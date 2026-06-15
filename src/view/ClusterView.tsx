@@ -1,72 +1,118 @@
 /**
- * ClusterView — interactive 3D model of a large-scale HPC cluster (standalone view).
+ * ClusterView — interactive 3D model of a large-scale HPC pod (A5 / A6).
  *
- * Three-level drill-down + topology:
- *   overview (16 cabinets) → cabinet view (power / blade / cooling) → node view
- *   interconnect topology (48 nodes × 7 planes, two-tier Clos)
+ * Generation switch (A5 / A6) drives all specs. Drill-down: data-hall overview →
+ * cabinet view → compute node, plus a UB interconnect-hierarchy view
+ * (L0 die → L4 cluster scale-out). The node view can overlay die /
+ * process(rank) / thread-level UB communication lines.
  *
  * Fully procedural modeling (no GLB). Display text with product/brand terms is
  * sourced from ../content (decoded at runtime); this file carries no plaintext
  * product names.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  RACKS, INFO, SOURCES, SPEC, UB_PLANE_COLORS, RDMA_COLOR, VPC_COLOR,
-  type RackInfo, type ViewMode,
+  INFO, SOURCES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
+  type Gen, type RackKind, type ViewMode,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
-import { OverviewScene, RackScene, NodeScene, TopologyScene } from '../scene/scenes';
+import {
+  OverviewScene, RackScene, NodeScene, TopologyScene, type NodeOverlays,
+} from '../scene/scenes';
 
-// initial camera position + look-at per view mode
 const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number] }> = {
-  overview: { pos: [7.5, 5.5, 9.5], target: [0, 1.0, 0] },
+  overview: { pos: [9, 10, 15], target: [0, 0.5, 0] },
   rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0] },
-  node:     { pos: [2.4, 2.6, 3.0], target: [0, 0.5, 0] },
-  topology: { pos: [0, 9, 14], target: [0, 2.8, 0] },
+  node:     { pos: [2.6, 2.8, 3.2], target: [0, 0.5, 0] },
+  topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'overview', label: '全景总览' },
   { id: 'rack',     label: '机柜视图' },
   { id: 'node',     label: '节点视图' },
-  { id: 'topology', label: '互联拓扑' },
+  { id: 'topology', label: 'UB 互联层级' },
+];
+
+const OVERLAY_TABS: { id: keyof NodeOverlays; label: string; color: string }[] = [
+  { id: 'mesh',   label: 'L1 板载 2D-Mesh', color: UB_LEVELS[1].color },
+  { id: 'ring',   label: COMM_PATTERNS[0].label, color: COMM_PATTERNS[0].color },
+  { id: 'a2a',    label: COMM_PATTERNS[1].label, color: COMM_PATTERNS[1].color },
+  { id: 'thread', label: COMM_PATTERNS[2].label, color: COMM_PATTERNS[2].color },
 ];
 
 export function ClusterView() {
+  const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
   const [mode, setMode] = useState<ViewMode>('overview');
-  const [rack, setRack] = useState<RackInfo>(RACKS.find((r) => r.kind === 'compute')!);
+  const [rackKind, setRackKind] = useState<RackKind>('compute');
   const [nodeSlot, setNodeSlot] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [nodeSubMode, setNodeSubMode] = useState<'compute' | 'ubswitch'>('compute');
+  const [overlays, setOverlays] = useState<NodeOverlays>({ mesh: true, ring: false, a2a: false, thread: false });
 
+  const spec = GENERATIONS[gen];
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
+  const rackLabel = rackKind === 'compute' ? '计算柜' : '通信柜';
 
   const infoKey =
     mode === 'overview' ? 'overview' :
-    mode === 'rack' ? (rack.kind === 'compute' ? 'computeRack' : 'switchRack') :
+    mode === 'rack' ? (rackKind === 'compute' ? 'computeRack' : 'switchRack') :
     mode === 'node' ? 'node' : 'topology';
   const info = INFO[infoKey];
 
-  const breadcrumb: { label: string; onClick?: () => void }[] = [
-    { label: TOK.supernode, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
-  ];
-  if (mode === 'rack' || mode === 'node') {
-    breadcrumb.push({ label: rack.label, onClick: mode === 'node' ? () => setMode('rack') : undefined });
-  }
-  if (mode === 'node') {
-    breadcrumb.push({ label: `节点 ${nodeSlot + 1}` });
-  }
+  const breadcrumb = useMemo(() => {
+    const bc: { label: string; onClick?: () => void }[] = [
+      { label: spec.name, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
+    ];
+    if (mode === 'rack' || mode === 'node') bc.push({ label: rackLabel, onClick: mode === 'node' ? () => setMode('rack') : undefined });
+    if (mode === 'node') bc.push({ label: `节点 ${nodeSlot + 1}` });
+    return bc;
+  }, [mode, rackLabel, nodeSlot, spec.name]);
 
   const cam = CAMERA[mode];
+
+  const specRows: [string, string][] = [
+    ['代际 / 形态', `${spec.code} · ${spec.name}`],
+    ['NPU 总数', `${spec.totalNpus.toLocaleString()}× ${spec.npuLabel}`],
+    ['算力 FP8 / FP4', `${spec.fp8EF} / ${spec.fp4EF} EFLOPS`],
+    ['HBM 总量', `${spec.memTB.toLocaleString()} TB · ${spec.hbm}`],
+    ['单卡 HBM 带宽', `${spec.memPerChipTBs} TB/s`],
+    ['单卡 UB 带宽', `${spec.chipUbTBs} TB/s`],
+    ['总互联带宽', `${spec.interconnectPBs} PB/s`],
+    ['机柜', `${spec.totalCabs}（${spec.computeCabs} 计算 + ${spec.commCabs} 通信）`],
+    ['占地', `${spec.footprintM2.toLocaleString()} m²`],
+    ['训练 / 推理', `${spec.trainTokps} / ${spec.inferTokps}`],
+    [TOK.supercluster, `${spec.superclusterNpu}卡`],
+    ['上市', spec.release],
+    ['散热', TOK.cooling],
+  ];
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f5f5', color: 'rgba(0,0,0,0.90)' }}>
       {/* ── toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.12)', flexWrap: 'wrap', background: 'white' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.12)', flexWrap: 'wrap', background: 'white' }}>
+        {/* generation switch */}
+        <div style={{ display: 'flex', gap: 4, borderRight: '1px solid rgba(0,0,0,0.12)', paddingRight: 12 }}>
+          {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGen(g)}
+              title={GENERATIONS[g].name}
+              style={{
+                padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, cursor: 'pointer',
+                border: `1px solid ${gen === g ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                background: gen === g ? 'rgba(67,105,239,0.10)' : 'transparent',
+                color: gen === g ? '#4369ef' : 'rgba(0,0,0,0.55)',
+              }}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+        {/* mode tabs */}
         <div style={{ display: 'flex', gap: 4 }}>
           {MODE_TABS.map((t) => (
             <button
@@ -83,17 +129,28 @@ export function ClusterView() {
             </button>
           ))}
         </div>
-        {/* node sub-mode switch */}
+        {/* node overlay toggles */}
         {mode === 'node' && (
           <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
-            {[{ id: 'compute', label: '计算节点' }, { id: 'ubswitch', label: `${TOK.ub}总线设备` }].map((t) => (
-              <button key={t.id} onClick={() => setNodeSubMode(t.id as 'compute' | 'ubswitch')} style={{
-                padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
-                border: `1px solid ${nodeSubMode === t.id ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
-                background: nodeSubMode === t.id ? 'rgba(67,105,239,0.10)' : 'transparent',
-                color: nodeSubMode === t.id ? '#4369ef' : 'rgba(0,0,0,0.55)',
-              }}>{t.label}</button>
-            ))}
+            {OVERLAY_TABS.map((t) => {
+              const on = overlays[t.id];
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setOverlays((o) => ({ ...o, [t.id]: !o[t.id] }))}
+                  style={{
+                    padding: '4px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    border: `1px solid ${on ? t.color : 'rgba(0,0,0,0.12)'}`,
+                    background: on ? `${t.color}22` : 'transparent',
+                    color: on ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.5)',
+                  }}
+                >
+                  <span style={{ width: 9, height: 3, background: t.color, display: 'inline-block', borderRadius: 1, opacity: on ? 1 : 0.4 }} />
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
         )}
         {/* breadcrumb */}
@@ -101,17 +158,12 @@ export function ClusterView() {
           {breadcrumb.map((b, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {i > 0 && <span style={{ color: 'rgba(0,0,0,0.42)' }}>›</span>}
-              <span
-                onClick={b.onClick}
-                style={b.onClick ? { cursor: 'pointer', color: '#4369ef' } : { color: 'rgba(0,0,0,0.75)' }}
-              >
-                {b.label}
-              </span>
+              <span onClick={b.onClick} style={b.onClick ? { cursor: 'pointer', color: '#4369ef' } : { color: 'rgba(0,0,0,0.75)' }}>{b.label}</span>
             </span>
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>{`${SPEC.name} · 384× ${TOK.n910c} · ${TOK.ub} UB 全互联`}</span>
+        <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>
         <button
           onClick={() => setPanelOpen((v) => !v)}
           style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
@@ -124,7 +176,7 @@ export function ClusterView() {
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <Canvas
-            key={mode}    /* reset camera + controls on view switch */
+            key={`${mode}-${gen}`}
             camera={{ position: cam.pos, fov: 42 }}
             shadows
             dpr={[1, 2]}
@@ -132,42 +184,30 @@ export function ClusterView() {
             onCreated={({ gl }) => { gl.shadowMap.type = THREE.PCFSoftShadowMap; }}
           >
             <color attach="background" args={['#f5f5f5']} />
-            <fog attach="fog" args={['#f5f5f5', 22, 46]} />
+            <fog attach="fog" args={['#f5f5f5', 26, 60]} />
             <ambientLight intensity={1.1} />
             <directionalLight
-              position={[8, 12, 6]}
-              intensity={1.2}
-              castShadow
+              position={[8, 14, 6]} intensity={1.2} castShadow
               shadow-mapSize={[2048, 2048]}
-              shadow-camera-left={-12} shadow-camera-right={12}
-              shadow-camera-top={12} shadow-camera-bottom={-12}
+              shadow-camera-left={-16} shadow-camera-right={16}
+              shadow-camera-top={16} shadow-camera-bottom={-16}
             />
-            <pointLight position={[0, 8, 0]} intensity={1.0} color="#e8f0ff" />
+            <pointLight position={[0, 10, 0]} intensity={1.0} color="#e8f0ff" />
 
             {mode === 'overview' && (
-              <OverviewScene
-                onHoverInfo={onHoverInfo}
-                onSelectRack={(r) => { setRack(r); setMode('rack'); }}
-              />
+              <OverviewScene gen={spec} onHoverInfo={onHoverInfo} onSelectRack={(k) => { setRackKind(k); setMode('rack'); }} />
             )}
             {mode === 'rack' && (
-              <RackScene
-                rack={rack}
-                onHoverInfo={onHoverInfo}
-                onSelectNode={(slot) => { setNodeSlot(slot); setMode('node'); }}
-              />
+              <RackScene rackKind={rackKind} label={rackLabel} onHoverInfo={onHoverInfo} onSelectNode={(slot) => { setNodeSlot(slot); setMode('node'); }} />
             )}
-            {mode === 'node' && <NodeScene onHoverInfo={onHoverInfo} nodeType={nodeSubMode} />}
-            {mode === 'topology' && <TopologyScene onHoverInfo={onHoverInfo} />}
+            {mode === 'node' && <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />}
+            {mode === 'topology' && <TopologyScene gen={spec} onHoverInfo={onHoverInfo} />}
 
             <OrbitControls
               target={cam.target}
-              enableDamping
-              dampingFactor={0.08}
-              minPolarAngle={0.1}
-              maxPolarAngle={Math.PI / 2 - 0.04}
-              minDistance={1.2}
-              maxDistance={30}
+              enableDamping dampingFactor={0.08}
+              minPolarAngle={0.1} maxPolarAngle={Math.PI / 2 - 0.04}
+              minDistance={1.2} maxDistance={60}
             />
           </Canvas>
 
@@ -178,41 +218,33 @@ export function ClusterView() {
               padding: '7px 12px', fontSize: 12.5, lineHeight: 1.5,
               background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
               color: 'rgba(0,0,0,0.90)', pointerEvents: 'none',
-            }}>
-              {hoverInfo}
-            </div>
+            }}>{hoverInfo}</div>
           )}
 
-          {/* color legend: 7 colors = 7 planes (shown in every view) */}
+          {/* legend: UB hierarchy levels (+ comm overlays in node view) */}
           <div style={{
             position: 'absolute', right: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
-            display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none',
+            display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none', maxWidth: 240,
           }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>
-              {`7 色 = 7 个${TOK.ub} UB 平面`}
-            </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', maxWidth: 230 }}>
-              {UB_PLANE_COLORS.map((c, i) => (
-                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <span style={{ width: 10, height: 3, background: c, display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.55)' }}>P{i + 1}</span>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {UB_LEVELS.map((lv) => (
+                <span key={lv.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 12, height: 3, background: lv.color, display: 'inline-block', borderRadius: 1 }} />
+                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>{`${lv.id} ${lv.label}`}</span>
                 </span>
               ))}
             </div>
-            <div style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.42)', maxWidth: 230, lineHeight: 1.5 }}>
-              每个平面是一套独立的无阻塞交换网络，每颗 NPU/CPU 同时接入全部 7 个平面
-            </div>
-            {mode === 'topology' && (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 10, height: 3, background: RDMA_COLOR, display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.55)' }}>{`RDMA 跨${TOK.supernode}`}</span>
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 10, height: 3, background: VPC_COLOR, display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.55)' }}>VPC 外网</span>
-                </span>
+            {mode === 'node' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>进程 / 线程级通信（叠加层）</div>
+                {COMM_PATTERNS.map((c) => (
+                  <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 3, background: c.color, display: 'inline-block', borderRadius: 1 }} />
+                    <span style={{ color: 'rgba(0,0,0,0.6)' }}>{c.label}</span>
+                  </span>
+                ))}
               </div>
             )}
           </div>
@@ -221,31 +253,21 @@ export function ClusterView() {
         {/* ── right info panel ── */}
         {panelOpen && (
           <div style={{
-            width: 295, borderLeft: '1px solid rgba(0,0,0,0.12)', padding: '14px 16px',
+            width: 300, borderLeft: '1px solid rgba(0,0,0,0.12)', padding: '14px 16px',
             overflowY: 'auto', fontSize: 12.5, lineHeight: 1.65, flexShrink: 0,
             background: 'white', color: 'rgba(0,0,0,0.90)',
           }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'rgba(0,0,0,0.75)' }}>
-              {info.lines.map((l, i) => (
-                <li key={i} style={{ marginBottom: 5 }}>{l}</li>
-              ))}
+              {info.lines.map((l, i) => (<li key={i} style={{ marginBottom: 5 }}>{l}</li>))}
             </ul>
 
-            <div style={{ margin: '14px 0 6px', fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>关键规格</div>
+            <div style={{ margin: '14px 0 6px', fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`关键规格 · ${spec.code}`}</div>
             <table style={{ width: '100%', fontSize: 11.5, color: 'rgba(0,0,0,0.75)', borderCollapse: 'collapse' }}>
               <tbody>
-                {[
-                  ['NPU 总数', `${SPEC.totalNpus}× ${TOK.ascend} ${TOK.n910c}`],
-                  ['CPU 总数', `${SPEC.totalCpus}× ${TOK.kunpeng} ${TOK.n920}`],
-                  ['FP16 算力', `${SPEC.fp16Pflops} PFLOPS`],
-                  ['HBM 总量', `${SPEC.totalHbmTB} TB 统一编址`],
-                  ['UB 带宽/NPU', `${SPEC.npuUbGBs} GB/s 单向`],
-                  ['单跳时延', `${SPEC.hopLatencyNs} ns`],
-                  ['散热', SPEC.cooling],
-                ].map(([k, v]) => (
+                {specRows.map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-                    <td style={{ padding: '3px 0', color: 'rgba(0,0,0,0.55)', whiteSpace: 'nowrap' }}>{k}</td>
+                    <td style={{ padding: '3px 0', color: 'rgba(0,0,0,0.55)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
                     <td style={{ padding: '3px 0 3px 10px', color: 'rgba(0,0,0,0.90)' }}>{v}</td>
                   </tr>
                 ))}
@@ -256,9 +278,7 @@ export function ClusterView() {
             <div style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.55)', lineHeight: 1.7 }}>
               {SOURCES.map((s, i) => (<div key={i}>{s}</div>))}
             </div>
-            <div style={{ marginTop: 10, fontSize: 10.5, color: 'rgba(0,0,0,0.55)', fontStyle: 'italic' }}>
-              {FOOTNOTE}
-            </div>
+            <div style={{ marginTop: 10, fontSize: 10.5, color: 'rgba(0,0,0,0.55)', fontStyle: 'italic' }}>{FOOTNOTE}</div>
           </div>
         )}
       </div>

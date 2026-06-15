@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Cluster model data layer.
+// Cluster model data layer — two generations (A5 / A6).
 //
-// Geometry note: cabinet outer dimensions use the published 2250×600×1150mm
-// envelope; in-cabinet blade/chip layout is a schematic abstraction (vendor
-// sheet-metal drawings are not public) and does not represent a real layout.
+// Specs are drawn from public conference / vendor material (see SOURCES in
+// ../content). In-cabinet / die / node layouts are schematic abstractions
+// (vendor sheet-metal drawings are not public) and do not represent a real
+// physical layout.
 //
 // All product/brand display text is sourced from ../content (stored base64 and
 // decoded at runtime), so this source file carries no plaintext product names.
@@ -14,197 +15,230 @@ export { INFO, SOURCES };
 
 export type RackKind = 'compute' | 'switch';
 export type ViewMode = 'overview' | 'rack' | 'node' | 'topology';
+export type Gen = 'A5' | 'A6';
 
-// ─── Global spec (baseline) ──────────────────────────────────────────────────
-export const SPEC = {
-  name: TOK.specName,
-  totalRacks: 16,
-  computeRacks: 12,
-  switchRacks: 4,
-  nodesPerComputeRack: 4,
-  totalNodes: 48,
-  npusPerNode: 8,
-  cpusPerNode: 4,
-  l1SwitchChipsPerNode: 7,   // on-board L1 switch chips, 1 chip = 1 sub-plane
-  ubPlanes: 7,               // 7 independent UB sub-planes
-  l2ChipsPerPlane: 16,       // 16 L2 switch chips per plane (across 4 switch cabinets)
-  totalNpus: 384,
-  totalCpus: 192,
-  // bandwidth
-  npuUbGBs: 392,             // per accelerator, unidirectional
-  npuD2dGBs: 784,            // accelerator-to-accelerator D2D, bidirectional
-  cpuUbGBs: 160,             // per CPU, unidirectional
-  npuRdmaGbps: 400,          // RDMA scale-out plane (RoCE), per accelerator
-  nodeVpcGbps: 400,          // DPU VPC plane
-  l2PortGBs: 28,             // per L2 chip: 48 × 28 GB/s ports
-  l2PortsPerChip: 48,
-  hopLatencyNs: 200,         // single-hop latency
-  // compute / memory
-  npuHbmGB: 128,             // per accelerator: 2 die × 64 GB HBM
-  npuHbmTBs: 3.2,            // per-accelerator HBM bandwidth
-  totalHbmTB: 48,            // 384 × 128 GB, unified addressing
-  ddr5Total: 1536,           // total DDR5 sticks (32 per node)
-  fp16Pflops: 307.2,         // FP16 peak
-  cooling: TOK.cooling,
+// ─── Generation specs ────────────────────────────────────────────────────────
+export interface GenSpec {
+  code: Gen;
+  name: string;             // pod form-factor display name
+  npuLabel: string;         // accelerator display label
+  npuShort: string;         // accelerator short label
+  totalNpus: number;
+  fp8EF: number;            // EFLOPS FP8
+  fp4EF: number;            // EFLOPS FP4
+  memTB: number;            // total HBM capacity
+  memPerChipTBs: number;    // per-chip HBM bandwidth (TB/s)
+  interconnectPBs: number;  // total UB interconnect bandwidth (PB/s)
+  chipUbTBs: number;        // per-NPU UB bandwidth (TB/s)
+  computeCabs: number;
+  commCabs: number;
+  totalCabs: number;
+  footprintM2: number;
+  hbm: string;              // self-developed HBM name
+  release: string;
+  trainTokps: string;
+  inferTokps: string;
+  superclusterNpu: string;  // cluster-level scale
+}
+
+export const GENERATIONS: Record<Gen, GenSpec> = {
+  A5: {
+    code: 'A5', name: TOK.atlas950, npuLabel: `${TOK.ascend} ${TOK.n950dt}`, npuShort: TOK.n950dt,
+    totalNpus: 8192, fp8EF: 8, fp4EF: 16, memTB: 1152, memPerChipTBs: 4, interconnectPBs: 16, chipUbTBs: 2,
+    computeCabs: 128, commCabs: 32, totalCabs: 160, footprintM2: 1000,
+    hbm: TOK.hbmZQ, release: '2026 Q4', trainTokps: '4.91M tok/s', inferTokps: '19.6M tok/s',
+    superclusterNpu: '>52万',
+  },
+  A6: {
+    code: 'A6', name: TOK.atlas960, npuLabel: `${TOK.ascend} ${TOK.n960}`, npuShort: TOK.n960,
+    totalNpus: 15488, fp8EF: 30, fp4EF: 60, memTB: 4460, memPerChipTBs: 4, interconnectPBs: 34, chipUbTBs: 4,
+    computeCabs: 176, commCabs: 44, totalCabs: 220, footprintM2: 2200,
+    hbm: TOK.hbmZQ, release: '2027 Q4', trainTokps: '15.9M tok/s', inferTokps: '80.5M tok/s',
+    superclusterNpu: '>100万',
+  },
+};
+
+export const DEFAULT_GEN: Gen = 'A5';
+
+// per-node schematic constants (illustrative; real per-node config not public)
+export const NPUS_PER_NODE = 8;
+export const CPUS_PER_NODE = 4;
+export const DIES_PER_NPU = 2;        // package-internal dies (UB / SIO die-to-die)
+export const NODES_PER_CAB = 8;       // 8 nodes × 8 NPU = 64 NPU per compute cabinet
+
+// ─── UB interconnect hierarchy (chip → cluster), drives all colour coding ─────
+export interface UbLevel { id: string; color: string; label: string; detail: string; }
+export const UB_LEVELS: UbLevel[] = [
+  { id: 'L0', color: '#2dd4bf', label: '片内 die',                  detail: '封装内 die 间 UB / SIO 直连' },
+  { id: 'L1', color: '#38bdf8', label: '节点内',                    detail: '板载 UB 2D-Mesh，NPU 直连' },
+  { id: 'L2', color: '#a78bfa', label: `机柜内 ${TOK.fullmesh}`,    detail: `跨节点 ${TOK.fullmesh} 总线级直连` },
+  { id: 'L3', color: '#fb923c', label: `${TOK.supernode} Clos`,     detail: `经 UB 交换(通信柜) Clos 全互联` },
+  { id: 'L4', color: '#4ade80', label: `${TOK.supernode}间`,        detail: `${TOK.supercluster} scale-out（全光）` },
+];
+
+// ─── Process / thread communication overlays (node view) ─────────────────────
+export interface CommPattern { id: string; color: string; label: string; }
+export const COMM_PATTERNS: CommPattern[] = [
+  { id: 'ring',   color: '#f43f5e', label: 'Ring AllReduce · 进程(rank)' },
+  { id: 'a2a',    color: '#f59e0b', label: 'All-to-All MoE · 进程(rank)' },
+  { id: 'thread', color: '#22d3ee', label: 'die 内线程 / AI Core 流' },
+];
+
+export const RACK_COLORS = {
+  accent: '#e0252f',
+  computeGlow: '#38bdf8',
+  switchGlow: '#fb923c',
 } as const;
 
-// ─── Rack layout: 2 rows × 8 cabinets, switch cabinets centred ───────────────
-export interface RackInfo {
+// ─── Overview hall: compute-cabinet grid + communication-cabinet spine ────────
+export interface CabinetCell {
   id: string;
   kind: RackKind;
-  label: string;
-  row: number;     // 0 = front row, 1 = back row
-  col: number;     // 0..7
-  /** global compute-node ids (0..47); empty for switch cabinets */
-  nodeIds: number[];
+  pos: [number, number, number];
 }
 
-export const RACKS: RackInfo[] = (() => {
-  const racks: RackInfo[] = [];
-  let nodeCounter = 0;
-  let computeIdx = 0;
-  let switchIdx = 0;
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 8; col++) {
-      const isSwitch = col === 3 || col === 4;
-      if (isSwitch) {
-        racks.push({
-          id: `switch-rack-${switchIdx}`,
-          kind: 'switch',
-          label: `${TOK.ub}总线柜 S${switchIdx + 1}`,
-          row, col, nodeIds: [],
-        });
-        switchIdx++;
-      } else {
-        const ids = Array.from({ length: 4 }, () => nodeCounter++);
-        racks.push({
-          id: `compute-rack-${computeIdx}`,
-          kind: 'compute',
-          label: `计算柜 C${computeIdx + 1}`,
-          row, col, nodeIds: ids,
-        });
-        computeIdx++;
-      }
-    }
+const HALL_COLS = 16;
+export const CAB_W = 0.34, CAB_H = 1.3, CAB_D = 0.68;
+const CAB_GAP_X = 0.12, CAB_GAP_Z = 0.5, BLOCK_GAP_Z = 1.0;
+
+/** Build a schematic data-hall floor for a generation:
+ *  compute cabinets in a front grid, communication cabinets as a rear block. */
+export function buildHall(gen: GenSpec): CabinetCell[] {
+  const cells: CabinetCell[] = [];
+  const pitchX = CAB_W + CAB_GAP_X;
+  const pitchZ = CAB_D + CAB_GAP_Z;
+  const rowW = HALL_COLS * pitchX;
+  const x0 = -rowW / 2 + CAB_W / 2;
+
+  const computeRows = Math.ceil(gen.computeCabs / HALL_COLS);
+  let z = 0;
+  // compute block (front, toward +Z growing away)
+  for (let i = 0; i < gen.computeCabs; i++) {
+    const r = Math.floor(i / HALL_COLS);
+    const c = i % HALL_COLS;
+    cells.push({ id: `c-${i}`, kind: 'compute', pos: [x0 + c * pitchX, 0, r * pitchZ] });
+    z = r * pitchZ;
   }
-  return racks;
-})();
-
-// ─── Rack geometry (scene unit = metre; envelope 2250×600×1150mm) ────────────
-export const RACK_DIM = { w: 0.6, h: 2.25, d: 1.15 };
-export const RACK_GAP_X = 0.32;
-export const ROW_GAP_Z = 2.6;
-
-export function rackWorldPos(rack: RackInfo): [number, number, number] {
-  const totalW = 8 * RACK_DIM.w + 7 * RACK_GAP_X;
-  const x = rack.col * (RACK_DIM.w + RACK_GAP_X) - totalW / 2 + RACK_DIM.w / 2;
-  const z = rack.row === 0 ? ROW_GAP_Z / 2 : -ROW_GAP_Z / 2;
-  return [x, 0, z];
+  // communication block (rear, separated by an aisle)
+  const commZ0 = z + pitchZ + BLOCK_GAP_Z;
+  for (let i = 0; i < gen.commCabs; i++) {
+    const r = Math.floor(i / HALL_COLS);
+    const c = i % HALL_COLS;
+    cells.push({ id: `s-${i}`, kind: 'switch', pos: [x0 + c * pitchX, 0, commZ0 + r * pitchZ] });
+  }
+  // centre the whole hall on the Z origin
+  const zs = cells.map((c) => c.pos[2]);
+  const zMid = (Math.min(...zs) + Math.max(...zs)) / 2;
+  for (const cell of cells) cell.pos[2] -= zMid;
+  void computeRows;
+  return cells;
 }
 
-// ─── In-cabinet layout (top to bottom; slots are schematic) ──────────────────
+// ─── Cabinet internals (representative; metres, schematic slots) ──────────────
+export const RACK_DIM = { w: 0.6, h: 2.25, d: 1.15 };
+
 export interface RackUnit {
   id: string;
   type: 'node' | 'switch-unit' | 'power' | 'mgmt' | 'cdu';
   label: string;
   labelEn: string;
-  /** unit bottom (0..1 of rack height) and unit height fraction (0..1) */
-  y0: number;
-  hFrac: number;
-  /** for type === 'node': in-cabinet node slot 0..3 */
+  y0: number;      // unit bottom (0..1 of rack height)
+  hFrac: number;   // unit height fraction (0..1)
   nodeSlot?: number;
 }
 
-export const COMPUTE_RACK_UNITS: RackUnit[] = [
-  { id: 'power',  type: 'power', label: '电源框 + 电源转换板（集中供电 Busbar）', labelEn: 'Power Shelf',      y0: 0.905, hFrac: 0.07 },
-  { id: 'mgmt',   type: 'mgmt',  label: '柜管模块 + GE 管理交换机',               labelEn: 'Mgmt + GE Switch', y0: 0.85,  hFrac: 0.048 },
-  { id: 'node-0', type: 'node',  label: '计算节点 1（液冷 ≈10U / 16.2kW max）',   labelEn: 'Compute Node 1',   y0: 0.655, hFrac: 0.18, nodeSlot: 0 },
-  { id: 'node-1', type: 'node',  label: '计算节点 2（液冷 ≈10U / 16.2kW max）',   labelEn: 'Compute Node 2',   y0: 0.465, hFrac: 0.18, nodeSlot: 1 },
-  { id: 'node-2', type: 'node',  label: '计算节点 3（液冷 ≈10U / 16.2kW max）',   labelEn: 'Compute Node 3',   y0: 0.275, hFrac: 0.18, nodeSlot: 2 },
-  { id: 'node-3', type: 'node',  label: '计算节点 4（液冷 ≈10U / 16.2kW max）',   labelEn: 'Compute Node 4',   y0: 0.085, hFrac: 0.18, nodeSlot: 3 },
-  { id: 'cdu',    type: 'cdu',   label: 'Manifold 液冷分集水器 / 快接头区',       labelEn: 'Liquid Manifold',  y0: 0.012, hFrac: 0.058 },
-];
+export const COMPUTE_RACK_UNITS: RackUnit[] = (() => {
+  const u: RackUnit[] = [];
+  u.push({ id: 'power', type: 'power', label: '集中供电 Busbar / 电源框', labelEn: 'Power / Busbar', y0: 0.93, hFrac: 0.05 });
+  u.push({ id: 'mgmt',  type: 'mgmt',  label: '柜管模块 + GE 管理交换',   labelEn: 'Mgmt + GE',      y0: 0.882, hFrac: 0.038 });
+  const top = 0.86, bottom = 0.075, gap = 0.004;
+  const step = (top - bottom) / NODES_PER_CAB;
+  for (let i = 0; i < NODES_PER_CAB; i++) {
+    u.push({
+      id: `node-${i}`, type: 'node',
+      label: `计算节点 ${i + 1}（液冷刀片 · ${NPUS_PER_NODE}× NPU）`,
+      labelEn: `Node ${i + 1}`,
+      y0: bottom + (NODES_PER_CAB - 1 - i) * step + gap / 2,
+      hFrac: step - gap, nodeSlot: i,
+    });
+  }
+  u.push({ id: 'cdu', type: 'cdu', label: 'Manifold 液冷分集水器 / 快接头', labelEn: 'Liquid Manifold', y0: 0.012, hFrac: 0.055 });
+  return u;
+})();
 
-export const SWITCH_RACK_UNITS: RackUnit[] = [
-  { id: 'power', type: 'power', label: '电源管理 · 集中供电', labelEn: 'Power Shelf', y0: 0.90, hFrac: 0.075 },
-  ...Array.from({ length: 7 }, (_, i): RackUnit => ({
-    id: `l2-${i}`,
-    type: 'switch-unit',
-    label: `${TOK.ub}互联设备 · UB 平面 ${i + 1}`,
-    labelEn: `UB Switch P${i + 1}`,
-    y0: 0.115 + (6 - i) * 0.112,
-    hFrac: 0.095,
-  })),
-  { id: 'mgmt', type: 'mgmt', label: '管理 / 配线区', labelEn: 'Mgmt', y0: 0.015, hFrac: 0.09 },
-];
+export const SWITCH_UNIT_COUNT = 6;
+export const SWITCH_RACK_UNITS: RackUnit[] = (() => {
+  const u: RackUnit[] = [];
+  u.push({ id: 'power', type: 'power', label: '电源管理 · 集中供电', labelEn: 'Power Shelf', y0: 0.92, hFrac: 0.06 });
+  for (let i = 0; i < SWITCH_UNIT_COUNT; i++) {
+    u.push({
+      id: `sw-${i}`, type: 'switch-unit',
+      label: `${TOK.ub} 交换设备 ${i + 1}（UB Clos 顶层 · 全光）`,
+      labelEn: `UB Switch ${i + 1}`,
+      y0: 0.10 + (SWITCH_UNIT_COUNT - 1 - i) * 0.128, hFrac: 0.108,
+    });
+  }
+  u.push({ id: 'mgmt', type: 'mgmt', label: '管理 / 全光配线区', labelEn: 'Mgmt / Optical Patch', y0: 0.015, hFrac: 0.07 });
+  return u;
+})();
 
 // ─── Compute-node internals (abstract blade layout, metres) ──────────────────
-export const NODE_DIM = { w: 0.8, h: 0.12, d: 0.7 };
+export const NODE_DIM = { w: 0.86, h: 0.12, d: 0.72 };
 
 export interface NodePart {
   id: string;
-  type: 'npu' | 'cpu' | 'ub-switch' | 'dpu' | 'optical' | 'dimm';
+  type: 'npu' | 'cpu' | 'ub-fabric' | 'dpu' | 'optical' | 'dimm';
   label: string;
-  pos: [number, number, number];   // relative to node centre
+  pos: [number, number, number];
   size: [number, number, number];
+  /** NPU index 0..7 (for overlay wiring) */
+  npuIdx?: number;
 }
+
+// 8 NPUs in a 2×4 grid — these positions drive the die / process / thread overlays.
+export const NPU_GRID = { cols: 4, rows: 2, pitchX: 0.18, pitchZ: 0.17, z0: -0.16 };
 
 export const NODE_PARTS: NodePart[] = (() => {
   const parts: NodePart[] = [];
-  // 8 accelerators (dual-die package + cold plate): 2 rows × 4 cols
-  for (let i = 0; i < 8; i++) {
-    const cx = (i % 4) * 0.155 - 0.2325;
-    const cz = i < 4 ? -0.155 : 0.01;
+  for (let i = 0; i < NPUS_PER_NODE; i++) {
+    const c = i % NPU_GRID.cols, r = Math.floor(i / NPU_GRID.cols);
+    const cx = (c - (NPU_GRID.cols - 1) / 2) * NPU_GRID.pitchX;
+    const cz = NPU_GRID.z0 + r * NPU_GRID.pitchZ;
     parts.push({
-      id: `npu-${i}`, type: 'npu', label: `${TOK.ascend} ${TOK.n910c} #${i + 1} · 128GB HBM · UB 392GB/s`,
-      pos: [cx, 0.022, cz], size: [0.105, 0.022, 0.105],
+      id: `npu-${i}`, type: 'npu', npuIdx: i,
+      label: `${TOK.ascend} ${TOK.n950dt} #${i + 1} · ${DIES_PER_NPU} die · UB 2 TB/s · ${TOK.hbmZQ} HBM`,
+      pos: [cx, 0.022, cz], size: [0.12, 0.024, 0.115],
     });
   }
-  // 4 CPUs: front row
-  for (let i = 0; i < 4; i++) {
+  // 4 CPUs (front row)
+  for (let i = 0; i < CPUS_PER_NODE; i++) {
     parts.push({
-      id: `cpu-${i}`, type: 'cpu', label: `${TOK.kunpeng} ${TOK.n920} #${i + 1} · UB 160GB/s`,
-      pos: [i * 0.155 - 0.2325, 0.018, 0.155], size: [0.07, 0.014, 0.07],
+      id: `cpu-${i}`, type: 'cpu',
+      label: `${TOK.kunpeng} ${TOK.n950} #${i + 1} · UB 全池化 · NUMA`,
+      pos: [(i - 1.5) * 0.18, 0.018, 0.2], size: [0.085, 0.016, 0.085],
     });
   }
-  // 2 DIMM banks (32 DDR5 sticks per node, shown as strips)
+  // 2 DIMM banks
   for (let i = 0; i < 2; i++) {
     parts.push({
-      id: `dimm-${i}`, type: 'dimm', label: 'DDR5 内存区（每节点 32 根）',
-      pos: [0, 0.014, 0.245 + i * 0.045], size: [0.66, 0.018, 0.03],
+      id: `dimm-${i}`, type: 'dimm', label: 'DDR5 内存区（统一编址池化）',
+      pos: [0, 0.014, 0.3 + i * 0.04], size: [0.72, 0.018, 0.026],
     });
   }
-  // 7 L1 UB switch chips: rear row (each maps to one UB sub-plane)
-  for (let i = 0; i < 7; i++) {
+  // central UB fabric chips (L1 node-internal 2D-mesh switching)
+  for (let i = 0; i < 2; i++) {
     parts.push({
-      id: `ub-${i}`, type: 'ub-switch', label: `${TOK.ub} L1 交换芯片 · UB 平面 ${i + 1}`,
-      pos: [i * 0.095 - 0.285, 0.016, -0.295], size: [0.055, 0.012, 0.055],
+      id: `ubf-${i}`, type: 'ub-fabric', label: `${TOK.ub} L1 板载 UB 2D-Mesh 交换 fabric`,
+      pos: [(i - 0.5) * 0.22, 0.016, 0.02], size: [0.075, 0.014, 0.06],
     });
   }
-  // DPU card (VPC plane egress)
-  parts.push({
-    id: 'dpu', type: 'dpu', label: `${TOK.qingtian} · VPC 400Gbps`,
-    pos: [0.34, 0.02, 0.2], size: [0.08, 0.02, 0.16],
-  });
-  // rear optical panel (56×400GE UB + 8×400GE RoCE)
-  parts.push({
-    id: 'optical', type: 'optical', label: '光口区 · 56×400GE UB + 8×400GE RoCE',
-    pos: [-0.04, 0.02, -0.337], size: [0.62, 0.026, 0.018],
-  });
+  // DPU (VPC egress)
+  parts.push({ id: 'dpu', type: 'dpu', label: `${TOK.qingtian} · VPC 外网`, pos: [0.36, 0.02, 0.24], size: [0.085, 0.02, 0.16] });
+  // rear optical panel (UB uplink to comms cabinets, L3)
+  parts.push({ id: 'optical', type: 'optical', label: '光口区 · UB 上行至通信柜（L3 Clos）+ RoCE scale-out', pos: [-0.02, 0.02, -0.34], size: [0.7, 0.026, 0.018] });
   return parts;
 })();
 
-// ─── Plane palette (7 planes + RDMA + VPC) ───────────────────────────────────
-export const UB_PLANE_COLORS = [
-  '#2dd4bf', '#38bdf8', '#a78bfa', '#f472b6', '#fb923c', '#facc15', '#4ade80',
-];
-export const RDMA_COLOR = '#f43f5e';
-export const VPC_COLOR = '#94a3b8';
-
-export const RACK_COLORS = {
-  body: '#16181d',
-  door: '#0d0f13',
-  accent: '#e0252f',
-  computeGlow: '#2dd4bf',
-  switchGlow: '#fbbf24',
-} as const;
+export function npuPositions(): [number, number, number][] {
+  return NODE_PARTS.filter((p) => p.type === 'npu').map((p) => p.pos);
+}
