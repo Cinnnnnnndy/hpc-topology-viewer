@@ -1615,49 +1615,56 @@ export function FullPodScene({ scale, podCount, overlays, tick, onHoverInfo, onP
   const phase = tick === null ? null : TRACE_SCHED[tick];
   const computeNow = phase === 'compute', commNow = phase === 'comm';
 
+  // vertical level bands (same order/colours as the UB hierarchy view)
+  const yL1 = 0.7, yL2 = 2.3, yL3 = 3.7, yL4 = 5.0;
+
   const G = useMemo(() => {
     const dims = SCALES[scale].kind === 'switched' ? [8, 4] : SCALES[scale].dims;
     const perBoard = dims[0], nb = dims.length > 1 ? dims[1] : 1, Nper = perBoard * nb;
-    const npuP = 0.5, bladeGap = 0.75, bladeW = 4 * npuP + bladeGap;
-    const xBlade = (b: number) => (b - (nb - 1) / 2) * bladeW;
-    const rel = (k: number): [number, number, number] => {
-      const b = Math.floor(k / perBoard), l = k % perBoard, lc = l % 4, lr = Math.floor(l / 4);
-      return [xBlade(b) + (lc - 1.5) * npuP, 0, (lr - 0.5) * npuP * 1.15];
-    };
-    const P0 = Array.from({ length: Nper }, (_, k) => rel(k));
-    const x0 = Math.min(...P0.map(p => p[0])) - 0.4, x1 = Math.max(...P0.map(p => p[0])) + 0.4;
-    const rz0 = Math.min(...P0.map(p => p[2])) - 0.4, rz1 = Math.max(...P0.map(p => p[2])) + 0.4;
-    const podPitch = (rz1 - rz0) + 2.2;
-    const podZ = (p: number) => (p - (podCount - 1) / 2) * podPitch;
-    const P: [number, number, number][] = [];
-    for (let p = 0; p < podCount; p++) for (let k = 0; k < Nper; k++) { const r = P0[k]; P.push([r[0], 0, r[2] + podZ(p)]); }
+    const npuP = 0.42, bladeGap = 0.55, bladeW = 4 * npuP + bladeGap;       // a blade spans 4 NPU cols
+    const colW = nb * bladeW + 1.6;                                          // one super-node column width
+    const xCol = (p: number) => (p - (podCount - 1) / 2) * colW;
+    const bladeX = (b: number) => (b - (nb - 1) / 2) * bladeW;
+    const npuLocal = (l: number): [number, number] => { const lc = l % 4, lr = Math.floor(l / 4); return [(lc - 1.5) * npuP, (lr - 0.5) * 0.42]; };
+
+    const P: [number, number, number][] = [];     // every NPU (L1 band)
+    const bladeNodes: [number, number, number][] = [];  // L2 band (one per blade per pod)
+    const switches: [number, number, number][] = [];    // L3 band (one per pod)
+    for (let p = 0; p < podCount; p++) {
+      for (let b = 0; b < nb; b++) {
+        for (let l = 0; l < perBoard; l++) { const [lx, lz] = npuLocal(l); P.push([xCol(p) + bladeX(b) + lx, yL1, lz]); }
+        bladeNodes.push([xCol(p) + bladeX(b), yL2, 0]);
+      }
+      switches.push([xCol(p), yL3, 0]);
+    }
     const N = P.length;
-    const pods = Array.from({ length: podCount }, (_, p) => {
-      const zoff = podZ(p);
-      const blades = Array.from({ length: nb }, (_, b) => {
-        const xs = P0.slice(b * perBoard, (b + 1) * perBoard);
-        const bx0 = Math.min(...xs.map(q => q[0])), bx1 = Math.max(...xs.map(q => q[0]));
-        const bz0 = Math.min(...xs.map(q => q[2])), bz1 = Math.max(...xs.map(q => q[2]));
-        return { idx: b, cx: (bx0 + bx1) / 2, cz: (bz0 + bz1) / 2 + zoff, w: bx1 - bx0 + 0.4, d: bz1 - bz0 + 0.4 };
-      });
-      const cab = { x0, x1, z0: rz0 + zoff, z1: rz1 + zoff };
-      const hub: [number, number, number] = [0, 1.7, rz0 + zoff - 0.2];
-      return { p, zoff, blades, cab, hub };
-    });
-    const l1: [number, number, number][] = [], l2: [number, number, number][] = [], l3: [number, number, number][] = [], a2a: [number, number, number][] = [];
-    const ry = 0.62;
+    const cluster: [number, number, number] = [0, yL4, 0];
+
+    // links
+    const l1: [number, number, number][] = [];   // intra-blade full-mesh (L1)
+    const a12: [number, number, number][] = [];  // NPU → blade node (L1→L2 aggregate)
+    const l2: [number, number, number][] = [];   // cross-blade full-mesh within cabinet (L2)
+    const a23: [number, number, number][] = [];  // blade node → super-node switch (L2→L3)
+    const a34: [number, number, number][] = [];  // switch → cluster (L3→L4)
+    const a2a: [number, number, number][] = [];  // All-to-All within super-node (rank level)
+    const ry = yL1 + 0.34;
     for (let p = 0; p < podCount; p++) {
       const base = p * Nper;
-      for (let b = 0; b < nb; b++) { const bb = base + b * perBoard; for (let i = 0; i < perBoard; i++) for (let j = i + 1; j < perBoard; j++) l1.push(P[bb + i], P[bb + j]); }
-      for (let l = 0; l < perBoard; l++) for (let b = 0; b < nb; b++) for (let b2 = b + 1; b2 < nb; b2++) l2.push(P[base + b * perBoard + l], P[base + b2 * perBoard + l]);
-      for (let k = 0; k < Nper; k++) { const g = base + k; l3.push([P[g][0], 0.15, P[g][2]], pods[p].hub); }
-      for (let i = 0; i < Nper; i++) for (let j = i + 1; j < Nper; j++) a2a.push([P[base + i][0], ry - 0.05, P[base + i][2]], [P[base + j][0], ry - 0.05, P[base + j][2]]);
+      for (let b = 0; b < nb; b++) {
+        const bb = base + b * perBoard, bn = p * nb + b;
+        for (let i = 0; i < perBoard; i++) for (let j = i + 1; j < perBoard; j++) l1.push(P[bb + i], P[bb + j]);
+        for (let i = 0; i < perBoard; i++) a12.push([P[bb + i][0], P[bb + i][1] + 0.1, P[bb + i][2]], bladeNodes[bn]);
+        a23.push(bladeNodes[bn], switches[p]);
+      }
+      for (let b = 0; b < nb; b++) for (let b2 = b + 1; b2 < nb; b2++) l2.push(bladeNodes[p * nb + b], bladeNodes[p * nb + b2]);
+      if (podCount > 1) a34.push(switches[p], cluster);
+      for (let i = 0; i < Nper; i++) for (let j = i + 1; j < Nper; j++) a2a.push([P[base + i][0], ry, P[base + i][2]], [P[base + j][0], ry, P[base + j][2]]);
     }
-    const l4: [number, number, number][] = [];
-    for (let p = 0; p + 1 < podCount; p++) l4.push(pods[p].hub, pods[p + 1].hub);
+    // Ring AllReduce across all ranks (cross-super-node DP)
     const ring: [number, number, number][] = [];
     for (let k = 0; k < N; k++) { const a = P[k], b = P[(k + 1) % N]; ring.push([a[0], ry, a[2]], [b[0], ry, b[2]]); }
-    return { P, N, Nper, nb, perBoard, pods, l1, l2, l3, l4, ring, a2a };
+    const xExtent = podCount * colW;
+    return { P, N, Nper, nb, perBoard, bladeNodes, switches, cluster, l1, a12, l2, a23, a34, a2a, ring, xExtent };
   }, [scale, podCount]);
 
   const podOf = (k: number) => Math.floor(k / G.Nper);
@@ -1668,48 +1675,63 @@ export function FullPodScene({ scale, podCount, overlays, tick, onHoverInfo, onP
     const npuBase = new THREE.Color(LC.npuTop), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR), white = new THREE.Color('#ffffff');
     const nm = npuRef.current, pm = procRef.current, tm = thrRef.current;
     if (nm) {
-      for (let k = 0; k < G.N; k++) { const on = hoverNpu === k; const s = on ? 0.34 : 0.26; m.makeScale(s, 0.16, s); m.setPosition(G.P[k][0], 0.08, G.P[k][2]); nm.setMatrixAt(k, m); nm.setColorAt(k, on ? col.copy(white) : col.copy(npuBase)); }
+      for (let k = 0; k < G.N; k++) { const on = hoverNpu === k; const s = on ? 0.3 : 0.22; m.makeScale(s, 0.14, s); m.setPosition(G.P[k][0], yL1, G.P[k][2]); nm.setMatrixAt(k, m); nm.setColorAt(k, on ? col.copy(white) : col.copy(npuBase)); }
       nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true;
     }
     if (pm) {
-      for (let k = 0; k < G.N; k++) { m.makeScale(0.16, 0.16, 0.16); m.setPosition(G.P[k][0], 0.32, G.P[k][2]); pm.setMatrixAt(k, m); col.copy(procBase); if (commNow || hoverNpu === k) col.lerp(white, 0.5); pm.setColorAt(k, col); }
+      for (let k = 0; k < G.N; k++) { m.makeScale(0.14, 0.14, 0.14); m.setPosition(G.P[k][0], yL1 + 0.16, G.P[k][2]); pm.setMatrixAt(k, m); col.copy(procBase); if (commNow || hoverNpu === k) col.lerp(white, 0.5); pm.setColorAt(k, col); }
       pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
     }
     if (tm) {
-      for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t; m.makeScale(0.07, 0.07, 0.07); m.setPosition(G.P[k][0] + (t - 1) * 0.12, 0.5, G.P[k][2]); tm.setMatrixAt(idx, m); col.copy(thrBase); if (computeNow || hoverNpu === k) col.lerp(white, 0.5); tm.setColorAt(idx, col); }
+      for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t; m.makeScale(0.06, 0.06, 0.06); m.setPosition(G.P[k][0] + (t - 1) * 0.1, yL1 + 0.3, G.P[k][2]); tm.setMatrixAt(idx, m); col.copy(thrBase); if (computeNow || hoverNpu === k) col.lerp(white, 0.5); tm.setColorAt(idx, col); }
       tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true;
     }
   }, [G, hoverNpu, computeNow, commNow]);
 
   const dim = hoverNpu !== null;
+  const xL = -G.xExtent / 2 - 0.5;
+  const rowLabel = (y: number, t: string, c: string) => <Text position={[xL, y, 0]} fontSize={0.18} color={c} anchorX="right" anchorY="middle">{t}</Text>;
+
   return (
     <group>
-      <Floor size={Math.max(18, (G.pods[G.pods.length - 1].cab.z1 - G.pods[0].cab.z0) + 6)} />
-      {/* per-supernode: cabinet outline + blades + central switch */}
-      {G.pods.map((pod) => (
-        <group key={pod.p}>
-          <Line points={[[pod.cab.x0, 0.02, pod.cab.z0], [pod.cab.x1, 0.02, pod.cab.z0], [pod.cab.x1, 0.02, pod.cab.z1], [pod.cab.x0, 0.02, pod.cab.z1], [pod.cab.x0, 0.02, pod.cab.z0]]} color={LC.rackEdge} lineWidth={1.5} />
-          {pod.blades.map((b) => (
-            <Slab key={b.idx} size={[b.w, 0.04, b.d]} position={[b.cx, 0.02, b.cz]} color={LC.nodeUnit} edgeColor={LC.rackEdge} metalness={0.4} roughness={0.5} />
-          ))}
-          <mesh position={pod.hub}><boxGeometry args={[Math.min(2.5, (pod.cab.x1 - pod.cab.x0) * 0.5), 0.3, 0.3]} /><meshStandardMaterial color={L(3)} emissive={L(3)} emissiveIntensity={0.5} /></mesh>
-          <Text position={[pod.cab.x1 + 0.5, 0.4, (pod.cab.z0 + pod.cab.z1) / 2]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color={L(3)} anchorX="center">{`超节点 P${pod.p}`}</Text>
+      <Floor size={Math.max(18, G.xExtent + 6)} />
+      {/* level row labels (consistent with UB hierarchy view) */}
+      {rowLabel(yL1, 'L1 节点内 (NPU)', L(1))}
+      {rowLabel(yL2, 'L2 机柜内 (刀片)', L(2))}
+      {rowLabel(yL3, `L3 ${TOK.supernode}`, L(3))}
+      {podCount > 1 && rowLabel(yL4, `L4 ${TOK.supernode}间`, L(4))}
+
+      {/* aggregation connectors + meshes, coloured per level (same scheme as UB view) */}
+      <Line points={G.l1} segments color={L(1)} lineWidth={dim ? 0.6 : 1.4} transparent opacity={dim ? 0.1 : 0.38} />
+      <Line points={G.a12} segments color={L(1)} lineWidth={1} transparent opacity={dim ? 0.08 : 0.3} />
+      <Line points={G.l2} segments color={L(2)} lineWidth={dim ? 1 : 2} transparent opacity={dim ? 0.2 : 0.6} />
+      <Line points={G.a23} segments color={L(2)} lineWidth={1.4} transparent opacity={0.5} />
+      {G.a34.length > 0 && <Line points={G.a34} segments color={L(4)} lineWidth={3} transparent opacity={0.85} />}
+
+      {/* L2 blade nodes */}
+      {G.bladeNodes.map((p, i) => (
+        <group key={i}>
+          <Slab size={[0.4, 0.16, 0.34]} position={p} color={'#efe7fb'} edgeColor={L(2)} metalness={0.3} roughness={0.55} />
         </group>
       ))}
-      {/* full UB links */}
-      <Line points={G.l1} segments color={L(1)} lineWidth={dim ? 0.8 : 1.6} transparent opacity={dim ? 0.12 : 0.4} />
-      <Line points={G.l2} segments color={L(2)} lineWidth={dim ? 0.8 : 1.4} transparent opacity={dim ? 0.1 : 0.3} />
-      <Line points={G.l3} segments color={L(3)} lineWidth={1} transparent opacity={dim ? 0.08 : 0.22} />
-      {/* L4 scale-out between supernodes */}
-      {G.l4.length > 0 && (
+      {/* L3 super-node switches */}
+      {G.switches.map((p, i) => (
+        <group key={i}>
+          <Slab size={[Math.min(2.4, G.nb * 0.9), 0.26, 0.3]} position={p} color={L(3)} emissive={L(3)} emissiveIntensity={0.5} />
+          <Text position={[p[0], p[1] + 0.3, 0]} fontSize={0.15} color={L(3)} anchorX="center">{`${TOK.supernode} P${i} · UB 交换 Clos`}</Text>
+        </group>
+      ))}
+      {/* L4 cluster node */}
+      {podCount > 1 && (
         <group>
-          <Line points={G.l4} segments color={L(4)} lineWidth={3} transparent opacity={0.85} />
-          <Text position={[G.pods[0].cab.x0 - 0.5, 1.9, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.18} color={L(4)} anchorX="center">{`L4 ${TOK.supernode}间 scale-out`}</Text>
+          <Slab size={[Math.min(3, G.xExtent * 0.4), 0.22, 0.3]} position={G.cluster} color={L(4)} emissive={L(4)} emissiveIntensity={0.4} opacity={0.85} edgeColor={L(4)} />
+          <Text position={[0, yL4 + 0.3, 0]} fontSize={0.16} color={L(4)} anchorX="center">{`${podCount}× ${TOK.supernode} → 集群 (L4 scale-out)`}</Text>
         </group>
       )}
 
+      {/* NPUs / processes / threads (full count, instanced) at L1 */}
       <instancedMesh ref={npuRef} args={[undefined, undefined, G.N]}
-        onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · 进程 rank ${k} · 刀片 B${bladeOf(k)} · 线程 ×${FP_THREADS} · 点击下钻节点`); }}
+        onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · 进程 rank ${k} · 刀片 B${bladeOf(k)} · 线程 ×${FP_THREADS} · 点击下钻`); }}
         onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.6} roughness={0.35} toneMapped={false} />
@@ -1721,11 +1743,12 @@ export function FullPodScene({ scale, podCount, overlays, tick, onHoverInfo, onP
         <sphereGeometry args={[1, 8, 8]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
       </instancedMesh>
 
+      {/* collectives (rank level): Ring (flowing) + All-to-All */}
       {overlays.ring && <FlowLine points={G.ring} color={COMM_PATTERNS[0].color} width={commNow ? 3.6 : 2.4} speed={commNow ? 3 : 1.2} />}
       {overlays.a2a && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.45 : 0.2} />}
 
-      <Text position={[0, 0.02, G.pods[G.pods.length - 1].cab.z1 + 0.9]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.22} color={LC.textDim} anchorX="center">
-        {`${SCALES[scale].label} × ${podCount} ${TOK.supernode} · ${G.N} NPU / ${G.N} 进程 · 蓝L1·紫L2·橙L3→交换·绿L4 超节点间`}
+      <Text position={[0, 0.04, 2.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color={LC.textDim} anchorX="center">
+        {`${SCALES[scale].label} × ${podCount} ${TOK.supernode} · 与 UB 互联同层级(L1→L4) · ${G.N} NPU/进程 · 进程(蓝)/线程(青) · 开 Ring/All-to-All ▶播放`}
       </Text>
     </group>
   );

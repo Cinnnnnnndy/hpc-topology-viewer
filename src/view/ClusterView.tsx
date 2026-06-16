@@ -128,7 +128,7 @@ export function ClusterView() {
   const cam = mode === 'node' && nodeKind === 'ubswitch'
     ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
     : mode === 'fullpod'
-    ? { pos: [0, 6 + podCount * 1.8, 12 + podCount * 3] as [number, number, number], target: [0, 0.5, 0] as [number, number, number] }
+    ? { pos: [0, 3.6 + podCount * 0.5, 11 + podCount * 6] as [number, number, number], target: [0, 2.6, 0] as [number, number, number] }
     : CAMERA[mode];
 
   const specRows: [string, string][] = [
