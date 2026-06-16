@@ -21,7 +21,7 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, FullPodScene,
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 
@@ -51,6 +51,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
   trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0] },
+  fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -61,6 +62,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'matrix',   label: '邻接矩阵' },
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '线程时序' },
+  { id: 'fullpod',  label: '整列全景(多卡)' },
 ];
 
 // per-mode overlay toggles
@@ -108,7 +110,8 @@ export function ClusterView() {
     mode === 'node' ? (nodeKind === 'ubswitch' ? 'ubswitch' : 'node') :
     mode === 'matrix' ? 'matrix' :
     mode === 'mapping' ? 'mapping' :
-    mode === 'trace' ? 'trace' : 'topology';
+    mode === 'trace' ? 'trace' :
+    mode === 'fullpod' ? 'fullpod' : 'topology';
   const info = INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
@@ -183,9 +186,9 @@ export function ClusterView() {
           ))}
         </div>
         {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
-        {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute')) && (
+        {(mode === 'topology' || mode === 'fullpod' || (mode === 'node' && nodeKind === 'compute')) && (
           <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
-            {(mode === 'topology' ? TOPO_OVERLAYS : NODE_OVERLAYS).map((t) => {
+            {(mode === 'node' ? NODE_OVERLAYS : TOPO_OVERLAYS).map((t) => {
               const on = overlays[t.id];
               return (
                 <button
@@ -206,8 +209,8 @@ export function ClusterView() {
             })}
           </div>
         )}
-        {/* scale selector (adjacency-matrix view) */}
-        {mode === 'matrix' && (
+        {/* scale selector (adjacency-matrix + full-pod views) */}
+        {(mode === 'matrix' || mode === 'fullpod') && (
           <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
             {(Object.keys(SCALES) as Scale[]).map((s) => (
               <button
@@ -285,6 +288,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
+            {mode === 'fullpod' && <FullPodScene scale={scale} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -346,7 +350,7 @@ export function ClusterView() {
           )}
 
           {/* trace timeline media control (HTML overlay, not a 3D object) */}
-          {mode === 'trace' && (
+          {(mode === 'trace' || mode === 'fullpod') && (
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',

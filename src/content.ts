@@ -94,6 +94,17 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
       dc('5bemPei9r+S7tuWxgue6p++8jOWPsz3noazku7blsYLnuqfvvIzov57nur895pig5bCE77yb54K55Ye75p+Q5bGC6auY5Lqu5a+55bqU5pig5bCE'),
     ],
   },
+  fullpod: {
+    title: dc('5pW05YiX5YWo5pmv77yI5aSa5Y2h6K6t57uD77yJwrcg5peg55yB55Wl'),
+    lines: [
+      dc('5oyJ55yf5a6e5pWw6YeP6ZO65byA77ya5YWo6YOo5YiA54mHIC8gTlBVIOWFqOaYvuekuu+8jOavj+WNoT0xIOi/m+eoiyhyYW5rKSBbMV0='),
+      dc('6L+b56iLKOiTneeri+aWuSkgKyDnur/nqIso6Z2S55CDKSDmmL7npLrlnKjmr4/popcgTlBVIOS5i+S4iiBbN10='),
+      dc('VUIg5LqS6IGU77ya6JOdIEwxIOadv+WGhSDCtyDntKsgTDIg6Leo5p2/IMK3IOapmSBMM+KGkumAmuS/oeafnOS6pOaNoiBbMV0='),
+      dc('5aSn5qih5Z6L5aSa5Y2h6K6t57uD77ya6aG25qCP5byAIFJpbmctQWxsUmVkdWNlIC8gQWxsLXRvLUFsbChNb0UpIFsxXQ=='),
+      dc('4pa2IOaSreaUvueciyDorqHnrpfihpTpgJrkv6Eg5Lqk5pu/77yI6K6h566X4oaS57q/56iL5Lqu77yM6YCa5L+h4oaS6L+b56iL5Lqu77yJWzdd'),
+      dc('6KeE5qih5Y+v5YiHIDE2UCAvIDMyUCAvIDY0UO+8mzMyUD00IOWIgOeJhy8zMiDljaHvvIjmjqjojZDvvIk='),
+    ],
+  },
   trace: {
     title: dc('57q/56iLIC8g6L+b56iL5pe25bqPIOKGlCDnoazku7blrprkvY0='),
     lines: [
