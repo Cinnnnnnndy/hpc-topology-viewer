@@ -21,7 +21,8 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, type CommOverlays,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene,
+  type CommOverlays, type LocateTarget,
 } from '../scene/scenes';
 
 /** Imperatively reposition camera + controls when the view changes, without
@@ -84,6 +85,8 @@ export function ClusterView() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
   const [overlays, setOverlays] = useState<CommOverlays>({ ring: false, a2a: false, tile: true, cores: true });
+  const [locate, setLocate] = useState<LocateTarget | null>(null);   // from trace view
+  const [hl, setHl] = useState<{ npu: number; blade: number; cabinet: number } | null>(null);
 
   const spec = GENERATIONS[gen];
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
@@ -254,7 +257,7 @@ export function ClusterView() {
             <pointLight position={[0, 10, 0]} intensity={1.0} color="#e8f0ff" />
 
             {mode === 'overview' && (
-              <OverviewScene gen={spec} onHoverInfo={onHoverInfo} onSelectRack={(k) => { setRackKind(k); setMode('rack'); }} />
+              <OverviewScene gen={spec} highlightCabinet={hl ? hl.cabinet : null} onHoverInfo={onHoverInfo} onSelectRack={(k) => { setRackKind(k); setMode('rack'); }} />
             )}
             {mode === 'rack' && (
               <RackScene
@@ -266,10 +269,10 @@ export function ClusterView() {
             {mode === 'node' && (nodeKind === 'ubswitch'
               ? <UBSwitchScene onHoverInfo={onHoverInfo} />
               : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />)}
-            {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} onHoverInfo={onHoverInfo} />}
+            {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} highlight={hl ? { npu: hl.npu, blade: hl.blade } : null} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
-            {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} />}
+            {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -278,6 +281,44 @@ export function ClusterView() {
               minDistance={1.2} maxDistance={60}
             />
           </Canvas>
+
+          {/* trace → jump-to-view controls */}
+          {mode === 'trace' && locate && (
+            <div style={{
+              position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, alignItems: 'center',
+              padding: '7px 12px', fontSize: 12, background: 'rgba(255,255,255,0.96)',
+              border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
+            }}>
+              <span style={{ color: 'rgba(0,0,0,0.7)' }}>{`已选 rank ${locate.rank}（刀片 B${locate.blade}）：`}</span>
+              <button
+                onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('topology'); }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+              >→ UB 互联高亮</button>
+              <button
+                onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('overview'); }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+              >→ 全景高亮机柜</button>
+              {hl && (
+                <button
+                  onClick={() => setHl(null)}
+                  style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
+                >清除高亮</button>
+              )}
+            </div>
+          )}
+
+          {/* active highlight banner in topology/overview */}
+          {hl && (mode === 'topology' || mode === 'overview') && (
+            <div style={{
+              position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, alignItems: 'center',
+              padding: '6px 11px', fontSize: 12, background: 'rgba(255,255,255,0.96)',
+              border: '1px solid #4369ef', borderRadius: 6, color: '#4369ef',
+            }}>
+              <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
+              <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>← 回时序</button>
+              <button onClick={() => setHl(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>清除</button>
+            </div>
+          )}
 
           {/* hover info bar */}
           {hoverInfo && (

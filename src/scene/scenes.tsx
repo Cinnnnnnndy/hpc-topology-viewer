@@ -13,7 +13,7 @@
  * Display text with product/brand terms is sourced from ../content (decoded at
  * runtime); this file carries no plaintext product names.
  */
-import { Suspense, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { Text as DreiText, Edges, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -146,11 +146,12 @@ function HallSpine({ cells }: { cells: CabinetCell[] }) {
   );
 }
 
-export function OverviewScene({ gen, onHoverInfo, onSelectRack }: SceneCallbacks & {
-  gen: GenSpec; onSelectRack: (kind: RackKind) => void;
+export function OverviewScene({ gen, highlightCabinet, onHoverInfo, onSelectRack }: SceneCallbacks & {
+  gen: GenSpec; highlightCabinet?: number | null; onSelectRack: (kind: RackKind) => void;
 }) {
   const cells = useMemo(() => buildHall(gen), [gen]);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const hlId = highlightCabinet != null ? `c-${highlightCabinet}` : null;
   const depth = useMemo(() => {
     const zs = cells.map((c) => c.pos[2]); return Math.max(...zs) - Math.min(...zs) + 4;
   }, [cells]);
@@ -162,7 +163,7 @@ export function OverviewScene({ gen, onHoverInfo, onSelectRack }: SceneCallbacks
         <HallCabinet
           key={cell.id}
           cell={cell}
-          hovered={hoverId === cell.id}
+          hovered={hoverId === cell.id || hlId === cell.id}
           onClick={() => onSelectRack(cell.kind)}
           onHover={(h) => {
             setHoverId(h ? cell.id : null);
@@ -629,10 +630,12 @@ const HT = {
   xSpan: 9.5,
 };
 
-export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & { gen: GenSpec; overlays: CommOverlays }) {
+export function TopologyScene({ gen, overlays, highlight, onHoverInfo }: SceneCallbacks & { gen: GenSpec; overlays: CommOverlays; highlight?: { npu: number; blade: number } | null }) {
   const [hov, setHov] = useState<number | null>(null);
   const [focus, setFocus] = useState<number | null>(null);   // focused parent level (highlight its downstream link)
   const cabs = Math.max(1, Math.round(gen.totalNpus / 64));
+  const hlNpu = highlight ? highlight.npu % 8 : -1;
+  const hlBlade = highlight ? highlight.blade % 8 : -1;
 
   // 2×4 grids so full-mesh links spread out and visibly crisscross
   const grid2x4 = (px: number, pz: number): [number, number, number][] =>
@@ -714,7 +717,10 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Line points={rect(2.05, 0.95)} color={L(1)} lineWidth={1.5} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         <Line points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         {npuPts.map((p, i) => (
-          <group key={i} position={[p[0], 0.02, p[2]]}><NpuChip w={0.18} h={0.12} hovered={hov === 1} /></group>
+          <group key={i} position={[p[0], 0.02, p[2]]}>
+            <NpuChip w={0.18} h={0.12} hovered={hov === 1} selected={i === hlNpu} />
+            {i === hlNpu && <Text position={[0, 0.3, 0]} fontSize={0.12} color={PROC_COLOR} anchorX="center">{`rank ${highlight!.npu}`}</Text>}
+          </group>
         ))}
         <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 刀片 / 节点 · 8 NPU 全互联</Text>
       </Tier>
@@ -724,7 +730,10 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Line points={rect(HT.xSpan * 0.86, 1.15)} color={L(2)} lineWidth={2} transparent opacity={hov === 2 ? 0.95 : 0.7} />
         <Line points={allPairs(nodePts)} segments color={L(2)} lineWidth={hov === 2 ? 2.4 : 1.6} transparent opacity={hov === 2 ? 0.9 : 0.5} />
         {nodePts.map((p, i) => (
-          <group key={i} position={[p[0], 0.02, p[2]]}><BladeTray w={0.5} d={0.4} hovered={hov === 2} /></group>
+          <group key={i} position={[p[0], 0.02, p[2]]}>
+            <BladeTray w={0.5} d={0.4} hovered={hov === 2 || i === hlBlade} />
+            {i === hlBlade && <Text position={[0, 0.22, 0]} fontSize={0.11} color={L(1)} anchorX="center">{`刀片 B${highlight!.blade}`}</Text>}
+          </group>
         ))}
         <Text position={[0, 0, 0.8]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜 · 8 刀片 / 64 NPU（托盘=刀片，外框=机柜）</Text>
       </Tier>
@@ -1223,68 +1232,93 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
 // 8. Execution timeline ↔ hardware locator (thread/process by time → NPU/blade/cabinet)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function TraceScene({ onHoverInfo }: SceneCallbacks) {
-  const [sel, setSel] = useState<{ p: number; t: number | null } | null>(null);
-  const P = 4, T = 3, NT = 8;
-  // phase schedule (shared shape): L=load C=compute M=comm(AllReduce) S=store
-  const sched = ['L', 'C', 'C', 'M', 'C', 'C', 'M', 'S'];
-  const phaseColor: Record<string, string> = { L: '#c2c9d4', C: THREAD_COLOR, M: COMM_PATTERNS[0].color, S: '#aab4c4' };
+export interface LocateTarget { rank: number; blade: number; thread: number | null }
 
-  // mapping: rank p → NPU p → blade floor(p/2) → cabinet 0
+export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocate?: (t: LocateTarget | null) => void }) {
+  const [sel, setSel] = useState<{ p: number; t: number | null } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [tick, setTick] = useState<number | null>(null);
+  const P = 4, T = 3, NT = 8;
+  const sched = ['L', 'C', 'C', 'M', 'C', 'C', 'M', 'S'];   // L=load C=compute M=comm S=store
+  const phaseColor: Record<string, string> = { L: '#c2c9d4', C: THREAD_COLOR, M: COMM_PATTERNS[0].color, S: '#aab4c4' };
   const bladeOf = (p: number) => Math.floor(p / 2);
+
+  // playhead animation
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => setTick((t) => ((t ?? -1) + 1) % NT), 750);
+    return () => clearInterval(id);
+  }, [playing]);
+
+  const pick = (s: { p: number; t: number | null } | null) => { setSel(s); onLocate?.(s ? { rank: s.p, blade: bladeOf(s.p), thread: s.t } : null); };
 
   const x0 = -3.4, x1 = 3.0, tickW = (x1 - x0) / NT;
   const tx = (k: number) => x0 + tickW * (k + 0.5);
   const laneH = 0.24, gap = 0.16;
   const groupH = (T + 1) * laneH + gap;
   const baseY = 0.4;
+  const topY = baseY + P * groupH;
   const procLaneY = (p: number) => baseY + p * groupH + T * laneH + laneH / 2;
   const threadLaneY = (p: number, t: number) => baseY + p * groupH + t * laneH + laneH / 2;
-  const hwY = baseY + P * groupH + 0.7;
+  const hwY = topY + 0.9;
 
   const Block = ({ x, y, color, on, w }: { x: number; y: number; color: string; on: boolean; w: number }) => (
-    <Slab size={[w, laneH * 0.78, 0.05]} position={[x, y, 0]} color={color} emissive={color} emissiveIntensity={on ? 0.8 : 0.25} />
+    <Slab size={[w, laneH * 0.78, 0.05]} position={[x, y, 0]} color={color} emissive={color} emissiveIntensity={on ? 0.9 : 0.25} />
   );
 
   return (
     <group>
       <Floor size={14} />
-      {/* time axis */}
+      {/* time axis + play/pause button */}
       <Line points={[[x0, baseY - 0.2, 0], [x1, baseY - 0.2, 0]]} color={LC.rackEdge} lineWidth={1.5} />
       <Text position={[x1 + 0.1, baseY - 0.2, 0]} fontSize={0.14} color={LC.textDim} anchorX="left">时间 →</Text>
       {sched.map((_ph, k) => (
-        <Text key={k} position={[tx(k), baseY - 0.4, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">{`t${k}`}</Text>
+        <Text key={k} position={[tx(k), baseY - 0.4, 0]} fontSize={0.1} color={tick === k ? LC.primary : LC.textDim} anchorX="center">{`t${k}`}</Text>
       ))}
+      <group position={[x0 - 0.05, baseY - 0.62, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
+        onPointerOut={() => setCursor(false)}
+        onClick={(e) => { e.stopPropagation(); setPlaying((p) => !p); if (tick === null) setTick(0); }}
+      >
+        <Slab size={[0.5, 0.22, 0.04]} color={playing ? '#cdd9fb' : '#eef1f6'} edgeColor={LC.primary} />
+        <Text position={[0, 0, 0.04]} fontSize={0.11} color={LC.primary} anchorX="center" anchorY="middle">{playing ? '⏸ 暂停' : '▶ 播放'}</Text>
+      </group>
 
-      {/* process + thread lanes (per rank group: threads below, process above) */}
+      {/* playhead */}
+      {tick !== null && (
+        <group>
+          <Line points={[[tx(tick), baseY - 0.15, 0.02], [tx(tick), topY + 0.1, 0.02]]} color={LC.primary} lineWidth={2.5} transparent opacity={0.85} />
+          <Text position={[tx(tick), topY + 0.25, 0]} fontSize={0.12} color={LC.primary} anchorX="center">{`t${tick} · ${sched[tick] === 'M' ? '通信' : sched[tick] === 'C' ? '计算' : sched[tick] === 'L' ? '加载' : '存储'}`}</Text>
+        </group>
+      )}
+
+      {/* process + thread lanes (threads below, process above) */}
       {Array.from({ length: P }, (_, p) => {
         const pSel = sel?.p === p;
         return (
           <group key={p}>
-            {/* process lane (comm / load / store) */}
             <group
               onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 rank ${p}（= NPU ${p}）· 集合通信(粉)走 UB；点击定位硬件`); }}
               onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
-              onClick={(e) => { e.stopPropagation(); setSel(sel?.p === p && sel.t === null ? null : { p, t: null }); }}
+              onClick={(e) => { e.stopPropagation(); pick(sel?.p === p && sel.t === null ? null : { p, t: null }); }}
             >
               <Slab size={[x1 - x0 + 0.1, laneH * 0.92, 0.02]} position={[(x0 + x1) / 2, procLaneY(p), -0.02]} color={pSel && sel?.t === null ? '#dbe4fb' : '#eef1f6'} edgeColor={pSel ? PROC_COLOR : LC.rackEdge} />
               {sched.map((ph, k) => (ph === 'M' || ph === 'L' || ph === 'S') && (
-                <Block key={k} x={tx(k)} y={procLaneY(p)} w={tickW * 0.84} color={phaseColor[ph]} on={pSel} />
+                <Block key={k} x={tx(k)} y={procLaneY(p)} w={tickW * 0.84} color={phaseColor[ph]} on={pSel || tick === k} />
               ))}
               <Text position={[x0 - 0.15, procLaneY(p), 0]} fontSize={0.11} color={pSel ? PROC_COLOR : LC.text} anchorX="right" anchorY="middle">{`进程 rank ${p}`}</Text>
             </group>
-            {/* thread lanes (compute) */}
             {Array.from({ length: T }, (_, t) => {
               const tSel = sel?.p === p && sel?.t === t;
               return (
                 <group key={t}
                   onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 ${p} · 线程/Tile ${t}（= die 内 AI Core）· 计算(青)；点击定位硬件`); }}
                   onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
-                  onClick={(e) => { e.stopPropagation(); setSel(tSel ? null : { p, t }); }}
+                  onClick={(e) => { e.stopPropagation(); pick(tSel ? null : { p, t }); }}
                 >
                   <Slab size={[x1 - x0 + 0.1, laneH * 0.86, 0.02]} position={[(x0 + x1) / 2, threadLaneY(p, t), -0.02]} color={tSel ? '#d8f5fb' : '#f4f7fb'} edgeColor={tSel ? THREAD_COLOR : '#e1e6ee'} />
                   {sched.map((ph, k) => ph === 'C' && (
-                    <Block key={k} x={tx(k)} y={threadLaneY(p, t)} w={tickW * 0.84} color={phaseColor.C} on={tSel || (sel?.p === p && sel?.t === null)} />
+                    <Block key={k} x={tx(k)} y={threadLaneY(p, t)} w={tickW * 0.84} color={phaseColor.C} on={tSel || (sel?.p === p && sel?.t === null) || tick === k} />
                   ))}
                   <Text position={[x0 - 0.15, threadLaneY(p, t), 0]} fontSize={0.085} color={tSel ? THREAD_COLOR : LC.textDim} anchorX="right" anchorY="middle">{`线程 ${t}`}</Text>
                 </group>
@@ -1294,39 +1328,53 @@ export function TraceScene({ onHoverInfo }: SceneCallbacks) {
         );
       })}
 
-      {/* hardware locator band (top): NPU → 刀片 → 机柜, lit for the selected rank */}
-      <Text position={[x0 - 0.15, hwY + 0.5, 0]} fontSize={0.14} color={LC.text} anchorX="right">硬件定位 ↑</Text>
+      {/* hardware locator band (top) — consistent with UB hierarchy levels (L0..L3) */}
+      <Text position={[x0 - 0.15, hwY + 0.55, 0]} fontSize={0.14} color={LC.text} anchorX="right">硬件定位 ↑</Text>
       {sel === null ? (
-        <Text position={[0, hwY + 0.4, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">点击下方某个线程 / 进程，这里显示其 NPU · 刀片 · 机柜</Text>
-      ) : (
-        <group>
-          {/* connector from selected lane up to hardware band */}
-          <Line points={[[-1.6, (sel.t === null ? procLaneY(sel.p) : threadLaneY(sel.p, sel.t)), 0], [-1.6, hwY - 0.2, 0]]} color={PROC_COLOR} lineWidth={2} dashed dashScale={5} transparent opacity={0.7} />
-          {/* NPU */}
-          <group position={[-1.6, hwY, 0]}>
-            <NpuChip w={0.5} h={0.3} hovered selected />
-            <Text position={[0, -0.45, 0]} fontSize={0.13} color={PROC_COLOR} anchorX="center">{`NPU ${sel.p}（rank ${sel.p}）`}</Text>
+        <Text position={[0, hwY + 0.4, 0]} fontSize={0.15} color={LC.textDim} anchorX="center">点击下方某个线程 / 进程，这里按 UB 层级显示其 AI Core · NPU · 刀片 · 机柜 · 超节点</Text>
+      ) : (() => {
+        const lx = [-2.7, -1.5, -0.3, 0.9, 2.2];   // L0 AI Core, NPU, L1 刀片, L2 机柜, L3 超节点
+        const conn = (a: number, b: number, c: string) => <Line points={[[lx[a] + 0.32, hwY, 0], [lx[b] - 0.32, hwY, 0]]} color={c} lineWidth={2.5} />;
+        return (
+          <group>
+            <Line points={[[lx[1], (sel.t === null ? procLaneY(sel.p) : threadLaneY(sel.p, sel.t)), 0], [lx[1], hwY - 0.35, 0]]} color={PROC_COLOR} lineWidth={2} dashed dashScale={5} transparent opacity={0.7} />
+            {/* L0 AI Core (only if a thread is selected) */}
+            {sel.t !== null && (
+              <group position={[lx[0], hwY, 0]}>
+                <Slab size={[0.34, 0.18, 0.34]} color={L(0)} emissive={L(0)} emissiveIntensity={0.8} />
+                <Text position={[0, -0.4, 0]} fontSize={0.11} color={L(0)} anchorX="center">{`L0 AI Core\n线程 ${sel.t}`}</Text>
+              </group>
+            )}
+            {sel.t !== null && conn(0, 1, L(0))}
+            {/* NPU = the rank (device identity) */}
+            <group position={[lx[1], hwY, 0]}>
+              <NpuChip w={0.5} h={0.3} hovered selected />
+              <Text position={[0, -0.4, 0]} fontSize={0.12} color={PROC_COLOR} anchorX="center">{`NPU\nrank ${sel.p}`}</Text>
+            </group>
+            {conn(1, 2, L(1))}
+            {/* L1 刀片 */}
+            <group position={[lx[2], hwY, 0]}>
+              <BladeTray w={0.7} d={0.5} hovered />
+              <Text position={[0, -0.4, 0]} fontSize={0.12} color={L(1)} anchorX="center">{`L1 刀片\nB${bladeOf(sel.p)}`}</Text>
+            </group>
+            {conn(2, 3, L(2))}
+            {/* L2 机柜 */}
+            <group position={[lx[3], hwY - 0.25, 0]}>
+              <CabinetBox w={0.4} h={0.55} d={0.25} kind="compute" hovered />
+              <Text position={[0, -0.15, 0]} fontSize={0.12} color={L(2)} anchorX="center">L2 机柜 C0</Text>
+            </group>
+            {conn(3, 4, L(3))}
+            {/* L3 超节点 */}
+            <group position={[lx[4], hwY, 0]}>
+              <Slab size={[0.5, 0.3, 0.3]} color={L(3)} emissive={L(3)} emissiveIntensity={0.4} opacity={0.85} edgeColor={L(3)} />
+              <Text position={[0, -0.4, 0]} fontSize={0.12} color={L(3)} anchorX="center">L3 超节点</Text>
+            </group>
           </group>
-          <Line points={[[-1.25, hwY, 0], [-0.35, hwY, 0]]} color={LC.rackEdge} lineWidth={2} />
-          {/* blade */}
-          <group position={[0.1, hwY, 0]}>
-            <BladeTray w={0.7} d={0.5} hovered />
-            <Text position={[0, -0.45, 0]} fontSize={0.13} color={LC.text} anchorX="center">{`刀片 B${bladeOf(sel.p)}`}</Text>
-          </group>
-          <Line points={[[0.5, hwY, 0], [1.4, hwY, 0]]} color={LC.rackEdge} lineWidth={2} />
-          {/* cabinet */}
-          <group position={[1.9, hwY - 0.25, 0]}>
-            <CabinetBox w={0.4} h={0.55} d={0.25} kind="compute" hovered />
-            <Text position={[0, -0.2, 0]} fontSize={0.13} color={LC.text} anchorX="center">机柜 C0</Text>
-          </group>
-          {sel.t !== null && (
-            <Text position={[-1.6, hwY + 0.42, 0]} fontSize={0.12} color={THREAD_COLOR} anchorX="center">{`线程 ${sel.t} = die 内 AI Core`}</Text>
-          )}
-        </group>
-      )}
+        );
+      })()}
 
       <Text position={[0, 0.02, 1.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">
-        {'下层=线程(计算) · 上层=进程(通信) · 按时序展开 · 点击定位到 NPU/刀片/机柜'}
+        {'下层=线程(计算) · 上层=进程(通信) · ▶ 播放看时序 · 点击定位（顶部层级与 UB 互联一致）'}
       </Text>
     </group>
   );
