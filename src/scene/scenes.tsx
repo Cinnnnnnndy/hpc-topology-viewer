@@ -625,6 +625,7 @@ const HT = {
 
 export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & { gen: GenSpec; overlays: CommOverlays }) {
   const [hov, setHov] = useState<number | null>(null);
+  const [focus, setFocus] = useState<number | null>(null);   // focused parent level (highlight its downstream link)
   const cabs = Math.max(1, Math.round(gen.totalNpus / 64));
 
   // 2×4 grids so full-mesh links spread out and visibly crisscross
@@ -668,6 +669,7 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         position={[0, HT.y[lvl], 0]}
         onPointerOver={(e) => { e.stopPropagation(); setHov(lvl); setCursor(true); onHoverInfo(levelInfo(lvl)); }}
         onPointerOut={() => { setHov(null); setCursor(false); onHoverInfo(null); }}
+        onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === lvl ? null : lvl)); }}
       >
         {children}
         <Text position={[-HT.xSpan / 2 - 0.3, 0, 0]} fontSize={0.2} color={isH ? L(lvl) : LC.textDim} anchorX="right" anchorY="middle" maxWidth={3}>
@@ -680,13 +682,16 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
     );
   };
 
-  // containment links (a unit at level k is one member of level k+1) — thin, subtle
-  const contain: [number, number, number][] = [
-    [0, HT.y[0] + 0.12, 0], [0, HT.y[1] - 0.2, 0],                          // die-package ⊂ NPU
-    [0, HT.y[1] + 0.2, 0], [nodePts[0][0], HT.y[2] - 0.18, nodePts[0][2]],  // blade ⊂ cabinet (→ blade #0)
-    [0, HT.y[2] + 0.25, 0], [-(HT.xSpan * 0.32), HT.y[3] - 0.18, 0],        // cabinet ⊂ pod (→ a cabinet dot)
-    [0, HT.y[3] + 0.2, 0], [0, HT.y[4] - 0.12, 0],                          // pod ⊂ cluster
-  ];
+  // up/down (containment) connectors between adjacent levels — clickable focus.
+  // parent level p (1..4) contains the downstream level p-1.
+  const downName = (p: number) =>
+    p === 1 ? 'NPU / die' : p === 2 ? '刀片 ×8' : p === 3 ? `机柜 ×${cabs}` : p === 4 ? `${TOK.supernode}` : '';
+  const parentName = (p: number) =>
+    p === 1 ? '刀片' : p === 2 ? '机柜' : p === 3 ? TOK.supernode : p === 4 ? TOK.supercluster : '';
+  const edges = [1, 2, 3, 4].map((p) => ({
+    p,
+    pts: [[0, HT.y[p] - 0.2, 0], [0, HT.y[p - 1] + 0.2, 0]] as [number, number, number][],
+  }));
 
   return (
     <group>
@@ -746,10 +751,29 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Text position={[0, 0, 0.5]} fontSize={0.13} color={hov === 4 ? L(4) : LC.textDim} anchorX="center">{`多超节点 → ${TOK.supercluster}`}</Text>
       </Tier>
 
-      {/* containment links (level k unit ⊂ level k+1) — thin grey, NOT the interconnect */}
-      <Line points={contain} segments color="#9aa4b2" lineWidth={1} dashed dashScale={4} transparent opacity={0.5} />
-      <Text position={[2.5, (HT.y[1] + HT.y[2]) / 2, 0]} fontSize={0.13} color={LC.textDim} anchorX="left">↑ 此刀片是机柜中的 1/8</Text>
-      <Text position={[2.5, (HT.y[2] + HT.y[3]) / 2, 0]} fontSize={0.13} color={LC.textDim} anchorX="left">↑ 此机柜是超节点中的 1/{cabs}</Text>
+      {/* up/down containment connectors — click a level to highlight its line + downstream */}
+      {edges.map((e) => {
+        const on = focus === e.p;
+        return (
+          <group key={e.p}
+            onPointerOver={(ev) => { ev.stopPropagation(); setCursor(true); }}
+            onPointerOut={() => setCursor(false)}
+            onClick={(ev) => { ev.stopPropagation(); setFocus((f) => (f === e.p ? null : e.p)); }}
+          >
+            {/* invisible thick pick target */}
+            <mesh position={[0, (e.pts[0][1] + e.pts[1][1]) / 2, 0]}>
+              <boxGeometry args={[0.3, Math.abs(e.pts[0][1] - e.pts[1][1]), 0.3]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+            <Line points={e.pts} color={on ? L(e.p) : '#9aa4b2'} lineWidth={on ? 4 : 1} dashed={!on} dashScale={4} transparent opacity={on ? 1 : (focus === null ? 0.5 : 0.18)} />
+          </group>
+        );
+      })}
+      {focus !== null && (
+        <Text position={[1.0, (HT.y[focus] + HT.y[focus - 1]) / 2, 0]} fontSize={0.16} color={L(focus)} anchorX="left" anchorY="middle">
+          {`${parentName(focus)} ▸ 下游 = ${downName(focus)}`}
+        </Text>
+      )}
 
       {/* ── process(rank) comm overlays (toggled in toolbar) ── */}
       {overlays.a2a && (
@@ -772,7 +796,7 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
       )}
 
       <Text position={[0, 0.04, 2.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.19} color={LC.textDim} anchorX="center">
-        {`${TOK.ubmesh}：层内交错线 = 实际 UB 全互联(full-mesh) · 框 = 刀片/机柜范围 · 灰虚线 = 层级包含`}
+        {`${TOK.ubmesh}：层内=UB 全互联(full-mesh) · 框=刀片/机柜 · 点击某层高亮其↕下游连线`}
       </Text>
     </group>
   );
