@@ -10,8 +10,8 @@
  * sourced from ../content (decoded at runtime); this file carries no plaintext
  * product names.
  */
-import { useCallback, useMemo, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -23,6 +23,24 @@ import { TOK, FOOTNOTE } from '../content';
 import {
   OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, type CommOverlays,
 } from '../scene/scenes';
+
+/** Imperatively reposition camera + controls when the view changes, without
+ *  remounting the Canvas (remounting creates a new WebGL context each time and
+ *  exhausts the browser's context limit → blank canvas needing refresh). */
+function CameraController({ poseKey, pos, target, controls }: {
+  poseKey: string; pos: [number, number, number]; target: [number, number, number];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  controls: React.MutableRefObject<any>;
+}) {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(pos[0], pos[1], pos[2]);
+    camera.updateProjectionMatrix();
+    if (controls.current) { controls.current.target.set(target[0], target[1], target[2]); controls.current.update(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poseKey]);
+  return null;
+}
 
 const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number] }> = {
   overview: { pos: [9, 10, 15], target: [0, 0.5, 0] },
@@ -59,6 +77,8 @@ export function ClusterView() {
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [scale, setScale] = useState<Scale>(DEFAULT_SCALE);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const controlsRef = useRef<any>(null);
   const [overlays, setOverlays] = useState<CommOverlays>({ ring: false, a2a: false, tile: true, cores: true });
 
   const spec = GENERATIONS[gen];
@@ -205,13 +225,17 @@ export function ClusterView() {
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <Canvas
-            key={`${mode}-${gen}-${scale}`}
             camera={{ position: cam.pos, fov: 42 }}
             shadows
             dpr={[1, 2]}
-            gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
-            onCreated={({ gl }) => { gl.shadowMap.type = THREE.PCFSoftShadowMap; }}
+            gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
+            onCreated={({ gl }) => {
+              gl.shadowMap.type = THREE.PCFSoftShadowMap;
+              // allow the browser to auto-restore a lost context instead of going blank
+              gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+            }}
           >
+            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
             <color attach="background" args={['#f5f5f5']} />
             <fog attach="fog" args={['#f5f5f5', 26, 60]} />
             <ambientLight intensity={1.1} />
@@ -240,7 +264,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
 
             <OrbitControls
-              target={cam.target}
+              ref={controlsRef}
               enableDamping dampingFactor={0.08}
               minPolarAngle={0.1} maxPolarAngle={Math.PI / 2 - 0.04}
               minDistance={1.2} maxDistance={60}

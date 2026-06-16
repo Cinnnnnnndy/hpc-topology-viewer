@@ -98,13 +98,14 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
     ],
   },
   matrix: {
-    title: dc('VUIg6YK75o6l55+p6Zi177yITlBVIMOXIE5QVSDCtyDpopzoibI95LqS6IGU57qn5Yir77yJ'),
+    title: dc('VUIg6YK75o6l55+p6Zi1IOKGlCAzRCDnu5PmnoTvvIjlt6blj7PogZTliqjvvIk='),
     lines: [
-      dc('6KGMIC8g5YiXID0gTlBV77yb5Y2V5YWD5qC8ID0g5Lik6ICF6Ze0IFVCIOebtOi/nuaJgOWxnue7tOW6piAvIOe6p+WIqyBbMV0='),
-      dc('5a+56KeS5Z2XKOWQjOadv8K3MUQpPUwx77yb6Leo5p2/KDJEKT1MMu+8m+i3qOafnCgzRCk9TDMgWzFd'),
-      dc('bkQtRnVsbE1lc2jvvJrku4Xnm7jlt64gMSDkuKrnu7TluqbljbPnm7Tov57vvIzlkKbliJnlpJrot7MgWzFd'),
-      dc('5YiH5o2i6KeE5qih77yaMTZQIC8gMzJQIC8gNjRQKOWNleafnCkg5p+l55yL5LiN5ZCM6YK75o6l57uT5p6EIFszXQ=='),
-      dc('5oKs5YGc5Y2V5YWD5qC85p+l55yLIChpLCBqKSDnmoTov57mjqXnuqfliKvkuI7ot7PmlbA='),
+      dc('55+p6Zi177ya6KGMIGnjgIHliJcgaiDlkITku6PooajkuIDpopcgTlBV77yb5qC85a2QIChpLGopPei/meS4pOmilyBOUFUg5LmL6Ze055qEIFVCIOi/nuaOpSBbMV0='),
+      dc('5qC85a2Q6aKc6ImyPeebtOi/nue6p+WIq++8mkwxIOadv+WGhSAvIEwyIOi3qOadvyAvIEwzIOi3qOafnO+8m+eBsD3lpJrot7PvvIzmt7E96Ieq6Lqr5a+56KeSIFsxXQ=='),
+      dc('5bem5L6n5Y2B5a2X57q/77ya5b2T5YmN5oKs5YGc55qE6KGMIGkgKyDliJcgau+8jOS6pOeCueWNs+ivpeagvOWtkO+8iOWumuS9jeaYr+WTquS4pOmilyBOUFXvvIk='),
+      dc('5Y+z5L6nIDNE77ya6IqC54K5KOadvynDlzggTlBVIOecn+WunuaOkuW4g++8m+i/nue6vz1VQiDnm7Tov57vvIjok50gTDEgLyDntKsgTDLvvIlbMV0='),
+      dc('6IGU5Yqo77ya5oKs5YGc55+p6Zi15qC8IOKGkiDlj7Pkvqfpq5jkuq7ov5nkuKTpopcgTlBVIOW5tueUu+WHuuWFtui/nue6v++8m+aCrOWBnCBOUFUg4oaSIOW3puS+p+mrmOS6ruWFtuihjOWIlw=='),
+      dc('5YiH5o2iIDE2UCAvIDMyUCAvIDY0UCDnnIvkuI3lkIzop4TmqKHnmoTpgrvmjqXnu5PmnoQ='),
     ],
   },
 };

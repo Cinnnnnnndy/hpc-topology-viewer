@@ -918,9 +918,17 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
             </group>
           );
         })}
-        {/* hovered row/col guides */}
+        {/* hovered row(i)+col(j) crosshair; intersection = the hovered cell */}
         {hi.rows.map((i) => <mesh key={'r' + i} position={[0, rowY(i), 0.02]}><planeGeometry args={[MAT_SPAN, cellSize]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.16} /></mesh>)}
         {hi.cols.map((j) => <mesh key={'c' + j} position={[colX(j), 0, 0.02]}><planeGeometry args={[cellSize, MAT_SPAN]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.16} /></mesh>)}
+        {/* bright marker at the hovered cell (i,j) + i/j end labels */}
+        {hi.pair && (
+          <group>
+            <mesh position={[colX(hi.pair[1]), rowY(hi.pair[0]), 0.03]}><planeGeometry args={[cellSize, cellSize]} /><meshBasicMaterial color="#ffffff" transparent opacity={0.55} /></mesh>
+            <Text position={[-MAT_SPAN / 2 - 0.12, rowY(hi.pair[0]), 0.03]} fontSize={0.14} color="#4369ef" anchorX="right">{`i=${hi.pair[0]}`}</Text>
+            <Text position={[colX(hi.pair[1]), MAT_SPAN / 2 + 0.12, 0.03]} fontSize={0.14} color="#4369ef" anchorX="center">{`j=${hi.pair[1]}`}</Text>
+          </group>
+        )}
         <Text position={[0, MAT_SPAN / 2 + 0.3, 0]} fontSize={0.22} color={LC.text} anchorX="center">{`${n}×${n} NPU UB 邻接矩阵`}</Text>
         <Text position={[0, -MAT_SPAN / 2 - 0.28, 0]} fontSize={0.15} color={LC.textDim} anchorX="center">NPU j →</Text>
         <Text position={[-MAT_SPAN / 2 - 0.28, 0, 0]} rotation={[0, 0, Math.PI / 2]} fontSize={0.15} color={LC.textDim} anchorX="center">NPU i →</Text>
@@ -947,9 +955,15 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
           <boxGeometry args={[1, 1, 1]} />
           <meshStandardMaterial metalness={0.3} roughness={0.5} toneMapped={false} />
         </instancedMesh>
-        {/* emphasised pair link */}
+        {/* emphasised pair link + i/j tags on the two NPUs */}
         {hi.pair && hi.pair[0] !== hi.pair[1] && cell(hi.pair[0], hi.pair[1]).direct && (
           <LinkTube a={posArr[hi.pair[0]]} b={posArr[hi.pair[1]]} color={L(cell(hi.pair[0], hi.pair[1]).level)} />
+        )}
+        {hi.pair && hi.pair[0] !== hi.pair[1] && (
+          <group>
+            <Text position={[posArr[hi.pair[0]][0], posArr[hi.pair[0]][1] + 0.2, posArr[hi.pair[0]][2]]} fontSize={0.16} color="#4369ef" anchorX="center">i</Text>
+            <Text position={[posArr[hi.pair[1]][0], posArr[hi.pair[1]][1] + 0.2, posArr[hi.pair[1]][2]]} fontSize={0.16} color="#4369ef" anchorX="center">j</Text>
+          </group>
         )}
         <Text position={[0, 2.1, 0]} fontSize={0.22} color={LC.text} anchorX="center">{`${SCALES[scale].label} · 3D 结构（${dims[1]} 板 × ${dims[0]} NPU）`}</Text>
         <Text position={[0, -2.0, 0]} fontSize={0.14} color={LC.textDim} anchorX="center">{`${dims.join('×')} 递归 full-mesh · 蓝=L1 板内 · 紫=L2 跨板`}</Text>
