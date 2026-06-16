@@ -93,6 +93,7 @@ export function ClusterView() {
   const [tracePlaying, setTracePlaying] = useState(false);
   const [ubFocus, setUbFocus] = useState<'ccu' | 'onchip' | 'ub' | null>(null);   // from IO-die inset jump
   const onUbJump = useCallback((t: UbJump) => { setUbFocus(t.focus); setMode(t.view); }, []);
+  const [podCount, setPodCount] = useState(1);   // full-pod view: number of super-nodes
 
   useEffect(() => {
     if (!tracePlaying) return;
@@ -125,6 +126,8 @@ export function ClusterView() {
 
   const cam = mode === 'node' && nodeKind === 'ubswitch'
     ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
+    : mode === 'fullpod'
+    ? { pos: [0, 6 + podCount * 1.8, 12 + podCount * 3] as [number, number, number], target: [0, 0.5, 0] as [number, number, number] }
     : CAMERA[mode];
 
   const specRows: [string, string][] = [
@@ -226,6 +229,24 @@ export function ClusterView() {
             ))}
           </div>
         )}
+        {/* super-node count (full-pod view) */}
+        {mode === 'fullpod' && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>超节点</span>
+            {[1, 2, 4].map((c) => (
+              <button
+                key={c}
+                onClick={() => setPodCount(c)}
+                style={{
+                  padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
+                  border: `1px solid ${podCount === c ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                  background: podCount === c ? 'rgba(67,105,239,0.10)' : 'transparent',
+                  color: podCount === c ? '#4369ef' : 'rgba(0,0,0,0.55)',
+                }}
+              >{`×${c}`}</button>
+            ))}
+          </div>
+        )}
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
           {breadcrumb.map((b, i) => (
@@ -259,7 +280,7 @@ export function ClusterView() {
               gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
             }}
           >
-            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
+            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
             <color attach="background" args={['#f5f5f5']} />
             <fog attach="fog" args={['#f5f5f5', 26, 60]} />
             <ambientLight intensity={1.1} />
@@ -288,7 +309,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale={scale} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} />}
+            {mode === 'fullpod' && <FullPodScene scale={scale} podCount={podCount} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setNodeSlot(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}
