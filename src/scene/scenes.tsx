@@ -13,7 +13,7 @@
  * Display text with product/brand terms is sourced from ../content (decoded at
  * runtime); this file carries no plaintext product names.
  */
-import { Suspense, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { Text as DreiText, Edges, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -356,7 +356,30 @@ const S_NODE = 3.2;   // node view scale
 
 // ─── Shared element abstractions: one concept → one look in every view ────────
 // (abstracted from the real form; node + cabinet views are the reference)
-/** NPU = chip package + dual die (die accent = L0 teal). */
+
+// Chip textures served from public/textures/ (committed → deployed). Drop the two
+// images there as npu-chip.png (package photo) and logo.png (logo) and they get
+// mapped onto the chip; if absent we fall back to procedural geometry.
+const TEX_BASE = `${import.meta.env.BASE_URL}textures/`;
+const CHIP_TEX = `${TEX_BASE}npu-chip.png`;   // image 2 (NPU package photo)
+const LOGO_TEX = `${TEX_BASE}logo.png`;       // image 1 (logo)
+const texCache = new Map<string, THREE.Texture | null>();
+function useOptionalTexture(url: string): THREE.Texture | null {
+  const [tex, setTex] = useState<THREE.Texture | null>(() => texCache.get(url) ?? null);
+  useEffect(() => {
+    if (texCache.has(url)) { setTex(texCache.get(url)!); return; }
+    let alive = true;
+    new THREE.TextureLoader().load(
+      url,
+      (t) => { t.colorSpace = THREE.SRGBColorSpace; texCache.set(url, t); if (alive) setTex(t); },
+      undefined,
+      () => { texCache.set(url, null); },   // remember miss → no retry / no 404 spam
+    );
+    return () => { alive = false; };
+  }, [url]);
+  return tex;
+}
+
 /** NPU = chip package: metal lid + recessed die/HBM tiles + (optional) Ascend mark.
  *  Abstracted from the real Ascend 910/950 package photo. */
 function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number; logo?: boolean }) {
@@ -364,6 +387,8 @@ function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number
   const edge = selected ? COMM_PATTERNS[2].color : hovered ? '#4ade80' : LC.rackEdge;
   const glow = dim ?? (selected ? 0.6 : hovered ? 0.4 : 0);
   const top = hh / 2;
+  const chipTex = useOptionalTexture(CHIP_TEX);
+  const logoTex = useOptionalTexture(LOGO_TEX);
   // 2 columns × 3 rows of die / HBM tiles on the recessed lid (chiplet layout)
   const tiles: [number, number][] = [];
   for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) tiles.push([(c - 0.5) * w * 0.36, (r - 1) * w * 0.27]);
@@ -371,21 +396,36 @@ function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number
     <group>
       {/* package body (brushed metal lid) */}
       <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
-      {/* recessed dark frame */}
-      <Slab size={[w * 0.9, hh * 0.14, w * 0.9]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
-      {/* die / HBM tiles */}
-      {tiles.map(([tx, tz], i) => (
-        <Slab key={i} size={[w * 0.3, hh * 0.16, w * 0.2]} position={[tx, top + hh * 0.12, tz]}
-          color={LC.npuTop} emissive={selected || hovered ? L(0) : '#000000'} emissiveIntensity={glow} metalness={0.7} roughness={0.3} />
-      ))}
-      {/* central vertical seam */}
-      <Slab size={[w * 0.02, hh * 0.18, w * 0.86]} position={[0, top + hh * 0.12, 0]} color="#3a4250" metalness={0.5} roughness={0.5} />
-      {/* Ascend mark (red triangular prism) — only at larger scale */}
-      {logo && (
-        <mesh position={[0, top + hh * 0.22, 0]} rotation={[0, Math.PI, 0]}>
-          <cylinderGeometry args={[w * 0.11, w * 0.11, hh * 0.18, 3]} />
-          <meshStandardMaterial color={RACK_COLORS.accent} emissive={RACK_COLORS.accent} emissiveIntensity={0.45} metalness={0.3} roughness={0.4} />
+      {chipTex ? (
+        /* textured top: real package photo on a plane (local-only image) */
+        <mesh position={[0, top + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[w * 0.92, w * 0.92]} />
+          <meshBasicMaterial map={chipTex} toneMapped={false} />
         </mesh>
+      ) : (
+        <group>
+          {/* recessed dark frame */}
+          <Slab size={[w * 0.9, hh * 0.14, w * 0.9]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
+          {/* die / HBM tiles */}
+          {tiles.map(([tx, tz], i) => (
+            <Slab key={i} size={[w * 0.3, hh * 0.16, w * 0.2]} position={[tx, top + hh * 0.12, tz]}
+              color={LC.npuTop} emissive={selected || hovered ? L(0) : '#000000'} emissiveIntensity={glow} metalness={0.7} roughness={0.3} />
+          ))}
+          {/* central vertical seam */}
+          <Slab size={[w * 0.02, hh * 0.18, w * 0.86]} position={[0, top + hh * 0.12, 0]} color="#3a4250" metalness={0.5} roughness={0.5} />
+          {/* mark: logo image on a plane if provided, else procedural red prism */}
+          {logo && (logoTex ? (
+            <mesh position={[0, top + hh * 0.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[w * 0.4, w * 0.4]} />
+              <meshBasicMaterial map={logoTex} transparent toneMapped={false} />
+            </mesh>
+          ) : (
+            <mesh position={[0, top + hh * 0.22, 0]} rotation={[0, Math.PI, 0]}>
+              <cylinderGeometry args={[w * 0.11, w * 0.11, hh * 0.18, 3]} />
+              <meshStandardMaterial color={RACK_COLORS.accent} emissive={RACK_COLORS.accent} emissiveIntensity={0.45} metalness={0.3} roughness={0.4} />
+            </mesh>
+          ))}
+        </group>
       )}
     </group>
   );
