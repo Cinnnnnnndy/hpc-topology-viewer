@@ -104,8 +104,6 @@ function Floor({ size = 22 }: { size?: number }) {
 function HallCabinet({ cell, hovered, onClick, onHover }: {
   cell: CabinetCell; hovered: boolean; onClick: () => void; onHover: (h: boolean) => void;
 }) {
-  const isCompute = cell.kind === 'compute';
-  const glow = isCompute ? RACK_COLORS.computeGlow : RACK_COLORS.switchGlow;
   return (
     <group
       position={cell.pos}
@@ -113,16 +111,7 @@ function HallCabinet({ cell, hovered, onClick, onHover }: {
       onPointerOver={(e) => { e.stopPropagation(); onHover(true); setCursor(true); }}
       onPointerOut={() => { onHover(false); setCursor(false); }}
     >
-      <Slab
-        size={[CAB_W, CAB_H, CAB_D]} position={[0, CAB_H / 2, 0]}
-        color={hovered ? '#dbe4fb' : LC.rackBody} metalness={0.5} roughness={0.5}
-        edgeColor={hovered ? LC.rackEdgeHov : LC.rackEdge}
-      />
-      {/* top status strip = cabinet kind */}
-      <Slab
-        size={[CAB_W * 0.78, 0.03, CAB_D * 0.7]} position={[0, CAB_H + 0.02, 0]}
-        color={glow} emissive={glow} emissiveIntensity={hovered ? 1.1 : 0.5}
-      />
+      <CabinetBox w={CAB_W} h={CAB_H} d={CAB_D} kind={cell.kind} hovered={hovered} />
     </group>
   );
 }
@@ -344,13 +333,60 @@ export function RackScene({ rackKind, label, onHoverInfo, onSelectNode, onSelect
 
 const S_NODE = 3.2;   // node view scale
 
+// ─── Shared element abstractions: one concept → one look in every view ────────
+// (abstracted from the real form; node + cabinet views are the reference)
+/** NPU = chip package + dual die (die accent = L0 teal). */
+function NpuChip({ w, h, hovered, selected, dim }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number }) {
+  const hh = h ?? w * 0.5;
+  const edge = selected ? COMM_PATTERNS[2].color : hovered ? '#4ade80' : LC.rackEdge;
+  const di = dim ?? (selected ? 1.0 : hovered ? 0.9 : 0.5);
+  return (
+    <group>
+      <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.35} roughness={0.55} />
+      {Array.from({ length: DIES_PER_NPU }, (_, d) => (
+        <Slab key={d} size={[w * 0.34, hh * 0.6, w * 0.8]} position={[(d - (DIES_PER_NPU - 1) / 2) * w * 0.42, hh * 0.62, 0]}
+          color={L(0)} emissive={L(0)} emissiveIntensity={di} metalness={0.5} roughness={0.4} />
+      ))}
+    </group>
+  );
+}
+/** CPU = chip package + lid. */
+function CpuChip({ w, h, hovered }: { w: number; h?: number; hovered?: boolean }) {
+  const hh = h ?? w * 0.5;
+  return (
+    <group>
+      <Slab size={[w, hh, w]} color={LC.cpuBody} edgeColor={hovered ? '#38bdf8' : LC.rackEdge} metalness={0.4} roughness={0.5} />
+      <Slab size={[w * 0.8, hh * 0.5, w * 0.8]} position={[0, hh * 0.6, 0]} color={LC.cpuTop} metalness={0.85} roughness={0.3} />
+    </group>
+  );
+}
+/** Blade / compute node = thin tray with a front accent strip. */
+function BladeTray({ w, d, hovered, accent = true }: { w: number; d: number; hovered?: boolean; accent?: boolean }) {
+  return (
+    <group>
+      <Slab size={[w, 0.05, d]} color={LC.nodeUnit} edgeColor={hovered ? RACK_COLORS.computeGlow : LC.rackEdge} metalness={0.4} roughness={0.5} />
+      {accent && <Slab size={[w * 0.86, 0.014, 0.02]} position={[0, 0.032, d / 2 - 0.03]} color={RACK_COLORS.computeGlow} emissive={RACK_COLORS.computeGlow} emissiveIntensity={hovered ? 0.8 : 0.4} />}
+    </group>
+  );
+}
+/** Cabinet = tall sheet-metal box + top status strip (compute vs switch). */
+function CabinetBox({ w = 0.34, h = 1.0, d = 0.5, kind = 'compute', hovered }: { w?: number; h?: number; d?: number; kind?: RackKind; hovered?: boolean }) {
+  const glow = kind === 'compute' ? RACK_COLORS.computeGlow : RACK_COLORS.switchGlow;
+  return (
+    <group>
+      <Slab size={[w, h, d]} position={[0, h / 2, 0]} color={hovered ? '#dbe4fb' : LC.rackBody} edgeColor={hovered ? glow : LC.rackEdge} metalness={0.5} roughness={0.5} />
+      <Slab size={[w * 0.78, 0.03, d * 0.7]} position={[0, h + 0.02, 0]} color={glow} emissive={glow} emissiveIntensity={hovered ? 1.0 : 0.5} />
+    </group>
+  );
+}
+
 function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
   part: NodePart; hovered: boolean; selected?: boolean; onHover: (h: boolean) => void; onSelect?: () => void;
 }) {
   const S = S_NODE;
   const [px, py, pz] = part.pos;
   const [sx, sy, sz] = part.size;
-  const selColor = COMM_PATTERNS[2].color;   // selected-NPU accent (cyan, matches die view)
+  const selColor = COMM_PATTERNS[2].color;
 
   const visuals: Record<NodePart['type'], { body: string; top?: string; edge: string }> = {
     npu:        { body: LC.npuBody,     top: LC.npuTop, edge: '#4ade80' },
@@ -361,7 +397,6 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
     dimm:       { body: LC.dimmBody,    edge: '#475263' },
   };
   const v = visuals[part.type];
-  const edge = selected ? selColor : hovered ? v.edge : LC.rackEdge;
 
   return (
     <group
@@ -370,41 +405,29 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
       onPointerOut={() => { onHover(false); if (onSelect) setCursor(false); }}
       onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
     >
-      <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={edge} />
-      {/* NPU: render dies on top (L0 die-level) */}
-      {part.type === 'npu' && (
-        <group>
-          {Array.from({ length: DIES_PER_NPU }, (_, d) => (
-            <Slab
-              key={d}
-              size={[sx * S * 0.4, sy * S * 0.55, sz * S * 0.8]}
-              position={[(d - (DIES_PER_NPU - 1) / 2) * sx * S * 0.46, sy * S * 0.6, 0]}
-              color={L(0)}
-              emissive={L(0)} emissiveIntensity={selected ? 1.0 : hovered ? 0.9 : 0.5}
-              metalness={0.5} roughness={0.4}
-            />
-          ))}
-          {/* die-to-die UB seam (L0) */}
-          <Slab size={[0.006 * S, sy * S * 0.6, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]} color={L(0)} emissive={L(0)} emissiveIntensity={0.9} />
-          {/* selected marker */}
-          {selected && <Slab size={[sx * S * 1.06, 0.004 * S, sz * S * 1.06]} position={[0, sy * S * 1.0, 0]} color={selColor} emissive={selColor} emissiveIntensity={1} />}
-        </group>
-      )}
-      {v.top && part.type !== 'npu' && (
-        <Slab size={[sx * S * 0.82, sy * S * 0.5, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]}
-          color={v.top} metalness={part.type === 'ub-fabric' ? 0.3 : 0.85} roughness={part.type === 'ub-fabric' ? 0.5 : 0.3}
-          emissive={part.type === 'ub-fabric' ? v.top : '#000000'} emissiveIntensity={part.type === 'ub-fabric' ? (hovered ? 0.9 : 0.4) : 0} />
-      )}
-      {part.type === 'optical' && (
-        <group>
-          {Array.from({ length: 14 }, (_, i) => (
+      {part.type === 'npu' ? (
+        <>
+          <NpuChip w={sx * S} h={sy * S} hovered={hovered} selected={selected} />
+          {selected && <Slab size={[sx * S * 1.08, 0.004 * S, sz * S * 1.08]} position={[0, sy * S * 1.0, 0]} color={selColor} emissive={selColor} emissiveIntensity={1} />}
+        </>
+      ) : part.type === 'cpu' ? (
+        <CpuChip w={sx * S} h={sy * S} hovered={hovered} />
+      ) : (
+        <>
+          <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={hovered ? v.edge : LC.rackEdge} />
+          {v.top && (
+            <Slab size={[sx * S * 0.82, sy * S * 0.5, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]}
+              color={v.top} metalness={part.type === 'ub-fabric' ? 0.3 : 0.85} roughness={part.type === 'ub-fabric' ? 0.5 : 0.3}
+              emissive={part.type === 'ub-fabric' ? v.top : '#000000'} emissiveIntensity={part.type === 'ub-fabric' ? (hovered ? 0.9 : 0.4) : 0} />
+          )}
+          {part.type === 'optical' && Array.from({ length: 14 }, (_, i) => (
             <Slab key={i} size={[0.028 * S, sy * S * 0.6, 0.008 * S]} position={[(i - 6.5) * 0.044 * S, 0, sz * S * 0.7]}
               color={LC.vent} emissive="#fbbf24" emissiveIntensity={hovered ? 0.8 : 0.3} />
           ))}
-        </group>
+        </>
       )}
       {(part.type === 'npu' || part.type === 'cpu') && (
-        <Text position={[0, sy * S * 1.0, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={part.type === 'npu' ? 0.06 : 0.045} color="#5a6478" anchorX="center" anchorY="middle">
+        <Text position={[0, sy * S * 1.05, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={part.type === 'npu' ? 0.06 : 0.045} color="#5a6478" anchorX="center" anchorY="middle">
           {part.type === 'npu' ? `${TOK.ascendEn} ${TOK.n950dt}` : `${TOK.kunpengEn} ${TOK.n950}`}
         </Text>
       )}
@@ -669,14 +692,10 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
     <group>
       <Floor size={16} />
 
-      {/* L0 — dies inside one NPU package (full-connect) */}
+      {/* L0 — one NPU package: dual die (NpuChip = same NPU element used everywhere) */}
       <Tier lvl={0}>
-        {Array.from({ length: DIES_PER_NPU }, (_, dd) => (
-          <Slab key={dd} size={[0.16, 0.1, 0.2]} position={[(dd - (DIES_PER_NPU - 1) / 2) * 0.26, 0, 0]} color={L(0)} emissive={L(0)} emissiveIntensity={hov === 0 ? 0.9 : 0.5} />
-        ))}
-        <Line points={[[-(DIES_PER_NPU - 1) * 0.13, 0.02, 0], [(DIES_PER_NPU - 1) * 0.13, 0.02, 0]]} color={L(0)} lineWidth={3} />
-        <Line points={rect(DIES_PER_NPU * 0.34, 0.4)} color={L(0)} lineWidth={1} transparent opacity={0.6} />
-        <Text position={[0, 0, 0.34]} fontSize={0.12} color={LC.textDim} anchorX="center">1 NPU 封装</Text>
+        <NpuChip w={0.62} h={0.2} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} />
+        <Text position={[0, 0, 0.42]} fontSize={0.12} color={LC.textDim} anchorX="center">1 NPU 封装 · 2 die</Text>
       </Tier>
 
       {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) inside a 刀片 box */}
@@ -684,22 +703,19 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Line points={rect(2.05, 0.95)} color={L(1)} lineWidth={1.5} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         <Line points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         {npuPts.map((p, i) => (
-          <Slab key={i} size={[0.16, 0.14, 0.16]} position={[p[0], 0.04, p[2]]} color={L(1)} emissive={L(1)} emissiveIntensity={hov === 1 ? 0.8 : 0.45} />
+          <group key={i} position={[p[0], 0.02, p[2]]}><NpuChip w={0.18} h={0.12} hovered={hov === 1} /></group>
         ))}
         <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 刀片 / 节点 · 8 NPU 全互联</Text>
       </Tier>
 
-      {/* L2 — ONE cabinet: 8 blades, cross-blade FULL-MESH; each blade boxed, all in a 机柜 box */}
+      {/* L2 — ONE cabinet: 8 blades, cross-blade FULL-MESH; each blade is a tray, all in a 机柜 box */}
       <Tier lvl={2}>
         <Line points={rect(HT.xSpan * 0.86, 1.15)} color={L(2)} lineWidth={2} transparent opacity={hov === 2 ? 0.95 : 0.7} />
         <Line points={allPairs(nodePts)} segments color={L(2)} lineWidth={hov === 2 ? 2.4 : 1.6} transparent opacity={hov === 2 ? 0.9 : 0.5} />
         {nodePts.map((p, i) => (
-          <group key={i} position={[p[0], 0, p[2]]}>
-            <Slab size={[0.34, 0.16, 0.28]} position={[0, 0.04, 0]} color={'#efe7fb'} edgeColor={hov === 2 ? L(2) : LC.rackEdge} />
-            <Line points={rect(0.46, 0.4)} color={L(2)} lineWidth={1} transparent opacity={0.5} />
-          </group>
+          <group key={i} position={[p[0], 0.02, p[2]]}><BladeTray w={0.5} d={0.4} hovered={hov === 2} /></group>
         ))}
-        <Text position={[0, 0, 0.78]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜 · 8 刀片 / 64 NPU（框=刀片，外框=机柜）</Text>
+        <Text position={[0, 0, 0.8]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜 · 8 刀片 / 64 NPU（托盘=刀片，外框=机柜）</Text>
       </Tier>
 
       {/* L3 — pod: cabinets → UB switch Clos (fan to switch, not full-mesh) */}
@@ -708,17 +724,17 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
           const M = Math.min(cabs, 8);
           const cx = Array.from({ length: M }, (_, i) => (i / (M - 1 || 1) - 0.5) * HT.xSpan * 0.78);
           const seg: number[] = [];
-          for (const x of cx) seg.push(x, -0.05, 0.2, 0, 0.2, -0.18);   // each cabinet → central switch
+          for (const x of cx) seg.push(x, 0.18, 0.22, 0, 0.32, -0.18);   // each cabinet top → central switch
           return (
             <group>
               {/* UB switch (Clos core) */}
-              <Slab size={[HT.xSpan * 0.5, 0.16, 0.3]} position={[0, 0.2, -0.18]} color={L(3)} emissive={L(3)} emissiveIntensity={hov === 3 ? 0.7 : 0.35} />
-              <Text position={[0, 0.34, -0.18]} fontSize={0.12} color={L(3)} anchorX="center">UB 交换 Clos</Text>
+              <Slab size={[HT.xSpan * 0.5, 0.16, 0.3]} position={[0, 0.32, -0.18]} color={L(3)} emissive={L(3)} emissiveIntensity={hov === 3 ? 0.7 : 0.35} />
+              <Text position={[0, 0.46, -0.18]} fontSize={0.12} color={L(3)} anchorX="center">UB 交换 Clos（通信柜）</Text>
               {cx.map((x, i) => (
-                <Slab key={i} size={[0.4, 0.16, 0.34]} position={[x, -0.05, 0.2]} color={'#fce7d2'} edgeColor={hov === 3 ? L(3) : LC.rackEdge} />
+                <group key={i} position={[x, 0, 0.22]}><CabinetBox w={0.34} h={0.34} d={0.3} kind="compute" hovered={hov === 3} /></group>
               ))}
               <Line points={segPairs(seg)} segments color={L(3)} lineWidth={hov === 3 ? 2.4 : 1.6} transparent opacity={hov === 3 ? 0.9 : 0.55} />
-              <Text position={[0, 0, 0.62]} fontSize={0.13} color={hov === 3 ? L(3) : LC.textDim} anchorX="center">{`${cabs} 机柜 经通信柜 Clos 全互联`}</Text>
+              <Text position={[0, 0, 0.66]} fontSize={0.13} color={hov === 3 ? L(3) : LC.textDim} anchorX="center">{`${cabs} 机柜 经通信柜 Clos 全互联`}</Text>
             </group>
           );
         })()}
@@ -973,7 +989,7 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
           <group key={b.idx}>
             <mesh position={[b.cx, b.cy, -0.07]}>
               <planeGeometry args={[b.w, b.h]} />
-              <meshBasicMaterial color="#dfe6f0" transparent opacity={0.7} />
+              <meshBasicMaterial color={LC.nodeUnit} transparent opacity={0.85} />
             </mesh>
             <Text position={[b.cx, b.cy + b.h / 2 + 0.06, 0]} fontSize={0.1} color={L(1)} anchorX="center">{`刀片 B${b.idx}`}</Text>
           </group>

@@ -329,7 +329,7 @@ export function ClusterView() {
                   </span>
                 ))}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 10, background: '#dfe6f0', display: 'inline-block', borderRadius: 1, border: '1px solid rgba(0,0,0,0.15)' }} />
+                  <span style={{ width: 12, height: 10, background: '#f2f4f8', display: 'inline-block', borderRadius: 1, border: '1px solid rgba(0,0,0,0.15)' }} />
                   <span style={{ color: 'rgba(0,0,0,0.6)' }}>刀片(板)框 · 外框 = 单柜</span>
                 </span>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', marginTop: 2 }}>联动高亮</div>
