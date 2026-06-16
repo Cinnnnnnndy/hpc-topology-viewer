@@ -116,32 +116,52 @@ function HallCabinet({ cell, hovered, onClick, onHover }: {
   );
 }
 
-/** Schematic UB optical spine: arcs from compute block to comms block. */
-function HallSpine({ cells }: { cells: CabinetCell[] }) {
-  const geo = useMemo(() => {
+/** Cabinet interconnect: every cabinet uplinks (full-optical) to the UB-switch
+ *  Clos in the communication cabinets → cross-cabinet all-to-all; plus in-hall
+ *  row/column adjacency mesh. (Schematic, but reflects the real relationship.) */
+function HallSpine({ cells, onHoverInfo }: { cells: CabinetCell[]; onHoverInfo: (t: string | null) => void }) {
+  const { uplinkGeo, meshGeo, apex } = useMemo(() => {
     const compute = cells.filter((c) => c.kind === 'compute');
     const comms = cells.filter((c) => c.kind === 'switch');
-    if (!compute.length || !comms.length) return [];
-    const cFrontZ = Math.max(...compute.map((c) => c.pos[2]));   // compute rear edge
-    const sFrontZ = Math.min(...comms.map((c) => c.pos[2]));     // comms front edge
-    const out: THREE.TubeGeometry[] = [];
-    const cols = 16;
-    for (let i = 0; i < cols; i++) {
-      const x = (i - (cols - 1) / 2) * (CAB_W + 0.12);
-      const a = new THREE.Vector3(x, CAB_H + 0.05, cFrontZ);
-      const b = new THREE.Vector3(x, CAB_H + 0.05, sFrontZ);
-      const mid = new THREE.Vector3(x, CAB_H + 0.9, (cFrontZ + sFrontZ) / 2);
-      out.push(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 20, 0.01, 5));
+    const cz = comms.length ? comms.reduce((s, c) => s + c.pos[2], 0) / comms.length : 0;
+    const apex: [number, number, number] = [0, CAB_H + 1.5, cz];
+    // uplinks: every cabinet → Clos apex
+    const up: number[] = [];
+    for (const c of cells) up.push(c.pos[0], CAB_H, c.pos[2], apex[0], apex[1], apex[2]);
+    // in-hall adjacency mesh among compute cabinets (row + column neighbours)
+    const key = (v: number) => Math.round(v * 100);
+    const byRow = new Map<number, CabinetCell[]>();
+    const byCol = new Map<number, CabinetCell[]>();
+    for (const c of compute) {
+      (byRow.get(key(c.pos[2])) ?? byRow.set(key(c.pos[2]), []).get(key(c.pos[2]))!).push(c);
+      (byCol.get(key(c.pos[0])) ?? byCol.set(key(c.pos[0]), []).get(key(c.pos[0]))!).push(c);
     }
-    return out;
+    const mesh: number[] = [];
+    const connect = (arr: CabinetCell[], axis: 'x' | 'z') => {
+      arr.sort((a, b) => (axis === 'x' ? a.pos[0] - b.pos[0] : a.pos[2] - b.pos[2]));
+      for (let i = 0; i + 1 < arr.length; i++) {
+        const a = arr[i], b = arr[i + 1];
+        mesh.push(a.pos[0], CAB_H * 0.5, a.pos[2], b.pos[0], CAB_H * 0.5, b.pos[2]);
+      }
+    };
+    byRow.forEach((a) => connect(a, 'x'));
+    byCol.forEach((a) => connect(a, 'z'));
+    const g = (s: number[]) => { const x = new THREE.BufferGeometry(); x.setAttribute('position', new THREE.Float32BufferAttribute(s, 3)); return x; };
+    return { uplinkGeo: g(up), meshGeo: g(mesh), apex };
   }, [cells]);
+
   return (
-    <group>
-      {geo.map((g, i) => (
-        <mesh key={i} geometry={g}>
-          <meshBasicMaterial color={L(3)} transparent opacity={0.4} />
-        </mesh>
-      ))}
+    <group
+      onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`机柜互联：全部计算柜 + 通信柜经全光上行至 ${TOK.ub} 交换 Clos（通信柜），实现跨柜全互联；柜间在机房内另有 ${TOK.fullmesh} 行/列邻接（示意）`); }}
+      onPointerOut={() => onHoverInfo(null)}
+    >
+      {/* in-hall adjacency mesh (L2 violet) */}
+      <lineSegments geometry={meshGeo}><lineBasicMaterial color={L(2)} transparent opacity={0.25} /></lineSegments>
+      {/* uplinks to Clos apex (L3 orange) */}
+      <lineSegments geometry={uplinkGeo}><lineBasicMaterial color={L(3)} transparent opacity={0.22} /></lineSegments>
+      {/* Clos apex node */}
+      <mesh position={apex}><sphereGeometry args={[0.16, 16, 16]} /><meshStandardMaterial color={L(3)} emissive={L(3)} emissiveIntensity={0.6} /></mesh>
+      <Text position={[apex[0], apex[1] + 0.3, apex[2]]} fontSize={0.32} color={L(3)} anchorX="center">{`${TOK.ub} 交换 Clos（通信柜）· 跨柜全互联`}</Text>
     </group>
   );
 }
@@ -175,7 +195,7 @@ export function OverviewScene({ gen, highlightCabinet, onHoverInfo, onSelectRack
           }}
         />
       ))}
-      <HallSpine cells={cells} />
+      <HallSpine cells={cells} onHoverInfo={onHoverInfo} />
       <Text position={[0, 0.02, -(depth / 2) + 0.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.34} color={LC.textDim} anchorX="center">
         {`${gen.code} · ${gen.totalCabs} cabinets (${gen.computeCabs} compute + ${gen.commCabs} comms) · ${gen.totalNpus} NPU`}
       </Text>
