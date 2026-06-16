@@ -87,14 +87,14 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
     ],
   },
   topology: {
-    title: dc('54G16KGi5LqS6IGU5bGC57qn77yIVUItTWVzaC1Qb2QgNEQtRnVsbE1lc2ggKyBDbG9z77yJ'),
+    title: dc('54G16KGi5LqS6IGU5bGC57qn77yI5bGC5YaFIGZ1bGwtbWVzaCArIOWxgumXtOWMheWQqyArIENsb3PvvIk='),
     lines: [
       dc('TDAg54mH5YaF77ya5piH6IW+IDk1MCDlsIHoo4XlhoUgZGllIOmXtCBVQiDnm7Tov54gWzFd'),
-      dc('TDEg6IqC54K55YaFKDFEKe+8mjjDlyBOUFUg5p2/6L29IFVCIOWFqOS6kuiBlChGdWxsTWVzaCkgWzFd'),
-      dc('TDIg5py65p+c5YaFKDJEKe+8mui3qOiKgueCuS/mnb8gbkQtRnVsbE1lc2gg55u06L+e77ybNjQg5Y2hL+afnOatpemVvyBbM10='),
-      dc('TDMg6LaF6IqC54K55YaFKDNEKynvvJpVQi1NZXNoLVBvZCA0RC1GdWxsTWVzaCArIENsb3Mg6aG25bGCIFsxXQ=='),
+      dc('TDEg5YiA54mHL+iKgueCueWGhe+8mjjDlyBOUFUg5YWo5LqS6IGU77yIZnVsbC1tZXNo77yM5q+P6aKX5a+55omA5pyJ77yJwrcg5Y2VIE5QVSAyIFRCL3MgWzFd'),
+      dc('TDIg5py65p+c5YaF77yaOCDliIDniYcgLyA2NCBOUFUg6Leo5YiA54mHIG5ELUZ1bGxNZXNoIOWFqOS6kuiBlO+8iOWkjeadguS6pOmUme+8jOmdnueugOWNleiBmuWQiO+8iVsxXQ=='),
+      dc('TDMg6LaF6IqC54K55YaF77yaTiDmnLrmn5wg57uPIFVCIOS6pOaNoijpgJrkv6Hmn5wpIENsb3Mg5YWo5LqS6IGUIFszXQ=='),
+      dc('5bGC5YaF5Lqk6ZSZ57q/PeWunumZhSBVQiDlhajkupLogZTvvJvmoYY95YiA54mHL+acuuafnOiMg+WbtO+8m+eBsOiZmue6vz3lsYLnuqfljIXlkKs='),
       dc('5Y+g5Yqg77ya6L+b56iL57qnIFJpbmctQWxsUmVkdWNlIC8gQWxsLXRvLUFsbChNb0Up77yI6aG25qCP5byA5YWz77yJWzFd'),
-      dc('TDQg6LaF6IqC54K56Ze077yaU3VwZXJDbHVzdGVyIHNjYWxlLW91dO+8iOWFqOWFie+8iVszXQ=='),
     ],
   },
   matrix: {

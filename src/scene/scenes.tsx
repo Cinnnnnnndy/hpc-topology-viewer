@@ -602,66 +602,41 @@ const HT = {
 
 export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & { gen: GenSpec; overlays: CommOverlays }) {
   const [hov, setHov] = useState<number | null>(null);
+  const cabs = Math.max(1, Math.round(gen.totalNpus / 64));
 
-  // node-tier sample positions (8 NPU dots) for L0/L1 illustration
-  const dieX = (i: number) => (i / 7 - 0.5) * 2.2;
-  // rank dots at the L1 tier (one process / rank per NPU)
-  const rankX = (i: number) => (i / 7 - 0.5) * 2.6;
+  // 2×4 grids so full-mesh links spread out and visibly crisscross
+  const grid2x4 = (px: number, pz: number): [number, number, number][] =>
+    Array.from({ length: 8 }, (_, i) => { const c = i % 4, r = Math.floor(i / 4); return [(c - 1.5) * px, 0, (r - 0.5) * pz]; });
+  const npuPts = useMemo(() => grid2x4(0.52, 0.46), []);    // L1: 8 NPU in one blade
+  const nodePts = useMemo(() => grid2x4(1.1, 0.5), []);     // L2: 8 blades in one cabinet
+  const allPairs = (pts: [number, number, number][]): [number, number, number][] => {
+    const o: [number, number, number][] = [];
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) o.push(pts[i], pts[j]);
+    return o;
+  };
+  const rect = (w: number, d: number, y = 0): [number, number, number][] =>
+    [[-w / 2, y, -d / 2], [w / 2, y, -d / 2], [w / 2, y, d / 2], [-w / 2, y, d / 2], [-w / 2, y, -d / 2]];
 
-  // ── process(rank) + thread comm overlays ──
+  // process(rank) overlays use the L1 NPU positions
+  const yR = HT.y[1] + 0.34;
   const ringGeo = useMemo(() => {
+    const order = [0, 1, 2, 3, 7, 6, 5, 4];
     const seg: number[] = [];
-    const order = [0, 1, 2, 3, 7, 6, 5, 4];   // snake ring over the 2×4 rank grid
-    const y = HT.y[1] + 0.18;
-    for (let k = 0; k < order.length; k++) {
-      const a = order[k], b = order[(k + 1) % order.length];
-      seg.push(rankX(a), y, 0.16, rankX(b), y, 0.16);
-    }
+    for (let k = 0; k < order.length; k++) { const a = npuPts[order[k]], b = npuPts[order[(k + 1) % 8]]; seg.push(a[0], yR, a[2], b[0], yR, b[2]); }
     return segGeo(seg);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [npuPts]);
 
-  const a2aGeo = useMemo(() => {
-    const seg: number[] = [];
-    const y = HT.y[1] + 0.18;
-    for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) seg.push(rankX(i), y, -0.16, rankX(j), y, -0.16);
-    return segGeo(seg);
-  }, []);
-
-  // counts text per level
   const levelInfo = (lvl: number): string => {
     switch (lvl) {
-      case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} die · die 间 UB/SIO 直连 · ${UB_LEVELS[0].detail}`;
-      case 1: return `L1 节点内：${NPUS_PER_NODE}× NPU 板载 UB 2D-Mesh 直连 · 单 NPU ${gen.chipUbTBs} TB/s`;
-      case 2: return `L2 机柜内：8 节点 / 64 NPU 跨节点 ${TOK.fullmesh} 总线级直连`;
-      case 3: return `L3 ${TOK.supernode}内：${gen.computeCabs} 计算柜 + ${gen.commCabs} 通信柜 Clos · ${gen.totalNpus} NPU 全互联 · ${gen.interconnectPBs} PB/s`;
-      case 4: return `L4 ${TOK.supernode}间：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光 UBoE）`;
+      case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} die · die 间 UB/SIO 直连`;
+      case 1: return `L1 刀片/节点内：${NPUS_PER_NODE}× NPU 全互联（full-mesh，每颗对所有）· 单 NPU ${gen.chipUbTBs} TB/s`;
+      case 2: return `L2 机柜内：8 刀片 / 64 NPU · 跨刀片 ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
+      case 3: return `L3 ${TOK.supernode}内：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
+      case 4: return `L4 ${TOK.supernode}间：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光）`;
       default: return '';
     }
   };
-
-  // ── inter-tier aggregation connectors (×N children → 1 parent) ──
-  const x1 = (i: number) => (i / 7 - 0.5) * 2.6;                 // L1 NPU x
-  const x2 = (i: number) => (i / 7 - 0.5) * HT.xSpan * 0.78;     // L2 node x
-  const cabs = Math.max(1, Math.round(gen.totalNpus / 64));
-  const yTop = (k: number) => HT.y[k] + 0.14;
-  const yBot = (k: number) => HT.y[k] - 0.14;
-  const fanTo = (child: (i: number) => number, yc: number, px: number, yp: number, count: number): [number, number, number][] => {
-    const p: [number, number, number][] = [];
-    for (let i = 0; i < count; i++) { p.push([child(i), yc, 0], [px, yp, 0]); }
-    return p;
-  };
-  // L0→L1: each NPU's dies → that NPU (parallel); L1→L2 / L2→L3: many → one (fan-in)
-  const bDie: [number, number, number][] = [];
-  for (let i = 0; i < 8; i++) bDie.push([dieX(i), yTop(0), 0], [x1(i), yBot(1), 0]);
-  const bNpu = fanTo(x1, yTop(1), 0, yBot(2), 8);
-  const bNode = fanTo(x2, yTop(2), 0, yBot(3), 8);
-  const bPod: [number, number, number][] = [[0, yTop(3), 0], [0, yBot(4), 0]];
-  const aggLabels: [number, string][] = [
-    [(HT.y[0] + HT.y[1]) / 2, `×${DIES_PER_NPU} die → 1 NPU`],
-    [(HT.y[1] + HT.y[2]) / 2, `×${NPUS_PER_NODE} NPU → 1 节点`],
-    [(HT.y[2] + HT.y[3]) / 2, `×8 节点 → 1 柜 · ×${cabs} 柜 → ${TOK.supernode}`],
-    [(HT.y[3] + HT.y[4]) / 2, `${TOK.supernode} → ${TOK.supercluster}`],
-  ];
 
   const Tier = ({ lvl, children }: { lvl: number; children?: ReactNode }) => {
     const isH = hov === lvl;
@@ -675,101 +650,128 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Text position={[-HT.xSpan / 2 - 0.3, 0, 0]} fontSize={0.2} color={isH ? L(lvl) : LC.textDim} anchorX="right" anchorY="middle" maxWidth={3}>
           {`${UB_LEVELS[lvl].id} ${UB_LEVELS[lvl].label}`}
         </Text>
-        <Text position={[HT.xSpan / 2 + 0.3, 0, 0]} fontSize={0.16} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
-          {lvl === 3 ? `${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s` : lvl === 4 ? `${gen.superclusterNpu}卡` : lvl === 0 ? `${DIES_PER_NPU} die/pkg` : lvl === 1 ? `${NPUS_PER_NODE}× NPU` : '64 NPU/柜'}
+        <Text position={[HT.xSpan / 2 + 0.3, 0, 0]} fontSize={0.15} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
+          {lvl === 0 ? `${DIES_PER_NPU} die / NPU` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
         </Text>
       </group>
     );
   };
 
+  // containment links (a unit at level k is one member of level k+1) — thin, subtle
+  const contain: [number, number, number][] = [
+    [0, HT.y[0] + 0.12, 0], [0, HT.y[1] - 0.2, 0],                          // die-package ⊂ NPU
+    [0, HT.y[1] + 0.2, 0], [nodePts[0][0], HT.y[2] - 0.18, nodePts[0][2]],  // blade ⊂ cabinet (→ blade #0)
+    [0, HT.y[2] + 0.25, 0], [-(HT.xSpan * 0.32), HT.y[3] - 0.18, 0],        // cabinet ⊂ pod (→ a cabinet dot)
+    [0, HT.y[3] + 0.2, 0], [0, HT.y[4] - 0.12, 0],                          // pod ⊂ cluster
+  ];
+
   return (
     <group>
       <Floor size={16} />
 
-      {/* L0 — dies (8 NPU × dies) */}
+      {/* L0 — dies inside one NPU package (full-connect) */}
       <Tier lvl={0}>
-        {Array.from({ length: 8 }, (_, i) => (
-          <group key={i} position={[dieX(i), 0, 0]}>
-            {Array.from({ length: DIES_PER_NPU }, (_, dd) => (
-              <Slab key={dd} size={[0.09, 0.09, 0.12]} position={[(dd - (DIES_PER_NPU - 1) / 2) * 0.11, 0, 0]} color={L(0)} emissive={L(0)} emissiveIntensity={hov === 0 ? 0.8 : 0.4} />
-            ))}
+        {Array.from({ length: DIES_PER_NPU }, (_, dd) => (
+          <Slab key={dd} size={[0.16, 0.1, 0.2]} position={[(dd - (DIES_PER_NPU - 1) / 2) * 0.26, 0, 0]} color={L(0)} emissive={L(0)} emissiveIntensity={hov === 0 ? 0.9 : 0.5} />
+        ))}
+        <Line points={[[-(DIES_PER_NPU - 1) * 0.13, 0.02, 0], [(DIES_PER_NPU - 1) * 0.13, 0.02, 0]]} color={L(0)} lineWidth={3} />
+        <Line points={rect(DIES_PER_NPU * 0.34, 0.4)} color={L(0)} lineWidth={1} transparent opacity={0.6} />
+        <Text position={[0, 0, 0.34]} fontSize={0.12} color={LC.textDim} anchorX="center">1 NPU 封装</Text>
+      </Tier>
+
+      {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) inside a 刀片 box */}
+      <Tier lvl={1}>
+        <Line points={rect(2.05, 0.95)} color={L(1)} lineWidth={1.5} transparent opacity={hov === 1 ? 0.95 : 0.6} />
+        <Line points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} transparent opacity={hov === 1 ? 0.95 : 0.6} />
+        {npuPts.map((p, i) => (
+          <Slab key={i} size={[0.16, 0.14, 0.16]} position={[p[0], 0.04, p[2]]} color={L(1)} emissive={L(1)} emissiveIntensity={hov === 1 ? 0.8 : 0.45} />
+        ))}
+        <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 刀片 / 节点 · 8 NPU 全互联</Text>
+      </Tier>
+
+      {/* L2 — ONE cabinet: 8 blades, cross-blade FULL-MESH; each blade boxed, all in a 机柜 box */}
+      <Tier lvl={2}>
+        <Line points={rect(HT.xSpan * 0.86, 1.15)} color={L(2)} lineWidth={2} transparent opacity={hov === 2 ? 0.95 : 0.7} />
+        <Line points={allPairs(nodePts)} segments color={L(2)} lineWidth={hov === 2 ? 2.4 : 1.6} transparent opacity={hov === 2 ? 0.9 : 0.5} />
+        {nodePts.map((p, i) => (
+          <group key={i} position={[p[0], 0, p[2]]}>
+            <Slab size={[0.34, 0.16, 0.28]} position={[0, 0.04, 0]} color={'#efe7fb'} edgeColor={hov === 2 ? L(2) : LC.rackEdge} />
+            <Line points={rect(0.46, 0.4)} color={L(2)} lineWidth={1} transparent opacity={0.5} />
           </group>
         ))}
+        <Text position={[0, 0, 0.78]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜 · 8 刀片 / 64 NPU（框=刀片，外框=机柜）</Text>
       </Tier>
 
-      {/* L1 — node bar with 8 NPU + 2D-mesh */}
-      <Tier lvl={1}>
-        <Slab size={[3.0, 0.14, 0.5]} color={'#e8ebf1'} edgeColor={hov === 1 ? L(1) : LC.rackEdge} />
-        {Array.from({ length: 8 }, (_, i) => (
-          <Slab key={i} size={[0.12, 0.16, 0.16]} position={[(i / 7 - 0.5) * 2.6, 0.05, 0]} color={L(1)} emissive={L(1)} emissiveIntensity={hov === 1 ? 0.8 : 0.4} />
-        ))}
-      </Tier>
-
-      {/* L2 — rack-level full mesh: 8 node bars + all-pairs lines */}
-      <Tier lvl={2}>
+      {/* L3 — pod: cabinets → UB switch Clos (fan to switch, not full-mesh) */}
+      <Tier lvl={3}>
         {(() => {
-          const N = 8, xs = Array.from({ length: N }, (_, i) => (i / (N - 1) - 0.5) * HT.xSpan * 0.78);
+          const M = Math.min(cabs, 8);
+          const cx = Array.from({ length: M }, (_, i) => (i / (M - 1 || 1) - 0.5) * HT.xSpan * 0.78);
           const seg: number[] = [];
-          for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) seg.push(xs[i], 0.02, 0.18, xs[j], 0.02, 0.18);
+          for (const x of cx) seg.push(x, -0.05, 0.2, 0, 0.2, -0.18);   // each cabinet → central switch
           return (
             <group>
-              {xs.map((x, i) => (
-                <Slab key={i} size={[0.5, 0.16, 0.34]} position={[x, 0, 0.18]} color={'#efe7fb'} edgeColor={hov === 2 ? L(2) : LC.rackEdge} />
+              {/* UB switch (Clos core) */}
+              <Slab size={[HT.xSpan * 0.5, 0.16, 0.3]} position={[0, 0.2, -0.18]} color={L(3)} emissive={L(3)} emissiveIntensity={hov === 3 ? 0.7 : 0.35} />
+              <Text position={[0, 0.34, -0.18]} fontSize={0.12} color={L(3)} anchorX="center">UB 交换 Clos</Text>
+              {cx.map((x, i) => (
+                <Slab key={i} size={[0.4, 0.16, 0.34]} position={[x, -0.05, 0.2]} color={'#fce7d2'} edgeColor={hov === 3 ? L(3) : LC.rackEdge} />
               ))}
-              <lineSegments geometry={segGeo(seg)}><lineBasicMaterial color={L(2)} transparent opacity={hov === 2 ? 0.85 : 0.4} /></lineSegments>
+              <Line points={segPairs(seg)} segments color={L(3)} lineWidth={hov === 3 ? 2.4 : 1.6} transparent opacity={hov === 3 ? 0.9 : 0.55} />
+              <Text position={[0, 0, 0.62]} fontSize={0.13} color={hov === 3 ? L(3) : LC.textDim} anchorX="center">{`${cabs} 机柜 经通信柜 Clos 全互联`}</Text>
             </group>
           );
         })()}
       </Tier>
 
-      {/* L3 — pod-level Clos: compute block + comms switch bar */}
-      <Tier lvl={3}>
-        <Slab size={[HT.xSpan * 0.9, 0.18, 0.55]} color={L(3)} opacity={hov === 3 ? 0.7 : 0.4} emissive={L(3)} emissiveIntensity={hov === 3 ? 0.4 : 0.18} />
-        {Array.from({ length: 16 }, (_, i) => (
-          <Slab key={i} size={[0.22, 0.3, 0.62]} position={[(i - 7.5) * (HT.xSpan * 0.9 / 16.5), 0, 0]} color={L(3)} emissive={L(3)} emissiveIntensity={hov === 3 ? 0.6 : 0.3} />
-        ))}
-      </Tier>
-
       {/* L4 — cluster scale-out */}
       <Tier lvl={4}>
         <Slab size={[HT.xSpan * 0.72, 0.14, 0.5]} color={L(4)} opacity={hov === 4 ? 0.7 : 0.38} emissive={L(4)} emissiveIntensity={hov === 4 ? 0.4 : 0.16} />
+        <Text position={[0, 0, 0.5]} fontSize={0.13} color={hov === 4 ? L(4) : LC.textDim} anchorX="center">{`多超节点 → ${TOK.supercluster}`}</Text>
       </Tier>
 
-      {/* ── inter-tier aggregation connectors (×N children → 1 parent of next level) ── */}
-      <Line points={bDie} segments color={L(0)} lineWidth={hov === 0 || hov === 1 ? 3 : 1.8} transparent opacity={0.7} />
-      <Line points={bNpu} segments color={L(1)} lineWidth={hov === 1 || hov === 2 ? 3 : 1.8} transparent opacity={0.7} />
-      <Line points={bNode} segments color={L(2)} lineWidth={hov === 2 || hov === 3 ? 3 : 1.8} transparent opacity={0.7} />
-      <Line points={bPod} segments color={L(3)} lineWidth={hov === 3 || hov === 4 ? 4 : 2.5} transparent opacity={0.85} />
-      {/* aggregation multiplicity labels */}
-      {aggLabels.map(([y, t], i) => (
-        <Text key={i} position={[2.4, y, 0]} fontSize={0.16} color={LC.textDim} anchorX="left" anchorY="middle">{t}</Text>
-      ))}
+      {/* containment links (level k unit ⊂ level k+1) — thin grey, NOT the interconnect */}
+      <Line points={contain} segments color="#9aa4b2" lineWidth={1} dashed dashScale={4} transparent opacity={0.5} />
+      <Text position={[2.5, (HT.y[1] + HT.y[2]) / 2, 0]} fontSize={0.13} color={LC.textDim} anchorX="left">↑ 此刀片是机柜中的 1/8</Text>
+      <Text position={[2.5, (HT.y[2] + HT.y[3]) / 2, 0]} fontSize={0.13} color={LC.textDim} anchorX="left">↑ 此机柜是超节点中的 1/{cabs}</Text>
 
       {/* ── process(rank) comm overlays (toggled in toolbar) ── */}
       {overlays.a2a && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行）：rank 间全互联，经 L1/L2 UB 直连 + L3 Clos`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行）：rank 间全互联，沿 L1/L2 UB full-mesh + L3 Clos`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
-          <lineSegments geometry={a2aGeo}><lineBasicMaterial color={COMM_PATTERNS[1].color} transparent opacity={0.4} /></lineSegments>
-          <Text position={[rankX(7) + 0.4, HT.y[1] + 0.18, -0.16]} fontSize={0.14} color={COMM_PATTERNS[1].color} anchorX="left">All-to-All</Text>
+          <Line points={a2aPts(npuPts, yR + 0.04)} segments color={COMM_PATTERNS[1].color} lineWidth={1.5} transparent opacity={0.5} />
+          <Text position={[2.0, yR, 0]} fontSize={0.14} color={COMM_PATTERNS[1].color} anchorX="left">All-to-All</Text>
         </group>
       )}
       {overlays.ring && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 Ring-AllReduce（数据并行梯度规约）：rank 环形通信，沿 UB 2D-Mesh`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 Ring-AllReduce（数据并行梯度规约）：rank 环形通信，沿 UB full-mesh`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <lineSegments geometry={ringGeo}><lineBasicMaterial color={COMM_PATTERNS[0].color} transparent opacity={0.9} /></lineSegments>
-          <Text position={[rankX(7) + 0.4, HT.y[1] + 0.18, 0.16]} fontSize={0.14} color={COMM_PATTERNS[0].color} anchorX="left">Ring AllReduce</Text>
+          <Text position={[2.0, yR + 0.2, 0]} fontSize={0.14} color={COMM_PATTERNS[0].color} anchorX="left">Ring AllReduce</Text>
         </group>
       )}
 
-      <Text position={[0, 0.04, 2.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color={LC.textDim} anchorX="center">
-        {`${TOK.ubmesh} 互联层级 · 连线=逐级聚合（×N 下级→1 上级）· ${gen.code} · 悬停看各级带宽`}
+      <Text position={[0, 0.04, 2.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.19} color={LC.textDim} anchorX="center">
+        {`${TOK.ubmesh}：层内交错线 = 实际 UB 全互联(full-mesh) · 框 = 刀片/机柜范围 · 灰虚线 = 层级包含`}
       </Text>
     </group>
   );
+}
+
+/** helpers shared by topology overlays */
+function segPairs(seg: number[]): [number, number, number][] {
+  const o: [number, number, number][] = [];
+  for (let i = 0; i < seg.length; i += 3) o.push([seg[i], seg[i + 1], seg[i + 2]]);
+  return o;
+}
+function a2aPts(pts: [number, number, number][], y: number): [number, number, number][] {
+  const o: [number, number, number][] = [];
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) { o.push([pts[i][0], y, pts[i][2]], [pts[j][0], y, pts[j][2]]); }
+  return o;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
