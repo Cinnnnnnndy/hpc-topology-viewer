@@ -22,7 +22,7 @@ import {
 import { TOK, FOOTNOTE } from '../content';
 import {
   OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene,
-  type CommOverlays, type LocateTarget,
+  type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 
 /** Imperatively reposition camera + controls when the view changes, without
@@ -89,6 +89,8 @@ export function ClusterView() {
   const [hl, setHl] = useState<{ npu: number; blade: number; cabinet: number } | null>(null);
   const [traceTick, setTraceTick] = useState<number | null>(null);
   const [tracePlaying, setTracePlaying] = useState(false);
+  const [ubFocus, setUbFocus] = useState<'ccu' | 'onchip' | 'ub' | null>(null);   // from IO-die inset jump
+  const onUbJump = useCallback((t: UbJump) => { setUbFocus(t.focus); setMode(t.view); }, []);
 
   useEffect(() => {
     if (!tracePlaying) return;
@@ -278,8 +280,8 @@ export function ClusterView() {
             )}
             {mode === 'node' && (nodeKind === 'ubswitch'
               ? <UBSwitchScene onHoverInfo={onHoverInfo} />
-              : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />)}
-            {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} highlight={hl ? { npu: hl.npu, blade: hl.blade } : null} onHoverInfo={onHoverInfo} />}
+              : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} onJump={onUbJump} />)}
+            {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} highlight={hl ? { npu: hl.npu, blade: hl.blade } : null} subFocus={ubFocus} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
@@ -314,6 +316,19 @@ export function ClusterView() {
                   style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
                 >清除高亮</button>
               )}
+            </div>
+          )}
+
+          {/* IO-die → UB linkage banner */}
+          {ubFocus && (mode === 'topology' || mode === 'matrix') && (
+            <div style={{
+              position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, alignItems: 'center',
+              padding: '6px 11px', fontSize: 12, background: 'rgba(255,255,255,0.96)',
+              border: '1px solid #4369ef', borderRadius: 6, color: '#4369ef',
+            }}>
+              <span>{`来自 IO Die：${ubFocus === 'ccu' ? `高亮 ${TOK.ccu} 集合通信` : ubFocus === 'onchip' ? `高亮 ${TOK.onchip} 转发` : '该端口实现的 NPU↔NPU UB 互联（邻接矩阵）'}`}</span>
+              <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>← 回节点</button>
+              <button onClick={() => setUbFocus(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>清除</button>
             </div>
           )}
 
