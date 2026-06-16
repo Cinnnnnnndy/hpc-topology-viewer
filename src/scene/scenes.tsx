@@ -344,12 +344,13 @@ export function RackScene({ rackKind, label, onHoverInfo, onSelectNode, onSelect
 
 const S_NODE = 3.2;   // node view scale
 
-function NodePartMesh({ part, hovered, onHover }: {
-  part: NodePart; hovered: boolean; onHover: (h: boolean) => void;
+function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
+  part: NodePart; hovered: boolean; selected?: boolean; onHover: (h: boolean) => void; onSelect?: () => void;
 }) {
   const S = S_NODE;
   const [px, py, pz] = part.pos;
   const [sx, sy, sz] = part.size;
+  const selColor = COMM_PATTERNS[2].color;   // selected-NPU accent (cyan, matches die view)
 
   const visuals: Record<NodePart['type'], { body: string; top?: string; edge: string }> = {
     npu:        { body: LC.npuBody,     top: LC.npuTop, edge: '#4ade80' },
@@ -360,14 +361,16 @@ function NodePartMesh({ part, hovered, onHover }: {
     dimm:       { body: LC.dimmBody,    edge: '#475263' },
   };
   const v = visuals[part.type];
+  const edge = selected ? selColor : hovered ? v.edge : LC.rackEdge;
 
   return (
     <group
       position={[px * S, py * S, pz * S]}
-      onPointerOver={(e) => { e.stopPropagation(); onHover(true); }}
-      onPointerOut={() => onHover(false)}
+      onPointerOver={(e) => { e.stopPropagation(); onHover(true); if (onSelect) setCursor(true); }}
+      onPointerOut={() => { onHover(false); if (onSelect) setCursor(false); }}
+      onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
     >
-      <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={hovered ? v.edge : LC.rackEdge} />
+      <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={edge} />
       {/* NPU: render dies on top (L0 die-level) */}
       {part.type === 'npu' && (
         <group>
@@ -377,12 +380,14 @@ function NodePartMesh({ part, hovered, onHover }: {
               size={[sx * S * 0.4, sy * S * 0.55, sz * S * 0.8]}
               position={[(d - (DIES_PER_NPU - 1) / 2) * sx * S * 0.46, sy * S * 0.6, 0]}
               color={L(0)}
-              emissive={L(0)} emissiveIntensity={hovered ? 0.9 : 0.5}
+              emissive={L(0)} emissiveIntensity={selected ? 1.0 : hovered ? 0.9 : 0.5}
               metalness={0.5} roughness={0.4}
             />
           ))}
           {/* die-to-die UB seam (L0) */}
           <Slab size={[0.006 * S, sy * S * 0.6, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]} color={L(0)} emissive={L(0)} emissiveIntensity={0.9} />
+          {/* selected marker */}
+          {selected && <Slab size={[sx * S * 1.06, 0.004 * S, sz * S * 1.06]} position={[0, sy * S * 1.0, 0]} color={selColor} emissive={selColor} emissiveIntensity={1} />}
         </group>
       )}
       {v.top && part.type !== 'npu' && (
@@ -426,7 +431,7 @@ const DIE = {
 };
 
 /** Enlarged single-die view: HBM → L1 → L0 → Cube/Vector cores, with tile dataflow. */
-function DieDetail({ overlays, onHoverInfo }: { overlays: CommOverlays; onHoverInfo: (t: string | null) => void }) {
+function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays: CommOverlays; onHoverInfo: (t: string | null) => void }) {
   const [hx, hz] = [DIE.w / 2, DIE.d / 2];
   const cubeColor = COMM_PATTERNS[2].color;   // thread/tile colour (cyan)
   const tileColor = '#f59e0b';
@@ -497,7 +502,7 @@ function DieDetail({ overlays, onHoverInfo }: { overlays: CommOverlays; onHoverI
         </group>
       )}
       <Text position={[0, 0.05, hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">
-        {`单 die 算子视图 · AI Core + 多级 SRAM · 线程/Tile 级`}
+        {`放大：NPU #${npuIdx + 1} 的 die · AI Core + 多级 SRAM · 线程/Tile 级（点左侧 NPU 切换）`}
       </Text>
     </group>
   );
@@ -526,8 +531,20 @@ function BoardMesh() {
 
 export function NodeScene({ onHoverInfo, overlays }: SceneCallbacks & { overlays: CommOverlays }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [selected, setSelected] = useState(0);   // which NPU's die is enlarged
   const S = S_NODE;
   const w = NODE_DIM.w * S, h = NODE_DIM.h * S, d = NODE_DIM.d * S;
+  const selColor = COMM_PATTERNS[2].color;
+
+  // leader line from the selected NPU to the die inset
+  const leaderGeo = useMemo(() => {
+    const npu = NODE_PARTS.filter((p) => p.type === 'npu')[selected];
+    const a: [number, number, number] = [npu.pos[0] * S, 0.06 * S + 0.5, npu.pos[2] * S];
+    const b: [number, number, number] = [DIE.pos[0] - DIE.w / 2, DIE.pos[1] + 0.2, DIE.pos[2]];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b], 3));
+    return g;
+  }, [selected, S]);
 
   return (
     <group>
@@ -555,17 +572,21 @@ export function NodeScene({ onHoverInfo, overlays }: SceneCallbacks & { overlays
             key={p.id}
             part={p}
             hovered={hoverId === p.id}
+            selected={p.type === 'npu' && p.npuIdx === selected}
+            onSelect={p.type === 'npu' ? () => setSelected(p.npuIdx!) : undefined}
             onHover={(hv) => {
               setHoverId(hv ? p.id : null);
-              onHoverInfo(hv ? p.label : null);
+              onHoverInfo(hv ? (p.type === 'npu' ? `${p.label}（点击放大该 die 算子视图 →）` : p.label) : null);
             }}
           />
         ))}
         {/* node-internal UB 2D-mesh (L1 board fabric) */}
         <BoardMesh />
       </group>
-      {/* enlarged single-die compute detail (AI Core + SRAM + Tile dataflow) */}
-      <DieDetail overlays={overlays} onHoverInfo={onHoverInfo} />
+      {/* leader: selected NPU → die inset */}
+      <lineSegments geometry={leaderGeo}><lineBasicMaterial color={selColor} transparent opacity={0.8} /></lineSegments>
+      {/* enlarged single-die compute detail of the selected NPU */}
+      <DieDetail npuIdx={selected} overlays={overlays} onHoverInfo={onHoverInfo} />
     </group>
   );
 }
@@ -763,6 +784,9 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
   const dims = SCALES[scale].dims;
   const { n, cell } = useMemo(() => makeAdjacency(dims), [dims]);
   const ref = useRef<THREE.InstancedMesh>(null);
+  const modelRef = useRef<THREE.InstancedMesh>(null);
+  const lastMat = useRef(-1);     // guard: only setState when hovered cell changes
+  const lastModel = useRef(-1);
   const [hoverCell, setHoverCell] = useState<[number, number] | null>(null);  // from matrix
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);              // from 3D model
 
@@ -834,6 +858,29 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
   const boardOf = (k: number) => Math.floor(k / dims[0]);
   const localOf = (k: number) => k % dims[0];
 
+  // model instance transforms + colours (recomputed only when highlight changes)
+  useLayoutEffect(() => {
+    const mesh = modelRef.current;
+    if (!mesh) return;
+    const m = new THREE.Matrix4();
+    const col = new THREE.Color();
+    const base = new THREE.Color(LC.npuBody);
+    for (let k = 0; k < n; k++) {
+      const on = hi.npus.includes(k);
+      const s = on ? 0.22 : 0.13;
+      m.makeScale(s, s, s);
+      m.setPosition(posArr[k][0], posArr[k][1], posArr[k][2]);
+      mesh.setMatrixAt(k, m);
+      if (on) {
+        const lvl = hi.pair ? cell(hi.pair[0], hi.pair[1]).level : 1;
+        col.set(L(lvl));
+      } else col.copy(base);
+      mesh.setColorAt(k, col);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [posArr, hi, n, cell]);
+
   return (
     <group>
       <Floor size={16} />
@@ -846,7 +893,8 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
           onPointerMove={(e) => {
             e.stopPropagation();
             const id = e.instanceId;
-            if (id === undefined) return;
+            if (id === undefined || id === lastMat.current) return;   // only on cell change
+            lastMat.current = id;
             const i = Math.floor(id / n), j = id % n;
             setHoverCell([i, j]); setHoverNpu(null);
             const a = cell(i, j);
@@ -855,7 +903,7 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
               : `多跳 ×${a.hops}（经 ${UB_LEVELS[a.level].id}）`;
             onHoverInfo(`NPU ${i} ↔ NPU ${j}：${desc}（右侧 3D 同步高亮）`);
           }}
-          onPointerOut={() => { setHoverCell(null); onHoverInfo(null); }}
+          onPointerOut={() => { lastMat.current = -1; setHoverCell(null); onHoverInfo(null); }}
         >
           <planeGeometry args={[1, 1]} />
           <meshBasicMaterial toneMapped={false} />
@@ -882,20 +930,23 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
       <group position={MODEL_POS}>
         <lineSegments geometry={links.l1}><lineBasicMaterial color={L(1)} transparent opacity={hi.npus.length ? 0.15 : 0.45} /></lineSegments>
         <lineSegments geometry={links.l2}><lineBasicMaterial color={L(2)} transparent opacity={hi.npus.length ? 0.1 : 0.3} /></lineSegments>
-        {posArr.map((p, k) => {
-          const on = hi.npus.includes(k);
-          const lvlColor = hi.pair && k === hi.pair[1] ? L(cell(hi.pair[0], hi.pair[1]).level) : L(1);
-          return (
-            <mesh key={k} position={p} scale={on ? 1.7 : 1}
-              onPointerOver={(e) => { e.stopPropagation(); setHoverNpu(k); setHoverCell(null); onHoverInfo(`NPU ${k}（板 ${boardOf(k)} · 本地 ${localOf(k)}）：板内→L1，跨板→L2（左侧矩阵同步高亮行列）`); }}
-              onPointerOut={() => { setHoverNpu(null); onHoverInfo(null); }}
-            >
-              <boxGeometry args={[0.14, 0.14, 0.14]} />
-              <meshStandardMaterial color={on ? lvlColor : LC.npuBody} emissive={on ? lvlColor : '#000000'} emissiveIntensity={on ? 0.8 : 0} metalness={0.3} roughness={0.5} />
-              <Edges color={on ? lvlColor : LC.rackEdge} threshold={20} />
-            </mesh>
-          );
-        })}
+        {/* NPUs as a single instanced mesh (perf) */}
+        <instancedMesh
+          ref={modelRef}
+          args={[undefined, undefined, n]}
+          onPointerMove={(e) => {
+            e.stopPropagation();
+            const k = e.instanceId;
+            if (k === undefined || k === lastModel.current) return;
+            lastModel.current = k;
+            setHoverNpu(k); setHoverCell(null);
+            onHoverInfo(`NPU ${k}（板 ${boardOf(k)} · 本地 ${localOf(k)}）：板内→L1，跨板→L2（左侧矩阵同步高亮行列）`);
+          }}
+          onPointerOut={() => { lastModel.current = -1; setHoverNpu(null); onHoverInfo(null); }}
+        >
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial metalness={0.3} roughness={0.5} toneMapped={false} />
+        </instancedMesh>
         {/* emphasised pair link */}
         {hi.pair && hi.pair[0] !== hi.pair[1] && cell(hi.pair[0], hi.pair[1]).direct && (
           <LinkTube a={posArr[hi.pair[0]]} b={posArr[hi.pair[1]]} color={L(cell(hi.pair[0], hi.pair[1]).level)} />
