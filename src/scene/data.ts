@@ -84,6 +84,16 @@ export const COMM_PATTERNS: CommPattern[] = [
   { id: 'thread', color: '#22d3ee', label: 'die 内线程 / AI Core 流' },
 ];
 
+// ─── Trace timeline (illustrative training-iteration schedule, NOT a real profile) ─
+export type Phase = 'load' | 'compute' | 'comm' | 'store';
+export const TRACE_SCHED: Phase[] = ['load', 'compute', 'compute', 'comm', 'compute', 'compute', 'comm', 'store'];
+export const PHASE_META: Record<Phase, { name: string; color: string }> = {
+  load:    { name: '加载',           color: '#c2c9d4' },
+  compute: { name: '计算（算子/Tile）', color: '#22d3ee' },
+  comm:    { name: '通信 AllReduce',  color: '#f43f5e' },
+  store:   { name: '存储',           color: '#aab4c4' },
+};
+
 export const RACK_COLORS = {
   accent: '#e0252f',
   computeGlow: '#38bdf8',

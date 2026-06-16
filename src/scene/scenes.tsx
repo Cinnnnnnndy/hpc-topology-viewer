@@ -13,7 +13,7 @@
  * Display text with product/brand terms is sourced from ../content (decoded at
  * runtime); this file carries no plaintext product names.
  */
-import { Suspense, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Suspense, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { Text as DreiText, Edges, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -21,7 +21,7 @@ import {
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
   UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
-  SCALES, makeAdjacency,
+  SCALES, makeAdjacency, TRACE_SCHED,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale,
 } from './data';
 import { TOK } from '../content';
@@ -1234,21 +1234,11 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
 
 export interface LocateTarget { rank: number; blade: number; thread: number | null }
 
-export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocate?: (t: LocateTarget | null) => void }) {
+export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { onLocate?: (t: LocateTarget | null) => void; tick: number | null }) {
   const [sel, setSel] = useState<{ p: number; t: number | null } | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [tick, setTick] = useState<number | null>(null);
-  const P = 4, T = 3, NT = 8;
-  const sched = ['L', 'C', 'C', 'M', 'C', 'C', 'M', 'S'];   // L=load C=compute M=comm S=store
-  const phaseColor: Record<string, string> = { L: '#c2c9d4', C: THREAD_COLOR, M: COMM_PATTERNS[0].color, S: '#aab4c4' };
-  const phaseName: Record<string, string> = { L: '加载', C: '计算', M: '通信 AllReduce', S: '存储' };
+  const P = 4, T = 3;
   const bladeOf = (p: number) => Math.floor(p / 2);
 
-  useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setTick((t) => ((t ?? -1) + 1) % NT), 750);
-    return () => clearInterval(id);
-  }, [playing]);
   const pick = (s: { p: number; t: number | null } | null) => { setSel(s); onLocate?.(s ? { rank: s.p, blade: bladeOf(s.p), thread: s.t } : null); };
 
   // horizontal positions (entities spread along X), vertical layers (like UB hierarchy)
@@ -1257,8 +1247,8 @@ export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocat
   const xB = (b: number) => (xP(2 * b) + xP(2 * b + 1)) / 2;
   const yThread = 0.7, yProc = 1.7, yNpu = 2.8, yBlade = 3.8, yCab = 4.8, ySuper = 5.7;
 
-  const phase = tick === null ? null : sched[tick];
-  const computeNow = phase === 'C', commNow = phase === 'M';
+  const phase = tick === null ? null : TRACE_SCHED[tick];
+  const computeNow = phase === 'compute', commNow = phase === 'comm';
 
   // selection chain flags
   const tOn = (p: number, t: number) => sel?.p === p && (sel.t === null || sel.t === t);
@@ -1290,9 +1280,6 @@ export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocat
 
   const rowLabel = (y: number, label: string, color: string) =>
     <Text position={[-3.8, y, 0]} fontSize={0.15} color={color} anchorX="right" anchorY="middle">{label}</Text>;
-
-  // bottom time strip
-  const stx = (k: number) => (k - (NT - 1) / 2) * 0.5;
 
   return (
     <group>
@@ -1362,29 +1349,8 @@ export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocat
         <Text position={[0, 0, 0.2]} fontSize={0.12} color={L(3)} anchorX="center" anchorY="middle">超节点</Text>
       </group>
 
-      {/* ── bottom time strip + play (kept above the floor so it stays visible) ── */}
-      <group position={[0, 0.25, 0]}>
-        <group position={[stx(0) - 0.7, 0, 0]}
-          onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
-          onPointerOut={() => setCursor(false)}
-          onClick={(e) => { e.stopPropagation(); setPlaying((v) => !v); if (tick === null) setTick(0); }}
-        >
-          <Slab size={[0.5, 0.26, 0.04]} color={playing ? '#cdd9fb' : '#eef1f6'} edgeColor={LC.primary} />
-          <Text position={[0, 0, 0.04]} fontSize={0.11} color={LC.primary} anchorX="center" anchorY="middle">{playing ? '⏸' : '▶'}</Text>
-        </group>
-        {sched.map((ph, k) => (
-          <group key={k} position={[stx(k), 0, 0]}>
-            <Slab size={[0.44, 0.24, 0.04]} color={phaseColor[ph]} emissive={phaseColor[ph]} emissiveIntensity={tick === k ? 0.9 : 0.3} edgeColor={tick === k ? LC.primary : 'transparent'} />
-            <Text position={[0, 0, 0.04]} fontSize={0.085} color="#33405a" anchorX="center" anchorY="middle">{`t${k}`}</Text>
-          </group>
-        ))}
-        <Text position={[stx(NT - 1) + 0.7, 0, 0]} fontSize={0.13} color={tick !== null ? LC.primary : LC.textDim} anchorX="left" anchorY="middle">
-          {tick === null ? '时序 →' : `t${tick} · ${phaseName[sched[tick]]}`}
-        </Text>
-      </group>
-
       <Text position={[0, 0.02, 1.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">
-        {'线程/进程水平排布 · 硬件层级竖向（与 UB 互联一致）· ▶ 播放看时序 · 点击线程/进程定位+联动'}
+        {'线程/进程水平排布 · 硬件层级竖向（与 UB 互联一致）· 顶栏播放看时序 · 点击线程/进程定位+联动'}
       </Text>
     </group>
   );

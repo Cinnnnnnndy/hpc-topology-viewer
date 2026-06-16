@@ -16,7 +16,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
-  SCALES, DEFAULT_SCALE,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META,
   type Gen, type RackKind, type ViewMode, type Scale,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -87,6 +87,14 @@ export function ClusterView() {
   const [overlays, setOverlays] = useState<CommOverlays>({ ring: false, a2a: false, tile: true, cores: true });
   const [locate, setLocate] = useState<LocateTarget | null>(null);   // from trace view
   const [hl, setHl] = useState<{ npu: number; blade: number; cabinet: number } | null>(null);
+  const [traceTick, setTraceTick] = useState<number | null>(null);
+  const [tracePlaying, setTracePlaying] = useState(false);
+
+  useEffect(() => {
+    if (!tracePlaying) return;
+    const id = setInterval(() => setTraceTick((t) => ((t ?? -1) + 1) % TRACE_SCHED.length), 750);
+    return () => clearInterval(id);
+  }, [tracePlaying]);
 
   const spec = GENERATIONS[gen];
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
@@ -272,7 +280,7 @@ export function ClusterView() {
             {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} highlight={hl ? { npu: hl.npu, blade: hl.blade } : null} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
-            {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} />}
+            {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -317,6 +325,42 @@ export function ClusterView() {
               <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
               <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>← 回时序</button>
               <button onClick={() => setHl(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}>清除</button>
+            </div>
+          )}
+
+          {/* trace timeline media control (HTML overlay, not a 3D object) */}
+          {mode === 'trace' && (
+            <div style={{
+              position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+              background: 'rgba(255,255,255,0.96)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8,
+            }}>
+              <button
+                onClick={() => { setTracePlaying((v) => !v); if (traceTick === null) setTraceTick(0); }}
+                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: tracePlaying ? '#4369ef' : 'white', color: tracePlaying ? 'white' : '#4369ef', fontSize: 13 }}
+              >{tracePlaying ? '⏸' : '▶'}</button>
+              {/* phase scrubber */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {TRACE_SCHED.map((ph, k) => (
+                  <button
+                    key={k}
+                    title={PHASE_META[ph].name}
+                    onClick={() => { setTracePlaying(false); setTraceTick(k); }}
+                    style={{
+                      width: 26, height: 18, cursor: 'pointer', borderRadius: 3,
+                      border: traceTick === k ? '2px solid #1c2433' : '1px solid rgba(0,0,0,0.12)',
+                      background: PHASE_META[ph].color, opacity: traceTick === null || traceTick === k ? 1 : 0.55,
+                      fontSize: 8, color: '#33405a',
+                    }}
+                  >{`t${k}`}</button>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: '#4369ef', minWidth: 96 }}>
+                {traceTick === null ? '示意时序（点块/播放）' : `t${traceTick} · ${PHASE_META[TRACE_SCHED[traceTick]].name}`}
+              </span>
+              {traceTick !== null && (
+                <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.5)' }}>复位</button>
+              )}
             </div>
           )}
 
