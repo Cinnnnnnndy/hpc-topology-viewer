@@ -21,7 +21,7 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, type CommOverlays,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, type CommOverlays,
 } from '../scene/scenes';
 
 /** Imperatively reposition camera + controls when the view changes, without
@@ -49,6 +49,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
+  trace:    { pos: [0, 3.2, 12.5], target: [0, 3.0, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -58,6 +59,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'topology', label: 'UB 互联层级' },
   { id: 'matrix',   label: '邻接矩阵' },
   { id: 'mapping',  label: '软硬件映射' },
+  { id: 'trace',    label: '线程时序' },
 ];
 
 // per-mode overlay toggles
@@ -92,7 +94,8 @@ export function ClusterView() {
     mode === 'rack' ? (rackKind === 'compute' ? 'computeRack' : 'switchRack') :
     mode === 'node' ? (nodeKind === 'ubswitch' ? 'ubswitch' : 'node') :
     mode === 'matrix' ? 'matrix' :
-    mode === 'mapping' ? 'mapping' : 'topology';
+    mode === 'mapping' ? 'mapping' :
+    mode === 'trace' ? 'trace' : 'topology';
   const info = INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
@@ -266,6 +269,7 @@ export function ClusterView() {
             {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
+            {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -305,7 +309,19 @@ export function ClusterView() {
                 <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>灰线 = 其他层级映射 · 点击高亮</span>
               </>
             )}
-            {mode !== 'matrix' && mode !== 'mapping' && (
+            {mode === 'trace' && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>时序 / 定位</div>
+                {([['计算（线程）', COMM_PATTERNS[2].color], ['通信 AllReduce（进程）', COMM_PATTERNS[0].color], ['加载 / 存储', '#c2c9d4']] as [string, string][]).map(([t, c]) => (
+                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 8, background: c, display: 'inline-block', borderRadius: 1 }} />
+                    <span style={{ color: 'rgba(0,0,0,0.6)' }}>{t}</span>
+                  </span>
+                ))}
+                <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>点击线程/进程 → 顶部定位 NPU/刀片/机柜</span>
+              </>
+            )}
+            {mode !== 'matrix' && mode !== 'mapping' && mode !== 'trace' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

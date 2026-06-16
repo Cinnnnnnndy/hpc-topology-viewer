@@ -86,6 +86,16 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
       dc('5bemPei9r+S7tuWxgue6p++8jOWPsz3noazku7blsYLnuqfvvIzov57nur895pig5bCE77yb54K55Ye75p+Q5bGC6auY5Lqu5a+55bqU5pig5bCE'),
     ],
   },
+  trace: {
+    title: dc('57q/56iLIC8g6L+b56iL5pe25bqPIOKGlCDnoazku7blrprkvY0='),
+    lines: [
+      dc('5pyA5LiL5bGCPee6v+eoiyhBSSBDb3JlL1RpbGUp77yM5YW25LiKPei/m+eoiyhyYW5rKe+8jOaMieaXtuW6j++8iOW3puKGkuWPs++8ieWxleW8gCBbN10='),
+      dc('5pe25bqP5Z2X77ya5Yqg6L29IC8g6K6h566XKOmdkikgLyDpgJrkv6EgQWxsUmVkdWNlKOeyiSkgLyDlrZjlgqgo54GwKSBbN10='),
+      dc('54K55Ye75p+Q57q/56iL5oiW6L+b56iLIOKGkiDpobbpg6jpq5jkuq7lhbYgTlBVIC8g5YiA54mHIC8g5py65p+cIOeJqeeQhuWumuS9jSBbMV0='),
+      dc('6L+b56iLPU5QVe+8jOe6v+eoiz1kaWUg5YaFIEFJIENvcmXvvJvpm4blkIjpgJrkv6HotbAgVUIg5ZCE57qnIFsxXQ=='),
+      dc('5oqK4oCc6L2v5Lu25omn6KGM5pe25bqP4oCd5LiO4oCc56Gs5Lu254mp55CG5L2N572u4oCd5a+55bqU6LW35p2l'),
+    ],
+  },
   node: {
     title: dc('6K6h566X6IqC54K577yI5YiA54mHIMK3IGRpZSAvIEFJIENvcmUgLyBUaWxl77yJ'),
     lines: [

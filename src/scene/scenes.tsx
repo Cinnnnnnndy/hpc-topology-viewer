@@ -1218,3 +1218,116 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
     </group>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. Execution timeline ↔ hardware locator (thread/process by time → NPU/blade/cabinet)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function TraceScene({ onHoverInfo }: SceneCallbacks) {
+  const [sel, setSel] = useState<{ p: number; t: number | null } | null>(null);
+  const P = 4, T = 3, NT = 8;
+  // phase schedule (shared shape): L=load C=compute M=comm(AllReduce) S=store
+  const sched = ['L', 'C', 'C', 'M', 'C', 'C', 'M', 'S'];
+  const phaseColor: Record<string, string> = { L: '#c2c9d4', C: THREAD_COLOR, M: COMM_PATTERNS[0].color, S: '#aab4c4' };
+
+  // mapping: rank p → NPU p → blade floor(p/2) → cabinet 0
+  const bladeOf = (p: number) => Math.floor(p / 2);
+
+  const x0 = -3.4, x1 = 3.0, tickW = (x1 - x0) / NT;
+  const tx = (k: number) => x0 + tickW * (k + 0.5);
+  const laneH = 0.24, gap = 0.16;
+  const groupH = (T + 1) * laneH + gap;
+  const baseY = 0.4;
+  const procLaneY = (p: number) => baseY + p * groupH + T * laneH + laneH / 2;
+  const threadLaneY = (p: number, t: number) => baseY + p * groupH + t * laneH + laneH / 2;
+  const hwY = baseY + P * groupH + 0.7;
+
+  const Block = ({ x, y, color, on, w }: { x: number; y: number; color: string; on: boolean; w: number }) => (
+    <Slab size={[w, laneH * 0.78, 0.05]} position={[x, y, 0]} color={color} emissive={color} emissiveIntensity={on ? 0.8 : 0.25} />
+  );
+
+  return (
+    <group>
+      <Floor size={14} />
+      {/* time axis */}
+      <Line points={[[x0, baseY - 0.2, 0], [x1, baseY - 0.2, 0]]} color={LC.rackEdge} lineWidth={1.5} />
+      <Text position={[x1 + 0.1, baseY - 0.2, 0]} fontSize={0.14} color={LC.textDim} anchorX="left">时间 →</Text>
+      {sched.map((_ph, k) => (
+        <Text key={k} position={[tx(k), baseY - 0.4, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">{`t${k}`}</Text>
+      ))}
+
+      {/* process + thread lanes (per rank group: threads below, process above) */}
+      {Array.from({ length: P }, (_, p) => {
+        const pSel = sel?.p === p;
+        return (
+          <group key={p}>
+            {/* process lane (comm / load / store) */}
+            <group
+              onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 rank ${p}（= NPU ${p}）· 集合通信(粉)走 UB；点击定位硬件`); }}
+              onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+              onClick={(e) => { e.stopPropagation(); setSel(sel?.p === p && sel.t === null ? null : { p, t: null }); }}
+            >
+              <Slab size={[x1 - x0 + 0.1, laneH * 0.92, 0.02]} position={[(x0 + x1) / 2, procLaneY(p), -0.02]} color={pSel && sel?.t === null ? '#dbe4fb' : '#eef1f6'} edgeColor={pSel ? PROC_COLOR : LC.rackEdge} />
+              {sched.map((ph, k) => (ph === 'M' || ph === 'L' || ph === 'S') && (
+                <Block key={k} x={tx(k)} y={procLaneY(p)} w={tickW * 0.84} color={phaseColor[ph]} on={pSel} />
+              ))}
+              <Text position={[x0 - 0.15, procLaneY(p), 0]} fontSize={0.11} color={pSel ? PROC_COLOR : LC.text} anchorX="right" anchorY="middle">{`进程 rank ${p}`}</Text>
+            </group>
+            {/* thread lanes (compute) */}
+            {Array.from({ length: T }, (_, t) => {
+              const tSel = sel?.p === p && sel?.t === t;
+              return (
+                <group key={t}
+                  onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 ${p} · 线程/Tile ${t}（= die 内 AI Core）· 计算(青)；点击定位硬件`); }}
+                  onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+                  onClick={(e) => { e.stopPropagation(); setSel(tSel ? null : { p, t }); }}
+                >
+                  <Slab size={[x1 - x0 + 0.1, laneH * 0.86, 0.02]} position={[(x0 + x1) / 2, threadLaneY(p, t), -0.02]} color={tSel ? '#d8f5fb' : '#f4f7fb'} edgeColor={tSel ? THREAD_COLOR : '#e1e6ee'} />
+                  {sched.map((ph, k) => ph === 'C' && (
+                    <Block key={k} x={tx(k)} y={threadLaneY(p, t)} w={tickW * 0.84} color={phaseColor.C} on={tSel || (sel?.p === p && sel?.t === null)} />
+                  ))}
+                  <Text position={[x0 - 0.15, threadLaneY(p, t), 0]} fontSize={0.085} color={tSel ? THREAD_COLOR : LC.textDim} anchorX="right" anchorY="middle">{`线程 ${t}`}</Text>
+                </group>
+              );
+            })}
+          </group>
+        );
+      })}
+
+      {/* hardware locator band (top): NPU → 刀片 → 机柜, lit for the selected rank */}
+      <Text position={[x0 - 0.15, hwY + 0.5, 0]} fontSize={0.14} color={LC.text} anchorX="right">硬件定位 ↑</Text>
+      {sel === null ? (
+        <Text position={[0, hwY + 0.4, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">点击下方某个线程 / 进程，这里显示其 NPU · 刀片 · 机柜</Text>
+      ) : (
+        <group>
+          {/* connector from selected lane up to hardware band */}
+          <Line points={[[-1.6, (sel.t === null ? procLaneY(sel.p) : threadLaneY(sel.p, sel.t)), 0], [-1.6, hwY - 0.2, 0]]} color={PROC_COLOR} lineWidth={2} dashed dashScale={5} transparent opacity={0.7} />
+          {/* NPU */}
+          <group position={[-1.6, hwY, 0]}>
+            <NpuChip w={0.5} h={0.3} hovered selected />
+            <Text position={[0, -0.45, 0]} fontSize={0.13} color={PROC_COLOR} anchorX="center">{`NPU ${sel.p}（rank ${sel.p}）`}</Text>
+          </group>
+          <Line points={[[-1.25, hwY, 0], [-0.35, hwY, 0]]} color={LC.rackEdge} lineWidth={2} />
+          {/* blade */}
+          <group position={[0.1, hwY, 0]}>
+            <BladeTray w={0.7} d={0.5} hovered />
+            <Text position={[0, -0.45, 0]} fontSize={0.13} color={LC.text} anchorX="center">{`刀片 B${bladeOf(sel.p)}`}</Text>
+          </group>
+          <Line points={[[0.5, hwY, 0], [1.4, hwY, 0]]} color={LC.rackEdge} lineWidth={2} />
+          {/* cabinet */}
+          <group position={[1.9, hwY - 0.25, 0]}>
+            <CabinetBox w={0.4} h={0.55} d={0.25} kind="compute" hovered />
+            <Text position={[0, -0.2, 0]} fontSize={0.13} color={LC.text} anchorX="center">机柜 C0</Text>
+          </group>
+          {sel.t !== null && (
+            <Text position={[-1.6, hwY + 0.42, 0]} fontSize={0.12} color={THREAD_COLOR} anchorX="center">{`线程 ${sel.t} = die 内 AI Core`}</Text>
+          )}
+        </group>
+      )}
+
+      <Text position={[0, 0.02, 1.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">
+        {'下层=线程(计算) · 上层=进程(通信) · 按时序展开 · 点击定位到 NPU/刀片/机柜'}
+      </Text>
+    </group>
+  );
+}
