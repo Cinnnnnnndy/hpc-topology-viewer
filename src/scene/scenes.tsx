@@ -431,6 +431,12 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
           {part.type === 'npu' ? `${TOK.ascendEn} ${TOK.n950dt}` : `${TOK.kunpengEn} ${TOK.n950}`}
         </Text>
       )}
+      {/* software overlay: process(rank) tag on each NPU */}
+      {part.type === 'npu' && part.npuIdx !== undefined && (
+        <Text position={[0, sy * S * 1.05, sz * S * 0.66]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.05} color="#4369ef" anchorX="center" anchorY="middle">
+          {`rank ${part.npuIdx}`}
+        </Text>
+      )}
     </group>
   );
 }
