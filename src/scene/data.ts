@@ -39,6 +39,14 @@ export interface GenSpec {
   trainTokps: string;
   inferTokps: string;
   superclusterNpu: string;  // cluster-level scale
+  // per-chip specs (A5 from the Ascend 950 whitepaper; A6 estimated/derived)
+  memGB: number;            // per-chip HBM capacity
+  fp4Tflops: number | null; // per-chip MXFP4 TFLOPS
+  fp8Tflops: number | null; // per-chip FP8-class TFLOPS
+  l2MB: number | null;      // global L2 cache
+  ubGBs: number;            // per-chip UB bandwidth (GB/s, bidirectional)
+  aiSubsys: number | null;  // AI subsystems (each = 1 Cube + 2 Vector)
+  estimated?: boolean;      // per-chip figures are estimates (A6)
 }
 
 export const GENERATIONS: Record<Gen, GenSpec> = {
@@ -48,6 +56,7 @@ export const GENERATIONS: Record<Gen, GenSpec> = {
     computeCabs: 128, commCabs: 32, totalCabs: 160, footprintM2: 1000,
     hbm: TOK.hbmZQ, release: '2026 Q4', trainTokps: '4.91M tok/s', inferTokps: '19.6M tok/s',
     superclusterNpu: '>52万',
+    memGB: 144, fp4Tflops: 2007, fp8Tflops: 1034, l2MB: 128, ubGBs: 2016, aiSubsys: 36,
   },
   A6: {
     code: 'A6', name: TOK.atlas960, npuLabel: `${TOK.ascend} ${TOK.n960}`, npuShort: TOK.n960,
@@ -55,6 +64,7 @@ export const GENERATIONS: Record<Gen, GenSpec> = {
     computeCabs: 176, commCabs: 44, totalCabs: 220, footprintM2: 2200,
     hbm: TOK.hbmZQ, release: '2027 Q4', trainTokps: '15.9M tok/s', inferTokps: '80.5M tok/s',
     superclusterNpu: '>100万',
+    memGB: 288, fp4Tflops: 3874, fp8Tflops: 1937, l2MB: null, ubGBs: 4032, aiSubsys: null, estimated: true,
   },
 };
 

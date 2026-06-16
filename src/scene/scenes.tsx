@@ -513,11 +513,11 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
       {/* substrate */}
       <Slab size={[DIE.w + 0.1, 0.03, DIE.d + 0.1]} position={[0, 0, 0]} color="#eef1f6" edgeColor={LC.rackEdge} />
       {/* HBM stack (left) */}
-      <Block x={-hx + 0.18} z={0} w={0.22} d={DIE.d * 0.8} label="HBM" color="#cdd6e4" />
+      <Block x={-hx + 0.18} z={0} w={0.22} d={DIE.d * 0.8} label="HBM 144GB" color="#cdd6e4" />
       {/* L1 SRAM */}
-      <Block x={-hx + 0.62} z={0} w={0.2} d={DIE.d * 0.7} label="L1" color="#d6e0f0" />
+      <Block x={-hx + 0.62} z={0} w={0.2} d={DIE.d * 0.7} label="L1 512KB" color="#d6e0f0" />
       {/* L0A/L0B buffers */}
-      <Block x={-0.1} z={hz - 0.28} w={0.5} d={0.18} label="L0A/L0B" color="#dbe6f2" />
+      <Block x={-0.1} z={hz - 0.28} w={0.5} d={0.18} label="L0A/B 64KB" color="#dbe6f2" />
       {/* AI Core array: Cube + Vector */}
       {overlays.cores && (
         <group>
@@ -537,11 +537,11 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
                 color="#7dd3fc" emissive="#7dd3fc" emissiveIntensity={0.35} />
             );
           })}
-          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.075} color={cubeColor} anchorX="center">Cube ×16</Text>
+          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · Cube+2Vector ×36/芯片</Text>
         </group>
       )}
       {/* L0C accumulator */}
-      <Block x={0.55} z={-hz + 0.3} w={0.5} d={0.18} label="L0C" color="#dbe6f2" />
+      <Block x={0.55} z={-hz + 0.3} w={0.5} d={0.18} label="L0C 256KB" color="#dbe6f2" />
       {/* tile dataflow */}
       {overlays.tile && (
         <group

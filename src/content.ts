@@ -30,6 +30,9 @@ export const TOK = {
   qingtian: dc('5pOO5aSpIFFpbmd0aWFuIERQVQ=='),
   pypto: dc('UHlQVE8='),
   cann: dc('Q0FOTg=='),
+  davinci: dc('6L6+6Iqs5aWHIERhVmluY2k='),
+  linx: dc('TGlueDgxNg=='),
+  hif8: dc('SGlGOA=='),
   cooling: dc('5YWo5ray5Ya377yI5Ya35p2/5byP77yJwrcg6K6h566X5p+c5ray5Ya3ICsg6YCa5L+h5p+c5YWo5YWJ'),
 } as const;
 
@@ -99,23 +102,23 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
   node: {
     title: dc('6K6h566X6IqC54K577yI5YiA54mHIMK3IGRpZSAvIEFJIENvcmUgLyBUaWxl77yJ'),
     lines: [
-      dc('OMOXIOaYh+iFviA5NTBEVO+8muWwgeijheWGheWkmiBkaWXvvIxkaWUg6Ze0IFVCL1NJTyDnm7Tov54gWzFd'),
-      dc('6IqC54K55YaFIDggTlBVIOadv+i9vSBVQiAyRC1NZXNo77yITDHvvInlhajkupLogZTvvIzljZUgTlBVIDIgVEIvcyBbMV0='),
-      dc('ZGllIOWGhe+8mkFJIENvcmUg6Zi15YiX77yIQ3ViZSArIFZlY3Rvcu+8iSsg5aSa57qnIFNSQU3vvIhMMS9MMO+8iVs3XQ=='),
-      dc('57q/56iLL1RpbGUg57qn77yaVGlsZVNoYXBlIOWIh+WIhu+8jEhCTeKGkkwx4oaSTDDihpJDdWJlIOaVsOaNrua1geawtCBbN10='),
-      dc('566X5a2Q5byA5Y+R5Y+C6ICDIFRpbGVMYW5nIC8gUHlQVE/vvIjnmb3nm5IgVGlsZSDnvJbnqIvCt0NBTk7vvIlbN10='),
-      dc('5rOo77ya5p2/5YaFIC8gZGllIOWGheW4g+WxgOS4uuekuuaEj++8jOmdnuecn+WuniBsYXlvdXQ='),
+      dc('OMOXIOaYh+iFviA5NTBEVO+8muWQiOWwgSAyIEFJIERpZSArIDIgSU8gRGll77yMVU1BIOe7n+S4gOiuv+WtmCBbOF0='),
+      dc('5q+P6Iqv54mHIDM2IEFJIOWtkOezu+e7nyA9IEN1YmXDlzEgKyBWZWN0b3LDlzLvvIjnrKzkuInku6Mg6L6+6Iqs5aWHIERhVmluY2nvvIlbOF0='),
+      dc('ZGllIOWGhSBTUkFN77yaTDEgNTEyS0IgLyBMMEHCt0wwQiA2NEtCIC8gTDBDIDI1NktCIC8gVUIgNTEyS0LvvJtMMiAxMjhNQiBbOF0='),
+      dc('57q/56iLL1RpbGXvvJpTSU1EL1NJTVQg5re35ZCIICsgTkRETUEg5aSa57u05pCs6L+Q77ybSEJN4oaSTDHihpJMMOKGkkN1YmUg5rWB5rC0IFs4XQ=='),
+      dc('5Y2V5Y2hIEhpRjgvRlA4IDEwMzQgwrcgTVhGUDQgMjAwNyBURkxPUFMgwrcgSGlaUSAyLjAgMTQ0R0IvNFRCL3MgWzhd'),
+      dc('566X5a2Q5byA5Y+RIFRpbGVMYW5nIC8gUHlQVE/vvIhDQU5O77yJ77yb5rOo77ya5biD5bGA5Li656S65oSPIFs3XQ=='),
     ],
   },
   topology: {
     title: dc('54G16KGi5LqS6IGU5bGC57qn77yI5bGC5YaFIGZ1bGwtbWVzaCArIOWxgumXtOWMheWQqyArIENsb3PvvIk='),
     lines: [
       dc('TDAg54mH5YaF77ya5piH6IW+IDk1MCDlsIHoo4XlhoUgZGllIOmXtCBVQiDnm7Tov54gWzFd'),
-      dc('TDEg5YiA54mHL+iKgueCueWGhe+8mjjDlyBOUFUg5YWo5LqS6IGU77yIZnVsbC1tZXNo77yM5q+P6aKX5a+55omA5pyJ77yJwrcg5Y2VIE5QVSAyIFRCL3MgWzFd'),
+      dc('TDEg5YiA54mHL+iKgueCueWGhe+8mjjDlyBOUFUg5YWo5LqS6IGU77yIZnVsbC1tZXNo77yJwrcg5Y2VIE5QVSBVQiAyMDE2IEdCL3PvvIgxOMOXMTEyR2Jwc++8iVs4XQ=='),
       dc('TDIg5py65p+c5YaF77yaOCDliIDniYcgLyA2NCBOUFUg6Leo5YiA54mHIG5ELUZ1bGxNZXNoIOWFqOS6kuiBlO+8iOWkjeadguS6pOmUme+8jOmdnueugOWNleiBmuWQiO+8iVsxXQ=='),
-      dc('TDMg6LaF6IqC54K55YaF77yaTiDmnLrmn5wg57uPIFVCIOS6pOaNoijpgJrkv6Hmn5wpIENsb3Mg5YWo5LqS6IGUIFszXQ=='),
+      dc('TDMg6LaF6IqC54K55YaF77yaQ2xvcyAvIEZ1bGwgTWVzaCtDbG9zIC8gbkQtTWVzaCDCtyA4MTkyIOWNoe+8jOmbhue+pCA+MTI4SyDljaEgWzhd'),
       dc('5bGC5YaF5Lqk6ZSZ57q/PeWunumZhSBVQiDlhajkupLogZTvvJvmoYY95YiA54mHL+acuuafnOiMg+WbtO+8m+eBsOiZmue6vz3lsYLnuqfljIXlkKs='),
-      dc('5Y+g5Yqg77ya6L+b56iL57qnIFJpbmctQWxsUmVkdWNlIC8gQWxsLXRvLUFsbChNb0Up77yI6aG25qCP5byA5YWz77yJWzFd'),
+      dc('5Y+g5Yqg77ya6L+b56iL57qnIFJpbmctQWxsUmVkdWNlIC8gQWxsLXRvLUFsbO+8jOeUsSBDQ1Ug56Gs5Lu25Y246L296ZuG5ZCI6YCa5L+hIFs4XQ=='),
     ],
   },
   matrix: {
@@ -142,6 +145,7 @@ export const CHANGES: string[] = [
   dc('5Y2P6K6u77yaVW5pZmllZEJ1cyAxLjAg4oaSIDIuMO+8iDIuMcK1cyDCtyA+MjAwbSDCtyAxMDBucyDmlYXpmpzmo4DmtYsgwrcgMTAww5cg5Y+v6Z2g77yJWzNd'),
   dc('5b2i5oCB77yaMTYg5p+cKDEyKzQpIOKGkiAxNjAg5p+cKDEyOCszMikgLyAyMjAg5p+cKDE3Nis0NCkgWzNd'),
   dc('5paw5aKe5YiG5p6Q77yaVUIg6YK75o6l55+p6Zi1ICsgZGllL0FJIENvcmUvVGlsZSDnuqfmlbDmja7mtYHlj6/op4bljJYgWzFdWzdd'),
+  dc('55m955qu5Lmm5qCh5YeG77yaMzYgQUkg5a2Q57O757ufKEN1YmUrMlZlY3RvcikgwrcgU1JBTSDlkITnuqflrrnph48gwrcg5Y2V5Y2hIFVCIDIwMTZHQi9zIMK3IENDVS9VUk1BL1VCIE1lbW9yeSBbOF0='),
 ];
 
 /** Reference citations shown at the bottom of the info panel. */
@@ -153,6 +157,7 @@ export const SOURCES: string[] = [
   dc('WzVdIOezu+e7n+e6p+aVsOaNruaxh+aAu++8mmNsb3VkY29tcHV0aW5nLW5ld3MgLyBjb252ZXF1aXR5IOaKpemBkw=='),
   dc('WzZdIOi2heiKgueCueWxleWHuuWunuaLjSAvIOekuuaEj++8iOeUqOaIt+aPkOS+m++8iQ=='),
   dc('WzddIOeul+WtkOW8gOWPke+8mlRpbGVMYW5nIChhclhpdjoyNTA0LjE3NTc3KSAvIFB5UFRPIMK3IENBTk4gVGlsZSDnvJbnqIs='),
+  dc('WzhdIOOAiuaYh+iFvjk1MCBOUFUg5p625p6E55m955qu5Lmm44CL77yI5Y2O5Li677yMMjAyNu+8iQ=='),
 ];
 
 export const FOOTNOTE = dc('5rOo77yaZGllIC8g6IqC54K5IC8g5py65p+c5YaF6YOo5biD5bGA5LiO6YK75o6l57uT5p6E5Li65Z+65LqO5YWs5byA6LWE5paZ55qE56S65oSP77yM6Z2e5Y6C5ZWG5a6e54mpIGxheW91dO+8m+mbhue+pOS4juiKr+eJh+inhOagvOS7peWNjuS4uuWumOaWueWFrOW4g+S4uuWHhu+8iEE1PUF0bGFzIDk1MO+8jEE2PUF0bGFzIDk2MO+8ieOAgg==');
