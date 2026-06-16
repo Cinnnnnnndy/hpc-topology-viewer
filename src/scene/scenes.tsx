@@ -639,13 +639,29 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
     }
   };
 
-  // connecting lines between adjacent tiers, coloured by upper level
-  const linkGeo = useMemo(() => {
-    const seg: number[] = [];
-    // L0→L1: 8 dies up to node bar
-    for (let i = 0; i < 8; i++) seg.push(dieX(i), HT.y[0] + 0.1, 0, dieX(i), HT.y[1] - 0.05, 0);
-    return segGeo(seg);
-  }, []);
+  // ── inter-tier aggregation connectors (×N children → 1 parent) ──
+  const x1 = (i: number) => (i / 7 - 0.5) * 2.6;                 // L1 NPU x
+  const x2 = (i: number) => (i / 7 - 0.5) * HT.xSpan * 0.78;     // L2 node x
+  const cabs = Math.max(1, Math.round(gen.totalNpus / 64));
+  const yTop = (k: number) => HT.y[k] + 0.14;
+  const yBot = (k: number) => HT.y[k] - 0.14;
+  const fanTo = (child: (i: number) => number, yc: number, px: number, yp: number, count: number): [number, number, number][] => {
+    const p: [number, number, number][] = [];
+    for (let i = 0; i < count; i++) { p.push([child(i), yc, 0], [px, yp, 0]); }
+    return p;
+  };
+  // L0→L1: each NPU's dies → that NPU (parallel); L1→L2 / L2→L3: many → one (fan-in)
+  const bDie: [number, number, number][] = [];
+  for (let i = 0; i < 8; i++) bDie.push([dieX(i), yTop(0), 0], [x1(i), yBot(1), 0]);
+  const bNpu = fanTo(x1, yTop(1), 0, yBot(2), 8);
+  const bNode = fanTo(x2, yTop(2), 0, yBot(3), 8);
+  const bPod: [number, number, number][] = [[0, yTop(3), 0], [0, yBot(4), 0]];
+  const aggLabels: [number, string][] = [
+    [(HT.y[0] + HT.y[1]) / 2, `×${DIES_PER_NPU} die → 1 NPU`],
+    [(HT.y[1] + HT.y[2]) / 2, `×${NPUS_PER_NODE} NPU → 1 节点`],
+    [(HT.y[2] + HT.y[3]) / 2, `×8 节点 → 1 柜 · ×${cabs} 柜 → ${TOK.supernode}`],
+    [(HT.y[3] + HT.y[4]) / 2, `${TOK.supernode} → ${TOK.supercluster}`],
+  ];
 
   const Tier = ({ lvl, children }: { lvl: number; children?: ReactNode }) => {
     const isH = hov === lvl;
@@ -680,7 +696,6 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
           </group>
         ))}
       </Tier>
-      <lineSegments geometry={linkGeo}><lineBasicMaterial color={L(1)} transparent opacity={0.5} /></lineSegments>
 
       {/* L1 — node bar with 8 NPU + 2D-mesh */}
       <Tier lvl={1}>
@@ -720,12 +735,14 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
         <Slab size={[HT.xSpan * 0.72, 0.14, 0.5]} color={L(4)} opacity={hov === 4 ? 0.7 : 0.38} emissive={L(4)} emissiveIntensity={hov === 4 ? 0.4 : 0.16} />
       </Tier>
 
-      {/* tier-to-tier vertical connectors (L1..L4) */}
-      {[1, 2, 3].map((lvl) => (
-        <mesh key={lvl} position={[0, (HT.y[lvl] + HT.y[lvl + 1]) / 2, 0]}>
-          <boxGeometry args={[0.04, HT.y[lvl + 1] - HT.y[lvl] - 0.3, 0.04]} />
-          <meshBasicMaterial color={L(lvl + 1)} transparent opacity={0.5} />
-        </mesh>
+      {/* ── inter-tier aggregation connectors (×N children → 1 parent of next level) ── */}
+      <Line points={bDie} segments color={L(0)} lineWidth={hov === 0 || hov === 1 ? 3 : 1.8} transparent opacity={0.7} />
+      <Line points={bNpu} segments color={L(1)} lineWidth={hov === 1 || hov === 2 ? 3 : 1.8} transparent opacity={0.7} />
+      <Line points={bNode} segments color={L(2)} lineWidth={hov === 2 || hov === 3 ? 3 : 1.8} transparent opacity={0.7} />
+      <Line points={bPod} segments color={L(3)} lineWidth={hov === 3 || hov === 4 ? 4 : 2.5} transparent opacity={0.85} />
+      {/* aggregation multiplicity labels */}
+      {aggLabels.map(([y, t], i) => (
+        <Text key={i} position={[2.4, y, 0]} fontSize={0.16} color={LC.textDim} anchorX="left" anchorY="middle">{t}</Text>
       ))}
 
       {/* ── process(rank) comm overlays (toggled in toolbar) ── */}
@@ -749,7 +766,7 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
       )}
 
       <Text position={[0, 0.04, 2.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color={LC.textDim} anchorX="center">
-        {`${TOK.ubmesh} 互联层级 · ${gen.code} ${gen.name} · 悬停查看各级带宽 · 顶栏开关叠加进程级通信`}
+        {`${TOK.ubmesh} 互联层级 · 连线=逐级聚合（×N 下级→1 上级）· ${gen.code} · 悬停看各级带宽`}
       </Text>
     </group>
   );
