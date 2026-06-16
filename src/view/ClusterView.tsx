@@ -21,7 +21,7 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, type CommOverlays,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, type CommOverlays,
 } from '../scene/scenes';
 
 /** Imperatively reposition camera + controls when the view changes, without
@@ -48,6 +48,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   node:     { pos: [3.8, 3.2, 4.6], target: [0.8, 0.6, 0] },
   topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
+  mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -56,6 +57,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'node',     label: '节点视图' },
   { id: 'topology', label: 'UB 互联层级' },
   { id: 'matrix',   label: '邻接矩阵' },
+  { id: 'mapping',  label: '软硬件映射' },
 ];
 
 // per-mode overlay toggles
@@ -89,7 +91,8 @@ export function ClusterView() {
     mode === 'overview' ? 'overview' :
     mode === 'rack' ? (rackKind === 'compute' ? 'computeRack' : 'switchRack') :
     mode === 'node' ? (nodeKind === 'ubswitch' ? 'ubswitch' : 'node') :
-    mode === 'matrix' ? 'matrix' : 'topology';
+    mode === 'matrix' ? 'matrix' :
+    mode === 'mapping' ? 'mapping' : 'topology';
   const info = INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
@@ -262,6 +265,7 @@ export function ClusterView() {
               : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />)}
             {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
+            {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -287,7 +291,21 @@ export function ClusterView() {
             background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
             display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none', maxWidth: 240,
           }}>
-            {mode !== 'matrix' && (
+            {mode === 'mapping' && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>软硬件映射</div>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 12, height: 3, background: '#4369ef', display: 'inline-block' }} />
+                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>进程 rank ↔ NPU</span>
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 12, height: 3, background: COMM_PATTERNS[2].color, display: 'inline-block' }} />
+                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>线程 / Tile ↔ AI Core</span>
+                </span>
+                <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>灰线 = 其他层级映射 · 点击高亮</span>
+              </>
+            )}
+            {mode !== 'matrix' && mode !== 'mapping' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

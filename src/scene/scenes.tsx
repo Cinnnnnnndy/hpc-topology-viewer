@@ -1143,3 +1143,72 @@ export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
     </group>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. Software ↔ hardware mapping (process/thread ↔ NPU/AI Core)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PROC_COLOR = '#4369ef';                 // process / rank
+const THREAD_COLOR = COMM_PATTERNS[2].color;  // thread / tile (cyan)
+
+export function MappingScene({ onHoverInfo }: SceneCallbacks) {
+  const [focus, setFocus] = useState<number | null>(null);
+  const swX = -2.8, hwX = 2.8;
+  const rows: { sw: string; hw: string; key?: 'proc' | 'thread'; tag?: string; info: string }[] = [
+    { sw: '作业 / 模型', hw: '集群 / 超节点', info: '整个训练作业运行在超节点 / 集群之上' },
+    { sw: '并行切分\nDP · TP · EP · PP', hw: 'NPU 组（机柜 / 刀片）', tag: '进程级（rank 间 · 走 UB）', info: '并行策略决定“哪个 rank 算什么”，落到 NPU 组与 NPU 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）' },
+    { sw: '进程 rank', hw: '1 NPU', key: 'proc', info: '一个进程(rank) 映射到一颗 NPU；rank 间集合通信走 UB 各级链路' },
+    { sw: '算子 / Tile 切分', hw: 'die', tag: '线程级（rank 内 · die 上）', info: `rank 内：算子按 TileShape 切分，数据流 HBM→L1→L0→Cube（参考 TileLang/${TOK.pypto}）` },
+    { sw: '线程 / Tile', hw: 'AI Core (Cube/Vector)', key: 'thread', info: '一个线程/Tile 映射到 die 内的 AI Core（Cube/Vector）+ SRAM 上的 Tile' },
+  ];
+  const y = (i: number) => 4.3 - i * 0.95;
+
+  const SwBox = ({ yy, label, on }: { yy: number; label: string; on: boolean }) => (
+    <group position={[swX, yy, 0]}>
+      <Slab size={[2.0, 0.6, 0.06]} color={on ? '#cdd9fb' : '#e7ecf8'} edgeColor={on ? PROC_COLOR : LC.rackEdge} />
+      <Text position={[0, 0, 0.05]} fontSize={0.16} color={LC.text} anchorX="center" anchorY="middle" maxWidth={1.9}>{label}</Text>
+    </group>
+  );
+
+  return (
+    <group>
+      <Floor size={14} />
+      {/* column headers */}
+      <Text position={[swX, y(0) + 0.7, 0]} fontSize={0.22} color={PROC_COLOR} anchorX="center">软件层级</Text>
+      <Text position={[hwX, y(0) + 0.7, 0]} fontSize={0.22} color={LC.text} anchorX="center">硬件层级</Text>
+
+      {rows.map((r, i) => {
+        const yy = y(i);
+        const on = focus === i;
+        const lineColor = r.key === 'proc' ? PROC_COLOR : r.key === 'thread' ? THREAD_COLOR : '#9aa4b2';
+        return (
+          <group key={i}
+            onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(r.info); }}
+            onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+            onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
+          >
+            {/* software side */}
+            <SwBox yy={yy} label={r.sw} on={on} />
+            {/* mapping connector */}
+            <Line points={[[swX + 1.0, yy, 0], [hwX - 0.9, yy, 0]]} color={on ? lineColor : (r.key ? lineColor : '#c2c9d4')} lineWidth={on ? 4 : (r.key ? 2.5 : 1)} dashed={!r.key && !on} dashScale={4} transparent opacity={on ? 1 : (focus === null ? 0.7 : 0.2)} />
+            {/* hardware side — real element per row */}
+            <group position={[hwX, yy, 0]}>
+              {i === 0 && <CabinetBox w={0.5} h={0.5} d={0.2} kind="compute" hovered={on} />}
+              {i === 1 && [-0.5, 0, 0.5].map((dx, k) => <group key={k} position={[dx, 0, 0]}><NpuChip w={0.26} h={0.16} hovered={on} /></group>)}
+              {i === 2 && <NpuChip w={0.5} h={0.3} hovered={on} selected={on} />}
+              {i === 3 && <Slab size={[0.34, 0.18, 0.34]} color={L(0)} emissive={L(0)} emissiveIntensity={on ? 0.9 : 0.5} />}
+              {i === 4 && Array.from({ length: 6 }, (_, k) => <Slab key={k} size={[0.1, 0.08, 0.1]} position={[(k % 3 - 1) * 0.16, 0, (Math.floor(k / 3) - 0.5) * 0.16]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />)}
+              <Text position={[0, -0.5, 0]} fontSize={0.14} color={LC.textDim} anchorX="center" maxWidth={2.4}>{r.hw}</Text>
+            </group>
+            {/* level tag (process / thread boundary) */}
+            {r.tag && <Text position={[0, yy - 0.42, 0]} fontSize={0.13} color={r.tag.includes('进程') ? PROC_COLOR : THREAD_COLOR} anchorX="center">{r.tag}</Text>}
+          </group>
+        );
+      })}
+
+      <Text position={[0, y(4) - 0.8, 0]} fontSize={0.18} color={LC.textDim} anchorX="center">
+        {'作业 →(DP/PP/TP/EP 切分)→ 进程=NPU →(Tile 切分)→ 线程=AI Core · 点击某层高亮映射'}
+      </Text>
+    </group>
+  );
+}

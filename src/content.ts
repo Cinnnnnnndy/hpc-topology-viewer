@@ -75,6 +75,17 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
       dc('5Ya35p2/5byP5ray5Ya3IMK3IOebsuaPkuW/q+aOpe+8m+mbtue6v+e8hueUteS6kuiBlCBbM10='),
     ],
   },
+  mapping: {
+    title: dc('6L2v56Gs5Lu25pig5bCE77yI6L+b56iLL+e6v+eoiyDihpQgTlBVL0FJIENvcmXvvIk='),
+    lines: [
+      dc('6L+b56iLKHJhbmspIOKGlCAxIOmilyBOUFXvvJtyYW5rIOmXtOmbhuWQiOmAmuS/oei1sCBVQiDlkITnuqfpk77ot68gWzFd'),
+      dc('57q/56iLL1RpbGUg4oaUIGRpZSDlhoUgQUkgQ29yZe+8iEN1YmUvVmVjdG9y77yJKyBTUkFNIOS4iueahCBUaWxlIFs3XQ=='),
+      dc('6L+b56iL57qn5bm26KGMIERQL1RQL0VQL1BQ77ya5Yaz5a6a4oCc5ZOq5LiqIHJhbmsg566X5LuA5LmI4oCd77yM5L2T546w5Li6IE5QVSDpl7QgVUIg6YCa5L+hIFsxXQ=='),
+      dc('57q/56iL57qn5bm26KGM77ya566X5a2QIFRpbGVTaGFwZSDliIfliIbliLAgQUkgQ29yZe+8iHJhbmsg5YaF77yJwrcg5Y+C6ICDIFRpbGVMYW5nL1B5UFRPIFs3XQ=='),
+      dc('6ZO+6Lev77ya5L2c5LiaIOKGkihEUC9QUC9UUC9FUCDliIfliIYp4oaSIOi/m+eoiz1OUFUg4oaSKFRpbGUg5YiH5YiGKeKGkiDnur/nqIs9QUkgQ29yZQ=='),
+      dc('5bemPei9r+S7tuWxgue6p++8jOWPsz3noazku7blsYLnuqfvvIzov57nur895pig5bCE77yb54K55Ye75p+Q5bGC6auY5Lqu5a+55bqU5pig5bCE'),
+    ],
+  },
   node: {
     title: dc('6K6h566X6IqC54K577yI5YiA54mHIMK3IGRpZSAvIEFJIENvcmUgLyBUaWxl77yJ'),
     lines: [
