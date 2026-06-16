@@ -94,6 +94,7 @@ export function ClusterView() {
   const [ubFocus, setUbFocus] = useState<'ccu' | 'onchip' | 'ub' | null>(null);   // from IO-die inset jump
   const onUbJump = useCallback((t: UbJump) => { setUbFocus(t.focus); setMode(t.view); }, []);
   const [podCount, setPodCount] = useState(1);   // full-pod view: number of super-nodes
+  const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
     if (!tracePlaying) return;
@@ -304,12 +305,12 @@ export function ClusterView() {
             )}
             {mode === 'node' && (nodeKind === 'ubswitch'
               ? <UBSwitchScene onHoverInfo={onHoverInfo} />
-              : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} onJump={onUbJump} />)}
+              : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} onJump={onUbJump} initialSelected={pendingNpu} />)}
             {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} highlight={hl ? { npu: hl.npu, blade: hl.blade } : null} subFocus={ubFocus} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale={scale} podCount={podCount} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setNodeSlot(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale={scale} podCount={podCount} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}

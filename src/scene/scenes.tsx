@@ -708,9 +708,10 @@ function BoardMesh() {
   return <lineSegments geometry={geo}><lineBasicMaterial color={L(1)} transparent opacity={0.7} /></lineSegments>;
 }
 
-export function NodeScene({ onHoverInfo, overlays, onJump }: SceneCallbacks & { overlays: CommOverlays; onJump?: (t: UbJump) => void }) {
+export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: SceneCallbacks & { overlays: CommOverlays; onJump?: (t: UbJump) => void; initialSelected?: number }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [selected, setSelected] = useState(0);   // which NPU's die is enlarged
+  const [selected, setSelected] = useState(initialSelected ?? 0);   // which NPU's die is enlarged
+  useEffect(() => { if (initialSelected != null) setSelected(initialSelected % NPUS_PER_NODE); }, [initialSelected]);
   const S = S_NODE;
   const w = NODE_DIM.w * S, h = NODE_DIM.h * S, d = NODE_DIM.d * S;
   const selColor = COMM_PATTERNS[2].color;
