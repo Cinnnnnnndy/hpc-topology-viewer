@@ -46,7 +46,7 @@ function CameraController({ poseKey, pos, target, controls }: {
 const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number] }> = {
   overview: { pos: [9, 10, 15], target: [0, 0.5, 0] },
   rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0] },
-  node:     { pos: [3.8, 3.2, 4.6], target: [0.8, 0.6, 0] },
+  node:     { pos: [0, 3.8, 6.6], target: [0, 0.7, 0] },
   topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },

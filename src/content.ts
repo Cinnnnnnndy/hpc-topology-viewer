@@ -33,6 +33,11 @@ export const TOK = {
   davinci: dc('6L6+6Iqs5aWHIERhVmluY2k='),
   linx: dc('TGlueDgxNg=='),
   hif8: dc('SGlGOA=='),
+  urma: dc('VVJNQQ=='),
+  uboe: dc('VUJvRQ=='),
+  ccu: dc('Q0NV'),
+  ubmem: dc('VUIgTWVtb3J5'),
+  onchip: dc('VUIgT24gQ2hpcCBTd2l0Y2g='),
   cooling: dc('5YWo5ray5Ya377yI5Ya35p2/5byP77yJwrcg6K6h566X5p+c5ray5Ya3ICsg6YCa5L+h5p+c5YWo5YWJ'),
 } as const;
 

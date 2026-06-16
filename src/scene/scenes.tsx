@@ -558,6 +558,71 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
   );
 }
 
+/** IO Die interconnect detail: 18× x4 ports, on-chip switch (9-port forward),
+ *  collective engine, ethernet / PCIe uplinks, async / sync memory semantics. */
+const IODIE = { pos: [-2.7, 0.06, 0] as [number, number, number], w: 1.8, d: 1.1 };
+function IoDieDetail({ onHoverInfo }: { onHoverInfo: (t: string | null) => void }) {
+  const [hx, hz] = [IODIE.w / 2, IODIE.d / 2];
+  const portColor = '#9aa4b2';
+  // 18 ports in 2 rows × 9 along the top
+  const portPos = (i: number): [number, number, number] => {
+    const r = Math.floor(i / 9), c = i % 9;
+    return [-hx + 0.22 + c * 0.17, 0.05, hz - 0.18 - r * 0.18];
+  };
+  const switchPos: [number, number, number] = [0.15, 0.05, -0.08];
+  // 9 ports (row 0) forward through the on-chip switch
+  const fwdGeo = useMemo(() => {
+    const seg: number[] = [];
+    for (let i = 0; i < 9; i++) { const p = portPos(i); seg.push(p[0], 0.06, p[2], switchPos[0], 0.06, switchPos[2]); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); return g;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <group position={IODIE.pos}>
+      <Slab size={[IODIE.w + 0.1, 0.03, IODIE.d + 0.1]} position={[0, 0, 0]} color="#eaeef4" edgeColor={LC.rackEdge} />
+      {/* 18 UB ports */}
+      <group
+        onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`18× x4 ${TOK.ub} Port（72 HiLink lane · 112Gbps · 2016 GB/s 双向）· Scale-up/out 端口复用`); }}
+        onPointerOut={() => onHoverInfo(null)}
+      >
+        {Array.from({ length: 18 }, (_, i) => {
+          const p = portPos(i);
+          const uboe = i >= 16;       // 2 ports → ethernet uplink
+          const pcie = i >= 12 && i < 16; // 4 ports → PCIe
+          const col = uboe ? L(4) : pcie ? '#818cf8' : portColor;
+          return <Slab key={i} size={[0.12, 0.05, 0.12]} position={[p[0], 0.03, p[2]]} color={col} emissive={col} emissiveIntensity={0.35} />;
+        })}
+        <Text position={[0, 0.04, hz + 0.04]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.082} color={LC.text} anchorX="center">18× x4 UB Port · 2016 GB/s</Text>
+      </group>
+      {/* on-chip switch forwarding (9 ports) */}
+      <group
+        onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`${TOK.onchip}：单 IO Die 内 9 个 x4 端口间片上转发，经 NoC 直接转出，不进计算 Die、不占 DRAM 带宽`); }}
+        onPointerOut={() => onHoverInfo(null)}
+      >
+        <lineSegments geometry={fwdGeo}><lineBasicMaterial color={L(3)} transparent opacity={0.6} /></lineSegments>
+        <Slab size={[0.34, 0.09, 0.26]} position={switchPos} color={L(3)} emissive={L(3)} emissiveIntensity={0.5} edgeColor={L(3)} />
+        <Text position={[switchPos[0], 0.12, switchPos[2]]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color="#fff" anchorX="center">On-Chip SW · 9口转发</Text>
+      </group>
+      {/* CCU collective engine */}
+      <group
+        onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 AllReduce / All2All / ReduceScatter 等，自行搬运+Reduce，释放 AI Core`); }}
+        onPointerOut={() => onHoverInfo(null)}
+      >
+        <Slab size={[0.34, 0.09, 0.22]} position={[-0.55, 0.05, -hz + 0.22]} color={COMM_PATTERNS[0].color} emissive={COMM_PATTERNS[0].color} emissiveIntensity={0.4} edgeColor={COMM_PATTERNS[0].color} />
+        <Text position={[-0.55, 0.12, -hz + 0.22]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.075} color="#fff" anchorX="center">CCU 集合通信</Text>
+      </group>
+      {/* protocol legend */}
+      <Text position={[0.5, 0.05, -hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={LC.textDim} anchorX="center" maxWidth={1.0}>
+        {`${TOK.urma} 异步 · ${TOK.ubmem} 同步(Ld/St/Atomic)`}
+      </Text>
+      <Text position={[0, 0.05, -hz - 0.04]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.075} color={LC.textDim} anchorX="center">
+        {`IO Die · 互连子系统 · 绿=${TOK.uboe} 2×400G · 蓝=PCIe5 x16`}
+      </Text>
+    </group>
+  );
+}
+
 /** Node-internal UB 2D-mesh among the 8 NPUs (L1 board fabric). */
 function BoardMesh() {
   const S = S_NODE;
@@ -635,8 +700,10 @@ export function NodeScene({ onHoverInfo, overlays }: SceneCallbacks & { overlays
       </group>
       {/* leader: selected NPU → die inset */}
       <lineSegments geometry={leaderGeo}><lineBasicMaterial color={selColor} transparent opacity={0.8} /></lineSegments>
-      {/* enlarged single-die compute detail of the selected NPU */}
+      {/* right inset: AI Die (compute) of the selected NPU */}
       <DieDetail npuIdx={selected} overlays={overlays} onHoverInfo={onHoverInfo} />
+      {/* left inset: IO Die (interconnect subsystem) */}
+      <IoDieDetail onHoverInfo={onHoverInfo} />
     </group>
   );
 }
@@ -830,8 +897,27 @@ export function TopologyScene({ gen, overlays, highlight, onHoverInfo }: SceneCa
         </group>
       )}
 
+      {/* IO-die sub-structures present in every chip: collective engine + on-chip switch */}
+      <Text position={[-HT.xSpan / 2 - 0.3, HT.y[1] + 0.55, 0]} fontSize={0.14} color={LC.textDim} anchorX="right">片内互连子结构</Text>
+      <group
+        position={[-HT.xSpan / 2 - 0.9, HT.y[1] + 0.1, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 Ring-AllReduce / All2All / ReduceScatter，自行搬运+Reduce，释放 AI Core、降总线占用`); }}
+        onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+      >
+        <Slab size={[0.55, 0.18, 0.3]} color={COMM_PATTERNS[0].color} emissive={COMM_PATTERNS[0].color} emissiveIntensity={0.4} edgeColor={COMM_PATTERNS[0].color} />
+        <Text position={[0, 0.16, 0]} fontSize={0.12} color={COMM_PATTERNS[0].color} anchorX="center">CCU 集合通信</Text>
+      </group>
+      <group
+        position={[-HT.xSpan / 2 - 0.9, HT.y[2] + 0.1, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.onchip}：单 IO Die 内 9 个 x4 端口间片上转发（经 NoC 直转），不进计算 Die、不占 DRAM 带宽 — 支撑 nD-Mesh / Clos 路由`); }}
+        onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+      >
+        <Slab size={[0.55, 0.18, 0.3]} color={L(3)} emissive={L(3)} emissiveIntensity={0.4} edgeColor={L(3)} />
+        <Text position={[0, 0.16, 0]} fontSize={0.1} color={L(3)} anchorX="center">On-Chip SW 9口转发</Text>
+      </group>
+
       <Text position={[0, 0.04, 2.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.19} color={LC.textDim} anchorX="center">
-        {`${TOK.ubmesh}：层内=UB 全互联(full-mesh) · 框=刀片/机柜 · 点击某层高亮其↕下游连线`}
+        {`${TOK.ubmesh}：层内=UB 全互联(full-mesh) · 框=刀片/机柜 · CCU 卸载集合通信 · On-Chip SW 片上转发`}
       </Text>
     </group>
   );
