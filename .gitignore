@@ -20,3 +20,6 @@ pnpm-debug.log*
 
 # Local content generation (kept out of VCS by design)
 scripts/gen-content.mjs
+
+# Project brief with plaintext brand context (delivered to user, not committed)
+PROJECT_OVERVIEW.md
