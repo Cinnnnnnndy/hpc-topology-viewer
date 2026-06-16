@@ -291,8 +291,8 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
   );
 }
 
-export function RackScene({ rackKind, label, onHoverInfo, onSelectNode }: SceneCallbacks & {
-  rackKind: RackKind; label: string; onSelectNode: (slot: number) => void;
+export function RackScene({ rackKind, label, onHoverInfo, onSelectNode, onSelectSwitch }: SceneCallbacks & {
+  rackKind: RackKind; label: string; onSelectNode: (slot: number) => void; onSelectSwitch?: () => void;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const units = rackKind === 'compute' ? COMPUTE_RACK_UNITS : SWITCH_RACK_UNITS;
@@ -316,20 +316,23 @@ export function RackScene({ rackKind, label, onHoverInfo, onSelectNode }: SceneC
         <Slab size={[0.02, rackH, 0.02]} position={[innerW / 2 + 0.08, rackH / 2 + 0.08, innerD / 2 - 0.02]} color={RACK_COLORS.accent} emissive={RACK_COLORS.accent} emissiveIntensity={0.35} />
       </group>
       <group position={[0, 0.08, 0]}>
-        {units.map((u) => (
-          <RackUnitMesh
-            key={u.id}
-            unit={u}
-            rackKind={rackKind}
-            hovered={hoverId === u.id}
-            clickable={u.type === 'node'}
-            onClick={u.type === 'node' ? () => onSelectNode(u.nodeSlot!) : undefined}
-            onHover={(h) => {
-              setHoverId(h ? u.id : null);
-              onHoverInfo(h ? `${u.label}${u.type === 'node' ? '（点击下钻查看刀片 + die/进程/线程级互联）' : ''}` : null);
-            }}
-          />
-        ))}
+        {units.map((u) => {
+          const clickable = u.type === 'node' || u.type === 'switch-unit';
+          return (
+            <RackUnitMesh
+              key={u.id}
+              unit={u}
+              rackKind={rackKind}
+              hovered={hoverId === u.id}
+              clickable={clickable}
+              onClick={u.type === 'node' ? () => onSelectNode(u.nodeSlot!) : u.type === 'switch-unit' ? () => onSelectSwitch?.() : undefined}
+              onHover={(h) => {
+                setHoverId(h ? u.id : null);
+                onHoverInfo(h ? `${u.label}${u.type === 'node' ? '（点击下钻查看刀片 + die/AI Core/Tile）' : u.type === 'switch-unit' ? '（点击下钻查看 UB 交换设备内部）' : ''}` : null);
+              }}
+            />
+          );
+        })}
       </group>
     </group>
   );
@@ -735,36 +738,63 @@ export function TopologyScene({ gen, overlays, onHoverInfo }: SceneCallbacks & {
 // 5. UB adjacency matrix (NPU × NPU, recursive full-mesh)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ADJ_SPAN = 6;   // matrix footprint in world units
+/** Thin cylinder link between two points (for emphasised pair). */
+function LinkTube({ a, b, color, r = 0.025 }: { a: [number, number, number]; b: [number, number, number]; color: string; r?: number }) {
+  const { pos, quat, len } = useMemo(() => {
+    const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
+    const dir = vb.clone().sub(va);
+    const len = dir.length();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    return { pos: va.clone().add(vb).multiplyScalar(0.5), quat: q, len };
+  }, [a, b]);
+  return (
+    <mesh position={pos} quaternion={quat}>
+      <cylinderGeometry args={[r, r, len, 10]} />
+      <meshBasicMaterial color={color} toneMapped={false} />
+    </mesh>
+  );
+}
+
+const MAT_SPAN = 3.8;       // upright matrix footprint
+const MAT_POS: [number, number, number] = [-3.7, 2.2, 0];
+const MODEL_POS: [number, number, number] = [3.3, 0.5, 0];
 
 export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale: Scale }) {
   const dims = SCALES[scale].dims;
   const { n, cell } = useMemo(() => makeAdjacency(dims), [dims]);
   const ref = useRef<THREE.InstancedMesh>(null);
-  const [hover, setHover] = useState<number | null>(null);
+  const [hoverCell, setHoverCell] = useState<[number, number] | null>(null);  // from matrix
+  const [hoverNpu, setHoverNpu] = useState<number | null>(null);              // from 3D model
 
-  const cellSize = ADJ_SPAN / n;
-  const pos = (k: number) => -ADJ_SPAN / 2 + cellSize * (k + 0.5);
+  // unified highlight: rows/cols to guide in matrix, NPUs to emphasise in model
+  const hi = useMemo(() => {
+    if (hoverCell) return { rows: [hoverCell[0]], cols: [hoverCell[1]], npus: [hoverCell[0], hoverCell[1]] as number[], pair: hoverCell };
+    if (hoverNpu !== null) return { rows: [hoverNpu], cols: [hoverNpu], npus: [hoverNpu], pair: null as [number, number] | null };
+    return { rows: [] as number[], cols: [] as number[], npus: [] as number[], pair: null as [number, number] | null };
+  }, [hoverCell, hoverNpu]);
 
-  // per-instance colour by connection level
+  // ── matrix geometry (upright XY plane) ──
+  const cellSize = MAT_SPAN / n;
+  const colX = (j: number) => -MAT_SPAN / 2 + cellSize * (j + 0.5);
+  const rowY = (i: number) => MAT_SPAN / 2 - cellSize * (i + 0.5);   // row 0 at top
+
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const m = new THREE.Matrix4();
     const col = new THREE.Color();
     const cSelf = new THREE.Color('#3a4256');
-    const cIndirect = new THREE.Color('#dfe3ea');
+    const cIndirect = new THREE.Color('#e2e6ec');
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         const idx = i * n + j;
-        // group is rotated -90° about X, so cells live in local XY (→ world XZ)
-        m.makeScale(cellSize * 0.92, cellSize * 0.92, 1);
-        m.setPosition(pos(j), pos(i), 0);
+        m.makeScale(cellSize * 0.9, cellSize * 0.9, 1);
+        m.setPosition(colX(j), rowY(i), 0);
         mesh.setMatrixAt(idx, m);
         const a = cell(i, j);
         if (a.hops === 0) col.copy(cSelf);
         else if (a.direct) col.set(L(a.level));
-        else { col.copy(cIndirect); }
+        else col.copy(cIndirect);
         mesh.setColorAt(idx, col);
       }
     }
@@ -772,11 +802,44 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, [n, cell, cellSize]);
 
+  // ── 3D scale model positions (boards × 8 NPU) ──
+  const { posArr, links } = useMemo(() => {
+    const perBoard = dims[0], boards = dims[1];
+    const bcols = boards <= 2 ? boards : (boards <= 4 ? 2 : 4);
+    const lc4 = 4, npuP = 0.34, gapX = 0.5, gapY = 0.55;
+    const boardW = lc4 * npuP + gapX, boardH = 2 * npuP + gapY;
+    const P: [number, number, number][] = [];
+    for (let k = 0; k < n; k++) {
+      const b = Math.floor(k / perBoard), l = k % perBoard;
+      const bc = b % bcols, br = Math.floor(b / bcols);
+      const lcx = l % lc4, lcy = Math.floor(l / lc4);
+      P.push([bc * boardW + lcx * npuP, br * boardH + lcy * npuP, 0]);
+    }
+    // centre
+    const mx = (Math.min(...P.map(p => p[0])) + Math.max(...P.map(p => p[0]))) / 2;
+    const my = (Math.min(...P.map(p => p[1])) + Math.max(...P.map(p => p[1]))) / 2;
+    for (const p of P) { p[0] -= mx; p[1] -= my; }
+    // direct UB links by level
+    const l1: number[] = [], l2: number[] = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = cell(i, j);
+      if (!a.direct) continue;
+      const arr = a.level <= 1 ? l1 : l2;
+      arr.push(...P[i], ...P[j]);
+    }
+    const g = (s: number[]) => { const x = new THREE.BufferGeometry(); x.setAttribute('position', new THREE.Float32BufferAttribute(s, 3)); return x; };
+    return { posArr: P, links: { l1: g(l1), l2: g(l2) } };
+  }, [dims, n, cell]);
+
+  const boardOf = (k: number) => Math.floor(k / dims[0]);
+  const localOf = (k: number) => k % dims[0];
+
   return (
     <group>
-      <Floor size={14} />
-      {/* matrix plane */}
-      <group position={[0, 0.3, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <Floor size={16} />
+
+      {/* ── left: upright adjacency matrix ── */}
+      <group position={MAT_POS}>
         <instancedMesh
           ref={ref}
           args={[undefined, undefined, n * n]}
@@ -784,45 +847,151 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
             e.stopPropagation();
             const id = e.instanceId;
             if (id === undefined) return;
-            setHover(id);
             const i = Math.floor(id / n), j = id % n;
+            setHoverCell([i, j]); setHoverNpu(null);
             const a = cell(i, j);
             const desc = a.hops === 0 ? '对角（自身）'
               : a.direct ? `直连 · ${UB_LEVELS[a.level].id} ${UB_LEVELS[a.level].label}`
               : `多跳 ×${a.hops}（经 ${UB_LEVELS[a.level].id}）`;
-            onHoverInfo(`NPU ${i} ↔ NPU ${j}：${desc}`);
+            onHoverInfo(`NPU ${i} ↔ NPU ${j}：${desc}（右侧 3D 同步高亮）`);
           }}
-          onPointerOut={() => { setHover(null); onHoverInfo(null); }}
+          onPointerOut={() => { setHoverCell(null); onHoverInfo(null); }}
         >
           <planeGeometry args={[1, 1]} />
           <meshBasicMaterial toneMapped={false} />
         </instancedMesh>
-        {/* highlight hovered row+col guide */}
-        {hover !== null && (() => {
-          const i = Math.floor(hover / n), j = hover % n;
+        {/* board boundary lines (every dims[0] cells) */}
+        {Array.from({ length: dims[1] + 1 }, (_, b) => {
+          const o = -MAT_SPAN / 2 + (MAT_SPAN / dims[1]) * b;
           return (
-            <group>
-              <mesh position={[0, pos(i), 0.01]}><planeGeometry args={[ADJ_SPAN, cellSize]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.12} /></mesh>
-              <mesh position={[pos(j), 0, 0.01]}><planeGeometry args={[cellSize, ADJ_SPAN]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.12} /></mesh>
+            <group key={b}>
+              <mesh position={[0, o, 0.01]}><planeGeometry args={[MAT_SPAN, 0.01]} /><meshBasicMaterial color={LC.rackEdge} transparent opacity={0.5} /></mesh>
+              <mesh position={[o, 0, 0.01]}><planeGeometry args={[0.01, MAT_SPAN]} /><meshBasicMaterial color={LC.rackEdge} transparent opacity={0.5} /></mesh>
             </group>
           );
-        })()}
+        })}
+        {/* hovered row/col guides */}
+        {hi.rows.map((i) => <mesh key={'r' + i} position={[0, rowY(i), 0.02]}><planeGeometry args={[MAT_SPAN, cellSize]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.16} /></mesh>)}
+        {hi.cols.map((j) => <mesh key={'c' + j} position={[colX(j), 0, 0.02]}><planeGeometry args={[cellSize, MAT_SPAN]} /><meshBasicMaterial color="#4369ef" transparent opacity={0.16} /></mesh>)}
+        <Text position={[0, MAT_SPAN / 2 + 0.3, 0]} fontSize={0.22} color={LC.text} anchorX="center">{`${n}×${n} NPU UB 邻接矩阵`}</Text>
+        <Text position={[0, -MAT_SPAN / 2 - 0.28, 0]} fontSize={0.15} color={LC.textDim} anchorX="center">NPU j →</Text>
+        <Text position={[-MAT_SPAN / 2 - 0.28, 0, 0]} rotation={[0, 0, Math.PI / 2]} fontSize={0.15} color={LC.textDim} anchorX="center">NPU i →</Text>
       </group>
-      {/* board boundary grid lines (every 8 NPU = one board) */}
-      {Array.from({ length: dims[1] + 1 }, (_, b) => {
-        const o = -ADJ_SPAN / 2 + (ADJ_SPAN / dims[1]) * b;
-        return (
-          <group key={b}>
-            <Slab size={[ADJ_SPAN, 0.32, 0.012]} position={[0, 0.16, o]} color={LC.rackEdge} opacity={0.25} />
-            <Slab size={[0.012, 0.32, ADJ_SPAN]} position={[o, 0.16, 0]} color={LC.rackEdge} opacity={0.25} />
-          </group>
-        );
-      })}
-      <Text position={[0, 0.02, ADJ_SPAN / 2 + 0.55]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.26} color={LC.textDim} anchorX="center">
-        {`${SCALES[scale].label} · ${n}×${n} NPU UB 邻接矩阵 · ${dims.join('×')} ${TOK.fullmesh} · 颜色=互联级别`}
+
+      {/* ── right: 3D scale model (boards × 8 NPU) with UB links ── */}
+      <group position={MODEL_POS}>
+        <lineSegments geometry={links.l1}><lineBasicMaterial color={L(1)} transparent opacity={hi.npus.length ? 0.15 : 0.45} /></lineSegments>
+        <lineSegments geometry={links.l2}><lineBasicMaterial color={L(2)} transparent opacity={hi.npus.length ? 0.1 : 0.3} /></lineSegments>
+        {posArr.map((p, k) => {
+          const on = hi.npus.includes(k);
+          const lvlColor = hi.pair && k === hi.pair[1] ? L(cell(hi.pair[0], hi.pair[1]).level) : L(1);
+          return (
+            <mesh key={k} position={p} scale={on ? 1.7 : 1}
+              onPointerOver={(e) => { e.stopPropagation(); setHoverNpu(k); setHoverCell(null); onHoverInfo(`NPU ${k}（板 ${boardOf(k)} · 本地 ${localOf(k)}）：板内→L1，跨板→L2（左侧矩阵同步高亮行列）`); }}
+              onPointerOut={() => { setHoverNpu(null); onHoverInfo(null); }}
+            >
+              <boxGeometry args={[0.14, 0.14, 0.14]} />
+              <meshStandardMaterial color={on ? lvlColor : LC.npuBody} emissive={on ? lvlColor : '#000000'} emissiveIntensity={on ? 0.8 : 0} metalness={0.3} roughness={0.5} />
+              <Edges color={on ? lvlColor : LC.rackEdge} threshold={20} />
+            </mesh>
+          );
+        })}
+        {/* emphasised pair link */}
+        {hi.pair && hi.pair[0] !== hi.pair[1] && cell(hi.pair[0], hi.pair[1]).direct && (
+          <LinkTube a={posArr[hi.pair[0]]} b={posArr[hi.pair[1]]} color={L(cell(hi.pair[0], hi.pair[1]).level)} />
+        )}
+        <Text position={[0, 2.1, 0]} fontSize={0.22} color={LC.text} anchorX="center">{`${SCALES[scale].label} · 3D 结构（${dims[1]} 板 × ${dims[0]} NPU）`}</Text>
+        <Text position={[0, -2.0, 0]} fontSize={0.14} color={LC.textDim} anchorX="center">{`${dims.join('×')} 递归 full-mesh · 蓝=L1 板内 · 紫=L2 跨板`}</Text>
+      </group>
+
+      <Text position={[0, 0.02, 4.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.22} color={LC.textDim} anchorX="center">
+        {`${SCALES[scale].label} 邻接矩阵 ↔ 3D 结构联动 · 悬停任一侧，另一侧同步高亮`}
       </Text>
-      <Text position={[-ADJ_SPAN / 2 - 0.35, 0.02, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]} fontSize={0.2} color={LC.textDim} anchorX="center">NPU i</Text>
-      <Text position={[0, 0.02, -ADJ_SPAN / 2 - 0.35]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.2} color={LC.textDim} anchorX="center">NPU j</Text>
+    </group>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. UB switch device (communication-cabinet switch box internals)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
+  const [hov, setHov] = useState<string | null>(null);
+  const S = 2.4;
+  const W = 1.15 * S, H = 0.3 * S, D = 0.62 * S;
+  const sw = L(3);   // Clos-level (orange)
+
+  return (
+    <group>
+      <Floor size={10} />
+      <pointLight position={[0, 4.2, 6]} intensity={14} color="#ffffff" />
+      <group position={[0, 0.55, 0]}>
+        {/* chassis tray */}
+        <group onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`${TOK.ub} 交换设备机箱 · 安装于通信柜 · 冷板式液冷`); }} onPointerOut={() => onHoverInfo(null)}>
+          <Slab size={[W + 0.1, 0.05, D + 0.1]} position={[0, -0.02, 0]} color={LC.rackBody} metalness={0.5} roughness={0.5} edgeColor={LC.rackEdge} />
+        </group>
+        {/* PCB */}
+        <mesh position={[0, 0.012, 0]} onPointerOver={(e) => { e.stopPropagation(); onHoverInfo('交换主板 PCB · 承载 HRS / LRS 交换 ASIC'); }} onPointerOut={() => onHoverInfo(null)}>
+          <boxGeometry args={[W, 0.022, D]} />
+          <meshStandardMaterial color={LC.pcb} metalness={0.1} roughness={0.85} />
+        </mesh>
+        {/* HRS high-radix switch (large, centre) */}
+        <group position={[0, 0.04, -0.05 * S]}
+          onPointerOver={(e) => { e.stopPropagation(); setHov('hrs'); onHoverInfo('HRS 高基数交换 ASIC · Clos 顶层核心 · All-Path-Routing 全路径路由'); }}
+          onPointerOut={() => { setHov(null); onHoverInfo(null); }}>
+          <Slab size={[0.4 * S, 0.09, 0.34 * S]} color={sw} emissive={sw} emissiveIntensity={hov === 'hrs' ? 1.0 : 0.4} metalness={0.3} roughness={0.45} edgeColor={hov === 'hrs' ? '#fff' : sw} />
+          <Text position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color="#fff" anchorX="center">HRS</Text>
+        </group>
+        {/* LRS low-radix switches (row of 4) */}
+        {Array.from({ length: 4 }, (_, i) => {
+          const id = `lrs-${i}`, isH = hov === id;
+          return (
+            <group key={id} position={[(i - 1.5) * 0.26 * S, 0.04, 0.16 * S]}
+              onPointerOver={(e) => { e.stopPropagation(); setHov(id); onHoverInfo(`LRS 低基数交换 ASIC #${i + 1} · 汇聚计算柜上行 UB 流量`); }}
+              onPointerOut={() => { setHov(null); onHoverInfo(null); }}>
+              <Slab size={[0.16 * S, 0.07, 0.14 * S]} color="#f6a45a" emissive="#f6a45a" emissiveIntensity={isH ? 0.9 : 0.35} metalness={0.3} roughness={0.5} edgeColor={isH ? '#fff' : '#f6a45a'} />
+              <Text position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.06} color="#5a3a10" anchorX="center">{`LRS${i + 1}`}</Text>
+            </group>
+          );
+        })}
+        {/* front optical port panel: 8 banks × 16 OSFP = 128×800GE */}
+        <group position={[0, H / 2, D / 2 + 0.01]}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo('前面板全光 OSFP 端口 · 128× 800GE · 8 组 × 16 口 · 接入计算柜上行光纤'); }}
+          onPointerOut={() => onHoverInfo(null)}>
+          {Array.from({ length: 8 }, (_, bank) => (
+            <group key={bank} position={[(bank - 3.5) * W / 9, 0, 0]}>
+              {Array.from({ length: 16 }, (_, j) => (
+                <Slab key={j} size={[0.024 * S, 0.024 * S, 0.006]}
+                  position={[(j % 4 - 1.5) * 0.03 * S, (Math.floor(j / 4) - 1.5) * 0.03 * S, 0]}
+                  color={LC.vent} emissive="#fbbf24" emissiveIntensity={0.5} />
+              ))}
+            </group>
+          ))}
+        </group>
+        {/* side liquid-cooling connectors */}
+        {[-1, 1].map((side) => (
+          <group key={side} position={[side * (W / 2 + 0.02), H / 4, 0]}
+            onPointerOver={(e) => { e.stopPropagation(); onHoverInfo('液冷快接头 ×4 · 冷板式进 / 回水 · 盲插免工具'); }}
+            onPointerOut={() => onHoverInfo(null)}>
+            {Array.from({ length: 4 }, (_, i) => (
+              <mesh key={i} position={[0, 0, (i - 1.5) * D / 5]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.026 * S, 0.026 * S, 0.03, 14]} />
+                <meshStandardMaterial color="#6b9fd4" metalness={0.7} roughness={0.3} />
+              </mesh>
+            ))}
+          </group>
+        ))}
+        {/* chassis outline */}
+        <Slab size={[W, H, D]} position={[0, H / 2, 0]} color={LC.rackBody} opacity={0.16} edgeColor={LC.rackEdge} />
+        {/* level strip */}
+        <Slab size={[W * 0.5, 0.02, 0.01]} position={[0, H + 0.02, D / 2 + 0.004]} color={sw} emissive={sw} emissiveIntensity={0.7} />
+        <Text position={[0, H + 0.16, D / 2 + 0.04]} fontSize={0.11} color={LC.text} anchorX="center">
+          {`${TOK.ub} 交换设备 · HRS + LRS · 128×800GE 全光 · L3 Clos 顶层`}
+        </Text>
+        <Text position={[0, H + 0.04, D / 2 + 0.04]} fontSize={0.08} color={LC.textDim} anchorX="center">
+          {'All-Path-Routing 全路径路由 · 1:1 无阻塞 · 液冷'}
+        </Text>
+      </group>
     </group>
   );
 }

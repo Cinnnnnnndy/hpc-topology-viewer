@@ -65,6 +65,16 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
       dc('VW5pZmllZEJ1cyAyLjAg5oqA5pyv6KeE6IyD5bey5byA5pS+5LiL6L29IFs0XQ=='),
     ],
   },
+  ubswitch: {
+    title: dc('VUIg5Lqk5o2i6K6+5aSH77yI6YCa5L+h5p+cIMK3IENsb3Mg6aG25bGCIMK3IOWFqOWFie+8iQ=='),
+    lines: [
+      dc('5om/6L29IOeBteihoiDkuqTmjaIgQVNJQ++8mkhSUyDpq5jln7rmlbAgKyBMUlMg5L2O5Z+65pWw5Lqk5o2iIFsxXQ=='),
+      dc('5YmN6Z2i5p2/5YWo5YWJIE9TRlAg56uv5Y+j6Zi15YiX77yM5rGH6IGaIC8g5LiK6KGM6K6h566X5p+cIFVCIOa1gemHjyBbMV0='),
+      dc('QWxsLVBhdGgtUm91dGluZyDlhajot6/lvoTot6/nlLHvvIwxOjEg5peg6Zi75aGeIENsb3MgWzFd'),
+      dc('5YWo5YWJ5LqS6IGU77yaMTAwIG5zIOaVhemanOajgOa1i++8jOWPr+mdoOaAp+aPkOWNhyAxMDDDlyBbM10='),
+      dc('5Ya35p2/5byP5ray5Ya3IMK3IOebsuaPkuW/q+aOpe+8m+mbtue6v+e8hueUteS6kuiBlCBbM10='),
+    ],
+  },
   node: {
     title: dc('6K6h566X6IqC54K577yI5YiA54mHIMK3IGRpZSAvIEFJIENvcmUgLyBUaWxl77yJ'),
     lines: [

@@ -21,7 +21,7 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, type CommOverlays,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, type CommOverlays,
 } from '../scene/scenes';
 
 const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number] }> = {
@@ -29,7 +29,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0] },
   node:     { pos: [3.8, 3.2, 4.6], target: [0.8, 0.6, 0] },
   topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
-  matrix:   { pos: [0, 9, 7.5], target: [0, 0, 0] },
+  matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -54,6 +54,7 @@ export function ClusterView() {
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
   const [mode, setMode] = useState<ViewMode>('overview');
   const [rackKind, setRackKind] = useState<RackKind>('compute');
+  const [nodeKind, setNodeKind] = useState<'compute' | 'ubswitch'>('compute');
   const [nodeSlot, setNodeSlot] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -67,7 +68,7 @@ export function ClusterView() {
   const infoKey =
     mode === 'overview' ? 'overview' :
     mode === 'rack' ? (rackKind === 'compute' ? 'computeRack' : 'switchRack') :
-    mode === 'node' ? 'node' :
+    mode === 'node' ? (nodeKind === 'ubswitch' ? 'ubswitch' : 'node') :
     mode === 'matrix' ? 'matrix' : 'topology';
   const info = INFO[infoKey];
 
@@ -76,11 +77,13 @@ export function ClusterView() {
       { label: spec.name, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
     ];
     if (mode === 'rack' || mode === 'node') bc.push({ label: rackLabel, onClick: mode === 'node' ? () => setMode('rack') : undefined });
-    if (mode === 'node') bc.push({ label: `节点 ${nodeSlot + 1}` });
+    if (mode === 'node') bc.push({ label: nodeKind === 'ubswitch' ? 'UB 交换设备' : `节点 ${nodeSlot + 1}` });
     return bc;
-  }, [mode, rackLabel, nodeSlot, spec.name]);
+  }, [mode, rackLabel, nodeSlot, nodeKind, spec.name]);
 
-  const cam = CAMERA[mode];
+  const cam = mode === 'node' && nodeKind === 'ubswitch'
+    ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
+    : CAMERA[mode];
 
   const specRows: [string, string][] = [
     ['代际 / 形态', `${spec.code} · ${spec.name}`],
@@ -139,7 +142,7 @@ export function ClusterView() {
           ))}
         </div>
         {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
-        {(mode === 'topology' || mode === 'node') && (
+        {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute')) && (
           <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
             {(mode === 'topology' ? TOPO_OVERLAYS : NODE_OVERLAYS).map((t) => {
               const on = overlays[t.id];
@@ -224,9 +227,15 @@ export function ClusterView() {
               <OverviewScene gen={spec} onHoverInfo={onHoverInfo} onSelectRack={(k) => { setRackKind(k); setMode('rack'); }} />
             )}
             {mode === 'rack' && (
-              <RackScene rackKind={rackKind} label={rackLabel} onHoverInfo={onHoverInfo} onSelectNode={(slot) => { setNodeSlot(slot); setMode('node'); }} />
+              <RackScene
+                rackKind={rackKind} label={rackLabel} onHoverInfo={onHoverInfo}
+                onSelectNode={(slot) => { setNodeSlot(slot); setNodeKind('compute'); setMode('node'); }}
+                onSelectSwitch={() => { setNodeKind('ubswitch'); setMode('node'); }}
+              />
             )}
-            {mode === 'node' && <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />}
+            {mode === 'node' && (nodeKind === 'ubswitch'
+              ? <UBSwitchScene onHoverInfo={onHoverInfo} />
+              : <NodeScene onHoverInfo={onHoverInfo} overlays={overlays} />)}
             {mode === 'topology' && <TopologyScene gen={spec} overlays={overlays} onHoverInfo={onHoverInfo} />}
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
 
@@ -288,7 +297,7 @@ export function ClusterView() {
                 <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>其余=按 UB 级别着色（直连）</span>
               </div>
             )}
-            {mode === 'node' && (
+            {mode === 'node' && nodeKind === 'compute' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>节点内（顶栏开关）</div>
                 {NODE_OVERLAYS.map((c) => (
