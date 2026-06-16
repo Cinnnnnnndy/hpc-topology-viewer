@@ -14,7 +14,7 @@
  * runtime); this file carries no plaintext product names.
  */
 import { Suspense, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { Text as DreiText, Edges } from '@react-three/drei';
+import { Text as DreiText, Edges, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   RACK_DIM, COMPUTE_RACK_UNITS, SWITCH_RACK_UNITS,
@@ -826,11 +826,11 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, [n, cell, cellSize]);
 
-  // ── 3D scale model positions (boards × 8 NPU) ──
-  const { posArr, links } = useMemo(() => {
-    const perBoard = dims[0], boards = dims[1];
-    const bcols = boards <= 2 ? boards : (boards <= 4 ? 2 : 4);
-    const lc4 = 4, npuP = 0.34, gapX = 0.5, gapY = 0.55;
+  // ── 3D scale model positions (boards × 8 NPU) + blade/cabinet bounds ──
+  const { posArr, l1Pts, l2Pts, boardBoxes, cabBox } = useMemo(() => {
+    const perBoard = dims[0], nb = dims[1];
+    const bcols = nb <= 2 ? nb : (nb <= 4 ? 2 : 4);
+    const lc4 = 4, npuP = 0.34, gapX = 0.6, gapY = 0.7;
     const boardW = lc4 * npuP + gapX, boardH = 2 * npuP + gapY;
     const P: [number, number, number][] = [];
     for (let k = 0; k < n; k++) {
@@ -839,20 +839,26 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
       const lcx = l % lc4, lcy = Math.floor(l / lc4);
       P.push([bc * boardW + lcx * npuP, br * boardH + lcy * npuP, 0]);
     }
-    // centre
     const mx = (Math.min(...P.map(p => p[0])) + Math.max(...P.map(p => p[0]))) / 2;
     const my = (Math.min(...P.map(p => p[1])) + Math.max(...P.map(p => p[1]))) / 2;
     for (const p of P) { p[0] -= mx; p[1] -= my; }
-    // direct UB links by level
-    const l1: number[] = [], l2: number[] = [];
+    // per-board (blade) bounding boxes
+    const boardBoxes = Array.from({ length: nb }, (_, b) => {
+      const pts = P.slice(b * perBoard, (b + 1) * perBoard);
+      const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      return { idx: b, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: x1 - x0 + 0.28, h: y1 - y0 + 0.28 };
+    });
+    const ax = P.map(p => p[0]), ay = P.map(p => p[1]);
+    const cabBox = { cx: 0, cy: 0, w: Math.max(...ax) - Math.min(...ax) + 0.6, h: Math.max(...ay) - Math.min(...ay) + 0.6 };
+    // direct UB links by level, as point pairs for fat lines
+    const l1Pts: [number, number, number][] = [], l2Pts: [number, number, number][] = [];
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
       const a = cell(i, j);
       if (!a.direct) continue;
-      const arr = a.level <= 1 ? l1 : l2;
-      arr.push(...P[i], ...P[j]);
+      (a.level <= 1 ? l1Pts : l2Pts).push(P[i], P[j]);
     }
-    const g = (s: number[]) => { const x = new THREE.BufferGeometry(); x.setAttribute('position', new THREE.Float32BufferAttribute(s, 3)); return x; };
-    return { posArr: P, links: { l1: g(l1), l2: g(l2) } };
+    return { posArr: P, l1Pts, l2Pts, boardBoxes, cabBox };
   }, [dims, n, cell]);
 
   const boardOf = (k: number) => Math.floor(k / dims[0]);
@@ -936,8 +942,26 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
 
       {/* ── right: 3D scale model (boards × 8 NPU) with UB links ── */}
       <group position={MODEL_POS}>
-        <lineSegments geometry={links.l1}><lineBasicMaterial color={L(1)} transparent opacity={hi.npus.length ? 0.15 : 0.45} /></lineSegments>
-        <lineSegments geometry={links.l2}><lineBasicMaterial color={L(2)} transparent opacity={hi.npus.length ? 0.1 : 0.3} /></lineSegments>
+        {/* cabinet enclosure (≤64P all within one cabinet) */}
+        <mesh position={[cabBox.cx, cabBox.cy, -0.12]}>
+          <planeGeometry args={[cabBox.w, cabBox.h]} />
+          <meshBasicMaterial color="#eef1f6" transparent opacity={0.5} />
+        </mesh>
+        <Line points={[[cabBox.cx - cabBox.w / 2, cabBox.cy - cabBox.h / 2, -0.11], [cabBox.cx + cabBox.w / 2, cabBox.cy - cabBox.h / 2, -0.11], [cabBox.cx + cabBox.w / 2, cabBox.cy + cabBox.h / 2, -0.11], [cabBox.cx - cabBox.w / 2, cabBox.cy + cabBox.h / 2, -0.11], [cabBox.cx - cabBox.w / 2, cabBox.cy - cabBox.h / 2, -0.11]]} color={LC.rackEdge} lineWidth={1.5} />
+        <Text position={[cabBox.cx - cabBox.w / 2 + 0.05, cabBox.cy + cabBox.h / 2 + 0.12, 0]} fontSize={0.13} color={LC.textDim} anchorX="left">单柜 (1 cabinet)</Text>
+        {/* per-board (blade) trays + labels */}
+        {boardBoxes.map((b) => (
+          <group key={b.idx}>
+            <mesh position={[b.cx, b.cy, -0.07]}>
+              <planeGeometry args={[b.w, b.h]} />
+              <meshBasicMaterial color="#dfe6f0" transparent opacity={0.7} />
+            </mesh>
+            <Text position={[b.cx, b.cy + b.h / 2 + 0.06, 0]} fontSize={0.1} color={L(1)} anchorX="center">{`刀片 B${b.idx}`}</Text>
+          </group>
+        ))}
+        {/* UB direct links (fat lines for visibility): blue=L1 board, purple=L2 cross-board */}
+        {l1Pts.length > 0 && <Line points={l1Pts} segments color={L(1)} lineWidth={hi.npus.length ? 1.5 : 3} transparent opacity={hi.npus.length ? 0.4 : 0.95} />}
+        {l2Pts.length > 0 && <Line points={l2Pts} segments color={L(2)} lineWidth={hi.npus.length ? 1.5 : 2.5} transparent opacity={hi.npus.length ? 0.35 : 0.8} />}
         {/* NPUs as a single instanced mesh (perf) */}
         <instancedMesh
           ref={modelRef}

@@ -105,7 +105,7 @@ export const INFO: Record<string, { title: string; lines: string[] }> = {
       dc('5bem5L6n5Y2B5a2X57q/77ya5b2T5YmN5oKs5YGc55qE6KGMIGkgKyDliJcgau+8jOS6pOeCueWNs+ivpeagvOWtkO+8iOWumuS9jeaYr+WTquS4pOmilyBOUFXvvIk='),
       dc('5Y+z5L6nIDNE77ya6IqC54K5KOadvynDlzggTlBVIOecn+WunuaOkuW4g++8m+i/nue6vz1VQiDnm7Tov57vvIjok50gTDEgLyDntKsgTDLvvIlbMV0='),
       dc('6IGU5Yqo77ya5oKs5YGc55+p6Zi15qC8IOKGkiDlj7Pkvqfpq5jkuq7ov5nkuKTpopcgTlBVIOW5tueUu+WHuuWFtui/nue6v++8m+aCrOWBnCBOUFUg4oaSIOW3puS+p+mrmOS6ruWFtuihjOWIlw=='),
-      dc('5YiH5o2iIDE2UCAvIDMyUCAvIDY0UCDnnIvkuI3lkIzop4TmqKHnmoTpgrvmjqXnu5PmnoQ='),
+      dc('5pys5Zu+IOKJpDY0UCDlkIzlsZ7ljZXmn5zvvIzku4XlkKsgTDEvTDLvvJtMMyDot6jmn5zop4Hmm7TlpKfop4TmqKEgwrcg5L6d5o2uIFsxXVszXe+8jOe7tOW6puWIh+WIhuS4uuekuuaEjw=='),
     ],
   },
 };

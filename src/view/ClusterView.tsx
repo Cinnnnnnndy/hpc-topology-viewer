@@ -287,15 +287,19 @@ export function ClusterView() {
             background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
             display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none', maxWidth: 240,
           }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {UB_LEVELS.map((lv) => (
-                <span key={lv.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 3, background: lv.color, display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>{`${lv.id} ${lv.label}`}</span>
-                </span>
-              ))}
-            </div>
+            {mode !== 'matrix' && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {UB_LEVELS.map((lv) => (
+                    <span key={lv.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 12, height: 3, background: lv.color, display: 'inline-block', borderRadius: 1 }} />
+                      <span style={{ color: 'rgba(0,0,0,0.6)' }}>{`${lv.id} ${lv.label}`}</span>
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
             {mode === 'topology' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>进程级通信（顶栏开关）</div>
@@ -308,17 +312,31 @@ export function ClusterView() {
               </div>
             )}
             {mode === 'matrix' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>单元格</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>图例</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)' }}>矩阵格子（行 i × 列 j = 两颗 NPU）</div>
+                {([['L1 直连·板内', UB_LEVELS[1].color], ['L2 直连·跨板', UB_LEVELS[2].color], ['L3 直连·跨柜（更大规模）', UB_LEVELS[3].color], ['多跳·非直连', '#dfe3ea'], ['对角·自身', '#3a4256']] as [string, string][]).map(([t, c]) => (
+                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 8, background: c, display: 'inline-block', borderRadius: 1, border: '1px solid rgba(0,0,0,0.08)' }} />
+                    <span style={{ color: 'rgba(0,0,0,0.6)' }}>{t}</span>
+                  </span>
+                ))}
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', marginTop: 2 }}>右侧 3D 结构</div>
+                {([['UB 直连 L1（板内）', UB_LEVELS[1].color], ['UB 直连 L2（跨板）', UB_LEVELS[2].color]] as [string, string][]).map(([t, c]) => (
+                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 3, background: c, display: 'inline-block', borderRadius: 1 }} />
+                    <span style={{ color: 'rgba(0,0,0,0.6)' }}>{t}</span>
+                  </span>
+                ))}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 8, background: '#3a4256', display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>对角（自身）</span>
+                  <span style={{ width: 12, height: 10, background: '#dfe6f0', display: 'inline-block', borderRadius: 1, border: '1px solid rgba(0,0,0,0.15)' }} />
+                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>刀片(板)框 · 外框 = 单柜</span>
                 </span>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'rgba(0,0,0,0.55)', marginTop: 2 }}>联动高亮</div>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 8, background: '#dfe3ea', display: 'inline-block', borderRadius: 1 }} />
-                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>多跳（非直连）</span>
+                  <span style={{ width: 12, height: 3, background: '#4369ef', display: 'inline-block' }} />
+                  <span style={{ color: 'rgba(0,0,0,0.6)' }}>十字 = 行 i / 列 j；i·j = 对应两颗 NPU</span>
                 </span>
-                <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>其余=按 UB 级别着色（直连）</span>
               </div>
             )}
             {mode === 'node' && nodeKind === 'compute' && (
