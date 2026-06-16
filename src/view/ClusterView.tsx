@@ -50,7 +50,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
-  trace:    { pos: [0, 3.2, 12.5], target: [0, 3.0, 0] },
+  trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0] },
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
