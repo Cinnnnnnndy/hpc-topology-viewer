@@ -361,8 +361,8 @@ const S_NODE = 3.2;   // node view scale
 // images there as npu-chip.png (package photo) and logo.png (logo) and they get
 // mapped onto the chip; if absent we fall back to procedural geometry.
 const TEX_BASE = `${import.meta.env.BASE_URL}textures/`;
-const CHIP_TEX = `${TEX_BASE}npu-chip.png`;   // image 2 (NPU package photo)
-const LOGO_TEX = `${TEX_BASE}logo.png`;       // image 1 (logo)
+const CHIP_TEX = `${TEX_BASE}image-1781609094658.png`;   // NPU package photo
+const LOGO_TEX = `${TEX_BASE}image-1781609100845.png`;   // logo
 const texCache = new Map<string, THREE.Texture | null>();
 function useOptionalTexture(url: string): THREE.Texture | null {
   const [tex, setTex] = useState<THREE.Texture | null>(() => texCache.get(url) ?? null);
