@@ -1362,8 +1362,8 @@ export function TraceScene({ onHoverInfo, onLocate }: SceneCallbacks & { onLocat
         <Text position={[0, 0, 0.2]} fontSize={0.12} color={L(3)} anchorX="center" anchorY="middle">超节点</Text>
       </group>
 
-      {/* ── bottom time strip + play ── */}
-      <group position={[0, -0.2, 0]}>
+      {/* ── bottom time strip + play (kept above the floor so it stays visible) ── */}
+      <group position={[0, 0.25, 0]}>
         <group position={[stx(0) - 0.7, 0, 0]}
           onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
           onPointerOut={() => setCursor(false)}
