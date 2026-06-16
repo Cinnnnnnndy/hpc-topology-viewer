@@ -357,17 +357,36 @@ const S_NODE = 3.2;   // node view scale
 // ─── Shared element abstractions: one concept → one look in every view ────────
 // (abstracted from the real form; node + cabinet views are the reference)
 /** NPU = chip package + dual die (die accent = L0 teal). */
-function NpuChip({ w, h, hovered, selected, dim }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number }) {
+/** NPU = chip package: metal lid + recessed die/HBM tiles + (optional) Ascend mark.
+ *  Abstracted from the real Ascend 910/950 package photo. */
+function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number; logo?: boolean }) {
   const hh = h ?? w * 0.5;
   const edge = selected ? COMM_PATTERNS[2].color : hovered ? '#4ade80' : LC.rackEdge;
-  const di = dim ?? (selected ? 1.0 : hovered ? 0.9 : 0.5);
+  const glow = dim ?? (selected ? 0.6 : hovered ? 0.4 : 0);
+  const top = hh / 2;
+  // 2 columns × 3 rows of die / HBM tiles on the recessed lid (chiplet layout)
+  const tiles: [number, number][] = [];
+  for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) tiles.push([(c - 0.5) * w * 0.36, (r - 1) * w * 0.27]);
   return (
     <group>
-      <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.35} roughness={0.55} />
-      {Array.from({ length: DIES_PER_NPU }, (_, d) => (
-        <Slab key={d} size={[w * 0.34, hh * 0.6, w * 0.8]} position={[(d - (DIES_PER_NPU - 1) / 2) * w * 0.42, hh * 0.62, 0]}
-          color={L(0)} emissive={L(0)} emissiveIntensity={di} metalness={0.5} roughness={0.4} />
+      {/* package body (brushed metal lid) */}
+      <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
+      {/* recessed dark frame */}
+      <Slab size={[w * 0.9, hh * 0.14, w * 0.9]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
+      {/* die / HBM tiles */}
+      {tiles.map(([tx, tz], i) => (
+        <Slab key={i} size={[w * 0.3, hh * 0.16, w * 0.2]} position={[tx, top + hh * 0.12, tz]}
+          color={LC.npuTop} emissive={selected || hovered ? L(0) : '#000000'} emissiveIntensity={glow} metalness={0.7} roughness={0.3} />
       ))}
+      {/* central vertical seam */}
+      <Slab size={[w * 0.02, hh * 0.18, w * 0.86]} position={[0, top + hh * 0.12, 0]} color="#3a4250" metalness={0.5} roughness={0.5} />
+      {/* Ascend mark (red triangular prism) — only at larger scale */}
+      {logo && (
+        <mesh position={[0, top + hh * 0.22, 0]} rotation={[0, Math.PI, 0]}>
+          <cylinderGeometry args={[w * 0.11, w * 0.11, hh * 0.18, 3]} />
+          <meshStandardMaterial color={RACK_COLORS.accent} emissive={RACK_COLORS.accent} emissiveIntensity={0.45} metalness={0.3} roughness={0.4} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -428,7 +447,7 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
     >
       {part.type === 'npu' ? (
         <>
-          <NpuChip w={sx * S} h={sy * S} hovered={hovered} selected={selected} />
+          <NpuChip w={sx * S} h={sy * S} hovered={hovered} selected={selected} logo />
           {selected && <Slab size={[sx * S * 1.08, 0.004 * S, sz * S * 1.08]} position={[0, sy * S * 1.0, 0]} color={selColor} emissive={selColor} emissiveIntensity={1} />}
         </>
       ) : part.type === 'cpu' ? (
@@ -799,7 +818,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
 
       {/* L0 — one NPU package: dual die (NpuChip = same NPU element used everywhere) */}
       <Tier lvl={0}>
-        <NpuChip w={0.62} h={0.2} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} />
+        <NpuChip w={0.62} h={0.2} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} logo />
         <Text position={[0, 0, 0.42]} fontSize={0.12} color={LC.textDim} anchorX="center">1 NPU 封装 · 2 die</Text>
       </Tier>
 
@@ -1324,7 +1343,7 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
             <group position={[hwX, yy, 0]}>
               {i === 0 && <CabinetBox w={0.5} h={0.5} d={0.2} kind="compute" hovered={on} />}
               {i === 1 && [-0.5, 0, 0.5].map((dx, k) => <group key={k} position={[dx, 0, 0]}><NpuChip w={0.26} h={0.16} hovered={on} /></group>)}
-              {i === 2 && <NpuChip w={0.5} h={0.3} hovered={on} selected={on} />}
+              {i === 2 && <NpuChip w={0.5} h={0.3} hovered={on} selected={on} logo />}
               {i === 3 && <Slab size={[0.34, 0.18, 0.34]} color={L(0)} emissive={L(0)} emissiveIntensity={on ? 0.9 : 0.5} />}
               {i === 4 && Array.from({ length: 6 }, (_, k) => <Slab key={k} size={[0.1, 0.08, 0.1]} position={[(k % 3 - 1) * 0.16, 0, (Math.floor(k / 3) - 0.5) * 0.16]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />)}
               <Text position={[0, -0.5, 0]} fontSize={0.14} color={LC.textDim} anchorX="center" maxWidth={2.4}>{r.hw}</Text>
@@ -1441,7 +1460,7 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       {/* NPU row */}
       {Array.from({ length: P }, (_, p) => (
         <group key={p} position={[xP(p), yNpu, 0]}>
-          <NpuChip w={0.42} h={0.24} hovered={pOn(p)} selected={pOn(p)} />
+          <NpuChip w={0.42} h={0.24} hovered={pOn(p)} selected={pOn(p)} logo />
           <Text position={[0, 0.32, 0]} fontSize={0.09} color={LC.textDim} anchorX="center">{`NPU ${p}`}</Text>
         </group>
       ))}
