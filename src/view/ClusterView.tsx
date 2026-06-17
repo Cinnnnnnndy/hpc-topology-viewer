@@ -16,7 +16,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -64,6 +64,19 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'trace',    label: '线程时序' },
   { id: 'fullpod',  label: '整列全景(多卡)' },
 ];
+
+// compact legend row: a swatch (line / square / dot) + label
+function LgRow({ color, label, shape = 'line' }: { color: string; label: string; shape?: 'line' | 'sq' | 'dot' }) {
+  const sw = shape === 'line' ? { width: 12, height: 3, borderRadius: 1 } : shape === 'dot' ? { width: 9, height: 9, borderRadius: '50%' } : { width: 10, height: 10, borderRadius: 2 };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ ...sw, background: color, display: 'inline-block', flexShrink: 0 }} />
+      <span style={{ color: 'rgba(0,0,0,0.62)', fontSize: 11 }}>{label}</span>
+    </span>
+  );
+}
+const lgHdr: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4, marginTop: 2 };
+const lgNote: React.CSSProperties = { color: 'rgba(0,0,0,0.5)', fontSize: 10 };
 
 // per-mode overlay toggles
 const TOPO_OVERLAYS: { id: keyof CommOverlays; label: string; color: string }[] = [
@@ -150,6 +163,12 @@ export function ClusterView() {
     const n = (fpFull ? spec.totalNpus : 64) * podCount;   // full super-node, else single 64P cabinet
     return Math.sqrt(n) * 1.3 + 12;
   }, [fpFull, podCount, spec.totalNpus]);
+  // parallel decomposition shown in the partition legend (mirrors FullPodScene's `part`)
+  const fpCfg = useMemo(() => {
+    const n1 = fpFull ? spec.totalNpus : 64, nB1 = Math.max(1, Math.round(n1 / 8));
+    const TP = 8, PP = Math.min(16, nB1), DP = Math.max(1, Math.round(nB1 / PP));
+    return `TP${TP}×PP${PP}×DP${DP}`;
+  }, [fpFull, spec.totalNpus]);
   const cam = mode === 'node' && nodeKind === 'ubswitch'
     ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
     : mode === 'fullpod'
@@ -561,7 +580,10 @@ export function ClusterView() {
           <div style={{
             position: 'absolute', right: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6,
-            display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none', maxWidth: 240,
+            display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 250,
+            pointerEvents: mode === 'fullpod' ? 'auto' : 'none',
+            maxHeight: mode === 'fullpod' ? 'calc(100vh - 140px)' : undefined,
+            overflowY: mode === 'fullpod' ? 'auto' : 'visible',
           }}>
             {mode === 'mapping' && (
               <>
@@ -589,7 +611,7 @@ export function ClusterView() {
                 <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>点击线程/进程 → 顶部定位 NPU/刀片/机柜</span>
               </>
             )}
-            {mode !== 'matrix' && mode !== 'mapping' && mode !== 'trace' && (
+            {mode !== 'matrix' && mode !== 'mapping' && mode !== 'trace' && mode !== 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -641,12 +663,44 @@ export function ClusterView() {
                 </span>
               </div>
             )}
-            {mode === 'fullpod' && fpPart !== 'none' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>{`并行切分上色 · ${PARTITION_META[fpPart].label}`}</div>
-                <span style={{ color: 'rgba(0,0,0,0.55)', fontSize: 10 }}>{PARTITION_META[fpPart].level}</span>
-                <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>{`同色 = 同一 ${fpPart.toUpperCase()} 组（卡 / 刀片按组循环上色）`}</span>
-              </div>
+            {mode === 'fullpod' && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.75)' }}>全量超节点 · 图例</div>
+                {/* layer elements */}
+                <LgRow shape="dot" color={COMM_PATTERNS[2].color} label="线程 / AI Core" />
+                <LgRow shape="dot" color="#4369ef" label="进程 rank" />
+                <LgRow shape="sq" color="#aeb8c6" label="L0 卡 / NPU" />
+                <LgRow shape="sq" color={UB_LEVELS[1].color} label="L1 刀片 / 节点" />
+                <LgRow shape="sq" color={UB_LEVELS[2].color} label="L2 机柜" />
+                <LgRow shape="sq" color={UB_LEVELS[3].color} label={`L3 ${TOK.supernode}`} />
+                {podCount > 1 && <LgRow shape="sq" color={UB_LEVELS[4].color} label="L4 超节点间" />}
+                {/* connections */}
+                <div style={lgHdr}>连接</div>
+                <LgRow color={UB_LEVELS[1].color} label="层内直连 L1 卡↔卡（板载）" />
+                <LgRow color={UB_LEVELS[2].color} label="层内直连 L2 节点↔节点（柜内）" />
+                <span style={lgNote}>竖向骨干按 UB 级别同色（L1→L4）</span>
+                <LgRow color={COMM_PATTERNS[0].color} label="Ring-AllReduce（环）" />
+                <LgRow color={COMM_PATTERNS[1].color} label="All-to-All（MoE）" />
+                {/* selection highlight */}
+                <div style={lgHdr}>选中高亮</div>
+                <LgRow color="#ffb020" label="上下游链路（竖向）" />
+                <LgRow color="#22d3ee" label="同级 peer mesh（卡/节点）" />
+                <span style={lgNote}>单击 卡 / 刀片 / 机柜高亮 · 双击进卡</span>
+                {/* run phases (phase-wash colours) */}
+                <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
+                {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
+                {/* parallel partition palette */}
+                {fpPart !== 'none' && (
+                  <>
+                    <div style={lgHdr}>{`并行切分 · ${PARTITION_META[fpPart].label}`}</div>
+                    <span style={lgNote}>{`${PARTITION_META[fpPart].level} · ${fpCfg}`}</span>
+                    <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', marginTop: 2 }}>
+                      {PARTITION_PALETTE.map((c, i) => <span key={i} title={`组 ${i}`} style={{ width: 14, height: 9, background: c, borderRadius: 1, display: 'inline-block' }} />)}
+                    </div>
+                    <span style={lgNote}>{`同色 = 同一 ${fpPart.toUpperCase()} 组（按组循环上色）`}</span>
+                  </>
+                )}
+              </>
             )}
             {mode === 'node' && nodeKind === 'compute' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>

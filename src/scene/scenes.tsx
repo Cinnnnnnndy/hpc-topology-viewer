@@ -22,7 +22,7 @@ import {
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
   UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
-  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED,
+  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1614,8 +1614,6 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-const FP_PART_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
-
 export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, onHoverInfo, onPick }: SceneCallbacks & {
   scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; onPick?: (npuLocal: number) => void;
 }) {
@@ -1776,9 +1774,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const onPart = partition !== 'none';
     if (pm) { for (let k = 0; k < G.N; k++) { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); pm.setColorAt(k, col); } if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     if (tm) { for (let k = 0; k < G.N * FP_THREADS; k++) { col.copy(thrBase); if (computeNow && tint) col.lerp(tint, 0.7); tm.setColorAt(k, col); } if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
-    if (nm && !useChip) { for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (onPart) col.set(FP_PART_PALETTE[part.groupOf(k) % FP_PART_PALETTE.length]); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); } if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
+    if (nm && !useChip) { for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (onPart) col.set(PARTITION_PALETTE[part.groupOf(k) % PARTITION_PALETTE.length]); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); } if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
     const bm = bladeInst.current;
-    if (bm) { for (let b = 0; b < G.nBlades; b++) { if (onPart) col.set(FP_PART_PALETTE[part.groupOf(b * FP_CARDS_PER_BLADE) % FP_PART_PALETTE.length]); else col.set('#dbe9fb'); bm.setColorAt(b, col); } if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
+    if (bm) { for (let b = 0; b < G.nBlades; b++) { if (onPart) col.set(PARTITION_PALETTE[part.groupOf(b * FP_CARDS_PER_BLADE) % PARTITION_PALETTE.length]); else col.set('#dbe9fb'); bm.setColorAt(b, col); } if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
   }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)

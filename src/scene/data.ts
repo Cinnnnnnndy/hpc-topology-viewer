@@ -126,6 +126,8 @@ export const PARTITION_META: Record<Exclude<PartitionDim, 'none'>, { label: stri
   dp: { label: 'DP 数据并行', level: 'L3/L4 副本间（梯度 AllReduce）' },
   ep: { label: 'EP 专家并行', level: 'L2/L3 机柜内（MoE All-to-All）' },
 };
+// cycling palette: group g → PARTITION_PALETTE[g % len] (same colour = same parallel group)
+export const PARTITION_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
 
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
   train: [
