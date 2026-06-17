@@ -100,6 +100,7 @@ export function ClusterView() {
   const [runPlaying, setRunPlaying] = useState(false);
   const [runStep, setRunStep] = useState(0);     // completed iterations / decode steps
   const [fpPart, setFpPart] = useState<PartitionDim>('none');   // full-pod: colour cards by parallel dim
+  const [fpPeers, setFpPeers] = useState(true);   // full-pod: draw same-level peer mesh (L1 card / L2 node)
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -330,6 +331,24 @@ export function ClusterView() {
             })}
           </div>
         )}
+        {/* full-pod same-level peer mesh (L1 card↔card + L2 node↔node UB links) */}
+        {mode === 'fullpod' && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+            <button
+              onClick={() => setFpPeers((v) => !v)}
+              title="层内直连：L1 板载卡↔卡 + L2 机柜内节点↔节点 UB 直连 mesh"
+              style={{
+                padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5,
+                border: `1px solid ${fpPeers ? UB_LEVELS[1].color : 'rgba(0,0,0,0.12)'}`,
+                background: fpPeers ? `${UB_LEVELS[1].color}22` : 'transparent',
+                color: fpPeers ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.5)',
+              }}
+            >
+              <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 1 : 0.4 }} />
+              层内直连
+            </button>
+          </div>
+        )}
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
           {breadcrumb.map((b, i) => (
@@ -392,7 +411,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}

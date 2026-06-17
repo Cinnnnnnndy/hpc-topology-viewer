@@ -1616,8 +1616,8 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  capped so the full ~8 K-card super-node stays interactive. */
 const FP_PART_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
 
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; onPick?: (npuLocal: number) => void;
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; onPick?: (npuLocal: number) => void;
 }) {
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [selCard, setSelCard] = useState<number | null>(null);   // single-click selection → highlight its up/down-stream chain
@@ -1713,11 +1713,19 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       if (nCabs1 <= 200) for (let i = 0; i < nCabs1; i++) for (let j = i + 1; j < nCabs1; j++) { const a = p * nCabs1 + i, b = p * nCabs1 + j; cabA2A.push([cabMX[a], yCab, cabMZ[a]], [cabMX[b], yCab, cabMZ[b]]); }
     }
 
+    // same-level peer links (direct card↔card / node↔node UB connections):
+    //   l1mesh = L1 board mesh (the 8 NPU of a blade are directly UB-connected)
+    //   l2mesh = L2 cabinet mesh (the 8 nodes of a cabinet are full-mesh at the blade level)
+    const l1mesh: [number, number, number][] = [], l2mesh: [number, number, number][] = [];
+    const peerL1 = N <= 16384;   // card-level mesh is dense → cap (keep node mesh beyond)
+    if (peerL1) for (let bi = 0; bi < bladeMX.length; bi++) { const base = bi * FP_CARDS_PER_BLADE; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) for (let j = i + 1; j < FP_CARDS_PER_BLADE; j++) { const a = base + i, b = base + j; if (b >= N) break; l1mesh.push([cardX[a], yCard, cardZ[a]], [cardX[b], yCard, cardZ[b]]); } }
+    { const byCab: number[][] = Array.from({ length: cabMX.length }, () => []); for (let bi = 0; bi < bladeMX.length; bi++) byCab[bladeCab[bi]].push(bi); for (const bl of byCab) for (let i = 0; i < bl.length; i++) for (let j = i + 1; j < bl.length; j++) { const a = bl[i], b = bl[j]; l2mesh.push([bladeMX[a], yBlade, bladeMZ[a]], [bladeMX[b], yBlade, bladeMZ[b]]); } }
+
     return {
       N, N1, nBlades: bladeMX.length, nCabs: cabMX.length, superMX, cluster: [0, yCluster, 0] as [number, number, number],
       cardX, cardZ, cardBlade, bladeMX, bladeMZ, bladeCab, cabMX, cabMZ, cabSuper, thrPitch, drawMicro,
       yThread, yProc, yCard, yBlade, yCab, ySuper, yCluster,
-      t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, cabRing, cabA2A, fieldW, fieldD: superD, superW, cw, cd,
+      t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, cabRing, cabA2A, l1mesh, l2mesh, peerL1, fieldW, fieldD: superD, superW, cw, cd,
     };
   }, [scale, podCount, full, gen.totalNpus]);
 
@@ -1839,6 +1847,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4)}
       {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4)}
 
+      {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet) */}
+      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={L(1)} lineWidth={0.8} transparent opacity={focus === null ? 0.5 : 0.16} />}
+      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={L(2)} lineWidth={1.2} transparent opacity={focus === null ? 0.55 : 0.2} />}
+
       {/* L1 blade + L2 cabinet markers (instanced) */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.55} toneMapped={false} />
@@ -1923,7 +1935,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       )}
 
       <Text position={[0, 0.04, G.fieldD / 2 + 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={Math.min(0.6, 0.2 + G.fieldW * 0.003)} color={LC.textDim} anchorX="center">
-        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
+        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${peers && !G.peerL1 ? ' · L1卡间mesh过密(暂隐)' : ''}${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
       </Text>
     </group>
   );
