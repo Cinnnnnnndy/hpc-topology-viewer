@@ -39,7 +39,7 @@ export interface GenSpec {
   trainTokps: string;
   inferTokps: string;
   superclusterNpu: string;  // cluster-level scale
-  // per-chip specs (A5 from the Ascend 950 whitepaper; A6 estimated/derived)
+  // per-chip specs (A5 from the published whitepaper; A6 estimated/derived)
   memGB: number;            // per-chip HBM capacity
   fp4Tflops: number | null; // per-chip MXFP4 TFLOPS
   fp8Tflops: number | null; // per-chip FP8-class TFLOPS

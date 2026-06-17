@@ -94,6 +94,7 @@ export function ClusterView() {
   const [ubFocus, setUbFocus] = useState<'ccu' | 'onchip' | 'ub' | null>(null);   // from IO-die inset jump
   const onUbJump = useCallback((t: UbJump) => { setUbFocus(t.focus); setMode(t.view); }, []);
   const [podCount, setPodCount] = useState(1);   // full-pod view: number of super-nodes
+  const [fpFull, setFpFull] = useState(false);   // full-pod view: show the full super-node (gen.totalNpus)
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -125,10 +126,15 @@ export function ClusterView() {
     return bc;
   }, [mode, rackLabel, nodeSlot, nodeKind, spec.name]);
 
+  // full-pod field grows with the card count → pull the camera back / raise the angle to fit
+  const fpReach = useMemo(() => {
+    const n = (fpFull ? spec.totalNpus : SCALES[scale].npus) * podCount;
+    return Math.sqrt(n) * 1.3 + 12;
+  }, [fpFull, scale, podCount, spec.totalNpus]);
   const cam = mode === 'node' && nodeKind === 'ubswitch'
     ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
     : mode === 'fullpod'
-    ? { pos: [0, 3.8 + podCount * 0.5, 12 + podCount * 6] as [number, number, number], target: [0, 3.0, 0] as [number, number, number] }
+    ? { pos: [0, fpReach * 0.62, fpReach * 1.02] as [number, number, number], target: [0, Math.min(6, fpReach * 0.1), 0] as [number, number, number] }
     : CAMERA[mode];
 
   const specRows: [string, string][] = [
@@ -248,6 +254,21 @@ export function ClusterView() {
             ))}
           </div>
         )}
+        {/* full-pod: render the entire super-node (gen.totalNpus) as a 2-D array */}
+        {mode === 'fullpod' && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+            <button
+              onClick={() => setFpFull((v) => !v)}
+              title={`全量超节点：渲染整座超节点全部 ${spec.totalNpus.toLocaleString()} 张卡（阵列）`}
+              style={{
+                padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
+                border: `1px solid ${fpFull ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                background: fpFull ? 'rgba(67,105,239,0.10)' : 'transparent',
+                color: fpFull ? '#4369ef' : 'rgba(0,0,0,0.55)',
+              }}
+            >{`全量超节点(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`}</button>
+          </div>
+        )}
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
           {breadcrumb.map((b, i) => (
@@ -281,9 +302,9 @@ export function ClusterView() {
               gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
             }}
           >
-            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
+            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
             <color attach="background" args={['#f5f5f5']} />
-            <fog attach="fog" args={['#f5f5f5', 26, 60]} />
+            <fog attach="fog" args={['#f5f5f5', mode === 'fullpod' ? 90 : 26, mode === 'fullpod' ? 420 : 60]} />
             <ambientLight intensity={1.1} />
             <directionalLight
               position={[8, 14, 6]} intensity={1.2} castShadow
@@ -310,13 +331,13 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale={scale} podCount={podCount} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale={scale} podCount={podCount} full={fpFull} gen={spec} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}
               enableDamping dampingFactor={0.08}
               minPolarAngle={0.1} maxPolarAngle={Math.PI / 2 - 0.04}
-              minDistance={1.2} maxDistance={60}
+              minDistance={1.2} maxDistance={mode === 'fullpod' ? 360 : 60}
             />
           </Canvas>
 
