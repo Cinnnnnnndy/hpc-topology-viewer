@@ -16,8 +16,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META,
-  type Gen, type RackKind, type ViewMode, type Scale,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED,
+  type Gen, type RackKind, type ViewMode, type Scale, type RunMode,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
@@ -95,6 +95,10 @@ export function ClusterView() {
   const onUbJump = useCallback((t: UbJump) => { setUbFocus(t.focus); setMode(t.view); }, []);
   const [podCount, setPodCount] = useState(1);   // full-pod view: number of super-nodes
   const [fpFull, setFpFull] = useState(false);   // full-pod view: show the full super-node (gen.totalNpus)
+  const [runMode, setRunMode] = useState<RunMode>('train');   // full-pod run view: train / infer
+  const [runTick, setRunTick] = useState<number | null>(null);   // current phase index in RUN_SCHED[runMode]
+  const [runPlaying, setRunPlaying] = useState(false);
+  const [runStep, setRunStep] = useState(0);     // completed iterations / decode steps
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -102,6 +106,19 @@ export function ClusterView() {
     const id = setInterval(() => setTraceTick((t) => ((t ?? -1) + 1) % TRACE_SCHED.length), 750);
     return () => clearInterval(id);
   }, [tracePlaying]);
+
+  // full-pod "running" loop: advance the train/infer schedule, bump the iteration counter on wrap
+  useEffect(() => {
+    if (!runPlaying) return;
+    const len = RUN_SCHED[runMode].length;
+    const id = setInterval(() => setRunTick((t) => {
+      const next = ((t ?? -1) + 1) % len;
+      if (next === 0) setRunStep((s) => s + 1);
+      return next;
+    }), 800);
+    return () => clearInterval(id);
+  }, [runPlaying, runMode]);
+  const runPhase = runTick === null ? null : RUN_SCHED[runMode][runTick % RUN_SCHED[runMode].length];
 
   const spec = GENERATIONS[gen];
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
@@ -272,6 +289,24 @@ export function ClusterView() {
             ))}
           </div>
         )}
+        {/* full-pod run mode: train / infer */}
+        {mode === 'fullpod' && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>运行</span>
+            {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }}
+                style={{
+                  padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
+                  border: `1px solid ${runMode === m ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                  background: runMode === m ? 'rgba(67,105,239,0.10)' : 'transparent',
+                  color: runMode === m ? '#4369ef' : 'rgba(0,0,0,0.55)',
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        )}
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
           {breadcrumb.map((b, i) => (
@@ -334,7 +369,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} tick={traceTick} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -396,7 +431,7 @@ export function ClusterView() {
           )}
 
           {/* trace timeline media control (HTML overlay, not a 3D object) */}
-          {(mode === 'trace' || mode === 'fullpod') && (
+          {mode === 'trace' && (
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
@@ -428,6 +463,45 @@ export function ClusterView() {
               {traceTick !== null && (
                 <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.5)' }}>复位</button>
               )}
+            </div>
+          )}
+
+          {/* full-pod run HUD: train/infer iteration driver + readouts */}
+          {mode === 'fullpod' && (
+            <div style={{
+              position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', maxWidth: '92%', flexWrap: 'wrap',
+              background: 'rgba(255,255,255,0.96)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8,
+            }}>
+              <button
+                onClick={() => { setRunPlaying((v) => !v); if (runTick === null) setRunTick(0); }}
+                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: runPlaying ? '#4369ef' : 'white', color: runPlaying ? 'white' : '#4369ef', fontSize: 13 }}
+              >{runPlaying ? '⏸' : '▶'}</button>
+              <div style={{ display: 'flex', gap: 2 }}>
+                {RUN_SCHED[runMode].map((ph, k) => (
+                  <button
+                    key={ph.id}
+                    title={ph.note}
+                    onClick={() => { setRunPlaying(false); setRunTick(k); }}
+                    style={{
+                      height: 22, padding: '0 8px', cursor: 'pointer', borderRadius: 3,
+                      border: runTick === k ? '2px solid #1c2433' : '1px solid rgba(0,0,0,0.12)',
+                      background: ph.color, opacity: runTick === null || runTick === k ? 1 : 0.5,
+                      fontSize: 10, color: '#1c2433', fontWeight: 600,
+                    }}
+                  >{ph.name.split(' ')[0]}</button>
+                ))}
+              </div>
+              <span style={{ fontSize: 12, color: '#1c2433', minWidth: 150 }}>
+                {runPhase ? `${runPhase.name} · ${runPhase.parallel ?? '—'}` : (runMode === 'train' ? '训练循环（点相位 / ▶）' : '推理循环（点相位 / ▶）')}
+              </span>
+              <span style={{ fontSize: 11.5, color: '#4369ef' }}>
+                {`${runMode === 'train' ? '迭代' : '步'} #${runStep} · ${runMode === 'train' ? spec.trainTokps : spec.inferTokps}`}
+              </span>
+              {runTick !== null && (
+                <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.5)' }}>复位</button>
+              )}
+              {runPhase && <span style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.55)', width: '100%' }}>{runPhase.note}</span>}
             </div>
           )}
 

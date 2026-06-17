@@ -104,6 +104,34 @@ export const PHASE_META: Record<Phase, { name: string; color: string }> = {
   store:   { name: '存储',           color: '#aab4c4' },
 };
 
+// ─── Full-pod "running" view: train / infer iteration schedules ───────────────
+// Drives the phase wash + collectives over the full super-node. A schematic loop
+// (illustrative, not a real profile). `kind` selects what lights up: compute →
+// AI cores/cards, comm → ranks + the named collective, load/store/mem → data.
+export type RunMode = 'train' | 'infer';
+export type RunKind = 'load' | 'compute' | 'comm' | 'store' | 'mem';
+export interface RunPhase {
+  id: string; name: string; kind: RunKind; color: string;
+  collective?: 'ring' | 'a2a';   // comm phases: which collective animates
+  parallel?: string;             // the parallel dim exercised (TP/PP/DP/EP)
+  note: string;
+}
+export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
+  train: [
+    { id: 'load', name: '加载 batch',      kind: 'load',    color: '#c2c9d4', parallel: 'DP',    note: '各 DP 副本读入各自 micro-batch' },
+    { id: 'fwd',  name: '前向 Forward',    kind: 'compute', color: '#22d3ee', parallel: 'TP·PP', note: 'TP 层内并行 + PP 流水级逐级前向' },
+    { id: 'bwd',  name: '反向 Backward',   kind: 'compute', color: '#0ea5e9', parallel: 'TP·PP', note: '反向传播逐级回传，产生梯度' },
+    { id: 'ar',   name: '梯度 AllReduce',  kind: 'comm',    color: '#f43f5e', collective: 'ring', parallel: 'DP', note: 'DP 副本间环状 AllReduce 同步梯度' },
+    { id: 'opt',  name: '优化器更新',      kind: 'store',   color: '#aab4c4', parallel: '—',     note: '更新参数 / 写回（含 store）' },
+  ],
+  infer: [
+    { id: 'pre', name: 'Prefill 预填充',     kind: 'compute', color: '#22d3ee', parallel: 'TP', note: '提示词整段并行前向，KV-Cache 建立' },
+    { id: 'a2a', name: 'MoE All-to-All',     kind: 'comm',    color: '#f59e0b', collective: 'a2a', parallel: 'EP', note: '专家并行 token 分发 All-to-All' },
+    { id: 'dec', name: 'Decode 解码(逐token)', kind: 'compute', color: '#34d399', parallel: 'TP', note: '自回归逐 token 前向，吞吐 = tok/s' },
+    { id: 'kv',  name: 'KV-Cache 读写',      kind: 'mem',     color: '#a78bfa', parallel: '—', note: '每步读写 KV-Cache（显存带宽受限）' },
+  ],
+};
+
 export const RACK_COLORS = {
   accent: '#e0252f',
   computeGlow: '#38bdf8',

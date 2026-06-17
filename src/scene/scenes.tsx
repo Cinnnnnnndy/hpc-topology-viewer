@@ -23,7 +23,7 @@ import {
   UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED,
-  type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale,
+  type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase,
 } from './data';
 import { TOK } from '../content';
 
@@ -1614,8 +1614,8 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, tick, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; tick: number | null; onPick?: (npuLocal: number) => void;
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; onPick?: (npuLocal: number) => void;
 }) {
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [selCard, setSelCard] = useState<number | null>(null);   // single-click selection → highlight its up/down-stream chain
@@ -1628,8 +1628,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, tick, onHov
   const cabInst = useRef<THREE.InstancedMesh>(null);
   const chipTex = useOptionalTexture(CHIP_TEX);
 
-  const phase = tick === null ? null : TRACE_SCHED[tick];
-  const computeNow = phase === 'compute', commNow = phase === 'comm';
+  const computeNow = phase?.kind === 'compute';   // AI cores / cards light up
+  const commNow = phase?.kind === 'comm';         // ranks + the named collective light up
+  const collective = phase?.collective ?? null;
 
   const G = useMemo(() => {
     const N1 = full ? gen.totalNpus : SCALES[scale].npus;   // cards per super-node
@@ -1729,13 +1730,17 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, tick, onHov
     if (cm) { col.set('#efe7fb'); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(2.2, G.cw * 0.5), 0.1, Math.min(2.2, G.cd * 0.4)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
 
-  // phase highlight: processes brighten on comm, threads on compute (re-runs per play tick only)
+  // phase wash: compute → AI cores (threads) + a card heat tint; comm → ranks pulse the
+  // collective colour. Driven by the run schedule; re-runs only on phase change.
   useLayoutEffect(() => {
-    const col = new THREE.Color(), white = new THREE.Color('#ffffff'), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR);
-    const pm = procRef.current, tm = thrRef.current;
-    if (pm) { for (let k = 0; k < G.N; k++) { col.copy(procBase); if (commNow) col.lerp(white, 0.45); pm.setColorAt(k, col); } if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
-    if (tm) { for (let k = 0; k < G.N * FP_THREADS; k++) { col.copy(thrBase); if (computeNow) col.lerp(white, 0.45); tm.setColorAt(k, col); } if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
-  }, [G, computeNow, commNow]);
+    const col = new THREE.Color(), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR);
+    const tint = phase ? new THREE.Color(phase.color) : null;
+    const cardBase = chipTex ? '#ffffff' : LC.npuTop;
+    const pm = procRef.current, tm = thrRef.current, nm = cardInst.current;
+    if (pm) { for (let k = 0; k < G.N; k++) { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); pm.setColorAt(k, col); } if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
+    if (tm) { for (let k = 0; k < G.N * FP_THREADS; k++) { col.copy(thrBase); if (computeNow && tint) col.lerp(tint, 0.7); tm.setColorAt(k, col); } if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
+    if (nm && !useChip) { for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); nm.setColorAt(k, col); } if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
+  }, [G, phase, computeNow, commNow, useChip, chipTex]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)
   const hoverCard = (k: number | null) => {
@@ -1795,9 +1800,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, tick, onHov
       {conn(G.t2p, THREAD_COLOR, 1, 0.7)}
       {conn(G.p2c, PROC_COLOR, 2, 0.9)}
       {conn(G.c2b, L(1), 3, 0.8)}
-      {conn(G.b2c, L(2), 4, 1.1)}
-      {conn(G.c2s, L(3), 5, 1.4)}
-      {conn(G.s2cl, L(4), 6, 2.4)}
+      {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1)}
+      {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4)}
+      {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4)}
 
       {/* L1 blade + L2 cabinet markers (instanced) */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}>
@@ -1856,12 +1861,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, tick, onHov
         <sphereGeometry args={[1, 8, 8]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
       </instancedMesh>
 
-      {/* rank-level collectives (capped at large N) */}
-      {overlays.ring && G.ring.length > 0 && <FlowLine points={G.ring} color={COMM_PATTERNS[0].color} width={commNow ? 3.6 : 2.4} speed={commNow ? 3 : 1.2} />}
-      {overlays.a2a && G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.45 : 0.2} />}
+      {/* rank-level collectives (toggle, or auto-driven by the current comm phase; capped at large N) */}
+      {(overlays.ring || (commNow && collective === 'ring')) && G.ring.length > 0 && <FlowLine points={G.ring} color={COMM_PATTERNS[0].color} width={commNow ? 3.6 : 2.4} speed={commNow ? 3 : 1.2} />}
+      {(overlays.a2a || (commNow && collective === 'a2a')) && G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.5 : 0.2} />}
 
       <Text position={[0, 0.04, G.fieldD / 2 + 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={Math.min(0.6, 0.2 + G.fieldW * 0.003)} color={LC.textDim} anchorX="center">
-        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${G.drawMicro ? '' : ' · 线程/进程连线已抽样'} · ▶播放`}
+        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
       </Text>
     </group>
   );
