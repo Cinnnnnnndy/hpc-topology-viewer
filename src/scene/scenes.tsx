@@ -1801,8 +1801,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     for (let t = 0; t < FP_THREADS; t++) segs.push([x + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, z], proc);
     segs.push(proc, card, card, blade, blade, cab, cab, sup);
     if (podCount > 1) segs.push(sup, G.cluster);
-    return { segs, card, blade, cab, sup };
+    return { segs, card, blade, cab, sup, k };
   }, [selCard, G, podCount]);
+
+  // die-inset callout placement: left of the field, scaled to the field size so it stays readable
+  const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));
+  const dieInsetPos: [number, number, number] = [-G.fieldW / 2 - DIE.w * 0.55 * dieS - 1.2, G.yCard + 1.8 * dieS, -G.fieldD / 2 - 0.5];
 
   // connector with downstream-focus emphasis (focus = upper band index)
   const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2) => pts.length > 0 && (
@@ -1855,7 +1859,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {useChip
         ? G.cardX.map((x, k) => (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
-            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮上下游 · 双击进入节点`); }}
+            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
@@ -1864,7 +1868,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         ))
         : (
           <instancedMesh ref={cardInst} args={[undefined, undefined, Math.max(1, G.N)]}
-            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮上下游 · 双击进入节点`); }}
+            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { hoverCard(null); setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
@@ -1873,7 +1877,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           </instancedMesh>
         )}
 
-      {/* selected card → highlight its full up/down-stream chain */}
+      {/* selected card → highlight its full up/down-stream chain + die-inset callout */}
       {selPath && (
         <group>
           <Line points={selPath.segs} segments color="#ffb020" lineWidth={3.4} transparent opacity={0.98} />
@@ -1881,6 +1885,16 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             <mesh key={i} position={p}><sphereGeometry args={[0.16, 12, 12]} /><meshStandardMaterial color="#ffb020" emissive="#ffb020" emissiveIntensity={0.7} toneMapped={false} /></mesh>
           ))}
           <mesh position={selPath.card}><boxGeometry args={[0.5, 0.18, 0.5]} /><meshBasicMaterial color="#ffb020" wireframe transparent opacity={0.95} /></mesh>
+          {/* die-operator inset for the selected card (reuses DieDetail), with a leader line */}
+          <Line points={[selPath.card, dieInsetPos]} color="#ffb020" lineWidth={1.6} transparent opacity={0.6} />
+          <group position={dieInsetPos} scale={dieS}>
+            <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
+              <DieDetail npuIdx={selPath.k % 8} overlays={overlays} onHoverInfo={onHoverInfo} />
+            </group>
+          </group>
+          <Text position={[dieInsetPos[0], dieInsetPos[1] + DIE.d * 0.62 * dieS + 0.25, dieInsetPos[2]]} fontSize={Math.min(0.5, 0.12 * dieS)} color="#b45309" anchorX="center">
+            {`NPU ${selPath.k} · ${runMode === 'train' ? '训练' : '推理'}${phase ? '·' + phase.name.split(' ')[0] : ''} · die 算子实况`}
+          </Text>
         </group>
       )}
 
