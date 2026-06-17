@@ -1620,7 +1620,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; onPick?: (npuLocal: number) => void;
 }) {
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
-  const [selCard, setSelCard] = useState<number | null>(null);   // single-click selection → highlight its up/down-stream chain
+  const [sel, setSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
   const [focus, setFocus] = useState<number | null>(null);   // focused band index → highlight its downstream link
   const lastHov = useRef(-1);
   const cardInst = useRef<THREE.InstancedMesh>(null);
@@ -1792,25 +1792,48 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true;
   };
 
-  const toggleSel = (k: number) => setSelCard((s) => (s === k ? null : k));   // single-click select
-  useEffect(() => { setSelCard(null); }, [G]);   // drop stale selection when the layout changes
+  const toggleSel = (lv: number, i: number) => setSel((s) => (s && s.lv === lv && s.i === i ? null : { lv, i }));   // single-click select at a level
+  useEffect(() => { setSel(null); }, [G]);   // drop stale selection when the layout changes
 
-  // trace the selected card's up/down-stream chain (thread → process → card → blade → cabinet → super-node)
+  // trace the selection's up/down-stream chain (vertical) + its same-level peer mesh (horizontal).
+  // lv 0 = card · lv 1 = blade (board) · lv 2 = cabinet (node mesh).
   const selPath = useMemo(() => {
-    if (selCard === null || selCard >= G.N) return null;
-    const k = selCard, x = G.cardX[k], z = G.cardZ[k];
-    const b = G.cardBlade[k], c = G.bladeCab[b], p = G.cabSuper[c];
-    const card: [number, number, number] = [x, G.yCard, z];
-    const proc: [number, number, number] = [x, G.yProc, z];
-    const blade: [number, number, number] = [G.bladeMX[b], G.yBlade, G.bladeMZ[b]];
-    const cab: [number, number, number] = [G.cabMX[c], G.yCab, G.cabMZ[c]];
-    const sup: [number, number, number] = [G.superMX[p], G.ySuper, 0];
-    const segs: [number, number, number][] = [];
-    for (let t = 0; t < FP_THREADS; t++) segs.push([x + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, z], proc);
-    segs.push(proc, card, card, blade, blade, cab, cab, sup);
-    if (podCount > 1) segs.push(sup, G.cluster);
-    return { segs, card, blade, cab, sup, k };
-  }, [selCard, G, podCount]);
+    if (!sel) return null;
+    const cPos = (k: number): [number, number, number] => [G.cardX[k], G.yCard, G.cardZ[k]];
+    const pPos = (k: number): [number, number, number] => [G.cardX[k], G.yProc, G.cardZ[k]];
+    const bPos = (b: number): [number, number, number] => [G.bladeMX[b], G.yBlade, G.bladeMZ[b]];
+    const caPos = (c: number): [number, number, number] => [G.cabMX[c], G.yCab, G.cabMZ[c]];
+    const sPos = (p: number): [number, number, number] => [G.superMX[p], G.ySuper, 0];
+    const vSegs: [number, number, number][] = [], pSegs: [number, number, number][] = [], boxes: [number, number, number][] = [], spheres: [number, number, number][] = [];
+    const bladeCards = (b: number): number[] => { const base = b * FP_CARDS_PER_BLADE, r: number[] = []; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) if (base + i < G.N) r.push(base + i); return r; };
+    const down = (k: number) => { for (let t = 0; t < FP_THREADS; t++) vSegs.push([G.cardX[k] + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, G.cardZ[k]], pPos(k)); vSegs.push(pPos(k), cPos(k)); boxes.push(cPos(k)); };
+    const meshPairs = (xs: number[], f: (x: number) => [number, number, number]) => { for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) pSegs.push(f(xs[i]), f(xs[j])); };
+    const upFromCab = (c: number) => { const p = G.cabSuper[c]; vSegs.push(caPos(c), sPos(p)); spheres.push(caPos(c), sPos(p)); if (podCount > 1) vSegs.push(sPos(p), G.cluster); };
+    let dieK: number | null = null, label = '', labelPos: [number, number, number] = [0, 0, 0];
+
+    if (sel.lv === 0) {
+      const k = sel.i; if (k >= G.N) return null;
+      const b = G.cardBlade[k], c = G.bladeCab[b];
+      down(k); vSegs.push(cPos(k), bPos(b), bPos(b), caPos(c)); spheres.push(bPos(b)); upFromCab(c);
+      meshPairs([k, ...bladeCards(b).filter((j) => j !== k)], cPos);   // card k ↔ its blade-mates (L1 board mesh)
+      dieK = k; label = `NPU ${k}`; labelPos = cPos(k);
+    } else if (sel.lv === 1) {
+      const b = sel.i; if (b >= G.nBlades) return null;
+      const c = G.bladeCab[b], ks = bladeCards(b);
+      for (const k of ks) { down(k); vSegs.push(cPos(k), bPos(b)); }
+      vSegs.push(bPos(b), caPos(c)); spheres.push(bPos(b)); upFromCab(c);
+      meshPairs(ks, cPos);   // L1 board mesh: all 8 cards card↔card
+      label = `刀片 B${b} · ${ks.length}×NPU`; labelPos = bPos(b);
+    } else {
+      const c = sel.i; if (c >= G.nCabs) return null;
+      const blades: number[] = [];
+      for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === c) blades.push(b);
+      for (const b of blades) { const ks = bladeCards(b); for (const k of ks) { down(k); vSegs.push(cPos(k), bPos(b)); } vSegs.push(bPos(b), caPos(c)); spheres.push(bPos(b)); meshPairs(ks, cPos); }
+      meshPairs(blades, bPos);   // L2 node mesh: blade↔blade within the cabinet
+      upFromCab(c); label = `机柜 C${c} · ${blades.length} 刀片`; labelPos = caPos(c);
+    }
+    return { vSegs, pSegs, boxes, spheres, dieK, label, labelPos };
+  }, [sel, G, podCount]);
 
   // die-inset callout placement: left of the field, scaled to the field size so it stays readable
   const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));
@@ -1847,15 +1870,24 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4)}
       {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4)}
 
-      {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet) */}
-      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={L(1)} lineWidth={0.8} transparent opacity={focus === null ? 0.5 : 0.16} />}
-      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={L(2)} lineWidth={1.2} transparent opacity={focus === null ? 0.55 : 0.2} />}
+      {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
+          These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
+      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={L(1)} lineWidth={1.4} transparent opacity={focus === null ? 0.62 : 0.16} />}
+      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={L(2)} lineWidth={1.4} transparent opacity={focus === null ? 0.6 : 0.2} />}
 
-      {/* L1 blade + L2 cabinet markers (instanced) */}
-      <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}>
+      {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
+      <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
+        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`刀片 B${e.instanceId}（L1 节点） · ${FP_CARDS_PER_BLADE}×NPU · 单击高亮板载卡↔卡 mesh + 上下游`); }}
+        onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+        onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(1, e.instanceId); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.55} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh ref={cabInst} args={[undefined, undefined, Math.max(1, G.nCabs)]}>
+      <instancedMesh ref={cabInst} args={[undefined, undefined, Math.max(1, G.nCabs)]}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
+        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`机柜 C${e.instanceId}（L2 机柜） · 单击高亮柜内节点↔节点 mesh + 上下游`); }}
+        onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
+        onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(2, e.instanceId); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.55} toneMapped={false} />
       </instancedMesh>
       {/* L3 super-node + L4 cluster markers */}
@@ -1873,40 +1905,49 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
             onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
-            onClick={(e) => { e.stopPropagation(); toggleSel(k); }}
+            onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
-            <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={hoverNpu === k || selCard === k} logo />
+            <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={hoverNpu === k || (sel?.lv === 0 && sel.i === k)} logo />
           </group>
         ))
         : (
           <instancedMesh ref={cardInst} args={[undefined, undefined, Math.max(1, G.N)]}
             onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { hoverCard(null); setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
-            onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(e.instanceId); }}
+            onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(0, e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
             <boxGeometry args={[1, 1, 1]} />
             <meshStandardMaterial map={chipTex ?? undefined} color={chipTex ? '#ffffff' : LC.npuTop} metalness={0.45} roughness={0.4} toneMapped={false} />
           </instancedMesh>
         )}
 
-      {/* selected card → highlight its full up/down-stream chain + die-inset callout */}
+      {/* selection → peer mesh (cyan, same-level card↔card / node↔node) + up/down-stream chain (amber) + die inset (card only) */}
       {selPath && (
         <group>
-          <Line points={selPath.segs} segments color="#ffb020" lineWidth={3.4} transparent opacity={0.98} />
-          {[selPath.blade, selPath.cab, selPath.sup].map((p, i) => (
-            <mesh key={i} position={p}><sphereGeometry args={[0.16, 12, 12]} /><meshStandardMaterial color="#ffb020" emissive="#ffb020" emissiveIntensity={0.7} toneMapped={false} /></mesh>
+          {selPath.pSegs.length > 0 && <Line points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} transparent opacity={0.95} />}
+          {selPath.vSegs.length > 0 && <Line points={selPath.vSegs} segments color="#ffb020" lineWidth={3} transparent opacity={0.92} />}
+          {selPath.spheres.map((p, i) => (
+            <mesh key={`s${i}`} position={p}><sphereGeometry args={[0.16, 12, 12]} /><meshStandardMaterial color="#ffb020" emissive="#ffb020" emissiveIntensity={0.7} toneMapped={false} /></mesh>
           ))}
-          <mesh position={selPath.card}><boxGeometry args={[0.5, 0.18, 0.5]} /><meshBasicMaterial color="#ffb020" wireframe transparent opacity={0.95} /></mesh>
-          {/* die-operator inset for the selected card (reuses DieDetail), with a leader line */}
-          <Line points={[selPath.card, dieInsetPos]} color="#ffb020" lineWidth={1.6} transparent opacity={0.6} />
-          <group position={dieInsetPos} scale={dieS}>
-            <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
-              <DieDetail npuIdx={selPath.k % 8} overlays={overlays} onHoverInfo={onHoverInfo} />
+          {selPath.boxes.map((p, i) => (
+            <mesh key={`b${i}`} position={p}><boxGeometry args={[0.5, 0.18, 0.5]} /><meshBasicMaterial color="#ffb020" wireframe transparent opacity={0.9} /></mesh>
+          ))}
+          {selPath.dieK !== null ? (
+            <group>
+              {/* die-operator inset for a selected card (reuses DieDetail), with a leader line */}
+              <Line points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#ffb020" lineWidth={1.6} transparent opacity={0.6} />
+              <group position={dieInsetPos} scale={dieS}>
+                <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
+                  <DieDetail npuIdx={selPath.dieK % 8} overlays={overlays} onHoverInfo={onHoverInfo} />
+                </group>
+              </group>
+              <Text position={[dieInsetPos[0], dieInsetPos[1] + DIE.d * 0.62 * dieS + 0.25, dieInsetPos[2]]} fontSize={Math.min(0.5, 0.12 * dieS)} color="#b45309" anchorX="center">
+                {`NPU ${selPath.dieK} · ${runMode === 'train' ? '训练' : '推理'}${phase ? '·' + phase.name.split(' ')[0] : ''} · die 算子实况`}
+              </Text>
             </group>
-          </group>
-          <Text position={[dieInsetPos[0], dieInsetPos[1] + DIE.d * 0.62 * dieS + 0.25, dieInsetPos[2]]} fontSize={Math.min(0.5, 0.12 * dieS)} color="#b45309" anchorX="center">
-            {`NPU ${selPath.k} · ${runMode === 'train' ? '训练' : '推理'}${phase ? '·' + phase.name.split(' ')[0] : ''} · die 算子实况`}
-          </Text>
+          ) : (
+            <Text position={[selPath.labelPos[0], selPath.labelPos[1] + 0.5, selPath.labelPos[2]]} fontSize={lblSize} color="#b45309" anchorX="center" anchorY="bottom">{selPath.label}</Text>
+          )}
         </group>
       )}
 
