@@ -1705,11 +1705,19 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const a2a: [number, number, number][] = [];
     if (N1 <= FP_A2A_CAP) for (let p = 0; p < podCount; p++) { const base = p * N1; for (let i = 0; i < N1; i++) for (let j = i + 1; j < N1; j++) a2a.push([cardX[base + i], yProc, cardZ[base + i]], [cardX[base + j], yProc, cardZ[base + j]]); }
 
+    // hierarchical (marker-level) collectives — these scale to the full super-node:
+    //   cabRing = inter-cabinet Ring-AllReduce (L3) · cabA2A = cabinet-level All-to-All (MoE EP)
+    const cabRing: [number, number, number][] = [], cabA2A: [number, number, number][] = [];
+    for (let p = 0; p < podCount; p++) {
+      for (let i = 0; i < nCabs1; i++) { const c = p * nCabs1 + i, cn = p * nCabs1 + ((i + 1) % nCabs1); cabRing.push([cabMX[c], yCab, cabMZ[c]], [cabMX[cn], yCab, cabMZ[cn]]); }
+      if (nCabs1 <= 200) for (let i = 0; i < nCabs1; i++) for (let j = i + 1; j < nCabs1; j++) { const a = p * nCabs1 + i, b = p * nCabs1 + j; cabA2A.push([cabMX[a], yCab, cabMZ[a]], [cabMX[b], yCab, cabMZ[b]]); }
+    }
+
     return {
       N, N1, nBlades: bladeMX.length, nCabs: cabMX.length, superMX, cluster: [0, yCluster, 0] as [number, number, number],
       cardX, cardZ, cardBlade, bladeMX, bladeMZ, bladeCab, cabMX, cabMZ, cabSuper, thrPitch, drawMicro,
       yThread, yProc, yCard, yBlade, yCab, ySuper, yCluster,
-      t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, fieldW, fieldD: superD, superW, cw, cd,
+      t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, cabRing, cabA2A, fieldW, fieldD: superD, superW, cw, cd,
     };
   }, [scale, podCount, full, gen.totalNpus]);
 
@@ -1884,9 +1892,21 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         <sphereGeometry args={[1, 8, 8]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
       </instancedMesh>
 
-      {/* rank-level collectives (toggle, or auto-driven by the current comm phase; capped at large N) */}
-      {(overlays.ring || (commNow && collective === 'ring')) && G.ring.length > 0 && <FlowLine points={G.ring} color={COMM_PATTERNS[0].color} width={commNow ? 3.6 : 2.4} speed={commNow ? 3 : 1.2} />}
-      {(overlays.a2a || (commNow && collective === 'a2a')) && G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.5 : 0.2} />}
+      {/* collectives: hierarchical marker-level flows (scale-independent) + rank-level (small N).
+          Toggle-driven, or auto-driven by the current comm phase's collective. */}
+      {(overlays.ring || (commNow && collective === 'ring')) && (
+        <group>
+          {G.cabRing.length > 0 && <FlowLine points={G.cabRing} color={COMM_PATTERNS[0].color} width={commNow ? 3.2 : 2} speed={commNow ? 2.6 : 1.2} />}
+          {commNow && G.c2s.length > 0 && <FlowLine points={G.c2s} color={COMM_PATTERNS[0].color} width={1.8} speed={2.2} opacity={0.8} />}
+          {G.ring.length > 0 && <FlowLine points={G.ring} color={COMM_PATTERNS[0].color} width={commNow ? 3.6 : 2.4} speed={commNow ? 3 : 1.2} />}
+        </group>
+      )}
+      {(overlays.a2a || (commNow && collective === 'a2a')) && (
+        <group>
+          {G.cabA2A.length > 0 && <Line points={G.cabA2A} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.4 : 0.16} />}
+          {G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.5 : 0.2} />}
+        </group>
+      )}
 
       <Text position={[0, 0.04, G.fieldD / 2 + 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={Math.min(0.6, 0.2 + G.fieldW * 0.003)} color={LC.textDim} anchorX="center">
         {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
