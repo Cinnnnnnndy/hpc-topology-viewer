@@ -116,6 +116,17 @@ export interface RunPhase {
   parallel?: string;             // the parallel dim exercised (TP/PP/DP/EP)
   note: string;
 }
+// ─── Model-parallel partition (maps a sharded model onto the physical levels) ─
+// TP = within a blade (8 NPU, L1) · PP = blades within a replica (L2/L3) ·
+// DP = replicas across the super-node (L3/L4) · EP = experts per cabinet (L2/L3).
+export type PartitionDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
+export const PARTITION_META: Record<Exclude<PartitionDim, 'none'>, { label: string; level: string }> = {
+  tp: { label: 'TP 张量并行', level: 'L1 节点内（8 卡）' },
+  pp: { label: 'PP 流水并行', level: 'L2/L3 跨刀片·跨柜' },
+  dp: { label: 'DP 数据并行', level: 'L3/L4 副本间（梯度 AllReduce）' },
+  ep: { label: 'EP 专家并行', level: 'L2/L3 机柜内（MoE All-to-All）' },
+};
+
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
   train: [
     { id: 'load', name: '加载 batch',      kind: 'load',    color: '#c2c9d4', parallel: 'DP',    note: '各 DP 副本读入各自 micro-batch' },

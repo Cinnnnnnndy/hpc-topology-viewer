@@ -23,7 +23,7 @@ import {
   UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED,
-  type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase,
+  type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
 
@@ -1614,8 +1614,10 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; onPick?: (npuLocal: number) => void;
+const FP_PART_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
+
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; onPick?: (npuLocal: number) => void;
 }) {
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [selCard, setSelCard] = useState<number | null>(null);   // single-click selection → highlight its up/down-stream chain
@@ -1715,6 +1717,24 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const useChip = G.N <= FP_CHIP_CAP;   // textured NpuChip per card at small counts; else instanced
   const cardW = 0.34, cardH = 0.075;
 
+  // model-parallel decomposition mapped onto the physical hierarchy (TP=blade, PP/DP=replicas, EP=cabinet)
+  const part = useMemo(() => {
+    const nB1 = Math.max(1, Math.round(G.nBlades / podCount));   // blades per super-node
+    const TP = FP_CARDS_PER_BLADE, PP = Math.min(16, nB1), DP = Math.max(1, Math.round(nB1 / PP));
+    const groupOf = (k: number): number => {
+      const b = Math.floor(k / FP_CARDS_PER_BLADE);   // global blade index = TP group
+      const lb = b % nB1;                             // blade within its super-node
+      switch (partition) {
+        case 'tp': return b;                          // 8 cards of a blade are tensor-parallel
+        case 'pp': return lb % PP;                    // pipeline stage within a model replica
+        case 'dp': return Math.floor(lb / PP);        // data-parallel replica
+        case 'ep': return G.bladeCab[b];              // experts grouped per cabinet
+        default:   return 0;
+      }
+    };
+    return { TP, PP, DP, groupOf, cfg: `TP${TP}×PP${PP}×DP${DP}` };
+  }, [G, podCount, partition]);
+
   // matrices + base colours (set once per layout — NOT per hover/phase)
   useLayoutEffect(() => {
     const m = new THREE.Matrix4(), col = new THREE.Color();
@@ -1737,10 +1757,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const tint = phase ? new THREE.Color(phase.color) : null;
     const cardBase = chipTex ? '#ffffff' : LC.npuTop;
     const pm = procRef.current, tm = thrRef.current, nm = cardInst.current;
+    const onPart = partition !== 'none';
     if (pm) { for (let k = 0; k < G.N; k++) { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); pm.setColorAt(k, col); } if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     if (tm) { for (let k = 0; k < G.N * FP_THREADS; k++) { col.copy(thrBase); if (computeNow && tint) col.lerp(tint, 0.7); tm.setColorAt(k, col); } if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
-    if (nm && !useChip) { for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); nm.setColorAt(k, col); } if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
-  }, [G, phase, computeNow, commNow, useChip, chipTex]);
+    if (nm && !useChip) { for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (onPart) col.set(FP_PART_PALETTE[part.groupOf(k) % FP_PART_PALETTE.length]); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); } if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
+    const bm = bladeInst.current;
+    if (bm) { for (let b = 0; b < G.nBlades; b++) { if (onPart) col.set(FP_PART_PALETTE[part.groupOf(b * FP_CARDS_PER_BLADE) % FP_PART_PALETTE.length]); else col.set('#dbe9fb'); bm.setColorAt(b, col); } if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
+  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)
   const hoverCard = (k: number | null) => {
@@ -1866,7 +1889,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {(overlays.a2a || (commNow && collective === 'a2a')) && G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.5 : 0.2} />}
 
       <Text position={[0, 0.04, G.fieldD / 2 + 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={Math.min(0.6, 0.2 + G.fieldW * 0.003)} color={LC.textDim} anchorX="center">
-        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
+        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
       </Text>
     </group>
   );

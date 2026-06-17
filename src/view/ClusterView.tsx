@@ -16,8 +16,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED,
-  type Gen, type RackKind, type ViewMode, type Scale, type RunMode,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META,
+  type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
@@ -99,6 +99,7 @@ export function ClusterView() {
   const [runTick, setRunTick] = useState<number | null>(null);   // current phase index in RUN_SCHED[runMode]
   const [runPlaying, setRunPlaying] = useState(false);
   const [runStep, setRunStep] = useState(0);     // completed iterations / decode steps
+  const [fpPart, setFpPart] = useState<PartitionDim>('none');   // full-pod: colour cards by parallel dim
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -307,6 +308,28 @@ export function ClusterView() {
             ))}
           </div>
         )}
+        {/* full-pod parallel partition colouring (TP/PP/DP/EP) */}
+        {mode === 'fullpod' && (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+            <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>切分</span>
+            {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => {
+              const on = fpPart === d;
+              return (
+                <button
+                  key={d}
+                  onClick={() => setFpPart((p) => (p === d ? 'none' : d))}
+                  title={`${PARTITION_META[d].label} · ${PARTITION_META[d].level}`}
+                  style={{
+                    padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
+                    border: `1px solid ${on ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                    background: on ? 'rgba(67,105,239,0.10)' : 'transparent',
+                    color: on ? '#4369ef' : 'rgba(0,0,0,0.55)',
+                  }}
+                >{d.toUpperCase()}</button>
+              );
+            })}
+          </div>
+        )}
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'rgba(0,0,0,0.55)' }}>
           {breadcrumb.map((b, i) => (
@@ -369,7 +392,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -597,6 +620,13 @@ export function ClusterView() {
                   <span style={{ width: 12, height: 3, background: '#4369ef', display: 'inline-block' }} />
                   <span style={{ color: 'rgba(0,0,0,0.6)' }}>十字 = 行 i / 列 j；i·j = 对应两颗 NPU</span>
                 </span>
+              </div>
+            )}
+            {mode === 'fullpod' && fpPart !== 'none' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderTop: '1px solid rgba(0,0,0,0.08)', paddingTop: 4 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'rgba(0,0,0,0.6)' }}>{`并行切分上色 · ${PARTITION_META[fpPart].label}`}</div>
+                <span style={{ color: 'rgba(0,0,0,0.55)', fontSize: 10 }}>{PARTITION_META[fpPart].level}</span>
+                <span style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10 }}>{`同色 = 同一 ${fpPart.toUpperCase()} 组（卡 / 刀片按组循环上色）`}</span>
               </div>
             )}
             {mode === 'node' && nodeKind === 'compute' && (
