@@ -4,6 +4,11 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+dist-single/
+
+# Standalone single-file exports (generated on demand, delivered to user, not committed)
+fullpod-supernode.html
+*.standalone.html
 
 # Logs
 *.log
