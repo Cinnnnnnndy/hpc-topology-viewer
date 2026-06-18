@@ -17,8 +17,12 @@ const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
 
-export function PlaneView({ gen }: { gen: Gen }) {
+export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
+  // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
+  const P = dark
+    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.16)', cardN: '#2a2f3a', ink: 'rgba(255,255,255,0.80)', ink2: 'rgba(255,255,255,0.55)' }
+    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.18)', cardN: '#cfd6e2', ink: 'rgba(0,0,0,0.62)', ink2: 'rgba(0,0,0,0.55)' };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tf = useRef<{ s: number; tx: number; ty: number } | null>(null);   // world→screen transform
@@ -88,7 +92,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
     if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - L.tw * f) / 2, ty: (H - L.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#f3f4f7'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
     const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;   // visible world rect (cull per-card detail)
 
@@ -101,15 +105,15 @@ export function PlaneView({ gen }: { gen: Gen }) {
     // cards
     const showBorder = s > 4, showId = s > 14, showThr = s > 26;   // card = NPU/rank; threads shown on deep zoom
     const thrC = COMM_PATTERNS[2].color;
-    ctx.lineWidth = 0.6 / s; ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 0.6 / s; ctx.strokeStyle = P.cardBd;
     for (let k = 0; k < L.N1; k++) {
       const [x, y] = cardXY(k); const g = groupOf(k);
-      ctx.fillStyle = g < 0 ? '#cfd6e2' : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
+      ctx.fillStyle = g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
       ctx.fillRect(x, y, L.cs, L.cs);
       if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs);
       // process = the NPU's rank (label); threads = 3 AI-core slices (sub-cells) — only for visible cards
       if (showId && x + L.cs >= vx0 && x <= vx1 && y + L.cs >= vy0 && y <= vy1) {
-        ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.textAlign = 'center'; ctx.font = '0.28px sans-serif';
+        ctx.fillStyle = P.ink; ctx.textAlign = 'center'; ctx.font = '0.28px sans-serif';
         ctx.textBaseline = showThr ? 'top' : 'middle';
         ctx.fillText(`r${k}`, x + L.cs / 2, y + (showThr ? 0.07 : L.cs / 2));
         if (showThr) {
@@ -148,7 +152,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
     const hk = hoverRef.current;
     if (hk != null) { const [x, y] = cardXY(hk); ctx.lineWidth = 2.5 / s; ctx.strokeStyle = '#ffb020'; ctx.strokeRect(x - 0.06, y - 0.06, L.cs + 0.12, L.cs + 0.12); }
     ctx.restore();
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark]);
 
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
@@ -189,28 +193,28 @@ export function PlaneView({ gen }: { gen: Gen }) {
   })();
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, zIndex: 11, background: '#f3f4f7', overflow: 'hidden' }}>
+    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, zIndex: 11, background: 'var(--bg2)', overflow: 'hidden' }}>
       <canvas
         ref={canvasRef}
         style={{ display: 'block', cursor: drag.current ? 'grabbing' : 'crosshair', touchAction: 'none' }}
         onWheel={onWheel} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={onLeave}
       />
       {/* controls */}
-      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8, boxShadow: '0 2px 12px rgba(0,0,0,0.10)' }}>
-        <span style={{ fontSize: 11.5, color: 'rgba(0,0,0,0.6)' }}>平面 · 上色</span>
+      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 8, boxShadow: '0 2px 12px rgba(0,0,0,0.10)' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>平面 · 上色</span>
         {COLOR_BTNS.map((c) => {
           const on = colorBy === c.id;
-          return <button key={c.id} onClick={() => setColorBy(c.id)} style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'rgba(0,0,0,0.12)'}`, background: on ? 'rgba(67,105,239,0.10)' : 'transparent', color: on ? '#4369ef' : 'rgba(0,0,0,0.55)' }}>{c.label}</button>;
+          return <button key={c.id} onClick={() => setColorBy(c.id)} style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.10)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{c.label}</button>;
         })}
         <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
-          style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'rgba(0,0,0,0.12)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.5)' }}>
+          style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'var(--bd)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'var(--tx)' : 'var(--tx3)' }}>
           <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
         </button>
-        <span style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动平移 / 滚轮缩放`}</span>
+        <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动平移 / 滚轮缩放`}</span>
       </div>
       {/* legend */}
-      <div style={{ position: 'absolute', bottom: 12, left: 12, padding: '7px 11px', fontSize: 11, background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6, lineHeight: 1.6, color: 'rgba(0,0,0,0.6)' }}>
-        <div style={{ fontWeight: 600, color: 'rgba(0,0,0,0.75)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
+      <div style={{ position: 'absolute', bottom: 12, left: 12, padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 6, lineHeight: 1.6, color: 'var(--tx2)' }}>
+        <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
         <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
         <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
         <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
@@ -219,7 +223,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
       </div>
       {/* hover tooltip */}
       {tip && tipInfo && (
-        <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'rgba(255,255,255,0.97)', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 6, pointerEvents: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.12)', color: 'rgba(0,0,0,0.85)' }}>
+        <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'var(--panel)', border: '1px solid var(--bd2)', borderRadius: 6, pointerEvents: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.12)', color: 'var(--tx)' }}>
           {tipInfo.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}

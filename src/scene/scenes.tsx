@@ -13,7 +13,7 @@
  * Display text with product/brand terms is sourced from ../content (decoded at
  * runtime); this file carries no plaintext product names.
  */
-import { Suspense, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Suspense, createContext, useContext, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Text as DreiText, Edges, Line } from '@react-three/drei';
 import * as THREE from 'three';
@@ -56,6 +56,9 @@ const LC = {
 
 const L = (i: number) => UB_LEVELS[i].color;       // UB level colour shortcut
 
+// dark/light theme for the 3-D scenes (provided inside the Canvas)
+export const SceneTheme = createContext(false);
+
 export interface SceneCallbacks { onHoverInfo: (text: string | null) => void; }
 const setCursor = (on: boolean) => { document.body.style.cursor = on ? 'pointer' : 'default'; };
 
@@ -87,13 +90,14 @@ function Slab(props: {
 }
 
 function Floor({ size = 22 }: { size?: number }) {
+  const dark = useContext(SceneTheme);
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow>
         <planeGeometry args={[size, size]} />
-        <meshStandardMaterial color="#f0f1f4" roughness={0.95} metalness={0.05} />
+        <meshStandardMaterial color={dark ? '#15171c' : '#f0f1f4'} roughness={0.95} metalness={0.05} />
       </mesh>
-      <gridHelper args={[size, size * 2, '#d0d5dd', '#e1e4ea']} position={[0, 0.001, 0]} />
+      <gridHelper args={[size, size * 2, dark ? '#2b303a' : '#d0d5dd', dark ? '#202329' : '#e1e4ea']} position={[0, 0.001, 0]} />
     </group>
   );
 }
