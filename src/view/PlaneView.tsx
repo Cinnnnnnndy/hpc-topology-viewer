@@ -8,10 +8,11 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARTITION_META, UB_LEVELS, type Gen, type PartitionDim } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARTITION_META, UB_LEVELS, COMM_PATTERNS, type Gen, type PartitionDim } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
+const THREADS = 3;        // threads (AI-core groups) per NPU / rank
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
@@ -89,6 +90,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#f3f4f7'; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
+    const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;   // visible world rect (cull per-card detail)
 
     // cabinets (L2) + blades (L1) containment frames
     ctx.lineWidth = 1.2 / s; ctx.strokeStyle = UB_LEVELS[2].color; ctx.fillStyle = 'rgba(167,139,250,0.07)';
@@ -97,14 +99,25 @@ export function PlaneView({ gen }: { gen: Gen }) {
     for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); ctx.strokeRect(x, y, L.bw, L.bh); }
 
     // cards
-    const showBorder = s > 4, showId = s > 16;
+    const showBorder = s > 4, showId = s > 14, showThr = s > 26;   // card = NPU/rank; threads shown on deep zoom
+    const thrC = COMM_PATTERNS[2].color;
     ctx.lineWidth = 0.6 / s; ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     for (let k = 0; k < L.N1; k++) {
       const [x, y] = cardXY(k); const g = groupOf(k);
       ctx.fillStyle = g < 0 ? '#cfd6e2' : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
       ctx.fillRect(x, y, L.cs, L.cs);
       if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs);
-      if (showId) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = `${0.34}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(k % CPB), x + L.cs / 2, y + L.cs / 2); }
+      // process = the NPU's rank (label); threads = 3 AI-core slices (sub-cells) — only for visible cards
+      if (showId && x + L.cs >= vx0 && x <= vx1 && y + L.cs >= vy0 && y <= vy1) {
+        ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.textAlign = 'center'; ctx.font = '0.28px sans-serif';
+        ctx.textBaseline = showThr ? 'top' : 'middle';
+        ctx.fillText(`r${k}`, x + L.cs / 2, y + (showThr ? 0.07 : L.cs / 2));
+        if (showThr) {
+          const gp = L.cs * 0.07, tw = (L.cs - gp * (THREADS + 1)) / THREADS, th = L.cs * 0.34, tyy = y + L.cs - th - gp;
+          ctx.fillStyle = thrC;
+          for (let t = 0; t < THREADS; t++) ctx.fillRect(x + gp + t * (tw + gp), tyy, tw, th);
+        }
+      }
     }
     // same-level connections (LOD): L2 node mesh (blade↔blade full-mesh per cabinet) +
     // L1 board 2-D mesh (card↔card neighbours per blade)
@@ -170,7 +183,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
 
   const tipInfo = tip && (() => {
     const k = tip.k, b = Math.floor(k / CPB), cab = Math.floor(b / BPC);
-    const parts = [`NPU ${k} · rank ${k}`, `刀片 B${b} · 机柜 C${cab}`, `节点内 tp${k % CPB}`];
+    const parts = [`NPU ${k} = 进程 rank ${k}`, `线程 ${THREADS} 个（AI Core 组）· tp${k % CPB}`, `刀片 B${b} · 机柜 C${cab}`];
     if (colorBy !== 'none') parts.push(`${PARTITION_META[colorBy as Exclude<PartitionDim, 'none'>].label}：组 ${groupOf(k)}`);
     return parts;
   })();
@@ -200,6 +213,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
         <div style={{ fontWeight: 600, color: 'rgba(0,0,0,0.75)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
         <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
         <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
+        <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
         <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
         {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
       </div>
