@@ -207,7 +207,7 @@ export function ClusterView() {
       {/* ── toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.12)', flexWrap: 'wrap', background: 'white' }}>
         {/* generation switch */}
-        <div style={{ display: 'flex', gap: 4, borderRight: '1px solid rgba(0,0,0,0.12)', paddingRight: 12 }}>
+        <div style={{ display: 'flex', gap: 4, borderRight: '1px solid rgba(0,0,0,0.12)', paddingRight: narrow ? 6 : 12 }}>
           {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
             <button
               key={g}
@@ -224,32 +224,43 @@ export function ClusterView() {
             </button>
           ))}
         </div>
-        {/* mode tabs */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {MODE_TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setMode(t.id)}
-              style={{
-                padding: '5px 14px', fontSize: 12, borderRadius: 5, cursor: 'pointer',
-                border: `1px solid ${mode === t.id ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
-                background: mode === t.id ? 'rgba(67,105,239,0.10)' : 'transparent',
-                color: mode === t.id ? '#4369ef' : 'rgba(0,0,0,0.55)',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {/* mode tabs (dropdown on small screens to save toolbar width) */}
+        {narrow ? (
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as ViewMode)}
+            style={{ padding: '5px 8px', fontSize: 12, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+          >
+            {MODE_TABS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        ) : (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {MODE_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setMode(t.id)}
+                style={{
+                  padding: '5px 14px', fontSize: 12, borderRadius: 5, cursor: 'pointer',
+                  border: `1px solid ${mode === t.id ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
+                  background: mode === t.id ? 'rgba(67,105,239,0.10)' : 'transparent',
+                  color: mode === t.id ? '#4369ef' : 'rgba(0,0,0,0.55)',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
         {(mode === 'topology' || mode === 'fullpod' || (mode === 'node' && nodeKind === 'compute')) && (
-          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             {(mode === 'node' ? NODE_OVERLAYS : TOPO_OVERLAYS).map((t) => {
               const on = overlays[t.id];
               return (
                 <button
                   key={t.id}
                   onClick={() => setOverlays((o) => ({ ...o, [t.id]: !o[t.id] }))}
+                  title={t.label}
                   style={{
                     padding: '4px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
                     display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -259,7 +270,7 @@ export function ClusterView() {
                   }}
                 >
                   <span style={{ width: 9, height: 3, background: t.color, display: 'inline-block', borderRadius: 1, opacity: on ? 1 : 0.4 }} />
-                  {t.label}
+                  {narrow ? t.label.split(' ')[0] : t.label}
                 </button>
               );
             })}
@@ -267,7 +278,7 @@ export function ClusterView() {
         )}
         {/* scale selector (adjacency-matrix view) */}
         {mode === 'matrix' && (
-          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             {(Object.keys(SCALES) as Scale[]).map((s) => (
               <button
                 key={s}
@@ -284,7 +295,7 @@ export function ClusterView() {
         )}
         {/* full-pod scale — only two, side by side: 64P single cabinet ↔ full super-node */}
         {mode === 'fullpod' && (
-          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             {([[false, '64P 单柜'], [true, `全量超节点(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
               <button
                 key={label}
@@ -302,7 +313,7 @@ export function ClusterView() {
         )}
         {/* super-node count (full-pod view) */}
         {mode === 'fullpod' && (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>超节点</span>
             {[1, 2, 4].map((c) => (
               <button
@@ -320,7 +331,7 @@ export function ClusterView() {
         )}
         {/* full-pod run mode: train / infer */}
         {mode === 'fullpod' && (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>运行</span>
             {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
               <button
@@ -338,7 +349,7 @@ export function ClusterView() {
         )}
         {/* full-pod parallel partition colouring (TP/PP/DP/EP) */}
         {mode === 'fullpod' && (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)' }}>切分</span>
             {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => {
               const on = fpPart === d;
@@ -360,7 +371,7 @@ export function ClusterView() {
         )}
         {/* full-pod same-level peer mesh (L1 card↔card + L2 node↔node UB links) */}
         {mode === 'fullpod' && (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: 12 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }}>
             <button
               onClick={() => setFpPeers((v) => !v)}
               title="层内直连：L1 板载卡↔卡 + L2 机柜内节点↔节点 UB 直连 mesh"
@@ -372,7 +383,7 @@ export function ClusterView() {
               }}
             >
               <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 1 : 0.4 }} />
-              层内直连
+              {narrow ? '直连' : '层内直连'}
             </button>
             <button
               onClick={() => setFpStatus((v) => !v)}
@@ -385,7 +396,7 @@ export function ClusterView() {
               }}
             >
               <span style={{ width: 9, height: 9, background: '#22c55e', display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.4 }} />
-              状态/流量
+              {narrow ? '状态' : '状态/流量'}
             </button>
           </div>
         )}
