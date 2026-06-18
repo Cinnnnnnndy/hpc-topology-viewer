@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, GizmoHelper, GizmoViewcube, OrthographicCamera } from '@react-three/drei';
+import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
@@ -362,6 +362,8 @@ export function ClusterView() {
           <Canvas
             shadows
             dpr={[1, 2]}
+            orthographic
+            camera={{ position: DEFAULT_CAM_POS, zoom: 60, near: 0.1, far: 4000 }}
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => {
               gl.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -370,10 +372,9 @@ export function ClusterView() {
             }}
           >
             {/* orthographic projection — no perspective foreshortening, so the
-                front/top/side snaps read as true engineering views (三视图).
-                Position/zoom are driven imperatively by CameraController (a reactive
-                prop here would fight OrbitControls on every re-render). */}
-            <OrthographicCamera makeDefault position={DEFAULT_CAM_POS} near={0.1} far={4000} />
+                front/top/side snaps read as true engineering views (三视图). R3F's
+                built-in ortho camera preserves zoom across resizes (drei's component
+                would reset it). CameraController drives position/zoom imperatively. */}
             <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} worldH={cam.worldH} iso={cam.iso} controls={controlsRef} />
             <ViewSnap preset={camPreset} onDone={() => setCamPreset(null)} controls={controlsRef} />
             <color attach="background" args={[dark ? '#101010' : '#f5f5f5']} />
