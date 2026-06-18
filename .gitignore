@@ -9,6 +9,8 @@ dist-single/
 # Standalone single-file exports (generated on demand, delivered to user, not committed)
 fullpod-supernode.html
 *.standalone.html
+pto-knowledge-report.html
+*-report.html
 
 # Logs
 *.log
