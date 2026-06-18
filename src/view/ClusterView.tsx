@@ -602,44 +602,101 @@ export function ClusterView() {
             </div>
           )}
 
-          {/* full-pod run HUD: train/infer iteration driver + readouts */}
-          {mode === 'fullpod' && (
-            <div style={{
-              position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
-              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', maxWidth: '92%', flexWrap: 'wrap',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            }}>
-              <button
-                onClick={() => { setRunPlaying((v) => !v); if (runTick === null) setRunTick(0); }}
-                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: runPlaying ? '#4369ef' : 'var(--panel-solid)', color: runPlaying ? '#fff' : '#4369ef', fontSize: 13 }}
-              >{runPlaying ? '⏸' : '▶'}</button>
-              <div style={{ display: 'flex', gap: 2 }}>
-                {RUN_SCHED[runMode].map((ph, k) => (
+          {/* full-pod run HUD + swimlane timeline (merged): the play driver, the per-
+              role swimlane (rows = TP/PP/DP/EP, columns = phases), and readouts in one
+              bottom panel. Click a phase column to seek the 3-D playback. */}
+          {mode === 'fullpod' && (() => {
+            const phases = RUN_SCHED[runMode];
+            const lanes: Exclude<PartitionDim, 'none'>[] = ['tp', 'pp', 'dp', 'ep'];
+            const cw = narrow ? 56 : 78;
+            const col = (w: number) => ({ width: w, minWidth: w, textAlign: 'center' as const });
+            return (
+              <div style={{
+                position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14, zIndex: 5,
+                display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 12px', maxWidth: 'calc(100% - 24px)',
+                background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              }}>
+                {/* swimlane grid (collapsible) */}
+                {swimOpen && (
+                  <div style={{ display: 'block', fontSize: 10.5, overflowX: 'auto', maxWidth: '100%' }}>
+                    <div style={{ display: 'inline-block' }}>
+                      {/* phase header — clickable = seek */}
+                      <div style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
+                        <div style={col(40)} />
+                        {phases.map((ph, k) => (
+                          <button key={ph.id} title={ph.note}
+                            onClick={() => { setRunPlaying(false); setRunTick(k); }}
+                            style={{ ...col(cw), padding: '3px 4px', cursor: 'pointer', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                              border: runTick === k ? `1px solid ${ph.color}` : '1px solid var(--bd)',
+                              background: runTick === k ? `${ph.color}26` : 'transparent', color: runTick === k ? 'var(--tx)' : 'var(--tx2)' }}>
+                            {ph.name.split(' ')[0]}
+                          </button>
+                        ))}
+                      </div>
+                      {/* role lanes */}
+                      {lanes.map((ln) => (
+                        <div key={ln} style={{ display: 'flex', gap: 3, marginBottom: 3, alignItems: 'center' }}>
+                          <div style={{ ...col(40), display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-start' }}>
+                            <span style={{ width: 7, height: 7, borderRadius: 2, background: PARALLEL_COLORS[ln] }} />
+                            <span style={{ color: 'var(--tx2)', fontWeight: 600 }}>{ln.toUpperCase()}</span>
+                          </div>
+                          {phases.map((ph, k) => {
+                            const active = (ph.parallel ?? '').toUpperCase().includes(ln.toUpperCase());
+                            const cur = runTick === k;
+                            return <div key={ph.id} style={{ ...col(cw), height: 13, borderRadius: 4,
+                              background: active ? PARALLEL_COLORS[ln] : 'var(--bd)',
+                              opacity: active ? (cur ? 1 : 0.62) : (cur ? 0.5 : 0.22),
+                              outline: cur ? `1px solid ${ph.color}` : 'none' }} />;
+                          })}
+                        </div>
+                      ))}
+                      {/* comm marker row */}
+                      <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                        <div style={{ ...col(40), color: 'var(--tx3)', textAlign: 'left' }}>通信</div>
+                        {phases.map((ph) => (
+                          <div key={ph.id} style={{ ...col(cw), textAlign: 'center', color: ph.kind === 'comm' ? (ph.collective === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color) : 'var(--tx3)' }}>
+                            {ph.kind === 'comm' ? (ph.collective === 'ring' ? 'AllReduce' : 'All2All') : '·'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* control row: play + (compact scrubber when collapsed) + readouts + toggles */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <button
-                    key={ph.id}
-                    title={ph.note}
-                    onClick={() => { setRunPlaying(false); setRunTick(k); }}
-                    style={{
-                      height: 22, padding: '0 8px', cursor: 'pointer', borderRadius: 6,
-                      border: runTick === k ? '2px solid var(--tx)' : '1px solid var(--bd)',
-                      background: ph.color, opacity: runTick === null || runTick === k ? 1 : 0.5,
-                      fontSize: 10, color: '#1c2433', fontWeight: 600,
-                    }}
-                  >{ph.name.split(' ')[0]}</button>
-                ))}
+                    onClick={() => { setRunPlaying((v) => !v); if (runTick === null) setRunTick(0); }}
+                    style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: runPlaying ? '#4369ef' : 'var(--panel-solid)', color: runPlaying ? '#fff' : '#4369ef', fontSize: 13 }}
+                  >{runPlaying ? '⏸' : '▶'}</button>
+                  {!swimOpen && (
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {phases.map((ph, k) => (
+                        <button key={ph.id} title={ph.note}
+                          onClick={() => { setRunPlaying(false); setRunTick(k); }}
+                          style={{ height: 22, padding: '0 8px', cursor: 'pointer', borderRadius: 6,
+                            border: runTick === k ? '2px solid var(--tx)' : '1px solid var(--bd)',
+                            background: ph.color, opacity: runTick === null || runTick === k ? 1 : 0.5, fontSize: 10, color: '#1c2433', fontWeight: 600 }}
+                        >{ph.name.split(' ')[0]}</button>
+                      ))}
+                    </div>
+                  )}
+                  <span style={{ fontSize: 12, color: 'var(--tx)', minWidth: 140 }}>
+                    {runPhase ? `${runPhase.name} · ${runPhase.parallel ?? '—'}` : (runMode === 'train' ? '训练循环（点相位 / ▶）' : '推理循环（点相位 / ▶）')}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: '#4369ef' }}>
+                    {`${runMode === 'train' ? '迭代' : '步'} #${runStep} · ${runMode === 'train' ? spec.trainTokps : spec.inferTokps}`}
+                  </span>
+                  <div style={{ flex: 1 }} />
+                  {runTick !== null && (
+                    <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
+                  )}
+                  <button onClick={() => setSwimOpen((v) => !v)} title="展开 / 收起时序泳道"
+                    style={{ padding: '3px 9px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>{swimOpen ? '泳道 ▾' : '泳道 ▸'}</button>
+                </div>
+                {runPhase && swimOpen && <div style={{ fontSize: 10.5, color: 'var(--tx2)' }}>{runPhase.note}</div>}
               </div>
-              <span style={{ fontSize: 12, color: '#1c2433', minWidth: 150 }}>
-                {runPhase ? `${runPhase.name} · ${runPhase.parallel ?? '—'}` : (runMode === 'train' ? '训练循环（点相位 / ▶）' : '推理循环（点相位 / ▶）')}
-              </span>
-              <span style={{ fontSize: 11.5, color: '#4369ef' }}>
-                {`${runMode === 'train' ? '迭代' : '步'} #${runStep} · ${runMode === 'train' ? spec.trainTokps : spec.inferTokps}`}
-              </span>
-              {runTick !== null && (
-                <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
-              )}
-              {runPhase && <span style={{ fontSize: 10.5, color: 'var(--tx2)', width: '100%' }}>{runPhase.note}</span>}
-            </div>
-          )}
+            );
+          })()}
 
           {/* hover info bar */}
           {hoverInfo && (
@@ -675,72 +732,6 @@ export function ClusterView() {
                 </div>
               ))}
               {memOpen && <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>示意占用 · 越贴近算力越易成瓶颈</div>}
-            </div>
-          )}
-
-          {/* full-pod swimlane timeline — the missing "time" dimension, linked to the 3D run.
-              Rows = parallel roles (TP/PP/DP/EP); columns = the iteration phases. Click a
-              phase to seek the 3-D playback (which lights up the active cards/collective). */}
-          {mode === 'fullpod' && (
-            <div style={{
-              position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 12, zIndex: 5,
-              padding: '8px 12px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12,
-              boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-              maxWidth: 'calc(100% - 24px)', overflowX: 'auto',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: swimOpen ? 7 : 0 }}>
-                <span style={{ fontWeight: 600, fontSize: 11.5, color: 'var(--tx)' }}>{`时序泳道 · ${runMode === 'train' ? '训练迭代' : '推理步'}`}</span>
-                <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>行=并行角色 · 列=相位 · 点列联动3D</span>
-                <button onClick={() => setSwimOpen((v) => !v)} style={{ padding: '1px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>{swimOpen ? '▾' : '▸'}</button>
-              </div>
-              {swimOpen && (() => {
-                const phases = RUN_SCHED[runMode];
-                const lanes: Exclude<PartitionDim, 'none'>[] = ['tp', 'pp', 'dp', 'ep'];
-                const col = (w: number) => ({ width: w, minWidth: w, textAlign: 'center' as const });
-                return (
-                  <div style={{ display: 'inline-block', fontSize: 10.5 }}>
-                    {/* phase header (clickable = seek) */}
-                    <div style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
-                      <div style={col(34)} />
-                      {phases.map((ph, k) => (
-                        <button key={ph.id} title={ph.note}
-                          onClick={() => { setRunPlaying(false); setRunTick(k); }}
-                          style={{ ...col(70), padding: '3px 4px', cursor: 'pointer', borderRadius: 6, fontSize: 10, fontWeight: 600,
-                            border: runTick === k ? `1px solid ${ph.color}` : '1px solid var(--bd)',
-                            background: runTick === k ? `${ph.color}26` : 'transparent', color: runTick === k ? 'var(--tx)' : 'var(--tx2)' }}>
-                          {ph.name.split(' ')[0]}
-                        </button>
-                      ))}
-                    </div>
-                    {/* lanes */}
-                    {lanes.map((ln) => (
-                      <div key={ln} style={{ display: 'flex', gap: 3, marginBottom: 3, alignItems: 'center' }}>
-                        <div style={{ ...col(34), display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-start' }}>
-                          <span style={{ width: 7, height: 7, borderRadius: 2, background: PARALLEL_COLORS[ln] }} />
-                          <span style={{ color: 'var(--tx2)', fontWeight: 600 }}>{ln.toUpperCase()}</span>
-                        </div>
-                        {phases.map((ph, k) => {
-                          const active = (ph.parallel ?? '').toUpperCase().includes(ln.toUpperCase());
-                          const cur = runTick === k;
-                          return <div key={ph.id} style={{ ...col(70), height: 14, borderRadius: 4,
-                            background: active ? PARALLEL_COLORS[ln] : 'var(--bd)',
-                            opacity: active ? (cur ? 1 : 0.62) : (cur ? 0.5 : 0.22),
-                            outline: cur ? `1px solid ${ph.color}` : 'none' }} />;
-                        })}
-                      </div>
-                    ))}
-                    {/* comm marker row */}
-                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                      <div style={{ ...col(34), color: 'var(--tx3)', textAlign: 'left' }}>通信</div>
-                      {phases.map((ph) => (
-                        <div key={ph.id} style={{ ...col(70), textAlign: 'center', color: ph.kind === 'comm' ? (ph.collective === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color) : 'var(--tx3)' }}>
-                          {ph.kind === 'comm' ? (ph.collective === 'ring' ? 'AllReduce' : 'All2All') : '·'}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           )}
 
