@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
@@ -40,42 +40,6 @@ function CameraController({ poseKey, pos, target, controls }: {
     if (controls.current) { controls.current.target.set(target[0], target[1], target[2]); controls.current.update(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poseKey]);
-  return null;
-}
-
-// 三视图 presets: front / top / side + isometric (mode default direction)
-const VIEW_PRESETS = [
-  { id: 'front', label: '主视', short: '主' },
-  { id: 'top', label: '俯视', short: '俯' },
-  { id: 'side', label: '侧视', short: '侧' },
-  { id: 'iso', label: '等轴', short: '等' },
-] as const;
-type CamView = typeof VIEW_PRESETS[number]['id'];
-
-/** Snap the camera to a standard orthographic-style view (front/top/side) or the
- *  mode's default isometric angle, framed around the current target. */
-function ViewController({ view, nonce, basePos, baseTarget, controls }: {
-  view: CamView; nonce: number; basePos: [number, number, number]; baseTarget: [number, number, number];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  controls: React.MutableRefObject<any>;
-}) {
-  const { camera } = useThree();
-  useEffect(() => {
-    const t = new THREE.Vector3(baseTarget[0], baseTarget[1], baseTarget[2]);
-    const bp = new THREE.Vector3(basePos[0], basePos[1], basePos[2]);
-    const d = Math.max(2, bp.distanceTo(t));
-    const p = new THREE.Vector3();
-    if (view === 'front') p.set(0, d * 0.12, d);          // looking along −Z (slightly raised)
-    else if (view === 'top') p.set(0.0001, d, 0.0001);    // looking straight down
-    else if (view === 'side') p.set(d, d * 0.12, 0);      // looking along −X
-    else p.copy(bp).sub(t);                               // 等轴 = mode default direction
-    p.add(t);
-    camera.position.copy(p);
-    camera.up.set(0, 1, 0);
-    camera.updateProjectionMatrix();
-    if (controls.current) { controls.current.target.copy(t); controls.current.update(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce]);
   return null;
 }
 
@@ -159,8 +123,6 @@ export function ClusterView() {
   }, []);
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
-  const [camView, setCamView] = useState<CamView>('iso');   // 三视图 preset
-  const [camNonce, setCamNonce] = useState(0);   // bump to re-snap the camera even if the same view
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -181,8 +143,6 @@ export function ClusterView() {
     return () => clearInterval(id);
   }, [runPlaying, runMode]);
   const runPhase = runTick === null ? null : RUN_SCHED[runMode][runTick % RUN_SCHED[runMode].length];
-  // reset the 三视图 selector to default when the framing changes (navigation)
-  useEffect(() => { setCamView('iso'); }, [mode, gen, scale, nodeKind, podCount, fpFull]);
 
   const spec = GENERATIONS[gen];
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
@@ -304,22 +264,6 @@ export function ClusterView() {
         </div>
         <div style={{ flex: 1 }} />
         {!narrow && <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
-        {/* 三视图 camera presets (whole-model viewing) */}
-        <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid rgba(0,0,0,0.12)', paddingLeft: narrow ? 6 : 12 }} title="三视图：主视/俯视/侧视/等轴">
-          {VIEW_PRESETS.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => { setCamView(v.id); setCamNonce((n) => n + 1); }}
-              title={v.label}
-              style={{
-                padding: narrow ? '4px 7px' : '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer',
-                border: `1px solid ${camView === v.id ? '#4369ef' : 'rgba(0,0,0,0.12)'}`,
-                background: camView === v.id ? 'rgba(67,105,239,0.10)' : 'transparent',
-                color: camView === v.id ? '#4369ef' : 'rgba(0,0,0,0.55)',
-              }}
-            >{narrow ? v.short : v.label}</button>
-          ))}
-        </div>
         <button
           onClick={() => setPanelOpen((v) => !v)}
           style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
@@ -343,7 +287,6 @@ export function ClusterView() {
             }}
           >
             <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
-            <ViewController view={camView} nonce={camNonce} basePos={cam.pos} baseTarget={cam.target} controls={controlsRef} />
             <color attach="background" args={['#f5f5f5']} />
             <fog attach="fog" args={['#f5f5f5', mode === 'fullpod' ? 90 : 26, mode === 'fullpod' ? 420 : 60]} />
             <ambientLight intensity={1.1} />
@@ -376,10 +319,19 @@ export function ClusterView() {
 
             <OrbitControls
               ref={controlsRef}
+              makeDefault
               enableDamping dampingFactor={0.08}
-              minPolarAngle={0.1} maxPolarAngle={Math.PI / 2 - 0.04}
+              minPolarAngle={0} maxPolarAngle={Math.PI / 2}
               minDistance={1.2} maxDistance={mode === 'fullpod' ? 360 : 60}
             />
+            {/* ViewCube navigation gizmo — click a face/edge/corner for a standard view (front/top/side/iso).
+                Latin face labels (the default webfont has no CJK glyphs). */}
+            <GizmoHelper alignment="top-right" margin={[68, 68]}>
+              <GizmoViewcube
+                faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
+                color="#eef1f6" hoverColor="#4369ef" textColor="#1c2433" strokeColor="#aab4c4" opacity={0.95}
+              />
+            </GizmoHelper>
           </Canvas>
 
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
