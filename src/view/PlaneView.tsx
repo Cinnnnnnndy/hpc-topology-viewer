@@ -24,6 +24,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const hoverRef = useRef<number | null>(null);
   const [colorBy, setColorBy] = useState<PartitionDim>('none');
+  const [links, setLinks] = useState(true);   // draw card↔card (L1) + node↔node (L2) connections
   const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
 
   // ── layout in world units ──
@@ -105,11 +106,36 @@ export function PlaneView({ gen }: { gen: Gen }) {
       if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs);
       if (showId) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = `${0.34}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(k % CPB), x + L.cs / 2, y + L.cs / 2); }
     }
+    // same-level connections (LOD): L2 node mesh (blade↔blade full-mesh per cabinet) +
+    // L1 board 2-D mesh (card↔card neighbours per blade)
+    if (links && s * L.bw > 14) {
+      ctx.strokeStyle = UB_LEVELS[2].color; ctx.globalAlpha = 0.5; ctx.lineWidth = 1.1 / s; ctx.beginPath();
+      for (let cab = 0; cab < L.nC; cab++) {
+        const c: [number, number][] = [];
+        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); }
+        for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) { ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); }
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (links && s * L.cs > 4) {
+      ctx.strokeStyle = UB_LEVELS[1].color; ctx.globalAlpha = 0.55; ctx.lineWidth = 0.7 / s; ctx.beginPath();
+      for (let b = 0; b < L.nB; b++) {
+        const cen: [number, number][] = [];
+        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); }
+        for (let l = 0; l < cen.length; l++) {
+          const col = l % 4, row = Math.floor(l / 4);
+          if (col < 3 && l + 1 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 1][0], cen[l + 1][1]); }   // right neighbour
+          if (row === 0 && l + 4 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 4][0], cen[l + 4][1]); }  // down neighbour
+        }
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+
     // hovered card outline
     const hk = hoverRef.current;
     if (hk != null) { const [x, y] = cardXY(hk); ctx.lineWidth = 2.5 / s; ctx.strokeStyle = '#ffb020'; ctx.strokeRect(x - 0.06, y - 0.06, L.cs + 0.12, L.cs + 0.12); }
     ctx.restore();
-  }, [L, colorBy, fit, cabXY, bladeXY, cardXY, groupOf]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf]);
 
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
@@ -163,6 +189,10 @@ export function PlaneView({ gen }: { gen: Gen }) {
           const on = colorBy === c.id;
           return <button key={c.id} onClick={() => setColorBy(c.id)} style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'rgba(0,0,0,0.12)'}`, background: on ? 'rgba(67,105,239,0.10)' : 'transparent', color: on ? '#4369ef' : 'rgba(0,0,0,0.55)' }}>{c.label}</button>;
         })}
+        <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
+          style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'rgba(0,0,0,0.12)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.5)' }}>
+          <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
+        </button>
         <span style={{ fontSize: 10.5, color: 'rgba(0,0,0,0.45)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动平移 / 滚轮缩放`}</span>
       </div>
       {/* legend */}
@@ -171,6 +201,7 @@ export function PlaneView({ gen }: { gen: Gen }) {
         <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
         <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
         <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
+        {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
       </div>
       {/* hover tooltip */}
       {tip && tipInfo && (
