@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
+import { OrbitControls, GizmoHelper, GizmoViewcube, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
@@ -29,14 +29,18 @@ import { PlaneView } from './PlaneView';
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
  *  exhausts the browser's context limit → blank canvas needing refresh). */
-function CameraController({ poseKey, pos, target, controls }: {
-  poseKey: string; pos: [number, number, number]; target: [number, number, number];
+function CameraController({ poseKey, pos, target, worldH, controls }: {
+  poseKey: string; pos: [number, number, number]; target: [number, number, number]; worldH: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   controls: React.MutableRefObject<any>;
 }) {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   useEffect(() => {
     camera.position.set(pos[0], pos[1], pos[2]);
+    // orthographic: derive zoom from viewport so the view frames `worldH` units tall
+    if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+      (camera as THREE.OrthographicCamera).zoom = size.height / worldH;
+    }
     camera.updateProjectionMatrix();
     if (controls.current) { controls.current.target.set(target[0], target[1], target[2]); controls.current.update(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,16 +48,47 @@ function CameraController({ poseKey, pos, target, controls }: {
   return null;
 }
 
-const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number] }> = {
-  overview: { pos: [9, 10, 15], target: [0, 0.5, 0] },
-  rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0] },
-  node:     { pos: [0, 3.8, 6.6], target: [0, 0.7, 0] },
-  topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0] },
-  matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0] },
-  mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
-  trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0] },
-  fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0] },
-  plane:    { pos: [0, 7, 13], target: [0, 0.6, 0] },   // 2-D overlay; 3-D camera unused
+// Snap the orbit camera to a standard projection direction (true ortho views +
+// a 2.5-D / axonometric angle), preserving the current distance and zoom.
+type CamPreset = 'top' | 'front' | 'side' | 'iso';
+const DEFAULT_CAM_POS: [number, number, number] = [9, 10, 15];   // stable initial; CameraController drives the rest
+function ViewSnap({ preset, onDone, controls }: {
+  preset: CamPreset | null; onDone: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  controls: React.MutableRefObject<any>;
+}) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (!preset || !controls.current) return;
+    const tgt: THREE.Vector3 = controls.current.target.clone();
+    const dist = camera.position.distanceTo(tgt) || 12;
+    const dirs: Record<CamPreset, [number, number, number]> = {
+      top: [0, 1, 0], front: [0, 0, 1], side: [1, 0, 0], iso: [1, 0.82, 1],
+    };
+    const v = new THREE.Vector3(...dirs[preset]).normalize();
+    camera.up.set(0, preset === 'top' ? 0 : 1, preset === 'top' ? -1 : 0);
+    camera.position.copy(tgt).addScaledVector(v, dist);
+    camera.lookAt(tgt);
+    camera.updateProjectionMatrix();
+    controls.current.update();
+    onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preset]);
+  return null;
+}
+
+// worldH = the vertical world extent the orthographic frustum should frame
+// (zoom is derived from canvas-height / worldH, so framing is resolution-stable).
+const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number]; worldH: number }> = {
+  overview: { pos: [9, 10, 15], target: [0, 0.5, 0], worldH: 17 },
+  rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0], worldH: 7.5 },
+  node:     { pos: [0, 3.8, 6.6], target: [0, 0.7, 0], worldH: 3.6 },
+  topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0], worldH: 10.5 },
+  matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0], worldH: 10 },
+  mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0], worldH: 8.5 },
+  trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0], worldH: 10.5 },
+  fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },
+  plane:    { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D overlay; 3-D camera unused
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -127,6 +162,7 @@ export function ClusterView() {
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
   const [dark, setDark] = useState(false);   // dark / light theme
+  const [camPreset, setCamPreset] = useState<CamPreset | null>(null);   // pending camera-angle snap
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -183,9 +219,9 @@ export function ClusterView() {
     return `TP${TP}×PP${PP}×DP${DP}`;
   }, [fpFull, spec.totalNpus]);
   const cam = mode === 'node' && nodeKind === 'ubswitch'
-    ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number] }
+    ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number], worldH: 4.5 }
     : mode === 'fullpod'
-    ? { pos: [0, fpReach * 0.62, fpReach * 1.02] as [number, number, number], target: [0, Math.min(6, fpReach * 0.1), 0] as [number, number, number] }
+    ? { pos: [0, fpReach * 0.62, fpReach * 1.02] as [number, number, number], target: [0, Math.min(6, fpReach * 0.1), 0] as [number, number, number], worldH: Math.max(14, fpReach * 1.5) }
     : CAMERA[mode];
 
   const specRows: [string, string][] = [
@@ -283,6 +319,19 @@ export function ClusterView() {
         </div>
         <div style={{ flex: 1 }} />
         {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
+        {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
+        {mode !== 'plane' && (
+          <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
+            {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setCamPreset(id)}
+                title={`${label}视角（正交投影）`}
+                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
+              >{label}</button>
+            ))}
+          </div>
+        )}
         <button
           onClick={() => setDark((v) => !v)}
           title="黑 / 白 主题切换"
@@ -300,7 +349,6 @@ export function ClusterView() {
       <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <Canvas
-            camera={{ position: cam.pos, fov: 42 }}
             shadows
             dpr={[1, 2]}
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
@@ -310,7 +358,13 @@ export function ClusterView() {
               gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
             }}
           >
-            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} controls={controlsRef} />
+            {/* orthographic projection — no perspective foreshortening, so the
+                front/top/side snaps read as true engineering views (三视图).
+                Position/zoom are driven imperatively by CameraController (a reactive
+                prop here would fight OrbitControls on every re-render). */}
+            <OrthographicCamera makeDefault position={DEFAULT_CAM_POS} near={0.1} far={4000} />
+            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} worldH={cam.worldH} controls={controlsRef} />
+            <ViewSnap preset={camPreset} onDone={() => setCamPreset(null)} controls={controlsRef} />
             <color attach="background" args={[dark ? '#101010' : '#f5f5f5']} />
             <fog attach="fog" args={[dark ? '#101010' : '#f5f5f5', mode === 'fullpod' ? 90 : 26, mode === 'fullpod' ? 420 : 60]} />
             <ambientLight intensity={dark ? 1.35 : 1.05} />
@@ -352,10 +406,11 @@ export function ClusterView() {
             />
             {/* ViewCube navigation gizmo — click a face/edge/corner for a standard view (front/top/side/iso).
                 Latin face labels (the default webfont has no CJK glyphs). */}
-            <GizmoHelper alignment="top-right" margin={[68, 68]}>
+            <GizmoHelper alignment="bottom-left" margin={[64, 64]}>
               <GizmoViewcube
                 faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
-                color="#eef1f6" hoverColor="#4369ef" textColor="#1c2433" strokeColor="#aab4c4" opacity={0.95}
+                color={dark ? '#2a2e36' : '#eef1f6'} hoverColor="#4369ef"
+                textColor={dark ? '#e6e6e6' : '#1c2433'} strokeColor={dark ? '#4a5160' : '#aab4c4'} opacity={0.95}
               />
             </GizmoHelper>
           </Canvas>
@@ -585,7 +640,7 @@ export function ClusterView() {
           {/* hover info bar */}
           {hoverInfo && (
             <div style={{
-              position: 'absolute', left: 14, bottom: 14, maxWidth: '70%',
+              position: 'absolute', left: 150, bottom: 14, maxWidth: 'calc(70% - 150px)',
               padding: '7px 12px', fontSize: 12.5, lineHeight: 1.5,
               background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               color: 'var(--tx)', pointerEvents: 'none',
