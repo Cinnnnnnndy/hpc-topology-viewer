@@ -31,6 +31,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [colorBy, setColorBy] = useState<PartitionDim>('none');
   const [links, setLinks] = useState(true);   // draw card↔card (L1) + node↔node (L2) connections
   const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
+  const [play, setPlay] = useState(false);          // scenario playback (animated hop-by-hop flow)
+  const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
+  const phaseRef = useRef(0);                       // flow animation phase
+  const rafRef = useRef<number | null>(null);
 
   // ── layout in world units ──
   const L = (() => {
@@ -148,6 +152,43 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.stroke(); ctx.globalAlpha = 1;
     }
 
+    // ── scenario playback: animated hop-by-hop flow (marching ants) ──
+    // Ring AllReduce → staged L1 (intra-blade) then L2 (intra-cabinet); All-to-All
+    // → L2 cross-blade full-mesh emphasised. Reads as "卡→刀片→机柜逐跳流动".
+    if (play) {
+      const ph = phaseRef.current, cyc = ph % 1;
+      const col = scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+      const l1A = scenario === 'ring' ? (cyc < 0.5 ? 1 : 0.3) : 0.45;
+      const l2A = scenario === 'ring' ? (cyc >= 0.5 ? 1 : 0.3) : 1;
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8;
+      ctx.setLineDash([0.16, 0.46]); ctx.lineDashOffset = -ph * 1.4;
+      // L1 board flow
+      if (links && s * L.cs > 4) {
+        ctx.globalAlpha = 0.95 * l1A; ctx.lineWidth = 1.5 / s; ctx.beginPath();
+        for (let b = 0; b < L.nB; b++) {
+          const cen: [number, number][] = [];
+          for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); }
+          for (let l = 0; l < cen.length; l++) {
+            const col2 = l % 4, row = Math.floor(l / 4);
+            if (col2 < 3 && l + 1 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 1][0], cen[l + 1][1]); }
+            if (row === 0 && l + 4 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 4][0], cen[l + 4][1]); }
+          }
+        }
+        ctx.stroke();
+      }
+      // L2 cabinet blade-mesh flow
+      if (links && s * L.bw > 14) {
+        ctx.globalAlpha = 0.95 * l2A; ctx.lineWidth = 1.8 / s; ctx.beginPath();
+        for (let cab = 0; cab < L.nC; cab++) {
+          const c: [number, number][] = [];
+          for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); }
+          for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) { ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); }
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.restore();
+    }
+
     // hovered card: "active" glow on its links — board neighbours (L1) + its blade↔
     // cabinet blades (L2). Rounded caps + shadow blur = a flow-engine "active" style.
     const hk = hoverRef.current;
@@ -169,10 +210,18 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.lineWidth = 2.5 / s; ctx.strokeStyle = '#ffb020'; ctx.strokeRect(hx - 0.06, hy - 0.06, L.cs + 0.12, L.cs + 0.12);
     }
     ctx.restore();
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario]);
 
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
+
+  // scenario playback loop: advance the flow phase and redraw
+  useEffect(() => {
+    if (!play) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; return; }
+    const loop = () => { phaseRef.current += 0.02; draw(); rafRef.current = requestAnimationFrame(loop); };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
+  }, [play, draw]);
   useEffect(() => {
     const onR = () => { tf.current = null; draw(); };   // re-fit on resize
     window.addEventListener('resize', onR);
@@ -229,6 +278,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'var(--bd)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'var(--tx)' : 'var(--tx3)' }}>
           <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
         </button>
+        {/* scenario playback — animated hop-by-hop flow */}
+        <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
+        {(['ring', 'a2a'] as const).map((sc) => {
+          const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+          return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+            style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
+        })}
+        <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
+          style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
         <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动平移 / 滚轮缩放`}</span>
       </div>
       {/* legend */}
@@ -239,6 +297,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
         <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
         {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
+        {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
       </div>
       {/* hover tooltip */}
       {tip && tipInfo && (
