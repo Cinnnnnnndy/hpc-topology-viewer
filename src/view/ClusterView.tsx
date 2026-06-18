@@ -22,7 +22,7 @@ import {
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
-  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, FullPodScene, SceneTheme,
+  OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, FullPodScene, SceneTheme, scenePalette,
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
@@ -196,6 +196,7 @@ export function ClusterView() {
   const runPhase = runTick === null ? null : RUN_SCHED[runMode][runTick % RUN_SCHED[runMode].length];
 
   const spec = GENERATIONS[gen];
+  const pal = scenePalette(dark);   // theme-aware neutrals, so legend swatches match the scene
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
   const rackLabel = rackKind === 'compute' ? '计算柜' : '通信柜';
 
@@ -807,7 +808,7 @@ export function ClusterView() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>图例</div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx2)' }}>矩阵格子（行 i × 列 j = 两颗 NPU）</div>
-                {([['L1 直连·板内', UB_LEVELS[1].color], ['L2 直连·跨板', UB_LEVELS[2].color], ['L3 直连·跨柜（更大规模）', UB_LEVELS[3].color], ['多跳·非直连', '#dfe3ea'], ['对角·自身', '#3a4256']] as [string, string][]).map(([t, c]) => (
+                {([['L1 直连·板内', UB_LEVELS[1].color], ['L2 直连·跨板', UB_LEVELS[2].color], ['L3 直连·跨柜（更大规模）', UB_LEVELS[3].color], ['多跳·非直连', pal.matIndirect], ['对角·自身', pal.matSelf]] as [string, string][]).map(([t, c]) => (
                   <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 12, height: 8, background: c, display: 'inline-block', borderRadius: 1, border: '1px solid var(--bd)' }} />
                     <span style={{ color: 'var(--tx2)' }}>{t}</span>
@@ -821,7 +822,7 @@ export function ClusterView() {
                   </span>
                 ))}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 10, background: '#f2f4f8', display: 'inline-block', borderRadius: 1, border: '1px solid var(--bd2)' }} />
+                  <span style={{ width: 12, height: 10, background: pal.substrate, display: 'inline-block', borderRadius: 1, border: '1px solid var(--bd2)' }} />
                   <span style={{ color: 'var(--tx2)' }}>刀片(板)框 · 外框 = 单柜</span>
                 </span>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx2)', marginTop: 2 }}>联动高亮</div>
@@ -837,9 +838,9 @@ export function ClusterView() {
                 {/* layer elements */}
                 <LgRow shape="dot" color={COMM_PATTERNS[2].color} label="线程 / AI Core" />
                 <LgRow shape="dot" color="#4369ef" label="进程 rank" />
-                <LgRow shape="sq" color="#aeb8c6" label="L0 卡 / NPU" />
-                <LgRow shape="sq" color={UB_LEVELS[1].color} label="L1 刀片 / 节点" />
-                <LgRow shape="sq" color={UB_LEVELS[2].color} label="L2 机柜" />
+                <LgRow shape="sq" color={pal.cardBase} label="L0 卡 / NPU" />
+                <LgRow shape="sq" color={pal.bladeBase} label="L1 刀片 / 节点" />
+                <LgRow shape="sq" color={pal.cabBase} label="L2 机柜" />
                 <LgRow shape="sq" color={UB_LEVELS[3].color} label={`L3 ${TOK.supernode}`} />
                 {podCount > 1 && <LgRow shape="sq" color={UB_LEVELS[4].color} label="L4 超节点间" />}
                 {/* connections */}
