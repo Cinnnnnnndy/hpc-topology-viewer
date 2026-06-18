@@ -14,7 +14,7 @@ import { TOK, INFO, SOURCES, CHANGES } from '../content';
 export { INFO, SOURCES, CHANGES };
 
 export type RackKind = 'compute' | 'switch';
-export type ViewMode = 'overview' | 'rack' | 'node' | 'topology' | 'matrix' | 'mapping' | 'trace' | 'fullpod';
+export type ViewMode = 'overview' | 'rack' | 'node' | 'topology' | 'matrix' | 'mapping' | 'trace' | 'fullpod' | 'plane';
 export type Gen = 'A5' | 'A6';
 
 // ─── Generation specs ────────────────────────────────────────────────────────

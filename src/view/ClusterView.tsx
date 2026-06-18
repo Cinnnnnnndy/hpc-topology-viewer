@@ -24,6 +24,7 @@ import {
   OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, FullPodScene,
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
+import { PlaneView } from './PlaneView';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -52,6 +53,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0] },
   trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0] },
   fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0] },
+  plane:    { pos: [0, 7, 13], target: [0, 0.6, 0] },   // 2-D overlay; 3-D camera unused
 };
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
@@ -63,6 +65,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '线程时序' },
   { id: 'fullpod',  label: '整列全景(多卡)' },
+  { id: 'plane',    label: '平面视图' },
 ];
 
 // compact legend row: a swatch (line / square / dot) + label
@@ -155,7 +158,7 @@ export function ClusterView() {
     mode === 'matrix' ? 'matrix' :
     mode === 'mapping' ? 'mapping' :
     mode === 'trace' ? 'trace' :
-    mode === 'fullpod' ? 'fullpod' : 'topology';
+    mode === 'fullpod' || mode === 'plane' ? 'fullpod' : 'topology';
   const info = INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
@@ -333,6 +336,9 @@ export function ClusterView() {
               />
             </GizmoHelper>
           </Canvas>
+
+          {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
+          {mode === 'plane' && <PlaneView gen={gen} />}
 
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
           {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
