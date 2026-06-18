@@ -15,7 +15,7 @@
  */
 import { Suspense, createContext, useContext, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text as DreiText, Edges, Line } from '@react-three/drei';
+import { Text as DreiText, Edges, Line, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   RACK_DIM, COMPUTE_RACK_UNITS, SWITCH_RACK_UNITS,
@@ -861,12 +861,17 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === lvl ? null : lvl)); }}
       >
         {children}
-        <Text position={[-HT.xSpan / 2 - 0.3, 0, 0]} fontSize={0.2} color={isH ? L(lvl) : LC.textDim} anchorX="right" anchorY="middle" maxWidth={3}>
-          {`${UB_LEVELS[lvl].id} ${UB_LEVELS[lvl].label}`}
-        </Text>
-        <Text position={[HT.xSpan / 2 + 0.3, 0, 0]} fontSize={0.15} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
-          {lvl === 0 ? `${DIES_PER_NPU} die / NPU` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
-        </Text>
+        {/* billboard the level labels so they stay readable from any view angle */}
+        <Billboard position={[-HT.xSpan / 2 - 0.3, 0, 0]}>
+          <Text fontSize={0.2} color={isH ? L(lvl) : LC.textDim} anchorX="right" anchorY="middle" maxWidth={3}>
+            {`${UB_LEVELS[lvl].id} ${UB_LEVELS[lvl].label}`}
+          </Text>
+        </Billboard>
+        <Billboard position={[HT.xSpan / 2 + 0.3, 0, 0]}>
+          <Text fontSize={0.15} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
+            {lvl === 0 ? `${DIES_PER_NPU} die / NPU` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
+          </Text>
+        </Billboard>
       </group>
     );
   };
@@ -1921,9 +1926,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* clickable band labels (focus → highlight that band's downstream connector) */}
       {bands.map(([i, y, t, c]) => (
         (i < 6 || podCount > 1) && (
-          <Text key={i} position={[xL, y, -G.fieldD / 2]} fontSize={lblSize} color={focus === i ? c : LC.textDim} anchorX="right" anchorY="middle"
-            onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
-            onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
+          // billboard → the level label always faces the camera, readable at any view angle
+          <Billboard key={i} position={[xL, y, -G.fieldD / 2]}>
+            <Text fontSize={lblSize} color={focus === i ? c : LC.textDim} anchorX="right" anchorY="middle"
+              onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
+              onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
+          </Billboard>
         )
       ))}
 

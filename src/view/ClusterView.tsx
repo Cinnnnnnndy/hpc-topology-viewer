@@ -30,20 +30,25 @@ import { PlaneView } from './PlaneView';
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
  *  exhausts the browser's context limit → blank canvas needing refresh). */
-function CameraController({ poseKey, pos, target, worldH, controls }: {
-  poseKey: string; pos: [number, number, number]; target: [number, number, number]; worldH: number;
+function CameraController({ poseKey, pos, target, worldH, iso, controls }: {
+  poseKey: string; pos: [number, number, number]; target: [number, number, number]; worldH: number; iso?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   controls: React.MutableRefObject<any>;
 }) {
   const { camera, size } = useThree();
   useEffect(() => {
-    camera.position.set(pos[0], pos[1], pos[2]);
+    const tgt = new THREE.Vector3(target[0], target[1], target[2]);
+    const p = new THREE.Vector3(pos[0], pos[1], pos[2]);
+    // default spatial views to the 2.5-D axonometric angle (preserve the preset's distance)
+    if (iso) p.copy(tgt).addScaledVector(ISO_DIR, new THREE.Vector3(pos[0], pos[1], pos[2]).distanceTo(tgt));
+    camera.up.set(0, 1, 0);
+    camera.position.copy(p);
     // orthographic: derive zoom from viewport so the view frames `worldH` units tall
     if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
       (camera as THREE.OrthographicCamera).zoom = size.height / worldH;
     }
     camera.updateProjectionMatrix();
-    if (controls.current) { controls.current.target.set(target[0], target[1], target[2]); controls.current.update(); }
+    if (controls.current) { controls.current.target.copy(tgt); controls.current.update(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poseKey]);
   return null;
@@ -80,17 +85,20 @@ function ViewSnap({ preset, onDone, controls }: {
 
 // worldH = the vertical world extent the orthographic frustum should frame
 // (zoom is derived from canvas-height / worldH, so framing is resolution-stable).
-const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number]; worldH: number }> = {
-  overview: { pos: [9, 10, 15], target: [0, 0.5, 0], worldH: 17 },
-  rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0], worldH: 7.5 },
-  node:     { pos: [0, 3.8, 6.6], target: [0, 0.7, 0], worldH: 3.6 },
-  topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0], worldH: 10.5 },
+// iso = open at the 2.5-D axonometric angle (spatial views); the flat diagram
+// views (matrix / mapping / trace) stay front-on so their labels read straight.
+const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number, number, number]; worldH: number; iso?: boolean }> = {
+  overview: { pos: [9, 10, 15], target: [0, 0.5, 0], worldH: 17, iso: true },
+  rack:     { pos: [4.6, 4.4, 8.6], target: [0, 2.8, 0], worldH: 7.5, iso: true },
+  node:     { pos: [0, 3.8, 6.6], target: [0, 0.7, 0], worldH: 3.6, iso: true },
+  topology: { pos: [0, 4.2, 13], target: [0, 2.9, 0], worldH: 10.5, iso: true },
   matrix:   { pos: [0, 3.4, 13.5], target: [0, 2, 0], worldH: 10 },
   mapping:  { pos: [0, 2.3, 11.5], target: [0, 2.3, 0], worldH: 8.5 },
   trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0], worldH: 10.5 },
-  fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },
+  fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18, iso: true },
   plane:    { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D overlay; 3-D camera unused
 };
+const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'overview', label: '全景总览' },
@@ -162,7 +170,7 @@ export function ClusterView() {
   }, []);
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
-  const [dark, setDark] = useState(false);   // dark / light theme
+  const [dark, setDark] = useState(true);   // dark / light theme (dark by default)
   const [camPreset, setCamPreset] = useState<CamPreset | null>(null);   // pending camera-angle snap
   const [memOpen, setMemOpen] = useState(true);   // per-card memory occupancy panel (node view)
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
@@ -222,9 +230,9 @@ export function ClusterView() {
     return `TP${TP}×PP${PP}×DP${DP}`;
   }, [fpFull, spec.totalNpus]);
   const cam = mode === 'node' && nodeKind === 'ubswitch'
-    ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number], worldH: 4.5 }
+    ? { pos: [2.9, 2.5, 3.6] as [number, number, number], target: [0, 0.7, 0] as [number, number, number], worldH: 4.5, iso: true }
     : mode === 'fullpod'
-    ? { pos: [0, fpReach * 0.62, fpReach * 1.02] as [number, number, number], target: [0, Math.min(6, fpReach * 0.1), 0] as [number, number, number], worldH: Math.max(14, fpReach * 1.5) }
+    ? { pos: [0, fpReach * 0.62, fpReach * 1.02] as [number, number, number], target: [0, Math.min(6, fpReach * 0.1), 0] as [number, number, number], worldH: Math.max(14, fpReach * 1.5), iso: true }
     : CAMERA[mode];
 
   const specRows: [string, string][] = [
@@ -366,7 +374,7 @@ export function ClusterView() {
                 Position/zoom are driven imperatively by CameraController (a reactive
                 prop here would fight OrbitControls on every re-render). */}
             <OrthographicCamera makeDefault position={DEFAULT_CAM_POS} near={0.1} far={4000} />
-            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} worldH={cam.worldH} controls={controlsRef} />
+            <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} worldH={cam.worldH} iso={cam.iso} controls={controlsRef} />
             <ViewSnap preset={camPreset} onDone={() => setCamPreset(null)} controls={controlsRef} />
             <color attach="background" args={[dark ? '#101010' : '#f5f5f5']} />
             <fog attach="fog" args={[dark ? '#101010' : '#f5f5f5', mode === 'fullpod' ? 90 : 26, mode === 'fullpod' ? 420 : 60]} />
