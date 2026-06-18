@@ -16,7 +16,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, STATUS_META, STATUS_COLORS,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -95,7 +95,7 @@ export function ClusterView() {
   const [nodeKind, setNodeKind] = useState<'compute' | 'ubswitch'>('compute');
   const [nodeSlot, setNodeSlot] = useState(0);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);   // info panel collapsed by default (small-screen friendly)
   const [scale, setScale] = useState<Scale>(DEFAULT_SCALE);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
@@ -114,6 +114,14 @@ export function ClusterView() {
   const [runStep, setRunStep] = useState(0);     // completed iterations / decode steps
   const [fpPart, setFpPart] = useState<PartitionDim>('none');   // full-pod: colour cards by parallel dim
   const [fpPeers, setFpPeers] = useState(true);   // full-pod: draw same-level peer mesh (L1 card / L2 node)
+  const [fpStatus, setFpStatus] = useState(false);   // full-pod: live status / flow overlay
+  const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440));
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -197,7 +205,7 @@ export function ClusterView() {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f5f5', color: 'rgba(0,0,0,0.90)' }}>
       {/* ── toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.12)', flexWrap: 'wrap', background: 'white' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.12)', flexWrap: 'wrap', background: 'white' }}>
         {/* generation switch */}
         <div style={{ display: 'flex', gap: 4, borderRight: '1px solid rgba(0,0,0,0.12)', paddingRight: 12 }}>
           {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
@@ -366,6 +374,19 @@ export function ClusterView() {
               <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 1 : 0.4 }} />
               层内直连
             </button>
+            <button
+              onClick={() => setFpStatus((v) => !v)}
+              title="状态/流量：节点按当前活动上色（计算/通信/访存…），连线粗细表示带宽，当前相位的活跃链路加粗发亮（状态色优先于切分色）"
+              style={{
+                padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5,
+                border: `1px solid ${fpStatus ? '#22c55e' : 'rgba(0,0,0,0.12)'}`,
+                background: fpStatus ? 'rgba(34,197,94,0.12)' : 'transparent',
+                color: fpStatus ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.5)',
+              }}
+            >
+              <span style={{ width: 9, height: 9, background: '#22c55e', display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.4 }} />
+              状态/流量
+            </button>
           </div>
         )}
         {/* breadcrumb */}
@@ -378,7 +399,7 @@ export function ClusterView() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>
+        {!narrow && <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         <button
           onClick={() => setPanelOpen((v) => !v)}
           style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
@@ -388,7 +409,7 @@ export function ClusterView() {
       </div>
 
       {/* ── main: Canvas + info panel ── */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <Canvas
             camera={{ position: cam.pos, fov: 42 }}
@@ -430,7 +451,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
 
             <OrbitControls
               ref={controlsRef}
@@ -689,6 +710,15 @@ export function ClusterView() {
                 {/* run phases (phase-wash colours) */}
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
+                {/* live status / flow */}
+                {fpStatus && (
+                  <>
+                    <div style={lgHdr}>状态 / 流量（节点活动）</div>
+                    {STATUS_META.map((s) => <LgRow key={s.id} shape="dot" color={STATUS_COLORS[s.id]} label={s.label} />)}
+                    <span style={lgNote}>连线粗细 = 带宽（节点内 L1 最粗 → scale-out 最细）</span>
+                    <span style={lgNote}>当前相位活跃链路加粗发亮 = 流量 · 状态色优先于切分色</span>
+                  </>
+                )}
                 {/* parallel partition palette */}
                 {fpPart !== 'none' && (
                   <>
@@ -718,12 +748,13 @@ export function ClusterView() {
           </div>
         </div>
 
-        {/* ── right info panel ── */}
+        {/* ── right info panel (floating overlay so it never compresses the canvas) ── */}
         {panelOpen && (
           <div style={{
-            width: 300, borderLeft: '1px solid rgba(0,0,0,0.12)', padding: '14px 16px',
+            position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 6,
+            width: narrow ? 270 : 300, borderLeft: '1px solid rgba(0,0,0,0.12)', padding: '14px 16px',
             overflowY: 'auto', fontSize: 12.5, lineHeight: 1.65, flexShrink: 0,
-            background: 'white', color: 'rgba(0,0,0,0.90)',
+            background: 'rgba(255,255,255,0.97)', color: 'rgba(0,0,0,0.90)', boxShadow: '-3px 0 12px rgba(0,0,0,0.10)',
           }}>
             <div style={{ fontSize: 13.5, fontWeight: 600, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'rgba(0,0,0,0.75)' }}>

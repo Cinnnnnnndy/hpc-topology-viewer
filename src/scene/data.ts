@@ -129,6 +129,18 @@ export const PARTITION_META: Record<Exclude<PartitionDim, 'none'>, { label: stri
 // cycling palette: group g → PARTITION_PALETTE[g % len] (same colour = same parallel group)
 export const PARTITION_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
 
+// ─── Live status / flow overlay (full-pod): node activity + link state ────────
+// Node colour = current activity (from the run phase); link thickness = bandwidth
+// (intra-node L1 fattest → scale-out L4 thinnest) with a flow surge on the active
+// collective. Status colour takes priority over the partition colour.
+export const STATUS_COLORS: Record<string, string> = {
+  compute: '#22c55e', comm: '#f43f5e', mem: '#a78bfa', load: '#60a5fa', store: '#94a3b8', idle: '#cbd5e1',
+};
+export const STATUS_META: { id: string; label: string }[] = [
+  { id: 'compute', label: '计算中' }, { id: 'comm', label: '通信中' }, { id: 'mem', label: '访存' },
+  { id: 'load', label: '加载' }, { id: 'store', label: '存储' }, { id: 'idle', label: '空闲' },
+];
+
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
   train: [
     { id: 'load', name: '加载 batch',      kind: 'load',    color: '#c2c9d4', parallel: 'DP',    note: '各 DP 副本读入各自 micro-batch' },

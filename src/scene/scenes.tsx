@@ -22,7 +22,7 @@ import {
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
   UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
-  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
+  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE, STATUS_COLORS,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1614,8 +1614,8 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; onPick?: (npuLocal: number) => void;
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; onPick?: (npuLocal: number) => void;
 }) {
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [sel, setSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
@@ -1773,9 +1773,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const pm = procRef.current, tm = thrRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
-    if (pm) for (let k = 0; k < G.N; k++) { if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); } pm.setColorAt(k, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(thrBase); if (computeNow && tint) col.lerp(tint, 0.7); } tm.setColorAt(i, col); }
-    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); }
+    // live status colours (priority over partition): card = current activity, rank = comm, thread = compute
+    const sCard = phase ? STATUS_COLORS[phase.kind] : STATUS_COLORS.idle;
+    const sProc = commNow ? STATUS_COLORS.comm : STATUS_COLORS.idle;
+    const sThr = computeNow ? STATUS_COLORS.compute : STATUS_COLORS.idle;
+    if (pm) for (let k = 0; k < G.N; k++) { if (status) col.set(sProc); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); } pm.setColorAt(k, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(thrBase); if (computeNow && tint) col.lerp(tint, 0.7); } tm.setColorAt(i, col); }
+    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (status) col.set(sCard); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); }
     if (bm) for (let b = 0; b < G.nBlades; b++) { if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set('#dbe9fb'); bm.setColorAt(b, col); }
     if (cm) for (let c = 0; c < G.nCabs; c++) cm.setColorAt(c, col.set('#efe7fb'));
     // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
@@ -1796,7 +1800,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (nm?.instanceColor) nm.instanceColor.needsUpdate = true;
     if (bm?.instanceColor) bm.instanceColor.needsUpdate = true;
     if (cm?.instanceColor) cm.instanceColor.needsUpdate = true;
-  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel]);
+  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)
   const hoverCard = (k: number | null) => {
@@ -1856,9 +1860,20 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));
   const dieInsetPos: [number, number, number] = [-G.fieldW / 2 - DIE.w * 0.55 * dieS - 1.2, G.yCard + 1.8 * dieS, -G.fieldD / 2 - 0.5];
 
-  // connector with downstream-focus emphasis (focus = upper band index)
-  const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2) => pts.length > 0 && (
-    <Line points={pts} segments color={color} lineWidth={focus === upper ? 3 : focus === null ? base : 0.5} transparent opacity={focus === upper ? 0.95 : focus === null ? 0.4 : 0.1} />
+  // status overlay: which band's links carry the current phase's traffic + the status colour
+  const statKind = phase?.kind ?? null;
+  const statCol = statKind ? STATUS_COLORS[statKind] : STATUS_COLORS.idle;
+  const linkActive = (band: number): boolean => {
+    if (!statKind) return false;
+    if (statKind === 'compute') return band <= 3;                                   // thread→proc→card→blade compute fan
+    if (statKind === 'comm') return collective === 'a2a' ? band === 4 || band === 5 : band === 5 || band === 6;
+    return band === 2;                                                              // load/store/mem → memory access
+  };
+  // connector. status mode → colour by link state, thickness ∝ bandwidth (bw) with a flow surge on active links.
+  const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => pts.length > 0 && (
+    status
+      ? <Line points={pts} segments color={linkActive(upper) ? statCol : '#cbd2dc'} lineWidth={linkActive(upper) ? bw * 1.8 : bw * 0.7} transparent opacity={linkActive(upper) ? 0.95 : 0.22} />
+      : <Line points={pts} segments color={color} lineWidth={focus === upper ? 3 : focus === null ? base : 0.5} transparent opacity={focus === upper ? 0.95 : focus === null ? 0.4 : 0.1} />
   );
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
@@ -1880,17 +1895,18 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       ))}
 
       {/* hierarchy backbone (downstream of band f is highlighted when focus===f) */}
-      {conn(G.t2p, THREAD_COLOR, 1, 0.7)}
-      {conn(G.p2c, PROC_COLOR, 2, 0.9)}
-      {conn(G.c2b, L(1), 3, 0.8)}
-      {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1)}
-      {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4)}
-      {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4)}
+      {/* bw (5th arg) = relative bandwidth → thickness in status mode: intra-node fattest, scale-out thinnest */}
+      {conn(G.t2p, THREAD_COLOR, 1, 0.7, 0.8)}
+      {conn(G.p2c, PROC_COLOR, 2, 0.9, 1.1)}
+      {conn(G.c2b, L(1), 3, 0.8, 2.4)}
+      {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
+      {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
+      {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4, 0.9)}
 
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
-      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={L(1)} lineWidth={1.4} transparent opacity={focus === null ? 0.62 : 0.16} />}
-      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={L(2)} lineWidth={1.4} transparent opacity={focus === null ? 0.6 : 0.2} />}
+      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={status ? (computeNow ? statCol : '#cbd2dc') : L(1)} lineWidth={status ? (computeNow ? 2.6 : 1.1) : 1.4} transparent opacity={status ? (computeNow ? 0.85 : 0.28) : (focus === null ? 0.62 : 0.16)} />}
+      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={status ? (commNow && collective === 'a2a' ? statCol : '#cbd2dc') : L(2)} lineWidth={status ? (commNow && collective === 'a2a' ? 2.2 : 1.1) : 1.4} transparent opacity={status ? (commNow && collective === 'a2a' ? 0.85 : 0.3) : (focus === null ? 0.6 : 0.2)} />}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
