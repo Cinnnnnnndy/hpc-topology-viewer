@@ -165,6 +165,7 @@ export function ClusterView() {
   const [dark, setDark] = useState(false);   // dark / light theme
   const [camPreset, setCamPreset] = useState<CamPreset | null>(null);   // pending camera-angle snap
   const [memOpen, setMemOpen] = useState(true);   // per-card memory occupancy panel (node view)
+  const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
 
   useEffect(() => {
@@ -674,6 +675,72 @@ export function ClusterView() {
                 </div>
               ))}
               {memOpen && <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>示意占用 · 越贴近算力越易成瓶颈</div>}
+            </div>
+          )}
+
+          {/* full-pod swimlane timeline — the missing "time" dimension, linked to the 3D run.
+              Rows = parallel roles (TP/PP/DP/EP); columns = the iteration phases. Click a
+              phase to seek the 3-D playback (which lights up the active cards/collective). */}
+          {mode === 'fullpod' && (
+            <div style={{
+              position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 12, zIndex: 5,
+              padding: '8px 12px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12,
+              boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              maxWidth: 'calc(100% - 24px)', overflowX: 'auto',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: swimOpen ? 7 : 0 }}>
+                <span style={{ fontWeight: 600, fontSize: 11.5, color: 'var(--tx)' }}>{`时序泳道 · ${runMode === 'train' ? '训练迭代' : '推理步'}`}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>行=并行角色 · 列=相位 · 点列联动3D</span>
+                <button onClick={() => setSwimOpen((v) => !v)} style={{ padding: '1px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>{swimOpen ? '▾' : '▸'}</button>
+              </div>
+              {swimOpen && (() => {
+                const phases = RUN_SCHED[runMode];
+                const lanes: Exclude<PartitionDim, 'none'>[] = ['tp', 'pp', 'dp', 'ep'];
+                const col = (w: number) => ({ width: w, minWidth: w, textAlign: 'center' as const });
+                return (
+                  <div style={{ display: 'inline-block', fontSize: 10.5 }}>
+                    {/* phase header (clickable = seek) */}
+                    <div style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
+                      <div style={col(34)} />
+                      {phases.map((ph, k) => (
+                        <button key={ph.id} title={ph.note}
+                          onClick={() => { setRunPlaying(false); setRunTick(k); }}
+                          style={{ ...col(70), padding: '3px 4px', cursor: 'pointer', borderRadius: 6, fontSize: 10, fontWeight: 600,
+                            border: runTick === k ? `1px solid ${ph.color}` : '1px solid var(--bd)',
+                            background: runTick === k ? `${ph.color}26` : 'transparent', color: runTick === k ? 'var(--tx)' : 'var(--tx2)' }}>
+                          {ph.name.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
+                    {/* lanes */}
+                    {lanes.map((ln) => (
+                      <div key={ln} style={{ display: 'flex', gap: 3, marginBottom: 3, alignItems: 'center' }}>
+                        <div style={{ ...col(34), display: 'inline-flex', alignItems: 'center', gap: 3, justifyContent: 'flex-start' }}>
+                          <span style={{ width: 7, height: 7, borderRadius: 2, background: PARALLEL_COLORS[ln] }} />
+                          <span style={{ color: 'var(--tx2)', fontWeight: 600 }}>{ln.toUpperCase()}</span>
+                        </div>
+                        {phases.map((ph, k) => {
+                          const active = (ph.parallel ?? '').toUpperCase().includes(ln.toUpperCase());
+                          const cur = runTick === k;
+                          return <div key={ph.id} style={{ ...col(70), height: 14, borderRadius: 4,
+                            background: active ? PARALLEL_COLORS[ln] : 'var(--bd)',
+                            opacity: active ? (cur ? 1 : 0.62) : (cur ? 0.5 : 0.22),
+                            outline: cur ? `1px solid ${ph.color}` : 'none' }} />;
+                        })}
+                      </div>
+                    ))}
+                    {/* comm marker row */}
+                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                      <div style={{ ...col(34), color: 'var(--tx3)', textAlign: 'left' }}>通信</div>
+                      {phases.map((ph) => (
+                        <div key={ph.id} style={{ ...col(70), textAlign: 'center', color: ph.kind === 'comm' ? (ph.collective === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color) : 'var(--tx3)' }}>
+                          {ph.kind === 'comm' ? (ph.collective === 'ring' ? 'AllReduce' : 'All2All') : '·'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
