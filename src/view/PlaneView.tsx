@@ -153,7 +153,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     }
 
     // ── scenario playback: animated hop-by-hop flow (marching ants) ──
-    // Ring AllReduce → staged L1 (intra-blade) then L2 (intra-cabinet); All-to-All
+    // Ring-AllReduce → staged L1 (intra-blade) then L2 (intra-cabinet); All-to-All
     // → L2 cross-blade full-mesh emphasised. Reads as "卡→刀片→机柜逐跳流动".
     if (play) {
       const ph = phaseRef.current, cyc = ph % 1;
@@ -282,7 +282,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
         {(['ring', 'a2a'] as const).map((sc) => {
           const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-          return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+          return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
             style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
         })}
         <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
@@ -297,7 +297,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
         <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
         {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-        {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
+        {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
       </div>
       {/* hover tooltip */}
       {tip && tipInfo && (

@@ -89,7 +89,7 @@ export const UB_LEVELS: UbLevel[] = [
 // ─── Process / thread communication overlays (node view) ─────────────────────
 export interface CommPattern { id: string; color: string; label: string; }
 export const COMM_PATTERNS: CommPattern[] = [
-  { id: 'ring',   color: '#ff4b7b', label: 'Ring AllReduce · 进程(rank)' },
+  { id: 'ring',   color: '#ff4b7b', label: 'Ring-AllReduce · 进程(rank)' },
   { id: 'a2a',    color: '#ffaa3b', label: 'All-to-All MoE · 进程(rank)' },
   { id: 'thread', color: '#22d3ee', label: 'die 内线程 / AI Core 流' },
 ];

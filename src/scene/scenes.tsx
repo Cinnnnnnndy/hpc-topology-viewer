@@ -695,7 +695,7 @@ function IoDieDetail({ onHoverInfo, onJump }: { onHoverInfo: (t: string | null) 
       </group>
       {/* collective engine */}
       <group
-        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 AllReduce / All2All / ReduceScatter 等，自行搬运+Reduce，释放 AI Core · 点击→UB 互联高亮`); }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 AllReduce / All-to-All / ReduceScatter 等，自行搬运+Reduce，释放 AI Core · 点击→UB 互联高亮`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); onJump?.({ view: 'topology', focus: 'ccu' }); }}
       >
@@ -986,7 +986,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
           onPointerOut={() => onHoverInfo(null)}
         >
           <lineSegments geometry={ringGeo}><lineBasicMaterial color={COMM_PATTERNS[0].color} transparent opacity={0.9} /></lineSegments>
-          <Text position={[2.0, yR + 0.2, 0]} fontSize={0.14} color={COMM_PATTERNS[0].color} anchorX="left">Ring AllReduce</Text>
+          <Text position={[2.0, yR + 0.2, 0]} fontSize={0.14} color={COMM_PATTERNS[0].color} anchorX="left">Ring-AllReduce</Text>
         </group>
       )}
 
@@ -995,7 +995,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       <group
         position={[-HT.xSpan / 2 - 0.9, HT.y[1] + 0.1, 0]}
         scale={subFocus === 'ccu' ? 1.4 : 1}
-        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 Ring-AllReduce / All2All / ReduceScatter，自行搬运+Reduce，释放 AI Core、降总线占用`); }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`${TOK.ccu}（集合通信单元）：硬件卸载 Ring-AllReduce / All-to-All / ReduceScatter，自行搬运+Reduce，释放 AI Core、降总线占用`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
       >
         <Slab size={[0.55, 0.18, 0.3]} color={COMM_PATTERNS[0].color} emissive={COMM_PATTERNS[0].color} emissiveIntensity={subFocus === 'ccu' ? 1.0 : 0.4} edgeColor={subFocus === 'ccu' ? '#fff' : COMM_PATTERNS[0].color} />

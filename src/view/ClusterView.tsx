@@ -655,7 +655,7 @@ export function ClusterView() {
                         <div style={{ ...col(40), color: 'var(--tx3)', textAlign: 'left' }}>通信</div>
                         {phases.map((ph) => (
                           <div key={ph.id} style={{ ...col(cw), textAlign: 'center', color: ph.kind === 'comm' ? (ph.collective === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color) : 'var(--tx3)' }}>
-                            {ph.kind === 'comm' ? (ph.collective === 'ring' ? 'AllReduce' : 'All2All') : '·'}
+                            {ph.kind === 'comm' ? (ph.collective === 'ring' ? 'AllReduce' : 'All-to-All') : '·'}
                           </div>
                         ))}
                       </div>
