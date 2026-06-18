@@ -221,6 +221,8 @@ export function ClusterView() {
       '--tx3': dark ? 'rgba(255,255,255,0.42)' : 'rgba(0,0,0,0.45)',
       '--bd': dark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.12)',
       '--bd2': dark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
+      '--shadow': dark ? '0 10px 30px rgba(0,0,0,0.55)' : '0 10px 28px rgba(17,24,39,0.12)',
+      '--shadow-sm': dark ? '0 4px 14px rgba(0,0,0,0.45)' : '0 4px 14px rgba(17,24,39,0.09)',
     } as React.CSSProperties}>
       {/* ── toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
@@ -232,7 +234,7 @@ export function ClusterView() {
               onClick={() => setGen(g)}
               title={GENERATIONS[g].name}
               style={{
-                padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 5, cursor: 'pointer',
+                padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
                 border: `1px solid ${gen === g ? '#4369ef' : 'var(--bd)'}`,
                 background: gen === g ? 'rgba(67,105,239,0.10)' : 'transparent',
                 color: gen === g ? '#4369ef' : 'var(--tx2)',
@@ -247,7 +249,7 @@ export function ClusterView() {
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as ViewMode)}
-            style={{ padding: '5px 8px', fontSize: 12, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+            style={{ padding: '5px 8px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
           >
             {MODE_TABS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
@@ -258,7 +260,7 @@ export function ClusterView() {
                 key={t.id}
                 onClick={() => setMode(t.id)}
                 style={{
-                  padding: '5px 14px', fontSize: 12, borderRadius: 5, cursor: 'pointer',
+                  padding: '5px 14px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
                   border: `1px solid ${mode === t.id ? '#4369ef' : 'var(--bd)'}`,
                   background: mode === t.id ? 'rgba(67,105,239,0.10)' : 'transparent',
                   color: mode === t.id ? '#4369ef' : 'var(--tx2)',
@@ -284,11 +286,11 @@ export function ClusterView() {
         <button
           onClick={() => setDark((v) => !v)}
           title="黑 / 白 主题切换"
-          style={{ padding: '4px 10px', fontSize: 13, borderRadius: 5, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
+          style={{ padding: '4px 10px', fontSize: 13, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
         >{dark ? '☀' : '◐'}</button>
         <button
           onClick={() => setPanelOpen((v) => !v)}
-          style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
+          style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
         >
           {panelOpen ? '收起信息 ▸' : '◂ 信息面板'}
         </button>
@@ -366,9 +368,9 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', top: 12, left: 12, zIndex: 5, maxWidth: 'calc(100% - 24px)',
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 8, boxShadow: '0 2px 12px var(--bd)',
+              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
-              <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '3px 9px', fontSize: 11.5, fontWeight: 600, borderRadius: 5, cursor: 'pointer', border: '1px solid var(--bd)', background: 'rgba(67,105,239,0.08)', color: '#4369ef' }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
+              <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '3px 9px', fontSize: 11.5, fontWeight: 600, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'rgba(67,105,239,0.08)', color: '#4369ef' }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
               {ctxOpen && (
                 <>
                   {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
@@ -378,7 +380,7 @@ export function ClusterView() {
                         const on = overlays[t.id];
                         return (
                           <button key={t.id} onClick={() => setOverlays((o) => ({ ...o, [t.id]: !o[t.id] }))} title={t.label}
-                            style={{ padding: '4px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${on ? t.color : 'var(--bd)'}`, background: on ? `${t.color}22` : 'transparent', color: on ? 'var(--tx)' : 'var(--tx3)' }}>
+                            style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${on ? t.color : 'var(--bd)'}`, background: on ? `${t.color}22` : 'transparent', color: on ? 'var(--tx)' : 'var(--tx3)' }}>
                             <span style={{ width: 9, height: 3, background: t.color, display: 'inline-block', borderRadius: 1, opacity: on ? 1 : 0.4 }} />
                             {narrow ? t.label.split(' ')[0] : t.label}
                           </button>
@@ -390,7 +392,7 @@ export function ClusterView() {
                   {mode === 'matrix' && (
                     <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       {(Object.keys(SCALES) as Scale[]).map((s) => (
-                        <button key={s} onClick={() => setScale(s)} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${scale === s ? '#4369ef' : 'var(--bd)'}`, background: scale === s ? 'rgba(67,105,239,0.10)' : 'transparent', color: scale === s ? '#4369ef' : 'var(--tx2)' }}>{SCALES[s].label}</button>
+                        <button key={s} onClick={() => setScale(s)} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${scale === s ? '#4369ef' : 'var(--bd)'}`, background: scale === s ? 'rgba(67,105,239,0.10)' : 'transparent', color: scale === s ? '#4369ef' : 'var(--tx2)' }}>{SCALES[s].label}</button>
                       ))}
                     </div>
                   )}
@@ -399,7 +401,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       {([[false, '64P 单柜'], [true, `全量超节点(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
                         <button key={label} onClick={() => setFpFull(v)} title={v ? `渲染整座超节点全部 ${spec.totalNpus.toLocaleString()} 张卡（阵列）` : '单柜 64 卡（8 刀片 × 8 卡）'}
-                          style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${fpFull === v ? '#4369ef' : 'var(--bd)'}`, background: fpFull === v ? 'rgba(67,105,239,0.10)' : 'transparent', color: fpFull === v ? '#4369ef' : 'var(--tx2)' }}>{label}</button>
+                          style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${fpFull === v ? '#4369ef' : 'var(--bd)'}`, background: fpFull === v ? 'rgba(67,105,239,0.10)' : 'transparent', color: fpFull === v ? '#4369ef' : 'var(--tx2)' }}>{label}</button>
                       ))}
                     </div>
                   )}
@@ -408,7 +410,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <span style={{ fontSize: 11, color: 'var(--tx3)' }}>超节点</span>
                       {[1, 2, 4].map((c) => (
-                        <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${podCount === c ? '#4369ef' : 'var(--bd)'}`, background: podCount === c ? 'rgba(67,105,239,0.10)' : 'transparent', color: podCount === c ? '#4369ef' : 'var(--tx2)' }}>{`×${c}`}</button>
+                        <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${podCount === c ? '#4369ef' : 'var(--bd)'}`, background: podCount === c ? 'rgba(67,105,239,0.10)' : 'transparent', color: podCount === c ? '#4369ef' : 'var(--tx2)' }}>{`×${c}`}</button>
                       ))}
                     </div>
                   )}
@@ -417,7 +419,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <span style={{ fontSize: 11, color: 'var(--tx3)' }}>运行</span>
                       {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
-                        <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${runMode === m ? '#4369ef' : 'var(--bd)'}`, background: runMode === m ? 'rgba(67,105,239,0.10)' : 'transparent', color: runMode === m ? '#4369ef' : 'var(--tx2)' }}>{label}</button>
+                        <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${runMode === m ? '#4369ef' : 'var(--bd)'}`, background: runMode === m ? 'rgba(67,105,239,0.10)' : 'transparent', color: runMode === m ? '#4369ef' : 'var(--tx2)' }}>{label}</button>
                       ))}
                     </div>
                   )}
@@ -429,7 +431,7 @@ export function ClusterView() {
                         const on = fpPart === d;
                         return (
                           <button key={d} onClick={() => setFpPart((p) => (p === d ? 'none' : d))} title={`${PARTITION_META[d].label} · ${PARTITION_META[d].level}`}
-                            style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.10)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{d.toUpperCase()}</button>
+                            style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.10)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{d.toUpperCase()}</button>
                         );
                       })}
                     </div>
@@ -438,12 +440,12 @@ export function ClusterView() {
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <button onClick={() => setFpPeers((v) => !v)} title="层内直连：L1 板载卡↔卡 + L2 机柜内节点↔节点 UB 直连 mesh"
-                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${fpPeers ? UB_LEVELS[1].color : 'var(--bd)'}`, background: fpPeers ? `${UB_LEVELS[1].color}22` : 'transparent', color: fpPeers ? 'var(--tx)' : 'var(--tx3)' }}>
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${fpPeers ? UB_LEVELS[1].color : 'var(--bd)'}`, background: fpPeers ? `${UB_LEVELS[1].color}22` : 'transparent', color: fpPeers ? 'var(--tx)' : 'var(--tx3)' }}>
                         <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 1 : 0.4 }} />
                         {narrow ? '直连' : '层内直连'}
                       </button>
                       <button onClick={() => setFpStatus((v) => !v)} title="状态/流量：节点按当前活动上色（计算/通信/访存…），连线粗细表示带宽，当前相位的活跃链路加粗发亮（状态色优先于切分色）"
-                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${fpStatus ? '#22c55e' : 'var(--bd)'}`, background: fpStatus ? 'rgba(34,197,94,0.12)' : 'transparent', color: fpStatus ? 'var(--tx)' : 'var(--tx3)' }}>
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${fpStatus ? '#22c55e' : 'var(--bd)'}`, background: fpStatus ? 'rgba(34,197,94,0.12)' : 'transparent', color: fpStatus ? 'var(--tx)' : 'var(--tx3)' }}>
                         <span style={{ width: 9, height: 9, background: '#22c55e', display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.4 }} />
                         {narrow ? '状态' : '状态/流量'}
                       </button>
@@ -459,21 +461,21 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, alignItems: 'center',
               padding: '7px 12px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid var(--bd)', borderRadius: 6,
+              border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span style={{ color: 'var(--tx)' }}>{`已选 rank ${locate.rank}（刀片 B${locate.blade}）：`}</span>
               <button
                 onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('topology'); }}
-                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
               >→ UB 互联高亮</button>
               <button
                 onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('overview'); }}
-                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', border: '1px solid #4369ef', background: 'rgba(67,105,239,0.10)', color: '#4369ef' }}
               >→ 全景高亮机柜</button>
               {hl && (
                 <button
                   onClick={() => setHl(null)}
-                  style={{ padding: '4px 10px', fontSize: 12, borderRadius: 5, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
+                  style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}
                 >清除高亮</button>
               )}
             </div>
@@ -484,11 +486,11 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: 14, top: 58, display: 'flex', gap: 8, alignItems: 'center',
               padding: '6px 11px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid #4369ef', borderRadius: 6, color: '#4369ef',
+              border: '1px solid #4369ef', borderRadius: 10, color: '#4369ef', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`来自 IO Die：${ubFocus === 'ccu' ? `高亮 ${TOK.ccu} 集合通信` : ubFocus === 'onchip' ? `高亮 ${TOK.onchip} 转发` : '该端口实现的 NPU↔NPU UB 互联（邻接矩阵）'}`}</span>
-              <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>← 回节点</button>
-              <button onClick={() => setUbFocus(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>清除</button>
+              <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>← 回节点</button>
+              <button onClick={() => setUbFocus(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>清除</button>
             </div>
           )}
 
@@ -497,11 +499,11 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: 14, top: 58, display: 'flex', gap: 8, alignItems: 'center',
               padding: '6px 11px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid #4369ef', borderRadius: 6, color: '#4369ef',
+              border: '1px solid #4369ef', borderRadius: 10, color: '#4369ef', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
-              <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>← 回时序</button>
-              <button onClick={() => setHl(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>清除</button>
+              <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>← 回时序</button>
+              <button onClick={() => setHl(null)} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx2)' }}>清除</button>
             </div>
           )}
 
@@ -510,11 +512,11 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 8,
+              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <button
                 onClick={() => { setTracePlaying((v) => !v); if (traceTick === null) setTraceTick(0); }}
-                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: tracePlaying ? '#4369ef' : 'white', color: tracePlaying ? 'white' : '#4369ef', fontSize: 13 }}
+                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: tracePlaying ? '#4369ef' : 'var(--panel-solid)', color: tracePlaying ? '#fff' : '#4369ef', fontSize: 13 }}
               >{tracePlaying ? '⏸' : '▶'}</button>
               {/* phase scrubber */}
               <div style={{ display: 'flex', gap: 2 }}>
@@ -524,8 +526,8 @@ export function ClusterView() {
                     title={PHASE_META[ph].name}
                     onClick={() => { setTracePlaying(false); setTraceTick(k); }}
                     style={{
-                      width: 26, height: 18, cursor: 'pointer', borderRadius: 3,
-                      border: traceTick === k ? '2px solid #1c2433' : '1px solid var(--bd)',
+                      width: 26, height: 18, cursor: 'pointer', borderRadius: 6,
+                      border: traceTick === k ? '2px solid var(--tx)' : '1px solid var(--bd)',
                       background: PHASE_META[ph].color, opacity: traceTick === null || traceTick === k ? 1 : 0.55,
                       fontSize: 8, color: '#33405a',
                     }}
@@ -536,7 +538,7 @@ export function ClusterView() {
                 {traceTick === null ? '示意时序（点块/播放）' : `t${traceTick} · ${PHASE_META[TRACE_SCHED[traceTick]].name}`}
               </span>
               {traceTick !== null && (
-                <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
+                <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
               )}
             </div>
           )}
@@ -546,11 +548,11 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', maxWidth: '92%', flexWrap: 'wrap',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 8,
+              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <button
                 onClick={() => { setRunPlaying((v) => !v); if (runTick === null) setRunTick(0); }}
-                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: runPlaying ? '#4369ef' : 'white', color: runPlaying ? 'white' : '#4369ef', fontSize: 13 }}
+                style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid #4369ef', background: runPlaying ? '#4369ef' : 'var(--panel-solid)', color: runPlaying ? '#fff' : '#4369ef', fontSize: 13 }}
               >{runPlaying ? '⏸' : '▶'}</button>
               <div style={{ display: 'flex', gap: 2 }}>
                 {RUN_SCHED[runMode].map((ph, k) => (
@@ -559,8 +561,8 @@ export function ClusterView() {
                     title={ph.note}
                     onClick={() => { setRunPlaying(false); setRunTick(k); }}
                     style={{
-                      height: 22, padding: '0 8px', cursor: 'pointer', borderRadius: 3,
-                      border: runTick === k ? '2px solid #1c2433' : '1px solid var(--bd)',
+                      height: 22, padding: '0 8px', cursor: 'pointer', borderRadius: 6,
+                      border: runTick === k ? '2px solid var(--tx)' : '1px solid var(--bd)',
                       background: ph.color, opacity: runTick === null || runTick === k ? 1 : 0.5,
                       fontSize: 10, color: '#1c2433', fontWeight: 600,
                     }}
@@ -574,7 +576,7 @@ export function ClusterView() {
                 {`${runMode === 'train' ? '迭代' : '步'} #${runStep} · ${runMode === 'train' ? spec.trainTokps : spec.inferTokps}`}
               </span>
               {runTick !== null && (
-                <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
+                <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)' }}>复位</button>
               )}
               {runPhase && <span style={{ fontSize: 10.5, color: 'var(--tx2)', width: '100%' }}>{runPhase.note}</span>}
             </div>
@@ -585,7 +587,7 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: 14, bottom: 14, maxWidth: '70%',
               padding: '7px 12px', fontSize: 12.5, lineHeight: 1.5,
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 6,
+              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               color: 'var(--tx)', pointerEvents: 'none',
             }}>{hoverInfo}</div>
           )}
@@ -593,7 +595,7 @@ export function ClusterView() {
           {/* legend: UB hierarchy levels (+ comm overlays in node view) */}
           <div style={{
             position: 'absolute', right: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
-            background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 6,
+            background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 250,
             pointerEvents: mode === 'fullpod' ? 'auto' : 'none',
             maxHeight: mode === 'fullpod' ? 'calc(100vh - 140px)' : undefined,
