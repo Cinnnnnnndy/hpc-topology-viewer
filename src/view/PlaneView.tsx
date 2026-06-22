@@ -33,6 +33,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
   const [play, setPlay] = useState(false);          // scenario playback (animated hop-by-hop flow)
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
+  const [layout, setLayout] = useState<'top' | 'layers'>('top');   // top-down map vs. layered hierarchy
   const phaseRef = useRef(0);                       // flow animation phase
   const rafRef = useRef<number | null>(null);
 
@@ -69,7 +70,45 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   };
   const cfg = `TP${CPB}×PP${L.PP}×DP${Math.max(1, Math.round(L.nB / L.PP))}`;
 
-  const fit = useCallback((W: number, H: number) => Math.min(W / L.tw, H / L.th) * 0.92, [L]);
+  // ── layered-hierarchy layout (world units): the same levels as the 3-D topology
+  // (线程→进程→L0卡→L1节点→L2机柜→L3超节点) flattened to stacked bands, with a bounded,
+  // count-labelled representative fan-out so containment (层级间) + peer mesh (层级内) read. ──
+  const LAY = (() => {
+    const N = spec.totalNpus;
+    const nCabTot = Math.ceil(N / 64), nNodeTot = Math.ceil(N / CPB);
+    const C = Math.min(3, nCabTot), Bd = 2, Cd = CPB, Th = THREADS;   // sampled fan-out
+    const thStep = 0.62, cardGap = 0.5, nodeGap = 1.7, cabGap = 3.2, margin = 8, bandH = 2.7, boxH = 0.8;
+    const avg = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+    type B = { cx: number; parent: number };
+    const cab: B[] = [], node: B[] = [], card: B[] = [], proc: B[] = [], thr: B[] = [];
+    let x = margin;
+    for (let c = 0; c < C; c++) {
+      const cabNodes: number[] = [];
+      for (let b = 0; b < Bd; b++) {
+        const nodeCards: number[] = [];
+        for (let k = 0; k < Cd; k++) {
+          const procId = proc.length, cardId = card.length, tStart = x;
+          for (let t = 0; t < Th; t++) { thr.push({ cx: x, parent: procId }); x += thStep; }
+          const pcx = (tStart + x - thStep) / 2;
+          proc.push({ cx: pcx, parent: cardId });
+          card.push({ cx: pcx, parent: node.length });
+          nodeCards.push(cardId); x += cardGap;
+        }
+        x += nodeGap;
+        node.push({ cx: avg(nodeCards.map((i) => card[i].cx)), parent: cab.length });
+        cabNodes.push(node.length - 1);
+      }
+      x += cabGap;
+      cab.push({ cx: avg(cabNodes.map((i) => node[i].cx)), parent: 0 });
+    }
+    const sup: B[] = [{ cx: avg(cab.map((c) => c.cx)), parent: -1 }];
+    const y = [0, 1, 2, 3, 4, 5].map((i) => boxH + i * bandH);
+    return { sup, cab, node, card, proc, thr, boxH, y, w: x + margin, h: boxH * 2 + bandH * 5,
+      counts: { sup: 1, cab: nCabTot, node: nNodeTot, card: N, proc: N, thr: N * Th }, sample: { Bd, Cd, Th, C } };
+  })();
+
+  const ext = layout === 'layers' ? { tw: LAY.w, th: LAY.h } : { tw: L.tw, th: L.th };
+  const fit = useCallback((W: number, H: number) => Math.min(W / ext.tw, H / ext.th) * 0.92, [ext.tw, ext.th]);
 
   // hit-test a world point → card index (O(1) via the grid math)
   const pick = (wx: number, wy: number): number | null => {
@@ -93,11 +132,57 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = wrap.clientWidth, H = wrap.clientHeight;
     if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
-    if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - L.tw * f) / 2, ty: (H - L.th * f) / 2 }; }
+    if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - ext.tw * f) / 2, ty: (H - ext.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
+
+    // ── layered-hierarchy layout (bands + containment + peer mesh) ──
+    if (layout === 'layers') {
+      const half = LAY.boxH / 2;
+      const Lv = [
+        { boxes: LAY.sup,  color: UB_LEVELS[3].color, label: 'L3 超节点', count: LAY.counts.sup,  bw: 1.9 },
+        { boxes: LAY.cab,  color: UB_LEVELS[2].color, label: 'L2 机柜',   count: LAY.counts.cab,  bw: 1.35 },
+        { boxes: LAY.node, color: UB_LEVELS[1].color, label: 'L1 节点',   count: LAY.counts.node, bw: 1.05 },
+        { boxes: LAY.card, color: UB_LEVELS[0].color, label: 'L0 卡',     count: LAY.counts.card, bw: 0.82 },
+        { boxes: LAY.proc, color: '#4369ef',          label: '进程 rank', count: LAY.counts.proc, bw: 0.7 },
+        { boxes: LAY.thr,  color: COMM_PATTERNS[2].color, label: '线程',  count: LAY.counts.thr,  bw: 0.42 },
+      ];
+      const yOf = (i: number) => LAY.y[i];
+      // 层级间：containment edges (parent band → child band)
+      ctx.strokeStyle = P.cardBd; ctx.globalAlpha = 0.55; ctx.lineWidth = 0.6 / s; ctx.beginPath();
+      for (let i = 1; i < 6; i++) for (const c of Lv[i].boxes) { const p = Lv[i - 1].boxes[c.parent]; if (!p) continue; ctx.moveTo(p.cx, yOf(i - 1) + half); ctx.lineTo(c.cx, yOf(i) - half); }
+      ctx.stroke(); ctx.globalAlpha = 1;
+      // 层级内：peer mesh as arcs bowing above each band (group = same parent)
+      const peer = (li: number, color: string, alpha: number, lw: number) => {
+        const boxes = Lv[li].boxes, yy = yOf(li); const g = new Map<number, { cx: number }[]>();
+        boxes.forEach((b) => { const a = g.get(b.parent) ?? []; a.push(b); g.set(b.parent, a); });
+        ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = lw / s; ctx.lineCap = 'round'; ctx.beginPath();
+        g.forEach((arr) => { for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) { const x1 = arr[i].cx, x2 = arr[j].cx, mx = (x1 + x2) / 2; ctx.moveTo(x1, yy - half); ctx.quadraticCurveTo(mx, yy - half - LAY.boxH * 0.5 - Math.abs(x2 - x1) * 0.16, x2, yy - half); } });
+        ctx.stroke(); ctx.globalAlpha = 1;
+      };
+      peer(1, UB_LEVELS[3].color, 0.5, 1.0);    // 机柜↔机柜 (L3 Clos)
+      peer(2, UB_LEVELS[2].color, 0.5, 0.9);    // 节点↔节点 (L2 柜内)
+      peer(3, UB_LEVELS[1].color, 0.45, 0.7);   // 卡↔卡 (L1 板载 full-mesh)
+      peer(5, COMM_PATTERNS[2].color, 0.4, 0.5); // 线程↔线程 (核间)
+      // boxes + per-band labels (label colour = level colour)
+      ctx.lineCap = 'butt';
+      Lv.forEach((lv, li) => {
+        const yy = yOf(li);
+        lv.boxes.forEach((b) => {
+          ctx.fillStyle = lv.color; ctx.globalAlpha = 0.2; ctx.fillRect(b.cx - lv.bw / 2, yy - half, lv.bw, LAY.boxH);
+          ctx.globalAlpha = 1; ctx.strokeStyle = lv.color; ctx.lineWidth = 0.5 / s; ctx.strokeRect(b.cx - lv.bw / 2, yy - half, lv.bw, LAY.boxH);
+        });
+        ctx.fillStyle = lv.color; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.font = '0.62px sans-serif';
+        ctx.fillText(lv.label, 7.2, yy - 0.18);
+        ctx.fillStyle = P.ink2; ctx.font = '0.4px sans-serif';
+        ctx.fillText(`×${lv.count.toLocaleString()}`, 7.2, yy + 0.34);
+      });
+      ctx.restore();
+      return;
+    }
+
     const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;   // visible world rect (cull per-card detail)
 
     // cabinets (L2) + blades (L1) containment frames
@@ -210,8 +295,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.lineWidth = 2.5 / s; ctx.strokeStyle = '#ffb020'; ctx.strokeRect(hx - 0.06, hy - 0.06, L.cs + 0.12, L.cs + 0.12);
     }
     ctx.restore();
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout]);
 
+  // re-fit when the layout (top ↔ layers) changes, then redraw
+  useEffect(() => { tf.current = null; }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
 
@@ -244,6 +331,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const onUp = (e: React.PointerEvent) => { drag.current = null; try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* noop */ } };
   const onMove = (e: React.PointerEvent) => {
     if (drag.current && tf.current) { tf.current = { ...tf.current, tx: drag.current.tx + (e.clientX - drag.current.x), ty: drag.current.ty + (e.clientY - drag.current.y) }; draw(); return; }
+    if (layout === 'layers') return;   // layered view: pan/zoom only (no per-card hover)
     const [wx, wy] = toWorld(e.clientX, e.clientY); const k = pick(wx, wy);
     if (k !== hoverRef.current) { hoverRef.current = k; draw(); }
     const r = canvasRef.current!.getBoundingClientRect();
@@ -267,37 +355,61 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       />
       {/* controls */}
       <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
-        <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>平面 · 上色</span>
-        {COLOR_BTNS.map((c) => {
-          const on = colorBy === c.id; const sig = PARALLEL_COLORS[c.id];
-          return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? sig : 'var(--bd)'}`, background: on ? `${sig}1f` : 'transparent', color: on ? sig : 'var(--tx2)' }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: sig, display: 'inline-block', opacity: on ? 1 : 0.6 }} />{c.label}
-          </button>;
+        {/* layout: top-down map vs. layered hierarchy */}
+        <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
+        {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
+          const on = layout === id;
+          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级图（线程→进程→卡→节点→机柜→超节点，示意层级间/层级内关系）'}
+            style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
         })}
-        <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
-          style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'var(--bd)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'var(--tx)' : 'var(--tx3)' }}>
-          <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
-        </button>
-        {/* scenario playback — animated hop-by-hop flow */}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
-        {(['ring', 'a2a'] as const).map((sc) => {
-          const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-          return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
-            style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
-        })}
-        <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
-          style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
-        <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动平移 / 滚轮缩放`}</span>
+        {layout === 'top' ? (
+          <>
+            <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>上色</span>
+            {COLOR_BTNS.map((c) => {
+              const on = colorBy === c.id; const sig = PARALLEL_COLORS[c.id];
+              return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? sig : 'var(--bd)'}`, background: on ? `${sig}1f` : 'transparent', color: on ? sig : 'var(--tx2)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: sig, display: 'inline-block', opacity: on ? 1 : 0.6 }} />{c.label}
+              </button>;
+            })}
+            <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
+              style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'var(--bd)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'var(--tx)' : 'var(--tx3)' }}>
+              <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
+            </button>
+            <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
+            {(['ring', 'a2a'] as const).map((sc) => {
+              const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+              return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
+            })}
+            <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
+              style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动 / 滚轮缩放`}</span>
+          </>
+        ) : (
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级图 · 行=层级，竖线=层级间包含，弧线=层级内互联 · 示意每柜 ${LAY.sample.Bd}/8 节点`}</span>
+        )}
       </div>
       {/* legend */}
       <div style={{ position: 'absolute', bottom: 12, left: 12, padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', lineHeight: 1.6, color: 'var(--tx2)' }}>
-        <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
-        <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
-        <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
-        <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
-        <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
-        {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-        {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
+        {layout === 'top' ? (
+          <>
+            <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
+            <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
+            <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
+            <div>卡 = NPU / 进程 rank · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内 3 格 = 线程（放大显示）</div>
+            <div>{colorBy === 'none' ? '格子 = NPU 卡（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
+            {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
+            {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
+          </>
+        ) : (
+          <>
+            <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`${TOK.supernode} · 层级图（与立体拓扑同层级）`}</div>
+            <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: '2px dashed var(--tx3)', verticalAlign: 'middle', marginRight: 5 }} />层级间：竖向连线 = 包含（父→子）</div>
+            <div><span style={{ display: 'inline-block', width: 12, height: 6, borderTop: `2px solid ${UB_LEVELS[1].color}`, borderRadius: '8px 8px 0 0', verticalAlign: 'middle', marginRight: 5 }} />层级内：弧线 = 同级互联（L1卡↔卡 / L2节点↔节点 / L3机柜↔机柜 / 线程）</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>示意：每柜 {LAY.sample.Bd}/8 节点、每节点 8 卡全展开；右侧 ×N = 实际总数</div>
+          </>
+        )}
       </div>
       {/* hover tooltip */}
       {tip && tipInfo && (
