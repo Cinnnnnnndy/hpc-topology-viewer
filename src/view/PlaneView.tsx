@@ -78,18 +78,19 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   // Levels: 超节点 → 机柜 → 节点 → NPU(=rank=device, strict 1:1) → Die(×2) → AI Core. ──
   const LAY = useMemo(() => {
     const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64)), coresPer = spec.aiSubsys ?? 32;
-    const margin = 9.5, Wc = 64, gap = 1.8, AR = 5.4;   // AR keeps every panel ≈ Wc/AR tall
+    const margin = 9.5, Wc = 64, gap = 1.8;
+    // Die is folded into the NPU glyph (split-in-two), so 5 levels. `ar` sets the
+    // panel aspect → AI Core gets a much taller panel so its Cube/Vector are visible.
     const defs = [
-      { kind: 'super', count: 1,            color: UB_LEVELS[3].color, label: 'L3 超节点' },
-      { kind: 'cab',   count: nCab,          color: UB_LEVELS[2].color, label: 'L2 机柜' },
-      { kind: 'node',  count: nCab * 8,      color: UB_LEVELS[1].color, label: 'L1 节点/刀片' },
-      { kind: 'npu',   count: N,             color: '#4369ef',          label: 'NPU=rank=device' },
-      { kind: 'die',   count: N * 2,         color: UB_LEVELS[0].color, label: 'Die (×2/NPU)' },
-      { kind: 'core',  count: N * coresPer,  color: COMM_PATTERNS[2].color, label: 'AI Core' },
+      { kind: 'super', count: 1,            color: UB_LEVELS[3].color, label: 'L3 超节点',       ar: 5.4 },
+      { kind: 'cab',   count: nCab,          color: UB_LEVELS[2].color, label: 'L2 机柜',         ar: 5.4 },
+      { kind: 'node',  count: nCab * 8,      color: UB_LEVELS[1].color, label: 'L1 节点/刀片',    ar: 5.4 },
+      { kind: 'npu',   count: N,             color: '#4369ef',          label: 'NPU=rank=device', ar: 4.4 },
+      { kind: 'core',  count: N * coresPer,  color: COMM_PATTERNS[2].color, label: 'AI Core',     ar: 1.7 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
-      const cols = Math.max(1, Math.round(Math.sqrt(d.count * AR)));
+      const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
       return { ...d, cols, cell, rows, y0, h, grp: li === 0 ? 1 : d.count / defs[li - 1].count };   // grp = children per parent
@@ -171,19 +172,47 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const hi = layRange();
       const vx0 = -tx / s, vx1 = (W - tx) / s, vy0 = -ty / s, vy1 = (H - ty) / s;
 
+      // per-level simplified glyph (distinct shape, with internal detail when the cell
+      // is big enough): cabinet slats · blade+dots · NPU split-in-2-dies · Cube+Vector.
+      const glyph = (kind: string, x: number, y: number, ws: number, base: string, A: number) => {
+        const px = ws * s;
+        ctx.fillStyle = base; ctx.strokeStyle = base; ctx.lineWidth = Math.max(0.012, ws * 0.05);
+        if (kind === 'super') { ctx.globalAlpha = 0.2 * A; rr(x, y, ws, ws, ws * 0.16); ctx.fill(); ctx.globalAlpha = A; ctx.stroke(); }
+        else if (kind === 'cab') {   // upright cabinet + horizontal slats
+          const cw = ws * 0.6, cx = x + (ws - cw) / 2;
+          ctx.globalAlpha = 0.22 * A; rr(cx, y, cw, ws, ws * 0.08); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
+          if (px > 7) { ctx.globalAlpha = 0.5 * A; ctx.lineWidth = ws * 0.035; for (let k = 1; k < 4; k++) { const yy = y + ws * k / 4; ctx.beginPath(); ctx.moveTo(cx + cw * 0.16, yy); ctx.lineTo(cx + cw * 0.84, yy); ctx.stroke(); } }
+        } else if (kind === 'node') {   // horizontal blade + NPU dots
+          const bh = ws * 0.46, by = y + (ws - bh) / 2;
+          ctx.globalAlpha = 0.22 * A; rr(x, by, ws, bh, bh * 0.3); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
+          if (px > 10) { ctx.globalAlpha = 0.85 * A; for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.04, 0, 7); ctx.fill(); } }
+        } else if (kind === 'npu') {   // square package split into 2 dies
+          ctx.globalAlpha = 0.14 * A; rr(x, y, ws, ws, ws * 0.12); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
+          const g = ws * 0.07, dw = (ws * 0.74 - g) / 2, dy = y + ws * 0.16, dh = ws * 0.68;
+          ctx.fillStyle = UB_LEVELS[0].color; ctx.globalAlpha = 0.45 * A;   // 2 dies (teal, L0)
+          rr(x + ws * 0.13, dy, dw, dh, ws * 0.05); ctx.fill();
+          rr(x + ws * 0.13 + dw + g, dy, dw, dh, ws * 0.05); ctx.fill();
+        } else {   // AI Core subsystem = 1 Cube + 2 Vector
+          if (px > 9) {
+            ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube
+            ctx.fillStyle = '#7c8db8'; ctx.globalAlpha = 0.75 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector
+          } else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.18); ctx.fill(); }
+        }
+        ctx.globalAlpha = 1;
+      };
+
       levels.forEach((Lv, li) => {
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
         // visible cell window (cull to viewport)
         const c0 = Math.max(0, Math.floor((vx0 - margin) / Lv.cell)), c1 = Math.min(Lv.cols, Math.ceil((vx1 - margin) / Lv.cell));
         const r0 = Math.max(0, Math.floor((vy0 - Lv.y0) / Lv.cell)), r1 = Math.min(Lv.rows, Math.ceil((vy1 - Lv.y0) / Lv.cell));
         if (cellPx >= 3 && Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
-          // individual matrix cells (culled)
+          // individual glyphs (culled)
           for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            ctx.fillStyle = hi ? (on ? '#ffb020' : Lv.color) : Lv.color; ctx.globalAlpha = hi ? (on ? 0.95 : 0.12) : 0.82;
-            rr(x, y, ws, ws, Math.min(0.1, ws * 0.22)); ctx.fill();
+            glyph(Lv.kind, x, y, ws, hi ? (on ? '#ffb020' : Lv.color) : Lv.color, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
         } else if (Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
@@ -408,7 +437,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（超节点→机柜→节点→NPU→Die→AI Core，每层一张矩阵）'}
+          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（超节点→机柜→节点→NPU(含2 Die)→AI Core，每层一张矩阵）'}
             style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
         })}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
@@ -454,11 +483,12 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ) : (
           <>
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
-            {/* each level = a matrix grid of its real units, colour-keyed */}
-            {LAY.levels.map((Lv) => (
-              <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()}</span></div>
-            ))}
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排（同顶视图）· 缩小=聚合块，放大=单格 · 仅 NPU=rank=device 严格 1:1；Die/AI Core 非 1:1</div>
+            {/* each level = a matrix grid of its real units, with a distinct glyph */}
+            {LAY.levels.map((Lv) => {
+              const shape = ({ super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', npu: '方块一分为二 = 2 Die', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
+              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()} · {shape}</span></div>;
+            })}
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排（同顶视图）· 放大看图元(NPU 内含 2 Die · AI Core 含 Cube/Vector) · 仅 NPU=rank=device 严格 1:1</div>
             <div style={{ color: '#ffb020', fontSize: 10.5 }}>{selL ? '已选中：金色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
         )}
