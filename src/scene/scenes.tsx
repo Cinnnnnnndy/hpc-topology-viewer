@@ -626,7 +626,7 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
                 color="#7dd3fc" emissive="#7dd3fc" emissiveIntensity={0.35} />
             );
           })}
-          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · Cube+2Vector ×36/芯片</Text>
+          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · AIC(Cube)+AIV(Vector) 分离双发射 · ≈16/计算 Die</Text>
         </group>
       )}
       {/* L0C accumulator */}
@@ -641,7 +641,7 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
         </group>
       )}
       <Text position={[0, 0.05, hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">
-        {`放大：NPU #${npuIdx + 1} 的 die · AI Core + 多级 SRAM · 线程/Tile 级（点左侧 NPU 切换）`}
+        {`放大：NPU #${npuIdx + 1}（device）的计算 Die · AI Core + 多级 SRAM · 设备内 block_idx/SIMT（点左侧切换）`}
       </Text>
     </group>
   );
@@ -847,7 +847,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
   const levelInfo = (lvl: number): string => {
     const base = (() => {
       switch (lvl) {
-        case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} die · die 间 UB/SIO 直连`;
+        case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} Die（2 计算 Die UMA 合并→1 device + 2 IO Die）· die 间 UB/SIO 直连`;
         case 1: return `L1 刀片/节点内：${NPUS_PER_NODE}× NPU 全互联（full-mesh，每颗对所有）· 单 NPU ${gen.chipUbTBs} TB/s`;
         case 2: return `L2 机柜内：8 刀片 / 64 NPU · 跨刀片 ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
         case 3: return `L3 ${TOK.supernode}内：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
@@ -882,7 +882,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         </Billboard>
         <Billboard position={[HT.xSpan / 2 + 0.3, 0, 0]}>
           <Text fontSize={0.15} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
-            {lvl === 0 ? `${DIES_PER_NPU} die / NPU` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
+            {lvl === 0 ? `${DIES_PER_NPU} Die / 卡（2 计算+2 IO）` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
           </Text>
         </Billboard>
       </group>
@@ -907,7 +907,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       {/* L0 — one NPU package: dual die (NpuChip = same NPU element used everywhere) */}
       <Tier lvl={0}>
         <NpuChip w={0.62} h={0.2} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} logo />
-        <Text position={[0, 0, 0.42]} fontSize={0.12} color={LC.textDim} anchorX="center">1 NPU 封装 · 2 die</Text>
+        <Text position={[0, 0, 0.42]} fontSize={0.12} color={LC.textDim} anchorX="center">1 卡 / device · 4 Die（2 计算 UMA + 2 IO）</Text>
       </Tier>
 
       {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) inside a 刀片 box */}
@@ -917,7 +917,10 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         {npuPts.map((p, i) => (
           <group key={i} position={[p[0], 0.02, p[2]]}>
             <NpuChip w={0.18} h={0.12} hovered={hov === 1} selected={i === hlNpu} />
-            {i === hlNpu && <Text position={[0, 0.3, 0]} fontSize={0.12} color={PROC_COLOR} anchorX="center">{`rank ${highlight!.npu}`}</Text>}
+            {i === hlNpu && <>
+              <Text position={[0, 0.36, 0]} fontSize={0.12} color={PROC_COLOR} anchorX="center">{`软件 rank ${highlight!.npu}`}</Text>
+              <Text position={[0, 0.24, 0]} fontSize={0.085} color={LC.textDim} anchorX="center">{`↓ 1:1 绑定 device（NPU ${highlight!.npu}）`}</Text>
+            </>}
           </group>
         ))}
         <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 刀片 / 节点 · 8 NPU 全互联</Text>
@@ -1447,22 +1450,25 @@ export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. Software ↔ hardware mapping (process/thread ↔ NPU/AI Core)
+// 7. Software ↔ hardware mapping — rank(软件) is kept strictly SEPARATE from
+//    device(硬件); the only 1:1 anchor is rank ↔ device. Everything below rank is
+//    DEVICE-INTERNAL parallelism (Stream/Context → block_idx → SIMT/SIMD), NOT more
+//    ranks. Tuned for the 950 (1 device = 1 card = 2 compute Die UMA · ≈32 AI Core).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const PROC_COLOR = '#4369ef';                 // process / rank
-const THREAD_COLOR = COMM_PATTERNS[2].color;  // thread / tile (cyan)
+const PROC_COLOR = '#4369ef';                 // software rank / the rank↔device boundary
+const THREAD_COLOR = COMM_PATTERNS[2].color;  // device-internal parallelism (AI Core / SIMT-SIMD, cyan)
 
 export function MappingScene({ onHoverInfo }: SceneCallbacks) {
   const LC = useLC();
   const [focus, setFocus] = useState<number | null>(null);
   const swX = -2.8, hwX = 2.8;
   const rows: { sw: string; hw: string; key?: 'proc' | 'thread'; tag?: string; info: string }[] = [
-    { sw: '作业 / 模型', hw: '集群 / 超节点', info: '整个训练作业运行在超节点 / 集群之上' },
-    { sw: '并行切分\nDP · TP · EP · PP', hw: 'NPU 组（机柜 / 刀片）', tag: '进程级（rank 间 · 走 UB）', info: '并行策略决定“哪个 rank 算什么”，落到 NPU 组与 NPU 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）' },
-    { sw: '进程 rank', hw: '1 NPU', key: 'proc', info: '一个进程(rank) 映射到一颗 NPU；rank 间集合通信走 UB 各级链路' },
-    { sw: '算子 / Tile 切分', hw: 'die', tag: '线程级（rank 内 · die 上）', info: `rank 内：算子按 TileShape 切分，数据流 HBM→L1→L0→Cube（参考 TileLang/${TOK.pypto}）` },
-    { sw: '线程 / Tile', hw: 'AI Core (Cube/Vector)', key: 'thread', info: '一个线程/Tile 映射到 die 内的 AI Core（Cube/Vector）+ SRAM 上的 Tile' },
+    { sw: '作业 / 模型', hw: '集群 / 超节点', info: '软件：整个训练作业。硬件：跑在超节点 / 集群之上' },
+    { sw: '并行切分\nDP · TP · EP · PP', hw: 'device 组（机柜 / 刀片）', tag: 'rank 间 · 走 UB', info: '软件：并行策略决定“哪个 rank 算什么”。硬件：落到 device 组 + device 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）' },
+    { sw: `rank\n（${TOK.hccl} 逻辑号）`, hw: '1 device\n= 1 张 950 卡（2 计算 Die UMA）', key: 'proc', tag: '软↔硬 1:1 锚点', info: `软件：rank = 纯软件逻辑编号（rank 表），与代际无关。硬件：1 张 950 卡 = 1 device（2 计算 Die UMA 合并 + 2 IO Die）。两者严格 1:1 绑定，是软硬件唯一的锚点` },
+    { sw: 'Stream / Context\nblock_idx（SPMD）', hw: 'AI Core（device 内 ≈32）', tag: '设备内并行 · 非 rank', info: '软件：rank 内不增 rank——Stream/Context 下发，block_idx 以 SPMD 切到各 AI Core。硬件：约 32 个 AI Core（16/计算 Die × 2），AIC(Cube)/AIV(Vector) 分离独立核、双发射' },
+    { sw: 'SIMT 线程 / SIMD 通道\n→ tile / element', hw: 'Cube(AIC) · Vector(AIV) 核内', key: 'thread', info: '软件：950 新增 SIMT/SIMD 同构双编程，线程/通道映射到核内 ALU 与 SRAM 上的 tile/element。硬件：Cube∶Vector 算力 ≈ 8∶1，含 Cube-Vector 融合通路' },
   ];
   const y = (i: number) => 4.3 - i * 0.95;
 
@@ -1499,18 +1505,24 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
               {i === 0 && <CabinetBox w={0.5} h={0.5} d={0.2} kind="compute" hovered={on} />}
               {i === 1 && [-0.5, 0, 0.5].map((dx, k) => <group key={k} position={[dx, 0, 0]}><NpuChip w={0.26} h={0.16} hovered={on} /></group>)}
               {i === 2 && <NpuChip w={0.5} h={0.3} hovered={on} selected={on} logo />}
-              {i === 3 && <Slab size={[0.34, 0.18, 0.34]} color={L(0)} emissive={L(0)} emissiveIntensity={on ? 0.9 : 0.5} />}
-              {i === 4 && Array.from({ length: 6 }, (_, k) => <Slab key={k} size={[0.1, 0.08, 0.1]} position={[(k % 3 - 1) * 0.16, 0, (Math.floor(k / 3) - 0.5) * 0.16]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />)}
-              <Text position={[0, -0.5, 0]} fontSize={0.14} color={LC.textDim} anchorX="center" maxWidth={2.4}>{r.hw}</Text>
+              {/* AI Core array (block_idx → AI Core), device-internal */}
+              {i === 3 && Array.from({ length: 8 }, (_, k) => <Slab key={k} size={[0.09, 0.07, 0.09]} position={[(k % 4 - 1.5) * 0.13, 0, (Math.floor(k / 4) - 0.5) * 0.15]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.85 : 0.45} />)}
+              {/* one AI Core: 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores */}
+              {i === 4 && <group>
+                <Slab size={[0.2, 0.14, 0.2]} position={[-0.12, 0, 0]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />
+                <Slab size={[0.08, 0.12, 0.18]} position={[0.08, 0, 0]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={on ? 0.8 : 0.4} />
+                <Slab size={[0.08, 0.12, 0.18]} position={[0.2, 0, 0]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={on ? 0.8 : 0.4} />
+              </group>}
+              <Text position={[0, -0.5, 0]} fontSize={0.13} color={LC.textDim} anchorX="center" maxWidth={2.6}>{r.hw}</Text>
             </group>
-            {/* level tag (process / thread boundary) */}
-            {r.tag && <Text position={[0, yy - 0.42, 0]} fontSize={0.13} color={r.tag.includes('进程') ? PROC_COLOR : THREAD_COLOR} anchorX="center">{r.tag}</Text>}
+            {/* boundary tag: rank↔device 1:1 (blue) vs device-internal parallelism (cyan) */}
+            {r.tag && <Text position={[0, yy - 0.44, 0]} fontSize={0.12} color={r.tag.includes('设备内') ? THREAD_COLOR : PROC_COLOR} anchorX="center">{r.tag}</Text>}
           </group>
         );
       })}
 
-      <Text position={[0, y(4) - 0.8, 0]} fontSize={0.18} color={LC.textDim} anchorX="center">
-        {'作业 →(DP/PP/TP/EP 切分)→ 进程=NPU →(Tile 切分)→ 线程=AI Core · 点击某层高亮映射'}
+      <Text position={[0, y(4) - 0.85, 0]} fontSize={0.16} color={LC.textDim} anchorX="center" maxWidth={9}>
+        {'软件 rank 严格 1:1 绑定硬件 device（1 张 950 卡）· rank 之下是设备内并行（Stream/Context→block_idx→SIMT/SIMD），不产生更多 rank · 点击某层高亮映射'}
       </Text>
     </group>
   );
@@ -1575,9 +1587,9 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       <Floor size={14} />
 
       {/* row labels (left) — hardware rows coloured by UB level, like topology */}
-      {rowLabel(yThread, '线程 / Tile', THREAD_COLOR)}
-      {rowLabel(yProc, '进程 rank', PROC_COLOR)}
-      {rowLabel(yNpu, 'NPU', LC.text)}
+      {rowLabel(yThread, '线程/Tile（设备内）', THREAD_COLOR)}
+      {rowLabel(yProc, 'rank（软件）', PROC_COLOR)}
+      {rowLabel(yNpu, 'NPU = device（硬件）', LC.text)}
       {rowLabel(yBlade, 'L1 刀片', L(1))}
       {rowLabel(yCab, 'L2 机柜', L(2))}
       {rowLabel(ySuper, 'L3 超节点', L(3))}
@@ -1591,7 +1603,7 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
         const on = tOn(p, t);
         return (
           <group key={`${p}-${t}`} position={[xT(p, t), yThread, 0]}
-            onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 ${p} · 线程/Tile ${t} = die 内 AI Core；点击定位 + 联动`); }}
+            onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`rank ${p}（软件）· 设备内 线程/Tile ${t} → AI Core（block_idx SPMD）；点击定位 + 联动`); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); pick(on && sel?.t === t ? null : { p, t }); }}
           >
@@ -1604,7 +1616,7 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
         const on = pOn(p);
         return (
           <group key={p} position={[xP(p), yProc, 0]}
-            onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`进程 rank ${p}（= NPU ${p}）· 集合通信走 UB；点击定位 + 联动`); }}
+            onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(`软件 rank ${p} → 1:1 绑定 device（NPU ${p}）· 集合通信走 UB；点击定位 + 联动`); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); pick(on && sel?.t === null ? null : { p, t: null }); }}
           >
@@ -1639,7 +1651,7 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       </group>
 
       <Text position={[0, 0.02, 1.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">
-        {'线程/进程水平排布 · 硬件层级竖向（与 UB 互联一致）· 顶栏播放看时序 · 点击线程/进程定位+联动'}
+        {'软件 rank/线程 水平排布 · 硬件层级竖向（与 UB 互联一致）· rank↔device 1:1 · 顶栏播放看时序 · 点击定位+联动'}
       </Text>
     </group>
   );
@@ -1888,7 +1900,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       const b = G.cardBlade[k], c = G.bladeCab[b];
       down(k); vSegs.push(cPos(k), bPos(b), bPos(b), caPos(c)); upFromCab(c);
       meshPairs([k, ...bladeCards(b).filter((j) => j !== k)], cPos);   // card k ↔ its blade-mates (L1 board mesh)
-      dieK = k; label = `NPU ${k}`; labelPos = cPos(k);
+      dieK = k; label = `NPU ${k}（device）· rank ${k}`; labelPos = cPos(k);
     } else if (sel.lv === 1) {
       const b = sel.i; if (b >= G.nBlades) return null;
       const c = G.bladeCab[b], ks = bladeCards(b);
@@ -1929,7 +1941,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
   const bands: [number, number, string, string][] = [
-    [0, G.yThread, '线程', THREAD_COLOR], [1, G.yProc, '进程 rank', PROC_COLOR], [2, G.yCard, 'L0 卡', L(0)],
+    [0, G.yThread, '线程(设备内)', THREAD_COLOR], [1, G.yProc, 'rank(软件)', PROC_COLOR], [2, G.yCard, 'L0 卡=device', L(0)],
     [3, G.yBlade, 'L1 节点', L(1)], [4, G.yCab, 'L2 机柜', L(2)], [5, G.ySuper, `L3 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L4 超节点间', L(4)],
   ];
 
@@ -1993,7 +2005,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {useChip
         ? G.cardX.map((x, k) => (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
-            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
+            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
@@ -2002,7 +2014,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         ))
         : (
           <instancedMesh ref={cardInst} args={[undefined, undefined, Math.max(1, G.N)]}
-            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k} · ${TOK.supernode} P${podOf(k)} · rank ${k} · 单击高亮链路+die实况 · 双击进入节点`); }}
+            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { hoverCard(null); setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(0, e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>

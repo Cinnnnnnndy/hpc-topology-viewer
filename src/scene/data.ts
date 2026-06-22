@@ -73,7 +73,11 @@ export const DEFAULT_GEN: Gen = 'A5';
 // per-node schematic constants (illustrative; real per-node config not public)
 export const NPUS_PER_NODE = 8;
 export const CPUS_PER_NODE = 4;
-export const DIES_PER_NPU = 2;        // package-internal dies (UB / SIO die-to-die)
+// 950-class package = 4 Die per card: 2 compute Die (UMA-merged → OS sees ONE device,
+// which the software rank binds to 1:1) + 2 IO Die (interconnect / IO). die-to-die via UB/SIO.
+export const COMPUTE_DIES_PER_CARD = 2;
+export const IO_DIES_PER_CARD = 2;
+export const DIES_PER_NPU = COMPUTE_DIES_PER_CARD + IO_DIES_PER_CARD;   // = 4 (950)
 export const NODES_PER_CAB = 8;       // 8 nodes × 8 NPU = 64 NPU per compute cabinet
 
 // ─── UB interconnect hierarchy (chip → cluster), drives all colour coding ─────
@@ -87,27 +91,33 @@ export const UB_LEVELS: UbLevel[] = [
 ];
 
 // Per UB level: scale-up/scale-out domain + bandwidth/latency + the parallel dims
-// that prefer it. (SU = scale-up 超高带宽窄域 FullMesh ≤128 卡 → TP·EP; SO = scale-out
-// 高带宽广域，双层 UB 交换 → PP·DP. Sources: UB-Mesh @ Hot Chips / 互联研究.)
+// that prefer it. (SU = scale-up 超高带宽窄域 全互联 ≤128 卡 → TP·EP; SO = scale-out
+// 高带宽广域，双层 UB 交换 → PP·DP. Sources: UB 互联研究 @ Hot Chips.)
 export interface UbLevelMeta { domain: 'SU' | 'SO'; bw: string; parallel: string; }
 export const UB_LEVEL_META: Record<string, UbLevelMeta> = {
   L0: { domain: 'SU', bw: 'D2D 双向 784 GB/s',           parallel: '片内 die 对等' },
   L1: { domain: 'SU', bw: '单卡 UB 2016 GB/s · 板载 2D-Mesh', parallel: 'TP 张量并行（窄快）' },
-  L2: { domain: 'SU', bw: '柜内 FullMesh · 单跳 200 ns · 1:1 无收敛', parallel: 'TP·EP（SU 超低延迟域）' },
+  L2: { domain: 'SU', bw: `柜内 ${TOK.fullmesh} · 单跳 200 ns · 1:1 无收敛`, parallel: 'TP·EP（SU 超低延迟域）' },
   L3: { domain: 'SO', bw: 'any-to-any <1 µs · 16 PB/s · 双层 UB 交换', parallel: 'EP·PP（SO 广域）' },
-  L4: { domain: 'SO', bw: '跨超节点 UBoE/RoCE',           parallel: 'DP 数据并行（广而省）' },
+  L4: { domain: 'SO', bw: `跨超节点 ${TOK.uboe}/RoCE`,    parallel: 'DP 数据并行（广而省）' },
 };
 
-// Layered-view semantics (per the 全栈关系图谱): for each hierarchy level —
-//  intra = 层内关系（同级成员如何协作）· inter = 层间关系（如何衔接到上层 + 流动对象）.
-export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; tag?: string; }
+// Each hierarchy level carries HARDWARE facts (hw) and the SOFTWARE view (sw)
+// SEPARATELY — rank is pure software (a collective-comm logical id) bound to a device,
+// never the device itself. Tuned for the 950 (4-Die package · UMA · ≈32 AI Core/card).
+export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; tag?: string; hw?: string; sw?: string; }
 export const LAYER_INFO: LayerInfo[] = [
-  { key: 'super', name: `${TOK.supernode} / 集群`, intra: '域内全互联 · UB-Mesh（SU 窄快 + SO 广省）', inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO' },
-  { key: 'cab',   name: '机柜', intra: '柜内 nD-FullMesh（≤128 卡 SU 超低延迟域）', inter: '↑ 总线池化 pooling：UB 统一编址 → 超节点“一台计算机”', bw: '柜内 FullMesh · 1:1 无收敛', domain: 'SU' },
-  { key: 'node',  name: '节点 / 刀片', intra: '节点内全互联 · 8 NPU + CPU 经 LQC 对 L1 平等编址', inter: '↑ 互联收敛 interconnect：经 L1/L2 上联（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(NPU) / 8×30G(CPU)', domain: 'SU' },
-  { key: 'npu',   name: 'NPU = rank = device', intra: '封装内 2 Die（对等 D2D · 含 HBM/NoC，机器层级 L2–L3）· 集合通信 TP/EP→SU, PP/DP→SO。这一级才是严格 1:1：1 NPU = 1 HCCL rank = 1 device', inter: '↑ 坐标绑定 binding：HCCL 通信域 · 互联收敛 LQC→L1', bw: 'D2D 784 GB/s · HBM 1.6–9.6 TB/s · 单卡 UB 2016 GB/s', domain: '—', tag: '严格 1:1' },
-  { key: 'core',  name: 'AI Core · Cube + Vector', intra: '每子系统 = 1 Cube + 2 Vector · 核间 GlobalMem + CrossCoreFlag · SPMD by block_idx（上代有 SIMD 无 SIMT；新代加 SIMT）', inter: '↑ 物理实现 realization：rank 内 TileShape 切到 AI Core', bw: '核内 TQue/TPipe 流水 · L0A/L0B/L0C', domain: '—', tag: '非 1:1（block_dim 可超核数·wave 执行）' },
+  { key: 'super', name: `${TOK.supernode} / 集群`, intra: `域内全互联 · ${TOK.ubmesh}（SU 窄快 + SO 广省）`, inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: '集群通信域 / 全局编排' },
+  { key: 'cab',   name: '机柜', intra: `柜内 ${TOK.fullmesh}（≤128 卡 SU 超低延迟域）`, inter: '↑ 总线池化 pooling：UB 统一编址 → 超节点“一台计算机”', bw: `柜内 ${TOK.fullmesh} · 1:1 无收敛`, domain: 'SU' },
+  { key: 'node',  name: '节点 / 刀片', intra: '8 卡 + CPU 经 LQC 对 L1 全互联、平等编址', inter: '↑ 互联收敛 interconnect：经 L1/L2 上联（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(卡) / 8×30G(CPU)', domain: 'SU' },
+  { key: 'card',  name: '卡 / NPU（1 device）', intra: '封装内 4 Die：2 计算 Die（UMA 高带宽直连、OS 视为单设备）+ 2 IO Die', inter: '↑ 坐标绑定 binding：软件 rank → 硬件 device', bw: 'D2D · HBM · 单卡 UB 2016 GB/s', domain: '—', tag: 'device ↔ rank 1:1',
+    hw: '硬件：1 张 950 卡 = 1 device = 2 计算 Die（UMA 合并）+ 2 IO Die', sw: `软件：rank = ${TOK.hccl} 逻辑编号（rank 表），与 device 严格 1:1 绑定 · 纯软件、与代际无关` },
+  { key: 'core',  name: 'AI Core（Cube / Vector）', intra: 'AIC(Cube)/AIV(Vector) 分离独立核、双发射并行 · 核间 GlobalMem + CrossCoreFlag', inter: '↑ 物理实现 realization：rank 内 TileShape 切到 AI Core', bw: 'L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
+    hw: '硬件：约 32 AI Core/卡（16/计算 Die × 2）· Cube∶Vector 算力 ≈ 8∶1 · 新增 Cube-Vector 融合通路', sw: '软件：设备内并行(不增 rank)：Stream/Context → block_idx SPMD → SIMT 线程/SIMD 通道 → tile/element（950 新增 SIMD/SIMT 同构双编程）' },
 ];
+
+// per-card AI Core count on the 950 (≈16 AI Core / compute Die × 2 compute Die)
+export const CORES_PER_CARD = 32;
 
 // ─── Process / thread communication overlays (node view) ─────────────────────
 export interface CommPattern { id: string; color: string; label: string; }
@@ -323,7 +333,7 @@ export const NODE_PARTS: NodePart[] = (() => {
     const cz = NPU_GRID.z0 + r * NPU_GRID.pitchZ;
     parts.push({
       id: `npu-${i}`, type: 'npu', npuIdx: i,
-      label: `${TOK.ascend} ${TOK.n950dt} #${i + 1} · ${DIES_PER_NPU} die · UB 2 TB/s · ${TOK.hbmZQ} HBM`,
+      label: `${TOK.ascend} ${TOK.n950dt} #${i + 1}（1 device）· ${DIES_PER_NPU} Die = 2 计算(UMA)+2 IO · UB 2 TB/s · ${TOK.hbmZQ} HBM`,
       pos: [cx, 0.022, cz], size: [0.12, 0.024, 0.115],
     });
   }
