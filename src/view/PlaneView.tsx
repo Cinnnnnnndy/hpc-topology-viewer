@@ -12,6 +12,7 @@ import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEV
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
+const AXIS_GUTTER = 118, RIGHT_PAD = 16;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
@@ -79,26 +80,29 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const LAY = useMemo(() => {
     const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64));
     const margin = 11, Wc = 100, gap = 2.4;   // wider canvas
-    // FULL hardware chain numbered by the UB L0–L7 coordinate (rank is software,
-    // shown separately). 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1·L0(×16/Die). `ar` sets
-    // panel aspect (smaller → bigger cells). 机柜 has no own L (并入机器域).
+    // FULL chain numbered by the UB L0–L7 coordinate (rank is software, shown separately):
+    // L7 作业 → L6 集群 → L5 超节点 → [机柜] → L4 节点 → L3 卡/device → L2 计算 Die(×2/卡)
+    // → L1·L0 AI Core(×16/Die). 机柜 has no own L (并入机器域). The 3 top context levels
+    // (job/cluster/super) are full-width banners; the rest are matrices. `ar`: smaller → bigger cells.
     const defs = [
-      { kind: 'super', count: 1,                 color: ENTITY_COLORS.super,      label: 'L5 超节点',     ar: 5.4 },
-      { kind: 'cab',   count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          ar: 6.0 },
-      { kind: 'node',  count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  ar: 5.0 },
-      { kind: 'card',  count: N,                  color: ENTITY_COLORS.card,      label: 'L3 卡/device',  ar: 2.6 },
-      { kind: 'die',   count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  ar: 1.8 },
-      { kind: 'core',  count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1·L0 AI Core', ar: 0.7 },
+      { kind: 'job',     count: 1,                 color: '#ff4b7b',                label: 'L7 作业/全局',  banner: true,  ar: 1 },
+      { kind: 'cluster', count: 1,                 color: '#04d793',                label: 'L6 集群',       banner: true,  ar: 1 },
+      { kind: 'super',   count: 1,                 color: ENTITY_COLORS.super,      label: 'L5 超节点',     banner: true,  ar: 5.4 },
+      { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          banner: false, ar: 6.0 },
+      { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  banner: false, ar: 5.0 },
+      { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L3 卡/device',  banner: false, ar: 2.6 },
+      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  banner: false, ar: 1.8 },
+      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1·L0 AI Core', banner: false, ar: 0.7 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
-      if (d.kind === 'super') { const h = 5, y0 = y; y += h + gap * 1.6; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: 1, banner: true }; }
+      if (d.banner) { const h = d.kind === 'super' ? 5 : 3.4, y0 = y; y += h + gap * 1.3; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
-      return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count, banner: false };   // grp = children per parent
+      return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count };   // grp = children per parent
     });
-    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin };
+    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
@@ -110,8 +114,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   };
 
   const ext = layout === 'layers' ? { tw: LAY.w, th: LAY.h } : { tw: L.tw, th: L.th };
-  // layered matrix is tall → fit to WIDTH (bigger, readable cells; scroll vertically)
-  const fit = useCallback((W: number, H: number) => layout === 'layers' ? (W / ext.tw) * 0.96 : Math.min(W / ext.tw, H / ext.th) * 0.92, [ext.tw, ext.th, layout]);
+  // layered matrix is tall → fit the matrix WIDTH to the screen minus a fixed label gutter
+  // (axis labels are constant px, drawn in the gutter), so it maximises screen width.
+  const fit = useCallback((W: number, H: number) => layout === 'layers' ? (W - AXIS_GUTTER - RIGHT_PAD) / LAY.Wc : Math.min(W / ext.tw, H / ext.th) * 0.92, [ext.tw, ext.th, layout, LAY.Wc]);
 
   // hit-test a world point → card index (O(1) via the grid math)
   const pick = (wx: number, wy: number): number | null => {
@@ -157,7 +162,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = wrap.clientWidth, H = wrap.clientHeight;
     if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
-    if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - ext.tw * f) / 2, ty: layout === 'layers' ? H * 0.04 : (H - ext.th * f) / 2 }; }
+    if (!tf.current) { const f = fit(W, H); tf.current = layout === 'layers' ? { s: f, tx: AXIS_GUTTER - LAY.margin * f, ty: H * 0.04 } : { s: f, tx: (W - ext.tw * f) / 2, ty: (H - ext.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;   // context state persists across frames; force a fully-opaque clear (no ghosting)
@@ -224,13 +229,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        // super = a clean full-width banner (not a half-width cell)
+        // L7 作业 / L6 集群 / L5 超节点 = clean full-width context banners
         if (Lv.banner) {
-          const on = !hi || (hi.lo[0] === 0);
-          ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.1 : 0.18; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
-          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? '#ffb020' : Lv.color; ctx.lineWidth = 0.18; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          ctx.fillStyle = hi && on ? '#ffb020' : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '2.2px sans-serif';
-          ctx.fillText(`${TOK.supernode} · ${LAY.levels[1].count.toLocaleString()} 机柜 / ${LAY.levels[3].count.toLocaleString()} NPU`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
+          const txt = Lv.kind === 'job' ? '1 训练作业 · 全局编排（端到端吞吐 / MFU）'
+            : Lv.kind === 'cluster' ? `集群 · 跨${TOK.supernode} scale-out（DP / PP）`
+            : `${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`;
+          ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
+          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? '#ffb020' : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
+          ctx.fillStyle = hi && on ? '#ffb020' : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
+          ctx.fillText(txt, margin + Wc / 2, Lv.y0 + Lv.h / 2);
           return;
         }
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
@@ -270,19 +278,21 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.globalAlpha = 1;
       }
 
-      // ── per-level label + ×count + 1:1 tag + UB L0–L7 坐标 ──
-      ctx.textAlign = 'right';
-      levels.forEach((Lv, li) => {
-        const yc = Lv.y0 + Math.min(Lv.h / 2, 3);
-        ctx.fillStyle = Lv.color; ctx.textBaseline = 'alphabetic'; ctx.font = '0.7px sans-serif';
-        ctx.fillText(Lv.label, margin - 0.6, yc);
-        ctx.fillStyle = P.ink2; ctx.font = '0.46px sans-serif';
-        ctx.fillText(`×${Lv.count.toLocaleString()}`, margin - 0.6, yc + 0.85);
-        if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '0.4px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], margin - 0.6, yc + 1.5); }
-        const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 软硬件同一坐标（L 号在层名里，这里标作用域）
-        if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '0.4px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, margin - 0.6, yc + (LAYER_INFO[li]?.tag ? 2.1 : 1.5)); }
-      });
       ctx.restore();
+      // ── per-level axis labels — CONSTANT screen-pixel size (don't scale with fit/zoom),
+      //    drawn in the fixed left gutter so the matrices use the full width ──
+      ctx.textAlign = 'right'; const lx = AXIS_GUTTER - 8;
+      levels.forEach((Lv, li) => {
+        const sy = ty + (Lv.y0 + Math.min(Lv.h / 2, 3)) * s;
+        if (sy < 6 || sy > H - 2) return;   // off-screen cull
+        ctx.fillStyle = Lv.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
+        ctx.fillText(Lv.label, lx, sy);
+        let yy = sy + 14;
+        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = '10px sans-serif'; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
+        if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], lx, yy); yy += 12; }
+        const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
+        if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); }
+      });
       return;
     }
 
@@ -490,7 +500,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1·L0 AI Core，按 UB L0–L7 坐标，每层一张矩阵）'}
+          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L7 作业→L6 集群→L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1·L0 AI Core，按 UB L0–L7 坐标）'}
             style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
         })}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
@@ -518,7 +528,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动 / 滚轮缩放`}</span>
           </>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · 全量 ${LAY.levels[3].count.toLocaleString()} 卡 → ${LAY.levels[5].count.toLocaleString()} AI Core(L1·L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1·L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
         )}
       </div>
       {/* legend */}
@@ -539,9 +549,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
+              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
-              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()} · {shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
+              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1·L0(×16/Die) 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>

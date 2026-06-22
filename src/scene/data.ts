@@ -107,7 +107,9 @@ export const UB_LEVEL_META: Record<string, UbLevelMeta> = {
 // never the device itself. Tuned for the 950 (4-Die package · UMA · ≈32 AI Core/card).
 export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; tag?: string; hw?: string; sw?: string; }
 export const LAYER_INFO: LayerInfo[] = [
-  { key: 'super', name: `${TOK.supernode} / 集群`, intra: `域内全互联 · ${TOK.ubmesh}（SU 窄快 + SO 广省）`, inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: '集群通信域 / 全局编排' },
+  { key: 'job',     name: '作业 / 全局', intra: '1 个训练作业 · 全局编排 / 调度', inter: '↓ 切分到集群：DP / PP / TP / EP 并行域', bw: '端到端吞吐 · MFU', domain: 'SO', sw: '软件：整个作业（模型 / 训练任务）· 全局' },
+  { key: 'cluster', name: '集群（跨超节点）', intra: '多超节点经全光 scale-out 互联', inter: '↓ 作业切分到各超节点（DP / PP）', bw: `跨超节点 ${TOK.uboe} / RoCE`, domain: 'SO', sw: '软件：跨超节点 DP / PP 通信域' },
+  { key: 'super', name: `${TOK.supernode}`, intra: `域内全互联 · ${TOK.ubmesh}（SU 窄快 + SO 广省）`, inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: '集群通信域 / 全局编排' },
   { key: 'cab',   name: '机柜', intra: `柜内 ${TOK.fullmesh}（≤128 卡 SU 超低延迟域）`, inter: '↑ 总线池化 pooling：UB 统一编址 → 超节点“一台计算机”', bw: `柜内 ${TOK.fullmesh} · 1:1 无收敛`, domain: 'SU' },
   { key: 'node',  name: '节点 / 刀片', intra: '8 卡 + CPU 经 LQC 对 L1 全互联、平等编址', inter: '↑ 互联收敛 interconnect：经 L1/L2 上联（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(卡) / 8×30G(CPU)', domain: 'SU' },
   { key: 'card',  name: '卡 / NPU（1 device）', intra: '封装内 4 Die：2 计算 Die（UMA 高带宽直连、OS 视为单设备）+ 2 IO Die', inter: '↑ 坐标绑定 binding：软件 rank → 硬件 device', bw: 'D2D · HBM · 单卡 UB 2016 GB/s', domain: '—', tag: 'device ↔ rank 1:1',
@@ -195,8 +197,9 @@ export const ENTITY_COLORS = {
 // (core)揉进同一根轴。下表把它对齐到本视图的五个层级（含每层软件落点 + 可观测指标）。
 export interface UbCoordLevel { L: string; scope: string; sw: string; obs: string; note?: string; }
 export const UB_COORD: Record<string, UbCoordLevel> = {
-  super: { L: 'L5', scope: '机器域', sw: 'Pod 部署边界 · TP/EP/SP 域(SU)', obs: 'UB 带宽利用 · EP All-to-All',
-           note: '上含 L6 Cluster(跨超节点 DP/PP) · L7 Global(Job · 端到端吞吐/MFU)' },
+  job:     { L: 'L7', scope: '集群域', sw: 'Job 全局 · 整个训练作业 / 数据中心', obs: '端到端吞吐 · MFU' },
+  cluster: { L: 'L6', scope: '集群域', sw: '跨超节点集群 · DP / PP 跨超节点', obs: '集群通信占比 (DP)' },
+  super: { L: 'L5', scope: '机器域', sw: 'Pod 部署边界 · TP/EP/SP 域(SU)', obs: 'UB 带宽利用 · EP All-to-All' },
   cab:   { L: 'L4–L5', scope: '机器域', sw: '部署 / 放置边界', obs: '卡间带宽 · host 开销',
            note: `机柜并入机器域 · ${TOK.ub} 坐标无独立级` },
   node:  { L: 'L4', scope: '机器域', sw: '单机多卡放置（Host = 1 CPU + 8 NPU）', obs: '卡间带宽 · host 开销' },
