@@ -93,8 +93,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // L7 作业 → L6 集群 → L5 超节点 → [机柜] → L4 节点 → L3 卡/device → L2 计算 Die(×2/卡)
     // → L1·L0 AI Core(×16/Die). 机柜 has no own L (并入机器域). The 3 top context levels
     // (job/cluster/super) are full-width banners; the rest are matrices. `ar`: smaller → bigger cells.
-    // `ar` = grid width:height in cells → cols = √(count·ar). Higher ar packs MORE units
-    // per row (smaller cells, fewer rows). Tuned so the cells stay compact at full width.
+    // `ar` = grid width:height → cols = √(count·ar); a level's WORLD height = Wc/ar, so
+    // higher ar ⇒ more per row AND shorter. The huge fine levels (L2/L1/L0) get high ar so
+    // they're COMPACT at overview (you can't scan 1M tiles) and aggregate; L0 in particular
+    // is an aggregate observation strip (流水气泡/访存), with per-cell detail only on drill.
     const defs = [
       { kind: 'job',     count: 1,                 color: '#ff4b7b',                label: 'L7 作业/全局',  banner: true,  ar: 1 },
       { kind: 'cluster', count: 1,                 color: '#04d793',                label: 'L6 集群',       banner: true,  ar: 1 },
@@ -102,9 +104,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          banner: false, ar: 32 },
       { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  banner: false, ar: 14 },
       { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L3 卡/device',  banner: false, ar: 5.0 },
-      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  banner: false, ar: 3.2 },
-      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1 AI Core',    banner: false, ar: 1.4 },
-      { kind: 'tile',    count: N * CORES_PER_CARD * 4, color: ENTITY_COLORS.vector, label: 'L0 Tile/lane',  banner: false, ar: 0.6 },
+      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  banner: false, ar: 6.0 },
+      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1 AI Core',    banner: false, ar: 8.0 },
+      { kind: 'tile',    count: N * CORES_PER_CARD * 4, color: ENTITY_COLORS.vector, label: 'L0 Tile/lane',  banner: false, ar: 20 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
@@ -277,6 +279,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             ctx.fillStyle = SEL; ctx.globalAlpha = 0.85;
             if (ra === rb) { const x = margin + (hi.lo[li] % Lv.cols) * Lv.cell; rr(x, Lv.y0 + ra * Lv.cell, (hi.hi[li] - hi.lo[li]) * Lv.cell, Lv.cell, 0.06); ctx.fill(); }
             else { rr(margin, Lv.y0 + ra * Lv.cell, Wc, (rb - ra + 1) * Lv.cell, 0.06); ctx.fill(); }
+            ctx.globalAlpha = 1;
+          }
+          // L0 is an aggregate observation level (too fine to enumerate) — label its role
+          if (Lv.kind === 'tile') {
+            ctx.fillStyle = P.ink2; ctx.globalAlpha = 0.92; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = `${Math.min(1.5, Lv.h * 0.42)}px sans-serif`;
+            ctx.fillText('L0 聚合观测 · 流水气泡 / 访存等待 ·（下钻执行时序 swimlane 展开）', margin + Wc / 2, Lv.y0 + Lv.h / 2);
             ctx.globalAlpha = 1;
           }
         }
@@ -579,12 +588,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: 'SIMD/SIMT lane 条' } as Record<string, string>)[Lv.kind];
+              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
             <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
         )}
