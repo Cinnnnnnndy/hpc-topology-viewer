@@ -417,6 +417,14 @@ function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number
     <group>
       {/* package body (brushed metal lid) */}
       <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
+      {/* selection = bold outline on the NPU itself (a crisp inflated edge halo, no covering fill) */}
+      {selected && (
+        <mesh scale={[1.07, 1.2, 1.07]}>
+          <boxGeometry args={[w, hh, w]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <Edges color={COMM_PATTERNS[2].color} lineWidth={2} />
+        </mesh>
+      )}
       {chipTex ? (
         /* textured top: real package photo on a plane (local-only image) */
         <mesh position={[0, top + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -491,7 +499,6 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
   const S = S_NODE;
   const [px, py, pz] = part.pos;
   const [sx, sy, sz] = part.size;
-  const selColor = COMM_PATTERNS[2].color;
 
   const visuals: Record<NodePart['type'], { body: string; top?: string; edge: string }> = {
     npu:        { body: LC.npuBody,     top: LC.npuTop, edge: '#4ade80' },
@@ -511,10 +518,7 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
       onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(); } : undefined}
     >
       {part.type === 'npu' ? (
-        <>
-          <NpuChip w={sx * S} h={sy * S} hovered={hovered} selected={selected} logo />
-          {selected && <Slab size={[sx * S * 1.08, 0.004 * S, sz * S * 1.08]} position={[0, sy * S * 1.0, 0]} color={selColor} emissive={selColor} emissiveIntensity={1} />}
-        </>
+        <NpuChip w={sx * S} h={sy * S} hovered={hovered} selected={selected} logo />
       ) : part.type === 'cpu' ? (
         <CpuChip w={sx * S} h={sy * S} hovered={hovered} />
       ) : (
