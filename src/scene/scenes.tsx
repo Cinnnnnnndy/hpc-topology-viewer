@@ -1753,10 +1753,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     for (let c = 0; c < cabMX.length; c++) { const p = cabSuper[c]; c2s.push([cabMX[c], yCab, cabMZ[c]], [superMX[p], ySuper, 0]); }
     if (podCount > 1) for (let p = 0; p < podCount; p++) s2cl.push([superMX[p], ySuper, 0], [0, yCluster, 0]);
 
+    // rank-level collectives drawn at the 卡/device level (rank ≡ card 1:1)
     const ring: [number, number, number][] = [];
-    if (N <= FP_RING_CAP) for (let k = 0; k < N; k++) ring.push([cardX[k], yProc, cardZ[k]], [cardX[(k + 1) % N], yProc, cardZ[(k + 1) % N]]);
+    if (N <= FP_RING_CAP) for (let k = 0; k < N; k++) ring.push([cardX[k], yCard, cardZ[k]], [cardX[(k + 1) % N], yCard, cardZ[(k + 1) % N]]);
     const a2a: [number, number, number][] = [];
-    if (N1 <= FP_A2A_CAP) for (let p = 0; p < podCount; p++) { const base = p * N1; for (let i = 0; i < N1; i++) for (let j = i + 1; j < N1; j++) a2a.push([cardX[base + i], yProc, cardZ[base + i]], [cardX[base + j], yProc, cardZ[base + j]]); }
+    if (N1 <= FP_A2A_CAP) for (let p = 0; p < podCount; p++) { const base = p * N1; for (let i = 0; i < N1; i++) for (let j = i + 1; j < N1; j++) a2a.push([cardX[base + i], yCard, cardZ[base + i]], [cardX[base + j], yCard, cardZ[base + j]]); }
 
     // hierarchical (marker-level) collectives — these scale to the full super-node:
     //   cabRing = inter-cabinet Ring-AllReduce (L3) · cabA2A = cabinet-level All-to-All (MoE EP)
@@ -1809,8 +1810,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const nm = cardInst.current;
     if (nm && !useChip) { col.set(chipTex ? '#ffffff' : LC.npuTop); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
-    const pm = procRef.current;
-    if (pm) { col.set(PROC_COLOR); for (let k = 0; k < G.N; k++) { m.makeScale(0.14, 0.14, 0.14); m.setPosition(G.cardX[k], G.yProc, G.cardZ[k]); pm.setMatrixAt(k, m); pm.setColorAt(k, col); } pm.count = G.N; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
+    const pm = procRef.current;   // L2 计算 Die markers (teal) — was the rank band
+    if (pm) { col.set(ENTITY_COLORS.computeDie); for (let k = 0; k < G.N; k++) { m.makeScale(0.17, 0.1, 0.17); m.setPosition(G.cardX[k], G.yProc, G.cardZ[k]); pm.setMatrixAt(k, m); pm.setColorAt(k, col); } pm.count = G.N; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     const tm = thrRef.current;
     if (tm) { col.set(THREAD_COLOR); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t; m.makeScale(0.045, 0.045, 0.045); m.setPosition(G.cardX[k] + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, G.cardZ[k]); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); } tm.count = G.N * FP_THREADS; tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
     const bm = bladeInst.current;
@@ -1822,7 +1823,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // phase wash + selection highlight: compute → AI cores / cards heat; comm → ranks pulse;
   // partition → group colour on card/rank/thread; selection → the actual chain objects glow amber.
   useLayoutEffect(() => {
-    const col = new THREE.Color(), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR), hl = new THREE.Color('#4369ef');
+    const col = new THREE.Color(), procBase = new THREE.Color(ENTITY_COLORS.computeDie), thrBase = new THREE.Color(THREAD_COLOR), hl = new THREE.Color('#4369ef');
     const tint = phase ? new THREE.Color(phase.color) : null;
     const cardBase = chipTex ? '#ffffff' : LC.npuTop;
     const pm = procRef.current, tm = thrRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
@@ -1932,14 +1933,17 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   );
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
+  // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
+  // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
+  // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
   const bands: [number, number, string, string][] = [
-    [0, G.yThread, 'AI Core(设备内)', THREAD_COLOR], [1, G.yProc, 'rank(软件)', PROC_COLOR], [2, G.yCard, 'L0 卡=device', L(0)],
-    [3, G.yBlade, 'L1 节点', L(1)], [4, G.yCab, 'L2 机柜', L(2)], [5, G.ySuper, `L3 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L4 超节点间', L(4)],
+    [0, G.yThread, 'L1·L0 AI Core', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
+    [3, G.yBlade, 'L4 节点', L(1)], [4, G.yCab, '机柜', L(2)], [5, G.ySuper, `L5 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L6 超节点间', L(4)],
   ];
-  // UB L0–L7 软硬件同一坐标 per band (L0–L7 对齐表)
+  // UB L0–L7 软硬件同一坐标 per band — scope domain (L 号在带名里)
   const bandCoord: Record<number, string> = {
-    0: `${TOK.ub} L1·L0 · 核内域`, 1: `${TOK.ub} L3 · 软件 rank`, 2: `${TOK.ub} L3·L2 · 芯片域`,
-    3: `${TOK.ub} L4 · Host`, 4: `${TOK.ub} L4–L5 · 机柜并入`, 5: `${TOK.ub} L5 · Pod`, 6: `${TOK.ub} L6–L7 · 集群域`,
+    0: `${TOK.ub} 核内域`, 1: `${TOK.ub} 芯片域`, 2: `${TOK.ub} 芯片域 · rank 1:1`,
+    3: `${TOK.ub} Host 机器域`, 4: `${TOK.ub} 机器域(并入)`, 5: `${TOK.ub} Pod 机器域`, 6: `${TOK.ub} 集群域`,
   };
 
   return (
@@ -1961,7 +1965,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* hierarchy backbone (downstream of band f is highlighted when focus===f) */}
       {/* bw (5th arg) = relative bandwidth → thickness in status mode: intra-node fattest, scale-out thinnest */}
       {conn(G.t2p, THREAD_COLOR, 1, 0.7, 0.8)}
-      {conn(G.p2c, PROC_COLOR, 2, 0.9, 1.1)}
+      {conn(G.p2c, ENTITY_COLORS.computeDie, 2, 0.9, 1.1)}
       {conn(G.c2b, L(1), 3, 0.8, 2.4)}
       {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
       {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
