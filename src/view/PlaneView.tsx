@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, type Gen, type PartitionDim } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, type Gen, type PartitionDim } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -262,7 +262,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.globalAlpha = 1;
       }
 
-      // ── per-level label + ×count + 1:1 / 非1:1 tag ──
+      // ── per-level label + ×count + 1:1 tag + UB L0–L7 坐标 ──
       ctx.textAlign = 'right';
       levels.forEach((Lv, li) => {
         const yc = Lv.y0 + Math.min(Lv.h / 2, 3);
@@ -270,7 +270,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.fillText(Lv.label, margin - 0.6, yc);
         ctx.fillStyle = P.ink2; ctx.font = '0.46px sans-serif';
         ctx.fillText(`×${Lv.count.toLocaleString()}`, margin - 0.6, yc + 0.85);
-        if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '0.4px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], margin - 0.6, yc + 1.55); }
+        if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '0.4px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], margin - 0.6, yc + 1.5); }
+        const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 软硬件同一坐标
+        if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '0.4px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.L} · ${lq.scope}`, margin - 0.6, yc + (LAYER_INFO[li]?.tag ? 2.1 : 1.5)); }
       });
       ctx.restore();
       return;
@@ -508,6 +510,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
             <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.computeDie, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.ioDie, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 = 4 Die：2 计算(UMA)+2 IO（放大显示）</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
+            <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
             {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
           </>
@@ -517,9 +520,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
               const shape = ({ super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
-              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()} · {shape}</span></div>;
+              const lq = UB_COORD[Lv.kind];
+              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()} · {shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排（同顶视图）· 放大看图元(卡内含 4 Die · AI Core 含 Cube/Vector) · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
+            <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入) · 集群域(L6–L7) · 点格看右上对齐`}</div>
             <div style={{ color: '#ffb020', fontSize: 10.5 }}>{selL ? '已选中：金色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
         )}
@@ -543,7 +548,20 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             {info.sw && <div style={{ marginBottom: 6, padding: '5px 7px', borderRadius: 7, background: 'rgba(67,105,239,0.10)', border: '1px solid rgba(67,105,239,0.35)' }}><span style={{ color: ENTITY_COLORS.sw, fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>软件 SW</span> <span style={{ color: 'var(--tx2)' }}>{info.sw.replace(/^软件：/, '')}</span></div>}
             <div style={{ marginBottom: 6 }}><span style={{ color: COMM_PATTERNS[2].color, fontWeight: 600 }}>层内关系</span> <span style={{ color: 'var(--tx2)' }}>{info.intra}</span></div>
             <div style={{ marginBottom: 6 }}><span style={{ color: '#4369ef', fontWeight: 600 }}>层间关系</span> <span style={{ color: 'var(--tx2)' }}>{info.inter}</span></div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10.5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>带宽/时延：{info.bw}</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10.5 }}>带宽/时延：{info.bw}</div>
+            {/* UB L0–L7 软硬件同一坐标（L0–L7 对齐表） */}
+            {UB_COORD[info.key] && (() => { const lq = UB_COORD[info.key]; return (
+              <div style={{ marginTop: 6, padding: '6px 7px', borderRadius: 7, background: 'rgba(124,141,184,0.10)', border: '1px solid rgba(124,141,184,0.34)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                  <span style={{ color: '#9fb6ff', fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>{`${TOK.ub} ${lq.L}`}</span>
+                  <span style={{ fontSize: 10, padding: '0 6px', borderRadius: 5, color: '#9fb6ff', border: '1px solid rgba(159,182,255,0.5)' }}>{lq.scope}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'var(--tx3)' }}>L0–L7 坐标</span>
+                </div>
+                <div style={{ color: 'var(--tx2)', fontSize: 10.5 }}>{lq.sw}</div>
+                <div style={{ color: 'var(--tx3)', fontSize: 10 }}>可观测：{lq.obs}</div>
+                {lq.note && <div style={{ color: 'var(--tx3)', fontSize: 9.5, marginTop: 2, fontStyle: 'italic' }}>{lq.note}</div>}
+              </div>
+            ); })()}
           </div>
         );
       })()}

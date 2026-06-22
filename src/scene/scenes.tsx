@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import {
   RACK_DIM, COMPUTE_RACK_UNITS, SWITCH_RACK_UNITS,
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
-  UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS,
+  UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE, STATUS_COLORS,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
@@ -866,6 +866,10 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
           {/* SU/SO domain tag (scale-up 窄快 / scale-out 广省) */}
           <Text position={[0, -0.22, 0]} fontSize={0.12} color={UB_LEVEL_META[UB_LEVELS[lvl].id].domain === 'SU' ? '#04d793' : '#7c8db8'} anchorX="right" anchorY="middle">
             {`${UB_LEVEL_META[UB_LEVELS[lvl].id].domain} · ${UB_LEVEL_META[UB_LEVELS[lvl].id].domain === 'SU' ? '超带宽窄域' : '广覆盖域'}`}
+          </Text>
+          {/* UB L0–L7 软硬件同一坐标 */}
+          <Text position={[0, -0.4, 0]} fontSize={0.11} color="#9fb6ff" anchorX="right" anchorY="middle" maxWidth={4}>
+            {`${TOK.ub} ${UB_COORD_TOPO[lvl].L} · ${UB_COORD_TOPO[lvl].scope}`}
           </Text>
         </Billboard>
         <Billboard position={[HT.xSpan / 2 + 0.3, 0, 0]}>
@@ -1932,6 +1936,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     [0, G.yThread, 'AI Core(设备内)', THREAD_COLOR], [1, G.yProc, 'rank(软件)', PROC_COLOR], [2, G.yCard, 'L0 卡=device', L(0)],
     [3, G.yBlade, 'L1 节点', L(1)], [4, G.yCab, 'L2 机柜', L(2)], [5, G.ySuper, `L3 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L4 超节点间', L(4)],
   ];
+  // UB L0–L7 软硬件同一坐标 per band (L0–L7 对齐表)
+  const bandCoord: Record<number, string> = {
+    0: `${TOK.ub} L1·L0 · 核内域`, 1: `${TOK.ub} L3 · 软件 rank`, 2: `${TOK.ub} L3·L2 · 芯片域`,
+    3: `${TOK.ub} L4 · Host`, 4: `${TOK.ub} L4–L5 · 机柜并入`, 5: `${TOK.ub} L5 · Pod`, 6: `${TOK.ub} L6–L7 · 集群域`,
+  };
 
   return (
     <group>
@@ -1944,6 +1953,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             <Text fontSize={lblSize} color={focus === i ? c : LC.textDim} anchorX="right" anchorY="middle"
               onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
               onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
+            <Text position={[0, -lblSize * 0.92, 0]} fontSize={lblSize * 0.58} color="#9fb6ff" anchorX="right" anchorY="middle">{bandCoord[i]}</Text>
           </Billboard>
         )
       ))}

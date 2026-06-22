@@ -186,6 +186,30 @@ export const ENTITY_COLORS = {
   sw:         '#4369ef',               // generic SOFTWARE accent — indigo
 } as const;
 
+// ─── UB L0–L7：软硬件“同一坐标系”（L0–L7 对齐表）─────────────────────────────────
+// L0–L7 是“任务在哪个作用域运行”的递归坐标（4 对作用域：核内 L0–L1 / 芯片 L2–L3 /
+// 机器 L4–L5 / 集群 L6–L7），不是 8 个硬件零件。它和我们的物理层不一一对应：① 机柜
+// 并入机器域(Pod)，无独立级；② 底部 die/核/tile 5 级压进 L0–L3；③ 把软件(tile)与硬件
+// (core)揉进同一根轴。下表把它对齐到本视图的五个层级（含每层软件落点 + 可观测指标）。
+export interface UbCoordLevel { L: string; scope: string; sw: string; obs: string; note?: string; }
+export const UB_COORD: Record<string, UbCoordLevel> = {
+  super: { L: 'L5', scope: '机器域', sw: 'Pod 部署边界 · TP/EP/SP 域(SU)', obs: 'UB 带宽利用 · EP All-to-All',
+           note: '上含 L6 Cluster(跨超节点 DP/PP) · L7 Global(Job · 端到端吞吐/MFU)' },
+  cab:   { L: 'L4–L5', scope: '机器域', sw: '部署 / 放置边界', obs: '卡间带宽 · host 开销',
+           note: `机柜并入机器域 · ${TOK.ub} 坐标无独立级` },
+  node:  { L: 'L4', scope: '机器域', sw: '单机多卡放置（Host = 1 CPU + 8 NPU）', obs: '卡间带宽 · host 开销' },
+  card:  { L: 'L3·L2', scope: '芯片域', sw: 'L3 Chip = rank 逻辑设备（950 整卡 UMA）· L2 CoreGroup = rank 内核组(Die/NoC)', obs: '算力% · HBM% · 负载均衡 · NoC 争用 · D2D' },
+  core:  { L: 'L1·L0', scope: '核内域', sw: 'L1 Core = block_idx 核实例(SPMD) · L0 Tile = tile / SIMT lane', obs: 'AIC/AIV 利用率 · 同步等待 · 流水气泡 · 访存等待' },
+};
+// topology-tier (UB 互联层级 L0–L4) → UB L0–L7 coordinate (底部 5 级压进 L0–L3)
+export const UB_COORD_TOPO: Record<number, { L: string; scope: string }> = {
+  0: { L: 'L0–L3', scope: '核内→芯片域（die/核/tile 压缩）' },
+  1: { L: 'L4',    scope: 'Host · 机器域' },
+  2: { L: 'L4–L5', scope: '机器域（机柜并入 Pod）' },
+  3: { L: 'L5',    scope: 'Pod · 机器域' },
+  4: { L: 'L6–L7', scope: 'Cluster / Global · 集群域' },
+};
+
 // ─── Live status / flow overlay (full-pod): node activity + link state ────────
 // Node colour = current activity (from the run phase); link thickness = bandwidth
 // (intra-node L1 fattest → scale-out L4 thinnest) with a flow surge on the active
