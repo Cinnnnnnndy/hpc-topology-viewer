@@ -78,34 +78,39 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   // Levels: 超节点 → 机柜 → 节点 → NPU(=rank=device, strict 1:1) → Die(×2) → AI Core. ──
   const LAY = useMemo(() => {
     const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64)), coresPer = spec.aiSubsys ?? 32;
-    const margin = 9.5, Wc = 64, gap = 1.8;
+    const margin = 11, Wc = 100, gap = 2.4;   // wider canvas
     // Die is folded into the NPU glyph (split-in-two), so 5 levels. `ar` sets the
-    // panel aspect → AI Core gets a much taller panel so its Cube/Vector are visible.
+    // panel aspect: smaller ar → fewer columns → bigger cells (NPU & AI Core get the
+    // biggest). Super is a full-width banner.
     const defs = [
       { kind: 'super', count: 1,            color: UB_LEVELS[3].color, label: 'L3 超节点',       ar: 5.4 },
-      { kind: 'cab',   count: nCab,          color: UB_LEVELS[2].color, label: 'L2 机柜',         ar: 5.4 },
-      { kind: 'node',  count: nCab * 8,      color: UB_LEVELS[1].color, label: 'L1 节点/刀片',    ar: 5.4 },
-      { kind: 'npu',   count: N,             color: '#4369ef',          label: 'NPU=rank=device', ar: 4.4 },
-      { kind: 'core',  count: N * coresPer,  color: COMM_PATTERNS[2].color, label: 'AI Core',     ar: 1.7 },
+      { kind: 'cab',   count: nCab,          color: UB_LEVELS[2].color, label: 'L2 机柜',         ar: 6.0 },
+      { kind: 'node',  count: nCab * 8,      color: UB_LEVELS[1].color, label: 'L1 节点/刀片',    ar: 5.0 },
+      { kind: 'npu',   count: N,             color: '#4369ef',          label: 'NPU=rank=device', ar: 2.6 },
+      { kind: 'core',  count: N * coresPer,  color: COMM_PATTERNS[2].color, label: 'AI Core',     ar: 0.7 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
+      if (d.kind === 'super') { const h = 5, y0 = y; y += h + gap * 1.6; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: 1, banner: true }; }
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
-      return { ...d, cols, cell, rows, y0, h, grp: li === 0 ? 1 : d.count / defs[li - 1].count };   // grp = children per parent
+      return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count, banner: false };   // grp = children per parent
     });
     return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
   const cellXY = (li: number, i: number): [number, number] => {
-    const Lv = LAY.levels[li]; const c = i % Lv.cols, r = Math.floor(i / Lv.cols);
+    const Lv = LAY.levels[li];
+    if (Lv.banner) return [LAY.margin + LAY.Wc / 2, Lv.y0 + Lv.h / 2];
+    const c = i % Lv.cols, r = Math.floor(i / Lv.cols);
     return [LAY.margin + (c + 0.5) * Lv.cell, Lv.y0 + (r + 0.5) * Lv.cell];
   };
 
   const ext = layout === 'layers' ? { tw: LAY.w, th: LAY.h } : { tw: L.tw, th: L.th };
-  const fit = useCallback((W: number, H: number) => Math.min(W / ext.tw, H / ext.th) * 0.92, [ext.tw, ext.th]);
+  // layered matrix is tall → fit to WIDTH (bigger, readable cells; scroll vertically)
+  const fit = useCallback((W: number, H: number) => layout === 'layers' ? (W / ext.tw) * 0.96 : Math.min(W / ext.tw, H / ext.th) * 0.92, [ext.tw, ext.th, layout]);
 
   // hit-test a world point → card index (O(1) via the grid math)
   const pick = (wx: number, wy: number): number | null => {
@@ -151,7 +156,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = wrap.clientWidth, H = wrap.clientHeight;
     if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
-    if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - ext.tw * f) / 2, ty: (H - ext.th * f) / 2 }; }
+    if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - ext.tw * f) / 2, ty: layout === 'layers' ? H * 0.04 : (H - ext.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;   // context state persists across frames; force a fully-opaque clear (no ghosting)
@@ -181,11 +186,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         else if (kind === 'cab') {   // upright cabinet + horizontal slats
           const cw = ws * 0.6, cx = x + (ws - cw) / 2;
           ctx.globalAlpha = 0.22 * A; rr(cx, y, cw, ws, ws * 0.08); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
-          if (px > 7) { ctx.globalAlpha = 0.5 * A; ctx.lineWidth = ws * 0.035; for (let k = 1; k < 4; k++) { const yy = y + ws * k / 4; ctx.beginPath(); ctx.moveTo(cx + cw * 0.16, yy); ctx.lineTo(cx + cw * 0.84, yy); ctx.stroke(); } }
+          if (px > 5) { ctx.globalAlpha = 0.5 * A; ctx.lineWidth = ws * 0.035; for (let k = 1; k < 4; k++) { const yy = y + ws * k / 4; ctx.beginPath(); ctx.moveTo(cx + cw * 0.16, yy); ctx.lineTo(cx + cw * 0.84, yy); ctx.stroke(); } }
         } else if (kind === 'node') {   // horizontal blade + NPU dots
           const bh = ws * 0.46, by = y + (ws - bh) / 2;
           ctx.globalAlpha = 0.22 * A; rr(x, by, ws, bh, bh * 0.3); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
-          if (px > 10) { ctx.globalAlpha = 0.85 * A; for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.04, 0, 7); ctx.fill(); } }
+          if (px > 7) { ctx.globalAlpha = 0.85 * A; for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.04, 0, 7); ctx.fill(); } }
         } else if (kind === 'npu') {   // square package split into 2 dies
           ctx.globalAlpha = 0.14 * A; rr(x, y, ws, ws, ws * 0.12); ctx.fill(); ctx.globalAlpha = A; ctx.stroke();
           const g = ws * 0.07, dw = (ws * 0.74 - g) / 2, dy = y + ws * 0.16, dh = ws * 0.68;
@@ -193,7 +198,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           rr(x + ws * 0.13, dy, dw, dh, ws * 0.05); ctx.fill();
           rr(x + ws * 0.13 + dw + g, dy, dw, dh, ws * 0.05); ctx.fill();
         } else {   // AI Core subsystem = 1 Cube + 2 Vector
-          if (px > 9) {
+          if (px > 6) {
             ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube
             ctx.fillStyle = '#7c8db8'; ctx.globalAlpha = 0.75 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector
           } else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.18); ctx.fill(); }
@@ -202,6 +207,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
+        // super = a clean full-width banner (not a half-width cell)
+        if (Lv.banner) {
+          const on = !hi || (hi.lo[0] === 0);
+          ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.1 : 0.18; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
+          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? '#ffb020' : Lv.color; ctx.lineWidth = 0.18; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
+          ctx.fillStyle = hi && on ? '#ffb020' : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '2.2px sans-serif';
+          ctx.fillText(`${TOK.supernode} · ${LAY.levels[1].count.toLocaleString()} 机柜 / ${LAY.levels[3].count.toLocaleString()} NPU`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          return;
+        }
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
         // visible cell window (cull to viewport)
         const c0 = Math.max(0, Math.floor((vx0 - margin) / Lv.cell)), c1 = Math.min(Lv.cols, Math.ceil((vx1 - margin) / Lv.cell));
