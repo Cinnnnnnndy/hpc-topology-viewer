@@ -15,7 +15,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS,
+  INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
   SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, STATUS_META, STATUS_COLORS,
   memLayers,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
@@ -760,12 +760,12 @@ export function ClusterView() {
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>软硬件映射</div>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 3, background: '#4369ef', display: 'inline-block' }} />
-                  <span style={{ color: 'var(--tx2)' }}>进程 rank ↔ NPU</span>
+                  <span style={{ width: 12, height: 3, background: ENTITY_COLORS.rank, display: 'inline-block' }} />
+                  <span style={{ color: 'var(--tx2)' }}>软件 rank ↔ device（1:1 锚点）</span>
                 </span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 12, height: 3, background: COMM_PATTERNS[2].color, display: 'inline-block' }} />
-                  <span style={{ color: 'var(--tx2)' }}>线程 / Tile ↔ AI Core</span>
+                  <span style={{ width: 12, height: 3, background: ENTITY_COLORS.cube, display: 'inline-block' }} />
+                  <span style={{ color: 'var(--tx2)' }}>设备内 线程/Tile ↔ AI Core</span>
                 </span>
                 <span style={{ color: 'var(--tx3)', fontSize: 10 }}>灰线 = 其他层级映射 · 点击高亮</span>
               </>
@@ -773,13 +773,13 @@ export function ClusterView() {
             {mode === 'trace' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>时序 / 定位</div>
-                {([['计算（线程）', COMM_PATTERNS[2].color], ['通信 AllReduce（进程）', COMM_PATTERNS[0].color], ['加载 / 存储', '#c2c9d4']] as [string, string][]).map(([t, c]) => (
+                {([['计算（设备内线程）', COMM_PATTERNS[2].color], ['通信 AllReduce（rank）', COMM_PATTERNS[0].color], ['加载 / 存储', '#c2c9d4']] as [string, string][]).map(([t, c]) => (
                   <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 12, height: 8, background: c, display: 'inline-block', borderRadius: 1 }} />
                     <span style={{ color: 'var(--tx2)' }}>{t}</span>
                   </span>
                 ))}
-                <span style={{ color: 'var(--tx3)', fontSize: 10 }}>点击线程/进程 → 顶部定位 NPU/刀片/机柜</span>
+                <span style={{ color: 'var(--tx3)', fontSize: 10 }}>点击 线程/rank → 顶部定位 device/刀片/机柜</span>
               </>
             )}
             {mode !== 'matrix' && mode !== 'mapping' && mode !== 'trace' && mode !== 'fullpod' && (
@@ -837,13 +837,13 @@ export function ClusterView() {
             {mode === 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
-                {/* layer elements */}
-                <LgRow shape="dot" color={COMM_PATTERNS[2].color} label="线程 / AI Core" />
-                <LgRow shape="dot" color="#4369ef" label="进程 rank" />
-                <LgRow shape="sq" color={pal.cardBase} label="L0 卡 / NPU" />
-                <LgRow shape="sq" color={pal.bladeBase} label="L1 刀片 / 节点" />
-                <LgRow shape="sq" color={pal.cabBase} label="L2 机柜" />
-                <LgRow shape="sq" color={UB_LEVELS[3].color} label={`L3 ${TOK.supernode}`} />
+                {/* layer elements — same canonical colour per concept as the layered/top views */}
+                <LgRow shape="dot" color={ENTITY_COLORS.cube} label="线程 / AI Core（设备内）" />
+                <LgRow shape="dot" color={ENTITY_COLORS.rank} label="rank（软件 · 1:1 绑定 device）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.card} label="L0 卡 / device（4 Die）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.node} label="L1 刀片 / 节点" />
+                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="L2 机柜" />
+                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L3 ${TOK.supernode}`} />
                 {podCount > 1 && <LgRow shape="sq" color={UB_LEVELS[4].color} label="L4 超节点间" />}
                 {/* connections */}
                 <div style={lgHdr}>连接</div>
@@ -879,7 +879,7 @@ export function ClusterView() {
                       {PARTITION_PALETTE.map((c, i) => <span key={i} title={`组 ${i}`} style={{ width: 14, height: 9, background: c, borderRadius: 1, display: 'inline-block' }} />)}
                     </div>
                     <span style={lgNote}>{PARTITION_META[fpPart].same}</span>
-                    <span style={lgNote}>卡 / 进程 rank / 线程切片 同步上色</span>
+                    <span style={lgNote}>卡(device) / rank(软件) / 线程 同步上色</span>
                   </>
                 )}
               </>

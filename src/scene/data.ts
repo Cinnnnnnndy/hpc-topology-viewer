@@ -168,6 +168,24 @@ export const PARALLEL_COLORS: Record<PartitionDim, string> = {
   none: '#7c8db8', tp: '#4369ef', pp: '#04d793', dp: '#ffaa3b', ep: '#ff4b7b',
 };
 
+// ─── ONE canonical colour per entity, shared by ALL three views (top / layered /
+// 3-D) so they correspond: same concept → same colour → same glyph language.
+// Hardware accent = teal (the die/device domain); software accent = indigo (rank).
+// The two are deliberately different hues so hardware and software never blur.
+export const ENTITY_COLORS = {
+  super:      UB_LEVELS[3].color,      // 超节点 — amber
+  cab:        UB_LEVELS[2].color,      // 机柜 — purple
+  node:       UB_LEVELS[1].color,      // 节点 / 刀片 — sky blue
+  card:       UB_LEVELS[0].color,      // 卡 / NPU device — teal (compute-die domain)
+  computeDie: UB_LEVELS[0].color,      // 计算 Die — teal
+  ioDie:      '#7c8db8',               // IO Die — accent grey
+  cube:       COMM_PATTERNS[2].color,  // AI Core · Cube(AIC) — cyan
+  vector:     '#7dd3fc',               // AI Core · Vector(AIV) — light cyan
+  rank:       '#4369ef',               // software rank — indigo (distinct from all hardware)
+  hw:         UB_LEVELS[0].color,      // generic HARDWARE accent — teal
+  sw:         '#4369ef',               // generic SOFTWARE accent — indigo
+} as const;
+
 // ─── Live status / flow overlay (full-pod): node activity + link state ────────
 // Node colour = current activity (from the run phase); link thickness = bandwidth
 // (intra-node L1 fattest → scale-out L4 thinnest) with a flow surge on the active

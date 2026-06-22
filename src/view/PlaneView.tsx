@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, type Gen, type PartitionDim } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, type Gen, type PartitionDim } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -83,11 +83,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // HARDWARE containment chain only (rank is software, shown separately). 950 card =
     // 1 device (4 Die) → ≈32 AI Core. `ar` sets panel aspect (smaller → bigger cells).
     const defs = [
-      { kind: 'super', count: 1,                 color: UB_LEVELS[3].color, label: 'L3 超节点',        ar: 5.4 },
-      { kind: 'cab',   count: nCab,               color: UB_LEVELS[2].color, label: 'L2 机柜',          ar: 6.0 },
-      { kind: 'node',  count: nCab * 8,           color: UB_LEVELS[1].color, label: 'L1 节点/刀片',     ar: 5.0 },
-      { kind: 'card',  count: N,                  color: '#4369ef',          label: '卡/NPU (1 device)', ar: 2.6 },
-      { kind: 'core',  count: N * CORES_PER_CARD, color: COMM_PATTERNS[2].color, label: 'AI Core (×32/卡)', ar: 0.7 },
+      { kind: 'super', count: 1,                 color: ENTITY_COLORS.super, label: 'L3 超节点',        ar: 5.4 },
+      { kind: 'cab',   count: nCab,               color: ENTITY_COLORS.cab,   label: 'L2 机柜',          ar: 6.0 },
+      { kind: 'node',  count: nCab * 8,           color: ENTITY_COLORS.node,  label: 'L1 节点/刀片',     ar: 5.0 },
+      { kind: 'card',  count: N,                  color: ENTITY_COLORS.card,  label: '卡/NPU (1 device)', ar: 2.6 },
+      { kind: 'core',  count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,  label: 'AI Core (×32/卡)', ar: 0.7 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
@@ -197,20 +197,20 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           if (px > 7) {
             const ins = ws * 0.13, g = ws * 0.08, dw = (ws - ins * 2 - g) / 2, dh = (ws - ins * 2 - g) / 2;
             const x0 = x + ins, x1 = x + ins + dw + g, y0 = y + ins, y1 = y + ins + dh + g;
-            ctx.fillStyle = UB_LEVELS[0].color; ctx.globalAlpha = 0.5 * A;   // top row = 2 compute Die (teal, UMA)
+            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.5 * A;   // top row = 2 compute Die (teal, UMA)
             rr(x0, y0, dw, dh, ws * 0.04); ctx.fill(); rr(x1, y0, dw, dh, ws * 0.04); ctx.fill();
-            ctx.strokeStyle = UB_LEVELS[0].color; ctx.globalAlpha = 0.95 * A; ctx.lineWidth = ws * 0.05;   // UMA bridge → single device
+            ctx.strokeStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.95 * A; ctx.lineWidth = ws * 0.05;   // UMA bridge → single device
             ctx.beginPath(); ctx.moveTo(x0 + dw, y0 + dh / 2); ctx.lineTo(x1, y0 + dh / 2); ctx.stroke();
-            ctx.fillStyle = '#7c8db8'; ctx.globalAlpha = 0.34 * A;   // bottom row = 2 IO Die
+            ctx.fillStyle = ENTITY_COLORS.ioDie; ctx.globalAlpha = 0.4 * A;   // bottom row = 2 IO Die (grey)
             rr(x0, y1, dw, dh, ws * 0.04); ctx.fill(); rr(x1, y1, dw, dh, ws * 0.04); ctx.fill();
           } else {   // too small → a single compute-die hint band
-            ctx.fillStyle = UB_LEVELS[0].color; ctx.globalAlpha = 0.42 * A;
+            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.42 * A;
             rr(x + ws * 0.16, y + ws * 0.22, ws * 0.68, ws * 0.3, ws * 0.05); ctx.fill();
           }
         } else {   // AI Core = 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores
           if (px > 6) {
-            ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube
-            ctx.fillStyle = '#7c8db8'; ctx.globalAlpha = 0.75 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector
+            ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube (base = cyan)
+            ctx.fillStyle = ENTITY_COLORS.vector; ctx.globalAlpha = 0.78 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector (light cyan)
           } else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.18); ctx.fill(); }
         }
         ctx.globalAlpha = 1;
@@ -500,7 +500,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
-            <div><span style={{ color: '#4369ef', fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: '#04d793', fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 9, height: 7, background: COMM_PATTERNS[2].color, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内格 = AI Core 块（block_idx，放大显示）</div>
+            <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 9, height: 7, background: ENTITY_COLORS.cube, borderRadius: 1, verticalAlign: '-1px', margin: '0 4px' }} />卡内格 = AI Core 块（block_idx，放大显示）</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
             {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
@@ -513,7 +513,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               const shape = ({ super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>×{Lv.count.toLocaleString()} · {shape}</span></div>;
             })}
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排（同顶视图）· 放大看图元(卡内含 4 Die · AI Core 含 Cube/Vector) · <span style={{ color: '#04d793' }}>硬件 device</span> ↔ <span style={{ color: '#04d793' }}>软件 rank</span> 严格 1:1</div>
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排（同顶视图）· 放大看图元(卡内含 4 Die · AI Core 含 Cube/Vector) · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#ffb020', fontSize: 10.5 }}>{selL ? '已选中：金色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
         )}
@@ -533,8 +533,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               </span>
             </div>
             {/* hardware ↔ software cleanly separated (rank is never the hardware) */}
-            {info.hw && <div style={{ marginBottom: 5, padding: '5px 7px', borderRadius: 7, background: 'rgba(67,105,239,0.10)', border: '1px solid rgba(67,105,239,0.35)' }}><span style={{ color: '#4369ef', fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>硬件 HW</span> <span style={{ color: 'var(--tx2)' }}>{info.hw.replace(/^硬件：/, '')}</span></div>}
-            {info.sw && <div style={{ marginBottom: 6, padding: '5px 7px', borderRadius: 7, background: 'rgba(4,215,147,0.10)', border: '1px solid rgba(4,215,147,0.35)' }}><span style={{ color: '#04d793', fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>软件 SW</span> <span style={{ color: 'var(--tx2)' }}>{info.sw.replace(/^软件：/, '')}</span></div>}
+            {info.hw && <div style={{ marginBottom: 5, padding: '5px 7px', borderRadius: 7, background: 'rgba(45,212,191,0.10)', border: '1px solid rgba(45,212,191,0.38)' }}><span style={{ color: ENTITY_COLORS.hw, fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>硬件 HW</span> <span style={{ color: 'var(--tx2)' }}>{info.hw.replace(/^硬件：/, '')}</span></div>}
+            {info.sw && <div style={{ marginBottom: 6, padding: '5px 7px', borderRadius: 7, background: 'rgba(67,105,239,0.10)', border: '1px solid rgba(67,105,239,0.35)' }}><span style={{ color: ENTITY_COLORS.sw, fontWeight: 700, fontSize: 10.5, letterSpacing: 0.3 }}>软件 SW</span> <span style={{ color: 'var(--tx2)' }}>{info.sw.replace(/^软件：/, '')}</span></div>}
             <div style={{ marginBottom: 6 }}><span style={{ color: COMM_PATTERNS[2].color, fontWeight: 600 }}>层内关系</span> <span style={{ color: 'var(--tx2)' }}>{info.intra}</span></div>
             <div style={{ marginBottom: 6 }}><span style={{ color: '#4369ef', fontWeight: 600 }}>层间关系</span> <span style={{ color: 'var(--tx2)' }}>{info.inter}</span></div>
             <div style={{ color: 'var(--tx3)', fontSize: 10.5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>带宽/时延：{info.bw}</div>

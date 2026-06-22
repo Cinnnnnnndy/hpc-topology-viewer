@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import {
   RACK_DIM, COMPUTE_RACK_UNITS, SWITCH_RACK_UNITS,
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
-  UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS,
+  UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE, STATUS_COLORS,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
@@ -381,8 +381,7 @@ const S_NODE = 3.2;   // node view scale
 // images there as npu-chip.png (package photo) and logo.png (logo) and they get
 // mapped onto the chip; if absent we fall back to procedural geometry.
 const TEX_BASE = `${import.meta.env.BASE_URL}textures/`;
-const CHIP_TEX = `${TEX_BASE}image-1781609094658.png`;   // NPU package photo
-const LOGO_TEX = `${TEX_BASE}image-1781609100845.png`;   // logo
+const CHIP_TEX = `${TEX_BASE}image-1781609094658.png`;   // NPU package photo (full-pod instancing only)
 const texCache = new Map<string, THREE.Texture | null>();
 function useOptionalTexture(url: string): THREE.Texture | null {
   const [tex, setTex] = useState<THREE.Texture | null>(() => texCache.get(url) ?? null);
@@ -402,17 +401,20 @@ function useOptionalTexture(url: string): THREE.Texture | null {
 
 /** NPU = chip package: metal lid + recessed die/HBM tiles + (optional) vendor mark.
  *  Abstracted from the real package photo. */
-function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number; logo?: boolean }) {
+function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number; logo?: boolean; dieLabels?: boolean }) {
   const LC = useLC();
   const hh = h ?? w * 0.5;
   const edge = selected ? COMM_PATTERNS[2].color : hovered ? '#4ade80' : LC.rackEdge;
   const glow = dim ?? (selected ? 0.6 : hovered ? 0.4 : 0);
   const top = hh / 2;
-  const chipTex = useOptionalTexture(CHIP_TEX);
-  const logoTex = useOptionalTexture(LOGO_TEX);
-  // 2 columns × 3 rows of die / HBM tiles on the recessed lid (chiplet layout)
-  const tiles: [number, number][] = [];
-  for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) tiles.push([(c - 0.5) * w * 0.36, (r - 1) * w * 0.27]);
+  // 950 package = 4 Die (no vendor photo): 2 compute Die (UMA-merged → ONE device) on the
+  // back row + 2 IO Die on the front row. Mirrors the layered view's card glyph so the two
+  // views correspond. Compute dies glow teal (L0), IO dies are accent grey.
+  const dw = w * 0.36, dd = w * 0.34, gx = w * 0.05, gz = w * 0.06;
+  const ty = top + hh * 0.12;
+  const cz = -(dd / 2 + gz / 2), iz = (dd / 2 + gz / 2);
+  const lx = -(dw / 2 + gx / 2), rx = (dw / 2 + gx / 2);
+  const cEm = selected || hovered ? Math.max(0.4, glow + 0.25) : 0.3;
   return (
     <group>
       {/* package body (brushed metal lid) */}
@@ -425,36 +427,22 @@ function NpuChip({ w, h, hovered, selected, dim, logo }: { w: number; h?: number
           <Edges color={COMM_PATTERNS[2].color} lineWidth={2} />
         </mesh>
       )}
-      {chipTex ? (
-        /* textured top: real package photo on a plane (local-only image) */
-        <mesh position={[0, top + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[w * 0.92, w * 0.92]} />
-          <meshBasicMaterial map={chipTex} toneMapped={false} />
-        </mesh>
-      ) : (
-        <group>
-          {/* recessed dark frame */}
-          <Slab size={[w * 0.9, hh * 0.14, w * 0.9]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
-          {/* die / HBM tiles */}
-          {tiles.map(([tx, tz], i) => (
-            <Slab key={i} size={[w * 0.3, hh * 0.16, w * 0.2]} position={[tx, top + hh * 0.12, tz]}
-              color={LC.npuTop} emissive={selected || hovered ? L(0) : '#000000'} emissiveIntensity={glow} metalness={0.7} roughness={0.3} />
-          ))}
-          {/* central vertical seam */}
-          <Slab size={[w * 0.02, hh * 0.18, w * 0.86]} position={[0, top + hh * 0.12, 0]} color="#3a4250" metalness={0.5} roughness={0.5} />
-          {/* mark: logo image on a plane if provided, else procedural red prism */}
-          {logo && (logoTex ? (
-            <mesh position={[0, top + hh * 0.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-              <planeGeometry args={[w * 0.4, w * 0.4]} />
-              <meshBasicMaterial map={logoTex} transparent toneMapped={false} />
-            </mesh>
-          ) : (
-            <mesh position={[0, top + hh * 0.22, 0]} rotation={[0, Math.PI, 0]}>
-              <cylinderGeometry args={[w * 0.11, w * 0.11, hh * 0.18, 3]} />
-              <meshStandardMaterial color={RACK_COLORS.accent} emissive={RACK_COLORS.accent} emissiveIntensity={0.45} metalness={0.3} roughness={0.4} />
-            </mesh>
-          ))}
-        </group>
+      {/* recessed substrate frame */}
+      <Slab size={[w * 0.92, hh * 0.12, w * 0.92]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
+      {/* 2 compute Die (teal L0) — UMA-merged into one device */}
+      <Slab size={[dw, hh * 0.2, dd]} position={[lx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
+      <Slab size={[dw, hh * 0.2, dd]} position={[rx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
+      {/* UMA die-to-die bridge between the 2 compute dies (→ single device) */}
+      <Slab size={[gx * 2.4, hh * 0.22, dd * 0.36]} position={[0, ty + hh * 0.02, cz]} color={L(0)} emissive={L(0)} emissiveIntensity={0.75} />
+      {/* 2 IO Die (accent grey) */}
+      <Slab size={[dw, hh * 0.16, dd]} position={[lx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+      <Slab size={[dw, hh * 0.16, dd]} position={[rx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+      {/* optional die labels (L0 detail tier) */}
+      {dieLabels && (
+        <>
+          <Text position={[0, ty + hh * 0.18, cz]} rotation={[-Math.PI / 2, 0, 0]} fontSize={w * 0.072} color={L(0)} anchorX="center" anchorY="middle">计算 Die ×2 · UMA</Text>
+          <Text position={[0, ty + hh * 0.18, iz]} rotation={[-Math.PI / 2, 0, 0]} fontSize={w * 0.072} color="#7c8db8" anchorX="center" anchorY="middle">IO Die ×2</Text>
+        </>
       )}
     </group>
   );
@@ -623,7 +611,7 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
             return (
               <Slab key={`vec-${k}`} size={[0.07, 0.05, 0.07]}
                 position={[0.4 + c * 0.1, 0.03, (r - 0.5) * 0.1 + hz - 0.22]}
-                color="#7dd3fc" emissive="#7dd3fc" emissiveIntensity={0.35} />
+                color={ENTITY_COLORS.vector} emissive={ENTITY_COLORS.vector} emissiveIntensity={0.35} />
             );
           })}
           <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · AIC(Cube)+AIV(Vector) 分离双发射 · ≈16/计算 Die</Text>
@@ -906,8 +894,8 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
 
       {/* L0 — one NPU package: dual die (NpuChip = same NPU element used everywhere) */}
       <Tier lvl={0}>
-        <NpuChip w={0.62} h={0.2} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} logo />
-        <Text position={[0, 0, 0.42]} fontSize={0.12} color={LC.textDim} anchorX="center">1 卡 / device · 4 Die（2 计算 UMA + 2 IO）</Text>
+        <NpuChip w={0.66} h={0.22} hovered={hov === 0} dim={hov === 0 ? 0.9 : 0.6} dieLabels />
+        <Text position={[0, 0, 0.46]} fontSize={0.12} color={LC.textDim} anchorX="center">1 卡 / device · 4 Die（2 计算 Die UMA→单 device + 2 IO Die）</Text>
       </Tier>
 
       {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) inside a 刀片 box */}
@@ -1456,8 +1444,8 @@ export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
 //    ranks. Tuned for the 950 (1 device = 1 card = 2 compute Die UMA · ≈32 AI Core).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const PROC_COLOR = '#4369ef';                 // software rank / the rank↔device boundary
-const THREAD_COLOR = COMM_PATTERNS[2].color;  // device-internal parallelism (AI Core / SIMT-SIMD, cyan)
+const PROC_COLOR = ENTITY_COLORS.rank;        // software rank / the rank↔device boundary (indigo)
+const THREAD_COLOR = ENTITY_COLORS.cube;      // device-internal parallelism (AI Core / SIMT-SIMD, cyan)
 
 export function MappingScene({ onHoverInfo }: SceneCallbacks) {
   const LC = useLC();
@@ -1484,7 +1472,7 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
       <Floor size={14} />
       {/* column headers */}
       <Text position={[swX, y(0) + 0.7, 0]} fontSize={0.22} color={PROC_COLOR} anchorX="center">软件层级</Text>
-      <Text position={[hwX, y(0) + 0.7, 0]} fontSize={0.22} color={LC.text} anchorX="center">硬件层级</Text>
+      <Text position={[hwX, y(0) + 0.7, 0]} fontSize={0.22} color={ENTITY_COLORS.hw} anchorX="center">硬件层级</Text>
 
       {rows.map((r, i) => {
         const yy = y(i);
@@ -1510,8 +1498,8 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
               {/* one AI Core: 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores */}
               {i === 4 && <group>
                 <Slab size={[0.2, 0.14, 0.2]} position={[-0.12, 0, 0]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />
-                <Slab size={[0.08, 0.12, 0.18]} position={[0.08, 0, 0]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={on ? 0.8 : 0.4} />
-                <Slab size={[0.08, 0.12, 0.18]} position={[0.2, 0, 0]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={on ? 0.8 : 0.4} />
+                <Slab size={[0.08, 0.12, 0.18]} position={[0.08, 0, 0]} color={ENTITY_COLORS.vector} emissive={ENTITY_COLORS.vector} emissiveIntensity={on ? 0.8 : 0.4} />
+                <Slab size={[0.08, 0.12, 0.18]} position={[0.2, 0, 0]} color={ENTITY_COLORS.vector} emissive={ENTITY_COLORS.vector} emissiveIntensity={on ? 0.8 : 0.4} />
               </group>}
               <Text position={[0, -0.5, 0]} fontSize={0.13} color={LC.textDim} anchorX="center" maxWidth={2.6}>{r.hw}</Text>
             </group>
