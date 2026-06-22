@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, type Gen, type PartitionDim } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, type Gen, type PartitionDim } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -501,6 +501,23 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </>
         )}
       </div>
+      {/* layered-view selection detail — level semantics (层内 / 层间关系 + 带宽/域) */}
+      {layout === 'layers' && selL && (() => {
+        const info = LAYER_INFO[selL.lvl]; if (!info) return null;
+        const col = [UB_LEVELS[3].color, UB_LEVELS[2].color, UB_LEVELS[1].color, UB_LEVELS[0].color, '#4369ef', COMM_PATTERNS[2].color][selL.lvl];
+        return (
+          <div style={{ position: 'absolute', top: 12, right: 12, width: 280, padding: '11px 13px', fontSize: 11.5, lineHeight: 1.5, background: 'var(--panel)', border: `1px solid ${col}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: col }} />
+              <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>{info.name}</span>
+              {info.domain !== '—' && <span style={{ marginLeft: 'auto', fontSize: 10, padding: '1px 7px', borderRadius: 5, color: info.domain.includes('SU') ? '#04d793' : '#7c8db8', border: `1px solid ${info.domain.includes('SU') ? '#04d793' : '#7c8db8'}` }}>{info.domain}</span>}
+            </div>
+            <div style={{ marginBottom: 6 }}><span style={{ color: COMM_PATTERNS[2].color, fontWeight: 600 }}>层内关系</span> <span style={{ color: 'var(--tx2)' }}>{info.intra}</span></div>
+            <div style={{ marginBottom: 6 }}><span style={{ color: '#4369ef', fontWeight: 600 }}>层间关系</span> <span style={{ color: 'var(--tx2)' }}>{info.inter}</span></div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10.5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>带宽/时延：{info.bw}</div>
+          </div>
+        );
+      })()}
       {/* hover tooltip */}
       {tip && tipInfo && (
         <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'var(--panel)', border: '1px solid var(--bd2)', borderRadius: 10, pointerEvents: 'none', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: 'var(--tx)' }}>

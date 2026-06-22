@@ -86,6 +86,30 @@ export const UB_LEVELS: UbLevel[] = [
   { id: 'L4', color: '#04d793', label: `${TOK.supernode}间`,        detail: `${TOK.supercluster} scale-out（全光）` },
 ];
 
+// Per UB level: scale-up/scale-out domain + bandwidth/latency + the parallel dims
+// that prefer it. (SU = scale-up 超高带宽窄域 FullMesh ≤128 卡 → TP·EP; SO = scale-out
+// 高带宽广域，双层 UB 交换 → PP·DP. Sources: UB-Mesh @ Hot Chips / 互联研究.)
+export interface UbLevelMeta { domain: 'SU' | 'SO'; bw: string; parallel: string; }
+export const UB_LEVEL_META: Record<string, UbLevelMeta> = {
+  L0: { domain: 'SU', bw: 'D2D 双向 784 GB/s',           parallel: '片内 die 对等' },
+  L1: { domain: 'SU', bw: '单卡 UB 2016 GB/s · 板载 2D-Mesh', parallel: 'TP 张量并行（窄快）' },
+  L2: { domain: 'SU', bw: '柜内 FullMesh · 单跳 200 ns · 1:1 无收敛', parallel: 'TP·EP（SU 超低延迟域）' },
+  L3: { domain: 'SO', bw: 'any-to-any <1 µs · 16 PB/s · 双层 UB 交换', parallel: 'EP·PP（SO 广域）' },
+  L4: { domain: 'SO', bw: '跨超节点 UBoE/RoCE',           parallel: 'DP 数据并行（广而省）' },
+};
+
+// Layered-view semantics (per the 全栈关系图谱): for each hierarchy level —
+//  intra = 层内关系（同级成员如何协作）· inter = 层间关系（如何衔接到上层 + 流动对象）.
+export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; }
+export const LAYER_INFO: LayerInfo[] = [
+  { key: 'super',  name: `${TOK.supernode} / 集群`, intra: '域内全互联 · UB-Mesh（SU 窄快 + SO 广省）', inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO' },
+  { key: 'cab',    name: '机柜', intra: '柜内 nD-FullMesh 全互联（≤128 卡 SU 超低延迟域）', inter: '↑ 总线池化 pooling：UB 统一编址 → 超节点“一台计算机”', bw: '柜内 FullMesh · 1:1 无收敛', domain: 'SU' },
+  { key: 'node',   name: '节点 / 刀片', intra: '节点内全互联 · 8 NPU + CPU 经 LQC 对 L1 平等编址', inter: '↑ 互联收敛 interconnect：经 L1/L2 上联（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(NPU) / 8×30G(CPU)', domain: 'SU' },
+  { key: 'card',   name: '卡 / NPU', intra: '相邻 die 对等 D2D · 板载 2D-Mesh', inter: '↑ 互联收敛：卡间数据 LQC → L1', bw: 'D2D 784 GB/s · 单卡 UB 2016 GB/s', domain: 'SU' },
+  { key: 'rank',   name: '进程 rank', intra: '集合通信：TP/EP→SU 窄快，PP/DP→SO 广省（multi-ring AllReduce / All-to-All）', inter: '↑ 坐标绑定 binding：1 NPU = 1 rank（HCCL 通信域）', bw: '进程级集合通信', domain: '—' },
+  { key: 'thread', name: '线程 / AI Core', intra: '核间同步：Cube↔Vector 经 GlobalMem + CrossCoreFlag · SPMD by block_idx', inter: '↑ 物理实现 realization：rank 内 TileShape 切分到 AI Core', bw: '核内 TQue/TPipe 流水', domain: '—' },
+];
+
 // ─── Process / thread communication overlays (node view) ─────────────────────
 export interface CommPattern { id: string; color: string; label: string; }
 export const COMM_PATTERNS: CommPattern[] = [

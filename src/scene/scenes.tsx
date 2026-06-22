@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import {
   RACK_DIM, COMPUTE_RACK_UNITS, SWITCH_RACK_UNITS,
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
-  UB_LEVELS, COMM_PATTERNS, RACK_COLORS,
+  UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE, STATUS_COLORS,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
@@ -845,14 +845,19 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
   }, [npuPts]);
 
   const levelInfo = (lvl: number): string => {
-    switch (lvl) {
-      case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} die · die 间 UB/SIO 直连`;
-      case 1: return `L1 刀片/节点内：${NPUS_PER_NODE}× NPU 全互联（full-mesh，每颗对所有）· 单 NPU ${gen.chipUbTBs} TB/s`;
-      case 2: return `L2 机柜内：8 刀片 / 64 NPU · 跨刀片 ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
-      case 3: return `L3 ${TOK.supernode}内：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
-      case 4: return `L4 ${TOK.supernode}间：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光）`;
-      default: return '';
-    }
+    const base = (() => {
+      switch (lvl) {
+        case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} die · die 间 UB/SIO 直连`;
+        case 1: return `L1 刀片/节点内：${NPUS_PER_NODE}× NPU 全互联（full-mesh，每颗对所有）· 单 NPU ${gen.chipUbTBs} TB/s`;
+        case 2: return `L2 机柜内：8 刀片 / 64 NPU · 跨刀片 ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
+        case 3: return `L3 ${TOK.supernode}内：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
+        case 4: return `L4 ${TOK.supernode}间：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光）`;
+        default: return '';
+      }
+    })();
+    if (!base) return '';
+    const m = UB_LEVEL_META[UB_LEVELS[lvl].id];
+    return m ? `${base} · 【${m.domain} 域】${m.bw} · ${m.parallel}` : base;
   };
 
   const Tier = ({ lvl, children }: { lvl: number; children?: ReactNode }) => {
@@ -869,6 +874,10 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         <Billboard position={[-HT.xSpan / 2 - 0.3, 0, 0]}>
           <Text fontSize={0.2} color={isH ? L(lvl) : LC.textDim} anchorX="right" anchorY="middle" maxWidth={3}>
             {`${UB_LEVELS[lvl].id} ${UB_LEVELS[lvl].label}`}
+          </Text>
+          {/* SU/SO domain tag (scale-up 窄快 / scale-out 广省) */}
+          <Text position={[0, -0.22, 0]} fontSize={0.12} color={UB_LEVEL_META[UB_LEVELS[lvl].id].domain === 'SU' ? '#04d793' : '#7c8db8'} anchorX="right" anchorY="middle">
+            {`${UB_LEVEL_META[UB_LEVELS[lvl].id].domain} · ${UB_LEVEL_META[UB_LEVELS[lvl].id].domain === 'SU' ? '超带宽窄域' : '广覆盖域'}`}
           </Text>
         </Billboard>
         <Billboard position={[HT.xSpan / 2 + 0.3, 0, 0]}>
