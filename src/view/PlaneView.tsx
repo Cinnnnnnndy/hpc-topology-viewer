@@ -134,15 +134,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     }
     return null;
   };
-  // highlighted slice-id sets per level for the selected up/down-stream chain
-  const layHi = (): Set<number>[] | null => {
+  // Selected up/down-stream chain as a CONTIGUOUS [lo,hi) range per level (the icicle
+  // is ordered, so a node's ancestors/descendants are contiguous) → O(1), no per-frame
+  // iteration over the 24 K threads.
+  const layRange = (): { lo: number[]; hi: number[] } | null => {
     if (!selL) return null;
-    const arrs = layArrs(), hi = [0, 1, 2, 3, 4, 5].map(() => new Set<number>());
-    hi[selL.lvl].add(selL.idx);
-    let l = selL.lvl, i = selL.idx;                                   // upstream (ancestors)
-    while (l > 0) { const p = arrs[l][i].parent; hi[l - 1].add(p); l--; i = p; }
-    for (let d = selL.lvl + 1; d < 6; d++) arrs[d].forEach((b, bi) => { if (hi[d - 1].has(b.parent)) hi[d].add(bi); });   // downstream
-    return hi;
+    const cp = [LAY.grp.cab, LAY.grp.node, LAY.grp.card, LAY.grp.proc, LAY.grp.thr];   // children-per-parent at transition l→l+1
+    const lo = [0, 0, 0, 0, 0, 0], hi = [1, 1, 1, 1, 1, 1];
+    lo[selL.lvl] = selL.idx; hi[selL.lvl] = selL.idx + 1;
+    for (let l = selL.lvl; l > 0; l--) { lo[l - 1] = Math.floor(lo[l] / cp[l - 1]); hi[l - 1] = lo[l - 1] + 1; }   // ancestors
+    for (let l = selL.lvl; l < 5; l++) { lo[l + 1] = lo[l] * cp[l]; hi[l + 1] = hi[l] * cp[l]; }                   // descendants
+    return { lo, hi };
   };
 
   const draw = useCallback(() => {
@@ -176,8 +178,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
         ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
       };
-      const hi = layHi();
-      const lit = (li: number, idx: number) => !hi || hi[li].has(idx);
+      const hi = layRange();
+      const lit = (li: number, idx: number) => !hi || (idx >= hi.lo[li] && idx < hi.hi[li]);
       const vx0 = -tx / s, vx1 = (W - tx) / s;
       const stepPx = (li: number) => (Wc / counts[li]) * s;          // avg slice width in screen px
       const glyphLOD = (li: number) => stepPx(li) >= 7;              // wide enough to draw individual glyphs
@@ -195,13 +197,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         else { ctx.globalAlpha = 0.85 * A; const bw2 = Math.min(0.16, (b.x1 - b.x0) * 0.42); rr(cx - bw2 / 2, yy - h * 0.24, bw2, h * 0.44, bw2 * 0.4); ctx.fill(); ctx.globalAlpha = 1; }
       };
 
-      // ── 层级间 (between levels): grey containment lines, only where children resolve (culled) + the selected chain always ──
-      for (let i = 1; i < 6; i++) {
+      // ── 层级间 (between levels): grey containment lines, only where children resolve (culled) ──
+      if (!hi) for (let i = 1; i < 6; i++) {
         if (!glyphLOD(i)) continue;
         const [i0, i1] = visRange(i);
-        for (let ci = i0; ci < i1; ci++) { const c = arrs[i][ci], p = arrs[i - 1][c.parent]; if (!p) continue; const on = lit(i, ci) && lit(i - 1, c.parent); if (hi && !on) continue; ctx.strokeStyle = hi ? '#ffb020' : P.cardBd; ctx.globalAlpha = hi ? 0.95 : 0.4; ctx.lineWidth = (hi ? 0.9 : 0.4) / s; ctx.beginPath(); ctx.moveTo(p.cx, yOf(i - 1) + half); ctx.lineTo(c.cx, yOf(i) - half); ctx.stroke(); }
+        ctx.strokeStyle = P.cardBd; ctx.globalAlpha = 0.4; ctx.lineWidth = 0.4 / s;
+        for (let ci = i0; ci < i1; ci++) { const c = arrs[i][ci], p = arrs[i - 1][c.parent]; if (!p) continue; ctx.beginPath(); ctx.moveTo(p.cx, yOf(i - 1) + half); ctx.lineTo(c.cx, yOf(i) - half); ctx.stroke(); }
       }
-      if (hi) for (let i = 1; i < 6; i++) hi[i].forEach((ci) => { const c = arrs[i][ci]; if (!lit(i - 1, c.parent)) return; const p = arrs[i - 1][c.parent]; ctx.strokeStyle = '#ffb020'; ctx.globalAlpha = 0.95; ctx.lineWidth = 0.9 / s; ctx.beginPath(); ctx.moveTo(p.cx, yOf(i - 1) + half); ctx.lineTo(c.cx, yOf(i) - half); ctx.stroke(); });
+      // selected: amber up-stream chain only (selL → super), a few lines; downstream shown via bright bands
+      if (hi) { ctx.strokeStyle = '#ffb020'; ctx.globalAlpha = 0.95; ctx.lineWidth = 0.9 / s; for (let i = 1; i <= selL!.lvl; i++) { const p = arrs[i - 1][hi.lo[i - 1]], c = arrs[i][hi.lo[i]]; ctx.beginPath(); ctx.moveTo(p.cx, yOf(i - 1) + half); ctx.lineTo(c.cx, yOf(i) - half); ctx.stroke(); } }
       ctx.globalAlpha = 1;
 
       // ── 层级内 (within a level): colored arc per sibling group; only when resolved (culled) ──
@@ -212,7 +216,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.lineCap = 'round';
         for (let g = g0; g < g1; g++) {
           const a0 = arrs[li][g * gsz], a1 = arrs[li][Math.min(c - 1, g * gsz + gsz - 1)]; if (!a0 || !a1) continue;
-          const on = !hi || hi[li].has(g * gsz);
+          const on = !hi || (g * gsz >= hi.lo[li] && g * gsz < hi.hi[li]);
           if (hi && !on) continue;
           ctx.strokeStyle = color; ctx.globalAlpha = baseA; ctx.lineWidth = 1.1 / s;
           const x1 = a0.cx, x2 = a1.cx, bow = yEdge + side * (0.32 + Math.min(1.1, (x2 - x1) * 0.14));
@@ -235,7 +239,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         } else {
           ctx.fillStyle = m.color; ctx.globalAlpha = hi ? 0.06 : 0.18; rr(margin, yy - half, Wc, LAY.boxH, 0.12); ctx.fill();
           ctx.globalAlpha = hi ? 0.18 : 0.55; ctx.strokeStyle = m.color; ctx.lineWidth = 0.5 / s; ctx.stroke(); ctx.globalAlpha = 1;
-          if (hi) hi[li].forEach((idx) => glyph(m.kind, arrs[li][idx], yy, m.color, 1));   // selected chain stays visible
+          // selected chain: draw its (contiguous) range as one bright amber-edged sub-band — O(1), no per-thread loop
+          if (hi) { const a = arrs[li][hi.lo[li]], bx = arrs[li][Math.min(counts[li] - 1, hi.hi[li] - 1)]; if (a && bx) { ctx.fillStyle = m.color; ctx.globalAlpha = 0.6; rr(a.x0, yy - half, bx.x1 - a.x0, LAY.boxH, 0.1); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 0.7 / s; ctx.stroke(); } }
         }
         ctx.fillStyle = m.color; ctx.globalAlpha = 1; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.font = '0.66px sans-serif';
         ctx.fillText(m.label, 8.8, yy - 0.05);
@@ -361,17 +366,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
-  useEffect(() => { tf.current = null; setSelL(null); }, [layout]);
+  useEffect(() => { tf.current = null; setSelL(null); setPlay(false); }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
 
   // scenario playback loop: advance the flow phase and redraw
   useEffect(() => {
-    if (!play) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; return; }
+    if (!play || layout !== 'top') { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; return; }
     const loop = () => { phaseRef.current += 0.02; draw(); rafRef.current = requestAnimationFrame(loop); };
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
-  }, [play, draw]);
+  }, [play, draw, layout]);
   useEffect(() => {
     const onR = () => { tf.current = null; draw(); };   // re-fit on resize
     window.addEventListener('resize', onR);
