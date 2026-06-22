@@ -1822,7 +1822,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // phase wash + selection highlight: compute → AI cores / cards heat; comm → ranks pulse;
   // partition → group colour on card/rank/thread; selection → the actual chain objects glow amber.
   useLayoutEffect(() => {
-    const col = new THREE.Color(), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR), hl = new THREE.Color('#ffb020');
+    const col = new THREE.Color(), procBase = new THREE.Color(PROC_COLOR), thrBase = new THREE.Color(THREAD_COLOR), hl = new THREE.Color('#4369ef');
     const tint = phase ? new THREE.Color(phase.color) : null;
     const cardBase = chipTex ? '#ffffff' : LC.npuTop;
     const pm = procRef.current, tm = thrRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
@@ -1992,7 +1992,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         const on = selPath !== null && selPath.superP === p;
         return (
           <group key={p}>
-            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#ffb020' : L(3)} emissive={on ? '#ffb020' : L(3)} emissiveIntensity={on ? 0.9 : 0.5} />
+            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : L(3)} emissive={on ? '#4369ef' : L(3)} emissiveIntensity={on ? 0.9 : 0.5} />
             <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`${TOK.supernode} P${p}`}</Text>
           </group>
         );
@@ -2026,11 +2026,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         <group>
           {/* the chain objects themselves glow amber (recoloured in the effect); here just the route + peer mesh */}
           {selPath.pSegs.length > 0 && <Line points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} transparent opacity={0.95} />}
-          {selPath.vSegs.length > 0 && <Line points={selPath.vSegs} segments color="#ffb020" lineWidth={3} transparent opacity={0.92} />}
+          {selPath.vSegs.length > 0 && <Line points={selPath.vSegs} segments color="#4369ef" lineWidth={3} transparent opacity={0.92} />}
           {selPath.dieK !== null ? (
             <group>
               {/* die-operator inset for a selected card (reuses DieDetail), with a leader line */}
-              <Line points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#ffb020" lineWidth={1.6} transparent opacity={0.6} />
+              <Line points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#4369ef" lineWidth={1.6} transparent opacity={0.6} />
               <group position={dieInsetPos} scale={dieS}>
                 <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
                   <DieDetail npuIdx={selPath.dieK % 8} overlays={overlays} onHoverInfo={onHoverInfo} />

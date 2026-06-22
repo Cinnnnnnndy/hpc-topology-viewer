@@ -108,7 +108,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'matrix',   label: '邻接矩阵' },
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '执行时序/定位' },
-  { id: 'fullpod',  label: '整列全景(多卡)' },
+  { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'plane',    label: '平面视图' },
 ];
 
@@ -854,7 +854,7 @@ export function ClusterView() {
                 <LgRow color={COMM_PATTERNS[1].color} label="All-to-All（MoE）" />
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
-                <LgRow color="#ffb020" label="上下游链路（竖向）" />
+                <LgRow color="#4369ef" label="上下游链路（竖向）" />
                 <LgRow color="#22d3ee" label="同级 peer mesh（卡/节点）" />
                 <span style={lgNote}>单击 卡 / 刀片 / 机柜高亮 · 双击进卡</span>
                 {/* run phases (phase-wash colours) */}

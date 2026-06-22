@@ -12,7 +12,15 @@ import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEV
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
-const AXIS_GUTTER = 118, RIGHT_PAD = 16;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
+const AXIS_GUTTER = 100, RIGHT_PAD = 10;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
+const SEL = '#4369ef';   // selection / hover highlight = PTO primary (was gold)
+// rounded-rect path (shared glyph language with the layered view)
+function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rad = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
+}
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
@@ -35,6 +43,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
   const [layout, setLayout] = useState<'top' | 'layers'>('top');   // top-down map vs. layered hierarchy
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
+  const [selTop, setSelTop] = useState<number | null>(null);   // top-view selected card (persistent highlight)
   const downXY = useRef<{ x: number; y: number } | null>(null);   // pointer-down (click vs drag)
   const phaseRef = useRef(0);                       // flow animation phase
   const rafRef = useRef<number | null>(null);
@@ -236,8 +245,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             : Lv.kind === 'cluster' ? `集群 · 跨${TOK.supernode} scale-out（DP / PP）`
             : `${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`;
           ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
-          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? '#ffb020' : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          ctx.fillStyle = hi && on ? '#ffb020' : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
+          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
+          ctx.fillStyle = hi && on ? SEL : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
           ctx.fillText(txt, margin + Wc / 2, Lv.y0 + Lv.h / 2);
           return;
         }
@@ -251,7 +260,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            glyph(Lv.kind, x, y, ws, hi ? (on ? '#ffb020' : Lv.color) : Lv.color, hi ? (on ? 1 : 0.14) : 1);
+            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : Lv.color) : Lv.color, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
         } else if (Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
@@ -259,7 +268,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           ctx.fillStyle = Lv.color; ctx.globalAlpha = hi ? 0.08 : 0.5; rr(margin, Lv.y0, Wc, Lv.h, 0.2); ctx.fill(); ctx.globalAlpha = 1;
           if (hi) {   // selected range = a contiguous bright block (rows lo..hi)
             const ra = Math.floor(hi.lo[li] / Lv.cols), rb = Math.floor((hi.hi[li] - 1) / Lv.cols);
-            ctx.fillStyle = '#ffb020'; ctx.globalAlpha = 0.85;
+            ctx.fillStyle = SEL; ctx.globalAlpha = 0.85;
             if (ra === rb) { const x = margin + (hi.lo[li] % Lv.cols) * Lv.cell; rr(x, Lv.y0 + ra * Lv.cell, (hi.hi[li] - hi.lo[li]) * Lv.cell, Lv.cell, 0.06); ctx.fill(); }
             else { rr(margin, Lv.y0 + ra * Lv.cell, Wc, (rb - ra + 1) * Lv.cell, 0.06); ctx.fill(); }
             ctx.globalAlpha = 1;
@@ -269,7 +278,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
       // ── containment links for the selected chain (parent cell → child block centre) ──
       if (hi) {
-        ctx.strokeStyle = '#ffb020'; ctx.globalAlpha = 0.9; ctx.lineWidth = 0.12; ctx.lineCap = 'round';
+        ctx.strokeStyle = SEL; ctx.globalAlpha = 0.9; ctx.lineWidth = 0.12; ctx.lineCap = 'round';
         for (let li = 1; li < levels.length; li++) {
           const pa = cellXY(li - 1, hi.lo[li - 1]);                                  // parent cell
           const ca = cellXY(li, hi.lo[li]), cb = cellXY(li, Math.min(levels[li].count - 1, hi.hi[li] - 1));
@@ -306,12 +315,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     // cards — full L3→L2→L1·L0 drill on zoom: card(4 Die) → 计算 Die → AI Core(Cube/Vector)
     const showBorder = s > 4, showId = s > 14, showDie = s > 26, showCore = s > 74;
+    const round = s > 8, rad = L.cs * 0.16;   // rounded corners (same glyph language as 层级图) once cards are big; cull off-screen
+    const dieR = L.cs * 0.05;
     ctx.lineWidth = 0.6 / s; ctx.strokeStyle = P.cardBd;
     for (let k = 0; k < L.N1; k++) {
-      const [x, y] = cardXY(k); const g = groupOf(k);
+      const [x, y] = cardXY(k);
+      if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
+      const g = groupOf(k);
       ctx.fillStyle = g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
-      ctx.fillRect(x, y, L.cs, L.cs);
-      if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs);
+      if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
+      else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
       // shows the 950 package = 4 Die (2 compute UMA + 2 IO); zoom further → each compute
       // Die reveals its AI Core array (Cube/Vector) — SAME glyph/colour as the 层级图.
@@ -325,15 +338,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           const x0 = x + ins, x1 = x + ins + dw + gp, y0 = y + L.cs * 0.28, y1 = y + L.cs * 0.28 + dh + gp;
           // one compute Die: solid teal, or (deeper zoom) a teal container of AI Core glyphs
           const computeDie = (dx: number, dy: number) => {
-            if (!showCore) { ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.fillRect(dx, dy, dw, dh); return; }
-            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.22; ctx.fillRect(dx, dy, dw, dh); ctx.globalAlpha = 1;
-            ctx.strokeStyle = ENTITY_COLORS.computeDie; ctx.lineWidth = 0.6 / s; ctx.strokeRect(dx, dy, dw, dh);
+            if (!showCore) { ctx.fillStyle = ENTITY_COLORS.computeDie; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); return; }
+            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.22; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); ctx.globalAlpha = 1;
+            ctx.strokeStyle = ENTITY_COLORS.computeDie; ctx.lineWidth = 0.6 / s; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.stroke();
             const cols = 2, rows = 2, pad = dw * 0.1, gxx = dw * 0.06, gyy = dh * 0.08;   // 2×2 schematic AI Core
             const cw = (dw - pad * 2 - gxx) / cols, ch = (dh - pad * 2 - gyy) / rows;
             for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
               const cx = dx + pad + c * (cw + gxx), cy = dy + pad + r * (ch + gyy);
-              ctx.fillStyle = ENTITY_COLORS.cube; ctx.fillRect(cx, cy, cw * 0.56, ch);   // Cube (AIC)
-              ctx.fillStyle = ENTITY_COLORS.vector; ctx.fillRect(cx + cw * 0.62, cy, cw * 0.16, ch); ctx.fillRect(cx + cw * 0.82, cy, cw * 0.16, ch);   // 2 Vector (AIV)
+              ctx.fillStyle = ENTITY_COLORS.cube; rrPath(ctx, cx, cy, cw * 0.56, ch, ch * 0.18); ctx.fill();   // Cube (AIC)
+              ctx.fillStyle = ENTITY_COLORS.vector; rrPath(ctx, cx + cw * 0.62, cy, cw * 0.16, ch, ch * 0.12); ctx.fill(); rrPath(ctx, cx + cw * 0.82, cy, cw * 0.16, ch, ch * 0.12); ctx.fill();   // 2 Vector (AIV)
             }
           };
           computeDie(x0, y0); computeDie(x1, y0);
@@ -341,7 +354,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           ctx.beginPath(); ctx.moveTo(x0 + dw, y0 + dh / 2); ctx.lineTo(x1, y0 + dh / 2); ctx.stroke();
           ctx.lineWidth = 0.6 / s; ctx.strokeStyle = P.cardBd;
           ctx.fillStyle = ENTITY_COLORS.ioDie;   // 2 IO Die (grey, no compute)
-          ctx.fillRect(x0, y1, dw, dh); ctx.fillRect(x1, y1, dw, dh);
+          rrPath(ctx, x0, y1, dw, dh, dieR); ctx.fill(); rrPath(ctx, x1, y1, dw, dh, dieR); ctx.fill();
         }
       }
     }
@@ -407,9 +420,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.restore();
     }
 
-    // hovered card: "active" glow on its links — board neighbours (L1) + its blade↔
-    // cabinet blades (L2). Rounded caps + shadow blur = a flow-engine "active" style.
-    const hk = hoverRef.current;
+    // selected (persistent) or hovered card: "active" glow on its links — board
+    // neighbours (L1) + its blade↔cabinet blades (L2). Rounded caps + shadow = "active".
+    const hk = selTop ?? hoverRef.current; const isSel = selTop != null;
     if (hk != null) {
       const b = Math.floor(hk / CPB), cab = Math.floor(b / BPC);
       const [hx, hy] = cardXY(hk); const hc: [number, number] = [hx + L.cs / 2, hy + L.cs / 2];
@@ -424,14 +437,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let l = 0; l < CPB; l++) { const k2 = b * CPB + l; if (k2 >= L.N1 || k2 === hk) continue; const [sx, sy] = cardXY(k2); ctx.moveTo(hc[0], hc[1]); ctx.lineTo(sx + L.cs / 2, sy + L.cs / 2); }
       ctx.stroke();
       ctx.restore();
-      // hovered card outline (on top, no blur)
-      ctx.lineWidth = 2.5 / s; ctx.strokeStyle = '#ffb020'; ctx.strokeRect(hx - 0.06, hy - 0.06, L.cs + 0.12, L.cs + 0.12);
+      // selected / hovered card outline (on top, no blur) — rounded, PTO-blue, bolder when selected
+      ctx.lineWidth = (isSel ? 3.4 : 2.5) / s; ctx.strokeStyle = SEL;
+      rrPath(ctx, hx - 0.07, hy - 0.07, L.cs + 0.14, L.cs + 0.14, L.cs * 0.18); ctx.stroke();
     }
     ctx.restore();
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL, selTop]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
-  useEffect(() => { tf.current = null; setSelL(null); setPlay(false); }, [layout]);
+  useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setPlay(false); }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
 
@@ -463,10 +477,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   };
   const onDown = (e: React.PointerEvent) => { if (!tf.current) return; downXY.current = { x: e.clientX, y: e.clientY }; drag.current = { x: e.clientX, y: e.clientY, tx: tf.current.tx, ty: tf.current.ty }; (e.target as Element).setPointerCapture(e.pointerId); };
   const onUp = (e: React.PointerEvent) => {
-    // layered view: a click (no drag) selects a node → highlight its up/down-stream chain
-    if (layout === 'layers' && downXY.current && Math.abs(e.clientX - downXY.current.x) + Math.abs(e.clientY - downXY.current.y) < 5) {
-      const [wx, wy] = toWorld(e.clientX, e.clientY); const hit = pickLayer(wx, wy);
-      setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit));
+    // a click (no drag) selects: layered → up/down-stream chain · top → a card (persistent highlight)
+    if (downXY.current && Math.abs(e.clientX - downXY.current.x) + Math.abs(e.clientY - downXY.current.y) < 5) {
+      const [wx, wy] = toWorld(e.clientX, e.clientY);
+      if (layout === 'layers') { const hit = pickLayer(wx, wy); setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit)); }
+      else { const k = pick(wx, wy); setSelTop((prev) => (k != null && prev === k ? null : k)); }
     }
     downXY.current = null; drag.current = null; try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* noop */ }
   };
@@ -525,7 +540,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             })}
             <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
               style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动 / 滚轮缩放`}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 点击卡=${selTop != null ? '已选中(再点取消)' : '选中高亮'}`}</span>
           </>
         ) : (
           <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1·L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
@@ -555,7 +570,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1·L0(×16/Die) 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>
-            <div style={{ color: '#ffb020', fontSize: 10.5 }}>{selL ? '已选中：金色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
         )}
       </div>
