@@ -116,8 +116,10 @@ export const LAYER_INFO: LayerInfo[] = [
     hw: '硬件：1 张 950 卡 = 1 device = 2 计算 Die（UMA 合并）+ 2 IO Die', sw: `软件：rank = ${TOK.hccl} 逻辑编号（rank 表），与 device 严格 1:1 绑定 · 纯软件、与代际无关` },
   { key: 'die',   name: '计算 Die / 核组（CoreGroup）', intra: '单计算 Die ≈ 16 AI Core，经片上 NoC 互联、共享 HBM', inter: '↑ UMA 合并：2 计算 Die 统一寻址 → 整卡 = 1 device', bw: '片上 NoC · D2D 784 GB/s · HBM 3.2–9.6 TB/s', domain: '—', tag: '设备内（非 rank）',
     hw: '硬件：1 计算 Die ≈ 16 AI Core · 整卡 = 2 计算 Die（UMA）+ 2 IO Die', sw: '软件：rank 内核组（CoreGroup）· 同 rank、不增 rank' },
-  { key: 'core',  name: 'AI Core（Cube / Vector）', intra: 'AIC(Cube)/AIV(Vector) 分离独立核、双发射并行 · 核间 GlobalMem + CrossCoreFlag', inter: '↑ 物理实现 realization：rank 内 TileShape 切到 AI Core', bw: 'L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
-    hw: '硬件：约 32 AI Core/卡（16/计算 Die × 2）· 内含 Cube/Vector + 片上 buf + lane（L0 Tile）· Cube∶Vector ≈ 8∶1', sw: '软件：设备内并行(不增 rank)：Stream/Context → block_idx SPMD → SIMT 线程/SIMD 通道 → tile/element（L0）' },
+  { key: 'core',  name: 'AI Core（L1 · AIC/AIV）', intra: 'AIC(Cube)/AIV(Vector) 分离独立核、双发射并行 · 核间 GlobalMem + CrossCoreFlag', inter: '↑ block_idx 核实例（SPMD）：rank 内 TileShape 切到各 AI Core', bw: 'L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
+    hw: '硬件：约 32 AI Core/卡（16/计算 Die × 2）· AIC(Cube)/AIV(Vector) 分离独立核 · Cube∶Vector ≈ 8∶1', sw: '软件：block_idx 核实例（SPMD）· rank 内不增 rank' },
+  { key: 'tile',  name: 'Tile（L0 · Cube/Vector/lane）', intra: '核内 Cube/Vector ALU + 片上 buf（L0A/B/C）+ SIMD/SIMT lane', inter: '↑ TileShape 切分：tile / element 落到 lane', bw: 'L0 buf · 寄存器 · element 级', domain: '—', tag: '设备内（非 rank）',
+    hw: '硬件：AI Core 内 Cube/Vector 计算单元 + 片上 buffer + SIMD/SIMT 通道（lane）', sw: '软件：tile / SIMT lane / element（950 SIMD/SIMT 同构双编程的最细粒度）' },
 ];
 
 // per-card AI Core count on the 950 (≈16 AI Core / compute Die × 2 compute Die)
@@ -205,7 +207,8 @@ export const UB_COORD: Record<string, UbCoordLevel> = {
   node:  { L: 'L4', scope: '机器域', sw: '单机多卡放置（Host = 1 CPU + 8 NPU）', obs: '卡间带宽 · host 开销' },
   card:  { L: 'L3', scope: '芯片域', sw: 'Chip = rank 逻辑设备（950 整卡 UMA）', obs: '算力% · HBM% · 负载均衡' },
   die:   { L: 'L2', scope: '芯片域', sw: 'CoreGroup = rank 内核组（Die / NoC）', obs: 'NoC 争用 · D2D · HBM 带宽' },
-  core:  { L: 'L1·L0', scope: '核内域', sw: 'L1 Core = block_idx 核实例(SPMD) · L0 Tile = tile / SIMT lane', obs: 'AIC/AIV 利用率 · 同步等待 · 流水气泡 · 访存等待' },
+  core:  { L: 'L1', scope: '核内域', sw: 'Core = block_idx 核实例（SPMD）', obs: 'AIC/AIV 利用率 · 同步等待' },
+  tile:  { L: 'L0', scope: '核内域', sw: 'Tile = Cube/Vector + 片上 buf + lane · tile / SIMT lane', obs: '流水气泡 · 访存等待' },
 };
 // topology-tier (UB 互联层级 L0–L4) → UB L0–L7 coordinate (底部 5 级压进 L0–L3)
 export const UB_COORD_TOPO: Record<number, { L: string; scope: string }> = {

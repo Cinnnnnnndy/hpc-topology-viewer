@@ -93,19 +93,22 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // L7 作业 → L6 集群 → L5 超节点 → [机柜] → L4 节点 → L3 卡/device → L2 计算 Die(×2/卡)
     // → L1·L0 AI Core(×16/Die). 机柜 has no own L (并入机器域). The 3 top context levels
     // (job/cluster/super) are full-width banners; the rest are matrices. `ar`: smaller → bigger cells.
+    // `ar` = grid width:height in cells → cols = √(count·ar). Higher ar packs MORE units
+    // per row (smaller cells, fewer rows). Tuned so the cells stay compact at full width.
     const defs = [
       { kind: 'job',     count: 1,                 color: '#ff4b7b',                label: 'L7 作业/全局',  banner: true,  ar: 1 },
       { kind: 'cluster', count: 1,                 color: '#04d793',                label: 'L6 集群',       banner: true,  ar: 1 },
       { kind: 'super',   count: 1,                 color: ENTITY_COLORS.super,      label: 'L5 超节点',     banner: true,  ar: 5.4 },
-      { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          banner: false, ar: 6.0 },
-      { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  banner: false, ar: 5.0 },
-      { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L3 卡/device',  banner: false, ar: 2.6 },
-      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  banner: false, ar: 1.8 },
-      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1·L0 AI Core', banner: false, ar: 0.7 },
+      { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          banner: false, ar: 32 },
+      { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  banner: false, ar: 14 },
+      { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L3 卡/device',  banner: false, ar: 5.0 },
+      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L2 计算 Die',  banner: false, ar: 3.2 },
+      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L1 AI Core',    banner: false, ar: 1.4 },
+      { kind: 'tile',    count: N * CORES_PER_CARD * 4, color: ENTITY_COLORS.vector, label: 'L0 Tile/lane',  banner: false, ar: 0.6 },
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
-      if (d.banner) { const h = d.kind === 'super' ? 5 : 3.4, y0 = y; y += h + gap * 1.3; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
+      if (d.banner) { const h = d.kind === 'super' ? 3.6 : 2.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
@@ -228,7 +231,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             ctx.globalAlpha = 0.85 * A;
             for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { const dx = x + ws * (0.18 + 0.21 * c), dy = y + ws * (0.18 + 0.21 * r); ctx.beginPath(); ctx.arc(dx, dy, ws * 0.045, 0, 7); ctx.fill(); }
           }
-        } else {   // AI Core = 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores
+        } else if (kind === 'tile') {   // L0 Tile = SIMD/SIMT lanes (thin bars) + element
+          if (px > 4) { ctx.globalAlpha = 0.9 * A; const n = 3, bw2 = ws * 0.2, gp2 = (ws - n * bw2) / (n + 1); for (let i = 0; i < n; i++) { rr(x + gp2 + i * (bw2 + gp2), y + ws * 0.16, bw2, ws * 0.68, bw2 * 0.35); ctx.fill(); } }
+          else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.2); ctx.fill(); }
+        } else {   // L1 AI Core = 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores
           if (px > 6) {
             ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube (base = cyan)
             ctx.fillStyle = ENTITY_COLORS.vector; ctx.globalAlpha = 0.78 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector (light cyan)
@@ -420,13 +426,22 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.restore();
     }
 
-    // selected (persistent) or hovered card: "active" glow on its links — board
-    // neighbours (L1) + its blade↔cabinet blades (L2). Rounded caps + shadow = "active".
+    // selected (persistent) or hovered card: "active" glow on its links — its cabinet's
+    // cross-cabinet fabric (L3, on select) + blade↔cabinet blades (L2) + board mates (L1).
     const hk = selTop ?? hoverRef.current; const isSel = selTop != null;
     if (hk != null) {
       const b = Math.floor(hk / CPB), cab = Math.floor(b / BPC);
       const [hx, hy] = cardXY(hk); const hc: [number, number] = [hx + L.cs / 2, hy + L.cs / 2];
       ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      // L3 (on select): selected card's CABINET → all other cabinets (super-node Clos fabric)
+      const [ccx, ccy] = cabXY(cab); const cc: [number, number] = [ccx + L.cw / 2, ccy + L.ch / 2];
+      if (isSel && L.nC > 1) {
+        ctx.strokeStyle = UB_LEVELS[3].color; ctx.shadowColor = UB_LEVELS[3].color; ctx.shadowBlur = 5; ctx.lineWidth = 1.1 / s; ctx.globalAlpha = 0.4; ctx.beginPath();
+        for (let oc = 0; oc < L.nC; oc++) { if (oc === cab) continue; const [ox, oy] = cabXY(oc); ctx.moveTo(cc[0], cc[1]); ctx.lineTo(ox + L.cw / 2, oy + L.ch / 2); }
+        ctx.stroke();
+        // highlight the selected cabinet + blade frames
+        ctx.shadowBlur = 0; ctx.globalAlpha = 0.95; ctx.strokeStyle = UB_LEVELS[2].color; ctx.lineWidth = 1.6 / s; ctx.strokeRect(ccx, ccy, L.cw, L.ch);
+      }
       // L2: hovered blade centre → other blade centres in the cabinet
       const [bx, by] = bladeXY(cab, b % BPC); const bc: [number, number] = [bx + L.bw / 2, by + L.bh / 2];
       ctx.strokeStyle = UB_LEVELS[2].color; ctx.shadowColor = UB_LEVELS[2].color; ctx.shadowBlur = 10; ctx.lineWidth = 1.6 / s; ctx.globalAlpha = 0.9; ctx.beginPath();
@@ -515,7 +530,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L7 作业→L6 集群→L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1·L0 AI Core，按 UB L0–L7 坐标）'}
+          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L7 作业→L6 集群→L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
             style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
         })}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
@@ -543,7 +558,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 点击卡=${selTop != null ? '已选中(再点取消)' : '选中高亮'}`}</span>
           </>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1·L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1)→Tile(L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
         )}
       </div>
       {/* legend */}
@@ -564,11 +579,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector' } as Record<string, string>)[Lv.kind];
+              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: 'SIMD/SIMT lane 条' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1·L0(×16/Die) 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>
             <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
           </>
