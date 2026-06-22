@@ -155,6 +155,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     if (!tf.current) { const f = fit(W, H); tf.current = { s: f, tx: (W - ext.tw * f) / 2, ty: (H - ext.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = 1;   // context state persists across frames; force a fully-opaque clear (no ghosting)
     ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
 
@@ -229,18 +230,24 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       peer(3, LAY.grp.card, UB_LEVELS[1].color, 0.78, -1);   // 卡↔卡 · L1 板载 full-mesh
       peer(4, LAY.grp.card, COMM_PATTERNS[0].color, 0.7, 1); // rank↔rank · 进程级集合通信 (TP 域, 下侧)
 
-      // ── levels: individual glyphs when zoomed in (culled), else an aggregate band ──
+      // ── levels: detailed glyphs when zoomed in; else EVERY real unit as a batched
+      //    mark (no solid "band" — you see all 8192/24576 individuals, culled to view) ──
       ctx.lineCap = 'butt';
+      const markSet = (li: number, m0: number, m1: number) => {   // one batched path over a slice range
+        if (m1 <= m0) return; const arr = arrs[li], top = yOf(li) - half, tick = li >= 4;
+        ctx.beginPath();
+        for (let i = m0; i < m1; i++) { const b = arr[i], w = Math.max((b.x1 - b.x0) * (tick ? 0.5 : 0.82), 0.0008); ctx.rect(b.x0 + (b.x1 - b.x0 - w) / 2, top + LAY.boxH * (tick ? 0.18 : 0.16), w, LAY.boxH * (tick ? 0.64 : 0.68)); }
+      };
       meta.forEach((m, li) => {
-        const yy = yOf(li);
+        const yy = yOf(li), [i0, i1] = visRange(li);
         if (glyphLOD(li)) {
-          const [i0, i1] = visRange(li);
           for (let i = i0; i < i1; i++) glyph(m.kind, arrs[li][i], yy, m.color, lit(li, i) ? 1 : 0.14);
+        } else if (!hi) {
+          markSet(li, i0, i1); ctx.fillStyle = m.color; ctx.globalAlpha = 0.78; ctx.fill(); ctx.globalAlpha = 1;
         } else {
-          ctx.fillStyle = m.color; ctx.globalAlpha = hi ? 0.06 : 0.18; rr(margin, yy - half, Wc, LAY.boxH, 0.12); ctx.fill();
-          ctx.globalAlpha = hi ? 0.18 : 0.55; ctx.strokeStyle = m.color; ctx.lineWidth = 0.5 / s; ctx.stroke(); ctx.globalAlpha = 1;
-          // selected chain: draw its (contiguous) range as one bright amber-edged sub-band — O(1), no per-thread loop
-          if (hi) { const a = arrs[li][hi.lo[li]], bx = arrs[li][Math.min(counts[li] - 1, hi.hi[li] - 1)]; if (a && bx) { ctx.fillStyle = m.color; ctx.globalAlpha = 0.6; rr(a.x0, yy - half, bx.x1 - a.x0, LAY.boxH, 0.1); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 0.7 / s; ctx.stroke(); } }
+          markSet(li, i0, i1); ctx.fillStyle = m.color; ctx.globalAlpha = 0.13; ctx.fill();          // dim all
+          markSet(li, Math.max(i0, hi.lo[li]), Math.min(i1, hi.hi[li])); ctx.fillStyle = m.color; ctx.globalAlpha = 1; ctx.fill();   // bright = selected range
+          ctx.globalAlpha = 1;
         }
         ctx.fillStyle = m.color; ctx.globalAlpha = 1; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.font = '0.66px sans-serif';
         ctx.fillText(m.label, 8.8, yy - 0.05);
@@ -489,7 +496,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: '2px solid var(--tx3)', verticalAlign: 'middle', marginRight: 5 }} /><b style={{ color: 'var(--tx2)' }}>层级间</b> 灰竖线 = 包含（父⊃子）
             </div>
             <div><span style={{ display: 'inline-block', width: 12, height: 6, borderTop: `2px solid ${UB_LEVELS[1].color}`, borderRadius: '8px 8px 0 0', verticalAlign: 'middle', marginRight: 5 }} /><b style={{ color: 'var(--tx2)' }}>层级内</b> 彩弧 = 同级互联（卡/节点/机柜 mesh · rank 集合通信）</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10, marginTop: 2 }}>{`全量${TOK.supernode}（${LAY.counts.card.toLocaleString()} 卡）· 缩小=每层聚合条，放大=个体+层内连线 · 点节点高亮上下游`}</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10, marginTop: 2 }}>{`全量${TOK.supernode}（${LAY.counts.card.toLocaleString()} 卡 / ${LAY.counts.thr.toLocaleString()} 线程）· 每层铺满全部单元，放大显示单个图元+层内连线 · 点节点高亮上下游`}</div>
             {selL && <div style={{ color: '#ffb020' }}>已选中：高亮其所属链路（上游父级 + 下游子级）· 再点取消</div>}
           </>
         )}
