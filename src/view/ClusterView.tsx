@@ -416,6 +416,8 @@ export function ClusterView() {
               enableDamping dampingFactor={0.08}
               minPolarAngle={0} maxPolarAngle={Math.PI / 2}
               minDistance={1.2} maxDistance={mode === 'fullpod' ? 360 : 60}
+              // middle-button drag pans (not dolly); wheel still zooms
+              mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN }}
             />
             {/* ViewCube navigation gizmo — click a face/edge/corner for a standard view (front/top/side/iso).
                 Latin face labels (the default webfont has no CJK glyphs). */}
