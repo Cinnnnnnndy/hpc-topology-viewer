@@ -399,7 +399,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const runSeg = phaseSegments('train');
     const cyc = (phaseRef.current * 0.07) % 1;
     const curPhase = play ? (runSeg.find((sg) => cyc < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
-    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.6 : curPhase.kind === 'comm' ? 0.55 : 0.42) : 0;
+    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
 
     // cards — full L3→L2→L1·L0 drill on zoom: card(4 Die) → 计算 Die → AI Core(Cube/Vector)
     const showBorder = s > 4, showId = s > 14, showDie = s > 26, showCore = s > 74;

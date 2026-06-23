@@ -1820,7 +1820,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const pm = procRef.current;   // L2 计算 Die markers (teal) — 2 per card (UMA-merged → 1 device), like the 平面视图
     if (pm) { col.set(ENTITY_COLORS.computeDie); for (let k = 0; k < G.N; k++) for (let d = 0; d < 2; d++) { const idx = k * 2 + d; m.makeScale(0.13, 0.09, 0.17); m.setPosition(G.cardX[k] + (d - 0.5) * 0.16, G.yProc, G.cardZ[k]); pm.setMatrixAt(idx, m); pm.setColorAt(idx, col); } pm.count = G.N * 2; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     const tm = thrRef.current;   // L1 AI Core grid (≈32/卡 representative) — mostly Cube(cyan) + a few Vector(light cyan), Cube∶Vector ≈ 8∶1
-    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t % 8 !== 7; const [dx, dz] = aicOff(t); col.set(cube ? ENTITY_COLORS.cube : ENTITY_COLORS.vector); m.makeScale(cube ? 0.024 : 0.018, 0.035, cube ? 0.024 : 0.018); m.setPosition(G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
+    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t % 8 !== 7; const [dx, dz] = aicOff(t); col.set(cube ? ENTITY_COLORS.cube : ENTITY_COLORS.vector); m.makeScale(cube ? 0.03 : 0.022, 0.04, cube ? 0.03 : 0.022); m.setPosition(G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
     if (tm) { tm.count = G.N * FP_THREADS; tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
     const lm = tileRef.current;   // L0 Tile / SIMT lane (finest) — thin light-cyan bars under each card, like the 平面视图 L0 lane glyph
     if (lm) { col.set(ENTITY_COLORS.vector); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_TILES; t++) { const idx = k * FP_TILES + t; m.makeScale(0.02, 0.05, 0.012); m.setPosition(G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]); lm.setMatrixAt(idx, m); lm.setColorAt(idx, col); } lm.count = G.N * FP_TILES; lm.instanceMatrix.needsUpdate = true; if (lm.instanceColor) lm.instanceColor.needsUpdate = true; }
@@ -1845,12 +1845,15 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const sCard = phase ? STATUS_COLORS[phase.kind] : STATUS_COLORS.idle;
     const sProc = commNow ? STATUS_COLORS.comm : STATUS_COLORS.idle;
     const sThr = computeNow ? STATUS_COLORS.compute : STATUS_COLORS.idle;
-    if (pm) for (let k = 0; k < G.N; k++) { if (status) col.set(sProc); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); } pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7; if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(cube ? cubeBase : vecBase); if (computeNow && tint) col.lerp(tint, 0.6); } tm.setColorAt(i, col); }
-    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_TILES)))); else { col.copy(tileBase); if (computeNow && tint) col.lerp(tint, 0.6); } lm.setColorAt(i, col); }
-    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (status) col.set(sCard); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) cm.setColorAt(c, col.set(LC.cabBase));
+    // playback (phase set, status overlay OFF): EVERY level tints toward the current phase
+    // colour across the whole timeline, so the entire tower visibly changes colour with the
+    // 时序 — the phase's "primary" level tints strongest, the rest get a clear secondary wash.
+    if (pm) for (let k = 0; k < G.N; k++) { if (status) col.set(sProc); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (tint) col.lerp(tint, commNow ? 0.78 : 0.5); } pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7; if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(cube ? cubeBase : vecBase); if (tint) col.lerp(tint, computeNow ? 0.72 : 0.5); } tm.setColorAt(i, col); }
+    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_TILES)))); else { col.copy(tileBase); if (tint) col.lerp(tint, computeNow ? 0.72 : 0.5); } lm.setColorAt(i, col); }
+    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (status) col.set(sCard); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (tint) col.lerp(tint, 0.5); } nm.setColorAt(k, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else { col.set(LC.bladeBase); if (tint && !status) col.lerp(tint, commNow ? 0.55 : 0.36); } bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { col.set(LC.cabBase); if (tint && !status && !onPart) col.lerp(tint, commNow ? 0.55 : 0.36); cm.setColorAt(c, col); }
     // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
     if (sel) {
       const cardsH: number[] = [], bladesH: number[] = [], cabsH: number[] = [];
