@@ -86,9 +86,9 @@ function Slab(props: {
   size: [number, number, number];
   position?: [number, number, number];
   color: string; metalness?: number; roughness?: number;
-  emissive?: string; emissiveIntensity?: number; edgeColor?: string; opacity?: number;
+  emissive?: string; emissiveIntensity?: number; edgeColor?: string; opacity?: number; toneMapped?: boolean;
 }) {
-  const { size, position, color, metalness = 0.3, roughness = 0.6, emissive, emissiveIntensity = 0, edgeColor, opacity } = props;
+  const { size, position, color, metalness = 0.3, roughness = 0.6, emissive, emissiveIntensity = 0, edgeColor, opacity, toneMapped } = props;
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
@@ -96,6 +96,7 @@ function Slab(props: {
         color={color} metalness={metalness} roughness={roughness}
         emissive={emissive ?? '#000000'} emissiveIntensity={emissiveIntensity}
         transparent={opacity !== undefined} opacity={opacity ?? 1}
+        toneMapped={toneMapped ?? true}
       />
       {edgeColor && <Edges color={edgeColor} threshold={20} />}
     </mesh>
@@ -2002,18 +2003,24 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // get their own colour AND thickness, not one colour per level.
   // thickness = BANDWIDTH (structural, per level — passed in `width`); colour = per-link UTILISATION
   // (load → discrete state). So 粗绿=大带宽但闲、细红=小带宽却被打满. (one state = one colour, no gradient)
-  const heatLines = (pts: [number, number, number][], loadFn: (s: number) => number, width: number, key: string) => {
+  const heatLines = (pts: [number, number, number][], loadFn: (s: number) => number, width: number, key: string, opacity = 0.9) => {
     if (pts.length === 0) return null;
     const cols: [number, number, number][] = [];
     for (let s = 0; s < pts.length / 2; s++) { const [r, g, b] = loadRGB(loadFn(s)); cols.push([r / 255, g / 255, b / 255], [r / 255, g / 255, b / 255]); }
-    return <Line key={key} points={pts} segments vertexColors={cols} lineWidth={width} transparent opacity={0.9} />;
+    return <Line key={key} points={pts} segments vertexColors={cols} lineWidth={width} transparent opacity={opacity} />;
   };
   const segLoad = (band: number, s: number): number => (((band * 7919 + s * 131 + 3) >>> 0) % 11 === 0 ? -1 : nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16));   // ~9% offline (灰)
   // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
   const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => {
     if (pts.length === 0) return false;
+    // the on-chip fans (band 7 = tile→core, band 1 = core→die) are by far the densest — at pod
+    // scale they flood the view and add no readable structure, so hide them unless that band is
+    // focused (click its label). Keeps the readable backbone: die→card→blade→cabinet→super.
+    const fine = upper === 7 || upper === 1;
+    if (fine && focus !== upper && G.N > 256) return false;
     return heat
-      ? heatLines(pts, (s) => segLoad(upper, s), bw, `b${upper}`)
+      // heat mode respects focus: bright on the focused band, faint elsewhere (was always 0.9 → dense)
+      ? heatLines(pts, (s) => segLoad(upper, s), bw, `b${upper}`, focus === null ? 0.5 : focus === upper ? 0.95 : 0.08)
       : <Line points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} transparent opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} />;
   };
   const xL = -G.fieldW / 2 - 0.9;
@@ -2132,12 +2139,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
       {/* within-level peer mesh (层级内): L1 card↔card (board) · L2 node↔node (cabinet) — per-link heatmap */}
       {/* thickness = bandwidth: L1 board (intra-blade, highest BW) thick · L2 cabinet thinner */}
+      {/* the full card↔card mesh is thousands of links → keep it a FAINT texture so it doesn't
+          flood the view; click a card/blade/cabinet for its own crisp peer mesh (cyan, below). */}
       {peers && G.l1mesh.length > 0 && (heat
-        ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 2.6, 'l1')
-        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={2.2} transparent opacity={focus === null ? 0.5 : 0.14} />)}
+        ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 1.4, 'l1', 0.3)
+        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.4} transparent opacity={focus === null ? 0.3 : 0.1} />)}
       {peers && G.l2mesh.length > 0 && (heat
-        ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.5, 'l2')
-        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.3} transparent opacity={focus === null ? 0.5 : 0.16} />)}
+        ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.0, 'l2', 0.32)
+        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.0} transparent opacity={focus === null ? 0.34 : 0.12} />)}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
@@ -2178,11 +2187,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
-            {/* observation: hot card = state box · non-hot = neutral blue-grey box (no type hue) · idle = chip */}
+            {/* observation: hot card = state box · non-hot = neutral blue-grey box (no type hue) · idle = chip.
+                state boxes share the SAME flat material as the L1/L2 markers (toneMapped off · no emissive)
+                so the busy red reads as ONE colour everywhere; a dark edge restores card-to-card definition. */}
             {lc
-              ? <Slab size={[0.34, 0.12, 0.34]} color={lc} emissive={lc} emissiveIntensity={0.5} edgeColor={sel0 ? '#4369ef' : undefined} />
+              ? <Slab size={[0.34, 0.13, 0.34]} color={lc} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
               : heat
-                ? <Slab size={[0.34, 0.1, 0.34]} color={LC.npuTop} edgeColor={sel0 ? '#4369ef' : undefined} />
+                ? <Slab size={[0.34, 0.1, 0.34]} color={LC.npuTop} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
                 : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })
