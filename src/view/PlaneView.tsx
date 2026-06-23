@@ -72,13 +72,27 @@ function runSwimlane(k: number, mode: RunMode) {
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
+// ── shared button language (solid colour blocks for emphasis, filled-secondary otherwise) ──
+const ACCENT = '#4369ef';
+const SECONDARY: React.CSSProperties = { border: '1px solid var(--btn-bd)', background: 'var(--btn)', color: 'var(--tx2)' };
+function inkOf(hex: string): string {
+  const h = hex.replace('#', ''); if (h.length < 6) return '#fff';
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#10131a' : '#fff';
+}
+function navBtn(active: boolean): React.CSSProperties {
+  return active ? { border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontWeight: 600, boxShadow: '0 1px 3px rgba(67,105,239,0.40)' } : { ...SECONDARY };
+}
+function toggleBtn(active: boolean, c: string): React.CSSProperties {
+  return active ? { border: `1px solid ${c}`, background: c, color: inkOf(c), fontWeight: 600 } : { ...SECONDARY };
+}
 
 export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
-    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.16)', cardN: '#2a2f3a', ink: 'rgba(255,255,255,0.80)', ink2: 'rgba(255,255,255,0.55)' }
-    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.18)', cardN: '#cfd6e2', ink: 'rgba(0,0,0,0.62)', ink2: 'rgba(0,0,0,0.55)' };
+    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(167,139,250,0.14)', frameBd: 'rgba(167,139,250,0.30)', bladeFill: 'rgba(255,255,255,0.035)' }
+    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(167,139,250,0.13)', frameBd: 'rgba(167,139,250,0.34)', bladeFill: 'rgba(0,0,0,0.025)' };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tf = useRef<{ s: number; tx: number; ty: number } | null>(null);   // world→screen transform
@@ -250,6 +264,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;   // context state persists across frames; force a fully-opaque clear (no ghosting)
     ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
+    // engineering dot-grid backdrop (screen-space, fixed pitch; offset by the pan so it
+    // reads like a drafting board / blueprint and gives the flat diagram 工程感)
+    { const gpitch = 24, ox = ((tx % gpitch) + gpitch) % gpitch, oy = ((ty % gpitch) + gpitch) % gpitch;
+      ctx.fillStyle = P.grid;
+      for (let gx = ox; gx < W; gx += gpitch) for (let gy = oy; gy < H; gy += gpitch) { ctx.beginPath(); ctx.arc(gx, gy, 0.9, 0, 7); ctx.fill(); } }
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
 
     // ── layered-hierarchy view: each level matrix-packed into a grid (like the top
@@ -388,11 +407,14 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;   // visible world rect (cull per-card detail)
 
-    // cabinets (L2) + blades (L1) containment frames
-    ctx.lineWidth = 1.2 / s; ctx.strokeStyle = UB_LEVELS[2].color; ctx.fillStyle = 'rgba(167,139,250,0.07)';
-    for (let cab = 0; cab < L.nC; cab++) { const [x, y] = cabXY(cab); ctx.fillRect(x, y, L.cw, L.ch); ctx.strokeRect(x, y, L.cw, L.ch); }
-    ctx.lineWidth = 0.8 / s; ctx.strokeStyle = UB_LEVELS[1].color;
-    for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); ctx.strokeRect(x, y, L.bw, L.bh); }
+    // cabinets (L2) + blades (L1) containment — solid colour BLOCKS, not bare strokes:
+    // cabinet = a soft filled panel (weak edge); blade = an even softer inner block. Fills
+    // carry the containment; strokes are de-emphasised (depth via stacked tints, like Figma).
+    const fr = Math.min(L.cw, L.ch) * 0.03;
+    ctx.fillStyle = P.frameFill; ctx.strokeStyle = P.frameBd; ctx.lineWidth = 0.6 / s;
+    for (let cab = 0; cab < L.nC; cab++) { const [x, y] = cabXY(cab); rrPath(ctx, x, y, L.cw, L.ch, fr); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = P.bladeFill;
+    for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); rrPath(ctx, x, y, L.bw, L.bh, fr * 0.7); ctx.fill(); }
 
     // playback: the whole pod runs the RUN_SCHED timeline (train) — every card tints to the
     // CURRENT phase colour (加载→前向→反向→AllReduce→优化器), matching the 执行时序 swimlane / 3D.
@@ -661,7 +683,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
           return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
-            style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
+            style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{lb}</button>;
         })}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
         {layout === 'top' ? (
@@ -669,22 +691,22 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>上色</span>
             {COLOR_BTNS.map((c) => {
               const on = colorBy === c.id; const sig = PARALLEL_COLORS[c.id];
-              return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? sig : 'var(--bd)'}`, background: on ? `${sig}1f` : 'transparent', color: on ? sig : 'var(--tx2)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: sig, display: 'inline-block', opacity: on ? 1 : 0.6 }} />{c.label}
+              return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...(c.id === 'none' ? navBtn(on) : toggleBtn(on, sig)) }}>
+                {c.id !== 'none' && <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? inkOf(sig) : sig, display: 'inline-block', opacity: on ? 0.9 : 0.6 }} />}{c.label}
               </button>;
             })}
             <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
-              style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, border: `1px solid ${links ? UB_LEVELS[1].color : 'var(--bd)'}`, background: links ? `${UB_LEVELS[1].color}22` : 'transparent', color: links ? 'var(--tx)' : 'var(--tx3)' }}>
-              <span style={{ width: 9, height: 3, background: UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 1 : 0.4 }} />连线
+              style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, ...toggleBtn(links, UB_LEVELS[1].color) }}>
+              <span style={{ width: 9, height: 3, background: links ? inkOf(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 0.9 : 0.5 }} />连线
             </button>
             <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
             {(['ring', 'a2a'] as const).map((sc) => {
               const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
               return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
-                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
+                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
             })}
             <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
-              style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
+              style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(play) }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 放大后点卡可继续选 Die / AI Core · 选中 = 右下 L0 执行时序`}</span>
           </>
         ) : (
@@ -801,14 +823,14 @@ function RunSwimlane({ card, sub, ink2, onClose }: { card: number; sub: string |
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
         <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序</span>
         <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card} · rank ${card}`}{sub ? ` · ${sub}` : ''}</span>
-        <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 6px' }}>✕</button>
+        <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', ...SECONDARY, borderRadius: 7, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 7px' }}>✕</button>
       </div>
       {/* transport: play / pause + train / infer toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: `1px solid ${playing ? ENTITY_COLORS.cube : 'var(--bd)'}`, background: playing ? `${ENTITY_COLORS.cube}1f` : 'transparent', color: playing ? ENTITY_COLORS.cube : 'var(--tx2)' }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
+        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...toggleBtn(playing, ENTITY_COLORS.cube) }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
         {(['train', 'infer'] as RunMode[]).map((m) => {
           const on = mode === m;
-          return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{m === 'train' ? '训练' : '推理'}</button>;
+          return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{m === 'train' ? '训练' : '推理'}</button>;
         })}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5 }}>
           <span style={{ color: '#04d793' }}>算力 {sw.util}%</span>
