@@ -21,6 +21,27 @@ function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, 
   ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
   ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
 }
+// ── L0 run-state swimlane (核 × 时间) — illustrative, deterministic per card so it's
+// stable. This is where L0's finest grain actually shows: 计算(绿) / 访存等待(橙) / 流水
+// 气泡(空). The aggregate util/mem/bubble % is the "整体状况" roll-up of L0. ──
+function mulberry(seed: number) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const SW_T = 56, SW_LANES = ['AIC·Cube', 'AIV·Vector 0', 'AIV·Vector 1', 'AIC·Cube', 'AIV·Vector 2', 'AIV·Vector 3'];
+function swimlane(k: number) {
+  const rng = mulberry((k * 2654435761 + 12345) >>> 0);
+  let comp = 0, mem = 0, bub = 0, tot = 0;
+  const rows = SW_LANES.map((name) => {
+    const slots: string[] = []; let st = 'compute';
+    for (let t = 0; t < SW_T; t++) {
+      const r = rng();   // sticky-ish: mostly compute, occasional mem-wait → bubble
+      if (st === 'compute') st = r < 0.14 ? 'mem' : r < 0.19 ? 'bubble' : 'compute';
+      else if (st === 'mem') st = r < 0.5 ? 'compute' : r < 0.68 ? 'bubble' : 'mem';
+      else st = r < 0.62 ? 'compute' : 'bubble';
+      slots.push(st); tot++; if (st === 'compute') comp++; else if (st === 'mem') mem++; else bub++;
+    }
+    return { name, slots };
+  });
+  return { rows, util: Math.round((comp / tot) * 100), mem: Math.round((mem / tot) * 100), bub: Math.round((bub / tot) * 100) };
+}
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
 ];
@@ -539,6 +560,14 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     return parts;
   })();
 
+  // which card is selected → drives the L0 swimlane drill-down (top: the card; layered:
+  // the card that owns the selected card/die/core/tile cell)
+  const swCard = (() => {
+    if (layout === 'top') return selTop;
+    if (selL) { const Lv = LAY.levels[selL.lvl]; if (['card', 'die', 'core', 'tile'].includes(Lv.kind)) return Math.floor(selL.idx / (Lv.count / LAY.cardN)); }
+    return null;
+  })();
+
   return (
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, zIndex: 11, background: 'var(--bg2)', overflow: 'hidden' }}>
       <canvas
@@ -577,7 +606,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             })}
             <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
               style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 点击卡=${selTop != null ? '已选中(再点取消)' : '选中高亮'}`}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 点击卡 = 选中高亮 + 底部 L0 执行时序 swimlane`}</span>
           </>
         ) : (
           <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1)→Tile(L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
@@ -588,8 +617,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         {layout === 'top' ? (
           <>
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
-            <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L2 机柜框（含 8 刀片）</div>
-            <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L1 刀片框（含 8 卡）</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><span style={{ color: '#ff4b7b' }}>L7 作业</span> ⊃ <span style={{ color: '#04d793' }}>L6 集群({LAY.nSuper} {TOK.supernode})</span> ⊃ <span style={{ color: ENTITY_COLORS.super }}>L5 本{TOK.supernode}(1/{LAY.nSuper})</span> ↓ 以下为本超节点展开</div>
+            <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />机柜框（机器域·含 8 刀片）</div>
+            <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
             <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.computeDie, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.ioDie, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: ENTITY_COLORS.cube, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: ENTITY_COLORS.vector, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector)</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
@@ -608,7 +638,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
-            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=其上游父级 + 下游子级链路 · 再点取消' : '点任一格 → 高亮上下游链路 + 右上详情'}</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 底部 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 底部 L0 swimlane'}</div>
           </>
         )}
       </div>
@@ -645,6 +675,40 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 {lq.note && <div style={{ color: 'var(--tx3)', fontSize: 9.5, marginTop: 2, fontStyle: 'italic' }}>{lq.note}</div>}
               </div>
             ); })()}
+          </div>
+        );
+      })()}
+      {/* L0 执行时序 swimlane (核 × 时间) — drill-down that opens when a card is selected.
+          This is where L0's finest grain / 流水气泡 / 访存等待 actually shows. */}
+      {swCard != null && (() => {
+        const sw = swimlane(swCard), W = 760, laneH = 16, padL = 96, slotW = (W - padL - 14) / SW_T;
+        return (
+          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: W, maxWidth: 'calc(100vw - 40px)', padding: '9px 12px 8px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序 · swimlane（核 × 时间）</span>
+              <span style={{ color: 'var(--tx3)' }}>{`device #${swCard} · rank ${swCard}`}</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontWeight: 600 }}>
+                <span style={{ color: '#04d793' }}>算力利用 {sw.util}%</span>
+                <span style={{ color: '#ffaa3b' }}>访存等待 {sw.mem}%</span>
+                <span style={{ color: 'var(--tx3)' }}>流水气泡 {sw.bub}%</span>
+              </span>
+              <button onClick={() => { setSelTop(null); setSelL(null); }} title="关闭" style={{ border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 6px' }}>✕</button>
+            </div>
+            <svg width={W - 24} height={sw.rows.length * laneH + 14} style={{ display: 'block' }}>
+              {Array.from({ length: 5 }, (_, g) => <line key={g} x1={padL + (g + 1) * (SW_T / 5) * slotW} y1={0} x2={padL + (g + 1) * (SW_T / 5) * slotW} y2={sw.rows.length * laneH} stroke="var(--bd)" strokeWidth={0.5} />)}
+              {sw.rows.map((r, ri) => (
+                <g key={ri} transform={`translate(0,${ri * laneH})`}>
+                  <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={9} fill={P.ink2}>{r.name}</text>
+                  {r.slots.map((sState, ti) => sState === 'bubble' ? null : (
+                    <rect key={ti} x={padL + ti * slotW} y={2} width={Math.max(0.8, slotW - 0.5)} height={laneH - 4} rx={1} fill={sState === 'compute' ? '#04d793' : '#ffaa3b'} opacity={sState === 'compute' ? 0.85 : 0.85} />
+                  ))}
+                </g>
+              ))}
+              <text x={padL} y={sw.rows.length * laneH + 11} fontSize={8.5} fill={P.ink2}>← 时间 t →</text>
+            </svg>
+            <div style={{ color: 'var(--tx3)', fontSize: 10, marginTop: 2 }}>
+              <span style={{ color: '#04d793' }}>■</span> 计算(Cube/Vector) · <span style={{ color: '#ffaa3b' }}>■</span> 访存等待(MTE 搬运) · ▢ 空=流水气泡 · 这是 L0 最细粒度运行态(示意)；气泡/访存多 → 算力没打满
+            </div>
           </div>
         );
       })()}
