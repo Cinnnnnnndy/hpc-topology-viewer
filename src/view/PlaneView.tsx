@@ -28,6 +28,36 @@ function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, 
   ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
   ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
 }
+// ── simplified abstract glyphs for the physical devices — same flat solid-block +
+// inset-detail language as cabinet/blade/card/die, so they read as objects (not text):
+//   cpu = chip (inset die + edge pins) · switch = fabric (top ports + crossing) ·
+//   lpo = optical module (lanes + lens) · nic = network card (port slot + connector tab) ·
+//   port = a small connector tab (UB 绿 / RDMA 橙). cx,cy = centre · w,h = footprint. ──
+type DevType = 'cpu' | 'switch' | 'lpo' | 'nic' | 'port';
+function devGlyph(ctx: CanvasRenderingContext2D, type: DevType, cx: number, cy: number, w: number, h: number, color: string) {
+  const x = cx - w / 2, y = cy - h / 2, DK = 'rgba(0,0,0,0.34)', LT = 'rgba(255,255,255,0.82)', mn = Math.min(w, h);
+  ctx.fillStyle = color;
+  if (type === 'port') {   // connector tab with a notch
+    rrPath(ctx, x, y, w, h, mn * 0.3); ctx.fill();
+    ctx.fillStyle = DK; ctx.fillRect(x + w * 0.42, y + h * 0.18, w * 0.16, h * 0.64); return;
+  }
+  rrPath(ctx, x, y, w, h, mn * 0.2); ctx.fill();
+  if (type === 'cpu') {            // chip: inset die + edge pins
+    ctx.fillStyle = DK; rrPath(ctx, x + w * 0.27, y + h * 0.24, w * 0.46, h * 0.52, mn * 0.08); ctx.fill();
+    ctx.fillStyle = color; for (let i = 0; i < 3; i++) { const py = y + h * (0.26 + i * 0.24); ctx.fillRect(x - w * 0.08, py, w * 0.08, h * 0.12); ctx.fillRect(x + w, py, w * 0.08, h * 0.12); }
+  } else if (type === 'switch') {  // fabric: top ports + crossing lines
+    ctx.fillStyle = color; for (let i = 0; i < 4; i++) ctx.fillRect(x + w * (0.1 + i * 0.24), y - h * 0.16, w * 0.1, h * 0.18);
+    ctx.strokeStyle = LT; ctx.lineWidth = mn * 0.07; ctx.beginPath();
+    ctx.moveTo(x + w * 0.26, y + h * 0.38); ctx.lineTo(x + w * 0.74, y + h * 0.72); ctx.moveTo(x + w * 0.74, y + h * 0.38); ctx.lineTo(x + w * 0.26, y + h * 0.72); ctx.stroke();
+  } else if (type === 'lpo') {     // optical module: 2 lanes + a lens
+    ctx.strokeStyle = LT; ctx.lineWidth = h * 0.1; ctx.beginPath();
+    ctx.moveTo(x + w * 0.12, y + h * 0.36); ctx.lineTo(x + w * 0.52, y + h * 0.36); ctx.moveTo(x + w * 0.12, y + h * 0.64); ctx.lineTo(x + w * 0.52, y + h * 0.64); ctx.stroke();
+    ctx.fillStyle = LT; ctx.beginPath(); ctx.arc(x + w * 0.74, y + h * 0.5, mn * 0.16, 0, 7); ctx.fill();
+  } else if (type === 'nic') {     // network card: port slot + bottom connector tab
+    ctx.fillStyle = DK; ctx.fillRect(x + w * 0.2, y + h * 0.28, w * 0.42, h * 0.18);
+    ctx.fillStyle = color; ctx.fillRect(x + w * 0.4, y + h, w * 0.2, h * 0.2);
+  }
+}
 // ── L0 执行时序 swimlane (核 × 时间) — segmented by the SAME train/infer phases as the
 // 3-D full-pod view (load→Forward→Backward→AllReduce→optimizer). Each phase colours the
 // cores by what they do: 计算(绿) / 访存(橙) / 通信等待(粉) / 加载(蓝) / 流水气泡(空).
@@ -351,9 +381,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               ctx.fillStyle = PLANES[0].color; ctx.beginPath(); ctx.arc(dx, ny - ws * 0.052, ws * 0.016, 0, 7); ctx.fill();
               ctx.fillStyle = PLANES[1].color; ctx.beginPath(); ctx.arc(dx, ny + ws * 0.052, ws * 0.016, 0, 7); ctx.fill();
             }
-            // device blocks
+            // device objects (simplified abstract glyphs, unified with cabinet/card/die)
             ctx.globalAlpha = A;
-            for (let i = 0; i < 4; i++) { ctx.fillStyle = dcol[i]; const cx = x + ws * dxs[i]; rr(cx - ws * 0.058, dy - ws * 0.05, ws * 0.116, ws * 0.1, ws * 0.03); ctx.fill(); }
+            const ndtype: DevType[] = ['cpu', 'switch', 'lpo', 'nic'];
+            for (let i = 0; i < 4; i++) devGlyph(ctx, ndtype[i], x + ws * dxs[i], dy, ws * 0.12, ws * 0.1, dcol[i]);
           } else if (px > 7) { ctx.fillStyle = LT(0.55 * A); for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.045, 0, 7); ctx.fill(); } }
         } else if (kind === 'card') {   // 950 package = solid card block carrying 4 Die sub-blocks
           ctx.globalAlpha = 0.32 * A; rr(x, y, ws, ws, ws * 0.12); ctx.fill();
@@ -365,9 +396,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             ctx.globalAlpha = 0.9 * A; rr(x0 + dw, y0 + dh * 0.32, g, dh * 0.36, dh * 0.12); ctx.fill();   // UMA bridge = solid block
             ctx.fillStyle = ENTITY_COLORS.ioDie; ctx.globalAlpha = 0.62 * A;   // 2 IO Die (solid grey)
             rr(x0, y1, dw, dh, ws * 0.04); ctx.fill(); rr(x1, y1, dw, dh, ws * 0.04); ctx.fill();
-            // NPU 物理端口：UB 口(绿·scale-up) + RDMA 口(橙·scale-out)
-            ctx.globalAlpha = A; ctx.fillStyle = PLANES[0].color; ctx.beginPath(); ctx.arc(x + ws - ws * 0.09, y + ws * 0.1, ws * 0.05, 0, 7); ctx.fill();
-            ctx.fillStyle = PLANES[1].color; ctx.beginPath(); ctx.arc(x + ws - ws * 0.09, y + ws * 0.26, ws * 0.05, 0, 7); ctx.fill();
+            // NPU 物理端口：UB 口(绿·scale-up) + RDMA 口(橙·scale-out) — 连接器 tab 图元
+            ctx.globalAlpha = A;
+            devGlyph(ctx, 'port', x + ws - ws * 0.1, y + ws * 0.1, ws * 0.15, ws * 0.09, PLANES[0].color);
+            devGlyph(ctx, 'port', x + ws - ws * 0.1, y + ws * 0.26, ws * 0.15, ws * 0.09, PLANES[1].color);
           } else {   // too small → a single solid compute-die hint band
             ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.7 * A;
             rr(x + ws * 0.16, y + ws * 0.22, ws * 0.68, ws * 0.3, ws * 0.05); ctx.fill();
@@ -504,9 +536,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       // shows the 950 package = 4 Die (2 compute UMA + 2 IO); zoom further → each compute
       // Die reveals its AI Core array (Cube/Vector) — SAME glyph/colour as the 层级图.
       if (showId && x + L.cs >= vx0 && x <= vx1 && y + L.cs >= vy0 && y <= vy1) {
-        // NPU 物理端口：UB 口(绿·scale-up) + RDMA/RoCE 口(橙·scale-out) — 卡上不同 SerDes 组
-        ctx.fillStyle = PLANES[0].color; ctx.beginPath(); ctx.arc(x + L.cs * 0.86, y + L.cs * 0.12, L.cs * 0.06, 0, 7); ctx.fill();
-        ctx.fillStyle = PLANES[1].color; ctx.beginPath(); ctx.arc(x + L.cs * 0.86, y + L.cs * 0.26, L.cs * 0.06, 0, 7); ctx.fill();
+        // NPU 物理端口：UB 口(绿·scale-up) + RDMA/RoCE 口(橙·scale-out) — 连接器 tab 图元
+        devGlyph(ctx, 'port', x + L.cs * 0.85, y + L.cs * 0.13, L.cs * 0.16, L.cs * 0.1, PLANES[0].color);
+        devGlyph(ctx, 'port', x + L.cs * 0.85, y + L.cs * 0.27, L.cs * 0.16, L.cs * 0.1, PLANES[1].color);
         ctx.fillStyle = P.ink; ctx.textAlign = 'center'; ctx.font = '0.26px sans-serif';
         ctx.textBaseline = showDie ? 'top' : 'middle';
         ctx.fillText(`r${k}`, x + L.cs / 2, y + (showDie ? 0.05 : L.cs / 2));
@@ -556,10 +588,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.strokeStyle = PLANES[1].color; ctx.beginPath(); ctx.moveTo(dxs[2], dy - dh2 / 2); ctx.lineTo(dxs[2], cardsBottomY); ctx.stroke();   // LPO ← NPU RDMA 口
         ctx.strokeStyle = PLANES[2].color; ctx.beginPath(); ctx.moveTo(dxs[0], dy); ctx.lineTo(dxs[3], dy); ctx.stroke();                       // CPU → NIC
         ctx.globalAlpha = 1;
-        for (let i = 0; i < 4; i++) { ctx.fillStyle = dcol[i]; rrPath(ctx, dxs[i] - dw2 / 2, dy - dh2 / 2, dw2, dh2, dh2 * 0.26); ctx.fill(); }
-        if (s > 34) {   // labels once big enough
-          ctx.fillStyle = '#0b1020'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${L.cs * 0.11}px sans-serif`;
-          for (let i = 0; i < 4; i++) ctx.fillText(dlbl[i], dxs[i], dy);
+        const dtype: DevType[] = ['cpu', 'switch', 'lpo', 'nic'];
+        for (let i = 0; i < 4; i++) devGlyph(ctx, dtype[i], dxs[i], dy, dw2, dh2, dcol[i]);
+        if (s > 34) {   // labels under the glyphs once big enough (graphic + text)
+          ctx.fillStyle = P.ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `${L.cs * 0.1}px sans-serif`;
+          for (let i = 0; i < 4; i++) ctx.fillText(dlbl[i], dxs[i], dy + dh2 * 0.62);
         }
       }
     }

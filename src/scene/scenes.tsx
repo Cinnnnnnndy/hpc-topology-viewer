@@ -1874,7 +1874,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (di) {
       const dcol = ['#4a8cff', PLANES[0].color, '#36e0c4', PLANES[2].color];   // CPU · L1交换 · LPO · NIC
       const dxo = [-0.33, -0.11, 0.11, 0.33];
-      for (let b = 0; b < G.nBlades; b++) for (let i = 0; i < 4; i++) { const idx = b * 4 + i; m.makeScale(0.1, 0.08, 0.1); m.setPosition(G.bladeMX[b] + dxo[i], G.yBlade + 0.08, G.bladeMZ[b] + 0.32); di.setMatrixAt(idx, m); di.setColorAt(idx, col.set(dcol[i])); }
+      // distinct proportions per device → simplified abstract shapes (unified w/ card/die blocks):
+      // CPU = cube · 交换 = wide flat slab · LPO = long thin module · NIC = small card
+      const dsc: [number, number, number][] = [[0.1, 0.1, 0.1], [0.21, 0.05, 0.08], [0.06, 0.05, 0.18], [0.09, 0.07, 0.07]];
+      for (let b = 0; b < G.nBlades; b++) for (let i = 0; i < 4; i++) { const idx = b * 4 + i; m.makeScale(dsc[i][0], dsc[i][1], dsc[i][2]); m.setPosition(G.bladeMX[b] + dxo[i], G.yBlade + 0.06 + dsc[i][1] / 2, G.bladeMZ[b] + 0.32); di.setMatrixAt(idx, m); di.setColorAt(idx, col.set(dcol[i])); }
       di.count = G.nBlades * 4; di.instanceMatrix.needsUpdate = true; if (di.instanceColor) di.instanceColor.needsUpdate = true;
     }
   }, [G, planes]);
