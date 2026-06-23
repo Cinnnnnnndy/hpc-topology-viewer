@@ -216,7 +216,31 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       y += h + gap;
       return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count };   // grp = children per parent
     });
-    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
+    // ── 器件互联平面 (device-interconnect plane): a SEPARATE band below the containment
+    //    tree — the super-node's FULL complement of NPU / CPU / LPO / NIC as four matrices
+    //    (全量), plus a representative 刀片 wiring schematic naming the 5 link types
+    //    (板内 NPU mesh · 板间 NPU · NPU-CPU · NPU-LPO · NIC-CPU). It is NOT part of the
+    //    containment selection tree (these are SIBLING devices, not parent/child), so it
+    //    lives in `dev`, leaving `levels`/grp/层级选择 untouched. ──
+    const nNode = nCab * 8;                                   // 刀片(节点) total
+    const PER = { npu: 8, cpu: 4, lpo: 4, nic: 4 };           // schematic per-node device count (real config not public)
+    const devDefs = [
+      { kind: 'npu_d', count: N,               color: ENTITY_COLORS.card, label: 'NPU',  per: PER.npu, ar: 5.0 },
+      { kind: 'cpu_d', count: nNode * PER.cpu, color: DEV_CPU,            label: 'CPU',  per: PER.cpu, ar: 7.0 },
+      { kind: 'lpo_d', count: nNode * PER.lpo, color: DEV_LPO,            label: 'LPO',  per: PER.lpo, ar: 7.0 },
+      { kind: 'nic_d', count: nNode * PER.nic, color: PLANES[2].color,    label: 'NIC',  per: PER.nic, ar: 7.0 },
+    ];
+    y += gap * 1.6;
+    const devHeaderH = 3.2, devHeaderY = y; y += devHeaderH + gap * 1.1;
+    const wiringH = 27, wiringY = y; y += wiringH + gap * 1.5;
+    const mats = devDefs.map((d) => {
+      const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
+      const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
+      y += h + gap;
+      return { ...d, cols, cell, rows, y0, h };
+    });
+    const dev = { headerY: devHeaderY, headerH: devHeaderH, wiringY, wiringH, mats, nNode, per: PER };
+    return { levels, dev, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
@@ -483,6 +507,95 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.globalAlpha = 1;
       }
 
+      // ── 器件互联平面：全量 NPU/CPU/LPO/NIC 矩阵 + 代表性刀片连线（板内/板间 NPU · NPU-CPU · NPU-LPO · NIC-CPU） ──
+      const dev = LAY.dev;
+      const devKind: Record<string, DevType> = { cpu_d: 'cpu', lpo_d: 'lpo', nic_d: 'nic' };
+      // section header bar
+      if (dev.headerY < vy1 && dev.headerY + dev.headerH > vy0) {
+        ctx.fillStyle = 'rgba(124,141,184,0.16)'; rr(margin, dev.headerY, Wc, dev.headerH, dev.headerH * 0.3); ctx.fill();
+        ctx.fillStyle = P.ink; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.font = `700 ${Math.min(1.8, dev.headerH * 0.5)}px sans-serif`;
+        ctx.fillText('器件互联平面 · 全量 NPU / CPU / LPO / NIC + 连接关系', margin + dev.headerH * 0.55, dev.headerY + dev.headerH / 2);
+        ctx.textAlign = 'right'; ctx.globalAlpha = 0.82; ctx.font = `${Math.min(1.45, dev.headerH * 0.38)}px ${MONO}`;
+        const cN = dev.mats.map((m) => m.count);
+        ctx.fillText(`${cN[0].toLocaleString()} NPU · ${cN[1].toLocaleString()} CPU · ${cN[2].toLocaleString()} LPO · ${cN[3].toLocaleString()} NIC`, margin + Wc - dev.headerH * 0.4, dev.headerY + dev.headerH / 2);
+        ctx.globalAlpha = 1;
+      }
+
+      // representative 刀片 wiring schematic (fixed size — readable at any matrix zoom)
+      if (dev.wiringY < vy1 && dev.wiringY + dev.wiringH > vy0) {
+        const wx = margin, wy = dev.wiringY, wW = Wc, wH = dev.wiringH;
+        ctx.fillStyle = 'rgba(124,141,184,0.07)'; rr(wx, wy, wW, wH, 1.3); ctx.fill();
+        ctx.strokeStyle = 'rgba(124,141,184,0.28)'; ctx.lineWidth = 0.08; ctx.setLineDash([]); rr(wx, wy, wW, wH, 1.3); ctx.stroke();
+        ctx.fillStyle = P.ink2; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = '600 1.45px sans-serif';
+        ctx.fillText('代表性刀片（节点）器件互联 · 8 NPU + 4 CPU + 4 LPO + 4 NIC · 线型=平面：实线 UB · 长虚 scale-out(光) · 点线 VPC', wx + 1.5, wy + 1);
+        const yN0 = wy + wH * 0.34, yN1 = wy + wH * 0.55, yDev = wy + wH * 0.82;
+        const npuC: [number, number][] = [];
+        for (let i = 0; i < 8; i++) { const c = i % 4, r = Math.floor(i / 4); npuC.push([wx + wW * (0.085 + 0.072 * c), r === 0 ? yN0 : yN1]); }
+        const lpoC: [number, number][] = [], cpuC: [number, number][] = [], nicC: [number, number][] = [];
+        for (let i = 0; i < 4; i++) { lpoC.push([wx + wW * (0.09 + 0.05 * i), yDev]); cpuC.push([wx + wW * (0.40 + 0.05 * i), yDev]); nicC.push([wx + wW * (0.63 + 0.05 * i), yDev]); }
+        const exit: [number, number] = [wx + wW * 0.92, yN0 - wH * 0.06];
+        // link stroke: line-STYLE encodes plane (type); COLOUR encodes utilisation when playing, else neutral
+        const wire = (style: 'ub' | 'so' | 'vpc', w: number, a: number, b: number, boost: number, alpha = 0.7) => {
+          const ld = curPhase ? linkLoad(a, b, boost) : -2;
+          ctx.setLineDash(style === 'ub' ? [] : style === 'so' ? [wW * 0.014, wW * 0.009] : [wW * 0.0035, wW * 0.0085]);
+          ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.globalAlpha = alpha;
+          ctx.strokeStyle = ld <= -2 ? 'rgba(150,168,205,0.85)' : loadColor(ld);
+        };
+        const seg = (p: [number, number], q: [number, number]) => { ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); };
+        // 1) 板内 NPU full-mesh (UB·scale-up · 实线 · 大带宽=粗)
+        for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) { wire('ub', 0.07, 700 + i, 700 + j, curPhase?.kind === 'comm' ? 0.3 : -0.05, 0.4); seg(npuC[i], npuC[j]); }
+        // 2) NPU→CPU (UB · 实线)  3) NPU→LPO (scale-out 光 · 长虚)
+        for (let i = 0; i < 8; i++) { wire('ub', 0.09, 810 + i, 300 + (i % 4), -0.08); seg(npuC[i], cpuC[i % 4]); wire('so', 0.085, 820 + i, 400 + (i % 4), curPhase?.kind === 'comm' ? 0.25 : -0.1); seg(npuC[i], lpoC[i % 4]); }
+        // 4) NIC→CPU (VPC · 点线 · 南北向小带宽=细)
+        for (let i = 0; i < 4; i++) { wire('vpc', 0.06, 500 + i, 300 + i, -0.2); seg(nicC[i], cpuC[i]); }
+        // 5) 板间 NPU (scale-out · 长虚 · 离开刀片 → 其它超节点)
+        wire('so', 0.10, 700 + 3, 999, curPhase?.kind === 'comm' ? 0.3 : 0); seg(npuC[3], exit);
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        // arrowhead on the inter-board exit
+        ctx.fillStyle = curPhase ? loadColor(linkLoad(703, 999, 0)) : 'rgba(150,168,205,0.95)';
+        ctx.beginPath(); ctx.moveTo(exit[0], exit[1]); ctx.lineTo(exit[0] - wW * 0.013, exit[1] - wW * 0.008); ctx.lineTo(exit[0] - wW * 0.013, exit[1] + wW * 0.008); ctx.closePath(); ctx.fill();
+        // device glyphs ON TOP of the wires
+        const gw = wW * 0.03, gh = wH * 0.16;
+        npuC.forEach((c, i) => {
+          ctx.fillStyle = curPhase ? heatOf(880 + i) : ENTITY_COLORS.card; rr(c[0] - gw / 2, c[1] - gh / 2, gw, gh, gh * 0.3); ctx.fill();
+          ctx.fillStyle = PLANES[0].color; ctx.beginPath(); ctx.arc(c[0] - gw * 0.22, c[1] - gh * 0.5, gw * 0.16, 0, 7); ctx.fill();
+          ctx.fillStyle = PLANES[1].color; ctx.beginPath(); ctx.arc(c[0] + gw * 0.22, c[1] - gh * 0.5, gw * 0.16, 0, 7); ctx.fill();
+        });
+        lpoC.forEach((c, i) => devGlyph(ctx, 'lpo', c[0], c[1], gw * 1.15, gh, curPhase ? heatOf(400 + i) : DEV_LPO));
+        cpuC.forEach((c, i) => devGlyph(ctx, 'cpu', c[0], c[1], gw * 1.15, gh, curPhase ? heatOf(300 + i) : DEV_CPU));
+        nicC.forEach((c, i) => devGlyph(ctx, 'nic', c[0], c[1], gw * 1.15, gh, curPhase ? heatOf(500 + i) : PLANES[2].color));
+        // cluster labels + link-type callouts
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '0.95px sans-serif'; ctx.fillStyle = P.ink2;
+        ctx.fillText('NPU ×8 · 板内 UB full-mesh', wx + wW * 0.20, yN1 + gh * 0.7);
+        ctx.fillText('LPO ×4', lpoC[1][0] + wW * 0.025, yDev + gh * 0.62);
+        ctx.fillText('CPU ×4', cpuC[1][0] + wW * 0.025, yDev + gh * 0.62);
+        ctx.fillText('NIC ×4', nicC[1][0] + wW * 0.025, yDev + gh * 0.62);
+        ctx.fillStyle = '#9fb6ff'; ctx.textAlign = 'left';
+        ctx.fillText('板间 NPU (scale-out) → 其它刀片/超节点', exit[0] - wW * 0.20, exit[1] - wH * 0.10);
+      }
+
+      // four full-count device matrices (全量)
+      dev.mats.forEach((M, mi) => {
+        if (M.y0 > vy1 || M.y0 + M.h < vy0) return;
+        const cellPx = M.cell * s, pad = M.cell * 0.16;
+        const c0 = Math.max(0, Math.floor((vx0 - margin) / M.cell)), c1 = Math.min(M.cols, Math.ceil((vx1 - margin) / M.cell));
+        const r0 = Math.max(0, Math.floor((vy0 - M.y0) / M.cell)), r1 = Math.min(M.rows, Math.ceil((vy1 - M.y0) / M.cell));
+        if (cellPx >= 3) {
+          for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+            const i = r * M.cols + c; if (i >= M.count) break;
+            const x = margin + c * M.cell + pad, y = M.y0 + r * M.cell + pad, ws = M.cell - pad * 2;
+            const base = curPhase ? heatOf(7000 + mi * 131 + i) : M.color;
+            if (mi > 0 && cellPx > 9) { devGlyph(ctx, devKind[M.kind], x + ws / 2, y + ws / 2, ws * 0.8, ws * 0.68, base); }
+            else {
+              ctx.fillStyle = base; ctx.globalAlpha = 0.92; rr(x, y, ws, ws, ws * 0.24); ctx.fill(); ctx.globalAlpha = 1;
+              if (mi === 0 && cellPx > 12) { devGlyph(ctx, 'port', x + ws * 0.74, y + ws * 0.3, ws * 0.36, ws * 0.2, PLANES[0].color); devGlyph(ctx, 'port', x + ws * 0.74, y + ws * 0.64, ws * 0.36, ws * 0.2, PLANES[1].color); }
+            }
+          }
+        } else {
+          ctx.fillStyle = curPhase ? heatOf(7000 + mi * 131) : M.color; ctx.globalAlpha = 0.5; rr(margin, M.y0, Wc, M.h, 0.25); ctx.fill(); ctx.globalAlpha = 1;
+        }
+      });
+
       ctx.restore();
       // ── per-level axis labels — CONSTANT screen-pixel size (don't scale with fit/zoom),
       //    drawn in the fixed left gutter so the matrices use the full width ──
@@ -500,6 +613,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         // per-level physical plane tag (NPU 端口 / CPU / LPO / NIC 落在哪一层 · 见右侧详情)
         const phys = LEVEL_PHYS[Lv.kind];
         if (phys) { ctx.fillStyle = phys.color; ctx.font = '600 9.5px sans-serif'; ctx.fillText(`◆ ${PLANE_TAG[phys.plane]}`, lx, yy); }
+      });
+      // device-plane band labels (header + the four full-count matrices)
+      { const hy = ty + (LAY.dev.headerY + LAY.dev.headerH / 2) * s;
+        if (hy > 6 && hy < H - 2) { ctx.fillStyle = P.ink; ctx.textBaseline = 'middle'; ctx.font = '700 12px sans-serif'; ctx.fillText('器件互联', lx, hy); } }
+      LAY.dev.mats.forEach((M) => {
+        const sy = ty + (M.y0 + Math.min(M.h / 2, 3)) * s;
+        if (sy < 6 || sy > H - 2) return;
+        ctx.fillStyle = M.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
+        ctx.fillText(M.label, lx, sy);
+        ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${M.count.toLocaleString()}`, lx, sy + 14);
+        ctx.fillStyle = '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${M.per}/刀片`, lx, sy + 27);
       });
       phaseBanner();
       return;
@@ -862,7 +986,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 放大后点卡可继续选 Die / AI Core · 选中 = 右下 L0 执行时序`}</span>
           </>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1)→Tile(L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core · 底部「器件互联平面」全量 NPU/CPU/LPO/NIC + 连线 · 按 ${TOK.ub} L0–L7 下探`}</span>
         )}
       </div>
       {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
@@ -909,6 +1033,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 点格看右上对齐`}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
             <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 4, paddingTop: 4, fontWeight: 600, color: 'var(--tx2)' }}>器件互联平面（底部）· 全量器件 + 连接</div>
+            <div>
+              <span style={{ display: 'inline-block', width: 9, height: 9, background: ENTITY_COLORS.card, borderRadius: 2, verticalAlign: '-1px', marginRight: 4 }} />NPU ×{LAY.dev.mats[0].count.toLocaleString()}
+              <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_CPU, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />CPU ×{LAY.dev.mats[1].count.toLocaleString()}
+              <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_LPO, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />LPO ×{LAY.dev.mats[2].count.toLocaleString()}
+              <span style={{ display: 'inline-block', width: 9, height: 9, background: PLANES[2].color, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />NIC ×{LAY.dev.mats[3].count.toLocaleString()}</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>连线线型=平面：
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px solid var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />实线 板内 NPU mesh / NPU-CPU（UB·SU） ·
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dashed var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />长虚 板间 NPU / NPU-LPO（scale-out·光） ·
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 NIC-CPU（VPC）</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>颜色=利用率（播放时·红黄绿+灰离线）/ 粗细=带宽 · 中部为代表性刀片接线图，上方四格为全量矩阵</div>
           </>
         ))}
       </div>
