@@ -87,14 +87,18 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [colorBy, setColorBy] = useState<PartitionDim>('none');
   const [links, setLinks] = useState(true);   // draw card↔card (L1) + node↔node (L2) connections
   const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
-  const [play, setPlay] = useState(false);          // scenario playback (animated hop-by-hop flow)
+  const [playing, setPlaying] = useState(true);     // 执行时序 playback (drives card phase-wash + flow + swimlane) — on by default
+  const [runMode, setRunMode] = useState<RunMode>('train');   // 执行时序 mode: train / infer
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
   const [layout, setLayout] = useState<'top' | 'layers'>('top');   // top-down map vs. layered hierarchy
   const [legendOpen, setLegendOpen] = useState(true);   // collapsible legend (avoids occluding the diagram on small screens)
+  const [swOpen, setSwOpen] = useState(true);   // 执行时序 swimlane shown by default
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
   const [selTop, setSelTop] = useState<{ k: number; die?: number; core?: number } | null>(null);   // top-view selection (card, or a Die / AI Core when zoomed in)
   const downXY = useRef<{ x: number; y: number } | null>(null);   // pointer-down (click vs drag)
-  const phaseRef = useRef(0);                       // flow animation phase
+  const phaseRef = useRef(0);                       // flow (marching-ants) animation phase
+  const headRef = useRef(0);                        // 执行时序 play head (0..1), shared by the card-wash + swimlane
+  const lastPhaseRef = useRef('');                  // last-drawn phase id (skip redundant overview redraws)
   const rafRef = useRef<number | null>(null);
 
   // ── layout in world units ──
@@ -394,11 +398,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ctx.lineWidth = 0.8 / s; ctx.strokeStyle = UB_LEVELS[1].color;
     for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); ctx.strokeRect(x, y, L.bw, L.bh); }
 
-    // playback: the whole pod runs the RUN_SCHED timeline (train) — every card tints to the
-    // CURRENT phase colour (加载→前向→反向→AllReduce→优化器), matching the 执行时序 swimlane / 3D.
-    const runSeg = phaseSegments('train');
-    const cyc = (phaseRef.current * 0.07) % 1;
-    const curPhase = play ? (runSeg.find((sg) => cyc < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
+    // playback: the whole pod runs the RUN_SCHED 执行时序 — every card tints to the CURRENT
+    // phase colour (加载→前向→反向→AllReduce→优化器). Same head as the 执行时序 swimlane (headRef).
+    const runSeg = phaseSegments(runMode);   // wash always reflects the head (frozen when paused); only the head ADVANCE is gated by `playing`
+    const curPhase = swOpen ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
     const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
 
     // cards — full L3→L2→L1·L0 drill on zoom: card(4 Die) → 计算 Die → AI Core(Cube/Vector)
@@ -476,7 +479,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // ── scenario playback: animated hop-by-hop flow (marching ants) ──
     // Ring-AllReduce → staged L1 (intra-blade) then L2 (intra-cabinet); All-to-All
     // → L2 cross-blade full-mesh emphasised. Reads as "卡→刀片→机柜逐跳流动".
-    if (play) {
+    if (playing) {
       const ph = phaseRef.current, cyc = ph % 1;
       const col = scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
       const l1A = scenario === 'ring' ? (cyc < 0.5 ? 1 : 0.3) : 0.45;
@@ -566,20 +569,34 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.globalAlpha = 1; ctx.strokeStyle = curPhase.color; ctx.lineWidth = 1.4; rrPath(ctx, bx, 12, bw, 26, 8); ctx.stroke();
       ctx.fillStyle = curPhase.color; ctx.fillText(label, W / 2, 25);
     }
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL, selTop, P.bg]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, playing, runMode, scenario, layout, selL, selTop, swOpen, P.bg]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
-  useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setPlay(false); }, [layout]);
+  useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
 
-  // scenario playback loop: advance the flow phase and redraw
+  // 执行时序 master clock: advances the play head (card-wash + flow), shared with the swimlane
+  // via headRef. Runs in both layouts (so the swimlane head keeps moving); only the top view
+  // needs a per-frame canvas redraw for the wash/flow.
   useEffect(() => {
-    if (!play || layout !== 'top') { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; return; }
-    const loop = () => { phaseRef.current += 0.02; draw(); rafRef.current = requestAnimationFrame(loop); };
+    if (!playing) { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; return; }
+    let last = performance.now();
+    const seg = phaseSegments(runMode);
+    const loop = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      headRef.current = (headRef.current + dt / 7) % 1;   // ≈7s per training iteration
+      phaseRef.current += dt * 1.4;                       // marching-ants dash offset
+      if (layout === 'top') {
+        const id = (seg.find((s) => headRef.current < s.t1)?.p ?? seg[seg.length - 1].p).id;
+        const flowVisible = !!tf.current && tf.current.s * L.cs > 4;   // ants/flow drawn only when zoomed in
+        if (flowVisible || id !== lastPhaseRef.current) { lastPhaseRef.current = id; draw(); }   // else colour is constant within a phase → skip
+      }
+      rafRef.current = requestAnimationFrame(loop);
+    };
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
-  }, [play, draw, layout]);
+  }, [playing, draw, layout]);
   useEffect(() => {
     const onR = () => { tf.current = null; draw(); };   // re-fit on resize
     window.addEventListener('resize', onR);
@@ -604,11 +621,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // a click (no drag) selects: layered → up/down-stream chain · top → a card (persistent highlight)
     if (downXY.current && Math.abs(e.clientX - downXY.current.x) + Math.abs(e.clientY - downXY.current.y) < 5) {
       const [wx, wy] = toWorld(e.clientX, e.clientY);
-      if (layout === 'layers') { const hit = pickLayer(wx, wy); setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit)); }
+      if (layout === 'layers') { const hit = pickLayer(wx, wy); setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit)); if (hit) setSwOpen(true); }
       else {
         const k = pick(wx, wy);
         if (k == null) setSelTop(null);
-        else { const sub = subPick(wx, wy, k); setSelTop((prev) => (prev && prev.k === k && prev.die === sub.die && prev.core === sub.core ? null : { k, ...sub })); }
+        else { const sub = subPick(wx, wy, k); setSelTop((prev) => (prev && prev.k === k && prev.die === sub.die && prev.core === sub.core ? null : { k, ...sub })); setSwOpen(true); }
       }
     }
     downXY.current = null; drag.current = null; try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* noop */ }
@@ -632,11 +649,14 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
   // which card is selected → drives the L0 swimlane drill-down (top: the card; layered:
   // the card that owns the selected card/die/core/tile cell)
+  // swimlane is shown by DEFAULT (card 0 as a representative); selecting a card/Die/AI Core
+  // just switches which device it profiles.
   const swCard = (() => {
-    if (layout === 'top') return selTop?.k ?? null;
+    if (layout === 'top') return selTop?.k ?? 0;
     if (selL) { const Lv = LAY.levels[selL.lvl]; if (['card', 'die', 'core', 'tile'].includes(Lv.kind)) return Math.floor(selL.idx / (Lv.count / LAY.cardN)); }
-    return null;
+    return 0;
   })();
+  const swDefault = (layout === 'top' ? selTop == null : !selL);   // showing the default representative device (no explicit selection)
   // sub-context label for the swimlane header (which Die / AI Core, when finer-selected)
   const swSub = (() => {
     if (layout === 'top' && selTop) {
@@ -680,11 +700,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
             {(['ring', 'a2a'] as const).map((sc) => {
               const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-              return <button key={sc} onClick={() => { setScenario(sc); setPlay(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+              return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
                 style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? c : 'var(--bd)'}`, background: on ? `${c}1f` : 'transparent', color: on ? c : 'var(--tx2)' }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
             })}
-            <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
-              style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
+            <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（卡随相位变色 + 数据流动 + 右下 swimlane）"
+              style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${playing ? '#4369ef' : 'var(--bd)'}`, background: playing ? 'rgba(67,105,239,0.12)' : 'transparent', color: playing ? '#4369ef' : 'var(--tx2)' }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
             <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 放大后点卡可继续选 Die / AI Core · 选中 = 右下 L0 执行时序`}</span>
           </>
         ) : (
@@ -706,8 +726,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
-            {play && <div style={{ color: 'var(--tx3)' }}>卡的颜色随执行时序相位变化（加载→前向→反向→AllReduce→优化器）· 顶部条显示当前相位</div>}
+            {playing && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>卡的颜色随执行时序相位变化（加载→前向→反向→AllReduce→优化器）· 顶部条显示当前相位</div>}
           </>
         ) : (
           <>
@@ -760,9 +780,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </div>
         );
       })()}
-      {/* L0 执行时序 swimlane — bottom-right drill-down, phase-driven (load→Forward→
-          Backward→AllReduce→optimizer, like the 3-D 时序) with a play head sweeping the phases. */}
-      {swCard != null && <RunSwimlane card={swCard} sub={swSub} ink2={P.ink2} onClose={() => { setSelTop(null); setSelL(null); }} />}
+      {/* L0 执行时序 swimlane — shown by default (bottom-right), phase-driven (load→Forward→
+          Backward→AllReduce→optimizer). Its play head + the card phase-wash share ONE clock (headRef). */}
+      {swOpen && <RunSwimlane card={swCard} sub={swSub} isDefault={swDefault} ink2={P.ink2}
+        headRef={headRef} mode={runMode} setMode={setRunMode} playing={playing} setPlaying={setPlaying}
+        onClose={() => { setSwOpen(false); setSelTop(null); setSelL(null); }} />}
       {/* hover tooltip */}
       {tip && tipInfo && (
         <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'var(--panel)', border: '1px solid var(--bd2)', borderRadius: 10, pointerEvents: 'none', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: 'var(--tx)' }}>
@@ -776,19 +798,20 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 // ── L0 执行时序 swimlane — a compact, bottom-right drill-down that opens on selection.
 // Phase-driven like the 3-D full-pod 时序: a phase band (load→Forward→Backward→AllReduce→
 // optimizer) with a play head sweeping it, and a per-core swimlane that lights up by phase.
-function RunSwimlane({ card, sub, ink2, onClose }: { card: number; sub: string | null; ink2: string; onClose: () => void }) {
-  const [mode, setMode] = useState<RunMode>('train');
-  const [playing, setPlaying] = useState(true);
-  const [head, setHead] = useState(0);   // play head 0..1 across the phase timeline
+function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playing, setPlaying, onClose }: {
+  card: number; sub: string | null; isDefault: boolean; ink2: string; headRef: React.MutableRefObject<number>;
+  mode: RunMode; setMode: (m: RunMode) => void; playing: boolean; setPlaying: (f: (v: boolean) => boolean) => void; onClose: () => void;
+}) {
+  const [, force] = useState(0);   // re-render each frame to follow the SHARED play head (headRef)
   const raf = useRef<number | null>(null);
   const sw = useMemo(() => runSwimlane(card, mode), [card, mode]);
   useEffect(() => {
-    if (!playing) { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; return; }
-    let last = performance.now();
-    const loop = (now: number) => { const dt = (now - last) / 1000; last = now; setHead((h) => (h + dt / 7) % 1); raf.current = requestAnimationFrame(loop); };
+    if (!playing) return;
+    const loop = () => { force((f) => f + 1); raf.current = requestAnimationFrame(loop); };
     raf.current = requestAnimationFrame(loop);
     return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
   }, [playing]);
+  const head = headRef.current;
   const cur = sw.seg.find((s) => head < s.t1) ?? sw.seg[sw.seg.length - 1];
 
   const W = 372, padL = 80, phH = 18, laneH = 12;
@@ -800,7 +823,7 @@ function RunSwimlane({ card, sub, ink2, onClose }: { card: number; sub: string |
       {/* header: title + device + close */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
         <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序</span>
-        <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card} · rank ${card}`}{sub ? ` · ${sub}` : ''}</span>
+        <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card}`}{sub ? ` · ${sub}` : isDefault ? '（默认示例·点卡切换）' : ` · rank ${card}`}</span>
         <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 6px' }}>✕</button>
       </div>
       {/* transport: play / pause + train / infer toggle */}
