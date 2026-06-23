@@ -1973,16 +1973,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // OBSERVATION: per-LINK load → split a line set's segments into 3 thickness buckets, each a Line
   // with per-segment vertex colours (load heatmap). So individual links — within OR between levels —
   // get their own colour AND thickness, not one colour per level.
-  const heatLines = (pts: [number, number, number][], loadFn: (s: number) => number, baseW: number, key: string) => {
+  // thickness = BANDWIDTH (structural, per level — passed in `width`); colour = per-link UTILISATION
+  // (load → discrete state). So 粗绿=大带宽但闲、细红=小带宽却被打满. (one state = one colour, no gradient)
+  const heatLines = (pts: [number, number, number][], loadFn: (s: number) => number, width: number, key: string) => {
     if (pts.length === 0) return null;
-    const W = [baseW * 0.5, baseW * 1.15, baseW * 2.1];
-    const bins: { pts: [number, number, number][]; cols: [number, number, number][] }[] = [{ pts: [], cols: [] }, { pts: [], cols: [] }, { pts: [], cols: [] }];
-    for (let s = 0; s < pts.length / 2; s++) {
-      const ld = Math.max(0, Math.min(1, loadFn(s))), bi = ld < 0.4 ? 0 : ld < 0.7 ? 1 : 2;
-      const [r, g, b] = loadRGB(ld), cc: [number, number, number] = [r / 255, g / 255, b / 255];
-      bins[bi].pts.push(pts[s * 2], pts[s * 2 + 1]); bins[bi].cols.push(cc, cc);
-    }
-    return <group>{bins.map((bk, bi) => bk.pts.length > 0 && <Line key={`${key}-${bi}`} points={bk.pts} segments vertexColors={bk.cols} lineWidth={W[bi]} transparent opacity={0.88} />)}</group>;
+    const cols: [number, number, number][] = [];
+    for (let s = 0; s < pts.length / 2; s++) { const [r, g, b] = loadRGB(loadFn(s)); cols.push([r / 255, g / 255, b / 255], [r / 255, g / 255, b / 255]); }
+    return <Line key={key} points={pts} segments vertexColors={cols} lineWidth={width} transparent opacity={0.9} />;
   };
   const segLoad = (band: number, s: number): number => nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16);
   // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
@@ -2038,12 +2035,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
       {/* within-level peer mesh (层级内): L1 card↔card (board) · L2 node↔node (cabinet) — per-link heatmap */}
+      {/* thickness = bandwidth: L1 board (intra-blade, highest BW) thick · L2 cabinet thinner */}
       {peers && G.l1mesh.length > 0 && (heat
-        ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 1.4, 'l1')
-        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.2} transparent opacity={focus === null ? 0.5 : 0.14} />)}
+        ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 2.6, 'l1')
+        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={2.2} transparent opacity={focus === null ? 0.5 : 0.14} />)}
       {peers && G.l2mesh.length > 0 && (heat
-        ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.4, 'l2')
-        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.2} transparent opacity={focus === null ? 0.5 : 0.16} />)}
+        ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.5, 'l2')
+        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.3} transparent opacity={focus === null ? 0.5 : 0.16} />)}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}

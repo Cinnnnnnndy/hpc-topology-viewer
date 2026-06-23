@@ -510,7 +510,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) {
           const mx = (c[i][0] + c[j][0]) / 2, my = (c[i][1] + c[j][1]) / 2;
           if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) continue;   // cull off-screen links
-          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = (0.6 + ld * 1.9) / s; }   // pure state colour (no bg blend); thickness = magnitude
+          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 0.95 / s; }   // 颜色=利用率 · 粗细=带宽（L2 机柜内，低于板载）
           else { ctx.strokeStyle = mute(UB_LEVELS[2].color); ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
           ctx.beginPath(); ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); ctx.stroke();
         }
@@ -523,7 +523,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const seg = (ka: number, kb: number, pa: [number, number], pb: [number, number]) => {
         const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
         if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) return;   // cull
-        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = (0.5 + ld * 1.5) / s; }   // pure state colour; thickness = magnitude
+        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 1.5 / s; }   // 颜色=利用率 · 粗细=带宽（L1 板载，最高 BW → 最粗）
         else { ctx.strokeStyle = mute(UB_LEVELS[1].color); ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
         ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
       };
@@ -782,7 +782,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
             {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>负载 4 档：空闲/中/高/满（拥塞）</span></div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>连线逐条按负载着色+粗细；卡只在满(拥塞)时上色（少量热点），其余中性 · 顶部条=当前相位</div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在满时上色 · 顶部=当前相位</div>}
           </>
         ) : (
           <>

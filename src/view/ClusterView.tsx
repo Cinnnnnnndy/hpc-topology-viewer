@@ -878,7 +878,7 @@ export function ClusterView() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
                   {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
-                <span style={lgNote}>连线逐条按负载着色 + 粗细（层级内/间各不同）</span>
+                <span style={lgNote}>连线 颜色=利用率 · 粗细=带宽（粗绿=大带宽闲 / 细红=小带宽打满）</span>
                 <span style={lgNote}>卡只在 满/拥塞 时上色（少量热点），其余保持中性</span>
                 <span style={lgNote}>播放(有相位) 或 开"负载/观测"时显示</span>
                 {/* selection highlight */}
