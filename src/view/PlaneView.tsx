@@ -693,26 +693,48 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         }
       }
     }
-    // node physical devices drawn AS OBJECTS inside each blade frame (like the cards/Die):
-    // 鲲鹏 CPU(蓝) · L1 UB 交换(绿) · LPO 光模块(青) · 擎天 NIC(紫) — sitting in the blade's bottom
-    // margin, wired to the NPU ports by plane colour (NPU UB口→交换·绿 / NPU RDMA口→LPO·橙 / CPU→NIC·紫).
-    if (showId && s * L.bpad > 4) {
-      const dw2 = L.cs * 0.5, dh2 = L.cs * 0.3;
-      const dcol = [DEV_CPU, PLANES[0].color, DEV_LPO, PLANES[2].color];
-      const dlbl = ['CPU', '交换', 'LPO', 'NIC'];
+    // node host-side device relationships — drawn AS CONNECTOR LINES BY DEFAULT (together with
+    // the NPU mesh, whenever 连线 is on), so the 3 latter relationships show without deep zoom:
+    //   NPU-CPU (UB·实线) · NPU-LPO (scale-out 光·长虚) · NIC-CPU (VPC·点线).
+    // Line-style = plane; colour=利用率 · 粗细=带宽 while playing, else neutral. The device
+    // OBJECTS (鲲鹏 CPU · L1 交换 · LPO · 擎天 NIC) + labels still appear on zoom (below).
+    const devDxs = (bx: number) => [0.16, 0.4, 0.62, 0.84].map((f) => bx + L.bw * f);
+    if (links && s * L.bw > 14) {
+      const boost = curPhase?.kind === 'comm' ? 0.2 : -0.15;
+      const hostWire = (style: 'ub' | 'so' | 'vpc', w: number, sa: number, sb: number, p: [number, number], q: [number, number]) => {
+        ctx.setLineDash(style === 'ub' ? [] : style === 'so' ? [L.bw * 0.05, L.bw * 0.035] : [L.bw * 0.012, L.bw * 0.03]);
+        ctx.lineWidth = w / s; ctx.lineCap = 'round';
+        ctx.strokeStyle = curPhase ? loadColor(linkLoad(sa, sb, boost)) : 'rgba(150,168,205,0.72)';
+        ctx.globalAlpha = curPhase ? 0.9 : 0.62;
+        ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+      };
+      const dotR = L.cs * 0.09, ddot = [DEV_CPU, DEV_LPO, PLANES[2].color];
       for (let b = 0; b < L.nB; b++) {
         const [bx, by] = bladeXY(Math.floor(b / BPC), b % BPC);
         if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
         const dy = by + L.bh - L.bpad * 0.5;                         // device row (blade bottom margin)
         const cardsBottomY = by + L.bpad + 2 * L.cs + L.gap;          // bottom of the 2 card rows
-        const dxs = [0.16, 0.4, 0.62, 0.84].map((f) => bx + L.bw * f);
-        // plane connectors (under the objects)
-        ctx.lineWidth = 1.1 / s; ctx.globalAlpha = 0.7;
-        ctx.strokeStyle = PLANES[0].color; ctx.beginPath(); ctx.moveTo(dxs[1], dy - dh2 / 2); ctx.lineTo(dxs[1], cardsBottomY); ctx.stroke();   // 交换 ← NPU UB 口
-        ctx.strokeStyle = PLANES[1].color; ctx.beginPath(); ctx.moveTo(dxs[2], dy - dh2 / 2); ctx.lineTo(dxs[2], cardsBottomY); ctx.stroke();   // LPO ← NPU RDMA 口
-        ctx.strokeStyle = PLANES[2].color; ctx.beginPath(); ctx.moveTo(dxs[0], dy); ctx.lineTo(dxs[3], dy); ctx.stroke();                       // CPU → NIC
-        ctx.globalAlpha = 1;
-        const dtype: DevType[] = ['cpu', 'switch', 'lpo', 'nic'];
+        const dxs = devDxs(bx);
+        hostWire('ub',  1.3, b * 131 + 11, b * 131 + 21, [dxs[0], cardsBottomY], [dxs[0], dy]);   // NPU → 鲲鹏 CPU (UB·SU)
+        hostWire('so',  1.2, b * 131 + 12, b * 131 + 22, [dxs[2], cardsBottomY], [dxs[2], dy]);   // NPU → LPO (scale-out 光)
+        hostWire('vpc', 0.9, b * 131 + 13, b * 131 + 23, [dxs[3], dy],           [dxs[0], dy]);   // 擎天 NIC → CPU (VPC)
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        // endpoint device dots (so the connectors read as device→device even before the glyphs)
+        const dpos = [dxs[0], dxs[2], dxs[3]];
+        for (let i = 0; i < 3; i++) { ctx.fillStyle = ddot[i]; ctx.beginPath(); ctx.arc(dpos[i], dy, dotR, 0, 7); ctx.fill(); }
+      }
+    }
+    // node physical devices drawn AS OBJECTS (鲲鹏 CPU · L1 交换 · LPO · 擎天 NIC) — need zoom to be legible
+    if (showId && s * L.bpad > 4) {
+      const dw2 = L.cs * 0.5, dh2 = L.cs * 0.3;
+      const dcol = [DEV_CPU, PLANES[0].color, DEV_LPO, PLANES[2].color];
+      const dlbl = ['CPU', '交换', 'LPO', 'NIC'];
+      const dtype: DevType[] = ['cpu', 'switch', 'lpo', 'nic'];
+      for (let b = 0; b < L.nB; b++) {
+        const [bx, by] = bladeXY(Math.floor(b / BPC), b % BPC);
+        if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
+        const dy = by + L.bh - L.bpad * 0.5;
+        const dxs = devDxs(bx);
         for (let i = 0; i < 4; i++) devGlyph(ctx, dtype[i], dxs[i], dy, dw2, dh2, dcol[i]);
         if (s > 34) {   // labels under the glyphs once big enough (graphic + text)
           ctx.fillStyle = P.ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `${L.cs * 0.1}px sans-serif`;
@@ -971,7 +993,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 {c.id !== 'none' && <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? inkOf(sig) : sig, display: 'inline-block', opacity: on ? 0.9 : 0.6 }} />}{c.label}
               </button>;
             })}
-            <button onClick={() => setLinks((v) => !v)} title="卡↔卡（L1 板载）+ 节点↔节点（L2 机柜内）连线，放大后显示"
+            <button onClick={() => setLinks((v) => !v)} title="连线：板内/板间 NPU（UB mesh）+ NPU-CPU · NPU-LPO · NIC-CPU（线型=平面），默认显示"
               style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, ...toggleBtn(links, UB_LEVELS[1].color) }}>
               <span style={{ width: 9, height: 3, background: links ? inkOf(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 0.9 : 0.5 }} />连线
             </button>
@@ -1002,7 +1024,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
             <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: M_DIE, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: M_IO, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: M_CUBE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: M_VEC, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector·靠形状区分)</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 2, paddingTop: 2 }}>放大刀片后显示物理器件（对象）+ 连线：
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 2, paddingTop: 2 }}>主机侧连线默认显示；放大刀片后显示物理器件（对象）：
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[0].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />NPU UB 口
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[1].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />RDMA 口 ·
               <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_CPU, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />CPU
@@ -1010,7 +1032,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_LPO, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />LPO
               <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />擎天 NIC</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
-            {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
+            {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />板内 NPU(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />板间 NPU(L2)</div>}
+            {links && <div style={{ color: 'var(--tx3)', fontSize: 10 }}>主机侧连线（默认显示·线型=平面）：
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px solid var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />实线 NPU-CPU(UB) ·
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dashed var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />长虚 NPU-LPO(SO·光) ·
+              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 NIC-CPU(VPC)</div>}
             {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线</span></div>}
             {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在繁忙时上色 · 红黄绿=状态、蓝灰=结构 · 顶部=当前相位</div>}
           </>

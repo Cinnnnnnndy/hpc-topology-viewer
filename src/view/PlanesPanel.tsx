@@ -96,7 +96,7 @@ function NodeSchematic() {
 }
 
 export function PlanesPanel() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);   // collapsed by default — relationship is shown in the views; pill expands on demand
 
   const pill: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 6, padding: '5px 11px', fontSize: 11.5, fontWeight: 600,
