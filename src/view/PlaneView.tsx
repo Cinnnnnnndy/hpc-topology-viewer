@@ -708,16 +708,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.globalAlpha = curPhase ? 0.9 : 0.62;
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
       };
-      const dotR = L.cs * 0.09, ddot = [DEV_CPU, DEV_LPO, PLANES[2].color];
+      const dotR = Math.max(L.cs * 0.1, 2.4 / s), ddot = [DEV_CPU, DEV_LPO, PLANES[2].color];   // screen-constant min so dots read at overview
       for (let b = 0; b < L.nB; b++) {
         const [bx, by] = bladeXY(Math.floor(b / BPC), b % BPC);
         if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
         const dy = by + L.bh - L.bpad * 0.5;                         // device row (blade bottom margin)
-        const cardsBottomY = by + L.bpad + 2 * L.cs + L.gap;          // bottom of the 2 card rows
+        const npuY = by + L.bpad + L.cs * 0.5;                        // start from the card area so the vertical legs are tall enough to read
         const dxs = devDxs(bx);
-        hostWire('ub',  1.3, b * 131 + 11, b * 131 + 21, [dxs[0], cardsBottomY], [dxs[0], dy]);   // NPU → 鲲鹏 CPU (UB·SU)
-        hostWire('so',  1.2, b * 131 + 12, b * 131 + 22, [dxs[2], cardsBottomY], [dxs[2], dy]);   // NPU → LPO (scale-out 光)
-        hostWire('vpc', 0.9, b * 131 + 13, b * 131 + 23, [dxs[3], dy],           [dxs[0], dy]);   // 擎天 NIC → CPU (VPC)
+        hostWire('ub',  2.0, b * 131 + 11, b * 131 + 21, [dxs[0], npuY], [dxs[0], dy]);   // NPU → 鲲鹏 CPU (UB·SU · 实线)
+        hostWire('so',  1.8, b * 131 + 12, b * 131 + 22, [dxs[2], npuY], [dxs[2], dy]);   // NPU → LPO (scale-out 光 · 长虚)
+        hostWire('vpc', 1.4, b * 131 + 13, b * 131 + 23, [dxs[3], dy],   [dxs[0], dy]);   // 擎天 NIC → CPU (VPC · 点线)
         ctx.setLineDash([]); ctx.globalAlpha = 1;
         // endpoint device dots (so the connectors read as device→device even before the glyphs)
         const dpos = [dxs[0], dxs[2], dxs[3]];
