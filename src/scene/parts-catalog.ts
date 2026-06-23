@@ -58,7 +58,7 @@ export const PARTS_CATALOG: CatalogPart[] = [
     realMM: [133, 31, 4],
     modelRotationDeg: [0, 0, 0],
     usedIn: ['节点视图'],
-    hint: 'KiCad kicad-packages3D / GrabCAD: "DDR5 RDIMM", "DIMM 288-pin"',
+    hint: 'GrabCAD: "DDR5 RDIMM"/"DDR4 DIMM" STEP（KiCad packages3D 实测无 DIMM 库）；或把 .SLDPRT 在 SolidWorks 另存 STEP',
   },
   {
     id: 'optic-osfp-module',
@@ -70,9 +70,11 @@ export const PARTS_CATALOG: CatalogPart[] = [
   {
     id: 'dpu-nic-card',
     label: 'DPU / 网卡（PCIe 卡）',
-    realMM: [167, 19, 69],
+    realMM: [167, 19, 111],
+    // model's long axis is X; rotate so it runs along the blade depth (Z)
+    modelRotationDeg: [0, 90, 0],
     usedIn: ['节点视图'],
-    hint: 'GrabCAD/OCP: "PCIe NIC half height", "DPU card", "OCP 3.0 mezzanine"',
+    hint: '已接入（PCIe 半高网卡 STEP）。换型可找 GrabCAD/OCP: "PCIe NIC", "OCP 3.0 mezzanine"',
   },
   {
     id: 'compute-blade',

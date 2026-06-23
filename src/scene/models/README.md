@@ -51,7 +51,7 @@ node scripts/step-to-glb.mjs <输入.step> <part-id>
 | ★ | 计算刀片 / 液冷节点托盘 | `compute-blade.glb` | 880×130×740 | 机柜 · UB层级(L2) · 阵列全景 | GrabCAD：`server blade`,`liquid cooled tray`,`GPU server tray` |
 | ★ | 计算机柜（19" 整柜） | `cabinet-compute.glb` | 600×2235×1200 | 全景总览 · UB层级(L3) | GrabCAD/OCP：`server rack 42U`,`ORV3 rack`（**低面数**，总览有上百实例） |
 |  | 通信柜（UB 交换整柜） | `cabinet-switch.glb` | 600×2235×1200 | 全景总览 | 同上，可同款换面板配色 |
-|  | DDR5 RDIMM 内存条 | `mem-ddr5-rdimm.glb` | 133×31×4 | 节点 | KiCad kicad-packages3D / GrabCAD：`DDR5 RDIMM`,`DIMM 288-pin` |
+|  | DDR5 RDIMM 内存条 | `mem-ddr5-rdimm.glb` | 133×31×4 | 节点 | GrabCAD：`DDR5 RDIMM`/`DDR4 DIMM` STEP（KiCad packages3D 实测无 DIMM 库）|
 |  | 光模块 / OSFP 收发器 | `optic-osfp-module.glb` | 100×17×22 | 节点(光口) · UB交换 | TraceParts/GrabCAD：`OSFP`,`QSFP-DD`,`optical transceiver 800G` |
 |  | DPU / 网卡（PCIe 卡） | `dpu-nic-card.glb` | 167×19×69 | 节点 | GrabCAD/OCP：`PCIe NIC half height`,`OCP 3.0 mezzanine` |
 |  | UB 交换托盘 / 线卡 | `ub-switch-line-card.glb` | 500×88×700 | 机柜(通信柜交换单元) | GrabCAD：`switch line card`,`1U switch tray` |
@@ -69,7 +69,7 @@ node scripts/step-to-glb.mjs <输入.step> <part-id>
 | **Sketchfab** | 免费 | 直接 GLB | 外观好看的整件（CPU/模组/机柜），筛 CC-BY/CC0 |
 | **GrabCAD** | 免费 | STEP/IGES | 工业件齐全（刀片/电源/机柜/导轨/歧管），逐件看许可 |
 | **TraceParts / 3DContentCentral** | 免费 | STEP/GLB | 真实型号连接器、光模块、滑轨 |
-| **KiCad kicad-packages3D** (GitHub) | 免登录 | STEP/WRL | DIMM / 连接器 / 芯片，质量高 |
+| **KiCad kicad-packages3D** (GitLab) | 免登录 | STEP/WRL | 连接器 / 芯片封装（注意：**无 DIMM/DDR 库**）|
 | **OCP** opencompute.org | 免登录 | STEP | OCP 网卡 / ORV3 机架 / 托盘 |
 
 ---
