@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
   SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, loadColor,
-  memLayers,
+  memLayers, PLANES,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -26,6 +26,7 @@ import {
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
+import { PlanesPanel } from './PlanesPanel';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -461,6 +462,10 @@ export function ClusterView() {
           {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
 
+          {/* physical-device layer & three planes (UB scale-up / RDMA scale-out / VPC) —
+              shown across all 3-D sub-views incl. 阵列全景; PlaneView renders its own */}
+          {mode !== 'plane' && <PlanesPanel />}
+
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
           {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
             <div style={{
@@ -885,6 +890,15 @@ export function ClusterView() {
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
                 <LgRow color="#22d3ee" label="同级 peer mesh（卡/节点）" />
                 <span style={lgNote}>单击 卡 / 刀片 / 机柜高亮 · 双击进卡</span>
+                {/* three physical planes (details in 顶部「三平面 / 物理器件」面板) */}
+                <div style={lgHdr}>三平面 · 物理器件</div>
+                {PLANES.map((p) => (
+                  <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 3, background: p.color, display: 'inline-block', borderRadius: 1 }} />
+                    <span style={{ color: 'var(--tx2)' }}>{`${p.short} · ${p.parallel}`}</span>
+                  </span>
+                ))}
+                <span style={lgNote}>竖向骨干＝scale-up(UB·绿)/scale-out(RDMA·橙)；详见顶部面板</span>
                 {/* run phases (phase-wash colours) */}
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}

@@ -198,6 +198,88 @@
   </div>
 </section>
 
+<!-- ②·B 物理器件 & 三平面 -->
+<section>
+  <div class="sh"><div class="n" style="font-size:11px">②ᴮ</div><h2>物理器件 &amp; 三平面：UB scale-up / RDMA scale-out / VPC</h2></div>
+  <div class="sdesc">上一张把“NPU 经 UB 全互联”当一根逻辑线；物理上一颗 NPU 有<b>两类不同的对外端口</b>，CPU 经 NIC 走第三平面。把逻辑线展开为“NPU 端口 → 铜/LPO → 交换”的物理链，并按 scale-up（TP/EP 落此）/ scale-out（DP/PP 落此）/ VPC（南北向）三平面着色。</div>
+  <div class="card">
+    <svg viewBox="0 0 1080 430" role="img" aria-label="物理器件与三平面">
+      <g font-family="inherit" font-size="12.5">
+        <!-- NPU die -->
+        <rect x="40" y="60" width="170" height="150" rx="12" fill="rgba(54,224,196,.12)" stroke="#36e0c4"/>
+        <text x="125" y="92" text-anchor="middle" fill="#aef3e7" font-weight="700" font-size="15">NPU Die</text>
+        <text x="125" y="112" text-anchor="middle" fill="#93a4c8">昇腾 950 · &gt;2 TB/s UB</text>
+        <!-- two distinct ports (different SerDes groups) -->
+        <rect x="190" y="120" width="56" height="26" rx="6" fill="#04d793" opacity=".9"/>
+        <text x="218" y="137" text-anchor="middle" fill="#06241b" font-weight="700" font-size="10.5">UB 口</text>
+        <rect x="190" y="160" width="56" height="26" rx="6" fill="#ffb454" opacity=".95"/>
+        <text x="218" y="177" text-anchor="middle" fill="#2a1c05" font-weight="700" font-size="10.5">RDMA 口</text>
+        <!-- CPU -->
+        <rect x="40" y="240" width="170" height="80" rx="12" fill="rgba(74,140,255,.12)" stroke="#4a8cff"/>
+        <text x="125" y="270" text-anchor="middle" fill="#bcd4ff" font-weight="700" font-size="14">鲲鹏 CPU</text>
+        <text x="125" y="290" text-anchor="middle" fill="#93a4c8">UB 与 NPU 对等 · 8×30G</text>
+
+        <!-- LPO modules -->
+        <g>
+          <rect x="430" y="118" width="78" height="30" rx="7" fill="rgba(54,224,196,.16)" stroke="#36e0c4"/>
+          <text x="469" y="138" text-anchor="middle" fill="#aef3e7" font-weight="700" font-size="11">LPO</text>
+          <rect x="430" y="158" width="78" height="30" rx="7" fill="rgba(255,180,84,.16)" stroke="#ffb454"/>
+          <text x="469" y="178" text-anchor="middle" fill="#ffd9a0" font-weight="700" font-size="11">LPO</text>
+        </g>
+
+        <!-- scale-up switch -->
+        <rect x="690" y="96" width="180" height="74" rx="12" fill="rgba(4,215,147,.12)" stroke="#04d793"/>
+        <text x="780" y="124" text-anchor="middle" fill="#9ff0cf" font-weight="700" font-size="13.5">L1→L2 UB 交换</text>
+        <text x="780" y="146" text-anchor="middle" fill="#93a4c8">scale-up · 超节点内全互联</text>
+        <!-- scale-out switch -->
+        <rect x="690" y="184" width="180" height="74" rx="12" fill="rgba(255,180,84,.12)" stroke="#ffb454"/>
+        <text x="780" y="212" text-anchor="middle" fill="#ffd9a0" font-weight="700" font-size="13.5">scale-out 交换</text>
+        <text x="780" y="234" text-anchor="middle" fill="#93a4c8">RoCE · 400G/NPU · 跨超节点</text>
+        <rect x="908" y="184" width="132" height="74" rx="12" fill="rgba(255,180,84,.06)" stroke="#ffb454" stroke-dasharray="4 3"/>
+        <text x="974" y="216" text-anchor="middle" fill="#ffd9a0" font-weight="700" font-size="12.5">其它超节点</text>
+        <text x="974" y="236" text-anchor="middle" fill="#93a4c8">SO 域</text>
+
+        <!-- 擎天 NIC + DC -->
+        <rect x="430" y="248" width="160" height="64" rx="12" fill="rgba(157,123,255,.12)" stroke="#9d7bff"/>
+        <text x="510" y="276" text-anchor="middle" fill="#cdbcff" font-weight="700" font-size="13">擎天 NIC</text>
+        <text x="510" y="296" text-anchor="middle" fill="#93a4c8">VPC 平面（非 RDMA）</text>
+        <rect x="690" y="272" width="180" height="64" rx="12" fill="rgba(157,123,255,.08)" stroke="#9d7bff"/>
+        <text x="780" y="300" text-anchor="middle" fill="#cdbcff" font-weight="700" font-size="13">数据中心网络</text>
+        <text x="780" y="320" text-anchor="middle" fill="#93a4c8">前端 / 存储 / 管理 · 南北向</text>
+
+        <!-- links: scale-up (green) -->
+        <line x1="246" y1="133" x2="430" y2="133" stroke="#04d793" stroke-width="3"/>
+        <text x="338" y="124" text-anchor="middle" fill="#9ff0cf" font-size="10">铜缆(柜内)/LPO(柜间)</text>
+        <line x1="508" y1="133" x2="690" y2="133" stroke="#04d793" stroke-width="3"/>
+        <!-- links: scale-out (orange) -->
+        <line x1="246" y1="173" x2="430" y2="173" stroke="#ffb454" stroke-width="3"/>
+        <line x1="508" y1="173" x2="690" y2="210" stroke="#ffb454" stroke-width="3"/>
+        <line x1="870" y1="221" x2="908" y2="221" stroke="#ffb454" stroke-width="3"/>
+        <!-- links: VPC (violet) -->
+        <line x1="125" y1="240" x2="125" y2="232" stroke="#9d7bff" stroke-width="3"/>
+        <line x1="210" y1="280" x2="430" y2="280" stroke="#9d7bff" stroke-width="3"/>
+        <text x="320" y="271" text-anchor="middle" fill="#cdbcff" font-size="10">PCIe</text>
+        <line x1="590" y1="280" x2="690" y2="300" stroke="#9d7bff" stroke-width="3"/>
+      </g>
+    </svg>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#04d793"></span>UB 平面 · Scale-up（NPU↔NPU↔CPU · TP/EP/SP）</span>
+      <span class="li"><span class="sw" style="background:#ffb454"></span>RDMA 平面 · Scale-out（NPU 自带 RoCE · DP/PP）</span>
+      <span class="li"><span class="sw" style="background:#9d7bff"></span>VPC 平面（CPU→擎天 NIC→DC · 南北向）</span>
+      <span class="li"><span class="sw" style="background:#36e0c4"></span>LPO 光模块（线性直驱·去 DSP）</span>
+    </div>
+    <table>
+      <thead><tr><th>平面</th><th>干什么</th><th>谁参与 / 器件</th><th>范围 · 并行</th></tr></thead>
+      <tbody>
+        <tr><td><b>UB · Scale-up</b></td><td>超节点内全互联</td><td>NPU+CPU · NPU UB 口→铜/LPO→L1/L2 UB 交换</td><td>超节点内 SU 域 · <b>TP/EP/SP</b></td></tr>
+        <tr><td><b>RDMA · Scale-out</b></td><td>跨超节点 / 外部 RDMA</td><td>仅 NPU（400G RoCE 口）→LPO→scale-out 交换</td><td>跨超节点 SO 域 · <b>DP/PP</b></td></tr>
+        <tr><td><b>VPC</b></td><td>接入数据中心</td><td>CPU→擎天 NIC→DC 网络</td><td>南北向 · 非训练关键路径</td></tr>
+      </tbody>
+    </table>
+    <div class="note">关键反直觉点：<b>scale-out RDMA 走 NPU 自带 RoCE 口，不走擎天 NIC</b>；擎天 NIC 负责的是 VPC 平面。LPO：去 DSP，功耗 <b>14–17W→7–8.5W</b>、单跳 <b>8–10ns→&lt;3ns</b>；CM384 实测 6912×400G LPO（5376 scale-up + 1536 scale-out）。LPO 800G 为下一代趋势（Atlas 950 全光 UB2.0），原理相同。<br><span class="pill cC">C</span> 三平面 / LPO 数据为厂商与媒体解读口径（CloudMatrix384 · Vitex），正式引用需标注。</div>
+  </div>
+</section>
+
 <!-- ③ 节点/Die 内部概念 -->
 <section>
   <div class="sh"><div class="n">③</div><h2>计算节点 &amp; Die 内部：构件与片上存储</h2></div>
