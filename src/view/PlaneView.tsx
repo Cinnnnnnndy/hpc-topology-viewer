@@ -133,8 +133,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const hoverRef = useRef<number | null>(null);
   const [colorBy, setColorBy] = useState<PartitionDim>('none');
-  const [links, setLinks] = useState(true);   // draw card↔card (L1) + node↔node (L2) connections
-  const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
+  const [links, setLinks] = useState(false);   // draw card↔card (L1) + node↔node (L2) connections — off by default
+  const [tip, setTip] = useState<{ k: number; die?: number; core?: number; x: number; y: number } | null>(null);
   const [playing, setPlaying] = useState(false);    // 执行时序 playback (drives card phase-wash + flow + swimlane) — paused by default
   const [runMode, setRunMode] = useState<RunMode>('train');   // 执行时序 mode: train / infer
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
@@ -672,9 +672,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         // NPU 物理端口：UB 口(绿·scale-up) + RDMA/RoCE 口(橙·scale-out) — 连接器 tab 图元
         devGlyph(ctx, 'port', x + L.cs * 0.85, y + L.cs * 0.13, L.cs * 0.16, L.cs * 0.1, PLANES[0].color);
         devGlyph(ctx, 'port', x + L.cs * 0.85, y + L.cs * 0.27, L.cs * 0.16, L.cs * 0.1, PLANES[1].color);
-        ctx.fillStyle = P.ink; ctx.textAlign = 'center'; ctx.font = '0.26px sans-serif';
-        ctx.textBaseline = showDie ? 'top' : 'middle';
-        ctx.fillText(`r${k}`, x + L.cs / 2, y + (showDie ? 0.05 : L.cs / 2));
+        // rank 编号不再画在卡面上 — hover 卡片显示 device/rank/坐标 tips（见右下信息卡）
         if (showDie) {
           const ins = L.cs * 0.14, gp = L.cs * 0.07;
           const dw = (L.cs - ins * 2 - gp) / 2, dh = (L.cs * 0.7 - gp) / 2;
@@ -943,12 +941,21 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const [wx, wy] = toWorld(e.clientX, e.clientY); const k = pick(wx, wy);
     if (k !== hoverRef.current) { hoverRef.current = k; draw(); }
     const r = canvasRef.current!.getBoundingClientRect();
-    setTip(k == null ? null : { k, x: e.clientX - r.left, y: e.clientY - r.top });
+    const sub = k == null ? {} : subPick(wx, wy, k);   // resolve which Die / AI Core is under the cursor (when zoomed in)
+    setTip(k == null ? null : { k, die: sub.die, core: sub.core, x: e.clientX - r.left, y: e.clientY - r.top });
   };
   const onLeave = () => { if (hoverRef.current != null) { hoverRef.current = null; draw(); } setTip(null); };
 
   const tipInfo = tip && (() => {
     const k = tip.k, b = Math.floor(k / CPB), cab = Math.floor(b / BPC);
+    // hover resolves to the exact part under the cursor: AI Core → 计算 Die → 卡/device
+    if (tip.core !== undefined && tip.die !== undefined) {
+      const vec = tip.core % 8 === 7;
+      return [`AI Core（L1 · ${vec ? 'AIV·Vector' : 'AIC·Cube'}）`, `卡 ${k} · 计算 Die ${tip.die} · core #${tip.core}（block_idx，SPMD）`, `${vec ? '矢量 Vector 单元' : '矩阵 Cube 单元'} · Cube∶Vector ≈ 8∶1 · 设备内并行（非 rank）`];
+    }
+    if (tip.die !== undefined) {
+      return [`计算 Die ${tip.die}（L2 · 核组 CoreGroup）`, `卡 ${k} 的 2 计算 Die 之一（UMA 合并 → 整卡 1 device）`, `≈16 AI Core · 片上 NoC · 同 rank、不增 rank`];
+    }
     const parts = [`硬件：${TOK.n950} 卡 ${k}（1 device · 4 Die）`, `软件：rank ${k}（${TOK.hccl} 逻辑号 · 与 device 1:1）· tp${k % CPB}`, `约 ${CORES_PER_CARD} AI Core/卡 · 刀片 B${b} · 机柜 C${cab}`];
     if (colorBy !== 'none') parts.push(`${PARTITION_META[colorBy as Exclude<PartitionDim, 'none'>].label}：组 ${groupOf(k)}`);
     return parts;
@@ -1013,7 +1020,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             })}
             <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（卡随相位变色 + 数据流动 + 右下 swimlane）"
               style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 放大后点卡可继续选 Die / AI Core · 选中 = 右下 L0 执行时序`}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 悬停任一卡/Die/AI Core 看信息卡 · 放大点卡选 Die/核 · 连线默认关`}</span>
           </>
         ) : layout === 'layers' ? (
           <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
