@@ -220,18 +220,20 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
   // ── 器件互联平面 (device-interconnect plane) — its OWN plane-view sub-view. An EXPLICIT
   //    node-link TOPOLOGY (not type-vs-type blocks): every individual device and its real
-  //    counterpart — 8 NPU + CPU each wire to the blade's L1 UB 交换 (菱形 hub); L1 → L2(机柜) →
+  //    counterpart — 8 NPU + CPU each wire to the blade's L1 UB 交换 (switch glyph hub); L1 → L2(机柜) →
   //    超节点; NIC ← CPU (VPC); NPU RoCE 口 → scale-out(板间). One blade is fully expanded;
   //    sibling blades are ghosts with ×count, so individual edges stay readable at pod scale. ──
   const DEV = useMemo(() => {
     const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64)), nBlades = nCab * 8;
-    const PER = { npu: 8, cpu: 4, nic: 4 };
+    const PER = { npu: 8, cpu: 4, nic: 4, lpo: 4 };
+    const totals = { npu: N, cpu: nBlades * PER.cpu, nic: nBlades * PER.nic, lpo: nBlades * PER.lpo, l1: nBlades, l2: nCab };
     const margin = 11, Wc = 100, cx = margin + Wc / 2;
-    const ySuper = margin + 6, yL2 = margin + 24, yL1 = margin + 50, yNpu = margin + 82, ySO = margin + 99, yCpu = margin + 116, yNic = margin + 134;
+    const yBanner = margin + 3.4;   // full super-node object counts strip
+    const ySuper = margin + 18, yL2 = margin + 34, yL1 = margin + 59, yNpu = margin + 90, ySO = margin + 106, yCpu = margin + 122, yNic = margin + 139;
     const npuXs = Array.from({ length: PER.npu }, (_, i) => margin + Wc * (0.06 + 0.88 * i / (PER.npu - 1)));
     const cpuXs = Array.from({ length: PER.cpu }, (_, i) => margin + Wc * (0.345 + 0.31 * i / (PER.cpu - 1)));
     const l1Xs = [cx - Wc * 0.33, cx, cx + Wc * 0.33];   // middle = the fully-expanded blade
-    return { N, nCab, nBlades, PER, margin, Wc, cx, ySuper, yL2, yL1, yNpu, ySO, yCpu, yNic, npuXs, cpuXs, l1Xs, w: margin * 2 + Wc, h: yNic + 14 };
+    return { N, nCab, nBlades, PER, totals, margin, Wc, cx, yBanner, ySuper, yL2, yL1, yNpu, ySO, yCpu, yNic, npuXs, cpuXs, l1Xs, w: margin * 2 + Wc, h: yNic + 14 };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
@@ -520,7 +522,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       return;
     }
 
-    // ── 器件互联平面 sub-view — explicit device-to-device TOPOLOGY (每一个器件到对方的关系) ──
+    // ── 器件互联平面 sub-view — explicit device-to-device TOPOLOGY · 图元与层级图统一 · 全量计数 ──
     if (layout === 'devices') {
       const D = DEV, { margin, Wc, cx } = D;
       const rr = (x: number, y: number, w: number, h: number, r: number) => {
@@ -542,46 +544,63 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const txt = (str: string, x: number, y: number, color: string, size: number, align: CanvasTextAlign = 'center', baseline: CanvasTextBaseline = 'middle', weight = '') => {
         ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = baseline; ctx.font = `${weight} ${size}px sans-serif`; ctx.fillText(str, x, y);
       };
-      const box = (bx: number, by: number, w: number, h: number, fill: string, label: string, seed: number, fs = 0.4) => {
-        const col = curPhase ? heatOf(seed) : fill;
-        ctx.fillStyle = col; ctx.globalAlpha = 0.96; rr(bx - w / 2, by - h / 2, w, h, h * 0.26); ctx.fill();
-        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 0.12; rr(bx - w / 2, by - h / 2, w, h, h * 0.26); ctx.stroke();
-        txt(label, bx, by, inkOf(col), h * fs, 'center', 'middle', '700');
-      };
-      const diamond = (dx: number, dy: number, r: number, label: string, on = true) => {
-        ctx.globalAlpha = on ? 0.97 : 0.38; ctx.fillStyle = on ? '#94a2bd' : '#5b6680';
-        ctx.beginPath(); ctx.moveTo(dx, dy - r); ctx.lineTo(dx + r * 1.18, dy); ctx.lineTo(dx, dy + r); ctx.lineTo(dx - r * 1.18, dy); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 0.12; ctx.stroke(); ctx.globalAlpha = 1;
-        if (on) txt(label, dx, dy, '#11151c', r * 0.66, 'center', 'middle', '700');
+      const heatFill = (fill: string, seed: number) => (curPhase ? heatOf(seed) : fill);
+      // NPU 图元 = 950 卡，与层级图/顶视图一致：实体卡块 + 4 Die(2 计算 teal + 2 IO grey) + UB/RDMA 端口 tab
+      const npuGlyph = (nx: number, ny: number, w: number, h: number, fill: string) => {
+        ctx.fillStyle = fill; ctx.globalAlpha = 0.95; rr(nx - w / 2, ny - h / 2, w, h, h * 0.2); ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.1; rr(nx - w / 2, ny - h / 2, w, h, h * 0.2); ctx.stroke();
+        const ins = w * 0.13, g = w * 0.06, dw = (w - ins * 2 - g) / 2, dh = (h - ins * 2 - g) / 2;
+        const x0 = nx - w / 2 + ins, x1 = x0 + dw + g, y0 = ny - h / 2 + ins, y1 = y0 + dh + g;
+        ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.92; rr(x0, y0, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.16); ctx.fill();
+        ctx.fillStyle = M_IO; ctx.globalAlpha = 0.6; rr(x0, y1, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.16); ctx.fill();
+        ctx.globalAlpha = 1;
+        if (w > 4) { devGlyph(ctx, 'port', nx + w / 2 - w * 0.05, ny - h * 0.24, w * 0.14, h * 0.22, PLANES[0].color); devGlyph(ctx, 'port', nx + w / 2 - w * 0.05, ny + h * 0.2, w * 0.14, h * 0.22, PLANES[1].color); }
       };
 
-      const sw = 3.0, nW = Wc * 0.082, nH = 6, cW = Wc * 0.072, cH = 5.6, niW = Wc * 0.05, niH = 4.4;
+      const nW = Wc * 0.086, nH = 7, cW = Wc * 0.062, cH = 5.4, niW = Wc * 0.05, niH = 4.6, swW = 8.4, swH = 5.6, swW2 = 10.4, swH2 = 6.6;
       const cuComm = curPhase?.kind === 'comm';
-      const superW = Wc * 0.36, superH = 6.6;
 
-      // 超节点 (top) ← L2(机柜) ← L1(刀片) backbone
-      ctx.fillStyle = curPhase ? heatOf(9100) : '#3b4a6b'; ctx.globalAlpha = 0.95; rr(cx - superW / 2, D.ySuper - superH / 2, superW, superH, superH * 0.42); ctx.fill();
+      // ── 全量器件数（本超节点）banner — glyph(统一) + count ──
+      const bI: [DevType | 'npu', string, number, string][] = [
+        ['npu', 'NPU', D.totals.npu, ENTITY_COLORS.card], ['cpu', 'CPU', D.totals.cpu, DEV_CPU],
+        ['lpo', 'LPO', D.totals.lpo, DEV_LPO], ['nic', 'NIC', D.totals.nic, PLANES[2].color],
+        ['switch', 'L1', D.totals.l1, PLANES[0].color], ['switch', 'L2', D.totals.l2, PLANES[0].color],
+      ];
+      ctx.fillStyle = 'rgba(124,141,184,0.12)'; rr(margin, D.yBanner - 3.2, Wc, 6.4, 1.4); ctx.fill();
+      txt('全量器件', margin + 2, D.yBanner, P.ink, 2.0, 'left', 'middle', '700');
+      const bx0 = margin + Wc * 0.125, bGap = (Wc * 0.875) / bI.length;
+      bI.forEach(([gt, lab, cnt, col], i) => {
+        const gx = bx0 + bGap * i;
+        if (gt === 'npu') npuGlyph(gx, D.yBanner, 3.0, 2.6, col); else devGlyph(ctx, gt, gx, D.yBanner, 3.0, 2.4, col);
+        txt(`${lab} ×${cnt.toLocaleString()}`, gx + 2.4, D.yBanner, P.ink2, 1.6, 'left', 'middle', '600');
+      });
+
+      // 超节点 ← L2(机柜) ← L1(刀片) backbone
+      const superW = Wc * 0.34, superH = 6.2;
+      ctx.fillStyle = heatFill('#3b4a6b', 9100); ctx.globalAlpha = 0.95; rr(cx - superW / 2, D.ySuper - superH / 2, superW, superH, superH * 0.42); ctx.fill();
       ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.12; rr(cx - superW / 2, D.ySuper - superH / 2, superW, superH, superH * 0.42); ctx.stroke();
       txt(`${TOK.supernode} · ${D.N.toLocaleString()} NPU`, cx, D.ySuper, '#e7ecf5', superH * 0.4, 'center', 'middle', '700');
-      edge([cx, D.ySuper + superH / 2], [cx, D.yL2 - sw], 'ub', 5001, 5002, -0.05, 0.24);
-      diamond(cx, D.yL2, sw * 1.25, 'L2');
-      txt(`L2 ${TOK.ub} 交换 · 机柜 ×${D.nCab.toLocaleString()}`, cx + sw * 1.7, D.yL2, P.ink2, 1.9, 'left');
+      edge([cx, D.ySuper + superH / 2], [cx, D.yL2 - swH2 / 2], 'ub', 5001, 5002, -0.05, 0.24);
+      devGlyph(ctx, 'switch', cx, D.yL2, swW2, swH2, heatFill(PLANES[0].color, 9001));
+      txt(`L2 ${TOK.ub} 交换 · 机柜 ×${D.totals.l2.toLocaleString()}`, cx + swW2 * 0.62, D.yL2, P.ink2, 1.9, 'left');
 
       // L1 switches: middle fully expanded, two ghosts standing in for the other blades
       D.l1Xs.forEach((lx, gi) => {
         const main = gi === 1;
-        edge([lx, D.yL1 - sw], [cx, D.yL2 + sw * 1.25], 'ub', 5100 + gi, 5002, main ? 0.05 : -0.1, main ? 0.22 : 0.14, main ? 0.9 : 0.4);
+        edge([lx, D.yL1 - swH / 2], [cx, D.yL2 + swH2 / 2], 'ub', 5100 + gi, 5002, main ? 0.05 : -0.1, main ? 0.22 : 0.14, main ? 0.9 : 0.35);
         if (main) {   // LPO 光模块 inline on the L1→L2 柜间 uplink
-          const mlx = (lx + cx) / 2 - 1.5, mly = (D.yL1 - sw + D.yL2 + sw * 1.25) / 2;
-          devGlyph(ctx, 'lpo', mlx, mly, 3.6, 2.7, curPhase ? heatOf(9200) : DEV_LPO);
+          const mlx = (lx + cx) / 2 - 1.5, mly = (D.yL1 - swH / 2 + D.yL2 + swH2 / 2) / 2;
+          devGlyph(ctx, 'lpo', mlx, mly, 3.6, 2.7, heatFill(DEV_LPO, 9200));
           txt('LPO 光模块', mlx + 3.0, mly, P.ink2, 1.5, 'left');
         }
-        diamond(lx, D.yL1, sw, 'L1', main);
-        if (!main) txt('…', lx, D.yL1 + sw + 2, P.ink2, 2.6, 'center');
+        ctx.globalAlpha = main ? 1 : 0.38;
+        devGlyph(ctx, 'switch', lx, D.yL1, swW, swH, main ? heatFill(PLANES[0].color, 5101) : '#5b6680');
+        ctx.globalAlpha = 1;
+        if (!main) txt('…', lx, D.yL1 + swH / 2 + 2, P.ink2, 2.6, 'center');
       });
-      txt(`L1 ${TOK.ub} 交换 · 刀片 ×${D.nBlades.toLocaleString()}（展开中间 1 个刀片，每个器件各自连到 L1）`, cx, D.yL1 + sw + 4.8, P.ink2, 1.85, 'center');
+      txt(`L1 ${TOK.ub} 交换 · 刀片 ×${D.totals.l1.toLocaleString()}（展开中间 1 刀片，每个器件各自连到 L1）`, cx, D.yL1 + swH / 2 + 4.6, P.ink2, 1.8, 'center');
 
-      const mid = D.cx;
+      const mid = cx;
       // RDMA scale-out bus (板间 NPU) — each NPU drops its RoCE 口 to a shared bus → 其它超节点
       const busX0 = margin + Wc * 0.05, busX1 = margin + Wc * 0.80;
       ctx.setLineDash([1.5, 1.0]); ctx.lineWidth = 0.22; ctx.lineCap = 'round';
@@ -589,24 +608,25 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.beginPath(); ctx.moveTo(busX0, D.ySO); ctx.lineTo(busX1, D.ySO); ctx.stroke();
       ctx.setLineDash([]); ctx.fillStyle = ctx.strokeStyle;
       ctx.beginPath(); ctx.moveTo(busX1 + 2.6, D.ySO); ctx.lineTo(busX1, D.ySO - 1.1); ctx.lineTo(busX1, D.ySO + 1.1); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
-      txt('RDMA scale-out 母线 → 其它超节点（板间 NPU · 每 NPU 自带 RoCE 口）', busX1 + 3.4, D.ySO, '#9fb6ff', 1.55, 'left');
+      txt('RDMA scale-out 母线 → 其它超节点（板间 NPU · 每 NPU 自带 RoCE 口）', busX1 + 3.4, D.ySO, '#9fb6ff', 1.5, 'left');
 
       // 8 NPU: each → L1 (UB 实线) AND each → scale-out bus (RoCE 口 · 长虚)
+      txt(`NPU ×${D.totals.npu.toLocaleString()}（8/刀片 · 1 卡=1 device·4 Die）`, cx, D.yNpu - nH / 2 - 2.4, P.ink2, 1.6, 'center');
       D.npuXs.forEach((nx, i) => {
-        edge([nx, D.yNpu - nH / 2], [mid, D.yL1 + sw], 'ub', 200 + i, 5101, cuComm ? 0.2 : -0.05, 0.2);
+        edge([nx, D.yNpu - nH / 2], [mid, D.yL1 + swH / 2], 'ub', 200 + i, 5101, cuComm ? 0.2 : -0.05, 0.2);
         edge([nx, D.yNpu + nH / 2], [nx, D.ySO], 'so', 300 + i, 9300, cuComm ? 0.25 : -0.1, 0.16);
       });
-      D.npuXs.forEach((nx, i) => box(nx, D.yNpu, nW, nH, ENTITY_COLORS.card, `N${i + 1}`, 800 + i));
+      D.npuXs.forEach((nx, i) => { npuGlyph(nx, D.yNpu, nW, nH, heatFill(ENTITY_COLORS.card, 800 + i)); txt(`N${i + 1}`, nx, D.yNpu + nH / 2 + 1.6, P.ink2, 1.6, 'center', 'middle', '600'); });
 
       // 4 CPU: each → L1 (UB 实线, 平等编址); each ← NIC (VPC 点线)
       D.cpuXs.forEach((cxx, i) => {
-        edge([cxx, D.yCpu - cH / 2], [mid, D.yL1 + sw], 'ub', 400 + i, 5102, -0.08, 0.18);
+        edge([cxx, D.yCpu - cH / 2], [mid, D.yL1 + swH / 2], 'ub', 400 + i, 5102, -0.08, 0.18);
         edge([cxx, D.yCpu + cH / 2], [cxx, D.yNic - niH / 2], 'vpc', 500 + i, 600 + i, -0.2, 0.14);
       });
-      D.cpuXs.forEach((cxx, i) => box(cxx, D.yCpu, cW, cH, DEV_CPU, 'CPU', 300 + i, 0.34));
-      D.cpuXs.forEach((cxx, i) => box(cxx, D.yNic, niW, niH, PLANES[2].color, 'NIC', 500 + i, 0.36));
-      txt(`${TOK.kunpeng} CPU ×${D.PER.cpu}/刀片 · UB 平等编址`, D.cpuXs[0] - cW * 0.7, D.yCpu, P.ink2, 1.5, 'right');
-      txt(`${TOK.qingtian} NIC ×${D.PER.nic} · VPC 南北向 → 数据中心`, D.cpuXs[D.cpuXs.length - 1] + niW * 0.7, D.yNic, P.ink2, 1.5, 'left');
+      D.cpuXs.forEach((cxx, i) => { devGlyph(ctx, 'cpu', cxx, D.yCpu, cW, cH, heatFill(DEV_CPU, 300 + i)); txt('CPU', cxx, D.yCpu + cH / 2 + 1.5, P.ink2, 1.4, 'center'); });
+      D.cpuXs.forEach((cxx, i) => { devGlyph(ctx, 'nic', cxx, D.yNic, niW, niH, heatFill(PLANES[2].color, 500 + i)); txt('NIC', cxx, D.yNic + niH / 2 + 1.4, P.ink2, 1.4, 'center'); });
+      txt(`${TOK.kunpeng} CPU ×${D.totals.cpu.toLocaleString()}（4/刀片·UB平等编址）`, D.cpuXs[0] - cW * 0.7, D.yCpu, P.ink2, 1.45, 'right');
+      txt(`${TOK.qingtian} NIC ×${D.totals.nic.toLocaleString()}（VPC→数据中心）`, D.cpuXs[D.cpuXs.length - 1] + niW * 0.7, D.yNic, P.ink2, 1.45, 'left');
 
       ctx.restore();
       // edge-style legend strip (constant px, top-left)
@@ -998,7 +1018,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ) : layout === 'layers' ? (
           <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`器件互联拓扑 · ${DEV.N.toLocaleString()} NPU · ${DEV.nBlades.toLocaleString()} 刀片 · 每个器件各自连到 L1 ${TOK.ub} 交换(菱形)：8 NPU + ${DEV.PER.cpu} CPU → L1 → L2(机柜) → 超节点；NIC←CPU(VPC)；NPU RoCE→scale-out(板间) · 拖动/滚轮`}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`器件互联拓扑 · 全量 ${DEV.totals.npu.toLocaleString()} NPU / ${DEV.totals.cpu.toLocaleString()} CPU / ${DEV.totals.lpo.toLocaleString()} LPO / ${DEV.totals.nic.toLocaleString()} NIC · 每个器件各自连 L1 ${TOK.ub} 交换：8 NPU + ${DEV.PER.cpu} CPU → L1 → L2(机柜) → 超节点；NIC←CPU(VPC)；NPU RoCE→scale-out · 图元同层级图`}</span>
         )}
       </div>
       {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
@@ -1054,7 +1074,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ) : (
           <>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>显式拓扑：<b style={{ color: 'var(--tx2)' }}>每一个器件</b>各自连到对方（非按类型整块）。展开 1 个代表刀片，其余 ×{DEV.nBlades.toLocaleString()} 为虚影。</div>
-            <div><span style={{ display: 'inline-block', width: 10, height: 10, background: '#94a2bd', transform: 'rotate(45deg)', verticalAlign: '-1px', marginRight: 6 }} />L1/L2 <b style={{ color: 'var(--tx2)' }}>{TOK.ub} 交换</b>（菱形 hub）：8 NPU + {DEV.PER.cpu} CPU 各自连 L1 → L2(机柜) → 超节点</div>
+            <div><span style={{ display: 'inline-block', width: 10, height: 8, background: PLANES[0].color, borderRadius: 2, verticalAlign: '-1px', marginRight: 6 }} />L1/L2 <b style={{ color: 'var(--tx2)' }}>{TOK.ub} 交换</b>（图元同层级图）：8 NPU + {DEV.PER.cpu} CPU 各自连 L1 → L2(机柜) → 超节点</div>
             <div>
               <span style={{ display: 'inline-block', width: 9, height: 9, background: ENTITY_COLORS.card, borderRadius: 2, verticalAlign: '-1px', marginRight: 4 }} />NPU
               <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_CPU, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />CPU
