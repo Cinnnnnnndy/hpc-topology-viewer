@@ -265,7 +265,7 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
       onPointerOver={(e) => { e.stopPropagation(); onHover(true); if (clickable) setCursor(true); }}
       onPointerOut={() => { onHover(false); setCursor(false); }}
     >
-      <ModelOr partId={swapId} size={[innerW - 0.12, h, innerD - 0.2]}>
+      <ModelOr partId={swapId} size={[innerW - 0.12, h, innerD - 0.2]} color={bodyColor} edgeColor={unit.type === 'switch-unit' ? swColor : LC.rackEdge}>
       <Slab
         size={[innerW - 0.12, h, innerD - 0.2]} color={bodyColor} metalness={0.3} roughness={0.55}
         edgeColor={hovered ? (rackKind === 'switch' ? swColor : RACK_COLORS.computeGlow) : LC.rackEdge}
@@ -436,8 +436,8 @@ function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: n
           (stretched to fill the slot) → else procedural lid. The compute / IO die
           tiles below ALWAYS draw on top, so the NPU keeps its die-level identity
           (2 compute Die + UMA bridge + 2 IO Die) whichever package model is used. */}
-      <ModelOr partId="npu-accelerator-module" size={[w, hh, w]}>
-        <ModelOr partId="cpu-server-package" size={[w, hh, w]} fit="stretch">
+      <ModelOr partId="npu-accelerator-module" size={[w, hh, w]} color={LC.npuBody} edgeColor={LC.rackEdge}>
+        <ModelOr partId="cpu-server-package" size={[w, hh, w]} fit="stretch" color={LC.npuBody} edgeColor={LC.rackEdge}>
           <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
         </ModelOr>
       </ModelOr>
@@ -468,7 +468,7 @@ function CpuChip({ w, h, hovered }: { w: number; h?: number; hovered?: boolean }
   const hh = h ?? w * 0.5;
   return (
     <group>
-      <ModelOr partId="cpu-server-package" size={[w, hh * 1.6, w]}>
+      <ModelOr partId="cpu-server-package" size={[w, hh * 1.6, w]} color={LC.cpuBody} edgeColor={LC.rackEdge}>
         <Slab size={[w, hh, w]} color={LC.cpuBody} edgeColor={hovered ? '#38bdf8' : LC.rackEdge} metalness={0.4} roughness={0.5} />
         <Slab size={[w * 0.8, hh * 0.5, w * 0.8]} position={[0, hh * 0.6, 0]} color={LC.cpuTop} metalness={0.85} roughness={0.3} />
       </ModelOr>
@@ -480,7 +480,7 @@ function BladeTray({ w, d, hovered, accent = true }: { w: number; d: number; hov
   const LC = useLC();
   return (
     <group>
-      <ModelOr partId="compute-blade" size={[w, 0.05, d]}>
+      <ModelOr partId="compute-blade" size={[w, 0.05, d]} color={LC.nodeUnit} edgeColor={RACK_COLORS.computeGlow}>
         <Slab size={[w, 0.05, d]} color={LC.nodeUnit} edgeColor={hovered ? RACK_COLORS.computeGlow : LC.rackEdge} metalness={0.4} roughness={0.5} />
         {accent && <Slab size={[w * 0.86, 0.014, 0.02]} position={[0, 0.032, d / 2 - 0.03]} color={RACK_COLORS.computeGlow} emissive={RACK_COLORS.computeGlow} emissiveIntensity={hovered ? 0.8 : 0.4} />}
       </ModelOr>
@@ -497,7 +497,7 @@ function CabinetBox({ w = 0.34, h = 1.0, d = 0.5, kind = 'compute', hovered }: {
   return (
     <group>
       <group position={[0, h / 2, 0]}>
-        <ModelOr partId={cabPart} size={[w, h, d]}>
+        <ModelOr partId={cabPart} size={[w, h, d]} color={LC.rackBody} edgeColor={glow}>
           <Slab size={[w, h, d]} color={hovered ? LC.hoverTint : LC.rackBody} edgeColor={hovered ? glow : LC.rackEdge} metalness={0.5} roughness={0.5} />
         </ModelOr>
       </group>
@@ -540,7 +540,7 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
       ) : part.type === 'cpu' ? (
         <CpuChip w={sx * S} h={sy * S} hovered={hovered} />
       ) : (
-        <ModelOr partId={swapId} size={[sx * S, sy * S, sz * S]}>
+        <ModelOr partId={swapId} size={[sx * S, sy * S, sz * S]} color={v.body} edgeColor={v.edge}>
           <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={hovered ? v.edge : LC.rackEdge} />
           {v.top && (
             <Slab size={[sx * S * 0.82, sy * S * 0.5, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]}
@@ -923,8 +923,10 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         <Text position={[0, 0, 0.46]} fontSize={0.12} color={LC.textDim} anchorX="center">1 卡 / device · 4 Die（2 计算 Die UMA→单 device + 2 IO Die）</Text>
       </Tier>
 
-      {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) inside a 刀片 box */}
+      {/* L1 — ONE blade: 8 NPU FULL-MESH (all-to-all crisscross) on the 刀片 tray */}
       <Tier lvl={1}>
+        {/* the node IS a blade — render the compute-blade tray under the 8 NPUs */}
+        <group position={[0, -0.05, 0]}><BladeTray w={2.05} d={0.95} hovered={hov === 1} accent={false} /></group>
         <Line points={rect(2.05, 0.95)} color={L(1)} lineWidth={1.5} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         <Line points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} transparent opacity={hov === 1 ? 0.95 : 0.6} />
         {npuPts.map((p, i) => (
