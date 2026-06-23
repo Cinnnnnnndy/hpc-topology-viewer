@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute,
+  loadColor, loadRGB, nodeLoad, mute, isHot,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1866,13 +1866,16 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
     const sk = phase?.kind ?? null, heat = status || sk != null;   // observation heatmap active
-    const heatCol = (id: number) => col.set(loadColor(nodeLoad(id, sk ?? undefined)));
-    if (pm) for (let k = 0; k < G.N; k++) { if (heat) heatCol(k); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (heat) heatCol(i); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
-    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (heat) heatCol(i + 7); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
-    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (heat) heatCol(k); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatCol(b * 131 + 7); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatCol(c * 911 + 13); else col.set(LC.cabBase); cm.setColorAt(c, col); }
+    const cardBaseCol = new THREE.Color(cardBase), bladeBaseCol = new THREE.Color(LC.bladeBase), cabBaseCol = new THREE.Color(LC.cabBase);
+    // observation: colour a node ONLY when 高/满 (isHot) so most stay neutral — the FEW hotspots pop;
+    // lines carry the rest of the load story. else → faint muted base.
+    const heatNode = (id: number, base: THREE.Color) => { const ld = nodeLoad(id, sk ?? undefined); if (isHot(ld)) col.set(loadColor(ld)); else col.copy(base); };
+    if (pm) for (let k = 0; k < G.N; k++) { if (heat) heatNode(k, procBase); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
+    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (heat) heatNode(i + 7, tileBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
+    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (heat) heatNode(k, cardBaseCol); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(LC.cabBase); cm.setColorAt(c, col); }
     // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
     if (sel) {
       const cardsH: number[] = [], bladesH: number[] = [], cabsH: number[] = [];
@@ -2072,7 +2075,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* L0 cards — individual textured NpuChip (≤cap) else instanced (texture-mapped) */}
       {useChip
         ? G.cardX.map((x, k) => {
-          const lc = heat ? loadColor(nodeLoad(k, statKind ?? undefined)) : null;   // observation: REPLACE the chip with a solid load-state box (no overlay → one state = one colour)
+          const ld = heat ? nodeLoad(k, statKind ?? undefined) : -1;   // observation: only 高/满 cards REPLACE the chip with a state box; the rest stay normal chips
+          const lc = ld >= 0 && isHot(ld) ? loadColor(ld) : null;
           const sel0 = hoverNpu === k || (selPath !== null && selPath.cards.includes(k));
           return (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}

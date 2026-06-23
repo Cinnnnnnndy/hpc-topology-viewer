@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, loadColor, nodeLoad, mute, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, loadColor, nodeLoad, mute, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -460,8 +460,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const [x, y] = cardXY(k);
       if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
       const g = groupOf(k);
-      // observation: load heatmap while playing; else partition (opt-in cognition) or neutral block
-      ctx.fillStyle = curPhase ? heatOf(k) : (g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
+      // observation: colour ONLY 高/满 cards (isHot) so most stay as neutral/partition blocks — few hotspots pop
+      const ld = curPhase ? nodeLoad(k, curPhase.kind) : -1;
+      ctx.fillStyle = ld >= 0 && isHot(ld) ? loadColor(ld) : (g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
       if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
       else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
@@ -780,8 +781,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {playing && <div><span style={{ display: 'inline-block', width: 40, height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.34)}, ${loadColor(0.67)}, ${loadColor(1)})`, verticalAlign: '-1px', marginRight: 5 }} /><span style={{ color: 'var(--tx3)' }}>负载热力：绿空闲 → 红繁忙</span></div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>每条连线按各自负载独立着色 + 粗细（非按层级）· 分层只用极淡色调+图元区分 · 顶部条=当前相位</div>}
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>负载 4 档：空闲/中/高/满（拥塞）</span></div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>连线逐条按负载着色+粗细；卡只在满(拥塞)时上色（少量热点），其余中性 · 顶部条=当前相位</div>}
           </>
         ) : (
           <>

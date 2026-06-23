@@ -16,7 +16,7 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, loadColor, mute,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, mute,
   memLayers,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
@@ -545,7 +545,7 @@ export function ClusterView() {
                       </button>
                       <button onClick={() => setFpStatus((v) => !v)} title="负载/观测：节点与连线按负载热力上色（绿空闲→黄→红繁忙/拥塞），连线粗细 ∝ 负载/带宽；分层只用极淡色调+图元区分，高饱和色专表状态"
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
-                        <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(1)})`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
+                        <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
                       </button>
                     </div>
@@ -873,14 +873,13 @@ export function ClusterView() {
                 <LgRow shape="sq" color={mute(ENTITY_COLORS.node)} label="L4 节点 / 刀片" />
                 <LgRow shape="sq" color={mute(ENTITY_COLORS.cab)} label="机柜" />
                 <LgRow shape="sq" color={mute(ENTITY_COLORS.super)} label={`L5 ${TOK.supernode}`} />
-                {/* state heatmap — the high-sat colour, observation */}
-                <div style={lgHdr}>状态 / 负载（观测）</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 1px' }}>
-                  <span style={{ fontSize: 10, color: 'var(--tx3)' }}>空闲</span>
-                  <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.34)}, ${loadColor(0.67)}, ${loadColor(1)})` }} />
-                  <span style={{ fontSize: 10, color: 'var(--tx3)' }}>繁忙</span>
+                {/* state — discrete 4-bucket load (one state = one colour) */}
+                <div style={lgHdr}>状态 / 负载（观测 · 4 档）</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
+                  {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
-                <span style={lgNote}>节点/连线按各自负载热力上色，连线粗细 ∝ 负载（层级内/间逐条不同）</span>
+                <span style={lgNote}>连线逐条按负载着色 + 粗细（层级内/间各不同）</span>
+                <span style={lgNote}>卡只在 满/拥塞 时上色（少量热点），其余保持中性</span>
                 <span style={lgNote}>播放(有相位) 或 开"负载/观测"时显示</span>
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
@@ -891,19 +890,6 @@ export function ClusterView() {
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
                 {/* observation: load/utilisation heatmap */}
-                {fpStatus && (
-                  <>
-                    <div style={lgHdr}>负载 / 状态（观测热力）</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 1px' }}>
-                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>空闲</span>
-                      <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.34)}, ${loadColor(0.67)}, ${loadColor(1)})` }} />
-                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>繁忙</span>
-                    </div>
-                    <span style={lgNote}>节点 = 负载热力（绿空闲 → 黄 → 橙 → 红繁忙/拥塞）</span>
-                    <span style={lgNote}>每条连线按各自负载独立着色 + 粗细（层级内/层级间都各不相同）</span>
-                    <span style={lgNote}>分层只用极淡色调 + 图元形状区分 · 高饱和色专表状态</span>
-                  </>
-                )}
                 {/* parallel partition palette */}
                 {fpPart !== 'none' && (
                   <>

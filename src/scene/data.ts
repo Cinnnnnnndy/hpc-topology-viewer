@@ -229,17 +229,15 @@ export const STATUS_META: { id: string; label: string }[] = [
   { id: 'load', label: '加载' }, { id: 'store', label: '存储' }, { id: 'idle', label: '空闲' },
 ];
 
-// ─── Observation palette: ONE load/utilisation heatmap (the high-saturation colours
-// we reserve OUT of the hierarchy). 0 空闲 → 1 繁忙 = 绿 → 黄 → 红. Lines & nodes use this
-// for STATE; line thickness ∝ load/bandwidth. Hierarchy/type uses only faint neutral hues.
-const HEAT_STOPS = [[0x4a, 0xde, 0x80], [0xfc, 0xd3, 0x4d], [0xfb, 0x92, 0x3c], [0xfb, 0x71, 0x85]];   // 绿 → 黄 → 橙 → 红 (high-brightness, pops on dark)
-const lerp3 = (a: number[], b: number[], t: number) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
-export function loadRGB(t: number): [number, number, number] {
-  const x = Math.max(0, Math.min(1, t)) * (HEAT_STOPS.length - 1);
-  const i = Math.min(HEAT_STOPS.length - 2, Math.floor(x)), f = x - i;
-  const c = lerp3(HEAT_STOPS[i], HEAT_STOPS[i + 1], f);
-  return [c[0], c[1], c[2]];
-}
+// ─── Observation: a DISCRETE 4-state load palette (空闲/中/高/满). One state = ONE fixed colour
+// (no gradient → never "同态异色"). Lines use all 4; NODES colour only when 高/满 (isHot) so most
+// stay neutral. Hierarchy/type uses only faint muted hues — high-sat is reserved for state.
+const STATE_RGB: [number, number, number][] = [[0x3f, 0xb9, 0x50], [0xd4, 0xa7, 0x2c], [0xe0, 0x82, 0x3a], [0xe5, 0x48, 0x4d]];   // 空闲 绿 / 中 琥珀 / 高 橙 / 满 红
+export const STATE_LABELS = ['空闲', '中', '高', '满 / 拥塞'];
+export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.3 ? 0 : x < 0.55 ? 1 : x < 0.8 ? 2 : 3; }
+export function loadRGB(t: number): [number, number, number] { return STATE_RGB[loadState(t)]; }
+export function stateColor(i: number): string { const [r, g, b] = STATE_RGB[Math.max(0, Math.min(3, i))]; return `rgb(${r},${g},${b})`; }
+export const isHot = (t: number): boolean => loadState(t) >= 3;   // only 满/拥塞 → colour the node (few hotspots); else neutral
 export function loadColor(t: number): string { const [r, g, b] = loadRGB(t); return `rgb(${r},${g},${b})`; }
 // desaturate a hierarchy hue toward its own luminance-grey (keep a FAINT tint so levels are
 // still tellable, but they never compete with the state heatmap). amt→1 = fully neutral.
