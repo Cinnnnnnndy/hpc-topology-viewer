@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, loadColor, nodeLoad, mute, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -39,14 +39,6 @@ function phaseSegments(mode: RunMode): SwSeg[] {
   const seg: SwSeg[] = []; let acc = 0;
   for (const p of phases) { const t0 = acc / tw; acc += wOf(p); seg.push({ p, t0, t1: acc / tw }); }
   return seg;
-}
-// hex(#rrggbb)→hex lerp, for the top-view phase colour wash
-function mix(a: string, b: string, t: number): string {
-  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
-  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
-  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
-  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
-  return `rgb(${r},${g},${bl})`;
 }
 function runSwimlane(k: number, mode: RunMode) {
   const seg = phaseSegments(mode);
@@ -278,12 +270,12 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let gx = ox; gx < W; gx += gpitch) for (let gy = oy; gy < H; gy += gpitch) { ctx.beginPath(); ctx.arc(gx, gy, 0.9, 0, 7); ctx.fill(); } }
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
 
-    // 执行时序 phase wash — shared by BOTH the top map and the layered matrix, so every view
-    // tints to the current RUN_SCHED phase colour while the 执行时序 plays (same headRef clock).
-    const runSeg = phaseSegments(runMode);   // phase-wash only while the 执行时序 is PLAYING (raw colours when paused)
+    // OBSERVATION over COGNITION: while the 执行时序 plays, nodes/cells show a LOAD heatmap
+    // (绿空闲→黄→红繁忙); when idle, hierarchy is a FAINT muted hue (shapes carry the level).
+    // High-saturation colour is reserved for state. Same headRef clock as the swimlane.
+    const runSeg = phaseSegments(runMode);
     const curPhase = playing ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
-    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
-    const wash = (c: string) => (curPhase ? mix(c, curPhase.color, washAmt) : c);
+    const heatOf = (id: number) => loadColor(nodeLoad(id, curPhase?.kind));   // per-node load colour
     // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
     const phaseBanner = () => {
       if (!curPhase) return;
@@ -356,7 +348,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        const lc = wash(Lv.color);   // level colour tinted to the current 执行时序 phase (during playback)
+        const lc = curPhase ? heatOf(li * 1009 + 1) : mute(Lv.color);   // playing → level load heatmap; idle → faint muted hue
         // L5 超节点 = the top context banner — a clean SOLID colour-block pill (no faint
         // outline): filled bar, bold title left, stats right, with a darker inset chip for "L5".
         if (Lv.banner) {
@@ -389,7 +381,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            const cellBase = Lv.kind === 'core' && i % 8 === 7 ? wash(ENTITY_COLORS.vector) : lc;   // L1: Cube∶Vector ≈ 8∶1 独立核
+            const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? mute(ENTITY_COLORS.vector) : lc);   // playing → per-cell load; idle → muted (L1 Cube∶Vector ≈ 8∶1)
             glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : cellBase) : cellBase, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
@@ -465,7 +457,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const [x, y] = cardXY(k);
       if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
       const g = groupOf(k);
-      ctx.fillStyle = wash(g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
+      // observation: load heatmap while playing; else partition (opt-in cognition) or neutral block
+      ctx.fillStyle = curPhase ? heatOf(k) : (g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
       if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
       else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
@@ -505,7 +498,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // same-level connections (LOD): L2 node mesh (blade↔blade full-mesh per cabinet) +
     // L1 board 2-D mesh (card↔card neighbours per blade)
     if (links && s * L.bw > 14) {
-      ctx.strokeStyle = UB_LEVELS[2].color; ctx.globalAlpha = 0.5; ctx.lineWidth = 1.1 / s; ctx.beginPath();
+      const l2hot = curPhase?.kind === 'comm';   // L2 cabinet mesh carries collective traffic
+      ctx.strokeStyle = curPhase ? loadColor(l2hot ? 0.9 : 0.2) : mute(UB_LEVELS[2].color); ctx.globalAlpha = curPhase ? (l2hot ? 0.85 : 0.4) : 0.38; ctx.lineWidth = (l2hot ? 2.0 : 1.1) / s; ctx.beginPath();
       for (let cab = 0; cab < L.nC; cab++) {
         const c: [number, number][] = [];
         for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); }
@@ -514,7 +508,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.stroke(); ctx.globalAlpha = 1;
     }
     if (links && s * L.cs > 4) {
-      ctx.strokeStyle = UB_LEVELS[1].color; ctx.globalAlpha = 0.55; ctx.lineWidth = 0.7 / s; ctx.beginPath();
+      const l1hot = curPhase?.kind === 'compute';   // L1 board mesh busiest during compute
+      ctx.strokeStyle = curPhase ? loadColor(l1hot ? 0.8 : 0.22) : mute(UB_LEVELS[1].color); ctx.globalAlpha = curPhase ? (l1hot ? 0.8 : 0.42) : 0.42; ctx.lineWidth = (l1hot ? 1.3 : 0.7) / s; ctx.beginPath();
       for (let b = 0; b < L.nB; b++) {
         const cen: [number, number][] = [];
         for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); }
@@ -532,7 +527,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // → L2 cross-blade full-mesh emphasised. Reads as "卡→刀片→机柜逐跳流动".
     if (playing) {
       const ph = phaseRef.current, cyc = ph % 1;
-      const col = scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+      const col = loadColor(0.95);   // active flow = busy traffic (hot/red)
       const l1A = scenario === 'ring' ? (cyc < 0.5 ? 1 : 0.3) : 0.45;
       const l2A = scenario === 'ring' ? (cyc >= 0.5 ? 1 : 0.3) : 1;
       ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8;
@@ -769,8 +764,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {playing && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>卡的颜色随执行时序相位变化（加载→前向→反向→AllReduce→优化器）· 顶部条显示当前相位</div>}
+            {playing && <div><span style={{ display: 'inline-block', width: 36, height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.5)}, ${loadColor(1)})`, verticalAlign: '-1px', marginRight: 5 }} /><span style={{ color: 'var(--tx3)' }}>负载热力：绿空闲 → 红繁忙 · 连线粗细 ∝ 负载</span></div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>观测态：节点/连线按负载状态上色，分层只用极淡色调+图元区分 · 顶部条=当前相位</div>}
           </>
         ) : (
           <>
