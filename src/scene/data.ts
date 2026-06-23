@@ -304,16 +304,16 @@ export const STATUS_META: { id: string; label: string }[] = [
   { id: 'load', label: '加载' }, { id: 'store', label: '存储' }, { id: 'idle', label: '空闲' },
 ];
 
-// ─── Observation palette: ONE load/utilisation heatmap (the high-saturation colours
-// we reserve OUT of the hierarchy). 0 空闲 → 1 繁忙 = 绿 → 黄 → 红. Lines & nodes use this
-// for STATE; line thickness ∝ load/bandwidth. Hierarchy/type uses only faint neutral hues.
-const HEAT_LOW = [0x22, 0xc5, 0x5e], HEAT_MID = [0xf5, 0x9e, 0x0b], HEAT_HOT = [0xef, 0x44, 0x44];   // 绿 / 黄 / 红
-const lerp3 = (a: number[], b: number[], t: number) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
-export function loadRGB(t: number): [number, number, number] {
-  const x = Math.max(0, Math.min(1, t));
-  const c = x < 0.5 ? lerp3(HEAT_LOW, HEAT_MID, x / 0.5) : lerp3(HEAT_MID, HEAT_HOT, (x - 0.5) / 0.5);
-  return [c[0], c[1], c[2]];
-}
+// ─── Observation: a DISCRETE 4-state load palette (空闲/中/高/满). One state = ONE fixed colour
+// (no gradient → never "同态异色"). Lines use all 4; NODES colour only when 高/满 (isHot) so most
+// stay neutral. Hierarchy/type uses only faint muted hues — high-sat is reserved for state.
+// values taken from the PTO design-system utilisation ramp (…→#22c55e→#facc15→#f97316→#ef4444)
+const STATE_RGB: [number, number, number][] = [[0x22, 0xc5, 0x5e], [0xfa, 0xcc, 0x15], [0xf9, 0x73, 0x16], [0xef, 0x44, 0x44]];   // 空闲 绿 / 中 黄 / 高 橙 / 满 红
+export const STATE_LABELS = ['空闲', '中', '高', '满 / 拥塞'];
+export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.3 ? 0 : x < 0.55 ? 1 : x < 0.8 ? 2 : 3; }
+export function loadRGB(t: number): [number, number, number] { return STATE_RGB[loadState(t)]; }
+export function stateColor(i: number): string { const [r, g, b] = STATE_RGB[Math.max(0, Math.min(3, i))]; return `rgb(${r},${g},${b})`; }
+export const isHot = (t: number): boolean => loadState(t) >= 3;   // only 满/拥塞 → colour the node (few hotspots); else neutral
 export function loadColor(t: number): string { const [r, g, b] = loadRGB(t); return `rgb(${r},${g},${b})`; }
 // desaturate a hierarchy hue toward its own luminance-grey (keep a FAINT tint so levels are
 // still tellable, but they never compete with the state heatmap). amt→1 = fully neutral.
@@ -323,12 +323,13 @@ export function mute(hex: string, amt = 0.8): string {
   return `rgb(${Math.round(r + (y - r) * amt)},${Math.round(g + (y - g) * amt)},${Math.round(b + (y - b) * amt)})`;
 }
 // deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
-// kind so playback reads as a live heatmap (compute → cores hot, comm → links hot, idle → cool).
+// kind so playback reads as a live heatmap. WIDE per-node spread so within a level you get a
+// clear 绿/黄/橙/红 mix (load imbalance / stragglers) — high contrast, like the swimlane states.
 export function nodeLoad(id: number, phaseKind?: string): number {
   let h = (id * 2654435761) >>> 0; h ^= h >>> 13; h = (h * 1274126177) >>> 0;
-  const base = (h >>> 8) / 0xffffff;            // 0..1 stable spread
-  const lvl = phaseKind === 'compute' ? 0.78 : phaseKind === 'comm' ? 0.42 : phaseKind === 'mem' ? 0.6 : phaseKind === 'load' || phaseKind === 'store' ? 0.5 : 0.22;
-  return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.42));
+  h ^= h >>> 16; const base = (h >>> 8) / 0xffffff;   // 0..1 stable spread
+  const lvl = phaseKind === 'compute' ? 0.62 : phaseKind === 'comm' ? 0.5 : phaseKind === 'mem' ? 0.56 : phaseKind === 'load' || phaseKind === 'store' ? 0.48 : 0.34;
+  return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.95));   // ±0.475 spread → spans green→red
 }
 
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {

@@ -8,15 +8,15 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, mute, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { TOK } from '../content';
+import { PlanesPanel } from './PlanesPanel';
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
 const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', multi: '多平面', none: '片上' };
 // physical-device accent colours (drawn as objects inside node glyphs / blade frames)
 const DEV_CPU = '#4a8cff';   // 鲲鹏 CPU
 const DEV_LPO = '#36e0c4';   // LPO 光模块
-import { TOK } from '../content';
-import { PlanesPanel } from './PlanesPanel';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
 const AXIS_GUTTER = 100, RIGHT_PAD = 10;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
@@ -76,14 +76,6 @@ function phaseSegments(mode: RunMode): SwSeg[] {
   const seg: SwSeg[] = []; let acc = 0;
   for (const p of phases) { const t0 = acc / tw; acc += wOf(p); seg.push({ p, t0, t1: acc / tw }); }
   return seg;
-}
-// hex(#rrggbb)→hex lerp, for the top-view phase colour wash
-function mix(a: string, b: string, t: number): string {
-  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
-  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
-  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
-  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
-  return `rgb(${r},${g},${bl})`;
 }
 function runSwimlane(k: number, mode: RunMode) {
   const seg = phaseSegments(mode);
@@ -315,12 +307,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let gx = ox; gx < W; gx += gpitch) for (let gy = oy; gy < H; gy += gpitch) { ctx.beginPath(); ctx.arc(gx, gy, 0.9, 0, 7); ctx.fill(); } }
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
 
-    // 执行时序 phase wash — shared by BOTH the top map and the layered matrix, so every view
-    // tints to the current RUN_SCHED phase colour while the 执行时序 plays (same headRef clock).
-    const runSeg = phaseSegments(runMode);   // phase-wash only while the 执行时序 is PLAYING (raw colours when paused)
+    // OBSERVATION over COGNITION: while the 执行时序 plays, nodes/cells show a LOAD heatmap
+    // (绿空闲→黄→红繁忙); when idle, hierarchy is a FAINT muted hue (shapes carry the level).
+    // High-saturation colour is reserved for state. Same headRef clock as the swimlane.
+    const runSeg = phaseSegments(runMode);
     const curPhase = playing ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
-    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
-    const wash = (c: string) => (curPhase ? mix(c, curPhase.color, washAmt) : c);
+    const heatOf = (id: number) => loadColor(nodeLoad(id, curPhase?.kind));   // per-node load colour
+    // per-LINK load 0..1 = avg of its two endpoints' load + a band tendency (so individual links
+    // within a level differ in colour AND thickness, not just level-by-level).
+    const linkLoad = (a: number, b: number, boost: number) => Math.max(0, Math.min(1, (nodeLoad(a, curPhase?.kind) + nodeLoad(b, curPhase?.kind)) / 2 + boost));
     // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
     const phaseBanner = () => {
       if (!curPhase) return;
@@ -417,7 +412,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        const lc = wash(Lv.color);   // level colour tinted to the current 执行时序 phase (during playback)
+        const lc = curPhase ? heatOf(li * 1009 + 1) : mute(Lv.color);   // playing → level load heatmap; idle → faint muted hue
         // L5 超节点 = the top context banner — a clean SOLID colour-block pill (no faint
         // outline): filled bar, bold title left, stats right, with a darker inset chip for "L5".
         if (Lv.banner) {
@@ -450,7 +445,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            const cellBase = Lv.kind === 'core' && i % 8 === 7 ? wash(ENTITY_COLORS.vector) : lc;   // L1: Cube∶Vector ≈ 8∶1 独立核
+            const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? mute(ENTITY_COLORS.vector) : lc);   // playing → per-cell load; idle → muted (L1 Cube∶Vector ≈ 8∶1)
             glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : cellBase) : cellBase, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
@@ -529,7 +524,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const [x, y] = cardXY(k);
       if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
       const g = groupOf(k);
-      ctx.fillStyle = wash(g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
+      // observation: colour ONLY 高/满 cards (isHot) so most stay as neutral/partition blocks — few hotspots pop
+      const ld = curPhase ? nodeLoad(k, curPhase.kind) : -1;
+      ctx.fillStyle = ld >= 0 && isHot(ld) ? loadColor(ld) : (g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
       if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
       else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
@@ -599,26 +596,41 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // same-level connections (LOD): L2 node mesh (blade↔blade full-mesh per cabinet) +
     // L1 board 2-D mesh (card↔card neighbours per blade)
     if (links && s * L.bw > 14) {
-      ctx.strokeStyle = UB_LEVELS[2].color; ctx.globalAlpha = 0.5; ctx.lineWidth = 1.1 / s; ctx.beginPath();
+      const boost = curPhase?.kind === 'comm' ? 0.34 : -0.12;   // L2 cabinet mesh carries collective traffic
+      ctx.lineCap = 'round';
       for (let cab = 0; cab < L.nC; cab++) {
-        const c: [number, number][] = [];
-        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); }
-        for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) { ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); }
-      }
-      ctx.stroke(); ctx.globalAlpha = 1;
-    }
-    if (links && s * L.cs > 4) {
-      ctx.strokeStyle = UB_LEVELS[1].color; ctx.globalAlpha = 0.55; ctx.lineWidth = 0.7 / s; ctx.beginPath();
-      for (let b = 0; b < L.nB; b++) {
-        const cen: [number, number][] = [];
-        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); }
-        for (let l = 0; l < cen.length; l++) {
-          const col = l % 4, row = Math.floor(l / 4);
-          if (col < 3 && l + 1 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 1][0], cen[l + 1][1]); }   // right neighbour
-          if (row === 0 && l + 4 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 4][0], cen[l + 4][1]); }  // down neighbour
+        const c: [number, number][] = [], bid: number[] = [];
+        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); bid.push(blade); }
+        for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) {
+          const mx = (c[i][0] + c[j][0]) / 2, my = (c[i][1] + c[j][1]) / 2;
+          if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) continue;   // cull off-screen links
+          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 0.95 / s; }   // 颜色=利用率 · 粗细=带宽（L2 机柜内，低于板载）
+          else { ctx.strokeStyle = mute(UB_LEVELS[2].color); ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
+          ctx.beginPath(); ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); ctx.stroke();
         }
       }
-      ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
+    }
+    if (links && s * L.cs > 4) {
+      const boost = curPhase?.kind === 'compute' ? 0.12 : -0.1;   // L1 board mesh busiest during compute
+      ctx.lineCap = 'round';
+      const seg = (ka: number, kb: number, pa: [number, number], pb: [number, number]) => {
+        const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
+        if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) return;   // cull
+        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 1.5 / s; }   // 颜色=利用率 · 粗细=带宽（L1 板载，最高 BW → 最粗）
+        else { ctx.strokeStyle = mute(UB_LEVELS[1].color); ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
+        ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
+      };
+      for (let b = 0; b < L.nB; b++) {
+        const cen: [number, number][] = [], kid: number[] = [];
+        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); kid.push(k); }
+        for (let l = 0; l < cen.length; l++) {
+          const colx = l % 4, row = Math.floor(l / 4);
+          if (colx < 3 && l + 1 < cen.length) seg(kid[l], kid[l + 1], cen[l], cen[l + 1]);   // right neighbour
+          if (row === 0 && l + 4 < cen.length) seg(kid[l], kid[l + 4], cen[l], cen[l + 4]);  // down neighbour
+        }
+      }
+      ctx.globalAlpha = 1;
     }
 
     // ── scenario playback: animated hop-by-hop flow (marching ants) ──
@@ -626,7 +638,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // → L2 cross-blade full-mesh emphasised. Reads as "卡→刀片→机柜逐跳流动".
     if (playing) {
       const ph = phaseRef.current, cyc = ph % 1;
-      const col = scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+      const col = loadColor(0.95);   // active flow = busy traffic (hot/red)
       const l1A = scenario === 'ring' ? (cyc < 0.5 ? 1 : 0.3) : 0.45;
       const l2A = scenario === 'ring' ? (cyc >= 0.5 ? 1 : 0.3) : 1;
       ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8;
@@ -872,8 +884,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />擎天 NIC</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {playing && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>卡的颜色随执行时序相位变化（加载→前向→反向→AllReduce→优化器）· 顶部条显示当前相位</div>}
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>负载 4 档：空闲/中/高/满（拥塞）</span></div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在满时上色 · 顶部=当前相位</div>}
           </>
         ) : (
           <>
@@ -1019,7 +1031,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
           <g key={ri} transform={`translate(0,${lanesY + ri * laneH})`}>
             <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={8.5} fill={ink2}>{r.name}</text>
             {r.slots.map((st, ti) => st === 'bubble' ? null : (
-              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} opacity={padL + ti * slotW <= headX ? 0.92 : 0.32} />
+              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} />
             ))}
           </g>
         ))}

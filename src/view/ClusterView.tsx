@@ -16,7 +16,7 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, loadColor,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, mute,
   memLayers, PLANES,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
@@ -551,7 +551,7 @@ export function ClusterView() {
                       </button>
                       <button onClick={() => setFpStatus((v) => !v)} title="负载/观测：节点与连线按负载热力上色（绿空闲→黄→红繁忙/拥塞），连线粗细 ∝ 负载/带宽；分层只用极淡色调+图元区分，高饱和色专表状态"
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
-                        <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(1)})`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
+                        <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
                       </button>
                       <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·超节点内·TP/EP) / RDMA scale-out(橙·跨超节点 RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
@@ -878,21 +878,22 @@ export function ClusterView() {
             {mode === 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
-                {/* layer elements — same canonical colour per concept as the layered/top views */}
-                <LgRow shape="dot" color={ENTITY_COLORS.cube} label="AI Core（设备内 · block）" />
-                <LgRow shape="dot" color={ENTITY_COLORS.rank} label="rank（软件 · 1:1 绑定 device）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.card} label="L0 卡 / device（4 Die）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.node} label="L1 刀片 / 节点" />
-                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="L2 机柜" />
-                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L3 ${TOK.supernode}`} />
-                {podCount > 1 && <LgRow shape="sq" color={UB_LEVELS[4].color} label="L4 超节点间" />}
-                {/* connections */}
-                <div style={lgHdr}>连接</div>
-                <LgRow color={UB_LEVELS[1].color} label="层内直连 L1 卡↔卡（板载）" />
-                <LgRow color={UB_LEVELS[2].color} label="层内直连 L2 节点↔节点（柜内）" />
-                <span style={lgNote}>竖向骨干按 UB 级别同色（L1→L4）</span>
-                <LgRow color={COMM_PATTERNS[0].color} label="Ring-AllReduce（环）" />
-                <LgRow color={COMM_PATTERNS[1].color} label="All-to-All（MoE）" />
+                {/* hierarchy — colour弱化, distinguished by GLYPH shape (高饱和色专表状态) */}
+                <span style={lgNote}>层级靠图元形状区分，颜色已弱化：</span>
+                <LgRow shape="dot" color={mute(ENTITY_COLORS.cube)} label="L1 AI Core（Cube/Vector·≈32/卡）" />
+                <LgRow shape="sq" color={mute(ENTITY_COLORS.computeDie)} label="L2 计算 Die（×2/卡）" />
+                <LgRow shape="sq" color={mute(ENTITY_COLORS.card)} label="L3 卡 / device" />
+                <LgRow shape="sq" color={mute(ENTITY_COLORS.node)} label="L4 节点 / 刀片" />
+                <LgRow shape="sq" color={mute(ENTITY_COLORS.cab)} label="机柜" />
+                <LgRow shape="sq" color={mute(ENTITY_COLORS.super)} label={`L5 ${TOK.supernode}`} />
+                {/* state — discrete 4-bucket load (one state = one colour) */}
+                <div style={lgHdr}>状态 / 负载（观测 · 4 档）</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
+                  {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
+                </div>
+                <span style={lgNote}>连线 颜色=利用率 · 粗细=带宽（粗绿=大带宽闲 / 细红=小带宽打满）</span>
+                <span style={lgNote}>卡只在 满/拥塞 时上色（少量热点），其余保持中性</span>
+                <span style={lgNote}>播放(有相位) 或 开"负载/观测"时显示</span>
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
@@ -915,19 +916,6 @@ export function ClusterView() {
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
                 {/* observation: load/utilisation heatmap */}
-                {fpStatus && (
-                  <>
-                    <div style={lgHdr}>负载 / 状态（观测热力）</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 1px' }}>
-                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>空闲</span>
-                      <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.5)}, ${loadColor(1)})` }} />
-                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>繁忙</span>
-                    </div>
-                    <span style={lgNote}>节点 = 负载热力（绿空闲 → 黄 → 红繁忙/拥塞）</span>
-                    <span style={lgNote}>连线 = 同一热力 + 粗细 ∝ 负载/带宽；当前相位的活跃链路最红最粗</span>
-                    <span style={lgNote}>分层只用极淡色调 + 图元形状区分 · 高饱和色专表状态</span>
-                  </>
-                )}
                 {/* parallel partition palette */}
                 {fpPart !== 'none' && (
                   <>
