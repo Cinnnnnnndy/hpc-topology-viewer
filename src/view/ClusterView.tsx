@@ -16,7 +16,7 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, STATUS_META, STATUS_COLORS,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, loadColor,
   memLayers,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
@@ -536,10 +536,10 @@ export function ClusterView() {
                         <span style={{ width: 9, height: 3, background: fpPeers ? ink(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 0.9 : 0.5 }} />
                         {narrow ? '直连' : '层内直连'}
                       </button>
-                      <button onClick={() => setFpStatus((v) => !v)} title="状态/流量：节点按当前活动上色（计算/通信/访存…），连线粗细表示带宽，当前相位的活跃链路加粗发亮（状态色优先于切分色）"
+                      <button onClick={() => setFpStatus((v) => !v)} title="负载/观测：节点与连线按负载热力上色（绿空闲→黄→红繁忙/拥塞），连线粗细 ∝ 负载/带宽；分层只用极淡色调+图元区分，高饱和色专表状态"
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
-                        <span style={{ width: 9, height: 9, background: fpStatus ? ink('#22c55e') : '#22c55e', display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 0.9 : 0.5 }} />
-                        {narrow ? '状态' : '状态/流量'}
+                        <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(1)})`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
+                        {narrow ? '负载' : '负载/观测'}
                       </button>
                     </div>
                   )}
@@ -881,13 +881,18 @@ export function ClusterView() {
                 {/* run phases (phase-wash colours) */}
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
-                {/* live status / flow */}
+                {/* observation: load/utilisation heatmap */}
                 {fpStatus && (
                   <>
-                    <div style={lgHdr}>状态 / 流量（节点活动）</div>
-                    {STATUS_META.map((s) => <LgRow key={s.id} shape="dot" color={STATUS_COLORS[s.id]} label={s.label} />)}
-                    <span style={lgNote}>连线粗细 = 带宽（节点内 L1 最粗 → scale-out 最细）</span>
-                    <span style={lgNote}>当前相位活跃链路加粗发亮 = 流量 · 状态色优先于切分色</span>
+                    <div style={lgHdr}>负载 / 状态（观测热力）</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 1px' }}>
+                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>空闲</span>
+                      <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.5)}, ${loadColor(1)})` }} />
+                      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>繁忙</span>
+                    </div>
+                    <span style={lgNote}>节点 = 负载热力（绿空闲 → 黄 → 红繁忙/拥塞）</span>
+                    <span style={lgNote}>连线 = 同一热力 + 粗细 ∝ 负载/带宽；当前相位的活跃链路最红最粗</span>
+                    <span style={lgNote}>分层只用极淡色调 + 图元形状区分 · 高饱和色专表状态</span>
                   </>
                 )}
                 {/* parallel partition palette */}

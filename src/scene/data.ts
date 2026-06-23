@@ -229,6 +229,33 @@ export const STATUS_META: { id: string; label: string }[] = [
   { id: 'load', label: '加载' }, { id: 'store', label: '存储' }, { id: 'idle', label: '空闲' },
 ];
 
+// ─── Observation palette: ONE load/utilisation heatmap (the high-saturation colours
+// we reserve OUT of the hierarchy). 0 空闲 → 1 繁忙 = 绿 → 黄 → 红. Lines & nodes use this
+// for STATE; line thickness ∝ load/bandwidth. Hierarchy/type uses only faint neutral hues.
+const HEAT_LOW = [0x22, 0xc5, 0x5e], HEAT_MID = [0xf5, 0x9e, 0x0b], HEAT_HOT = [0xef, 0x44, 0x44];   // 绿 / 黄 / 红
+const lerp3 = (a: number[], b: number[], t: number) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
+export function loadRGB(t: number): [number, number, number] {
+  const x = Math.max(0, Math.min(1, t));
+  const c = x < 0.5 ? lerp3(HEAT_LOW, HEAT_MID, x / 0.5) : lerp3(HEAT_MID, HEAT_HOT, (x - 0.5) / 0.5);
+  return [c[0], c[1], c[2]];
+}
+export function loadColor(t: number): string { const [r, g, b] = loadRGB(t); return `rgb(${r},${g},${b})`; }
+// desaturate a hierarchy hue toward its own luminance-grey (keep a FAINT tint so levels are
+// still tellable, but they never compete with the state heatmap). amt→1 = fully neutral.
+export function mute(hex: string, amt = 0.8): string {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const y = 0.3 * r + 0.59 * g + 0.11 * b;
+  return `rgb(${Math.round(r + (y - r) * amt)},${Math.round(g + (y - g) * amt)},${Math.round(b + (y - b) * amt)})`;
+}
+// deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
+// kind so playback reads as a live heatmap (compute → cores hot, comm → links hot, idle → cool).
+export function nodeLoad(id: number, phaseKind?: string): number {
+  let h = (id * 2654435761) >>> 0; h ^= h >>> 13; h = (h * 1274126177) >>> 0;
+  const base = (h >>> 8) / 0xffffff;            // 0..1 stable spread
+  const lvl = phaseKind === 'compute' ? 0.78 : phaseKind === 'comm' ? 0.42 : phaseKind === 'mem' ? 0.6 : phaseKind === 'load' || phaseKind === 'store' ? 0.5 : 0.22;
+  return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.42));
+}
+
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
   train: [
     { id: 'load', name: '加载 batch',      kind: 'load',    color: '#c2c9d4', parallel: 'DP',    note: '各 DP 副本读入各自 micro-batch' },

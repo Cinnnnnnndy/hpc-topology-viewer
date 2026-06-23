@@ -22,7 +22,8 @@ import {
   NODE_DIM, NODE_PARTS, NPU_GRID, DIES_PER_NPU, NPUS_PER_NODE,
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
-  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE, STATUS_COLORS,
+  SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
+  loadColor, nodeLoad, mute,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1822,29 +1823,24 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
 
-  // phase wash + selection highlight: compute → AI cores / cards heat; comm → ranks pulse;
-  // partition → group colour on card/rank/thread; selection → the actual chain objects glow amber.
+  // OBSERVATION heatmap + selection. State (load 0..1) → 绿→黄→红; this is the ONLY high-sat
+  // colour. Hierarchy/type stays a FAINT muted hue (shapes carry the level). Partition is an
+  // opt-in cognition lens. Heatmap is live while a run phase is active (or the 观测 toggle is on).
   useLayoutEffect(() => {
-    const col = new THREE.Color(), procBase = new THREE.Color(ENTITY_COLORS.computeDie), cubeBase = new THREE.Color(ENTITY_COLORS.cube), vecBase = new THREE.Color(ENTITY_COLORS.vector), hl = new THREE.Color('#4369ef');
-    const tint = phase ? new THREE.Color(phase.color) : null;
+    const col = new THREE.Color(), procBase = new THREE.Color(mute(ENTITY_COLORS.computeDie)), cubeBase = new THREE.Color(mute(ENTITY_COLORS.cube)), vecBase = new THREE.Color(mute(ENTITY_COLORS.vector)), hl = new THREE.Color('#4369ef');
     const cardBase = chipTex ? '#ffffff' : LC.npuTop;
     const pm = procRef.current, tm = thrRef.current, lm = tileRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
-    const tileBase = new THREE.Color(ENTITY_COLORS.vector);
+    const tileBase = new THREE.Color(mute(ENTITY_COLORS.vector));
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
-    // live status colours (priority over partition): card = current activity, rank = comm, thread = compute
-    const sCard = phase ? STATUS_COLORS[phase.kind] : STATUS_COLORS.idle;
-    const sProc = commNow ? STATUS_COLORS.comm : STATUS_COLORS.idle;
-    const sThr = computeNow ? STATUS_COLORS.compute : STATUS_COLORS.idle;
-    // playback (phase set, status overlay OFF): EVERY level tints toward the current phase
-    // colour across the whole timeline, so the entire tower visibly changes colour with the
-    // 时序 — the phase's "primary" level tints strongest, the rest get a clear secondary wash.
-    if (pm) for (let k = 0; k < G.N; k++) { if (status) col.set(sProc); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (tint) col.lerp(tint, commNow ? 0.78 : 0.5); } pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7; if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(cube ? cubeBase : vecBase); if (tint) col.lerp(tint, computeNow ? 0.72 : 0.5); } tm.setColorAt(i, col); }
-    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_TILES)))); else { col.copy(tileBase); if (tint) col.lerp(tint, computeNow ? 0.72 : 0.5); } lm.setColorAt(i, col); }
-    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (status) col.set(sCard); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (tint) col.lerp(tint, 0.5); } nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else { col.set(LC.bladeBase); if (tint && !status) col.lerp(tint, commNow ? 0.55 : 0.36); } bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) { col.set(LC.cabBase); if (tint && !status && !onPart) col.lerp(tint, commNow ? 0.55 : 0.36); cm.setColorAt(c, col); }
+    const sk = phase?.kind ?? null, heat = status || sk != null;   // observation heatmap active
+    const heatCol = (id: number) => col.set(loadColor(nodeLoad(id, sk ?? undefined)));
+    if (pm) for (let k = 0; k < G.N; k++) { if (heat) heatCol(k); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (heat) heatCol(i); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
+    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (heat) heatCol(i + 7); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
+    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (heat) heatCol(k); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatCol(b * 131 + 7); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatCol(c * 911 + 13); else col.set(LC.cabBase); cm.setColorAt(c, col); }
     // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
     if (sel) {
       const cardsH: number[] = [], bladesH: number[] = [], cabsH: number[] = [];
@@ -1929,30 +1925,33 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));
   const dieInsetPos: [number, number, number] = [-G.fieldW / 2 - DIE.w * 0.55 * dieS - 1.2, G.yCard + 1.8 * dieS, -G.fieldD / 2 - 0.5];
 
-  // status overlay: which band's links carry the current phase's traffic + the status colour
+  // OBSERVATION: each connector carries a load 0..1 → 绿/黄/红 heatmap + thickness ∝ load.
+  // The band that carries the current phase's traffic runs hot (red, thick); the rest idle (green, thin).
   const statKind = phase?.kind ?? null;
-  const statCol = statKind ? STATUS_COLORS[statKind] : STATUS_COLORS.idle;
+  const heat = status || statKind != null;
   const linkActive = (band: number): boolean => {
     if (!statKind) return false;
     if (statKind === 'compute') return band <= 3 || band === 7;                      // tile→AI core→die→card→blade compute fan
     if (statKind === 'comm') return collective === 'a2a' ? band === 4 || band === 5 : band === 5 || band === 6;
     return band === 2;                                                              // load/store/mem → memory access
   };
-  // connector. status mode → colour by link state, thickness ∝ bandwidth (bw) with a flow surge on active links.
+  const linkLoad = (band: number): number => (!statKind ? 0.12 : linkActive(band) ? (statKind === 'comm' ? 0.95 : 0.82) : 0.2);
+  // connector. observation → colour by load state, thickness ∝ load. else → FAINT muted hierarchy hue.
   const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => pts.length > 0 && (
-    status
-      ? <Line points={pts} segments color={linkActive(upper) ? statCol : '#cbd2dc'} lineWidth={linkActive(upper) ? bw * 1.8 : bw * 0.7} transparent opacity={linkActive(upper) ? 0.95 : 0.22} />
-      : <Line points={pts} segments color={color} lineWidth={focus === upper ? 3 : focus === null ? base : 0.5} transparent opacity={focus === upper ? 0.95 : focus === null ? 0.4 : 0.1} />
+    heat
+      ? <Line points={pts} segments color={loadColor(linkLoad(upper))} lineWidth={bw * (0.45 + linkLoad(upper) * 1.8)} transparent opacity={linkActive(upper) ? 0.95 : 0.34} />
+      : <Line points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} transparent opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} />
   );
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
   // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
   // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
   // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
+  // hierarchy band hue = FAINT muted (shapes carry the level; high-sat colour reserved for state)
   const bands: [number, number, string, string][] = [
-    [7, G.yTile, 'L0 Tile/lane', ENTITY_COLORS.vector],
-    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die ×2', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
-    [3, G.yBlade, 'L4 节点', L(1)], [4, G.yCab, '机柜', L(2)], [5, G.ySuper, `L5 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L6 超节点间', L(4)],
+    [7, G.yTile, 'L0 Tile/lane', mute(ENTITY_COLORS.vector)],
+    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', mute(THREAD_COLOR)], [1, G.yProc, 'L2 计算 Die ×2', mute(ENTITY_COLORS.computeDie)], [2, G.yCard, 'L3 卡=device', mute(L(0))],
+    [3, G.yBlade, 'L4 节点', mute(L(1))], [4, G.yCab, '机柜', mute(L(2))], [5, G.ySuper, `L5 ${TOK.supernode}`, mute(L(3))], [6, G.yCluster, 'L6 超节点间', mute(L(4))],
   ];
   // UB L0–L7 软硬件同一坐标 per band — scope domain (L 号在带名里)
   const bandCoord: Record<number, string> = {
@@ -1988,8 +1987,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
-      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={status ? (computeNow ? statCol : '#cbd2dc') : L(1)} lineWidth={status ? (computeNow ? 2.6 : 1.1) : 1.4} transparent opacity={status ? (computeNow ? 0.85 : 0.28) : (focus === null ? 0.62 : 0.16)} />}
-      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={status ? (commNow && collective === 'a2a' ? statCol : '#cbd2dc') : L(2)} lineWidth={status ? (commNow && collective === 'a2a' ? 2.2 : 1.1) : 1.4} transparent opacity={status ? (commNow && collective === 'a2a' ? 0.85 : 0.3) : (focus === null ? 0.6 : 0.2)} />}
+      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={heat ? loadColor(computeNow ? 0.82 : 0.18) : mute(L(1))} lineWidth={heat ? (computeNow ? 2.6 : 1.0) : 1.2} transparent opacity={heat ? (computeNow ? 0.85 : 0.3) : (focus === null ? 0.5 : 0.14)} />}
+      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={heat ? loadColor(commNow && collective === 'a2a' ? 0.92 : 0.2) : mute(L(2))} lineWidth={heat ? (commNow && collective === 'a2a' ? 2.4 : 1.0) : 1.2} transparent opacity={heat ? (commNow && collective === 'a2a' ? 0.85 : 0.32) : (focus === null ? 0.5 : 0.16)} />}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
