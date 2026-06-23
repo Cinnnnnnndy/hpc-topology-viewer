@@ -110,13 +110,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
-      if (d.banner) { const h = d.kind === 'super' ? 3.6 : 2.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
+      if (d.banner) { const h = d.kind === 'super' ? 3.6 : d.kind === 'cluster' ? 3.8 : 2.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
       return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count };   // grp = children per parent
     });
-    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
+    // how many super-nodes the cluster (L6) holds — this view drills into just ONE (L5),
+    // so L5/L6/L7 are a fan-out, NOT 1:1. superclusterNpu is illustrative (e.g. ">52万").
+    const clusterNpu = (() => { const m = spec.superclusterNpu.match(/(\d+)\s*万/); if (m) return parseInt(m[1], 10) * 10000; const m2 = spec.superclusterNpu.match(/(\d+)/); return m2 ? parseInt(m2[1], 10) : 0; })();
+    const nSuper = Math.max(2, Math.round(clusterNpu / N));
+    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD, nSuper };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
@@ -246,16 +250,25 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        // L7 作业 / L6 集群 / L5 超节点 = clean full-width context banners
+        // L7 作业 / L6 集群 / L5 超节点 = context banners. NOT 1:1: L7=1 作业 over a cluster
+        // of nSuper 超节点 (L6), of which this view drills into ONE (L5).
         if (Lv.banner) {
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
-          const txt = Lv.kind === 'job' ? '1 训练作业 · 全局编排（端到端吞吐 / MFU）'
-            : Lv.kind === 'cluster' ? `集群 · 跨${TOK.supernode} scale-out（DP / PP）`
-            : `${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`;
           ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
           ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          ctx.fillStyle = hi && on ? SEL : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
-          ctx.fillText(txt, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          const col = hi && on ? SEL : Lv.color;
+          if (Lv.kind === 'cluster') {
+            // fan-out row: nSuper 超节点, the FIRST one highlighted = the one this view expands
+            const n = Math.min(LAY.nSuper, 96), cw2 = Wc / n, sq = Math.min(cw2 * 0.62, Lv.h * 0.32);
+            for (let i = 0; i < n; i++) { const cx = margin + (i + 0.5) * cw2, sel0 = i === 0; ctx.fillStyle = sel0 ? col : Lv.color; ctx.globalAlpha = sel0 ? 1 : 0.34; rr(cx - sq / 2, Lv.y0 + Lv.h * 0.52, sq, sq * 1.4, sq * 0.25); ctx.fill(); }
+            ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '1.5px sans-serif';
+            ctx.fillText(`集群 · ${LAY.nSuper} 个${TOK.supernode} scale-out（DP / PP）· 本图展开其一 ↓`, margin + Wc / 2, Lv.y0 + Lv.h * 0.27);
+          } else {
+            const txt = Lv.kind === 'job' ? '1 训练作业 · 全局编排 · 横跨整个集群（端到端吞吐 / MFU）'
+              : `${TOK.supernode}（1 / ${LAY.nSuper}）· ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`;
+            ctx.fillStyle = col; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
+            ctx.fillText(txt, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          }
           return;
         }
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
@@ -588,7 +601,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ job: '作业横幅', cluster: '集群横幅', super: '面板', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
+              const shape = ({ job: '1 作业·横跨集群', cluster: `${LAY.nSuper} 个超节点·本图详其一`, super: `集群中的 1 / ${LAY.nSuper}`, cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
