@@ -1979,7 +1979,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       const [r, g, b] = loadRGB(ld), cc: [number, number, number] = [r / 255, g / 255, b / 255];
       bins[bi].pts.push(pts[s * 2], pts[s * 2 + 1]); bins[bi].cols.push(cc, cc);
     }
-    return <group>{bins.map((bk, bi) => bk.pts.length > 0 && <Line key={`${key}-${bi}`} points={bk.pts} segments vertexColors={bk.cols} lineWidth={W[bi]} transparent opacity={0.34 + bi * 0.26} />)}</group>;
+    return <group>{bins.map((bk, bi) => bk.pts.length > 0 && <Line key={`${key}-${bi}`} points={bk.pts} segments vertexColors={bk.cols} lineWidth={W[bi]} transparent opacity={0.88} />)}</group>;
   };
   const segLoad = (band: number, s: number): number => nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16);
   // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
@@ -2072,15 +2072,17 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* L0 cards — individual textured NpuChip (≤cap) else instanced (texture-mapped) */}
       {useChip
         ? G.cardX.map((x, k) => {
-          const lc = heat ? loadColor(nodeLoad(k, statKind ?? undefined)) : null;   // observation: load heat plate over the chip
+          const lc = heat ? loadColor(nodeLoad(k, statKind ?? undefined)) : null;   // observation: REPLACE the chip with a solid load-state box (no overlay → one state = one colour)
+          const sel0 = hoverNpu === k || (selPath !== null && selPath.cards.includes(k));
           return (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
             onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
-            <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={hoverNpu === k || (selPath !== null && selPath.cards.includes(k))} logo />
-            {lc && <Slab size={[0.37, 0.06, 0.37]} position={[0, 0.14, 0]} color={lc} emissive={lc} emissiveIntensity={0.6} />}
+            {lc
+              ? <Slab size={[0.34, 0.12, 0.34]} color={lc} emissive={lc} emissiveIntensity={0.5} edgeColor={sel0 ? '#4369ef' : undefined} />
+              : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })
         : (

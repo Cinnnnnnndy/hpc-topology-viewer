@@ -509,7 +509,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) {
           const mx = (c[i][0] + c[j][0]) / 2, my = (c[i][1] + c[j][1]) / 2;
           if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) continue;   // cull off-screen links
-          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.3 + ld * 0.6; ctx.lineWidth = (0.6 + ld * 1.9) / s; }
+          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = (0.6 + ld * 1.9) / s; }   // pure state colour (no bg blend); thickness = magnitude
           else { ctx.strokeStyle = mute(UB_LEVELS[2].color); ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
           ctx.beginPath(); ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); ctx.stroke();
         }
@@ -522,7 +522,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const seg = (ka: number, kb: number, pa: [number, number], pb: [number, number]) => {
         const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
         if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) return;   // cull
-        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.32 + ld * 0.58; ctx.lineWidth = (0.5 + ld * 1.5) / s; }
+        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = (0.5 + ld * 1.5) / s; }   // pure state colour; thickness = magnitude
         else { ctx.strokeStyle = mute(UB_LEVELS[1].color); ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
         ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
       };
@@ -909,7 +909,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
           <g key={ri} transform={`translate(0,${lanesY + ri * laneH})`}>
             <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={8.5} fill={ink2}>{r.name}</text>
             {r.slots.map((st, ti) => st === 'bubble' ? null : (
-              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} opacity={padL + ti * slotW <= headX ? 0.92 : 0.32} />
+              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} />
             ))}
           </g>
         ))}
