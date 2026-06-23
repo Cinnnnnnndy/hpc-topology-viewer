@@ -30,12 +30,26 @@ const SW_T = 60;
 const SW_LANES = ['AIC·Cube 0', 'AIC·Cube 1', 'AIV·Vector 0', 'AIV·Vector 1', 'AIV·Vector 2', 'MTE·DMA 搬运'];
 const SW_COLOR: Record<string, string> = { compute: '#04d793', mem: '#ffaa3b', comm: '#ff4b7b', load: '#60a5fa', bubble: '' };
 interface SwSeg { p: RunPhase; t0: number; t1: number; }
-function runSwimlane(k: number, mode: RunMode) {
+// phase timeline (normalised 0..1 segments) shared by the swimlane AND the top-view
+// playback wash — compute phases run longer, so the cards dwell on the compute colour.
+function phaseSegments(mode: RunMode): SwSeg[] {
   const phases = RUN_SCHED[mode];
-  const wOf = (p: RunPhase) => (p.kind === 'compute' ? 3 : p.kind === 'comm' ? 1.4 : 1);   // compute phases run longer
+  const wOf = (p: RunPhase) => (p.kind === 'compute' ? 3 : p.kind === 'comm' ? 1.4 : 1);
   const tw = phases.reduce((s, p) => s + wOf(p), 0);
   const seg: SwSeg[] = []; let acc = 0;
   for (const p of phases) { const t0 = acc / tw; acc += wOf(p); seg.push({ p, t0, t1: acc / tw }); }
+  return seg;
+}
+// hex(#rrggbb)→hex lerp, for the top-view phase colour wash
+function mix(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
+  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
+  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+function runSwimlane(k: number, mode: RunMode) {
+  const seg = phaseSegments(mode);
   const phaseAt = (t: number) => seg.find((s) => t < s.t1)?.p ?? seg[seg.length - 1].p;
   const rng = mulberry((k * 2654435761 + 7) >>> 0);
   let comp = 0, mem = 0, bub = 0, tot = 0;
@@ -380,6 +394,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ctx.lineWidth = 0.8 / s; ctx.strokeStyle = UB_LEVELS[1].color;
     for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); ctx.strokeRect(x, y, L.bw, L.bh); }
 
+    // playback: the whole pod runs the RUN_SCHED timeline (train) — every card tints to the
+    // CURRENT phase colour (加载→前向→反向→AllReduce→优化器), matching the 执行时序 swimlane / 3D.
+    const runSeg = phaseSegments('train');
+    const cyc = (phaseRef.current * 0.07) % 1;
+    const curPhase = play ? (runSeg.find((sg) => cyc < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
+    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.6 : curPhase.kind === 'comm' ? 0.55 : 0.42) : 0;
+
     // cards — full L3→L2→L1·L0 drill on zoom: card(4 Die) → 计算 Die → AI Core(Cube/Vector)
     const showBorder = s > 4, showId = s > 14, showDie = s > 26, showCore = s > 74;
     const round = s > 8, rad = L.cs * 0.16;   // rounded corners (same glyph language as 层级图) once cards are big; cull off-screen
@@ -389,7 +410,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const [x, y] = cardXY(k);
       if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
       const g = groupOf(k);
-      ctx.fillStyle = g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
+      let cf = g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
+      if (curPhase) cf = mix(cf, curPhase.color, washAmt);
+      ctx.fillStyle = cf;
       if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
       else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
@@ -534,7 +557,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       }
     }
     ctx.restore();
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL, selTop]);
+    // live phase banner (screen-space) — names the current run phase driving the card colour
+    if (curPhase) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '600 13px sans-serif';
+      const label = `▶ 执行时序 · ${curPhase.name}${curPhase.parallel && curPhase.parallel !== '—' ? ' · ' + curPhase.parallel : ''}`;
+      const tw = ctx.measureText(label).width, bx = W / 2 - tw / 2 - 11, bw = tw + 22;
+      ctx.fillStyle = P.bg; ctx.globalAlpha = 0.82; rrPath(ctx, bx, 12, bw, 26, 8); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = curPhase.color; ctx.lineWidth = 1.4; rrPath(ctx, bx, 12, bw, 26, 8); ctx.stroke();
+      ctx.fillStyle = curPhase.color; ctx.fillText(label, W / 2, 25);
+    }
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL, selTop, P.bg]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
   useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setPlay(false); }, [layout]);
@@ -675,6 +707,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
             {play && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
+            {play && <div style={{ color: 'var(--tx3)' }}>卡的颜色随执行时序相位变化（加载→前向→反向→AllReduce→优化器）· 顶部条显示当前相位</div>}
           </>
         ) : (
           <>

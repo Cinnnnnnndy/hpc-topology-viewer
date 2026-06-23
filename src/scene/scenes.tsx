@@ -1654,7 +1654,12 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
 //    rendered (no sampling), with full UB relationships + LLM-training collectives
 // ═══════════════════════════════════════════════════════════════════════════
 
-const FP_THREADS = 3;            // threads (AI-core groups) shown per NPU
+const FP_THREADS = 32;           // L1 AI Core markers / card = ≈32/卡 (16/计算 Die × 2), matching the 平面视图 count
+const FP_TILES = 8;              // L0 Tile / SIMT-lane markers / card (finest grain · lane strip, schematic)
+const FP_AIC_COLS = 8;          // L1 AI Core grid (32 = 8×4)
+const FP_AIC_ROWS = FP_THREADS / FP_AIC_COLS;
+const aicOff = (t: number): [number, number] => [((t % FP_AIC_COLS) - (FP_AIC_COLS - 1) / 2) * 0.04, (Math.floor(t / FP_AIC_COLS) - (FP_AIC_ROWS - 1) / 2) * 0.05];   // AI Core grid offset within a card
+const tileOff = (t: number): number => (t - (FP_TILES - 1) / 2) * 0.038;   // L0 lane x-offset within a card
 const FP_CARDS_PER_BLADE = 8;   // = NPUS_PER_NODE
 const FP_BLADES_PER_CAB = 8;    // = NODES_PER_CAB → 64 NPU / cabinet
 const FP_CHIP_CAP = 64;         // ≤ this → individual textured NpuChip; beyond → instanced (texture-mapped)
@@ -1679,6 +1684,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const cardInst = useRef<THREE.InstancedMesh>(null);
   const procRef = useRef<THREE.InstancedMesh>(null);
   const thrRef = useRef<THREE.InstancedMesh>(null);
+  const tileRef = useRef<THREE.InstancedMesh>(null);   // L0 Tile / SIMT-lane markers
   const bladeInst = useRef<THREE.InstancedMesh>(null);
   const cabInst = useRef<THREE.InstancedMesh>(null);
   const chipTex = useOptionalTexture(CHIP_TEX);
@@ -1706,7 +1712,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const fieldW = Math.max(superW, podPitch * podCount);
     // band heights scale gently with field size so the tiers stay distinct when zoomed out
     const yStep = Math.min(1.5, 0.62 + Math.max(fieldW, superD) * 0.012);
-    const yThread = 0.5, yProc = yThread + yStep, yCard = yProc + yStep;
+    const yTile = 0.5, yThread = yTile + yStep, yProc = yThread + yStep, yCard = yProc + yStep;
     const yBlade = yCard + yStep, yCab = yBlade + yStep, ySuper = yCab + yStep, yCluster = ySuper + yStep;
 
     const cardX: number[] = [], cardZ: number[] = [], cardBlade: number[] = [];
@@ -1739,13 +1745,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     // connectors (backbone always full; dense per-card / collectives capped)
     const thrPitch = 0.12;
     const drawMicro = N <= FP_MICRO_CAP;
-    const t2p: [number, number, number][] = [], p2c: [number, number, number][] = [];
+    const l2t: [number, number, number][] = [], t2p: [number, number, number][] = [], p2c: [number, number, number][] = [];
     const c2b: [number, number, number][] = [], b2c: [number, number, number][] = [], c2s: [number, number, number][] = [], s2cl: [number, number, number][] = [];
     for (let k = 0; k < N; k++) {
       const x = cardX[k], z = cardZ[k], b = cardBlade[k];
       c2b.push([x, yCard, z], [bladeMX[b], yBlade, bladeMZ[b]]);
       if (drawMicro) {
-        for (let t = 0; t < FP_THREADS; t++) t2p.push([x + (t - (FP_THREADS - 1) / 2) * thrPitch, yThread, z], [x, yProc, z]);
+        for (let t = 0; t < FP_TILES; t++) l2t.push([x + tileOff(t), yTile, z], [x, yThread, z]);   // L0 tile → L1 AI Core
+        for (let t = 0; t < FP_THREADS; t++) { const [dx, dz] = aicOff(t); t2p.push([x + dx, yThread, z + dz], [x, yProc, z]); }   // L1 → L2 die
         p2c.push([x, yProc, z], [x, yCard, z]);
       }
     }
@@ -1778,8 +1785,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     return {
       N, N1, nBlades: bladeMX.length, nCabs: cabMX.length, superMX, cluster: [0, yCluster, 0] as [number, number, number],
       cardX, cardZ, cardBlade, bladeMX, bladeMZ, bladeCab, cabMX, cabMZ, cabSuper, thrPitch, drawMicro,
-      yThread, yProc, yCard, yBlade, yCab, ySuper, yCluster,
-      t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, cabRing, cabA2A, l1mesh, l2mesh, peerL1, fieldW, fieldD: superD, superW, cw, cd,
+      yTile, yThread, yProc, yCard, yBlade, yCab, ySuper, yCluster,
+      l2t, t2p, p2c, c2b, b2c, c2s, s2cl, ring, a2a, cabRing, cabA2A, l1mesh, l2mesh, peerL1, fieldW, fieldD: superD, superW, cw, cd,
     };
   }, [scale, podCount, full, gen.totalNpus]);
 
@@ -1812,13 +1819,16 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (nm && !useChip) { col.set(chipTex ? '#ffffff' : LC.npuTop); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
     const pm = procRef.current;   // L2 计算 Die markers (teal) — 2 per card (UMA-merged → 1 device), like the 平面视图
     if (pm) { col.set(ENTITY_COLORS.computeDie); for (let k = 0; k < G.N; k++) for (let d = 0; d < 2; d++) { const idx = k * 2 + d; m.makeScale(0.13, 0.09, 0.17); m.setPosition(G.cardX[k] + (d - 0.5) * 0.16, G.yProc, G.cardZ[k]); pm.setMatrixAt(idx, m); pm.setColorAt(idx, col); } pm.count = G.N * 2; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
-    const tm = thrRef.current;   // L1 AI Core: 1 Cube (wide, cyan) + 2 Vector (thin, light cyan) — same glyph language as the 平面视图
-    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t === 0; col.set(cube ? ENTITY_COLORS.cube : ENTITY_COLORS.vector); m.makeScale(cube ? 0.06 : 0.032, 0.05, cube ? 0.06 : 0.05); m.setPosition(G.cardX[k] + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, G.cardZ[k]); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
+    const tm = thrRef.current;   // L1 AI Core grid (≈32/卡 representative) — mostly Cube(cyan) + a few Vector(light cyan), Cube∶Vector ≈ 8∶1
+    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t % 8 !== 7; const [dx, dz] = aicOff(t); col.set(cube ? ENTITY_COLORS.cube : ENTITY_COLORS.vector); m.makeScale(cube ? 0.024 : 0.018, 0.035, cube ? 0.024 : 0.018); m.setPosition(G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
     if (tm) { tm.count = G.N * FP_THREADS; tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
+    const lm = tileRef.current;   // L0 Tile / SIMT lane (finest) — thin light-cyan bars under each card, like the 平面视图 L0 lane glyph
+    if (lm) { col.set(ENTITY_COLORS.vector); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_TILES; t++) { const idx = k * FP_TILES + t; m.makeScale(0.02, 0.05, 0.012); m.setPosition(G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]); lm.setMatrixAt(idx, m); lm.setColorAt(idx, col); } lm.count = G.N * FP_TILES; lm.instanceMatrix.needsUpdate = true; if (lm.instanceColor) lm.instanceColor.needsUpdate = true; }
     const bm = bladeInst.current;   // L4 节点/刀片 = a wide thin board (4×2 NPU footprint), echoing the 平面视图 blade glyph
     if (bm) { col.set(LC.bladeBase); for (let b = 0; b < G.nBlades; b++) { m.makeScale(0.92, 0.04, 0.46); m.setPosition(G.bladeMX[b], G.yBlade, G.bladeMZ[b]); bm.setMatrixAt(b, m); bm.setColorAt(b, col); } bm.count = G.nBlades; bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
-    const cm = cabInst.current;
-    if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(2.2, G.cw * 0.5), 0.1, Math.min(2.2, G.cd * 0.4)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
+    const cm = cabInst.current;   // 机柜 = an UPRIGHT cabinet box (taller than wide, a rack — not a flat board) — distinct from the blade
+    const cabH = Math.min(0.62, (G.yProc - G.yThread) * 0.7);
+    if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
 
   // phase wash + selection highlight: compute → AI cores / cards heat; comm → ranks pulse;
@@ -1827,7 +1837,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const col = new THREE.Color(), procBase = new THREE.Color(ENTITY_COLORS.computeDie), cubeBase = new THREE.Color(ENTITY_COLORS.cube), vecBase = new THREE.Color(ENTITY_COLORS.vector), hl = new THREE.Color('#4369ef');
     const tint = phase ? new THREE.Color(phase.color) : null;
     const cardBase = chipTex ? '#ffffff' : LC.npuTop;
-    const pm = procRef.current, tm = thrRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
+    const pm = procRef.current, tm = thrRef.current, lm = tileRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
+    const tileBase = new THREE.Color(ENTITY_COLORS.vector);
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
     // live status colours (priority over partition): card = current activity, rank = comm, thread = compute
@@ -1835,7 +1846,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const sProc = commNow ? STATUS_COLORS.comm : STATUS_COLORS.idle;
     const sThr = computeNow ? STATUS_COLORS.compute : STATUS_COLORS.idle;
     if (pm) for (let k = 0; k < G.N; k++) { if (status) col.set(sProc); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.copy(procBase); if (commNow && tint) col.lerp(tint, 0.7); } pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % FP_THREADS === 0; if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(cube ? cubeBase : vecBase); if (computeNow && tint) col.lerp(tint, 0.6); } tm.setColorAt(i, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7; if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_THREADS)))); else { col.copy(cube ? cubeBase : vecBase); if (computeNow && tint) col.lerp(tint, 0.6); } tm.setColorAt(i, col); }
+    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { if (status) col.set(sThr); else if (onPart) col.set(pcol(part.groupOf(Math.floor(i / FP_TILES)))); else { col.copy(tileBase); if (computeNow && tint) col.lerp(tint, 0.6); } lm.setColorAt(i, col); }
     if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (status) col.set(sCard); else if (onPart) col.set(pcol(part.groupOf(k))); else { col.set(cardBase); if (computeNow && tint) col.lerp(tint, 0.34); } nm.setColorAt(k, col); }
     if (bm) for (let b = 0; b < G.nBlades; b++) { if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
     if (cm) for (let c = 0; c < G.nCabs; c++) cm.setColorAt(c, col.set(LC.cabBase));
@@ -1849,11 +1861,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       if (nm && !useChip) for (const k of cardsH) nm.setColorAt(k, hl);
       if (pm) for (const k of cardsH) { pm.setColorAt(k * 2, hl); pm.setColorAt(k * 2 + 1, hl); }
       if (tm) for (const k of cardsH) for (let t = 0; t < FP_THREADS; t++) tm.setColorAt(k * FP_THREADS + t, hl);
+      if (lm) for (const k of cardsH) for (let t = 0; t < FP_TILES; t++) lm.setColorAt(k * FP_TILES + t, hl);
       if (bm) for (const b of bladesH) bm.setColorAt(b, hl);
       if (cm) for (const c of cabsH) cm.setColorAt(c, hl);
     }
     if (pm?.instanceColor) pm.instanceColor.needsUpdate = true;
     if (tm?.instanceColor) tm.instanceColor.needsUpdate = true;
+    if (lm?.instanceColor) lm.instanceColor.needsUpdate = true;
     if (nm?.instanceColor) nm.instanceColor.needsUpdate = true;
     if (bm?.instanceColor) bm.instanceColor.needsUpdate = true;
     if (cm?.instanceColor) cm.instanceColor.needsUpdate = true;
@@ -1884,7 +1898,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const sPos = (p: number): [number, number, number] => [G.superMX[p], G.ySuper, 0];
     const vSegs: [number, number, number][] = [], pSegs: [number, number, number][] = [], cards: number[] = [];
     const bladeCards = (b: number): number[] => { const base = b * FP_CARDS_PER_BLADE, r: number[] = []; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) if (base + i < G.N) r.push(base + i); return r; };
-    const down = (k: number) => { for (let t = 0; t < FP_THREADS; t++) vSegs.push([G.cardX[k] + (t - (FP_THREADS - 1) / 2) * G.thrPitch, G.yThread, G.cardZ[k]], pPos(k)); vSegs.push(pPos(k), cPos(k)); cards.push(k); };
+    const down = (k: number) => {
+      for (let t = 0; t < FP_TILES; t++) vSegs.push([G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]], [G.cardX[k], G.yThread, G.cardZ[k]]);   // L0 tile → L1
+      for (let t = 0; t < FP_THREADS; t++) { const [dx, dz] = aicOff(t); vSegs.push([G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz], pPos(k)); }   // L1 AI Core → L2 die
+      vSegs.push(pPos(k), cPos(k)); cards.push(k);
+    };
     const meshPairs = (xs: number[], f: (x: number) => [number, number, number]) => { for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) pSegs.push(f(xs[i]), f(xs[j])); };
     let dieK: number | null = null, label = '', labelPos: [number, number, number] = [0, 0, 0], superP = 0;
     const upFromCab = (c: number) => { superP = G.cabSuper[c]; vSegs.push(caPos(c), sPos(superP)); if (podCount > 1) vSegs.push(sPos(superP), G.cluster); };
@@ -1922,7 +1940,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const statCol = statKind ? STATUS_COLORS[statKind] : STATUS_COLORS.idle;
   const linkActive = (band: number): boolean => {
     if (!statKind) return false;
-    if (statKind === 'compute') return band <= 3;                                   // thread→proc→card→blade compute fan
+    if (statKind === 'compute') return band <= 3 || band === 7;                      // tile→AI core→die→card→blade compute fan
     if (statKind === 'comm') return collective === 'a2a' ? band === 4 || band === 5 : band === 5 || band === 6;
     return band === 2;                                                              // load/store/mem → memory access
   };
@@ -1938,12 +1956,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
   // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
   const bands: [number, number, string, string][] = [
-    [0, G.yThread, 'L1 AI Core·Cube/Vector', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die ×2', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
+    [7, G.yTile, 'L0 Tile/lane', ENTITY_COLORS.vector],
+    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die ×2', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
     [3, G.yBlade, 'L4 节点', L(1)], [4, G.yCab, '机柜', L(2)], [5, G.ySuper, `L5 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L6 超节点间', L(4)],
   ];
   // UB L0–L7 软硬件同一坐标 per band — scope domain (L 号在带名里)
   const bandCoord: Record<number, string> = {
-    0: `${TOK.ub} 核内域`, 1: `${TOK.ub} 芯片域`, 2: `${TOK.ub} 芯片域 · rank 1:1`,
+    7: `${TOK.ub} 核内域 L0`, 0: `${TOK.ub} 核内域 L1`, 1: `${TOK.ub} 芯片域`, 2: `${TOK.ub} 芯片域 · rank 1:1`,
     3: `${TOK.ub} Host 机器域`, 4: `${TOK.ub} 机器域(并入)`, 5: `${TOK.ub} Pod 机器域`, 6: `${TOK.ub} 集群域`,
   };
 
@@ -1952,7 +1971,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       <Floor size={Math.max(18, G.fieldW + 6, G.fieldD + 6)} />
       {/* clickable band labels (focus → highlight that band's downstream connector) */}
       {bands.map(([i, y, t, c]) => (
-        (i < 6 || podCount > 1) && (
+        (i === 7 || i < 6 || podCount > 1) && (
           // billboard → the level label always faces the camera, readable at any view angle
           <Billboard key={i} position={[xL, y, -G.fieldD / 2]}>
             <Text fontSize={lblSize} color={focus === i ? c : LC.textDim} anchorX="right" anchorY="middle"
@@ -1965,6 +1984,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* hierarchy backbone (downstream of band f is highlighted when focus===f) */}
       {/* bw (5th arg) = relative bandwidth → thickness in status mode: intra-node fattest, scale-out thinnest */}
+      {conn(G.l2t, ENTITY_COLORS.vector, 7, 0.55, 0.6)}
       {conn(G.t2p, THREAD_COLOR, 1, 0.7, 0.8)}
       {conn(G.p2c, ENTITY_COLORS.computeDie, 2, 0.9, 1.1)}
       {conn(G.c2b, L(1), 3, 0.8, 2.4)}
@@ -2051,12 +2071,15 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         </group>
       )}
 
-      {/* L2 计算 Die (2 / card, UMA) + L1 AI Core (Cube/Vector box markers) — instanced,
-          glyph + colour unified with the 平面视图 (2 teal dies; 1 Cube + 2 Vector boxes). */}
+      {/* L2 计算 Die (2 / card, UMA) + L1 AI Core (Cube/Vector boxes) + L0 Tile (lane bars) —
+          instanced, glyph + colour unified with the 平面视图 (2 teal dies; Cube/Vector; L0 lanes). */}
       <instancedMesh ref={procRef} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={thrRef} args={[undefined, undefined, Math.max(1, G.N * FP_THREADS)]}>
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={tileRef} args={[undefined, undefined, Math.max(1, G.N * FP_TILES)]}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
       </instancedMesh>
 
