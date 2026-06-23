@@ -276,6 +276,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const runSeg = phaseSegments(runMode);
     const curPhase = playing ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
     const heatOf = (id: number) => loadColor(nodeLoad(id, curPhase?.kind));   // per-node load colour
+    // per-LINK load 0..1 = avg of its two endpoints' load + a band tendency (so individual links
+    // within a level differ in colour AND thickness, not just level-by-level).
+    const linkLoad = (a: number, b: number, boost: number) => Math.max(0, Math.min(1, (nodeLoad(a, curPhase?.kind) + nodeLoad(b, curPhase?.kind)) / 2 + boost));
     // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
     const phaseBanner = () => {
       if (!curPhase) return;
@@ -498,28 +501,41 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     // same-level connections (LOD): L2 node mesh (blade↔blade full-mesh per cabinet) +
     // L1 board 2-D mesh (card↔card neighbours per blade)
     if (links && s * L.bw > 14) {
-      const l2hot = curPhase?.kind === 'comm';   // L2 cabinet mesh carries collective traffic
-      ctx.strokeStyle = curPhase ? loadColor(l2hot ? 0.9 : 0.2) : mute(UB_LEVELS[2].color); ctx.globalAlpha = curPhase ? (l2hot ? 0.85 : 0.4) : 0.38; ctx.lineWidth = (l2hot ? 2.0 : 1.1) / s; ctx.beginPath();
+      const boost = curPhase?.kind === 'comm' ? 0.34 : -0.12;   // L2 cabinet mesh carries collective traffic
+      ctx.lineCap = 'round';
       for (let cab = 0; cab < L.nC; cab++) {
-        const c: [number, number][] = [];
-        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); }
-        for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) { ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); }
-      }
-      ctx.stroke(); ctx.globalAlpha = 1;
-    }
-    if (links && s * L.cs > 4) {
-      const l1hot = curPhase?.kind === 'compute';   // L1 board mesh busiest during compute
-      ctx.strokeStyle = curPhase ? loadColor(l1hot ? 0.8 : 0.22) : mute(UB_LEVELS[1].color); ctx.globalAlpha = curPhase ? (l1hot ? 0.8 : 0.42) : 0.42; ctx.lineWidth = (l1hot ? 1.3 : 0.7) / s; ctx.beginPath();
-      for (let b = 0; b < L.nB; b++) {
-        const cen: [number, number][] = [];
-        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); }
-        for (let l = 0; l < cen.length; l++) {
-          const col = l % 4, row = Math.floor(l / 4);
-          if (col < 3 && l + 1 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 1][0], cen[l + 1][1]); }   // right neighbour
-          if (row === 0 && l + 4 < cen.length) { ctx.moveTo(cen[l][0], cen[l][1]); ctx.lineTo(cen[l + 4][0], cen[l + 4][1]); }  // down neighbour
+        const c: [number, number][] = [], bid: number[] = [];
+        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); c.push([bx + L.bw / 2, by + L.bh / 2]); bid.push(blade); }
+        for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) {
+          const mx = (c[i][0] + c[j][0]) / 2, my = (c[i][1] + c[j][1]) / 2;
+          if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) continue;   // cull off-screen links
+          if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.3 + ld * 0.6; ctx.lineWidth = (0.6 + ld * 1.9) / s; }
+          else { ctx.strokeStyle = mute(UB_LEVELS[2].color); ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
+          ctx.beginPath(); ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); ctx.stroke();
         }
       }
-      ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
+    }
+    if (links && s * L.cs > 4) {
+      const boost = curPhase?.kind === 'compute' ? 0.12 : -0.1;   // L1 board mesh busiest during compute
+      ctx.lineCap = 'round';
+      const seg = (ka: number, kb: number, pa: [number, number], pb: [number, number]) => {
+        const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
+        if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) return;   // cull
+        if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.32 + ld * 0.58; ctx.lineWidth = (0.5 + ld * 1.5) / s; }
+        else { ctx.strokeStyle = mute(UB_LEVELS[1].color); ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
+        ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
+      };
+      for (let b = 0; b < L.nB; b++) {
+        const cen: [number, number][] = [], kid: number[] = [];
+        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [x, y] = cardXY(k); cen.push([x + L.cs / 2, y + L.cs / 2]); kid.push(k); }
+        for (let l = 0; l < cen.length; l++) {
+          const colx = l % 4, row = Math.floor(l / 4);
+          if (colx < 3 && l + 1 < cen.length) seg(kid[l], kid[l + 1], cen[l], cen[l + 1]);   // right neighbour
+          if (row === 0 && l + 4 < cen.length) seg(kid[l], kid[l + 4], cen[l], cen[l + 4]);  // down neighbour
+        }
+      }
+      ctx.globalAlpha = 1;
     }
 
     // ── scenario playback: animated hop-by-hop flow (marching ants) ──
@@ -764,8 +780,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {playing && <div><span style={{ display: 'inline-block', width: 36, height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.5)}, ${loadColor(1)})`, verticalAlign: '-1px', marginRight: 5 }} /><span style={{ color: 'var(--tx3)' }}>负载热力：绿空闲 → 红繁忙 · 连线粗细 ∝ 负载</span></div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>观测态：节点/连线按负载状态上色，分层只用极淡色调+图元区分 · 顶部条=当前相位</div>}
+            {playing && <div><span style={{ display: 'inline-block', width: 40, height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.34)}, ${loadColor(0.67)}, ${loadColor(1)})`, verticalAlign: '-1px', marginRight: 5 }} /><span style={{ color: 'var(--tx3)' }}>负载热力：绿空闲 → 红繁忙</span></div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>每条连线按各自负载独立着色 + 粗细（非按层级）· 分层只用极淡色调+图元区分 · 顶部条=当前相位</div>}
           </>
         ) : (
           <>

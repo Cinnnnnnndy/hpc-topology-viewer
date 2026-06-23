@@ -232,11 +232,12 @@ export const STATUS_META: { id: string; label: string }[] = [
 // ─── Observation palette: ONE load/utilisation heatmap (the high-saturation colours
 // we reserve OUT of the hierarchy). 0 空闲 → 1 繁忙 = 绿 → 黄 → 红. Lines & nodes use this
 // for STATE; line thickness ∝ load/bandwidth. Hierarchy/type uses only faint neutral hues.
-const HEAT_LOW = [0x22, 0xc5, 0x5e], HEAT_MID = [0xf5, 0x9e, 0x0b], HEAT_HOT = [0xef, 0x44, 0x44];   // 绿 / 黄 / 红
+const HEAT_STOPS = [[0x3f, 0xb9, 0x50], [0xe3, 0xb3, 0x41], [0xdb, 0x6d, 0x28], [0xf8, 0x51, 0x49]];   // 绿 → 黄 → 橙 → 红 (refined, no muddy middle)
 const lerp3 = (a: number[], b: number[], t: number) => [Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t), Math.round(a[2] + (b[2] - a[2]) * t)];
 export function loadRGB(t: number): [number, number, number] {
-  const x = Math.max(0, Math.min(1, t));
-  const c = x < 0.5 ? lerp3(HEAT_LOW, HEAT_MID, x / 0.5) : lerp3(HEAT_MID, HEAT_HOT, (x - 0.5) / 0.5);
+  const x = Math.max(0, Math.min(1, t)) * (HEAT_STOPS.length - 1);
+  const i = Math.min(HEAT_STOPS.length - 2, Math.floor(x)), f = x - i;
+  const c = lerp3(HEAT_STOPS[i], HEAT_STOPS[i + 1], f);
   return [c[0], c[1], c[2]];
 }
 export function loadColor(t: number): string { const [r, g, b] = loadRGB(t); return `rgb(${r},${g},${b})`; }

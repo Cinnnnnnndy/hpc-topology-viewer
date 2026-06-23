@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, nodeLoad, mute,
+  loadColor, loadRGB, nodeLoad, mute,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1967,13 +1967,28 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (statKind === 'comm') return collective === 'a2a' ? band === 4 || band === 5 : band === 5 || band === 6;
     return band === 2;                                                              // load/store/mem → memory access
   };
-  const linkLoad = (band: number): number => (!statKind ? 0.12 : linkActive(band) ? (statKind === 'comm' ? 0.95 : 0.82) : 0.2);
-  // connector. observation → colour by load state, thickness ∝ load. else → FAINT muted hierarchy hue.
-  const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => pts.length > 0 && (
-    heat
-      ? <Line points={pts} segments color={loadColor(linkLoad(upper))} lineWidth={bw * (0.45 + linkLoad(upper) * 1.8)} transparent opacity={linkActive(upper) ? 0.95 : 0.34} />
-      : <Line points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} transparent opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} />
-  );
+  // OBSERVATION: per-LINK load → split a line set's segments into 3 thickness buckets, each a Line
+  // with per-segment vertex colours (load heatmap). So individual links — within OR between levels —
+  // get their own colour AND thickness, not one colour per level.
+  const heatLines = (pts: [number, number, number][], loadFn: (s: number) => number, baseW: number, key: string) => {
+    if (pts.length === 0) return null;
+    const W = [baseW * 0.5, baseW * 1.15, baseW * 2.1];
+    const bins: { pts: [number, number, number][]; cols: [number, number, number][] }[] = [{ pts: [], cols: [] }, { pts: [], cols: [] }, { pts: [], cols: [] }];
+    for (let s = 0; s < pts.length / 2; s++) {
+      const ld = Math.max(0, Math.min(1, loadFn(s))), bi = ld < 0.4 ? 0 : ld < 0.7 ? 1 : 2;
+      const [r, g, b] = loadRGB(ld), cc: [number, number, number] = [r / 255, g / 255, b / 255];
+      bins[bi].pts.push(pts[s * 2], pts[s * 2 + 1]); bins[bi].cols.push(cc, cc);
+    }
+    return <group>{bins.map((bk, bi) => bk.pts.length > 0 && <Line key={`${key}-${bi}`} points={bk.pts} segments vertexColors={bk.cols} lineWidth={W[bi]} transparent opacity={0.34 + bi * 0.26} />)}</group>;
+  };
+  const segLoad = (band: number, s: number): number => nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16);
+  // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
+  const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => {
+    if (pts.length === 0) return false;
+    return heat
+      ? heatLines(pts, (s) => segLoad(upper, s), bw, `b${upper}`)
+      : <Line points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} transparent opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} />;
+  };
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
   // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
@@ -2019,8 +2034,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
-      {peers && G.l1mesh.length > 0 && <Line points={G.l1mesh} segments color={heat ? loadColor(computeNow ? 0.82 : 0.18) : mute(L(1))} lineWidth={heat ? (computeNow ? 2.6 : 1.0) : 1.2} transparent opacity={heat ? (computeNow ? 0.85 : 0.3) : (focus === null ? 0.5 : 0.14)} />}
-      {peers && G.l2mesh.length > 0 && <Line points={G.l2mesh} segments color={heat ? loadColor(commNow && collective === 'a2a' ? 0.92 : 0.2) : mute(L(2))} lineWidth={heat ? (commNow && collective === 'a2a' ? 2.4 : 1.0) : 1.2} transparent opacity={heat ? (commNow && collective === 'a2a' ? 0.85 : 0.32) : (focus === null ? 0.5 : 0.16)} />}
+      {/* within-level peer mesh (层级内): L1 card↔card (board) · L2 node↔node (cabinet) — per-link heatmap */}
+      {peers && G.l1mesh.length > 0 && (heat
+        ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 1.4, 'l1')
+        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.2} transparent opacity={focus === null ? 0.5 : 0.14} />)}
+      {peers && G.l2mesh.length > 0 && (heat
+        ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.4, 'l2')
+        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.2} transparent opacity={focus === null ? 0.5 : 0.16} />)}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}

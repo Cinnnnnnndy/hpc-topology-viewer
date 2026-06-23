@@ -894,11 +894,11 @@ export function ClusterView() {
                     <div style={lgHdr}>负载 / 状态（观测热力）</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 1px' }}>
                       <span style={{ fontSize: 10, color: 'var(--tx3)' }}>空闲</span>
-                      <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.5)}, ${loadColor(1)})` }} />
+                      <span style={{ flex: 1, height: 9, borderRadius: 5, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(0.34)}, ${loadColor(0.67)}, ${loadColor(1)})` }} />
                       <span style={{ fontSize: 10, color: 'var(--tx3)' }}>繁忙</span>
                     </div>
-                    <span style={lgNote}>节点 = 负载热力（绿空闲 → 黄 → 红繁忙/拥塞）</span>
-                    <span style={lgNote}>连线 = 同一热力 + 粗细 ∝ 负载/带宽；当前相位的活跃链路最红最粗</span>
+                    <span style={lgNote}>节点 = 负载热力（绿空闲 → 黄 → 橙 → 红繁忙/拥塞）</span>
+                    <span style={lgNote}>每条连线按各自负载独立着色 + 粗细（层级内/层级间都各不相同）</span>
                     <span style={lgNote}>分层只用极淡色调 + 图元形状区分 · 高饱和色专表状态</span>
                   </>
                 )}
