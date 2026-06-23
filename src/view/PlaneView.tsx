@@ -87,7 +87,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [colorBy, setColorBy] = useState<PartitionDim>('none');
   const [links, setLinks] = useState(true);   // draw card↔card (L1) + node↔node (L2) connections
   const [tip, setTip] = useState<{ k: number; x: number; y: number } | null>(null);
-  const [playing, setPlaying] = useState(true);     // 执行时序 playback (drives card phase-wash + flow + swimlane) — on by default
+  const [playing, setPlaying] = useState(false);    // 执行时序 playback (drives card phase-wash + flow + swimlane) — paused by default
   const [runMode, setRunMode] = useState<RunMode>('train');   // 执行时序 mode: train / infer
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
   const [layout, setLayout] = useState<'top' | 'layers'>('top');   // top-down map vs. layered hierarchy
@@ -258,8 +258,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     // 执行时序 phase wash — shared by BOTH the top map and the layered matrix, so every view
     // tints to the current RUN_SCHED phase colour while the 执行时序 plays (same headRef clock).
-    const runSeg = phaseSegments(runMode);
-    const curPhase = swOpen ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
+    const runSeg = phaseSegments(runMode);   // phase-wash only while the 执行时序 is PLAYING (raw colours when paused)
+    const curPhase = playing ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
     const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
     const wash = (c: string) => (curPhase ? mix(c, curPhase.color, washAmt) : c);
     // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
@@ -289,7 +289,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
       // per-level simplified glyph (distinct shape, with internal detail when the cell
       // is big enough): cabinet slats · blade+dots · card = 4 Die (2 compute UMA + 2 IO) ·
-      // 计算 Die = teal die + AI-core dots · AI Core = Cube + 2 Vector.
+      // 计算 Die = teal die + AI-core dots · AI Core = 独立 Cube/Vector 核 (Cube∶Vector ≈ 8∶1).
       const glyph = (kind: string, x: number, y: number, ws: number, base: string, A: number) => {
         const px = ws * s;
         ctx.fillStyle = base; ctx.strokeStyle = base; ctx.lineWidth = Math.max(0.012, ws * 0.05);
@@ -326,11 +326,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         } else if (kind === 'tile') {   // L0 Tile = SIMD/SIMT lanes (thin bars) + element
           if (px > 4) { ctx.globalAlpha = 0.9 * A; const n = 3, bw2 = ws * 0.2, gp2 = (ws - n * bw2) / (n + 1); for (let i = 0; i < n; i++) { rr(x + gp2 + i * (bw2 + gp2), y + ws * 0.16, bw2, ws * 0.68, bw2 * 0.35); ctx.fill(); } }
           else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.2); ctx.fill(); }
-        } else {   // L1 AI Core = 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores
-          if (px > 6) {
-            ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.08, y + ws * 0.2, ws * 0.42, ws * 0.6, ws * 0.08); ctx.fill();   // Cube (base = cyan)
-            ctx.fillStyle = ENTITY_COLORS.vector; ctx.globalAlpha = 0.78 * A; rr(x + ws * 0.58, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill(); rr(x + ws * 0.76, y + ws * 0.24, ws * 0.14, ws * 0.52, ws * 0.04); ctx.fill();   // 2 Vector (light cyan)
-          } else { ctx.globalAlpha = 0.82 * A; rr(x, y, ws, ws, ws * 0.18); ctx.fill(); }
+        } else {   // L1 AI Core = ONE independent core — Cube(cyan) or Vector(light cyan) via `base`; same glyph as 3D / DieDetail
+          ctx.globalAlpha = 0.9 * A; rr(x + ws * 0.12, y + ws * 0.12, ws * 0.76, ws * 0.76, ws * 0.22); ctx.fill();
         }
         ctx.globalAlpha = 1;
       };
@@ -356,7 +353,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : lc) : lc, hi ? (on ? 1 : 0.14) : 1);
+            const cellBase = Lv.kind === 'core' && i % 8 === 7 ? wash(ENTITY_COLORS.vector) : lc;   // L1: Cube∶Vector ≈ 8∶1 独立核
+            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : cellBase) : cellBase, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
         } else if (Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
@@ -442,17 +440,19 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           const ins = L.cs * 0.14, gp = L.cs * 0.07;
           const dw = (L.cs - ins * 2 - gp) / 2, dh = (L.cs * 0.7 - gp) / 2;
           const x0 = x + ins, x1 = x + ins + dw + gp, y0 = y + L.cs * 0.28, y1 = y + L.cs * 0.28 + dh + gp;
-          // one compute Die: solid teal, or (deeper zoom) a teal container of AI Core glyphs
+          // one compute Die: solid teal, or (deeper zoom) a teal container of its ~16 AI Core
           const computeDie = (dx: number, dy: number) => {
             if (!showCore) { ctx.fillStyle = ENTITY_COLORS.computeDie; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); return; }
             ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.22; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); ctx.globalAlpha = 1;
             ctx.strokeStyle = ENTITY_COLORS.computeDie; ctx.lineWidth = 0.6 / s; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.stroke();
-            const cols = 2, rows = 2, pad = dw * 0.1, gxx = dw * 0.06, gyy = dh * 0.08;   // 2×2 schematic AI Core
-            const cw = (dw - pad * 2 - gxx) / cols, ch = (dh - pad * 2 - gyy) / rows;
+            // ≈16 AI Core (4×4) — SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 (same glyph as 3D / DieDetail)
+            const cols = 4, rows = 4, pad = dw * 0.08, gxx = dw * 0.05, gyy = dh * 0.05;
+            const cw = (dw - pad * 2 - gxx * (cols - 1)) / cols, ch = (dh - pad * 2 - gyy * (rows - 1)) / rows;
             for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+              const idx = r * cols + c, vec = idx % 8 === 7;
               const cx = dx + pad + c * (cw + gxx), cy = dy + pad + r * (ch + gyy);
-              ctx.fillStyle = ENTITY_COLORS.cube; rrPath(ctx, cx, cy, cw * 0.56, ch, ch * 0.18); ctx.fill();   // Cube (AIC)
-              ctx.fillStyle = ENTITY_COLORS.vector; rrPath(ctx, cx + cw * 0.62, cy, cw * 0.16, ch, ch * 0.12); ctx.fill(); rrPath(ctx, cx + cw * 0.82, cy, cw * 0.16, ch, ch * 0.12); ctx.fill();   // 2 Vector (AIV)
+              ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube;
+              rrPath(ctx, cx, cy, cw, ch, Math.min(cw, ch) * 0.3); ctx.fill();
             }
           };
           computeDie(x0, y0); computeDie(x1, y0);
@@ -738,7 +738,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           <>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ super: '本超节点·全量展开', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
+              const shape = ({ super: '本超节点·全量展开', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube/Vector 独立核(≈8:1)', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
