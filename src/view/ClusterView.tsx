@@ -150,6 +150,9 @@ function toggleBtn(active: boolean, c: string): React.CSSProperties {
     ? { border: `1px solid ${c}`, background: c, color: ink(c), fontWeight: 600 }
     : { ...BTN_SECONDARY };
 }
+// PTO type scale: section label (11px · 600 · +0.4 tracking · muted) for control-group captions
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 
 // per-mode overlay toggles
 const TOPO_OVERLAYS: { id: keyof CommOverlays; label: string; color: string }[] = [
@@ -285,7 +288,7 @@ export function ClusterView() {
     <div data-theme={dark ? 'dark' : 'light'} style={{
       width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
       background: 'var(--bg)', color: 'var(--tx)',
-      fontFamily: 'Inter, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+      fontFamily: 'var(--font-sans)',
       '--bg': dark ? '#101010' : '#f5f5f5',
       '--bg2': dark ? '#0d0d0d' : '#f3f4f7',
       '--panel': dark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.96)',
@@ -302,6 +305,10 @@ export function ClusterView() {
       '--btn-bd': dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)',
       // engineering dot-grid (drawn behind the canvas / on the plane view)
       '--grid': dark ? 'rgba(255,255,255,0.06)' : 'rgba(67,105,239,0.11)',
+      // PTO state / highlight + focus-ring + strong border (for selection emphasis)
+      '--state-sel': dark ? 'rgba(67,105,239,0.16)' : 'rgba(67,105,239,0.10)',
+      '--focus-ring': dark ? 'rgba(67,105,239,0.42)' : 'rgba(67,105,239,0.36)',
+      '--bd-strong': dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.18)',
     } as React.CSSProperties}>
       {/* ── toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
@@ -351,7 +358,7 @@ export function ClusterView() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)' }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
+        {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
         {mode !== 'plane' && (
           <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
@@ -499,7 +506,7 @@ export function ClusterView() {
                   {/* super-node count */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      <span style={{ fontSize: 11, color: 'var(--tx3)' }}>超节点</span>
+                      <span style={{ ...LBL }}>超节点</span>
                       {[1, 2, 4].map((c) => (
                         <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(podCount === c) }}>{`×${c}`}</button>
                       ))}
@@ -508,7 +515,7 @@ export function ClusterView() {
                   {/* run mode: train / infer */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      <span style={{ fontSize: 11, color: 'var(--tx3)' }}>运行</span>
+                      <span style={{ ...LBL }}>运行</span>
                       {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
                         <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(runMode === m) }}>{label}</button>
                       ))}
@@ -517,7 +524,7 @@ export function ClusterView() {
                   {/* parallel partition (TP/PP/DP/EP) */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      <span style={{ fontSize: 11, color: 'var(--tx3)' }}>切分</span>
+                      <span style={{ ...LBL }}>切分</span>
                       {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => {
                         const on = fpPart === d; const sig = PARALLEL_COLORS[d];
                         return (
@@ -716,7 +723,7 @@ export function ClusterView() {
                   <span style={{ fontSize: 12, color: 'var(--tx)', minWidth: 140 }}>
                     {runPhase ? `${runPhase.name} · ${runPhase.parallel ?? '—'}` : (runMode === 'train' ? '训练循环（点相位 / ▶）' : '推理循环（点相位 / ▶）')}
                   </span>
-                  <span style={{ fontSize: 11.5, color: '#4369ef' }}>
+                  <span style={{ fontSize: 11.5, color: '#4369ef', ...TNUM }}>
                     {`${runMode === 'train' ? '迭代' : '步'} #${runStep} · ${runMode === 'train' ? spec.trainTokps : spec.inferTokps}`}
                   </span>
                   <div style={{ flex: 1 }} />
@@ -927,29 +934,29 @@ export function ClusterView() {
             overflowY: 'auto', fontSize: 12.5, lineHeight: 1.65, flexShrink: 0,
             background: 'var(--panel)', color: 'var(--tx)', boxShadow: '-3px 0 12px var(--bd)',
           }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: 0.2, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)' }}>
               {info.lines.map((l, i) => (<li key={i} style={{ marginBottom: 5 }}>{l}</li>))}
             </ul>
 
-            <div style={{ margin: '14px 0 6px', fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>{`关键规格 · ${spec.code}`}</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>{`关键规格 · ${spec.code}`}</div>
             <table style={{ width: '100%', fontSize: 11.5, color: 'var(--tx)', borderCollapse: 'collapse' }}>
               <tbody>
                 {specRows.map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: '1px solid var(--bd)' }}>
                     <td style={{ padding: '3px 0', color: 'var(--tx2)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
-                    <td style={{ padding: '3px 0 3px 10px', color: 'var(--tx)' }}>{v}</td>
+                    <td style={{ padding: '3px 0 3px 10px', color: 'var(--tx)', ...TNUM }}>{v}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <div style={{ margin: '14px 0 6px', fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>相比 A3 的演进</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>相比 A3 的演进</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)', fontSize: 11.5, lineHeight: 1.6 }}>
               {CHANGES.map((c, i) => (<li key={i} style={{ marginBottom: 4 }}>{c}</li>))}
             </ul>
 
-            <div style={{ margin: '14px 0 6px', fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>数据来源</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>数据来源</div>
             <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.7 }}>
               {SOURCES.map((s, i) => (<div key={i}>{s}</div>))}
             </div>
