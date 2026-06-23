@@ -1711,6 +1711,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const tileRef = useRef<THREE.InstancedMesh>(null);   // L0 Tile / SIMT-lane markers
   const bladeInst = useRef<THREE.InstancedMesh>(null);
   const cabInst = useRef<THREE.InstancedMesh>(null);
+  const portInst = useRef<THREE.InstancedMesh>(null);   // physical: NPU UB/RDMA ports (2/card)
+  const devInst = useRef<THREE.InstancedMesh>(null);    // physical: CPU/L1交换/LPO/NIC (4/blade)
   const chipTex = useOptionalTexture(CHIP_TEX);
 
   const computeNow = phase?.kind === 'compute';   // AI cores / cards light up
@@ -1854,6 +1856,28 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const cabH = Math.min(0.62, (G.yProc - G.yThread) * 0.7);
     if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
+
+  // physical-device objects (shown with the 三平面 toggle): NPU UB/RDMA ports on each card,
+  // and CPU / L1 交换 / LPO / 擎天 NIC per node — drawn as real instanced objects, like the cards.
+  useLayoutEffect(() => {
+    if (!planes) return;
+    const m = new THREE.Matrix4(), col = new THREE.Color();
+    const pi = portInst.current;
+    if (pi) {
+      for (let k = 0; k < G.N; k++) {
+        m.makeScale(0.08, 0.06, 0.08); m.setPosition(G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] - 0.1); pi.setMatrixAt(k * 2, m); pi.setColorAt(k * 2, col.set(PLANES[0].color));       // UB 口
+      m.setPosition(G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] + 0.1); pi.setMatrixAt(k * 2 + 1, m); pi.setColorAt(k * 2 + 1, col.set(PLANES[1].color));   // RDMA 口
+      }
+      pi.count = G.N * 2; pi.instanceMatrix.needsUpdate = true; if (pi.instanceColor) pi.instanceColor.needsUpdate = true;
+    }
+    const di = devInst.current;
+    if (di) {
+      const dcol = ['#4a8cff', PLANES[0].color, '#36e0c4', PLANES[2].color];   // CPU · L1交换 · LPO · NIC
+      const dxo = [-0.33, -0.11, 0.11, 0.33];
+      for (let b = 0; b < G.nBlades; b++) for (let i = 0; i < 4; i++) { const idx = b * 4 + i; m.makeScale(0.1, 0.08, 0.1); m.setPosition(G.bladeMX[b] + dxo[i], G.yBlade + 0.08, G.bladeMZ[b] + 0.32); di.setMatrixAt(idx, m); di.setColorAt(idx, col.set(dcol[i])); }
+      di.count = G.nBlades * 4; di.instanceMatrix.needsUpdate = true; if (di.instanceColor) di.instanceColor.needsUpdate = true;
+    }
+  }, [G, planes]);
 
   // OBSERVATION heatmap + selection. State (load 0..1) → 绿→黄→红; this is the ONLY high-sat
   // colour. Hierarchy/type stays a FAINT muted hue (shapes carry the level). Partition is an
@@ -2004,6 +2028,15 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     soRisers.push(s, G.cluster);
     vpcRisers.push(s, dcNode);
   }
+  // per-node device connectors (plane-coloured) — drawn for modest configs so the relationships
+  // (NPU UB口→交换 · NPU RDMA口→LPO · CPU→NIC) read without flooding the full 8 K field.
+  const DEV_LINK_CAP = 640;
+  const portUbLines: [number, number, number][] = [], portRdLines: [number, number, number][] = [], cpuNicLines: [number, number, number][] = [];
+  const devPos = (b: number, i: number): [number, number, number] => [G.bladeMX[b] + [-0.33, -0.11, 0.11, 0.33][i], G.yBlade + 0.08, G.bladeMZ[b] + 0.32];
+  if (planes && G.N <= DEV_LINK_CAP) {
+    for (let b = 0; b < G.nBlades; b++) cpuNicLines.push(devPos(b, 0), devPos(b, 3));
+    for (let k = 0; k < G.N; k++) { const b = G.cardBlade[k]; portUbLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] - 0.1], devPos(b, 1)); portRdLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] + 0.1], devPos(b, 2)); }
+  }
 
   return (
     <group>
@@ -2060,6 +2093,20 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           <Billboard position={[dcNode[0], dcNode[1] + 0.55, dcNode[2]]}>
             <Text fontSize={lblSize * 0.95} color={PL_VPC.color} anchorX="center" anchorY="middle">{`VPC → 数据中心（南北向）`}</Text>
           </Billboard>
+
+          {/* physical-device OBJECTS: NPU UB/RDMA ports (2/card) + CPU/L1交换/LPO/NIC (4/node) */}
+          <instancedMesh ref={portInst} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial toneMapped={false} metalness={0.2} roughness={0.5} />
+          </instancedMesh>
+          <instancedMesh ref={devInst} args={[undefined, undefined, Math.max(1, G.nBlades * 4)]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial toneMapped={false} metalness={0.25} roughness={0.5} />
+          </instancedMesh>
+          {/* device connectors (modest configs): NPU UB口→L1交换(绿) · NPU RDMA口→LPO(橙) · CPU→NIC(紫) */}
+          {portUbLines.length > 0 && <Line points={portUbLines} segments color={PL_UB.color} lineWidth={1.4} transparent opacity={0.55} />}
+          {portRdLines.length > 0 && <Line points={portRdLines} segments color={PL_RDMA.color} lineWidth={1.4} transparent opacity={0.55} />}
+          {cpuNicLines.length > 0 && <Line points={cpuNicLines} segments color={PL_VPC.color} lineWidth={1.6} transparent opacity={0.6} />}
         </group>
       )}
 

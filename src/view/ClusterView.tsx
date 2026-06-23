@@ -906,7 +906,11 @@ export function ClusterView() {
                     <span style={{ color: 'var(--tx2)' }}>{`${p.short} · ${p.parallel}`}</span>
                   </span>
                 ))}
-                <span style={lgNote}>竖向骨干＝scale-up(UB·绿)/scale-out(RDMA·橙)；详见顶部面板</span>
+                {/* physical device OBJECTS shown when 三平面 toggle on */}
+                {fpPlanes && ([['NPU UB 口', '#04d793', 'dot'], ['NPU RDMA 口', '#ffaa3b', 'dot'], ['鲲鹏 CPU', '#4a8cff', 'sq'], ['L1 UB 交换', '#04d793', 'sq'], ['LPO 光模块', '#36e0c4', 'sq'], ['擎天 NIC', '#9d7bff', 'sq']] as [string, string, 'dot' | 'sq'][]).map(([t, c, sh]) => (
+                  <LgRow key={t} shape={sh} color={c} label={t} />
+                ))}
+                <span style={lgNote}>{fpPlanes ? '卡上=NPU UB口(绿)/RDMA口(橙)；节点前沿=CPU/交换/LPO/NIC 对象 + 平面连线' : '开「三平面分色」显示物理器件对象 + 平面连线'}</span>
                 {/* run phases (phase-wash colours) */}
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}

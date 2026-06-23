@@ -12,6 +12,9 @@ import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEV
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
 const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', multi: '多平面', none: '片上' };
+// physical-device accent colours (drawn as objects inside node glyphs / blade frames)
+const DEV_CPU = '#4a8cff';   // 鲲鹏 CPU
+const DEV_LPO = '#36e0c4';   // LPO 光模块
 import { TOK } from '../content';
 import { PlanesPanel } from './PlanesPanel';
 
@@ -329,10 +332,29 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           const cw = ws * 0.62, cx = x + (ws - cw) / 2;
           ctx.globalAlpha = 0.92 * A; rr(cx, y, cw, ws, ws * 0.08); ctx.fill();
           if (px > 5) { ctx.fillStyle = DK(0.2 * A); for (let k = 0; k < 4; k++) { rr(cx + cw * 0.16, y + ws * (k + 0.5) / 4 - ws * 0.03, cw * 0.68, ws * 0.06, ws * 0.02); ctx.fill(); } }
-        } else if (kind === 'node') {   // horizontal blade = solid bar + NPU dot blocks
+        } else if (kind === 'node') {   // 节点 = 板 + 物理器件对象：8×NPU(各含 UB/RDMA 口) + CPU + L1 交换 + LPO + 擎天 NIC
           const bh = ws * 0.5, by = y + (ws - bh) / 2;
           ctx.globalAlpha = 0.9 * A; rr(x, by, ws, bh, bh * 0.28); ctx.fill();
-          if (px > 7) { ctx.fillStyle = LT(0.55 * A); for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.045, 0, 7); ctx.fill(); } }
+          if (px > 12) {
+            const ny = y + ws * 0.3;                                   // NPU row
+            const dy = y + ws * 0.72, dxs = [0.16, 0.4, 0.62, 0.84];   // device row: CPU / L1交换 / LPO / NIC
+            const dcol = [DEV_CPU, PLANES[0].color, DEV_LPO, PLANES[2].color];
+            // plane connectors (drawn first, under the objects): NPU→L1交换(绿) · NPU→LPO(橙) · CPU→NIC(紫)
+            ctx.globalAlpha = 0.6 * A; ctx.lineWidth = ws * 0.012;
+            ctx.strokeStyle = PLANES[0].color; ctx.beginPath(); ctx.moveTo(x + ws * 0.4, ny); ctx.lineTo(x + ws * 0.4, dy); ctx.stroke();   // UB → 交换
+            ctx.strokeStyle = PLANES[1].color; ctx.beginPath(); ctx.moveTo(x + ws * 0.62, ny); ctx.lineTo(x + ws * 0.62, dy); ctx.stroke();  // RDMA → LPO
+            ctx.strokeStyle = PLANES[2].color; ctx.beginPath(); ctx.moveTo(x + ws * 0.16, dy); ctx.lineTo(x + ws * 0.84, dy); ctx.stroke();  // CPU → NIC
+            // 8 NPU, each carrying a UB 口(绿) + RDMA 口(橙)
+            for (let d = 0; d < 8; d++) {
+              const dx = x + ws * (0.1 + 0.8 * d / 7);
+              ctx.fillStyle = LT(0.72 * A); ctx.beginPath(); ctx.arc(dx, ny, ws * 0.033, 0, 7); ctx.fill();
+              ctx.fillStyle = PLANES[0].color; ctx.beginPath(); ctx.arc(dx, ny - ws * 0.052, ws * 0.016, 0, 7); ctx.fill();
+              ctx.fillStyle = PLANES[1].color; ctx.beginPath(); ctx.arc(dx, ny + ws * 0.052, ws * 0.016, 0, 7); ctx.fill();
+            }
+            // device blocks
+            ctx.globalAlpha = A;
+            for (let i = 0; i < 4; i++) { ctx.fillStyle = dcol[i]; const cx = x + ws * dxs[i]; rr(cx - ws * 0.058, dy - ws * 0.05, ws * 0.116, ws * 0.1, ws * 0.03); ctx.fill(); }
+          } else if (px > 7) { ctx.fillStyle = LT(0.55 * A); for (let d = 0; d < 8; d++) { const dx = x + ws * (0.1 + 0.8 * d / 7); ctx.beginPath(); ctx.arc(dx, y + ws / 2, ws * 0.045, 0, 7); ctx.fill(); } }
         } else if (kind === 'card') {   // 950 package = solid card block carrying 4 Die sub-blocks
           ctx.globalAlpha = 0.32 * A; rr(x, y, ws, ws, ws * 0.12); ctx.fill();
           if (px > 7) {
@@ -512,6 +534,32 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           rrPath(ctx, x0 + dw, y0 + dh * 0.34, gp, dh * 0.32, dh * 0.12); ctx.fill();
           ctx.fillStyle = ENTITY_COLORS.ioDie;   // 2 IO Die (grey, no compute)
           rrPath(ctx, x0, y1, dw, dh, dieR); ctx.fill(); rrPath(ctx, x1, y1, dw, dh, dieR); ctx.fill();
+        }
+      }
+    }
+    // node physical devices drawn AS OBJECTS inside each blade frame (like the cards/Die):
+    // 鲲鹏 CPU(蓝) · L1 UB 交换(绿) · LPO 光模块(青) · 擎天 NIC(紫) — sitting in the blade's bottom
+    // margin, wired to the NPU ports by plane colour (NPU UB口→交换·绿 / NPU RDMA口→LPO·橙 / CPU→NIC·紫).
+    if (showId && s * L.bpad > 4) {
+      const dw2 = L.cs * 0.5, dh2 = L.cs * 0.3;
+      const dcol = [DEV_CPU, PLANES[0].color, DEV_LPO, PLANES[2].color];
+      const dlbl = ['CPU', '交换', 'LPO', 'NIC'];
+      for (let b = 0; b < L.nB; b++) {
+        const [bx, by] = bladeXY(Math.floor(b / BPC), b % BPC);
+        if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
+        const dy = by + L.bh - L.bpad * 0.5;                         // device row (blade bottom margin)
+        const cardsBottomY = by + L.bpad + 2 * L.cs + L.gap;          // bottom of the 2 card rows
+        const dxs = [0.16, 0.4, 0.62, 0.84].map((f) => bx + L.bw * f);
+        // plane connectors (under the objects)
+        ctx.lineWidth = 1.1 / s; ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = PLANES[0].color; ctx.beginPath(); ctx.moveTo(dxs[1], dy - dh2 / 2); ctx.lineTo(dxs[1], cardsBottomY); ctx.stroke();   // 交换 ← NPU UB 口
+        ctx.strokeStyle = PLANES[1].color; ctx.beginPath(); ctx.moveTo(dxs[2], dy - dh2 / 2); ctx.lineTo(dxs[2], cardsBottomY); ctx.stroke();   // LPO ← NPU RDMA 口
+        ctx.strokeStyle = PLANES[2].color; ctx.beginPath(); ctx.moveTo(dxs[0], dy); ctx.lineTo(dxs[3], dy); ctx.stroke();                       // CPU → NIC
+        ctx.globalAlpha = 1;
+        for (let i = 0; i < 4; i++) { ctx.fillStyle = dcol[i]; rrPath(ctx, dxs[i] - dw2 / 2, dy - dh2 / 2, dw2, dh2, dh2 * 0.26); ctx.fill(); }
+        if (s > 34) {   // labels once big enough
+          ctx.fillStyle = '#0b1020'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${L.cs * 0.11}px sans-serif`;
+          for (let i = 0; i < 4; i++) ctx.fillText(dlbl[i], dxs[i], dy);
         }
       }
     }
@@ -782,6 +830,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
             <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.computeDie, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.ioDie, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: ENTITY_COLORS.cube, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: ENTITY_COLORS.vector, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector)</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
+            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 2, paddingTop: 2 }}>放大刀片后显示物理器件（对象）+ 连线：
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[0].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />NPU UB 口
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[1].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />RDMA 口 ·
+              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_CPU, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />CPU
+              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[0].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />L1 交换
+              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_LPO, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />LPO
+              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />擎天 NIC</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
             {playing && <div style={{ color: scenario === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color }}>{scenario === 'ring' ? '▶ Ring-AllReduce：先卡内(L1)逐跳→再机柜内(L2)' : '▶ All-to-All：机柜内刀片全互联(L2)'} · 放大看流动</div>}
@@ -796,6 +851,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>放大 L4 节点格 → 显示物理器件对象：8×NPU(各含
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: PLANES[0].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />UB 口
+              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: PLANES[1].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />RDMA 口) +
+              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: DEV_CPU, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />CPU
+              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: PLANES[0].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />交换
+              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: DEV_LPO, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />LPO
+              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />NIC + 平面连线</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 点格看右上对齐`}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
             <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
