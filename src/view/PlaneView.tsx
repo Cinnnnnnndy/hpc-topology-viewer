@@ -86,6 +86,9 @@ function navBtn(active: boolean): React.CSSProperties {
 function toggleBtn(active: boolean, c: string): React.CSSProperties {
   return active ? { border: `1px solid ${c}`, background: c, color: inkOf(c), fontWeight: 600 } : { ...SECONDARY };
 }
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
+const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canvas numeric labels
 
 export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
@@ -371,7 +374,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           ctx.fillText('L5', margin + chPad + chW / 2, Lv.y0 + Lv.h / 2);
           ctx.textAlign = 'left'; ctx.font = `700 ${Math.min(1.9, Lv.h * 0.42)}px sans-serif`;
           ctx.fillText(TOK.supernode, margin + chPad * 2 + chW, Lv.y0 + Lv.h / 2);
-          ctx.textAlign = 'right'; ctx.globalAlpha = 0.85; ctx.font = `${Math.min(1.55, Lv.h * 0.34)}px sans-serif`;
+          ctx.textAlign = 'right'; ctx.globalAlpha = 0.85; ctx.font = `${Math.min(1.55, Lv.h * 0.34)}px ${MONO}`;
           ctx.fillText(`${LAY.cabN.toLocaleString()} 机柜 · ${LAY.cardN.toLocaleString()} NPU`, margin + Wc - Lv.h * 0.45, Lv.y0 + Lv.h / 2);
           ctx.globalAlpha = 1;
           return;
@@ -431,7 +434,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.fillStyle = Lv.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
         ctx.fillText(Lv.label, lx, sy);
         let yy = sy + 14;
-        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = '10px sans-serif'; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
+        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
         if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], lx, yy); yy += 12; }
         const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
         if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); }
@@ -717,7 +720,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       {/* controls */}
       <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
         {/* layout: top-down map vs. layered hierarchy */}
-        <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
+        <span style={{ ...LBL }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
           return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
@@ -726,7 +729,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
         {layout === 'top' ? (
           <>
-            <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>上色</span>
+            <span style={{ ...LBL }}>上色</span>
             {COLOR_BTNS.map((c) => {
               const on = colorBy === c.id; const sig = PARALLEL_COLORS[c.id];
               return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...(c.id === 'none' ? navBtn(on) : toggleBtn(on, sig)) }}>
@@ -873,7 +876,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
           const on = mode === m;
           return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{m === 'train' ? '训练' : '推理'}</button>;
         })}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5, ...TNUM }}>
           <span style={{ color: '#04d793' }}>算力 {sw.util}%</span>
           <span style={{ color: '#ffaa3b' }}>访存 {sw.mem}%</span>
           <span style={{ color: 'var(--tx3)' }}>气泡 {sw.bub}%</span>
