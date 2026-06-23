@@ -232,7 +232,8 @@ export const STATUS_META: { id: string; label: string }[] = [
 // ─── Observation: a DISCRETE 4-state load palette (空闲/中/高/满). One state = ONE fixed colour
 // (no gradient → never "同态异色"). Lines use all 4; NODES colour only when 高/满 (isHot) so most
 // stay neutral. Hierarchy/type uses only faint muted hues — high-sat is reserved for state.
-const STATE_RGB: [number, number, number][] = [[0x3f, 0xb9, 0x50], [0xd4, 0xa7, 0x2c], [0xe0, 0x82, 0x3a], [0xe5, 0x48, 0x4d]];   // 空闲 绿 / 中 琥珀 / 高 橙 / 满 红
+// values taken from the PTO design-system utilisation ramp (…→#22c55e→#facc15→#f97316→#ef4444)
+const STATE_RGB: [number, number, number][] = [[0x22, 0xc5, 0x5e], [0xfa, 0xcc, 0x15], [0xf9, 0x73, 0x16], [0xef, 0x44, 0x44]];   // 空闲 绿 / 中 黄 / 高 橙 / 满 红
 export const STATE_LABELS = ['空闲', '中', '高', '满 / 拥塞'];
 export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.3 ? 0 : x < 0.55 ? 1 : x < 0.8 ? 2 : 3; }
 export function loadRGB(t: number): [number, number, number] { return STATE_RGB[loadState(t)]; }
