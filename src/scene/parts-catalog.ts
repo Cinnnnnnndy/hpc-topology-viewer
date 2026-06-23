@@ -109,9 +109,9 @@ export const PARTS_CATALOG: CatalogPart[] = [
   {
     id: 'psu-crps-shelf',
     label: '电源框 / PSU（CRPS）',
-    realMM: [440, 88, 700],
+    realMM: [73, 40, 185],
     usedIn: ['机柜视图（供电单元）'],
-    hint: 'GrabCAD: "CRPS power supply", "server PSU", "power shelf"',
+    hint: '已接入（复用自内部 BMC 模型库的 CRPS PSU 模组）。换整框电源可找 GrabCAD: "power shelf", "CRPS"',
   },
   {
     id: 'cdu-liquid-manifold',
