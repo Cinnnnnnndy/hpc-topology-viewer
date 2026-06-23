@@ -14,6 +14,8 @@ import { TOK } from '../content';
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
 const AXIS_GUTTER = 100, RIGHT_PAD = 10;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
 const SEL = '#4369ef';   // selection / hover highlight = PTO primary (was gold)
+// structure/type glyph fills → neutral blue-grey (de-RYG; type told apart by SHAPE not colour)
+const M_DIE = mute(ENTITY_COLORS.computeDie), M_CUBE = mute(ENTITY_COLORS.cube), M_VEC = mute(ENTITY_COLORS.vector), M_IO = mute(ENTITY_COLORS.ioDie);
 // rounded-rect path (shared glyph language with the layered view)
 function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.min(r, w / 2, h / 2);
@@ -86,8 +88,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
-    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(167,139,250,0.20)', frameBd: 'rgba(167,139,250,0.30)', bladeFill: 'rgba(96,165,250,0.12)' }
-    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(167,139,250,0.18)', frameBd: 'rgba(167,139,250,0.34)', bladeFill: 'rgba(96,165,250,0.13)' };
+    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(140,150,175,0.14)', frameBd: 'rgba(150,162,190,0.32)', bladeFill: 'rgba(130,142,165,0.10)' }
+    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(120,132,158,0.14)', frameBd: 'rgba(110,124,152,0.34)', bladeFill: 'rgba(120,132,158,0.12)' };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tf = useRef<{ s: number; tx: number; ty: number } | null>(null);   // world→screen transform
@@ -278,7 +280,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const heatOf = (id: number) => loadColor(nodeLoad(id, curPhase?.kind));   // per-node load colour
     // per-LINK load 0..1 = avg of its two endpoints' load + a band tendency (so individual links
     // within a level differ in colour AND thickness, not just level-by-level).
-    const linkLoad = (a: number, b: number, boost: number) => Math.max(0, Math.min(1, (nodeLoad(a, curPhase?.kind) + nodeLoad(b, curPhase?.kind)) / 2 + boost));
+    const linkLoad = (a: number, b: number, boost: number) => { if ((((a * 73856093) ^ (b * 19349663)) >>> 0) % 11 === 0) return -1; return Math.max(0, Math.min(1, (nodeLoad(a, curPhase?.kind) + nodeLoad(b, curPhase?.kind)) / 2 + boost)); };   // ~9% offline (灰)
     // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
     const phaseBanner = () => {
       if (!curPhase) return;
@@ -329,13 +331,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           if (px > 7) {
             const ins = ws * 0.13, g = ws * 0.08, dw = (ws - ins * 2 - g) / 2, dh = (ws - ins * 2 - g) / 2;
             const x0 = x + ins, x1 = x + ins + dw + g, y0 = y + ins, y1 = y + ins + dh + g;
-            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.92 * A;   // 2 compute Die (solid teal, UMA)
+            ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.92 * A;   // 2 compute Die (solid teal, UMA)
             rr(x0, y0, dw, dh, ws * 0.04); ctx.fill(); rr(x1, y0, dw, dh, ws * 0.04); ctx.fill();
             ctx.globalAlpha = 0.9 * A; rr(x0 + dw, y0 + dh * 0.32, g, dh * 0.36, dh * 0.12); ctx.fill();   // UMA bridge = solid block
-            ctx.fillStyle = ENTITY_COLORS.ioDie; ctx.globalAlpha = 0.62 * A;   // 2 IO Die (solid grey)
+            ctx.fillStyle = M_IO; ctx.globalAlpha = 0.62 * A;   // 2 IO Die (solid grey)
             rr(x0, y1, dw, dh, ws * 0.04); ctx.fill(); rr(x1, y1, dw, dh, ws * 0.04); ctx.fill();
           } else {   // too small → a single solid compute-die hint band
-            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.7 * A;
+            ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.7 * A;
             rr(x + ws * 0.16, y + ws * 0.22, ws * 0.68, ws * 0.3, ws * 0.05); ctx.fill();
           }
         } else if (kind === 'die') {   // compute Die = solid teal block + AI-core dot blocks
@@ -478,23 +480,23 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           const x0 = x + ins, x1 = x + ins + dw + gp, y0 = y + L.cs * 0.28, y1 = y + L.cs * 0.28 + dh + gp;
           // one compute Die: solid teal, or (deeper zoom) a teal container of its ~16 AI Core
           const computeDie = (dx: number, dy: number) => {
-            if (!showCore) { ctx.fillStyle = ENTITY_COLORS.computeDie; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); return; }
+            if (!showCore) { ctx.fillStyle = M_DIE; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); return; }
             // solid teal die block carrying its ~16 independent Cube/Vector cores (no wireframe outline)
-            ctx.fillStyle = ENTITY_COLORS.computeDie; ctx.globalAlpha = 0.5; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); ctx.globalAlpha = 1;
+            ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.5; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); ctx.globalAlpha = 1;
             // ≈16 AI Core (4×4) — SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 (same glyph as 3D / DieDetail)
             const cols = 4, rows = 4, pad = dw * 0.08, gxx = dw * 0.05, gyy = dh * 0.05;
             const cw = (dw - pad * 2 - gxx * (cols - 1)) / cols, ch = (dh - pad * 2 - gyy * (rows - 1)) / rows;
             for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
               const idx = r * cols + c, vec = idx % 8 === 7;
               const cx = dx + pad + c * (cw + gxx), cy = dy + pad + r * (ch + gyy);
-              ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube;
+              ctx.fillStyle = vec ? M_VEC : M_CUBE;
               rrPath(ctx, cx, cy, cw, ch, Math.min(cw, ch) * 0.3); ctx.fill();
             }
           };
           computeDie(x0, y0); computeDie(x1, y0);
-          ctx.fillStyle = ENTITY_COLORS.computeDie;   // UMA bridge → 1 device (solid block, not a line)
+          ctx.fillStyle = M_DIE;   // UMA bridge → 1 device (solid block, not a line)
           rrPath(ctx, x0 + dw, y0 + dh * 0.34, gp, dh * 0.32, dh * 0.12); ctx.fill();
-          ctx.fillStyle = ENTITY_COLORS.ioDie;   // 2 IO Die (grey, no compute)
+          ctx.fillStyle = M_IO;   // 2 IO Die (grey, no compute)
           rrPath(ctx, x0, y1, dw, dh, dieR); ctx.fill(); rrPath(ctx, x1, y1, dw, dh, dieR); ctx.fill();
         }
       }
@@ -586,19 +588,19 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       // L3 (on select): selected card's CABINET → all other cabinets (super-node Clos fabric)
       const [ccx, ccy] = cabXY(cab); const cc: [number, number] = [ccx + L.cw / 2, ccy + L.ch / 2];
       if (isSel && L.nC > 1) {
-        ctx.strokeStyle = UB_LEVELS[3].color; ctx.shadowColor = UB_LEVELS[3].color; ctx.shadowBlur = 5; ctx.lineWidth = 1.1 / s; ctx.globalAlpha = 0.4; ctx.beginPath();
+        ctx.strokeStyle = SEL; ctx.shadowColor = SEL; ctx.shadowBlur = 5; ctx.lineWidth = 1.1 / s; ctx.globalAlpha = 0.4; ctx.beginPath();
         for (let oc = 0; oc < L.nC; oc++) { if (oc === cab) continue; const [ox, oy] = cabXY(oc); ctx.moveTo(cc[0], cc[1]); ctx.lineTo(ox + L.cw / 2, oy + L.ch / 2); }
         ctx.stroke();
-        // highlight the selected cabinet + blade frames
-        ctx.shadowBlur = 0; ctx.globalAlpha = 0.95; ctx.strokeStyle = UB_LEVELS[2].color; ctx.lineWidth = 1.6 / s; ctx.strokeRect(ccx, ccy, L.cw, L.ch);
+        // highlight the selected cabinet + blade frames (selection = ONE accent, not per-level colour)
+        ctx.shadowBlur = 0; ctx.globalAlpha = 0.95; ctx.strokeStyle = SEL; ctx.lineWidth = 1.6 / s; ctx.strokeRect(ccx, ccy, L.cw, L.ch);
       }
       // L2: hovered blade centre → other blade centres in the cabinet
       const [bx, by] = bladeXY(cab, b % BPC); const bc: [number, number] = [bx + L.bw / 2, by + L.bh / 2];
-      ctx.strokeStyle = UB_LEVELS[2].color; ctx.shadowColor = UB_LEVELS[2].color; ctx.shadowBlur = 10; ctx.lineWidth = 1.6 / s; ctx.globalAlpha = 0.9; ctx.beginPath();
+      ctx.strokeStyle = SEL; ctx.shadowColor = SEL; ctx.shadowBlur = 10; ctx.lineWidth = 1.6 / s; ctx.globalAlpha = 0.9; ctx.beginPath();
       for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB || blade === b) continue; const [ox, oy] = bladeXY(cab, bl); ctx.moveTo(bc[0], bc[1]); ctx.lineTo(ox + L.bw / 2, oy + L.bh / 2); }
       ctx.stroke();
       // L1: hovered card → its 7 board siblings
-      ctx.strokeStyle = UB_LEVELS[1].color; ctx.shadowColor = UB_LEVELS[1].color; ctx.shadowBlur = 12; ctx.lineWidth = 2 / s; ctx.globalAlpha = 1; ctx.beginPath();
+      ctx.strokeStyle = SEL; ctx.shadowColor = SEL; ctx.shadowBlur = 12; ctx.lineWidth = 2 / s; ctx.globalAlpha = 1; ctx.beginPath();
       for (let l = 0; l < CPB; l++) { const k2 = b * CPB + l; if (k2 >= L.N1 || k2 === hk) continue; const [sx, sy] = cardXY(k2); ctx.moveTo(hc[0], hc[1]); ctx.lineTo(sx + L.cs / 2, sy + L.cs / 2); }
       ctx.stroke();
       ctx.restore();
@@ -777,12 +779,12 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}><span style={{ color: ENTITY_COLORS.super }}>L5 本{TOK.supernode}</span>（{LAY.cabN.toLocaleString()} 机柜 / {LAY.cardN.toLocaleString()} NPU）↓ 以下为本超节点逐级展开</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />机柜框（机器域·含 8 刀片）</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
-            <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.computeDie, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.ioDie, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: ENTITY_COLORS.cube, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: ENTITY_COLORS.vector, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector)</div>
+            <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: M_DIE, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: M_IO, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: M_CUBE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: M_VEC, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector·靠形状区分)</div>
             <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
             <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
             {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />卡↔卡(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />节点↔节点(L2)，放大显示</div>}
-            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>负载 4 档：空闲/中/高/满（拥塞）</span></div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在满时上色 · 顶部=当前相位</div>}
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线</span></div>}
+            {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在繁忙时上色 · 红黄绿=状态、蓝灰=结构 · 顶部=当前相位</div>}
           </>
         ) : (
           <>

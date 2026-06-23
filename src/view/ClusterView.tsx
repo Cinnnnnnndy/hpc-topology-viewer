@@ -874,7 +874,7 @@ export function ClusterView() {
                 <LgRow shape="sq" color={mute(ENTITY_COLORS.cab)} label="机柜" />
                 <LgRow shape="sq" color={mute(ENTITY_COLORS.super)} label={`L5 ${TOK.supernode}`} />
                 {/* state — discrete 4-bucket load (one state = one colour) */}
-                <div style={lgHdr}>状态 / 负载（观测 · 4 档）</div>
+                <div style={lgHdr}>状态 / 负载（红黄绿=状态，蓝灰=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
                   {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>

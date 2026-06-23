@@ -164,7 +164,9 @@ export const PARTITION_META: Record<Exclude<PartitionDim, 'none'>, { label: stri
   ep: { label: 'EP 专家并行', level: 'L2/L3 机柜内',          comm: 'token All-to-All',         same: '同色 = 同一专家组（All-to-All 域）' },
 };
 // cycling palette: group g → PARTITION_PALETTE[g % len] (same colour = same parallel group)
-export const PARTITION_PALETTE = ['#ef4444', '#f59e0b', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#06b6d4', '#a855f7'];
+// de-RYG: parallel-group palette uses ONLY non-state hues (blue/indigo/violet/cyan/pink) so it
+// never collides with the red/yellow/green state colours. (partition is an opt-in cognition lens)
+export const PARTITION_PALETTE = ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#06b6d4', '#0ea5e9', '#818cf8', '#c084fc', '#22d3ee', '#f472b6'];
 
 // canonical signature colour per parallel dimension (one colour each for none/TP/PP/DP/EP),
 // used for the dimension *selector* chips + legends so each dim reads consistently.
@@ -229,23 +231,25 @@ export const STATUS_META: { id: string; label: string }[] = [
   { id: 'load', label: '加载' }, { id: 'store', label: '存储' }, { id: 'idle', label: '空闲' },
 ];
 
-// ─── Observation: a DISCRETE 4-state load palette (空闲/中/高/满). One state = ONE fixed colour
-// (no gradient → never "同态异色"). Lines use all 4; NODES colour only when 高/满 (isHot) so most
-// stay neutral. Hierarchy/type uses only faint muted hues — high-sat is reserved for state.
-// values taken from the PTO design-system utilisation ramp (…→#22c55e→#facc15→#f97316→#ef4444)
-const STATE_RGB: [number, number, number][] = [[0x22, 0xc5, 0x5e], [0xfa, 0xcc, 0x15], [0xf9, 0x73, 0x16], [0xef, 0x44, 0x44]];   // 空闲 绿 / 中 黄 / 高 橙 / 满 红
-export const STATE_LABELS = ['空闲', '中', '高', '满 / 拥塞'];
-export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.3 ? 0 : x < 0.55 ? 1 : x < 0.8 ? 2 : 3; }
-export function loadRGB(t: number): [number, number, number] { return STATE_RGB[loadState(t)]; }
-export function stateColor(i: number): string { const [r, g, b] = STATE_RGB[Math.max(0, Math.min(3, i))]; return `rgb(${r},${g},${b})`; }
-export const isHot = (t: number): boolean => loadState(t) >= 3;   // only 满/拥塞 → colour the node (few hotspots); else neutral
+// ─── THE iron rule: 红/黄/绿(+灰) = state-only. ───────────────────────────────
+// Observation state = 3 active levels + offline. One state = ONE fixed colour (no gradient).
+// Thresholds per the design doctrine: 空闲<40% / 中40–70% / 繁忙>70% · 离线/无数据=灰.
+// Used identically by ALL views (阵列全景 + 平面顶视图 + 层级图) for lines AND nodes.
+const STATE_RGB: [number, number, number][] = [[0x22, 0xc5, 0x5e], [0xfa, 0xcc, 0x15], [0xef, 0x44, 0x44]];   // 空闲 绿 / 中 黄 / 繁忙 红 (PTO ramp)
+const OFFLINE_RGB: [number, number, number] = [0x8b, 0x93, 0xa3];   // 离线/无数据 — 冷中性灰
+export const STATE_LABELS = ['空闲 <40%', '中 40–70%', '繁忙 >70%', '离线/无数据'];
+export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.4 ? 0 : x < 0.7 ? 1 : 2; }   // 0 绿 / 1 黄 / 2 红
+export function loadRGB(t: number): [number, number, number] { return t < 0 ? OFFLINE_RGB : STATE_RGB[loadState(t)]; }   // t<0 → offline
+export function stateColor(i: number): string { const c = i < 0 || i >= 3 ? OFFLINE_RGB : STATE_RGB[i]; return `rgb(${c[0]},${c[1]},${c[2]})`; }
+export const isHot = (t: number): boolean => t >= 0 && loadState(t) >= 2;   // only 繁忙(红) → colour the node; else neutral
 export function loadColor(t: number): string { const [r, g, b] = loadRGB(t); return `rgb(${r},${g},${b})`; }
-// desaturate a hierarchy hue toward its own luminance-grey (keep a FAINT tint so levels are
-// still tellable, but they never compete with the state heatmap). amt→1 = fully neutral.
-export function mute(hex: string, amt = 0.8): string {
+// STRUCTURE → a single COOL NEUTRAL BLUE-GREY (NO hue, NO RYG). Any hierarchy/type colour fed
+// through here recedes to a lightness-preserving blue-grey, so red/yellow/green belong ONLY to
+// state. Levels/types are told apart by SHAPE / POSITION / lightness — never hue.
+export function mute(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-  const y = 0.3 * r + 0.59 * g + 0.11 * b;
-  return `rgb(${Math.round(r + (y - r) * amt)},${Math.round(g + (y - g) * amt)},${Math.round(b + (y - b) * amt)})`;
+  const L = Math.max(30, Math.min(206, 0.3 * r + 0.59 * g + 0.11 * b));   // input lightness, clamped off pure black/white
+  return `rgb(${Math.round(L * 0.82)},${Math.round(L * 0.9)},${Math.round(Math.min(255, L * 1.08))})`;   // cool blue-grey
 }
 // deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
 // kind so playback reads as a live heatmap. WIDE per-node spread so within a level you get a

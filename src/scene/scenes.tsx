@@ -1981,7 +1981,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     for (let s = 0; s < pts.length / 2; s++) { const [r, g, b] = loadRGB(loadFn(s)); cols.push([r / 255, g / 255, b / 255], [r / 255, g / 255, b / 255]); }
     return <Line key={key} points={pts} segments vertexColors={cols} lineWidth={width} transparent opacity={0.9} />;
   };
-  const segLoad = (band: number, s: number): number => nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16);
+  const segLoad = (band: number, s: number): number => (((band * 7919 + s * 131 + 3) >>> 0) % 11 === 0 ? -1 : nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16));   // ~9% offline (灰)
   // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
   const conn = (pts: [number, number, number][], color: string, upper: number, base = 1.2, bw = base) => {
     if (pts.length === 0) return false;
@@ -2082,9 +2082,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
+            {/* observation: hot card = state box · non-hot = neutral blue-grey box (no type hue) · idle = chip */}
             {lc
               ? <Slab size={[0.34, 0.12, 0.34]} color={lc} emissive={lc} emissiveIntensity={0.5} edgeColor={sel0 ? '#4369ef' : undefined} />
-              : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
+              : heat
+                ? <Slab size={[0.34, 0.1, 0.34]} color={LC.npuTop} edgeColor={sel0 ? '#4369ef' : undefined} />
+                : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })
         : (
