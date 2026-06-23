@@ -326,6 +326,12 @@ export function mute(hex: string): string {
   const L = Math.max(30, Math.min(206, 0.3 * r + 0.59 * g + 0.11 * b));   // input lightness, clamped off pure black/white
   return `rgb(${Math.round(L * 0.82)},${Math.round(L * 0.9)},${Math.round(Math.min(255, L * 1.08))})`;   // cool blue-grey
 }
+// deliberate cool blue-grey LIGHTNESS ramp for hierarchy — levels differ by 明度 (浅 finest → 深
+// coarsest), so legends/levels stay tellable WITHOUT hue. depth 0..1 (0 = finest level).
+export function structColor(depth: number): string {
+  const t = Math.max(0, Math.min(1, depth)), L = 196 - t * 130;   // 196 light → 66 dark
+  return `rgb(${Math.round(L * 0.82)},${Math.round(L * 0.9)},${Math.round(Math.min(255, L * 1.12))})`;
+}
 // deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
 // kind so playback reads as a live heatmap. WIDE per-node spread so within a level you get a
 // clear 绿/黄/橙/红 mix (load imbalance / stragglers) — high contrast, like the swimlane states.

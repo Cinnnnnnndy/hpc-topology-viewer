@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
+  loadColor, loadRGB, nodeLoad, mute, isHot, structColor, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -2159,12 +2159,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         const on = selPath !== null && selPath.superP === p;
         return (
           <group key={p}>
-            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : L(3)} emissive={on ? '#4369ef' : L(3)} emissiveIntensity={on ? 0.9 : 0.5} />
+            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : structColor(1)} emissive={on ? '#4369ef' : structColor(1)} emissiveIntensity={on ? 0.9 : 0.4} />
             <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`${TOK.supernode} P${p}`}</Text>
           </group>
         );
       })}
-      {podCount > 1 && <Slab size={[Math.min(3.4, G.fieldW * 0.4), 0.2, 0.3]} position={G.cluster} color={L(4)} emissive={L(4)} emissiveIntensity={0.4} opacity={0.85} edgeColor={L(4)} />}
+      {podCount > 1 && <Slab size={[Math.min(3.4, G.fieldW * 0.4), 0.2, 0.3]} position={G.cluster} color={structColor(1)} emissive={structColor(1)} emissiveIntensity={0.3} opacity={0.85} edgeColor={structColor(1)} />}
 
       {/* L0 cards — individual textured NpuChip (≤cap) else instanced (texture-mapped) */}
       {useChip

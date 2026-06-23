@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, mute, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { PlanesPanel } from './PlanesPanel';
 
@@ -21,8 +21,9 @@ const DEV_LPO = '#36e0c4';   // LPO 光模块
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
 const AXIS_GUTTER = 100, RIGHT_PAD = 10;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
 const SEL = '#4369ef';   // selection / hover highlight = PTO primary (was gold)
-// structure/type glyph fills → neutral blue-grey (de-RYG; type told apart by SHAPE not colour)
-const M_DIE = mute(ENTITY_COLORS.computeDie), M_CUBE = mute(ENTITY_COLORS.cube), M_VEC = mute(ENTITY_COLORS.vector), M_IO = mute(ENTITY_COLORS.ioDie);
+// plane views keep the ORIGINAL hierarchy/type colours (looks better here); state heatmap still
+// overlays during playback. (the 3-D array view stays de-RYG neutral.)
+const M_DIE = ENTITY_COLORS.computeDie, M_CUBE = ENTITY_COLORS.cube, M_VEC = ENTITY_COLORS.vector, M_IO = ENTITY_COLORS.ioDie;
 // rounded-rect path (shared glyph language with the layered view)
 function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.min(r, w / 2, h / 2);
@@ -125,8 +126,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
-    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(140,150,175,0.14)', frameBd: 'rgba(150,162,190,0.32)', bladeFill: 'rgba(130,142,165,0.10)' }
-    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(120,132,158,0.14)', frameBd: 'rgba(110,124,152,0.34)', bladeFill: 'rgba(120,132,158,0.12)' };
+    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(167,139,250,0.20)', frameBd: 'rgba(167,139,250,0.30)', bladeFill: 'rgba(96,165,250,0.12)' }
+    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(167,139,250,0.18)', frameBd: 'rgba(167,139,250,0.34)', bladeFill: 'rgba(96,165,250,0.13)' };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tf = useRef<{ s: number; tx: number; ty: number } | null>(null);   // world→screen transform
@@ -414,7 +415,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        const lc = curPhase ? heatOf(li * 1009 + 1) : mute(Lv.color);   // playing → level load heatmap; idle → faint muted hue
+        const lc = curPhase ? heatOf(li * 1009 + 1) : Lv.color;   // playing → level load heatmap; idle → original level colour
         // L5 超节点 = the top context banner — a clean SOLID colour-block pill (no faint
         // outline): filled bar, bold title left, stats right, with a darker inset chip for "L5".
         if (Lv.banner) {
@@ -447,7 +448,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? mute(ENTITY_COLORS.vector) : lc);   // playing → per-cell load; idle → muted (L1 Cube∶Vector ≈ 8∶1)
+            const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? ENTITY_COLORS.vector : lc);   // playing → per-cell load; idle → original (L1 Cube∶Vector ≈ 8∶1)
             glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : cellBase) : cellBase, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
@@ -607,7 +608,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           const mx = (c[i][0] + c[j][0]) / 2, my = (c[i][1] + c[j][1]) / 2;
           if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) continue;   // cull off-screen links
           if (curPhase) { const ld = linkLoad(bid[i] * 131 + 5, bid[j] * 131 + 5, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 0.95 / s; }   // 颜色=利用率 · 粗细=带宽（L2 机柜内，低于板载）
-          else { ctx.strokeStyle = mute(UB_LEVELS[2].color); ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
+          else { ctx.strokeStyle = UB_LEVELS[2].color; ctx.globalAlpha = 0.3; ctx.lineWidth = 1.0 / s; }
           ctx.beginPath(); ctx.moveTo(c[i][0], c[i][1]); ctx.lineTo(c[j][0], c[j][1]); ctx.stroke();
         }
       }
@@ -620,7 +621,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
         if (mx < vx0 || mx > vx1 || my < vy0 || my > vy1) return;   // cull
         if (curPhase) { const ld = linkLoad(ka, kb, boost); ctx.strokeStyle = loadColor(ld); ctx.globalAlpha = 0.9; ctx.lineWidth = 1.5 / s; }   // 颜色=利用率 · 粗细=带宽（L1 板载，最高 BW → 最粗）
-        else { ctx.strokeStyle = mute(UB_LEVELS[1].color); ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
+        else { ctx.strokeStyle = UB_LEVELS[1].color; ctx.globalAlpha = 0.42; ctx.lineWidth = 0.7 / s; }
         ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
       };
       for (let b = 0; b < L.nB; b++) {

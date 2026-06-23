@@ -16,7 +16,7 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, mute,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, structColor,
   memLayers, PLANES,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
@@ -26,7 +26,6 @@ import {
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
-import { PlanesPanel } from './PlanesPanel';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -437,7 +436,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} planes={fpPlanes} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPlaying || fpStatus ? runPhase : null} partition={fpPart} peers={fpPeers} status={fpStatus} planes={fpPlanes} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
             </SceneTheme.Provider>
 
             <OrbitControls
@@ -463,9 +462,8 @@ export function ClusterView() {
           {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
 
-          {/* physical-device layer & three planes (UB scale-up / RDMA scale-out / VPC) —
-              integrated into the 阵列全景 only (顶视图/层级图 are in PlaneView) */}
-          {mode === 'fullpod' && <PlanesPanel />}
+          {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
+              (line style), not a separate card */}
 
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
           {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
@@ -879,13 +877,13 @@ export function ClusterView() {
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
                 {/* hierarchy — colour弱化, distinguished by GLYPH shape (高饱和色专表状态) */}
-                <span style={lgNote}>层级靠图元形状区分，颜色已弱化：</span>
-                <LgRow shape="dot" color={mute(ENTITY_COLORS.cube)} label="L1 AI Core（Cube/Vector·≈32/卡）" />
-                <LgRow shape="sq" color={mute(ENTITY_COLORS.computeDie)} label="L2 计算 Die（×2/卡）" />
-                <LgRow shape="sq" color={mute(ENTITY_COLORS.card)} label="L3 卡 / device" />
-                <LgRow shape="sq" color={mute(ENTITY_COLORS.node)} label="L4 节点 / 刀片" />
-                <LgRow shape="sq" color={mute(ENTITY_COLORS.cab)} label="机柜" />
-                <LgRow shape="sq" color={mute(ENTITY_COLORS.super)} label={`L5 ${TOK.supernode}`} />
+                <span style={lgNote}>层级靠图元形状 + 明度区分（蓝灰·浅→深），不占状态色：</span>
+                <LgRow shape="dot" color={structColor(0)} label="L1 AI Core（Cube/Vector·≈32/卡）" />
+                <LgRow shape="sq" color={structColor(0.2)} label="L2 计算 Die（×2/卡）" />
+                <LgRow shape="sq" color={structColor(0.4)} label="L3 卡 / device" />
+                <LgRow shape="sq" color={structColor(0.6)} label="L4 节点 / 刀片" />
+                <LgRow shape="sq" color={structColor(0.8)} label="机柜" />
+                <LgRow shape="sq" color={structColor(1)} label={`L5 ${TOK.supernode}`} />
                 {/* state — discrete 4-bucket load (one state = one colour) */}
                 <div style={lgHdr}>状态 / 负载（红黄绿=状态，蓝灰=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
