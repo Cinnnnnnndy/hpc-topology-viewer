@@ -101,6 +101,8 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
+  { id: 'plane',    label: '平面视图' },
+  { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'overview', label: '全景总览' },
   { id: 'rack',     label: '机柜视图' },
   { id: 'node',     label: '节点视图' },
@@ -108,8 +110,6 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'matrix',   label: '邻接矩阵' },
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '执行时序/定位' },
-  { id: 'fullpod',  label: '阵列全景(多卡)' },
-  { id: 'plane',    label: '平面视图' },
 ];
 
 // compact legend row: a swatch (line / square / dot) + label
