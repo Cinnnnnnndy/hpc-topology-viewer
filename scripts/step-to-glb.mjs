@@ -107,10 +107,11 @@ async function main() {
     const idxAcc = accessors.length - 1;
 
     const c = m.color || [0.78, 0.80, 0.84];
-    materials.push({ pbrMetallicRoughness: { baseColorFactor: [c[0], c[1], c[2], 1], metallicFactor: 0.4, roughnessFactor: 0.6 }, name: m.name || `mat_${i}` });
+    // deliberately drop source product names → keep models brand-free (anti-scrape)
+    materials.push({ pbrMetallicRoughness: { baseColorFactor: [c[0], c[1], c[2], 1], metallicFactor: 0.4, roughnessFactor: 0.6 }, name: `mat_${i}` });
     const attributes = { POSITION: posAcc };
     if (normAcc !== undefined) attributes.NORMAL = normAcc;
-    meshes.push({ primitives: [{ attributes, indices: idxAcc, material: i }], name: m.name || `mesh_${i}` });
+    meshes.push({ primitives: [{ attributes, indices: idxAcc, material: i }], name: `mesh_${i}` });
     nodes.push({ mesh: i });
   });
 

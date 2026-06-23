@@ -16,11 +16,7 @@ import { Suspense, useMemo, type ReactNode } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { hasPartModel, resolvePartModelUrl } from './model-registry';
-import { partRotationDeg } from './parts-catalog';
-
-/** 'contain' = uniform scale to fit inside the slot (no distortion, default).
- *  'stretch' = per-axis scale to exactly fill the slot (may distort). */
-export type FitMode = 'contain' | 'stretch';
+import { partRotationDeg, partFit, type FitMode } from './parts-catalog';
 
 function GlbModel({ url, partId, size, fit }: { url: string; partId: string; size: [number, number, number]; fit: FitMode }) {
   const { scene } = useGLTF(url);
@@ -61,8 +57,9 @@ function GlbModel({ url, partId, size, fit }: { url: string; partId: string; siz
   return <primitive object={object} />;
 }
 
-/** Render an installed GLB for `partId`, else fall back to `children`. */
-export function ModelOr({ partId, size, fit = 'contain', children }: {
+/** Render an installed GLB for `partId`, else fall back to `children`. The fit
+ *  mode defaults to the part's catalog setting (override with the `fit` prop). */
+export function ModelOr({ partId, size, fit, children }: {
   partId: string; size: [number, number, number]; fit?: FitMode; children: ReactNode;
 }) {
   if (!hasPartModel(partId)) return <>{children}</>;
@@ -70,7 +67,7 @@ export function ModelOr({ partId, size, fit = 'contain', children }: {
   // Suspense fallback = the procedural children, so there is never a blank frame.
   return (
     <Suspense fallback={<>{children}</>}>
-      <GlbModel url={url} partId={partId} size={size} fit={fit} />
+      <GlbModel url={url} partId={partId} size={size} fit={fit ?? partFit(partId)} />
     </Suspense>
   );
 }

@@ -12,6 +12,10 @@
 // content-encoding design. See models/README.md for the download guide.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** 'contain' = uniform scale to fit inside the slot (no distortion, default).
+ *  'stretch' = per-axis scale to exactly fill the slot (may distort). */
+export type FitMode = 'contain' | 'stretch';
+
 export interface CatalogPart {
   /** model filename stem: models/<id>.glb */
   id: string;
@@ -23,6 +27,9 @@ export interface CatalogPart {
   /** load-time Euler rotation (deg) applied BEFORE auto-fit, to fix orientation.
    *  World axes: Y up, Z = front→back, X = left→right. */
   modelRotationDeg?: [number, number, number];
+  /** how the model fills its slot (default 'contain'). Use 'stretch' when a
+   *  generic box should fill a slot of different proportions (e.g. a tray). */
+  fit?: FitMode;
   /** views that render this part */
   usedIn: string[];
   /** search hints / suggested sources */
@@ -40,7 +47,8 @@ export const PARTS_CATALOG: CatalogPart[] = [
   {
     id: 'cpu-server-package',
     label: '服务器 CPU 封装（LGA）',
-    realMM: [75, 8, 75],
+    realMM: [52, 5, 45],
+    modelRotationDeg: [90, 0, 0],
     usedIn: ['节点视图'],
     hint: 'Sketchfab/GrabCAD: "server CPU", "LGA CPU package", "datacenter processor"',
   },
@@ -69,7 +77,11 @@ export const PARTS_CATALOG: CatalogPart[] = [
   {
     id: 'compute-blade',
     label: '计算刀片 / 液冷节点托盘',
-    realMM: [880, 130, 740],
+    realMM: [104, 34, 169],
+    // current model is a compact box (deeper-than-wide); 'stretch' lets it fill
+    // the wide, shallow blade slot. Switch to 'contain' if you swap in a real
+    // wide rack-mount tray model (then it won't need distorting).
+    fit: 'stretch',
     usedIn: ['机柜视图（节点槽）', 'UB 互联层级 (L2)', '阵列全景'],
     hint: 'GrabCAD: "server blade", "1U 2U liquid cooled tray", "GPU server tray"',
   },
@@ -120,4 +132,9 @@ export function getPart(id: string): CatalogPart | undefined {
 /** Load-time rotation (deg) for a part, or [0,0,0] if none configured. */
 export function partRotationDeg(id: string): [number, number, number] {
   return byId[id]?.modelRotationDeg ?? [0, 0, 0];
+}
+
+/** Configured fit mode for a part, or 'contain' if none configured. */
+export function partFit(id: string): FitMode {
+  return byId[id]?.fit ?? 'contain';
 }

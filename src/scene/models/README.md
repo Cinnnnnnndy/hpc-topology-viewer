@@ -26,11 +26,13 @@
 ## 1. 转换命令（在仓库根目录）
 
 ```bash
-# glb / gltf / obj —— 通用
+# glb / gltf / obj / stl —— 通用
 node scripts/convert-to-glb.mjs <输入文件> <part-id>
 
 # step / stp —— 全自动（OpenCASCADE WASM，无需 FreeCAD）
 node scripts/step-to-glb.mjs <输入.step> <part-id>
+
+# iges / x_t(Parasolid) / FCStd 等 —— 先在 FreeCAD/CAD 另存 STEP 或导出 GLB，再用上面两条
 ```
 默认**不开 Draco**（运行时无需外部解码器，契合本项目离线 / noindex 部署）；
 想压体积加 `--draco`。
