@@ -256,6 +256,23 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.translate(tx, ty); ctx.scale(s, s);
 
+    // 执行时序 phase wash — shared by BOTH the top map and the layered matrix, so every view
+    // tints to the current RUN_SCHED phase colour while the 执行时序 plays (same headRef clock).
+    const runSeg = phaseSegments(runMode);
+    const curPhase = swOpen ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
+    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
+    const wash = (c: string) => (curPhase ? mix(c, curPhase.color, washAmt) : c);
+    // live phase banner (screen-space, top-centre) — names the phase driving the colour; call AFTER ctx.restore()
+    const phaseBanner = () => {
+      if (!curPhase) return;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '600 13px sans-serif';
+      const label = `▶ 执行时序 · ${curPhase.name}${curPhase.parallel && curPhase.parallel !== '—' ? ' · ' + curPhase.parallel : ''}`;
+      const twb = ctx.measureText(label).width, bx = W / 2 - twb / 2 - 11, bw = twb + 22;
+      ctx.fillStyle = P.bg; ctx.globalAlpha = 0.82; rrPath(ctx, bx, 12, bw, 26, 8); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = curPhase.color; ctx.lineWidth = 1.4; rrPath(ctx, bx, 12, bw, 26, 8); ctx.stroke();
+      ctx.fillStyle = curPhase.color; ctx.fillText(label, W / 2, 25);
+    };
+
     // ── layered-hierarchy view: each level matrix-packed into a grid (like the top
     //    view), grids stacked by level. Full pod via LOD: cells when zoomed in, an
     //    aggregate fill when too small. Click → highlight the up/down-stream chain. ──
@@ -319,12 +336,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
+        const lc = wash(Lv.color);   // level colour tinted to the current 执行时序 phase (during playback)
         // L5 超节点 = the top context banner (this view = ONE super-node = 8,192 NPU)
         if (Lv.banner) {
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
-          ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
-          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          ctx.fillStyle = hi && on ? SEL : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
+          ctx.fillStyle = lc; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
+          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : lc; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
+          ctx.fillStyle = hi && on ? SEL : lc; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
           ctx.fillText(`${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
           return;
         }
@@ -338,12 +356,12 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : Lv.color) : Lv.color, hi ? (on ? 1 : 0.14) : 1);
+            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : lc) : lc, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
         } else if (Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
           // aggregate: one fill over the whole grid panel (represents all units)
-          ctx.fillStyle = Lv.color; ctx.globalAlpha = hi ? 0.08 : 0.5; rr(margin, Lv.y0, Wc, Lv.h, 0.2); ctx.fill(); ctx.globalAlpha = 1;
+          ctx.fillStyle = lc; ctx.globalAlpha = hi ? 0.08 : 0.5; rr(margin, Lv.y0, Wc, Lv.h, 0.2); ctx.fill(); ctx.globalAlpha = 1;
           if (hi) {   // selected range = a contiguous bright block (rows lo..hi)
             const ra = Math.floor(hi.lo[li] / Lv.cols), rb = Math.floor((hi.hi[li] - 1) / Lv.cols);
             ctx.fillStyle = SEL; ctx.globalAlpha = 0.85;
@@ -387,6 +405,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
         if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); }
       });
+      phaseBanner();
       return;
     }
 
@@ -400,10 +419,6 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     // playback: the whole pod runs the RUN_SCHED 执行时序 — every card tints to the CURRENT
     // phase colour (加载→前向→反向→AllReduce→优化器). Same head as the 执行时序 swimlane (headRef).
-    const runSeg = phaseSegments(runMode);   // wash always reflects the head (frozen when paused); only the head ADVANCE is gated by `playing`
-    const curPhase = swOpen ? (runSeg.find((sg) => headRef.current < sg.t1)?.p ?? runSeg[runSeg.length - 1].p) : null;
-    const washAmt = curPhase ? (curPhase.kind === 'compute' ? 0.72 : curPhase.kind === 'comm' ? 0.66 : 0.52) : 0;
-
     // cards — full L3→L2→L1·L0 drill on zoom: card(4 Die) → 计算 Die → AI Core(Cube/Vector)
     const showBorder = s > 4, showId = s > 14, showDie = s > 26, showCore = s > 74;
     const round = s > 8, rad = L.cs * 0.16;   // rounded corners (same glyph language as 层级图) once cards are big; cull off-screen
@@ -413,9 +428,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const [x, y] = cardXY(k);
       if (round && (x + L.cs < vx0 || x > vx1 || y + L.cs < vy0 || y > vy1)) continue;   // cull off-screen when zoomed in
       const g = groupOf(k);
-      let cf = g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length];
-      if (curPhase) cf = mix(cf, curPhase.color, washAmt);
-      ctx.fillStyle = cf;
+      ctx.fillStyle = wash(g < 0 ? P.cardN : PARTITION_PALETTE[g % PARTITION_PALETTE.length]);
       if (round) { rrPath(ctx, x, y, L.cs, L.cs, rad); ctx.fill(); if (showBorder) { ctx.strokeStyle = P.cardBd; ctx.stroke(); } }
       else { ctx.fillRect(x, y, L.cs, L.cs); if (showBorder) ctx.strokeRect(x, y, L.cs, L.cs); }
       // card = 1 device (HW); r-label = SOFTWARE rank bound 1:1. On deep zoom the interior
@@ -560,15 +573,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       }
     }
     ctx.restore();
-    // live phase banner (screen-space) — names the current run phase driving the card colour
-    if (curPhase) {
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '600 13px sans-serif';
-      const label = `▶ 执行时序 · ${curPhase.name}${curPhase.parallel && curPhase.parallel !== '—' ? ' · ' + curPhase.parallel : ''}`;
-      const tw = ctx.measureText(label).width, bx = W / 2 - tw / 2 - 11, bw = tw + 22;
-      ctx.fillStyle = P.bg; ctx.globalAlpha = 0.82; rrPath(ctx, bx, 12, bw, 26, 8); ctx.fill();
-      ctx.globalAlpha = 1; ctx.strokeStyle = curPhase.color; ctx.lineWidth = 1.4; rrPath(ctx, bx, 12, bw, 26, 8); ctx.stroke();
-      ctx.fillStyle = curPhase.color; ctx.fillText(label, W / 2, 25);
-    }
+    phaseBanner();   // live phase banner (screen-space) — names the current run phase driving the card colour
   }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, playing, runMode, scenario, layout, selL, selTop, swOpen, P.bg]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
@@ -587,11 +592,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       headRef.current = (headRef.current + dt / 7) % 1;   // ≈7s per training iteration
       phaseRef.current += dt * 1.4;                       // marching-ants dash offset
-      if (layout === 'top') {
-        const id = (seg.find((s) => headRef.current < s.t1)?.p ?? seg[seg.length - 1].p).id;
-        const flowVisible = !!tf.current && tf.current.s * L.cs > 4;   // ants/flow drawn only when zoomed in
-        if (flowVisible || id !== lastPhaseRef.current) { lastPhaseRef.current = id; draw(); }   // else colour is constant within a phase → skip
-      }
+      // colour is constant within a phase → only the top view's marching-ants need a per-frame
+      // redraw; otherwise redraw both views on a phase change so the wash steps forward.
+      const id = (seg.find((s) => headRef.current < s.t1)?.p ?? seg[seg.length - 1].p).id;
+      const flowVisible = layout === 'top' && !!tf.current && tf.current.s * L.cs > 4;
+      if (flowVisible || id !== lastPhaseRef.current) { lastPhaseRef.current = id; draw(); }
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
