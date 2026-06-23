@@ -2071,15 +2071,18 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* L0 cards — individual textured NpuChip (≤cap) else instanced (texture-mapped) */}
       {useChip
-        ? G.cardX.map((x, k) => (
+        ? G.cardX.map((x, k) => {
+          const lc = heat ? loadColor(nodeLoad(k, statKind ?? undefined)) : null;   // observation: load heat plate over the chip
+          return (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
             onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
             <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={hoverNpu === k || (selPath !== null && selPath.cards.includes(k))} logo />
+            {lc && <Slab size={[0.37, 0.06, 0.37]} position={[0, 0.14, 0]} color={lc} emissive={lc} emissiveIntensity={0.6} />}
           </group>
-        ))
+        ); })
         : (
           <instancedMesh ref={cardInst} args={[undefined, undefined, Math.max(1, G.N)]}
             onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}

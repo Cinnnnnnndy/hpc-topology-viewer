@@ -249,12 +249,13 @@ export function mute(hex: string, amt = 0.8): string {
   return `rgb(${Math.round(r + (y - r) * amt)},${Math.round(g + (y - g) * amt)},${Math.round(b + (y - b) * amt)})`;
 }
 // deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
-// kind so playback reads as a live heatmap (compute → cores hot, comm → links hot, idle → cool).
+// kind so playback reads as a live heatmap. WIDE per-node spread so within a level you get a
+// clear 绿/黄/橙/红 mix (load imbalance / stragglers) — high contrast, like the swimlane states.
 export function nodeLoad(id: number, phaseKind?: string): number {
   let h = (id * 2654435761) >>> 0; h ^= h >>> 13; h = (h * 1274126177) >>> 0;
-  const base = (h >>> 8) / 0xffffff;            // 0..1 stable spread
-  const lvl = phaseKind === 'compute' ? 0.78 : phaseKind === 'comm' ? 0.42 : phaseKind === 'mem' ? 0.6 : phaseKind === 'load' || phaseKind === 'store' ? 0.5 : 0.22;
-  return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.42));
+  h ^= h >>> 16; const base = (h >>> 8) / 0xffffff;   // 0..1 stable spread
+  const lvl = phaseKind === 'compute' ? 0.62 : phaseKind === 'comm' ? 0.5 : phaseKind === 'mem' ? 0.56 : phaseKind === 'load' || phaseKind === 'store' ? 0.48 : 0.34;
+  return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.95));   // ±0.475 spread → spans green→red
 }
 
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
