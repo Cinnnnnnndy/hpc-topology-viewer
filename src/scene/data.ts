@@ -107,8 +107,6 @@ export const UB_LEVEL_META: Record<string, UbLevelMeta> = {
 // never the device itself. Tuned for the 950 (4-Die package · UMA · ≈32 AI Core/card).
 export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; tag?: string; hw?: string; sw?: string; }
 export const LAYER_INFO: LayerInfo[] = [
-  { key: 'job',     name: '作业 / 全局', intra: '1 个训练作业 · 全局编排 / 调度', inter: '↓ 切分到集群：DP / PP / TP / EP 并行域', bw: '端到端吞吐 · MFU', domain: 'SO', sw: '软件：整个作业（模型 / 训练任务）· 全局' },
-  { key: 'cluster', name: '集群（跨超节点）', intra: '多超节点经全光 scale-out 互联', inter: '↓ 作业切分到各超节点（DP / PP）', bw: `跨超节点 ${TOK.uboe} / RoCE`, domain: 'SO', sw: '软件：跨超节点 DP / PP 通信域' },
   { key: 'super', name: `${TOK.supernode}`, intra: `域内全互联 · ${TOK.ubmesh}（SU 窄快 + SO 广省）`, inter: '顶层 · UB Load/Store 内存语义抹平总线/网络边界', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: '集群通信域 / 全局编排' },
   { key: 'cab',   name: '机柜', intra: `柜内 ${TOK.fullmesh}（≤128 卡 SU 超低延迟域）`, inter: '↑ 总线池化 pooling：UB 统一编址 → 超节点“一台计算机”', bw: `柜内 ${TOK.fullmesh} · 1:1 无收敛`, domain: 'SU' },
   { key: 'node',  name: '节点 / 刀片', intra: '8 卡 + CPU 经 LQC 对 L1 全互联、平等编址', inter: '↑ 互联收敛 interconnect：经 L1/L2 上联（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(卡) / 8×30G(CPU)', domain: 'SU' },

@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, type Gen, type PartitionDim } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
@@ -21,26 +21,39 @@ function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, 
   ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
   ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
 }
-// ── L0 run-state swimlane (核 × 时间) — illustrative, deterministic per card so it's
-// stable. This is where L0's finest grain actually shows: 计算(绿) / 访存等待(橙) / 流水
-// 气泡(空). The aggregate util/mem/bubble % is the "整体状况" roll-up of L0. ──
+// ── L0 执行时序 swimlane (核 × 时间) — segmented by the SAME train/infer phases as the
+// 3-D full-pod view (load→Forward→Backward→AllReduce→optimizer). Each phase colours the
+// cores by what they do: 计算(绿) / 访存(橙) / 通信等待(粉) / 加载(蓝) / 流水气泡(空).
+// Deterministic per card so it's stable; a playhead sweeps the phases like the 3-D 时序. ──
 function mulberry(seed: number) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-const SW_T = 56, SW_LANES = ['AIC·Cube', 'AIV·Vector 0', 'AIV·Vector 1', 'AIC·Cube', 'AIV·Vector 2', 'AIV·Vector 3'];
-function swimlane(k: number) {
-  const rng = mulberry((k * 2654435761 + 12345) >>> 0);
+const SW_T = 60;
+const SW_LANES = ['AIC·Cube 0', 'AIC·Cube 1', 'AIV·Vector 0', 'AIV·Vector 1', 'AIV·Vector 2', 'MTE·DMA 搬运'];
+const SW_COLOR: Record<string, string> = { compute: '#04d793', mem: '#ffaa3b', comm: '#ff4b7b', load: '#60a5fa', bubble: '' };
+interface SwSeg { p: RunPhase; t0: number; t1: number; }
+function runSwimlane(k: number, mode: RunMode) {
+  const phases = RUN_SCHED[mode];
+  const wOf = (p: RunPhase) => (p.kind === 'compute' ? 3 : p.kind === 'comm' ? 1.4 : 1);   // compute phases run longer
+  const tw = phases.reduce((s, p) => s + wOf(p), 0);
+  const seg: SwSeg[] = []; let acc = 0;
+  for (const p of phases) { const t0 = acc / tw; acc += wOf(p); seg.push({ p, t0, t1: acc / tw }); }
+  const phaseAt = (t: number) => seg.find((s) => t < s.t1)?.p ?? seg[seg.length - 1].p;
+  const rng = mulberry((k * 2654435761 + 7) >>> 0);
   let comp = 0, mem = 0, bub = 0, tot = 0;
-  const rows = SW_LANES.map((name) => {
-    const slots: string[] = []; let st = 'compute';
-    for (let t = 0; t < SW_T; t++) {
-      const r = rng();   // sticky-ish: mostly compute, occasional mem-wait → bubble
-      if (st === 'compute') st = r < 0.14 ? 'mem' : r < 0.19 ? 'bubble' : 'compute';
-      else if (st === 'mem') st = r < 0.5 ? 'compute' : r < 0.68 ? 'bubble' : 'mem';
-      else st = r < 0.62 ? 'compute' : 'bubble';
-      slots.push(st); tot++; if (st === 'compute') comp++; else if (st === 'mem') mem++; else bub++;
-    }
+  const rows = SW_LANES.map((name, li) => {
+    const isMte = li === SW_LANES.length - 1;   // last lane = the DMA / 搬运 engine (busy on load/store/comm)
+    const slots = Array.from({ length: SW_T }, (_, t) => {
+      const ph = phaseAt((t + 0.5) / SW_T), r = rng();
+      let st: string;
+      if (ph.kind === 'comm') st = isMte ? (r < 0.75 ? 'comm' : 'mem') : r < 0.5 ? 'comm' : r < 0.82 ? 'bubble' : 'mem';   // cores block on the collective → 气泡
+      else if (ph.kind === 'load') st = isMte ? 'load' : r < 0.35 ? 'load' : 'bubble';
+      else if (ph.kind === 'store' || ph.kind === 'mem') st = isMte ? 'mem' : r < 0.5 ? 'compute' : r < 0.82 ? 'mem' : 'bubble';
+      else st = isMte ? (r < 0.45 ? 'mem' : 'bubble') : r < 0.82 ? 'compute' : r < 0.92 ? 'mem' : 'bubble';   // compute phase
+      tot++; if (st === 'compute') comp++; else if (st === 'mem' || st === 'load') mem++; else if (st === 'bubble') bub++;
+      return st;
+    });
     return { name, slots };
   });
-  return { rows, util: Math.round((comp / tot) * 100), mem: Math.round((mem / tot) * 100), bub: Math.round((bub / tot) * 100) };
+  return { rows, seg, util: Math.round((comp / tot) * 100), mem: Math.round((mem / tot) * 100), bub: Math.round((bub / tot) * 100) };
 }
 const COLOR_BTNS: { id: PartitionDim; label: string }[] = [
   { id: 'none', label: '无' }, { id: 'tp', label: 'TP' }, { id: 'pp', label: 'PP' }, { id: 'dp', label: 'DP' }, { id: 'ep', label: 'EP' },
@@ -63,8 +76,9 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [play, setPlay] = useState(false);          // scenario playback (animated hop-by-hop flow)
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
   const [layout, setLayout] = useState<'top' | 'layers'>('top');   // top-down map vs. layered hierarchy
+  const [legendOpen, setLegendOpen] = useState(true);   // collapsible legend (avoids occluding the diagram on small screens)
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
-  const [selTop, setSelTop] = useState<number | null>(null);   // top-view selected card (persistent highlight)
+  const [selTop, setSelTop] = useState<{ k: number; die?: number; core?: number } | null>(null);   // top-view selection (card, or a Die / AI Core when zoomed in)
   const downXY = useRef<{ x: number; y: number } | null>(null);   // pointer-down (click vs drag)
   const phaseRef = useRef(0);                       // flow animation phase
   const rafRef = useRef<number | null>(null);
@@ -111,16 +125,14 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64));
     const margin = 11, Wc = 100, gap = 2.4;   // wider canvas
     // FULL chain numbered by the UB L0–L7 coordinate (rank is software, shown separately):
-    // L7 作业 → L6 集群 → L5 超节点 → [机柜] → L4 节点 → L3 卡/device → L2 计算 Die(×2/卡)
-    // → L1·L0 AI Core(×16/Die). 机柜 has no own L (并入机器域). The 3 top context levels
-    // (job/cluster/super) are full-width banners; the rest are matrices. `ar`: smaller → bigger cells.
+    // L5 超节点 → [机柜] → L4 节点 → L3 卡/device → L2 计算 Die(×2/卡) → L1 AI Core(×16/Die)
+    // → L0 Tile. 机柜 has no own L (并入机器域). L6/L7 集群·作业 are NOT shown — this view is
+    // exactly ONE super-node. The super level is a full-width banner; the rest are matrices. `ar`: smaller → bigger cells.
     // `ar` = grid width:height → cols = √(count·ar); a level's WORLD height = Wc/ar, so
     // higher ar ⇒ more per row AND shorter. The huge fine levels (L2/L1/L0) get high ar so
     // they're COMPACT at overview (you can't scan 1M tiles) and aggregate; L0 in particular
     // is an aggregate observation strip (流水气泡/访存), with per-cell detail only on drill.
     const defs = [
-      { kind: 'job',     count: 1,                 color: '#ff4b7b',                label: 'L7 作业/全局',  banner: true,  ar: 1 },
-      { kind: 'cluster', count: 1,                 color: '#04d793',                label: 'L6 集群',       banner: true,  ar: 1 },
       { kind: 'super',   count: 1,                 color: ENTITY_COLORS.super,      label: 'L5 超节点',     banner: true,  ar: 5.4 },
       { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜',          banner: false, ar: 32 },
       { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L4 节点/刀片',  banner: false, ar: 14 },
@@ -131,17 +143,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ];
     let y = margin;
     const levels = defs.map((d, li) => {
-      if (d.banner) { const h = d.kind === 'super' ? 3.6 : d.kind === 'cluster' ? 3.8 : 2.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: li === 0 ? 1 : Math.max(1, d.count / defs[li - 1].count) }; }
+      if (d.banner) { const h = 3.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: 1 }; }
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
       return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count };   // grp = children per parent
     });
-    // how many super-nodes the cluster (L6) holds — this view drills into just ONE (L5),
-    // so L5/L6/L7 are a fan-out, NOT 1:1. superclusterNpu is illustrative (e.g. ">52万").
-    const clusterNpu = (() => { const m = spec.superclusterNpu.match(/(\d+)\s*万/); if (m) return parseInt(m[1], 10) * 10000; const m2 = spec.superclusterNpu.match(/(\d+)/); return m2 ? parseInt(m2[1], 10) : 0; })();
-    const nSuper = Math.max(2, Math.round(clusterNpu / N));
-    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD, nSuper };
+    return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
   }, [spec]);
 
   // formula cell centre (level li, unit index i) — no stored arrays
@@ -172,6 +180,28 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     if (lx - lc * (L.cs + L.gap) > L.cs || ly - lr * (L.cs + L.gap) > L.cs) return null;   // in the gap
     const k = blade * CPB + (lr * 4 + lc);
     return k < L.N1 ? k : null;
+  };
+
+  // finer top-view pick: inside a card, resolve which compute Die / AI Core was clicked
+  // (only when zoomed in enough that the drill is actually drawn — mirrors the draw geometry).
+  // IO Die / card body → {} (card-level). Returns { die?, core? }.
+  const subPick = (wx: number, wy: number, k: number): { die?: number; core?: number } => {
+    const s = tf.current?.s ?? 0; if (s <= 26) return {};
+    const [x, y] = cardXY(k);
+    const ins = L.cs * 0.14, gp = L.cs * 0.07;
+    const dw = (L.cs - ins * 2 - gp) / 2, dh = (L.cs * 0.7 - gp) / 2;
+    const x0 = x + ins, x1 = x + ins + dw + gp, y0 = y + L.cs * 0.28;
+    const inR = (rx: number, ry: number) => wx >= rx && wx <= rx + dw && wy >= ry && wy <= ry + dh;
+    let die: number, dx: number;
+    if (inR(x0, y0)) { die = 0; dx = x0; } else if (inR(x1, y0)) { die = 1; dx = x1; } else return {};   // only the 2 compute Die are selectable
+    if (s <= 74) return { die };
+    const pad = dw * 0.1, gxx = dw * 0.06, gyy = dh * 0.08;
+    const cw = (dw - pad * 2 - gxx) / 2, ch = (dh - pad * 2 - gyy) / 2;
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+      const cx = dx + pad + c * (cw + gxx), cy = y0 + pad + r * (ch + gyy);
+      if (wx >= cx && wx <= cx + cw && wy >= cy && wy <= cy + ch) return { die, core: r * 2 + c };
+    }
+    return { die };
   };
 
   // layered view: hit-test world point → { level, grid cell index }
@@ -271,25 +301,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
 
       levels.forEach((Lv, li) => {
-        // L7 作业 / L6 集群 / L5 超节点 = context banners. NOT 1:1: L7=1 作业 over a cluster
-        // of nSuper 超节点 (L6), of which this view drills into ONE (L5).
+        // L5 超节点 = the top context banner (this view = ONE super-node = 8,192 NPU)
         if (Lv.banner) {
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
           ctx.fillStyle = Lv.color; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
           ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : Lv.color; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          const col = hi && on ? SEL : Lv.color;
-          if (Lv.kind === 'cluster') {
-            // fan-out row: nSuper 超节点, the FIRST one highlighted = the one this view expands
-            const n = Math.min(LAY.nSuper, 96), cw2 = Wc / n, sq = Math.min(cw2 * 0.62, Lv.h * 0.32);
-            for (let i = 0; i < n; i++) { const cx = margin + (i + 0.5) * cw2, sel0 = i === 0; ctx.fillStyle = sel0 ? col : Lv.color; ctx.globalAlpha = sel0 ? 1 : 0.34; rr(cx - sq / 2, Lv.y0 + Lv.h * 0.52, sq, sq * 1.4, sq * 0.25); ctx.fill(); }
-            ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '1.5px sans-serif';
-            ctx.fillText(`集群 · ${LAY.nSuper} 个${TOK.supernode} scale-out（DP / PP）· 本图展开其一 ↓`, margin + Wc / 2, Lv.y0 + Lv.h * 0.27);
-          } else {
-            const txt = Lv.kind === 'job' ? '1 训练作业 · 全局编排 · 横跨整个集群（端到端吞吐 / MFU）'
-              : `${TOK.supernode}（1 / ${LAY.nSuper}）· ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`;
-            ctx.fillStyle = col; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
-            ctx.fillText(txt, margin + Wc / 2, Lv.y0 + Lv.h / 2);
-          }
+          ctx.fillStyle = hi && on ? SEL : Lv.color; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
+          ctx.fillText(`${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
           return;
         }
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
@@ -471,7 +489,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     // selected (persistent) or hovered card: "active" glow on its links — its cabinet's
     // cross-cabinet fabric (L3, on select) + blade↔cabinet blades (L2) + board mates (L1).
-    const hk = selTop ?? hoverRef.current; const isSel = selTop != null;
+    const hk = selTop?.k ?? hoverRef.current; const isSel = selTop != null;
     if (hk != null) {
       const b = Math.floor(hk / CPB), cab = Math.floor(b / BPC);
       const [hx, hy] = cardXY(hk); const hc: [number, number] = [hx + L.cs / 2, hy + L.cs / 2];
@@ -498,6 +516,22 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       // selected / hovered card outline (on top, no blur) — rounded, PTO-blue, bolder when selected
       ctx.lineWidth = (isSel ? 3.4 : 2.5) / s; ctx.strokeStyle = SEL;
       rrPath(ctx, hx - 0.07, hy - 0.07, L.cs + 0.14, L.cs + 0.14, L.cs * 0.18); ctx.stroke();
+      // finer selection: outline the chosen compute Die / AI Core inside the package
+      if (isSel && selTop && selTop.die != null) {
+        const ins = L.cs * 0.14, gp = L.cs * 0.07;
+        const dw = (L.cs - ins * 2 - gp) / 2, dh = (L.cs * 0.7 - gp) / 2;
+        const dx = hx + ins + selTop.die * (dw + gp), dy = hy + L.cs * 0.28;
+        ctx.lineWidth = 1.6 / s; ctx.strokeStyle = SEL; ctx.shadowColor = SEL; ctx.shadowBlur = 6;
+        rrPath(ctx, dx - 0.02, dy - 0.02, dw + 0.04, dh + 0.04, dieR); ctx.stroke();
+        if (selTop.core != null) {
+          const pad = dw * 0.1, gxx = dw * 0.06, gyy = dh * 0.08;
+          const cw = (dw - pad * 2 - gxx) / 2, ch = (dh - pad * 2 - gyy) / 2;
+          const cc = selTop.core % 2, cr = Math.floor(selTop.core / 2);
+          const cx = dx + pad + cc * (cw + gxx), cy = dy + pad + cr * (ch + gyy);
+          ctx.lineWidth = 1.1 / s; rrPath(ctx, cx - 0.01, cy - 0.01, cw + 0.02, ch + 0.02, ch * 0.18); ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
     }
     ctx.restore();
   }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, play, scenario, layout, selL, selTop]);
@@ -539,7 +573,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     if (downXY.current && Math.abs(e.clientX - downXY.current.x) + Math.abs(e.clientY - downXY.current.y) < 5) {
       const [wx, wy] = toWorld(e.clientX, e.clientY);
       if (layout === 'layers') { const hit = pickLayer(wx, wy); setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit)); }
-      else { const k = pick(wx, wy); setSelTop((prev) => (k != null && prev === k ? null : k)); }
+      else {
+        const k = pick(wx, wy);
+        if (k == null) setSelTop(null);
+        else { const sub = subPick(wx, wy, k); setSelTop((prev) => (prev && prev.k === k && prev.die === sub.die && prev.core === sub.core ? null : { k, ...sub })); }
+      }
     }
     downXY.current = null; drag.current = null; try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* noop */ }
   };
@@ -563,8 +601,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   // which card is selected → drives the L0 swimlane drill-down (top: the card; layered:
   // the card that owns the selected card/die/core/tile cell)
   const swCard = (() => {
-    if (layout === 'top') return selTop;
+    if (layout === 'top') return selTop?.k ?? null;
     if (selL) { const Lv = LAY.levels[selL.lvl]; if (['card', 'die', 'core', 'tile'].includes(Lv.kind)) return Math.floor(selL.idx / (Lv.count / LAY.cardN)); }
+    return null;
+  })();
+  // sub-context label for the swimlane header (which Die / AI Core, when finer-selected)
+  const swSub = (() => {
+    if (layout === 'top' && selTop) {
+      if (selTop.core != null) return `计算 Die ${selTop.die} · AI Core ${selTop.die! * 16 + selTop.core}`;
+      if (selTop.die != null) return `计算 Die ${selTop.die}`;
+    }
+    if (layout === 'layers' && selL) { const Lv = LAY.levels[selL.lvl]; if (Lv.kind === 'die') return '计算 Die'; if (Lv.kind === 'core') return 'AI Core'; if (Lv.kind === 'tile') return 'Tile / lane'; }
     return null;
   })();
 
@@ -581,7 +628,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L7 作业→L6 集群→L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
+          return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
             style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{lb}</button>;
         })}
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
@@ -606,18 +653,21 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             })}
             <button onClick={() => setPlay((v) => !v)} title="播放 / 暂停 数据流动"
               style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer', border: `1px solid ${play ? '#4369ef' : 'var(--bd)'}`, background: play ? 'rgba(67,105,239,0.12)' : 'transparent', color: play ? '#4369ef' : 'var(--tx2)' }}>{play ? '⏸ 播放中' : '▶ 播放'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 点击卡 = 选中高亮 + 底部 L0 执行时序 swimlane`}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 放大后点卡可继续选 Die / AI Core · 选中 = 右下 L0 执行时序`}</span>
           </>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L7 作业→L0 · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1)→Tile(L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core(L1)→Tile(L0) · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
         )}
       </div>
-      {/* legend */}
-      <div style={{ position: 'absolute', bottom: 12, left: 12, padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', lineHeight: 1.6, color: 'var(--tx2)' }}>
-        {layout === 'top' ? (
+      {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
+      <div style={{ position: 'absolute', bottom: 12, left: 12, maxWidth: 'min(420px, calc(100vw - 24px))', padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', lineHeight: 1.6, color: 'var(--tx2)' }}>
+        <div onClick={() => setLegendOpen((v) => !v)} title={legendOpen ? '收起图例' : '展开图例'} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600, color: 'var(--tx)', marginBottom: legendOpen ? 3 : 0 }}>
+          <span>{layout === 'top' ? `全量${TOK.supernode} · 平面拓扑` : `${TOK.supernode} · 层级矩阵图`}</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--tx3)', fontSize: 10 }}>{legendOpen ? '▾ 收起' : '▸ 图例'}</span>
+        </div>
+        {legendOpen && (layout === 'top' ? (
           <>
-            <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 2 }}>{`全量${TOK.supernode} · 平面拓扑`}</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><span style={{ color: '#ff4b7b' }}>L7 作业</span> ⊃ <span style={{ color: '#04d793' }}>L6 集群({LAY.nSuper} {TOK.supernode})</span> ⊃ <span style={{ color: ENTITY_COLORS.super }}>L5 本{TOK.supernode}(1/{LAY.nSuper})</span> ↓ 以下为本超节点展开</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><span style={{ color: ENTITY_COLORS.super }}>L5 本{TOK.supernode}</span>（{LAY.cabN.toLocaleString()} 机柜 / {LAY.cardN.toLocaleString()} NPU）↓ 以下为本超节点逐级展开</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />机柜框（机器域·含 8 刀片）</div>
             <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
             <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.computeDie, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: ENTITY_COLORS.ioDie, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: ENTITY_COLORS.cube, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: ENTITY_COLORS.vector, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector)</div>
@@ -628,19 +678,18 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </>
         ) : (
           <>
-            <div style={{ fontWeight: 600, color: 'var(--tx)', marginBottom: 3 }}>{`${TOK.supernode} · 层级矩阵图`}</div>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ job: '1 作业·横跨集群', cluster: `${LAY.nSuper} 个超节点·本图详其一`, super: `集群中的 1 / ${LAY.nSuper}`, cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
+              const shape = ({ super: '本超节点·全量展开', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube + 2 Vector', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
               return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
             <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
-            <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 集群域(L6–L7) · 点格看右上对齐`}</div>
+            <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 点格看右上对齐`}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
-            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 底部 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 底部 L0 swimlane'}</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
           </>
-        )}
+        ))}
       </div>
       {/* layered-view selection detail — level semantics (层内 / 层间关系 + 带宽/域) */}
       {layout === 'layers' && selL && (() => {
@@ -678,46 +727,95 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </div>
         );
       })()}
-      {/* L0 执行时序 swimlane (核 × 时间) — drill-down that opens when a card is selected.
-          This is where L0's finest grain / 流水气泡 / 访存等待 actually shows. */}
-      {swCard != null && (() => {
-        const sw = swimlane(swCard), W = 760, laneH = 16, padL = 96, slotW = (W - padL - 14) / SW_T;
-        return (
-          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: W, maxWidth: 'calc(100vw - 40px)', padding: '9px 12px 8px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序 · swimlane（核 × 时间）</span>
-              <span style={{ color: 'var(--tx3)' }}>{`device #${swCard} · rank ${swCard}`}</span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontWeight: 600 }}>
-                <span style={{ color: '#04d793' }}>算力利用 {sw.util}%</span>
-                <span style={{ color: '#ffaa3b' }}>访存等待 {sw.mem}%</span>
-                <span style={{ color: 'var(--tx3)' }}>流水气泡 {sw.bub}%</span>
-              </span>
-              <button onClick={() => { setSelTop(null); setSelL(null); }} title="关闭" style={{ border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 6px' }}>✕</button>
-            </div>
-            <svg width={W - 24} height={sw.rows.length * laneH + 14} style={{ display: 'block' }}>
-              {Array.from({ length: 5 }, (_, g) => <line key={g} x1={padL + (g + 1) * (SW_T / 5) * slotW} y1={0} x2={padL + (g + 1) * (SW_T / 5) * slotW} y2={sw.rows.length * laneH} stroke="var(--bd)" strokeWidth={0.5} />)}
-              {sw.rows.map((r, ri) => (
-                <g key={ri} transform={`translate(0,${ri * laneH})`}>
-                  <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={9} fill={P.ink2}>{r.name}</text>
-                  {r.slots.map((sState, ti) => sState === 'bubble' ? null : (
-                    <rect key={ti} x={padL + ti * slotW} y={2} width={Math.max(0.8, slotW - 0.5)} height={laneH - 4} rx={1} fill={sState === 'compute' ? '#04d793' : '#ffaa3b'} opacity={sState === 'compute' ? 0.85 : 0.85} />
-                  ))}
-                </g>
-              ))}
-              <text x={padL} y={sw.rows.length * laneH + 11} fontSize={8.5} fill={P.ink2}>← 时间 t →</text>
-            </svg>
-            <div style={{ color: 'var(--tx3)', fontSize: 10, marginTop: 2 }}>
-              <span style={{ color: '#04d793' }}>■</span> 计算(Cube/Vector) · <span style={{ color: '#ffaa3b' }}>■</span> 访存等待(MTE 搬运) · ▢ 空=流水气泡 · 这是 L0 最细粒度运行态(示意)；气泡/访存多 → 算力没打满
-            </div>
-          </div>
-        );
-      })()}
+      {/* L0 执行时序 swimlane — bottom-right drill-down, phase-driven (load→Forward→
+          Backward→AllReduce→optimizer, like the 3-D 时序) with a play head sweeping the phases. */}
+      {swCard != null && <RunSwimlane card={swCard} sub={swSub} ink2={P.ink2} onClose={() => { setSelTop(null); setSelL(null); }} />}
       {/* hover tooltip */}
       {tip && tipInfo && (
         <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'var(--panel)', border: '1px solid var(--bd2)', borderRadius: 10, pointerEvents: 'none', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: 'var(--tx)' }}>
           {tipInfo.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── L0 执行时序 swimlane — a compact, bottom-right drill-down that opens on selection.
+// Phase-driven like the 3-D full-pod 时序: a phase band (load→Forward→Backward→AllReduce→
+// optimizer) with a play head sweeping it, and a per-core swimlane that lights up by phase.
+function RunSwimlane({ card, sub, ink2, onClose }: { card: number; sub: string | null; ink2: string; onClose: () => void }) {
+  const [mode, setMode] = useState<RunMode>('train');
+  const [playing, setPlaying] = useState(true);
+  const [head, setHead] = useState(0);   // play head 0..1 across the phase timeline
+  const raf = useRef<number | null>(null);
+  const sw = useMemo(() => runSwimlane(card, mode), [card, mode]);
+  useEffect(() => {
+    if (!playing) { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; return; }
+    let last = performance.now();
+    const loop = (now: number) => { const dt = (now - last) / 1000; last = now; setHead((h) => (h + dt / 7) % 1); raf.current = requestAnimationFrame(loop); };
+    raf.current = requestAnimationFrame(loop);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
+  }, [playing]);
+  const cur = sw.seg.find((s) => head < s.t1) ?? sw.seg[sw.seg.length - 1];
+
+  const W = 372, padL = 80, phH = 18, laneH = 12;
+  const svgW = W - 22, span = svgW - padL, slotW = span / SW_T;
+  const lanesY = phH + 6, lanesH = sw.rows.length * laneH, svgH = lanesY + lanesH + 12;
+  const headX = padL + head * span;
+  return (
+    <div style={{ position: 'absolute', bottom: 12, right: 12, width: W, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
+      {/* header: title + device + close */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+        <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序</span>
+        <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card} · rank ${card}`}{sub ? ` · ${sub}` : ''}</span>
+        <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', border: '1px solid var(--bd)', background: 'transparent', color: 'var(--tx3)', borderRadius: 6, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 6px' }}>✕</button>
+      </div>
+      {/* transport: play / pause + train / infer toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 9px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: `1px solid ${playing ? ENTITY_COLORS.cube : 'var(--bd)'}`, background: playing ? `${ENTITY_COLORS.cube}1f` : 'transparent', color: playing ? ENTITY_COLORS.cube : 'var(--tx2)' }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
+        {(['train', 'infer'] as RunMode[]).map((m) => {
+          const on = mode === m;
+          return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 6, cursor: 'pointer', border: `1px solid ${on ? '#4369ef' : 'var(--bd)'}`, background: on ? 'rgba(67,105,239,0.12)' : 'transparent', color: on ? '#4369ef' : 'var(--tx2)' }}>{m === 'train' ? '训练' : '推理'}</button>;
+        })}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5 }}>
+          <span style={{ color: '#04d793' }}>算力 {sw.util}%</span>
+          <span style={{ color: '#ffaa3b' }}>访存 {sw.mem}%</span>
+          <span style={{ color: 'var(--tx3)' }}>气泡 {sw.bub}%</span>
+        </span>
+      </div>
+      <svg width={svgW} height={svgH} style={{ display: 'block' }}>
+        {/* phase band: segments coloured by run phase, active one brighter */}
+        {sw.seg.map((s, i) => {
+          const x = padL + s.t0 * span, w = (s.t1 - s.t0) * span, active = s === cur;
+          return (
+            <g key={i}>
+              <rect x={x} y={0} width={Math.max(0, w - 1)} height={phH} rx={3} fill={s.p.color} opacity={active ? 0.55 : 0.2} />
+              {w > 26 && <text x={x + w / 2} y={phH / 2 + 3.5} textAnchor="middle" fontSize={9} fill={active ? '#fff' : ink2} style={{ fontWeight: active ? 700 : 400 }}>{s.p.name.split(' ')[0]}</text>}
+            </g>
+          );
+        })}
+        {/* lanes — per AI Core / DMA, coloured by what the current phase makes it do */}
+        {sw.rows.map((r, ri) => (
+          <g key={ri} transform={`translate(0,${lanesY + ri * laneH})`}>
+            <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={8.5} fill={ink2}>{r.name}</text>
+            {r.slots.map((st, ti) => st === 'bubble' ? null : (
+              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} opacity={padL + ti * slotW <= headX ? 0.92 : 0.32} />
+            ))}
+          </g>
+        ))}
+        {/* play head sweeping the phases (spans band + lanes) */}
+        <line x1={headX} y1={0} x2={headX} y2={lanesY + lanesH} stroke={ENTITY_COLORS.cube} strokeWidth={1.4} />
+        <circle cx={headX} cy={0} r={2.6} fill={ENTITY_COLORS.cube} />
+        <text x={padL} y={svgH - 2} fontSize={8.5} fill={ink2}>← 时间 t（一次迭代）→</text>
+      </svg>
+      {/* current phase note + legend */}
+      <div style={{ marginTop: 3, fontSize: 10, color: 'var(--tx2)' }}>
+        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: cur.p.color, verticalAlign: '-1px', marginRight: 4 }} />
+        <b style={{ color: 'var(--tx)' }}>{cur.p.name}</b>{cur.p.parallel && cur.p.parallel !== '—' ? <span style={{ color: '#9fb6ff' }}> · {cur.p.parallel}</span> : null} <span style={{ color: 'var(--tx3)' }}>{cur.p.note}</span>
+      </div>
+      <div style={{ marginTop: 2, fontSize: 9.5, color: 'var(--tx3)' }}>
+        <span style={{ color: '#04d793' }}>■</span>计算 · <span style={{ color: '#ffaa3b' }}>■</span>访存 · <span style={{ color: '#ff4b7b' }}>■</span>通信等待 · <span style={{ color: '#60a5fa' }}>■</span>加载 · ▢气泡 — 通信/加载相位算力闲置 = 气泡来源
+      </div>
     </div>
   );
 }
