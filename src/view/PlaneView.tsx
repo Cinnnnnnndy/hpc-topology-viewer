@@ -86,13 +86,16 @@ function navBtn(active: boolean): React.CSSProperties {
 function toggleBtn(active: boolean, c: string): React.CSSProperties {
   return active ? { border: `1px solid ${c}`, background: c, color: inkOf(c), fontWeight: 600 } : { ...SECONDARY };
 }
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
+const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canvas numeric labels
 
 export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
-    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(167,139,250,0.14)', frameBd: 'rgba(167,139,250,0.30)', bladeFill: 'rgba(255,255,255,0.035)' }
-    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(167,139,250,0.13)', frameBd: 'rgba(167,139,250,0.34)', bladeFill: 'rgba(0,0,0,0.025)' };
+    ? { bg: '#101010', cardBd: 'rgba(255,255,255,0.10)', cardN: '#39404e', ink: 'rgba(255,255,255,0.82)', ink2: 'rgba(255,255,255,0.55)', grid: 'rgba(255,255,255,0.05)', frameFill: 'rgba(167,139,250,0.20)', frameBd: 'rgba(167,139,250,0.30)', bladeFill: 'rgba(96,165,250,0.12)' }
+    : { bg: '#f3f4f7', cardBd: 'rgba(0,0,0,0.10)', cardN: '#b9c2d4', ink: 'rgba(0,0,0,0.66)', ink2: 'rgba(0,0,0,0.55)', grid: 'rgba(67,105,239,0.10)', frameFill: 'rgba(167,139,250,0.18)', frameBd: 'rgba(167,139,250,0.34)', bladeFill: 'rgba(96,165,250,0.13)' };
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tf = useRef<{ s: number; tx: number; ty: number } | null>(null);   // world→screen transform
@@ -354,13 +357,26 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
       levels.forEach((Lv, li) => {
         const lc = wash(Lv.color);   // level colour tinted to the current 执行时序 phase (during playback)
-        // L5 超节点 = the top context banner (this view = ONE super-node = 8,192 NPU)
+        // L5 超节点 = the top context banner — a clean SOLID colour-block pill (no faint
+        // outline): filled bar, bold title left, stats right, with a darker inset chip for "L5".
         if (Lv.banner) {
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
-          ctx.fillStyle = lc; ctx.globalAlpha = hi && !on ? 0.08 : 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.fill();
-          ctx.globalAlpha = hi && !on ? 0.3 : 1; ctx.strokeStyle = hi && on ? SEL : lc; ctx.lineWidth = 0.16; rr(margin, Lv.y0, Wc, Lv.h, 1); ctx.stroke();
-          ctx.fillStyle = hi && on ? SEL : lc; ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.min(2.2, Lv.h * 0.5)}px sans-serif`;
-          ctx.fillText(`${TOK.supernode} · ${LAY.cabN.toLocaleString()} 机柜 / ${LAY.cardN.toLocaleString()} NPU`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          const sel = !!(hi && on), dim = hi && !on;
+          const txt = sel ? '#fff' : inkOf(Lv.color);
+          ctx.globalAlpha = dim ? 0.32 : 1;
+          ctx.fillStyle = sel ? SEL : lc; rr(margin, Lv.y0, Wc, Lv.h, Lv.h * 0.3); ctx.fill();
+          // "L5" chip (darker inset block on the left)
+          const chW = Lv.h * 1.5, chPad = Lv.h * 0.2;
+          ctx.fillStyle = 'rgba(0,0,0,0.20)'; rr(margin + chPad, Lv.y0 + chPad, chW, Lv.h - chPad * 2, Lv.h * 0.22); ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = txt; ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center'; ctx.font = `700 ${Math.min(1.7, Lv.h * 0.4)}px sans-serif`;
+          ctx.fillText('L5', margin + chPad + chW / 2, Lv.y0 + Lv.h / 2);
+          ctx.textAlign = 'left'; ctx.font = `700 ${Math.min(1.9, Lv.h * 0.42)}px sans-serif`;
+          ctx.fillText(TOK.supernode, margin + chPad * 2 + chW, Lv.y0 + Lv.h / 2);
+          ctx.textAlign = 'right'; ctx.globalAlpha = 0.85; ctx.font = `${Math.min(1.55, Lv.h * 0.34)}px ${MONO}`;
+          ctx.fillText(`${LAY.cabN.toLocaleString()} 机柜 · ${LAY.cardN.toLocaleString()} NPU`, margin + Wc - Lv.h * 0.45, Lv.y0 + Lv.h / 2);
+          ctx.globalAlpha = 1;
           return;
         }
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
@@ -418,7 +434,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.fillStyle = Lv.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
         ctx.fillText(Lv.label, lx, sy);
         let yy = sy + 14;
-        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = '10px sans-serif'; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
+        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
         if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], lx, yy); yy += 12; }
         const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
         if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); }
@@ -429,12 +445,12 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
     const vx0 = -tx / s, vy0 = -ty / s, vx1 = (W - tx) / s, vy1 = (H - ty) / s;   // visible world rect (cull per-card detail)
 
-    // cabinets (L2) + blades (L1) containment — solid colour BLOCKS, not bare strokes:
-    // cabinet = a soft filled panel (weak edge); blade = an even softer inner block. Fills
-    // carry the containment; strokes are de-emphasised (depth via stacked tints, like Figma).
-    const fr = Math.min(L.cw, L.ch) * 0.03;
-    ctx.fillStyle = P.frameFill; ctx.strokeStyle = P.frameBd; ctx.lineWidth = 0.6 / s;
-    for (let cab = 0; cab < L.nC; cab++) { const [x, y] = cabXY(cab); rrPath(ctx, x, y, L.cw, L.ch, fr); ctx.fill(); ctx.stroke(); }
+    // cabinets (L2) + blades (L1) containment = solid NESTED colour BLOCKS, no outline:
+    // cabinet = purple block, blade = sky-blue block inside it, cards sit on top. Stacked
+    // tints carry the containment (depth via fills, like Figma) — no strokes.
+    const fr = Math.min(L.cw, L.ch) * 0.035;
+    ctx.fillStyle = P.frameFill;
+    for (let cab = 0; cab < L.nC; cab++) { const [x, y] = cabXY(cab); rrPath(ctx, x, y, L.cw, L.ch, fr); ctx.fill(); }
     ctx.fillStyle = P.bladeFill;
     for (let b = 0; b < L.nB; b++) { const [x, y] = bladeXY(Math.floor(b / BPC), b % BPC); rrPath(ctx, x, y, L.bw, L.bh, fr * 0.7); ctx.fill(); }
 
@@ -704,7 +720,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       {/* controls */}
       <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
         {/* layout: top-down map vs. layered hierarchy */}
-        <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>布局</span>
+        <span style={{ ...LBL }}>布局</span>
         {([['top', '顶视图'], ['layers', '层级图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
           return <button key={id} onClick={() => setLayout(id)} title={id === 'top' ? '超节点顶视图（嵌套平铺）' : '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）'}
@@ -713,7 +729,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
         {layout === 'top' ? (
           <>
-            <span style={{ fontSize: 11.5, color: 'var(--tx2)' }}>上色</span>
+            <span style={{ ...LBL }}>上色</span>
             {COLOR_BTNS.map((c) => {
               const on = colorBy === c.id; const sig = PARALLEL_COLORS[c.id];
               return <button key={c.id} onClick={() => setColorBy(c.id)} title={`按 ${c.label} 上色`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...(c.id === 'none' ? navBtn(on) : toggleBtn(on, sig)) }}>
@@ -860,7 +876,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
           const on = mode === m;
           return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{m === 'train' ? '训练' : '推理'}</button>;
         })}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 9, fontWeight: 600, fontSize: 10.5, ...TNUM }}>
           <span style={{ color: '#04d793' }}>算力 {sw.util}%</span>
           <span style={{ color: '#ffaa3b' }}>访存 {sw.mem}%</span>
           <span style={{ color: 'var(--tx3)' }}>气泡 {sw.bub}%</span>
