@@ -192,6 +192,7 @@ export function ClusterView() {
   const [fpPart, setFpPart] = useState<PartitionDim>('none');   // full-pod: colour cards by parallel dim
   const [fpPeers, setFpPeers] = useState(true);   // full-pod: draw same-level peer mesh (L1 card / L2 node)
   const [fpStatus, setFpStatus] = useState(false);   // full-pod: live status / flow overlay
+  const [fpPlanes, setFpPlanes] = useState(false);   // full-pod: three-plane backbone overlay (UB/RDMA/VPC)
   const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440));
   useEffect(() => {
     const onResize = () => setVw(window.innerWidth);
@@ -436,7 +437,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} planes={fpPlanes} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
             </SceneTheme.Provider>
 
             <OrbitControls
@@ -552,6 +553,13 @@ export function ClusterView() {
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
                         <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${loadColor(0)}, ${loadColor(1)})`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
+                      </button>
+                      <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·超节点内·TP/EP) / RDMA scale-out(橙·跨超节点 RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPlanes, PLANES[0].color) }}>
+                        <span style={{ display: 'inline-flex', gap: 2 }}>
+                          {PLANES.map((p) => <span key={p.id} style={{ width: 7, height: 7, borderRadius: 1, background: p.color, display: 'inline-block', opacity: fpPlanes ? 1 : 0.6 }} />)}
+                        </span>
+                        {narrow ? '三平面' : '三平面分色'}
                       </button>
                     </div>
                   )}

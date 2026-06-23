@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, nodeLoad, mute,
+  loadColor, nodeLoad, mute, PLANES,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1706,8 +1706,8 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; onPick?: (npuLocal: number) => void;
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; planes: boolean; onPick?: (npuLocal: number) => void;
 }) {
   const LC = useLC();
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
@@ -2000,6 +2000,20 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     3: `${TOK.ub} Host 机器域`, 4: `${TOK.ub} 机器域(并入)`, 5: `${TOK.ub} Pod 机器域`, 6: `${TOK.ub} 集群域`,
   };
 
+  // ── three-plane overlay on the vertical backbone (按平面分色) ──────────────────
+  // scale-up (UB·绿) = the intra-super-node backbone (卡→刀片→机柜→超节点); scale-out
+  // (RDMA·橙) = a riser from each super-node up to the cluster point (跨超节点 RoCE);
+  // VPC (紫) = host egress from each super-node out to a 数据中心 node on the side.
+  const [PL_UB, PL_RDMA, PL_VPC] = PLANES;
+  const dcNode: [number, number, number] = [G.fieldW / 2 + Math.max(1.4, G.fieldW * 0.06), G.ySuper, G.fieldD / 2];
+  const soRisers: [number, number, number][] = [];
+  const vpcRisers: [number, number, number][] = [];
+  if (planes) for (let p = 0; p < podCount; p++) {
+    const s: [number, number, number] = [G.superMX[p], G.ySuper, 0];
+    soRisers.push(s, G.cluster);
+    vpcRisers.push(s, dcNode);
+  }
+
   return (
     <group>
       <Floor size={Math.max(18, G.fieldW + 6, G.fieldD + 6)} />
@@ -2025,6 +2039,34 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
       {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
       {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4, 0.9)}
+
+      {/* ── three-plane overlay (按平面分色，覆盖竖向骨干) ── */}
+      {planes && (
+        <group>
+          {/* UB · scale-up (绿) — 超节点内骨干：卡→刀片→机柜→超节点 */}
+          <Line points={G.c2b} segments color={PL_UB.color} lineWidth={2.6} transparent opacity={0.45} />
+          <Line points={G.b2c} segments color={PL_UB.color} lineWidth={2.2} transparent opacity={0.5} />
+          <Line points={G.c2s} segments color={PL_UB.color} lineWidth={1.8} transparent opacity={0.6} />
+          {/* RDMA · scale-out (橙) — 每超节点上行至 cluster 点（跨超节点 RoCE 400G） */}
+          {soRisers.length > 0 && <Line points={soRisers} segments color={PL_RDMA.color} lineWidth={3} transparent opacity={0.85} />}
+          {/* VPC (紫) — host→擎天 NIC→数据中心 侧出 */}
+          {vpcRisers.length > 0 && <Line points={vpcRisers} segments color={PL_VPC.color} lineWidth={2.4} transparent opacity={0.8} />}
+          <mesh position={dcNode}>
+            <boxGeometry args={[0.7, 0.5, 0.7]} />
+            <meshStandardMaterial color={PL_VPC.color} emissive={PL_VPC.color} emissiveIntensity={0.45} metalness={0.3} roughness={0.5} toneMapped={false} />
+          </mesh>
+          {/* plane labels (billboards, always camera-facing) */}
+          <Billboard position={[G.superMX[Math.floor(podCount / 2)] ?? 0, G.yCab + 0.1, G.fieldD / 2 + 0.6]}>
+            <Text fontSize={lblSize} color={PL_UB.color} anchorX="center" anchorY="middle">{`UB · Scale-up（超节点内 · TP/EP）`}</Text>
+          </Billboard>
+          <Billboard position={[G.cluster[0], G.yCluster + lblSize * 1.2, 0]}>
+            <Text fontSize={lblSize} color={PL_RDMA.color} anchorX="center" anchorY="middle">{`RDMA · Scale-out（跨超节点 RoCE · DP/PP）`}</Text>
+          </Billboard>
+          <Billboard position={[dcNode[0], dcNode[1] + 0.55, dcNode[2]]}>
+            <Text fontSize={lblSize * 0.95} color={PL_VPC.color} anchorX="center" anchorY="middle">{`VPC → 数据中心（南北向）`}</Text>
+          </Billboard>
+        </group>
+      )}
 
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}
