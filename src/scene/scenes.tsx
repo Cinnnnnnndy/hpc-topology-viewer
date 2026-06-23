@@ -26,6 +26,7 @@ import {
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
+import { ModelOr } from './PartModel';
 
 // ─── Theme-aware scene palette ───────────────────────────────────────────────
 // Structural / neutral / text colours for every procedural object. Light variant
@@ -252,6 +253,10 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
     unit.type === 'mgmt'        ? LC.mgmtUnit :
     unit.type === 'cdu'         ? LC.cduUnit :
     unit.type === 'switch-unit' ? LC.switchUnit : LC.nodeUnit;
+  // GLB swap-point per rack unit type (node faces stay procedural)
+  const swapId = unit.type === 'power' ? 'psu-crps-shelf'
+    : unit.type === 'switch-unit' ? 'ub-switch-line-card'
+    : unit.type === 'cdu' ? 'cdu-liquid-manifold' : '';
 
   return (
     <group
@@ -260,6 +265,7 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
       onPointerOver={(e) => { e.stopPropagation(); onHover(true); if (clickable) setCursor(true); }}
       onPointerOut={() => { onHover(false); setCursor(false); }}
     >
+      <ModelOr partId={swapId} size={[innerW - 0.12, h, innerD - 0.2]}>
       <Slab
         size={[innerW - 0.12, h, innerD - 0.2]} color={bodyColor} metalness={0.3} roughness={0.55}
         edgeColor={hovered ? (rackKind === 'switch' ? swColor : RACK_COLORS.computeGlow) : LC.rackEdge}
@@ -313,6 +319,7 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
           </group>
         )}
       </group>
+      </ModelOr>
       <Text position={[-(innerW / 2) + 0.02, 0, (innerD - 0.2) / 2 + 0.04]} fontSize={0.072} color={hovered ? LC.primary : LC.textDim} anchorX="left" anchorY="middle">
         {unit.labelEn}
       </Text>
@@ -417,8 +424,6 @@ function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: n
   const cEm = selected || hovered ? Math.max(0.4, glow + 0.25) : 0.3;
   return (
     <group>
-      {/* package body (brushed metal lid) */}
-      <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
       {/* selection = bold outline on the NPU itself (a crisp inflated edge halo, no covering fill) */}
       {selected && (
         <mesh scale={[1.07, 1.2, 1.07]}>
@@ -427,16 +432,21 @@ function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: n
           <Edges color={COMM_PATTERNS[2].color} lineWidth={2} />
         </mesh>
       )}
-      {/* recessed substrate frame */}
-      <Slab size={[w * 0.92, hh * 0.12, w * 0.92]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
-      {/* 2 compute Die (teal L0) — UMA-merged into one device */}
-      <Slab size={[dw, hh * 0.2, dd]} position={[lx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
-      <Slab size={[dw, hh * 0.2, dd]} position={[rx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
-      {/* UMA die-to-die bridge between the 2 compute dies (→ single device) */}
-      <Slab size={[gx * 2.4, hh * 0.22, dd * 0.36]} position={[0, ty + hh * 0.02, cz]} color={L(0)} emissive={L(0)} emissiveIntensity={0.75} />
-      {/* 2 IO Die (accent grey) */}
-      <Slab size={[dw, hh * 0.16, dd]} position={[lx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
-      <Slab size={[dw, hh * 0.16, dd]} position={[rx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+      {/* open-source GLB swap-point (falls back to the procedural package below) */}
+      <ModelOr partId="npu-accelerator-module" size={[w, hh, w]}>
+        {/* package body (brushed metal lid) */}
+        <Slab size={[w, hh, w]} color={LC.npuBody} edgeColor={edge} metalness={0.6} roughness={0.35} />
+        {/* recessed substrate frame */}
+        <Slab size={[w * 0.92, hh * 0.12, w * 0.92]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
+        {/* 2 compute Die (teal L0) — UMA-merged into one device */}
+        <Slab size={[dw, hh * 0.2, dd]} position={[lx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
+        <Slab size={[dw, hh * 0.2, dd]} position={[rx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
+        {/* UMA die-to-die bridge between the 2 compute dies (→ single device) */}
+        <Slab size={[gx * 2.4, hh * 0.22, dd * 0.36]} position={[0, ty + hh * 0.02, cz]} color={L(0)} emissive={L(0)} emissiveIntensity={0.75} />
+        {/* 2 IO Die (accent grey) */}
+        <Slab size={[dw, hh * 0.16, dd]} position={[lx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+        <Slab size={[dw, hh * 0.16, dd]} position={[rx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+      </ModelOr>
       {/* optional die labels (L0 detail tier) */}
       {dieLabels && (
         <>
@@ -453,8 +463,10 @@ function CpuChip({ w, h, hovered }: { w: number; h?: number; hovered?: boolean }
   const hh = h ?? w * 0.5;
   return (
     <group>
-      <Slab size={[w, hh, w]} color={LC.cpuBody} edgeColor={hovered ? '#38bdf8' : LC.rackEdge} metalness={0.4} roughness={0.5} />
-      <Slab size={[w * 0.8, hh * 0.5, w * 0.8]} position={[0, hh * 0.6, 0]} color={LC.cpuTop} metalness={0.85} roughness={0.3} />
+      <ModelOr partId="cpu-server-package" size={[w, hh * 1.6, w]}>
+        <Slab size={[w, hh, w]} color={LC.cpuBody} edgeColor={hovered ? '#38bdf8' : LC.rackEdge} metalness={0.4} roughness={0.5} />
+        <Slab size={[w * 0.8, hh * 0.5, w * 0.8]} position={[0, hh * 0.6, 0]} color={LC.cpuTop} metalness={0.85} roughness={0.3} />
+      </ModelOr>
     </group>
   );
 }
@@ -463,8 +475,10 @@ function BladeTray({ w, d, hovered, accent = true }: { w: number; d: number; hov
   const LC = useLC();
   return (
     <group>
-      <Slab size={[w, 0.05, d]} color={LC.nodeUnit} edgeColor={hovered ? RACK_COLORS.computeGlow : LC.rackEdge} metalness={0.4} roughness={0.5} />
-      {accent && <Slab size={[w * 0.86, 0.014, 0.02]} position={[0, 0.032, d / 2 - 0.03]} color={RACK_COLORS.computeGlow} emissive={RACK_COLORS.computeGlow} emissiveIntensity={hovered ? 0.8 : 0.4} />}
+      <ModelOr partId="compute-blade" size={[w, 0.05, d]}>
+        <Slab size={[w, 0.05, d]} color={LC.nodeUnit} edgeColor={hovered ? RACK_COLORS.computeGlow : LC.rackEdge} metalness={0.4} roughness={0.5} />
+        {accent && <Slab size={[w * 0.86, 0.014, 0.02]} position={[0, 0.032, d / 2 - 0.03]} color={RACK_COLORS.computeGlow} emissive={RACK_COLORS.computeGlow} emissiveIntensity={hovered ? 0.8 : 0.4} />}
+      </ModelOr>
     </group>
   );
 }
@@ -472,9 +486,16 @@ function BladeTray({ w, d, hovered, accent = true }: { w: number; d: number; hov
 function CabinetBox({ w = 0.34, h = 1.0, d = 0.5, kind = 'compute', hovered }: { w?: number; h?: number; d?: number; kind?: RackKind; hovered?: boolean }) {
   const LC = useLC();
   const glow = kind === 'compute' ? RACK_COLORS.computeGlow : RACK_COLORS.switchGlow;
+  // GLB swap-point. NOTE: the overview hall / full-pod views render up to a few
+  // hundred cabinets — if you install a cabinet model, keep it LOW-poly.
+  const cabPart = kind === 'compute' ? 'cabinet-compute' : 'cabinet-switch';
   return (
     <group>
-      <Slab size={[w, h, d]} position={[0, h / 2, 0]} color={hovered ? LC.hoverTint : LC.rackBody} edgeColor={hovered ? glow : LC.rackEdge} metalness={0.5} roughness={0.5} />
+      <group position={[0, h / 2, 0]}>
+        <ModelOr partId={cabPart} size={[w, h, d]}>
+          <Slab size={[w, h, d]} color={hovered ? LC.hoverTint : LC.rackBody} edgeColor={hovered ? glow : LC.rackEdge} metalness={0.5} roughness={0.5} />
+        </ModelOr>
+      </group>
       <Slab size={[w * 0.78, 0.03, d * 0.7]} position={[0, h + 0.02, 0]} color={glow} emissive={glow} emissiveIntensity={hovered ? 1.0 : 0.5} />
     </group>
   );
@@ -497,6 +518,10 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
     dimm:       { body: LC.dimmBody,    edge: '#475263' },
   };
   const v = visuals[part.type];
+  // GLB swap-point per discrete part type (npu/cpu handled by NpuChip/CpuChip)
+  const swapId = part.type === 'dimm' ? 'mem-ddr5-rdimm'
+    : part.type === 'optical' ? 'optic-osfp-module'
+    : part.type === 'dpu' ? 'dpu-nic-card' : '';
 
   return (
     <group
@@ -510,7 +535,7 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
       ) : part.type === 'cpu' ? (
         <CpuChip w={sx * S} h={sy * S} hovered={hovered} />
       ) : (
-        <>
+        <ModelOr partId={swapId} size={[sx * S, sy * S, sz * S]}>
           <Slab size={[sx * S, sy * S, sz * S]} color={v.body} metalness={0.35} roughness={0.6} edgeColor={hovered ? v.edge : LC.rackEdge} />
           {v.top && (
             <Slab size={[sx * S * 0.82, sy * S * 0.5, sz * S * 0.82]} position={[0, sy * S * 0.62, 0]}
@@ -521,7 +546,7 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
             <Slab key={i} size={[0.028 * S, sy * S * 0.6, 0.008 * S]} position={[(i - 6.5) * 0.044 * S, 0, sz * S * 0.7]}
               color={LC.vent} emissive="#fbbf24" emissiveIntensity={hovered ? 0.8 : 0.3} />
           ))}
-        </>
+        </ModelOr>
       )}
       {(part.type === 'npu' || part.type === 'cpu') && (
         <Text position={[0, sy * S * 1.05, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={part.type === 'npu' ? 0.06 : 0.045} color={LC.textDim} anchorX="center" anchorY="middle">

@@ -2,8 +2,13 @@
 
 Interactive 3D viewer for a large-scale HPC accelerator cluster — racks, compute
 nodes, and the interconnect fabric — built with **React + Three.js**
-(`@react-three/fiber` + `@react-three/drei`). Everything is **procedurally
-modeled** (no GLB/external 3D assets).
+(`@react-three/fiber` + `@react-three/drei`). Geometry is **procedural by
+default**, with an **optional open-source GLB swap layer**: drop a correctly
+named `.glb` into `src/scene/models/` and the matching part (NPU module, CPU,
+blade, cabinet, DIMM, optic, DPU, PSU, CDU, switch line-card) renders the real
+model instead — no code edits, automatic fall-back if absent. See
+[`src/scene/models/README.md`](src/scene/models/README.md) for the part list and
+download guide.
 
 ## Views
 
