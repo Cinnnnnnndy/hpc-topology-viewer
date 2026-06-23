@@ -50,8 +50,20 @@
     { "type": "l2_switch", "layer": "rack", "label_cn": "L2 总线交换", "color": "#ffce7a", "role": "跨节点全互联 (总线柜)", "planes": 7, "confidence": "A" },
     { "type": "hbm", "layer": "blade", "label_cn": "自研 HBM 堆栈", "color": "#6f7cff", "variants": "HiBL 1.0(128GB/1.6TBs) · HiZQ 2.0(144GB/4TBs)", "confidence": "A" },
     { "type": "aic_cube", "layer": "core", "label_cn": "AIC · Cube 核", "color": "#36e0c4", "role": "矩阵计算 GEMM", "onchip": "L0A/L0B/L0C", "tilelang": "T.Scope(\"C\")", "confidence": "A" },
-    { "type": "aiv_vector", "layer": "core", "label_cn": "AIV · Vector 核", "color": "#ffb454", "role": "矢量/逐元素", "onchip": "Unified Buffer(UB)", "tilelang": "T.Scope(\"V\")", "confidence": "A" }
+    { "type": "aiv_vector", "layer": "core", "label_cn": "AIV · Vector 核", "color": "#ffb454", "role": "矢量/逐元素", "onchip": "Unified Buffer(UB)", "tilelang": "T.Scope(\"V\")", "confidence": "A" },
+
+    { "type": "npu_ub_port", "layer": "blade", "label_cn": "NPU UB 端口", "color": "#04d793", "plane": "ub", "role": "scale-up：SerDes/LQC 高速口进 UB 总线，NPU↔NPU↔CPU 全互联", "bandwidth": ">2 TB/s · 单卡", "note": "与 RDMA 口物理上是 NPU 上不同的 SerDes 组", "confidence": "B" },
+    { "type": "npu_rdma_port", "layer": "blade", "label_cn": "NPU RDMA/RoCE 端口", "color": "#ffb454", "plane": "rdma", "role": "scale-out：集成在 NPU 上的 RoCE 口，跨超节点", "bandwidth": "400 Gbps · 单卡(单向)", "note": "scale-out 不走擎天 NIC，而走 NPU 自带 RoCE 口", "confidence": "B" },
+    { "type": "lpo_module", "layer": "rack", "label_cn": "LPO 光模块(线性直驱)", "color": "#36e0c4", "plane": "ub|rdma", "role": "柜间光链路物理介质，去 DSP 仅留 TIA+CTLE+线性驱动", "spec": "功耗 14–17W→7–8.5W(降35–50%) · 单跳 8–10ns→<3ns", "deploy": "CM384 实测 6912×400G：5376 给 scale-up(UB) + 1536 给 scale-out(RDMA)", "note": "LPO 800G 为下一代趋势(Atlas 950 全光 UB2.0)，原理相同，待核", "confidence": "C" },
+    { "type": "nic_qingtian", "layer": "node", "label_cn": "擎天 NIC", "color": "#9d7bff", "plane": "vpc", "role": "VPC 平面：CPU host 侧接入数据中心(前端/存储/管理/南北向)", "uplink": "CPU → PCIe → 擎天 NIC → DC 网络", "note": "负责 VPC，非 scale-out RDMA", "confidence": "B" }
   ],
+
+  "planes": [
+    { "id": "ub", "name_cn": "UB 平面 · Scale-up", "color": "#04d793", "role": "超节点内全互联(NPU↔NPU↔CPU)", "members": ["NPU", "CPU"], "devices": ["NPU UB 端口", "铜缆(柜内)", "LPO 光模块(柜间)", "L1/L2 UB 交换"], "scope": "超节点内 SU 域 · ≤128 卡超低延迟", "parallel": ["TP", "EP", "SP"], "confidence": "B" },
+    { "id": "rdma", "name_cn": "RDMA 平面 · Scale-out", "color": "#ffb454", "role": "跨超节点/外部 RDMA(RoCE)", "members": ["NPU"], "devices": ["NPU RDMA 端口(400G)", "LPO 光模块", "scale-out 交换"], "scope": "跨超节点 SO 域", "parallel": ["DP", "PP"], "confidence": "B" },
+    { "id": "vpc", "name_cn": "VPC 平面", "color": "#9d7bff", "role": "接入数据中心(存储/前端/管理·南北向)", "members": ["CPU", "擎天 NIC"], "devices": ["CPU", "擎天 NIC", "数据中心网络"], "scope": "南北向·非训练关键路径", "parallel": [], "confidence": "B" }
+  ],
+  "planes_note": "现模型把'NPU 经 UB 全互联'当成一根逻辑线，物理上一颗 NPU 有三类对外链路：①UB 端口(scale-up) ②RDMA/RoCE 端口(scale-out，集成在 NPU 上) ③经 CPU 走 VPC。来源：CloudMatrix384 三平面解读(InfoQ/知乎，厂商口径 C) · LPO 功耗/时延(Vitex，C)。",
 
   "interconnect_levels": [
     { "id": "ic_d2d",   "from": "die",  "to": "die",  "name_cn": "Die 间 D2D", "medium": "片内 D2D", "bandwidth": "双向 784 GB/s", "latency": null, "convergence": null, "color": "#ff5d8f", "confidence": "A", "source": "Atlas 900 A3 规格表" },
@@ -59,7 +71,11 @@
     { "id": "ic_cpu_l1","from": "cpu", "to": "l1_switch", "name_cn": "CPU→L1", "medium": "8×30G LQC", "bandwidth": "平等编址", "latency": null, "color": "#4a8cff", "confidence": "A", "source": "A3 网络架构" },
     { "id": "ic_l1_l2", "from": "l1_switch", "to": "l2_switch", "name_cn": "L1→L2 (跨节点)", "medium": "光纤 UB", "bandwidth": "节点内167 / 跨节点164 GB/s (NPU↔NPU)", "latency": "单跳 200 ns", "convergence": "1:1 无收敛", "color": "#ffb454", "confidence": "B", "source": "CloudMatrix384 解读(厂商口径)" },
     { "id": "ic_ub_mesh","from": "npu_blade", "to": "npu_blade", "name_cn": "超节点内 UB 全互联", "medium": "UB / UB-Mesh (柜内 2D-FullMesh)", "bandwidth": "any-to-any，衰减<2%", "latency": "<1 µs (跨节点)", "convergence": "1:1", "color": "#4a8cff", "confidence": "B", "source": "廖恒 UB-Mesh / CM384" },
-    { "id": "ic_cluster","from": "superpod", "to": "superpod", "name_cn": "跨超节点", "medium": "UBoE(推荐) / RoCE", "bandwidth": "集群级", "latency": "集群级", "color": "#9d7bff", "confidence": "A", "source": "HC2025 keynote" }
+    { "id": "ic_cluster","from": "superpod", "to": "superpod", "name_cn": "跨超节点", "medium": "UBoE(推荐) / RoCE", "bandwidth": "集群级", "latency": "集群级", "color": "#9d7bff", "confidence": "A", "source": "HC2025 keynote" },
+
+    { "id": "ic_phys_su", "plane": "ub", "from": "npu_ub_port", "to": "l2_switch", "name_cn": "物理链·Scale-up", "chain": ["NPU Die", "UB 端口", "铜缆/LPO 光模块", "L1→L2 UB 交换"], "medium": "铜缆(柜内) / LPO 光模块(柜间)", "color": "#04d793", "confidence": "C", "source": "CloudMatrix384 三平面解读" },
+    { "id": "ic_phys_so", "plane": "rdma", "from": "npu_rdma_port", "to": "superpod", "name_cn": "物理链·Scale-out", "chain": ["NPU Die", "RDMA/RoCE 口(400G)", "LPO 光模块", "scale-out 交换", "其它超节点"], "medium": "LPO 光模块 → 光纤", "color": "#ffb454", "confidence": "C", "source": "CloudMatrix384 三平面解读" },
+    { "id": "ic_phys_vpc", "plane": "vpc", "from": "nic_qingtian", "to": "datacenter", "name_cn": "物理链·VPC", "chain": ["鲲鹏 CPU", "擎天 NIC", "数据中心网络"], "medium": "PCIe → 以太", "color": "#9d7bff", "confidence": "B", "source": "CloudMatrix384 三平面解读" }
   ],
 
   "topology_scales": {

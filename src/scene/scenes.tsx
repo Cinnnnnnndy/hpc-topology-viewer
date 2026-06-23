@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute, isHot,
+  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1697,8 +1697,8 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, onHoverInfo, onPick }: SceneCallbacks & {
-  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; onPick?: (npuLocal: number) => void;
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick }: SceneCallbacks & {
+  scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; planes: boolean; onPick?: (npuLocal: number) => void;
 }) {
   const LC = useLC();
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
@@ -1711,6 +1711,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const tileRef = useRef<THREE.InstancedMesh>(null);   // L0 Tile / SIMT-lane markers
   const bladeInst = useRef<THREE.InstancedMesh>(null);
   const cabInst = useRef<THREE.InstancedMesh>(null);
+  const portInst = useRef<THREE.InstancedMesh>(null);   // physical: NPU UB/RDMA ports (2/card)
+  const devInst = useRef<THREE.InstancedMesh>(null);    // physical: CPU/L1交换/LPO/NIC (4/blade)
   const chipTex = useOptionalTexture(CHIP_TEX);
 
   const computeNow = phase?.kind === 'compute';   // AI cores / cards light up
@@ -1854,6 +1856,31 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const cabH = Math.min(0.62, (G.yProc - G.yThread) * 0.7);
     if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
+
+  // physical-device objects (shown with the 三平面 toggle): NPU UB/RDMA ports on each card,
+  // and CPU / L1 交换 / LPO / 擎天 NIC per node — drawn as real instanced objects, like the cards.
+  useLayoutEffect(() => {
+    if (!planes) return;
+    const m = new THREE.Matrix4(), col = new THREE.Color();
+    const pi = portInst.current;
+    if (pi) {
+      for (let k = 0; k < G.N; k++) {
+        m.makeScale(0.08, 0.06, 0.08); m.setPosition(G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] - 0.1); pi.setMatrixAt(k * 2, m); pi.setColorAt(k * 2, col.set(PLANES[0].color));       // UB 口
+      m.setPosition(G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] + 0.1); pi.setMatrixAt(k * 2 + 1, m); pi.setColorAt(k * 2 + 1, col.set(PLANES[1].color));   // RDMA 口
+      }
+      pi.count = G.N * 2; pi.instanceMatrix.needsUpdate = true; if (pi.instanceColor) pi.instanceColor.needsUpdate = true;
+    }
+    const di = devInst.current;
+    if (di) {
+      const dcol = ['#4a8cff', PLANES[0].color, '#36e0c4', PLANES[2].color];   // CPU · L1交换 · LPO · NIC
+      const dxo = [-0.33, -0.11, 0.11, 0.33];
+      // distinct proportions per device → simplified abstract shapes (unified w/ card/die blocks):
+      // CPU = cube · 交换 = wide flat slab · LPO = long thin module · NIC = small card
+      const dsc: [number, number, number][] = [[0.1, 0.1, 0.1], [0.21, 0.05, 0.08], [0.06, 0.05, 0.18], [0.09, 0.07, 0.07]];
+      for (let b = 0; b < G.nBlades; b++) for (let i = 0; i < 4; i++) { const idx = b * 4 + i; m.makeScale(dsc[i][0], dsc[i][1], dsc[i][2]); m.setPosition(G.bladeMX[b] + dxo[i], G.yBlade + 0.06 + dsc[i][1] / 2, G.bladeMZ[b] + 0.32); di.setMatrixAt(idx, m); di.setColorAt(idx, col.set(dcol[i])); }
+      di.count = G.nBlades * 4; di.instanceMatrix.needsUpdate = true; if (di.instanceColor) di.instanceColor.needsUpdate = true;
+    }
+  }, [G, planes]);
 
   // OBSERVATION heatmap + selection. State (load 0..1) → 绿→黄→红; this is the ONLY high-sat
   // colour. Hierarchy/type stays a FAINT muted hue (shapes carry the level). Partition is an
@@ -2006,6 +2033,29 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     3: `${TOK.ub} Host 机器域`, 4: `${TOK.ub} 机器域(并入)`, 5: `${TOK.ub} Pod 机器域`, 6: `${TOK.ub} 集群域`,
   };
 
+  // ── three-plane overlay on the vertical backbone (按平面分色) ──────────────────
+  // scale-up (UB·绿) = the intra-super-node backbone (卡→刀片→机柜→超节点); scale-out
+  // (RDMA·橙) = a riser from each super-node up to the cluster point (跨超节点 RoCE);
+  // VPC (紫) = host egress from each super-node out to a 数据中心 node on the side.
+  const [PL_UB, PL_RDMA, PL_VPC] = PLANES;
+  const dcNode: [number, number, number] = [G.fieldW / 2 + Math.max(1.4, G.fieldW * 0.06), G.ySuper, G.fieldD / 2];
+  const soRisers: [number, number, number][] = [];
+  const vpcRisers: [number, number, number][] = [];
+  if (planes) for (let p = 0; p < podCount; p++) {
+    const s: [number, number, number] = [G.superMX[p], G.ySuper, 0];
+    soRisers.push(s, G.cluster);
+    vpcRisers.push(s, dcNode);
+  }
+  // per-node device connectors (plane-coloured) — drawn for modest configs so the relationships
+  // (NPU UB口→交换 · NPU RDMA口→LPO · CPU→NIC) read without flooding the full 8 K field.
+  const DEV_LINK_CAP = 640;
+  const portUbLines: [number, number, number][] = [], portRdLines: [number, number, number][] = [], cpuNicLines: [number, number, number][] = [];
+  const devPos = (b: number, i: number): [number, number, number] => [G.bladeMX[b] + [-0.33, -0.11, 0.11, 0.33][i], G.yBlade + 0.08, G.bladeMZ[b] + 0.32];
+  if (planes && G.N <= DEV_LINK_CAP) {
+    for (let b = 0; b < G.nBlades; b++) cpuNicLines.push(devPos(b, 0), devPos(b, 3));
+    for (let k = 0; k < G.N; k++) { const b = G.cardBlade[k]; portUbLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] - 0.1], devPos(b, 1)); portRdLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] + 0.1], devPos(b, 2)); }
+  }
+
   return (
     <group>
       <Floor size={Math.max(18, G.fieldW + 6, G.fieldD + 6)} />
@@ -2018,6 +2068,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
               onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
               onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
             <Text position={[0, -lblSize * 0.92, 0]} fontSize={lblSize * 0.58} color="#9fb6ff" anchorX="right" anchorY="middle">{bandCoord[i]}</Text>
+            {/* per-level physical devices & plane (物理三平面) — shown when the 三平面 toggle is on */}
+            {planes && LEVEL_PHYS[BAND_PHYS_KEY[i]] && (
+              <Text position={[0, -lblSize * 1.62, 0]} fontSize={lblSize * 0.52} color={LEVEL_PHYS[BAND_PHYS_KEY[i]].color} anchorX="right" anchorY="middle">{`◆ ${LEVEL_PHYS[BAND_PHYS_KEY[i]].short}`}</Text>
+            )}
           </Billboard>
         )
       ))}
@@ -2031,6 +2085,48 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
       {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
       {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4, 0.9)}
+
+      {/* ── three-plane overlay (按平面分色，覆盖竖向骨干) ── */}
+      {planes && (
+        <group>
+          {/* UB · scale-up (绿) — 超节点内骨干：卡→刀片→机柜→超节点 */}
+          <Line points={G.c2b} segments color={PL_UB.color} lineWidth={2.6} transparent opacity={0.45} />
+          <Line points={G.b2c} segments color={PL_UB.color} lineWidth={2.2} transparent opacity={0.5} />
+          <Line points={G.c2s} segments color={PL_UB.color} lineWidth={1.8} transparent opacity={0.6} />
+          {/* RDMA · scale-out (橙) — 每超节点上行至 cluster 点（跨超节点 RoCE 400G） */}
+          {soRisers.length > 0 && <Line points={soRisers} segments color={PL_RDMA.color} lineWidth={3} transparent opacity={0.85} />}
+          {/* VPC (紫) — host→擎天 NIC→数据中心 侧出 */}
+          {vpcRisers.length > 0 && <Line points={vpcRisers} segments color={PL_VPC.color} lineWidth={2.4} transparent opacity={0.8} />}
+          <mesh position={dcNode}>
+            <boxGeometry args={[0.7, 0.5, 0.7]} />
+            <meshStandardMaterial color={PL_VPC.color} emissive={PL_VPC.color} emissiveIntensity={0.45} metalness={0.3} roughness={0.5} toneMapped={false} />
+          </mesh>
+          {/* plane labels (billboards, always camera-facing) */}
+          <Billboard position={[G.superMX[Math.floor(podCount / 2)] ?? 0, G.yCab + 0.1, G.fieldD / 2 + 0.6]}>
+            <Text fontSize={lblSize} color={PL_UB.color} anchorX="center" anchorY="middle">{`UB · Scale-up（超节点内 · TP/EP）`}</Text>
+          </Billboard>
+          <Billboard position={[G.cluster[0], G.yCluster + lblSize * 1.2, 0]}>
+            <Text fontSize={lblSize} color={PL_RDMA.color} anchorX="center" anchorY="middle">{`RDMA · Scale-out（跨超节点 RoCE · DP/PP）`}</Text>
+          </Billboard>
+          <Billboard position={[dcNode[0], dcNode[1] + 0.55, dcNode[2]]}>
+            <Text fontSize={lblSize * 0.95} color={PL_VPC.color} anchorX="center" anchorY="middle">{`VPC → 数据中心（南北向）`}</Text>
+          </Billboard>
+
+          {/* physical-device OBJECTS: NPU UB/RDMA ports (2/card) + CPU/L1交换/LPO/NIC (4/node) */}
+          <instancedMesh ref={portInst} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial toneMapped={false} metalness={0.2} roughness={0.5} />
+          </instancedMesh>
+          <instancedMesh ref={devInst} args={[undefined, undefined, Math.max(1, G.nBlades * 4)]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial toneMapped={false} metalness={0.25} roughness={0.5} />
+          </instancedMesh>
+          {/* device connectors (modest configs): NPU UB口→L1交换(绿) · NPU RDMA口→LPO(橙) · CPU→NIC(紫) */}
+          {portUbLines.length > 0 && <Line points={portUbLines} segments color={PL_UB.color} lineWidth={1.4} transparent opacity={0.55} />}
+          {portRdLines.length > 0 && <Line points={portRdLines} segments color={PL_RDMA.color} lineWidth={1.4} transparent opacity={0.55} />}
+          {cpuNicLines.length > 0 && <Line points={cpuNicLines} segments color={PL_VPC.color} lineWidth={1.6} transparent opacity={0.6} />}
+        </group>
+      )}
 
       {/* same-level peer mesh — direct UB links: L1 card↔card (board) + L2 node↔node (cabinet).
           These are physically small (within a blade / cabinet) — click a card/blade/cabinet to light its local mesh. */}

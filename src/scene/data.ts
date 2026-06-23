@@ -102,6 +102,81 @@ export const UB_LEVEL_META: Record<string, UbLevelMeta> = {
   L4: { domain: 'SO', bw: `跨超节点 ${TOK.uboe}/RoCE`,    parallel: 'DP 数据并行（广而省）' },
 };
 
+// ─── Physical communication planes (三平面) + physical devices ────────────────
+// The single logical "NPU 经 UB 全互联" line actually rides THREE distinct PHYSICAL
+// planes — the layer the pure logical bus model omitted. Each NPU exposes TWO
+// different port groups (UB scale-up vs RDMA scale-out, physically different SerDes
+// groups), and the CPU drives a third plane (VPC) via the NIC. The optical segment
+// of the scale-up / scale-out planes is carried by LPO (linear-drive, DSP-less)
+// modules. This lets "NPU 经 UB 全互联" expand into the real chain
+// "NPU 端口 → 铜/LPO → 交换", and separates TP/EP (scale-up) · DP/PP (scale-out) ·
+// 南北向 (VPC). Sources: CloudMatrix384 三平面解读 (InfoQ/知乎, 厂商口径 C) ·
+// LPO 功耗/时延 (Vitex, C). Figures标"趋势/待核"处为下一代(LPO 800G/UB2.0)推断。
+export type PlaneId = 'ub' | 'rdma' | 'vpc';
+export interface PlaneSpec {
+  id: PlaneId; name: string; short: string; color: string;
+  role: string; members: string; devices: string; scope: string; parallel: string;
+  confidence: 'A' | 'B' | 'C';
+}
+export const PLANES: PlaneSpec[] = [
+  { id: 'ub', name: `${TOK.ub} 平面 · Scale-up`, short: 'UB·SU', color: '#04d793',
+    role: '超节点内全互联（NPU↔NPU↔CPU）', members: `NPU + CPU`,
+    devices: `NPU UB 端口 → 铜缆(柜内)/LPO 光模块(柜间) → L1/L2 ${TOK.ub} 交换`,
+    scope: '超节点内 SU 域 · ≤128 卡超低延迟 · >2 TB/s·NPU', parallel: 'TP · EP · SP', confidence: 'B' },
+  { id: 'rdma', name: 'RDMA 平面 · Scale-out', short: 'RDMA·SO', color: '#ffaa3b',
+    role: '跨超节点 / 外部 RDMA（RoCE）', members: '仅 NPU（自带 RoCE 口）',
+    devices: 'NPU RDMA 端口(400G/NPU) → LPO 光模块 → scale-out 交换 → 其它超节点',
+    scope: '跨超节点 SO 域', parallel: 'DP · PP', confidence: 'B' },
+  { id: 'vpc', name: 'VPC 平面', short: 'VPC', color: '#9d7bff',
+    role: '接入数据中心（存储 / 前端 / 管理 · 南北向）', members: `CPU + ${TOK.qingtian} NIC`,
+    devices: `CPU → ${TOK.qingtian} NIC → 数据中心网络`,
+    scope: '南北向 · 非训练关键路径', parallel: '—', confidence: 'B' },
+];
+
+// physical devices the planes traverse (这是现模型最该补的器件层)
+export interface PhysDevice { id: string; label: string; color: string; plane: PlaneId | 'multi'; note: string; }
+export const PHYS_DEVICES: PhysDevice[] = [
+  { id: 'npu_ub_port', label: 'NPU UB 端口', color: '#04d793', plane: 'ub',
+    note: 'SerDes/LQC 高速口，进 UB 总线 · 单卡 >2 TB/s · scale-up 最高带宽' },
+  { id: 'npu_rdma_port', label: 'NPU RDMA 端口', color: '#ffaa3b', plane: 'rdma',
+    note: '集成在 NPU 上的 RoCE 口 · 400 Gbps/NPU · 跨超节点（与 UB 口是 NPU 上不同的 SerDes 组）' },
+  { id: 'cpu_ub', label: `${TOK.kunpeng} CPU`, color: '#4a8cff', plane: 'multi',
+    note: 'UB 平面与 NPU 平等互联(8×30G LQC 统一编址) · host 侧挂 NIC 接 VPC · 调度/预处理/存储' },
+  { id: 'lpo', label: 'LPO 光模块', color: '#36e0c4', plane: 'multi',
+    note: '线性直驱(去 DSP)：功耗降 35–50%(→7–8.5W)、单跳<3ns · 柜间光链路介质 · scale-up/out 共用' },
+  { id: 'nic', label: `${TOK.qingtian} NIC`, color: '#9d7bff', plane: 'vpc',
+    note: '负责 VPC 平面（注意：scale-out RDMA 走 NPU 自带 RoCE 口，不走擎天 NIC）· 南北向接入 DC' },
+];
+
+// the physical hop-chain per plane — 把"NPU 经 UB 全互联"那根逻辑线展开成物理链
+export interface PhysChain { plane: PlaneId; label: string; hops: string[] }
+export const PHYS_CHAINS: PhysChain[] = [
+  { plane: 'ub', label: 'Scale-up（超节点内）', hops: ['NPU Die', 'UB 端口', '铜缆 / LPO 光模块', `L1→L2 ${TOK.ub} 交换`] },
+  { plane: 'rdma', label: 'Scale-out（跨超节点）', hops: ['NPU Die', 'RDMA/RoCE 口 400G', 'LPO 光模块', 'scale-out 交换', '其它超节点'] },
+  { plane: 'vpc', label: 'VPC（南北向）', hops: [`${TOK.kunpeng} CPU`, `${TOK.qingtian} NIC`, '数据中心网络'] },
+];
+
+// ── PER-LEVEL physical devices & plane (把物理器件挂到每一层级上) ─────────────────
+// Mirrors the reference "物理三平面" layer: each hierarchy level carries WHICH physical
+// devices live there and WHICH plane it rides. Keyed by the level `kind` used in the
+// 层级图 (LAY.levels.kind) and mapped onto the 阵列全景 bands. `color` = plane accent
+// (grey = on-chip, no external port). Consumed by PlaneView (层级图) + FullPodScene bands.
+export interface LevelPhys { plane: PlaneId | 'none' | 'multi'; planeLabel: string; color: string; devices: string; short: string }
+export const LEVEL_PHYS: Record<string, LevelPhys> = {
+  cluster: { plane: 'rdma', planeLabel: 'RDMA · Scale-out', color: '#ffaa3b', short: 'RDMA口→其它超节点', devices: `跨超节点 · ${TOK.uboe}/RoCE（NPU RDMA 口）` },
+  super:   { plane: 'ub',   planeLabel: 'UB · Scale-up',    color: '#04d793', short: 'UB 交换 · LPO', devices: `L2 ${TOK.ub} 交换 · LPO 光模块(柜间)` },
+  cab:     { plane: 'ub',   planeLabel: 'UB · Scale-up',    color: '#04d793', short: '柜内 mesh · 铜/LPO', devices: `柜内 ${TOK.fullmesh} · 铜/LPO 上行` },
+  node:    { plane: 'multi', planeLabel: 'UB / RDMA / VPC', color: '#9d7bff', short: 'UB口/RDMA口·CPU·LPO·NIC', devices: 'NPU UB口 + RDMA口 · 鲲鹏 CPU · LPO · 擎天 NIC · L1 交换' },
+  card:    { plane: 'multi', planeLabel: 'UB + RDMA',       color: '#04d793', short: 'NPU UB口 + RDMA口', devices: 'NPU 封装：UB 端口(绿·scale-up) + RDMA/RoCE 端口(橙·scale-out)' },
+  die:     { plane: 'none',  planeLabel: '片上 · 无对外口',  color: '#7c8db8', short: '片上 · 无对外口', devices: 'D2D 784 GB/s · NoC · HBM' },
+  core:    { plane: 'none',  planeLabel: '片上 · 无对外口',  color: '#7c8db8', short: '片上 · 无对外口', devices: 'AIC(Cube)/AIV(Vector) · Global Memory' },
+  tile:    { plane: 'none',  planeLabel: '片上 · 无对外口',  color: '#7c8db8', short: '片上 · 无对外口', devices: 'Cube/Vector 单元 · UB/L0 buffer' },
+};
+// 阵列全景 band index → LEVEL_PHYS key
+export const BAND_PHYS_KEY: Record<number, string> = {
+  7: 'tile', 0: 'core', 1: 'die', 2: 'card', 3: 'node', 4: 'cab', 5: 'super', 6: 'cluster',
+};
+
 // Each hierarchy level carries HARDWARE facts (hw) and the SOFTWARE view (sw)
 // SEPARATELY — rank is pure software (a collective-comm logical id) bound to a device,
 // never the device itself. Tuned for the 950 (4-Die package · UMA · ≈32 AI Core/card).

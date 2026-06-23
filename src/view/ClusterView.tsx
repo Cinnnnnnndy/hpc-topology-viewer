@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
   SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, mute,
-  memLayers,
+  memLayers, PLANES,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -26,6 +26,7 @@ import {
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
+import { PlanesPanel } from './PlanesPanel';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -191,6 +192,7 @@ export function ClusterView() {
   const [fpPart, setFpPart] = useState<PartitionDim>('none');   // full-pod: colour cards by parallel dim
   const [fpPeers, setFpPeers] = useState(true);   // full-pod: draw same-level peer mesh (L1 card / L2 node)
   const [fpStatus, setFpStatus] = useState(false);   // full-pod: live status / flow overlay
+  const [fpPlanes, setFpPlanes] = useState(false);   // full-pod: three-plane backbone overlay (UB/RDMA/VPC)
   const [vw, setVw] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1440));
   useEffect(() => {
     const onResize = () => setVw(window.innerWidth);
@@ -435,7 +437,7 @@ export function ClusterView() {
             {mode === 'matrix' && <AdjacencyScene scale={scale} onHoverInfo={onHoverInfo} />}
             {mode === 'mapping' && <MappingScene onHoverInfo={onHoverInfo} />}
             {mode === 'trace' && <TraceScene onHoverInfo={onHoverInfo} onLocate={setLocate} tick={traceTick} />}
-            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
+            {mode === 'fullpod' && <FullPodScene scale="64P" podCount={podCount} full={fpFull} gen={spec} overlays={overlays} runMode={runMode} phase={runPhase} partition={fpPart} peers={fpPeers} status={fpStatus} planes={fpPlanes} onHoverInfo={onHoverInfo} onPick={(loc) => { setRackKind('compute'); setNodeKind('compute'); setPendingNpu(loc); setMode('node'); }} />}
             </SceneTheme.Provider>
 
             <OrbitControls
@@ -460,6 +462,10 @@ export function ClusterView() {
 
           {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
+
+          {/* physical-device layer & three planes (UB scale-up / RDMA scale-out / VPC) —
+              integrated into the 阵列全景 only (顶视图/层级图 are in PlaneView) */}
+          {mode === 'fullpod' && <PlanesPanel />}
 
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
           {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
@@ -547,6 +553,13 @@ export function ClusterView() {
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
                         <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
+                      </button>
+                      <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·超节点内·TP/EP) / RDMA scale-out(橙·跨超节点 RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPlanes, PLANES[0].color) }}>
+                        <span style={{ display: 'inline-flex', gap: 2 }}>
+                          {PLANES.map((p) => <span key={p.id} style={{ width: 7, height: 7, borderRadius: 1, background: p.color, display: 'inline-block', opacity: fpPlanes ? 1 : 0.6 }} />)}
+                        </span>
+                        {narrow ? '三平面' : '三平面分色'}
                       </button>
                     </div>
                   )}
@@ -886,6 +899,19 @@ export function ClusterView() {
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
                 <LgRow color="#22d3ee" label="同级 peer mesh（卡/节点）" />
                 <span style={lgNote}>单击 卡 / 刀片 / 机柜高亮 · 双击进卡</span>
+                {/* three physical planes (details in 顶部「三平面 / 物理器件」面板) */}
+                <div style={lgHdr}>三平面 · 物理器件</div>
+                {PLANES.map((p) => (
+                  <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 12, height: 3, background: p.color, display: 'inline-block', borderRadius: 1 }} />
+                    <span style={{ color: 'var(--tx2)' }}>{`${p.short} · ${p.parallel}`}</span>
+                  </span>
+                ))}
+                {/* physical device OBJECTS shown when 三平面 toggle on */}
+                {fpPlanes && ([['NPU UB 口', '#04d793', 'dot'], ['NPU RDMA 口', '#ffaa3b', 'dot'], ['鲲鹏 CPU', '#4a8cff', 'sq'], ['L1 UB 交换', '#04d793', 'sq'], ['LPO 光模块', '#36e0c4', 'sq'], ['擎天 NIC', '#9d7bff', 'sq']] as [string, string, 'dot' | 'sq'][]).map(([t, c, sh]) => (
+                  <LgRow key={t} shape={sh} color={c} label={t} />
+                ))}
+                <span style={lgNote}>{fpPlanes ? '卡上=NPU UB口(绿)/RDMA口(橙)；节点前沿=CPU/交换/LPO/NIC 对象 + 平面连线' : '开「三平面分色」显示物理器件对象 + 平面连线'}</span>
                 {/* run phases (phase-wash colours) */}
                 <div style={lgHdr}>{`运行相位 · ${runMode === 'train' ? '训练' : '推理'}`}</div>
                 {RUN_SCHED[runMode].map((ph) => <LgRow key={ph.id} shape="sq" color={ph.color} label={ph.name} />)}
