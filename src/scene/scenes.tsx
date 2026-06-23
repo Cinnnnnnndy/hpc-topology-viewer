@@ -552,8 +552,6 @@ export interface CommOverlays { ring: boolean; a2a: boolean; tile: boolean; core
 const DIE = {
   pos: [2.7, 0.06, 0] as [number, number, number],   // inset podium beside the blade
   w: 1.7, d: 1.1,
-  cube: { rows: 4, cols: 4 },     // Cube core array (schematic)
-  vec: { rows: 2, cols: 4 },      // Vector cores
 };
 
 /** Enlarged single-die view: HBM → L1 → L0 → Cube/Vector cores, with tile dataflow. */
@@ -595,26 +593,19 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
       <Block x={-hx + 0.62} z={0} w={0.2} d={DIE.d * 0.7} label="L1 512KB" color={LC.blockHi} />
       {/* L0A/L0B buffers */}
       <Block x={-0.1} z={hz - 0.28} w={0.5} d={0.18} label="L0A/B 64KB" color={LC.blockAlt} />
-      {/* AI Core array: Cube + Vector */}
+      {/* AI Core array: ≈16/计算 Die — SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 (same 4×4 glyph as the 平面视图) */}
       {overlays.cores && (
         <group>
-          {Array.from({ length: DIE.cube.rows * DIE.cube.cols }, (_, k) => {
-            const r = Math.floor(k / DIE.cube.cols), c = k % DIE.cube.cols;
+          {Array.from({ length: 16 }, (_, k) => {
+            const r = Math.floor(k / 4), c = k % 4, vec = k % 8 === 7;
+            const col = vec ? ENTITY_COLORS.vector : cubeColor;
             return (
-              <Slab key={`cube-${k}`} size={[0.085, 0.06, 0.085]}
+              <Slab key={`aic-${k}`} size={vec ? [0.07, 0.05, 0.07] : [0.085, 0.06, 0.085]}
                 position={[0.4 + c * 0.1, 0.03, (r - 1.5) * 0.1]}
-                color={cubeColor} emissive={cubeColor} emissiveIntensity={0.5} />
+                color={col} emissive={col} emissiveIntensity={vec ? 0.4 : 0.5} />
             );
           })}
-          {Array.from({ length: DIE.vec.rows * DIE.vec.cols }, (_, k) => {
-            const r = Math.floor(k / DIE.vec.cols), c = k % DIE.vec.cols;
-            return (
-              <Slab key={`vec-${k}`} size={[0.07, 0.05, 0.07]}
-                position={[0.4 + c * 0.1, 0.03, (r - 0.5) * 0.1 + hz - 0.22]}
-                color={ENTITY_COLORS.vector} emissive={ENTITY_COLORS.vector} emissiveIntensity={0.35} />
-            );
-          })}
-          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · AIC(Cube)+AIV(Vector) 分离双发射 · ≈16/计算 Die</Text>
+          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · AIC(Cube)/AIV(Vector) 分离独立核 · Cube∶Vector ≈ 8∶1 · ≈16/计算 Die</Text>
         </group>
       )}
       {/* L0C accumulator */}
@@ -1497,9 +1488,9 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
               {i === 0 && <CabinetBox w={0.5} h={0.5} d={0.2} kind="compute" hovered={on} />}
               {i === 1 && [-0.5, 0, 0.5].map((dx, k) => <group key={k} position={[dx, 0, 0]}><NpuChip w={0.26} h={0.16} hovered={on} /></group>)}
               {i === 2 && <NpuChip w={0.5} h={0.3} hovered={on} selected={on} logo />}
-              {/* AI Core array (block_idx → AI Core), device-internal */}
-              {i === 3 && Array.from({ length: 8 }, (_, k) => <Slab key={k} size={[0.09, 0.07, 0.09]} position={[(k % 4 - 1.5) * 0.13, 0, (Math.floor(k / 4) - 0.5) * 0.15]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.85 : 0.45} />)}
-              {/* one AI Core: 1 Cube (AIC) + 2 Vector (AIV), separate dual-issue cores */}
+              {/* AI Core array (block_idx → AI Core): SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 */}
+              {i === 3 && Array.from({ length: 8 }, (_, k) => { const vec = k === 7, col = vec ? ENTITY_COLORS.vector : THREAD_COLOR; return <Slab key={k} size={[0.09, 0.07, 0.09]} position={[(k % 4 - 1.5) * 0.13, 0, (Math.floor(k / 4) - 0.5) * 0.15]} color={col} emissive={col} emissiveIntensity={on ? 0.85 : 0.45} />; })}
+              {/* the two core TYPES side by side: AIC(Cube, 大) + AIV(Vector, 小) — 分离独立核 */}
               {i === 4 && <group>
                 <Slab size={[0.2, 0.14, 0.2]} position={[-0.12, 0, 0]} color={THREAD_COLOR} emissive={THREAD_COLOR} emissiveIntensity={on ? 0.9 : 0.5} />
                 <Slab size={[0.08, 0.12, 0.18]} position={[0.08, 0, 0]} color={ENTITY_COLORS.vector} emissive={ENTITY_COLORS.vector} emissiveIntensity={on ? 0.8 : 0.4} />
