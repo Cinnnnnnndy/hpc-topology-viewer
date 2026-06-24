@@ -36,6 +36,13 @@ function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, 
 //   lpo = optical module (lanes + lens) · nic = network card (port slot + connector tab) ·
 //   port = a small connector tab (UB 绿 / RDMA 橙). cx,cy = centre · w,h = footprint. ──
 type DevType = 'cpu' | 'switch' | 'lpo' | 'nic' | 'port';
+// device-interconnect selection: one device + (derived) its links / related objects
+type SelDev =
+  | { kind: 'npu'; k: number; blade: number }
+  | { kind: 'cpu'; blade: number; i: number }
+  | { kind: 'nic'; blade: number; i: number }
+  | { kind: 'l1'; blade: number }
+  | { kind: 'l2'; cab: number };
 function devGlyph(ctx: CanvasRenderingContext2D, type: DevType, cx: number, cy: number, w: number, h: number, color: string) {
   const x = cx - w / 2, y = cy - h / 2, DK = 'rgba(0,0,0,0.34)', LT = 'rgba(255,255,255,0.82)', mn = Math.min(w, h);
   ctx.fillStyle = color;
@@ -143,6 +150,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [swOpen, setSwOpen] = useState(true);   // 执行时序 swimlane shown by default
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
   const [selTop, setSelTop] = useState<{ k: number; die?: number; core?: number } | null>(null);   // top-view selection (card, or a Die / AI Core when zoomed in)
+  const [selDev, setSelDev] = useState<SelDev | null>(null);   // device-topology selection (highlight object + its links + related, dim the rest)
   const downXY = useRef<{ x: number; y: number } | null>(null);   // pointer-down (click vs drag)
   const phaseRef = useRef(0);                       // flow (marching-ants) animation phase
   const headRef = useRef(0);                        // 执行时序 play head (0..1), shared by the card-wash + swimlane
@@ -286,6 +294,27 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       if (wx >= cx && wx <= cx + cw && wy >= cy && wy <= cy + ch) return { die, core: r * 2 + c };
     }
     return { die };
+  };
+
+  // device-topology hit-test (mirrors the tiled draw geometry): L2(cabinet) / L1(blade) /
+  // CPU·NIC(bottom margin) / NPU(card). Returns the device descriptor under the cursor.
+  const pickDev = (wx: number, wy: number): SelDev | null => {
+    const cc = Math.floor(wx / (L.cw + L.cgap)), cr = Math.floor(wy / (L.ch + L.cgap));
+    if (cc < 0 || cc >= L.cCols || cr < 0) return null;
+    const cab = cr * L.cCols + cc; if (cab >= L.nC) return null;
+    const [cx0, cy0] = cabXY(cab);
+    if (Math.abs(wx - (cx0 + L.cw / 2)) < L.cw * 0.12 && Math.abs(wy - (cy0 + L.cpad * 0.42)) < L.cpad * 0.5) return { kind: 'l2', cab };   // L2 switch
+    const blc = Math.floor((wx - cx0 - L.cpad) / (L.bw + L.bgap)), blr = Math.floor((wy - cy0 - L.cpad) / (L.bh + L.bgap));
+    if (blc < 0 || blc >= 2 || blr < 0 || blr >= 4) return null;
+    const bl = blr * 2 + blc, blade = cab * BPC + bl; if (blade >= L.nB) return null;
+    const [bx, by] = bladeXY(cab, bl), dy = by + L.bh - L.bpad * 0.5;
+    if (Math.abs(wx - (bx + L.bw / 2)) < L.bw * 0.16 && Math.abs(wy - (by + L.bh - L.bpad * 0.45)) < L.bpad * 0.45) return { kind: 'l1', blade };   // L1 switch
+    if (Math.abs(wy - dy) < L.bpad * 0.45) {
+      for (let i = 0; i < 4; i++) if (Math.abs(wx - (bx + L.bw * (0.07 + 0.075 * i))) < L.bw * 0.045) return { kind: 'cpu', blade, i };
+      for (let i = 0; i < 4; i++) if (Math.abs(wx - (bx + L.bw * (0.67 + 0.075 * i))) < L.bw * 0.045) return { kind: 'nic', blade, i };
+    }
+    const k = pick(wx, wy);
+    return k != null ? { kind: 'npu', k, blade } : null;
   };
 
   // layered view: hit-test world point → { level, grid cell index }
@@ -534,6 +563,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
       };
       const NED = 'rgba(150,168,205,0.85)';
+      const DIM_DEV = 0.12;   // alpha for objects/links outside the selection
       type ST = 'ub' | 'so' | 'vpc';
       const heatFill = (fill: string, seed: number) => (curPhase ? heatOf(seed) : fill);
       const cuComm = curPhase?.kind === 'comm';
@@ -547,17 +577,28 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.setLineDash([]); ctx.globalAlpha = 1;
       };
       // NPU 图元 = 950 卡 (与层级图/顶视图一致：实体块 + 4 Die 2计算 teal+2 IO grey + UB/RDMA 端口 tab)
-      const npuGlyph = (x: number, y: number, sz: number, fill: string) => {
-        ctx.fillStyle = fill; ctx.globalAlpha = 0.96; rr(x, y, sz, sz, sz * 0.16); ctx.fill();
-        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.4 / s; rr(x, y, sz, sz, sz * 0.16); ctx.stroke();
+      const npuGlyph = (x: number, y: number, sz: number, fill: string, a = 1) => {
+        ctx.fillStyle = fill; ctx.globalAlpha = 0.96 * a; rr(x, y, sz, sz, sz * 0.16); ctx.fill();
+        ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.4 / s; rr(x, y, sz, sz, sz * 0.16); ctx.stroke();
         if (sz * s > 16) {
           const ins = sz * 0.14, g = sz * 0.07, dw = (sz - ins * 2 - g) / 2, dh = (sz - ins * 2 - g) / 2;
           const x0 = x + ins, x1 = x0 + dw + g, y0 = y + ins, y1 = y0 + dh + g;
-          ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.9; rr(x0, y0, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.16); ctx.fill();
-          ctx.fillStyle = M_IO; ctx.globalAlpha = 0.58; rr(x0, y1, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.16); ctx.fill();
-          ctx.globalAlpha = 1;
+          ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.9 * a; rr(x0, y0, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.16); ctx.fill();
+          ctx.fillStyle = M_IO; ctx.globalAlpha = 0.58 * a; rr(x0, y1, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.16); ctx.fill();
         }
+        ctx.globalAlpha = 1;
       };
+      // dimmed devGlyph + selection ring helpers
+      const dg = (active: boolean, type: DevType, x: number, y: number, w: number, h: number, color: string) => { ctx.globalAlpha = active ? 1 : DIM_DEV; devGlyph(ctx, type, x, y, w, h, color); ctx.globalAlpha = 1; };
+      const ring = (cxr: number, cyr: number, w: number, h: number) => { const rw = w * 1.34, rh = h * 1.34; ctx.strokeStyle = SEL; ctx.lineWidth = 2.6 / s; ctx.setLineDash([]); ctx.globalAlpha = 1; rr(cxr - rw / 2, cyr - rh / 2, rw, rh, Math.min(rw, rh) * 0.3); ctx.stroke(); };
+
+      // ── selection: highlight the picked object + its links + related objects, dim the rest ──
+      const sel = selDev;
+      const selCab = sel ? (sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC)) : -1;
+      const aL2 = (cab: number) => !sel || cab === selCab;                                                                 // L2 in the uplink chain
+      const aL1 = (blade: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : blade === sel.blade);
+      const aNpu = (k: number, blade: number) => !sel || (sel.kind === 'npu' ? k === sel.k : sel.kind === 'l1' ? blade === sel.blade : sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : false);
+      const aCN = (blade: number, i: number) => !sel || (sel.kind === 'l1' ? blade === sel.blade : sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : (sel.kind === 'cpu' || sel.kind === 'nic') ? blade === sel.blade && i === sel.i : false);   // CPU i ↔ NIC i pair
 
       const showCard = s * L.cs > 7, showHub = s * L.bw > 26, showDev = s * L.bw > 58;
 
@@ -568,30 +609,34 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.fillStyle = P.bladeFill;
       for (let b = 0; b < L.nB; b++) { const [bx, by] = bladeXY(Math.floor(b / BPC), b % BPC); if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue; rr(bx, by, L.bw, L.bh, fr * 0.7); ctx.fill(); }
 
+      const ea = (base: number, on: boolean) => (!sel ? base : on ? 0.85 : DIM_DEV);   // edge alpha by selection
+
       // per-cabinet L2 交换 + each blade's L1→L2 uplink (deep zoom)
       if (showDev) for (let cab = 0; cab < L.nC; cab++) {
         const [cx0, cy0] = cabXY(cab); if (cx0 + L.cw < vx0 || cx0 > vx1 || cy0 + L.ch < vy0 || cy0 > vy1) continue;
-        const l2x = cx0 + L.cw / 2, l2y = cy0 + L.cpad * 0.42;
-        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); edge([bx + L.bw / 2, by + L.bh - L.bpad * 0.45], [l2x, l2y], 'ub', cab * 97 + bl, cab * 31 + 3, cuComm ? 0.2 : -0.12, 1.0, 0.6); }
-        devGlyph(ctx, 'switch', l2x, l2y, L.cw * 0.15, L.cpad * 0.66, heatFill(PLANES[0].color, cab * 911 + 13));
+        const l2x = cx0 + L.cw / 2, l2y = cy0 + L.cpad * 0.42, l2On = aL2(cab);
+        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); edge([bx + L.bw / 2, by + L.bh - L.bpad * 0.45], [l2x, l2y], 'ub', cab * 97 + bl, cab * 31 + 3, cuComm ? 0.2 : -0.12, 1.0, ea(0.6, aL1(blade) && l2On)); }
+        dg(l2On, 'switch', l2x, l2y, L.cw * 0.15, L.cpad * 0.66, heatFill(PLANES[0].color, cab * 911 + 13));
+        if (sel?.kind === 'l2' && sel.cab === cab) ring(l2x, l2y, L.cw * 0.15, L.cpad * 0.66);
       }
 
       // every blade: 8 NPU cards + L1 hub + CPU/NIC + real wiring
       for (let b = 0; b < L.nB; b++) {
         const cab = Math.floor(b / BPC), bl = b % BPC, [bx, by] = bladeXY(cab, bl);
         if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
-        const l1x = bx + L.bw / 2, l1y = by + L.bh - L.bpad * 0.45;
+        const l1x = bx + L.bw / 2, l1y = by + L.bh - L.bpad * 0.45, l1On = aL1(b);
         for (let l = 0; l < CPB; l++) {
-          const k = b * CPB + l; if (k >= L.N1) break; const [cx2, cy2] = cardXY(k);
-          if (showHub) edge([cx2 + L.cs / 2, cy2 + L.cs], [l1x, l1y], 'ub', 200 + (k % 4093), b * 131 + 1, cuComm ? 0.15 : -0.05, 0.9, 0.72);   // NPU UB 口 → L1
-          if (showCard) npuGlyph(cx2, cy2, L.cs, heatFill(ENTITY_COLORS.card, k));
-          else { ctx.fillStyle = heatFill(ENTITY_COLORS.card, k); ctx.globalAlpha = 0.95; rr(cx2, cy2, L.cs, L.cs, L.cs * 0.2); ctx.fill(); ctx.globalAlpha = 1; }
+          const k = b * CPB + l; if (k >= L.N1) break; const [cx2, cy2] = cardXY(k); const nOn = aNpu(k, b);
+          if (showHub) edge([cx2 + L.cs / 2, cy2 + L.cs], [l1x, l1y], 'ub', 200 + (k % 4093), b * 131 + 1, cuComm ? 0.15 : -0.05, 0.9, ea(0.72, nOn && l1On));   // NPU UB 口 → L1
+          if (showCard) npuGlyph(cx2, cy2, L.cs, heatFill(ENTITY_COLORS.card, k), nOn ? 1 : DIM_DEV);
+          else { ctx.fillStyle = heatFill(ENTITY_COLORS.card, k); ctx.globalAlpha = nOn ? 0.95 : DIM_DEV; rr(cx2, cy2, L.cs, L.cs, L.cs * 0.2); ctx.fill(); ctx.globalAlpha = 1; }
+          if (sel?.kind === 'npu' && sel.k === k) ring(cx2 + L.cs / 2, cy2 + L.cs / 2, L.cs, L.cs);
         }
-        if (showHub) devGlyph(ctx, 'switch', l1x, l1y, L.bw * 0.28, L.bpad * 0.76, heatFill(PLANES[0].color, b * 131));
+        if (showHub) { dg(l1On, 'switch', l1x, l1y, L.bw * 0.28, L.bpad * 0.76, heatFill(PLANES[0].color, b * 131)); if (sel?.kind === 'l1' && sel.blade === b) ring(l1x, l1y, L.bw * 0.28, L.bpad * 0.76); }
         if (showDev) {   // 4 CPU (UB→L1) + 4 NIC (VPC→CPU) in the blade bottom margin
           const dy = by + L.bh - L.bpad * 0.5;
-          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i); edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, 0.7, 0.65); devGlyph(ctx, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); }
-          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i); edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, 0.6, 0.65); devGlyph(ctx, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); }
+          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCN(b, i); edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, 0.7, ea(0.65, on && l1On)); dg(on, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); if (sel?.kind === 'cpu' && sel.blade === b && sel.i === i) ring(cpx, dy, L.cs * 0.3, L.bpad * 0.62); }
+          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCN(b, i); edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, 0.6, ea(0.65, on)); dg(on, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); if (sel?.kind === 'nic' && sel.blade === b && sel.i === i) ring(nxp, dy, L.cs * 0.27, L.bpad * 0.54); }
         }
       }
 
@@ -601,7 +646,14 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.fillStyle = P.ink; ctx.font = '700 13px sans-serif'; ctx.fillText('器件互联 · 全量拓扑', 14, 20);
       ctx.fillStyle = P.ink2; ctx.font = '11px sans-serif';
       ctx.fillText(`${TOK.supernode} · ${DEV.N.toLocaleString()} NPU 全部绘出 · 每刀片 L1 交换 + 8 NPU + 4 CPU + 4 NIC`, 14, 37);
-      ctx.fillText(showHub ? '放大已显示每刀片接线（NPU/CPU→L1 · NIC→CPU · L1→L2）' : '继续放大 → 显示每刀片 L1 交换与接线', 14, 53);
+      if (sel) {
+        const sl = sel.kind === 'npu' ? `已选 NPU 卡 ${sel.k}（device）· 高亮其 L1→L2→超节点链路`
+          : sel.kind === 'l1' ? `已选 L1 交换（刀片 ${sel.blade}）· 高亮板内 8 NPU + 4 CPU + 4 NIC 及上联 L2`
+          : sel.kind === 'l2' ? `已选 L2 交换（机柜 ${sel.cab}）· 高亮柜内全部 L1 及其器件`
+          : sel.kind === 'cpu' ? `已选 ${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）· 高亮其 L1 与配对 NIC`
+          : `已选 ${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）· 高亮其配对 CPU`;
+        ctx.fillStyle = SEL; ctx.font = '600 11px sans-serif'; ctx.fillText(`${sl} · 点空白处取消`, 14, 53);
+      } else ctx.fillText(showHub ? '点任一器件高亮其关联关系（其余暗下）· 放大看每刀片接线' : '继续放大 → 显示每刀片 L1 交换与接线 · 点器件高亮关联', 14, 53);
       const ls: [string, number[], string][] = [['实线 UB', [], '#cfd8ea'], ['长虚 scale-out', [9, 6], '#cfd8ea'], ['点线 VPC', [2, 5], '#cfd8ea']];
       let lyy = 73; ls.forEach(([lab, dash, c]) => { ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(14, lyy); ctx.lineTo(40, lyy); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = P.ink2; ctx.font = '11px sans-serif'; ctx.fillText(lab, 45, lyy); lyy += 15; });
       phaseBanner();
@@ -844,10 +896,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     }
     ctx.restore();
     phaseBanner();   // live phase banner (screen-space) — names the current run phase driving the card colour
-  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, playing, runMode, scenario, layout, selL, selTop, swOpen, P.bg]);
+  }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, playing, runMode, scenario, layout, selL, selTop, selDev, swOpen, P.bg]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
-  useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); }, [layout]);
+  useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setSelDev(null); }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
 
@@ -897,6 +949,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     if (downXY.current && Math.abs(e.clientX - downXY.current.x) + Math.abs(e.clientY - downXY.current.y) < 5) {
       const [wx, wy] = toWorld(e.clientX, e.clientY);
       if (layout === 'layers') { const hit = pickLayer(wx, wy); setSelL((prev) => (hit && prev && prev.lvl === hit.lvl && prev.idx === hit.idx ? null : hit)); if (hit) setSwOpen(true); }
+      else if (layout === 'devices') { const hit = pickDev(wx, wy); setSelDev((prev) => (JSON.stringify(prev) === JSON.stringify(hit) ? null : hit)); }
       else if (layout === 'top') {
         const k = pick(wx, wy);
         if (k == null) setSelTop(null);
@@ -955,7 +1008,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     <div ref={wrapRef} style={{ position: 'absolute', inset: 0, zIndex: 11, background: 'var(--bg2)', overflow: 'hidden' }}>
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', cursor: drag.current ? 'grabbing' : layout === 'top' ? 'crosshair' : layout === 'layers' ? 'pointer' : 'grab', touchAction: 'none' }}
+        style={{ display: 'block', cursor: drag.current ? 'grabbing' : layout === 'top' ? 'crosshair' : 'pointer', touchAction: 'none' }}
         onWheel={onWheel} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={onLeave}
       />
       {/* controls */}
@@ -1062,6 +1115,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dashed var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />长虚 RDMA scale-out ·
               <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 VPC(NIC→CPU)</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>颜色=利用率（播放时·红黄绿+灰离线）· 粗细=带宽</div>
+            <div style={{ color: SEL, fontSize: 10.5, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>{selDev ? '已选中：蓝圈=所选对象 · 高亮其连线与关联对象，其余暗下 · 点空白取消' : '点任一器件（NPU/CPU/NIC/L1/L2）→ 高亮它与关联对象的连接，其余暗下'}</div>
             {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线</span></div>}
           </>
         ))}
