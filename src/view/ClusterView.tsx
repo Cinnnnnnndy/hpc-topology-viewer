@@ -166,7 +166,7 @@ const NODE_OVERLAYS: { id: keyof CommOverlays; label: string; color: string }[] 
 
 export function ClusterView() {
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
-  const [mode, setMode] = useState<ViewMode>('overview');
+  const [mode, setMode] = useState<ViewMode>('plane');   // land on 平面视图 (its default sub-view = 器件互联)
   const [rackKind, setRackKind] = useState<RackKind>('compute');
   const [nodeKind, setNodeKind] = useState<'compute' | 'ubswitch'>('compute');
   const [nodeSlot, setNodeSlot] = useState(0);

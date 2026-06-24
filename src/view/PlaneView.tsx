@@ -145,7 +145,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [playing, setPlaying] = useState(false);    // 执行时序 playback (drives card phase-wash + flow + swimlane) — paused by default
   const [runMode, setRunMode] = useState<RunMode>('train');   // 执行时序 mode: train / infer
   const [scenario, setScenario] = useState<'ring' | 'a2a'>('ring');
-  const [layout, setLayout] = useState<'top' | 'layers' | 'devices'>('top');   // top-down map · layered hierarchy · device-interconnect plane
+  const [layout, setLayout] = useState<'top' | 'layers' | 'devices'>('devices');   // device-interconnect (default) · layered hierarchy · top-down map
   const [legendOpen, setLegendOpen] = useState(true);   // collapsible legend (avoids occluding the diagram on small screens)
   const [swOpen, setSwOpen] = useState(true);   // 执行时序 swimlane shown by default
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
@@ -576,15 +576,18 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
         ctx.setLineDash([]); ctx.globalAlpha = 1;
       };
-      // NPU 图元 = 950 卡 (与层级图/顶视图一致：实体块 + 4 Die 2计算 teal+2 IO grey + UB/RDMA 端口 tab)
+      // NPU 图元 = 950 卡 (与层级图/顶视图一致)：卡体 + 暗底凹槽内 4 Die（2 计算 teal + 2 IO 蓝灰），
+      // 凹槽让 Die 与卡体(青/热力色)拉开对比，不再糊成一片。
       const npuGlyph = (x: number, y: number, sz: number, fill: string, a = 1) => {
         ctx.fillStyle = fill; ctx.globalAlpha = 0.96 * a; rr(x, y, sz, sz, sz * 0.16); ctx.fill();
         ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.4 / s; rr(x, y, sz, sz, sz * 0.16); ctx.stroke();
-        if (sz * s > 16) {
-          const ins = sz * 0.14, g = sz * 0.07, dw = (sz - ins * 2 - g) / 2, dh = (sz - ins * 2 - g) / 2;
+        if (sz * s > 15) {
+          const pad = sz * 0.1;
+          ctx.fillStyle = 'rgba(9,13,20,0.62)'; ctx.globalAlpha = a; rr(x + pad, y + pad, sz - pad * 2, sz - pad * 2, sz * 0.08); ctx.fill();   // 暗底凹槽
+          const ins = sz * 0.17, g = sz * 0.075, dw = (sz - ins * 2 - g) / 2, dh = (sz - ins * 2 - g) / 2;
           const x0 = x + ins, x1 = x0 + dw + g, y0 = y + ins, y1 = y0 + dh + g;
-          ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.9 * a; rr(x0, y0, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.16); ctx.fill();
-          ctx.fillStyle = M_IO; ctx.globalAlpha = 0.58 * a; rr(x0, y1, dw, dh, dh * 0.16); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.16); ctx.fill();
+          ctx.fillStyle = '#2be0b0'; ctx.globalAlpha = a; rr(x0, y0, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.18); ctx.fill();   // 2 计算 Die · 亮青
+          ctx.fillStyle = '#8a9bc4'; ctx.globalAlpha = 0.95 * a; rr(x0, y1, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.18); ctx.fill();   // 2 IO Die · 蓝灰
         }
         ctx.globalAlpha = 1;
       };
@@ -593,12 +596,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const ring = (cxr: number, cyr: number, w: number, h: number) => { const rw = w * 1.34, rh = h * 1.34; ctx.strokeStyle = SEL; ctx.lineWidth = 2.6 / s; ctx.setLineDash([]); ctx.globalAlpha = 1; rr(cxr - rw / 2, cyr - rh / 2, rw, rh, Math.min(rw, rh) * 0.3); ctx.stroke(); };
 
       // ── selection: highlight the picked object + its links + related objects, dim the rest ──
+      // super-node fabric: NPUs on a blade are DIRECTLY full-meshed (not via a switch), and CPU
+      // is a UB peer on the same blade. So selecting any NPU lights all 8 board-mates + the blade CPUs.
       const sel = selDev;
+      const selBlade = sel && sel.kind !== 'l2' ? sel.blade : -1;
       const selCab = sel ? (sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC)) : -1;
       const aL2 = (cab: number) => !sel || cab === selCab;                                                                 // L2 in the uplink chain
-      const aL1 = (blade: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : blade === sel.blade);
-      const aNpu = (k: number, blade: number) => !sel || (sel.kind === 'npu' ? k === sel.k : sel.kind === 'l1' ? blade === sel.blade : sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : false);
-      const aCN = (blade: number, i: number) => !sel || (sel.kind === 'l1' ? blade === sel.blade : sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : (sel.kind === 'cpu' || sel.kind === 'nic') ? blade === sel.blade && i === sel.i : false);   // CPU i ↔ NIC i pair
+      const aL1 = (blade: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : blade === selBlade);
+      const aNpu = (blade: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : (sel.kind === 'nic' ? false : blade === selBlade));   // NIC is VPC-side → NPUs dim
+      const aCpu = (blade: number, i: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : sel.kind === 'l1' || sel.kind === 'npu' ? blade === selBlade : blade === selBlade && i === sel.i);   // cpu/nic → its own i
+      const aNic = (blade: number, i: number) => !sel || (sel.kind === 'l2' ? Math.floor(blade / BPC) === sel.cab : sel.kind === 'l1' ? blade === selBlade : (sel.kind === 'cpu' || sel.kind === 'nic') ? blade === selBlade && i === sel.i : false);   // npu sel → NIC dim
 
       const showCard = s * L.cs > 7, showHub = s * L.bw > 26, showDev = s * L.bw > 58;
 
@@ -620,23 +627,29 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         if (sel?.kind === 'l2' && sel.cab === cab) ring(l2x, l2y, L.cw * 0.15, L.cpad * 0.66);
       }
 
-      // every blade: 8 NPU cards + L1 hub + CPU/NIC + real wiring
+      // every blade: 8 NPU cards (board UB FULL-MESH, direct) + board egress to L1 + CPU/NIC
+      const showMesh = s * L.bw > 60;   // intra-board mesh only when a board is large enough to read
       for (let b = 0; b < L.nB; b++) {
         const cab = Math.floor(b / BPC), bl = b % BPC, [bx, by] = bladeXY(cab, bl);
         if (bx + L.bw < vx0 || bx > vx1 || by + L.bh < vy0 || by > vy1) continue;
-        const l1x = bx + L.bw / 2, l1y = by + L.bh - L.bpad * 0.45, l1On = aL1(b);
-        for (let l = 0; l < CPB; l++) {
-          const k = b * CPB + l; if (k >= L.N1) break; const [cx2, cy2] = cardXY(k); const nOn = aNpu(k, b);
-          if (showHub) edge([cx2 + L.cs / 2, cy2 + L.cs], [l1x, l1y], 'ub', 200 + (k % 4093), b * 131 + 1, cuComm ? 0.15 : -0.05, 0.9, ea(0.72, nOn && l1On));   // NPU UB 口 → L1
-          if (showCard) npuGlyph(cx2, cy2, L.cs, heatFill(ENTITY_COLORS.card, k), nOn ? 1 : DIM_DEV);
-          else { ctx.fillStyle = heatFill(ENTITY_COLORS.card, k); ctx.globalAlpha = nOn ? 0.95 : DIM_DEV; rr(cx2, cy2, L.cs, L.cs, L.cs * 0.2); ctx.fill(); ctx.globalAlpha = 1; }
+        const l1x = bx + L.bw / 2, l1y = by + L.bh - L.bpad * 0.45, l1On = aL1(b), bOn = aNpu(b);
+        const cen: [number, number][] = [], kk: number[] = [];
+        for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [cx2, cy2] = cardXY(k); cen.push([cx2 + L.cs / 2, cy2 + L.cs / 2]); kk.push(k); }
+        // intra-board NPU full-mesh — DIRECT NPU↔NPU UB links (no switch in between)
+        if (showMesh) for (let i = 0; i < cen.length; i++) for (let j = i + 1; j < cen.length; j++) edge(cen[i], cen[j], 'ub', b * 131 + i * 7 + 11, b * 131 + j * 7 + 12, cuComm ? 0.18 : -0.06, 0.7, ea(0.42, bOn));
+        // board UB egress → L1 路由 (2 representative uplink ports) → up to L2(rack/pod Clos)
+        if (showHub && cen.length) { edge(cen[0], [l1x, l1y], 'ub', b * 131 + 3, b * 131 + 1, -0.05, 0.8, ea(0.6, bOn && l1On)); edge(cen[cen.length - 1], [l1x, l1y], 'ub', b * 131 + 4, b * 131 + 1, -0.05, 0.8, ea(0.6, bOn && l1On)); }
+        for (let l = 0; l < cen.length; l++) {
+          const k = kk[l], [cx2, cy2] = cardXY(k);
+          if (showCard) npuGlyph(cx2, cy2, L.cs, heatFill(ENTITY_COLORS.card, k), bOn ? 1 : DIM_DEV);
+          else { ctx.fillStyle = heatFill(ENTITY_COLORS.card, k); ctx.globalAlpha = bOn ? 0.95 : DIM_DEV; rr(cx2, cy2, L.cs, L.cs, L.cs * 0.2); ctx.fill(); ctx.globalAlpha = 1; }
           if (sel?.kind === 'npu' && sel.k === k) ring(cx2 + L.cs / 2, cy2 + L.cs / 2, L.cs, L.cs);
         }
         if (showHub) { dg(l1On, 'switch', l1x, l1y, L.bw * 0.28, L.bpad * 0.76, heatFill(PLANES[0].color, b * 131)); if (sel?.kind === 'l1' && sel.blade === b) ring(l1x, l1y, L.bw * 0.28, L.bpad * 0.76); }
-        if (showDev) {   // 4 CPU (UB→L1) + 4 NIC (VPC→CPU) in the blade bottom margin
+        if (showDev) {   // 4 CPU (UB peer → L1) + 4 NIC (VPC → CPU) in the blade bottom margin
           const dy = by + L.bh - L.bpad * 0.5;
-          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCN(b, i); edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, 0.7, ea(0.65, on && l1On)); dg(on, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); if (sel?.kind === 'cpu' && sel.blade === b && sel.i === i) ring(cpx, dy, L.cs * 0.3, L.bpad * 0.62); }
-          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCN(b, i); edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, 0.6, ea(0.65, on)); dg(on, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); if (sel?.kind === 'nic' && sel.blade === b && sel.i === i) ring(nxp, dy, L.cs * 0.27, L.bpad * 0.54); }
+          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCpu(b, i); edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, 0.7, ea(0.65, on && l1On)); dg(on, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); if (sel?.kind === 'cpu' && sel.blade === b && sel.i === i) ring(cpx, dy, L.cs * 0.3, L.bpad * 0.62); }
+          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i), on = aNic(b, i); edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, 0.6, ea(0.65, on)); dg(on, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); if (sel?.kind === 'nic' && sel.blade === b && sel.i === i) ring(nxp, dy, L.cs * 0.27, L.bpad * 0.54); }
         }
       }
 
@@ -645,15 +658,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillStyle = P.ink; ctx.font = '700 13px sans-serif'; ctx.fillText('器件互联 · 全量拓扑', 14, 20);
       ctx.fillStyle = P.ink2; ctx.font = '11px sans-serif';
-      ctx.fillText(`${TOK.supernode} · ${DEV.N.toLocaleString()} NPU 全部绘出 · 每刀片 L1 交换 + 8 NPU + 4 CPU + 4 NIC`, 14, 37);
+      ctx.fillText(`${TOK.supernode} · ${DEV.N.toLocaleString()} NPU 全部绘出 · 板内 8 NPU UB 全互联(直连·${TOK.ubmesh}) + CPU/NIC · 上联 L1/L2`, 14, 37);
       if (sel) {
-        const sl = sel.kind === 'npu' ? `已选 NPU 卡 ${sel.k}（device）· 高亮其 L1→L2→超节点链路`
-          : sel.kind === 'l1' ? `已选 L1 交换（刀片 ${sel.blade}）· 高亮板内 8 NPU + 4 CPU + 4 NIC 及上联 L2`
-          : sel.kind === 'l2' ? `已选 L2 交换（机柜 ${sel.cab}）· 高亮柜内全部 L1 及其器件`
-          : sel.kind === 'cpu' ? `已选 ${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）· 高亮其 L1 与配对 NIC`
+        const sl = sel.kind === 'npu' ? `已选 NPU 卡 ${sel.k}（device）· 高亮同刀片 8 NPU 全互联 + 板上 CPU + 上联 L1→L2`
+          : sel.kind === 'l1' ? `已选 L1 路由（刀片 ${sel.blade}）· 高亮板内 8 NPU + 4 CPU + 4 NIC 及上联 L2`
+          : sel.kind === 'l2' ? `已选 L2 交换（机柜 ${sel.cab}）· 高亮柜内全部刀片及其器件`
+          : sel.kind === 'cpu' ? `已选 ${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）· 高亮板内 NPU + 配对 NIC + L1`
           : `已选 ${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）· 高亮其配对 CPU`;
         ctx.fillStyle = SEL; ctx.font = '600 11px sans-serif'; ctx.fillText(`${sl} · 点空白处取消`, 14, 53);
-      } else ctx.fillText(showHub ? '点任一器件高亮其关联关系（其余暗下）· 放大看每刀片接线' : '继续放大 → 显示每刀片 L1 交换与接线 · 点器件高亮关联', 14, 53);
+      } else ctx.fillText(showMesh ? '点任一器件高亮其关联关系（其余暗下）· 板内 NPU 直连全互联' : '继续放大 → 显示板内 NPU 全互联与接线 · 点器件高亮关联', 14, 53);
       const ls: [string, number[], string][] = [['实线 UB', [], '#cfd8ea'], ['长虚 scale-out', [9, 6], '#cfd8ea'], ['点线 VPC', [2, 5], '#cfd8ea']];
       let lyy = 73; ls.forEach(([lab, dash, c]) => { ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(14, lyy); ctx.lineTo(40, lyy); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = P.ink2; ctx.font = '11px sans-serif'; ctx.fillText(lab, 45, lyy); lyy += 15; });
       phaseBanner();
@@ -1015,7 +1028,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
         {/* layout: top-down map vs. layered hierarchy */}
         <span style={{ ...LBL }}>布局</span>
-        {([['top', '顶视图'], ['layers', '层级图'], ['devices', '器件互联']] as [typeof layout, string][]).map(([id, lb]) => {
+        {([['devices', '器件互联'], ['layers', '层级图'], ['top', '顶视图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
           const title = id === 'top' ? '超节点顶视图（嵌套平铺）' : id === 'layers' ? '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）' : '器件互联平面（全量 NPU/CPU/LPO/NIC + 板内/板间 NPU · NPU-CPU · NPU-LPO · NIC-CPU 连线）';
           return <button key={id} onClick={() => setLayout(id)} title={title}
@@ -1104,7 +1117,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ) : (
           <>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>全量拓扑：<b style={{ color: 'var(--tx2)' }}>每一个器件都画出来</b>（{DEV.nBlades.toLocaleString()} 刀片全部铺开，非计数/虚影）。放大某刀片看其接线。</div>
-            <div><span style={{ display: 'inline-block', width: 10, height: 8, background: PLANES[0].color, borderRadius: 2, verticalAlign: '-1px', marginRight: 6 }} />L1/L2 <b style={{ color: 'var(--tx2)' }}>{TOK.ub} 交换</b>（图元同层级图）：每刀片 8 NPU + {DEV.PER.cpu} CPU 各自连 L1 → L2(机柜) → 超节点</div>
+            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><b style={{ color: ENTITY_COLORS.card }}>板内 8 NPU UB 全互联（直连·{TOK.ubmesh}，无中间交换）</b> + CPU 同板 UB 互通；板/柜经 <span style={{ color: PLANES[0].color }}>L1 路由→L2 交换</span>(Pod Clos) 上联</div>
             <div>
               <span style={{ display: 'inline-block', width: 9, height: 9, background: ENTITY_COLORS.card, borderRadius: 2, verticalAlign: '-1px', marginRight: 4 }} />NPU
               <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_CPU, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />CPU
