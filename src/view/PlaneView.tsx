@@ -1295,7 +1295,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />NIC + 平面连线</div>
             <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 点格看右上对齐`}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
-            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消' : '点任一格 → 高亮上下游 + 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? (playing ? '已选中(播放中)：链路按状态(负载)上色·其余暗下 · 选中卡/Die/AI Core → 右下 L0 swimlane · 再点取消' : '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消') : '点任一格 → 高亮上下游（播放时按状态上色）+ 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>器件级 NPU/CPU/LPO/NIC 与连接关系 → 见上方「器件互联」子视图</div>
           </>
         ) : (

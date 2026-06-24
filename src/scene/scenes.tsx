@@ -23,7 +23,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute, isHot, structColor, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
+  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -2171,12 +2171,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         const on = selPath !== null && selPath.superP === p;
         return (
           <group key={p}>
-            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : structColor(1)} emissive={on ? '#4369ef' : structColor(1)} emissiveIntensity={on ? 0.9 : 0.4} />
+            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : ENTITY_COLORS.super} emissive={on ? '#4369ef' : ENTITY_COLORS.super} emissiveIntensity={on ? 0.9 : 0.4} />
             <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`${TOK.supernode} P${p}`}</Text>
           </group>
         );
       })}
-      {podCount > 1 && <Slab size={[Math.min(3.4, G.fieldW * 0.4), 0.2, 0.3]} position={G.cluster} color={structColor(1)} emissive={structColor(1)} emissiveIntensity={0.3} opacity={0.85} edgeColor={structColor(1)} />}
+      {podCount > 1 && <Slab size={[Math.min(3.4, G.fieldW * 0.4), 0.2, 0.3]} position={G.cluster} color={L(4)} emissive={L(4)} emissiveIntensity={0.3} opacity={0.85} edgeColor={L(4)} />}
 
       {/* L0 cards — individual textured NpuChip (≤cap) else instanced (texture-mapped) */}
       {useChip
@@ -2190,13 +2190,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
-            {/* observation: hot card = state box · non-hot = neutral blue-grey box (no type hue) · idle = chip.
+            {/* observation: hot card = state box (red) · non-hot = its UNIFIED level hue (teal·card) box · idle = chip.
                 state boxes share the SAME flat material as the L1/L2 markers (toneMapped off · no emissive)
                 so the busy red reads as ONE colour everywhere; a dark edge restores card-to-card definition. */}
             {lc
               ? <Slab size={[0.34, 0.13, 0.34]} color={lc} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
               : heat
-                ? <Slab size={[0.34, 0.1, 0.34]} color={LC.npuTop} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
+                ? <Slab size={[0.34, 0.1, 0.34]} color={ENTITY_COLORS.card} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
                 : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })
@@ -2207,7 +2207,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(0, e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
             <boxGeometry args={[1, 1, 1]} />
-            <meshStandardMaterial map={chipTex ?? undefined} color={chipTex ? '#ffffff' : LC.npuTop} metalness={0.45} roughness={0.4} toneMapped={false} />
+            <meshStandardMaterial map={chipTex ?? undefined} color="#ffffff" metalness={0.45} roughness={0.4} toneMapped={false} />
           </instancedMesh>
         )}
 

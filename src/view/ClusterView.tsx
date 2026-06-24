@@ -16,7 +16,7 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS, structColor,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS,
   memLayers, PLANES,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
@@ -894,21 +894,21 @@ export function ClusterView() {
             {mode === 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
-                {/* hierarchy — colour弱化, distinguished by GLYPH shape (高饱和色专表状态) */}
-                <span style={lgNote}>层级靠图元形状 + 明度区分（蓝灰·浅→深），不占状态色：</span>
-                <LgRow shape="dot" color={structColor(0)} label="L1 AI Core（Cube/Vector·≈32/卡）" />
-                <LgRow shape="sq" color={structColor(0.2)} label="L2 计算 Die（×2/卡）" />
-                <LgRow shape="sq" color={structColor(0.4)} label="L3 卡 / device" />
-                <LgRow shape="sq" color={structColor(0.6)} label="L4 节点 / 刀片" />
-                <LgRow shape="sq" color={structColor(0.8)} label="机柜" />
-                <LgRow shape="sq" color={structColor(1)} label={`L5 ${TOK.supernode}`} />
+                {/* hierarchy colour UNIFIED with 平面视图 层级图 (卡=teal/Die=teal/Cube=cyan/刀片=sky/机柜=purple/超节点=amber) · 高饱和载色专表状态 */}
+                <span style={lgNote}>层级配色与「层级图」统一（图元形状再区分层级）：</span>
+                <LgRow shape="dot" color={ENTITY_COLORS.cube} label="L1 AI Core（Cube 青 / Vector 浅青·≈32/卡）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L2 计算 Die（teal·×2/卡）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.card} label="L3 卡 / device（teal）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.node} label="L4 节点 / 刀片（sky）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="机柜（purple）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L5 ${TOK.supernode}（amber）`} />
                 {/* state — discrete 4-bucket load (one state = one colour) */}
-                <div style={lgHdr}>状态 / 负载（红黄绿=状态，蓝灰=结构）</div>
+                <div style={lgHdr}>状态 / 负载（红黄绿+灰=状态唯一一套色 · 层级色=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
                   {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
                 <span style={lgNote}>连线 颜色=利用率 · 粗细=带宽（粗绿=大带宽闲 / 细红=小带宽打满）</span>
-                <span style={lgNote}>卡只在 满/拥塞 时上色（少量热点），其余保持中性</span>
+                <span style={lgNote}>卡只在 满/拥塞 时染红（少量热点），其余保持其层级色（结构）</span>
                 <span style={lgNote}>播放(有相位) 或 开"负载/观测"时显示</span>
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
