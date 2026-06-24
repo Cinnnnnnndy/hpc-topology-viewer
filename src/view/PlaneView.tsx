@@ -19,6 +19,7 @@ const DEV_LPO = '#36e0c4';   // LPO 光模块
 
 const CPB = 8, BPC = 8;   // cards / blade, blades / cabinet (= 64 NPU / cabinet)
 const AXIS_GUTTER = 100, RIGHT_PAD = 10;   // layered view: fixed px gutter for constant-size axis labels + right pad (matrix fills the rest)
+const PANEL_W = 340;   // device-interconnect selection → right-side hierarchy panel width (squeezes the canvas)
 const SEL = '#4369ef';   // selection / hover highlight = PTO primary (was gold)
 // plane views keep the ORIGINAL hierarchy/type colours (looks better here); state heatmap still
 // overlays during playback. (the 3-D array view stays de-RYG neutral.)
@@ -127,6 +128,58 @@ function toggleBtn(active: boolean, c: string): React.CSSProperties {
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canvas numeric labels
+
+// 器件互联 选中 → 右侧层级面板：用与「层级图」完全一致的层级/配色，只画选中(蓝圈)+关联对象
+function SelHierPanel({ sel, onClose }: { sel: SelDev; onClose: () => void }) {
+  const NPU_C = ENTITY_COLORS.card, CPU_C = DEV_CPU, NIC_C = PLANES[2].color;
+  const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
+  const blade = sel.kind === 'l2' ? -1 : sel.blade;
+  const npuLocal = sel.kind === 'npu' ? sel.k % CPB : -1;
+  const RNG = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const npuShow = (sel.kind === 'nic' || sel.kind === 'l2') ? [] : RNG(8);
+  const cpuShow = (sel.kind === 'npu' || sel.kind === 'l1') ? RNG(4) : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
+  const nicShow = sel.kind === 'l1' ? RNG(4) : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
+  const box = (key: string, c: string, label: string, on = false) => (
+    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 24, height: 19, padding: '0 5px', borderRadius: 5, background: c, color: inkOf(c), fontSize: 9, fontWeight: 700, outline: on ? `2px solid ${SEL}` : 'none', outlineOffset: 1, boxShadow: on ? `0 0 7px ${SEL}` : 'none' }}>{label}</span>
+  );
+  const row = (key: string, lvl: string, name: string, kids: React.ReactNode) => (
+    <div key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 0', borderTop: '1px dashed var(--bd)' }}>
+      <div style={{ width: 52, flexShrink: 0, textAlign: 'right', lineHeight: 1.25 }}>{lvl && <div style={{ fontSize: 10, fontWeight: 700, color: '#9fb6ff' }}>{lvl}</div>}<div style={{ fontSize: 10, color: 'var(--tx3)' }}>{name}</div></div>
+      <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', paddingTop: 1 }}>{kids}</div>
+    </div>
+  );
+  const rows: React.ReactNode[] = [
+    row('super', 'L5', '超节点', box('s', ENTITY_COLORS.super, TOK.supernode)),
+    row('cab', '', '机柜', box('c', ENTITY_COLORS.cab, `C${cab}`)),
+  ];
+  if (sel.kind === 'l2') rows.push(row('blades', 'L4', '刀片 ×8', RNG(8).map((i) => box('b' + i, ENTITY_COLORS.node, `B${cab * BPC + i}`))));
+  else {
+    rows.push(row('blade', 'L4', '节点/刀片', box('b', ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1')));
+    if (npuShow.length) rows.push(row('npu', 'L3', '卡/NPU', npuShow.map((i) => box('n' + i, NPU_C, `N${i + 1}`, i === npuLocal))));
+    if (cpuShow.length || nicShow.length) rows.push(row('host', '', '主机器件', [
+      ...cpuShow.map((i) => box('cp' + i, CPU_C, 'CPU', sel.kind === 'cpu' && sel.i === i)),
+      ...nicShow.map((i) => box('ni' + i, NIC_C, 'NIC', sel.kind === 'nic' && sel.i === i)),
+    ]));
+    if (sel.kind === 'npu') {
+      rows.push(row('die', 'L2', '计算 Die', [box('d0', '#2be0b0', 'Die'), box('d1', '#2be0b0', 'Die'), box('io0', '#8a9bc4', 'IO'), box('io1', '#8a9bc4', 'IO')]));
+      rows.push(row('core', 'L1·L0', 'AI Core', <span style={{ fontSize: 10, color: 'var(--tx3)' }}>≈32 AI Core（AIC Cube∶AIV Vector ≈ 8∶1）· L0 Tile/lane</span>));
+    }
+  }
+  const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
+  return (
+    <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: PANEL_W, background: 'var(--panel)', borderLeft: '1px solid var(--bd)', boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+        <span style={{ width: 10, height: 10, borderRadius: 3, background: SEL }} />
+        <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>选中链路 · 层级</span>
+        <span style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--tx2)', fontSize: 12, lineHeight: 1, padding: '3px 8px', border: '1px solid var(--bd)', borderRadius: 6 }} onClick={onClose}>✕</span>
+      </div>
+      <div style={{ fontSize: 11, color: SEL, fontWeight: 600, marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>与层级图同一层级/配色 · 仅显示选中(蓝圈)与关联对象</div>
+      <div style={{ overflowY: 'auto', flex: 1 }}>{rows}</div>
+      <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；CPU/NIC = 节点主机器件。点画布空白取消。</div>
+    </div>
+  );
+}
 
 export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const spec = GENERATIONS[gen];
@@ -342,7 +395,10 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const draw = useCallback(() => {
     const cv = canvasRef.current, wrap = wrapRef.current; if (!cv || !wrap) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = wrap.clientWidth, H = wrap.clientHeight;
+    // the hierarchy side-panel (器件互联 选中时) SQUEEZES the canvas: shrink its width so the diagram
+    // re-lays in the remaining space rather than hiding behind the panel.
+    const panelW = (layout === 'devices' && selDev && wrap.clientWidth > PANEL_W * 1.8) ? PANEL_W : 0;
+    const W = Math.max(40, wrap.clientWidth - panelW), H = wrap.clientHeight;
     if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
     if (!tf.current) { const f = fit(W, H); tf.current = layout === 'layers' ? { s: f, tx: AXIS_GUTTER - LAY.margin * f, ty: H * 0.04 } : { s: f, tx: (W - ext.tw * f) / 2, ty: (H - ext.th * f) / 2 }; }
     const { s, tx, ty } = tf.current;
@@ -1191,6 +1247,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           {tipInfo.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
+      {/* device-interconnect selection → right-side hierarchy panel (squeezes the canvas, see draw()) */}
+      {layout === 'devices' && selDev && <SelHierPanel sel={selDev} onClose={() => setSelDev(null)} />}
     </div>
   );
 }
