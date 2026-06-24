@@ -26,6 +26,7 @@ import {
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
+import { StatusView } from './StatusView';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -97,11 +98,13 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   trace:    { pos: [0, 3.2, 13.5], target: [0, 3.1, 0], worldH: 10.5 },
   fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18, iso: true },
   plane:    { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D overlay; 3-D camera unused
+  status:   { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D dashboard overlay; 3-D camera unused
 };
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'plane',    label: '平面视图' },
+  { id: 'status',   label: '运行状态' },
   { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'overview', label: '全景总览' },
   { id: 'rack',     label: '机柜视图' },
@@ -238,7 +241,18 @@ export function ClusterView() {
     mode === 'mapping' ? 'mapping' :
     mode === 'trace' ? 'trace' :
     mode === 'fullpod' || mode === 'plane' ? 'fullpod' : 'topology';
-  const info = INFO[infoKey];
+  // 运行状态 dashboard carries its own (status-first) panel copy
+  const STATUS_INFO = {
+    title: `运行状态总览 · ${TOK.supernode}（多镜头联动）`,
+    lines: [
+      '状态优先：红/黄/绿(+灰)=状态唯一一套色；结构/层级用图元与位置区分，不抢状态色。',
+      '层级状态轴=共用选区：集群→超节点→机柜→节点→rank，点一层 4 个镜头一起按该选区重新取粒度并染色。',
+      '聚合暴露离群：每层给 典型 p50 · 红区占比% · 峰 p95，专治 straggler 被均值掩盖。',
+      '四镜头：状态热力（下钻到全量热力）/ 机柜流量（rack×rack 通信矩阵）/ 通信域（TP/EP/DP 进程↔进程）/ 物理链路（UB/RDMA/VPC 器件链）。',
+      '可运行：回放推进工况(预训练/Prefill/Decode)+step，负载随之变化并注入机柜事件；计数、关系均由真实层级规模推导，非写死。',
+    ],
+  };
+  const info = mode === 'status' ? STATUS_INFO : INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
     const bc: { label: string; onClick?: () => void }[] = [
@@ -361,7 +375,7 @@ export function ClusterView() {
         <div style={{ flex: 1 }} />
         {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
-        {mode !== 'plane' && (
+        {mode !== 'plane' && mode !== 'status' && (
           <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
             {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
               <button
@@ -461,6 +475,9 @@ export function ClusterView() {
 
           {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
+
+          {/* 2-D runtime-state dashboard — KPI + hierarchy status-axis + multi-lens (overlays the 3-D canvas) */}
+          {mode === 'status' && <StatusView gen={gen} dark={dark} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}
@@ -786,7 +803,8 @@ export function ClusterView() {
             </div>
           )}
 
-          {/* legend: UB hierarchy levels (+ comm overlays in node view) */}
+          {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard, which carries its own legend */}
+          {mode !== 'status' && (
           <div style={{
             position: 'absolute', right: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
@@ -941,6 +959,7 @@ export function ClusterView() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* ── right info panel (floating overlay so it never compresses the canvas) ── */}
