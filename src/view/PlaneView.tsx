@@ -129,54 +129,76 @@ const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing:
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canvas numeric labels
 
-// 器件互联 选中 → 右侧层级面板：用与「层级图」完全一致的层级/配色，只画选中(蓝圈)+关联对象
-function SelHierPanel({ sel, onClose }: { sel: SelDev; onClose: () => void }) {
-  const NPU_C = ENTITY_COLORS.card, CPU_C = DEV_CPU, NIC_C = PLANES[2].color;
-  const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
-  const blade = sel.kind === 'l2' ? -1 : sel.blade;
-  const npuLocal = sel.kind === 'npu' ? sel.k % CPB : -1;
-  const RNG = (n: number) => Array.from({ length: n }, (_, i) => i);
-  const npuShow = (sel.kind === 'nic' || sel.kind === 'l2') ? [] : RNG(8);
-  const cpuShow = (sel.kind === 'npu' || sel.kind === 'l1') ? RNG(4) : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
-  const nicShow = sel.kind === 'l1' ? RNG(4) : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
-  const box = (key: string, c: string, label: string, on = false) => (
-    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 24, height: 19, padding: '0 5px', borderRadius: 5, background: c, color: inkOf(c), fontSize: 9, fontWeight: 700, outline: on ? `2px solid ${SEL}` : 'none', outlineOffset: 1, boxShadow: on ? `0 0 7px ${SEL}` : 'none' }}>{label}</span>
-  );
-  const row = (key: string, lvl: string, name: string, kids: React.ReactNode) => (
-    <div key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 0', borderTop: '1px dashed var(--bd)' }}>
-      <div style={{ width: 52, flexShrink: 0, textAlign: 'right', lineHeight: 1.25 }}>{lvl && <div style={{ fontSize: 10, fontWeight: 700, color: '#9fb6ff' }}>{lvl}</div>}<div style={{ fontSize: 10, color: 'var(--tx3)' }}>{name}</div></div>
-      <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', paddingTop: 1 }}>{kids}</div>
-    </div>
-  );
-  const rows: React.ReactNode[] = [
-    row('super', 'L5', '超节点', box('s', ENTITY_COLORS.super, TOK.supernode)),
-    row('cab', '', '机柜', box('c', ENTITY_COLORS.cab, `C${cab}`)),
-  ];
-  if (sel.kind === 'l2') rows.push(row('blades', 'L4', '刀片 ×8', RNG(8).map((i) => box('b' + i, ENTITY_COLORS.node, `B${cab * BPC + i}`))));
-  else {
-    rows.push(row('blade', 'L4', '节点/刀片', box('b', ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1')));
-    if (npuShow.length) rows.push(row('npu', 'L3', '卡/NPU', npuShow.map((i) => box('n' + i, NPU_C, `N${i + 1}`, i === npuLocal))));
-    if (cpuShow.length || nicShow.length) rows.push(row('host', '', '主机器件', [
-      ...cpuShow.map((i) => box('cp' + i, CPU_C, 'CPU', sel.kind === 'cpu' && sel.i === i)),
-      ...nicShow.map((i) => box('ni' + i, NIC_C, 'NIC', sel.kind === 'nic' && sel.i === i)),
-    ]));
-    if (sel.kind === 'npu') {
-      rows.push(row('die', 'L2', '计算 Die', [box('d0', '#2be0b0', 'Die'), box('d1', '#2be0b0', 'Die'), box('io0', '#8a9bc4', 'IO'), box('io1', '#8a9bc4', 'IO')]));
-      rows.push(row('core', 'L1·L0', 'AI Core', <span style={{ fontSize: 10, color: 'var(--tx3)' }}>≈32 AI Core（AIC Cube∶AIV Vector ≈ 8∶1）· L0 Tile/lane</span>));
+// 器件互联 选中 → 右侧「截取的层级图」面板：canvas 绘制，图元/配色与「层级图」统一，含 containment
+// 连线，下钻到 L1 AI Core / L0 Tile。仅显示选中(蓝圈)链路 + 关联对象。
+function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onClose: () => void }) {
+  const cref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = cref.current; if (!cv) return;
+    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 188 : 372;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const ink2 = dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+    const rr = (x: number, y: number, w: number, h: number, r: number) => { const rad = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + rad, y); ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad); ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath(); };
+    const lbl = (lvl: string, name: string, yc: number) => { ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; if (lvl) { ctx.fillStyle = '#9fb6ff'; ctx.font = '700 9.5px sans-serif'; ctx.fillText(lvl, 40, yc - 6); } ctx.fillStyle = ink2; ctx.font = '9.5px sans-serif'; ctx.fillText(name, 40, yc + (lvl ? 6 : 0)); };
+    const pill = (cx: number, cy: number, w: number, h: number, color: string, text: string, on: boolean) => { ctx.fillStyle = color; ctx.globalAlpha = 0.95; rr(cx - w / 2, cy - h / 2, w, h, h * 0.32); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = inkOf(color); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.min(10, h * 0.5)}px sans-serif`; ctx.fillText(text, cx, cy); if (on) { ctx.strokeStyle = SEL; ctx.lineWidth = 2; rr(cx - w / 2 - 2, cy - h / 2 - 2, w + 4, h + 4, h * 0.4); ctx.stroke(); } };
+    const card = (cx: number, cy: number, sz: number, on: boolean) => { const x = cx - sz / 2, y = cy - sz / 2; ctx.fillStyle = ENTITY_COLORS.card; ctx.globalAlpha = 0.95; rr(x, y, sz, sz, sz * 0.16); ctx.fill(); ctx.globalAlpha = 1; const p = sz * 0.1; ctx.fillStyle = 'rgba(9,13,20,0.6)'; rr(x + p, y + p, sz - p * 2, sz - p * 2, sz * 0.08); ctx.fill(); const ins = sz * 0.17, g = sz * 0.075, dw = (sz - ins * 2 - g) / 2, dh = dw, x0 = x + ins, x1 = x0 + dw + g, y0 = y + ins, y1 = y0 + dh + g; ctx.fillStyle = '#2be0b0'; rr(x0, y0, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.18); ctx.fill(); ctx.fillStyle = '#8a9bc4'; rr(x0, y1, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.18); ctx.fill(); if (on) { ctx.strokeStyle = SEL; ctx.lineWidth = 2.2; rr(x - 2, y - 2, sz + 4, sz + 4, sz * 0.2); ctx.stroke(); } };
+    const die = (cx: number, cy: number, w: number, h: number, compute: boolean) => { ctx.fillStyle = compute ? '#2be0b0' : '#8a9bc4'; ctx.globalAlpha = 0.92; rr(cx - w / 2, cy - h / 2, w, h, h * 0.18); ctx.fill(); ctx.globalAlpha = 1; if (compute) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { ctx.beginPath(); ctx.arc(cx - w / 2 + w * (0.2 + 0.2 * c), cy - h / 2 + h * (0.2 + 0.2 * r), Math.min(w, h) * 0.05, 0, 7); ctx.fill(); } } };
+    const conn = (x1: number, y1: number, x2: number, y2: number, strong: boolean) => { ctx.strokeStyle = strong ? SEL : (dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)'); ctx.lineWidth = strong ? 1.4 : 1; ctx.globalAlpha = strong ? 0.9 : 0.7; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; };
+    const cl = 46, cr = W - 6, cw = cr - cl, midX = cl + cw / 2;
+    const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
+    const blade = sel.kind === 'l2' ? -1 : sel.blade, npuLocal = sel.kind === 'npu' ? sel.k % CPB : -1;
+    const focusLocal = npuLocal >= 0 ? npuLocal : 0, focusK = blade >= 0 ? blade * CPB + focusLocal : 0;
+
+    // L5 超节点
+    let y = 18; lbl('L5', '超节点', y); pill(midX, y, Math.min(cw, 150), 18, ENTITY_COLORS.super, TOK.supernode, false); const ySuper = y;
+    // 机柜
+    y = 52; lbl('', '机柜', y); pill(midX, y, 78, 18, ENTITY_COLORS.cab, `C${cab}`, false); conn(midX, ySuper + 9, midX, y - 9, true); const yCab = y;
+
+    if (isL2) {
+      y = 92; lbl('L4', '刀片 ×8', y); const n = 8, bw = Math.min(34, (cw - (n - 1) * 5) / n), step = (cw - bw) / (n - 1);
+      for (let i = 0; i < n; i++) { const x = cl + bw / 2 + step * i; conn(midX, yCab + 9, x, y - 12, true); pill(x, y, bw, 22, ENTITY_COLORS.node, `B${cab * BPC + i}`, false); }
+      lbl('', '柜内全部刀片', y + 34);
+    } else {
+      // L4 节点/刀片
+      y = 92; lbl('L4', '节点/刀片', y); pill(midX, y, 90, 18, ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1'); conn(midX, yCab + 9, midX, y - 9, true); const yNode = y;
+      // L3 卡/NPU ×8
+      y = 138; lbl('L3', '卡/NPU', y); const csz = Math.min(28, (cw - 7 * 5) / 8), cstep = (cw - csz) / 7; const cardX: number[] = [];
+      for (let i = 0; i < 8; i++) { const x = cl + csz / 2 + cstep * i; cardX.push(x); const on = i === npuLocal; conn(midX, yNode + 9, x, y - csz / 2, on || sel.kind === 'l1'); card(x, y, csz, on); }
+      const yCards = y;
+      // 主机器件 CPU/NIC (related)
+      y = 178; lbl('', '主机器件', y);
+      const cpuShow = (sel.kind === 'npu' || sel.kind === 'l1') ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
+      const nicShow = sel.kind === 'l1' ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
+      const hostN = cpuShow.length + nicShow.length, hw = 30, hstep = hostN > 1 ? Math.min(46, cw / hostN) : 0, hx0 = midX - (hostN - 1) * hstep / 2;
+      cpuShow.forEach((i, j) => pill(hx0 + j * hstep, y, hw, 17, DEV_CPU, 'CPU', sel.kind === 'cpu' && sel.i === i));
+      nicShow.forEach((i, j) => pill(hx0 + (cpuShow.length + j) * hstep, y, hw, 17, PLANES[2].color, 'NIC', sel.kind === 'nic' && sel.i === i));
+      // L2 计算 Die (focus card) — 截取层级图下钻
+      y = 224; lbl('L2', `计算 Die · 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
+      for (let i = 0; i < 4; i++) { const x = cl + dieW / 2 + dstep * i; dieX.push(x); conn(cardX[focusLocal], yCards + csz / 2, x, y - 17, true); die(x, y, dieW, 30, i < 2); }
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8px sans-serif'; ctx.fillText('2 计算(UMA)', dieX[0] / 1 + (dieX[1] - dieX[0]) / 2, y + 20); ctx.fillText('2 IO', dieX[2] + (dieX[3] - dieX[2]) / 2, y + 20);
+      // L1 AI Core (≈32, Cube/Vector)
+      y = 286; lbl('L1', 'AI Core', y); const cols = 8, rows = 4, gw = (cw) / cols, gh = 9;
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube; const x = cl + c * gw + 1, yy = y - (rows * (gh + 2)) / 2 + r * (gh + 2); rr(x, yy, gw - 2, gh, 2); ctx.fill(); }
+      for (let i = 0; i < 2; i++) conn(dieX[i], y - 28 - (rows * (gh + 2)) / 2, midX, y - (rows * (gh + 2)) / 2 - 2, true);
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8.5px sans-serif'; ctx.fillText('≈32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, y + 26);
+      // L0 Tile
+      y = 348; lbl('L0', 'Tile', y); ctx.fillStyle = dark ? 'rgba(125,211,252,0.18)' : 'rgba(34,211,238,0.18)'; rr(cl, y - 7, cw, 14, 4); ctx.fill(); ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8.5px sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('L0 Tile / SIMT lane（核内最细粒度）', midX, y);
     }
-  }
-  const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
+  }, [sel, dark]);
+  const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
   return (
     <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: PANEL_W, background: 'var(--panel)', borderLeft: '1px solid var(--bd)', boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
         <span style={{ width: 10, height: 10, borderRadius: 3, background: SEL }} />
-        <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>选中链路 · 层级</span>
+        <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>选中链路 · 层级图（截取）</span>
         <span style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--tx2)', fontSize: 12, lineHeight: 1, padding: '3px 8px', border: '1px solid var(--bd)', borderRadius: 6 }} onClick={onClose}>✕</span>
       </div>
       <div style={{ fontSize: 11, color: SEL, fontWeight: 600, marginBottom: 2 }}>{title}</div>
-      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>与层级图同一层级/配色 · 仅显示选中(蓝圈)与关联对象</div>
-      <div style={{ overflowY: 'auto', flex: 1 }}>{rows}</div>
-      <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；CPU/NIC = 节点主机器件。点画布空白取消。</div>
+      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>与层级图同一图元/配色/连线 · 仅选中(蓝圈)+关联，下钻到 L1/L0</div>
+      <div style={{ overflowY: 'auto', flex: 1 }}><canvas ref={cref} style={{ width: '100%', display: 'block' }} /></div>
+      <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；卡=device(4 Die)；下钻 AI Core(L1)/Tile(L0)。点画布空白取消。</div>
     </div>
   );
 }
@@ -678,7 +700,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       if (showDev) for (let cab = 0; cab < L.nC; cab++) {
         const [cx0, cy0] = cabXY(cab); if (cx0 + L.cw < vx0 || cx0 > vx1 || cy0 + L.ch < vy0 || cy0 > vy1) continue;
         const l2x = cx0 + L.cw / 2, l2y = cy0 + L.cpad * 0.42, l2On = aL2(cab);
-        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); edge([bx + L.bw / 2, by + L.bh - L.bpad * 0.45], [l2x, l2y], 'ub', cab * 97 + bl, cab * 31 + 3, cuComm ? 0.2 : -0.12, 1.0, ea(0.6, aL1(blade) && l2On)); }
+        for (let bl = 0; bl < BPC; bl++) { const blade = cab * BPC + bl; if (blade >= L.nB) break; const [bx, by] = bladeXY(cab, bl); edge([bx + L.bw / 2, by + L.bh - L.bpad * 0.45], [l2x, l2y], 'ub', cab * 97 + bl, cab * 31 + 3, cuComm ? 0.2 : -0.12, sel?.kind === 'l2' ? 0.9 : 0.65, ea(0.55, aL1(blade) && l2On)); }
         dg(l2On, 'switch', l2x, l2y, L.cw * 0.15, L.cpad * 0.66, heatFill(PLANES[0].color, cab * 911 + 13));
         if (sel?.kind === 'l2' && sel.cab === cab) ring(l2x, l2y, L.cw * 0.15, L.cpad * 0.66);
       }
@@ -691,10 +713,15 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         const l1x = bx + L.bw / 2, l1y = by + L.bh - L.bpad * 0.45, l1On = aL1(b), bOn = aNpu(b);
         const cen: [number, number][] = [], kk: number[] = [];
         for (let l = 0; l < CPB; l++) { const k = b * CPB + l; if (k >= L.N1) break; const [cx2, cy2] = cardXY(k); cen.push([cx2 + L.cs / 2, cy2 + L.cs / 2]); kk.push(k); }
-        // intra-board NPU full-mesh — DIRECT NPU↔NPU UB links (no switch in between)
-        if (showMesh) for (let i = 0; i < cen.length; i++) for (let j = i + 1; j < cen.length; j++) edge(cen[i], cen[j], 'ub', b * 131 + i * 7 + 11, b * 131 + j * 7 + 12, cuComm ? 0.18 : -0.06, 0.7, ea(0.42, bOn));
-        // board UB egress → L1 路由 (2 representative uplink ports) → up to L2(rack/pod Clos)
-        if (showHub && cen.length) { edge(cen[0], [l1x, l1y], 'ub', b * 131 + 3, b * 131 + 1, -0.05, 0.8, ea(0.6, bOn && l1On)); edge(cen[cen.length - 1], [l1x, l1y], 'ub', b * 131 + 4, b * 131 + 1, -0.05, 0.8, ea(0.6, bOn && l1On)); }
+        // intra-board NPU full-mesh — the DIRECT NPU↔NPU UB links (primary/strong); edges incident
+        // to the selected NPU are boldest. Uplinks to L1 are SECONDARY (thin).
+        if (showMesh) for (let i = 0; i < cen.length; i++) for (let j = i + 1; j < cen.length; j++) {
+          const inc = sel?.kind === 'npu' && (kk[i] === sel.k || kk[j] === sel.k);
+          const w = !sel ? 1.0 : bOn ? (inc ? 2.3 : 1.5) : 0.9, a = !sel ? 0.5 : bOn ? (inc ? 1 : 0.92) : DIM_DEV;
+          edge(cen[i], cen[j], 'ub', b * 131 + i * 7 + 11, b * 131 + j * 7 + 12, cuComm ? 0.18 : -0.06, w, a);
+        }
+        // board UB egress → L1 路由 (SECONDARY · 次要：上联出口，细线)
+        if (showHub && cen.length) { edge(cen[0], [l1x, l1y], 'ub', b * 131 + 3, b * 131 + 1, -0.05, 0.55, ea(0.5, bOn && l1On)); edge(cen[cen.length - 1], [l1x, l1y], 'ub', b * 131 + 4, b * 131 + 1, -0.05, 0.55, ea(0.5, bOn && l1On)); }
         for (let l = 0; l < cen.length; l++) {
           const k = kk[l], [cx2, cy2] = cardXY(k);
           if (showCard) npuGlyph(cx2, cy2, L.cs, heatFill(ENTITY_COLORS.card, k), bOn ? 1 : DIM_DEV);
@@ -704,8 +731,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         if (showHub) { dg(l1On, 'switch', l1x, l1y, L.bw * 0.28, L.bpad * 0.76, heatFill(PLANES[0].color, b * 131)); if (sel?.kind === 'l1' && sel.blade === b) ring(l1x, l1y, L.bw * 0.28, L.bpad * 0.76); }
         if (showDev) {   // 4 CPU (UB peer → L1) + 4 NIC (VPC → CPU) in the blade bottom margin
           const dy = by + L.bh - L.bpad * 0.5;
-          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCpu(b, i); edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, 0.7, ea(0.65, on && l1On)); dg(on, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); if (sel?.kind === 'cpu' && sel.blade === b && sel.i === i) ring(cpx, dy, L.cs * 0.3, L.bpad * 0.62); }
-          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i), on = aNic(b, i); edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, 0.6, ea(0.65, on)); dg(on, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); if (sel?.kind === 'nic' && sel.blade === b && sel.i === i) ring(nxp, dy, L.cs * 0.27, L.bpad * 0.54); }
+          for (let i = 0; i < 4; i++) { const cpx = bx + L.bw * (0.07 + 0.075 * i), on = aCpu(b, i), prim = sel?.kind === 'cpu' && sel.blade === b && sel.i === i; edge([cpx, dy], [l1x, l1y], 'ub', 400 + i, b * 131 + 2, -0.08, prim ? 1.8 : 0.6, ea(prim ? 0.95 : 0.55, on && l1On)); dg(on, 'cpu', cpx, dy, L.cs * 0.3, L.bpad * 0.62, heatFill(DEV_CPU, b * 40 + i + 9)); if (prim) ring(cpx, dy, L.cs * 0.3, L.bpad * 0.62); }
+          for (let i = 0; i < 4; i++) { const nxp = bx + L.bw * (0.67 + 0.075 * i), cpx = bx + L.bw * (0.07 + 0.075 * i), on = aNic(b, i), prim = (sel?.kind === 'nic' || sel?.kind === 'cpu') && sel.blade === b && sel.i === i; edge([nxp, dy], [cpx, dy], 'vpc', 500 + i, 600 + i, -0.2, prim ? 1.6 : 0.55, ea(prim ? 0.95 : 0.55, on)); dg(on, 'nic', nxp, dy, L.cs * 0.27, L.bpad * 0.54, heatFill(PLANES[2].color, b * 50 + i + 9)); if (sel?.kind === 'nic' && sel.blade === b && sel.i === i) ring(nxp, dy, L.cs * 0.27, L.bpad * 0.54); }
         }
       }
 
@@ -966,6 +993,35 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ctx.restore();
     phaseBanner();   // live phase banner (screen-space) — names the current run phase driving the card colour
   }, [L, colorBy, links, fit, cabXY, bladeXY, cardXY, groupOf, dark, playing, runMode, scenario, layout, selL, selTop, selDev, swOpen, P.bg]);
+
+  // smooth zoom-to-focus a world rect (selection → focus the selected blade/cabinet in the squeezed canvas)
+  const focusRaf = useRef<number | null>(null);
+  const focusRect = useCallback((wx0: number, wy0: number, wx1: number, wy1: number, pad = 0.24) => {
+    const wrap = wrapRef.current; if (!wrap) return;
+    const panelW = (layout === 'devices' && wrap.clientWidth > PANEL_W * 1.8) ? PANEL_W : 0;
+    const W = Math.max(40, wrap.clientWidth - panelW), H = wrap.clientHeight, fb = fit(W, H);
+    const rw = Math.max(0.001, wx1 - wx0), rh = Math.max(0.001, wy1 - wy0);
+    const s = Math.max(fb * 0.5, Math.min(Math.min(W / (rw * (1 + pad * 2)), H / (rh * (1 + pad * 2))), fb * 400));
+    const cx = (wx0 + wx1) / 2, cy = (wy0 + wy1) / 2, target = { s, tx: W / 2 - cx * s, ty: H / 2 - cy * s };
+    if (!tf.current) { tf.current = target; draw(); return; }
+    const start = { ...tf.current }, t0 = performance.now(), dur = 340;
+    if (focusRaf.current) cancelAnimationFrame(focusRaf.current);
+    const step = (now: number) => {
+      const u = Math.min(1, (now - t0) / dur), e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+      tf.current = { s: start.s + (target.s - start.s) * e, tx: start.tx + (target.tx - start.tx) * e, ty: start.ty + (target.ty - start.ty) * e };
+      draw();
+      if (u < 1) focusRaf.current = requestAnimationFrame(step); else focusRaf.current = null;
+    };
+    focusRaf.current = requestAnimationFrame(step);
+  }, [layout, fit, draw]);
+  // selection → auto zoom-focus the selected blade (or cabinet for L2)
+  useEffect(() => {
+    if (layout !== 'devices' || !selDev) return;
+    const sel = selDev;
+    if (sel.kind === 'l2') { const [cx0, cy0] = cabXY(sel.cab); focusRect(cx0, cy0, cx0 + L.cw, cy0 + L.ch); }
+    else { const cab = Math.floor(sel.blade / BPC), [bx, by] = bladeXY(cab, sel.blade % BPC); focusRect(bx, by, bx + L.bw, by + L.bh); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selDev, layout]);
 
   // re-fit when the layout (top ↔ layers) changes, then redraw
   useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setSelDev(null); }, [layout]);
@@ -1248,7 +1304,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
       )}
       {/* device-interconnect selection → right-side hierarchy panel (squeezes the canvas, see draw()) */}
-      {layout === 'devices' && selDev && <SelHierPanel sel={selDev} onClose={() => setSelDev(null)} />}
+      {layout === 'devices' && selDev && <SelHierPanel sel={selDev} dark={dark} onClose={() => setSelDev(null)} />}
     </div>
   );
 }
