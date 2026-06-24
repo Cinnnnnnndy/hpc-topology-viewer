@@ -894,14 +894,14 @@ export function ClusterView() {
             {mode === 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
-                {/* hierarchy colour UNIFIED with 平面视图 层级图 (卡=teal/Die=teal/Cube=cyan/刀片=sky/机柜=purple/超节点=amber) · 高饱和载色专表状态 */}
+                {/* hierarchy colour UNIFIED with 平面视图 层级图 (卡=teal/Die=teal/Cube=cyan/刀片=sky/机柜=purple/超节点=rose) · 高饱和载色专表状态 */}
                 <span style={lgNote}>层级配色与「层级图」统一（图元形状再区分层级）：</span>
                 <LgRow shape="dot" color={ENTITY_COLORS.cube} label="L1 AI Core（Cube 青 / Vector 浅青·≈32/卡）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L2 计算 Die（teal·×2/卡）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.card} label="L3 卡 / device（teal）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.node} label="L4 节点 / 刀片（sky）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.cab} label="机柜（purple）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L5 ${TOK.supernode}（amber）`} />
+                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L5 ${TOK.supernode}（玫紫 rose）`} />
                 {/* state — discrete 4-bucket load (one state = one colour) */}
                 <div style={lgHdr}>状态 / 负载（红黄绿+灰=状态唯一一套色 · 层级色=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>

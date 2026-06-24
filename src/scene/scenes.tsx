@@ -1819,7 +1819,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
   const podOf = (k: number) => Math.floor(k / G.N1);
   const useChip = G.N <= FP_CHIP_CAP;   // textured NpuChip per card at small counts; else instanced
-  const cardW = 0.34, cardH = 0.075;
+  const cardW = 0.34, cardH = 0.15;   // chip-like thickness (贴近 64p NpuChip 比例)，非扁平贴片
 
   // model-parallel decomposition mapped onto the physical hierarchy (TP=blade, PP/DP=replicas, EP=cabinet)
   const part = useMemo(() => {
@@ -2157,14 +2157,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`刀片 B${e.instanceId}（L4 节点 · 一块板载 ${FP_CARDS_PER_BLADE}×NPU 的板） · 单击高亮板载卡↔卡 mesh + 上下游`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(1, e.instanceId); }}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.55} toneMapped={false} />
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={cabInst} args={[undefined, undefined, Math.max(1, G.nCabs)]}
         onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
         onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`机柜 C${e.instanceId}（机器域 · 机柜并入 Pod·无独立 L 级） · 单击高亮柜内节点↔节点 mesh + 上下游`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(2, e.instanceId); }}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.55} toneMapped={false} />
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       {/* L3 super-node + L4 cluster markers */}
       {G.superMX.map((sx, p) => {
@@ -2194,9 +2194,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
                 state boxes share the SAME flat material as the L1/L2 markers (toneMapped off · no emissive)
                 so the busy red reads as ONE colour everywhere; a dark edge restores card-to-card definition. */}
             {lc
-              ? <Slab size={[0.34, 0.13, 0.34]} color={lc} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
+              ? <Slab size={[0.34, 0.13, 0.34]} color={lc} toneMapped={false} metalness={0} roughness={0.5} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
               : heat
-                ? <Slab size={[0.34, 0.1, 0.34]} color={ENTITY_COLORS.card} toneMapped={false} metalness={0.3} roughness={0.55} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
+                ? <Slab size={[0.34, 0.1, 0.34]} color={ENTITY_COLORS.card} toneMapped={false} metalness={0} roughness={0.5} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
                 : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })
@@ -2207,7 +2207,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(0, e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
             <boxGeometry args={[1, 1, 1]} />
-            <meshStandardMaterial map={chipTex ?? undefined} color="#ffffff" metalness={0.45} roughness={0.4} toneMapped={false} />
+            <meshStandardMaterial map={chipTex ?? undefined} color="#ffffff" metalness={0} roughness={0.42} toneMapped={false} />
           </instancedMesh>
         )}
 
@@ -2239,13 +2239,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* L2 计算 Die (2 / card, UMA) + L1 AI Core (Cube/Vector boxes) + L0 Tile (lane bars) —
           instanced, glyph + colour unified with the 平面视图 (2 teal dies; Cube/Vector; L0 lanes). */}
       <instancedMesh ref={procRef} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.3} roughness={0.5} toneMapped={false} />
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={thrRef} args={[undefined, undefined, Math.max(1, G.N * FP_THREADS)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={tileRef} args={[undefined, undefined, Math.max(1, G.N * FP_TILES)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0.2} roughness={0.5} toneMapped={false} />
+        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
 
       {/* collectives: hierarchical marker-level flows (scale-independent) + rank-level (small N).

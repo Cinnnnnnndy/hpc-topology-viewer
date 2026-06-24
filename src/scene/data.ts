@@ -86,7 +86,7 @@ export const UB_LEVELS: UbLevel[] = [
   { id: 'L0', color: '#2dd4bf', label: '片内 die',                  detail: '封装内 die 间 UB / SIO 直连' },
   { id: 'L1', color: '#38bdf8', label: '节点内',                    detail: '板载 UB 2D-Mesh，NPU 直连' },
   { id: 'L2', color: '#a78bfa', label: `机柜内 ${TOK.fullmesh}`,    detail: `跨节点 ${TOK.fullmesh} 总线级直连` },
-  { id: 'L3', color: '#ffaa3b', label: `${TOK.supernode} Clos`,     detail: `经 UB 交换(通信柜) Clos 全互联` },
+  { id: 'L3', color: '#fb5b9a', label: `${TOK.supernode} Clos`,     detail: `经 UB 交换(通信柜) Clos 全互联` },
   { id: 'L4', color: '#04d793', label: `${TOK.supernode}间`,        detail: `${TOK.supercluster} scale-out（全光）` },
 ];
 
@@ -254,7 +254,7 @@ export const PARALLEL_COLORS: Record<PartitionDim, string> = {
 // Hardware accent = teal (the die/device domain); software accent = indigo (rank).
 // The two are deliberately different hues so hardware and software never blur.
 export const ENTITY_COLORS = {
-  super:      UB_LEVELS[3].color,      // 超节点 — amber
+  super:      UB_LEVELS[3].color,      // 超节点 — rose（避开状态黄）
   cab:        UB_LEVELS[2].color,      // 机柜 — purple
   node:       UB_LEVELS[1].color,      // 节点 / 刀片 — sky blue
   card:       UB_LEVELS[0].color,      // 卡 / NPU device — teal (compute-die domain)
