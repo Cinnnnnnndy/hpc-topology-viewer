@@ -1843,7 +1843,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   useLayoutEffect(() => {
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const nm = cardInst.current;
-    if (nm && !useChip) { col.set(chipTex ? '#ffffff' : LC.npuTop); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
+    if (nm && !useChip) { col.set(chipTex ? '#ffffff' : ENTITY_COLORS.card); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
     const pm = procRef.current;   // L2 计算 Die markers (teal) — 2 per card (UMA-merged → 1 device), like the 平面视图
     if (pm) { col.set(ENTITY_COLORS.computeDie); for (let k = 0; k < G.N; k++) for (let d = 0; d < 2; d++) { const idx = k * 2 + d; m.makeScale(0.13, 0.09, 0.17); m.setPosition(G.cardX[k] + (d - 0.5) * 0.16, G.yProc, G.cardZ[k]); pm.setMatrixAt(idx, m); pm.setColorAt(idx, col); } pm.count = G.N * 2; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     const tm = thrRef.current;   // L1 AI Core grid (≈32/卡 representative) — mostly Cube(cyan) + a few Vector(light cyan), Cube∶Vector ≈ 8∶1
@@ -1852,10 +1852,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const lm = tileRef.current;   // L0 Tile / SIMT lane (finest) — thin light-cyan bars under each card, like the 平面视图 L0 lane glyph
     if (lm) { col.set(ENTITY_COLORS.vector); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_TILES; t++) { const idx = k * FP_TILES + t; m.makeScale(0.02, 0.05, 0.012); m.setPosition(G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]); lm.setMatrixAt(idx, m); lm.setColorAt(idx, col); } lm.count = G.N * FP_TILES; lm.instanceMatrix.needsUpdate = true; if (lm.instanceColor) lm.instanceColor.needsUpdate = true; }
     const bm = bladeInst.current;   // L4 节点/刀片 = a wide thin board (4×2 NPU footprint), echoing the 平面视图 blade glyph
-    if (bm) { col.set(LC.bladeBase); for (let b = 0; b < G.nBlades; b++) { m.makeScale(0.92, 0.04, 0.46); m.setPosition(G.bladeMX[b], G.yBlade, G.bladeMZ[b]); bm.setMatrixAt(b, m); bm.setColorAt(b, col); } bm.count = G.nBlades; bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
+    if (bm) { col.set(ENTITY_COLORS.node); for (let b = 0; b < G.nBlades; b++) { m.makeScale(0.92, 0.04, 0.46); m.setPosition(G.bladeMX[b], G.yBlade, G.bladeMZ[b]); bm.setMatrixAt(b, m); bm.setColorAt(b, col); } bm.count = G.nBlades; bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
     const cm = cabInst.current;   // 机柜 = an UPRIGHT cabinet box (taller than wide, a rack — not a flat board) — distinct from the blade
     const cabH = Math.min(0.62, (G.yProc - G.yThread) * 0.7);
-    if (cm) { col.set(LC.cabBase); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
+    if (cm) { col.set(ENTITY_COLORS.cab); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
   }, [G, useChip, chipTex]);
 
   // physical-device objects (shown with the 三平面 toggle): NPU UB/RDMA ports on each card,
@@ -1887,14 +1887,16 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // colour. Hierarchy/type stays a FAINT muted hue (shapes carry the level). Partition is an
   // opt-in cognition lens. Heatmap is live while a run phase is active (or the 观测 toggle is on).
   useLayoutEffect(() => {
-    const col = new THREE.Color(), procBase = new THREE.Color(mute(ENTITY_COLORS.computeDie)), cubeBase = new THREE.Color(mute(ENTITY_COLORS.cube)), vecBase = new THREE.Color(mute(ENTITY_COLORS.vector)), hl = new THREE.Color('#4369ef');
-    const cardBase = chipTex ? '#ffffff' : LC.npuTop;
+    // hierarchy hue UNIFIED with the 层级图 (card=teal · die=teal · Cube=cyan · Vector=light-cyan ·
+    // 刀片=sky · 机柜=purple) — NOT the old blue-grey LC palette. State(load) still pops via loadColor.
+    const col = new THREE.Color(), procBase = new THREE.Color(ENTITY_COLORS.computeDie), cubeBase = new THREE.Color(ENTITY_COLORS.cube), vecBase = new THREE.Color(ENTITY_COLORS.vector), hl = new THREE.Color('#4369ef');
+    const cardBase = chipTex ? '#ffffff' : ENTITY_COLORS.card;
     const pm = procRef.current, tm = thrRef.current, lm = tileRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
-    const tileBase = new THREE.Color(mute(ENTITY_COLORS.vector));
+    const tileBase = new THREE.Color(ENTITY_COLORS.vector);
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
     const sk = phase?.kind ?? null, heat = status || sk != null;   // observation heatmap active
-    const cardBaseCol = new THREE.Color(cardBase), bladeBaseCol = new THREE.Color(LC.bladeBase), cabBaseCol = new THREE.Color(LC.cabBase);
+    const cardBaseCol = new THREE.Color(cardBase), bladeBaseCol = new THREE.Color(ENTITY_COLORS.node), cabBaseCol = new THREE.Color(ENTITY_COLORS.cab);
     // observation: colour a node ONLY when 高/满 (isHot) so most stay neutral — the FEW hotspots pop;
     // lines carry the rest of the load story. else → faint muted base.
     const heatNode = (id: number, base: THREE.Color) => { const ld = nodeLoad(id, sk ?? undefined); if (isHot(ld)) col.set(loadColor(ld)); else col.copy(base); };
@@ -1902,8 +1904,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
     if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (heat) heatNode(i + 7, tileBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
     if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (heat) heatNode(k, cardBaseCol); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(LC.bladeBase); bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(LC.cabBase); cm.setColorAt(c, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(ENTITY_COLORS.node); bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(ENTITY_COLORS.cab); cm.setColorAt(c, col); }
     // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
     if (sel) {
       const cardsH: number[] = [], bladesH: number[] = [], cabsH: number[] = [];
@@ -1930,7 +1932,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const hoverCard = (k: number | null) => {
     const nm = cardInst.current; if (!nm || useChip) return;
     const m = new THREE.Matrix4(), col = new THREE.Color(), prev = lastHov.current;
-    const put = (i: number, on: boolean) => { m.makeScale(on ? cardW * 1.5 : cardW, on ? cardH * 1.8 : cardH, on ? cardW * 1.5 : cardW); m.setPosition(G.cardX[i], G.yCard, G.cardZ[i]); nm.setMatrixAt(i, m); nm.setColorAt(i, col.set(on ? '#bdf0cf' : chipTex ? '#ffffff' : LC.npuTop)); };
+    const put = (i: number, on: boolean) => { m.makeScale(on ? cardW * 1.5 : cardW, on ? cardH * 1.8 : cardH, on ? cardW * 1.5 : cardW); m.setPosition(G.cardX[i], G.yCard, G.cardZ[i]); nm.setMatrixAt(i, m); nm.setColorAt(i, col.set(on ? '#bdf0cf' : chipTex ? '#ffffff' : ENTITY_COLORS.card)); };
     if (prev >= 0 && prev !== k && prev < G.N) put(prev, false);
     if (k !== null) put(k, true);
     lastHov.current = k ?? -1;
@@ -2028,11 +2030,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
   // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
   // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
-  // hierarchy band hue = FAINT muted (shapes carry the level; high-sat colour reserved for state)
+  // hierarchy band hue UNIFIED with the 平面视图 层级图 (full ENTITY_COLORS hue per level — same as
+  // the 3D blocks/markers now); high-sat load colour still reserved for state.
   const bands: [number, number, string, string][] = [
-    [7, G.yTile, 'L0 Tile/lane', mute(ENTITY_COLORS.vector)],
-    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', mute(THREAD_COLOR)], [1, G.yProc, 'L2 计算 Die ×2', mute(ENTITY_COLORS.computeDie)], [2, G.yCard, 'L3 卡=device', mute(L(0))],
-    [3, G.yBlade, 'L4 节点', mute(L(1))], [4, G.yCab, '机柜', mute(L(2))], [5, G.ySuper, `L5 ${TOK.supernode}`, mute(L(3))], [6, G.yCluster, 'L6 超节点间', mute(L(4))],
+    [7, G.yTile, 'L0 Tile/lane', ENTITY_COLORS.vector],
+    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die ×2', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
+    [3, G.yBlade, 'L4 节点', L(1)], [4, G.yCab, '机柜', L(2)], [5, G.ySuper, `L5 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L6 超节点间', L(4)],
   ];
   // UB L0–L7 软硬件同一坐标 per band — scope domain (L 号在带名里)
   const bandCoord: Record<number, string> = {
