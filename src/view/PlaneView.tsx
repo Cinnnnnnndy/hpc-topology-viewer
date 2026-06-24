@@ -133,9 +133,16 @@ const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canva
 // 连线，下钻到 L1 AI Core / L0 Tile。仅显示选中(蓝圈)链路 + 关联对象。
 function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onClose: () => void }) {
   const cref = useRef<HTMLCanvasElement>(null);
+  const [avail, setAvail] = useState(440);   // host (scroll area) height → L1/L0 fill the rest
+  useEffect(() => {
+    const cv = cref.current, host = cv?.parentElement; if (!host) return;
+    const ro = new ResizeObserver(() => setAvail(host.clientHeight));
+    ro.observe(host); setAvail(host.clientHeight);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     const cv = cref.current; if (!cv) return;
-    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 188 : 372;
+    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : Math.max(392, avail - 2);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -178,15 +185,22 @@ function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onCl
       y = 224; lbl('L2', `计算 Die · 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
       for (let i = 0; i < 4; i++) { const x = cl + dieW / 2 + dstep * i; dieX.push(x); conn(cardX[focusLocal], yCards + csz / 2, x, y - 17, true); die(x, y, dieW, 30, i < 2); }
       ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8px sans-serif'; ctx.fillText('2 计算(UMA)', dieX[0] / 1 + (dieX[1] - dieX[0]) / 2, y + 20); ctx.fillText('2 IO', dieX[2] + (dieX[3] - dieX[2]) / 2, y + 20);
-      // L1 AI Core (≈32, Cube/Vector)
-      y = 286; lbl('L1', 'AI Core', y); const cols = 8, rows = 4, gw = (cw) / cols, gh = 9;
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube; const x = cl + c * gw + 1, yy = y - (rows * (gh + 2)) / 2 + r * (gh + 2); rr(x, yy, gw - 2, gh, 2); ctx.fill(); }
-      for (let i = 0; i < 2; i++) conn(dieX[i], y - 28 - (rows * (gh + 2)) / 2, midX, y - (rows * (gh + 2)) / 2 - 2, true);
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8.5px sans-serif'; ctx.fillText('≈32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, y + 26);
-      // L0 Tile
-      y = 348; lbl('L0', 'Tile', y); ctx.fillStyle = dark ? 'rgba(125,211,252,0.18)' : 'rgba(34,211,238,0.18)'; rr(cl, y - 7, cw, 14, 4); ctx.fill(); ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8.5px sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('L0 Tile / SIMT lane（核内最细粒度）', midX, y);
+      // ── lower region fills the remaining panel height: L1 AI Core grid (big) + L0 Tile strip ──
+      const dieBot = 224 + 15;
+      const l0H = 16, yL0 = H - 12 - l0H / 2;              // L0 strip near the very bottom
+      const l1lblY = 272, gridTop = l1lblY + 12, gridBot = yL0 - l0H / 2 - 26;
+      // L1 AI Core (32/卡 = 8×4, Cube/Vector) — cells stretch to fill the height
+      lbl('L1', 'AI Core', l1lblY);
+      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, gridTop - 4, true);
+      const cols = 8, rows = 4, gv = 3, gw = cw / cols, gh = Math.max(9, (gridBot - gridTop - (rows - 1) * gv) / rows);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube; const x = cl + c * gw + 1, yy = gridTop + r * (gh + gv); rr(x, yy, gw - 2, gh, 2.5); ctx.fill(); }
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, gridBot + 11);
+      // L0 Tile / SIMT lane
+      lbl('L0', 'Tile', yL0); conn(midX, gridBot + 2, midX, yL0 - l0H / 2 - 2, true);
+      ctx.fillStyle = dark ? 'rgba(125,211,252,0.20)' : 'rgba(34,211,238,0.20)'; rr(cl, yL0 - l0H / 2, cw, l0H, 4); ctx.fill();
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, yL0);
     }
-  }, [sel, dark]);
+  }, [sel, dark, avail]);
   const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
   return (
     <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: PANEL_W, background: 'var(--panel)', borderLeft: '1px solid var(--bd)', boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
@@ -1014,12 +1028,13 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     };
     focusRaf.current = requestAnimationFrame(step);
   }, [layout, fit, draw]);
-  // selection → auto zoom-focus the selected blade (or cabinet for L2)
+  // selection → auto zoom-focus the cabinet that contains the selection (not the single blade)
   useEffect(() => {
     if (layout !== 'devices' || !selDev) return;
     const sel = selDev;
-    if (sel.kind === 'l2') { const [cx0, cy0] = cabXY(sel.cab); focusRect(cx0, cy0, cx0 + L.cw, cy0 + L.ch); }
-    else { const cab = Math.floor(sel.blade / BPC), [bx, by] = bladeXY(cab, sel.blade % BPC); focusRect(bx, by, bx + L.bw, by + L.bh); }
+    const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
+    const [cx0, cy0] = cabXY(cab), m = L.cw * 0.16;
+    focusRect(cx0 - m, cy0 - m, cx0 + L.cw + m, cy0 + L.ch + m, 0.05);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selDev, layout]);
 
