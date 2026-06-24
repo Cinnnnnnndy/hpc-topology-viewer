@@ -2,25 +2,28 @@
  * StatusView — 运行状态总览 (runtime-state / observability dashboard).
  *
  * A status-FIRST lens on the same super-node the rest of the app models: it answers
- * the operations journey "现在好不好 → 慢在哪一层 → 哪张卡/哪段通信 → 哪个时刻", per the
- * design analysis. The layout enlarges the MAIN lens canvas as the dominant body, with
- * a compact KPI strip + a clickable hierarchy status-axis above it (the shared selection),
- * and a detail rail to the right.
+ * the operations journey "现在好不好 → 慢在哪一层 → 哪张卡/哪段通信 → 哪个时刻". The MAIN
+ * lens canvas is the dominant body; a compact KPI strip + a clickable hierarchy
+ * status-axis above it are the shared selection; a detail rail on the right shows the
+ * selected entity + its communication ASSOCIATIONS (mirrors 平面视图's relationship view).
  *
  * Four lenses share ONE selection (breadcrumb + hierarchy axis): 状态热力 / 机柜流量 /
- * 通信域 / 物理链路. Pick a level → every lens re-scopes its granularity AND its colouring.
+ * 通信域 / 物理链路. The hierarchy drills the FULL chain — like 平面视图's 层级图 — all the
+ * way below the card: 集群→超节点→机柜→节点→卡(rank)→计算Die→AI Core→Tile.
  *
- * NOTHING is hard-coded: counts come from the generation spec (cabinets = NPU/64, nodes = …),
- * per-card load reuses the SAME `nodeLoad` field the 阵列全景 / 平面视图 playback uses (so the
- * heatmap is consistent across views), and the comm lenses are derived from the real parallel
- * decomposition (PARTITION_META) + planes (PLANES) + run schedule (RUN_SCHED). Replay (step)
- * perturbs the field live and injects a localized cabinet event, so it actually "runs".
+ * NOTHING is hard-coded: counts come from the generation spec (cabinets = NPU/64, nodes,
+ * dies = 2/卡, cores = 32/卡 …), per-card load reuses the SAME `nodeLoad` field the 阵列全景
+ * / 平面视图 playback uses, and the comm lenses are derived from the real parallel
+ * decomposition (PARTITION_META) + planes (PLANES). Every element (node / link / die /
+ * core / plane) is coloured by its OWN load and the replay `step` perturbs the whole field
+ * live + injects a localized cabinet event, so the physical & comm lenses actually animate.
  *
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, PLANES, PARTITION_META,
+  GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
+  PLANES, PARTITION_META, ENTITY_COLORS,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
   type Gen,
 } from '../scene/data';
@@ -47,20 +50,21 @@ const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 type Phase = 'pretrain' | 'prefill' | 'decode';
 type Metric = 'util' | 'strag' | 'fault';
 type Lens = 'heat' | 'flow' | 'domain' | 'phys';
-type Level = 'cluster' | 'super' | 'cab' | 'node' | 'rank';
+// full hierarchy chain, incl. below-card levels (mirrors 平面视图 层级图)
+type Level = 'cluster' | 'super' | 'cab' | 'node' | 'rank' | 'die' | 'core' | 'tile';
+const SUBCARD: Level[] = ['die', 'core', 'tile'];
 
-// 工况 → 基准负载 + 驱动的 phaseKind(复用 nodeLoad 的相位语义) + 平面/通信侧重
-const PH: Record<Phase, { label: string; base: number; kind: string; hot: 'ub' | 'rdma' }> = {
-  pretrain: { label: '预训练', base: 0.55, kind: 'compute', hot: 'ub' },
-  prefill: { label: 'Prefill', base: 0.50, kind: 'compute', hot: 'ub' },
-  decode: { label: 'Decode', base: 0.62, kind: 'comm', hot: 'ub' },
+// 工况 → 基准负载 + 驱动的 phaseKind(复用 nodeLoad 的相位语义)
+const PH: Record<Phase, { label: string; base: number; kind: string }> = {
+  pretrain: { label: '预训练', base: 0.55, kind: 'compute' },
+  prefill: { label: 'Prefill', base: 0.50, kind: 'compute' },
+  decode: { label: 'Decode', base: 0.62, kind: 'comm' },
 };
 const NIC_LBL = TOK.qingtian.split(' ')[0];   // 擎天 — brand via TOK (no plaintext brand in source)
 const STEP_MAX = 60;
 const EVT_LO = 34, EVT_HI = 46;   // 回放事件窗口：某机柜过热（演示局部故障/拥塞的时间定位）
+const TILES_VIEW = 48;            // L0 tile/lane 聚合观测的示意格数
 
-// deterministic noise (same shape as the reference low-fi, but only used to ANIMATE/spread —
-// the field itself is anchored to the project-wide nodeLoad)
 const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return v - Math.floor(v); };
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -84,15 +88,13 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [selSpod, setSelSpod] = useState(0);
   const [selCab, setSelCab] = useState(0);
   const [selNode, setSelNode] = useState(0);             // global node index within the super-node [0,NODES)
-  const [selNpu, setSelNpu] = useState(-1);              // NPU within the selected node [0,8)
+  const [selNpu, setSelNpu] = useState(-1);              // NPU within the selected node [0,8); -1 = none picked
+  const [selCore, setSelCore] = useState(0);             // AI Core within the selected card [0,32)
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [tip, setTip] = useState<{ x: number; y: number; t: string } | null>(null);
 
-  // clamp selections when the generation (→ counts) changes
   useEffect(() => { setSelSpod(0); setSelCab(0); setSelNode(0); setSelNpu(-1); }, [gen]);
-
-  // replay loop
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => setStep((s) => (s + 1) % (STEP_MAX + 1)), 650);
@@ -101,8 +103,11 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
   const ev = step >= EVT_LO && step <= EVT_HI;
   const kind = PH[phase].kind;
+  const cardJ = selNpu < 0 ? 0 : selNpu;                  // the focused card's NPU index in its node
+  const cardRank = selNode * NPN + cardJ;                 // rank id within the super-node
+  const cardSelected = selNpu >= 0 || SUBCARD.includes(selLevel);
 
-  // ── the live per-NPU field (anchored to nodeLoad, perturbed by phase/step/event) ──
+  // ── live per-NPU field (anchored to nodeLoad, perturbed by phase/step/event) ──
   const isStrag = useCallback((sp: number, gnode: number) => rnd(sp * 131 + gnode * 1.7 + step * 0.05) > 0.985, [step]);
   const faultAt = useCallback((sp: number, gnode: number, j: number) => {
     const k = sp * NPU_TOT + gnode * NPN + j, cab = (gnode / NODES_PER_CAB) | 0;
@@ -110,13 +115,14 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   }, [step, ev, EVT_CAB, NPU_TOT, NPN]);
   const util01 = useCallback((sp: number, gnode: number, j: number) => {
     const k = sp * NPU_TOT + gnode * NPN + j, cab = (gnode / NODES_PER_CAB) | 0;
-    let u = nodeLoad(k, kind) + (PH[phase].base - 0.55);          // project field + 工况偏置
-    u += (rnd(k * 0.91 + step * 0.07) - 0.5) * 0.10;              // live step ripple
-    if (isStrag(sp, gnode)) u += 0.4;                            // straggler 拖后腿
-    if (ev && sp === 0 && cab === EVT_CAB) u += 0.4;             // event-window overheat
+    let u = nodeLoad(k, kind) + (PH[phase].base - 0.55);
+    u += (rnd(sp * 17 + cab * 2.7 + 1) - 0.5) * 0.40;   // per-cabinet stable bias (热/冷机柜 — gives aggregate views spatial spread)
+    u += (rnd(gnode * 1.3 + 7) - 0.5) * 0.20;           // per-node stable bias
+    u += (rnd(k * 0.91 + step * 0.07) - 0.5) * 0.10;    // live step ripple
+    if (isStrag(sp, gnode)) u += 0.4;
+    if (ev && sp === 0 && cab === EVT_CAB) u += 0.4;
     return clamp01(u);
   }, [kind, phase, step, ev, EVT_CAB, isStrag, NPU_TOT, NPN]);
-  // metric the heatmap/axis colour BY (util / straggler 落后度 / 故障)
   const metricVal = useCallback((sp: number, gnode: number, j: number) => {
     if (metric === 'fault') return faultAt(sp, gnode, j) ? 0.95 : 0.12;
     const u = util01(sp, gnode, j);
@@ -128,21 +134,39 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const cabMean = useCallback((sp: number, cab: number) => { let s = 0; for (let n = 0; n < NODES_PER_CAB; n++) s += nodeMean(sp, cab * NODES_PER_CAB + n); return s / NODES_PER_CAB; }, [nodeMean]);
   const spodMean = useCallback((sp: number) => { let s = 0; for (let c = 0; c < CAB; c++) s += cabMean(sp, c); return s / CAB; }, [cabMean, CAB]);
 
+  // ── below-card on-chip field (compute Die / AI Core / Tile), anchored to the card's load ──
+  const cardBaseU = useCallback(() => util01(selSpod, selNode, cardJ), [util01, selSpod, selNode, cardJ]);
+  const dieVal = useCallback((d: number) => clamp01(cardBaseU() + (rnd(cardRank * 7 + d * 131 + step * 0.06) - 0.5) * 0.16), [cardBaseU, cardRank, step]);
+  const coreVal = useCallback((c: number) => {
+    const isVec = c % 8 === 7;   // Cube∶Vector ≈ 8∶1 → 4 Vector / 32 cores
+    const b = cardBaseU() + (kind === 'compute' ? 0.06 : -0.05);
+    return clamp01(b + (rnd(cardRank * 101 + c * 3.7 + step * 0.05) - 0.5) * 0.34 + (isVec ? -0.05 : 0));
+  }, [cardBaseU, cardRank, step, kind]);
+  const tileVal = useCallback((t: number) => {
+    const b = kind === 'comm' ? 0.60 : 0.42;   // comm phase → 更多流水气泡/等待
+    return clamp01(b + (rnd(cardRank * 211 + selCore * 17 + t * 1.9 + step * 0.04) - 0.5) * 0.5);
+  }, [cardRank, selCore, step, kind]);
+
   const scopeMean = useCallback(() => {
     if (selLevel === 'cluster') { let s = 0; for (let i = 0; i < pods; i++) s += spodMean(i); return s / pods; }
     if (selLevel === 'super' || selLevel === 'rank') return spodMean(selSpod);
     if (selLevel === 'cab') return cabMean(selSpod, selCab);
-    return nodeMean(selSpod, selNode);
-  }, [selLevel, pods, selSpod, selCab, selNode, spodMean, cabMean, nodeMean]);
+    if (selLevel === 'node') return nodeMean(selSpod, selNode);
+    return cardBaseU();   // die/core/tile → the card's load
+  }, [selLevel, pods, selSpod, selCab, selNode, spodMean, cabMean, nodeMean, cardBaseU]);
 
+  const cardName = `机柜${((selNode / NODES_PER_CAB) | 0) + 1}·节点${(selNode % NODES_PER_CAB) + 1}·卡 r${cardJ}`;
   const scopeName = useCallback(() => {
     if (selLevel === 'cluster') return `集群 · ${pods} 超节点`;
     if (selLevel === 'super' || selLevel === 'rank') return `超节点#${selSpod + 1}`;
     if (selLevel === 'cab') return `超节点#${selSpod + 1} · 机柜${selCab + 1}`;
-    return `机柜${((selNode / NODES_PER_CAB) | 0) + 1} · 节点${(selNode % NODES_PER_CAB) + 1}`;
-  }, [selLevel, pods, selSpod, selCab, selNode]);
+    if (selLevel === 'node') return `机柜${((selNode / NODES_PER_CAB) | 0) + 1} · 节点${(selNode % NODES_PER_CAB) + 1}`;
+    if (selLevel === 'die') return `${cardName} · 计算 Die`;
+    if (selLevel === 'core') return `${cardName} · AI Core`;
+    return `${cardName} · Tile/lane（核 ${selCore}）`;
+  }, [selLevel, pods, selSpod, selCab, selNode, cardName, selCore]);
 
-  // ── KPI (always utilisation/fault-based, independent of the colour metric) ──
+  // ── KPI (utilisation/fault-based, independent of colour metric) ──
   const kpi = useMemo(() => {
     let sum = 0, red = 0, fa = 0;
     for (let gn = 0; gn < NODES; gn++) for (let j = 0; j < NPN; j++) {
@@ -152,12 +176,15 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     return { redR, mfu, fa, stepMs: Math.round(92 + redR * 420 + (fa ? 40 : 0)) };
   }, [util01, faultAt, selSpod, NODES, NPN]);
 
-  // ── hierarchy status-axis data (typical p50 · red% · peak p95 — exposes outliers) ──
+  // ── hierarchy status-axis (typical p50 · red% · peak p95 — exposes outliers); now incl. below-card ──
   const axis = useMemo(() => {
     const cards: number[] = []; for (let gn = 0; gn < NODES; gn++) for (let j = 0; j < NPN; j++) cards.push(metricVal(selSpod, gn, j));
     const nodes: number[] = []; for (let gn = 0; gn < NODES; gn++) nodes.push(nodeMean(selSpod, gn));
     const cabs: number[] = []; for (let c = 0; c < CAB; c++) cabs.push(cabMean(selSpod, c));
     const spods: number[] = []; for (let i = 0; i < pods; i++) spods.push(spodMean(i));
+    const dies = Array.from({ length: COMPUTE_DIES_PER_CARD }, (_, d) => dieVal(d));
+    const cores = Array.from({ length: CORES_PER_CARD }, (_, c) => coreVal(c));
+    const tiles = Array.from({ length: TILES_VIEW }, (_, t) => tileVal(t));
     const pctl = (a: number[], p: number) => { const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(p * b.length))]; };
     const redF = (a: number[]) => { let c = 0; for (const v of a) if (loadState(v) >= 2) c++; return c / a.length; };
     const mk = (id: Level, nm: string, su: string, a: number[]) => ({ id, nm, su, p50: pctl(a, 0.5), p95: pctl(a, 0.95), red: redF(a) });
@@ -167,21 +194,26 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       mk('cab', '机柜', `${CAB} 柜`, cabs),
       mk('node', '节点', `${NODES.toLocaleString()} 节点`, nodes),
       mk('rank', 'rank/卡', `${NPU_TOT.toLocaleString()} 卡`, cards),
+      mk('die', '计算 Die', `${COMPUTE_DIES_PER_CARD}/卡`, dies),
+      mk('core', 'AI Core', `${CORES_PER_CARD}/卡`, cores),
+      mk('tile', 'Tile', `L0 lane`, tiles),
     ];
-  }, [metricVal, nodeMean, cabMean, spodMean, selSpod, pods, CAB, NODES, NPU_TOT, NPN]);
+  }, [metricVal, nodeMean, cabMean, spodMean, dieVal, coreVal, tileVal, selSpod, pods, CAB, NODES, NPU_TOT, NPN]);
 
   // ── flow-matrix cell intensity (real parallel relationships) ──
-  // 对角=内部通信；Decode→EP All-to-All 全密；Prefill/预训练→近邻块(TP/PP)；事件机柜整行/列变红
   const flowCfg = (): [number, string] => ({
     cluster: [pods, '超节点 × 超节点 · DP 副本间'] as [number, string],
     super: [CAB, '机柜 × 机柜 · EP/TP 域'] as [number, string],
     rank: [CAB, '机柜 × 机柜 · EP/TP 域'] as [number, string],
     cab: [NODES_PER_CAB, '节点 × 节点'] as [number, string],
     node: [NPN, 'NPU × NPU · TP AllReduce'] as [number, string],
+    die: [NPN, 'NPU × NPU（片上无跨卡矩阵→显示所属节点）'] as [number, string],
+    core: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
+    tile: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
   }[selLevel]);
   const tcell = useCallback((i: number, j: number, N: number) => {
     let v = 0.16 + (i === j ? 0.5 : 0);
-    if (phase === 'decode') v += 0.32;                                            // EP all-to-all 全密
+    if (phase === 'decode') v += 0.32;
     else if (phase === 'prefill') v += 0.08 + (Math.abs(i - j) <= Math.max(1, N / 8) ? 0.26 : 0);
     else v += 0.10 + (Math.abs(i - j) <= Math.max(1, N / 6) ? 0.20 : 0);
     v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.18;
@@ -193,25 +225,26 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const planeUtil = useCallback(() => {
     const sm = scopeMean();
     return [
-      { n: `${PLANES[0].short} · ${selLevel === 'node' ? '本节点' : '域内'}(TP/EP)`, u: Math.min(1, (phase === 'decode' ? 0.46 : 0.30) + sm * 0.6), c: PLANES[0].color },
-      { n: `${PLANES[1].short}(DP/PP)`, u: Math.min(1, 0.24 + sm * 0.4 + (ev ? 0.10 : 0)), c: PLANES[1].color },
-      { n: '集群 DP AllReduce', u: Math.min(1, 0.18 + sm * 0.32), c: PLANES[1].color },
-      { n: `${PLANES[2].short} · 南北向`, u: 0.14, c: PLANES[2].color },
+      { n: `${PLANES[0].short} · ${selLevel === 'node' ? '本节点' : '域内'}(TP/EP)`, u: clamp01((phase === 'decode' ? 0.46 : 0.30) + sm * 0.6), c: PLANES[0].color },
+      { n: `${PLANES[1].short}(DP/PP)`, u: clamp01(0.24 + sm * 0.4 + (ev ? 0.10 : 0)), c: PLANES[1].color },
+      { n: '集群 DP AllReduce', u: clamp01(0.18 + sm * 0.32), c: PLANES[1].color },
+      { n: `${PLANES[2].short} · 南北向`, u: clamp01(0.12 + sm * 0.08), c: PLANES[2].color },
     ];
   }, [scopeMean, selLevel, phase, ev]);
 
-  // ── communication domains (process↔process), active set depends on the scope ──
+  // ── communication domains (process↔process) ──
   const domains = useCallback(() => {
     const sm = scopeMean(), adj = (u: number) => Math.max(0.05, Math.min(1, u + (sm - 0.55) * 0.5));
     return [
-      { key: 'tp', nm: PARTITION_META.tp.label, sc: '超节点内 SU', co: 'AllReduce ×4/层', me: `${NPN} rank/组`, u: adj(phase === 'decode' ? 0.5 : 0.72) },
-      { key: 'sp', nm: 'SP 序列并行', sc: '与 TP 同域', co: 'AllGather + ReduceScatter', me: '与 TP', u: adj(phase === 'decode' ? 0.45 : 0.6) },
-      { key: 'ep', nm: PARTITION_META.ep.label, sc: '超节点内 SU', co: 'AllToAll ×2/MoE层', me: `${NPC} rank/柜`, u: adj(phase === 'decode' ? 0.92 : 0.5) },
-      { key: 'pp', nm: PARTITION_META.pp.label, sc: '跨节点', co: 'P2P send/recv', me: 'stage 间', u: adj(0.35) },
-      { key: 'dp', nm: PARTITION_META.dp.label, sc: '跨超节点 SO', co: 'AllReduce ×1/step', me: '最外层', u: adj(0.4 + (ev ? 0.08 : 0)) },
-    ];
-  }, [scopeMean, phase, ev, NPN, NPC]);
+      { key: 'tp', nm: PARTITION_META.tp.label, pat: 'ring', sc: '超节点内 SU', co: 'AllReduce', me: `${NPN} rank/组`, u: adj(phase === 'decode' ? 0.5 : 0.72) },
+      { key: 'sp', nm: 'SP 序列并行', pat: 'ring', sc: '与 TP 同域', co: 'AllGather+ReduceScatter', me: '与 TP', u: adj(phase === 'decode' ? 0.45 : 0.6) },
+      { key: 'ep', nm: PARTITION_META.ep.label, pat: 'a2a', sc: '超节点内 SU', co: 'All-to-All', me: `${NPC} rank/柜`, u: adj(phase === 'decode' ? 0.92 : 0.5) },
+      { key: 'pp', nm: PARTITION_META.pp.label, pat: 'p2p', sc: '跨节点', co: 'P2P send/recv', me: 'stage 间', u: adj(0.35) },
+      { key: 'dp', nm: PARTITION_META.dp.label, pat: 'ring', sc: '跨超节点 SO', co: 'AllReduce', me: `${pods} 副本`, u: adj(0.4 + (ev ? 0.08 : 0)) },
+    ] as { key: string; nm: string; pat: 'ring' | 'a2a' | 'p2p'; sc: string; co: string; me: string; u: number }[];
+  }, [scopeMean, phase, ev, NPN, NPC, pods]);
   const domActive = useCallback((): Record<string, boolean> => {
+    if (SUBCARD.includes(selLevel)) return { tp: false, sp: false, ep: false, pp: false, dp: false };   // 片上：无 rank 间通信
     if (selLevel === 'cluster') return { tp: false, sp: false, ep: false, pp: true, dp: true };
     if (selLevel === 'rank') return { tp: true, sp: true, ep: true, pp: true, dp: true };
     return { tp: true, sp: true, ep: true, pp: false, dp: false };
@@ -222,8 +255,8 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const cvRef = useRef<HTMLCanvasElement>(null);
   const cells = useRef<{ x: number; y: number; w: number; h: number; kind: string; idx: number }[]>([]);
   const P = dark
-    ? { bg: '#121418', grid: 'rgba(255,255,255,0.05)', track: '#262E3C', ink: 'rgba(255,255,255,0.88)', ink2: 'rgba(255,255,255,0.55)', mut: '#5A6172', frame: 'rgba(255,255,255,0.10)', neutral: '#39404e' }
-    : { bg: '#fbfbfd', grid: 'rgba(67,105,239,0.08)', track: '#e4e7ef', ink: 'rgba(0,0,0,0.78)', ink2: 'rgba(0,0,0,0.52)', mut: '#9aa3b2', frame: 'rgba(0,0,0,0.10)', neutral: '#b9c2d4' };
+    ? { bg: '#121418', grid: 'rgba(255,255,255,0.05)', track: '#262E3C', ink: 'rgba(255,255,255,0.88)', ink2: 'rgba(255,255,255,0.58)', mut: '#5A6172', frame: 'rgba(255,255,255,0.10)', neutral: '#39404e' }
+    : { bg: '#fbfbfd', grid: 'rgba(67,105,239,0.08)', track: '#e4e7ef', ink: 'rgba(0,0,0,0.80)', ink2: 'rgba(0,0,0,0.55)', mut: '#9aa3b2', frame: 'rgba(0,0,0,0.10)', neutral: '#b9c2d4' };
 
   const draw = useCallback(() => {
     const cv = cvRef.current, wrap = wrapRef.current; if (!cv || !wrap) return;
@@ -233,203 +266,325 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = P.bg; ctx.fillRect(0, 0, W, H);
-    // drafting dot-grid backdrop (工程感)
     ctx.fillStyle = P.grid; for (let gx = 14; gx < W; gx += 22) for (let gy = 14; gy < H; gy += 22) { ctx.beginPath(); ctx.arc(gx, gy, 0.9, 0, 7); ctx.fill(); }
     cells.current = [];
+    const PAD = 16;
     const tx = (s: string, x: number, y: number, c: string, f = '11px Inter', a: CanvasTextAlign = 'left') => { ctx.fillStyle = c; ctx.font = f; ctx.textAlign = a; ctx.fillText(s, x, y); ctx.textAlign = 'left'; };
     const bar = (x: number, y: number, w: number, h: number, u: number, c?: string) => { ctx.fillStyle = P.track; ctx.fillRect(x, y, w, h); ctx.fillStyle = c ?? loadColor(u); ctx.fillRect(x, y, w * u, h); };
-    const PAD = 16;
+    const line = (x1: number, y1: number, x2: number, y2: number, c: string, w: number, dash = false) => { ctx.save(); ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; if (dash) { ctx.setLineDash([6, 5]); ctx.lineDashOffset = -step * 3; } ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
+    const dia = (x: number, y: number, r: number, c: string, lab?: string) => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); ctx.fillStyle = P.neutral; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke(); if (lab) tx(lab, x, y + 3.5, P.ink, '10px Inter', 'center'); };
+    const fbox = (x: number, y: number, w: number, h: number, fill: string, stroke?: string) => { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.4; ctx.strokeRect(x, y, w, h); } };
 
     if (lens === 'heat') drawHeat(); else if (lens === 'flow') drawFlow(); else if (lens === 'domain') drawDomain(); else drawPhys();
 
-    // ── 状态热力 ──
+    // ════════ 状态热力 ════════
     function drawHeat() {
-      type Item = { val: number; kind: string; idx: number; label: string };
+      type Item = { val: number; kind: string; idx: number; label: string; color?: string; sub?: string };
       let items: Item[] | null = null;
       if (selLevel === 'cluster') items = Array.from({ length: pods }, (_, i) => ({ val: spodMean(i), kind: 'spod', idx: i, label: `超节点#${i + 1}` }));
       else if (selLevel === 'super') items = Array.from({ length: CAB }, (_, c) => ({ val: cabMean(selSpod, c), kind: 'cabc', idx: c, label: `机柜${c + 1}` }));
       else if (selLevel === 'cab') items = Array.from({ length: NODES_PER_CAB }, (_, n) => ({ val: nodeMean(selSpod, selCab * NODES_PER_CAB + n), kind: 'nodec', idx: selCab * NODES_PER_CAB + n, label: `节点${n + 1}` }));
-      else if (selLevel === 'node') items = Array.from({ length: NPN }, (_, j) => ({ val: metricVal(selSpod, selNode, j), kind: 'npuc', idx: j, label: `NPU${j}` }));
+      else if (selLevel === 'node') items = Array.from({ length: NPN }, (_, j) => ({ val: metricVal(selSpod, selNode, j), kind: 'npuc', idx: j, label: `NPU${j}`, sub: faultAt(selSpod, selNode, j) ? '故障' : 'rank ' + (selNode * NPN + j) }));
+      else if (selLevel === 'die') items = [
+        ...Array.from({ length: COMPUTE_DIES_PER_CARD }, (_, d) => ({ val: dieVal(d), kind: 'diec', idx: d, label: `计算 Die ${d}`, sub: '≈16 AI Core · UMA' })),
+        ...Array.from({ length: IO_DIES_PER_CARD }, (_, d) => ({ val: 0, kind: 'iodie', idx: d, label: `IO Die ${d}`, color: ENTITY_COLORS.ioDie, sub: '互联/IO · 无算力负载' })),
+      ];
+      else if (selLevel === 'core') items = Array.from({ length: CORES_PER_CARD }, (_, c) => ({ val: coreVal(c), kind: 'corec', idx: c, label: c % 8 === 7 ? `AIV${c}` : `AIC${c}`, sub: c % 8 === 7 ? 'Vector' : 'Cube' }));
+      else if (selLevel === 'tile') items = Array.from({ length: TILES_VIEW }, (_, t) => ({ val: tileVal(t), kind: 'tilec', idx: t, label: '' }));
       if (items) { drawUniform(items); return; }
       drawFull();   // rank → 全量铺开
     }
-    function drawUniform(items: { val: number; kind: string; idx: number; label: string }[]) {
+    function drawUniform(items: { val: number; kind: string; idx: number; label: string; color?: string; sub?: string }[]) {
       const n = items.length, cols = n <= 4 ? 2 : n <= 16 ? 4 : n <= 64 ? 8 : Math.ceil(Math.sqrt(n * 1.6));
-      const rows = Math.ceil(n / cols);
-      const cw = (W - 2 * PAD - (cols - 1) * 4) / cols, ch = (H - 2 * PAD - (rows - 1) * 4) / rows;
+      const rows = Math.ceil(n / cols), GP = 6;
+      const cw = (W - 2 * PAD - (cols - 1) * GP) / cols, ch = (H - 2 * PAD - (rows - 1) * GP) / rows;
       items.forEach((it, i) => {
-        const c = i % cols, r = (i / cols) | 0, x = PAD + c * (cw + 4), y = PAD + r * (ch + 4);
-        ctx.fillStyle = loadColor(it.val); ctx.fillRect(x, y, cw, ch);
-        if (cw >= 64 && ch >= 30) { const ink = inkOf(loadColor(it.val)); tx(it.label, x + 9, y + 20, ink, '600 12px Inter'); tx(Math.round(it.val * 100) + '%', x + 9, y + 38, ink, `13px ${MONO}`); }
+        const c = i % cols, r = (i / cols) | 0, x = PAD + c * (cw + GP), y = PAD + r * (ch + GP);
+        const fill = it.color ?? loadColor(it.val);
+        fbox(x, y, cw, ch, fill);
+        const picked = (it.kind === 'npuc' && it.idx === selNpu) || (it.kind === 'corec' && it.idx === selCore);
+        if (picked) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, cw - 3, ch - 3); }
+        const ink = inkOf(fill);
+        if (cw >= 58 && ch >= 26) {
+          tx(it.label, x + 10, y + 22, ink, '600 13px Inter');
+          if (it.color) tx(it.sub ?? '', x + 10, y + 40, ink, '10px Inter');
+          else tx(Math.round(it.val * 100) + '%', x + 10, y + (it.sub && ch >= 56 ? 42 : 42), ink, `15px ${MONO}`);
+          if (it.sub && !it.color && ch >= 64) tx(it.sub, x + 10, y + 60, ink, '10px Inter');
+        } else if (cw >= 26 && ch >= 18) tx(it.label || (Math.round(it.val * 100) + ''), x + 4, y + 14, ink, '9px Inter');
         cells.current.push({ x, y, w: cw, h: ch, kind: it.kind, idx: it.idx });
       });
     }
     function drawFull() {
-      // 全量：NODES 个节点，每节点 = 4×2 NPU 小块；机柜用分隔线
       const PERROW = Math.min(NODES, Math.max(8, Math.round(Math.sqrt(NODES * 2.2))));
       const gridRows = Math.ceil(NODES / PERROW);
-      const cs = Math.max(2, Math.min(8, Math.floor(Math.min((W - 2 * PAD) / (PERROW * 5), (H - 2 * PAD) / (gridRows * 3)))));
+      const availH = H - 2 * PAD - 16;
+      const cs = Math.max(2, Math.min(10, Math.floor(Math.min((W - 2 * PAD) / (PERROW * 5), availH / (gridRows * 3)))));
       const nbw = 4 * cs, nbh = 2 * cs, sx = nbw + cs, sy = nbh + cs;
-      const x0 = PAD + (W - 2 * PAD - PERROW * sx) / 2, y0 = PAD;
+      const usedW = PERROW * sx - cs, usedH = gridRows * sy - cs;
+      const x0 = PAD + Math.max(0, (W - 2 * PAD - usedW) / 2), y0 = PAD + Math.max(0, (availH - usedH) / 2);
       for (let gn = 0; gn < NODES; gn++) {
         const nx = x0 + (gn % PERROW) * sx, ny = y0 + ((gn / PERROW) | 0) * sy;
         for (let j = 0; j < NPN; j++) { ctx.fillStyle = loadColor(metricVal(selSpod, gn, j)); ctx.fillRect(nx + (j % 4) * cs, ny + ((j / 4) | 0) * cs, cs - 0.6, cs - 0.6); }
-        if (gn === selNode) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.6; ctx.strokeRect(nx - 1.5, ny - 1.5, nbw + 1, nbh + 1); }
+        if (gn === selNode) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.8; ctx.strokeRect(nx - 1.5, ny - 1.5, nbw + 1, nbh + 1); }
         cells.current.push({ x: nx, y: ny, w: nbw, h: nbh, kind: 'rankfull', idx: gn });
       }
-      // cabinet separators (every NODES_PER_CAB nodes)
-      tx(`全量 ${NPU_TOT.toLocaleString()} 张卡（每小块=1 节点=8 NPU · 每格=1 卡）· 点击下钻节点`, PAD, H - 10, P.mut, '11px Inter');
+      tx(`全量 ${NPU_TOT.toLocaleString()} 张卡（每小块=1 节点=8 NPU · 每格=1 卡）· 点击下钻节点`, PAD, H - 8, P.mut, '11px Inter');
     }
 
-    // ── 机柜流量：N×N 矩阵 + 平面带宽条 ──
+    // ════════ 机柜流量 ════════
     function drawFlow() {
       const [N, label] = flowCfg();
-      const left = PAD + 26, top = PAD + 22;
-      const matMax = Math.min(H - top - 30, W * 0.52);
-      const cs = Math.max(2, Math.min(26, Math.floor(matMax / N)));
-      tx(`${scopeName()} · ${label}`, left, top - 8, P.ink2, '12px Inter');
+      const left = PAD + 28, top = PAD + 26;
+      const matMax = Math.min(H - top - 36, W * 0.5);
+      const cs = Math.max(2, Math.min(30, Math.floor(matMax / N)));
+      tx(`${scopeName()} · ${label}`, left, top - 10, P.ink2, '12.5px Inter');
       for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { ctx.fillStyle = loadColor(tcell(i, j, N)); ctx.fillRect(left + j * cs, top + i * cs, cs - (cs > 5 ? 1 : 0.4), cs - (cs > 5 ? 1 : 0.4)); }
-      // axis ticks
       const lab = N <= 8 ? 1 : N <= 32 ? 4 : 16;
-      ctx.fillStyle = P.mut; ctx.font = `9px ${MONO}`;
-      for (let i = 0; i < N; i += lab) { tx('' + (i + 1), left + i * cs, top - 1, P.mut, `9px ${MONO}`); tx('' + (i + 1), left - 22, top + i * cs + cs - 1, P.mut, `9px ${MONO}`); }
+      for (let i = 0; i < N; i += lab) { tx('' + (i + 1), left + i * cs, top - 2, P.mut, `9px ${MONO}`); tx('' + (i + 1), left - 24, top + i * cs + cs - 1, P.mut, `9px ${MONO}`); }
       tx('行/列 = 通信单元 · 对角=内部 · 颜色=通信强度(状态色)', left, top + N * cs + 18, P.mut, '10.5px Inter');
-      // plane bars (right)
-      const bx = left + N * cs + 54, bw = Math.max(120, W - bx - PAD - 10);
-      tx('平面带宽利用（随选区）', bx, top - 8, P.ink2, '12px Inter');
-      planeUtil().forEach((p, i) => { const y = top + 14 + i * 58; tx(p.n, bx, y - 6, P.ink2, '11px Inter'); bar(bx, y, bw, 16, p.u); tx(Math.round(p.u * 100) + '%', bx + bw - 30, y + 12, inkOf(loadColor(p.u)), `10px ${MONO}`); });
+      if (SUBCARD.includes(selLevel)) tx('（已下钻到卡内：片上 NoC 无跨卡通信矩阵，显示所属节点）', left, top + N * cs + 34, P.mut, '10px Inter');
+      const bx = left + N * cs + 54, bw = Math.max(140, W - bx - PAD - 10);
+      tx('平面带宽利用（随选区·随回放）', bx, top - 10, P.ink2, '12.5px Inter');
+      planeUtil().forEach((p, i) => { const y = top + 16 + i * 60; tx(p.n, bx, y - 6, P.ink2, '11px Inter'); bar(bx, y, bw, 18, p.u); tx(Math.round(p.u * 100) + '%', bx + bw - 32, y + 13, inkOf(loadColor(p.u)), `11px ${MONO}`); });
     }
 
-    // ── 通信域：分组带 + 5 行并行(TP/SP/EP/PP/DP) ──
+    // ════════ 通信域：每个并行维度画真实集合通信图元 ════════
     function drawDomain() {
-      tx(`通信域(进程↔进程) · ${scopeName()} · 进程=rank=1 NPU（硬件↔进程 1:1）`, PAD, PAD + 14, P.ink2, '12px Inter');
-      const su = selLevel === 'node' ? { n: NPN, unit: 'rank', gs: NPN, gl: `本节点 ${NPN} rank = 1 TP 组` }
-        : selLevel === 'cab' ? { n: NODES_PER_CAB, unit: '节点', gs: 4, gl: `每 4 节点(${4 * NPN} rank)= 1 EP 子组` }
-        : selLevel === 'super' ? { n: CAB, unit: '机柜', gs: 2, gl: '机柜聚成 TP/EP 域(SU 域内)' }
-        : selLevel === 'cluster' ? { n: pods, unit: '超节点', gs: 1, gl: '每超节点 = 1 个 DP 副本' }
-        : { n: NPN, unit: 'rank', gs: NPN, gl: 'TP 组' };
-      tx(`本层单元 ${su.n} 个 ${su.unit} · ${su.gl} · 高亮组=本层活跃并行`, PAD, PAD + 30, P.mut, '10.5px Inter');
-      // group band
-      const gx = PAD, gy = PAD + 40, gw = W - 2 * PAD;
-      const cs = Math.max(5, Math.min(16, Math.floor(gw / Math.min(su.n, 64)))), cols = Math.max(1, Math.min(su.n, Math.floor(gw / cs)));
-      for (let i = 0; i < su.n; i++) {
-        const c = i % cols, r = (i / cols) | 0, x = gx + c * cs, y = gy + r * cs;
-        ctx.fillStyle = P.neutral; ctx.fillRect(x, y, cs - 1, cs - 1);
-        if (su.gs > 1 && i % su.gs === 0) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 1; ctx.strokeRect(x - 0.5, y - 0.5, cs * Math.min(su.gs, cols - c), cs); }
-      }
-      const dy = gy + Math.ceil(su.n / cols) * cs + 18, rh = (H - dy - 14) / 5;
+      tx(`通信域(进程↔进程) · ${scopeName()} · 进程 = rank = 1 NPU（硬件↔进程 1:1）`, PAD, PAD + 16, P.ink2, '12.5px Inter');
+      const onchip = SUBCARD.includes(selLevel);
+      const lvlNote = onchip ? '已下钻到卡内：设备内并行 = block_idx / SPMD（核实例），非 rank 间集合通信'
+        : selLevel === 'node' ? `本节点 ${NPN} rank = 1 TP 组（域内 AllReduce）`
+        : selLevel === 'cab' ? `本机柜 ${NPC} rank = 1 EP 组（All-to-All 域）`
+        : selLevel === 'cluster' ? `每超节点 = 1 个 DP 副本（跨超节点 AllReduce）`
+        : `本超节点：TP/EP 在域内、DP/PP 跨域`;
+      tx(lvlNote + ' · 图元=集合通信形态、颜色=状态、回放时按方向流动', PAD, PAD + 34, P.mut, '10.5px Inter');
       const D = domains(), act = domActive();
+      const top = PAD + 48, rh = (H - top - 12) / D.length;
+      // collective-pattern glyph among k representative ranks
+      const glyph = (cx: number, cy: number, rad: number, pat: 'ring' | 'a2a' | 'p2p', col: string, on: boolean) => {
+        const k = pat === 'p2p' ? 5 : 7;
+        const pts: [number, number][] = pat === 'p2p'
+          ? Array.from({ length: k }, (_, i) => [cx - rad + (i * 2 * rad) / (k - 1), cy] as [number, number])
+          : Array.from({ length: k }, (_, i) => { const t = -Math.PI / 2 + (i * 2 * Math.PI) / k; return [cx + rad * Math.cos(t), cy + rad * Math.sin(t)] as [number, number]; });
+        const lc = on ? col : P.neutral;
+        if (pat === 'a2a') { for (let i = 0; i < k; i++) for (let j = i + 1; j < k; j++) line(pts[i][0], pts[i][1], pts[j][0], pts[j][1], lc, on ? 1.4 : 0.8, on); }
+        else if (pat === 'ring') { for (let i = 0; i < k; i++) { const a = pts[i], b = pts[(i + 1) % k]; line(a[0], a[1], b[0], b[1], lc, on ? 2 : 1, on); } }
+        else { for (let i = 0; i < k - 1; i++) line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], lc, on ? 2 : 1, on); }
+        pts.forEach((p) => { ctx.fillStyle = on ? lc : P.neutral; ctx.beginPath(); ctx.arc(p[0], p[1], on ? 4 : 3, 0, 7); ctx.fill(); });
+      };
       D.forEach((d, i) => {
-        const a = act[d.key], y = dy + i * rh;
-        ctx.globalAlpha = a ? 1 : 0.4;
-        ctx.fillStyle = a ? loadColor(d.u) : P.neutral; ctx.fillRect(PAD, y, 168, Math.min(38, rh - 7));
-        tx(d.nm, PAD + 9, y + 16, a ? inkOf(loadColor(d.u)) : P.ink2, '600 12px Inter');
-        tx(a ? d.sc : d.sc + ' · 跨出本层', PAD + 9, y + 30, a ? inkOf(loadColor(d.u)) : P.mut, '9px Inter');
-        tx(d.co, PAD + 184, y + 15, P.ink, '11px Inter'); tx(d.me, PAD + 184, y + 30, P.ink2, '9.5px Inter');
-        const bx = PAD + 360, bw = W - bx - PAD;
-        tx(a ? '集合通信量' : '(本层不直接发生)', bx, y + 9, P.mut, '9.5px Inter'); bar(bx, y + 14, bw, 15, a ? d.u : 0.03, a ? undefined : P.neutral);
-        if (a) tx(Math.round(d.u * 100) + '%', bx + bw - 30, y + 26, inkOf(loadColor(d.u)), `10px ${MONO}`);
+        const on = act[d.key], y = top + i * rh, midY = y + rh / 2;
+        ctx.globalAlpha = on ? 1 : 0.42;
+        // left text panel (state-coloured block when active)
+        const pw = 188, ph = Math.min(46, rh - 10);
+        fbox(PAD, midY - ph / 2, pw, ph, on ? loadColor(d.u) : P.neutral);
+        const tcol = on ? inkOf(loadColor(d.u)) : P.ink2;
+        tx(d.nm, PAD + 10, midY - 8, tcol, '600 12.5px Inter');
+        tx(`${d.sc} · ${d.me}`, PAD + 10, midY + 8, tcol, '9.5px Inter');
+        tx(on ? d.co : d.co + ' · 跨出本层', PAD + 10, midY + 22, tcol, '9px Inter');
+        // centre collective glyph
+        glyph(PAD + pw + 86, midY, Math.min(30, rh / 2 - 8), d.pat, loadColor(d.u), on);
+        tx({ ring: 'Ring/AllReduce', a2a: 'All-to-All', p2p: 'P2P 链' }[d.pat], PAD + pw + 86, y + rh - 6, on ? P.ink2 : P.mut, '9px Inter', 'center');
+        // right volume bar
+        const bx = PAD + pw + 176, bw = W - bx - PAD;
+        tx(on ? '集合通信量' : '(本层不直接发生)', bx, midY - 10, P.mut, '9.5px Inter');
+        bar(bx, midY - 2, bw, 16, on ? d.u : 0.03, on ? undefined : P.neutral);
+        if (on) tx(Math.round(d.u * 100) + '%', bx + bw - 32, midY + 11, inkOf(loadColor(d.u)), `11px ${MONO}`);
         ctx.globalAlpha = 1;
       });
     }
 
-    // ── 物理链路：结构随层级、颜色=平面负载 ──
+    // ════════ 物理链路：结构随层级、每个器件/链路按自身负载上色（随回放变化）、数量真实 ════════
     function drawPhys() {
       const Pl = planeUtil();
-      tx(`物理链路 · ${scopeName()} · 结构随层级、颜色=平面负载`, PAD, PAD + 14, P.ink2, '12px Inter');
-      // plane bars (top-right mini)
-      const bx = W - 200, bw = 168;
-      tx('平面利用', bx, PAD + 14, P.ink2, '11px Inter');
-      Pl.forEach((p, i) => { const y = PAD + 28 + i * 30; tx(p.n.split('·')[0].split('(')[0], bx, y - 3, P.ink2, '9px Inter'); bar(bx, y, bw, 11, p.u); tx(Math.round(p.u * 100) + '%', bx + bw - 26, y + 9, inkOf(loadColor(p.u)), `9px ${MONO}`); });
-      const cx = (W - 200) / 2 + 10, cy = H / 2 + 10;
-      const dot = (x: number, y: number, s: number, c: string, lab?: string) => { ctx.fillStyle = P.neutral; ctx.fillRect(x - s / 2, y - s / 2, s, s); ctx.strokeStyle = c; ctx.lineWidth = 1.4; ctx.strokeRect(x - s / 2, y - s / 2, s, s); if (lab) tx(lab, x, y + 3, P.ink, '9px Inter', 'center'); };
-      const dia = (x: number, y: number, r: number, c: string, lab?: string) => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); ctx.fillStyle = P.neutral; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 1.8; ctx.stroke(); if (lab) tx(lab, x, y + 3, P.ink, '9px Inter', 'center'); };
-      const line = (x1: number, y1: number, x2: number, y2: number, c: string, w: number) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
-      const ring = (n: number, r: number) => Array.from({ length: n }, (_, i) => { const t = -Math.PI / 2 + i * 2 * Math.PI / n; return [cx + r * Math.cos(t), cy + r * Math.sin(t)] as [number, number]; });
-      const cUB = loadColor(Pl[0].u), cSO = loadColor(Pl[1].u), cVPC = loadColor(Pl[3].u);
-      if (selLevel === 'cluster') {
-        const pts = ring(pods, 130); for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) line(pts[i][0], pts[i][1], pts[j][0], pts[j][1], cSO, 3);
-        pts.forEach((p, i) => dot(p[0], p[1], 54, PLANES[1].color, '超节点' + (i + 1)));
-        tx(`${pods} 超节点经 NPU 自带 RoCE(400G) 全互联 · ${PLANES[1].short} · scale-out`, PAD, H - 12, P.ink2, '10px Inter');
-      } else if (selLevel === 'super') {
-        const pts = ring(Math.min(CAB, 24), 150); for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) line(pts[i][0], pts[i][1], pts[j][0], pts[j][1], cUB, 0.5);
-        dia(cx, cy, 18, cUB, 'UB'); pts.forEach((p) => dot(p[0], p[1], 13, PLANES[0].color));
-        tx(`${CAB} 机柜经两层 UB 交换 → UB-Mesh 全互联(any-to-any) · ${PLANES[0].short}`, PAD, H - 12, P.ink2, '10px Inter');
-      } else if (selLevel === 'cab') {
-        dia(cx, cy - 130, 17, cUB, 'L2'); const cols = Math.min(NODES_PER_CAB, 8);
-        for (let i = 0; i < NODES_PER_CAB; i++) { const c = i % cols, r = (i / cols) | 0, x = cx - (cols - 1) * 22 / 2 + c * 22, y = cy + 20 + r * 34; line(x, y, cx, cy - 118, cUB, 0.6); dot(x, y, 13, PLANES[0].color, 'N' + (i + 1)); }
-        tx(`${NODES_PER_CAB} 节点各 1 条 UB 上行 → 机柜 L2 交换 → 超节点 UB-Mesh`, PAD, H - 12, P.ink2, '10px Inter');
-      } else if (selLevel === 'node' || selLevel === 'rank') {
-        dia(cx, cy - 130, 20, cUB, 'L1');
-        for (let j = 0; j < NPN; j++) { const x = cx - (NPN - 1) * 64 / 2 + j * 64, y = cy + 30; dot(x, y, 44, PLANES[0].color, 'NPU' + j); line(x, y - 22, cx, cy - 112, cUB, 3); line(x + 14, y + 22, x + 14, y + 40, cSO, 2); tx('口', x + 14, y + 52, P.mut, '8px Inter', 'center'); }
-        ctx.fillStyle = P.neutral; ctx.fillRect(cx + 150, cy - 60, 86, 28); tx(`${TOK.kunpeng}CPU`, cx + 193, cy - 42, P.ink, '10px Inter', 'center'); line(cx + 150, cy - 46, cx + 6, cy - 120, cVPC, 2);
-        ctx.fillStyle = P.neutral; ctx.fillRect(cx + 150, cy - 18, 86, 26); tx(`${NIC_LBL}NIC`, cx + 193, cy - 1, P.ink, '10px Inter', 'center'); line(cx + 193, cy - 32, cx + 193, cy - 18, cVPC, 2);
-        tx(`${NPN} NPU 各 UB口+RDMA口 → L1；CPU→${NIC_LBL}NIC→VPC（器件级）`, PAD, H - 12, P.ink2, '10px Inter');
+      tx(`物理链路 · ${scopeName()} · 器件/链路按各自负载上色 · 随回放变化`, PAD, PAD + 16, P.ink2, '12.5px Inter');
+      // plane-utilisation bars along the bottom (full width, time-varying)
+      const pbY = H - 46, pbW = (W - 2 * PAD - 3 * 12) / 4;
+      Pl.forEach((p, i) => { const x = PAD + i * (pbW + 12); tx(p.n.split('·')[0].split('(')[0], x, pbY - 5, P.ink2, '9.5px Inter'); bar(x, pbY, pbW, 13, p.u); tx(Math.round(p.u * 100) + '%', x + pbW - 28, pbY + 11, inkOf(loadColor(p.u)), `9px ${MONO}`); });
+
+      if (SUBCARD.includes(selLevel)) { drawChip(Pl); return; }
+
+      // hub + child units (the real count), each coloured by its OWN load
+      const cx = W / 2, hubY = PAD + 64, areaTop = hubY + 40, areaBot = pbY - 28;
+      const hubU = selLevel === 'cluster' ? Pl[1].u : Pl[0].u;
+      const hubLab = selLevel === 'cluster' ? 'RoCE' : selLevel === 'super' ? 'UB-Mesh' : selLevel === 'cab' ? 'L2' : 'L1';
+      const cfg = selLevel === 'cluster' ? { N: pods, val: (i: number) => spodMean(i), unit: '超节点', plane: PLANES[1] }
+        : selLevel === 'super' ? { N: CAB, val: (i: number) => cabMean(selSpod, i), unit: '机柜', plane: PLANES[0] }
+        : selLevel === 'cab' ? { N: NODES_PER_CAB, val: (i: number) => nodeMean(selSpod, selCab * NODES_PER_CAB + i), unit: '节点', plane: PLANES[0] }
+        : { N: NPN, val: (i: number) => util01(selSpod, selNode, i), unit: 'NPU', plane: PLANES[0] };
+      dia(cx, hubY, 26, loadColor(hubU), hubLab);
+      const isNode = selLevel === 'node' || selLevel === 'rank';
+
+      if (cfg.N <= 16) {
+        // big boxes filling the width, each linked to the hub by a line coloured by its load
+        const cols = Math.min(cfg.N, 8), rows = Math.ceil(cfg.N / cols);
+        const areaW = W - 2 * PAD, bw = Math.min(132, (areaW - (cols - 1) * 16) / cols), bh = Math.min(74, ((isNode ? areaBot - 64 : areaBot) - areaTop - (rows - 1) * 16) / rows);
+        const x0 = cx - (cols * bw + (cols - 1) * 16) / 2;
+        for (let i = 0; i < cfg.N; i++) {
+          const c = i % cols, r = (i / cols) | 0, x = x0 + c * (bw + 16), y = areaTop + r * (bh + 16), v = cfg.val(i);
+          line(x + bw / 2, y, cx, hubY + 18, loadColor(v), 2.4, isNode);
+          const picked = isNode && i === selNpu;
+          fbox(x, y, bw, bh, loadColor(v), picked ? ACCENT : undefined);
+          if (picked) { ctx.lineWidth = 3; ctx.strokeStyle = ACCENT; ctx.strokeRect(x + 1.5, y + 1.5, bw - 3, bh - 3); }
+          tx(`${cfg.unit}${i + (selLevel === 'cluster' ? 1 : selLevel === 'super' ? 1 : selLevel === 'cab' ? 1 : 0)}`, x + bw / 2, y + bh / 2 - 2, inkOf(loadColor(v)), '600 11px Inter', 'center');
+          tx(Math.round(v * 100) + '%', x + bw / 2, y + bh / 2 + 14, inkOf(loadColor(v)), `11px ${MONO}`, 'center');
+          cells.current.push({ x, y, w: bw, h: bh, kind: isNode ? 'pnpu' : 'punit', idx: i });
+        }
+        if (isNode) {
+          // 鲲鹏 CPU (UB→L1) + 擎天 NIC (VPC) — the third plane
+          const cpuY = areaBot - 18, cpw = 96, ch2 = 30;
+          fbox(cx - cpw - 30, cpuY - ch2, cpw, ch2, P.neutral, PLANES[0].color); tx(`${TOK.kunpeng}CPU`, cx - cpw - 30 + cpw / 2, cpuY - ch2 / 2 + 4, P.ink, '10px Inter', 'center');
+          line(cx - 30, cpuY - ch2 / 2, cx, hubY + 18, loadColor(Pl[0].u), 2);
+          fbox(cx + 30, cpuY - ch2, cpw, ch2, P.neutral, PLANES[2].color); tx(`${NIC_LBL}NIC`, cx + 30 + cpw / 2, cpuY - ch2 / 2 + 4, P.ink, '10px Inter', 'center');
+          line(cx + 30, cpuY - ch2 / 2, cx - 30 + cpw, cpuY - ch2 / 2, loadColor(Pl[3].u), 2, true);
+          tx('CPU→L1 = UB(绿) · CPU→NIC→数据中心 = VPC(紫)', cx, cpuY + 12, P.mut, '9px Inter', 'center');
+        }
+        tx(`${cfg.N} 个 ${cfg.unit} · 经 ${hubLab} ${selLevel === 'cluster' ? 'scale-out 全互联' : 'UB 全互联'}`, PAD, areaTop - 8, P.mut, '10px Inter');
+      } else {
+        // grid of the REAL count, each square coloured by its own load; sample a few links to the hub
+        const areaW = W - 2 * PAD, areaH = areaBot - areaTop;
+        const cols = Math.max(1, Math.round(Math.sqrt(cfg.N * (areaW / Math.max(1, areaH))))), rows = Math.ceil(cfg.N / cols);
+        const cell = Math.max(3, Math.min(Math.floor(areaW / cols), Math.floor(areaH / rows))), gp = cell > 10 ? 2 : 1;
+        const gw = cols * cell, x0 = cx - gw / 2, y0 = areaTop;
+        const sample = Math.max(1, Math.floor(cfg.N / 16));
+        for (let i = 0; i < cfg.N; i++) {
+          const c = i % cols, r = (i / cols) | 0, x = x0 + c * cell, y = y0 + r * cell, v = cfg.val(i);
+          if (i % sample === 0) line(x + cell / 2, y + cell / 2, cx, hubY + 18, loadColor(v), 0.5, false);
+          fbox(x, y, cell - gp, cell - gp, loadColor(v));
+          cells.current.push({ x, y, w: cell - gp, h: cell - gp, kind: 'punit', idx: i });
+        }
+        tx(`${cfg.N.toLocaleString()} 个 ${cfg.unit}（真实数量）· 经 ${hubLab} UB-Mesh any-to-any（抽样连线）· 每格=1 ${cfg.unit}、颜色=负载`, PAD, areaBot + 14, P.mut, '10px Inter');
       }
     }
-  }, [lens, selLevel, selSpod, selCab, selNode, pods, CAB, NODES, NPN, NPC, NPU_TOT, P, metricVal, nodeMean, cabMean, spodMean, scopeName, scopeMean, tcell, planeUtil, domains, domActive, flowCfg]);
+    // on-chip physical view: 2 compute Die (UMA) + 2 IO Die + HBM + D2D + UB/RDMA ports
+    function drawChip(Pl: { u: number }[]) {
+      const cx = W / 2, top = PAD + 56, bot = H - 60, midY = (top + bot) / 2;
+      const dieW = Math.min(220, (W - 2 * PAD - 120) / 2), dieH = Math.min(220, bot - top - 40);
+      const gap = 56, lx = cx - gap / 2 - dieW, rx = cx + gap / 2;
+      const dv0 = dieVal(0), dv1 = dieVal(1);
+      // compute dies
+      [{ x: lx, v: dv0, d: 0 }, { x: rx, v: dv1, d: 1 }].forEach(({ x, v, d }) => {
+        fbox(x, top, dieW, dieH, loadColor(v), ENTITY_COLORS.computeDie);
+        tx(`计算 Die ${d}`, x + dieW / 2, top - 8, P.ink2, '11px Inter', 'center');
+        tx(Math.round(v * 100) + '%', x + dieW / 2, top + 20, inkOf(loadColor(v)), `13px ${MONO}`, 'center');
+        if (selLevel === 'core' || selLevel === 'tile') {
+          // 16 AI Core per compute die, coloured by coreVal
+          const per = CORES_PER_CARD / 2, cc = 4, cr = per / cc;
+          const iw = (dieW - 24) / cc, ih = (dieH - 44) / cr;
+          for (let k = 0; k < per; k++) {
+            const gi = d * per + k, c = k % cc, r = (k / cc) | 0, x2 = x + 12 + c * iw, y2 = top + 32 + r * ih, v2 = coreVal(gi);
+            fbox(x2 + 1, y2 + 1, iw - 3, ih - 3, loadColor(v2), gi === selCore ? ACCENT : undefined);
+            if (iw > 30) tx(gi % 8 === 7 ? 'V' : 'C', x2 + iw / 2, y2 + ih / 2 + 3, inkOf(loadColor(v2)), '9px Inter', 'center');
+            cells.current.push({ x: x2, y: y2, w: iw, h: ih, kind: 'corec', idx: gi });
+          }
+        }
+        // HBM stack beside each die
+        const hbx = d === 0 ? x - 26 : x + dieW + 6;
+        for (let s = 0; s < 4; s++) fbox(hbx, top + 8 + s * (dieH / 4 - 4), 20, dieH / 4 - 8, P.neutral, ENTITY_COLORS.ioDie);
+        tx('HBM', hbx + 10, bot + 2, P.mut, '8px Inter', 'center');
+      });
+      // UMA / D2D bridge between compute dies
+      fbox(cx - gap / 2 + 4, midY - 8, gap - 8, 16, loadColor((dv0 + dv1) / 2));
+      tx('D2D 784GB/s', cx, midY - 14, P.mut, '8.5px Inter', 'center');
+      // UB / RDMA ports at the very bottom of each die (plane-coloured)
+      fbox(lx + dieW / 2 - 30, bot + 8, 26, 12, loadColor(Pl[0].u)); tx('UB口', lx + dieW / 2 - 17, bot + 30, PLANES[0].color, '8.5px Inter', 'center');
+      fbox(lx + dieW / 2 + 6, bot + 8, 26, 12, loadColor(Pl[1].u)); tx('RDMA口', lx + dieW / 2 + 19, bot + 30, PLANES[1].color, '8.5px Inter', 'center');
+      tx(`1 卡 = 2 计算 Die(UMA·OS 视为单 device) + ${IO_DIES_PER_CARD} IO Die · 对外 UB口(绿)/RDMA口(橙) · ${selLevel === 'tile' ? `核 ${selCore} 的 L0 tile/lane 见热力镜头` : '点 Die/Core 看热力'}`, PAD, H - 8, P.mut, '10px Inter');
+    }
+  }, [lens, selLevel, selSpod, selCab, selNode, selNpu, selCore, pods, CAB, NODES, NPN, NPC, NPU_TOT, step, P, metricVal, util01, faultAt, nodeMean, cabMean, spodMean, dieVal, coreVal, tileVal, scopeName, planeUtil, domains, domActive, tcell, flowCfg]);
 
   useEffect(() => { draw(); }, [draw]);
-  useEffect(() => {
-    const onR = () => draw(); window.addEventListener('resize', onR); return () => window.removeEventListener('resize', onR);
-  }, [draw]);
+  useEffect(() => { const onR = () => draw(); window.addEventListener('resize', onR); return () => window.removeEventListener('resize', onR); }, [draw]);
 
   // hover + click on the canvas
   const hitTest = (mx: number, my: number) => { for (const c of cells.current) if (mx >= c.x && mx <= c.x + c.w && my >= c.y && my <= c.y + c.h) return c; return null; };
   const onMove = (e: React.MouseEvent) => {
-    if (lens !== 'heat') { if (tip) setTip(null); return; }
-    const r = cvRef.current!.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, h = hitTest(mx, my);
+    const r = cvRef.current!.getBoundingClientRect(), h = hitTest(e.clientX - r.left, e.clientY - r.top);
     if (!h) { if (tip) setTip(null); return; }
     let t = '';
     if (h.kind === 'spod') t = `超节点#${h.idx + 1} · 平均 ${Math.round(spodMean(h.idx) * 100)}%`;
-    else if (h.kind === 'cabc') t = `超节点#${selSpod + 1}·机柜${h.idx + 1} · 均值 ${Math.round(cabMean(selSpod, h.idx) * 100)}%`;
+    else if (h.kind === 'cabc' || (h.kind === 'punit' && selLevel === 'super')) t = `机柜${h.idx + 1} · 均值 ${Math.round(cabMean(selSpod, h.idx) * 100)}%`;
     else if (h.kind === 'nodec') t = `机柜${((h.idx / NODES_PER_CAB) | 0) + 1}·节点${(h.idx % NODES_PER_CAB) + 1} · 均值 ${Math.round(nodeMean(selSpod, h.idx) * 100)}%`;
-    else if (h.kind === 'npuc') { const v = metricVal(selSpod, selNode, h.idx); t = `NPU${h.idx} (rank) · ${Math.round(v * 100)}% ${STATE_LABELS[loadState(v)]}`; }
-    else if (h.kind === 'rankfull') { const cab = ((h.idx / NODES_PER_CAB) | 0) + 1, nl = (h.idx % NODES_PER_CAB) + 1, v = nodeMean(selSpod, h.idx); t = `机柜${cab}·节点${nl} · 均值 ${Math.round(v * 100)}%${isStrag(selSpod, h.idx) ? ' · ⚠ straggler' : ''}`; }
+    else if (h.kind === 'npuc' || h.kind === 'pnpu') { const v = metricVal(selSpod, selNode, h.idx); t = `NPU${h.idx} (rank ${selNode * NPN + h.idx}) · ${Math.round(v * 100)}% ${STATE_LABELS[loadState(v)]}`; }
+    else if (h.kind === 'rankfull') { const cab = ((h.idx / NODES_PER_CAB) | 0) + 1, nl = (h.idx % NODES_PER_CAB) + 1; t = `机柜${cab}·节点${nl} · 均值 ${Math.round(nodeMean(selSpod, h.idx) * 100)}%${isStrag(selSpod, h.idx) ? ' · ⚠ straggler' : ''}`; }
+    else if (h.kind === 'punit') t = `${selLevel === 'cluster' ? '超节点' : selLevel === 'cab' ? '节点' : '单元'}${h.idx + 1}`;
+    else if (h.kind === 'diec') t = `计算 Die ${h.idx} · ${Math.round(dieVal(h.idx) * 100)}%`;
+    else if (h.kind === 'iodie') t = `IO Die ${h.idx} · 互联/IO（无算力负载）`;
+    else if (h.kind === 'corec') t = `${h.idx % 8 === 7 ? 'AIV/Vector' : 'AIC/Cube'} #${h.idx} · ${Math.round(coreVal(h.idx) * 100)}%`;
+    else if (h.kind === 'tilec') t = `Tile/lane #${h.idx} · ${Math.round(tileVal(h.idx) * 100)}%`;
+    if (!t) { if (tip) setTip(null); return; }
     setTip({ x: e.clientX, y: e.clientY, t });
   };
   const onClick = (e: React.MouseEvent) => {
-    if (lens !== 'heat') return;
     const r = cvRef.current!.getBoundingClientRect(), h = hitTest(e.clientX - r.left, e.clientY - r.top); if (!h) return;
-    if (h.kind === 'spod') { setSelSpod(h.idx); setSelCab(0); setSelNode(0); setSelNpu(-1); setSelLevel('super'); }
-    else if (h.kind === 'cabc') { setSelCab(h.idx); setSelNode(h.idx * NODES_PER_CAB); setSelNpu(-1); setSelLevel('cab'); }
-    else if (h.kind === 'nodec' || h.kind === 'rankfull') { setSelNode(h.idx); setSelCab((h.idx / NODES_PER_CAB) | 0); setSelNpu(-1); setSelLevel('node'); }
-    else if (h.kind === 'npuc') { setSelNpu(h.idx); }
+    if (h.kind === 'spod' || (h.kind === 'punit' && selLevel === 'cluster')) { setSelSpod(h.idx); setSelCab(0); setSelNode(0); setSelNpu(-1); setSelLevel('super'); }
+    else if (h.kind === 'cabc' || (h.kind === 'punit' && selLevel === 'super')) { setSelCab(h.idx); setSelNode(h.idx * NODES_PER_CAB); setSelNpu(-1); setSelLevel('cab'); }
+    else if (h.kind === 'nodec' || h.kind === 'rankfull' || (h.kind === 'punit' && selLevel === 'cab')) { const gn = h.kind === 'punit' ? selCab * NODES_PER_CAB + h.idx : h.idx; setSelNode(gn); setSelCab((gn / NODES_PER_CAB) | 0); setSelNpu(-1); setSelLevel('node'); }
+    else if (h.kind === 'npuc' || h.kind === 'pnpu') setSelNpu(h.idx);
+    else if (h.kind === 'diec') { setSelNpu((j) => (j < 0 ? 0 : j)); setSelLevel('core'); }
+    else if (h.kind === 'corec') { setSelCore(h.idx); setSelLevel('tile'); }
   };
 
-  // ── level navigation (axis + breadcrumb) ──
+  // level navigation (axis + breadcrumb)
   const setLevel = (id: Level) => {
-    if (id === 'cab' && selLevel !== 'cab') setSelCab((c) => (c < 0 ? 0 : c));
-    if (id === 'node') setSelNode((n) => (n < 0 ? selCab * NODES_PER_CAB : n));
+    if (id === 'cab' && selCab < 0) setSelCab(0);
+    if ((id === 'node' || SUBCARD.includes(id)) && selNode < 0) setSelNode(selCab * NODES_PER_CAB);
+    if (SUBCARD.includes(id) && selNpu < 0) setSelNpu(0);
     setSelLevel(id);
   };
 
-  // breadcrumb segments
-  const crumbs: { lvl: Level; label: string }[] = [{ lvl: 'cluster', label: `集群` }];
+  // breadcrumb segments (incl. below-card)
+  const crumbs: { lvl: Level; label: string }[] = [{ lvl: 'cluster', label: '集群' }];
   if (selLevel !== 'cluster') crumbs.push({ lvl: 'super', label: `超节点#${selSpod + 1}` });
-  if (selLevel === 'cab' || selLevel === 'node') crumbs.push({ lvl: 'cab', label: `机柜${selCab + 1}` });
-  if (selLevel === 'node') crumbs.push({ lvl: 'node', label: `节点${(selNode % NODES_PER_CAB) + 1}` });
+  if (['cab', 'node', ...SUBCARD].includes(selLevel)) crumbs.push({ lvl: 'cab', label: `机柜${selCab + 1}` });
+  if (['node', ...SUBCARD].includes(selLevel)) crumbs.push({ lvl: 'node', label: `节点${(selNode % NODES_PER_CAB) + 1}` });
+  if (SUBCARD.includes(selLevel)) crumbs.push({ lvl: 'die', label: `卡 r${cardJ}` });
+  if (selLevel === 'core' || selLevel === 'tile') crumbs.push({ lvl: 'core', label: 'AI Core' });
+  if (selLevel === 'tile') crumbs.push({ lvl: 'tile', label: 'Tile' });
 
-  // ── selection detail (right rail), all data-driven ──
+  // ── detail rail data ──
   const sm = scopeMean();
-  // step-time decomposition by 工况 (示意：compute/comm/mem share)
   const decomp = phase === 'decode' ? [['计算', 0.34, '#22d3ee'], ['通信(EP)', 0.46, '#ff4b7b'], ['访存(KV)', 0.20, '#a78bfa']]
     : phase === 'prefill' ? [['计算', 0.70, '#22d3ee'], ['通信', 0.18, '#ff4b7b'], ['访存', 0.12, '#a78bfa']]
     : [['计算', 0.58, '#22d3ee'], ['通信(AllReduce)', 0.30, '#ff4b7b'], ['访存', 0.12, '#a78bfa']];
+  const scopeCount = ({ cluster: pods, super: CAB, cab: NODES_PER_CAB, node: NPN, rank: NPU_TOT, die: COMPUTE_DIES_PER_CARD, core: CORES_PER_CARD, tile: TILES_VIEW } as Record<Level, number>)[selLevel];
+  const scopeUnit = ({ cluster: '超节点', super: '机柜', cab: '节点', node: 'NPU', rank: '卡(rank)', die: '计算 Die', core: 'AI Core', tile: 'Tile' } as Record<Level, string>)[selLevel];
+  // per-NPU bars for the focused card's node (the TP group) — shown whenever a card is in context
+  const showAssoc = cardSelected || selLevel === 'node';
+  const nodePeers = showAssoc ? Array.from({ length: NPN }, (_, j) => ({ j, u: util01(selSpod, selNode, j), fault: faultAt(selSpod, selNode, j), strag: isStrag(selSpod, selNode) })) : null;
 
-  // detail: node/rank → per-NPU mini bars
-  const nodeNpus = (selLevel === 'node' || selLevel === 'rank') ? Array.from({ length: NPN }, (_, j) => ({ j, u: util01(selSpod, selNode, j), fault: faultAt(selSpod, selNode, j) })) : null;
-  const nodeIsStrag = nodeNpus ? isStrag(selSpod, selNode) : false;
+  // inline SVG: card associations (node-internal 8 NPU ↔ L1 ↔ CPU), focused card highlighted (mirrors 平面视图)
+  const assocSVG = () => {
+    const W = 240, cx = W / 2;
+    return (
+      <svg viewBox={`0 0 ${W} 150`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 4 }}>
+        <polygon points={`${cx},10 ${cx + 18},26 ${cx},42 ${cx - 18},26`} fill="none" stroke={loadColor(sm)} strokeWidth={2} />
+        <text x={cx} y={30} fontSize={9} fill="var(--tx)" textAnchor="middle">L1</text>
+        {Array.from({ length: NPN }, (_, j) => {
+          const u = util01(selSpod, selNode, j), x = 14 + j * ((W - 28) / (NPN - 1)), focus = j === cardJ;
+          return (
+            <g key={j}>
+              <line x1={x} y1={84} x2={cx} y2={42} stroke={loadColor(u)} strokeWidth={focus ? 3 : 1.5} opacity={focus ? 1 : 0.6} />
+              <rect x={x - 12} y={84} width={24} height={22} rx={3} fill={loadColor(u)} stroke={focus ? ACCENT : 'transparent'} strokeWidth={focus ? 2.5 : 0} />
+              <text x={x} y={99} fontSize={8.5} fill={inkOf(loadColor(u))} textAnchor="middle">r{j}</text>
+            </g>
+          );
+        })}
+        <line x1={cx} y1={128} x2={cx} y2={42} stroke={PLANES[0].color} strokeWidth={1.5} opacity={0.7} />
+        <rect x={cx - 34} y={128} width={68} height={20} rx={10} fill="none" stroke="var(--bd2)" />
+        <text x={cx} y={142} fontSize={9} fill="var(--tx2)" textAnchor="middle">{TOK.kunpeng} CPU</text>
+      </svg>
+    );
+  };
 
   return (
     <div data-theme={dark ? 'dark' : 'light'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
-      {/* ── control header ── */}
+      {/* control header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', borderBottom: '1px solid var(--bd)' }}>
-        {/* breadcrumb (shared selection) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--tx3)' }}>选区</span>
           {crumbs.map((c, i) => (
-            <span key={c.lvl} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span key={c.lvl + i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {i > 0 && <span style={{ color: 'var(--tx3)' }}>›</span>}
               <span onClick={() => setLevel(c.lvl)} style={{ cursor: 'pointer', color: c.lvl === selLevel ? 'var(--tx)' : '#5b86ff', fontWeight: c.lvl === selLevel ? 700 : 400 }}>{c.label}</span>
             </span>
@@ -456,7 +611,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
       </div>
 
-      {/* ── KPI strip ── */}
+      {/* KPI strip */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '10px 14px 4px' }}>
         {([
           [`${NPU_TOT.toLocaleString()}`, 'NPU / 超节点', 'var(--tx)'],
@@ -473,80 +628,99 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ))}
       </div>
 
-      {/* ── hierarchy status-axis (the shared selection nav) ── */}
+      {/* hierarchy status-axis (full chain incl. below-card) */}
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, flexWrap: 'wrap', padding: '6px 14px 2px' }}>
         {axis.map((l, i) => (
           <div key={l.id} style={{ display: 'contents' }}>
             <div onClick={() => setLevel(l.id)} style={{
-              flex: '1 1 0', minWidth: 132, cursor: 'pointer', padding: '7px 11px', borderRadius: 10,
+              flex: '1 1 0', minWidth: 104, cursor: 'pointer', padding: '6px 9px', borderRadius: 9,
               border: `1px solid ${selLevel === l.id ? ACCENT : 'var(--bd)'}`, background: selLevel === l.id ? 'var(--state-sel)' : 'var(--panel-solid)',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx)' }}>{l.nm}</span>
-                <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>{l.su}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>{l.nm}</span>
+                <span style={{ fontSize: 9, color: 'var(--tx3)' }}>{l.su}</span>
               </div>
-              <div style={{ height: 8, background: 'var(--btn)', borderRadius: 5, overflow: 'hidden', margin: '5px 0 3px' }}>
+              <div style={{ height: 7, background: 'var(--btn)', borderRadius: 5, overflow: 'hidden', margin: '5px 0 3px' }}>
                 <div style={{ height: '100%', width: `${Math.round(l.p50 * 100)}%`, background: loadColor(l.p50), borderRadius: 5 }} />
               </div>
-              <div style={{ fontSize: 9.5, color: 'var(--tx2)', fontFamily: MONO }}>{`典型 ${Math.round(l.p50 * 100)}% · 红区 ${(l.red * 100).toFixed(1)}% · 峰 ${Math.round(l.p95 * 100)}%`}</div>
+              <div style={{ fontSize: 9, color: 'var(--tx2)', fontFamily: MONO }}>{`典型 ${Math.round(l.p50 * 100)}% · 红 ${(l.red * 100).toFixed(1)}% · 峰 ${Math.round(l.p95 * 100)}%`}</div>
             </div>
-            {i < axis.length - 1 && <div style={{ alignSelf: 'center', color: 'var(--tx3)', padding: '0 4px', fontSize: 11 }}>▸</div>}
+            {i < axis.length - 1 && <div style={{ alignSelf: 'center', color: 'var(--tx3)', padding: '0 3px', fontSize: 10 }}>▸</div>}
           </div>
         ))}
       </div>
 
-      {/* ── main stage: enlarged lens canvas + detail rail ── */}
+      {/* main stage: enlarged lens canvas + detail rail */}
       <div style={{ flex: 1, display: 'flex', gap: 12, padding: '8px 14px 12px', minHeight: 0 }}>
         <div ref={wrapRef} style={{ flex: 1, minWidth: 0, position: 'relative', borderRadius: 12, border: '1px solid var(--bd)', overflow: 'hidden', background: 'var(--panel-solid)' }}>
-          <canvas ref={cvRef} onMouseMove={onMove} onMouseLeave={() => setTip(null)} onClick={onClick} style={{ display: 'block', width: '100%', height: '100%', cursor: lens === 'heat' ? 'pointer' : 'default' }} />
+          <canvas ref={cvRef} onMouseMove={onMove} onMouseLeave={() => setTip(null)} onClick={onClick} style={{ display: 'block', width: '100%', height: '100%', cursor: 'pointer' }} />
         </div>
 
         {/* detail rail */}
-        <div style={{ width: 268, flexShrink: 0, overflowY: 'auto', borderRadius: 12, border: '1px solid var(--bd)', background: 'var(--panel-solid)', padding: '12px 14px' }}>
+        <div style={{ width: 272, flexShrink: 0, overflowY: 'auto', borderRadius: 12, border: '1px solid var(--bd)', background: 'var(--panel-solid)', padding: '12px 14px' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#5b86ff', marginBottom: 2 }}>{scopeName()}</div>
           <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 10 }}>{({ heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' })[lens]} · {({ util: '利用率', strag: 'straggler 落后度', fault: '故障' })[metric]}</div>
 
-          {/* scope summary */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 1, padding: '7px 9px', borderRadius: 8, background: 'var(--btn)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: loadColor(sm) }}>{Math.round(sm * 100)}%</div>
               <div style={{ fontSize: 10, color: 'var(--tx3)' }}>选区平均负载</div>
             </div>
             <div style={{ flex: 1, padding: '7px 9px', borderRadius: 8, background: 'var(--btn)' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: 'var(--tx)' }}>{({ cluster: pods, super: CAB, cab: NODES_PER_CAB, node: NPN, rank: NPU_TOT } as Record<Level, number>)[selLevel].toLocaleString()}</div>
-              <div style={{ fontSize: 10, color: 'var(--tx3)' }}>{({ cluster: '超节点', super: '机柜', cab: '节点', node: 'NPU', rank: '卡(rank)' } as Record<Level, string>)[selLevel]}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: 'var(--tx)' }}>{scopeCount.toLocaleString()}</div>
+              <div style={{ fontSize: 10, color: 'var(--tx3)' }}>{scopeUnit}</div>
             </div>
           </div>
 
-          {/* step decomposition */}
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', margin: '6px 0 5px' }}>step 时间分解（{PH[phase].label}）</div>
-          {decomp.map(([nm, frac, c]) => (
-            <div key={nm as string} style={{ marginBottom: 5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginBottom: 2 }}><span style={{ color: 'var(--tx)' }}>{nm}</span><span style={{ color: 'var(--tx3)', fontFamily: MONO }}>{Math.round((frac as number) * 100)}%</span></div>
-              <div style={{ height: 7, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${(frac as number) * 100}%`, background: c as string }} /></div>
-            </div>
-          ))}
-
-          {/* node/rank → per-NPU mini bars + node↔L1↔CPU sketch */}
-          {nodeNpus && (
-            <>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', margin: '12px 0 5px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>本节点 8 NPU(rank)</span>{nodeIsStrag && <span style={{ color: '#e5484d' }}>⚠ straggler</span>}
+          {/* card associations / comm relationships (mirrors 平面视图's relationship view) */}
+          {showAssoc && (
+            <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9, marginBottom: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>通信关系 · 卡 r{cardJ}（rank {selNode * NPN + cardJ}）</span>
+                {nodePeers?.[cardJ]?.strag && <span style={{ color: '#e5484d' }}>⚠ straggler</span>}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4 }}>
-                {nodeNpus.map((p) => (
-                  <div key={p.j} onClick={() => setSelNpu(p.j)} title={`NPU${p.j} · ${Math.round(p.u * 100)}%${p.fault ? ' · 故障' : ''}`} style={{ cursor: 'pointer', padding: '5px 4px', borderRadius: 6, background: loadColor(p.u), border: selNpu === p.j ? `2px solid ${ACCENT}` : `1px solid ${p.fault ? '#e5484d' : 'transparent'}`, textAlign: 'center' }}>
+              {assocSVG()}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginTop: 6 }}>
+                {nodePeers!.map((p) => (
+                  <div key={p.j} onClick={() => { setSelNpu(p.j); if (SUBCARD.includes(selLevel)) setSelLevel('node'); }} title={`NPU${p.j} · ${Math.round(p.u * 100)}%${p.fault ? ' · 故障' : ''}`}
+                    style={{ cursor: 'pointer', padding: '4px 2px', borderRadius: 6, background: loadColor(p.u), border: p.j === cardJ ? `2px solid ${ACCENT}` : `1px solid ${p.fault ? '#e5484d' : 'transparent'}`, textAlign: 'center' }}>
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: inkOf(loadColor(p.u)) }}>{p.fault ? '✕' : `r${p.j}`}</div>
                     <div style={{ fontSize: 9, fontFamily: MONO, color: inkOf(loadColor(p.u)) }}>{Math.round(p.u * 100)}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>节点内 8 NPU 经 56G UB↔L1 · CPU 30G 接入 · 上联 L2（层间）</div>
-            </>
+              {/* association rows: which comm groups this card belongs to */}
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {([
+                  ['TP 组', `本节点 ${NPN} rank · AllReduce`, PARTITION_META.tp.label.includes('TP') ? '#04d793' : '#04d793', loadColor(nodeMean(selSpod, selNode))],
+                  ['EP 组', `本机柜 ${NPC} rank · All-to-All`, '#ff4b7b', loadColor(cabMean(selSpod, (selNode / NODES_PER_CAB) | 0))],
+                  ['DP 副本', `跨超节点 ×${pods} · AllReduce`, '#ffaa3b', loadColor(sm)],
+                  ['上联链路', `NPU→L1→L2→超节点 · UB`, PLANES[0].color, loadColor(planeUtil()[0].u)],
+                ] as [string, string, string, string][]).map(([k, v, tag, st]) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: tag, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--tx)', width: 52, flexShrink: 0 }}>{k}</span>
+                    <span style={{ color: 'var(--tx3)', flex: 1 }}>{v}</span>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: st, flexShrink: 0 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
+          {/* step decomposition */}
+          <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', margin: '0 0 5px' }}>step 时间分解（{PH[phase].label}）</div>
+            {decomp.map(([nm, frac, c]) => (
+              <div key={nm as string} style={{ marginBottom: 5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginBottom: 2 }}><span style={{ color: 'var(--tx)' }}>{nm}</span><span style={{ color: 'var(--tx3)', fontFamily: MONO }}>{Math.round((frac as number) * 100)}%</span></div>
+                <div style={{ height: 7, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${(frac as number) * 100}%`, background: c as string }} /></div>
+              </div>
+            ))}
+          </div>
+
           {/* legend */}
-          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 12, paddingTop: 10 }}>
+          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 5 }}>状态色（红黄绿=状态，唯一一套）</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
               {STATE_LABELS.map((lb, i) => (<span key={lb} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 11, height: 11, borderRadius: 3, background: stateColor(i) }} />{lb}</span>))}
@@ -559,13 +733,12 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
             )}
           </div>
 
-          {/* cluster scale control (only meaningful at cluster level) */}
-          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 12, paddingTop: 10 }}>
+          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 5 }}>集群规模（示意 · 超节点数）</div>
             <div style={{ display: 'flex', gap: 4 }}>
               {[1, 2, 4, 8].map((c) => (<button key={c} onClick={() => { setPods(c); if (selSpod >= c) setSelSpod(0); }} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(pods === c, ACCENT) }}>×{c}</button>))}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>状态为示意（含 straggler / 故障注入 + 回放事件）。接 profiler 后替换 nodeLoad / 通信强度即可，结构与阈值不变。</div>
+            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>状态为示意（含 straggler/故障注入 + 回放事件）。计数与关系均由真实层级规模推导；接 profiler 后替换 nodeLoad / 通信强度即可。</div>
           </div>
         </div>
       </div>
