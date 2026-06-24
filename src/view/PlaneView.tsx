@@ -126,6 +126,7 @@ function toggleBtn(active: boolean, c: string): React.CSSProperties {
   return active ? { border: `1px solid ${c}`, background: c, color: inkOf(c), fontWeight: 600 } : { ...SECONDARY };
 }
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+const lgNote: React.CSSProperties = { color: 'var(--tx3)', fontSize: 10 };   // compact legend note line
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canvas numeric labels
 
@@ -1199,18 +1200,19 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         style={{ display: 'block', cursor: drag.current ? 'grabbing' : layout === 'top' ? 'crosshair' : 'pointer', touchAction: 'none' }}
         onWheel={onWheel} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={onLeave}
       />
-      {/* controls */}
-      <div style={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
-        {/* layout: top-down map vs. layered hierarchy */}
+      {/* main toolbar: layout tabs — top-center */}
+      <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 12, maxWidth: 'calc(100vw - 24px)' }}>
         <span style={{ ...LBL }}>布局</span>
         {([['devices', '器件互联'], ['layers', '层级图'], ['top', '顶视图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          const title = id === 'top' ? '超节点顶视图（嵌套平铺）' : id === 'layers' ? '层级矩阵图（L5 超节点→机柜→L4 节点→L3 卡/device→L2 计算 Die→L1 AI Core→L0 Tile，按 UB L0–L7 坐标）' : '器件互联平面（全量 NPU/CPU/LPO/NIC + 板内/板间 NPU · NPU-CPU · NPU-LPO · NIC-CPU 连线）';
+          const title = id === 'top' ? '超节点顶视图（嵌套平铺）' : id === 'layers' ? '层级矩阵图（L5 超节点→L0 Tile，按 UB L0–L7 坐标）' : '器件互联平面（全量 NPU/CPU/LPO/NIC + 连线）';
           return <button key={id} onClick={() => setLayout(id)} title={title}
             style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{lb}</button>;
         })}
-        <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
-        {layout === 'top' ? (
+      </div>
+      {/* action buttons: separate centered bar below the tabs (按钮单独显示) */}
+      <div style={{ position: 'absolute', top: 54, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 6, padding: '5px 10px', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 12, maxWidth: 'calc(100vw - 24px)' }}>
+        {layout === 'top' && (
           <>
             <span style={{ ...LBL }}>上色</span>
             {COLOR_BTNS.map((c) => {
@@ -1219,34 +1221,21 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 {c.id !== 'none' && <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? inkOf(sig) : sig, display: 'inline-block', opacity: on ? 0.9 : 0.6 }} />}{c.label}
               </button>;
             })}
-            <button onClick={() => setLinks((v) => !v)} title="连线：板内/板间 NPU（UB mesh）+ NPU-CPU · NPU-LPO · NIC-CPU（线型=平面），默认显示"
-              style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4, ...toggleBtn(links, UB_LEVELS[1].color) }}>
+            <button onClick={() => setLinks((v) => !v)} title="连线（线型=平面），默认显示"
+              style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(links, UB_LEVELS[1].color) }}>
               <span style={{ width: 9, height: 3, background: links ? inkOf(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: links ? 0.9 : 0.5 }} />连线
             </button>
             <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
-            {(['ring', 'a2a'] as const).map((sc) => {
-              const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-              return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
-                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
-            })}
-            <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（卡随相位变色 + 数据流动 + 右下 swimlane）"
-              style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`${L.N1.toLocaleString()} 卡 · ${L.nC} 机柜 · 拖动/滚轮 · 悬停任一卡/Die/AI Core 看信息卡 · 放大点卡选 Die/核 · 连线默认关`}</span>
-          </>
-        ) : layout === 'layers' ? (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
-        ) : (
-          <>
-            {(['ring', 'a2a'] as const).map((sc) => {
-              const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-              return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
-                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
-            })}
-            <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（连线流量流动 + 器件状态变色 + 右侧层级面板同步播放）"
-              style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
-            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`器件互联 · ${DEV.totals.npu.toLocaleString()} NPU/${DEV.totals.cpu.toLocaleString()} CPU/${DEV.totals.nic.toLocaleString()} NIC · 点器件高亮关联 + 右侧层级 · ▶ 看连线流量/器件状态`}</span>
           </>
         )}
+        {/* scenario + play — 执行时序, available in every layout */}
+        {(['ring', 'a2a'] as const).map((sc) => {
+          const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+          return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+            style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
+        })}
+        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（节点按状态变色 + 连线/数据流动 + swimlane/右侧面板同步）"
+          style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
       </div>
       {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
       <div style={{ position: 'absolute', bottom: 12, left: 12, maxWidth: 'min(420px, calc(100vw - 24px))', padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', lineHeight: 1.6, color: 'var(--tx2)' }}>
@@ -1256,64 +1245,32 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
         {legendOpen && (layout === 'top' ? (
           <>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><span style={{ color: ENTITY_COLORS.super }}>L5 本{TOK.supernode}</span>（{LAY.cabN.toLocaleString()} 机柜 / {LAY.cardN.toLocaleString()} NPU）↓ 以下为本超节点逐级展开</div>
-            <div><span style={{ display: 'inline-block', width: 11, height: 11, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />机柜框（机器域·含 8 刀片）</div>
-            <div><span style={{ display: 'inline-block', width: 11, height: 11, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 5 }} />L4 节点/刀片框（含 8 卡）</div>
-            <div><span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡 = 1 device</span>（硬件）· <span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>r 号 = rank</span>（软件 · 1:1 绑定） · <span style={{ display: 'inline-block', width: 7, height: 7, background: M_DIE, borderRadius: 1, verticalAlign: '-1px', marginLeft: 4, marginRight: 1 }} /><span style={{ display: 'inline-block', width: 7, height: 7, background: M_IO, borderRadius: 1, verticalAlign: '-1px', marginRight: 4 }} />卡内 L3→L2→L1：4 Die(2 计算+2 IO) · 再放大 <span style={{ display: 'inline-block', width: 6, height: 7, background: M_CUBE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: M_VEC, borderRadius: 1, verticalAlign: '-1px', marginRight: 3 }} />AI Core(Cube/Vector·靠形状区分)</div>
-            <div>{colorBy === 'none' ? '格子 = 1 张 950 卡 / device（嵌套=包含关系）' : `卡按 ${colorBy.toUpperCase()} 组上色（${cfg}）`}</div>
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 2, paddingTop: 2 }}>主机侧连线默认显示；放大刀片后显示物理器件（对象）：
-              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[0].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />NPU UB 口
-              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: PLANES[1].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />RDMA 口 ·
-              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_CPU, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />CPU
-              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[0].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />L1 交换
-              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: DEV_LPO, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />LPO
-              <span style={{ display: 'inline-block', width: 9, height: 7, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 2px 0 4px' }} />擎天 NIC</div>
-            <div style={{ color: '#9fb6ff' }}>{`${TOK.ub} L0–L7：机柜框/刀片框=机器域(L4–L5) · 卡=L3 Chip(rank) · 卡内 Die=L2 · AI Core=L1 · tile/lane=L0`}</div>
-            {links && <div><span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[1].color}`, verticalAlign: 'middle', marginRight: 5 }} />板内 NPU(L1) · <span style={{ display: 'inline-block', width: 11, height: 0, borderTop: `2px solid ${UB_LEVELS[2].color}`, verticalAlign: 'middle', margin: '0 5px' }} />板间 NPU(L2)</div>}
-            {links && <div style={{ color: 'var(--tx3)', fontSize: 10 }}>主机侧连线（默认显示·线型=平面）：
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px solid var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />实线 NPU-CPU(UB) ·
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dashed var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />长虚 NPU-LPO(SO·光) ·
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 NIC-CPU(VPC)</div>}
-            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线</span></div>}
-            {playing && <div style={{ color: 'var(--tx3)' }}>连线<b style={{ color: 'var(--tx2)' }}>颜色=利用率</b>、<b style={{ color: 'var(--tx2)' }}>粗细=带宽</b>（粗绿=大带宽空闲 / 细红=小带宽打满）；卡只在繁忙时上色 · 红黄绿=状态、蓝灰=结构 · 顶部=当前相位</div>}
+            <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 4 }} />机柜框 · <span style={{ display: 'inline-block', width: 10, height: 10, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', margin: '0 4px' }} />刀片框 · <span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡=device</span>·<span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>rank</span> 1:1</div>
+            <div style={lgNote}>放大卡 → <span style={{ display: 'inline-block', width: 7, height: 7, background: M_DIE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} />4 Die(2计算+2 IO) → <span style={{ display: 'inline-block', width: 6, height: 7, background: M_CUBE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: M_VEC, borderRadius: 1, verticalAlign: '-1px', marginRight: 2 }} />AI Core · {colorBy === 'none' ? '嵌套=包含' : `卡按 ${colorBy.toUpperCase()}（${cfg}）`}</div>
+            {links && <div style={lgNote}>线型=平面：— UB · – – SO · ··· VPC</div>}
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={lgNote}>状态 闲/中/忙/离线 · 连线 色=利用率·粗=带宽</span></div>}
           </>
         ) : layout === 'layers' ? (
           <>
             {/* each level = a matrix grid of its real units, with a distinct glyph */}
             {LAY.levels.map((Lv) => {
-              const shape = ({ super: '本超节点·全量展开', cab: '柜+槽位', node: '刀片+8 NPU 点', card: '4 Die = 2 计算(UMA)+2 IO', die: '计算 Die + 16 AI Core 点', core: 'Cube/Vector 独立核(≈8:1)', tile: '聚合观测·下钻 swimlane' } as Record<string, string>)[Lv.kind];
               const lq = UB_COORD[Lv.kind];
-              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label} <span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : `×${Lv.count.toLocaleString()} · `}{shape}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
+              return <div key={Lv.kind}><span style={{ display: 'inline-block', width: 9, height: 9, background: Lv.color, borderRadius: 2, verticalAlign: '-1px', marginRight: 5 }} />{Lv.label}<span style={{ color: 'var(--tx3)' }}>{Lv.banner ? '' : ` ×${Lv.count.toLocaleString()}`}</span>{lq && <span style={{ color: '#9fb6ff' }}> · {TOK.ub} {lq.L}</span>}</div>;
             })}
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>每层=该级全部单元的矩阵铺排 · 卡 L3 → 计算 Die L2(×2/卡) → AI Core L1(×16/Die) → Tile L0 逐级下探 · <span style={{ color: ENTITY_COLORS.card }}>硬件 device</span> ↔ <span style={{ color: ENTITY_COLORS.rank }}>软件 rank</span> 严格 1:1</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>放大 L4 节点格 → 显示物理器件对象：8×NPU(各含
-              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: PLANES[0].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />UB 口
-              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: PLANES[1].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />RDMA 口) +
-              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: DEV_CPU, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />CPU
-              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: PLANES[0].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />交换
-              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: DEV_LPO, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />LPO
-              <span style={{ display: 'inline-block', width: 8, height: 6, borderRadius: 2, background: PLANES[2].color, verticalAlign: '-1px', margin: '0 1px 0 3px' }} />NIC + 平面连线</div>
-            <div style={{ color: '#9fb6ff', fontSize: 10 }}>{`层号 = ${TOK.ub} L0–L7 同一坐标：核内域(L0–L1) · 芯片域(L2–L3) · 机器域(L4–L5,机柜并入·无独立级) · 点格看右上对齐`}</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>L2/L1/L0 数量巨大 → 概览<b style={{ color: ENTITY_COLORS.vector }}>聚合</b>、缩放才铺到个体；<b style={{ color: ENTITY_COLORS.vector }}>L0</b> 是聚合观测级（流水气泡/访存），逐核展开看执行时序 swimlane</div>
-            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? (playing ? '已选中(播放中)：链路按状态(负载)上色·其余暗下 · 选中卡/Die/AI Core → 右下 L0 swimlane · 再点取消' : '已选中：蓝色=上下游链路 · 选中卡/Die/AI Core → 右下 L0 执行时序 swimlane · 再点取消') : '点任一格 → 高亮上下游（播放时按状态上色）+ 右上详情；点卡及以下 → 右下 L0 swimlane'}</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>器件级 NPU/CPU/LPO/NIC 与连接关系 → 见上方「器件互联」子视图</div>
+            <div style={{ ...lgNote, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>逐级下探 L3 卡→L2 Die→L1 AI Core→L0 Tile · <span style={{ color: ENTITY_COLORS.card }}>device</span>↔<span style={{ color: ENTITY_COLORS.rank }}>rank</span> 1:1</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selL ? (playing ? '已选(播放)：链路按状态色·其余暗下 · 卡/Die/核 → 右下 L0 swimlane' : '已选：蓝=上下游链路 · 卡/Die/核 → 右下 swimlane · 再点取消') : '点格 → 高亮上下游（播放按状态色）· 点卡及以下 → L0 swimlane'}</div>
           </>
         ) : (
           <>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>全量拓扑：<b style={{ color: 'var(--tx2)' }}>每一个器件都画出来</b>（{DEV.nBlades.toLocaleString()} 刀片全部铺开，非计数/虚影）。放大某刀片看其接线。</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}><b style={{ color: ENTITY_COLORS.card }}>板内 8 NPU UB 全互联（直连·{TOK.ubmesh}，无中间交换）</b> + CPU 同板 UB 互通；板/柜经 <span style={{ color: PLANES[0].color }}>L1 路由→L2 交换</span>(Pod Clos) 上联</div>
             <div>
               <span style={{ display: 'inline-block', width: 9, height: 9, background: ENTITY_COLORS.card, borderRadius: 2, verticalAlign: '-1px', marginRight: 4 }} />NPU
               <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_CPU, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />CPU
               <span style={{ display: 'inline-block', width: 9, height: 9, background: PLANES[2].color, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />NIC
-              <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_LPO, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />LPO 光模块</div>
-            <div style={{ borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3, color: 'var(--tx3)', fontSize: 10 }}>连线线型=平面：
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px solid var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />实线 UB(NPU/CPU→L1) ·
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dashed var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />长虚 RDMA scale-out ·
-              <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 VPC(NIC→CPU)</div>
-            <div style={{ color: 'var(--tx3)', fontSize: 10 }}>颜色=利用率（播放时·红黄绿+灰离线）· 粗细=带宽</div>
-            <div style={{ color: SEL, fontSize: 10.5, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>{selDev ? '已选中：蓝圈=所选对象 · 高亮其连线与关联对象，其余暗下 · 点空白取消' : '点任一器件（NPU/CPU/NIC/L1/L2）→ 高亮它与关联对象的连接，其余暗下'}</div>
-            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>器件状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线 · 连线<b style={{ color: 'var(--tx2)' }}>虚线流动=活跃流量</b>（颜色=利用率）· 右侧面板同步播放</span></div>}
+              <span style={{ display: 'inline-block', width: 9, height: 9, background: DEV_LPO, borderRadius: 2, verticalAlign: '-1px', margin: '0 4px 0 8px' }} />LPO
+            </div>
+            <div style={lgNote}>板内 8 NPU UB 全互联(直连) + 上联 L1→L2 · 线型=平面：— UB · – – SO · ··· VPC</div>
+            <div style={{ color: SEL, fontSize: 10.5 }}>{selDev ? '已选：蓝圈=对象 · 高亮其连线与关联，其余暗下 · 点空白取消' : '点器件 → 高亮它与关联对象，其余暗下'}</div>
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={lgNote}>状态 闲/中/忙/离线 · 虚线流动=流量 · 右侧面板同步</span></div>}
           </>
         ))}
       </div>
@@ -1405,7 +1362,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
   const lanesY = phH + 6, lanesH = sw.rows.length * laneH, svgH = lanesY + lanesH + 12;
   const headX = padL + head * span;
   return (
-    <div style={{ position: 'absolute', bottom: 12, right: 12, width: W, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
+    <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: W, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
       {/* header: title + device + close */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
         <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 执行时序</span>

@@ -485,8 +485,8 @@ export function ClusterView() {
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
           {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
             <div style={{
-              position: 'absolute', top: 12, left: 12, zIndex: 5, maxWidth: 'calc(100% - 24px)',
-              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 7, maxWidth: 'calc(100% - 24px)',
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
               background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(ctxOpen) }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
@@ -766,13 +766,13 @@ export function ClusterView() {
             );
           })()}
 
-          {/* hover info bar */}
+          {/* hover info bar — bottom-right (clear of the bottom-left legend + bottom-center timeline + top-center toolbar) */}
           {hoverInfo && (
             <div style={{
-              position: 'absolute', left: 150, bottom: 14, maxWidth: 'calc(70% - 150px)',
+              position: 'absolute', right: 14, bottom: 14, maxWidth: '34%',
               padding: '7px 12px', fontSize: 12.5, lineHeight: 1.5,
               background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-              color: 'var(--tx)', pointerEvents: 'none',
+              color: 'var(--tx)', pointerEvents: 'none', zIndex: 6,
             }}>{hoverInfo}</div>
           )}
 
@@ -806,12 +806,13 @@ export function ClusterView() {
           {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard, which carries its own legend */}
           {mode !== 'status' && (
           <div style={{
-            position: 'absolute', right: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
+            position: 'absolute', left: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 250,
             pointerEvents: mode === 'fullpod' ? 'auto' : 'none',
             maxHeight: mode === 'fullpod' ? 'calc(100vh - 140px)' : undefined,
             overflowY: mode === 'fullpod' ? 'auto' : 'visible',
+            zIndex: 5,
           }}>
             {mode === 'mapping' && (
               <>
@@ -907,9 +908,7 @@ export function ClusterView() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
                   {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: 'var(--tx2)' }}><span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
-                <span style={lgNote}>连线 颜色=利用率 · 粗细=带宽（粗绿=大带宽闲 / 细红=小带宽打满）</span>
-                <span style={lgNote}>卡只在 满/拥塞 时染红（少量热点），其余保持其层级色（结构）</span>
-                <span style={lgNote}>播放(有相位) 或 开"负载/观测"时显示</span>
+                <span style={lgNote}>连线 色=利用率·粗=带宽 · 卡满/拥塞才染红(其余层级色) · 播放/观测时显示</span>
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
