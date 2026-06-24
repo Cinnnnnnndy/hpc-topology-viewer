@@ -25,6 +25,9 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 
+# Claude Code tooling state (session / worktree scratch — never tracked)
+.claude/
+
 # Local content generation (kept out of VCS by design)
 scripts/gen-content.mjs
 
