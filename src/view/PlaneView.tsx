@@ -131,8 +131,9 @@ const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canva
 
 // 器件互联 选中 → 右侧「截取的层级图」面板：canvas 绘制，图元/配色与「层级图」统一，含 containment
 // 连线，下钻到 L1 AI Core / L0 Tile。仅显示选中(蓝圈)链路 + 关联对象。
-function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onClose: () => void }) {
+function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode }: { sel: SelDev; dark: boolean; onClose: () => void; playing: boolean; headRef: React.MutableRefObject<number>; phaseRef: React.MutableRefObject<number>; runMode: RunMode }) {
   const cref = useRef<HTMLCanvasElement>(null);
+  const raf = useRef<number | null>(null);
   const [avail, setAvail] = useState(440);   // host (scroll area) height → L1/L0 fill the rest
   useEffect(() => {
     const cv = cref.current, host = cv?.parentElement; if (!host) return;
@@ -140,19 +141,30 @@ function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onCl
     ro.observe(host); setAvail(host.clientHeight);
     return () => ro.disconnect();
   }, []);
-  useEffect(() => {
+  // paint — re-run each frame while 执行时序 plays, so the panel's 流量(虚线流动) + 器件状态(load 配色)
+  // stay in sync with the main canvas (shares the SAME headRef/phaseRef clock).
+  const paint = useCallback(() => {
     const cv = cref.current; if (!cv) return;
     const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : Math.max(392, avail - 2);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     const ink2 = dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+    // shared play head → current phase (node load colour) + marching-ants offset (link flow)
+    const seg = phaseSegments(runMode);
+    const curP = playing ? (seg.find((sg) => headRef.current < sg.t1)?.p ?? seg[seg.length - 1].p) : null;
+    const flowOff = -(phaseRef.current * 16);
+    const heat = (seed: number) => loadColor(nodeLoad(seed, curP!.kind));   // call only when curP set
     const rr = (x: number, y: number, w: number, h: number, r: number) => { const rad = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + rad, y); ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad); ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath(); };
     const lbl = (lvl: string, name: string, yc: number) => { ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; if (lvl) { ctx.fillStyle = '#9fb6ff'; ctx.font = '700 9.5px sans-serif'; ctx.fillText(lvl, 40, yc - 6); } ctx.fillStyle = ink2; ctx.font = '9.5px sans-serif'; ctx.fillText(name, 40, yc + (lvl ? 6 : 0)); };
     const pill = (cx: number, cy: number, w: number, h: number, color: string, text: string, on: boolean) => { ctx.fillStyle = color; ctx.globalAlpha = 0.95; rr(cx - w / 2, cy - h / 2, w, h, h * 0.32); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = inkOf(color); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.min(10, h * 0.5)}px sans-serif`; ctx.fillText(text, cx, cy); if (on) { ctx.strokeStyle = SEL; ctx.lineWidth = 2; rr(cx - w / 2 - 2, cy - h / 2 - 2, w + 4, h + 4, h * 0.4); ctx.stroke(); } };
-    const card = (cx: number, cy: number, sz: number, on: boolean) => { const x = cx - sz / 2, y = cy - sz / 2; ctx.fillStyle = ENTITY_COLORS.card; ctx.globalAlpha = 0.95; rr(x, y, sz, sz, sz * 0.16); ctx.fill(); ctx.globalAlpha = 1; const p = sz * 0.1; ctx.fillStyle = 'rgba(9,13,20,0.6)'; rr(x + p, y + p, sz - p * 2, sz - p * 2, sz * 0.08); ctx.fill(); const ins = sz * 0.17, g = sz * 0.075, dw = (sz - ins * 2 - g) / 2, dh = dw, x0 = x + ins, x1 = x0 + dw + g, y0 = y + ins, y1 = y0 + dh + g; ctx.fillStyle = '#2be0b0'; rr(x0, y0, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.18); ctx.fill(); ctx.fillStyle = '#8a9bc4'; rr(x0, y1, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.18); ctx.fill(); if (on) { ctx.strokeStyle = SEL; ctx.lineWidth = 2.2; rr(x - 2, y - 2, sz + 4, sz + 4, sz * 0.2); ctx.stroke(); } };
+    const card = (cx: number, cy: number, sz: number, on: boolean, fill = ENTITY_COLORS.card) => { const x = cx - sz / 2, y = cy - sz / 2; ctx.fillStyle = fill; ctx.globalAlpha = 0.95; rr(x, y, sz, sz, sz * 0.16); ctx.fill(); ctx.globalAlpha = 1; const p = sz * 0.1; ctx.fillStyle = 'rgba(9,13,20,0.6)'; rr(x + p, y + p, sz - p * 2, sz - p * 2, sz * 0.08); ctx.fill(); const ins = sz * 0.17, g = sz * 0.075, dw = (sz - ins * 2 - g) / 2, dh = dw, x0 = x + ins, x1 = x0 + dw + g, y0 = y + ins, y1 = y0 + dh + g; ctx.fillStyle = '#2be0b0'; rr(x0, y0, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y0, dw, dh, dh * 0.18); ctx.fill(); ctx.fillStyle = '#8a9bc4'; rr(x0, y1, dw, dh, dh * 0.18); ctx.fill(); rr(x1, y1, dw, dh, dh * 0.18); ctx.fill(); if (on) { ctx.strokeStyle = SEL; ctx.lineWidth = 2.2; rr(x - 2, y - 2, sz + 4, sz + 4, sz * 0.2); ctx.stroke(); } };
     const die = (cx: number, cy: number, w: number, h: number, compute: boolean) => { ctx.fillStyle = compute ? '#2be0b0' : '#8a9bc4'; ctx.globalAlpha = 0.92; rr(cx - w / 2, cy - h / 2, w, h, h * 0.18); ctx.fill(); ctx.globalAlpha = 1; if (compute) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { ctx.beginPath(); ctx.arc(cx - w / 2 + w * (0.2 + 0.2 * c), cy - h / 2 + h * (0.2 + 0.2 * r), Math.min(w, h) * 0.05, 0, 7); ctx.fill(); } } };
-    const conn = (x1: number, y1: number, x2: number, y2: number, strong: boolean) => { ctx.strokeStyle = strong ? SEL : (dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)'); ctx.lineWidth = strong ? 1.4 : 1; ctx.globalAlpha = strong ? 0.9 : 0.7; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; };
+    // conn — while playing a STRONG (active) link marches (流量流动); idle keeps static SEL/neutral
+    const conn = (x1: number, y1: number, x2: number, y2: number, strong: boolean) => {
+      if (playing && strong) { ctx.strokeStyle = loadColor(0.62); ctx.lineWidth = 1.7; ctx.globalAlpha = 0.95; ctx.setLineDash([7, 5]); ctx.lineDashOffset = flowOff; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1; return; }
+      ctx.strokeStyle = strong ? SEL : (dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)'); ctx.lineWidth = strong ? 1.4 : 1; ctx.globalAlpha = strong ? 0.9 : 0.7; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1;
+    };
     const cl = 46, cr = W - 6, cw = cr - cl, midX = cl + cw / 2;
     const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
     const blade = sel.kind === 'l2' ? -1 : sel.blade, npuLocal = sel.kind === 'npu' ? sel.k % CPB : -1;
@@ -165,42 +177,56 @@ function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onCl
 
     if (isL2) {
       y = 92; lbl('L4', '刀片 ×8', y); const n = 8, bw = Math.min(34, (cw - (n - 1) * 5) / n), step = (cw - bw) / (n - 1);
-      for (let i = 0; i < n; i++) { const x = cl + bw / 2 + step * i; conn(midX, yCab + 9, x, y - 12, true); pill(x, y, bw, 22, ENTITY_COLORS.node, `B${cab * BPC + i}`, false); }
+      for (let i = 0; i < n; i++) { const x = cl + bw / 2 + step * i; const bid = cab * BPC + i; conn(midX, yCab + 9, x, y - 12, true); pill(x, y, bw, 22, curP ? heat(bid * 131 + 5) : ENTITY_COLORS.node, `B${bid}`, false); }
       lbl('', '柜内全部刀片', y + 34);
     } else {
       // L4 节点/刀片
-      y = 92; lbl('L4', '节点/刀片', y); pill(midX, y, 90, 18, ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1'); conn(midX, yCab + 9, midX, y - 9, true); const yNode = y;
+      y = 92; lbl('L4', '节点/刀片', y); pill(midX, y, 90, 18, curP ? heat(blade * 131 + 5) : ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1'); conn(midX, yCab + 9, midX, y - 9, true); const yNode = y;
       // L3 卡/NPU ×8
       y = 138; lbl('L3', '卡/NPU', y); const csz = Math.min(28, (cw - 7 * 5) / 8), cstep = (cw - csz) / 7; const cardX: number[] = [];
-      for (let i = 0; i < 8; i++) { const x = cl + csz / 2 + cstep * i; cardX.push(x); const on = i === npuLocal; conn(midX, yNode + 9, x, y - csz / 2, on || sel.kind === 'l1'); card(x, y, csz, on); }
+      for (let i = 0; i < 8; i++) { const x = cl + csz / 2 + cstep * i; cardX.push(x); const on = i === npuLocal; conn(midX, yNode + 9, x, y - csz / 2, on || sel.kind === 'l1'); card(x, y, csz, on, curP ? heat(blade * CPB + i) : ENTITY_COLORS.card); }
       const yCards = y;
       // 主机器件 CPU/NIC (related)
       y = 178; lbl('', '主机器件', y);
       const cpuShow = (sel.kind === 'npu' || sel.kind === 'l1') ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
       const nicShow = sel.kind === 'l1' ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
       const hostN = cpuShow.length + nicShow.length, hw = 30, hstep = hostN > 1 ? Math.min(46, cw / hostN) : 0, hx0 = midX - (hostN - 1) * hstep / 2;
-      cpuShow.forEach((i, j) => pill(hx0 + j * hstep, y, hw, 17, DEV_CPU, 'CPU', sel.kind === 'cpu' && sel.i === i));
-      nicShow.forEach((i, j) => pill(hx0 + (cpuShow.length + j) * hstep, y, hw, 17, PLANES[2].color, 'NIC', sel.kind === 'nic' && sel.i === i));
+      cpuShow.forEach((i, j) => pill(hx0 + j * hstep, y, hw, 17, curP ? heat(blade * 40 + i + 9) : DEV_CPU, 'CPU', sel.kind === 'cpu' && sel.i === i));
+      nicShow.forEach((i, j) => pill(hx0 + (cpuShow.length + j) * hstep, y, hw, 17, curP ? heat(blade * 50 + i + 9) : PLANES[2].color, 'NIC', sel.kind === 'nic' && sel.i === i));
       // L2 计算 Die (focus card) — 截取层级图下钻
       y = 224; lbl('L2', `计算 Die · 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
       for (let i = 0; i < 4; i++) { const x = cl + dieW / 2 + dstep * i; dieX.push(x); conn(cardX[focusLocal], yCards + csz / 2, x, y - 17, true); die(x, y, dieW, 30, i < 2); }
       ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8px sans-serif'; ctx.fillText('2 计算(UMA)', dieX[0] / 1 + (dieX[1] - dieX[0]) / 2, y + 20); ctx.fillText('2 IO', dieX[2] + (dieX[3] - dieX[2]) / 2, y + 20);
-      // ── lower region fills the remaining panel height: L1 AI Core grid (big) + L0 Tile strip ──
+      // ── lower region: L1 AI Core (32, 全量) + L0 Tile (128, 全量) — both grids fill remaining height ──
       const dieBot = 224 + 15;
-      const l0H = 16, yL0 = H - 12 - l0H / 2;              // L0 strip near the very bottom
-      const l1lblY = 272, gridTop = l1lblY + 12, gridBot = yL0 - l0H / 2 - 26;
-      // L1 AI Core (32/卡 = 8×4, Cube/Vector) — cells stretch to fill the height
-      lbl('L1', 'AI Core', l1lblY);
-      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, gridTop - 4, true);
-      const cols = 8, rows = 4, gv = 3, gw = cw / cols, gh = Math.max(9, (gridBot - gridTop - (rows - 1) * gv) / rows);
-      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube; const x = cl + c * gw + 1, yy = gridTop + r * (gh + gv); rr(x, yy, gw - 2, gh, 2.5); ctx.fill(); }
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, gridBot + 11);
-      // L0 Tile / SIMT lane
-      lbl('L0', 'Tile', yL0); conn(midX, gridBot + 2, midX, yL0 - l0H / 2 - 2, true);
-      ctx.fillStyle = dark ? 'rgba(125,211,252,0.20)' : 'rgba(34,211,238,0.20)'; rr(cl, yL0 - l0H / 2, cw, l0H, 4); ctx.fill();
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, yL0);
+      const regTop = 256, regBot = H - 8, labelH = 14, capH = 12, gapV = 10;
+      const gridTotal = Math.max(96, (regBot - regTop) - (labelH * 2 + capH * 2 + gapV));
+      const l1H = Math.round(gridTotal * 0.36), l0H = gridTotal - l1H;
+      const b1Top = regTop + labelH, b1Bot = b1Top + l1H;
+      const b0Top = b1Bot + capH + gapV + labelH, b0Bot = b0Top + l0H;
+      // L1 AI Core — 32 (8×4), Cube/Vector idle · per-core load 配色 when playing
+      lbl('L1', 'AI Core', regTop + labelH / 2);
+      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, b1Top - 2, true);
+      { const cols = 8, rows = 4, gv = 4, gw = cw / cols, gh = Math.min(20, (l1H - (rows - 1) * gv) / rows), gy0 = b1Top + (l1H - (rows * gh + (rows - 1) * gv)) / 2;
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = curP ? heat(focusK * 131 + idx) : (vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube); rr(cl + c * gw + 1.5, gy0 + r * (gh + gv), gw - 3, gh, 2.5); ctx.fill(); } }
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, b1Bot + capH / 2);
+      // L0 Tile — 128 (16×8) 全量 · per-tile load 配色 when playing
+      conn(midX, b1Bot + capH, midX, b0Top - 2, true);
+      lbl('L0', 'Tile', b1Bot + capH + gapV + labelH / 2);
+      { const cols = 16, rows = 8, gv = 2, gw = cw / cols, gh = Math.min(13, (l0H - (rows - 1) * gv) / rows), gy0 = b0Top + (l0H - (rows * gh + (rows - 1) * gv)) / 2;
+        ctx.globalAlpha = 0.9;
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c; ctx.fillStyle = curP ? heat(focusK * 517 + idx) : ENTITY_COLORS.vector; rr(cl + c * gw + 0.8, gy0 + r * (gh + gv), gw - 1.6, gh, 1.6); ctx.fill(); }
+        ctx.globalAlpha = 1; }
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, b0Bot + capH / 2);
     }
-  }, [sel, dark, avail]);
+  }, [sel, dark, avail, playing, runMode, headRef, phaseRef]);
+  useEffect(() => { paint(); }, [paint]);
+  useEffect(() => {   // while playing, re-paint every frame to follow the shared play head
+    if (!playing) { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; return; }
+    const loop = () => { paint(); raf.current = requestAnimationFrame(loop); };
+    raf.current = requestAnimationFrame(loop);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
+  }, [playing, paint]);
   const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
   return (
     <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: PANEL_W, background: 'var(--panel)', borderLeft: '1px solid var(--bd)', boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
@@ -210,7 +236,7 @@ function SelHierPanel({ sel, dark, onClose }: { sel: SelDev; dark: boolean; onCl
         <span style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--tx2)', fontSize: 12, lineHeight: 1, padding: '3px 8px', border: '1px solid var(--bd)', borderRadius: 6 }} onClick={onClose}>✕</span>
       </div>
       <div style={{ fontSize: 11, color: SEL, fontWeight: 600, marginBottom: 2 }}>{title}</div>
-      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>与层级图同一图元/配色/连线 · 仅选中(蓝圈)+关联，下钻到 L1/L0</div>
+      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>{playing ? <><span style={{ color: ENTITY_COLORS.cube, fontWeight: 600 }}>▶ 执行时序同步播放</span> · 器件按负载变色 · 链路虚线流动=流量</> : '与层级图同一图元/配色/连线 · 仅选中(蓝圈)+关联，下钻到 L1/L0'}</div>
       <div style={{ overflowY: 'auto', flex: 1 }}><canvas ref={cref} style={{ width: '100%', display: 'block' }} /></div>
       <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；卡=device(4 Die)；下钻 AI Core(L1)/Tile(L0)。点画布空白取消。</div>
     </div>
@@ -659,14 +685,18 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       type ST = 'ub' | 'so' | 'vpc';
       const heatFill = (fill: string, seed: number) => (curPhase ? heatOf(seed) : fill);
       const cuComm = curPhase?.kind === 'comm';
-      // edge: line-STYLE = plane · colour = utilisation when playing · width in SCREEN px (÷s)
+      // edge: line-STYLE = plane · colour = utilisation when playing · width in SCREEN px (÷s).
+      // While 执行时序 plays, an ACTIVE (non-offline) link's dash MARCHES → reads as live 流量流动;
+      // offline/idle keep the static plane style. phaseRef is the shared marching-ants clock.
       const edge = (p: [number, number], q: [number, number], style: ST, sa: number, sb: number, boost: number, wpx: number, alpha = 0.8) => {
         const ld = curPhase ? linkLoad(sa, sb, boost) : -2;
-        ctx.setLineDash(style === 'ub' ? [] : style === 'so' ? [6 / s, 4 / s] : [1.6 / s, 4 / s]);
+        const flowing = playing && ld >= 0;
+        if (flowing) { ctx.setLineDash(style === 'ub' ? [13 / s, 5 / s] : style === 'so' ? [6 / s, 4 / s] : [1.6 / s, 4 / s]); ctx.lineDashOffset = -(phaseRef.current * 22) / s; }
+        else { ctx.setLineDash(style === 'ub' ? [] : style === 'so' ? [6 / s, 4 / s] : [1.6 / s, 4 / s]); ctx.lineDashOffset = 0; }
         ctx.lineWidth = wpx / s; ctx.lineCap = 'round'; ctx.globalAlpha = alpha;
         ctx.strokeStyle = ld <= -2 ? NED : loadColor(ld);
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
-        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
       };
       // NPU 图元 = 950 卡 (与层级图/顶视图一致)：卡体 + 暗底凹槽内 4 Die（2 计算 teal + 2 IO 蓝灰），
       // 凹槽让 Die 与卡体(青/热力色)拉开对比，不再糊成一片。
@@ -1057,7 +1087,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       // colour is constant within a phase → only the top view's marching-ants need a per-frame
       // redraw; otherwise redraw both views on a phase change so the wash steps forward.
       const id = (seg.find((s) => headRef.current < s.t1)?.p ?? seg[seg.length - 1].p).id;
-      const flowVisible = layout === 'top' && !!tf.current && tf.current.s * L.cs > 4;
+      const flowVisible = (layout === 'top' || layout === 'devices') && !!tf.current && tf.current.s * L.cs > 4;
       if (flowVisible || id !== lastPhaseRef.current) { lastPhaseRef.current = id; draw(); }
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -1188,7 +1218,16 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ) : layout === 'layers' ? (
           <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`层级矩阵图 · L5 超节点→L0 Tile · 全量 ${LAY.cardN.toLocaleString()} 卡 → ${LAY.coreN.toLocaleString()} AI Core · 按 ${TOK.ub} L0–L7 逐级下探 · 点格高亮上下游`}</span>
         ) : (
-          <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{`器件互联拓扑 · 全量 ${DEV.totals.npu.toLocaleString()} NPU / ${DEV.totals.cpu.toLocaleString()} CPU / ${DEV.totals.lpo.toLocaleString()} LPO / ${DEV.totals.nic.toLocaleString()} NIC · 每个器件各自连 L1 ${TOK.ub} 交换：8 NPU + ${DEV.PER.cpu} CPU → L1 → L2(机柜) → 超节点；NIC←CPU(VPC)；NPU RoCE→scale-out · 图元同层级图`}</span>
+          <>
+            {(['ring', 'a2a'] as const).map((sc) => {
+              const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
+              return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
+            })}
+            <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（连线流量流动 + 器件状态变色 + 右侧层级面板同步播放）"
+              style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)', marginLeft: 2 }}>{`器件互联 · ${DEV.totals.npu.toLocaleString()} NPU/${DEV.totals.cpu.toLocaleString()} CPU/${DEV.totals.nic.toLocaleString()} NIC · 点器件高亮关联 + 右侧层级 · ▶ 看连线流量/器件状态`}</span>
+          </>
         )}
       </div>
       {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
@@ -1256,7 +1295,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
               <span style={{ display: 'inline-block', width: 14, height: 0, borderTop: '2px dotted var(--tx2)', verticalAlign: 'middle', margin: '0 3px 0 5px' }} />点线 VPC(NIC→CPU)</div>
             <div style={{ color: 'var(--tx3)', fontSize: 10 }}>颜色=利用率（播放时·红黄绿+灰离线）· 粗细=带宽</div>
             <div style={{ color: SEL, fontSize: 10.5, borderTop: '1px solid var(--bd)', marginTop: 3, paddingTop: 3 }}>{selDev ? '已选中：蓝圈=所选对象 · 高亮其连线与关联对象，其余暗下 · 点空白取消' : '点任一器件（NPU/CPU/NIC/L1/L2）→ 高亮它与关联对象的连接，其余暗下'}</div>
-            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线</span></div>}
+            {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={{ color: 'var(--tx3)', marginLeft: 3 }}>器件状态：空闲&lt;40% / 中 / 繁忙&gt;70% / 离线 · 连线<b style={{ color: 'var(--tx2)' }}>虚线流动=活跃流量</b>（颜色=利用率）· 右侧面板同步播放</span></div>}
           </>
         ))}
       </div>
@@ -1319,7 +1358,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
       )}
       {/* device-interconnect selection → right-side hierarchy panel (squeezes the canvas, see draw()) */}
-      {layout === 'devices' && selDev && <SelHierPanel sel={selDev} dark={dark} onClose={() => setSelDev(null)} />}
+      {layout === 'devices' && selDev && <SelHierPanel sel={selDev} dark={dark} onClose={() => setSelDev(null)} playing={playing} headRef={headRef} phaseRef={phaseRef} runMode={runMode} />}
     </div>
   );
 }
