@@ -577,9 +577,11 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         if (Lv.banner) {
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
           const sel = !!(hi && on), dim = hi && !on;
-          const txt = sel ? '#fff' : inkOf(Lv.color);
+          const selHi = sel && !curPhase;   // playing → 选中链路也按状态(load)上色，而非高亮色
+          const bFill = selHi ? SEL : lc;
+          const txt = selHi ? '#fff' : inkOf(bFill);
           ctx.globalAlpha = dim ? 0.32 : 1;
-          ctx.fillStyle = sel ? SEL : lc; rr(margin, Lv.y0, Wc, Lv.h, Lv.h * 0.3); ctx.fill();
+          ctx.fillStyle = bFill; rr(margin, Lv.y0, Wc, Lv.h, Lv.h * 0.3); ctx.fill();
           // "L5" chip (darker inset block on the left)
           const chW = Lv.h * 1.5, chPad = Lv.h * 0.2;
           ctx.fillStyle = 'rgba(0,0,0,0.20)'; rr(margin + chPad, Lv.y0 + chPad, chW, Lv.h - chPad * 2, Lv.h * 0.22); ctx.fill();
@@ -605,7 +607,8 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
             const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? ENTITY_COLORS.vector : lc);   // playing → per-cell load; idle → original (L1 Cube∶Vector ≈ 8∶1)
-            glyph(Lv.kind, x, y, ws, hi ? (on ? SEL : cellBase) : cellBase, hi ? (on ? 1 : 0.14) : 1);
+            const cellCol = (hi && on && !curPhase) ? SEL : cellBase;   // playing → 选中链路按状态(load)上色，而非高亮色
+            glyph(Lv.kind, x, y, ws, cellCol, hi ? (on ? 1 : 0.14) : 1);
           }
           ctx.globalAlpha = 1;
         } else if (Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
@@ -613,7 +616,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
           ctx.fillStyle = lc; ctx.globalAlpha = hi ? 0.1 : 0.62; rr(margin, Lv.y0, Wc, Lv.h, 0.2); ctx.fill(); ctx.globalAlpha = 1;
           if (hi) {   // selected range = a contiguous bright block (rows lo..hi)
             const ra = Math.floor(hi.lo[li] / Lv.cols), rb = Math.floor((hi.hi[li] - 1) / Lv.cols);
-            ctx.fillStyle = SEL; ctx.globalAlpha = 0.85;
+            ctx.fillStyle = curPhase ? lc : SEL; ctx.globalAlpha = 0.85;   // playing → 选中段按层级负载(状态色)，而非高亮色
             if (ra === rb) { const x = margin + (hi.lo[li] % Lv.cols) * Lv.cell; rr(x, Lv.y0 + ra * Lv.cell, (hi.hi[li] - hi.lo[li]) * Lv.cell, Lv.cell, 0.06); ctx.fill(); }
             else { rr(margin, Lv.y0 + ra * Lv.cell, Wc, (rb - ra + 1) * Lv.cell, 0.06); ctx.fill(); }
             ctx.globalAlpha = 1;
