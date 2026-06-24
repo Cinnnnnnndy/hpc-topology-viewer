@@ -134,18 +134,12 @@ const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canva
 function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode }: { sel: SelDev; dark: boolean; onClose: () => void; playing: boolean; headRef: React.MutableRefObject<number>; phaseRef: React.MutableRefObject<number>; runMode: RunMode }) {
   const cref = useRef<HTMLCanvasElement>(null);
   const raf = useRef<number | null>(null);
-  const [avail, setAvail] = useState(440);   // host (scroll area) height → L1/L0 fill the rest
-  useEffect(() => {
-    const cv = cref.current, host = cv?.parentElement; if (!host) return;
-    const ro = new ResizeObserver(() => setAvail(host.clientHeight));
-    ro.observe(host); setAvail(host.clientHeight);
-    return () => ro.disconnect();
-  }, []);
   // paint — re-run each frame while 执行时序 plays, so the panel's 流量(虚线流动) + 器件状态(load 配色)
   // stay in sync with the main canvas (shares the SAME headRef/phaseRef clock).
   const paint = useCallback(() => {
     const cv = cref.current; if (!cv) return;
-    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : Math.max(392, avail - 2);
+    // compact natural height (no force-fill) — every row sits right under its parent + connectors connect
+    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : 528;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -197,29 +191,27 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
       y = 224; lbl('L2', `计算 Die · 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
       for (let i = 0; i < 4; i++) { const x = cl + dieW / 2 + dstep * i; dieX.push(x); conn(cardX[focusLocal], yCards + csz / 2, x, y - 17, true); die(x, y, dieW, 30, i < 2); }
       ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8px sans-serif'; ctx.fillText('2 计算(UMA)', dieX[0] / 1 + (dieX[1] - dieX[0]) / 2, y + 20); ctx.fillText('2 IO', dieX[2] + (dieX[3] - dieX[2]) / 2, y + 20);
-      // ── lower region: L1 AI Core (32, 全量) + L0 Tile (128, 全量) — both grids fill remaining height ──
+      // ── lower region: L1 AI Core (32, 8×4) + L0 Tile (128, 16×8) — compact, every grid sits
+      //    right under its parent and the connectors actually CONNECT (no forced fill / 纵向空缺) ──
       const dieBot = 224 + 15;
-      const regTop = 256, regBot = H - 8, labelH = 14, capH = 12, gapV = 10;
-      const gridTotal = Math.max(96, (regBot - regTop) - (labelH * 2 + capH * 2 + gapV));
-      const l1H = Math.round(gridTotal * 0.36), l0H = gridTotal - l1H;
-      const b1Top = regTop + labelH, b1Bot = b1Top + l1H;
-      const b0Top = b1Bot + capH + gapV + labelH, b0Bot = b0Top + l0H;
+      const l1Top = 282, l1gh = 16, l1gv = 4, l1rows = 4, l1Bot = l1Top + l1rows * l1gh + (l1rows - 1) * l1gv;
+      const l0Top = 398, l0gh = 12, l0gv = 2, l0rows = 8, l0Bot = l0Top + l0rows * l0gh + (l0rows - 1) * l0gv;
+      // connectors first (so the captions/labels render on top, staying legible)
+      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, l1Top - 1, true);   // 计算 Die → L1 grid top
+      conn(midX, l1Bot + 1, midX, l0Top - 1, true);                               // L1 grid bottom → L0 grid top
       // L1 AI Core — 32 (8×4), Cube/Vector idle · per-core load 配色 when playing
-      lbl('L1', 'AI Core', regTop + labelH / 2);
-      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, b1Top - 2, true);
-      { const cols = 8, rows = 4, gv = 4, gw = cw / cols, gh = Math.min(20, (l1H - (rows - 1) * gv) / rows), gy0 = b1Top + (l1H - (rows * gh + (rows - 1) * gv)) / 2;
-        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = curP ? heat(focusK * 131 + idx) : (vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube); rr(cl + c * gw + 1.5, gy0 + r * (gh + gv), gw - 3, gh, 2.5); ctx.fill(); } }
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, b1Bot + capH / 2);
+      lbl('L1', 'AI Core', 268);
+      { const cols = 8, gw = cw / cols;
+        for (let r = 0; r < l1rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = curP ? heat(focusK * 131 + idx) : (vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube); rr(cl + c * gw + 1.5, l1Top + r * (l1gh + l1gv), gw - 3, l1gh, 2.5); ctx.fill(); } }
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 AI Core · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, l1Bot + 11);
       // L0 Tile — 128 (16×8) 全量 · per-tile load 配色 when playing
-      conn(midX, b1Bot + capH, midX, b0Top - 2, true);
-      lbl('L0', 'Tile', b1Bot + capH + gapV + labelH / 2);
-      { const cols = 16, rows = 8, gv = 2, gw = cw / cols, gh = Math.min(13, (l0H - (rows - 1) * gv) / rows), gy0 = b0Top + (l0H - (rows * gh + (rows - 1) * gv)) / 2;
-        ctx.globalAlpha = 0.9;
-        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c; ctx.fillStyle = curP ? heat(focusK * 517 + idx) : ENTITY_COLORS.vector; rr(cl + c * gw + 0.8, gy0 + r * (gh + gv), gw - 1.6, gh, 1.6); ctx.fill(); }
+      lbl('L0', 'Tile', 384);
+      { const cols = 16, gw = cw / cols; ctx.globalAlpha = 0.9;
+        for (let r = 0; r < l0rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c; ctx.fillStyle = curP ? heat(focusK * 517 + idx) : ENTITY_COLORS.vector; rr(cl + c * gw + 0.8, l0Top + r * (l0gh + l0gv), gw - 1.6, l0gh, 1.6); ctx.fill(); }
         ctx.globalAlpha = 1; }
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, b0Bot + capH / 2);
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, l0Bot + 11);
     }
-  }, [sel, dark, avail, playing, runMode, headRef, phaseRef]);
+  }, [sel, dark, playing, runMode, headRef, phaseRef]);
   useEffect(() => { paint(); }, [paint]);
   useEffect(() => {   // while playing, re-paint every frame to follow the shared play head
     if (!playing) { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; return; }
@@ -715,7 +707,19 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
       };
       // dimmed devGlyph + selection ring helpers
       const dg = (active: boolean, type: DevType, x: number, y: number, w: number, h: number, color: string) => { ctx.globalAlpha = active ? 1 : DIM_DEV; devGlyph(ctx, type, x, y, w, h, color); ctx.globalAlpha = 1; };
-      const ring = (cxr: number, cyr: number, w: number, h: number) => { const rw = w * 1.34, rh = h * 1.34; ctx.strokeStyle = SEL; ctx.lineWidth = 2.6 / s; ctx.setLineDash([]); ctx.globalAlpha = 1; rr(cxr - rw / 2, cyr - rh / 2, rw, rh, Math.min(rw, rh) * 0.3); ctx.stroke(); };
+      // selection highlight = BOLD outline hugging the glyph edge + expanding 涟漪(ripple) pulses
+      const ring = (cxr: number, cyr: number, w: number, h: number) => {
+        ctx.setLineDash([]); ctx.strokeStyle = SEL;
+        const rp = (performance.now() / 1250) % 1;   // ripple phase 0..1 (wall-clock)
+        for (const off of [0, 0.5]) {                // two phase-offset ripples grow & fade outward
+          const t = (rp + off) % 1, gw = w * (1.06 + t * 0.5), gh = h * (1.06 + t * 0.5);
+          ctx.globalAlpha = (1 - t) * 0.5; ctx.lineWidth = (0.6 + (1 - t) * 2.4) / s;
+          rr(cxr - gw / 2, cyr - gh / 2, gw, gh, Math.min(gw, gh) * 0.24); ctx.stroke();
+        }
+        ctx.globalAlpha = 1; ctx.lineWidth = 3 / s;   // bold border tight on the glyph (紧贴描边)
+        const bw = w * 1.06, bh = h * 1.06;
+        rr(cxr - bw / 2, cyr - bh / 2, bw, bh, Math.min(bw, bh) * 0.2); ctx.stroke();
+      };
 
       // ── selection: highlight the picked object + its links + related objects, dim the rest ──
       // super-node fabric: NPUs on a blade are DIRECTLY full-meshed (not via a switch), and CPU
@@ -1072,6 +1076,17 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
   useEffect(() => { tf.current = null; setSelL(null); setSelTop(null); setSelDev(null); }, [layout]);
   // redraw on colour / size changes
   useEffect(() => { draw(); }, [draw]);
+
+  // selection 涟漪: while a device is selected (and not already redrawing via playback), repaint
+  // each frame so the ripple highlight pulses. Selection auto-focuses the cabinet → only ~8 blades
+  // render, so the per-frame cost is small.
+  useEffect(() => {
+    if (layout !== 'devices' || !selDev || playing) return;
+    let raf = 0;
+    const loop = () => { draw(); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [layout, selDev, playing, draw]);
 
   // 执行时序 master clock: advances the play head (card-wash + flow), shared with the swimlane
   // via headRef. Runs in both layouts (so the swimlane head keeps moving); only the top view
