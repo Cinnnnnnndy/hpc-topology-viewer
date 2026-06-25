@@ -1664,12 +1664,15 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick, focusSel, onSel, dir }: SceneCallbacks & {
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick, focusSel, onSel, dir, scopeOnly, onScope }: SceneCallbacks & {
   scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; planes: boolean; onPick?: (npuLocal: number) => void;
   // ── optional external linkage (used by the 联动控制台 / console view): when `focusSel` is
   //    provided the selection becomes CONTROLLED (driven by the left 2-D plane control); `onSel`
-  //    lifts panorama clicks back out; `dir` filters the highlighted chain to up / down only. ──
-  focusSel?: { lv: number; i: number } | null; onSel?: (s: { lv: number; i: number } | null) => void; dir?: 'all' | 'up' | 'down';
+  //    lifts panorama clicks back out; `dir` filters the highlighted chain to up / down only;
+  //    `scopeOnly` dims every entity OUTSIDE the selected chain so the panorama shows ONLY the
+  //    left-plane链路 content (matches the reference Smartscape interaction). ──
+  focusSel?: { lv: number; i: number } | null; onSel?: (s: { lv: number; i: number } | null) => void; dir?: 'all' | 'up' | 'down'; scopeOnly?: boolean;
+  onScope?: (b: { cx: number; cy: number; cz: number; r: number } | null) => void;   // world bounds of the selected scope → host can frame the camera on it
 }) {
   const LC = useLC();
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
@@ -1872,25 +1875,41 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     // observation: colour a node ONLY when 高/满 (isHot) so most stay neutral — the FEW hotspots pop;
     // lines carry the rest of the load story. else → faint muted base.
     const heatNode = (id: number, base: THREE.Color) => { const ld = nodeLoad(id, sk ?? undefined); if (isHot(ld)) col.set(loadColor(ld)); else col.copy(base); };
-    if (pm) for (let k = 0; k < G.N; k++) { if (heat) heatNode(k, procBase); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
-    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
-    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (heat) heatNode(i + 7, tileBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
-    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (heat) heatNode(k, cardBaseCol); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(ENTITY_COLORS.node); bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) { if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(ENTITY_COLORS.cab); cm.setColorAt(c, col); }
-    // selection → light up the actual objects on the chain (cards + ranks + threads + blade/cabinet markers)
+    // selected chain sets (cards / blades / cabinets) — used BOTH to dim everything else in
+    // scopeOnly mode AND to draw the highlight. Computed up-front so the base loops can recede
+    // out-of-scope entities toward the background (the「只显示链路内容」behaviour).
+    const chainCards = new Set<number>(), chainBlades = new Set<number>(), chainCabs = new Set<number>();
     if (sel) {
-      const cardsH: number[] = [], bladesH: number[] = [], cabsH: number[] = [];
-      const addBlade = (b: number) => { bladesH.push(b); for (let i = 0; i < FP_CARDS_PER_BLADE; i++) { const k = b * FP_CARDS_PER_BLADE + i; if (k < G.N) cardsH.push(k); } };
-      if (sel.lv === 0 && sel.i < G.N) { const k = sel.i, b = G.cardBlade[k]; cardsH.push(k); bladesH.push(b); cabsH.push(G.bladeCab[b]); }
-      else if (sel.lv === 1 && sel.i < G.nBlades) { addBlade(sel.i); cabsH.push(G.bladeCab[sel.i]); }
-      else if (sel.lv === 2 && sel.i < G.nCabs) { cabsH.push(sel.i); for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === sel.i) addBlade(b); }
-      if (nm && !useChip) for (const k of cardsH) nm.setColorAt(k, hl);
-      if (pm) for (const k of cardsH) { pm.setColorAt(k * 2, hl); pm.setColorAt(k * 2 + 1, hl); }
-      if (tm) for (const k of cardsH) for (let t = 0; t < FP_THREADS; t++) tm.setColorAt(k * FP_THREADS + t, hl);
-      if (lm) for (const k of cardsH) for (let t = 0; t < FP_TILES; t++) lm.setColorAt(k * FP_TILES + t, hl);
-      if (bm) for (const b of bladesH) bm.setColorAt(b, hl);
-      if (cm) for (const c of cabsH) cm.setColorAt(c, hl);
+      const addBladeSet = (b: number) => { chainBlades.add(b); for (let i = 0; i < FP_CARDS_PER_BLADE; i++) { const k = b * FP_CARDS_PER_BLADE + i; if (k < G.N) chainCards.add(k); } };
+      if (sel.lv === 0 && sel.i < G.N) { const k = sel.i, b = G.cardBlade[k]; chainCards.add(k); chainBlades.add(b); chainCabs.add(G.bladeCab[b]); }
+      else if (sel.lv === 1 && sel.i < G.nBlades) { addBladeSet(sel.i); chainCabs.add(G.bladeCab[sel.i]); }
+      else if (sel.lv === 2 && sel.i < G.nCabs) { chainCabs.add(sel.i); for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === sel.i) addBladeSet(b); }
+    }
+    const dimming = !!scopeOnly && !!sel && (chainCards.size > 0 || chainCabs.size > 0);
+    const dimC = new THREE.Color('#2a2f38');   // out-of-scope → recede toward background
+    const offCard = (k: number) => dimming && !chainCards.has(k);
+    if (pm) for (let k = 0; k < G.N; k++) { if (offCard(k)) col.copy(dimC); else if (heat) heatNode(k, procBase); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
+    if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (offCard(kk)) col.copy(dimC); else if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
+    if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (offCard(kk)) col.copy(dimC); else if (heat) heatNode(i + 7, tileBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
+    if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (offCard(k)) col.copy(dimC); else if (heat) heatNode(k, cardBaseCol); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (dimming && !chainBlades.has(b)) col.copy(dimC); else if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(ENTITY_COLORS.node); bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { if (dimming && !chainCabs.has(c)) col.copy(dimC); else if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(ENTITY_COLORS.cab); cm.setColorAt(c, col); }
+    // highlight: scopeOnly → ONLY the focused marker turns blue (chain keeps its metric/heat colour,
+    // matching the 2-D 层级图); otherwise (standalone fullpod) the whole chain lights up blue as before.
+    if (sel) {
+      if (scopeOnly) {
+        if (sel.lv === 0 && nm && !useChip) nm.setColorAt(sel.i, hl);
+        else if (sel.lv === 1 && bm) bm.setColorAt(sel.i, hl);
+        else if (sel.lv === 2 && cm) cm.setColorAt(sel.i, hl);
+      } else {
+        const cardsH = [...chainCards], bladesH = [...chainBlades], cabsH = [...chainCabs];
+        if (nm && !useChip) for (const k of cardsH) nm.setColorAt(k, hl);
+        if (pm) for (const k of cardsH) { pm.setColorAt(k * 2, hl); pm.setColorAt(k * 2 + 1, hl); }
+        if (tm) for (const k of cardsH) for (let t = 0; t < FP_THREADS; t++) tm.setColorAt(k * FP_THREADS + t, hl);
+        if (lm) for (const k of cardsH) for (let t = 0; t < FP_TILES; t++) lm.setColorAt(k * FP_TILES + t, hl);
+        if (bm) for (const b of bladesH) bm.setColorAt(b, hl);
+        if (cm) for (const c of cabsH) cm.setColorAt(c, hl);
+      }
     }
     if (pm?.instanceColor) pm.instanceColor.needsUpdate = true;
     if (tm?.instanceColor) tm.instanceColor.needsUpdate = true;
@@ -1898,7 +1917,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (nm?.instanceColor) nm.instanceColor.needsUpdate = true;
     if (bm?.instanceColor) bm.instanceColor.needsUpdate = true;
     if (cm?.instanceColor) cm.instanceColor.needsUpdate = true;
-  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status]);
+  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status, scopeOnly]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)
   const hoverCard = (k: number | null) => {
@@ -1965,6 +1984,21 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     }
     return { vSegs, pSegs, cards, superP, dieK, label, labelPos };
   }, [sel, G, podCount, chainDir]);
+
+  // world bounds of the selected scope → the host frames the camera on it (so scopeOnly actually
+  // "只显示链路内容": the chain fills the view instead of being a speck in the 8 K-card field).
+  const scopeBounds = useMemo(() => {
+    if (!scopeOnly || !sel) return null;
+    const ks: number[] = [];
+    if (sel.lv === 0 && sel.i < G.N) ks.push(sel.i);
+    else if (sel.lv === 1 && sel.i < G.nBlades) { for (let i = 0; i < FP_CARDS_PER_BLADE; i++) { const k = sel.i * FP_CARDS_PER_BLADE + i; if (k < G.N) ks.push(k); } }
+    else if (sel.lv === 2 && sel.i < G.nCabs) { for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === sel.i) for (let i = 0; i < FP_CARDS_PER_BLADE; i++) { const k = b * FP_CARDS_PER_BLADE + i; if (k < G.N) ks.push(k); } }
+    if (!ks.length) return null;
+    let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+    for (const k of ks) { const x = G.cardX[k], z = G.cardZ[k]; if (x < minx) minx = x; if (x > maxx) maxx = x; if (z < minz) minz = z; if (z > maxz) maxz = z; }
+    return { cx: (minx + maxx) / 2, cy: G.yCard, cz: (minz + maxz) / 2, r: Math.max(2.2, Math.hypot(maxx - minx, maxz - minz) / 2 + 1.4) };
+  }, [sel, scopeOnly, G]);
+  useEffect(() => { onScope?.(scopeBounds); }, [scopeBounds, onScope]);
 
   // die-inset callout placement: left of the field, scaled to the field size so it stays readable
   const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));

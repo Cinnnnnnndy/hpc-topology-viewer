@@ -1,20 +1,17 @@
 /**
- * ConsoleView — 联动控制台. A single linked module that fuses the three existing views:
- *   · 平面视图 (PlaneView)      → LEFT, used as the CONTROL surface
- *   · 阵列全景 (FullPodScene)   → RIGHT, the MAIN 3-D panorama (full super-node)
- *   · 运行状态 (status charts)  → the analysis DASHBOARD (KPI · 层级状态轴 · 实体仪表 · 根因)
+ * ConsoleView — 联动控制台. One linked module fusing the three existing views per the reference
+ * Smartscape (Dynatrace-style) interaction:
+ *   · LEFT  = 平面视图「层级图」改造成 Smartscape 层级 (集群→超节点→机柜→节点→卡 + 卡内 Die/Core/Tile)，
+ *             作为控制：点一个实体只展开/高亮它的「链路」(祖先+后代，按方向过滤)。
+ *   · RIGHT = 阵列全景 (FullPodScene, 全量超节点) 作为主视图：scopeOnly 模式只显示左侧链路的内容
+ *             (链路内按状态/负载上色，链路外全部压暗)。
+ *   · 运行状态 = 分析仪表 (集群 KPI · 实体辅助指标 · DAVIS 根因)。
  *
- * Linkage (the low-fi reference is ONLY for this left↔right relationship): selecting any
- * level / card in the left plane drives the panorama's highlighted chain AND the dashboard's
- * auxiliary metrics; clicking the panorama or the status-axis updates the same shared focus.
- *
- * Everything visual — glyphs, colours, state system, connections, up/down hierarchy and
- * intra-level relations — is OUR existing solution: the real PlaneView + FullPodScene are
- * reused as-is, and the dashboard is drawn from the same data.ts primitives the 运行状态
- * view uses (loadColor / loadState / stateColor / nodeLoad / isHot / ENTITY_COLORS / PLANES …).
+ * 所有样式/图元/状态/连接/上下层级与层内关系都用既有方案：FullPodScene 组件 + 同一套 data.ts
+ * 色彩/状态/负载函数 (loadColor / loadState / stateColor / nodeLoad / isHot / ENTITY_COLORS / PLANES)。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -24,11 +21,9 @@ import {
 } from '../scene/data';
 import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
-import { PlaneView, type PlaneSel } from './PlaneView';
 
-// ── hierarchy fan-out (the 8×8 schematic shared with PlaneView full super-node + FullPodScene
-//    full=true): 8 卡/刀片 · 8 刀片/柜 → 64 卡/柜. A global card index `k` therefore maps the
-//    SAME way in all three views, so a selection on one lights up the matching entity elsewhere.
+// ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
+//    64 卡/柜. A global card index `k` maps the SAME way in the left 层级 and the right 3D array. ──
 const CPB = 8, BPC = 8, PER_CAB = CPB * BPC;
 const STEP_MAX = 60, EVT_LO = 34, EVT_HI = 46, EVT_CAB = 1;   // injected 过热 window on cabinet C1
 
@@ -36,7 +31,8 @@ type Workload = 'pretrain' | 'prefill' | 'decode';
 type Metric = 'util' | 'strag' | 'fault';
 type Lens = 'heat' | 'flow' | 'domain' | 'phys';
 type Dir = 'all' | 'up' | 'down';
-type Focus = PlaneSel;   // { level, card, die?, core? } | null — shared single source of truth
+type Level = 'cluster' | 'super' | 'cab' | 'node' | 'card' | 'die' | 'core' | 'tile';
+type Focus = { level: Level; card: number; die?: number; core?: number } | null;
 
 const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
   pretrain: { label: '预训练', kind: 'compute' },
@@ -46,10 +42,8 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
 const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: '超节点', cab: '机柜', node: '节点', card: '卡 rank', die: '计算 Die', core: 'AI Core', tile: 'Tile' };
-const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: true };   // panorama die-inset overlays (stable identity)
 
-// ── metric model (deterministic, mirrors 运行状态): util = phase-load + live ripple + 机柜事件;
-//    strag/fault are sparse states that bloom inside the event window on the affected cabinet. ──
+// ── metric model (deterministic, mirrors 运行状态) ──
 const rnd = (s: number) => { const x = Math.sin(s * 99.13) * 43758.5453; return x - Math.floor(x); };
 function cardLoad(k: number, wlKind: string, step: number): number {
   let v = nodeLoad(k, wlKind) + (rnd(k * 0.91 + step * 0.07) - 0.5) * 0.06;
@@ -71,24 +65,54 @@ function cardMetric(k: number, metric: Metric, wlKind: string, step: number): nu
   return cardLoad(k, wlKind, step);
 }
 
-// focus ↔ panorama selection (FullPodScene sel: lv 0 card / 1 blade(node) / 2 cabinet, i = global index)
+// ── hierarchy navigation / scope (matches the reference HTML scopeOf/isHi) ──
+const levelIdx = (lv: Level): number => (lv === 'cluster' ? 0 : lv === 'super' ? 1 : lv === 'cab' ? 2 : lv === 'node' ? 3 : 4);
+function scopeRange(f: Focus, N: number): [number, number] {
+  if (!f || f.level === 'cluster' || f.level === 'super') return [0, N];
+  if (f.level === 'cab') { const c = Math.floor(f.card / PER_CAB); return [c * PER_CAB, Math.min(N, (c + 1) * PER_CAB)]; }
+  if (f.level === 'node') { const n = Math.floor(f.card / CPB); return [n * CPB, Math.min(N, (n + 1) * CPB)]; }
+  return [f.card, f.card + 1];
+}
+// which entity indices of tier Le are on the focus's chain (ancestor / self / descendant), dir-filtered.
+// returns null = "no focus → overview (show all, capped)".
+function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nCabs: number, nBlades: number): number[] | null {
+  if (!focus || focus.level === 'cluster') return null;
+  const Lf = levelIdx(focus.level);
+  const counts = [1, 1, nCabs, nBlades, N];
+  const div = [N, N, PER_CAB, CPB, 1][Le];
+  const [flo, fhi] = scopeRange(focus, N);
+  const range = (a: number, b: number) => { const o: number[] = []; for (let i = a; i < b; i++) o.push(i); return o; };
+  const cabMates = () => { const cab = Math.floor(flo / PER_CAB); return range(cab * BPC, Math.min(nBlades, (cab + 1) * BPC)); };   // 同柜 8 节点 (UB mesh, 同低保真 node-tier 特例)
+  if (Le < Lf) {                          // ancestor
+    if (dir === 'down') return [];
+    if (dir === 'all' && Le === 3 && Lf >= 3) return cabMates();
+    return [Math.floor(flo / div)];
+  }
+  if (Le === Lf) {                        // focus tier (node tier expands to same-cab UB mates on 全链)
+    if (dir === 'all' && Le === 3) return cabMates();
+    return [Math.floor(flo / div)];
+  }
+  if (dir === 'up') return [];            // descendant
+  return range(Math.floor(flo / div), Math.min(counts[Le], Math.floor((fhi - 1) / div) + 1));
+}
+function entityToFocus(Le: number, idx: number): Focus {
+  if (Le === 0) return null;                                  // cluster = clear (whole)
+  if (Le === 1) return { level: 'super', card: 0 };
+  if (Le === 2) return { level: 'cab', card: idx * PER_CAB };
+  if (Le === 3) return { level: 'node', card: idx * CPB };
+  return { level: 'card', card: idx };
+}
 function focusToSel(f: Focus): { lv: number; i: number } | null {
-  if (!f || f.level === 'cluster' || f.level === 'super') return null;   // whole field → no chain highlight
+  if (!f || f.level === 'cluster' || f.level === 'super') return null;
   if (f.level === 'cab') return { lv: 2, i: Math.floor(f.card / PER_CAB) };
   if (f.level === 'node') return { lv: 1, i: Math.floor(f.card / CPB) };
-  return { lv: 0, i: f.card };   // card / die / core / tile → highlight the owning card chain
+  return { lv: 0, i: f.card };
 }
 function selToFocus(s: { lv: number; i: number } | null): Focus {
   if (!s) return null;
   if (s.lv === 2) return { level: 'cab', card: s.i * PER_CAB };
   if (s.lv === 1) return { level: 'node', card: s.i * CPB };
   return { level: 'card', card: s.i };
-}
-function scopeRange(f: Focus, N: number): [number, number] {
-  if (!f || f.level === 'cluster' || f.level === 'super') return [0, N];
-  if (f.level === 'cab') { const c = Math.floor(f.card / PER_CAB); return [c * PER_CAB, Math.min(N, (c + 1) * PER_CAB)]; }
-  if (f.level === 'node') { const n = Math.floor(f.card / CPB); return [n * CPB, Math.min(N, (n + 1) * CPB)]; }
-  return [f.card, f.card + 1];
 }
 function focusName(f: Focus): string {
   if (!f || f.level === 'cluster' || f.level === 'super') return '全量超节点';
@@ -101,7 +125,7 @@ function focusName(f: Focus): string {
   return `卡 ${k} · Tile`;
 }
 
-// ── shared button language (mirrors ClusterView / PlaneView: solid blocks for emphasis) ──
+// ── shared button language ──
 const ACCENT = '#4369ef';
 const SECONDARY: React.CSSProperties = { border: '1px solid var(--btn-bd)', background: 'var(--btn)', color: 'var(--tx2)' };
 function ink(hex: string): string { const h = hex.replace('#', ''); if (h.length < 6) return '#fff'; const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#10131a' : '#fff'; }
@@ -110,26 +134,168 @@ function toggleBtn(on: boolean, c: string): React.CSSProperties { return on ? { 
 const GLAB: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: 0.3, color: 'var(--tx3)', alignSelf: 'center' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const btnBase: React.CSSProperties = { padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer' };
+const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: true };
 
-// imperatively frame the orthographic camera on the (large) full-pod field, once per gen
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function FitCamera({ reach, controls }: { reach: number; controls: React.MutableRefObject<any> }) {
+// Frame the orthographic camera on the focused scope (pan target + zoom); with no focus it settles
+// on the whole-field overview. Animates on focus CHANGE then releases, so the user can still orbit/zoom.
+function FrameCamera({ bounds, reach, controls }: { bounds: { cx: number; cy: number; cz: number; r: number } | null; reach: number; controls: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null> }) {
   const { camera, size } = useThree();
-  const last = useRef<number | null>(null);
-  useEffect(() => {
-    if (size.height < 10) return;                       // wait for a real canvas size
-    if (last.current === reach) return;                 // re-fit only on gen (reach) change, not resize
-    last.current = reach;
-    const worldH = Math.max(14, reach * 1.5), ty = Math.min(6, reach * 0.1);
-    const tgt = new THREE.Vector3(0, ty, 0), dir = new THREE.Vector3(1, 0.82, 1).normalize();
-    camera.position.copy(tgt).addScaledVector(dir, reach * 1.3);
-    camera.up.set(0, 1, 0);
-    const oc = camera as THREE.OrthographicCamera;
-    if (oc.isOrthographicCamera) oc.zoom = size.height / worldH;
-    camera.updateProjectionMatrix();
-    if (controls.current) { controls.current.target.copy(tgt); controls.current.update(); }
-  }, [reach, size.height, camera, controls]);
+  const init = useRef(false);
+  const settling = useRef(true);
+  const tgt = useMemo(() => (bounds
+    ? { pos: new THREE.Vector3(bounds.cx, bounds.cy, bounds.cz), worldH: bounds.r * 2.4 }
+    : { pos: new THREE.Vector3(0, Math.min(6, reach * 0.1), 0), worldH: Math.max(14, reach * 1.5) }), [bounds, reach]);
+  useEffect(() => { settling.current = true; }, [tgt]);   // re-animate whenever the scope changes
+  useEffect(() => {                                        // set the 2.5-D iso direction + distance once
+    if (init.current || size.height < 10) return; init.current = true;
+    camera.position.copy(tgt.pos).addScaledVector(new THREE.Vector3(1, 0.82, 1).normalize(), reach * 1.3);
+    camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera, reach, size.height]);
+  useFrame(() => {
+    if (!controls.current || !settling.current || size.height < 10) return;
+    controls.current.target.lerp(tgt.pos, 0.14);
+    const oc = camera as THREE.OrthographicCamera, want = size.height / tgt.worldH;
+    if (oc.isOrthographicCamera) { oc.zoom += (want - oc.zoom) * 0.14; oc.updateProjectionMatrix(); }
+    controls.current.update();
+    if (controls.current.target.distanceTo(tgt.pos) < 0.08 && Math.abs((oc.zoom ?? want) - want) < 0.06) settling.current = false;
+  });
   return null;
+}
+
+// ── stats (per-tier distributions + KPI) computed in one pass over all cards ──
+interface Stats {
+  kpi: { util: number; hot: number; strag: number; faultDom: number };
+  clusterMean: number; cabVals: number[]; ndVals: number[]; cardVals: number[];
+  agg: Record<'cluster' | 'cab' | 'node' | 'card', { p50: number; p95: number; red: number }>;
+}
+
+// ── LEFT: Smartscape 层级 (改造自平面视图层级图) ──
+const SVG_W = 600, SVG_H = 680, X0 = 120, X1 = 586, BUDGET = 26;
+const TIERS = [
+  { Le: 0, key: 'cluster', y: 36, r: 13, label: '集群' },
+  { Le: 1, key: 'super', y: 92, r: 11, label: '超节点' },
+  { Le: 2, key: 'cab', y: 150, r: 8, label: '机柜' },
+  { Le: 3, key: 'node', y: 212, r: 6, label: '节点' },
+  { Le: 4, key: 'card', y: 284, r: 4, label: '卡 rank' },
+] as const;
+const SUBTIERS = [
+  { key: 'die', lvl: 'die' as Level, y: 356, cols: 2, cell: 15, n: 4, seed: 131, label: '计算 Die' },
+  { key: 'core', lvl: 'core' as Level, y: 430, cols: 16, cell: 11, n: 32, seed: 517, label: 'AI Core' },
+  { key: 'tile', lvl: 'tile' as Level, y: 540, cols: 16, cell: 9, n: 48, seed: 911, label: 'Tile' },
+] as const;
+
+function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, stats, dark }: {
+  N: number; nCabs: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
+  metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; stats: Stats; dark: boolean;
+}) {
+  const P = dark
+    ? { ink: '#e6ebf2', ink2: '#9aa6b4', ink3: '#5f6b79', line: '#2a323d', pill: '#1b212b', pillBd: '#2a323d', dim: '#3a424e' }
+    : { ink: '#1c2433', ink2: '#5b6573', ink3: '#9099a8', line: '#d6dbe4', pill: '#eef1f6', pillBd: '#d2d8e2', dim: '#c2c9d4' };
+  const counts = [1, 1, nCabs, nBlades, N];
+  const total = (Le: number) => counts[Le];
+  const metricOf = (Le: number, idx: number): number =>
+    Le <= 1 ? stats.clusterMean : Le === 2 ? (stats.cabVals[idx] ?? 0) : Le === 3 ? (stats.ndVals[idx] ?? 0) : cardMetric(idx, metric, wlKind, step);
+  const aggOf = (Le: number) => (Le <= 1 ? stats.agg.cluster : Le === 2 ? stats.agg.cab : Le === 3 ? stats.agg.node : stats.agg.card);
+  const selLe = !focus || focus.level === 'cluster' ? -1 : focus.level === 'super' ? 1 : focus.level === 'cab' ? 2 : focus.level === 'node' ? 3 : 4;
+  const selIdx = selLe < 0 ? -1 : selLe === 1 ? 0 : selLe === 2 ? Math.floor(focus!.card / PER_CAB) : selLe === 3 ? Math.floor(focus!.card / CPB) : focus!.card;
+  const focusCard = focus && selLe === 4 ? focus.card : null;
+
+  // build per-tier shown lists + positions
+  const pos: Record<number, Record<number, { x: number; y: number }>> = {};
+  const rows = TIERS.map((t) => {
+    const sc = tierInScope(t.Le, focus, dir, N, nCabs, nBlades);
+    const full = sc === null;
+    const baseList = full ? Array.from({ length: Math.min(total(t.Le), BUDGET) }, (_, i) => i) : sc;
+    const shownIdx = baseList.slice(0, BUDGET);
+    const inCount = full ? total(t.Le) : sc.length;
+    const fold = inCount - shownIdx.length;
+    const slots = shownIdx.length + (fold > 0 ? 1 : 0);
+    pos[t.Le] = {};
+    const shown = shownIdx.map((idx, i) => { const x = X0 + (X1 - X0) * (i + 0.5) / Math.max(1, slots); pos[t.Le][idx] = { x, y: t.y }; return { idx, x }; });
+    const foldX = fold > 0 ? X0 + (X1 - X0) * (slots - 0.5) / Math.max(1, slots) : null;
+    return { t, shown, fold, foldX, inCount };
+  });
+
+  const parentOf = (Le: number, idx: number): { Le: number; idx: number } | null =>
+    Le === 1 ? { Le: 0, idx: 0 } : Le === 2 ? { Le: 1, idx: 0 } : Le === 3 ? { Le: 2, idx: Math.floor(idx / BPC) } : Le === 4 ? { Le: 3, idx: Math.floor(idx / CPB) } : null;
+
+  const els: React.ReactNode[] = [];
+  // 1) containment connectors (focus only)
+  if (focus) {
+    rows.forEach(({ t, shown }) => {
+      shown.forEach(({ idx, x }) => {
+        const par = parentOf(t.Le, idx); if (!par) return;
+        const pp = pos[par.Le]?.[par.idx]; if (!pp) return;
+        els.push(<line key={`c-${t.Le}-${idx}`} x1={x} y1={t.y} x2={pp.x} y2={pp.y} stroke={ACCENT} strokeWidth={1} strokeOpacity={0.45} />);
+      });
+    });
+    // 2) UB plane mesh between node-tier siblings (横向, 同级关系)
+    if (planeOn.ub) {
+      const nodeRow = rows[3].shown;
+      for (let i = 0; i < nodeRow.length - 1; i++) {
+        const a = nodeRow[i], b = nodeRow[i + 1], mx = (a.x + b.x) / 2, my = TIERS[3].y - 16;
+        els.push(<path key={`ub-${i}`} d={`M${a.x} ${TIERS[3].y} Q ${mx} ${my} ${b.x} ${TIERS[3].y}`} fill="none" stroke={PLANES[0].color} strokeWidth={1} strokeOpacity={0.5} />);
+      }
+    }
+  }
+  // 3) node circles
+  rows.forEach(({ t, shown, fold, foldX }) => {
+    shown.forEach(({ idx, x }) => {
+      const v = metricOf(t.Le, idx), isSel = t.Le === selLe && idx === selIdx;
+      const strag = t.Le === 4 && isStrag(idx, step);
+      els.push(
+        <g key={`n-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus(isSel ? null : entityToFocus(t.Le, idx)); }}>
+          {isSel && <circle cx={x} cy={t.y} r={t.r + 4} fill="none" stroke={dark ? '#fff' : '#10131a'} strokeWidth={1.6} />}
+          <circle cx={x} cy={t.y} r={t.r} fill={loadColor(v)} stroke={strag ? '#b07bff' : 'none'} strokeWidth={strag ? 1.8 : 0} />
+        </g>,
+      );
+    });
+    if (fold > 0 && foldX != null) {
+      const w = Math.max(28, String(fold).length * 7 + 22);
+      els.push(
+        <g key={`f-${t.Le}`}>
+          <rect x={foldX - w / 2} y={t.y - 9} width={w} height={18} rx={9} fill={P.pill} stroke={P.pillBd} />
+          <text x={foldX} y={t.y + 4} fill={P.ink2} fontSize={10} textAnchor="middle">{`+${fold}`}</text>
+        </g>,
+      );
+    }
+  });
+  // 4) tier labels (gutter): name · shown/total · p50/红
+  rows.forEach(({ t, inCount }) => {
+    const a = aggOf(t.Le);
+    els.push(
+      <g key={`l-${t.Le}`}>
+        <text x={12} y={t.y + 4} fill={P.ink} fontSize={12} fontWeight={600}>{t.label}</text>
+        <text x={12} y={t.y + 18} fill={P.ink3} fontSize={9}>{`${focus ? inCount + '/' : ''}${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}%红`}</text>
+      </g>,
+    );
+  });
+  // 5) divider + card-internal sub-grids (only when a card is focused)
+  els.push(<line key="div" x1={8} y1={330} x2={592} y2={330} stroke={P.line} strokeDasharray="2 4" />);
+  els.push(<text key="divt" x={300} y={325} fill={P.ink3} fontSize={9} textAnchor="middle">—— 卡以下（钻取到某张卡后展开 · 阵列网格）——</text>);
+  SUBTIERS.forEach((st) => {
+    els.push(<text key={`sl-${st.key}`} x={12} y={st.y + 4} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
+    if (focusCard == null) { els.push(<text key={`sh-${st.key}`} x={120} y={st.y + 4} fill={P.ink3} fontSize={11}>— 钻取到某张卡后展开</text>); return; }
+    const gap = 2;
+    for (let i = 0; i < st.n; i++) {
+      const cx = 120 + (i % st.cols) * (st.cell + gap), cy = st.y - 6 + Math.floor(i / st.cols) * (st.cell + gap);
+      const v = Math.max(0, Math.min(1, nodeLoad(focusCard * st.seed + i, wlKind)));
+      const isSel = (st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i);
+      els.push(
+        <rect key={`s-${st.key}-${i}`} x={cx} y={cy} width={st.cell} height={st.cell} rx={2} fill={loadColor(v)} style={{ cursor: 'pointer' }}
+          stroke={isSel ? (dark ? '#fff' : '#10131a') : 'none'} strokeWidth={isSel ? 1.6 : 0}
+          onClick={(e) => { e.stopPropagation(); setFocus({ level: st.lvl, card: focusCard, ...(st.lvl === 'die' ? { die: i } : st.lvl === 'core' ? { core: i } : {}) }); }} />,
+      );
+    }
+  });
+
+  return (
+    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style={{ display: 'block' }}>
+      <rect x={0} y={0} width={SVG_W} height={SVG_H} fill="transparent" onClick={() => setFocus(null)} />
+      {els}
+    </svg>
+  );
 }
 
 export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
@@ -141,8 +307,10 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [metric, setMetric] = useState<Metric>('util');
   const [dir, setDir] = useState<Dir>('all');
   const [lens, setLens] = useState<Lens>('heat');
-  const [partDim, setPartDim] = useState<Exclude<PartitionDim, 'none'>>('tp');   // 通信域 lens: which parallel切分
+  const [partDim, setPartDim] = useState<Exclude<PartitionDim, 'none'>>('tp');
+  const [planeOn, setPlaneOn] = useState({ ub: true, rdma: true, vpc: false });
   const [focus, setFocus] = useState<Focus>(null);
+  const [scopeB, setScopeB] = useState<{ cx: number; cy: number; cz: number; r: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -150,15 +318,14 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const controlsRef = useRef<any>(null);
   const wlKind = WL[workload].kind;
 
-  useEffect(() => { setFocus(null); }, [gen]);   // drop stale selection on generation switch
+  useEffect(() => { setFocus(null); }, [gen]);
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => setStep((s) => (s + 1) % (STEP_MAX + 1)), 650);
     return () => clearInterval(id);
   }, [playing]);
 
-  // ── one pass over every card → cluster KPI + per-cab / per-node / per-card distributions ──
-  const stats = useMemo(() => {
+  const stats = useMemo<Stats>(() => {
     const cabSum = new Float64Array(nCabs), cabCnt = new Int32Array(nCabs);
     const ndSum = new Float64Array(nBlades), ndCnt = new Int32Array(nBlades);
     const cardVals: number[] = [], stride = Math.max(1, Math.floor(N / 2048));
@@ -182,24 +349,19 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const clusterMean = cabVals.reduce((a, b) => a + b, 0) / Math.max(1, cabVals.length);
     return {
       kpi: { util: utilSum / N, hot, strag, faultDom: faultNodes.size },
-      axis: [
-        { lvl: 'super' as const, name: '超节点', sub: `${N.toLocaleString()} 卡`, ...agg([clusterMean]) },
-        { lvl: 'cab' as const, name: '机柜', sub: `${nCabs} 柜`, ...agg(cabVals) },
-        { lvl: 'node' as const, name: '节点', sub: `${nBlades.toLocaleString()} 节点`, ...agg(ndVals) },
-        { lvl: 'card' as const, name: '卡 rank', sub: `${N.toLocaleString()} 卡`, ...agg(cardVals) },
-      ],
+      clusterMean, cabVals, ndVals, cardVals,
+      agg: { cluster: agg([clusterMean]), cab: agg(cabVals), node: agg(ndVals), card: agg(cardVals) },
     };
   }, [N, nCabs, nBlades, metric, wlKind, step]);
 
   // focused-entity auxiliary metrics (exact over the scope range; ≤64 cards unless whole)
   const rail = useMemo(() => {
     const [lo, hi] = scopeRange(focus, N), n = hi - lo;
-    if (n > PER_CAB) return null;   // whole / super → handled by the cluster summary block
+    if (n > PER_CAB) return null;
     const mean = (m: Metric) => { let s = 0; for (let k = lo; k < hi; k++) s += cardMetric(k, m, wlKind, step); return n ? s / n : 0; };
     return { util: mean('util'), strag: mean('strag'), fault: mean('fault'), count: n };
   }, [focus, N, wlKind, step]);
 
-  // 根因 (DAVIS-style) — the injected 机柜 over-heat is the demo problem during the event window
   const problem = useMemo(() => {
     if (step < EVT_LO || step > EVT_HI) return null;
     let strag = 0; for (let k = EVT_CAB * PER_CAB; k < (EVT_CAB + 1) * PER_CAB && k < N; k++) if (isStrag(k, step)) strag++;
@@ -207,9 +369,8 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
     return { root: EVT_CAB, title: `机柜 C${EVT_CAB} 过热`, chain: `液冷异常 → ${strag} 卡掉队(straggler) → DP 梯度 AllReduce 阻塞`, impact: `影响 ${Math.min(N, PER_CAB)} 卡 · step 延迟 +${Math.round(redR * 420 + 22)}%` };
   }, [step, N, stats.kpi.hot]);
 
-  // breadcrumb (ancestors of the focus, each clickable to re-focus that level)
   const crumbs = useMemo(() => {
-    const out: { lvl: NonNullable<Focus>['level']; label: string; card: number }[] = [{ lvl: 'super', label: '超节点', card: 0 }];
+    const out: { lvl: Level; label: string; card: number }[] = [{ lvl: 'super', label: '超节点', card: 0 }];
     if (focus && focus.level !== 'super' && focus.level !== 'cluster') {
       const cab = Math.floor(focus.card / PER_CAB); out.push({ lvl: 'cab', label: `机柜 C${cab}`, card: cab * PER_CAB });
       if (['node', 'card', 'die', 'core', 'tile'].includes(focus.level)) { const b = Math.floor(focus.card / CPB); out.push({ lvl: 'node', label: `节点 B${b}`, card: b * CPB }); }
@@ -219,10 +380,7 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
     return out;
   }, [focus]);
 
-  // ── panorama config derived from the lens (the 运行状态 镜头 mapped onto the 阵列全景) ──
-  // panoPhase / panoSel are MEMOISED so their object identity is stable across playback
-  // step-ticks: FullPodScene's 8K-instance recolor effect keys on `phase` + `sel`, so a fresh
-  // object every render would needlessly re-run it ~1.5×/s. They change only on real input.
+  // panorama config (lens → array presentation); memoised so playback ticks don't churn the 8K recolor
   const panoStatus = lens === 'heat' || lens === 'flow';
   const panoPeers = lens === 'flow';
   const panoPlanes = lens === 'phys';
@@ -234,7 +392,6 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const reach = Math.sqrt(N) * 1.3 + 12;
   const panoSel = useMemo(() => focusToSel(focus), [focus]);
 
-  // group rows for the focused card (TP/PP/DP/EP)
   const groups = focus && rail ? (() => {
     const k = focus.card, b = Math.floor(k / CPB);
     return [
@@ -245,13 +402,12 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
     ];
   })() : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
-
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
 
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' }}>
-      {/* ── shared toolbar: 工况 / 指标 / 方向 / 镜头 (+切分) · breadcrumb · KPI ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
+      {/* ── toolbar: 工况 / 指标 / 方向 / 镜头 (+切分) / 平面 · breadcrumb · KPI ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 12px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
         <span style={GLAB}>工况</span>
         <div style={{ display: 'flex', gap: 3 }}>
           {(Object.keys(WL) as Workload[]).map((w) => (
@@ -260,21 +416,15 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
         <span style={GLAB}>指标</span>
         <div style={{ display: 'flex', gap: 3 }}>
-          {(Object.keys(M_LABEL) as Metric[]).map((m) => (
-            <button key={m} onClick={() => setMetric(m)} style={{ ...btnBase, ...navBtn(metric === m) }}>{M_LABEL[m]}</button>
-          ))}
+          {(Object.keys(M_LABEL) as Metric[]).map((m) => (<button key={m} onClick={() => setMetric(m)} style={{ ...btnBase, ...navBtn(metric === m) }}>{M_LABEL[m]}</button>))}
         </div>
         <span style={GLAB}>方向</span>
         <div style={{ display: 'flex', gap: 3 }}>
-          {([['all', '全链'], ['up', '上游'], ['down', '下游']] as [Dir, string][]).map(([d, l]) => (
-            <button key={d} onClick={() => setDir(d)} style={{ ...btnBase, ...navBtn(dir === d) }}>{l}</button>
-          ))}
+          {([['all', '全链'], ['up', '上游'], ['down', '下游']] as [Dir, string][]).map(([d, l]) => (<button key={d} onClick={() => setDir(d)} style={{ ...btnBase, ...navBtn(dir === d) }}>{l}</button>))}
         </div>
         <span style={GLAB}>镜头</span>
         <div style={{ display: 'flex', gap: 3 }}>
-          {(Object.keys(LENS_LABEL) as Lens[]).map((l) => (
-            <button key={l} onClick={() => setLens(l)} style={{ ...btnBase, ...(lens === l ? { border: '1px solid #5a3a86', background: '#5a3a86', color: '#fff', fontWeight: 600 } : SECONDARY) }}>{LENS_LABEL[l]}</button>
-          ))}
+          {(Object.keys(LENS_LABEL) as Lens[]).map((l) => (<button key={l} onClick={() => setLens(l)} style={{ ...btnBase, ...(lens === l ? { border: '1px solid #5a3a86', background: '#5a3a86', color: '#fff', fontWeight: 600 } : SECONDARY) }}>{LENS_LABEL[l]}</button>))}
         </div>
         {lens === 'domain' && (
           <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
@@ -286,6 +436,14 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
             ))}
           </div>
         )}
+        <span style={GLAB}>平面</span>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {PLANES.map((p) => { const on = planeOn[p.id]; return (
+            <button key={p.id} onClick={() => setPlaneOn((s) => ({ ...s, [p.id]: !s[p.id] }))} title={p.role} style={{ ...btnBase, display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, p.color) }}>
+              <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(p.color) : p.color }} />{p.short.split('·')[0]}
+            </button>
+          ); })}
+        </div>
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--tx2)', flex: 1, minWidth: 60, overflow: 'hidden' }}>
           {crumbs.map((c, i) => (
@@ -310,23 +468,20 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
         </div>
       </div>
 
-      {/* ── body: left plane control · right panorama + dashboard ── */}
+      {/* ── body: left Smartscape 控制 · right panorama (scopeOnly) + 仪表 ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {/* LEFT — 平面视图 as the control surface */}
-        <div style={{ flex: '0 0 40%', maxWidth: '46%', minWidth: 360, borderRight: '1px solid var(--bd)', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--panel-solid)' }}>
+        <div style={{ flex: '0 0 40%', maxWidth: '46%', minWidth: 340, borderRight: '1px solid var(--bd)', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--panel-solid)' }}>
           <div style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
-            平面视图 · 控制 — 切换 器件互联/层级图/顶视图，点击任意层级或卡 → 联动右侧阵列全景 + 运行仪表
+            平面视图 · 层级图（控制）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
           </div>
-          <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-            <PlaneView gen={gen} dark={dark} onSelect={setFocus} />
+          <div style={{ flex: 1, position: 'relative', minHeight: 0, padding: '4px 6px' }}>
+            <Smartscape N={N} nCabs={nCabs} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} stats={stats} dark={dark} />
           </div>
         </div>
 
-        {/* RIGHT — 阵列全景 (main) + 运行状态 dashboard overlays */}
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <Canvas
-            orthographic
-            dpr={[1, 2]}
+            orthographic dpr={[1, 2]}
             camera={{ position: [reach, reach * 0.7, reach], zoom: 8, near: 0.1, far: 4000 }}
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => { gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false); }}
@@ -336,13 +491,13 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <ambientLight intensity={dark ? 1.35 : 1.05} />
             <directionalLight position={[8, 14, 6]} intensity={dark ? 0.95 : 1.2} />
             <pointLight position={[0, 10, 0]} intensity={dark ? 0.7 : 1.0} color={dark ? '#7e93cf' : '#e8f0ff'} />
-            <FitCamera reach={reach} controls={controlsRef} />
+            <FrameCamera bounds={scopeB} reach={reach} controls={controlsRef} />
             <SceneTheme.Provider value={dark}>
               <FullPodScene
                 scale="64P" podCount={1} full gen={spec} overlays={OVERLAYS}
                 runMode={runMode} phase={panoPhase} partition={panoPart} peers={panoPeers}
-                status={panoStatus} planes={panoPlanes} onHoverInfo={setHover} onPick={() => { /* double-click handled via focus */ }}
-                focusSel={panoSel} onSel={(s) => setFocus(selToFocus(s))} dir={dir}
+                status={panoStatus} planes={panoPlanes} onHoverInfo={setHover} onPick={() => { /* dbl-click via focus */ }}
+                focusSel={panoSel} onSel={(s) => setFocus(selToFocus(s))} dir={dir} scopeOnly onScope={setScopeB}
               />
             </SceneTheme.Provider>
             <OrbitControls
@@ -353,34 +508,11 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </Canvas>
 
           <div style={{ position: 'absolute', top: 8, left: 12, fontSize: 11, color: 'var(--tx3)', pointerEvents: 'none' }}>
-            3D 阵列全景 · 主视图 · 镜头：{LENS_LABEL[lens]}{dir !== 'all' ? ` · ${dir === 'up' ? '上游' : '下游'}` : ''} · 全量 {N.toLocaleString()} 卡
+            3D 阵列全景 · 主视图 · {focus ? `仅显示「${focusName(focus)}」链路` : '全量'} · 镜头：{LENS_LABEL[lens]}{dir !== 'all' ? ` · ${dir === 'up' ? '上游' : '下游'}` : ''} · {N.toLocaleString()} 卡
           </div>
 
-          {/* 运行状态 instrument 1 — 层级状态轴 (per-level p50 · 红% · 峰p95, clickable) */}
-          <div style={{ position: 'absolute', top: 30, left: 12, right: 248, display: 'flex', alignItems: 'stretch', gap: 4, pointerEvents: 'auto' }}>
-            {stats.axis.map((a, i) => {
-              const on = (focus ? (focus.level === a.lvl || (a.lvl === 'super' && (focus.level === 'super' || focus.level === 'cluster'))) : a.lvl === 'super');
-              return (
-                <div key={a.lvl} style={{ display: 'flex', alignItems: 'stretch', gap: 4, flex: '1 1 0', minWidth: 0 }}>
-                  <div onClick={() => setFocus(a.lvl === 'super' ? null : { level: a.lvl, card: focus?.card ?? 0 })}
-                    style={{ ...card, flex: 1, minWidth: 0, padding: '5px 7px', cursor: 'pointer', borderColor: on ? ACCENT : 'var(--bd)', background: on ? 'var(--state-sel)' : 'var(--panel)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 4 }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap' }}>{a.name}</span>
-                      <span style={{ fontSize: 9, color: 'var(--tx3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.sub}</span>
-                    </div>
-                    <div style={{ height: 6, borderRadius: 3, background: 'var(--btn)', overflow: 'hidden', margin: '4px 0 3px' }}>
-                      <div style={{ height: '100%', width: `${Math.round(a.p50 * 100)}%`, background: loadColor(a.p50), borderRadius: 3 }} />
-                    </div>
-                    <div style={{ fontSize: 9.5, color: 'var(--tx3)', ...TNUM }}>{`p50 ${Math.round(a.p50 * 100)}% · 红 ${(a.red * 100).toFixed(0)}% · 峰 ${Math.round(a.p95 * 100)}%`}</div>
-                  </div>
-                  {i < stats.axis.length - 1 && <span style={{ alignSelf: 'center', color: 'var(--tx3)', fontSize: 12 }}>›</span>}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 运行状态 instrument 2 — 根因 (DAVIS) */}
-          <div style={{ position: 'absolute', top: 96, right: 12, width: 224, ...card, padding: '10px 12px', borderColor: problem ? 'var(--danger, #ef4d4d)' : 'var(--bd)', background: problem ? 'rgba(60,24,24,0.92)' : 'var(--panel)' }}>
+          {/* DAVIS 根因 */}
+          <div style={{ position: 'absolute', top: 30, right: 12, width: 224, ...card, padding: '10px 12px', borderColor: problem ? 'var(--danger, #ef4d4d)' : 'var(--bd)', background: problem ? 'rgba(60,24,24,0.92)' : 'var(--panel)' }}>
             <div style={{ fontSize: 10, letterSpacing: 0.4, color: 'var(--tx3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: problem ? '#ef4d4d' : '#2bd47d' }} />DAVIS · 根因分析
             </div>
@@ -396,8 +528,8 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
             )}
           </div>
 
-          {/* 运行状态 instrument 3 — 实体仪表 (auxiliary metrics for the focus) */}
-          <div style={{ position: 'absolute', top: problem ? 252 : 232, right: 12, width: 224, ...card, padding: '10px 12px' }}>
+          {/* 实体仪表 (auxiliary metrics for the focus) */}
+          <div style={{ position: 'absolute', top: problem ? 186 : 166, right: 12, width: 224, ...card, padding: '10px 12px' }}>
             <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
             <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nCabs} 机柜 · ${nBlades.toLocaleString()} 节点`}</div>
             {focus && rail ? (
@@ -428,36 +560,31 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 )}
               </>
             ) : (
-              <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧平面视图驱动右侧阵列全景。方向开关切上下游链路；镜头切阵列呈现（状态热力/机柜流量/通信域/物理链路）；时间轴回放看问题定位。</div>
+              <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧层级图驱动右侧阵列全景。点实体只展开其链路；方向(全链/上游/下游)过滤；镜头切阵列呈现；时间轴回放看问题定位。</div>
             )}
           </div>
 
-          {/* legend — state (iron-rule RYG) + hierarchy + planes */}
+          {/* legend */}
           <div style={{ position: 'absolute', left: 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
             <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx2)' }}>状态（红黄绿+灰 = 状态唯一一套色）</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
             </div>
-            <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx2)', borderTop: '1px solid var(--bd)', paddingTop: 4 }}>层级（图元/位置区分，不抢状态色）</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid var(--bd)', paddingTop: 4 }}>
               {([['卡', ENTITY_COLORS.card], ['节点', ENTITY_COLORS.node], ['机柜', ENTITY_COLORS.cab], [TOK.supernode, ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
                 <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
               ))}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {PLANES.map((p) => <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 12, height: 3, borderRadius: 1, background: p.color }} />{p.short}</span>)}
-            </div>
-            <div style={{ fontSize: 9.5, color: 'var(--tx3)' }}>蓝链 = 选中上下游 · 青网 = 同级 peer mesh · 单击卡/节点/机柜联动</div>
+            <div style={{ fontSize: 9.5, color: 'var(--tx3)' }}>蓝=选中焦点 · 紫环=掉队卡 · 链路外压暗 · 单击实体联动</div>
           </div>
 
-          {/* hover info */}
           {hover && (
             <div style={{ position: 'absolute', right: 248, bottom: 12, maxWidth: 320, ...card, padding: '7px 11px', fontSize: 12, lineHeight: 1.5, color: 'var(--tx)', pointerEvents: 'none' }}>{hover}</div>
           )}
         </div>
       </div>
 
-      {/* ── playbar: 回放 step（驱动工况负载 + 注入机柜事件） ── */}
+      {/* playbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 16px', borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
         <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 26, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>{playing ? '❚❚' : '▶'}</button>
         <span style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap', ...TNUM }}>{`t = ${step}`}</span>
