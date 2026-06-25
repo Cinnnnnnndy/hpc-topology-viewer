@@ -236,7 +236,12 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
   );
 }
 
-export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
+// normalized selection lifted out of the plane view (any layout) → drives the linked
+// 阵列全景 + 运行状态 dashboard in the 联动控制台 (console) view. `card` = global card
+// index inside the single super-node (8 卡/刀片 · 8 刀片/柜, matches FullPodScene full=true).
+export type PlaneSel = { level: 'cluster' | 'super' | 'cab' | 'node' | 'card' | 'die' | 'core' | 'tile'; card: number; die?: number; core?: number } | null;
+
+export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; onSelect?: (sel: PlaneSel) => void }) {
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
@@ -1110,6 +1115,37 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
     window.addEventListener('resize', onR);
     return () => window.removeEventListener('resize', onR);
   }, [draw]);
+
+  // ── lift the active selection OUT (for the 联动控制台): normalise whichever layout's
+  //    selection is active into { level, card } and emit it when it changes. The callback is
+  //    held in a ref so a non-memoised parent handler never re-fires this effect. ──
+  const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
+  const lastEmit = useRef<string>(' ');
+  useEffect(() => {
+    let s: PlaneSel = null;
+    if (layout === 'layers' && selL) {
+      const kind = LAY.levels[selL.lvl].kind, idx = selL.idx;
+      if (kind === 'super') s = { level: 'super', card: 0 };
+      else if (kind === 'cab') s = { level: 'cab', card: idx * (CPB * BPC) };
+      else if (kind === 'node') s = { level: 'node', card: idx * CPB };
+      else if (kind === 'card') s = { level: 'card', card: idx };
+      else if (kind === 'die') s = { level: 'die', card: Math.floor(idx / 2), die: idx % 2 };
+      else if (kind === 'core') s = { level: 'core', card: Math.floor(idx / CORES_PER_CARD), core: idx % CORES_PER_CARD };
+      else if (kind === 'tile') s = { level: 'tile', card: Math.floor(idx / (CORES_PER_CARD * 4)) };
+    } else if (layout === 'top' && selTop) {
+      const level = selTop.core !== undefined ? 'core' : selTop.die !== undefined ? 'die' : 'card';
+      s = { level, card: selTop.k, die: selTop.die, core: selTop.core };
+    } else if (layout === 'devices' && selDev) {
+      if (selDev.kind === 'npu') s = { level: 'card', card: selDev.k };
+      else if (selDev.kind === 'l1') s = { level: 'node', card: selDev.blade * CPB };
+      else if (selDev.kind === 'l2') s = { level: 'cab', card: selDev.cab * (CPB * BPC) };
+      else s = { level: 'node', card: selDev.blade * CPB };   // cpu / nic → host devices on a blade → node scope
+    }
+    const key = JSON.stringify(s);
+    if (key === lastEmit.current) return;
+    lastEmit.current = key;
+    onSelectRef.current?.(s);
+  }, [selL, selTop, selDev, layout, LAY]);
 
   // ── interaction ──
   const toWorld = (clientX: number, clientY: number): [number, number] => {

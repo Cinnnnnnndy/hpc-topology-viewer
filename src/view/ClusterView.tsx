@@ -27,6 +27,7 @@ import {
 } from '../scene/scenes';
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
+import { ConsoleView } from './ConsoleView';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -99,10 +100,12 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   fullpod:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18, iso: true },
   plane:    { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D overlay; 3-D camera unused
   status:   { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D dashboard overlay; 3-D camera unused
+  console:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 联动控制台 overlay (own canvas); main 3-D camera unused
 };
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
+  { id: 'console',  label: '联动控制台' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
   { id: 'fullpod',  label: '阵列全景(多卡)' },
@@ -252,7 +255,19 @@ export function ClusterView() {
       '可运行：回放推进工况(预训练/Prefill/Decode)+step，负载随之变化并注入机柜事件；计数、关系均由真实层级规模推导，非写死。',
     ],
   };
-  const info = mode === 'status' ? STATUS_INFO : INFO[infoKey];
+  // 联动控制台 — fuses 平面视图(控制) + 阵列全景(主视图) + 运行状态(分析仪表)
+  const CONSOLE_INFO = {
+    title: `联动控制台 · ${TOK.supernode}（平面 ▸ 阵列全景 ▸ 运行仪表）`,
+    lines: [
+      '左 平面视图 = 控制：点击任意层级/卡（器件互联·层级图·顶视图三种布局），即刻联动右侧阵列全景的高亮链路。',
+      '右 阵列全景 = 主视图：全量超节点 3D 阵列，按选区高亮上下游链路 + 同级 peer mesh；单击实体反向回填选区。',
+      '运行状态 = 分析仪表：集群 KPI、层级状态轴(p50·红%·峰p95)、实体辅助指标(利用率/掉队/故障 + 并行组 + 三平面)、DAVIS 根因。',
+      '镜头映射阵列呈现：状态热力(负载) / 机柜流量(peer mesh) / 通信域(TP/PP/DP/EP 切分配色) / 物理链路(UB/RDMA/VPC)。',
+      '方向(全链/上游/下游)过滤高亮链路；回放 step 推进工况负载并在 t=34–46 注入机柜过热事件，触发根因定位。',
+      '所有样式/图元/状态/连接/层级关系沿用既有方案（复用 平面视图 + 阵列全景 组件 + 同一套 data 色彩/状态/负载函数）。',
+    ],
+  };
+  const info = mode === 'status' ? STATUS_INFO : mode === 'console' ? CONSOLE_INFO : INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
     const bc: { label: string; onClick?: () => void }[] = [
@@ -375,7 +390,7 @@ export function ClusterView() {
         <div style={{ flex: 1 }} />
         {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
-        {mode !== 'plane' && mode !== 'status' && (
+        {mode !== 'plane' && mode !== 'status' && mode !== 'console' && (
           <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
             {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
               <button
@@ -478,6 +493,9 @@ export function ClusterView() {
 
           {/* 2-D runtime-state dashboard — KPI + hierarchy status-axis + multi-lens (overlays the 3-D canvas) */}
           {mode === 'status' && <StatusView gen={gen} dark={dark} />}
+
+          {/* 联动控制台 — 平面视图(控制) + 阵列全景(主视图·自带 canvas) + 运行状态仪表 (overlays the 3-D canvas) */}
+          {mode === 'console' && <ConsoleView gen={gen} dark={dark} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}
@@ -803,8 +821,8 @@ export function ClusterView() {
             </div>
           )}
 
-          {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard, which carries its own legend */}
-          {mode !== 'status' && (
+          {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard / 联动控制台, which carry their own legend */}
+          {mode !== 'status' && mode !== 'console' && (
           <div style={{
             position: 'absolute', left: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',

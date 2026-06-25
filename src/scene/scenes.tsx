@@ -1664,12 +1664,18 @@ const FP_A2A_CAP = 64;          // per-supernode ≤ this → draw the All-to-Al
  *  Cards/processes/threads are InstancedMesh (matrices set once per layout); the
  *  hierarchy backbone is batched Lines. Dense per-card fan-in / collectives are
  *  capped so the full ~8 K-card super-node stays interactive. */
-export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick }: SceneCallbacks & {
+export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, phase, partition, peers, status, planes, onHoverInfo, onPick, focusSel, onSel, dir }: SceneCallbacks & {
   scale: Scale; podCount: number; full: boolean; gen: GenSpec; overlays: CommOverlays; runMode: RunMode; phase: RunPhase | null; partition: PartitionDim; peers: boolean; status: boolean; planes: boolean; onPick?: (npuLocal: number) => void;
+  // ── optional external linkage (used by the 联动控制台 / console view): when `focusSel` is
+  //    provided the selection becomes CONTROLLED (driven by the left 2-D plane control); `onSel`
+  //    lifts panorama clicks back out; `dir` filters the highlighted chain to up / down only. ──
+  focusSel?: { lv: number; i: number } | null; onSel?: (s: { lv: number; i: number } | null) => void; dir?: 'all' | 'up' | 'down';
 }) {
   const LC = useLC();
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
-  const [sel, setSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
+  const [internalSel, setInternalSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
+  const sel = focusSel !== undefined ? focusSel : internalSel;   // controlled when focusSel passed, else internal
+  const chainDir = dir ?? 'all';
   const [focus, setFocus] = useState<number | null>(null);   // focused band index → highlight its downstream link
   const lastHov = useRef(-1);
   const cardInst = useRef<THREE.InstancedMesh>(null);
@@ -1905,8 +1911,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true;
   };
 
-  const toggleSel = (lv: number, i: number) => setSel((s) => (s && s.lv === lv && s.i === i ? null : { lv, i }));   // single-click select at a level
-  useEffect(() => { setSel(null); }, [G]);   // drop stale selection when the layout changes
+  const toggleSel = (lv: number, i: number) => {   // single-click select at a level (toggles off when re-clicked)
+    const next = sel && sel.lv === lv && sel.i === i ? null : { lv, i };
+    if (focusSel === undefined) setInternalSel(next);   // uncontrolled: own the state
+    onSel?.(next);                                       // lift out (console view keeps the shared focus)
+  };
+  useEffect(() => { if (focusSel === undefined) setInternalSel(null); }, [G, focusSel]);   // drop stale internal selection when the layout changes
 
   // trace the selection's up/down-stream chain (vertical) + its same-level peer mesh (horizontal).
   // lv 0 = card · lv 1 = blade (board) · lv 2 = cabinet (node mesh).
@@ -1918,39 +1928,43 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const caPos = (c: number): [number, number, number] => [G.cabMX[c], G.yCab, G.cabMZ[c]];
     const sPos = (p: number): [number, number, number] => [G.superMX[p], G.ySuper, 0];
     const vSegs: [number, number, number][] = [], pSegs: [number, number, number][] = [], cards: number[] = [];
+    const showDn = chainDir !== 'up', showUp = chainDir !== 'down';   // 方向开关：上游 / 下游 / 全链
     const bladeCards = (b: number): number[] => { const base = b * FP_CARDS_PER_BLADE, r: number[] = []; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) if (base + i < G.N) r.push(base + i); return r; };
     const down = (k: number) => {
-      for (let t = 0; t < FP_TILES; t++) vSegs.push([G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]], [G.cardX[k], G.yThread, G.cardZ[k]]);   // L0 tile → L1
-      for (let t = 0; t < FP_THREADS; t++) { const [dx, dz] = aicOff(t); vSegs.push([G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz], pPos(k)); }   // L1 AI Core → L2 die
-      vSegs.push(pPos(k), cPos(k)); cards.push(k);
+      if (showDn) {
+        for (let t = 0; t < FP_TILES; t++) vSegs.push([G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]], [G.cardX[k], G.yThread, G.cardZ[k]]);   // L0 tile → L1
+        for (let t = 0; t < FP_THREADS; t++) { const [dx, dz] = aicOff(t); vSegs.push([G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz], pPos(k)); }   // L1 AI Core → L2 die
+        vSegs.push(pPos(k), cPos(k));
+      }
+      cards.push(k);   // the card itself always highlights, regardless of direction
     };
     const meshPairs = (xs: number[], f: (x: number) => [number, number, number]) => { for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) pSegs.push(f(xs[i]), f(xs[j])); };
     let dieK: number | null = null, label = '', labelPos: [number, number, number] = [0, 0, 0], superP = 0;
-    const upFromCab = (c: number) => { superP = G.cabSuper[c]; vSegs.push(caPos(c), sPos(superP)); if (podCount > 1) vSegs.push(sPos(superP), G.cluster); };
+    const upFromCab = (c: number) => { superP = G.cabSuper[c]; if (!showUp) return; vSegs.push(caPos(c), sPos(superP)); if (podCount > 1) vSegs.push(sPos(superP), G.cluster); };
 
     if (sel.lv === 0) {
       const k = sel.i; if (k >= G.N) return null;
       const b = G.cardBlade[k], c = G.bladeCab[b];
-      down(k); vSegs.push(cPos(k), bPos(b), bPos(b), caPos(c)); upFromCab(c);
+      down(k); if (showUp) vSegs.push(cPos(k), bPos(b), bPos(b), caPos(c)); upFromCab(c);
       meshPairs([k, ...bladeCards(b).filter((j) => j !== k)], cPos);   // card k ↔ its blade-mates (L1 board mesh)
-      dieK = k; label = `NPU ${k}（device）· rank ${k}`; labelPos = cPos(k);
+      dieK = showDn ? k : null; label = `NPU ${k}（device）· rank ${k}`; labelPos = cPos(k);
     } else if (sel.lv === 1) {
       const b = sel.i; if (b >= G.nBlades) return null;
       const c = G.bladeCab[b], ks = bladeCards(b);
-      for (const k of ks) { down(k); vSegs.push(cPos(k), bPos(b)); }
-      vSegs.push(bPos(b), caPos(c)); upFromCab(c);
+      for (const k of ks) { down(k); if (showUp) vSegs.push(cPos(k), bPos(b)); }
+      if (showUp) vSegs.push(bPos(b), caPos(c)); upFromCab(c);
       meshPairs(ks, cPos);   // L1 board mesh: all 8 cards card↔card
       label = `刀片 B${b} · ${ks.length}×NPU`; labelPos = bPos(b);
     } else {
       const c = sel.i; if (c >= G.nCabs) return null;
       const blades: number[] = [];
       for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === c) blades.push(b);
-      for (const b of blades) { const ks = bladeCards(b); for (const k of ks) { down(k); vSegs.push(cPos(k), bPos(b)); } vSegs.push(bPos(b), caPos(c)); meshPairs(ks, cPos); }
+      for (const b of blades) { const ks = bladeCards(b); for (const k of ks) { down(k); if (showUp) vSegs.push(cPos(k), bPos(b)); } if (showUp) vSegs.push(bPos(b), caPos(c)); meshPairs(ks, cPos); }
       meshPairs(blades, bPos);   // L2 node mesh: blade↔blade within the cabinet
       upFromCab(c); label = `机柜 C${c} · ${blades.length} 刀片`; labelPos = caPos(c);
     }
     return { vSegs, pSegs, cards, superP, dieK, label, labelPos };
-  }, [sel, G, podCount]);
+  }, [sel, G, podCount, chainDir]);
 
   // die-inset callout placement: left of the field, scaled to the field size so it stays readable
   const dieS = Math.min(4, Math.max(1.1, G.fieldW * 0.05));
