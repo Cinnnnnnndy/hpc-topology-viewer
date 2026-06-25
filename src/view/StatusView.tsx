@@ -28,6 +28,7 @@ import {
   type Gen,
 } from '../scene/data';
 import { TOK } from '../content';
+import { comet2d } from './wire2d';
 
 // ── shared button language (matches ClusterView / PlaneView) ──
 const ACCENT = '#4369ef';
@@ -271,7 +272,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     const PAD = 16, STRIP_H = 54;   // STRIP_H = parent-context strip height (heat lens)
     const tx = (s: string, x: number, y: number, c: string, f = '11px Inter', a: CanvasTextAlign = 'left') => { ctx.fillStyle = c; ctx.font = f; ctx.textAlign = a; ctx.fillText(s, x, y); ctx.textAlign = 'left'; };
     const bar = (x: number, y: number, w: number, h: number, u: number, c?: string) => { ctx.fillStyle = P.track; ctx.fillRect(x, y, w, h); ctx.fillStyle = c ?? loadColor(u); ctx.fillRect(x, y, w * u, h); };
-    const line = (x1: number, y1: number, x2: number, y2: number, c: string, w: number, dash = false) => { ctx.save(); ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; if (dash) { ctx.setLineDash([6, 5]); ctx.lineDashOffset = -step * 3; } ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
+    const line = (x1: number, y1: number, x2: number, y2: number, c: string, w: number, dash = false) => { ctx.save(); ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; if (dash) { ctx.setLineDash([6, 5]); ctx.lineDashOffset = -step * 3; } ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); if (dash) comet2d(ctx, [x1, y1], [x2, y2], c, Math.max(w * 1.3, 1.6), step * 0.12); };
     const dia = (x: number, y: number, r: number, c: string, lab?: string) => { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); ctx.fillStyle = P.neutral; ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke(); if (lab) tx(lab, x, y + 3.5, P.ink, '10px Inter', 'center'); };
     const fbox = (x: number, y: number, w: number, h: number, fill: string, stroke?: string) => { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.4; ctx.strokeRect(x, y, w, h); } };
 

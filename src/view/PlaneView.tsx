@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
+import { comet2d, connDot2d } from './wire2d';
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
 const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', multi: '多平面', none: '片上' };
@@ -148,7 +149,6 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
     // shared play head → current phase (node load colour) + marching-ants offset (link flow)
     const seg = phaseSegments(runMode);
     const curP = playing ? (seg.find((sg) => headRef.current < sg.t1)?.p ?? seg[seg.length - 1].p) : null;
-    const flowOff = -(phaseRef.current * 16);
     const heat = (seed: number) => loadColor(nodeLoad(seed, curP!.kind));   // call only when curP set
     const rr = (x: number, y: number, w: number, h: number, r: number) => { const rad = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + rad, y); ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad); ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath(); };
     const lbl = (lvl: string, name: string, yc: number) => { ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; if (lvl) { ctx.fillStyle = '#9fb6ff'; ctx.font = '700 9.5px sans-serif'; ctx.fillText(lvl, 40, yc - 6); } ctx.fillStyle = ink2; ctx.font = '9.5px sans-serif'; ctx.fillText(name, 40, yc + (lvl ? 6 : 0)); };
@@ -157,8 +157,11 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
     const die = (cx: number, cy: number, w: number, h: number, compute: boolean) => { ctx.fillStyle = compute ? '#2be0b0' : '#8a9bc4'; ctx.globalAlpha = 0.92; rr(cx - w / 2, cy - h / 2, w, h, h * 0.18); ctx.fill(); ctx.globalAlpha = 1; if (compute) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { ctx.beginPath(); ctx.arc(cx - w / 2 + w * (0.2 + 0.2 * c), cy - h / 2 + h * (0.2 + 0.2 * r), Math.min(w, h) * 0.05, 0, 7); ctx.fill(); } } };
     // conn — while playing a STRONG (active) link marches (流量流动); idle keeps static SEL/neutral
     const conn = (x1: number, y1: number, x2: number, y2: number, strong: boolean) => {
-      if (playing && strong) { ctx.strokeStyle = loadColor(0.62); ctx.lineWidth = 1.7; ctx.globalAlpha = 0.95; ctx.setLineDash([7, 5]); ctx.lineDashOffset = flowOff; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1; return; }
-      ctx.strokeStyle = strong ? SEL : (dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)'); ctx.lineWidth = strong ? 1.4 : 1; ctx.globalAlpha = strong ? 0.9 : 0.7; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1;
+      const base = strong ? SEL : (dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.16)');
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = base; ctx.lineWidth = strong ? 2 : 1; ctx.globalAlpha = strong ? 0.85 : 0.6;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; ctx.restore();
+      if (playing && strong) comet2d(ctx, [x1, y1], [x2, y2], loadColor(0.62), 2.6, phaseRef.current * 0.5);
+      if (strong) { connDot2d(ctx, x1, y1, 2.8, base); connDot2d(ctx, x2, y2, 2.8, base); }
     };
     const cl = 46, cr = W - 6, cw = cr - cl, midX = cl + cw / 2;
     const cab = sel.kind === 'l2' ? sel.cab : Math.floor(sel.blade / BPC);
@@ -693,6 +696,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.strokeStyle = ld <= -2 ? NED : loadColor(ld);
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
         ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+        if (flowing) comet2d(ctx, p, q, loadColor(ld), (wpx * 1.3) / s, -phaseRef.current * 0.5);
       };
       // NPU 图元 = 950 卡 (与层级图/顶视图一致)：卡体 + 暗底凹槽内 4 Die（2 计算 teal + 2 IO 蓝灰），
       // 凹槽让 Die 与卡体(青/热力色)拉开对比，不再糊成一片。
@@ -884,6 +888,7 @@ export function PlaneView({ gen, dark }: { gen: Gen; dark: boolean }) {
         ctx.strokeStyle = curPhase ? loadColor(linkLoad(sa, sb, boost)) : 'rgba(150,168,205,0.72)';
         ctx.globalAlpha = curPhase ? 0.9 : 0.62;
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+        if (playing && curPhase) comet2d(ctx, p, q, loadColor(linkLoad(sa, sb, boost)), (w * 1.3) / s, -phaseRef.current * 0.5);
       };
       const dotR = Math.max(L.cs * 0.1, 2.4 / s), ddot = [DEV_CPU, DEV_LPO, PLANES[2].color];   // screen-constant min so dots read at overview
       for (let b = 0; b < L.nB; b++) {

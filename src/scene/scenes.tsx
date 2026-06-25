@@ -14,7 +14,6 @@
  * runtime); this file carries no plaintext product names.
  */
 import { Suspense, createContext, useContext, useEffect, useMemo, useState, useLayoutEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { Text as DreiText, Edges, Line, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import {
@@ -28,6 +27,7 @@ import {
 } from './data';
 import { TOK } from '../content';
 import { ModelOr } from './PartModel';
+import { Wire, WireScale } from './wiring';
 
 // ─── Theme-aware scene palette ───────────────────────────────────────────────
 // Structural / neutral / text colours for every procedural object. Light variant
@@ -139,7 +139,7 @@ function HallCabinet({ cell, hovered, onClick, onHover }: {
  *  Clos in the communication cabinets → cross-cabinet all-to-all; plus in-hall
  *  row/column adjacency mesh. (Schematic, but reflects the real relationship.) */
 function HallSpine({ cells, onHoverInfo }: { cells: CabinetCell[]; onHoverInfo: (t: string | null) => void }) {
-  const { uplinkGeo, meshGeo, apex } = useMemo(() => {
+  const { uplinkPts, meshPts, apex } = useMemo(() => {
     const compute = cells.filter((c) => c.kind === 'compute');
     const comms = cells.filter((c) => c.kind === 'switch');
     const cz = comms.length ? comms.reduce((s, c) => s + c.pos[2], 0) / comms.length : 0;
@@ -165,8 +165,7 @@ function HallSpine({ cells, onHoverInfo }: { cells: CabinetCell[]; onHoverInfo: 
     };
     byRow.forEach((a) => connect(a, 'x'));
     byCol.forEach((a) => connect(a, 'z'));
-    const g = (s: number[]) => { const x = new THREE.BufferGeometry(); x.setAttribute('position', new THREE.Float32BufferAttribute(s, 3)); return x; };
-    return { uplinkGeo: g(up), meshGeo: g(mesh), apex };
+    return { uplinkPts: segPairs(up), meshPts: segPairs(mesh), apex };
   }, [cells]);
 
   return (
@@ -175,9 +174,9 @@ function HallSpine({ cells, onHoverInfo }: { cells: CabinetCell[]; onHoverInfo: 
       onPointerOut={() => onHoverInfo(null)}
     >
       {/* in-hall adjacency mesh (L2 violet) */}
-      <lineSegments geometry={meshGeo}><lineBasicMaterial color={L(2)} transparent opacity={0.25} /></lineSegments>
+      <Wire points={meshPts} segments color={L(2)} lineWidth={1.4} opacity={0.25} active speed={0.4} />
       {/* uplinks to Clos apex (L3 orange) */}
-      <lineSegments geometry={uplinkGeo}><lineBasicMaterial color={L(3)} transparent opacity={0.22} /></lineSegments>
+      <Wire points={uplinkPts} segments color={L(3)} lineWidth={1.5} opacity={0.22} active speed={0.5} />
       {/* Clos apex node */}
       <mesh position={apex}><sphereGeometry args={[0.16, 16, 16]} /><meshStandardMaterial color={L(3)} emissive={L(3)} emissiveIntensity={0.6} /></mesh>
       <Text position={[apex[0], apex[1] + 0.3, apex[2]]} fontSize={0.32} color={L(3)} anchorX="center">{`${TOK.ub} 交换 Clos（通信柜）· 跨柜全互联`}</Text>
@@ -571,12 +570,6 @@ function NodePartMesh({ part, hovered, selected, onHover, onSelect }: {
 }
 
 /** Build a LineSegments geometry from an array of [ax,ay,az,bx,by,bz] in one colour. */
-function segGeo(segments: number[]): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(segments, 3));
-  return g;
-}
-
 /** Toggleable overlays. ring/a2a → UB hierarchy view; tile/cores → node view. */
 export interface CommOverlays { ring: boolean; a2a: boolean; tile: boolean; cores: boolean; }
 
@@ -594,15 +587,10 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
   const tileColor = '#f59e0b';
 
   // tile dataflow polyline: HBM → L1 → L0A/L0B → Cube → L0C → L1
-  const flowGeo = useMemo(() => {
+  const flowPts = useMemo(() => {
     const p = (x: number, z: number): [number, number, number] => [x, 0.06, z];
-    const seg: number[] = [];
     const hbm = p(-hx + 0.18, 0), l1 = p(-hx + 0.62, 0), l0 = p(-0.1, 0), cube = p(0.55, 0), l0c = p(0.55, -hz + 0.3);
-    const chain = [hbm, l1, l0, cube, l0c, l1];
-    for (let i = 0; i < chain.length - 1; i++) seg.push(...chain[i], ...chain[i + 1]);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
-    return g;
+    return [hbm, l1, l0, cube, l0c, l1] as [number, number, number][];
   }, [hx, hz]);
 
   const Block = ({ x, z, w, d, label, color }: { x: number; z: number; w: number; d: number; label: string; color: string }) => (
@@ -648,7 +636,7 @@ function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays
           onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`Tile 数据流：HBM→L1→L0→Cube→L0C 异步流水（TileShape 切分 · 参考 TileLang/${TOK.pypto}）`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
-          <lineSegments geometry={flowGeo}><lineBasicMaterial color={tileColor} transparent opacity={0.9} /></lineSegments>
+          <Wire points={flowPts} color={tileColor} lineWidth={2} opacity={0.9} active speed={0.8} cornerRadius={0.08} endpoints={false} />
         </group>
       )}
       <Text position={[0, 0.05, hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">
@@ -673,10 +661,10 @@ function IoDieDetail({ onHoverInfo, onJump }: { onHoverInfo: (t: string | null) 
   };
   const switchPos: [number, number, number] = [0.15, 0.05, -0.08];
   // 9 ports (row 0) forward through the on-chip switch
-  const fwdGeo = useMemo(() => {
+  const fwdPts = useMemo(() => {
     const seg: number[] = [];
     for (let i = 0; i < 9; i++) { const p = portPos(i); seg.push(p[0], 0.06, p[2], switchPos[0], 0.06, switchPos[2]); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); return g;
+    return segPairs(seg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -704,7 +692,7 @@ function IoDieDetail({ onHoverInfo, onJump }: { onHoverInfo: (t: string | null) 
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); onJump?.({ view: 'topology', focus: 'onchip' }); }}
       >
-        <lineSegments geometry={fwdGeo}><lineBasicMaterial color={L(3)} transparent opacity={0.6} /></lineSegments>
+        <Wire points={fwdPts} segments color={L(3)} lineWidth={1.8} opacity={0.6} active speed={0.7} />
         <Slab size={[0.34, 0.09, 0.26]} position={switchPos} color={L(3)} emissive={L(3)} emissiveIntensity={0.5} edgeColor={L(3)} />
         <Text position={[switchPos[0], 0.12, switchPos[2]]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color="#fff" anchorX="center">On-Chip SW · 9口转发</Text>
       </group>
@@ -731,7 +719,7 @@ function IoDieDetail({ onHoverInfo, onJump }: { onHoverInfo: (t: string | null) 
 /** Node-internal UB 2D-mesh among the 8 NPUs (L1 board fabric). */
 function BoardMesh() {
   const S = S_NODE;
-  const geo = useMemo(() => {
+  const pts = useMemo(() => {
     const npu = NODE_PARTS.filter((p) => p.type === 'npu');
     const pos = (i: number): [number, number, number] => [npu[i].pos[0] * S, 0.05 * S, npu[i].pos[2] * S];
     const seg: number[] = [];
@@ -742,11 +730,9 @@ function BoardMesh() {
         if (c + 1 < NPU_GRID.cols) seg.push(...pos(i), ...pos(i + 1));
         if (r + 1 < NPU_GRID.rows && i + NPU_GRID.cols < npu.length) seg.push(...pos(i), ...pos(i + NPU_GRID.cols));
       }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
-    return g;
+    return segPairs(seg);
   }, []);
-  return <lineSegments geometry={geo}><lineBasicMaterial color={L(1)} transparent opacity={0.7} /></lineSegments>;
+  return <Wire points={pts} segments color={L(1)} lineWidth={1.6} opacity={0.7} active speed={0.5} />;
 }
 
 export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: SceneCallbacks & { overlays: CommOverlays; onJump?: (t: UbJump) => void; initialSelected?: number }) {
@@ -759,13 +745,11 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
   const selColor = COMM_PATTERNS[2].color;
 
   // leader line from the selected NPU to the die inset
-  const leaderGeo = useMemo(() => {
+  const leaderPts = useMemo(() => {
     const npu = NODE_PARTS.filter((p) => p.type === 'npu')[selected];
     const a: [number, number, number] = [npu.pos[0] * S, 0.06 * S + 0.5, npu.pos[2] * S];
     const b: [number, number, number] = [DIE.pos[0] - DIE.w / 2, DIE.pos[1] + 0.2, DIE.pos[2]];
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b], 3));
-    return g;
+    return [a, b] as [number, number, number][];
   }, [selected, S]);
 
   return (
@@ -806,7 +790,7 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
         <BoardMesh />
       </group>
       {/* leader: selected NPU → die inset */}
-      <lineSegments geometry={leaderGeo}><lineBasicMaterial color={selColor} transparent opacity={0.8} /></lineSegments>
+      <Wire points={leaderPts} color={selColor} lineWidth={2} opacity={0.8} active speed={0.9} />
       {/* right inset: AI Die (compute) of the selected NPU */}
       <DieDetail npuIdx={selected} overlays={overlays} onHoverInfo={onHoverInfo} />
       {/* left inset: IO Die (interconnect subsystem) */}
@@ -851,7 +835,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
     const order = [0, 1, 2, 3, 7, 6, 5, 4];
     const seg: number[] = [];
     for (let k = 0; k < order.length; k++) { const a = npuPts[order[k]], b = npuPts[order[(k + 1) % 8]]; seg.push(a[0], yR, a[2], b[0], yR, b[2]); }
-    return segGeo(seg);
+    return segPairs(seg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [npuPts]);
 
@@ -930,7 +914,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         {/* the node IS a blade — render the compute-blade tray under the 8 NPUs */}
         <group position={[0, -0.05, 0]}><BladeTray w={2.05} d={0.95} hovered={hov === 1} accent={false} /></group>
         <Line points={rect(2.05, 0.95)} color={L(1)} lineWidth={1.5} transparent opacity={hov === 1 ? 0.95 : 0.6} />
-        <Line points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} transparent opacity={hov === 1 ? 0.95 : 0.6} />
+        <Wire points={allPairs(npuPts)} segments color={L(1)} lineWidth={hov === 1 ? 2.6 : 1.8} opacity={hov === 1 ? 0.95 : 0.6} active={hov === 1} speed={0.6} />
         {npuPts.map((p, i) => (
           <group key={i} position={[p[0], 0.02, p[2]]}>
             <NpuChip w={0.18} h={0.12} hovered={hov === 1} selected={i === hlNpu} />
@@ -946,7 +930,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       {/* L2 — ONE cabinet: 8 blades, cross-blade FULL-MESH; each blade is a tray, all in a 机柜 box */}
       <Tier lvl={2}>
         <Line points={rect(HT.xSpan * 0.86, 1.15)} color={L(2)} lineWidth={2} transparent opacity={hov === 2 ? 0.95 : 0.7} />
-        <Line points={allPairs(nodePts)} segments color={L(2)} lineWidth={hov === 2 ? 2.4 : 1.6} transparent opacity={hov === 2 ? 0.9 : 0.5} />
+        <Wire points={allPairs(nodePts)} segments color={L(2)} lineWidth={hov === 2 ? 2.4 : 1.6} opacity={hov === 2 ? 0.9 : 0.5} active={hov === 2} speed={0.6} />
         {nodePts.map((p, i) => (
           <group key={i} position={[p[0], 0.02, p[2]]}>
             <BladeTray w={0.5} d={0.4} hovered={hov === 2 || i === hlBlade} />
@@ -971,7 +955,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
               {cx.map((x, i) => (
                 <group key={i} position={[x, 0, 0.22]}><CabinetBox w={0.34} h={0.34} d={0.3} kind="compute" hovered={hov === 3} /></group>
               ))}
-              <Line points={segPairs(seg)} segments color={L(3)} lineWidth={hov === 3 ? 2.4 : 1.6} transparent opacity={hov === 3 ? 0.9 : 0.55} />
+              <Wire points={segPairs(seg)} segments color={L(3)} lineWidth={hov === 3 ? 2.4 : 1.6} opacity={hov === 3 ? 0.9 : 0.55} active={hov === 3} speed={0.7} />
               <Text position={[0, 0, 0.66]} fontSize={0.13} color={hov === 3 ? L(3) : LC.textDim} anchorX="center">{`${cabs} 机柜 经通信柜 Clos 全互联`}</Text>
             </group>
           );
@@ -998,7 +982,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
               <boxGeometry args={[0.3, Math.abs(e.pts[0][1] - e.pts[1][1]), 0.3]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
-            <Line points={e.pts} color={on ? L(e.p) : '#9aa4b2'} lineWidth={on ? 4 : 1} dashed={!on} dashScale={4} transparent opacity={on ? 1 : (focus === null ? 0.5 : 0.18)} />
+            <Wire points={e.pts} color={on ? L(e.p) : '#9aa4b2'} lineWidth={on ? 4 : 1} dashed={!on} active={on} opacity={on ? 1 : (focus === null ? 0.5 : 0.18)} endpoints={on} speed={1.0} />
           </group>
         );
       })}
@@ -1014,7 +998,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
           onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行）：rank 间全互联，沿 L1/L2 UB full-mesh + L3 Clos`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
-          <Line points={a2aPts(npuPts, yR + 0.04)} segments color={COMM_PATTERNS[1].color} lineWidth={1.5} transparent opacity={0.5} />
+          <Wire points={a2aPts(npuPts, yR + 0.04)} segments color={COMM_PATTERNS[1].color} lineWidth={1.5} opacity={0.5} active speed={0.7} />
           <Text position={[2.0, yR, 0]} fontSize={0.14} color={COMM_PATTERNS[1].color} anchorX="left">All-to-All</Text>
         </group>
       )}
@@ -1023,7 +1007,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
           onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 Ring-AllReduce（数据并行梯度规约）：rank 环形通信，沿 UB full-mesh`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
-          <lineSegments geometry={ringGeo}><lineBasicMaterial color={COMM_PATTERNS[0].color} transparent opacity={0.9} /></lineSegments>
+          <Wire points={ringGeo} segments color={COMM_PATTERNS[0].color} lineWidth={1.8} opacity={0.9} active speed={0.9} />
           <Text position={[2.0, yR + 0.2, 0]} fontSize={0.14} color={COMM_PATTERNS[0].color} anchorX="left">Ring-AllReduce</Text>
         </group>
       )}
@@ -1074,34 +1058,16 @@ function a2aPts(pts: [number, number, number][], y: number): [number, number, nu
 // 5. UB adjacency matrix (NPU × NPU, recursive full-mesh)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Thin cylinder link between two points (for emphasised pair). */
-function LinkTube({ a, b, color, r = 0.025 }: { a: [number, number, number]; b: [number, number, number]; color: string; r?: number }) {
-  const { pos, quat, len } = useMemo(() => {
-    const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
-    const dir = vb.clone().sub(va);
-    const len = dir.length();
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-    return { pos: va.clone().add(vb).multiplyScalar(0.5), quat: q, len };
-  }, [a, b]);
-  return (
-    <mesh position={pos} quaternion={quat}>
-      <cylinderGeometry args={[r, r, len, 10]} />
-      <meshBasicMaterial color={color} toneMapped={false} />
-    </mesh>
-  );
+/** Emphasised pair link — bus-wiring tube with flowing comet + connector endpoints. */
+function LinkTube({ a, b, color, r = 0.045 }: { a: [number, number, number]; b: [number, number, number]; color: string; r?: number }) {
+  return <Wire points={[a, b]} color={color} radius={r} opacity={1} active speed={1.2} endpoints />;
 }
 
-/** Animated dashed line — dashes flow along the path (collective-comm direction). */
+/** Flowing collective-comm path — bus-wiring tube with a moving comet highlight. */
 function FlowLine({ points, color, width = 2.5, speed = 1, opacity = 0.95 }: {
   points: [number, number, number][]; color: string; width?: number; speed?: number; opacity?: number;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ref = useRef<any>(null);
-  useFrame((_, dt) => { const m = ref.current?.material; if (m) m.dashOffset -= dt * speed; });
-  return (
-    <Line ref={ref} points={points} color={color} lineWidth={width} transparent opacity={opacity}
-      dashed dashSize={0.32} gapSize={0.22} />
-  );
+  return <Wire points={points} color={color} lineWidth={width} opacity={opacity} active speed={speed} endpoints={false} />;
 }
 
 const MAT_SPAN = 3.8;       // upright matrix footprint
@@ -1302,8 +1268,8 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
         {/* switched (32P 一体): central switch hub + single-hop spokes + ethernet stubs */}
         {switched && (
           <group>
-            <Line points={spokes} segments color={L(3)} lineWidth={hi.npus.length ? 1.2 : 2.4} transparent opacity={hi.npus.length ? 0.25 : 0.7} />
-            <Line points={uboePts} segments color={L(4)} lineWidth={2} transparent opacity={0.8} />
+            <Wire points={spokes} segments color={L(3)} lineWidth={hi.npus.length ? 1.2 : 2.4} opacity={hi.npus.length ? 0.25 : 0.7} active={!hi.npus.length} speed={0.7} />
+            <Wire points={uboePts} segments color={L(4)} lineWidth={2} opacity={0.8} active speed={0.6} />
             <mesh position={hub}><boxGeometry args={[0.5, 0.5, 0.3]} /><meshStandardMaterial color={L(3)} emissive={L(3)} emissiveIntensity={0.5} /></mesh>
             <Text position={[0, 0, 0.25]} fontSize={0.13} color="#fff" anchorX="center">交换</Text>
             <Text position={[0, -0.42, 0]} fontSize={0.12} color={L(3)} anchorX="center">{`任意两片单跳 · ×${paths} 通路`}</Text>
@@ -1331,8 +1297,8 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
           </group>
         ))}
         {/* UB direct links (fat lines for visibility): blue=L1 board, purple=L2 cross-board */}
-        {l1Pts.length > 0 && <Line points={l1Pts} segments color={L(1)} lineWidth={hi.npus.length ? 1.5 : 3} transparent opacity={hi.npus.length ? 0.4 : 0.95} />}
-        {l2Pts.length > 0 && <Line points={l2Pts} segments color={L(2)} lineWidth={hi.npus.length ? 1.5 : 2.5} transparent opacity={hi.npus.length ? 0.35 : 0.8} />}
+        {l1Pts.length > 0 && <Wire points={l1Pts} segments color={L(1)} lineWidth={hi.npus.length ? 1.5 : 3} opacity={hi.npus.length ? 0.4 : 0.95} active={!hi.npus.length} speed={0.6} />}
+        {l2Pts.length > 0 && <Wire points={l2Pts} segments color={L(2)} lineWidth={hi.npus.length ? 1.5 : 2.5} opacity={hi.npus.length ? 0.35 : 0.8} active={!hi.npus.length} speed={0.6} />}
         {/* NPUs as a single instanced mesh (perf) */}
         <instancedMesh
           ref={modelRef}
@@ -1516,7 +1482,7 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
             {/* software side */}
             <SwBox yy={yy} label={r.sw} on={on} />
             {/* mapping connector */}
-            <Line points={[[swX + 1.0, yy, 0], [hwX - 0.9, yy, 0]]} color={on ? lineColor : (r.key ? lineColor : '#c2c9d4')} lineWidth={on ? 4 : (r.key ? 2.5 : 1)} dashed={!r.key && !on} dashScale={4} transparent opacity={on ? 1 : (focus === null ? 0.7 : 0.2)} />
+            <Wire points={[[swX + 1.0, yy, 0], [hwX - 0.9, yy, 0]]} color={on ? lineColor : (r.key ? lineColor : '#c2c9d4')} lineWidth={on ? 4 : (r.key ? 2.5 : 1)} dashed={!r.key && !on} active={on} opacity={on ? 1 : (focus === null ? 0.7 : 0.2)} endpoints={on} speed={1.0} />
             {/* hardware side — real element per row */}
             <group position={[hwX, yy, 0]}>
               {i === 0 && <CabinetBox w={0.5} h={0.5} d={0.2} kind="compute" hovered={on} />}
@@ -1612,8 +1578,8 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       {rowLabel(ySuper, 'L3 超节点', L(3))}
 
       {/* connectors */}
-      {baseLines.map((ln, i) => <Line key={i} points={ln.pts} color={ln.c} lineWidth={1.2} transparent opacity={sel ? 0.15 : 0.4} />)}
-      {pathLines.map((ln, i) => <Line key={'h' + i} points={ln.pts} color={ln.c} lineWidth={3} transparent opacity={0.95} />)}
+      {baseLines.map((ln, i) => <Wire key={i} points={ln.pts} color={ln.c} lineWidth={1.2} opacity={sel ? 0.15 : 0.4} endpoints={false} />)}
+      {pathLines.map((ln, i) => <Wire key={'h' + i} points={ln.pts} color={ln.c} lineWidth={3} opacity={0.95} active speed={1.1} />)}
 
       {/* THREAD row */}
       {Array.from({ length: P }, (_, p) => Array.from({ length: T }, (_, t) => {
@@ -2009,7 +1975,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (pts.length === 0) return null;
     const cols: [number, number, number][] = [];
     for (let s = 0; s < pts.length / 2; s++) { const [r, g, b] = loadRGB(loadFn(s)); cols.push([r / 255, g / 255, b / 255], [r / 255, g / 255, b / 255]); }
-    return <Line key={key} points={pts} segments vertexColors={cols} lineWidth={width} transparent opacity={opacity} />;
+    return <Wire key={key} points={pts} segments vertexColors={cols} lineWidth={width} opacity={opacity} />;
   };
   const segLoad = (band: number, s: number): number => (((band * 7919 + s * 131 + 3) >>> 0) % 11 === 0 ? -1 : nodeLoad(band * 7919 + s * 131 + 3, statKind ?? undefined) + (linkActive(band) ? 0.3 : -0.16));   // ~9% offline (灰)
   // backbone connector (between-level). observation → per-link heatmap buckets; else → faint muted line.
@@ -2023,7 +1989,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     return heat
       // heat mode respects focus: bright on the focused band, faint elsewhere (was always 0.9 → dense)
       ? heatLines(pts, (s) => segLoad(upper, s), bw, `b${upper}`, focus === null ? 0.5 : focus === upper ? 0.95 : 0.08)
-      : <Line points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} transparent opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} />;
+      : <Wire points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} active={focus === upper} speed={0.6} />;
   };
   const xL = -G.fieldW / 2 - 0.9;
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
@@ -2066,7 +2032,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     for (let k = 0; k < G.N; k++) { const b = G.cardBlade[k]; portUbLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] - 0.1], devPos(b, 1)); portRdLines.push([G.cardX[k] + 0.12, G.yCard + 0.05, G.cardZ[k] + 0.1], devPos(b, 2)); }
   }
 
+  // big fields need proportionally thicker tubes than the chip-scale scenes (world-unit radius).
+  const wireScale = Math.min(7, Math.max(1.2, G.fieldW * 0.045));
+
   return (
+    <WireScale.Provider value={wireScale}>
     <group>
       <Floor size={Math.max(18, G.fieldW + 6, G.fieldD + 6)} />
       {/* clickable band labels (focus → highlight that band's downstream connector) */}
@@ -2100,13 +2070,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {planes && (
         <group>
           {/* UB · scale-up (绿) — 超节点内骨干：卡→刀片→机柜→超节点 */}
-          <Line points={G.c2b} segments color={PL_UB.color} lineWidth={2.6} transparent opacity={0.45} />
-          <Line points={G.b2c} segments color={PL_UB.color} lineWidth={2.2} transparent opacity={0.5} />
-          <Line points={G.c2s} segments color={PL_UB.color} lineWidth={1.8} transparent opacity={0.6} />
+          <Wire points={G.c2b} segments color={PL_UB.color} lineWidth={2.6} opacity={0.45} active speed={0.6} />
+          <Wire points={G.b2c} segments color={PL_UB.color} lineWidth={2.2} opacity={0.5} active speed={0.6} />
+          <Wire points={G.c2s} segments color={PL_UB.color} lineWidth={1.8} opacity={0.6} active speed={0.7} />
           {/* RDMA · scale-out (橙) — 每超节点上行至 cluster 点（跨超节点 RoCE 400G） */}
-          {soRisers.length > 0 && <Line points={soRisers} segments color={PL_RDMA.color} lineWidth={3} transparent opacity={0.85} />}
+          {soRisers.length > 0 && <Wire points={soRisers} segments color={PL_RDMA.color} lineWidth={3} opacity={0.85} active speed={0.9} />}
           {/* VPC (紫) — host→擎天 NIC→数据中心 侧出 */}
-          {vpcRisers.length > 0 && <Line points={vpcRisers} segments color={PL_VPC.color} lineWidth={2.4} transparent opacity={0.8} />}
+          {vpcRisers.length > 0 && <Wire points={vpcRisers} segments color={PL_VPC.color} lineWidth={2.4} opacity={0.8} active speed={0.8} />}
           <mesh position={dcNode}>
             <boxGeometry args={[0.7, 0.5, 0.7]} />
             <meshStandardMaterial color={PL_VPC.color} emissive={PL_VPC.color} emissiveIntensity={0.45} metalness={0.3} roughness={0.5} toneMapped={false} />
@@ -2132,9 +2102,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             <meshStandardMaterial toneMapped={false} metalness={0.25} roughness={0.5} />
           </instancedMesh>
           {/* device connectors (modest configs): NPU UB口→L1交换(绿) · NPU RDMA口→LPO(橙) · CPU→NIC(紫) */}
-          {portUbLines.length > 0 && <Line points={portUbLines} segments color={PL_UB.color} lineWidth={1.4} transparent opacity={0.55} />}
-          {portRdLines.length > 0 && <Line points={portRdLines} segments color={PL_RDMA.color} lineWidth={1.4} transparent opacity={0.55} />}
-          {cpuNicLines.length > 0 && <Line points={cpuNicLines} segments color={PL_VPC.color} lineWidth={1.6} transparent opacity={0.6} />}
+          {portUbLines.length > 0 && <Wire points={portUbLines} segments color={PL_UB.color} lineWidth={1.4} opacity={0.55} active speed={0.6} />}
+          {portRdLines.length > 0 && <Wire points={portRdLines} segments color={PL_RDMA.color} lineWidth={1.4} opacity={0.55} active speed={0.6} />}
+          {cpuNicLines.length > 0 && <Wire points={cpuNicLines} segments color={PL_VPC.color} lineWidth={1.6} opacity={0.6} active speed={0.6} />}
         </group>
       )}
 
@@ -2146,10 +2116,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           flood the view; click a card/blade/cabinet for its own crisp peer mesh (cyan, below). */}
       {peers && G.l1mesh.length > 0 && (heat
         ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 1.4, 'l1', 0.3)
-        : <Line points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.4} transparent opacity={focus === null ? 0.3 : 0.1} />)}
+        : <Wire points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.4} opacity={focus === null ? 0.3 : 0.1} />)}
       {peers && G.l2mesh.length > 0 && (heat
         ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.0, 'l2', 0.32)
-        : <Line points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.0} transparent opacity={focus === null ? 0.34 : 0.12} />)}
+        : <Wire points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.0} opacity={focus === null ? 0.34 : 0.12} />)}
 
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
@@ -2215,12 +2185,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {selPath && (
         <group>
           {/* the chain objects themselves glow amber (recoloured in the effect); here just the route + peer mesh */}
-          {selPath.pSegs.length > 0 && <Line points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} transparent opacity={0.95} />}
-          {selPath.vSegs.length > 0 && <Line points={selPath.vSegs} segments color="#4369ef" lineWidth={3} transparent opacity={0.92} />}
+          {selPath.pSegs.length > 0 && <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} opacity={0.95} active speed={1.1} />}
+          {selPath.vSegs.length > 0 && <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={3} opacity={0.92} active speed={1.0} />}
           {selPath.dieK !== null ? (
             <group>
               {/* die-operator inset for a selected card (reuses DieDetail), with a leader line */}
-              <Line points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#4369ef" lineWidth={1.6} transparent opacity={0.6} />
+              <Wire points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#4369ef" lineWidth={1.6} opacity={0.6} active speed={0.9} />
               <group position={dieInsetPos} scale={dieS}>
                 <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
                   <DieDetail npuIdx={selPath.dieK % 8} overlays={overlays} onHoverInfo={onHoverInfo} />
@@ -2259,8 +2229,8 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       )}
       {(overlays.a2a || (commNow && collective === 'a2a')) && (
         <group>
-          {G.cabA2A.length > 0 && <Line points={G.cabA2A} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.4 : 0.16} />}
-          {G.a2a.length > 0 && <Line points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} transparent opacity={commNow ? 0.5 : 0.2} />}
+          {G.cabA2A.length > 0 && <Wire points={G.cabA2A} segments color={COMM_PATTERNS[1].color} lineWidth={1} opacity={commNow ? 0.4 : 0.16} active={commNow} speed={0.8} />}
+          {G.a2a.length > 0 && <Wire points={G.a2a} segments color={COMM_PATTERNS[1].color} lineWidth={1} opacity={commNow ? 0.5 : 0.2} active={commNow} speed={0.8} />}
         </group>
       )}
 
@@ -2268,5 +2238,6 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${peers && !G.peerL1 ? ' · L1卡间mesh过密(暂隐)' : ''}${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
       </Text>
     </group>
+    </WireScale.Provider>
   );
 }
