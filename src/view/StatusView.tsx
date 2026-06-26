@@ -32,19 +32,19 @@ import { busWire2d } from './wire2d';
 
 // ── shared button language (matches ClusterView / PlaneView) ──
 const ACCENT = '#4369ef';
-const SECONDARY: React.CSSProperties = { border: '1px solid var(--btn-bd)', background: 'var(--btn)', color: 'var(--tx2)' };
+const SECONDARY: React.CSSProperties = { border: '1px solid var(--button-secondary-border)', background: 'var(--button-secondary-bg)', color: 'var(--foreground-muted)' };
 function inkOf(hex: string): string {
   const h = hex.replace('#', ''); if (h.length < 6) return '#fff';
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
   return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#10131a' : '#fff';
 }
 function navBtn(active: boolean): React.CSSProperties {
-  return active ? { border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontWeight: 600 } : { ...SECONDARY };
+  return active ? { border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontWeight: 600, transform: 'translateY(-1px)' } : { ...SECONDARY };
 }
 function toggleBtn(active: boolean, c: string): React.CSSProperties {
   return active ? { border: `1px solid ${c}`, background: c, color: inkOf(c), fontWeight: 600 } : { ...SECONDARY };
 }
-const LBL: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 

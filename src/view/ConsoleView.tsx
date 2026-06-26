@@ -127,11 +127,11 @@ function focusName(f: Focus): string {
 
 // ── shared button language ──
 const ACCENT = '#4369ef';
-const SECONDARY: React.CSSProperties = { border: '1px solid var(--btn-bd)', background: 'var(--btn)', color: 'var(--tx2)' };
+const SECONDARY: React.CSSProperties = { border: '1px solid var(--button-secondary-border)', background: 'var(--button-secondary-bg)', color: 'var(--foreground-muted)' };
 function ink(hex: string): string { const h = hex.replace('#', ''); if (h.length < 6) return '#fff'; const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16); return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#10131a' : '#fff'; }
-function navBtn(on: boolean): React.CSSProperties { return on ? { border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontWeight: 600, boxShadow: '0 1px 3px rgba(67,105,239,0.40)' } : { ...SECONDARY }; }
+function navBtn(on: boolean): React.CSSProperties { return on ? { border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontWeight: 600, transform: 'translateY(-1px)', boxShadow: '0 1px 3px rgba(67,105,239,0.40)' } : { ...SECONDARY }; }
 function toggleBtn(on: boolean, c: string): React.CSSProperties { return on ? { border: `1px solid ${c}`, background: c, color: ink(c), fontWeight: 600 } : { ...SECONDARY }; }
-const GLAB: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: 0.3, color: 'var(--tx3)', alignSelf: 'center' };
+const GLAB: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)', alignSelf: 'center' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const btnBase: React.CSSProperties = { padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer' };
 const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: true };

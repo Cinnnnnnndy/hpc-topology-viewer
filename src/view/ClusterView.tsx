@@ -147,7 +147,7 @@ function ink(hex: string): string {
 // primary nav (generation / mode / preset): active = solid accent block, else secondary
 function navBtn(active: boolean): React.CSSProperties {
   return active
-    ? { border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontWeight: 600, boxShadow: '0 1px 3px rgba(67,105,239,0.40)' }
+    ? { border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontWeight: 600, transform: 'translateY(-1px)', boxShadow: '0 1px 3px rgba(67,105,239,0.40)' }
     : { ...BTN_SECONDARY };
 }
 // semantic toggle: active = solid block in its OWN colour (the block IS the legend swatch)
@@ -156,8 +156,8 @@ function toggleBtn(active: boolean, c: string): React.CSSProperties {
     ? { border: `1px solid ${c}`, background: c, color: ink(c), fontWeight: 600 }
     : { ...BTN_SECONDARY };
 }
-// PTO type scale: section label (11px · 600 · +0.4 tracking · muted) for control-group captions
-const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'var(--tx3)' };
+// PTO type scale: section label (11px · 500 · ALL CAPS · +0.5 tracking · muted) for control-group captions
+const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 
 // per-mode overlay toggles
@@ -319,29 +319,30 @@ export function ClusterView() {
       width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
       background: 'var(--bg)', color: 'var(--tx)',
       fontFamily: 'var(--font-sans)',
-      '--bg': dark ? '#101010' : '#f5f5f5',
-      '--bg2': dark ? '#0d0d0d' : '#f3f4f7',
-      '--panel': dark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.96)',
-      '--panel-solid': dark ? '#181818' : '#ffffff',
-      '--tx': dark ? 'rgba(255,255,255,0.90)' : 'rgba(0,0,0,0.88)',
-      '--tx2': dark ? 'rgba(255,255,255,0.62)' : 'rgba(0,0,0,0.58)',
-      '--tx3': dark ? 'rgba(255,255,255,0.42)' : 'rgba(0,0,0,0.45)',
-      '--bd': dark ? 'rgba(255,255,255,0.13)' : 'rgba(0,0,0,0.12)',
-      '--bd2': dark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)',
-      '--shadow': dark ? '0 10px 30px rgba(0,0,0,0.55)' : '0 10px 28px rgba(17,24,39,0.12)',
-      '--shadow-sm': dark ? '0 4px 14px rgba(0,0,0,0.45)' : '0 4px 14px rgba(17,24,39,0.09)',
+      // ── PTO bridge: legacy vars now resolve to PTO semantic tokens (src/styles/pto.css).
+      //    Theme switching happens in pto.css via data-theme, so these are theme-agnostic. ──
+      '--bg': 'var(--background)',
+      '--bg2': 'var(--background-subtle)',
+      '--panel': 'var(--panel-shell-bg)',
+      '--panel-solid': 'var(--background-elevated)',
+      '--tx': 'var(--foreground)',
+      '--tx2': 'var(--foreground-muted)',
+      '--tx3': 'var(--foreground-subtle)',
+      '--bd': 'var(--border)',
+      '--bd2': 'var(--border-strong)',
+      '--shadow': 'var(--shadow-md)',
+      '--shadow-sm': 'var(--shadow-sm)',
       // filled "secondary" button surface (soft colour block) + its near-invisible edge
-      '--btn': dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.045)',
-      '--btn-bd': dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)',
-      // engineering dot-grid (drawn behind the canvas / on the plane view)
-      '--grid': dark ? 'rgba(255,255,255,0.06)' : 'rgba(67,105,239,0.11)',
-      // PTO state / highlight + focus-ring + strong border (for selection emphasis)
-      '--state-sel': dark ? 'rgba(67,105,239,0.16)' : 'rgba(67,105,239,0.10)',
-      '--focus-ring': dark ? 'rgba(67,105,239,0.42)' : 'rgba(67,105,239,0.36)',
-      '--bd-strong': dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.18)',
+      '--btn': 'var(--button-secondary-bg)',
+      '--btn-bd': 'var(--button-secondary-border)',
+      // PTO state / highlight + strong border (for selection emphasis)
+      '--state-sel': 'var(--state-selected)',
+      '--bd-strong': 'var(--border-emphasis)',
+      // --grid and --focus-ring share their names with PTO semantic tokens, so
+      // pto.css already defines them on this data-theme root — no bridge needed.
     } as React.CSSProperties}>
       {/* ── toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', minHeight: 'var(--comp-toolbar-height)', borderBottom: '1px solid var(--comp-toolbar-border)', flexWrap: 'wrap', background: 'var(--comp-toolbar-bg)' }}>
         {/* generation switch */}
         <div style={{ display: 'flex', gap: 4, borderRight: '1px solid var(--bd)', paddingRight: narrow ? 6 : 12 }}>
           {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
@@ -505,7 +506,7 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 7, maxWidth: 'calc(100% - 24px)',
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(ctxOpen) }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
               {ctxOpen && (
@@ -605,8 +606,8 @@ export function ClusterView() {
           {mode === 'trace' && locate && (
             <div style={{
               position: 'absolute', left: 14, top: 14, display: 'flex', gap: 8, alignItems: 'center',
-              padding: '7px 12px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              padding: '7px 12px', fontSize: 12, background: 'var(--panel-shell-bg)',
+              border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span style={{ color: 'var(--tx)' }}>{`已选 rank ${locate.rank}（刀片 B${locate.blade}）：`}</span>
               <button
@@ -630,8 +631,8 @@ export function ClusterView() {
           {ubFocus && (mode === 'topology' || mode === 'matrix') && (
             <div style={{
               position: 'absolute', left: 14, top: 58, display: 'flex', gap: 8, alignItems: 'center',
-              padding: '6px 11px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid #4369ef', borderRadius: 10, color: '#4369ef', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              padding: '6px 11px', fontSize: 12, background: 'var(--panel-shell-bg)',
+              border: '1px solid var(--primary)', borderRadius: 10, color: 'var(--primary)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`来自 IO Die：${ubFocus === 'ccu' ? `高亮 ${TOK.ccu} 集合通信` : ubFocus === 'onchip' ? `高亮 ${TOK.onchip} 转发` : '该端口实现的 NPU↔NPU UB 互联（邻接矩阵）'}`}</span>
               <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>← 回节点</button>
@@ -643,8 +644,8 @@ export function ClusterView() {
           {hl && (mode === 'topology' || mode === 'overview') && (
             <div style={{
               position: 'absolute', left: 14, top: 58, display: 'flex', gap: 8, alignItems: 'center',
-              padding: '6px 11px', fontSize: 12, background: 'var(--panel)',
-              border: '1px solid #4369ef', borderRadius: 10, color: '#4369ef', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              padding: '6px 11px', fontSize: 12, background: 'var(--panel-shell-bg)',
+              border: '1px solid var(--primary)', borderRadius: 10, color: 'var(--primary)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
               <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>← 回时序</button>
@@ -657,7 +658,7 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14,
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <button
                 onClick={() => { setTracePlaying((v) => !v); if (traceTick === null) setTraceTick(0); }}
@@ -700,7 +701,7 @@ export function ClusterView() {
               <div style={{
                 position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: 14, zIndex: 5,
                 display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 12px', maxWidth: 'calc(100% - 24px)',
-                background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               }}>
                 {/* swimlane grid (collapsible) */}
                 {swimOpen && (
@@ -789,7 +790,7 @@ export function ClusterView() {
             <div style={{
               position: 'absolute', right: 14, bottom: 14, maxWidth: '34%',
               padding: '7px 12px', fontSize: 12.5, lineHeight: 1.5,
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
               color: 'var(--tx)', pointerEvents: 'none', zIndex: 6,
             }}>{hoverInfo}</div>
           )}
@@ -798,7 +799,7 @@ export function ClusterView() {
           {mode === 'node' && nodeKind === 'compute' && (
             <div style={{
               position: 'absolute', right: 14, top: 14, width: 232, padding: '9px 12px', fontSize: 11.5,
-              background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)',
+              background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)',
               backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', color: 'var(--tx2)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: memOpen ? 7 : 0 }}>
@@ -825,7 +826,7 @@ export function ClusterView() {
           {mode !== 'status' && mode !== 'console' && (
           <div style={{
             position: 'absolute', left: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
-            background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+            background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 250,
             pointerEvents: mode === 'fullpod' ? 'auto' : 'none',
             maxHeight: mode === 'fullpod' ? 'calc(100vh - 140px)' : undefined,
@@ -985,14 +986,14 @@ export function ClusterView() {
             position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 6,
             width: narrow ? 270 : 300, borderLeft: '1px solid var(--bd)', padding: '14px 16px',
             overflowY: 'auto', fontSize: 12.5, lineHeight: 1.65, flexShrink: 0,
-            background: 'var(--panel)', color: 'var(--tx)', boxShadow: '-3px 0 12px var(--bd)',
+            background: 'var(--background-elevated)', color: 'var(--tx)', boxShadow: '-3px 0 12px var(--bd)',
           }}>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: 0.2, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)' }}>
               {info.lines.map((l, i) => (<li key={i} style={{ marginBottom: 5 }}>{l}</li>))}
             </ul>
 
-            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>{`关键规格 · ${spec.code}`}</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx2)' }}>{`关键规格 · ${spec.code}`}</div>
             <table style={{ width: '100%', fontSize: 11.5, color: 'var(--tx)', borderCollapse: 'collapse' }}>
               <tbody>
                 {specRows.map(([k, v]) => (
@@ -1004,12 +1005,12 @@ export function ClusterView() {
               </tbody>
             </table>
 
-            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>相比 A3 的演进</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx2)' }}>相比 A3 的演进</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)', fontSize: 11.5, lineHeight: 1.6 }}>
               {CHANGES.map((c, i) => (<li key={i} style={{ marginBottom: 4 }}>{c}</li>))}
             </ul>
 
-            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: 'var(--tx2)' }}>数据来源</div>
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx2)' }}>数据来源</div>
             <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.7 }}>
               {SOURCES.map((s, i) => (<div key={i}>{s}</div>))}
             </div>
