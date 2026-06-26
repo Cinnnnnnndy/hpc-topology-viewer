@@ -1675,6 +1675,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   onScope?: (b: { cx: number; cy: number; cz: number; r: number } | null) => void;   // world bounds of the selected scope → host can frame the camera on it
 }) {
   const LC = useLC();
+  const dark = useContext(SceneTheme);   // theme → out-of-scope dim colour (matches bg so it vanishes)
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [internalSel, setInternalSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
   const sel = focusSel !== undefined ? focusSel : internalSel;   // controlled when focusSel passed, else internal
@@ -1886,7 +1887,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       else if (sel.lv === 2 && sel.i < G.nCabs) { chainCabs.add(sel.i); for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === sel.i) addBladeSet(b); }
     }
     const dimming = !!scopeOnly && !!sel && (chainCards.size > 0 || chainCabs.size > 0);
-    const dimC = new THREE.Color('#2a2f38');   // out-of-scope → recede toward background
+    const dimC = new THREE.Color(dark ? '#101010' : '#f5f5f5');   // out-of-scope → match bg so it visually disappears (只显示链路)
     const offCard = (k: number) => dimming && !chainCards.has(k);
     if (pm) for (let k = 0; k < G.N; k++) { if (offCard(k)) col.copy(dimC); else if (heat) heatNode(k, procBase); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
     if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (offCard(kk)) col.copy(dimC); else if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
@@ -1917,7 +1918,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (nm?.instanceColor) nm.instanceColor.needsUpdate = true;
     if (bm?.instanceColor) bm.instanceColor.needsUpdate = true;
     if (cm?.instanceColor) cm.instanceColor.needsUpdate = true;
-  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status, scopeOnly]);
+  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status, scopeOnly, dark]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move)
   const hoverCard = (k: number | null) => {
@@ -1948,9 +1949,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const sPos = (p: number): [number, number, number] => [G.superMX[p], G.ySuper, 0];
     const vSegs: [number, number, number][] = [], pSegs: [number, number, number][] = [], cards: number[] = [];
     const showDn = chainDir !== 'up', showUp = chainDir !== 'down';   // 方向开关：上游 / 下游 / 全链
+    // on-chip fan (tile→core→die) only for a single-card focus in scopeOnly — for cab/node it would
+    // be 8–64 cards' worth of fine fans (clutter); the left 层级图 likewise expands 卡内 only on a card.
+    const fine = !scopeOnly || sel.lv === 0;
     const bladeCards = (b: number): number[] => { const base = b * FP_CARDS_PER_BLADE, r: number[] = []; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) if (base + i < G.N) r.push(base + i); return r; };
     const down = (k: number) => {
-      if (showDn) {
+      if (showDn && fine) {
         for (let t = 0; t < FP_TILES; t++) vSegs.push([G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]], [G.cardX[k], G.yThread, G.cardZ[k]]);   // L0 tile → L1
         for (let t = 0; t < FP_THREADS; t++) { const [dx, dz] = aicOff(t); vSegs.push([G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz], pPos(k)); }   // L1 AI Core → L2 die
         vSegs.push(pPos(k), cPos(k));
@@ -1983,7 +1987,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       upFromCab(c); label = `机柜 C${c} · ${blades.length} 刀片`; labelPos = caPos(c);
     }
     return { vSegs, pSegs, cards, superP, dieK, label, labelPos };
-  }, [sel, G, podCount, chainDir]);
+  }, [sel, G, podCount, chainDir, scopeOnly]);
 
   // world bounds of the selected scope → the host frames the camera on it (so scopeOnly actually
   // "只显示链路内容": the chain fills the view instead of being a speck in the 8 K-card field).
@@ -2081,7 +2085,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   }
 
   // big fields need proportionally thicker tubes than the chip-scale scenes (world-unit radius).
-  const wireScale = Math.min(7, Math.max(1.2, G.fieldW * 0.045));
+  // scopeOnly (联动控制台): thinner wires + hide the whole non-chain field so only the selected
+  // 链路 shows (matches the left 层级图 "只显示链路内容").
+  const hideField = !!scopeOnly && !!sel;
+  const wireScale = Math.min(scopeOnly ? 2.6 : 7, Math.max(1.2, G.fieldW * 0.045));
 
   return (
     <WireScale.Provider value={wireScale}>
@@ -2106,16 +2113,19 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* hierarchy backbone (downstream of band f is highlighted when focus===f) */}
       {/* bw (5th arg) = relative bandwidth → thickness in status mode: intra-node fattest, scale-out thinnest */}
-      {conn(G.l2t, ENTITY_COLORS.vector, 7, 0.55, 0.6)}
-      {conn(G.t2p, THREAD_COLOR, 1, 0.7, 0.8)}
-      {conn(G.p2c, ENTITY_COLORS.computeDie, 2, 0.9, 1.1)}
-      {conn(G.c2b, L(1), 3, 0.8, 2.4)}
-      {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
-      {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
-      {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4, 0.9)}
+      {/* scopeOnly + selection → the whole-field backbone is hidden; only selPath (the chain) draws */}
+      {!hideField && (<>
+        {conn(G.l2t, ENTITY_COLORS.vector, 7, 0.55, 0.6)}
+        {conn(G.t2p, THREAD_COLOR, 1, 0.7, 0.8)}
+        {conn(G.p2c, ENTITY_COLORS.computeDie, 2, 0.9, 1.1)}
+        {conn(G.c2b, L(1), 3, 0.8, 2.4)}
+        {conn(G.b2c, L(2), 4, commNow ? 2 : 1.1, 1.8)}
+        {conn(G.c2s, L(3), 5, commNow ? 3 : 1.4, 1.3)}
+        {conn(G.s2cl, L(4), 6, commNow ? 3.6 : 2.4, 0.9)}
+      </>)}
 
       {/* ── three-plane overlay (按平面分色，覆盖竖向骨干) ── */}
-      {planes && (
+      {planes && !hideField && (
         <group>
           {/* UB · scale-up (绿) — 超节点内骨干：卡→刀片→机柜→超节点 */}
           <Wire points={G.c2b} segments color={PL_UB.color} lineWidth={2.6} opacity={0.45} active speed={0.6} />
@@ -2162,10 +2172,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* thickness = bandwidth: L1 board (intra-blade, highest BW) thick · L2 cabinet thinner */}
       {/* the full card↔card mesh is thousands of links → keep it a FAINT texture so it doesn't
           flood the view; click a card/blade/cabinet for its own crisp peer mesh (cyan, below). */}
-      {peers && G.l1mesh.length > 0 && (heat
+      {!hideField && peers && G.l1mesh.length > 0 && (heat
         ? heatLines(G.l1mesh, (s) => nodeLoad(s * 131 + 11, statKind ?? undefined) + (computeNow ? 0.24 : -0.12), 1.4, 'l1', 0.3, statKind != null)
         : <Wire points={G.l1mesh} segments color={mute(L(1))} lineWidth={1.4} opacity={focus === null ? 0.3 : 0.1} />)}
-      {peers && G.l2mesh.length > 0 && (heat
+      {!hideField && peers && G.l2mesh.length > 0 && (heat
         ? heatLines(G.l2mesh, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + (commNow && collective === 'a2a' ? 0.36 : -0.14), 1.0, 'l2', 0.32, statKind != null)
         : <Wire points={G.l2mesh} segments color={mute(L(2))} lineWidth={1.0} opacity={focus === null ? 0.34 : 0.12} />)}
 
@@ -2234,11 +2244,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         <group>
           {/* the chain objects themselves glow amber (recoloured in the effect); here just the route + peer mesh */}
           {selPath.pSegs.length > 0 && (heat
-            ? heatLines(selPath.pSegs, (s) => nodeLoad(s * 131 + 17, statKind ?? undefined) + 0.12, 2.6, 'selp', 0.95, true)
-            : <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} opacity={0.95} active speed={1.1} />)}
+            ? heatLines(selPath.pSegs, (s) => nodeLoad(s * 131 + 17, statKind ?? undefined) + 0.12, scopeOnly ? 1.5 : 2.6, 'selp', 0.95, true)
+            : <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={scopeOnly ? 1.5 : 2.6} opacity={0.95} active speed={1.1} />)}
           {selPath.vSegs.length > 0 && (heat
-            ? heatLines(selPath.vSegs, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + 0.18, 3, 'selv', 0.95, true)
-            : <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={3} opacity={0.92} active speed={1.0} />)}
+            ? heatLines(selPath.vSegs, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + 0.18, scopeOnly ? 1.7 : 3, 'selv', 0.95, true)
+            : <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={scopeOnly ? 1.7 : 3} opacity={0.92} active speed={1.0} />)}
           {selPath.dieK !== null ? (
             <group>
               {/* die-operator inset for a selected card (reuses DieDetail), with a leader line */}
@@ -2259,16 +2269,19 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       )}
 
       {/* L2 计算 Die (2 / card, UMA) + L1 AI Core (Cube/Vector boxes) + L0 Tile (lane bars) —
-          instanced, glyph + colour unified with the 平面视图 (2 teal dies; Cube/Vector; L0 lanes). */}
-      <instancedMesh ref={procRef} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh ref={thrRef} args={[undefined, undefined, Math.max(1, G.N * FP_THREADS)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh ref={tileRef} args={[undefined, undefined, Math.max(1, G.N * FP_TILES)]}>
-        <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
-      </instancedMesh>
+          instanced, glyph + colour unified with the 平面视图 (2 teal dies; Cube/Vector; L0 lanes).
+          Hidden in scopeOnly+selection (the focused card's internals show via the die-inset instead). */}
+      <group visible={!hideField}>
+        <instancedMesh ref={procRef} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
+          <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
+        </instancedMesh>
+        <instancedMesh ref={thrRef} args={[undefined, undefined, Math.max(1, G.N * FP_THREADS)]}>
+          <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
+        </instancedMesh>
+        <instancedMesh ref={tileRef} args={[undefined, undefined, Math.max(1, G.N * FP_TILES)]}>
+          <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
+        </instancedMesh>
+      </group>
 
       {/* collectives: hierarchical marker-level flows (scale-independent) + rank-level (small N).
           Toggle-driven, or auto-driven by the current comm phase's collective. */}
