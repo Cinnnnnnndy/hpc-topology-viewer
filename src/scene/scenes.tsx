@@ -1961,7 +1961,22 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       }
       cards.push(k);   // the card itself always highlights, regardless of direction
     };
-    const meshPairs = (xs: number[], f: (x: number) => [number, number, number]) => { for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) pSegs.push(f(xs[i]), f(xs[j])); };
+    // peer mesh (层级内 card↔card / node↔node). scopeOnly → 抬成上拱「弧线」(细分成段)，让全互联的每条
+    // 关系彼此错开、不再与卡块叠成一团红；否则保持直线段（standalone fullpod 原样）。
+    const meshPairs = (xs: number[], f: (x: number) => [number, number, number]) => {
+      for (let i = 0; i < xs.length; i++) for (let j = i + 1; j < xs.length; j++) {
+        const a = f(xs[i]), b = f(xs[j]);
+        if (scopeOnly) {
+          const dist = Math.hypot(a[0] - b[0], a[2] - b[2]), h = Math.min(1.5, 0.28 + dist * 0.5);
+          const mx = (a[0] + b[0]) / 2, my = a[1] + h, mz = (a[2] + b[2]) / 2;   // quadratic-bezier control above the row
+          let prev = a; const K = 9;
+          for (let s = 1; s <= K; s++) { const t = s / K, u = 1 - t;
+            const cur: [number, number, number] = [u * u * a[0] + 2 * u * t * mx + t * t * b[0], u * u * a[1] + 2 * u * t * my + t * t * b[1], u * u * a[2] + 2 * u * t * mz + t * t * b[2]];
+            pSegs.push(prev, cur); prev = cur;
+          }
+        } else pSegs.push(a, b);
+      }
+    };
     let dieK: number | null = null, label = '', labelPos: [number, number, number] = [0, 0, 0], superP = 0;
     const upFromCab = (c: number) => { superP = G.cabSuper[c]; if (!showUp) return; vSegs.push(caPos(c), sPos(superP)); if (podCount > 1) vSegs.push(sPos(superP), G.cluster); };
 
@@ -2243,12 +2258,18 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {selPath && (
         <group>
           {/* the chain objects themselves glow amber (recoloured in the effect); here just the route + peer mesh */}
-          {selPath.pSegs.length > 0 && (heat
-            ? heatLines(selPath.pSegs, (s) => nodeLoad(s * 131 + 17, statKind ?? undefined) + 0.12, scopeOnly ? 1.5 : 2.6, 'selp', 0.95, true)
-            : <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={scopeOnly ? 1.5 : 2.6} opacity={0.95} active speed={1.1} />)}
-          {selPath.vSegs.length > 0 && (heat
-            ? heatLines(selPath.vSegs, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + 0.18, scopeOnly ? 1.7 : 3, 'selv', 0.95, true)
-            : <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={scopeOnly ? 1.7 : 3} opacity={0.92} active speed={1.0} />)}
+          {/* scopeOnly: 关系=细的统一色线 (peer mesh 青弧 / 骨干 蓝)，状态留在卡块上 → 关系看得清；
+              standalone: 仍用按负载热力的粗管。 */}
+          {selPath.pSegs.length > 0 && (scopeOnly
+            ? <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={0.9} opacity={0.5} active speed={0.8} />
+            : (heat
+              ? heatLines(selPath.pSegs, (s) => nodeLoad(s * 131 + 17, statKind ?? undefined) + 0.12, 2.6, 'selp', 0.95, true)
+              : <Wire points={selPath.pSegs} segments color="#22d3ee" lineWidth={2.6} opacity={0.95} active speed={1.1} />))}
+          {selPath.vSegs.length > 0 && (scopeOnly
+            ? <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={1.3} opacity={0.72} active speed={0.7} />
+            : (heat
+              ? heatLines(selPath.vSegs, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + 0.18, 3, 'selv', 0.95, true)
+              : <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={3} opacity={0.92} active speed={1.0} />))}
           {selPath.dieK !== null && !scopeOnly ? (
             <group>
               {/* die-operator inset for a selected card (reuses DieDetail), with a leader line.

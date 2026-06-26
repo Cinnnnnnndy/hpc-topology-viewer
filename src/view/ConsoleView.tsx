@@ -181,9 +181,9 @@ const TIERS = [
   { Le: 4, key: 'card', y: 268, h: 17, maxW: 20, tag: 'L3', label: '卡 rank', col: ENTITY_COLORS.card },
 ] as const;
 const SUBTIERS = [
-  { key: 'die', lvl: 'die' as Level, y: 356, cols: 4, cell: 24, gap: 6, n: 4, seed: 131, tag: 'L2', label: '计算 Die', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
-  { key: 'core', lvl: 'core' as Level, y: 416, cols: 16, cell: 11, gap: 2, n: 32, seed: 517, tag: 'L1', label: 'AI Core', col: (i: number) => (i % 8 === 7 ? ENTITY_COLORS.vector : ENTITY_COLORS.cube) },
-  { key: 'tile', lvl: 'tile' as Level, y: 520, cols: 16, cell: 9, gap: 2, n: 48, seed: 911, tag: 'L0', label: 'Tile', col: () => ENTITY_COLORS.vector },
+  { key: 'die', lvl: 'die' as Level, y: 346, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L2', label: '计算 Die', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
+  { key: 'core', lvl: 'core' as Level, y: 432, cols: 16, cell: 14, gap: 3, n: 32, seed: 517, tag: 'L1', label: 'AI Core', col: (i: number) => (i % 8 === 7 ? ENTITY_COLORS.vector : ENTITY_COLORS.cube) },
+  { key: 'tile', lvl: 'tile' as Level, y: 532, cols: 16, cell: 11, gap: 3, n: 48, seed: 911, tag: 'L0', label: 'Tile', col: () => ENTITY_COLORS.vector },
 ] as const;
 
 function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark }: {
@@ -288,24 +288,27 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       </g>,
     );
   });
-  // 5) divider + card-internal sub-grids (only when a card is focused) — 层内关系
-  els.push(<line key="div" x1={8} y1={326} x2={592} y2={326} stroke={P.line} strokeDasharray="2 4" />);
-  els.push(<text key="divt" x={300} y={321} fill={P.ink3} fontSize={9} textAnchor="middle">—— 卡以下（钻取到某张卡后展开 · 阵列网格）——</text>);
+  // 5) divider + card-internal sub-grids — 层内关系. 始终展开「代表卡」的卡内结构 (机柜/节点选中=该
+  //    范围首卡；无选中=卡0)，用满竖向空间；选中具体卡时即该卡。结构色，播放时叠加负载。
+  const repCard = focusCard != null ? focusCard : focus ? scopeRange(focus, N)[0] : 0;
+  const repReal = focusCard != null;   // true = 真的选到某张卡（否则是代表卡）
+  els.push(<line key="div" x1={8} y1={312} x2={592} y2={312} stroke={P.line} strokeDasharray="2 4" />);
+  els.push(<text key="divt" x={300} y={307} fill={P.ink3} fontSize={9} textAnchor="middle">{`—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——`}</text>);
   SUBTIERS.forEach((st) => {
     els.push(<text key={`slt-${st.key}`} x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key={`sl-${st.key}`} x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    if (focusCard == null) { els.push(<text key={`sh-${st.key}`} x={120} y={st.y + 4} fill={P.ink3} fontSize={11}>— 钻取到某张卡后展开</text>); return; }
+    els.push(<text key={`scnt-${st.key}`} x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}${st.key === 'core' ? '/卡' : st.key === 'tile' ? '/核' : ''}`}</text>);
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols) * (st.cell + st.gap), cy = st.y - 6 + Math.floor(i / st.cols) * (st.cell + st.gap);
-      const isSel = (st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i);
-      const fill = playing ? loadColor(Math.max(0, Math.min(1, nodeLoad(focusCard * st.seed + i, wlKind)))) : st.col(i);
+      const isSel = repReal && ((st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i));
+      const fill = playing ? loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed + i, wlKind)))) : st.col(i);
       els.push(
         <rect key={`s-${st.key}-${i}`} x={cx} y={cy} width={st.cell} height={st.cell} rx={Math.min(3, st.cell * 0.18)} fill={fill} style={{ cursor: 'pointer' }}
           stroke={isSel ? ringC : 'none'} strokeWidth={isSel ? 1.8 : 0}
-          onClick={(e) => { e.stopPropagation(); setFocus({ level: st.lvl, card: focusCard, ...(st.lvl === 'die' ? { die: i } : st.lvl === 'core' ? { core: i } : {}) }); }} />,
+          onClick={(e) => { e.stopPropagation(); setFocus({ level: st.lvl, card: repCard, ...(st.lvl === 'die' ? { die: i } : st.lvl === 'core' ? { core: i } : {}) }); }} />,
       );
     }
-    if (st.key === 'die') els.push(<text key="die-cap" x={120} y={st.y + 34} fill={P.ink3} fontSize={8}>2 计算(UMA) · 2 IO</text>);
+    if (st.key === 'die') els.push(<text key="die-cap" x={120 + 4 * (st.cell + st.gap) + 6} y={st.y + st.cell / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
   });
 
   return (
