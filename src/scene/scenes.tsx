@@ -277,7 +277,7 @@ function RackUnitMesh({ unit, rackKind, hovered, clickable, onClick, onHover }: 
             {Array.from({ length: 4 }, (_, i) => (
               <group key={i} position={[(i - 1.5) * (innerW / 4.6), 0, 0.015]}>
                 <Slab size={[innerW / 5.2, h * 0.7, 0.02]} color={LC.metal} metalness={0.6} roughness={0.4} edgeColor={LC.rackEdge} />
-                <Slab size={[0.02, 0.02, 0.012]} position={[innerW / 12, h * 0.22, 0.014]} color="#22c55e" emissive="#22c55e" emissiveIntensity={1.2} />
+                <Slab size={[0.02, 0.02, 0.012]} position={[innerW / 12, h * 0.22, 0.014]} color="#04d793" emissive="#04d793" emissiveIntensity={1.2} />
               </group>
             ))}
           </group>

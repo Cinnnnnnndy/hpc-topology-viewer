@@ -35,6 +35,13 @@
         outline: none;
         box-shadow: 0 0 0 3px var(--focus-ring, rgba(67, 105, 239, 0.42));
       }
+      /* PTO button feel: snappy state transitions + subtle hover lift (matches reference .tb-btn) */
+      button { transition: background 100ms, border-color 100ms, transform 100ms, box-shadow 100ms, filter 100ms; }
+      button:hover { filter: brightness(1.12); }
+      /* thin engineering scrollbars */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(127, 127, 127, 0.28); border-radius: 3px; }
     </style>
   </head>
   <body style="margin: 0">

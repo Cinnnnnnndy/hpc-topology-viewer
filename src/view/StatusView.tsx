@@ -679,15 +679,15 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>工况</span>
-          {(Object.keys(PH) as Phase[]).map((p) => (<button key={p} onClick={() => setPhase(p)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(phase === p) }}>{PH[p].label}</button>))}
+          {(Object.keys(PH) as Phase[]).map((p) => (<button key={p} onClick={() => setPhase(p)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(phase === p) }}>{PH[p].label}</button>))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>着色</span>
-          {([['util', '利用率'], ['strag', 'straggler'], ['fault', '故障']] as [Metric, string][]).map(([m, l]) => (<button key={m} onClick={() => setMetric(m)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(metric === m) }}>{l}</button>))}
+          {([['util', '利用率'], ['strag', 'straggler'], ['fault', '故障']] as [Metric, string][]).map(([m, l]) => (<button key={m} onClick={() => setMetric(m)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(metric === m) }}>{l}</button>))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>镜头</span>
-          {([['heat', '状态热力'], ['flow', '机柜流量'], ['domain', '通信域'], ['phys', '物理链路']] as [Lens, string][]).map(([v, l]) => (<button key={v} onClick={() => setLens(v)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(lens === v) }}>{l}</button>))}
+          {([['heat', '状态热力'], ['flow', '机柜流量'], ['domain', '通信域'], ['phys', '物理链路']] as [Lens, string][]).map(([v, l]) => (<button key={v} onClick={() => setLens(v)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(lens === v) }}>{l}</button>))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={LBL}>回放</span>
@@ -822,7 +822,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
           <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 5 }}>集群规模（示意 · 超节点数）</div>
             <div style={{ display: 'flex', gap: 4 }}>
-              {[1, 2, 4, 8].map((c) => (<button key={c} onClick={() => { setPods(c); if (selSpod >= c) setSelSpod(0); }} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(pods === c, ACCENT) }}>×{c}</button>))}
+              {[1, 2, 4, 8].map((c) => (<button key={c} onClick={() => { setPods(c); if (selSpod >= c) setSelSpod(0); }} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(pods === c, ACCENT) }}>×{c}</button>))}
             </div>
             <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>状态为示意（含 straggler/故障注入 + 回放事件）。计数与关系均由真实层级规模推导；接 profiler 后替换 nodeLoad / 通信强度即可。</div>
           </div>
@@ -830,7 +830,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       </div>
 
       {tip && (
-        <div style={{ position: 'fixed', left: tip.x + 12, top: tip.y + 12, pointerEvents: 'none', zIndex: 30, background: 'var(--panel-solid)', border: '1px solid var(--bd2)', borderRadius: 7, padding: '5px 9px', fontSize: 11.5, color: 'var(--tx)', boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}>{tip.t}</div>
+        <div style={{ position: 'fixed', left: tip.x + 12, top: tip.y + 12, pointerEvents: 'none', zIndex: 30, background: 'var(--panel-solid)', border: '1px solid var(--bd2)', borderRadius: 8, padding: '5px 9px', fontSize: 11.5, color: 'var(--tx)', boxShadow: 'var(--shadow-sm)', whiteSpace: 'nowrap' }}>{tip.t}</div>
       )}
     </div>
   );

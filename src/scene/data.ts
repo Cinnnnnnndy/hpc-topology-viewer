@@ -310,7 +310,7 @@ export const STATUS_META: { id: string; label: string }[] = [
 // Observation state = 3 active levels + offline. One state = ONE fixed colour (no gradient).
 // Thresholds per the design doctrine: 空闲<40% / 中40–70% / 繁忙>70% · 离线/无数据=灰.
 // Used identically by ALL views (阵列全景 + 平面顶视图 + 层级图) for lines AND nodes.
-const STATE_RGB: [number, number, number][] = [[0x22, 0xc5, 0x5e], [0xfa, 0xcc, 0x15], [0xef, 0x44, 0x44]];   // 空闲 绿 / 中 黄 / 繁忙 红 (PTO ramp)
+const STATE_RGB: [number, number, number][] = [[0x04, 0xd7, 0x93], [0xfb, 0xbf, 0x24], [0xff, 0x4b, 0x7b]];   // 空闲 绿 / 中 黄 / 繁忙 红 (PTO ramp, aligned to reference)
 const OFFLINE_RGB: [number, number, number] = [0x8b, 0x93, 0xa3];   // 离线/无数据 — 冷中性灰
 export const STATE_LABELS = ['空闲 <40%', '中 40–70%', '繁忙 >70%', '离线/无数据'];
 export function loadState(t: number): number { const x = Math.max(0, Math.min(1, t)); return x < 0.4 ? 0 : x < 0.7 ? 1 : 2; }   // 0 绿 / 1 黄 / 2 红

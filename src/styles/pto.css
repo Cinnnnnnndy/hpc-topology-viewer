@@ -39,9 +39,9 @@
   --pto-label-transform: uppercase;
 
   /* radii */
-  --pto-radius-sm: 7px;
+  --pto-radius-sm: 8px;            /* buttons */
   --pto-radius-md: 10px;
-  --pto-radius-lg: 12px;
+  --pto-radius-lg: 14px;           /* floating panels */
 
   /* motion */
   --pto-lift: -1px;                /* active-state translateY nudge */
@@ -52,31 +52,33 @@
 
 /* ── 2 · SEMANTIC (per theme) ─────────────────────────────────────────────── */
 
-/* dark — default */
+/* dark — default (aligned to the PTO reference: #101010 stage, #141414 elevated
+ * cards, low-contrast hairline borders, darker top chrome) */
 [data-theme="dark"] {
   --background:          #101010;
-  --background-subtle:   #0d0d0d;
-  --background-elevated: #181818;
-  --surface-overlay:     rgba(24, 24, 27, 0.95);   /* frosted floating card */
+  --background-subtle:   #0d0d0d;   /* side rails */
+  --background-elevated: #141414;   /* floating cards / inspector (LIGHTER than stage) */
+  --surface-overlay:     #141414;   /* solid floating card (reference uses no frost) */
+  --surface-sunken:      #0a0a0a;   /* top chrome (slightly darker than stage) */
 
   --foreground:          rgba(var(--pto-snow), 0.90);
-  --foreground-muted:    rgba(var(--pto-snow), 0.62);
-  --foreground-subtle:   rgba(var(--pto-snow), 0.42);
+  --foreground-muted:    rgba(var(--pto-snow), 0.65);
+  --foreground-subtle:   rgba(var(--pto-snow), 0.40);
 
-  --border:          rgba(var(--pto-snow), 0.13);
-  --border-strong:   rgba(var(--pto-snow), 0.22);
-  --border-emphasis: rgba(var(--pto-snow), 0.16);
+  --border:          rgba(var(--pto-snow), 0.08);   /* hairline divider */
+  --border-strong:   rgba(var(--pto-snow), 0.13);
+  --border-emphasis: rgba(var(--pto-snow), 0.10);
 
   --primary:            var(--pto-blue-500);
   --primary-foreground: #ffffff;
 
-  --button-secondary-bg:     rgba(var(--pto-snow), 0.07);
-  --button-secondary-border: rgba(var(--pto-snow), 0.10);
+  --button-secondary-bg:     rgba(var(--pto-snow), 0.06);
+  --button-secondary-border: rgba(var(--pto-snow), 0.09);
 
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.45);
 
-  --grid:           rgba(var(--pto-snow), 0.06);
+  --grid:           rgba(var(--pto-snow), 0.09);
   --state-selected: rgba(67, 105, 239, 0.16);
   --focus-ring:     rgba(67, 105, 239, 0.42);
 }
@@ -86,7 +88,8 @@
   --background:          #f5f5f5;
   --background-subtle:   #f3f4f7;
   --background-elevated: #ffffff;
-  --surface-overlay:     rgba(255, 255, 255, 0.96);   /* frosted floating card */
+  --surface-overlay:     #ffffff;   /* solid floating card */
+  --surface-sunken:      #ffffff;   /* top chrome */
 
   --foreground:          rgba(var(--pto-ink), 0.88);
   --foreground-muted:    rgba(var(--pto-ink), 0.58);
@@ -116,6 +119,7 @@
   --background-subtle:   #080b11;
   --background-elevated: rgba(20, 24, 33, 0.55);
   --surface-overlay:     rgba(18, 22, 31, 0.55);   /* frosted floating card */
+  --surface-sunken:      rgba(14, 18, 26, 0.60);   /* top chrome */
 
   --foreground:          rgba(var(--pto-snow), 0.92);
   --foreground-muted:    rgba(var(--pto-snow), 0.66);
@@ -142,8 +146,8 @@
 /* ── 3 · COMPONENT ────────────────────────────────────────────────────────
  * Component tokens compose semantic tokens, so they re-theme automatically. */
 [data-theme] {
-  /* toolbar — solid top chrome */
-  --comp-toolbar-bg:     var(--background-elevated);
+  /* toolbar — solid top chrome (slightly sunken vs the stage) */
+  --comp-toolbar-bg:     var(--surface-sunken);
   --comp-toolbar-border: var(--border);
   --comp-toolbar-height: var(--pto-toolbar-height);
 
@@ -152,9 +156,4 @@
   --panel-shell-border: var(--border);
   --panel-shell-shadow: var(--shadow-md);
   --panel-shell-radius: var(--pto-radius-lg);
-}
-
-/* glass overrides: toolbar chrome stays translucent so the scene reads through */
-[data-theme="glass"] {
-  --comp-toolbar-bg: rgba(14, 18, 26, 0.60);
 }

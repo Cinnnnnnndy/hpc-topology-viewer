@@ -343,6 +343,13 @@ export function ClusterView() {
     } as React.CSSProperties}>
       {/* ── toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', minHeight: 'var(--comp-toolbar-height)', borderBottom: '1px solid var(--comp-toolbar-border)', flexWrap: 'wrap', background: 'var(--comp-toolbar-bg)' }}>
+        {/* brand: logo dot + product name */}
+        {!narrow && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingRight: 12, borderRight: '1px solid var(--bd)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--foreground)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--foreground)' }}>HPC 拓扑查看器</span>
+          </div>
+        )}
         {/* generation switch */}
         <div style={{ display: 'flex', gap: 4, borderRight: '1px solid var(--bd)', paddingRight: narrow ? 6 : 12 }}>
           {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
@@ -350,7 +357,7 @@ export function ClusterView() {
               key={g}
               onClick={() => setGen(g)}
               title={GENERATIONS[g].name}
-              style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(gen === g) }}
+              style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', ...navBtn(gen === g) }}
             >
               {g}
             </button>
@@ -361,7 +368,7 @@ export function ClusterView() {
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as ViewMode)}
-            style={{ padding: '5px 8px', fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: 'pointer', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff' }}
+            style={{ padding: '5px 8px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff' }}
           >
             {MODE_TABS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
@@ -371,7 +378,7 @@ export function ClusterView() {
               <button
                 key={t.id}
                 onClick={() => setMode(t.id)}
-                style={{ padding: '5px 14px', fontSize: 12, borderRadius: 7, cursor: 'pointer', ...navBtn(mode === t.id) }}
+                style={{ padding: '5px 14px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(mode === t.id) }}
               >
                 {t.label}
               </button>
@@ -389,7 +396,7 @@ export function ClusterView() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {!narrow && <span style={{ fontSize: 11, color: 'var(--tx2)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
+        {!narrow && <span style={{ fontSize: 10, color: 'var(--tx3)', fontFamily: 'var(--font-mono)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
         {mode !== 'plane' && mode !== 'status' && mode !== 'console' && (
           <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
@@ -398,7 +405,7 @@ export function ClusterView() {
                 key={id}
                 onClick={() => setCamPreset(id)}
                 title={`${label}视角（正交投影）`}
-                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}
+                style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}
               >{label}</button>
             ))}
           </div>
@@ -406,11 +413,11 @@ export function ClusterView() {
         <button
           onClick={() => setDark((v) => !v)}
           title="黑 / 白 主题切换"
-          style={{ padding: '4px 10px', fontSize: 13, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}
+          style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}
         >{dark ? '☀' : '◐'}</button>
         <button
           onClick={() => setPanelOpen((v) => !v)}
-          style={{ padding: '4px 10px', fontSize: 12, borderRadius: 7, cursor: 'pointer', ...navBtn(panelOpen) }}
+          style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(panelOpen) }}
         >
           {panelOpen ? '收起信息 ▸' : '◂ 信息面板'}
         </button>
@@ -508,7 +515,7 @@ export function ClusterView() {
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
               background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
-              <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(ctxOpen) }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
+              <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 8, cursor: 'pointer', ...navBtn(ctxOpen) }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
               {ctxOpen && (
                 <>
                   {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
@@ -518,7 +525,7 @@ export function ClusterView() {
                         const on = overlays[t.id];
                         return (
                           <button key={t.id} onClick={() => setOverlays((o) => ({ ...o, [t.id]: !o[t.id] }))} title={t.label}
-                            style={{ padding: '4px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, t.color) }}>
+                            style={{ padding: '4px 10px', fontSize: 11, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, t.color) }}>
                             <span style={{ width: 9, height: 3, background: on ? ink(t.color) : t.color, display: 'inline-block', borderRadius: 1, opacity: on ? 0.9 : 0.5 }} />
                             {narrow ? t.label.split(' ')[0] : t.label}
                           </button>
@@ -530,7 +537,7 @@ export function ClusterView() {
                   {mode === 'matrix' && (
                     <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       {(Object.keys(SCALES) as Scale[]).map((s) => (
-                        <button key={s} onClick={() => setScale(s)} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(scale === s) }}>{SCALES[s].label}</button>
+                        <button key={s} onClick={() => setScale(s)} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(scale === s) }}>{SCALES[s].label}</button>
                       ))}
                     </div>
                   )}
@@ -539,7 +546,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       {([[false, '64P 单柜'], [true, `全量超节点(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
                         <button key={label} onClick={() => setFpFull(v)} title={v ? `渲染整座超节点全部 ${spec.totalNpus.toLocaleString()} 张卡（阵列）` : '单柜 64 卡（8 刀片 × 8 卡）'}
-                          style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(fpFull === v) }}>{label}</button>
+                          style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(fpFull === v) }}>{label}</button>
                       ))}
                     </div>
                   )}
@@ -548,7 +555,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <span style={{ ...LBL }}>超节点</span>
                       {[1, 2, 4].map((c) => (
-                        <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(podCount === c) }}>{`×${c}`}</button>
+                        <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(podCount === c) }}>{`×${c}`}</button>
                       ))}
                     </div>
                   )}
@@ -557,7 +564,7 @@ export function ClusterView() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <span style={{ ...LBL }}>运行</span>
                       {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
-                        <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(runMode === m) }}>{label}</button>
+                        <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(runMode === m) }}>{label}</button>
                       ))}
                     </div>
                   )}
@@ -569,7 +576,7 @@ export function ClusterView() {
                         const on = fpPart === d; const sig = PARALLEL_COLORS[d];
                         return (
                           <button key={d} onClick={() => setFpPart((p) => (p === d ? 'none' : d))} title={`${PARTITION_META[d].label} · ${PARTITION_META[d].level}`}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, sig) }}>
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(on, sig) }}>
                             <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? ink(sig) : sig, display: 'inline-block', opacity: on ? 0.9 : 0.6 }} />{d.toUpperCase()}</button>
                         );
                       })}
@@ -579,17 +586,17 @@ export function ClusterView() {
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
                       <button onClick={() => setFpPeers((v) => !v)} title="层内直连：L1 板载卡↔卡 + L2 机柜内节点↔节点 UB 直连 mesh"
-                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPeers, UB_LEVELS[1].color) }}>
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPeers, UB_LEVELS[1].color) }}>
                         <span style={{ width: 9, height: 3, background: fpPeers ? ink(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 0.9 : 0.5 }} />
                         {narrow ? '直连' : '层内直连'}
                       </button>
                       <button onClick={() => setFpStatus((v) => !v)} title="负载/观测：节点与连线按负载热力上色（绿空闲→黄→红繁忙/拥塞），连线粗细 ∝ 负载/带宽；分层只用极淡色调+图元区分，高饱和色专表状态"
-                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#22c55e') }}>
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpStatus, '#04d793') }}>
                         <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
                       </button>
                       <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·超节点内·TP/EP) / RDMA scale-out(橙·跨超节点 RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
-                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPlanes, PLANES[0].color) }}>
+                        style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPlanes, PLANES[0].color) }}>
                         <span style={{ display: 'inline-flex', gap: 2 }}>
                           {PLANES.map((p) => <span key={p.id} style={{ width: 7, height: 7, borderRadius: 1, background: p.color, display: 'inline-block', opacity: fpPlanes ? 1 : 0.6 }} />)}
                         </span>
@@ -612,16 +619,16 @@ export function ClusterView() {
               <span style={{ color: 'var(--tx)' }}>{`已选 rank ${locate.rank}（刀片 B${locate.blade}）：`}</span>
               <button
                 onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('topology'); }}
-                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 7, cursor: 'pointer', ...navBtn(true) }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(true) }}
               >→ UB 互联高亮</button>
               <button
                 onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('overview'); }}
-                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 7, cursor: 'pointer', ...navBtn(true) }}
+                style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(true) }}
               >→ 全景高亮机柜</button>
               {hl && (
                 <button
                   onClick={() => setHl(null)}
-                  style={{ padding: '4px 10px', fontSize: 12, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}
+                  style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}
                 >清除高亮</button>
               )}
             </div>
@@ -635,8 +642,8 @@ export function ClusterView() {
               border: '1px solid var(--primary)', borderRadius: 10, color: 'var(--primary)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`来自 IO Die：${ubFocus === 'ccu' ? `高亮 ${TOK.ccu} 集合通信` : ubFocus === 'onchip' ? `高亮 ${TOK.onchip} 转发` : '该端口实现的 NPU↔NPU UB 互联（邻接矩阵）'}`}</span>
-              <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>← 回节点</button>
-              <button onClick={() => setUbFocus(null)} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>清除</button>
+              <button onClick={() => { setUbFocus(null); setMode('node'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>← 回节点</button>
+              <button onClick={() => setUbFocus(null)} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>清除</button>
             </div>
           )}
 
@@ -648,8 +655,8 @@ export function ClusterView() {
               border: '1px solid var(--primary)', borderRadius: 10, color: 'var(--primary)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
               <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
-              <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>← 回时序</button>
-              <button onClick={() => setHl(null)} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>清除</button>
+              <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>← 回时序</button>
+              <button onClick={() => setHl(null)} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>清除</button>
             </div>
           )}
 
@@ -684,7 +691,7 @@ export function ClusterView() {
                 {traceTick === null ? '示意时序（点块/播放）' : `t${traceTick} · ${PHASE_META[TRACE_SCHED[traceTick]].name}`}
               </span>
               {traceTick !== null && (
-                <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>复位</button>
+                <button onClick={() => { setTracePlaying(false); setTraceTick(null); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>复位</button>
               )}
             </div>
           )}
@@ -775,10 +782,10 @@ export function ClusterView() {
                   </span>
                   <div style={{ flex: 1 }} />
                   {runTick !== null && (
-                    <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>复位</button>
+                    <button onClick={() => { setRunPlaying(false); setRunTick(null); setRunStep(0); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>复位</button>
                   )}
                   <button onClick={() => setSwimOpen((v) => !v)} title="展开 / 收起时序泳道"
-                    style={{ padding: '3px 9px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(swimOpen) }}>{swimOpen ? '泳道 ▾' : '泳道 ▸'}</button>
+                    style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...navBtn(swimOpen) }}>{swimOpen ? '泳道 ▾' : '泳道 ▸'}</button>
                 </div>
                 {runPhase && swimOpen && <div style={{ fontSize: 10.5, color: 'var(--tx2)' }}>{runPhase.note}</div>}
               </div>
@@ -804,7 +811,7 @@ export function ClusterView() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: memOpen ? 7 : 0 }}>
                 <span style={{ fontWeight: 600, color: 'var(--tx)' }}>单卡内存占用 · 1 NPU</span>
-                <button onClick={() => setMemOpen((v) => !v)} style={{ padding: '1px 8px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...BTN_SECONDARY }}>{memOpen ? '▾' : '▸'}</button>
+                <button onClick={() => setMemOpen((v) => !v)} style={{ padding: '1px 8px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>{memOpen ? '▾' : '▸'}</button>
               </div>
               {memOpen && memLayers(spec).map((m) => (
                 <div key={m.id} title={m.note} style={{ marginBottom: 6 }}>
@@ -998,8 +1005,8 @@ export function ClusterView() {
               <tbody>
                 {specRows.map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: '1px solid var(--bd)' }}>
-                    <td style={{ padding: '3px 0', color: 'var(--tx2)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
-                    <td style={{ padding: '3px 0 3px 10px', color: 'var(--tx)', ...TNUM }}>{v}</td>
+                    <td style={{ padding: '4px 0', fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
+                    <td style={{ padding: '4px 0 4px 10px', fontSize: 11, color: 'var(--tx)', fontFamily: 'var(--font-mono)', ...TNUM }}>{v}</td>
                   </tr>
                 ))}
               </tbody>

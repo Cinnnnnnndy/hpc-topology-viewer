@@ -133,7 +133,7 @@ function navBtn(on: boolean): React.CSSProperties { return on ? { border: '1px s
 function toggleBtn(on: boolean, c: string): React.CSSProperties { return on ? { border: `1px solid ${c}`, background: c, color: ink(c), fontWeight: 600 } : { ...SECONDARY }; }
 const GLAB: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)', alignSelf: 'center' };
 const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
-const btnBase: React.CSSProperties = { padding: '4px 10px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer' };
+const btnBase: React.CSSProperties = { padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer' };
 const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: true };
 
 // Frame the orthographic camera on the focused scope (pan target + zoom); with no focus it settles
@@ -542,7 +542,7 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
                 <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
                 <div style={{ fontSize: 11, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
-                <button onClick={() => { setFocus({ level: 'cab', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 7, cursor: 'pointer' }}>定位根因 →</button>
+                <button onClick={() => { setFocus({ level: 'cab', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
               </>
             ) : (
               <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
