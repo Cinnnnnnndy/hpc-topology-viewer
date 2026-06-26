@@ -2249,9 +2249,11 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           {selPath.vSegs.length > 0 && (heat
             ? heatLines(selPath.vSegs, (s) => nodeLoad(s * 197 + 23, statKind ?? undefined) + 0.18, scopeOnly ? 1.7 : 3, 'selv', 0.95, true)
             : <Wire points={selPath.vSegs} segments color="#4369ef" lineWidth={scopeOnly ? 1.7 : 3} opacity={0.92} active speed={1.0} />)}
-          {selPath.dieK !== null ? (
+          {selPath.dieK !== null && !scopeOnly ? (
             <group>
-              {/* die-operator inset for a selected card (reuses DieDetail), with a leader line */}
+              {/* die-operator inset for a selected card (reuses DieDetail), with a leader line.
+                  In scopeOnly (联动控制台) we DON'T pull it out — the card's own Die/Core/Tile markers
+                  show in place in the topology instead (proc/thr/tile group stays visible for a card focus). */}
               <Wire points={[[G.cardX[selPath.dieK], G.yCard, G.cardZ[selPath.dieK]], dieInsetPos]} color="#4369ef" lineWidth={1.6} opacity={0.6} active speed={0.9} />
               <group position={dieInsetPos} scale={dieS}>
                 <group position={[-DIE.pos[0], -DIE.pos[1], -DIE.pos[2]]}>
@@ -2270,8 +2272,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 
       {/* L2 计算 Die (2 / card, UMA) + L1 AI Core (Cube/Vector boxes) + L0 Tile (lane bars) —
           instanced, glyph + colour unified with the 平面视图 (2 teal dies; Cube/Vector; L0 lanes).
-          Hidden in scopeOnly+selection (the focused card's internals show via the die-inset instead). */}
-      <group visible={!hideField}>
+          scopeOnly: hidden for cab/node focus (no on-chip detail), but SHOWN IN PLACE for a single-card
+          focus so the card's Die/Core/Tile relationship reads directly in the topology (no pulled-out inset).
+          Out-of-card markers dim to bg in the colour effect, so only the focused card's internals appear. */}
+      <group visible={!hideField || sel?.lv === 0}>
         <instancedMesh ref={procRef} args={[undefined, undefined, Math.max(1, G.N * 2)]}>
           <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
         </instancedMesh>
