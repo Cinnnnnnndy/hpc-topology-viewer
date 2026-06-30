@@ -28,6 +28,7 @@ import {
 import { TOK } from '../content';
 import { ModelOr } from './PartModel';
 import { Wire, WireScale } from './wiring';
+import { SceneVisualProfileContext, resolveSceneMaterial, useSceneVisualProfile, type SceneVisualProfile } from './visual-profile';
 
 // ─── Theme-aware scene palette ───────────────────────────────────────────────
 // Structural / neutral / text colours for every procedural object. Light variant
@@ -42,6 +43,7 @@ export interface ScenePalette {
   opticalBody: string; dimmBody: string; metal: string; vent: string;
   substrate: string; substrate2: string; block: string; blockHi: string; blockAlt: string;
   cardBase: string; bladeBase: string; cabBase: string; hoverTint: string; matIndirect: string; matSelf: string;
+  floor: string; grid: string; gridMinor: string;
 }
 const PALETTE: Record<'light' | 'dark', ScenePalette> = {
   light: {
@@ -52,6 +54,7 @@ const PALETTE: Record<'light' | 'dark', ScenePalette> = {
     opticalBody: '#dde3ec', dimmBody: '#e0e5ee', metal: '#c4cad4', vent: '#9aa4b2',
     substrate: '#eef1f6', substrate2: '#eaeef4', block: '#cdd6e4', blockHi: '#d6e0f0', blockAlt: '#dbe6f2',
     cardBase: '#aeb8c6', bladeBase: '#dbe9fb', cabBase: '#efe7fb', hoverTint: '#dbe4fb', matIndirect: '#e2e6ec', matSelf: '#3a4256',
+    floor: '#f0f1f4', grid: '#d0d5dd', gridMinor: '#e1e4ea',
   },
   dark: {
     primary: '#5b7cff', rackBody: '#23262d', rackDoor: '#1b1e24', rackEdge: '#3d4452', rackEdgeHov: '#5b7cff',
@@ -61,16 +64,42 @@ const PALETTE: Record<'light' | 'dark', ScenePalette> = {
     opticalBody: '#222831', dimmBody: '#232932', metal: '#565e6c', vent: '#6b7688',
     substrate: '#1f242c', substrate2: '#1c2128', block: '#2c3442', blockHi: '#314056', blockAlt: '#2a3a4c',
     cardBase: '#4b5160', bladeBase: '#2c3a52', cabBase: '#332c46', hoverTint: '#2f3c58', matIndirect: '#272c34', matSelf: '#aab4c8',
+    floor: '#15171c', grid: '#2b303a', gridMinor: '#202329',
   },
 };
-export function scenePalette(dark: boolean): ScenePalette { return dark ? PALETTE.dark : PALETTE.light; }
+const OP_RANK_TIME_PALETTE: Record<'light' | 'dark', ScenePalette> = {
+  light: {
+    primary: '#4f6df6', rackBody: '#dbe4ef', rackDoor: '#cdd7e5', rackEdge: '#7a8798', rackEdgeHov: '#4f6df6',
+    text: '#0f0f10', textDim: '#5d6878', textInv: '#ffffff', nodeUnit: '#dbe4ef', powerUnit: '#dce4ee',
+    mgmtUnit: '#dbe4ef', switchUnit: '#dbe4ef', cduUnit: '#d7e0eb', pcb: '#d6e1ed', npuBody: '#dbe4ef',
+    npuTop: '#ffffff', cpuBody: '#dbe4ef', cpuTop: '#ffffff', ubBody: '#dbe4ef', dpuBody: '#dbe4ef',
+    opticalBody: '#dbe4ef', dimmBody: '#dbe4ef', metal: '#aeb8c7', vent: '#7a8798',
+    substrate: '#f6f8fb', substrate2: '#edf2f8', block: '#dbe4ef', blockHi: '#ffffff', blockAlt: '#edf3fa',
+    cardBase: '#dbe4ef', bladeBase: '#e5edf6', cabBase: '#e8edf4', hoverTint: '#eef3ff', matIndirect: '#dde5ee', matSelf: '#2c313a',
+    floor: '#f8f8f8', grid: '#b8c2d2', gridMinor: '#dce3ed',
+  },
+  dark: {
+    primary: '#4f6df6', rackBody: '#2c313a', rackDoor: '#242a33', rackEdge: '#525a66', rackEdgeHov: '#4f6df6',
+    text: '#e6ebf2', textDim: '#9aa6b4', textInv: '#ffffff', nodeUnit: '#2c313a', powerUnit: '#272d36',
+    mgmtUnit: '#2a3039', switchUnit: '#2c313a', cduUnit: '#262c35', pcb: '#2a313a', npuBody: '#2c313a',
+    npuTop: '#ffffff', cpuBody: '#2c313a', cpuTop: '#ffffff', ubBody: '#2c313a', dpuBody: '#2c313a',
+    opticalBody: '#2c313a', dimmBody: '#2c313a', metal: '#3c4654', vent: '#525a66',
+    substrate: '#202733', substrate2: '#1d242f', block: '#2c313a', blockHi: '#3a4250', blockAlt: '#303d4d',
+    cardBase: '#2c313a', bladeBase: '#303744', cabBase: '#2e3540', hoverTint: '#344155', matIndirect: '#242b35', matSelf: '#dbe2ee',
+    floor: '#10131a', grid: '#222730', gridMinor: '#161d2c',
+  },
+};
+export function scenePalette(dark: boolean, profile: SceneVisualProfile = 'default'): ScenePalette {
+  const palettes = profile === 'opRankTime' ? OP_RANK_TIME_PALETTE : PALETTE;
+  return dark ? palettes.dark : palettes.light;
+}
 
 const L = (i: number) => UB_LEVELS[i].color;       // UB level colour shortcut
 
 // dark/light theme for the 3-D scenes (provided inside the Canvas)
 export const SceneTheme = createContext(false);
 // resolve the structural palette for the current scene theme
-function useLC(): ScenePalette { return scenePalette(useContext(SceneTheme)); }
+function useLC(): ScenePalette { return scenePalette(useContext(SceneTheme), useContext(SceneVisualProfileContext)); }
 
 export interface SceneCallbacks { onHoverInfo: (text: string | null) => void; }
 const setCursor = (on: boolean) => { document.body.style.cursor = on ? 'pointer' : 'default'; };
@@ -89,29 +118,64 @@ function Slab(props: {
   emissive?: string; emissiveIntensity?: number; edgeColor?: string; opacity?: number; toneMapped?: boolean;
 }) {
   const { size, position, color, metalness = 0.3, roughness = 0.6, emissive, emissiveIntensity = 0, edgeColor, opacity, toneMapped } = props;
+  const profile = useSceneVisualProfile();
+  const opProfile = profile === 'opRankTime';
+  const mat = resolveSceneMaterial(profile, metalness, roughness, emissiveIntensity);
   return (
     <mesh position={position} castShadow receiveShadow>
       <boxGeometry args={size} />
       <meshStandardMaterial
-        color={color} metalness={metalness} roughness={roughness}
-        emissive={emissive ?? '#000000'} emissiveIntensity={emissiveIntensity}
+        color={color} metalness={mat.metalness} roughness={mat.roughness}
+        emissive={emissive ?? '#000000'} emissiveIntensity={mat.emissiveIntensity}
         transparent={opacity !== undefined} opacity={opacity ?? 1}
         toneMapped={toneMapped ?? true}
+        flatShading={opProfile}
       />
-      {edgeColor && <Edges color={edgeColor} threshold={20} />}
+      {edgeColor && <Edges color={edgeColor} threshold={opProfile ? 28 : 20} transparent={opProfile} opacity={opProfile ? 0.58 : 1} />}
     </mesh>
   );
 }
 
-function Floor({ size = 22 }: { size?: number }) {
-  const dark = useContext(SceneTheme);
+function Floor({
+  size = 22,
+  floorColor,
+  gridColor,
+  gridMinorColor,
+  gridOpacity,
+}: {
+  size?: number;
+  floorColor?: string;
+  gridColor?: string;
+  gridMinorColor?: string;
+  gridOpacity?: number;
+}) {
+  const LC = useLC();
+  const profile = useSceneVisualProfile();
+  const opProfile = profile === 'opRankTime';
+  const divisions = opProfile ? Math.max(18, Math.min(56, Math.round(size * 1.4))) : size * 2;
+  const resolvedFloor = floorColor ?? LC.floor;
+  const resolvedGrid = gridColor ?? LC.grid;
+  const resolvedGridMinor = gridMinorColor ?? LC.gridMinor;
+  const flatFloor = floorColor !== undefined;
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow={!flatFloor}>
         <planeGeometry args={[size, size]} />
-        <meshStandardMaterial color={dark ? '#15171c' : '#f0f1f4'} roughness={0.95} metalness={0.05} />
+        {flatFloor
+          ? <meshBasicMaterial color={resolvedFloor} />
+          : <meshStandardMaterial color={resolvedFloor} roughness={0.98} metalness={0} />}
       </mesh>
-      <gridHelper args={[size, size * 2, dark ? '#2b303a' : '#d0d5dd', dark ? '#202329' : '#e1e4ea']} position={[0, 0.001, 0]} />
+      <gridHelper
+        args={[size, divisions, resolvedGrid, resolvedGridMinor]}
+        position={[0, 0.001, 0]}
+        onUpdate={(grid: THREE.GridHelper) => {
+          const mats = Array.isArray(grid.material) ? grid.material : [grid.material];
+          mats.forEach((m) => {
+            m.transparent = opProfile || gridOpacity !== undefined;
+            m.opacity = gridOpacity ?? (opProfile ? 0.38 : 1);
+          });
+        }}
+      />
     </group>
   );
 }
@@ -411,6 +475,8 @@ function useOptionalTexture(url: string): THREE.Texture | null {
  *  Abstracted from the real package photo. */
 function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: number; hovered?: boolean; selected?: boolean; dim?: number; logo?: boolean; dieLabels?: boolean }) {
   const LC = useLC();
+  const profile = useSceneVisualProfile();
+  const opProfile = profile === 'opRankTime';
   const hh = h ?? w * 0.5;
   const edge = selected ? COMM_PATTERNS[2].color : hovered ? '#4ade80' : LC.rackEdge;
   const glow = dim ?? (selected ? 0.6 : hovered ? 0.4 : 0);
@@ -444,15 +510,15 @@ function NpuChip({ w, h, hovered, selected, dim, dieLabels }: { w: number; h?: n
       </ModelOr>
       {/* die layer (always procedural, mounted on the package top) */}
       {/* recessed substrate frame */}
-      <Slab size={[w * 0.92, hh * 0.12, w * 0.92]} position={[0, top, 0]} color="#23272e" metalness={0.4} roughness={0.6} />
+      <Slab size={[w * 0.92, hh * 0.12, w * 0.92]} position={[0, top, 0]} color={opProfile ? LC.substrate : '#23272e'} metalness={0.08} roughness={0.78} edgeColor={opProfile ? LC.rackEdge : undefined} />
       {/* 2 compute Die (teal L0) — UMA-merged into one device */}
       <Slab size={[dw, hh * 0.2, dd]} position={[lx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
       <Slab size={[dw, hh * 0.2, dd]} position={[rx, ty, cz]} color={LC.npuTop} emissive={L(0)} emissiveIntensity={cEm} metalness={0.6} roughness={0.32} />
       {/* UMA die-to-die bridge between the 2 compute dies (→ single device) */}
       <Slab size={[gx * 2.4, hh * 0.22, dd * 0.36]} position={[0, ty + hh * 0.02, cz]} color={L(0)} emissive={L(0)} emissiveIntensity={0.75} />
       {/* 2 IO Die (accent grey) */}
-      <Slab size={[dw, hh * 0.16, dd]} position={[lx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
-      <Slab size={[dw, hh * 0.16, dd]} position={[rx, ty, iz]} color="#7c8db8" emissive="#7c8db8" emissiveIntensity={hovered ? 0.32 : 0.14} metalness={0.5} roughness={0.45} />
+      <Slab size={[dw, hh * 0.16, dd]} position={[lx, ty, iz]} color={opProfile ? LC.metal : '#7c8db8'} emissive={opProfile ? '#000000' : '#7c8db8'} emissiveIntensity={hovered ? 0.24 : 0.1} metalness={0.08} roughness={0.72} />
+      <Slab size={[dw, hh * 0.16, dd]} position={[rx, ty, iz]} color={opProfile ? LC.metal : '#7c8db8'} emissive={opProfile ? '#000000' : '#7c8db8'} emissiveIntensity={hovered ? 0.24 : 0.1} metalness={0.08} roughness={0.72} />
       {/* optional die labels (L0 detail tier) */}
       {dieLabels && (
         <>
@@ -1676,6 +1742,18 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
 }) {
   const LC = useLC();
   const dark = useContext(SceneTheme);   // theme → out-of-scope dim colour (matches bg so it vanishes)
+  const visualProfile = useSceneVisualProfile();
+  const workbenchProfile = visualProfile === 'opRankTime';
+  const struct = useMemo(() => ({
+    card: workbenchProfile ? LC.cardBase : ENTITY_COLORS.card,
+    proc: workbenchProfile ? LC.blockHi : ENTITY_COLORS.computeDie,
+    cube: workbenchProfile ? LC.block : ENTITY_COLORS.cube,
+    vector: workbenchProfile ? LC.metal : ENTITY_COLORS.vector,
+    blade: workbenchProfile ? LC.bladeBase : ENTITY_COLORS.node,
+    cab: workbenchProfile ? LC.cabBase : ENTITY_COLORS.cab,
+    super: workbenchProfile ? LC.rackBody : ENTITY_COLORS.super,
+    dim: workbenchProfile ? (dark ? '#0e1116' : '#ffffff') : (dark ? '#101010' : '#f5f5f5'),
+  }), [LC.bladeBase, LC.block, LC.blockHi, LC.cabBase, LC.cardBase, LC.metal, LC.rackBody, dark, workbenchProfile]);
   const [hoverNpu, setHoverNpu] = useState<number | null>(null);
   const [internalSel, setInternalSel] = useState<{ lv: number; i: number } | null>(null);   // selection: lv 0 card / 1 blade / 2 cabinet → highlight its up/down-stream + peer mesh
   const sel = focusSel !== undefined ? focusSel : internalSel;   // controlled when focusSel passed, else internal
@@ -1819,20 +1897,20 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   useLayoutEffect(() => {
     const m = new THREE.Matrix4(), col = new THREE.Color();
     const nm = cardInst.current;
-    if (nm && !useChip) { col.set(chipTex ? '#ffffff' : ENTITY_COLORS.card); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
+    if (nm && !useChip) { col.set(chipTex ? '#ffffff' : struct.card); for (let k = 0; k < G.N; k++) { m.makeScale(cardW, cardH, cardW); m.setPosition(G.cardX[k], G.yCard, G.cardZ[k]); nm.setMatrixAt(k, m); nm.setColorAt(k, col); } nm.count = G.N; nm.instanceMatrix.needsUpdate = true; if (nm.instanceColor) nm.instanceColor.needsUpdate = true; }
     const pm = procRef.current;   // L2 计算 Die markers (teal) — 2 per card (UMA-merged → 1 device), like the 平面视图
-    if (pm) { col.set(ENTITY_COLORS.computeDie); for (let k = 0; k < G.N; k++) for (let d = 0; d < 2; d++) { const idx = k * 2 + d; m.makeScale(0.13, 0.09, 0.17); m.setPosition(G.cardX[k] + (d - 0.5) * 0.16, G.yProc, G.cardZ[k]); pm.setMatrixAt(idx, m); pm.setColorAt(idx, col); } pm.count = G.N * 2; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
+    if (pm) { col.set(struct.proc); for (let k = 0; k < G.N; k++) for (let d = 0; d < 2; d++) { const idx = k * 2 + d; m.makeScale(0.13, 0.09, 0.17); m.setPosition(G.cardX[k] + (d - 0.5) * 0.16, G.yProc, G.cardZ[k]); pm.setMatrixAt(idx, m); pm.setColorAt(idx, col); } pm.count = G.N * 2; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true; }
     const tm = thrRef.current;   // L1 AI Core grid (≈32/卡 representative) — mostly Cube(cyan) + a few Vector(light cyan), Cube∶Vector ≈ 8∶1
-    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t % 8 !== 7; const [dx, dz] = aicOff(t); col.set(cube ? ENTITY_COLORS.cube : ENTITY_COLORS.vector); m.makeScale(cube ? 0.03 : 0.022, 0.04, cube ? 0.03 : 0.022); m.setPosition(G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
+    if (tm) for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_THREADS; t++) { const idx = k * FP_THREADS + t, cube = t % 8 !== 7; const [dx, dz] = aicOff(t); col.set(cube ? struct.cube : struct.vector); m.makeScale(cube ? 0.03 : 0.022, 0.04, cube ? 0.03 : 0.022); m.setPosition(G.cardX[k] + dx, G.yThread, G.cardZ[k] + dz); tm.setMatrixAt(idx, m); tm.setColorAt(idx, col); }
     if (tm) { tm.count = G.N * FP_THREADS; tm.instanceMatrix.needsUpdate = true; if (tm.instanceColor) tm.instanceColor.needsUpdate = true; }
     const lm = tileRef.current;   // L0 Tile / SIMT lane (finest) — thin light-cyan bars under each card, like the 平面视图 L0 lane glyph
-    if (lm) { col.set(ENTITY_COLORS.vector); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_TILES; t++) { const idx = k * FP_TILES + t; m.makeScale(0.02, 0.05, 0.012); m.setPosition(G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]); lm.setMatrixAt(idx, m); lm.setColorAt(idx, col); } lm.count = G.N * FP_TILES; lm.instanceMatrix.needsUpdate = true; if (lm.instanceColor) lm.instanceColor.needsUpdate = true; }
+    if (lm) { col.set(struct.vector); for (let k = 0; k < G.N; k++) for (let t = 0; t < FP_TILES; t++) { const idx = k * FP_TILES + t; m.makeScale(0.02, 0.05, 0.012); m.setPosition(G.cardX[k] + tileOff(t), G.yTile, G.cardZ[k]); lm.setMatrixAt(idx, m); lm.setColorAt(idx, col); } lm.count = G.N * FP_TILES; lm.instanceMatrix.needsUpdate = true; if (lm.instanceColor) lm.instanceColor.needsUpdate = true; }
     const bm = bladeInst.current;   // L4 节点/刀片 = a wide thin board (4×2 NPU footprint), echoing the 平面视图 blade glyph
-    if (bm) { col.set(ENTITY_COLORS.node); for (let b = 0; b < G.nBlades; b++) { m.makeScale(0.92, 0.04, 0.46); m.setPosition(G.bladeMX[b], G.yBlade, G.bladeMZ[b]); bm.setMatrixAt(b, m); bm.setColorAt(b, col); } bm.count = G.nBlades; bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
+    if (bm) { col.set(struct.blade); for (let b = 0; b < G.nBlades; b++) { m.makeScale(0.92, 0.04, 0.46); m.setPosition(G.bladeMX[b], G.yBlade, G.bladeMZ[b]); bm.setMatrixAt(b, m); bm.setColorAt(b, col); } bm.count = G.nBlades; bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true; }
     const cm = cabInst.current;   // 机柜 = an UPRIGHT cabinet box (taller than wide, a rack — not a flat board) — distinct from the blade
     const cabH = Math.min(0.62, (G.yProc - G.yThread) * 0.7);
-    if (cm) { col.set(ENTITY_COLORS.cab); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
-  }, [G, useChip, chipTex]);
+    if (cm) { col.set(struct.cab); for (let c = 0; c < G.nCabs; c++) { m.makeScale(Math.min(0.42, G.cw * 0.16), cabH, Math.min(0.42, G.cd * 0.14)); m.setPosition(G.cabMX[c], G.yCab, G.cabMZ[c]); cm.setMatrixAt(c, m); cm.setColorAt(c, col); } cm.count = G.nCabs; cm.instanceMatrix.needsUpdate = true; if (cm.instanceColor) cm.instanceColor.needsUpdate = true; }
+  }, [G, useChip, chipTex, struct.blade, struct.cab, struct.card, struct.cube, struct.proc, struct.vector]);
 
   // physical-device objects (shown with the 三平面 toggle): NPU UB/RDMA ports on each card,
   // and CPU / L1 交换 / LPO / 擎天 NIC per node — drawn as real instanced objects, like the cards.
@@ -1865,14 +1943,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   useLayoutEffect(() => {
     // hierarchy hue UNIFIED with the 层级图 (card=teal · die=teal · Cube=cyan · Vector=light-cyan ·
     // 刀片=sky · 机柜=purple) — NOT the old blue-grey LC palette. State(load) still pops via loadColor.
-    const col = new THREE.Color(), procBase = new THREE.Color(ENTITY_COLORS.computeDie), cubeBase = new THREE.Color(ENTITY_COLORS.cube), vecBase = new THREE.Color(ENTITY_COLORS.vector), hl = new THREE.Color('#4369ef');
-    const cardBase = chipTex ? '#ffffff' : ENTITY_COLORS.card;
+    const col = new THREE.Color(), procBase = new THREE.Color(struct.proc), cubeBase = new THREE.Color(struct.cube), vecBase = new THREE.Color(struct.vector), hl = new THREE.Color('#4369ef');
+    const cardBase = chipTex ? '#ffffff' : struct.card;
     const pm = procRef.current, tm = thrRef.current, lm = tileRef.current, nm = cardInst.current, bm = bladeInst.current, cm = cabInst.current;
-    const tileBase = new THREE.Color(ENTITY_COLORS.vector);
+    const tileBase = new THREE.Color(struct.vector);
     const onPart = partition !== 'none';
     const pcol = (g: number) => PARTITION_PALETTE[g % PARTITION_PALETTE.length];
     const sk = phase?.kind ?? null, heat = status || sk != null;   // observation heatmap active
-    const cardBaseCol = new THREE.Color(cardBase), bladeBaseCol = new THREE.Color(ENTITY_COLORS.node), cabBaseCol = new THREE.Color(ENTITY_COLORS.cab);
+    const cardBaseCol = new THREE.Color(cardBase), bladeBaseCol = new THREE.Color(struct.blade), cabBaseCol = new THREE.Color(struct.cab);
     // observation: colour a node ONLY when 高/满 (isHot) so most stay neutral — the FEW hotspots pop;
     // lines carry the rest of the load story. else → faint muted base.
     const heatNode = (id: number, base: THREE.Color) => { const ld = nodeLoad(id, sk ?? undefined); if (isHot(ld)) col.set(loadColor(ld)); else col.copy(base); };
@@ -1887,14 +1965,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       else if (sel.lv === 2 && sel.i < G.nCabs) { chainCabs.add(sel.i); for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === sel.i) addBladeSet(b); }
     }
     const dimming = !!scopeOnly && !!sel && (chainCards.size > 0 || chainCabs.size > 0);
-    const dimC = new THREE.Color(dark ? '#101010' : '#f5f5f5');   // out-of-scope → match bg so it visually disappears (只显示链路)
+    const dimC = new THREE.Color(struct.dim);   // out-of-scope → match bg so it visually disappears (只显示链路)
     const offCard = (k: number) => dimming && !chainCards.has(k);
     if (pm) for (let k = 0; k < G.N; k++) { if (offCard(k)) col.copy(dimC); else if (heat) heatNode(k, procBase); else if (onPart) col.set(pcol(part.groupOf(k))); else col.copy(procBase); pm.setColorAt(k * 2, col); pm.setColorAt(k * 2 + 1, col); }
     if (tm) for (let i = 0; i < G.N * FP_THREADS; i++) { const cube = i % 8 !== 7, kk = Math.floor(i / FP_THREADS); if (offCard(kk)) col.copy(dimC); else if (heat) heatNode(i, cube ? cubeBase : vecBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(cube ? cubeBase : vecBase); tm.setColorAt(i, col); }
     if (lm) for (let i = 0; i < G.N * FP_TILES; i++) { const kk = Math.floor(i / FP_TILES); if (offCard(kk)) col.copy(dimC); else if (heat) heatNode(i + 7, tileBase); else if (onPart) col.set(pcol(part.groupOf(kk))); else col.copy(tileBase); lm.setColorAt(i, col); }
     if (nm && !useChip) for (let k = 0; k < G.N; k++) { if (k === lastHov.current) continue; if (offCard(k)) col.copy(dimC); else if (heat) heatNode(k, cardBaseCol); else if (onPart) col.set(pcol(part.groupOf(k))); else col.set(cardBase); nm.setColorAt(k, col); }
-    if (bm) for (let b = 0; b < G.nBlades; b++) { if (dimming && !chainBlades.has(b)) col.copy(dimC); else if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(ENTITY_COLORS.node); bm.setColorAt(b, col); }
-    if (cm) for (let c = 0; c < G.nCabs; c++) { if (dimming && !chainCabs.has(c)) col.copy(dimC); else if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(ENTITY_COLORS.cab); cm.setColorAt(c, col); }
+    if (bm) for (let b = 0; b < G.nBlades; b++) { if (dimming && !chainBlades.has(b)) col.copy(dimC); else if (heat) heatNode(b * 131 + 7, bladeBaseCol); else if (onPart && partition !== 'tp') col.set(pcol(part.groupOf(b * FP_CARDS_PER_BLADE))); else col.set(struct.blade); bm.setColorAt(b, col); }
+    if (cm) for (let c = 0; c < G.nCabs; c++) { if (dimming && !chainCabs.has(c)) col.copy(dimC); else if (heat) heatNode(c * 911 + 13, cabBaseCol); else col.set(struct.cab); cm.setColorAt(c, col); }
     // highlight: scopeOnly → ONLY the focused marker turns blue (chain keeps its metric/heat colour,
     // matching the 2-D 层级图); otherwise (standalone fullpod) the whole chain lights up blue as before.
     if (sel) {
@@ -1918,7 +1996,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (nm?.instanceColor) nm.instanceColor.needsUpdate = true;
     if (bm?.instanceColor) bm.instanceColor.needsUpdate = true;
     if (cm?.instanceColor) cm.instanceColor.needsUpdate = true;
-  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status, scopeOnly, dark]);
+  }, [G, phase, computeNow, commNow, useChip, chipTex, partition, part, sel, status, scopeOnly, struct.blade, struct.cab, struct.card, struct.cube, struct.dim, struct.proc, struct.vector]);
 
   // imperative single-instance hover for the instanced-card path (avoids 8 K-loop per move).
   // scopeOnly (联动控制台): NO hover visual — hovering must not turn a block into a selected-looking
@@ -1926,7 +2004,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const hoverCard = (k: number | null) => {
     const nm = cardInst.current; if (!nm || useChip || scopeOnly) return;
     const m = new THREE.Matrix4(), col = new THREE.Color(), prev = lastHov.current;
-    const put = (i: number, on: boolean) => { m.makeScale(on ? cardW * 1.5 : cardW, on ? cardH * 1.8 : cardH, on ? cardW * 1.5 : cardW); m.setPosition(G.cardX[i], G.yCard, G.cardZ[i]); nm.setMatrixAt(i, m); nm.setColorAt(i, col.set(on ? '#bdf0cf' : chipTex ? '#ffffff' : ENTITY_COLORS.card)); };
+    const put = (i: number, on: boolean) => { m.makeScale(on ? cardW * 1.5 : cardW, on ? cardH * 1.8 : cardH, on ? cardW * 1.5 : cardW); m.setPosition(G.cardX[i], G.yCard, G.cardZ[i]); nm.setMatrixAt(i, m); nm.setColorAt(i, col.set(on ? '#bdf0cf' : chipTex ? '#ffffff' : struct.card)); };
     if (prev >= 0 && prev !== k && prev < G.N) put(prev, false);
     if (k !== null) put(k, true);
     lastHov.current = k ?? -1;
@@ -2101,7 +2179,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   return (
     <WireScale.Provider value={wireScale}>
     <group>
-      <Floor size={Math.max(18, G.fieldW + 6, G.fieldD + 6)} />
+      <Floor
+        size={Math.max(18, G.fieldW + 6, G.fieldD + 6)}
+        floorColor={workbenchProfile ? '#ffffff' : undefined}
+        gridColor={workbenchProfile ? '#8f96a3' : undefined}
+        gridMinorColor={workbenchProfile ? '#d4d8df' : undefined}
+        gridOpacity={workbenchProfile ? 0.7 : undefined}
+      />
       {/* clickable band labels (focus → highlight that band's downstream connector) */}
       {bands.map(([i, y, t, c]) => (
         (i === 7 || i < 6 || podCount > 1) && (
@@ -2207,7 +2291,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         const on = selPath !== null && selPath.superP === p;
         return (
           <group key={p}>
-            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : ENTITY_COLORS.super} emissive={on ? '#4369ef' : ENTITY_COLORS.super} emissiveIntensity={on ? 0.9 : 0.4} />
+            <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : struct.super} emissive={on ? '#4369ef' : (workbenchProfile ? '#000000' : ENTITY_COLORS.super)} emissiveIntensity={on ? 0.9 : 0.4} />
             <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`${TOK.supernode} P${p}`}</Text>
           </group>
         );
@@ -2232,7 +2316,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             {lc
               ? <Slab size={[0.34, 0.13, 0.34]} color={lc} toneMapped={false} metalness={0} roughness={0.5} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
               : heat
-                ? <Slab size={[0.34, 0.1, 0.34]} color={ENTITY_COLORS.card} toneMapped={false} metalness={0} roughness={0.5} edgeColor={sel0 ? '#4369ef' : '#0a0d13'} />
+                ? <Slab size={[0.34, 0.1, 0.34]} color={struct.card} toneMapped={false} metalness={0} roughness={0.5} edgeColor={sel0 ? '#4369ef' : LC.rackEdge} />
                 : <NpuChip w={0.34} h={0.18} hovered={hoverNpu === k} selected={sel0} logo />}
           </group>
         ); })

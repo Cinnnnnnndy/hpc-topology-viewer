@@ -3,17 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- anti-scrape: ask crawlers/indexers not to index or follow -->
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
     <meta name="googlebot" content="noindex, nofollow" />
     <meta name="referrer" content="no-referrer" />
-    <title>HPC Topology Viewer</title>
+    <title>HPC Topology Viewer · Workbench</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <!-- typography: Inter (sans) + JetBrains Mono (numeric/mono), aligned to the PTO design system -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -21,32 +19,27 @@
         --font-sans: 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Noto Sans SC', -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
         --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, monospace;
       }
-      html, body { margin: 0; }
+      html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
       body {
         font-family: var(--font-sans);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         text-rendering: optimizeLegibility;
+        background: #0e1116;
       }
-      /* engineering feel: tabular figures for numeric/spec data */
       .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
       .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-      /* keyboard focus ring (mouse clicks stay clean via :focus-visible) */
-      button:focus-visible, select:focus-visible {
+      button:focus-visible, select:focus-visible, input:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 3px var(--focus-ring, rgba(67, 105, 239, 0.42));
+        box-shadow: 0 0 0 3px var(--focus-ring, rgba(79, 109, 246, 0.42));
       }
-      /* PTO button feel: snappy state transitions + subtle hover lift (matches reference .tb-btn) */
-      button { transition: background 100ms, border-color 100ms, transform 100ms, box-shadow 100ms, filter 100ms; }
-      button:hover { filter: brightness(1.12); }
-      /* thin engineering scrollbars */
       ::-webkit-scrollbar { width: 6px; height: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
-      ::-webkit-scrollbar-thumb { background: rgba(127, 127, 127, 0.28); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb { background: rgba(127, 127, 127, 0.30); border-radius: 3px; }
     </style>
   </head>
-  <body style="margin: 0">
-    <div id="root" style="width: 100vw; height: 100vh"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/workbench/main.tsx"></script>
   </body>
 </html>

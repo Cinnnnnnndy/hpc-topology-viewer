@@ -20,12 +20,14 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { hasPartModel, resolvePartModelUrl } from './model-registry';
 import { partRotationDeg, partFit, type FitMode } from './parts-catalog';
+import { resolveSceneMaterial, useSceneVisualProfile } from './visual-profile';
 
 function GlbModel({ url, partId, w, h, d, fit, color, edgeColor, edgeThreshold = 32 }: {
   url: string; partId: string; w: number; h: number; d: number; fit: FitMode;
   color?: string; edgeColor?: string; edgeThreshold?: number;
 }) {
   const { scene } = useGLTF(url);
+  const profile = useSceneVisualProfile();
   const object = useMemo(() => {
     // Clone so the same cached GLTF can be placed in many slots independently.
     const root = scene.clone(true);
@@ -49,13 +51,18 @@ function GlbModel({ url, partId, w, h, d, fit, color, edgeColor, edgeThreshold =
     // 3) re-skin to the scene palette + add sharp-edge wireframe so the installed
     //    model matches the procedural flat-block + edge style (legend colours).
     if (color || edgeColor) {
+      const mat = resolveSceneMaterial(profile, 0.3, 0.6, 0);
       root.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!(mesh as unknown as { isMesh?: boolean }).isMesh || !mesh.geometry) return;
-        if (color) mesh.material = new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.6 });
+        if (color) mesh.material = new THREE.MeshStandardMaterial({ color, metalness: mat.metalness, roughness: mat.roughness });
         if (edgeColor) {
           const eg = new THREE.EdgesGeometry(mesh.geometry, edgeThreshold);
-          mesh.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: edgeColor })));
+          mesh.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+            color: edgeColor,
+            transparent: profile === 'opRankTime',
+            opacity: profile === 'opRankTime' ? 0.62 : 1,
+          })));
         }
       });
     }
@@ -66,7 +73,7 @@ function GlbModel({ url, partId, w, h, d, fit, color, edgeColor, edgeThreshold =
     root.position.sub(center);
     wrap.add(root);
     return wrap;
-  }, [scene, partId, w, h, d, fit, color, edgeColor, edgeThreshold]);
+  }, [scene, partId, w, h, d, fit, color, edgeColor, edgeThreshold, profile]);
 
   return <primitive object={object} />;
 }
