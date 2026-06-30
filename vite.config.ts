@@ -8,10 +8,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
-      input: {
-        main: new URL('./index.html', import.meta.url).pathname,
-        workbench: new URL('./workbench.html', import.meta.url).pathname,
-      },
+      input: new URL('./index.html', import.meta.url).pathname,
     },
   },
 });
