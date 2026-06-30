@@ -6,4 +6,12 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/hpc-topology-viewer/',
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: new URL('./index.html', import.meta.url).pathname,
+        workbench: new URL('./workbench.html', import.meta.url).pathname,
+      },
+    },
+  },
 });

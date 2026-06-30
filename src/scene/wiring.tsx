@@ -14,6 +14,10 @@ import * as THREE from 'three';
 
 export type Pt = [number, number, number];
 
+// Uniform visual scale for communication wires. Keep caller lineWidth ratios, but
+// render the whole family a bit slimmer so dense 3D topology fields stay readable.
+const WIRE_WIDTH_SCALE = 0.25;
+const WIRE_OPACITY_SCALE = 0.5;
 // 世界半径 / 单位 lineWidth：调到 width 1≈0.012、width 4≈0.048（与 bus-wiring 0.038~0.05 同档）。
 const R_PER_W = 0.012;
 // 每个场景的半径倍率（FullPod 大场按 field 放大；默认 1）。
@@ -155,7 +159,9 @@ export function Wire({
   radialSegments = 6, maxTubes = 1400, renderOrder,
 }: WireProps) {
   const scale = useContext(WireScale);
-  const r = radius ?? Math.max(0.004, lineWidth * R_PER_W * scale);
+  const renderedLineWidth = lineWidth * WIRE_WIDTH_SCALE;
+  const renderedOpacity = opacity * WIRE_OPACITY_SCALE;
+  const r = radius ?? Math.max(0.003, renderedLineWidth * R_PER_W * scale);
   const useVColor = !!vertexColors;
 
   const verts = useMemo(() => points.map(V), [points]);
@@ -192,7 +198,7 @@ export function Wire({
     defines: useVColor ? { USE_VCOLOR: '' } : {},
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uOpacity: { value: opacity },
+      uOpacity: { value: renderedOpacity },
       uActive: { value: active ? 1 : 0 },
       uOffset: { value: 0 },
       uDensity: { value: built?.density ?? 1.4 },
@@ -204,11 +210,11 @@ export function Wire({
 
   useEffect(() => {
     mat.uniforms.uColor.value.set(color);
-    mat.uniforms.uOpacity.value = opacity;
+    mat.uniforms.uOpacity.value = renderedOpacity;
     mat.uniforms.uActive.value = active ? 1 : 0;
     mat.uniforms.uDashed.value = dashed ? 1 : 0;
     if (built) mat.uniforms.uDensity.value = built.density;
-  }, [color, opacity, active, dashed, built, mat]);
+  }, [color, renderedOpacity, active, dashed, built, mat]);
 
   useEffect(() => () => mat.dispose(), [mat]);
   useEffect(() => () => built?.geo.dispose(), [built]);
@@ -218,13 +224,13 @@ export function Wire({
   if (fallback) {
     return (
       <Line points={verts} segments color={color} vertexColors={vertexColors as [number, number, number][] | undefined}
-        lineWidth={lineWidth} transparent opacity={opacity} renderOrder={renderOrder} />
+        lineWidth={renderedLineWidth} transparent opacity={renderedOpacity} renderOrder={renderOrder} />
     );
   }
   if (!built) return null;
 
   const showCaps = (endpoints ?? !segments) && !useVColor && verts.length >= 2;
-  const capOpacity = Math.max(opacity, 0.8);
+  const capOpacity = renderedOpacity;
 
   return (
     <group>

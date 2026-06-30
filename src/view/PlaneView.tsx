@@ -7,10 +7,11 @@
  *
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
+import { SceneVisualProfileContext } from '../scene/visual-profile';
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
 const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', multi: '多平面', none: '片上' };
@@ -134,6 +135,8 @@ const MONO = "'JetBrains Mono', 'Consolas', ui-monospace, monospace";   // canva
 // 器件互联 选中 → 右侧「截取的层级图」面板：canvas 绘制，图元/配色与「层级图」统一，含 containment
 // 连线，下钻到 L1 AI Core / L0 Tile。仅显示选中(蓝圈)链路 + 关联对象。
 function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode }: { sel: SelDev; dark: boolean; onClose: () => void; playing: boolean; headRef: React.MutableRefObject<number>; phaseRef: React.MutableRefObject<number>; runMode: RunMode }) {
+  const visualProfile = useContext(SceneVisualProfileContext);
+  const workbenchProfile = visualProfile === 'opRankTime';
   const cref = useRef<HTMLCanvasElement>(null);
   const raf = useRef<number | null>(null);
   // paint — re-run each frame while 执行时序 plays, so the panel's 流量(虚线流动) + 器件状态(load 配色)
@@ -221,7 +224,7 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
   }, [paint]);
   const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 路由（刀片 ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（刀片 ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（刀片 ${sel.blade} #${sel.i + 1}）`;
   return (
-    <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: PANEL_W, background: 'var(--panel)', borderLeft: '1px solid var(--bd)', boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
+    <div style={{ position: 'absolute', top: workbenchProfile ? 12 : 0, right: workbenchProfile ? 12 : 0, bottom: workbenchProfile ? 12 : 0, width: PANEL_W, background: 'var(--panel)', ...(workbenchProfile ? { borderRadius: 'var(--panel-shell-radius)' } : { borderLeft: '1px solid var(--bd)' }), boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
         <span style={{ width: 10, height: 10, borderRadius: 3, background: SEL }} />
         <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>选中链路 · 层级图（截取）</span>
@@ -241,6 +244,8 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
 export type PlaneSel = { level: 'cluster' | 'super' | 'cab' | 'node' | 'card' | 'die' | 'core' | 'tile'; card: number; die?: number; core?: number } | null;
 
 export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; onSelect?: (sel: PlaneSel) => void }) {
+  const visualProfile = useContext(SceneVisualProfileContext);
+  const workbenchProfile = visualProfile === 'opRankTime';
   const spec = GENERATIONS[gen];
   // canvas-2D palette (cannot use CSS var() in fillStyle/strokeStyle)
   const P = dark
@@ -1212,7 +1217,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
   })();
 
   return (
-    <div ref={wrapRef} style={{ position: 'absolute', inset: 0, zIndex: 11, background: 'var(--bg2)', overflow: 'hidden' }}>
+    <div ref={wrapRef} className={workbenchProfile ? 'hpc-plane-shell hpc-plane-shell--workbench' : undefined} style={{ position: 'absolute', inset: 0, zIndex: 11, background: workbenchProfile ? 'var(--background-elevated)' : 'var(--bg2)', overflow: 'hidden' }}>
       <canvas
         ref={canvasRef}
         style={{ display: 'block', cursor: drag.current ? 'grabbing' : layout === 'top' ? 'crosshair' : 'pointer', touchAction: 'none' }}

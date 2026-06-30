@@ -10,7 +10,7 @@
  * 所有样式/图元/状态/连接/上下层级与层内关系都用既有方案：FullPodScene 组件 + 同一套 data.ts
  * 色彩/状态/负载函数 (loadColor / loadState / stateColor / nodeLoad / isHot / ENTITY_COLORS / PLANES)。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -21,6 +21,7 @@ import {
 } from '../scene/data';
 import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
+import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
 //    64 卡/柜. A global card index `k` maps the SAME way in the left 层级 and the right 3D array. ──
@@ -41,6 +42,7 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 };
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
+const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
 const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: '超节点', cab: '机柜', node: '节点', card: '卡 rank', die: '计算 Die', core: 'AI Core', tile: 'Tile' };
 
 // ── metric model (deterministic, mirrors 运行状态) ──
@@ -138,7 +140,12 @@ const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: tru
 
 // Frame the orthographic camera on the focused scope (pan target + zoom); with no focus it settles
 // on the whole-field overview. Animates on focus CHANGE then releases, so the user can still orbit/zoom.
-function FrameCamera({ bounds, reach, controls }: { bounds: { cx: number; cy: number; cz: number; r: number } | null; reach: number; controls: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null> }) {
+function FrameCamera({ bounds, reach, controls, zoomScale = 1 }: {
+  bounds: { cx: number; cy: number; cz: number; r: number } | null;
+  reach: number;
+  controls: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null>;
+  zoomScale?: number;
+}) {
   const { camera, size } = useThree();
   const init = useRef(false);
   const settling = useRef(true);
@@ -155,7 +162,7 @@ function FrameCamera({ bounds, reach, controls }: { bounds: { cx: number; cy: nu
   useFrame(() => {
     if (!controls.current || !settling.current || size.height < 10) return;
     controls.current.target.lerp(tgt.pos, 0.14);
-    const oc = camera as THREE.OrthographicCamera, want = size.height / tgt.worldH;
+    const oc = camera as THREE.OrthographicCamera, want = size.height / tgt.worldH * zoomScale;
     if (oc.isOrthographicCamera) { oc.zoom += (want - oc.zoom) * 0.14; oc.updateProjectionMatrix(); }
     controls.current.update();
     if (controls.current.target.distanceTo(tgt.pos) < 0.08 && Math.abs((oc.zoom ?? want) - want) < 0.06) settling.current = false;
@@ -200,6 +207,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
   const selLe = !focus || focus.level === 'cluster' ? -1 : focus.level === 'super' ? 1 : focus.level === 'cab' ? 2 : focus.level === 'node' ? 3 : 4;
   const selIdx = selLe < 0 ? -1 : selLe === 1 ? 0 : selLe === 2 ? Math.floor(focus!.card / PER_CAB) : selLe === 3 ? Math.floor(focus!.card / CPB) : focus!.card;
   const focusCard = focus && selLe === 4 ? focus.card : null;
+  const hasDrillFocus = !!focus && focus.level !== 'cluster' && focus.level !== 'super';
   const ringC = dark ? '#fff' : '#10131a';
   // structure = glyph + position; state = 红黄绿 (only when playing) — else hierarchy colour (同层级图)
   const fillOf = (Le: number, idx: number, base: string) => (playing ? loadColor(metricOf(Le, idx)) : base);
@@ -261,7 +269,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
   rows.forEach(({ t, shown, fold, foldX, slotW }) => {
     shown.forEach(({ idx, x }) => {
       const isSel = t.Le === selLe && idx === selIdx, fill = fillOf(t.Le, idx, t.col);
-      const strag = t.Le === 4 && isStrag(idx, step);
+      const strag = playing && t.Le === 4 && isStrag(idx, step);
       const cy = t.y, click = (e: React.MouseEvent) => { e.stopPropagation(); setFocus(isSel ? null : entityToFocus(t.Le, idx)); };
       if (t.Le === 4) {           // card glyph: rounded square + 2×2 Die dots
         const s = Math.max(9, Math.min(t.maxW, slotW * 0.82)), gx = x - s / 2, gy = cy - s / 2, ins = s * 0.17, gp = s * 0.08, dw = (s - ins * 2 - gp) / 2;
@@ -305,15 +313,17 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       </g>,
     );
   });
-  // 5) divider + card-internal sub-grids — 层内关系. 始终展开「代表卡」的卡内结构 (机柜/节点选中=该
-  //    范围首卡；无选中=卡0)，用满竖向空间；选中具体卡时即该卡。结构色，播放时叠加负载。
+  // 5) divider + card-internal sub-grids — 层内关系. 只有钻取到机柜/节点/卡内时才画蓝色链路；
+  //    默认 overview 只保留结构网格，避免看起来像已经选中某个 rank。
   const repCard = focusCard != null ? focusCard : focus ? scopeRange(focus, N)[0] : 0;
   const repReal = focusCard != null;   // true = 真的选到某张卡（否则是代表卡）
   els.push(<line key="div" x1={8} y1={312} x2={592} y2={312} stroke={P.line} strokeDasharray="2 4" />);
-  els.push(<text key="divt" x={300} y={307} fill={P.ink3} fontSize={9} textAnchor="middle">{`—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——`}</text>);
+  els.push(<text key="divt" x={300} y={307} fill={P.ink3} fontSize={9} textAnchor="middle">
+    {hasDrillFocus ? `—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——` : '—— 卡内结构 ——'}
+  </text>);
   // containment connectors into the sub-card layers — same bus-wiring language as 选中链路·层级图:
   // 代表卡 → 2 计算 Die → AI Core 网格顶 → Tile 网格顶, each a solid SEL line + connector dots + 流动彗星.
-  { const rp4 = pos[4]?.[repCard];
+  if (hasDrillFocus) { const rp4 = pos[4]?.[repCard];
     const dieCx = [135, 175], dieTopY = 340, dieBotY = 370;        // compute Die centres (i=0,1) · 30px cells @ y=340
     const coreCx = 254.5, coreTopY = 426, coreBotY = 457;          // AI Core grid (16 cols · 17px pitch) span 120..389
     const tileCx = 230.5, tileTopY = 526;                          // Tile grid (16 cols · 14px pitch) span 120..341
@@ -346,7 +356,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       const isSel = repReal && ((st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i));
       // always use load-based color keyed to repCard so L0-L2 visually changes when a different
       // node/cabinet is selected; IO Die (i≥2) keeps its structural color (no compute load).
-      const fill = (st.key === 'die' && i >= 2) ? st.col(i) : loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed + i, wlKind))));
+      const fill = (st.key === 'die' && i >= 2) || !playing ? st.col(i) : loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed + i, wlKind))));
       els.push(
         <rect key={`s-${st.key}-${i}`} x={cx} y={cy} width={st.cell} height={st.cell} rx={Math.min(3, st.cell * 0.18)} fill={fill} style={{ cursor: 'pointer' }}
           stroke={isSel ? ringC : 'none'} strokeWidth={isSel ? 1.8 : 0}
@@ -365,6 +375,9 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
 }
 
 export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
+  const visualProfile = useContext(SceneVisualProfileContext);
+  const workbenchProfile = visualProfile === 'opRankTime';
+  const surf = sceneSurface(dark, visualProfile);
   const spec = GENERATIONS[gen];
   const N = spec.totalNpus;
   const nBlades = Math.ceil(N / CPB), nCabs = Math.ceil(nBlades / BPC), PP = Math.min(16, nBlades);
@@ -380,11 +393,54 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [hover, setHover] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
+  const splitRef = useRef<HTMLDivElement | null>(null);
   const wlKind = WL[workload].kind;
 
-  useEffect(() => { setFocus(null); }, [gen]);
+  useEffect(() => { setFocus(null); setScopeB(null); }, [gen]);
+  useEffect(() => {
+    if (!workbenchProfile || !splitRef.current) return;
+
+    const helper = window.PtoWorkbenchShell;
+    if (!helper?.initResizablePanes) return;
+
+    const root = splitRef.current;
+    const leftPane = root.querySelector<HTMLElement>('[data-pane="smartscape"]');
+    const rightPane = root.querySelector<HTMLElement>('[data-pane="panorama"]');
+    if (!leftPane || !rightPane) return;
+
+    let frame = 0;
+    const refreshCanvasLayout = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        window.dispatchEvent(new Event('resize'));
+        controlsRef.current?.update?.();
+      });
+    };
+
+    const split = helper.initResizablePanes({
+      root,
+      panes: [leftPane, rightPane],
+      direction: 'horizontal',
+      sizes: [38, 62],
+      minSize: [300, 420],
+      gutterSize: 10,
+      storageKey: 'hpc-topology-console-split-v1',
+      gutterLabel: '调整平面视图和阵列全景宽度',
+      onResize: refreshCanvasLayout,
+    });
+
+    refreshCanvasLayout();
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      split.destroy();
+    };
+  }, [workbenchProfile]);
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => setStep((s) => (s + 1) % (STEP_MAX + 1)), 650);
@@ -447,8 +503,8 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   }, [focus]);
 
   // panorama config (lens → array presentation); memoised so playback ticks don't churn the 8K recolor
-  const panoStatus = lens === 'heat' || lens === 'flow';
-  const panoPeers = lens === 'flow';
+  const panoStatus = playing && (lens === 'heat' || lens === 'flow');
+  const panoPeers = playing && lens === 'flow';
   const panoPlanes = lens === 'phys';
   const panoPart: PartitionDim = lens === 'domain' ? partDim : 'none';
   const panoPhase = useMemo<RunPhase | null>(() => (playing && (lens === 'heat' || lens === 'flow')
@@ -469,10 +525,103 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   })() : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
+  const shellStyle: React.CSSProperties = workbenchProfile
+    ? { position: 'relative', zIndex: 11, flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', color: 'var(--tx)' }
+    : { position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' };
 
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' }}>
+    <div className={workbenchProfile ? 'hpc-console-shell hpc-console-shell--workbench' : 'hpc-console-shell'} style={shellStyle}>
       {/* ── toolbar: 工况 / 指标 / 方向 / 镜头 (+切分) / 平面 · breadcrumb · KPI ── */}
+      {workbenchProfile ? (
+        <div className="hpc-console-toolbar hpc-console-toolbar--compact">
+          <div className="hpc-console-primary-controls">
+            <span style={GLAB}>工况</span>
+            <div className="hpc-console-segment">
+              {(Object.keys(WL) as Workload[]).map((w) => (
+                <button key={w} onClick={() => setWorkload(w)} style={{ ...btnBase, ...(workload === w ? { border: '1px solid #2a6f5f', background: '#2a6f5f', color: '#fff', fontWeight: 600 } : SECONDARY) }}>{WL[w].label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="hpc-wb-menu-wrap hpc-console-settings">
+            <button
+              className={`hpc-console-summary${settingsOpen ? ' is-active' : ''}`}
+              onClick={() => setSettingsOpen((v) => !v)}
+              aria-expanded={settingsOpen}
+              title="视图设置"
+            >
+              <span>{M_LABEL[metric]}</span>
+              <span>{D_LABEL[dir]}</span>
+              <span>{LENS_LABEL[lens]}</span>
+              {lens === 'domain' && <span>{partDim.toUpperCase()}</span>}
+            </button>
+            {settingsOpen && (
+              <div className="hpc-wb-menu hpc-console-settings-menu">
+                <div className="hpc-wb-menu-section">
+                  <div className="hpc-wb-menu-title">指标</div>
+                  <div className="hpc-wb-menu-grid compact">
+                    {(Object.keys(M_LABEL) as Metric[]).map((m) => (
+                      <button key={m} className={`hpc-wb-menu-item${metric === m ? ' is-active' : ''}`} onClick={() => setMetric(m)}>{M_LABEL[m]}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="hpc-wb-menu-section">
+                  <div className="hpc-wb-menu-title">方向</div>
+                  <div className="hpc-wb-menu-grid compact">
+                    {([['all', '全链'], ['up', '上游'], ['down', '下游']] as [Dir, string][]).map(([d, l]) => (
+                      <button key={d} className={`hpc-wb-menu-item${dir === d ? ' is-active' : ''}`} onClick={() => setDir(d)}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="hpc-wb-menu-section">
+                  <div className="hpc-wb-menu-title">镜头</div>
+                  <div className="hpc-wb-menu-grid">
+                    {(Object.keys(LENS_LABEL) as Lens[]).map((l) => (
+                      <button key={l} className={`hpc-wb-menu-item${lens === l ? ' is-active' : ''}`} onClick={() => setLens(l)}>{LENS_LABEL[l]}</button>
+                    ))}
+                  </div>
+                </div>
+                {lens === 'domain' && (
+                  <div className="hpc-wb-menu-section">
+                    <div className="hpc-wb-menu-title">并行切分</div>
+                    <div className="hpc-wb-menu-grid compact">
+                      {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => (
+                        <button key={d} className={`hpc-wb-menu-item${partDim === d ? ' is-active' : ''}`} onClick={() => setPartDim(d)} title={PARTITION_META[d].label}>{d.toUpperCase()}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="hpc-console-plane-group" aria-label="通信平面">
+            {PLANES.map((p) => { const on = planeOn[p.id]; return (
+              <button key={p.id} onClick={() => setPlaneOn((s) => ({ ...s, [p.id]: !s[p.id] }))} title={p.role} style={{ ...btnBase, display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, p.color) }}>
+                <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(p.color) : p.color }} />{p.short.split('·')[0]}
+              </button>
+            ); })}
+          </div>
+          <div className="hpc-console-crumbs">
+            {crumbs.map((c, i) => (
+              <span key={i} className="hpc-console-crumb">
+                {i > 0 && <span className="hpc-console-crumb-sep">/</span>}
+                <span onClick={() => setFocus(c.lvl === 'super' ? null : { level: c.lvl, card: c.card })}>{c.label}</span>
+              </span>
+            ))}
+          </div>
+          <div className="hpc-console-kpis">
+            {([
+              [`${Math.round(stats.kpi.util * 100)}%`, `集群${M_LABEL.util}`, 'var(--tx)'],
+              [`${metric === 'fault' ? stats.kpi.faultDom : stats.kpi.hot}`, metric === 'fault' ? '故障域' : '热点卡', loadColor(0.9)],
+              [`${stats.kpi.strag}`, '掉队卡', PARALLEL_COLORS.ep],
+            ] as [string, string, string][]).map(([v, l, c], i) => (
+              <div key={i} className="hpc-console-kpi">
+                <div style={{ color: c, ...TNUM }}>{v}</div>
+                <span>{l}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 12px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
         <span style={GLAB}>工况</span>
         <div style={{ display: 'flex', gap: 3 }}>
@@ -533,11 +682,28 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
           ))}
         </div>
       </div>
+      )}
 
       {/* ── body: left Smartscape 控制 · right panorama (scopeOnly) + 仪表 ── */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <div style={{ flex: '0 0 40%', maxWidth: '46%', minWidth: 340, borderRight: '1px solid var(--bd)', display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--panel-solid)' }}>
-          <div style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', borderBottom: '1px solid var(--bd)', flexShrink: 0 }}>
+      <div
+        ref={splitRef}
+        className={workbenchProfile ? 'hpc-console-body hpc-console-body--split workbench-frame-split pto-workbench-shell__panes' : 'hpc-console-body'}
+        style={{ flex: 1, display: 'flex', minHeight: 0 }}
+      >
+        <div
+          className={workbenchProfile ? 'hpc-console-left-pane workbench-pane pto-workbench-shell__pane' : 'hpc-console-left-pane'}
+          data-pane="smartscape"
+          style={{
+            flex: workbenchProfile ? '0 0 38%' : '0 0 40%',
+            maxWidth: workbenchProfile ? undefined : '46%',
+            minWidth: workbenchProfile ? 0 : 340,
+            ...(workbenchProfile ? { borderRadius: 'var(--pto-radius-lg)', background: 'var(--background-elevated)', overflow: 'hidden' } : { borderRight: '1px solid var(--bd)', background: 'var(--panel-solid)' }),
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
             平面视图 · 层级图（控制 · 图元/配色同层级图）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
           </div>
           <div style={{ flex: 1, position: 'relative', minHeight: 0, padding: '4px 6px' }}>
@@ -545,19 +711,26 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
           </div>
         </div>
 
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+        <div
+          className={workbenchProfile ? 'hpc-console-pano-pane workbench-pane pto-workbench-shell__pane' : 'hpc-console-pano-pane'}
+          data-pane="panorama"
+          style={{ flex: 1, position: 'relative', minWidth: 0, ...(workbenchProfile ? { borderRadius: 'var(--pto-radius-lg)', overflow: 'hidden', background: '#ffffff' } : {}) }}
+        >
           <Canvas
             orthographic dpr={[1, 2]}
-            camera={{ position: [reach, reach * 0.7, reach], zoom: 8, near: 0.1, far: 4000 }}
+            camera={{ position: [reach, reach * 0.7, reach], zoom: 16, near: 0.1, far: 4000 }}
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
             onCreated={({ gl }) => { gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false); }}
           >
-            <color attach="background" args={[dark ? '#101010' : '#f5f5f5']} />
-            <fog attach="fog" args={[dark ? '#101010' : '#f5f5f5', 90, 420]} />
-            <ambientLight intensity={dark ? 1.35 : 1.05} />
-            <directionalLight position={[8, 14, 6]} intensity={dark ? 0.95 : 1.2} />
-            <pointLight position={[0, 10, 0]} intensity={dark ? 0.7 : 1.0} color={dark ? '#7e93cf' : '#e8f0ff'} />
-            <FrameCamera bounds={scopeB} reach={reach} controls={controlsRef} />
+            <color attach="background" args={[surf.background]} />
+            <fog attach="fog" args={[surf.fog, 90, 420]} />
+            {visualProfile === 'opRankTime'
+              ? <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
+              : <ambientLight intensity={surf.ambient} />}
+            <directionalLight position={[8, 14, 6]} intensity={surf.key} />
+            {visualProfile === 'opRankTime' && <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />}
+            <pointLight position={[0, 10, 0]} intensity={surf.point} color={surf.pointColor} />
+            <FrameCamera bounds={scopeB} reach={reach} controls={controlsRef} zoomScale={2} />
             <SceneTheme.Provider value={dark}>
               <FullPodScene
                 scale="64P" podCount={1} full gen={spec} overlays={OVERLAYS}
@@ -573,76 +746,88 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
             />
           </Canvas>
 
-          <div style={{ position: 'absolute', top: 8, left: 12, fontSize: 11, color: 'var(--tx3)', pointerEvents: 'none' }}>
-            3D 阵列全景 · 主视图 · {focus ? `仅显示「${focusName(focus)}」链路` : '全量'} · 镜头：{LENS_LABEL[lens]}{dir !== 'all' ? ` · ${dir === 'up' ? '上游' : '下游'}` : ''} · {N.toLocaleString()} 卡
-          </div>
+          <button
+            className={`hpc-console-info-toggle${infoOpen ? ' is-active' : ''}`}
+            type="button"
+            aria-label="信息面板"
+            aria-expanded={infoOpen}
+            title="信息面板"
+            onClick={() => setInfoOpen((v) => !v)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 10.8v5" />
+              <path d="M12 7.6h.01" />
+            </svg>
+          </button>
 
-          {/* DAVIS 根因 */}
-          <div style={{ position: 'absolute', top: 30, right: 12, width: 224, ...card, padding: '10px 12px', borderColor: problem ? 'var(--danger, #ef4d4d)' : 'var(--bd)', background: problem ? 'rgba(60,24,24,0.92)' : 'var(--panel)' }}>
-            <div style={{ fontSize: 10, letterSpacing: 0.4, color: 'var(--tx3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: problem ? '#ef4d4d' : '#2bd47d' }} />DAVIS · 根因分析
-            </div>
-            {problem ? (
-              <>
-                <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
-                <div style={{ fontSize: 11, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
-                <button onClick={() => { setFocus({ level: 'cab', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
-              </>
-            ) : (
-              <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
-            )}
-          </div>
+          {infoOpen && (
+            <div className="hpc-console-info-tray">
+              <div style={{ ...card, padding: '10px 12px', borderColor: problem ? 'var(--danger, #ef4d4d)' : 'var(--bd)', background: problem ? 'rgba(60,24,24,0.92)' : 'var(--panel)' }}>
+                <div style={{ fontSize: 10, letterSpacing: 0.4, color: 'var(--tx3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: problem ? '#ef4d4d' : '#2bd47d' }} />DAVIS · 根因分析
+                </div>
+                {problem ? (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
+                    <div style={{ fontSize: 11, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
+                    <button onClick={() => { setFocus({ level: 'cab', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
+                )}
+              </div>
 
-          {/* 实体仪表 (auxiliary metrics for the focus) */}
-          <div style={{ position: 'absolute', top: problem ? 186 : 166, right: 12, width: 224, ...card, padding: '10px 12px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nCabs} 机柜 · ${nBlades.toLocaleString()} 节点`}</div>
-            {focus && rail ? (
-              <>
-                {(['util', 'strag', 'fault'] as Metric[]).map((mm) => {
-                  const v = rail[mm];
-                  return (
-                    <div key={mm}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, margin: '4px 0 2px' }}>
-                        <span style={{ color: 'var(--tx2)' }}>{M_LABEL[mm]}</span><span style={{ fontWeight: 600, ...TNUM }}>{Math.round(v * 100)}%</span>
+              <div style={{ ...card, padding: '10px 12px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
+                <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nCabs} 机柜 · ${nBlades.toLocaleString()} 节点`}</div>
+                {focus && rail ? (
+                  <>
+                    {(['util', 'strag', 'fault'] as Metric[]).map((mm) => {
+                      const v = rail[mm];
+                      return (
+                        <div key={mm}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, margin: '4px 0 2px' }}>
+                            <span style={{ color: 'var(--tx2)' }}>{M_LABEL[mm]}</span><span style={{ fontWeight: 600, ...TNUM }}>{Math.round(v * 100)}%</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.round(v * 100)}%`, background: loadColor(v), borderRadius: 3 }} /></div>
+                        </div>
+                      );
+                    })}
+                    {groups.length > 0 && (
+                      <div style={{ marginTop: 9, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
+                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>并行组（rank 关系）</div>
+                        {groups.map((g) => <span key={g.d} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${g.c}22`, color: g.c, margin: '0 4px 4px 0' }}>{g.label}</span>)}
                       </div>
-                      <div style={{ height: 5, borderRadius: 3, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.round(v * 100)}%`, background: loadColor(v), borderRadius: 3 }} /></div>
-                    </div>
-                  );
-                })}
-                {groups.length > 0 && (
-                  <div style={{ marginTop: 9, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
-                    <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>并行组（rank 关系）</div>
-                    {groups.map((g) => <span key={g.d} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${g.c}22`, color: g.c, margin: '0 4px 4px 0' }}>{g.label}</span>)}
-                  </div>
+                    )}
+                    {phys && (
+                      <div style={{ marginTop: 4, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
+                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>通信平面 · {phys.planeLabel}</div>
+                        {PLANES.map((p) => <span key={p.id} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${p.color}1f`, color: p.color, margin: '0 4px 4px 0', opacity: phys.plane === p.id || phys.plane === 'multi' ? 1 : 0.4 }}>{p.short}</span>)}
+                        <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 2 }}>{phys.devices}</div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧层级图驱动右侧阵列全景。点实体只展开其链路；方向(全链/上游/下游)过滤；镜头切阵列呈现；时间轴回放看问题定位。</div>
                 )}
-                {phys && (
-                  <div style={{ marginTop: 4, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
-                    <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>通信平面 · {phys.planeLabel}</div>
-                    {PLANES.map((p) => <span key={p.id} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${p.color}1f`, color: p.color, margin: '0 4px 4px 0', opacity: phys.plane === p.id || phys.plane === 'multi' ? 1 : 0.4 }}>{p.short}</span>)}
-                    <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 2 }}>{phys.devices}</div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧层级图驱动右侧阵列全景。点实体只展开其链路；方向(全链/上游/下游)过滤；镜头切阵列呈现；时间轴回放看问题定位。</div>
-            )}
-          </div>
+              </div>
 
-          {/* legend */}
-          <div style={{ position: 'absolute', left: 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 260 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx2)' }}>状态（红黄绿+灰 = 状态唯一一套色）</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
+              <div style={{ ...card, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx2)' }}>状态（红黄绿+灰 = 状态唯一一套色）</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid var(--bd)', paddingTop: 4 }}>
+                  {([['卡', ENTITY_COLORS.card], ['节点', ENTITY_COLORS.node], ['机柜', ENTITY_COLORS.cab], [TOK.supernode, ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
+                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 9.5, color: 'var(--tx3)' }}>蓝=选中焦点 · 紫环=掉队卡 · 链路外压暗 · 单击实体联动</div>
+              </div>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid var(--bd)', paddingTop: 4 }}>
-              {([['卡', ENTITY_COLORS.card], ['节点', ENTITY_COLORS.node], ['机柜', ENTITY_COLORS.cab], [TOK.supernode, ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
-                <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
-              ))}
-            </div>
-            <div style={{ fontSize: 9.5, color: 'var(--tx3)' }}>蓝=选中焦点 · 紫环=掉队卡 · 链路外压暗 · 单击实体联动</div>
-          </div>
+          )}
 
           {hover && (
             <div style={{ position: 'absolute', right: 248, bottom: 12, maxWidth: 320, ...card, padding: '7px 11px', fontSize: 12, lineHeight: 1.5, color: 'var(--tx)', pointerEvents: 'none' }}>{hover}</div>
@@ -651,7 +836,7 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
       </div>
 
       {/* playbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 16px', borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
+      <div className={workbenchProfile ? 'hpc-console-playbar hpc-console-playbar--floating' : 'hpc-console-playbar'} style={{ display: 'flex', alignItems: 'center', gap: 12, ...(workbenchProfile ? { padding: '8px 12px', background: 'var(--panel-shell-bg)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : { padding: '7px 16px', borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }) }}>
         <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 26, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>{playing ? '❚❚' : '▶'}</button>
         <span style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap', ...TNUM }}>{`t = ${step}`}</span>
         <input type="range" min={0} max={STEP_MAX} value={step} onChange={(e) => setStep(+e.target.value)} style={{ flex: 1 }} />

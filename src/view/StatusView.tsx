@@ -20,7 +20,7 @@
  *
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
   PLANES, PARTITION_META, ENTITY_COLORS,
@@ -29,6 +29,7 @@ import {
 } from '../scene/data';
 import { TOK } from '../content';
 import { busWire2d } from './wire2d';
+import { SceneVisualProfileContext } from '../scene/visual-profile';
 
 // ── shared button language (matches ClusterView / PlaneView) ──
 const ACCENT = '#4369ef';
@@ -70,6 +71,8 @@ const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
+  const visualProfile = useContext(SceneVisualProfileContext);
+  const workbenchProfile = visualProfile === 'opRankTime';
   const spec = GENERATIONS[gen];
 
   // ── real counts from the spec (NOTHING hard-coded) ──
@@ -664,9 +667,9 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   };
 
   return (
-    <div data-theme={dark ? 'dark' : 'light'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div className={workbenchProfile ? 'hpc-status-shell hpc-status-shell--workbench' : undefined} data-theme={dark ? 'dark' : 'light'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: workbenchProfile ? 'var(--background-elevated)' : 'var(--bg)', overflow: 'hidden' }}>
       {/* control header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', borderBottom: '1px solid var(--bd)' }}>
+      <div className={workbenchProfile ? 'hpc-status-toolbar hpc-status-toolbar--floating' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: workbenchProfile ? '10px 14px' : '8px 14px', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }) }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--tx3)' }}>选区</span>
           {crumbs.map((c, i) => (
@@ -698,7 +701,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       </div>
 
       {/* KPI strip */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '10px 14px 4px' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: workbenchProfile ? '86px 14px 4px' : '10px 14px 4px' }}>
         {([
           [`${NPU_TOT.toLocaleString()}`, 'NPU / 超节点', 'var(--tx)'],
           [`${kpi.stepMs}ms`, 'step time(示意)', 'var(--tx)'],
@@ -738,12 +741,12 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
       {/* main stage: enlarged lens canvas + detail rail */}
       <div style={{ flex: 1, display: 'flex', gap: 12, padding: '8px 14px 12px', minHeight: 0 }}>
-        <div ref={wrapRef} style={{ flex: 1, minWidth: 0, position: 'relative', borderRadius: 12, border: '1px solid var(--bd)', overflow: 'hidden', background: 'var(--panel-solid)' }}>
+        <div ref={wrapRef} style={{ flex: 1, minWidth: 0, position: 'relative', borderRadius: 12, ...(workbenchProfile ? {} : { border: '1px solid var(--bd)' }), overflow: 'hidden', background: 'var(--panel-solid)' }}>
           <canvas ref={cvRef} onMouseMove={onMove} onMouseLeave={() => setTip(null)} onClick={onClick} style={{ display: 'block', width: '100%', height: '100%', cursor: 'pointer' }} />
         </div>
 
         {/* detail rail */}
-        <div style={{ width: 272, flexShrink: 0, overflowY: 'auto', borderRadius: 12, border: '1px solid var(--bd)', background: 'var(--panel-solid)', padding: '12px 14px' }}>
+        <div style={{ width: 272, flexShrink: 0, overflowY: 'auto', borderRadius: 12, ...(workbenchProfile ? { boxShadow: 'var(--shadow-sm)' } : { border: '1px solid var(--bd)' }), background: 'var(--panel-solid)', padding: '12px 14px' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#5b86ff', marginBottom: 2 }}>{scopeName()}</div>
           <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 10 }}>{({ heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' })[lens]} · {({ util: '利用率', strag: 'straggler 落后度', fault: '故障' })[metric]}</div>
 

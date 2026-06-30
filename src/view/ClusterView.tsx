@@ -10,7 +10,7 @@
  * sourced from ../content (decoded at runtime); this file carries no plaintext
  * product names.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
@@ -25,6 +25,7 @@ import {
   OverviewScene, RackScene, NodeScene, TopologyScene, AdjacencyScene, UBSwitchScene, MappingScene, TraceScene, FullPodScene, SceneTheme, scenePalette,
   type CommOverlays, type LocateTarget, type UbJump,
 } from '../scene/scenes';
+import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
 import { ConsoleView } from './ConsoleView';
@@ -117,6 +118,89 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '执行时序/定位' },
 ];
+type WorkbenchViewGroupId = 'console' | 'threeD' | 'twoD' | 'engineering';
+const WORKBENCH_VIEW_GROUPS: {
+  id: WorkbenchViewGroupId;
+  label: string;
+  mode?: ViewMode;
+  title?: string;
+  items?: { id: ViewMode; label: string; note: string }[];
+}[] = [
+  { id: 'console', label: '工作台', mode: 'console' },
+  {
+    id: 'threeD',
+    label: '3D 对象',
+    title: '对象 / 层级',
+    items: [
+      { id: 'fullpod', label: '超节点阵列', note: '全量 3D 阵列 · 运行相位' },
+      { id: 'overview', label: '数据大厅', note: '机柜总览 · 通信柜' },
+      { id: 'rack', label: '机柜', note: '机柜内部 · 刀片/交换' },
+      { id: 'node', label: '节点 / 卡', note: 'NPU · Die · AI Core' },
+      { id: 'topology', label: 'UB 层级', note: 'L0-L4 互联结构' },
+    ],
+  },
+  {
+    id: 'twoD',
+    label: '2D 分析',
+    title: '平面 / 指标',
+    items: [
+      { id: 'plane', label: '平面视图', note: '层级图 · 器件互联' },
+      { id: 'status', label: '运行状态', note: 'KPI · 多镜头分析' },
+      { id: 'matrix', label: '邻接矩阵', note: 'NPU × NPU 可达性' },
+    ],
+  },
+  {
+    id: 'engineering',
+    label: '工程定位',
+    title: '软件 / 时间',
+    items: [
+      { id: 'mapping', label: '软硬件映射', note: 'rank · device · thread' },
+      { id: 'trace', label: '执行时序', note: '算子时序 · 定位跳转' },
+    ],
+  },
+];
+
+type ShellIconName = 'info' | 'moon' | 'sun' | 'panel' | 'sidebar' | 'more' | 'camera';
+function ShellIcon({ name }: { name: ShellIconName }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  return (
+    <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" focusable="false">
+      {name === 'info' && (
+        <>
+          <circle cx="12" cy="12" r="9" {...common} />
+          <path d="M12 10.7v5" {...common} />
+          <path d="M12 7.6h.01" {...common} />
+        </>
+      )}
+      {name === 'moon' && <path d="M20 15.1A7.5 7.5 0 0 1 8.9 4a8 8 0 1 0 11.1 11.1Z" {...common} />}
+      {name === 'sun' && (
+        <>
+          <circle cx="12" cy="12" r="4.2" {...common} />
+          <path d="M12 2.8v2M12 19.2v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.8 12h2M19.2 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" {...common} />
+        </>
+      )}
+      {name === 'panel' && (
+        <>
+          <rect x="4" y="4.5" width="16" height="15" rx="2.2" {...common} />
+          <path d="M4 15.5h16" {...common} />
+        </>
+      )}
+      {name === 'sidebar' && (
+        <>
+          <rect x="4" y="4.5" width="16" height="15" rx="2.2" {...common} />
+          <path d="M14.5 4.5v15" {...common} />
+        </>
+      )}
+      {name === 'more' && <path d="M5 7.5h14M5 12h14M5 16.5h8" {...common} />}
+      {name === 'camera' && (
+        <>
+          <path d="M6 8.2 12 5l6 3.2v7.6L12 19l-6-3.2Z" {...common} />
+          <path d="M12 5v6.8l6 4M12 11.8l-6 4" {...common} />
+        </>
+      )}
+    </svg>
+  );
+}
 
 // compact legend row: a swatch (line / square / dot) + label
 function LgRow({ color, label, shape = 'line' }: { color: string; label: string; shape?: 'line' | 'sq' | 'dot' }) {
@@ -170,7 +254,9 @@ const NODE_OVERLAYS: { id: keyof CommOverlays; label: string; color: string }[] 
   { id: 'cores', label: 'AI Core 阵列', color: COMM_PATTERNS[2].color },
 ];
 
-export function ClusterView() {
+export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'workbench' } = {}) {
+  const visualProfile = useContext(SceneVisualProfileContext);
+  const workbench = chrome === 'workbench';
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
   const [mode, setMode] = useState<ViewMode>('console');   // land on 联动控制台 (linked console)
   const [rackKind, setRackKind] = useState<RackKind>('compute');
@@ -206,11 +292,13 @@ export function ClusterView() {
   }, []);
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
-  const [dark, setDark] = useState(true);   // dark / light theme (dark by default)
+  const [dark, setDark] = useState(() => !workbench);   // workbench opens light; classic keeps dark
   const [camPreset, setCamPreset] = useState<CamPreset | null>(null);   // pending camera-angle snap
   const [memOpen, setMemOpen] = useState(true);   // per-card memory occupancy panel (node view)
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
+  const [modeMenuOpen, setModeMenuOpen] = useState<WorkbenchViewGroupId | null>(null);
+  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!tracePlaying) return;
@@ -232,7 +320,8 @@ export function ClusterView() {
   const runPhase = runTick === null ? null : RUN_SCHED[runMode][runTick % RUN_SCHED[runMode].length];
 
   const spec = GENERATIONS[gen];
-  const pal = scenePalette(dark);   // theme-aware neutrals, so legend swatches match the scene
+  const pal = scenePalette(dark, visualProfile);   // theme-aware neutrals, so legend swatches match the scene
+  const surf = sceneSurface(dark, visualProfile);
   const onHoverInfo = useCallback((t: string | null) => setHoverInfo(t), []);
   const rackLabel = rackKind === 'compute' ? '计算柜' : '通信柜';
 
@@ -313,9 +402,15 @@ export function ClusterView() {
     ['上市', spec.release],
     ['散热', TOK.cooling],
   ];
+  const activeModeLabel = MODE_TABS.find((t) => t.id === mode)?.label ?? mode;
+  const activeViewGroup = WORKBENCH_VIEW_GROUPS.find((g) => g.mode === mode || g.items?.some((it) => it.id === mode))?.id ?? 'console';
+  const selectMode = (next: ViewMode) => {
+    setMode(next);
+    setModeMenuOpen(null);
+  };
 
   return (
-    <div data-theme={dark ? 'dark' : 'light'} style={{
+    <div className={workbench ? 'hpc-workbench-view pto-workbench-shell' : undefined} data-theme={dark ? 'dark' : 'light'} style={{
       width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
       background: 'var(--bg)', color: 'var(--tx)',
       fontFamily: 'var(--font-sans)',
@@ -342,6 +437,137 @@ export function ClusterView() {
       // pto.css already defines them on this data-theme root — no bridge needed.
     } as React.CSSProperties}>
       {/* ── toolbar ── */}
+      {workbench ? (
+        <div className="hpc-wb-topbar">
+          <div className="hpc-wb-primary">
+            <div className="hpc-wb-brand" title="HPC 拓扑查看器">
+              <span className="hpc-wb-brand-dot" />
+              <span className="hpc-wb-brand-title">HPC 拓扑查看器</span>
+            </div>
+          </div>
+          <div className="hpc-wb-center-nav">
+            <div className="hpc-wb-segment" aria-label="代际">
+              {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
+                <button
+                  key={g}
+                  className={`hpc-wb-segment-btn${gen === g ? ' is-active' : ''}`}
+                  onClick={() => setGen(g)}
+                  title={GENERATIONS[g].name}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+            <nav className="hpc-wb-modebar" aria-label="主视图">
+              {WORKBENCH_VIEW_GROUPS.map((group) => {
+                const active = activeViewGroup === group.id;
+                if (group.mode) {
+                  return (
+                    <button
+                      key={group.id}
+                      className={`hpc-wb-mode-btn${active ? ' is-active' : ''}`}
+                      onClick={() => selectMode(group.mode!)}
+                    >
+                      {group.label}
+                    </button>
+                  );
+                }
+                const open = modeMenuOpen === group.id;
+                return (
+                  <div className="hpc-wb-menu-wrap" key={group.id}>
+                    <button
+                      className={`hpc-wb-mode-btn hpc-wb-more${active || open ? ' is-active' : ''}`}
+                      onClick={() => setModeMenuOpen((v) => (v === group.id ? null : group.id))}
+                      aria-expanded={open}
+                      title={group.title ?? group.label}
+                    >
+                      <ShellIcon name="more" />
+                      <span>{group.label}</span>
+                    </button>
+                    {open && (
+                      <div className="hpc-wb-menu hpc-wb-mode-menu">
+                        <div className="hpc-wb-menu-title">{group.title}</div>
+                        <div className="hpc-wb-menu-grid">
+                          {group.items?.map((item) => (
+                            <button
+                              key={item.id}
+                              className={`hpc-wb-menu-item hpc-wb-view-item${mode === item.id ? ' is-active' : ''}`}
+                              onClick={() => selectMode(item.id)}
+                            >
+                              <span className="hpc-wb-menu-item-label">{item.label}</span>
+                              <span className="hpc-wb-menu-item-note">{item.note}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
+          </div>
+          <div className="hpc-wb-secondary">
+            <div className="hpc-wb-breadcrumb" aria-label="当前位置">
+              {breadcrumb.map((b, i) => (
+                <span key={i} className="hpc-wb-breadcrumb-item">
+                  {i > 0 && <span className="hpc-wb-breadcrumb-sep">/</span>}
+                  <span onClick={b.onClick} className={b.onClick ? 'is-link' : undefined}>{b.label}</span>
+                </span>
+              ))}
+            </div>
+            {!narrow && (
+              <div className="hpc-wb-statusline" title={`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}>
+                <span>{activeModeLabel}</span>
+                <span>{spec.totalNpus.toLocaleString()}× {spec.npuShort}</span>
+                <span>{TOK.ub} UB</span>
+              </div>
+            )}
+            {mode !== 'plane' && mode !== 'status' && mode !== 'console' && (
+              <div className="hpc-wb-menu-wrap">
+                <button
+                  className={`hpc-wb-icon-btn${cameraMenuOpen ? ' is-active' : ''}`}
+                  onClick={() => setCameraMenuOpen((v) => !v)}
+                  aria-label="相机视角"
+                  title="相机视角"
+                >
+                  <ShellIcon name="camera" />
+                </button>
+                {cameraMenuOpen && (
+                  <div className="hpc-wb-menu hpc-wb-camera-menu">
+                    <div className="hpc-wb-menu-title">正交视角</div>
+                    <div className="hpc-wb-menu-grid compact">
+                      {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
+                        <button
+                          key={id}
+                          className="hpc-wb-menu-item"
+                          onClick={() => { setCamPreset(id); setCameraMenuOpen(false); }}
+                          title={`${label}视角（正交投影）`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="hpc-wb-iconbar" aria-label="页面操作">
+              <button className={`hpc-wb-icon-btn${panelOpen ? ' is-active' : ''}`} onClick={() => setPanelOpen(true)} title="说明">
+                <ShellIcon name="info" />
+              </button>
+              <button className="hpc-wb-icon-btn" onClick={() => setDark((v) => !v)} title={dark ? '切换浅色模式' : '切换深色模式'}>
+                <ShellIcon name={dark ? 'sun' : 'moon'} />
+              </button>
+              <button className={`hpc-wb-icon-btn${ctxOpen ? ' is-active' : ''}`} onClick={() => setCtxOpen((v) => !v)} title="视图控制面板">
+                <ShellIcon name="panel" />
+              </button>
+              <button className={`hpc-wb-icon-btn${panelOpen ? ' is-active' : ''}`} onClick={() => setPanelOpen((v) => !v)} title="右侧信息面板">
+                <ShellIcon name="sidebar" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 6 : 12, padding: narrow ? '5px 8px' : '8px 14px', minHeight: 'var(--comp-toolbar-height)', borderBottom: '1px solid var(--comp-toolbar-border)', flexWrap: 'wrap', background: 'var(--comp-toolbar-bg)' }}>
         {/* brand: logo dot + product name */}
         {!narrow && (
@@ -422,10 +648,12 @@ export function ClusterView() {
           {panelOpen ? '收起信息 ▸' : '◂ 信息面板'}
         </button>
       </div>
+      )}
 
       {/* ── main: Canvas + info panel ── */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+      <div className={workbench ? 'hpc-workbench-panes' : undefined} style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+        <div className={workbench ? 'hpc-workbench-stage-pane' : undefined} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          {!(workbench && mode === 'console') && (
           <Canvas
             shadows
             dpr={[1, 2]}
@@ -444,16 +672,19 @@ export function ClusterView() {
                 would reset it). CameraController drives position/zoom imperatively. */}
             <CameraController poseKey={`${mode}-${gen}-${scale}-${nodeKind}-${podCount}-${fpFull}`} pos={cam.pos} target={cam.target} worldH={cam.worldH} iso={cam.iso} controls={controlsRef} />
             <ViewSnap preset={camPreset} onDone={() => setCamPreset(null)} controls={controlsRef} />
-            <color attach="background" args={[dark ? '#101010' : '#f5f5f5']} />
-            <fog attach="fog" args={[dark ? '#101010' : '#f5f5f5', mode === 'fullpod' ? 90 : 26, mode === 'fullpod' ? 420 : 60]} />
-            <ambientLight intensity={dark ? 1.35 : 1.05} />
+            <color attach="background" args={[surf.background]} />
+            <fog attach="fog" args={[surf.fog, mode === 'fullpod' ? 90 : surf.fogNear, mode === 'fullpod' ? 420 : surf.fogFar]} />
+            {visualProfile === 'opRankTime'
+              ? <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
+              : <ambientLight intensity={surf.ambient} />}
             <directionalLight
-              position={[8, 14, 6]} intensity={dark ? 0.95 : 1.2} castShadow
+              position={[8, 14, 6]} intensity={surf.key} castShadow
               shadow-mapSize={[2048, 2048]}
               shadow-camera-left={-16} shadow-camera-right={16}
               shadow-camera-top={16} shadow-camera-bottom={-16}
             />
-            <pointLight position={[0, 10, 0]} intensity={dark ? 0.7 : 1.0} color={dark ? '#7e93cf' : '#e8f0ff'} />
+            {visualProfile === 'opRankTime' && <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />}
+            <pointLight position={[0, 10, 0]} intensity={surf.point} color={surf.pointColor} />
 
             <SceneTheme.Provider value={dark}>
             {mode === 'overview' && (
@@ -495,6 +726,7 @@ export function ClusterView() {
               />
             </GizmoHelper>
           </Canvas>
+          )}
 
           {/* 2-D planar view — flat tiled diagram of the full super-node (overlays the 3-D canvas) */}
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
@@ -990,10 +1222,13 @@ export function ClusterView() {
         {/* ── right info panel (floating overlay so it never compresses the canvas) ── */}
         {panelOpen && (
           <div style={{
-            position: 'absolute', top: 0, right: 0, bottom: 0, zIndex: 6,
-            width: narrow ? 270 : 300, borderLeft: '1px solid var(--bd)', padding: '14px 16px',
+            position: 'absolute', top: workbench ? 12 : 0, right: workbench ? 12 : 0, bottom: workbench ? 12 : 0, zIndex: workbench ? 24 : 6,
+            width: narrow ? 270 : 300, padding: '14px 16px',
             overflowY: 'auto', fontSize: 12.5, lineHeight: 1.65, flexShrink: 0,
-            background: 'var(--background-elevated)', color: 'var(--tx)', boxShadow: '-3px 0 12px var(--bd)',
+            ...(workbench
+              ? { borderRadius: 'var(--panel-shell-radius)', background: 'var(--surface-overlay)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }
+              : { borderLeft: '1px solid var(--bd)', background: 'var(--background-elevated)', boxShadow: '-3px 0 12px var(--bd)' }),
+            color: 'var(--tx)',
           }}>
             <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: 0.2, lineHeight: 1.3, color: '#4369ef', marginBottom: 8 }}>{info.title}</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)' }}>
