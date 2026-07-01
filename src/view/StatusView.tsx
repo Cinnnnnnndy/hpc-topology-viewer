@@ -217,17 +217,19 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     core: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
     tile: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
   }[selLevel]);
-  // Cell intensity keyed to the REAL collective per phase (Pangu Pro MoE, arXiv:2505.21411):
-  //  · decode  → EP token All-to-All dominates → DENSE any-to-any (非对角为主), 对角(自身)反而低
-  //  · prefill → 计算为主 + EP All-to-All → 非对角中等密集, 对角(自算力)高
-  //  · 预训练  → DP Ring-AllReduce(邻近带) + EP All-to-All(稀疏底噪)
+  // Cell intensity keyed to the REAL collective per phase (Pangu Pro MoE, arXiv:2505.21411).
+  // The diagonal is NEVER special-cased as a lone cell (that read as a bright line, the exact
+  // artefact this replaces) — it is folded into whatever structure the phase has:
+  //  · decode  → EP token All-to-All → 均匀密集 any-to-any（无对角结构，整片繁忙）
+  //  · prefill → 计算为主 + EP All-to-All → 近对角 TP 软带（含对角，不是单像素线）
+  //  · 预训练  → DP Ring-AllReduce 邻近带 + EP All-to-All 底噪（软带，含对角）
   const tcell = useCallback((i: number, j: number, N: number) => {
-    const self = i === j;
+    const d = Math.abs(i - j);
     let v: number;
-    if (phase === 'decode') v = self ? 0.20 : 0.58;
-    else if (phase === 'prefill') v = self ? 0.54 : 0.28 + (Math.abs(i - j) <= Math.max(1, N / 8) ? 0.14 : 0);
-    else v = self ? 0.42 : 0.16 + (Math.abs(i - j) <= Math.max(1, N / 10) ? 0.34 : 0.08);
-    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.16;
+    if (phase === 'decode') v = 0.60;                                                    // uniform dense — no diagonal
+    else if (phase === 'prefill') v = 0.32 + (d <= Math.max(1, N / 8) ? 0.16 : 0.04);    // soft near-diagonal band
+    else v = 0.18 + (d <= Math.max(1, N / 10) ? 0.32 : 0.06);                            // wider soft band
+    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.20;
     if (ev && selSpod === 0 && N === CAB && (i === EVT_CAB || j === EVT_CAB)) v += 0.35;
     return clamp01(v);
   }, [phase, selSpod, selCab, selNode, step, ev, CAB, EVT_CAB]);
@@ -389,9 +391,9 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { ctx.fillStyle = loadColor(tcell(i, j, N)); ctx.fillRect(mx + j * cs, my + i * cs, cs - (cs > 5 ? 1 : 0.4), cs - (cs > 5 ? 1 : 0.4)); }
       const lab = N <= 8 ? 1 : N <= 32 ? 4 : 16;
       for (let i = 0; i < N; i += lab) { tx('' + (i + 1), mx + i * cs, my - 3, P.mut, `9px ${MONO}`); tx('' + (i + 1), mx - 22, my + i * cs + cs - 1, P.mut, `9px ${MONO}`); }
-      const patNote = phase === 'decode' ? 'Decode·EP All-to-All → 密集非对角(any-to-any)，对角=自身较低'
-        : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 非对角中等，对角=自算力高'
-        : '预训练·DP Ring-AllReduce(邻近带)+EP A2A(底噪)';
+      const patNote = phase === 'decode' ? 'Decode·EP All-to-All → 均匀密集 any-to-any 全互联（无对角结构）'
+        : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 近对角 TP 软带（含对角）'
+        : '预训练·DP Ring-AllReduce 邻近带 + EP A2A 底噪（软带）';
       tx(`行/列 = 通信单元 · ${patNote} · 颜色=通信强度(状态色)` + (SUBCARD.includes(selLevel) ? ' · 卡内片上 NoC 无跨卡矩阵，显示所属节点' : ''), mLeft, H - 8, P.mut, '10.5px Inter');
     }
 
