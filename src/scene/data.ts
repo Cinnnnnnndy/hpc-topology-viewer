@@ -228,6 +228,117 @@ export interface RunPhase {
   parallel?: string;             // the parallel dim exercised (TP/PP/DP/EP)
   note: string;
 }
+// ─── REAL workload profile: Pangu Pro MoE (72BA16B) ──────────────────────────
+// The concrete MoE model whose measured config / parallelism / collectives / throughput
+// GROUND the 工况·通信 overlays (previously round guesses). Every field below is taken
+// from the Pangu Pro MoE technical report (arXiv:2505.21411v2, Tables 1/2/5/6/7 + §4).
+//
+// IMPORTANT scope note: the paper deploys on Ascend 300I Duo / 800I A2 — a DIFFERENT
+// platform than this app's Atlas 950/960 (A5/A6) super-node hardware model. So ONLY the
+// workload (model shape, parallel degrees, collective ops, per-card tok/s) is real here;
+// the cluster/cabinet/NPU hardware topology stays the A5/A6 model. The overlays cite the
+// paper as the workload source, not as this hardware's profile.
+export interface WorkloadProfile {
+  name: string; short: string;
+  totalB: number; activeB: number;        // params (B): total / activated-per-token
+  layers: number; noopLayers: number;     // 48 transformer + 2 no-op (PP load-balance) = 50
+  hidden: number; intermediate: number;
+  queryHeads: number; kvHeads: number; headSize: number;   // GQA
+  vocab: number;
+  routedExperts: number; activatedExperts: number; sharedExperts: number;   // MoGE: 64 / 8 / 4
+  trainTokens: string;                     // pre-training corpus
+  trainNpus: number;                       // NPUs used for pre-training
+  // parallel degrees
+  train: { tp: number; ep: number; pp: number; vpp: number; cp: number };
+  inferAttn: { dp: number; tp: number };   // H2P attention: DP2 + TP4
+  inferRouted: { tp: number; ep: number }; // H2P routed experts: TP2 + EP4
+  inferSharedTP: number;                   // shared experts: TP8
+  // measured per-card throughput on Ascend 800I A2 (W8A8)
+  perf: {
+    prefillTokps: number; prefillTTFTms: number;      // batch 2, seq 2048
+    decodeTokps: number; decodeTPOTms: number; decodeBatch: number;
+    decodeMtpTokps: number;                           // with MTP speculative decoding
+    weightXferPct: number;                            // weight transfer = 29% of decode latency
+    epCommPct: number;                                // EP all-gather/reduce-scatter ≈ 8% of net latency
+  };
+  mfuGainPct: number;                      // +35% relative MFU after H2P/overlap/fused-op optimisation
+}
+export const WORKLOAD: WorkloadProfile = {
+  name: TOK.panguProMoe, short: '72BA16B',
+  totalB: 71.99, activeB: 16.5, layers: 48, noopLayers: 2,
+  hidden: 5120, intermediate: 1344, queryHeads: 40, kvHeads: 8, headSize: 128, vocab: 153376,
+  routedExperts: 64, activatedExperts: 8, sharedExperts: 4,
+  trainTokens: '13T', trainNpus: 4096,
+  train: { tp: 8, ep: 2, pp: 5, vpp: 5, cp: 1 },
+  inferAttn: { dp: 2, tp: 4 }, inferRouted: { tp: 2, ep: 4 }, inferSharedTP: 8,
+  perf: {
+    prefillTokps: 4828, prefillTTFTms: 424, decodeTokps: 1148, decodeTPOTms: 99, decodeBatch: 456,
+    decodeMtpTokps: 1528, weightXferPct: 29, epCommPct: 8,
+  },
+  mfuGainPct: 35,
+};
+
+// MoGE routing + kernel/comm-optimisation facts (arXiv:2505.21411 §2/§4) — annotate overlays.
+export const WORKLOAD_DETAIL = {
+  moge: { perGroupTopK: 1, imbalanceScore: 0, imbalanceReductionPct: 50, note: 'N=64 专家均分 M 组，每组 Top-1 → 设备负载天然均衡(IS=0)' },
+  kernel: { mulAttnSpeedup: 4.5, attnLatencyPct: [30, 50] as [number, number], kvOfAttnPct: 70, swiftGmmLatencyPct: 50 },
+  comm: { allreduceCutPct: 50, rmsnormCutPct: 75, fusedOps: ['GMMRS', 'AGMM'] as string[] },
+} as const;
+
+// Same-family REAL results on Ascend super-nodes (each a confidence-A paper) — a 同类对照
+// panel. These are NOT this app's platform; shown as reference context alongside the primary
+// Pangu Pro MoE workload. (arXiv ids: 2505.04519 / 2506.12708 / 2508.02520 / 2504.07866 / 2509.11662)
+export interface WorkloadRef { id: string; title: string; arxiv: string; scale: string; metric: string; }
+export const WORKLOAD_REFS: WorkloadRef[] = [
+  { id: 'pangu-pro-moe',   title: TOK.panguProMoe,                 arxiv: '2505.21411', scale: '72BA16B · 64 专家',        metric: 'Decode 1148→MTP 1528 · Prefill 4828 tok/s·卡' },
+  { id: 'pangu-ultra-moe', title: `${TOK.pangu} Ultra MoE`,        arxiv: '2505.04519', scale: '718B · 256 专家 · 6000 NPU', metric: 'MFU 18.9%→30% · 1.46M tok/s' },
+  { id: 'deepseek-cm384',  title: 'DeepSeek-R1 · CloudMatrix384',  arxiv: '2506.12708', scale: '671B MoE · 384 NPU',        metric: 'Prefill 6688 / Decode 1943 tok/s·NPU (TPOT<50ms)' },
+  { id: 'xdeepserve',      title: 'xDeepServe MaaS · CM384',       arxiv: '2508.02520', scale: '384×910C · UB 全互联',      metric: '2400 tok/s·NPU · 系统 345K tok/s (DP288)' },
+  { id: 'pangu-ultra-135b',title: `${TOK.pangu} Ultra 135B Dense`, arxiv: '2504.07866', scale: '135B Dense · 8192 卡',       metric: '13.2T tokens · depth-scaled sandwich norm' },
+  { id: 'mindvl',          title: 'MindVL 多模态 · Ascend',        arxiv: '2509.11662', scale: '原生分辨率 ViT · 447B tokens', metric: '强扩展 >94% (1→128 NPU) · 1/10 数据量' },
+];
+
+// Base-model benchmark scores (arXiv:2505.21411 Table 3) — Pangu Pro MoE vs comparable
+// 27–32B models. Used for a 模型质量对照 bar panel (Pangu highlighted). Scores are 0–100
+// (EM/F1/Pass@1). Pangu is the LAST column.
+export const BENCH_MODELS: string[] = ['Qwen2.5-32B', 'GLM4-32B', 'Gemma3-27B', 'Llama4-Scout', TOK.panguProMoe];
+export const BENCH_PANGU_IDX = BENCH_MODELS.length - 1;
+export interface BenchRow { name: string; scores: number[]; }
+export const BENCHMARKS: BenchRow[] = [
+  { name: 'MMLU',      scores: [84.2, 82.0, 78.6, 78.3, 87.4] },
+  { name: 'MMLU-Pro',  scores: [58.0, 55.8, 50.3, 50.3, 63.5] },
+  { name: 'C-Eval',    scores: [87.7, 84.1, 69.4, 74.8, 90.6] },
+  { name: 'CMMLU',     scores: [88.9, 83.8, 70.4, 76.8, 89.0] },
+  { name: 'GSM8K',     scores: [83.0, 85.4, 82.6, 79.2, 86.5] },
+  { name: 'HumanEval', scores: [57.9, 59.1, 48.8, 54.6, 63.7] },
+  { name: 'HellaSwag', scores: [93.1, 92.6, 84.1, 81.9, 93.5] },
+];
+
+// Per-phase step-time decomposition (计算 / 通信 / 访存), grounded in the Pangu Pro MoE
+// report rather than guessed: decode is memory-bound (weight transfer ≈29% of latency + KV),
+// EP All-to-All ≈8% of network latency; prefill is compute-bound (Top-8 experts, big GEMMs);
+// pre-training carries DP-AllReduce gradient sync + EP All-to-All. Fractions are the paper's
+// hard anchors rounded to sum to 1 (illustrative split of the residual).
+export type StepPhase = 'pretrain' | 'prefill' | 'decode';
+export interface StepPart { label: string; frac: number; color: string; }
+export const STEP_DECOMP: Record<StepPhase, StepPart[]> = {
+  pretrain: [
+    { label: '计算(FWD/BWD)', frac: 0.58, color: '#22d3ee' },
+    { label: '通信(DP AllReduce+EP A2A)', frac: 0.30, color: '#ff4b7b' },
+    { label: '访存', frac: 0.12, color: '#a78bfa' },
+  ],
+  prefill: [
+    { label: '计算(Top-8 GEMM)', frac: 0.72, color: '#22d3ee' },
+    { label: '通信(EP All-to-All)', frac: 0.16, color: '#ff4b7b' },
+    { label: '访存(KV 建立)', frac: 0.12, color: '#a78bfa' },
+  ],
+  decode: [
+    { label: '计算', frac: 0.40, color: '#22d3ee' },
+    { label: '通信(EP A2A≈8%)', frac: 0.12, color: '#ff4b7b' },
+    { label: '访存(权重29%+KV)', frac: 0.48, color: '#a78bfa' },
+  ],
+};
+
 // ─── Model-parallel partition (maps a sharded model onto the physical levels) ─
 // TP = within a blade (8 NPU, L1) · PP = blades within a replica (L2/L3) ·
 // DP = replicas across the super-node (L3/L4) · EP = experts per cabinet (L2/L3).

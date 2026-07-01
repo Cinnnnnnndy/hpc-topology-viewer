@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
   SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS,
-  memLayers, PLANES,
+  memLayers, PLANES, WORKLOAD,
   type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
@@ -398,6 +398,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     ['机柜', `${spec.totalCabs}（${spec.computeCabs} 计算 + ${spec.commCabs} 通信）`],
     ['占地', `${spec.footprintM2.toLocaleString()} m²`],
     ['训练 / 推理', `${spec.trainTokps} / ${spec.inferTokps}`],
+    ['工况模型', `${WORKLOAD.name} ${WORKLOAD.short} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家`],
+    ['真实吞吐', `Decode ${WORKLOAD.perf.decodeTokps}→MTP ${WORKLOAD.perf.decodeMtpTokps} · Prefill ${WORKLOAD.perf.prefillTokps} tok/s·卡`],
     [TOK.supercluster, `${spec.superclusterNpu}卡`],
     ['上市', spec.release],
     ['散热', TOK.cooling],
@@ -1193,8 +1195,14 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 {fpPart !== 'none' && (
                   <>
                     <div style={lgHdr}>{`并行切分 · ${PARTITION_META[fpPart].label}`}</div>
-                    <span style={lgNote}>{`${PARTITION_META[fpPart].level} · ${fpCfg}`}</span>
+                    <span style={lgNote}>{`${PARTITION_META[fpPart].level} · ${fpCfg}（硬件铺格示意）`}</span>
                     <span style={lgNote}>{`通信：${PARTITION_META[fpPart].comm}`}</span>
+                    <span style={{ ...lgNote, color: PARALLEL_COLORS[fpPart] }}>{`真实(${WORKLOAD.short})：${
+                      fpPart === 'tp' ? `训练 TP${WORKLOAD.train.tp} · 推理 TP${WORKLOAD.inferAttn.tp}(注意力)/TP${WORKLOAD.inferRouted.tp}(路由)/TP${WORKLOAD.inferSharedTP}(共享)`
+                      : fpPart === 'pp' ? `PP${WORKLOAD.train.pp}·VPP${WORKLOAD.train.vpp}（48层+2 no-op=50）`
+                      : fpPart === 'dp' ? `推理注意力 DP${WORKLOAD.inferAttn.dp} · Ring-AllReduce`
+                      : `训练 EP${WORKLOAD.train.ep} · 推理 EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活/${WORKLOAD.sharedExperts}共享专家`
+                    } · arXiv:2505.21411`}</span>
                     <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', marginTop: 2 }}>
                       {PARTITION_PALETTE.map((c, i) => <span key={i} title={`组 ${i}`} style={{ width: 14, height: 9, background: c, borderRadius: 1, display: 'inline-block' }} />)}
                     </div>
