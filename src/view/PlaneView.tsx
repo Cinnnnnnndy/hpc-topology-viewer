@@ -8,7 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
 import { SceneVisualProfileContext } from '../scene/visual-profile';
@@ -1255,7 +1255,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         {/* scenario + play — 执行时序, available in every layout */}
         {(['ring', 'a2a'] as const).map((sc) => {
           const on = scenario === sc, c = sc === 'ring' ? COMM_PATTERNS[0].color : COMM_PATTERNS[1].color;
-          return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? 'Ring-AllReduce（数据并行梯度规约）' : 'All-to-All（MoE 专家并行）'}
+          return <button key={sc} onClick={() => { setScenario(sc); setPlaying(true); }} title={sc === 'ring' ? `Ring-AllReduce（数据并行梯度规约 · 推理 DP${WORKLOAD.inferAttn.dp}）` : `All-to-All（MoE 专家并行 · EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）`}
             style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
         })}
         <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（节点按状态变色 + 连线/数据流动 + swimlane/右侧面板同步）"
@@ -1268,6 +1268,11 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
           <span>{layout === 'top' ? `全量${TOK.supernode} · 平面拓扑` : layout === 'layers' ? `${TOK.supernode} · 层级矩阵图` : `${TOK.supernode} · 器件互联平面`}</span>
           <span style={{ marginLeft: 'auto', color: 'var(--tx3)', fontSize: 10 }}>{legendOpen ? '▾ 收起' : '▸ 图例'}</span>
         </div>
+        {legendOpen && (
+          <div style={{ ...lgNote, borderBottom: '1px solid var(--bd)', marginBottom: 4, paddingBottom: 4 }}>
+            工况 <span style={{ color: 'var(--tx)', fontWeight: 600 }}>{WORKLOAD.name} {WORKLOAD.short}</span> · 训练 TP{WORKLOAD.train.tp}·EP{WORKLOAD.train.ep}·PP{WORKLOAD.train.pp} · 推理 H2P DP{WORKLOAD.inferAttn.dp}+TP{WORKLOAD.inferAttn.tp} / TP{WORKLOAD.inferRouted.tp}+EP{WORKLOAD.inferRouted.ep} · Decode {WORKLOAD.perf.decodeTokps} tok/s·卡（arXiv:2505.21411）
+          </div>
+        )}
         {legendOpen && (layout === 'top' ? (
           <>
             <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 4 }} />机柜框 · <span style={{ display: 'inline-block', width: 10, height: 10, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', margin: '0 4px' }} />刀片框 · <span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡=device</span>·<span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>rank</span> 1:1</div>

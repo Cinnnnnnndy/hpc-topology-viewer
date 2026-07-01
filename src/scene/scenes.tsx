@@ -22,7 +22,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY,
+  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY, WORKLOAD,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1061,7 +1061,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       {/* ── process(rank) comm overlays (toggled in toolbar) ── */}
       {overlays.a2a && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行）：rank 间全互联，沿 L1/L2 UB full-mesh + L3 Clos`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行 · ${WORKLOAD.name} EP${WORKLOAD.inferRouted.ep}·${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）：rank 间全互联，沿 L1/L2 UB full-mesh + L3 Clos · 层级化 All-to-All`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <Wire points={a2aPts(npuPts, yR + 0.04)} segments color={COMM_PATTERNS[1].color} lineWidth={1.5} opacity={0.5} active speed={0.7} />
@@ -1070,7 +1070,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       )}
       {overlays.ring && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 Ring-AllReduce（数据并行梯度规约）：rank 环形通信，沿 UB full-mesh`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 Ring-AllReduce（数据并行梯度规约 · ${WORKLOAD.name} 训练 EP${WORKLOAD.train.ep}·推理 DP${WORKLOAD.inferAttn.dp}）：rank 环形通信，沿 UB full-mesh`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <Wire points={ringGeo} segments color={COMM_PATTERNS[0].color} lineWidth={1.8} opacity={0.9} active speed={0.9} />
@@ -1514,7 +1514,7 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
   const swX = -2.8, hwX = 2.8;
   const rows: { sw: string; hw: string; key?: 'proc' | 'thread'; tag?: string; info: string }[] = [
     { sw: '作业 / 模型', hw: '集群 / 超节点', info: '软件：整个训练作业。硬件：跑在超节点 / 集群之上' },
-    { sw: '并行切分\nDP · TP · EP · PP', hw: 'device 组（机柜 / 刀片）', tag: 'rank 间 · 走 UB', info: '软件：并行策略决定“哪个 rank 算什么”。硬件：落到 device 组 + device 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）' },
+    { sw: '并行切分\nDP · TP · EP · PP', hw: 'device 组（机柜 / 刀片）', tag: 'rank 间 · 走 UB', info: `软件：并行策略决定“哪个 rank 算什么”。硬件：落到 device 组 + device 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）。真实工况 ${WORKLOAD.name}：训练 TP${WORKLOAD.train.tp}·EP${WORKLOAD.train.ep}·PP${WORKLOAD.train.pp}·VPP${WORKLOAD.train.vpp}；推理 H2P 注意力 DP${WORKLOAD.inferAttn.dp}+TP${WORKLOAD.inferAttn.tp} / 路由专家 TP${WORKLOAD.inferRouted.tp}+EP${WORKLOAD.inferRouted.ep} / 共享 TP${WORKLOAD.inferSharedTP}（arXiv:2505.21411）` },
     { sw: `rank\n（${TOK.hccl} 逻辑号）`, hw: '1 device\n= 1 张 950 卡（2 计算 Die UMA）', key: 'proc', tag: '软↔硬 1:1 锚点', info: `软件：rank = 纯软件逻辑编号（rank 表），与代际无关。硬件：1 张 950 卡 = 1 device（2 计算 Die UMA 合并 + 2 IO Die）。两者严格 1:1 绑定，是软硬件唯一的锚点` },
     { sw: 'Stream / Context\nblock_idx（SPMD）', hw: 'AI Core（device 内 ≈32）', tag: '设备内并行 · 非 rank', info: '软件：rank 内不增 rank——Stream/Context 下发，block_idx 以 SPMD 切到各 AI Core。硬件：约 32 个 AI Core（16/计算 Die × 2），AIC(Cube)/AIV(Vector) 分离独立核、双发射' },
     { sw: 'SIMT 线程 / SIMD 通道\n→ tile / element', hw: 'Cube(AIC) · Vector(AIV) 核内', key: 'thread', info: '软件：950 新增 SIMT/SIMD 同构双编程，线程/通道映射到核内 ALU 与 SRAM 上的 tile/element。硬件：Cube∶Vector 算力 ≈ 8∶1，含 Cube-Vector 融合通路' },
