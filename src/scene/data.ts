@@ -298,6 +298,22 @@ export const WORKLOAD_REFS: WorkloadRef[] = [
   { id: 'mindvl',          title: 'MindVL 多模态 · Ascend',        arxiv: '2509.11662', scale: '原生分辨率 ViT · 447B tokens', metric: '强扩展 >94% (1→128 NPU) · 1/10 数据量' },
 ];
 
+// Base-model benchmark scores (arXiv:2505.21411 Table 3) — Pangu Pro MoE vs comparable
+// 27–32B models. Used for a 模型质量对照 bar panel (Pangu highlighted). Scores are 0–100
+// (EM/F1/Pass@1). Pangu is the LAST column.
+export const BENCH_MODELS: string[] = ['Qwen2.5-32B', 'GLM4-32B', 'Gemma3-27B', 'Llama4-Scout', TOK.panguProMoe];
+export const BENCH_PANGU_IDX = BENCH_MODELS.length - 1;
+export interface BenchRow { name: string; scores: number[]; }
+export const BENCHMARKS: BenchRow[] = [
+  { name: 'MMLU',      scores: [84.2, 82.0, 78.6, 78.3, 87.4] },
+  { name: 'MMLU-Pro',  scores: [58.0, 55.8, 50.3, 50.3, 63.5] },
+  { name: 'C-Eval',    scores: [87.7, 84.1, 69.4, 74.8, 90.6] },
+  { name: 'CMMLU',     scores: [88.9, 83.8, 70.4, 76.8, 89.0] },
+  { name: 'GSM8K',     scores: [83.0, 85.4, 82.6, 79.2, 86.5] },
+  { name: 'HumanEval', scores: [57.9, 59.1, 48.8, 54.6, 63.7] },
+  { name: 'HellaSwag', scores: [93.1, 92.6, 84.1, 81.9, 93.5] },
+];
+
 // Per-phase step-time decomposition (计算 / 通信 / 访存), grounded in the Pangu Pro MoE
 // report rather than guessed: decode is memory-bound (weight transfer ≈29% of latency + KV),
 // EP All-to-All ≈8% of network latency; prefill is compute-bound (Top-8 experts, big GEMMs);

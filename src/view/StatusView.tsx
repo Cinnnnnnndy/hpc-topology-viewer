@@ -24,6 +24,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
   PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
+  BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
   type Gen,
 } from '../scene/data';
@@ -854,6 +855,34 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 {PLANES.map((p) => (<span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--tx2)', marginBottom: 2 }}><span style={{ width: 12, height: 3, background: p.color, borderRadius: 1 }} />{p.short} · {p.parallel}</span>))}
               </div>
             )}
+          </div>
+
+          {/* model-quality benchmarks: Pangu Pro MoE vs comparable 27–32B (arXiv:2505.21411 T3) */}
+          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 6 }}>模型质量对照 · {WORKLOAD.name} <span style={{ color: 'var(--tx3)', fontWeight: 400 }}>vs 27–32B</span></div>
+            {BENCHMARKS.map((b) => {
+              const mine = b.scores[BENCH_PANGU_IDX];
+              const others = b.scores.filter((_, i) => i !== BENCH_PANGU_IDX);
+              const bestOther = Math.max(...others);
+              const lead = mine >= bestOther;
+              const scale = (s: number) => Math.max(0, Math.min(1, (s - 40) / 55));   // 40–95 → 0–1 for contrast
+              return (
+                <div key={b.name} style={{ marginBottom: 5 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 2 }}>
+                    <span style={{ color: 'var(--tx)' }}>{b.name}</span>
+                    <span style={{ color: 'var(--tx3)', fontFamily: MONO }}>
+                      <span style={{ color: lead ? '#04d793' : 'var(--tx)', fontWeight: 700 }}>{mine.toFixed(1)}</span>
+                      <span style={{ color: 'var(--tx3)' }}> · 次优 {bestOther.toFixed(1)} {lead ? `(+${(mine - bestOther).toFixed(1)})` : `(${(mine - bestOther).toFixed(1)})`}</span>
+                    </span>
+                  </div>
+                  <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${scale(mine) * 100}%`, background: lead ? ACCENT : '#9aa3b2', borderRadius: 4 }} />
+                    <div title={`最优对手 ${bestOther.toFixed(1)}`} style={{ position: 'absolute', left: `${scale(bestOther) * 100}%`, top: -1, height: 10, width: 2, background: 'var(--tx)', opacity: 0.65 }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 5 }}>蓝条=盘古得分 · 竖线=最优对手（{BENCH_MODELS.length - 1} 个 27–32B）· EM/F1/Pass@1 · arXiv:2505.21411 T3</div>
           </div>
 
           {/* same-family real results on Ascend super-nodes (reference context) */}
