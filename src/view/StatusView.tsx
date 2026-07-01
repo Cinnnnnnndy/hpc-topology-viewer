@@ -218,23 +218,29 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     tile: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
   }[selLevel]);
   // Cell intensity keyed to the REAL collective per phase (Pangu Pro MoE, arXiv:2505.21411).
-  // The diagonal is NEVER special-cased as a lone cell (that read as a bright line, the exact
-  // artefact this replaces) — it is folded into whatever structure the phase has:
-  //  · decode  → EP token All-to-All → 均匀密集 any-to-any（无对角结构，整片繁忙）
-  //  · prefill → 计算为主 + EP All-to-All → 近对角 TP 软带（含对角，不是单像素线）
-  //  · 预训练  → DP Ring-AllReduce 邻近带 + EP All-to-All 底噪（软带，含对角）
+  // loadColor is a DISCRETE 3-state map (green<40 / yellow40–70 / red>70), so cells only read
+  // as "changing" when values actually cross those thresholds. A near-uniform field therefore
+  // looks like one flat yellow block. We give each cell a per-SOURCE(row) + per-DEST(col) stable
+  // hotness (real All-to-All load imbalance → coherent hot/cold bands, NOT a diagonal) plus a
+  // live term that swings wide enough to flip colour states as playback advances. selLevel/
+  // selCore fold in so sub-card (die/core/tile) levels show a DIFFERENT field, not a frozen one.
+  //  · decode  → EP token All-to-All → 密集 any-to-any，行/列热度纹理（无对角）
+  //  · prefill → 计算为主 + EP A2A → 近对角软带 + 纹理
+  //  · 预训练  → DP Ring 邻近带 + EP A2A 底噪 + 纹理
   const tcell = useCallback((i: number, j: number, N: number) => {
     const d = Math.abs(i - j);
+    const salt = selSpod * 4.2 + selCab * 1.7 + selNode * 0.6 + SUBCARD.indexOf(selLevel) * 2.3 + selCore * 0.4;
+    const rowHot = rnd(i * 3.1 + salt) - 0.5;          // 该源单元忙/闲（整行纹理）
+    const colHot = rnd(j * 2.7 + salt + 5) - 0.5;      // 该目的单元忙/闲（整列纹理）
+    const live = rnd(i * 0.7 + j * 0.9 + step * 0.05 + flowRef.current * 0.9) - 0.5;   // 逐帧流动
     let v: number;
-    if (phase === 'decode') v = 0.60;                                                    // uniform dense — no diagonal
-    else if (phase === 'prefill') v = 0.32 + (d <= Math.max(1, N / 8) ? 0.16 : 0.04);    // soft near-diagonal band
-    else v = 0.18 + (d <= Math.max(1, N / 10) ? 0.32 : 0.06);                            // wider soft band
-    // step (discrete) + flowRef (continuous, advances every frame while playing) → the matrix
-    // shimmers live during playback instead of holding a single frame.
-    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03 + flowRef.current * 0.6) - 0.5) * 0.20;
+    if (phase === 'decode') v = 0.46 + rowHot * 0.5 + colHot * 0.5;
+    else if (phase === 'prefill') v = 0.30 + (d <= Math.max(1, N / 8) ? 0.22 : 0) + rowHot * 0.32 + colHot * 0.32;
+    else v = 0.20 + (d <= Math.max(1, N / 10) ? 0.30 : 0) + rowHot * 0.30 + colHot * 0.30;
+    v += live * 0.32;
     if (ev && selSpod === 0 && N === CAB && (i === EVT_CAB || j === EVT_CAB)) v += 0.35;
     return clamp01(v);
-  }, [phase, selSpod, selCab, selNode, step, ev, CAB, EVT_CAB]);
+  }, [phase, selSpod, selCab, selNode, selLevel, selCore, step, ev, CAB, EVT_CAB]);
 
   // ── plane utilisation (UB scale-up / RDMA scale-out / DP / VPC) by scope ──
   const planeUtil = useCallback(() => {
@@ -393,9 +399,9 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { ctx.fillStyle = loadColor(tcell(i, j, N)); ctx.fillRect(mx + j * cs, my + i * cs, cs - (cs > 5 ? 1 : 0.4), cs - (cs > 5 ? 1 : 0.4)); }
       const lab = N <= 8 ? 1 : N <= 32 ? 4 : 16;
       for (let i = 0; i < N; i += lab) { tx('' + (i + 1), mx + i * cs, my - 3, P.mut, `9px ${MONO}`); tx('' + (i + 1), mx - 22, my + i * cs + cs - 1, P.mut, `9px ${MONO}`); }
-      const patNote = phase === 'decode' ? 'Decode·EP All-to-All → 均匀密集 any-to-any 全互联（无对角结构）'
-        : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 近对角 TP 软带（含对角）'
-        : '预训练·DP Ring-AllReduce 邻近带 + EP A2A 底噪（软带）';
+      const patNote = phase === 'decode' ? 'Decode·EP All-to-All → 密集 any-to-any + 行/列负载纹理（无对角 · 回放流动）'
+        : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 近对角软带 + 负载纹理'
+        : '预训练·DP Ring 邻近带 + EP A2A 底噪 + 负载纹理';
       tx(`行/列 = 通信单元 · ${patNote} · 颜色=通信强度(状态色)` + (SUBCARD.includes(selLevel) ? ' · 卡内片上 NoC 无跨卡矩阵，显示所属节点' : ''), mLeft, H - 8, P.mut, '10.5px Inter');
     }
 
