@@ -414,7 +414,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         : selLevel === 'cab' ? `本机柜 ${NPC} rank = EP All-to-All 域（EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）`
         : selLevel === 'cluster' ? `每超节点 = 1 个 DP 副本（跨超节点 AllReduce）`
         : `本超节点：TP/EP 在域内、DP/PP 跨域`;
-      tx(lvlNote + ' · 图元=集合通信形态、颜色=状态、回放时按方向流动', PAD, topY + 34, P.mut, '10.5px Inter');
+      tx(lvlNote + ' · 嵌套框=域包含(TP⊂EP⊂DP) · 内嵌图标=集合通信形态 · 颜色=状态 · 蓝框=当前选区所在域', PAD, topY + 34, P.mut, '10.5px Inter');
       const D = domains(), act = domActive();
       const top = topY + 48, rh = (H - top - 12) / D.length;
       // collective-pattern glyph among k representative ranks
@@ -429,26 +429,72 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         else { for (let i = 0; i < k - 1; i++) line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], lc, on ? 2 : 1, on); }
         pts.forEach((p) => { ctx.fillStyle = on ? lc : P.neutral; ctx.beginPath(); ctx.arc(p[0], p[1], on ? 4 : 3, 0, 7); ctx.fill(); });
       };
-      D.forEach((d, i) => {
-        const on = act[d.key], y = top + i * rh, midY = y + rh / 2;
-        ctx.globalAlpha = on ? 1 : 0.42;
-        // left text panel (state-coloured block when active)
-        const pw = 188, ph = Math.min(46, rh - 10);
-        fbox(PAD, midY - ph / 2, pw, ph, on ? loadColor(d.u) : P.neutral);
-        const tcol = on ? inkOf(loadColor(d.u)) : P.ink2;
-        tx(d.nm, PAD + 10, midY - 8, tcol, '600 12.5px Inter');
-        tx(`${d.sc} · ${d.me}`, PAD + 10, midY + 8, tcol, '9.5px Inter');
-        tx(on ? d.co : d.co + ' · 跨出本层', PAD + 10, midY + 22, tcol, '9px Inter');
-        // centre collective glyph
-        glyph(PAD + pw + 86, midY, Math.min(30, rh / 2 - 8), d.pat, loadColor(d.u), on);
-        tx({ ring: 'Ring/AllReduce', a2a: 'All-to-All', p2p: 'P2P 链' }[d.pat], PAD + pw + 86, y + rh - 6, on ? P.ink2 : P.mut, '9px Inter', 'center');
-        // right volume bar
-        const bx = PAD + pw + 176, bw = W - bx - PAD;
-        tx(on ? '集合通信量' : '(本层不直接发生)', bx, midY - 10, P.mut, '9.5px Inter');
-        bar(bx, midY - 2, bw, 16, on ? d.u : 0.03, on ? undefined : P.neutral);
-        if (on) tx(Math.round(d.u * 100) + '%', bx + bw - 32, midY + 11, inkOf(loadColor(d.u)), `11px ${MONO}`);
+      void rh;
+      type Dom = (typeof D)[number];
+      const byKey: Record<string, Dom> = {}; D.forEach((d) => { byKey[d.key] = d; });
+      const dp = byKey.dp, ep = byKey.ep, tp = byKey.tp, pp = byKey.pp;
+
+      // 片上：设备内并行(block_idx/SPMD)，无 rank 间集合通信 → 说明并停止
+      if (onchip) {
+        const bx = PAD, by = top + 8, bw = W - 2 * PAD, bh = 118;
+        fbox(bx, by, bw, bh, P.neutral); ctx.strokeStyle = P.frame; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, bh);
+        tx('片上（计算 Die / AI Core / Tile）= 设备内并行', bx + 14, by + 28, P.ink, '700 13px Inter');
+        tx('block_idx · SPMD 核实例 · rank 内不增 rank —— 无 rank↔rank 集合通信（TP/EP/DP/PP 均在卡之上）', bx + 14, by + 52, P.ink2, '11px Inter');
+        tx('要看集合通信域，请上钻到 节点(TP 域) / 机柜(EP 域) / 集群(DP 域)', bx + 14, by + 76, P.mut, '10.5px Inter');
+        return;
+      }
+
+      // 当前选区落在哪个域 → 高亮该域框
+      const hi = (key: string) => (selLevel === 'node' && key === 'tp') || (selLevel === 'cab' && key === 'ep') || (selLevel === 'cluster' && (key === 'dp' || key === 'pp'));
+      // 一个「域框」：状态色描边 + 内嵌集合通信图标(抽象图元作说明) + 名称/scope/集合/成员 + 流量条
+      const domainBox = (x: number, y: number, w: number, h: number, d: Dom, tag: string) => {
+        const on = act[d.key], col = on ? loadColor(d.u) : P.neutral;
+        ctx.globalAlpha = on ? 1 : 0.5;
+        ctx.fillStyle = on ? (dark ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.012)') : 'transparent'; ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = col; ctx.lineWidth = on ? 2 : 1; ctx.setLineDash(on ? [] : [4, 3]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+        if (hi(d.key)) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 3; ctx.strokeRect(x + 2, y + 2, w - 4, h - 4); }
+        glyph(x + 24, y + 26, 13, d.pat, col, on);   // 内嵌抽象图元＝该域集合通信形态的说明
+        tx(d.nm, x + 46, y + 20, on ? P.ink : P.mut, '700 12.5px Inter');
+        tx(tag, x + 46, y + 34, on ? P.ink2 : P.mut, '9.5px Inter');
+        tx(`${d.co} · ${d.me}`, x + 46, y + 47, on ? P.ink2 : P.mut, '9px Inter');
+        if (on) { const bw2 = Math.min(110, w * 0.4); bar(x + w - bw2 - 12, y + 12, bw2, 10, d.u); tx(Math.round(d.u * 100) + '%', x + w - 44, y + 20, inkOf(col), `9px ${MONO}`); }
         ctx.globalAlpha = 1;
-      });
+      };
+
+      // ── 嵌套：DP 副本(SO) ⊃ EP 域(SU) ⊃ 多个 TP 组 ；PP 在右侧贯穿；SP 与 TP 同域 ──
+      const A = { x: PAD, y: top + 4, w: W - 2 * PAD, h: (H - 16) - (top + 4) };
+      const gutter = 92;
+      domainBox(A.x, A.y, A.w, A.h, dp, 'SO 广域 · 跨超节点（全光 scale-out）');
+      const ep0 = { x: A.x + 18, y: A.y + 64, w: A.w - 36 - gutter, h: A.h - 64 - 26 };
+      domainBox(ep0.x, ep0.y, ep0.w, ep0.h, ep, 'SU 超低延迟 · 机柜内全互联（scale-up）');
+      // EP 内：一排 TP 组（代表性 4 个 + ×K 说明）
+      const nTP = 4, tgTop = ep0.y + 62, tgH = Math.max(56, Math.min(96, ep0.h - 78)), tgGap = 10;
+      const tgW = (ep0.w - 24 - (nTP - 1) * tgGap) / nTP;
+      const onTP = act.tp;
+      for (let g = 0; g < nTP; g++) {
+        const gx = ep0.x + 12 + g * (tgW + tgGap);
+        ctx.globalAlpha = onTP ? 1 : 0.5;
+        ctx.strokeStyle = onTP ? loadColor(tp.u) : P.neutral; ctx.lineWidth = (selLevel === 'node' && g === 0) ? 2.5 : 1.2;
+        ctx.setLineDash(onTP ? [] : [3, 3]); ctx.strokeRect(gx, tgTop, tgW, tgH); ctx.setLineDash([]);
+        glyph(gx + tgW / 2, tgTop + tgH / 2 + 2, Math.min(22, tgW / 2 - 8), 'ring', loadColor(tp.u), onTP);
+        tx(g === 0 ? `TP 组·${NPN}rank` : 'TP 组', gx + tgW / 2, tgTop + 14, onTP ? P.ink2 : P.mut, '9.5px Inter', 'center');
+        ctx.globalAlpha = 1;
+      }
+      const K = Math.max(1, Math.round(NPC / NPN));
+      tx(`… ×${K} TP 组/机柜（每组=1 节点 ${NPN} 卡 · AllReduce）· SP 与 TP 同域（AllGather+ReduceScatter）`, ep0.x + 12, tgTop + tgH + 15, P.mut, '9.5px Inter');
+      // PP：右侧竖向流水（stage→stage P2P，贯穿 EP 之间）
+      const onPP = act.pp, pcx = A.x + A.w - gutter / 2 - 4, y1 = A.y + 84, y2 = A.y + A.h - 30, stages = 5;
+      ctx.globalAlpha = onPP ? 1 : 0.5;
+      tx('PP 流水', pcx, A.y + 74, onPP ? P.ink : P.mut, '700 10px Inter', 'center');
+      for (let s = 0; s < stages; s++) {
+        const yy = y1 + s * (y2 - y1) / (stages - 1);
+        if (s < stages - 1) line(pcx, yy + 5, pcx, y1 + (s + 1) * (y2 - y1) / (stages - 1) - 5, onPP ? loadColor(pp.u) : P.neutral, onPP ? 2 : 1, false, onPP);
+        ctx.fillStyle = onPP ? loadColor(pp.u) : P.neutral; ctx.beginPath(); ctx.arc(pcx, yy, 4.5, 0, 7); ctx.fill();
+      }
+      tx('stage→stage', pcx, y2 + 14, onPP ? P.ink2 : P.mut, '9px Inter', 'center'); tx('P2P', pcx, y2 + 25, P.mut, '8.5px Inter', 'center');
+      ctx.globalAlpha = 1;
+      // SU/SO 分界说明
+      tx('SU 超低延迟域(TP/EP · 域内) ↑   ↓ SO 广域(DP/PP · 跨超节点/全光)', A.x + 14, A.y + A.h - 9, P.mut, '9.5px Inter');
     }
 
     // ════════ 物理链路：结构随层级、每个器件/链路按自身负载上色（随回放变化）、数量真实 ════════
