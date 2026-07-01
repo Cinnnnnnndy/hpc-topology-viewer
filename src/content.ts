@@ -40,6 +40,11 @@ export const TOK = {
   ubmem: dc('VUIgTWVtb3J5'),
   onchip: dc('VUIgT24gQ2hpcCBTd2l0Y2g='),
   cooling: dc('5YWo5ray5Ya377yI5Ya35p2/5byP77yJwrcg6K6h566X5p+c5ray5Ya3ICsg6YCa5L+h5p+c5YWo5YWJ'),
+  pangu: dc('55uY5Y+k'),
+  panguProMoe: dc('UGFuZ3UgUHJvIE1vRQ=='),
+  ascend300i: dc('5piH6IW+IDMwMEkgRHVv'),
+  ascend800i: dc('5piH6IW+IDgwMEkgQTI='),
+  moge: dc('TW9HRSDliIbnu4TkuJPlrrY='),
 } as const;
 
 /** Info-panel copy keyed by view mode. */
@@ -175,6 +180,7 @@ export const SOURCES: string[] = [
   dc('WzZdIOi2heiKgueCueWxleWHuuWunuaLjSAvIOekuuaEj++8iOeUqOaIt+aPkOS+m++8iQ=='),
   dc('WzddIOeul+WtkOW8gOWPke+8mlRpbGVMYW5nIChhclhpdjoyNTA0LjE3NTc3KSAvIFB5UFRPIMK3IENBTk4gVGlsZSDnvJbnqIs='),
   dc('WzhdIOOAiuaYh+iFvjk1MCBOUFUg5p625p6E55m955qu5Lmm44CL77yI5Y2O5Li677yMMjAyNu+8iQ=='),
+  dc('WzldIFBhbmd1IFBybyBNb0Ug5oqA5pyv5oql5ZGKIMK3IDcyQkExNkIgTW9HRe+8iGFyWGl2OjI1MDUuMjE0MTHvvIk='),
 ];
 
 export const FOOTNOTE = dc('5rOo77yaZGllIC8g6IqC54K5IC8g5py65p+c5YaF6YOo5biD5bGA5LiO6YK75o6l57uT5p6E5Li65Z+65LqO5YWs5byA6LWE5paZ55qE56S65oSP77yM6Z2e5Y6C5ZWG5a6e54mpIGxheW91dO+8m+mbhue+pOS4juiKr+eJh+inhOagvOS7peWNjuS4uuWumOaWueWFrOW4g+S4uuWHhu+8iEE1PUF0bGFzIDk1MO+8jEE2PUF0bGFzIDk2MO+8ieOAgg==');

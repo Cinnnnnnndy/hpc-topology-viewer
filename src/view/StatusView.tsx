@@ -23,7 +23,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
-  PLANES, PARTITION_META, ENTITY_COLORS,
+  PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, STEP_DECOMP,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
   type Gen,
 } from '../scene/data';
@@ -216,12 +216,17 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     core: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
     tile: [NPN, 'NPU × NPU（片上 NoC·非跨卡）'] as [number, string],
   }[selLevel]);
+  // Cell intensity keyed to the REAL collective per phase (Pangu Pro MoE, arXiv:2505.21411):
+  //  · decode  → EP token All-to-All dominates → DENSE any-to-any (非对角为主), 对角(自身)反而低
+  //  · prefill → 计算为主 + EP All-to-All → 非对角中等密集, 对角(自算力)高
+  //  · 预训练  → DP Ring-AllReduce(邻近带) + EP All-to-All(稀疏底噪)
   const tcell = useCallback((i: number, j: number, N: number) => {
-    let v = 0.16 + (i === j ? 0.5 : 0);
-    if (phase === 'decode') v += 0.32;
-    else if (phase === 'prefill') v += 0.08 + (Math.abs(i - j) <= Math.max(1, N / 8) ? 0.26 : 0);
-    else v += 0.10 + (Math.abs(i - j) <= Math.max(1, N / 6) ? 0.20 : 0);
-    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.18;
+    const self = i === j;
+    let v: number;
+    if (phase === 'decode') v = self ? 0.20 : 0.58;
+    else if (phase === 'prefill') v = self ? 0.54 : 0.28 + (Math.abs(i - j) <= Math.max(1, N / 8) ? 0.14 : 0);
+    else v = self ? 0.42 : 0.16 + (Math.abs(i - j) <= Math.max(1, N / 10) ? 0.34 : 0.08);
+    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.16;
     if (ev && selSpod === 0 && N === CAB && (i === EVT_CAB || j === EVT_CAB)) v += 0.35;
     return clamp01(v);
   }, [phase, selSpod, selCab, selNode, step, ev, CAB, EVT_CAB]);
@@ -240,14 +245,16 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   // ── communication domains (process↔process) ──
   const domains = useCallback(() => {
     const sm = scopeMean(), adj = (u: number) => Math.max(0.05, Math.min(1, u + (sm - 0.55) * 0.5));
+    // parallel degrees + collectives are the REAL Pangu Pro MoE config (arXiv:2505.21411):
+    // train TP8·EP2·PP5·VPP5 · infer H2P 注意力 DP2+TP4 / 路由专家 TP2+EP4 / 共享 TP8.
     return [
-      { key: 'tp', nm: PARTITION_META.tp.label, pat: 'ring', sc: '超节点内 SU', co: 'AllReduce', me: `${NPN} rank/组`, u: adj(phase === 'decode' ? 0.5 : 0.72) },
-      { key: 'sp', nm: 'SP 序列并行', pat: 'ring', sc: '与 TP 同域', co: 'AllGather+ReduceScatter', me: '与 TP', u: adj(phase === 'decode' ? 0.45 : 0.6) },
-      { key: 'ep', nm: PARTITION_META.ep.label, pat: 'a2a', sc: '超节点内 SU', co: 'All-to-All', me: `${NPC} rank/柜`, u: adj(phase === 'decode' ? 0.92 : 0.5) },
-      { key: 'pp', nm: PARTITION_META.pp.label, pat: 'p2p', sc: '跨节点', co: 'P2P send/recv', me: 'stage 间', u: adj(0.35) },
-      { key: 'dp', nm: PARTITION_META.dp.label, pat: 'ring', sc: '跨超节点 SO', co: 'AllReduce', me: `${pods} 副本`, u: adj(0.4 + (ev ? 0.08 : 0)) },
+      { key: 'tp', nm: PARTITION_META.tp.label, pat: 'ring', sc: '超节点内 SU', co: 'AllReduce', me: `训练TP${WORKLOAD.train.tp}·推理TP${WORKLOAD.inferAttn.tp} · ${NPN} rank/节点`, u: adj(phase === 'decode' ? 0.5 : 0.72) },
+      { key: 'sp', nm: 'SP 序列并行', pat: 'ring', sc: '与 TP 同域', co: 'AllGather+ReduceScatter', me: '与 TP 同域', u: adj(phase === 'decode' ? 0.45 : 0.6) },
+      { key: 'ep', nm: PARTITION_META.ep.label, pat: 'a2a', sc: '超节点内 SU', co: '层级化 All-to-All', me: `EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活/${WORKLOAD.sharedExperts}共享`, u: adj(phase === 'decode' ? 0.92 : 0.5) },
+      { key: 'pp', nm: PARTITION_META.pp.label, pat: 'p2p', sc: '跨节点', co: 'P2P send/recv', me: `PP${WORKLOAD.train.pp}·VPP${WORKLOAD.train.vpp} · stage 间`, u: adj(0.35) },
+      { key: 'dp', nm: PARTITION_META.dp.label, pat: 'ring', sc: '跨超节点 SO', co: 'Ring-AllReduce', me: `DP${WORKLOAD.inferAttn.dp} · ${pods} 副本`, u: adj(0.4 + (ev ? 0.08 : 0)) },
     ] as { key: string; nm: string; pat: 'ring' | 'a2a' | 'p2p'; sc: string; co: string; me: string; u: number }[];
-  }, [scopeMean, phase, ev, NPN, NPC, pods]);
+  }, [scopeMean, phase, ev, NPN, pods]);
   const domActive = useCallback((): Record<string, boolean> => {
     if (SUBCARD.includes(selLevel)) return { tp: false, sp: false, ep: false, pp: false, dp: false };   // 片上：无 rank 间通信
     if (selLevel === 'cluster') return { tp: false, sp: false, ep: false, pp: true, dp: true };
@@ -381,7 +388,10 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { ctx.fillStyle = loadColor(tcell(i, j, N)); ctx.fillRect(mx + j * cs, my + i * cs, cs - (cs > 5 ? 1 : 0.4), cs - (cs > 5 ? 1 : 0.4)); }
       const lab = N <= 8 ? 1 : N <= 32 ? 4 : 16;
       for (let i = 0; i < N; i += lab) { tx('' + (i + 1), mx + i * cs, my - 3, P.mut, `9px ${MONO}`); tx('' + (i + 1), mx - 22, my + i * cs + cs - 1, P.mut, `9px ${MONO}`); }
-      tx('行/列 = 通信单元 · 对角=内部通信 · 颜色=通信强度(状态色)' + (SUBCARD.includes(selLevel) ? ' · 卡内片上 NoC 无跨卡矩阵，显示所属节点' : ''), mLeft, H - 8, P.mut, '10.5px Inter');
+      const patNote = phase === 'decode' ? 'Decode·EP All-to-All → 密集非对角(any-to-any)，对角=自身较低'
+        : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 非对角中等，对角=自算力高'
+        : '预训练·DP Ring-AllReduce(邻近带)+EP A2A(底噪)';
+      tx(`行/列 = 通信单元 · ${patNote} · 颜色=通信强度(状态色)` + (SUBCARD.includes(selLevel) ? ' · 卡内片上 NoC 无跨卡矩阵，显示所属节点' : ''), mLeft, H - 8, P.mut, '10.5px Inter');
     }
 
     // ════════ 通信域：每个并行维度画真实集合通信图元 ════════
@@ -390,7 +400,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
       const onchip = SUBCARD.includes(selLevel);
       const lvlNote = onchip ? '已下钻到卡内：设备内并行 = block_idx / SPMD（核实例），非 rank 间集合通信'
         : selLevel === 'node' ? `本节点 ${NPN} rank = 1 TP 组（域内 AllReduce）`
-        : selLevel === 'cab' ? `本机柜 ${NPC} rank = 1 EP 组（All-to-All 域）`
+        : selLevel === 'cab' ? `本机柜 ${NPC} rank = EP All-to-All 域（EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）`
         : selLevel === 'cluster' ? `每超节点 = 1 个 DP 副本（跨超节点 AllReduce）`
         : `本超节点：TP/EP 在域内、DP/PP 跨域`;
       tx(lvlNote + ' · 图元=集合通信形态、颜色=状态、回放时按方向流动', PAD, topY + 34, P.mut, '10.5px Inter');
@@ -620,9 +630,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
   // ── detail rail data ──
   const sm = scopeMean();
-  const decomp = phase === 'decode' ? [['计算', 0.34, '#22d3ee'], ['通信(EP)', 0.46, '#ff4b7b'], ['访存(KV)', 0.20, '#a78bfa']]
-    : phase === 'prefill' ? [['计算', 0.70, '#22d3ee'], ['通信', 0.18, '#ff4b7b'], ['访存', 0.12, '#a78bfa']]
-    : [['计算', 0.58, '#22d3ee'], ['通信(AllReduce)', 0.30, '#ff4b7b'], ['访存', 0.12, '#a78bfa']];
+  const decomp = STEP_DECOMP[phase];   // paper-grounded 计算/通信/访存 split (arXiv:2505.21411)
   const scopeCount = ({ cluster: pods, super: CAB, cab: NODES_PER_CAB, node: NPN, rank: NPU_TOT, die: COMPUTE_DIES_PER_CARD, core: CORES_PER_CARD, tile: TILES_VIEW } as Record<Level, number>)[selLevel];
   const scopeUnit = ({ cluster: '超节点', super: '机柜', cab: '节点', node: 'NPU', rank: '卡(rank)', die: '计算 Die', core: 'AI Core', tile: 'Tile' } as Record<Level, string>)[selLevel];
   // per-NPU bars for the focused card's node (the TP group) — shown whenever a card is in context
@@ -761,6 +769,22 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
             </div>
           </div>
 
+          {/* real workload anchor: Pangu Pro MoE (arXiv:2505.21411) — model shape + measured tok/s */}
+          <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9, marginBottom: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 4 }}>工况模型 · {WORKLOAD.name} <span style={{ color: 'var(--tx3)', fontWeight: 400 }}>{WORKLOAD.short}</span></div>
+            <div style={{ fontSize: 10, color: 'var(--tx3)', lineHeight: 1.55 }}>
+              {WORKLOAD.routedExperts}路由/{WORKLOAD.activatedExperts}激活/{WORKLOAD.sharedExperts}共享专家 · {WORKLOAD.layers}层 · hidden {WORKLOAD.hidden}<br />
+              <span style={{ color: 'var(--tx2)', fontFamily: MONO }}>
+                {phase === 'decode'
+                  ? `Decode ${WORKLOAD.perf.decodeTokps} tok/s·卡 (batch${WORKLOAD.perf.decodeBatch}·TPOT ${WORKLOAD.perf.decodeTPOTms}ms) → MTP ${WORKLOAD.perf.decodeMtpTokps}`
+                  : phase === 'prefill'
+                    ? `Prefill ${WORKLOAD.perf.prefillTokps} tok/s·卡 (TTFT ${WORKLOAD.perf.prefillTTFTms}ms)`
+                    : `预训练 ${WORKLOAD.trainNpus} NPU · ${WORKLOAD.trainTokens} tokens · MFU +${WORKLOAD.mfuGainPct}%`}
+              </span>
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>真实值 · Ascend 800I A2/300I Duo（arXiv:2505.21411）</div>
+          </div>
+
           {/* card associations / comm relationships (mirrors 平面视图's relationship view) */}
           {showAssoc && (
             <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9, marginBottom: 4 }}>
@@ -781,9 +805,9 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
               {/* association rows: which comm groups this card belongs to */}
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {([
-                  ['TP 组', `本节点 ${NPN} rank · AllReduce`, PARTITION_META.tp.label.includes('TP') ? '#04d793' : '#04d793', loadColor(nodeMean(selSpod, selNode))],
-                  ['EP 组', `本机柜 ${NPC} rank · All-to-All`, '#ff4b7b', loadColor(cabMean(selSpod, (selNode / NODES_PER_CAB) | 0))],
-                  ['DP 副本', `跨超节点 ×${pods} · AllReduce`, '#ffaa3b', loadColor(sm)],
+                  ['TP 组', `本节点 ${NPN} rank · TP${WORKLOAD.train.tp} AllReduce`, PARTITION_META.tp.label.includes('TP') ? '#04d793' : '#04d793', loadColor(nodeMean(selSpod, selNode))],
+                  ['EP 组', `EP${WORKLOAD.inferRouted.ep} · ${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活 · All-to-All`, '#ff4b7b', loadColor(cabMean(selSpod, (selNode / NODES_PER_CAB) | 0))],
+                  ['DP 副本', `跨超节点 ×${pods} · DP${WORKLOAD.inferAttn.dp} AllReduce`, '#ffaa3b', loadColor(sm)],
                   ['上联链路', `NPU→L1→L2→超节点 · UB`, PLANES[0].color, loadColor(planeUtil()[0].u)],
                 ] as [string, string, string, string][]).map(([k, v, tag, st]) => (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5 }}>
@@ -799,11 +823,11 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
           {/* step decomposition */}
           <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', margin: '0 0 5px' }}>step 时间分解（{PH[phase].label}）</div>
-            {decomp.map(([nm, frac, c]) => (
-              <div key={nm as string} style={{ marginBottom: 5 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginBottom: 2 }}><span style={{ color: 'var(--tx)' }}>{nm}</span><span style={{ color: 'var(--tx3)', fontFamily: MONO }}>{Math.round((frac as number) * 100)}%</span></div>
-                <div style={{ height: 7, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${(frac as number) * 100}%`, background: c as string }} /></div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', margin: '0 0 5px' }}>step 时间分解（{PH[phase].label} · {WORKLOAD.short}）</div>
+            {decomp.map(({ label, frac, color }) => (
+              <div key={label} style={{ marginBottom: 5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginBottom: 2 }}><span style={{ color: 'var(--tx)' }}>{label}</span><span style={{ color: 'var(--tx3)', fontFamily: MONO }}>{Math.round(frac * 100)}%</span></div>
+                <div style={{ height: 7, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${frac * 100}%`, background: color }} /></div>
               </div>
             ))}
           </div>
@@ -827,7 +851,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
             <div style={{ display: 'flex', gap: 4 }}>
               {[1, 2, 4, 8].map((c) => (<button key={c} onClick={() => { setPods(c); if (selSpod >= c) setSelSpod(0); }} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(pods === c, ACCENT) }}>×{c}</button>))}
             </div>
-            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>状态为示意（含 straggler/故障注入 + 回放事件）。计数与关系均由真实层级规模推导；接 profiler 后替换 nodeLoad / 通信强度即可。</div>
+            <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 6 }}>负载状态为示意（含 straggler/故障注入 + 回放事件）。计数与关系由真实层级规模推导；工况/并行/通信/吞吐取自 Pangu Pro MoE 论文（arXiv:2505.21411）；接 profiler 后替换 nodeLoad 即可。</div>
           </div>
         </div>
       </div>
