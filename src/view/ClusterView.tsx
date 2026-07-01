@@ -11,6 +11,7 @@
  * product names.
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { WorkloadPanel } from './WorkloadPanel';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
@@ -1254,6 +1255,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 ))}
               </tbody>
             </table>
+
+            <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)' }}>真实工况数据 · Pangu Pro MoE</div>
+            <WorkloadPanel phase={runMode === 'train' ? 'pretrain' : 'decode'} style={{ marginBottom: 4 }} />
 
             <div style={{ margin: '16px 0 6px', fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)' }}>相比 A3 的演进</div>
             <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--tx)', fontSize: 11.5, lineHeight: 1.6 }}>

@@ -229,7 +229,9 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
     if (phase === 'decode') v = 0.60;                                                    // uniform dense — no diagonal
     else if (phase === 'prefill') v = 0.32 + (d <= Math.max(1, N / 8) ? 0.16 : 0.04);    // soft near-diagonal band
     else v = 0.18 + (d <= Math.max(1, N / 10) ? 0.32 : 0.06);                            // wider soft band
-    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03) - 0.5) * 0.20;
+    // step (discrete) + flowRef (continuous, advances every frame while playing) → the matrix
+    // shimmers live during playback instead of holding a single frame.
+    v += (rnd(selSpod * 13 + (selCab + 2) * 7 + (selNode + 3) * 1.3 + i * 0.7 + j * 0.9 + step * 0.03 + flowRef.current * 0.6) - 0.5) * 0.20;
     if (ev && selSpod === 0 && N === CAB && (i === EVT_CAB || j === EVT_CAB)) v += 0.35;
     return clamp01(v);
   }, [phase, selSpod, selCab, selNode, step, ev, CAB, EVT_CAB]);
@@ -566,14 +568,16 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => { const onR = () => draw(); window.addEventListener('resize', onR); return () => window.removeEventListener('resize', onR); }, [draw]);
-  // 含连线的镜头（通信域 / 物理链路）逐帧重绘，让连线彗星持续流动（即使未播放）。
+  // 逐帧重绘：通信域/物理链路始终让连线彗星流动；机柜流量矩阵在【播放时】逐帧刷新，
+  // 让通信强度真正随回放流动（暂停=定格快照，非静态写死）。
   useEffect(() => {
-    if (lens !== 'domain' && lens !== 'phys') return;
+    const animate = lens === 'domain' || lens === 'phys' || (lens === 'flow' && playing);
+    if (!animate) return;
     let last = performance.now(), raf = 0;
     const loop = (now: number) => { const dt = Math.min(0.05, (now - last) / 1000); last = now; flowRef.current += dt * 1.2; draw(); raf = requestAnimationFrame(loop); };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [lens, draw]);
+  }, [lens, draw, playing]);
 
   // hover + click on the canvas
   const hitTest = (mx: number, my: number) => { for (const c of cells.current) if (mx >= c.x && mx <= c.x + c.w && my >= c.y && my <= c.y + c.h) return c; return null; };

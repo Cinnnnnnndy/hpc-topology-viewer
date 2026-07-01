@@ -8,6 +8,7 @@
  * Display text with brand terms is sourced from ../content (decoded at runtime).
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { WorkloadPanel } from './WorkloadPanel';
 import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
@@ -268,6 +269,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
   const [selL, setSelL] = useState<{ lvl: number; idx: number } | null>(null);   // layered-view selection
   const [selTop, setSelTop] = useState<{ k: number; die?: number; core?: number } | null>(null);   // top-view selection (card, or a Die / AI Core when zoomed in)
   const [selDev, setSelDev] = useState<SelDev | null>(null);   // device-topology selection (highlight object + its links + related, dim the rest)
+  const [wlOpen, setWlOpen] = useState(false);   // deep real-workload data panel (Pangu Pro MoE) — off by default
   const downXY = useRef<{ x: number; y: number } | null>(null);   // pointer-down (click vs drag)
   const phaseRef = useRef(0);                       // flow (marching-ants) animation phase
   const headRef = useRef(0);                        // 执行时序 play head (0..1), shared by the card-wash + swimlane
@@ -1260,8 +1262,21 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         })}
         <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（节点按状态变色 + 连线/数据流动 + swimlane/右侧面板同步）"
           style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
+        <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
+        <button onClick={() => setWlOpen((v) => !v)} title="真实工况数据面板（Pangu Pro MoE · 模型/并行/通信/吞吐/质量对照 · arXiv:2505.21411）"
+          style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(wlOpen) }}>{wlOpen ? '▾ 工况数据' : '▸ 工况数据'}</button>
       </div>
       </div>
+      {/* deep real-workload data panel (Pangu Pro MoE) — right-side rail, toggled from the toolbar */}
+      {wlOpen && (
+        <div style={{ position: 'absolute', top: 12, right: 12, bottom: 12, width: 300, zIndex: 20, padding: '12px 14px', overflowY: 'auto', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', color: 'var(--tx)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#5b86ff' }}>真实工况数据</span>
+            <span onClick={() => setWlOpen(false)} title="关闭" style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--tx3)', fontSize: 13 }}>✕</span>
+          </div>
+          <WorkloadPanel phase={runMode === 'train' ? 'pretrain' : 'decode'} />
+        </div>
+      )}
       {/* legend (collapsible — avoids occluding the diagram / swimlane on small screens) */}
       <div style={{ position: 'absolute', bottom: 12, left: 12, maxWidth: 'min(420px, calc(100vw - 24px))', padding: '7px 11px', fontSize: 11, background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', lineHeight: 1.6, color: 'var(--tx2)' }}>
         <div onClick={() => setLegendOpen((v) => !v)} title={legendOpen ? '收起图例' : '展开图例'} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600, color: 'var(--tx)', marginBottom: legendOpen ? 3 : 0 }}>
