@@ -23,7 +23,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
-  PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, STEP_DECOMP,
+  PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
   type Gen,
 } from '../scene/data';
@@ -782,6 +782,16 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
                     : `预训练 ${WORKLOAD.trainNpus} NPU · ${WORKLOAD.trainTokens} tokens · MFU +${WORKLOAD.mfuGainPct}%`}
               </span>
             </div>
+            <div style={{ fontSize: 9.5, color: 'var(--tx3)', marginTop: 4, lineHeight: 1.5 }}>
+              {phase === 'decode'
+                ? `内核：MulAttention ${WORKLOAD_DETAIL.kernel.mulAttnSpeedup}× · 注意力占时延 ${WORKLOAD_DETAIL.kernel.attnLatencyPct[0]}–${WORKLOAD_DETAIL.kernel.attnLatencyPct[1]}%（KV 搬运占其 ${WORKLOAD_DETAIL.kernel.kvOfAttnPct}%）`
+                : phase === 'prefill'
+                  ? `Prefill 每 token 仅激活 Top-${WORKLOAD.activatedExperts} 专家 ≈ ${WORKLOAD.activeB}B Dense · SwiftGMM 高并发占时延 >${WORKLOAD_DETAIL.kernel.swiftGmmLatencyPct}%`
+                  : `MoGE：${WORKLOAD_DETAIL.moge.note} · 负载不均 ↓>${WORKLOAD_DETAIL.moge.imbalanceReductionPct}%`}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>
+              通信优化：AllReduce→RS+AG −{WORKLOAD_DETAIL.comm.allreduceCutPct}% · RMSNorm 重排 −{WORKLOAD_DETAIL.comm.rmsnormCutPct}% · 融合 {WORKLOAD_DETAIL.comm.fusedOps.join('/')}
+            </div>
             <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>真实值 · Ascend 800I A2/300I Duo（arXiv:2505.21411）</div>
           </div>
 
@@ -844,6 +854,21 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
                 {PLANES.map((p) => (<span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--tx2)', marginBottom: 2 }}><span style={{ width: 12, height: 3, background: p.color, borderRadius: 1 }} />{p.short} · {p.parallel}</span>))}
               </div>
             )}
+          </div>
+
+          {/* same-family real results on Ascend super-nodes (reference context) */}
+          <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', marginBottom: 6 }}>同类对照 · 昇腾超节点真实论文</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {WORKLOAD_REFS.map((r) => (
+                <div key={r.id} style={{ fontSize: 10, lineHeight: 1.45, paddingLeft: 7, borderLeft: `2px solid ${r.id === 'pangu-pro-moe' ? ACCENT : 'var(--bd2)'}` }}>
+                  <div style={{ color: 'var(--tx)', fontWeight: 600 }}>{r.title} <span style={{ color: 'var(--tx3)', fontWeight: 400, fontFamily: MONO }}>arXiv:{r.arxiv}</span></div>
+                  <div style={{ color: 'var(--tx3)' }}>{r.scale}</div>
+                  <div style={{ color: 'var(--tx2)' }}>{r.metric}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 6 }}>注：对照均为昇腾超节点真实论文（非本视图 950 硬件平台），仅作规模/性能参照。</div>
           </div>
 
           <div style={{ borderTop: '1px solid var(--bd)', marginTop: 10, paddingTop: 10 }}>

@@ -278,6 +278,26 @@ export const WORKLOAD: WorkloadProfile = {
   mfuGainPct: 35,
 };
 
+// MoGE routing + kernel/comm-optimisation facts (arXiv:2505.21411 §2/§4) — annotate overlays.
+export const WORKLOAD_DETAIL = {
+  moge: { perGroupTopK: 1, imbalanceScore: 0, imbalanceReductionPct: 50, note: 'N=64 专家均分 M 组，每组 Top-1 → 设备负载天然均衡(IS=0)' },
+  kernel: { mulAttnSpeedup: 4.5, attnLatencyPct: [30, 50] as [number, number], kvOfAttnPct: 70, swiftGmmLatencyPct: 50 },
+  comm: { allreduceCutPct: 50, rmsnormCutPct: 75, fusedOps: ['GMMRS', 'AGMM'] as string[] },
+} as const;
+
+// Same-family REAL results on Ascend super-nodes (each a confidence-A paper) — a 同类对照
+// panel. These are NOT this app's platform; shown as reference context alongside the primary
+// Pangu Pro MoE workload. (arXiv ids: 2505.04519 / 2506.12708 / 2508.02520 / 2504.07866 / 2509.11662)
+export interface WorkloadRef { id: string; title: string; arxiv: string; scale: string; metric: string; }
+export const WORKLOAD_REFS: WorkloadRef[] = [
+  { id: 'pangu-pro-moe',   title: TOK.panguProMoe,                 arxiv: '2505.21411', scale: '72BA16B · 64 专家',        metric: 'Decode 1148→MTP 1528 · Prefill 4828 tok/s·卡' },
+  { id: 'pangu-ultra-moe', title: `${TOK.pangu} Ultra MoE`,        arxiv: '2505.04519', scale: '718B · 256 专家 · 6000 NPU', metric: 'MFU 18.9%→30% · 1.46M tok/s' },
+  { id: 'deepseek-cm384',  title: 'DeepSeek-R1 · CloudMatrix384',  arxiv: '2506.12708', scale: '671B MoE · 384 NPU',        metric: 'Prefill 6688 / Decode 1943 tok/s·NPU (TPOT<50ms)' },
+  { id: 'xdeepserve',      title: 'xDeepServe MaaS · CM384',       arxiv: '2508.02520', scale: '384×910C · UB 全互联',      metric: '2400 tok/s·NPU · 系统 345K tok/s (DP288)' },
+  { id: 'pangu-ultra-135b',title: `${TOK.pangu} Ultra 135B Dense`, arxiv: '2504.07866', scale: '135B Dense · 8192 卡',       metric: '13.2T tokens · depth-scaled sandwich norm' },
+  { id: 'mindvl',          title: 'MindVL 多模态 · Ascend',        arxiv: '2509.11662', scale: '原生分辨率 ViT · 447B tokens', metric: '强扩展 >94% (1→128 NPU) · 1/10 数据量' },
+];
+
 // Per-phase step-time decomposition (计算 / 通信 / 访存), grounded in the Pangu Pro MoE
 // report rather than guessed: decode is memory-bound (weight transfer ≈29% of latency + KV),
 // EP All-to-All ≈8% of network latency; prefill is compute-bound (Top-8 experts, big GEMMs);
