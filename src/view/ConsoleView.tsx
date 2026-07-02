@@ -1,9 +1,9 @@
 /**
  * ConsoleView — 联动控制台. One linked module fusing the three existing views per the reference
  * Smartscape (Dynatrace-style) interaction:
- *   · LEFT  = 平面视图「层级图」改造成 Smartscape 层级 (集群→超节点→机柜→节点→卡 + 卡内 Die/Core/Tile)，
+ *   · LEFT  = 平面视图「层级图」改造成 Smartscape 8 级漏斗 (全球 L7→集群 L6→服务池 L5→Pod L4→Host L3→Chip L2 + 卡内 Die L1/Core-Group L0)，
  *             作为控制：点一个实体只展开/高亮它的「链路」(祖先+后代，按方向过滤)。
- *   · RIGHT = 阵列全景 (FullPodScene, 全量超节点) 作为主视图：scopeOnly 模式只显示左侧链路的内容
+ *   · RIGHT = 阵列全景 (FullPodScene, 全量 Pod) 作为主视图：scopeOnly 模式只显示左侧链路的内容
  *             (链路内按状态/负载上色，链路外全部压暗)。
  *   · 运行状态 = 分析仪表 (集群 KPI · 实体辅助指标 · DAVIS 根因)。
  *
@@ -15,13 +15,12 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS,
-  parallelMap, REPLAY, cardLoad01, cardMetric01, cardStraggler, cardFault,
+  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
 } from '../scene/data';
-import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
+import { CoreGroupMiniSvg } from './arch-glyphs';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
@@ -33,7 +32,9 @@ type Workload = 'pretrain' | 'prefill' | 'decode';
 type Metric = 'util' | 'strag' | 'fault';
 type Lens = 'heat' | 'flow' | 'domain' | 'phys';
 type Dir = 'all' | 'up' | 'down';
-type Level = 'cluster' | 'super' | 'cab' | 'node' | 'card' | 'die' | 'core' | 'tile';
+// hw-native-sys L4→L0 焦点级（L7 全球/L6 集群/L5 服务池 为上层上下文，点击即回到整 Pod，不作 focus）。
+// 机柜不是层级（仅物理分组）、Tile 不是层级（L0 Core-Group 内部），均不出现在焦点级里。
+type Level = 'super' | 'node' | 'card' | 'die' | 'core';
 type Focus = { level: Level; card: number; die?: number; core?: number } | null;
 
 const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
@@ -44,7 +45,7 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
 const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
-const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: '超节点', cab: '机柜', node: '节点', card: '卡 rank', die: '计算 Die', core: 'AI Core', tile: 'Tile' };
+const LEVEL_NAME: Record<string, string> = { global: '全球', cluster: '集群', pool: '服务池', super: 'Pod', node: 'Host', card: 'Chip·NPU', die: '计算 Die', core: 'Core-Group' };
 
 // ── metric model — thin aliases over the SHARED model in data.ts (same value as 运行状态) ──
 const cardLoad = (k: number, wlKind: string, step: number) => cardLoad01(k, wlKind, step);
@@ -52,64 +53,61 @@ const isStrag = (k: number, step: number) => cardStraggler(k, step);
 const isFault = (k: number, step: number) => cardFault(k, step);
 const cardMetric = (k: number, metric: Metric, wlKind: string, step: number) => cardMetric01(k, metric, wlKind, step);
 
-// ── hierarchy navigation / scope (matches the reference HTML scopeOf/isHi) ──
-const levelIdx = (lv: Level): number => (lv === 'cluster' ? 0 : lv === 'super' ? 1 : lv === 'cab' ? 2 : lv === 'node' ? 3 : 4);
+// ── hierarchy navigation / scope — 阶梯（Le）：L4 Pod=3 · L3 Host=4 · L2 Chip=5（含 die/core）。
+//    Pod 直接含 1024 Host、Host 含 8 Chip（无机柜档位；机柜仅为 3D 物理分组）。 ──
+const levelIdx = (lv: Level): number => (lv === 'super' ? 3 : lv === 'node' ? 4 : 5);   // card/die/core → 5
 function scopeRange(f: Focus, N: number): [number, number] {
-  if (!f || f.level === 'cluster' || f.level === 'super') return [0, N];
-  if (f.level === 'cab') { const c = Math.floor(f.card / PER_CAB); return [c * PER_CAB, Math.min(N, (c + 1) * PER_CAB)]; }
+  if (!f || f.level === 'super') return [0, N];
   if (f.level === 'node') { const n = Math.floor(f.card / CPB); return [n * CPB, Math.min(N, (n + 1) * CPB)]; }
-  return [f.card, f.card + 1];
+  return [f.card, f.card + 1];   // card / die / core
 }
 // which entity indices of tier Le are on the focus's chain (ancestor / self / descendant), dir-filtered.
-// returns null = "no focus → overview (show all, capped)".
-function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nCabs: number, nBlades: number): number[] | null {
-  if (!focus || focus.level === 'cluster') return null;
+// returns null = "no focus → overview (show all, capped)". Le: 3 Pod · 4 Host · 5 Chip.
+function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nBlades: number): number[] | null {
+  if (!focus || focus.level === 'super') return null;
   const Lf = levelIdx(focus.level);
-  const counts = [1, 1, nCabs, nBlades, N];
-  const div = [N, N, PER_CAB, CPB, 1][Le];
+  const counts = [1, 1, 1, 1, nBlades, N];
+  const div = [N, N, N, N, CPB, 1][Le];
   const [flo, fhi] = scopeRange(focus, N);
   const range = (a: number, b: number) => { const o: number[] = []; for (let i = a; i < b; i++) o.push(i); return o; };
-  const cabMates = () => { const cab = Math.floor(flo / PER_CAB); return range(cab * BPC, Math.min(nBlades, (cab + 1) * BPC)); };   // 同柜 8 节点 (UB mesh, 同低保真 node-tier 特例)
+  const hostMates = () => { const cab = Math.floor(flo / PER_CAB); return range(cab * BPC, Math.min(nBlades, (cab + 1) * BPC)); };   // 同物理分组 8 Host (UB mesh 特例)
   if (Le < Lf) {                          // ancestor
     if (dir === 'down') return [];
-    if (dir === 'all' && Le === 3 && Lf >= 3) return cabMates();
+    if (dir === 'all' && Le === 4 && Lf >= 4) return hostMates();
     return [Math.floor(flo / div)];
   }
-  if (Le === Lf) {                        // focus tier (node tier expands to same-cab UB mates on 全链)
-    if (dir === 'all' && Le === 3) return cabMates();
+  if (Le === Lf) {                        // focus tier (Host tier expands to same-group UB mates on 全链)
+    if (dir === 'all' && Le === 4) return hostMates();
     return [Math.floor(flo / div)];
   }
   if (dir === 'up') return [];            // descendant
   return range(Math.floor(flo / div), Math.min(counts[Le], Math.floor((fhi - 1) / div) + 1));
 }
 function entityToFocus(Le: number, idx: number): Focus {
-  if (Le === 0) return null;                                  // cluster = clear (whole)
-  if (Le === 1) return { level: 'super', card: 0 };
-  if (Le === 2) return { level: 'cab', card: idx * PER_CAB };
-  if (Le === 3) return { level: 'node', card: idx * CPB };
-  return { level: 'card', card: idx };
+  if (Le === 3) return { level: 'super', card: 0 };   // Pod = whole scope
+  if (Le === 4) return { level: 'node', card: idx * CPB };   // Host
+  return { level: 'card', card: idx };                 // Chip (Le 5)
 }
 function focusToSel(f: Focus): { lv: number; i: number } | null {
-  if (!f || f.level === 'cluster' || f.level === 'super') return null;
-  if (f.level === 'cab') return { lv: 2, i: Math.floor(f.card / PER_CAB) };
+  // 3D 全景选择级：lv 0=card · lv 1=blade(Host) · lv 2=cabinet(物理分组)。
+  if (!f || f.level === 'super') return null;
   if (f.level === 'node') return { lv: 1, i: Math.floor(f.card / CPB) };
-  return { lv: 0, i: f.card };
+  return { lv: 0, i: f.card };   // card / die / core → 高亮该卡
 }
 function selToFocus(s: { lv: number; i: number } | null): Focus {
   if (!s) return null;
-  if (s.lv === 2) return { level: 'cab', card: s.i * PER_CAB };
   if (s.lv === 1) return { level: 'node', card: s.i * CPB };
+  if (s.lv === 2) return { level: 'super', card: 0 };   // 机柜=物理分组，不是层级 → 回到整 Pod
   return { level: 'card', card: s.i };
 }
 function focusName(f: Focus): string {
-  if (!f || f.level === 'cluster' || f.level === 'super') return '全量超节点';
+  if (!f || f.level === 'super') return '全量 Pod';
   const k = f.card;
-  if (f.level === 'cab') return `机柜 C${Math.floor(k / PER_CAB)}`;
-  if (f.level === 'node') return `节点 B${Math.floor(k / CPB)}`;
-  if (f.level === 'card') return `卡 r${k}（device）`;
-  if (f.level === 'die') return `卡 ${k} · 计算 Die ${f.die ?? 0}`;
-  if (f.level === 'core') return `卡 ${k} · AI Core #${f.core ?? 0}`;
-  return `卡 ${k} · Tile`;
+  if (f.level === 'node') return `Host B${Math.floor(k / CPB)}`;
+  if (f.level === 'card') return `Chip r${k}（device）`;
+  if (f.level === 'die') return `Chip ${k} · Die ${f.die ?? 0}`;
+  if (f.level === 'core') return `Chip ${k} · Core-Group 核 #${f.core ?? 0}`;
+  return `Chip ${k}`;
 }
 
 // ── shared button language ──
@@ -173,45 +171,61 @@ interface Stats {
   agg: Record<'cluster' | 'cab' | 'node' | 'card', { p50: number; p95: number; red: number }>;
 }
 
-// ── LEFT: Smartscape 层级 (改造自平面视图层级图) — 图元/配色与「层级图」「选中链路·层级图」统一：
-//    超节点=玫紫 pill · 机柜=紫 · 节点/刀片=天蓝 · 卡=teal 卡图元(2×2 Die 点) · Die/Core/Tile=网格。
-//    结构用图元+位置区分(不抢状态色)；播放时叠加 红黄绿 负载色，空闲时显层级色 (同低保真层级图)。从 L5 起，无集群层。 ──
-const SVG_W = 600, SVG_H = 680, X0 = 118, X1 = 586, BUDGET = 26;
-const TIERS = [
-  { Le: 1, key: 'super', y: 46, h: 22, maxW: 168, tag: 'L5', label: '超节点', col: ENTITY_COLORS.super },
-  { Le: 2, key: 'cab', y: 116, h: 17, maxW: 56, tag: '', label: '机柜', col: ENTITY_COLORS.cab },
-  { Le: 3, key: 'node', y: 188, h: 15, maxW: 52, tag: 'L4', label: '节点/刀片', col: ENTITY_COLORS.node },
-  { Le: 4, key: 'card', y: 268, h: 17, maxW: 20, tag: 'L3', label: '卡 rank', col: ENTITY_COLORS.card },
-] as const;
-const SUBTIERS = [
-  { key: 'die', lvl: 'die' as Level, y: 346, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L2', label: '计算 Die', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
-  { key: 'core', lvl: 'core' as Level, y: 432, cols: 16, cell: 14, gap: 3, n: 32, seed: 517, tag: 'L1', label: 'AI Core', col: (i: number) => (i % 8 === 7 ? ENTITY_COLORS.vector : ENTITY_COLORS.cube) },
-  { key: 'tile', lvl: 'tile' as Level, y: 532, cols: 16, cell: 11, gap: 3, n: 48, seed: 911, tag: 'L0', label: 'Tile', col: () => ENTITY_COLORS.vector },
-] as const;
+// ── LEFT: Smartscape 8 级漏斗 (改造自平面视图层级图) — 图元/配色与「层级图」「选中链路·层级图」统一：
+//    上三级 L7 全球 / L6 集群 / L5 服务池 = 焦点 pill + 半透明幽灵 sibling（不可点，点焦点回整 Pod）；
+//    L4 Pod=玫紫 pill · L3 Host=天蓝 · L2 Chip=teal 卡图元(2×2 Die 点) · L1 Die=网格 · L0 Core-Group=原生 CoreGroupMiniSvg 图元。
+//    级间连线挂互联名小 chip（DCN/Scale-Out/Pool 内互联/Scale-Up/PCIe·UB/封装互连/NoC）。 ──
+const SVG_W = 600, SVG_H = 648, X0 = 118, X1 = 586, BUDGET = 26;
+// Le 阶梯：0 全球 · 1 集群 · 2 服务池（ctx 上层上下文）· 3 Pod · 4 Host · 5 Chip。
+interface Tier { Le: number; key: string; ctx?: boolean; y: number; h: number; maxW?: number; tag: string; label: string; col: string; ghosts?: string[] }
+const TIERS: Tier[] = [
+  { Le: 0, key: 'global',  ctx: true, y: 30, h: 16, maxW: 150, tag: 'L7', label: '全球',      col: ENTITY_COLORS.global,  ghosts: ['Global A', 'Global C'] },
+  { Le: 1, key: 'cluster', ctx: true, y: 66, h: 16, maxW: 150, tag: 'L6', label: '集群',      col: ENTITY_COLORS.cluster, ghosts: ['Cluster A', 'Cluster C'] },
+  { Le: 2, key: 'pool',    ctx: true, y: 102, h: 16, maxW: 150, tag: 'L5', label: '服务池',    col: ENTITY_COLORS.pool,    ghosts: ['Pool 1', 'Pool 3'] },
+  { Le: 3, key: 'super',   y: 150, h: 22, maxW: 168, tag: 'L4', label: 'Pod',        col: ENTITY_COLORS.super },
+  { Le: 4, key: 'node',    y: 232, h: 15, maxW: 52,  tag: 'L3', label: 'Host',       col: ENTITY_COLORS.node },
+  { Le: 5, key: 'card',    y: 314, h: 17, maxW: 20,  tag: 'L2', label: 'Chip·NPU',   col: ENTITY_COLORS.card },
+];
+interface SubTier { key: string; lvl: Level; y: number; n: number; tag: string; label: string; cols?: number; cell?: number; gap?: number; seed?: number; col?: (i: number) => string }
+const SUBTIERS: SubTier[] = [
+  { key: 'die',  lvl: 'die',  y: 396, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L1', label: '计算 Die（可选）', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
+  { key: 'core', lvl: 'core', y: 470, n: 32, tag: 'L0', label: 'Core-Group' },   // 原生 CoreGroupMiniSvg 图元（非网格）
+];
+// 级间互联小 chip（y=连线中点，居中）：HW_LEVELS[i].down.label/color。
+const CX_MID = (X0 + X1) / 2;
+const ICHIPS: { y: number; li: number }[] = [
+  { y: 48, li: 0 },   // 全球→集群 DCN
+  { y: 84, li: 1 },   // 集群→服务池 Scale-Out
+  { y: 126, li: 2 },  // 服务池→Pod Pool 内互联
+  { y: 191, li: 3 },  // Pod→Host Scale-Up
+  { y: 273, li: 4 },  // Host→Chip PCIe/UB
+  { y: 372, li: 5 },  // Chip→Die 封装互连
+  { y: 443, li: 6 },  // Die→Core-Group NoC
+];
 
-function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark }: {
-  N: number; nCabs: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
-  metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; playing: boolean; stats: Stats; dark: boolean;
+function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, flow }: {
+  N: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
+  metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; playing: boolean; stats: Stats; dark: boolean; flow: boolean;
 }) {
   const P = dark
     ? { ink: '#e6ebf2', ink2: '#9aa6b4', ink3: '#5f6b79', line: '#2a323d', pill: '#1b212b', pillBd: '#2a323d', die: 'rgba(9,13,20,0.55)' }
     : { ink: '#1c2433', ink2: '#5b6573', ink3: '#9099a8', line: '#d6dbe4', pill: '#eef1f6', pillBd: '#d2d8e2', die: 'rgba(255,255,255,0.55)' };
-  const total = (Le: number) => [1, 1, nCabs, nBlades, N][Le];
+  const total = (Le: number) => [1, 1, 1, 1, nBlades, N][Le];
   const metricOf = (Le: number, idx: number): number =>
-    Le <= 1 ? stats.clusterMean : Le === 2 ? (stats.cabVals[idx] ?? 0) : Le === 3 ? (stats.ndVals[idx] ?? 0) : cardMetric(idx, metric, wlKind, step);
-  const aggOf = (Le: number) => (Le <= 1 ? stats.agg.cluster : Le === 2 ? stats.agg.cab : Le === 3 ? stats.agg.node : stats.agg.card);
-  const selLe = !focus || focus.level === 'cluster' ? -1 : focus.level === 'super' ? 1 : focus.level === 'cab' ? 2 : focus.level === 'node' ? 3 : 4;
-  const selIdx = selLe < 0 ? -1 : selLe === 1 ? 0 : selLe === 2 ? Math.floor(focus!.card / PER_CAB) : selLe === 3 ? Math.floor(focus!.card / CPB) : focus!.card;
-  const focusCard = focus && selLe === 4 ? focus.card : null;
-  const hasDrillFocus = !!focus && focus.level !== 'cluster' && focus.level !== 'super';
+    Le <= 3 ? stats.clusterMean : Le === 4 ? (stats.ndVals[idx] ?? 0) : cardMetric(idx, metric, wlKind, step);
+  const aggOf = (Le: number) => (Le <= 3 ? stats.agg.cluster : Le === 4 ? stats.agg.node : stats.agg.card);
+  const selLe = !focus ? -1 : focus.level === 'super' ? 3 : focus.level === 'node' ? 4 : 5;   // card/die/core → 5 (Chip 卡)
+  const selIdx = selLe < 0 ? -1 : selLe === 3 ? 0 : selLe === 4 ? Math.floor(focus!.card / CPB) : focus!.card;
+  const focusCard = focus && (focus.level === 'card' || focus.level === 'die' || focus.level === 'core') ? focus.card : null;
+  const hasDrillFocus = !!focus && focus.level !== 'super';
   const ringC = dark ? '#fff' : '#10131a';
   // structure = glyph + position; state = 红黄绿 (only when playing) — else hierarchy colour (同层级图)
   const fillOf = (Le: number, idx: number, base: string) => (playing ? loadColor(metricOf(Le, idx)) : base);
 
-  // build per-tier shown lists + positions
+  // build per-tier shown lists + positions（仅可下钻漏斗级 super/node/card；上三级 ctx 单独渲染）
   const pos: Record<number, Record<number, { x: number; y: number }>> = {};
-  const rows = TIERS.map((t) => {
-    const sc = tierInScope(t.Le, focus, dir, N, nCabs, nBlades);
+  const rows = TIERS.filter((t) => !t.ctx).map((t) => {
+    const sc = tierInScope(t.Le, focus, dir, N, nBlades);
     const full = sc === null;
     const baseList = full ? Array.from({ length: Math.min(total(t.Le), BUDGET) }, (_, i) => i) : sc;
     const shownIdx = baseList.slice(0, BUDGET);
@@ -226,7 +240,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
   });
 
   const parentOf = (Le: number, idx: number): { Le: number; idx: number } | null =>
-    Le === 2 ? { Le: 1, idx: 0 } : Le === 3 ? { Le: 2, idx: Math.floor(idx / BPC) } : Le === 4 ? { Le: 3, idx: Math.floor(idx / CPB) } : null;
+    Le === 5 ? { Le: 4, idx: Math.floor(idx / CPB) } : Le === 4 ? { Le: 3, idx: 0 } : null;   // Chip→Host, Host→Pod
 
   const els: React.ReactNode[] = [];
   // connector language mirrors 平面视图「选中链路·层级图」(SelHierPanel): a solid SEL line +
@@ -255,30 +269,31 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       });
     });
     parentDots.forEach(([px, py], k) => els.push(cdot(px, py, ACCENT, `pd-${k}`)));
-    // 2) UB plane mesh between node-tier siblings (横向同级关系)
+    // 2) UB plane mesh between Host-tier siblings (横向同级关系)
     if (planeOn.ub) {
-      const nr = rows.find((r) => r.t.Le === 3); const ny = TIERS[2].y;
-      if (nr) for (let i = 0; i < nr.shown.length - 1; i++) { const a = nr.shown[i], b = nr.shown[i + 1], mx = (a.x + b.x) / 2; els.push(<path key={`ub-${i}`} d={`M${a.x} ${ny} Q ${mx} ${ny - 15} ${b.x} ${ny}`} fill="none" stroke={PLANES[0].color} strokeWidth={1} strokeOpacity={0.55} />); }
+      const nr = rows.find((r) => r.t.Le === 4);
+      if (nr) { const ny = nr.t.y; for (let i = 0; i < nr.shown.length - 1; i++) { const a = nr.shown[i], b = nr.shown[i + 1], mx = (a.x + b.x) / 2; els.push(<path key={`ub-${i}`} d={`M${a.x} ${ny} Q ${mx} ${ny - 15} ${b.x} ${ny}`} fill="none" stroke={PLANES[0].color} strokeWidth={1} strokeOpacity={0.55} />); } }
     }
   }
-  // 3) tier glyphs — pill (super) / block (cab·node) / card-glyph(2×2 Die) (card)
+  // 3) tier glyphs — pill (Pod) / block (Host) / card-glyph(2×2 Die) (Chip)
   rows.forEach(({ t, shown, fold, foldX, slotW }) => {
+    const maxW = t.maxW ?? 40;
     shown.forEach(({ idx, x }) => {
       const isSel = t.Le === selLe && idx === selIdx, fill = fillOf(t.Le, idx, t.col);
-      const strag = playing && t.Le === 4 && isStrag(idx, step);
+      const strag = playing && t.Le === 5 && isStrag(idx, step);
       const cy = t.y, click = (e: React.MouseEvent) => { e.stopPropagation(); setFocus(isSel ? null : entityToFocus(t.Le, idx)); };
-      if (t.Le === 4) {           // card glyph: rounded square + 2×2 Die dots
-        const s = Math.max(9, Math.min(t.maxW, slotW * 0.82)), gx = x - s / 2, gy = cy - s / 2, ins = s * 0.17, gp = s * 0.08, dw = (s - ins * 2 - gp) / 2;
+      if (t.Le === 5) {           // Chip glyph: rounded square + 2×2 Die dots
+        const s = Math.max(9, Math.min(maxW, slotW * 0.82)), gx = x - s / 2, gy = cy - s / 2, ins = s * 0.17, gp = s * 0.08, dw = (s - ins * 2 - gp) / 2;
         els.push(
-          <g key={`g-4-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
+          <g key={`g-5-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
             {(isSel || strag) && <rect x={gx - 3} y={gy - 3} width={s + 6} height={s + 6} rx={s * 0.34} fill="none" stroke={isSel ? ringC : '#b07bff'} strokeWidth={1.8} />}
             <rect x={gx} y={gy} width={s} height={s} rx={s * 0.24} fill={fill} />
             {s >= 12 && [0, 1, 2, 3].map((q) => <rect key={q} x={gx + ins + (q % 2) * (dw + gp)} y={gy + ins + Math.floor(q / 2) * (dw + gp)} width={dw} height={dw} rx={dw * 0.3} fill={P.die} />)}
           </g>,
         );
-      } else {                    // super / cab / node : rounded pill (+ id label when wide)
-        const w = Math.max(11, Math.min(t.maxW, slotW * 0.82)), h = t.h, gx = x - w / 2, gy = cy - h / 2;
-        const lbl = t.Le === 1 ? '超节点' : w >= 30 ? (t.Le === 2 ? `C${idx}` : `B${idx}`) : '';
+      } else {                    // Pod / Host : rounded pill (+ id label when wide)
+        const w = Math.max(11, Math.min(maxW, slotW * 0.82)), h = t.h, gx = x - w / 2, gy = cy - h / 2;
+        const lbl = t.Le === 3 ? 'Pod' : w >= 30 ? `B${idx}` : '';
         els.push(
           <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
             {isSel && <rect x={gx - 3} y={gy - 3} width={w + 6} height={h + 6} rx={(h + 6) * 0.36} fill="none" stroke={ringC} strokeWidth={1.8} />}
@@ -309,28 +324,27 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       </g>,
     );
   });
-  // 5) divider + card-internal sub-grids — 层内关系. 只有钻取到机柜/节点/卡内时才画蓝色链路；
-  //    默认 overview 只保留结构网格，避免看起来像已经选中某个 rank。
+  // 5) divider + card-internal sub-tiers — 层内关系. 只有钻取到 Host/Chip/卡内时才画蓝色链路；
+  //    默认 overview 只保留结构，避免看起来像已经选中某个 rank。
   const repCard = focusCard != null ? focusCard : focus ? scopeRange(focus, N)[0] : 0;
   const repReal = focusCard != null;   // true = 真的选到某张卡（否则是代表卡）
-  els.push(<line key="div" x1={8} y1={312} x2={592} y2={312} stroke={P.line} strokeDasharray="2 4" />);
-  els.push(<text key="divt" x={300} y={307} fill={P.ink3} fontSize={9} textAnchor="middle">
+  const DIE = SUBTIERS[0], CORE = SUBTIERS[1];
+  els.push(<line key="div" x1={8} y1={352} x2={592} y2={352} stroke={P.line} strokeDasharray="2 4" />);
+  els.push(<text key="divt" x={300} y={347} fill={P.ink3} fontSize={9} textAnchor="middle">
     {hasDrillFocus ? `—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——` : '—— 卡内结构 ——'}
   </text>);
-  // containment connectors into the sub-card layers — same bus-wiring language as 选中链路·层级图:
-  // 代表卡 → 2 计算 Die → AI Core 网格顶 → Tile 网格顶, each a solid SEL line + connector dots + 流动彗星.
-  if (hasDrillFocus) { const rp4 = pos[4]?.[repCard];
-    const dieCx = [135, 175], dieTopY = 340, dieBotY = 370;        // compute Die centres (i=0,1) · 30px cells @ y=340
-    const coreCx = 254.5, coreTopY = 426, coreBotY = 457;          // AI Core grid (16 cols · 17px pitch) span 120..389
-    const tileCx = 230.5, tileTopY = 526;                          // Tile grid (16 cols · 14px pitch) span 120..341
-    const cardBotY = 278;                                          // just below the card glyph (card centre y=268)
-    if (rp4) {
+  // containment connectors — 代表卡 → 2 计算 Die → Core-Group 图元，solid SEL line + connector dots + 流动彗星（封装互连 / NoC）.
+  const dieTopY = DIE.y - 6, dieBotY = DIE.y - 6 + DIE.cell!;
+  const coreGX = 120, coreGW = X1 - coreGX, coreCx = coreGX + coreGW / 2, coreTopY = CORE.y;
+  if (hasDrillFocus) {
+    const rp5 = pos[5]?.[repCard], dieCx = [135, 175], cardBotY = 322;
+    if (rp5) {
       dieCx.forEach((dx, di) => {
-        els.push(<line key={`cc-die-${di}`} x1={rp4.x} y1={cardBotY} x2={dx} y2={dieTopY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={0.55} />);
-        els.push(cflow(rp4.x, cardBotY, dx, dieTopY, `ccf-die-${di}`));
+        els.push(<line key={`cc-die-${di}`} x1={rp5.x} y1={cardBotY} x2={dx} y2={dieTopY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={0.55} />);
+        els.push(cflow(rp5.x, cardBotY, dx, dieTopY, `ccf-die-${di}`));
         els.push(cdot(dx, dieTopY, ACCENT, `ccd-die-${di}`, 2.2));
       });
-      els.push(cdot(rp4.x, cardBotY, ACCENT, 'ccd-card'));
+      els.push(cdot(rp5.x, cardBotY, ACCENT, 'ccd-card'));
     }
     dieCx.forEach((dx, di) => {
       els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreCx} y2={coreTopY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.5} />);
@@ -338,28 +352,78 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
     });
     els.push(cdot(coreCx, coreTopY, ACCENT, 'cd-core-top'));
-    els.push(<line key="cd-tile" x1={coreCx} y1={coreBotY} x2={tileCx} y2={tileTopY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.5} />);
-    els.push(cflow(coreCx, coreBotY, tileCx, tileTopY, 'cdf-tile'));
-    els.push(cdot(coreCx, coreBotY, ACCENT, 'cd-core-bot', 2));
-    els.push(cdot(tileCx, tileTopY, ACCENT, 'cd-tile-top'));
   }
-  SUBTIERS.forEach((st) => {
-    els.push(<text key={`slt-${st.key}`} x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
-    els.push(<text key={`sl-${st.key}`} x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    els.push(<text key={`scnt-${st.key}`} x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}${st.key === 'core' ? '/卡' : st.key === 'tile' ? '/核' : ''}`}</text>);
+  // 5a) L1 Die 子层（网格）
+  {
+    const st = DIE;
+    els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
+    els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
+    els.push(<text key="scnt-die" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
     for (let i = 0; i < st.n; i++) {
-      const cx = 120 + (i % st.cols) * (st.cell + st.gap), cy = st.y - 6 + Math.floor(i / st.cols) * (st.cell + st.gap);
-      const isSel = repReal && ((st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i));
-      // always use load-based color keyed to repCard so L0-L2 visually changes when a different
-      // node/cabinet is selected; IO Die (i≥2) keeps its structural color (no compute load).
-      const fill = (st.key === 'die' && i >= 2) || !playing ? st.col(i) : loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed + i, wlKind))));
+      const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
+      const isSel = repReal && focus?.die === i;
+      const fill = i >= 2 || !playing ? st.col!(i) : loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed! + i, wlKind))));
       els.push(
-        <rect key={`s-${st.key}-${i}`} x={cx} y={cy} width={st.cell} height={st.cell} rx={Math.min(3, st.cell * 0.18)} fill={fill} style={{ cursor: 'pointer' }}
+        <rect key={`s-die-${i}`} x={cx} y={cy} width={st.cell!} height={st.cell!} rx={Math.min(3, st.cell! * 0.18)} fill={fill} style={{ cursor: 'pointer' }}
           stroke={isSel ? ringC : 'none'} strokeWidth={isSel ? 1.8 : 0}
-          onClick={(e) => { e.stopPropagation(); setFocus({ level: st.lvl, card: repCard, ...(st.lvl === 'die' ? { die: i } : st.lvl === 'core' ? { core: i } : {}) }); }} />,
+          onClick={(e) => { e.stopPropagation(); setFocus({ level: 'die', card: repCard, die: i }); }} />,
       );
     }
-    if (st.key === 'die') els.push(<text key="die-cap" x={120 + 4 * (st.cell + st.gap) + 6} y={st.y + st.cell / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
+    els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
+  }
+  // 5b) L0 Core-Group 子层 —— 原生内嵌 CoreGroupMiniSvg 图元（不再用普通格子）。聚焦 core → 加高 + detail 提升。
+  {
+    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 150 : 90;
+    els.push(<text key="slt-core" x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
+    els.push(<text key="sl-core" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
+    els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡 · GM/L2+AIV/AIC`}</text>);
+    els.push(
+      <g key="core-glyph" style={{ cursor: 'pointer' }} transform={`translate(${coreGX} ${st.y})`}
+        onClick={(e) => { e.stopPropagation(); setFocus({ level: 'core', card: repCard, core: 0 }); }}>
+        {coreFocused && <rect x={-3} y={-3} width={coreGW + 6} height={coreH + 6} rx={8} fill="none" stroke={ringC} strokeWidth={1.8} />}
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={focus?.level === 'core' ? 1 : 0} phase={flow ? 'comm' : 'compute'}
+          load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
+      </g>,
+    );
+  }
+  // 6) 级间互联小 chip（HW_LEVELS[i].down）—— 与 hub 小标签一致：竖线 + 淡填圆角 + 描边 + 居中标签
+  const ichip = (x: number, y: number, label: string, color: string, key: string) => {
+    const w = label.length * 6.2 + 14;
+    return (
+      <g key={key} style={{ pointerEvents: 'none' }}>
+        <line x1={x} y1={y - 9} x2={x} y2={y + 9} stroke={color} strokeWidth={1.1} strokeOpacity={0.7} />
+        <rect x={x - w / 2} y={y - 6.5} width={w} height={13} rx={6.5} fill={color} fillOpacity={0.16} stroke={color} strokeOpacity={0.5} />
+        <text x={x} y={y + 0.5} fill={color} fontSize={8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central">{label}</text>
+      </g>
+    );
+  };
+  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(CX_MID, y, d.label, d.color, `ic-${li}`)); });
+  // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 每级 1 焦点 pill + 1–2 半透明幽灵 sibling（不可点，点焦点→整 Pod）
+  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）</text>);
+  TIERS.filter((t) => t.ctx).forEach((t) => {
+    const slotW = (X1 - X0) / 3, fh = t.h;
+    els.push(
+      <g key={`ctxl-${t.key}`}>
+        <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
+        <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
+      </g>,
+    );
+    const fx = X0 + slotW * 0.5, fw = Math.min(slotW - 12, t.maxW ?? 140);
+    els.push(
+      <g key={`ctxf-${t.key}`} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); }}>
+        <rect x={fx - fw / 2} y={t.y - fh / 2} width={fw} height={fh} rx={fh * 0.4} fill={t.col} />
+        <text x={fx} y={t.y + 0.5} fill={ink(t.col)} fontSize={9.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{`${t.label}·本域`}</text>
+      </g>,
+    );
+    (t.ghosts ?? []).forEach((g, gi) => {
+      const gx2 = X0 + slotW * (gi + 1.5), gw2 = Math.min(slotW - 12, 120);
+      els.push(
+        <g key={`ctxg-${t.key}-${gi}`} style={{ pointerEvents: 'none' }}>
+          <rect x={gx2 - gw2 / 2} y={t.y - fh / 2} width={gw2} height={fh} rx={fh * 0.4} fill={t.col} fillOpacity={0.12} stroke={t.col} strokeOpacity={0.4} strokeDasharray="3 3" />
+          <text x={gx2} y={t.y + 0.5} fill={t.col} fillOpacity={0.75} fontSize={9} textAnchor="middle" dominantBaseline="central">{g}</text>
+        </g>,
+      );
+    });
   });
 
   return (
@@ -491,16 +555,20 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
     if (step < EVT_LO || step > EVT_HI) return null;
     let strag = 0; for (let k = EVT_CAB * PER_CAB; k < (EVT_CAB + 1) * PER_CAB && k < N; k++) if (isStrag(k, step)) strag++;
     const redR = stats.kpi.hot / N;
-    return { root: EVT_CAB, title: `机柜 C${EVT_CAB} 过热`, chain: `液冷异常 → ${strag} 卡掉队(straggler) → DP 梯度 AllReduce 阻塞`, impact: `影响 ${Math.min(N, PER_CAB)} 卡 · step 延迟 +${Math.round(redR * 420 + 22)}%` };
+    return { root: EVT_CAB, title: `机柜（物理分组）C${EVT_CAB} 过热`, chain: `液冷异常 → ${strag} 卡掉队(straggler) → DP 梯度 AllReduce 阻塞`, impact: `影响 ${Math.min(N, PER_CAB)} 卡 · step 延迟 +${Math.round(redR * 420 + 22)}%` };
   }, [step, N, stats.kpi.hot]);
 
+  // 面包屑：全球 › 集群 › 服务池 › Pod › Host B{n} › Chip r{k} › Die › Core-Group（上三级为上下文，点击回整 Pod）
   const crumbs = useMemo(() => {
-    const out: { lvl: Level; label: string; card: number }[] = [{ lvl: 'super', label: '超节点', card: 0 }];
-    if (focus && focus.level !== 'super' && focus.level !== 'cluster') {
-      const cab = Math.floor(focus.card / PER_CAB); out.push({ lvl: 'cab', label: `机柜 C${cab}`, card: cab * PER_CAB });
-      if (['node', 'card', 'die', 'core', 'tile'].includes(focus.level)) { const b = Math.floor(focus.card / CPB); out.push({ lvl: 'node', label: `节点 B${b}`, card: b * CPB }); }
-      if (['card', 'die', 'core', 'tile'].includes(focus.level)) out.push({ lvl: 'card', label: `卡 r${focus.card}`, card: focus.card });
-      if (['die', 'core', 'tile'].includes(focus.level)) out.push({ lvl: focus.level, label: LEVEL_NAME[focus.level], card: focus.card });
+    const out: { lvl: string; label: string; card: number }[] = [
+      { lvl: 'global', label: '全球', card: 0 }, { lvl: 'cluster', label: '集群', card: 0 },
+      { lvl: 'pool', label: '服务池', card: 0 }, { lvl: 'super', label: 'Pod', card: 0 },
+    ];
+    if (focus && focus.level !== 'super') {
+      const b = Math.floor(focus.card / CPB); out.push({ lvl: 'node', label: `Host B${b}`, card: b * CPB });
+      if (['card', 'die', 'core'].includes(focus.level)) out.push({ lvl: 'card', label: `Chip r${focus.card}`, card: focus.card });
+      if (focus.level === 'die' || focus.level === 'core') out.push({ lvl: 'die', label: 'Die', card: focus.card });
+      if (focus.level === 'core') out.push({ lvl: 'core', label: 'Core-Group', card: focus.card });
     }
     return out;
   }, [focus]);
@@ -517,15 +585,15 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const reach = Math.sqrt(N) * 1.3 + 12;
   const panoSel = useMemo(() => focusToSel(focus), [focus]);
 
-  // parallel groups from the SINGLE SOURCE OF TRUTH — degrees/membership agree with 平面·3D·运行状态
-  const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
-  // 并行关系（rank↔rank）：每维给出 集合通信形态 + 度数 + 真实对端数（peersOf 真值），把 TP/SP/EP/PP/DP 的「联系」讲清楚
-  const COLL: Record<ParDim, string> = { tp: 'AllReduce', sp: 'AllGather+RS', pp: 'P2P send/recv', dp: 'Ring-AllReduce', ep: '层级化 All-to-All' };
-  const groups: { d: ParDim; label: string; c: string; coll: string; pat: 'ring' | 'a2a' | 'p2p'; peers: number; deg: number }[] = focus && rail ? (['tp', 'sp', 'pp', 'dp', 'ep'] as ParDim[]).map((d) => {
-    const k = focus.card, grp = pm.groupOf(k, d), deg = pm.groupCount(d);
-    const label = d === 'sp' && pm.sp <= 1 ? '与 TP 同域' : d === 'tp' ? `切片 ${grp}` : d === 'pp' ? `级 ${grp}/${pm.pp}` : d === 'dp' ? `副本 ${grp}` : `组 ${grp}/${pm.ep}`;
-    return { d, label, c: d === 'sp' ? PARALLEL_COLORS_SP : PARALLEL_COLORS[d as Exclude<PartitionDim, 'none'>], coll: COLL[d], pat: pm.collectiveOf(d), peers: pm.peersOf(k, d, 1 << 20).length, deg };
-  }) : [];
+  const groups = focus && rail ? (() => {
+    const k = focus.card, b = Math.floor(k / CPB);
+    return [
+      { d: 'tp', label: `TP·${k % CPB}`, c: PARALLEL_COLORS.tp },
+      { d: 'pp', label: `PP·${b % PP}`, c: PARALLEL_COLORS.pp },
+      { d: 'dp', label: `DP·复本${Math.floor(b / PP)}`, c: PARALLEL_COLORS.dp },
+      { d: 'ep', label: `EP 组 ${Math.floor(k / 64)}`, c: PARALLEL_COLORS.ep },
+    ];
+  })() : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
   const shellStyle: React.CSSProperties = workbenchProfile
@@ -607,7 +675,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             {crumbs.map((c, i) => (
               <span key={i} className="hpc-console-crumb">
                 {i > 0 && <span className="hpc-console-crumb-sep">/</span>}
-                <span onClick={() => setFocus(c.lvl === 'super' ? null : { level: c.lvl, card: c.card })}>{c.label}</span>
+                <span onClick={() => setFocus(['global', 'cluster', 'pool', 'super'].includes(c.lvl) ? null : { level: c.lvl as Level, card: c.card })}>{c.label}</span>
               </span>
             ))}
           </div>
@@ -667,7 +735,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           {crumbs.map((c, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {i > 0 && <span style={{ color: 'var(--tx3)' }}>›</span>}
-              <span onClick={() => setFocus(c.lvl === 'super' ? null : { level: c.lvl, card: c.card })} style={{ cursor: 'pointer', padding: '2px 5px', borderRadius: 5, color: i === crumbs.length - 1 ? 'var(--tx)' : ACCENT }}>{c.label}</span>
+              <span onClick={() => setFocus(['global', 'cluster', 'pool', 'super'].includes(c.lvl) ? null : { level: c.lvl as Level, card: c.card })} style={{ cursor: 'pointer', padding: '2px 5px', borderRadius: 5, color: i === crumbs.length - 1 ? 'var(--tx)' : ACCENT }}>{c.label}</span>
             </span>
           ))}
         </div>
@@ -710,7 +778,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             平面视图 · 层级图（控制 · 图元/配色同层级图）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
           </div>
           <div style={{ flex: 1, position: 'relative', minHeight: 0, padding: '4px 6px' }}>
-            <Smartscape N={N} nCabs={nCabs} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} />
+            <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} flow={lens === 'flow'} />
           </div>
         </div>
 
@@ -749,6 +817,8 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             />
           </Canvas>
 
+          {/* L0 细节由左侧原生 CoreGroupMiniSvg 图元 + 运行状态视图承担，右侧全景不再覆盖 L0 面板。 */}
+
           <button
             className={`hpc-console-info-toggle${infoOpen ? ' is-active' : ''}`}
             type="button"
@@ -775,7 +845,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                     <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
                     <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
                     <div style={{ fontSize: 11, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
-                    <button onClick={() => { setFocus({ level: 'cab', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
+                    <button onClick={() => { setFocus({ level: 'node', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
                   </>
                 ) : (
                   <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
@@ -784,7 +854,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
 
               <div style={{ ...card, padding: '10px 12px' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
-                <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nCabs} 机柜 · ${nBlades.toLocaleString()} 节点`}</div>
+                <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nBlades.toLocaleString()} Host · ${nCabs} 机柜（物理分组）`}</div>
                 {focus && rail ? (
                   <>
                     {(['util', 'strag', 'fault'] as Metric[]).map((mm) => {
@@ -830,7 +900,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                   {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid var(--bd)', paddingTop: 4 }}>
-                  {([['卡', ENTITY_COLORS.card], ['节点', ENTITY_COLORS.node], ['机柜', ENTITY_COLORS.cab], [TOK.supernode, ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
+                  {([['Chip', ENTITY_COLORS.card], ['Host', ENTITY_COLORS.node], ['机柜（物理分组）', ENTITY_COLORS.cab], ['Pod', ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
                     <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
                   ))}
                 </div>
