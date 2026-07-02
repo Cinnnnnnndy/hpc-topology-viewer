@@ -234,9 +234,10 @@ export const LEVEL_PHYS: Record<string, LevelPhys> = {
   core:    { plane: 'none',  planeLabel: '片上 · 无对外口',  color: '#7c8db8', short: '片上 · 无对外口', devices: 'Core-Group：AIC(Cube)/AIV(Vector)/AICPU · GM/L2 轨道' },
   tile:    { plane: 'none',  planeLabel: '片上 · 无对外口',  color: '#7c8db8', short: '片上 · 无对外口', devices: 'Cube/Vector 单元 · UB/L1/L0A/L0B/L0C buffer' },
 };
-// 阵列全景 band index → LEVEL_PHYS key
+// 阵列全景 band index → LEVEL_PHYS key（band index == L 编号，严格 8 级链 L0→L7；
+// 机柜/Tile 不是层级，不在此表——机柜=Pod 内物理分组，Tile=L0 Core-Group 内部粒度）
 export const BAND_PHYS_KEY: Record<number, string> = {
-  7: 'tile', 0: 'core', 1: 'die', 2: 'card', 3: 'node', 4: 'cab', 5: 'super', 6: 'cluster',
+  0: 'core', 1: 'die', 2: 'card', 3: 'node', 4: 'super', 5: 'pool', 6: 'cluster', 7: 'global',
 };
 
 // Each hierarchy level carries HARDWARE facts (hw) and the SOFTWARE view (sw)

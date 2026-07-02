@@ -72,7 +72,7 @@ export function layoutCoreGroupMini(w: number, h: number, detail: 0 | 1 | 2 = 1)
     const pad = Math.max(3, coreW * 0.045), innerX = coreX + pad, innerW = coreW - pad * 2;
     if (r.kind === 'aiv') {
       // UB 缓冲（左）+ SIMD/SIMT（右）
-      const ubW = innerW * (detail >= 1 ? 0.46 : 0.6), unitH = r.hh - pad * 2 - 8;
+      const ubW = innerW * (detail >= 1 ? 0.46 : 0.6), unitH = Math.max(6, r.hh - pad * 2 - 8);
       P.push({ t: 'buffer', x: innerX, y: r.y + pad + 7, w: ubW, h: unitH, name: 'UB', cap: '64kb', cols: detail >= 1 ? 8 : 4, rows: detail >= 1 ? 3 : 2, occKey: 'UB' });
       P.push({ t: 'exec', x: innerX + ubW + pad, y: r.y + pad + 7, w: innerW - ubW - pad, h: unitH, label: detail >= 2 ? 'SIMT · SIMD' : 'SIMD', color: ARCH_COLORS.simd });
       // MTE2：GM → UB
@@ -80,13 +80,13 @@ export function layoutCoreGroupMini(w: number, h: number, detail: 0 | 1 | 2 = 1)
       if (detail >= 1) P.push({ t: 'chip', x: (gmX + railW + innerX) / 2, y: r.y + r.hh * 0.5 - 6, label: 'MTE2', color: ARCH_COLORS.mteChip, hotKeys: ['mte2'] });
     } else {
       // AIC：L1 → L0A/L0B → CUBE → L0C（detail≥2 加 BT/FP/Scalar）
-      const colW = innerW / (detail >= 1 ? 4 : 3), unitH = r.hh - pad * 2 - 8, uy = r.y + pad + 7;
+      const colW = innerW / (detail >= 1 ? 4 : 3), unitH = Math.max(6, r.hh - pad * 2 - 8), uy = r.y + pad + 7;
       P.push({ t: 'buffer', x: innerX, y: uy, w: colW * 0.86, h: unitH, name: 'L1', cap: '512kb', cols: 5, rows: detail >= 1 ? 5 : 3, occKey: 'L1' });
       if (detail >= 1) {
         const abH = detail >= 2 ? unitH * 0.42 : unitH * 0.46;
         P.push({ t: 'buffer', x: innerX + colW, y: uy, w: colW * 0.8, h: abH, name: 'L0A', cols: 5, rows: 2, occKey: 'L0A' });
         P.push({ t: 'buffer', x: innerX + colW, y: uy + unitH - abH, w: colW * 0.8, h: abH, name: 'L0B', cols: 5, rows: 2, occKey: 'L0B' });
-        if (detail >= 2) P.push({ t: 'buffer', x: innerX + colW, y: uy + abH + 2, w: colW * 0.8, h: unitH - 2 * abH - 4, name: 'BT·FP', cols: 5, rows: 1, occKey: 'FP' });
+        if (detail >= 2 && unitH - 2 * abH - 4 >= 8) P.push({ t: 'buffer', x: innerX + colW, y: uy + abH + 2, w: colW * 0.8, h: unitH - 2 * abH - 4, name: 'BT·FP', cols: 5, rows: 1, occKey: 'FP' });
         P.push({ t: 'route', pts: [[innerX + colW * 0.86, uy + unitH * 0.5], [innerX + colW, uy + unitH * 0.5]], color: ARCH_COLORS.mteChip, hotKeys: ['mte1'] });
         P.push({ t: 'chip', x: innerX + colW * 0.93, y: uy + unitH * 0.5 - 6, label: 'MTE1', color: ARCH_COLORS.mteChip, hotKeys: ['mte1'] });
       }
@@ -141,14 +141,17 @@ export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], 
       ctx.fillStyle = label; ctx.font = '600 6.5px sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(p.name + (p.cap ? ` ${p.cap}` : ''), ox + p.x + 2, oy + p.y + 7);
       const gx = ox + p.x + 2, gy = oy + p.y + 9, gw = p.w - 4, gh = p.h - 11;
-      const cw = gw / p.cols, ch = Math.min(gh / p.rows, 5);
-      const isOcc = occ.includes(p.occKey);
-      const occCells = isOcc ? Math.round(p.cols * p.rows * occFrac) : 0;
-      let k = 0;
-      for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++, k++) {
-        ctx.fillStyle = k < occCells ? ARCH_COLORS.cellOcc : ARCH_COLORS.cellBase;
-        ctx.globalAlpha = (o.alpha ?? 1) * (k < occCells ? 0.95 : 0.55);
-        ctx.fillRect(gx + c * cw, gy + r * (ch + 1), Math.max(1.5, cw - 1), Math.max(1.5, ch - 0.5));
+      const nRows = Math.max(1, Math.min(p.rows, Math.floor(gh / 3)));   // 小尺寸下压缩行数
+      if (gh >= 3 && gw >= 3) {
+        const cw = gw / p.cols, ch = Math.max(1.5, Math.min(gh / nRows, 5));
+        const isOcc = occ.includes(p.occKey);
+        const occCells = isOcc ? Math.round(p.cols * nRows * occFrac) : 0;
+        let k = 0;
+        for (let r = 0; r < nRows; r++) for (let c = 0; c < p.cols; c++, k++) {
+          ctx.fillStyle = k < occCells ? ARCH_COLORS.cellOcc : ARCH_COLORS.cellBase;
+          ctx.globalAlpha = (o.alpha ?? 1) * (k < occCells ? 0.95 : 0.55);
+          ctx.fillRect(gx + c * cw, gy + r * (ch + 1), Math.max(1.5, cw - 1), Math.max(1, ch - 0.5));
+        }
       }
       ctx.globalAlpha = o.alpha ?? 1;
     } else if (p.t === 'exec') {
@@ -210,12 +213,16 @@ export function CoreGroupMiniSvg({ width, height, detail = 1, phase, load = 0.5,
           <text x={p.x + 4} y={p.y + 8} fontSize={7.5} fontWeight={700} fill={label}>{p.label}</text></g>;
         if (p.t === 'buffer') {
           const cells: React.ReactNode[] = [];
-          const gx = p.x + 2, gy = p.y + 9, cw = (p.w - 4) / p.cols, ch = Math.min((p.h - 11) / p.rows, 5);
-          const occCells = occ.includes(p.occKey) ? Math.round(p.cols * p.rows * occFrac) : 0;
-          let k = 0;
-          for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++, k++)
-            cells.push(<rect key={k} x={gx + c * cw} y={gy + r * (ch + 1)} width={Math.max(1.5, cw - 1)} height={Math.max(1.5, ch - 0.5)}
-              fill={k < occCells ? ARCH_COLORS.cellOcc : ARCH_COLORS.cellBase} opacity={k < occCells ? 0.95 : 0.55} />);
+          const gx = p.x + 2, gy = p.y + 9, gh = p.h - 11;
+          const nRows = Math.max(1, Math.min(p.rows, Math.floor(gh / 3)));   // 小尺寸下压缩行数
+          if (gh >= 3 && p.w >= 7) {
+            const cw = (p.w - 4) / p.cols, ch = Math.max(1.5, Math.min(gh / nRows, 5));
+            const occCells = occ.includes(p.occKey) ? Math.round(p.cols * nRows * occFrac) : 0;
+            let k = 0;
+            for (let r = 0; r < nRows; r++) for (let c = 0; c < p.cols; c++, k++)
+              cells.push(<rect key={k} x={gx + c * cw} y={gy + r * (ch + 1)} width={Math.max(1.5, cw - 1)} height={Math.max(1, ch - 0.5)}
+                fill={k < occCells ? ARCH_COLORS.cellOcc : ARCH_COLORS.cellBase} opacity={k < occCells ? 0.95 : 0.55} />);
+          }
           return <g key={i}>
             <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={2.5} fill="none" stroke={dark ? '#4a5468' : '#9aa6bd'} strokeWidth={0.8} />
             <text x={p.x + 2} y={p.y + 7} fontSize={6.5} fontWeight={600} fill={label}>{p.name}{p.cap ? ` ${p.cap}` : ''}</text>{cells}</g>;

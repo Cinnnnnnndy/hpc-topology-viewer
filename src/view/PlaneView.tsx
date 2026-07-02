@@ -9,14 +9,14 @@
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkloadPanel } from './WorkloadPanel';
-import { CoreGroupPattern } from './CoreGroupPattern';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, HW_LEVELS, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
+import { drawCoreGroupMini, drawLevelContainer, drawInterconnectChip } from './arch-glyphs';
 import { SceneVisualProfileContext } from '../scene/visual-profile';
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
-const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', multi: '多平面', none: '片上' };
+const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', vpc: 'DCN·南北向', multi: '多平面', none: '片上' };
 // physical-device accent colours (drawn as objects inside node glyphs / blade frames)
 const DEV_CPU = '#4a8cff';   // 鲲鹏 CPU
 const DEV_LPO = '#36e0c4';   // LPO 光模块
@@ -146,7 +146,7 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
   const paint = useCallback(() => {
     const cv = cref.current; if (!cv) return;
     // compact natural height (no force-fill) — every row sits right under its parent + connectors connect
-    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : 528;
+    const W = PANEL_W - 26, isL2 = sel.kind === 'l2', H = isL2 ? 200 : 400;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
     const ctx = cv.getContext('2d')!; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
@@ -170,52 +170,42 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
     const blade = sel.kind === 'l2' ? -1 : sel.blade, npuLocal = sel.kind === 'npu' ? sel.k % CPB : -1;
     const focusLocal = npuLocal >= 0 ? npuLocal : 0, focusK = blade >= 0 ? blade * CPB + focusLocal : 0;
 
-    // L4 Pod · 超节点
-    let y = 18; lbl('L4', 'Pod·超节点', y); pill(midX, y, Math.min(cw, 150), 18, ENTITY_COLORS.super, TOK.supernode, false); const ySuper = y;
-    // 机柜（并入 L4）
-    y = 52; lbl('', '机柜（并入 L4）', y); pill(midX, y, 78, 18, ENTITY_COLORS.cab, `C${cab}`, false); conn(midX, ySuper + 9, midX, y - 9, true); const yCab = y;
+    // 8 级链：L7 Global → L6 Cluster → L5 Pool → L4 Pod（上三级为上下文，漏斗 ghost pill）→ …
+    let y = 12; lbl('L7', 'Global', y); pill(midX, y, 66, 13, ENTITY_COLORS.global, 'Global', false); const yG = y;
+    y = 34; lbl('L6', 'Cluster', y); pill(midX, y, 74, 13, ENTITY_COLORS.cluster, 'Cluster', false); conn(midX, yG + 6.5, midX, y - 6.5, true); const yCl = y;
+    y = 56; lbl('L5', 'Pool', y); pill(midX, y, 82, 13, ENTITY_COLORS.pool, 'Pool', false); conn(midX, yCl + 6.5, midX, y - 6.5, true); const yPl = y;
+    y = 82; lbl('L4', 'Pod · UBL128', y); pill(midX, y, Math.min(cw, 150), 18, ENTITY_COLORS.super, 'Pod', false); conn(midX, yPl + 6.5, midX, y - 9, true); const ySuper = y;
 
     if (isL2) {
-      y = 92; lbl('L3', 'Host ×8', y); const n = 8, bw = Math.min(34, (cw - (n - 1) * 5) / n), step = (cw - bw) / (n - 1);
-      for (let i = 0; i < n; i++) { const x = cl + bw / 2 + step * i; const bid = cab * BPC + i; conn(midX, yCab + 9, x, y - 12, true); pill(x, y, bw, 22, curP ? heat(bid * 131 + 5) : ENTITY_COLORS.node, `B${bid}`, false); }
-      lbl('', '柜内全部 Host', y + 34);
+      y = 120; lbl('L3', 'Host ×8', y); const n = 8, bw = Math.min(34, (cw - (n - 1) * 5) / n), step = (cw - bw) / (n - 1);
+      for (let i = 0; i < n; i++) { const x = cl + bw / 2 + step * i; const bid = cab * BPC + i; conn(midX, ySuper + 9, x, y - 12, true); pill(x, y, bw, 22, curP ? heat(bid * 131 + 5) : ENTITY_COLORS.node, `B${bid}`, false); }
+      lbl('', '机柜（物理分组）· 柜内全部 Host', y + 34);
     } else {
       // L3 Host · 节点/刀片
-      y = 92; lbl('L3', 'Host·节点/刀片', y); pill(midX, y, 90, 18, curP ? heat(blade * 131 + 5) : ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1'); conn(midX, yCab + 9, midX, y - 9, true); const yNode = y;
+      y = 118; lbl('L3', 'Host·节点/刀片', y); pill(midX, y, 90, 18, curP ? heat(blade * 131 + 5) : ENTITY_COLORS.node, `B${blade}`, sel.kind === 'l1'); conn(midX, ySuper + 9, midX, y - 9, true); const yNode = y;
       // L2 Chip·NPU ×8
-      y = 138; lbl('L2', 'Chip·NPU', y); const csz = Math.min(28, (cw - 7 * 5) / 8), cstep = (cw - csz) / 7; const cardX: number[] = [];
+      y = 158; lbl('L2', 'Chip·NPU', y); const csz = Math.min(28, (cw - 7 * 5) / 8), cstep = (cw - csz) / 7; const cardX: number[] = [];
       for (let i = 0; i < 8; i++) { const x = cl + csz / 2 + cstep * i; cardX.push(x); const on = i === npuLocal; conn(midX, yNode + 9, x, y - csz / 2, on || sel.kind === 'l1'); card(x, y, csz, on, curP ? heat(blade * CPB + i) : ENTITY_COLORS.card); }
       const yCards = y;
       // 主机器件 CPU/NIC (related)
-      y = 178; lbl('', '主机器件', y);
+      y = 196; lbl('', '主机器件', y);
       const cpuShow = (sel.kind === 'npu' || sel.kind === 'l1') ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
       const nicShow = sel.kind === 'l1' ? [0, 1, 2, 3] : (sel.kind === 'cpu' || sel.kind === 'nic') ? [sel.i] : [];
       const hostN = cpuShow.length + nicShow.length, hw = 30, hstep = hostN > 1 ? Math.min(46, cw / hostN) : 0, hx0 = midX - (hostN - 1) * hstep / 2;
       cpuShow.forEach((i, j) => pill(hx0 + j * hstep, y, hw, 17, curP ? heat(blade * 40 + i + 9) : DEV_CPU, 'CPU', sel.kind === 'cpu' && sel.i === i));
       nicShow.forEach((i, j) => pill(hx0 + (cpuShow.length + j) * hstep, y, hw, 17, curP ? heat(blade * 50 + i + 9) : PLANES[2].color, 'NIC', sel.kind === 'nic' && sel.i === i));
       // L1 计算 Die (focus card) — 截取层级图下钻
-      y = 224; lbl('L1', `Die（可选）· 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
+      y = 240; lbl('L1', `Die（可选）· 卡${focusK}`, y); const dieW = Math.min(48, (cw - 3 * 8) / 4), dstep = (cw - dieW) / 3; const dieX: number[] = [];
       for (let i = 0; i < 4; i++) { const x = cl + dieW / 2 + dstep * i; dieX.push(x); conn(cardX[focusLocal], yCards + csz / 2, x, y - 17, true); die(x, y, dieW, 30, i < 2); }
       ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.font = '8px sans-serif'; ctx.fillText('2 计算(UMA)', dieX[0] / 1 + (dieX[1] - dieX[0]) / 2, y + 20); ctx.fillText('2 IO', dieX[2] + (dieX[3] - dieX[2]) / 2, y + 20);
-      // ── lower region: L0 Core-Group (32 成员核, 8×4) + Tile（L0 内）(128, 16×8) — compact, every
-      //    grid sits right under its parent and the connectors actually CONNECT (no forced fill / 纵向空缺) ──
-      const dieBot = 224 + 15;
-      const l1Top = 282, l1gh = 16, l1gv = 4, l1rows = 4, l1Bot = l1Top + l1rows * l1gh + (l1rows - 1) * l1gv;
-      const l0Top = 398, l0gh = 12, l0gv = 2, l0rows = 8, l0Bot = l0Top + l0rows * l0gh + (l0rows - 1) * l0gv;
-      // connectors first (so the captions/labels render on top, staying legible)
-      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, l1Top - 1, true);   // 计算 Die → L1 grid top
-      conn(midX, l1Bot + 1, midX, l0Top - 1, true);                               // L1 grid bottom → L0 grid top
-      // L0 Core-Group — 32 成员核 (8×4), Cube/Vector idle · per-core load 配色 when playing
-      lbl('L0', 'Core-Group', 268);
+      // ── L0 Core-Group grid（32 成员核, 8×4）· 内部 Tile/lane 归入 L0（不再单列 Tile 行）──
+      const dieBot = 240 + 15;
+      const l1Top = 296, l1gh = 16, l1gv = 4, l1rows = 4, l1Bot = l1Top + l1rows * l1gh + (l1rows - 1) * l1gv;
+      for (let i = 0; i < 2; i++) conn(dieX[i], dieBot, midX, l1Top - 1, true);   // 计算 Die → L0 grid top
+      lbl('L0', 'Core-Group', 284);
       { const cols = 8, gw = cw / cols;
         for (let r = 0; r < l1rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c, vec = idx % 8 === 7; ctx.fillStyle = curP ? heat(focusK * 131 + idx) : (vec ? ENTITY_COLORS.vector : ENTITY_COLORS.cube); rr(cl + c * gw + 1.5, l1Top + r * (l1gh + l1gv), gw - 3, l1gh, 2.5); ctx.fill(); } }
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('32 Core-Group 成员核 · AIC Cube ∶ AIV Vector ≈ 8∶1', midX, l1Bot + 11);
-      // Tile（L0 内）— 128 (16×8) 全量 · per-tile load 配色 when playing
-      lbl('', 'Tile（L0 内）', 384);
-      { const cols = 16, gw = cw / cols; ctx.globalAlpha = 0.9;
-        for (let r = 0; r < l0rows; r++) for (let c = 0; c < cols; c++) { const idx = r * cols + c; ctx.fillStyle = curP ? heat(focusK * 517 + idx) : ENTITY_COLORS.vector; rr(cl + c * gw + 0.8, l0Top + r * (l0gh + l0gv), gw - 1.6, l0gh, 1.6); ctx.fill(); }
-        ctx.globalAlpha = 1; }
-      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('128 Tile / SIMT lane（核内最细粒度）', midX, l0Bot + 11);
+      ctx.fillStyle = ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '8.5px sans-serif'; ctx.fillText('内部：Tile/lane · memory-architecture', midX, l1Bot + 11);
     }
   }, [sel, dark, playing, runMode, headRef, phaseRef]);
   useEffect(() => { paint(); }, [paint]);
@@ -224,7 +214,7 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
     raf.current = requestAnimationFrame(loop);
     return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
   }, [paint]);
-  const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 交换（Host ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（Host ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（Host ${sel.blade} #${sel.i + 1}）`;
+  const title = sel.kind === 'npu' ? `NPU 卡 ${sel.k}` : sel.kind === 'l1' ? `L1 交换（Host ${sel.blade}）` : sel.kind === 'l2' ? `L2 交换（机柜·物理分组 ${sel.cab}）` : sel.kind === 'cpu' ? `${TOK.kunpeng} CPU（Host ${sel.blade} #${sel.i + 1}）` : `${TOK.qingtian} NIC（Host ${sel.blade} #${sel.i + 1}）`;
   return (
     <div style={{ position: 'absolute', top: workbenchProfile ? 12 : 0, right: workbenchProfile ? 12 : 0, bottom: workbenchProfile ? 12 : 0, width: PANEL_W, background: 'var(--panel)', ...(workbenchProfile ? { borderRadius: 'var(--panel-shell-radius)' } : { borderLeft: '1px solid var(--bd)' }), boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
@@ -235,7 +225,7 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
       <div style={{ fontSize: 11, color: SEL, fontWeight: 600, marginBottom: 2 }}>{title}</div>
       <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>{playing ? <><span style={{ color: ENTITY_COLORS.cube, fontWeight: 600 }}>▶ 执行时序同步播放</span> · 器件按负载变色 · 链路虚线流动=流量</> : '与层级图同一图元/配色/连线 · 仅选中(蓝圈)+关联，下钻到 L1/L0'}</div>
       <div style={{ overflowY: 'auto', flex: 1 }}><canvas ref={cref} style={{ width: '100%', display: 'block' }} /></div>
-      <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；卡=device(4 Die)；下钻 Core-Group(L0)/Tile(L0 内)。点画布空白取消。</div>
+      <div style={{ paddingTop: 8, marginTop: 6, fontSize: 9.5, color: 'var(--tx3)', borderTop: '1px solid var(--bd)' }}>板内 NPU = UB 直连全互联；卡=device(4 Die)；下钻 L0 Core-Group（内部 Tile/lane · memory-architecture）。点画布空白取消。</div>
     </div>
   );
 }
@@ -243,7 +233,7 @@ function SelHierPanel({ sel, dark, onClose, playing, headRef, phaseRef, runMode 
 // normalized selection lifted out of the plane view (any layout) → drives the linked
 // 阵列全景 + 运行状态 dashboard in the 联动控制台 (console) view. `card` = global card
 // index inside the single super-node (8 卡/刀片 · 8 刀片/柜, matches FullPodScene full=true).
-export type PlaneSel = { level: 'cluster' | 'super' | 'cab' | 'node' | 'card' | 'die' | 'core' | 'tile'; card: number; die?: number; core?: number } | null;
+export type PlaneSel = { level: 'global' | 'cluster' | 'pool' | 'super' | 'node' | 'card' | 'die' | 'core'; card: number; die?: number; core?: number } | null;
 
 export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; onSelect?: (sel: PlaneSel) => void }) {
   const visualProfile = useContext(SceneVisualProfileContext);
@@ -313,37 +303,37 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
   // ── layered-hierarchy layout: each level is MATRIX-PACKED into a square-ish grid
   // (like the top view), the grids stacked top→bottom by level. Formula-based (no
   // per-unit arrays) so the full pod — incl. 16K Die / ~300K AI Core — costs nothing.
-  // Levels (hw-native-sys L0–L7): L4 Pod · 超节点 → 机柜(并入 L4) → L3 Host · 节点 →
-  // L2 Chip·NPU(1 device · 内含 4 Die) → L1 Die(可选) → L0 Core-Group → Tile(L0 内).
+  // Levels (hw-native-sys L7→L0, aligned 1:1 with LAYER_INFO / HW_LEVELS):
+  //   L7 全球(funnel) → L6 集群(funnel) → L5 服务池(funnel) → L4 Pod(banner) →
+  //   L3 Host ×1024 → L2 Chip·NPU ×8192 → L1 Die ×2/Chip(可选) → L0 Core-Group(mini-arch 本体).
+  // 机柜 / Tile 不是层级：机柜=Pod 内物理分组、Tile=L0 内部粒度（并到 L0 行下方小注）。
   // HARDWARE containment only; rank is software, bound 1:1 to the card-device. ──
   const LAY = useMemo(() => {
-    const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64));
+    const N = spec.totalNpus, nCab = Math.max(1, Math.round(N / 64)), nNode = Math.max(1, Math.round(N / CPB));
     const margin = 11, Wc = 100, gap = 2.4;   // wider canvas
-    // FULL chain by the hw-native-sys L0–L7 coordinate (rank is software, shown separately):
-    // L4 Pod · 超节点 → [机柜 并入 L4] → L3 Host · 节点 → L2 Chip·NPU(device) →
-    // L1 计算 Die(×2/卡 · 可选) → L0 Core-Group(×16/Die) → Tile(L0 内). 机柜 has no own L
-    // (并入 L4 Pod). Upper L5 服务池 / L6 集群 / L7 全球 are context-only (not rendered here) —
-    // this view is exactly ONE L4 Pod. The Pod level is a full-width banner; the rest are matrices.
-    // `ar` = grid width:height → cols = √(count·ar); a level's WORLD height = Wc/ar, so
-    // higher ar ⇒ more per row AND shorter. The huge fine levels (Die/Core-Group/Tile) get high ar
-    // so they're COMPACT at overview (you can't scan 1M tiles) and aggregate; the finest Tile level
-    // is an aggregate observation strip (流水气泡/访存), with per-cell detail only on drill.
+    // 上三行 global/cluster/pool = 漏斗 pill 行（焦点 pill + 幽灵 sibling · 相邻倍率 1）；super = banner；
+    // node/card/die = matrix；core = L0 mini-architecture 本体（drawCoreGroupMini）。相邻倍率：
+    // …1,1,1,1024,8,2,聚合(16)。`ar` = grid width:height → cols = √(count·ar)。
     const defs = [
-      { kind: 'super',   count: 1,                 color: ENTITY_COLORS.super,      label: 'L4 Pod · 超节点',     banner: true,  ar: 5.4 },
-      { kind: 'cab',     count: nCab,               color: ENTITY_COLORS.cab,       label: '机柜（并入 L4）',      banner: false, ar: 32 },
-      { kind: 'node',    count: nCab * 8,           color: ENTITY_COLORS.node,      label: 'L3 Host · 节点/刀片',  banner: false, ar: 14 },
-      { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L2 Chip·NPU',         banner: false, ar: 5.0 },
-      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L1 计算 Die ×2 · 可选', banner: false, ar: 6.0 },
-      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L0 Core-Group',       banner: false, ar: 8.0 },
-      { kind: 'tile',    count: N * CORES_PER_CARD * 4, color: ENTITY_COLORS.vector, label: 'Tile（L0 内）',        banner: false, ar: 20 },
-    ];
+      { kind: 'global',  count: 1,                 color: ENTITY_COLORS.global,     label: 'L7 全球',             funnel: true,  ar: 1 },
+      { kind: 'cluster', count: 1,                 color: ENTITY_COLORS.cluster,    label: 'L6 集群',             funnel: true,  ar: 1 },
+      { kind: 'pool',    count: 1,                 color: ENTITY_COLORS.pool,       label: 'L5 服务池',           funnel: true,  ar: 1 },
+      { kind: 'super',   count: 1,                 color: ENTITY_COLORS.super,      label: 'L4 Pod · UBL128',     banner: true,  ar: 5.4 },
+      { kind: 'node',    count: nNode,             color: ENTITY_COLORS.node,       label: 'L3 Host · 节点/刀片',  ar: 14 },
+      { kind: 'card',    count: N,                  color: ENTITY_COLORS.card,      label: 'L2 Chip·NPU',         ar: 5.0 },
+      { kind: 'die',     count: N * 2,              color: ENTITY_COLORS.computeDie, label: 'L1 计算 Die ×2 · 可选', ar: 6.0 },
+      { kind: 'core',    count: N * CORES_PER_CARD, color: ENTITY_COLORS.cube,      label: 'L0 Core-Group',       coreRow: true, ar: 8.0 },
+    ] as { kind: string; count: number; color: string; label: string; funnel?: boolean; banner?: boolean; coreRow?: boolean; ar: number }[];
     let y = margin;
     const levels = defs.map((d, li) => {
-      if (d.banner) { const h = 3.6, y0 = y; y += h + gap * 1.1; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp: 1 }; }
+      const grp = li === 0 ? 1 : d.count / defs[li - 1].count;   // children per parent
+      if (d.funnel) { const h = 3.0, y0 = y; y += h + gap * 1.5; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp }; }
+      if (d.banner) { const h = 3.6, y0 = y; y += h + gap * 1.5; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp }; }
+      if (d.coreRow) { const h = 22, y0 = y; y += h + gap; return { ...d, cols: 1, cell: Wc, rows: 1, y0, h, grp }; }   // L0 mini-arch strip (taller)
       const cols = Math.max(1, Math.round(Math.sqrt(d.count * d.ar)));
       const cell = Wc / cols, rows = Math.ceil(d.count / cols), h = rows * cell, y0 = y;
       y += h + gap;
-      return { ...d, cols, cell, rows, y0, h, grp: d.count / defs[li - 1].count };   // grp = children per parent
+      return { ...d, cols, cell, rows, y0, h, grp };
     });
     return { levels, margin, Wc, w: margin * 2 + Wc, h: y - gap + margin, cabN: nCab, cardN: N, coreN: N * CORES_PER_CARD };
   }, [spec]);
@@ -369,7 +359,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
   // formula cell centre (level li, unit index i) — no stored arrays
   const cellXY = (li: number, i: number): [number, number] => {
     const Lv = LAY.levels[li];
-    if (Lv.banner) return [LAY.margin + LAY.Wc / 2, Lv.y0 + Lv.h / 2];
+    if (Lv.banner || Lv.funnel || Lv.coreRow) return [LAY.margin + LAY.Wc / 2, Lv.y0 + Lv.h / 2];
     const c = i % Lv.cols, r = Math.floor(i / Lv.cols);
     return [LAY.margin + (c + 0.5) * Lv.cell, Lv.y0 + (r + 0.5) * Lv.cell];
   };
@@ -585,18 +575,31 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         ctx.globalAlpha = 1;
       };
 
+      const REFINE_PX = 54;   // node/card/die cells above this px get a screen-space drawLevelContainer refine
       levels.forEach((Lv, li) => {
         const lc = curPhase ? heatOf(li * 1009 + 1) : Lv.color;   // playing → level load heatmap; idle → original level colour
-        // L4 Pod · 超节点 = the top context banner — a clean SOLID colour-block pill (no faint
-        // outline): filled bar, bold title left, stats right, with a darker inset chip for "L4".
+        // 漏斗 pill 行（L7 全球 / L6 集群 / L5 服务池）：焦点 pill（在链路上）+ 幽灵 sibling（不在链路）。
+        if (Lv.funnel) {
+          const hl = HW_LEVELS[li];
+          const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
+          const sel = !!(hi && on), dim = hi && !on;
+          // ghost siblings（faint）on both sides
+          const gw = Wc * 0.24, gAlpha = dim ? 0.1 : 0.28;
+          ctx.globalAlpha = gAlpha; ctx.fillStyle = Lv.color;
+          rr(margin + Wc * 0.03, Lv.y0 + Lv.h * 0.14, gw, Lv.h * 0.72, Lv.h * 0.3); ctx.fill();
+          rr(margin + Wc - Wc * 0.03 - gw, Lv.y0 + Lv.h * 0.14, gw, Lv.h * 0.72, Lv.h * 0.3); ctx.fill();
+          // focus pill（in-chain）
+          const fw = Wc * 0.4, fx = margin + (Wc - fw) / 2;
+          const bFill = (sel && !curPhase) ? SEL : lc;
+          ctx.globalAlpha = dim ? 0.4 : 1; ctx.fillStyle = bFill;
+          rr(fx, Lv.y0, fw, Lv.h, Lv.h * 0.3); ctx.fill();
+          ctx.globalAlpha = 1; ctx.fillStyle = (sel && !curPhase) ? '#fff' : inkOf(bFill);
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.min(1.5, Lv.h * 0.42)}px sans-serif`;
+          ctx.fillText(`${hl.tag} ${hl.name}`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          return;
+        }
+        // L4 Pod = banner — filled bar, bold title left, 'UB 交换 Clos' switch 块示意 in the middle, stats right.
         if (Lv.banner) {
-          // context chain above the banner (small · muted, like the axis notes): the upper
-          // coordinates (L7 全球 / L6 集群 / L5 服务池) that contain this single L4 Pod.
-          ctx.save();
-          ctx.globalAlpha = 1; ctx.fillStyle = P.ink2; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-          ctx.font = `${Math.min(1.15, Lv.h * 0.3)}px sans-serif`;
-          ctx.fillText('L7 全球 ─DCN→ L6 集群 ─Scale-Out→ L5 服务池 ─Pool 内互联→ 本视图 = 1 × L4 Pod', margin, Lv.y0 - Lv.h * 0.32);
-          ctx.restore();
           const on = !hi || (hi.lo[li] <= 0 && hi.hi[li] > 0);
           const sel = !!(hi && on), dim = hi && !on;
           const selHi = sel && !curPhase;   // playing → 选中链路也按状态(load)上色，而非高亮色
@@ -612,23 +615,31 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
           ctx.textAlign = 'center'; ctx.font = `700 ${Math.min(1.7, Lv.h * 0.4)}px sans-serif`;
           ctx.fillText('L4', margin + chPad + chW / 2, Lv.y0 + Lv.h / 2);
           ctx.textAlign = 'left'; ctx.font = `700 ${Math.min(1.9, Lv.h * 0.42)}px sans-serif`;
-          ctx.fillText(`${TOK.supernode} · Pod · UBL128`, margin + chPad * 2 + chW, Lv.y0 + Lv.h / 2);
-          ctx.textAlign = 'right'; ctx.globalAlpha = 0.85; ctx.font = `${Math.min(1.55, Lv.h * 0.34)}px ${MONO}`;
-          ctx.fillText(`${LAY.cabN.toLocaleString()} 机柜 · ${LAY.cardN.toLocaleString()} NPU`, margin + Wc - Lv.h * 0.45, Lv.y0 + Lv.h / 2);
+          ctx.fillText('Pod · UBL128', margin + chPad * 2 + chW, Lv.y0 + Lv.h / 2);
+          // 'UB 交换 Clos' switch 块示意（middle）
+          const swW = Lv.h * 2.9, swH = Lv.h * 0.56, swX = margin + Wc * 0.5, swY = Lv.y0 + (Lv.h - swH) / 2;
+          ctx.globalAlpha = 0.92; ctx.fillStyle = PLANES[0].color; rr(swX, swY, swW, swH, swH * 0.34); ctx.fill();
+          ctx.globalAlpha = 1; ctx.fillStyle = inkOf(PLANES[0].color); ctx.textAlign = 'center'; ctx.font = `700 ${Math.min(0.95, Lv.h * 0.26)}px sans-serif`;
+          ctx.fillText('UB 交换 Clos', swX + swW / 2, swY + swH / 2 + 0.1);
+          ctx.textAlign = 'right'; ctx.globalAlpha = 0.85; ctx.font = `${Math.min(1.4, Lv.h * 0.32)}px ${MONO}`;
+          ctx.fillText(`${LAY.cabN.toLocaleString()} 机柜（物理分组） · ${LAY.cardN.toLocaleString()} NPU`, margin + Wc - Lv.h * 0.35, Lv.y0 + Lv.h / 2);
           ctx.globalAlpha = 1;
           return;
         }
+        if (Lv.coreRow) return;   // L0 Core-Group 本体在 restore 后以屏幕空间 drawCoreGroupMini 原生绘制
         const cellPx = Lv.cell * s, pad = Lv.cell * 0.14;
         // visible cell window (cull to viewport)
         const c0 = Math.max(0, Math.floor((vx0 - margin) / Lv.cell)), c1 = Math.min(Lv.cols, Math.ceil((vx1 - margin) / Lv.cell));
         const r0 = Math.max(0, Math.floor((vy0 - Lv.y0) / Lv.cell)), r1 = Math.min(Lv.rows, Math.ceil((vy1 - Lv.y0) / Lv.cell));
         if (cellPx >= 3 && Lv.y0 < vy1 && Lv.y0 + Lv.h > vy0) {
           // individual glyphs (culled)
+          const refine = cellPx > REFINE_PX && (Lv.kind === 'node' || Lv.kind === 'card' || Lv.kind === 'die');   // large cells → screen-space drawLevelContainer refine pass
           for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
             const i = r * Lv.cols + c; if (i >= Lv.count) break;
+            if (refine) continue;   // drawn as a refined container in the screen pass below
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            const cellBase = curPhase ? heatOf(i) : (Lv.kind === 'core' && i % 8 === 7 ? ENTITY_COLORS.vector : lc);   // playing → per-cell load; idle → original (L1 Cube∶Vector ≈ 8∶1)
+            const cellBase = curPhase ? heatOf(i) : lc;
             const cellCol = (hi && on && !curPhase) ? SEL : cellBase;   // playing → 选中链路按状态(load)上色，而非高亮色
             glyph(Lv.kind, x, y, ws, cellCol, hi ? (on ? 1 : 0.14) : 1);
           }
@@ -641,13 +652,6 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
             ctx.fillStyle = curPhase ? lc : SEL; ctx.globalAlpha = 0.85;   // playing → 选中段按层级负载(状态色)，而非高亮色
             if (ra === rb) { const x = margin + (hi.lo[li] % Lv.cols) * Lv.cell; rr(x, Lv.y0 + ra * Lv.cell, (hi.hi[li] - hi.lo[li]) * Lv.cell, Lv.cell, 0.06); ctx.fill(); }
             else { rr(margin, Lv.y0 + ra * Lv.cell, Wc, (rb - ra + 1) * Lv.cell, 0.06); ctx.fill(); }
-            ctx.globalAlpha = 1;
-          }
-          // L0 is an aggregate observation level (too fine to enumerate) — label its role
-          if (Lv.kind === 'tile') {
-            ctx.fillStyle = P.ink2; ctx.globalAlpha = 0.92; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.font = `${Math.min(1.5, Lv.h * 0.42)}px sans-serif`;
-            ctx.fillText('L0 聚合观测 · 流水气泡 / 访存等待 ·（下钻执行时序 swimlane 展开）', margin + Wc / 2, Lv.y0 + Lv.h / 2);
             ctx.globalAlpha = 1;
           }
         }
@@ -665,6 +669,59 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
       }
 
       ctx.restore();
+
+      // ── 级间互联 chip（DCN / Scale-Out / Pool 内互联 / Scale-Up / PCIe·UB / 封装互连 / NoC）—
+      //    screen-space between adjacent rows, label/color from HW_LEVELS[i].down (上下文链已实体化) ──
+      const chipX = tx + (margin + Wc / 2) * s;
+      for (let i = 0; i < levels.length - 1; i++) {
+        const dn = HW_LEVELS[i]?.down; if (!dn) continue;
+        const yGap = ((levels[i].y0 + levels[i].h) + levels[i + 1].y0) / 2;
+        const cy = ty + yGap * s;
+        if (cy < 10 || cy > H - 6) continue;
+        drawInterconnectChip(ctx, chipX, cy, dn.label, dn.color, { dark });
+      }
+
+      // ── L0 Core-Group 行本体 = 一张迷你 memory-architecture（drawCoreGroupMini · LOD 原生绘制）──
+      const coreLi = levels.findIndex((l) => l.coreRow);
+      if (coreLi >= 0) {
+        const cLv = levels[coreLi];
+        const cx0 = tx + margin * s, cy0 = ty + cLv.y0 * s, cwS = Wc * s, chS = cLv.h * s;
+        if (cy0 < H && cy0 + chS > 0 && cwS > 8) {
+          const detail: 0 | 1 | 2 = s < 9 ? 0 : s < 18 ? 1 : 2;
+          const phaseKind = curPhase ? curPhase.kind : 'compute';
+          const load = curPhase ? nodeLoad(hi ? hi.lo[coreLi] : 0, curPhase.kind) : 0.62;
+          drawCoreGroupMini(ctx, cx0, cy0, cwS, chS, { detail, phase: phaseKind, load, dark });
+          if (hi) { ctx.strokeStyle = curPhase ? heatOf(coreLi * 1009 + 3) : SEL; ctx.lineWidth = 2; ctx.strokeRect(cx0 - 1, cy0 - 1, cwS + 2, chS + 2); }
+          ctx.fillStyle = P.ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '11px sans-serif';
+          ctx.fillText('L0 内部 · Tile/lane（下钻 swimlane）', chipX, cy0 + chS + 3);
+        }
+      }
+
+      // ── node/card/die 行同语法细化：cell 足够大时以屏幕空间 drawLevelContainer 绘制（否则用世界矢量 glyph）──
+      { const vX0 = -tx / s, vX1 = (W - tx) / s, vY0 = -ty / s, vY1 = (H - ty) / s;
+        for (let li = 0; li < levels.length; li++) {
+          const Lv = levels[li];
+          if (!(Lv.kind === 'node' || Lv.kind === 'card' || Lv.kind === 'die')) continue;
+          if (Lv.cell * s <= REFINE_PX) continue;
+          const c0 = Math.max(0, Math.floor((vX0 - margin) / Lv.cell)), c1 = Math.min(Lv.cols, Math.ceil((vX1 - margin) / Lv.cell));
+          const r0 = Math.max(0, Math.floor((vY0 - Lv.y0) / Lv.cell)), r1 = Math.min(Lv.rows, Math.ceil((vY1 - Lv.y0) / Lv.cell));
+          const pad = Lv.cell * 0.14;
+          const title = Lv.kind === 'node' ? 'Host' : Lv.kind === 'card' ? 'Chip·NPU' : 'Die';
+          const blocks = Lv.kind === 'node'
+            ? [{ label: 'CPU', color: DEV_CPU, kind: 'unit' as const }, { label: 'NPU×8', color: ENTITY_COLORS.card, kind: 'unit' as const, w: 2.4 }, { label: 'L1', color: PLANES[0].color, kind: 'switch' as const }]
+            : Lv.kind === 'card'
+              ? [{ label: 'Die', color: M_DIE, kind: 'unit' as const }, { label: 'Die', color: M_DIE, kind: 'unit' as const }, { label: 'IO', color: M_IO, kind: 'unit' as const }, { label: 'IO', color: M_IO, kind: 'unit' as const }]
+              : [{ label: '核组', color: ENTITY_COLORS.cube, kind: 'unit' as const, w: 3 }, { label: 'HBM', color: '#4369ef', kind: 'mem' as const }];
+          const ports = Lv.kind === 'die' ? undefined : [{ label: 'UB', color: PLANES[0].color }, { label: 'RDMA', color: PLANES[1].color }];
+          for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
+            const idx = r * Lv.cols + c; if (idx >= Lv.count) break;
+            const on = !hi || (idx >= hi.lo[li] && idx < hi.hi[li]);
+            const sx = tx + (margin + c * Lv.cell + pad) * s, sy = ty + (Lv.y0 + r * Lv.cell + pad) * s, sz = (Lv.cell - pad * 2) * s;
+            drawLevelContainer(ctx, sx, sy, sz, sz, title, blocks, { dark, ports, alpha: hi ? (on ? 1 : 0.16) : 1 });
+          }
+        }
+      }
+
       // ── per-level axis labels — CONSTANT screen-pixel size (don't scale with fit/zoom),
       //    drawn in the fixed left gutter so the matrices use the full width ──
       ctx.textAlign = 'right'; const lx = AXIS_GUTTER - 8;
@@ -674,7 +731,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         ctx.fillStyle = Lv.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
         ctx.fillText(Lv.label, lx, sy);
         let yy = sy + 14;
-        if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
+        if (!Lv.banner && !Lv.funnel) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
         if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], lx, yy); yy += 12; }
         const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
         if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); yy += 12; }
@@ -815,7 +872,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
       if (sel) {
         const sl = sel.kind === 'npu' ? `已选 NPU 卡 ${sel.k}（device）· 高亮同 Host 8 NPU 全互联 + 板上 CPU + 上联 L1→L2`
           : sel.kind === 'l1' ? `已选 L1 交换（Host ${sel.blade}）· 高亮板内 8 NPU + 4 CPU + 4 NIC 及上联 L2`
-          : sel.kind === 'l2' ? `已选 L2 交换（机柜 ${sel.cab}）· 高亮柜内全部 Host 及其器件`
+          : sel.kind === 'l2' ? `已选 L2 交换（机柜·物理分组 ${sel.cab}）· 高亮柜内全部 Host 及其器件`
           : sel.kind === 'cpu' ? `已选 ${TOK.kunpeng} CPU（Host ${sel.blade} #${sel.i + 1}）· 高亮板内 NPU + 配对 NIC + L1`
           : `已选 ${TOK.qingtian} NIC（Host ${sel.blade} #${sel.i + 1}）· 高亮其配对 CPU`;
         ctx.fillStyle = SEL; ctx.font = '600 11px sans-serif'; ctx.fillText(`${sl} · 点空白处取消`, 14, 53);
@@ -868,17 +925,12 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
           // one compute Die: solid teal, or (deeper zoom) a teal container of its ~16 AI Core
           const computeDie = (dx: number, dy: number) => {
             if (!showCore) { ctx.fillStyle = M_DIE; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); return; }
-            // solid teal die block carrying its ~16 independent Cube/Vector cores (no wireframe outline)
+            // deep zoom → 钻到 Die 内画核组 = drawCoreGroupMini(detail 1)（LOD 原生绘制，图元同层级图 L0 行）
             ctx.fillStyle = M_DIE; ctx.globalAlpha = 0.5; rrPath(ctx, dx, dy, dw, dh, dieR); ctx.fill(); ctx.globalAlpha = 1;
-            // ≈16 AI Core (4×4) — SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 (same glyph as 3D / DieDetail)
-            const cols = 4, rows = 4, pad = dw * 0.08, gxx = dw * 0.05, gyy = dh * 0.05;
-            const cw = (dw - pad * 2 - gxx * (cols - 1)) / cols, ch = (dh - pad * 2 - gyy * (rows - 1)) / rows;
-            for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-              const idx = r * cols + c, vec = idx % 8 === 7;
-              const cx = dx + pad + c * (cw + gxx), cy = dy + pad + r * (ch + gyy);
-              ctx.fillStyle = vec ? M_VEC : M_CUBE;
-              rrPath(ctx, cx, cy, cw, ch, Math.min(cw, ch) * 0.3); ctx.fill();
-            }
+            ctx.save(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // arch-glyphs are pixel-based → draw in screen space
+            drawCoreGroupMini(ctx, tx + dx * s, ty + dy * s, dw * s, dh * s,
+              { detail: 1, phase: curPhase ? curPhase.kind : 'compute', load: curPhase ? nodeLoad(k, curPhase.kind) : 0.6, dark });
+            ctx.restore();
           };
           computeDie(x0, y0); computeDie(x1, y0);
           ctx.fillStyle = M_DIE;   // UMA bridge → 1 device (solid block, not a line)
@@ -1132,20 +1184,21 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
     let s: PlaneSel = null;
     if (layout === 'layers' && selL) {
       const kind = LAY.levels[selL.lvl].kind, idx = selL.idx;
-      if (kind === 'super') s = { level: 'super', card: 0 };
-      else if (kind === 'cab') s = { level: 'cab', card: idx * (CPB * BPC) };
+      if (kind === 'global') s = { level: 'global', card: 0 };
+      else if (kind === 'cluster') s = { level: 'cluster', card: 0 };
+      else if (kind === 'pool') s = { level: 'pool', card: 0 };
+      else if (kind === 'super') s = { level: 'super', card: 0 };
       else if (kind === 'node') s = { level: 'node', card: idx * CPB };
       else if (kind === 'card') s = { level: 'card', card: idx };
       else if (kind === 'die') s = { level: 'die', card: Math.floor(idx / 2), die: idx % 2 };
       else if (kind === 'core') s = { level: 'core', card: Math.floor(idx / CORES_PER_CARD), core: idx % CORES_PER_CARD };
-      else if (kind === 'tile') s = { level: 'tile', card: Math.floor(idx / (CORES_PER_CARD * 4)) };
     } else if (layout === 'top' && selTop) {
       const level = selTop.core !== undefined ? 'core' : selTop.die !== undefined ? 'die' : 'card';
       s = { level, card: selTop.k, die: selTop.die, core: selTop.core };
     } else if (layout === 'devices' && selDev) {
       if (selDev.kind === 'npu') s = { level: 'card', card: selDev.k };
       else if (selDev.kind === 'l1') s = { level: 'node', card: selDev.blade * CPB };
-      else if (selDev.kind === 'l2') s = { level: 'cab', card: selDev.cab * (CPB * BPC) };
+      else if (selDev.kind === 'l2') s = { level: 'super', card: selDev.cab * (CPB * BPC) };   // L2 交换 = 机柜（物理分组），折入 L4 Pod
       else s = { level: 'node', card: selDev.blade * CPB };   // cpu / nic → host devices on a blade → node scope
     }
     const key = JSON.stringify(s);
@@ -1203,7 +1256,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
     if (tip.die !== undefined) {
       return [`计算 Die ${tip.die}（L1 · 可选）`, `卡 ${k} 的 2 计算 Die 之一（UMA 合并 → 整卡 1 device）`, `≈16 AI Core（L0 Core-Group）· 片上 NoC · 同 rank、不增 rank`];
     }
-    const parts = [`硬件：${TOK.n950} 卡 ${k}（1 device · 4 Die）`, `软件：rank ${k}（${TOK.hccl} 逻辑号 · 与 device 1:1）· tp${k % CPB}`, `约 ${CORES_PER_CARD} AI Core/卡 · Host B${b} · 机柜 C${cab}`];
+    const parts = [`硬件：${TOK.n950} 卡 ${k}（1 device · 4 Die）`, `软件：rank ${k}（${TOK.hccl} 逻辑号 · 与 device 1:1）· tp${k % CPB}`, `约 ${CORES_PER_CARD} AI Core/卡 · Host B${b} · 机柜（物理分组）C${cab}`];
     if (colorBy !== 'none') parts.push(`${PARTITION_META[colorBy as Exclude<PartitionDim, 'none'>].label}：组 ${groupOf(k)}`);
     return parts;
   })();
@@ -1224,14 +1277,9 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
       if (selTop.core != null) return `计算 Die ${selTop.die} · Core-Group 成员核 ${selTop.die! * 16 + selTop.core}`;
       if (selTop.die != null) return `计算 Die ${selTop.die}`;
     }
-    if (layout === 'layers' && selL) { const Lv = LAY.levels[selL.lvl]; if (Lv.kind === 'die') return '计算 Die'; if (Lv.kind === 'core') return 'Core-Group'; if (Lv.kind === 'tile') return 'Tile / lane'; }
+    if (layout === 'layers' && selL) { const Lv = LAY.levels[selL.lvl]; if (Lv.kind === 'die') return '计算 Die'; if (Lv.kind === 'core') return 'Core-Group · 内部 Tile/lane'; }
     return null;
   })();
-
-  // is the current selection at L0 (Core-Group / Tile)? layers 视图选中 core/tile，或 top 视图钻到 AI Core
-  // → 在右侧嵌入 memory-architecture pattern（L0 Core-Group 内部）。
-  const l0Active = (layout === 'layers' && !!selL && ['core', 'tile'].includes(LAY.levels[selL.lvl].kind))
-    || (layout === 'top' && !!selTop && selTop.core != null);
 
   return (
     <div ref={wrapRef} className={workbenchProfile ? 'hpc-plane-shell hpc-plane-shell--workbench' : undefined} style={{ position: 'absolute', inset: 0, zIndex: 11, background: workbenchProfile ? 'var(--background-elevated)' : 'var(--bg2)', overflow: 'hidden' }}>
@@ -1246,7 +1294,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         <span style={{ ...LBL }}>布局</span>
         {([['devices', '器件互联'], ['layers', '层级图'], ['top', '顶视图']] as [typeof layout, string][]).map(([id, lb]) => {
           const on = layout === id;
-          const title = id === 'top' ? '超节点顶视图（嵌套平铺）' : id === 'layers' ? '层级矩阵图（L4 Pod→L0 Core-Group · hw-native-sys L0–L7）' : '器件互联平面（全量 NPU/CPU/LPO/NIC + 连线）';
+          const title = id === 'top' ? 'Pod 顶视图（嵌套平铺）' : id === 'layers' ? '层级矩阵图（L7 全球→L0 Core-Group · hw-native-sys L0–L7）' : '器件互联平面（全量 NPU/CPU/LPO/NIC + 连线）';
           return <button key={id} onClick={() => setLayout(id)} title={title}
             style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{lb}</button>;
         })}
@@ -1305,7 +1353,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         )}
         {legendOpen && (layout === 'top' ? (
           <>
-            <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 4 }} />机柜框 · <span style={{ display: 'inline-block', width: 10, height: 10, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', margin: '0 4px' }} />刀片框 · <span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡=device</span>·<span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>rank</span> 1:1</div>
+            <div><span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(167,139,250,0.18)', border: `1px solid ${UB_LEVELS[2].color}`, borderRadius: 2, verticalAlign: '-2px', marginRight: 4 }} />机柜（物理分组）框 · <span style={{ display: 'inline-block', width: 10, height: 10, border: `1px solid ${UB_LEVELS[1].color}`, borderRadius: 2, verticalAlign: '-2px', margin: '0 4px' }} />刀片框 · <span style={{ color: ENTITY_COLORS.card, fontWeight: 600 }}>卡=device</span>·<span style={{ color: ENTITY_COLORS.rank, fontWeight: 600 }}>rank</span> 1:1</div>
             <div style={lgNote}>放大卡 → <span style={{ display: 'inline-block', width: 7, height: 7, background: M_DIE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} />4 Die(2计算+2 IO) → <span style={{ display: 'inline-block', width: 6, height: 7, background: M_CUBE, borderRadius: 1, verticalAlign: '-1px', margin: '0 1px' }} /><span style={{ display: 'inline-block', width: 3, height: 7, background: M_VEC, borderRadius: 1, verticalAlign: '-1px', marginRight: 2 }} />AI Core · {colorBy === 'none' ? '嵌套=包含' : `卡按 ${colorBy.toUpperCase()}（${cfg}）`}</div>
             {links && <div style={lgNote}>线型=平面：— UB · – – SO · ··· VPC</div>}
             {playing && <div>{[0, 1, 2, 3].map((i) => <span key={i} style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: stateColor(i), verticalAlign: '-1px', marginRight: 3 }} />)}<span style={lgNote}>状态 闲/中/忙/离线 · 连线 色=利用率·粗=带宽</span></div>}
@@ -1386,9 +1434,6 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
       {swOpen && layout !== 'devices' && <RunSwimlane card={swCard} sub={swSub} isDefault={swDefault} ink2={P.ink2}
         headRef={headRef} mode={runMode} setMode={setRunMode} playing={playing} setPlaying={setPlaying}
         onClose={() => { setSwOpen(false); setSelTop(null); setSelL(null); }} />}
-      {/* L0 pattern overlay — 钻取到 L0（Core-Group / Tile）时嵌入 memory-architecture pattern */}
-      {l0Active && <L0PatternPanel playing={playing} runMode={runMode} headRef={headRef}
-        onClose={() => { setSelL(null); setSelTop(null); }} />}
       {/* hover tooltip */}
       {tip && tipInfo && (
         <div style={{ position: 'absolute', left: Math.min(tip.x + 14, (wrapRef.current?.clientWidth ?? 9999) - 200), top: tip.y + 14, padding: '6px 9px', fontSize: 11.5, background: 'var(--panel)', border: '1px solid var(--bd2)', borderRadius: 10, pointerEvents: 'none', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: 'var(--tx)' }}>
@@ -1428,7 +1473,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
     <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: W, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
       {/* header: title + device + close */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-        <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 Core-Group 执行时序</span>
+        <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 Core-Group 执行时序（L0 内部）</span>
         <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card}`}{sub ? ` · ${sub}` : isDefault ? '（默认示例·点卡切换）' : ` · rank ${card}`}</span>
         <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', ...SECONDARY, borderRadius: 7, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 7px' }}>✕</button>
       </div>
@@ -1477,40 +1522,6 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
       </div>
       <div style={{ marginTop: 2, fontSize: 9.5, color: 'var(--tx3)' }}>
         <span style={{ color: '#04d793' }}>■</span>计算 · <span style={{ color: '#ffaa3b' }}>■</span>访存 · <span style={{ color: '#ff4b7b' }}>■</span>通信等待 · <span style={{ color: '#60a5fa' }}>■</span>加载 · ▢气泡 — 通信/加载相位算力闲置 = 气泡来源
-      </div>
-    </div>
-  );
-}
-
-// ── L0 Core-Group 内部 pattern 覆盖面板 — 钻取到 L0（core / tile）时嵌入 memory-architecture
-// pattern（GM/L2 轨道 → AIV1·AIC·AIV2 · MTE/FixPipe 路由）。相位随执行时序播放头（headRef）
-// 驱动路由高亮；未播放时用 'compute' 常量。容器风格与 SelHierPanel 一致（同边框/背景/圆角变量）。──
-function L0PatternPanel({ playing, runMode, headRef, onClose }: {
-  playing: boolean; runMode: RunMode; headRef: React.MutableRefObject<number>; onClose: () => void;
-}) {
-  const [, force] = useState(0);   // follow the shared play head so the route focus tracks the phase
-  const raf = useRef<number | null>(null);
-  useEffect(() => {
-    if (!playing) return;
-    const loop = () => { force((f) => f + 1); raf.current = requestAnimationFrame(loop); };
-    raf.current = requestAnimationFrame(loop);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
-  }, [playing]);
-  const phaseKind = (() => {
-    if (!playing) return 'compute';
-    const seg = phaseSegments(runMode);
-    return (seg.find((s) => headRef.current < s.t1)?.p ?? seg[seg.length - 1].p).kind;
-  })();
-  return (
-    <div style={{ position: 'absolute', top: '20%', right: 12, width: 'min(560px, 46%)', height: '60%', background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 22, display: 'flex', flexDirection: 'column', padding: '12px 13px', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-        <span style={{ width: 10, height: 10, borderRadius: 3, background: ENTITY_COLORS.cube }} />
-        <span style={{ fontWeight: 700, color: 'var(--tx)', fontSize: 12.5 }}>L0 Core-Group 内部 · memory-architecture</span>
-        <span style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--tx2)', fontSize: 12, lineHeight: 1, padding: '3px 8px', border: '1px solid var(--bd)', borderRadius: 6 }} onClick={onClose}>✕</span>
-      </div>
-      <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 6 }}>GM/L2 轨道 → AIV1·AIC·AIV2 · MTE/FixPipe 路由（滚轮缩放 · 拖拽平移）</div>
-      <div style={{ flex: 1, minHeight: 0, borderRadius: 8, overflow: 'hidden' }}>
-        <CoreGroupPattern phaseKind={phaseKind} zoom={0.42} height="100%" />
       </div>
     </div>
   );
