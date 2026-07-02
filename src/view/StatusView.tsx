@@ -26,6 +26,7 @@ import {
   PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
   BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
   parallelMap, REPLAY, cardLoad01, cardStraggler, cardFault, loadColor, loadState, stateColor, STATE_LABELS,
+  memLayers, MEM_STACK, MEM_ROUTE,
   type Gen,
 } from '../scene/data';
 import { TOK } from '../content';
@@ -590,20 +591,43 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
         tx('1 卡 = 2 计算 Die(UMA·OS 视为单 device) + 2 IO Die · 对外 UB口(绿)/RDMA口(橙)', PAD, H - 8, P.mut, '10px Inter');
       } else tx(isCore ? `32 AI Core（Cube∶Vector≈8∶1）· 点核下钻 Tile · 选中核 ${selCore}` : '2 计算 Die（各 ≈16 AI Core，UMA 合并为单 device）· 在热力镜头点 Die 看核', PAD, H - 8, P.mut, '10px Inter');
     }
-    // 单 AI Core 内部：Cube/Vector ALU + L0A/L0B/L0C buffer + SIMD/SIMT lane（L0 Tile 粒度）
+    // 内存架构 + 访存路由（route overlay）：把 HBM→L2→UB→L1→L0→ALU 层次空间化，叠加当前工况的
+    // 数据搬运路径（真实内核数据：Decode 权重29%/KV70% · Prefill SwiftGMM>50%）。参照 PTO 参考项目
+    // memory-architecture / route-overlay 图元语言（近算力在上、HBM 在下 + 沿线流动彗星）。
     function drawTile(top: number, bot: number) {
       const isVec = selCore % 8 === 7, base = coreVal(selCore);
-      tx(`物理链路 · ${scopeName()} · 单 AI Core 内部（${isVec ? 'AIV/Vector' : 'AIC/Cube'} #${selCore}）`, PAD, top - 24, P.ink2, '12.5px Inter');
-      const x0 = PAD + 20, w = W - 2 * PAD - 40, h = bot - top;
-      fbox(x0, top, w, h, P.neutral, ENTITY_COLORS.computeDie);
-      const aluW = w * 0.34, aluH = h * 0.42;           // ALU block
-      fbox(x0 + 20, top + 28, aluW, aluH, loadColor(base));
-      tx(isVec ? 'Vector ALU (SIMD)' : 'Cube ALU (矩阵乘)', x0 + 20 + aluW / 2, top + 28 + aluH / 2 + 4, inkOf(loadColor(base)), '600 12px Inter', 'center');
-      ['L0A', 'L0B', 'L0C'].forEach((nm, i) => { const bx = x0 + 40 + aluW, by = top + 28 + i * (aluH / 3 + 6), bh = aluH / 3 - 2; fbox(bx, by, w * 0.18, bh, P.track, ENTITY_COLORS.ioDie); tx(nm + ' buffer', bx + 8, by + bh / 2 + 3, P.ink, '10px Inter'); });
-      const lanes = 16, ly = top + 28 + aluH + 26, lw = (w - 40) / lanes;   // SIMD/SIMT lanes (live tileVal)
-      tx('SIMD/SIMT lane（颜色=流水/访存占用 · 随回放）', x0 + 20, ly - 8, P.ink2, '10.5px Inter');
-      for (let t = 0; t < lanes; t++) fbox(x0 + 20 + t * lw, ly, lw - 2, h - (ly - top) - 16, loadColor(tileVal(t)));
-      tx('AI Core = Cube/Vector ALU + 片上 L0A/B/C buffer + SIMD/SIMT lane（L0 Tile 粒度）', PAD, H - 8, P.mut, '10px Inter');
+      const route = MEM_ROUTE[phase], ml = memLayers(spec);
+      const byId: Record<string, { cap: string; util: number; note: string }> = {};
+      ml.forEach((m) => { byId[m.id] = { cap: m.cap, util: m.util, note: m.note }; });
+      tx(`物理链路 · ${scopeName()} · 内存架构 + 访存路由（${isVec ? 'AIV/Vector' : 'AIC/Cube'} #${selCore}）`, PAD, top - 24, P.ink2, '12.5px Inter');
+      tx(route.note, PAD, top - 9, P.mut, '10px Inter');
+      const x0 = PAD, areaW = W - 2 * PAD, stackW = Math.min(380, areaW * 0.52);
+      const gutter = areaW - stackW, y0 = top + 8, availH = bot - y0 - 6;
+      const weight: Record<string, number> = { alu: 1.35, l0: 0.85, l1: 0.95, ub: 0.8, l2: 1.15, hbm: 1.9 };
+      const totW = MEM_STACK.reduce((s, b) => s + weight[b.id], 0);
+      const bandY: Record<string, { y: number; h: number; cy: number }> = {};
+      let yy = y0;
+      MEM_STACK.forEach((b) => { const h = (availH * weight[b.id]) / totW - 6; bandY[b.id] = { y: yy, h, cy: yy + h / 2 }; yy += h + 6; });
+      // memory-hierarchy bands (state-coloured by occupancy; bottleneck band ringed red)
+      MEM_STACK.forEach((b) => {
+        const info = b.id === 'alu' ? { cap: '算力单元', util: base, note: isVec ? 'Vector ALU · SIMD/SIMT lane' : 'Cube ALU · 矩阵乘' } : byId[b.id] ?? { cap: '', util: 0.5, note: '' };
+        const { y, h } = bandY[b.id], bott = b.id === route.bottleneck, fill = loadColor(info.util), ink = inkOf(fill);
+        fbox(x0, y, stackW, h, fill);
+        if (bott) { ctx.strokeStyle = '#ff4b7b'; ctx.lineWidth = 2.5; ctx.strokeRect(x0 + 1.25, y + 1.25, stackW - 2.5, h - 2.5); }
+        tx(b.label, x0 + 12, y + 16, ink, '600 12px Inter');
+        tx(info.cap, x0 + stackW - 10, y + 16, ink, `10px ${MONO}`, 'right');
+        if (h >= 32) tx(info.note, x0 + 12, y + 30, ink, '9px Inter');
+        if (bott && h >= 32) tx('◀ 瓶颈', x0 + stackW - 10, y + 30, '#ff4b7b', '9px Inter', 'right');
+      });
+      // route overlay — animated comets in the right gutter, bowing per hop (colour/width = intensity)
+      const gx = x0 + stackW, hopN = Math.max(1, route.hops.length);
+      route.hops.forEach((hop, i) => {
+        const a = bandY[hop.from], b = bandY[hop.to]; if (!a || !b) return;
+        const bow = gx + 22 + i * Math.min(34, (gutter - 70) / hopN), col = loadColor(hop.intensity), lw = 1.6 + hop.intensity * 2.6;
+        busWire2d(ctx, [[gx, a.cy], [bow, (a.cy + b.cy) / 2], [gx, b.cy]], col, lw, { phase: flowRef.current, flowing: true, caps: true, tube: true, alpha: 0.95 });
+        if (hop.label) tx(hop.label, bow + 5, (a.cy + b.cy) / 2 + 3, col, `9px ${MONO}`, 'left');
+      });
+      tx('内存层次（近算力在上·HBM 在下·色=占用·红框=瓶颈）· 右侧=当前工况访存搬运路由（色/粗细=强度·流动=数据流）', PAD, H - 8, P.mut, '10px Inter');
     }
   }, [lens, selLevel, selSpod, selCab, selNode, selNpu, selCore, pods, CAB, NODES, NPN, NPC, NPU_TOT, step, P, metricVal, util01, faultAt, nodeMean, cabMean, spodMean, dieVal, coreVal, tileVal, scopeName, planeUtil, domains, domActive, tcell, flowCfg]);
 

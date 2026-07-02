@@ -606,6 +606,57 @@ export function memLayers(gen: GenSpec): MemLayer[] {
   ];
 }
 
+// ─── On-chip memory ROUTE overlay (HBM→L2→L1→L0→ALU) per workload ──────────────
+// Inspired by the reference PTO memory-architecture / route-overlay pattern (910B/950 内存架构图 +
+// 访问路由叠加). Spatialises the memory hierarchy at die/AI-Core/Tile level and animates WHERE the
+// bytes flow, grounded in REAL Pangu Pro MoE kernel data (arXiv:2505.21411):
+//   · Decode  访存受限：权重搬运占时延 29% · KV 占注意力计算 70%（注意力占端到端 30–50%）· MulAttention 4.5×
+//   · Prefill 计算受限：SwiftGMM 占端到端 >50%（MTE2 利用率 up to 95%，近权重带宽上限）
+//   · 预训练  FWD/BWD 计算 + 梯度回写（访存与计算交织）
+// ordered top(最贴近算力 ALU)→bottom(HBM) so the view reads 近算力在上、HBM 在下.
+export const MEM_STACK: { id: string; label: string; kind: 'alu' | 'buf' | 'sram' | 'ub' | 'cache' | 'hbm' }[] = [
+  { id: 'alu', label: 'Cube / Vector ALU', kind: 'alu' },
+  { id: 'l0',  label: 'L0A / L0B / L0C',   kind: 'buf' },
+  { id: 'l1',  label: 'L1 片上 SRAM',       kind: 'sram' },
+  { id: 'ub',  label: 'UB Memory（池化）',   kind: 'ub' },
+  { id: 'l2',  label: 'L2 全局缓存',         kind: 'cache' },
+  { id: 'hbm', label: 'HBM',               kind: 'hbm' },
+];
+export interface MemHop { from: string; to: string; label: string; intensity: number; }   // from/to = MEM_STACK id · intensity 0..1 → 状态色+线宽
+export const MEM_ROUTE: Record<'pretrain' | 'prefill' | 'decode', { note: string; bottleneck: string; hops: MemHop[] }> = {
+  decode: {
+    note: 'Decode 访存受限：权重搬运占时延 29% · KV 占注意力 70%',
+    bottleneck: 'hbm',
+    hops: [
+      { from: 'hbm', to: 'l0', label: '权重 29%', intensity: 0.92 },
+      { from: 'hbm', to: 'l1', label: 'KV 搬运', intensity: 0.82 },
+      { from: 'l1', to: 'alu', label: 'MulAttn 4.5×', intensity: 0.6 },
+      { from: 'l0', to: 'alu', label: '', intensity: 0.5 },
+    ],
+  },
+  prefill: {
+    note: 'Prefill 计算受限：SwiftGMM 占端到端 >50%（MTE2 up to 95%）',
+    bottleneck: 'alu',
+    hops: [
+      { from: 'hbm', to: 'l2', label: '权重/激活', intensity: 0.5 },
+      { from: 'l2', to: 'l1', label: '', intensity: 0.62 },
+      { from: 'l1', to: 'l0', label: 'GEMM', intensity: 0.8 },
+      { from: 'l0', to: 'alu', label: 'SwiftGMM >50%', intensity: 0.92 },
+    ],
+  },
+  pretrain: {
+    note: '预训练：FWD/BWD 计算 + 梯度回写（访存↔计算交织）',
+    bottleneck: 'l1',
+    hops: [
+      { from: 'hbm', to: 'l2', label: '激活', intensity: 0.55 },
+      { from: 'l2', to: 'l1', label: '', intensity: 0.62 },
+      { from: 'l1', to: 'l0', label: 'GEMM', intensity: 0.8 },
+      { from: 'l0', to: 'alu', label: 'FWD/BWD', intensity: 0.75 },
+      { from: 'alu', to: 'hbm', label: '梯度回写', intensity: 0.5 },
+    ],
+  },
+};
+
 export const RACK_COLORS = {
   accent: '#e0252f',
   computeGlow: '#38bdf8',
