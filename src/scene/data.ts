@@ -135,6 +135,10 @@ export const levelName = (k: LevelKey): string => HW_BY_KEY[k].name;
 export const levelFull = (k: LevelKey): string => { const l = HW_BY_KEY[k]; return l.tag ? `${l.tag} ${l.name}` : l.name; };
 // 一个 Service Pool 含的 Pod 数（示意分组值，用于 L5 视图聚合）
 export const PODS_PER_POOL = 4;
+// 一个 L6 集群（SuperCluster）真实含的 Pod 数：Atlas 950 SuperCluster = 64 × SuperPoD
+// （>52万卡 ÷ 8192 卡/Pod = 64；HC2025 徐直军演讲口径）→ 16 个服务池 × 4 Pod
+export const PODS_PER_CLUSTER = 64;
+export const POOLS_PER_CLUSTER = PODS_PER_CLUSTER / PODS_PER_POOL;   // = 16
 // L0 Core-Group 构成（memory-architecture pattern）：1 AIC·Cube + 2 AIV·向量（+ AICPU 调度）
 export const AIV_PER_COREGROUP = 2;
 

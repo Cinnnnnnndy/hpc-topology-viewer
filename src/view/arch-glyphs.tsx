@@ -111,7 +111,7 @@ export function layoutCoreGroupMini(w: number, h: number, detail: 0 | 1 | 2 = 1)
 }
 
 // ─── canvas 渲染器（层级图 / 平面图 / 运行状态画布用）────────────────────────────
-export interface ArchDrawOpts { dark?: boolean; phase?: string; load?: number; alpha?: number }
+export interface ArchDrawOpts { dark?: boolean; phase?: string; load?: number; alpha?: number; /** 字号缩放（提升小尺寸可读性） */ fs?: number }
 export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], ox: number, oy: number, o: ArchDrawOpts = {}) {
   const hot = o.phase ? ARCH_PHASE[o.phase]?.hot ?? [] : [];
   const occ = o.phase ? ARCH_PHASE[o.phase]?.occ ?? [] : [];
@@ -119,6 +119,7 @@ export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], 
   ctx.save();
   if (o.alpha != null) ctx.globalAlpha = o.alpha;
   const label = o.dark ? ARCH_COLORS.labelDark : ARCH_COLORS.labelLight;
+  const F = o.fs ?? 1;   // 字号缩放
   for (const p of prims) {
     if (p.t === 'rail') {
       ctx.fillStyle = p.color; ctx.globalAlpha = (o.alpha ?? 1) * 0.16;
@@ -127,18 +128,18 @@ export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], 
       const step = 4.6;   // 点阵容量块
       for (let yy = oy + p.y + 3; yy < oy + p.y + p.h - 3; yy += step)
         for (let xx = ox + p.x + 2; xx < ox + p.x + p.w - 2; xx += step) ctx.fillRect(xx, yy, 2, 2);
-      ctx.globalAlpha = o.alpha ?? 1; ctx.fillStyle = label; ctx.font = '600 7px sans-serif'; ctx.textAlign = 'center';
+      ctx.globalAlpha = o.alpha ?? 1; ctx.fillStyle = label; ctx.font = `600 ${7 * F}px sans-serif`; ctx.textAlign = 'center';
       ctx.fillText(p.label, ox + p.x + p.w / 2, oy + p.y + p.h - 3);
     } else if (p.t === 'container') {
       ctx.fillStyle = o.dark ? ARCH_COLORS.containerDark : ARCH_COLORS.containerLight;
       ctx.strokeStyle = o.dark ? '#3a4152' : '#c6cddc'; ctx.lineWidth = 1;
       ctx.beginPath(); (ctx as any).roundRect(ox + p.x, oy + p.y, p.w, p.h, 4); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = label; ctx.font = '700 7.5px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = label; ctx.font = `700 ${8 * F}px sans-serif`; ctx.textAlign = 'left';
       ctx.fillText(p.label, ox + p.x + 4, oy + p.y + 8);
     } else if (p.t === 'buffer') {
       ctx.strokeStyle = o.dark ? '#4a5468' : '#9aa6bd'; ctx.lineWidth = 0.8;
       ctx.beginPath(); (ctx as any).roundRect(ox + p.x, oy + p.y, p.w, p.h, 2.5); ctx.stroke();
-      ctx.fillStyle = label; ctx.font = '600 6.5px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = label; ctx.font = `600 ${7 * F}px sans-serif`; ctx.textAlign = 'left';
       ctx.fillText(p.name + (p.cap ? ` ${p.cap}` : ''), ox + p.x + 2, oy + p.y + 7);
       const gx = ox + p.x + 2, gy = oy + p.y + 9, gw = p.w - 4, gh = p.h - 11;
       const nRows = Math.max(1, Math.min(p.rows, Math.floor(gh / 3)));   // 小尺寸下压缩行数
@@ -158,11 +159,11 @@ export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], 
       ctx.fillStyle = p.color; ctx.globalAlpha = (o.alpha ?? 1) * (hot.includes('cube') && p.label === 'CUBE' ? 1 : 0.82);
       ctx.beginPath(); (ctx as any).roundRect(ox + p.x, oy + p.y, p.w, p.h, 3); ctx.fill();
       ctx.globalAlpha = o.alpha ?? 1; ctx.fillStyle = o.dark ? '#10141c' : '#ffffff';
-      ctx.font = '700 7px sans-serif'; ctx.textAlign = 'center';
+      ctx.font = `700 ${7.5 * F}px sans-serif`; ctx.textAlign = 'center';
       ctx.fillText(p.label, ox + p.x + p.w / 2, oy + p.y + p.h / 2 + 2.5);
     } else if (p.t === 'route') {
       const isHot = p.hotKeys?.some((k) => hot.includes(k));
-      ctx.strokeStyle = p.color; ctx.lineWidth = isHot ? 2 : 1;
+      ctx.strokeStyle = p.color; ctx.lineWidth = isHot ? 2.2 : 1.2;
       ctx.globalAlpha = (o.alpha ?? 1) * (isHot ? 1 : 0.45);
       ctx.setLineDash(p.dashed ? [3, 2.5] : []);
       ctx.beginPath(); ctx.moveTo(ox + p.pts[0][0], oy + p.pts[0][1]);
@@ -170,11 +171,11 @@ export function drawArchPrims(ctx: CanvasRenderingContext2D, prims: ArchPrim[], 
       ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = o.alpha ?? 1;
     } else if (p.t === 'chip') {
       const isHot = p.hotKeys?.some((k) => hot.includes(k));
-      ctx.font = '700 6px sans-serif'; const tw = ctx.measureText(p.label).width + 6;
-      ctx.fillStyle = p.color; ctx.globalAlpha = (o.alpha ?? 1) * (isHot ? 1 : 0.8);
-      ctx.beginPath(); (ctx as any).roundRect(ox + p.x - tw / 2, oy + p.y, tw, 9, 4.5); ctx.fill();
+      ctx.font = `700 ${6.5 * F}px sans-serif`; const tw = ctx.measureText(p.label).width + 7;
+      ctx.fillStyle = p.color; ctx.globalAlpha = (o.alpha ?? 1) * (isHot ? 1 : 0.85);
+      ctx.beginPath(); (ctx as any).roundRect(ox + p.x - tw / 2, oy + p.y, tw, 10 * F, 5 * F); ctx.fill();
       ctx.globalAlpha = o.alpha ?? 1; ctx.fillStyle = '#1a1e28'; ctx.textAlign = 'center';
-      ctx.fillText(p.label, ox + p.x, oy + p.y + 6.5);
+      ctx.fillText(p.label, ox + p.x, oy + p.y + 7 * F);
     } else if (p.t === 'text') {
       ctx.fillStyle = label; ctx.globalAlpha = (o.alpha ?? 1) * (p.dim ? 0.6 : 1);
       ctx.font = `${p.size}px sans-serif`; ctx.textAlign = 'left';
@@ -190,8 +191,8 @@ export function drawCoreGroupMini(ctx: CanvasRenderingContext2D, x: number, y: n
 }
 
 // ─── SVG 渲染器（Smartscape 等 SVG 视图用）──────────────────────────────────────
-export function CoreGroupMiniSvg({ width, height, detail = 1, phase, load = 0.5, dark = true, opacity = 1 }:
-  { width: number; height: number; detail?: 0 | 1 | 2; phase?: string; load?: number; dark?: boolean; opacity?: number }) {
+export function CoreGroupMiniSvg({ width, height, detail = 1, phase, load = 0.5, dark = true, opacity = 1, fs = 1 }:
+  { width: number; height: number; detail?: 0 | 1 | 2; phase?: string; load?: number; dark?: boolean; opacity?: number; /** 字号缩放 */ fs?: number }) {
   const prims = layoutCoreGroupMini(width, height, detail);
   const hot = phase ? ARCH_PHASE[phase]?.hot ?? [] : [];
   const occ = phase ? ARCH_PHASE[phase]?.occ ?? [] : [];
@@ -206,11 +207,11 @@ export function CoreGroupMiniSvg({ width, height, detail = 1, phase, load = 0.5,
             for (let xx = p.x + 2, c = 0; xx < p.x + p.w - 2; xx += 4.6, c++)
               dots.push(<rect key={`${r}-${c}`} x={xx} y={yy} width={2} height={2} fill={p.color} opacity={0.75} />);
           return <g key={i}><rect x={p.x} y={p.y} width={p.w} height={p.h} fill={p.color} opacity={0.16} />{dots}
-            <text x={p.x + p.w / 2} y={p.y + p.h - 3} fontSize={7} fontWeight={600} fill={label} textAnchor="middle">{p.label}</text></g>;
+            <text x={p.x + p.w / 2} y={p.y + p.h - 3} fontSize={7 * fs} fontWeight={600} fill={label} textAnchor="middle">{p.label}</text></g>;
         }
         if (p.t === 'container') return <g key={i}>
           <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={4} fill={dark ? ARCH_COLORS.containerDark : ARCH_COLORS.containerLight} stroke={dark ? '#3a4152' : '#c6cddc'} strokeWidth={1} />
-          <text x={p.x + 4} y={p.y + 8} fontSize={7.5} fontWeight={700} fill={label}>{p.label}</text></g>;
+          <text x={p.x + 4} y={p.y + 8} fontSize={8 * fs} fontWeight={700} fill={label}>{p.label}</text></g>;
         if (p.t === 'buffer') {
           const cells: React.ReactNode[] = [];
           const gx = p.x + 2, gy = p.y + 9, gh = p.h - 11;
@@ -225,22 +226,22 @@ export function CoreGroupMiniSvg({ width, height, detail = 1, phase, load = 0.5,
           }
           return <g key={i}>
             <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={2.5} fill="none" stroke={dark ? '#4a5468' : '#9aa6bd'} strokeWidth={0.8} />
-            <text x={p.x + 2} y={p.y + 7} fontSize={6.5} fontWeight={600} fill={label}>{p.name}{p.cap ? ` ${p.cap}` : ''}</text>{cells}</g>;
+            <text x={p.x + 2} y={p.y + 7} fontSize={7 * fs} fontWeight={600} fill={label}>{p.name}{p.cap ? ` ${p.cap}` : ''}</text>{cells}</g>;
         }
         if (p.t === 'exec') return <g key={i}>
           <rect x={p.x} y={p.y} width={p.w} height={p.h} rx={3} fill={p.color} opacity={hot.includes('cube') && p.label === 'CUBE' ? 1 : 0.82} />
-          <text x={p.x + p.w / 2} y={p.y + p.h / 2 + 2.5} fontSize={7} fontWeight={700} fill={dark ? '#10141c' : '#ffffff'} textAnchor="middle">{p.label}</text></g>;
+          <text x={p.x + p.w / 2} y={p.y + p.h / 2 + 2.5} fontSize={7.5 * fs} fontWeight={700} fill={dark ? '#10141c' : '#ffffff'} textAnchor="middle">{p.label}</text></g>;
         if (p.t === 'route') {
           const isHot = p.hotKeys?.some((k) => hot.includes(k));
           return <polyline key={i} points={p.pts.map(([x, y]) => `${x},${y}`).join(' ')} fill="none" stroke={p.color}
-            strokeWidth={isHot ? 2 : 1} strokeDasharray={p.dashed ? '3 2.5' : undefined} opacity={isHot ? 1 : 0.45} />;
+            strokeWidth={isHot ? 2.2 : 1.2} strokeDasharray={p.dashed ? '3 2.5' : undefined} opacity={isHot ? 1 : 0.45} />;
         }
         if (p.t === 'chip') {
           const isHot = p.hotKeys?.some((k) => hot.includes(k));
-          const tw = p.label.length * 4 + 6;
+          const tw = p.label.length * 4.4 * fs + 7;
           return <g key={i}>
-            <rect x={p.x - tw / 2} y={p.y} width={tw} height={9} rx={4.5} fill={p.color} opacity={isHot ? 1 : 0.8} />
-            <text x={p.x} y={p.y + 6.5} fontSize={6} fontWeight={700} fill="#1a1e28" textAnchor="middle">{p.label}</text></g>;
+            <rect x={p.x - tw / 2} y={p.y} width={tw} height={10 * fs} rx={5 * fs} fill={p.color} opacity={isHot ? 1 : 0.85} />
+            <text x={p.x} y={p.y + 7 * fs} fontSize={6.5 * fs} fontWeight={700} fill="#1a1e28" textAnchor="middle">{p.label}</text></g>;
         }
         return <text key={i} x={p.x} y={p.y} fontSize={p.size} fill={label} opacity={p.dim ? 0.6 : 1}>{p.label}</text>;
       })}

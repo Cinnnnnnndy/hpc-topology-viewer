@@ -16,6 +16,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
+  PODS_PER_CLUSTER, POOLS_PER_CLUSTER, PODS_PER_POOL,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
   REPLAY, cardLoad01, cardStraggler, cardFault, cardMetric01, parallelMap,
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
@@ -176,7 +177,10 @@ interface Stats {
 //    上三级 L7 全球 / L6 集群 / L5 服务池 = 焦点 pill + 半透明幽灵 sibling（不可点，点焦点回整 Pod）；
 //    L4 Pod=玫紫 pill · L3 Host=天蓝 · L2 Chip=teal 卡图元(2×2 Die 点) · L1 Die=网格 · L0 Core-Group=原生 CoreGroupMiniSvg 图元。
 //    级间连线挂互联名小 chip（DCN/Scale-Out/Pool 内互联/Scale-Up/PCIe·UB/封装互连/NoC）。 ──
-const SVG_W = 600, SVG_H = 648, X0 = 118, X1 = 586, BUDGET = 26;
+const SVG_W = 600, SVG_H = 724, X0 = 118, X1 = 586, BUDGET = 26;
+// ctx-tier real-count geometry (global/cluster/pool rows render TRUE fan-out counts, not fake siblings)
+const POOL_PW = 88, POOL_GAP = 16;                                   // 4 Pod pills on the 服务池 row
+const poolPodCx = (i: number) => X0 + i * (POOL_PW + POOL_GAP) + POOL_PW / 2;
 // Le 阶梯：0 全球 · 1 集群 · 2 服务池（ctx 上层上下文）· 3 Pod · 4 Host · 5 Chip。
 interface Tier { Le: number; key: string; ctx?: boolean; y: number; h: number; maxW?: number; tag: string; label: string; col: string; ghosts?: string[] }
 const TIERS: Tier[] = [
@@ -204,9 +208,10 @@ const ICHIPS: { y: number; li: number }[] = [
   { y: 443, li: 6 },  // Die→Core-Group NoC
 ];
 
-function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, flow }: {
+function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, flow, pm }: {
   N: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
   metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; playing: boolean; stats: Stats; dark: boolean; flow: boolean;
+  pm: ReturnType<typeof parallelMap>;
 }) {
   const P = dark
     ? { ink: '#e6ebf2', ink2: '#9aa6b4', ink3: '#5f6b79', line: '#2a323d', pill: '#1b212b', pillBd: '#2a323d', die: 'rgba(9,13,20,0.55)' }
@@ -374,7 +379,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   }
   // 5b) L0 Core-Group 子层 —— 原生内嵌 CoreGroupMiniSvg 图元（不再用普通格子）。聚焦 core → 加高 + detail 提升。
   {
-    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 150 : 90;
+    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 230 : 120;
     els.push(<text key="slt-core" x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key="sl-core" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
     els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡 · GM/L2+AIV/AIC`}</text>);
@@ -382,10 +387,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       <g key="core-glyph" style={{ cursor: 'pointer' }} transform={`translate(${coreGX} ${st.y})`}
         onClick={(e) => { e.stopPropagation(); setFocus({ level: 'core', card: repCard, core: 0 }); }}>
         {coreFocused && <rect x={-3} y={-3} width={coreGW + 6} height={coreH + 6} rx={8} fill="none" stroke={ringC} strokeWidth={1.8} />}
-        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={focus?.level === 'core' ? 1 : 0} phase={flow ? 'comm' : 'compute'}
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={coreFocused ? 2 : 1} fs={coreFocused ? 1.15 : 1} phase={flow ? 'comm' : 'compute'}
           load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
       </g>,
     );
+    // 数据通路说明（8px 小字）—— 放在 L0 图元正下方，viewBox 已加高避免与下方重叠
+    els.push(<text key="core-datapath" x={coreCx} y={st.y + coreH + 13} fill={P.ink3} fontSize={8} textAnchor="middle">
+      {'GM/L2 ─MTE2→ UB·L1 ─MTE1→ L0A/B ─CUBE→ L0C ─CV→ UB ─MTE3→ GM'}
+    </text>);
   }
   // 6) 级间互联小 chip（HW_LEVELS[i].down）—— 与 hub 小标签一致：竖线 + 淡填圆角 + 描边 + 居中标签
   const ichip = (x: number, y: number, label: string, color: string, key: string) => {
@@ -399,33 +408,126 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     );
   };
   ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(CX_MID, y, d.label, d.color, `ic-${li}`)); });
-  // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 每级 1 焦点 pill + 1–2 半透明幽灵 sibling（不可点，点焦点→整 Pod）
-  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）</text>);
-  TIERS.filter((t) => t.ctx).forEach((t) => {
-    const slotW = (X1 - X0) / 3, fh = t.h;
-    els.push(
-      <g key={`ctxl-${t.key}`}>
-        <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
-        <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
-      </g>,
-    );
-    const fx = X0 + slotW * 0.5, fw = Math.min(slotW - 12, t.maxW ?? 140);
-    els.push(
-      <g key={`ctxf-${t.key}`} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); }}>
-        <rect x={fx - fw / 2} y={t.y - fh / 2} width={fw} height={fh} rx={fh * 0.4} fill={t.col} />
-        <text x={fx} y={t.y + 0.5} fill={ink(t.col)} fontSize={9.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{`${t.label}·本域`}</text>
-      </g>,
-    );
-    (t.ghosts ?? []).forEach((g, gi) => {
-      const gx2 = X0 + slotW * (gi + 1.5), gw2 = Math.min(slotW - 12, 120);
-      els.push(
-        <g key={`ctxg-${t.key}-${gi}`} style={{ pointerEvents: 'none' }}>
-          <rect x={gx2 - gw2 / 2} y={t.y - fh / 2} width={gw2} height={fh} rx={fh * 0.4} fill={t.col} fillOpacity={0.12} stroke={t.col} strokeOpacity={0.4} strokeDasharray="3 3" />
-          <text x={gx2} y={t.y + 0.5} fill={t.col} fillOpacity={0.75} fontSize={9} textAnchor="middle" dominantBaseline="central">{g}</text>
+  // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 用真实换算数量渲染（真实成员计数，不再是单个假 sibling）：
+  //    global = 本集群 + 1–2 虚线幽灵集群；cluster = 16 服务池(前 6 pill + +10 chip)；pool = 4 Pod pill(本 Pod + 3 兄弟半透明)。
+  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实换算</text>);
+  const ctxLabel = (t: Tier) => els.push(
+    <g key={`ctxl-${t.key}`}>
+      <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
+      <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
+    </g>,
+  );
+  // solid focus pill (点击回整 Pod) / dashed ghost / faded sibling (不可点)
+  const ctxPill = (key: string, cx: number, w: number, y: number, h: number, col: string, label: string, mode: 'focus' | 'ghost' | 'sib') => els.push(
+    mode === 'focus'
+      ? <g key={key} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); }}>
+          <rect x={cx - w / 2} y={y - h / 2} width={w} height={h} rx={h * 0.4} fill={col} />
+          <text x={cx} y={y + 0.5} fill={ink(col)} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{label}</text>
+        </g>
+      : <g key={key} style={{ pointerEvents: 'none' }}>
+          <rect x={cx - w / 2} y={y - h / 2} width={w} height={h} rx={h * 0.4} fill={col} fillOpacity={mode === 'sib' ? 0.3 : 0.12} stroke={col} strokeOpacity={mode === 'sib' ? 0.55 : 0.4} strokeDasharray={mode === 'ghost' ? '3 3' : undefined} />
+          <text x={cx} y={y + 0.5} fill={col} fillOpacity={mode === 'sib' ? 0.92 : 0.75} fontSize={8.5} textAnchor="middle" dominantBaseline="central">{label}</text>
         </g>,
+  );
+  const ctxCap = (t: Tier, cap: string) => els.push(
+    <text key={`ctxcap-${t.key}`} x={X1} y={t.y + 0.5} fill={P.ink3} fontSize={8} textAnchor="end" dominantBaseline="central">{cap}</text>,
+  );
+  {   // global: 本集群 focus + 1–2 虚线幽灵集群（跨集群示意）
+    const t = TIERS[0], h = t.h;
+    ctxLabel(t);
+    ctxPill('ctx-gf', X0 + 44, 84, t.y, h, t.col, '本集群', 'focus');
+    ctxPill('ctx-gg0', X0 + 140, 80, t.y, h, t.col, '集群 B', 'ghost');
+    ctxPill('ctx-gg1', X0 + 226, 80, t.y, h, t.col, '集群 C', 'ghost');
+    ctxCap(t, `1 集群 = ${PODS_PER_CLUSTER} Pod（>52万卡）`);
+  }
+  {   // cluster: 真实 ${POOLS_PER_CLUSTER}=16 服务池 —— 前 6 pill（首=焦点池、高亮）+ 尾部 +10 计数 chip
+    const t = TIERS[1], h = t.h, show = 6, pw = 52, slot = 62;
+    ctxLabel(t);
+    for (let i = 0; i < show; i++) {
+      const cx = X0 + i * slot + pw / 2;
+      if (i === 0) ctxPill('ctx-poolf', cx, pw, t.y, h, t.col, '本池', 'focus');
+      else ctxPill(`ctx-pool-${i}`, cx, pw, t.y, h, t.col, `P${i + 1}`, 'ghost');
+    }
+    const fold = POOLS_PER_CLUSTER - show, fx = X0 + show * slot + 18, fw = Math.max(28, String(fold).length * 7 + 22);
+    els.push(
+      <g key="ctx-cluster-fold">
+        <rect x={fx - fw / 2} y={t.y - 9} width={fw} height={18} rx={9} fill={P.pill} stroke={P.pillBd} />
+        <text x={fx} y={t.y + 4} fill={P.ink2} fontSize={10} textAnchor="middle">{`+${fold}`}</text>
+      </g>,
+    );
+    ctxCap(t, `×${POOLS_PER_CLUSTER} 服务池`);
+  }
+  {   // pool: 真实 ${PODS_PER_POOL}=4 Pod pill（首=本 Pod 焦点、其余 3 兄弟 Pod 半透明）
+    const t = TIERS[2], h = t.h;
+    ctxLabel(t);
+    for (let i = 0; i < PODS_PER_POOL; i++) {
+      const cx = poolPodCx(i);
+      if (i === 0) ctxPill('ctx-podf', cx, POOL_PW, t.y, h, t.col, '本 Pod', 'focus');
+      else ctxPill(`ctx-pod-${i}`, cx, POOL_PW, t.y, h, t.col, `Pod ${i + 1}`, 'sib');
+    }
+    ctxCap(t, `×${PODS_PER_POOL} Pod / 池`);
+  }
+
+  // C) 并行关系落到真实层级对象（仅 card 焦点）：TP/PP 描到真实 Host pill · DP 弧到兄弟 Pod · EP 按 epScope。
+  if (focus && focus.level === 'card') {
+    const k = focus.card, bk = Math.floor(k / CPB);
+    const nodeRow = rows.find((r) => r.t.Le === 4);
+    const hostW = nodeRow ? Math.max(11, Math.min(TIERS[4].maxW ?? 52, nodeRow.slotW * 0.82)) : 40;
+    const hY = TIERS[4].y, hH = TIERS[4].h;
+    const badge = (key: string, x: number, y: number, txt: string, col: string, anchor: 'middle' | 'end' = 'middle') => {
+      const w = txt.length * 6.6 + 8, lx = anchor === 'end' ? x - w : x - w / 2;
+      return (
+        <g key={key} style={{ pointerEvents: 'none' }}>
+          <rect x={lx} y={y - 6} width={w} height={12} rx={6} fill={col} />
+          <text x={lx + w / 2} y={y + 0.5} fill={ink(col)} fontSize={7.5} fontWeight={700} textAnchor="middle" dominantBaseline="central">{txt}</text>
+        </g>
       );
+    };
+    const hostStroke = (key: string, cx: number, col: string, inset: number) => (
+      <rect key={key} x={cx - hostW / 2 - inset} y={hY - hH / 2 - inset} width={hostW + inset * 2} height={hH + inset * 2} rx={(hH + inset * 2) * 0.4} fill="none" stroke={col} strokeWidth={1.8} />
+    );
+    // 1) TP — 焦点 Chip 所在 Host pill 描 tp 色 + 角标 TP×8（TP 组 = 本 Host 8 卡）
+    const hp = pos[4]?.[bk];
+    if (hp) {
+      els.push(hostStroke('c-tp-str', hp.x, PARALLEL_COLORS.tp, 3));
+      els.push(badge('c-tp-b', hp.x, hY - hH / 2 - 9, `TP×${pm.tp}`, PARALLEL_COLORS.tp));
+    }
+    // 2) PP — peersOf(k,'pp') 换算 host 下标 b=⌊peer/8⌋；段内 Host 加 pp 描边 + PP级{stage}；段外合并成行尾角标
+    let ppOff = 0;
+    pm.peersOf(k, 'pp').forEach((peer) => {
+      const pb = Math.floor(peer / CPB); if (pb === bk) return;   // 焦点 Host 已由 TP 标注
+      const php = pos[4]?.[pb];
+      if (php) {
+        els.push(hostStroke(`c-pp-str-${pb}`, php.x, PARALLEL_COLORS.pp, 5));
+        els.push(badge(`c-pp-b-${pb}`, php.x, hY + hH / 2 + 9, `PP级${pm.groupOf(peer, 'pp')}`, PARALLEL_COLORS.pp));
+      } else ppOff++;
     });
-  });
+    if (ppOff > 0) els.push(badge('c-pp-off', X1, hY - hH / 2 - 9, `PP ×${pm.pp} 级（跨 Host）`, PARALLEL_COLORS.pp, 'end'));
+    // 3) DP — 从焦点 Chip 画虚线弧到 pool 行兄弟 Pod pill 区（弧向右弓开）+ 副本角标
+    const cp = pos[5]?.[k];
+    if (cp) {
+      const sx = cp.x, sy = TIERS[5].y - 12, tx = poolPodCx(2), ty = TIERS[2].y + TIERS[2].h / 2;
+      const ctlX = Math.max(sx, tx) + 70, ctlY = (sy + ty) / 2;
+      els.push(<path key="c-dp-arc" d={`M${sx} ${sy} Q ${ctlX} ${ctlY} ${tx} ${ty}`} fill="none" stroke={PARALLEL_COLORS.dp} strokeWidth={1.5} strokeDasharray="4 4" strokeOpacity={0.9} />);
+      els.push(badge('c-dp-b', (sx + tx) / 2 + 24, 180, `DP ×${pm.dp} 副本（本 Pod 内平铺·逻辑上跨 Pod）`, PARALLEL_COLORS.dp));
+      // 4) EP — replica 作用域：在 DP 弧旁标相邻副本 A2A
+      if (pm.epScope === 'replica') els.push(badge('c-ep-rep', (sx + tx) / 2 + 24, 194, `EP×${pm.ep}（相邻副本 A2A）`, PARALLEL_COLORS.ep));
+    }
+    // 4) EP — node 作用域：焦点 Host pill 内描边 + 节点内路由角标
+    if (pm.epScope === 'node' && hp) {
+      els.push(hostStroke('c-ep-str', hp.x, PARALLEL_COLORS.ep, 6));
+      els.push(badge('c-ep-node', hp.x, hY + hH / 2 + 9, `EP×${pm.ep}·节点内路由`, PARALLEL_COLORS.ep));
+    }
+    // 5) 图例：TP■ PP■ DP■ EP■（真实成员来自 parallelMap）
+    let lx = 300;
+    (['tp', 'pp', 'dp', 'ep'] as const).forEach((d) => {
+      const c = PARALLEL_COLORS[d];
+      els.push(<rect key={`c-lg-${d}`} x={lx} y={8} width={8} height={8} rx={2} fill={c} />);
+      els.push(<text key={`c-lgt-${d}`} x={lx + 11} y={14} fill={P.ink2} fontSize={8.5} fontWeight={700}>{d.toUpperCase()}</text>);
+      lx += 40;
+    });
+    els.push(<text key="c-lg-note" x={lx + 2} y={14} fill={P.ink3} fontSize={8}>（真实成员来自 parallelMap）</text>);
+  }
 
   return (
     <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style={{ display: 'block' }}>
@@ -779,7 +881,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             平面视图 · 层级图（控制 · 图元/配色同层级图）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
           </div>
           <div style={{ flex: 1, position: 'relative', minHeight: 0, padding: '4px 6px' }}>
-            <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} flow={lens === 'flow'} />
+            <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} flow={lens === 'flow'} pm={pm} />
           </div>
         </div>
 
