@@ -9,7 +9,7 @@
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkloadPanel } from './WorkloadPanel';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, HW_LEVELS, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, HW_LEVELS, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, parallelMap, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
 import { drawCoreGroupMini, drawLevelContainer, drawInterconnectChip } from './arch-glyphs';

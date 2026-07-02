@@ -30,7 +30,6 @@ import {
   PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
   BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
   parallelMap, REPLAY, cardLoad01, cardStraggler, cardFault, loadColor, loadState, stateColor, STATE_LABELS,
-  memLayers, MEM_STACK, MEM_ROUTE,
   type Gen, type ViewSync,
 } from '../scene/data';
 import { TOK } from '../content';
@@ -736,6 +735,7 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   // ── detail rail data ──
   const sm = scopeMean();
   const decomp = STEP_DECOMP[phase];   // paper-grounded 计算/通信/访存 split (arXiv:2505.21411)
+  const pm = parallelMap(phase, NPU_TOT);   // SINGLE SOURCE OF TRUTH physical tiling — same across 平面/工作台/3D
   const scopeCount = ({ global: 1, cluster: pools, pool: podsInPool, super: NODES, node: NPN, rank: NPU_TOT, die: COMPUTE_DIES_PER_CARD, core: CORES_PER_CARD } as Record<Level, number>)[selLevel];
   const scopeUnit = ({ global: '集群', cluster: '服务池', pool: 'Pod', super: 'Host', node: 'Chip·NPU', rank: 'Chip·NPU（rank 1:1）', die: '计算 Die', core: 'Core-Group' } as Record<Level, string>)[selLevel];
   // per-NPU bars for the focused card's node (the TP group) — shown whenever a card is in context

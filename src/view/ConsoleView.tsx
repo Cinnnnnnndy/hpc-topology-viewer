@@ -15,8 +15,9 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
+  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
+  REPLAY, cardLoad01, cardStraggler, cardFault, cardMetric01, parallelMap,
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
 } from '../scene/data';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
@@ -585,15 +586,15 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const reach = Math.sqrt(N) * 1.3 + 12;
   const panoSel = useMemo(() => focusToSel(focus), [focus]);
 
-  const groups = focus && rail ? (() => {
-    const k = focus.card, b = Math.floor(k / CPB);
-    return [
-      { d: 'tp', label: `TP·${k % CPB}`, c: PARALLEL_COLORS.tp },
-      { d: 'pp', label: `PP·${b % PP}`, c: PARALLEL_COLORS.pp },
-      { d: 'dp', label: `DP·复本${Math.floor(b / PP)}`, c: PARALLEL_COLORS.dp },
-      { d: 'ep', label: `EP 组 ${Math.floor(k / 64)}`, c: PARALLEL_COLORS.ep },
-    ];
-  })() : [];
+  // parallel groups from the SINGLE SOURCE OF TRUTH — degrees/membership agree with 平面·3D·运行状态
+  const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
+  // 并行关系（rank↔rank）：每维给出 集合通信形态 + 度数 + 真实对端数（peersOf 真值），把 TP/SP/EP/PP/DP 的「联系」讲清楚
+  const COLL: Record<ParDim, string> = { tp: 'AllReduce', sp: 'AllGather+RS', pp: 'P2P send/recv', dp: 'Ring-AllReduce', ep: '层级化 All-to-All' };
+  const groups: { d: ParDim; label: string; c: string; coll: string; pat: 'ring' | 'a2a' | 'p2p'; peers: number; deg: number }[] = focus && rail ? (['tp', 'sp', 'pp', 'dp', 'ep'] as ParDim[]).map((d) => {
+    const k = focus.card, grp = pm.groupOf(k, d), deg = pm.groupCount(d);
+    const label = d === 'sp' && pm.sp <= 1 ? '与 TP 同域' : d === 'tp' ? `切片 ${grp}` : d === 'pp' ? `级 ${grp}/${pm.pp}` : d === 'dp' ? `副本 ${grp}` : `组 ${grp}/${pm.ep}`;
+    return { d, label, c: d === 'sp' ? PARALLEL_COLORS_SP : PARALLEL_COLORS[d as Exclude<PartitionDim, 'none'>], coll: COLL[d], pat: pm.collectiveOf(d), peers: pm.peersOf(k, d, 1 << 20).length, deg };
+  }) : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
   const shellStyle: React.CSSProperties = workbenchProfile

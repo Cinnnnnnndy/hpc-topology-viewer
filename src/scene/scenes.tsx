@@ -23,7 +23,7 @@ import {
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
   loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY, WORKLOAD,
-  HW_LEVELS, LAYER_INFO, levelFull, PODS_PER_POOL,
+  HW_LEVELS, LAYER_INFO, levelFull, PODS_PER_POOL, parallelMap,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
