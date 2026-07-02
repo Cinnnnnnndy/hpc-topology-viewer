@@ -18,7 +18,7 @@ import {
   GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS,
   parallelMap, REPLAY, cardLoad01, cardMetric01, cardStraggler, cardFault,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
-  type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode,
+  type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
 } from '../scene/data';
 import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
@@ -359,7 +359,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
   );
 }
 
-export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
+export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbenchProfile = visualProfile === 'opRankTime';
   const surf = sceneSurface(dark, visualProfile);
@@ -367,7 +367,10 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const N = spec.totalNpus;
   const nBlades = Math.ceil(N / CPB), nCabs = Math.ceil(nBlades / BPC);
 
-  const [workload, setWorkload] = useState<Workload>('pretrain');
+  // 工况/时间/播放 come from the cross-view sync when present → 运行状态 ⇄ 工作台 stay linked
+  const [workloadL, setWorkloadL] = useState<Workload>('decode');
+  const workload = sync?.workload ?? workloadL;
+  const setWorkload = sync?.setWorkload ?? setWorkloadL;
   const [metric, setMetric] = useState<Metric>('util');
   const [dir, setDir] = useState<Dir>('all');
   const [lens, setLens] = useState<Lens>('heat');
@@ -376,8 +379,12 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [focus, setFocus] = useState<Focus>(null);
   const [scopeB, setScopeB] = useState<{ cx: number; cy: number; cz: number; r: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
-  const [step, setStep] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  const [stepL, setStepL] = useState(0);
+  const step = sync?.step ?? stepL;
+  const setStep = sync?.setStep ?? setStepL;
+  const [playingL, setPlayingL] = useState(false);
+  const playing = sync?.playing ?? playingL;
+  const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

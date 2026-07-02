@@ -19,7 +19,7 @@ import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
   SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS,
   memLayers, PLANES, WORKLOAD,
-  type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim,
+  type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim, type ViewSync, type ParallelWorkload,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
@@ -260,6 +260,11 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const workbench = chrome === 'workbench';
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
   const [mode, setMode] = useState<ViewMode>('console');   // land on 联动控制台 (linked console)
+  // cross-view sync (运行状态 ⇄ 工作台): shared 工况 / 时间 / 播放 so switching tabs keeps the same world
+  const [syncWorkload, setSyncWorkload] = useState<ParallelWorkload>('decode');
+  const [syncStep, setSyncStep] = useState(0);
+  const [syncPlaying, setSyncPlaying] = useState(false);
+  const viewSync: ViewSync = { workload: syncWorkload, step: syncStep, playing: syncPlaying, setWorkload: setSyncWorkload, setStep: setSyncStep, setPlaying: setSyncPlaying };
   const [rackKind, setRackKind] = useState<RackKind>('compute');
   const [nodeKind, setNodeKind] = useState<'compute' | 'ubswitch'>('compute');
   const [nodeSlot, setNodeSlot] = useState(0);
@@ -735,10 +740,10 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
 
           {/* 2-D runtime-state dashboard — KPI + hierarchy status-axis + multi-lens (overlays the 3-D canvas) */}
-          {mode === 'status' && <StatusView gen={gen} dark={dark} />}
+          {mode === 'status' && <StatusView gen={gen} dark={dark} sync={viewSync} />}
 
           {/* 联动控制台 — 平面视图(控制) + 阵列全景(主视图·自带 canvas) + 运行状态仪表 (overlays the 3-D canvas) */}
-          {mode === 'console' && <ConsoleView gen={gen} dark={dark} />}
+          {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}

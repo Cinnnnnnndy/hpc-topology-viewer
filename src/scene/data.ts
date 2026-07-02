@@ -378,6 +378,18 @@ export const PARALLEL_COLORS_SP = '#22d3ee';   // SP signature colour (cyan, dis
 // 路由 TP2+EP4 / 共享 TP8. 真实作业 ~4K 卡除不尽 8192 卡 950 超节点，所以物理平铺取「整除近似」：
 // PP 5→与 8192 卡整除的最近约数，DP 填充到铺满 —— 逻辑并行度(real)与物理平铺度(tiled)都保留、都标注。
 export type ParallelWorkload = 'pretrain' | 'prefill' | 'decode';
+
+// ─── Cross-view sync: shared 工况 / 时间 / 播放 so 运行状态 ⇄ 工作台 stay linked when you switch
+// tabs (combined with the shared load model, both tabs show the SAME world at the same t). Optional —
+// a view falls back to its own local state when no sync is provided (standalone use). ───
+export interface ViewSync {
+  workload: ParallelWorkload;
+  step: number;
+  playing: boolean;
+  setWorkload: (w: ParallelWorkload) => void;
+  setStep: (n: number | ((s: number) => number)) => void;
+  setPlaying: (b: boolean | ((b: boolean) => boolean)) => void;
+}
 export interface ParallelMapping {
   workload: ParallelWorkload; N: number; training: boolean;
   tp: number; sp: number; ep: number; pp: number; dp: number;   // physical tiling degrees (整除铺满)

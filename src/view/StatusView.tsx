@@ -27,7 +27,7 @@ import {
   BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
   parallelMap, REPLAY, cardLoad01, cardStraggler, cardFault, loadColor, loadState, stateColor, STATE_LABELS,
   memLayers, MEM_STACK, MEM_ROUTE,
-  type Gen,
+  type Gen, type ViewSync,
 } from '../scene/data';
 import { TOK } from '../content';
 import { busWire2d } from './wire2d';
@@ -72,7 +72,7 @@ const TILES_VIEW = 48;            // L0 tile/lane 聚合观测的示意格数
 const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return v - Math.floor(v); };
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
+export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbenchProfile = visualProfile === 'opRankTime';
   const spec = GENERATIONS[gen];
@@ -85,8 +85,10 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const NPN = NPUS_PER_NODE;                             // 8 NPU / node
   const EVT_CAB = Math.min(CAB - 1, REPLAY.evtCab);   // overheating cabinet during the event (shared with 工作台)
 
-  // ── shared selection (drives ALL lenses) ──
-  const [phase, setPhase] = useState<Phase>('decode');
+  // ── shared selection (drives ALL lenses) · 工况/时间/播放 come from the cross-view sync when present ──
+  const [phaseL, setPhaseL] = useState<Phase>('decode');
+  const phase = sync?.workload ?? phaseL;
+  const setPhase = sync?.setWorkload ?? setPhaseL;
   const [metric, setMetric] = useState<Metric>('util');
   const [lens, setLens] = useState<Lens>('heat');
   const [pods, setPods] = useState(4);                   // 集群 = N 超节点（示意，跨超节点 DP）
@@ -96,8 +98,12 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const [selNode, setSelNode] = useState(0);             // global node index within the super-node [0,NODES)
   const [selNpu, setSelNpu] = useState(-1);              // NPU within the selected node [0,8); -1 = none picked
   const [selCore, setSelCore] = useState(0);             // AI Core within the selected card [0,32)
-  const [step, setStep] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  const [stepL, setStepL] = useState(0);
+  const step = sync?.step ?? stepL;
+  const setStep = sync?.setStep ?? setStepL;
+  const [playingL, setPlayingL] = useState(false);
+  const playing = sync?.playing ?? playingL;
+  const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [tip, setTip] = useState<{ x: number; y: number; t: string } | null>(null);
   const flowRef = useRef(0);   // 连线彗星流动相位 —— 始终推进（即使未播放，连线持续流动）
 
