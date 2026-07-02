@@ -1,35 +1,37 @@
-# hw-native-sys 层级坐标规范（L7 → L0）——所有视图统一遵循
+# hw-native-sys 层级坐标规范（L7 → L0）——所有视图统一遵循（v2 · 严格版）
 
-> 参照 hw-native-sys（compute-graph-viewer）7+1 级递归层级。本仓库唯一层级编号来源为
-> `src/scene/data.ts` 中的 `HW_LEVELS` / `HW_BY_KEY` / `UB_COORD`（helper：`levelTag/levelName/levelFull`）。
+> 参照 hw-native-sys（compute-graph-viewer）递归层级。本仓库唯一层级编号来源为
+> `src/scene/data.ts` 中的 `HW_LEVELS` / `HW_BY_KEY` / `UB_COORD` / `LAYER_INFO`
+> （helper：`levelTag/levelName/levelFull`）。
 
-## 层级表
+## 层级表（这就是全部层级，任何视图的层级轴必须与此完全一致、级数一致、顺序一致）
 
-| L | key（代码内部） | 名称 | 英文 | 通往下一级的互联 | 备注 |
-|----|----------------|------|------|------------------|------|
-| L7 | `global`（UB_COORD 里为 `job`） | 全球调度 | Global | **DCN**（跨地域数据中心网络） | sibling 样例 Global A/C |
-| L6 | `cluster` | 集群 | Cluster | **Scale-Out**（跨 Pool UBoE/RoCE 全光） | |
-| L5 | `pool` | 服务池 | Service Pool | **Pool 内互联**（Pool 内 Pod 间） | 新增级；`PODS_PER_POOL = 4` |
-| L4 | `super` | Pod · 超节点 | Pod · UBL128 | **Scale-Up**（柜内 nD-FullMesh + UB 交换 Clos） | **机柜 `cab` 并入本级**，无独立 L 级、tag 为 '' |
-| L3 | `node` | Host · 节点 | Host · 1 OS | **PCIe / UB** | 1 CPU + 8 NPU 同挂 1 OS |
-| L2 | `card` | Chip · NPU | Chip · NPU | **封装互连**（Die 间 UB/SIO · D2D 784 GB/s） | rank ↔ device 1:1 |
-| L1 | `die` | Die | Die | **NoC**（片上互联核组） | **可选级**（单 die 芯片可省略） |
-| L0 | `core` | 核组 | Core-Group | 内部：MTE / FixPipe 流水 | 成员 = AIV·向量 / AIC·Cube / AICPU；**`tile` 归入 L0 内部**（tag ''） |
+| L | key（代码内部） | 名称 | 英文 | 通往下一级的互联 | sibling 样例 |
+|----|----------------|------|------|------------------|--------------|
+| L7 | `global`（UB_COORD 里为 `job`） | 全球调度 | Global | **DCN** | Global A / C |
+| L6 | `cluster` | 集群 | Cluster | **Scale-Out** | Cluster A / C |
+| L5 | `pool` | 服务池 | Service Pool | **Pool 内互联** | Pool 1 / 3（`PODS_PER_POOL = 4`） |
+| L4 | `super` | **Pod**（UBL128） | Pod · UBL128 | **Scale-Up** | Pod α / γ |
+| L3 | `node` | Host | Host · 1 OS | **PCIe / UB** | Host 1 / 3 |
+| L2 | `card` | Chip · NPU | Chip · NPU | **封装互连** | NPU 1 / 3 |
+| L1 | `die` | Die（**可选级**） | Die | **NoC** | die 0 |
+| L0 | `core` | 核组 Core-Group | Core-Group | 内部：MTE/FixPipe 流水 | AIV · AIC · AICPU |
 
-## 关键规则
+## 硬性规则（v2 与 v1 的区别：不再有“并入级”行）
 
-1. **L 编号唯一**：`L0`…`L7` 只表示上表层级。旧 UB 互联层级（`UB_LEVELS`）已改用互联名
-   id（`NoC·D2D` / `UB·Host` / `SU·柜内` / `SU·Pod` / `SO`），任何视图不得再把互联层级标成 L0–L4。
-   物理交换芯片名 “L1 交换 / L2 交换”（switch tier）是产品名，保留不变。
-2. **并入级**：机柜（cab）显示为 “机柜（并入 L4 Pod）”、无 L tag；Tile 显示为 “Tile（L0 内）”。
-3. **可选级**：Die 标注 “L1 · 可选”。
-4. **L0 内部组织统一复用 memory-architecture pattern**（`src/view/CoreGroupPattern.tsx`）：
-   GM / L2 Cache 轨道 + AIV1 / AIC / AIV2 + UB/L1/L0A/L0B/L0C/BT/FP 缓冲 + MTE1/MTE2/MTE3/FixPipe 路由。
-   2D / 工作台 / 运行状态视图钻取到 L0（core / tile）时渲染该组件；运行相位经
-   `phaseKind`（load/compute/comm/mem/store）驱动路由高亮与缓冲占用。3D 场景的 die 内部
-   （DieDetail）按同一 pattern 的结构组织（GM/L2 轨道 → AIV/AIC/AIV 块 → 缓冲 → MTE 路径）。
-5. **并行维度落位**（`PARTITION_META`）：TP=L3 Host 内 · EP=L4 Pod 内机柜域 · PP=L4 Pod 内跨 Host ·
-   DP=跨 Pod（L5 Pool / L6 Cluster）。
-6. 旧→新对照：超节点 L5→**L4 Pod**、节点 L4→**L3 Host**、卡 L3→**L2 Chip·NPU**、
-   计算 Die L2→**L1 Die（可选）**、AI Core L1→**L0 Core-Group**、Tile L0→**L0 内部**。
-   集群 L6 不变；新增 L5 服务池、L7 全球调度（原 job）。
+1. **“超节点”“机柜”不再是层级**。L4 的名字就是 **Pod**。机柜（`cab`）只是 Pod 内的
+   物理分组：可以作为 3D 物理场景（机房/机柜视图）和物理分组框存在，但**绝不出现在**
+   层级轴、漏斗、Smartscape 层级、面包屑层级链、层级图例中。文案需要提到时写
+   “机柜（物理分组）”。`TOK.supernode`/Atlas 产品名只能出现在产品规格文案中，不得作层级名。
+2. **Tile 不是层级**。`tile` 是 L0 Core-Group 的内部粒度（pattern 缓冲/swimlane lane），
+   不出现在层级轴/面包屑；L0 的内部组织统一复用 memory-architecture pattern
+   （`src/view/CoreGroupPattern.tsx`），标题一律 “L0 内部 / L0 Core-Group 内部”。
+3. **所有视图的层级轴完全相同**：运行状态、联动控制台、平面视图（层级图）、3D 漏斗
+   全部是同一条链：全球 L7 → 集群 L6 → 服务池 L5 → Pod L4 → Host L3 → Chip·NPU L2 →
+   Die L1（可选）→ Core-Group L0，级间互联标注 DCN / Scale-Out / Pool 内互联 / Scale-Up /
+   PCIe·UB / 封装互连 / NoC。
+4. **L1 Die 标注“可选”**（单 die 芯片可省略）。
+5. 旧 UB 互联层级（`UB_LEVELS`）用互联名 id（`NoC·D2D/UB·Host/SU·柜内/SU·Pod/SO`），
+   不占用 L 编号；“L1/L2 交换”是交换芯片产品名，保留。
+6. **并行维度落位**：TP=L3 Host 内 · EP/PP=L4 Pod 内 · DP=跨 Pod（L5/L6）。
+7. `LAYER_INFO`（data.ts）现为 8 条、L7→L0 按位有序，PlaneView LAY.defs 必须与其对齐。

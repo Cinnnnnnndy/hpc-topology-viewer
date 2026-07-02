@@ -107,8 +107,8 @@ export const HW_LEVELS: HwLevel[] = [
     down: { label: 'Scale-Out', color: '#ffaa3b', detail: `跨 Pool ${TOK.uboe}/RoCE 全光 scale-out` }, example: 'Cluster A / C' },
   { L: 5, tag: 'L5', key: 'pool',    name: '服务池', en: 'Service Pool',
     down: { label: 'Pool 内互联', color: '#04d793', detail: 'Pool 内 Pod 间互联（业务 / 资源分区）' }, example: 'Pool 1 / 3' },
-  { L: 4, tag: 'L4', key: 'super',   name: `Pod · ${TOK.supernode}`, en: 'Pod · UBL128',
-    down: { label: 'Scale-Up', color: '#fb5b9a', detail: `UBL128 Scale-Up：柜内 ${TOK.fullmesh} + UB 交换 Clos（机柜并入本级）` }, example: 'Pod α / γ' },
+  { L: 4, tag: 'L4', key: 'super',   name: 'Pod', en: 'Pod · UBL128',
+    down: { label: 'Scale-Up', color: '#fb5b9a', detail: `UBL128 Scale-Up：${TOK.fullmesh} + UB 交换 Clos（机柜仅为物理分组，不是层级）` }, example: 'Pod α / γ' },
   { L: 3, tag: 'L3', key: 'node',    name: 'Host · 节点', en: 'Host · 1 OS',
     down: { label: 'PCIe / UB', color: '#38bdf8', detail: '主机内多 NPU 经 PCIe/UB 挂到 1 个 OS' }, example: 'Host 1 / 3' },
   { L: 2, tag: 'L2', key: 'card',    name: 'Chip · NPU', en: 'Chip · NPU',
@@ -121,9 +121,10 @@ export const HW_LEVELS: HwLevel[] = [
 export const HW_BY_KEY: Record<LevelKey, HwLevel> = (() => {
   const m = {} as Record<LevelKey, HwLevel>;
   for (const l of HW_LEVELS) m[l.key] = l;
-  // 并入级：机柜（L4 Pod 内物理分组）、Tile（L0 Core-Group 内最细粒度）
-  m.cab  = { ...m.super, key: 'cab',  tag: '', folded: true, name: '机柜', en: 'Cabinet', example: 'C0 / C1' };
-  m.tile = { ...m.core,  key: 'tile', tag: '', folded: true, name: 'Tile / lane', en: 'Tile', example: 'lane 0…' };
+  // 非层级：机柜只是 L4 Pod 内的物理分组、Tile 只是 L0 Core-Group 内部粒度，
+  // 两者都不出现在层级轴/漏斗/面包屑里（key 仅供旧代码路径兼容）。
+  m.cab  = { ...m.super, key: 'cab',  tag: '', folded: true, name: '机柜（物理分组）', en: 'Cabinet (physical)', example: 'C0 / C1' };
+  m.tile = { ...m.core,  key: 'tile', tag: '', folded: true, name: 'Tile（L0 内部）', en: 'Tile', example: 'lane 0…' };
   return m;
 })();
 /** 层级 tag（'L4'…；并入级返回 ''） */
@@ -241,19 +242,21 @@ export const BAND_PHYS_KEY: Record<number, string> = {
 // Each hierarchy level carries HARDWARE facts (hw) and the SOFTWARE view (sw)
 // SEPARATELY — rank is pure software (a collective-comm logical id) bound to a device,
 // never the device itself. Tuned for the 950 (4-Die package · UMA · ≈32 AI Core/card).
+// 8 entries, one per hw-native-sys level L7→L0（与 PlaneView LAY.defs 按位对齐）。
+// 机柜 / Tile 不是层级，不在此表：机柜=Pod 内物理分组，Tile=L0 Core-Group 内部粒度。
 export interface LayerInfo { key: string; name: string; intra: string; inter: string; bw: string; domain: string; tag?: string; hw?: string; sw?: string; }
 export const LAYER_INFO: LayerInfo[] = [
-  { key: 'super', name: `Pod · ${TOK.supernode}（UBL128）`, intra: `Scale-Up 域内全互联 · ${TOK.ubmesh}（SU 窄快 + SO 广省）`, inter: '↑ L5 Service Pool（Pool 内互联）→ L6 Cluster（Scale-Out）→ L7 Global（DCN）', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: '集群通信域 / 全局编排' },
-  { key: 'cab',   name: '机柜（并入 L4 Pod）', intra: `柜内 ${TOK.fullmesh}（≤128 卡 SU 超低延迟域）`, inter: '↑ 总线池化 pooling：UB 统一编址 → Pod“一台计算机”（机柜无独立 L 级）', bw: `柜内 ${TOK.fullmesh} · 1:1 无收敛`, domain: 'SU' },
-  { key: 'node',  name: 'Host · 节点/刀片（1 OS）', intra: '8 卡 + CPU 经 PCIe/UB（LQC）对 L1 全互联、平等编址、同挂 1 OS', inter: '↑ Scale-Up：经 L1/L2 UB 交换上联 L4 Pod（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(卡) / 8×30G(CPU)', domain: 'SU' },
-  { key: 'card',  name: 'Chip · NPU（1 device）', intra: '封装互连：4 Die = 2 计算 Die（UMA 高带宽直连、OS 视为单设备）+ 2 IO Die', inter: '↑ PCIe / UB：Chip 挂入 L3 Host · 软件 rank → 硬件 device 绑定', bw: 'D2D · HBM · 单卡 UB 2016 GB/s', domain: '—', tag: 'device ↔ rank 1:1',
+  { key: 'global', name: 'Global · 全球调度（L7）', intra: '跨地域多集群统一调度 / 容灾 / 就近接入', inter: '↓ DCN：经数据中心网络下挂各 Cluster', bw: 'DCN 广域 · 南北向', domain: '—', sw: '作业全局编排 · 端到端吞吐 / MFU' },
+  { key: 'cluster', name: 'Cluster · 集群（L6）', intra: `集群内跨 Pool 调度 · DP/PP 跨 Pod`, inter: `↓ Scale-Out：${TOK.uboe}/RoCE 全光下挂各 Service Pool`, bw: `跨 Pod ${TOK.uboe}/RoCE`, domain: 'SO', sw: 'DP 数据并行域 · 集群通信占比' },
+  { key: 'pool',  name: 'Service Pool · 服务池（L5）', intra: '业务 / 资源分区：训练池 · 推理池 · 混部池', inter: '↓ Pool 内互联：池内 Pod 间互联', bw: 'Pool 内 Pod 间全光', domain: 'SO', sw: '任务排布 / 配额边界' },
+  { key: 'super', name: 'Pod（L4 · UBL128）', intra: `Scale-Up 域内全互联 · ${TOK.ubmesh}（≤128 卡超低延迟 SU 域，机柜仅为物理分组）`, inter: '↓ Scale-Up：UB 统一编址 → Pod =“一台计算机”', bw: 'any-to-any <1 µs · 16 PB/s', domain: 'SU+SO', sw: 'TP/EP/SP 域(SU) · 部署边界' },
+  { key: 'node',  name: 'Host（L3 · 1 OS）', intra: '8 卡 + CPU 经 PCIe/UB（LQC）全互联、平等编址、同挂 1 个 OS', inter: '↓ PCIe / UB：多 NPU 挂入同一 Host OS（单跳 200 ns · 1:1）', bw: 'LQC 8×56G(卡) / 8×30G(CPU)', domain: 'SU' },
+  { key: 'card',  name: 'Chip · NPU（L2 · 1 device）', intra: '封装互连：4 Die = 2 计算 Die（UMA 高带宽直连、OS 视为单设备）+ 2 IO Die', inter: '↓ 封装互连：Die 间 UB/SIO（D2D 784 GB/s）', bw: 'D2D · HBM · 单卡 UB 2016 GB/s', domain: '—', tag: 'device ↔ rank 1:1',
     hw: '硬件：1 颗 950 Chip = 1 device = 2 计算 Die（UMA 合并）+ 2 IO Die', sw: `软件：rank = ${TOK.hccl} 逻辑编号（rank 表），与 device 严格 1:1 绑定 · 纯软件、与代际无关` },
-  { key: 'die',   name: 'Die（L1 · 可选）', intra: '单计算 Die ≈ 16 AI Core（若干核组），经片上 NoC 互联、共享 HBM', inter: '↑ 封装互连：2 计算 Die UMA 统一寻址 → 整卡 = 1 device（单 die 芯片可省略本级）', bw: '片上 NoC · D2D 784 GB/s · HBM 3.2–9.6 TB/s', domain: '—', tag: '设备内（非 rank）· 可选级',
+  { key: 'die',   name: 'Die（L1 · 可选）', intra: '单计算 Die ≈ 16 AI Core（若干核组），经片上 NoC 互联、共享 HBM', inter: '↓ NoC：片上 NoC 下挂各 Core-Group（单 die 芯片可省略本级）', bw: '片上 NoC · D2D 784 GB/s · HBM 3.2–9.6 TB/s', domain: '—', tag: '设备内（非 rank）· 可选级',
     hw: '硬件：1 计算 Die ≈ 16 AI Core · 整卡 = 2 计算 Die（UMA）+ 2 IO Die', sw: '软件：rank 内 Die 分区 · 同 rank、不增 rank' },
-  { key: 'core',  name: 'Core-Group · 核组（L0 · AIC/AIV/AICPU）', intra: '核组 = 1 AIC(Cube) + 2 AIV(Vector)（+ AICPU 调度）· 核间 GlobalMem + CrossCoreFlag', inter: '↑ NoC：核组经片上 NoC 挂入 L1 Die · block_idx 核实例（SPMD）', bw: 'GM/L2 轨道 · UB/L1/L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
+  { key: 'core',  name: 'Core-Group · 核组（L0 · AIV/AIC/AICPU）', intra: '核组 = 1 AIC(Cube) + 2 AIV(Vector)（+ AICPU 调度）· 内部按 memory-architecture 组织：GM/L2 轨道 → UB/L1/L0A/L0B/L0C 缓冲 → MTE/FixPipe 流水', inter: '↓ 内部：Tile / SIMT lane（不再是层级）· block_idx 核实例（SPMD）', bw: 'GM/L2 轨道 · UB/L1/L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
     hw: '硬件：约 32 AI Core/卡（16/计算 Die × 2）· AIC(Cube)/AIV(Vector) 分离独立核 · 核组内 1 Cube + 2 Vector', sw: '软件：block_idx 核实例（SPMD）· rank 内不增 rank' },
-  { key: 'tile',  name: 'Tile（L0 内 · Cube/Vector/lane）', intra: '核内 Cube/Vector ALU + 片上 buf（UB/L1/L0A/B/C）+ SIMD/SIMT lane（memory-architecture 组织）', inter: '↑ TileShape 切分：tile / element 落到 lane（归入 L0 Core-Group 内部）', bw: 'L0 buf · 寄存器 · element 级', domain: '—', tag: '设备内（非 rank）',
-    hw: '硬件：AI Core 内 Cube/Vector 计算单元 + 片上 buffer + SIMD/SIMT 通道（lane）', sw: '软件：tile / SIMT lane / element（950 SIMD/SIMT 同构双编程的最细粒度）' },
 ];
 
 // per-card AI Core count on the 950 (≈16 AI Core / compute Die × 2 compute Die)
@@ -451,8 +454,8 @@ export const UB_COORD: Record<string, UbCoordLevel> = {
   cluster: { L: 'L6', scope: '集群域',  sw: 'Cluster · 跨 Pool/Pod 的 DP / PP（Scale-Out）', obs: '集群通信占比 (DP)' },
   pool:    { L: 'L5', scope: '服务池域', sw: 'Service Pool · 业务/资源分区（Pool 内互联）', obs: 'Pool 内 Pod 间带宽 · 任务排布' },
   super:   { L: 'L4', scope: 'Pod 域',  sw: 'Pod（UBL128 Scale-Up）· TP/EP/SP 域(SU)', obs: 'UB 带宽利用 · EP All-to-All' },
-  cab:     { L: 'L4', scope: 'Pod 域',  sw: '机柜 = Pod 内物理分组', obs: '柜内 mesh 利用 · 上行带宽',
-             note: '机柜并入 L4 Pod · 无独立 L 级' },
+  cab:     { L: 'L4', scope: 'Pod 域',  sw: '机柜 = Pod 内物理分组（不是层级）', obs: '柜内 mesh 利用 · 上行带宽',
+             note: '机柜不是层级 · 仅物理分组，不出现在层级轴' },
   node:    { L: 'L3', scope: 'Host 域', sw: 'Host（1 OS）· 单机多卡放置（1 CPU + 8 NPU 经 PCIe/UB）', obs: '卡间带宽 · host 开销' },
   card:    { L: 'L2', scope: 'Chip 域', sw: 'Chip·NPU = rank 逻辑设备（950 整卡 UMA）', obs: '算力% · HBM% · 负载均衡' },
   die:     { L: 'L1', scope: 'Die 域',  sw: 'Die（可选级）· NoC 互联核组 / 共享 HBM', obs: 'NoC 争用 · D2D · HBM 带宽',
