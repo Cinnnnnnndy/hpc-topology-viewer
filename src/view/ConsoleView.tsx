@@ -15,9 +15,9 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARTITION_META, PLANES, LEVEL_PHYS,
-  loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
-  type Gen, type PartitionDim, type RunPhase, type RunMode,
+  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS,
+  parallelMap, loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
+  type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode,
 } from '../scene/data';
 import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
@@ -380,7 +380,7 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const surf = sceneSurface(dark, visualProfile);
   const spec = GENERATIONS[gen];
   const N = spec.totalNpus;
-  const nBlades = Math.ceil(N / CPB), nCabs = Math.ceil(nBlades / BPC), PP = Math.min(16, nBlades);
+  const nBlades = Math.ceil(N / CPB), nCabs = Math.ceil(nBlades / BPC);
 
   const [workload, setWorkload] = useState<Workload>('pretrain');
   const [metric, setMetric] = useState<Metric>('util');
@@ -514,13 +514,16 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const reach = Math.sqrt(N) * 1.3 + 12;
   const panoSel = useMemo(() => focusToSel(focus), [focus]);
 
-  const groups = focus && rail ? (() => {
-    const k = focus.card, b = Math.floor(k / CPB);
+  // parallel groups from the SINGLE SOURCE OF TRUTH — degrees/membership agree with 平面·3D·运行状态
+  const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
+  const groups: { d: ParDim; label: string; c: string }[] = focus && rail ? (() => {
+    const k = focus.card;
     return [
-      { d: 'tp', label: `TP·${k % CPB}`, c: PARALLEL_COLORS.tp },
-      { d: 'pp', label: `PP·${b % PP}`, c: PARALLEL_COLORS.pp },
-      { d: 'dp', label: `DP·复本${Math.floor(b / PP)}`, c: PARALLEL_COLORS.dp },
-      { d: 'ep', label: `EP·C${Math.floor(k / PER_CAB)}`, c: PARALLEL_COLORS.ep },
+      { d: 'tp', label: `TP·切片${pm.groupOf(k, 'tp')}`, c: PARALLEL_COLORS.tp },
+      { d: 'sp', label: pm.sp > 1 ? `SP·${pm.groupOf(k, 'sp')}` : 'SP·与TP同域', c: PARALLEL_COLORS_SP },
+      { d: 'pp', label: `PP·级${pm.groupOf(k, 'pp')}/${pm.pp}`, c: PARALLEL_COLORS.pp },
+      { d: 'dp', label: `DP·副本${pm.groupOf(k, 'dp')}`, c: PARALLEL_COLORS.dp },
+      { d: 'ep', label: `EP·组${pm.groupOf(k, 'ep')}/${pm.ep}`, c: PARALLEL_COLORS.ep },
     ];
   })() : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;

@@ -9,7 +9,7 @@
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkloadPanel } from './WorkloadPanel';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, parallelMap, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
 import { SceneVisualProfileContext } from '../scene/visual-profile';
@@ -299,15 +299,10 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
     const [bx, by] = bladeXY(cab, bl);
     return [bx + L.bpad + (l % 4) * (L.cs + L.gap), by + L.bpad + Math.floor(l / 4) * (L.cs + L.gap)];
   };
-  const groupOf = (k: number): number => {
-    const b = Math.floor(k / CPB);
-    if (colorBy === 'tp') return k % CPB;
-    if (colorBy === 'pp') return b % L.PP;
-    if (colorBy === 'dp') return Math.floor(b / L.PP);
-    if (colorBy === 'ep') return Math.floor(b / BPC);
-    return -1;
-  };
-  const cfg = `TP${CPB}×PP${L.PP}×DP${Math.max(1, Math.round(L.nB / L.PP))}`;
+  // parallel decomposition from the SINGLE SOURCE OF TRUTH (data.ts) — workload-aware, integer-tiled
+  const pm = useMemo(() => parallelMap(runMode === 'train' ? 'pretrain' : 'decode', spec.totalNpus), [runMode, spec.totalNpus]);
+  const groupOf = (k: number): number => (colorBy === 'none' ? -1 : pm.groupOf(k, colorBy));
+  const cfg = pm.cfg;
 
   // ── layered-hierarchy layout: each level is MATRIX-PACKED into a square-ish grid
   // (like the top view), the grids stacked top→bottom by level. Formula-based (no

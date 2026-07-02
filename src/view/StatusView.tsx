@@ -25,7 +25,7 @@ import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
   PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
   BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
-  loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
+  parallelMap, loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
   type Gen,
 } from '../scene/data';
 import { TOK } from '../content';
@@ -690,6 +690,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   // ── detail rail data ──
   const sm = scopeMean();
   const decomp = STEP_DECOMP[phase];   // paper-grounded 计算/通信/访存 split (arXiv:2505.21411)
+  const pm = parallelMap(phase, NPU_TOT);   // SINGLE SOURCE OF TRUTH physical tiling — same across 平面/工作台/3D
   const scopeCount = ({ cluster: pods, super: CAB, cab: NODES_PER_CAB, node: NPN, rank: NPU_TOT, die: COMPUTE_DIES_PER_CARD, core: CORES_PER_CARD, tile: TILES_VIEW } as Record<Level, number>)[selLevel];
   const scopeUnit = ({ cluster: '超节点', super: '机柜', cab: '节点', node: 'NPU', rank: '卡(rank)', die: '计算 Die', core: 'AI Core', tile: 'Tile' } as Record<Level, string>)[selLevel];
   // per-NPU bars for the focused card's node (the TP group) — shown whenever a card is in context
@@ -852,6 +853,8 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
               通信优化：AllReduce→RS+AG −{WORKLOAD_DETAIL.comm.allreduceCutPct}% · RMSNorm 重排 −{WORKLOAD_DETAIL.comm.rmsnormCutPct}% · 融合 {WORKLOAD_DETAIL.comm.fusedOps.join('/')}
             </div>
             <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 3 }}>真实值 · Ascend 800I A2/300I Duo（arXiv:2505.21411）</div>
+            <div style={{ fontSize: 9.5, color: 'var(--tx2)', marginTop: 4, fontFamily: MONO }}>物理平铺 {pm.cfg}</div>
+            <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 1 }}>{pm.real} · {pm.approxNote}</div>
           </div>
 
           {/* card associations / comm relationships (mirrors 平面视图's relationship view) */}

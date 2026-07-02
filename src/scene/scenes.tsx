@@ -22,7 +22,7 @@ import {
   UB_LEVELS, UB_LEVEL_META, COMM_PATTERNS, RACK_COLORS, ENTITY_COLORS, UB_COORD_TOPO,
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
-  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY, WORKLOAD,
+  loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY, WORKLOAD, parallelMap,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -1875,23 +1875,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const useChip = G.N <= FP_CHIP_CAP;   // textured NpuChip per card at small counts; else instanced
   const cardW = 0.34, cardH = 0.15;   // chip-like thickness (贴近 64p NpuChip 比例)，非扁平贴片
 
-  // model-parallel decomposition mapped onto the physical hierarchy (TP=blade, PP/DP=replicas, EP=cabinet)
+  // model-parallel decomposition — reads the SINGLE SOURCE OF TRUTH (data.ts parallelMap) so the
+  // 3D colouring/grouping agrees with 平面视图 · 工作台 · 运行状态. Degrees/tiling are workload-aware
+  // (train TP8·EP2·PP≈5 · DP fills the pod / infer H²P) and integer-tiled to fill N1.
   const part = useMemo(() => {
-    const nB1 = Math.max(1, Math.round(G.nBlades / podCount));   // blades per super-node
-    const TP = FP_CARDS_PER_BLADE, PP = Math.min(16, nB1), DP = Math.max(1, Math.round(nB1 / PP));
-    const groupOf = (k: number): number => {
-      const b = Math.floor(k / FP_CARDS_PER_BLADE);   // global blade index = TP group
-      const lb = b % nB1;                             // blade within its super-node
-      switch (partition) {
-        case 'tp': return k % FP_CARDS_PER_BLADE;     // tensor slice (tp rank 0–7) within the node
-        case 'pp': return lb % PP;                    // pipeline stage within a model replica
-        case 'dp': return Math.floor(lb / PP);        // data-parallel replica
-        case 'ep': return G.bladeCab[b];              // experts grouped per cabinet (All-to-All domain)
-        default:   return 0;
-      }
-    };
-    return { TP, PP, DP, groupOf, cfg: `TP${TP}×PP${PP}×DP${DP}` };
-  }, [G, podCount, partition]);
+    const pm = parallelMap(runMode === 'train' ? 'pretrain' : 'decode', G.N1);
+    const groupOf = (k: number): number => (partition === 'none' ? 0 : pm.groupOf(k % G.N1, partition));
+    return { TP: pm.tp, PP: pm.pp, DP: pm.dp, groupOf, cfg: pm.cfg, map: pm };
+  }, [G.N1, runMode, partition]);
 
   // matrices + base colours (set once per layout — NOT per hover/phase)
   useLayoutEffect(() => {

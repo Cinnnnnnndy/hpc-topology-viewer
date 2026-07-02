@@ -359,6 +359,93 @@ export const PARTITION_PALETTE = ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#
 export const PARALLEL_COLORS: Record<PartitionDim, string> = {
   none: '#7c8db8', tp: '#4369ef', pp: '#04d793', dp: '#ffaa3b', ep: '#ff4b7b',
 };
+export type SpDim = 'sp';
+export type ParDim = Exclude<PartitionDim, 'none'> | SpDim;   // tp/pp/dp/ep + sp
+export const PARALLEL_COLORS_SP = '#22d3ee';   // SP signature colour (cyan, distinct from TP)
+
+// ─── SINGLE SOURCE OF TRUTH for the model-parallel mapping (TP/SP/EP/PP/DP) ───
+// EVERY view (平面 groupOf · 工作台 groups · 3D FullPodScene.part · 运行状态 通信域) must read
+// this so the parallel DEGREES + the GROUP membership + the COMM peers agree everywhere.
+//
+// Placement doctrine (matches 昇腾 SU/SO 域):
+//   · TP = 节点内 8 卡 (L1 UB mesh · 最高带宽)  —— tp rank = k % 8, one node = one TP group.
+//   · SP = 与 TP 同域 (共组切序列) —— 本工况 CP1 未独立切分，别名到 TP。
+//   · PP = 副本内跨节点 (P2P 流水) —— stage = node % PP, replica = ⌊node/PP⌋ (连续 PP 节点=1 副本).
+//   · DP = 副本间 (Ring-AllReduce) —— 同 (tp, stage) 跨全部副本.
+//   · EP = 专家 All-to-All —— 训练：折叠进 DP 轴 (EP 个相邻副本 A2A)；推理：节点内路由专家 (TP2+EP4).
+//
+// Real 盘古 Pro MoE (arXiv:2505.21411): 训练 TP8·EP2·PP5·VPP5·CP1；推理 H²P 注意力 DP2+TP4 /
+// 路由 TP2+EP4 / 共享 TP8. 真实作业 ~4K 卡除不尽 8192 卡 950 超节点，所以物理平铺取「整除近似」：
+// PP 5→与 8192 卡整除的最近约数，DP 填充到铺满 —— 逻辑并行度(real)与物理平铺度(tiled)都保留、都标注。
+export type ParallelWorkload = 'pretrain' | 'prefill' | 'decode';
+export interface ParallelMapping {
+  workload: ParallelWorkload; N: number; training: boolean;
+  tp: number; sp: number; ep: number; pp: number; dp: number;   // physical tiling degrees (整除铺满)
+  epScope: 'replica' | 'node';                                   // where EP All-to-All lives
+  cfg: string;                 // tiled config display, e.g. "TP8×PP4×DP256 · EP2"
+  real: string;                // the real paper config (logical) — always shown alongside
+  approxNote: string;          // what was approximated to divide N evenly
+  groupOf: (k: number, dim: ParDim) => number;                  // colour-group id per dim
+  groupCount: (dim: ParDim) => number;                          // number of distinct groups
+  peersOf: (k: number, dim: ParDim, cap?: number) => number[];  // cards that actually communicate w/ k
+  collectiveOf: (dim: ParDim) => 'ring' | 'a2a' | 'p2p';
+}
+// nearest integer divisor of n to a target (for 整除近似铺满)
+function nearestDivisor(n: number, target: number): number {
+  let best = 1, bestD = Infinity;
+  for (let d = 1; d <= n; d++) if (n % d === 0) { const gap = Math.abs(d - target); if (gap < bestD) { bestD = gap; best = d; } }
+  return best;
+}
+const TP_NODE = NPUS_PER_NODE;   // 8 卡/节点 = TP 域大小
+
+export function parallelMap(workload: ParallelWorkload, N: number): ParallelMapping {
+  const training = workload === 'pretrain';
+  const TP = Math.min(TP_NODE, N);
+  const nodes = Math.max(1, Math.floor(N / TP));
+  const realPP = training ? 5 : 1, realEP = training ? 2 : 4;   // 训练 EP2 / 推理路由 EP4
+  const PP = training ? nearestDivisor(nodes, realPP) : 1;
+  const DP = Math.max(1, Math.floor(nodes / PP));
+  const epScope: 'replica' | 'node' = training ? 'replica' : 'node';
+  const EP = training ? Math.max(1, nearestDivisor(DP, realEP)) : Math.min(realEP, TP);
+  const SP = 1;   // CP1 → SP 未独立切分
+
+  const nodeOf = (k: number) => Math.floor(k / TP);
+  const stageOf = (k: number) => nodeOf(k) % PP;
+  const replicaOf = (k: number) => Math.floor(nodeOf(k) / PP);
+  const range = (a: number, b: number) => { const o: number[] = []; for (let i = a; i < b; i++) o.push(i); return o; };
+
+  const groupOf = (k: number, dim: ParDim): number => {
+    switch (dim) {
+      case 'tp': case 'sp': return k % TP;                                  // tensor slice (repeats per node)
+      case 'pp': return stageOf(k);                                         // pipeline stage
+      case 'dp': return replicaOf(k);                                       // data-parallel replica
+      case 'ep': return epScope === 'replica' ? replicaOf(k) % EP           // which expert shard (folded in DP)
+                                              : Math.floor((k % TP) / Math.max(1, TP / EP));   // node-internal routed shard
+    }
+  };
+  const groupCount = (dim: ParDim): number => (dim === 'tp' || dim === 'sp' ? TP : dim === 'pp' ? PP : dim === 'dp' ? DP : EP);
+  const peersOf = (k: number, dim: ParDim, cap = 64): number[] => {
+    const nb = nodeOf(k), tp = k % TP, st = stageOf(k), rep = replicaOf(k);
+    if (dim === 'tp' || dim === 'sp') return range(nb * TP, Math.min(N, nb * TP + TP));       // node mates
+    if (dim === 'pp') return range(0, PP).map((s) => (rep * PP + s) * TP + tp).filter((x) => x < N);   // stage chain, same replica+tp
+    if (dim === 'dp') { const o: number[] = []; for (let r = 0; r < DP && o.length < cap; r++) { const x = (r * PP + st) * TP + tp; if (x < N) o.push(x); } return o; }
+    // ep
+    if (epScope === 'node') return range(nb * TP, Math.min(N, nb * TP + TP));                 // routed experts A2A within node
+    const blk = Math.floor(rep / EP); const o: number[] = [];                                 // EP replicas that A2A (folded in DP)
+    for (let r = blk * EP; r < (blk + 1) * EP && r < DP; r++) { const x = (r * PP + st) * TP + tp; if (x < N) o.push(x); }
+    return o;
+  };
+  const collectiveOf = (dim: ParDim): 'ring' | 'a2a' | 'p2p' => (dim === 'pp' ? 'p2p' : dim === 'ep' ? 'a2a' : 'ring');
+
+  const cfg = training ? `TP${TP}×PP${PP}×DP${DP} · EP${EP}` : `TP${TP}×DP${DP} · EP${EP}(节点内路由) · PP1`;
+  const real = training
+    ? '真实 TP8·EP2·PP5·VPP5·CP1'
+    : '真实 H²P：注意力 DP2+TP4 · 路由 TP2+EP4 · 共享 TP8';
+  const approxNote = training
+    ? (PP !== realPP ? `PP 5→${PP}（整除 ${N.toLocaleString()} 卡）· DP 填充至 ${DP}` : `DP 填充至 ${DP} 铺满 ${N.toLocaleString()} 卡`)
+    : `节点=1 H²P 服务实例（8 卡按子层重划分）· 跨节点 DP=${DP} 副本`;
+  return { workload, N, training, tp: TP, sp: SP, ep: EP, pp: PP, dp: DP, epScope, cfg, real, approxNote, groupOf, groupCount, peersOf, collectiveOf };
+}
 
 // ─── ONE canonical colour per entity, shared by ALL three views (top / layered /
 // 3-D) so they correspond: same concept → same colour → same glyph language.
