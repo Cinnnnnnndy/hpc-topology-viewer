@@ -7,10 +7,12 @@
  * status-axis above it are the shared selection; a detail rail on the right shows the
  * selected entity + its communication ASSOCIATIONS (mirrors 平面视图's relationship view).
  *
- * Four lenses share ONE selection (breadcrumb + hierarchy axis): 状态热力 / 机柜流量 /
- * 通信域 / 物理链路. The hierarchy drills the FULL hw-native-sys L7→L0 chain — like 平面视图's
- * 层级图: 全球(L7)→集群(L6)→服务池(L5)→Pod(L4)→机柜→Host(L3)→Chip·NPU(L2·rank)→
- * Die(L1·可选)→Core-Group(L0)→Tile. L0 (core/tile) renders the memory-architecture pattern.
+ * Four lenses share ONE selection (breadcrumb + hierarchy axis): 状态热力 / 互联流量 /
+ * 通信域 / 物理链路. The hierarchy drills the FULL hw-native-sys L7→L0 chain (EXACTLY 8 levels,
+ * identical to every other view) — like 平面视图's 层级图:
+ * 全球(L7)→集群(L6)→服务池(L5)→Pod(L4)→Host(L3)→Chip·NPU(L2·rank)→Die(L1·可选)→Core-Group(L0).
+ * 机柜/Tile 不是层级（机柜=Pod 内物理分组、Tile=L0 内部粒度）。L0 (core) renders the
+ * memory-architecture pattern (CoreGroupPattern), whose internals carry the Tile granularity.
  *
  * NOTHING is hard-coded: counts come from the generation spec (cabinets = NPU/64, nodes,
  * dies = 2/卡, cores = 32/卡 …), per-card load reuses the SAME `nodeLoad` field the 阵列全景

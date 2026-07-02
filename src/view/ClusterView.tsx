@@ -112,7 +112,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'status',   label: '运行状态' },
   { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'overview', label: '全景总览' },
-  { id: 'rack',     label: '机柜视图' },
+  { id: 'rack',     label: '机柜（物理分组）' },
   { id: 'node',     label: 'Host 节点视图' },
   { id: 'topology', label: 'UB 互联层级' },
   { id: 'matrix',   label: '邻接矩阵' },
@@ -134,10 +134,10 @@ const WORKBENCH_VIEW_GROUPS: {
     title: '对象 / 层级',
     items: [
       { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
-      { id: 'overview', label: '数据大厅', note: '机柜总览 · 通信柜' },
-      { id: 'rack', label: '机柜', note: '机柜内部 · Host/交换' },
+      { id: 'overview', label: 'Pod 物理机房', note: '机柜=物理分组 · 通信柜总览' },
+      { id: 'rack', label: '机柜（物理分组）', note: '机柜内部 · Host/交换' },
       { id: 'node', label: 'Host / Chip', note: 'Chip·NPU · Die · Core-Group' },
-      { id: 'topology', label: '互联层级', note: '片内 NoC → Scale-Out 互联结构' },
+      { id: 'topology', label: '互联层级', note: '8 级漏斗 · DCN→NoC' },
     ],
   },
   {
@@ -336,10 +336,10 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     mode === 'fullpod' || mode === 'plane' ? 'fullpod' : 'topology';
   // 运行状态 dashboard carries its own (status-first) panel copy
   const STATUS_INFO = {
-    title: `运行状态总览 · ${TOK.supernode}（多镜头联动）`,
+    title: `运行状态总览 · Pod（多镜头联动）`,
     lines: [
       '状态优先：红/黄/绿(+灰)=状态唯一一套色；结构/层级用图元与位置区分，不抢状态色。',
-      '层级状态轴=共用选区：L6 集群 → L5 服务池 → L4 Pod → 机柜 → L3 Host → L2 Chip(rank) → L1 Die → L0 Core-Group，点一层 4 个镜头一起按该选区重新取粒度并染色。',
+      '层级状态轴=共用选区：全球 L7 → 集群 L6 → 服务池 L5 → Pod L4 → Host L3 → Chip·NPU L2 → Die L1(可选) → Core-Group L0，点一层 4 个镜头一起按该选区重新取粒度并染色。',
       '聚合暴露离群：每层给 典型 p50 · 红区占比% · 峰 p95，专治 straggler 被均值掩盖。',
       '四镜头：状态热力（下钻到全量热力）/ 机柜流量（rack×rack 通信矩阵）/ 通信域（TP/EP/DP 进程↔进程）/ 物理链路（UB/RDMA/VPC 器件链）。',
       '可运行：回放推进工况(预训练/Prefill/Decode)+step，负载随之变化并注入机柜事件；计数、关系均由真实层级规模推导，非写死。',
@@ -347,7 +347,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   };
   // 联动控制台 — fuses 平面视图(控制) + 阵列全景(主视图) + 运行状态(分析仪表)
   const CONSOLE_INFO = {
-    title: `联动控制台 · ${TOK.supernode}（平面 ▸ 阵列全景 ▸ 运行仪表）`,
+    title: `联动控制台 · Pod（平面 ▸ 阵列全景 ▸ 运行仪表）`,
     lines: [
       '左 平面视图 = 控制：点击任意层级/卡（器件互联·层级图·顶视图三种布局），即刻联动右侧阵列全景的高亮链路。',
       '右 阵列全景 = 主视图：全量 Pod 3D 阵列，按选区高亮上下游链路 + 同级 peer mesh；单击实体反向回填选区。',
@@ -363,7 +363,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     const bc: { label: string; onClick?: () => void }[] = [
       { label: `${spec.name} · L4 Pod`, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
     ];
-    if (mode === 'rack' || mode === 'node') bc.push({ label: rackLabel, onClick: mode === 'node' ? () => setMode('rack') : undefined });
+    if (mode === 'rack' || mode === 'node') bc.push({ label: `${rackLabel}（物理分组）`, onClick: mode === 'node' ? () => setMode('rack') : undefined });
     if (mode === 'node') bc.push({ label: nodeKind === 'ubswitch' ? 'UB 交换设备' : `Host ${nodeSlot + 1}` });
     return bc;
   }, [mode, rackLabel, nodeSlot, nodeKind, spec.name]);
@@ -1156,16 +1156,17 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             {mode === 'fullpod' && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量 Pod · 图例</div>
-                {/* hierarchy colour UNIFIED with 平面视图 层级图 (Chip=teal/Die=teal/Cube=cyan/Host=sky/机柜=purple/Pod=rose) · 高饱和载色专表状态 */}
-                <span style={lgNote}>层级配色与「层级图」统一（图元形状再区分层级）：</span>
+                {/* 严格 8 级层级 L0→L7（颜色与「层级图」统一，图元形状再区分层级）· 机柜/Tile 不是层级 */}
+                <span style={lgNote}>层级配色与「层级图」统一（严格 8 级 · 图元形状再区分层级）：</span>
                 <LgRow shape="dot" color={ENTITY_COLORS.cube} label="L0 Core-Group（AIC Cube 青 / AIV Vector 浅青 · ≈32 核/卡）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L1 计算 Die（teal · ×2/卡 · 可选级）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L1 Die（teal · ×2/卡 · 可选级）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.card} label="L2 Chip·NPU 卡 = device" />
                 <LgRow shape="sq" color={ENTITY_COLORS.node} label="L3 Host · 节点/刀片" />
-                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="机柜（并入 L4）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L4 Pod · ${TOK.supernode}`} />
-                <LgRow shape="sq" color={ENTITY_COLORS.pool} label="L5 服务池 · Scale-Out（多 Pod 时显示）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.super} label="L4 Pod（UBL128）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.pool} label="L5 服务池（多 Pod 时显示）" />
                 <LgRow shape="sq" color={ENTITY_COLORS.cluster} label="L6 集群 · Scale-Out（多 Pod 时显示）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.global} label="L7 全球调度 · DCN（多 Pod 时显示）" />
+                <span style={lgNote}>□ 机柜框 = 物理分组（非层级）</span>
                 {/* state — discrete 4-bucket load (one state = one colour) */}
                 <div style={lgHdr}>状态 / 负载（红黄绿+灰=状态唯一一套色 · 层级色=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
@@ -1176,7 +1177,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 <div style={lgHdr}>选中高亮</div>
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
                 <LgRow color="#22d3ee" label="同级 peer mesh（Chip·NPU / Host）" />
-                <span style={lgNote}>单击 Chip·NPU / Host / 机柜高亮 · 双击进卡</span>
+                <span style={lgNote}>单击 Chip·NPU / Host / 机柜（物理分组）高亮 · 双击进卡</span>
                 {/* three physical planes (details in 顶部「三平面 / 物理器件」面板) */}
                 <div style={lgHdr}>三平面 · 物理器件</div>
                 {PLANES.map((p) => (
