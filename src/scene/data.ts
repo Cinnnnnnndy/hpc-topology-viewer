@@ -540,6 +540,41 @@ export function nodeLoad(id: number, phaseKind?: string): number {
   return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.95));   // ±0.475 spread → spans green→red
 }
 
+// ─── SHARED live load / straggler / fault / replay-event model ────────────────
+// ONE model, so the SAME card reads the SAME value in 运行状态 AND 工作台 (was two divergent
+// copies: util01/faultAt in StatusView vs cardLoad/isFault in ConsoleView). k = global card
+// index inside a super-node (node = ⌊k/8⌋, cabinet = ⌊k/64⌋); pod = super-node index.
+export const REPLAY = { stepMax: 60, evtLo: 34, evtHi: 46, evtCab: 1, cardsPerCab: 64 } as const;
+const _rnd01 = (s: number) => { const x = Math.sin(s * 99.13) * 43758.5453; return x - Math.floor(x); };
+const _clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export function inReplayEvent(step: number): boolean { return step >= REPLAY.evtLo && step <= REPLAY.evtHi; }
+const _evtEnv = (step: number) => Math.sin(((step - REPLAY.evtLo) / (REPLAY.evtHi - REPLAY.evtLo)) * Math.PI);   // 0→1→0 bump
+export function cardStraggler(k: number, step: number, pod = 0): boolean {
+  const cab = Math.floor(k / REPLAY.cardsPerCab);
+  const thr = inReplayEvent(step) && pod === 0 && cab === REPLAY.evtCab ? 0.55 : 0.985;   // event柜掉队概率飙升
+  return _rnd01(pod * 131 + k * 1.7 + step * 0.05) > thr;
+}
+export function cardFault(k: number, step: number, pod = 0): boolean {
+  const cab = Math.floor(k / REPLAY.cardsPerCab), nodeInCab = Math.floor(k / 8) % 8;
+  const inEvt = inReplayEvent(step) && pod === 0 && cab === REPLAY.evtCab && nodeInCab === 1;
+  return inEvt ? _rnd01(k * 0.7) > 0.25 : _rnd01(pod * 5 + k * 2.3 + step) > 0.9994;
+}
+export function cardLoad01(k: number, phaseKind: string, step: number, pod = 0): number {
+  const cab = Math.floor(k / REPLAY.cardsPerCab);
+  let u = nodeLoad(k + pod * 100003, phaseKind);
+  u += (_rnd01(pod * 17 + cab * 2.7 + 1) - 0.5) * 0.30;   // per-cabinet hot/cold bias (spatial spread)
+  u += (_rnd01(k * 0.91 + step * 0.07) - 0.5) * 0.08;      // live per-step ripple
+  if (cardStraggler(k, step, pod)) u += 0.4;               // straggler runs hot
+  if (inReplayEvent(step) && pod === 0 && cab === REPLAY.evtCab) u += 0.35 * _evtEnv(step);   // injected 过热事件
+  return _clamp01(u);
+}
+export type CardMetric = 'util' | 'strag' | 'fault';
+export function cardMetric01(k: number, metric: CardMetric, phaseKind: string, step: number, pod = 0): number {
+  if (metric === 'fault') return cardFault(k, step, pod) ? 0.95 : 0.1;
+  if (metric === 'strag') return cardStraggler(k, step, pod) ? 0.88 : Math.max(0, cardLoad01(k, phaseKind, step, pod) - 0.5) * 0.4;
+  return cardLoad01(k, phaseKind, step, pod);
+}
+
 export const RUN_SCHED: Record<RunMode, RunPhase[]> = {
   train: [
     { id: 'load', name: '加载 batch',      kind: 'load',    color: '#c2c9d4', parallel: 'DP',    note: '各 DP 副本读入各自 micro-batch' },

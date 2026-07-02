@@ -16,7 +16,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS,
-  parallelMap, loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
+  parallelMap, REPLAY, cardLoad01, cardMetric01, cardStraggler, cardFault,
+  loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode,
 } from '../scene/data';
 import { TOK } from '../content';
@@ -26,7 +27,7 @@ import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
 //    64 卡/柜. A global card index `k` maps the SAME way in the left 层级 and the right 3D array. ──
 const CPB = 8, BPC = 8, PER_CAB = CPB * BPC;
-const STEP_MAX = 60, EVT_LO = 34, EVT_HI = 46, EVT_CAB = 1;   // injected 过热 window on cabinet C1
+const STEP_MAX = REPLAY.stepMax, EVT_LO = REPLAY.evtLo, EVT_HI = REPLAY.evtHi, EVT_CAB = REPLAY.evtCab;   // shared replay/event window (data.ts)
 
 type Workload = 'pretrain' | 'prefill' | 'decode';
 type Metric = 'util' | 'strag' | 'fault';
@@ -45,27 +46,11 @@ const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜�
 const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
 const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: '超节点', cab: '机柜', node: '节点', card: '卡 rank', die: '计算 Die', core: 'AI Core', tile: 'Tile' };
 
-// ── metric model (deterministic, mirrors 运行状态) ──
-const rnd = (s: number) => { const x = Math.sin(s * 99.13) * 43758.5453; return x - Math.floor(x); };
-function cardLoad(k: number, wlKind: string, step: number): number {
-  let v = nodeLoad(k, wlKind) + (rnd(k * 0.91 + step * 0.07) - 0.5) * 0.06;
-  if (step >= EVT_LO && step <= EVT_HI && Math.floor(k / PER_CAB) === EVT_CAB) v += 0.22 * Math.sin((step - EVT_LO) / (EVT_HI - EVT_LO) * Math.PI);
-  return Math.max(0, Math.min(1, v));
-}
-function isStrag(k: number, step: number): boolean {
-  let thr = 0.93;
-  if (step >= EVT_LO && step <= EVT_HI && Math.floor(k / PER_CAB) === EVT_CAB) thr = 0.55;
-  return rnd(k * 1.7 + step * 0.05) > thr;
-}
-function isFault(k: number, step: number): boolean {
-  const inEvt = step >= EVT_LO && step <= EVT_HI && Math.floor(k / PER_CAB) === EVT_CAB && Math.floor(k / CPB) % BPC === 1;
-  return inEvt ? rnd(k * 0.7) > 0.25 : rnd(k * 0.7 + 13) > 0.985;
-}
-function cardMetric(k: number, metric: Metric, wlKind: string, step: number): number {
-  if (metric === 'fault') return isFault(k, step) ? 0.95 : 0.1;
-  if (metric === 'strag') return isStrag(k, step) ? 0.88 : Math.max(0, cardLoad(k, wlKind, step) - 0.5) * 0.4;
-  return cardLoad(k, wlKind, step);
-}
+// ── metric model — thin aliases over the SHARED model in data.ts (same value as 运行状态) ──
+const cardLoad = (k: number, wlKind: string, step: number) => cardLoad01(k, wlKind, step);
+const isStrag = (k: number, step: number) => cardStraggler(k, step);
+const isFault = (k: number, step: number) => cardFault(k, step);
+const cardMetric = (k: number, metric: Metric, wlKind: string, step: number) => cardMetric01(k, metric, wlKind, step);
 
 // ── hierarchy navigation / scope (matches the reference HTML scopeOf/isHi) ──
 const levelIdx = (lv: Level): number => (lv === 'cluster' ? 0 : lv === 'super' ? 1 : lv === 'cab' ? 2 : lv === 'node' ? 3 : 4);

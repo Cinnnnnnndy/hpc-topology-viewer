@@ -25,7 +25,7 @@ import {
   GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, COMPUTE_DIES_PER_CARD, IO_DIES_PER_CARD, CORES_PER_CARD,
   PLANES, PARTITION_META, ENTITY_COLORS, WORKLOAD, WORKLOAD_DETAIL, WORKLOAD_REFS, STEP_DECOMP,
   BENCHMARKS, BENCH_MODELS, BENCH_PANGU_IDX,
-  parallelMap, loadColor, loadState, stateColor, STATE_LABELS, nodeLoad,
+  parallelMap, REPLAY, cardLoad01, cardStraggler, cardFault, loadColor, loadState, stateColor, STATE_LABELS,
   type Gen,
 } from '../scene/data';
 import { TOK } from '../content';
@@ -64,8 +64,8 @@ const PH: Record<Phase, { label: string; base: number; kind: string }> = {
   decode: { label: 'Decode', base: 0.62, kind: 'comm' },
 };
 const NIC_LBL = TOK.qingtian.split(' ')[0];   // 擎天 — brand via TOK (no plaintext brand in source)
-const STEP_MAX = 60;
-const EVT_LO = 34, EVT_HI = 46;   // 回放事件窗口：某机柜过热（演示局部故障/拥塞的时间定位）
+const STEP_MAX = REPLAY.stepMax;
+const EVT_LO = REPLAY.evtLo, EVT_HI = REPLAY.evtHi;   // 回放事件窗口（与工作台共用 data.ts REPLAY）
 const TILES_VIEW = 48;            // L0 tile/lane 聚合观测的示意格数
 
 const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return v - Math.floor(v); };
@@ -82,7 +82,7 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const CAB = Math.max(1, Math.round(NPU_TOT / NPC));    // cabinets / super-node
   const NODES = CAB * NODES_PER_CAB;                     // nodes / super-node
   const NPN = NPUS_PER_NODE;                             // 8 NPU / node
-  const EVT_CAB = Math.min(CAB - 1, Math.round(CAB * 0.56));   // the cabinet that overheats during the event
+  const EVT_CAB = Math.min(CAB - 1, REPLAY.evtCab);   // overheating cabinet during the event (shared with 工作台)
 
   // ── shared selection (drives ALL lenses) ──
   const [phase, setPhase] = useState<Phase>('decode');
@@ -113,22 +113,11 @@ export function StatusView({ gen, dark }: { gen: Gen; dark: boolean }) {
   const cardRank = selNode * NPN + cardJ;                 // rank id within the super-node
   const cardSelected = selNpu >= 0 || SUBCARD.includes(selLevel);
 
-  // ── live per-NPU field (anchored to nodeLoad, perturbed by phase/step/event) ──
-  const isStrag = useCallback((sp: number, gnode: number) => rnd(sp * 131 + gnode * 1.7 + step * 0.05) > 0.985, [step]);
-  const faultAt = useCallback((sp: number, gnode: number, j: number) => {
-    const k = sp * NPU_TOT + gnode * NPN + j, cab = (gnode / NODES_PER_CAB) | 0;
-    return rnd(sp * 5 + k * 2.3 + step) > 0.9994 || (ev && sp === 0 && cab === EVT_CAB && j === 0 && rnd(gnode + step) > 0.7);
-  }, [step, ev, EVT_CAB, NPU_TOT, NPN]);
-  const util01 = useCallback((sp: number, gnode: number, j: number) => {
-    const k = sp * NPU_TOT + gnode * NPN + j, cab = (gnode / NODES_PER_CAB) | 0;
-    let u = nodeLoad(k, kind) + (PH[phase].base - 0.55);
-    u += (rnd(sp * 17 + cab * 2.7 + 1) - 0.5) * 0.40;   // per-cabinet stable bias (热/冷机柜 — gives aggregate views spatial spread)
-    u += (rnd(gnode * 1.3 + 7) - 0.5) * 0.20;           // per-node stable bias
-    u += (rnd(k * 0.91 + step * 0.07) - 0.5) * 0.10;    // live step ripple
-    if (isStrag(sp, gnode)) u += 0.4;
-    if (ev && sp === 0 && cab === EVT_CAB) u += 0.4;
-    return clamp01(u);
-  }, [kind, phase, step, ev, EVT_CAB, isStrag, NPU_TOT, NPN]);
+  // ── live per-NPU field — delegates to the SHARED model (data.ts) so the SAME card reads the SAME
+  //    value here and in 工作台. k = card index within the super-node (gnode*8+j), pod = super-node sp. ──
+  const isStrag = useCallback((sp: number, gnode: number) => cardStraggler(gnode * NPN, step, sp), [step, NPN]);
+  const faultAt = useCallback((sp: number, gnode: number, j: number) => cardFault(gnode * NPN + j, step, sp), [step, NPN]);
+  const util01 = useCallback((sp: number, gnode: number, j: number) => cardLoad01(gnode * NPN + j, kind, step, sp), [kind, step, NPN]);
   const metricVal = useCallback((sp: number, gnode: number, j: number) => {
     if (metric === 'fault') return faultAt(sp, gnode, j) ? 0.95 : 0.12;
     const u = util01(sp, gnode, j);
