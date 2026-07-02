@@ -123,6 +123,17 @@ const TNUM: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 const btnBase: React.CSSProperties = { padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer' };
 const OVERLAYS: CommOverlays = { ring: false, a2a: false, tile: true, cores: true };
 
+// collective-comm glyph: ring (环状 AllReduce) / a2a (全互联 All-to-All) / p2p (阶段链)
+function CollGlyph({ pat, c }: { pat: 'ring' | 'a2a' | 'p2p'; c: string }) {
+  return (
+    <svg width={14} height={14} viewBox="0 0 14 14" style={{ flexShrink: 0 }} aria-hidden>
+      {pat === 'ring' && <circle cx={7} cy={7} r={4.6} fill="none" stroke={c} strokeWidth={1.5} />}
+      {pat === 'a2a' && <><line x1={2} y1={2} x2={12} y2={12} stroke={c} strokeWidth={1.3} /><line x1={12} y1={2} x2={2} y2={12} stroke={c} strokeWidth={1.3} /><line x1={2} y1={7} x2={12} y2={7} stroke={c} strokeWidth={1.3} /></>}
+      {pat === 'p2p' && <><line x1={2} y1={7} x2={11} y2={7} stroke={c} strokeWidth={1.5} /><path d="M8 4 L12 7 L8 10" fill="none" stroke={c} strokeWidth={1.5} strokeLinejoin="round" /></>}
+    </svg>
+  );
+}
+
 // Frame the orthographic camera on the focused scope (pan target + zoom); with no focus it settles
 // on the whole-field overview. Animates on focus CHANGE then releases, so the user can still orbit/zoom.
 function FrameCamera({ bounds, reach, controls, zoomScale = 1 }: {
@@ -508,16 +519,13 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
 
   // parallel groups from the SINGLE SOURCE OF TRUTH — degrees/membership agree with 平面·3D·运行状态
   const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
-  const groups: { d: ParDim; label: string; c: string }[] = focus && rail ? (() => {
-    const k = focus.card;
-    return [
-      { d: 'tp', label: `TP·切片${pm.groupOf(k, 'tp')}`, c: PARALLEL_COLORS.tp },
-      { d: 'sp', label: pm.sp > 1 ? `SP·${pm.groupOf(k, 'sp')}` : 'SP·与TP同域', c: PARALLEL_COLORS_SP },
-      { d: 'pp', label: `PP·级${pm.groupOf(k, 'pp')}/${pm.pp}`, c: PARALLEL_COLORS.pp },
-      { d: 'dp', label: `DP·副本${pm.groupOf(k, 'dp')}`, c: PARALLEL_COLORS.dp },
-      { d: 'ep', label: `EP·组${pm.groupOf(k, 'ep')}/${pm.ep}`, c: PARALLEL_COLORS.ep },
-    ];
-  })() : [];
+  // 并行关系（rank↔rank）：每维给出 集合通信形态 + 度数 + 真实对端数（peersOf 真值），把 TP/SP/EP/PP/DP 的「联系」讲清楚
+  const COLL: Record<ParDim, string> = { tp: 'AllReduce', sp: 'AllGather+RS', pp: 'P2P send/recv', dp: 'Ring-AllReduce', ep: '层级化 All-to-All' };
+  const groups: { d: ParDim; label: string; c: string; coll: string; pat: 'ring' | 'a2a' | 'p2p'; peers: number; deg: number }[] = focus && rail ? (['tp', 'sp', 'pp', 'dp', 'ep'] as ParDim[]).map((d) => {
+    const k = focus.card, grp = pm.groupOf(k, d), deg = pm.groupCount(d);
+    const label = d === 'sp' && pm.sp <= 1 ? '与 TP 同域' : d === 'tp' ? `切片 ${grp}` : d === 'pp' ? `级 ${grp}/${pm.pp}` : d === 'dp' ? `副本 ${grp}` : `组 ${grp}/${pm.ep}`;
+    return { d, label, c: d === 'sp' ? PARALLEL_COLORS_SP : PARALLEL_COLORS[d as Exclude<PartitionDim, 'none'>], coll: COLL[d], pat: pm.collectiveOf(d), peers: pm.peersOf(k, d, 1 << 20).length, deg };
+  }) : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
   const shellStyle: React.CSSProperties = workbenchProfile
@@ -792,8 +800,15 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                     })}
                     {groups.length > 0 && (
                       <div style={{ marginTop: 9, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
-                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>并行组（rank 关系）</div>
-                        {groups.map((g) => <span key={g.d} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${g.c}22`, color: g.c, margin: '0 4px 4px 0' }}>{g.label}</span>)}
+                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>并行关系 · rank↔rank（{pm.cfg}）</div>
+                        {groups.map((g) => (
+                          <div key={g.d} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, margin: '3px 0' }}>
+                            <CollGlyph pat={g.pat} c={g.c} />
+                            <span style={{ color: g.c, fontWeight: 700, width: 20, flexShrink: 0 }}>{g.d.toUpperCase()}</span>
+                            <span style={{ color: 'var(--tx2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.label} · {g.coll}</span>
+                            <span style={{ color: 'var(--tx3)', flexShrink: 0, ...TNUM }}>{g.peers}对端/{g.deg}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                     {phys && (
