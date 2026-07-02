@@ -21,6 +21,7 @@ import {
 } from '../scene/data';
 import { TOK } from '../content';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
+import { CoreGroupPattern } from './CoreGroupPattern';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
@@ -43,7 +44,7 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
 const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
-const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: '超节点', cab: '机柜', node: '节点', card: '卡 rank', die: '计算 Die', core: 'AI Core', tile: 'Tile' };
+const LEVEL_NAME: Record<string, string> = { cluster: '集群', super: 'Pod·超节点', cab: '机柜', node: 'Host·节点', card: 'Chip·NPU 卡', die: '计算 Die', core: 'Core-Group', tile: 'Tile' };
 
 // ── metric model (deterministic, mirrors 运行状态) ──
 const rnd = (s: number) => { const x = Math.sin(s * 99.13) * 43758.5453; return x - Math.floor(x); };
@@ -117,14 +118,14 @@ function selToFocus(s: { lv: number; i: number } | null): Focus {
   return { level: 'card', card: s.i };
 }
 function focusName(f: Focus): string {
-  if (!f || f.level === 'cluster' || f.level === 'super') return '全量超节点';
+  if (!f || f.level === 'cluster' || f.level === 'super') return '全量 Pod';
   const k = f.card;
   if (f.level === 'cab') return `机柜 C${Math.floor(k / PER_CAB)}`;
-  if (f.level === 'node') return `节点 B${Math.floor(k / CPB)}`;
-  if (f.level === 'card') return `卡 r${k}（device）`;
-  if (f.level === 'die') return `卡 ${k} · 计算 Die ${f.die ?? 0}`;
-  if (f.level === 'core') return `卡 ${k} · AI Core #${f.core ?? 0}`;
-  return `卡 ${k} · Tile`;
+  if (f.level === 'node') return `Host B${Math.floor(k / CPB)}`;
+  if (f.level === 'card') return `Chip r${k}（device）`;
+  if (f.level === 'die') return `Chip ${k} · Die ${f.die ?? 0}`;
+  if (f.level === 'core') return `Chip ${k} · Core-Group 核 #${f.core ?? 0}`;
+  return `Chip ${k} · Tile`;
 }
 
 // ── shared button language ──
@@ -179,18 +180,18 @@ interface Stats {
 
 // ── LEFT: Smartscape 层级 (改造自平面视图层级图) — 图元/配色与「层级图」「选中链路·层级图」统一：
 //    超节点=玫紫 pill · 机柜=紫 · 节点/刀片=天蓝 · 卡=teal 卡图元(2×2 Die 点) · Die/Core/Tile=网格。
-//    结构用图元+位置区分(不抢状态色)；播放时叠加 红黄绿 负载色，空闲时显层级色 (同低保真层级图)。从 L5 起，无集群层。 ──
+//    结构用图元+位置区分(不抢状态色)；播放时叠加 红黄绿 负载色，空闲时显层级色 (同低保真层级图)。从 L4 Pod 起 · L5–L7 为上层上下文。 ──
 const SVG_W = 600, SVG_H = 680, X0 = 118, X1 = 586, BUDGET = 26;
 const TIERS = [
-  { Le: 1, key: 'super', y: 46, h: 22, maxW: 168, tag: 'L5', label: '超节点', col: ENTITY_COLORS.super },
-  { Le: 2, key: 'cab', y: 116, h: 17, maxW: 56, tag: '', label: '机柜', col: ENTITY_COLORS.cab },
-  { Le: 3, key: 'node', y: 188, h: 15, maxW: 52, tag: 'L4', label: '节点/刀片', col: ENTITY_COLORS.node },
-  { Le: 4, key: 'card', y: 268, h: 17, maxW: 20, tag: 'L3', label: '卡 rank', col: ENTITY_COLORS.card },
+  { Le: 1, key: 'super', y: 46, h: 22, maxW: 168, tag: 'L4', label: 'Pod · 超节点', col: ENTITY_COLORS.super },
+  { Le: 2, key: 'cab', y: 116, h: 17, maxW: 56, tag: '', label: '机柜（并入 L4）', col: ENTITY_COLORS.cab },
+  { Le: 3, key: 'node', y: 188, h: 15, maxW: 52, tag: 'L3', label: 'Host · 节点/刀片', col: ENTITY_COLORS.node },
+  { Le: 4, key: 'card', y: 268, h: 17, maxW: 20, tag: 'L2', label: 'Chip·NPU 卡 rank', col: ENTITY_COLORS.card },
 ] as const;
 const SUBTIERS = [
-  { key: 'die', lvl: 'die' as Level, y: 346, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L2', label: '计算 Die', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
-  { key: 'core', lvl: 'core' as Level, y: 432, cols: 16, cell: 14, gap: 3, n: 32, seed: 517, tag: 'L1', label: 'AI Core', col: (i: number) => (i % 8 === 7 ? ENTITY_COLORS.vector : ENTITY_COLORS.cube) },
-  { key: 'tile', lvl: 'tile' as Level, y: 532, cols: 16, cell: 11, gap: 3, n: 48, seed: 911, tag: 'L0', label: 'Tile', col: () => ENTITY_COLORS.vector },
+  { key: 'die', lvl: 'die' as Level, y: 346, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L1', label: '计算 Die（可选）', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
+  { key: 'core', lvl: 'core' as Level, y: 432, cols: 16, cell: 14, gap: 3, n: 32, seed: 517, tag: 'L0', label: 'Core-Group', col: (i: number) => (i % 8 === 7 ? ENTITY_COLORS.vector : ENTITY_COLORS.cube) },
+  { key: 'tile', lvl: 'tile' as Level, y: 532, cols: 16, cell: 11, gap: 3, n: 48, seed: 911, tag: '', label: 'Tile（L0 内）', col: () => ENTITY_COLORS.vector },
 ] as const;
 
 function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark }: {
@@ -350,7 +351,7 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
   SUBTIERS.forEach((st) => {
     els.push(<text key={`slt-${st.key}`} x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key={`sl-${st.key}`} x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    els.push(<text key={`scnt-${st.key}`} x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}${st.key === 'core' ? '/卡' : st.key === 'tile' ? '/核' : ''}`}</text>);
+    els.push(<text key={`scnt-${st.key}`} x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{st.key === 'core' ? `Core-Group 核 ×${st.n}/卡` : st.key === 'tile' ? `×${st.n}/核（L0 内 Tile）` : `×${st.n}`}</text>);
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols) * (st.cell + st.gap), cy = st.y - 6 + Math.floor(i / st.cols) * (st.cell + st.gap);
       const isSel = repReal && ((st.lvl === 'die' && focus?.die === i) || (st.lvl === 'core' && focus?.core === i));
@@ -365,6 +366,26 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
     }
     if (st.key === 'die') els.push(<text key="die-cap" x={120 + 4 * (st.cell + st.gap) + 6} y={st.y + st.cell / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
   });
+  // 0) 上层上下文链 (L7 全球 / L6 集群 / L5 服务池) — 不可点的 muted context pills，位于 super tier 之上
+  {
+    const ccy = 15, cph = 16, ctx = [
+      { tag: 'L7', label: '全球 · DCN', col: ENTITY_COLORS.global },
+      { tag: 'L6', label: '集群 · Scale-Out', col: ENTITY_COLORS.cluster },
+      { tag: 'L5', label: '服务池 · Pool 内互联', col: ENTITY_COLORS.pool },
+    ];
+    els.push(<text key="ctx-lab" x={12} y={ccy + 3} fill={P.ink3} fontSize={9} fontWeight={600}>上层</text>);
+    const slot = (X1 - X0) / ctx.length;
+    ctx.forEach((c, i) => {
+      const cx = X0 + slot * (i + 0.5), w = Math.min(slot - 10, 150), gx = cx - w / 2, gy = ccy - cph / 2;
+      els.push(
+        <g key={`ctx-${i}`}>
+          <rect x={gx} y={gy} width={w} height={cph} rx={cph / 2} fill={c.col} fillOpacity={0.14} stroke={c.col} strokeOpacity={0.5} />
+          <circle cx={gx + 11} cy={ccy} r={3} fill={c.col} />
+          <text x={gx + 20} y={ccy + 0.5} fill={c.col} fontSize={9} fontWeight={600} dominantBaseline="central">{`${c.tag} ${c.label}`}</text>
+        </g>,
+      );
+    });
+  }
 
   return (
     <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style={{ display: 'block' }}>
@@ -492,11 +513,11 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
   }, [step, N, stats.kpi.hot]);
 
   const crumbs = useMemo(() => {
-    const out: { lvl: Level; label: string; card: number }[] = [{ lvl: 'super', label: '超节点', card: 0 }];
+    const out: { lvl: Level; label: string; card: number }[] = [{ lvl: 'super', label: 'Pod', card: 0 }];
     if (focus && focus.level !== 'super' && focus.level !== 'cluster') {
       const cab = Math.floor(focus.card / PER_CAB); out.push({ lvl: 'cab', label: `机柜 C${cab}`, card: cab * PER_CAB });
-      if (['node', 'card', 'die', 'core', 'tile'].includes(focus.level)) { const b = Math.floor(focus.card / CPB); out.push({ lvl: 'node', label: `节点 B${b}`, card: b * CPB }); }
-      if (['card', 'die', 'core', 'tile'].includes(focus.level)) out.push({ lvl: 'card', label: `卡 r${focus.card}`, card: focus.card });
+      if (['node', 'card', 'die', 'core', 'tile'].includes(focus.level)) { const b = Math.floor(focus.card / CPB); out.push({ lvl: 'node', label: `Host B${b}`, card: b * CPB }); }
+      if (['card', 'die', 'core', 'tile'].includes(focus.level)) out.push({ lvl: 'card', label: `Chip r${focus.card}`, card: focus.card });
       if (['die', 'core', 'tile'].includes(focus.level)) out.push({ lvl: focus.level, label: LEVEL_NAME[focus.level], card: focus.card });
     }
     return out;
@@ -745,6 +766,19 @@ export function ConsoleView({ gen, dark }: { gen: Gen; dark: boolean }) {
               mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN }}
             />
           </Canvas>
+
+          {/* L0 焦点：在 3D 全景之上覆盖 memory-architecture pattern（FullPodScene 仍挂载于下层） */}
+          {focus && (focus.level === 'core' || focus.level === 'tile') && (
+            <div style={{ ...card, position: 'absolute', inset: 12, zIndex: 20, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--panel-solid)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--bd)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>L0 Core-Group 内部 · memory-architecture</div>
+                <button onClick={() => setFocus({ level: 'die', card: focus.card, die: focus.die ?? 0 })} style={{ ...btnBase, ...SECONDARY }}>返回 Die</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                <CoreGroupPattern phaseKind={lens === 'flow' ? 'comm' : 'compute'} zoom={0.45} height="100%" />
+              </div>
+            </div>
+          )}
 
           <button
             className={`hpc-console-info-toggle${infoOpen ? ' is-active' : ''}`}

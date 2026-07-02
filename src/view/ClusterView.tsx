@@ -113,7 +113,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'overview', label: '全景总览' },
   { id: 'rack',     label: '机柜视图' },
-  { id: 'node',     label: '节点视图' },
+  { id: 'node',     label: 'Host 节点视图' },
   { id: 'topology', label: 'UB 互联层级' },
   { id: 'matrix',   label: '邻接矩阵' },
   { id: 'mapping',  label: '软硬件映射' },
@@ -133,11 +133,11 @@ const WORKBENCH_VIEW_GROUPS: {
     label: '3D 对象',
     title: '对象 / 层级',
     items: [
-      { id: 'fullpod', label: '超节点阵列', note: '全量 3D 阵列 · 运行相位' },
+      { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
       { id: 'overview', label: '数据大厅', note: '机柜总览 · 通信柜' },
-      { id: 'rack', label: '机柜', note: '机柜内部 · 刀片/交换' },
-      { id: 'node', label: '节点 / 卡', note: 'NPU · Die · AI Core' },
-      { id: 'topology', label: 'UB 层级', note: 'L0-L4 互联结构' },
+      { id: 'rack', label: '机柜', note: '机柜内部 · Host/交换' },
+      { id: 'node', label: 'Host / Chip', note: 'Chip·NPU · Die · Core-Group' },
+      { id: 'topology', label: '互联层级', note: '片内 NoC → Scale-Out 互联结构' },
     ],
   },
   {
@@ -339,7 +339,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     title: `运行状态总览 · ${TOK.supernode}（多镜头联动）`,
     lines: [
       '状态优先：红/黄/绿(+灰)=状态唯一一套色；结构/层级用图元与位置区分，不抢状态色。',
-      '层级状态轴=共用选区：集群→超节点→机柜→节点→rank，点一层 4 个镜头一起按该选区重新取粒度并染色。',
+      '层级状态轴=共用选区：L6 集群 → L5 服务池 → L4 Pod → 机柜 → L3 Host → L2 Chip(rank) → L1 Die → L0 Core-Group，点一层 4 个镜头一起按该选区重新取粒度并染色。',
       '聚合暴露离群：每层给 典型 p50 · 红区占比% · 峰 p95，专治 straggler 被均值掩盖。',
       '四镜头：状态热力（下钻到全量热力）/ 机柜流量（rack×rack 通信矩阵）/ 通信域（TP/EP/DP 进程↔进程）/ 物理链路（UB/RDMA/VPC 器件链）。',
       '可运行：回放推进工况(预训练/Prefill/Decode)+step，负载随之变化并注入机柜事件；计数、关系均由真实层级规模推导，非写死。',
@@ -350,7 +350,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     title: `联动控制台 · ${TOK.supernode}（平面 ▸ 阵列全景 ▸ 运行仪表）`,
     lines: [
       '左 平面视图 = 控制：点击任意层级/卡（器件互联·层级图·顶视图三种布局），即刻联动右侧阵列全景的高亮链路。',
-      '右 阵列全景 = 主视图：全量超节点 3D 阵列，按选区高亮上下游链路 + 同级 peer mesh；单击实体反向回填选区。',
+      '右 阵列全景 = 主视图：全量 Pod 3D 阵列，按选区高亮上下游链路 + 同级 peer mesh；单击实体反向回填选区。',
       '运行状态 = 分析仪表：集群 KPI、层级状态轴(p50·红%·峰p95)、实体辅助指标(利用率/掉队/故障 + 并行组 + 三平面)、DAVIS 根因。',
       '镜头映射阵列呈现：状态热力(负载) / 机柜流量(peer mesh) / 通信域(TP/PP/DP/EP 切分配色) / 物理链路(UB/RDMA/VPC)。',
       '方向(全链/上游/下游)过滤高亮链路；回放 step 推进工况负载并在 t=34–46 注入机柜过热事件，触发根因定位。',
@@ -361,10 +361,10 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
 
   const breadcrumb = useMemo(() => {
     const bc: { label: string; onClick?: () => void }[] = [
-      { label: spec.name, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
+      { label: `${spec.name} · L4 Pod`, onClick: mode !== 'overview' ? () => setMode('overview') : undefined },
     ];
     if (mode === 'rack' || mode === 'node') bc.push({ label: rackLabel, onClick: mode === 'node' ? () => setMode('rack') : undefined });
-    if (mode === 'node') bc.push({ label: nodeKind === 'ubswitch' ? 'UB 交换设备' : `节点 ${nodeSlot + 1}` });
+    if (mode === 'node') bc.push({ label: nodeKind === 'ubswitch' ? 'UB 交换设备' : `Host ${nodeSlot + 1}` });
     return bc;
   }, [mode, rackLabel, nodeSlot, nodeKind, spec.name]);
 
@@ -395,7 +395,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     ['单卡 UB 带宽', `${spec.ubGBs.toLocaleString()} GB/s（${spec.chipUbTBs} TB/s 级）`],
     ['总互联带宽', `${spec.interconnectPBs} PB/s`],
     ['L2 / AI 子系统', `${spec.l2MB ? spec.l2MB + ' MB' : '—'} · ${spec.aiSubsys ? spec.aiSubsys + '×(Cube+2Vector)' : '—'}`],
-    ['小超节点', `16P / 32P / 64P(单柜) · 64 卡步长`],
+    ['小 Pod', `16P / 32P / 64P(单柜) · 64 卡步长`],
     ['机柜', `${spec.totalCabs}（${spec.computeCabs} 计算 + ${spec.commCabs} 通信）`],
     ['占地', `${spec.footprintM2.toLocaleString()} m²`],
     ['训练 / 推理', `${spec.trainTokps} / ${spec.inferTokps}`],
@@ -779,8 +779,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                   {/* full-pod scale — 64P cabinet ↔ full super-node */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      {([[false, '64P 单柜'], [true, `全量超节点(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
-                        <button key={label} onClick={() => setFpFull(v)} title={v ? `渲染整座超节点全部 ${spec.totalNpus.toLocaleString()} 张卡（阵列）` : '单柜 64 卡（8 刀片 × 8 卡）'}
+                      {([[false, '64P 单柜'], [true, `全量 Pod(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
+                        <button key={label} onClick={() => setFpFull(v)} title={v ? `渲染整座 Pod 全部 ${spec.totalNpus.toLocaleString()} 张卡（阵列）` : '单柜 64 卡（8 Host × 8 卡）'}
                           style={{ padding: '4px 12px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(fpFull === v) }}>{label}</button>
                       ))}
                     </div>
@@ -788,7 +788,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                   {/* super-node count */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      <span style={{ ...LBL }}>超节点</span>
+                      <span style={{ ...LBL }}>Pod</span>
                       {[1, 2, 4].map((c) => (
                         <button key={c} onClick={() => setPodCount(c)} style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(podCount === c) }}>{`×${c}`}</button>
                       ))}
@@ -820,7 +820,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                   {/* same-level peer mesh + status/flow toggles */}
                   {mode === 'fullpod' && (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
-                      <button onClick={() => setFpPeers((v) => !v)} title="层内直连：L1 板载卡↔卡 + L2 机柜内节点↔节点 UB 直连 mesh"
+                      <button onClick={() => setFpPeers((v) => !v)} title="层内直连：Host 内卡↔卡 + 柜内节点↔节点 UB 直连 mesh"
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPeers, UB_LEVELS[1].color) }}>
                         <span style={{ width: 9, height: 3, background: fpPeers ? ink(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 0.9 : 0.5 }} />
                         {narrow ? '直连' : '层内直连'}
@@ -830,7 +830,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                         <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
                         {narrow ? '负载' : '负载/观测'}
                       </button>
-                      <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·超节点内·TP/EP) / RDMA scale-out(橙·跨超节点 RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
+                      <button onClick={() => setFpPlanes((v) => !v)} title="三平面：把竖向骨干按物理平面分色 — UB scale-up(绿·Pod 内·TP/EP) / RDMA scale-out(橙·跨 Pod RoCE·DP/PP) / VPC(紫·CPU→擎天 NIC→数据中心·南北向)"
                         style={{ padding: '4px 10px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(fpPlanes, PLANES[0].color) }}>
                         <span style={{ display: 'inline-flex', gap: 2 }}>
                           {PLANES.map((p) => <span key={p.id} style={{ width: 7, height: 7, borderRadius: 1, background: p.color, display: 'inline-block', opacity: fpPlanes ? 1 : 0.6 }} />)}
@@ -851,7 +851,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               padding: '7px 12px', fontSize: 12, background: 'var(--panel-shell-bg)',
               border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
-              <span style={{ color: 'var(--tx)' }}>{`已选 rank ${locate.rank}（刀片 B${locate.blade}）：`}</span>
+              <span style={{ color: 'var(--tx)' }}>{`已选 rank ${locate.rank}（Host B${locate.blade}）：`}</span>
               <button
                 onClick={() => { setHl({ npu: locate.rank, blade: locate.blade, cabinet: 0 }); setMode('topology'); }}
                 style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(true) }}
@@ -889,7 +889,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               padding: '6px 11px', fontSize: 12, background: 'var(--panel-shell-bg)',
               border: '1px solid var(--primary)', borderRadius: 10, color: 'var(--primary)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
-              <span>{`定位高亮：rank ${hl.npu} · 刀片 B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
+              <span>{`定位高亮：rank ${hl.npu} · Host B${hl.blade} · 机柜 C${hl.cabinet}`}</span>
               <button onClick={() => { setHl(null); setMode('trace'); }} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>← 回时序</button>
               <button onClick={() => setHl(null)} style={{ padding: '3px 9px', fontSize: 11, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}>清除</button>
             </div>
@@ -1098,12 +1098,12 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                     <span style={{ color: 'var(--tx2)' }}>{t}</span>
                   </span>
                 ))}
-                <span style={{ color: 'var(--tx3)', fontSize: 10 }}>点击 线程/rank → 顶部定位 device/刀片/机柜</span>
+                <span style={{ color: 'var(--tx3)', fontSize: 10 }}>点击 线程/rank → 顶部定位 device/Host/刀片/机柜</span>
               </>
             )}
             {mode !== 'matrix' && mode !== 'mapping' && mode !== 'trace' && mode !== 'fullpod' && (
               <>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>{`${TOK.ub} UB 互联层级（颜色 = 级别）`}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>{`${TOK.ub} UB 互联层级（颜色 = 互联段，L 编号见层级坐标）`}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {UB_LEVELS.map((lv) => (
                     <span key={lv.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -1129,14 +1129,14 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>图例</div>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx2)' }}>矩阵格子（行 i × 列 j = 两颗 NPU）</div>
-                {([['L1 直连·板内', UB_LEVELS[1].color], ['L2 直连·跨板', UB_LEVELS[2].color], ['L3 直连·跨柜（更大规模）', UB_LEVELS[3].color], ['多跳·非直连', pal.matIndirect], ['对角·自身', pal.matSelf]] as [string, string][]).map(([t, c]) => (
+                {([['板内直连（Host 内）', UB_LEVELS[1].color], ['跨板直连（柜内）', UB_LEVELS[2].color], ['跨柜直连（Pod 内 · 更大规模）', UB_LEVELS[3].color], ['多跳·非直连', pal.matIndirect], ['对角·自身', pal.matSelf]] as [string, string][]).map(([t, c]) => (
                   <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 12, height: 8, background: c, display: 'inline-block', borderRadius: 1, border: '1px solid var(--bd)' }} />
                     <span style={{ color: 'var(--tx2)' }}>{t}</span>
                   </span>
                 ))}
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx2)', marginTop: 2 }}>右侧 3D 结构</div>
-                {([['UB 直连 L1（板内）', UB_LEVELS[1].color], ['UB 直连 L2（跨板）', UB_LEVELS[2].color]] as [string, string][]).map(([t, c]) => (
+                {([['UB 直连（板内 · Host 内）', UB_LEVELS[1].color], ['UB 直连（跨板 · 柜内）', UB_LEVELS[2].color]] as [string, string][]).map(([t, c]) => (
                   <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 12, height: 3, background: c, display: 'inline-block', borderRadius: 1 }} />
                     <span style={{ color: 'var(--tx2)' }}>{t}</span>
@@ -1144,7 +1144,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 ))}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 12, height: 10, background: pal.substrate, display: 'inline-block', borderRadius: 1, border: '1px solid var(--bd2)' }} />
-                  <span style={{ color: 'var(--tx2)' }}>刀片(板)框 · 外框 = 单柜</span>
+                  <span style={{ color: 'var(--tx2)' }}>Host/刀片(板)框 · 外框 = 单柜</span>
                 </span>
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--tx2)', marginTop: 2 }}>联动高亮</div>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -1155,15 +1155,17 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             )}
             {mode === 'fullpod' && (
               <>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量超节点 · 图例</div>
-                {/* hierarchy colour UNIFIED with 平面视图 层级图 (卡=teal/Die=teal/Cube=cyan/刀片=sky/机柜=purple/超节点=rose) · 高饱和载色专表状态 */}
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>全量 Pod · 图例</div>
+                {/* hierarchy colour UNIFIED with 平面视图 层级图 (Chip=teal/Die=teal/Cube=cyan/Host=sky/机柜=purple/Pod=rose) · 高饱和载色专表状态 */}
                 <span style={lgNote}>层级配色与「层级图」统一（图元形状再区分层级）：</span>
-                <LgRow shape="dot" color={ENTITY_COLORS.cube} label="L1 AI Core（Cube 青 / Vector 浅青·≈32/卡）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L2 计算 Die（teal·×2/卡）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.card} label="L3 卡 / device（teal）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.node} label="L4 节点 / 刀片（sky）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="机柜（purple）" />
-                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L5 ${TOK.supernode}（玫紫 rose）`} />
+                <LgRow shape="dot" color={ENTITY_COLORS.cube} label="L0 Core-Group（AIC Cube 青 / AIV Vector 浅青 · ≈32 核/卡）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.computeDie} label="L1 计算 Die（teal · ×2/卡 · 可选级）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.card} label="L2 Chip·NPU 卡 = device" />
+                <LgRow shape="sq" color={ENTITY_COLORS.node} label="L3 Host · 节点/刀片" />
+                <LgRow shape="sq" color={ENTITY_COLORS.cab} label="机柜（并入 L4）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.super} label={`L4 Pod · ${TOK.supernode}`} />
+                <LgRow shape="sq" color={ENTITY_COLORS.pool} label="L5 服务池 · Scale-Out（多 Pod 时显示）" />
+                <LgRow shape="sq" color={ENTITY_COLORS.cluster} label="L6 集群 · Scale-Out（多 Pod 时显示）" />
                 {/* state — discrete 4-bucket load (one state = one colour) */}
                 <div style={lgHdr}>状态 / 负载（红黄绿+灰=状态唯一一套色 · 层级色=结构）</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '1px 0' }}>
@@ -1173,8 +1175,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 {/* selection highlight */}
                 <div style={lgHdr}>选中高亮</div>
                 <LgRow color="#4369ef" label="上下游链路（竖向）" />
-                <LgRow color="#22d3ee" label="同级 peer mesh（卡/节点）" />
-                <span style={lgNote}>单击 卡 / 刀片 / 机柜高亮 · 双击进卡</span>
+                <LgRow color="#22d3ee" label="同级 peer mesh（Chip·NPU / Host）" />
+                <span style={lgNote}>单击 Chip·NPU / Host / 机柜高亮 · 双击进卡</span>
                 {/* three physical planes (details in 顶部「三平面 / 物理器件」面板) */}
                 <div style={lgHdr}>三平面 · 物理器件</div>
                 {PLANES.map((p) => (

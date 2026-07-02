@@ -6,8 +6,8 @@
  *   RackScene       single cabinet internals (compute blade rack / UB switch rack)
  *   NodeScene       compute blade: 8× NPU (multi-die) + CPU + UB fabric,
  *                   with toggleable die / process(rank) / thread comm overlays
- *   TopologyScene   UB interconnect hierarchy L0→L4 (die → node → rack mesh
- *                   → pod-level Clos → cluster scale-out)
+ *   TopologyScene   UB interconnect hierarchy: chip (NoC/封装) → Host (PCIe/UB)
+ *                   → cabinet/Pod mesh → Pod Clos (Scale-Up) → Pool/Cluster (Scale-Out)
  *
  * Colour coding follows the UB hierarchy levels (UB_LEVELS), not per-plane.
  * Display text with product/brand terms is sourced from ../content (decoded at
@@ -430,7 +430,7 @@ export function RackScene({ rackKind, label, onHoverInfo, onSelectNode, onSelect
               onClick={u.type === 'node' ? () => onSelectNode(u.nodeSlot!) : u.type === 'switch-unit' ? () => onSelectSwitch?.() : undefined}
               onHover={(h) => {
                 setHoverId(h ? u.id : null);
-                onHoverInfo(h ? `${u.label}${u.type === 'node' ? '（点击下钻查看刀片 + die/AI Core/Tile）' : u.type === 'switch-unit' ? '（点击下钻查看 UB 交换设备内部）' : ''}` : null);
+                onHoverInfo(h ? `${u.label}${u.type === 'node' ? '（点击下钻查看 Host/刀片 + die/AI Core/Tile）' : u.type === 'switch-unit' ? '（点击下钻查看 UB 交换设备内部）' : ''}` : null);
               }}
             />
           );
@@ -645,68 +645,108 @@ const DIE = {
   w: 1.7, d: 1.1,
 };
 
-/** Enlarged single-die view: HBM → L1 → L0 → Cube/Vector cores, with tile dataflow. */
+/** Enlarged single-die view: L0 Core-Group organised per the memory-architecture pattern
+ *  (GM / L2 rails → AIV1 / AIC / AIV2 blocks + UB/L1/L0A/L0B/L0C/BT/FP buffers + MTE/FixPipe routes). */
 function DieDetail({ npuIdx, overlays, onHoverInfo }: { npuIdx: number; overlays: CommOverlays; onHoverInfo: (t: string | null) => void }) {
   const LC = useLC();
   const [hx, hz] = [DIE.w / 2, DIE.d / 2];
-  const cubeColor = COMM_PATTERNS[2].color;   // thread/tile colour (cyan)
-  const tileColor = '#f59e0b';
+  const cubeColor = ENTITY_COLORS.cube;       // AIC · Cube 计算单元（cyan）
+  const vecColor = ENTITY_COLORS.vector;      // AIV · Vector（light cyan）
+  const mteColor = '#f59e0b';                 // MTE / FixPipe 数据搬运通路（amber）
+  const gmColor = '#7c8db8';                  // Global Memory 轨道（灰）
+  const l2Color = '#4369ef';                  // L2 Cache 轨道（蓝）
+  const wy = 0.07;                            // 数据通路走线高度（薄板之上）
 
-  // tile dataflow polyline: HBM → L1 → L0A/L0B → Cube → L0C → L1
-  const flowPts = useMemo(() => {
-    const p = (x: number, z: number): [number, number, number] => [x, 0.06, z];
-    const hbm = p(-hx + 0.18, 0), l1 = p(-hx + 0.62, 0), l0 = p(-0.1, 0), cube = p(0.55, 0), l0c = p(0.55, -hz + 0.3);
-    return [hbm, l1, l0, cube, l0c, l1] as [number, number, number][];
-  }, [hx, hz]);
+  // memory-architecture 锚点：GM/L2 轨道 → AIV1/AIC/AIV2 缓冲与计算块
+  const P = useMemo(() => {
+    const p = (x: number, z: number): [number, number, number] => [x, wy, z];
+    return {
+      gm: p(-hx + 0.13, 0.1), l2: p(-hx + 0.33, -0.1),
+      l1: p(-0.14, 0), l0a: p(0.05, 0.08), l0b: p(0.19, 0.08), bt: p(0.05, -0.08), fp: p(0.19, -0.08),
+      cube: p(0.42, 0), l0c: p(0.66, 0), ub1: p(-0.02, 0.35), ub2: p(-0.02, -0.35),
+    };
+  }, [hx]);
 
-  const Block = ({ x, z, w, d, label, color }: { x: number; z: number; w: number; d: number; label: string; color: string }) => (
+  // 带标签的扁平块（Slab + 顶部文字）—— 每个缓冲/计算块复用
+  const Cell = ({ x, z, w, d, label, color, emissive, ei = 0 }: { x: number; z: number; w: number; d: number; label: string; color: string; emissive?: string; ei?: number }) => (
     <group position={[x, 0, z]}
-      onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`${label}`); }}
+      onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(label); }}
       onPointerOut={() => onHoverInfo(null)}
     >
-      <Slab size={[w, 0.05, d]} position={[0, 0.025, 0]} color={color} metalness={0.3} roughness={0.55} edgeColor={LC.rackEdge} />
-      <Text position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.08} color={LC.text} anchorX="center" anchorY="middle">{label}</Text>
+      <Slab size={[w, 0.05, d]} position={[0, 0.025, 0]} color={color} emissive={emissive} emissiveIntensity={ei} metalness={0.3} roughness={0.55} edgeColor={LC.rackEdge} />
+      <Text position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.045} color={LC.text} anchorX="center" anchorY="middle" maxWidth={Math.max(w, d) * 1.6}>{label}</Text>
     </group>
+  );
+  const bandLabel = (z: number, label: string, color: string) => (
+    <Text position={[0.3, 0.14, z]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.05} color={color} anchorX="center" anchorY="middle">{label}</Text>
+  );
+  const flowLabel = (a: [number, number, number], b: [number, number, number], label: string, color: string) => (
+    <Text position={[(a[0] + b[0]) / 2, wy + 0.02, (a[2] + b[2]) / 2]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.035} color={color} anchorX="center" anchorY="middle">{label}</Text>
   );
 
   return (
     <group position={DIE.pos}>
       {/* substrate */}
       <Slab size={[DIE.w + 0.1, 0.03, DIE.d + 0.1]} position={[0, 0, 0]} color={LC.substrate} edgeColor={LC.rackEdge} />
-      {/* HBM stack (left) */}
-      <Block x={-hx + 0.18} z={0} w={0.22} d={DIE.d * 0.8} label="HBM 144GB" color={LC.block} />
-      {/* L1 SRAM */}
-      <Block x={-hx + 0.62} z={0} w={0.2} d={DIE.d * 0.7} label="L1 512KB" color={LC.blockHi} />
-      {/* L0A/L0B buffers */}
-      <Block x={-0.1} z={hz - 0.28} w={0.5} d={0.18} label="L0A/B 64KB" color={LC.blockAlt} />
-      {/* AI Core array: ≈16/计算 Die — SEPARATE Cube(cyan)/Vector(light cyan) 独立核, Cube∶Vector ≈ 8∶1 (same 4×4 glyph as the 平面视图) */}
-      {overlays.cores && (
-        <group>
-          {Array.from({ length: 16 }, (_, k) => {
-            const r = Math.floor(k / 4), c = k % 4, vec = k % 8 === 7;
-            const col = vec ? ENTITY_COLORS.vector : cubeColor;
-            return (
-              <Slab key={`aic-${k}`} size={vec ? [0.07, 0.05, 0.07] : [0.085, 0.06, 0.085]}
-                position={[0.4 + c * 0.1, 0.03, (r - 1.5) * 0.1]}
-                color={col} emissive={col} emissiveIntensity={vec ? 0.4 : 0.5} />
-            );
-          })}
-          <Text position={[0.62, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.07} color={cubeColor} anchorX="center">AI Core · AIC(Cube)/AIV(Vector) 分离独立核 · Cube∶Vector ≈ 8∶1 · ≈16/计算 Die</Text>
-        </group>
-      )}
-      {/* L0C accumulator */}
-      <Block x={0.55} z={-hz + 0.3} w={0.5} d={0.18} label="L0C 256KB" color={LC.blockAlt} />
-      {/* tile dataflow */}
+
+      {/* ── 左侧两条纵向轨道：Global Memory（灰）+ L2 Cache（蓝）——整合原 HBM / L2 ── */}
+      <Cell x={-hx + 0.13} z={0} w={0.16} d={DIE.d * 0.86} label="Global Memory" color={gmColor} />
+      <Cell x={-hx + 0.33} z={0} w={0.16} d={DIE.d * 0.86} label="L2 Cache" color={l2Color} />
+
+      {/* ── AIV 1（上）：UB 64KB 缓冲 + SIMT/SIMD ── */}
+      {bandLabel(0.35, 'AIV 1 · Vector', vecColor)}
+      <Cell x={-0.02} z={0.35} w={0.2} d={0.16} label="UB 64KB" color={LC.block} />
+      <Cell x={0.32} z={0.35} w={0.22} d={0.16} label="SIMT/SIMD" color={overlays.cores ? vecColor : LC.blockAlt} emissive={overlays.cores ? vecColor : undefined} ei={overlays.cores ? 0.4 : 0} />
+
+      {/* ── AIC（中）：L1 + L0A/L0B/BT/FP + CUBE + L0C ── */}
+      {bandLabel(0, 'AIC · Cube', cubeColor)}
+      <Cell x={-0.14} z={0} w={0.18} d={0.28} label="L1 512KB" color={LC.blockHi} />
+      <Cell x={0.05} z={0.08} w={0.12} d={0.11} label="L0A" color={LC.blockAlt} />
+      <Cell x={0.19} z={0.08} w={0.12} d={0.11} label="L0B" color={LC.blockAlt} />
+      <Cell x={0.05} z={-0.08} w={0.12} d={0.11} label="BT 64KB" color={LC.blockAlt} />
+      <Cell x={0.19} z={-0.08} w={0.12} d={0.11} label="FP 64KB" color={LC.blockAlt} />
+      <Cell x={0.42} z={0} w={0.2} d={0.22} label="CUBE" color={overlays.cores ? cubeColor : LC.block} emissive={overlays.cores ? cubeColor : undefined} ei={overlays.cores ? 0.5 : 0} />
+      <Cell x={0.66} z={0} w={0.16} d={0.2} label="L0C" color={LC.blockAlt} />
+
+      {/* ── AIV 2（下）：同 AIV 1 ── */}
+      {bandLabel(-0.35, 'AIV 2 · Vector', vecColor)}
+      <Cell x={-0.02} z={-0.35} w={0.2} d={0.16} label="UB 64KB" color={LC.block} />
+      <Cell x={0.32} z={-0.35} w={0.22} d={0.16} label="SIMT/SIMD" color={overlays.cores ? vecColor : LC.blockAlt} emissive={overlays.cores ? vecColor : undefined} ei={overlays.cores ? 0.4 : 0} />
+
+      {/* ── 数据通路（tile 开→显示流水通路）：MTE2 / MTE1 / CUBE→L0C / FixPipe / L0C→UB(CV 直连) ── */}
       {overlays.tile && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`Tile 数据流：HBM→L1→L0→Cube→L0C 异步流水（TileShape 切分 · 参考 TileLang/${TOK.pypto}）`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`memory-architecture 数据通路：MTE2 GM/L2→L1·UB · MTE1 L1→L0A/L0B/BT · CUBE→L0C · FixPipe(FP/L0C 输出) · L0C→UB（CV 直连）`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
-          <Wire points={flowPts} color={tileColor} lineWidth={2} opacity={0.9} active speed={0.8} cornerRadius={0.08} endpoints={false} />
+          {/* MTE2：GM/L2 → L1 / UB */}
+          <Wire points={[P.gm, P.l1]} color={mteColor} lineWidth={1.8} opacity={0.9} active speed={0.8} endpoints={false} />
+          <Wire points={[P.l2, P.l1]} color={mteColor} lineWidth={1.4} opacity={0.75} active speed={0.8} endpoints={false} />
+          <Wire points={[P.gm, P.ub1]} color={mteColor} lineWidth={1.4} opacity={0.7} active speed={0.8} endpoints={false} />
+          <Wire points={[P.gm, P.ub2]} color={mteColor} lineWidth={1.4} opacity={0.7} active speed={0.8} endpoints={false} />
+          {/* MTE1：L1 → L0A/L0B/BT */}
+          <Wire points={[P.l1, P.l0a]} color={mteColor} lineWidth={1.2} opacity={0.8} active speed={0.9} endpoints={false} />
+          <Wire points={[P.l1, P.l0b]} color={mteColor} lineWidth={1.2} opacity={0.8} active speed={0.9} endpoints={false} />
+          <Wire points={[P.l1, P.bt]} color={mteColor} lineWidth={1.2} opacity={0.8} active speed={0.9} endpoints={false} />
+          {/* L0A/L0B → CUBE → L0C */}
+          <Wire points={[P.l0a, P.cube]} color={cubeColor} lineWidth={1.4} opacity={0.85} active speed={1.0} endpoints={false} />
+          <Wire points={[P.l0b, P.cube]} color={cubeColor} lineWidth={1.4} opacity={0.85} active speed={1.0} endpoints={false} />
+          <Wire points={[P.cube, P.l0c]} color={cubeColor} lineWidth={1.8} opacity={0.9} active speed={1.0} endpoints={false} />
+          {/* FixPipe：FP / L0C 输出 */}
+          <Wire points={[P.l0c, P.fp]} color={mteColor} lineWidth={1.4} opacity={0.8} active speed={0.7} endpoints={false} />
+          {/* L0C → UB（CV 直连） */}
+          <Wire points={[P.l0c, P.ub1]} color={vecColor} lineWidth={1.4} opacity={0.85} active speed={0.9} endpoints={false} />
+          <Wire points={[P.l0c, P.ub2]} color={vecColor} lineWidth={1.4} opacity={0.85} active speed={0.9} endpoints={false} />
+          {/* 通路标签 */}
+          {flowLabel(P.gm, P.l1, 'MTE2', mteColor)}
+          {flowLabel(P.l1, P.l0a, 'MTE1', mteColor)}
+          {flowLabel(P.cube, P.l0c, 'CUBE→L0C', cubeColor)}
+          {flowLabel(P.l0c, P.ub1, 'CV 直连', vecColor)}
         </group>
       )}
-      <Text position={[0, 0.05, hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color={LC.textDim} anchorX="center">
-        {`放大：NPU #${npuIdx + 1}（device）的计算 Die · AI Core + 多级 SRAM · 设备内 block_idx/SIMT（点左侧切换）`}
+
+      <Text position={[0, 0.05, hz + 0.18]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.09} color={LC.textDim} anchorX="center" maxWidth={DIE.w * 1.15}>
+        {`L0 Core-Group · memory-architecture 组织 · NPU #${npuIdx + 1}（device）计算 Die（点左侧切换）`}
       </Text>
     </group>
   );
@@ -823,7 +863,7 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
       <Floor size={10} />
       <group position={[0, 0.5, 0]}>
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`节点托盘 · 全宽液冷刀片 · ${NPUS_PER_NODE}× NPU + CPU + 板载 UB fabric`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`L3 Host 节点托盘 · 全宽液冷刀片 · ${NPUS_PER_NODE}× NPU + CPU + 板载 UB fabric`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <Slab size={[w + 0.12, 0.04, d + 0.12]} position={[0, -0.02, 0]} color={LC.rackBody} metalness={0.6} roughness={0.45} edgeColor={LC.rackEdge} />
@@ -833,7 +873,7 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
         </group>
         <mesh
           position={[0, 0.012, 0]}
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`节点主板 PCB · 板载 ${TOK.ub} L1 UB 2D-Mesh fabric（蓝=L1）`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`节点主板 PCB · 板载 ${TOK.ub} L1 交换 UB 2D-Mesh fabric（蓝=UB·Host 板载）`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <boxGeometry args={[w, 0.018, d]} />
@@ -866,7 +906,7 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 4. UB interconnect hierarchy (L0 → L4)
+// 4. UB interconnect hierarchy (chip → Host → cabinet/Pod → Pod Clos → Pool/Cluster)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const HT = {
@@ -908,11 +948,11 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
   const levelInfo = (lvl: number): string => {
     const base = (() => {
       switch (lvl) {
-        case 0: return `L0 片内：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} Die（2 计算 Die UMA 合并→1 device + 2 IO Die）· die 间 UB/SIO 直连`;
-        case 1: return `L1 刀片/节点内：${NPUS_PER_NODE}× NPU 全互联（full-mesh，每颗对所有）· 单 NPU ${gen.chipUbTBs} TB/s`;
-        case 2: return `L2 机柜内：8 刀片 / 64 NPU · 跨刀片 ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
-        case 3: return `L3 ${TOK.supernode}内：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
-        case 4: return `L4 ${TOK.supernode}间：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光）`;
+        case 0: return `片内（Chip 内 · L0–L2）：${TOK.ascend} ${gen.npuShort} 封装内 ${DIES_PER_NPU} Die（2 计算 Die UMA 合并→1 device + 2 IO Die）· Die 间 UB/SIO 封装互连 + 片内 NoC 至 L0 核组`;
+        case 1: return `Host 内（L3）：${NPUS_PER_NODE}× NPU 全互联（板载 UB，PCIe/UB 同挂 1 OS）· 单 NPU ${gen.chipUbTBs} TB/s`;
+        case 2: return `机柜内（并入 L4 Pod）：8 Host / 64 NPU · 跨 Host ${TOK.fullmesh} 全互联（复杂交错，非简单聚合）`;
+        case 3: return `Pod Clos（L4 · Scale-Up）：${cabs} 机柜 经 UB 交换(通信柜) Clos · ${gen.totalNpus} NPU · ${gen.interconnectPBs} PB/s`;
+        case 4: return `Pod 间 Scale-Out（L5 Pool / L6 Cluster）：${TOK.supercluster} scale-out · ${gen.superclusterNpu}卡（全光）`;
         default: return '';
       }
     })();
@@ -947,7 +987,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         </Billboard>
         <Billboard position={[HT.xSpan / 2 + 0.3, 0, 0]}>
           <Text fontSize={0.15} color={isH ? L(lvl) : LC.textDim} anchorX="left" anchorY="middle" maxWidth={5}>
-            {lvl === 0 ? `${DIES_PER_NPU} Die / 卡（2 计算+2 IO）` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 刀片 / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
+            {lvl === 0 ? `${DIES_PER_NPU} Die / 卡（2 计算+2 IO）` : lvl === 1 ? `8 NPU 全互联` : lvl === 2 ? `8 Host / 64 NPU` : lvl === 3 ? `${cabs} 机柜 · ${gen.interconnectPBs} PB/s` : `${gen.superclusterNpu}卡`}
           </Text>
         </Billboard>
       </group>
@@ -957,9 +997,9 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
   // up/down (containment) connectors between adjacent levels — clickable focus.
   // parent level p (1..4) contains the downstream level p-1.
   const downName = (p: number) =>
-    p === 1 ? 'NPU / die' : p === 2 ? '刀片 ×8' : p === 3 ? `机柜 ×${cabs}` : p === 4 ? `${TOK.supernode}` : '';
+    p === 1 ? 'Chip·NPU / die' : p === 2 ? 'Host·节点 ×8' : p === 3 ? `机柜 ×${cabs}` : p === 4 ? 'Pod' : '';
   const parentName = (p: number) =>
-    p === 1 ? '刀片' : p === 2 ? '机柜' : p === 3 ? TOK.supernode : p === 4 ? TOK.supercluster : '';
+    p === 1 ? 'Host·节点' : p === 2 ? '机柜' : p === 3 ? 'Pod' : p === 4 ? 'Pool/Cluster' : '';
   const edges = [1, 2, 3, 4].map((p) => ({
     p,
     pts: [[0, HT.y[p] - 0.2, 0], [0, HT.y[p - 1] + 0.2, 0]] as [number, number, number][],
@@ -990,7 +1030,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
             </>}
           </group>
         ))}
-        <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 刀片 / 节点 · 8 NPU 全互联</Text>
+        <Text position={[0, 0, 0.66]} fontSize={0.14} color={hov === 1 ? L(1) : LC.textDim} anchorX="center">1 Host（刀片/节点）· 8 NPU 全互联</Text>
       </Tier>
 
       {/* L2 — ONE cabinet: 8 blades, cross-blade FULL-MESH; each blade is a tray, all in a 机柜 box */}
@@ -1000,10 +1040,10 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
         {nodePts.map((p, i) => (
           <group key={i} position={[p[0], 0.02, p[2]]}>
             <BladeTray w={0.5} d={0.4} hovered={hov === 2 || i === hlBlade} />
-            {i === hlBlade && <Text position={[0, 0.22, 0]} fontSize={0.11} color={L(1)} anchorX="center">{`刀片 B${highlight!.blade}`}</Text>}
+            {i === hlBlade && <Text position={[0, 0.22, 0]} fontSize={0.11} color={L(1)} anchorX="center">{`Host/刀片 B${highlight!.blade}`}</Text>}
           </group>
         ))}
-        <Text position={[0, 0, 0.8]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜 · 8 刀片 / 64 NPU（托盘=刀片，外框=机柜）</Text>
+        <Text position={[0, 0, 0.8]} fontSize={0.14} color={hov === 2 ? L(2) : LC.textDim} anchorX="center">1 机柜（并入 L4 Pod）· 8 Host / 64 NPU（托盘=Host/刀片，外框=机柜）</Text>
       </Tier>
 
       {/* L3 — pod: cabinets → UB switch Clos (fan to switch, not full-mesh) */}
@@ -1031,7 +1071,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       {/* L4 — cluster scale-out */}
       <Tier lvl={4}>
         <Slab size={[HT.xSpan * 0.72, 0.14, 0.5]} color={L(4)} opacity={hov === 4 ? 0.7 : 0.38} emissive={L(4)} emissiveIntensity={hov === 4 ? 0.4 : 0.16} />
-        <Text position={[0, 0, 0.5]} fontSize={0.13} color={hov === 4 ? L(4) : LC.textDim} anchorX="center">{`多超节点 → ${TOK.supercluster}`}</Text>
+        <Text position={[0, 0, 0.5]} fontSize={0.13} color={hov === 4 ? L(4) : LC.textDim} anchorX="center">{`多 Pod → L5 Pool / L6 ${TOK.supercluster}`}</Text>
       </Tier>
 
       {/* up/down containment connectors — click a level to highlight its line + downstream */}
@@ -1061,7 +1101,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       {/* ── process(rank) comm overlays (toggled in toolbar) ── */}
       {overlays.a2a && (
         <group
-          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行 · ${WORKLOAD.name} EP${WORKLOAD.inferRouted.ep}·${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）：rank 间全互联，沿 L1/L2 UB full-mesh + L3 Clos · 层级化 All-to-All`); }}
+          onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`进程级 All-to-All（MoE 专家并行 · ${WORKLOAD.name} EP${WORKLOAD.inferRouted.ep}·${WORKLOAD.routedExperts}路由/${WORKLOAD.activatedExperts}激活专家）：rank 间全互联，沿 Host/机柜 UB full-mesh + Pod Clos · 层级化 All-to-All`); }}
           onPointerOut={() => onHoverInfo(null)}
         >
           <Wire points={a2aPts(npuPts, yR + 0.04)} segments color={COMM_PATTERNS[1].color} lineWidth={1.5} opacity={0.5} active speed={0.7} />
@@ -1102,7 +1142,7 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
       </group>
 
       <Text position={[0, 0.04, 2.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.19} color={LC.textDim} anchorX="center">
-        {`${TOK.ubmesh}：层内=UB 全互联(full-mesh) · 框=刀片/机柜 · ${TOK.ccu} 卸载集合通信 · On-Chip SW 片上转发`}
+        {`${TOK.ubmesh}：层内=UB 全互联(full-mesh) · 框=Host/机柜 · ${TOK.ccu} 卸载集合通信 · On-Chip SW 片上转发`}
       </Text>
     </group>
   );
@@ -1359,7 +1399,7 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
               <planeGeometry args={[b.w, b.h]} />
               <meshBasicMaterial color={LC.nodeUnit} transparent opacity={0.85} />
             </mesh>
-            <Text position={[b.cx, b.cy + b.h / 2 + 0.06, 0]} fontSize={0.1} color={L(1)} anchorX="center">{`刀片 B${b.idx}`}</Text>
+            <Text position={[b.cx, b.cy + b.h / 2 + 0.06, 0]} fontSize={0.1} color={L(1)} anchorX="center">{`Host/刀片 B${b.idx}`}</Text>
           </group>
         ))}
         {/* UB direct links (fat lines for visibility): blue=L1 board, purple=L2 cross-board */}
@@ -1402,7 +1442,7 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
           </group>
         )}
         <Text position={[0, 2.1, 0]} fontSize={0.22} color={LC.text} anchorX="center">{switched ? `${spec.label} · 3D 结构（${n} NPU ↔ 中央交换）` : `${spec.label} · 3D 结构（${dims[1]} 板 × ${dims[0]} NPU）`}</Text>
-        <Text position={[0, -2.0, 0]} fontSize={0.14} color={LC.textDim} anchorX="center">{switched ? `单跳全交换 · 每对 ${paths} 通路（橙）· 每片 1-2 外接 ${TOK.uboe}（绿）` : `${dims.join('×')} 递归 full-mesh · 蓝=L1 板内 · 紫=L2 跨板`}</Text>
+        <Text position={[0, -2.0, 0]} fontSize={0.14} color={LC.textDim} anchorX="center">{switched ? `单跳全交换 · 每对 ${paths} 通路（橙）· 每片 1-2 外接 ${TOK.uboe}（绿）` : `${dims.join('×')} 递归 full-mesh · 蓝=UB·Host 板内 · 紫=SU·柜内 跨板`}</Text>
       </group>
 
       <Text position={[0, 0.02, 4.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.22} color={LC.textDim} anchorX="center">
@@ -1488,7 +1528,7 @@ export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
         {/* level strip */}
         <Slab size={[W * 0.5, 0.02, 0.01]} position={[0, H + 0.02, D / 2 + 0.004]} color={sw} emissive={sw} emissiveIntensity={0.7} />
         <Text position={[0, H + 0.16, D / 2 + 0.04]} fontSize={0.11} color={LC.text} anchorX="center">
-          {`${TOK.ub} 交换设备 · HRS + LRS · 128×800GE 全光 · L3 Clos 顶层`}
+          {`${TOK.ub} 交换设备 · HRS + LRS · 128×800GE 全光 · Pod Clos 顶层（Scale-Up）`}
         </Text>
         <Text position={[0, H + 0.04, D / 2 + 0.04]} fontSize={0.08} color={LC.textDim} anchorX="center">
           {'All-Path-Routing 全路径路由 · 1:1 无阻塞 · 液冷'}
@@ -1513,11 +1553,11 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
   const [focus, setFocus] = useState<number | null>(null);
   const swX = -2.8, hwX = 2.8;
   const rows: { sw: string; hw: string; key?: 'proc' | 'thread'; tag?: string; info: string }[] = [
-    { sw: '作业 / 模型', hw: '集群 / 超节点', info: '软件：整个训练作业。硬件：跑在超节点 / 集群之上' },
-    { sw: '并行切分\nDP · TP · EP · PP', hw: 'device 组（机柜 / 刀片）', tag: 'rank 间 · 走 UB', info: `软件：并行策略决定“哪个 rank 算什么”。硬件：落到 device 组 + device 间 UB 通信（DP=Ring-AllReduce，EP=All-to-All，TP=组内，PP=stage 间）。真实工况 ${WORKLOAD.name}：训练 TP${WORKLOAD.train.tp}·EP${WORKLOAD.train.ep}·PP${WORKLOAD.train.pp}·VPP${WORKLOAD.train.vpp}；推理 H2P 注意力 DP${WORKLOAD.inferAttn.dp}+TP${WORKLOAD.inferAttn.tp} / 路由专家 TP${WORKLOAD.inferRouted.tp}+EP${WORKLOAD.inferRouted.ep} / 共享 TP${WORKLOAD.inferSharedTP}（arXiv:2505.21411）` },
-    { sw: `rank\n（${TOK.hccl} 逻辑号）`, hw: '1 device\n= 1 张 950 卡（2 计算 Die UMA）', key: 'proc', tag: '软↔硬 1:1 锚点', info: `软件：rank = 纯软件逻辑编号（rank 表），与代际无关。硬件：1 张 950 卡 = 1 device（2 计算 Die UMA 合并 + 2 IO Die）。两者严格 1:1 绑定，是软硬件唯一的锚点` },
-    { sw: 'Stream / Context\nblock_idx（SPMD）', hw: 'AI Core（device 内 ≈32）', tag: '设备内并行 · 非 rank', info: '软件：rank 内不增 rank——Stream/Context 下发，block_idx 以 SPMD 切到各 AI Core。硬件：约 32 个 AI Core（16/计算 Die × 2），AIC(Cube)/AIV(Vector) 分离独立核、双发射' },
-    { sw: 'SIMT 线程 / SIMD 通道\n→ tile / element', hw: 'Cube(AIC) · Vector(AIV) 核内', key: 'thread', info: '软件：950 新增 SIMT/SIMD 同构双编程，线程/通道映射到核内 ALU 与 SRAM 上的 tile/element。硬件：Cube∶Vector 算力 ≈ 8∶1，含 Cube-Vector 融合通路' },
+    { sw: '作业 / 模型', hw: 'L6 集群 / L7 全球', info: '软件：整个训练作业。硬件：跑在 L4 Pod → L6 集群 → L7 全球调度（DCN）之上' },
+    { sw: '并行切分\nDP · TP · EP · PP', hw: 'device 组（L4 Pod · 机柜/Host）', tag: 'rank 间 · 走 UB', info: `软件：并行策略决定“哪个 rank 算什么”。硬件：落到 device 组 + device 间 UB 通信（DP=跨 Pod Ring-AllReduce，EP=Pod 内 All-to-All，TP=Host 内，PP=Pod 内跨 Host stage 间）。真实工况 ${WORKLOAD.name}：训练 TP${WORKLOAD.train.tp}·EP${WORKLOAD.train.ep}·PP${WORKLOAD.train.pp}·VPP${WORKLOAD.train.vpp}；推理 H2P 注意力 DP${WORKLOAD.inferAttn.dp}+TP${WORKLOAD.inferAttn.tp} / 路由专家 TP${WORKLOAD.inferRouted.tp}+EP${WORKLOAD.inferRouted.ep} / 共享 TP${WORKLOAD.inferSharedTP}（arXiv:2505.21411）` },
+    { sw: `rank\n（${TOK.hccl} 逻辑号）`, hw: 'L2 Chip·NPU = 1 device\n（1 张 950 卡 · 2 计算 Die UMA）', key: 'proc', tag: '软↔硬 1:1 锚点', info: `软件：rank = 纯软件逻辑编号（rank 表），与代际无关。硬件：1 张 950 卡 = L2 Chip·NPU = 1 device（2 计算 Die UMA 合并 + 2 IO Die）。两者严格 1:1 绑定，是软硬件唯一的锚点` },
+    { sw: 'Stream / Context\nblock_idx（SPMD）', hw: 'L0 Core-Group · AI Core（device 内 ≈32）', tag: '设备内并行 · 非 rank', info: '软件：rank 内不增 rank——Stream/Context 下发，block_idx 以 SPMD 切到各 L0 Core-Group（AI Core）。硬件：约 32 个 AI Core（16/计算 Die × 2），AIC(Cube)/AIV(Vector) 分离独立核、双发射' },
+    { sw: 'SIMT 线程 / SIMD 通道\n→ tile / element', hw: 'L0 内 · Tile/lane（Cube/Vector 核内）', key: 'thread', info: '软件：950 新增 SIMT/SIMD 同构双编程，线程/通道映射到 L0 Core-Group 内核内 ALU 与 SRAM 上的 tile/element/lane。硬件：Cube∶Vector 算力 ≈ 8∶1，含 Cube-Vector 融合通路' },
   ];
   const y = (i: number) => 4.3 - i * 0.95;
 
@@ -1638,10 +1678,10 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       {/* row labels (left) — hardware rows coloured by UB level, like topology */}
       {rowLabel(yThread, 'AI Core（设备内）', THREAD_COLOR)}
       {rowLabel(yProc, 'rank（软件）', PROC_COLOR)}
-      {rowLabel(yNpu, '卡 / NPU = device', LC.text)}
-      {rowLabel(yBlade, 'L1 刀片', L(1))}
-      {rowLabel(yCab, 'L2 机柜', L(2))}
-      {rowLabel(ySuper, 'L3 超节点', L(3))}
+      {rowLabel(yNpu, 'L2 Chip·NPU = device', LC.text)}
+      {rowLabel(yBlade, 'L3 Host·刀片', L(1))}
+      {rowLabel(yCab, '机柜（并入 L4）', L(2))}
+      {rowLabel(ySuper, 'L4 Pod', L(3))}
 
       {/* connectors */}
       {baseLines.map((ln, i) => <Wire key={i} points={ln.pts} color={ln.c} lineWidth={1.2} opacity={sel ? 0.15 : 0.4} endpoints={false} />)}
@@ -1685,7 +1725,7 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       {Array.from({ length: P / 2 }, (_, b) => (
         <group key={b} position={[xB(b), yBlade, 0]}>
           <BladeTray w={0.9} d={0.5} hovered={bOn(b)} />
-          <Text position={[0, 0.2, 0]} fontSize={0.11} color={L(1)} anchorX="center">{`刀片 B${b}`}</Text>
+          <Text position={[0, 0.2, 0]} fontSize={0.11} color={L(1)} anchorX="center">{`Host/刀片 B${b}`}</Text>
         </group>
       ))}
       {/* CABINET row (L2) */}
@@ -1696,11 +1736,11 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
       {/* SUPERNODE row (L3) */}
       <group position={[0, ySuper, 0]}>
         <Slab size={[1.0, 0.3, 0.3]} color={L(3)} emissive={L(3)} emissiveIntensity={upOn ? 0.5 : 0.25} opacity={0.85} edgeColor={L(3)} />
-        <Text position={[0, 0, 0.2]} fontSize={0.12} color={L(3)} anchorX="center" anchorY="middle">超节点</Text>
+        <Text position={[0, 0, 0.2]} fontSize={0.12} color={L(3)} anchorX="center" anchorY="middle">Pod</Text>
       </group>
 
       <Text position={[0, 0.02, 1.0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.16} color={LC.textDim} anchorX="center">
-        {'最细 = AI Core（设备内）· 上方 rank（软件）↔ device 1:1 · 硬件层级竖向（超节点→机柜→节点→卡→AI Core，与层级图一致）· 顶栏播放看时序 · 点击定位+联动'}
+        {'最细 = AI Core（设备内）· 上方 rank（软件）↔ device 1:1 · 硬件层级竖向（Pod→机柜→Host→Chip·NPU→AI Core，与层级图一致）· 顶栏播放看时序 · 点击定位+联动'}
       </Text>
     </group>
   );
@@ -2063,14 +2103,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       for (const k of ks) { down(k); if (showUp) vSegs.push(cPos(k), bPos(b)); }
       if (showUp) vSegs.push(bPos(b), caPos(c)); upFromCab(c);
       meshPairs(ks, cPos);   // L1 board mesh: all 8 cards card↔card
-      label = `刀片 B${b} · ${ks.length}×NPU`; labelPos = bPos(b);
+      label = `Host/刀片 B${b} · ${ks.length}×NPU`; labelPos = bPos(b);
     } else {
       const c = sel.i; if (c >= G.nCabs) return null;
       const blades: number[] = [];
       for (let b = 0; b < G.nBlades; b++) if (G.bladeCab[b] === c) blades.push(b);
       for (const b of blades) { const ks = bladeCards(b); for (const k of ks) { down(k); if (showUp) vSegs.push(cPos(k), bPos(b)); } if (showUp) vSegs.push(bPos(b), caPos(c)); meshPairs(ks, cPos); }
       meshPairs(blades, bPos);   // L2 node mesh: blade↔blade within the cabinet
-      upFromCab(c); label = `机柜 C${c} · ${blades.length} 刀片`; labelPos = caPos(c);
+      upFromCab(c); label = `机柜 C${c} · ${blades.length} Host/刀片`; labelPos = caPos(c);
     }
     return { vSegs, pSegs, cards, superP, dieK, label, labelPos };
   }, [sel, G, podCount, chainDir, scopeOnly]);
@@ -2137,14 +2177,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   // hierarchy band hue UNIFIED with the 平面视图 层级图 (full ENTITY_COLORS hue per level — same as
   // the 3D blocks/markers now); high-sat load colour still reserved for state.
   const bands: [number, number, string, string][] = [
-    [7, G.yTile, 'L0 Tile/lane', ENTITY_COLORS.vector],
-    [0, G.yThread, 'L1 AI Core ×32/卡(Cube/Vector)', THREAD_COLOR], [1, G.yProc, 'L2 计算 Die ×2', ENTITY_COLORS.computeDie], [2, G.yCard, 'L3 卡=device', L(0)],
-    [3, G.yBlade, 'L4 节点', L(1)], [4, G.yCab, '机柜', L(2)], [5, G.ySuper, `L5 ${TOK.supernode}`, L(3)], [6, G.yCluster, 'L6 超节点间', L(4)],
+    [7, G.yTile, 'Tile（L0 内）', ENTITY_COLORS.vector],
+    [0, G.yThread, 'L0 Core-Group（AI Core ×32/卡）', THREAD_COLOR], [1, G.yProc, 'L1 计算 Die ×2 · 可选', ENTITY_COLORS.computeDie], [2, G.yCard, 'L2 Chip·NPU = device', L(0)],
+    [3, G.yBlade, 'L3 Host · 节点', L(1)], [4, G.yCab, '机柜（并入 L4）', L(2)], [5, G.ySuper, 'L4 Pod（UBL128）', L(3)], [6, G.yCluster, 'L5/L6 Pool·Cluster', L(4)],
   ];
-  // UB L0–L7 软硬件同一坐标 per band — scope domain (L 号在带名里)
+  // hw-native-sys L0–L7 坐标 per band — scope domain（L 号在带名里，此处补 UB 互联域）
   const bandCoord: Record<number, string> = {
-    7: `${TOK.ub} 核内域 L0`, 0: `${TOK.ub} 核内域 L1`, 1: `${TOK.ub} 芯片域`, 2: `${TOK.ub} 芯片域 · rank 1:1`,
-    3: `${TOK.ub} Host 机器域`, 4: `${TOK.ub} 机器域(并入)`, 5: `${TOK.ub} Pod 机器域`, 6: `${TOK.ub} 集群域`,
+    7: `${TOK.ub} 核组域 · L0 内`, 0: `${TOK.ub} 核组域 · L0`, 1: `${TOK.ub} Die 域 · L1 可选`, 2: `${TOK.ub} Chip 域 · L2 · rank 1:1`,
+    3: `${TOK.ub} Host 域 · L3`, 4: `${TOK.ub} Pod 域 · L4（机柜并入）`, 5: `${TOK.ub} Pod 域 · L4 Scale-Up`, 6: `${TOK.ub} Pool/Cluster · L5–L6`,
   };
 
   // ── three-plane overlay on the vertical backbone (按平面分色) ──────────────────
@@ -2233,10 +2273,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           </mesh>
           {/* plane labels (billboards, always camera-facing) */}
           <Billboard position={[G.superMX[Math.floor(podCount / 2)] ?? 0, G.yCab + 0.1, G.fieldD / 2 + 0.6]}>
-            <Text fontSize={lblSize} color={PL_UB.color} anchorX="center" anchorY="middle">{`UB · Scale-up（超节点内 · TP/EP）`}</Text>
+            <Text fontSize={lblSize} color={PL_UB.color} anchorX="center" anchorY="middle">{`UB · Scale-up（Pod 内 · TP/EP）`}</Text>
           </Billboard>
           <Billboard position={[G.cluster[0], G.yCluster + lblSize * 1.2, 0]}>
-            <Text fontSize={lblSize} color={PL_RDMA.color} anchorX="center" anchorY="middle">{`RDMA · Scale-out（跨超节点 RoCE · DP/PP）`}</Text>
+            <Text fontSize={lblSize} color={PL_RDMA.color} anchorX="center" anchorY="middle">{`RDMA · Scale-out（Pod 间 RoCE · L5 Pool / L6 Cluster · DP/PP）`}</Text>
           </Billboard>
           <Billboard position={[dcNode[0], dcNode[1] + 0.55, dcNode[2]]}>
             <Text fontSize={lblSize * 0.95} color={PL_VPC.color} anchorX="center" anchorY="middle">{`VPC → 数据中心（南北向）`}</Text>
@@ -2274,14 +2314,14 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* L1 blade + L2 cabinet markers (instanced) — clickable to highlight their up/down-stream + peer mesh */}
       <instancedMesh ref={bladeInst} args={[undefined, undefined, Math.max(1, G.nBlades)]}
         onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
-        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`刀片 B${e.instanceId}（L4 节点 · 一块板载 ${FP_CARDS_PER_BLADE}×NPU 的板） · 单击高亮板载卡↔卡 mesh + 上下游`); }}
+        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`Host/刀片 B${e.instanceId}（L3 Host · 一块板载 ${FP_CARDS_PER_BLADE}×NPU 的板） · 单击高亮板载卡↔卡 mesh + 上下游`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(1, e.instanceId); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
       <instancedMesh ref={cabInst} args={[undefined, undefined, Math.max(1, G.nCabs)]}
         onPointerOver={(e) => { e.stopPropagation(); setCursor(true); }}
-        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`机柜 C${e.instanceId}（机器域 · 机柜并入 Pod·无独立 L 级） · 单击高亮柜内节点↔节点 mesh + 上下游`); }}
+        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onHoverInfo(`机柜 C${e.instanceId}（L4 Pod 域 · 机柜并入 Pod · 无独立 L 级） · 单击高亮柜内节点↔节点 mesh + 上下游`); }}
         onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(2, e.instanceId); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
@@ -2292,7 +2332,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         return (
           <group key={p}>
             <Slab size={[Math.min(2.6, G.superW * 0.5), 0.22, 0.3]} position={[sx, G.ySuper, 0]} color={on ? '#4369ef' : struct.super} emissive={on ? '#4369ef' : (workbenchProfile ? '#000000' : ENTITY_COLORS.super)} emissiveIntensity={on ? 0.9 : 0.4} />
-            <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`${TOK.supernode} P${p}`}</Text>
+            <Text position={[sx, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : L(3)} anchorX="center">{`Pod P${p}`}</Text>
           </group>
         );
       })}
@@ -2306,7 +2346,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
           const sel0 = hoverNpu === k || (selPath !== null && selPath.cards.includes(k));
           return (
           <group key={k} position={[x, G.yCard, G.cardZ[k]]}
-            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
+            onPointerOver={(e) => { e.stopPropagation(); if (k === lastHov.current) return; lastHov.current = k; setHoverNpu(k); setCursor(true); onHoverInfo(`NPU ${k}（device · 4 Die）· Pod P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { lastHov.current = -1; setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); toggleSel(0, k); }}
             onDoubleClick={(e) => { e.stopPropagation(); onPick?.(k % 8); }}>
@@ -2322,7 +2362,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         ); })
         : (
           <instancedMesh ref={cardInst} args={[undefined, undefined, Math.max(1, G.N)]}
-            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k}（device · 4 Die）· ${TOK.supernode} P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
+            onPointerMove={(e) => { e.stopPropagation(); const k = e.instanceId; if (k === undefined || k === lastHov.current) return; hoverCard(k); setHoverNpu(k); onHoverInfo(`NPU ${k}（device · 4 Die）· Pod P${podOf(k)} · 软件 rank ${k}（1:1 绑定）· 单击高亮链路+die实况 · 双击进入节点`); }}
             onPointerOut={() => { hoverCard(null); setHoverNpu(null); setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(0, e.instanceId); }}
             onDoubleClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) onPick?.(e.instanceId % 8); }}>
@@ -2405,7 +2445,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       )}
 
       <Text position={[0, 0.04, G.fieldD / 2 + 1.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={Math.min(0.6, 0.2 + G.fieldW * 0.003)} color={LC.textDim} anchorX="center">
-        {`${full ? `全量${TOK.supernode}` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} 刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡高亮上下游 · 双击进入节点${peers && !G.peerL1 ? ' · L1卡间mesh过密(暂隐)' : ''}${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
+        {`${full ? `全量 Pod（${TOK.supernode}）` : SCALES[scale].label} × ${podCount} · ${G.N.toLocaleString()} NPU · ${G.nBlades.toLocaleString()} Host/刀片 · ${G.nCabs.toLocaleString()} 机柜 · 单击卡(Chip·NPU)高亮上下游 · 双击进入节点${peers && !G.peerL1 ? ' · L1卡间mesh过密(暂隐)' : ''}${partition !== 'none' ? ` · 切分 ${part.cfg}（按 ${partition.toUpperCase()} 上色）` : ''}${phase ? ` · ${runMode === 'train' ? '训练' : '推理'}：${phase.name}` : ' · ▶ 运行'}`}
       </Text>
     </group>
     </WireScale.Provider>
