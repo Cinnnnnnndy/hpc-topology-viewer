@@ -399,7 +399,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     ['HBM 总量', `${spec.memTB.toLocaleString()} TB`],
     ['单卡 UB 带宽', `${spec.ubGBs.toLocaleString()} GB/s（${spec.chipUbTBs} TB/s 级）`],
     ['总互联带宽', `${spec.interconnectPBs} PB/s`],
-    ['L2 / AI 子系统', `${spec.l2MB ? spec.l2MB + ' MB' : '—'} · ${spec.aiSubsys ? spec.aiSubsys + '×(Cube+2Vector)' : '—'}`],
+    ['L2 / AI 子系统', `${spec.l2MB ? spec.l2MB + ' MB' : '—'} · ${spec.aiSubsys ? spec.aiSubsys + '×(Cube+2Vector) 子系统' : '—'}（片上视图用 32 核代表网格）`],
     ['小超节点', `16P / 32P / 64P(单柜) · 64 卡步长`],
     ['机柜', `${spec.totalCabs}（${spec.computeCabs} 计算 + ${spec.commCabs} 通信）`],
     ['占地', `${spec.footprintM2.toLocaleString()} m²`],

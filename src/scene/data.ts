@@ -190,12 +190,16 @@ export const LAYER_INFO: LayerInfo[] = [
   { key: 'die',   name: '计算 Die / 核组（CoreGroup）', intra: '单计算 Die ≈ 16 AI Core，经片上 NoC 互联、共享 HBM', inter: '↑ UMA 合并：2 计算 Die 统一寻址 → 整卡 = 1 device', bw: '片上 NoC · D2D 784 GB/s · HBM 3.2–9.6 TB/s', domain: '—', tag: '设备内（非 rank）',
     hw: '硬件：1 计算 Die ≈ 16 AI Core · 整卡 = 2 计算 Die（UMA）+ 2 IO Die', sw: '软件：rank 内核组（CoreGroup）· 同 rank、不增 rank' },
   { key: 'core',  name: 'AI Core（L1 · AIC/AIV）', intra: 'AIC(Cube)/AIV(Vector) 分离独立核、双发射并行 · 核间 GlobalMem + CrossCoreFlag', inter: '↑ block_idx 核实例（SPMD）：rank 内 TileShape 切到各 AI Core', bw: 'L0A/L0B/L0C · TQue/TPipe 流水', domain: '—', tag: '设备内并行（非 rank）',
-    hw: '硬件：约 32 AI Core/卡（16/计算 Die × 2）· AIC(Cube)/AIV(Vector) 分离独立核 · Cube∶Vector ≈ 8∶1', sw: '软件：block_idx 核实例（SPMD）· rank 内不增 rank' },
+    hw: '硬件：片上视图用 32 AI Core 代表网格（16/计算 Die × 2）· 规格 36 AI 子系统(每个=1 Cube+2 Vector) · AIC(Cube)/AIV(Vector) 分离独立核 · Cube∶Vector ≈ 8∶1', sw: '软件：block_idx 核实例（SPMD）· rank 内不增 rank' },
   { key: 'tile',  name: 'Tile（L0 · Cube/Vector/lane）', intra: '核内 Cube/Vector ALU + 片上 buf（L0A/B/C）+ SIMD/SIMT lane', inter: '↑ TileShape 切分：tile / element 落到 lane', bw: 'L0 buf · 寄存器 · element 级', domain: '—', tag: '设备内（非 rank）',
     hw: '硬件：AI Core 内 Cube/Vector 计算单元 + 片上 buffer + SIMD/SIMT 通道（lane）', sw: '软件：tile / SIMT lane / element（950 SIMD/SIMT 同构双编程的最细粒度）' },
 ];
 
-// per-card AI Core count on the 950 (≈16 AI Core / compute Die × 2 compute Die)
+// per-card AI Core count used by the on-chip GRIDS (≈16 AI Core / compute Die × 2 compute Die = 32).
+// NOTE: this is the visualisation's REPRESENTATIVE core grid. It is a DIFFERENT granularity from the
+// published spec figure `GenSpec.aiSubsys` (A5 = 36 AI 子系统, each = 1 Cube + 2 Vector) — subsystem ≠
+// core. Both coexist on purpose: spec panels cite aiSubsys (36 子系统); die/core/tile grids use 32 cores
+// (Cube∶Vector ≈ 8∶1). Keep them labelled distinctly so "32" and "36" never read as a contradiction.
 export const CORES_PER_CARD = 32;
 
 // ─── Process / thread communication overlays (node view) ─────────────────────
