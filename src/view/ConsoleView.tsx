@@ -425,22 +425,24 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       {'GM/L2 ─MTE2→ UB·L1 ─MTE1→ L0A/B ─CUBE→ L0C ─CV→ UB ─MTE3→ GM'}
     </text>);
   }
-  // 6) 级间互联小 chip（HW_LEVELS[i].down）—— 与 hub 小标签一致：竖线 + 淡填圆角 + 描边 + 居中标签
-  const ichip = (x: number, y: number, label: string, color: string, key: string) => {
-    const w = label.length * 6.2 + 14;
+  // 6) 级间互联徽标（HW_LEVELS[i].down）—— 命名「该层→下一层」用什么网络/互联织物：
+  //    不透明底色（遮住竖脊，读作坐在脊上的一枚徽标）+ 层级色描边 + 悬停 <title> 展开详情。
+  const ichip = (x: number, y: number, label: string, color: string, detail: string, key: string) => {
+    const w = label.length * 6.2 + 16;
     return (
-      <g key={key} style={{ pointerEvents: 'none' }}>
-        <line x1={x} y1={y - 9} x2={x} y2={y + 9} stroke={color} strokeWidth={1.1} strokeOpacity={0.7} />
-        <rect x={x - w / 2} y={y - 6.5} width={w} height={13} rx={6.5} fill={color} fillOpacity={0.16} stroke={color} strokeOpacity={0.5} />
-        <text x={x} y={y + 0.5} fill={color} fontSize={8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central">{label}</text>
+      <g key={key} onClick={(e) => e.stopPropagation()}>
+        <title>{`级间互联网络：${label} —— ${detail}`}</title>
+        <rect x={x - w / 2} y={y - 7} width={w} height={14} rx={7} fill={P.pill} stroke={color} strokeOpacity={0.75} strokeWidth={1} />
+        <text x={x} y={y + 0.5} fill={color} fontSize={8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{label}</text>
       </g>
     );
   };
-  // 上 5 级互联 chip 坐在中心竖脊上；卡内 2 级（封装互连 L2→L1 / NoC L1→L0）移到左侧卡内连线区，贴着真实连线。
-  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li >= 5 ? 210 : CX_MID, y, d.label, d.color, `ic-${li}`)); });
+  // 上 5 级互联徽标坐在中心竖脊上；卡内 2 级（封装互连 L2→L1 / NoC L1→L0）移到左侧卡内连线区，贴着真实连线。
+  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li >= 5 ? 210 : CX_MID, y, d.label, d.color, d.detail, `ic-${li}`)); });
   // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 用真实换算数量渲染（真实成员计数，不再是单个假 sibling）：
   //    global = 本集群 + 1–2 虚线幽灵集群；cluster = 16 服务池(前 6 pill + +10 chip)；pool = 4 Pod pill(本 Pod + 3 兄弟半透明)。
   els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实数量 · 抽象图元</text>);
+  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">中轴=包含关系 · 徽标=级间互联网络（悬停看详情）</text>);
   const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
       <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
