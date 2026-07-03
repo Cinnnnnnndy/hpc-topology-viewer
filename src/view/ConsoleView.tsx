@@ -47,7 +47,7 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
 const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
-const LEVEL_NAME: Record<string, string> = { global: '全球', cluster: '集群', pool: '服务池', super: 'Pod', node: 'Host', card: 'Chip·NPU', die: '计算 Die', core: 'Core-Group' };
+const LEVEL_NAME: Record<string, string> = { global: 'Global', cluster: 'Cluster', pool: 'Service Pool', super: 'Pod', node: 'Host', card: 'Chip·NPU', die: 'Die', core: 'Core-Group' };
 
 // ── metric model — thin aliases over the SHARED model in data.ts (same value as 运行状态) ──
 const cardLoad = (k: number, wlKind: string, step: number) => cardLoad01(k, wlKind, step);
@@ -188,16 +188,16 @@ const ctxPerSide = Math.floor(((X1 - CX_SPINE) - CTX_GW / 2 - 4) / CTX_SLOT);
 // Le 阶梯：0 全球 · 1 集群 · 2 服务池（ctx 上层上下文）· 3 Pod · 4 Host · 5 Chip。
 interface Tier { Le: number; key: string; ctx?: boolean; y: number; h: number; maxW?: number; tag: string; label: string; col: string; ghosts?: string[] }
 const TIERS: Tier[] = [
-  { Le: 0, key: 'global',  ctx: true, y: 30, h: 16, maxW: 150, tag: 'L7', label: '全球',      col: ENTITY_COLORS.global,  ghosts: ['Global A', 'Global C'] },
-  { Le: 1, key: 'cluster', ctx: true, y: 66, h: 16, maxW: 150, tag: 'L6', label: '集群',      col: ENTITY_COLORS.cluster, ghosts: ['Cluster A', 'Cluster C'] },
-  { Le: 2, key: 'pool',    ctx: true, y: 102, h: 16, maxW: 150, tag: 'L5', label: '服务池',    col: ENTITY_COLORS.pool,    ghosts: ['Pool 1', 'Pool 3'] },
-  { Le: 3, key: 'super',   y: 150, h: 22, maxW: 168, tag: 'L4', label: 'Pod',        col: ENTITY_COLORS.super },
-  { Le: 4, key: 'node',    y: 232, h: 15, maxW: 52,  tag: 'L3', label: 'Host',       col: ENTITY_COLORS.node },
-  { Le: 5, key: 'card',    y: 314, h: 17, maxW: 20,  tag: 'L2', label: 'Chip·NPU',   col: ENTITY_COLORS.card },
+  { Le: 0, key: 'global',  ctx: true, y: 30, h: 16, maxW: 150, tag: 'L7', label: 'Global',       col: ENTITY_COLORS.global,  ghosts: ['Global A', 'Global C'] },
+  { Le: 1, key: 'cluster', ctx: true, y: 66, h: 16, maxW: 150, tag: 'L6', label: 'Cluster',      col: ENTITY_COLORS.cluster, ghosts: ['Cluster A', 'Cluster C'] },
+  { Le: 2, key: 'pool',    ctx: true, y: 102, h: 16, maxW: 150, tag: 'L5', label: 'Service Pool', col: ENTITY_COLORS.pool,    ghosts: ['Pool 1', 'Pool 3'] },
+  { Le: 3, key: 'super',   y: 150, h: 22, maxW: 168, tag: 'L4', label: 'Pod',          col: ENTITY_COLORS.super },
+  { Le: 4, key: 'node',    y: 232, h: 15, maxW: 52,  tag: 'L3', label: 'Host',         col: ENTITY_COLORS.node },
+  { Le: 5, key: 'card',    y: 314, h: 17, maxW: 20,  tag: 'L2', label: 'Chip·NPU',     col: ENTITY_COLORS.card },
 ];
 interface SubTier { key: string; lvl: Level; y: number; n: number; tag: string; label: string; cols?: number; cell?: number; gap?: number; seed?: number; col?: (i: number) => string }
 const SUBTIERS: SubTier[] = [
-  { key: 'die',  lvl: 'die',  y: 396, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L1', label: '计算 Die（可选）', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
+  { key: 'die',  lvl: 'die',  y: 396, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L1', label: 'Die (optional)', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
   { key: 'core', lvl: 'core', y: 470, n: 32, tag: 'L0', label: 'Core-Group' },   // 原生 CoreGroupMiniSvg 图元（非网格）
 ];
 // 级间互联小 chip（y=连线中点，居中）：HW_LEVELS[i].down.label/color。
@@ -220,6 +220,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   const P = dark
     ? { ink: '#e6ebf2', ink2: '#9aa6b4', ink3: '#5f6b79', line: '#2a323d', pill: '#1b212b', pillBd: '#2a323d', die: 'rgba(9,13,20,0.55)' }
     : { ink: '#1c2433', ink2: '#5b6573', ink3: '#9099a8', line: '#d6dbe4', pill: '#eef1f6', pillBd: '#d2d8e2', die: 'rgba(255,255,255,0.55)' };
+  const [ctxCur, setCtxCur] = useState<Record<string, number>>({});   // 上层每级当前选中的实体索引（可点兄弟切换）
   const total = (Le: number) => [1, 1, 1, 1, nBlades, N][Le];
   const metricOf = (Le: number, idx: number): number =>
     Le <= 3 ? stats.clusterMean : Le === 4 ? (stats.ndVals[idx] ?? 0) : cardMetric(idx, metric, wlKind, step);
@@ -266,6 +267,57 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       <animate attributeName="stroke-dashoffset" from="15" to="0" dur="0.6s" repeatCount="indefinite" />
     </line>
   ) : null);
+  // hw-native-sys whitepaper level icons: Global=globe · Cluster=rack · Service Pool=4 linked boxes ·
+  //   Pod=UBL128 grid · Host=3 blocks · Chip·NPU=chip shell · Die=dashed 2-die (optional) · Core-Group=V/C/CPU. s = half-size.
+  const levelIcon = (kind: string, cx: number, cy: number, s: number, col: string, op: number, key: string) => {
+    const sw = Math.max(0.7, s * 0.14), rr = Math.min(2, s * 0.2);
+    const box = (x: number, y: number, w: number, h: number, dash?: boolean) => <rect key={`${key}box`} x={cx + x} y={cy + y} width={w} height={h} rx={rr} fill="none" stroke={col} strokeOpacity={op} strokeWidth={sw} strokeDasharray={dash ? `${sw * 2.2} ${sw * 1.6}` : undefined} />;
+    const cell = (x: number, y: number, w: number, h: number, k: string, fo = 0.42) => <rect key={`${key}f${k}`} x={cx + x} y={cy + y} width={w} height={h} rx={rr * 0.6} fill={col} fillOpacity={op * fo} stroke={col} strokeOpacity={op * 0.55} strokeWidth={sw * 0.6} />;
+    const ln = (x1: number, y1: number, x2: number, y2: number, k: string, o = 0.75) => <line key={`${key}l${k}`} x1={cx + x1} y1={cy + y1} x2={cx + x2} y2={cy + y2} stroke={col} strokeOpacity={op * o} strokeWidth={sw * 0.85} />;
+    const dt = (x: number, y: number, k: string) => <circle key={`${key}d${k}`} cx={cx + x} cy={cy + y} r={sw * 0.75} fill={col} fillOpacity={op} />;
+    switch (kind) {
+      case 'global': return <g key={key} style={{ pointerEvents: 'none' }}>
+        <circle cx={cx} cy={cy} r={s} fill="none" stroke={col} strokeOpacity={op} strokeWidth={sw} />
+        <ellipse cx={cx} cy={cy} rx={s * 0.42} ry={s} fill="none" stroke={col} strokeOpacity={op * 0.85} strokeWidth={sw * 0.8} />
+        {ln(-s, 0, s, 0, 'eq', 0.85)}{ln(-s * 0.86, -s * 0.5, s * 0.86, -s * 0.5, 'la', 0.55)}{ln(-s * 0.86, s * 0.5, s * 0.86, s * 0.5, 'lb', 0.55)}
+      </g>;
+      case 'cluster': { const w = s * 1.5, h = s * 1.95, x = -w / 2, y = -h / 2;
+        return <g key={key} style={{ pointerEvents: 'none' }}>{box(x, y, w, h)}
+          {[0.28, 0.52, 0.76].map((f, i) => ln(x, y + h * f, x + w, y + h * f, `sh${i}`, 0.65))}
+          {[0.14, 0.4, 0.64, 0.88].map((f, i) => dt(x + s * 0.3, y + h * f, `p${i}`))}
+        </g>; }
+      case 'pool': { const u = s * 0.66, o = s * 0.56;
+        const cells: [number, number][] = [[-o, -o], [o, -o], [-o, o], [o, o]];
+        return <g key={key} style={{ pointerEvents: 'none' }}>
+          {ln(-o, -o, o, -o, 'ct', 0.65)}{ln(-o, o, o, o, 'cb', 0.65)}{ln(-o, -o, -o, o, 'cl', 0.65)}{ln(o, -o, o, o, 'cr', 0.65)}
+          {cells.map(([dx, dy], i) => <rect key={`${key}c${i}`} x={cx + dx - u / 2} y={cy + dy - u / 2} width={u} height={u} rx={rr * 0.7} fill={col} fillOpacity={op * 0.3} stroke={col} strokeOpacity={op} strokeWidth={sw * 0.8} />)}
+        </g>; }
+      case 'pod': { const w = s * 1.95, h = s * 1.5, x = -w / 2, y = -h / 2, pad = s * 0.24, cols = 4, rws = 2;
+        const cw = (w - pad * 2) / cols, ch = (h - pad * 2) / rws, out: React.ReactNode[] = [];
+        for (let r = 0; r < rws; r++) for (let c = 0; c < cols; c++) out.push(cell(x + pad + c * cw + 0.3, y + pad + r * ch + 0.3, cw - 0.6, ch - 0.6, `${r}${c}`, 0.5));
+        return <g key={key} style={{ pointerEvents: 'none' }}>{box(x, y, w, h)}{out}</g>; }
+      case 'host': { const w = s * 1.95, h = s * 1.15, x = -w / 2, y = -h / 2, u = h * 0.52;
+        return <g key={key} style={{ pointerEvents: 'none' }}>{box(x, y, w, h)}
+          {[0, 1, 2].map((i) => cell(x + w * (0.15 + i * 0.28), -u / 2, u, u, `s${i}`, 0.5))}
+        </g>; }
+      case 'chip': { const w = s * 1.5, x = -w / 2;
+        return <g key={key} style={{ pointerEvents: 'none' }}>{box(x, x, w, w)}
+          {cell(x + w * 0.24, x + w * 0.24, w * 0.52, w * 0.52, 'k', 0.35)}
+          {[0.32, 0.68].map((f, i) => ln(x - s * 0.26, x + w * f, x, x + w * f, `pl${i}`, 0.8))}
+          {[0.32, 0.68].map((f, i) => ln(x + w, x + w * f, x + w + s * 0.26, x + w * f, `pr${i}`, 0.8))}
+        </g>; }
+      case 'die': { const w = s * 1.95, h = s * 1.35, x = -w / 2, y = -h / 2, u = h * 0.52;
+        return <g key={key} style={{ pointerEvents: 'none' }}>{box(x, y, w, h, true)}
+          {[0.24, 0.55].map((f, i) => cell(x + w * f, -u / 2, u, u, `s${i}`, 0.5))}
+        </g>; }
+      default: { const cs = ['#7c5cff', '#ef4444', '#f59e0b'], labels = ['V', 'C', 'CPU'];
+        const bw = s * 0.7, gap = s * 0.2, tot = bw * 3 + gap * 2, x0 = -tot / 2;
+        return <g key={key} style={{ pointerEvents: 'none' }}>
+          {cs.map((cc, i) => <rect key={`${key}v${i}`} x={cx + x0 + i * (bw + gap)} y={cy - bw / 2} width={bw} height={bw} rx={rr * 0.6} fill={cc} fillOpacity={op} />)}
+          {s >= 8 && cs.map((_, i) => <text key={`${key}t${i}`} x={cx + x0 + i * (bw + gap) + bw / 2} y={cy + bw * 0.3} fill="#fff" fontSize={bw * (labels[i].length > 1 ? 0.42 : 0.62)} fontWeight={700} textAnchor="middle">{labels[i]}</text>)}
+        </g>; }
+    }
+  };
   // 0) ALWAYS-ON containment funnel — 层级间关系（overview 也画）：
   //    L7→L6→L5→L4 中心竖脊 (ctx 当前 pill 都坐在脊上) + L4 Pod → L3 Host 漏斗楔形（1 Pod ⊃ 1024 Host）。
   {
@@ -341,25 +393,25 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       );
     }
   });
-  // 4) tier labels (gutter): Lx · name · shown/total · p50/红
+  // 4) tier labels (gutter): Lx · name · icon · shown/total · p50/red
   rows.forEach(({ t, inCount }) => {
     const a = aggOf(t.Le);
     els.push(
       <g key={`l-${t.Le}`}>
         {t.tag && <text x={12} y={t.y - 6} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>}
         <text x={12} y={t.y + (t.tag ? 6 : 4)} fill={P.ink} fontSize={12} fontWeight={600}>{t.label}</text>
-        <text x={12} y={t.y + (t.tag ? 18 : 16)} fill={P.ink3} fontSize={9}>{`${focus ? inCount + '/' : ''}${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}%红`}</text>
+        <text x={12} y={t.y + (t.tag ? 18 : 16)} fill={P.ink3} fontSize={9}>{`${focus ? inCount + '/' : ''}${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
+        {levelIcon(t.Le === 4 ? 'host' : 'chip', 104, t.y + 3, 8, t.col, 1, `l-ic-${t.Le}`)}
       </g>,
     );
   });
-  // 5) divider + card-internal sub-tiers — 层内关系. 只有钻取到 Host/Chip/卡内时才画蓝色链路；
-  //    默认 overview 只保留结构，避免看起来像已经选中某个 rank。
+  // 5) divider + card-internal sub-tiers — intra-chip links only when drilled into Host/Chip.
   const repCard = focusCard != null ? focusCard : focus ? scopeRange(focus, N)[0] : 0;
-  const repReal = focusCard != null;   // true = 真的选到某张卡（否则是代表卡）
+  const repReal = focusCard != null;   // true = a real card is selected (else representative card)
   const DIE = SUBTIERS[0];
   els.push(<line key="div" x1={8} y1={352} x2={592} y2={352} stroke={P.line} strokeDasharray="2 4" />);
   els.push(<text key="divt" x={300} y={347} fill={P.ink3} fontSize={9} textAnchor="middle">
-    {hasDrillFocus ? `—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——` : '—— 卡内结构 ——'}
+    {hasDrillFocus ? `—— On-chip · ${repReal ? 'card' : 'rep. card'} r${repCard} ——` : '—— On-chip ——'}
   </text>);
   // containment connectors — 代表卡 → 2 计算 Die → Core-Group 图元，solid SEL line + connector dots + 流动彗星（封装互连 / NoC）.
   const dieTopY = DIE.y - 6, dieBotY = DIE.y - 6 + DIE.cell!;
@@ -380,13 +432,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
   });
   els.push(<path key="l0-arrow" d={`M${coreAnchorX - 4} ${l0PtrY - 6} L${coreAnchorX} ${l0PtrY} L${coreAnchorX + 4} ${l0PtrY - 6}`} fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />);
-  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>↓ L0 Core-Group 完整存储架构（下方面板）· 1 计算 Die ⊃ ~16 Core-Group</text>);
+  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>↓ L0 Core-Group full memory architecture (panel below) · 1 compute Die ⊃ ~16 Core-Group</text>);
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
     els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
     els.push(<text key="scnt-die" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
+    els.push(levelIcon('die', 104, st.y + 3, 8, ENTITY_COLORS.computeDie, 1, 'die-gic'));
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
       const isSel = repReal && focus?.die === i;
@@ -397,7 +450,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
           onClick={(e) => { e.stopPropagation(); setFocus({ level: 'die', card: repCard, die: i }); }} />,
       );
     }
-    els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
+    els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 compute(UMA) · 2 IO</text>);
   }
   // L0 Core-Group（最深层级）不再画在本 SVG 内——由下方独立的 CoreGroupPattern 面板完整渲染 memory-architecture 图。
   // 6) 级间互联徽标（HW_LEVELS[i].down）—— 命名「该层→下一层」用什么网络/互联织物：
@@ -406,77 +459,66 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const w = label.length * 6.2 + 16;
     return (
       <g key={key} onClick={(e) => e.stopPropagation()}>
-        <title>{`级间互联网络：${label} —— ${detail}`}</title>
+        <title>{`Inter-level fabric: ${label} — ${detail}`}</title>
         <rect x={x - w / 2} y={y - 7} width={w} height={14} rx={7} fill={P.pill} stroke={color} strokeOpacity={0.75} strokeWidth={1} />
         <text x={x} y={y + 0.5} fill={color} fontSize={8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{label}</text>
       </g>
     );
   };
-  // 上 5 级互联徽标坐在中心竖脊上；卡内 2 级（封装互连 L2→L1 / NoC L1→L0）移到左侧卡内连线区，贴着真实连线。
-  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li === 6 ? coreAnchorX : li === 5 ? 210 : CX_MID, y, d.label, d.color, d.detail, `ic-${li}`)); });
-  // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 用真实换算数量渲染（真实成员计数，不再是单个假 sibling）：
-  //    global = 本集群 + 1–2 虚线幽灵集群；cluster = 16 服务池(前 6 pill + +10 chip)；pool = 4 Pod pill(本 Pod + 3 兄弟半透明)。
-  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实数量 · 抽象图元</text>);
-  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">中轴=包含关系 · 徽标=级间互联网络（悬停看详情）</text>);
-  const ctxLabel = (t: Tier, sub: string) => els.push(
+  // English display labels for the two badges whose source label carries Chinese (source data is shared with other views).
+  const ICHIP_EN: Record<string, string> = { 'Pool 内互联': 'Intra-Pool', '封装互连': 'Package (D2D)' };
+  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li === 6 ? coreAnchorX : li === 5 ? 210 : CX_MID, y, ICHIP_EN[d.label] ?? d.label, d.color, d.detail, `ic-${li}`)); });
+  // 0) upper context (L7 Global / L6 Cluster / L5 Service Pool / L4 Pod) rendered as their own entities.
+  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>Upper context · real counts · hw-native-sys icons</text>);
+  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · badge = inter-level fabric (hover)</text>);
+  const ctxLabel = (t: Tier, sub: string, kind: string) => els.push(
     <g key={`ctxl-${t.key}`}>
       <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
       <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
       <text x={12} y={t.y + 18} fill={P.ink3} fontSize={8}>{sub}</text>
+      {levelIcon(kind, 103, t.y + 4, 8, t.col, 1, `ctxl-ic-${t.key}`)}
     </g>,
   );
-  // abstract 2D level glyph (same vocabulary as 刀片/NPU 图元) — 集群=方块群 · 服务池=2×2(4 Pod) · Pod=点阵(Host 阵列)
-  const levelIcon = (kind: string, cx: number, cy: number, c: string, op: number, key: string) => {
-    const d = (dx: number, dy: number, r: number) => <circle key={`${key}${dx}_${dy}`} cx={cx + dx} cy={cy + dy} r={r} fill={c} fillOpacity={op} />;
-    const s = (dx: number, dy: number, w: number) => <rect key={`${key}${dx}_${dy}`} x={cx + dx - w / 2} y={cy + dy - w / 2} width={w} height={w} rx={0.6} fill={c} fillOpacity={op} />;
-    if (kind === 'global') return <g key={key} style={{ pointerEvents: 'none' }}>
-      <circle cx={cx} cy={cy} r={4.4} fill="none" stroke={c} strokeOpacity={op} strokeWidth={1} />
-      <line x1={cx - 4.4} y1={cy} x2={cx + 4.4} y2={cy} stroke={c} strokeOpacity={op} strokeWidth={0.7} />
-      <ellipse cx={cx} cy={cy} rx={1.9} ry={4.4} fill="none" stroke={c} strokeOpacity={op} strokeWidth={0.7} />
-    </g>;   // global = 地球
-    if (kind === 'cluster') return <g key={key} style={{ pointerEvents: 'none' }}>{[-4, 0, 4].flatMap((dx) => [-3, 3].map((dy) => s(dx, dy, 2.4)))}</g>;
-    if (kind === 'pool') return <g key={key} style={{ pointerEvents: 'none' }}>{[-2.6, 2.6].flatMap((dx) => [-2.6, 2.6].map((dy) => d(dx, dy, 1.5)))}</g>;
-    return <g key={key} style={{ pointerEvents: 'none' }}>{[-3.4, 0, 3.4].flatMap((dx) => [-3.4, 0, 3.4].map((dy) => d(dx, dy, 1.05)))}</g>;   // pod = 3×3 点阵
-  };
-  // one context row: uniform glyphs centered on the spine, ALL members shown when they fit (else +N fold).
-  //   kind = 该行成员实体的抽象图元（L7 行=集群实体、L6 行=服务池实体、L5 行=Pod 实体）；当前成员高亮描环。
-  const ctxRow = (t: Tier, kind: string, total: number, sub: string, dashed: boolean) => {
-    ctxLabel(t, sub);
+  // one context row: the SELECTED member sits on the spine (ring), siblings fan out and are CLICKABLE to
+  //   switch which one is current. Small counts show every member (else +N fold). Gutter carries the level icon.
+  const ctxRow = (t: Tier, kind: string, total: number, subFn: (c: number) => string, dashed: boolean) => {
+    const cur = Math.min(total - 1, ctxCur[t.key] ?? 0);
+    ctxLabel(t, subFn(cur), kind);
     const h = t.h, gw = CTX_GW;
-    const glyph = (cx: number, cur: boolean, key: string) => {
-      const gx = cx - gw / 2;
+    const drawG = (e: number, cx: number) => {
+      const isCur = e === cur, gx = cx - gw / 2;
       els.push(
-        <g key={key} style={cur ? { cursor: 'pointer' } : { pointerEvents: 'none' }} onClick={cur ? (e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); } : undefined}>
-          {cur && <rect x={gx - 2.5} y={t.y - h / 2 - 2.5} width={gw + 5} height={h + 5} rx={(h + 5) * 0.4} fill="none" stroke={t.col} strokeWidth={1.6} />}
-          <rect x={gx} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill={t.col} fillOpacity={cur ? 1 : dashed ? 0.14 : 0.3} stroke={cur ? 'none' : t.col} strokeOpacity={cur ? 0 : dashed ? 0.4 : 0.5} strokeDasharray={!cur && dashed ? '3 3' : undefined} />
+        <g key={`ctx-${t.key}-${e}`} style={{ cursor: 'pointer' }}
+          onClick={(ev) => { ev.stopPropagation(); setCtxCur((c) => ({ ...c, [t.key]: e })); if (t.Le === 3) setFocus({ level: 'super', card: 0 }); }}>
+          {isCur && <rect x={gx - 2.5} y={t.y - h / 2 - 2.5} width={gw + 5} height={h + 5} rx={(h + 5) * 0.4} fill="none" stroke={t.col} strokeWidth={1.6} />}
+          <rect x={gx} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill={t.col} fillOpacity={isCur ? 1 : dashed ? 0.14 : 0.32} stroke={isCur ? 'none' : t.col} strokeOpacity={isCur ? 0 : dashed ? 0.4 : 0.5} strokeDasharray={!isCur && dashed ? '3 3' : undefined} />
         </g>,
       );
-      els.push(levelIcon(kind, cx, t.y, cur ? ink(t.col) : t.col, cur ? 1 : dashed ? 0.32 : 0.6, `${key}-ic`));
     };
-    glyph(CX_SPINE, true, `ctx-${t.key}-cur`);
-    const sibs = total - 1;
-    let placedR = 0, placedL = 0, shown = 0;
-    for (let sIdx = 0; sIdx < sibs && shown < ctxPerSide * 2; sIdx++) {
-      const right = sIdx % 2 === 0, k = right ? ++placedR : ++placedL; shown++;
-      glyph(ctxSibCx(right ? 1 : -1, k), false, `ctx-${t.key}-s${sIdx}`);
+    drawG(cur, CX_SPINE);
+    let pr = 0, pl = 0, shown = 0;
+    for (let dd = 1; dd < total && shown < ctxPerSide * 2; dd++) {
+      if (cur + dd < total) { drawG(cur + dd, ctxSibCx(1, ++pr)); shown++; }
+      if (shown >= ctxPerSide * 2) break;
+      if (cur - dd >= 0) { drawG(cur - dd, ctxSibCx(-1, ++pl)); shown++; }
     }
-    const fold = sibs - shown;
-    if (fold > 0) {
-      const fx = ctxSibCx(1, placedR) + gw / 2 + CTX_GAP, fw = Math.max(28, String(fold).length * 7 + 18);
+    const foldN = (total - 1) - shown;
+    if (foldN > 0) {
+      const fx = ctxSibCx(1, pr) + gw / 2 + CTX_GAP, fw = Math.max(28, String(foldN).length * 7 + 18);
       els.push(
         <g key={`ctx-${t.key}-fold`}>
           <rect x={fx} y={t.y - 9} width={fw} height={18} rx={9} fill={P.pill} stroke={P.pillBd} />
-          <text x={fx + fw / 2} y={t.y + 4} fill={P.ink2} fontSize={10} textAnchor="middle">{`+${fold}`}</text>
+          <text x={fx + fw / 2} y={t.y + 4} fill={P.ink2} fontSize={10} textAnchor="middle">{`+${foldN}`}</text>
         </g>,
       );
     }
   };
-  // 每一行 = 该层级自身的实体（不再显示子级）：全球=地球 · 集群=方块群 · 服务池=2×2 点 · Pod=3×3 点阵。
-  //   Pool 与 Pod 是两个独立层级、各占一行；小数量层级（集群/服务池/Pod）成员全部显示。
-  ctxRow(TIERS[0], 'global', 1, `本全球 · 经 DCN 下挂各集群`, false);
-  ctxRow(TIERS[1], 'cluster', 4, `本集群 · 1 集群 = ${PODS_PER_CLUSTER} Pod（虚线=其他集群）`, true);
-  ctxRow(TIERS[2], 'pool', POOLS_PER_CLUSTER, `本池 · ${POOLS_PER_CLUSTER} 服务池 / 集群（全显示）`, false);
-  ctxRow(TIERS[3], 'pod', PODS_PER_POOL, `本 Pod · ${PODS_PER_POOL} Pod / 池（全显示 · 下方=本 Pod 展开）`, false);
+  // Each row = the level's OWN entities (Pool and Pod are separate rows). Small levels show every member.
+  //   Click a sibling to switch which Cluster / Pool / Pod is current.
+  ctxRow(TIERS[0], 'global', 1, () => `1 Global · via DCN`, false);
+  ctxRow(TIERS[1], 'cluster', 4, (c) => (c === 0 ? `this Cluster · 1 = ${PODS_PER_CLUSTER} Pod` : `Cluster ${c} · sibling`), true);
+  ctxRow(TIERS[2], 'pool', POOLS_PER_CLUSTER, (c) => `${c === 0 ? 'this Pool' : 'Pool ' + (c + 1)} · ${POOLS_PER_CLUSTER}/Cluster · click to switch`, false);
+  ctxRow(TIERS[3], 'pod', PODS_PER_POOL, (c) => `${c === 0 ? 'this Pod' : 'Pod ' + (c + 1)} · ${PODS_PER_POOL}/Pool · click to switch`, false);
 
   // C) 并行关系落到真实层级对象（仅 card 焦点）：TP/PP 描到真实 Host pill · DP 弧到兄弟 Pod · EP 按 epScope。
   if (focus && focus.level === 'card') {
@@ -893,10 +935,17 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div style={{ flex: '1 1 50%', position: 'relative', minHeight: 0, padding: '4px 6px' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
-          {/* L0 Core-Group：完整 memory-architecture pattern（与 运行状态·物理链路·L0 同一套图元，可缩放/平移） */}
-          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--bd)' }}>
-            <div className="hpc-console-pane-note" style={{ padding: '4px 12px', fontSize: 11, color: 'var(--tx3)', flexShrink: 0 }}>
-              L0 Core-Group · 芯片内完整存储架构 — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · Scalar · MTE1/2/3（滚轮缩放 · 拖拽平移）
+          {/* L0 Core-Group: full memory-architecture pattern (same figure as 运行状态·物理链路·L0), zoom/pan */}
+          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '3px solid var(--bd)' }}>
+            <div style={{ padding: '6px 12px', flexShrink: 0, borderBottom: '1px solid var(--bd)', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#36e0c4' }}>L0</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>Core-Group</span>
+              <span style={{ display: 'inline-flex', gap: 3 }}>
+                {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
+                  <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
+                ))}
+              </span>
+              <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>full on-chip memory architecture — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · MTE1/2/3 (scroll to zoom · drag to pan)</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               <CoreGroupPattern
