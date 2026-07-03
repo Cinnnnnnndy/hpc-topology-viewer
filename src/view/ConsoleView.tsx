@@ -12,7 +12,7 @@
  */
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
@@ -945,6 +945,15 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
               minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
               mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN }}
             />
+            {/* ViewCube 导航正方体 — 点面/棱/角回到标准视角（与 ClusterView 3D 画布一致）。
+                bottom margin 抬高避开悬浮播放条。Latin face labels（默认 webfont 无 CJK 字形）。 */}
+            <GizmoHelper alignment="bottom-left" margin={[64, 110]}>
+              <GizmoViewcube
+                faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
+                color={dark ? '#2a2e36' : '#eef1f6'} hoverColor="#4369ef"
+                textColor={dark ? '#e6e6e6' : '#1c2433'} strokeColor={dark ? '#4a5160' : '#aab4c4'} opacity={0.95}
+              />
+            </GizmoHelper>
           </Canvas>
 
           {/* L0 细节由左侧原生 CoreGroupMiniSvg 图元 + 运行状态视图承担，右侧全景不再覆盖 L0 面板。 */}
