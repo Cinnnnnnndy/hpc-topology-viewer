@@ -23,7 +23,7 @@ import {
   buildHall, CAB_W, CAB_H, CAB_D,
   SCALES, makeAdjacency, makeSwitchedAdjacency, TRACE_SCHED, PARTITION_PALETTE,
   loadColor, loadRGB, nodeLoad, mute, isHot, PLANES, LEVEL_PHYS, BAND_PHYS_KEY, WORKLOAD,
-  HW_LEVELS, LAYER_INFO, levelFull, PODS_PER_POOL, parallelMap,
+  HW_LEVELS, LAYER_INFO, levelFull, PODS_PER_POOL, PODS_PER_CLUSTER, POOLS_PER_CLUSTER, parallelMap,
   type RackKind, type RackUnit, type NodePart, type GenSpec, type CabinetCell, type Scale, type RunMode, type RunPhase, type PartitionDim,
 } from './data';
 import { TOK } from '../content';
@@ -2255,6 +2255,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       {/* L6 集群 slab — 罩全部 Pod */}
       <Slab size={[Math.min(3.6, G.fieldW * 0.45), 0.2, 0.34]} position={G.cluster} color={ENTITY_COLORS.cluster} emissive={ENTITY_COLORS.cluster} emissiveIntensity={0.3} opacity={0.85} edgeColor={ENTITY_COLORS.cluster} />
       <Text position={[G.cluster[0], G.cluster[1] + 0.3, 0]} fontSize={lblSize} color={ENTITY_COLORS.cluster} anchorX="center">集群</Text>
+      <Text position={[G.cluster[0], G.cluster[1] + 0.3 + lblSize * 0.92, 0]} fontSize={lblSize * 0.58} color="#9fb6ff" anchorX="center">{`${POOLS_PER_CLUSTER} 服务池 · ${PODS_PER_CLUSTER} Pod`}</Text>
       {/* L7 全球 · DCN — 顶部小标记 + DCN riser */}
       <mesh position={G.global}><boxGeometry args={[0.5, 0.3, 0.5]} /><meshStandardMaterial color={ENTITY_COLORS.global} emissive={ENTITY_COLORS.global} emissiveIntensity={0.5} metalness={0.3} roughness={0.5} toneMapped={false} /></mesh>
       <Text position={[G.global[0], G.global[1] + 0.42, 0]} fontSize={lblSize} color={ENTITY_COLORS.global} anchorX="center">全球 · DCN</Text>

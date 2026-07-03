@@ -9,7 +9,7 @@
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkloadPanel } from './WorkloadPanel';
-import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, HW_LEVELS, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, parallelMap, loadColor, nodeLoad, isHot, stateColor, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
+import { GENERATIONS, PARTITION_PALETTE, PARALLEL_COLORS, PARTITION_META, UB_LEVELS, COMM_PATTERNS, LAYER_INFO, HW_LEVELS, CORES_PER_CARD, ENTITY_COLORS, UB_COORD, RUN_SCHED, PLANES, LEVEL_PHYS, WORKLOAD, parallelMap, loadColor, nodeLoad, isHot, stateColor, PODS_PER_CLUSTER, POOLS_PER_CLUSTER, PODS_PER_POOL, type Gen, type PartitionDim, type RunMode, type RunPhase } from '../scene/data';
 import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
 import { drawCoreGroupMini, drawLevelContainer, drawInterconnectChip } from './arch-glyphs';
@@ -591,6 +591,9 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
           ctx.globalAlpha = 1; ctx.fillStyle = (sel && !curPhase) ? '#fff' : inkOf(bFill);
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `700 ${Math.min(1.5, Lv.h * 0.42)}px sans-serif`;
           ctx.fillText(`${hl.tag} ${hl.name}`, margin + Wc / 2, Lv.y0 + Lv.h / 2);
+          // sub-count annotation in the gap below the pill (world-space small text)
+          const countNote = li === 1 ? `${POOLS_PER_CLUSTER} Pool · ${PODS_PER_CLUSTER} Pod` : li === 2 ? `×${PODS_PER_POOL} Pod/Pool` : '';
+          if (countNote && !dim) { ctx.globalAlpha = 0.62; ctx.fillStyle = Lv.color; ctx.font = `${Math.min(1.1, Lv.h * 0.32)}px sans-serif`; ctx.textBaseline = 'top'; ctx.fillText(countNote, margin + Wc / 2, Lv.y0 + Lv.h + 0.3); ctx.globalAlpha = 1; }
           return;
         }
         // L4 Pod = banner — filled bar, bold title left, 'UB 交换 Clos' switch 块示意 in the middle, stats right.
@@ -634,7 +637,8 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
             if (refine) continue;   // drawn as a refined container in the screen pass below
             const on = !hi || (i >= hi.lo[li] && i < hi.hi[li]);
             const x = margin + c * Lv.cell + pad, y = Lv.y0 + r * Lv.cell + pad, ws = Lv.cell - pad * 2;
-            const cellBase = curPhase ? heatOf(i) : lc;
+            const withPart = colorBy !== 'none' && Lv.kind === 'card' && !curPhase;
+            const cellBase = curPhase ? heatOf(i) : (withPart ? PARTITION_PALETTE[Math.max(0, groupOf(i)) % PARTITION_PALETTE.length] : lc);
             const cellCol = (hi && on && !curPhase) ? SEL : cellBase;   // playing → 选中链路按状态(load)上色，而非高亮色
             glyph(Lv.kind, x, y, ws, cellCol, hi ? (on ? 1 : 0.14) : 1);
           }
@@ -726,7 +730,10 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
         ctx.fillStyle = Lv.color; ctx.textBaseline = 'middle'; ctx.font = '600 12.5px sans-serif';
         ctx.fillText(Lv.label, lx, sy);
         let yy = sy + 14;
-        if (!Lv.banner && !Lv.funnel) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
+        if (Lv.funnel) {
+          const funnelHint = li === 0 ? '×1 全球' : li === 1 ? `${POOLS_PER_CLUSTER} Pool · ${PODS_PER_CLUSTER} Pod` : li === 2 ? `×${PODS_PER_POOL} Pod/Pool` : '';
+          if (funnelHint) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(funnelHint, lx, yy); yy += 13; }
+        } else if (!Lv.banner) { ctx.fillStyle = P.ink2; ctx.font = `10px ${MONO}`; ctx.fillText(`×${Lv.count.toLocaleString()}`, lx, yy); yy += 13; }
         if (LAYER_INFO[li]?.tag) { ctx.fillStyle = LAYER_INFO[li].tag!.includes('1:1') ? '#04d793' : '#7c8db8'; ctx.font = '9.5px sans-serif'; ctx.fillText(LAYER_INFO[li].tag!.split('（')[0], lx, yy); yy += 12; }
         const lq = UB_COORD[LAYER_INFO[li]?.key];   // UB L0–L7 同一坐标（L 号在层名里，这里标作用域）
         if (lq) { ctx.fillStyle = '#9fb6ff'; ctx.font = '9.5px sans-serif'; ctx.fillText(`${TOK.ub} ${lq.scope}`, lx, yy); yy += 12; }
