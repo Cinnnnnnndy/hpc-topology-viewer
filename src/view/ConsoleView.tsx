@@ -22,7 +22,7 @@ import {
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
 } from '../scene/data';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
-import { CoreGroupMiniSvg } from './arch-glyphs';
+import { CoreGroupPattern } from './CoreGroupPattern';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
@@ -177,7 +177,7 @@ interface Stats {
 //    上三级 L7 全球 / L6 集群 / L5 服务池 = 焦点 pill + 半透明幽灵 sibling（不可点，点焦点回整 Pod）；
 //    L4 Pod=玫紫 pill · L3 Host=天蓝 · L2 Chip=teal 卡图元(2×2 Die 点) · L1 Die=网格 · L0 Core-Group=原生 CoreGroupMiniSvg 图元。
 //    级间连线挂互联名小 chip（DCN/Scale-Out/Pool 内互联/Scale-Up/PCIe·UB/封装互连/NoC）。 ──
-const SVG_W = 600, SVG_H = 724, X0 = 118, X1 = 586, BUDGET = 26;
+const SVG_W = 600, SVG_H = 472, X0 = 118, X1 = 586, BUDGET = 26;   // 漏斗 L7→L1；L0 完整架构由下方 CoreGroupPattern 面板承担
 // ctx-tier centered funnel geometry: current glyph sits ON the center spine, siblings flank symmetrically.
 // uniform abstract 2D glyphs per level (like the chip 2×2-die glyph) — small counts render EVERY member.
 const CX_SPINE = (X0 + X1) / 2, CTX_GW = 20, CTX_GAP = 5, CTX_SLOT = CTX_GW + CTX_GAP;
@@ -212,9 +212,9 @@ const ICHIPS: { y: number; li: number }[] = [
   { y: 443, li: 6 },  // Die→Core-Group NoC
 ];
 
-function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, flow, pm }: {
+function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, pm }: {
   N: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
-  metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; playing: boolean; stats: Stats; dark: boolean; flow: boolean;
+  metric: Metric; wlKind: string; step: number; dir: Dir; planeOn: { ub: boolean; rdma: boolean; vpc: boolean }; playing: boolean; stats: Stats; dark: boolean;
   pm: ReturnType<typeof parallelMap>;
 }) {
   const P = dark
@@ -356,15 +356,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   //    默认 overview 只保留结构，避免看起来像已经选中某个 rank。
   const repCard = focusCard != null ? focusCard : focus ? scopeRange(focus, N)[0] : 0;
   const repReal = focusCard != null;   // true = 真的选到某张卡（否则是代表卡）
-  const DIE = SUBTIERS[0], CORE = SUBTIERS[1];
+  const DIE = SUBTIERS[0];
   els.push(<line key="div" x1={8} y1={352} x2={592} y2={352} stroke={P.line} strokeDasharray="2 4" />);
   els.push(<text key="divt" x={300} y={347} fill={P.ink3} fontSize={9} textAnchor="middle">
     {hasDrillFocus ? `—— 卡内结构 · ${repReal ? '卡' : '代表卡'} r${repCard}（${repReal ? '已选中' : '该范围首卡'}）——` : '—— 卡内结构 ——'}
   </text>);
   // containment connectors — 代表卡 → 2 计算 Die → Core-Group 图元，solid SEL line + connector dots + 流动彗星（封装互连 / NoC）.
   const dieTopY = DIE.y - 6, dieBotY = DIE.y - 6 + DIE.cell!;
-  const coreGX = 120, coreGW = X1 - coreGX, coreCx = coreGX + coreGW / 2, coreTopY = CORE.y;
-  const coreAnchorX = coreGX + 34, dieCxArr = [135, 175];   // 2 计算 Die → L0 存储轨道锚点（GM/L2 rail 区）
+  const coreGX = 120, coreAnchorX = coreGX + 34, dieCxArr = [135, 175];
   const rpCardX = pos[5]?.[repCard]?.x ?? CX_SPINE, cardBotY = 322;
   // L2 Chip → L1 计算 Die：代表卡连线（overview 淡显 · focus 加重 + 彗星）——「一张卡 ⊃ 2 计算 + 2 IO Die」
   dieCxArr.forEach((dx, di) => {
@@ -373,14 +372,15 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(cdot(dx, dieTopY, ACCENT, `ccd-die-${di}`, 2));
   });
   els.push(cdot(rpCardX, cardBotY, ACCENT, 'ccd-card', hasDrillFocus ? 2.4 : 2));
-  // L1 计算 Die → L0 Core-Group：两块计算 Die 汇聚到 L0 存储轨道锚点（1 计算 Die ⊃ ~16 Core-Group）
+  // L1 计算 Die → L0：两块计算 Die 向下汇聚，箭头指向下方「L0 完整存储架构」面板（NoC · 1 计算 Die ⊃ ~16 Core-Group）
+  const l0PtrY = SVG_H - 18;
   dieCxArr.forEach((dx, di) => {
-    els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreAnchorX} y2={coreTopY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={hasDrillFocus ? 0.55 : 0.36} />);
-    if (hasDrillFocus) els.push(cflow(dx, dieBotY, coreAnchorX, coreTopY, `cdf-core-${di}`));
+    els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreAnchorX} y2={l0PtrY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={hasDrillFocus ? 0.55 : 0.36} />);
+    if (hasDrillFocus) els.push(cflow(dx, dieBotY, coreAnchorX, l0PtrY, `cdf-core-${di}`));
     els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
   });
-  els.push(cdot(coreAnchorX, coreTopY, ACCENT, 'cd-core-top'));
-  els.push(<text key="l1l0-note" x={coreAnchorX + 10} y={(dieBotY + coreTopY) / 2 + 3} fill={P.ink3} fontSize={8}>1 计算 Die ⊃ ~16 Core-Group</text>);
+  els.push(<path key="l0-arrow" d={`M${coreAnchorX - 4} ${l0PtrY - 6} L${coreAnchorX} ${l0PtrY} L${coreAnchorX + 4} ${l0PtrY - 6}`} fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />);
+  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>↓ L0 Core-Group 完整存储架构（下方面板）· 1 计算 Die ⊃ ~16 Core-Group</text>);
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
@@ -399,28 +399,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     }
     els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
   }
-  // 5b) L0 Core-Group 子层 —— 原生内嵌 CoreGroupMiniSvg 图元（不再用普通格子）。聚焦 core → 加高 + detail 提升。
-  {
-    // L0 = 最深、最详细的层级：占满剩余高度、用满面板宽度，完整画出 GM/L2 + AIV1/AIC/AIV2 存储架构图。
-    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 236 : 216;
-    els.push(<text key="slt-core" x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
-    els.push(<text key="sl-core" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡`}</text>);
-    els.push(<text key="scnt-core2" x={12} y={st.y + 29} fill={P.ink3} fontSize={9}>GM/L2</text>);
-    els.push(<text key="scnt-core3" x={12} y={st.y + 40} fill={P.ink3} fontSize={9}>+AIV/AIC</text>);
-    els.push(
-      <g key="core-glyph" style={{ cursor: 'pointer' }} transform={`translate(${coreGX} ${st.y})`}
-        onClick={(e) => { e.stopPropagation(); setFocus({ level: 'core', card: repCard, core: 0 }); }}>
-        {coreFocused && <rect x={-3} y={-3} width={coreGW + 6} height={coreH + 6} rx={8} fill="none" stroke={ringC} strokeWidth={1.8} />}
-        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={coreFocused ? 1.28 : 1.16} phase={flow ? 'comm' : 'compute'}
-          load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
-      </g>,
-    );
-    // 数据通路说明（8px 小字）—— 放在 L0 图元正下方，viewBox 已加高避免与下方重叠
-    els.push(<text key="core-datapath" x={coreCx} y={st.y + coreH + 13} fill={P.ink3} fontSize={8} textAnchor="middle">
-      {'GM/L2 ─MTE2→ UB·L1 ─MTE1→ L0A/B ─CUBE→ L0C ─CV→ UB ─MTE3→ GM'}
-    </text>);
-  }
+  // L0 Core-Group（最深层级）不再画在本 SVG 内——由下方独立的 CoreGroupPattern 面板完整渲染 memory-architecture 图。
   // 6) 级间互联徽标（HW_LEVELS[i].down）—— 命名「该层→下一层」用什么网络/互联织物：
   //    不透明底色（遮住竖脊，读作坐在脊上的一枚徽标）+ 层级色描边 + 悬停 <title> 展开详情。
   const ichip = (x: number, y: number, label: string, color: string, detail: string, key: string) => {
@@ -434,7 +413,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     );
   };
   // 上 5 级互联徽标坐在中心竖脊上；卡内 2 级（封装互连 L2→L1 / NoC L1→L0）移到左侧卡内连线区，贴着真实连线。
-  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li >= 5 ? 210 : CX_MID, y, d.label, d.color, d.detail, `ic-${li}`)); });
+  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li === 6 ? coreAnchorX : li === 5 ? 210 : CX_MID, y, d.label, d.color, d.detail, `ic-${li}`)); });
   // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 用真实换算数量渲染（真实成员计数，不再是单个假 sibling）：
   //    global = 本集群 + 1–2 虚线幽灵集群；cluster = 16 服务池(前 6 pill + +10 chip)；pool = 4 Pod pill(本 Pod + 3 兄弟半透明)。
   els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实数量 · 抽象图元</text>);
@@ -911,8 +890,23 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
             平面视图 · 层级图（控制 · 图元/配色同层级图）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
           </div>
-          <div style={{ flex: 1, position: 'relative', minHeight: 0, padding: '4px 6px' }}>
-            <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} flow={lens === 'flow'} pm={pm} />
+          <div style={{ flex: '1 1 50%', position: 'relative', minHeight: 0, padding: '4px 6px' }}>
+            <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
+          </div>
+          {/* L0 Core-Group：完整 memory-architecture pattern（与 运行状态·物理链路·L0 同一套图元，可缩放/平移） */}
+          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--bd)' }}>
+            <div className="hpc-console-pane-note" style={{ padding: '4px 12px', fontSize: 11, color: 'var(--tx3)', flexShrink: 0 }}>
+              L0 Core-Group · 芯片内完整存储架构 — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · Scalar · MTE1/2/3（滚轮缩放 · 拖拽平移）
+            </div>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+              <CoreGroupPattern
+                phaseKind={playing ? (lens === 'flow' ? 'comm' : 'compute') : undefined}
+                load={Math.max(0, Math.min(1, stats.kpi.util))}
+                zoom={0.4}
+                detail
+                height="100%"
+              />
+            </div>
           </div>
         </div>
 
