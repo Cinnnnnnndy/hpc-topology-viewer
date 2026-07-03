@@ -342,22 +342,24 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // containment connectors — 代表卡 → 2 计算 Die → Core-Group 图元，solid SEL line + connector dots + 流动彗星（封装互连 / NoC）.
   const dieTopY = DIE.y - 6, dieBotY = DIE.y - 6 + DIE.cell!;
   const coreGX = 120, coreGW = X1 - coreGX, coreCx = coreGX + coreGW / 2, coreTopY = CORE.y;
+  // Die(L1)→Core-Group(L0) 连线：始终显示以示层级关联；焦点时加流动彗星 + 加深透明度
+  const dieCxArr = [135, 175];
+  dieCxArr.forEach((dx, di) => {
+    els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreCx} y2={coreTopY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={hasDrillFocus ? 0.5 : 0.28} />);
+    if (hasDrillFocus) els.push(cflow(dx, dieBotY, coreCx, coreTopY, `cdf-core-${di}`));
+    els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
+  });
+  els.push(cdot(coreCx, coreTopY, ACCENT, 'cd-core-top'));
   if (hasDrillFocus) {
-    const rp5 = pos[5]?.[repCard], dieCx = [135, 175], cardBotY = 322;
+    const rp5 = pos[5]?.[repCard], cardBotY = 322;
     if (rp5) {
-      dieCx.forEach((dx, di) => {
+      dieCxArr.forEach((dx, di) => {
         els.push(<line key={`cc-die-${di}`} x1={rp5.x} y1={cardBotY} x2={dx} y2={dieTopY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={0.55} />);
         els.push(cflow(rp5.x, cardBotY, dx, dieTopY, `ccf-die-${di}`));
         els.push(cdot(dx, dieTopY, ACCENT, `ccd-die-${di}`, 2.2));
       });
       els.push(cdot(rp5.x, cardBotY, ACCENT, 'ccd-card'));
     }
-    dieCx.forEach((dx, di) => {
-      els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreCx} y2={coreTopY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.5} />);
-      els.push(cflow(dx, dieBotY, coreCx, coreTopY, `cdf-core-${di}`));
-      els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
-    });
-    els.push(cdot(coreCx, coreTopY, ACCENT, 'cd-core-top'));
   }
   // 5a) L1 Die 子层（网格）
   {
@@ -379,7 +381,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   }
   // 5b) L0 Core-Group 子层 —— 原生内嵌 CoreGroupMiniSvg 图元（不再用普通格子）。聚焦 core → 加高 + detail 提升。
   {
-    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 230 : 120;
+    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 230 : 160;
     els.push(<text key="slt-core" x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key="sl-core" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
     els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡 · GM/L2+AIV/AIC`}</text>);
@@ -387,7 +389,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       <g key="core-glyph" style={{ cursor: 'pointer' }} transform={`translate(${coreGX} ${st.y})`}
         onClick={(e) => { e.stopPropagation(); setFocus({ level: 'core', card: repCard, core: 0 }); }}>
         {coreFocused && <rect x={-3} y={-3} width={coreGW + 6} height={coreH + 6} rx={8} fill="none" stroke={ringC} strokeWidth={1.8} />}
-        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={coreFocused ? 2 : 1} fs={coreFocused ? 1.15 : 1} phase={flow ? 'comm' : 'compute'}
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={coreFocused ? 1.15 : 1} phase={flow ? 'comm' : 'compute'}
           load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
       </g>,
     );
@@ -417,16 +419,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
     </g>,
   );
-  // solid focus pill (点击回整 Pod) / dashed ghost / faded sibling (不可点)
-  const ctxPill = (key: string, cx: number, w: number, y: number, h: number, col: string, label: string, mode: 'focus' | 'ghost' | 'sib') => els.push(
+  // solid focus pill (点击回整 Pod) / dashed ghost / faded sibling (不可点) — 仅色块，无文字（左侧标签已标注层级名）
+  const ctxPill = (key: string, cx: number, w: number, y: number, h: number, col: string, _label: string, mode: 'focus' | 'ghost' | 'sib') => els.push(
     mode === 'focus'
       ? <g key={key} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); }}>
           <rect x={cx - w / 2} y={y - h / 2} width={w} height={h} rx={h * 0.4} fill={col} />
-          <text x={cx} y={y + 0.5} fill={ink(col)} fontSize={9} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{label}</text>
         </g>
       : <g key={key} style={{ pointerEvents: 'none' }}>
           <rect x={cx - w / 2} y={y - h / 2} width={w} height={h} rx={h * 0.4} fill={col} fillOpacity={mode === 'sib' ? 0.3 : 0.12} stroke={col} strokeOpacity={mode === 'sib' ? 0.55 : 0.4} strokeDasharray={mode === 'ghost' ? '3 3' : undefined} />
-          <text x={cx} y={y + 0.5} fill={col} fillOpacity={mode === 'sib' ? 0.92 : 0.75} fontSize={8.5} textAnchor="middle" dominantBaseline="central">{label}</text>
         </g>,
   );
   const ctxCap = (t: Tier, cap: string) => els.push(

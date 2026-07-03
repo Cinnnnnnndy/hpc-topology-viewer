@@ -499,6 +499,8 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
       tx(lvlNote + ' · 嵌套框=域包含(TP⊂EP⊂DP) · 内嵌图标=集合通信形态 · 颜色=状态 · 蓝框=当前选区所在域', PAD, topY + 34, P.mut, '10.5px Inter');
       const D = domains(), act = domActive();
       const top = topY + 48, rh = (H - top - 12) / D.length;
+      const availH2 = (H - 16) - (top + 4);
+      const conceptH = Math.max(224, Math.round(availH2 * 0.60));
       // collective-pattern glyph among k representative ranks
       const glyph = (cx: number, cy: number, rad: number, pat: 'ring' | 'a2a' | 'p2p', col: string, on: boolean) => {
         const k = pat === 'p2p' ? 5 : 7;
@@ -544,7 +546,7 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
       };
 
       // ── 嵌套：DP 副本(SO) ⊃ EP 域(SU) ⊃ 多个 TP 组 ；PP 在右侧贯穿；SP 与 TP 同域 ──
-      const A = { x: PAD, y: top + 4, w: W - 2 * PAD, h: (H - 16) - (top + 4) };
+      const A = { x: PAD, y: top + 4, w: W - 2 * PAD, h: conceptH };
       const gutter = 92;
       domainBox(A.x, A.y, A.w, A.h, dp, 'SO 广域 · 跨 Pod（全光 scale-out）');
       const ep0 = { x: A.x + 18, y: A.y + 64, w: A.w - 36 - gutter, h: A.h - 64 - 26 };
@@ -577,6 +579,76 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
       ctx.globalAlpha = 1;
       // SU/SO 分界说明
       tx('SU 超低延迟域(TP/EP · 域内) ↑   ↓ SO 广域(DP/PP · 跨 Pod/全光)', A.x + 14, A.y + A.h - 9, P.mut, '9.5px Inter');
+
+      // ── 实体映射：真实 L0-L7 对象 + 并行域着色 ────────────────────────────────
+      const entY = A.y + conceptH + 14;
+      const entH = (H - 16) - entY;
+      if (entH >= 56) {
+        tx('实体关系 · 真实 Host/Chip 对象 · 并行域着色（parallelMap 真值）', PAD, entY + 13, P.ink2, '700 11px Inter');
+        const rY = entY + 26, rH = Math.max(28, Math.min(44, entH - 50));
+        const cH = rH - 7;
+        const doNode = selLevel === 'node' || selLevel === 'rank';
+        const doSuper = selLevel === 'super';
+
+        if (doNode) {
+          // Host 级：NPN 个 Chip 并排，全属同一 TP 组
+          const cW = (W - 2 * PAD - NPN + 1) / NPN;
+          for (let j = 0; j < NPN; j++) {
+            const cx5 = PAD + j * (cW + 1);
+            ctx.fillStyle = act.tp ? PARALLEL_COLORS.tp : loadColor(util01(selSpod, selNode, j));
+            ctx.globalAlpha = act.tp ? 0.80 : 1;
+            ctx.fillRect(cx5, rY + 4, cW, cH);
+            ctx.globalAlpha = 1;
+            if (cW >= 20) tx(`r${selNode * NPN + j}`, cx5 + cW / 2, rY + 4 + cH / 2 + 4, act.tp ? inkOf(PARALLEL_COLORS.tp) : P.ink, '8px Inter', 'center');
+          }
+          ctx.strokeStyle = act.tp ? PARALLEL_COLORS.tp : P.frame; ctx.lineWidth = act.tp ? 2 : 1;
+          ctx.strokeRect(PAD, rY + 4, W - 2 * PAD, cH);
+          const ann = rY + 4 + cH + 12;
+          tx(`TP×${pm.tp} AllReduce · 1 Host = 1 TP 组 · ${NPN} rank/Chip 全归约`, PAD, ann, PARALLEL_COLORS.tp, '9px Inter');
+          tx(`SP 与 TP 同域(AG+RS) · EP×${pm.ep} Pod 内 SU · DP×${pm.dp} 跨 Pod SO · PP×${pm.pp} 跨 Pod P2P`, PAD, ann + 13, PARALLEL_COLORS.ep, '9px Inter');
+        } else if (doSuper) {
+          // Pod 级：最多 8 个 Host，每个 Host 内 NPN 个 Chip（TP 组 = Host 边框着色）
+          const nH = Math.min(NODES, 8), hGap = 3;
+          const hW = (W - 2 * PAD - (nH - 1) * hGap) / nH;
+          const cW = Math.max(1, (hW - 4 - (NPN - 1)) / NPN);
+          for (let hi = 0; hi < nH; hi++) {
+            const hx = PAD + hi * (hW + hGap);
+            ctx.strokeStyle = act.tp ? PARALLEL_COLORS.tp : P.frame; ctx.lineWidth = 1.4;
+            ctx.strokeRect(hx, rY, hW, rH);
+            for (let j = 0; j < NPN; j++) {
+              const cx5 = hx + 2 + j * (cW + 1);
+              ctx.fillStyle = act.tp ? PARALLEL_COLORS.tp : loadColor(util01(selSpod, hi, j));
+              ctx.globalAlpha = 0.78; ctx.fillRect(cx5, rY + 4, cW, rH - 8); ctx.globalAlpha = 1;
+            }
+            if (hW >= 16) tx(`H${hi}`, hx + hW / 2, rY + rH + 11, P.mut, '8px Inter', 'center');
+          }
+          if (NODES > nH) tx(`+${NODES - nH}`, PAD + nH * (hW + hGap) + 2, rY + rH / 2 + 4, P.mut, '8.5px Inter');
+          const epBrY = rY + rH + (NODES > nH ? 14 : 14);
+          ctx.strokeStyle = act.ep ? PARALLEL_COLORS.ep : P.frame; ctx.lineWidth = act.ep ? 1.8 : 1;
+          ctx.beginPath(); ctx.moveTo(PAD, epBrY); ctx.lineTo(W - PAD, epBrY); ctx.stroke();
+          const ann = epBrY + 12;
+          tx(`EP×${pm.ep} Pod 内全互联 AllToAll (SU Scale-Up) · TP×${pm.tp} 每 Host 一组`, PAD, ann, PARALLEL_COLORS.ep, '9px Inter');
+          tx(`DP×${pm.dp} 副本 AllReduce · 跨 Pod SO Scale-Out广域`, PAD, ann + 13, PARALLEL_COLORS.dp, '9px Inter');
+          if (act.pp) tx(`PP×${pm.pp} 流水 P2P · 跨 Pod 顺序执行`, W - PAD, ann + 13, PP_HI, '9px Inter', 'right');
+        } else {
+          // Cluster/Pool/Global 级：Pod 色块着色（每 Pod = 1 DP 副本）+ PP 流水
+          const nPods = Math.min(pods, 8), pGap = 6;
+          const pW = (W - 2 * PAD - (nPods - 1) * pGap) / nPods;
+          for (let pi = 0; pi < nPods; pi++) {
+            const px = PAD + pi * (pW + pGap);
+            ctx.fillStyle = PARALLEL_COLORS.dp; ctx.globalAlpha = 0.5;
+            ctx.fillRect(px, rY, pW, rH);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = act.pp ? PP_HI : P.frame; ctx.lineWidth = 1.4;
+            ctx.strokeRect(px, rY, pW, rH);
+            if (pW >= 20) tx(`P${pi + 1}`, px + pW / 2, rY + rH / 2 + 4, P.ink, '9px Inter', 'center');
+          }
+          if (pods > nPods) tx(`+${pods - nPods} Pod`, PAD + nPods * (pW + pGap), rY + rH / 2 + 4, P.mut, '8.5px Inter');
+          const ann = rY + rH + 12;
+          tx(`DP×${pm.dp} 副本 AllReduce · 跨 Pod · SO Scale-Out 广域（每 Pod = 1 副本）`, PAD, ann, PARALLEL_COLORS.dp, '9.5px Inter');
+          if (act.pp) tx(`PP×${pm.pp} 流水级 P2P · Pod 间顺序穿越`, PAD, ann + 14, PP_HI, '9.5px Inter');
+        }
+      }
     }
 
     // ════════ 物理链路：结构随层级、每个器件/链路按自身负载上色（随回放变化）、数量真实 ════════
