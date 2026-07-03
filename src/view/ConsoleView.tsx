@@ -178,10 +178,13 @@ interface Stats {
 //    L4 Pod=玫紫 pill · L3 Host=天蓝 · L2 Chip=teal 卡图元(2×2 Die 点) · L1 Die=网格 · L0 Core-Group=原生 CoreGroupMiniSvg 图元。
 //    级间连线挂互联名小 chip（DCN/Scale-Out/Pool 内互联/Scale-Up/PCIe·UB/封装互连/NoC）。 ──
 const SVG_W = 600, SVG_H = 724, X0 = 118, X1 = 586, BUDGET = 26;
-// ctx-tier centered funnel geometry: current pill sits ON the center spine, faded siblings flank it.
-const CX_SPINE = (X0 + X1) / 2, CTX_CURW = 72, CTX_SIBW = 40, CTX_GAP = 9;
-// x-center of the k-th sibling pill on a given side (+1 right / -1 left) of the centered current pill.
-const ctxSibCx = (side: number, k: number) => CX_SPINE + side * (CTX_CURW / 2 + CTX_GAP + CTX_SIBW / 2 + (k - 1) * (CTX_SIBW + CTX_GAP));
+// ctx-tier centered funnel geometry: current glyph sits ON the center spine, siblings flank symmetrically.
+// uniform abstract 2D glyphs per level (like the chip 2×2-die glyph) — small counts render EVERY member.
+const CX_SPINE = (X0 + X1) / 2, CTX_GW = 20, CTX_GAP = 5, CTX_SLOT = CTX_GW + CTX_GAP;
+// x-center of the k-th sibling glyph on a given side (+1 right / -1 left) of the spine-centered current glyph.
+const ctxSibCx = (side: number, k: number) => CX_SPINE + side * k * CTX_SLOT;
+// how many sibling glyphs fit per side before hitting the panel edge (so ≤~16 members show in full).
+const ctxPerSide = Math.floor(((X1 - CX_SPINE) - CTX_GW / 2 - 4) / CTX_SLOT);
 // Le 阶梯：0 全球 · 1 集群 · 2 服务池（ctx 上层上下文）· 3 Pod · 4 Host · 5 Chip。
 interface Tier { Le: number; key: string; ctx?: boolean; y: number; h: number; maxW?: number; tag: string; label: string; col: string; ghosts?: string[] }
 const TIERS: Tier[] = [
@@ -316,12 +319,21 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         );
       } else {                    // Pod / Host : rounded pill (+ id label when wide)
         const w = Math.max(11, Math.min(maxW, slotW * 0.82)), h = t.h, gx = x - w / 2, gy = cy - h / 2;
-        const lbl = t.Le === 3 ? 'Pod' : w >= 30 ? `B${idx}` : '';
+        const isPod = t.Le === 3;
+        const lbl = isPod ? '本 Pod' : w >= 30 ? `B${idx}` : '';
+        const ic = ink(t.col);
         els.push(
           <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
             {isSel && <rect x={gx - 3} y={gy - 3} width={w + 6} height={h + 6} rx={(h + 6) * 0.36} fill="none" stroke={ringC} strokeWidth={1.8} />}
             <rect x={gx} y={gy} width={w} height={h} rx={h * 0.34} fill={fill} />
-            {lbl && <text x={x} y={cy + 0.5} fill={ink(t.col)} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
+            {isPod && (   // 本 Pod = 展开的当前 Pod：左侧点阵示意 Host 阵列（对应下方 L3 Host 行）+ 文字
+              <g style={{ pointerEvents: 'none' }}>
+                {[0, 1, 2, 3, 4, 5].flatMap((cxi) => [0, 1].map((cyi) => (
+                  <circle key={`pdot-${cxi}-${cyi}`} cx={x - 54 + cxi * 5.2} cy={cy - 2.6 + cyi * 5.2} r={1.15} fill={ic} fillOpacity={0.9} />
+                )))}
+              </g>
+            )}
+            {lbl && <text x={isPod ? x + 18 : x} y={cy + 0.5} fill={ic} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
           </g>,
         );
       }
@@ -428,38 +440,47 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li >= 5 ? 210 : CX_MID, y, d.label, d.color, `ic-${li}`)); });
   // 0) 上层上下文 (L7 全球 / L6 集群 / L5 服务池) — 用真实换算数量渲染（真实成员计数，不再是单个假 sibling）：
   //    global = 本集群 + 1–2 虚线幽灵集群；cluster = 16 服务池(前 6 pill + +10 chip)；pool = 4 Pod pill(本 Pod + 3 兄弟半透明)。
-  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实换算</text>);
-  const ctxLabel = (t: Tier) => els.push(
+  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>上层（上下文）· 真实数量 · 抽象图元</text>);
+  const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
       <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
       <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
+      <text x={12} y={t.y + 18} fill={P.ink3} fontSize={8}>{sub}</text>
     </g>,
   );
-  const ctxCap = (t: Tier, cap: string) => els.push(
-    <text key={`ctxcap-${t.key}`} x={X1} y={t.y + 0.5} fill={P.ink3} fontSize={8} textAnchor="end" dominantBaseline="central">{cap}</text>,
-  );
-  // centered funnel row: 当前 pill 坐在中心竖脊上（实心 + 白点=当前，点击回整 Pod）；
-  //   两侧对称 faded 兄弟 pill（示意「1 / N」的层级内关系），超出用 +N 折叠 chip；无 pill 内文字。
-  const ctxRow = (t: Tier, total: number, dashed: boolean) => {
-    ctxLabel(t);
-    const h = t.h;
-    els.push(
-      <g key={`ctx-${t.key}-f`} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); }}>
-        <rect x={CX_SPINE - CTX_CURW / 2} y={t.y - h / 2} width={CTX_CURW} height={h} rx={h * 0.4} fill={t.col} />
-        <circle cx={CX_SPINE} cy={t.y} r={2.6} fill={ink(t.col)} />
-      </g>,
-    );
-    const sibs = total - 1, flankMax = 1;   // 1 兄弟/侧 + 折叠计数，保证与右侧 cap 不撞
+  // abstract 2D level glyph (same vocabulary as 刀片/NPU 图元) — 集群=方块群 · 服务池=2×2(4 Pod) · Pod=点阵(Host 阵列)
+  const levelIcon = (kind: string, cx: number, cy: number, c: string, op: number, key: string) => {
+    const d = (dx: number, dy: number, r: number) => <circle key={`${key}${dx}_${dy}`} cx={cx + dx} cy={cy + dy} r={r} fill={c} fillOpacity={op} />;
+    const s = (dx: number, dy: number, w: number) => <rect key={`${key}${dx}_${dy}`} x={cx + dx - w / 2} y={cy + dy - w / 2} width={w} height={w} rx={0.6} fill={c} fillOpacity={op} />;
+    if (kind === 'cluster') return <g key={key} style={{ pointerEvents: 'none' }}>{[-4, 0, 4].flatMap((dx) => [-3, 3].map((dy) => s(dx, dy, 2.4)))}</g>;
+    if (kind === 'pool') return <g key={key} style={{ pointerEvents: 'none' }}>{[-2.6, 2.6].flatMap((dx) => [-2.6, 2.6].map((dy) => d(dx, dy, 1.5)))}</g>;
+    return <g key={key} style={{ pointerEvents: 'none' }}>{[-3.4, 0, 3.4].flatMap((dx) => [-3.4, 0, 3.4].map((dy) => d(dx, dy, 1.05)))}</g>;   // pod = 3×3 点阵
+  };
+  // one context row: uniform glyphs centered on the spine, ALL members shown when they fit (else +N fold).
+  //   kind = 该行成员实体的抽象图元（L7 行=集群实体、L6 行=服务池实体、L5 行=Pod 实体）；当前成员高亮描环。
+  const ctxRow = (t: Tier, kind: string, total: number, sub: string, dashed: boolean) => {
+    ctxLabel(t, sub);
+    const h = t.h, gw = CTX_GW;
+    const glyph = (cx: number, cur: boolean, key: string) => {
+      const gx = cx - gw / 2;
+      els.push(
+        <g key={key} style={cur ? { cursor: 'pointer' } : { pointerEvents: 'none' }} onClick={cur ? (e) => { e.stopPropagation(); setFocus({ level: 'super', card: 0 }); } : undefined}>
+          {cur && <rect x={gx - 2.5} y={t.y - h / 2 - 2.5} width={gw + 5} height={h + 5} rx={(h + 5) * 0.4} fill="none" stroke={t.col} strokeWidth={1.6} />}
+          <rect x={gx} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill={t.col} fillOpacity={cur ? 1 : dashed ? 0.14 : 0.3} stroke={cur ? 'none' : t.col} strokeOpacity={cur ? 0 : dashed ? 0.4 : 0.5} strokeDasharray={!cur && dashed ? '3 3' : undefined} />
+        </g>,
+      );
+      els.push(levelIcon(kind, cx, t.y, cur ? ink(t.col) : t.col, cur ? 1 : dashed ? 0.32 : 0.6, `${key}-ic`));
+    };
+    glyph(CX_SPINE, true, `ctx-${t.key}-cur`);
+    const sibs = total - 1;
     let placedR = 0, placedL = 0, shown = 0;
-    for (let s = 0; s < sibs && shown < flankMax * 2; s++) {
-      const right = s % 2 === 0, k = right ? ++placedR : ++placedL; shown++;
-      const cx = ctxSibCx(right ? 1 : -1, k);
-      els.push(<rect key={`ctx-${t.key}-s${s}`} x={cx - CTX_SIBW / 2} y={t.y - h / 2} width={CTX_SIBW} height={h} rx={h * 0.4}
-        fill={t.col} fillOpacity={dashed ? 0.12 : 0.24} stroke={t.col} strokeOpacity={dashed ? 0.4 : 0.5} strokeDasharray={dashed ? '3 3' : undefined} style={{ pointerEvents: 'none' }} />);
+    for (let sIdx = 0; sIdx < sibs && shown < ctxPerSide * 2; sIdx++) {
+      const right = sIdx % 2 === 0, k = right ? ++placedR : ++placedL; shown++;
+      glyph(ctxSibCx(right ? 1 : -1, k), false, `ctx-${t.key}-s${sIdx}`);
     }
     const fold = sibs - shown;
     if (fold > 0) {
-      const fx = ctxSibCx(1, placedR) + CTX_SIBW / 2 + CTX_GAP, fw = Math.max(30, String(fold).length * 7 + 20);
+      const fx = ctxSibCx(1, placedR) + gw / 2 + CTX_GAP, fw = Math.max(28, String(fold).length * 7 + 18);
       els.push(
         <g key={`ctx-${t.key}-fold`}>
           <rect x={fx} y={t.y - 9} width={fw} height={18} rx={9} fill={P.pill} stroke={P.pillBd} />
@@ -468,9 +489,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       );
     }
   };
-  ctxRow(TIERS[0], 3, true);  ctxCap(TIERS[0], `本集群 · 1 集群 = ${PODS_PER_CLUSTER} Pod`);
-  ctxRow(TIERS[1], POOLS_PER_CLUSTER, false);  ctxCap(TIERS[1], `本池 · 1 / ${POOLS_PER_CLUSTER} 服务池`);
-  ctxRow(TIERS[2], PODS_PER_POOL, false);  ctxCap(TIERS[2], `本 Pod · 1 / ${PODS_PER_POOL} Pod`);
+  ctxRow(TIERS[0], 'cluster', 3, `本集群（1 集群 = ${PODS_PER_CLUSTER} Pod）`, true);
+  ctxRow(TIERS[1], 'pool', POOLS_PER_CLUSTER, `本池 · ${POOLS_PER_CLUSTER} 服务池/集群`, false);
+  ctxRow(TIERS[2], 'pod', PODS_PER_POOL, `本 Pod · ${PODS_PER_POOL} Pod/池（下方=展开）`, false);
 
   // C) 并行关系落到真实层级对象（仅 card 焦点）：TP/PP 描到真实 Host pill · DP 弧到兄弟 Pod · EP 按 epScope。
   if (focus && focus.level === 'card') {
