@@ -232,9 +232,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // structure = glyph + position; state = 红黄绿 (only when playing) — else hierarchy colour (同层级图)
   const fillOf = (Le: number, idx: number, base: string) => (playing ? loadColor(metricOf(Le, idx)) : base);
 
-  // build per-tier shown lists + positions（仅可下钻漏斗级 super/node/card；上三级 ctx 单独渲染）
+  // build per-tier shown lists + positions（漏斗下钻级只保留 Host(4)/Chip(5)；L4 Pod 与上三级一样是
+  //   居中 ctx 行——本 Pod 高亮 + 3 兄弟 Pod，见 ctxRow；这里预置 pos[3] 供 Host→Pod 连线取点）
   const pos: Record<number, Record<number, { x: number; y: number }>> = {};
-  const rows = TIERS.filter((t) => !t.ctx).map((t) => {
+  const rows = TIERS.filter((t) => !t.ctx && t.Le !== 3).map((t) => {
     const sc = tierInScope(t.Le, focus, dir, N, nBlades);
     const full = sc === null;
     const baseList = full ? Array.from({ length: Math.min(total(t.Le), BUDGET) }, (_, i) => i) : sc;
@@ -248,6 +249,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const foldX = fold > 0 ? X0 + (X1 - X0) * (slots - 0.5) / Math.max(1, slots) : null;
     return { t, shown, fold, foldX, inCount, slotW };
   });
+  pos[3] = { 0: { x: CX_SPINE, y: TIERS[3].y } };   // 本 Pod 坐在中心竖脊上（ctxRow 渲染）
 
   const parentOf = (Le: number, idx: number): { Le: number; idx: number } | null =>
     Le === 5 ? { Le: 4, idx: Math.floor(idx / CPB) } : Le === 4 ? { Le: 3, idx: 0 } : null;   // Chip→Host, Host→Pod
@@ -317,23 +319,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
             {s >= 12 && [0, 1, 2, 3].map((q) => <rect key={q} x={gx + ins + (q % 2) * (dw + gp)} y={gy + ins + Math.floor(q / 2) * (dw + gp)} width={dw} height={dw} rx={dw * 0.3} fill={P.die} />)}
           </g>,
         );
-      } else {                    // Pod / Host : rounded pill (+ id label when wide)
+      } else {                    // Host : rounded pill (+ id label when wide)
         const w = Math.max(11, Math.min(maxW, slotW * 0.82)), h = t.h, gx = x - w / 2, gy = cy - h / 2;
-        const isPod = t.Le === 3;
-        const lbl = isPod ? '本 Pod' : w >= 30 ? `B${idx}` : '';
-        const ic = ink(t.col);
+        const lbl = w >= 30 ? `B${idx}` : '';
         els.push(
           <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
             {isSel && <rect x={gx - 3} y={gy - 3} width={w + 6} height={h + 6} rx={(h + 6) * 0.36} fill="none" stroke={ringC} strokeWidth={1.8} />}
             <rect x={gx} y={gy} width={w} height={h} rx={h * 0.34} fill={fill} />
-            {isPod && (   // 本 Pod = 展开的当前 Pod：左侧点阵示意 Host 阵列（对应下方 L3 Host 行）+ 文字
-              <g style={{ pointerEvents: 'none' }}>
-                {[0, 1, 2, 3, 4, 5].flatMap((cxi) => [0, 1].map((cyi) => (
-                  <circle key={`pdot-${cxi}-${cyi}`} cx={x - 54 + cxi * 5.2} cy={cy - 2.6 + cyi * 5.2} r={1.15} fill={ic} fillOpacity={0.9} />
-                )))}
-              </g>
-            )}
-            {lbl && <text x={isPod ? x + 18 : x} y={cy + 0.5} fill={ic} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
+            {lbl && <text x={x} y={cy + 0.5} fill={ink(t.col)} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
           </g>,
         );
       }
@@ -408,15 +401,18 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   }
   // 5b) L0 Core-Group 子层 —— 原生内嵌 CoreGroupMiniSvg 图元（不再用普通格子）。聚焦 core → 加高 + detail 提升。
   {
-    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 230 : 160;
+    // L0 = 最深、最详细的层级：占满剩余高度、用满面板宽度，完整画出 GM/L2 + AIV1/AIC/AIV2 存储架构图。
+    const st = CORE, coreFocused = focus?.level === 'core', coreH = coreFocused ? 236 : 216;
     els.push(<text key="slt-core" x={12} y={st.y - 6} fill={ENTITY_COLORS.cube} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key="sl-core" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡 · GM/L2+AIV/AIC`}</text>);
+    els.push(<text key="scnt-core" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}/卡`}</text>);
+    els.push(<text key="scnt-core2" x={12} y={st.y + 29} fill={P.ink3} fontSize={9}>GM/L2</text>);
+    els.push(<text key="scnt-core3" x={12} y={st.y + 40} fill={P.ink3} fontSize={9}>+AIV/AIC</text>);
     els.push(
       <g key="core-glyph" style={{ cursor: 'pointer' }} transform={`translate(${coreGX} ${st.y})`}
         onClick={(e) => { e.stopPropagation(); setFocus({ level: 'core', card: repCard, core: 0 }); }}>
         {coreFocused && <rect x={-3} y={-3} width={coreGW + 6} height={coreH + 6} rx={8} fill="none" stroke={ringC} strokeWidth={1.8} />}
-        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={coreFocused ? 1.15 : 1} phase={flow ? 'comm' : 'compute'}
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={coreFocused ? 1.28 : 1.16} phase={flow ? 'comm' : 'compute'}
           load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
       </g>,
     );
@@ -454,6 +450,11 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   const levelIcon = (kind: string, cx: number, cy: number, c: string, op: number, key: string) => {
     const d = (dx: number, dy: number, r: number) => <circle key={`${key}${dx}_${dy}`} cx={cx + dx} cy={cy + dy} r={r} fill={c} fillOpacity={op} />;
     const s = (dx: number, dy: number, w: number) => <rect key={`${key}${dx}_${dy}`} x={cx + dx - w / 2} y={cy + dy - w / 2} width={w} height={w} rx={0.6} fill={c} fillOpacity={op} />;
+    if (kind === 'global') return <g key={key} style={{ pointerEvents: 'none' }}>
+      <circle cx={cx} cy={cy} r={4.4} fill="none" stroke={c} strokeOpacity={op} strokeWidth={1} />
+      <line x1={cx - 4.4} y1={cy} x2={cx + 4.4} y2={cy} stroke={c} strokeOpacity={op} strokeWidth={0.7} />
+      <ellipse cx={cx} cy={cy} rx={1.9} ry={4.4} fill="none" stroke={c} strokeOpacity={op} strokeWidth={0.7} />
+    </g>;   // global = 地球
     if (kind === 'cluster') return <g key={key} style={{ pointerEvents: 'none' }}>{[-4, 0, 4].flatMap((dx) => [-3, 3].map((dy) => s(dx, dy, 2.4)))}</g>;
     if (kind === 'pool') return <g key={key} style={{ pointerEvents: 'none' }}>{[-2.6, 2.6].flatMap((dx) => [-2.6, 2.6].map((dy) => d(dx, dy, 1.5)))}</g>;
     return <g key={key} style={{ pointerEvents: 'none' }}>{[-3.4, 0, 3.4].flatMap((dx) => [-3.4, 0, 3.4].map((dy) => d(dx, dy, 1.05)))}</g>;   // pod = 3×3 点阵
@@ -491,9 +492,12 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       );
     }
   };
-  ctxRow(TIERS[0], 'cluster', 3, `本集群（1 集群 = ${PODS_PER_CLUSTER} Pod）`, true);
-  ctxRow(TIERS[1], 'pool', POOLS_PER_CLUSTER, `本池 · ${POOLS_PER_CLUSTER} 服务池/集群`, false);
-  ctxRow(TIERS[2], 'pod', PODS_PER_POOL, `本 Pod · ${PODS_PER_POOL} Pod/池（下方=展开）`, false);
+  // 每一行 = 该层级自身的实体（不再显示子级）：全球=地球 · 集群=方块群 · 服务池=2×2 点 · Pod=3×3 点阵。
+  //   Pool 与 Pod 是两个独立层级、各占一行；小数量层级（集群/服务池/Pod）成员全部显示。
+  ctxRow(TIERS[0], 'global', 1, `本全球 · 经 DCN 下挂各集群`, false);
+  ctxRow(TIERS[1], 'cluster', 4, `本集群 · 1 集群 = ${PODS_PER_CLUSTER} Pod（虚线=其他集群）`, true);
+  ctxRow(TIERS[2], 'pool', POOLS_PER_CLUSTER, `本池 · ${POOLS_PER_CLUSTER} 服务池 / 集群（全显示）`, false);
+  ctxRow(TIERS[3], 'pod', PODS_PER_POOL, `本 Pod · ${PODS_PER_POOL} Pod / 池（全显示 · 下方=本 Pod 展开）`, false);
 
   // C) 并行关系落到真实层级对象（仅 card 焦点）：TP/PP 描到真实 Host pill · DP 弧到兄弟 Pod · EP 按 epScope。
   if (focus && focus.level === 'card') {
@@ -530,10 +534,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       } else ppOff++;
     });
     if (ppOff > 0) els.push(badge('c-pp-off', X1, hY - hH / 2 - 9, `PP ×${pm.pp} 级（跨 Host）`, PARALLEL_COLORS.pp, 'end'));
-    // 3) DP — 从焦点 Chip 画虚线弧到 pool 行兄弟 Pod pill 区（弧向右弓开）+ 副本角标
+    // 3) DP — 从焦点 Chip 画虚线弧到 L4 行的兄弟 Pod（DP 副本 = 跨 Pod）+ 副本角标
     const cp = pos[5]?.[k];
     if (cp) {
-      const sx = cp.x, sy = TIERS[5].y - 12, tx = ctxSibCx(1, 1), ty = TIERS[2].y + TIERS[2].h / 2;
+      const sx = cp.x, sy = TIERS[5].y - 12, tx = ctxSibCx(1, 1), ty = TIERS[3].y + TIERS[3].h / 2;
       const ctlX = Math.max(sx, tx) + 70, ctlY = (sy + ty) / 2;
       els.push(<path key="c-dp-arc" d={`M${sx} ${sy} Q ${ctlX} ${ctlY} ${tx} ${ty}`} fill="none" stroke={PARALLEL_COLORS.dp} strokeWidth={1.5} strokeDasharray="4 4" strokeOpacity={0.9} />);
       els.push(badge('c-dp-b', (sx + tx) / 2 + 24, 180, `DP ×${pm.dp} 副本（本 Pod 内平铺·逻辑上跨 Pod）`, PARALLEL_COLORS.dp));
