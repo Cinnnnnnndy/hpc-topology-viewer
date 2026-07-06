@@ -599,9 +599,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   }
 
   return (
-    // fill the pane WIDTH (aspect-locked, left-aligned) so the funnel scales with width and its left
-    // gutter shares the same left edge as the L0 panel below — no horizontal centering gap.
-    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMinYMin meet" width="100%" style={{ display: 'block', width: '100%', height: 'auto' }}>
+    // FIT the pane (aspect-locked) and LEFT-align (xMinYMin): a reasonable size at any width — no
+    // huge scale-up on wide panes, no horizontal centering gap. All 8 levels are this one SVG.
+    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMinYMin meet" width="100%" height="100%" style={{ display: 'block' }}>
       <rect x={0} y={0} width={SVG_W} height={SVG_H} fill="transparent" onClick={() => setFocus(null)} />
       {els}
     </svg>
@@ -951,9 +951,9 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
             Plane view · hierarchy — click an entity to expand its chain (ancestors + descendants) and drive the array on the right; each level shows selected/total · p50 · red%
           </div>
-          {/* one continuous SVG for all 8 levels L7→L0 (L0 = native memory-architecture glyph): fills pane
-              width, left-aligned; scrolls vertically if the pane is short. */}
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '2px 0 0' }}>
+          {/* one continuous SVG for all 8 levels L7→L0 (L0 = native memory-architecture glyph): fits the
+              pane, left-aligned. */}
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: '2px 0 0' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
         </div>
