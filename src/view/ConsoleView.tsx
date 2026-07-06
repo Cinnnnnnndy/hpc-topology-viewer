@@ -432,7 +432,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
   });
   els.push(<path key="l0-arrow" d={`M${coreAnchorX - 4} ${l0PtrY - 6} L${coreAnchorX} ${l0PtrY} L${coreAnchorX + 4} ${l0PtrY - 6}`} fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />);
-  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>↓ L0 Core-Group full memory architecture (panel below) · 1 compute Die ⊃ ~16 Core-Group</text>);
+  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>1 compute Die ⊃ ~16 Core-Group ↓ L0 (panel below)</text>);
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
@@ -936,16 +936,16 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
           {/* L0 Core-Group: full memory-architecture pattern (same figure as 运行状态·物理链路·L0), zoom/pan */}
-          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '3px solid var(--bd)' }}>
-            <div style={{ padding: '6px 12px', flexShrink: 0, borderBottom: '1px solid var(--bd)', display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#36e0c4' }}>L0</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>Core-Group</span>
+          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '1px dashed var(--bd)' }}>
+            <div style={{ padding: '6px 12px 3px', flexShrink: 0, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>Core-Group</span>
               <span style={{ display: 'inline-flex', gap: 3 }}>
                 {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
                   <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
                 ))}
               </span>
-              <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>full on-chip memory architecture — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · MTE1/2/3 (scroll to zoom · drag to pan)</span>
+              <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>full on-chip memory architecture — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · MTE1/2/3 (scroll to zoom · drag to pan)</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               <CoreGroupPattern
