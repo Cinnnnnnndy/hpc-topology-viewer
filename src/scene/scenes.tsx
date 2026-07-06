@@ -1813,26 +1813,21 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const podSlabW = Math.min(1.7, superW * 0.42);
     const poolSlabW = Math.min(1.15, superW * 0.28);
     const clusterSlabW = Math.min(1.9, fieldW * 0.22);
-    const ringXZ = (n: number, pitch: number): [number, number][] => {
-      const out: [number, number][] = [[0, 0]];
-      for (let r = 1; out.length < n; r++) {
-        const ring: [number, number][] = [];
-        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++)
-          if (Math.max(Math.abs(dx), Math.abs(dz)) === r) ring.push([dx, dz]);
-        ring.sort((a, b) => Math.min(Math.abs(a[0]), Math.abs(a[1])) - Math.min(Math.abs(b[0]), Math.abs(b[1])));   // cardinal 先于对角 → 匀称
-        for (const [dx, dz] of ring) { if (out.length >= n) break; out.push([dx * pitch, dz * pitch]); }
-      }
-      return out;
+    // 矩形网格（行列对齐，与下方阵列同一视觉语言）：居中排布，中心优先 → 真实成员落在最靠中轴的格，
+    // ghost 按行列铺满其余格。n≤3 用单行，其余用近方阵（cols=⌈√n⌉），间距均匀 → 读作整齐的一块阵列。
+    const gridXZ = (n: number, pitch: number): [number, number][] => {
+      const cols = n <= 3 ? n : Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / cols);
+      const cells: [number, number][] = [];
+      for (let i = 0; i < n; i++) cells.push([((i % cols) - (cols - 1) / 2) * pitch, (Math.floor(i / cols) - (rows - 1) / 2) * pitch]);
+      return cells.map((c) => ({ c, d: c[0] * c[0] + c[1] * c[1] })).sort((a, b) => a.d - b.d).map((o) => o.c);   // 中心优先
     };
-    // L4 Pod：poolCount 恒为 1，本池 podCount 个真实 Pod（落在阵列中心 superMX 上，包含链竖直）+ 补足 ghost
-    const ctxPods = ringXZ(PODS_PER_POOL, podSlabW * 1.6).map((c, idx) => {
-      const real = idx < podCount;
-      return { x: real ? superMX[idx] : c[0], z: real ? 0 : c[1], ghost: !real, pool: 0, pod: real ? idx : null };
-    });
-    // L5 服务池：本集群 POOLS_PER_CLUSTER 池（cell 0 = 本池 居中，其余 ghost 网格外扩）
-    const ctxPools = ringXZ(POOLS_PER_CLUSTER, poolSlabW * 1.7).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
-    // L6 集群：全球 3 集群（cell 0 = 本集群 居中，其余 ghost）
-    const ctxClusters = ringXZ(3, clusterSlabW * 1.55).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
+    // L4 Pod：poolCount 恒为 1，本池 podCount 个真实 Pod（居中格）+ 补足 ghost（1 池 = PODS_PER_POOL Pod）
+    const ctxPods = gridXZ(PODS_PER_POOL, podSlabW * 1.5).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx >= podCount, pool: 0, pod: idx < podCount ? idx : null }));
+    // L5 服务池：本集群 POOLS_PER_CLUSTER 池（cell 0 = 本池 居中，其余 ghost），4×4 方阵
+    const ctxPools = gridXZ(POOLS_PER_CLUSTER, poolSlabW * 1.5).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
+    // L6 集群：全球 3 集群（cell 0 = 本集群 居中，其余 ghost），单行
+    const ctxClusters = gridXZ(3, clusterSlabW * 1.5).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
 
     return {
       N, N1, nBlades: bladeMX.length, nCabs: cabMX.length, superMX, poolMX, poolCount,
@@ -2322,10 +2317,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       </instancedMesh>
       {/* ── 上层 · 真实数量成员（2D 网格「整列」排布，与下方阵列同构）：实心 = 已展开的真实对象 ·
           半透明 = 未展开的兄弟（抽象示意）。任一成员单击 → 层级间（包含链上/下·蓝）+ 层级内（同级辐条·青）关联。 ── */}
-      {/* L4 Pod：1 服务池 = PODS_PER_POOL Pod（本 Pod 已展开为下方阵列，兄弟为 ghost 网格） */}
+      {/* L4 Pod：1 服务池 = PODS_PER_POOL Pod（本 Pod 已展开为下方阵列，兄弟为 ghost）。
+          全格同尺寸 → 读作整齐一块；真实=实心+描边，ghost=淡显无描边（当背景网格）。 */}
       {G.ctxPods.map((m, i) => {
         const on = (selPath !== null && m.pod === selPath.superP) || (ctxSel?.band === 4 && ctxSel.i === i);
-        const w = m.ghost ? G.podSlabW * 0.72 : G.podSlabW;
         const hov = m.pod != null
           ? `Pod P${m.pod}（L4 · 已展开为下方阵列 · 本服务池 ${PODS_PER_POOL} Pod 之一）· 单击显示层级间/层级内关联`
           : `兄弟 Pod（L4 · 同服务池 · 未展开的抽象示意）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示关联`;
@@ -2334,20 +2329,19 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 4 && s.i === i ? null : { band: 4, i })); }}>
-            <Slab size={[w, m.ghost ? 0.14 : 0.2, w]} position={[m.x, G.ySuper, m.z]}
+            <Slab size={[G.podSlabW, 0.18, G.podSlabW]} position={[m.x, G.ySuper, m.z]}
               color={on ? '#4369ef' : struct.super}
               emissive={on ? '#4369ef' : (workbenchProfile ? '#000000' : ENTITY_COLORS.super)}
-              emissiveIntensity={on ? 0.9 : m.ghost ? 0.12 : 0.4}
-              opacity={m.ghost ? 0.35 : undefined}
-              edgeColor={m.ghost ? ENTITY_COLORS.super : undefined} />
+              emissiveIntensity={on ? 0.9 : m.ghost ? 0.06 : 0.4}
+              opacity={m.ghost ? 0.4 : 0.95}
+              edgeColor={m.ghost ? undefined : ENTITY_COLORS.super} />
             {m.pod != null && <Text position={[m.x, G.ySuper + 0.3, m.z]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.super} anchorX="center">{`Pod P${m.pod}`}</Text>}
           </group>
         );
       })}
-      {/* L5 服务池：1 集群 = POOLS_PER_CLUSTER 池（全部按真实数量铺成网格，不折叠） */}
+      {/* L5 服务池：1 集群 = POOLS_PER_CLUSTER 池，铺成 4×4 方阵（全部真实数量，不折叠） */}
       {G.ctxPools.map((m, i) => {
         const on = ctxSel?.band === 5 && ctxSel.i === i;
-        const w = m.ghost ? G.poolSlabW * 0.82 : G.poolSlabW;
         const hov = m.ghost
           ? `兄弟服务池（L5 · 本集群 ${POOLS_PER_CLUSTER} 池之一 · 未展开的抽象示意）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示关联`
           : `服务池 Pool 0（L5 · 本池 · 含下方 Pod）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示层级间/层级内关联`;
@@ -2356,18 +2350,17 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 5 && s.i === i ? null : { band: 5, i })); }}>
-            <Slab size={[w, m.ghost ? 0.12 : 0.18, w]} position={[m.x, G.yPool, m.z]}
+            <Slab size={[G.poolSlabW, 0.16, G.poolSlabW]} position={[m.x, G.yPool, m.z]}
               color={on ? '#4369ef' : ENTITY_COLORS.pool} emissive={on ? '#4369ef' : ENTITY_COLORS.pool}
-              emissiveIntensity={on ? 0.9 : m.ghost ? 0.14 : 0.34}
-              opacity={m.ghost ? 0.32 : 0.9} edgeColor={ENTITY_COLORS.pool} />
-            {!m.ghost && <Text position={[m.x, G.yPool + 0.26, m.z]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.pool} anchorX="center">Pool 0</Text>}
+              emissiveIntensity={on ? 0.9 : m.ghost ? 0.08 : 0.34}
+              opacity={m.ghost ? 0.38 : 0.92} edgeColor={m.ghost ? undefined : ENTITY_COLORS.pool} />
+            {!m.ghost && <Text position={[m.x, G.yPool + 0.24, m.z]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.pool} anchorX="center">Pool 0</Text>}
           </group>
         );
       })}
-      {/* L6 集群：本集群（实）+ 2 幽灵集群（虚 · 同「全球 = 3 集群」） */}
+      {/* L6 集群：本集群（实）+ 2 幽灵集群（虚 · 同「全球 = 3 集群」），单行 */}
       {G.ctxClusters.map((m, i) => {
         const on = ctxSel?.band === 6 && ctxSel.i === i;
-        const w = m.ghost ? G.clusterSlabW * 0.72 : G.clusterSlabW;
         const hov = m.ghost
           ? '幽灵集群（L6 · 全球另一集群 · 抽象示意）· 集群↔集群 = DCN · 单击显示关联'
           : `本集群（L6）· ${POOLS_PER_CLUSTER} 服务池 · ${PODS_PER_CLUSTER} Pod · 单击显示层级间/层级内关联`;
@@ -2376,10 +2369,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 6 && s.i === i ? null : { band: 6, i })); }}>
-            <Slab size={[w, m.ghost ? 0.12 : 0.18, w]} position={[m.x, G.yCluster, m.z]}
+            <Slab size={[G.clusterSlabW, 0.16, G.clusterSlabW]} position={[m.x, G.yCluster, m.z]}
               color={on ? '#4369ef' : ENTITY_COLORS.cluster} emissive={on ? '#4369ef' : ENTITY_COLORS.cluster}
-              emissiveIntensity={on ? 0.9 : m.ghost ? 0.1 : 0.32}
-              opacity={m.ghost ? 0.25 : 0.9} edgeColor={ENTITY_COLORS.cluster} />
+              emissiveIntensity={on ? 0.9 : m.ghost ? 0.08 : 0.32}
+              opacity={m.ghost ? 0.3 : 0.92} edgeColor={m.ghost ? undefined : ENTITY_COLORS.cluster} />
           </group>
         );
       })}
