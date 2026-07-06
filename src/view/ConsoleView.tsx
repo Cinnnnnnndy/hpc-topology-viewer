@@ -462,8 +462,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(<text key="scnt-core2" x={12} y={coreY + 52} fill={P.ink3} fontSize={8}>GM/L2+AIV/AIC</text>);
     els.push(
       <g key="core-glyph" transform={`translate(${coreGX} ${coreY})`}>
-        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={1.18} phase={wlKind === 'comm' ? 'comm' : 'compute'}
-          load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
+        {/* animate with the timeline: cycle the datapath phase + vary load by `step` while playing */}
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={1.18}
+          phase={playing ? (['load', 'compute', 'comm', 'store'] as const)[step % 4] : (wlKind === 'comm' ? 'comm' : 'compute')}
+          load={playing ? Math.max(0.15, Math.min(1, cardLoad(repCard, wlKind, step))) : 0.5} dark={dark} />
       </g>,
     );
     els.push(<text key="core-datapath" x={coreGX + coreGW / 2} y={coreY + coreH + 12} fill={P.ink3} fontSize={8} textAnchor="middle">
@@ -502,13 +504,18 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const cur = Math.min(total - 1, ctxCur[t.key] ?? 0);
     ctxLabel(t, subFn(cur), kind);
     const h = t.h, gw = CTX_GW;
+    // each member is drawn as the LEVEL'S abstract icon (same as the gutter icon), not a plain pill;
+    //   current = full-opacity + soft ring, siblings = faded (dashed tiers extra-faint).
+    const iconS = Math.min(gw, h) * 0.46;
     const drawG = (e: number, cx: number) => {
-      const isCur = e === cur, gx = cx - gw / 2;
+      const isCur = e === cur;
       els.push(
         <g key={`ctx-${t.key}-${e}`} style={{ cursor: 'pointer' }}
           onClick={(ev) => { ev.stopPropagation(); setCtxCur((c) => ({ ...c, [t.key]: e })); if (t.Le === 3) setFocus({ level: 'super', card: 0 }); }}>
-          {isCur && <rect x={gx - 2.5} y={t.y - h / 2 - 2.5} width={gw + 5} height={h + 5} rx={(h + 5) * 0.4} fill="none" stroke={t.col} strokeWidth={1.6} />}
-          <rect x={gx} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill={t.col} fillOpacity={isCur ? 1 : dashed ? 0.14 : 0.32} stroke={isCur ? 'none' : t.col} strokeOpacity={isCur ? 0 : dashed ? 0.4 : 0.5} strokeDasharray={!isCur && dashed ? '3 3' : undefined} />
+          {isCur
+            ? <rect x={cx - gw / 2 - 1} y={t.y - h / 2 - 1} width={gw + 2} height={h + 2} rx={(h + 2) * 0.4} fill={t.col} fillOpacity={0.14} stroke={t.col} strokeWidth={1.6} />
+            : <rect x={cx - gw / 2} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill="transparent" />}
+          {levelIcon(kind, cx, t.y, iconS, t.col, isCur ? 1 : dashed ? 0.3 : 0.55, `ctxg-${t.key}-${e}`)}
         </g>,
       );
     };
