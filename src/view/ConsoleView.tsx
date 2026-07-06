@@ -582,7 +582,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   }
 
   return (
-    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style={{ display: 'block' }}>
+    // fill the pane WIDTH (aspect-locked, left-aligned) so the funnel scales with width and its left
+    // gutter shares the same left edge as the L0 panel below — no horizontal centering gap.
+    <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} preserveAspectRatio="xMinYMin meet" width="100%" style={{ display: 'block', width: '100%', height: 'auto' }}>
       <rect x={0} y={0} width={SVG_W} height={SVG_H} fill="transparent" onClick={() => setFocus(null)} />
       {els}
     </svg>
@@ -930,15 +932,16 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           }}
         >
           <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
-            平面视图 · 层级图（控制 · 图元/配色同层级图）— 点任一实体 → 只展开其链路(祖先+后代) 并联动右侧阵列全景；每层显示 选中/总数 · p50 · 红卡率
+            Plane view · hierarchy — click an entity to expand its chain (ancestors + descendants) and drive the array on the right; each level shows selected/total · p50 · red%
           </div>
-          <div style={{ flex: '1 1 50%', position: 'relative', minHeight: 0, padding: '4px 6px' }}>
+          {/* funnel L7→L1: fills pane width, natural (aspect-locked) height, left-aligned */}
+          <div style={{ flexShrink: 0, position: 'relative', padding: '2px 0 0' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
-          {/* L0 Core-Group — continues the funnel: label sits in the SAME left gutter as L1–L7, the full
-              memory-architecture pattern fills the content area on the right (same figure as 运行状态·物理链路·L0). */}
-          <div style={{ flex: '1 1 52%', minHeight: 180, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
-            <div style={{ width: '19%', minWidth: 96, maxWidth: 150, flexShrink: 0, padding: '8px 4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* L0 Core-Group — continues the funnel: label in the SAME left gutter (x≈2%, width≈19.7% = X0/600),
+              the full memory-architecture pattern fills the content area on the right. */}
+          <div style={{ flex: '1 1 0', minHeight: 200, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
+            <div style={{ width: '19.7%', minWidth: 80, flexShrink: 0, paddingLeft: '2%', paddingTop: 8, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', lineHeight: 1.1 }}>Core-Group</span>
               <span style={{ display: 'inline-flex', gap: 3, marginTop: 3 }}>
