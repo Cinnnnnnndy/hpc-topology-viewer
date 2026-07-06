@@ -221,7 +221,6 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   const selIdx = selLe < 0 ? -1 : selLe === 3 ? 0 : selLe === 4 ? Math.floor(focus!.card / CPB) : focus!.card;
   const focusCard = focus && (focus.level === 'card' || focus.level === 'die' || focus.level === 'core') ? focus.card : null;
   const hasDrillFocus = !!focus && focus.level !== 'super';
-  const ringC = dark ? '#fff' : '#10131a';
   // structure = glyph + position; state = 红黄绿 (only when playing) — else hierarchy colour (同层级图)
   const fillOf = (Le: number, idx: number, base: string) => (playing ? loadColor(metricOf(Le, idx)) : base);
 
@@ -254,9 +253,11 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   const cdot = (x: number, y: number, c: string, k: string, r = 2.4) => (
     <g key={k}><circle cx={x} cy={y} r={r} fill={c} /><circle cx={x} cy={y} r={r * 0.42} fill="#fff" /></g>
   );
-  const cflow = (x1: number, y1: number, x2: number, y2: number, k: string) => (playing ? (
-    <line key={k} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="3 12" opacity={0.82}>
-      <animate attributeName="stroke-dashoffset" from="15" to="0" dur="0.6s" repeatCount="indefinite" />
+  // 流动彗星：默认仅播放时出现；force=true → 选中链路也常显流动（选中即「联动」，与之前一致）。
+  //   选中态彗星用 ACCENT 蓝，播放态用白，二者可区分。
+  const cflow = (x1: number, y1: number, x2: number, y2: number, k: string, force = false) => ((playing || force) ? (
+    <line key={k} x1={x1} y1={y1} x2={x2} y2={y2} stroke={playing ? '#fff' : ACCENT} strokeWidth={1.6} strokeLinecap="round" strokeDasharray="3 11" opacity={playing ? 0.82 : 0.9}>
+      <animate attributeName="stroke-dashoffset" from="14" to="0" dur="0.6s" repeatCount="indefinite" />
     </line>
   ) : null);
   // selection highlight = 涟漪(ripple): a bold outline hugging the glyph + two phase-offset rounded-rect
@@ -344,6 +345,15 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       els.push(<path key="ph-wedge" d={`M${CX_SPINE - 16} ${apexY} L${left} ${baseY} L${right} ${baseY} L${CX_SPINE + 16} ${apexY} Z`} fill={ACCENT} fillOpacity={0.07} />);
       els.push(<line key="ph-spine" x1={CX_SPINE} y1={apexY} x2={CX_SPINE} y2={baseY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.33} />);
     }
+    // L3 Host → L2 Chip 漏斗楔形（1 Host ⊃ 8 Chip）——续在 Pod→Host 之下，让 L3/L2 之间不再断线
+    const chipRow0 = rows.find((r) => r.t.Le === 5);
+    if (hostRow && hostRow.shown.length && chipRow0 && chipRow0.shown.length) {
+      const cy0 = TIERS[5].y, ch0 = TIERS[5].h, cxs = chipRow0.shown.map((s) => s.x);
+      const hBaseY = TIERS[4].y + TIERS[4].h / 2, cTopY = cy0 - ch0 / 2 - 2;
+      const cLeft = Math.min(...cxs) - 4, cRight = Math.max(...cxs) + 4;
+      els.push(<path key="hc-wedge" d={`M${CX_SPINE - 14} ${hBaseY} L${cLeft} ${cTopY} L${cRight} ${cTopY} L${CX_SPINE + 14} ${hBaseY} Z`} fill={ACCENT} fillOpacity={0.06} />);
+      els.push(<line key="hc-spine" x1={CX_SPINE} y1={hBaseY} x2={CX_SPINE} y2={cTopY} stroke={ACCENT} strokeWidth={1.1} strokeOpacity={0.28} />);
+    }
   }
   // 1) selected containment chain — UNIFIED across levels: selecting any entity (Host / Chip / Die / Core)
   //    highlights its path up the ancestors (Chip → Host → Pod spine) drawn OVER the full overview — no
@@ -358,11 +368,23 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       const me = pos[Le][idx], par = parentOf(Le, idx); if (!par) return;
       const pp = pos[par.Le]?.[par.idx]; if (!pp) return;
       const cTop = me.y - tierH(Le) / 2, pBot = pp.y + tierH(par.Le) / 2;
-      els.push(<line key={`ch-${Le}-${idx}`} x1={me.x} y1={cTop} x2={pp.x} y2={pBot} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.6} />);
-      els.push(cflow(pp.x, pBot, me.x, cTop, `chf-${Le}-${idx}`));
-      els.push(cdot(me.x, me.y, ACCENT, `chd-${Le}-${idx}`, 2.2));
-      els.push(cdot(pp.x, pBot, ACCENT, `chp-${Le}-${idx}`, 2));
+      els.push(<line key={`ch-${Le}-${idx}`} x1={me.x} y1={cTop} x2={pp.x} y2={pBot} stroke={ACCENT} strokeWidth={1.8} strokeOpacity={0.7} />);
+      els.push(cflow(pp.x, pBot, me.x, cTop, `chf-${Le}-${idx}`, true));   // 选中即流动（联动）
+      els.push(cdot(me.x, me.y, ACCENT, `chd-${Le}-${idx}`, 2.4));
+      els.push(cdot(pp.x, pBot, ACCENT, `chp-${Le}-${idx}`, 2.2));
     });
+    // Host 被选中 → 只向下画到「本 Host 的 8 张 Chip」（L3→L2 下行包含链，与上行同样流动联动）
+    if (focus.level === 'node' && pos[4]?.[hostIdx]) {
+      const hp = pos[4][hostIdx], hBot = hp.y + tierH(4) / 2;
+      const kids = Object.entries(pos[5] ?? {}).filter(([ci]) => Math.floor(+ci / CPB) === hostIdx);
+      if (kids.length) els.push(cdot(hp.x, hBot, ACCENT, 'hc-sel-anchor', 2.4));
+      kids.forEach(([ci, cpos]) => {
+        const cTop = cpos.y - tierH(5) / 2;
+        els.push(<line key={`hc-sel-${ci}`} x1={hp.x} y1={hBot} x2={cpos.x} y2={cTop} stroke={ACCENT} strokeWidth={1.6} strokeOpacity={0.6} />);
+        els.push(cflow(hp.x, hBot, cpos.x, cTop, `hc-self-${ci}`, true));
+        els.push(cdot(cpos.x, cpos.y, ACCENT, `hc-seld-${ci}`, 2.2));
+      });
+    }
     // 2) UB plane mesh — same-level Host↔Host links among the selected host's shown neighbours (toggle)
     if (planeOn.ub) {
       const nr = rows.find((r) => r.t.Le === 4);
@@ -386,7 +408,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
           {/* transparent hit target — the levelIcon itself is pointer-events:none, so without this the
               row would not be clickable (→ no selection, no 3D link). */}
           <rect x={x - gsz / 2 - 2} y={cy - gsz / 2 - 2} width={gsz + 4} height={gsz + 4} rx={gsz * 0.2} fill="transparent" />
-          {isSel ? ripple(x, cy, gsz + 5, gsz + 5, ringC, `gr-${t.Le}-${idx}`)
+          {isSel ? ripple(x, cy, gsz + 5, gsz + 5, t.col, `gr-${t.Le}-${idx}`)
             : strag ? <rect x={x - gsz / 2 - 3} y={cy - gsz / 2 - 3} width={gsz + 6} height={gsz + 6} rx={gsz * 0.34} fill="none" stroke="#b07bff" strokeWidth={1.6} /> : null}
           {levelIcon(kind, x, cy, hs, col, 1, `gi-${t.Le}-${idx}`)}
         </g>,
@@ -407,9 +429,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const a = aggOf(t.Le);
     els.push(
       <g key={`l-${t.Le}`}>
-        {t.tag && <text x={12} y={t.y - 6} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>}
-        <text x={12} y={t.y + (t.tag ? 6 : 4)} fill={P.ink} fontSize={12} fontWeight={600}>{t.label}</text>
-        <text x={12} y={t.y + (t.tag ? 18 : 16)} fill={P.ink3} fontSize={9}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
+        {t.tag && <text x={12} y={t.y - 7} fill={t.col} fontSize={10} fontWeight={700}>{t.tag}</text>}
+        <text x={12} y={t.y + (t.tag ? 7 : 5)} fill={P.ink} fontSize={13} fontWeight={700}>{t.label}</text>
+        <text x={12} y={t.y + (t.tag ? 20 : 18)} fill={P.ink3} fontSize={9}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
       </g>,
     );
   });
@@ -444,16 +466,16 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
-    els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
-    els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
-    els.push(<text key="scnt-die" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
+    els.push(<text key="slt-die" x={12} y={st.y - 7} fill={ENTITY_COLORS.computeDie} fontSize={10} fontWeight={700}>{st.tag}</text>);
+    els.push(<text key="sl-die" x={12} y={st.y + 7} fill={P.ink} fontSize={13} fontWeight={700}>{st.label}</text>);
+    els.push(<text key="scnt-die" x={12} y={st.y + 20} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
       const isSel = repReal && focus?.die === i;
       const fill = i >= 2 || !playing ? st.col!(i) : loadColor(Math.max(0, Math.min(1, nodeLoad(repCard * st.seed! + i, wlKind))));
       els.push(
         <rect key={`s-die-${i}`} x={cx} y={cy} width={st.cell!} height={st.cell!} rx={Math.min(3, st.cell! * 0.18)} fill={fill} style={{ cursor: 'pointer' }}
-          stroke={isSel ? ringC : 'none'} strokeWidth={isSel ? 1.8 : 0}
+          stroke={isSel ? ENTITY_COLORS.computeDie : 'none'} strokeWidth={isSel ? 2.2 : 0}
           onClick={(e) => { e.stopPropagation(); setFocus({ level: 'die', card: repCard, die: i }); }} />,
       );
     }
@@ -467,9 +489,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · click any level to switch</text>);
   const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
-      <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
-      <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
-      <text x={12} y={t.y + 18} fill={P.ink3} fontSize={8}>{sub}</text>
+      <text x={12} y={t.y - 5} fill={t.col} fontSize={10} fontWeight={700}>{t.tag}</text>
+      <text x={12} y={t.y + 8} fill={P.ink} fontSize={13} fontWeight={700}>{t.label}</text>
+      <text x={12} y={t.y + 19} fill={P.ink3} fontSize={9}>{sub}</text>
     </g>,
   );
   // one context row: the SELECTED member sits on the spine (涟漪 ripple), siblings fan out and are CLICKABLE
@@ -952,7 +974,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                 ))}
               </span>
               <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
-              <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>scroll to zoom · drag to pan</span>
+              <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>fixed scale · reads as one piece with the funnel</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               <CoreGroupPattern
@@ -962,6 +984,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                 detail
                 align="left"
                 height="100%"
+                interactive={false}
               />
             </div>
           </div>

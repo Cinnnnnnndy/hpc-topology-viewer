@@ -2135,28 +2135,24 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const xL = -G.fieldW / 2 - Math.max(1.6, G.fieldW * 0.03);   // 轴线离阵列左缘的间隙（大场也不贴阵列）
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
   // 层级轴标签用独立字号：随场地放大（大场 8K 也读得清），下限=lblSize
-  const axisSize = Math.min(1.5, Math.max(lblSize, G.fieldW * 0.02));
+  const axisSize = Math.min(1.1, Math.max(lblSize, G.fieldW * 0.017));
   // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
   // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
   // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
   // hierarchy band hue UNIFIED with the 平面视图 层级图 (full ENTITY_COLORS hue per level — same as
   // the 3D blocks/markers now); high-sat load colour still reserved for state.
   // band index == L 编号（严格 8 级链 L0→L7）。机柜/Tile 不是层级，不在此列表。
+  // 轴标签：一级一行、简洁（详细互联域文案在别处/悬停，不再堆到轴上造成重复与拥挤）
   const bands: [number, number, string, string][] = [
     [0, G.yThread, 'L0 Core-Group', THREAD_COLOR],
-    [1, G.yProc, 'L1 计算 Die ×2 · 可选', ENTITY_COLORS.computeDie],
-    [2, G.yCard, 'L2 Chip·NPU = device', L(0)],
+    [1, G.yProc, 'L1 计算 Die', ENTITY_COLORS.computeDie],
+    [2, G.yCard, 'L2 Chip·NPU', L(0)],
     [3, G.yBlade, 'L3 Host', L(1)],
-    [4, G.ySuper, 'L4 Pod（UBL128）', ENTITY_COLORS.super],
+    [4, G.ySuper, 'L4 Pod', ENTITY_COLORS.super],
     [5, G.yPool, 'L5 服务池', ENTITY_COLORS.pool],
     [6, G.yCluster, 'L6 集群', ENTITY_COLORS.cluster],
-    [7, G.yGlobal, 'L7 全球 · DCN', ENTITY_COLORS.global],
+    [7, G.yGlobal, 'L7 全球', ENTITY_COLORS.global],
   ];
-  // 每 band 补一行 scope / 互联域文案（L 号已在带名里）
-  const bandCoord: Record<number, string> = {
-    0: `${TOK.ub} 核组域 · L0`, 1: `${TOK.ub} Die 域 · L1 可选`, 2: `${TOK.ub} Chip 域 · L2 · rank 1:1`, 3: `${TOK.ub} Host 域 · L3`,
-    4: `Scale-Up · L4 Pod（机柜=物理分组）`, 5: `Pool 内互联 · L5`, 6: `Scale-Out · L6 集群`, 7: `DCN · L7 全球`,
-  };
 
   // ── three-plane overlay on the vertical backbone (按平面分色) ──────────────────
   // scale-up (UB·绿) = the intra-super-node backbone (卡→刀片→机柜→超节点); scale-out
@@ -2209,8 +2205,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         const zAxis = -G.fieldD / 2;
         const nodeR = Math.max(0.12, axisSize * 0.3);
         const halo = dark ? '#0e1116' : '#ffffff';
-        const gap = nodeR * 2.6;   // 标签在节点左侧的水平间距
-        const dimTx = dark ? '#c2ccda' : '#3a4557';   // 副行文字：比原 textDim 更实，保证可读
+        const gap = nodeR * 2.4;   // 标签在节点左侧的水平间距
+        const tx = dark ? '#e8edf4' : '#26324a';      // 主标签中性色（清晰不刺眼；选中转层级色）
+        const dimTx = dark ? '#9aa6b8' : '#7a8698';   // 非层级（机柜/Tile）淡字
         const els: ReactNode[] = [];
         // 竖轴导轨（贯穿 L0→L7，屏幕像素宽度恒定）
         els.push(<Line key="lvl-axis" points={[[xL, G.yThread, zAxis], [xL, G.yGlobal, zAxis]]} color={LC.textDim} lineWidth={1.5} transparent opacity={0.45} />);
@@ -2228,7 +2225,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             <Billboard><Text position={[-gap, 0, 0]} fontSize={axisSize * 0.62} color={ENTITY_COLORS.vector} outlineWidth={axisSize * 0.045} outlineColor={halo} outlineOpacity={0.85} anchorX="right" anchorY="middle">L0 内部 · Tile/lane</Text></Billboard>
           </group>,
         );
-        // 8 级正式层级：彩色实心节点 + 主名(该级色·加描边) + 副行(scope·较淡) [+ 三平面时物理器件行]
+        // 8 级正式层级：彩色节点 + 一行简洁标签（中性色·选中转层级色；三平面开时才补一行物理器件）
         bands.forEach(([i, y, t, c]) => {
           const active = focus === i;
           els.push(
@@ -2239,16 +2236,13 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
                 <meshBasicMaterial color={c} toneMapped={false} />
               </mesh>
               <Billboard>
-                <Text position={[-gap, 0, 0]} fontSize={active ? axisSize * 1.16 : axisSize} color={c}
-                  outlineWidth={axisSize * 0.07} outlineColor={halo} outlineOpacity={0.95}
+                <Text position={[-gap, 0, 0]} fontSize={active ? axisSize * 1.12 : axisSize} color={active ? c : tx}
+                  outlineWidth={axisSize * 0.05} outlineColor={halo} outlineOpacity={0.9}
                   anchorX="right" anchorY="middle"
                   onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
                   onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
-                <Text position={[-gap, -axisSize * 0.84, 0]} fontSize={axisSize * 0.52} color={dimTx}
-                  outlineWidth={axisSize * 0.04} outlineColor={halo} outlineOpacity={0.85}
-                  anchorX="right" anchorY="middle">{bandCoord[i]}</Text>
                 {planes && LEVEL_PHYS[BAND_PHYS_KEY[i]] && (
-                  <Text position={[-gap, -axisSize * 1.46, 0]} fontSize={axisSize * 0.5} color={LEVEL_PHYS[BAND_PHYS_KEY[i]].color}
+                  <Text position={[-gap, -axisSize * 0.82, 0]} fontSize={axisSize * 0.52} color={LEVEL_PHYS[BAND_PHYS_KEY[i]].color}
                     outlineWidth={axisSize * 0.04} outlineColor={halo} outlineOpacity={0.85}
                     anchorX="right" anchorY="middle">{`◆ ${LEVEL_PHYS[BAND_PHYS_KEY[i]].short}`}</Text>
                 )}

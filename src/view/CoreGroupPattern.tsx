@@ -98,11 +98,14 @@ export interface CoreGroupPatternProps {
   /** 水平对齐：'center'（默认，居中）或 'left'（贴左，紧接上方漏斗的左栏 → 视觉连成一体） */
   align?: 'center' | 'left';
   height?: number | string;
+  /** 是否允许滚轮缩放 / 拖拽平移（默认 true）。嵌入固定漏斗（如联动控制台左栏）时设 false，
+   *  这样滚动不会意外把 L0 单独放大，L0 与上方漏斗保持同一固定比例、读作一体。 */
+  interactive?: boolean;
   style?: React.CSSProperties;
 }
 
 /** L0 Core-Group（AIV·向量 / AIC·Cube / AICPU）内部架构 —— memory-architecture pattern 挂载器 */
-export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = false, foldAiv = false, align = 'center', height = '100%', style }: CoreGroupPatternProps) {
+export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = false, foldAiv = false, align = 'center', height = '100%', interactive = true, style }: CoreGroupPatternProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<{ overlay?: any; hover?: any; zoomCtl?: any } | null>(null);
@@ -125,7 +128,7 @@ export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = f
     const zoomCtl = helper.createZoomController?.({
       viewport, sizer, canvas,
       defaultZoom: zoom, min: 0.3, max: 1.4, step: 0.1,
-      pan: true, wheelZoom: true, centerOnReset: true,
+      pan: interactive, wheelZoom: interactive, centerOnReset: true,
       centerTarget: '.pto-mem950__rails, .pto-mem950__engine-stack, .pto-mem950__stack',
       onZoom: ({ zoom: z }: { zoom: number }) => { hover?.setViewportScale?.(z); overlay?.render(); },
     });
