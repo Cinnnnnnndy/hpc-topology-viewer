@@ -22,7 +22,7 @@ import {
   type Gen, type PartitionDim, type ParDim, type RunPhase, type RunMode, type ViewSync,
 } from '../scene/data';
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
-import { CoreGroupPattern } from './CoreGroupPattern';
+import { CoreGroupMiniSvg } from './arch-glyphs';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
@@ -177,7 +177,7 @@ interface Stats {
 //    上三级 L7 全球 / L6 集群 / L5 服务池 = 焦点 pill + 半透明幽灵 sibling（不可点，点焦点回整 Pod）；
 //    L4 Pod=玫紫 pill · L3 Host=天蓝 · L2 Chip=teal 卡图元(2×2 Die 点) · L1 Die=网格 · L0 Core-Group=原生 CoreGroupMiniSvg 图元。
 //    级间连线挂互联名小 chip（DCN/Scale-Out/Pool 内互联/Scale-Up/PCIe·UB/封装互连/NoC）。 ──
-const SVG_W = 600, SVG_H = 472, X0 = 118, X1 = 586, BUDGET = 26;   // 漏斗 L7→L1；L0 完整架构由下方 CoreGroupPattern 面板承担
+const SVG_W = 600, SVG_H = 712, X0 = 118, X1 = 586, BUDGET = 26;   // 全 8 级 L7→L0 在一张 SVG 内（L0 = 原生存储架构图元）
 // ctx-tier centered funnel geometry: current glyph sits ON the center spine, siblings flank symmetrically.
 // uniform abstract 2D glyphs per level (like the chip 2×2-die glyph) — small counts render EVERY member.
 const CX_SPINE = (X0 + X1) / 2, CTX_GW = 20, CTX_GAP = 5, CTX_SLOT = CTX_GW + CTX_GAP;
@@ -424,15 +424,15 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(cdot(dx, dieTopY, ACCENT, `ccd-die-${di}`, 2));
   });
   els.push(cdot(rpCardX, cardBotY, ACCENT, 'ccd-card', hasDrillFocus ? 2.4 : 2));
-  // L1 计算 Die → L0：两块计算 Die 向下汇聚，箭头指向下方「L0 完整存储架构」面板（NoC · 1 计算 Die ⊃ ~16 Core-Group）
-  const l0PtrY = SVG_H - 18;
+  // L1 计算 Die → L0 Core-Group：两块计算 Die 向下汇聚到 L0 存储轨道锚点（NoC · 1 计算 Die ⊃ ~16 Core-Group）
+  const coreY = 470, l0PtrY = coreY;
   dieCxArr.forEach((dx, di) => {
     els.push(<line key={`cd-core-${di}`} x1={dx} y1={dieBotY} x2={coreAnchorX} y2={l0PtrY} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={hasDrillFocus ? 0.55 : 0.36} />);
     if (hasDrillFocus) els.push(cflow(dx, dieBotY, coreAnchorX, l0PtrY, `cdf-core-${di}`));
     els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
   });
-  els.push(<path key="l0-arrow" d={`M${coreAnchorX - 4} ${l0PtrY - 6} L${coreAnchorX} ${l0PtrY} L${coreAnchorX + 4} ${l0PtrY - 6}`} fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />);
-  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>1 compute Die ⊃ ~16 Core-Group ↓ L0 (panel below)</text>);
+  els.push(cdot(coreAnchorX, l0PtrY, ACCENT, 'cd-core-top'));
+  els.push(<text key="l1l0-note" x={coreAnchorX + 200} y={coreY - 6} fill={P.ink3} fontSize={8} textAnchor="middle">1 compute Die ⊃ ~16 Core-Group</text>);
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
@@ -452,7 +452,24 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     }
     els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 compute(UMA) · 2 IO</text>);
   }
-  // L0 Core-Group（最深层级）不再画在本 SVG 内——由下方独立的 CoreGroupPattern 面板完整渲染 memory-architecture 图。
+  // 5b) L0 Core-Group —— 原生 SVG 存储架构图元（与 L1–L7 同一张 SVG，8 级合为一体）。
+  {
+    const coreGW = X1 - coreGX, coreH = 222;
+    els.push(<text key="slt-core" x={12} y={coreY - 4} fill="#36e0c4" fontSize={9} fontWeight={700}>L0</text>);
+    els.push(<text key="sl-core" x={12} y={coreY + 8} fill={P.ink} fontSize={12} fontWeight={600}>Core-Group</text>);
+    els.push(levelIcon('core', 28, coreY + 24, 8, '#36e0c4', 1, 'core-gic'));
+    els.push(<text key="scnt-core" x={12} y={coreY + 42} fill={P.ink3} fontSize={8}>×32/card</text>);
+    els.push(<text key="scnt-core2" x={12} y={coreY + 52} fill={P.ink3} fontSize={8}>GM/L2+AIV/AIC</text>);
+    els.push(
+      <g key="core-glyph" transform={`translate(${coreGX} ${coreY})`}>
+        <CoreGroupMiniSvg width={coreGW} height={coreH} detail={2} fs={1.18} phase={wlKind === 'comm' ? 'comm' : 'compute'}
+          load={playing ? Math.max(0, Math.min(1, nodeLoad(repCard * 517, wlKind))) : 0.5} dark={dark} />
+      </g>,
+    );
+    els.push(<text key="core-datapath" x={coreGX + coreGW / 2} y={coreY + coreH + 12} fill={P.ink3} fontSize={8} textAnchor="middle">
+      {'GM/L2 ─MTE2→ UB·L1 ─MTE1→ L0A/B ─CUBE→ L0C ─CV→ UB ─MTE3→ GM'}
+    </text>);
+  }
   // 6) 级间互联徽标（HW_LEVELS[i].down）—— 命名「该层→下一层」用什么网络/互联织物：
   //    不透明底色（遮住竖脊，读作坐在脊上的一枚徽标）+ 层级色描边 + 悬停 <title> 展开详情。
   const ichip = (x: number, y: number, label: string, color: string, detail: string, key: string) => {
@@ -934,33 +951,10 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
             Plane view · hierarchy — click an entity to expand its chain (ancestors + descendants) and drive the array on the right; each level shows selected/total · p50 · red%
           </div>
-          {/* funnel L7→L1: fills pane width, natural (aspect-locked) height, left-aligned */}
-          <div style={{ flexShrink: 0, position: 'relative', padding: '2px 0 0' }}>
+          {/* one continuous SVG for all 8 levels L7→L0 (L0 = native memory-architecture glyph): fills pane
+              width, left-aligned; scrolls vertically if the pane is short. */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '2px 0 0' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
-          </div>
-          {/* L0 Core-Group — continues the funnel: label in the SAME left gutter (x≈2%, width≈19.7% = X0/600),
-              the full memory-architecture pattern fills the content area on the right. */}
-          <div style={{ flex: '1 1 0', minHeight: 200, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
-            <div style={{ width: '19.7%', minWidth: 80, flexShrink: 0, paddingLeft: '2%', paddingTop: 8, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', lineHeight: 1.1 }}>Core-Group</span>
-              <span style={{ display: 'inline-flex', gap: 3, marginTop: 3 }}>
-                {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
-                  <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
-                ))}
-              </span>
-              <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
-              <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>scroll to zoom · drag to pan</span>
-            </div>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative', borderLeft: '1px dashed var(--bd)' }}>
-              <CoreGroupPattern
-                phaseKind={playing ? (lens === 'flow' ? 'comm' : 'compute') : undefined}
-                load={Math.max(0, Math.min(1, stats.kpi.util))}
-                zoom={0.42}
-                detail
-                height="100%"
-              />
-            </div>
           </div>
         </div>
 
