@@ -1728,7 +1728,7 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     const yStep = Math.min(1.5, 0.62 + Math.max(fieldW, superD) * 0.012);
     const yTile = 0.5, yThread = yTile + yStep, yProc = yThread + yStep, yCard = yProc + yStep;
     const yBlade = yCard + yStep, yCab = yBlade + yStep, ySuper = yCab + yStep;
-    const yPool = ySuper + yStep, yCluster = yPool + yStep, yGlobal = yCluster + yStep;   // L5 服务池 · L6 集群 · L7 全球
+    const yPool = ySuper + yStep * 1.7, yCluster = yPool + yStep * 1.7, yGlobal = yCluster + yStep * 1.5;   // L5 服务池 · L6 集群 · L7 全球（网格式排布 → 加大层间距，避免俯视投影叠压）
 
     const cardX: number[] = [], cardZ: number[] = [], cardBlade: number[] = [];
     const bladeMX: number[] = [], bladeMZ: number[] = [], bladeCab: number[] = [];
@@ -1806,43 +1806,40 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
     if (peerL1) for (let bi = 0; bi < bladeMX.length; bi++) { const base = bi * FP_CARDS_PER_BLADE; for (let i = 0; i < FP_CARDS_PER_BLADE; i++) for (let j = i + 1; j < FP_CARDS_PER_BLADE; j++) { const a = base + i, b = base + j; if (b >= N) break; l1mesh.push([cardX[a], yCard, cardZ[a]], [cardX[b], yCard, cardZ[b]]); } }
     { const byCab: number[][] = Array.from({ length: cabMX.length }, () => []); for (let bi = 0; bi < bladeMX.length; bi++) byCab[bladeCab[bi]].push(bi); for (const bl of byCab) for (let i = 0; i < bl.length; i++) for (let j = i + 1; j < bl.length; j++) { const a = bl[i], b = bl[j]; l2mesh.push([bladeMX[a], yBlade, bladeMZ[a]], [bladeMX[b], yBlade, bladeMZ[b]]); } }
 
-    // ── 上层「真实数量」成员行（与 2D 层级图 ctx 行同构）：1 服务池 = PODS_PER_POOL Pod ·
-    //    1 集群 = POOLS_PER_CLUSTER 服务池 · 全球 = 本集群 + 2 幽灵集群。ghost = 未在下方阵列
-    //    展开的兄弟成员（抽象示意）；布局同漏斗：当前成员居原位、兄弟左右对称 flank、放不下折叠 +N。 ──
-    const CTX_SIDE_CAP = 6;
-    const podSlabW = Math.min(2.6, superW * 0.5);
-    const poolSlabW = Math.min(3.0, superW * 0.6);
-    const clusterSlabW = Math.min(3.6, fieldW * 0.45);
-    const ctxMinX = -fieldW / 2 + 0.6;   // 左侧留出 band 标签 gutter，ghost 不越过
-    const flank = (realXs: number[], total: number, pitch: number) => {
-      const xs = realXs.map((x) => ({ x, ghost: false }));
-      let right = Math.max(...realXs), left = Math.min(...realXs), shown = 0;
-      const sibs = total - realXs.length;
-      for (let s = 0; s < sibs && shown < CTX_SIDE_CAP * 2; s++, shown++) {
-        if (s % 2 === 1 && left - pitch >= ctxMinX) { left -= pitch; xs.push({ x: left, ghost: true }); }
-        else { right += pitch; xs.push({ x: right, ghost: true }); }
+    // ── 上层「真实数量」成员：与下方阵列一致，按 2D 网格「整列」排布（不再横向拉成一行）。
+    //    每级用 ring 网格：cell 0 落在原点 = 已展开的真实对象（本 Pod/池/集群），其余同心外扩（cardinal
+    //    优先，形态匀称）= 未展开的兄弟成员（ghost·抽象示意），凑足真实换算数量：1 池 = PODS_PER_POOL Pod ·
+    //    1 集群 = POOLS_PER_CLUSTER 池 · 全球 = 3 集群。中心竖直对齐 → 包含链读作一条竖轴。 ──
+    const podSlabW = Math.min(1.7, superW * 0.42);
+    const poolSlabW = Math.min(1.15, superW * 0.28);
+    const clusterSlabW = Math.min(1.9, fieldW * 0.22);
+    const ringXZ = (n: number, pitch: number): [number, number][] => {
+      const out: [number, number][] = [[0, 0]];
+      for (let r = 1; out.length < n; r++) {
+        const ring: [number, number][] = [];
+        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++)
+          if (Math.max(Math.abs(dx), Math.abs(dz)) === r) ring.push([dx, dz]);
+        ring.sort((a, b) => Math.min(Math.abs(a[0]), Math.abs(a[1])) - Math.min(Math.abs(b[0]), Math.abs(b[1])));   // cardinal 先于对角 → 匀称
+        for (const [dx, dz] of ring) { if (out.length >= n) break; out.push([dx * pitch, dz * pitch]); }
       }
-      return { xs, fold: sibs - shown, foldX: right + pitch };
+      return out;
     };
-    // L4 Pod 行：每个服务池补足 PODS_PER_POOL 个成员（真实 Pod 已展开为下方阵列，兄弟为 ghost）
-    const ctxPods: { x: number; ghost: boolean; pool: number; pod: number | null }[] = [];
-    for (let pl = 0; pl < poolCount; pl++) {
-      const real: number[] = []; for (let p = 0; p < podCount; p++) if (poolOf(p) === pl) real.push(p);
-      const row = flank(real.map((p) => superMX[p]), PODS_PER_POOL, podSlabW * 1.5);
-      row.xs.forEach((m, i) => ctxPods.push({ x: m.x, ghost: m.ghost, pool: pl, pod: m.ghost ? null : real[i] }));
-    }
-    // L5 服务池 行：补足 POOLS_PER_CLUSTER 个成员（flank 先放真实成员 → 下标 < poolMX.length 即真实池）
-    const poolRow = flank(poolMX, POOLS_PER_CLUSTER, Math.max(poolSlabW * 0.72, fieldW * 0.045));
-    // L6 集群 行：本集群 + 2 幽灵集群（同 2D 漏斗 L7 行的 3 集群）
-    const ctxClusters = flank([0], 3, clusterSlabW * 1.35).xs;
+    // L4 Pod：poolCount 恒为 1，本池 podCount 个真实 Pod（落在阵列中心 superMX 上，包含链竖直）+ 补足 ghost
+    const ctxPods = ringXZ(PODS_PER_POOL, podSlabW * 1.6).map((c, idx) => {
+      const real = idx < podCount;
+      return { x: real ? superMX[idx] : c[0], z: real ? 0 : c[1], ghost: !real, pool: 0, pod: real ? idx : null };
+    });
+    // L5 服务池：本集群 POOLS_PER_CLUSTER 池（cell 0 = 本池 居中，其余 ghost 网格外扩）
+    const ctxPools = ringXZ(POOLS_PER_CLUSTER, poolSlabW * 1.7).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
+    // L6 集群：全球 3 集群（cell 0 = 本集群 居中，其余 ghost）
+    const ctxClusters = ringXZ(3, clusterSlabW * 1.55).map((c, idx) => ({ x: c[0], z: c[1], ghost: idx > 0 }));
 
     return {
       N, N1, nBlades: bladeMX.length, nCabs: cabMX.length, superMX, poolMX, poolCount,
       cluster: [0, yCluster, 0] as [number, number, number], global: [0, yGlobal, 0] as [number, number, number],
       cardX, cardZ, cardBlade, bladeMX, bladeMZ, bladeCab, cabMX, cabMZ, cabSuper, thrPitch, drawMicro,
       yTile, yThread, yProc, yCard, yBlade, yCab, ySuper, yPool, yCluster, yGlobal, yStep,
-      ctxPods, ctxPools: poolRow.xs, ctxPoolFold: poolRow.fold, ctxPoolFoldX: poolRow.foldX, ctxClusters,
-      podSlabW, poolSlabW, clusterSlabW,
+      ctxPods, ctxPools, ctxClusters, podSlabW, poolSlabW, clusterSlabW,
       l2t, t2p, p2c, c2b, b2c, c2s, hostPod, s2p, p2cl, cl2g, ring, a2a, cabRing, cabA2A, l1mesh, l2mesh, peerL1, fieldW, fieldD: superD, superW, cw, cd,
     };
   }, [scale, podCount, full, gen.totalNpus]);
@@ -1991,36 +1988,38 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const ctxPath = useMemo(() => {
     if (!ctxSel) return null;
     const up: [number, number, number][][] = [], down: [number, number, number][] = [], arcs: [number, number, number][][] = [];
-    const arc = (ax: number, bx: number, y: number): [number, number, number][] => {
-      const lift = Math.min(G.yStep * 0.45, Math.abs(bx - ax) * 0.35 + 0.1);
-      return [[ax, y, 0], [(ax + bx) / 2, y + lift, 0], [bx, y, 0]];
+    // 3D 同级弧：从选中成员到每个兄弟，抬高中点（跨度越大抬越高）→ 层级内关联的辐条
+    const arc3 = (a: [number, number, number], b: [number, number, number]): [number, number, number][] => {
+      const span = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      return [a, [(a[0] + b[0]) / 2, Math.max(a[1], b[1]) + span * 0.16 + 0.12, (a[2] + b[2]) / 2], b];
     };
-    const sibArcs = (xs: number[], y: number) => { const s = [...xs].sort((a, b) => a - b); for (let i = 0; i + 1 < s.length; i++) arcs.push(arc(s[i], s[i + 1], y)); };
+    const spokes = (members: { x: number; z: number }[], y: number, sx: number, sz: number) => {
+      for (const q of members) { if (q.x === sx && q.z === sz) continue; arcs.push(arc3([sx, y, sz], [q.x, y, q.z])); }
+    };
     let label = '', labelPos: [number, number, number] = [0, 0, 0];
     if (ctxSel.band === 4) {
       const m = G.ctxPods[ctxSel.i]; if (!m) return null;
-      up.push([[m.x, G.ySuper, 0], [G.poolMX[m.pool] ?? 0, G.yPool, 0], G.cluster, G.global]);
-      if (m.pod != null) for (let c = 0; c < G.nCabs; c++) if (G.cabSuper[c] === m.pod) down.push([m.x, G.ySuper, 0], [G.cabMX[c], G.yCab, G.cabMZ[c]]);
-      sibArcs(G.ctxPods.filter((q) => q.pool === m.pool).map((q) => q.x), G.ySuper);
+      up.push([[m.x, G.ySuper, m.z], [0, G.yPool, 0], G.cluster, G.global]);
+      if (m.pod != null) for (let c = 0; c < G.nCabs; c++) if (G.cabSuper[c] === m.pod) down.push([m.x, G.ySuper, m.z], [G.cabMX[c], G.yCab, G.cabMZ[c]]);
+      spokes(G.ctxPods, G.ySuper, m.x, m.z);
       label = m.pod != null ? `Pod P${m.pod} · 本服务池 ${PODS_PER_POOL} Pod（Pod↔Pod = Pool 内互联）` : `兄弟 Pod（未展开·抽象）· 1 池 = ${PODS_PER_POOL} Pod`;
-      labelPos = [m.x, G.ySuper, 0];
+      labelPos = [m.x, G.ySuper, m.z];
     } else if (ctxSel.band === 5) {
       const m = G.ctxPools[ctxSel.i]; if (!m) return null;
-      up.push([[m.x, G.yPool, 0], G.cluster, G.global]);
-      // flank 先放真实成员 → 下标 < poolMX.length 即真实池，其成员 Pod 按 pool 下标匹配
-      if (!m.ghost) G.ctxPods.forEach((q) => { if (q.pool === ctxSel.i) down.push([m.x, G.yPool, 0], [q.x, G.ySuper, 0]); });
-      sibArcs(G.ctxPools.map((q) => q.x), G.yPool);
+      up.push([[m.x, G.yPool, m.z], G.cluster, G.global]);
+      if (!m.ghost) G.ctxPods.forEach((q) => { if (q.pod != null) down.push([m.x, G.yPool, m.z], [q.x, G.ySuper, q.z]); });
+      spokes(G.ctxPools, G.yPool, m.x, m.z);
       label = m.ghost ? `兄弟服务池（未展开·抽象）· 1 集群 = ${POOLS_PER_CLUSTER} 池` : `本服务池 · ${PODS_PER_POOL} Pod/池（池↔池 = Scale-Out）`;
-      labelPos = [m.x, G.yPool, 0];
+      labelPos = [m.x, G.yPool, m.z];
     } else if (ctxSel.band === 6) {
       const m = G.ctxClusters[ctxSel.i]; if (!m) return null;
-      up.push([[m.x, G.yCluster, 0], G.global]);
-      if (!m.ghost) G.ctxPools.forEach((q) => down.push([m.x, G.yCluster, 0], [q.x, G.yPool, 0]));
-      sibArcs(G.ctxClusters.map((q) => q.x), G.yCluster);
+      up.push([[m.x, G.yCluster, m.z], G.global]);
+      if (!m.ghost) G.ctxPools.forEach((q) => down.push([m.x, G.yCluster, m.z], [q.x, G.yPool, q.z]));
+      spokes(G.ctxClusters, G.yCluster, m.x, m.z);
       label = m.ghost ? '幽灵集群（全球另一集群 · 抽象）' : `本集群 · ${POOLS_PER_CLUSTER} 服务池 · ${PODS_PER_CLUSTER} Pod（集群↔集群 = DCN）`;
-      labelPos = [m.x, G.yCluster, 0];
+      labelPos = [m.x, G.yCluster, m.z];
     } else {
-      G.ctxClusters.forEach((q) => down.push(G.global, [q.x, G.yCluster, 0]));
+      G.ctxClusters.forEach((q) => down.push(G.global, [q.x, G.yCluster, q.z]));
       label = '全球 · DCN — 跨集群互联（全球 ⊃ 3 集群）';
       labelPos = G.global;
     }
@@ -2169,9 +2168,9 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   const [PL_UB, PL_RDMA, PL_VPC] = PLANES;
   // ghost 成员 → 父级 的包含虚线（常显淡色，与 s2p/p2cl/cl2g 同色系）——「未展开的兄弟也挂在链上」
   const gPodUp: [number, number, number][] = [], gPoolUp: [number, number, number][] = [], gClusterUp: [number, number, number][] = [];
-  G.ctxPods.forEach((m) => { if (m.ghost) gPodUp.push([m.x, G.ySuper, 0], [G.poolMX[m.pool] ?? 0, G.yPool, 0]); });
-  G.ctxPools.forEach((m) => { if (m.ghost) gPoolUp.push([m.x, G.yPool, 0], G.cluster); });
-  G.ctxClusters.forEach((m) => { if (m.ghost) gClusterUp.push([m.x, G.yCluster, 0], G.global); });
+  G.ctxPods.forEach((m) => { if (m.ghost) gPodUp.push([m.x, G.ySuper, m.z], [0, G.yPool, 0]); });
+  G.ctxPools.forEach((m) => { if (m.ghost) gPoolUp.push([m.x, G.yPool, m.z], G.cluster); });
+  G.ctxClusters.forEach((m) => { if (m.ghost) gClusterUp.push([m.x, G.yCluster, m.z], G.global); });
   const dcNode: [number, number, number] = [G.fieldW / 2 + Math.max(1.4, G.fieldW * 0.06), G.ySuper, G.fieldD / 2];
   const soRisers: [number, number, number][] = [];
   const vpcRisers: [number, number, number][] = [];
@@ -2321,11 +2320,12 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         onClick={(e) => { e.stopPropagation(); if (e.instanceId !== undefined) toggleSel(2, e.instanceId); }}>
         <boxGeometry args={[1, 1, 1]} /><meshStandardMaterial metalness={0} roughness={0.5} toneMapped={false} />
       </instancedMesh>
-      {/* ── 上层 · 真实数量成员行（同 2D 层级图 ctx 行）：实心 = 已展开的真实对象 · 半透明 = 未展开的
-          兄弟成员（抽象示意）。任一成员单击 → 层级间（包含链上/下行·蓝）+ 层级内（同级相邻弧·青）关联。 ── */}
-      {/* L4 Pod 行：1 服务池 = PODS_PER_POOL Pod（本 Pod 已展开为下方阵列，兄弟为 ghost） */}
+      {/* ── 上层 · 真实数量成员（2D 网格「整列」排布，与下方阵列同构）：实心 = 已展开的真实对象 ·
+          半透明 = 未展开的兄弟（抽象示意）。任一成员单击 → 层级间（包含链上/下·蓝）+ 层级内（同级辐条·青）关联。 ── */}
+      {/* L4 Pod：1 服务池 = PODS_PER_POOL Pod（本 Pod 已展开为下方阵列，兄弟为 ghost 网格） */}
       {G.ctxPods.map((m, i) => {
         const on = (selPath !== null && m.pod === selPath.superP) || (ctxSel?.band === 4 && ctxSel.i === i);
+        const w = m.ghost ? G.podSlabW * 0.72 : G.podSlabW;
         const hov = m.pod != null
           ? `Pod P${m.pod}（L4 · 已展开为下方阵列 · 本服务池 ${PODS_PER_POOL} Pod 之一）· 单击显示层级间/层级内关联`
           : `兄弟 Pod（L4 · 同服务池 · 未展开的抽象示意）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示关联`;
@@ -2334,45 +2334,40 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 4 && s.i === i ? null : { band: 4, i })); }}>
-            <Slab size={[m.ghost ? G.podSlabW * 0.6 : G.podSlabW, m.ghost ? 0.16 : 0.22, m.ghost ? 0.24 : 0.3]} position={[m.x, G.ySuper, 0]}
+            <Slab size={[w, m.ghost ? 0.14 : 0.2, w]} position={[m.x, G.ySuper, m.z]}
               color={on ? '#4369ef' : struct.super}
               emissive={on ? '#4369ef' : (workbenchProfile ? '#000000' : ENTITY_COLORS.super)}
               emissiveIntensity={on ? 0.9 : m.ghost ? 0.12 : 0.4}
               opacity={m.ghost ? 0.35 : undefined}
               edgeColor={m.ghost ? ENTITY_COLORS.super : undefined} />
-            {m.pod != null && <Text position={[m.x, G.ySuper + 0.32, 0]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.super} anchorX="center">{`Pod P${m.pod}`}</Text>}
+            {m.pod != null && <Text position={[m.x, G.ySuper + 0.3, m.z]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.super} anchorX="center">{`Pod P${m.pod}`}</Text>}
           </group>
         );
       })}
-      {/* L5 服务池 行：1 集群 = POOLS_PER_CLUSTER 池（放不下折叠为 +N，同漏斗） */}
+      {/* L5 服务池：1 集群 = POOLS_PER_CLUSTER 池（全部按真实数量铺成网格，不折叠） */}
       {G.ctxPools.map((m, i) => {
         const on = ctxSel?.band === 5 && ctxSel.i === i;
+        const w = m.ghost ? G.poolSlabW * 0.82 : G.poolSlabW;
         const hov = m.ghost
           ? `兄弟服务池（L5 · 本集群 ${POOLS_PER_CLUSTER} 池之一 · 未展开的抽象示意）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示关联`
-          : `服务池 Pool ${i}（L5 · 本池 · 含下方 Pod）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示层级间/层级内关联`;
+          : `服务池 Pool 0（L5 · 本池 · 含下方 Pod）· 1 池 = ${PODS_PER_POOL} Pod · 单击显示层级间/层级内关联`;
         return (
           <group key={`pool${i}`}
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 5 && s.i === i ? null : { band: 5, i })); }}>
-            <Slab size={[m.ghost ? G.poolSlabW * 0.5 : G.poolSlabW, m.ghost ? 0.14 : 0.2, m.ghost ? 0.26 : 0.34]} position={[m.x, G.yPool, 0]}
+            <Slab size={[w, m.ghost ? 0.12 : 0.18, w]} position={[m.x, G.yPool, m.z]}
               color={on ? '#4369ef' : ENTITY_COLORS.pool} emissive={on ? '#4369ef' : ENTITY_COLORS.pool}
-              emissiveIntensity={on ? 0.9 : m.ghost ? 0.14 : 0.32}
-              opacity={m.ghost ? 0.32 : 0.85} edgeColor={ENTITY_COLORS.pool} />
-            {!m.ghost && <Text position={[m.x, G.yPool + 0.3, 0]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.pool} anchorX="center">{`Pool ${i}`}</Text>}
+              emissiveIntensity={on ? 0.9 : m.ghost ? 0.14 : 0.34}
+              opacity={m.ghost ? 0.32 : 0.9} edgeColor={ENTITY_COLORS.pool} />
+            {!m.ghost && <Text position={[m.x, G.yPool + 0.26, m.z]} fontSize={lblSize} color={on ? '#b45309' : ENTITY_COLORS.pool} anchorX="center">Pool 0</Text>}
           </group>
         );
       })}
-      {G.ctxPoolFold > 0 && (
-        <Billboard position={[G.ctxPoolFoldX, G.yPool, 0]}>
-          <Text fontSize={lblSize * 0.8} color={ENTITY_COLORS.pool} anchorX="center" anchorY="middle"
-            onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`还有 ${G.ctxPoolFold} 个服务池未显示 · 1 集群 = ${POOLS_PER_CLUSTER} 服务池`); }}
-            onPointerOut={() => onHoverInfo(null)}>{`+${G.ctxPoolFold}`}</Text>
-        </Billboard>
-      )}
-      {/* L6 集群 行：本集群（实）+ 2 幽灵集群（虚 · 同漏斗「全球 = 3 集群」） */}
+      {/* L6 集群：本集群（实）+ 2 幽灵集群（虚 · 同「全球 = 3 集群」） */}
       {G.ctxClusters.map((m, i) => {
         const on = ctxSel?.band === 6 && ctxSel.i === i;
+        const w = m.ghost ? G.clusterSlabW * 0.72 : G.clusterSlabW;
         const hov = m.ghost
           ? '幽灵集群（L6 · 全球另一集群 · 抽象示意）· 集群↔集群 = DCN · 单击显示关联'
           : `本集群（L6）· ${POOLS_PER_CLUSTER} 服务池 · ${PODS_PER_CLUSTER} Pod · 单击显示层级间/层级内关联`;
@@ -2381,10 +2376,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
             onPointerOver={(e) => { e.stopPropagation(); setCursor(true); onHoverInfo(hov); }}
             onPointerOut={() => { setCursor(false); onHoverInfo(null); }}
             onClick={(e) => { e.stopPropagation(); setCtxSel((s) => (s && s.band === 6 && s.i === i ? null : { band: 6, i })); }}>
-            <Slab size={[m.ghost ? G.clusterSlabW * 0.55 : G.clusterSlabW, m.ghost ? 0.14 : 0.2, m.ghost ? 0.26 : 0.34]} position={[m.x, G.yCluster, 0]}
+            <Slab size={[w, m.ghost ? 0.12 : 0.18, w]} position={[m.x, G.yCluster, m.z]}
               color={on ? '#4369ef' : ENTITY_COLORS.cluster} emissive={on ? '#4369ef' : ENTITY_COLORS.cluster}
-              emissiveIntensity={on ? 0.9 : m.ghost ? 0.1 : 0.3}
-              opacity={m.ghost ? 0.25 : 0.85} edgeColor={ENTITY_COLORS.cluster} />
+              emissiveIntensity={on ? 0.9 : m.ghost ? 0.1 : 0.32}
+              opacity={m.ghost ? 0.25 : 0.9} edgeColor={ENTITY_COLORS.cluster} />
           </group>
         );
       })}
