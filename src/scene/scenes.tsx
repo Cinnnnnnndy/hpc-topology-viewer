@@ -2132,8 +2132,10 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
       ? heatLines(pts, (s) => segLoad(upper, s), bw, `b${upper}`, focus === null ? 0.5 : focus === upper ? 0.95 : 0.08, statKind != null)
       : <Wire points={pts} segments color={mute(color)} lineWidth={focus === upper ? 2.4 : focus === null ? base * 0.8 : 0.4} opacity={focus === upper ? 0.9 : focus === null ? 0.26 : 0.1} active={focus === upper} speed={0.6} />;
   };
-  const xL = -G.fieldW / 2 - 0.9;
+  const xL = -G.fieldW / 2 - Math.max(1.6, G.fieldW * 0.03);   // 轴线离阵列左缘的间隙（大场也不贴阵列）
   const lblSize = Math.min(0.5, 0.16 + G.fieldW * 0.004);
+  // 层级轴标签用独立字号：随场地放大（大场 8K 也读得清），下限=lblSize
+  const axisSize = Math.min(1.5, Math.max(lblSize, G.fieldW * 0.02));
   // bands unified with the 平面视图 层级图: 同一 L0–L7 编号 + 同一图元/配色. The old rank
   // band is now the L2 计算 Die band (teal); rank is folded into the 卡/device (software,
   // 1:1, shown on hover + the card collectives), so the spine is a clean hardware chain.
@@ -2200,32 +2202,62 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
         gridMinorColor={workbenchProfile ? '#d4d8df' : undefined}
         gridOpacity={workbenchProfile ? 0.7 : undefined}
       />
-      {/* clickable band labels (focus → highlight that band's downstream connector) — 8 级恒显（podCount=1 时链也完整） */}
-      {bands.map(([i, y, t, c]) => (
-        (
-          // billboard → the level label always faces the camera, readable at any view angle
-          <Billboard key={i} position={[xL, y, -G.fieldD / 2]}>
-            <Text fontSize={lblSize} color={focus === i ? c : LC.textDim} anchorX="right" anchorY="middle"
-              onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
-              onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
-            <Text position={[0, -lblSize * 0.92, 0]} fontSize={lblSize * 0.58} color="#9fb6ff" anchorX="right" anchorY="middle">{bandCoord[i]}</Text>
-            {/* per-level physical devices & plane (物理三平面) — shown when the 三平面 toggle is on */}
-            {planes && LEVEL_PHYS[BAND_PHYS_KEY[i]] && (
-              <Text position={[0, -lblSize * 1.62, 0]} fontSize={lblSize * 0.52} color={LEVEL_PHYS[BAND_PHYS_KEY[i]].color} anchorX="right" anchorY="middle">{`◆ ${LEVEL_PHYS[BAND_PHYS_KEY[i]].short}`}</Text>
-            )}
-          </Billboard>
-        )
-      ))}
-      {/* 机柜不是层级：几何保留（yCab），旁加小灰字标注为物理分组 */}
-      <Billboard position={[xL, G.yCab, -G.fieldD / 2]}>
-        <Text fontSize={lblSize * 0.7} color={LC.textDim} anchorX="right" anchorY="middle">机柜（物理分组）</Text>
-      </Billboard>
-      {/* Tile 不是层级：仅 L0 聚焦时给出 caption */}
-      {(focus === 0 || sel?.lv === 0) && (
-        <Billboard position={[xL, G.yTile, -G.fieldD / 2]}>
-          <Text fontSize={lblSize * 0.7} color={ENTITY_COLORS.vector} anchorX="right" anchorY="middle">L0 内部（Tile / lane）</Text>
-        </Billboard>
-      )}
+      {/* ── 左侧「层级轴」：一条竖直导轨 + 每级彩色节点（色=该级图元色，一眼对应）+ 朝相机的标签。
+          文字带描边(halo) → 无论压在网格/浅底都清晰可读；点节点或标签 = 高亮该级下行连线。
+          非层级(机柜/Tile) 用小空心节点区分。取代原先低对比、悬空的双行灰字。 ── */}
+      {(() => {
+        const zAxis = -G.fieldD / 2;
+        const nodeR = Math.max(0.12, axisSize * 0.3);
+        const halo = dark ? '#0e1116' : '#ffffff';
+        const gap = nodeR * 2.6;   // 标签在节点左侧的水平间距
+        const dimTx = dark ? '#c2ccda' : '#3a4557';   // 副行文字：比原 textDim 更实，保证可读
+        const els: ReactNode[] = [];
+        // 竖轴导轨（贯穿 L0→L7，屏幕像素宽度恒定）
+        els.push(<Line key="lvl-axis" points={[[xL, G.yThread, zAxis], [xL, G.yGlobal, zAxis]]} color={LC.textDim} lineWidth={1.5} transparent opacity={0.45} />);
+        // 机柜（物理分组）：非层级 → 空心小节点 + 淡字，夹在 L3/L4 之间
+        els.push(
+          <group key="lvl-cab" position={[xL, G.yCab, zAxis]}>
+            <mesh><sphereGeometry args={[nodeR * 0.5, 12, 12]} /><meshBasicMaterial color={LC.textDim} toneMapped={false} transparent opacity={0.6} /></mesh>
+            <Billboard><Text position={[-gap, 0, 0]} fontSize={axisSize * 0.62} color={dimTx} outlineWidth={axisSize * 0.045} outlineColor={halo} outlineOpacity={0.85} anchorX="right" anchorY="middle">机柜 · 物理分组</Text></Billboard>
+          </group>,
+        );
+        // Tile（非层级）：仅 L0 聚焦/选中时
+        if (focus === 0 || sel?.lv === 0) els.push(
+          <group key="lvl-tile" position={[xL, G.yTile, zAxis]}>
+            <mesh><sphereGeometry args={[nodeR * 0.5, 12, 12]} /><meshBasicMaterial color={ENTITY_COLORS.vector} toneMapped={false} /></mesh>
+            <Billboard><Text position={[-gap, 0, 0]} fontSize={axisSize * 0.62} color={ENTITY_COLORS.vector} outlineWidth={axisSize * 0.045} outlineColor={halo} outlineOpacity={0.85} anchorX="right" anchorY="middle">L0 内部 · Tile/lane</Text></Billboard>
+          </group>,
+        );
+        // 8 级正式层级：彩色实心节点 + 主名(该级色·加描边) + 副行(scope·较淡) [+ 三平面时物理器件行]
+        bands.forEach(([i, y, t, c]) => {
+          const active = focus === i;
+          els.push(
+            <group key={`lvl-${i}`} position={[xL, y, zAxis]}>
+              <mesh onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
+                onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>
+                <sphereGeometry args={[active ? nodeR * 1.5 : nodeR, 16, 16]} />
+                <meshBasicMaterial color={c} toneMapped={false} />
+              </mesh>
+              <Billboard>
+                <Text position={[-gap, 0, 0]} fontSize={active ? axisSize * 1.16 : axisSize} color={c}
+                  outlineWidth={axisSize * 0.07} outlineColor={halo} outlineOpacity={0.95}
+                  anchorX="right" anchorY="middle"
+                  onClick={(e) => { e.stopPropagation(); setFocus((f) => (f === i ? null : i)); }}
+                  onPointerOver={() => setCursor(true)} onPointerOut={() => setCursor(false)}>{t}</Text>
+                <Text position={[-gap, -axisSize * 0.84, 0]} fontSize={axisSize * 0.52} color={dimTx}
+                  outlineWidth={axisSize * 0.04} outlineColor={halo} outlineOpacity={0.85}
+                  anchorX="right" anchorY="middle">{bandCoord[i]}</Text>
+                {planes && LEVEL_PHYS[BAND_PHYS_KEY[i]] && (
+                  <Text position={[-gap, -axisSize * 1.46, 0]} fontSize={axisSize * 0.5} color={LEVEL_PHYS[BAND_PHYS_KEY[i]].color}
+                    outlineWidth={axisSize * 0.04} outlineColor={halo} outlineOpacity={0.85}
+                    anchorX="right" anchorY="middle">{`◆ ${LEVEL_PHYS[BAND_PHYS_KEY[i]].short}`}</Text>
+                )}
+              </Billboard>
+            </group>,
+          );
+        });
+        return els;
+      })()}
 
       {/* hierarchy backbone (downstream of band f is highlighted when focus===f) */}
       {/* bw (5th arg) = relative bandwidth → thickness in status mode: intra-node fattest, scale-out thinnest */}
