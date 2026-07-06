@@ -66,7 +66,9 @@ function scopeRange(f: Focus, N: number): [number, number] {
 // which entity indices of tier Le are on the focus's chain (ancestor / self / descendant), dir-filtered.
 // returns null = "no focus → overview (show all, capped)". Le: 3 Pod · 4 Host · 5 Chip.
 function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nBlades: number): number[] | null {
-  if (!focus || focus.level === 'super') return null;
+  // Chip·NPU (card) & below = SWITCH not filter: keep the funnel in overview (highlight only);
+  // only Host (node) drilling collapses the funnel to its chain.
+  if (!focus || focus.level === 'super' || focus.level === 'card' || focus.level === 'die' || focus.level === 'core') return null;
   const Lf = levelIdx(focus.level);
   const counts = [1, 1, 1, 1, nBlades, N];
   const div = [N, N, N, N, CPB, 1][Le];
@@ -334,8 +336,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       els.push(cdot(CX_SPINE, apexY, ACCENT, 'ph-apex', 2.2));
     }
   }
-  // 1) containment connectors (edge-to-edge) + connector dots (focus only) — 上下层级关系
-  if (focus) {
+  // 1) containment connectors — only when a Host (node) is drilled (funnel collapsed to its chain);
+  //    Chip·NPU switching keeps overview, so no chain lines then.
+  if (focus && focus.level === 'node') {
     const parentDots = new Map<string, [number, number]>();
     rows.forEach(({ t, shown }) => {
       shown.forEach(({ idx, x }) => {
