@@ -30,6 +30,7 @@ import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
 import { ConsoleView } from './ConsoleView';
+import { CommView } from './CommView';
 
 /** Imperatively reposition camera + controls when the view changes, without
  *  remounting the Canvas (remounting creates a new WebGL context each time and
@@ -103,6 +104,7 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   plane:    { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D overlay; 3-D camera unused
   status:   { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D dashboard overlay; 3-D camera unused
   console:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 联动控制台 overlay (own canvas); main 3-D camera unused
+  comm:     { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 通信全景 2-D overlay; 3-D camera unused
 };
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
@@ -110,6 +112,7 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'console',  label: '联动控制台' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
+  { id: 'comm',     label: '通信全景' },
   { id: 'fullpod',  label: '阵列全景(多卡)' },
   { id: 'overview', label: '全景总览' },
   { id: 'rack',     label: '机柜（物理分组）' },
@@ -147,6 +150,7 @@ const WORKBENCH_VIEW_GROUPS: {
     items: [
       { id: 'plane', label: '平面视图', note: '层级图 · 器件互联' },
       { id: 'status', label: '运行状态', note: 'KPI · 多镜头分析' },
+      { id: 'comm', label: '通信全景', note: 'rank×rank · TP/SP/EP/PP/DP' },
       { id: 'matrix', label: '邻接矩阵', note: 'NPU × NPU 可达性' },
     ],
   },
@@ -362,7 +366,18 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
       '所有样式/图元/状态/连接/层级关系沿用既有方案（复用 平面视图 + 阵列全景 组件 + 同一套 data 色彩/状态/负载函数）。',
     ],
   };
-  const info = mode === 'status' ? STATUS_INFO : mode === 'console' ? CONSOLE_INFO : INFO[infoKey];
+  // 通信全景 — dedicated non-hierarchical comm view
+  const COMM_INFO = {
+    title: `通信全景 · rank×rank 通信矩阵（TP/SP/EP/PP/DP）`,
+    lines: [
+      '专治「通信关系画在物理层级里看不清」：通信是重叠的组（TP 在节点内 · PP 成链 · DP/EP 跨域），物理是树，两者结构不同。这里给通信自己的画布——不分层级。',
+      'rank×rank 矩阵：格(i,j) 的颜色 = 连接这对 rank 的并行维度（TP/SP/EP/PP/DP 签名色，去 RYG 不抢状态色）；亮度 = 该对实时流量。',
+      '一眼读足迹：块对角=TP(节点内) · 阶梯带=PP · 密块=EP · 远带=DP。范围切「副本内(TP/PP/EP)」/「副本间(DP/EP)」，维度按钮单独过滤某一维。',
+      '真值一致：连接关系取自 parallelMap（与 平面/工作台/3D 同一套 groupOf/peersOf）；工况/时间与 运行状态 ⇄ 工作台 联动（切 tab 保持同一时刻）。',
+      '看「在哪(包含)」去 3D 阵列/平面层级图；看「跟谁通信」在这里——两者用同一份真值，互不挤占。',
+    ],
+  };
+  const info = mode === 'status' ? STATUS_INFO : mode === 'console' ? CONSOLE_INFO : mode === 'comm' ? COMM_INFO : INFO[infoKey];
 
   const breadcrumb = useMemo(() => {
     const bc: { label: string; onClick?: () => void }[] = [
@@ -742,6 +757,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {/* 2-D runtime-state dashboard — KPI + hierarchy status-axis + multi-lens (overlays the 3-D canvas) */}
           {mode === 'status' && <StatusView gen={gen} dark={dark} sync={viewSync} />}
 
+          {/* 2-D 通信全景 — dedicated non-hierarchical rank×rank comm matrix (overlays the 3-D canvas) */}
+          {mode === 'comm' && <CommView gen={gen} dark={dark} sync={viewSync} />}
+
           {/* 联动控制台 — 平面视图(控制) + 阵列全景(主视图·自带 canvas) + 运行状态仪表 (overlays the 3-D canvas) */}
           {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} />}
 
@@ -1069,8 +1087,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             </div>
           )}
 
-          {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard / 联动控制台, which carry their own legend */}
-          {mode !== 'status' && mode !== 'console' && (
+          {/* legend: UB hierarchy levels (+ comm overlays in node view) — hidden under the 状态 dashboard / 联动控制台 / 通信全景, which carry their own legend */}
+          {mode !== 'status' && mode !== 'console' && mode !== 'comm' && (
           <div style={{
             position: 'absolute', left: 14, bottom: 14, padding: '8px 12px', fontSize: 11.5,
             background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 10, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
