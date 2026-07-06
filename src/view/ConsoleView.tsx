@@ -513,11 +513,15 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       );
     };
     drawG(cur, CX_SPINE);
+    // remaining members fan out SYMMETRICALLY around the spine (nearest index first, alternating
+    // right/left) so the row stays centered in the content area and every member stays in view.
+    const sibs: number[] = [];
+    for (let d = 1; d < total; d++) { if (cur + d < total) sibs.push(cur + d); if (cur - d >= 0) sibs.push(cur - d); }
     let pr = 0, pl = 0, shown = 0;
-    for (let dd = 1; dd < total && shown < ctxPerSide * 2; dd++) {
-      if (cur + dd < total) { drawG(cur + dd, ctxSibCx(1, ++pr)); shown++; }
-      if (shown >= ctxPerSide * 2) break;
-      if (cur - dd >= 0) { drawG(cur - dd, ctxSibCx(-1, ++pl)); shown++; }
+    for (let j = 0; j < sibs.length && shown < ctxPerSide * 2; j++) {
+      const right = j % 2 === 0;
+      drawG(sibs[j], ctxSibCx(right ? 1 : -1, right ? ++pr : ++pl));
+      shown++;
     }
     const foldN = (total - 1) - shown;
     if (foldN > 0) {
