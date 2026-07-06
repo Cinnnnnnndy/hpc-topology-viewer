@@ -935,23 +935,25 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div style={{ flex: '1 1 50%', position: 'relative', minHeight: 0, padding: '4px 6px' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
-          {/* L0 Core-Group: full memory-architecture pattern (same figure as 运行状态·物理链路·L0), zoom/pan */}
-          <div style={{ flex: '1 1 50%', minHeight: 170, display: 'flex', flexDirection: 'column', borderTop: '1px dashed var(--bd)' }}>
-            <div style={{ padding: '6px 12px 3px', flexShrink: 0, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          {/* L0 Core-Group — continues the funnel: label sits in the SAME left gutter as L1–L7, the full
+              memory-architecture pattern fills the content area on the right (same figure as 运行状态·物理链路·L0). */}
+          <div style={{ flex: '1 1 52%', minHeight: 180, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
+            <div style={{ width: '19%', minWidth: 96, maxWidth: 150, flexShrink: 0, padding: '8px 4px 8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)' }}>Core-Group</span>
-              <span style={{ display: 'inline-flex', gap: 3 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', lineHeight: 1.1 }}>Core-Group</span>
+              <span style={{ display: 'inline-flex', gap: 3, marginTop: 3 }}>
                 {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
                   <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
                 ))}
               </span>
-              <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>full on-chip memory architecture — GM/L2 · AIV1/AIC/AIV2 · UB/L1/L0A/L0B/BT/FP/L0C · CUBE · MTE1/2/3 (scroll to zoom · drag to pan)</span>
+              <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
+              <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>scroll to zoom · drag to pan</span>
             </div>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative', borderLeft: '1px dashed var(--bd)' }}>
               <CoreGroupPattern
                 phaseKind={playing ? (lens === 'flow' ? 'comm' : 'compute') : undefined}
                 load={Math.max(0, Math.min(1, stats.kpi.util))}
-                zoom={0.4}
+                zoom={0.42}
                 detail
                 height="100%"
               />
