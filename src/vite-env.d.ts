@@ -56,6 +56,6 @@ interface Window {
     clearPathFocus?(container: Element): void;
     setBufferBlocks?(root: Element, blocks: Array<{ core: string; buffer: string; label?: string; state?: string; tone?: string; cellRange?: [number, number]; sourceTile?: string }>): void;
     clearBufferBlocks?(root: Element): void;
-    createZoomController?(options: any): { render?(): void; setZoom?(z: number): void; setPan?(x: number, y: number): void; center?(): void; zoomAtPoint?(z: number, x: number, y: number): void; reset?(): void; destroy?(): void } | null;
+    createZoomController?(options: any): { render?(): void; getZoom?(): number; getPan?(): { x: number; y: number }; setZoom?(z: number): void; setPan?(x: number, y: number): void; center?(): void; zoomAtPoint?(z: number, x: number, y: number): void; reset?(): void; destroy?(): void } | null;
   };
 }

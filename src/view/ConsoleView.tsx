@@ -15,7 +15,7 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS, HW_LEVELS,
+  GENERATIONS, ENTITY_COLORS, PARALLEL_COLORS, PARALLEL_COLORS_SP, PARTITION_META, PLANES, LEVEL_PHYS,
   PODS_PER_CLUSTER, POOLS_PER_CLUSTER, PODS_PER_POOL,
   loadColor, loadState, stateColor, STATE_LABELS, nodeLoad, isHot,
   REPLAY, cardLoad01, cardStraggler, cardFault, cardMetric01, parallelMap,
@@ -202,17 +202,6 @@ const SUBTIERS: SubTier[] = [
   { key: 'die',  lvl: 'die',  y: 396, cols: 4, cell: 30, gap: 10, n: 4, seed: 131, tag: 'L1', label: 'Die (optional)', col: (i: number) => (i < 2 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.ioDie) },
   { key: 'core', lvl: 'core', y: 470, n: 32, tag: 'L0', label: 'Core-Group' },   // 原生 CoreGroupMiniSvg 图元（非网格）
 ];
-// 级间互联小 chip（y=连线中点，居中）：HW_LEVELS[i].down.label/color。
-const CX_MID = (X0 + X1) / 2;
-const ICHIPS: { y: number; li: number }[] = [
-  { y: 48, li: 0 },   // 全球→集群 DCN
-  { y: 84, li: 1 },   // 集群→服务池 Scale-Out
-  { y: 126, li: 2 },  // 服务池→Pod Pool 内互联
-  { y: 191, li: 3 },  // Pod→Host Scale-Up
-  { y: 273, li: 4 },  // Host→Chip PCIe/UB
-  { y: 372, li: 5 },  // Chip→Die 封装互连
-  { y: 443, li: 6 },  // Die→Core-Group NoC
-];
 
 function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, planeOn, playing, stats, dark, pm }: {
   N: number; nBlades: number; focus: Focus; setFocus: (f: Focus) => void;
@@ -269,6 +258,26 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       <animate attributeName="stroke-dashoffset" from="15" to="0" dur="0.6s" repeatCount="indefinite" />
     </line>
   ) : null);
+  // selection highlight = 涟漪(ripple): a bold outline hugging the glyph + two phase-offset rounded-rect
+  //   pulses that grow & fade outward (SVG port of 平面视图 PlaneView's canvas ripple). Replaces the old
+  //   fill-box + blue centre dot. w/h = glyph box size; grows ~30% each side (→1.6×) over 1.25s.
+  const ripple = (cx: number, cy: number, w: number, h: number, col: string, key: string) => {
+    const x = cx - w / 2, y = cy - h / 2, rk = Math.min(w, h) * 0.3, gx = w * 0.3, gy = h * 0.3;
+    return (
+      <g key={key} style={{ pointerEvents: 'none' }}>
+        <rect x={x} y={y} width={w} height={h} rx={rk} fill={col} fillOpacity={0.12} stroke={col} strokeWidth={1.8} />
+        {[0, 0.625].map((d, i) => (
+          <rect key={i} x={x} y={y} width={w} height={h} rx={rk} fill="none" stroke={col} strokeWidth={2} strokeOpacity={0.45}>
+            <animate attributeName="x" values={`${x};${x - gx}`} dur="1.25s" begin={`${d}s`} repeatCount="indefinite" />
+            <animate attributeName="y" values={`${y};${y - gy}`} dur="1.25s" begin={`${d}s`} repeatCount="indefinite" />
+            <animate attributeName="width" values={`${w};${w + 2 * gx}`} dur="1.25s" begin={`${d}s`} repeatCount="indefinite" />
+            <animate attributeName="height" values={`${h};${h + 2 * gy}`} dur="1.25s" begin={`${d}s`} repeatCount="indefinite" />
+            <animate attributeName="stroke-opacity" values="0.45;0" dur="1.25s" begin={`${d}s`} repeatCount="indefinite" />
+          </rect>
+        ))}
+      </g>
+    );
+  };
   // hw-native-sys whitepaper level icons: Global=globe · Cluster=rack · Service Pool=4 linked boxes ·
   //   Pod=UBL128 grid · Host=3 blocks · Chip·NPU=chip shell · Die=dashed 2-die (optional) · Core-Group=V/C/CPU. s = half-size.
   const levelIcon = (kind: string, cx: number, cy: number, s: number, col: string, op: number, key: string) => {
@@ -326,14 +335,13 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const podY = TIERS[3].y, podH = TIERS[3].h;
     els.push(<line key="spine" x1={CX_SPINE} y1={TIERS[0].y} x2={CX_SPINE} y2={podY} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.4} />);
     els.push(cflow(CX_SPINE, TIERS[0].y, CX_SPINE, podY, 'spine-flow'));
-    [TIERS[0].y, TIERS[1].y, TIERS[2].y].forEach((yy, i) => els.push(cdot(CX_SPINE, yy, ACCENT, `sp-dot-${i}`, 2.4)));
+    // (blue centre dots on the spine removed — the selected member is now marked by its 涟漪 ripple)
     const hostRow = rows.find((r) => r.t.Le === 4);
     if (hostRow && hostRow.shown.length) {
       const hy = TIERS[4].y, hh = TIERS[4].h, xs = hostRow.shown.map((s) => s.x);
       const left = Math.min(...xs) - 4, right = Math.max(...xs) + 4, apexY = podY + podH / 2, baseY = hy - hh / 2 - 2;
       els.push(<path key="ph-wedge" d={`M${CX_SPINE - 16} ${apexY} L${left} ${baseY} L${right} ${baseY} L${CX_SPINE + 16} ${apexY} Z`} fill={ACCENT} fillOpacity={0.07} />);
       els.push(<line key="ph-spine" x1={CX_SPINE} y1={apexY} x2={CX_SPINE} y2={baseY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.33} />);
-      els.push(cdot(CX_SPINE, apexY, ACCENT, 'ph-apex', 2.2));
     }
   }
   // 1) containment connectors — only when a Host (node) is drilled (funnel collapsed to its chain);
@@ -369,7 +377,8 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         const s = Math.max(9, Math.min(maxW, slotW * 0.82)), gx = x - s / 2, gy = cy - s / 2, ins = s * 0.17, gp = s * 0.08, dw = (s - ins * 2 - gp) / 2;
         els.push(
           <g key={`g-5-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
-            {(isSel || strag) && <rect x={gx - 3} y={gy - 3} width={s + 6} height={s + 6} rx={s * 0.34} fill="none" stroke={isSel ? ringC : '#b07bff'} strokeWidth={1.8} />}
+            {isSel ? ripple(x, cy, s + 6, s + 6, ringC, `g5r-${idx}`)
+              : strag ? <rect x={gx - 3} y={gy - 3} width={s + 6} height={s + 6} rx={s * 0.34} fill="none" stroke="#b07bff" strokeWidth={1.8} /> : null}
             <rect x={gx} y={gy} width={s} height={s} rx={s * 0.24} fill={fill} />
             {s >= 12 && [0, 1, 2, 3].map((q) => <rect key={q} x={gx + ins + (q % 2) * (dw + gp)} y={gy + ins + Math.floor(q / 2) * (dw + gp)} width={dw} height={dw} rx={dw * 0.3} fill={P.die} />)}
           </g>,
@@ -379,7 +388,7 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         const lbl = w >= 30 ? `B${idx}` : '';
         els.push(
           <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
-            {isSel && <rect x={gx - 3} y={gy - 3} width={w + 6} height={h + 6} rx={(h + 6) * 0.36} fill="none" stroke={ringC} strokeWidth={1.8} />}
+            {isSel && ripple(x, cy, w + 6, h + 6, ringC, `ghr-${t.Le}-${idx}`)}
             <rect x={gx} y={gy} width={w} height={h} rx={h * 0.34} fill={fill} />
             {lbl && <text x={x} y={cy + 0.5} fill={ink(t.col)} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
           </g>,
@@ -456,21 +465,8 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 compute(UMA) · 2 IO</text>);
   }
   // L0 Core-Group（最深层级）由下方独立的 CoreGroupPattern 面板完整渲染 memory-architecture 图（可缩放/平移）。
-  // 6) 级间互联徽标（HW_LEVELS[i].down）—— 命名「该层→下一层」用什么网络/互联织物：
-  //    不透明底色（遮住竖脊，读作坐在脊上的一枚徽标）+ 层级色描边 + 悬停 <title> 展开详情。
-  const ichip = (x: number, y: number, label: string, color: string, detail: string, key: string) => {
-    const w = label.length * 6.2 + 16;
-    return (
-      <g key={key} onClick={(e) => e.stopPropagation()}>
-        <title>{`Inter-level fabric: ${label} — ${detail}`}</title>
-        <rect x={x - w / 2} y={y - 7} width={w} height={14} rx={7} fill={P.pill} stroke={color} strokeOpacity={0.75} strokeWidth={1} />
-        <text x={x} y={y + 0.5} fill={color} fontSize={8.5} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{label}</text>
-      </g>
-    );
-  };
-  // English display labels for the two badges whose source label carries Chinese (source data is shared with other views).
-  const ICHIP_EN: Record<string, string> = { 'Pool 内互联': 'Intra-Pool', '封装互连': 'Package (D2D)' };
-  ICHIPS.forEach(({ y, li }) => { const d = HW_LEVELS[li].down; if (d) els.push(ichip(li === 6 ? coreAnchorX : li === 5 ? 210 : CX_MID, y, ICHIP_EN[d.label] ?? d.label, d.color, d.detail, `ic-${li}`)); });
+  // 级间互联徽标（DCN/Scale-Out/Intra-Pool/Scale-Up/PCIe·UB/Package/NoC）已移除——竖脊本身即表达包含，
+  // 徽标文字标签在中心列显得杂乱；织物名称保留在各行副标题/悬停里即可。
   // 0) upper context (L7 Global / L6 Cluster / L5 Service Pool / L4 Pod) rendered as their own entities.
   els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>Upper context · real counts · hw-native-sys icons</text>);
   els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · badge = inter-level fabric (hover)</text>);
@@ -496,9 +492,8 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       els.push(
         <g key={`ctx-${t.key}-${e}`} style={{ cursor: 'pointer' }}
           onClick={(ev) => { ev.stopPropagation(); setCtxCur((c) => ({ ...c, [t.key]: e })); if (t.Le === 3) setFocus({ level: 'super', card: 0 }); }}>
-          {isCur
-            ? <rect x={cx - gw / 2 - 1} y={t.y - h / 2 - 1} width={gw + 2} height={h + 2} rx={(h + 2) * 0.4} fill={t.col} fillOpacity={0.14} stroke={t.col} strokeWidth={1.6} />
-            : <rect x={cx - gw / 2} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill="transparent" />}
+          <rect x={cx - gw / 2} y={t.y - h / 2} width={gw} height={h} rx={h * 0.4} fill="transparent" />
+          {isCur && ripple(cx, t.y, gw + 3, h + 3, t.col, `ctxr-${t.key}-${e}`)}
           {levelIcon(kind, cx, t.y, iconS, t.col, isCur ? 1 : dashed ? 0.3 : 0.55, `ctxg-${t.key}-${e}`)}
         </g>,
       );
@@ -950,8 +945,10 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           <div style={{ flexShrink: 0, minHeight: 0, overflow: 'hidden', padding: '2px 0 0' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
-          {/* L0 Core-Group — full interactive memory-architecture (same figure as 运行状态·物理链路·L0);
-              label in the SAME left gutter (x≈2%, width 19.7% = X0/600) as L1–L7, diagram fills the right. */}
+          {/* L0 Core-Group — full interactive memory-architecture (same figure as 运行状态·物理链路·L0).
+              Reads as ONE piece with the funnel above: the label sits in the SAME left gutter (x≈2%,
+              width 19.7% = X0/600) as L1–L7, and the diagram is left-aligned so its rails butt directly
+              under the L1 Die section (no floating gap). Divider = same soft dashed line as on-chip levels. */}
           <div style={{ flex: '1 1 0', minHeight: 190, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
             <div style={{ width: '19.7%', minWidth: 80, flexShrink: 0, paddingLeft: '2%', paddingTop: 6, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
@@ -964,12 +961,13 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
               <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
               <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>scroll to zoom · drag to pan</span>
             </div>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative', borderLeft: '1px dashed var(--bd)' }}>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               <CoreGroupPattern
                 phaseKind={playing ? (['load', 'compute', 'comm', 'store'] as const)[step % 4] : undefined}
                 load={playing ? Math.max(0.15, Math.min(1, stats.kpi.util)) : 0.5}
                 zoom={0.42}
                 detail
+                align="left"
                 height="100%"
               />
             </div>

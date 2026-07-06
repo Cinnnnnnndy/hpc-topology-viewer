@@ -95,12 +95,14 @@ export interface CoreGroupPatternProps {
   detail?: boolean;
   /** 折叠 AIV 2（窄面板时省空间） */
   foldAiv?: boolean;
+  /** 水平对齐：'center'（默认，居中）或 'left'（贴左，紧接上方漏斗的左栏 → 视觉连成一体） */
+  align?: 'center' | 'left';
   height?: number | string;
   style?: React.CSSProperties;
 }
 
 /** L0 Core-Group（AIV·向量 / AIC·Cube / AICPU）内部架构 —— memory-architecture pattern 挂载器 */
-export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = false, foldAiv = false, height = '100%', style }: CoreGroupPatternProps) {
+export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = false, foldAiv = false, align = 'center', height = '100%', style }: CoreGroupPatternProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const apiRef = useRef<{ overlay?: any; hover?: any; zoomCtl?: any } | null>(null);
@@ -128,7 +130,25 @@ export function CoreGroupPattern({ phaseKind, load = 0.5, zoom = 0.5, detail = f
       onZoom: ({ zoom: z }: { zoom: number }) => { hover?.setViewportScale?.(z); overlay?.render(); },
     });
     zoomCtl?.render?.();
-    requestAnimationFrame(() => zoomCtl?.center?.());
+    // center() (vendored) equalises L/R margins → a big empty gap on the left between the funnel's
+    // left gutter and this diagram. align='left' shifts X so the rails butt against the gutter, so the
+    // figure reads as one continuous piece with the L1 Die section directly above it.
+    const settle = () => {
+      zoomCtl?.center?.();
+      if (align === 'left' && zoomCtl && viewport) {
+        const targets = viewport.querySelectorAll('.pto-mem950__rails, .pto-mem950__engine-stack, .pto-mem950__stack');
+        if (targets.length) {
+          const vr = viewport.getBoundingClientRect();
+          let left = Infinity;
+          targets.forEach((t) => { const b = (t as HTMLElement).getBoundingClientRect(); if (b.width > 0) left = Math.min(left, b.left); });
+          if (Number.isFinite(left)) {
+            const cur = zoomCtl.getPan?.() ?? { x: 0 };
+            zoomCtl.setPan?.(cur.x + 8 - (left - vr.left), (zoomCtl.getPan?.() ?? { y: 0 }).y);
+          }
+        }
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(settle));
     apiRef.current = { overlay, hover, zoomCtl };
     return () => {
       zoomCtl?.destroy?.();
