@@ -383,6 +383,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       const hs = gsz * (t.Le === 5 ? 0.5 : 0.46);              // levelIcon half-size (≈ box ⁄ 1.5–2)
       els.push(
         <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
+          {/* transparent hit target — the levelIcon itself is pointer-events:none, so without this the
+              row would not be clickable (→ no selection, no 3D link). */}
+          <rect x={x - gsz / 2 - 2} y={cy - gsz / 2 - 2} width={gsz + 4} height={gsz + 4} rx={gsz * 0.2} fill="transparent" />
           {isSel ? ripple(x, cy, gsz + 5, gsz + 5, ringC, `gr-${t.Le}-${idx}`)
             : strag ? <rect x={x - gsz / 2 - 3} y={cy - gsz / 2 - 3} width={gsz + 6} height={gsz + 6} rx={gsz * 0.34} fill="none" stroke="#b07bff" strokeWidth={1.6} /> : null}
           {levelIcon(kind, x, cy, hs, col, 1, `gi-${t.Le}-${idx}`)}
@@ -489,15 +492,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         </g>,
       );
     };
-    drawG(cur, CX_SPINE);
-    // remaining members fan out SYMMETRICALLY around the spine (nearest index first, alternating
-    // right/left) so the row stays centered in the content area and every member stays in view.
-    const sibs: number[] = [];
-    for (let d = 1; d < total; d++) { if (cur + d < total) sibs.push(cur + d); if (cur - d >= 0) sibs.push(cur - d); }
+    // FIXED positions (index-based, NOT selection-based): index 0 ("this X", the containment anchor) sits
+    // on the spine; the rest fan out symmetrically at fixed per-index slots (1→R, 2→L, 3→R…). Selecting a
+    // member only ripples it IN PLACE — it never repositions anyone.
+    drawG(0, CX_SPINE);
     let pr = 0, pl = 0, shown = 0;
-    for (let j = 0; j < sibs.length && shown < ctxPerSide * 2; j++) {
-      const right = j % 2 === 0;
-      drawG(sibs[j], ctxSibCx(right ? 1 : -1, right ? ++pr : ++pl));
+    for (let e = 1; e < total && shown < ctxPerSide * 2; e++) {
+      const right = e % 2 === 1;
+      drawG(e, ctxSibCx(right ? 1 : -1, right ? ++pr : ++pl));
       shown++;
     }
     const foldN = (total - 1) - shown;
