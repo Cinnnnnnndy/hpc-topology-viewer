@@ -66,9 +66,10 @@ function scopeRange(f: Focus, N: number): [number, number] {
 // which entity indices of tier Le are on the focus's chain (ancestor / self / descendant), dir-filtered.
 // returns null = "no focus → overview (show all, capped)". Le: 3 Pod · 4 Host · 5 Chip.
 function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nBlades: number): number[] | null {
-  // Chip·NPU (card) & below = SWITCH not filter: keep the funnel in overview (highlight only);
-  // only Host (node) drilling collapses the funnel to its chain.
-  if (!focus || focus.level === 'super' || focus.level === 'card' || focus.level === 'die' || focus.level === 'core') return null;
+  // UNIFIED select model (L7→L0): every level is SWITCH not filter — selecting an entity highlights it
+  // + drives the detail panel, but NEVER collapses the funnel. So scope is always "overview" (show all,
+  // capped). Host (node) no longer drills; it behaves exactly like the L4–L7 context switch and L2 Chip.
+  if (!focus || focus.level === 'super' || focus.level === 'node' || focus.level === 'card' || focus.level === 'die' || focus.level === 'core') return null;
   const Lf = levelIdx(focus.level);
   const counts = [1, 1, 1, 1, nBlades, N];
   const div = [N, N, N, N, CPB, 1][Le];
@@ -344,56 +345,49 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       els.push(<line key="ph-spine" x1={CX_SPINE} y1={apexY} x2={CX_SPINE} y2={baseY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.33} />);
     }
   }
-  // 1) containment connectors — only when a Host (node) is drilled (funnel collapsed to its chain);
-  //    Chip·NPU switching keeps overview, so no chain lines then.
-  if (focus && focus.level === 'node') {
-    const parentDots = new Map<string, [number, number]>();
-    rows.forEach(({ t, shown }) => {
-      shown.forEach(({ idx, x }) => {
-        const par = parentOf(t.Le, idx); if (!par) return;
-        const pp = pos[par.Le]?.[par.idx]; if (!pp) return;
-        const cTop = t.y - t.h / 2, pBot = pp.y + tierH(par.Le) / 2;
-        els.push(<line key={`c-${t.Le}-${idx}`} x1={x} y1={cTop} x2={pp.x} y2={pBot} stroke={ACCENT} strokeWidth={1.3} strokeOpacity={0.55} />);
-        els.push(cflow(pp.x, pBot, x, cTop, `cf-${t.Le}-${idx}`));
-        els.push(cdot(x, cTop, ACCENT, `cd-${t.Le}-${idx}`, 2.2));
-        parentDots.set(`${par.Le}-${par.idx}`, [pp.x, pBot]);
-      });
+  // 1) selected containment chain — UNIFIED across levels: selecting any entity (Host / Chip / Die / Core)
+  //    highlights its path up the ancestors (Chip → Host → Pod spine) drawn OVER the full overview — no
+  //    collapse, same switch-select feel as the L4–L7 context rows.
+  if (focus && focus.level !== 'super') {
+    const chipIdx = focus.level === 'node' ? null : focus.card;
+    const hostIdx = Math.floor(focus.card / CPB);
+    const chain: { Le: number; idx: number }[] = [];
+    if (chipIdx != null && pos[5]?.[chipIdx]) chain.push({ Le: 5, idx: chipIdx });   // skip any card scrolled past the BUDGET cap
+    if (pos[4]?.[hostIdx]) chain.push({ Le: 4, idx: hostIdx });
+    chain.forEach(({ Le, idx }) => {
+      const me = pos[Le][idx], par = parentOf(Le, idx); if (!par) return;
+      const pp = pos[par.Le]?.[par.idx]; if (!pp) return;
+      const cTop = me.y - tierH(Le) / 2, pBot = pp.y + tierH(par.Le) / 2;
+      els.push(<line key={`ch-${Le}-${idx}`} x1={me.x} y1={cTop} x2={pp.x} y2={pBot} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.6} />);
+      els.push(cflow(pp.x, pBot, me.x, cTop, `chf-${Le}-${idx}`));
+      els.push(cdot(me.x, me.y, ACCENT, `chd-${Le}-${idx}`, 2.2));
+      els.push(cdot(pp.x, pBot, ACCENT, `chp-${Le}-${idx}`, 2));
     });
-    parentDots.forEach(([px, py], k) => els.push(cdot(px, py, ACCENT, `pd-${k}`)));
-    // 2) UB plane mesh between Host-tier siblings (横向同级关系)
+    // 2) UB plane mesh — same-level Host↔Host links among the selected host's shown neighbours (toggle)
     if (planeOn.ub) {
       const nr = rows.find((r) => r.t.Le === 4);
-      if (nr) { const ny = nr.t.y; for (let i = 0; i < nr.shown.length - 1; i++) { const a = nr.shown[i], b = nr.shown[i + 1], mx = (a.x + b.x) / 2; els.push(<path key={`ub-${i}`} d={`M${a.x} ${ny} Q ${mx} ${ny - 15} ${b.x} ${ny}`} fill="none" stroke={PLANES[0].color} strokeWidth={1} strokeOpacity={0.55} />); } }
+      if (nr) { const ny = nr.t.y; for (let i = 0; i < nr.shown.length - 1; i++) { const a = nr.shown[i], b = nr.shown[i + 1]; if (Math.min(Math.abs(a.idx - hostIdx), Math.abs(b.idx - hostIdx)) > 4) continue; const mx = (a.x + b.x) / 2; els.push(<path key={`ub-${i}`} d={`M${a.x} ${ny} Q ${mx} ${ny - 13} ${b.x} ${ny}`} fill="none" stroke={PLANES[0].color} strokeWidth={1} strokeOpacity={0.5} />); } }
     }
   }
-  // 3) tier glyphs — pill (Pod) / block (Host) / card-glyph(2×2 Die) (Chip)
+  // 3) tier glyphs — every member is the level's abstract hw-native-sys icon (Host = 3-block, Chip·NPU =
+  //    chip shell), same glyph as the context rows above; tinted by live load (fillOf) so utilization
+  //    still reads through the hue. Selection = 涟漪 ripple.
   rows.forEach(({ t, shown, fold, foldX, slotW }) => {
     const maxW = t.maxW ?? 40;
+    const kind = t.Le === 4 ? 'host' : 'chip';
     shown.forEach(({ idx, x }) => {
-      const isSel = t.Le === selLe && idx === selIdx, fill = fillOf(t.Le, idx, t.col);
+      const isSel = t.Le === selLe && idx === selIdx, col = fillOf(t.Le, idx, t.col);
       const strag = playing && t.Le === 5 && isStrag(idx, step);
       const cy = t.y, click = (e: React.MouseEvent) => { e.stopPropagation(); setFocus(isSel ? null : entityToFocus(t.Le, idx)); };
-      if (t.Le === 5) {           // Chip glyph: rounded square + 2×2 Die dots
-        const s = Math.max(9, Math.min(maxW, slotW * 0.82)), gx = x - s / 2, gy = cy - s / 2, ins = s * 0.17, gp = s * 0.08, dw = (s - ins * 2 - gp) / 2;
-        els.push(
-          <g key={`g-5-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
-            {isSel ? ripple(x, cy, s + 6, s + 6, ringC, `g5r-${idx}`)
-              : strag ? <rect x={gx - 3} y={gy - 3} width={s + 6} height={s + 6} rx={s * 0.34} fill="none" stroke="#b07bff" strokeWidth={1.8} /> : null}
-            <rect x={gx} y={gy} width={s} height={s} rx={s * 0.24} fill={fill} />
-            {s >= 12 && [0, 1, 2, 3].map((q) => <rect key={q} x={gx + ins + (q % 2) * (dw + gp)} y={gy + ins + Math.floor(q / 2) * (dw + gp)} width={dw} height={dw} rx={dw * 0.3} fill={P.die} />)}
-          </g>,
-        );
-      } else {                    // Host : rounded pill (+ id label when wide)
-        const w = Math.max(11, Math.min(maxW, slotW * 0.82)), h = t.h, gx = x - w / 2, gy = cy - h / 2;
-        const lbl = w >= 30 ? `B${idx}` : '';
-        els.push(
-          <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
-            {isSel && ripple(x, cy, w + 6, h + 6, ringC, `ghr-${t.Le}-${idx}`)}
-            <rect x={gx} y={gy} width={w} height={h} rx={h * 0.34} fill={fill} />
-            {lbl && <text x={x} y={cy + 0.5} fill={ink(t.col)} fontSize={Math.min(11, h * 0.56)} fontWeight={700} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none' }}>{lbl}</text>}
-          </g>,
-        );
-      }
+      const gsz = Math.max(9, Math.min(maxW, slotW * 0.82));   // glyph footprint
+      const hs = gsz * (t.Le === 5 ? 0.5 : 0.46);              // levelIcon half-size (≈ box ⁄ 1.5–2)
+      els.push(
+        <g key={`g-${t.Le}-${idx}`} style={{ cursor: 'pointer' }} onClick={click}>
+          {isSel ? ripple(x, cy, gsz + 5, gsz + 5, ringC, `gr-${t.Le}-${idx}`)
+            : strag ? <rect x={x - gsz / 2 - 3} y={cy - gsz / 2 - 3} width={gsz + 6} height={gsz + 6} rx={gsz * 0.34} fill="none" stroke="#b07bff" strokeWidth={1.6} /> : null}
+          {levelIcon(kind, x, cy, hs, col, 1, `gi-${t.Le}-${idx}`)}
+        </g>,
+      );
     });
     if (fold > 0 && foldX != null) {
       const w = Math.max(28, String(fold).length * 7 + 22);
@@ -405,15 +399,14 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       );
     }
   });
-  // 4) tier labels (gutter): Lx · name · icon · shown/total · p50/red
-  rows.forEach(({ t, inCount }) => {
+  // 4) tier labels (gutter): Lx · name · total · p50/red — no separate icon (the row members ARE the icon now)
+  rows.forEach(({ t }) => {
     const a = aggOf(t.Le);
     els.push(
       <g key={`l-${t.Le}`}>
         {t.tag && <text x={12} y={t.y - 6} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>}
         <text x={12} y={t.y + (t.tag ? 6 : 4)} fill={P.ink} fontSize={12} fontWeight={600}>{t.label}</text>
-        <text x={12} y={t.y + (t.tag ? 18 : 16)} fill={P.ink3} fontSize={9}>{`${focus ? inCount + '/' : ''}${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
-        {levelIcon(t.Le === 4 ? 'host' : 'chip', 104, t.y + 3, 8, t.col, 1, `l-ic-${t.Le}`)}
+        <text x={12} y={t.y + (t.tag ? 18 : 16)} fill={P.ink3} fontSize={9}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
       </g>,
     );
   });
@@ -451,7 +444,6 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
     els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={12} fontWeight={600}>{st.label}</text>);
     els.push(<text key="scnt-die" x={12} y={st.y + 18} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
-    els.push(levelIcon('die', 104, st.y + 3, 8, ENTITY_COLORS.computeDie, 1, 'die-gic'));
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
       const isSel = repReal && focus?.die === i;
@@ -469,23 +461,22 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // 徽标文字标签在中心列显得杂乱；织物名称保留在各行副标题/悬停里即可。
   // 0) upper context (L7 Global / L6 Cluster / L5 Service Pool / L4 Pod) rendered as their own entities.
   els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>Upper context · real counts · hw-native-sys icons</text>);
-  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · badge = inter-level fabric (hover)</text>);
-  const ctxLabel = (t: Tier, sub: string, kind: string) => els.push(
+  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · click any level to switch</text>);
+  const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
       <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
       <text x={12} y={t.y + 8} fill={P.ink2} fontSize={10} fontWeight={600}>{t.label}</text>
       <text x={12} y={t.y + 18} fill={P.ink3} fontSize={8}>{sub}</text>
-      {levelIcon(kind, 103, t.y + 4, 8, t.col, 1, `ctxl-ic-${t.key}`)}
     </g>,
   );
-  // one context row: the SELECTED member sits on the spine (ring), siblings fan out and are CLICKABLE to
-  //   switch which one is current. Small counts show every member (else +N fold). Gutter carries the level icon.
+  // one context row: the SELECTED member sits on the spine (涟漪 ripple), siblings fan out and are CLICKABLE
+  //   to switch which one is current. Small counts show every member (else +N fold).
   const ctxRow = (t: Tier, kind: string, total: number, subFn: (c: number) => string, dashed: boolean) => {
     const cur = Math.min(total - 1, ctxCur[t.key] ?? 0);
-    ctxLabel(t, subFn(cur), kind);
+    ctxLabel(t, subFn(cur));
     const h = t.h, gw = CTX_GW;
-    // each member is drawn as the LEVEL'S abstract icon (same as the gutter icon), not a plain pill;
-    //   current = full-opacity + soft ring, siblings = faded (dashed tiers extra-faint).
+    // each member is drawn as the LEVEL'S abstract hw-native-sys icon, not a plain pill;
+    //   current = full-opacity + 涟漪 ripple, siblings = faded (dashed tiers extra-faint).
     const iconS = Math.min(gw, h) * 0.46;
     const drawG = (e: number, cx: number) => {
       const isCur = e === cur;
