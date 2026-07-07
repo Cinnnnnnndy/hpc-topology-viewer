@@ -316,10 +316,15 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     }
   };
   // 0) ALWAYS-ON containment funnel — 层级间关系（overview 也画）：
-  //    L7→L6→L5→L4 中心竖脊 (ctx 当前 pill 都坐在脊上) + L4 Pod → L3 Host 漏斗楔形（1 Pod ⊃ 1024 Host）。
+  //    L7→L6→L5→L4 短连线（仅相邻两级当前成员之间 + L4 Pod → L3 Host 漏斗楔形）。
   {
     const podY = TIERS[3].y, podH = TIERS[3].h;
-    // (center spine lines removed — containment shown by wedge shapes only)
+    // Short connector between adjacent ctx-tier current members (index 0 always at CX_SPINE): L7→L6, L6→L5, L5→L4
+    for (let i = 0; i < 3; i++) {
+      const ta = TIERS[i], tb = TIERS[i + 1];
+      const y1 = ta.y + ta.h / 2, y2 = tb.y - tb.h / 2;
+      if (y2 > y1) els.push(<line key={`ctx-seg-${i}`} x1={CX_SPINE} y1={y1} x2={CX_SPINE} y2={y2} stroke={ACCENT} strokeWidth={1} strokeOpacity={0.25} />);
+    }
     const hostRow = rows.find((r) => r.t.Le === 4);
     if (hostRow && hostRow.shown.length) {
       const hy = TIERS[4].y, hh = TIERS[4].h, xs = hostRow.shown.map((s) => s.x);
