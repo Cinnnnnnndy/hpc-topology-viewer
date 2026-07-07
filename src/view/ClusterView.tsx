@@ -586,6 +586,107 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                           <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', minWidth: 32, fontVariantNumeric: 'tabular-nums' }}>t={syncStep}</span>
                         </div>
                       </div>
+                      {/* ── divider ── */}
+                      <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                      {/* ── 代际 (always) ── */}
+                      <div className="hpc-wb-ctrl-group">
+                        <span className="hpc-wb-ctrl-label">代际</span>
+                        <div className="hpc-wb-ctrl-btns">
+                          {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
+                            <button key={g} onClick={() => setGen(g)} title={GENERATIONS[g].name}
+                              style={{ padding: '3px 11px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(gen === g) }}>
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* ── mode-specific controls ── */}
+                      {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'fullpod') && (
+                        <div className="hpc-wb-ctrl-group">
+                          <span className="hpc-wb-ctrl-label">叠加</span>
+                          <div className="hpc-wb-ctrl-btns">
+                            {(mode === 'node' ? NODE_OVERLAYS : TOPO_OVERLAYS).map((t) => {
+                              const on = overlays[t.id];
+                              return (
+                                <button key={t.id} onClick={() => setOverlays((o) => ({ ...o, [t.id]: !o[t.id] }))}
+                                  style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, t.color) }}>
+                                  <span style={{ width: 9, height: 3, background: on ? ink(t.color) : t.color, display: 'inline-block', borderRadius: 1, opacity: on ? 0.9 : 0.5 }} />
+                                  {t.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {mode === 'matrix' && (
+                        <div className="hpc-wb-ctrl-group">
+                          <span className="hpc-wb-ctrl-label">规模</span>
+                          <div className="hpc-wb-ctrl-btns">
+                            {(Object.keys(SCALES) as Scale[]).map((s) => (
+                              <button key={s} onClick={() => setScale(s)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(scale === s) }}>{SCALES[s].label}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {mode === 'fullpod' && (
+                        <>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">规模</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([[false, '64P 单柜'], [true, `全量(${spec.totalNpus >= 1000 ? Math.round(spec.totalNpus / 1000) + 'K' : spec.totalNpus})`]] as [boolean, string][]).map(([v, label]) => (
+                                <button key={label} onClick={() => setFpFull(v)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(fpFull === v) }}>{label}</button>
+                              ))}
+                              {[1, 2, 4].map((c) => (
+                                <button key={c} onClick={() => setPodCount(c)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(podCount === c) }}>{`×${c} Pod`}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">运行</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([['train', '训练'], ['infer', '推理']] as [RunMode, string][]).map(([m, label]) => (
+                                <button key={m} onClick={() => { setRunMode(m); setRunTick((t) => (t === null ? t : 0)); setRunStep(0); }} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(runMode === m) }}>{label}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">切分</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => {
+                                const on = fpPart === d; const sig = PARALLEL_COLORS[d];
+                                return (
+                                  <button key={d} onClick={() => setFpPart((p) => (p === d ? 'none' : d))}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, sig) }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? ink(sig) : sig, display: 'inline-block', opacity: on ? 0.9 : 0.6 }} />{d.toUpperCase()}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">显示</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              <button onClick={() => setFpPeers((v) => !v)}
+                                style={{ ...toggleBtn(fpPeers, UB_LEVELS[1].color), padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 9, height: 3, background: fpPeers ? ink(UB_LEVELS[1].color) : UB_LEVELS[1].color, display: 'inline-block', borderRadius: 1, opacity: fpPeers ? 0.9 : 0.5 }} />
+                                层内直连
+                              </button>
+                              <button onClick={() => setFpStatus((v) => !v)}
+                                style={{ ...toggleBtn(fpStatus, '#04d793'), padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ width: 9, height: 9, background: `linear-gradient(90deg, ${stateColor(0)} 50%, ${stateColor(3)} 50%)`, display: 'inline-block', borderRadius: '50%', opacity: fpStatus ? 1 : 0.6 }} />
+                                负载/观测
+                              </button>
+                              <button onClick={() => setFpPlanes((v) => !v)}
+                                style={{ ...toggleBtn(fpPlanes, PLANES[0].color), padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ display: 'inline-flex', gap: 2 }}>
+                                  {PLANES.map((p) => <span key={p.id} style={{ width: 7, height: 7, borderRadius: 1, background: p.color, display: 'inline-block', opacity: fpPlanes ? 1 : 0.6 }} />)}
+                                </span>
+                                三平面
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </>
@@ -764,8 +865,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}
 
-          {/* floating on-canvas control panel — per-view controls (collapsible) */}
-          {mode !== 'plane' && mode !== 'status' && mode !== 'comm' && mode !== 'console' && (
+          {/* floating on-canvas control panel — per-view controls (classic mode only; workbench uses center-pill dropdown) */}
+          {!workbench && mode !== 'plane' && mode !== 'status' && mode !== 'comm' && mode !== 'console' && (
             <div style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 7, maxWidth: 'calc(100% - 24px)',
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
