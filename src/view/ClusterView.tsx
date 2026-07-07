@@ -517,6 +517,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           <div className="hpc-wb-center-nav" />
           <div className="hpc-wb-secondary">
             <div className="hpc-wb-iconbar" aria-label="页面操作">
+              <button className={`hpc-wb-icon-btn${ctrlBarOpen ? ' is-active' : ''}`} onClick={() => setCtrlBarOpen((v) => !v)} title={ctrlBarOpen ? '收起控制条' : '展开控制条'}>
+                <ShellIcon name="panel" />
+              </button>
               <button className="hpc-wb-icon-btn" onClick={() => setDark((v) => !v)} title={dark ? '切换浅色模式' : '切换深色模式'}>
                 <ShellIcon name={dark ? 'sun' : 'moon'} />
               </button>
@@ -597,11 +600,10 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
       )}
 
       {/* ── global control bar (workbench only) ── */}
-      {workbench && (
-        <div className={`hpc-wb-ctrlbar${ctrlBarOpen ? '' : ' is-collapsed'}`}>
-          {ctrlBarOpen && (
-            <>
-              {/* 工况 */}
+      {workbench && ctrlBarOpen && (
+        <div className="hpc-wb-ctrlbar">
+          <>
+            {/* 工况 */}
               <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', fontWeight: 600 }}>工况</span>
               <div style={{ display: 'flex', gap: 3 }}>
                 {(['pretrain', 'prefill', 'decode'] as ParallelWorkload[]).map((w) => {
@@ -645,11 +647,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 <input type="range" min={0} max={60} value={syncStep} onChange={(e) => setSyncStep(Number(e.target.value))} style={{ width: 100, accentColor: 'var(--state-selected)' } as React.CSSProperties} />
                 <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', minWidth: 32, fontVariantNumeric: 'tabular-nums' }}>t={syncStep}</span>
               </div>
-            </>
-          )}
-          <button className="hpc-wb-ctrlbar-toggle" onClick={() => setCtrlBarOpen((v) => !v)} title={ctrlBarOpen ? '收起控制条' : '展开控制条'}>
-            {ctrlBarOpen ? '⌃' : '⌄'}
-          </button>
+          </>
         </div>
       )}
 
