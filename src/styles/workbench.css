@@ -226,38 +226,91 @@
   transform: translateY(-1px);
 }
 
-/* ── global control bar (second toolbar row) ── */
-.hpc-wb-ctrlbar {
+/* ── center control pill + dropdown ── */
+.hpc-wb-center-nav {
+  position: relative;
+}
+
+.hpc-wb-ctrl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--button-secondary-bg);
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+
+.hpc-wb-ctrl-pill:hover {
+  background: var(--background-elevated);
+  border-color: var(--border-strong);
+  color: var(--foreground);
+}
+
+.hpc-wb-ctrl-pill.is-active {
+  background: var(--state-selected);
+  border-color: var(--border-emphasis);
+  color: var(--foreground);
+}
+
+.hpc-wb-ctrl-sep {
+  color: var(--foreground-subtle);
+  font-size: 10px;
+  margin: 0 1px;
+}
+
+.hpc-wb-ctrl-chevron {
+  color: var(--foreground-subtle);
+  font-size: 9px;
+  margin-left: 3px;
+}
+
+.hpc-wb-ctrl-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  min-width: 520px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hpc-wb-ctrl-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--background-subtle);
-  flex-wrap: wrap;
-  min-height: 36px;
-  position: relative;
-  overflow: hidden;
-  transition: min-height 200ms ease, padding 200ms ease;
 }
 
-.hpc-wb-ctrlbar.is-collapsed {
-  padding-top: 0;
-  padding-bottom: 0;
-  min-height: 0;
-}
-
-.hpc-wb-ctrlbar-toggle {
-  margin-left: auto;
-  padding: 2px 8px;
-  font-size: 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  background: var(--button-secondary-bg);
-  border: 1px solid var(--button-secondary-border);
-  color: var(--foreground-muted);
-  line-height: 1;
+.hpc-wb-ctrl-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground-subtle);
+  min-width: 28px;
   flex-shrink: 0;
+  text-align: right;
+}
+
+.hpc-wb-ctrl-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .hpc-wb-breadcrumb {

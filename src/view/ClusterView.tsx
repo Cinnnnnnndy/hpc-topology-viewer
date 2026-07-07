@@ -268,7 +268,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [syncWorkload, setSyncWorkload] = useState<ParallelWorkload>('decode');
   const [syncStep, setSyncStep] = useState(0);
   const [syncPlaying, setSyncPlaying] = useState(false);
-  const [ctrlBarOpen, setCtrlBarOpen] = useState(true);
+  const [ctrlBarOpen, setCtrlBarOpen] = useState(false);
   const [syncMetric, setSyncMetric] = useState<'util' | 'strag' | 'fault'>('util');
   const [syncPlaneOn, setSyncPlaneOn] = useState({ ub: true, rdma: true, vpc: false });
   const viewSync: ViewSync = {
@@ -514,17 +514,88 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               )}
             </div>
           </div>
-          <div className="hpc-wb-center-nav" />
+          <div className="hpc-wb-center-nav">
+            {(() => {
+              const wlLabels: Record<ParallelWorkload, string> = { pretrain: '预训练', prefill: 'Prefill', decode: 'Decode' };
+              const metShort: Record<'util' | 'strag' | 'fault', string> = { util: '利用率', strag: '全链', fault: '热力' };
+              const activePl = (['ub', 'rdma', 'vpc'] as const).filter((k) => syncPlaneOn[k]).map((k) => k.toUpperCase());
+              return (
+                <>
+                  <button
+                    className={`hpc-wb-ctrl-pill${ctrlBarOpen ? ' is-active' : ''}`}
+                    onClick={() => setCtrlBarOpen((v) => !v)}
+                    title={ctrlBarOpen ? '收起全局控制' : '展开全局控制'}
+                  >
+                    <span>{wlLabels[syncWorkload]}</span>
+                    <span className="hpc-wb-ctrl-sep">·</span>
+                    <span>{metShort[syncMetric]}</span>
+                    {activePl.length > 0 && (
+                      <>
+                        <span className="hpc-wb-ctrl-sep">·</span>
+                        <span>{activePl.join(' ')}</span>
+                      </>
+                    )}
+                    <span className="hpc-wb-ctrl-sep">·</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{syncPlaying ? '⏸' : '▶'} t={syncStep}</span>
+                    <span className="hpc-wb-ctrl-chevron">{ctrlBarOpen ? '▴' : '▾'}</span>
+                  </button>
+                  {ctrlBarOpen && (
+                    <div className="hpc-wb-ctrl-dropdown">
+                      <div className="hpc-wb-ctrl-group">
+                        <span className="hpc-wb-ctrl-label">工况</span>
+                        <div className="hpc-wb-ctrl-btns">
+                          {(['pretrain', 'prefill', 'decode'] as ParallelWorkload[]).map((w) => (
+                            <button key={w} onClick={() => setSyncWorkload(w)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(syncWorkload === w) }}>
+                              {wlLabels[w]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="hpc-wb-ctrl-group">
+                        <span className="hpc-wb-ctrl-label">平面</span>
+                        <div className="hpc-wb-ctrl-btns">
+                          {([['ub', 'UB', '#22c55e'], ['rdma', 'RDMA', '#f97316'], ['vpc', 'VPC', '#a855f7']] as [keyof typeof syncPlaneOn, string, string][]).map(([k, label, col]) => {
+                            const on = syncPlaneOn[k];
+                            return (
+                              <button key={k} onClick={() => setSyncPlaneOn((p) => ({ ...p, [k]: !p[k] }))}
+                                style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, col) }}>
+                                <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(col) : col, display: 'inline-block', opacity: on ? 0.9 : 0.5 }} />
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="hpc-wb-ctrl-group">
+                        <span className="hpc-wb-ctrl-label">着色</span>
+                        <div className="hpc-wb-ctrl-btns">
+                          {([['util', '利用率'], ['strag', '全链'], ['fault', '状态热力']] as ['util' | 'strag' | 'fault', string][]).map(([m, label]) => (
+                            <button key={m} onClick={() => setSyncMetric(m)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(syncMetric === m) }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="hpc-wb-ctrl-group">
+                        <span className="hpc-wb-ctrl-label">回放</span>
+                        <div className="hpc-wb-ctrl-btns">
+                          <button onClick={() => setSyncStep((s) => Math.max(0, s - 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>◀</button>
+                          <button onClick={() => setSyncPlaying((v) => !v)} style={{ padding: '2px 9px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer', ...navBtn(syncPlaying) }}>{syncPlaying ? '⏸' : '▶'}</button>
+                          <button onClick={() => setSyncStep((s) => Math.min(60, s + 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>▶</button>
+                          <input type="range" min={0} max={60} value={syncStep} onChange={(e) => setSyncStep(Number(e.target.value))} style={{ width: 90, accentColor: 'var(--state-selected)' } as React.CSSProperties} />
+                          <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', minWidth: 32, fontVariantNumeric: 'tabular-nums' }}>t={syncStep}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
           <div className="hpc-wb-secondary">
             <div className="hpc-wb-iconbar" aria-label="页面操作">
-              <button className={`hpc-wb-icon-btn${ctrlBarOpen ? ' is-active' : ''}`} onClick={() => setCtrlBarOpen((v) => !v)} title={ctrlBarOpen ? '收起控制条' : '展开控制条'}>
-                <ShellIcon name="panel" />
-              </button>
               <button className="hpc-wb-icon-btn" onClick={() => setDark((v) => !v)} title={dark ? '切换浅色模式' : '切换深色模式'}>
                 <ShellIcon name={dark ? 'sun' : 'moon'} />
-              </button>
-              <button className={`hpc-wb-icon-btn${panelOpen ? ' is-active' : ''}`} onClick={() => setPanelOpen((v) => !v)} title="右侧信息面板">
-                <ShellIcon name="sidebar" />
               </button>
             </div>
           </div>
@@ -599,57 +670,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
       </div>
       )}
 
-      {/* ── global control bar (workbench only) ── */}
-      {workbench && ctrlBarOpen && (
-        <div className="hpc-wb-ctrlbar">
-          <>
-            {/* 工况 */}
-              <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', fontWeight: 600 }}>工况</span>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {(['pretrain', 'prefill', 'decode'] as ParallelWorkload[]).map((w) => {
-                  const labels: Record<ParallelWorkload, string> = { pretrain: '预训练', prefill: 'Prefill', decode: 'Decode' };
-                  return (
-                    <button key={w} onClick={() => setSyncWorkload(w)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(syncWorkload === w) }}>
-                      {labels[w]}
-                    </button>
-                  );
-                })}
-              </div>
-              {/* 平面 */}
-              <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', fontWeight: 600, marginLeft: 6 }}>平面</span>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {([['ub', 'UB', '#22c55e'], ['rdma', 'RDMA', '#f97316'], ['vpc', 'VPC', '#a855f7']] as [keyof typeof syncPlaneOn, string, string][]).map(([k, label, col]) => {
-                  const on = syncPlaneOn[k];
-                  return (
-                    <button key={k} onClick={() => setSyncPlaneOn((p) => ({ ...p, [k]: !p[k] }))}
-                      style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, col) }}>
-                      <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(col) : col, display: 'inline-block', opacity: on ? 0.9 : 0.5 }} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-              {/* 着色 */}
-              <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', fontWeight: 600, marginLeft: 6 }}>着色</span>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {([['util', '利用率'], ['strag', '全链'], ['fault', '状态热力']] as ['util' | 'strag' | 'fault', string][]).map(([m, label]) => (
-                  <button key={m} onClick={() => setSyncMetric(m)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(syncMetric === m) }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {/* 回放 */}
-              <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', fontWeight: 600, marginLeft: 6 }}>回放</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button onClick={() => setSyncStep((s) => Math.max(0, s - 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>◀</button>
-                <button onClick={() => setSyncPlaying((v) => !v)} style={{ padding: '2px 9px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer', ...navBtn(syncPlaying) }}>{syncPlaying ? '⏸' : '▶'}</button>
-                <button onClick={() => setSyncStep((s) => Math.min(60, s + 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>▶</button>
-                <input type="range" min={0} max={60} value={syncStep} onChange={(e) => setSyncStep(Number(e.target.value))} style={{ width: 100, accentColor: 'var(--state-selected)' } as React.CSSProperties} />
-                <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', minWidth: 32, fontVariantNumeric: 'tabular-nums' }}>t={syncStep}</span>
-              </div>
-          </>
-        </div>
-      )}
 
       {/* ── main: Canvas + info panel ── */}
       <div className={workbench ? 'hpc-workbench-panes' : undefined} style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
