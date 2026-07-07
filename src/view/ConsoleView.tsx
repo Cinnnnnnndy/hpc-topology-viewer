@@ -498,13 +498,13 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         </g>,
       );
     };
-    // FIXED positions (index-based, NOT selection-based): index 0 ("this X", the containment anchor) sits
-    // on the spine; the rest fan out symmetrically at fixed per-index slots (1→R, 2→L, 3→R…). Selecting a
-    // member only ripples it IN PLACE — it never repositions anyone.
-    drawG(0, CX_SPINE);
+    // CURRENT member always at CX_SPINE (it is the containment anchor the chain connects to).
+    // Siblings fan out alternately right/left. Clicking a sibling makes it current → it moves to CX_SPINE.
+    drawG(cur, CX_SPINE);
     let pr = 0, pl = 0, shown = 0;
-    for (let e = 1; e < total && shown < ctxPerSide * 2; e++) {
-      const right = e % 2 === 1;
+    for (let e = 0; e < total && shown < ctxPerSide * 2; e++) {
+      if (e === cur) continue;
+      const right = pr <= pl;
       drawG(e, ctxSibCx(right ? 1 : -1, right ? ++pr : ++pl));
       shown++;
     }
