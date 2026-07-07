@@ -308,7 +308,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
-  const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+
 
   useEffect(() => {
     if (!tracePlaying) return;
@@ -466,8 +466,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               <span className="hpc-wb-brand-dot" />
               <span className="hpc-wb-brand-title">HPC 拓扑查看器</span>
             </div>
-          </div>
-          <div className="hpc-wb-center-nav">
             <div className="hpc-wb-menu-wrap">
               <button
                 className={`hpc-wb-mode-btn hpc-wb-more${viewMenuOpen ? ' is-active' : ''}`}
@@ -508,6 +506,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               )}
             </div>
           </div>
+          <div className="hpc-wb-center-nav" />
           <div className="hpc-wb-secondary">
             <div className="hpc-wb-breadcrumb" aria-label="当前位置">
               {breadcrumb.map((b, i) => (
@@ -524,44 +523,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                 <span>{TOK.ub} UB</span>
               </div>
             )}
-            {mode !== 'plane' && mode !== 'status' && mode !== 'console' && (
-              <div className="hpc-wb-menu-wrap">
-                <button
-                  className={`hpc-wb-icon-btn${cameraMenuOpen ? ' is-active' : ''}`}
-                  onClick={() => setCameraMenuOpen((v) => !v)}
-                  aria-label="相机视角"
-                  title="相机视角"
-                >
-                  <ShellIcon name="camera" />
-                </button>
-                {cameraMenuOpen && (
-                  <div className="hpc-wb-menu hpc-wb-camera-menu">
-                    <div className="hpc-wb-menu-title">正交视角</div>
-                    <div className="hpc-wb-menu-grid compact">
-                      {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
-                        <button
-                          key={id}
-                          className="hpc-wb-menu-item"
-                          onClick={() => { setCamPreset(id); setCameraMenuOpen(false); }}
-                          title={`${label}视角（正交投影）`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
             <div className="hpc-wb-iconbar" aria-label="页面操作">
-              <button className={`hpc-wb-icon-btn${panelOpen ? ' is-active' : ''}`} onClick={() => setPanelOpen(true)} title="说明">
-                <ShellIcon name="info" />
-              </button>
               <button className="hpc-wb-icon-btn" onClick={() => setDark((v) => !v)} title={dark ? '切换浅色模式' : '切换深色模式'}>
                 <ShellIcon name={dark ? 'sun' : 'moon'} />
-              </button>
-              <button className={`hpc-wb-icon-btn${ctxOpen ? ' is-active' : ''}`} onClick={() => setCtxOpen((v) => !v)} title="视图控制面板">
-                <ShellIcon name="panel" />
               </button>
               <button className={`hpc-wb-icon-btn${panelOpen ? ' is-active' : ''}`} onClick={() => setPanelOpen((v) => !v)} title="右侧信息面板">
                 <ShellIcon name="sidebar" />
