@@ -225,7 +225,11 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const foldX = fold > 0 ? X0 + (X1 - X0) * (slots - 0.5) / Math.max(1, slots) : null;
     return { t, shown, fold, foldX, inCount, slotW };
   });
-  pos[3] = { 0: { x: CX_SPINE, y: TIERS[3].y } };   // 本 Pod 坐在中心竖脊上（ctxRow 渲染）
+  // Pod anchor: index 0 always at CX_SPINE; selected pod (cur) sits at its fixed slot position.
+  // The chain line should connect FROM the selected pod's ripple, so store that position at key 0.
+  { const podCur = Math.min(PODS_PER_POOL - 1, ctxCur['super'] ?? 0);
+    const podCurX = podCur === 0 ? CX_SPINE : ctxSibCx(podCur % 2 === 1 ? 1 : -1, Math.ceil(podCur / 2));
+    pos[3] = { 0: { x: podCurX, y: TIERS[3].y } }; }
 
   const parentOf = (Le: number, idx: number): { Le: number; idx: number } | null =>
     Le === 5 ? { Le: 4, idx: Math.floor(idx / CPB) } : Le === 4 ? { Le: 3, idx: 0 } : null;   // Chip→Host, Host→Pod
@@ -498,13 +502,12 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
         </g>,
       );
     };
-    // CURRENT member always at CX_SPINE (it is the containment anchor the chain connects to).
-    // Siblings fan out alternately right/left. Clicking a sibling makes it current → it moves to CX_SPINE.
-    drawG(cur, CX_SPINE);
+    // FIXED positions (index-based, NOT selection-based): index 0 sits on the spine; rest fan out at
+    // fixed slots (1→R, 2→L, 3→R…). Clicking a sibling ripples it IN PLACE, no repositioning.
+    drawG(0, CX_SPINE);
     let pr = 0, pl = 0, shown = 0;
-    for (let e = 0; e < total && shown < ctxPerSide * 2; e++) {
-      if (e === cur) continue;
-      const right = pr <= pl;
+    for (let e = 1; e < total && shown < ctxPerSide * 2; e++) {
+      const right = e % 2 === 1;
       drawG(e, ctxSibCx(right ? 1 : -1, right ? ++pr : ++pl));
       shown++;
     }
