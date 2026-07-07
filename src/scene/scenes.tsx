@@ -137,49 +137,7 @@ function Slab(props: {
   );
 }
 
-function Floor({
-  size = 22,
-  floorColor,
-  gridColor,
-  gridMinorColor,
-  gridOpacity,
-}: {
-  size?: number;
-  floorColor?: string;
-  gridColor?: string;
-  gridMinorColor?: string;
-  gridOpacity?: number;
-}) {
-  const LC = useLC();
-  const profile = useSceneVisualProfile();
-  const opProfile = profile === 'opRankTime';
-  const divisions = opProfile ? Math.max(18, Math.min(56, Math.round(size * 1.4))) : size * 2;
-  const resolvedFloor = floorColor ?? LC.floor;
-  const resolvedGrid = gridColor ?? LC.grid;
-  const resolvedGridMinor = gridMinorColor ?? LC.gridMinor;
-  const flatFloor = floorColor !== undefined;
-  return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.001, 0]} receiveShadow={!flatFloor}>
-        <planeGeometry args={[size, size]} />
-        {flatFloor
-          ? <meshBasicMaterial color={resolvedFloor} />
-          : <meshStandardMaterial color={resolvedFloor} roughness={0.98} metalness={0} />}
-      </mesh>
-      <gridHelper
-        args={[size, divisions, resolvedGrid, resolvedGridMinor]}
-        position={[0, 0.001, 0]}
-        onUpdate={(grid: THREE.GridHelper) => {
-          const mats = Array.isArray(grid.material) ? grid.material : [grid.material];
-          mats.forEach((m) => {
-            m.transparent = opProfile || gridOpacity !== undefined;
-            m.opacity = gridOpacity ?? (opProfile ? 0.38 : 1);
-          });
-        }}
-      />
-    </group>
-  );
-}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. Overview: data-hall floor (compute grid + comms block)
@@ -262,7 +220,6 @@ export function OverviewScene({ gen, highlightCabinet, onHoverInfo, onSelectRack
 
   return (
     <group>
-      <Floor size={Math.max(16, depth + 4)} />
       {cells.map((cell) => (
         <HallCabinet
           key={cell.id}
@@ -403,7 +360,6 @@ export function RackScene({ rackKind, label, onHoverInfo, onSelectNode, onSelect
 
   return (
     <group>
-      <Floor size={12} />
       <pointLight position={[0, 4.2, 6]} intensity={18} color="#ffffff" />
       <pointLight position={[3.5, 1.4, 4.5]} intensity={8} color="#ffffff" />
       <group
@@ -861,7 +817,6 @@ export function NodeScene({ onHoverInfo, overlays, onJump, initialSelected }: Sc
 
   return (
     <group>
-      <Floor size={10} />
       <group position={[0, 0.5, 0]}>
         <group
           onPointerOver={(e) => { e.stopPropagation(); onHoverInfo(`L3 Host 节点托盘 · 全宽液冷刀片 · ${NPUS_PER_NODE}× NPU + CPU + 板载 UB fabric`); }}
@@ -991,7 +946,6 @@ export function TopologyScene({ gen, overlays, highlight, subFocus, onHoverInfo 
 
   return (
     <group>
-      <Floor size={16} />
 
       {/* 8 级层级板（遍历 HW_LEVELS 生成，无硬编码 switch） */}
       {HW_LEVELS.map((l, i) => {
@@ -1214,7 +1168,6 @@ export function AdjacencyScene({ scale, onHoverInfo }: SceneCallbacks & { scale:
 
   return (
     <group>
-      <Floor size={16} />
 
       {/* ── left: upright adjacency matrix ── */}
       <group position={MAT_POS}>
@@ -1362,7 +1315,6 @@ export function UBSwitchScene({ onHoverInfo }: SceneCallbacks) {
 
   return (
     <group>
-      <Floor size={10} />
       <pointLight position={[0, 4.2, 6]} intensity={14} color="#ffffff" />
       <group position={[0, 0.55, 0]}>
         {/* chassis tray */}
@@ -1467,7 +1419,6 @@ export function MappingScene({ onHoverInfo }: SceneCallbacks) {
 
   return (
     <group>
-      <Floor size={14} />
       {/* column headers */}
       <Text position={[swX, y(0) + 0.7, 0]} fontSize={0.22} color={PROC_COLOR} anchorX="center">软件层级</Text>
       <Text position={[hwX, y(0) + 0.7, 0]} fontSize={0.22} color={ENTITY_COLORS.hw} anchorX="center">硬件层级</Text>
@@ -1568,7 +1519,6 @@ export function TraceScene({ onHoverInfo, onLocate, tick }: SceneCallbacks & { o
 
   return (
     <group>
-      <Floor size={14} />
 
       {/* row labels (left) — hardware rows coloured by UB level, like topology */}
       {rowLabel(yThread, 'L0 Core-Group（内含 lane）', THREAD_COLOR)}
@@ -2191,13 +2141,6 @@ export function FullPodScene({ scale, podCount, full, gen, overlays, runMode, ph
   return (
     <WireScale.Provider value={wireScale}>
     <group>
-      <Floor
-        size={Math.max(18, G.fieldW + 6, G.fieldD + 6)}
-        floorColor={workbenchProfile ? '#ffffff' : undefined}
-        gridColor={workbenchProfile ? '#8f96a3' : undefined}
-        gridMinorColor={workbenchProfile ? '#d4d8df' : undefined}
-        gridOpacity={workbenchProfile ? 0.7 : undefined}
-      />
       {/* ── 左侧「层级轴」：一条竖直导轨 + 每级彩色节点（色=该级图元色，一眼对应）+ 朝相机的标签。
           文字带描边(halo) → 无论压在网格/浅底都清晰可读；点节点或标签 = 高亮该级下行连线。
           非层级(机柜/Tile) 用小空心节点区分。取代原先低对比、悬空的双行灰字。 ── */}
