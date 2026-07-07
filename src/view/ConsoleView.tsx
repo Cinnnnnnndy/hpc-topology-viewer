@@ -438,9 +438,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const a = aggOf(t.Le);
     els.push(
       <g key={`l-${t.Le}`}>
-        {t.tag && <text x={12} y={t.y - 7} fill={t.col} fontSize={10} fontWeight={700}>{t.tag}</text>}
-        <text x={12} y={t.y + (t.tag ? 7 : 5)} fill={P.ink} fontSize={13} fontWeight={700}>{t.label}</text>
-        <text x={12} y={t.y + (t.tag ? 20 : 18)} fill={P.ink3} fontSize={9}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}% · ${Math.round(a.red * 100)}% red`}</text>
+        {t.tag && <text x={12} y={t.y - 6} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>}
+        <text x={12} y={t.y + (t.tag ? 6 : 4)} fill={P.ink} fontSize={11} fontWeight={700}>{t.label}</text>
+        <text x={12} y={t.y + (t.tag ? 17 : 15)} fill={P.ink3} fontSize={8.5}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}%`}</text>
       </g>,
     );
   });
@@ -471,13 +471,13 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     els.push(cdot(dx, dieBotY, ACCENT, `cdd-die-${di}`, 2));
   });
   els.push(<path key="l0-arrow" d={`M${coreAnchorX - 4} ${l0PtrY - 6} L${coreAnchorX} ${l0PtrY} L${coreAnchorX + 4} ${l0PtrY - 6}`} fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinejoin="round" />);
-  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={9}>1 compute Die ⊃ ~16 Core-Group ↓ L0 (panel below)</text>);
+  els.push(<text key="l1l0-note" x={coreAnchorX + 12} y={l0PtrY - 2} fill={P.ink3} fontSize={8.5}>↓ L0 Core-Group (panel below)</text>);
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
-    els.push(<text key="slt-die" x={12} y={st.y - 7} fill={ENTITY_COLORS.computeDie} fontSize={10} fontWeight={700}>{st.tag}</text>);
-    els.push(<text key="sl-die" x={12} y={st.y + 7} fill={P.ink} fontSize={13} fontWeight={700}>{st.label}</text>);
-    els.push(<text key="scnt-die" x={12} y={st.y + 20} fill={P.ink3} fontSize={9}>{`×${st.n}`}</text>);
+    els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
+    els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={11} fontWeight={700}>{st.label}</text>);
+    els.push(<text key="scnt-die" x={12} y={st.y + 17} fill={P.ink3} fontSize={8.5}>{`×${st.n}`}</text>);
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
       const isSel = repReal && focus?.die === i;
@@ -488,18 +488,18 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
           onClick={(e) => { e.stopPropagation(); setFocus({ level: 'die', card: repCard, die: i }); }} />,
       );
     }
-    els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 compute(UMA) · 2 IO</text>);
+    els.push(<text key="die-cap" x={120 + 4 * (st.cell! + st.gap!) + 6} y={st.y + st.cell! / 2} fill={P.ink3} fontSize={8} dominantBaseline="central">compute·IO</text>);
   }
   // L0 Core-Group（最深层级）由下方独立的 CoreGroupPattern 面板完整渲染 memory-architecture 图（可缩放/平移）。
   // 级间互联徽标（DCN/Scale-Out/Intra-Pool/Scale-Up/PCIe·UB/Package/NoC）已移除——竖脊本身即表达包含，
   // 徽标文字标签在中心列显得杂乱；织物名称保留在各行副标题/悬停里即可。
   // 0) upper context (L7 Global / L6 Cluster / L5 Service Pool / L4 Pod) rendered as their own entities.
-  els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>Upper context · real counts · hw-native-sys icons</text>);
+  // ctx-hint removed (unnecessary gray header)
   const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
-      <text x={12} y={t.y - 5} fill={t.col} fontSize={10} fontWeight={700}>{t.tag}</text>
-      <text x={12} y={t.y + 8} fill={P.ink} fontSize={13} fontWeight={700}>{t.label}</text>
-      <text x={12} y={t.y + 19} fill={P.ink3} fontSize={9}>{sub}</text>
+      <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
+      <text x={12} y={t.y + 7} fill={P.ink} fontSize={11} fontWeight={700}>{t.label}</text>
+      <text x={12} y={t.y + 17} fill={P.ink3} fontSize={8.5}>{sub}</text>
     </g>,
   );
   // one context row: the SELECTED member sits on the spine (涟漪 ripple), siblings fan out and are CLICKABLE
@@ -544,10 +544,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   };
   // Each row = the level's OWN entities (Pool and Pod are separate rows). Small levels show every member.
   //   Click a sibling to switch which Cluster / Pool / Pod is current.
-  ctxRow(TIERS[0], 'global', 1, () => `1 Global · via DCN`, false);
-  ctxRow(TIERS[1], 'cluster', 4, (c) => (c === 0 ? `this Cluster · 1 = ${PODS_PER_CLUSTER} Pod` : `Cluster ${c} · sibling`), true);
-  ctxRow(TIERS[2], 'pool', POOLS_PER_CLUSTER, (c) => `${c === 0 ? 'this Pool' : 'Pool ' + (c + 1)} · ${POOLS_PER_CLUSTER}/Cluster · click to switch`, false);
-  ctxRow(TIERS[3], 'pod', PODS_PER_POOL, (c) => `${c === 0 ? 'this Pod' : 'Pod ' + (c + 1)} · ${PODS_PER_POOL}/Pool · click to switch`, false);
+  ctxRow(TIERS[0], 'global', 1, () => `via DCN`, false);
+  ctxRow(TIERS[1], 'cluster', 4, (c) => (c === 0 ? `1 = ${PODS_PER_CLUSTER} Pod` : `Cluster ${c}`), true);
+  ctxRow(TIERS[2], 'pool', POOLS_PER_CLUSTER, (c) => `${c === 0 ? 'this Pool' : 'Pool ' + (c + 1)} · ${POOLS_PER_CLUSTER}/Cluster`, false);
+  ctxRow(TIERS[3], 'pod', PODS_PER_POOL, (c) => `${c === 0 ? 'this Pod' : 'Pod ' + (c + 1)} · ${PODS_PER_POOL}/Pool`, false);
 
   // C) 并行关系落到真实层级对象（仅 card 焦点）：TP/PP 描到真实 Host pill · DP 弧到兄弟 Pod · EP 按 epScope。
   if (focus && focus.level === 'card') {
