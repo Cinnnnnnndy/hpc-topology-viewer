@@ -272,13 +272,33 @@
   margin-left: 3px;
 }
 
+/* pill indicator dot — pulses green when playing */
+@keyframes hpc-breath {
+  0%, 100% { opacity: 0.35; transform: scale(0.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.hpc-wb-ctrl-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--foreground-subtle);
+  flex-shrink: 0;
+  transition: background 250ms ease;
+}
+.hpc-wb-ctrl-dot--breath {
+  background: #22c55e;
+  animation: hpc-breath 1.6s ease-in-out infinite;
+}
+
 .hpc-wb-ctrl-dropdown {
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 80;
-  min-width: 520px;
+  width: max-content;
+  min-width: 320px;
+  max-width: min(600px, calc(100vw - 32px));
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;

@@ -46,7 +46,6 @@ const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
 };
 const M_LABEL: Record<Metric, string> = { util: '利用率', strag: '掉队率', fault: '故障度' };
 const LENS_LABEL: Record<Lens, string> = { heat: '状态热力', flow: '机柜流量', domain: '通信域', phys: '物理链路' };
-const D_LABEL: Record<Dir, string> = { all: '全链', up: '上游', down: '下游' };
 const LEVEL_NAME: Record<string, string> = { global: 'Global', cluster: 'Cluster', pool: 'Service Pool', super: 'Pod', node: 'Host', card: 'Chip·NPU', die: 'Die', core: 'Core-Group' };
 
 // ── metric model — thin aliases over the SHARED model in data.ts (same value as 运行状态) ──
@@ -616,7 +615,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   );
 }
 
-export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
+export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, dir: dirP, setDir: setDirP }: {
+  gen: Gen; dark: boolean; sync?: ViewSync;
+  lens?: Lens; setLens?: (l: Lens) => void; dir?: Dir; setDir?: (d: Dir) => void;
+}) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbenchProfile = visualProfile === 'opRankTime';
   const surf = sceneSurface(dark, visualProfile);
@@ -629,8 +631,10 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const workload = sync?.workload ?? workloadL;
   const [metricL] = useState<Metric>('util');
   const metric = (sync?.metric ?? metricL) as Metric;
-  const [dir, setDir] = useState<Dir>('all');
-  const [lens, setLens] = useState<Lens>('heat');
+  const [dirL, setDirL] = useState<Dir>('all');
+  const dir = dirP ?? dirL; const setDir = setDirP ?? setDirL;
+  const [lensL, setLensL] = useState<Lens>('heat');
+  const lens = lensP ?? lensL; const setLens = setLensP ?? setLensL;
   const [partDim, setPartDim] = useState<Exclude<PartitionDim, 'none'>>('tp');
   const [planeOnL] = useState({ ub: true, rdma: true, vpc: false });
   const planeOn = sync?.planeOn ?? planeOnL;
@@ -642,7 +646,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const setStep = sync?.setStep ?? setStepL;
   const [playingL] = useState(false);
   const playing = sync?.playing ?? playingL;
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
@@ -787,49 +790,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
       {/* ── toolbar: 工况 / 指标 / 方向 / 镜头 (+切分) / 平面 · breadcrumb · KPI ── */}
       {workbenchProfile ? (
         <div className="hpc-console-toolbar hpc-console-toolbar--compact">
-          <div className="hpc-wb-menu-wrap hpc-console-settings">
-            <button
-              className={`hpc-console-summary${settingsOpen ? ' is-active' : ''}`}
-              onClick={() => setSettingsOpen((v) => !v)}
-              aria-expanded={settingsOpen}
-              title="视图设置"
-            >
-              <span>{M_LABEL[metric]}</span>
-              <span>{D_LABEL[dir]}</span>
-              <span>{LENS_LABEL[lens]}</span>
-              {lens === 'domain' && <span>{partDim.toUpperCase()}</span>}
-            </button>
-            {settingsOpen && (
-              <div className="hpc-wb-menu hpc-console-settings-menu">
-                <div className="hpc-wb-menu-section">
-                  <div className="hpc-wb-menu-title">方向</div>
-                  <div className="hpc-wb-menu-grid compact">
-                    {([['all', '全链'], ['up', '上游'], ['down', '下游']] as [Dir, string][]).map(([d, l]) => (
-                      <button key={d} className={`hpc-wb-menu-item${dir === d ? ' is-active' : ''}`} onClick={() => setDir(d)}>{l}</button>
-                    ))}
-                  </div>
-                </div>
-                <div className="hpc-wb-menu-section">
-                  <div className="hpc-wb-menu-title">镜头</div>
-                  <div className="hpc-wb-menu-grid">
-                    {(Object.keys(LENS_LABEL) as Lens[]).map((l) => (
-                      <button key={l} className={`hpc-wb-menu-item${lens === l ? ' is-active' : ''}`} onClick={() => setLens(l)}>{LENS_LABEL[l]}</button>
-                    ))}
-                  </div>
-                </div>
-                {lens === 'domain' && (
-                  <div className="hpc-wb-menu-section">
-                    <div className="hpc-wb-menu-title">并行切分</div>
-                    <div className="hpc-wb-menu-grid compact">
-                      {(['tp', 'pp', 'dp', 'ep'] as Exclude<PartitionDim, 'none'>[]).map((d) => (
-                        <button key={d} className={`hpc-wb-menu-item${partDim === d ? ' is-active' : ''}`} onClick={() => setPartDim(d)} title={PARTITION_META[d].label}>{d.toUpperCase()}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
           <div className="hpc-console-crumbs">
             {crumbs.map((c, i) => (
               <span key={i} className="hpc-console-crumb">

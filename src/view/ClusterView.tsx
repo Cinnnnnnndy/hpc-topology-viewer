@@ -17,9 +17,9 @@ import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   INFO, SOURCES, CHANGES, GENERATIONS, DEFAULT_GEN, UB_LEVELS, COMM_PATTERNS, ENTITY_COLORS,
-  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, stateColor, STATE_LABELS,
+  SCALES, DEFAULT_SCALE, TRACE_SCHED, PHASE_META, RUN_SCHED, PARTITION_META, PARTITION_PALETTE, PARALLEL_COLORS, PARALLEL_COLORS_SP, stateColor, STATE_LABELS,
   memLayers, PLANES, WORKLOAD,
-  type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim, type ViewSync, type ParallelWorkload,
+  type Gen, type RackKind, type ViewMode, type Scale, type RunMode, type PartitionDim, type ViewSync, type ParallelWorkload, type ParDim,
 } from '../scene/data';
 import { TOK, FOOTNOTE } from '../content';
 import {
@@ -316,6 +316,13 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // lifted per-view filter state (shown in center-pill dropdown; child views receive these as props)
+  const [consoleLens, setConsoleLens] = useState<'heat' | 'flow' | 'domain' | 'phys'>('heat');
+  const [consoleDir, setConsoleDir] = useState<'all' | 'up' | 'down'>('all');
+  const [statusLens, setStatusLens] = useState<'heat' | 'flow' | 'domain' | 'phys'>('heat');
+  const [statusRelHi, setStatusRelHi] = useState(true);
+  const [commScope, setCommScope] = useState<'intra' | 'inter'>('intra');
+  const [commDim, setCommDim] = useState<'all' | ParDim>('all');
 
 
   useEffect(() => {
@@ -517,8 +524,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           <div className="hpc-wb-center-nav">
             {(() => {
               const wlLabels: Record<ParallelWorkload, string> = { pretrain: '预训练', prefill: 'Prefill', decode: 'Decode' };
-              const metShort: Record<'util' | 'strag' | 'fault', string> = { util: '利用率', strag: '全链', fault: '热力' };
-              const activePl = (['ub', 'rdma', 'vpc'] as const).filter((k) => syncPlaneOn[k]).map((k) => k.toUpperCase());
               return (
                 <>
                   <button
@@ -526,17 +531,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                     onClick={() => setCtrlBarOpen((v) => !v)}
                     title={ctrlBarOpen ? '收起全局控制' : '展开全局控制'}
                   >
+                    <span className={`hpc-wb-ctrl-dot${syncPlaying ? ' hpc-wb-ctrl-dot--breath' : ''}`} />
                     <span>{wlLabels[syncWorkload]}</span>
-                    <span className="hpc-wb-ctrl-sep">·</span>
-                    <span>{metShort[syncMetric]}</span>
-                    {activePl.length > 0 && (
-                      <>
-                        <span className="hpc-wb-ctrl-sep">·</span>
-                        <span>{activePl.join(' ')}</span>
-                      </>
-                    )}
-                    <span className="hpc-wb-ctrl-sep">·</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{syncPlaying ? '⏸' : '▶'} t={syncStep}</span>
                     <span className="hpc-wb-ctrl-chevron">{ctrlBarOpen ? '▴' : '▾'}</span>
                   </button>
                   {ctrlBarOpen && (
@@ -549,21 +545,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                               {wlLabels[w]}
                             </button>
                           ))}
-                        </div>
-                      </div>
-                      <div className="hpc-wb-ctrl-group">
-                        <span className="hpc-wb-ctrl-label">平面</span>
-                        <div className="hpc-wb-ctrl-btns">
-                          {([['ub', 'UB', '#22c55e'], ['rdma', 'RDMA', '#f97316'], ['vpc', 'VPC', '#a855f7']] as [keyof typeof syncPlaneOn, string, string][]).map(([k, label, col]) => {
-                            const on = syncPlaneOn[k];
-                            return (
-                              <button key={k} onClick={() => setSyncPlaneOn((p) => ({ ...p, [k]: !p[k] }))}
-                                style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, col) }}>
-                                <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(col) : col, display: 'inline-block', opacity: on ? 0.9 : 0.5 }} />
-                                {label}
-                              </button>
-                            );
-                          })}
                         </div>
                       </div>
                       <div className="hpc-wb-ctrl-group">
@@ -683,6 +664,71 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                                 </span>
                                 三平面
                               </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {/* ── mode-specific: 联动控制台 / 运行状态 / 通信全景 ── */}
+                      {mode === 'console' && (
+                        <>
+                          <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">方向</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([['all', '全链'], ['up', '上游'], ['down', '下游']] as const).map(([d, l]) => (
+                                <button key={d} onClick={() => setConsoleDir(d)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(consoleDir === d) }}>{l}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">镜头</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([['heat', '状态热力'], ['flow', '机柜流量'], ['domain', '通信域'], ['phys', '物理链路']] as const).map(([l, label]) => (
+                                <button key={l} onClick={() => setConsoleLens(l)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(consoleLens === l) }}>{label}</button>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {mode === 'status' && (
+                        <>
+                          <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">镜头</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路']] as const).map(([l, label]) => (
+                                <button key={l} onClick={() => setStatusLens(l)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(statusLens === l) }}>{label}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">并行</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              <button onClick={() => setStatusRelHi((v) => !v)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...toggleBtn(statusRelHi, '#4369ef') }}>并行对端高亮</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      {mode === 'comm' && (
+                        <>
+                          <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">范围</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {([['intra', '副本内'], ['inter', '副本间']] as const).map(([s, l]) => (
+                                <button key={s} onClick={() => setCommScope(s)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(commScope === s) }}>{l}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">维度</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              <button onClick={() => setCommDim('all')} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(commDim === 'all') }}>全部</button>
+                              {([['tp', 'TP', PARALLEL_COLORS.tp], ['sp', 'SP', PARALLEL_COLORS_SP], ['ep', 'EP', PARALLEL_COLORS.ep], ['pp', 'PP', PARALLEL_COLORS.pp], ['dp', 'DP', PARALLEL_COLORS.dp]] as [ParDim, string, string][]).map(([key, label, color]) => (
+                                <button key={key} onClick={() => setCommDim(key)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, ...toggleBtn(commDim === key, color) }}>
+                                  <span style={{ width: 8, height: 8, borderRadius: 2, background: commDim === key ? 'currentColor' : color, display: 'inline-block' }} />{label}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         </>
@@ -854,13 +900,13 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {mode === 'plane' && <PlaneView gen={gen} dark={dark} />}
 
           {/* 2-D runtime-state dashboard — KPI + hierarchy status-axis + multi-lens (overlays the 3-D canvas) */}
-          {mode === 'status' && <StatusView gen={gen} dark={dark} sync={viewSync} />}
+          {mode === 'status' && <StatusView gen={gen} dark={dark} sync={viewSync} lens={statusLens} setLens={setStatusLens} relHi={statusRelHi} setRelHi={setStatusRelHi} />}
 
           {/* 2-D 通信全景 — dedicated non-hierarchical rank×rank comm matrix (overlays the 3-D canvas) */}
-          {mode === 'comm' && <CommView gen={gen} dark={dark} sync={viewSync} />}
+          {mode === 'comm' && <CommView gen={gen} dark={dark} sync={viewSync} scope={commScope} setScope={setCommScope} dim={commDim} setDim={setCommDim} />}
 
           {/* 联动控制台 — 平面视图(控制) + 阵列全景(主视图·自带 canvas) + 运行状态仪表 (overlays the 3-D canvas) */}
-          {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} />}
+          {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} lens={consoleLens} setLens={setConsoleLens} dir={consoleDir} setDir={setConsoleDir} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}

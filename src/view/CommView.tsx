@@ -59,7 +59,10 @@ function hexA(hex: string, a: number): string {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
+export function CommView({ gen, dark, sync, scope: scopeP, setScope: setScopeP, dim: dimP, setDim: setDimP }: {
+  gen: Gen; dark: boolean; sync?: ViewSync;
+  scope?: Scope; setScope?: (s: Scope) => void; dim?: DimFilter; setDim?: (d: DimFilter) => void;
+}) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbenchProfile = visualProfile === 'opRankTime';
   const spec = GENERATIONS[gen];
@@ -73,8 +76,10 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   const step = sync?.step ?? locStep;
   const playing = sync?.playing ?? locPlaying;
 
-  const [scope, setScope] = useState<Scope>('intra');
-  const [dim, setDim] = useState<DimFilter>('all');
+  const [scopeL, setScopeL] = useState<Scope>('intra');
+  const scope = scopeP ?? scopeL; const setScope = setScopeP ?? setScopeL;
+  const [dimL, setDimL] = useState<DimFilter>('all');
+  const dim = dimP ?? dimL; const setDim = setDimP ?? setDimL;
   const [tip, setTip] = useState<{ x: number; y: number; t: string } | null>(null);
 
   const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
@@ -202,8 +207,9 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
 
   return (
     <div data-theme={dark ? 'dark' : 'light'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: workbenchProfile ? 'var(--background-elevated)' : 'var(--bg)', overflow: 'hidden' }}>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }) }}>
+      {/* toolbar — hidden in workbench (filters live in center-pill dropdown) */}
+      {!workbenchProfile && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', borderBottom: '1px solid var(--bd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>范围</span>
           {([['intra', '副本内 (TP/PP/EP)'], ['inter', '副本间 (DP/EP)']] as [Scope, string][]).map(([s, l]) => (<button key={s} onClick={() => setScope(s)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(scope === s) }}>{l}</button>))}
@@ -215,6 +221,7 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
         </div>
         <div style={{ flex: 1 }} />
       </div>
+      )}
 
       {/* body: matrix + rail */}
       <div style={{ flex: 1, display: 'flex', gap: 12, padding: '8px 14px 12px', minHeight: 0 }}>

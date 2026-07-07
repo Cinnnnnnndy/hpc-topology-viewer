@@ -81,7 +81,10 @@ const HOST_GRID_MAX = 1024;       // Pod 级 Host 大网格采样上限（超出
 const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return v - Math.floor(v); };
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
-export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
+export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, relHi: relHiP, setRelHi: setRelHiP }: {
+  gen: Gen; dark: boolean; sync?: ViewSync;
+  lens?: Lens; setLens?: (l: Lens) => void; relHi?: boolean; setRelHi?: (v: boolean) => void;
+}) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbenchProfile = visualProfile === 'opRankTime';
   const spec = GENERATIONS[gen];
@@ -99,8 +102,10 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   const phase = sync?.workload ?? phaseL;
   const [metricL] = useState<Metric>('util');
   const metric = (sync?.metric ?? metricL) as Metric;
-  const [lens, setLens] = useState<Lens>('heat');
-  const [relHi, setRelHi] = useState(true);              // 关系高亮：在真实格子上描边选中卡的 TP/PP/DP/EP 对端
+  const [lensL, setLensL] = useState<Lens>('heat');
+  const lens = lensP ?? lensL; const setLens = setLensP ?? setLensL;
+  const [relHiL, setRelHiL] = useState(true);
+  const relHi = relHiP ?? relHiL; const setRelHi = setRelHiP ?? setRelHiL;
   const [pods, setPods] = useState(4);                   // 集群 = N 个 Pod（示意，跨 Pod DP）
   const [selLevel, setSelLevel] = useState<Level>('super');
   const [selPool, setSelPool] = useState(0);            // 选中服务池（L5）
@@ -926,8 +931,9 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
 
   return (
     <div className={workbenchProfile ? 'hpc-status-shell hpc-status-shell--workbench' : undefined} data-theme={dark ? 'dark' : 'light'} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: workbenchProfile ? 'var(--background-elevated)' : 'var(--bg)', overflow: 'hidden' }}>
-      {/* control header */}
-      <div className={workbenchProfile ? 'hpc-status-toolbar hpc-status-toolbar--floating' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: workbenchProfile ? '10px 14px' : '8px 14px', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }) }}>
+      {/* control header — hidden in workbench (filters live in center-pill dropdown) */}
+      {!workbenchProfile && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', borderBottom: '1px solid var(--bd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--tx3)' }}>选区</span>
           {crumbs.map((c, i) => (
@@ -944,12 +950,13 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>并行</span>
-          <button onClick={() => setRelHi((v) => !v)} title="状态热力镜头下：在真实网格上给选中卡的 TP/PP/DP/EP 对端描边（parallelMap 真值 · 采样显示）。想看整个并行域拓扑请切到「通信域」镜头。" style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(relHi, ACCENT) }}>并行对端高亮</button>
+          <button onClick={() => setRelHi(!relHi)} title="状态热力镜头下：在真实网格上给选中卡的 TP/PP/DP/EP 对端描边（parallelMap 真值 · 采样显示）。想看整个并行域拓扑请切到「通信域」镜头。" style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(relHi, ACCENT) }}>并行对端高亮</button>
         </div>
       </div>
+      )}
 
       {/* KPI strip */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: workbenchProfile ? '86px 14px 4px' : '10px 14px 4px' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '10px 14px 4px' }}>
         {([
           [`${NPU_TOT.toLocaleString()}`, 'NPU / Pod', 'var(--tx)'],
           phase === 'decode'
