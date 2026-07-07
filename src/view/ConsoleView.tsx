@@ -218,11 +218,13 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const shownIdx = baseList.slice(0, BUDGET);
     const inCount = full ? total(t.Le) : sc.length;
     const fold = inCount - shownIdx.length;
-    const slots = shownIdx.length + (fold > 0 ? 1 : 0);
-    const slotW = (X1 - X0) / Math.max(1, slots);
+    // Reserve right-edge space for fold pill so it never overlaps the last glyph
+    const pillW = fold > 0 ? Math.max(28, String(fold).length * 7 + 22) : 0;
+    const availW = X1 - X0 - (fold > 0 ? pillW + 8 : 0);
+    const slotW = availW / Math.max(1, shownIdx.length);
     pos[t.Le] = {};
-    const shown = shownIdx.map((idx, i) => { const x = X0 + (X1 - X0) * (i + 0.5) / Math.max(1, slots); pos[t.Le][idx] = { x, y: t.y }; return { idx, x }; });
-    const foldX = fold > 0 ? X0 + (X1 - X0) * (slots - 0.5) / Math.max(1, slots) : null;
+    const shown = shownIdx.map((idx, i) => { const x = X0 + availW * (i + 0.5) / Math.max(1, shownIdx.length); pos[t.Le][idx] = { x, y: t.y }; return { idx, x }; });
+    const foldX = fold > 0 ? X1 - pillW / 2 + 2 : null;
     return { t, shown, fold, foldX, inCount, slotW };
   });
   // Pod anchor: index 0 always at CX_SPINE; selected pod (cur) sits at its fixed slot position.
