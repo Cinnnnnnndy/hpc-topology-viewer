@@ -57,7 +57,6 @@ const cardMetric = (k: number, metric: Metric, wlKind: string, step: number) => 
 
 // ── hierarchy navigation / scope — 阶梯（Le）：L4 Pod=3 · L3 Host=4 · L2 Chip=5（含 die/core）。
 //    Pod 直接含 1024 Host、Host 含 8 Chip（无机柜档位；机柜仅为 3D 物理分组）。 ──
-const levelIdx = (lv: Level): number => (lv === 'super' ? 3 : lv === 'node' ? 4 : 5);   // card/die/core → 5
 function scopeRange(f: Focus, N: number): [number, number] {
   if (!f || f.level === 'super') return [0, N];
   if (f.level === 'node') { const n = Math.floor(f.card / CPB); return [n * CPB, Math.min(N, (n + 1) * CPB)]; }
@@ -65,28 +64,14 @@ function scopeRange(f: Focus, N: number): [number, number] {
 }
 // which entity indices of tier Le are on the focus's chain (ancestor / self / descendant), dir-filtered.
 // returns null = "no focus → overview (show all, capped)". Le: 3 Pod · 4 Host · 5 Chip.
-function tierInScope(Le: number, focus: Focus, dir: Dir, N: number, nBlades: number): number[] | null {
-  // UNIFIED select model (L7→L0): every level is SWITCH not filter — selecting an entity highlights it
-  // + drives the detail panel, but NEVER collapses the funnel. So scope is always "overview" (show all,
-  // capped). Host (node) no longer drills; it behaves exactly like the L4–L7 context switch and L2 Chip.
-  if (!focus || focus.level === 'super' || focus.level === 'node' || focus.level === 'card' || focus.level === 'die' || focus.level === 'core') return null;
-  const Lf = levelIdx(focus.level);
-  const counts = [1, 1, 1, 1, nBlades, N];
-  const div = [N, N, N, N, CPB, 1][Le];
-  const [flo, fhi] = scopeRange(focus, N);
-  const range = (a: number, b: number) => { const o: number[] = []; for (let i = a; i < b; i++) o.push(i); return o; };
-  const hostMates = () => { const cab = Math.floor(flo / PER_CAB); return range(cab * BPC, Math.min(nBlades, (cab + 1) * BPC)); };   // 同物理分组 8 Host (UB mesh 特例)
-  if (Le < Lf) {                          // ancestor
-    if (dir === 'down') return [];
-    if (dir === 'all' && Le === 4 && Lf >= 4) return hostMates();
-    return [Math.floor(flo / div)];
+function tierInScope(Le: number, focus: Focus, _dir: Dir, N: number, _nBlades: number): number[] | null {
+  if (!focus || focus.level === 'super') return null;
+  // Host selected → filter L2 (Chip) to that host's CPB chips so the row shows containment
+  if (focus.level === 'node' && Le === 5) {
+    const n = Math.floor(focus.card / CPB);
+    return Array.from({ length: CPB }, (_, i) => n * CPB + i).filter((i) => i < N);
   }
-  if (Le === Lf) {                        // focus tier (Host tier expands to same-group UB mates on 全链)
-    if (dir === 'all' && Le === 4) return hostMates();
-    return [Math.floor(flo / div)];
-  }
-  if (dir === 'up') return [];            // descendant
-  return range(Math.floor(flo / div), Math.min(counts[Le], Math.floor((fhi - 1) / div) + 1));
+  return null;   // all other cases: overview (show all, capped at BUDGET)
 }
 function entityToFocus(Le: number, idx: number): Focus {
   if (Le === 3) return { level: 'super', card: 0 };   // Pod = whole scope
@@ -334,25 +319,22 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   //    L7→L6→L5→L4 中心竖脊 (ctx 当前 pill 都坐在脊上) + L4 Pod → L3 Host 漏斗楔形（1 Pod ⊃ 1024 Host）。
   {
     const podY = TIERS[3].y, podH = TIERS[3].h;
-    els.push(<line key="spine" x1={CX_SPINE} y1={TIERS[0].y} x2={CX_SPINE} y2={podY} stroke={ACCENT} strokeWidth={1.5} strokeOpacity={0.4} />);
-    els.push(cflow(CX_SPINE, TIERS[0].y, CX_SPINE, podY, 'spine-flow'));
-    // (blue centre dots on the spine removed — the selected member is now marked by its 涟漪 ripple)
+    // (spine vertical line removed — containment expressed by wedge shape alone)
     const hostRow = rows.find((r) => r.t.Le === 4);
     if (hostRow && hostRow.shown.length) {
       const hy = TIERS[4].y, hh = TIERS[4].h, xs = hostRow.shown.map((s) => s.x);
       const left = Math.min(...xs) - 4, right = Math.max(...xs) + 4, apexY = podY + podH / 2, baseY = hy - hh / 2 - 2;
       els.push(<path key="ph-wedge" d={`M${CX_SPINE - 16} ${apexY} L${left} ${baseY} L${right} ${baseY} L${CX_SPINE + 16} ${apexY} Z`} fill={ACCENT} fillOpacity={0.07} />);
-      els.push(<line key="ph-spine" x1={CX_SPINE} y1={apexY} x2={CX_SPINE} y2={baseY} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.33} />);
     }
   }
   // 1) selected containment chain — UNIFIED across levels: selecting any entity (Host / Chip / Die / Core)
-  //    highlights its path up the ancestors (Chip → Host → Pod spine) drawn OVER the full overview — no
+  //    highlights its path up the ancestors (Chip → Host → Pod) drawn OVER the full overview — no
   //    collapse, same switch-select feel as the L4–L7 context rows.
   if (focus && focus.level !== 'super') {
     const chipIdx = focus.level === 'node' ? null : focus.card;
     const hostIdx = Math.floor(focus.card / CPB);
     const chain: { Le: number; idx: number }[] = [];
-    if (chipIdx != null && pos[5]?.[chipIdx]) chain.push({ Le: 5, idx: chipIdx });   // skip any card scrolled past the BUDGET cap
+    if (chipIdx != null && pos[5]?.[chipIdx]) chain.push({ Le: 5, idx: chipIdx });
     if (pos[4]?.[hostIdx]) chain.push({ Le: 4, idx: hostIdx });
     chain.forEach(({ Le, idx }) => {
       const me = pos[Le][idx], par = parentOf(Le, idx); if (!par) return;
@@ -363,6 +345,19 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       els.push(cdot(me.x, me.y, ACCENT, `chd-${Le}-${idx}`, 2.2));
       els.push(cdot(pp.x, pBot, ACCENT, `chp-${Le}-${idx}`, 2));
     });
+    // Host selected: draw fan lines from host glyph down to each of its chips (now shown filtered in L2)
+    if (focus.level === 'node' && pos[4]?.[hostIdx]) {
+      const hp = pos[4][hostIdx];
+      const hostBotY = hp.y + tierH(4) / 2;
+      const n = Math.floor(focus.card / CPB);
+      for (let i = 0; i < CPB; i++) {
+        const ci = n * CPB + i;
+        const cp = pos[5]?.[ci]; if (!cp) continue;
+        const chipTopY = cp.y - tierH(5) / 2;
+        els.push(<line key={`hcf-${i}`} x1={hp.x} y1={hostBotY} x2={cp.x} y2={chipTopY} stroke={ACCENT} strokeWidth={1} strokeOpacity={0.45} />);
+        els.push(cdot(cp.x, cp.y, ACCENT, `hcd-${i}`, 1.8));
+      }
+    }
     // 2) UB plane mesh — same-level Host↔Host links among the selected host's shown neighbours (toggle)
     if (planeOn.ub) {
       const nr = rows.find((r) => r.t.Le === 4);
@@ -464,7 +459,6 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // 徽标文字标签在中心列显得杂乱；织物名称保留在各行副标题/悬停里即可。
   // 0) upper context (L7 Global / L6 Cluster / L5 Service Pool / L4 Pod) rendered as their own entities.
   els.push(<text key="ctx-hint" x={12} y={14} fill={P.ink3} fontSize={9} fontWeight={600}>Upper context · real counts · hw-native-sys icons</text>);
-  els.push(<text key="spine-legend" x={X1} y={14} fill={P.ink3} fontSize={8} textAnchor="end">spine = containment · click any level to switch</text>);
   const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
       <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
