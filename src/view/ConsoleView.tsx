@@ -340,8 +340,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
       const xa = ctxSelX(ka, na), xb = ctxSelX(kb, nb);
       const y1 = ta.y + ta.h / 2, y2 = tb.y - tb.h / 2;
       if (y2 <= y1) return;
-      els.push(<line key={`ctx-seg-${i}`} x1={xa} y1={y1} x2={xb} y2={y2} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.4} />);
-      els.push(cdot(xb, tb.y, ACCENT, `ctx-dot-${i}`, 1.8));
+      els.push(<line key={`ctx-seg-${i}`} x1={xa} y1={y1} x2={xb} y2={y2} stroke={ACCENT} strokeWidth={1.6} strokeOpacity={0.6} />);
+      els.push(cflow(xa, y1, xb, y2, `ctx-flow-${i}`, true));
+      els.push(cdot(xa, ta.y, ACCENT, `ctx-dot-a-${i}`, 2.2));
+      els.push(cdot(xb, tb.y, ACCENT, `ctx-dot-b-${i}`, 2.2));
     });
     const hostRow = rows.find((r) => r.t.Le === 4);
     if (hostRow && hostRow.shown.length) {
