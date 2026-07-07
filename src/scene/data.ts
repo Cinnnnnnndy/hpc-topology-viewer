@@ -619,14 +619,40 @@ export function structColor(depth: number): string {
   const t = Math.max(0, Math.min(1, depth)), L = 196 - t * 130;   // 196 light → 66 dark
   return `rgb(${Math.round(L * 0.82)},${Math.round(L * 0.9)},${Math.round(Math.min(255, L * 1.12))})`;
 }
-// deterministic, stable per-id "load" 0..1 (illustrative), modulated by the current run-phase
-// kind so playback reads as a live heatmap. WIDE per-node spread so within a level you get a
-// clear 绿/黄/橙/红 mix (load imbalance / stragglers) — high contrast, like the swimlane states.
+// deterministic, stable per-id "load" 0..1, modulated by the current run-phase kind.
+// WIDE per-node spread so within a level you get a clear 绿/黄/橙/红 mix.
 export function nodeLoad(id: number, phaseKind?: string): number {
   let h = (id * 2654435761) >>> 0; h ^= h >>> 13; h = (h * 1274126177) >>> 0;
   h ^= h >>> 16; const base = (h >>> 8) / 0xffffff;   // 0..1 stable spread
   const lvl = phaseKind === 'compute' ? 0.62 : phaseKind === 'comm' ? 0.5 : phaseKind === 'mem' ? 0.56 : phaseKind === 'load' || phaseKind === 'store' ? 0.48 : 0.34;
   return Math.max(0, Math.min(1, lvl + (base - 0.5) * 0.95));   // ±0.475 spread → spans green→red
+}
+
+// Physics-grounded per-card role bias derived from Pangu Pro MoE parallel config (arXiv:2505.21411).
+// k = global card rank; phaseKind = 'compute'|'comm'|'mem'; N = total NPUs in the supernode.
+// Returns a bias [-0.12, +0.15] that shifts nodeLoad to reflect real role-level utilization patterns.
+export function parallelRoleBias(k: number, phaseKind: string, N = 8192): number {
+  const tpRank = k % NPUS_PER_NODE;  // 0–7 within a host (TP8 training, TP4/TP8 inference)
+  // Approximate PP stage: PP5 → divide supernode into 5 equal bands
+  const ppStage = Math.min(WORKLOAD.train.pp - 1, Math.floor((k / Math.max(1, N)) * WORKLOAD.train.pp));
+  const isEdgePP = ppStage === 0 || ppStage === WORKLOAD.train.pp - 1;
+  // EP group for decode: groups of cards share an expert partition
+  const epGrpSize = Math.max(1, Math.floor(N / (WORKLOAD.inferRouted.ep * 4)));
+  const epGroup = Math.floor(k / epGrpSize);
+
+  if (phaseKind === 'compute') {
+    // Prefill: TP-heavy GEMMs dominate. PP bubble at boundary stages reduces util ~8%.
+    return isEdgePP ? -0.08 : 0.03;
+  }
+  if (phaseKind === 'comm') {
+    // Decode: EP All-to-All dominant. Even with MoGE IS=0 cutting imbalance >50%,
+    // popular expert groups still run hotter. Shared experts (TP8) handle ALL tokens.
+    const epHot = _rnd01(epGroup * 7.3) > 0.58;          // ~42% of groups are hot
+    const isShared = tpRank >= NPUS_PER_NODE - 2;         // last 2 TP ranks = shared experts
+    return (epHot ? 0.09 : -0.04) + (isShared ? 0.07 : 0);
+  }
+  // Pretrain: DP Ring-AllReduce + EP A2A = 30% of step. PP bubble at edges reduces compute.
+  return isEdgePP ? -0.06 : 0.02;
 }
 
 // ─── SHARED live load / straggler / fault / replay-event model ────────────────
@@ -648,9 +674,10 @@ export function cardFault(k: number, step: number, pod = 0): boolean {
   const inEvt = inReplayEvent(step) && pod === 0 && cab === REPLAY.evtCab && nodeInCab === 1;
   return inEvt ? _rnd01(k * 0.7) > 0.25 : _rnd01(pod * 5 + k * 2.3 + step) > 0.9994;
 }
-export function cardLoad01(k: number, phaseKind: string, step: number, pod = 0): number {
+export function cardLoad01(k: number, phaseKind: string, step: number, pod = 0, N = 8192): number {
   const cab = Math.floor(k / REPLAY.cardsPerCab);
   let u = nodeLoad(k + pod * 100003, phaseKind);
+  u += parallelRoleBias(k, phaseKind, N);                    // physics-grounded role bias (PP bubble, EP hot experts)
   u += (_rnd01(pod * 17 + cab * 2.7 + 1) - 0.5) * 0.30;   // per-cabinet hot/cold bias (spatial spread)
   u += (_rnd01(k * 0.91 + step * 0.07) - 0.5) * 0.08;      // live per-step ripple
   if (cardStraggler(k, step, pod)) u += 0.4;               // straggler runs hot

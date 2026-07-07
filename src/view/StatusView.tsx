@@ -142,7 +142,7 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   //    value here and in 工作台. k = card index within the super-node (gnode*8+j), pod = super-node sp. ──
   const isStrag = useCallback((sp: number, gnode: number) => cardStraggler(gnode * NPN, step, sp), [step, NPN]);
   const faultAt = useCallback((sp: number, gnode: number, j: number) => cardFault(gnode * NPN + j, step, sp), [step, NPN]);
-  const util01 = useCallback((sp: number, gnode: number, j: number) => cardLoad01(gnode * NPN + j, kind, step, sp), [kind, step, NPN]);
+  const util01 = useCallback((sp: number, gnode: number, j: number) => cardLoad01(gnode * NPN + j, kind, step, sp, NPU_TOT), [kind, step, NPN, NPU_TOT]);
   const metricVal = useCallback((sp: number, gnode: number, j: number) => {
     if (metric === 'fault') return faultAt(sp, gnode, j) ? 0.95 : 0.12;
     const u = util01(sp, gnode, j);
@@ -238,31 +238,48 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   //  · decode  → EP token All-to-All → 密集 any-to-any，行/列热度纹理（无对角）
   //  · prefill → 计算为主 + EP A2A → 近对角软带 + 纹理
   //  · 预训练  → DP Ring 邻近带 + EP A2A 底噪 + 纹理
+  // Base intensity anchored to STEP_DECOMP comm fractions (Pangu Pro MoE, arXiv:2505.21411):
+  //   decode 12% comm → commBase ≈ 0.39   prefill 16% → 0.45   pretrain 30% → 0.65
+  // loadColor is DISCRETE (green<0.4 / yellow 0.4–0.7 / red>0.7), so the base must be chosen
+  // such that row/col hotness + live swing cross those thresholds for visible colour variation.
+  const commFrac = STEP_DECOMP[phase as 'pretrain' | 'prefill' | 'decode']
+    ?.find(p => p.label.includes('通信'))?.frac ?? 0.20;
   const tcell = useCallback((i: number, j: number, N: number) => {
     const d = Math.abs(i - j);
     const salt = selSpod * 4.2 + selCab * 1.7 + selNode * 0.6 + SUBCARD.indexOf(selLevel) * 2.3 + selCore * 0.4;
     const rowHot = rnd(i * 3.1 + salt) - 0.5;          // 该源单元忙/闲（整行纹理）
     const colHot = rnd(j * 2.7 + salt + 5) - 0.5;      // 该目的单元忙/闲（整列纹理）
     const live = rnd(i * 0.7 + j * 0.9 + step * 0.05 + flowRef.current * 0.9) - 0.5;   // 逐帧流动
+    const commBase = 0.21 + commFrac * 1.5;              // paper-anchored base intensity
     let v: number;
-    if (phase === 'decode') v = 0.46 + rowHot * 0.5 + colHot * 0.5;
-    else if (phase === 'prefill') v = 0.30 + (d <= Math.max(1, N / 8) ? 0.22 : 0) + rowHot * 0.32 + colHot * 0.32;
-    else v = 0.20 + (d <= Math.max(1, N / 10) ? 0.30 : 0) + rowHot * 0.30 + colHot * 0.30;
+    if (phase === 'decode') {
+      // EP token All-to-All: dense any-to-any. Paper: A2A≈8% of step, moderate network pressure.
+      v = commBase + rowHot * 0.50 + colHot * 0.50;
+    } else if (phase === 'prefill') {
+      // TP AllReduce + SP AllGather: intra-host (near-diagonal). EP A2A adds off-diagonal noise.
+      v = commBase + (d <= Math.max(1, N / 8) ? 0.20 : -0.05) + rowHot * 0.30 + colHot * 0.30;
+    } else {
+      // Pretrain: DP Ring-AllReduce (near-diagonal) + EP A2A background. Paper: 30% comm → high base.
+      v = commBase + (d <= Math.max(1, N / 10) ? 0.20 : -0.15) + rowHot * 0.28 + colHot * 0.28;
+    }
     v += live * 0.32;
     if (ev && selSpod === 0 && N === CAB && (i === EVT_CAB || j === EVT_CAB)) v += 0.35;
     return clamp01(v);
-  }, [phase, selSpod, selCab, selNode, selLevel, selCore, step, ev, CAB, EVT_CAB]);
+  }, [phase, commFrac, selSpod, selCab, selNode, selLevel, selCore, step, ev, CAB, EVT_CAB]);
 
   // ── plane utilisation (UB scale-up / RDMA scale-out / DP / VPC) by scope ──
   const planeUtil = useCallback(() => {
     const sm = scopeMean();
+    // UB plane carries TP/EP in-domain collectives. Paper: decode EP A2A=8%, prefill SP=16%,
+    // pretrain DP+EP=30% → drive the bar base from STEP_DECOMP comm fraction.
+    const ubBase = commFrac * 1.8;   // decode 0.22 / prefill 0.29 / pretrain 0.54
     return [
-      { n: `${PLANES[0].short} · ${selLevel === 'node' ? '本 Host' : '域内'}(TP/EP)`, u: clamp01((phase === 'decode' ? 0.46 : 0.30) + sm * 0.6), c: PLANES[0].color },
+      { n: `${PLANES[0].short} · ${selLevel === 'node' ? '本 Host' : '域内'}(TP/EP)`, u: clamp01(ubBase + sm * 0.55), c: PLANES[0].color },
       { n: `${PLANES[1].short}(DP/PP)`, u: clamp01(0.24 + sm * 0.4 + (ev ? 0.10 : 0)), c: PLANES[1].color },
       { n: '集群 DP AllReduce', u: clamp01(0.18 + sm * 0.32), c: PLANES[1].color },
       { n: `${PLANES[2].short} · 南北向`, u: clamp01(0.12 + sm * 0.08), c: PLANES[2].color },
     ];
-  }, [scopeMean, selLevel, phase, ev]);
+  }, [scopeMean, commFrac, selLevel, phase, ev]);
 
   // ── communication domains (process↔process) ──
   const domains = useCallback(() => {
@@ -950,8 +967,16 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: workbenchProfile ? '86px 14px 4px' : '10px 14px 4px' }}>
         {([
           [`${NPU_TOT.toLocaleString()}`, 'NPU / Pod', 'var(--tx)'],
-          [`${kpi.stepMs}ms`, 'step time(示意)', 'var(--tx)'],
-          [`${kpi.mfu}%`, 'MFU(示意)', 'var(--tx)'],
+          phase === 'decode'
+            ? [`${WORKLOAD.perf.decodeTPOTms}ms`, 'TPOT(实测)', 'var(--tx)']
+            : phase === 'prefill'
+              ? [`${WORKLOAD.perf.prefillTTFTms}ms`, 'TTFT(实测)', 'var(--tx)']
+              : [`+${WORKLOAD.mfuGainPct}%`, 'MFU增益(实测)', '#22d3ee'],
+          phase === 'decode'
+            ? [`${WORKLOAD.perf.decodeMtpTokps}`, 'MTP tok/s(实测)', 'var(--tx)']
+            : phase === 'prefill'
+              ? [`${WORKLOAD.perf.prefillTokps}`, 'Prefill tok/s(实测)', 'var(--tx)']
+              : [`${WORKLOAD.trainNpus}`, '训练 NPU', 'var(--tx)'],
           [`${(kpi.redR * 100).toFixed(1)}%`, '红区占比', stateColor(kpi.redR >= 0.1 ? 2 : kpi.redR >= 0.04 ? 1 : 0)],
           [`${kpi.fa}`, '故障 NPU', kpi.fa ? '#e5484d' : 'var(--tx2)'],
           [`${PH[phase].label} · #${step}`, '当前工况 / step', 'var(--tx)'],
