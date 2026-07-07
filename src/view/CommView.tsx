@@ -23,7 +23,6 @@ import {
 } from '../scene/data';
 import { SceneVisualProfileContext } from '../scene/visual-profile';
 
-const ACCENT = '#4369ef';
 const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 const SECONDARY: React.CSSProperties = { border: '1px solid var(--button-secondary-border)', background: 'var(--button-secondary-bg)', color: 'var(--foreground-muted)' };
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.5, textTransform: 'uppercase', color: 'var(--tx3)' };
@@ -67,15 +66,12 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   const N = spec.totalNpus;
 
   // 工况 / 时间 come from the shared sync when present (linked with 运行状态 ⇄ 工作台); else local.
-  const [locWl, setLocWl] = useState<ParallelWorkload>('pretrain');
+  const [locWl] = useState<ParallelWorkload>('pretrain');
   const [locStep, setLocStep] = useState(0);
-  const [locPlaying, setLocPlaying] = useState(false);
+  const [locPlaying] = useState(false);
   const workload = sync?.workload ?? locWl;
   const step = sync?.step ?? locStep;
   const playing = sync?.playing ?? locPlaying;
-  const setWorkload = sync?.setWorkload ?? setLocWl;
-  const setStep = sync?.setStep ?? setLocStep;
-  const setPlaying = sync?.setPlaying ?? setLocPlaying;
 
   const [scope, setScope] = useState<Scope>('intra');
   const [dim, setDim] = useState<DimFilter>('all');
@@ -209,10 +205,6 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
       {/* toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '8px 14px', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }) }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={LBL}>工况</span>
-          {(Object.keys(WL) as ParallelWorkload[]).map((w) => (<button key={w} onClick={() => setWorkload(w)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(workload === w) }}>{WL[w].label}</button>))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>范围</span>
           {([['intra', '副本内 (TP/PP/EP)'], ['inter', '副本间 (DP/EP)']] as [Scope, string][]).map(([s, l]) => (<button key={s} onClick={() => setScope(s)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(scope === s) }}>{l}</button>))}
         </div>
@@ -222,12 +214,6 @@ export function CommView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
           {DIMS.map((d) => (<button key={d.key} onClick={() => setDim(d.key)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(dim === d.key, d.color) }}><span style={{ width: 8, height: 8, borderRadius: 2, background: dim === d.key ? 'currentColor' : d.color }} />{d.label}</button>))}
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={LBL}>回放</span>
-          <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontSize: 13 }}>{playing ? '⏸' : '▶'}</button>
-          <input type="range" min={0} max={60} value={step} onChange={(e) => setStep(+e.target.value)} style={{ width: 120, accentColor: ACCENT }} />
-          <span style={{ fontSize: 11, fontFamily: MONO, color: 'var(--tx2)', minWidth: 54 }}>{`step ${step}`}</span>
-        </div>
       </div>
 
       {/* body: matrix + rail */}

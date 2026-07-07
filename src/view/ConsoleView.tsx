@@ -625,27 +625,23 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const nBlades = Math.ceil(N / CPB), nCabs = Math.ceil(nBlades / BPC);
 
   // 工况/时间/播放 come from the cross-view sync when present → 运行状态 ⇄ 工作台 stay linked
-  const [workloadL, setWorkloadL] = useState<Workload>('decode');
+  const [workloadL] = useState<Workload>('decode');
   const workload = sync?.workload ?? workloadL;
-  const setWorkload = sync?.setWorkload ?? setWorkloadL;
-  const [metricL, setMetricL] = useState<Metric>('util');
+  const [metricL] = useState<Metric>('util');
   const metric = (sync?.metric ?? metricL) as Metric;
-  const setMetric = (sync?.setMetric ?? setMetricL) as (m: Metric) => void;
   const [dir, setDir] = useState<Dir>('all');
   const [lens, setLens] = useState<Lens>('heat');
   const [partDim, setPartDim] = useState<Exclude<PartitionDim, 'none'>>('tp');
-  const [planeOnL, setPlaneOnL] = useState({ ub: true, rdma: true, vpc: false });
+  const [planeOnL] = useState({ ub: true, rdma: true, vpc: false });
   const planeOn = sync?.planeOn ?? planeOnL;
-  const setPlaneOn = (sync?.setPlaneOn ?? setPlaneOnL) as (fn: (p: typeof planeOnL) => typeof planeOnL) => void;
   const [focus, setFocus] = useState<Focus>(null);
   const [scopeB, setScopeB] = useState<{ cx: number; cy: number; cz: number; r: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [stepL, setStepL] = useState(0);
   const step = sync?.step ?? stepL;
   const setStep = sync?.setStep ?? setStepL;
-  const [playingL, setPlayingL] = useState(false);
+  const [playingL] = useState(false);
   const playing = sync?.playing ?? playingL;
-  const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -791,14 +787,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
       {/* ── toolbar: 工况 / 指标 / 方向 / 镜头 (+切分) / 平面 · breadcrumb · KPI ── */}
       {workbenchProfile ? (
         <div className="hpc-console-toolbar hpc-console-toolbar--compact">
-          <div className="hpc-console-primary-controls">
-            <span style={GLAB}>工况</span>
-            <div className="hpc-console-segment">
-              {(Object.keys(WL) as Workload[]).map((w) => (
-                <button key={w} onClick={() => setWorkload(w)} style={{ ...btnBase, ...(workload === w ? { border: '1px solid #2a6f5f', background: '#2a6f5f', color: '#fff', fontWeight: 600 } : SECONDARY) }}>{WL[w].label}</button>
-              ))}
-            </div>
-          </div>
           <div className="hpc-wb-menu-wrap hpc-console-settings">
             <button
               className={`hpc-console-summary${settingsOpen ? ' is-active' : ''}`}
@@ -813,14 +801,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             </button>
             {settingsOpen && (
               <div className="hpc-wb-menu hpc-console-settings-menu">
-                <div className="hpc-wb-menu-section">
-                  <div className="hpc-wb-menu-title">指标</div>
-                  <div className="hpc-wb-menu-grid compact">
-                    {(Object.keys(M_LABEL) as Metric[]).map((m) => (
-                      <button key={m} className={`hpc-wb-menu-item${metric === m ? ' is-active' : ''}`} onClick={() => setMetric(m)}>{M_LABEL[m]}</button>
-                    ))}
-                  </div>
-                </div>
                 <div className="hpc-wb-menu-section">
                   <div className="hpc-wb-menu-title">方向</div>
                   <div className="hpc-wb-menu-grid compact">
@@ -850,13 +830,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
               </div>
             )}
           </div>
-          <div className="hpc-console-plane-group" aria-label="通信平面">
-            {PLANES.map((p) => { const on = planeOn[p.id]; return (
-              <button key={p.id} onClick={() => setPlaneOn((s) => ({ ...s, [p.id]: !s[p.id] }))} title={p.role} style={{ ...btnBase, display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, p.color) }}>
-                <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(p.color) : p.color }} />{p.short.split('·')[0]}
-              </button>
-            ); })}
-          </div>
           <div className="hpc-console-crumbs">
             {crumbs.map((c, i) => (
               <span key={i} className="hpc-console-crumb">
@@ -880,16 +853,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
         </div>
       ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 12px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
-        <span style={GLAB}>工况</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {(Object.keys(WL) as Workload[]).map((w) => (
-            <button key={w} onClick={() => setWorkload(w)} style={{ ...btnBase, ...(workload === w ? { border: '1px solid #2a6f5f', background: '#2a6f5f', color: '#fff', fontWeight: 600 } : SECONDARY) }}>{WL[w].label}</button>
-          ))}
-        </div>
-        <span style={GLAB}>指标</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {(Object.keys(M_LABEL) as Metric[]).map((m) => (<button key={m} onClick={() => setMetric(m)} style={{ ...btnBase, ...navBtn(metric === m) }}>{M_LABEL[m]}</button>))}
-        </div>
         <span style={GLAB}>方向</span>
         <div style={{ display: 'flex', gap: 3 }}>
           {([['all', '全链'], ['up', '上游'], ['down', '下游']] as [Dir, string][]).map(([d, l]) => (<button key={d} onClick={() => setDir(d)} style={{ ...btnBase, ...navBtn(dir === d) }}>{l}</button>))}
@@ -908,14 +871,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             ))}
           </div>
         )}
-        <span style={GLAB}>平面</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {PLANES.map((p) => { const on = planeOn[p.id]; return (
-            <button key={p.id} onClick={() => setPlaneOn((s) => ({ ...s, [p.id]: !s[p.id] }))} title={p.role} style={{ ...btnBase, display: 'inline-flex', alignItems: 'center', gap: 5, ...toggleBtn(on, p.color) }}>
-              <span style={{ width: 9, height: 3, borderRadius: 1, background: on ? ink(p.color) : p.color }} />{p.short.split('·')[0]}
-            </button>
-          ); })}
-        </div>
         {/* breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)', flex: 1, minWidth: 60, overflow: 'hidden' }}>
           {crumbs.map((c, i) => (
@@ -1139,13 +1094,6 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
         </div>
       </div>
 
-      {/* playbar */}
-      <div className={workbenchProfile ? 'hpc-console-playbar hpc-console-playbar--floating' : 'hpc-console-playbar'} style={{ display: 'flex', alignItems: 'center', gap: 12, ...(workbenchProfile ? { padding: '8px 12px', background: 'var(--panel-shell-bg)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : { padding: '7px 16px', borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }) }}>
-        <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 26, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 10 }}>{playing ? '❚❚' : '▶'}</button>
-        <span style={{ fontSize: 10, color: 'var(--tx2)', whiteSpace: 'nowrap', ...TNUM }}>{`t = ${step}`}</span>
-        <input type="range" min={0} max={STEP_MAX} value={step} onChange={(e) => setStep(+e.target.value)} style={{ flex: 1 }} />
-        <span style={{ fontSize: 10, color: problem ? '#ef6d6d' : 'var(--tx3)', whiteSpace: 'nowrap' }}>{problem ? `⚠ 过热事件窗口 t=${EVT_LO}–${EVT_HI}` : `工况 ${WL[workload].label} · 指标 ${M_LABEL[metric]}`}</span>
-      </div>
     </div>
   );
 }

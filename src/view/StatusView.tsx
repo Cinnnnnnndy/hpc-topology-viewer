@@ -95,12 +95,10 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   const EVT_CAB = Math.min(CAB - 1, REPLAY.evtCab);   // overheating cabinet during the event (shared with 工作台)
 
   // ── shared selection (drives ALL lenses) · 工况/时间/播放 come from the cross-view sync when present ──
-  const [phaseL, setPhaseL] = useState<Phase>('decode');
+  const [phaseL] = useState<Phase>('decode');
   const phase = sync?.workload ?? phaseL;
-  const setPhase = sync?.setWorkload ?? setPhaseL;
-  const [metricL, setMetricL] = useState<Metric>('util');
+  const [metricL] = useState<Metric>('util');
   const metric = (sync?.metric ?? metricL) as Metric;
-  const setMetric = (sync?.setMetric ?? setMetricL) as (m: Metric) => void;
   const [lens, setLens] = useState<Lens>('heat');
   const [relHi, setRelHi] = useState(true);              // 关系高亮：在真实格子上描边选中卡的 TP/PP/DP/EP 对端
   const [pods, setPods] = useState(4);                   // 集群 = N 个 Pod（示意，跨 Pod DP）
@@ -114,9 +112,8 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   const [stepL, setStepL] = useState(0);
   const step = sync?.step ?? stepL;
   const setStep = sync?.setStep ?? setStepL;
-  const [playingL, setPlayingL] = useState(false);
+  const [playingL] = useState(false);
   const playing = sync?.playing ?? playingL;
-  const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [tip, setTip] = useState<{ x: number; y: number; t: string } | null>(null);
   const flowRef = useRef(0);   // 连线彗星流动相位 —— 始终推进（即使未播放，连线持续流动）
 
@@ -942,26 +939,12 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={LBL}>工况</span>
-          {(Object.keys(PH) as Phase[]).map((p) => (<button key={p} onClick={() => setPhase(p)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(phase === p) }}>{PH[p].label}</button>))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={LBL}>着色</span>
-          {([['util', '利用率'], ['strag', 'straggler'], ['fault', '故障']] as [Metric, string][]).map(([m, l]) => (<button key={m} onClick={() => setMetric(m)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(metric === m) }}>{l}</button>))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>镜头</span>
           {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路']] as [Lens, string][]).map(([v, l]) => (<button key={v} onClick={() => setLens(v)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(lens === v) }}>{l}</button>))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>并行</span>
           <button onClick={() => setRelHi((v) => !v)} title="状态热力镜头下：在真实网格上给选中卡的 TP/PP/DP/EP 对端描边（parallelMap 真值 · 采样显示）。想看整个并行域拓扑请切到「通信域」镜头。" style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...toggleBtn(relHi, ACCENT) }}>并行对端高亮</button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={LBL}>回放</span>
-          <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontSize: 13, boxShadow: playing ? '0 0 0 3px rgba(67,105,239,0.25)' : 'none' }}>{playing ? '⏸' : '▶'}</button>
-          <input type="range" min={0} max={STEP_MAX} value={step} onChange={(e) => setStep(+e.target.value)} style={{ width: 120, accentColor: ACCENT }} />
-          <span style={{ fontSize: 11, fontFamily: MONO, minWidth: 92, ...(ev ? { color: '#e5484d', background: 'rgba(255,75,123,0.12)', border: '1px solid rgba(255,75,123,0.35)', borderRadius: 6, padding: '2px 6px' } : { color: 'var(--tx2)' }) }}>{`step ${step}${ev ? ' · 局部热点事件' : ''}`}</span>
         </div>
       </div>
 
