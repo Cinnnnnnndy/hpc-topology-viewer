@@ -226,6 +226,40 @@
   transform: translateY(-1px);
 }
 
+/* ── global control bar (second toolbar row) ── */
+.hpc-wb-ctrlbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background-subtle);
+  flex-wrap: wrap;
+  min-height: 36px;
+  position: relative;
+  overflow: hidden;
+  transition: min-height 200ms ease, padding 200ms ease;
+}
+
+.hpc-wb-ctrlbar.is-collapsed {
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: 0;
+}
+
+.hpc-wb-ctrlbar-toggle {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--button-secondary-bg);
+  border: 1px solid var(--button-secondary-border);
+  color: var(--foreground-muted);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .hpc-wb-breadcrumb {
   min-width: 0;
   display: flex;

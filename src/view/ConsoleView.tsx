@@ -628,11 +628,15 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
   const [workloadL, setWorkloadL] = useState<Workload>('decode');
   const workload = sync?.workload ?? workloadL;
   const setWorkload = sync?.setWorkload ?? setWorkloadL;
-  const [metric, setMetric] = useState<Metric>('util');
+  const [metricL, setMetricL] = useState<Metric>('util');
+  const metric = (sync?.metric ?? metricL) as Metric;
+  const setMetric = (sync?.setMetric ?? setMetricL) as (m: Metric) => void;
   const [dir, setDir] = useState<Dir>('all');
   const [lens, setLens] = useState<Lens>('heat');
   const [partDim, setPartDim] = useState<Exclude<PartitionDim, 'none'>>('tp');
-  const [planeOn, setPlaneOn] = useState({ ub: true, rdma: true, vpc: false });
+  const [planeOnL, setPlaneOnL] = useState({ ub: true, rdma: true, vpc: false });
+  const planeOn = sync?.planeOn ?? planeOnL;
+  const setPlaneOn = (sync?.setPlaneOn ?? setPlaneOnL) as (fn: (p: typeof planeOnL) => typeof planeOnL) => void;
   const [focus, setFocus] = useState<Focus>(null);
   const [scopeB, setScopeB] = useState<{ cx: number; cy: number; cz: number; r: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);

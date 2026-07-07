@@ -459,9 +459,13 @@ export interface ViewSync {
   workload: ParallelWorkload;
   step: number;
   playing: boolean;
+  metric: 'util' | 'strag' | 'fault';
+  planeOn: { ub: boolean; rdma: boolean; vpc: boolean };
   setWorkload: (w: ParallelWorkload) => void;
   setStep: (n: number | ((s: number) => number)) => void;
   setPlaying: (b: boolean | ((b: boolean) => boolean)) => void;
+  setMetric: (m: 'util' | 'strag' | 'fault') => void;
+  setPlaneOn: (fn: (p: { ub: boolean; rdma: boolean; vpc: boolean }) => { ub: boolean; rdma: boolean; vpc: boolean }) => void;
 }
 export interface ParallelMapping {
   workload: ParallelWorkload; N: number; training: boolean;

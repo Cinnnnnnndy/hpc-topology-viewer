@@ -98,7 +98,9 @@ export function StatusView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?
   const [phaseL, setPhaseL] = useState<Phase>('decode');
   const phase = sync?.workload ?? phaseL;
   const setPhase = sync?.setWorkload ?? setPhaseL;
-  const [metric, setMetric] = useState<Metric>('util');
+  const [metricL, setMetricL] = useState<Metric>('util');
+  const metric = (sync?.metric ?? metricL) as Metric;
+  const setMetric = (sync?.setMetric ?? setMetricL) as (m: Metric) => void;
   const [lens, setLens] = useState<Lens>('heat');
   const [relHi, setRelHi] = useState(true);              // 关系高亮：在真实格子上描边选中卡的 TP/PP/DP/EP 对端
   const [pods, setPods] = useState(4);                   // 集群 = N 个 Pod（示意，跨 Pod DP）
