@@ -508,21 +508,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           </div>
           <div className="hpc-wb-center-nav" />
           <div className="hpc-wb-secondary">
-            <div className="hpc-wb-breadcrumb" aria-label="当前位置">
-              {breadcrumb.map((b, i) => (
-                <span key={i} className="hpc-wb-breadcrumb-item">
-                  {i > 0 && <span className="hpc-wb-breadcrumb-sep">/</span>}
-                  <span onClick={b.onClick} className={b.onClick ? 'is-link' : undefined}>{b.label}</span>
-                </span>
-              ))}
-            </div>
-            {!narrow && (
-              <div className="hpc-wb-statusline" title={`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}>
-                <span>{activeModeLabel}</span>
-                <span>{spec.totalNpus.toLocaleString()}× {spec.npuShort}</span>
-                <span>{TOK.ub} UB</span>
-              </div>
-            )}
             <div className="hpc-wb-iconbar" aria-label="页面操作">
               <button className="hpc-wb-icon-btn" onClick={() => setDark((v) => !v)} title={dark ? '切换浅色模式' : '切换深色模式'}>
                 <ShellIcon name={dark ? 'sun' : 'moon'} />
