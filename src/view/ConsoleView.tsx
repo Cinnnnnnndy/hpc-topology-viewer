@@ -325,12 +325,24 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   //    L7→L6→L5→L4 短连线（仅相邻两级当前成员之间 + L4 Pod → L3 Host 漏斗楔形）。
   {
     const podY = TIERS[3].y, podH = TIERS[3].h;
-    // Short connector between adjacent ctx-tier current members (index 0 always at CX_SPINE): L7→L6, L6→L5, L5→L4
-    for (let i = 0; i < 3; i++) {
-      const ta = TIERS[i], tb = TIERS[i + 1];
+    // Ctx-tier containment connectors: diagonal from selected member of tier N to selected of tier N+1.
+    // Uses same fixed-slot formula as ctxRow (e=0→CX_SPINE, odd→right, even→left).
+    const ctxSelX = (key: string, tot: number) => {
+      const e = Math.min(tot - 1, ctxCur[key] ?? 0);
+      return e === 0 ? CX_SPINE : ctxSibCx(e % 2 === 1 ? 1 : -1, Math.ceil(e / 2));
+    };
+    const ctxPairs: [Tier, string, number, Tier, string, number][] = [
+      [TIERS[0], 'global',  1,                TIERS[1], 'cluster', 4],
+      [TIERS[1], 'cluster', 4,                TIERS[2], 'pool',    POOLS_PER_CLUSTER],
+      [TIERS[2], 'pool',    POOLS_PER_CLUSTER, TIERS[3], 'super',  PODS_PER_POOL],
+    ];
+    ctxPairs.forEach(([ta, ka, na, tb, kb, nb], i) => {
+      const xa = ctxSelX(ka, na), xb = ctxSelX(kb, nb);
       const y1 = ta.y + ta.h / 2, y2 = tb.y - tb.h / 2;
-      if (y2 > y1) els.push(<line key={`ctx-seg-${i}`} x1={CX_SPINE} y1={y1} x2={CX_SPINE} y2={y2} stroke={ACCENT} strokeWidth={1} strokeOpacity={0.25} />);
-    }
+      if (y2 <= y1) return;
+      els.push(<line key={`ctx-seg-${i}`} x1={xa} y1={y1} x2={xb} y2={y2} stroke={ACCENT} strokeWidth={1.2} strokeOpacity={0.4} />);
+      els.push(cdot(xb, tb.y, ACCENT, `ctx-dot-${i}`, 1.8));
+    });
     const hostRow = rows.find((r) => r.t.Le === 4);
     if (hostRow && hostRow.shown.length) {
       const hy = TIERS[4].y, hh = TIERS[4].h, xs = hostRow.shown.map((s) => s.x);
