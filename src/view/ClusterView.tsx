@@ -307,7 +307,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [memOpen, setMemOpen] = useState(true);   // per-card memory occupancy panel (node view)
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel
   const [pendingNpu, setPendingNpu] = useState<number | undefined>(undefined);   // preselect NPU's die on node drill
-  const [modeMenuOpen, setModeMenuOpen] = useState<WorkbenchViewGroupId | null>(null);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -426,10 +426,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     ['散热', TOK.cooling],
   ];
   const activeModeLabel = MODE_TABS.find((t) => t.id === mode)?.label ?? mode;
-  const activeViewGroup = WORKBENCH_VIEW_GROUPS.find((g) => g.mode === mode || g.items?.some((it) => it.id === mode))?.id ?? 'console';
   const selectMode = (next: ViewMode) => {
     setMode(next);
-    setModeMenuOpen(null);
+    setViewMenuOpen(false);
   };
 
   return (
@@ -469,53 +468,45 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             </div>
           </div>
           <div className="hpc-wb-center-nav">
-            <nav className="hpc-wb-modebar" aria-label="主视图">
-              {WORKBENCH_VIEW_GROUPS.map((group) => {
-                const active = activeViewGroup === group.id;
-                if (group.mode) {
-                  return (
-                    <button
-                      key={group.id}
-                      className={`hpc-wb-mode-btn${active ? ' is-active' : ''}`}
-                      onClick={() => selectMode(group.mode!)}
-                    >
-                      {group.label}
-                    </button>
-                  );
-                }
-                const open = modeMenuOpen === group.id;
-                return (
-                  <div className="hpc-wb-menu-wrap" key={group.id}>
-                    <button
-                      className={`hpc-wb-mode-btn hpc-wb-more${active || open ? ' is-active' : ''}`}
-                      onClick={() => setModeMenuOpen((v) => (v === group.id ? null : group.id))}
-                      aria-expanded={open}
-                      title={group.title ?? group.label}
-                    >
-                      <ShellIcon name="more" />
-                      <span>{group.label}</span>
-                    </button>
-                    {open && (
-                      <div className="hpc-wb-menu hpc-wb-mode-menu">
-                        <div className="hpc-wb-menu-title">{group.title}</div>
-                        <div className="hpc-wb-menu-grid">
-                          {group.items?.map((item) => (
-                            <button
-                              key={item.id}
-                              className={`hpc-wb-menu-item hpc-wb-view-item${mode === item.id ? ' is-active' : ''}`}
-                              onClick={() => selectMode(item.id)}
-                            >
-                              <span className="hpc-wb-menu-item-label">{item.label}</span>
-                              <span className="hpc-wb-menu-item-note">{item.note}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </nav>
+            <div className="hpc-wb-menu-wrap">
+              <button
+                className={`hpc-wb-mode-btn hpc-wb-more${viewMenuOpen ? ' is-active' : ''}`}
+                onClick={() => setViewMenuOpen((v) => !v)}
+                aria-expanded={viewMenuOpen}
+                title="切换视图"
+              >
+                <ShellIcon name="more" />
+                <span>{activeModeLabel}</span>
+              </button>
+              {viewMenuOpen && (
+                <div className="hpc-wb-menu hpc-wb-unified-menu" onClick={() => setViewMenuOpen(false)}>
+                  {WORKBENCH_VIEW_GROUPS.map((group) => (
+                    <div key={group.id} className="hpc-wb-unified-col">
+                      <div className="hpc-wb-menu-title">{group.title ?? group.label}</div>
+                      {group.mode ? (
+                        <button
+                          className={`hpc-wb-menu-item hpc-wb-view-item${mode === group.mode ? ' is-active' : ''}`}
+                          onClick={() => selectMode(group.mode!)}
+                        >
+                          <span className="hpc-wb-menu-item-label">{group.label}</span>
+                        </button>
+                      ) : (
+                        group.items?.map((item) => (
+                          <button
+                            key={item.id}
+                            className={`hpc-wb-menu-item hpc-wb-view-item${mode === item.id ? ' is-active' : ''}`}
+                            onClick={() => selectMode(item.id)}
+                          >
+                            <span className="hpc-wb-menu-item-label">{item.label}</span>
+                            <span className="hpc-wb-menu-item-note">{item.note}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="hpc-wb-secondary">
             <div className="hpc-wb-breadcrumb" aria-label="当前位置">

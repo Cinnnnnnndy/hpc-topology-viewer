@@ -333,6 +333,30 @@
   width: 332px;
 }
 
+/* unified view-picker panel — all groups in a horizontal column layout */
+.hpc-wb-unified-menu {
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  width: 700px;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.hpc-wb-unified-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hpc-wb-unified-col .hpc-wb-menu-title {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
 .hpc-wb-camera-menu {
   width: 214px;
 }
