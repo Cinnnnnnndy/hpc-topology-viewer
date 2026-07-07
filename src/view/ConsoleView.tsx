@@ -913,7 +913,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           ); })}
         </div>
         {/* breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--tx2)', flex: 1, minWidth: 60, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)', flex: 1, minWidth: 60, overflow: 'hidden' }}>
           {crumbs.map((c, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {i > 0 && <span style={{ color: 'var(--tx3)' }}>›</span>}
@@ -929,8 +929,8 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             [`${stats.kpi.strag}`, '掉队卡', PARALLEL_COLORS.ep],
           ] as [string, string, string][]).map(([v, l, c], i) => (
             <div key={i} style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.1, color: c, ...TNUM }}>{v}</div>
-              <div style={{ fontSize: 10, color: 'var(--tx3)' }}>{l}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.1, color: c, ...TNUM }}>{v}</div>
+              <div style={{ fontSize: 9, color: 'var(--tx3)' }}>{l}</div>
             </div>
           ))}
         </div>
@@ -956,7 +956,7 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
             minHeight: 0,
           }}
         >
-          <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 11, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
+          <div className="hpc-console-pane-note" style={{ padding: '5px 12px', fontSize: 9, color: 'var(--tx3)', ...(workbenchProfile ? {} : { borderBottom: '1px solid var(--bd)' }), flexShrink: 0 }}>
             Plane view · hierarchy — click an entity to expand its chain (ancestors + descendants) and drive the array on the right; each level shows selected/total · p50 · red%
           </div>
           {/* funnel L7→L1 (fills width, left-aligned) */}
@@ -1057,31 +1057,31 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
           {infoOpen && (
             <div className="hpc-console-info-tray">
               <div style={{ ...card, padding: '10px 12px', borderColor: problem ? 'var(--danger, #ef4d4d)' : 'var(--bd)', background: problem ? 'rgba(60,24,24,0.92)' : 'var(--panel)' }}>
-                <div style={{ fontSize: 10, letterSpacing: 0.4, color: 'var(--tx3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+                <div style={{ fontSize: 9, letterSpacing: 0.4, color: 'var(--tx3)', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: problem ? '#ef4d4d' : '#2bd47d' }} />DAVIS · 根因分析
                 </div>
                 {problem ? (
                   <>
-                    <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
-                    <div style={{ fontSize: 11, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
-                    <div style={{ fontSize: 11, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
-                    <button onClick={() => { setFocus({ level: 'node', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 12, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
+                    <div style={{ fontSize: 11, fontWeight: 600, margin: '0 0 6px' }}>{problem.title}</div>
+                    <div style={{ fontSize: 10, color: 'var(--tx2)', lineHeight: 1.55, marginBottom: 7 }}>{problem.chain}</div>
+                    <div style={{ fontSize: 10, color: '#ef6d6d', marginBottom: 8 }}>{problem.impact}</div>
+                    <button onClick={() => { setFocus({ level: 'node', card: problem.root * PER_CAB }); setDir('down'); }} style={{ width: '100%', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 10, padding: 6, borderRadius: 8, cursor: 'pointer' }}>定位根因 →</button>
                   </>
                 ) : (
-                  <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
+                  <div style={{ fontSize: 10, color: 'var(--tx3)', lineHeight: 1.55 }}>当前无活动问题。拖动下方时间轴到 t=34–46 触发过热事件，看根因链自动聚合与定位。</div>
                 )}
               </div>
 
               <div style={{ ...card, padding: '10px 12px' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
-                <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nBlades.toLocaleString()} Host · ${nCabs} 机柜（物理分组）`}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, margin: '0 0 2px' }}>{focusName(focus)}</div>
+                <div style={{ fontSize: 10, color: 'var(--tx2)', marginBottom: 8 }}>{focus && rail ? `${LEVEL_NAME[focus.level]}${rail.count > 1 ? ' · ' + rail.count + ' 卡' : ''}` : `${N.toLocaleString()} 卡 · ${nBlades.toLocaleString()} Host · ${nCabs} 机柜（物理分组）`}</div>
                 {focus && rail ? (
                   <>
                     {(['util', 'strag', 'fault'] as Metric[]).map((mm) => {
                       const v = rail[mm];
                       return (
                         <div key={mm}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, margin: '4px 0 2px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, margin: '4px 0 2px' }}>
                             <span style={{ color: 'var(--tx2)' }}>{M_LABEL[mm]}</span><span style={{ fontWeight: 600, ...TNUM }}>{Math.round(v * 100)}%</span>
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ height: '100%', width: `${Math.round(v * 100)}%`, background: loadColor(v), borderRadius: 3 }} /></div>
@@ -1090,9 +1090,9 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                     })}
                     {groups.length > 0 && (
                       <div style={{ marginTop: 9, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
-                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>并行关系 · rank↔rank（{pm.cfg}）</div>
+                        <div style={{ fontSize: 9, color: 'var(--tx3)', marginBottom: 5 }}>并行关系 · rank↔rank（{pm.cfg}）</div>
                         {groups.map((g) => (
-                          <div key={g.d} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, margin: '3px 0' }}>
+                          <div key={g.d} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9.5, margin: '3px 0' }}>
                             <CollGlyph pat={g.pat} c={g.c} />
                             <span style={{ color: g.c, fontWeight: 700, width: 20, flexShrink: 0 }}>{g.d.toUpperCase()}</span>
                             <span style={{ color: 'var(--tx2)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.label} · {g.coll}</span>
@@ -1103,44 +1103,44 @@ export function ConsoleView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync
                     )}
                     {phys && (
                       <div style={{ marginTop: 4, borderTop: '1px solid var(--bd)', paddingTop: 7 }}>
-                        <div style={{ fontSize: 10, color: 'var(--tx3)', marginBottom: 5 }}>通信平面 · {phys.planeLabel}</div>
-                        {PLANES.map((p) => <span key={p.id} style={{ display: 'inline-block', fontSize: 10.5, padding: '2px 8px', borderRadius: 10, background: `${p.color}1f`, color: p.color, margin: '0 4px 4px 0', opacity: phys.plane === p.id || phys.plane === 'multi' ? 1 : 0.4 }}>{p.short}</span>)}
-                        <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 2 }}>{phys.devices}</div>
+                        <div style={{ fontSize: 9, color: 'var(--tx3)', marginBottom: 5 }}>通信平面 · {phys.planeLabel}</div>
+                        {PLANES.map((p) => <span key={p.id} style={{ display: 'inline-block', fontSize: 9.5, padding: '2px 8px', borderRadius: 10, background: `${p.color}1f`, color: p.color, margin: '0 4px 4px 0', opacity: phys.plane === p.id || phys.plane === 'multi' ? 1 : 0.4 }}>{p.short}</span>)}
+                        <div style={{ fontSize: 9, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 2 }}>{phys.devices}</div>
                       </div>
                     )}
                   </>
                 ) : (
-                  <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧层级图驱动右侧阵列全景。点实体只展开其链路；方向(全链/上游/下游)过滤；镜头切阵列呈现；时间轴回放看问题定位。</div>
+                  <div style={{ fontSize: 10, color: 'var(--tx3)', lineHeight: 1.55 }}>左侧层级图驱动右侧阵列全景。点实体只展开其链路；方向(全链/上游/下游)过滤；镜头切阵列呈现；时间轴回放看问题定位。</div>
                 )}
               </div>
 
               <div style={{ ...card, padding: '8px 11px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tx2)' }}>状态（红黄绿+灰 = 状态唯一一套色）</div>
+                <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--tx2)' }}>状态（红黄绿+灰 = 状态唯一一套色）</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
+                  {STATE_LABELS.map((lb, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>)}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, borderTop: '1px solid var(--bd)', paddingTop: 4 }}>
                   {([['Chip', ENTITY_COLORS.card], ['Host', ENTITY_COLORS.node], ['机柜（物理分组）', ENTITY_COLORS.cab], ['Pod', ENTITY_COLORS.super]] as [string, string][]).map(([t, c]) => (
-                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
+                    <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}</span>
                   ))}
                 </div>
-                <div style={{ fontSize: 9.5, color: 'var(--tx3)' }}>蓝=选中焦点 · 紫环=掉队卡 · 链路外压暗 · 单击实体联动</div>
+                <div style={{ fontSize: 9, color: 'var(--tx3)' }}>蓝=选中焦点 · 紫环=掉队卡 · 链路外压暗 · 单击实体联动</div>
               </div>
             </div>
           )}
 
           {hover && (
-            <div style={{ position: 'absolute', right: 248, bottom: 12, maxWidth: 320, ...card, padding: '7px 11px', fontSize: 12, lineHeight: 1.5, color: 'var(--tx)', pointerEvents: 'none' }}>{hover}</div>
+            <div style={{ position: 'absolute', right: 248, bottom: 12, maxWidth: 320, ...card, padding: '7px 11px', fontSize: 10, lineHeight: 1.5, color: 'var(--tx)', pointerEvents: 'none' }}>{hover}</div>
           )}
         </div>
       </div>
 
       {/* playbar */}
       <div className={workbenchProfile ? 'hpc-console-playbar hpc-console-playbar--floating' : 'hpc-console-playbar'} style={{ display: 'flex', alignItems: 'center', gap: 12, ...(workbenchProfile ? { padding: '8px 12px', background: 'var(--panel-shell-bg)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' } : { padding: '7px 16px', borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }) }}>
-        <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 26, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>{playing ? '❚❚' : '▶'}</button>
-        <span style={{ fontSize: 11, color: 'var(--tx2)', whiteSpace: 'nowrap', ...TNUM }}>{`t = ${step}`}</span>
+        <button onClick={() => setPlaying((v) => !v)} style={{ width: 30, height: 26, border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 10 }}>{playing ? '❚❚' : '▶'}</button>
+        <span style={{ fontSize: 10, color: 'var(--tx2)', whiteSpace: 'nowrap', ...TNUM }}>{`t = ${step}`}</span>
         <input type="range" min={0} max={STEP_MAX} value={step} onChange={(e) => setStep(+e.target.value)} style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: problem ? '#ef6d6d' : 'var(--tx3)', whiteSpace: 'nowrap' }}>{problem ? `⚠ 过热事件窗口 t=${EVT_LO}–${EVT_HI}` : `工况 ${WL[workload].label} · 指标 ${M_LABEL[metric]}`}</span>
+        <span style={{ fontSize: 10, color: problem ? '#ef6d6d' : 'var(--tx3)', whiteSpace: 'nowrap' }}>{problem ? `⚠ 过热事件窗口 t=${EVT_LO}–${EVT_HI}` : `工况 ${WL[workload].label} · 指标 ${M_LABEL[metric]}`}</span>
       </div>
     </div>
   );
