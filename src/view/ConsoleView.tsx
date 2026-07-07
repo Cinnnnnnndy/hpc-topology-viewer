@@ -173,7 +173,7 @@ interface Stats {
 // ── LEFT: Smartscape 层级 (改造自平面视图层级图) — 图元/配色与「层级图」「选中链路·层级图」统一：
 //    超节点=玫紫 pill · 机柜=紫 · 节点/刀片=天蓝 · 卡=teal 卡图元(2×2 Die 点) · Die/Core/Tile=网格。
 //    结构用图元+位置区分(不抢状态色)；播放时叠加 红黄绿 负载色，空闲时显层级色 (同低保真层级图)。从 L5 起，无集群层。 ──
-const SVG_W = 600, SVG_H = 680, X0 = 118, X1 = 586, BUDGET = 26;
+const SVG_W = 600, SVG_H = 680, X0 = 200, X1 = 518, DOT_X = 554, BUDGET = 26;
 const TIERS = [
   { Le: 1, key: 'super', y: 46, h: 22, maxW: 168, tag: 'L5', label: '超节点', col: ENTITY_COLORS.super },
   { Le: 2, key: 'cab', y: 116, h: 17, maxW: 56, tag: '', label: '机柜', col: ENTITY_COLORS.cab },
@@ -225,6 +225,10 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
     Le === 2 ? { Le: 1, idx: 0 } : Le === 3 ? { Le: 2, idx: Math.floor(idx / BPC) } : Le === 4 ? { Le: 3, idx: Math.floor(idx / CPB) } : null;
 
   const els: React.ReactNode[] = [];
+  // ── Vertical timeline backbone (pushed first = bottom SVG layer) ──
+  const _lt = TIERS[0].y - 12, _lb = SUBTIERS[2].y + 24;
+  els.push(<line key="vt-bg" x1={DOT_X} y1={_lt} x2={DOT_X} y2={_lb} stroke={P.line} strokeWidth={1.5} strokeLinecap="round" />);
+  if (playing) els.push(<line key="vt-anim" x1={DOT_X} y1={_lt} x2={DOT_X} y2={_lb} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="4 22" opacity={0.6}><animate attributeName="stroke-dashoffset" from="26" to="0" dur="0.7s" repeatCount="indefinite" /></line>);
   // connector language mirrors 平面视图「选中链路·层级图」(SelHierPanel): a solid SEL line +
   // connector dots (色环 + 白芯) at the junctions + 运行时沿线流动的白色彗星 (SMIL marching-ants).
   const tierH = (Le: number) => (TIERS.find((tt) => tt.Le === Le)?.h ?? 16);
@@ -354,6 +358,23 @@ function Smartscape({ N, nCabs, nBlades, focus, setFocus, metric, wlKind, step, 
       );
     }
     if (st.key === 'die') els.push(<text key="die-cap" x={120 + 4 * (st.cell + st.gap) + 6} y={st.y + st.cell / 2} fill={P.ink3} fontSize={9} dominantBaseline="central">2 计算(UMA) · 2 IO</text>);
+  });
+  // ── Tier dots on backbone (pushed last = top SVG layer) ──
+  rows.forEach(({ t }) => {
+    const isTSel = t.Le === selLe;
+    const dotR = t.Le === 1 ? 9 : t.Le === 4 ? 5 : 7;
+    const r = isTSel ? dotR + 2.5 : dotR;
+    els.push(
+      <circle key={`vt-${t.Le}`} cx={DOT_X} cy={t.y} r={r}
+        fill={isTSel ? t.col : P.pill} stroke={t.col} strokeWidth={2} style={{ cursor: 'pointer' }}
+        onClick={(e: React.MouseEvent) => { e.stopPropagation(); setFocus(isTSel ? null : entityToFocus(t.Le, 0)); }}
+      />,
+    );
+    if (isTSel) els.push(<circle key={`vt-ring-${t.Le}`} cx={DOT_X} cy={t.y} r={r + 5} fill="none" stroke={t.col} strokeWidth={1} strokeOpacity={0.4} />);
+  });
+  SUBTIERS.forEach((st) => {
+    const dotR = st.key === 'die' ? 6 : st.key === 'core' ? 5 : 4;
+    els.push(<circle key={`vt-s${st.key}`} cx={DOT_X} cy={st.y} r={dotR} fill={st.col(0)} stroke="none" opacity={0.65} />);
   });
 
   return (
