@@ -237,10 +237,6 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     Le === 5 ? { Le: 4, idx: Math.floor(idx / CPB) } : Le === 4 ? { Le: 3, idx: 0 } : null;   // Chip→Host, Host→Pod
 
   const els: React.ReactNode[] = [];
-  // ── Vertical timeline backbone at x=108 (left of entity area; pushed first = bottom SVG layer) ──
-  const VT_X = 108, _bt = TIERS[0].y - 12, _bb = SVG_H - 8;
-  els.push(<line key="vt-bg" x1={VT_X} y1={_bt} x2={VT_X} y2={_bb} stroke={P.line} strokeWidth={1.5} strokeLinecap="round" />);
-  if (playing) els.push(<line key="vt-anim" x1={VT_X} y1={_bt} x2={VT_X} y2={_bb} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="4 22" opacity={0.6}><animate attributeName="stroke-dashoffset" from="26" to="0" dur="0.7s" repeatCount="indefinite" /></line>);
   // connector language mirrors 平面视图「选中链路·层级图」(SelHierPanel): a solid SEL line +
   // connector dots (色环 + 白芯) at the junctions + 运行时沿线流动的白色彗星 (SMIL marching-ants).
   const tierH = (Le: number) => (TIERS.find((tt) => tt.Le === Le)?.h ?? 16);
@@ -438,9 +434,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     const a = aggOf(t.Le);
     els.push(
       <g key={`l-${t.Le}`}>
-        {t.tag && <text x={12} y={t.y - 6} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>}
-        <text x={12} y={t.y + (t.tag ? 6 : 4)} fill={P.ink} fontSize={11} fontWeight={700}>{t.label}</text>
-        <text x={12} y={t.y + (t.tag ? 17 : 15)} fill={P.ink3} fontSize={8.5}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}%`}</text>
+        {t.tag && <text x={12} y={t.y - 5} fill={t.col} fontSize={8} fontWeight={700}>{t.tag}</text>}
+        <text x={12} y={t.y + (t.tag ? 5 : 3)} fill={P.ink} fontSize={10} fontWeight={700}>{t.label}</text>
+        <text x={12} y={t.y + (t.tag ? 15 : 13)} fill={P.ink3} fontSize={8}>{`${total(t.Le).toLocaleString()} · p50 ${Math.round(a.p50 * 100)}%`}</text>
       </g>,
     );
   });
@@ -475,9 +471,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // 5a) L1 Die 子层（网格）
   {
     const st = DIE;
-    els.push(<text key="slt-die" x={12} y={st.y - 6} fill={ENTITY_COLORS.computeDie} fontSize={9} fontWeight={700}>{st.tag}</text>);
-    els.push(<text key="sl-die" x={12} y={st.y + 6} fill={P.ink} fontSize={11} fontWeight={700}>{st.label}</text>);
-    els.push(<text key="scnt-die" x={12} y={st.y + 17} fill={P.ink3} fontSize={8.5}>{`×${st.n}`}</text>);
+    els.push(<text key="slt-die" x={12} y={st.y - 5} fill={ENTITY_COLORS.computeDie} fontSize={8} fontWeight={700}>{st.tag}</text>);
+    els.push(<text key="sl-die" x={12} y={st.y + 5} fill={P.ink} fontSize={10} fontWeight={700}>{st.label}</text>);
+    els.push(<text key="scnt-die" x={12} y={st.y + 15} fill={P.ink3} fontSize={8}>{`×${st.n}`}</text>);
     for (let i = 0; i < st.n; i++) {
       const cx = 120 + (i % st.cols!) * (st.cell! + st.gap!), cy = st.y - 6 + Math.floor(i / st.cols!) * (st.cell! + st.gap!);
       const isSel = repReal && focus?.die === i;
@@ -497,9 +493,9 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
   // ctx-hint removed (unnecessary gray header)
   const ctxLabel = (t: Tier, sub: string) => els.push(
     <g key={`ctxl-${t.key}`}>
-      <text x={12} y={t.y - 4} fill={t.col} fontSize={9} fontWeight={700}>{t.tag}</text>
-      <text x={12} y={t.y + 7} fill={P.ink} fontSize={11} fontWeight={700}>{t.label}</text>
-      <text x={12} y={t.y + 17} fill={P.ink3} fontSize={8.5}>{sub}</text>
+      <text x={12} y={t.y - 3} fill={t.col} fontSize={8} fontWeight={700}>{t.tag}</text>
+      <text x={12} y={t.y + 6} fill={P.ink} fontSize={10} fontWeight={700}>{t.label}</text>
+      <text x={12} y={t.y + 15} fill={P.ink3} fontSize={8}>{sub}</text>
     </g>,
   );
   // one context row: the SELECTED member sits on the spine (涟漪 ripple), siblings fan out and are CLICKABLE
@@ -609,24 +605,6 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     });
     els.push(<text key="c-lg-note" x={lx + 2} y={14} fill={P.ink3} fontSize={8}>（真实成员来自 parallelMap）</text>);
   }
-
-  // ── Tier dots on backbone (pushed last = top SVG layer) ──
-  TIERS.forEach((t) => {
-    const isTSel = selLe === t.Le;
-    const r = t.Le === 3 ? 10 : t.ctx ? 9 : 8;
-    const rad = isTSel ? r + 2.5 : r;
-    els.push(
-      <circle key={`vt-${t.Le}`} cx={VT_X} cy={t.y} r={rad}
-        fill={isTSel ? t.col : P.pill} stroke={t.col} strokeWidth={2} style={{ cursor: 'pointer' }}
-        onClick={(e: React.MouseEvent) => { e.stopPropagation(); setFocus(t.Le <= 2 ? null : (isTSel ? null : entityToFocus(t.Le, 0))); }}
-      />,
-    );
-    if (isTSel) els.push(<circle key={`vt-ring-${t.Le}`} cx={VT_X} cy={t.y} r={rad + 5} fill="none" stroke={t.col} strokeWidth={1} strokeOpacity={0.4} />);
-  });
-  SUBTIERS.forEach((st, si) => {
-    const stCol = si === 0 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.cube;
-    els.push(<circle key={`vt-s${st.key}`} cx={VT_X} cy={st.y} r={si === 0 ? 7 : 6} fill={stCol} stroke="none" opacity={0.65} />);
-  });
 
   return (
     // funnel L7→L1 fills the pane WIDTH (aspect-locked, left-aligned) so its gutter lines up with the
