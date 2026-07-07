@@ -469,18 +469,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             </div>
           </div>
           <div className="hpc-wb-center-nav">
-            <div className="hpc-wb-segment" aria-label="代际">
-              {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
-                <button
-                  key={g}
-                  className={`hpc-wb-segment-btn${gen === g ? ' is-active' : ''}`}
-                  onClick={() => setGen(g)}
-                  title={GENERATIONS[g].name}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
             <nav className="hpc-wb-modebar" aria-label="主视图">
               {WORKBENCH_VIEW_GROUPS.map((group) => {
                 const active = activeViewGroup === group.id;
@@ -599,19 +587,6 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
             <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--foreground)' }}>HPC 拓扑查看器</span>
           </div>
         )}
-        {/* generation switch */}
-        <div style={{ display: 'flex', gap: 4, borderRight: '1px solid var(--bd)', paddingRight: narrow ? 6 : 12 }}>
-          {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
-            <button
-              key={g}
-              onClick={() => setGen(g)}
-              title={GENERATIONS[g].name}
-              style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', ...navBtn(gen === g) }}
-            >
-              {g}
-            </button>
-          ))}
-        </div>
         {/* mode tabs (dropdown on small screens to save toolbar width) */}
         {narrow ? (
           <select
@@ -767,14 +742,25 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               (line style), not a separate card */}
 
           {/* floating on-canvas control panel — per-view controls (collapsible) */}
-          {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
+          {mode !== 'plane' && mode !== 'status' && mode !== 'comm' && mode !== 'console' && (
             <div style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 7, maxWidth: 'calc(100% - 24px)',
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: narrow ? 5 : 8, padding: '6px 10px',
               background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', borderRadius: 'var(--panel-shell-radius)', boxShadow: 'var(--panel-shell-shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
             }}>
+              {/* A5/A6 generation toggle — always visible */}
+              <div style={{ display: 'flex', gap: 3 }}>
+                {(Object.keys(GENERATIONS) as Gen[]).map((g) => (
+                  <button key={g} onClick={() => setGen(g)} title={GENERATIONS[g].name}
+                    style={{ padding: '4px 11px', fontSize: 11.5, fontWeight: 600, borderRadius: 8, cursor: 'pointer', ...navBtn(gen === g) }}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+              {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
               <button onClick={() => setCtxOpen((v) => !v)} title="视图控制" style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 8, cursor: 'pointer', ...navBtn(ctxOpen) }}>{ctxOpen ? '控制 ▾' : '控制 ▸'}</button>
-              {ctxOpen && (
+              )}
+              {ctxOpen && (mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'matrix' || mode === 'fullpod') && (
                 <>
                   {/* per-mode overlay toggles: process(rank) in UB view, tile/cores in node view */}
                   {(mode === 'topology' || mode === 'fullpod' || (mode === 'node' && nodeKind === 'compute')) && (
