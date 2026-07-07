@@ -237,6 +237,10 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     Le === 5 ? { Le: 4, idx: Math.floor(idx / CPB) } : Le === 4 ? { Le: 3, idx: 0 } : null;   // Chip→Host, Host→Pod
 
   const els: React.ReactNode[] = [];
+  // ── Vertical timeline backbone at x=108 (left of entity area; pushed first = bottom SVG layer) ──
+  const VT_X = 108, _bt = TIERS[0].y - 12, _bb = SVG_H - 8;
+  els.push(<line key="vt-bg" x1={VT_X} y1={_bt} x2={VT_X} y2={_bb} stroke={P.line} strokeWidth={1.5} strokeLinecap="round" />);
+  if (playing) els.push(<line key="vt-anim" x1={VT_X} y1={_bt} x2={VT_X} y2={_bb} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="4 22" opacity={0.6}><animate attributeName="stroke-dashoffset" from="26" to="0" dur="0.7s" repeatCount="indefinite" /></line>);
   // connector language mirrors 平面视图「选中链路·层级图」(SelHierPanel): a solid SEL line +
   // connector dots (色环 + 白芯) at the junctions + 运行时沿线流动的白色彗星 (SMIL marching-ants).
   const tierH = (Le: number) => (TIERS.find((tt) => tt.Le === Le)?.h ?? 16);
@@ -605,6 +609,24 @@ function Smartscape({ N, nBlades, focus, setFocus, metric, wlKind, step, dir, pl
     });
     els.push(<text key="c-lg-note" x={lx + 2} y={14} fill={P.ink3} fontSize={8}>（真实成员来自 parallelMap）</text>);
   }
+
+  // ── Tier dots on backbone (pushed last = top SVG layer) ──
+  TIERS.forEach((t) => {
+    const isTSel = selLe === t.Le;
+    const r = t.Le === 3 ? 10 : t.ctx ? 9 : 8;
+    const rad = isTSel ? r + 2.5 : r;
+    els.push(
+      <circle key={`vt-${t.Le}`} cx={VT_X} cy={t.y} r={rad}
+        fill={isTSel ? t.col : P.pill} stroke={t.col} strokeWidth={2} style={{ cursor: 'pointer' }}
+        onClick={(e: React.MouseEvent) => { e.stopPropagation(); setFocus(t.Le <= 2 ? null : (isTSel ? null : entityToFocus(t.Le, 0))); }}
+      />,
+    );
+    if (isTSel) els.push(<circle key={`vt-ring-${t.Le}`} cx={VT_X} cy={t.y} r={rad + 5} fill="none" stroke={t.col} strokeWidth={1} strokeOpacity={0.4} />);
+  });
+  SUBTIERS.forEach((st, si) => {
+    const stCol = si === 0 ? ENTITY_COLORS.computeDie : ENTITY_COLORS.cube;
+    els.push(<circle key={`vt-s${st.key}`} cx={VT_X} cy={st.y} r={si === 0 ? 7 : 6} fill={stCol} stroke="none" opacity={0.65} />);
+  });
 
   return (
     // funnel L7→L1 fills the pane WIDTH (aspect-locked, left-aligned) so its gutter lines up with the
