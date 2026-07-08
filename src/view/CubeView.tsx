@@ -247,36 +247,53 @@ function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number
   );
 }
 
-// ── PP 流水甘特（每级一套泳道语义之 L4）：1F1B 调度，stage 为道、microbatch 的 F/B 为格、空档=bubble。 ──
+// ── PP 流水甘特（每级一套泳道语义之 L4）：1F1B 调度，stage 为道、microbatch 的 F/B 为格、空档=bubble。
+//   掉队：某 stage 算子耗时×2 → 延迟沿依赖链传播、bubble 变大（真实模拟）。
+//   VPP：交错虚拟流水，理论把 bubble 降到 ~1/v（示意；未重跑完美交错调度）。 ──
 const PIPE_MB = 8;
-function PipelineGantt({ stages, step }: { stages: number; step: number }) {
-  const pipe = useMemo(() => pipeline1F1B(stages, PIPE_MB), [stages]);
+function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
+  stages: number; step: number; straggler: number | null; onStraggler: (s: number | null) => void; vpp: number; onVpp: (v: number) => void;
+}) {
+  const pipe = useMemo(() => pipeline1F1B(stages, PIPE_MB, straggler), [stages, straggler]);
+  const baseBubble = useMemo(() => pipeline1F1B(stages, PIPE_MB, null).bubblePct, [stages]);
   const cursor = (step % 61) / 60;
   const curSlot = Math.floor(cursor * pipe.slots);
   const LANE_H = 20, GAP = 4;
   if (stages <= 1) {
-    return <div style={{ padding: '12px 12px 14px', fontSize: 11.5, color: 'var(--tx2)', lineHeight: 1.6 }}>PP = 1 · 本工况无流水线（Decode/Prefill 单副本推理，PP 未切分）。切到 <b style={{ color: 'var(--tx)' }}>预训练</b> 工况看 1F1B 流水甘特与 bubble。</div>;
+    return <div style={{ padding: '12px 12px 14px', fontSize: 11.5, color: 'var(--tx2)', lineHeight: 1.6 }}>PP = 1 · 本工况无流水线（Decode/Prefill 单副本推理，PP 未切分）。切到 <b style={{ color: 'var(--tx)' }}>预训练</b> 工况看 1F1B 流水甘特、掉队与 VPP。</div>;
   }
   const colF = '#22d3ee', colB = '#6b8bff', w = 1 / pipe.slots;
+  const vppBubble = baseBubble / vpp;
+  const chip: React.CSSProperties = { ...btnBase, padding: '2px 8px', fontSize: 10.5 };
   return (
     <div style={{ padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 600 }}>PP 流水甘特 · 1F1B <span style={{ fontSize: 10.5, color: 'var(--tx3)', fontWeight: 400 }}>{stages} 级 × {PIPE_MB} microbatch</span></span>
-        <span style={{ fontSize: 10.5, fontFamily: MONO }}><span style={{ color: colF }}>F 前向</span> · <span style={{ color: colB }}>B 后向</span> · <span style={{ color: 'var(--tx3)' }}>空档 = bubble</span></span>
-        <span style={{ fontSize: 10.5, fontFamily: MONO, color: pipe.bubblePct > 0.25 ? '#ff4b7b' : 'var(--tx2)' }}>bubble {Math.round(pipe.bubblePct * 100)}%</span>
-        <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>schedule-simulated · 对齐 PTO 1F1B trace</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>PP 流水甘特 · 1F1B <span style={{ fontSize: 10.5, color: 'var(--tx3)', fontWeight: 400 }}>{stages} 级 × {PIPE_MB} mb</span></span>
+        <span style={{ fontSize: 10.5, fontFamily: MONO }}><span style={{ color: colF }}>F</span>·<span style={{ color: colB }}>B</span>·<span style={{ color: 'var(--tx3)' }}>空档=bubble</span></span>
+        <span style={{ fontSize: 10.5, fontFamily: MONO, color: pipe.bubblePct > 0.3 ? '#ff4b7b' : 'var(--tx2)' }}>bubble {Math.round(pipe.bubblePct * 100)}%{straggler != null ? `（掉队前 ${Math.round(baseBubble * 100)}%）` : ''}</span>
+        {/* 掉队注入 */}
+        <span style={{ ...LBL, marginLeft: 4 }}>掉队</span>
+        <button onClick={() => onStraggler(null)} style={{ ...chip, ...navBtn(straggler === null) }}>无</button>
+        {pipe.lanes.map((_, s) => <button key={s} onClick={() => onStraggler(s)} style={{ ...chip, ...(straggler === s ? { border: '1px solid #ff4b7b', background: '#ff4b7b', color: '#fff', fontWeight: 600 } : SECONDARY) }}>S{s}</button>)}
+        {/* VPP 交错 */}
+        <span style={{ ...LBL, marginLeft: 4 }}>VPP</span>
+        {[1, 2, 4].map((v) => <button key={v} onClick={() => onVpp(v)} style={{ ...chip, ...navBtn(vpp === v) }}>×{v}</button>)}
+        {vpp > 1 && <span style={{ fontSize: 10, fontFamily: MONO, color: '#04d793' }}>交错 → 理论 bubble ~{Math.round(vppBubble * 100)}%</span>}
+        <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>schedule-simulated · 对齐 PTO 1F1B</span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: 'var(--tx2)', fontWeight: 600 }}>stage {s}</div>)}
+        <div style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
+          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}{straggler === s ? ' ⚠' : ''}</div>)}
         </div>
         <div style={{ position: 'relative', flex: 1, height: pipe.stages * (LANE_H + GAP) }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ position: 'absolute', left: 0, right: 0, top: s * (LANE_H + GAP), height: LANE_H, background: 'var(--btn)', borderRadius: 3 }} />)}
+          {pipe.lanes.map((_, s) => <div key={s} style={{ position: 'absolute', left: 0, right: 0, top: s * (LANE_H + GAP), height: LANE_H, background: straggler === s ? 'rgba(255,75,123,0.12)' : 'var(--btn)', borderRadius: 3 }} />)}
           {pipe.lanes.map((lane, s) => lane.map((c) => {
-            const active = c.slot === curSlot;
-            return <div key={`${c.dir}${c.mb}-${c.slot}`} title={`stage ${s} · ${c.dir === 'F' ? '前向' : '后向'} · microbatch ${c.mb}`}
-              style={{ position: 'absolute', left: `${c.slot * w * 100}%`, width: `calc(${w * 100}% - 1px)`, top: s * (LANE_H + GAP), height: LANE_H, background: c.dir === 'F' ? colF : colB, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#0b0f16', boxShadow: active ? '0 0 0 2px var(--tx)' : 'none' }}>
-              {w > 0.028 ? c.mb : ''}
+            const active = curSlot >= c.slot && curSlot < c.end, slow = straggler === s;
+            // VPP>1 时按 microbatch 模 vpp 分 chunk（示意交错），色相微移
+            const base = c.dir === 'F' ? colF : colB;
+            return <div key={`${c.dir}${c.mb}-${c.slot}`} title={`stage ${s} · ${c.dir === 'F' ? '前向' : '后向'} · microbatch ${c.mb}${slow ? ' · 掉队(×2)' : ''}`}
+              style={{ position: 'absolute', left: `${c.slot * w * 100}%`, width: `calc(${(c.end - c.slot) * w * 100}% - 1px)`, top: s * (LANE_H + GAP), height: LANE_H, background: base, opacity: vpp > 1 && c.mb % vpp !== 0 ? 0.62 : 1, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#0b0f16', boxShadow: active ? '0 0 0 2px var(--tx)' : 'none' }}>
+              {(c.end - c.slot) * w > 0.028 ? c.mb : ''}
             </div>;
           }))}
           <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.7 }} />
@@ -303,6 +320,8 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settling, setSettling] = useState(false);
   const [flowMode, setFlowMode] = useState<'ops' | 'pipe'>('ops');   // 流动面：层内算子序列 / PP 流水甘特
+  const [straggler, setStraggler] = useState<number | null>(null);   // PP 甘特：掉队 stage
+  const [vpp, setVpp] = useState(1);                                  // PP 甘特：VPP 交错度
   const [sel, setSel] = useState<number | null>(null);      // 选中的 rank（点选）
   const [hover, setHover] = useState<number | null>(null);
   useEffect(() => { setSel(null); setHover(null); }, [gen]);  // 代际换 → N 变，清选区
@@ -501,7 +520,7 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
           ))}
           <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 6 }}>{flowMode === 'ops' ? '一层内的算子时序 · 掩盖/暴露' : 'L4 · PP stage × microbatch · 1F1B bubble'}</span>
         </div>
-        {flowMode === 'ops' ? <Swimlane workload={workload} step={step} /> : <PipelineGantt stages={pm.pp} step={step} />}
+        {flowMode === 'ops' ? <Swimlane workload={workload} step={step} /> : <PipelineGantt stages={pm.pp} step={step} straggler={straggler} onStraggler={setStraggler} vpp={vpp} onVpp={setVpp} />}
       </div>
     </div>
   );

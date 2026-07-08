@@ -138,10 +138,12 @@ export function opAtCursor(phase: 'pretrain' | 'prefill' | 'decode', cursor01: n
 //   数据模型对齐 PTO 参考 pangu-moe-trainviz/strict-1f1b-trace-sim.json（fidelity=schedule-simulated）。
 //   依赖：F(mb,s) 需 F(mb,s-1) 完成；B(mb,s) 需 (s==末级? F(mb,末级) : B(mb,s+1)) 完成。 ──
 export type PipeDir = 'F' | 'B';
-export interface PipeCell { slot: number; dir: PipeDir; mb: number; }
-export interface PipeSchedule { stages: number; microbatches: number; slots: number; lanes: PipeCell[][]; bubblePct: number; }
-export function pipeline1F1B(stages: number, microbatches: number): PipeSchedule {
+export interface PipeCell { slot: number; end: number; dir: PipeDir; mb: number; }
+export interface PipeSchedule { stages: number; microbatches: number; slots: number; lanes: PipeCell[][]; bubblePct: number; stragglerStage: number | null; }
+// stragglerStage: 指定该 stage 的每个算子耗时×2（掉队卡）→ 延迟沿依赖链传播、bubble 变大。
+export function pipeline1F1B(stages: number, microbatches: number, stragglerStage: number | null = null): PipeSchedule {
   const S = Math.max(1, stages), M = Math.max(1, microbatches);
+  const dur = (s: number) => (stragglerStage === s ? 2 : 1);
   // 每 stage 的算子顺序（1F1B，保证 F(mb) 早于 B(mb)，无死锁）
   const order: { dir: PipeDir; mb: number }[][] = [];
   for (let s = 0; s < S; s++) {
@@ -163,16 +165,16 @@ export function pipeline1F1B(stages: number, microbatches: number): PipeSchedule
       const op = order[s][ptr[s]];
       const depEnd = op.dir === 'F' ? (s === 0 ? 0 : doneF[op.mb][s - 1]) : (s === S - 1 ? doneF[op.mb][S - 1] : doneB[op.mb][s + 1]);
       if (depEnd < 0) continue;   // 依赖未完成，下一轮再试
-      const start = Math.max(stageFree[s], depEnd), end = start + 1;
-      lanes[s].push({ slot: start, dir: op.dir, mb: op.mb });
+      const start = Math.max(stageFree[s], depEnd), end = start + dur(s);
+      lanes[s].push({ slot: start, end, dir: op.dir, mb: op.mb });
       if (op.dir === 'F') doneF[op.mb][s] = end; else doneB[op.mb][s] = end;
       stageFree[s] = end; ptr[s]++; progress = true;
     }
   }
   const slots = Math.max(1, ...stageFree);
   let busy = 0, total = 0;
-  for (let s = 0; s < S; s++) { total += stageFree[s]; busy += lanes[s].length; }
-  return { stages: S, microbatches: M, slots, lanes, bubblePct: total > 0 ? (total - busy) / total : 0 };
+  for (let s = 0; s < S; s++) { total += stageFree[s]; busy += lanes[s].reduce((sum, c) => sum + (c.end - c.slot), 0); }
+  return { stages: S, microbatches: M, slots, lanes, bubblePct: total > 0 ? (total - busy) / total : 0, stragglerStage };
 }
 
 // ── 一层内 计算/通信/访存(含背景) 的真实占比（由上面的有序算子归一得出，与 STEP_DECOMP 对齐、校验一致）。 ──
