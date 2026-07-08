@@ -410,7 +410,44 @@
     首要任务是 <b>B 运维监控</b>。并行如何映射硬件不是为了教学，是<b>为了把监控看清楚</b>——8192+ 卡的红绿平铺读不懂，<b>按并行维重排后异常会显出"形状"</b>：TP 组整块红 = 该 Host 拖累 AllReduce；DP 副本整块红 = 数据管道；PP 竖板慢 = bubble；EP 域几张热 = 专家倾斜。<b>形状直接对应根因类别</b>——这就是"看清楚"。
   </div>
 
-  <p class="foot">锚定代码：HW_LEVELS · PARTITION_META / parallelMap · PLANES / LEVEL_PHYS · STEP_DECOMP / TRACE_SCHED · loadState / loadColor ｜ 视图：overview·rack·node（写实）· fullpod（立方体）· plane（平面）· comm（矩阵）· trace / status（泳道·状态）<br>配套文档：research/3D可视化-算子并行框架融合改进方案.md</p>
+  <!-- ─────────── §8 CubeView 现状 ─────────── -->
+  <hr class="rule" />
+  <h2>方案落地 · 已建</h2>
+  <p class="h2-title"><span class="n">▶</span>新视图 <code>CubeView</code>：把三个平面做成一个可运行的新工作区（实验）</p>
+  <p class="body">按"新视图做全、成熟再取代旧视图"的策略，新建了独立视图 <b>立方重排(实验)</b>（工作台 3D 对象菜单里），<strong>全程加法</strong>——<code>FullPodScene</code> 和现有视图一行没动。方案的<b>三个平面</b>现在都立起来了，由<b>一个选区 + 一个游标</b>联动。</p>
+
+  <div class="planes">
+    <div class="plane p-struct">
+      <p class="pk">结构面 · 已建</p><p class="pt">立方体重排</p><p class="pch">layout.ts · 飞行动画</p>
+      <p>同一批 8192 卡按 物理/TP/PP/DP/EP <b>换堆法</b>，带飞行动画 + 自适应相机。<b>异常显形状</b>：注入异常→物理散布、切到对应维度 snap 成块。双射不变量单测守门。</p>
+    </div>
+    <div class="plane p-flow">
+      <p class="pk">流动面 · 已建</p><p class="pt">泳道 + PP 甘特</p><p class="pch">op-schedule.ts · 真实算子时序</p>
+      <p>层内算子泳道（计算/通信/访存三轨）+ <b>掩盖 vs 暴露</b>（通信被计算盖住=掩盖、露出=暴露开销标红）。切 <b>PP 流水甘特</b>（1F1B · stage×microbatch · bubble%）。数据锚定盘古论文 + PTO 参考。</p>
+    </div>
+    <div class="plane p-state">
+      <p class="pk">状态面 · 已建</p><p class="pt">热力 + 部署反查</p><p class="pch">loadRGB · deployment</p>
+      <p>红黄绿状态色叠在立方体上。<b>点一张卡</b>→反查它部署了什么任务（物理位置 + TP切片/PP级/DP副本/EP组）。<b>游标↔3D打通</b>：扫到通信算子→高亮该卡此刻的通信对端（EP/DP…）。</p>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+    <span style="font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); margin-right:4px">已推送</span>
+    <span class="mem good"><span class="tag">P0</span> deployment + ingest 契约</span>
+    <span class="mem good"><span class="tag">P1</span> layout 引擎 + CubeView + 飞行动画</span>
+    <span class="mem good"><span class="tag">数据</span> op-schedule 真实算子时序</span>
+    <span class="mem good"><span class="tag">#1</span> 点选反查 + 游标↔3D</span>
+    <span class="mem good"><span class="tag">#2</span> 掩盖/暴露</span>
+    <span class="mem good"><span class="tag">#3</span> 散布维/结构维</span>
+    <span class="mem good"><span class="tag">L4</span> PP 1F1B 甘特</span>
+  </div>
+
+  <div class="callout" style="margin-top:16px; border-left-color:var(--sw)">
+    <span class="tag" style="color:var(--sw)">还剩</span>
+    <b>接真实遥测</b>让状态色成为真监控——契约已对齐真实格式（<code>rank_table_file</code> 放置 · <code>npu-smi</code>/<code>msprof</code> 遥测 · <code>parallel_state</code> 配置 · <code>fidelity</code> 标注实测/仿真），但逐卡实时数据需真集群，论文替代不了。<b>诚实边界</b>：论文给作业级真值（算子/时序/吞吐，已入库）；监控热力必须来自集群。之后新视图成熟即取代 阵列全景/工作台。
+  </div>
+
+  <p class="foot">锚定代码：HW_LEVELS · PARTITION_META / parallelMap · deployment / layout / op-schedule · PLANES · loadState / loadColor ｜ 视图：overview·rack·node（写实）· fullpod（立方体）· plane（平面）· comm（矩阵）· <b>cube（立方重排·新）</b> · status（泳道·状态）<br>配套文档：research/3D可视化-算子并行框架融合改进方案.md</p>
 </div>
 
 <script>
