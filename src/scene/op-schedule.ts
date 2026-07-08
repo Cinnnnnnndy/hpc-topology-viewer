@@ -134,6 +134,47 @@ export function opAtCursor(phase: 'pretrain' | 'prefill' | 'decode', cursor01: n
   return placed[placed.length - 1].op;
 }
 
+// ── PP 流水甘特（每级一套泳道语义之 L4）：1F1B 调度，lanes=stage、cells=microbatch 的 F/B、空档=bubble。
+//   数据模型对齐 PTO 参考 pangu-moe-trainviz/strict-1f1b-trace-sim.json（fidelity=schedule-simulated）。
+//   依赖：F(mb,s) 需 F(mb,s-1) 完成；B(mb,s) 需 (s==末级? F(mb,末级) : B(mb,s+1)) 完成。 ──
+export type PipeDir = 'F' | 'B';
+export interface PipeCell { slot: number; dir: PipeDir; mb: number; }
+export interface PipeSchedule { stages: number; microbatches: number; slots: number; lanes: PipeCell[][]; bubblePct: number; }
+export function pipeline1F1B(stages: number, microbatches: number): PipeSchedule {
+  const S = Math.max(1, stages), M = Math.max(1, microbatches);
+  // 每 stage 的算子顺序（1F1B，保证 F(mb) 早于 B(mb)，无死锁）
+  const order: { dir: PipeDir; mb: number }[][] = [];
+  for (let s = 0; s < S; s++) {
+    const warm = Math.min(S - 1 - s, M), o: { dir: PipeDir; mb: number }[] = [];
+    for (let i = 0; i < warm; i++) o.push({ dir: 'F', mb: i });                               // 预热前向
+    for (let i = warm; i < M; i++) { o.push({ dir: 'F', mb: i }); o.push({ dir: 'B', mb: i - warm }); }  // 稳态 1F1B
+    for (let i = M - warm; i < M; i++) o.push({ dir: 'B', mb: i });                            // 排空后向
+    order.push(o);
+  }
+  const doneF = Array.from({ length: M }, () => new Array(S).fill(-1));
+  const doneB = Array.from({ length: M }, () => new Array(S).fill(-1));
+  const stageFree = new Array(S).fill(0), ptr = new Array(S).fill(0);
+  const lanes: PipeCell[][] = Array.from({ length: S }, () => []);
+  let progress = true, guard = 0;
+  while (progress && guard++ < 8 * S * M + 20) {
+    progress = false;
+    for (let s = 0; s < S; s++) {
+      if (ptr[s] >= order[s].length) continue;
+      const op = order[s][ptr[s]];
+      const depEnd = op.dir === 'F' ? (s === 0 ? 0 : doneF[op.mb][s - 1]) : (s === S - 1 ? doneF[op.mb][S - 1] : doneB[op.mb][s + 1]);
+      if (depEnd < 0) continue;   // 依赖未完成，下一轮再试
+      const start = Math.max(stageFree[s], depEnd), end = start + 1;
+      lanes[s].push({ slot: start, dir: op.dir, mb: op.mb });
+      if (op.dir === 'F') doneF[op.mb][s] = end; else doneB[op.mb][s] = end;
+      stageFree[s] = end; ptr[s]++; progress = true;
+    }
+  }
+  const slots = Math.max(1, ...stageFree);
+  let busy = 0, total = 0;
+  for (let s = 0; s < S; s++) { total += stageFree[s]; busy += lanes[s].length; }
+  return { stages: S, microbatches: M, slots, lanes, bubblePct: total > 0 ? (total - busy) / total : 0 };
+}
+
 // ── 一层内 计算/通信/访存(含背景) 的真实占比（由上面的有序算子归一得出，与 STEP_DECOMP 对齐、校验一致）。 ──
 export function phaseMix(phase: 'pretrain' | 'prefill' | 'decode'): { compute: number; comm: number; mem: number } {
   const s = OP_SCHEDULE[phase];
