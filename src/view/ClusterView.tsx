@@ -29,7 +29,8 @@ import {
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
-import { CubeView } from './CubeView';
+import { CubeView, ANOM_LABEL, type AnomalyDim } from './CubeView';
+import { LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
 import { ConsoleView } from './ConsoleView';
 import { CommView } from './CommView';
 
@@ -327,6 +328,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [statusRelHi, setStatusRelHi] = useState(true);
   const [commScope, setCommScope] = useState<'intra' | 'inter'>('intra');
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
+  // 立方重排(cube) 的筛选：堆叠方式 + 注入异常，随中间控制面板驱动、作为 props 传给 CubeView
+  const [cubeLayout, setCubeLayout] = useState<LayoutView>('physical');
+  const [cubeAnom, setCubeAnom] = useState<AnomalyDim>('none');
 
 
   useEffect(() => {
@@ -586,6 +590,32 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                         </div>
                       </div>
                       {/* ── mode-specific controls ── */}
+                      {mode === 'cube' && (
+                        <>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">堆叠方式</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {LAYOUT_VIEWS.map((v) => (
+                                <button key={v} onClick={() => setCubeLayout(v)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(cubeLayout === v) }}>{LAYOUT_LABEL[v]}</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="hpc-wb-ctrl-group">
+                            <span className="hpc-wb-ctrl-label">注入异常</span>
+                            <div className="hpc-wb-ctrl-btns">
+                              {(['none', 'tp', 'pp', 'dp', 'ep'] as AnomalyDim[]).map((d) => {
+                                const on = cubeAnom === d, sig = d === 'none' ? undefined : PARALLEL_COLORS[d];
+                                return (
+                                  <button key={d} onClick={() => setCubeAnom(d)} title={d === 'none' ? '不注入' : `把 ${ANOM_LABEL[d]}0 标红，看它在不同堆法下的形状`}
+                                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, ...(on ? { border: `1px solid ${sig ?? 'var(--primary)'}`, background: sig ?? 'var(--primary)', color: '#fff', fontWeight: 600 } : navBtn(false)) }}>
+                                    {sig && <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? '#fff' : sig }} />}{ANOM_LABEL[d]}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
                       {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'fullpod') && (
                         <div className="hpc-wb-ctrl-group">
                           <span className="hpc-wb-ctrl-label">叠加</span>
@@ -913,7 +943,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} lens={consoleLens} setLens={setConsoleLens} dir={consoleDir} setDir={setConsoleDir} />}
 
           {/* 立方体重排(实验·P1) — 新视图·自带 canvas，按并行轴换堆法看异常形状 (overlays the 3-D canvas) */}
-          {mode === 'cube' && <CubeView gen={gen} dark={dark} sync={viewSync} />}
+          {mode === 'cube' && <CubeView gen={gen} dark={dark} sync={viewSync} layout={cubeLayout} anom={cubeAnom} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}

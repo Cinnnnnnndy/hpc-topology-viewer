@@ -30,8 +30,8 @@ const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 const OP_COL: Record<OpKind, string> = { compute: '#22d3ee', comm: '#ff4b7b', mem: '#a78bfa' };
 const OP_KIND_LBL: Record<OpKind, string> = { compute: '计算', comm: '通信', mem: '访存' };
 
-type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
-const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
+export type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
+export const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
 // 每个维度的异常「真实语义 + 物理形状」——诚实区分「散布维(re-layout 必需)」与「结构维(物理已有结构)」。
 const ANOM_TYPE: Record<Exclude<AnomalyDim, 'none'>, { scatter: '散布维' | '结构维'; tag: string }> = {
   pp: { scatter: '散布维', tag: 're-layout 必需' },
@@ -354,21 +354,27 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
   );
 }
 
-export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
+export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
+  gen: Gen; dark: boolean; sync?: ViewSync;
+  layout?: LayoutView;    // 堆叠方式（受控：由工作台顶部中间控制面板驱动，只读）
+  anom?: AnomalyDim;       // 注入异常（受控）
+}) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const surf = sceneSurface(dark, visualProfile);
   const N = GENERATIONS[gen].totalNpus;
 
-  const [view, setView] = useState<LayoutView>('physical');
-  // 工况：立方体重排的价值在训练(PP4·DP256·EP2 结构丰富)下最明显 → 默认 pretrain，独立于 sync。
-  const [workload, setWorkload] = useState<ParallelWorkload>('pretrain');
-  const [anom, setAnom] = useState<AnomalyDim>('none');
+  // 堆叠方式 / 工况 / 注入异常 / 回放 均由工作台顶部中间控制面板驱动，本地仅作独立运行的兜底（只读）。
+  const [viewL] = useState<LayoutView>('physical');
+  const view = layoutP ?? viewL;
+  const [workloadL] = useState<ParallelWorkload>('pretrain');
+  const workload = sync?.workload ?? workloadL;
+  const [anomL] = useState<AnomalyDim>('none');
+  const anom = anomP ?? anomL;
   const [stepL, setStepL] = useState(0);
   const step = sync?.step ?? stepL;
   const setStep = sync?.setStep ?? setStepL;
-  const [playingL, setPlayingL] = useState(false);
+  const [playingL] = useState(false);   // 回放由顶部控制面板驱动（sync.playing）；本地仅兜底
   const playing = sync?.playing ?? playingL;
-  const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settling, setSettling] = useState(false);
   const [flowMode, setFlowMode] = useState<'ops' | 'pipe' | 'graph'>('ops');   // 流动面：层内算子序列 / PP 甘特 / 算子图
   const [straggler, setStraggler] = useState<number | null>(null);   // PP 甘特：掉队 stage
@@ -423,38 +429,7 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
 
   return (
     <div style={shell}>
-      {/* ── toolbar: 堆叠方式 / 工况 / 注入异常 / 回放 ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 12px', borderBottom: '1px solid var(--bd)', flexWrap: 'wrap', background: 'var(--panel-solid)' }}>
-        <span style={LBL}>堆叠方式</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {LAYOUT_VIEWS.map((v) => (
-            <button key={v} onClick={() => setView(v)} style={{ ...btnBase, ...navBtn(view === v) }}>{LAYOUT_LABEL[v]}</button>
-          ))}
-        </div>
-        <span style={{ ...LBL, marginLeft: 6 }}>工况</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {([['pretrain', '预训练'], ['decode', 'Decode']] as [ParallelWorkload, string][]).map(([w, l]) => (
-            <button key={w} onClick={() => setWorkload(w)} style={{ ...btnBase, ...navBtn(workload === w) }}>{l}</button>
-          ))}
-        </div>
-        <span style={{ ...LBL, marginLeft: 6 }}>注入异常</span>
-        <div style={{ display: 'flex', gap: 3 }}>
-          {(['none', 'tp', 'pp', 'dp', 'ep'] as AnomalyDim[]).map((d) => {
-            const on = anom === d, sig = d === 'none' ? undefined : PARALLEL_COLORS[d as Exclude<ParDim, 'sp'>];
-            return (
-              <button key={d} onClick={() => setAnom(d)} title={d === 'none' ? '不注入' : `把 ${ANOM_LABEL[d]}0 标红，看它在不同堆法下的形状`}
-                style={{ ...btnBase, display: 'inline-flex', alignItems: 'center', gap: 5, ...(on ? { border: `1px solid ${sig ?? 'var(--primary)'}`, background: sig ?? 'var(--primary)', color: '#fff', fontWeight: 600 } : SECONDARY) }}>
-                {sig && <span style={{ width: 8, height: 8, borderRadius: 2, background: on ? '#fff' : sig }} />}{ANOM_LABEL[d]}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setPlaying((p) => !p)} style={{ ...btnBase, ...navBtn(playing) }}>{playing ? '暂停' : '▶ 回放'}</button>
-        <input type="range" min={0} max={60} value={step} onChange={(e) => setStep(Number(e.target.value))} style={{ width: 150 }} aria-label="时间" />
-        <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--tx2)', width: 46 }}>t={step}</span>
-      </div>
-
+      {/* 堆叠方式 / 工况 / 注入异常 / 回放 已上移到工作台顶部中间控制面板（Decode ▾ pill）。此处仅留画布 + 流动面。 */}
       {/* ── 3D 立方阵 ── */}
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <Canvas
