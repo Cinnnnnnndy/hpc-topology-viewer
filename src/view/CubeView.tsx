@@ -32,6 +32,19 @@ const OP_KIND_LBL: Record<OpKind, string> = { compute: '计算', comm: '通信',
 
 type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
 const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
+// 每个维度的异常「真实语义 + 物理形状」——诚实区分「散布维(re-layout 必需)」与「结构维(物理已有结构)」。
+const ANOM_TYPE: Record<Exclude<AnomalyDim, 'none'>, { scatter: '散布维' | '结构维'; tag: string }> = {
+  pp: { scatter: '散布维', tag: 're-layout 必需' },
+  ep: { scatter: '散布维', tag: 're-layout 必需' },
+  tp: { scatter: '结构维', tag: '物理已有结构' },
+  dp: { scatter: '结构维', tag: '物理已有结构' },
+};
+const ANOM_NOTE: Record<Exclude<AnomalyDim, 'none'>, string> = {
+  pp: 'PP 级 0 = 每 PP 台 Host 的同一流水级 · 物理散成条纹 → 切 PP 视图 snap 成一整条竖板。散布维,不重排几乎看不出成组。',
+  ep: 'EP 组 0 = 一个专家 All-to-All 域 · 物理散布 → 切 EP 视图 snap 成一条带。散布维,不重排看不出成组。',
+  tp: 'TP 切片 0 = 每台 Host 的第 0 张卡(片内张量分片相同)· 均匀点阵散布 → TP 视图里是规则点阵。结构维:TP 是 Host 内 8 卡并行,故障多为局部,物理视图已能定位。',
+  dp: 'DP 副本 0 = 连续几台 Host 的一份模型拷贝 · 物理半聚集 → DP 视图里是干净一块。结构维:物理已有块状结构,重排只是更规整。',
+};
 
 // ── 卡阵列（唯一被重排的对象）：位置来自 layout（飞行动画 lerp），颜色来自负载场（逐 step 重染） ──
 //    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
@@ -380,8 +393,12 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{LAYOUT_LABEL[view]}<span style={{ color: 'var(--tx3)', fontWeight: 400, fontFamily: MONO, marginLeft: 8 }}>{lay.cols}×{lay.rows}{settling ? ' · 重排中…' : ''}</span></div>
           <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.5 }}>{lay.note}</div>
           {anom !== 'none' && (
-            <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.5, marginTop: 5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>
-              已注入 <b style={{ color: 'var(--tx)' }}>{ANOM_LABEL[anom]}0</b> 异常 · 切到 <b style={{ color: 'var(--tx)' }}>{ANOM_LABEL[anom].slice(0, 2)} 视图</b> 看它 snap 成一整块（散点=物理散布 · 成块=沿该维成组）
+            <div style={{ marginTop: 5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: ANOM_TYPE[anom].scatter === '散布维' ? '#ff4b7b' : PARALLEL_COLORS[anom as Exclude<ParDim, 'sp'>], borderRadius: 3, padding: '1px 6px' }}>{ANOM_TYPE[anom].scatter}</span>
+                <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>{ANOM_TYPE[anom].tag}</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.5 }}>{ANOM_NOTE[anom]}</div>
             </div>
           )}
         </div>
