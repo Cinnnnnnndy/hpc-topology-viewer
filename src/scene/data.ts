@@ -467,6 +467,9 @@ export interface ViewSync {
   setMetric: (m: 'util' | 'strag' | 'fault') => void;
   setPlaneOn: (fn: (p: { ub: boolean; rdma: boolean; vpc: boolean }) => { ub: boolean; rdma: boolean; vpc: boolean }) => void;
 }
+// ── 外部并行配置（P0 · 加法）：监控可从真实作业「摄入」并行度以覆盖自动推导。
+// 全部字段可选；不传任何字段时 parallelMap 的行为与升级前逐字节一致。 ──
+export interface ParallelConfig { tp?: number; sp?: number; pp?: number; dp?: number; ep?: number; }
 export interface ParallelMapping {
   workload: ParallelWorkload; N: number; training: boolean;
   tp: number; sp: number; ep: number; pp: number; dp: number;   // physical tiling degrees (整除铺满)
@@ -487,16 +490,18 @@ function nearestDivisor(n: number, target: number): number {
 }
 const TP_NODE = NPUS_PER_NODE;   // 8 卡/节点 = TP 域大小
 
-export function parallelMap(workload: ParallelWorkload, N: number): ParallelMapping {
+export function parallelMap(workload: ParallelWorkload, N: number, cfgIn?: ParallelConfig): ParallelMapping {
+  // cfgIn（可选·加法）：外部摄入的真实并行度覆盖自动推导。用 `cfgIn?.x ?? <推导>`，
+  // 不传 cfgIn 时每个度数与升级前逐字节一致，且覆盖沿依赖链（nodes→PP→DP）正确级联。
   const training = workload === 'pretrain';
-  const TP = Math.min(TP_NODE, N);
+  const TP = cfgIn?.tp ?? Math.min(TP_NODE, N);
   const nodes = Math.max(1, Math.floor(N / TP));
   const realPP = training ? 5 : 1, realEP = training ? 2 : 4;   // 训练 EP2 / 推理路由 EP4
-  const PP = training ? nearestDivisor(nodes, realPP) : 1;
-  const DP = Math.max(1, Math.floor(nodes / PP));
+  const PP = cfgIn?.pp ?? (training ? nearestDivisor(nodes, realPP) : 1);
+  const DP = cfgIn?.dp ?? Math.max(1, Math.floor(nodes / PP));
   const epScope: 'replica' | 'node' = training ? 'replica' : 'node';
-  const EP = training ? Math.max(1, nearestDivisor(DP, realEP)) : Math.min(realEP, TP);
-  const SP = 1;   // CP1 → SP 未独立切分
+  const EP = cfgIn?.ep ?? (training ? Math.max(1, nearestDivisor(DP, realEP)) : Math.min(realEP, TP));
+  const SP = cfgIn?.sp ?? 1;   // CP1 → SP 未独立切分
 
   const nodeOf = (k: number) => Math.floor(k / TP);
   const stageOf = (k: number) => nodeOf(k) % PP;
