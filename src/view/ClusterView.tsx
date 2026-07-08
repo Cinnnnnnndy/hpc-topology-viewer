@@ -29,6 +29,7 @@ import {
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
+import { CubeView } from './CubeView';
 import { ConsoleView } from './ConsoleView';
 import { CommView } from './CommView';
 
@@ -105,11 +106,13 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   status:   { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 2-D dashboard overlay; 3-D camera unused
   console:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 联动控制台 overlay (own canvas); main 3-D camera unused
   comm:     { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 通信全景 2-D overlay; 3-D camera unused
+  cube:     { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 立方体重排 overlay (own canvas); main 3-D camera unused
 };
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'console',  label: '联动控制台' },
+  { id: 'cube',     label: '立方重排(实验)' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
   { id: 'comm',     label: '通信全景' },
@@ -136,6 +139,7 @@ const WORKBENCH_VIEW_GROUPS: {
     label: '3D 对象',
     title: '对象 / 层级',
     items: [
+      { id: 'cube', label: '立方重排(实验)', note: '按 TP/PP/DP/EP 换堆法 · 异常显形状' },
       { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
       { id: 'overview', label: 'Pod 物理机房', note: '机柜=物理分组 · 通信柜总览' },
       { id: 'rack', label: '机柜（物理分组）', note: '机柜内部 · Host/交换' },
@@ -821,7 +825,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
       {/* ── main: Canvas + info panel ── */}
       <div className={workbench ? 'hpc-workbench-panes' : undefined} style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         <div className={workbench ? 'hpc-workbench-stage-pane' : undefined} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          {!(workbench && mode === 'console') && (
+          {!((workbench && mode === 'console') || mode === 'cube') && (
           <Canvas
             shadows
             dpr={[1, 2]}
@@ -907,6 +911,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
 
           {/* 联动控制台 — 平面视图(控制) + 阵列全景(主视图·自带 canvas) + 运行状态仪表 (overlays the 3-D canvas) */}
           {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} lens={consoleLens} setLens={setConsoleLens} dir={consoleDir} setDir={setConsoleDir} />}
+
+          {/* 立方体重排(实验·P1) — 新视图·自带 canvas，按并行轴换堆法看异常形状 (overlays the 3-D canvas) */}
+          {mode === 'cube' && <CubeView gen={gen} dark={dark} sync={viewSync} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}
