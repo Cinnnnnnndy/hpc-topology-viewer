@@ -247,6 +247,57 @@ function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number
   );
 }
 
+// ── 算子图（P3·算子整网）：一层内算子 DAG，Attention/MoE 分块 + 残差，标每个算子用哪种并行；
+//   当前算子（游标）高亮 → 回答「这张卡此刻在算哪个算子」。结构面看位置、流动面看时间、这里看结构。 ──
+function opDim(id: string, coll?: string): string | null {
+  if (coll === 'a2a') return 'EP'; if (coll === 'ring') return 'DP'; if (coll === 'p2p') return 'PP';
+  if (/qkv|attn|oproj/i.test(id)) return 'TP'; if (/gmm|expert/i.test(id)) return 'EP·TP';
+  if (/^fwd|^bwd/i.test(id)) return '全部'; return null;
+}
+function OperatorGraph({ workload, step }: { workload: ParallelWorkload; step: number }) {
+  const ops = OP_SCHEDULE[workload].ops;
+  const cur = opAtCursor(workload, (step % 61) / 60);
+  const fine = ops.length > 5;   // 推理层有细算子 → 分 Attention/MoE 块；训练粗算子 → 平铺
+  // 分块：Attention = 到 oproj 为止；MoE = router 起
+  const moeStart = ops.findIndex((o) => /router/i.test(o.id));
+  const attn = fine && moeStart > 0 ? ops.slice(0, moeStart) : ops;
+  const moe = fine && moeStart > 0 ? ops.slice(moeStart) : [];
+  const node = (o: typeof ops[number]) => {
+    const on = o.id === cur.id, dim = opDim(o.id, o.coll);
+    return (
+      <div key={o.id} title={o.note} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        <div style={{ padding: '5px 9px', borderRadius: 7, background: on ? OP_COL[o.kind] : `${OP_COL[o.kind]}22`, border: `1.5px solid ${OP_COL[o.kind]}`, color: on ? '#0b0f16' : 'var(--tx)', fontSize: 10.5, fontWeight: on ? 700 : 500, boxShadow: on ? '0 0 0 3px color-mix(in srgb, var(--tx) 30%, transparent)' : 'none', whiteSpace: 'nowrap', position: 'relative' }}>
+          {on && <span style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', fontSize: 8, color: 'var(--tx)', fontWeight: 700 }}>▶ 此刻</span>}
+          {o.name}
+        </div>
+        {dim && <span style={{ fontSize: 8, fontFamily: MONO, color: 'var(--tx3)' }}>{dim}</span>}
+      </div>
+    );
+  };
+  const arrow = <span style={{ color: 'var(--tx3)', fontSize: 12, flexShrink: 0 }}>→</span>;
+  const block = (title: string, list: typeof ops, color: string) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, border: `1px dashed ${color}66`, borderRadius: 9, padding: '14px 10px 8px', position: 'relative', flexShrink: 0 }}>
+      <span style={{ position: 'absolute', top: -8, left: 10, fontSize: 9, fontWeight: 700, color, background: 'var(--panel-solid)', padding: '0 5px' }}>{title} <span style={{ color: 'var(--tx3)', fontWeight: 400 }}>+残差</span></span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{list.map((o, i) => <span key={o.id} style={{ display: 'contents' }}>{i > 0 && arrow}{node(o)}</span>)}</div>
+    </div>
+  );
+  return (
+    <div style={{ padding: '8px 12px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>算子图 · {workload === 'decode' ? 'Decode' : workload === 'prefill' ? 'Prefill' : '预训练'} <span style={{ fontSize: 10.5, color: 'var(--tx3)', fontWeight: 400 }}>一层内 DAG · {fine ? 'Attention + MoE 块' : 'Forward / Backward'}</span></span>
+        <span style={{ fontSize: 10.5, fontFamily: MONO, color: OP_COL[cur.kind] }}>此刻在算: {cur.name}（{OP_KIND_LBL[cur.kind]}）</span>
+        <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>节点色=计算/通信/访存 · 下标=用哪种并行</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', paddingTop: 8, paddingBottom: 2 }}>
+        <div style={{ fontSize: 9.5, color: 'var(--tx3)', flexShrink: 0 }}>输入</div>{arrow}
+        {fine && moe.length ? <>{block('Attention', attn, '#4369ef')}{arrow}{block('MoE 专家', moe, '#ff4b7b')}</>
+          : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{ops.map((o, i) => <span key={o.id} style={{ display: 'contents' }}>{i > 0 && arrow}{node(o)}</span>)}</div>}
+        {arrow}<div style={{ fontSize: 9.5, color: 'var(--tx3)', flexShrink: 0 }}>输出</div>
+      </div>
+    </div>
+  );
+}
+
 // ── PP 流水甘特（每级一套泳道语义之 L4）：1F1B 调度，stage 为道、microbatch 的 F/B 为格、空档=bubble。
 //   掉队：某 stage 算子耗时×2 → 延迟沿依赖链传播、bubble 变大（真实模拟）。
 //   VPP：交错虚拟流水，理论把 bubble 降到 ~1/v（示意；未重跑完美交错调度）。 ──
@@ -319,7 +370,7 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   const playing = sync?.playing ?? playingL;
   const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settling, setSettling] = useState(false);
-  const [flowMode, setFlowMode] = useState<'ops' | 'pipe'>('ops');   // 流动面：层内算子序列 / PP 流水甘特
+  const [flowMode, setFlowMode] = useState<'ops' | 'pipe' | 'graph'>('ops');   // 流动面：层内算子序列 / PP 甘特 / 算子图
   const [straggler, setStraggler] = useState<number | null>(null);   // PP 甘特：掉队 stage
   const [vpp, setVpp] = useState(1);                                  // PP 甘特：VPP 交错度
   const [sel, setSel] = useState<number | null>(null);      // 选中的 rank（点选）
@@ -503,8 +554,14 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
                 <span style={{ color: 'var(--tx)' }}>{STATE_LABELS[st]}</span>
                 <span style={{ marginLeft: 'auto', fontFamily: MONO, color: 'var(--tx2)' }}>{Math.round(u * 100)}%</span>
               </div>
-              <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 11, borderTop: '1px solid var(--bd)', paddingTop: 8 }}>
-                反查（deployment.rolesOf）：一张卡同时担任多个并行角色。切换堆叠方式看它在不同维度下与谁成组。
+              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>此刻在算（t={step}）</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: OP_COL[curOp.kind], flexShrink: 0 }} />
+                <span style={{ color: 'var(--tx)', fontWeight: 600 }}>{curOp.name}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--tx3)' }}>{OP_KIND_LBL[curOp.kind]}</span>
+              </div>
+              <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 9 }}>
+                反查（rolesOf + opAtCursor）：这张卡此刻在算什么算子 + 它的并行角色。切「算子图」看结构、切「堆叠方式」看它与谁成组。
               </div>
             </div>
           );
@@ -515,12 +572,14 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px 0' }}>
           <span style={LBL}>流动面</span>
-          {([['ops', '层内算子'], ['pipe', 'PP 流水甘特']] as [typeof flowMode, string][]).map(([m, l]) => (
+          {([['ops', '层内算子'], ['pipe', 'PP 流水甘特'], ['graph', '算子图']] as [typeof flowMode, string][]).map(([m, l]) => (
             <button key={m} onClick={() => setFlowMode(m)} style={{ ...btnBase, padding: '3px 10px', ...navBtn(flowMode === m) }}>{l}</button>
           ))}
-          <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 6 }}>{flowMode === 'ops' ? '一层内的算子时序 · 掩盖/暴露' : 'L4 · PP stage × microbatch · 1F1B bubble'}</span>
+          <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 6 }}>{flowMode === 'ops' ? '一层内算子时序 · 掩盖/暴露' : flowMode === 'pipe' ? 'L4 · PP stage × microbatch · 1F1B bubble' : '算子 DAG 结构 · 此刻在算哪个算子'}</span>
         </div>
-        {flowMode === 'ops' ? <Swimlane workload={workload} step={step} /> : <PipelineGantt stages={pm.pp} step={step} straggler={straggler} onStraggler={setStraggler} vpp={vpp} onVpp={setVpp} />}
+        {flowMode === 'ops' ? <Swimlane workload={workload} step={step} />
+          : flowMode === 'pipe' ? <PipelineGantt stages={pm.pp} step={step} straggler={straggler} onStraggler={setStraggler} vpp={vpp} onVpp={setVpp} />
+          : <OperatorGraph workload={workload} step={step} />}
       </div>
     </div>
   );
