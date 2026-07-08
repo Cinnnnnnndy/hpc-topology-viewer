@@ -35,16 +35,20 @@ const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 
 
 // ── 卡阵列（唯一被重排的对象）：位置来自 layout（飞行动画 lerp），颜色来自负载场（逐 step 重染） ──
 //    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
-function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover, onPick, onHover }: {
+const PEER_MAX = 96;   // 对端高亮上限（peersOf 采样）
+function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peers, peerColor }: {
   cells: { x: number; z: number }[]; loadOf: (k: number) => number; recolorKey: number;
   onSettleChange?: (settling: boolean) => void;
   selected: number | null; hover: number | null;
   onPick: (rank: number | null) => void; onHover: (rank: number | null) => void;
+  peers: number[]; peerColor: string;   // 当前通信算子下，选中卡的通信对端（流动面 → 结构面）
 }) {
   const N = cells.length;
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const selRef = useRef<THREE.Mesh>(null);
   const hovRef = useRef<THREE.Mesh>(null);
+  const peerRef = useRef<THREE.InstancedMesh>(null);
+  const m2 = useMemo(() => new THREE.Matrix4(), []);
   const cur = useRef<{ x: Float32Array; z: Float32Array } | null>(null);
   const target = useRef(cells);
   const settling = useRef(true);
@@ -66,6 +70,13 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover,
       ref.current.visible = true; ref.current.position.set(c.x[idx], 0, c.z[idx]);
     };
     place(selRef, selected); place(hovRef, hover === selected ? null : hover);
+    // 对端高亮：跟随各对端卡的实时位置（每帧）
+    const pm2 = peerRef.current;
+    if (pm2) {
+      const n = Math.min(peers.length, PEER_MAX);
+      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(BOX * 1.25, 0.2, BOX * 1.25); m2.setPosition(c.x[k], 0, c.z[k]); pm2.setMatrixAt(i, m2); }
+      pm2.count = n; pm2.instanceMatrix.needsUpdate = true;
+    }
     if (!settling.current) return;
     let moving = false;
     for (let k = 0; k < N; k++) {
@@ -109,6 +120,11 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover,
         <boxGeometry args={[BOX * 1.35, 0.24, BOX * 1.35]} />
         <meshBasicMaterial color="#8ba3f2" wireframe transparent opacity={0.6} />
       </mesh>
+      {/* 通信对端高亮：当前通信算子下，选中卡正在与之通信的卡（并行维签名色线框） */}
+      <instancedMesh ref={peerRef} args={[undefined, undefined, PEER_MAX]} frustumCulled={false} raycast={() => null}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshBasicMaterial color={peerColor} wireframe transparent opacity={0.9} />
+      </instancedMesh>
     </>
   );
 }
@@ -254,6 +270,19 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   }, [kind, step, N, anom, pm]);
   const recolorKey = useMemo(() => step * 100 + LAYOUT_VIEWS.indexOf(view) * 7 + ({ none: 0, tp: 1, pp: 2, dp: 3, ep: 4 } as Record<AnomalyDim, number>)[anom], [step, view, anom]);
 
+  // ── 流动面 → 结构面：游标扫到的当前算子 → 若为通信算子且选中了卡，高亮它此刻的通信对端 ──
+  const curOp = useMemo(() => {
+    const ops = OP_SCHEDULE[workload].ops, total = ops.reduce((s, o) => s + o.w, 0) || 1, cursor = (step % 61) / 60;
+    let acc = 0;
+    for (const o of ops) { const x = acc / total, w = o.w / total; if (cursor >= x && cursor < x + w) return o; acc += o.w; }
+    return ops[ops.length - 1];
+  }, [workload, step]);
+  const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = curOp.kind === 'comm'
+    ? (curOp.coll === 'ring' ? 'dp' : curOp.coll === 'p2p' ? 'pp' : 'ep') : null;
+  const peers = useMemo(() => (sel != null && curDim ? dep.peersOf(sel, curDim, PEER_MAX) : []), [sel, curDim, dep, step]);
+  const peerColor = curDim ? PARALLEL_COLORS[curDim] : '#4369ef';
+  const dimLabel: Record<string, string> = { ep: '专家 All-to-All', dp: '数据并行 AllReduce', pp: '流水 P2P' };
+
   const shell: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' };
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
 
@@ -306,7 +335,7 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
           <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />
           <FrameField cols={lay.cols} rows={lay.rows} controls={controlsRef} />
           <CubeField cells={lay.pos} loadOf={loadOf} recolorKey={recolorKey} onSettleChange={setSettling}
-            selected={sel} hover={hover} onPick={setSel} onHover={setHover} />
+            selected={sel} hover={hover} onPick={setSel} onHover={setHover} peers={peers} peerColor={peerColor} />
           <OrbitControls
             ref={controlsRef as never} makeDefault enableDamping dampingFactor={0.08}
             minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
@@ -318,6 +347,18 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
               textColor={dark ? '#e6e6e6' : '#1c2433'} strokeColor={dark ? '#4a5160' : '#aab4c4'} opacity={0.95} />
           </GizmoHelper>
         </Canvas>
+
+        {/* 当前算子横幅（流动面游标 → 结构面）：显示游标此刻在算什么；通信算子+选中卡 → 高亮对端 */}
+        {(
+          <div style={{ position: 'absolute', left: '50%', top: 12, transform: 'translateX(-50%)', ...card, padding: '7px 14px', pointerEvents: 'none', display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: OP_COL[curOp.kind] }} />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{curOp.name}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{OP_KIND_LBL[curOp.kind]}</span>
+            {curDim && sel != null && peers.length > 0 && (
+              <span style={{ fontSize: 10.5, color: peerColor, borderLeft: '1px solid var(--bd)', paddingLeft: 9 }}>rank {sel} · 与 {peers.length} 张卡做 {dimLabel[curDim]}</span>
+            )}
+          </div>
+        )}
 
         {/* 视图说明 + 状态图例 */}
         <div style={{ position: 'absolute', left: 12, top: 12, ...card, padding: '9px 12px', maxWidth: 340, pointerEvents: 'none' }}>
