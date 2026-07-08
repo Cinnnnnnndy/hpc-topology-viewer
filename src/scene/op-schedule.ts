@@ -93,6 +93,47 @@ export const DECODE_BATCH_SCALING: BatchPoint[] = [
 ];
 export const PREFILL_MEASURED = { batch: 2, ttftMs: 424.21, tokps: 4828 } as const;   // 表 5（800I A2）
 
+// ── flow 布局（泳道 + 3D 游标共用的单一真值）：把算子分成「关键路径(wall-clock)」与「被计算掩盖」两类。 ──
+//   关键路径 = 所有计算算子 + 未被掩盖的通信/访存（overlapBg=false）。
+//   掩盖 = 通信/访存且 overlapBg=true（藏在前一个计算算子之下，不占 wall-clock）+ 背景搬运带 sched.bg。
+//   暴露通信 = 落在关键路径上的通信占比（= 浪费的墙钟时间，监控要盯的靶子）。
+export interface Placed { op: ScheduledOp; x: number; w: number; }   // x/w 归一到关键路径 [0,1]
+export interface HiddenBand { op: ScheduledOp; x: number; w: number; }  // 画在其掩盖的计算算子之下
+export interface FlowLayout {
+  placed: Placed[];            // 关键路径算子（有序、占 wall-clock）
+  hidden: HiddenBand[];        // 被掩盖的通信/访存（叠在计算下方）
+  bgBand: { name: string; x: number; w: number; note: string } | null;  // 背景搬运带（掩盖）
+  exposedComm: number;         // 暴露通信占比（关键路径内）
+  hiddenFrac: number;          // 被掩盖占比（相对关键路径）
+}
+const isCritical = (o: ScheduledOp) => o.kind === 'compute' || !o.overlapBg;
+export function flowLayout(phase: 'pretrain' | 'prefill' | 'decode'): FlowLayout {
+  const sched = OP_SCHEDULE[phase], ops = sched.ops;
+  const crit = ops.filter(isCritical);
+  const critTotal = crit.reduce((s, o) => s + o.w, 0) || 1;
+  let acc = 0;
+  const placed: Placed[] = crit.map((op) => { const x = acc / critTotal, w = op.w / critTotal; acc += op.w; return { op, x, w }; });
+  // 被掩盖的算子 → 放到「原序列中它前面最近的计算算子」之下
+  const underOf = (opId: string): Placed | undefined => {
+    const idx = ops.findIndex((o) => o.id === opId);
+    for (let i = idx - 1; i >= 0; i--) if (ops[i].kind === 'compute') { const p = placed.find((pp) => pp.op.id === ops[i].id); if (p) return p; }
+    return placed.find((p) => p.op.kind === 'compute');
+  };
+  const hidden: HiddenBand[] = ops.filter((o) => !isCritical(o)).map((op) => { const u = underOf(op.id); return { op, x: u?.x ?? 0, w: Math.min(u?.w ?? 0.2, op.w / critTotal) }; });
+  // 背景搬运带：放在带 overlapBg 的计算算子（如 Expert GMM）之下
+  const bgUnder = placed.find((p) => p.op.overlapBg && p.op.kind === 'compute') ?? placed.find((p) => p.op.kind === 'compute');
+  const bgBand = sched.bg && bgUnder ? { name: sched.bg.name, x: bgUnder.x, w: Math.min(1 - bgUnder.x, sched.bg.frac / critTotal), note: sched.bg.note } : null;
+  const exposedComm = crit.filter((o) => o.kind === 'comm').reduce((s, o) => s + o.w, 0) / critTotal;
+  const hiddenFrac = (ops.filter((o) => !isCritical(o)).reduce((s, o) => s + o.w, 0) + (sched.bg?.frac ?? 0)) / critTotal;
+  return { placed, hidden, bgBand, exposedComm, hiddenFrac };
+}
+// 游标(0..1)扫到的当前算子（关键路径上）—— 泳道与 3D 游标共用，保证一致。
+export function opAtCursor(phase: 'pretrain' | 'prefill' | 'decode', cursor01: number): ScheduledOp {
+  const { placed } = flowLayout(phase);
+  for (const p of placed) if (cursor01 >= p.x && cursor01 < p.x + p.w) return p.op;
+  return placed[placed.length - 1].op;
+}
+
 // ── 一层内 计算/通信/访存(含背景) 的真实占比（由上面的有序算子归一得出，与 STEP_DECOMP 对齐、校验一致）。 ──
 export function phaseMix(phase: 'pretrain' | 'prefill' | 'decode'): { compute: number; comm: number; mem: number } {
   const s = OP_SCHEDULE[phase];

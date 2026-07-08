@@ -20,7 +20,7 @@ import {
 } from '../scene/data';
 import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
 import { deploymentOf } from '../scene/deployment';
-import { OP_SCHEDULE, phaseMix, type OpKind } from '../scene/op-schedule';
+import { OP_SCHEDULE, phaseMix, flowLayout, opAtCursor, type OpKind } from '../scene/op-schedule';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 const PITCH = 0.42;                    // 每格世界尺寸
@@ -74,7 +74,7 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover,
     const pm2 = peerRef.current;
     if (pm2) {
       const n = Math.min(peers.length, PEER_MAX);
-      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(BOX * 1.25, 0.2, BOX * 1.25); m2.setPosition(c.x[k], 0, c.z[k]); pm2.setMatrixAt(i, m2); }
+      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(BOX * 1.7, 0.34, BOX * 1.7); m2.setPosition(c.x[k], 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
       pm2.count = n; pm2.instanceMatrix.needsUpdate = true;
     }
     if (!settling.current) return;
@@ -167,15 +167,13 @@ const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing:
 //    游标随 step 扫过，高亮当前算子。这就是「流动面」：结构面看位置，这里看时间。
 function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number }) {
   const sched = OP_SCHEDULE[workload];
-  const ops = sched.ops;
-  const total = ops.reduce((s, o) => s + o.w, 0) || 1;
-  let acc = 0;
-  const placed = ops.map((o) => { const x = acc / total; acc += o.w; return { o, x, w: o.w / total }; });
+  const fl = flowLayout(workload);
   const mix = phaseMix(workload);
   const cursor = (step % 61) / 60;
   const LANES: OpKind[] = ['compute', 'comm', 'mem'];
-  const LANE_H = 22, GAP = 4, TL_H = LANES.length * (LANE_H + GAP);
-  const gmm = placed.find((p) => p.o.overlapBg);   // 被计算掩盖的背景搬运锚点算子
+  const LANE_H = 22, GAP = 4, BG_H = 15, TL_H = LANES.length * (LANE_H + GAP);
+  const hasBg = fl.hidden.length > 0 || fl.bgBand;
+  const topPad = hasBg ? BG_H + 3 : 0;
   const phLbl = workload === 'decode' ? 'Decode' : workload === 'prefill' ? 'Prefill' : '预训练';
 
   return (
@@ -185,40 +183,51 @@ function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number
         <span style={{ fontSize: 10.5, fontFamily: MONO, color: 'var(--tx2)' }}>
           计算 {Math.round(mix.compute * 100)}% · 通信 {Math.round(mix.comm * 100)}% · 访存 {Math.round(mix.mem * 100)}%
         </span>
+        {/* 监控靶子：暴露通信(浪费墙钟) vs 掩盖(藏在计算下) */}
+        <span style={{ fontSize: 10.5, fontFamily: MONO, display: 'inline-flex', gap: 10 }}>
+          <span style={{ color: '#ff4b7b' }}>暴露通信 {Math.round(fl.exposedComm * 100)}%</span>
+          <span style={{ color: 'var(--tx3)' }}>掩盖 {Math.round(fl.hiddenFrac * 100)}%</span>
+        </span>
         <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>{sched.src}</span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         {/* 左侧轨道名 */}
-        <div style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP, paddingTop: sched.bg ? 16 : 0 }}>
+        <div style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP, paddingTop: topPad }}>
           {LANES.map((k) => (
             <div key={k} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: OP_COL[k], fontWeight: 600 }}>{OP_KIND_LBL[k]}</div>
           ))}
         </div>
-        {/* 时间轴 */}
-        <div style={{ position: 'relative', flex: 1, height: TL_H + (sched.bg ? 16 : 0) }}>
-          {/* 背景搬运带（掩盖）：叠在计算算子上方，宽度 = bg.frac */}
-          {sched.bg && gmm && (
-            <div title={sched.bg.note} style={{ position: 'absolute', left: `${gmm.x * 100}%`, width: `${Math.min(1 - gmm.x, sched.bg.frac / total) * 100}%`, top: 0, height: 13, borderRadius: 3, background: `${OP_COL.mem}55`, border: `1px dashed ${OP_COL.mem}`, fontSize: 8.5, color: 'var(--tx)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {sched.bg.name} · 掩盖
+        {/* 时间轴（关键路径 = wall-clock；掩盖带叠在计算之上） */}
+        <div style={{ position: 'relative', flex: 1, height: TL_H + topPad }}>
+          {/* 掩盖带：被计算盖住的通信/访存 + 背景搬运（不占 wall-clock，虚线表示藏在下方计算里） */}
+          {fl.bgBand && (
+            <div title={fl.bgBand.note} style={{ position: 'absolute', left: `${fl.bgBand.x * 100}%`, width: `${fl.bgBand.w * 100}%`, top: 0, height: BG_H, borderRadius: 3, background: `${OP_COL.mem}44`, border: `1px dashed ${OP_COL.mem}`, fontSize: 8, color: 'var(--tx2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {fl.bgBand.name} · 掩盖
             </div>
           )}
+          {fl.hidden.map((h) => (
+            <div key={h.op.id} title={`${h.op.name} · ${h.op.note}（被计算掩盖，不占墙钟）`} style={{ position: 'absolute', left: `${h.x * 100}%`, width: `${h.w * 100}%`, top: 0, height: BG_H, borderRadius: 3, background: `${OP_COL[h.op.kind]}44`, border: `1px dashed ${OP_COL[h.op.kind]}`, fontSize: 8, color: 'var(--tx2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {h.op.name} · 掩盖
+            </div>
+          ))}
           {/* 轨道底 */}
           {LANES.map((k, li) => (
-            <div key={k} style={{ position: 'absolute', left: 0, right: 0, top: (sched.bg ? 16 : 0) + li * (LANE_H + GAP), height: LANE_H, background: 'var(--btn)', borderRadius: 4 }} />
+            <div key={k} style={{ position: 'absolute', left: 0, right: 0, top: topPad + li * (LANE_H + GAP), height: LANE_H, background: 'var(--btn)', borderRadius: 4 }} />
           ))}
-          {/* 算子条 */}
-          {placed.map(({ o, x, w }) => {
-            const li = LANES.indexOf(o.kind);
+          {/* 关键路径算子条；暴露的通信标红边 */}
+          {fl.placed.map(({ op, x, w }) => {
+            const li = LANES.indexOf(op.kind);
             const active = cursor >= x && cursor < x + w;
+            const exposed = op.kind === 'comm';   // 关键路径上的通信 = 暴露开销
             return (
-              <div key={o.id} title={`${o.name} · ${o.note}`}
-                style={{ position: 'absolute', left: `${x * 100}%`, width: `calc(${w * 100}% - 2px)`, top: (sched.bg ? 16 : 0) + li * (LANE_H + GAP), height: LANE_H, background: OP_COL[o.kind], borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: 9, fontWeight: 600, color: '#0b0f16', whiteSpace: 'nowrap', boxShadow: active ? `0 0 0 2px var(--tx)` : 'none', opacity: active ? 1 : 0.9 }}>
-                {w > 0.06 ? o.name : ''}
+              <div key={op.id} title={`${op.name} · ${op.note}${exposed ? '（暴露：占墙钟）' : ''}`}
+                style={{ position: 'absolute', left: `${x * 100}%`, width: `calc(${w * 100}% - 2px)`, top: topPad + li * (LANE_H + GAP), height: LANE_H, background: OP_COL[op.kind], borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: 9, fontWeight: 600, color: '#0b0f16', whiteSpace: 'nowrap', border: exposed ? '2px solid #b3003b' : 'none', boxShadow: active ? `0 0 0 2px var(--tx)` : 'none', opacity: active ? 1 : 0.92 }}>
+                {w > 0.05 ? op.name : ''}
               </div>
             );
           })}
           {/* 时间游标 */}
-          <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.7 }} />
+          <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.75 }} />
         </div>
       </div>
     </div>
@@ -270,15 +279,18 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   }, [kind, step, N, anom, pm]);
   const recolorKey = useMemo(() => step * 100 + LAYOUT_VIEWS.indexOf(view) * 7 + ({ none: 0, tp: 1, pp: 2, dp: 3, ep: 4 } as Record<AnomalyDim, number>)[anom], [step, view, anom]);
 
-  // ── 流动面 → 结构面：游标扫到的当前算子 → 若为通信算子且选中了卡，高亮它此刻的通信对端 ──
-  const curOp = useMemo(() => {
-    const ops = OP_SCHEDULE[workload].ops, total = ops.reduce((s, o) => s + o.w, 0) || 1, cursor = (step % 61) / 60;
-    let acc = 0;
-    for (const o of ops) { const x = acc / total, w = o.w / total; if (cursor >= x && cursor < x + w) return o; acc += o.w; }
-    return ops[ops.length - 1];
-  }, [workload, step]);
-  const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = curOp.kind === 'comm'
-    ? (curOp.coll === 'ring' ? 'dp' : curOp.coll === 'p2p' ? 'pp' : 'ep') : null;
+  // ── 流动面 → 结构面：游标扫到的当前算子（与泳道共用 opAtCursor）→ 通信则高亮对端。
+  //    当前算子若是计算、但其下有并发的「掩盖」通信（如 Backward 下的 DP AllReduce），也触发对端（标注掩盖）。 ──
+  const cursor01 = (step % 61) / 60;
+  const fl = useMemo(() => flowLayout(workload), [workload]);
+  const curOp = useMemo(() => opAtCursor(workload, cursor01), [workload, cursor01]);
+  const activeComm = useMemo(() => {
+    if (curOp.kind === 'comm') return { op: curOp, hidden: false };
+    const h = fl.hidden.find((hh) => hh.op.kind === 'comm' && cursor01 >= hh.x && cursor01 < hh.x + hh.w);
+    return h ? { op: h.op, hidden: true } : null;
+  }, [curOp, fl, cursor01]);
+  const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = activeComm
+    ? (activeComm.op.coll === 'ring' ? 'dp' : activeComm.op.coll === 'p2p' ? 'pp' : 'ep') : null;
   const peers = useMemo(() => (sel != null && curDim ? dep.peersOf(sel, curDim, PEER_MAX) : []), [sel, curDim, dep, step]);
   const peerColor = curDim ? PARALLEL_COLORS[curDim] : '#4369ef';
   const dimLabel: Record<string, string> = { ep: '专家 All-to-All', dp: '数据并行 AllReduce', pp: '流水 P2P' };
@@ -355,7 +367,10 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
             <span style={{ fontSize: 12, fontWeight: 600 }}>{curOp.name}</span>
             <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{OP_KIND_LBL[curOp.kind]}</span>
             {curDim && sel != null && peers.length > 0 && (
-              <span style={{ fontSize: 10.5, color: peerColor, borderLeft: '1px solid var(--bd)', paddingLeft: 9 }}>rank {sel} · 与 {peers.length} 张卡做 {dimLabel[curDim]}</span>
+              <span style={{ fontSize: 10.5, color: peerColor, borderLeft: '1px solid var(--bd)', paddingLeft: 9 }}>
+                rank {sel} · 与 {peers.length} 张卡做 {dimLabel[curDim]}
+                <span style={{ color: 'var(--tx3)', marginLeft: 6 }}>{activeComm?.hidden ? '（掩盖·并发）' : '（暴露）'}</span>
+              </span>
             )}
           </div>
         )}
