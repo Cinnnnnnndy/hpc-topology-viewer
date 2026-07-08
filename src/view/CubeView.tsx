@@ -15,10 +15,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, loadRGB, stateColor, STATE_LABELS, cardLoad01, parallelMap, PARALLEL_COLORS,
+  GENERATIONS, NODES_PER_CAB, loadRGB, loadState, stateColor, STATE_LABELS, cardLoad01, parallelMap, PARALLEL_COLORS,
   type Gen, type ViewSync, type ParallelWorkload, type ParDim,
 } from '../scene/data';
 import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
+import { deploymentOf } from '../scene/deployment';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 const PITCH = 0.42;                    // 每格世界尺寸
@@ -29,12 +30,17 @@ type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
 const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
 
 // ── 卡阵列（唯一被重排的对象）：位置来自 layout（飞行动画 lerp），颜色来自负载场（逐 step 重染） ──
-function CubeField({ cells, loadOf, recolorKey, onSettleChange }: {
+//    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
+function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover, onPick, onHover }: {
   cells: { x: number; z: number }[]; loadOf: (k: number) => number; recolorKey: number;
   onSettleChange?: (settling: boolean) => void;
+  selected: number | null; hover: number | null;
+  onPick: (rank: number | null) => void; onHover: (rank: number | null) => void;
 }) {
   const N = cells.length;
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const selRef = useRef<THREE.Mesh>(null);
+  const hovRef = useRef<THREE.Mesh>(null);
   const cur = useRef<{ x: Float32Array; z: Float32Array } | null>(null);
   const target = useRef(cells);
   const settling = useRef(true);
@@ -46,10 +52,16 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange }: {
   // 视图切换 → 新目标位置，开始飞行
   useEffect(() => { target.current = cells; settling.current = true; onSettleChange?.(true); }, [cells, onSettleChange]);
 
-  // 每帧把当前位置 lerp 向目标位置；稳定后停写（省 CPU）
+  // 每帧：高亮跟随实时位置（始终）+ 位置 lerp 向目标（稳定后停写省 CPU）
   const m = useMemo(() => new THREE.Matrix4(), []);
   useFrame(() => {
     const mesh = meshRef.current, c = cur.current; if (!mesh || !c) return;
+    const place = (ref: React.RefObject<THREE.Mesh>, idx: number | null) => {
+      if (!ref.current) return;
+      if (idx == null || idx < 0 || idx >= N) { ref.current.visible = false; return; }
+      ref.current.visible = true; ref.current.position.set(c.x[idx], 0, c.z[idx]);
+    };
+    place(selRef, selected); place(hovRef, hover === selected ? null : hover);
     if (!settling.current) return;
     let moving = false;
     for (let k = 0; k < N; k++) {
@@ -73,10 +85,27 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange }: {
   }, [recolorKey, N]);
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, N]} frustumCulled={false}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial metalness={0.02} roughness={0.78} />
-    </instancedMesh>
+    <>
+      <instancedMesh
+        ref={meshRef} args={[undefined, undefined, N]} frustumCulled={false}
+        onClick={(e) => { e.stopPropagation(); onPick(e.instanceId ?? null); }}
+        onPointerMove={(e) => { e.stopPropagation(); if (e.instanceId !== undefined && e.instanceId !== hover) onHover(e.instanceId); }}
+        onPointerOut={() => onHover(null)}
+      >
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial metalness={0.02} roughness={0.78} />
+      </instancedMesh>
+      {/* 选中高亮：软件靛色线框（选中的是一个 rank = 软件对象），比卡略大以包住 */}
+      <mesh ref={selRef} visible={false} raycast={() => null}>
+        <boxGeometry args={[BOX * 1.5, 0.28, BOX * 1.5]} />
+        <meshBasicMaterial color="#4369ef" wireframe transparent opacity={0.95} />
+      </mesh>
+      {/* 悬停高亮：更淡 */}
+      <mesh ref={hovRef} visible={false} raycast={() => null}>
+        <boxGeometry args={[BOX * 1.35, 0.24, BOX * 1.35]} />
+        <meshBasicMaterial color="#8ba3f2" wireframe transparent opacity={0.6} />
+      </mesh>
+    </>
   );
 }
 
@@ -129,6 +158,9 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
   const playing = sync?.playing ?? playingL;
   const setPlaying = sync?.setPlaying ?? setPlayingL;
   const [settling, setSettling] = useState(false);
+  const [sel, setSel] = useState<number | null>(null);      // 选中的 rank（点选）
+  const [hover, setHover] = useState<number | null>(null);
+  useEffect(() => { setSel(null); setHover(null); }, [gen]);  // 代际换 → N 变，清选区
 
   const controlsRef = useRef<{ target: THREE.Vector3; update: () => void } | null>(null);
 
@@ -140,6 +172,7 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
 
   const lay = useMemo(() => layoutOf(view, workload, N), [view, workload, N]);
   const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
+  const dep = useMemo(() => deploymentOf(workload, N), [workload, N]);   // 部署查询（正查：这张卡担任什么）
   const kind = workload === 'decode' ? 'comm' : 'compute';
 
   // 负载场：
@@ -198,13 +231,15 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
           camera={{ position: [40, 34, 40], zoom: 12, near: 0.1, far: 4000 }}
           gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
           onCreated={({ gl }) => { gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false); }}
+          onPointerMissed={() => setSel(null)}
         >
           <color attach="background" args={[surf.background]} />
           <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
           <directionalLight position={[8, 14, 6]} intensity={surf.key} />
           <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />
           <FrameField cols={lay.cols} rows={lay.rows} controls={controlsRef} />
-          <CubeField cells={lay.pos} loadOf={loadOf} recolorKey={recolorKey} onSettleChange={setSettling} />
+          <CubeField cells={lay.pos} loadOf={loadOf} recolorKey={recolorKey} onSettleChange={setSettling}
+            selected={sel} hover={hover} onPick={setSel} onHover={setHover} />
           <OrbitControls
             ref={controlsRef as never} makeDefault enableDamping dampingFactor={0.08}
             minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
@@ -227,11 +262,54 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
             </div>
           )}
         </div>
-        <div style={{ position: 'absolute', right: 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', gap: 10, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', right: sel != null ? 288 : 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', gap: 10, pointerEvents: 'none' }}>
           {STATE_LABELS.map((lb, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>
           ))}
         </div>
+
+        {/* 部署查询详情栏（反查：点一张卡 → 它担任什么并行角色 + 物理位置） */}
+        {sel != null && (() => {
+          const phys = dep.physOf(sel), u = loadOf(sel), st = loadState(u);
+          const roleLbl: Record<string, string> = { tp: '张量切片 TP', pp: '流水级 PP', dp: '数据副本 DP', ep: '专家组 EP' };
+          const roles = dep.rolesOf(sel).filter((r) => r.dim !== 'sp');
+          const row = (label: string, val: string) => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, margin: '3px 0' }}><span style={{ color: 'var(--tx2)' }}>{label}</span><span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{val}</span></div>
+          );
+          return (
+            <div style={{ position: 'absolute', right: 12, top: 12, bottom: 12, width: 264, ...card, padding: '13px 14px', overflowY: 'auto', pointerEvents: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: MONO, color: '#4369ef' }}>rank {sel}</span>
+                <button onClick={() => setSel(null)} style={{ ...btnBase, padding: '2px 8px', ...SECONDARY }}>✕</button>
+              </div>
+              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '2px 0 4px' }}>物理位置（部署在哪台机器）</div>
+              {row('Pod', 'α')}
+              {row('机柜（物理分组）', `C${phys.cabinet}`)}
+              {row('Host · 节点', `${phys.host}（柜内 ${phys.host % NODES_PER_CAB}）`)}
+              {row('卡槽 slot', `${phys.slot} / 8`)}
+              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>并行角色（担任什么任务）· {pm.cfg}</div>
+              {roles.map((r) => {
+                const c = PARALLEL_COLORS[r.dim as Exclude<ParDim, 'sp'>];
+                return (
+                  <div key={r.dim} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, margin: '4px 0' }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--tx2)', flex: 1 }}>{roleLbl[r.dim]}</span>
+                    <span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{r.group} / {r.degree}</span>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>当前状态</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(st) }} />
+                <span style={{ color: 'var(--tx)' }}>{STATE_LABELS[st]}</span>
+                <span style={{ marginLeft: 'auto', fontFamily: MONO, color: 'var(--tx2)' }}>{Math.round(u * 100)}%</span>
+              </div>
+              <div style={{ fontSize: 9.5, color: 'var(--tx3)', lineHeight: 1.5, marginTop: 11, borderTop: '1px solid var(--bd)', paddingTop: 8 }}>
+                反查（deployment.rolesOf）：一张卡同时担任多个并行角色。切换堆叠方式看它在不同维度下与谁成组。
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
