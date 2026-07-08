@@ -345,7 +345,9 @@ export const WORKLOAD: WorkloadProfile = {
   train: { tp: 8, ep: 2, pp: 5, vpp: 5, cp: 1 },
   inferAttn: { dp: 2, tp: 4 }, inferRouted: { tp: 2, ep: 4 }, inferSharedTP: 8,
   perf: {
-    prefillTokps: 4828, prefillTTFTms: 424, decodeTokps: 1148, decodeTPOTms: 99, decodeBatch: 456,
+    // Ascend 800I A2 · 表 6：Decode batch64 → 95.56 ms TPOT / 1148 tok/s（+MTP 1528）；batch1 → 456 tok/s。
+    // 修正：原 decodeBatch=456 实为 batch-1 的 tok/s、decodeTPOTms=99 实为 300I Duo 值，均与 800I A2·1148 不配。
+    prefillTokps: 4828, prefillTTFTms: 424, decodeTokps: 1148, decodeTPOTms: 96, decodeBatch: 64,
     decodeMtpTokps: 1528, weightXferPct: 29, epCommPct: 8,
   },
   mfuGainPct: 35,
