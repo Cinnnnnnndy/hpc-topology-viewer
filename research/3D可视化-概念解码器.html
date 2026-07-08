@@ -367,8 +367,8 @@
 
   <!-- ─────────── §7 md-derived: macro/micro + moe ─────────── -->
   <hr class="rule" />
-  <h2>方案里两个最容易混的点</h2>
-  <p class="h2-title"><span class="n">⊞</span>"整网"其实是两件事 · MoE 是"静态骨架 + 动态强度"</p>
+  <h2>方案里三个最容易混的点</h2>
+  <p class="h2-title"><span class="n">⊞</span>"整网"是两件事 · MoE 是"静态骨架+动态强度" · 魔方不是严格立方体</p>
 
   <div class="twocard">
     <div class="ccard">
@@ -387,6 +387,22 @@
       <p><b>哪些专家被选中、传多少 token = 动态</b>（routing 决定）→ 进泳道（expert-GEMM 段）+ 辉光。</p>
       <p><b>卡间 A2A</b>：能跟谁通信是<b>静态</b>（EP 域内固定骨架），通信多大是<b>动态</b>（只调线宽 / 辉光）。</p>
     </div>
+  </div>
+
+  <div class="ccard" style="margin-top:14px; border-left:3px solid var(--hw)">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:2px">
+      <h4 style="margin:0">魔方不是严格立方体（塌缩轴）</h4>
+      <span style="font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--hw); font-weight:700; border:1px solid color-mix(in srgb,var(--hw) 45%,var(--line-strong)); border-radius:999px; padding:2px 8px">已由代码验证抓到</span>
+    </div>
+    <p class="cc-sub">并行维不是互相正交的 —— EP 会「折进」别的轴</p>
+    <p>把并行配置想成魔方时，容易默认它是个<b>干净的立方体</b>：边长相乘 = 卡数。<b>但会算错。</b> 落地写 <code>deployment.ts</code> 时，运行时验证立刻抓到：<span style="font-family:var(--mono); color:var(--state-busy)">tp8 × dp1024 × ep4 × tp8 = 32768 ≠ 8192</span>。</p>
+    <p style="margin-top:9px">原因：<b>EP 不是独立的空间轴</b>——推理时它折在 TP 域内（节点内路由）、训练时折在 DP 轴内。硬把它当一条边，就把同一批卡<b>重复计数</b>了。</p>
+    <div class="split" style="grid-template-columns:1fr 1fr 1fr; margin:12px 0 4px">
+      <div class="s" style="background:color-mix(in srgb,var(--hw) 12%,transparent); border:1px solid color-mix(in srgb,var(--hw) 30%,transparent)"><div class="st" style="color:var(--hw)">spatial 空间轴</div><div class="sd"><b style="color:var(--ink)">tp · pp · dp</b>：三者乘积 = N，可给独立空间维度。</div></div>
+      <div class="s" style="background:color-mix(in srgb,var(--state-busy) 10%,transparent); border:1px solid color-mix(in srgb,var(--state-busy) 28%,transparent)"><div class="st" style="color:var(--state-busy)">collapsed 塌缩轴</div><div class="sd"><b style="color:var(--ink)">ep</b>：折入 DP(训练)/TP(推理)，<b>不再乘进 N</b>。</div></div>
+      <div class="s" style="background:color-mix(in srgb,var(--neutral) 12%,transparent); border:1px solid color-mix(in srgb,var(--neutral) 30%,transparent)"><div class="st" style="color:var(--neutral)">virtual 虚轴</div><div class="sd"><b style="color:var(--ink)">sp</b>：与 TP 同域，无独立体量。</div></div>
+    </div>
+    <p style="margin-top:9px">修法：给每个维度标 <code>kind</code>（spatial / collapsed / virtual），<b>保证空间轴乘积 = N</b>，让代码<b>诚实反映"不是严格立方体"</b>，而不是假装成干净魔方。这也印证了方案里的漏洞 #14——早验证早暴露，留到画立方体重排才发现返工会大得多。</p>
   </div>
 
   <div class="callout" style="margin-top:16px">
