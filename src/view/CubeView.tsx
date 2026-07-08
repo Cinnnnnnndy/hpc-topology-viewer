@@ -20,11 +20,15 @@ import {
 } from '../scene/data';
 import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
 import { deploymentOf } from '../scene/deployment';
+import { OP_SCHEDULE, phaseMix, type OpKind } from '../scene/op-schedule';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 
 const PITCH = 0.42;                    // 每格世界尺寸
 const BOX = 0.72 * PITCH;              // 卡块边长（略小于格，留缝）
 const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
+// 算子 kind → 色（与 STEP_DECOMP 一致：计算青 / 通信红 / 访存紫）
+const OP_COL: Record<OpKind, string> = { compute: '#22d3ee', comm: '#ff4b7b', mem: '#a78bfa' };
+const OP_KIND_LBL: Record<OpKind, string> = { compute: '计算', comm: '通信', mem: '访存' };
 
 type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
 const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
@@ -141,6 +145,69 @@ function navBtn(on: boolean): React.CSSProperties {
 }
 const btnBase: React.CSSProperties = { padding: '5px 12px', fontSize: 12, borderRadius: 8, cursor: 'pointer' };
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', alignSelf: 'center' };
+
+// ── 泳道（流动面·P2）：一个 step 内的有序算子（op-schedule 真实序列，锚定 arXiv:2505.21411）。
+//    x = 关键路径累计时长；三轨 计算/通信/访存；overlapBg 的算子上方叠「背景搬运」带 = 掩盖；
+//    游标随 step 扫过，高亮当前算子。这就是「流动面」：结构面看位置，这里看时间。
+function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number }) {
+  const sched = OP_SCHEDULE[workload];
+  const ops = sched.ops;
+  const total = ops.reduce((s, o) => s + o.w, 0) || 1;
+  let acc = 0;
+  const placed = ops.map((o) => { const x = acc / total; acc += o.w; return { o, x, w: o.w / total }; });
+  const mix = phaseMix(workload);
+  const cursor = (step % 61) / 60;
+  const LANES: OpKind[] = ['compute', 'comm', 'mem'];
+  const LANE_H = 22, GAP = 4, TL_H = LANES.length * (LANE_H + GAP);
+  const gmm = placed.find((p) => p.o.overlapBg);   // 被计算掩盖的背景搬运锚点算子
+  const phLbl = workload === 'decode' ? 'Decode' : workload === 'prefill' ? 'Prefill' : '预训练';
+
+  return (
+    <div style={{ padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>算子泳道 · {phLbl} <span style={{ fontSize: 10.5, color: 'var(--tx3)', fontWeight: 400 }}>一层内 · {sched.bound === 'memory' ? '访存受限' : '计算受限'}</span></span>
+        <span style={{ fontSize: 10.5, fontFamily: MONO, color: 'var(--tx2)' }}>
+          计算 {Math.round(mix.compute * 100)}% · 通信 {Math.round(mix.comm * 100)}% · 访存 {Math.round(mix.mem * 100)}%
+        </span>
+        <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>{sched.src}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {/* 左侧轨道名 */}
+        <div style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP, paddingTop: sched.bg ? 16 : 0 }}>
+          {LANES.map((k) => (
+            <div key={k} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: OP_COL[k], fontWeight: 600 }}>{OP_KIND_LBL[k]}</div>
+          ))}
+        </div>
+        {/* 时间轴 */}
+        <div style={{ position: 'relative', flex: 1, height: TL_H + (sched.bg ? 16 : 0) }}>
+          {/* 背景搬运带（掩盖）：叠在计算算子上方，宽度 = bg.frac */}
+          {sched.bg && gmm && (
+            <div title={sched.bg.note} style={{ position: 'absolute', left: `${gmm.x * 100}%`, width: `${Math.min(1 - gmm.x, sched.bg.frac / total) * 100}%`, top: 0, height: 13, borderRadius: 3, background: `${OP_COL.mem}55`, border: `1px dashed ${OP_COL.mem}`, fontSize: 8.5, color: 'var(--tx)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {sched.bg.name} · 掩盖
+            </div>
+          )}
+          {/* 轨道底 */}
+          {LANES.map((k, li) => (
+            <div key={k} style={{ position: 'absolute', left: 0, right: 0, top: (sched.bg ? 16 : 0) + li * (LANE_H + GAP), height: LANE_H, background: 'var(--btn)', borderRadius: 4 }} />
+          ))}
+          {/* 算子条 */}
+          {placed.map(({ o, x, w }) => {
+            const li = LANES.indexOf(o.kind);
+            const active = cursor >= x && cursor < x + w;
+            return (
+              <div key={o.id} title={`${o.name} · ${o.note}`}
+                style={{ position: 'absolute', left: `${x * 100}%`, width: `calc(${w * 100}% - 2px)`, top: (sched.bg ? 16 : 0) + li * (LANE_H + GAP), height: LANE_H, background: OP_COL[o.kind], borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: 9, fontWeight: 600, color: '#0b0f16', whiteSpace: 'nowrap', boxShadow: active ? `0 0 0 2px var(--tx)` : 'none', opacity: active ? 1 : 0.9 }}>
+                {w > 0.06 ? o.name : ''}
+              </div>
+            );
+          })}
+          {/* 时间游标 */}
+          <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.7 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: ViewSync }) {
   const visualProfile = useContext(SceneVisualProfileContext);
@@ -310,6 +377,11 @@ export function CubeView({ gen, dark, sync }: { gen: Gen; dark: boolean; sync?: 
             </div>
           );
         })()}
+      </div>
+
+      {/* ── 泳道（流动面）docked 在 3D 下方：结构面看位置，这里看时间/掩盖 ── */}
+      <div style={{ flexShrink: 0, borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
+        <Swimlane workload={workload} step={step} />
       </div>
     </div>
   );
