@@ -24,22 +24,31 @@ import {
 import { FullPodScene, SceneTheme, type CommOverlays } from '../scene/scenes';
 import { CoreGroupPattern } from './CoreGroupPattern';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
+import { CubeView } from './CubeView';
+import { DualModeMonitor } from './DualModeMonitor';
+import { CommDeepDive } from './CommDeepDive';
+import { LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
+import { type LevelKey } from '../scene/data';
+
+// focus.level → CubeView 聚合粒度（层级图选层 → 魔方按该粒度重排/染色）
+const FOCUS_AGG: Record<string, LevelKey> = { super: 'super', node: 'node', card: 'card', die: 'die', core: 'core' };
 
 // ── hierarchy fan-out (8×8 schematic shared with FullPodScene full=true): 8 卡/刀片 · 8 刀片/柜 →
 //    64 卡/柜. A global card index `k` maps the SAME way in the left 层级 and the right 3D array. ──
-const CPB = 8, BPC = 8, PER_CAB = CPB * BPC;
+export const CPB = 8, BPC = 8, PER_CAB = CPB * BPC;
 const STEP_MAX = REPLAY.stepMax, EVT_LO = REPLAY.evtLo, EVT_HI = REPLAY.evtHi, EVT_CAB = REPLAY.evtCab;   // shared replay/event window (data.ts)
 
-type Workload = 'pretrain' | 'prefill' | 'decode';
-type Metric = 'util' | 'strag' | 'fault';
+// 导出（供统一驾驶舱复用同一套「平面层级图」Smartscape 与选区模型）。
+export type Workload = 'pretrain' | 'prefill' | 'decode';
+export type Metric = 'util' | 'strag' | 'fault';
 type Lens = 'heat' | 'flow' | 'domain' | 'phys';
-type Dir = 'all' | 'up' | 'down';
+export type Dir = 'all' | 'up' | 'down';
 // hw-native-sys L4→L0 焦点级（L7 全球/L6 集群/L5 服务池 为上层上下文，点击即回到整 Pod，不作 focus）。
 // 机柜不是层级（仅物理分组）、Tile 不是层级（L0 Core-Group 内部），均不出现在焦点级里。
-type Level = 'super' | 'node' | 'card' | 'die' | 'core';
-type Focus = { level: Level; card: number; die?: number; core?: number } | null;
+export type Level = 'super' | 'node' | 'card' | 'die' | 'core';
+export type Focus = { level: Level; card: number; die?: number; core?: number } | null;
 
-const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
+export const WL: Record<Workload, { label: string; kind: RunPhase['kind'] }> = {
   pretrain: { label: '预训练', kind: 'compute' },
   prefill: { label: 'Prefill', kind: 'compute' },
   decode: { label: 'Decode', kind: 'comm' },
@@ -56,7 +65,7 @@ const cardMetric = (k: number, metric: Metric, wlKind: string, step: number) => 
 
 // ── hierarchy navigation / scope — 阶梯（Le）：L4 Pod=3 · L3 Host=4 · L2 Chip=5（含 die/core）。
 //    Pod 直接含 1024 Host、Host 含 8 Chip（无机柜档位；机柜仅为 3D 物理分组）。 ──
-function scopeRange(f: Focus, N: number): [number, number] {
+export function scopeRange(f: Focus, N: number): [number, number] {
   if (!f || f.level === 'super') return [0, N];
   if (f.level === 'node') { const n = Math.floor(f.card / CPB); return [n * CPB, Math.min(N, (n + 1) * CPB)]; }
   return [f.card, f.card + 1];   // card / die / core
@@ -76,13 +85,13 @@ function entityToFocus(Le: number, idx: number): Focus {
   if (Le === 4) return { level: 'node', card: idx * CPB };   // Host
   return { level: 'card', card: idx };                 // Chip (Le 5)
 }
-function focusToSel(f: Focus): { lv: number; i: number } | null {
+export function focusToSel(f: Focus): { lv: number; i: number } | null {
   // 3D 全景选择级：lv 0=card · lv 1=blade(Host) · lv 2=cabinet(物理分组)。
   if (!f || f.level === 'super') return null;
   if (f.level === 'node') return { lv: 1, i: Math.floor(f.card / CPB) };
   return { lv: 0, i: f.card };   // card / die / core → 高亮该卡
 }
-function selToFocus(s: { lv: number; i: number } | null): Focus {
+export function selToFocus(s: { lv: number; i: number } | null): Focus {
   if (!s) return null;
   if (s.lv === 1) return { level: 'node', card: s.i * CPB };
   if (s.lv === 2) return { level: 'super', card: 0 };   // 机柜=物理分组，不是层级 → 回到整 Pod
@@ -153,10 +162,39 @@ function FrameCamera({ bounds, reach, controls, zoomScale = 1 }: {
 }
 
 // ── stats (per-tier distributions + KPI) computed in one pass over all cards ──
-interface Stats {
+export interface Stats {
   kpi: { util: number; hot: number; strag: number; faultDom: number };
   clusterMean: number; cabVals: number[]; ndVals: number[]; cardVals: number[];
   agg: Record<'cluster' | 'cab' | 'node' | 'card', { p50: number; p95: number; red: number }>;
+}
+// one-pass distribution/KPI over all cards — shared by 联动控制台 与 统一驾驶舱（同一真值源）。
+export function computeStats(N: number, nCabs: number, nBlades: number, metric: Metric, wlKind: string, step: number): Stats {
+  const cabSum = new Float64Array(nCabs), cabCnt = new Int32Array(nCabs);
+  const ndSum = new Float64Array(nBlades), ndCnt = new Int32Array(nBlades);
+  const cardVals: number[] = [], stride = Math.max(1, Math.floor(N / 2048));
+  let utilSum = 0, hot = 0, strag = 0; const faultNodes = new Set<number>();
+  for (let k = 0; k < N; k++) {
+    const u = cardLoad(k, wlKind, step); utilSum += u; if (isHot(u)) hot++;
+    if (isStrag(k, step)) strag++; if (isFault(k, step)) faultNodes.add(Math.floor(k / CPB));
+    const mv = cardMetric(k, metric, wlKind, step);
+    const cb = Math.floor(k / PER_CAB), nd = Math.floor(k / CPB);
+    cabSum[cb] += mv; cabCnt[cb]++; ndSum[nd] += mv; ndCnt[nd]++;
+    if (k % stride === 0) cardVals.push(mv);
+  }
+  const cabVals = Array.from({ length: nCabs }, (_, i) => (cabCnt[i] ? cabSum[i] / cabCnt[i] : 0));
+  const ndVals = Array.from({ length: nBlades }, (_, i) => (ndCnt[i] ? ndSum[i] / ndCnt[i] : 0));
+  const agg = (arr: number[]) => {
+    if (!arr.length) return { p50: 0, p95: 0, red: 0 };
+    const s = [...arr].sort((a, b) => a - b), q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+    let red = 0; for (const v of arr) if (loadState(v) >= 2) red++;
+    return { p50: q(0.5), p95: q(0.95), red: red / arr.length };
+  };
+  const clusterMean = cabVals.reduce((a, b) => a + b, 0) / Math.max(1, cabVals.length);
+  return {
+    kpi: { util: utilSum / N, hot, strag, faultDom: faultNodes.size },
+    clusterMean, cabVals, ndVals, cardVals,
+    agg: { cluster: agg([clusterMean]), cab: agg(cabVals), node: agg(ndVals), card: agg(cardVals) },
+  };
 }
 
 // ── LEFT: Smartscape 8 级漏斗 (改造自平面视图层级图) — 图元/配色与「层级图」「选中链路·层级图」统一：
@@ -641,6 +679,11 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
   const [focus, setFocus] = useState<Focus>(null);
   const [scopeB, setScopeB] = useState<{ cx: number; cy: number; cz: number; r: number } | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // ── 统一驾驶舱增量（仅 workbench profile 启用）：右侧时空折叠魔方 · 左侧诊断抽屉 ──
+  const [cubeMode, setCubeMode] = useState(false);          // 右画布：物理机柜(false) ⇄ 时空折叠魔方(true)
+  const [cubeLayout, setCubeLayout] = useState<LayoutView>('physical');
+  const [leftLower, setLeftLower] = useState<'core' | 'monitor' | 'comm'>('core');   // 左下抽屉：L0 核组 / 双模监控 / 通信深潜
+  const [monMode, setMonMode] = useState<'heat' | 'replay'>('heat');
   const [stepL, setStepL] = useState(0);
   const step = sync?.step ?? stepL;
   const setStep = sync?.setStep ?? setStepL;
@@ -699,34 +742,7 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
     return () => clearInterval(id);
   }, [playing]);
 
-  const stats = useMemo<Stats>(() => {
-    const cabSum = new Float64Array(nCabs), cabCnt = new Int32Array(nCabs);
-    const ndSum = new Float64Array(nBlades), ndCnt = new Int32Array(nBlades);
-    const cardVals: number[] = [], stride = Math.max(1, Math.floor(N / 2048));
-    let utilSum = 0, hot = 0, strag = 0; const faultNodes = new Set<number>();
-    for (let k = 0; k < N; k++) {
-      const u = cardLoad(k, wlKind, step); utilSum += u; if (isHot(u)) hot++;
-      if (isStrag(k, step)) strag++; if (isFault(k, step)) faultNodes.add(Math.floor(k / CPB));
-      const mv = cardMetric(k, metric, wlKind, step);
-      const cb = Math.floor(k / PER_CAB), nd = Math.floor(k / CPB);
-      cabSum[cb] += mv; cabCnt[cb]++; ndSum[nd] += mv; ndCnt[nd]++;
-      if (k % stride === 0) cardVals.push(mv);
-    }
-    const cabVals = Array.from({ length: nCabs }, (_, i) => (cabCnt[i] ? cabSum[i] / cabCnt[i] : 0));
-    const ndVals = Array.from({ length: nBlades }, (_, i) => (ndCnt[i] ? ndSum[i] / ndCnt[i] : 0));
-    const agg = (arr: number[]) => {
-      if (!arr.length) return { p50: 0, p95: 0, red: 0 };
-      const s = [...arr].sort((a, b) => a - b), q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
-      let red = 0; for (const v of arr) if (loadState(v) >= 2) red++;
-      return { p50: q(0.5), p95: q(0.95), red: red / arr.length };
-    };
-    const clusterMean = cabVals.reduce((a, b) => a + b, 0) / Math.max(1, cabVals.length);
-    return {
-      kpi: { util: utilSum / N, hot, strag, faultDom: faultNodes.size },
-      clusterMean, cabVals, ndVals, cardVals,
-      agg: { cluster: agg([clusterMean]), cab: agg(cabVals), node: agg(ndVals), card: agg(cardVals) },
-    };
-  }, [N, nCabs, nBlades, metric, wlKind, step]);
+  const stats = useMemo<Stats>(() => computeStats(N, nCabs, nBlades, metric, wlKind, step), [N, nCabs, nBlades, metric, wlKind, step]);
 
   // focused-entity auxiliary metrics (exact over the scope range; ≤64 cards unless whole)
   const rail = useMemo(() => {
@@ -770,6 +786,18 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
   const reach = Math.sqrt(N) * 1.3 + 12;
   const panoSel = useMemo(() => focusToSel(focus), [focus]);
 
+  // ── 魔方联动：层级图 focus.level → 聚合粒度；focus 为具体卡 → 选中 rank；lens=通信域 → 策略着色 ──
+  const cubeAgg: LevelKey = focus ? (FOCUS_AGG[focus.level] ?? 'card') : 'card';
+  const cubeSel = focus && (focus.level === 'card' || focus.level === 'die' || focus.level === 'core') ? focus.card : null;
+  const cubeStrat: PartitionDim = lens === 'domain' ? partDim : 'none';
+  const noop = () => { /* CubeView 嵌入时不回写这些通道 */ };
+  const cubeSync: ViewSync = {
+    workload, step, playing: false, metric, planeOn,
+    setWorkload: sync?.setWorkload ?? noop, setStep, setPlaying: sync?.setPlaying ?? noop,
+    setMetric: sync?.setMetric ?? noop, setPlaneOn: sync?.setPlaneOn ?? noop,
+  };
+  const monBaseHost = cubeSel != null ? Math.floor(Math.floor(cubeSel / CPB) / 8) * 8 : 0;
+
   // parallel groups from the SINGLE SOURCE OF TRUTH — degrees/membership agree with 平面·3D·运行状态
   const pm = useMemo(() => parallelMap(workload, N), [workload, N]);
   // 并行关系（rank↔rank）：每维给出 集合通信形态 + 度数 + 真实对端数（peersOf 真值），把 TP/SP/EP/PP/DP 的「联系」讲清楚
@@ -781,6 +809,30 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
   }) : [];
   const phys = focus && rail ? LEVEL_PHYS[focus.level] : null;
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
+
+  // L0 核组图（层级图之下的最深层级面板）——抽出以便经典视图与工作台抽屉复用同一图元。
+  const l0Panel = (
+    <div style={{ flex: '1 1 0', minHeight: 190, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
+      <div style={{ width: '19.7%', minWidth: 80, flexShrink: 0, paddingLeft: '2%', paddingTop: 6, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', lineHeight: 1.1 }}>Core-Group</span>
+        <span style={{ display: 'inline-flex', gap: 3, marginTop: 3 }}>
+          {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
+            <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
+          ))}
+        </span>
+        <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
+        <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>fixed scale · reads as one piece with the funnel</span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <CoreGroupPattern
+          phaseKind={playing ? (['load', 'compute', 'comm', 'store'] as const)[step % 4] : undefined}
+          load={playing ? Math.max(0.15, Math.min(1, stats.kpi.util)) : 0.5}
+          zoom={0.42} detail align="left" height="100%" interactive={false}
+        />
+      </div>
+    </div>
+  );
   const shellStyle: React.CSSProperties = workbenchProfile
     ? { position: 'relative', zIndex: 11, flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent', color: 'var(--tx)' }
     : { position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' };
@@ -882,34 +934,25 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
           <div style={{ flexShrink: 0, minHeight: 0, overflow: 'hidden', padding: '2px 0 0' }}>
             <Smartscape N={N} nBlades={nBlades} focus={focus} setFocus={setFocus} metric={metric} wlKind={wlKind} step={step} dir={dir} planeOn={planeOn} playing={playing} stats={stats} dark={dark} pm={pm} />
           </div>
-          {/* L0 Core-Group — full interactive memory-architecture (same figure as 运行状态·物理链路·L0).
-              Reads as ONE piece with the funnel above: the label sits in the SAME left gutter (x≈2%,
-              width 19.7% = X0/600) as L1–L7, and the diagram is left-aligned so its rails butt directly
-              under the L1 Die section (no floating gap). Divider = same soft dashed line as on-chip levels. */}
-          <div style={{ flex: '1 1 0', minHeight: 190, display: 'flex', borderTop: '1px dashed var(--bd)' }}>
-            <div style={{ width: '19.7%', minWidth: 80, flexShrink: 0, paddingLeft: '2%', paddingTop: 6, paddingRight: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#36e0c4' }}>L0</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx)', lineHeight: 1.1 }}>Core-Group</span>
-              <span style={{ display: 'inline-flex', gap: 3, marginTop: 3 }}>
-                {([['V', '#7c5cff'], ['C', '#ef4444'], ['CPU', '#f59e0b']] as [string, string][]).map(([l, c]) => (
-                  <span key={l} style={{ fontSize: 8, fontWeight: 700, color: '#fff', background: c, borderRadius: 3, padding: '1px 4px' }}>{l}</span>
+          {/* 层级图之下：经典视图=L0 核组图；工作台驾驶舱=可切换抽屉（L0 核组 / 动态监控双模式 / 集合通信深潜）。
+              通信关系仍长在上方的平面层级图（Smartscape 的 TP/PP/DP/EP 徽标与弧）上；这里补两块诊断视图。 */}
+          {workbenchProfile ? (
+            <div style={{ flex: '1 1 0', minHeight: 200, display: 'flex', flexDirection: 'column', borderTop: '1px dashed var(--bd)', minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 4, padding: '6px 10px 4px', flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: 0.3, color: 'var(--tx3)', marginRight: 2 }}>层级图之下</span>
+                {([['core', 'L0 核组'], ['monitor', '动态监控双模式'], ['comm', '集合通信深潜']] as [typeof leftLower, string][]).map(([k, l]) => (
+                  <button key={k} onClick={() => setLeftLower(k)} style={{ ...btnBase, padding: '3px 9px', ...navBtn(leftLower === k) }}>{l}</button>
                 ))}
-              </span>
-              <span style={{ fontSize: 8.5, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 4 }}>×32 / card · GM/L2 + AIV/AIC</span>
-              <span style={{ fontSize: 8, color: 'var(--tx3)', lineHeight: 1.35, marginTop: 'auto' }}>fixed scale · reads as one piece with the funnel</span>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: leftLower === 'core' ? 'hidden' : 'auto', display: 'flex', flexDirection: 'column', padding: leftLower === 'core' ? 0 : '2px 10px 10px' }}>
+                {leftLower === 'core' ? l0Panel
+                  : leftLower === 'monitor' ? (
+                    <DualModeMonitor mode={monMode} setMode={setMonMode} workload={workload} step={step} setStep={setStep}
+                      playing={playing} setPlaying={sync?.setPlaying ?? noop} sel={cubeSel} onSelectRank={(r) => setFocus(r == null ? null : { level: 'card', card: r })} baseHost={monBaseHost} dark={dark} />
+                  ) : <CommDeepDive dark={dark} />}
+              </div>
             </div>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-              <CoreGroupPattern
-                phaseKind={playing ? (['load', 'compute', 'comm', 'store'] as const)[step % 4] : undefined}
-                load={playing ? Math.max(0.15, Math.min(1, stats.kpi.util)) : 0.5}
-                zoom={0.42}
-                detail
-                align="left"
-                height="100%"
-                interactive={false}
-              />
-            </div>
-          </div>
+          ) : l0Panel}
         </div>
 
         <div
@@ -917,6 +960,12 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
           data-pane="panorama"
           style={{ flex: 1, position: 'relative', minWidth: 0, ...(workbenchProfile ? { borderRadius: 'var(--pto-radius-lg)', overflow: 'hidden', background: '#ffffff' } : {}) }}
         >
+          {workbenchProfile && cubeMode ? (
+            /* 时空折叠魔方：复用立方重排（物理平铺 ⇄ 按 P 重排飞行动画 + 层级图选层聚合 + 策略着色） */
+            <CubeView gen={gen} dark={dark} sync={cubeSync} embedded
+              layout={cubeLayout} stratColor={cubeStrat} showComm showAlert
+              aggLevel={cubeAgg} sel={cubeSel} onSelectRank={(r) => setFocus(r == null ? null : { level: 'card', card: r })} />
+          ) : (
           <Canvas
             orthographic dpr={[1, 2]}
             camera={{ position: [reach, reach * 0.7, reach], zoom: 16, near: 0.1, far: 4000 }}
@@ -955,6 +1004,25 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
               />
             </GizmoHelper>
           </Canvas>
+          )}
+
+          {/* 右画布场景切换（仅工作台驾驶舱）：物理机柜层级 ⇄ 时空折叠魔方；魔方态附 布局(物理/TP/PP/DP/EP) */}
+          {workbenchProfile && (
+            <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 'calc(100% - 20px)' }}>
+              <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 9, background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)' }}>
+                {([[false, '🏢 物理机柜'], [true, '🧊 时空折叠魔方']] as [boolean, string][]).map(([v, l]) => (
+                  <button key={l} onClick={() => setCubeMode(v)} style={{ ...btnBase, padding: '4px 10px', ...navBtn(cubeMode === v) }}>{l}</button>
+                ))}
+              </div>
+              {cubeMode && (
+                <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 9, background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)' }}>
+                  {LAYOUT_VIEWS.map((v) => (
+                    <button key={v} onClick={() => setCubeLayout(v)} title={`按 ${LAYOUT_LABEL[v]} 重排`} style={{ ...btnBase, padding: '4px 9px', ...navBtn(cubeLayout === v) }}>{LAYOUT_LABEL[v]}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* L0 细节由左侧原生 CoreGroupMiniSvg 图元 + 运行状态视图承担，右侧全景不再覆盖 L0 面板。 */}
 

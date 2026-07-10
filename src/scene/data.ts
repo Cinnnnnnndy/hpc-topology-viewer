@@ -468,6 +468,14 @@ export interface ViewSync {
   setPlaying: (b: boolean | ((b: boolean) => boolean)) => void;
   setMetric: (m: 'util' | 'strag' | 'fault') => void;
   setPlaneOn: (fn: (p: { ub: boolean; rdma: boolean; vpc: boolean }) => { ub: boolean; rdma: boolean; vpc: boolean }) => void;
+  // ── 统一驾驶舱（CockpitApp）联动扩展 · 全部可选、向后兼容 ──
+  // 着色互斥（策略透镜）· 图层开关（通信线/热点告警）· 层级聚合粒度（来自层级轴）· 选中 rank。
+  // 既有 viewSync 不带这些字段时行为逐字节不变。
+  stratColor?: PartitionDim;   // 策略着色（none/tp/pp/dp/ep）——互斥图层
+  commLayer?: boolean;         // 通信连线图层开关
+  alertLayer?: boolean;        // 热点/告警图层开关
+  aggLevel?: LevelKey;         // 左画布聚合粒度（层级轴点选驱动）
+  selRank?: number | null;     // 当前选中 rank（左右联动共用选区）
 }
 // ── 外部并行配置（P0 · 加法）：监控可从真实作业「摄入」并行度以覆盖自动推导。
 // 全部字段可选；不传任何字段时 parallelMap 的行为与升级前逐字节一致。 ──
