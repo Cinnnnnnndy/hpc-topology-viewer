@@ -15,8 +15,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
 import {
-  GENERATIONS, NODES_PER_CAB, loadRGB, loadState, stateColor, STATE_LABELS, cardLoad01, parallelMap, PARALLEL_COLORS,
-  type Gen, type ViewSync, type ParallelWorkload, type ParDim,
+  GENERATIONS, NODES_PER_CAB, NPUS_PER_NODE, loadRGB, loadState, stateColor, STATE_LABELS, cardLoad01, parallelMap, PARALLEL_COLORS,
+  PARTITION_PALETTE,
+  type Gen, type ViewSync, type ParallelWorkload, type ParDim, type PartitionDim, type LevelKey,
 } from '../scene/data';
 import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
 import { deploymentOf } from '../scene/deployment';
@@ -29,6 +30,59 @@ const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 // 算子 kind → 色（与 STEP_DECOMP 一致：计算青 / 通信红 / 访存紫）
 const OP_COL: Record<OpKind, string> = { compute: '#22d3ee', comm: '#ff4b7b', mem: '#a78bfa' };
 const OP_KIND_LBL: Record<OpKind, string> = { compute: '计算', comm: '通信', mem: '访存' };
+const CAB_CARDS = NODES_PER_CAB * NPUS_PER_NODE;   // 64 卡 / 机柜（Pod 内物理分组）
+
+function hexRGB(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+// ── 聚合粒度（来自层级轴）：LevelKey → 每个「聚合单元」含多少张连续 rank（物理近邻）。
+//    card/die/core = 满 rank 粒度（1 卡/单元，行为与升级前一致）；node=Host(8)；
+//    cab/super = 机柜(64，Pod 内物理分组，宏观降噪一柜一块)；pool/cluster/global = 更粗。
+//    单 Pod 模型下 L4 Pod 展示为「一柜一大方块」的物理分组，向上继续粗化。
+function aggUnitCards(level: LevelKey | undefined): number {
+  switch (level) {
+    case 'node': return NPUS_PER_NODE;                 // L3 Host
+    case 'cab': case 'super': return CAB_CARDS;        // L4 Pod / 机柜物理分组
+    case 'pool': return CAB_CARDS * 8;                 // L5 服务池
+    case 'cluster': return CAB_CARDS * 64;             // L6 集群
+    case 'global': return Infinity;                    // L7 全球（整体一块）
+    default: return 1;                                 // L2 Chip / L1 Die / L0 Core → 满粒度
+  }
+}
+const nearCols = (n: number) => Math.max(1, Math.ceil(Math.sqrt(n)));
+const AGG_SPREAD = 2.0;   // 聚合单元的网格间距倍率（比逐卡稀疏，让宏观大方块之间留缝、不糊成一片）
+
+// 聚合布局：把 N 张卡按 aggUnitCards 分成 U 个单元，铺成近方阵（居中抽象坐标）。
+// size===1 时直接透传逐 rank 的 lay.pos（零行为变化）。返回单元↔rank 的双向映射。
+interface AggLayout {
+  count: number; cells: { x: number; z: number }[]; cols: number; rows: number; size: number;
+  rankOfUnit: (u: number) => number;                 // 代表 rank（首个成员）
+  unitOfRank: (rank: number) => number;
+  membersOfUnit: (u: number) => { start: number; end: number };
+}
+function aggregateOf(level: LevelKey | undefined, layPos: { x: number; z: number }[], N: number): AggLayout {
+  const size = Math.min(N, aggUnitCards(level));
+  if (size <= 1) {
+    return {
+      count: N, cells: layPos, cols: 0, rows: 0, size: 1,
+      rankOfUnit: (u) => u, unitOfRank: (r) => r,
+      membersOfUnit: (u) => ({ start: u, end: u + 1 }),
+    };
+  }
+  const count = Math.ceil(N / size);
+  const cols = nearCols(count), rows = Math.ceil(count / cols);
+  const cx = (cols - 1) / 2, cz = (rows - 1) / 2;
+  // 稀疏网格：坐标间距 ×AGG_SPREAD，大方块之间留缝；cols/rows 同比放大供相机取景。
+  const cells = Array.from({ length: count }, (_, u) => ({ x: ((u % cols) - cx) * AGG_SPREAD, z: (Math.floor(u / cols) - cz) * AGG_SPREAD }));
+  return {
+    count, cells, cols: cols * AGG_SPREAD, rows: rows * AGG_SPREAD, size,
+    rankOfUnit: (u) => u * size,
+    unitOfRank: (r) => Math.floor(r / size),
+    membersOfUnit: (u) => ({ start: u * size, end: Math.min(N, (u + 1) * size) }),
+  };
+}
 
 export type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
 export const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
@@ -49,12 +103,13 @@ const ANOM_NOTE: Record<Exclude<AnomalyDim, 'none'>, string> = {
 // ── 卡阵列（唯一被重排的对象）：位置来自 layout（飞行动画 lerp），颜色来自负载场（逐 step 重染） ──
 //    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
 const PEER_MAX = 96;   // 对端高亮上限（peersOf 采样）
-function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peers, peerColor }: {
-  cells: { x: number; z: number }[]; loadOf: (k: number) => number; recolorKey: number;
+function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peers, peerColor, boxXZ = BOX, boxY = 0.16 }: {
+  cells: { x: number; z: number }[]; colorOf: (k: number) => [number, number, number]; recolorKey: number;
   onSettleChange?: (settling: boolean) => void;
   selected: number | null; hover: number | null;
   onPick: (rank: number | null) => void; onHover: (rank: number | null) => void;
   peers: number[]; peerColor: string;   // 当前通信算子下，选中卡的通信对端（流动面 → 结构面）
+  boxXZ?: number; boxY?: number;         // 方块尺寸（聚合单元更大）
 }) {
   const N = cells.length;
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -77,17 +132,18 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover,
   const m = useMemo(() => new THREE.Matrix4(), []);
   useFrame(() => {
     const mesh = meshRef.current, c = cur.current; if (!mesh || !c) return;
+    const hlScale = boxXZ / BOX;   // 聚合单元更大 → 高亮线框同比例放大
     const place = (ref: React.RefObject<THREE.Mesh>, idx: number | null) => {
       if (!ref.current) return;
       if (idx == null || idx < 0 || idx >= N) { ref.current.visible = false; return; }
-      ref.current.visible = true; ref.current.position.set(c.x[idx], 0, c.z[idx]);
+      ref.current.visible = true; ref.current.position.set(c.x[idx], 0, c.z[idx]); ref.current.scale.setScalar(hlScale);
     };
     place(selRef, selected); place(hovRef, hover === selected ? null : hover);
     // 对端高亮：跟随各对端卡的实时位置（每帧）
     const pm2 = peerRef.current;
     if (pm2) {
       const n = Math.min(peers.length, PEER_MAX);
-      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(BOX * 1.7, 0.34, BOX * 1.7); m2.setPosition(c.x[k], 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
+      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(boxXZ * 1.7, 0.34, boxXZ * 1.7); m2.setPosition(c.x[k], 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
       pm2.count = n; pm2.instanceMatrix.needsUpdate = true;
     }
     if (!settling.current) return;
@@ -97,17 +153,17 @@ function CubeField({ cells, loadOf, recolorKey, onSettleChange, selected, hover,
       const nx = c.x[k] + (tx - c.x[k]) * 0.16, nz = c.z[k] + (tz - c.z[k]) * 0.16;
       if (Math.abs(tx - nx) > 0.004 || Math.abs(tz - nz) > 0.004) moving = true;
       c.x[k] = nx; c.z[k] = nz;
-      m.makeScale(BOX, 0.16, BOX); m.setPosition(nx, 0, nz); mesh.setMatrixAt(k, m);
+      m.makeScale(boxXZ, boxY, boxXZ); m.setPosition(nx, 0, nz); mesh.setMatrixAt(k, m);
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (!moving) { settling.current = false; onSettleChange?.(false); }
   });
 
-  // 颜色：负载 → 红黄绿（loadRGB）。step / 异常 / 视图变化时重染一次。
+  // 颜色：由 colorOf 决定（状态红黄绿 或 策略互斥着色）。step / 异常 / 着色 / 粒度变化时重染一次。
   useEffect(() => {
     const mesh = meshRef.current; if (!mesh) return;
     const col = new THREE.Color();
-    for (let k = 0; k < N; k++) { const [r, g, b] = loadRGB(loadOf(k)); mesh.setColorAt(k, col.setRGB(r / 255, g / 255, b / 255)); }
+    for (let k = 0; k < N; k++) { const [r, g, b] = colorOf(k); mesh.setColorAt(k, col.setRGB(r / 255, g / 255, b / 255)); }
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recolorKey, N]);
@@ -354,14 +410,30 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
   );
 }
 
-export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
+export function CubeView({
+  gen, dark, sync, layout: layoutP, anom: anomP,
+  stratColor: stratColorP, showComm, showAlert, aggLevel: aggLevelP,
+  sel: selCtl, onSelectRank, onHoverRank, embedded = false,
+}: {
   gen: Gen; dark: boolean; sync?: ViewSync;
   layout?: LayoutView;    // 堆叠方式（受控：由工作台顶部中间控制面板驱动，只读）
   anom?: AnomalyDim;       // 注入异常（受控）
+  // ── 统一驾驶舱（CockpitApp）扩展 · 全部可选，不传时行为与升级前一致 ──
+  stratColor?: PartitionDim;   // 策略互斥着色（none/tp/pp/dp/ep）——一次只回答一个「谁和谁一组」
+  showComm?: boolean;          // 通信连线图层（P1 完整演化；P0 复用选中卡对端高亮）
+  showAlert?: boolean;         // 热点/告警图层（P1）
+  aggLevel?: LevelKey;         // 聚合粒度（来自层级轴）：L4 Pod/机柜 一柜一块 · L2 满卡粒度 …
+  sel?: number | null;         // 受控选中 rank（驾驶舱左右联动共用选区）
+  onSelectRank?: (rank: number | null) => void;
+  onHoverRank?: (rank: number | null) => void;
+  embedded?: boolean;          // 嵌入驾驶舱：隐藏自带右侧详情栏 + 底部流动面 dock（由驾驶舱右栏承载）
 }) {
   const visualProfile = useContext(SceneVisualProfileContext);
   const surf = sceneSurface(dark, visualProfile);
   const N = GENERATIONS[gen].totalNpus;
+  const stratColor: PartitionDim = sync?.stratColor ?? stratColorP ?? 'none';
+  const aggLevel: LevelKey = sync?.aggLevel ?? aggLevelP ?? 'card';
+  void showComm; void showAlert;   // P0：图层开关已接线到驾驶舱顶栏，连线渲染留待 P1
 
   // 堆叠方式 / 工况 / 注入异常 / 回放 均由工作台顶部中间控制面板驱动，本地仅作独立运行的兜底（只读）。
   const [viewL] = useState<LayoutView>('physical');
@@ -379,9 +451,14 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
   const [flowMode, setFlowMode] = useState<'ops' | 'pipe' | 'graph'>('ops');   // 流动面：层内算子序列 / PP 甘特 / 算子图
   const [straggler, setStraggler] = useState<number | null>(null);   // PP 甘特：掉队 stage
   const [vpp, setVpp] = useState(1);                                  // PP 甘特：VPP 交错度
-  const [sel, setSel] = useState<number | null>(null);      // 选中的 rank（点选）
-  const [hover, setHover] = useState<number | null>(null);
-  useEffect(() => { setSel(null); setHover(null); }, [gen]);  // 代际换 → N 变，清选区
+  // 选中 rank：受控（驾驶舱）优先，否则本地 state（独立/ClusterView 用法）。
+  const controlledSel = onSelectRank !== undefined;
+  const [selL, setSelL] = useState<number | null>(null);
+  const sel = controlledSel ? (selCtl ?? null) : selL;
+  const setSel = (r: number | null) => { if (onSelectRank) onSelectRank(r); else setSelL(r); };
+  const [hover, setHoverL] = useState<number | null>(null);
+  const setHover = (r: number | null) => { setHoverL(r); onHoverRank?.(r); };
+  useEffect(() => { if (!controlledSel) setSelL(null); setHoverL(null); }, [gen, controlledSel]);  // 代际换 → N 变，清选区
 
   const controlsRef = useRef<{ target: THREE.Vector3; update: () => void } | null>(null);
 
@@ -406,7 +483,34 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
       return cardLoad01(k, kind, step, 0, N);
     };
   }, [kind, step, N, anom, pm]);
-  const recolorKey = useMemo(() => step * 100 + LAYOUT_VIEWS.indexOf(view) * 7 + ({ none: 0, tp: 1, pp: 2, dp: 3, ep: 4 } as Record<AnomalyDim, number>)[anom], [step, view, anom]);
+
+  // ── 聚合粒度（层级轴驱动）：把逐 rank 布局折成「一柜一块」等宏观单元；card/die/core = 满粒度 ──
+  const agg = useMemo(() => aggregateOf(aggLevel, lay.pos, N), [aggLevel, lay, N]);
+  const aggregated = agg.size > 1;
+  // ── 单元着色：策略互斥着色（PARTITION 调色板）优先；否则状态红黄绿（聚合时取成员均值）──
+  const stratRGB = useMemo(() => PARTITION_PALETTE.map(hexRGB), []);
+  const colorOf = useMemo(() => {
+    return (u: number): [number, number, number] => {
+      if (stratColor !== 'none') {
+        const g = pm.groupOf(agg.rankOfUnit(u), stratColor as ParDim);
+        return stratRGB[g % stratRGB.length];
+      }
+      if (agg.size === 1) return loadRGB(loadOf(u));
+      const { start, end } = agg.membersOfUnit(u);
+      let s = 0; for (let k = start; k < end; k++) s += loadOf(k);
+      return loadRGB(s / Math.max(1, end - start));
+    };
+  }, [stratColor, pm, agg, stratRGB, loadOf]);
+  // 聚合方块尺寸：填满稀疏格的 ~88%（留细缝），下限比单卡明显更大 → 读作「宏观一块」。
+  const boxXZ = aggregated ? Math.min(0.88 * AGG_SPREAD * PITCH, Math.max(BOX * 1.8, PITCH * Math.sqrt(agg.size) * 0.28)) : BOX;
+  const boxY = aggregated ? 0.42 : 0.16;
+
+  const recolorKey = useMemo(() =>
+    step * 1000 + LAYOUT_VIEWS.indexOf(view) * 7
+    + ({ none: 0, tp: 1, pp: 2, dp: 3, ep: 4 } as Record<AnomalyDim, number>)[anom]
+    + ({ none: 0, tp: 100, pp: 200, dp: 300, ep: 400 } as Record<PartitionDim, number>)[stratColor]
+    + agg.size * 0.0001,
+  [step, view, anom, stratColor, agg.size]);
 
   // ── 流动面 → 结构面：游标扫到的当前算子（与泳道共用 opAtCursor）→ 通信则高亮对端。
   //    当前算子若是计算、但其下有并发的「掩盖」通信（如 Backward 下的 DP AllReduce），也触发对端（标注掩盖）。 ──
@@ -420,7 +524,7 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
   }, [curOp, fl, cursor01]);
   const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = activeComm
     ? (activeComm.op.coll === 'ring' ? 'dp' : activeComm.op.coll === 'p2p' ? 'pp' : 'ep') : null;
-  const peers = useMemo(() => (sel != null && curDim ? dep.peersOf(sel, curDim, PEER_MAX) : []), [sel, curDim, dep, step]);
+  const peers = useMemo(() => (sel != null && curDim && !aggregated ? dep.peersOf(sel, curDim, PEER_MAX) : []), [sel, curDim, dep, step, aggregated]);
   const peerColor = curDim ? PARALLEL_COLORS[curDim] : '#4369ef';
   const dimLabel: Record<string, string> = { ep: '专家 All-to-All', dp: '数据并行 AllReduce', pp: '流水 P2P' };
 
@@ -443,9 +547,11 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
           <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
           <directionalLight position={[8, 14, 6]} intensity={surf.key} />
           <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />
-          <FrameField cols={lay.cols} rows={lay.rows} controls={controlsRef} />
-          <CubeField cells={lay.pos} loadOf={loadOf} recolorKey={recolorKey} onSettleChange={setSettling}
-            selected={sel} hover={hover} onPick={setSel} onHover={setHover} peers={peers} peerColor={peerColor} />
+          <FrameField cols={aggregated ? agg.cols : lay.cols} rows={aggregated ? agg.rows : lay.rows} controls={controlsRef} />
+          <CubeField cells={agg.cells} colorOf={colorOf} recolorKey={recolorKey} onSettleChange={setSettling} boxXZ={boxXZ} boxY={boxY}
+            selected={sel != null ? agg.unitOfRank(sel) : null} hover={hover != null ? agg.unitOfRank(hover) : null}
+            onPick={(u) => setSel(u == null ? null : agg.rankOfUnit(u))} onHover={(u) => setHover(u == null ? null : agg.rankOfUnit(u))}
+            peers={peers} peerColor={peerColor} />
           <OrbitControls
             ref={controlsRef as never} makeDefault enableDamping dampingFactor={0.08}
             minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
@@ -487,14 +593,17 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
             </div>
           )}
         </div>
-        <div style={{ position: 'absolute', right: sel != null ? 288 : 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', gap: 10, pointerEvents: 'none' }}>
+        {/* 状态图例（策略着色时隐藏——此刻颜色通道给了策略而非状态，避免误读） */}
+        {stratColor === 'none' && (
+        <div style={{ position: 'absolute', right: (!embedded && sel != null) ? 288 : 12, bottom: 12, ...card, padding: '8px 11px', display: 'flex', gap: 10, pointerEvents: 'none' }}>
           {STATE_LABELS.map((lb, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, color: 'var(--tx2)' }}><span style={{ width: 9, height: 9, borderRadius: 2, background: stateColor(i) }} />{lb}</span>
           ))}
         </div>
+        )}
 
-        {/* 部署查询详情栏（反查：点一张卡 → 它担任什么并行角色 + 物理位置） */}
-        {sel != null && (() => {
+        {/* 部署查询详情栏（反查：点一张卡 → 它担任什么并行角色 + 物理位置）· 嵌入驾驶舱时由右栏承载 */}
+        {!embedded && sel != null && (() => {
           const phys = dep.physOf(sel), u = loadOf(sel), st = loadState(u);
           const roleLbl: Record<string, string> = { tp: '张量切片 TP', pp: '流水级 PP', dp: '数据副本 DP', ep: '专家组 EP' };
           const roles = dep.rolesOf(sel).filter((r) => r.dim !== 'sp');
@@ -543,7 +652,9 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
         })()}
       </div>
 
-      {/* ── 流动面 docked 在 3D 下方：结构面看位置，这里看时间。每级一套语义：层内算子 / PP 流水甘特 ── */}
+      {/* ── 流动面 docked 在 3D 下方：结构面看位置，这里看时间。每级一套语义：层内算子 / PP 流水甘特 ──
+          嵌入驾驶舱时隐藏（右栏②算子下钻承载「此刻在算什么」；驾驶舱主画布只留 3D）。 */}
+      {!embedded && (
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px 0' }}>
           <span style={LBL}>流动面</span>
@@ -556,6 +667,7 @@ export function CubeView({ gen, dark, sync, layout: layoutP, anom: anomP }: {
           : flowMode === 'pipe' ? <PipelineGantt stages={pm.pp} step={step} straggler={straggler} onStraggler={setStraggler} vpp={vpp} onVpp={setVpp} />
           : <OperatorGraph workload={workload} step={step} />}
       </div>
+      )}
     </div>
   );
 }
