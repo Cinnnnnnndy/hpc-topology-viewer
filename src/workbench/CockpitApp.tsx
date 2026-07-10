@@ -1,42 +1,42 @@
 /**
- * CockpitApp — 统一驾驶舱（取代工作台内容）· P0 骨架。
+ * CockpitApp — 统一驾驶舱（取代工作台内容）。
  *
- * 以 CubeView（立方重排视图）为主画布，融合工作台的 L0–L7 层级轴，构建左右联动的
- * 「一张画布四个维度」驾驶舱（设计文档 §8/9/12 · v2 原型第九组件的工程化形态）：
- *   · 物理结构 = 位置（CubeView 基准画布 + 重排飞行动画）
- *   · 并行策略 = 着色（互斥图层 · stratColor）
- *   · 卡间通信 = 连线（时间的函数 · 随 op-schedule 阶段演化，P1 完整实现）
- *   · 算子整网 = 下钻（右栏②，不占画布）
- *   · 时间     = 第四轴（顶栏 Scrubber / 播放，复用 ViewSync）
+ * 沿用工作台的页面框架与设计风格（pto-workbench-shell + 主题 token），保留左右结构与 L0–L7 层级：
+ *   · 左栏 = L0–L7 层级图（对右侧 3D 做层级控制/筛选，显示归属链）+ 两块诊断面板：
+ *       ① 动态监控双模式（实时热力大盘 vs 时间轴回放，原型第四组件）
+ *       ② 集合通信深潜诊断（环构建散射 / PXN / busbw，原型第八组件）
+ *   · 右栏 = 物理机柜层级场景（FullPodScene）⇄ 时空折叠魔方（CubeView 立方重排），一键切换。
+ *   · 顶栏 = 工况 · 时间轴 Scrubber/播放 · 策略着色 · 右场景切换。
  *
- * 联动（双向）：左 click rank → 右②③刷新 + ①高亮归属链；左 hover → ③遥测浮条；
- *              右①点层级 → 左画布按该粒度重排（aggLevel）。
- *
- * P0 范围：布局骨架 + CubeView 嵌入 + HierarchyAxis 抽取复用 + 点击/悬停左右联动 +
- *          层级→粒度（至少 L4/L2 两档）。策略着色互斥已一并接线；通信连线随时间演化 = P1。
+ * 四维同屏：位置(物理/魔方) + 着色(策略互斥) + 连线/热点(通信·时间的函数) + 下钻(算子/层级)。
+ * 左右联动：左点卡/层级 → 右 3D 高亮/取粒度；右点卡 → 左监控窗口滚动 + 层级轴归属链。
+ * 所有面板共用同一 工况/step/播放/选区（单一真值源），左右同屏同一个世界。
  */
-import { useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
+import * as THREE from 'three';
 import {
-  DEFAULT_GEN, GENERATIONS, PARALLEL_COLORS, PARTITION_META,
-  WORKLOAD, NODES_PER_CAB, NPUS_PER_NODE, levelName,
-  type Gen, type ViewSync, type ParallelWorkload, type PartitionDim, type LevelKey, type ParDim,
+  DEFAULT_GEN, GENERATIONS, PARALLEL_COLORS, PARTITION_META, levelName, NPUS_PER_NODE,
+  type Gen, type ViewSync, type ParallelWorkload, type PartitionDim, type LevelKey, type RunPhase, type RunMode,
 } from '../scene/data';
-import { LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
+import { FullPodScene, SceneTheme } from '../scene/scenes';
+import { type LayoutView } from '../scene/layout';
 import { deploymentOf } from '../scene/deployment';
-import { phaseMix, opAtCursor, flowLayout, type OpKind } from '../scene/op-schedule';
+import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import { CubeView } from '../view/CubeView';
 import { HierarchyAxis } from '../view/HierarchyAxis';
+import { DualModeMonitor } from '../view/DualModeMonitor';
+import { CommDeepDive } from '../view/CommDeepDive';
 
+const CPB = NPUS_PER_NODE;
 const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
-const OP_COL: Record<OpKind, string> = { compute: '#22d3ee', comm: '#ff4b7b', mem: '#a78bfa' };
-const OP_KIND_LBL: Record<OpKind, string> = { compute: '计算', comm: '通信', mem: '访存' };
-const CAB_CARDS = NODES_PER_CAB * NPUS_PER_NODE;
-
 const WL_LABEL: Record<ParallelWorkload, string> = { pretrain: '预训练', prefill: 'Prefill', decode: 'Decode' };
 const STRAT_DIMS: PartitionDim[] = ['none', 'tp', 'pp', 'dp', 'ep'];
 const STRAT_LABEL: Record<PartitionDim, string> = { none: '无', tp: 'TP', pp: 'PP', dp: 'DP', ep: 'EP' };
+const STEP_MAX = 60;
+// LevelKey → CubeView 聚合粒度直接透传；FullPodScene 用选中 rank 做焦点。层级轴主要驱动魔方粒度 + 监控窗口。
 
-// PTO 主题桥接（与 ClusterView 同一套 legacy→PTO 语义 token 映射，随 data-theme 切换）。
 const THEME_VARS: React.CSSProperties = {
   '--bg': 'var(--background)', '--bg2': 'var(--background-subtle)',
   '--panel': 'var(--panel-shell-bg)', '--panel-solid': 'var(--background-elevated)',
@@ -48,25 +48,37 @@ const THEME_VARS: React.CSSProperties = {
 } as React.CSSProperties;
 
 const SECONDARY: React.CSSProperties = { border: '1px solid var(--button-secondary-border)', background: 'var(--button-secondary-bg)', color: 'var(--foreground-muted)' };
-function navBtn(on: boolean): React.CSSProperties {
-  return on ? { border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontWeight: 600 } : { ...SECONDARY };
-}
-function chipBtn(on: boolean, c: string): React.CSSProperties {
-  return on ? { border: `1px solid ${c}`, background: c, color: '#0b0f16', fontWeight: 700 } : { ...SECONDARY };
-}
+function navBtn(on: boolean): React.CSSProperties { return on ? { border: '1px solid var(--primary)', background: 'var(--primary)', color: 'var(--primary-foreground)', fontWeight: 600 } : { ...SECONDARY }; }
+function chipBtn(on: boolean, c: string): React.CSSProperties { return on ? { border: `1px solid ${c}`, background: c, color: '#0b0f16', fontWeight: 700 } : { ...SECONDARY }; }
 const btn: React.CSSProperties = { padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer' };
 const LBL: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', alignSelf: 'center' };
 const card: React.CSSProperties = { background: 'var(--panel-solid)', border: '1px solid var(--bd)', borderRadius: 10, padding: '11px 12px' };
 
-// deterministic per-rank telemetry (hover 探针；纯示意，与 StatusView 同风格)
-const rnd = (x: number) => { const v = Math.sin(x * 99.13) * 43758.5453; return v - Math.floor(v); };
+// 一次性把正交相机缩放到能容纳整座 Pod（无需外部 FrameCamera）。
+function FitPod({ reach }: { reach: number }) {
+  const { camera, size } = useThree();
+  const done = useRef(false);
+  useEffect(() => { done.current = false; }, [reach]);
+  useFrame(() => {
+    if (done.current || size.height < 10) return;
+    const oc = camera as THREE.OrthographicCamera;
+    if (oc.isOrthographicCamera) {
+      const want = size.height / Math.max(14, reach * 1.5) * 2;
+      oc.zoom += (want - oc.zoom) * 0.2; oc.updateProjectionMatrix();
+      if (Math.abs(oc.zoom - want) < 0.05) done.current = true;
+    }
+  });
+  return null;
+}
 
 export function CockpitApp() {
+  const visualProfile = useContext(SceneVisualProfileContext);
   const [gen] = useState<Gen>(DEFAULT_GEN);
-  const [dark, setDark] = useState(true);   // 驾驶舱默认深色（贴合原型第九组件观感）
-  const N = GENERATIONS[gen].totalNpus;
+  const [dark, setDark] = useState(true);
+  const spec = GENERATIONS[gen];
+  const N = spec.totalNpus;
+  const surf = sceneSurface(dark, visualProfile);
 
-  // ── 共享工况 / 时间 / 播放（ViewSync）+ 驾驶舱专属：着色 / 图层 / 粒度 / 选区 ──
   const [workload, setWorkload] = useState<ParallelWorkload>('pretrain');
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -74,58 +86,50 @@ export function CockpitApp() {
   const [planeOn, setPlaneOn] = useState({ ub: true, rdma: true, vpc: false });
   const [layout, setLayout] = useState<LayoutView>('physical');
   const [stratColor, setStratColor] = useState<PartitionDim>('none');
-  const [commLayer, setCommLayer] = useState(true);
-  const [alertLayer, setAlertLayer] = useState(true);
-  const [aggLevel, setAggLevel] = useState<LevelKey>('card');   // L2 满卡粒度起步
+  const [aggLevel, setAggLevel] = useState<LevelKey>('card');
   const [sel, setSel] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [rightScene, setRightScene] = useState<'phys' | 'cube'>('phys');
+  const [leftTab, setLeftTab] = useState<'monitor' | 'comm'>('monitor');
+  const [monMode, setMonMode] = useState<'heat' | 'replay'>('heat');
+
+  // 单一时钟：仅此处推进 step（CubeView 收到 playing=false 以避免二次推进）。
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => setStep((s) => (s + 1) % (STEP_MAX + 1)), 650);
+    return () => clearInterval(id);
+  }, [playing]);
 
   const sync: ViewSync = {
     workload, step, playing, metric, planeOn,
     setWorkload, setStep, setPlaying, setMetric, setPlaneOn,
-    stratColor, commLayer, alertLayer, aggLevel, selRank: sel,
+    stratColor, commLayer: true, alertLayer: true, aggLevel, selRank: sel,
   };
+  const cubeSync: ViewSync = { ...sync, playing: false };   // CubeView 不自转时钟
 
   const dep = useMemo(() => deploymentOf(workload, N), [workload, N]);
-  const pm = dep.pm;
+  const reach = useMemo(() => Math.sqrt(N) * 1.3 + 12, [N]);
+  const runMode: RunMode = workload === 'pretrain' ? 'train' : 'infer';
+  const wlKind = workload === 'decode' ? 'comm' : 'compute';
+  const panoPhase = useMemo<RunPhase | null>(() => (playing
+    ? { id: 'wl', name: WL_LABEL[workload], kind: wlKind, color: wlKind === 'comm' ? '#ff4b7b' : '#22d3ee', collective: wlKind === 'comm' ? 'a2a' : undefined, note: '' }
+    : null), [playing, workload, wlKind]);
+  const panoSel = useMemo(() => (sel != null ? { lv: 0, i: sel } : null), [sel]);
 
-  // ── 流动面 → 结构面：当前时间步的算子 + 活跃通信维（与 CubeView 同一推导）──
-  const cursor01 = (step % 61) / 60;
-  const curOp = useMemo(() => opAtCursor(workload, cursor01), [workload, cursor01]);
-  const activeComm = useMemo(() => {
-    if (curOp.kind === 'comm') return curOp;
-    const fl = flowLayout(workload);
-    const h = fl.hidden.find((hh) => hh.op.kind === 'comm' && cursor01 >= hh.x && cursor01 < hh.x + hh.w);
-    return h ? h.op : null;
-  }, [curOp, workload, cursor01]);
-  const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = activeComm
-    ? (activeComm.coll === 'ring' ? 'dp' : activeComm.coll === 'p2p' ? 'pp' : 'ep') : null;
-  const mix = useMemo(() => phaseMix(workload), [workload]);
+  const baseHost = sel != null ? Math.floor(Math.floor(sel / CPB) / 8) * 8 : 0;
 
-  // ── COMM BUS 阶段自适应：当前主导链路（柜内 UB / 柜内接力 PP / 跨柜 OCS）随 activeComm 切换 ──
-  const bus = curDim === 'ep' ? { ub: 20, pp: 16, ocs: 88, lead: '跨柜 OCS 全光 · EP AllToAll 星状 ⚠', hot: true }
-    : curDim === 'dp' ? { ub: 18, pp: 22, ocs: 76, lead: '跨柜全局网络 · DP 同步环（低频）', hot: false }
-      : curDim === 'pp' ? { ub: 30, pp: 82, ocs: 24, lead: '柜内接力 · PP 边界激活传递', hot: false }
-        : { ub: 90, pp: 20, ocs: 12, lead: '柜内灵衢/UB · TP 高频域', hot: false };
-
-  const aggLabel = aggLevel === 'card' ? '满卡粒度（一卡一块）'
-    : aggLevel === 'node' ? `Host 粒度（${NPUS_PER_NODE} 卡/块）`
-      : (aggLevel === 'cab' || aggLevel === 'super') ? `Pod 物理分组（一柜 ${CAB_CARDS} 卡一块）`
-        : `${levelName(aggLevel)} 粒度（宏观降噪）`;
-
-  // ── 底栏 desc：着色 × 连线 × 层级 × 时间 的组合语义一句话 ──
-  const stratTxt = stratColor === 'none' ? '未开策略着色（颜色 = 状态红黄绿）' : `${STRAT_LABEL[stratColor]} 着色：同色 = ${PARTITION_META[stratColor as Exclude<PartitionDim, 'none'>].same}`;
-  const desc = `${stratTxt} ｜ 连线：${commLayer ? (curDim ? `随阶段演化（当前 ${curDim.toUpperCase()}）` : '当前为计算步、无活跃通信') : '关'} ｜ 层级：${aggLabel} ｜ 时间：t=${step}·${WL_LABEL[workload]}。四维同屏：位置(物理)＋着色(策略)＋连线(通信)＋下钻(算子)，时间为第四轴。`;
+  const stratTxt = stratColor === 'none' ? '未开策略着色（颜色=状态红黄绿）' : `${STRAT_LABEL[stratColor]} 着色：同色=${PARTITION_META[stratColor as Exclude<PartitionDim, 'none'>].same}`;
+  const desc = `${stratTxt} ｜ 右场景：${rightScene === 'phys' ? '物理机柜层级（FullPodScene）' : `时空折叠魔方（${layout === 'physical' ? '物理基准' : layout.toUpperCase() + ' 重排'}）`} ｜ 层级：${levelName(aggLevel)} ｜ 时间：t=${step}·${WL_LABEL[workload]}。四维同屏：位置＋着色＋连线/热点＋下钻。`;
 
   return (
     <div data-theme={dark ? 'dark' : 'light'} className="hpc-workbench-view pto-workbench-shell" style={{
       width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
       background: 'var(--bg)', color: 'var(--tx)', fontFamily: 'var(--font-sans)', ...THEME_VARS,
     }}>
-      {/* ══ 顶栏：工况 · 策略着色 · 图层 · 布局 · 时间轴 ══ */}
+      {/* ══ 顶栏 ══ */}
       <div style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--bd)', background: 'var(--panel-solid)' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 0.3 }}>统一驾驶舱</span>
-        <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>一张画布四维 · 取代工作台</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800 }}>统一驾驶舱</span>
+        <span style={{ fontSize: 9.5, color: 'var(--tx3)' }}>左诊断 · 右 3D · 一张画布四维</span>
 
         <span style={{ ...LBL, marginLeft: 6 }}>工况</span>
         {(Object.keys(WL_LABEL) as ParallelWorkload[]).map((w) => (
@@ -135,142 +139,106 @@ export function CockpitApp() {
         <span style={{ ...LBL, marginLeft: 6 }}>策略着色</span>
         {STRAT_DIMS.map((d) => {
           const on = stratColor === d, sig = d === 'none' ? undefined : PARALLEL_COLORS[d];
-          return (
-            <button key={d} onClick={() => setStratColor(d)} title={d === 'none' ? '关闭策略着色' : `${PARTITION_META[d as Exclude<PartitionDim, 'none'>].label} · 互斥`}
-              style={{ ...btn, ...(sig ? chipBtn(on, sig) : navBtn(on)) }}>{STRAT_LABEL[d]}</button>
-          );
+          return <button key={d} onClick={() => setStratColor(d)} title={d === 'none' ? '关闭策略着色' : `${PARTITION_META[d as Exclude<PartitionDim, 'none'>].label} · 互斥`}
+            style={{ ...btn, ...(sig ? chipBtn(on, sig) : navBtn(on)) }}>{STRAT_LABEL[d]}</button>;
         })}
 
-        <span style={{ ...LBL, marginLeft: 6 }}>图层</span>
-        <button onClick={() => setCommLayer((v) => !v)} title="通信连线图层（P0 复用选中卡对端高亮 · 完整随时间演化 = P1）"
-          style={{ ...btn, ...navBtn(commLayer) }}>🛣️ 通信线</button>
-        <button onClick={() => setAlertLayer((v) => !v)} title="热点/告警图层（跨 L4 链路统计与散射建议 = P3）"
-          style={{ ...btn, ...navBtn(alertLayer) }}>⚠️ 热点</button>
-
-        <span style={{ ...LBL, marginLeft: 6 }}>布局</span>
-        {LAYOUT_VIEWS.map((v) => (
-          <button key={v} onClick={() => setLayout(v)} title={v === 'physical' ? '物理基准' : `按 ${v.toUpperCase()} 重排（飞行动画）`}
-            style={{ ...btn, ...navBtn(layout === v) }}>{LAYOUT_LABEL[v]}</button>
+        <span style={{ ...LBL, marginLeft: 6 }}>右场景</span>
+        {([['phys', '物理机柜'], ['cube', '时空折叠魔方']] as ['phys' | 'cube', string][]).map(([s, l]) => (
+          <button key={s} onClick={() => setRightScene(s)} style={{ ...btn, ...navBtn(rightScene === s) }}>{l}</button>
+        ))}
+        {rightScene === 'cube' && ([['physical', '物理'], ['tp', 'TP'], ['pp', 'PP'], ['dp', 'DP'], ['ep', 'EP']] as [LayoutView, string][]).map(([v, l]) => (
+          <button key={v} onClick={() => setLayout(v)} title={`按 ${l} 重排（飞行动画）`} style={{ ...btn, padding: '3px 8px', ...navBtn(layout === v) }}>{l}</button>
         ))}
 
-        {/* 时间轴 Scrubber + 播放 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           <button onClick={() => setPlaying((p) => !p)} style={{ ...btn, ...navBtn(playing) }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
-          <input type="range" min={0} max={60} value={step % 61} onChange={(e) => setStep(+e.target.value)} style={{ width: 160 }} />
-          <span style={{ fontSize: 10.5, fontFamily: MONO, color: 'var(--tx2)', minWidth: 84 }}>t={step % 61} · {activeComm ? activeComm.name : curOp.name}</span>
+          <input type="range" min={0} max={STEP_MAX} value={step % (STEP_MAX + 1)} onChange={(e) => setStep(+e.target.value)} style={{ width: 150 }} />
+          <span style={{ fontSize: 10.5, fontFamily: MONO, color: 'var(--tx2)', minWidth: 42 }}>t={step % (STEP_MAX + 1)}</span>
           <button onClick={() => setDark((d) => !d)} title="切换深/浅色" style={{ ...btn, ...SECONDARY }}>{dark ? '☾' : '☀'}</button>
         </div>
       </div>
 
-      {/* ══ 主体：左 CubeView 主画布（~70%）· 右 联动三段面板（~30%）══ */}
+      {/* ══ 主体：左诊断 / 右 3D ══ */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {/* 左：CubeView 主画布 */}
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <CubeView
-            gen={gen} dark={dark} sync={sync} embedded
-            layout={layout} stratColor={stratColor} showComm={commLayer} showAlert={alertLayer}
-            aggLevel={aggLevel} sel={sel} onSelectRank={setSel} onHoverRank={setHover}
-          />
-        </div>
-
-        {/* 右：联动面板（三段纵排） */}
-        <div style={{ width: 'clamp(320px, 30%, 420px)', flexShrink: 0, borderLeft: '1px solid var(--bd)', background: 'var(--bg)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
-          {/* ① L0–L7 层级状态轴 */}
+        {/* 左栏 */}
+        <div style={{ width: 'clamp(360px, 42%, 560px)', flexShrink: 0, borderRight: '1px solid var(--bd)', background: 'var(--bg)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
+          {/* ① L0-L7 层级图（控制/筛选右 3D + 归属链） */}
           <div style={card}>
             <HierarchyAxis selLevel={aggLevel} onSelectLevel={setAggLevel} selRank={sel} deployment={dep} />
+            <div style={{ fontSize: 9.5, color: 'var(--tx3)', marginTop: 6, lineHeight: 1.5 }}>
+              点层级 → {rightScene === 'cube' ? '右魔方按该粒度重排/染色' : '右物理场景聚焦该层'}；点右侧卡 → 此处高亮 L7→L0 归属链。
+            </div>
           </div>
 
-          {/* ② 算子下钻面板 */}
+          {/* ②/③ 诊断面板 tab */}
           <div style={card}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>算子下钻 <span style={{ fontSize: 9.5, color: 'var(--tx3)', fontWeight: 400 }}>（第四维度 · 不占画布）</span></div>
-            {sel == null ? (
-              <div style={{ fontSize: 11, color: 'var(--tx3)', lineHeight: 1.6 }}>点左画布任一方块下钻：逻辑坐标、当前时间步算子构成、参与的通信组（TP组/PP链/DP环/EP路由）、承载层切片。</div>
-            ) : (() => {
-              const phys = dep.physOf(sel);
-              const roles = dep.rolesOf(sel).filter((r) => r.dim !== 'sp');
-              const roleLbl: Record<string, string> = { tp: 'TP 张量切片', pp: 'PP 流水级', dp: 'DP 数据副本', ep: 'EP 专家组' };
-              const commLbl: Record<string, string> = { tp: 'TP 组', pp: 'PP 链', dp: 'DP 环', ep: 'EP 路由' };
-              const ppStage = pm.groupOf(sel, 'pp'), ppDeg = pm.groupCount('pp');
-              const lps = Math.ceil(WORKLOAD.layers / Math.max(1, ppDeg));
-              const layA = ppStage * lps + 1, layB = Math.min(WORKLOAD.layers, (ppStage + 1) * lps);
-              const row = (l: string, v: string, c?: string) => (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, margin: '3px 0' }}>
-                  <span style={{ color: 'var(--tx2)' }}>{l}</span><span style={{ fontFamily: MONO, color: c ?? 'var(--tx)' }}>{v}</span>
-                </div>
-              );
-              return (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: MONO, color: '#4369ef' }}>rank {sel}</span>
-                    <button onClick={() => setSel(null)} style={{ ...btn, padding: '1px 8px', ...SECONDARY }}>✕</button>
-                  </div>
-                  <div style={{ ...LBL, margin: '4px 0 2px' }}>物理位置</div>
-                  {row('Pod', `${phys.pod}`)}
-                  {row('机柜（物理分组）', `C${phys.cabinet}`)}
-                  {row('Host · 卡槽', `H${phys.host} / slot ${phys.slot}`)}
-
-                  <div style={{ ...LBL, margin: '9px 0 3px', borderTop: '1px solid var(--bd)', paddingTop: 8 }}>当前算子构成（t={step % 61}）</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, marginBottom: 4 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: OP_COL[curOp.kind], flexShrink: 0 }} />
-                    <span style={{ color: 'var(--tx)', fontWeight: 600 }}>{curOp.name}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--tx3)' }}>{OP_KIND_LBL[curOp.kind]}</span>
-                  </div>
-                  {([['compute', mix.compute], ['comm', mix.comm], ['mem', mix.mem]] as [OpKind, number][]).map(([k, v]) => (
-                    <div key={k} style={{ margin: '3px 0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx2)' }}><span>{OP_KIND_LBL[k]}</span><span>{Math.round(v * 100)}%</span></div>
-                      <div style={{ height: 5, borderRadius: 3, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ width: `${v * 100}%`, height: '100%', background: OP_COL[k] }} /></div>
-                    </div>
-                  ))}
-
-                  <div style={{ ...LBL, margin: '9px 0 3px', borderTop: '1px solid var(--bd)', paddingTop: 8 }}>参与的通信组 · {pm.cfg}</div>
-                  {roles.map((r) => {
-                    const c = PARALLEL_COLORS[r.dim as Exclude<ParDim, 'sp'>];
-                    const peers = dep.peersOf(sel, r.dim, 4096).length;
-                    const hot = curDim === r.dim;
-                    return (
-                      <div key={r.dim} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, margin: '3px 0' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0, boxShadow: hot ? `0 0 0 2px color-mix(in srgb, ${c} 45%, transparent)` : 'none' }} />
-                        <span style={{ color: 'var(--tx2)', flex: 1 }}>{commLbl[r.dim]}（{roleLbl[r.dim]}）{hot ? ' · 此刻活跃' : ''}</span>
-                        <span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{peers} 卡</span>
-                      </div>
-                    );
-                  })}
-
-                  <div style={{ ...LBL, margin: '9px 0 3px', borderTop: '1px solid var(--bd)', paddingTop: 8 }}>承载层切片</div>
-                  {row('PP stage', `${ppStage} / ${ppDeg}`)}
-                  {row('承载 Transformer 层', `L${layA}–L${layB}`)}
-                  {row('专家（MoGE）', `${WORKLOAD.routedExperts} 路由 / 每组 Top-${WORKLOAD.activatedExperts}`)}
-                </div>
-              );
-            })()}
+            <div style={{ display: 'flex', gap: 5, marginBottom: 10 }}>
+              <button onClick={() => setLeftTab('monitor')} style={{ ...btn, ...navBtn(leftTab === 'monitor') }}>动态监控双模式</button>
+              <button onClick={() => setLeftTab('comm')} style={{ ...btn, ...navBtn(leftTab === 'comm') }}>集合通信深潜</button>
+            </div>
+            {leftTab === 'monitor' ? (
+              <DualModeMonitor mode={monMode} setMode={setMonMode} workload={workload} step={step} setStep={setStep}
+                playing={playing} setPlaying={setPlaying} sel={sel} onSelectRank={setSel} baseHost={baseHost} dark={dark} />
+            ) : (
+              <CommDeepDive dark={dark} />
+            )}
           </div>
+        </div>
 
-          {/* ③ COMM BUS 遥测 */}
-          <div style={card}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>COMM BUS 遥测 <span style={{ fontSize: 9.5, color: 'var(--tx3)', fontWeight: 400 }}>· 阶段自适应</span></div>
-            <div style={{ fontSize: 10.5, color: bus.hot ? '#ff4b7b' : '#22d3ee', marginBottom: 8 }}>当前主导链路：{bus.lead}</div>
-            {([['柜内 UB（TP 域）', bus.ub, '#04d793'], ['柜内接力（PP）', bus.pp, '#a78bfa'], ['跨柜 OCS / RDMA', bus.ocs, bus.hot ? '#ff4b7b' : '#39c5cf']] as [string, number, string][]).map(([l, v, c]) => (
-              <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '5px 0' }}>
-                <span style={{ fontSize: 10, color: 'var(--tx2)', width: 110, flexShrink: 0 }}>{l}</span>
-                <div style={{ flex: 1, height: 7, borderRadius: 4, background: 'var(--btn)', overflow: 'hidden' }}><div style={{ width: `${v}%`, height: '100%', background: v > 50 ? c : '#556' }} /></div>
-                <span style={{ fontSize: 10, fontFamily: MONO, color: 'var(--tx2)', width: 32, textAlign: 'right' }}>{v}%</span>
-              </div>
-            ))}
-            <div style={{ ...LBL, margin: '9px 0 3px', borderTop: '1px solid var(--bd)', paddingTop: 8 }}>硬件遥测探针</div>
-            <div style={{ fontSize: 10.5, fontFamily: MONO, color: '#4369ef', lineHeight: 1.5, minHeight: 30 }}>
-              {hover == null ? '悬停左画布方块读取遥测' : (() => {
-                const p = dep.physOf(hover);
-                return `GPU_${hover} · Pod${p.pod}/C${p.cabinet}/H${p.host}/s${p.slot} · UB ${55 + Math.round(rnd(hover) * 35)}% · HBM ${60 + Math.round(rnd(hover * 3) * 20)}/${GENERATIONS[gen].memGB}GB · ${62 + Math.round(rnd(hover * 7) * 9)}℃`;
-              })()}
+        {/* 右栏：物理机柜层级场景 ⇄ 时空折叠魔方 */}
+        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          {rightScene === 'cube' ? (
+            <CubeView gen={gen} dark={dark} sync={cubeSync} embedded
+              layout={layout} stratColor={stratColor} showComm showAlert
+              aggLevel={aggLevel} sel={sel} onSelectRank={setSel} onHoverRank={setHover} />
+          ) : (
+            <Canvas
+              orthographic dpr={[1, 2]}
+              camera={{ position: [reach, reach * 0.7, reach], zoom: 12, near: 0.1, far: 4000 }}
+              gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, powerPreference: 'high-performance' }}
+              onCreated={({ gl }) => { gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false); }}
+            >
+              <color attach="background" args={[surf.background]} />
+              <fog attach="fog" args={[surf.fog, 90, 420]} />
+              <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
+              <directionalLight position={[8, 14, 6]} intensity={surf.key} />
+              <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />
+              <pointLight position={[0, 10, 0]} intensity={surf.point} color={surf.pointColor} />
+              <FitPod reach={reach} />
+              <SceneTheme.Provider value={dark}>
+                <FullPodScene
+                  scale="64P" podCount={1} full gen={spec} overlays={{ ring: false, a2a: false, tile: true, cores: true }}
+                  runMode={runMode} phase={panoPhase} partition={stratColor} peers={false}
+                  status={playing} planes={false} onHoverInfo={() => { /* tooltip handled via selection */ }}
+                  focusSel={panoSel} onSel={(s) => setSel(s && s.lv === 0 ? s.i : null)} dir="all" scopeOnly={false}
+                />
+              </SceneTheme.Provider>
+              <OrbitControls makeDefault enableDamping dampingFactor={0.08}
+                minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
+                mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN }} />
+              <GizmoHelper alignment="bottom-left" margin={[64, 88]}>
+                <GizmoViewcube faces={['Right', 'Left', 'Top', 'Bottom', 'Front', 'Back']}
+                  color={dark ? '#2a2e36' : '#eef1f6'} hoverColor="#4369ef"
+                  textColor={dark ? '#e6e6e6' : '#1c2433'} strokeColor={dark ? '#4a5160' : '#aab4c4'} opacity={0.95} />
+              </GizmoHelper>
+            </Canvas>
+          )}
+
+          {/* 右场景内选中/悬停浮条 */}
+          <div style={{ position: 'absolute', left: 12, top: 12, ...card, padding: '7px 11px', pointerEvents: 'none', maxWidth: 320 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 600 }}>{rightScene === 'phys' ? '物理机柜层级场景' : '时空折叠魔方'}</div>
+            <div style={{ fontSize: 9.5, color: 'var(--tx2)', marginTop: 2, lineHeight: 1.5 }}>
+              {rightScene === 'phys' ? '按 L0–L7 层级铺陈的真实机柜/Host/卡；点卡下钻、随工况呼吸热力。' : '物理平铺 ⇄ 按 P 重排飞行动画；策略着色 + 层级粒度。'}
+              {sel != null && <span style={{ color: '#4369ef', fontFamily: MONO }}> · 选中 rank {sel}</span>}
+              {hover != null && <span style={{ color: 'var(--tx3)', fontFamily: MONO }}> · hover r{hover}</span>}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ══ 底栏 desc：着色 × 连线 × 层级 × 时间 的组合语义 ══ */}
-      <div style={{ flexShrink: 0, borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)', padding: '7px 12px', fontSize: 11, color: 'var(--tx2)', lineHeight: 1.5 }}>
-        {desc}
-      </div>
+      {/* ══ 底栏 desc ══ */}
+      <div style={{ flexShrink: 0, borderTop: '1px solid var(--bd)', background: 'var(--panel-solid)', padding: '7px 12px', fontSize: 11, color: 'var(--tx2)', lineHeight: 1.5 }}>{desc}</div>
     </div>
   );
 }
