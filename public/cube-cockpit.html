@@ -2598,6 +2598,15 @@ describeModelSel(); renderMM(); renderFilterBar(); updateCounts();
 requestAnimationFrame(drawArcs);
 requestAnimationFrame(loop);
 </script>
+<!-- ── 宿主融合：嵌入 HPC 拓扑查看器时，与宿主 chrome 视觉合一 ──
+     · 去掉原型自带产品名（宿主标签页已标「立方重排」，避免二次命名）
+     · 去掉原型自带明暗按钮（主题由宿主统一驱动）
+     · 顶栏去掉独立背景/下边框，与宿主顶栏连成一条，不再是「叠在下面的第二行」 -->
+<style id="host-fusion">
+  #topbar .title { display: none !important; }
+  #topbar #btnTheme { display: none !important; }
+  #topbar { background: transparent !important; border-bottom: none !important; }
+</style>
 <!-- ── 主题桥：随宿主项目（HPC 拓扑查看器）明暗切换 ──
      初始从 URL ?theme=dark|light 读取；运行中由父窗口 postMessage({type:'cockpit-theme',theme}) 驱动。 -->
 <script>
