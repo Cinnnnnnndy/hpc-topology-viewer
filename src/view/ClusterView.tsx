@@ -329,7 +329,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [commScope, setCommScope] = useState<'intra' | 'inter'>('intra');
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
   // 立方重排(cube) 的筛选：堆叠方式 + 注入异常，随中间控制面板驱动、作为 props 传给 CubeView
-  const [cubeLayout, setCubeLayout] = useState<LayoutView>('physical');
+  const [cubeLayout, setCubeLayout] = useState<LayoutView>('standard');
   const [cubeAnom, setCubeAnom] = useState<AnomalyDim>('none');
 
 
