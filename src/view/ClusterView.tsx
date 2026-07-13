@@ -126,6 +126,16 @@ const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'mapping',  label: '软硬件映射' },
   { id: 'trace',    label: '执行时序/定位' },
 ];
+
+// ── hash 路由：每个模块一个可分享/可刷新的地址（#/cube、#/plane …）。
+//    GitHub Pages 用 hash 而非 path，刷新不会 404、无需服务器 rewrite。ViewMode 本身即 slug。
+const VALID_MODES = new Set<ViewMode>(MODE_TABS.map((t) => t.id));
+function modeFromHash(): ViewMode | null {
+  if (typeof window === 'undefined') return null;
+  const h = window.location.hash.replace(/^#\/?/, '');   // 去掉前导 "#/" 或 "#"
+  return VALID_MODES.has(h as ViewMode) ? (h as ViewMode) : null;
+}
+
 type WorkbenchViewGroupId = 'console' | 'threeD' | 'twoD' | 'engineering';
 const WORKBENCH_VIEW_GROUPS: {
   id: WorkbenchViewGroupId;
@@ -268,7 +278,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbench = chrome === 'workbench';
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
-  const [mode, setMode] = useState<ViewMode>('console');   // land on 联动控制台 (linked console)
+  const [mode, setMode] = useState<ViewMode>(() => modeFromHash() ?? 'console');   // 初始 mode：URL hash 优先，否则联动控制台
   // cross-view sync (运行状态 ⇄ 工作台): shared 工况 / 时间 / 播放 so switching tabs keeps the same world
   const [syncWorkload, setSyncWorkload] = useState<ParallelWorkload>('decode');
   const [syncStep, setSyncStep] = useState(0);
@@ -312,6 +322,21 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
     const onResize = () => setVw(window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+  // ── hash 路由：mode ⇄ URL hash 双向同步 ──
+  //    mode 变 → 写回 hash（首次 replace，之后 push → 支持浏览器前进/后退）；
+  //    hash 变（前进/后退按钮）→ 回读到 mode。二者用 hash 是否已匹配互相短路，不成环。
+  const hashInit = useRef(false);
+  useEffect(() => {
+    const want = `#/${mode}`;
+    if (window.location.hash === want) { hashInit.current = true; return; }
+    if (hashInit.current) window.history.pushState(null, '', want);
+    else { window.history.replaceState(null, '', want); hashInit.current = true; }
+  }, [mode]);
+  useEffect(() => {
+    const onHash = () => { const m = modeFromHash(); if (m) setMode(m); };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
