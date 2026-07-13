@@ -54,19 +54,19 @@ function aggUnitCards(level: LevelKey | undefined): number {
 const nearCols = (n: number) => Math.max(1, Math.ceil(Math.sqrt(n)));
 const AGG_SPREAD = 2.0;   // 聚合单元的网格间距倍率（比逐卡稀疏，让宏观大方块之间留缝、不糊成一片）
 
-// 聚合布局：把 N 张卡按 aggUnitCards 分成 U 个单元，铺成近方阵（居中抽象坐标）。
+// 聚合布局：把 N 张卡按 aggUnitCards 分成 U 个单元，铺成近方阵（居中坐标，world unit）。
 // size===1 时直接透传逐 rank 的 lay.pos（零行为变化）。返回单元↔rank 的双向映射。
 interface AggLayout {
-  count: number; cells: { x: number; z: number }[]; cols: number; rows: number; size: number;
+  count: number; cells: { x: number; y: number; z: number }[]; cols: number; rows: number; yExtent: number; size: number;
   rankOfUnit: (u: number) => number;                 // 代表 rank（首个成员）
   unitOfRank: (rank: number) => number;
   membersOfUnit: (u: number) => { start: number; end: number };
 }
-function aggregateOf(level: LevelKey | undefined, layPos: { x: number; z: number }[], N: number): AggLayout {
+function aggregateOf(level: LevelKey | undefined, layPos: { x: number; y: number; z: number }[], N: number): AggLayout {
   const size = Math.min(N, aggUnitCards(level));
   if (size <= 1) {
     return {
-      count: N, cells: layPos, cols: 0, rows: 0, size: 1,
+      count: N, cells: layPos, cols: 0, rows: 0, yExtent: 0, size: 1,
       rankOfUnit: (u) => u, unitOfRank: (r) => r,
       membersOfUnit: (u) => ({ start: u, end: u + 1 }),
     };
@@ -74,10 +74,10 @@ function aggregateOf(level: LevelKey | undefined, layPos: { x: number; z: number
   const count = Math.ceil(N / size);
   const cols = nearCols(count), rows = Math.ceil(count / cols);
   const cx = (cols - 1) / 2, cz = (rows - 1) / 2;
-  // 稀疏网格：坐标间距 ×AGG_SPREAD，大方块之间留缝；cols/rows 同比放大供相机取景。
-  const cells = Array.from({ length: count }, (_, u) => ({ x: ((u % cols) - cx) * AGG_SPREAD, z: (Math.floor(u / cols) - cz) * AGG_SPREAD }));
+  // 稀疏网格：坐标间距 ×AGG_SPREAD×PITCH，大方块之间留缝；cols/rows 同比放大供相机取景。
+  const cells = Array.from({ length: count }, (_, u) => ({ x: ((u % cols) - cx) * AGG_SPREAD * PITCH, y: 0, z: (Math.floor(u / cols) - cz) * AGG_SPREAD * PITCH }));
   return {
-    count, cells, cols: cols * AGG_SPREAD, rows: rows * AGG_SPREAD, size,
+    count, cells, cols: cols * AGG_SPREAD * PITCH, rows: rows * AGG_SPREAD * PITCH, yExtent: 0, size,
     rankOfUnit: (u) => u * size,
     unitOfRank: (r) => Math.floor(r / size),
     membersOfUnit: (u) => ({ start: u * size, end: Math.min(N, (u + 1) * size) }),
@@ -104,7 +104,7 @@ const ANOM_NOTE: Record<Exclude<AnomalyDim, 'none'>, string> = {
 //    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
 const PEER_MAX = 96;   // 对端高亮上限（peersOf 采样）
 function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peers, peerColor, boxXZ = BOX, boxY = 0.16 }: {
-  cells: { x: number; z: number }[]; colorOf: (k: number) => [number, number, number]; recolorKey: number;
+  cells: { x: number; y: number; z: number }[]; colorOf: (k: number) => [number, number, number]; recolorKey: number;
   onSettleChange?: (settling: boolean) => void;
   selected: number | null; hover: number | null;
   onPick: (rank: number | null) => void; onHover: (rank: number | null) => void;
@@ -117,13 +117,13 @@ function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover
   const hovRef = useRef<THREE.Mesh>(null);
   const peerRef = useRef<THREE.InstancedMesh>(null);
   const m2 = useMemo(() => new THREE.Matrix4(), []);
-  const cur = useRef<{ x: Float32Array; z: Float32Array } | null>(null);
+  const cur = useRef<{ x: Float32Array; y: Float32Array; z: Float32Array } | null>(null);
   const target = useRef(cells);
   const settling = useRef(true);
   if (!cur.current || cur.current.x.length !== N) {
-    const x = new Float32Array(N), z = new Float32Array(N);
-    for (let k = 0; k < N; k++) { x[k] = cells[k].x * PITCH; z[k] = cells[k].z * PITCH; }
-    cur.current = { x, z };
+    const x = new Float32Array(N), y = new Float32Array(N), z = new Float32Array(N);
+    for (let k = 0; k < N; k++) { x[k] = cells[k].x; y[k] = cells[k].y; z[k] = cells[k].z; }
+    cur.current = { x, y, z };
   }
   // 视图切换 → 新目标位置，开始飞行
   useEffect(() => { target.current = cells; settling.current = true; onSettleChange?.(true); }, [cells, onSettleChange]);
@@ -136,24 +136,24 @@ function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover
     const place = (ref: React.RefObject<THREE.Mesh>, idx: number | null) => {
       if (!ref.current) return;
       if (idx == null || idx < 0 || idx >= N) { ref.current.visible = false; return; }
-      ref.current.visible = true; ref.current.position.set(c.x[idx], 0, c.z[idx]); ref.current.scale.setScalar(hlScale);
+      ref.current.visible = true; ref.current.position.set(c.x[idx], c.y[idx], c.z[idx]); ref.current.scale.setScalar(hlScale);
     };
     place(selRef, selected); place(hovRef, hover === selected ? null : hover);
     // 对端高亮：跟随各对端卡的实时位置（每帧）
     const pm2 = peerRef.current;
     if (pm2) {
       const n = Math.min(peers.length, PEER_MAX);
-      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(boxXZ * 1.7, 0.34, boxXZ * 1.7); m2.setPosition(c.x[k], 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
+      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(boxXZ * 1.7, 0.34, boxXZ * 1.7); m2.setPosition(c.x[k], c.y[k] + 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
       pm2.count = n; pm2.instanceMatrix.needsUpdate = true;
     }
     if (!settling.current) return;
     let moving = false;
     for (let k = 0; k < N; k++) {
-      const tx = target.current[k].x * PITCH, tz = target.current[k].z * PITCH;
-      const nx = c.x[k] + (tx - c.x[k]) * 0.16, nz = c.z[k] + (tz - c.z[k]) * 0.16;
-      if (Math.abs(tx - nx) > 0.004 || Math.abs(tz - nz) > 0.004) moving = true;
-      c.x[k] = nx; c.z[k] = nz;
-      m.makeScale(boxXZ, boxY, boxXZ); m.setPosition(nx, 0, nz); mesh.setMatrixAt(k, m);
+      const tx = target.current[k].x, ty = target.current[k].y, tz = target.current[k].z;
+      const nx = c.x[k] + (tx - c.x[k]) * 0.16, ny = c.y[k] + (ty - c.y[k]) * 0.16, nz = c.z[k] + (tz - c.z[k]) * 0.16;
+      if (Math.abs(tx - nx) > 0.004 || Math.abs(ty - ny) > 0.004 || Math.abs(tz - nz) > 0.004) moving = true;
+      c.x[k] = nx; c.y[k] = ny; c.z[k] = nz;
+      m.makeScale(boxXZ, boxY, boxXZ); m.setPosition(nx, ny, nz); mesh.setMatrixAt(k, m);
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (!moving) { settling.current = false; onSettleChange?.(false); }
@@ -198,18 +198,20 @@ function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover
   );
 }
 
-// 相机随当前视图的网格尺寸自适应取景（PP 视图很高/很窄也能装下）
-function FrameField({ cols, rows, controls }: {
-  cols: number; rows: number; controls: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null>;
+// 相机随当前视图的三维包围盒自适应取景
+function FrameField({ cols, rows, yExtent, controls }: {
+  cols: number; rows: number; yExtent: number;
+  controls: React.MutableRefObject<{ target: THREE.Vector3; update: () => void } | null>;
 }) {
   const { camera, size } = useThree();
   const init = useRef(false);
   const settling = useRef(true);
-  const worldH = useMemo(() => Math.max(cols, rows) * PITCH * 1.18 + 2.4, [cols, rows]);
-  useEffect(() => { settling.current = true; }, [cols, rows]);
+  const span = useMemo(() => Math.max(cols, rows, yExtent), [cols, rows, yExtent]);
+  const worldH = useMemo(() => span * 1.18 + 2.4, [span]);
+  useEffect(() => { settling.current = true; }, [cols, rows, yExtent]);
   useEffect(() => {
     if (init.current || size.height < 10) return; init.current = true;
-    camera.position.set(1, 0.9, 1).normalize().multiplyScalar(Math.max(cols, rows) * PITCH * 1.4 + 8);
+    camera.position.set(1, 0.9, 1).normalize().multiplyScalar(span * 1.4 + 8);
     camera.up.set(0, 1, 0); camera.updateProjectionMatrix();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.height]);
@@ -436,7 +438,7 @@ export function CubeView({
   void showComm; void showAlert;   // P0：图层开关已接线到驾驶舱顶栏，连线渲染留待 P1
 
   // 堆叠方式 / 工况 / 注入异常 / 回放 均由工作台顶部中间控制面板驱动，本地仅作独立运行的兜底（只读）。
-  const [viewL] = useState<LayoutView>('physical');
+  const [viewL] = useState<LayoutView>('standard');
   const view = layoutP ?? viewL;
   const [workloadL] = useState<ParallelWorkload>('pretrain');
   const workload = sync?.workload ?? workloadL;
@@ -547,7 +549,7 @@ export function CubeView({
           <hemisphereLight intensity={surf.ambient} groundColor={dark ? '#10131a' : '#e8edf4'} />
           <directionalLight position={[8, 14, 6]} intensity={surf.key} />
           <directionalLight position={[-8, 8, -10]} intensity={surf.fill} />
-          <FrameField cols={aggregated ? agg.cols : lay.cols} rows={aggregated ? agg.rows : lay.rows} controls={controlsRef} />
+          <FrameField cols={aggregated ? agg.cols : lay.cols} rows={aggregated ? agg.rows : lay.rows} yExtent={aggregated ? agg.yExtent : lay.yExtent} controls={controlsRef} />
           <CubeField cells={agg.cells} colorOf={colorOf} recolorKey={recolorKey} onSettleChange={setSettling} boxXZ={boxXZ} boxY={boxY}
             selected={sel != null ? agg.unitOfRank(sel) : null} hover={hover != null ? agg.unitOfRank(hover) : null}
             onPick={(u) => setSel(u == null ? null : agg.rankOfUnit(u))} onHover={(u) => setHover(u == null ? null : agg.rankOfUnit(u))}
@@ -581,7 +583,7 @@ export function CubeView({
 
         {/* 视图说明 + 状态图例 */}
         <div style={{ position: 'absolute', left: 12, top: 12, ...card, padding: '9px 12px', maxWidth: 340, pointerEvents: 'none' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{LAYOUT_LABEL[view]}<span style={{ color: 'var(--tx3)', fontWeight: 400, fontFamily: MONO, marginLeft: 8 }}>{lay.cols}×{lay.rows}{settling ? ' · 重排中…' : ''}</span></div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{LAYOUT_LABEL[view]}<span style={{ color: 'var(--tx3)', fontWeight: 400, fontFamily: MONO, marginLeft: 8 }}>{settling ? '重排中…' : ''}</span></div>
           <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.5 }}>{lay.note}</div>
           {anom !== 'none' && (
             <div style={{ marginTop: 5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>

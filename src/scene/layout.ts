@@ -1,124 +1,162 @@
 /**
- * layout — P1 立方体重排的布局引擎（加法，纯函数，不碰渲染）。
+ * layout — 立方体重排布局引擎（P1 · 5 种 3D 堆法，纯函数，不碰渲染）。
  *
- * 「切视图 = 换一种堆法」：同一批卡（rank），按不同并行轴重新分组、摆到不同格子。
- * 本模块只算「每个 rank 在某视图下落在网格的哪一格」，派生自 deployment（→ parallelMap SSOT），
- * 不 import three、不接场景。接入 FullPodScene 是 P1 第二步（藏在 layout='physical' 默认后）。
+ * 「切视图 = 换一种堆法」：同一批卡（rank），按不同并行轴重新排布到三维空间。
+ * 5 种视图来自原型 HTML（chipCubeM v22），坐标直接以 THREE.js world unit 返回：
+ *   standard    — 标准 3D 立方，X=TP · Y=PP · Z=DP，基准对照视图
+ *   dp-tile     — DP 平铺，64 个副本排 8×8 宫格，每格内展示 TP×PP 竖板
+ *   ep-cluster  — EP 聚簇，专家 Host 成墙 · 其余压缩块
+ *   tp-slice    — TP 切片，8 张权重墙沿 X 展开
+ *   pp-pipeline — PP 流水，16 段竖板沿 X（左→右流水）
  *
- * 硬不变量（方案漏洞 #13，可单元测试、作为验收门槛）：
- *   每个视图都必须是「同一批卡的一个置换」—— 每张卡在网格里恰好占一格、不重叠、不丢失（双射）。
- * 因为每个 rank 的位置只由它「唯一的空间坐标 (pp,dp,tp)」决定（tp·pp·dp 乘积 = N），
- * 所以只要位置是这三者的函数、且不同三元组映到不同格，就天然是双射。
- *
- * EP 是塌缩轴（不是独立空间轴，见 deployment.MeshDim.kind）——所以 EP 视图按「同 EP 组相邻」
- * 排成条带，而非干净矩形，这是诚实的（EP 本就没有独立体量）。
+ * pos[rank] 直接是 Three.js 世界坐标（单位 = THREE.js unit），CubeField 不再乘 PITCH。
+ * cols/rows 是 XZ 平面的世界空间跨度（用于相机取景）；yExtent 是 Y 轴跨度。
  */
 import { deploymentOf } from './deployment';
 import { NPUS_PER_NODE, type ParallelWorkload, type ParallelConfig } from './data';
 
-export type LayoutView = 'physical' | 'tp' | 'pp' | 'dp' | 'ep';
-export const LAYOUT_VIEWS: LayoutView[] = ['physical', 'tp', 'pp', 'dp', 'ep'];
+export type LayoutView = 'standard' | 'dp-tile' | 'ep-cluster' | 'tp-slice' | 'pp-pipeline';
+export const LAYOUT_VIEWS: LayoutView[] = ['standard', 'dp-tile', 'ep-cluster', 'tp-slice', 'pp-pipeline'];
 export const LAYOUT_LABEL: Record<LayoutView, string> = {
-  physical: '物理', tp: 'TP 视图', pp: 'PP 视图', dp: 'DP 视图', ep: 'EP 视图',
+  standard:      '标准',
+  'dp-tile':     'DP 平铺',
+  'ep-cluster':  'EP 聚簇',
+  'tp-slice':    'TP 切片',
+  'pp-pipeline': 'PP 流水',
 };
 
-export interface Cell { x: number; z: number; }   // 居中的抽象网格坐标（原点在阵列中心；场景再缩放/摆放）
+/** 每个 rank 的三维世界坐标（THREE.js unit，原点居中）。 */
+export interface Cell { x: number; y: number; z: number; }
+
 export interface LayoutResult {
   view: LayoutView;
-  cols: number; rows: number;
-  pos: Cell[];      // pos[rank] —— 每个 rank 的格心
-  note: string;     // 该视图的一句话说明（含塌缩轴提示）
+  cols: number;    // XZ 平面 X 轴跨度（world unit），供相机取景
+  rows: number;    // XZ 平面 Z 轴跨度（world unit），供相机取景
+  yExtent: number; // Y 轴跨度（world unit），供相机取景
+  pos: Cell[];     // pos[rank] — 每个 rank 的三维世界坐标
+  note: string;    // 该视图的一句话说明
 }
-
-// 把整数 (col,row) 居中成抽象坐标：原点落在网格中心。
-function center(col: Int32Array, row: Int32Array, cols: number, rows: number): Cell[] {
-  const cx = (cols - 1) / 2, cz = (rows - 1) / 2;
-  const pos: Cell[] = new Array(col.length);
-  for (let k = 0; k < col.length; k++) pos[k] = { x: col[k] - cx, z: row[k] - cz };
-  return pos;
-}
-const nearCols = (n: number) => Math.max(1, Math.ceil(Math.sqrt(n)));
 
 /**
- * layoutOf — 给定视图，返回每个 rank 的网格位置（居中抽象坐标）。
- * physical 复现主机平铺（host 4×2 卡块，host 近方阵）；cube 视图按并行轴重排。
+ * layoutOf — 给定视图，返回每个 rank 的三维世界坐标（pos）和视图元信息。
+ * 坐标 = THREE.js world unit；CubeField 直接使用，不再乘 PITCH。
  */
 export function layoutOf(view: LayoutView, workload: ParallelWorkload, N: number, cfg?: ParallelConfig): LayoutResult {
   const d = deploymentOf(workload, N, cfg);
-  const TP = d.pm.groupCount('tp'), PP = d.pm.groupCount('pp'), DP = d.pm.groupCount('dp'), EP = d.pm.groupCount('ep');
+  const TP = d.pm.groupCount('tp'), PP = d.pm.groupCount('pp'), DP = d.pm.groupCount('dp');
   const HOST = NPUS_PER_NODE;
-  const col = new Int32Array(N), row = new Int32Array(N);
-  let cols = 1, rows = 1, note = '';
+  const pos: Cell[] = new Array(N);
 
-  if (view === 'physical') {
-    // 物理平铺：host = ⌊k/8⌋、slot = k%8；host 排近方阵，每 host 是 4×2 卡块。
+  const tpC = (TP - 1) / 2, ppC = (PP - 1) / 2, dpC = (DP - 1) / 2;
+  let cols = 1, rows = 1, yExtent = 0, note = '';
+
+  if (view === 'standard') {
+    // 标准 3D 立方：X=TP · Y=PP(倒序,低 stage 在顶) · Z=DP
+    for (let k = 0; k < N; k++) {
+      const c = d.coordsOf(k);
+      pos[k] = { x: (c.tp - tpC) * 1.6, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
+    }
+    cols = (TP - 1) * 1.6 + 1;
+    rows = (DP - 1) * 0.75 + 1;
+    yExtent = (PP - 1) * 1.15;
+    note = `标准立方：X=TP×${TP} · Y=PP×${PP}（模型深度，低 stage 在顶）· Z=DP×${DP}`;
+
+  } else if (view === 'dp-tile') {
+    // DP 平铺：DP 个副本排近方阵宫格，每格内 TP（横） × PP（竖，低 stage 在顶）竖板
+    const DGX = Math.max(1, Math.ceil(Math.sqrt(DP)));
+    const DGZ = Math.ceil(DP / DGX);
+    const dpGapX = TP * 1.3 + 5;   // DP 宫格间距（X）
+    const dpGapZ = PP * 0.9 + 2;   // DP 宫格间距（Z）
+    for (let k = 0; k < N; k++) {
+      const c = d.coordsOf(k);
+      const gx = c.dp % DGX, gz = Math.floor(c.dp / DGX);
+      pos[k] = {
+        x: (gx - (DGX - 1) / 2) * dpGapX + (c.tp - tpC) * 1.3,
+        y: (ppC - c.pp) * 0.9,
+        z: (gz - (DGZ - 1) / 2) * dpGapZ,
+      };
+    }
+    cols = (DGX - 1) * dpGapX + (TP - 1) * 1.3 + 1;
+    rows = (DGZ - 1) * dpGapZ + 1;
+    yExtent = (PP - 1) * 0.9;
+    note = `DP 平铺：${DP} 个副本排 ${DGX}×${DGZ} 宫格 · 每格内 TP×PP 竖板 · 「整网=一份×${DP} 份」`;
+
+  } else if (view === 'ep-cluster') {
+    // EP 聚簇：按物理 Host 指定「专家 Host」→ 右侧专家墙；其余压缩到左侧块。
+    // 专家 Host 公式（与原型 HTML 一致）：expertHostIdx = (e * step + 5) % nHosts
     const nHosts = Math.max(1, Math.ceil(N / HOST));
-    const hc = nearCols(nHosts);
-    cols = hc * 4; rows = Math.ceil(nHosts / hc) * 2;
+    const nExp = Math.max(1, Math.floor(nHosts / 16));
+    const step = Math.max(1, Math.ceil(nHosts / nExp));
+    const hostExpertIdx = new Int32Array(nHosts).fill(-1);
+    for (let e = 0; e < nExp; e++) hostExpertIdx[(e * step + 5) % nHosts] = e;
+    const EGX = Math.max(1, Math.ceil(Math.sqrt(nExp)));
+    const EGY = Math.ceil(nExp / EGX);
+
     for (let k = 0; k < N; k++) {
-      const host = Math.floor(k / HOST), slot = k % HOST;
-      col[k] = (host % hc) * 4 + (slot % 4);
-      row[k] = Math.floor(host / hc) * 2 + Math.floor(slot / 4);
+      const h = Math.floor(k / HOST), slot = k % HOST;
+      const e = hostExpertIdx[h];
+      if (e >= 0) {
+        // 专家墙（右侧）：8×8 Host 排列，每 Host 2×4 卡块
+        const ex = e % EGX, ey = Math.floor(e / EGX);
+        pos[k] = {
+          x: 15 + (ex - (EGX - 1) / 2) * 2.4 + (slot % 4) * 0.45,
+          y: ((EGY - 1) / 2 - ey) * 2.4 + ((slot >> 2) - 0.5) * 0.9,
+          z: 0,
+        };
+      } else {
+        // 非专家（左侧）：pp × dp 展开，tp 微偏移
+        const c = d.coordsOf(k);
+        pos[k] = {
+          x: -14 + (slot - (HOST - 1) / 2) * 0.9,
+          y: (ppC - c.pp) * 0.8,
+          z: (c.dp - dpC) * 0.5,
+        };
+      }
     }
-    note = '物理平铺：Host 4×2 卡块 · 与现有阵列一致';
-  } else if (view === 'tp') {
-    // TP 视图：每个 TP 组（=一台 Host 的 8 卡，同 pp·dp）聚成 4×2 块；块按 (pp,dp) 排近方阵。
-    const nB = PP * DP, bc = nearCols(nB);
-    cols = bc * 4; rows = Math.ceil(nB / bc) * 2;
-    for (let k = 0; k < N; k++) {
-      const c = d.coordsOf(k), b = c.dp * PP + c.pp;
-      col[k] = (b % bc) * 4 + (c.tp % 4);
-      row[k] = Math.floor(b / bc) * 2 + Math.floor(c.tp / 4);
-    }
-    note = `TP 视图：${PP * DP} 个 TP 组（8 卡/组）各成 4×2 块 · 张量切片贴在 Host 内`;
-  } else if (view === 'pp') {
-    // PP 视图：PP 个 stage 并排成竖板（左→右流水）；板内按 (tp 横, dp 纵) 铺满。
-    cols = PP * TP; rows = DP;
+    const expertWallX = 15 + (EGX - 1) / 2 * 2.4 + 1.5 * 0.45;
+    const nonExpertX = 14 + (HOST - 1) / 2 * 0.9;
+    cols = expertWallX + nonExpertX + 1;
+    rows = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (DP - 1) * 0.5) + 1;
+    yExtent = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (PP - 1) * 0.8);
+    note = `EP 聚簇：${nExp} 个专家 Host 成墙（右）· 其余 ${nHosts - nExp} Host 压缩块（左）· 专家域边界直观可见`;
+
+  } else if (view === 'tp-slice') {
+    // TP 切片：8 张权重墙沿 X 展开；每墙 = DP×PP 平面（一个 TP 切片的完整模型）
     for (let k = 0; k < N; k++) {
       const c = d.coordsOf(k);
-      col[k] = c.pp * TP + c.tp;
-      row[k] = c.dp;
+      pos[k] = { x: (c.tp - tpC) * 7, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
     }
-    note = `PP 视图：${PP} 个 stage 并排竖板（左→右流水）· 板内 ${TP}×${DP}`;
-  } else if (view === 'dp') {
-    // DP 视图：每个 DP 副本成一个 TP×PP 矩形块；块按近方阵平铺 → 「整网 = 一份 × N 副本」直观可见。
-    const bc = nearCols(DP);
-    cols = bc * TP; rows = Math.ceil(DP / bc) * PP;
-    for (let k = 0; k < N; k++) {
-      const c = d.coordsOf(k);
-      col[k] = (c.dp % bc) * TP + c.tp;
-      row[k] = Math.floor(c.dp / bc) * PP + c.pp;
-    }
-    note = `DP 视图：${DP} 个相同副本各成 ${TP}×${PP} 块 · 整网 = 一份 × ${DP}`;
+    cols = (TP - 1) * 7 + 1;
+    rows = (DP - 1) * 0.75 + 1;
+    yExtent = (PP - 1) * 1.15;
+    note = `TP 切片：${TP} 张权重墙沿 X 展开 · 每墙内 Y=PP×${PP} · Z=DP×${DP} · 张量分片一目了然`;
+
   } else {
-    // EP 视图：EP 是塌缩轴（无独立体量）→ 按「同 EP 组相邻」排成条带，非干净矩形（诚实反映塌缩）。
-    // key = ((ep·DP + dp)·PP + pp)·TP + tp —— 含唯一空间三元组，天然可排序且双射。
-    const order = Array.from({ length: N }, (_, k) => k);
-    const keyOf = (k: number): number => { const c = d.coordsOf(k); return ((c.ep * DP + c.dp) * PP + c.pp) * TP + c.tp; };
-    order.sort((a, b) => keyOf(a) - keyOf(b));
-    const C = nearCols(N);
-    cols = C; rows = Math.ceil(N / C);
-    for (let ord = 0; ord < N; ord++) { const k = order[ord]; col[k] = ord % C; row[k] = Math.floor(ord / C); }
-    note = `EP 视图：${EP} 组按「同组相邻」排成条带（EP 为塌缩轴、无独立矩形体量）`;
+    // PP 流水（pp-pipeline）：PP 段竖板沿 X 展开（左→右流水方向）；TP 沿 Y · DP 沿 Z
+    for (let k = 0; k < N; k++) {
+      const c = d.coordsOf(k);
+      pos[k] = { x: (c.pp - ppC) * 6.2, y: (c.tp - tpC) * 1.2, z: (c.dp - dpC) * 0.75 };
+    }
+    cols = (PP - 1) * 6.2 + 1;
+    rows = (DP - 1) * 0.75 + 1;
+    yExtent = (TP - 1) * 1.2;
+    note = `PP 流水：${PP} 段竖板从左（stage 0）到右（stage ${PP - 1}）展开 · Y=TP×${TP} · Z=DP×${DP}`;
   }
 
-  return { view, cols, rows, pos: center(col, row, cols, rows), note };
+  return { view, cols, rows, yExtent, pos, note };
 }
 
 /**
- * verifyBijection — 校验一个布局是「同一批卡的置换」（每格 ≤1 张卡、共 N 张、都在网格内）。
+ * verifyBijection — 校验布局是「同一批卡的置换」（每个三维位置最多一张卡）。
  * 供测试/自检使用；返回 { ok, reason }。
  */
 export function verifyBijection(r: LayoutResult, N: number): { ok: boolean; reason: string } {
   if (r.pos.length !== N) return { ok: false, reason: `pos 数量 ${r.pos.length} ≠ N ${N}` };
-  const seen = new Set<number>();
-  const cx = (r.cols - 1) / 2, cz = (r.rows - 1) / 2;
+  const seen = new Set<string>();
   for (let k = 0; k < N; k++) {
-    const c = Math.round(r.pos[k].x + cx), rw = Math.round(r.pos[k].z + cz);
-    if (c < 0 || c >= r.cols || rw < 0 || rw >= r.rows) return { ok: false, reason: `rank ${k} 越界 (${c},${rw}) / ${r.cols}×${r.rows}` };
-    const cell = rw * r.cols + c;
-    if (seen.has(cell)) return { ok: false, reason: `格 (${c},${rw}) 被占两次（rank ${k} 冲突）` };
-    seen.add(cell);
+    const key = `${r.pos[k].x.toFixed(3)},${r.pos[k].y.toFixed(3)},${r.pos[k].z.toFixed(3)}`;
+    if (seen.has(key)) return { ok: false, reason: `位置 (${key}) 被 rank ${k} 重叠` };
+    seen.add(key);
   }
-  return { ok: true, reason: `${N} 张卡各占一格（${r.cols}×${r.rows}=${r.cols * r.rows} 格）` };
+  return { ok: true, reason: `${N} 张卡各占唯一三维位置` };
 }

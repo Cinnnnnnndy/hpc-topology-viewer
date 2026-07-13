@@ -681,7 +681,7 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
   const [hover, setHover] = useState<string | null>(null);
   // ── 统一驾驶舱增量（仅 workbench profile 启用）：右侧时空折叠魔方 · 左侧诊断抽屉 ──
   const [cubeMode, setCubeMode] = useState(false);          // 右画布：物理机柜(false) ⇄ 时空折叠魔方(true)
-  const [cubeLayout, setCubeLayout] = useState<LayoutView>('physical');
+  const [cubeLayout, setCubeLayout] = useState<LayoutView>('standard');
   const [leftLower, setLeftLower] = useState<'core' | 'monitor' | 'comm'>('core');   // 左下抽屉：L0 核组 / 双模监控 / 通信深潜
   const [monMode, setMonMode] = useState<'heat' | 'replay'>('heat');
   const [stepL, setStepL] = useState(0);
