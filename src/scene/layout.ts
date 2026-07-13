@@ -50,16 +50,37 @@ export function layoutOf(view: LayoutView, workload: ParallelWorkload, N: number
   const tpC = (TP - 1) / 2, ppC = (PP - 1) / 2, dpC = (DP - 1) / 2;
   let cols = 1, rows = 1, yExtent = 0, note = '';
 
+  // DP 折叠：DP 很大时（如 Decode/Prefill：PP=1、DP=1024），把 DP 摆在单轴会退化成一条极长的细线。
+  //   → DP>128 时折成近方格铺在平面，任何工况都渲染成紧凑的立体块而非细线；平衡工况（预训练 DP=64）保持经典三轴立方。
+  const foldDP = DP > 128;
+  const dgx = Math.max(1, Math.ceil(Math.sqrt(DP)));   // DP 折叠网格列数
+  const dgz = Math.ceil(DP / dgx);                      // DP 折叠网格行数
+  const dpGX = (dp: number) => (dp % dgx) - (dgx - 1) / 2;         // 居中列偏移
+  const dpGZ = (dp: number) => Math.floor(dp / dgx) - (dgz - 1) / 2; // 居中行偏移
+
   if (view === 'standard') {
-    // 标准 3D 立方：X=TP · Y=PP(倒序,低 stage 在顶) · Z=DP
-    for (let k = 0; k < N; k++) {
-      const c = d.coordsOf(k);
-      pos[k] = { x: (c.tp - tpC) * 1.6, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
+    if (!foldDP) {
+      // 平衡工况（预训练 TP8×PP16×DP64）：经典 3D 立方 X=TP · Y=PP(倒序,低 stage 在顶) · Z=DP
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = { x: (c.tp - tpC) * 1.6, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
+      }
+      cols = (TP - 1) * 1.6 + 1;
+      rows = (DP - 1) * 0.75 + 1;
+      yExtent = (PP - 1) * 1.15;
+      note = `标准立方：X=TP×${TP} · Y=PP×${PP}（模型深度，低 stage 在顶）· Z=DP×${DP}`;
+    } else {
+      // 大 DP（Decode/Prefill）：DP 折成 dgx×dgz 铺地；(PP,TP) 併成高度 → 紧凑立体块
+      const hCount = TP * PP, hC = (hCount - 1) / 2;
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = { x: dpGX(c.dp) * 1.4, y: (hC - (c.pp * TP + c.tp)) * 1.2, z: dpGZ(c.dp) * 1.4 };
+      }
+      cols = (dgx - 1) * 1.4 + 1;
+      rows = (dgz - 1) * 1.4 + 1;
+      yExtent = (hCount - 1) * 1.2;
+      note = `标准立方：DP×${DP} 折成 ${dgx}×${dgz} 铺地（避免退化成细线）· 高度=TP×${TP}${PP > 1 ? `×PP×${PP}` : ''}`;
     }
-    cols = (TP - 1) * 1.6 + 1;
-    rows = (DP - 1) * 0.75 + 1;
-    yExtent = (PP - 1) * 1.15;
-    note = `标准立方：X=TP×${TP} · Y=PP×${PP}（模型深度，低 stage 在顶）· Z=DP×${DP}`;
 
   } else if (view === 'dp-tile') {
     // DP 平铺：DP 个副本排近方阵宫格，每格内 TP（横） × PP（竖，低 stage 在顶）竖板
@@ -104,43 +125,75 @@ export function layoutOf(view: LayoutView, workload: ParallelWorkload, N: number
           z: 0,
         };
       } else {
-        // 非专家（左侧）：pp × dp 展开，tp 微偏移
+        // 非专家（左侧压缩块）：DP 折成方格铺地（避免 DP 大时退化成细线）· (PP,TP) 併成高度
         const c = d.coordsOf(k);
+        const hCount = TP * PP, hC = (hCount - 1) / 2;
         pos[k] = {
-          x: -14 + (slot - (HOST - 1) / 2) * 0.9,
-          y: (ppC - c.pp) * 0.8,
-          z: (c.dp - dpC) * 0.5,
+          x: -14 - ((dgx - 1) / 2) * 1.0 + (dpGX(c.dp) + (dgx - 1) / 2) * 1.0,
+          y: (hC - (c.pp * TP + c.tp)) * 0.9,
+          z: dpGZ(c.dp) * 1.0,
         };
       }
     }
     const expertWallX = 15 + (EGX - 1) / 2 * 2.4 + 1.5 * 0.45;
-    const nonExpertX = 14 + (HOST - 1) / 2 * 0.9;
+    const nonExpertX = 14 + (dgx - 1) * 1.0;
     cols = expertWallX + nonExpertX + 1;
-    rows = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (DP - 1) * 0.5) + 1;
-    yExtent = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (PP - 1) * 0.8);
-    note = `EP 聚簇：${nExp} 个专家 Host 成墙（右）· 其余 ${nHosts - nExp} Host 压缩块（左）· 专家域边界直观可见`;
+    rows = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (dgz - 1) * 1.0) + 1;
+    yExtent = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (TP * PP - 1) * 0.9);
+    note = `EP 聚簇：${nExp} 个专家 Host 成墙（右）· 其余 ${nHosts - nExp} Host 压缩块（左，DP 折 ${dgx}×${dgz}）· 专家域边界直观可见`;
 
   } else if (view === 'tp-slice') {
-    // TP 切片：8 张权重墙沿 X 展开；每墙 = DP×PP 平面（一个 TP 切片的完整模型）
-    for (let k = 0; k < N; k++) {
-      const c = d.coordsOf(k);
-      pos[k] = { x: (c.tp - tpC) * 7, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
+    if (!foldDP) {
+      // TP 切片：${TP} 张权重墙沿 X 展开；每墙 = DP×PP 平面（一个 TP 切片的完整模型）
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = { x: (c.tp - tpC) * 7, y: (ppC - c.pp) * 1.15, z: (c.dp - dpC) * 0.75 };
+      }
+      cols = (TP - 1) * 7 + 1;
+      rows = (DP - 1) * 0.75 + 1;
+      yExtent = (PP - 1) * 1.15;
+      note = `TP 切片：${TP} 张权重墙沿 X 展开 · 每墙内 Y=PP×${PP} · Z=DP×${DP} · 张量分片一目了然`;
+    } else {
+      // 大 DP：每张 TP 墙 = DP 折叠面（DP 折成 dgz 行 × dgx 列铺在 Y-Z）；PP 併入 Z 分层
+      const wallGapX = dgx * 0.9 + 5;   // 墙间距（含墙宽）
+      const ppLayerZ = dgx * 0.9 + 2;   // PP>1 时的分层深度
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = {
+          x: (c.tp - tpC) * wallGapX,
+          y: -dpGZ(c.dp) * 1.0,
+          z: dpGX(c.dp) * 0.9 + (c.pp - ppC) * ppLayerZ,
+        };
+      }
+      cols = (TP - 1) * wallGapX + dgx * 0.9 + 1;
+      rows = dgx * 0.9 + (PP - 1) * ppLayerZ + 1;
+      yExtent = (dgz - 1) * 1.0;
+      note = `TP 切片：${TP} 张权重墙沿 X 展开 · 每墙内 DP×${DP} 折成 ${dgz}×${dgx} 面 · 张量分片一目了然`;
     }
-    cols = (TP - 1) * 7 + 1;
-    rows = (DP - 1) * 0.75 + 1;
-    yExtent = (PP - 1) * 1.15;
-    note = `TP 切片：${TP} 张权重墙沿 X 展开 · 每墙内 Y=PP×${PP} · Z=DP×${DP} · 张量分片一目了然`;
 
   } else {
-    // PP 流水（pp-pipeline）：PP 段竖板沿 X 展开（左→右流水方向）；TP 沿 Y · DP 沿 Z
-    for (let k = 0; k < N; k++) {
-      const c = d.coordsOf(k);
-      pos[k] = { x: (c.pp - ppC) * 6.2, y: (c.tp - tpC) * 1.2, z: (c.dp - dpC) * 0.75 };
+    if (!foldDP) {
+      // PP 流水（pp-pipeline）：PP 段竖板沿 X 展开（左→右流水方向）；TP 沿 Y · DP 沿 Z
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = { x: (c.pp - ppC) * 6.2, y: (c.tp - tpC) * 1.2, z: (c.dp - dpC) * 0.75 };
+      }
+      cols = (PP - 1) * 6.2 + 1;
+      rows = (DP - 1) * 0.75 + 1;
+      yExtent = (TP - 1) * 1.2;
+      note = `PP 流水：${PP} 段竖板从左（stage 0）到右（stage ${PP - 1}）展开 · Y=TP×${TP} · Z=DP×${DP}`;
+    } else {
+      // 大 DP（Decode/Prefill：PP=1 单段）：每 PP 段 = DP 折叠板铺地 · TP 沿 Y
+      const stageGapX = dgx * 1.4 + 6;
+      for (let k = 0; k < N; k++) {
+        const c = d.coordsOf(k);
+        pos[k] = { x: (c.pp - ppC) * stageGapX + dpGX(c.dp) * 1.4, y: (c.tp - tpC) * 1.2, z: dpGZ(c.dp) * 1.4 };
+      }
+      cols = (PP - 1) * stageGapX + (dgx - 1) * 1.4 + 1;
+      rows = (dgz - 1) * 1.4 + 1;
+      yExtent = (TP - 1) * 1.2;
+      note = `PP 流水：${PP} 段${PP > 1 ? '沿 X 展开' : '（本工况无流水）'} · 每段 DP×${DP} 折成 ${dgx}×${dgz} 铺地 · 高度=TP×${TP}`;
     }
-    cols = (PP - 1) * 6.2 + 1;
-    rows = (DP - 1) * 0.75 + 1;
-    yExtent = (TP - 1) * 1.2;
-    note = `PP 流水：${PP} 段竖板从左（stage 0）到右（stage ${PP - 1}）展开 · Y=TP×${TP} · Z=DP×${DP}`;
   }
 
   return { view, cols, rows, yExtent, pos, note };
