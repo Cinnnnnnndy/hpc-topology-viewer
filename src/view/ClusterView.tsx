@@ -29,7 +29,19 @@ import {
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
-import { CubeCockpit } from './CubeCockpit';
+import { CubeCockpit, type CockpitCmd, type CockpitState } from './CubeCockpit';
+
+// 立方重排驾驶舱工具栏 → 宿主 Decode 面板的桥接项（原型内按钮已隐藏，改由这些代理按钮驱动）
+const CUBE_LENS: [string, string][] = [
+  ['NONE', '健康度'], ['TP', 'TP×8'], ['PP', 'PP×16'], ['DP', 'DP×64'],
+  ['EP', 'EP·MoE'], ['SP', 'SP·序列'], ['CP', 'CP·上下文'], ['JOB', '任务·部署'],
+];
+const CUBE_WIRE: [string, string][] = [
+  ['AUTO', '自动·随阶段'], ['COMM', '通信域'], ['FLOW', '互联流量'], ['LINK', '物理链路'], ['PATH', '消息路径'],
+];
+const CUBE_SCRIPT: [string, string][] = [
+  ['scPatrol', '巡检大盘'], ['scMoe', 'MoE 越界'], ['scSlow', '慢 DP 副本'], ['scDeep', '单机深潜'], ['scDeploy', '部署审视'],
+];
 import { ConsoleView } from './ConsoleView';
 import { CommView } from './CommView';
 
@@ -352,7 +364,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [statusRelHi, setStatusRelHi] = useState(true);
   const [commScope, setCommScope] = useState<'intra' | 'inter'>('intra');
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
-  // 立方重排(cube) 现内嵌统一驾驶舱原型（CubeCockpit·自带全部控制），无需宿主侧筛选状态。
+  // 立方重排(cube) 内嵌统一驾驶舱原型：工具栏桥接到宿主 Decode 面板。
+  const cockpitCmd = useRef<((c: CockpitCmd) => void) | null>(null);
+  const [cockpitState, setCockpitState] = useState<CockpitState>({ lens: 'NONE', wire: 'AUTO', anom: false });
 
 
   useEffect(() => {
@@ -562,11 +576,54 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                     title={ctrlBarOpen ? '收起全局控制' : '展开全局控制'}
                   >
                     <span className={`hpc-wb-ctrl-dot${syncPlaying ? ' hpc-wb-ctrl-dot--breath' : ''}`} />
-                    <span>{wlLabels[syncWorkload]}</span>
+                    <span>{mode === 'cube' ? '立方重排' : wlLabels[syncWorkload]}</span>
                     <span className="hpc-wb-ctrl-chevron">{ctrlBarOpen ? '▴' : '▾'}</span>
                   </button>
                   {ctrlBarOpen && (
                     <div className="hpc-wb-ctrl-dropdown">
+                      {/* ── 立方重排：驾驶舱工具栏（着色透镜/连线镜头/剧本/演练/重置）桥接到此，替代工况/回放/代际（对立方不适用） ── */}
+                      {mode === 'cube' && (() => {
+                        const cbtn = { padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer' } as React.CSSProperties;
+                        const send = (c: CockpitCmd) => cockpitCmd.current?.(c);
+                        return (
+                          <>
+                            <div className="hpc-wb-ctrl-group">
+                              <span className="hpc-wb-ctrl-label">着色·透镜</span>
+                              <div className="hpc-wb-ctrl-btns">
+                                {CUBE_LENS.map(([v, l]) => (
+                                  <button key={v} onClick={() => send({ cmd: 'lens', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.lens === v) }}>{l}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="hpc-wb-ctrl-group">
+                              <span className="hpc-wb-ctrl-label">连线·镜头</span>
+                              <div className="hpc-wb-ctrl-btns">
+                                {CUBE_WIRE.map(([v, l]) => (
+                                  <button key={v} onClick={() => send({ cmd: 'wire', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.wire === v) }}>{l}</button>
+                                ))}
+                                <button onClick={() => send({ cmd: 'matrix' })} style={{ ...cbtn, ...navBtn(false) }}>▦ 矩阵</button>
+                              </div>
+                            </div>
+                            <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
+                            <div className="hpc-wb-ctrl-group">
+                              <span className="hpc-wb-ctrl-label">剧本</span>
+                              <div className="hpc-wb-ctrl-btns">
+                                {CUBE_SCRIPT.map(([id, l]) => (
+                                  <button key={id} onClick={() => send({ cmd: 'script', value: id })} style={{ ...cbtn, ...navBtn(false) }}>{l}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="hpc-wb-ctrl-group">
+                              <span className="hpc-wb-ctrl-label">演练</span>
+                              <div className="hpc-wb-ctrl-btns">
+                                <button onClick={() => send({ cmd: 'anom' })} style={{ ...cbtn, ...(cockpitState.anom ? { border: '1px solid #ff4b7b', background: '#ff4b7b', color: '#fff' } : navBtn(false)) }}>注入 EP 异常</button>
+                                <button onClick={() => send({ cmd: 'reset' })} style={{ ...cbtn, ...navBtn(false) }}>⟲ 重置</button>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {mode !== 'cube' && (<>
                       <div className="hpc-wb-ctrl-group">
                         <span className="hpc-wb-ctrl-label">工况</span>
                         <div className="hpc-wb-ctrl-btns">
@@ -611,8 +668,8 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                           ))}
                         </div>
                       </div>
+                      </>)}
                       {/* ── mode-specific controls ── */}
-                      {/* 立方重排：控制内建于驾驶舱原型本身，宿主侧不再重复提供 */}
                       {(mode === 'topology' || (mode === 'node' && nodeKind === 'compute') || mode === 'fullpod') && (
                         <div className="hpc-wb-ctrl-group">
                           <span className="hpc-wb-ctrl-label">叠加</span>
@@ -940,7 +997,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           {mode === 'console' && <ConsoleView gen={gen} dark={dark} sync={viewSync} lens={consoleLens} setLens={setConsoleLens} dir={consoleDir} setDir={setConsoleDir} />}
 
           {/* 立方重排 — 内嵌 AI Infra 统一 3D 拓扑驾驶舱（完整原型 · 自带全部功能）(overlays the 3-D canvas) */}
-          {mode === 'cube' && <CubeCockpit dark={dark} />}
+          {mode === 'cube' && <CubeCockpit dark={dark} cmdApiRef={cockpitCmd} onState={setCockpitState} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}

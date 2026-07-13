@@ -2645,7 +2645,8 @@ requestAnimationFrame(loop);
    ④ 左右主分栏可拖拽调节（苹果分屏式）
    ============================================================ */
 :root { --radius-lg: 14px; --radius-md: 10px; }
-#topbar .title, #topbar #btnTheme { display: none !important; }
+/* 工具栏整体交给宿主顶栏（着色透镜/连线镜头/剧本/演练/重置 已桥接到宿主 Decode 面板） */
+#topbar { display: none !important; }
 
 /* 舞台底：卡片浮在与项目一致的底色之上 */
 body { background: var(--sys-bg); }
@@ -2750,6 +2751,42 @@ body { background: var(--sys-bg); }
     var d = ev && ev.data;
     if (d && d.type === 'cockpit-theme') setTheme(d.theme);
   });
+})();
+</script>
+<!-- ── 工具栏桥：把驾驶舱工具栏（着色透镜 / 连线镜头 / 剧本 / 演练 / 重置）交给宿主顶栏驱动 ──
+     宿主发 {type:'cockpit-cmd', cmd, value} → 这里点对应按钮（隐藏也能触发）；
+     变更后回报 {type:'cockpit-state', lens, wire, anom} 供宿主高亮。 -->
+<script>
+(function () {
+  function reportState() {
+    try {
+      var lensOn = document.querySelector('.lensbtn.on');
+      var wireOn = document.querySelector('.wirebtn.on');
+      var anom = document.getElementById('btnAnom');
+      parent.postMessage({
+        type: 'cockpit-state',
+        lens: lensOn ? lensOn.getAttribute('data-lens') : 'NONE',
+        wire: wireOn ? wireOn.getAttribute('data-wire') : 'AUTO',
+        anom: !!(anom && anom.classList.contains('on'))
+      }, '*');
+    } catch (e) {}
+  }
+  window.addEventListener('message', function (ev) {
+    var d = ev && ev.data; if (!d || d.type !== 'cockpit-cmd') return;
+    var el = null;
+    if (d.cmd === 'lens') el = document.querySelector('.lensbtn[data-lens="' + d.value + '"]');
+    else if (d.cmd === 'wire') el = document.querySelector('.wirebtn[data-wire="' + d.value + '"]');
+    else if (d.cmd === 'script') el = document.getElementById(d.value);
+    else if (d.cmd === 'anom') el = document.getElementById('btnAnom');
+    else if (d.cmd === 'reset') el = document.getElementById('scReset');
+    else if (d.cmd === 'matrix') el = document.getElementById('btnMx');
+    if (el) el.click();
+    setTimeout(reportState, 90);
+  });
+  // 就绪后首次上报（等驾驶舱按钮挂好）
+  var tries = 0, t = setInterval(function () {
+    if (document.querySelector('.lensbtn') || ++tries > 40) { clearInterval(t); reportState(); }
+  }, 150);
 })();
 </script>
 </body>
