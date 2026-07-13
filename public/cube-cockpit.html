@@ -1234,13 +1234,26 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
   memMesh.setMatrixAt(h,dummy.matrix);
   memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xf85149: memLevel[h]>.75?0xd29922:0x39c5cf)); }
 scene.add(memMesh);
-// 场地文字标牌
+// 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
-  const cv=document.createElement('canvas'); cv.width=512; cv.height=96;
-  const c=cv.getContext('2d'); c.font='600 40px sans-serif'; c.fillStyle=color;
-  c.textAlign='center'; c.fillText(text,256,62);
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthTest:false}));
-  sp.scale.set(w,w*96/512,1); return sp;
+  const SS = 4, fontPx = 44, padX = 16, padY = 12;   // 超采样 4×
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
+  const tw = Math.ceil(meas.measureText(text).width) + padX * 2;
+  const th = fontPx + padY * 2;
+  const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
+  const c = cv.getContext('2d'); c.scale(SS, SS);
+  c.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
+  c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(text, tw / 2, th / 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch (e) {}
+  tex.needsUpdate = true;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const worldW = w * tw / 512;                        // 保持与原 512px 画布一致的世界尺寸
+  sp.scale.set(worldW, worldW * th / tw, 1); return sp;
 }
 { const l1=makeLabel('SN0 · 本超节点 8192 NPU','#9ecbff',26); l1.position.set(0,9.5,0); physGroup.add(l1);
   const l2=makeLabel('Service Pool · SN0-7','#58a6ff',22); l2.position.set(126,7.5,-19); physGroup.add(l2);
