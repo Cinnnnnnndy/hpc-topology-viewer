@@ -1136,18 +1136,36 @@ function chipCube(c,out){ return chipCubeM(c, cubeMode, out); }
 /* ---- 场景静态物 ---- */
 const physGroup = new THREE.Group(); scene.add(physGroup);
 function reg(mat, base){ mat.userData.base = base; mat.transparent = true; mat.opacity = base; return mat; }
-const grid = new THREE.GridHelper(760, 76, 0x243147, 0x131a26);
-grid.position.set(FIELD.x, -.02, FIELD.z); reg(grid.material,.85); physGroup.add(grid);
+// 场地参考网格：GridHelper 把颜色烘进几何，改主题须重建。深色维持原色；浅色用淡灰蓝，避免白底上出现刺眼的深色大网格。
+let grid = null;
+function buildGrid(dark){
+  if(grid){ physGroup.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  grid = new THREE.GridHelper(760, 76, dark?0x243147:0xc2ccdb, dark?0x131a26:0xdbe2ec);
+  grid.position.set(FIELD.x, -.02, FIELD.z);
+  reg(grid.material, dark?0.85:0.45);
+  physGroup.add(grid);
+}
+buildGrid(isDark());
 // 其余 63 个超节点（L6/L5 · 缩略体块）
 const podGeo = new THREE.BoxGeometry(31,6.5,22);
 const podMat = reg(new THREE.MeshLambertMaterial({color:0xffffff, depthWrite:false}), .20);
 const pods = new THREE.InstancedMesh(podGeo, podMat, 63);
+let podGhostEdges;
 { const tr=[]; for(let i=0;i<63;i++){ const p=podXZ(i+1);
     dummy.position.set(p.x,3.25,p.z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
     dummy.updateMatrix(); pods.setMatrixAt(i,dummy.matrix);
-    pods.setColorAt(i, cTmp.set(0x1c232e)); tr.push({x:p.x,y:3.25,z:p.z}); }
+    tr.push({x:p.x,y:3.25,z:p.z}); }
   physGroup.add(pods);
-  physGroup.add(mergedEdges(podGeo, tr, 0x2d3644, .5)); }
+  podGhostEdges = mergedEdges(podGeo, tr, 0x2d3644, .5); physGroup.add(podGhostEdges); }
+// 63 个缩略超节点（场地远景）：深色维持原样；浅色改淡灰，避免白底上一大片深色棱线（“灰钻石”）。
+function colorGhostPods(dark){
+  for(let i=0;i<63;i++) pods.setColorAt(i, cTmp.set(dark?0x1c232e:0xe6ebf2));
+  if(pods.instanceColor) pods.instanceColor.needsUpdate = true;
+  podGhostEdges.material.color.set(dark?0x2d3644:0xd4dbe6);
+  podGhostEdges.material.opacity = dark?0.5:0.28;
+  podGhostEdges.material.userData.base = dark?0.5:0.28;
+}
+colorGhostPods(isDark());
 function mergedEdges(geo, translations, color, opacity){
   const e = new THREE.EdgesGeometry(geo), src = e.attributes.position.array, n = src.length;
   const all = new Float32Array(n*translations.length);
@@ -2521,10 +2539,13 @@ function applyTheme(dark){
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
   $('#btnTheme').textContent = dark ? '🌙' : '☀';
   COL.DIM = dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.22)';
-  scene.fog.color.set(dark ? 0x010409 : 0xd9e1ec);
-  scene.fog.near = dark ? 300 : 200; scene.fog.far = dark ? 1600 : 1200;
-  ambientLight.color.set(dark ? 0x93a4c0 : 0xc8d4e0);
-  ambientLight.intensity = dark ? 0.95 : 0.85;
+  // 浅色对齐工作台白场：雾用近白 #eef1f5 而非发蓝的 #d9e1ec，远端拉远减少灰霾
+  scene.fog.color.set(dark ? 0x010409 : 0xeef1f5);
+  scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
+  ambientLight.color.set(dark ? 0x93a4c0 : 0xdfe6f0);
+  ambientLight.intensity = dark ? 0.95 : 0.92;
+  buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
+  colorGhostPods(dark);   // 63 缩略超节点随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   touchLeft(); requestAnimationFrame(()=>{ renderL3(); renderL2(); renderL4(); drawArcs(); });
 }
 $('#btnTheme').onclick = () => applyTheme(isDark() ? false : true);
@@ -2603,10 +2624,99 @@ requestAnimationFrame(loop);
      · 去掉原型自带明暗按钮（主题由宿主统一驱动）
      · 顶栏去掉独立背景/下边框，与宿主顶栏连成一条，不再是「叠在下面的第二行」 -->
 <style id="host-fusion">
-  #topbar .title { display: none !important; }
-  #topbar #btnTheme { display: none !important; }
-  #topbar { background: transparent !important; border-bottom: none !important; }
+/* ============================================================
+   宿主融合 · 工作台卡片化布局（对齐 HPC 拓扑查看器 pto.css）
+   ① 去原型自带产品名/主题钮（宿主标签页已标「立方重排」、主题由宿主统一驱动）
+   ② 所有面板卡片化：圆角 + 描边 + 阴影，靠 8px 间距分隔，不再用分割线
+   ③ 舞台/卡片配色、圆角(14px) 对齐项目
+   ④ 左右主分栏可拖拽调节（苹果分屏式）
+   ============================================================ */
+:root { --radius-lg: 14px; --radius-md: 10px; }
+#topbar .title, #topbar #btnTheme { display: none !important; }
+
+/* 舞台底：卡片浮在与项目一致的底色之上 */
+body { background: var(--sys-bg); }
+#app { padding: 8px; gap: 8px; background: var(--sys-bg); }
+
+/* 顶栏 / 场景栏 卡片化（去下分割线） */
+#topbar, #scenbar {
+  border: 1px solid var(--sys-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  background: var(--panel) !important;
+}
+#topbar { height: auto; min-height: var(--comp-toolbar-h); }
+
+/* 主区：左右卡片间用间距分隔 */
+#main { gap: 8px; }
+#left {
+  border: 1px solid var(--sys-border) !important;
+  border-right: 1px solid var(--sys-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  background: var(--panel) !important;
+}
+#right {
+  border: 1px solid var(--sys-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  overflow: hidden;
+}
+/* 底部时间轴 / 抽屉泳道 卡片化（去上分割线） */
+#footer, #drawer {
+  border: 1px solid var(--sys-border) !important;
+  border-top: 1px solid var(--sys-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card) !important;
+  background: var(--panel) !important;
+}
+
+/* 左右分栏拖拽手柄（苹果分屏式） */
+#splitH {
+  width: 8px; flex-shrink: 0; cursor: col-resize; align-self: stretch;
+  position: relative; background: transparent; transition: background .15s; border-radius: var(--radius-pill);
+}
+#splitH::before {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 3px; height: 34px; border-radius: 2px; background: var(--sys-border-strong); opacity: .5; transition: .15s;
+}
+#splitH:hover { background: color-mix(in srgb, var(--sys-accent) 12%, transparent); }
+#splitH:hover::before { opacity: 1; background: var(--sys-accent); height: 48px; }
+
+/* ── 浅色配色对齐工作台（深色维持原样）── */
+:root[data-theme="light"] {
+  --sys-bg: #f5f6f8; --sys-sunken: #eef1f5;
+  --sys-raised: #f2f4f7; --sys-raised-hover: #e9edf3;
+  --sys-border: rgba(14, 18, 27, .11); --sys-border-strong: rgba(14, 18, 27, .18);
+  /* 3D 舞台底：干净近白（对齐工作台白场 3D），去掉原本发灰发蓝的渐变 */
+  --sys-stage-bg: radial-gradient(ellipse at 50% 26%, #ffffff 0%, #eef1f5 82%);
+}
 </style>
+<!-- 左右分栏可拖拽（苹果分屏式，拖动后派发 resize 让 3D 画布重算） -->
+<script>
+(function () {
+  function initSplit() {
+    var main = document.getElementById('main'),
+        left = document.getElementById('left'),
+        right = document.getElementById('right');
+    if (!main || !left || !right || document.getElementById('splitH')) return;
+    var h = document.createElement('div'); h.id = 'splitH';
+    main.insertBefore(h, right);
+    var dragging = false;
+    h.addEventListener('mousedown', function (e) { dragging = true; e.preventDefault(); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; });
+    window.addEventListener('mousemove', function (e) {
+      if (!dragging) return;
+      var r = main.getBoundingClientRect();
+      var w = Math.max(280, Math.min(r.width - 360, e.clientX - r.left - 4));
+      left.style.width = w + 'px'; left.style.flexShrink = '0';
+      window.dispatchEvent(new Event('resize'));   // 让原型 resize() 重算 3D 画布
+    });
+    window.addEventListener('mouseup', function () { if (dragging) { dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; window.dispatchEvent(new Event('resize')); } });
+  }
+  if (document.readyState !== 'loading') initSplit();
+  else document.addEventListener('DOMContentLoaded', initSplit);
+})();
+</script>
 <!-- ── 主题桥：随宿主项目（HPC 拓扑查看器）明暗切换 ──
      初始从 URL ?theme=dark|light 读取；运行中由父窗口 postMessage({type:'cockpit-theme',theme}) 驱动。 -->
 <script>
