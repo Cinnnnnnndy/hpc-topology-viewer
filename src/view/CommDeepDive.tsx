@@ -37,7 +37,7 @@ function ringSVG(on: boolean): { html: string; note: string; noteRed: boolean } 
     h += seg([RA[1][0], RA[1][1] + 4], [RB[0][0], RB[0][1] + 4], '#f85149', 3.4, true);
     h += seg([RB[3][0], RB[3][1] - 3], [RA[2][0], RA[2][1] - 3], '#f85149', 3.4, true);
     h += seg([RB[3][0], RB[3][1] + 4], [RA[2][0], RA[2][1] + 4], '#f85149', 3.4, true);
-    h += `<text x="360" y="52" fill="#f85149" font-size="11" text-anchor="middle">⚠ 全部环挤在同一对节点跨域：需求 1.6 Tbps / 链路</text>`;
+    h += `<text x="360" y="52" fill="#f85149" font-size="11" text-anchor="middle">全部环挤在同一对节点跨域：需求 1.6 Tbps / 链路</text>`;
     note = '无散射：环先在各域内构建，再用松散端跨域拼接（跨域链路数恒为 2×(nDC−1)）。但所有环都从同一对节点跨越慢链路——4 GPU×400Gbps 全压到单链路，成为整个集合的瓶颈，对应泳道图上的暴露气泡。'; noteRed = true;
   } else {
     h += seg(RA[1], RB[0], '#3fb950', 2, true);
@@ -101,7 +101,7 @@ function BusbwCanvas({ dark }: { dark: boolean }) {
       const plot = (d: number[], col: string) => { x.strokeStyle = col; x.lineWidth = 2; x.beginPath(); d.forEach((v, i) => i ? x.lineTo(X(i), Y(v)) : x.moveTo(X(i), Y(v))); x.stroke(); };
       plot(good, '#3fb950'); plot(bad, '#f85149');
       x.fillStyle = '#f85149'; x.beginPath(); x.arc(X(19), Y(48), 4, 0, 7); x.fill();
-      x.textAlign = 'center'; x.fillText('峰值 48 → 回落 34 ⚠ ECMP 哈希不均', X(17), Y(48) - 14);
+      x.textAlign = 'center'; x.fillText('峰值 48 → 回落 34 ECMP 哈希不均', X(17), Y(48) - 14);
       x.textAlign = 'left'; x.fillStyle = '#f85149'; x.fillText('— 优化前（跨轨接线，交换机间链路拥堵）', padL + 6, padT + 8);
       x.fillStyle = '#3fb950'; x.fillText('— 轨道优化后（同轨 NIC 接同一交换机）', padL + 6, padT + 22);
     };

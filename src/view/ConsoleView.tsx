@@ -1010,7 +1010,7 @@ export function ConsoleView({ gen, dark, sync, lens: lensP, setLens: setLensP, d
           {workbenchProfile && (
             <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 'calc(100% - 20px)' }}>
               <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 9, background: 'var(--panel-shell-bg)', border: '1px solid var(--panel-shell-border)', boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)' }}>
-                {([[false, '🏢 物理机柜'], [true, '🧊 时空折叠魔方']] as [boolean, string][]).map(([v, l]) => (
+                {([[false, '物理机柜'], [true, '时空折叠魔方']] as [boolean, string][]).map(([v, l]) => (
                   <button key={l} onClick={() => setCubeMode(v)} style={{ ...btnBase, padding: '4px 10px', ...navBtn(cubeMode === v) }}>{l}</button>
                 ))}
               </div>
