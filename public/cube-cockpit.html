@@ -1301,13 +1301,11 @@ function chipStack(c,out){ const h=c>>3, s=c&7;
   (out=out||new THREE.Vector3()).set(
     (h%32-15.5)*.62 + (s%4-1.5)*.135, STACK.L2,
     (((h/32)|0)-15.5)*.62 + ((s>>2)-.5)*.21); return out; }
-var stackL5, stackL4, stackPath; const stackPlats = {};
+var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
 {
   const plat = (lv,y,sx,sz,label)=>{
     const g = new THREE.BoxGeometry(sx,.06,sz);
-    const p = new THREE.Mesh(g, reg(new THREE.MeshLambertMaterial({color:0x10161f, depthWrite:false}),.5));
-    p.position.y = y-.24; stackGroup.add(p);
-    const ed = mergedEdges(g,[{x:0,y:y-.24,z:0}],0x30363d,.7); stackGroup.add(ed);
+    const ed = mergedEdges(g,[{x:0,y:y-.24,z:0}],0x30363d,.7); stackGroup.add(ed);   // 去掉每层下面的灰色底板，仅留层轮廓
     const lb = makeLabel(label,'#ffffff',Math.max(6,sx*.55));
     lb.material.color.set(0x8b949e);
     lb.position.set(-sx/2-Math.max(3,sx*.3), y+.6, 0); stackGroup.add(lb);
@@ -1320,15 +1318,15 @@ var stackL5, stackL4, stackPath; const stackPlats = {};
   plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip ×8192');
   plat('L1',STACK.L1, 7,3,'L1 · Die 占位');
   plat('L0',STACK.L0, 9.5,3,'L0 · Core 占位');
-  const g7 = new THREE.Mesh(new THREE.BoxGeometry(2.2,.3,2.2),
+  stackG7 = new THREE.Mesh(new THREE.BoxGeometry(2.2,.3,2.2),
     reg(new THREE.MeshLambertMaterial({color:0x21262d}),.95));
-  g7.position.y = STACK.L7; stackGroup.add(g7);
-  const t6 = new THREE.InstancedMesh(new THREE.BoxGeometry(1.3,.22,1.3),
+  stackG7.position.y = STACK.L7; stackGroup.add(stackG7);
+  stackT6 = new THREE.InstancedMesh(new THREE.BoxGeometry(1.3,.22,1.3),
     reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 64);
   for(let i=0;i<64;i++){ dummy.position.set(((i%8)-3.5)*1.7, STACK.L6, (((i/8)|0)-3.5)*1.7);
     dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
-    t6.setMatrixAt(i,dummy.matrix); t6.setColorAt(i, cTmp.set(i===0?0x1f6feb:0x21262d)); }
-  stackGroup.add(t6);
+    stackT6.setMatrixAt(i,dummy.matrix); stackT6.setColorAt(i, cTmp.set(i===0?0x1f6feb:0x21262d)); }
+  stackGroup.add(stackT6);
   stackL5 = new THREE.InstancedMesh(new THREE.BoxGeometry(2,.28,1.5),
     reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 8);
   for(let i=0;i<8;i++){ dummy.position.set((i-3.5)*2.5, STACK.L5, 0);
@@ -1336,9 +1334,7 @@ var stackL5, stackL4, stackPath; const stackPlats = {};
     stackL5.setMatrixAt(i,dummy.matrix); stackL5.setColorAt(i, cTmp.set(i===0?0x1f6feb:0x21262d)); }
   stackGroup.add(stackL5);
   const g4s = new THREE.BoxGeometry(7.5,.2,4.9);
-  const s4 = new THREE.Mesh(g4s, reg(new THREE.MeshLambertMaterial({color:0x0f2038}),.95));
-  s4.position.y = STACK.L4; stackGroup.add(s4);
-  stackGroup.add(mergedEdges(g4s,[{x:0,y:STACK.L4,z:0}],0x1f6feb,.9));
+  stackGroup.add(mergedEdges(g4s,[{x:0,y:STACK.L4,z:0}],0x1f6feb,.9));   // 去掉 L4 灰色底板，仅留蓝色轮廓
   stackL4 = new THREE.InstancedMesh(new THREE.BoxGeometry(.4,.22,.48),
     reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 128);
   for(let i=0;i<128;i++){ dummy.position.set(((i%16)-7.5)*.46, STACK.L4+.24, (((i/16)|0)-3.5)*.6);
@@ -1357,6 +1353,16 @@ var stackL5, stackL4, stackPath; const stackPlats = {};
   stackPath = new THREE.Line(pg, reg(new THREE.LineBasicMaterial({color:0x4369EF}),.85));
   stackGroup.add(stackPath);
 }
+// 层级堆叠层块随主题着色：深色维持原深块；浅色改浅蓝灰，避免白底上一片发黑
+function colorStack(dark){
+  const base = dark?0x21262d:0xc8d0dc;
+  if(stackG7) stackG7.material.color.set(base);
+  const paint=(m,n)=>{ if(!m) return; for(let i=0;i<n;i++) m.setColorAt(i, cTmp.set(i===0?0x1f6feb:base)); if(m.instanceColor) m.instanceColor.needsUpdate=true; };
+  paint(stackT6,64); paint(stackL5,8);
+  if(stackL4){ for(let i=0;i<128;i++) stackL4.setColorAt(i, cTmp.set(base)); if(stackL4.instanceColor) stackL4.instanceColor.needsUpdate=true; }
+  Object.values(stackPlats).forEach(pl=>{ if(pl && pl.edges) pl.edges.material.color.set(dark?0x30363d:0xccd5e0); });
+}
+colorStack(isDark());
 /* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
 const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
 { const ox=CUBE.cx-4.6*CUBE.sx, oy=CUBE.cy-8.6*CUBE.sy, oz=CUBE.cz-33*CUBE.sz;
@@ -2605,6 +2611,7 @@ function applyTheme(dark){
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
+  colorStack(dark);   // 层级堆叠层块随主题着色（浅色不再发黑）
   touchLeft(); requestAnimationFrame(()=>{ renderL3(); renderL2(); renderL4(); drawArcs(); });
 }
 $('#btnTheme').onclick = () => applyTheme(isDark() ? false : true);
