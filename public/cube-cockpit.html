@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Infra 可视化原型 v22 · 统一 3D 拓扑驾驶舱 · 软硬结合连线镜头 · 明暗双主题</title>
 <script src="./vendor/three-r128.min.js"></script>
+<!-- L0 Core-Group：复用控制台同款 memory-architecture pattern（vanilla · window.PtoMemoryArchitecturePattern）。
+     pto-tokens 先于本文件内联 <style> 加载 → 冲突变量以驾驶舱自身取值为准；pattern 仅取其缺失的设计 token。 -->
+<link rel="stylesheet" href="./vendor/pto-tokens/foundation.css">
+<link rel="stylesheet" href="./vendor/pto-tokens/semantic.css">
+<link rel="stylesheet" href="./vendor/pto-tokens/components.css">
+<link rel="stylesheet" href="./vendor/aic-core-object/pattern.css">
+<link rel="stylesheet" href="./vendor/aiv-core-object/pattern.css">
+<link rel="stylesheet" href="./vendor/memory-architecture/pattern.css">
+<script src="./vendor/aiv-core-object/pattern.js"></script>
+<script src="./vendor/aic-core-object/pattern.js"></script>
+<script src="./vendor/memory-architecture/pattern.js"></script>
 <style>
 /* ============================================================
    PTO Design System — canonical tokens (retrofit, LIGHT-FIRST)
@@ -210,6 +221,14 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .cg.v{border-color:var(--purple);color:#9B3CF6;background:#1c1333}
 .cg.c{border-color:var(--red);color:#ffb3ac;background:#2d0f0e}
 .cg.u{border-color:var(--orange);color:#FFAA3B;background:#2b2008}
+/* ---- L1 Die 图元（2 计算 teal + 2 IO 灰，与控制台 SUBTIERS die 统一） ---- */
+.l1dies{display:flex;gap:6px}
+.l1die{flex:1;border:1px solid;border-radius:6px;padding:5px 6px;font-size:10px;text-align:center}
+.l1die.c{border-color:#2dd4bf;color:#2dd4bf;background:color-mix(in srgb,#2dd4bf 12%,transparent)}
+.l1die.io{border-color:#7c8db8;color:#8b97ab;background:color-mix(in srgb,#7c8db8 12%,transparent)}
+/* ---- L0 Core-Group：内嵌控制台同款 memory-architecture pattern ---- */
+.l0cg{margin-top:6px}
+#l0viewport{width:100%;height:460px;overflow:hidden;position:relative;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel);box-shadow:var(--shadow-card)}
 #commsvg{position:absolute;top:0;left:0;pointer-events:none;z-index:4}
 @keyframes dashmove{to{stroke-dashoffset:-22}}
 .flow{stroke-dasharray:7 4;animation:dashmove .9s linear infinite;fill:none}
@@ -398,7 +417,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div class="lvrow focus" data-level="L6"><div class="hd"><span class="lv">L6</span><span class="nm">Cluster · 集群（本模型）</span><span class="ct" id="ctL6">8192 NPU · 万卡级 · 64 Pod</span></div><div class="kpi" id="kpiL6"></div>
         <div class="body" id="l6body"></div></div>
       <div class="gap" data-gap="L6L5"></div>
-      <div class="lvrow ghost" data-level="L5"><div class="hd"><span class="lv">L5</span><span class="nm">Service Pool · 服务池</span><span class="ct" id="ctL5">本池 8 Pod · 1024 NPU · 缩略</span></div><div class="kpi" id="kpiL5"></div>
+      <div class="lvrow ghost" data-level="L5"><div class="hd"><span class="lv">L5</span><span class="nm">Service Pool · 服务池</span><span class="ct" id="ctL5">本池 4 Pod · 512 NPU · 16 池/集群</span></div><div class="kpi" id="kpiL5"></div>
         <div class="body" id="l5body"></div></div>
       <div class="gap" data-gap="L5L4">
         <span class="badge b-ANOM" id="bdAnom">EP·AllToAll 越界 ↑</span>
@@ -422,11 +441,19 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div class="inset"><span class="lab">焦点 Host 放大 ×8：</span><span class="zoom" id="chipZoom"></span></div>
         </div></div>
       <div class="gap" data-gap="L2L1"></div>
-      <div class="lvrow ghost" data-level="L1"><div class="hd"><span class="lv">L1</span><span class="nm">Die（可选）</span><span class="ct">结构占位 · 950DT 未公开</span></div>
-        <div class="body ph"><span class="die">Die 0 · 占位</span><span class="die">Die 1 · 占位</span></div></div>
+      <div class="lvrow" data-level="L1"><div class="hd"><span class="lv">L1</span><span class="nm">Die（可选）</span><span class="ct">×4 · 2 计算 Die + 2 IO Die</span></div>
+        <div class="body l1dies"><span class="l1die c">Die 0 · 计算</span><span class="l1die c">Die 1 · 计算</span><span class="l1die io">Die 2 · IO</span><span class="l1die io">Die 3 · IO</span></div></div>
       <div class="gap" data-gap="L1L0"></div>
-      <div class="lvrow ghost" data-level="L0"><div class="hd"><span class="lv">L0</span><span class="nm">Core-Group</span><span class="ct">结构占位</span></div>
-        <div class="body ph"><span class="cg v">V · Vector</span><span class="cg c">C · Cube</span><span class="cg u">CPU · 调度</span></div></div>
+      <div class="lvrow" data-level="L0"><div class="hd"><span class="lv">L0</span><span class="nm">Core-Group</span><span class="ct">AIV·向量 / AIC·Cube / AICPU · ×32/卡</span></div>
+        <div class="body l0cg">
+          <div class="pto-memory-architecture-viewport" data-pto-mem-arch-viewport data-default-zoom="0.4" id="l0viewport" aria-label="L0 Core-Group 内部架构（memory-architecture pattern）">
+            <div class="pto-memory-architecture-sizer" data-pto-mem-arch-sizer>
+              <div class="pto-memory-architecture-canvas" data-pto-mem-arch-canvas>
+                <div id="l0stage"></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
       </div>
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
@@ -677,12 +704,12 @@ function updateCounts(){
   const f = filterInfo();
   const set = (id,txt)=>{ const el=$(id); if(el) el.textContent=txt; };
   set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '8192 NPU · 万卡级 · 64 Pod');
-  set('#ctL5', f? '关联 1 Pod / 8 · 本池' : '本池 8 Pod · 1024 NPU · 缩略');
+  set('#ctL5', f? '关联 1 Pod / 4 · 本池' : '本池 4 Pod · 512 NPU · 16 池/集群');
   set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '×1024 Host · 每节点 8 NPU');
   set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜（每 2 柜 = 1 Pod）+ 32 互联柜');
   set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '×8192 Chip');
   if(S.focusPod>0){ set('#ctL6', `已选 Pod ${S.focusPod}/64 · 本集群`);
-    if(S.focusPod<8) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
+    if(S.focusPod<4) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
 }
 /* ================= 左侧页签 1：2D 层级剖面 ================= */
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
@@ -694,10 +721,10 @@ function hidpi(cv, W, H){
   cv.getContext('2d').setTransform(d,0,0,d,0,0);
 }
 (function(){ const b = $('#l6body'); let html='<div style="display:flex;gap:2px;flex-wrap:wrap">';
-  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?COL.DP:themeC('#21262d','#d0d8e4')};border:1px solid ${i===0?COL.DP:(i<8?themeC('#2a4f8a','#a8b6cc'):themeC('#30363d','#c8d2de'))}" title="Pod ${i}（UBL128 · 128 NPU）${i<8?' · 本服务池成员':''}"></i>`;
+  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?COL.DP:themeC('#21262d','#d0d8e4')};border:1px solid ${i===0?COL.DP:(i<4?themeC('#2a4f8a','#a8b6cc'):themeC('#30363d','#c8d2de'))}" title="Pod ${i}（UBL128 · 128 NPU）${i<4?' · 本服务池成员':''}"></i>`;
   b.innerHTML = html+'</div>'; })();
 (function(){ const b = $('#l5body'); let html='<div style="display:flex;gap:5px">';
-  for(let i=0;i<8;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}">Pod${i}${i===0?' ·本(=L4)':''}</span>`;
+  for(let i=0;i<4;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}">Pod${i}${i===0?' ·本(=L4)':''}</span>`;
   b.innerHTML = html+'</div>'; })();
 $('#l4body').innerHTML =
   `<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
@@ -725,7 +752,7 @@ function renderPodRows(){
     const sel = S.focusPod===i;
     el.style.outline = 'none';
     el.style.background = sel? COL.DP : themeC('#21262d','#d0d8e4');
-    el.style.borderColor = sel? COL.DP : (i<8? themeC('#2a4f8a','#a8b6cc') : themeC('#30363d','#c8d2de'));
+    el.style.borderColor = sel? COL.DP : (i<4? themeC('#2a4f8a','#a8b6cc') : themeC('#30363d','#c8d2de'));
   });
 }
 (function(){ const z = $('#chipZoom'); let html='';
@@ -893,7 +920,7 @@ function drawArcs(){
   const podSel = ()=>{ if(!S.focusPod) return;
     const i = S.focusPod, si = anchorEl('#sn'+i);
     dot(si,'#4369EF');
-    if(i<8){ const pi = anchorEl('#pod5-'+i);
+    if(i<4){ const pi = anchorEl('#pod5-'+i);
       out.push(`<path d="${arcPath(si,pi,-12)}" stroke="#4369EF" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`);
       dot(pi,'#4369EF');
       lab(pi.x, pi.y+15, '#4369EF', `已选 Pod ${i} · 缩略（未下钻 · 点 Pod0 返回）`); }
@@ -1212,7 +1239,7 @@ function mergedEdges(geo, translations, color, opacity){
 }
 // Service Pool 框（L5：Pod0-7 一排）
 var poolLine, podBaseEdges;
-{ const pts=[V3(-19,.05,-14),V3(271,.05,-14),V3(271,.05,14),V3(-19,.05,14),V3(-19,.05,-14)];
+{ const pts=[V3(-19,.05,-14),V3(127,.05,-14),V3(127,.05,14),V3(-19,.05,14),V3(-19,.05,-14)];
   const g=new THREE.BufferGeometry().setFromPoints(pts);
   poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x4369EF}), .55));
   physGroup.add(poolLine); }
@@ -1312,7 +1339,7 @@ var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
     stackPlats[lv] = { edges:ed, label:lb }; };
   plat('L7',STACK.L7, 5,5,'L7 · Global · N 集群');
   plat('L6',STACK.L6, 15,15,'L6 · Cluster 集群 · 8192 NPU（万卡）');
-  plat('L5',STACK.L5, 22,4,'L5 · Service Pool · 8 Pod');
+  plat('L5',STACK.L5, 22,4,'L5 · Service Pool · 4 Pod');
   plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod · UBL128 · 128 NPU · ×64');
   plat('L3',STACK.L3, 19.5,19.5,'L3 · Host ×1024 · 8 NPU');
   plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip ×8192');
@@ -2273,7 +2300,7 @@ function syncPhase(){
   renderHUD(); }
 /* ---- 信息面板 ---- */
 function renderViewlab(){
-  const t = { L7:'L7 · Global（N 集群）', L6:'L6 · Cluster 集群（8192 NPU · 万卡）', L5:'L5 · Service Pool（8 Pod）',
+  const t = { L7:'L7 · Global（N 集群）', L6:'L6 · Cluster 集群（8192 NPU · 万卡）', L5:'L5 · Service Pool（4 Pod · 16 池/集群）',
     L4:'L4 · Pod · UBL128（128 NPU · 16 Host）', L3:'L3 · Host（焦点机柜）', L2:'L2 · Chip ×8',
     L1:'L1 · Die（占位）', L0:'L0 · Core-Group（占位）' };
   const vtxt = S.form==='cube'
@@ -2715,6 +2742,30 @@ describeModelSel(); renderMM(); renderFilterBar(); updateCounts();
 { const g = camGoal(); camCur.t.copy(g.t); camCur.d = g.d; }
 requestAnimationFrame(drawArcs);
 wakeLoop(10);
+/* ── L0 Core-Group：内嵌控制台同款 memory-architecture pattern（window.PtoMemoryArchitecturePattern） ── */
+function initL0Pattern(){
+  const helper = window.PtoMemoryArchitecturePattern;
+  const stage = document.getElementById('l0stage'), viewport = document.getElementById('l0viewport');
+  if(!helper || !stage || !viewport || stage._done) return;
+  const sizer = viewport.querySelector('[data-pto-mem-arch-sizer]'), canvas = viewport.querySelector('[data-pto-mem-arch-canvas]');
+  try{
+    helper.renderArchitecture(stage, 'ascend950b');
+    helper.setDetailVisibility && helper.setDetailVisibility(stage, false);
+    helper.setAivFolded && helper.setAivFolded(stage, false);
+    const overlay = helper.createRouteOverlay && helper.createRouteOverlay(stage, 'ascend950b');
+    overlay && overlay.render && overlay.render();
+    const zc = helper.createZoomController && helper.createZoomController({
+      viewport, sizer, canvas, defaultZoom:0.32, min:0.24, max:1.4, step:0.08,
+      pan:true, wheelZoom:false, centerOnReset:true,
+      centerTarget:'.pto-mem950__rails, .pto-mem950__engine-stack, .pto-mem950__stack',
+      onZoom:()=>{ overlay && overlay.render && overlay.render(); }
+    });
+    zc && zc.render && zc.render();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ zc && zc.center && zc.center(); }));
+    stage._done = true; stage._overlay = overlay; stage._zc = zc;
+  }catch(e){ console.warn('L0 pattern init failed', e); }
+}
+initL0Pattern();
 </script>
 <!-- ── 宿主融合：嵌入 HPC 拓扑查看器时，与宿主 chrome 视觉合一 ──
      · 去掉原型自带产品名（宿主标签页已标「立方重排」，避免二次命名）
