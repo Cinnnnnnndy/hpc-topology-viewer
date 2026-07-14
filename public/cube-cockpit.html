@@ -358,13 +358,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
     <span class="grp fold" id="foldScen">
       <button class="foldhead warn" id="fhScen">演练 ▾</button>
       <span class="fbody">
-        <button id="btnAnom" class="warn">注入 EP 跨超节点异常</button>
+        <button id="btnAnom" class="warn">注入 EP 跨 Pod 异常</button>
         <button id="btnScatter" style="display:none">散射跨域路由</button>
       </span>
     </span>
     <button id="btnTheme" title="切换明暗主题" style="padding:4px 9px;font-size:14px"></button>
     <button id="scReset" title="重置全部视图">⟲ 重置</button>
-    <span id="alertbar">EP AllToAll 越界：8 个专家组成员被越区调度至相邻超节点，跨 Pod 光链路拥塞</span>
+    <span id="alertbar">EP AllToAll 越界：8 个专家组成员被越区调度至相邻 Pod，跨 Pod 光链路拥塞</span>
     <span class="grp" style="margin-left:auto"><canvas id="sparks" width="340" height="36" style="width:255px;height:27px"></canvas></span>
   </div>
   <div id="main">
@@ -393,30 +393,30 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="topn"></div>
         </div>
       </div>
-      <div class="lvrow ghost" data-level="L7"><div class="hd"><span class="lv">L7</span><span class="nm">Global</span><span class="ct">全球调度域 · 缩略</span></div></div>
+      <div class="lvrow ghost" data-level="L7"><div class="hd"><span class="lv">L7</span><span class="nm">Global · 全球调度</span><span class="ct">N 个 Cluster · 缩略</span></div></div>
       <div class="gap" data-gap="L7L6"></div>
-      <div class="lvrow ghost" data-level="L6"><div class="hd"><span class="lv">L6</span><span class="nm">Cluster · SuperCluster</span><span class="ct" id="ctL6">×64 超节点 · 缩略</span></div><div class="kpi" id="kpiL6"></div>
+      <div class="lvrow focus" data-level="L6"><div class="hd"><span class="lv">L6</span><span class="nm">Cluster · 集群（本模型）</span><span class="ct" id="ctL6">8192 NPU · 万卡级 · 64 Pod</span></div><div class="kpi" id="kpiL6"></div>
         <div class="body" id="l6body"></div></div>
       <div class="gap" data-gap="L6L5"></div>
-      <div class="lvrow ghost" data-level="L5"><div class="hd"><span class="lv">L5</span><span class="nm">Service Pool · 服务池（组）</span><span class="ct" id="ctL5">本池 8 超节点 · 缩略</span></div><div class="kpi" id="kpiL5"></div>
+      <div class="lvrow ghost" data-level="L5"><div class="hd"><span class="lv">L5</span><span class="nm">Service Pool · 服务池</span><span class="ct" id="ctL5">本池 8 Pod · 1024 NPU · 缩略</span></div><div class="kpi" id="kpiL5"></div>
         <div class="body" id="l5body"></div></div>
       <div class="gap" data-gap="L5L4">
         <span class="badge b-ANOM" id="bdAnom">EP·AllToAll 越界 ↑</span>
-        <span class="badge b-DP" id="bdDPx">DP·跨超节点同步(多Pod作业)</span>
+        <span class="badge b-DP" id="bdDPx">DP·跨 Pod 梯度同步（Scale-Out ×64）</span>
       </div>
-      <div class="lvrow focus" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · Atlas 950 超节点（=SN0，池内成员之一）</span><span class="ct">8192 NPU · UB 16PB/s</span></div><div class="kpi" id="kpiL4"></div>
+      <div class="lvrow" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · UBL128（Scale-Up 域）</span><span class="ct">128 NPU · 16 Host · 2 机柜 · UB 全互联</span></div><div class="kpi" id="kpiL4"></div>
         <div class="body" id="l4body"></div></div>
       <div class="gap" data-gap="L4L3">
-        <span class="badge b-PP" id="bdPP">PP·接力 ×16 段</span>
-        <span class="badge b-DP" id="bdDP">DP·梯度同步 ×64 副本</span>
-        <span class="badge b-EP" id="bdEP">EP·AllToAll 浪涌</span>
+        <span class="badge b-PP" id="bdPP">PP·接力 ×16 段（Pod 内 16 Host）</span>
+        <span class="badge b-DP" id="bdDP">DP·本 Pod = 1 副本（×64 跨 Pod）</span>
+        <span class="badge b-EP" id="bdEP">EP·AllToAll 浪涌（Pod 内）</span>
       </div>
-      <div class="lvrow" data-level="L3"><div class="hd"><span class="lv">L3</span><span class="nm">Host · 计算节点</span><span class="ct" id="ctL3">×1024 · 每节点 8 NPU</span></div><div class="kpi" id="kpiL3"></div>
+      <div class="lvrow" data-level="L3"><div class="hd"><span class="lv">L3</span><span class="nm">Host · 计算节点</span><span class="ct" id="ctL3">×1024 Host · 每节点 8 NPU</span></div><div class="kpi" id="kpiL3"></div>
         <div class="body"><canvas class="strip" id="cvL3" width="404" height="104"></canvas></div></div>
       <div class="gap" data-gap="L3L2">
         <span class="badge b-TP" id="bdTP">TP·AllReduce ×8 · 节点内 UB</span>
       </div>
-      <div class="lvrow" data-level="L2"><div class="hd"><span class="lv">L2</span><span class="nm">Chip · NPU 昇腾950DT</span><span class="ct" id="ctL2">×8192</span></div><div class="kpi" id="kpiL2"></div>
+      <div class="lvrow" data-level="L2"><div class="hd"><span class="lv">L2</span><span class="nm">Chip · NPU 昇腾950DT</span><span class="ct" id="ctL2">×8192 Chip</span></div><div class="kpi" id="kpiL2"></div>
         <div class="body">
           <canvas class="strip" id="cvL2" width="404" height="112"></canvas>
           <div class="inset"><span class="lab">焦点 Host 放大 ×8：</span><span class="zoom" id="chipZoom"></span></div>
@@ -503,9 +503,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   </div>
 </div>
 <script>
-/* ================= 数据模型：一个 Atlas 950 超节点（真实数量） =================
-   8192 NPU = 1024 Host × 8 芯片；128 计算柜(每柜 8 Host，16 列×8 排) + 互联柜示意
-   逻辑切分：TP=8(节点内) × PP=16 × DP=64；整网 48 层（每段 3 层）
+/* ================= 数据模型：一个集群 L6（真实数量 · 万卡级） =================
+   8192 NPU = 64 Pod（L4 · UBL128 各 128 NPU）= 1024 Host × 8 芯片；
+   128 计算柜(每柜 8 Host = 64 NPU · 每 2 柜 = 1 Pod，16 列×8 排) + 互联柜示意
+   逻辑切分：TP=8(Host 内) × PP=16(Pod 内跨 Host) × DP=64(跨 Pod)；1 Pod = 1 DP 副本 = PP16×TP8；整网 48 层（每段 3 层）
    模型数据：Pangu Pro MoE 72B-A16B（arXiv:2505.21411）——48 层 · hidden 5120 ·
    64 路由专家 = 8 组 × 组内 top-1（MoGE，IS=0）+ 4 共享专家 · 激活 16.5B/共 72B */
 const N_HOST = 1024, N_CHIP = 8192, TP = 8, PP = 16, DP = 64, N_LAYER = 48, N_EXP = 64;
@@ -514,9 +515,9 @@ const isDark = () => document.documentElement.getAttribute('data-theme') === 'da
 const themeC = (dark, light) => isDark() ? dark : light;
 const PHASES = [
   { id:'TP', name:'TP · 前向 AllReduce', bus:'节点内 UB 铜缆/光 · 高频', load:.92 },
-  { id:'PP', name:'PP · 阶段接力 Send/Recv', bus:'Pod 内跨节点 UB · 中频', load:.45 },
+  { id:'PP', name:'PP · 阶段接力 Send/Recv', bus:'Pod 内跨 Host UB · 中频', load:.45 },
   { id:'EP', name:'EP · MoE AllToAll 浪涌', bus:'Pod 内全互联 · 浪涌', load:.88 },
-  { id:'DP', name:'DP · 梯度 AllReduce', bus:'Pod 内 + 跨 Pod(多作业) · 低频大包', load:.60 },
+  { id:'DP', name:'DP · 梯度 AllReduce', bus:'跨 Pod Scale-Out · 低频大包', load:.60 },
 ];
 const S = {
   lens:'NONE', form:'phys', morph:0,
@@ -675,13 +676,13 @@ function renderTopN(){
 function updateCounts(){
   const f = filterInfo();
   const set = (id,txt)=>{ const el=$(id); if(el) el.textContent=txt; };
-  set('#ctL6', f? '关联 1/64 · 本超节点' : '×64 超节点 · 缩略');
-  set('#ctL5', f? '关联 1/8 · SN0' : '池内 8 超节点 SN0-7 · 缩略');
-  set('#ctL3', f? `关联 ${f.set.size}/1024` : '×1024 · 每节点 8 NPU');
-  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '128 计算柜（16×8 · 每柜 8 槽）+ 32 互联柜');
-  set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '×8192');
-  if(S.focusPod>0){ set('#ctL6', `已选超节点 ${S.focusPod}/64 · 缩略`);
-    if(S.focusPod<8) set('#ctL5', `已选 SN${S.focusPod} · 缩略`); }
+  set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '8192 NPU · 万卡级 · 64 Pod');
+  set('#ctL5', f? '关联 1 Pod / 8 · 本池' : '本池 8 Pod · 1024 NPU · 缩略');
+  set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '×1024 Host · 每节点 8 NPU');
+  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜（每 2 柜 = 1 Pod）+ 32 互联柜');
+  set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '×8192 Chip');
+  if(S.focusPod>0){ set('#ctL6', `已选 Pod ${S.focusPod}/64 · 本集群`);
+    if(S.focusPod<8) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
 }
 /* ================= 左侧页签 1：2D 层级剖面 ================= */
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
@@ -693,14 +694,14 @@ function hidpi(cv, W, H){
   cv.getContext('2d').setTransform(d,0,0,d,0,0);
 }
 (function(){ const b = $('#l6body'); let html='<div style="display:flex;gap:2px;flex-wrap:wrap">';
-  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?COL.DP:themeC('#21262d','#d0d8e4')};border:1px solid ${i===0?COL.DP:(i<8?themeC('#2a4f8a','#a8b6cc'):themeC('#30363d','#c8d2de'))}" title="超节点 ${i}${i<8?' · 本服务池成员':''}"></i>`;
+  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?COL.DP:themeC('#21262d','#d0d8e4')};border:1px solid ${i===0?COL.DP:(i<8?themeC('#2a4f8a','#a8b6cc'):themeC('#30363d','#c8d2de'))}" title="Pod ${i}（UBL128 · 128 NPU）${i<8?' · 本服务池成员':''}"></i>`;
   b.innerHTML = html+'</div>'; })();
 (function(){ const b = $('#l5body'); let html='<div style="display:flex;gap:5px">';
-  for(let i=0;i<8;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}">SN${i}${i===0?' ·本(=L4)':''}</span>`;
+  for(let i=0;i<8;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}">Pod${i}${i===0?' ·本(=L4)':''}</span>`;
   b.innerHTML = html+'</div>'; })();
 $('#l4body').innerHTML =
   `<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
-     <span id="ctL4">128 计算柜（16×8 · 每柜 8 槽）+ 32 互联柜</span>
+     <span id="ctL4">本集群 128 机柜（16×8 · 每柜 8 槽 = 64 NPU）· 每 2 柜 = 1 Pod（UBL128）+ 32 互联柜</span>
      <span style="margin-left:auto">MFU <b style="color:var(--sys-text-bright)">54.2%</b></span>
    </div>
    <canvas class="strip" id="cvL4" width="404" height="86" style="margin-top:5px"></canvas>`;
@@ -711,7 +712,7 @@ $$('#l6body i').forEach((el,i)=>{ el.style.cursor='pointer';
 function setPod(i,lv){ S.focusPod = (S.focusPod===i && S.level===lv)? 0 : i;
   renderPodRows(); colorsDirty = true; updateCounts(); setLevel(lv); drawArcs(); }
 function renderPodRows(){
-  // 选中态完全由 S.focusPod 驱动：切换即迁移，SN0 不再常亮（仅保留"本池"弱标识）
+  // 选中态完全由 S.focusPod 驱动：切换即迁移，Pod0 不再常亮（仅保留"本池"弱标识）
   $$('#l5body span').forEach((el,i)=>{
     const sel = S.focusPod===i;
     el.style.outline = 'none';
@@ -895,8 +896,8 @@ function drawArcs(){
     if(i<8){ const pi = anchorEl('#pod5-'+i);
       out.push(`<path d="${arcPath(si,pi,-12)}" stroke="#4369EF" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`);
       dot(pi,'#4369EF');
-      lab(pi.x, pi.y+15, '#4369EF', `已选 SN${i} · 缩略超节点（未下钻 · 点 SN0 返回）`); }
-    else lab(si.x+8, si.y+3, '#4369EF', `已选超节点 ${i} · 不在本服务池（缩略）`, 'start');
+      lab(pi.x, pi.y+15, '#4369EF', `已选 Pod ${i} · 缩略（未下钻 · 点 Pod0 返回）`); }
+    else lab(si.x+8, si.y+3, '#4369EF', `已选 Pod ${i} · 不在本服务池（缩略）`, 'start');
   };
   const flt = filterInfo();
   if(flt){                                   // ==== Smartscape 下钻模式 ====
@@ -913,11 +914,11 @@ function drawArcs(){
       if(extra>0) lab(hp.x, hp.y+15, flt.color, `+${extra} 个关联已在网格中描边`);
     }
     const ups = [anchorL4cab(cabOf(S.filterHost)), anchorEl('#pod5-0'), anchorEl('#sn0')];
-    let prev = hp;                                              // ③ 向上归属链：Host→Pod→Pool→SuperCluster
+    let prev = hp;                                              // ③ 向上归属链：Host→机柜→Pod→Cluster
     ups.forEach(p=>{ out.push(`<path d="${arcPath(prev,p,0)}" stroke="#3d444d" stroke-width="1" fill="none"/>`); dot(p,'#3d444d'); prev=p; });
     lab(ups[0].x+4, ups[0].y-6, '#4369EF', `柜${cabOf(S.filterHost)}`, 'start');
-    lab(ups[1].x, ups[1].y-9, '#4369EF', 'SN0·本');
-    lab(ups[2].x+7, ups[2].y+3, '#4369EF', 'SN0', 'start');
+    lab(ups[1].x, ups[1].y-9, '#4369EF', 'Pod0·本');
+    lab(ups[2].x+7, ups[2].y+3, '#4369EF', 'Pod0', 'start');
     podSel();
     commsvg.innerHTML = out.join('');
     const map = { TP:'#bdTP', PP:'#bdPP', EP:'#bdEP', DP:'#bdDP' };
@@ -953,7 +954,7 @@ function drawArcs(){
     if(S.anomaly){
       const pod1 = anchorEl('#pod5-1', true);
       arc(hub, pod1, -60, COL.RED, 2.2, 'RED');
-      lab((hub.x+pod1.x)/2, (hub.y+pod1.y)/2-6, COL.RED, '8 专家越界 → SN1（跨超节点光链路）');
+      lab((hub.x+pod1.x)/2, (hub.y+pod1.y)/2-6, COL.RED, '8 专家越界 → Pod1（跨 Pod 光链路）');
     }
   }
   if(ph==='DP'){
@@ -963,7 +964,7 @@ function drawArcs(){
     lab(pts[0].x+8, pts[0].y-10, COL.DP, `Stage${ppOf(S.focusHost)} 的 DP 梯度环（示 8/64 副本）`, 'start');
     const pod2 = anchorEl('#pod5-2', true);
     arc(pts[0], pod2, -55, COL.DP, 1.2, 'DP');
-    lab(pod2.x, pod2.y+14, COL.DP, '跨超节点 DP 同步（多 Pod 作业）');
+    lab(pod2.x, pod2.y+14, COL.DP, '跨 Pod DP 同步（Scale-Out）');
   }
   podSel();
   commsvg.innerHTML = out.join('');
@@ -1100,7 +1101,7 @@ function describeModelSel(){
   else if(S.selCard){ const {pp,tp}=S.selCard, l0=pp*3+1;
     d.innerHTML = `选中卡 <b>PP${pp}${tp!=null?'·TP'+tp:'（整段 8 卡）'}</b> → 它承载 <b>L${l0}-L${l0+2}</b>
       ${tp!=null?`各层的第 ${tp+1}/8 TP 切片，须与同 Host 另 7 卡 <b>AllReduce</b> 拼回完整权重`:'（每层含 64 路由专家 · MoGE 分组）'}；
-      全 Pod 共 <b>64 个 DP 同位卡</b>（每副本一张）已在 3D 中亮起。下方为显存构成反查。`; }
+      全集群共 <b>64 个 DP 同位卡</b>（每 Pod 副本一张）已在 3D 中亮起。下方为显存构成反查。`; }
   else d.innerHTML = '点<b>行</b>=整网的一层 → 右侧 3D 亮起承载它的卡；点<b>格/列</b>=一张卡 → 反查它装了整网哪些片 + 显存构成。TP/PP/EP=真·裁切（紫线）；DP=整网复制（绿虚线外圈）；行上绿虚线=重算层，反向(DP)扫过时闪绿=在线重算。';
 }
 function renderMemPanel(){
@@ -1143,7 +1144,7 @@ const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
 /* ---- 世界坐标：一切都在同一坐标系 ---- */
-const podXZ = p => ({ x:(p%8)*36, z:((p/8)|0)*30 });          // 64 超节点场地，Pod0=原点
+const podXZ = p => ({ x:(p%8)*36, z:((p/8)|0)*30 });          // 64 Pod 场地（本集群），Pod0=原点
 const FIELD = { x:126, z:105 };
 function hostPos(h,out){ const cab=h>>3, slot=h&7;
   out = out||new THREE.Vector3();
@@ -1161,7 +1162,7 @@ function chipCubeM(c,mode,out){ const h=c>>3, tp=c&7, pp=h%16, dp=h>>4;
     if(e>=0) return out.set(15+((e%8)-3.5)*2.4+(tp%4)*.45,
                             16+(3.5-((e/8)|0))*2.4+((tp>>2)-.5)*.9, 0);
     return out.set(-14+(tp-3.5)*.9, 16+(7.5-pp)*.8, (dp-31.5)*.5); }
-  if(mode===3)                     // TP 切片：8 片"权重墙"沿 X 拉开，一面墙=全 Pod 同槽位切片（查同槽位系统性问题）
+  if(mode===3)                     // TP 切片：8 片"权重墙"沿 X 拉开，一面墙=全集群同槽位切片（查同槽位系统性问题）
     return out.set((tp-3.5)*7, 17+(7.5-pp)*1.15, (dp-31.5)*.75);
   if(mode===4)                     // PP 流水：16 段横向展开成流水线（找慢段/气泡）
     return out.set((pp-7.5)*6.2, 12+(tp-3.5)*1.2, (dp-31.5)*.75);
@@ -1181,7 +1182,7 @@ function buildGrid(dark){
   physGroup.add(grid);
 }
 buildGrid(isDark());
-// 其余 63 个超节点（L6/L5 · 缩略体块）
+// 其余 63 个 Pod（L4 · 缩略体块）
 const podGeo = new THREE.BoxGeometry(31,6.5,22);
 const podMat = reg(new THREE.MeshLambertMaterial({color:0xffffff, depthWrite:false}), .20);
 const pods = new THREE.InstancedMesh(podGeo, podMat, 63);
@@ -1192,7 +1193,7 @@ let podGhostEdges;
     tr.push({x:p.x,y:3.25,z:p.z}); }
   physGroup.add(pods);
   podGhostEdges = mergedEdges(podGeo, tr, 0x2d3644, .5); physGroup.add(podGhostEdges); }
-// 63 个缩略超节点（场地远景）：深色维持原样；浅色改淡灰，避免白底上一大片深色棱线（“灰钻石”）。
+// 63 个缩略 Pod（场地远景）：深色维持原样；浅色改淡灰，避免白底上一大片深色棱线（“灰钻石”）。
 function colorGhostPods(dark){
   for(let i=0;i<63;i++) pods.setColorAt(i, cTmp.set(dark?0x1c232e:0xe6ebf2));
   if(pods.instanceColor) pods.instanceColor.needsUpdate = true;
@@ -1215,7 +1216,7 @@ var poolLine, podBaseEdges;
   const g=new THREE.BufferGeometry().setFromPoints(pts);
   poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x4369EF}), .55));
   physGroup.add(poolLine); }
-// 本超节点底座（L4）
+// 本 Pod 底座（L4 · 焦点展开 = 本集群细节）
 { const base=new THREE.Mesh(new THREE.BoxGeometry(31,.24,22),
     reg(new THREE.MeshLambertMaterial({color:0x0f2038}), .9));
   base.position.y=-.12; physGroup.add(base);
@@ -1290,7 +1291,7 @@ function makeLabel(text, color, w){
   const worldW = w * tw / 512;                        // 保持与原 512px 画布一致的世界尺寸
   sp.scale.set(worldW, worldW * th / tw, 1); return sp;
 }
-/* 场地大字标题（SN0 / Service Pool / SuperCluster）按需删除 —— 三视图统一去掉悬浮大字 */
+/* 场地大字标题（本集群 / Service Pool / 64 Pod）按需删除 —— 三视图统一去掉悬浮大字 */
 /* ---- 形态 3：层级堆叠（与左侧 L7→L0 对齐的 3D 分层视图） ---- */
 const STACK = { L7:30, L6:26, L5:22, L4:18.5, L3:13.5, L2:8, L1:4, L0:1 };
 const stackGroup = new THREE.Group(); stackGroup.visible = false; scene.add(stackGroup);
@@ -1311,11 +1312,11 @@ var stackL5, stackL4, stackPath; const stackPlats = {};
     lb.material.color.set(0x8b949e);
     lb.position.set(-sx/2-Math.max(3,sx*.3), y+.6, 0); stackGroup.add(lb);
     stackPlats[lv] = { edges:ed, label:lb }; };
-  plat('L7',STACK.L7, 5,5,'L7 · Global ×1');
-  plat('L6',STACK.L6, 15,15,'L6 · SuperCluster ×64');
-  plat('L5',STACK.L5, 22,4,'L5 · Pool · SN0-7');
-  plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod ×1 · 128+32 柜');
-  plat('L3',STACK.L3, 19.5,19.5,'L3 · Host ×1024');
+  plat('L7',STACK.L7, 5,5,'L7 · Global · N 集群');
+  plat('L6',STACK.L6, 15,15,'L6 · Cluster 集群 · 8192 NPU（万卡）');
+  plat('L5',STACK.L5, 22,4,'L5 · Service Pool · 8 Pod');
+  plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod · UBL128 · 128 NPU · ×64');
+  plat('L3',STACK.L3, 19.5,19.5,'L3 · Host ×1024 · 8 NPU');
   plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip ×8192');
   plat('L1',STACK.L1, 7,3,'L1 · Die 占位');
   plat('L0',STACK.L0, 9.5,3,'L0 · Core 占位');
@@ -1575,7 +1576,7 @@ function buildPhaseLines(dim){
       flowTube(ring, 0x39c5cf, .5, .95, 'UB');
       addMover(ring, 0xffffff, .55, .1, 'UB');
       wireLab(`TP·AllReduce ×8 rank · Host ${fh} · 节点内 UB`, '#7ee0e8', 13, V3(vA.x,vA.y+2.2,vA.z));
-      wireLab('全 Pod 1024 台同构发生（示焦点 1 台 · 下钻 L2 看芯片环）', '#8b949e', 11, V3(vA.x,vA.y+1.5,vA.z));
+      wireLab('全集群 1024 台同构发生（示焦点 1 台 · 下钻 L2 看芯片环）', '#8b949e', 11, V3(vA.x,vA.y+1.5,vA.z));
     }
   }
   if(dim==='PP'){
@@ -1660,7 +1661,7 @@ function buildPhaseLines(dim){
           flowTube(bez(hostPos(h2,new THREE.Vector3()),exit.clone().add(V3(0,.6,0)),1.4),0xFF4B7B,.4,.6,'RDMA'); }
         const cr=bez(exit.clone(),V3(p1.x,6.8,p1.z),10);
         flowTube(cr,0xFF4B7B,.95,.95,'RDMA'); addMover(cr,0xffffff,.65,.15,'RDMA');
-        wireLab('8 专家越界→SN1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
+        wireLab('8 专家越界→Pod1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
       } else {
         for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
           const cr=bez(hostPos(h2,new THREE.Vector3()),V3(p1.x+(k2-1.5)*5,6.8,p1.z),9);
@@ -1695,7 +1696,7 @@ function buildPhaseLines(dim){
       wireLab(`DP·梯度 AllReduce · Stage${ppF} 环（示 8/64 副本）· 双股=2 Channels`,'#4369EF',17,V3(0,6.6,0));
       const p2=podXZ(2), cr=bez(pts[0].clone(),V3(p2.x,6.8,p2.z),10);
       flowTube(cr,0x4369EF,.25,.4,'DP');
-      wireLab('跨超节点 DP 同步（多 Pod 作业）→ SN2','#4369EF',13,V3(p2.x*.55,8.8,p2.z*.55));
+      wireLab('跨 Pod DP 同步（Scale-Out）→ Pod2','#4369EF',13,V3(p2.x*.55,8.8,p2.z*.55));
     }
   }
 }
@@ -1716,7 +1717,7 @@ function buildDomainLines(dim){
         ring.push(V3(vA.x+Math.cos(a)*.68, vA.y+.1, vA.z+Math.sin(a)*.56)); }
       flowTube(ring,0x39c5cf,.1,h===fh?.9:.4,'UB'); }
     hostPos(fh,vA);
-    wireLab(`TP 通信域 = 1 台 Host（8×NPU）· 全 Pod 1024 个域 · 示焦点柜${cab} 的 8 个`,'#7ee0e8',19,V3(vA.x,vA.y+2.5,vA.z));
+    wireLab(`TP 通信域 = 1 台 Host（8×NPU）· 全集群 1024 个域 · 示焦点柜${cab} 的 8 个`,'#7ee0e8',19,V3(vA.x,vA.y+2.5,vA.z));
   }
   if(dim==='PP'){
     [0,8,16,24].forEach((off,i)=>{ const d=(dpF+off)%64, pts=[];
@@ -1820,7 +1821,7 @@ function buildLinkLines(){
       else flowTube([V3(x,3.55,z),V3(x,3.0,z)],c2,st===1?.4:.15,st===1?.85:.35,'UB');
       if(cab===fc) wireLab(`柜${fc}（焦点）上联${st===2?'中断':st===1?'降级·CRC重传↑':'正常'}`,
         st===2?'#ffa198':st===1?'#ffe08a':'#7ee787', 13, V3(x,5.3,z)); }
-    wireLab(`行${row} 母线 → 两翼互联柜 · 全 Pod 链路汇总见 L4`,'#8b949e',18,V3(0,6.4,z));
+    wireLab(`行${row} 母线 → 两翼互联柜 · 全集群链路汇总见 L4`,'#8b949e',18,V3(0,6.4,z));
     return; }
   let ok=0, deg=0, brk=0;
   for(let row=0;row<8;row++){ const z=(row-3.5)*2.4;
@@ -2266,11 +2267,11 @@ function syncPhase(){
   renderHUD(); }
 /* ---- 信息面板 ---- */
 function renderViewlab(){
-  const t = { L7:'L7 · Global', L6:'L6 · SuperCluster ×64', L5:'L5 · Service Pool（8 超节点 SN0-7）',
-    L4:'L4 · Atlas 950 超节点（8192 NPU）', L3:'L3 · Host（焦点机柜）', L2:'L2 · Chip ×8',
+  const t = { L7:'L7 · Global（N 集群）', L6:'L6 · Cluster 集群（8192 NPU · 万卡）', L5:'L5 · Service Pool（8 Pod）',
+    L4:'L4 · Pod · UBL128（128 NPU · 16 Host）', L3:'L3 · Host（焦点机柜）', L2:'L2 · Chip ×8',
     L1:'L1 · Die（占位）', L0:'L0 · Core-Group（占位）' };
   const vtxt = S.form==='cube'
-    ? `统一 3D 拓扑 · <b>逻辑魔方 · ${['标准 X=TP Y=PP(模型深度) Z=DP','DP 平铺：64 副本各自成板（找慢副本）','EP 聚簇：64 专家=8 组抽出成墙（MoGE 组结构）','TP 切片：8 片权重墙 · 一面墙=全 Pod 同槽位切片（查同槽位系统性故障）','PP 流水：16 段横向展开 · 左=Stage0 右=Stage15（找慢段/气泡）'][cubeMode]}</b>${S.selLayer!=null?` · 高亮 L${S.selLayer+1} 切片`:''}`
+    ? `统一 3D 拓扑 · <b>逻辑魔方 · ${['标准 X=TP Y=PP(模型深度) Z=DP','DP 平铺：64 副本各自成板（找慢副本）','EP 聚簇：64 专家=8 组抽出成墙（MoGE 组结构）','TP 切片：8 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）','PP 流水：16 段横向展开 · 左=Stage0 右=Stage15（找慢段/气泡）'][cubeMode]}</b>${S.selLayer!=null?` · 高亮 L${S.selLayer+1} 切片`:''}`
     : S.form==='stack'
     ? `统一 3D 拓扑 · <b>层级堆叠形态</b> · 与左侧 L7→L0 对齐 · 聚焦 <b>${t[S.level]}</b>`
     : `统一 3D 拓扑 · 单相机 · 聚焦 <b>${t[S.level]}</b>（左侧选层=飞行缩放）`;
@@ -2375,7 +2376,7 @@ function syncDrawer(){
   $('#laneCtx').textContent = drawerTab==='lane'
     ? `对象：Host ${laneHost()} · 8×NPU(TP0-7) + 硬件计数器轨 · 随下钻联动`
     : drawerTab==='mx' ? '对象：EP 64 专家 ÷ 8 组（MoGE）· 行=源组 列=目的组 · 随异常联动'
-    : '对象：本超节点 UB 平面 · 随异常注入联动';
+    : '对象：本集群 UB 平面 · 随异常注入联动';
   if(drawerTab==='lane') renderLane();
   else if(drawerTab==='mx') renderMx();
   else renderBw();
@@ -2452,7 +2453,7 @@ function renderLane(){
   c.fillStyle = laneMode==='moge' ? '#04D793' : '#FF4B7B';
   c.fillText(laneMode==='moge'
     ? `Host ${Hh} · MoGE 均衡：Compute 齐整 · AllToAll 全掩盖 · IS=0（组内 top-1 强制均衡 · 最热专家≈12.5%）`
-    : `Host ${Hh}${exp?'（MoE 专家节点）':''} · Top-K：热点 ${hotSet.map(r=>'TP'+r).join('/')} 拖长 → Bubble 处利用率轨同步塌陷（对照：Top-K 最热专家可占 30% token）${S.anomaly?' · 第3周期跨超节点加时':''}`,
+    : `Host ${Hh}${exp?'（MoE 专家节点）':''} · Top-K：热点 ${hotSet.map(r=>'TP'+r).join('/')} 拖长 → Bubble 处利用率轨同步塌陷（对照：Top-K 最热专家可占 30% token）${S.anomaly?' · 第3周期跨 Pod 加时':''}`,
     x0, H-4);
   const lg=[['#1f6feb','Compute'],['#9B3CF6','AllToAll'],['rgba(248,81,73,.7)','Bubble/越界'],['#04D793','下方=硬件计数器(同轴)']];
   let lx=Math.max(x0+440, W-480); c.font='9px sans-serif';
@@ -2540,7 +2541,7 @@ function setPlay(on){ S.playing=on;
 function scenario(k){
   S.selLayer=null; S.selCard=null; renderMemPanel(); describeModelSel();
   setTab('hier');
-  if(k==='patrol' || k==='reset'){                 // 巡检：健康度热力 + 整 Pod 俯视 + 播放
+  if(k==='patrol' || k==='reset'){                 // 巡检：健康度热力 + 整集群俯视 + 播放
     S.filterHost=null; setLens('NONE'); setRel('AUTO');
     S.focusPod=0; renderPodRows(); closeDrawer();
     S.wire='AUTO'; $$('.wirebtn').forEach(x=>x.classList.toggle('on', x.dataset.wire==='AUTO'));
@@ -2602,7 +2603,7 @@ function applyTheme(dark){
   ambientLight.color.set(dark ? 0x93a4c0 : 0xdfe6f0);
   ambientLight.intensity = dark ? 0.95 : 0.92;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
-  colorGhostPods(dark);   // 63 缩略超节点随主题重着色（浅色淡灰，去掉白底“灰钻石”）
+  colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
   touchLeft(); requestAnimationFrame(()=>{ renderL3(); renderL2(); renderL4(); drawArcs(); });
 }

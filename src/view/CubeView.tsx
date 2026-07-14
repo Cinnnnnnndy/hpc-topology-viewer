@@ -38,15 +38,18 @@ function hexRGB(hex: string): [number, number, number] {
 }
 
 // ── 聚合粒度（来自层级轴）：LevelKey → 每个「聚合单元」含多少张连续 rank（物理近邻）。
-//    card/die/core = 满 rank 粒度（1 卡/单元，行为与升级前一致）；node=Host(8)；
-//    cab/super = 机柜(64，Pod 内物理分组，宏观降噪一柜一块)；pool/cluster/global = 更粗。
-//    单 Pod 模型下 L4 Pod 展示为「一柜一大方块」的物理分组，向上继续粗化。
+//    严格对齐 hw-native-sys L0→L7 与参考 8 级详表：整个渲染模型 = 1 个 L6 集群（8192 卡·万卡级），
+//    万卡规模落在 Cluster（L6），而非 Pod。逐级换算：
+//      L3 Host = 8 卡；L4 Pod · UBL128 = 128 卡（= 16 Host = 2 机柜，Scale-Up 域）；
+//      L5 服务池 = 8 Pod = 1024 卡；L6 集群 = 整个模型（万卡·一块）；L7 全球 = 整体一块。
+//    card/die/core = 满 rank 粒度（1 卡/单元）；机柜(cab)只是 Pod 内物理分组(64)，不是层级。
 function aggUnitCards(level: LevelKey | undefined): number {
   switch (level) {
-    case 'node': return NPUS_PER_NODE;                 // L3 Host
-    case 'cab': case 'super': return CAB_CARDS;        // L4 Pod / 机柜物理分组
-    case 'pool': return CAB_CARDS * 8;                 // L5 服务池
-    case 'cluster': return CAB_CARDS * 64;             // L6 集群
+    case 'node': return NPUS_PER_NODE;                 // L3 Host = 8 卡
+    case 'cab': return CAB_CARDS;                      // 机柜（物理分组，非层级）= 64 卡
+    case 'super': return CAB_CARDS * 2;                // L4 Pod · UBL128 = 128 卡（16 Host = 2 机柜）
+    case 'pool': return CAB_CARDS * 16;                // L5 服务池 = 8 Pod = 1024 卡
+    case 'cluster': return Infinity;                   // L6 集群 = 整个模型（万卡·一块）
     case 'global': return Infinity;                    // L7 全球（整体一块）
     default: return 1;                                 // L2 Chip / L1 Die / L0 Core → 满粒度
   }
@@ -619,7 +622,8 @@ export function CubeView({
                 <button onClick={() => setSel(null)} style={{ ...btnBase, padding: '2px 8px', ...SECONDARY }}>✕</button>
               </div>
               <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '2px 0 4px' }}>物理位置（部署在哪台机器）</div>
-              {row('Pod', 'α')}
+              {row('集群（L6 · 万卡）', `本集群 · ${N.toLocaleString()} 卡`)}
+              {row('Pod（L4 · UBL128）', `Pod ${Math.floor(sel / (CAB_CARDS * 2))} / ${Math.ceil(N / (CAB_CARDS * 2))}`)}
               {row('机柜（物理分组）', `C${phys.cabinet}`)}
               {row('Host · 节点', `${phys.host}（柜内 ${phys.host % NODES_PER_CAB}）`)}
               {row('卡槽 slot', `${phys.slot} / 8`)}
