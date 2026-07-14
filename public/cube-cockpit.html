@@ -2648,8 +2648,11 @@ function applyTheme(dark){
   // 浅色对齐工作台白场：雾用近白 #eef1f5 而非发蓝的 #d9e1ec，远端拉远减少灰霾
   scene.fog.color.set(dark ? 0x010409 : 0xeef1f5);
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
-  ambientLight.color.set(dark ? 0x93a4c0 : 0xdfe6f0);
-  ambientLight.intensity = dark ? 0.95 : 0.92;
+  // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
+  ambientLight.color.set(dark ? 0x93a4c0 : 0xf1f3f6);
+  ambientLight.intensity = dark ? 0.95 : 1.0;
+  if(typeof dl2 !== 'undefined' && dl2) dl2.color.set(dark ? 0x5878ff : 0xdbe0e8);   // 浅色去掉蓝色补光
+  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.7 : 0.55;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
