@@ -7,80 +7,93 @@
 <script src="./vendor/three-r128.min.js"></script>
 <style>
 /* ============================================================
-   PTO Design System · 默认浅色（light-first）
-   ① Foundation（品牌色·圆角·字体·动效）
-   ② Semantic（表面/前景/边框/强调，light/dark 各一套）
-      --sys-* 保持原名，下游 CSS 零改动
-   ③ 数据编码 --dv-*（PTO 对齐，跨主题恒定）
-   ④ 别名层（--bg/--panel/--txt 等存量变量不变）
+   PTO Design System — canonical tokens (retrofit, LIGHT-FIRST)
+   Source of truth: pto-new-module-design-system/tokens/{foundation,semantic,components}.css
+   Default (bare :root) = LIGHT so the cockpit shows light with no JS / no attribute
+   dependency; [data-theme="dark"] is the single dark override. All values are the
+   shared PTO values. Legacy --sys-* / --bg / --panel … names are kept in ④ as ALIASES
+   deriving from canonical tokens, so every downstream rule consumes the PTO system.
    ============================================================ */
-/* ① PTO Foundation */
-:root {
-  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6;
+/* ① Foundation — LIGHT neutral ramp (default) + theme-invariant scales */
+:root{
+  --ark-neutral-0:#FFFFFF; --ark-neutral-1:#F5F5F5; --ark-neutral-2:#FFFFFF;
+  --ark-neutral-3:#F2F2F2; --ark-neutral-4:#E6E6E6;
+  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6; --ark-domain-aux:#7C8DB8;
   --ark-green-500:#04D793; --ark-orange-500:#FFAA3B; --ark-red-500:#FF4B7B;
+  --ark-violet-400:#9B3CF6;
+  --font-size-display-lg:28px; --font-size-title-md:20px; --font-size-title-sm:16px;
+  --font-size-body-md:14px; --font-size-body-sm:12px; --font-size-label-xs:11px;
+  --font-weight-bold:700; --font-weight-semibold:600; --font-weight-medium:500;
+  --line-height-display:1.25; --line-height-body:1.5; --line-height-label:1.2;
+  --letter-spacing-label:.5px;
   --font-sans:'Inter','Source Han Sans SC','PingFang SC','Noto Sans SC',sans-serif;
   --font-mono:'JetBrains Mono','Fira Code','Consolas',monospace;
-  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px;
-  --radius-pill:999px;
-  --shadow-sm:0 1px 3px rgba(0,0,0,.12); --shadow-md:0 6px 18px rgba(0,0,0,.15);
-  --shadow-card:0 1px 2px rgba(0,0,0,.06),0 2px 6px rgba(0,0,0,.06);
-  --duration-fast:100ms; --duration-base:200ms; --easing-default:cubic-bezier(.4,0,.2,1);
-  /* 工作台布局 */
-  --comp-toolbar-h:44px; --comp-scenbar-h:34px;
-  /* 焦点环 */
-  --focus-ring:rgba(67,105,239,.42);
-  /* 细滚动条 */
-  --scrollbar-w:5px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px;
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:16px; --radius-pill:999px;
+  --panel-shell-radius:14px;
+  --duration-fast:100ms; --duration-base:200ms; --duration-slow:350ms;
+  --easing-default:cubic-bezier(.4,0,.2,1); --easing-out:cubic-bezier(0,0,.2,1);
+  --comp-toolbar-h:44px; --comp-scenbar-h:34px; --scrollbar-w:5px;
 }
-/* ② Semantic · 浅色（默认） */
-:root, :root[data-theme="light"] {
-  --sys-bg:#F0F2F5; --sys-surface:#FFFFFF; --sys-sunken:#F2F4F7;
-  --sys-raised:#F5F5F5; --sys-raised-hover:#EBEBEB;
-  --sys-border:rgba(0,0,0,.09); --sys-border-strong:rgba(0,0,0,.16);
-  --sys-text:rgba(0,0,0,.88); --sys-text-dim:rgba(0,0,0,.52); --sys-text-bright:rgba(0,0,0,.90);
-  --sys-accent:#4369EF; --sys-accent-strong:#5A92E6;
-  --sys-danger:#FF4B7B; --sys-danger-bg:color-mix(in srgb,#FF4B7B 12%,transparent);
-  --sys-overlay:rgba(255,255,255,.97);
-  --sys-stage-bg:radial-gradient(ellipse at 50% 30%,#eef2f8 0%,#d9e1ec 75%);
-  --btn-radius:var(--radius-lg);
-  /* 交互状态 */
+/* ② Semantic — LIGHT (default). Accent/status/tones are theme-invariant and set here. */
+:root, :root[data-theme="light"]{
+  --background:var(--ark-neutral-1); --background-elevated:var(--ark-neutral-2);
+  --surface-1:#FFFFFF; --surface-2:#F2F2F2; --surface-3:#E6E6E6; --surface-4:#CCCCCC;
+  --foreground:rgba(0,0,0,.90); --foreground-secondary:rgba(0,0,0,.55);
+  --foreground-muted:rgba(0,0,0,.38); --foreground-disabled:rgba(0,0,0,.25);
+  --border-subtle:rgba(0,0,0,.07); --border-default:rgba(0,0,0,.12); --border-strong:rgba(0,0,0,.18);
+  --primary:var(--ark-blue-500); --primary-hover:var(--ark-blue-600); --primary-foreground:#f5f9ff;
+  --accent:var(--ark-domain-aux); --success:var(--ark-green-500); --warning:var(--ark-orange-500); --danger:var(--ark-red-500);
+  --tone-critical-bg:color-mix(in srgb,var(--danger) 14%,transparent);
+  --tone-warning-bg:color-mix(in srgb,var(--warning) 16%,transparent);
+  --tone-info-bg:color-mix(in srgb,var(--primary) 16%,transparent);
+  --focus-ring:rgba(67,105,239,.36);
   --state-hover:rgba(0,0,0,.05); --state-press:rgba(0,0,0,.09);
-  --state-selected:rgba(67,105,239,.10); --state-muted:rgba(0,0,0,.05);
-  /* 按钮阴影（Apple 风格内高光） */
-  --btn-shadow:inset 0 1px 0 rgba(255,255,255,.80),0 1px 2px rgba(0,0,0,.06);
-  --btn-shadow-on:inset 0 1px 2px rgba(0,0,0,.18);
+  --state-muted:rgba(0,0,0,.05); --state-selected:rgba(67,105,239,.10);
+  --surface-disabled:rgba(0,0,0,.04); --border-disabled:rgba(0,0,0,.07);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12); --shadow-lg:0 12px 30px rgba(0,0,0,.16);
+  --shadow-card:0 1px 2px rgba(0,0,0,.06),0 2px 6px rgba(0,0,0,.06);
+  --overlay-surface:rgba(255,255,255,.94);
+  --stage-bg:radial-gradient(ellipse at 50% 26%,#ffffff 0%,#eef1f5 82%);
 }
-/* ② Semantic · 暗色 */
-:root[data-theme="dark"] {
-  --sys-bg:#101010; --sys-surface:#141414; --sys-sunken:#1c1c1c;
-  --sys-raised:#1c1c1c; --sys-raised-hover:#262626;
-  --sys-border:rgba(255,255,255,.09); --sys-border-strong:rgba(255,255,255,.16);
-  --sys-text:rgba(255,255,255,.88); --sys-text-dim:rgba(255,255,255,.52); --sys-text-bright:#FFFFFF;
-  --sys-accent:#4369EF; --sys-accent-strong:#5A92E6;
-  --sys-danger:#FF4B7B; --sys-danger-bg:color-mix(in srgb,#FF4B7B 14%,transparent);
-  --sys-overlay:rgba(10,10,10,.90);
-  --sys-stage-bg:radial-gradient(ellipse at 50% 30%,#0f1626 0%,#010409 75%);
-  --btn-radius:var(--radius-lg);
-  /* 交互状态 */
+/* ② Semantic — DARK override (single block: ramp + surfaces + elevation) */
+:root[data-theme="dark"]{
+  --ark-neutral-0:#0b0b0b; --ark-neutral-1:#101010; --ark-neutral-2:#141414;
+  --ark-neutral-3:#1a1a1a; --ark-neutral-4:#343434;
+  --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626; --surface-4:#313131;
+  --foreground:rgba(255,255,255,.90); --foreground-secondary:rgba(255,255,255,.60);
+  --foreground-muted:rgba(255,255,255,.40); --foreground-disabled:rgba(255,255,255,.25);
+  --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.16);
+  --focus-ring:rgba(67,105,239,.42);
   --state-hover:rgba(255,255,255,.06); --state-press:rgba(255,255,255,.10);
-  --state-selected:rgba(67,105,239,.14); --state-muted:rgba(255,255,255,.06);
-  /* 按钮阴影 */
-  --btn-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 2px 8px rgba(0,0,0,.18);
-  --btn-shadow-on:none;
+  --state-muted:rgba(255,255,255,.06); --state-selected:rgba(67,105,239,.14);
+  --surface-disabled:rgba(255,255,255,.04); --border-disabled:rgba(255,255,255,.06);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.28); --shadow-md:0 6px 18px rgba(0,0,0,.34); --shadow-lg:0 12px 30px rgba(0,0,0,.42);
+  --shadow-card:var(--shadow-sm);
+  --overlay-surface:rgba(20,20,20,.90);
+  --stage-bg:radial-gradient(ellipse at 50% 30%,#0f1626 0%,#010409 75%);
 }
-/* ③ 数据编码色（PTO 色板对齐，跨主题恒定） */
-:root {
-  --dv-state-idle:#04D793; --dv-state-mid:#FFAA3B; --dv-state-busy:#FF4B7B;
-  --dv-tp:#39c5cf; --dv-pp:#FFAA3B; --dv-dp:#4369EF; --dv-ep:#9B3CF6;
+/* ③ Data-viz encoding — theme-invariant, viz-exempt */
+:root{
+  --dv-tp:#39c5cf; --dv-pp:var(--warning); --dv-dp:var(--primary); --dv-ep:var(--ark-violet-400);
+  --dv-state-idle:var(--success); --dv-state-mid:var(--warning); --dv-state-busy:var(--danger);
 }
-/* ④ 别名层（存量 CSS 零改动） */
-:root {
-  --bg:var(--sys-bg); --panel:var(--sys-surface); --panel2:var(--sys-sunken);
-  --border:var(--sys-border); --border2:var(--sys-border-strong);
-  --txt:var(--sys-text); --dim:var(--sys-text-dim);
-  --blue:var(--sys-accent); --dblue:var(--sys-accent-strong);
-  --purple:var(--dv-ep); --green:var(--dv-state-idle); --red:var(--dv-state-busy);
-  --orange:var(--dv-state-mid); --teal:var(--dv-tp);
+/* ④ Compat alias — legacy names DERIVE from canonical tokens (downstream unchanged) */
+:root{
+  --btn-radius:var(--radius-lg);
+  --sys-bg:var(--background); --sys-surface:var(--surface-1); --sys-sunken:var(--surface-2);
+  --sys-raised:var(--surface-2); --sys-raised-hover:var(--surface-3);
+  --sys-overlay:var(--overlay-surface); --sys-stage-bg:var(--stage-bg);
+  --sys-border:var(--border-default); --sys-border-strong:var(--border-strong);
+  --sys-text:var(--foreground); --sys-text-dim:var(--foreground-secondary); --sys-text-bright:var(--foreground);
+  --sys-accent:var(--primary); --sys-accent-strong:var(--primary-hover);
+  --sys-danger:var(--danger); --sys-danger-bg:var(--tone-critical-bg);
+  --bg:var(--background); --panel:var(--surface-1); --panel2:var(--surface-2);
+  --border:var(--border-default); --border2:var(--border-strong);
+  --txt:var(--foreground); --dim:var(--foreground-secondary);
+  --blue:var(--primary); --dblue:var(--primary-hover);
+  --purple:var(--dv-ep); --green:var(--success); --red:var(--danger);
+  --orange:var(--warning); --teal:var(--dv-tp);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -94,43 +107,35 @@ body{background:var(--bg);color:var(--txt);font-family:var(--font-sans);overflow
 #app{display:flex;flex-direction:column;height:100vh}
 /* ===== 顶栏 ===== */
 #topbar{height:var(--comp-toolbar-h);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px;background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-bottom:1px solid var(--sys-border)}
-#topbar .title{font-size:14px;font-weight:700;letter-spacing:-.01em;background:linear-gradient(90deg,var(--blue) 20%,var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent;margin-right:6px;white-space:nowrap}
+#topbar .title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--sys-text-bright);margin-right:6px;white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
+#topbar .title::before{content:"";width:9px;height:9px;border-radius:3px;background:var(--sys-accent);flex-shrink:0}
 #topbar .grp{display:flex;align-items:center;gap:5px}
 #topbar .grplab{font-size:11px;color:var(--dim);margin-right:2px}
-button{cursor:pointer;background:var(--sys-raised);color:var(--txt);border:1px solid var(--sys-border-strong);border-radius:var(--btn-radius);padding:4px 10px;font:500 12px/1 var(--font-sans);box-shadow:var(--btn-shadow);transition:background var(--duration-fast),border-color var(--duration-fast),box-shadow var(--duration-fast);white-space:nowrap}
+button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;background:var(--sys-raised);color:var(--txt);border:1px solid var(--sys-border);border-radius:var(--btn-radius);padding:0 11px;font:500 12px/1 var(--font-sans);box-shadow:none;transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast);white-space:nowrap}
 button:hover{background:var(--sys-raised-hover);border-color:var(--sys-border-strong)}
-button:active{background:var(--state-press);box-shadow:var(--btn-shadow-on)}
-button:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
-button.on{background:var(--dblue);border-color:var(--blue);color:#fff;box-shadow:var(--btn-shadow-on)}
-button.lens-TP.on{background:#0f4a50;border-color:var(--teal)}
-button.lens-PP.on{background:#5a4310;border-color:var(--orange)}
-button.lens-DP.on{background:#173a6b;border-color:var(--blue)}
-button.lens-EP.on{background:#3c2a63;border-color:var(--purple)}
-button.lens-SP.on{background:#0d4536;border-color:#2ea27a}
-button.lens-CP.on{background:#3a2440;border-color:#c586d6}
-button.lens-JOB.on{background:#1a3a5c;border-color:#58a6ff}
-button.warn.on{background:color-mix(in srgb,var(--red) 22%,#000);border-color:var(--red)}
+button:active{background:var(--state-press)}
+button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--focus-ring)}
+button.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
+button.lens-TP.on{background:color-mix(in srgb,var(--teal) 14%,transparent);border-color:color-mix(in srgb,var(--teal) 52%,var(--sys-border));color:color-mix(in srgb,var(--teal) 68%,var(--sys-text))}
+button.lens-PP.on{background:color-mix(in srgb,var(--orange) 15%,transparent);border-color:color-mix(in srgb,var(--orange) 52%,var(--sys-border));color:#a56a00}
+button.lens-DP.on{background:color-mix(in srgb,var(--blue) 13%,transparent);border-color:color-mix(in srgb,var(--blue) 48%,var(--sys-border));color:var(--blue)}
+button.lens-EP.on{background:color-mix(in srgb,var(--purple) 13%,transparent);border-color:color-mix(in srgb,var(--purple) 48%,var(--sys-border));color:var(--purple)}
+button.lens-SP.on{background:color-mix(in srgb,var(--green) 14%,transparent);border-color:color-mix(in srgb,var(--green) 48%,var(--sys-border));color:#0a8f66}
+button.lens-CP.on{background:color-mix(in srgb,var(--purple) 12%,transparent);border-color:color-mix(in srgb,var(--purple) 44%,var(--sys-border));color:var(--purple)}
+button.lens-JOB.on{background:color-mix(in srgb,var(--blue) 13%,transparent);border-color:color-mix(in srgb,var(--blue) 48%,var(--sys-border));color:var(--blue)}
+button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--sys-danger)}
 /* ---- v20：按钮分组折叠（页面收齐）---- */
 .fold{position:relative;display:inline-flex}
 .foldhead{background:var(--sys-raised)}
-.foldhead b{color:#9ecbff;font-weight:600}
-.fold.open .foldhead{background:var(--dblue);border-color:var(--blue);color:#fff}
-.fold.open .foldhead b{color:#fff}
+.foldhead b{color:#4369EF;font-weight:600}
+.fold.open .foldhead{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
+.fold.open .foldhead b{color:var(--blue)}
 .fold .fbody{display:none;position:absolute;top:32px;left:0;z-index:40;background:var(--panel);border:1px solid var(--sys-border-strong);border-radius:var(--radius-md);padding:6px;box-shadow:0 8px 32px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.10)}
 .fold.open .fbody{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:max-content;max-width:440px}
-.foldhead.warn{border-color:#6e2c2c}
-.foldhead.warn.on{background:color-mix(in srgb,var(--red) 22%,#000);border-color:var(--red);color:#ffdcd7}
+.foldhead.warn{border-color:color-mix(in srgb,var(--red) 50%,var(--sys-border))}
+.foldhead.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--sys-danger)}
 /* ---- 浅色主题下覆盖：暗底色按钮 → 透明底 + 彩色文字 ---- */
-[data-theme="light"] button.lens-TP.on{background:color-mix(in srgb,var(--teal) 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-PP.on{background:color-mix(in srgb,var(--orange) 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-DP.on{background:color-mix(in srgb,var(--blue) 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-EP.on{background:color-mix(in srgb,var(--purple) 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-SP.on{background:color-mix(in srgb,#2ea27a 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-CP.on{background:color-mix(in srgb,#c586d6 14%,transparent);color:inherit}
-[data-theme="light"] button.lens-JOB.on{background:color-mix(in srgb,var(--blue) 14%,transparent);color:inherit}
-[data-theme="light"] button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--sys-danger)}
-[data-theme="light"] .foldhead.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--sys-danger)}
-[data-theme="light"] #topn button.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--sys-danger)}
+[data-theme="light"] #topn button.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--red)}
 [data-theme="light"] .cg.v{background:color-mix(in srgb,var(--purple) 12%,transparent);color:var(--purple)}
 [data-theme="light"] .cg.c{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red)}
 [data-theme="light"] .cg.u{background:color-mix(in srgb,var(--orange) 12%,transparent);color:#8a5f00}
@@ -159,14 +164,22 @@ button.warn.on{background:color-mix(in srgb,var(--red) 22%,#000);border-color:va
 #lefttabs button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm);border:none}
 .pane{display:none}
 .pane.show{display:block}
-#left h3{font-size:12px;color:var(--dim);font-weight:400;margin-bottom:8px}
-#left h3 b{color:var(--sys-text-bright)}
-.lvrow{position:relative;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel);padding:6px 8px;cursor:pointer;transition:border-color var(--duration-base),box-shadow var(--duration-base),background var(--duration-base);box-shadow:var(--shadow-card)}
+#left h3{font-size:11px;color:var(--dim);font-weight:400;margin-bottom:11px;line-height:1.45}
+#left h3 b{color:var(--sys-text-bright);font-size:13px;font-weight:600;letter-spacing:-.01em}
+.lvrow{position:relative;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--panel);padding:10px 12px;cursor:pointer;transition:border-color var(--duration-base),box-shadow var(--duration-base),background var(--duration-base);box-shadow:var(--shadow-card)}
 .lvrow:hover{border-color:var(--sys-border-strong);background:color-mix(in srgb,var(--panel) 96%,var(--state-hover))}
 .lvrow.focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--focus-ring),var(--shadow-card)}
-.lvrow .hd{display:flex;align-items:baseline;gap:6px}
-.lvrow .lv{font-size:11px;font-weight:700;color:var(--blue);width:24px;flex-shrink:0}
-.lvrow .nm{font-size:12px;color:var(--sys-text-bright)}
+.lvrow .hd{display:flex;align-items:center;gap:8px}
+.lvrow .lv{font-size:10px;font-weight:700;color:var(--lvc,var(--blue));flex-shrink:0;background:color-mix(in srgb,var(--lvc,var(--blue)) 13%,transparent);border-radius:5px;padding:2px 6px;letter-spacing:.03em}
+.lvrow[data-level="L7"]{--lvc:#9B3CF6}
+.lvrow[data-level="L6"]{--lvc:#FFAA3B}
+.lvrow[data-level="L5"]{--lvc:#9B3CF6}
+.lvrow[data-level="L4"]{--lvc:#FF4B7B}
+.lvrow[data-level="L3"]{--lvc:#4369EF}
+.lvrow[data-level="L2"]{--lvc:#39c5cf}
+.lvrow[data-level="L1"]{--lvc:#04D793}
+.lvrow[data-level="L0"]{--lvc:#04D793}
+.lvrow .nm{font-size:13px;font-weight:600;color:var(--sys-text-bright);letter-spacing:-.01em}
 .lvrow .ct{font-size:11px;color:var(--dim);margin-left:auto;font-family:ui-monospace,monospace}
 .lvrow .kpi{font-size:10px;color:var(--dim);margin-top:3px;font-family:ui-monospace,monospace}
 .lvrow .kpi b{font-weight:600}
@@ -175,9 +188,9 @@ button.warn.on{background:color-mix(in srgb,var(--red) 22%,#000);border-color:va
 .gap{position:relative;height:26px;display:flex;align-items:center;justify-content:flex-end;gap:6px;padding-right:4px}
 .badge{font-size:10px;padding:1px 8px;border-radius:9px;border:1px solid var(--border2);color:var(--dim);background:var(--panel);transition:.25s;position:relative;z-index:5}
 .badge.b-TP{border-color:#1b7c86;color:#7ee0e8}
-.badge.b-PP{border-color:#8a6416;color:#e3b341}
-.badge.b-DP{border-color:#1f6feb;color:#9ecbff}
-.badge.b-EP{border-color:#6e40c9;color:#d2a8ff}
+.badge.b-PP{border-color:#8a6416;color:#FFAA3B}
+.badge.b-DP{border-color:#1f6feb;color:#4369EF}
+.badge.b-EP{border-color:#6e40c9;color:#9B3CF6}
 .badge.b-ANOM{border-color:var(--red);color:#ffdcd7;display:none}
 [data-theme="light"] .badge.b-TP{border-color:#0d6b75;color:#0d6b75}
 [data-theme="light"] .badge.b-PP{border-color:#8a5f00;color:#8a5f00}
@@ -194,9 +207,9 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .ph{display:flex;gap:6px;align-items:center}
 .ph .die{flex:1;border:1px dashed var(--border2);border-radius:6px;padding:4px 8px;font-size:10px;color:var(--dim);text-align:center}
 .ph .cg{border:1px solid;border-radius:4px;font-size:10px;padding:3px 8px}
-.cg.v{border-color:var(--purple);color:#d2a8ff;background:#1c1333}
+.cg.v{border-color:var(--purple);color:#9B3CF6;background:#1c1333}
 .cg.c{border-color:var(--red);color:#ffb3ac;background:#2d0f0e}
-.cg.u{border-color:var(--orange);color:#e3b341;background:#2b2008}
+.cg.u{border-color:var(--orange);color:#FFAA3B;background:#2b2008}
 #commsvg{position:absolute;top:0;left:0;pointer-events:none;z-index:4}
 @keyframes dashmove{to{stroke-dashoffset:-22}}
 .flow{stroke-dasharray:7 4;animation:dashmove .9s linear infinite;fill:none}
@@ -206,16 +219,26 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #filterToggle:hover{background:var(--state-hover)}
 #filterToggle .ft-label{flex:1}
 #filterToggle .ft-icon{font-size:9px;color:var(--dim);transition:transform var(--duration-fast)}
-#filterBody{display:block}
+#filterBody{display:block;background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);padding:11px 12px;box-shadow:var(--shadow-card);margin-bottom:10px}
 #filterBody.collapsed{display:none}
 #filterBody.collapsed + #filterToggle .ft-icon{transform:rotate(180deg)}
 /* ---- 筛选栏（Smartscape 式下钻） ---- */
-#filterbar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:8px;position:relative;z-index:6;background:color-mix(in srgb,var(--panel) 60%,var(--sys-sunken));border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:5px 8px;font-size:11px;color:var(--dim)}
+#filterbar{display:flex;flex-direction:column;gap:8px;position:relative;z-index:6;font-size:11px;color:var(--dim)}
 #filterbar b{color:var(--sys-text-bright)}
-#filterbar button{padding:2px 7px;font-size:10.5px}
-#topn{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px;position:relative;z-index:6;font-size:10px}
-#topn button{padding:2px 7px;font-size:10px;border-color:var(--red);color:var(--red)}
-#topn button.on{background:color-mix(in srgb,var(--red) 22%,#000);border-color:var(--red);color:#fff}
+#filterbar .fb-top{display:flex;align-items:center;gap:8px}
+#filterbar #fbCrumb{flex:1;min-width:0;line-height:1.4}
+#filterbar #fbClear{flex:0 0 auto;border:none;background:transparent;box-shadow:none;color:var(--dim);min-height:24px;padding:0 6px;font-size:10.5px}
+#filterbar #fbClear:hover{background:var(--state-hover);color:var(--sys-text)}
+#filterbar .fb-rel{display:flex;align-items:center;gap:8px}
+#filterbar .fb-lab{flex:0 0 auto;font-size:10.5px;color:var(--dim)}
+.relseg{display:flex;flex:1;gap:2px;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
+.relseg .relbtn{flex:1;min-height:26px;border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);padding:0 4px;font-size:10.5px;color:var(--dim)}
+.relseg .relbtn:hover{background:var(--state-hover);color:var(--sys-text)}
+.relseg .relbtn.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm);border:none}
+#topn{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:9px;margin-bottom:0;border-top:1px solid var(--sys-border);position:relative;z-index:6;font-size:10px}
+#topn button{min-height:24px;padding:0 9px;font-size:10px;border-radius:var(--radius-pill);border-color:color-mix(in srgb,var(--red) 40%,var(--sys-border));color:var(--red);background:transparent}
+#topn button:hover{background:var(--sys-danger-bg)}
+#topn button.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--red)}
 /* ---- 整网映射页签 ---- */
 #mmcv{display:block;width:100%;border-radius:4px;cursor:crosshair;border:1px solid var(--border)}
 #mmdesc{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:46px}
@@ -231,19 +254,21 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #right{flex:1;position:relative;min-width:0;background:var(--sys-stage-bg)}
 #stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #formctl{position:absolute;top:10px;right:12px;display:flex;gap:6px;z-index:5;align-items:center}
-#formctl .hint{font-size:10px;color:var(--dim);margin-right:4px}
+#formctl .hint{font-size:10px;color:var(--dim);background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 11px;box-shadow:var(--shadow-sm)}
 /* 3D 形态控制浮层（画布左上角） */
 #formmode{position:absolute;top:10px;left:14px;z-index:5;display:flex;flex-direction:column;gap:4px}
-#formmode .fm-row{display:flex;gap:3px;align-items:center;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:3px 6px;box-shadow:var(--shadow-sm)}
-#formmode .fm-row button{border:none;background:transparent;box-shadow:none;border-radius:var(--radius-pill);padding:3px 10px;font-size:11px;color:var(--dim);font-weight:500}
+#formmode .fm-row{display:flex;gap:2px;align-items:center;background:color-mix(in srgb,var(--sys-border) 55%,var(--panel));border:1px solid var(--sys-border);border-radius:var(--radius-lg);padding:3px;box-shadow:none}
+#formmode .fm-row button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-lg) - 3px);padding:4px 12px;font-size:11px;color:var(--dim);font-weight:500;min-height:26px}
 #formmode .fm-row button:hover{background:var(--state-hover)}
-#formmode .fm-row button.on{background:var(--sys-accent);color:#fff;box-shadow:0 1px 3px rgba(67,105,239,.35)}
-#viewlab{position:absolute;top:72px;left:14px;z-index:5;font-size:12px;color:var(--dim);pointer-events:none}
+#formmode .fm-row button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+#viewlab{position:absolute;top:60px;left:14px;z-index:5;font-size:11.5px;line-height:1.45;color:var(--dim);pointer-events:none;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:6px 11px;box-shadow:var(--shadow-sm);max-width:58%}
 #viewlab b{color:var(--sys-text-bright)}
 #probe{position:absolute;left:14px;bottom:12px;z-index:5;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--dim);min-width:230px;max-width:340px;pointer-events:none;box-shadow:var(--shadow-md)}
 #probe b{color:var(--sys-text-bright)}
 #probe .lg{color:var(--teal);font-family:ui-monospace,monospace}
+#probe::before{content:"主机详情 · FOCUS";display:block;font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--sys-accent);margin-bottom:5px}
 #hud{position:absolute;right:12px;bottom:12px;z-index:5;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--dim);width:238px;pointer-events:auto;box-shadow:var(--shadow-md)}
+#hud::before{content:"实时带宽 · BANDWIDTH";display:block;font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--sys-accent);margin-bottom:6px}
 #hud .busbar{height:7px;background:var(--sys-raised);border-radius:4px;overflow:hidden;margin-top:2px}
 #hud .busbar i{display:block;height:100%;border-radius:4px;transition:width .4s}
 .hudrow{display:flex;align-items:center;gap:6px;margin-top:3px;cursor:pointer;border-radius:4px;padding:1px 3px}
@@ -282,6 +307,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .pseg{flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;opacity:.35;transition:opacity .3s;border-right:1px solid var(--sys-bg)}
 .pseg.on{opacity:1}
 .pseg.s-TP{background:#0f4a50}.pseg.s-PP{background:#5a4310}.pseg.s-EP{background:#3c2a63}.pseg.s-DP{background:#173a6b}
+/* 浅色主题：阶段段落用 PTO 语义色浅底 + 深字，替代深色皮肤 */
+[data-theme="light"] .pseg{color:rgba(0,0,0,.50);border-right-color:var(--sys-border)}
+[data-theme="light"] .pseg.on{color:rgba(0,0,0,.84)}
+[data-theme="light"] .pseg.s-TP{background:color-mix(in srgb,var(--teal) 22%,#fff)}
+[data-theme="light"] .pseg.s-PP{background:color-mix(in srgb,var(--orange) 24%,#fff)}
+[data-theme="light"] .pseg.s-EP{background:color-mix(in srgb,var(--purple) 20%,#fff)}
+[data-theme="light"] .pseg.s-DP{background:color-mix(in srgb,var(--blue) 20%,#fff)}
 #playhead{position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;box-shadow:0 0 8px #fff;pointer-events:none}
 #phaselab{font-size:12px;color:var(--orange);width:210px;text-align:right}
 </style>
@@ -344,19 +376,19 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
       <!-- ============ 页签 1：物理层级剖面 ============ -->
       <div class="pane show" id="paneHier">
-      <h3><b>2D 层级剖面</b> · 点击实体下钻筛选（Smartscape 式）</h3>
+      <h3><b>层级剖面</b> · L7→L0 · 点击实体下钻</h3>
       <div id="filterWrap">
         <button id="filterToggle"><span class="ft-label">筛选 &amp; 快速分诊</span><span class="ft-icon">▴</span></button>
         <div id="filterBody">
           <div id="filterbar">
-            <span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span>
-            <span style="flex:1 1 auto"></span>
-            <button class="relbtn on" data-rel="AUTO">跟随阶段</button>
-            <button class="relbtn lens-TP" data-rel="TP">TP组</button>
-            <button class="relbtn lens-PP" data-rel="PP">PP链</button>
-            <button class="relbtn lens-DP" data-rel="DP">DP环</button>
-            <button class="relbtn lens-EP" data-rel="EP">EP对端</button>
-            <button id="fbClear">✕ 清除</button>
+            <div class="fb-top"><span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span><button id="fbClear">✕ 清除</button></div>
+            <div class="fb-rel"><span class="fb-lab">关联</span><div class="relseg">
+              <button class="relbtn on" data-rel="AUTO">跟随阶段</button>
+              <button class="relbtn" data-rel="TP">TP组</button>
+              <button class="relbtn" data-rel="PP">PP链</button>
+              <button class="relbtn" data-rel="DP">DP环</button>
+              <button class="relbtn" data-rel="EP">EP对端</button>
+            </div></div>
           </div>
           <div id="topn"></div>
         </div>
@@ -398,14 +430,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
-        <h3><b>模型侧 · 整网分隔映射</b>（拼图原图 ⇄ 3D 货架 双向索引）<br>
-        行=整网 48 层（<b>Pangu Pro MoE 72B-A16B</b> · arXiv:2505.21411）· 列=一个 DP 副本 128 芯片（PP16×TP8）· 每层含 64 路由专家(8 组·MoGE)+4 共享</h3>
+        <h3><b>整网分隔映射</b> · 行=48 层 · 列=128 芯片（PP16×TP8）</h3>
         <div style="display:flex;gap:6px;margin-bottom:8px">
           <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
           <button id="btnClearSel">清除选择</button>
         </div>
         <canvas id="mmcv" width="404" height="400"></canvas>
-        <div id="mmdesc">点<b>行</b>=整网的一层 → 右侧 3D 亮起承载它的卡（含全部 64 个 DP 副本；魔方形态下是一整个水平切片）。点<b>格/列</b>=一张卡 → 反查它装了整网哪些片 + 显存构成。TP/PP/EP=真·裁切整网（紫色裁切线）；DP 不切、是整网复制（绿色虚线外圈）。</div>
+        <div id="mmdesc">点<b>行</b>→ 3D 亮起承载该层的卡；点<b>格</b>→ 反查该卡装载的片段与显存构成。</div>
         <div id="memPanel"></div>
       </div>
     </div>
@@ -537,32 +568,36 @@ function carrierChip(c){
 }
 /* ============ 透镜配色（选中整网片段时非承载者压暗） ============ */
 function baseHostColor(h){
-  const L = S.lens;
+  const L = S.lens, D = isDark();
   if(S.anomaly && isAnomHost[h] && (L==='EP'||L==='NONE')) return COL.RED;
   if(L==='NONE'){ const v = health[h];
     if(v>.95) return COL.RED;
-    const g = 40+Math.floor(v*140); return `rgb(${30+g*.3|0},${g},${90+g*.5|0})`; }
-  if(L==='TP') return '#1b7c86';
-  if(L==='SP') return '#1e7a5a';
-  if(L==='CP') return '#233043';
+    if(D){ const g = 40+Math.floor(v*140); return `rgb(${30+g*.3|0},${g},${90+g*.5|0})`; }
+    return `hsl(214,6%,${(76-v*18)|0}%)`; }
+  if(L==='TP') return D ? '#1b7c86' : '#2ba0b3';
+  if(L==='SP') return D ? '#1e7a5a' : '#22a578';
+  if(L==='CP') return D ? '#233043' : '#93a0b4';
   if(L==='JOB'){ const j=jobOf(h);
-    if(j===2) return '#1a2029';
+    if(j===2) return D ? '#1a2029' : '#cdd5e0';
     const v=(h%16)/16;
-    return j===0 ? `hsl(212,68%,${26+v*14|0}%)` : `hsl(174,60%,${22+v*12|0}%)`; }
-  if(L==='PP'){ const p = ppOf(h); return `hsl(${30+p*11},72%,${34+(p%4)*7}%)`; }
-  if(L==='DP'){ const d = dpOf(h); return `hsl(${205+(d%8)*6},68%,${30+((d/8)|0)*4}%)`; }
+    if(D) return j===0 ? `hsl(212,68%,${26+v*14|0}%)` : `hsl(174,60%,${22+v*12|0}%)`;
+    return j===0 ? `hsl(212,64%,${(60-v*14)|0}%)` : `hsl(174,54%,${(54-v*12)|0}%)`; }
+  if(L==='PP'){ const p = ppOf(h);
+    return D ? `hsl(${30+p*11},72%,${34+(p%4)*7}%)` : `hsl(${30+p*11},82%,${(60-(p%4)*4)|0}%)`; }
+  if(L==='DP'){ const d = dpOf(h);
+    return D ? `hsl(${205+(d%8)*6},68%,${30+((d/8)|0)*4}%)` : `hsl(${205+(d%8)*6},66%,${(60-((d/8)|0)*3)|0}%)`; }
   if(L==='EP'){ if(!isExpertHost[h]) return themeC('#21262d','#c4cdd8');
-    return isExpertHost[h]===2 ? '#e3b341' : COL.EP; }
+    return isExpertHost[h]===2 ? '#FFAA3B' : COL.EP; }
   return COL.DIM;
 }
-function hostColor(h){ if(!carrierHost(h) || !filterPassHost(h)) return themeC('#151b23','#cdd5e0'); return baseHostColor(h); }
+function hostColor(h){ if(!carrierHost(h) || !filterPassHost(h)) return themeC('#151b23','#c8cacc'); return baseHostColor(h); }
 function chipColor(c){
-  if(!carrierChip(c) || !filterPassHost(hostOf(c))) return themeC('#141a21','#d1d9e4');
-  const h = hostOf(c), s = slotOf(c);
-  if(S.lens==='TP'){ const base=[26,124,134];
-    const k = .75 + .35*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
-  if(S.lens==='SP'){ const k = .7 + .4*(s/7);
-    return `rgb(${30*k|0},${122*k|0},${90*k|0})`; }
+  if(!carrierChip(c) || !filterPassHost(hostOf(c))) return themeC('#141a21','#caccce');
+  const h = hostOf(c), s = slotOf(c), D = isDark();
+  if(S.lens==='TP'){ const base = D ? [26,124,134] : [58,178,196];
+    const k = .78 + .28*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
+  if(S.lens==='SP'){ const base = D ? [30,122,90] : [52,182,134];
+    const k = .78 + .28*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
   return baseHostColor(h);
 }
 /* ============ 当前阶段的参与者（左侧弧线 / 画布描边 / 3D 通信线共用） ============ */
@@ -620,7 +655,7 @@ function updateLevelKPI(){
     sum+=u; if(u>peak) peak=u;
     if(health[h]>.95 || (S.anomaly&&isAnomHost[h])) red++; }
   const typ=(sum/N_HOST)|0, redP=(red/N_HOST*100).toFixed(1);
-  const html = `典型 <b style="color:#c9d1d9">${typ}%</b> · 红 <b style="color:${red>5?'#f85149':'#8b949e'}">${redP}%</b> · 峰 <b style="color:#e3b341">${peak|0}%</b>`;
+  const html = `典型 <b style="color:#c9d1d9">${typ}%</b> · 红 <b style="color:${red>5?'#FF4B7B':'#8b949e'}">${redP}%</b> · 峰 <b style="color:#FFAA3B">${peak|0}%</b>`;
   ['kpiL6','kpiL5','kpiL4','kpiL3','kpiL2'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.innerHTML=html; });
 }
@@ -852,24 +887,24 @@ function drawArcs(){
   const out = [`<defs>${['TP','PP','DP','EP','RED'].map(k=>
     `<marker id="arr${k}" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="${COL[k]}"/></marker>`).join('')}</defs>`];
   const dot = (p,c)=>out.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${c}"/>`);
-  const lab = (x,y,c,t,anchor)=>out.push(`<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" fill="${c}" font-size="10" text-anchor="${anchor||'middle'}" style="paint-order:stroke;stroke:#010409;stroke-width:3px">${t}</text>`);
+  const lab = (x,y,c,t,anchor)=>out.push(`<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" fill="${c}" font-size="10" text-anchor="${anchor||'middle'}" style="paint-order:stroke;stroke:${isDark()?'#0b0e14':'#ffffff'};stroke-width:2.5px;stroke-opacity:.85">${t}</text>`);
   const arc = (a,b,bow,color,wd,mk)=>out.push(`<path class="flow" d="${arcPath(a,b,bow)}" stroke="${color}" stroke-width="${wd}"${mk?` marker-end="url(#arr${mk})"`:''}/>`);
   const podSel = ()=>{ if(!S.focusPod) return;
     const i = S.focusPod, si = anchorEl('#sn'+i);
-    dot(si,'#9ecbff');
+    dot(si,'#4369EF');
     if(i<8){ const pi = anchorEl('#pod5-'+i);
-      out.push(`<path d="${arcPath(si,pi,-12)}" stroke="#9ecbff" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`);
-      dot(pi,'#9ecbff');
-      lab(pi.x, pi.y+15, '#9ecbff', `已选 SN${i} · 缩略超节点（未下钻 · 点 SN0 返回）`); }
-    else lab(si.x+8, si.y+3, '#9ecbff', `已选超节点 ${i} · 不在本服务池（缩略）`, 'start');
+      out.push(`<path d="${arcPath(si,pi,-12)}" stroke="#4369EF" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`);
+      dot(pi,'#4369EF');
+      lab(pi.x, pi.y+15, '#4369EF', `已选 SN${i} · 缩略超节点（未下钻 · 点 SN0 返回）`); }
+    else lab(si.x+8, si.y+3, '#4369EF', `已选超节点 ${i} · 不在本服务池（缩略）`, 'start');
   };
   const flt = filterInfo();
   if(flt){                                   // ==== Smartscape 下钻模式 ====
     const hp = anchorL3(S.filterHost);
     dot(hp,'#fff'); lab(hp.x, hp.y-8, '#fff', `Host ${S.filterHost}`);
     for(let s=0;s<8;s++){ const p=anchorL2(S.filterHost*8+s);   // ① 纵向下钻：Host → 8 芯片
-      out.push(`<path d="${arcPath(hp,p,-10)}" stroke="#58a6ff" stroke-width="1" fill="none" opacity=".7"/>`);
-      dot(p,'#58a6ff'); }
+      out.push(`<path d="${arcPath(hp,p,-10)}" stroke="#4369EF" stroke-width="1" fill="none" opacity=".7"/>`);
+      dot(p,'#4369EF'); }
     if(!flt.empty){                                             // ② 关联集合（当前关系）
       const others = flt.hosts.filter(x=>x!==S.filterHost).slice(0,14);
       others.forEach(h=>{ const p=anchorL3(h);
@@ -880,9 +915,9 @@ function drawArcs(){
     const ups = [anchorL4cab(cabOf(S.filterHost)), anchorEl('#pod5-0'), anchorEl('#sn0')];
     let prev = hp;                                              // ③ 向上归属链：Host→Pod→Pool→SuperCluster
     ups.forEach(p=>{ out.push(`<path d="${arcPath(prev,p,0)}" stroke="#3d444d" stroke-width="1" fill="none"/>`); dot(p,'#3d444d'); prev=p; });
-    lab(ups[0].x+4, ups[0].y-6, '#9ecbff', `柜${cabOf(S.filterHost)}`, 'start');
-    lab(ups[1].x, ups[1].y-9, '#9ecbff', 'SN0·本');
-    lab(ups[2].x+7, ups[2].y+3, '#9ecbff', 'SN0', 'start');
+    lab(ups[0].x+4, ups[0].y-6, '#4369EF', `柜${cabOf(S.filterHost)}`, 'start');
+    lab(ups[1].x, ups[1].y-9, '#4369EF', 'SN0·本');
+    lab(ups[2].x+7, ups[2].y+3, '#4369EF', 'SN0', 'start');
     podSel();
     commsvg.innerHTML = out.join('');
     const map = { TP:'#bdTP', PP:'#bdPP', EP:'#bdEP', DP:'#bdDP' };
@@ -913,8 +948,8 @@ function drawArcs(){
     const hub = anchorL3(ps.hub);
     ps.hosts.forEach(h=>{ if(h===ps.hub) return;
       const p = anchorL3(h); arc(hub,p, 22+((h*7)%18), COL.EP, 1.3, 'EP'); dot(p,COL.EP); });
-    dot(hub,'#e3b341');
-    lab(hub.x, hub.y-9, '#e3b341', `热点专家 Host ${ps.hub} ⇄ 各专家 · AllToAll`);
+    dot(hub,'#FFAA3B');
+    lab(hub.x, hub.y-9, '#FFAA3B', `热点专家 Host ${ps.hub} ⇄ 各专家 · AllToAll`);
     if(S.anomaly){
       const pod1 = anchorEl('#pod5-1', true);
       arc(hub, pod1, -60, COL.RED, 2.2, 'RED');
@@ -940,7 +975,7 @@ function drawArcs(){
   if(S.anomaly && ph==='EP') $('#bdAnom').classList.add('live');
   const p1 = $('#pod5-1');
   if(p1 && S.focusPod!==1){                     // 选中态优先于异常染色
-    p1.style.borderColor = S.anomaly?'#f85149':'#30363d';
+    p1.style.borderColor = S.anomaly?'#FF4B7B':'#30363d';
     p1.style.color = S.anomaly?'#ffdcd7':'#8b949e';
     p1.style.background = S.anomaly?'#3d0c0e':'#161b22'; }
 }
@@ -1072,13 +1107,13 @@ function renderMemPanel(){
   const el = $('#memPanel');
   if(!S.selCard){ el.classList.remove('show'); return; }
   const {pp,tp} = S.selCard;
-  const segs = [ ['专家权重分片（占权重 95%）',24,'#1f6feb'], ['注意力权重（5%）',2,'#58a6ff'],
-    ['优化器 m',16,'#6e40c9'], ['优化器 v',16,'#8957e5'], ['激活值',27,'#3fb950'], ['KV·其他',15,'#8b949e'] ];
+  const segs = [ ['专家权重分片（占权重 95%）',24,'#1f6feb'], ['注意力权重（5%）',2,'#4369EF'],
+    ['优化器 m',16,'#6e40c9'], ['优化器 v',16,'#8957e5'], ['激活值',27,'#04D793'], ['KV·其他',15,'#8b949e'] ];
   el.innerHTML = `<h4>单卡显存构成 · PP${pp}${tp!=null?'·TP'+tp:''}</h4>
     <div class="membar">${segs.map(s=>`<div title="${s[0]} ${s[1]}%" style="width:${s[1]}%;background:${s[2]}"></div>`).join('')}</div>
     <div class="memleg">${segs.map(s=>`<span><i style="background:${s[2]}"></i>${s[0]} ${s[1]}%</span>`).join('')}</div>
     <div class="note">优化器状态(m+v)≈权重的 2-4×；激活占大头可用重算换回。${tp!=null?`该卡持有权重列切第 ${tp+1}/8 片。`:''}</div>
-    <div class="note" style="color:#d2a8ff">参数组绑定：<b style="color:#9ecbff">W</b> ⇄ <b style="color:#ffa198">∇W</b> ⇄ <b style="color:#d2a8ff">m,v</b> 同卡同组 · 更新式 W ← W − lr·m̂/(√v̂+ε)</div>`;
+    <div class="note" style="color:#9B3CF6">参数组绑定：<b style="color:#4369EF">W</b> ⇄ <b style="color:#ffa198">∇W</b> ⇄ <b style="color:#9B3CF6">m,v</b> 同卡同组 · 更新式 W ← W − lr·m̂/(√v̂+ε)</div>`;
   el.classList.add('show');
 }
 /* ---- 页签切换 ---- */
@@ -1178,7 +1213,7 @@ function mergedEdges(geo, translations, color, opacity){
 var poolLine, podBaseEdges;
 { const pts=[V3(-19,.05,-14),V3(271,.05,-14),V3(271,.05,14),V3(-19,.05,14),V3(-19,.05,-14)];
   const g=new THREE.BufferGeometry().setFromPoints(pts);
-  poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x58a6ff}), .55));
+  poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x4369EF}), .55));
   physGroup.add(poolLine); }
 // 本超节点底座（L4）
 { const base=new THREE.Mesh(new THREE.BoxGeometry(31,.24,22),
@@ -1232,7 +1267,7 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
   dummy.position.set(vA.x-.62, vA.y-.08+bh/2, vA.z);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,bh,1); dummy.updateMatrix();
   memMesh.setMatrixAt(h,dummy.matrix);
-  memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xf85149: memLevel[h]>.75?0xd29922:0x39c5cf)); }
+  memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xFF4B7B: memLevel[h]>.75?0xFFAA3B:0x39c5cf)); }
 scene.add(memMesh);
 // 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
@@ -1255,9 +1290,9 @@ function makeLabel(text, color, w){
   const worldW = w * tw / 512;                        // 保持与原 512px 画布一致的世界尺寸
   sp.scale.set(worldW, worldW * th / tw, 1); return sp;
 }
-{ const l1=makeLabel('SN0 · 本超节点 8192 NPU','#9ecbff',26); l1.position.set(0,9.5,0); physGroup.add(l1);
-  const l2=makeLabel('Service Pool · SN0-7','#58a6ff',22); l2.position.set(126,7.5,-19); physGroup.add(l2);
-  const l3=makeLabel('SuperCluster ×64 超节点','#6e7681',40); l3.position.set(FIELD.x,13,FIELD.z+30); physGroup.add(l3); }
+{ const l1=makeLabel('SN0 · 本超节点 · 8192 NPU','#4369EF',9.5); l1.position.set(0,11,0); physGroup.add(l1);
+  const l2=makeLabel('Service Pool · SN0-7','#4369EF',8); l2.position.set(126,8,-19); physGroup.add(l2);
+  const l3=makeLabel('SuperCluster ×64','#8a93a3',15); l3.position.set(FIELD.x,13,FIELD.z+30); physGroup.add(l3); }
 /* ---- 形态 3：层级堆叠（与左侧 L7→L0 对齐的 3D 分层视图） ---- */
 const STACK = { L7:30, L6:26, L5:22, L4:18.5, L3:13.5, L2:8, L1:4, L0:1 };
 const stackGroup = new THREE.Group(); stackGroup.visible = false; scene.add(stackGroup);
@@ -1318,9 +1353,9 @@ var stackL5, stackL4, stackPath; const stackPlats = {};
   stackGroup.add(icm);
   const wf=(x,z,sx,sz,color,y)=>stackGroup.add(mergedEdges(new THREE.BoxGeometry(sx,.5,sz),[{x,y,z}],color,.8));
   wf(-1.6,0,2.6,1.6,0x8b949e,STACK.L1); wf(1.6,0,2.6,1.6,0x8b949e,STACK.L1);
-  wf(-2.9,0,2.2,1.6,0xa371f7,STACK.L0); wf(0,0,2.2,1.6,0xf85149,STACK.L0); wf(2.9,0,2.2,1.6,0xd29922,STACK.L0);
+  wf(-2.9,0,2.2,1.6,0x9B3CF6,STACK.L0); wf(0,0,2.2,1.6,0xFF4B7B,STACK.L0); wf(2.9,0,2.2,1.6,0xFFAA3B,STACK.L0);
   const pg = new THREE.BufferGeometry().setFromPoints([...Array(8)].map(()=>new THREE.Vector3()));
-  stackPath = new THREE.Line(pg, reg(new THREE.LineBasicMaterial({color:0x58a6ff}),.85));
+  stackPath = new THREE.Line(pg, reg(new THREE.LineBasicMaterial({color:0x4369EF}),.85));
   stackGroup.add(stackPath);
 }
 /* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
@@ -1329,15 +1364,15 @@ const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
   const axis=(a,b,color)=>{ const g=new THREE.BufferGeometry().setFromPoints([a,b]);
     cubeGroup.add(new THREE.Line(g, reg(new THREE.LineBasicMaterial({color}),.9))); };
   axis(V3(ox,oy,oz), V3(ox+9.2*CUBE.sx,oy,oz), 0x39c5cf);
-  axis(V3(ox,oy,oz), V3(ox,oy+17.2*CUBE.sy,oz), 0xd29922);
-  axis(V3(ox,oy,oz), V3(ox,oy,oz+66*CUBE.sz), 0x58a6ff);
+  axis(V3(ox,oy,oz), V3(ox,oy+17.2*CUBE.sy,oz), 0xFFAA3B);
+  axis(V3(ox,oy,oz), V3(ox,oy,oz+66*CUBE.sz), 0x4369EF);
   const lx=makeLabel('X = TP×8','#39c5cf',9); lx.position.set(ox+10.5*CUBE.sx,oy,oz); cubeGroup.add(lx);
-  const ly=makeLabel('Y = PP×16 = 模型深度','#d29922',14); ly.position.set(ox,oy+18.6*CUBE.sy,oz); cubeGroup.add(ly);
-  const lz=makeLabel('Z = DP×64','#58a6ff',9); lz.position.set(ox,oy,oz+69*CUBE.sz); cubeGroup.add(lz); }
+  const ly=makeLabel('Y = PP×16 = 模型深度','#FFAA3B',14); ly.position.set(ox,oy+18.6*CUBE.sy,oz); cubeGroup.add(ly);
+  const lz=makeLabel('Z = DP×64','#4369EF',9); lz.position.set(ox,oy,oz+69*CUBE.sz); cubeGroup.add(lz); }
 // 层段标尺：每个 PP 段挂 "S0·L1-4"
 const rulerSprites = [];
 for(let s2=0;s2<16;s2++){
-  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#d29922', 7.5);
+  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#FFAA3B', 7.5);
   sp.position.set(CUBE.cx+5.4*CUBE.sx, CUBE.cy+(7.5-s2)*CUBE.sy, CUBE.cz-35*CUBE.sz);
   rulerSprites.push(sp); cubeGroup.add(sp);
 }
@@ -1350,24 +1385,24 @@ const slices = { TP:[], PP:[], DP:[] };
   for(let k=0;k<7;k++){ const g=new THREE.PlaneGeometry(66*CUBE.sz+2,17.6*CUBE.sy); g.rotateY(Math.PI/2);
     const m=mk(g,0x39c5cf); m.position.set(CUBE.cx+(k-3)*CUBE.sx,CUBE.cy,CUBE.cz); slices.TP.push(m); }
   for(let k=0;k<15;k++){ const g=new THREE.PlaneGeometry(9.2*CUBE.sx,66*CUBE.sz+2); g.rotateX(Math.PI/2);
-    const m=mk(g,0xd29922); m.position.set(CUBE.cx,CUBE.cy+(7-k)*CUBE.sy,CUBE.cz); slices.PP.push(m); }
+    const m=mk(g,0xFFAA3B); m.position.set(CUBE.cx,CUBE.cy+(7-k)*CUBE.sy,CUBE.cz); slices.PP.push(m); }
   for(let k=1;k<8;k++){ const g=new THREE.PlaneGeometry(9.2*CUBE.sx,17.6*CUBE.sy);
-    const m=mk(g,0x58a6ff); m.position.set(CUBE.cx,CUBE.cy,CUBE.cz+(k*8-32)*CUBE.sz); slices.DP.push(m); } }
+    const m=mk(g,0x4369EF); m.position.set(CUBE.cx,CUBE.cy,CUBE.cz+(k*8-32)*CUBE.sz); slices.DP.push(m); } }
 // 选中整网层 → 魔方水平切片
 const selSlab = new THREE.Mesh(new THREE.BoxGeometry(9.4*CUBE.sx, CUBE.sy*.96, 66*CUBE.sz),
-  reg(new THREE.MeshBasicMaterial({color:0xa371f7, depthWrite:false}),.16));
+  reg(new THREE.MeshBasicMaterial({color:0x9B3CF6, depthWrite:false}),.16));
 selSlab.visible=false; cubeGroup.add(selSlab);
 /* ---- 焦点/悬停指示 & 芯片下钻细节（L1/L0） ---- */
 function edgeBox(color){ const g=new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1));
   return new THREE.LineSegments(g,new THREE.LineBasicMaterial({color,transparent:true,opacity:.95})); }
 const hoverBox = edgeBox(0x9ecbff), focusHostBox = edgeBox(0xffffff), focusChipBox = edgeBox(0xffffff);
-const focusCabBox = edgeBox(0x58a6ff);
+const focusCabBox = edgeBox(0x4369EF);
 scene.add(hoverBox,focusHostBox,focusChipBox,focusCabBox);
 const detail = new THREE.Group(); scene.add(detail);
 { const dieMat = new THREE.MeshLambertMaterial({color:0x2a3038});
   [[-.05,0],[.05,0]].forEach(p=>{ const d=new THREE.Mesh(new THREE.BoxGeometry(.075,.02,.11),dieMat);
     d.position.set(p[0],.09,p[1]); detail.add(d); });
-  [[0xa371f7,-.028],[0xf85149,0],[0xd29922,.028]].forEach(cc=>{
+  [[0x9B3CF6,-.028],[0xFF4B7B,0],[0xFFAA3B,.028]].forEach(cc=>{
     const m=new THREE.Mesh(new THREE.BoxGeometry(.03,.016,.022),
       new THREE.MeshLambertMaterial({color:cc[0]}));
     m.position.set(-.05,.104,cc[1]); detail.add(m); });
@@ -1400,15 +1435,15 @@ function buildComm(){
       const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
       cubeLine(pts.concat(back,[pts[0].clone()]), 0x39c5cf, .95); }
     if(ph==='PP'){ const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+3,0,new THREE.Vector3()));
-      cubeLine(pts, 0xd29922, .9); }
+      cubeLine(pts, 0xFFAA3B, .9); }
     if(ph==='EP'){ const hub=expertHosts[5], a=chipCubeM(hub*8+4,0,new THREE.Vector3());
       for(let e=1;e<N_EXP;e+=5){ const h2=expertHosts[e]; if(h2===hub) continue;
-        cubeLine([a.clone(), chipCubeM(h2*8+4,0,new THREE.Vector3())], 0xa371f7, .5); }
+        cubeLine([a.clone(), chipCubeM(h2*8+4,0,new THREE.Vector3())], 0x9B3CF6, .5); }
       if(S.anomaly) for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
-        cubeLine([chipCubeM(h2*8+4,0,new THREE.Vector3()), V3(16,17-k2,2)], 0xf85149, .95); } }
+        cubeLine([chipCubeM(h2*8+4,0,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } }
     if(ph==='DP'){ const pts=[]; for(let d=0;d<64;d+=4) pts.push(chipCubeM((d*16+ppF)*8+3,0,new THREE.Vector3()));
       pts.push(pts[0].clone().add(V3(0,.6,0)));
-      cubeLine(pts, 0x58a6ff, .7); }
+      cubeLine(pts, 0x4369EF, .7); }
   }
   clearMovers();
   const wire = S.wire || 'AUTO';
@@ -1550,7 +1585,7 @@ function buildPhaseLines(dim){
       const p=chipPhys(S.focusChip,new THREE.Vector3());
       const nxt=hostPos(dpF*16+(ppF+1)%16,new THREE.Vector3());
       const arc=bez(p.clone(),nxt,1.2);
-      flowTube(arc,0xd29922,3,.9,'UB'); addMover(arc,0xffe08a,.4,.5,'UB');
+      flowTube(arc,0xFFAA3B,3,.9,'UB'); addMover(arc,0xffe08a,.4,.5,'UB');
       wireLab(`本卡持有 L${ppF*3+1}-${ppF*3+3} 的 TP${slotOf(S.focusChip)} 切片 · 激活经 UB → S${(ppF+1)%16}`,'#ffd28a',26,p.clone().add(V3(0,.65,0)));
     } else if(band==='cab'){                   // 本机视角：只画上下游
       const prev=(ppF+15)%16, next=(ppF+1)%16;
@@ -1558,23 +1593,23 @@ function buildPhaseLines(dim){
       const pPrev=hostPos(dpF*16+prev,new THREE.Vector3()).add(V3(0,.12,0));
       const pNext=hostPos(dpF*16+next,new THREE.Vector3()).add(V3(0,.12,0));
       const a1=bez(pPrev.clone(),hp.clone(),1.6), a2=bez(hp.clone(),pNext.clone(),1.6);
-      flowTube(a1,0xd29922,1.2,.85,'UB'); addMover(a1,0xffe08a,.35,.3,'UB');
-      flowTube(a2,0xd29922,1.2,.85,'UB'); addMover(a2,0xffe08a,.35,.3,'UB');
-      dotAt(pPrev,0xd29922,.5); dotAt(pNext,0xd29922,.5);
+      flowTube(a1,0xFFAA3B,1.2,.85,'UB'); addMover(a1,0xffe08a,.35,.3,'UB');
+      flowTube(a2,0xFFAA3B,1.2,.85,'UB'); addMover(a2,0xffe08a,.35,.3,'UB');
+      dotAt(pPrev,0xFFAA3B,.5); dotAt(pNext,0xFFAA3B,.5);
       wireLab(`S${prev} → 接收激活`,'#ffd28a',9,pPrev.clone().add(V3(0,.8,0)));
       wireLab(`发送 → S${next}`,'#ffd28a',9,pNext.clone().add(V3(0,.8,0)));
       wireLab(`Host ${fh} = DP${dpF} 链的 S${ppF} 段 · 承载 L${ppF*3+1}-${ppF*3+3}`,'#ffd28a',15,hp.clone().add(V3(0,1.5,0)));
       const ctx=[]; for(let k=0;k<16;k++) ctx.push(hostPos(dpF*16+k,new THREE.Vector3()).add(V3(0,.1,0)));
-      flowTube(ctx,0xd29922,.3,.15,'UB');      // 整链弱上下文
+      flowTube(ctx,0xFFAA3B,.3,.15,'UB');      // 整链弱上下文
     } else {                                   // 全景：完整 16 段接力
       const pts=[]; for(let k=0;k<16;k++) pts.push(hostPos(dpF*16+k,new THREE.Vector3()).add(V3(0,.14,0)));
-      flowTube(pts, 0xd29922, .4, .9, 'UB');
+      flowTube(pts, 0xFFAA3B, .4, .9, 'UB');
       addMover(pts, 0xffffff, .22, .12, 'UB'); addMover(pts, 0xffe08a, .22, .1, 'UB');
       dotAt(pts[0],0xffffff,.16); dotAt(pts[15],0xffffff,.16);
       wireLab('S0·L1-3','#ffe08a',6,pts[0].clone().add(V3(0,.9,0)));
       wireLab('S15·L46-48','#ffe08a',7,pts[15].clone().add(V3(0,.9,0)));
-      for(let k=4;k<15;k+=5) wireLab('S'+k,'#d29922',3.5,pts[k].clone().add(V3(0,.6,0)));
-      flowTube(bez(pts[15].clone(),pts[0].clone(),2.4), 0xd29922, .08, .3, 'UB');
+      for(let k=4;k<15;k+=5) wireLab('S'+k,'#FFAA3B',3.5,pts[k].clone().add(V3(0,.6,0)));
+      flowTube(bez(pts[15].clone(),pts[0].clone(),2.4), 0xFFAA3B, .08, .3, 'UB');
       wireLab(`PP·接力 Send/Recv · DP副本${dpF} · 16 段=整网48层 · 粒子=激活流向`, '#ffd28a', 17, pts[7].clone().add(V3(0,2.8,0)));
     }
   }
@@ -1584,9 +1619,9 @@ function buildPhaseLines(dim){
       const p=chipPhys(S.focusChip,new THREE.Vector3());
       const e=hostExpertIdx[fh];
       wireLab(e>=0? `本机 = 专家 E${e}（G${e>>3} 组）· token 经 UB AllToAll 汇入本卡`
-                  : '本机非专家节点 · EP 流量路由转发、不落地', e>=0?'#d2a8ff':'#8b949e', 26, p.clone().add(V3(0,.7,0)));
+                  : '本机非专家节点 · EP 流量路由转发、不落地', e>=0?'#9B3CF6':'#8b949e', 26, p.clone().add(V3(0,.7,0)));
       if(e>=0){ const peer=hostPos(expertHosts[(e+8)%64],new THREE.Vector3());
-        const arc=bez(p.clone(),peer,2); flowTube(arc,0xa371f7,2,.8,'UB'); addMover(arc,0xd2a8ff,.4,.5,'UB'); }
+        const arc=bez(p.clone(),peer,2); flowTube(arc,0x9B3CF6,2,.8,'UB'); addMover(arc,0xd2a8ff,.4,.5,'UB'); }
       return; }
     if(band==='cab'){                          // 本机视角：与所属组/邻组对端
       const e=hostExpertIdx[fh];
@@ -1594,12 +1629,12 @@ function buildPhaseLines(dim){
       if(e>=0){
         for(let k=1;k<=4;k++){ const pe=expertHosts[(e+k*8)%64];
           const arc=bez(hp.clone(),hostPos(pe,new THREE.Vector3()).add(V3(0,.15,0)),2+k*.4);
-          flowTube(arc,0xa371f7,1,.7,'UB'); addMover(arc,0xd2a8ff,.4,.3,'UB');
+          flowTube(arc,0x9B3CF6,1,.7,'UB'); addMover(arc,0xd2a8ff,.4,.3,'UB');
           addMover(arc.slice().reverse(),0xd2a8ff,.4,.24,'UB'); }
-        wireLab(`Host ${fh} = 专家 E${e}（G${e>>3} 组）⇄ 对端专家 AllToAll 双向`,'#d2a8ff',17,hp.clone().add(V3(0,1.7,0)));
+        wireLab(`Host ${fh} = 专家 E${e}（G${e>>3} 组）⇄ 对端专家 AllToAll 双向`,'#9B3CF6',17,hp.clone().add(V3(0,1.7,0)));
       } else {
         const arc=bez(hp.clone(),hostPos(expertHosts[5],new THREE.Vector3()).add(V3(0,.15,0)),2.4);
-        flowTube(arc,0xa371f7,.6,.4,'UB');
+        flowTube(arc,0x9B3CF6,.6,.4,'UB');
         wireLab(`Host ${fh} 非专家 · token 发往专家节点（示热点 Host ${expertHosts[5]}）`,'#8b949e',17,hp.clone().add(V3(0,1.5,0)));
       }
       return; }
@@ -1613,24 +1648,24 @@ function buildPhaseLines(dim){
       const p=hostPos(expertHosts[es[0]],new THREE.Vector3()).add(V3(0,.15,0));
       const load=Math.min(.9,.3+es.length*.15+rng(cb)*.2);
       const pts=bez(hub.clone(),p,1.6+((cb*13)%30)/12);
-      flowTube(pts,0xa371f7,load*.6,.5,'UB');
+      flowTube(pts,0x9B3CF6,load*.6,.5,'UB');
       addMover(pts,0xd2a8ff,.45+rng(cb)*.4,.09,'UB');
       addMover(pts.slice().reverse(),0xd2a8ff,.45,.07,'UB');   // AllToAll 双向
     });
     dotAt(hub,0xe3b341,.3);
-    wireLab(`EP·AllToAll · 热点专家 Host ${hub0} ⇄ 63 专家（按柜聚合）· 粒子双向=浪涌`,'#d2a8ff',18,hub.clone().add(V3(0,3,0)));
+    wireLab(`EP·AllToAll · 热点专家 Host ${hub0} ⇄ 63 专家（按柜聚合）· 粒子双向=浪涌`,'#9B3CF6',18,hub.clone().add(V3(0,3,0)));
     if(S.anomaly){ const p1=podXZ(1);
       if(!S.scatter){
         const exit=hostPos(expertHosts[anomExperts[0]],new THREE.Vector3());
         for(let k2=1;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
-          flowTube(bez(hostPos(h2,new THREE.Vector3()),exit.clone().add(V3(0,.6,0)),1.4),0xf85149,.4,.6,'RDMA'); }
+          flowTube(bez(hostPos(h2,new THREE.Vector3()),exit.clone().add(V3(0,.6,0)),1.4),0xFF4B7B,.4,.6,'RDMA'); }
         const cr=bez(exit.clone(),V3(p1.x,6.8,p1.z),10);
-        flowTube(cr,0xf85149,.95,.95,'RDMA'); addMover(cr,0xffffff,.65,.15,'RDMA');
+        flowTube(cr,0xFF4B7B,.95,.95,'RDMA'); addMover(cr,0xffffff,.65,.15,'RDMA');
         wireLab('8 专家越界→SN1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
       } else {
         for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
           const cr=bez(hostPos(h2,new THREE.Vector3()),V3(p1.x+(k2-1.5)*5,6.8,p1.z),9);
-          flowTube(cr,0xd29922,.4,.8,'RDMA'); addMover(cr,0xffe08a,.55,.1,'RDMA'); }
+          flowTube(cr,0xFFAA3B,.4,.8,'RDMA'); addMover(cr,0xffe08a,.55,.1,'RDMA'); }
         wireLab('已散射 SCATTER_XDC：4 环独立出口 · 单链路峰值 ↓75%','#7ee787',20,V3(p1.x*.5,9.5,p1.z*.5));
       } }
   }
@@ -1638,30 +1673,30 @@ function buildPhaseLines(dim){
     if(band==='chip'){                         // 卡级：本卡梯度分桶 + 环邻示意
       chipRingCtx(fh);
       const p=chipPhys(S.focusChip,new THREE.Vector3());
-      wireLab(`本卡梯度分桶 · 与 63 张同位卡 Ring AllReduce（DP${dpF} · S${ppF}）`,'#9ecbff',26,p.clone().add(V3(0,.6,0)));
+      wireLab(`本卡梯度分桶 · 与 63 张同位卡 Ring AllReduce（DP${dpF} · S${ppF}）`,'#4369EF',26,p.clone().add(V3(0,.6,0)));
       const nb=hostPos(((dpF+1)%64)*16+ppF,new THREE.Vector3());
-      const arc=bez(p.clone(),nb,2); flowTube(arc,0x58a6ff,2,.8,'DP'); addMover(arc,0x9ecbff,.35,.5,'DP');
+      const arc=bez(p.clone(),nb,2); flowTube(arc,0x4369EF,2,.8,'DP'); addMover(arc,0x9ecbff,.35,.5,'DP');
     } else if(band==='cab'){                   // 本机视角：环上左右邻
       const hp=hostPos(fh,new THREE.Vector3()).add(V3(0,.1,0));
       [[(dpF+63)%64,'in'],[(dpF+1)%64,'out']].forEach(([d2,dir])=>{
         const pn=hostPos(d2*16+ppF,new THREE.Vector3()).add(V3(0,.1,0));
         const arc = dir==='out'? bez(hp.clone(),pn.clone(),2.2) : bez(pn.clone(),hp.clone(),2.2);
-        flowTube(arc,0x58a6ff,1,.8,'DP'); addMover(arc,0x9ecbff,.35,.3,'DP');
-        dotAt(pn,0x58a6ff,.5);
-        wireLab(`DP${d2}·S${ppF}${dir==='out'?' →':' ←'}`,'#9ecbff',9,pn.clone().add(V3(0,.8,0))); });
-      wireLab(`Host ${fh} 在 DP 梯度环中的左右邻（共 64 副本 · 2 Channels）`,'#9ecbff',16,hp.clone().add(V3(0,1.7,0)));
+        flowTube(arc,0x4369EF,1,.8,'DP'); addMover(arc,0x9ecbff,.35,.3,'DP');
+        dotAt(pn,0x4369EF,.5);
+        wireLab(`DP${d2}·S${ppF}${dir==='out'?' →':' ←'}`,'#4369EF',9,pn.clone().add(V3(0,.8,0))); });
+      wireLab(`Host ${fh} 在 DP 梯度环中的左右邻（共 64 副本 · 2 Channels）`,'#4369EF',16,hp.clone().add(V3(0,1.7,0)));
     } else {                                   // 全景：采样环 + 跨 Pod
       const pts=[]; for(let d=0;d<64;d+=8) pts.push(hostPos(d*16+ppF,new THREE.Vector3()));
       for(let k=0;k<pts.length;k++){
         const a2=pts[k].clone().add(V3(0,.1,0)), b2=pts[(k+1)%pts.length].clone().add(V3(0,.1,0));
         const seg=bez(a2,b2,3.2);
-        flowTube(seg,0x58a6ff,.45,.6,'DP'); addMover(seg,0x9ecbff,.4,.1,'DP');
-        flowTube(bez(a2.clone().add(V3(0,.5,0)),b2.clone().add(V3(0,.5,0)),3.2),0x58a6ff,.15,.25,'DP'); }
-      pts.forEach(p=>dotAt(p.clone().add(V3(0,.15,0)),0x58a6ff,.13));
-      wireLab(`DP·梯度 AllReduce · Stage${ppF} 环（示 8/64 副本）· 双股=2 Channels`,'#9ecbff',17,V3(0,6.6,0));
+        flowTube(seg,0x4369EF,.45,.6,'DP'); addMover(seg,0x9ecbff,.4,.1,'DP');
+        flowTube(bez(a2.clone().add(V3(0,.5,0)),b2.clone().add(V3(0,.5,0)),3.2),0x4369EF,.15,.25,'DP'); }
+      pts.forEach(p=>dotAt(p.clone().add(V3(0,.15,0)),0x4369EF,.13));
+      wireLab(`DP·梯度 AllReduce · Stage${ppF} 环（示 8/64 副本）· 双股=2 Channels`,'#4369EF',17,V3(0,6.6,0));
       const p2=podXZ(2), cr=bez(pts[0].clone(),V3(p2.x,6.8,p2.z),10);
-      flowTube(cr,0x58a6ff,.25,.4,'DP');
-      wireLab('跨超节点 DP 同步（多 Pod 作业）→ SN2','#9ecbff',13,V3(p2.x*.55,8.8,p2.z*.55));
+      flowTube(cr,0x4369EF,.25,.4,'DP');
+      wireLab('跨超节点 DP 同步（多 Pod 作业）→ SN2','#4369EF',13,V3(p2.x*.55,8.8,p2.z*.55));
     }
   }
 }
@@ -1687,17 +1722,17 @@ function buildDomainLines(dim){
   if(dim==='PP'){
     [0,8,16,24].forEach((off,i)=>{ const d=(dpF+off)%64, pts=[];
       for(let k=0;k<16;k++) pts.push(hostPos(d*16+k,new THREE.Vector3()).add(V3(0,.12,0)));
-      flowTube(pts,0xd29922,i===0?.35:.08,i===0?.9:.22,'UB');
+      flowTube(pts,0xFFAA3B,i===0?.35:.08,i===0?.9:.22,'UB');
       if(i===0){ dotAt(pts[0],0xffffff,.15); dotAt(pts[15],0xffffff,.15); } });
     wireLab(`PP 通信域 = 1 条 16 段接力链 · 共 64 条（示 4 条）· 亮=焦点 DP副本${dpF}`,'#ffd28a',19,V3(0,5.4,0));
   }
   if(dim==='DP'){
     const pts=[];
     for(let d=0;d<64;d++){ const p=hostPos(d*16+ppF,new THREE.Vector3());
-      dotAt(p.clone().add(V3(0,.2,0)),0x58a6ff,.09);
+      dotAt(p.clone().add(V3(0,.2,0)),0x4369EF,.09);
       if(d%8===0) pts.push(p.clone().add(V3(0,.15,0))); }
-    for(let k=0;k<pts.length;k++) flowTube(bez(pts[k],pts[(k+1)%pts.length],2.8),0x58a6ff,.2,.5,'DP');
-    wireLab(`DP 通信域 = Stage${ppF} 的 64 台同位副本（点=成员）· 共 16 个域`,'#9ecbff',19,V3(0,6,0));
+    for(let k=0;k<pts.length;k++) flowTube(bez(pts[k],pts[(k+1)%pts.length],2.8),0x4369EF,.2,.5,'DP');
+    wireLab(`DP 通信域 = Stage${ppF} 的 64 台同位副本（点=成员）· 共 16 个域`,'#4369EF',19,V3(0,6,0));
   }
   if(dim==='EP'){
     const eF = hostExpertIdx[fh];
@@ -1712,12 +1747,12 @@ function buildDomainLines(dim){
         if(S.anomaly&&anomExperts.indexOf(e)>=0) anomG=true; }
       ps.sort((a,b)=>Math.atan2(a.z-cz,a.x-cx)-Math.atan2(b.z-cz,b.x-cx));
       const loop=ps.map(p=>V3(p.x,.12,p.z)); loop.push(loop[0].clone());
-      flowTube(loop, anomG?0xf85149:0xa371f7, .08, anomG?.85:.45, 'UB');
-      ps.forEach(p=>dotAt(V3(p.x,.35,p.z), anomG?0xf85149:0xa371f7, .12));
-      wireLab('G'+g+(anomG?'·含越界':''), anomG?'#ffa198':'#d2a8ff', anomG?7:3.5, V3(cx,1.9,cz));
+      flowTube(loop, anomG?0xFF4B7B:0x9B3CF6, .08, anomG?.85:.45, 'UB');
+      ps.forEach(p=>dotAt(V3(p.x,.35,p.z), anomG?0xFF4B7B:0x9B3CF6, .12));
+      wireLab('G'+g+(anomG?'·含越界':''), anomG?'#ffa198':'#9B3CF6', anomG?7:3.5, V3(cx,1.9,cz));
     }
     if(band==='field'||band==='pod')
-      wireLab('EP 通信域 = MoGE 专家组 ×8（地面轮廓=组边界 · 组内 top-1 · 组间 AllToAll）','#d2a8ff',22,V3(0,7.6,0));
+      wireLab('EP 通信域 = MoGE 专家组 ×8（地面轮廓=组边界 · 组内 top-1 · 组间 AllToAll）','#9B3CF6',22,V3(0,7.6,0));
   }
 }
 /* ======== 镜头③ 互联流量：有序走线 · 状态色=占用 · 与矩阵叠加卡双向联动 ======== */
@@ -1767,7 +1802,7 @@ function buildFlowLines(){
     flowTube(bez(V3((k-1)*9,3.2,-8.4),V3((k-1)*22,1.2,-38),4),0x39c5cf,.04,.3*dimK('VPC'),'VPC');
   if(S.anomaly){ const p1=podXZ(1);
     const pts=bez(V3(15.4,1.5,0),V3(p1.x-16,6,p1.z),8);
-    flowTube(pts,0xf85149,.95,.95*dimK('RDMA'),'RDMA'); addMover(pts,0xffffff,.6,.15,'RDMA');
+    flowTube(pts,0xFF4B7B,.95,.95*dimK('RDMA'),'RDMA'); addMover(pts,0xffffff,.6,.15,'RDMA');
     wireLab('跨 Pod 光链路拥塞（EP 越界流量落此）','#ffa198',17,V3(p1.x*.45,8.4,p1.z*.45)); }
   wireLab(`互联流量 · 绿<40% 黄40-70% 红>70% · 宽度=占用 · ${med?'已按介质过滤：'+med:'右上矩阵卡：格=单元对 · 介质条可过滤'}`,'#8b949e',28,V3(0,12,0));
 }
@@ -1780,7 +1815,7 @@ function buildLinkLines(){
     for(let col=0;col<16;col++){ const cab=row*16+col;
       if(band!=='cab' && cab!==fc) continue;
       const x=(col-7.5)*1.8, st=cab===41?2:(cab%13===0?1:0);
-      const c2=st===2?0xf85149:st===1?0xd29922:0x2ea043;
+      const c2=st===2?0xFF4B7B:st===1?0xFFAA3B:0x2ea043;
       if(st===2){ flowTube([V3(x,3.55,z),V3(x,3.25,z)],c2,.5,.95,'UB'); dotAt(V3(x,3.1,z),c2,.4);
         wireLab(`柜${cab} 中断`,'#ffa198',10,V3(x,4.6,z)); }
       else flowTube([V3(x,3.55,z),V3(x,3.0,z)],c2,st===1?.4:.15,st===1?.85:.35,'UB');
@@ -1797,11 +1832,11 @@ function buildLinkLines(){
     const x=(cab%16-7.5)*1.8, z=((cab>>4)-3.5)*2.4;
     const st = cab===41?2 : (cab%13===0?1:0);
     if(st===2){ brk++;
-      flowTube([V3(x,3.55,z),V3(x,3.25,z)],0xf85149,.18,.95,'UB');   // 上半截+缺口
-      dotAt(V3(x,3.1,z),0xf85149,.15);
+      flowTube([V3(x,3.55,z),V3(x,3.25,z)],0xFF4B7B,.18,.95,'UB');   // 上半截+缺口
+      dotAt(V3(x,3.1,z),0xFF4B7B,.15);
       wireLab(`柜${cab} 上联中断 · 影响 8 Host / 64 NPU`,'#ffa198',13,V3(x,5.3,z)); }
     else if(st===1){ deg++;
-      flowTube([V3(x,3.55,z),V3(x,3.0,z)],0xd29922,.1,.85,'UB');
+      flowTube([V3(x,3.55,z),V3(x,3.0,z)],0xFFAA3B,.1,.85,'UB');
       if(deg<=2) wireLab(`柜${cab} 降级·CRC 重传↑`,'#ffe08a',8,V3(x,4.7,z)); }
     else { ok++;
       flowTube([V3(x,3.55,z),V3(x,3.0,z)],0x2ea043,.02,.18,'UB'); }
@@ -1814,19 +1849,19 @@ function buildPathLines(){
   const a=hostPos(srcH,new THREE.Vector3()), b=hostPos(dstH,new THREE.Vector3());
   const leafA=V3(a.x*.72,5.6,a.z*.72), leafB=V3(b.x*.72,5.6,b.z*.72), spine=V3(0,9.6,0);
   [[leafA,'Leaf-A'],[spine,'Spine'],[leafB,'Leaf-B']].forEach(([p,t])=>{
-    dotAt(p,0xf85149,.3); wireLab(t,'#e6edf3',6,p.clone().add(V3(0,.9,0))); });
+    dotAt(p,0xFF4B7B,.3); wireLab(t,'#e6edf3',6,p.clone().add(V3(0,.9,0))); });
   const segs=[[a,leafA],[leafA,spine],[spine,leafB],[leafB,b]], redPts=[];
   segs.forEach((sg,i)=>{ const pts=bez(sg[0].clone(),sg[1].clone(),.7);
-    flowTube(pts,0xf85149,.2,.8,'RDMA'); redPts.push(...pts);
+    flowTube(pts,0xFF4B7B,.2,.8,'RDMA'); redPts.push(...pts);
     if(i<3) wireLab(['①','②','③'][i]+' hop','#ffa198',4.5,sg[1].clone().add(V3(.9,.5,0))); });
   addMover(redPts,0xffa198,.15,.13,'RDMA');              // 慢
-  wireLab('跨轨 3-hop：NIC→Leaf→Spine→Leaf→NIC ≈3.2μs · 穿越二层脊交换','#f85149',21,V3(0,11.6,0));
+  wireLab('跨轨 3-hop：NIC→Leaf→Spine→Leaf→NIC ≈3.2μs · 穿越二层脊交换','#FF4B7B',21,V3(0,11.6,0));
   const mid=hostPos(srcH^1,new THREE.Vector3());
   const g1=bez(a.clone(),mid.clone(),.5), g2=bez(mid.clone(),b.clone(),2.4);
-  flowTube(g1,0x3fb950,.25,.95,'UB'); flowTube(g2,0x3fb950,.25,.95,'RDMA');
+  flowTube(g1,0x04D793,.25,.95,'UB'); flowTube(g2,0x04D793,.25,.95,'RDMA');
   addMover(g1.concat(g2),0x7ee787,.48,.13);              // 快 ≈3×
-  dotAt(mid,0x3fb950,.22); wireLab('挪轨 GPU','#7ee787',6,mid.clone().add(V3(0,.8,0)));
-  wireLab('PXN 1-hop：UB 挪轨→同轨 NIC 直达 ≈1.1μs（-66%）· 支持 8 消息聚合','#3fb950',20,V3((a.x+b.x)/2,3.6,(a.z+b.z)/2));
+  dotAt(mid,0x04D793,.22); wireLab('挪轨 GPU','#7ee787',6,mid.clone().add(V3(0,.8,0)));
+  wireLab('PXN 1-hop：UB 挪轨→同轨 NIC 直达 ≈1.1μs（-66%）· 支持 8 消息聚合','#04D793',20,V3((a.x+b.x)/2,3.6,(a.z+b.z)/2));
   wireLab(`Host ${srcH} → Host ${dstH} · 粒子速度=实际时延对比`,'#e6edf3',13,V3(a.x,a.y+1.5,a.z));
 }
 /* ======== 互联矩阵叠加卡：浅色 2D 版 Host×Host 的 3D 联动版 ======== */
@@ -1856,7 +1891,7 @@ function renderMxCard(){
   const box=(pr,col)=>{ if(!pr) return; gmx.strokeStyle=col; gmx.lineWidth=1.2;
     gmx.strokeRect(pr[1]*cs-1,pr[0]*cs-1,cs+2,cs+2);
     gmx.strokeRect(pr[0]*cs-1,pr[1]*cs-1,cs+2,cs+2); };   // 对称格一起框
-  box(S.mxPin,'#58a6ff'); box(S.mxHover,'#ffffff');
+  box(S.mxPin,'#4369EF'); box(S.mxHover,'#ffffff');
   if(levelBand()==='cab'||levelBand()==='chip'){   // 下钻时标出焦点 Host 所在通信单元行/列
     const fu=(S.focusHost/16)|0;
     gmx.strokeStyle='rgba(158,203,255,.75)'; gmx.lineWidth=1;
@@ -1980,7 +2015,7 @@ function updateSlices(){
   else selSlab.visible = false;
   rulerSprites.forEach((sp,s2)=>{ const sel = (S.selLayer!=null&&stageOfLayer(S.selLayer)===s2) ||
       (S.selCard&&S.selCard.pp===s2);
-    sp.material.color.set(sel?0xffffff:0xd29922); });
+    sp.material.color.set(sel?0xffffff:0xFFAA3B); });
 }
 function updateIndicators(){
   const wC = ease(Wgt.cube), wS = Wgt.stack, wP = Wgt.phys;
@@ -2035,12 +2070,12 @@ function updateIndicators(){
       pts.forEach((p,i)=>P.setXYZ(i,p[0],p[1],p[2])); P.needsUpdate = true; } }
   // 层级选中反馈：堆叠平台描边高亮 / 物理形态边界高亮
   if(nS>0.02){ for(const lv in stackPlats){ const sel = S.level===lv, o = stackPlats[lv];
-      o.edges.material.color.set(sel?0x58a6ff:0x30363d);
+      o.edges.material.color.set(sel?0x4369EF:0x30363d);
       o.edges.material.opacity = (sel?1:.4)*Wgt.stack;
       o.label.material.color.set(sel?0xffffff:0x8b949e); } }
-  if(poolLine){ poolLine.material.color.set(S.level==='L5'?0x9ecbff:0x58a6ff);
+  if(poolLine){ poolLine.material.color.set(S.level==='L5'?0x9ecbff:0x4369EF);
     poolLine.material.opacity = (S.level==='L5'?1:.5)*Wgt.phys; }
-  if(podBaseEdges){ podBaseEdges.material.color.set(S.level==='L4'?0x58a6ff:0x1f6feb);
+  if(podBaseEdges){ podBaseEdges.material.color.set(S.level==='L4'?0x4369EF:0x1f6feb);
     podBaseEdges.material.opacity = (S.level==='L4'?1:.75)*Wgt.phys; }
 }
 function updateCommPulse(now){
@@ -2235,38 +2270,38 @@ function renderViewlab(){
     : `统一 3D 拓扑 · 单相机 · 聚焦 <b>${t[S.level]}</b>（左侧选层=飞行缩放）`;
   const lensNote = {
     TP:'<br><span style="color:#39c5cf">TP 张量并行：层内矩阵切 8 片 = 魔方 X 轴（节点内 8×NPU）· UB 高频 AllReduce（可切\u201cTP切片\u201d排列）</span>',
-    PP:'<br><span style="color:#d29922">PP 流水线：48 层切 16 段（每段 3 层）= 魔方 Y 轴（模型深度）· 相邻段接力 Send/Recv（可切\u201cPP流水\u201d排列）</span>',
-    DP:'<br><span style="color:#58a6ff">DP 数据并行：整网复制 64 副本 = 魔方 Z 轴 · 步末梯度 AllReduce（可切"DP平铺"排列找慢副本）</span>',
-    EP:'<br><span style="color:#a371f7">EP 专家并行：64 专家=MoGE 8 组散布晶格 · AllToAll 浪涌 · IS=0（可切"EP聚簇"排列）</span>',
-    SP:'<br><span style="color:#2ea27a">SP 与 TP 绑定同域：LayerNorm/Dropout 按序列切分 · 节点内通信</span>',
-    CP:'<br><span style="color:#c586d6">CP 上下文并行：本作业未启用（长序列场景）· Ring Attention 跨节点环形传递</span>',
-    JOB:'<br><span style="color:#58a6ff">任务透镜：框架（MindSpeed/vLLM）编译整网→按 P 策略切分→调度到物理卡 · 蓝=训练 768 台 · 青=推理 192 台 · 暗=空闲 64 台</span>' }[S.lens]||'';
+    PP:'<br><span style="color:#FFAA3B">PP 流水线：48 层切 16 段（每段 3 层）= 魔方 Y 轴（模型深度）· 相邻段接力 Send/Recv（可切\u201cPP流水\u201d排列）</span>',
+    DP:'<br><span style="color:#4369EF">DP 数据并行：整网复制 64 副本 = 魔方 Z 轴 · 步末梯度 AllReduce（可切"DP平铺"排列找慢副本）</span>',
+    EP:'<br><span style="color:#9B3CF6">EP 专家并行：64 专家=MoGE 8 组散布晶格 · AllToAll 浪涌 · IS=0（可切"EP聚簇"排列）</span>',
+    SP:'<br><span style="color:#04D793">SP 与 TP 绑定同域：LayerNorm/Dropout 按序列切分 · 节点内通信</span>',
+    CP:'<br><span style="color:#9B3CF6">CP 上下文并行：本作业未启用（长序列场景）· Ring Attention 跨节点环形传递</span>',
+    JOB:'<br><span style="color:#4369EF">任务透镜：框架（MindSpeed/vLLM）编译整网→按 P 策略切分→调度到物理卡 · 蓝=训练 768 台 · 青=推理 192 台 · 暗=空闲 64 台</span>' }[S.lens]||'';
   const wireNote = S.wire && S.wire!=='AUTO'
     ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=MoGE 8 组地面轮廓）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比'})[S.wire]}</span>` : '';
   const granNote = `<br><span style="color:#6e7681">粒度：${({
     pod:'Pod↔Pod 聚合流（下钻 L4 展开柜级）', field:'柜/Host 级全景',
     cab:'本机视角 · 焦点 Host 的直接对端', chip:'卡级 · 本卡在算子中的角色',
     die:'片上占位 · 无跨卡连线'})[levelBand()]}</span>`;
-  $('#viewlab').innerHTML = vtxt + lensNote + wireNote + granNote;
+  $('#viewlab').innerHTML = vtxt;
   renderStageLeg(); updateFoldHeads(); }
 function renderStageLeg(){                    // 舞台底部编码图例（随镜头切换）
   const w = S.wire||'AUTO';
   const chip=(c,t)=>`<span><i style="background:${c}"></i>${t}</span>`;
   let html='';
-  if(w==='FLOW') html=chip('#3fb950','空闲 <40%')+chip('#d29922','中 40-70%')+chip('#f85149','繁忙 >70%')+'<span>宽度=占用 · 粒子=方向</span>';
-  else if(w==='LINK') html=chip('#2ea043','正常')+chip('#d29922','降级')+chip('#f85149','中断');
-  else if(w==='PATH') html=chip('#f85149','跨轨 3-hop ≈3.2μs')+chip('#3fb950','PXN 1-hop ≈1.1μs')+'<span>粒子速度=时延</span>';
-  else html=chip('#39c5cf','TP')+chip('#d29922','PP')+chip('#58a6ff','DP')+chip('#a371f7','EP')
+  if(w==='FLOW') html=chip('#04D793','空闲 <40%')+chip('#FFAA3B','中 40-70%')+chip('#FF4B7B','繁忙 >70%')+'<span>宽度=占用 · 粒子=方向</span>';
+  else if(w==='LINK') html=chip('#04D793','正常')+chip('#FFAA3B','降级')+chip('#FF4B7B','中断');
+  else if(w==='PATH') html=chip('#FF4B7B','跨轨 3-hop ≈3.2μs')+chip('#04D793','PXN 1-hop ≈1.1μs')+'<span>粒子速度=时延</span>';
+  else html=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
     +'<span>'+(w==='COMM'?'轮廓=通信域边界 · 点=成员':'流带=当前阶段算子 · 粒子=方向')+'</span>';
   $('#stageleg').innerHTML = html;
 }
 function renderProbe(){
   const h = S.hoverHost>=0 ? S.hoverHost : S.focusHost;
   const exp = isExpertHost[h] ? (isExpertHost[h]===2?' · 热点专家':' · MoE 专家') : '';
-  const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#f85149">EP 越界成员</b>' : '';
+  const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#FF4B7B">EP 越界成员</b>' : '';
   const st = ppOf(h), lys = `L${st*3+1}-L${st*3+3}`;
   const sel = (S.selLayer!=null||S.selCard)
-    ? `<br><span style="color:${carrierHost(h)?'#d2a8ff':'#6e7681'}">${carrierHost(h)?'承载当前选中的整网片段':'不承载选中片段（已压暗）'}</span>` : '';
+    ? `<br><span style="color:${carrierHost(h)?'#9B3CF6':'#6e7681'}">${carrierHost(h)?'承载当前选中的整网片段':'不承载选中片段（已压暗）'}</span>` : '';
   $('#probe').innerHTML =
     `<b>Host ${h}</b>${S.hoverHost>=0?'（悬停）':'（焦点）'} · 计算柜 ${cabOf(h)} / 槽位 ${h%8}${exp}${an}<br>
      逻辑坐标 <span class="lg">[DP${dpOf(h)}, PP${st}, TP0-7]</span> · 承载整网 <span class="lg">${lys}</span> · 健康度 ${(100-health[h]*40).toFixed(0)}% · 显存 ${(memLevel[h]*100)|0}%<br>
@@ -2289,14 +2324,14 @@ function renderHUD(){
   $('#hud').innerHTML =
     `<b style="color:#fff">工况 · Pangu Pro MoE 72BA16B</b><br>
      <span style="font-size:10px">TP8 · PP16 · DP64 · EP(64专家/MoGE 8组) · 整网48层</span>
-     <div style="margin-top:4px">${ph.bus}${anomX?' + <span style="color:#f85149">跨 Pod 光链路(越界)</span>':''}
-       <div class="busbar"><i style="width:${Math.min(100,load*100)|0}%;background:${anomX?'#f85149':'#39c5cf'}"></i></div>
+     <div style="margin-top:4px">${ph.bus}${anomX?' + <span style="color:#FF4B7B">跨 Pod 光链路(越界)</span>':''}
+       <div class="busbar"><i style="width:${Math.min(100,load*100)|0}%;background:${anomX?'#FF4B7B':'#39c5cf'}"></i></div>
        <div style="margin-top:3px">带宽占用 ${Math.min(100,(load*100)|0)}%${anomX?' · 拥塞告警':''}</div>
      </div>
      <div style="margin-top:6px;color:#fff">step 时间分解 · <span style="color:#7ee0e8">hover 行 ⇄ 3D 连线联动</span></div>
      ${row('calc','计算 · Cube GEMM',bd[0],'#39c5cf')}
      ${row('comm','通信 · '+opName,bd[1],COL[ph.id])}
-     ${row('mem','访存 · KV/权重',bd[2],'#a371f7')}
+     ${row('mem','访存 · KV/权重',bd[2],'#9B3CF6')}
      <div style="margin-top:4px;color:#7ee0e8;font-size:10px">${({TP:'Ring AllReduce · 8 rank · busbw=algbw×2(n-1)/n',PP:'P2P Send/Recv 接力 · 无集合算法',EP:'AllToAll · O(N²) 消息 · PXN 可 3hop→1hop（镜头⑤）',DP:'Ring/Tree · 2 Channels · 跨域边=2·(n域-1)'})[ph.id]||''}</div>
      ${anomX?(S.scatter
        ?'<div style="margin-top:3px;color:#7ee787;font-size:10px">已散射（SCATTER_XDC）：单链路峰值 ↓75%</div>'
@@ -2374,13 +2409,13 @@ function renderLane(){
     c.fillStyle=col; c.fillRect(x,y,Math.max(ww,1),hh); c.globalAlpha=1; };
   for(let r=0;r<8;r++){
     const yC=top+r*rowH, yM=yC+rowH*.46, bh=Math.max(4,rowH*.34);
-    c.fillStyle=hotSet.includes(r)?'#e3b341':'#8b949e'; c.textAlign='right';
+    c.fillStyle=hotSet.includes(r)?'#FFAA3B':'#8b949e'; c.textAlign='right';
     c.fillText('TP'+r, x0-6, yC+bh);
     for(const cy of cyc){
       const s=x0+cy.start*u, L=cy.row[r], CL=cy.cm[r];
       seg(s,yC,L*u,bh,'#1f6feb');
       if(L<cy.mx-1) seg(s+L*u,yC,(cy.mx-L)*u,bh,'rgba(248,81,73,.6)');
-      seg(s+cy.mx*u,yM,CL*u,bh, laneMode==='moge'?'#2ea043':'#a371f7');
+      seg(s+cy.mx*u,yM,CL*u,bh, laneMode==='moge'?'#04D793':'#9B3CF6');
       if(cy.anomX) seg(s+(cy.mx+CL)*u,yM,cy.anomX*u,bh,'rgba(248,81,73,.95)');
     } }
   // —— 硬件计数器轨：与软件泳道同轴（Perfetto counter track / Vampir Performance Radar 范式）——
@@ -2398,19 +2433,19 @@ function renderLane(){
     c.fillStyle=col; c.beginPath(); c.moveTo(x0,y+h2);
     for(let i=0;i<NB;i++) c.lineTo(x0+(i+.5)/NB*w, y+h2-data[i]*h2*.94);
     c.lineTo(x0+w,y+h2); c.closePath(); c.globalAlpha=.45; c.fill(); c.globalAlpha=1; };
-  track(busy, cY, 17, '#3fb950', 'Cube利用率');
-  track(bw2, cY+21, 17, '#a371f7', 'UB带宽');
+  track(busy, cY, 17, '#04D793', 'Cube利用率');
+  track(bw2, cY+21, 17, '#9B3CF6', 'UB带宽');
   c.strokeStyle=themeC('#fff','#333'); c.lineWidth=1;
   c.beginPath(); c.moveTo(tx,top-6); c.lineTo(tx,cY+38); c.stroke();
   c.fillStyle=themeC('#fff','#333'); c.textAlign='center'; c.font='9px ui-monospace,monospace';
   c.fillText('▶ '+PHASES[S.phase].id+' · '+((S.t*350)|0)+'μs', Math.min(W-60,Math.max(x0+40,tx)), cY+48);
   c.textAlign='left'; c.font='10px sans-serif';
-  c.fillStyle = laneMode==='moge' ? '#3fb950' : '#f85149';
+  c.fillStyle = laneMode==='moge' ? '#04D793' : '#FF4B7B';
   c.fillText(laneMode==='moge'
     ? `Host ${Hh} · MoGE 均衡：Compute 齐整 · AllToAll 全掩盖 · IS=0（组内 top-1 强制均衡 · 最热专家≈12.5%）`
     : `Host ${Hh}${exp?'（MoE 专家节点）':''} · Top-K：热点 ${hotSet.map(r=>'TP'+r).join('/')} 拖长 → Bubble 处利用率轨同步塌陷（对照：Top-K 最热专家可占 30% token）${S.anomaly?' · 第3周期跨超节点加时':''}`,
     x0, H-4);
-  const lg=[['#1f6feb','Compute'],['#a371f7','AllToAll'],['rgba(248,81,73,.7)','Bubble/越界'],['#3fb950','下方=硬件计数器(同轴)']];
+  const lg=[['#1f6feb','Compute'],['#9B3CF6','AllToAll'],['rgba(248,81,73,.7)','Bubble/越界'],['#04D793','下方=硬件计数器(同轴)']];
   let lx=Math.max(x0+440, W-480); c.font='9px sans-serif';
   lg.forEach(g2=>{ c.fillStyle=g2[0]; c.fillRect(lx,H-12,10,7);
     c.fillStyle='#8b949e'; c.fillText(g2[1], lx+13, H-5); lx+=c.measureText(g2[1]).width+26; });
@@ -2473,7 +2508,7 @@ function renderMx(){
   c.fillStyle='#8b949e';
   c.fillText('行=源专家组 · 列=目的组 · 亮度=消息量 · 对角线=组内不跨卡', ix, y0+24);
   c.fillText('橙红竖条=热点组被路由打爆（各源都在给它发）→ 负载失衡指纹', ix, y0+40);
-  if(S.anomaly){ c.fillStyle='#f85149';
+  if(S.anomaly){ c.fillStyle='#FF4B7B';
     c.fillText('红框行=含越界专家的组：这些流量实际落在跨 Pod 光链路（理论应为 0）', ix, y0+58); }
   if(mxHover){ const {i,j}=mxHover; c.fillStyle='#e6edf3';
     c.fillText(`G${i} → G${j}：${(vol[i][j]*37).toFixed(1)} GB/step${hotG.has(j)?' · 目的=热点组':''}`, ix, y0+78); }
@@ -2587,11 +2622,11 @@ function renderSparks(){ if(!sg) return;
     sg.stroke();
     (dots||[]).forEach(d=>{ if(d<0||d>=pts.length) return;
       const x=x0+d*w/(pts.length-1), y=y0+h-(pts[d]-mn)/(mx-mn||1)*h;
-      sg.fillStyle='#f85149'; sg.beginPath(); sg.arc(x,y,2.5,0,7); sg.fill(); });
+      sg.fillStyle='#FF4B7B'; sg.beginPath(); sg.arc(x,y,2.5,0,7); sg.fill(); });
     sg.fillStyle='#6e7681'; sg.font='9px sans-serif'; sg.textAlign='left'; sg.fillText(name,x0,7); };
-  draw(SD.loss,2,'#f85149','Loss · Scale溢出=红点',SD.dots);
-  draw(SD.lr,118,'#d29922','LR');
-  draw(SD.mfu,234,'#3fb950','MFU'+(S.anomaly?' ↓':''));
+  draw(SD.loss,2,'#FF4B7B','Loss · Scale溢出=红点',SD.dots);
+  draw(SD.lr,118,'#FFAA3B','LR');
+  draw(SD.mfu,234,'#04D793','MFU'+(S.anomaly?' ↓':''));
 }
 /* ---- 尺寸 / 主循环 ---- */
 function resize(){ const r = right.getBoundingClientRect();
@@ -2601,9 +2636,21 @@ function resize(){ const r = right.getBoundingClientRect();
 window.addEventListener('resize', ()=>{ resize(); drawArcs();
   try{ if(drawer.classList.contains('show')) syncDrawer(); }catch(e){} });
 let last = performance.now();
+/* 按需渲染：空闲时完全停止 rAF，彻底释放主线程，避免截图/eval 超时 */
+let renderBudget = 10, loopRaf = 0;
+const _camPrev = new THREE.Vector3();
+function wakeLoop(n){ renderBudget = Math.max(renderBudget, n||3); if(!loopRaf) loopRaf = requestAnimationFrame(loop); }
+['pointermove','pointerdown','wheel'].forEach(ev =>
+  renderer.domElement.addEventListener(ev, ()=> wakeLoop(45), {passive:true}));
+document.addEventListener('click', ()=> wakeLoop(90), true);
+window.addEventListener('focus', ()=> wakeLoop(30));
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) wakeLoop(30); });
 function loop(now){
+  loopRaf = 0;
+  if(document.hidden){ last = now; return; }
   const dt = Math.min(.1,(now-last)/1000); last = now;
-  if(S.playing){ S.t = (S.t + dt/16) % 1; syncPhase();
+  let busy = false;
+  if(S.playing){ busy = true; S.t = (S.t + dt/16) % 1; syncPhase();
     if(S.tab==='model') renderMM();
     const tick = (S.t*48)|0;
     if(tick!==SD.lastTick){ SD.lastTick=tick; stepSparks(); }
@@ -2612,15 +2659,19 @@ function loop(now){
     ['phys','cube','stack'].forEach(fm=>{ const tgt = formTarget===fm?1:0, d = tgt-Wgt[fm];
       if(Math.abs(d)>0.001){ Wgt[fm]+=Math.sign(d)*Math.min(dt/0.9,Math.abs(d)); moving=true; }
       else Wgt[fm]=tgt; });
-    if(moving){ S.morph=Wgt.cube; morphDirty=true; } }
-  if(cubeBlend<1){ cubeBlend=Math.min(1,cubeBlend+dt/0.8); morphDirty=true; }
+    if(moving){ S.morph=Wgt.cube; morphDirty=true; busy=true; } }
+  if(cubeBlend<1){ cubeBlend=Math.min(1,cubeBlend+dt/0.8); morphDirty=true; busy=true; }
   if(morphDirty){ applyMorph(); morphDirty=false; }
-  if(commDirty){ buildComm(); commDirty=false; }
-  if(colorsDirty){ applyColors(true); colorsDirty=false; }
+  if(commDirty){ buildComm(); commDirty=false; busy=true; }
+  if(colorsDirty){ applyColors(true); colorsDirty=false; busy=true; }
   else if(S.playing) applyColors(false);
-  updateIndicators(); updateCommPulse(now); updateCamera(dt);
-  renderer.render(scene, camera);
-  requestAnimationFrame(loop);
+  updateIndicators(); updateCommPulse(now);
+  _camPrev.copy(camera.position); updateCamera(dt);
+  if(_camPrev.distanceToSquared(camera.position) > 2e-4) busy = true;
+  if(busy) renderBudget = Math.max(renderBudget, 3);
+  if(renderBudget > 0){ renderer.render(scene, camera); renderBudget--; }
+  if(renderBudget > 0 || busy) loopRaf = requestAnimationFrame(loop);
+  // 真正空闲：停止 rAF，完全释放主线程
 }
 /* ---- 初始化 ---- */
 resize();
@@ -2630,7 +2681,7 @@ renderL3(); renderL2(); renderL4(); renderChipZoom(); renderProbe(); renderHUD()
 describeModelSel(); renderMM(); renderFilterBar(); updateCounts();
 { const g = camGoal(); camCur.t.copy(g.t); camCur.d = g.d; }
 requestAnimationFrame(drawArcs);
-requestAnimationFrame(loop);
+wakeLoop(10);
 </script>
 <!-- ── 宿主融合：嵌入 HPC 拓扑查看器时，与宿主 chrome 视觉合一 ──
      · 去掉原型自带产品名（宿主标签页已标「立方重排」，避免二次命名）
@@ -2638,73 +2689,61 @@ requestAnimationFrame(loop);
      · 顶栏去掉独立背景/下边框，与宿主顶栏连成一条，不再是「叠在下面的第二行」 -->
 <style id="host-fusion">
 /* ============================================================
-   宿主融合 · 工作台卡片化布局（对齐 HPC 拓扑查看器 pto.css）
-   ① 去原型自带产品名/主题钮（宿主标签页已标「立方重排」、主题由宿主统一驱动）
-   ② 所有面板卡片化：圆角 + 描边 + 阴影，靠 8px 间距分隔，不再用分割线
-   ③ 舞台/卡片配色、圆角(14px) 对齐项目
-   ④ 左右主分栏可拖拽调节（苹果分屏式）
+   Host fusion — workbench card layout (consumes PTO tokens only)
+   ① big containers = PTO panel-shell radius (14px); buttons/cards keep --radius-lg (12)
+   ② every panel card-ified: radius + border + shadow, separated by --space-2 gaps
+   ③ colors/borders/shadows all reference canonical-derived aliases (no private values)
+   ④ split handle for Apple-style resizable columns
    ============================================================ */
-:root { --radius-lg: 14px; --radius-md: 10px; }
-/* 工具栏整体交给宿主顶栏（着色透镜/连线镜头/剧本/演练/重置 已桥接到宿主 Decode 面板） */
-#topbar { display: none !important; }
+/* stage backdrop + neutral ramp now come from canonical semantic layer; nothing to override */
+body{ background:var(--bg); }
+#app{ padding:var(--space-2); gap:var(--space-2); background:var(--bg); }
+/* 抬头保持昨天调整：工具栏桥接到宿主顶栏，隐藏驾驶舱自带 topbar */
+#topbar{ display:none !important; }
 
-/* 舞台底：卡片浮在与项目一致的底色之上 */
-body { background: var(--sys-bg); }
-#app { padding: 8px; gap: 8px; background: var(--sys-bg); }
+/* toolbar / scene bar card-ified (drop bottom divider) */
+#topbar, #scenbar{
+  border:1px solid var(--sys-border) !important;
+  border-radius:var(--panel-shell-radius) !important;
+  box-shadow:var(--shadow-card) !important;
+  background:var(--panel) !important;
+}
+#topbar{ height:auto; min-height:var(--comp-toolbar-h); }
 
-/* 顶栏 / 场景栏 卡片化（去下分割线） */
-#topbar, #scenbar {
-  border: 1px solid var(--sys-border) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-card) !important;
-  background: var(--panel) !important;
+/* main split into cards with --space-2 gaps */
+#main{ gap:var(--space-2); }
+#left{
+  border:1px solid var(--sys-border) !important;
+  border-right:1px solid var(--sys-border) !important;
+  border-radius:var(--panel-shell-radius) !important;
+  box-shadow:var(--shadow-card) !important;
+  background:var(--panel) !important;
 }
-#topbar { height: auto; min-height: var(--comp-toolbar-h); }
-
-/* 主区：左右卡片间用间距分隔 */
-#main { gap: 8px; }
-#left {
-  border: 1px solid var(--sys-border) !important;
-  border-right: 1px solid var(--sys-border) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-card) !important;
-  background: var(--panel) !important;
+#right{
+  border:1px solid var(--sys-border) !important;
+  border-radius:var(--panel-shell-radius) !important;
+  box-shadow:var(--shadow-card) !important;
+  overflow:hidden;
 }
-#right {
-  border: 1px solid var(--sys-border) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-card) !important;
-  overflow: hidden;
-}
-/* 底部时间轴 / 抽屉泳道 卡片化（去上分割线） */
-#footer, #drawer {
-  border: 1px solid var(--sys-border) !important;
-  border-top: 1px solid var(--sys-border) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-card) !important;
-  background: var(--panel) !important;
+#footer, #drawer{
+  border:1px solid var(--sys-border) !important;
+  border-top:1px solid var(--sys-border) !important;
+  border-radius:var(--panel-shell-radius) !important;
+  box-shadow:var(--shadow-card) !important;
+  background:var(--panel) !important;
 }
 
-/* 左右分栏拖拽手柄（苹果分屏式） */
-#splitH {
-  width: 8px; flex-shrink: 0; cursor: col-resize; align-self: stretch;
-  position: relative; background: transparent; transition: background .15s; border-radius: var(--radius-pill);
+/* Apple-style resizable column handle */
+#splitH{
+  width:var(--space-2); flex-shrink:0; cursor:col-resize; align-self:stretch;
+  position:relative; background:transparent; transition:background var(--duration-base); border-radius:var(--radius-pill);
 }
-#splitH::before {
-  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 3px; height: 34px; border-radius: 2px; background: var(--sys-border-strong); opacity: .5; transition: .15s;
+#splitH::before{
+  content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:3px; height:34px; border-radius:2px; background:var(--sys-border-strong); opacity:.5; transition:var(--duration-base);
 }
-#splitH:hover { background: color-mix(in srgb, var(--sys-accent) 12%, transparent); }
-#splitH:hover::before { opacity: 1; background: var(--sys-accent); height: 48px; }
-
-/* ── 浅色配色对齐工作台（深色维持原样）── */
-:root[data-theme="light"] {
-  --sys-bg: #f5f6f8; --sys-sunken: #eef1f5;
-  --sys-raised: #f2f4f7; --sys-raised-hover: #e9edf3;
-  --sys-border: rgba(14, 18, 27, .11); --sys-border-strong: rgba(14, 18, 27, .18);
-  /* 3D 舞台底：干净近白（对齐工作台白场 3D），去掉原本发灰发蓝的渐变 */
-  --sys-stage-bg: radial-gradient(ellipse at 50% 26%, #ffffff 0%, #eef1f5 82%);
-}
+#splitH:hover{ background:color-mix(in srgb,var(--sys-accent) 12%,transparent); }
+#splitH:hover::before{ opacity:1; background:var(--sys-accent); height:48px; }
 </style>
 <!-- 左右分栏可拖拽（苹果分屏式，拖动后派发 resize 让 3D 画布重算） -->
 <script>
