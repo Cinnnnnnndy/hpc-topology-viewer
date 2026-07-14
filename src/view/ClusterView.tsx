@@ -30,6 +30,7 @@ import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile
 import { PlaneView } from './PlaneView';
 import { StatusView } from './StatusView';
 import { CubeCockpit, type CockpitCmd, type CockpitState } from './CubeCockpit';
+import { NetCutView } from './NetCutView';
 
 // 立方重排驾驶舱工具栏 → 宿主 Decode 面板的桥接项（原型内按钮已隐藏，改由这些代理按钮驱动）
 const CUBE_LENS: [string, string][] = [
@@ -119,12 +120,14 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
   console:  { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 联动控制台 overlay (own canvas); main 3-D camera unused
   comm:     { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 通信全景 2-D overlay; 3-D camera unused
   cube:     { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 立方体重排 overlay (own canvas); main 3-D camera unused
+  netcut:   { pos: [0, 7, 13], target: [0, 0.6, 0], worldH: 18 },   // 整网切分 overlay (整网图 × 立方 own canvas); main 3-D camera unused
 };
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'console',  label: '联动控制台' },
   { id: 'cube',     label: '立方重排(实验)' },
+  { id: 'netcut',   label: '整网切分' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
   { id: 'comm',     label: '通信全景' },
@@ -162,6 +165,7 @@ const WORKBENCH_VIEW_GROUPS: {
     title: '对象 / 层级',
     items: [
       { id: 'cube', label: '立方重排(实验)', note: '按 TP/PP/DP/EP 换堆法 · 异常显形状' },
+      { id: 'netcut', label: '整网切分', note: '整网图 × 立方 · 前向/反向 · 算子↔切分维联动' },
       { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
       { id: 'overview', label: 'Pod 物理机房', note: '机柜=物理分组 · 通信柜总览' },
       { id: 'rack', label: '机柜（物理分组）', note: '机柜内部 · Host/交换' },
@@ -879,7 +883,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
         <div style={{ flex: 1 }} />
         {!narrow && <span style={{ fontSize: 10, color: 'var(--tx3)', fontFamily: 'var(--font-mono)', ...TNUM }}>{`${spec.name} · ${spec.totalNpus.toLocaleString()}× ${spec.npuShort} · ${TOK.ub} UB 全互联`}</span>}
         {/* view-angle presets — orthographic 三视图 + a 2.5-D (axonometric) angle */}
-        {mode !== 'plane' && mode !== 'status' && mode !== 'console' && (
+        {mode !== 'plane' && mode !== 'status' && mode !== 'console' && mode !== 'netcut' && (
           <div style={{ display: 'flex', gap: 3, borderLeft: '1px solid var(--bd)', paddingLeft: narrow ? 6 : 10 }}>
             {([['top', '俯视'], ['front', '正视'], ['side', '侧视'], ['iso', '2.5D']] as [CamPreset, string][]).map(([id, label]) => (
               <button
@@ -909,7 +913,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
       {/* ── main: Canvas + info panel ── */}
       <div className={workbench ? 'hpc-workbench-panes' : undefined} style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         <div className={workbench ? 'hpc-workbench-stage-pane' : undefined} style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          {!((workbench && mode === 'console') || mode === 'cube') && (
+          {!((workbench && mode === 'console') || mode === 'cube' || mode === 'netcut') && (
           <Canvas
             shadows
             dpr={[1, 2]}
@@ -998,6 +1002,9 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
 
           {/* 立方重排 — 内嵌 AI Infra 统一 3D 拓扑驾驶舱（完整原型 · 自带全部功能）(overlays the 3-D canvas) */}
           {mode === 'cube' && <CubeCockpit dark={dark} cmdApiRef={cockpitCmd} onState={setCockpitState} />}
+
+          {/* 整网切分 — 整网图（model-graphviz）× 立方重组，前向/反向箭头 + 算子↔切分维联动 (overlays the 3-D canvas) */}
+          {mode === 'netcut' && <NetCutView gen={gen} dark={dark} />}
 
           {/* physical-device layer & three planes (UB / RDMA / VPC) are expressed IN the views
               (line style), not a separate card */}
