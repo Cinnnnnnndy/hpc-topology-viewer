@@ -588,7 +588,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                         return (
                           <>
                             <div className="hpc-wb-ctrl-group">
-                              <span className="hpc-wb-ctrl-label">着色·透镜</span>
+                              <span className="hpc-wb-ctrl-label">着色</span>
                               <div className="hpc-wb-ctrl-btns">
                                 {CUBE_LENS.map(([v, l]) => (
                                   <button key={v} onClick={() => send({ cmd: 'lens', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.lens === v) }}>{l}</button>
@@ -596,7 +596,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                               </div>
                             </div>
                             <div className="hpc-wb-ctrl-group">
-                              <span className="hpc-wb-ctrl-label">连线·镜头</span>
+                              <span className="hpc-wb-ctrl-label">连线</span>
                               <div className="hpc-wb-ctrl-btns">
                                 {CUBE_WIRE.map(([v, l]) => (
                                   <button key={v} onClick={() => send({ cmd: 'wire', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.wire === v) }}>{l}</button>
