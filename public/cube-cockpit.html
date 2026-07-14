@@ -177,19 +177,25 @@ button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var
 .pane.show{display:block}
 #left h3{font-size:11px;color:var(--dim);font-weight:400;margin-bottom:11px;line-height:1.45}
 #left h3 b{color:var(--sys-text-bright);font-size:13px;font-weight:600;letter-spacing:-.01em}
-.lvrow{position:relative;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--panel);padding:10px 12px;cursor:pointer;transition:border-color var(--duration-base),box-shadow var(--duration-base),background var(--duration-base);box-shadow:var(--shadow-card)}
-.lvrow:hover{border-color:var(--sys-border-strong);background:color-mix(in srgb,var(--panel) 96%,var(--state-hover))}
-.lvrow.focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--focus-ring),var(--shadow-card)}
+/* 层级剖面：所有层级共用一张背景卡（.lvfunnel），每级不再是独立卡片，用细分隔线区分（对齐控制台漏斗观感） */
+.lvfunnel{background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:0 12px;margin-bottom:10px}
+.lvrow{position:relative;border:none;background:transparent;box-shadow:none;border-radius:0;padding:9px 4px;cursor:pointer;transition:background var(--duration-base)}
+.lvfunnel>.lvrow{border-top:1px solid color-mix(in srgb,var(--sys-border) 70%,transparent)}
+.lvfunnel>.lvrow:first-of-type{border-top:none}
+.lvrow:hover{background:color-mix(in srgb,var(--panel) 92%,var(--state-hover))}
+.lvrow.focus{box-shadow:inset 3px 0 0 var(--lvc,var(--blue))}
+.lvrow.focus .lv{background:var(--lvc,var(--blue));color:#fff}
 .lvrow .hd{display:flex;align-items:center;gap:8px}
 .lvrow .lv{font-size:10px;font-weight:700;color:var(--lvc,var(--blue));flex-shrink:0;background:color-mix(in srgb,var(--lvc,var(--blue)) 13%,transparent);border-radius:5px;padding:2px 6px;letter-spacing:.03em}
-.lvrow[data-level="L7"]{--lvc:#9B3CF6}
-.lvrow[data-level="L6"]{--lvc:#FFAA3B}
-.lvrow[data-level="L5"]{--lvc:#9B3CF6}
-.lvrow[data-level="L4"]{--lvc:#FF4B7B}
-.lvrow[data-level="L3"]{--lvc:#4369EF}
-.lvrow[data-level="L2"]{--lvc:#39c5cf}
-.lvrow[data-level="L1"]{--lvc:#04D793}
-.lvrow[data-level="L0"]{--lvc:#04D793}
+/* 层级配色与联动控制台漏斗统一（ENTITY_COLORS：global/cluster/pool/super/node/card/die/core） */
+.lvrow[data-level="L7"]{--lvc:#9d7bff}
+.lvrow[data-level="L6"]{--lvc:#ffaa3b}
+.lvrow[data-level="L5"]{--lvc:#c084fc}
+.lvrow[data-level="L4"]{--lvc:#fb5b9a}
+.lvrow[data-level="L3"]{--lvc:#38bdf8}
+.lvrow[data-level="L2"]{--lvc:#2dd4bf}
+.lvrow[data-level="L1"]{--lvc:#2dd4bf}
+.lvrow[data-level="L0"]{--lvc:#04d793}
 .lvrow .nm{font-size:13px;font-weight:600;color:var(--sys-text-bright);letter-spacing:-.01em}
 .lvrow .ct{font-size:11px;color:var(--dim);margin-left:auto;font-family:ui-monospace,monospace}
 .lvrow .kpi{font-size:10px;color:var(--dim);margin-top:3px;font-family:ui-monospace,monospace}
@@ -412,7 +418,8 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="topn"></div>
         </div>
       </div>
-      <div class="lvrow ghost" data-level="L7"><div class="hd"><span class="lv">L7</span><span class="nm">Global · 全球调度</span><span class="ct">N 个 Cluster · 缩略</span></div></div>
+      <div class="lvfunnel">
+      <div class="lvrow ghost" data-level="L7"><div class="hd"><span class="lv">L7</span><span class="nm">Global · 全球调度</span><span class="ct">N 个 Cluster · 经 DCN</span></div></div>
       <div class="gap" data-gap="L7L6"></div>
       <div class="lvrow focus" data-level="L6"><div class="hd"><span class="lv">L6</span><span class="nm">Cluster · 集群（本模型）</span><span class="ct" id="ctL6">8192 NPU · 万卡级 · 64 Pod</span></div><div class="kpi" id="kpiL6"></div>
         <div class="body" id="l6body"></div></div>
@@ -423,7 +430,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <span class="badge b-ANOM" id="bdAnom">EP·AllToAll 越界 ↑</span>
         <span class="badge b-DP" id="bdDPx">DP·跨 Pod 梯度同步（Scale-Out ×64）</span>
       </div>
-      <div class="lvrow" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · UBL128（Scale-Up 域）</span><span class="ct">128 NPU · 16 Host · 2 机柜 · UB 全互联</span></div><div class="kpi" id="kpiL4"></div>
+      <div class="lvrow" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · UBL128（Scale-Up 域）</span><span class="ct">本 Pod · 128 NPU · 16 Host · 4 Pod/池</span></div><div class="kpi" id="kpiL4"></div>
         <div class="body" id="l4body"></div></div>
       <div class="gap" data-gap="L4L3">
         <span class="badge b-PP" id="bdPP">PP·接力 ×16 段（Pod 内 16 Host）</span>
@@ -444,7 +451,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div class="lvrow" data-level="L1"><div class="hd"><span class="lv">L1</span><span class="nm">Die（可选）</span><span class="ct">×4 · 2 计算 Die + 2 IO Die</span></div>
         <div class="body l1dies"><span class="l1die c">Die 0 · 计算</span><span class="l1die c">Die 1 · 计算</span><span class="l1die io">Die 2 · IO</span><span class="l1die io">Die 3 · IO</span></div></div>
       <div class="gap" data-gap="L1L0"></div>
-      <div class="lvrow" data-level="L0"><div class="hd"><span class="lv">L0</span><span class="nm">Core-Group</span><span class="ct">AIV·向量 / AIC·Cube / AICPU · ×32/卡</span></div>
+      <div class="lvrow" data-level="L0"><div class="hd"><span class="lv">L0</span><span class="nm">Core-Group</span><span class="ct">×32/卡 · GM/L2 + AIV/AIC</span></div>
         <div class="body l0cg">
           <div class="pto-memory-architecture-viewport" data-pto-mem-arch-viewport data-default-zoom="0.4" id="l0viewport" aria-label="L0 Core-Group 内部架构（memory-architecture pattern）">
             <div class="pto-memory-architecture-sizer" data-pto-mem-arch-sizer>
@@ -454,6 +461,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
             </div>
           </div>
         </div></div>
+      </div>
       </div>
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
@@ -703,11 +711,11 @@ function renderTopN(){
 function updateCounts(){
   const f = filterInfo();
   const set = (id,txt)=>{ const el=$(id); if(el) el.textContent=txt; };
-  set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '8192 NPU · 万卡级 · 64 Pod');
-  set('#ctL5', f? '关联 1 Pod / 4 · 本池' : '本池 4 Pod · 512 NPU · 16 池/集群');
-  set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '×1024 Host · 每节点 8 NPU');
+  set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '1 集群 = 64 Pod · 8192 NPU（万卡）');
+  set('#ctL5', f? '关联 1 Pod / 4 · 本池' : '本池 4 Pod · 16 池/集群');
+  set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '1,024 Host · 8 NPU/台');
   set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜（每 2 柜 = 1 Pod）+ 32 互联柜');
-  set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '×8192 Chip');
+  set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '8,192 Chip');
   if(S.focusPod>0){ set('#ctL6', `已选 Pod ${S.focusPod}/64 · 本集群`);
     if(S.focusPod<4) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
 }
