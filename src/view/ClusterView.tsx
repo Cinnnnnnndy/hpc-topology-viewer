@@ -648,7 +648,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                         <span className="hpc-wb-ctrl-label">回放</span>
                         <div className="hpc-wb-ctrl-btns">
                           <button onClick={() => setSyncStep((s) => Math.max(0, s - 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>◀</button>
-                          <button onClick={() => setSyncPlaying((v) => !v)} style={{ padding: '2px 9px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer', ...navBtn(syncPlaying) }}>{syncPlaying ? '⏸' : '▶'}</button>
+                          <button onClick={() => setSyncPlaying((v) => !v)} style={{ padding: '2px 9px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer', ...navBtn(syncPlaying) }}>{syncPlaying ? '' : '▶'}</button>
                           <button onClick={() => setSyncStep((s) => Math.min(60, s + 1))} style={{ padding: '2px 7px', fontSize: 11, borderRadius: 6, cursor: 'pointer', ...navBtn(false) }}>▶</button>
                           <input type="range" min={0} max={60} value={syncStep} onChange={(e) => setSyncStep(Number(e.target.value))} style={{ width: 90, accentColor: 'var(--state-selected)' } as React.CSSProperties} />
                           <span style={{ fontSize: 11, color: 'var(--foreground-subtle)', minWidth: 32, fontVariantNumeric: 'tabular-nums' }}>t={syncStep}</span>
@@ -895,7 +895,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
           onClick={() => setDark((v) => !v)}
           title="黑 / 白 主题切换"
           style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8, cursor: 'pointer', ...BTN_SECONDARY }}
-        >{dark ? '☀' : '◐'}</button>
+        >{dark ? '◑' : '◐'}</button>
         <button
           onClick={() => setPanelOpen((v) => !v)}
           style={{ padding: '4px 10px', fontSize: 12, borderRadius: 8, cursor: 'pointer', ...navBtn(panelOpen) }}
@@ -1175,7 +1175,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
               <button
                 onClick={() => { setTracePlaying((v) => !v); if (traceTick === null) setTraceTick(0); }}
                 style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 13, boxShadow: tracePlaying ? '0 0 0 3px rgba(67,105,239,0.25)' : 'none' }}
-              >{tracePlaying ? '⏸' : '▶'}</button>
+              >{tracePlaying ? '' : '▶'}</button>
               {/* phase scrubber */}
               <div style={{ display: 'flex', gap: 2 }}>
                 {TRACE_SCHED.map((ph, k) => (
@@ -1266,7 +1266,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                   <button
                     onClick={() => { setRunPlaying((v) => !v); if (runTick === null) setRunTick(0); }}
                     style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', border: `1px solid ${ACCENT}`, background: ACCENT, color: '#fff', fontSize: 13, boxShadow: runPlaying ? '0 0 0 3px rgba(67,105,239,0.25)' : 'none' }}
-                  >{runPlaying ? '⏸' : '▶'}</button>
+                  >{runPlaying ? '' : '▶'}</button>
                   {!swimOpen && (
                     <div style={{ display: 'flex', gap: 2 }}>
                       {phases.map((ph, k) => (

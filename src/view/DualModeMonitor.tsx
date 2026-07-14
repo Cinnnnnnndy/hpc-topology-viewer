@@ -94,15 +94,15 @@ export function DualModeMonitor({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        <button onClick={() => setMode('heat')} style={{ ...btn, ...tab(mode === 'heat') }}>🔥 实时热力大盘</button>
-        <button onClick={() => setMode('replay')} style={{ ...btn, ...tab(mode === 'replay') }}>⏪ 时间轴回放</button>
+        <button onClick={() => setMode('heat')} style={{ ...btn, ...tab(mode === 'heat') }}>实时热力大盘</button>
+        <button onClick={() => setMode('replay')} style={{ ...btn, ...tab(mode === 'replay') }}>时间轴回放</button>
         <span style={{ fontSize: 9.5, color: 'var(--tx3)', alignSelf: 'center', marginLeft: 4 }}>{mode === 'heat' ? 'SRE 视角 · 秒级巡航' : '优化工程师视角 · 逐帧'}</span>
       </div>
 
       {/* 告警条：回放事件窗口 = MoE 浪涌，自动触发 Trace 快照 */}
       {inEvt && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: 'rgba(248,81,73,0.14)', border: '1px solid rgba(248,81,73,0.5)', fontSize: 10.5, color: '#f85149' }}>
-          <span>⚠️ <b>ALERT</b> 机柜 C{REPLAY.evtCab} MoE AllToAll 浪涌：热点卡负载 &gt;95%，已自动触发 5-Step Trace 快照。</span>
+          <span><b>ALERT</b> 机柜 C{REPLAY.evtCab} MoE AllToAll 浪涌：热点卡负载 &gt;95%，已自动触发 5-Step Trace 快照。</span>
           {mode === 'heat' && <button onClick={() => setMode('replay')} style={{ ...btn, padding: '2px 8px', marginLeft: 'auto', ...tab(false) }}>→ 分析此段 Trace</button>}
         </div>
       )}
@@ -110,7 +110,7 @@ export function DualModeMonitor({
       {/* 回放控制条 */}
       {mode === 'replay' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setPlaying(!playing)} style={{ ...btn, ...tab(playing) }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
+          <button onClick={() => setPlaying(!playing)} style={{ ...btn, ...tab(playing) }}>{playing ? '暂停' : '▶ 播放'}</button>
           <input type="range" min={0} max={STEP_MAX} value={step % (STEP_MAX + 1)} onChange={(e) => setStep(+e.target.value)} style={{ flex: 1 }} />
           <span style={{ fontSize: 10, fontFamily: MONO, color: 'var(--tx2)', minWidth: 150 }}>t={tPct}% · {phase[2]}</span>
         </div>
@@ -133,8 +133,8 @@ export function DualModeMonitor({
       </div>
       <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.55 }}>
         {mode === 'heat'
-          ? (inEvt ? '🔥 浪涌事件：MoE 极端路由把 Token 洪水涌向热点专家组 → 局部爆红。系统在后台自动开启 5 个 Step 深层打点（Triggered Dump），随后自动关闭探针。' : '✅ 集群巡航中：秒级轮询聚合指标（负载/显存/温度），采集开销极低、不影响训练。热力呼吸属正常波动。')
-          : (a2aActive ? `⏪ 回放 t=${tPct}%：Token 从源卡发出 AllToAll 星状路由（紫线=流量、红线=拥堵链路），热点专家组随数据分布漂移。拖动时间轴逐帧对照右侧 3D 定位掩盖失败点。` : `⏪ 回放 t=${tPct}%：${phase[2]}。此阶段无跨节点 MoE 路由。`)}
+          ? (inEvt ? '浪涌事件：MoE 极端路由把 Token 洪水涌向热点专家组 → 局部爆红。系统在后台自动开启 5 个 Step 深层打点（Triggered Dump），随后自动关闭探针。' : '集群巡航中：秒级轮询聚合指标（负载/显存/温度），采集开销极低、不影响训练。热力呼吸属正常波动。')
+          : (a2aActive ? `回放 t=${tPct}%：Token 从源卡发出 AllToAll 星状路由（紫线=流量、红线=拥堵链路），热点专家组随数据分布漂移。拖动时间轴逐帧对照右侧 3D 定位掩盖失败点。` : `回放 t=${tPct}%：${phase[2]}。此阶段无跨节点 MoE 路由。`)}
       </div>
     </div>
   );

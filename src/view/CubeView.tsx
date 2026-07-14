@@ -392,7 +392,7 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <div style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}{straggler === s ? ' ⚠' : ''}</div>)}
+          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}{straggler === s ? '' : ''}</div>)}
         </div>
         <div style={{ position: 'relative', flex: 1, height: pipe.stages * (LANE_H + GAP) }}>
           {pipe.lanes.map((_, s) => <div key={s} style={{ position: 'absolute', left: 0, right: 0, top: s * (LANE_H + GAP), height: LANE_H, background: straggler === s ? 'rgba(255,75,123,0.12)' : 'var(--btn)', borderRadius: 3 }} />)}

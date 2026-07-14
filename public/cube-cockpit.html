@@ -293,15 +293,15 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
     <span class="grp fold" id="foldScript">
       <button class="foldhead" id="fhScript">▶ 剧本 ▾</button>
       <span class="fbody">
-        <button id="scPatrol">🩺 巡检大盘</button>
-        <button id="scMoe">🚨 MoE 越界</button>
-        <button id="scSlow">🐢 慢 DP 副本</button>
-        <button id="scDeep">🔬 单机深潜</button>
-        <button id="scDeploy">📦 部署审视</button>
+        <button id="scPatrol">巡检大盘</button>
+        <button id="scMoe">MoE 越界</button>
+        <button id="scSlow">慢 DP 副本</button>
+        <button id="scDeep">单机深潜</button>
+        <button id="scDeploy">部署审视</button>
       </span>
     </span>
     <span class="grp fold" id="foldView">
-      <button class="foldhead" id="fhView">🎛 视图 ▾</button>
+      <button class="foldhead" id="fhView">视图 ▾</button>
       <div class="fbody vpanel">
         <div class="vrow"><span class="vlab">着色·透镜</span>
           <button class="lensbtn on" data-lens="NONE">健康度</button>
@@ -324,15 +324,15 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
     </span>
     <span class="grp fold" id="foldScen">
-      <button class="foldhead warn" id="fhScen">🧪 演练 ▾</button>
+      <button class="foldhead warn" id="fhScen">演练 ▾</button>
       <span class="fbody">
         <button id="btnAnom" class="warn">注入 EP 跨超节点异常</button>
         <button id="btnScatter" style="display:none">散射跨域路由</button>
       </span>
     </span>
-    <button id="btnTheme" title="切换明暗主题" style="padding:4px 9px;font-size:14px">☀</button>
+    <button id="btnTheme" title="切换明暗主题" style="padding:4px 9px;font-size:14px"></button>
     <button id="scReset" title="重置全部视图">⟲ 重置</button>
-    <span id="alertbar">⚠ EP AllToAll 越界：8 个专家组成员被越区调度至相邻超节点，跨 Pod 光链路拥塞</span>
+    <span id="alertbar">EP AllToAll 越界：8 个专家组成员被越区调度至相邻超节点，跨 Pod 光链路拥塞</span>
     <span class="grp" style="margin-left:auto"><canvas id="sparks" width="340" height="36" style="width:255px;height:27px"></canvas></span>
   </div>
   <div id="main">
@@ -460,7 +460,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   </div>
   <div id="footer">
     <button id="btnPlay">▶ 播放</button>
-    <button id="btnModeB" title="离线深潜：泳道 Trace / busbw 基线 / 通信矩阵">📊 泳道回放</button>
+    <button id="btnModeB" title="离线深潜：泳道 Trace / busbw 基线 / 通信矩阵">泳道回放</button>
     <div id="phasetrack">
       <div class="pseg s-TP" data-ph="0">TP · 前向 AllReduce</div>
       <div class="pseg s-PP" data-ph="1">PP · 阶段接力</div>
@@ -634,7 +634,7 @@ function renderTopN(){
   const idx = Array.from({length:N_HOST},(_,i)=>i).sort((a,b)=>health[b]-health[a]);
   for(const h of idx){ if(list.length>=5) break;
     if(!list.some(x=>x[0]===h)) list.push([h, ((40+health[h]*55)|0)+'%']); }
-  el.innerHTML = '<span style="color:#8b949e">🔥 快速分诊 Top5</span>' +
+  el.innerHTML = '<span style="color:#8b949e">快速分诊 Top5</span>' +
     list.map(x=>`<button data-h="${x[0]}"${S.filterHost===x[0]?' class="on"':''}>Host${x[0]} · ${x[1]}</button>`).join('');
 }
 function updateCounts(){
@@ -1626,7 +1626,7 @@ function buildPhaseLines(dim){
           flowTube(bez(hostPos(h2,new THREE.Vector3()),exit.clone().add(V3(0,.6,0)),1.4),0xf85149,.4,.6,'RDMA'); }
         const cr=bez(exit.clone(),V3(p1.x,6.8,p1.z),10);
         flowTube(cr,0xf85149,.95,.95,'RDMA'); addMover(cr,0xffffff,.65,.15,'RDMA');
-        wireLab('⚠ 8 专家越界→SN1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
+        wireLab('8 专家越界→SN1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
       } else {
         for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
           const cr=bez(hostPos(h2,new THREE.Vector3()),V3(p1.x+(k2-1.5)*5,6.8,p1.z),9);
@@ -1714,7 +1714,7 @@ function buildDomainLines(dim){
       const loop=ps.map(p=>V3(p.x,.12,p.z)); loop.push(loop[0].clone());
       flowTube(loop, anomG?0xf85149:0xa371f7, .08, anomG?.85:.45, 'UB');
       ps.forEach(p=>dotAt(V3(p.x,.35,p.z), anomG?0xf85149:0xa371f7, .12));
-      wireLab('G'+g+(anomG?'·含越界⚠':''), anomG?'#ffa198':'#d2a8ff', anomG?7:3.5, V3(cx,1.9,cz));
+      wireLab('G'+g+(anomG?'·含越界':''), anomG?'#ffa198':'#d2a8ff', anomG?7:3.5, V3(cx,1.9,cz));
     }
     if(band==='field'||band==='pod')
       wireLab('EP 通信域 = MoGE 专家组 ×8（地面轮廓=组边界 · 组内 top-1 · 组间 AllToAll）','#d2a8ff',22,V3(0,7.6,0));
@@ -1768,7 +1768,7 @@ function buildFlowLines(){
   if(S.anomaly){ const p1=podXZ(1);
     const pts=bez(V3(15.4,1.5,0),V3(p1.x-16,6,p1.z),8);
     flowTube(pts,0xf85149,.95,.95*dimK('RDMA'),'RDMA'); addMover(pts,0xffffff,.6,.15,'RDMA');
-    wireLab('⚠ 跨 Pod 光链路拥塞（EP 越界流量落此）','#ffa198',17,V3(p1.x*.45,8.4,p1.z*.45)); }
+    wireLab('跨 Pod 光链路拥塞（EP 越界流量落此）','#ffa198',17,V3(p1.x*.45,8.4,p1.z*.45)); }
   wireLab(`互联流量 · 绿<40% 黄40-70% 红>70% · 宽度=占用 · ${med?'已按介质过滤：'+med:'右上矩阵卡：格=单元对 · 介质条可过滤'}`,'#8b949e',28,V3(0,12,0));
 }
 /* ======== 镜头④ 物理链路：Manhattan 走线（柜↑行母线→两翼）· 健康三色 ======== */
@@ -1782,7 +1782,7 @@ function buildLinkLines(){
       const x=(col-7.5)*1.8, st=cab===41?2:(cab%13===0?1:0);
       const c2=st===2?0xf85149:st===1?0xd29922:0x2ea043;
       if(st===2){ flowTube([V3(x,3.55,z),V3(x,3.25,z)],c2,.5,.95,'UB'); dotAt(V3(x,3.1,z),c2,.4);
-        wireLab(`✂ 柜${cab} 中断`,'#ffa198',10,V3(x,4.6,z)); }
+        wireLab(`柜${cab} 中断`,'#ffa198',10,V3(x,4.6,z)); }
       else flowTube([V3(x,3.55,z),V3(x,3.0,z)],c2,st===1?.4:.15,st===1?.85:.35,'UB');
       if(cab===fc) wireLab(`柜${fc}（焦点）上联${st===2?'中断':st===1?'降级·CRC重传↑':'正常'}`,
         st===2?'#ffa198':st===1?'#ffe08a':'#7ee787', 13, V3(x,5.3,z)); }
@@ -1799,14 +1799,14 @@ function buildLinkLines(){
     if(st===2){ brk++;
       flowTube([V3(x,3.55,z),V3(x,3.25,z)],0xf85149,.18,.95,'UB');   // 上半截+缺口
       dotAt(V3(x,3.1,z),0xf85149,.15);
-      wireLab(`✂ 柜${cab} 上联中断 · 影响 8 Host / 64 NPU`,'#ffa198',13,V3(x,5.3,z)); }
+      wireLab(`柜${cab} 上联中断 · 影响 8 Host / 64 NPU`,'#ffa198',13,V3(x,5.3,z)); }
     else if(st===1){ deg++;
       flowTube([V3(x,3.55,z),V3(x,3.0,z)],0xd29922,.1,.85,'UB');
       if(deg<=2) wireLab(`柜${cab} 降级·CRC 重传↑`,'#ffe08a',8,V3(x,4.7,z)); }
     else { ok++;
       flowTube([V3(x,3.55,z),V3(x,3.0,z)],0x2ea043,.02,.18,'UB'); }
   }
-  wireLab(`物理链路 · 正常 ${ok}（暗绿）· 降级 ${deg}（黄）· 中断 ${brk}（红✂）· 走线：柜↑行母线→两翼互联柜`,'#8b949e',28,V3(0,10.8,0));
+  wireLab(`物理链路 · 正常 ${ok}（暗绿）· 降级 ${deg}（黄）· 中断 ${brk}（红）· 走线：柜↑行母线→两翼互联柜`,'#8b949e',28,V3(0,10.8,0));
 }
 /* ======== 镜头⑤ 消息路径·PXN：交换节点显名 + hop 计数 + 粒子速度=时延对比 ======== */
 function buildPathLines(){
@@ -2172,10 +2172,10 @@ function updateFoldHeads(){
   const wireS = {AUTO:'自动',COMM:'通信域',FLOW:'流量',LINK:'链路',PATH:'路径'}[S.wire]||S.wire;
   const formS = {phys:'物理',cube:'魔方'+(cubeMode?('·'+['','DP','EP','TP','PP'][cubeMode]):''),stack:'堆叠'}[S.form]||S.form;
   const fv=document.getElementById('fhView');
-  if(fv) fv.innerHTML = `🎛 视图 · 着色 <b>${lensS}</b> · 连线 <b>${wireS}</b> · 形态 <b>${formS}</b> ▾`;
+  if(fv) fv.innerHTML = `视图 · 着色 <b>${lensS}</b> · 连线 <b>${wireS}</b> · 形态 <b>${formS}</b> ▾`;
   const fs=document.getElementById('fhScen');
   if(fs){ fs.classList.toggle('on', S.anomaly);
-    fs.innerHTML = S.anomaly? '🧪 演练 · <b style="color:#ffdcd7">EP 异常注入中</b> ▾' : '🧪 演练 ▾'; }
+    fs.innerHTML = S.anomaly? '演练 · <b style="color:#ffdcd7">EP 异常注入中</b> ▾' : '演练 ▾'; }
   const fsc=document.getElementById('fhScript');
   if(fsc){ const nm={patrol:'巡检',moe:'MoE',slowdp:'慢DP',deep:'深潜',deploy:'部署'}[S.scene]||'';
     fsc.innerHTML = nm? `▶ 剧本 · <b>${nm}</b> ▾` : '▶ 剧本 ▾'; }
@@ -2199,7 +2199,7 @@ $('#btnAnom').onclick = ()=>{ S.anomaly=!S.anomaly;
   $('#btnAnom').classList.toggle('on', S.anomaly);
   $('#alertbar').classList.toggle('show', S.anomaly);
   if(S.anomaly) $('#alertbar').innerHTML =
-    '⚠ EP AllToAll 越界：8 个专家组成员被越区调度 · <b style="text-decoration:underline;cursor:pointer">已自动抓拍 Step 1284-88 → 点击回放</b>';
+    'EP AllToAll 越界：8 个专家组成员被越区调度 · <b style="text-decoration:underline;cursor:pointer">已自动抓拍 Step 1284-88 → 点击回放</b>';
   $('#btnScatter').style.display = S.anomaly ? 'inline-block' : 'none';
   if(!S.anomaly){ S.scatter = false; $('#btnScatter').classList.remove('on'); }
   if($('#drawer').classList.contains('show')) syncDrawer();
@@ -2210,7 +2210,7 @@ $('#btnScatter').onclick = ()=>{ S.scatter = !S.scatter;
 $('#alertbar').style.cursor = 'pointer';
 $('#alertbar').onclick = ()=>{ if(S.anomaly) scenario('moe'); };
 $('#btnPlay').onclick = ()=>{ S.playing=!S.playing;
-  $('#btnPlay').textContent = S.playing?'⏸ 暂停':'▶ 播放';
+  $('#btnPlay').textContent = S.playing?'暂停':'▶ 播放';
   $('#btnPlay').classList.toggle('on', S.playing); };
 $('#phasetrack').addEventListener('click', ev=>{
   const r = $('#phasetrack').getBoundingClientRect();
@@ -2242,7 +2242,7 @@ function renderViewlab(){
     CP:'<br><span style="color:#c586d6">CP 上下文并行：本作业未启用（长序列场景）· Ring Attention 跨节点环形传递</span>',
     JOB:'<br><span style="color:#58a6ff">任务透镜：框架（MindSpeed/vLLM）编译整网→按 P 策略切分→调度到物理卡 · 蓝=训练 768 台 · 青=推理 192 台 · 暗=空闲 64 台</span>' }[S.lens]||'';
   const wireNote = S.wire && S.wire!=='AUTO'
-    ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=MoGE 8 组地面轮廓）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红✂=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比'})[S.wire]}</span>` : '';
+    ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=MoGE 8 组地面轮廓）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比'})[S.wire]}</span>` : '';
   const granNote = `<br><span style="color:#6e7681">粒度：${({
     pod:'Pod↔Pod 聚合流（下钻 L4 展开柜级）', field:'柜/Host 级全景',
     cab:'本机视角 · 焦点 Host 的直接对端', chip:'卡级 · 本卡在算子中的角色',
@@ -2254,7 +2254,7 @@ function renderStageLeg(){                    // 舞台底部编码图例（随�
   const chip=(c,t)=>`<span><i style="background:${c}"></i>${t}</span>`;
   let html='';
   if(w==='FLOW') html=chip('#3fb950','空闲 <40%')+chip('#d29922','中 40-70%')+chip('#f85149','繁忙 >70%')+'<span>宽度=占用 · 粒子=方向</span>';
-  else if(w==='LINK') html=chip('#2ea043','正常')+chip('#d29922','降级')+chip('#f85149','中断 ✂');
+  else if(w==='LINK') html=chip('#2ea043','正常')+chip('#d29922','降级')+chip('#f85149','中断');
   else if(w==='PATH') html=chip('#f85149','跨轨 3-hop ≈3.2μs')+chip('#3fb950','PXN 1-hop ≈1.1μs')+'<span>粒子速度=时延</span>';
   else html=chip('#39c5cf','TP')+chip('#d29922','PP')+chip('#58a6ff','DP')+chip('#a371f7','EP')
     +'<span>'+(w==='COMM'?'轮廓=通信域边界 · 点=成员':'流带=当前阶段算子 · 粒子=方向')+'</span>';
@@ -2262,11 +2262,11 @@ function renderStageLeg(){                    // 舞台底部编码图例（随�
 }
 function renderProbe(){
   const h = S.hoverHost>=0 ? S.hoverHost : S.focusHost;
-  const exp = isExpertHost[h] ? (isExpertHost[h]===2?' · 热点专家⚠':' · MoE 专家') : '';
+  const exp = isExpertHost[h] ? (isExpertHost[h]===2?' · 热点专家':' · MoE 专家') : '';
   const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#f85149">EP 越界成员</b>' : '';
   const st = ppOf(h), lys = `L${st*3+1}-L${st*3+3}`;
   const sel = (S.selLayer!=null||S.selCard)
-    ? `<br><span style="color:${carrierHost(h)?'#d2a8ff':'#6e7681'}">${carrierHost(h)?'✔ 承载当前选中的整网片段':'✘ 不承载选中片段（已压暗）'}</span>` : '';
+    ? `<br><span style="color:${carrierHost(h)?'#d2a8ff':'#6e7681'}">${carrierHost(h)?'承载当前选中的整网片段':'不承载选中片段（已压暗）'}</span>` : '';
   $('#probe').innerHTML =
     `<b>Host ${h}</b>${S.hoverHost>=0?'（悬停）':'（焦点）'} · 计算柜 ${cabOf(h)} / 槽位 ${h%8}${exp}${an}<br>
      逻辑坐标 <span class="lg">[DP${dpOf(h)}, PP${st}, TP0-7]</span> · 承载整网 <span class="lg">${lys}</span> · 健康度 ${(100-health[h]*40).toFixed(0)}% · 显存 ${(memLevel[h]*100)|0}%<br>
@@ -2476,7 +2476,7 @@ function renderMx(){
   if(S.anomaly){ c.fillStyle='#f85149';
     c.fillText('红框行=含越界专家的组：这些流量实际落在跨 Pod 光链路（理论应为 0）', ix, y0+58); }
   if(mxHover){ const {i,j}=mxHover; c.fillStyle='#e6edf3';
-    c.fillText(`G${i} → G${j}：${(vol[i][j]*37).toFixed(1)} GB/step${hotG.has(j)?' · 目的=热点组⚠':''}`, ix, y0+78); }
+    c.fillText(`G${i} → G${j}：${(vol[i][j]*37).toFixed(1)} GB/step${hotG.has(j)?' · 目的=热点组':''}`, ix, y0+78); }
 }
 $('#cvMx').addEventListener('mousemove', ev=>{
   const r = $('#cvMx').getBoundingClientRect();
@@ -2491,7 +2491,7 @@ function setLens(l){ S.lens=l;
 function setRel(r){ S.rel=r;
   $$('.relbtn').forEach(x=>x.classList.toggle('on', x.dataset.rel===r)); invalidateRel(); }
 function setPlay(on){ S.playing=on;
-  $('#btnPlay').textContent = on?'⏸ 暂停':'▶ 播放';
+  $('#btnPlay').textContent = on?'暂停':'▶ 播放';
   $('#btnPlay').classList.toggle('on', on); }
 function scenario(k){
   S.selLayer=null; S.selCard=null; renderMemPanel(); describeModelSel();
@@ -2550,7 +2550,7 @@ function scenario(k){
 /* ---- 主题切换 ---- */
 function applyTheme(dark){
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  $('#btnTheme').textContent = dark ? '🌙' : '☀';
+  $('#btnTheme').textContent = dark ? '暗' : '明';
   COL.DIM = dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.22)';
   // 浅色对齐工作台白场：雾用近白 #eef1f5 而非发蓝的 #d9e1ec，远端拉远减少灰霾
   scene.fog.color.set(dark ? 0x010409 : 0xeef1f5);

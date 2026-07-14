@@ -835,7 +835,7 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
     else if (h.kind === 'spod') t = `Pod#${h.idx + 1} · 平均 ${Math.round(spodMean(h.idx) * 100)}%`;
     else if (h.kind === 'nodec' || (h.kind === 'punit' && selLevel === 'super')) t = `Host${(h.idx % NODES_PER_CAB) + 1} · 均值 ${Math.round(nodeMean(selSpod, h.idx) * 100)}%（机柜${((h.idx / NODES_PER_CAB) | 0) + 1} 物理分组）`;
     else if (h.kind === 'npuc' || h.kind === 'pnpu') { const v = metricVal(selSpod, selNode, h.idx); t = `Chip r${h.idx} (rank ${selNode * NPN + h.idx}) · ${Math.round(v * 100)}% ${STATE_LABELS[loadState(v)]}`; }
-    else if (h.kind === 'rankfull') { const nl = (h.idx % NODES_PER_CAB) + 1; t = `Host${nl} · 均值 ${Math.round(nodeMean(selSpod, h.idx) * 100)}%（机柜${((h.idx / NODES_PER_CAB) | 0) + 1} 物理分组）${isStrag(selSpod, h.idx) ? ' · ⚠ straggler' : ''}`; }
+    else if (h.kind === 'rankfull') { const nl = (h.idx % NODES_PER_CAB) + 1; t = `Host${nl} · 均值 ${Math.round(nodeMean(selSpod, h.idx) * 100)}%（机柜${((h.idx / NODES_PER_CAB) | 0) + 1} 物理分组）${isStrag(selSpod, h.idx) ? ' · straggler' : ''}`; }
     else if (h.kind === 'punit') t = `${selLevel === 'pool' ? 'Pod' : '单元'}${h.idx + 1}`;
     else if (h.kind === 'diec') t = `计算 Die ${h.idx} · ${Math.round(dieVal(h.idx) * 100)}%`;
     else if (h.kind === 'iodie') t = `IO Die ${h.idx} · 互联/IO（无算力负载）`;
@@ -1069,7 +1069,7 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
             <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 9, marginBottom: 4 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>通信关系 · 卡 r{cardJ}（rank {selNode * NPN + cardJ}）</span>
-                {nodePeers?.[cardJ]?.strag && <span style={{ color: '#e5484d' }}>⚠ straggler</span>}
+                {nodePeers?.[cardJ]?.strag && <span style={{ color: '#e5484d' }}>straggler</span>}
               </div>
               {assocSVG()}
               {/* 并行组归属（parallelMap 真值 · 1 基显示）——与画布『关系高亮』同源 */}

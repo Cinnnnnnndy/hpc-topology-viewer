@@ -1326,7 +1326,7 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
             style={{ padding: '4px 9px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...toggleBtn(on, c) }}>{sc === 'ring' ? 'AllReduce' : 'All-to-All'}</button>;
         })}
         <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 执行时序（节点按状态变色 + 连线/数据流动 + swimlane/右侧面板同步）"
-          style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '⏸ 时序播放中' : '▶ 播放时序'}</button>
+          style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(playing) }}>{playing ? '时序播放中' : '▶ 播放时序'}</button>
         <span style={{ borderLeft: '1px solid var(--bd)', height: 16, margin: '0 2px' }} />
         <button onClick={() => setWlOpen((v) => !v)} title="真实工况数据面板（Pangu Pro MoE · 模型/并行/通信/吞吐/质量对照 · arXiv:2505.21411）"
           style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 7, cursor: 'pointer', ...navBtn(wlOpen) }}>{wlOpen ? '▾ 工况数据' : '▸ 工况数据'}</button>
@@ -1481,7 +1481,7 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
       </div>
       {/* transport: play / pause + train / infer toggle */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...toggleBtn(playing, ENTITY_COLORS.cube) }}>{playing ? '⏸ 暂停' : '▶ 播放'}</button>
+        <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...toggleBtn(playing, ENTITY_COLORS.cube) }}>{playing ? '暂停' : '▶ 播放'}</button>
         {(['train', 'infer'] as RunMode[]).map((m) => {
           const on = mode === m;
           return <button key={m} onClick={() => setMode(m)} title={m === 'train' ? '训练迭代时序' : '推理时序'} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...navBtn(on) }}>{m === 'train' ? '训练' : '推理'}</button>;
