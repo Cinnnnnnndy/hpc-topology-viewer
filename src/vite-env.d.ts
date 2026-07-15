@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+// 构建期注入的唯一 id（见 vite.config.ts define），用于给 iframe 静态资源做缓存刷新。
+declare const __BUILD_ID__: string;
+
 declare module '*workbench-shell/pattern.js';
 declare module '*aic-core-object/pattern.js';
 declare module '*aiv-core-object/pattern.js';

@@ -64,7 +64,7 @@ export function CubeCockpit({ dark, onState, cmdApiRef }: {
       <iframe
         ref={frameRef}
         title="立方重排 · AI Infra 统一驾驶舱"
-        src={`${COCKPIT_URL}?theme=${theme}`}
+        src={`${COCKPIT_URL}?theme=${theme}&v=${__BUILD_ID__}`}
         onLoad={() => post({ type: 'cockpit-theme', theme })}
         style={{ width: '100%', height: '100%', border: 'none', display: 'block', background: 'var(--bg)' }}
       />
