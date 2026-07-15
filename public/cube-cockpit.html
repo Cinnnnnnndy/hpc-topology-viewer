@@ -1238,7 +1238,7 @@ scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.05); scene.add(ambientLight);
 const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(120,300,180); scene.add(dl);
-const dl2 = new THREE.DirectionalLight(0xe8f0ff, .75); dl2.position.set(-100,80,-120); scene.add(dl2);
+const ptLight = new THREE.PointLight(0xe8f0ff, 1.0, 0); ptLight.position.set(0, 40, 0); scene.add(ptLight);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -2840,10 +2840,9 @@ function applyTheme(dark){
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
-  ambientLight.color.set(0xffffff);
   ambientLight.intensity = dark ? 1.35 : 1.05;
-  if(typeof dl2 !== 'undefined' && dl2){ dl2.color.set(dark ? 0x7e93cf : 0xe8f0ff); dl2.intensity = dark ? 0.55 : 0.75; }
-  if(typeof dl !== 'undefined' && dl){ dl.intensity = dark ? 0.95 : 1.2; }
+  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.95 : 1.2;
+  if(typeof ptLight !== 'undefined' && ptLight){ ptLight.color.set(dark ? 0x7e93cf : 0xe8f0ff); ptLight.intensity = dark ? 0.7 : 1.0; }
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
