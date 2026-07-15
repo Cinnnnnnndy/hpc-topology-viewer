@@ -1056,9 +1056,9 @@ function drawArcs(){
   if(S.anomaly && ph==='EP') $('#bdAnom').classList.add('live');
   const p1 = $('#pod5-1');
   if(p1 && S.focusPod!==1){                     // 选中态优先于异常染色
-    p1.style.borderColor = S.anomaly?'#FF4B7B':'#30363d';
-    p1.style.color = S.anomaly?'#ffdcd7':'#8b949e';
-    p1.style.background = S.anomaly?'#3d0c0e':'#161b22'; }
+    p1.style.borderColor = S.anomaly?'#FF4B7B':themeC('#30363d','#c8d2de');
+    p1.style.color = S.anomaly?'#ffdcd7':themeC('#8b949e','rgba(0,0,0,.50)');
+    p1.style.background = S.anomaly?themeC('#3d0c0e','#ffe4e4'):themeC('#161b22','#f0f2f6'); }
 }
 function touchLeft(){
   if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); } else renderMM();
