@@ -543,7 +543,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div id="probe"></div>
       <div id="hud"></div>
       <div id="mxcard">
-        <h4>Pod0 · 互联矩阵（Host×Host 采样）<span class="x" id="mxClose">✕</span></h4>
+        <h4>本集群 · Pod↔Pod 互联矩阵（64 单元）<span class="x" id="mxClose">✕</span></h4>
         <div id="mxmedia"></div>
         <canvas id="mxcv" width="232" height="232"></canvas>
         <div id="mxinfo"></div>
@@ -1227,7 +1227,6 @@ const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3
 // Pod p 在本集群机柜阵内的代表位（= 该 Pod 的 2 个机柜中心）。整个模型 = 1 集群 = 64 Pod，
 // 所以「跨 Pod」连线都落在集群内部的机柜区之间，不再飞到场地外的灰块。
 const podXZ = p => ({ x:(((2*p)%16)-7)*1.8, z:(((2*p)>>4&7)-3.5)*2.4 });
-const FIELD = { x:126, z:105 };
 function hostPos(h,out){ const cab=h>>3, slot=h&7;
   out = out||new THREE.Vector3();
   out.set((cab%16-7.5)*1.8, .5+slot*.38, ((cab>>4)-3.5)*2.4); return out; }
@@ -1988,7 +1987,7 @@ function renderMxCard(){
   const pr = S.mxHover||S.mxPin;
   $('#mxinfo').innerHTML = pr
     ? `单元 <b>${pr[0]}</b>（Host ${pr[0]*16}-${pr[0]*16+15}·柜${pr[0]*2}-${pr[0]*2+1}）⇄ 单元 <b>${pr[1]}</b> · 占用 <b style="color:${stateCss(mxVal(pr[0],pr[1]))}">${(mxVal(pr[0],pr[1])*100)|0}%</b><br>3D 已点亮此对 · ${S.mxPin&&!S.mxHover?'已钉住（再点取消）':'点击钉住'}`
-    : '行/列 = 64 通信单元（1 单元=16 Host=2 柜）· 色=状态 · 悬停格→3D 点亮该对 · 点介质条→过滤 3D 流量';
+    : '行/列 = 64 通信单元（1 单元=16 Host=2 柜=1 Pod）· 色=状态 · 悬停格→3D 点亮该对 · 点介质条→过滤 3D 流量';
 }
 function renderMxHi(){                                    // 矩阵 → 3D 交叉高亮
   for(let i=mxHiGroup.children.length-1;i>=0;i--){ const o=mxHiGroup.children[i];

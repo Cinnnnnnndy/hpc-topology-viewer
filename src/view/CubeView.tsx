@@ -41,14 +41,14 @@ function hexRGB(hex: string): [number, number, number] {
 //    严格对齐 hw-native-sys L0→L7 与参考 8 级详表：整个渲染模型 = 1 个 L6 集群（8192 卡·万卡级），
 //    万卡规模落在 Cluster（L6），而非 Pod。逐级换算：
 //      L3 Host = 8 卡；L4 Pod · UBL128 = 128 卡（= 16 Host = 2 机柜，Scale-Up 域）；
-//      L5 服务池 = 8 Pod = 1024 卡；L6 集群 = 整个模型（万卡·一块）；L7 全球 = 整体一块。
+//      L5 服务池 = 4 Pod = 512 卡；L6 集群 = 整个模型（万卡·一块）；L7 全球 = 整体一块。
 //    card/die/core = 满 rank 粒度（1 卡/单元）；机柜(cab)只是 Pod 内物理分组(64)，不是层级。
 function aggUnitCards(level: LevelKey | undefined): number {
   switch (level) {
     case 'node': return NPUS_PER_NODE;                 // L3 Host = 8 卡
     case 'cab': return CAB_CARDS;                      // 机柜（物理分组，非层级）= 64 卡
     case 'super': return CAB_CARDS * 2;                // L4 Pod · UBL128 = 128 卡（16 Host = 2 机柜）
-    case 'pool': return CAB_CARDS * 16;                // L5 服务池 = 8 Pod = 1024 卡
+    case 'pool': return CAB_CARDS * 8;                 // L5 服务池 = 4 Pod = 512 卡（PODS_PER_POOL=4）
     case 'cluster': return Infinity;                   // L6 集群 = 整个模型（万卡·一块）
     case 'global': return Infinity;                    // L7 全球（整体一块）
     default: return 1;                                 // L2 Chip / L1 Die / L0 Core → 满粒度
