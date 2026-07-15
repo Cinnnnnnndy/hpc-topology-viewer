@@ -298,8 +298,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #netSelLab{color:var(--accent);font-weight:600}
 #netLegend{display:flex;gap:14px;font-size:10px;color:var(--dim);margin-bottom:7px}
 #netLegend .ndot{display:inline-flex;align-items:center;gap:5px}
-#netStage{height:66vh;overflow:auto;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel)}
-#netStage svg{width:100%;height:auto;display:block}
+/* 无内卡片：不加边框/圆角/独立底，整网图按宽度自适应、自然高度直接铺在左面板(大卡片)上，面板自身滚动。
+   svg 高度由 JS 按容器宽度 × viewBox 比例显式设定（viewBox-only svg 的 height:auto 不可靠）。 */
+#netStage{width:100%;background:transparent}
+#netStage svg{width:100%;display:block}
 /* 浅色：对齐参考页 —— 柔和边框 + 深灰标签（配合 modelArchitecture 浅色调色板，不再偏深/刺眼） */
 :root[data-theme='light'] #netStage .pto-model-graphviz-node rect{fill-opacity:1;stroke:rgba(63,76,99,.24);stroke-width:.9px}
 /* io/权重(tensor)节点：属性里的 var(--tensor-fill) 不解析会退回黑；参考页那套 var 又只在 .pattern-page 作用域下，
@@ -2405,21 +2407,28 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
       ? MGV.modelArchitectureColormap(G, { theme:'light', lightHsl:LIGHT_HSL }) : undefined;
     ctrl = MGV.renderController(stage, G, { theme:lastTheme, colormap, reportOverlays:false, evidence:false,
       onSelect:function(info){ const id=info&&info.nodeId; if(id) onPickNode(id); } });
-    if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.height='auto'; ctrl.svg.style.display='block';
+    if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.display='block';
       ctrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon').forEach(el=>{ el.style.display='none'; });
-      mk=ensureMarkers(ctrl.svg); applyDir(ctrl.svg, dir, mk); if(curHi) applyHi(ctrl.svg, curHi); }
+      mk=ensureMarkers(ctrl.svg); applyDir(ctrl.svg, dir, mk); if(curHi) applyHi(ctrl.svg, curHi); sizeNetSvg(); }
     rendered=true; }
+  // viewBox-only 的 svg 用 height:auto 会塌成空白 → 按容器宽度 × viewBox 比例(3841/2099)显式设高，随宽度自适应铺满大卡片
+  function sizeNetSvg(){ const stage=$('#netStage'); if(!ctrl||!ctrl.svg||!stage) return;
+    const w=stage.clientWidth||stage.getBoundingClientRect().width; if(w>0) ctrl.svg.style.height=Math.round(w*3841/2099)+'px'; }
+  if(window.ResizeObserver){ try{ new ResizeObserver(()=>sizeNetSvg()).observe($('#netStage')); }catch(e){} }
 
-  // 点算子 → ①右侧立方按其切分维重排 ②同维算子高亮 ③分隔矩阵高亮该维落卡
+  // 点算子 → ①右侧立方按其切分维「重着色」②同维算子高亮 ③分隔矩阵高亮该维落卡
+  const DIM_LENS={tp:'TP',pp:'PP',dp:'DP',ep:'EP'};
   function onPickNode(id){ const dim=NODE_DIM[id];
     $('#netSelLab').textContent = dim ? ('　选中 '+id+' → '+DIM_LABEL[dim]) : ('　选中 '+id);
     if(!dim) return;
     setHi({ match:x=>NODE_DIM[x]===dim, color:DIM_GLOW[dim] });
     window.__netMatrixDim = dim; if(typeof renderMM==='function') renderMM();   // ③ 矩阵落卡示意
-    formTarget='cube'; formBtns();                                              // ① 立方切「逻辑魔方」
-    const k=DIM_CUBEMODE[dim];
-    if(k!=null && cubeMode!==k){ cubePrev=cubeMode; cubeMode=k; cubeBlend=0;
-      [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k)); renderCubeAxes(); renderViewlab(); } }
+    // ① 立方按该切分维「重着色」（透镜/lens）——只换颜色不做整形态飞行，顺滑（对齐整网切分手感）
+    const L=DIM_LENS[dim];
+    if(L && typeof S!=='undefined'){ S.lens=L; $$('.lensbtn').forEach(x=>x.classList.toggle('on', x.dataset.lens===L));
+      if(typeof updateSlices==='function') updateSlices();
+      if(typeof touchLeft==='function') touchLeft();
+      if(typeof renderStageLeg==='function') renderStageLeg(); } }
 
   // ── 反查：矩阵/3D 选择 → 整网图高亮对应算子（选层→dense/MoE 路径；选卡→TP/EP 计算算子）──
   function reverseFromSel(){
