@@ -1513,8 +1513,8 @@ function axLabel(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.
 function axLine(a,b,color){
   const dir = b.clone().sub(a), len = dir.length();
   const mid = a.clone().add(b).multiplyScalar(.5);
-  const geo = new THREE.CylinderGeometry(.06,.06,len,6,1);
-  const mat = new THREE.MeshBasicMaterial({color,transparent:true,opacity:.88});
+  const geo = new THREE.CylinderGeometry(.14,.14,len,8,1);
+  const mat = new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92});
   const mesh = new THREE.Mesh(geo,mat);
   mesh.position.copy(mid);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
@@ -1523,10 +1523,12 @@ function axLine(a,b,color){
 function renderCubeAxes(){
   while(cubeAxes.children.length){ const o=cubeAxes.children.pop(); if(o.material)o.material.dispose(); if(o.geometry)o.geometry.dispose(); }
   const TPc='#7ee8f4', PPc='#ffe0a0', DPc='#8aa6ff', EPc='#c97fff';
-  if(cubeMode===0){                 // 标准立方：X=TP · Y=PP(模型深度) · Z=DP
-    axLine(V3(-6.5,17,0),V3(7,17,0),0x7ee8f4);  axLabel('TP × 8',TPc,6,V3(9.6,17,0));
-    axLine(V3(0,8,0),V3(0,26.5,0),0xffe0a0);    axLabel('PP × 16 · 模型深度',PPc,6,V3(0,28.8,0));
-    axLine(V3(0,17,-24),V3(0,17,25),0x8aa6ff);  axLabel('DP × 64',DPc,6,V3(0,17,27.6));
+  if(cubeMode===0){
+    // 三轴沿魔方外边缘，交于左下前角 (-7, 7, 25.5)，完全暴露在方块之外
+    const ox=-7, oy=7, oz=25.5;
+    axLine(V3(ox,oy,oz),V3(8,oy,oz),0x7ee8f4);      axLabel('TP × 8',TPc,5.5,V3(10.5,oy,oz));
+    axLine(V3(ox,oy,oz),V3(ox,28,oz),0xffe0a0);     axLabel('PP × 16',PPc,5.5,V3(ox,30,oz));
+    axLine(V3(ox,oy,-25.5),V3(ox,oy,oz),0x8aa6ff); axLabel('DP × 64',DPc,5.5,V3(ox,oy,oz+3));
   } else if(cubeMode===1){          axLabel('DP × 64 副本平铺（8×8）· 每格 = 一份完整模型 TP×PP',DPc,12,V3(0,20.5,0));
   } else if(cubeMode===2){          axLabel('EP · 64 专家 = 8 组抽出成墙（MoGE）· 左 = 非专家 Host',EPc,12,V3(0,26,0));
   } else if(cubeMode===3){          axLabel('TP × 8 权重墙沿 X · 一面墙 = 全网同槽位切片',TPc,12,V3(0,28,0));
