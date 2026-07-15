@@ -1235,7 +1235,7 @@ const renderer = new THREE.WebGLRenderer({canvas:stage, antialias:true, alpha:tr
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.LinearToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.35;
 renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
@@ -2899,9 +2899,9 @@ function applyTheme(dark){
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
-  hemiLight.intensity = dark ? 1.20 : 0.95;
+  hemiLight.intensity = dark ? 1.55 : 0.95;
   hemiLight.groundColor.set(dark ? 0x10131a : 0xf5f5f5);
-  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.70 : 0.75;
+  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.95 : 0.75;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
@@ -3073,6 +3073,7 @@ body{ background:var(--bg); }
 /* main split：单条 12px 沟槽（对齐工作台 content-gap），不再是 gap+handle+gap 的双倍间距 */
 #main{ gap:0; }
 #left{
+  width:480px;
   border:1px solid var(--sys-border) !important;
   border-right:1px solid var(--sys-border) !important;
   border-radius:var(--panel-shell-radius) !important;
