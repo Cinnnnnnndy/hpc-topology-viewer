@@ -373,7 +373,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
   // 立方重排(cube) 内嵌统一驾驶舱原型：工具栏桥接到宿主 Decode 面板。
   const cockpitCmd = useRef<((c: CockpitCmd) => void) | null>(null);
-  const [cockpitState, setCockpitState] = useState<CockpitState>({ lens: 'NONE', wire: 'AUTO', anom: false, rel: 'AUTO' });
+  const [cockpitState, setCockpitState] = useState<CockpitState>({ lens: 'NONE', wire: 'AUTO', anom: false, rel: 'AUTO', topn: [] });
 
 
   useEffect(() => {
@@ -635,6 +635,19 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                                 <button onClick={() => send({ cmd: 'reset' })} style={{ ...cbtn, ...navBtn(false) }}>⟲ 重置</button>
                               </div>
                             </div>
+                            {cockpitState.topn.length > 0 && (
+                              <div className="hpc-wb-ctrl-group">
+                                <span className="hpc-wb-ctrl-label">分诊</span>
+                                <div className="hpc-wb-ctrl-btns" style={{ flexWrap: 'wrap', gap: 4 }}>
+                                  {cockpitState.topn.map(([host, label]) => (
+                                    <button key={host} onClick={() => send({ cmd: 'topn', host })}
+                                      style={{ ...cbtn, borderColor: 'color-mix(in srgb,#ff4b7b 50%,var(--sys-border))', color: '#ff4b7b' }}>
+                                      Host{host} · {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </>
                         );
                       })()}

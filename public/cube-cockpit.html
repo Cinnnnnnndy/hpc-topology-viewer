@@ -453,7 +453,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
               <button class="relbtn" data-rel="EP">EP对端</button>
             </div></div>
           </div>
-          <div id="topn"></div>
+          <div id="topn" style="display:none"></div>
         </div>
         </div>
       </div>
@@ -3142,12 +3142,26 @@ body{ background:var(--bg); }
       var wireOn = document.querySelector('.wirebtn.on');
       var relOn = document.querySelector('.relbtn.on');
       var anom = document.getElementById('btnAnom');
+      var topList = [];
+      try {
+        if (typeof S !== 'undefined' && typeof health !== 'undefined') {
+          if (S.anomaly && typeof anomExperts !== 'undefined' && typeof expertHosts !== 'undefined')
+            anomExperts.slice(0,3).forEach(function(e){ topList.push([expertHosts[e],'EP越界']); });
+          var idx = Array.from({length: N_HOST}, function(_,i){ return i; }).sort(function(a,b){ return health[b]-health[a]; });
+          for (var i2=0; i2<idx.length && topList.length<5; i2++) {
+            var hh = idx[i2];
+            if (!topList.some(function(x){ return x[0]===hh; }))
+              topList.push([hh, ((40+health[hh]*55)|0)+'%']);
+          }
+        }
+      } catch(e2) {}
       parent.postMessage({
         type: 'cockpit-state',
         lens: lensOn ? lensOn.getAttribute('data-lens') : 'NONE',
         wire: wireOn ? wireOn.getAttribute('data-wire') : 'AUTO',
         rel: relOn ? relOn.getAttribute('data-rel') : 'AUTO',
-        anom: !!(anom && anom.classList.contains('on'))
+        anom: !!(anom && anom.classList.contains('on')),
+        topn: topList
       }, '*');
     } catch (e) {}
   }
@@ -3161,6 +3175,7 @@ body{ background:var(--bg); }
     else if (d.cmd === 'anom') el = document.getElementById('btnAnom');
     else if (d.cmd === 'reset') el = document.getElementById('scReset');
     else if (d.cmd === 'matrix') el = document.getElementById('btnMx');
+    else if (d.cmd === 'topn') { try { setFilter(+d.host); } catch(e){} setTimeout(reportState, 90); return; }
     if (el) el.click();
     setTimeout(reportState, 90);
   });
