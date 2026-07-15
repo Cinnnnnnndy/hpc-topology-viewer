@@ -329,16 +329,16 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #probe b{color:var(--sys-text-bright)}
 #probe .lg{color:var(--teal);font-family:ui-monospace,monospace}
 #probe::before{content:"主机详情";display:block;font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--sys-accent);margin-bottom:5px}
-#hud{position:absolute;right:12px;bottom:12px;z-index:5;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--dim);width:238px;pointer-events:auto;box-shadow:var(--shadow-md)}
-#hud::before{content:"实时带宽 · BANDWIDTH";display:block;font-size:9px;font-weight:600;letter-spacing:.09em;color:var(--sys-accent);margin-bottom:6px}
-#hud .busbar{height:7px;background:var(--sys-raised);border-radius:4px;overflow:hidden;margin-top:2px}
-#hud .busbar i{display:block;height:100%;border-radius:4px;transition:width .4s}
-.hudrow{display:flex;align-items:center;gap:6px;margin-top:3px;cursor:pointer;border-radius:4px;padding:1px 3px}
+#hud{display:none}
+#cvHud{flex:1;min-height:0;overflow-y:auto;border:1px solid var(--border);border-radius:6px;background:var(--panel2);padding:10px 16px;box-sizing:border-box;font-size:11px;color:var(--dim)}
+#cvHud .busbar{height:7px;background:var(--sys-raised);border-radius:4px;overflow:hidden;margin-top:2px}
+#cvHud .busbar i{display:block;height:100%;border-radius:4px;transition:width .4s}
+.hudrow{display:flex;align-items:center;gap:8px;margin-top:4px;cursor:pointer;border-radius:4px;padding:2px 4px}
 .hudrow:hover{background:var(--state-hover);outline:1px solid var(--sys-border)}
-.hudrow .hl{width:104px;flex-shrink:0;font-size:10px}
-.hudrow .hb{flex:1;height:6px;background:var(--sys-raised);border-radius:3px;overflow:hidden}
+.hudrow .hl{width:140px;flex-shrink:0;font-size:11px}
+.hudrow .hb{flex:1;height:7px;background:var(--sys-raised);border-radius:3px;overflow:hidden}
 .hudrow .hb i{display:block;height:100%;border-radius:3px}
-.hudrow .hv{width:28px;text-align:right;font-family:ui-monospace,monospace;font-size:10px}
+.hudrow .hv{width:32px;text-align:right;font-family:ui-monospace,monospace;font-size:11px}
 /* ---- 3D 舞台叠加：互联矩阵卡（不新增布局面板，浮在场景上） ---- */
 #mxcard{position:absolute;top:48px;right:12px;z-index:6;width:256px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 10px;display:none;font-size:11px;color:var(--dim);box-shadow:var(--shadow-md)}
 #mxcard.show{display:block}
@@ -556,7 +556,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
       <div id="viewlab"></div>
       <div id="probe"></div>
-      <div id="hud"></div>
+      <div id="hud" style="display:none"></div>
       <div id="mxcard">
         <h4>本集群 · Pod↔Pod 互联矩阵（64 单元）<span class="x" id="mxClose">✕</span></h4>
         <div id="mxmedia"></div>
@@ -572,6 +572,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <button id="drTabLane" class="on">泳道 Trace 回放</button>
       <button id="drTabBw">busbw 基线</button>
       <button id="drTabMx">通信矩阵</button>
+      <button id="drTabHud">实时带宽</button>
       <span id="laneCtl" style="display:flex;gap:5px;margin-left:10px">
         <button id="laneTopk" class="on">传统 Top-K</button>
         <button id="laneMoge">MoGE 均衡</button>
@@ -582,7 +583,8 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
     </div>
     <canvas id="cvLane" width="1000" height="206"></canvas>
     <canvas id="cvBw" width="1000" height="206" style="display:none"></canvas>
-  <canvas id="cvMx" width="1000" height="206" style="display:none"></canvas>
+    <canvas id="cvMx" width="1000" height="206" style="display:none"></canvas>
+    <div id="cvHud" style="display:none"></div>
   </div>
   <div id="footer">
     <button id="btnPlay">▶ 播放</button>
@@ -1249,7 +1251,7 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.05); scene.add(ambientLight);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xe8edf4, 1.05); scene.add(hemiLight);
 const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
@@ -2576,6 +2578,7 @@ function stepBreakdown(){                     // 工况 step 时间分解（软�
   return b;
 }
 function renderHUD(){
+  if($('#cvHud').style.display==='none') return;
   const ph = PHASES[S.phase];
   const load = S.playing ? ph.load*(0.85+0.3*Math.abs(Math.sin(performance.now()/700))) : 0.08;
   const anomX = S.anomaly && ph.id==='EP';
@@ -2583,7 +2586,7 @@ function renderHUD(){
   const opName = {TP:'TP AllReduce',PP:'PP Send/Recv',EP:'EP All-to-All',DP:'DP AllReduce'}[ph.id];
   const row = (k,lab,v,col)=>`<div class="hudrow" data-emph="${k}">
       <span class="hl">${lab}</span><span class="hb"><i style="width:${v}%;background:${col}"></i></span><span class="hv">${v}%</span></div>`;
-  $('#hud').innerHTML =
+  $('#cvHud').innerHTML =
     `<b style="color:#fff">工况 · Pangu Pro MoE 72BA16B</b><br>
      <span style="font-size:10px">TP8 · PP16 · DP64 · EP(64专家/MoGE 8组) · 整网48层</span>
      <div style="margin-top:4px">${ph.bus}${anomX?' + <span style="color:#FF4B7B">跨 Pod 光链路(越界)</span>':''}
@@ -2598,9 +2601,9 @@ function renderHUD(){
      ${anomX?(S.scatter
        ?'<div style="margin-top:3px;color:#7ee787;font-size:10px">已散射（SCATTER_XDC）：单链路峰值 ↓75%</div>'
        :'<div style="margin-top:3px;color:#ffa198;font-size:10px">跨 Pod 单出口 = 4× 带宽需求 · 点顶栏"散射跨域路由"对比</div>'):''}`; }
-$('#hud').addEventListener('mouseover', ev=>{ const r=ev.target.closest('.hudrow');
+$('#cvHud').addEventListener('mouseover', ev=>{ const r=ev.target.closest('.hudrow');
   S.hudEmph = r ? r.dataset.emph : null; });
-$('#hud').addEventListener('mouseleave', ()=>{ S.hudEmph=null; });
+$('#cvHud').addEventListener('mouseleave', ()=>{ S.hudEmph=null; });
 /* ================= 模式 B：泳道 Trace 回放 + busbw 基线（v2 组件三/八） ================= */
 const drawer = $('#drawer');
 let drawerTab = 'lane', laneMode = 'topk';
@@ -2613,24 +2616,29 @@ $('#drClose').onclick = closeDrawer;
 $('#drTabLane').onclick = ()=>{ drawerTab='lane'; syncDrawer(); };
 $('#drTabBw').onclick = ()=>{ drawerTab='bw'; syncDrawer(); };
 $('#drTabMx').onclick = ()=>{ drawerTab='mx'; syncDrawer(); };
+$('#drTabHud').onclick = ()=>{ drawerTab='hud'; syncDrawer(); };
 $('#laneTopk').onclick = ()=>{ laneMode='topk'; syncDrawer(); };
 $('#laneMoge').onclick = ()=>{ laneMode='moge'; syncDrawer(); };
 function syncDrawer(){
   $('#drTabLane').classList.toggle('on', drawerTab==='lane');
   $('#drTabBw').classList.toggle('on', drawerTab==='bw');
   $('#drTabMx').classList.toggle('on', drawerTab==='mx');
+  $('#drTabHud').classList.toggle('on', drawerTab==='hud');
   $('#laneTopk').classList.toggle('on', laneMode==='topk');
   $('#laneMoge').classList.toggle('on', laneMode==='moge');
   $('#laneCtl').style.display = drawerTab==='lane'?'flex':'none';
   $('#cvLane').style.display = drawerTab==='lane'?'block':'none';
   $('#cvBw').style.display = drawerTab==='bw'?'block':'none';
   $('#cvMx').style.display = drawerTab==='mx'?'block':'none';
+  $('#cvHud').style.display = drawerTab==='hud'?'block':'none';
   $('#laneCtx').textContent = drawerTab==='lane'
     ? `对象：Host ${laneHost()} · 8×NPU(TP0-7) + 硬件计数器轨 · 随下钻联动`
     : drawerTab==='mx' ? '对象：EP 64 专家 ÷ 8 组（MoGE）· 行=源组 列=目的组 · 随异常联动'
+    : drawerTab==='hud' ? 'step 时间分解 · Hover 行 ⇄ 3D 连线联动 · 随阶段/异常更新'
     : '对象：本集群 UB 平面 · 随异常注入联动';
   if(drawerTab==='lane') renderLane();
   else if(drawerTab==='mx') renderMx();
+  else if(drawerTab==='hud') renderHUD();
   else renderBw();
 }
 function laneHost(){ return S.filterHost!=null ? S.filterHost : S.focusHost; }
@@ -2863,7 +2871,8 @@ function applyTheme(dark){
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
-  ambientLight.intensity = dark ? 1.35 : 1.05;
+  hemiLight.intensity = dark ? 1.35 : 1.05;
+  hemiLight.groundColor.set(dark ? 0x10131a : 0xe8edf4);
   if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.95 : 1.2;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
