@@ -364,7 +364,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 /* ===== 模式 B 抽屉 ===== */
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
 #drawer.show{display:flex}
-#drawer .drhead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+#drawer .drhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+#drawer .drtabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
+#drawer .drtabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);padding:4px 10px;color:var(--dim);font-weight:500;min-height:24px;font-size:12px}
+#drawer .drtabs button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm)}
 #drawer .drtitle{font-size:12px;color:var(--txt);font-weight:600;margin-right:8px;display:flex;align-items:center;gap:4px}
 #drawer .drtitle-info{position:relative;display:inline-flex;align-items:center;cursor:default;font-size:11px;opacity:.7}
 #drawer .drtitle-info:hover .drtitle-tip{display:block}
@@ -564,10 +567,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   <div id="drawer">
     <div class="drhead">
       <span class="drtitle">Profiling 视图</span>
-      <button id="drTabLane" class="on">Timeline</button>
-      <button id="drTabBw">busbw 基线</button>
-      <button id="drTabMx">通信矩阵</button>
-      <button id="drTabHud">实时带宽</button>
+      <div class="drtabs">
+        <button id="drTabLane" class="on">Timeline</button>
+        <button id="drTabBw">busbw 基线</button>
+        <button id="drTabMx">通信矩阵</button>
+        <button id="drTabHud">实时带宽</button>
+      </div>
       <span id="laneCtl" style="display:flex;gap:5px;margin-left:10px">
         <button id="laneTopk" class="on">传统 Top-K</button>
         <button id="laneMoge">MoGE 均衡</button>
