@@ -252,7 +252,6 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #filterToggle .ft-icon{font-size:9px;color:var(--dim);transition:transform var(--duration-fast)}
 #filterBody{display:block;background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);padding:11px 12px;box-shadow:var(--shadow-card);margin-bottom:10px}
 #filterBody.collapsed{display:none}
-#filterBody.collapsed + #filterToggle .ft-icon{transform:rotate(180deg)}
 /* ---- 筛选栏（Smartscape 式下钻） ---- */
 #filterbar{display:flex;flex-direction:column;gap:8px;position:relative;z-index:6;font-size:11px;color:var(--dim)}
 #filterbar b{color:var(--sys-text-bright)}
@@ -425,10 +424,11 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
       <!-- ============ 页签 1：物理层级剖面 ============ -->
       <div class="pane show" id="paneHier">
-      <h3><b>层级剖面</b> · L7→L0 · 点击实体下钻</h3>
-      <div id="filterWrap">
-        <button id="filterToggle"><span class="ft-label">筛选 &amp; 快速分诊</span><span class="ft-icon">▴</span></button>
-        <div id="filterBody">
+      <div id="hierHead">
+        <h3><b>层级剖面</b></h3>
+        <div id="filterWrap">
+          <button id="filterToggle"><span class="ft-label">筛选</span><span class="ft-icon">▾</span></button>
+          <div id="filterBody">
           <div id="filterbar">
             <div class="fb-top"><span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span><button id="fbClear">✕ 清除</button></div>
             <div class="fb-rel"><span class="fb-lab">关联</span><div class="relseg">
@@ -440,6 +440,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
             </div></div>
           </div>
           <div id="topn"></div>
+        </div>
         </div>
       </div>
       <div class="lvfunnel">
@@ -499,7 +500,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         </div>
         <!-- 子页 A：物理切分矩阵（原视图） -->
         <div id="mmWrap">
-          <h3><b>整网分隔映射</b> · 行=48 层 · 列=128 芯片（PP16×TP8）</h3>
+          <h3><b>整网分隔映射</b></h3>
           <div style="display:flex;gap:6px;margin-bottom:8px">
             <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
             <button id="btnClearSel">清除选择</button>
@@ -2750,12 +2751,9 @@ function scenario(k){
   tog.onclick=()=>{
     const col=body.classList.toggle('collapsed');
     if(ic) ic.textContent=col?'▾':'▴';
-    tog.querySelector('.ft-label').textContent=col?'筛选 & 快速分诊 …':'筛选 & 快速分诊';
   };
-  // 默认收起（只留按钮，不占左栏空间）
+  // 默认收起
   body.classList.add('collapsed');
-  if(ic) ic.textContent='▾';
-  tog.querySelector('.ft-label').textContent='筛选 & 快速分诊 …';
 })();
 /* ---- 主题切换 ---- */
 function applyTheme(dark){
@@ -2977,10 +2975,16 @@ body{ background:var(--bg); }
 #viewlab { display:none !important; }          /* 删掉「统一 3D 拓扑 · 单相机 · 聚焦 L4…」标题 */
 .gap { display:none !important; }              /* 删掉层间标签（PP·接力 / DP·梯度同步 / EP·AllToAll…） */
 /* 「筛选 & 快速分诊」标题并入卡片 → 一张卡（标题即卡头，不再是标题+独立卡） */
-/* 「筛选 & 快速分诊」收成一个按钮：默认收起、点击下拉浮层展开（不再内联挤压左栏内容） */
-#filterWrap { position:relative; margin-bottom:10px; }
-#filterToggle { border:1px solid var(--sys-border) !important; border-radius:var(--radius-lg) !important; background:var(--panel) !important; box-shadow:var(--shadow-card) !important; padding:8px 12px !important; font-weight:500 !important; }
-#filterBody { position:absolute !important; top:calc(100% + 6px) !important; left:0 !important; right:0 !important; z-index:30 !important; border:1px solid var(--sys-border) !important; background:var(--panel) !important; box-shadow:var(--shadow-md) !important; border-radius:var(--radius-lg) !important; padding:11px 12px !important; margin-bottom:0 !important; }
+/* 层级剖面 标题行：左标题 + 右侧筛选按钮 */
+#hierHead { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
+#hierHead h3 { flex:1; margin-bottom:0; }
+/* 筛选按钮：紧凑小丸 */
+#filterWrap { position:relative; flex-shrink:0; }
+#filterToggle { width:auto !important; min-height:24px !important; padding:2px 9px !important; font-size:11px !important; font-weight:500 !important; border:1px solid var(--sys-border) !important; border-radius:var(--radius-pill) !important; background:var(--panel) !important; box-shadow:var(--shadow-sm) !important; color:var(--dim) !important; display:inline-flex !important; align-items:center !important; gap:4px !important; }
+#filterToggle:hover { background:var(--state-hover) !important; border-color:var(--sys-border-strong) !important; }
+#filterToggle .ft-label { flex:none; }
+/* 筛选下拉：从按钮右侧对齐展开 */
+#filterBody { position:absolute !important; top:calc(100% + 6px) !important; right:0 !important; left:auto !important; min-width:260px !important; z-index:30 !important; border:1px solid var(--sys-border) !important; background:var(--panel) !important; box-shadow:var(--shadow-md) !important; border-radius:var(--radius-lg) !important; padding:11px 12px !important; margin-bottom:0 !important; }
 </style>
 <!-- 左右分栏可拖拽（苹果分屏式，拖动后派发 resize 让 3D 画布重算） -->
 <script>
