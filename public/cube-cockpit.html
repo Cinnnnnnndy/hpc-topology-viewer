@@ -175,7 +175,8 @@ button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var
 /* ===== 主区 ===== */
 #main{flex:1;display:flex;min-height:0}
 /* ---- 左 ---- */
-#left{width:430px;flex-shrink:0;border-right:1px solid var(--sys-border);background:var(--sys-sunken);overflow-y:auto;position:relative;padding:10px 12px 16px}
+#left{width:430px;flex-shrink:0;border-right:1px solid var(--sys-border);background:var(--sys-sunken);overflow-y:auto;position:relative;padding:10px 12px 16px;transition:width var(--duration-base)}
+#left.net-expand{width:520px;padding-left:6px;padding-right:6px}
 #lefttabs{display:flex;gap:4px;margin-bottom:10px;position:relative;z-index:6;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
 #lefttabs button{flex:1;border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);padding:5px 8px;color:var(--dim);font-weight:500}
 #lefttabs button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm);border:none}
@@ -505,15 +506,15 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
         <div id="mmSub">
-          <button id="subMx" class="on">分隔矩阵</button>
-          <button id="subNet">整网图</button>
+          <button id="subNet" class="on">整网图</button>
+          <button id="subMx">分隔矩阵</button>
           <span id="netDirWrap">
             <span class="ndlab">方向</span>
             <button id="ndFwd">前向</button><button id="ndBwd">反向</button><button id="ndBoth" class="on">全链</button>
           </span>
         </div>
         <!-- 子页 A：物理切分矩阵（原视图） -->
-        <div id="mmWrap">
+        <div id="mmWrap" style="display:none">
           <h3><b>整网分隔映射</b></h3>
           <div style="display:flex;gap:6px;margin-bottom:8px">
             <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
@@ -524,7 +525,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="memPanel"></div>
         </div>
         <!-- 子页 B：整网图（逻辑计算图）——点算子 → 右侧立方按其切分维重排 -->
-        <div id="netWrap" style="display:none">
+        <div id="netWrap">
           <h3><b>整网图</b> · openPangu-2.0-Flash <span style="color:var(--dim);font-weight:400">· 逻辑算子 → 物理切分</span></h3>
           <div id="netHint">点<b>算子</b>→ 右侧立方按它的切分维重排（专家=EP · 注意力/FFN=TP · 逐层=PP · 权重=DP）。<span id="netSelLab"></span></div>
           <div id="netLegend">
@@ -1236,6 +1237,9 @@ function setTab(t){ S.tab=t;
   $('#paneHier').classList.toggle('show',t==='hier');
   $('#paneModel').classList.toggle('show',t==='model');
   commsvg.style.display = t==='hier'?'block':'none';
+  // 整网图子页已展开时保持宽面板；切回层级剖面恢复正常宽度
+  const netExpanded = t==='model' && $('#netWrap').style.display!=='none';
+  left.classList.toggle('net-expand', netExpanded);
   if(t==='hier'){ renderL3(); renderL2(); requestAnimationFrame(drawArcs); }
   else renderMM();
 }
@@ -1251,7 +1255,7 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xe8edf4, 1.05); scene.add(hemiLight);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 1.05); scene.add(hemiLight);
 const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
@@ -1402,7 +1406,9 @@ var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
     const lb = makeLabel(label,'#ffffff',5);
     lb.material.color.set(0x8b949e);
     lb.position.set(-14, y+.6, 0); stackGroup.add(lb);
-    stackPlats[lv] = { label:lb }; };
+    const eg = mergedEdges(new THREE.BoxGeometry(sx,.08,sz),[{x:0,y,z:0}],0x30363d,.5);
+    stackGroup.add(eg);
+    stackPlats[lv] = { label:lb, edges:eg }; };
   plat('L7',STACK.L7, 5,5,'L7 · Global');
   plat('L6',STACK.L6, 15,15,'L6 · Cluster');
   plat('L5',STACK.L5, 22,4,'L5 · Service Pool');
@@ -2467,9 +2473,11 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   function showSub(net){ $('#subMx').classList.toggle('on', !net); $('#subNet').classList.toggle('on', net);
     $('#mmWrap').style.display = net?'none':'block'; $('#netWrap').style.display = net?'block':'none';
     $('#netDirWrap').classList.toggle('show', net);
+    left.classList.toggle('net-expand', net);   // 整网图展宽面板
     if(net){ if(!rendered || lastTheme!==themeNow()) renderGraph(); flowMode=''; ensureFlow(); }
     else if(typeof renderMM==='function') renderMM(); }   // 回到分隔矩阵 → 刷新（含落卡 overlay）
   $('#subMx').onclick=()=>showSub(false); $('#subNet').onclick=()=>showSub(true);
+  showSub(true);   // 整网图为默认子视图
 
   function setDir(d){ dir=d; $('#ndFwd').classList.toggle('on',d==='fwd'); $('#ndBwd').classList.toggle('on',d==='bwd'); $('#ndBoth').classList.toggle('on',d==='both');
     if(ctrl&&ctrl.svg&&mk && !(typeof S!=='undefined'&&S.playing)){ applyDir(ctrl.svg,dir,mk); if(curHi) applyHi(ctrl.svg,curHi); } }
@@ -2872,7 +2880,7 @@ function applyTheme(dark){
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
   hemiLight.intensity = dark ? 1.35 : 1.05;
-  hemiLight.groundColor.set(dark ? 0x10131a : 0xe8edf4);
+  hemiLight.groundColor.set(dark ? 0x10131a : 0xf5f5f5);
   if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.95 : 1.2;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
