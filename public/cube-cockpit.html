@@ -1512,8 +1512,16 @@ const cubeComm = new THREE.Group(); scene.add(cubeComm);
 // ── 逻辑魔方坐标轴标注：把每种排布的轴向/结构标出来，帮助理解 ──
 const cubeAxes = new THREE.Group(); cubeAxes.visible = false; scene.add(cubeAxes);
 function axLabel(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.copy(pos); cubeAxes.add(l); }
-function axLine(a,b,color){ const g=new THREE.BufferGeometry().setFromPoints([a,b]);
-  cubeAxes.add(new THREE.Line(g, new THREE.LineBasicMaterial({color,transparent:true,opacity:.92}))); }
+function axLine(a,b,color){
+  const dir = b.clone().sub(a), len = dir.length();
+  const mid = a.clone().add(b).multiplyScalar(.5);
+  const geo = new THREE.CylinderGeometry(.06,.06,len,6,1);
+  const mat = new THREE.MeshBasicMaterial({color,transparent:true,opacity:.88});
+  const mesh = new THREE.Mesh(geo,mat);
+  mesh.position.copy(mid);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+  cubeAxes.add(mesh);
+}
 function renderCubeAxes(){
   while(cubeAxes.children.length){ const o=cubeAxes.children.pop(); if(o.material)o.material.dispose(); if(o.geometry)o.geometry.dispose(); }
   const TPc='#7ee8f4', PPc='#ffe0a0', DPc='#8aa6ff', EPc='#c97fff';
