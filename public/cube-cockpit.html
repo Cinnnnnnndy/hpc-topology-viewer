@@ -2493,7 +2493,7 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   function showSub(net){ $('#subMx').classList.toggle('on', !net); $('#subNet').classList.toggle('on', net);
     $('#mmWrap').style.display = net?'none':'block'; $('#netWrap').style.display = net?'block':'none';
     $('#netDirWrap').classList.toggle('show', net);
-    left.classList.toggle('net-expand', net);   // 整网图展宽面板
+    if($('#paneModel').classList.contains('show')) left.classList.toggle('net-expand', net);   // 整网图展宽面板（仅当模型面板可见时生效）
     if(net){ if(!rendered || lastTheme!==themeNow()) renderGraph(); flowMode=''; ensureFlow(); }
     else if(typeof renderMM==='function') renderMM(); }   // 回到分隔矩阵 → 刷新（含落卡 overlay）
   $('#subMx').onclick=()=>showSub(false); $('#subNet').onclick=()=>showSub(true);
