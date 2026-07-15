@@ -1243,8 +1243,8 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f4ff, 1.05); scene.add(hemiLight);
-const dl = new THREE.DirectionalLight(0xffffff, 0.70); dl.position.set(120,300,180); scene.add(dl);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 0.95); scene.add(hemiLight);
+const dl = new THREE.DirectionalLight(0xffffff, 0.75); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -1329,7 +1329,7 @@ var cabEdges;
   physGroup.add(ics); }
 // 1024 Host 托盘（InstancedMesh + 逐实例色）
 const hostGeo = new THREE.BoxGeometry(1.05,.16,.9);
-const hostMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); hostMat.userData.base=1;
+const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.28, metalness:0.0}); hostMat.userData.base=1;
 const hostsMesh = new THREE.InstancedMesh(hostGeo, hostMat, N_HOST);
 for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
@@ -1338,12 +1338,12 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
 scene.add(hostsMesh);
 // 8192 芯片（可 Morph 到魔方 → 不放入 physGroup）
 const chipGeo = new THREE.BoxGeometry(.18,.12,.26);
-const chipMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); chipMat.userData.base=1;
+const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.28, metalness:0.0}); chipMat.userData.base=1;
 const chipsMesh = new THREE.InstancedMesh(chipGeo, chipMat, N_CHIP);
 scene.add(chipsMesh);
 /* 深下钻时其余 Host/芯片整体淡化 → 焦点对象用独立不透明网格保持清晰 */
-const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshLambertMaterial({color:0xffffff}));
-const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshLambertMaterial({color:0xffffff}), 8);
+const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.28, metalness:0.0}));
+const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.28, metalness:0.0}), 8);
 focusHostMesh.visible = focusChipsMesh.visible = false;
 for(let s=0;s<8;s++) focusChipsMesh.setColorAt(s, new THREE.Color(0x334455));
 scene.add(focusHostMesh, focusChipsMesh);
@@ -2066,20 +2066,21 @@ function hostActive(h){ const ph = PHASES[S.phase].id;
   if(ph==='DP') return dpOf(h)%8 === (((S.t*4%1)*8)|0);
   return false; }
 function pulseK(){ return S.playing ? .5+.5*Math.sin(performance.now()/180) : 0; }
+function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.15), Math.min(0.78,hsl.l+0.08)); return c; }
 function applyColors(chipsToo){
   const pk = pulseK();
-  for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h));
+  for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h)); candyBoost(cTmp);
     if(S.playing && hostActive(h)) cTmp.lerp(WHITE, pk*.55);
     hostsMesh.setColorAt(h,cTmp); }
   hostsMesh.instanceColor.needsUpdate = true;
   if(chipsToo){
-    for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); chipsMesh.setColorAt(c,cTmp); }
+    for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); candyBoost(cTmp); chipsMesh.setColorAt(c,cTmp); }
     chipsMesh.instanceColor.needsUpdate = true;
     if(stackL5){ stackL5.setColorAt(1, cTmp.set(S.anomaly?0x8b1a1a:0x21262d));
       stackL5.instanceColor.needsUpdate = true; }
     if(stackL4){ for(let cab=0;cab<128;cab++){ let hot=cab*8;
         for(let s=1;s<8;s++) if(health[cab*8+s]>health[hot]) hot=cab*8+s;
-        stackL4.setColorAt(cab, cTmp.setStyle(hostColor(hot))); }
+        cTmp.setStyle(hostColor(hot)); candyBoost(cTmp); stackL4.setColorAt(cab, cTmp); }
       stackL4.instanceColor.needsUpdate = true; } }
 }
 const ease = k => k<.5 ? 2*k*k : 1-Math.pow(-2*k+2,2)/2;
@@ -2171,11 +2172,11 @@ function updateIndicators(){
   focusHostMesh.visible = focusChipsMesh.visible = showFocus;
   if(showFocus){
     hostPos(S.focusHost, focusHostMesh.position);
-    focusHostMesh.material.color.setStyle(hostColor(S.focusHost));
+    focusHostMesh.material.color.setStyle(hostColor(S.focusHost)); candyBoost(focusHostMesh.material.color);
     for(let s2=0;s2<8;s2++){ chipPhys(S.focusHost*8+s2, vA);
       dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
       focusChipsMesh.setMatrixAt(s2, dummy.matrix);
-      focusChipsMesh.setColorAt(s2, cTmp.setStyle(chipColor(S.focusHost*8+s2))); }
+      cTmp.setStyle(chipColor(S.focusHost*8+s2)); candyBoost(cTmp); focusChipsMesh.setColorAt(s2, cTmp); }
     focusChipsMesh.instanceMatrix.needsUpdate = true;
     focusChipsMesh.instanceColor.needsUpdate = true;
   }
