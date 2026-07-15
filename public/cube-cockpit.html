@@ -22,6 +22,8 @@
 <script src="./vendor/model-graphviz/pattern.js"></script>
 <link rel="stylesheet" href="./vendor/swimlane-task/pattern.css">
 <script src="./vendor/swimlane-task/pattern.js"></script>
+<link rel="stylesheet" href="./vendor/timeline-swimlane/pattern.css">
+<script src="./vendor/timeline-swimlane/pattern.js"></script>
 <style>
 /* ============================================================
    PTO Design System — canonical tokens (retrofit, LIGHT-FIRST)
@@ -365,6 +367,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #drawer .drhead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
 #drawer .drtitle{font-size:12px;color:var(--orange);font-weight:600;margin-right:8px}
 #drawer canvas{flex:1;width:100%;min-height:0;border:1px solid var(--border);border-radius:6px;background:var(--panel2)}
+#drawer #cvLane{flex:1;min-height:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--panel2)}
 /* ===== 底部时间轴 ===== */
 #footer{height:52px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 12px;background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-top:1px solid var(--sys-border)}
 #phasetrack{flex:1;display:flex;height:26px;border-radius:6px;overflow:hidden;position:relative;cursor:pointer}
@@ -557,7 +560,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   <div id="drawer">
     <div class="drhead">
       <span class="drtitle">模式 B · 离线深潜 · Triggered Dump（Step 1284-1288）</span>
-      <button id="drTabLane" class="on">泳道 Trace 回放</button>
+      <button id="drTabLane" class="on">Timeline</button>
       <button id="drTabBw">busbw 基线</button>
       <button id="drTabMx">通信矩阵</button>
       <button id="drTabHud">实时带宽</button>
@@ -565,11 +568,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <button id="laneTopk" class="on">传统 Top-K</button>
         <button id="laneMoge">MoGE 均衡</button>
       </span>
-      <span id="laneCtx" style="font-size:11px;color:var(--dim);margin-left:10px"></span>
       <span style="flex:1 1 auto"></span>
       <button id="drClose">✕ 关闭</button>
     </div>
-    <canvas id="cvLane" width="1000" height="206"></canvas>
+    <div id="cvLane"></div>
     <canvas id="cvBw" width="1000" height="206" style="display:none"></canvas>
     <canvas id="cvMx" width="1000" height="206" style="display:none"></canvas>
     <div id="cvHud" style="display:none"></div>
@@ -783,7 +785,7 @@ $('#l4body').innerHTML =
      <span id="ctL4">本集群 128 机柜 · +32 互联柜</span>
      <span style="margin-left:auto">MFU <b style="color:var(--sys-text-bright)">54.2%</b></span>
    </div>
-   <canvas class="strip" id="cvL4" width="404" height="86" style="margin-top:5px"></canvas>`;
+   <canvas class="strip" id="cvL4" width="404" height="92" style="margin-top:5px"></canvas>`;
 $$('#l5body span').forEach((el,i)=>{ el.style.cursor='pointer';
   el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L5'); }); });
 $$('#l6body i').forEach((el,i)=>{ el.style.cursor='pointer';
@@ -895,8 +897,8 @@ function pickL2(ev){ const r = cvL2.getBoundingClientRect();
 const cvL4 = $('#cvL4'), gL4 = cvL4.getContext('2d');
 const L4C = { cw:404/16, ch:64/8, icY:70, icH:12 };
 function renderL4(){
-  hidpi(cvL4,404,86);
-  gL4.clearRect(0,0,404,86);
+  hidpi(cvL4,404,92);
+  gL4.clearRect(0,0,404,92);
   for(let cab=0;cab<128;cab++){
     const x=(cab%16)*L4C.cw, y=((cab/16)|0)*L4C.ch;
     for(let s=0;s<8;s++){
@@ -915,13 +917,14 @@ function renderL4(){
   for(let i=0;i<32;i++){
     const x = 6+i*12.3;
     gL4.fillStyle = (S.anomaly && i%8===1) ? themeC('#67060c',COL.RED+'33') : themeC('#21262d','rgba(0,0,0,.14)');
-    gL4.fillRect(x, L4C.icY, 10, L4C.icH);
-    gL4.strokeStyle=themeC('#30363d','rgba(0,0,0,.18)'); gL4.strokeRect(x+.5, L4C.icY+.5, 9, L4C.icH-1); }
+    gL4.beginPath(); gL4.roundRect(x, L4C.icY, 10, L4C.icH, 1); gL4.fill();
+    gL4.strokeStyle=themeC('#30363d','rgba(0,0,0,.18)'); gL4.lineWidth=1;
+    gL4.beginPath(); gL4.roundRect(x+.5, L4C.icY+.5, 9, L4C.icH-1, 1); gL4.stroke(); }
   gL4.fillStyle=themeC('#6e7681','rgba(0,0,0,.45)'); gL4.font='8px sans-serif'; gL4.textAlign='left';
-  gL4.fillText('互联柜 ×32', 6, L4C.icY-2);
+  gL4.fillText('互联柜 ×32', 6, L4C.icY+L4C.icH+8);
 }
 function pickL4(ev){ const r=cvL4.getBoundingClientRect();
-  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*86;
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*92;
   if(y>=64) return -1;
   const col=Math.min(15,Math.max(0,(x/L4C.cw)|0)), row=Math.min(7,Math.max(0,(y/L4C.ch)|0));
   const cab=row*16+col, s=Math.min(7,Math.max(0,((x-col*L4C.cw-1)/((L4C.cw-2)/8))|0));
@@ -2652,115 +2655,29 @@ function syncDrawer(){
   $('#drTabBw').classList.toggle('on', drawerTab==='bw');
   $('#drTabMx').classList.toggle('on', drawerTab==='mx');
   $('#drTabHud').classList.toggle('on', drawerTab==='hud');
-  $('#laneTopk').classList.toggle('on', laneMode==='topk');
-  $('#laneMoge').classList.toggle('on', laneMode==='moge');
-  $('#laneCtl').style.display = drawerTab==='lane'?'flex':'none';
-  $('#cvLane').style.display = drawerTab==='lane'?'block':'none';
+  $('#laneCtl').style.display = 'none';
+  $('#cvLane').style.display = drawerTab==='lane'?'':'none';
   $('#cvBw').style.display = drawerTab==='bw'?'block':'none';
   $('#cvMx').style.display = drawerTab==='mx'?'block':'none';
   $('#cvHud').style.display = drawerTab==='hud'?'block':'none';
-  $('#laneCtx').textContent = drawerTab==='lane'
-    ? `对象：Host ${laneHost()} · 8×NPU(TP0-7) + 硬件计数器轨 · 随下钻联动`
-    : drawerTab==='mx' ? '对象：EP 64 专家 ÷ 8 组（MoGE）· 行=源组 列=目的组 · 随异常联动'
-    : drawerTab==='hud' ? 'step 时间分解 · Hover 行 ⇄ 3D 连线联动 · 随阶段/异常更新'
-    : '对象：本集群 UB 平面 · 随异常注入联动';
   if(drawerTab==='lane') renderLane();
   else if(drawerTab==='mx') renderMx();
   else if(drawerTab==='hud') renderHUD();
   else renderBw();
 }
-function laneHost(){ return S.filterHost!=null ? S.filterHost : S.focusHost; }
 function fitCanvas(cv){ const dpr = Math.min(window.devicePixelRatio||1, 2);
   const w = cv.clientWidth||1000, h = cv.clientHeight||200;
   if(cv.width !== (w*dpr|0) || cv.height !== (h*dpr|0)){ cv.width = w*dpr|0; cv.height = h*dpr|0; }
   const c = cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
   return { c, W:w, H:h };
 }
-function laneLayout(Hh){                      // 确定性伪 Trace：随 Host / 模式 / 异常变化
-  const exp = !!isExpertHost[Hh];
-  const hotSet = laneMode==='moge' ? [] : (exp? [1,3,6] : [2,5]);
-  const cyc=[]; let total=0;
-  for(let b=0;b<5;b++){ let mx=0; const row=[], cm=[];
-    for(let r=0;r<8;r++){ const hot=hotSet.includes(r);
-      const L = laneMode==='moge' ? 88+rng(Hh+b)*8
-        : (hot? 112+rng(Hh*31+r*7+b*13)*44 : 52+rng(Hh*17+r*11+b*5)*34);
-      const CL = (laneMode==='moge'?20:26) + rng(Hh*7+r*3+b*11)*(laneMode==='moge'?6:16);
-      row.push(L); cm.push(CL); mx=Math.max(mx,L); }
-    const anomX = (S.anomaly && laneMode==='topk' && b===2) ? (isAnomHost[Hh]?34:14) : 0;
-    cyc.push({row,cm,mx,anomX,start:total});
-    total += mx + Math.max(...cm) + anomX; }
-  return {cyc,total,hotSet,exp};
-}
 function renderLane(){
-  const helper = window.PtoSwimlaneTaskPattern;
-  const {c,W,H} = fitCanvas($('#cvLane'));
-  const Hh = laneHost();
-  const {cyc,total,hotSet,exp} = laneLayout(Hh);
-  const x0=64, w=W-x0-16, top=15;
-  const laneH = H-104, rowH = laneH/8, cY = top+laneH+6;
-  const u = w/total;
-  const tx = x0 + Math.min(1,Math.max(0,S.t))*w;
-  c.font='9px ui-monospace,monospace';
-  for(let t=0;t<=7;t++){ const x=x0+t*w/7;
-    c.fillStyle=themeC('#1b212b','rgba(0,0,0,.08)'); c.fillRect(x,top-4,1,cY+40-top);
-    c.fillStyle=themeC('#6e7681','rgba(0,0,0,.45)'); c.textAlign='left'; c.fillText((t*50)+'μs', x+2, 9); }
-  // segAlpha: dim bars that haven't been "played" yet
-  const segAlpha=(sx,sw)=>{ const rx=sx+sw; return rx<=tx?1:sx>=tx?.26:.9; };
-  const drawBar=(bx,by,bw,bh,baseColor,label)=>{
-    if(bw<0.5) return;
-    c.globalAlpha=segAlpha(bx,bw);
-    if(helper) helper.drawTaskBar(c,{task:{label},x:bx,y:by,width:bw,height:bh,baseColor,radius:2});
-    else { c.fillStyle=baseColor; c.fillRect(bx,by,bw,bh); }
-    c.globalAlpha=1; };
-  for(let r=0;r<8;r++){
-    const yC=top+r*rowH, yM=yC+rowH*.48, bh=Math.max(8,rowH*.42);
-    c.fillStyle=hotSet.includes(r)?'#FFAA3B':'#8b949e'; c.textAlign='right'; c.font='9px ui-monospace,monospace';
-    c.fillText('TP'+r, x0-6, yC+bh);
-    for(const cy of cyc){
-      const s=x0+cy.start*u, L=cy.row[r], CL=cy.cm[r];
-      drawBar(s, yC, L*u, bh, '#1f6feb', 'Compute');
-      if(L<cy.mx-1){ const bx2=s+L*u, bw2=(cy.mx-L)*u;
-        c.globalAlpha=segAlpha(bx2,bw2)*.6; c.fillStyle='#f85149'; c.fillRect(bx2,yC,bw2,bh); c.globalAlpha=1; }
-      drawBar(s+cy.mx*u, yM, CL*u, bh, laneMode==='moge'?'#04D793':'#9B3CF6', 'AllToAll');
-      if(cy.anomX){ const ax=s+(cy.mx+CL)*u, aw=cy.anomX*u;
-        c.globalAlpha=segAlpha(ax,aw)*.95; c.fillStyle='#f85149'; c.fillRect(ax,yM,aw,bh); c.globalAlpha=1; }
-    } }
-  // —— 硬件计数器轨：与软件泳道同轴（Perfetto counter track / Vampir Performance Radar 范式）——
-  const NB=160, busy=new Float32Array(NB), bw2=new Float32Array(NB);
-  for(let r=0;r<8;r++) for(const cy of cyc){
-    const a1=(cy.start/total*NB)|0, b1=Math.min(NB-1,((cy.start+cy.row[r])/total*NB)|0);
-    for(let i=a1;i<=b1;i++) busy[i]+=1/8;
-    const c0=((cy.start+cy.mx)/total*NB)|0,
-          c1=Math.min(NB-1,((cy.start+cy.mx+cy.cm[r]+cy.anomX)/total*NB)|0);
-    for(let i=c0;i<=c1;i++) bw2[i]+=1/8; }
-  const track=(data,y,h2,col,label)=>{
-    c.font='9px ui-monospace,monospace';
-    c.fillStyle='#8b949e'; c.textAlign='right'; c.fillText(label, x0-6, y+h2-3);
-    c.strokeStyle='#1b212b'; c.strokeRect(x0,y,w,h2);
-    c.fillStyle=col; c.beginPath(); c.moveTo(x0,y+h2);
-    for(let i=0;i<NB;i++) c.lineTo(x0+(i+.5)/NB*w, y+h2-data[i]*h2*.94);
-    c.lineTo(x0+w,y+h2); c.closePath(); c.globalAlpha=.45; c.fill(); c.globalAlpha=1; };
-  track(busy, cY, 17, '#04D793', 'Cube利用率');
-  track(bw2, cY+21, 17, '#9B3CF6', 'UB带宽');
-  c.strokeStyle=themeC('#fff','#333'); c.lineWidth=1;
-  c.beginPath(); c.moveTo(tx,top-6); c.lineTo(tx,cY+38); c.stroke();
-  c.fillStyle=themeC('#fff','#333'); c.textAlign='center'; c.font='9px ui-monospace,monospace';
-  c.fillText('▶ '+PHASES[S.phase].id+' · '+((S.t*350)|0)+'μs', Math.min(W-60,Math.max(x0+40,tx)), cY+48);
-  c.textAlign='left'; c.font='10px sans-serif';
-  c.fillStyle = laneMode==='moge' ? '#04D793' : '#FF4B7B';
-  c.fillText(laneMode==='moge'
-    ? `Host ${Hh} · MoGE 均衡：Compute 齐整 · AllToAll 全掩盖 · IS=0（组内 top-1 强制均衡 · 最热专家≈12.5%）`
-    : `Host ${Hh}${exp?'（MoE 专家节点）':''} · Top-K：热点 ${hotSet.map(r=>'TP'+r).join('/')} 拖长 → Bubble 处利用率轨同步塌陷（对照：Top-K 最热专家可占 30% token）${S.anomaly?' · 第3周期跨 Pod 加时':''}`,
-    x0, H-4);
-  const lg=[['#1f6feb','Compute'],['#9B3CF6','AllToAll'],['rgba(248,81,73,.7)','Bubble/越界'],['#04D793','下方=硬件计数器(同轴)']];
-  let lx=Math.max(x0+440, W-480); c.font='9px sans-serif';
-  lg.forEach(g2=>{ c.fillStyle=g2[0]; c.fillRect(lx,H-12,10,7);
-    c.fillStyle='#8b949e'; c.fillText(g2[1], lx+13, H-5); lx+=c.measureText(g2[1]).width+26; });
+  const host = $('#cvLane');
+  if (!host) return;
+  // The module manages its own ResizeObserver/MutationObserver — only init once.
+  if (host._ptoTimelineCleanup) return;
+  if (window.PtoProblemOneTimeline) PtoProblemOneTimeline.render(host);
 }
-$('#cvLane').addEventListener('click', ev=>{
-  const r = $('#cvLane').getBoundingClientRect();
-  const x0=64, w=r.width-x0-16, x=ev.clientX-r.left;
-  S.t = Math.min(.999, Math.max(0, (x-x0)/w)); syncPhase(); renderLane(); });
 function renderBw(){
   const {c,W,H} = fitCanvas($('#cvBw'));
   const x0=60, y0=H-28, w=W-x0-30, h=H-54;
