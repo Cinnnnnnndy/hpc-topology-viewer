@@ -268,8 +268,8 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .relseg .relbtn:hover{background:var(--state-hover);color:var(--sys-text)}
 .relseg .relbtn.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm);border:none}
 #topn{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:9px;margin-bottom:0;border-top:1px solid var(--sys-border);position:relative;z-index:6;font-size:10px}
-#topn button{min-height:24px;padding:0 9px;font-size:10px;border-radius:var(--radius-pill);border-color:color-mix(in srgb,var(--red) 40%,var(--sys-border));color:var(--red);background:transparent}
-#topn button:hover{background:var(--sys-danger-bg)}
+#topn button{min-height:24px;padding:0 9px;font-size:10px;border-radius:var(--radius-pill);border-color:var(--border-default);color:var(--foreground-secondary);background:var(--surface-2)}
+#topn button:hover{background:var(--sys-danger-bg);border-color:color-mix(in srgb,var(--red) 40%,var(--sys-border));color:var(--red)}
 #topn button.on{background:var(--sys-danger-bg);border-color:var(--red);color:var(--red)}
 /* ---- 整网映射页签 ---- */
 #mmcv{display:block;width:100%;border-radius:4px;cursor:crosshair;border:1px solid var(--border)}
@@ -407,12 +407,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button class="lensbtn lens-CP" data-lens="CP">CP·上下文</button>
           <button class="lensbtn lens-JOB" data-lens="JOB">任务·部署</button>
         </div>
-        <div class="vrow"><span class="vlab">连线·镜头</span>
-          <button class="wirebtn on" data-wire="AUTO">自动·随阶段</button>
-          <button class="wirebtn" data-wire="COMM">通信域</button>
-          <button class="wirebtn" data-wire="FLOW">互联流量</button>
-          <button class="wirebtn" data-wire="LINK">物理链路</button>
-          <button class="wirebtn" data-wire="PATH">消息路径</button>
+        <div class="vrow"><span class="vlab" title="控制 3D 场景里全局绘制哪种通信线（不依赖点选）">场景连线</span>
+          <button class="wirebtn on" data-wire="AUTO" title="随当前训练阶段自动切换线型（TP→AllReduce 环 · PP→接力线 · EP→AllToAll · DP→梯度环）">随阶段</button>
+          <button class="wirebtn" data-wire="COMM" title="通信域轮廓：哪些 Host 属于同一个通信组">通信域</button>
+          <button class="wirebtn" data-wire="FLOW" title="互联带宽流带：总线占用量与方向">互联流量</button>
+          <button class="wirebtn" data-wire="LINK" title="物理线缆拓扑：NVLink / IB 实际链路">物理链路</button>
+          <button class="wirebtn" data-wire="PATH" title="消息路由路径：逐跳可视化">消息路径</button>
           <button id="btnMx">▦ 矩阵</button>
         </div>
       </div>
@@ -445,12 +445,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="filterBody">
           <div id="filterbar">
             <div class="fb-top"><span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span><button id="fbClear">✕ 清除</button></div>
-            <div class="fb-rel" style="display:none"><span class="fb-lab">关联</span><div class="relseg">
-              <button class="relbtn on" data-rel="AUTO">跟随阶段</button>
-              <button class="relbtn" data-rel="TP">TP组</button>
-              <button class="relbtn" data-rel="PP">PP链</button>
-              <button class="relbtn" data-rel="DP">DP环</button>
-              <button class="relbtn" data-rel="EP">EP对端</button>
+            <div class="fb-rel" style="display:none"><span class="fb-lab" title="点击某台 Host 后，哪些其他 Host 算它的关联节点（高亮范围）">点选关联</span><div class="relseg">
+              <button class="relbtn on" data-rel="AUTO" title="由当前训练阶段决定关联组（EP→EP对端 · TP→TP组 · PP→PP副本 · DP→DP环）">阶段默认</button>
+              <button class="relbtn" data-rel="TP" title="固定高亮同 TP 组的 7 台 Host（共享权重张量切片）">TP组</button>
+              <button class="relbtn" data-rel="PP" title="固定高亮同 PP 副本链的 15 台 Host（激活传递方向）">PP链</button>
+              <button class="relbtn" data-rel="DP" title="固定高亮同 DP 环的 63 台 Host（梯度同步）">DP环</button>
+              <button class="relbtn" data-rel="EP" title="固定高亮 EP AllToAll 对端的专家 Host">EP对端</button>
             </div></div>
           </div>
           <div id="topn" style="display:none"></div>
