@@ -2355,7 +2355,8 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 [0,1,2,3,4].forEach(k=>{ $('#cm'+k).onclick = ()=>{ if(cubeMode===k) return;
   cubePrev = cubeMode; cubeMode = k; cubeBlend = 0;
   [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
-  renderCubeAxes(); renderViewlab(); }; });
+  renderCubeAxes(); renderViewlab();
+  if(typeof window.__netSyncCubeMode==='function') window.__netSyncCubeMode(k); }; });
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
@@ -2452,6 +2453,14 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
     else { $('#netSelLab').textContent=''; setHi(null); window.__netMatrixDim=null; }
   }
   window.__cockpitNetReverse = reverseFromSel;   // setModelSel 里回调
+  // 右侧魔方切模式 → 整网图同步高亮对应算子维度
+  const MODE_DIM = {1:'dp',2:'ep',3:'tp',4:'pp'};
+  window.__netSyncCubeMode = function(mode){
+    const dim = MODE_DIM[mode];
+    if(!dim){ $('#netSelLab').textContent=''; setHi(null); window.__netMatrixDim=null; return; }
+    $('#netSelLab').textContent = '　' + DIM_LABEL[dim];
+    setHi({ match:x=>NODE_DIM[x]===dim, color:DIM_GLOW[dim] });
+    window.__netMatrixDim = dim; if(typeof renderMM==='function') renderMM(); };
 
   // ── 前向/反向流动动画：随底部播放（相位轨 TP前向→PP→EP→DP）沿边流动。
   //    前向相位（TP/PP/EP）激活下行(青)；反向相位（DP 梯度同步）梯度上行(蓝)。用虚线偏移做流动 + 箭头方向区分。──
