@@ -2401,6 +2401,7 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
     const colormap = lastTheme==='light' && MGV.modelArchitectureColormap
       ? MGV.modelArchitectureColormap(G, { theme:'light', lightHsl:LIGHT_HSL }) : undefined;
     ctrl = MGV.renderController(stage, G, { theme:lastTheme, colormap, reportOverlays:false, evidence:false,
+      autoFit:false,  // 禁用内部 fit()，防止 rAF 里 applyTransform() 用固定像素宽覆盖我们的 width:100%+viewBox
       onSelect:function(info){ const id=info&&info.nodeId; if(id) onPickNode(id); } });
     if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.display='block';
       ctrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon').forEach(el=>{ el.style.display='none'; });
@@ -2414,14 +2415,20 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   function trimNetSvgViewBox(){
     if(!ctrl||!ctrl.svg) return;
     const stage=$('#netStage'); if(!stage) return;
-    const root=ctrl.svg.querySelector('g')||ctrl.svg.firstElementChild;
-    if(!root){ sizeNetSvg(); return; }
     try{
-      const bbox=root.getBBox();
-      if(!bbox||bbox.width<10){ sizeNetSvg(); return; }
+      // 取所有非 defs 子元素的 getBBox 并集，避免只取第一个 <g>（cluster）而漏掉超出它的节点
+      var x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+      Array.from(ctrl.svg.children).forEach(function(el){
+        if(el.tagName.toLowerCase()==='defs') return;
+        try{ var b=el.getBBox(); if(!(b.width>0)) return;
+          if(b.x<x0)x0=b.x; if(b.y<y0)y0=b.y;
+          if(b.x+b.width>x1)x1=b.x+b.width; if(b.y+b.height>y1)y1=b.y+b.height;
+        }catch(e){}
+      });
+      if(!isFinite(x0)||x1<=x0){ sizeNetSvg(); return; }
       const pad=16;
-      const vx=Math.max(0,bbox.x-pad), vy=Math.max(0,bbox.y-pad);
-      const vw=bbox.width+pad*2, vh=bbox.height+pad*2;
+      const vx=Math.max(0,x0-pad), vy=Math.max(0,y0-pad);
+      const vw=x1-x0+pad*2, vh=y1-y0+pad*2;
       ctrl.svg.setAttribute('viewBox',`${vx} ${vy} ${vw} ${vh}`);
       const w=stage.clientWidth||stage.getBoundingClientRect().width;
       if(w>0) ctrl.svg.style.height=Math.round(w*vh/vw)+'px';
