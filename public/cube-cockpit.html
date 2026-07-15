@@ -234,7 +234,9 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .l1die.io{border-color:#7c8db8;color:#8b97ab;background:color-mix(in srgb,#7c8db8 12%,transparent)}
 /* ---- L0 Core-Group：内嵌控制台同款 memory-architecture pattern ---- */
 .l0cg{margin-top:6px}
-#l0viewport{width:100%;height:460px;overflow:hidden;position:relative;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel);box-shadow:var(--shadow-card)}
+/* L0 图直接落在大卡片上：去掉内层卡片描边/底色/阴影 */
+#l0viewport{width:100%;height:460px;overflow:hidden;position:relative;background:transparent}
+.l0cg{margin-top:2px}
 #commsvg{position:absolute;top:0;left:0;pointer-events:none;z-index:4}
 @keyframes dashmove{to{stroke-dashoffset:-22}}
 .flow{stroke-dasharray:7 4;animation:dashmove .9s linear infinite;fill:none}
@@ -2766,14 +2768,32 @@ function initL0Pattern(){
     const overlay = helper.createRouteOverlay && helper.createRouteOverlay(stage, 'ascend950b');
     overlay && overlay.render && overlay.render();
     const zc = helper.createZoomController && helper.createZoomController({
-      viewport, sizer, canvas, defaultZoom:0.32, min:0.24, max:1.4, step:0.08,
+      viewport, sizer, canvas, defaultZoom:0.32, min:0.1, max:1.4, step:0.08,
       pan:true, wheelZoom:false, centerOnReset:true,
       centerTarget:'.pto-mem950__rails, .pto-mem950__engine-stack, .pto-mem950__stack',
       onZoom:()=>{ overlay && overlay.render && overlay.render(); }
     });
     zc && zc.render && zc.render();
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{ zc && zc.center && zc.center(); }));
-    stage._done = true; stage._overlay = overlay; stage._zc = zc;
+    // 宽度自适配：把整张核组图缩放到恰好铺满左栏宽度（右侧不再被裁切），
+    // 视口高度随之贴合缩放后内容高度，整图完整可见；分栏/窗口尺寸变化时重算。
+    const fit = ()=>{
+      const content = canvas && canvas.firstElementChild; if(!content || !zc) return;
+      const cur = (zc.getZoom && zc.getZoom()) || 0.32;
+      // 真·内容范围：取 stage 及其所有后代的最右/最下边（scrollWidth 会漏掉溢出的 LOC 等块）
+      const base = content.getBoundingClientRect();
+      let maxR = base.right, maxB = base.bottom;
+      content.querySelectorAll('*').forEach(el=>{ const r=el.getBoundingClientRect(); if(r.width>0&&r.height>0){ if(r.right>maxR)maxR=r.right; if(r.bottom>maxB)maxB=r.bottom; } });
+      const natW = Math.max(1,(maxR-base.left)/cur), natH = Math.max(1,(maxB-base.top)/cur);
+      const vpW = viewport.clientWidth || 400;
+      const z = Math.max(0.08, Math.min(1.2, (vpW - 2) / natW));
+      zc.setZoom && zc.setZoom(z);
+      zc.setPan && zc.setPan(0, 0);   // transform-origin: top left → 贴左上，整图完整铺满宽度
+      viewport.style.height = Math.min(820, Math.max(180, Math.ceil(natH * z) + 6)) + 'px';
+      overlay && overlay.render && overlay.render();
+    };
+    requestAnimationFrame(()=>requestAnimationFrame(fit));
+    let rt=0; window.addEventListener('resize', ()=>{ if(rt) cancelAnimationFrame(rt); rt=requestAnimationFrame(fit); });
+    stage._done = true; stage._overlay = overlay; stage._zc = zc; stage._fit = fit;
   }catch(e){ console.warn('L0 pattern init failed', e); }
 }
 initL0Pattern();
