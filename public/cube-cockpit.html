@@ -432,7 +432,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <span class="badge b-ANOM" id="bdAnom">EP·AllToAll 越界 ↑</span>
         <span class="badge b-DP" id="bdDPx">DP·跨 Pod 梯度同步（Scale-Out ×64）</span>
       </div>
-      <div class="lvrow" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · UBL128（Scale-Up 域）</span><span class="ct">本 Pod · 128 NPU · 16 Host · 4 Pod/池</span></div><div class="kpi" id="kpiL4"></div>
+      <div class="lvrow" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · UBL128（Scale-Up 域）</span><span class="ct">本 Pod · 128 NPU · 16 Host · 2 机柜 · 4 Pod/池</span></div><div class="kpi" id="kpiL4"></div>
         <div class="body" id="l4body"></div></div>
       <div class="gap" data-gap="L4L3">
         <span class="badge b-PP" id="bdPP">PP·接力 ×16 段（Pod 内 16 Host）</span>
@@ -716,7 +716,7 @@ function updateCounts(){
   set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '1 集群 = 64 Pod · 8192 NPU（万卡）');
   set('#ctL5', f? '关联 1 Pod / 4 · 本池' : '本池 4 Pod · 16 池/集群');
   set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '1,024 Host · 8 NPU/台');
-  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜（每 2 柜 = 1 Pod）+ 32 互联柜');
+  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜 · +32 互联柜');
   set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '8,192 Chip');
   if(S.focusPod>0){ set('#ctL6', `已选 Pod ${S.focusPod}/64 · 本集群`);
     if(S.focusPod<4) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
@@ -738,7 +738,7 @@ function hidpi(cv, W, H){
   b.innerHTML = html+'</div>'; })();
 $('#l4body').innerHTML =
   `<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
-     <span id="ctL4">本集群 128 机柜（16×8 · 每柜 8 槽 = 64 NPU）· 每 2 柜 = 1 Pod（UBL128）+ 32 互联柜</span>
+     <span id="ctL4">本集群 128 机柜 · +32 互联柜</span>
      <span style="margin-left:auto">MFU <b style="color:var(--sys-text-bright)">54.2%</b></span>
    </div>
    <canvas class="strip" id="cvL4" width="404" height="86" style="margin-top:5px"></canvas>`;
