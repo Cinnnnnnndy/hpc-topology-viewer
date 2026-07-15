@@ -20,6 +20,8 @@
 <link rel="stylesheet" href="./vendor/model-graphviz/pattern.css">
 <script src="./vendor/model-graphviz/graph.js"></script>
 <script src="./vendor/model-graphviz/pattern.js"></script>
+<link rel="stylesheet" href="./vendor/swimlane-task/pattern.css">
+<script src="./vendor/swimlane-task/pattern.js"></script>
 <style>
 /* ============================================================
    PTO Design System — canonical tokens (retrofit, LIGHT-FIRST)
@@ -431,7 +433,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="filterBody">
           <div id="filterbar">
             <div class="fb-top"><span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span><button id="fbClear">✕ 清除</button></div>
-            <div class="fb-rel"><span class="fb-lab">关联</span><div class="relseg">
+            <div class="fb-rel" style="display:none"><span class="fb-lab">关联</span><div class="relseg">
               <button class="relbtn on" data-rel="AUTO">跟随阶段</button>
               <button class="relbtn" data-rel="TP">TP组</button>
               <button class="relbtn" data-rel="PP">PP链</button>
@@ -2631,6 +2633,7 @@ function laneLayout(Hh){                      // 确定性伪 Trace：随 Host /
   return {cyc,total,hotSet,exp};
 }
 function renderLane(){
+  const helper = window.PtoSwimlaneTaskPattern;
   const {c,W,H} = fitCanvas($('#cvLane'));
   const Hh = laneHost();
   const {cyc,total,hotSet,exp} = laneLayout(Hh);
@@ -2642,18 +2645,26 @@ function renderLane(){
   for(let t=0;t<=7;t++){ const x=x0+t*w/7;
     c.fillStyle=themeC('#1b212b','rgba(0,0,0,.08)'); c.fillRect(x,top-4,1,cY+40-top);
     c.fillStyle=themeC('#6e7681','rgba(0,0,0,.45)'); c.textAlign='left'; c.fillText((t*50)+'μs', x+2, 9); }
-  const seg=(x,y,ww,hh,col)=>{ c.globalAlpha=(x+ww<=tx)?1:(x<tx?.9:.26);
-    c.fillStyle=col; c.fillRect(x,y,Math.max(ww,1),hh); c.globalAlpha=1; };
+  // segAlpha: dim bars that haven't been "played" yet
+  const segAlpha=(sx,sw)=>{ const rx=sx+sw; return rx<=tx?1:sx>=tx?.26:.9; };
+  const drawBar=(bx,by,bw,bh,baseColor,label)=>{
+    if(bw<0.5) return;
+    c.globalAlpha=segAlpha(bx,bw);
+    if(helper) helper.drawTaskBar(c,{task:{label},x:bx,y:by,width:bw,height:bh,baseColor,radius:2});
+    else { c.fillStyle=baseColor; c.fillRect(bx,by,bw,bh); }
+    c.globalAlpha=1; };
   for(let r=0;r<8;r++){
     const yC=top+r*rowH, yM=yC+rowH*.46, bh=Math.max(4,rowH*.34);
-    c.fillStyle=hotSet.includes(r)?'#FFAA3B':'#8b949e'; c.textAlign='right';
+    c.fillStyle=hotSet.includes(r)?'#FFAA3B':'#8b949e'; c.textAlign='right'; c.font='9px ui-monospace,monospace';
     c.fillText('TP'+r, x0-6, yC+bh);
     for(const cy of cyc){
       const s=x0+cy.start*u, L=cy.row[r], CL=cy.cm[r];
-      seg(s,yC,L*u,bh,'#1f6feb');
-      if(L<cy.mx-1) seg(s+L*u,yC,(cy.mx-L)*u,bh,'rgba(248,81,73,.6)');
-      seg(s+cy.mx*u,yM,CL*u,bh, laneMode==='moge'?'#04D793':'#9B3CF6');
-      if(cy.anomX) seg(s+(cy.mx+CL)*u,yM,cy.anomX*u,bh,'rgba(248,81,73,.95)');
+      drawBar(s, yC, L*u, bh, '#1f6feb', 'Compute');
+      if(L<cy.mx-1){ const bx2=s+L*u, bw2=(cy.mx-L)*u;
+        c.globalAlpha=segAlpha(bx2,bw2)*.6; c.fillStyle='#f85149'; c.fillRect(bx2,yC,bw2,bh); c.globalAlpha=1; }
+      drawBar(s+cy.mx*u, yM, CL*u, bh, laneMode==='moge'?'#04D793':'#9B3CF6', 'AllToAll');
+      if(cy.anomX){ const ax=s+(cy.mx+CL)*u, aw=cy.anomX*u;
+        c.globalAlpha=segAlpha(ax,aw)*.95; c.fillStyle='#f85149'; c.fillRect(ax,yM,aw,bh); c.globalAlpha=1; }
     } }
   // —— 硬件计数器轨：与软件泳道同轴（Perfetto counter track / Vampir Performance Radar 范式）——
   const NB=160, busy=new Float32Array(NB), bw2=new Float32Array(NB);
@@ -3108,11 +3119,13 @@ body{ background:var(--bg); }
     try {
       var lensOn = document.querySelector('.lensbtn.on');
       var wireOn = document.querySelector('.wirebtn.on');
+      var relOn = document.querySelector('.relbtn.on');
       var anom = document.getElementById('btnAnom');
       parent.postMessage({
         type: 'cockpit-state',
         lens: lensOn ? lensOn.getAttribute('data-lens') : 'NONE',
         wire: wireOn ? wireOn.getAttribute('data-wire') : 'AUTO',
+        rel: relOn ? relOn.getAttribute('data-rel') : 'AUTO',
         anom: !!(anom && anom.classList.contains('on'))
       }, '*');
     } catch (e) {}
@@ -3122,6 +3135,7 @@ body{ background:var(--bg); }
     var el = null;
     if (d.cmd === 'lens') el = document.querySelector('.lensbtn[data-lens="' + d.value + '"]');
     else if (d.cmd === 'wire') el = document.querySelector('.wirebtn[data-wire="' + d.value + '"]');
+    else if (d.cmd === 'rel') el = document.querySelector('.relbtn[data-rel="' + d.value + '"]');
     else if (d.cmd === 'script') el = document.getElementById(d.value);
     else if (d.cmd === 'anom') el = document.getElementById('btnAnom');
     else if (d.cmd === 'reset') el = document.getElementById('scReset');

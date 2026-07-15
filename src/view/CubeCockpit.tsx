@@ -20,12 +20,13 @@ export type CockpitCmd =
   | { cmd: 'lens'; value: string }
   | { cmd: 'wire'; value: string }
   | { cmd: 'script'; value: string }
+  | { cmd: 'rel'; value: string }
   | { cmd: 'anom' }
   | { cmd: 'reset' }
   | { cmd: 'matrix' };
 
 /** 原型 → 宿主 的工具栏状态（供宿主面板高亮）。 */
-export interface CockpitState { lens: string; wire: string; anom: boolean; }
+export interface CockpitState { lens: string; wire: string; anom: boolean; rel: string; }
 
 export function CubeCockpit({ dark, onState, cmdApiRef }: {
   dark: boolean;
@@ -53,7 +54,7 @@ export function CubeCockpit({ dark, onState, cmdApiRef }: {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== frameRef.current?.contentWindow) return;
       const d = e.data;
-      if (d && d.type === 'cockpit-state') onState({ lens: d.lens, wire: d.wire, anom: !!d.anom });
+      if (d && d.type === 'cockpit-state') onState({ lens: d.lens, wire: d.wire, anom: !!d.anom, rel: d.rel ?? 'AUTO' });
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);

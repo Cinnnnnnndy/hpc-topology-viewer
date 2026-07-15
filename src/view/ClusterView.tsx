@@ -43,6 +43,9 @@ const CUBE_WIRE: [string, string][] = [
 const CUBE_SCRIPT: [string, string][] = [
   ['scPatrol', '巡检大盘'], ['scMoe', 'MoE 越界'], ['scSlow', '慢 DP 副本'], ['scDeep', '单机深潜'], ['scDeploy', '部署审视'],
 ];
+const CUBE_REL: [string, string][] = [
+  ['AUTO', '跟随阶段'], ['TP', 'TP组'], ['PP', 'PP链'], ['DP', 'DP环'], ['EP', 'EP对端'],
+];
 import { ConsoleView } from './ConsoleView';
 import { CommView } from './CommView';
 
@@ -370,7 +373,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
   // 立方重排(cube) 内嵌统一驾驶舱原型：工具栏桥接到宿主 Decode 面板。
   const cockpitCmd = useRef<((c: CockpitCmd) => void) | null>(null);
-  const [cockpitState, setCockpitState] = useState<CockpitState>({ lens: 'NONE', wire: 'AUTO', anom: false });
+  const [cockpitState, setCockpitState] = useState<CockpitState>({ lens: 'NONE', wire: 'AUTO', anom: false, rel: 'AUTO' });
 
 
   useEffect(() => {
@@ -606,6 +609,14 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                                   <button key={v} onClick={() => send({ cmd: 'wire', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.wire === v) }}>{l}</button>
                                 ))}
                                 <button onClick={() => send({ cmd: 'matrix' })} style={{ ...cbtn, ...navBtn(false) }}>▦ 矩阵</button>
+                              </div>
+                            </div>
+                            <div className="hpc-wb-ctrl-group">
+                              <span className="hpc-wb-ctrl-label">关联</span>
+                              <div className="hpc-wb-ctrl-btns">
+                                {CUBE_REL.map(([v, l]) => (
+                                  <button key={v} onClick={() => send({ cmd: 'rel', value: v })} style={{ ...cbtn, ...navBtn(cockpitState.rel === v) }}>{l}</button>
+                                ))}
                               </div>
                             </div>
                             <div style={{ borderTop: '1px solid var(--border)', margin: '2px 0' }} />
