@@ -641,7 +641,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                                 <div className="hpc-wb-ctrl-btns" style={{ flexWrap: 'wrap', gap: 4 }}>
                                   {cockpitState.topn.map(([host, label]) => (
                                     <button key={host} onClick={() => send({ cmd: 'topn', host })}
-                                      style={{ ...cbtn, borderColor: 'color-mix(in srgb,#ff4b7b 50%,var(--sys-border))', color: '#ff4b7b' }}>
+                                      style={{ ...cbtn, borderRadius: 'var(--radius-pill)', border: '1px solid color-mix(in srgb,#ff4b7b 35%,var(--sys-border))', background: 'color-mix(in srgb,#ff4b7b 10%,transparent)', color: '#ff4b7b', fontWeight: 500 }}>
                                       Host{host} · {label}
                                     </button>
                                   ))}
