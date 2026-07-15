@@ -178,15 +178,16 @@ button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var
 #left h3{font-size:11px;color:var(--dim);font-weight:400;margin-bottom:11px;line-height:1.45}
 #left h3 b{color:var(--sys-text-bright);font-size:13px;font-weight:600;letter-spacing:-.01em}
 /* 层级剖面：所有层级共用一张背景卡（.lvfunnel），每级不再是独立卡片，用细分隔线区分（对齐控制台漏斗观感） */
-.lvfunnel{background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-card);padding:0 12px;margin-bottom:10px}
+/* 八级直接落在左栏背景上：不要外层卡片（无描边/底色/阴影），仅用细分隔线区分 */
+.lvfunnel{background:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin-bottom:10px}
 .lvrow{position:relative;border:none;background:transparent;box-shadow:none;border-radius:0;padding:9px 4px;cursor:pointer;transition:background var(--duration-base)}
 .lvfunnel>.lvrow{border-top:1px solid color-mix(in srgb,var(--sys-border) 70%,transparent)}
 .lvfunnel>.lvrow:first-of-type{border-top:none}
 .lvrow:hover{background:color-mix(in srgb,var(--panel) 92%,var(--state-hover))}
-.lvrow.focus{box-shadow:inset 3px 0 0 var(--lvc,var(--blue))}
 .lvrow.focus .lv{background:var(--lvc,var(--blue));color:#fff}
-.lvrow .hd{display:flex;align-items:center;gap:8px}
-.lvrow .lv{font-size:10px;font-weight:700;color:var(--lvc,var(--blue));flex-shrink:0;background:color-mix(in srgb,var(--lvc,var(--blue)) 13%,transparent);border-radius:5px;padding:2px 6px;letter-spacing:.03em}
+/* 表头两行制：层级标签 | 名称（行1）/ 关系式计数（行2），不再挤在一行导致折行 */
+.lvrow .hd{display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center;row-gap:1px}
+.lvrow .lv{grid-column:1;grid-row:1 / span 2;align-self:center;font-size:10px;font-weight:700;color:var(--lvc,var(--blue));flex-shrink:0;background:color-mix(in srgb,var(--lvc,var(--blue)) 13%,transparent);border-radius:5px;padding:2px 6px;letter-spacing:.03em}
 /* 层级配色与联动控制台漏斗统一（ENTITY_COLORS：global/cluster/pool/super/node/card/die/core） */
 .lvrow[data-level="L7"]{--lvc:#9d7bff}
 .lvrow[data-level="L6"]{--lvc:#ffaa3b}
@@ -196,9 +197,9 @@ button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var
 .lvrow[data-level="L2"]{--lvc:#2dd4bf}
 .lvrow[data-level="L1"]{--lvc:#2dd4bf}
 .lvrow[data-level="L0"]{--lvc:#04d793}
-.lvrow .nm{font-size:13px;font-weight:600;color:var(--sys-text-bright);letter-spacing:-.01em}
-.lvrow .ct{font-size:11px;color:var(--dim);margin-left:auto;font-family:ui-monospace,monospace}
-.lvrow .kpi{font-size:10px;color:var(--dim);margin-top:3px;font-family:ui-monospace,monospace}
+.lvrow .nm{grid-column:2;grid-row:1;font-size:12.5px;font-weight:600;color:var(--sys-text-bright);letter-spacing:-.01em;line-height:1.3}
+.lvrow .ct{grid-column:2;grid-row:2;margin-left:0;font-size:10.5px;color:var(--dim);font-family:ui-monospace,monospace;line-height:1.35}
+.lvrow .kpi{display:none}
 .lvrow .kpi b{font-weight:600}
 .lvrow.ghost{opacity:.75}
 .lvrow .body{margin-top:5px}
@@ -232,11 +233,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .l1die{flex:1;border:1px solid;border-radius:6px;padding:5px 6px;font-size:10px;text-align:center}
 .l1die.c{border-color:#2dd4bf;color:#2dd4bf;background:color-mix(in srgb,#2dd4bf 12%,transparent)}
 .l1die.io{border-color:#7c8db8;color:#8b97ab;background:color-mix(in srgb,#7c8db8 12%,transparent)}
-/* ---- L0 Core-Group：内嵌控制台同款 memory-architecture pattern ---- */
-.l0cg{margin-top:6px}
-/* L0 图直接落在大卡片上：去掉内层卡片描边/底色/阴影 */
-#l0viewport{width:100%;height:460px;overflow:hidden;position:relative;background:transparent}
+/* ---- L0 Core-Group：内嵌控制台同款 memory-architecture pattern（直接落在背景上，无内层卡片） ---- */
 .l0cg{margin-top:2px}
+#l0viewport{width:100%;height:460px;overflow:hidden;position:relative;background:transparent}
+#l0stage .pto-mem950__note{display:none}   /* 去掉底部脚注（减少提示文本 + 让核组图更贴宽度铺满） */
 #commsvg{position:absolute;top:0;left:0;pointer-events:none;z-index:4}
 @keyframes dashmove{to{stroke-dashoffset:-22}}
 .flow{stroke-dasharray:7 4;animation:dashmove .9s linear infinite;fill:none}
@@ -2795,20 +2795,26 @@ function initL0Pattern(){
     zc && zc.render && zc.render();
     // 宽度自适配：把整张核组图缩放到恰好铺满左栏宽度（右侧不再被裁切），
     // 视口高度随之贴合缩放后内容高度，整图完整可见；分栏/窗口尺寸变化时重算。
+    const CORE = '.pto-mem950__rails, .pto-mem950__stack, .pto-mem950__stack *';   // 只量核组内容（排除全幅 route 覆盖层 + 底部 note 脚注）
     const fit = ()=>{
       const content = canvas && canvas.firstElementChild; if(!content || !zc) return;
       const cur = (zc.getZoom && zc.getZoom()) || 0.32;
-      // 真·内容范围：取 stage 及其所有后代的最右/最下边（scrollWidth 会漏掉溢出的 LOC 等块）
-      const base = content.getBoundingClientRect();
-      let maxR = base.right, maxB = base.bottom;
-      content.querySelectorAll('*').forEach(el=>{ const r=el.getBoundingClientRect(); if(r.width>0&&r.height>0){ if(r.right>maxR)maxR=r.right; if(r.bottom>maxB)maxB=r.bottom; } });
-      const natW = Math.max(1,(maxR-base.left)/cur), natH = Math.max(1,(maxB-base.top)/cur);
+      let minL=1e9,maxR=-1e9,minT=1e9,maxB=-1e9;
+      content.querySelectorAll(CORE).forEach(el=>{ const r=el.getBoundingClientRect(); if(r.width>0&&r.height>0){ if(r.left<minL)minL=r.left; if(r.right>maxR)maxR=r.right; if(r.top<minT)minT=r.top; if(r.bottom>maxB)maxB=r.bottom; } });
+      if(maxR<=minL) return;
+      const natW = Math.max(1,(maxR-minL)/cur), natH = Math.max(1,(maxB-minT)/cur);
       const vpW = viewport.clientWidth || 400;
-      const z = Math.max(0.08, Math.min(1.2, (vpW - 2) / natW));
+      const z = Math.max(0.08, Math.min(1.6, (vpW - 2) / natW));
       zc.setZoom && zc.setZoom(z);
-      zc.setPan && zc.setPan(0, 0);   // transform-origin: top left → 贴左上，整图完整铺满宽度
-      viewport.style.height = Math.min(820, Math.max(180, Math.ceil(natH * z) + 6)) + 'px';
-      overlay && overlay.render && overlay.render();
+      // 缩放后重新量，把核组内容左上角贴到视口左上角（去掉左右留白，整幅铺满内容宽度）
+      requestAnimationFrame(()=>{
+        let l2=1e9,t2=1e9;
+        content.querySelectorAll('.pto-mem950__rails, .pto-mem950__stack').forEach(el=>{ const r=el.getBoundingClientRect(); if(r.width>0){ if(r.left<l2)l2=r.left; if(r.top<t2)t2=r.top; } });
+        const vr = viewport.getBoundingClientRect(), pan = (zc.getPan&&zc.getPan())||{x:0,y:0};
+        zc.setPan && zc.setPan(pan.x-(l2-vr.left)+1, pan.y-(t2-vr.top)+1);
+        viewport.style.height = Math.min(900, Math.max(150, Math.ceil(natH * z) + 4)) + 'px';
+        overlay && overlay.render && overlay.render();
+      });
     };
     requestAnimationFrame(()=>requestAnimationFrame(fit));
     let rt=0; window.addEventListener('resize', ()=>{ if(rt) cancelAnimationFrame(rt); rt=requestAnimationFrame(fit); });
