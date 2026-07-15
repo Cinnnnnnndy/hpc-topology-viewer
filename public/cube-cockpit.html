@@ -284,15 +284,19 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #memPanel .memleg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
 #memPanel .note{font-size:10px;color:var(--teal);margin-top:6px}
 /* ---- 整网分隔映射：子页签（分隔矩阵 / 整网图）+ 方向 ---- */
-#mmSub{display:flex;align-items:center;gap:4px;margin-bottom:9px;flex-wrap:wrap}
-#mmSub>button{min-height:26px;padding:4px 12px;font-size:11.5px;border-radius:var(--radius-md);border:1px solid var(--sys-border);background:var(--panel);color:var(--dim);font-weight:500}
-#mmSub>button:hover{background:var(--state-hover)}
-#mmSub>button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+#mmSub{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+/* segmented control：与 #lefttabs 保持一致 */
+#mmSubTabs{display:flex;gap:2px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
+#mmSubTabs button{border:none;box-shadow:none;background:transparent;border-radius:calc(var(--radius-md) - 2px);padding:4px 12px;font-size:11.5px;min-height:26px;color:var(--dim);font-weight:500;cursor:pointer}
+#mmSubTabs button:hover:not(.on){background:color-mix(in srgb,var(--state-hover) 50%,transparent)}
+#mmSubTabs button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm)}
+/* 方向 chip pills：与快速分诊 #topn 保持一致 */
 #netDirWrap{display:none;align-items:center;gap:3px;margin-left:auto}
 #netDirWrap.show{display:inline-flex}
 #netDirWrap .ndlab{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim);margin-right:2px}
-#netDirWrap button{min-height:24px;padding:3px 9px;font-size:10.5px;border-radius:var(--radius-pill);border:1px solid var(--sys-border);background:var(--panel);color:var(--dim)}
-#netDirWrap button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+#netDirWrap button{min-height:22px;padding:2px 9px;font-size:10.5px;border-radius:var(--radius-pill);border:1px solid var(--sys-border);background:transparent;color:var(--dim)}
+#netDirWrap button:hover:not(.on){background:color-mix(in srgb,var(--sys-accent) 8%,transparent);border-color:color-mix(in srgb,var(--sys-accent) 30%,var(--sys-border))}
+#netDirWrap button.on{background:color-mix(in srgb,var(--sys-accent) 14%,var(--panel));border-color:var(--sys-accent);color:var(--sys-accent);font-weight:600}
 #netWrap h3{margin-bottom:5px}
 #netHint{font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:6px}
 #netHint b{color:var(--sys-text-bright)}
@@ -491,8 +495,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
         <div id="mmSub">
-          <button id="subNet" class="on">整网图</button>
-          <button id="subMx">分隔矩阵</button>
+          <span id="mmSubTabs">
+            <button id="subNet" class="on">整网图</button>
+            <button id="subMx">分隔矩阵</button>
+          </span>
           <span id="netDirWrap">
             <span class="ndlab">方向</span>
             <button id="ndFwd">前向</button><button id="ndBwd">反向</button><button id="ndBoth" class="on">全链</button>
