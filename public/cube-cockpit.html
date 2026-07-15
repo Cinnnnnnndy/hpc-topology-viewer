@@ -1534,11 +1534,11 @@ function renderCubeAxes(){
   while(cubeAxes.children.length){ const o=cubeAxes.children.pop(); if(o.material)o.material.dispose(); if(o.geometry)o.geometry.dispose(); }
   const TPc='#7ee8f4', PPc='#ffe0a0', DPc='#8aa6ff', EPc='#c97fff';
   if(cubeMode===0){
-    // 三轴沿魔方外边缘，交于左下前角 (-7, 7, 25.5)，完全暴露在方块之外
-    const ox=-7, oy=7, oz=25.5;
-    axLine(V3(ox,oy,oz),V3(8,oy,oz),0x7ee8f4);      axLabel('TP × 8',TPc,5.5,V3(10.5,oy,oz));
-    axLine(V3(ox,oy,oz),V3(ox,28,oz),0xffe0a0);     axLabel('PP × 16',PPc,5.5,V3(ox,30,oz));
-    axLine(V3(ox,oy,-25.5),V3(ox,oy,oz),0x8aa6ff); axLabel('DP × 64',DPc,5.5,V3(ox,oy,oz+3));
+    // 三轴交于左下角 (-7, 6, 0)：X<-5.6 且 Y<8.4 均在方块之外，不被遮挡
+    const ox=-7, oy=6, oz=0;
+    axLine(V3(ox,oy,oz),V3(8,oy,oz),0x7ee8f4);        axLabel('TP × 8',TPc,5.5,V3(10.5,oy,oz));
+    axLine(V3(ox,oy,oz),V3(ox,28,oz),0xffe0a0);       axLabel('PP × 16',PPc,5.5,V3(ox,30,oz));
+    axLine(V3(ox,oy,-25.5),V3(ox,oy,25.5),0x8aa6ff); axLabel('DP × 64',DPc,5.5,V3(ox,oy,27.5));
   } else if(cubeMode===1){          axLabel('DP × 64 副本平铺（8×8）· 每格 = 一份完整模型 TP×PP',DPc,12,V3(0,20.5,0));
   } else if(cubeMode===2){          axLabel('EP · 64 专家 = 8 组抽出成墙（MoGE）· 左 = 非专家 Host',EPc,12,V3(0,26,0));
   } else if(cubeMode===3){          axLabel('TP × 8 权重墙沿 X · 一面墙 = 全网同槽位切片',TPc,12,V3(0,28,0));
