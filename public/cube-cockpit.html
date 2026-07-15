@@ -365,7 +365,10 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
 #drawer.show{display:flex}
 #drawer .drhead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-#drawer .drtitle{font-size:12px;color:var(--orange);font-weight:600;margin-right:8px}
+#drawer .drtitle{font-size:12px;color:var(--orange);font-weight:600;margin-right:8px;display:flex;align-items:center;gap:4px}
+#drawer .drtitle-info{position:relative;display:inline-flex;align-items:center;cursor:default;font-size:11px;opacity:.7}
+#drawer .drtitle-info:hover .drtitle-tip{display:block}
+#drawer .drtitle-tip{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:20;white-space:nowrap;padding:5px 8px;background:var(--panel2);border:1px solid var(--border);border-radius:5px;font-size:11px;font-weight:400;color:var(--fg);box-shadow:0 2px 8px rgba(0,0,0,.18)}
 #drawer canvas{flex:1;width:100%;min-height:0;border:1px solid var(--border);border-radius:6px;background:var(--panel2)}
 #drawer #cvLane{flex:1;min-height:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--panel2)}
 /* ===== 底部时间轴 ===== */
@@ -559,7 +562,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   </div>
   <div id="drawer">
     <div class="drhead">
-      <span class="drtitle">模式 B · 离线深潜 · Triggered Dump（Step 1284-1288）</span>
+      <span class="drtitle">模式 B · 离线深潜<span class="drtitle-info">ℹ️<span class="drtitle-tip">Triggered Dump（Step 1284-1288）</span></span></span>
       <button id="drTabLane" class="on">Timeline</button>
       <button id="drTabBw">busbw 基线</button>
       <button id="drTabMx">通信矩阵</button>
