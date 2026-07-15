@@ -783,7 +783,7 @@ $('#l4body').innerHTML =
      <span id="ctL4">本集群 128 机柜 · +32 互联柜</span>
      <span style="margin-left:auto">MFU <b style="color:var(--sys-text-bright)">54.2%</b></span>
    </div>
-   <canvas class="strip" id="cvL4" width="404" height="86" style="margin-top:5px"></canvas>`;
+   <canvas class="strip" id="cvL4" width="404" height="92" style="margin-top:5px"></canvas>`;
 $$('#l5body span').forEach((el,i)=>{ el.style.cursor='pointer';
   el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L5'); }); });
 $$('#l6body i').forEach((el,i)=>{ el.style.cursor='pointer';
@@ -895,8 +895,8 @@ function pickL2(ev){ const r = cvL2.getBoundingClientRect();
 const cvL4 = $('#cvL4'), gL4 = cvL4.getContext('2d');
 const L4C = { cw:404/16, ch:64/8, icY:70, icH:12 };
 function renderL4(){
-  hidpi(cvL4,404,86);
-  gL4.clearRect(0,0,404,86);
+  hidpi(cvL4,404,92);
+  gL4.clearRect(0,0,404,92);
   for(let cab=0;cab<128;cab++){
     const x=(cab%16)*L4C.cw, y=((cab/16)|0)*L4C.ch;
     for(let s=0;s<8;s++){
@@ -915,13 +915,14 @@ function renderL4(){
   for(let i=0;i<32;i++){
     const x = 6+i*12.3;
     gL4.fillStyle = (S.anomaly && i%8===1) ? themeC('#67060c',COL.RED+'33') : themeC('#21262d','rgba(0,0,0,.14)');
-    gL4.fillRect(x, L4C.icY, 10, L4C.icH);
-    gL4.strokeStyle=themeC('#30363d','rgba(0,0,0,.18)'); gL4.strokeRect(x+.5, L4C.icY+.5, 9, L4C.icH-1); }
+    gL4.beginPath(); gL4.roundRect(x, L4C.icY, 10, L4C.icH, 1); gL4.fill();
+    gL4.strokeStyle=themeC('#30363d','rgba(0,0,0,.18)'); gL4.lineWidth=1;
+    gL4.beginPath(); gL4.roundRect(x+.5, L4C.icY+.5, 9, L4C.icH-1, 1); gL4.stroke(); }
   gL4.fillStyle=themeC('#6e7681','rgba(0,0,0,.45)'); gL4.font='8px sans-serif'; gL4.textAlign='left';
-  gL4.fillText('互联柜 ×32', 6, L4C.icY-2);
+  gL4.fillText('互联柜 ×32', 6, L4C.icY+L4C.icH+8);
 }
 function pickL4(ev){ const r=cvL4.getBoundingClientRect();
-  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*86;
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*92;
   if(y>=64) return -1;
   const col=Math.min(15,Math.max(0,(x/L4C.cw)|0)), row=Math.min(7,Math.max(0,(y/L4C.ch)|0));
   const cab=row*16+col, s=Math.min(7,Math.max(0,((x-col*L4C.cw-1)/((L4C.cw-2)/8))|0));
