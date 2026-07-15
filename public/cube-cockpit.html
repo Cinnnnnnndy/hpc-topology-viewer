@@ -3064,6 +3064,7 @@ body{ background:var(--bg); }
 /* main split：单条 12px 沟槽（对齐工作台 content-gap），不再是 gap+handle+gap 的双倍间距 */
 #main{ gap:0; }
 #left{
+  width:480px;
   border:1px solid var(--sys-border) !important;
   border-right:1px solid var(--sys-border) !important;
   border-radius:var(--panel-shell-radius) !important;
@@ -3112,6 +3113,9 @@ body{ background:var(--bg); }
     if (!main || !left || !right || document.getElementById('splitH')) return;
     var h = document.createElement('div'); h.id = 'splitH';
     main.insertBefore(h, right);
+    var LS_KEY = 'cockpit-left-w';
+    var savedW = parseInt(localStorage.getItem(LS_KEY) || '0', 10);
+    if (savedW >= 280) { left.style.width = savedW + 'px'; left.style.flexShrink = '0'; }
     var dragging = false;
     h.addEventListener('mousedown', function (e) { dragging = true; e.preventDefault(); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; });
     window.addEventListener('mousemove', function (e) {
@@ -3121,7 +3125,13 @@ body{ background:var(--bg); }
       left.style.width = w + 'px'; left.style.flexShrink = '0';
       window.dispatchEvent(new Event('resize'));   // 让原型 resize() 重算 3D 画布
     });
-    window.addEventListener('mouseup', function () { if (dragging) { dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = ''; window.dispatchEvent(new Event('resize')); } });
+    window.addEventListener('mouseup', function () {
+      if (dragging) {
+        dragging = false; document.body.style.cursor = ''; document.body.style.userSelect = '';
+        try { localStorage.setItem(LS_KEY, parseInt(left.style.width) || ''); } catch(e){}
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
   }
   if (document.readyState !== 'loading') initSplit();
   else document.addEventListener('DOMContentLoaded', initSplit);
