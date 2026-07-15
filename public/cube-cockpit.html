@@ -1130,6 +1130,18 @@ function renderMM(){
   gm.save(); gm.translate(9,Y0+MM.H/2); gm.rotate(-Math.PI/2);
   gm.fillStyle='#8b949e'; gm.font='9px sans-serif'; gm.textAlign='center';
   gm.fillText('整网 48 层 →（每层含 64 路由专家 · MoGE）',0,0); gm.restore();
+  // 整网图点算子 → 该切分维在矩阵上的落卡示意（TP=每卡都承载 · EP=专家片 · PP=段结构 · DP=复制外圈）
+  if(window.__netMatrixDim){ const _d=window.__netMatrixDim;
+    const _c={tp:'#4369ef',pp:'#04d793',dp:'#ffaa3b',ep:'#ff4b7b'}[_d]||'#fff';
+    gm.save();
+    if(_d==='dp'){ gm.setLineDash([6,3]); gm.strokeStyle=_c; gm.lineWidth=2.6; gm.strokeRect(X0-4,Y0-4,MM.W+8,MM.H+8); gm.setLineDash([]); }
+    else { gm.globalAlpha=.18; gm.fillStyle=_c;
+      for(let r=0;r<N_LAYER;r++){ const st=stageOfLayer(r);
+        for(let c=0;c<128;c++){ const pc=c>>3, tp=c&7; if(st!==pc) continue;
+          const on = _d==='tp' ? true : _d==='ep' ? (tp>=6) : (r%3===0);
+          if(on) gm.fillRect(X0+c*cw, Y0+r*ch, cw-.35, ch-.5); } }
+      gm.globalAlpha=1; }
+    gm.restore(); }
   // 选择高亮框
   if(S.selLayer!=null){ gm.strokeStyle='#fff'; gm.lineWidth=1.4;
     gm.strokeRect(X0, Y0+S.selLayer*ch-.5, MM.W, ch+1); }
@@ -1171,6 +1183,7 @@ function setModelSel(layer, card){
   renderMM(); renderL3(); renderL2(); renderChipZoom(); renderProbe();
   colorsDirty = true;
   if((S.selLayer!=null||S.selCard) && S.morph<0.5 && !['L4','L3'].includes(S.level)) setLevel('L4');
+  if(window.__cockpitNetReverse) window.__cockpitNetReverse();   // 反查：选择 → 整网图高亮对应算子
 }
 function describeModelSel(){
   const d = $('#mmdesc');
@@ -2340,10 +2353,16 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
     if(n.parent==='decoder-stack') return 'pp';
     return 'pp'; }
   const NODE_DIM={}; (G.nodes||[]).forEach(n=>{ NODE_DIM[n.id]=deriveDim(n); });
+  // dense / MoE 两条 FFN 路径（供「选层→按层型高亮对应路径」用；层0-1=dense, ≥2=MoE）
+  const DENSE_IDS=new Set(), MOE_IDS=new Set();
+  (G.nodes||[]).forEach(n=>{ if(/^dense/.test(n.id)) DENSE_IDS.add(n.id);
+    if(n.parent==='moe-block'||n.id==='moe_ffn'||/^moe_all_to_all/.test(n.id)) MOE_IDS.add(n.id); });
   const DIM_CUBEMODE={dp:1,ep:2,tp:3,pp:4};        // → cm1 DP平铺 / cm2 EP聚簇 / cm3 TP切片 / cm4 PP流水
   const DIM_LABEL={tp:'TP 张量切片',pp:'PP 流水级',dp:'DP 数据副本',ep:'EP 专家组'};
+  const DIM_GLOW={tp:'#4369ef',pp:'#04d793',dp:'#ffaa3b',ep:'#ff4b7b'};
   const FWD='#22d3ee', BWD='#6b8bff', NS='http://www.w3.org/2000/svg';
   let ctrl=null, dir='both', mk=null, rendered=false, lastTheme=null;
+  let curHi=null;                                  // 当前高亮 {match,color}|null（供重渲染/切页后重放）
   const themeNow=()=> document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light';
 
   function mkMarker(id,orient,fill){ const m=document.createElementNS(NS,'marker');
@@ -2357,30 +2376,76 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
     else if(d==='bwd'){ el.style.markerEnd='none'; el.style.markerStart='url(#'+ids.bwd+')'; el.style.stroke=BWD; el.style.strokeOpacity='0.85'; }
     else { el.style.markerEnd='url(#'+ids.fwd+')'; el.style.markerStart='url(#'+ids.bwd+')'; el.style.stroke=''; el.style.strokeOpacity=''; } }); }
 
+  // ── 节点高亮：match 命中的算子保持全亮 + 发光，其余淡出；边同理（反查/同维/层型共用） ──
+  function applyHi(svg, hi){
+    svg.querySelectorAll('[data-node-id]').forEach(el=>{ const id=el.getAttribute('data-node-id')||'';
+      if(!hi){ el.style.opacity=''; el.style.filter=''; return; }
+      const on=hi.match(id); el.style.opacity=on?'1':'0.14'; el.style.filter=on?('drop-shadow(0 0 5px '+hi.color+')'):''; });
+    svg.querySelectorAll('path.pto-model-graphviz-edge').forEach(el=>{
+      if(!hi){ el.style.opacity=''; return; }
+      const s=el.getAttribute('data-source')||'', t=el.getAttribute('data-target')||'';
+      el.style.opacity=(hi.match(s)&&hi.match(t))?'0.95':'0.09'; }); }
+  function setHi(hi){ curHi=hi; if(ctrl&&ctrl.svg) applyHi(ctrl.svg, hi); }
+
   function renderGraph(){ const stage=$('#netStage'); if(!stage) return;
     stage.innerHTML=''; lastTheme=themeNow();
     ctrl = MGV.renderController(stage, G, { theme:lastTheme, reportOverlays:false, evidence:false,
       onSelect:function(info){ const id=info&&info.nodeId; if(id) onPickNode(id); } });
     if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.height='auto'; ctrl.svg.style.display='block';
       ctrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon').forEach(el=>{ el.style.display='none'; });
-      mk=ensureMarkers(ctrl.svg); applyDir(ctrl.svg, dir, mk); }
+      mk=ensureMarkers(ctrl.svg); applyDir(ctrl.svg, dir, mk); if(curHi) applyHi(ctrl.svg, curHi); }
     rendered=true; }
 
+  // 点算子 → ①右侧立方按其切分维重排 ②同维算子高亮 ③分隔矩阵高亮该维落卡
   function onPickNode(id){ const dim=NODE_DIM[id];
     $('#netSelLab').textContent = dim ? ('　选中 '+id+' → '+DIM_LABEL[dim]) : ('　选中 '+id);
     if(!dim) return;
-    formTarget='cube'; formBtns();                 // 右侧立方切到「逻辑魔方」
+    setHi({ match:x=>NODE_DIM[x]===dim, color:DIM_GLOW[dim] });
+    window.__netMatrixDim = dim; if(typeof renderMM==='function') renderMM();   // ③ 矩阵落卡示意
+    formTarget='cube'; formBtns();                                              // ① 立方切「逻辑魔方」
     const k=DIM_CUBEMODE[dim];
     if(k!=null && cubeMode!==k){ cubePrev=cubeMode; cubeMode=k; cubeBlend=0;
       [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k)); renderCubeAxes(); renderViewlab(); } }
 
+  // ── 反查：矩阵/3D 选择 → 整网图高亮对应算子（选层→dense/MoE 路径；选卡→TP/EP 计算算子）──
+  function reverseFromSel(){
+    if(typeof S==='undefined'){ return; }
+    if(S.selLayer!=null){ const L=S.selLayer, dense=L<2;
+      $('#netSelLab').textContent = '　对应 L'+(L+1)+' · '+(dense?'Dense FFN 层':'MoE 层')+'（整网图高亮该层 FFN 路径）';
+      setHi({ match:x=> dense?DENSE_IDS.has(x):MOE_IDS.has(x), color: dense?DIM_GLOW.tp:DIM_GLOW.ep }); }
+    else if(S.selCard){ const {pp,tp}=S.selCard;
+      $('#netSelLab').textContent='　对应卡 PP'+pp+(tp!=null?'·TP'+tp:'')+'（高亮它承载的 TP/EP 计算算子）';
+      setHi({ match:x=>NODE_DIM[x]==='tp'||NODE_DIM[x]==='ep', color:DIM_GLOW.tp }); }
+    else { $('#netSelLab').textContent=''; setHi(null); window.__netMatrixDim=null; }
+  }
+  window.__cockpitNetReverse = reverseFromSel;   // setModelSel 里回调
+
+  // ── 前向/反向流动动画：随底部播放（相位轨 TP前向→PP→EP→DP）沿边流动。
+  //    前向相位（TP/PP/EP）激活下行(青)；反向相位（DP 梯度同步）梯度上行(蓝)。用虚线偏移做流动 + 箭头方向区分。──
+  function applyFlow(svg){ const fwd = S.phase<3, col=fwd?FWD:BWD;
+    const off = (fwd?-1:1) * ((performance.now()/26) % 12);
+    svg.querySelectorAll('path.pto-model-graphviz-edge').forEach(el=>{
+      el.style.stroke=col; el.style.strokeOpacity='0.95'; el.style.strokeDasharray='6 6'; el.style.strokeDashoffset=String(off);
+      el.style.markerEnd=fwd?'url(#wng-fwd)':'none'; el.style.markerStart=fwd?'none':'url(#wng-bwd)'; }); }
+  function restoreStatic(svg){ svg.querySelectorAll('path.pto-model-graphviz-edge').forEach(el=>{ el.style.strokeDasharray=''; el.style.strokeDashoffset=''; });
+    applyDir(svg,dir,mk); if(curHi) applyHi(svg,curHi); }
+  let flowRaf=0, flowMode='';
+  function flowLoop(){ const svg=ctrl&&ctrl.svg;
+    if(!svg || $('#netWrap').style.display==='none'){ flowRaf=0; flowMode=''; return; }   // 整网图隐藏 → 停
+    if(typeof S!=='undefined' && S.playing){ applyFlow(svg); flowMode='play'; }
+    else if(flowMode!=='static'){ restoreStatic(svg); flowMode='static'; }
+    flowRaf=requestAnimationFrame(flowLoop); }
+  function ensureFlow(){ if(!flowRaf) flowRaf=requestAnimationFrame(flowLoop); }
+
   function showSub(net){ $('#subMx').classList.toggle('on', !net); $('#subNet').classList.toggle('on', net);
     $('#mmWrap').style.display = net?'none':'block'; $('#netWrap').style.display = net?'block':'none';
     $('#netDirWrap').classList.toggle('show', net);
-    if(net && (!rendered || lastTheme!==themeNow())) renderGraph(); }
+    if(net){ if(!rendered || lastTheme!==themeNow()) renderGraph(); flowMode=''; ensureFlow(); }
+    else if(typeof renderMM==='function') renderMM(); }   // 回到分隔矩阵 → 刷新（含落卡 overlay）
   $('#subMx').onclick=()=>showSub(false); $('#subNet').onclick=()=>showSub(true);
 
-  function setDir(d){ dir=d; $('#ndFwd').classList.toggle('on',d==='fwd'); $('#ndBwd').classList.toggle('on',d==='bwd'); $('#ndBoth').classList.toggle('on',d==='both'); if(ctrl&&ctrl.svg&&mk) applyDir(ctrl.svg,dir,mk); }
+  function setDir(d){ dir=d; $('#ndFwd').classList.toggle('on',d==='fwd'); $('#ndBwd').classList.toggle('on',d==='bwd'); $('#ndBoth').classList.toggle('on',d==='both');
+    if(ctrl&&ctrl.svg&&mk && !(typeof S!=='undefined'&&S.playing)){ applyDir(ctrl.svg,dir,mk); if(curHi) applyHi(ctrl.svg,curHi); } }
   $('#ndFwd').onclick=()=>setDir('fwd'); $('#ndBwd').onclick=()=>setDir('bwd'); $('#ndBoth').onclick=()=>setDir('both');
 
   // 主题切换 → 若整网图正显示则按新主题重渲染（节点色在渲染时烘焙）
