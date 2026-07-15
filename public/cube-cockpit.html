@@ -662,9 +662,8 @@ function baseHostColor(h){
   const L = S.lens, D = isDark();
   if(S.anomaly && isAnomHost[h] && (L==='EP'||L==='NONE')) return COL.RED;
   if(L==='NONE'){ const v = health[h];
-    // 分级着色（参考控制台状态色，不用无极渐变）：空闲 <40% / 中 40-70% / 繁忙 >70% · 异常 >95%
     if(v>.95) return COL.RED;
-    return v<.4 ? '#04D793' : v<.7 ? '#fbbf24' : '#FF4B7B'; }
+    return v<.4 ? '#5ce8c4' : v<.7 ? '#ffe566' : '#ff85b3'; }
   if(L==='TP') return D ? '#1b7c86' : '#2ba0b3';
   if(L==='SP') return D ? '#1e7a5a' : '#22a578';
   if(L==='CP') return D ? '#233043' : '#93a0b4';
@@ -674,7 +673,7 @@ function baseHostColor(h){
     if(D) return j===0 ? `hsl(212,68%,${26+v*14|0}%)` : `hsl(174,60%,${22+v*12|0}%)`;
     return j===0 ? `hsl(212,64%,${(60-v*14)|0}%)` : `hsl(174,54%,${(54-v*12)|0}%)`; }
   if(L==='PP'){ const p = ppOf(h);
-    return D ? `hsl(${30+p*11},72%,${34+(p%4)*7}%)` : `hsl(${30+p*11},82%,${(60-(p%4)*4)|0}%)`; }
+    return D ? `hsl(${30+p*11},85%,${52+(p%4)*5}%)` : `hsl(${30+p*11},90%,${(68-(p%4)*3)|0}%)`; }
   if(L==='DP'){ const d = dpOf(h);
     return D ? `hsl(${205+(d%8)*6},68%,${30+((d/8)|0)*4}%)` : `hsl(${205+(d%8)*6},66%,${(60-((d/8)|0)*3)|0}%)`; }
   if(L==='EP'){ if(!isExpertHost[h]) return themeC('#21262d','#c4cdd8');
@@ -685,10 +684,10 @@ function hostColor(h){ if(!carrierHost(h) || !filterPassHost(h)) return themeC('
 function chipColor(c){
   if(!carrierChip(c) || !filterPassHost(hostOf(c))) return themeC('#141a21','#caccce');
   const h = hostOf(c), s = slotOf(c), D = isDark();
-  if(S.lens==='TP'){ const base = D ? [26,124,134] : [58,178,196];
-    const k = .78 + .28*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
-  if(S.lens==='SP'){ const base = D ? [30,122,90] : [52,182,134];
-    const k = .78 + .28*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
+  if(S.lens==='TP'){ const base = D ? [60,195,210] : [80,215,230];
+    const k = .80 + .22*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
+  if(S.lens==='SP'){ const base = D ? [60,210,155] : [80,230,175];
+    const k = .80 + .22*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
   return baseHostColor(h);
 }
 /* ============ 当前阶段的参与者（左侧弧线 / 画布描边 / 3D 通信线共用） ============ */
@@ -1246,8 +1245,8 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 0.95); scene.add(hemiLight);
-const dl = new THREE.DirectionalLight(0xffffff, 0.75); dl.position.set(120,300,180); scene.add(dl);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f4ff, 1.35); scene.add(hemiLight);
+const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -1332,7 +1331,7 @@ var cabEdges;
   physGroup.add(ics); }
 // 1024 Host 托盘（InstancedMesh + 逐实例色）
 const hostGeo = new THREE.BoxGeometry(1.05,.16,.9);
-const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.50, metalness:0.02}); hostMat.userData.base=1;
+const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.18, metalness:0.0}); hostMat.userData.base=1;
 const hostsMesh = new THREE.InstancedMesh(hostGeo, hostMat, N_HOST);
 for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
@@ -1341,7 +1340,7 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
 scene.add(hostsMesh);
 // 8192 芯片（可 Morph 到魔方 → 不放入 physGroup）
 const chipGeo = new THREE.BoxGeometry(.18,.12,.26);
-const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.50, metalness:0.02}); chipMat.userData.base=1;
+const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.18, metalness:0.0}); chipMat.userData.base=1;
 const chipsMesh = new THREE.InstancedMesh(chipGeo, chipMat, N_CHIP);
 scene.add(chipsMesh);
 /* 深下钻时其余 Host/芯片整体淡化 → 焦点对象用独立不透明网格保持清晰 */
