@@ -583,7 +583,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                     title={ctrlBarOpen ? '收起全局控制' : '展开全局控制'}
                   >
                     <span className={`hpc-wb-ctrl-dot${syncPlaying ? ' hpc-wb-ctrl-dot--breath' : ''}`} />
-                    <span>{mode === 'cube' ? '集群驾驶舱' : wlLabels[syncWorkload]}</span>
+                    <span>{mode === 'cube' ? '视图控制' : wlLabels[syncWorkload]}</span>
                     <span className="hpc-wb-ctrl-chevron">{ctrlBarOpen ? '▴' : '▾'}</span>
                   </button>
                   {ctrlBarOpen && (
