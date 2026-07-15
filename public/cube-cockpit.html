@@ -16,6 +16,10 @@
 <script src="./vendor/aiv-core-object/pattern.js"></script>
 <script src="./vendor/aic-core-object/pattern.js"></script>
 <script src="./vendor/memory-architecture/pattern.js"></script>
+<!-- 整网图（model-graphviz）：整网分隔映射页里，逻辑计算图 ⇄ 物理切分矩阵/3D 联动 -->
+<link rel="stylesheet" href="./vendor/model-graphviz/pattern.css">
+<script src="./vendor/model-graphviz/graph.js"></script>
+<script src="./vendor/model-graphviz/pattern.js"></script>
 <style>
 /* ============================================================
    PTO Design System — canonical tokens (retrofit, LIGHT-FIRST)
@@ -277,6 +281,24 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #memPanel .memleg{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10px;color:var(--dim)}
 #memPanel .memleg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
 #memPanel .note{font-size:10px;color:var(--teal);margin-top:6px}
+/* ---- 整网分隔映射：子页签（分隔矩阵 / 整网图）+ 方向 ---- */
+#mmSub{display:flex;align-items:center;gap:4px;margin-bottom:9px;flex-wrap:wrap}
+#mmSub>button{min-height:26px;padding:4px 12px;font-size:11.5px;border-radius:var(--radius-md);border:1px solid var(--sys-border);background:var(--panel);color:var(--dim);font-weight:500}
+#mmSub>button:hover{background:var(--state-hover)}
+#mmSub>button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+#netDirWrap{display:none;align-items:center;gap:3px;margin-left:auto}
+#netDirWrap.show{display:inline-flex}
+#netDirWrap .ndlab{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim);margin-right:2px}
+#netDirWrap button{min-height:24px;padding:3px 9px;font-size:10.5px;border-radius:var(--radius-pill);border:1px solid var(--sys-border);background:var(--panel);color:var(--dim)}
+#netDirWrap button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+#netWrap h3{margin-bottom:5px}
+#netHint{font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:6px}
+#netHint b{color:var(--sys-text-bright)}
+#netSelLab{color:var(--accent);font-weight:600}
+#netLegend{display:flex;gap:14px;font-size:10px;color:var(--dim);margin-bottom:7px}
+#netLegend .ndot{display:inline-flex;align-items:center;gap:5px}
+#netStage{height:66vh;overflow:auto;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel)}
+#netStage svg{width:100%;height:auto;display:block}
 /* ---- 右：3D ---- */
 #right{flex:1;position:relative;min-width:0;background:var(--sys-stage-bg)}
 #stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
@@ -467,14 +489,35 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       </div>
       <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
       <div class="pane" id="paneModel">
-        <h3><b>整网分隔映射</b> · 行=48 层 · 列=128 芯片（PP16×TP8）</h3>
-        <div style="display:flex;gap:6px;margin-bottom:8px">
-          <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
-          <button id="btnClearSel">清除选择</button>
+        <div id="mmSub">
+          <button id="subMx" class="on">分隔矩阵</button>
+          <button id="subNet">整网图</button>
+          <span id="netDirWrap">
+            <span class="ndlab">方向</span>
+            <button id="ndFwd">前向</button><button id="ndBwd">反向</button><button id="ndBoth" class="on">全链</button>
+          </span>
         </div>
-        <canvas id="mmcv" width="404" height="400"></canvas>
-        <div id="mmdesc">点<b>行</b>→ 3D 亮起承载该层的卡；点<b>格</b>→ 反查该卡装载的片段与显存构成。</div>
-        <div id="memPanel"></div>
+        <!-- 子页 A：物理切分矩阵（原视图） -->
+        <div id="mmWrap">
+          <h3><b>整网分隔映射</b> · 行=48 层 · 列=128 芯片（PP16×TP8）</h3>
+          <div style="display:flex;gap:6px;margin-bottom:8px">
+            <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
+            <button id="btnClearSel">清除选择</button>
+          </div>
+          <canvas id="mmcv" width="404" height="400"></canvas>
+          <div id="mmdesc">点<b>行</b>→ 3D 亮起承载该层的卡；点<b>格</b>→ 反查该卡装载的片段与显存构成。</div>
+          <div id="memPanel"></div>
+        </div>
+        <!-- 子页 B：整网图（逻辑计算图）——点算子 → 右侧立方按其切分维重排 -->
+        <div id="netWrap" style="display:none">
+          <h3><b>整网图</b> · openPangu-2.0-Flash <span style="color:var(--dim);font-weight:400">· 逻辑算子 → 物理切分</span></h3>
+          <div id="netHint">点<b>算子</b>→ 右侧立方按它的切分维重排（专家=EP · 注意力/FFN=TP · 逐层=PP · 权重=DP）。<span id="netSelLab"></span></div>
+          <div id="netLegend">
+            <span class="ndot"><svg width="20" height="8"><line x1="1" y1="4" x2="15" y2="4" stroke="#22d3ee" stroke-width="2"/><path d="M15 4 L11 1.5 L11 6.5 Z" fill="#22d3ee"/></svg>前向 · 激活下行</span>
+            <span class="ndot"><svg width="20" height="8"><line x1="19" y1="4" x2="5" y2="4" stroke="#6b8bff" stroke-width="2"/><path d="M5 4 L9 1.5 L9 6.5 Z" fill="#6b8bff"/></svg>反向 · 梯度上行</span>
+          </div>
+          <div id="netStage"></div>
+        </div>
       </div>
     </div>
     <div id="right">
@@ -2282,6 +2325,73 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   cubePrev = cubeMode; cubeMode = k; cubeBlend = 0;
   [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
   renderCubeAxes(); renderViewlab(); }; });
+
+/* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
+   直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
+   前向/反向用箭头方向 + 颜色区分；点算子 → 立方切「逻辑魔方」并按 EP/TP/PP/DP 重排。 */
+(function(){
+  const G = window.OPENPANGU_GRAPH, MGV = window.PtoModelGraphvizPattern;
+  if(!G || !MGV){ return; }
+  function deriveDim(n){ const id=n.id;
+    if(/^moe_all_to_all/.test(id)) return 'ep';
+    if(/^attention_(all_gather|reduce_scatter)/.test(id)) return 'tp';
+    if(/^ffn_(all_gather|reduce_scatter)/.test(id)) return 'tp';
+    if(id==='expert_parallel_state'||id==='expert_bank_weights') return 'ep';
+    if(n.colorKey==='io:parameter') return 'dp';
+    if(n.parent==='attention-block') return 'tp';
+    if(n.parent==='moe-block') return 'ep';
+    if(n.parent==='ffn-block') return 'tp';
+    if(n.parent==='decoder-stack') return 'pp';
+    return 'pp'; }
+  const NODE_DIM={}; (G.nodes||[]).forEach(n=>{ NODE_DIM[n.id]=deriveDim(n); });
+  const DIM_CUBEMODE={dp:1,ep:2,tp:3,pp:4};        // → cm1 DP平铺 / cm2 EP聚簇 / cm3 TP切片 / cm4 PP流水
+  const DIM_LABEL={tp:'TP 张量切片',pp:'PP 流水级',dp:'DP 数据副本',ep:'EP 专家组'};
+  const FWD='#22d3ee', BWD='#6b8bff', NS='http://www.w3.org/2000/svg';
+  let ctrl=null, dir='both', mk=null, rendered=false, lastTheme=null;
+  const themeNow=()=> document.documentElement.getAttribute('data-theme')==='dark' ? 'dark' : 'light';
+
+  function mkMarker(id,orient,fill){ const m=document.createElementNS(NS,'marker');
+    m.setAttribute('id',id); m.setAttribute('viewBox','0 0 10 10'); m.setAttribute('refX','8.5'); m.setAttribute('refY','5');
+    m.setAttribute('markerWidth','7'); m.setAttribute('markerHeight','7'); m.setAttribute('orient',orient);
+    const p=document.createElementNS(NS,'path'); p.setAttribute('d','M 0 0 L 10 5 L 0 10 z'); p.setAttribute('fill',fill); m.appendChild(p); return m; }
+  function ensureMarkers(svg){ let defs=svg.querySelector('defs'); if(!defs){ defs=document.createElementNS(NS,'defs'); svg.insertBefore(defs,svg.firstChild); }
+    defs.appendChild(mkMarker('wng-fwd','auto',FWD)); defs.appendChild(mkMarker('wng-bwd','auto-start-reverse',BWD)); return {fwd:'wng-fwd',bwd:'wng-bwd'}; }
+  function applyDir(svg,d,ids){ svg.querySelectorAll('path.pto-model-graphviz-edge').forEach(el=>{
+    if(d==='fwd'){ el.style.markerEnd='url(#'+ids.fwd+')'; el.style.markerStart='none'; el.style.stroke=FWD; el.style.strokeOpacity='0.85'; }
+    else if(d==='bwd'){ el.style.markerEnd='none'; el.style.markerStart='url(#'+ids.bwd+')'; el.style.stroke=BWD; el.style.strokeOpacity='0.85'; }
+    else { el.style.markerEnd='url(#'+ids.fwd+')'; el.style.markerStart='url(#'+ids.bwd+')'; el.style.stroke=''; el.style.strokeOpacity=''; } }); }
+
+  function renderGraph(){ const stage=$('#netStage'); if(!stage) return;
+    stage.innerHTML=''; lastTheme=themeNow();
+    ctrl = MGV.renderController(stage, G, { theme:lastTheme, reportOverlays:false, evidence:false,
+      onSelect:function(info){ const id=info&&info.nodeId; if(id) onPickNode(id); } });
+    if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.height='auto'; ctrl.svg.style.display='block';
+      ctrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon').forEach(el=>{ el.style.display='none'; });
+      mk=ensureMarkers(ctrl.svg); applyDir(ctrl.svg, dir, mk); }
+    rendered=true; }
+
+  function onPickNode(id){ const dim=NODE_DIM[id];
+    $('#netSelLab').textContent = dim ? ('　选中 '+id+' → '+DIM_LABEL[dim]) : ('　选中 '+id);
+    if(!dim) return;
+    formTarget='cube'; formBtns();                 // 右侧立方切到「逻辑魔方」
+    const k=DIM_CUBEMODE[dim];
+    if(k!=null && cubeMode!==k){ cubePrev=cubeMode; cubeMode=k; cubeBlend=0;
+      [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k)); renderCubeAxes(); renderViewlab(); } }
+
+  function showSub(net){ $('#subMx').classList.toggle('on', !net); $('#subNet').classList.toggle('on', net);
+    $('#mmWrap').style.display = net?'none':'block'; $('#netWrap').style.display = net?'block':'none';
+    $('#netDirWrap').classList.toggle('show', net);
+    if(net && (!rendered || lastTheme!==themeNow())) renderGraph(); }
+  $('#subMx').onclick=()=>showSub(false); $('#subNet').onclick=()=>showSub(true);
+
+  function setDir(d){ dir=d; $('#ndFwd').classList.toggle('on',d==='fwd'); $('#ndBwd').classList.toggle('on',d==='bwd'); $('#ndBoth').classList.toggle('on',d==='both'); if(ctrl&&ctrl.svg&&mk) applyDir(ctrl.svg,dir,mk); }
+  $('#ndFwd').onclick=()=>setDir('fwd'); $('#ndBwd').onclick=()=>setDir('bwd'); $('#ndBoth').onclick=()=>setDir('both');
+
+  // 主题切换 → 若整网图正显示则按新主题重渲染（节点色在渲染时烘焙）
+  new MutationObserver(()=>{ if(rendered && lastTheme!==themeNow() && $('#netWrap').style.display!=='none') renderGraph(); })
+    .observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+})();
+
 $('#btnAnom').onclick = ()=>{ S.anomaly=!S.anomaly;
   $('#btnAnom').classList.toggle('on', S.anomaly);
   $('#alertbar').classList.toggle('show', S.anomaly);
