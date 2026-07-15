@@ -560,7 +560,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
   <div id="drawer">
     <div class="drhead">
       <span class="drtitle">模式 B · 离线深潜 · Triggered Dump（Step 1284-1288）</span>
-      <button id="drTabLane" class="on">泳道 Trace 回放</button>
+      <button id="drTabLane" class="on">Timeline</button>
       <button id="drTabBw">busbw 基线</button>
       <button id="drTabMx">通信矩阵</button>
       <button id="drTabHud">实时带宽</button>
@@ -568,7 +568,6 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <button id="laneTopk" class="on">传统 Top-K</button>
         <button id="laneMoge">MoGE 均衡</button>
       </span>
-      <span id="laneCtx" style="font-size:11px;color:var(--dim);margin-left:10px"></span>
       <span style="flex:1 1 auto"></span>
       <button id="drClose">✕ 关闭</button>
     </div>
@@ -2661,11 +2660,6 @@ function syncDrawer(){
   $('#cvBw').style.display = drawerTab==='bw'?'block':'none';
   $('#cvMx').style.display = drawerTab==='mx'?'block':'none';
   $('#cvHud').style.display = drawerTab==='hud'?'block':'none';
-  $('#laneCtx').textContent = drawerTab==='lane'
-    ? 'node2 · Rank 16-23 · EP Rank 23（GPU 7）all-to-all 超时 → 死锁泳道'
-    : drawerTab==='mx' ? '对象：EP 64 专家 ÷ 8 组（MoGE）· 行=源组 列=目的组 · 随异常联动'
-    : drawerTab==='hud' ? 'step 时间分解 · Hover 行 ⇄ 3D 连线联动 · 随阶段/异常更新'
-    : '对象：本集群 UB 平面 · 随异常注入联动';
   if(drawerTab==='lane') renderLane();
   else if(drawerTab==='mx') renderMx();
   else if(drawerTab==='hud') renderHUD();
