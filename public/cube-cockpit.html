@@ -1362,13 +1362,17 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
 scene.add(memMesh);
 // 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
-  const SS = 4, fontPx = 44, padX = 16, padY = 12;   // 超采样 4×
+  const SS = 4, fontPx = 44, padX = 20, padY = 10;   // 超采样 4×
   const meas = document.createElement('canvas').getContext('2d');
   meas.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
   const tw = Math.ceil(meas.measureText(text).width) + padX * 2;
   const th = fontPx + padY * 2;
   const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
   const c = cv.getContext('2d'); c.scale(SS, SS);
+  // 半透明深色胶囊底色，保证亮/暗主题下都清晰
+  c.fillStyle = 'rgba(8,12,24,0.55)';
+  const r = th * 0.38;
+  c.beginPath(); c.roundRect(0, 0, tw, th, r); c.fill();
   c.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
   c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(text, tw / 2, th / 2);
@@ -1461,13 +1465,13 @@ const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
   axis(V3(ox,oy,oz), V3(ox+9.2*CUBE.sx,oy,oz), 0x39c5cf);
   axis(V3(ox,oy,oz), V3(ox,oy+17.2*CUBE.sy,oz), 0xFFAA3B);
   axis(V3(ox,oy,oz), V3(ox,oy,oz+66*CUBE.sz), 0x4369EF);
-  const lx=makeLabel('X = TP×8','#39c5cf',9); lx.position.set(ox+10.5*CUBE.sx,oy,oz); cubeGroup.add(lx);
-  const ly=makeLabel('Y = PP×16 = 模型深度','#FFAA3B',14); ly.position.set(ox,oy+18.6*CUBE.sy,oz); cubeGroup.add(ly);
+  const lx=makeLabel('X = TP×8','#7ee8f4',9); lx.position.set(ox+10.5*CUBE.sx,oy,oz); cubeGroup.add(lx);
+  const ly=makeLabel('Y = PP×16 = 模型深度','#ffe0a0',14); ly.position.set(ox,oy+18.6*CUBE.sy,oz); cubeGroup.add(ly);
   const lz=makeLabel('Z = DP×64','#4369EF',9); lz.position.set(ox,oy,oz+69*CUBE.sz); cubeGroup.add(lz); }
 // 层段标尺：每个 PP 段挂 "S0·L1-4"
 const rulerSprites = [];
 for(let s2=0;s2<16;s2++){
-  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#FFAA3B', 7.5);
+  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#ffe0a0', 7.5);
   sp.position.set(CUBE.cx+5.4*CUBE.sx, CUBE.cy+(7.5-s2)*CUBE.sy, CUBE.cz-35*CUBE.sz);
   rulerSprites.push(sp); cubeGroup.add(sp);
 }
@@ -1513,7 +1517,7 @@ function axLine(a,b,color){ const g=new THREE.BufferGeometry().setFromPoints([a,
   cubeAxes.add(new THREE.Line(g, new THREE.LineBasicMaterial({color,transparent:true,opacity:.55}))); }
 function renderCubeAxes(){
   while(cubeAxes.children.length){ const o=cubeAxes.children.pop(); if(o.material)o.material.dispose(); if(o.geometry)o.geometry.dispose(); }
-  const TPc='#39c5cf', PPc='#FFAA3B', DPc='#4369EF', EPc='#9B3CF6';
+  const TPc='#7ee8f4', PPc='#ffe0a0', DPc='#8aa6ff', EPc='#c97fff';
   if(cubeMode===0){                 // 标准立方：X=TP · Y=PP(模型深度) · Z=DP
     axLine(V3(-6.5,17,0),V3(7,17,0),0x39c5cf);  axLabel('TP × 8',TPc,4.6,V3(9.6,17,0));
     axLine(V3(0,8,0),V3(0,26.5,0),0xFFAA3B);    axLabel('PP × 16 · 模型深度',PPc,8,V3(0,28.8,0));
