@@ -4,6 +4,7 @@ declare module '*workbench-shell/pattern.js';
 declare module '*aic-core-object/pattern.js';
 declare module '*aiv-core-object/pattern.js';
 declare module '*memory-architecture/pattern.js';
+declare module '*model-graphviz/pattern.js';
 
 type PtoWorkbenchSplitDirection = 'horizontal' | 'vertical';
 
@@ -58,4 +59,22 @@ interface Window {
     clearBufferBlocks?(root: Element): void;
     createZoomController?(options: any): { render?(): void; getZoom?(): number; getPan?(): { x: number; y: number }; setZoom?(z: number): void; setPan?(x: number, y: number): void; center?(): void; zoomAtPoint?(z: number, x: number, y: number): void; reset?(): void; destroy?(): void } | null;
   };
+  /** pto-design-system patterns/model-graphviz（vendored，全局注册）
+   *  整网图：Model → DecoderLayer → Attention/MoE → QKV/Expert → Operator 分层计算图渲染引擎。 */
+  PtoModelGraphvizPattern?: {
+    render(container: Element | string, graph: unknown, options?: Record<string, unknown>): (SVGSVGElement & { ptoModelGraphvizController?: ModelGraphvizController }) | null;
+    renderController(container: Element | string, graph: unknown, options?: Record<string, unknown>): ModelGraphvizController | null;
+  };
+}
+
+interface ModelGraphvizController {
+  svg: SVGSVGElement;
+  graph: unknown;
+  selectNode(nodeId: string | null, options?: { source?: string; relatedNodeIds?: string[] | null }): void;
+  clearSelection(): void;
+  setFocus(focus: string | { nodeId?: string; id?: string; relatedNodeIds?: string[]; source?: string } | null): void;
+  fit(): void;
+  setTransform(transform: unknown): void;
+  getTransform(): unknown;
+  destroy(): void;
 }
