@@ -663,7 +663,7 @@ function baseHostColor(h){
   if(S.anomaly && isAnomHost[h] && (L==='EP'||L==='NONE')) return COL.RED;
   if(L==='NONE'){ const v = health[h];
     if(v>.95) return COL.RED;
-    return v<.4 ? '#00d4a8' : v<.7 ? '#ffd23f' : '#ff5fa0'; }
+    return v<.4 ? '#04D793' : v<.7 ? '#fbbf24' : '#FF4B7B'; }
   if(L==='TP') return D ? '#1b7c86' : '#2ba0b3';
   if(L==='SP') return D ? '#1e7a5a' : '#22a578';
   if(L==='CP') return D ? '#233043' : '#93a0b4';
@@ -673,7 +673,7 @@ function baseHostColor(h){
     if(D) return j===0 ? `hsl(212,68%,${26+v*14|0}%)` : `hsl(174,60%,${22+v*12|0}%)`;
     return j===0 ? `hsl(212,64%,${(60-v*14)|0}%)` : `hsl(174,54%,${(54-v*12)|0}%)`; }
   if(L==='PP'){ const p = ppOf(h);
-    return `hsl(${30+p*11},92%,${58-(p%3)*4}%)`; }
+    return D ? `hsl(${30+p*11},72%,${38+(p%4)*6}%)` : `hsl(${30+p*11},78%,${55-(p%4)*3}%)`; }
   if(L==='DP'){ const d = dpOf(h);
     return D ? `hsl(${205+(d%8)*6},68%,${30+((d/8)|0)*4}%)` : `hsl(${205+(d%8)*6},66%,${(60-((d/8)|0)*3)|0}%)`; }
   if(L==='EP'){ if(!isExpertHost[h]) return themeC('#21262d','#c4cdd8');
@@ -1243,8 +1243,8 @@ renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f4ff, 1.35); scene.add(hemiLight);
-const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(120,300,180); scene.add(dl);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f4ff, 1.05); scene.add(hemiLight);
+const dl = new THREE.DirectionalLight(0xffffff, 0.70); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
