@@ -985,7 +985,7 @@ function drawArcs(){
   const flt = filterInfo();
   if(flt){                                   // ==== Smartscape 下钻模式 ====
     const hp = anchorL3(S.filterHost);
-    dot(hp,'#fff'); lab(hp.x, hp.y-8, '#fff', `Host ${S.filterHost}`);
+    dot(hp,themeC('#fff','#333')); lab(hp.x, hp.y-8, themeC('#fff','#333'), `Host ${S.filterHost}`);
     for(let s=0;s<8;s++){ const p=anchorL2(S.filterHost*8+s);   // ① 纵向下钻：Host → 8 芯片
       out.push(`<path d="${arcPath(hp,p,-10)}" stroke="#4369EF" stroke-width="1" fill="none" opacity=".7"/>`);
       dot(p,'#4369EF'); }
@@ -1016,14 +1016,14 @@ function drawArcs(){
     for(let s=0;s<7;s++) arc(chips[s],chips[s+1], 9, COL.TP, 1.6, s===6?'TP':null);
     arc(chips[7],chips[0], -13, COL.TP, 1.6, 'TP');          // 环收口
     chips.forEach(p=>dot(p,COL.TP));
-    dot(hp,'#fff'); lab(hp.x, hp.y-8, '#fff', `Host ${fh}`, 'middle');
+    dot(hp,themeC('#fff','#333')); lab(hp.x, hp.y-8, themeC('#fff','#333'), `Host ${fh}`, 'middle');
     const gEl = document.querySelector('.gap[data-gap="L3L2"]'), gL = left.getBoundingClientRect(), gR = gEl.getBoundingClientRect();
     lab(12, gR.top-gL.top+left.scrollTop+gR.height/2+3, COL.TP, `Host ${fh} → 自身 8×NPU 环状 AllReduce（下方高亮）`, 'start');
   }
   if(ph==='PP'){
     const pts = ps.hosts.map(anchorL3);
     for(let k=0;k<15;k++) arc(pts[k],pts[k+1], 8+(k%2)*4, COL.PP, 1.7, 'PP');
-    dot(pts[0],'#fff'); dot(pts[15],'#fff');
+    dot(pts[0],themeC('#fff','#333')); dot(pts[15],themeC('#fff','#333'));
     lab(pts[0].x, pts[0].y-9, COL.PP, 'S0', 'middle');
     lab(pts[15].x, pts[15].y-9, COL.PP, 'S15', 'middle');
     lab((pts[0].x+pts[15].x)/2, pts[0].y-20, COL.PP, `DP 副本 ${dpOf(S.focusHost)} · 16 段流水线接力 →`);
