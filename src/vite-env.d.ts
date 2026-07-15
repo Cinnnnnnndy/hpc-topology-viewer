@@ -90,6 +90,7 @@ interface Window {
   PtoModelGraphvizPattern?: {
     render(container: Element | string, graph: unknown, options?: Record<string, unknown>): (SVGSVGElement & { ptoModelGraphvizController?: ModelGraphvizController }) | null;
     renderController(container: Element | string, graph: unknown, options?: Record<string, unknown>): ModelGraphvizController | null;
+    modelArchitectureColormap?(graph: unknown, options?: Record<string, unknown>): unknown;
   };
 }
 

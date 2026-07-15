@@ -52,8 +52,13 @@ export function WholeNetGraph({ dark, direction, highlightDim = null, selectedNo
     const helper = window.PtoModelGraphvizPattern;
     const stage = stageRef.current;
     if (!helper || !stage) return;
+    // 浅色主题：套参考页同一套 modelArchitecture 柔和调色板（否则默认高饱和色偏"深"）
+    const colormap = !dark && helper.modelArchitectureColormap
+      ? helper.modelArchitectureColormap(OPENPANGU_GRAPH, { theme: 'light', lightHsl: { hue: 2, saturation: 79, lightness: 76 } })
+      : undefined;
     const ctrl = helper.renderController(stage, OPENPANGU_GRAPH, {
       theme: dark ? 'dark' : 'light',
+      colormap,
       reportOverlays: false,   // 无 reportPriority → 关掉右侧优先级药丸（否则边缘残留小点）
       evidence: false,
       onSelect: (info: { nodeId?: string | null } | null) => {

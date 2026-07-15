@@ -300,6 +300,16 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #netLegend .ndot{display:inline-flex;align-items:center;gap:5px}
 #netStage{height:66vh;overflow:auto;border:1px solid var(--sys-border);border-radius:var(--radius-md);background:var(--panel)}
 #netStage svg{width:100%;height:auto;display:block}
+/* 浅色：对齐参考页 —— 柔和边框 + 深灰标签（配合 modelArchitecture 浅色调色板，不再偏深/刺眼） */
+:root[data-theme='light'] #netStage .pto-model-graphviz-node rect{fill-opacity:1;stroke:rgba(63,76,99,.24);stroke-width:.9px}
+/* io/权重(tensor)节点：属性里的 var(--tensor-fill) 不解析会退回黑；参考页那套 var 又只在 .pattern-page 作用域下，
+   这里直接给浅灰（对齐参考页 #D1D1D1），标签用深灰保证可读 */
+:root[data-theme='light'] #netStage .pto-model-graphviz-node.is-tensor rect{fill:#D1D1D1;stroke:#B8B8B8}
+:root[data-theme='light'] #netStage .pto-model-graphviz-node.is-tensor .pto-model-graphviz-node-label{fill:#1f2937}
+:root[data-theme='light'] #netStage .pto-model-graphviz-node-label{fill:#1f2937;font-weight:650}
+:root[data-theme='light'] #netStage .pto-model-graphviz-node-type{fill:rgba(69,82,104,.74);font-weight:500}
+:root[data-theme='light'] #netStage .pto-model-graphviz-edge{stroke:rgba(37,47,63,.56)}
+:root[data-theme='light'] #netStage .pto-model-graphviz-cluster-label{fill:rgba(69,82,104,.72)}
 /* ---- 右：3D ---- */
 #right{flex:1;position:relative;min-width:0;background:var(--sys-stage-bg)}
 #stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
@@ -2389,9 +2399,13 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
       el.style.opacity=(hi.match(s)&&hi.match(t))?'0.95':'0.09'; }); }
   function setHi(hi){ curHi=hi; if(ctrl&&ctrl.svg) applyHi(ctrl.svg, hi); }
 
+  const LIGHT_HSL={ hue:2, saturation:79, lightness:76 };   // 参考页浅色默认（柔和不刺眼）
   function renderGraph(){ const stage=$('#netStage'); if(!stage) return;
     stage.innerHTML=''; lastTheme=themeNow();
-    ctrl = MGV.renderController(stage, G, { theme:lastTheme, reportOverlays:false, evidence:false,
+    // 浅色主题：套参考页同一套 modelArchitecture 柔和调色板（否则用的是默认高饱和色，偏"深"）
+    const colormap = lastTheme==='light' && MGV.modelArchitectureColormap
+      ? MGV.modelArchitectureColormap(G, { theme:'light', lightHsl:LIGHT_HSL }) : undefined;
+    ctrl = MGV.renderController(stage, G, { theme:lastTheme, colormap, reportOverlays:false, evidence:false,
       onSelect:function(info){ const id=info&&info.nodeId; if(id) onPickNode(id); } });
     if(ctrl && ctrl.svg){ ctrl.svg.style.width='100%'; ctrl.svg.style.height='auto'; ctrl.svg.style.display='block';
       ctrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon').forEach(el=>{ el.style.display='none'; });
