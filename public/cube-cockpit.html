@@ -69,7 +69,7 @@
   --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12); --shadow-lg:0 12px 30px rgba(0,0,0,.16);
   --shadow-card:0 1px 2px rgba(0,0,0,.06),0 2px 6px rgba(0,0,0,.06);
   --overlay-surface:rgba(255,255,255,.94);
-  --stage-bg:radial-gradient(ellipse at 50% 26%,#ffffff 0%,#eef1f5 82%);
+  --stage-bg:#f5f5f5;
 }
 /* ② Semantic — DARK override (single block: ramp + surfaces + elevation) */
 :root[data-theme="dark"]{
@@ -86,7 +86,7 @@
   --shadow-sm:0 1px 3px rgba(0,0,0,.28); --shadow-md:0 6px 18px rgba(0,0,0,.34); --shadow-lg:0 12px 30px rgba(0,0,0,.42);
   --shadow-card:var(--shadow-sm);
   --overlay-surface:rgba(20,20,20,.90);
-  --stage-bg:radial-gradient(ellipse at 50% 30%,#0f1626 0%,#010409 75%);
+  --stage-bg:#101010;
 }
 /* ③ Data-viz encoding — theme-invariant, viz-exempt */
 :root{
@@ -654,7 +654,7 @@ function baseHostColor(h){
   if(L==='NONE'){ const v = health[h];
     // 分级着色（参考控制台状态色，不用无极渐变）：空闲 <40% / 中 40-70% / 繁忙 >70% · 异常 >95%
     if(v>.95) return COL.RED;
-    return v<.4 ? '#04D793' : v<.7 ? '#FFAA3B' : '#FF4B7B'; }
+    return v<.4 ? '#04D793' : v<.7 ? '#fbbf24' : '#FF4B7B'; }
   if(L==='TP') return D ? '#1b7c86' : '#2ba0b3';
   if(L==='SP') return D ? '#1e7a5a' : '#22a578';
   if(L==='CP') return D ? '#233043' : '#93a0b4';
@@ -1333,7 +1333,7 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
   dummy.position.set(vA.x-.62, vA.y-.08+bh/2, vA.z);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,bh,1); dummy.updateMatrix();
   memMesh.setMatrixAt(h,dummy.matrix);
-  memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xFF4B7B: memLevel[h]>.75?0xFFAA3B:0x39c5cf)); }
+  memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xFF4B7B: memLevel[h]>.75?0xFBBF24:0x39c5cf)); }
 scene.add(memMesh);
 // 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
@@ -1369,20 +1369,18 @@ function chipStack(c,out){ const h=c>>3, s=c&7;
 var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
 {
   const plat = (lv,y,sx,sz,label)=>{
-    const g = new THREE.BoxGeometry(sx,.06,sz);
-    const ed = mergedEdges(g,[{x:0,y:y-.24,z:0}],0x30363d,.7); stackGroup.add(ed);   // 去掉每层下面的灰色底板，仅留层轮廓
-    const lb = makeLabel(label,'#ffffff',Math.max(6,sx*.55));
+    const lb = makeLabel(label,'#ffffff',5);
     lb.material.color.set(0x8b949e);
-    lb.position.set(-sx/2-Math.max(3,sx*.3), y+.6, 0); stackGroup.add(lb);
-    stackPlats[lv] = { edges:ed, label:lb }; };
-  plat('L7',STACK.L7, 5,5,'L7 · Global · N 集群');
-  plat('L6',STACK.L6, 15,15,'L6 · Cluster 集群 · 8192 NPU（万卡）');
-  plat('L5',STACK.L5, 22,4,'L5 · Service Pool · 4 Pod');
-  plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod · UBL128 · 128 NPU · ×64');
-  plat('L3',STACK.L3, 19.5,19.5,'L3 · Host ×1024 · 8 NPU');
-  plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip ×8192');
-  plat('L1',STACK.L1, 7,3,'L1 · Die 占位');
-  plat('L0',STACK.L0, 9.5,3,'L0 · Core 占位');
+    lb.position.set(-14, y+.6, 0); stackGroup.add(lb);
+    stackPlats[lv] = { label:lb }; };
+  plat('L7',STACK.L7, 5,5,'L7 · Global');
+  plat('L6',STACK.L6, 15,15,'L6 · Cluster');
+  plat('L5',STACK.L5, 22,4,'L5 · Service Pool');
+  plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod');
+  plat('L3',STACK.L3, 19.5,19.5,'L3 · Host');
+  plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip');
+  plat('L1',STACK.L1, 7,3,'L1 · Die');
+  plat('L0',STACK.L0, 9.5,3,'L0 · Core');
   stackG7 = new THREE.Mesh(new THREE.BoxGeometry(2.2,.3,2.2),
     reg(new THREE.MeshLambertMaterial({color:0x21262d}),.95));
   stackG7.position.y = STACK.L7; stackGroup.add(stackG7);
@@ -1412,7 +1410,6 @@ var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
     dummy.updateMatrix(); icm.setMatrixAt(i,dummy.matrix); }
   stackGroup.add(icm);
   const wf=(x,z,sx,sz,color,y)=>stackGroup.add(mergedEdges(new THREE.BoxGeometry(sx,.5,sz),[{x,y,z}],color,.8));
-  wf(-1.6,0,2.6,1.6,0x8b949e,STACK.L1); wf(1.6,0,2.6,1.6,0x8b949e,STACK.L1);
   wf(-2.9,0,2.2,1.6,0x9B3CF6,STACK.L0); wf(0,0,2.2,1.6,0xFF4B7B,STACK.L0); wf(2.9,0,2.2,1.6,0xFFAA3B,STACK.L0);
   const pg = new THREE.BufferGeometry().setFromPoints([...Array(8)].map(()=>new THREE.Vector3()));
   stackPath = new THREE.Line(pg, reg(new THREE.LineBasicMaterial({color:0x4369EF}),.85));
@@ -1425,7 +1422,6 @@ function colorStack(dark){
   const paint=(m,n)=>{ if(!m) return; for(let i=0;i<n;i++) m.setColorAt(i, cTmp.set(i===0?0x1f6feb:base)); if(m.instanceColor) m.instanceColor.needsUpdate=true; };
   paint(stackT6,64); paint(stackL5,8);
   if(stackL4){ for(let i=0;i<128;i++) stackL4.setColorAt(i, cTmp.set(base)); if(stackL4.instanceColor) stackL4.instanceColor.needsUpdate=true; }
-  Object.values(stackPlats).forEach(pl=>{ if(pl && pl.edges) pl.edges.material.color.set(dark?0x30363d:0xccd5e0); });
 }
 colorStack(isDark());
 /* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
@@ -1546,8 +1542,8 @@ function buildComm(){
    原则（源自浅色 2D 版）：① 统一状态色 绿<40% 黄40-70% 红>70%；
    ② 连线按选区层级聚合（L5 以上 → Pod↔Pod 粗流）；③ 宽度=占用量；
    ④ 方向粒子=流向；⑤ 每束流挂语义标签（算子/介质/量），软硬同框 */
-const stateHex = v => v>.7? 0xFF4B7B : v>.4? 0xFFAA3B : 0x04D793;
-const stateCss = v => v>.7? '#FF4B7B' : v>.4? '#FFAA3B' : '#04D793';
+const stateHex = v => v>.7? 0xFF4B7B : v>.4? 0xFBBF24 : 0x04D793;
+const stateCss = v => v>.7? '#FF4B7B' : v>.4? '#fbbf24' : '#04D793';
 /* 层级自适应：下钻越深，管径/粒子/标签越小（避免 L2 时连线盖住芯片） */
 function lvlScale(){ return ({L4:1, L3:.4, L2:.12, L1:.07, L0:.06})[S.level] || 1; }
 function flowTube(pts, color, load, base, medium){       // 粗管：半径=负载×层级比例
@@ -1903,7 +1899,7 @@ function buildLinkLines(){
     for(let col=0;col<16;col++){ const cab=row*16+col;
       if(band!=='cab' && cab!==fc) continue;
       const x=(col-7.5)*1.8, st=cab===41?2:(cab%13===0?1:0);
-      const c2=st===2?0xFF4B7B:st===1?0xFFAA3B:0x2ea043;
+      const c2=st===2?0xFF4B7B:st===1?0xFBBF24:0x2ea043;
       if(st===2){ flowTube([V3(x,3.55,z),V3(x,3.25,z)],c2,.5,.95,'UB'); dotAt(V3(x,3.1,z),c2,.4);
         wireLab(`柜${cab} 中断`,'#ffa198',10,V3(x,4.6,z)); }
       else flowTube([V3(x,3.55,z),V3(x,3.0,z)],c2,st===1?.4:.15,st===1?.85:.35,'UB');
@@ -2452,15 +2448,15 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
   const lab=(t)=>`<b style="font-weight:600;color:var(--sys-text-bright)">${t}</b>`;
   // ① 着色图例（随 S.lens）—— 左 2D 卡片与右 3D 方块用的是同一个 hostColor/chipColor
   let colr='';
-  if(L==='NONE') colr = chip('#04D793','空闲<40%')+chip('#FFAA3B','中40-70%')+chip('#FF4B7B','繁忙>70%');
+  if(L==='NONE') colr = chip('#04D793','空闲<40%')+chip('#fbbf24','中40-70%')+chip('#FF4B7B','繁忙>70%');
   else if(['TP','PP','DP','EP'].includes(L)) colr = chip({TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'}[L], L+' · 同组同色');
   else if(L==='SP') colr = chip('#2ea27a','SP 序列 · 同组同色');
   else if(L==='CP') colr = chip('#c586d6','CP 上下文 · 同组同色');
   else if(L==='JOB') colr = chip('#4369EF','训练')+chip('#39c5cf','推理')+chip('#8b949e','空闲');
   // ② 连线图例（随 S.wire）
   let line='';
-  if(w==='FLOW') line=chip('#04D793','空闲')+chip('#FFAA3B','中')+chip('#FF4B7B','繁忙')+'<span>宽=占用</span>';
-  else if(w==='LINK') line=chip('#04D793','正常')+chip('#FFAA3B','降级')+chip('#FF4B7B','中断');
+  if(w==='FLOW') line=chip('#04D793','空闲')+chip('#fbbf24','中')+chip('#FF4B7B','繁忙')+'<span>宽=占用</span>';
+  else if(w==='LINK') line=chip('#04D793','正常')+chip('#fbbf24','降级')+chip('#FF4B7B','中断');
   else if(w==='PATH') line=chip('#FF4B7B','跨轨 3-hop')+chip('#04D793','PXN 1-hop');
   else line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
     +'<span>'+(w==='COMM'?'轮廓=通信域':'流带=当前算子')+'</span>';
@@ -2766,8 +2762,7 @@ function applyTheme(dark){
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
   $('#btnTheme').textContent = dark ? '暗' : '明';
   COL.DIM = dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.22)';
-  // 浅色对齐工作台白场：雾用近白 #eef1f5 而非发蓝的 #d9e1ec，远端拉远减少灰霾
-  scene.fog.color.set(dark ? 0x010409 : 0xeef1f5);
+  scene.fog.color.set(dark ? 0x101010 : 0xf5f5f5);
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   ambientLight.color.set(dark ? 0x93a4c0 : 0xf1f3f6);
