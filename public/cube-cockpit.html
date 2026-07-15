@@ -1217,13 +1217,13 @@ const renderer = new THREE.WebGLRenderer({canvas:stage, antialias:true, alpha:tr
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.92;
+renderer.toneMappingExposure = 1.1;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const ambientLight = new THREE.AmbientLight(0xf1f3f6, 1.6); scene.add(ambientLight);
-const dl = new THREE.DirectionalLight(0xffffff, 1.1); dl.position.set(120,300,180); scene.add(dl);
-const dl2 = new THREE.DirectionalLight(0xdbe0e8, .35); dl2.position.set(-100,80,-120); scene.add(dl2);
+const ambientLight = new THREE.AmbientLight(0xffffff, 1.05); scene.add(ambientLight);
+const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(120,300,180); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xe8f0ff, .75); dl2.position.set(-100,80,-120); scene.add(dl2);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -1285,12 +1285,9 @@ var poolLine, podBaseEdges;
   const g=new THREE.BufferGeometry().setFromPoints(pts);
   poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x4369EF}), .0));   // 默认隐藏，选 L5 时点亮
   physGroup.add(poolLine); }
-// 本 Pod 底座（L4 · 焦点展开 = 本集群细节）
-{ const base=new THREE.Mesh(new THREE.BoxGeometry(31,.24,22),
-    reg(new THREE.MeshLambertMaterial({color:0x0f2038}), .9));
-  base.position.y=-.12; physGroup.add(base);
-  podBaseEdges = mergedEdges(new THREE.BoxGeometry(31,.24,22),[{x:0,y:-.12,z:0}],0x1f6feb,.8);
-  physGroup.add(podBaseEdges); }
+// 本 Pod 底座已移除（用户要求去掉蓝色底板）
+{ podBaseEdges = mergedEdges(new THREE.BoxGeometry(31,.24,22),[{x:0,y:-.12,z:0}],0x1f6feb,.8);
+  podBaseEdges.visible = false; physGroup.add(podBaseEdges); }
 // 128 计算柜（16 列 × 8 排）
 const cabGeo = new THREE.BoxGeometry(1.32,3.5,1.06);
 const cabMat = reg(new THREE.MeshLambertMaterial({color:0x1a2029, depthWrite:false}), .45);
@@ -2767,10 +2764,10 @@ function applyTheme(dark){
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
-  ambientLight.color.set(dark ? 0x93a4c0 : 0xf1f3f6);
-  ambientLight.intensity = dark ? 1.35 : 1.6;
-  if(typeof dl2 !== 'undefined' && dl2) dl2.color.set(dark ? 0x5878ff : 0xdbe0e8);
-  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 1.0 : 1.1;
+  ambientLight.color.set(0xffffff);
+  ambientLight.intensity = dark ? 1.35 : 1.05;
+  if(typeof dl2 !== 'undefined' && dl2){ dl2.color.set(dark ? 0x7e93cf : 0xe8f0ff); dl2.intensity = dark ? 0.55 : 0.75; }
+  if(typeof dl !== 'undefined' && dl){ dl.intensity = dark ? 0.95 : 1.2; }
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
