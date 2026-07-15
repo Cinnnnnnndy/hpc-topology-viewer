@@ -14,6 +14,8 @@ import { TOK } from '../content';
 import { connDot2d, busWire2d } from './wire2d';
 import { drawCoreGroupMini, drawLevelContainer, drawInterconnectChip } from './arch-glyphs';
 import { SceneVisualProfileContext } from '../scene/visual-profile';
+import '../vendor/swimlane-task/pattern.css';
+import '../vendor/swimlane-task/pattern.js';
 
 // short plane tag per level (drawn in the narrow 层级图 axis gutter)
 const PLANE_TAG: Record<string, string> = { ub: 'UB·SU', rdma: 'RDMA·SO', vpc: 'DCN·南北向', multi: '多平面', none: '片上' };
@@ -1448,38 +1450,119 @@ export function PlaneView({ gen, dark, onSelect }: { gen: Gen; dark: boolean; on
   );
 }
 
-// ── L0 执行时序 swimlane — a compact, bottom-right drill-down that opens on selection.
-// Phase-driven like the 3-D full-pod 时序: a phase band (load→Forward→Backward→AllReduce→
-// optimizer) with a play head sweeping it, and a per-core swimlane that lights up by phase.
+// ── L0 执行时序 swimlane — canvas-based, powered by PtoSwimlaneTaskPattern.drawTaskBar.
+const SW_STATE_LABEL: Record<string, string> = { compute: '计算', mem: '访存', comm: '通信等待', load: '加载' };
+const LABEL_W = 72;
 function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playing, setPlaying, onClose }: {
   card: number; sub: string | null; isDefault: boolean; ink2: string; headRef: React.MutableRefObject<number>;
   mode: RunMode; setMode: (m: RunMode) => void; playing: boolean; setPlaying: (f: (v: boolean) => boolean) => void; onClose: () => void;
 }) {
-  const [, force] = useState(0);   // re-render each frame to follow the SHARED play head (headRef)
+  const [, force] = useState(0);
   const raf = useRef<number | null>(null);
   const sw = useMemo(() => runSwimlane(card, mode), [card, mode]);
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const tooltipRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!playing) return;
     const loop = () => { force((f) => f + 1); raf.current = requestAnimationFrame(loop); };
     raf.current = requestAnimationFrame(loop);
     return () => { if (raf.current) cancelAnimationFrame(raf.current); raf.current = null; };
   }, [playing]);
+
+  const drawLanes = useCallback(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    canvasRefs.current.forEach((canvas, ri) => {
+      if (!canvas) return;
+      const row = sw.rows[ri];
+      if (!row) return;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.offsetWidth;
+      const H = canvas.offsetHeight;
+      if (W === 0 || H === 0) return;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, W, H);
+      const slotW = W / SW_T;
+      let i = 0;
+      while (i < row.slots.length) {
+        const state = row.slots[i];
+        let j = i + 1;
+        while (j < row.slots.length && row.slots[j] === state) j++;
+        if (state !== 'bubble' && SW_COLOR[state]) {
+          helper.drawTaskBar(ctx, {
+            task: { label: SW_STATE_LABEL[state] || state, laneKind: row.name, totalCycle: j - i },
+            x: i * slotW, y: 1,
+            width: Math.max(0.5, (j - i) * slotW - 0.5),
+            height: H - 2,
+            baseColor: SW_COLOR[state],
+            radius: 2,
+          });
+        }
+        i = j;
+      }
+    });
+  }, [sw]);
+
+  useEffect(() => { drawLanes(); }, [drawLanes]);
+
+  useEffect(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    const tip = helper.createTooltip();
+    tooltipRef.current = tip;
+    const container = containerRef.current;
+    if (container) container.appendChild(tip);
+    const handlers: Array<{ canvas: HTMLCanvasElement; move: EventListener; leave: EventListener }> = [];
+    canvasRefs.current.forEach((canvas, ri) => {
+      if (!canvas) return;
+      const row = sw.rows[ri];
+      if (!row) return;
+      const move = (e: Event) => {
+        const me = e as MouseEvent;
+        const rect = canvas.getBoundingClientRect();
+        const x = me.clientX - rect.left;
+        const slotW = rect.width / SW_T;
+        const ti = Math.floor(x / slotW);
+        const state = row.slots[ti];
+        if (!state || state === 'bubble') { helper.hideTooltip(tip); return; }
+        let lo = ti; while (lo > 0 && row.slots[lo - 1] === state) lo--;
+        let hi = ti + 1; while (hi < row.slots.length && row.slots[hi] === state) hi++;
+        helper.showTooltip(tip, { label: SW_STATE_LABEL[state] || state, laneKind: row.name, totalCycle: hi - lo, status: state }, me, { bounds: container });
+      };
+      const leave = () => helper.hideTooltip(tip);
+      canvas.addEventListener('pointermove', move);
+      canvas.addEventListener('pointerleave', leave);
+      handlers.push({ canvas, move, leave });
+    });
+    return () => {
+      handlers.forEach(({ canvas, move, leave }) => {
+        canvas.removeEventListener('pointermove', move);
+        canvas.removeEventListener('pointerleave', leave);
+      });
+      tip.remove();
+      tooltipRef.current = null;
+    };
+  }, [sw]);
+
   const head = headRef.current;
   const cur = sw.seg.find((s) => head < s.t1) ?? sw.seg[sw.seg.length - 1];
+  const phH = 18;
 
-  const W = 372, padL = 80, phH = 18, laneH = 12;
-  const svgW = W - 22, span = svgW - padL, slotW = span / SW_T;
-  const lanesY = phH + 6, lanesH = sw.rows.length * laneH, svgH = lanesY + lanesH + 12;
-  const headX = padL + head * span;
   return (
-    <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: W, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
-      {/* header: title + device + close */}
+    <div ref={containerRef} style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', width: 372, maxWidth: 'calc(100vw - 24px)', padding: '9px 11px', fontSize: 11, background: 'var(--panel)', border: `1px solid ${ENTITY_COLORS.cube}`, borderRadius: 12, boxShadow: 'var(--shadow)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 20 }}>
+      {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
         <span style={{ fontWeight: 700, color: 'var(--tx)' }}>L0 Core-Group 执行时序（L0 内部）</span>
         <span style={{ color: 'var(--tx3)', fontSize: 10.5 }}>{`device #${card}`}{sub ? ` · ${sub}` : isDefault ? '（默认示例·点卡切换）' : ` · rank ${card}`}</span>
         <button onClick={onClose} title="关闭" style={{ marginLeft: 'auto', ...SECONDARY, borderRadius: 7, cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: '2px 7px' }}>✕</button>
       </div>
-      {/* transport: play / pause + train / infer toggle */}
+      {/* transport */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <button onClick={() => setPlaying((v) => !v)} title="播放 / 暂停 时序" style={{ padding: '3px 10px', fontSize: 11, borderRadius: 7, cursor: 'pointer', ...toggleBtn(playing, ENTITY_COLORS.cube) }}>{playing ? '暂停' : '▶ 播放'}</button>
         {(['train', 'infer'] as RunMode[]).map((m) => {
@@ -1492,31 +1575,37 @@ function RunSwimlane({ card, sub, isDefault, ink2, headRef, mode, setMode, playi
           <span style={{ color: 'var(--tx3)' }}>气泡 {sw.bub}%</span>
         </span>
       </div>
-      <svg width={svgW} height={svgH} style={{ display: 'block' }}>
-        {/* phase band: segments coloured by run phase, active one brighter */}
-        {sw.seg.map((s, i) => {
-          const x = padL + s.t0 * span, w = (s.t1 - s.t0) * span, active = s === cur;
-          return (
-            <g key={i}>
-              <rect x={x} y={0} width={Math.max(0, w - 1)} height={phH} rx={3} fill={s.p.color} opacity={active ? 0.55 : 0.2} />
-              {w > 26 && <text x={x + w / 2} y={phH / 2 + 3.5} textAnchor="middle" fontSize={9} fill={active ? '#fff' : ink2} style={{ fontWeight: active ? 700 : 400 }}>{s.p.name.split(' ')[0]}</text>}
-            </g>
-          );
-        })}
-        {/* lanes — per AI Core / DMA, coloured by what the current phase makes it do */}
+      {/* phase band + play head */}
+      <div style={{ position: 'relative', height: phH, marginBottom: 4 }}>
+        <div style={{ position: 'absolute', left: LABEL_W, right: 0, top: 0, height: phH, display: 'flex' }}>
+          {sw.seg.map((s, i) => {
+            const pct = (s.t1 - s.t0) * 100;
+            const active = s === cur;
+            return (
+              <div key={i} style={{ flex: `0 0 ${pct}%`, height: phH, background: s.p.color, opacity: active ? 0.55 : 0.2, borderRadius: 3, marginRight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {pct > 6 && <span style={{ fontSize: 8, color: active ? '#fff' : ink2, fontWeight: active ? 700 : 400, whiteSpace: 'nowrap' }}>{s.p.name.split(' ')[0]}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ position: 'absolute', left: `calc(${LABEL_W}px + ${head} * (100% - ${LABEL_W}px))`, top: 0, width: 1.4, height: phH, background: ENTITY_COLORS.cube, pointerEvents: 'none' }} />
+      </div>
+      {/* canvas lanes */}
+      <div className="pto-pattern-swimlane-task" style={{ position: 'relative' }}>
         {sw.rows.map((r, ri) => (
-          <g key={ri} transform={`translate(0,${lanesY + ri * laneH})`}>
-            <text x={padL - 6} y={laneH / 2 + 3} textAnchor="end" fontSize={8.5} fill={ink2}>{r.name}</text>
-            {r.slots.map((st, ti) => st === 'bubble' ? null : (
-              <rect key={ti} x={padL + ti * slotW} y={1.5} width={Math.max(0.7, slotW - 0.4)} height={laneH - 3} rx={1} fill={SW_COLOR[st]} />
-            ))}
-          </g>
+          <div key={ri} className="pto-pattern-swimlane-task__row">
+            <span style={{ width: LABEL_W, fontSize: 8.5, textAlign: 'right', paddingRight: 6, color: ink2, fontFamily: 'var(--font-sans)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{r.name}</span>
+            <canvas
+              ref={(el) => { canvasRefs.current[ri] = el; }}
+              className="pto-pattern-swimlane-task__canvas"
+              style={{ height: 12 }}
+            />
+          </div>
         ))}
-        {/* play head sweeping the phases (spans band + lanes) */}
-        <line x1={headX} y1={0} x2={headX} y2={lanesY + lanesH} stroke={ENTITY_COLORS.cube} strokeWidth={1.4} />
-        <circle cx={headX} cy={0} r={2.6} fill={ENTITY_COLORS.cube} />
-        <text x={padL} y={svgH - 2} fontSize={8.5} fill={ink2}>← 时间 t（一次迭代）→</text>
-      </svg>
+        {/* play head over lanes */}
+        <div style={{ position: 'absolute', left: `calc(${LABEL_W}px + ${head} * (100% - ${LABEL_W}px))`, top: 0, bottom: 0, width: 1.4, background: ENTITY_COLORS.cube, pointerEvents: 'none' }} />
+      </div>
+      <div style={{ paddingLeft: LABEL_W, fontSize: 8.5, color: ink2, marginTop: 2 }}>← 时间 t（一次迭代）→</div>
       {/* current phase note + legend */}
       <div style={{ marginTop: 3, fontSize: 10, color: 'var(--tx2)' }}>
         <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: cur.p.color, verticalAlign: '-1px', marginRight: 4 }} />

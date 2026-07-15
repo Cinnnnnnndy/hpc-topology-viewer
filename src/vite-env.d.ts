@@ -8,6 +8,7 @@ declare module '*aic-core-object/pattern.js';
 declare module '*aiv-core-object/pattern.js';
 declare module '*memory-architecture/pattern.js';
 declare module '*model-graphviz/pattern.js';
+declare module '*swimlane-task/pattern.js';
 
 type PtoWorkbenchSplitDirection = 'horizontal' | 'vertical';
 
@@ -61,6 +62,28 @@ interface Window {
     setBufferBlocks?(root: Element, blocks: Array<{ core: string; buffer: string; label?: string; state?: string; tone?: string; cellRange?: [number, number]; sourceTile?: string }>): void;
     clearBufferBlocks?(root: Element): void;
     createZoomController?(options: any): { render?(): void; getZoom?(): number; getPan?(): { x: number; y: number }; setZoom?(z: number): void; setPan?(x: number, y: number): void; center?(): void; zoomAtPoint?(z: number, x: number, y: number): void; reset?(): void; destroy?(): void } | null;
+  };
+  /** pto-design-system patterns/swimlane-task（vendored，全局注册）
+   *  泳道任务条：canvas 渲染 IN/compute/OUT 三段任务条 + 悬停提示，适用于泳道/执行时序/甘特图。 */
+  PtoSwimlaneTaskPattern?: {
+    defaults: Record<string, unknown>;
+    drawTaskBar(ctx: CanvasRenderingContext2D, options: {
+      task?: { label?: string; displayName?: string; opName?: string; laneKind?: string; laneId?: string; totalCycle?: number; clcCycle?: number; gap?: number; gapRatio?: number; status?: string; dominantCounter?: string; wrapId?: string; inputRawMagic?: unknown[]; outputRawMagic?: unknown[]; [k: string]: unknown };
+      x?: number; y?: number; width?: number; height?: number;
+      baseColor?: string; radius?: number; fontFamily?: string;
+      isSelected?: boolean; isRelated?: boolean; isEmphasized?: boolean;
+    }): { displayColor: string; borderColor: string; segmentWidths: { inW: number; computeW: number; outW: number } };
+    createTaskColormap(options?: Record<string, unknown>): { colorForTask(task: unknown, mode?: string): string; colorForLaneKind(kind: string): string; legendForKeys(keys: unknown[], mode?: string): Array<{ key: string; label: string; color: string }> };
+    formatTaskTooltip(task: Record<string, unknown>, options?: Record<string, unknown>): string;
+    createTooltip(options?: Record<string, unknown>): HTMLElement;
+    showTooltip(tooltip: HTMLElement, task: Record<string, unknown>, event: MouseEvent | null, options?: Record<string, unknown>): void;
+    moveTooltip(tooltip: HTMLElement, event: MouseEvent, options?: Record<string, unknown>): void;
+    hideTooltip(tooltip: HTMLElement): void;
+    initHoverTooltip(options: { root: Element; targets?: Element[] | string; tooltip?: HTMLElement; bounds?: Element; appendTo?: Element; getTask?: (target: Element, event?: Event) => Record<string, unknown> | null; durationUnit?: string; [k: string]: unknown }): { tooltip: HTMLElement; destroy(): void } | null;
+    alphaHexColor(color: string, alpha: number): string;
+    lightenHexColor(hex: string, amount: number): string;
+    mixHexColors(base: string, target: string, ratio: number): string;
+    stableHash(input: unknown): number;
   };
   /** pto-design-system patterns/model-graphviz（vendored，全局注册）
    *  整网图：Model → DecoderLayer → Attention/MoE → QKV/Expert → Operator 分层计算图渲染引擎。 */

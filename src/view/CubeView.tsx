@@ -10,7 +10,7 @@
  * 几何全部来自已验证的 layout.ts（双射不变量），配色来自 data.ts 的 loadRGB（红黄绿=状态唯一色）。
  * 逻辑视图里不画物理刀片/机柜脚手架（那在逻辑重排里没有意义）——只画卡本身。
  */
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei';
 import * as THREE from 'three';
@@ -23,6 +23,8 @@ import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/
 import { deploymentOf } from '../scene/deployment';
 import { OP_SCHEDULE, phaseMix, flowLayout, opAtCursor, pipeline1F1B, type OpKind } from '../scene/op-schedule';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
+import '../vendor/swimlane-task/pattern.css';
+import '../vendor/swimlane-task/pattern.js';
 
 const PITCH = 0.42;                    // 每格世界尺寸
 const BOX = 0.72 * PITCH;              // 卡块边长（略小于格，留缝）
@@ -236,19 +238,102 @@ function navBtn(on: boolean): React.CSSProperties {
 const btnBase: React.CSSProperties = { padding: '5px 12px', fontSize: 12, borderRadius: 8, cursor: 'pointer' };
 const LBL: React.CSSProperties = { fontSize: 11, fontWeight: 500, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', alignSelf: 'center' };
 
-// ── 泳道（流动面·P2）：一个 step 内的有序算子（op-schedule 真实序列，锚定 arXiv:2505.21411）。
-//    x = 关键路径累计时长；三轨 计算/通信/访存；overlapBg 的算子上方叠「背景搬运」带 = 掩盖；
-//    游标随 step 扫过，高亮当前算子。这就是「流动面」：结构面看位置，这里看时间。
+// ── 泳道（流动面·P2）：一个 step 内的有序算子，canvas 渲染，powered by PtoSwimlaneTaskPattern。
+//    x = 关键路径累计时长；三轨 计算/通信/访存；overlapBg 的算子上方叠「背景搬运」带 = 掩盖。
+const SW_LANE_KINDS: OpKind[] = ['compute', 'comm', 'mem'];
 function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number }) {
   const sched = OP_SCHEDULE[workload];
-  const fl = flowLayout(workload);
-  const mix = phaseMix(workload);
+  const fl = useMemo(() => flowLayout(workload), [workload]);
+  const mix = useMemo(() => phaseMix(workload), [workload]);
   const cursor = (step % 61) / 60;
-  const LANES: OpKind[] = ['compute', 'comm', 'mem'];
-  const LANE_H = 22, GAP = 4, BG_H = 15, TL_H = LANES.length * (LANE_H + GAP);
+  const LANE_H = 22, GAP = 4, BG_H = 15, TL_H = SW_LANE_KINDS.length * (LANE_H + GAP);
   const hasBg = fl.hidden.length > 0 || fl.bgBand;
   const topPad = hasBg ? BG_H + 3 : 0;
   const phLbl = workload === 'decode' ? 'Decode' : workload === 'prefill' ? 'Prefill' : '预训练';
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const tooltipRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const drawLanes = useCallback(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    SW_LANE_KINDS.forEach((kind, li) => {
+      const canvas = canvasRefs.current[li];
+      if (!canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.offsetWidth;
+      const H = canvas.offsetHeight;
+      if (!W || !H) return;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, W, H);
+      fl.placed.filter(({ op }) => op.kind === kind).forEach(({ op, x, w }) => {
+        const active = cursor >= x && cursor < x + w;
+        const exposed = op.kind === 'comm';
+        helper.drawTaskBar(ctx, {
+          task: { label: op.name, laneKind: kind },
+          x: x * W, y: 1,
+          width: Math.max(1, w * W - 2),
+          height: H - 2,
+          baseColor: OP_COL[op.kind],
+          radius: 4,
+          isSelected: active,
+        });
+        if (exposed) {
+          ctx.save();
+          ctx.strokeStyle = '#b3003b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          if ((ctx as any).roundRect) (ctx as any).roundRect(x * W, 1, Math.max(1, w * W - 2), H - 2, 4);
+          else ctx.rect(x * W, 1, Math.max(1, w * W - 2), H - 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    });
+  }, [fl, cursor]);
+
+  useEffect(() => { drawLanes(); }, [drawLanes]);
+
+  useEffect(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    const tip = helper.createTooltip();
+    tooltipRef.current = tip;
+    const container = containerRef.current;
+    if (container) container.appendChild(tip);
+    const handlers: Array<{ canvas: HTMLCanvasElement; move: EventListener; leave: EventListener }> = [];
+    SW_LANE_KINDS.forEach((kind, li) => {
+      const canvas = canvasRefs.current[li];
+      if (!canvas) return;
+      const opsForLane = fl.placed.filter(({ op }) => op.kind === kind);
+      const move = (e: Event) => {
+        const me = e as MouseEvent;
+        const rect = canvas.getBoundingClientRect();
+        const xFrac = (me.clientX - rect.left) / rect.width;
+        const found = opsForLane.find(({ x, w }) => xFrac >= x && xFrac < x + w);
+        if (!found) { helper.hideTooltip(tip); return; }
+        const { op } = found;
+        const exposed = op.kind === 'comm';
+        helper.showTooltip(tip, { label: op.name, laneKind: OP_KIND_LBL[kind], note: (op as any).note + (exposed ? '（暴露：占墙钟）' : ''), status: exposed ? 'warn' : undefined }, me, { bounds: container });
+      };
+      const leave = () => helper.hideTooltip(tip);
+      canvas.addEventListener('pointermove', move);
+      canvas.addEventListener('pointerleave', leave);
+      handlers.push({ canvas, move, leave });
+    });
+    return () => {
+      handlers.forEach(({ canvas, move, leave }) => {
+        canvas.removeEventListener('pointermove', move);
+        canvas.removeEventListener('pointerleave', leave);
+      });
+      tip.remove();
+      tooltipRef.current = null;
+    };
+  }, [fl]);
 
   return (
     <div style={{ padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -267,39 +352,33 @@ function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number
       <div style={{ display: 'flex', gap: 8 }}>
         {/* 左侧轨道名 */}
         <div style={{ width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP, paddingTop: topPad }}>
-          {LANES.map((k) => (
+          {SW_LANE_KINDS.map((k) => (
             <div key={k} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: OP_COL[k], fontWeight: 600 }}>{OP_KIND_LBL[k]}</div>
           ))}
         </div>
         {/* 时间轴（关键路径 = wall-clock；掩盖带叠在计算之上） */}
-        <div style={{ position: 'relative', flex: 1, height: TL_H + topPad }}>
-          {/* 掩盖带：被计算盖住的通信/访存 + 背景搬运（不占 wall-clock，虚线表示藏在下方计算里） */}
+        <div ref={containerRef} style={{ position: 'relative', flex: 1, height: TL_H + topPad }}>
+          {/* 掩盖带：被计算盖住的通信/访存 + 背景搬运 */}
           {fl.bgBand && (
             <div title={fl.bgBand.note} style={{ position: 'absolute', left: `${fl.bgBand.x * 100}%`, width: `${fl.bgBand.w * 100}%`, top: 0, height: BG_H, borderRadius: 3, background: `${OP_COL.mem}44`, border: `1px dashed ${OP_COL.mem}`, fontSize: 8, color: 'var(--tx2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
               {fl.bgBand.name} · 掩盖
             </div>
           )}
           {fl.hidden.map((h) => (
-            <div key={h.op.id} title={`${h.op.name} · ${h.op.note}（被计算掩盖，不占墙钟）`} style={{ position: 'absolute', left: `${h.x * 100}%`, width: `${h.w * 100}%`, top: 0, height: BG_H, borderRadius: 3, background: `${OP_COL[h.op.kind]}44`, border: `1px dashed ${OP_COL[h.op.kind]}`, fontSize: 8, color: 'var(--tx2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <div key={h.op.id} title={`${h.op.name} · ${(h.op as any).note}（被计算掩盖，不占墙钟）`} style={{ position: 'absolute', left: `${h.x * 100}%`, width: `${h.w * 100}%`, top: 0, height: BG_H, borderRadius: 3, background: `${OP_COL[h.op.kind]}44`, border: `1px dashed ${OP_COL[h.op.kind]}`, fontSize: 8, color: 'var(--tx2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
               {h.op.name} · 掩盖
             </div>
           ))}
-          {/* 轨道底 */}
-          {LANES.map((k, li) => (
-            <div key={k} style={{ position: 'absolute', left: 0, right: 0, top: topPad + li * (LANE_H + GAP), height: LANE_H, background: 'var(--btn)', borderRadius: 4 }} />
-          ))}
-          {/* 关键路径算子条；暴露的通信标红边 */}
-          {fl.placed.map(({ op, x, w }) => {
-            const li = LANES.indexOf(op.kind);
-            const active = cursor >= x && cursor < x + w;
-            const exposed = op.kind === 'comm';   // 关键路径上的通信 = 暴露开销
-            return (
-              <div key={op.id} title={`${op.name} · ${op.note}${exposed ? '（暴露：占墙钟）' : ''}`}
-                style={{ position: 'absolute', left: `${x * 100}%`, width: `calc(${w * 100}% - 2px)`, top: topPad + li * (LANE_H + GAP), height: LANE_H, background: OP_COL[op.kind], borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: 9, fontWeight: 600, color: '#0b0f16', whiteSpace: 'nowrap', border: exposed ? '2px solid #b3003b' : 'none', boxShadow: active ? `0 0 0 2px var(--tx)` : 'none', opacity: active ? 1 : 0.92 }}>
-                {w > 0.05 ? op.name : ''}
-              </div>
-            );
-          })}
+          {/* canvas lanes (轨道底 + 算子条) */}
+          <div style={{ position: 'absolute', left: 0, right: 0, top: topPad, display: 'flex', flexDirection: 'column', gap: GAP }}>
+            {SW_LANE_KINDS.map((kind, li) => (
+              <canvas
+                key={kind}
+                ref={(el) => { canvasRefs.current[li] = el; }}
+                style={{ display: 'block', width: '100%', height: LANE_H, background: 'var(--btn)', borderRadius: 4, cursor: 'default' }}
+              />
+            ))}
+          </div>
           {/* 时间游标 */}
           <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.75 }} />
         </div>
@@ -359,10 +438,11 @@ function OperatorGraph({ workload, step }: { workload: ParallelWorkload; step: n
   );
 }
 
-// ── PP 流水甘特（每级一套泳道语义之 L4）：1F1B 调度，stage 为道、microbatch 的 F/B 为格、空档=bubble。
+// ── PP 流水甘特（每级一套泳道语义之 L4）：canvas 渲染，powered by PtoSwimlaneTaskPattern。
 //   掉队：某 stage 算子耗时×2 → 延迟沿依赖链传播、bubble 变大（真实模拟）。
-//   VPP：交错虚拟流水，理论把 bubble 降到 ~1/v（示意；未重跑完美交错调度）。 ──
+//   VPP：交错虚拟流水，理论把 bubble 降到 ~1/v（示意）。
 const PIPE_MB = 8;
+const PIPE_COL_F = '#22d3ee', PIPE_COL_B = '#6b8bff';
 function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
   stages: number; step: number; straggler: number | null; onStraggler: (s: number | null) => void; vpp: number; onVpp: (v: number) => void;
 }) {
@@ -371,17 +451,94 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
   const cursor = (step % 61) / 60;
   const curSlot = Math.floor(cursor * pipe.slots);
   const LANE_H = 20, GAP = 4;
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const tooltipRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const drawGantt = useCallback(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    pipe.lanes.forEach((lane, s) => {
+      const canvas = canvasRefs.current[s];
+      if (!canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.offsetWidth;
+      const H = canvas.offsetHeight;
+      if (!W || !H) return;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, W, H);
+      const slotW = W / pipe.slots;
+      lane.forEach((c) => {
+        const active = curSlot >= c.slot && curSlot < c.end;
+        const base = c.dir === 'F' ? PIPE_COL_F : PIPE_COL_B;
+        const barW = Math.max(1, (c.end - c.slot) * slotW - 1);
+        if (vpp > 1 && c.mb % vpp !== 0) ctx.globalAlpha = 0.62;
+        helper.drawTaskBar(ctx, {
+          task: { label: barW > 14 ? String(c.mb) : '' },
+          x: c.slot * slotW, y: 1,
+          width: barW,
+          height: H - 2,
+          baseColor: base,
+          radius: 2,
+          isSelected: active,
+        });
+        ctx.globalAlpha = 1;
+      });
+    });
+  }, [pipe, curSlot, vpp]);
+
+  useEffect(() => { drawGantt(); }, [drawGantt]);
+
+  useEffect(() => {
+    const helper = window.PtoSwimlaneTaskPattern;
+    if (!helper) return;
+    const tip = helper.createTooltip();
+    tooltipRef.current = tip;
+    const container = containerRef.current;
+    if (container) container.appendChild(tip);
+    const handlers: Array<{ canvas: HTMLCanvasElement; move: EventListener; leave: EventListener }> = [];
+    pipe.lanes.forEach((lane, s) => {
+      const canvas = canvasRefs.current[s];
+      if (!canvas) return;
+      const slow = straggler === s;
+      const move = (e: Event) => {
+        const me = e as MouseEvent;
+        const rect = canvas.getBoundingClientRect();
+        const xFrac = (me.clientX - rect.left) / rect.width;
+        const slot = Math.floor(xFrac * pipe.slots);
+        const cell = lane.find((c) => slot >= c.slot && slot < c.end);
+        if (!cell) { helper.hideTooltip(tip); return; }
+        helper.showTooltip(tip, { label: `${cell.dir === 'F' ? '前向' : '后向'} · mb ${cell.mb}`, laneKind: `stage ${s}${slow ? ' · 掉队(×2)' : ''}`, status: cell.dir === 'F' ? 'ok' : 'warn' }, me, { bounds: container });
+      };
+      const leave = () => helper.hideTooltip(tip);
+      canvas.addEventListener('pointermove', move);
+      canvas.addEventListener('pointerleave', leave);
+      handlers.push({ canvas, move, leave });
+    });
+    return () => {
+      handlers.forEach(({ canvas, move, leave }) => {
+        canvas.removeEventListener('pointermove', move);
+        canvas.removeEventListener('pointerleave', leave);
+      });
+      tip.remove();
+      tooltipRef.current = null;
+    };
+  }, [pipe, straggler]);
+
   if (stages <= 1) {
     return <div style={{ padding: '12px 12px 14px', fontSize: 11.5, color: 'var(--tx2)', lineHeight: 1.6 }}>PP = 1 · 本工况无流水线（Decode/Prefill 单副本推理，PP 未切分）。切到 <b style={{ color: 'var(--tx)' }}>预训练</b> 工况看 1F1B 流水甘特、掉队与 VPP。</div>;
   }
-  const colF = '#22d3ee', colB = '#6b8bff', w = 1 / pipe.slots;
   const vppBubble = baseBubble / vpp;
   const chip: React.CSSProperties = { ...btnBase, padding: '2px 8px', fontSize: 10.5 };
   return (
     <div style={{ padding: '8px 12px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12.5, fontWeight: 600 }}>PP 流水甘特 · 1F1B <span style={{ fontSize: 10.5, color: 'var(--tx3)', fontWeight: 400 }}>{stages} 级 × {PIPE_MB} mb</span></span>
-        <span style={{ fontSize: 10.5, fontFamily: MONO }}><span style={{ color: colF }}>F</span>·<span style={{ color: colB }}>B</span>·<span style={{ color: 'var(--tx3)' }}>空档=bubble</span></span>
+        <span style={{ fontSize: 10.5, fontFamily: MONO }}><span style={{ color: PIPE_COL_F }}>F</span>·<span style={{ color: PIPE_COL_B }}>B</span>·<span style={{ color: 'var(--tx3)' }}>空档=bubble</span></span>
         <span style={{ fontSize: 10.5, fontFamily: MONO, color: pipe.bubblePct > 0.3 ? '#ff4b7b' : 'var(--tx2)' }}>bubble {Math.round(pipe.bubblePct * 100)}%{straggler != null ? `（掉队前 ${Math.round(baseBubble * 100)}%）` : ''}</span>
         {/* 掉队注入 */}
         <span style={{ ...LBL, marginLeft: 4 }}>掉队</span>
@@ -395,20 +552,20 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <div style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}{straggler === s ? '' : ''}</div>)}
+          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}</div>)}
         </div>
-        <div style={{ position: 'relative', flex: 1, height: pipe.stages * (LANE_H + GAP) }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ position: 'absolute', left: 0, right: 0, top: s * (LANE_H + GAP), height: LANE_H, background: straggler === s ? 'rgba(255,75,123,0.12)' : 'var(--btn)', borderRadius: 3 }} />)}
-          {pipe.lanes.map((lane, s) => lane.map((c) => {
-            const active = curSlot >= c.slot && curSlot < c.end, slow = straggler === s;
-            // VPP>1 时按 microbatch 模 vpp 分 chunk（示意交错），色相微移
-            const base = c.dir === 'F' ? colF : colB;
-            return <div key={`${c.dir}${c.mb}-${c.slot}`} title={`stage ${s} · ${c.dir === 'F' ? '前向' : '后向'} · microbatch ${c.mb}${slow ? ' · 掉队(×2)' : ''}`}
-              style={{ position: 'absolute', left: `${c.slot * w * 100}%`, width: `calc(${(c.end - c.slot) * w * 100}% - 1px)`, top: s * (LANE_H + GAP), height: LANE_H, background: base, opacity: vpp > 1 && c.mb % vpp !== 0 ? 0.62 : 1, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#0b0f16', boxShadow: active ? '0 0 0 2px var(--tx)' : 'none' }}>
-              {(c.end - c.slot) * w > 0.028 ? c.mb : ''}
-            </div>;
-          }))}
-          <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.7 }} />
+        <div ref={containerRef} style={{ position: 'relative', flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
+            {pipe.lanes.map((_, s) => (
+              <canvas
+                key={s}
+                ref={(el) => { canvasRefs.current[s] = el; }}
+                style={{ display: 'block', width: '100%', height: LANE_H, background: straggler === s ? 'rgba(255,75,123,0.12)' : 'var(--btn)', borderRadius: 3, cursor: 'default' }}
+              />
+            ))}
+          </div>
+          {/* 时间游标 */}
+          <div style={{ position: 'absolute', left: `${cursor * 100}%`, top: 0, bottom: 0, width: 2, background: 'var(--tx)', opacity: 0.7, pointerEvents: 'none' }} />
         </div>
       </div>
     </div>
