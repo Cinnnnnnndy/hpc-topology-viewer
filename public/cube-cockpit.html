@@ -1218,9 +1218,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const ambientLight = new THREE.AmbientLight(0xc8d4e0, 0.85); scene.add(ambientLight);
-const dl = new THREE.DirectionalLight(0xffffff, .7); dl.position.set(120,300,180); scene.add(dl);
-const dl2 = new THREE.DirectionalLight(0x5878ff, .3); dl2.position.set(-100,80,-120); scene.add(dl2);
+const ambientLight = new THREE.AmbientLight(0xf1f3f6, 1.35); scene.add(ambientLight);
+const dl = new THREE.DirectionalLight(0xffffff, .9); dl.position.set(120,300,180); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xdbe0e8, .3); dl2.position.set(-100,80,-120); scene.add(dl2);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -1308,7 +1308,7 @@ var cabEdges;
   physGroup.add(ics); }
 // 1024 Host 托盘（InstancedMesh + 逐实例色）
 const hostGeo = new THREE.BoxGeometry(1.05,.16,.9);
-const hostMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); hostMat.userData.base=1;
+const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.72, metalness:0.02}); hostMat.userData.base=1;
 const hostsMesh = new THREE.InstancedMesh(hostGeo, hostMat, N_HOST);
 for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
@@ -1317,12 +1317,12 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
 scene.add(hostsMesh);
 // 8192 芯片（可 Morph 到魔方 → 不放入 physGroup）
 const chipGeo = new THREE.BoxGeometry(.18,.12,.26);
-const chipMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); chipMat.userData.base=1;
+const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.72, metalness:0.02}); chipMat.userData.base=1;
 const chipsMesh = new THREE.InstancedMesh(chipGeo, chipMat, N_CHIP);
 scene.add(chipsMesh);
 /* 深下钻时其余 Host/芯片整体淡化 → 焦点对象用独立不透明网格保持清晰 */
-const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshLambertMaterial({color:0xffffff}));
-const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshLambertMaterial({color:0xffffff}), 8);
+const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.72, metalness:0.02}));
+const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.72, metalness:0.02}), 8);
 focusHostMesh.visible = focusChipsMesh.visible = false;
 for(let s=0;s<8;s++) focusChipsMesh.setColorAt(s, new THREE.Color(0x334455));
 scene.add(focusHostMesh, focusChipsMesh);
@@ -2763,10 +2763,11 @@ function applyTheme(dark){
   scene.fog.color.set(dark ? 0x101010 : 0xf5f5f5);
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
+  // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
   ambientLight.color.set(dark ? 0x93a4c0 : 0xf1f3f6);
-  ambientLight.intensity = dark ? 0.95 : 1.0;
-  if(typeof dl2 !== 'undefined' && dl2) dl2.color.set(dark ? 0x5878ff : 0xdbe0e8);   // 浅色去掉蓝色补光
-  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.7 : 0.55;
+  ambientLight.intensity = dark ? 1.15 : 1.35;
+  if(typeof dl2 !== 'undefined' && dl2) dl2.color.set(dark ? 0x5878ff : 0xdbe0e8);
+  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.85 : 0.9;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
