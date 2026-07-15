@@ -547,7 +547,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
    模型数据：Pangu Pro MoE 72B-A16B（arXiv:2505.21411）——48 层 · hidden 5120 ·
    64 路由专家 = 8 组 × 组内 top-1（MoGE，IS=0）+ 4 共享专家 · 激活 16.5B/共 72B */
 const N_HOST = 1024, N_CHIP = 8192, TP = 8, PP = 16, DP = 64, N_LAYER = 48, N_EXP = 64;
-const COL = { TP:'#39c5cf', PP:'#FFAA3B', DP:'#4369EF', EP:'#9B3CF6', RED:'#FF4B7B', GREEN:'#04D793', DIM:'rgba(0,0,0,.22)' };
+const COL = { TP:'#39c5cf', PP:'#FFAA3B', DP:'#4369EF', EP:'#9B3CF6', CP:'#5eead4', RED:'#FF4B7B', GREEN:'#04D793', DIM:'rgba(0,0,0,.22)' };
 const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
 const themeC = (dark, light) => isDark() ? dark : light;
 const PHASES = [
@@ -2382,12 +2382,27 @@ function renderProbe(){
   const exp = isExpertHost[h] ? (isExpertHost[h]===2?' · 热点专家':' · MoE 专家') : '';
   const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#FF4B7B">EP 越界成员</b>' : '';
   const st = ppOf(h), lys = `L${st*3+1}-L${st*3+3}`;
+  const dp = dpOf(h), ep = dp % 2;   // 并行坐标：DP=副本 · PP=段 · TP=Host内8卡 · CP=1(全序列不切) · EP=2(折入DP)
+  // ── 对象坐标带（白皮书「并行坐标层 / 对象层级图」）：同一张卡叠 PP/TP/DP/CP/EP 五条独立坐标 ──
+  const bands = [['PP',COL.PP,st,PP],['TP',COL.TP,'0–7',TP],['DP',COL.DP,dp,DP],['CP',COL.CP,0,1],['EP',COL.EP,ep,2]];
+  const glyph = '<div style="display:flex;gap:3px;margin:5px 0 3px">' + bands.map(b=>{
+      const off = b[3] <= 1;   // CP=1 退化 → 淡显（轴存在但未切）
+      return '<div title="'+b[0]+b[2]+(off?'（未启用·全序列不切）':' / '+b[3])+'" style="flex:1;border:1px solid '+(off?'var(--sys-border)':b[1])+';background:'+(off?'transparent':b[1]+'26')+';border-radius:5px;text-align:center;padding:2px 0;opacity:'+(off?.5:1)+'">'
+        + '<div style="font-size:8px;font-weight:700;color:'+(off?'var(--dim)':b[1])+'">'+b[0]+'</div>'
+        + '<div style="font-size:11px;font-family:ui-monospace,monospace;color:var(--sys-text-bright);font-weight:600;line-height:1.05">'+b[2]+'</div>'
+        + '<div style="font-size:7px;color:var(--dim)">'+(off?'×1':'/'+b[3])+'</div></div>';
+    }).join('') + '</div>';
+  const base = h*8;
+  const decomp = 'rank '+base+'–'+(base+7)+' = (((<b>'+dp+'</b>·16+<b>'+st+'</b>)·1+0)·8 + <b style="color:'+COL.TP+'">t</b>)　t=TP0–7';
   const sel = (S.selLayer!=null||S.selCard)
     ? `<br><span style="color:${carrierHost(h)?'#9B3CF6':'#6e7681'}">${carrierHost(h)?'承载当前选中的整网片段':'不承载选中片段（已压暗）'}</span>` : '';
   probe.style.display='block';
   probe.innerHTML =
     `<b>Host ${h}</b>（悬停）· 计算柜 ${cabOf(h)} / 槽位 ${h%8}${exp}${an}<br>
-     逻辑坐标 <span class="lg">[DP${dpOf(h)}, PP${st}, TP0-7]</span> · 承载整网 <span class="lg">${lys}</span> · 健康度 ${(100-health[h]*40).toFixed(0)}% · 显存 ${(memLevel[h]*100)|0}%<br>
+     逻辑坐标 <span class="lg">[DP${dp} · PP${st} · CP0 · TP0–7 · EP${ep}]</span> · 承载整网 <span class="lg">${lys}</span> · 健康度 ${(100-health[h]*40).toFixed(0)}% · 显存 ${(memLevel[h]*100)|0}%<br>
+     ${glyph}
+     <span style="font-size:9px;color:var(--dim)">并行坐标层 · 一卡多轴（每轴独立）· 嵌套 DP→PP→CP→TP · CP1 全序列不切：</span><br>
+     <span style="font-family:ui-monospace,monospace;font-size:9.5px;color:var(--dim)">${decomp}</span><br>
      部署 <b>${JOBS[jobOf(h)].name}</b> · ${JOBS[jobOf(h)].fw}${jobOf(h)===0?'（整网切分见左侧"整网分隔映射"）':''}<br>
      当前算子：${S.playing? (PHASES[S.phase].id==='TP'?'MatMul + AllReduce(UB)':PHASES[S.phase].id==='PP'?'Send/Recv 激活接力':PHASES[S.phase].id==='EP'?'Top-K 路由 + AllToAll':'梯度 AllReduce'):'空闲 / 未播放'}${sel}`; }
 function stepBreakdown(){                     // 工况 step 时间分解（软件侧，随阶段/异常联动）
@@ -2406,7 +2421,7 @@ function renderHUD(){
       <span class="hl">${lab}</span><span class="hb"><i style="width:${v}%;background:${col}"></i></span><span class="hv">${v}%</span></div>`;
   $('#hud').innerHTML =
     `<b style="color:#fff">工况 · Pangu Pro MoE 72BA16B</b><br>
-     <span style="font-size:10px">TP8 · PP16 · DP64 · EP(64专家/MoGE 8组) · 整网48层</span>
+     <span style="font-size:10px">TP8 · PP16 · DP64 · CP1 · EP(64专家/MoGE 8组) · 整网48层</span>
      <div style="margin-top:4px">${ph.bus}${anomX?' + <span style="color:#FF4B7B">跨 Pod 光链路(越界)</span>':''}
        <div class="busbar"><i style="width:${Math.min(100,load*100)|0}%;background:${anomX?'#FF4B7B':'#39c5cf'}"></i></div>
        <div style="margin-top:3px">带宽占用 ${Math.min(100,(load*100)|0)}%${anomX?' · 拥塞告警':''}</div>
