@@ -176,7 +176,7 @@ button.warn.on{background:var(--sys-danger-bg);border-color:var(--red);color:var
 #main{flex:1;display:flex;min-height:0}
 /* ---- 左 ---- */
 #left{width:430px;flex-shrink:0;border-right:1px solid var(--sys-border);background:var(--sys-sunken);overflow-y:auto;position:relative;padding:10px 12px 16px;transition:width var(--duration-base)}
-#left.net-expand{width:520px;padding-left:6px;padding-right:6px}
+#left.net-expand{width:min(750px,calc(100vw - 400px));padding-left:6px;padding-right:6px}
 #lefttabs{display:flex;gap:4px;margin-bottom:10px;position:relative;z-index:6;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
 #lefttabs button{flex:1;border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);padding:5px 8px;color:var(--dim);font-weight:500}
 #lefttabs button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:var(--shadow-sm);border:none}
@@ -1250,13 +1250,13 @@ const renderer = new THREE.WebGLRenderer({canvas:stage, antialias:true, alpha:tr
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 0.9;
 renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 1.05); scene.add(hemiLight);
-const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(120,300,180); scene.add(dl);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 0.95); scene.add(hemiLight);
+const dl = new THREE.DirectionalLight(0xffffff, 0.75); dl.position.set(120,300,180); scene.add(dl);
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -1341,7 +1341,7 @@ var cabEdges;
   physGroup.add(ics); }
 // 1024 Host 托盘（InstancedMesh + 逐实例色）
 const hostGeo = new THREE.BoxGeometry(1.05,.16,.9);
-const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.72, metalness:0.02}); hostMat.userData.base=1;
+const hostMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.50, metalness:0.02}); hostMat.userData.base=1;
 const hostsMesh = new THREE.InstancedMesh(hostGeo, hostMat, N_HOST);
 for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
   dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
@@ -1350,12 +1350,12 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
 scene.add(hostsMesh);
 // 8192 芯片（可 Morph 到魔方 → 不放入 physGroup）
 const chipGeo = new THREE.BoxGeometry(.18,.12,.26);
-const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.72, metalness:0.02}); chipMat.userData.base=1;
+const chipMat = new THREE.MeshStandardMaterial({color:0xffffff, transparent:true, roughness:0.50, metalness:0.02}); chipMat.userData.base=1;
 const chipsMesh = new THREE.InstancedMesh(chipGeo, chipMat, N_CHIP);
 scene.add(chipsMesh);
 /* 深下钻时其余 Host/芯片整体淡化 → 焦点对象用独立不透明网格保持清晰 */
-const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.72, metalness:0.02}));
-const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.72, metalness:0.02}), 8);
+const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.50, metalness:0.02}));
+const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.50, metalness:0.02}), 8);
 focusHostMesh.visible = focusChipsMesh.visible = false;
 for(let s=0;s<8;s++) focusChipsMesh.setColorAt(s, new THREE.Color(0x334455));
 scene.add(focusHostMesh, focusChipsMesh);
@@ -1401,14 +1401,16 @@ function chipStack(c,out){ const h=c>>3, s=c&7;
     (h%32-15.5)*.62 + (s%4-1.5)*.135, STACK.L2,
     (((h/32)|0)-15.5)*.62 + ((s>>2)-.5)*.21); return out; }
 var stackL5, stackL4, stackPath, stackG7, stackT6; const stackPlats = {};
+const PLAT_COL={L7:0x9d7bff,L6:0xffaa3b,L5:0xc084fc,L4:0xfb5b9a,L3:0x38bdf8,L2:0x2dd4bf,L1:0x2dd4bf,L0:0x04d793};
 {
   const plat = (lv,y,sx,sz,label)=>{
     const lb = makeLabel(label,'#ffffff',5);
     lb.material.color.set(0x8b949e);
     lb.position.set(-14, y+.6, 0); stackGroup.add(lb);
-    const eg = mergedEdges(new THREE.BoxGeometry(sx,.08,sz),[{x:0,y,z:0}],0x30363d,.5);
-    stackGroup.add(eg);
-    stackPlats[lv] = { label:lb, edges:eg }; };
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(sx,sz),
+      new THREE.MeshBasicMaterial({color:PLAT_COL[lv]||0x4369EF,transparent:true,opacity:0.07,depthWrite:false,side:THREE.DoubleSide}));
+    fl.rotation.x = -Math.PI/2; fl.position.y = y - 0.02; stackGroup.add(fl);
+    stackPlats[lv] = { label:lb, floor:fl }; };
   plat('L7',STACK.L7, 5,5,'L7 · Global');
   plat('L6',STACK.L6, 15,15,'L6 · Cluster');
   plat('L5',STACK.L5, 22,4,'L5 · Service Pool');
@@ -2187,8 +2189,7 @@ function updateIndicators(){
       pts.forEach((p,i)=>P.setXYZ(i,p[0],p[1],p[2])); P.needsUpdate = true; } }
   // 层级选中反馈：堆叠平台描边高亮 / 物理形态边界高亮
   if(nS>0.02){ for(const lv in stackPlats){ const sel = S.level===lv, o = stackPlats[lv];
-      o.edges.material.color.set(sel?0x4369EF:0x30363d);
-      o.edges.material.opacity = (sel?1:.4)*Wgt.stack;
+      if(o.floor) o.floor.material.opacity = (sel?0.22:0.07)*Wgt.stack;
       o.label.material.color.set(sel?0xffffff:0x8b949e); } }
   if(poolLine){ poolLine.material.color.set(S.level==='L5'?0x9ecbff:0x4369EF);
     poolLine.material.opacity = (S.level==='L5'?1:.5)*Wgt.phys; }
@@ -2888,9 +2889,9 @@ function applyTheme(dark){
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
   // MeshStandard 需适度提升环境光补偿 PBR 能量守恒带来的暗度；Key 光稍强以保持层次
-  hemiLight.intensity = dark ? 1.35 : 1.05;
+  hemiLight.intensity = dark ? 1.20 : 0.95;
   hemiLight.groundColor.set(dark ? 0x10131a : 0xf5f5f5);
-  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.95 : 1.2;
+  if(typeof dl !== 'undefined' && dl) dl.intensity = dark ? 0.70 : 0.75;
   buildGrid(dark);   // 场地网格随主题重建（浅色淡灰蓝，去掉白底刺眼深网格）
   colorGhostPods(dark);   // 63 缩略 Pod 随主题重着色（浅色淡灰，去掉白底“灰钻石”）
   if(cabEdges) cabEdges.material.color.set(dark?0x2d3644:0xb4bfce);   // 机箱线框：浅色改柔和灰蓝，不再刺眼黑
