@@ -129,7 +129,7 @@ const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometri
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
   { id: 'console',  label: '联动控制台' },
-  { id: 'cube',     label: '立方重排(实验)' },
+  { id: 'cube',     label: '集群驾驶舱' },
   { id: 'netcut',   label: '整网切分' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
@@ -167,7 +167,7 @@ const WORKBENCH_VIEW_GROUPS: {
     label: '3D 对象',
     title: '对象 / 层级',
     items: [
-      { id: 'cube', label: '立方重排(实验)', note: '按 TP/PP/DP/EP 换堆法 · 异常显形状' },
+      { id: 'cube', label: '集群驾驶舱', note: '按 TP/PP/DP/EP 换堆法 · 异常显形状' },
       { id: 'netcut', label: '整网切分', note: '整网图 × 立方 · 前向/反向 · 算子↔切分维联动' },
       { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
       { id: 'overview', label: 'Pod 物理机房', note: '机柜=物理分组 · 通信柜总览' },
@@ -583,7 +583,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                     title={ctrlBarOpen ? '收起全局控制' : '展开全局控制'}
                   >
                     <span className={`hpc-wb-ctrl-dot${syncPlaying ? ' hpc-wb-ctrl-dot--breath' : ''}`} />
-                    <span>{mode === 'cube' ? '立方重排' : wlLabels[syncWorkload]}</span>
+                    <span>{mode === 'cube' ? '集群驾驶舱' : wlLabels[syncWorkload]}</span>
                     <span className="hpc-wb-ctrl-chevron">{ctrlBarOpen ? '▴' : '▾'}</span>
                   </button>
                   {ctrlBarOpen && (
