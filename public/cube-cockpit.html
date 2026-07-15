@@ -297,9 +297,6 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #netDirWrap button{min-height:22px;padding:2px 9px;font-size:10.5px;border-radius:var(--radius-pill);border:1px solid var(--sys-border);background:transparent;color:var(--dim)}
 #netDirWrap button:hover:not(.on){background:color-mix(in srgb,var(--sys-accent) 8%,transparent);border-color:color-mix(in srgb,var(--sys-accent) 30%,var(--sys-border))}
 #netDirWrap button.on{background:color-mix(in srgb,var(--sys-accent) 14%,var(--panel));border-color:var(--sys-accent);color:var(--sys-accent);font-weight:600}
-#netWrap h3{margin-bottom:5px}
-#netHint{font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:6px}
-#netHint b{color:var(--sys-text-bright)}
 #netSelLab{color:var(--accent);font-weight:600}
 #netLegend{display:flex;gap:14px;font-size:10px;color:var(--dim);margin-bottom:7px}
 #netLegend .ndot{display:inline-flex;align-items:center;gap:5px}
@@ -517,8 +514,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         </div>
         <!-- 子页 B：整网图（逻辑计算图）——点算子 → 右侧立方按其切分维重排 -->
         <div id="netWrap">
-          <h3><b>整网图</b> · openPangu-2.0-Flash <span style="color:var(--dim);font-weight:400">· 逻辑算子 → 物理切分</span></h3>
-          <div id="netHint">点<b>算子</b>→ 右侧立方按它的切分维重排（专家=EP · 注意力/FFN=TP · 逐层=PP · 权重=DP）。<span id="netSelLab"></span></div>
+          <span id="netSelLab" style="display:block;font-size:11px;color:var(--accent);font-weight:600;min-height:0;margin-bottom:4px"></span>
           <div id="netLegend">
             <span class="ndot"><svg width="20" height="8"><line x1="1" y1="4" x2="15" y2="4" stroke="#22d3ee" stroke-width="2"/><path d="M15 4 L11 1.5 L11 6.5 Z" fill="#22d3ee"/></svg>前向 · 激活下行</span>
             <span class="ndot"><svg width="20" height="8"><line x1="19" y1="4" x2="5" y2="4" stroke="#6b8bff" stroke-width="2"/><path d="M5 4 L9 1.5 L9 6.5 Z" fill="#6b8bff"/></svg>反向 · 梯度上行</span>
