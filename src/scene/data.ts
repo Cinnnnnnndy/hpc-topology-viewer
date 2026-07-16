@@ -422,7 +422,7 @@ export const PARTITION_META: Record<Exclude<PartitionDim, 'none'>, { label: stri
   tp: { label: 'TP 张量并行', level: 'L3 Host 内（8 卡/节点）', comm: 'AllGather / ReduceScatter', same: '同色 = 同一张量切片（tp rank 0–7，每 Host 复现）' },
   pp: { label: 'PP 流水并行', level: 'L4 Pod 内 · 跨 Host/机柜', comm: '阶段间 P2P 激活传递',        same: '同色 = 同一流水级（承载相同层）' },
   dp: { label: 'DP 数据并行', level: '跨 Pod（L5 Pool / L6 Cluster）', comm: '梯度 AllReduce',       same: '同色 = 同一数据副本' },
-  ep: { label: 'EP 专家并行', level: 'L4 Pod 内 · 机柜级 EP 域',  comm: 'token All-to-All',         same: '同色 = 同一专家组（All-to-All 域）' },
+  ep: { label: 'EP 专家并行', level: '训练折入 DP 轴（相邻副本）· 推理节点内路由', comm: 'dispatch/combine All-to-All', same: '同色 = 持有同一专家分桶（experts 相同 · 桶↔卡非 1:1，每个 A2A 域各持一桶）' },
 };
 // cycling palette: group g → PARTITION_PALETTE[g % len] (same colour = same parallel group)
 // de-RYG: parallel-group palette uses ONLY non-state hues (blue/indigo/violet/cyan/pink) so it

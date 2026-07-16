@@ -10,7 +10,7 @@
  * 也暂不接入任何视图（接入是 P1）——纯粹为后续立方体重排 / 监控放置查询提供底座。
  */
 import {
-  NPUS_PER_NODE, NODES_PER_CAB, parallelMap,
+  NPUS_PER_NODE, NODES_PER_CAB, parallelMap, WORKLOAD,
   type ParallelWorkload, type ParallelConfig, type ParallelMapping, type ParDim,
 } from './data';
 
@@ -26,6 +26,25 @@ export type MeshDimKind = 'spatial' | 'collapsed' | 'virtual';
 export interface MeshDim { dim: ParDim; size: number; kind: MeshDimKind; note?: string; }
 export interface ParallelRole { dim: ParDim; group: number; degree: number; }
 
+// 单卡任务投影（白皮书「多维叠加」§：整网架构经 placement 投影到某个 rank 后的计算切片）。
+// 语义边界（白皮书核心结论）：只有 PP 适合说「哪段层」；TP 是同层 shard、DP 是副本+样本 shard、
+// EP 是「持有哪些 experts」+ A2A 域、CP/SP 是 token 段——各维口径不同，不能都压成「层归属」。
+export interface RankSlice {
+  layerLo: number; layerHi: number;          // PP：该 stage 承载的连续 decoder blocks（含端点）
+  hasEmbedding: boolean; hasHead: boolean;   // 只有 stage 0 有 Embedding、末 stage 有 LM Head
+  expertLo: number; expertHi: number;        // EP：该 rank 持有的专家分桶 experts lo-hi（含端点）
+  epDomain: number;                          // EP：所属 A2A 域 id（训练=⌊replica/EP⌋ · 推理=node）
+  tokenNote: string;                         // CP/SP：token 分片口径（CP1 → full context）
+}
+
+// PP stage → 连续层段（decoder blocks 均分，余数摊给前段；对齐白皮书「PP5 · layers 36-42」口径）。
+export function stageLayerRange(stages: number, s: number, totalLayers = WORKLOAD.layers): { lo: number; hi: number } {
+  const S = Math.max(1, stages), base = Math.floor(totalLayers / S), extra = totalLayers % S;
+  const lo = s * base + Math.min(s, extra);
+  const len = base + (s < extra ? 1 : 0);
+  return { lo, hi: Math.max(lo, lo + len - 1) };
+}
+
 export interface Deployment {
   workload: ParallelWorkload;
   N: number;
@@ -35,6 +54,7 @@ export interface Deployment {
   coordsOf: (rank: number) => MeshCoord;                              // rank → 逻辑 mesh 坐标
   physOf: (rank: number) => PhysCoord;                               // rank → 物理坐标
   rolesOf: (rank: number) => ParallelRole[];                         // 这张卡担任的并行角色（正查）
+  sliceOf: (rank: number) => RankSlice;                              // 单卡任务投影（层段/专家桶/token 段）
   ranksInGroup: (dim: ParDim, group: number, cap?: number) => number[]; // 某并行组里有哪些卡（反查）
   peersOf: (rank: number, dim: ParDim, cap?: number) => number[];    // 通信对端（透传 pm）
 }
@@ -63,6 +83,22 @@ export function deploymentOf(workload: ParallelWorkload, N: number, cfg?: Parall
   const rolesOf = (rank: number): ParallelRole[] =>
     ROLE_DIMS.map((dim) => ({ dim, group: pm.groupOf(rank, dim), degree: pm.groupCount(dim) }));
 
+  // 单卡任务投影：整网架构（48 blocks · 64 routed experts）按 placement 投到该 rank。
+  const sliceOf = (rank: number): RankSlice => {
+    const c = coordsOf(rank);
+    const PP = pm.groupCount('pp'), EPd = pm.groupCount('ep');
+    const { lo, hi } = stageLayerRange(PP, c.pp);
+    const perBucket = Math.max(1, Math.floor(WORKLOAD.routedExperts / EPd));
+    const epDomain = pm.epScope === 'replica' ? Math.floor(c.dp / Math.max(1, EPd)) : Math.floor(rank / pm.tp);
+    return {
+      layerLo: lo, layerHi: hi,
+      hasEmbedding: c.pp === 0, hasHead: c.pp === PP - 1,
+      expertLo: c.ep * perBucket, expertHi: Math.min(WORKLOAD.routedExperts, (c.ep + 1) * perBucket) - 1,
+      epDomain,
+      tokenNote: pm.sp > 1 ? `token 段 ${c.sp + 1}/${pm.sp}` : 'CP1 · full context（未切分，与 TP 同域）',
+    };
+  };
+
   // 反查：扫描 [0,N) 收集 groupOf 命中该组的卡（cap 上限保底）。查询非每帧调用，O(N) 可接受。
   const ranksInGroup = (dim: ParDim, group: number, cap = 1 << 16): number[] => {
     const out: number[] = [];
@@ -84,7 +120,7 @@ export function deploymentOf(workload: ParallelWorkload, N: number, cfg?: Parall
 
   return {
     workload, N, pm, mesh, fromIngest: !!cfg,
-    coordsOf, physOf, rolesOf, ranksInGroup,
+    coordsOf, physOf, rolesOf, sliceOf, ranksInGroup,
     peersOf: (rank, dim, cap) => pm.peersOf(rank, dim, cap),
   };
 }

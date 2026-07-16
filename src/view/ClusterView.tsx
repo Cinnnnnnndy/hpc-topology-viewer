@@ -358,7 +358,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   }, []);
   const narrow = vw < 1440;   // 13" laptops (~1280–1440) → compact toolbar + overlay panel
   const [ctxOpen, setCtxOpen] = useState(true);   // floating on-canvas control panel open/collapsed
-  const [dark, setDark] = useState(() => !workbench);   // workbench opens light; classic keeps dark
+  const [dark, setDark] = useState(false);   // 默认浅色（workbench 与经典模式一致；可用主题按钮切换）
   const [camPreset, setCamPreset] = useState<CamPreset | null>(null);   // pending camera-angle snap
   const [memOpen, setMemOpen] = useState(true);   // per-card memory occupancy panel (node view)
   const [swimOpen, setSwimOpen] = useState(true);   // full-pod swimlane timeline panel

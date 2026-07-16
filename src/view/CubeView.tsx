@@ -20,7 +20,7 @@ import {
   type Gen, type ViewSync, type ParallelWorkload, type ParDim, type PartitionDim, type LevelKey,
 } from '../scene/data';
 import { layoutOf, LAYOUT_VIEWS, LAYOUT_LABEL, type LayoutView } from '../scene/layout';
-import { deploymentOf } from '../scene/deployment';
+import { deploymentOf, stageLayerRange } from '../scene/deployment';
 import { OP_SCHEDULE, phaseMix, flowLayout, opAtCursor, pipeline1F1B, type OpKind } from '../scene/op-schedule';
 import { SceneVisualProfileContext, sceneSurface } from '../scene/visual-profile';
 import '../vendor/swimlane-task/pattern.css';
@@ -90,7 +90,7 @@ function aggregateOf(level: LevelKey | undefined, layPos: { x: number; y: number
 }
 
 export type AnomalyDim = 'none' | 'tp' | 'pp' | 'dp' | 'ep';
-export const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 组' };
+export const ANOM_LABEL: Record<AnomalyDim, string> = { none: '无', tp: 'TP 组', pp: 'PP 级', dp: 'DP 副本', ep: 'EP 桶' };
 // 每个维度的异常「真实语义 + 物理形状」——诚实区分「散布维(re-layout 必需)」与「结构维(物理已有结构)」。
 const ANOM_TYPE: Record<Exclude<AnomalyDim, 'none'>, { scatter: '散布维' | '结构维'; tag: string }> = {
   pp: { scatter: '散布维', tag: 're-layout 必需' },
@@ -100,7 +100,7 @@ const ANOM_TYPE: Record<Exclude<AnomalyDim, 'none'>, { scatter: '散布维' | '�
 };
 const ANOM_NOTE: Record<Exclude<AnomalyDim, 'none'>, string> = {
   pp: 'PP 级 0 = 每 PP 台 Host 的同一流水级 · 物理散成条纹 → 切 PP 视图 snap 成一整条竖板。散布维,不重排几乎看不出成组。',
-  ep: 'EP 组 0 = 一个专家 All-to-All 域 · 物理散布 → 切 EP 视图 snap 成一条带。散布维,不重排看不出成组。',
+  ep: 'EP 桶 0 = 持有第 0 号专家分桶的所有 rank(每个 A2A 域各出一员,桶↔卡非 1:1)· 物理散成周期条带 → 切 EP 视图 snap 成一面桶墙。散布维,不重排看不出成组(热点专家桶的典型形状)。',
   tp: 'TP 切片 0 = 每台 Host 的第 0 张卡(片内张量分片相同)· 均匀点阵散布 → TP 视图里是规则点阵。结构维:TP 是 Host 内 8 卡并行,故障多为局部,物理视图已能定位。',
   dp: 'DP 副本 0 = 连续几台 Host 的一份模型拷贝 · 物理半聚集 → DP 视图里是干净一块。结构维:物理已有块状结构,重排只是更规整。',
 };
@@ -108,19 +108,22 @@ const ANOM_NOTE: Record<Exclude<AnomalyDim, 'none'>, string> = {
 // ── 卡阵列（唯一被重排的对象）：位置来自 layout（飞行动画 lerp），颜色来自负载场（逐 step 重染） ──
 //    拾取：instanceId == rank；选中/悬停高亮跟随卡的实时(动画中)位置。
 const PEER_MAX = 96;   // 对端高亮上限（peersOf 采样）
-function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peers, peerColor, boxXZ = BOX, boxY = 0.16 }: {
+// 多维叠加对端组（白皮书「一个 rank 的多维身份」）：选中卡的 TP/PP/DP/EP 通信组同时显示，
+// active（游标正扫到该维通信算子）加亮加大，其余维淡显——placement 常在，runtime event 点亮。
+export interface PeerSet { dim: string; ranks: number[]; color: string; active: boolean; }
+function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover, onPick, onHover, peerSets, boxXZ = BOX, boxY = 0.16 }: {
   cells: { x: number; y: number; z: number }[]; colorOf: (k: number) => [number, number, number]; recolorKey: number;
   onSettleChange?: (settling: boolean) => void;
   selected: number | null; hover: number | null;
   onPick: (rank: number | null) => void; onHover: (rank: number | null) => void;
-  peers: number[]; peerColor: string;   // 当前通信算子下，选中卡的通信对端（流动面 → 结构面）
+  peerSets: PeerSet[];                   // 选中卡在各并行维的通信对端（四维同时呈现）
   boxXZ?: number; boxY?: number;         // 方块尺寸（聚合单元更大）
 }) {
   const N = cells.length;
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const selRef = useRef<THREE.Mesh>(null);
   const hovRef = useRef<THREE.Mesh>(null);
-  const peerRef = useRef<THREE.InstancedMesh>(null);
+  const peerRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
   const m2 = useMemo(() => new THREE.Matrix4(), []);
   const cur = useRef<{ x: Float32Array; y: Float32Array; z: Float32Array } | null>(null);
   const target = useRef(cells);
@@ -144,13 +147,14 @@ function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover
       ref.current.visible = true; ref.current.position.set(c.x[idx], c.y[idx], c.z[idx]); ref.current.scale.setScalar(hlScale);
     };
     place(selRef, selected); place(hovRef, hover === selected ? null : hover);
-    // 对端高亮：跟随各对端卡的实时位置（每帧）
-    const pm2 = peerRef.current;
-    if (pm2) {
-      const n = Math.min(peers.length, PEER_MAX);
-      for (let i = 0; i < n; i++) { const k = peers[i]; if (k < 0 || k >= N) continue; m2.makeScale(boxXZ * 1.7, 0.34, boxXZ * 1.7); m2.setPosition(c.x[k], c.y[k] + 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
+    // 多维对端高亮：四个并行维的通信组同时跟随实时位置（active 维加大，其余淡显）
+    peerSets.forEach((set, si) => {
+      const pm2 = peerRefs.current[si]; if (!pm2) return;
+      const n = Math.min(set.ranks.length, PEER_MAX);
+      const sXZ = set.active ? 1.7 : 1.42, sY = set.active ? 0.34 : 0.24;
+      for (let i = 0; i < n; i++) { const k = set.ranks[i]; if (k < 0 || k >= N) continue; m2.makeScale(boxXZ * sXZ, sY, boxXZ * sXZ); m2.setPosition(c.x[k], c.y[k] + 0.02, c.z[k]); pm2.setMatrixAt(i, m2); }
       pm2.count = n; pm2.instanceMatrix.needsUpdate = true;
-    }
+    });
     if (!settling.current) return;
     let moving = false;
     for (let k = 0; k < N; k++) {
@@ -194,11 +198,14 @@ function CubeField({ cells, colorOf, recolorKey, onSettleChange, selected, hover
         <boxGeometry args={[BOX * 1.35, 0.24, BOX * 1.35]} />
         <meshBasicMaterial color="#8ba3f2" wireframe transparent opacity={0.6} />
       </mesh>
-      {/* 通信对端高亮：当前通信算子下，选中卡正在与之通信的卡（并行维签名色线框） */}
-      <instancedMesh ref={peerRef} args={[undefined, undefined, PEER_MAX]} frustumCulled={false} raycast={() => null}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshBasicMaterial color={peerColor} wireframe transparent opacity={0.9} />
-      </instancedMesh>
+      {/* 多维通信组高亮：选中卡的 TP/PP/DP/EP 对端同时呈现（各维签名色线框），
+          游标扫到某维通信算子 → 该维加亮（0.92），其余维淡显（0.26）——「同时存在」可见 */}
+      {peerSets.map((set, si) => (
+        <instancedMesh key={set.dim} ref={(el) => { peerRefs.current[si] = el; }} args={[undefined, undefined, PEER_MAX]} frustumCulled={false} raycast={() => null}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color={set.color} wireframe transparent opacity={set.active ? 0.92 : 0.26} />
+        </instancedMesh>
+      ))}
     </>
   );
 }
@@ -389,7 +396,8 @@ function Swimlane({ workload, step }: { workload: ParallelWorkload; step: number
 
 // ── 算子图（P3·算子整网）：一层内算子 DAG，Attention/MoE 分块 + 残差，标每个算子用哪种并行；
 //   当前算子（游标）高亮 → 回答「这张卡此刻在算哪个算子」。结构面看位置、流动面看时间、这里看结构。 ──
-function opDim(id: string, coll?: string): string | null {
+function opDim(id: string, coll?: string, dim?: string): string | null {
+  if (dim) return dim.toUpperCase();   // 事件自带并行维标签（白皮书：通信事件携带 tp/pp/dp/ep 标签）
   if (coll === 'a2a') return 'EP'; if (coll === 'ring') return 'DP'; if (coll === 'p2p') return 'PP';
   if (/qkv|attn|oproj/i.test(id)) return 'TP'; if (/gmm|expert/i.test(id)) return 'EP·TP';
   if (/^fwd|^bwd/i.test(id)) return '全部'; return null;
@@ -403,7 +411,7 @@ function OperatorGraph({ workload, step }: { workload: ParallelWorkload; step: n
   const attn = fine && moeStart > 0 ? ops.slice(0, moeStart) : ops;
   const moe = fine && moeStart > 0 ? ops.slice(moeStart) : [];
   const node = (o: typeof ops[number]) => {
-    const on = o.id === cur.id, dim = opDim(o.id, o.coll);
+    const on = o.id === cur.id, dim = opDim(o.id, o.coll, o.dim);
     return (
       <div key={o.id} title={o.note} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
         <div style={{ padding: '5px 9px', borderRadius: 7, background: on ? OP_COL[o.kind] : `${OP_COL[o.kind]}22`, border: `1.5px solid ${OP_COL[o.kind]}`, color: on ? '#0b0f16' : 'var(--tx)', fontSize: 10.5, fontWeight: on ? 700 : 500, boxShadow: on ? '0 0 0 3px color-mix(in srgb, var(--tx) 30%, transparent)' : 'none', whiteSpace: 'nowrap', position: 'relative' }}>
@@ -505,6 +513,7 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
       const canvas = canvasRefs.current[s];
       if (!canvas) return;
       const slow = straggler === s;
+      const { lo, hi } = stageLayerRange(pipe.stages, s);
       const move = (e: Event) => {
         const me = e as MouseEvent;
         const rect = canvas.getBoundingClientRect();
@@ -512,7 +521,7 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
         const slot = Math.floor(xFrac * pipe.slots);
         const cell = lane.find((c) => slot >= c.slot && slot < c.end);
         if (!cell) { helper.hideTooltip(tip); return; }
-        helper.showTooltip(tip, { label: `${cell.dir === 'F' ? '前向' : '后向'} · mb ${cell.mb}`, laneKind: `stage ${s}${slow ? ' · 掉队(×2)' : ''}`, status: cell.dir === 'F' ? 'ok' : 'warn' }, me, { bounds: container });
+        helper.showTooltip(tip, { label: `${cell.dir === 'F' ? '前向' : '后向'} · mb ${cell.mb}`, laneKind: `stage ${s} · L${lo}-${hi}${slow ? ' · 掉队(×2)' : ''}`, status: cell.dir === 'F' ? 'ok' : 'warn' }, me, { bounds: container });
       };
       const leave = () => helper.hideTooltip(tip);
       canvas.addEventListener('pointermove', move);
@@ -551,8 +560,12 @@ function PipelineGantt({ stages, step, straggler, onStraggler, vpp, onVpp }: {
         <span style={{ fontSize: 9.5, color: 'var(--tx3)', marginLeft: 'auto' }}>schedule-simulated · 对齐 PTO 1F1B</span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
-          {pipe.lanes.map((_, s) => <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 10, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600 }}>stage {s}</div>)}
+        {/* stage 泳道名带层段范围（白皮书：PP 是唯一适合「哪段层在哪个 stage」的维度，stage 应带 layers lo-hi） */}
+        <div style={{ width: 86, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
+          {pipe.lanes.map((_, s) => {
+            const { lo, hi } = stageLayerRange(stages, s);
+            return <div key={s} style={{ height: LANE_H, display: 'flex', alignItems: 'center', fontSize: 9.5, color: straggler === s ? '#ff4b7b' : 'var(--tx2)', fontWeight: 600, whiteSpace: 'nowrap' }}>S{s} · L{lo}-{hi}</div>;
+          })}
         </div>
         <div ref={containerRef} style={{ position: 'relative', flex: 1 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
@@ -684,11 +697,19 @@ export function CubeView({
     const h = fl.hidden.find((hh) => hh.op.kind === 'comm' && cursor01 >= hh.x && cursor01 < hh.x + hh.w);
     return h ? { op: h.op, hidden: true } : null;
   }, [curOp, fl, cursor01]);
-  const curDim: Exclude<ParDim, 'sp' | 'tp'> | null = activeComm
-    ? (activeComm.op.coll === 'ring' ? 'dp' : activeComm.op.coll === 'p2p' ? 'pp' : 'ep') : null;
-  const peers = useMemo(() => (sel != null && curDim && !aggregated ? dep.peersOf(sel, curDim, PEER_MAX) : []), [sel, curDim, dep, step, aggregated]);
+  const curDim: Exclude<ParDim, 'sp'> | null = activeComm
+    ? (activeComm.op.dim ?? (activeComm.op.coll === 'ring' ? 'dp' : activeComm.op.coll === 'p2p' ? 'pp' : 'ep')) : null;
+  // 多维叠加（白皮书「一个 rank 的多维身份」）：选中一张卡 → 它在 TP/PP/DP/EP 四个维度的通信组
+  // 同时显示（同一 rank 同时具有多个并行坐标，不是互斥模式）；游标扫到某维通信算子时该维加亮。
+  const peerSets = useMemo(() => {
+    if (sel == null || aggregated) return [];
+    return (['tp', 'pp', 'dp', 'ep'] as const).map((d) => ({
+      dim: d, ranks: dep.peersOf(sel, d, PEER_MAX), color: PARALLEL_COLORS[d], active: d === curDim,
+    }));
+  }, [sel, aggregated, dep, curDim]);
+  const activePeers = curDim ? (peerSets.find((s) => s.dim === curDim)?.ranks ?? []) : [];
   const peerColor = curDim ? PARALLEL_COLORS[curDim] : '#4369ef';
-  const dimLabel: Record<string, string> = { ep: '专家 All-to-All', dp: '数据并行 AllReduce', pp: '流水 P2P' };
+  const dimLabel: Record<string, string> = { tp: '张量并行 AllGather/ReduceScatter', ep: '专家 All-to-All', dp: '数据并行 AllReduce', pp: '流水 P2P' };
 
   const shell: React.CSSProperties = { position: 'absolute', inset: 0, zIndex: 11, display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--tx)' };
   const card: React.CSSProperties = { background: 'var(--panel)', border: '1px solid var(--bd)', borderRadius: 11, boxShadow: 'var(--shadow-sm)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' };
@@ -713,7 +734,7 @@ export function CubeView({
           <CubeField cells={agg.cells} colorOf={colorOf} recolorKey={recolorKey} onSettleChange={setSettling} boxXZ={boxXZ} boxY={boxY}
             selected={sel != null ? agg.unitOfRank(sel) : null} hover={hover != null ? agg.unitOfRank(hover) : null}
             onPick={(u) => setSel(u == null ? null : agg.rankOfUnit(u))} onHover={(u) => setHover(u == null ? null : agg.rankOfUnit(u))}
-            peers={peers} peerColor={peerColor} />
+            peerSets={peerSets} />
           <OrbitControls
             ref={controlsRef as never} makeDefault enableDamping dampingFactor={0.08}
             minPolarAngle={0} maxPolarAngle={Math.PI / 2} minDistance={2} maxDistance={600}
@@ -732,10 +753,15 @@ export function CubeView({
             <span style={{ width: 9, height: 9, borderRadius: 2, background: OP_COL[curOp.kind] }} />
             <span style={{ fontSize: 12, fontWeight: 600 }}>{curOp.name}</span>
             <span style={{ fontSize: 10.5, color: 'var(--tx3)' }}>{OP_KIND_LBL[curOp.kind]}</span>
-            {curDim && sel != null && peers.length > 0 && (
+            {curDim && sel != null && activePeers.length > 0 && (
               <span style={{ fontSize: 10.5, color: peerColor, borderLeft: '1px solid var(--bd)', paddingLeft: 9 }}>
-                rank {sel} · 与 {peers.length} 张卡做 {dimLabel[curDim]}
+                rank {sel} · 与 {activePeers.length} 张卡做 {dimLabel[curDim]}
                 <span style={{ color: 'var(--tx3)', marginLeft: 6 }}>{activeComm?.hidden ? '（掩盖·并发）' : '（暴露）'}</span>
+              </span>
+            )}
+            {!curDim && sel != null && peerSets.length > 0 && (
+              <span style={{ fontSize: 10.5, color: 'var(--tx3)', borderLeft: '1px solid var(--bd)', paddingLeft: 9 }}>
+                rank {sel} · TP/PP/DP/EP 四维通信组同时淡显 · 游标扫到通信算子时对应维加亮
               </span>
             )}
           </div>
@@ -745,6 +771,16 @@ export function CubeView({
         <div style={{ position: 'absolute', left: 12, top: 12, ...card, padding: '9px 12px', maxWidth: 340, pointerEvents: 'none' }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{LAYOUT_LABEL[view]}<span style={{ color: 'var(--tx3)', fontWeight: 400, fontFamily: MONO, marginLeft: 8 }}>{settling ? '重排中…' : ''}</span></div>
           <div style={{ fontSize: 10.5, color: 'var(--tx2)', lineHeight: 1.5 }}>{lay.note}</div>
+          {/* 多维叠加常驻图例：几种并行是同一批 rank 上叠加的不同维度坐标（同时存在、不互斥）；
+              切视图只是换一根投影轴，rank 的多维坐标本身不变（白皮书「多维运行时放置」） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap', borderTop: '1px solid var(--bd)', paddingTop: 5 }}>
+            {(['tp', 'pp', 'dp', 'ep'] as const).map((d) => (
+              <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontFamily: MONO, color: 'var(--tx2)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: PARALLEL_COLORS[d] }} />{d.toUpperCase()}×{pm.groupCount(d)}
+              </span>
+            ))}
+            <span style={{ fontSize: 9, color: 'var(--tx3)', lineHeight: 1.4, width: '100%' }}>同一 rank 同时具有以上各维坐标（叠加，非互斥）· 切视图只换投影轴 · 点选一张卡看它的四维通信组</span>
+          </div>
           {anom !== 'none' && (
             <div style={{ marginTop: 5, borderTop: '1px solid var(--bd)', paddingTop: 5 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
@@ -767,7 +803,14 @@ export function CubeView({
         {/* 部署查询详情栏（反查：点一张卡 → 它担任什么并行角色 + 物理位置）· 嵌入驾驶舱时由右栏承载 */}
         {!embedded && sel != null && (() => {
           const phys = dep.physOf(sel), u = loadOf(sel), st = loadState(u);
-          const roleLbl: Record<string, string> = { tp: '张量切片 TP', pp: '流水级 PP', dp: '数据副本 DP', ep: '专家组 EP' };
+          const slice = dep.sliceOf(sel);
+          // 白皮书口径：只有 PP 说「哪段层」；TP=同层 shard · DP=副本+样本 shard · EP=持有哪些 experts。
+          const roleRow: Record<string, { label: string; val: (g: number, deg: number) => string; sub: (g: number, deg: number) => string }> = {
+            tp: { label: 'TP 张量并行', val: (g, deg) => `shard ${g + 1}/${deg}`, sub: () => 'QKV/MLP 同层分片 · 协同计算，非整层归属' },
+            pp: { label: 'PP 流水并行', val: (g, deg) => `stage ${g}/${deg}`, sub: () => `层段 L${slice.layerLo}-${slice.layerHi}${slice.hasEmbedding ? ' +Embedding' : ''}${slice.hasHead ? ' +LM Head' : ''}` },
+            dp: { label: 'DP 数据并行', val: (g, deg) => `replica ${g}/${deg}`, sub: () => '同一完整模型副本 · 处理不同样本 shard' },
+            ep: { label: 'EP 专家并行', val: () => `experts ${slice.expertLo}-${slice.expertHi}`, sub: (g, deg) => `专家分桶 ${g}/${deg} · A2A 域 ${slice.epDomain} · 桶↔卡非 1:1` },
+          };
           const roles = dep.rolesOf(sel).filter((r) => r.dim !== 'sp');
           const row = (label: string, val: string) => (
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, margin: '3px 0' }}><span style={{ color: 'var(--tx2)' }}>{label}</span><span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{val}</span></div>
@@ -784,17 +827,30 @@ export function CubeView({
               {row('机柜（物理分组）', `C${phys.cabinet}`)}
               {row('Host · 节点', `${phys.host}（柜内 ${phys.host % NODES_PER_CAB}）`)}
               {row('卡槽 slot', `${phys.slot} / 8`)}
-              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>并行角色（担任什么任务）· {pm.cfg}</div>
+              <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>运行时放置 Runtime Placement · {pm.cfg}</div>
               {roles.map((r) => {
                 const c = PARALLEL_COLORS[r.dim as Exclude<ParDim, 'sp'>];
+                const rr = roleRow[r.dim];
                 return (
-                  <div key={r.dim} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, margin: '4px 0' }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0 }} />
-                    <span style={{ color: 'var(--tx2)', flex: 1 }}>{roleLbl[r.dim]}</span>
-                    <span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{r.group} / {r.degree}</span>
+                  <div key={r.dim} style={{ margin: '5px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0 }} />
+                      <span style={{ color: 'var(--tx2)', flex: 1 }}>{rr.label}</span>
+                      <span style={{ fontFamily: MONO, color: 'var(--tx)' }}>{rr.val(r.group, r.degree)}</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--tx3)', margin: '1px 0 0 16px', lineHeight: 1.4 }}>{rr.sub(r.group, r.degree)}</div>
                   </div>
                 );
               })}
+              {/* CP/SP：白皮书要求按配置展示（本工况 CP1 未切分，与 TP 同域），而非省略 */}
+              <div style={{ margin: '5px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, background: '#22d3ee', flexShrink: 0 }} />
+                  <span style={{ color: 'var(--tx2)', flex: 1 }}>CP/SP 序列并行</span>
+                  <span style={{ fontFamily: MONO, color: 'var(--tx)' }}>CP1</span>
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--tx3)', margin: '1px 0 0 16px', lineHeight: 1.4 }}>{slice.tokenNote}</div>
+              </div>
               <div style={{ fontSize: 9.5, letterSpacing: 0.4, textTransform: 'uppercase', color: 'var(--tx3)', margin: '11px 0 5px', borderTop: '1px solid var(--bd)', paddingTop: 9 }}>当前状态</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, background: stateColor(st) }} />
