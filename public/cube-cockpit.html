@@ -547,6 +547,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="cm3">TP切片</button>
           <button id="cm4">PP流水</button>
         </div>
+        <div class="fm-row" id="cubeViews" style="display:none">
+          <button id="cv0" class="on" title="默认斜视角">斜视</button>
+          <button id="cv1" title="俯视：只看 X×Z 平面 → 读 TP×DP 切分">顶 TP×DP</button>
+          <button id="cv2" title="正视：只看 X×Y 平面 → 读 TP×PP 切分">前 TP×PP</button>
+          <button id="cv3" title="侧视：只看 Z×Y 平面 → 读 DP×PP 切分">侧 DP×PP</button>
+        </div>
       </div>
       <div id="formctl">
         <span class="hint">拖拽旋转 · 滚轮缩放 · 选层=相机飞行</span>
@@ -771,7 +777,7 @@ function updateCounts(){
   set('#ctL6', f? '关联 1 Pod / 64 · 本集群' : '1 集群 = 64 Pod · 8192 NPU（万卡）');
   set('#ctL5', f? '关联 1 Pod / 4 · 本池' : '本池 4 Pod · 16 池/集群');
   set('#ctL3', f? `关联 ${f.set.size}/1024 Host` : '1,024 Host · 8 NPU/台');
-  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '本集群 128 机柜 · +32 互联柜');
+  set('#ctL4', f? `关联 ${new Set([...f.set].map(h=>dpOf(h))).size}/64 Pod` : '64 Pod（本层级对象 · 色=Pod 均值负载）· 每 Pod=128 NPU/2 机柜');
   set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '8,192 Chip');
   if(S.focusPod>0){ set('#ctL6', `已选 Pod ${S.focusPod}/64 · 本集群`);
     if(S.focusPod<4) set('#ctL5', `已选 Pod ${S.focusPod} · 本池`); }
@@ -785,39 +791,52 @@ function hidpi(cv, W, H){
   if(cv.width !== (W*d|0) || cv.height !== (H*d|0)){ cv.width = W*d|0; cv.height = H*d|0; }
   cv.getContext('2d').setTransform(d,0,0,d,0,0);
 }
-(function(){ const b = $('#l6body'); let html='<div style="display:flex;gap:2px;flex-wrap:wrap">';
-  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?COL.DP:themeC('#21262d','#d0d8e4')};border:1px solid ${i===0?COL.DP:(i<4?themeC('#2a4f8a','#a8b6cc'):themeC('#30363d','#c8d2de'))}" title="Pod ${i}（UBL128 · 128 NPU）${i<4?' · 本服务池成员':''}"></i>`;
+(function(){ const b = $('#l6body');   // L6 对象 = 集群（本层级仅 1 个；兄弟集群经 DCN 见 L7）
+  b.innerHTML = `<div id="clusterBar" style="display:flex;align-items:center;gap:8px;padding:4px 9px;border-radius:5px;cursor:pointer;border:1px solid ${themeC('#2a4f8a','#a8b6cc')};background:${themeC('#12233d','color-mix(in srgb,'+COL.DP+' 8%,transparent)')};font-size:10.5px;color:${themeC('#c9d1d9','rgba(0,0,0,.62)')}">
+    <b style="color:${themeC('#fff',COL.DP)}">本集群</b><span>8192 NPU · 64 Pod · 16 服务池</span>
+    <span style="margin-left:auto;opacity:.7">点击回总览</span></div>`; })();
+(function(){ const b = $('#l5body'); let html='<div style="display:flex;gap:3px;flex-wrap:wrap">';   // L5 对象 = 服务池 ×16
+  for(let i=0;i<16;i++) html += `<span id="pool5-${i}" style="flex:1 0 44px;text-align:center;font-size:9.5px;padding:2px 0;border-radius:4px;cursor:pointer;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}" title="服务池 ${i} · 4 Pod · 512 NPU">池${i}${i===0?'·本':''}</span>`;
   b.innerHTML = html+'</div>'; })();
-(function(){ const b = $('#l5body'); let html='<div style="display:flex;gap:5px">';
-  for(let i=0;i<4;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?COL.DP:themeC('#30363d','#c8d2de')};background:${i===0?themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)'):themeC('#161b22','#f0f2f6')};color:${i===0?themeC('#fff',COL.DP):themeC('#8b949e','rgba(0,0,0,.50)')}">Pod${i}${i===0?' ·本(=L4)':''}</span>`;
-  b.innerHTML = html+'</div>'; })();
-$('#l4body').innerHTML =
+(function(){
+  const podC = i => { let m=0; for(let h=i*16;h<i*16+16;h++) m+=health[h]; m/=16;
+    const u=.4+m*.55; return u>.72?'#FF4B7B':u>.62?'#fbbf24':'#04D793'; };   // 均值取色（峰值会全红无区分度）
+  let tiles='';
+  for(let i=0;i<64;i++) tiles += `<i id="sn${i}" style="flex:1 0 20px;height:13px;border-radius:2px;cursor:pointer;background:${podC(i)};opacity:.85;border:1px solid ${themeC('rgba(255,255,255,.14)','rgba(0,0,0,.14)')}" title="Pod ${i} · 128 NPU · 服务池 ${(i/4)|0}"></i>`;
+  $('#l4body').innerHTML =
   `<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
-     <span id="ctL4">本集群 128 机柜 · +32 互联柜</span>
+     <span id="ctL4">64 Pod（本层级对象 · 色=Pod 均值负载）· 每 Pod=128 NPU/2 机柜</span>
      <span style="margin-left:auto">MFU <b style="color:var(--sys-text-bright)">54.2%</b></span>
    </div>
-   <canvas class="strip" id="cvL4" width="404" height="92" style="margin-top:5px"></canvas>`;
-$$('#l5body span').forEach((el,i)=>{ el.style.cursor='pointer';
-  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L5'); }); });
-$$('#l6body i').forEach((el,i)=>{ el.style.cursor='pointer';
-  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L6'); }); });
+   <div id="l4pods" style="display:flex;gap:2px;flex-wrap:wrap;margin-top:5px">${tiles}</div>
+   <canvas class="strip" id="cvL4" width="404" height="92" style="display:none"></canvas>`;
+})();
+$$('#l5body span').forEach((el,i)=>{
+  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i*4,'L5'); }); });
+$$('#l4pods i').forEach((el,i)=>{
+  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L4'); });
+  el.addEventListener('mouseenter', ()=>setHover(i*16+8,'L4'));
+  el.addEventListener('mouseleave', ()=>setHover(-1,'')); });
+$('#clusterBar').addEventListener('click', e=>{ e.stopPropagation(); setPod(0,'L6'); });
 function setPod(i,lv){ S.focusPod = (S.focusPod===i && S.level===lv)? 0 : i;
   renderPodRows(); colorsDirty = true; updateCounts(); setLevel(lv); drawArcs(); }
 function renderPodRows(){
-  // 选中态完全由 S.focusPod 驱动：切换即迁移，Pod0 不再常亮（仅保留"本池"弱标识）
+  // 选中态由 S.focusPod 驱动：L5 高亮所属服务池（focusPod/4），L4 高亮 Pod 瓦片本身
+  const selPool = (S.focusPod/4)|0;
   $$('#l5body span').forEach((el,i)=>{
-    const sel = S.focusPod===i;
+    const sel = selPool===i && S.focusPod>0 || (S.focusPod===0 && i===0);
     el.style.outline = 'none';
     el.style.borderColor = sel? COL.DP : (i===0? themeC('#2a4f8a','#a8b6cc') : themeC('#30363d','#c8d2de'));
     el.style.background = sel? themeC('#173a6b','color-mix(in srgb,'+COL.DP+' 14%,transparent)') : themeC('#161b22','#f0f2f6');
     el.style.color = sel? themeC('#fff',COL.DP) : themeC('#8b949e','rgba(0,0,0,.50)');
     el.style.fontWeight = sel? '600' : '400';
   });
-  $$('#l6body i').forEach((el,i)=>{
+  $$('#l4pods i').forEach((el,i)=>{
     const sel = S.focusPod===i;
-    el.style.outline = 'none';
-    el.style.background = sel? COL.DP : themeC('#21262d','#d0d8e4');
-    el.style.borderColor = sel? COL.DP : (i<4? themeC('#2a4f8a','#a8b6cc') : themeC('#30363d','#c8d2de'));
+    el.style.outline = sel? ('2px solid '+COL.DP) : 'none';
+    el.style.opacity = sel? '1' : '.85';
+    const anom = S.anomaly && (i%8)===ANOM_BUCKET;
+    el.style.borderColor = anom? COL.RED : themeC('rgba(255,255,255,.14)','rgba(0,0,0,.14)');
   });
 }
 const cvL3 = $('#cvL3'), g3 = cvL3.getContext('2d');
@@ -980,11 +999,10 @@ function drawArcs(){
   const podSel = ()=>{ if(!S.focusPod) return;
     const i = S.focusPod, si = anchorEl('#sn'+i);
     dot(si,'#4369EF');
-    if(i<4){ const pi = anchorEl('#pod5-'+i);
-      arc(si, pi, -12, '#4369EF', 1.2);
-      dot(pi,'#4369EF');
-      lab(pi.x, pi.y+15, '#4369EF', `已选 Pod ${i} · 缩略（未下钻 · 点 Pod0 返回）`); }
-    else lab(si.x+8, si.y+3, '#4369EF', `已选 Pod ${i} · 不在本服务池（缩略）`, 'start');
+    const pi = anchorEl('#pool5-'+((i/4)|0));
+    arc(si, pi, -12, '#4369EF', 1.2);
+    dot(pi,'#4369EF');
+    lab(pi.x, pi.y+15, '#4369EF', `已选 Pod ${i} · 属服务池 ${(i/4)|0}（点集群条返回）`);
   };
   const flt = filterInfo();
   if(flt){                                   // ==== Smartscape 下钻模式 ====
@@ -1000,14 +1018,12 @@ function drawArcs(){
       const extra = flt.set.size-1-others.length;
       if(extra>0) lab(hp.x, hp.y+15, flt.color, `+${extra} 个关联已在网格中描边`);
     }
-    const podI = S.focusPod || 0;                             // ③ 向上归属链：跟随当前选中 Pod
-    const l5pod = podI<4 ? anchorEl('#pod5-'+podI) : anchorEl('#pod5-0');
-    const l6sn  = anchorEl('#sn'+podI);
-    const ups = [anchorL4cab(cabOf(S.filterHost)), l5pod, l6sn];
+    const podI = dpOf(S.filterHost);                          // ③ 向上归属链：Host → 所属 Pod → 服务池 → 集群
+    const ups = [anchorEl('#sn'+podI), anchorEl('#pool5-'+((podI/4)|0)), anchorEl('#clusterBar')];
     const chainC = themeC('#5a7a9e','#8aaaca');
     let prev = hp;
     ups.forEach(p=>{ arc(prev, p, 7, chainC, 1.3); dot(p,chainC); prev=p; });
-    lab(ups[0].x+4, ups[0].y-6, '#4369EF', `柜${cabOf(S.filterHost)}`, 'start');
+    lab(ups[0].x+4, ups[0].y-6, '#4369EF', `Pod${podI}`, 'start');
     lab(ups[1].x, ups[1].y-9, '#4369EF', `Pod${podI}·本`);
     lab(ups[2].x+7, ups[2].y+3, '#4369EF', `Pod${podI}`, 'start');
     commsvg.innerHTML = out.join('');
@@ -1043,7 +1059,7 @@ function drawArcs(){
     pts.forEach((p,i)=>dot(p, ps.hosts[i]===S.focusHost?'#FFAA3B':COL.EP));
     lab(pts[0].x, pts[0].y-9, COL.EP, `A2A 域 ${epDomOf(S.focusHost)} · 8 副本各持 1 桶 · 全互发`);
     if(S.anomaly){
-      const pod1 = anchorEl('#pod5-1', true);
+      const pod1 = anchorEl('#sn1', true);
       arc(pts[Math.min(ANOM_BUCKET,pts.length-1)], pod1, -60, COL.RED, 2.2, 'RED');
       lab((pts[0].x+pod1.x)/2, (pts[0].y+pod1.y)/2-6, COL.RED, '桶 3 成员越界 → 相邻 Pod（跨 Pod 光链路）');
     }
@@ -1053,7 +1069,7 @@ function drawArcs(){
     for(let k=0;k<pts.length;k++) arc(pts[k], pts[(k+1)%pts.length], 14+(k%3)*8, COL.DP, 1.5, 'DP');
     pts.forEach(p=>dot(p,COL.DP));
     lab(pts[0].x+8, pts[0].y-10, COL.DP, `Stage${ppOf(S.focusHost)} 的 DP 梯度环（示 8/64 副本）`, 'start');
-    const pod2 = anchorEl('#pod5-2', true);
+    const pod2 = anchorEl('#sn2', true);
     arc(pts[0], pod2, -55, COL.DP, 1.2, 'DP');
     lab(pod2.x, pod2.y+14, COL.DP, '跨 Pod DP 同步（Scale-Out）');
   }
@@ -1065,11 +1081,10 @@ function drawArcs(){
   if(ph==='DP') $('#bdDPx').classList.add('live');
   $('#bdAnom').classList.toggle('show', S.anomaly);
   if(S.anomaly && ph==='EP') $('#bdAnom').classList.add('live');
-  const p1 = $('#pod5-1');
-  if(p1 && S.focusPod!==1){                     // 选中态优先于异常染色
-    p1.style.borderColor = S.anomaly?'#FF4B7B':themeC('#30363d','#c8d2de');
-    p1.style.color = S.anomaly?'#ffdcd7':themeC('#8b949e','rgba(0,0,0,.50)');
-    p1.style.background = S.anomaly?themeC('#3d0c0e','#ffe4e4'):themeC('#161b22','#f0f2f6'); }
+  const p1 = $('#sn1');
+  if(p1 && S.focusPod!==1){                     // 选中态优先于异常染色（Pod1 瓦片）
+    p1.style.borderColor = S.anomaly?'#FF4B7B':themeC('rgba(255,255,255,.14)','rgba(0,0,0,.14)');
+    p1.style.boxShadow = S.anomaly?'0 0 4px #FF4B7B':''; }
 }
 function touchLeft(){
   if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); } else renderMM();
@@ -1656,6 +1671,36 @@ function cubeLine(points, color, base, r){
   const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6; cubeComm.add(mesh); return mesh;
 }
 function cubeLab(text,color,w,pos){ const l=makeLabel(text,color,w); l.material.fog=false; l.renderOrder=7; l.position.copy(pos); cubeComm.add(l); }
+/* ---- microbatch F→B 追踪通道：播放时一块半透明扫板沿 stage 轴 前向→反向 往返，
+        标签实时显示 F/B · mb 编号 · 当前 stage 层段（标准=Y 轴 · PP 流水=X 轴） ---- */
+const mbGrp = new THREE.Group(); mbGrp.visible=false; scene.add(mbGrp);
+const mbSlabM = new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:.22, depthWrite:false, fog:false});
+const mbSlab = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), mbSlabM); mbSlab.renderOrder=5; mbGrp.add(mbSlab);
+let mbLab=null, mbLabTxt='';
+function mbSetLab(txt,color){
+  if(txt===mbLabTxt && mbLab) return;
+  if(mbLab){ if(mbLab.material.map) mbLab.material.map.dispose(); mbLab.material.dispose(); mbGrp.remove(mbLab); }
+  mbLab = makeLabel(txt,color,7); mbLab.material.fog=false; mbLab.renderOrder=8; mbGrp.add(mbLab); mbLabTxt=txt;
+}
+function updateMbTracer(){
+  const on = Wgt.cube>0.5 && S.playing && (cubeMode===0||cubeMode===4) && cubeBlend>=1;
+  mbGrp.visible = on; if(!on) return;
+  const f2 = (S.t*4%1)*2, fwd = f2<1, prog = fwd? f2 : 2-f2;   // 每相位周期一个 F→B 往返
+  const stage = Math.min(15.999, prog*15.999), si = stage|0;
+  const mb = Math.floor(S.t*16)%8;
+  mbSlabM.color.set(fwd?0x22d3ee:0x6b8bff);
+  if(cubeMode===0){
+    mbSlab.scale.set(9.4*CUBE.sx, CUBE.sy*.9, 66*CUBE.sz);
+    mbSlab.position.set(CUBE.cx, CUBE.cy+(7.5-stage)*CUBE.sy, CUBE.cz);
+    if(mbLab) mbLab.position.set(CUBE.cx, CUBE.cy+(7.5-stage)*CUBE.sy, CUBE.cz+27);
+  } else {
+    mbSlab.scale.set(1.5, 11, 50);
+    mbSlab.position.set((stage-7.5)*6.2, 12, 0);
+    if(mbLab) mbLab.position.set((stage-7.5)*6.2, 20.8, 0);
+  }
+  mbSetLab(`${fwd?'F 前向 ↓':'B 反向 ↑'} · mb${mb} · S${si} L${si*3+1}-${si*3+3}`, fwd?'#22d3ee':'#9ecbff');
+  if(mbLab && cubeMode===0) mbLab.position.set(CUBE.cx, CUBE.cy+(7.5-stage)*CUBE.sy, CUBE.cz+27);
+}
 function commLine(points, color, base, width){
   const g = new THREE.BufferGeometry().setFromPoints(points);
   const m = new THREE.LineBasicMaterial({color, transparent:true, opacity:base});
@@ -2367,6 +2412,7 @@ function updateIndicators(){
     podBaseEdges.material.opacity = (S.level==='L4'?1:.75)*Wgt.phys; }
 }
 function updateCommPulse(now){
+  updateMbTracer();   // F→B microbatch 追踪扫板（播放 · 标准/PP 流水形态）
   // AUTO 连线只在「播放中或选中卡」时显示（图例同步出现/隐藏）；显式连线镜头（COMM/FLOW…）不受限
   const autoGate = S.wire!=='AUTO' || S.playing || S.filterHost!=null;
   commGroup.visible = Wgt.phys>0.6 && autoGate;
@@ -2526,6 +2572,7 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#btnCube').classList.toggle('on', formTarget==='cube');
   $('#btnStack').classList.toggle('on', formTarget==='stack');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
+  $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   S.form = formTarget; renderViewlab(); }
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
@@ -2534,6 +2581,11 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
   renderCubeAxes(); renderViewlab(); commDirty = true;   // 四维通信线随新变形坐标重布
   if(typeof window.__netSyncCubeMode==='function') window.__netSyncCubeMode(k); }; });
+// 视角预设：顶/前/侧视图用视角「压平」一维 → 专注读某两维切分（标准形态：X=TP·Y=PP·Z=DP）
+[[.82,.58],[.02,1.47],[.02,.06],[Math.PI/2-.02,.06]].forEach((v,k)=>{
+  $('#cv'+k).onclick = ()=>{ yaw=v[0]; pitch=v[1];
+    [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===k));
+    try{ wakeLoop(60); }catch(e){} }; });
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
