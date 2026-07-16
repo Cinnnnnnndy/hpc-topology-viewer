@@ -2283,9 +2283,16 @@ function applyMorph(){
   cubeComm.visible = wC>0.5 && S.wire==='AUTO' && (S.playing || S.filterHost!=null);   // 四维通信线：播放或选卡时显示（随 cubeMode 重布）
 }
 function updateSlices(){
-  slices.TP.forEach(p=>p.visible = S.lens==='TP');
-  slices.PP.forEach(p=>p.visible = S.lens==='PP');
-  slices.DP.forEach(p=>p.visible = S.lens==='DP');
+  // 多维同显（标准魔方）：颜色一次只能编码一个维，但位置已同时编码三维（X=TP·Y=PP·Z=DP）。
+  // 三种切分刀面用各维签名色【同时】淡显标出组边界，当前透镜的维加亮——
+  // 于是：位置(3 维) + 刀面边界(同屏) + 着色透镜(第 4 维) + 选卡四维连线，可同屏读多维关系。
+  const setB=(arr,hi)=>arr.forEach(p=>{ p.visible=true;
+    p.material.userData.base = hi?.16:.045; p.material.opacity = p.material.userData.base; });
+  setB(slices.TP, S.lens==='TP');
+  setB(slices.PP, S.lens==='PP');
+  setB(slices.DP, S.lens==='DP'||S.lens==='EP');
+  // DP 纵面恰好每 8 副本一片 = EP A2A 域边界 → EP 透镜下变紫并加亮
+  slices.DP.forEach(p=>p.material.color.set(S.lens==='EP'?0x9B3CF6:0x4369EF));
   if(S.selLayer!=null){ selSlab.visible = true;
     selSlab.position.set(CUBE.cx, CUBE.cy+(7.5-stageOfLayer(S.selLayer))*CUBE.sy, CUBE.cz); }
   else if(S.selCard){ selSlab.visible = true;
@@ -2725,7 +2732,7 @@ function syncPhase(){
 /* ---- 信息面板 ---- */
 // 每种魔方变形的「读图钥匙」——从 3D 场景挪进 HUD，不再被方块遮挡
 const CUBE_WHY=[
-  '多维切分同时存在 · 换视图只是换一根投影轴，卡的坐标不变',
+  '位置即多维坐标：X=TP·Y=PP·Z=DP 同屏三维 · 刀面=组边界 · 着色透镜再叠第 4 维（换视图只换投影轴）',
   '副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本',
   '桶故障 = 整面墙同红 · 域热点 = 横穿 8 墙的一排过热 · 桶↔卡非 1:1',
   '同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常',
