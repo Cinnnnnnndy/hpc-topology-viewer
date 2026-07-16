@@ -1363,19 +1363,28 @@ for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
 scene.add(memMesh);
 // 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
-  const SS = 4, fontPx = 44, padX = 20, padY = 10;   // 超采样 4×
+  const SS = 4, fontPx = 44, padX = 22, padY = 11;   // 超采样 4×
+  const FONT = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
   const meas = document.createElement('canvas').getContext('2d');
-  meas.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
+  meas.font = FONT;
   const tw = Math.ceil(meas.measureText(text).width) + padX * 2;
   const th = fontPx + padY * 2;
   const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
   const c = cv.getContext('2d'); c.scale(SS, SS);
-  // 半透明深色胶囊底色，保证亮/暗主题下都清晰
-  c.fillStyle = 'rgba(8,12,24,0.55)';
+  // 随主题的圆角字牌：浅色=白底细描边+自动加深字色；深色=深底+亮字。任何场景底上都干净可读。
+  const light = !isDark();
+  c.fillStyle = light ? 'rgba(255,255,255,0.90)' : 'rgba(10,14,24,0.72)';
   const r = th * 0.38;
-  c.beginPath(); c.roundRect(0, 0, tw, th, r); c.fill();
-  c.font = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC',sans-serif`;
-  c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, r); c.fill();
+  c.lineWidth = 1.5;
+  c.strokeStyle = light ? 'rgba(63,76,99,0.30)' : 'rgba(139,148,158,0.32)';
+  c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, r); c.stroke();
+  // 浅色主题下自动加深传入的亮色（沿用各调用点的维度色，不必逐处改色值）
+  let fill = color;
+  if(light){ const tc = new THREE.Color(color), hsl = {}; tc.getHSL(hsl);
+    tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.05), Math.min(hsl.l, 0.34)); fill = '#' + tc.getHexString(); }
+  c.font = FONT;
+  c.fillStyle = fill; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(text, tw / 2, th / 2);
   const tex = new THREE.CanvasTexture(cv);
   tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
@@ -1460,13 +1469,19 @@ function colorStack(dark){
 colorStack(isDark());
 /* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
 const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
-// 层段标尺：每个 PP 段挂 "S0·L1-3"——与网格框左后棱的 PP 轴合并成一列（PP 标题在顶、刻度在下）
+// 层段标尺：每个 PP 段挂 "S0·L1-3"——与网格框左后棱的 PP 轴合并成一列（PP 标题在顶、刻度在下）。
+// 字牌随主题重绘 → 可重建（applyTheme 调 buildRuler）。
 const rulerSprites = [];
-for(let s2=0;s2<16;s2++){
-  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#ffe0a0', 3.8);
-  sp.position.set(-8.3, CUBE.cy+(7.5-s2)*CUBE.sy, -24.8);
-  rulerSprites.push(sp); cubeGroup.add(sp);
+function buildRuler(){
+  while(rulerSprites.length){ const sp = rulerSprites.pop();
+    if(sp.material.map) sp.material.map.dispose(); sp.material.dispose(); cubeGroup.remove(sp); }
+  for(let s2=0;s2<16;s2++){
+    const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#ffe0a0', 3.8);
+    sp.position.set(-8.3, CUBE.cy+(7.5-s2)*CUBE.sy, -24.8);
+    rulerSprites.push(sp); cubeGroup.add(sp);
+  }
 }
+buildRuler();
 // 切分刀面（透镜联动：TP 竖切 / PP 横切 / DP 纵切）
 const sliceGroup = new THREE.Group(); cubeGroup.add(sliceGroup);
 const slices = { TP:[], PP:[], DP:[] };
@@ -1521,25 +1536,9 @@ function axArrow(a,b,color){   // 细方向轴（箭头指向 b）
   const cone=new THREE.Mesh(new THREE.ConeGeometry(.3,1,10), new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92}));
   cone.position.copy(b); cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir); cubeAxes.add(cone);
 }
-// 裸文字标注（参考 op-rank-time 的 3D 表达：等宽粗体 · 无底无描边 · light=深字/dark=浅字）
-function makeAxText(text,color,w){
-  const SS=3, fontPx=44, pad=10;
-  const meas=document.createElement('canvas').getContext('2d');
-  meas.font=`700 ${fontPx}px 'JetBrains Mono','Menlo',ui-monospace,monospace`;
-  const tw=Math.ceil(meas.measureText(text).width)+pad*2, th=fontPx+pad*2;
-  const cv=document.createElement('canvas'); cv.width=tw*SS; cv.height=th*SS;
-  const c=cv.getContext('2d'); c.scale(SS,SS);
-  c.font=`700 ${fontPx}px 'JetBrains Mono','Menlo',ui-monospace,monospace`;
-  c.fillStyle=color; c.textAlign='center'; c.textBaseline='middle';
-  c.fillText(text,tw/2,th/2);
-  const tex=new THREE.CanvasTexture(cv);
-  tex.minFilter=THREE.LinearMipmapLinearFilter; tex.magFilter=THREE.LinearFilter;
-  try{ tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); }catch(e){}
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
-  sp.scale.set(w*tw/512, w*th/512, 1);
-  return sp;
-}
-function axText(text,color,w,pos){ const l=makeAxText(text,color,w); l.position.copy(pos); cubeAxes.add(l); }
+// 轴/结构标注：随主题圆角字牌（makeLabel：浅色白底深字 · 深色深底亮字），
+// 覆盖在网格线/方块上也干净可读——被穿线、字体混搭发虚的问题由字牌底解决。
+function axText(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.copy(pos); cubeAxes.add(l); }
 function axGridSeg(pairs,color,opacity){
   const g=new THREE.BufferGeometry().setFromPoints(pairs);
   const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color,transparent:true,opacity}));
@@ -1585,7 +1584,7 @@ function renderCubeAxes(){
     axText('DP×64 完整副本 · 数据不同 · 梯度 AllReduce',DPc,9.5,V3(b.x1+6,b.y0-2.8,0));
     axArrow(V3(b.x0-1.5,b.y1,b.z0),V3(b.x0-1.5,b.y0,b.z0),PPw);
     axText('PP×16 模型深度 L1→L48 · 段间 P2P',PPc,9,V3(b.x0-1.5,b.y1+1.8,b.z0));
-    axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶',NTc,11.5,V3(0,b.y1+3.6,0));
+    axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶',NTc,11.5,V3(0,b.y1+5,0));
   } else if(cubeMode===1){
     // DP 平铺：地面 8×8 宫格 = 64 份完整副本；解剖第一块板（横=TP · 竖=PP）
     const b={x0:-52,x1:52,y0:2.6,y1:17.4,z0:-44,z1:44};
@@ -2968,7 +2967,7 @@ function applyTheme(dark){
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
   $('#btnTheme').textContent = dark ? '暗' : '明';
   COL.DIM = dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.22)';
-  try{ renderCubeAxes(); commDirty = true; }catch(e){}   // 轴/标注颜色随主题重建
+  try{ renderCubeAxes(); buildRuler(); commDirty = true; }catch(e){}   // 轴/标注/标尺字牌随主题重建
   scene.fog.color.set(dark ? 0x101010 : 0xf5f5f5);
   scene.fog.near = dark ? 300 : 240; scene.fog.far = dark ? 1600 : 1500;
   // 浅色用中性白光：3D 方块渲染出真实底色（健康度=中性灰），与左侧 2D 平铺色一致，不再偏蓝
