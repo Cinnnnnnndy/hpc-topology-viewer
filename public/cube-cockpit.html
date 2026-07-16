@@ -2081,7 +2081,7 @@ function hostActive(h){ const ph = PHASES[S.phase].id;
   if(ph==='DP') return dpOf(h)%8 === (((S.t*4%1)*8)|0);
   return false; }
 function pulseK(){ return S.playing ? .5+.5*Math.sin(performance.now()/180) : 0; }
-function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.15), Math.min(0.78,hsl.l+0.08)); return c; }
+function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.12), Math.min(0.83,hsl.l+0.13)); return c; }
 function applyColors(chipsToo){
   const pk = pulseK();
   for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h)); candyBoost(cTmp);
