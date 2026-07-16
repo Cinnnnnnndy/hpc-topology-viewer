@@ -1365,7 +1365,7 @@ scene.add(memMesh);
 // 场地文字标牌：高分辨率（超采样 + 紧贴文字 + 各向异性），避免放大后发虚发糊/锯齿
 function makeLabel(text, color, w){
   const SS = 4, fontPx = 44, padX = 22, padY = 11;   // 超采样 4×
-  const FONT = `600 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
+  const FONT = `700 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
   const meas = document.createElement('canvas').getContext('2d');
   meas.font = FONT;
   const tw = Math.ceil(meas.measureText(text).width) + padX * 2;
@@ -1374,16 +1374,16 @@ function makeLabel(text, color, w){
   const c = cv.getContext('2d'); c.scale(SS, SS);
   // 随主题的圆角字牌：浅色=白底细描边+自动加深字色；深色=深底+亮字。任何场景底上都干净可读。
   const light = !isDark();
-  c.fillStyle = light ? 'rgba(255,255,255,0.90)' : 'rgba(10,14,24,0.72)';
+  c.fillStyle = light ? 'rgba(255,255,255,0.96)' : 'rgba(10,14,24,0.78)';
   const r = th * 0.38;
   c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, r); c.fill();
-  c.lineWidth = 1.5;
-  c.strokeStyle = light ? 'rgba(63,76,99,0.30)' : 'rgba(139,148,158,0.32)';
+  c.lineWidth = 2;
+  c.strokeStyle = light ? 'rgba(45,58,80,0.48)' : 'rgba(139,148,158,0.4)';
   c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, r); c.stroke();
   // 浅色主题下自动加深传入的亮色（沿用各调用点的维度色，不必逐处改色值）
   let fill = color;
   if(light){ const tc = new THREE.Color(color), hsl = {}; tc.getHSL(hsl);
-    tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.05), Math.min(hsl.l, 0.34)); fill = '#' + tc.getHexString(); }
+    tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(hsl.l, 0.28)); fill = '#' + tc.getHexString(); }
   c.font = FONT;
   c.fillStyle = fill; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.fillText(text, tw / 2, th / 2);
@@ -1539,7 +1539,7 @@ function axArrow(a,b,color){   // 细方向轴（箭头指向 b）
 }
 // 轴/结构标注：随主题圆角字牌（makeLabel：浅色白底深字 · 深色深底亮字），
 // 覆盖在网格线/方块上也干净可读——被穿线、字体混搭发虚的问题由字牌底解决。
-function axText(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.copy(pos); cubeAxes.add(l); }
+function axText(text,color,w,pos){ const l=makeLabel(text,color,w*1.25); l.position.copy(pos); cubeAxes.add(l); }   // 轴标注统一放大 25% 保证可读
 function axGridSeg(pairs,color,opacity){
   const g=new THREE.BufferGeometry().setFromPoints(pairs);
   const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color,transparent:true,opacity}));
@@ -1549,19 +1549,21 @@ function axGridSeg(pairs,color,opacity){
 // floorOnly=true 时只铺地面网格（平铺类变形用）。
 function axGridBox(b,xt,yt,zt,floorOnly){
   const hxg=c=>new THREE.Color(c).getHex();
-  const grid=hxg(themeC('#2c3950','#c6d0de')), frame=hxg(themeC('#4d5f7a','#8fa1b8'));
+  // 浅色主题网格加深（#c6d0de 在白底上几乎不可见 → 换更深的灰蓝 + 更高不透明度）
+  const grid=hxg(themeC('#33415c','#93a5bd')), frame=hxg(themeC('#54678a','#54678a'));
+  const gridOp=isDark()?.42:.6, frameOp=isDark()?.85:.95;
   const seg=[];
   xt.forEach(x=>{ seg.push(V3(x,b.y0,b.z0),V3(x,b.y0,b.z1)); if(!floorOnly) seg.push(V3(x,b.y0,b.z0),V3(x,b.y1,b.z0)); });
   if(!floorOnly) yt.forEach(y=>{ seg.push(V3(b.x0,y,b.z0),V3(b.x1,y,b.z0), V3(b.x0,y,b.z0),V3(b.x0,y,b.z1)); });
   zt.forEach(z=>{ seg.push(V3(b.x0,b.y0,z),V3(b.x1,b.y0,z)); if(!floorOnly) seg.push(V3(b.x0,b.y0,z),V3(b.x0,b.y1,z)); });
-  axGridSeg(seg,grid,.4);
+  axGridSeg(seg,grid,gridOp);
   const E=floorOnly
     ? [[b.x0,b.y0,b.z0,b.x1,b.y0,b.z0],[b.x0,b.y0,b.z1,b.x1,b.y0,b.z1],[b.x0,b.y0,b.z0,b.x0,b.y0,b.z1],[b.x1,b.y0,b.z0,b.x1,b.y0,b.z1]]
     : [[b.x0,b.y0,b.z0,b.x1,b.y0,b.z0],[b.x0,b.y0,b.z1,b.x1,b.y0,b.z1],[b.x0,b.y0,b.z0,b.x0,b.y0,b.z1],[b.x1,b.y0,b.z0,b.x1,b.y0,b.z1],
        [b.x0,b.y0,b.z0,b.x0,b.y1,b.z0],[b.x1,b.y0,b.z0,b.x1,b.y1,b.z0],[b.x0,b.y0,b.z1,b.x0,b.y1,b.z1],
        [b.x0,b.y1,b.z0,b.x1,b.y1,b.z0],[b.x0,b.y1,b.z0,b.x0,b.y1,b.z1]];
   const fr=[]; E.forEach(e=>fr.push(V3(e[0],e[1],e[2]),V3(e[3],e[4],e[5])));
-  axGridSeg(fr,frame,.85);
+  axGridSeg(fr,frame,frameOp);
 }
 // 每种变形 = 换一根投影轴。大 3D 网格坐标框 + 刻度 + 裸文字标注 + 关键结构线，
 // 讲清「为什么这样重排 · 这个形状帮你看什么」——一个小方块 = 1 颗 NPU（卡/rank）。
