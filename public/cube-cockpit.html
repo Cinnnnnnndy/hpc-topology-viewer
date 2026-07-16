@@ -1519,13 +1519,19 @@ const detail = new THREE.Group(); scene.add(detail);
 const commGroup = new THREE.Group(); scene.add(commGroup);
 const cubeComm = new THREE.Group(); scene.add(cubeComm);
 // ── 逻辑魔方坐标轴标注：把每种排布的轴向/结构标出来，帮助理解 ──
+// 双组交叉淡化：切变形时旧标注移入 cubeAxesOld 随方块飞散淡出，新标注随 cubeBlend 淡入。
 const cubeAxes = new THREE.Group(); cubeAxes.visible = false; scene.add(cubeAxes);
+const cubeAxesOld = new THREE.Group(); cubeAxesOld.visible = false; scene.add(cubeAxesOld);
+function clearAxGroup(g){
+  while(g.children.length){ const o=g.children.pop();
+    if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } if(o.geometry)o.geometry.dispose(); }
+}
 function axLabel(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.copy(pos); cubeAxes.add(l); }
 function axLine(a,b,color,r){
   const dir = b.clone().sub(a), len = dir.length();
   const mid = a.clone().add(b).multiplyScalar(.5);
   const geo = new THREE.CylinderGeometry(r||.1,r||.1,len,8,1);
-  const mat = new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92});
+  const mat = new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92}); mat.userData.base=.92;
   const mesh = new THREE.Mesh(geo,mat);
   mesh.position.copy(mid);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
@@ -1534,7 +1540,8 @@ function axLine(a,b,color,r){
 function axArrow(a,b,color){   // 细方向轴（箭头指向 b）
   axLine(a,b,color,.09);
   const dir=b.clone().sub(a).normalize();
-  const cone=new THREE.Mesh(new THREE.ConeGeometry(.3,1,10), new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92}));
+  const cm2=new THREE.MeshBasicMaterial({color,transparent:true,opacity:.92}); cm2.userData.base=.92;
+  const cone=new THREE.Mesh(new THREE.ConeGeometry(.3,1,10), cm2);
   cone.position.copy(b); cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir); cubeAxes.add(cone);
 }
 // 轴/结构标注：随主题圆角字牌（makeLabel：浅色白底深字 · 深色深底亮字），
@@ -1542,7 +1549,8 @@ function axArrow(a,b,color){   // 细方向轴（箭头指向 b）
 function axText(text,color,w,pos){ const l=makeLabel(text,color,w*1.25); l.position.copy(pos); cubeAxes.add(l); }   // 轴标注统一放大 25% 保证可读
 function axGridSeg(pairs,color,opacity){
   const g=new THREE.BufferGeometry().setFromPoints(pairs);
-  const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color,transparent:true,opacity}));
+  const m=new THREE.LineBasicMaterial({color,transparent:true,opacity}); m.userData.base=opacity;
+  const l=new THREE.LineSegments(g,m);
   cubeAxes.add(l); return l;
 }
 // 大 3D 坐标网格框（类 3D 图表：底面 XZ + 背面 XY + 左面 YZ 三张淡网格 + 描边棱线）
@@ -1568,8 +1576,9 @@ function axGridBox(b,xt,yt,zt,floorOnly){
 // 每种变形 = 换一根投影轴。大 3D 网格坐标框 + 刻度 + 裸文字标注 + 关键结构线，
 // 讲清「为什么这样重排 · 这个形状帮你看什么」——一个小方块 = 1 颗 NPU（卡/rank）。
 function renderCubeAxes(){
-  while(cubeAxes.children.length){ const o=cubeAxes.children.pop();
-    if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } if(o.geometry)o.geometry.dispose(); }
+  // 旧标注移入淡出组（随变形动画淡出）；上一次的淡出组彻底清理
+  clearAxGroup(cubeAxesOld);
+  while(cubeAxes.children.length) cubeAxesOld.add(cubeAxes.children[0]);
   // 文字与线共用同一套随主题深浅的维度色（图例=场景，参考 op-rank-time）
   const TPc=themeC('#7ee8f4','#0d6b75'), PPc=themeC('#ffce7a','#8a5f00'),
         DPc=themeC('#9ecbff','#2b4bc0'), EPc=themeC('#d2a8ff','#6b2cba'), NTc=themeC('#c8d2dc','#3f4c63');
@@ -2242,11 +2251,24 @@ function applyMorph(){
   physGroup.traverse(o=>{ if(o.material&&o.material.userData.base!=null)
     o.material.opacity = o.material.userData.base*Wgt.phys; });
   physGroup.visible = Wgt.phys>0.01;
-  cubeGroup.visible = wC>0.05 && cubeMode===0;
-  cubeAxes.visible = wC>0.05;   // 逻辑魔方时显示坐标轴/结构标注
+  // 网格/标注跟随变形动画交叉淡化：新标注随 cubeBlend 淡入，旧标注（cubeAxesOld）同步淡出
+  const axT = ease(Math.min(1, cubeBlend));
+  cubeAxes.visible = wC>0.05;
+  cubeAxes.traverse(o=>{ if(o.material){ o.material.transparent=true;
+    const b=o.material.userData.base!=null?o.material.userData.base:1;
+    o.material.opacity = b*wC*axT; } });
+  cubeAxesOld.visible = wC>0.05 && axT<1;
+  if(axT<1){ cubeAxesOld.traverse(o=>{ if(o.material){ o.material.transparent=true;
+    const b=o.material.userData.base!=null?o.material.userData.base:1;
+    o.material.opacity = b*wC*(1-axT); } }); }
+  else if(cubeAxesOld.children.length) clearAxGroup(cubeAxesOld);
+  // 层段标尺/切分刀面（cubeGroup·仅标准形态）：进入标准淡入、离开标准淡出
+  const inStd = cubeMode===0, fromStd = cubePrev===0 && cubeBlend<1;
+  cubeGroup.visible = wC>0.05 && (inStd || fromStd);
+  const gT = inStd ? axT : (1-axT);
   cubeGroup.traverse(o=>{ if(o.material){ o.material.transparent=true;
     const b=o.material.userData.base!=null?o.material.userData.base:1;
-    o.material.opacity = b*wC; } });
+    o.material.opacity = b*wC*gT; } });
   stackGroup.visible = wS>0.01;
   stackGroup.traverse(o=>{ if(o.material){ o.material.transparent=true;
     const b=o.material.userData.base!=null?o.material.userData.base:1;
