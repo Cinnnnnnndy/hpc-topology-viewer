@@ -738,7 +738,7 @@ function filterPassHost(h){ const f = filterInfo(); return !f || f.set.has(h); }
 function setFilter(h){
   if(S.filterHost===h){ S.filterHost=null; }
   else { S.filterHost=h; S.focusHost=h; S.focusChip=h*8; }
-  invalidateRel(); renderFilterBar(); updateCounts();
+  invalidateRel(); renderFilterBar(); updateCounts(); commDirty=true; renderStageLeg(); try{ wakeLoop(30); }catch(e){}   // 选卡 → 连线/标签与图例同步
   if(S.filterHost!=null && S.level!=='L3' && S.level!=='L2') setLevel('L3');
   touchLeft();
 }
@@ -1645,10 +1645,10 @@ function renderCubeAxes(){
     axArrow(V3(b.x0-2,b.y1,b.z0),V3(b.x0-2,b.y0,b.z0),TPw); axText('段内竖=TP×8',TPc,4.6,V3(b.x0-2,b.y1+1.4,b.z0));
   }
 }
-function cubeLine(points, color, base){
+function cubeLine(points, color, base, r){
   if(points.length < 2) return null;
   const curve = new THREE.CatmullRomCurve3(points);
-  const g = new THREE.TubeGeometry(curve, Math.max(6, points.length*3), 0.16, 6, false);
+  const g = new THREE.TubeGeometry(curve, Math.max(6, points.length*3), r||.16, 6, false);
   // X 光模式：焦点卡多在方阵内部，通信线必须穿透方块可见（depthTest:false + 高 renderOrder）；
   // 关雾（fog:false），否则被场景雾洗淡到难以辨认
   const m = new THREE.MeshBasicMaterial({color, transparent:true, opacity:base, depthWrite:false, depthTest:false, fog:false});
@@ -1687,26 +1687,26 @@ function buildComm(){
     { const on=(ph==='TP'); const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,cubeMode,new THREE.Vector3()));
       const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
       const ring = pts.concat(back,[pts[0].clone()]);
-      cubeLine(ring, LNC.tp, on?.85:.34);
-      cubeLab(`TP 组 · Host ${fh} 的 8 卡`, '#7ee8f4', on?5.5:4, pts[0].clone().add(V3(0,1.3,0)));
+      cubeLine(ring, LNC.tp, on?.85:.3, on?.17:.09);
+      if(on||S.filterHost!=null) cubeLab(`TP 组 · Host ${fh} 的 8 卡`, '#7ee8f4', on?5.5:4, pts[0].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(ring, 0x7ee8f4, .65, .08); addCubeMover(ring, 0x7ee8f4, .38, .065); } }
     { const on=(ph==='PP'); const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+tpF,cubeMode,new THREE.Vector3()));
-      cubeLine(pts, LNC.pp, on?.85:.34);
-      cubeLab(`PP 链 · 副本${dpF} 的 16 段`, '#ffe0a0', on?5.5:4, pts[15].clone().add(V3(0,1.3,0)));
+      cubeLine(pts, LNC.pp, on?.85:.3, on?.17:.09);
+      if(on||S.filterHost!=null) cubeLab(`PP 链 · 副本${dpF} 的 16 段`, '#ffe0a0', on?5.5:4, pts[15].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(pts, 0xffe08a, .55, .08); addCubeMover(pts, 0xffe08a, .28, .065); } }
     { const on=(ph==='EP'); const dom=epDomOf(fh);   // A2A 域内 8 副本同位 rank 互发（各持 1 桶）
       const a=chipCubeM(fh*8+tpF,cubeMode,new THREE.Vector3());
       let last=a;
       for(let d=dom*EP; d<dom*EP+EP; d++){ const h2=d*16+ppF; if(h2===fh) continue;
         const b=chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()); last=b;
-        cubeLine([a.clone(), b], LNC.ep, on?.5:.28); if(on) addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07); }
-      cubeLab(`EP 域 ${dom} · 8 副本互发`, '#d2a8ff', on?5.5:4, last.clone().add(V3(0,1.6,0)));
+        cubeLine([a.clone(), b], LNC.ep, on?.5:.26, on?.14:.08); if(on) addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07); }
+      if(on||S.filterHost!=null) cubeLab(`EP 域 ${dom} · 8 副本互发`, '#d2a8ff', on?5.5:4, last.clone().add(V3(0,1.6,0)));
       if(S.anomaly&&on) for(let k2=0;k2<4;k2++){ const h2=anomPods[k2*2]*16+ppF;
         cubeLine([chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } }
     { const on=(ph==='DP'); const pts=[]; for(let d=0;d<64;d+=4) pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3()));
       pts.push(pts[0].clone().add(V3(0,.6,0)));
-      cubeLine(pts, LNC.dp, on?.75:.32);
-      cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', on?6:4.5, pts[8].clone().add(V3(0,1.3,0)));
+      cubeLine(pts, LNC.dp, on?.75:.28, on?.17:.09);
+      if(on||S.filterHost!=null) cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', on?6:4.5, pts[8].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(pts, 0x9ecbff, .5, .08); addCubeMover(pts, 0x9ecbff, .28, .065); } }
   }
   clearMovers();
@@ -2280,7 +2280,7 @@ function applyMorph(){
     o.material.opacity = b*wS; } });
   commGroup.visible = Wgt.phys>0.6;
   mxHiGroup.visible = Wgt.phys>0.6;
-  cubeComm.visible = wC>0.5 && S.wire==='AUTO';   // 四维通信线随全部 5 种变形显示（线随 cubeMode 重布）
+  cubeComm.visible = wC>0.5 && S.wire==='AUTO' && (S.playing || S.filterHost!=null);   // 四维通信线：播放或选卡时显示（随 cubeMode 重布）
 }
 function updateSlices(){
   slices.TP.forEach(p=>p.visible = S.lens==='TP');
@@ -2360,6 +2360,10 @@ function updateIndicators(){
     podBaseEdges.material.opacity = (S.level==='L4'?1:.75)*Wgt.phys; }
 }
 function updateCommPulse(now){
+  // AUTO 连线只在「播放中或选中卡」时显示（图例同步出现/隐藏）；显式连线镜头（COMM/FLOW…）不受限
+  const autoGate = S.wire!=='AUTO' || S.playing || S.filterHost!=null;
+  commGroup.visible = Wgt.phys>0.6 && autoGate;
+  cubeComm.visible = Wgt.cube>0.5 && S.wire==='AUTO' && (S.playing || S.filterHost!=null);
   const k = S.playing ? .45+.55*Math.abs(Math.sin(now/260)) : .8;
   const emph = S.hudEmph;                         // HUD step 分解 hover → 软硬联动
   commGroup.children.forEach(o=>{ const m=o.material;
@@ -2704,14 +2708,16 @@ $('#alertbar').style.cursor = 'pointer';
 $('#alertbar').onclick = ()=>{ if(S.anomaly) scenario('moe'); };
 $('#btnPlay').onclick = ()=>{ S.playing=!S.playing;
   $('#btnPlay').textContent = S.playing?'暂停':'▶ 播放';
-  $('#btnPlay').classList.toggle('on', S.playing); };
+  $('#btnPlay').classList.toggle('on', S.playing);
+  renderStageLeg(); };
 $('#phasetrack').addEventListener('click', ev=>{
   const r = $('#phasetrack').getBoundingClientRect();
   S.t = Math.min(.999, Math.max(0,(ev.clientX-r.left)/r.width)); syncPhase(); });
 function syncPhase(){
   const p = Math.min(3, (S.t*4)|0);
   if(p!==S.phase){ S.phase=p; if(S.rel==='AUTO'){ invalidateRel(); renderFilterBar(); updateCounts(); } touchLeft();
-    if(S.mxShow){ renderMxCard(); renderMxHi(); } }
+    if(S.mxShow){ renderMxCard(); renderMxHi(); }
+    renderStageLeg(); }   // 物理形态 AUTO 图例显示当前阶段的线 → 随相位刷新
   $('#playhead').style.left = (S.t*100)+'%';
   $$('.pseg').forEach((el,i)=>el.classList.toggle('on', i===S.phase));
   $('#phaselab').textContent = PHASES[S.phase].name;
@@ -2762,17 +2768,22 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
   else if(L==='SP') colr = chip('#2ea27a','SP 序列 · 同组同色');
   else if(L==='CP') colr = chip('#c586d6','CP 上下文 · 同组同色');
   else if(L==='JOB') colr = chip('#4369EF','训练')+chip('#39c5cf','推理')+chip('#8b949e','空闲');
-  // ② 连线图例（随 S.wire）
-  let line='';
+  // ② 连线图例（随 S.wire）——AUTO 连线只在播放/选卡时显示，图例只描述屏幕上真实存在的线
+  const autoOn = S.playing || S.filterHost!=null;
+  let line=null;
   if(w==='FLOW') line=chip('#04D793','空闲')+chip('#fbbf24','中')+chip('#FF4B7B','繁忙')+'<span>宽=占用</span>';
   else if(w==='LINK') line=chip('#04D793','正常')+chip('#fbbf24','降级')+chip('#FF4B7B','中断');
   else if(w==='PATH') line=chip('#FF4B7B','跨轨 3-hop')+chip('#04D793','PXN 1-hop');
-  else line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
-    +'<span>'+(w==='COMM' ? '轮廓=通信域'
-      : (S.form==='cube' ? '焦点卡的四维通信组线（当前算子维加亮 · 点卡换焦点）'
-                         : '流带=当前算子的通信组 · 挂在焦点 Host 上（点卡换焦点）'))+'</span>';
+  else if(w==='COMM') line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')+'<span>轮廓=通信域</span>';
+  else if(!autoOn) line=null;   // AUTO 且未播放/未选卡：无线 → 不显示连线图例，只留一句唤起提示
+  else if(S.form==='cube') line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
+    +'<span>焦点卡的四维通信组线 · 当前算子维加亮（点卡换焦点）</span>';
+  else { const pid=PHASES[S.phase].id;
+    line=chip(COL[pid],pid)+'<span>流带=当前算子 '+PHASES[S.phase].name.split('·')[0].trim()+' 的通信组 · 挂焦点 Host</span>'; }
   const sep = '<span style="opacity:.35;margin:0 2px">|</span>';
-  $('#stageleg').innerHTML = lab('着色') + colr + sep + lab('连线') + line;
+  $('#stageleg').innerHTML = lab('着色') + colr
+    + (line!=null ? sep + lab('连线') + line
+                  : sep + '<span style="opacity:.55">▶ 播放或点选一张卡显示通信连线</span>');
 }
 function renderProbe(){
   const probe = $('#probe');
@@ -2938,7 +2949,8 @@ function setRel(r){ S.rel=r;
   $$('.relbtn').forEach(x=>x.classList.toggle('on', x.dataset.rel===r)); invalidateRel(); }
 function setPlay(on){ S.playing=on;
   $('#btnPlay').textContent = on?'暂停':'▶ 播放';
-  $('#btnPlay').classList.toggle('on', on); }
+  $('#btnPlay').classList.toggle('on', on);
+  renderStageLeg(); try{ wakeLoop(30); }catch(e){} }   // 连线随播放出现/隐藏 → 图例同步 + 唤醒渲染循环
 function scenario(k){
   S.selLayer=null; S.selCard=null; renderMemPanel(); describeModelSel();
   setTab('hier');
