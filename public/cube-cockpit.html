@@ -1243,13 +1243,14 @@ const renderer = new THREE.WebGLRenderer({canvas:stage, antialias:true, alpha:tr
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.LinearToneMapping;
-renderer.toneMappingExposure = 1.35;
+renderer.toneMappingExposure = 1.55;
 renderer.physicallyCorrectLights = true;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xd9e1ec, 200, 1200);
 const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 0.95); scene.add(hemiLight);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 1.0); scene.add(hemiLight);
 const dl = new THREE.DirectionalLight(0xffffff, 0.75); dl.position.set(120,300,180); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.32); dl2.position.set(-140,160,-120); scene.add(dl2); // 补光：去除背光面发灰
 const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
 const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
@@ -2194,7 +2195,7 @@ function hostActive(h){ const ph = PHASES[S.phase].id;
   if(ph==='DP') return dpOf(h)%8 === (((S.t*4%1)*8)|0);
   return false; }
 function pulseK(){ return S.playing ? .5+.5*Math.sin(performance.now()/180) : 0; }
-function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.15), Math.min(0.78,hsl.l+0.08)); return c; }
+function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.2), Math.min(0.72,hsl.l+0.05)); return c; }
 function applyColors(chipsToo){
   const pk = pulseK();
   for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h)); candyBoost(cTmp);
