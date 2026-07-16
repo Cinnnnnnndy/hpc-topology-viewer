@@ -1648,12 +1648,14 @@ function renderCubeAxes(){
 function cubeLine(points, color, base){
   if(points.length < 2) return null;
   const curve = new THREE.CatmullRomCurve3(points);
-  const g = new THREE.TubeGeometry(curve, Math.max(6, points.length*3), 0.05, 6, false);
-  const m = new THREE.MeshBasicMaterial({color, transparent:true, opacity:base, depthWrite:false});
+  const g = new THREE.TubeGeometry(curve, Math.max(6, points.length*3), 0.16, 6, false);
+  // X 光模式：焦点卡多在方阵内部，通信线必须穿透方块可见（depthTest:false + 高 renderOrder）；
+  // 关雾（fog:false），否则被场景雾洗淡到难以辨认
+  const m = new THREE.MeshBasicMaterial({color, transparent:true, opacity:base, depthWrite:false, depthTest:false, fog:false});
   m.userData.base = base;
-  const mesh = new THREE.Mesh(g, m); cubeComm.add(mesh); return mesh;
+  const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6; cubeComm.add(mesh); return mesh;
 }
-function cubeLab(text,color,w,pos){ const l=makeLabel(text,color,w); l.position.copy(pos); cubeComm.add(l); }
+function cubeLab(text,color,w,pos){ const l=makeLabel(text,color,w); l.material.fog=false; l.renderOrder=7; l.position.copy(pos); cubeComm.add(l); }
 function commLine(points, color, base, width){
   const g = new THREE.BufferGeometry().setFromPoints(points);
   const m = new THREE.LineBasicMaterial({color, transparent:true, opacity:base});
@@ -1679,14 +1681,17 @@ function buildComm(){
     // 线随 5 种变形重新布线（chipCubeM(·,cubeMode)）——切变形即可看到「哪个组聚成一块、其它组如何散开」。
     const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh);
     const tpF=(S.focusChip!=null && (S.focusChip>>3)===fh)? (S.focusChip&7) : 3;
+    // 线色随主题（浅色用深变体，否则白底上淡显维几乎不可见）；淡显维不透明度抬高保证可发现
+    const dk=isDark();
+    const LNC={ tp:dk?0x39c5cf:0x0d6b75, pp:dk?0xFFAA3B:0x9a6a00, ep:dk?0x9B3CF6:0x6b2cba, dp:dk?0x4369EF:0x2b4bc0 };
     { const on=(ph==='TP'); const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,cubeMode,new THREE.Vector3()));
       const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
       const ring = pts.concat(back,[pts[0].clone()]);
-      cubeLine(ring, 0x39c5cf, on?.85:.15);
+      cubeLine(ring, LNC.tp, on?.85:.34);
       cubeLab(`TP 组 · Host ${fh} 的 8 卡`, '#7ee8f4', on?5.5:4, pts[0].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(ring, 0x7ee8f4, .65, .08); addCubeMover(ring, 0x7ee8f4, .38, .065); } }
     { const on=(ph==='PP'); const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+tpF,cubeMode,new THREE.Vector3()));
-      cubeLine(pts, 0xFFAA3B, on?.85:.15);
+      cubeLine(pts, LNC.pp, on?.85:.34);
       cubeLab(`PP 链 · 副本${dpF} 的 16 段`, '#ffe0a0', on?5.5:4, pts[15].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(pts, 0xffe08a, .55, .08); addCubeMover(pts, 0xffe08a, .28, .065); } }
     { const on=(ph==='EP'); const dom=epDomOf(fh);   // A2A 域内 8 副本同位 rank 互发（各持 1 桶）
@@ -1694,13 +1699,13 @@ function buildComm(){
       let last=a;
       for(let d=dom*EP; d<dom*EP+EP; d++){ const h2=d*16+ppF; if(h2===fh) continue;
         const b=chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()); last=b;
-        cubeLine([a.clone(), b], 0x9B3CF6, on?.5:.12); if(on) addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07); }
+        cubeLine([a.clone(), b], LNC.ep, on?.5:.28); if(on) addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07); }
       cubeLab(`EP 域 ${dom} · 8 副本互发`, '#d2a8ff', on?5.5:4, last.clone().add(V3(0,1.6,0)));
       if(S.anomaly&&on) for(let k2=0;k2<4;k2++){ const h2=anomPods[k2*2]*16+ppF;
         cubeLine([chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } }
     { const on=(ph==='DP'); const pts=[]; for(let d=0;d<64;d+=4) pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3()));
       pts.push(pts[0].clone().add(V3(0,.6,0)));
-      cubeLine(pts, 0x4369EF, on?.75:.14);
+      cubeLine(pts, LNC.dp, on?.75:.32);
       cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', on?6:4.5, pts[8].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(pts, 0x9ecbff, .5, .08); addCubeMover(pts, 0x9ecbff, .28, .065); } }
   }
@@ -2763,7 +2768,9 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
   else if(w==='LINK') line=chip('#04D793','正常')+chip('#fbbf24','降级')+chip('#FF4B7B','中断');
   else if(w==='PATH') line=chip('#FF4B7B','跨轨 3-hop')+chip('#04D793','PXN 1-hop');
   else line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
-    +'<span>'+(w==='COMM'?'轮廓=通信域':'流带=当前算子')+'</span>';
+    +'<span>'+(w==='COMM' ? '轮廓=通信域'
+      : (S.form==='cube' ? '焦点卡的四维通信组线（当前算子维加亮 · 点卡换焦点）'
+                         : '流带=当前算子的通信组 · 挂在焦点 Host 上（点卡换焦点）'))+'</span>';
   const sep = '<span style="opacity:.35;margin:0 2px">|</span>';
   $('#stageleg').innerHTML = lab('着色') + colr + sep + lab('连线') + line;
 }
