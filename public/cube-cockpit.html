@@ -1460,11 +1460,11 @@ function colorStack(dark){
 colorStack(isDark());
 /* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
 const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
-// 层段标尺：每个 PP 段挂 "S0·L1-4"
+// 层段标尺：每个 PP 段挂 "S0·L1-3"——与网格框左后棱的 PP 轴合并成一列（PP 标题在顶、刻度在下）
 const rulerSprites = [];
 for(let s2=0;s2<16;s2++){
-  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#ffe0a0', 5);
-  sp.position.set(CUBE.cx+5.4*CUBE.sx, CUBE.cy+(7.5-s2)*CUBE.sy, CUBE.cz-35*CUBE.sz);
+  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#ffe0a0', 3.8);
+  sp.position.set(-8.3, CUBE.cy+(7.5-s2)*CUBE.sy, -24.8);
   rulerSprites.push(sp); cubeGroup.add(sp);
 }
 // 切分刀面（透镜联动：TP 竖切 / PP 横切 / DP 纵切）
@@ -1573,8 +1573,7 @@ function renderCubeAxes(){
         DPc=themeC('#9ecbff','#2b4bc0'), EPc=themeC('#d2a8ff','#6b2cba'), NTc=themeC('#c8d2dc','#3f4c63');
   const hx=c=>new THREE.Color(c).getHex();
   const TPw=hx(TPc), PPw=hx(PPc), DPw=hx(DPc), EPw=hx(EPc), NTw=hx(NTc);
-  const R=(n,f)=>Array.from({length:n},(_,i)=>f(i));
-  const why=t=>axText('◇ '+t, NTc, 12, V3(0,1.2,0));   // 底部一行「读图钥匙」
+  const R=(n,f)=>Array.from({length:n},(_,i)=>f(i));   // 「为什么这样摆」已挪到 HUD（renderViewlab · CUBE_WHY）
   if(cubeMode===0){
     // 标准：三面网格框 = 三根语义轴；层段标尺(S0·L1-3…)由 cubeGroup 常驻在右侧
     const xT=t=>(t-3.5)*1.6, yS=p=>17+(7.5-p)*1.15, zD=d=>(d-31.5)*.75;
@@ -1587,7 +1586,6 @@ function renderCubeAxes(){
     axArrow(V3(b.x0-1.5,b.y1,b.z0),V3(b.x0-1.5,b.y0,b.z0),PPw);
     axText('PP×16 模型深度 L1→L48 · 段间 P2P',PPc,9,V3(b.x0-1.5,b.y1+1.8,b.z0));
     axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶',NTc,11.5,V3(0,b.y1+3.6,0));
-    why('多维切分同时存在 · 换视图只是换一根投影轴，卡的坐标不变');
   } else if(cubeMode===1){
     // DP 平铺：地面 8×8 宫格 = 64 份完整副本；解剖第一块板（横=TP · 竖=PP）
     const b={x0:-52,x1:52,y0:2.6,y1:17.4,z0:-44,z1:44};
@@ -1598,7 +1596,6 @@ function renderCubeAxes(){
     axText('DP 平铺 · 64 块板 = 64 份完整副本（副本号=行×8+列 · 参数相同 · 各吃不同数据）',DPc,14,V3(0,21.8,0));
     axArrow(V3(-50.1,1.4,-38.5),V3(-40.9,1.4,-38.5),TPw); axText('板内横=TP×8',TPc,4.6,V3(-45.5,.2,-38.5));
     axArrow(V3(-52.4,16.75,-38.5),V3(-52.4,3.25,-38.5),PPw); axText('板内竖=PP×16 L1→L48',PPc,6.5,V3(-45.5,19.4,-42.5));
-    why('副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本');
   } else if(cubeMode===2){
     // EP 专家桶墙：网格框 + 逐墙桶标签（交错高度防重叠）+ 关键结构线 = A2A 域横穿 8 墙
     const yS=p=>17+(7.5-p)*1.15;
@@ -1612,7 +1609,6 @@ function renderCubeAxes(){
     axText('1 个 A2A 域 = 横穿 8 面墙的同一排 · 每桶各出 1 员互发',EPc,11.5,V3(0,4.2,zb0));
     axArrow(V3(b.x1+1.6,b.y0-.6,-6.65),V3(b.x1+1.6,b.y0-.6,6.65),NTw); axText('域0→域7',NTc,3.8,V3(b.x1+3.6,b.y0-1.8,0));
     axArrow(V3(b.x0-1.6,b.y1,0),V3(b.x0-1.6,b.y0,0),PPw); axText('墙内竖=PP×16',PPc,5,V3(b.x0-1.6,b.y1+1.4,0));
-    why('桶故障 = 整面墙同红 · 域热点 = 横穿 8 墙的一排过热 · 桶↔卡非 1:1');
   } else if(cubeMode===3){
     // TP 切片：网格框 + 逐墙片号 + 关键结构线 = 同 1 台 Host 的 8 卡横跨 8 面墙
     const yS=p=>17+(7.5-p)*1.15, zD=d=>(d-31.5)*.75;
@@ -1626,7 +1622,6 @@ function renderCubeAxes(){
     axText('同 1 台 Host 的 8 卡 → 分属 8 面墙 · 层内 AllReduce 拼回完整权重',TPc,12.5,V3(0,23.8,-27));
     axText('DP0',DPc,2.2,V3(b.x1+1.8,b.y0-.8,zD(0))); axText('DP63',DPc,2.6,V3(b.x1+2,b.y0-.8,zD(63)));
     axArrow(V3(b.x0-1.6,b.y1,0),V3(b.x0-1.6,b.y0,0),PPw); axText('墙内竖=PP×16',PPc,5,V3(b.x0-1.6,b.y1+1.4,0));
-    why('同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常');
   } else {
     // PP 流水：地面「跑道」网格（16 段隔线）+ 段标签带层段 + 流向箭头
     const zD=d=>(d-31.5)*.75;
@@ -1637,7 +1632,6 @@ function renderCubeAxes(){
     axText('前向激活 →（反向梯度 ←）· 段间 P2P · 每段=连续 3 层',PPc,12,V3(0,23.2,0));
     axText('DP0',DPc,2.2,V3(b.x1+2,b.y0-.6,zD(0))); axText('DP63',DPc,2.6,V3(b.x1+2.2,b.y0-.6,zD(63)));
     axArrow(V3(b.x0-2,b.y1,b.z0),V3(b.x0-2,b.y0,b.z0),TPw); axText('段内竖=TP×8',TPc,4.6,V3(b.x0-2,b.y1+1.4,b.z0));
-    why('只有 PP 适合说「哪段层在哪」· 慢段拖住下游 = 右侧板变暗 · 空档=bubble');
   }
 }
 function cubeLine(points, color, base){
@@ -2303,12 +2297,16 @@ function updateIndicators(){
   if(focusCabBox.visible){ const cab = cabOf(S.focusHost);
     focusCabBox.position.set((cab%16-7.5)*1.8, 1.85, ((cab>>4)-3.5)*2.4);
     focusCabBox.scale.set(1.5,3.72,1.28); }
-  const showFocus = cabLv && nP>0.5;
-  focusHostMesh.visible = focusChipsMesh.visible = showFocus;
+  // 魔方高亮态（cubeHiF）：焦点 Host 的 8 卡用独立不透明网格保持清晰（其余已半透明）
+  const cubeHiF = Wgt.cube>.5 && S.filterHost!=null;
+  const showFocus = (cabLv && nP>0.5) || cubeHiF;
+  focusHostMesh.visible = cabLv && nP>0.5;
+  focusChipsMesh.visible = showFocus;
   if(showFocus){
     hostPos(S.focusHost, focusHostMesh.position);
     focusHostMesh.material.color.setStyle(hostColor(S.focusHost)); candyBoost(focusHostMesh.material.color);
-    for(let s2=0;s2<8;s2++){ chipPhys(S.focusHost*8+s2, vA);
+    for(let s2=0;s2<8;s2++){
+      if(cubeHiF) chipCube(S.focusHost*8+s2, vA); else chipPhys(S.focusHost*8+s2, vA);
       dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
       focusChipsMesh.setMatrixAt(s2, dummy.matrix);
       cTmp.setStyle(chipColor(S.focusHost*8+s2)); candyBoost(cTmp); focusChipsMesh.setColorAt(s2, cTmp); }
@@ -2398,7 +2396,9 @@ function updateCamera(dt){
   hostMat.opacity += (hostTgt - hostMat.opacity)*k;
   hostMat.depthWrite = hostMat.opacity > .5;
   memMat.opacity = hostMat.opacity; memMat.depthWrite = hostMat.depthWrite;
-  const chipTgt = (deepZoom && S.level!=='L3' && Wgt.phys>.5) ? .15 : 1;
+  // 魔方形态下有筛选高亮（点卡/TopN/告警下钻）→ 其余方块整体半透明，减少对通信线/焦点的遮挡
+  const cubeHi = Wgt.cube>.5 && S.filterHost!=null;
+  const chipTgt = (deepZoom && S.level!=='L3' && Wgt.phys>.5) ? .15 : (cubeHi ? .3 : 1);
   chipMat.opacity += (chipTgt - chipMat.opacity)*k;
   chipMat.depthWrite = chipMat.opacity > .5;
 }
@@ -2688,12 +2688,20 @@ function syncPhase(){
   $('#phaselab').textContent = PHASES[S.phase].name;
   renderHUD(); }
 /* ---- 信息面板 ---- */
+// 每种魔方变形的「读图钥匙」——从 3D 场景挪进 HUD，不再被方块遮挡
+const CUBE_WHY=[
+  '多维切分同时存在 · 换视图只是换一根投影轴，卡的坐标不变',
+  '副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本',
+  '桶故障 = 整面墙同红 · 域热点 = 横穿 8 墙的一排过热 · 桶↔卡非 1:1',
+  '同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常',
+  '只有 PP 适合说「哪段层在哪」· 慢段拖住下游 = 右侧板变暗 · 空档=bubble',
+];
 function renderViewlab(){
   const t = { L7:'L7 · Global（N 集群）', L6:'L6 · Cluster 集群（8192 NPU · 万卡）', L5:'L5 · Service Pool（4 Pod · 16 池/集群）',
     L4:'L4 · Pod · UBL128（128 NPU · 16 Host）', L3:'L3 · Host（焦点机柜）', L2:'L2 · Chip ×8',
     L1:'L1 · Die（占位）', L0:'L0 · Core-Group（占位）' };
   const vtxt = S.form==='cube'
-    ? `统一 3D 拓扑 · <b>逻辑魔方 · ${['标准 X=TP Y=PP(模型深度) Z=DP','DP 平铺：64 副本各自成板（找慢副本）','EP 聚簇：8 专家桶成墙（桶=MoGE 组 · 每桶复现于 8 个 A2A 域 · 桶↔卡非 1:1）','TP 切片：8 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）','PP 流水：16 段横向展开 · 左=Stage0 右=Stage15（找慢段/气泡）'][cubeMode]}</b>${S.selLayer!=null?` · 高亮 L${S.selLayer+1} 切片`:''}`
+    ? `统一 3D 拓扑 · <b>逻辑魔方 · ${['标准 X=TP Y=PP(模型深度) Z=DP','DP 平铺：64 副本各自成板（找慢副本）','EP 聚簇：8 专家桶成墙（桶=MoGE 组 · 每桶复现于 8 个 A2A 域 · 桶↔卡非 1:1）','TP 切片：8 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）','PP 流水：16 段横向展开 · 左=Stage0 右=Stage15（找慢段/气泡）'][cubeMode]}</b>${S.selLayer!=null?` · 高亮 L${S.selLayer+1} 切片`:''}<br><span style="color:#8b949e">◇ 为什么这样摆：${CUBE_WHY[cubeMode]}</span>`
     : S.form==='stack'
     ? `统一 3D 拓扑 · <b>层级堆叠形态</b> · 与左侧 L7→L0 对齐 · 聚焦 <b>${t[S.level]}</b>`
     : `统一 3D 拓扑 · 单相机 · 聚焦 <b>${t[S.level]}</b>（左侧选层=飞行缩放）`;
