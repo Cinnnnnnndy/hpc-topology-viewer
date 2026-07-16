@@ -5,7 +5,7 @@
  * 5 种视图来自原型 HTML（chipCubeM v22），坐标直接以 THREE.js world unit 返回：
  *   standard    — 标准 3D 立方，X=TP · Y=PP · Z=DP，基准对照视图
  *   dp-tile     — DP 平铺，64 个副本排 8×8 宫格，每格内展示 TP×PP 竖板
- *   ep-cluster  — EP 聚簇，专家 Host 成墙 · 其余压缩块
+ *   ep-cluster  — EP 专家桶墙，同桶成墙 · 墙内 = 各 A2A 域网格（真值派生自 parallelMap）
  *   tp-slice    — TP 切片，8 张权重墙沿 X 展开
  *   pp-pipeline — PP 流水，16 段竖板沿 X（左→右流水）
  *
@@ -13,7 +13,7 @@
  * cols/rows 是 XZ 平面的世界空间跨度（用于相机取景）；yExtent 是 Y 轴跨度。
  */
 import { deploymentOf } from './deployment';
-import { NPUS_PER_NODE, type ParallelWorkload, type ParallelConfig } from './data';
+import { type ParallelWorkload, type ParallelConfig } from './data';
 
 export type LayoutView = 'standard' | 'dp-tile' | 'ep-cluster' | 'tp-slice' | 'pp-pipeline';
 export const LAYOUT_VIEWS: LayoutView[] = ['standard', 'dp-tile', 'ep-cluster', 'tp-slice', 'pp-pipeline'];
@@ -44,7 +44,6 @@ export interface LayoutResult {
 export function layoutOf(view: LayoutView, workload: ParallelWorkload, N: number, cfg?: ParallelConfig): LayoutResult {
   const d = deploymentOf(workload, N, cfg);
   const TP = d.pm.groupCount('tp'), PP = d.pm.groupCount('pp'), DP = d.pm.groupCount('dp');
-  const HOST = NPUS_PER_NODE;
   const pos: Cell[] = new Array(N);
 
   const tpC = (TP - 1) / 2, ppC = (PP - 1) / 2, dpC = (DP - 1) / 2;
@@ -103,44 +102,34 @@ export function layoutOf(view: LayoutView, workload: ParallelWorkload, N: number
     note = `DP 平铺：${DP} 个副本排 ${DGX}×${DGZ} 宫格 · 每格内 TP×PP 竖板 · 「整网=一份×${DP} 份」`;
 
   } else if (view === 'ep-cluster') {
-    // EP 聚簇：按物理 Host 指定「专家 Host」→ 右侧专家墙；其余压缩到左侧块。
-    // 专家 Host 公式（与原型 HTML 一致）：expertHostIdx = (e * step + 5) % nHosts
-    const nHosts = Math.max(1, Math.ceil(N / HOST));
-    const nExp = Math.max(1, Math.floor(nHosts / 16));
-    const step = Math.max(1, Math.ceil(nHosts / nExp));
-    const hostExpertIdx = new Int32Array(nHosts).fill(-1);
-    for (let e = 0; e < nExp; e++) hostExpertIdx[(e * step + 5) % nHosts] = e;
-    const EGX = Math.max(1, Math.ceil(Math.sqrt(nExp)));
-    const EGY = Math.ceil(nExp / EGX);
-
+    // EP 专家桶墙（真值派生，替换旧「专家 Host」第二套真值）：
+    //   每个 rank 都持有一个专家分桶（experts 不专属少数主机、桶↔卡非 1:1）。
+    //   X = 专家分桶（groupOf 'ep'，同墙 = 持有相同 experts）；墙内 = 该桶复现的全部 A2A 域
+    //   （训练：⌊replica/EP⌋ · 推理：节点）折成 XZ 网格；Y = 域内成员（训练 PP×TP · 推理 TP/EP 槽）。
+    //   于是「桶故障」snap 成一面墙，「A2A 域热点」= 每面墙同一格各取一员——与 parallelMap 的
+    //   peersOf('ep') 完全一致（dispatch/combine 的对端 = 同域其余桶）。
+    const EP = d.pm.groupCount('ep');
+    const folded = d.pm.epScope === 'replica';
+    const B = Math.max(1, folded ? Math.ceil(DP / EP) : Math.ceil(N / TP));   // A2A 域数
+    const V = Math.max(1, folded ? PP * TP : Math.floor(TP / EP));            // 每域每桶成员数
+    const bgx = Math.max(1, Math.ceil(Math.sqrt(B))), bgz = Math.ceil(B / bgx);
+    const wallGap = bgx * 0.9 + 4;   // 墙间距 > 墙内网格宽，桶边界直观可见
+    const epC = (EP - 1) / 2, vC = (V - 1) / 2;
     for (let k = 0; k < N; k++) {
-      const h = Math.floor(k / HOST), slot = k % HOST;
-      const e = hostExpertIdx[h];
-      if (e >= 0) {
-        // 专家墙（右侧）：8×8 Host 排列，每 Host 2×4 卡块
-        const ex = e % EGX, ey = Math.floor(e / EGX);
-        pos[k] = {
-          x: 15 + (ex - (EGX - 1) / 2) * 2.4 + (slot % 4) * 0.45,
-          y: ((EGY - 1) / 2 - ey) * 2.4 + ((slot >> 2) - 0.5) * 0.9,
-          z: 0,
-        };
-      } else {
-        // 非专家（左侧压缩块）：DP 折成方格铺地（避免 DP 大时退化成细线）· (PP,TP) 併成高度
-        const c = d.coordsOf(k);
-        const hCount = TP * PP, hC = (hCount - 1) / 2;
-        pos[k] = {
-          x: -14 - ((dgx - 1) / 2) * 1.0 + (dpGX(c.dp) + (dgx - 1) / 2) * 1.0,
-          y: (hC - (c.pp * TP + c.tp)) * 0.9,
-          z: dpGZ(c.dp) * 1.0,
-        };
-      }
+      const c = d.coordsOf(k);
+      const b = folded ? Math.floor(c.dp / EP) : Math.floor(k / TP);          // A2A 域 id
+      const v = folded ? c.pp * TP + c.tp : (k % TP) % V;                     // 域内成员序
+      pos[k] = {
+        x: (c.ep - epC) * wallGap + ((b % bgx) - (bgx - 1) / 2) * 0.9,
+        y: (vC - v) * 0.9,
+        z: (Math.floor(b / bgx) - (bgz - 1) / 2) * 0.9,
+      };
     }
-    const expertWallX = 15 + (EGX - 1) / 2 * 2.4 + 1.5 * 0.45;
-    const nonExpertX = 14 + (dgx - 1) * 1.0;
-    cols = expertWallX + nonExpertX + 1;
-    rows = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (dgz - 1) * 1.0) + 1;
-    yExtent = Math.max((EGY - 1) * 2.4 + 1.5 * 0.9, (TP * PP - 1) * 0.9);
-    note = `EP 聚簇：${nExp} 个专家 Host 成墙（右）· 其余 ${nHosts - nExp} Host 压缩块（左，DP 折 ${dgx}×${dgz}）· 专家域边界直观可见`;
+    cols = (EP - 1) * wallGap + (bgx - 1) * 0.9 + 1;
+    rows = (bgz - 1) * 0.9 + 1;
+    yExtent = (V - 1) * 0.9;
+    note = `EP 专家桶墙：${EP} 个分桶成墙（同墙=持有相同 experts）· 墙内 ${B} 个 A2A 域排 ${bgx}×${bgz} 网格 · ` +
+      (folded ? `训练 EP 折入 DP 轴（相邻 ${EP} 副本 dispatch/combine）` : `推理 EP=节点内路由（域=节点）`) + ' · 桶↔卡非 1:1';
 
   } else if (view === 'tp-slice') {
     if (!foldDP) {

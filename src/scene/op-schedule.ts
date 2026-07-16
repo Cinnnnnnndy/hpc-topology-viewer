@@ -11,6 +11,7 @@
  */
 export type OpKind = 'compute' | 'comm' | 'mem';
 export type CollKind = 'a2a' | 'ring' | 'p2p' | 'allgather';
+export type OpDim = 'tp' | 'pp' | 'dp' | 'ep';   // 事件携带的并行维标签（白皮书：PP/TP/DP/EP 不是时间阶段，是 event 标签）
 
 export interface ScheduledOp {
   id: string;
@@ -18,6 +19,7 @@ export interface ScheduledOp {
   kind: OpKind;
   w: number;                 // 相对时长权重（同 phase 内比较；非绝对时间）
   coll?: CollKind;           // kind==='comm' 时的集合通信形态
+  dim?: OpDim;               // kind==='comm' 时该事件所属的并行维（决定对端组与签名色）
   overlapBg?: boolean;       // 是否与背景访存/权重搬运轨重叠（→ 被掩盖）
   note: string;
 }
@@ -41,9 +43,9 @@ const DECODE: PhaseSchedule = {
     { id: 'oproj', name: 'O Proj', kind: 'compute', w: 0.05, note: '注意力输出投影' },
     { id: 'rmsnorm2', name: 'RMSNorm', kind: 'compute', w: 0.03, note: '前 MoE 归一' },
     { id: 'router', name: 'Router / Gating', kind: 'compute', w: 0.03, note: 'MoGE 分组 Top-1（64 专家均分 M 组）' },
-    { id: 'a2a-d', name: 'EP All-to-All · dispatch', kind: 'comm', w: 0.04, coll: 'a2a', note: 'token 路由到专家所在卡（EP A2A 合计≈8%）' },
+    { id: 'a2a-d', name: 'EP All-to-All · dispatch', kind: 'comm', w: 0.04, coll: 'a2a', dim: 'ep', note: 'token 路由到专家所在卡（EP A2A 合计≈8%）' },
     { id: 'gmm', name: 'Expert GMM', kind: 'compute', w: 0.17, overlapBg: true, note: 'SwiftGMM · MTE2 利用达 95% · 与权重搬运重叠' },
-    { id: 'a2a-c', name: 'EP All-to-All · combine', kind: 'comm', w: 0.04, coll: 'a2a', note: '专家结果聚合回原卡' },
+    { id: 'a2a-c', name: 'EP All-to-All · combine', kind: 'comm', w: 0.04, coll: 'a2a', dim: 'ep', note: '专家结果聚合回原卡' },
   ],
   src: 'arXiv:2505.21411v2 §4.2 · 表 6（Ascend 800I A2）',
 };
@@ -60,24 +62,28 @@ const PREFILL: PhaseSchedule = {
     { id: 'oproj', name: 'O Proj', kind: 'compute', w: 0.06, note: '输出投影' },
     { id: 'rmsnorm2', name: 'RMSNorm', kind: 'compute', w: 0.02, note: '前 MoE 归一' },
     { id: 'router', name: 'Router / Gating', kind: 'compute', w: 0.03, note: 'MoGE 路由' },
-    { id: 'a2a-d', name: 'EP All-to-All · dispatch', kind: 'comm', w: 0.08, coll: 'a2a', note: 'EP A2A 合计≈16%' },
+    { id: 'a2a-d', name: 'EP All-to-All · dispatch', kind: 'comm', w: 0.08, coll: 'a2a', dim: 'ep', note: 'EP A2A 合计≈16%' },
     { id: 'gmm', name: 'Expert GMM', kind: 'compute', w: 0.33, note: 'Top-8 专家大 GEMM（计算主导）· GMM >50% e2e' },
-    { id: 'a2a-c', name: 'EP All-to-All · combine', kind: 'comm', w: 0.08, coll: 'a2a', note: '专家结果聚合' },
+    { id: 'a2a-c', name: 'EP All-to-All · combine', kind: 'comm', w: 0.08, coll: 'a2a', dim: 'ep', note: '专家结果聚合' },
   ],
   src: 'arXiv:2505.21411v2 §4.2 · 表 5（Ascend 800I A2）',
 };
 
-// ── pretrain：计算受限 + DP 梯度同步。FWD/BWD 主导；DP Ring-AllReduce + EP A2A ≈30%（STEP_DECOMP 口径）。 ──
+// ── pretrain：计算受限 + 全并行维通信。FWD/BWD 主导；通信合计 ≈30%（STEP_DECOMP 口径），
+//    按白皮书语义细分到四个维度：TP 层内集合通信（暴露·低时延敏感）→ EP A2A → PP 边界 P2P →
+//    DP 梯度 AllReduce（与 BWD 重叠掩盖）。TP/PP 份额为示意细分（whitepaper 语义补全），总量对齐论文锚点。 ──
 const PRETRAIN: PhaseSchedule = {
   phase: 'pretrain', bound: 'compute',
   bg: { name: '访存（背景）', frac: 0.12, note: '激活/梯度访存' },
   ops: [
     { id: 'fwd', name: 'Forward', kind: 'compute', w: 0.29, note: '前向（注意力 + MoE）' },
-    { id: 'ep-a2a', name: 'EP All-to-All', kind: 'comm', w: 0.10, coll: 'a2a', note: '专家并行 token 路由（EP2）' },
+    { id: 'tp-cc', name: 'TP AllGather/ReduceScatter', kind: 'comm', w: 0.06, coll: 'ring', dim: 'tp', note: '层内张量并行集合通信（TP8 · Host 内 Scale-Up 域）· 在关键路径上，对时延/拓扑跳数敏感' },
+    { id: 'ep-a2a', name: 'EP All-to-All', kind: 'comm', w: 0.08, coll: 'a2a', dim: 'ep', note: '专家并行 token dispatch/combine（EP2 · 折入 DP 轴相邻副本）' },
     { id: 'bwd', name: 'Backward', kind: 'compute', w: 0.29, note: '反向传播' },
-    { id: 'dp-ar', name: 'DP Ring-AllReduce', kind: 'comm', w: 0.20, coll: 'ring', overlapBg: true, note: '梯度同步（跨 Pod DP）· 可与 BWD 重叠掩盖' },
+    { id: 'pp-p2p', name: 'PP send/recv', kind: 'comm', w: 0.03, coll: 'p2p', dim: 'pp', note: 'stage 边界 activation/gradient P2P（相邻 stage 走低时延路径 · bubble 的来源之一）' },
+    { id: 'dp-ar', name: 'DP Ring-AllReduce', kind: 'comm', w: 0.13, coll: 'ring', dim: 'dp', overlapBg: true, note: '梯度同步（跨 Pod DP · 可跨 Scale-Out）· 可与 BWD 重叠掩盖' },
   ],
-  src: 'arXiv:2505.21411v2 §4.1 · STEP_DECOMP（计算58%/通信30%/访存12%）',
+  src: 'arXiv:2505.21411v2 §4.1 · STEP_DECOMP（计算58%/通信30%/访存12%）· TP/PP 份额为语义示意细分',
 };
 
 export const OP_SCHEDULE: Record<'pretrain' | 'prefill' | 'decode', PhaseSchedule> = {
