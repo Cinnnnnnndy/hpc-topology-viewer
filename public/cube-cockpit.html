@@ -1082,7 +1082,7 @@ function drawArcs(){
       others.forEach(h=>{ const p=anchorL3(h);
         arc(hp,p, 16+((h*11)%14), flt.color, 1.2, activeRel()); dot(p,flt.color); });
       const extra = flt.set.size-1-others.length;
-      if(extra>0) lab(hp.x, hp.y+15, flt.color, `+${extra} 个关联已在网格中描边`);
+      if(extra>0) lab(hp.x+8, hp.y+16, flt.color, `+${extra} 关联`, 'start');
     }
     const podI = dpOf(S.filterHost);                          // ③ 向上归属链：Host → 所属 Pod → 服务池 → 集群
     const ups = [anchorEl('#sn'+podI), anchorEl('#pool5-'+((podI/4)|0)), anchorEl('#clusterBar')];
@@ -1357,17 +1357,21 @@ function renderAlgo(){
   gA.clearRect(0,0,404,480);
   const ink = themeC('#c9d1d9','rgba(0,0,0,.75)'), dim2 = themeC('#8b949e','rgba(0,0,0,.45)');
   if(!M){ gA.fillStyle=dim2; gA.font='12px sans-serif'; gA.textAlign='center';
-    gA.fillText('先在任意视图点选一张卡（= 选中一个通信域）', 202, 220);
+    gA.fillText('先在任意视图点选一张卡（= 选中一个通信域）', 202, 210);
+    gA.font='10.5px sans-serif'; gA.fillStyle=dim2;
+    gA.fillText('然后在顶部选“关联维”（TP/PP/DP/EP）看该域怎么组织收发', 202, 232);
     $('#algoHead').innerHTML=''; $('#algoDesc').innerHTML=''; return; }
   const dimC = algoDimColor(M.dim), N = M.chips.length;
   // 域界与拼接：超域 = A2A 域（DP·8 Pod/域）或 Pod 本身（EP）；TP/PP 全在 1 Pod 内 → 无拼接
   const superDom = c => M.dim==='DP' ? epDomOf(hostOf(c)) : dpOf(hostOf(c));
   const doms = [...new Set(M.chips.map(superDom))], nDC = doms.length;
   const crossDomain = nDC > 1;
+  // 一句话「这是什么」：把选中的通信域画成 NCCL 组织收发的算法图（ring/tree），节点=卡
   $('#algoHead').innerHTML =
-    `<b style="color:${dimC}">${M.name}</b> · communicator 成员 ${N} rank（节点=卡 · 色=状态）` +
-    (crossDomain ? ` · 跨 <b>${nDC}</b> 个${M.dim==='DP'?'超域（A2A 域）':'Pod'} → 开环拼接点 <b>2×(nDC−1)=${2*(nDC-1)}</b>${S.scatter?' · <b style="color:#04D793">散射开启：各 channel 拼接点错开</b>':''}`
-                 : ' · <b>域内</b> communicator（不跨 Pod → 无拼接点）');
+    `<div style="color:var(--sys-text-bright);font-weight:600;font-size:11.5px;margin-bottom:2px">这张图 = 你选中的「${M.dim} 通信域」按 NCCL 算法怎么收发（${S.algoView==='ring'?'Ring 环':'Tree 树'}）</div>` +
+    `<b style="color:${dimC}">${M.name}</b> · 成员 ${N} 张卡（每个节点=1 张卡 · 颜色=负载状态）` +
+    (crossDomain ? `<br>跨 <b>${nDC}</b> 个${M.dim==='DP'?'超域（每 8 Pod 一个 A2A 域）':'Pod'} → 需<b>开环拼接</b> <b>2×(${nDC}−1)=${2*(nDC-1)}</b> 处${S.scatter?' · <b style="color:#04D793">散射开启：各 channel 拼接点错开</b>':''}`
+                 : '<br><b>域内</b>通信（全在 1 个 Pod 内 · 走 UB · 无跨域拼接点）');
   gA.font='10px sans-serif';
   if(S.algoView==='ring') renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2);
   else renderAlgoTree(M, dimC, N, ink, dim2);
@@ -1929,6 +1933,10 @@ function cubeLine(points, color, base, r, edge){
   cubeComm.add(mesh); return mesh;
 }
 function cubeLab(text,color,w,pos){ const l=makeLabel(text,color,w); l.material.fog=false; l.renderOrder=7; l.position.copy(pos); cubeComm.add(l); }
+/* 魔方通信节点球：把「哪几张卡」显式画成实心球（焦点=大白环 · 成员=状态色），穿透方块可见 */
+function cubeDot(pos,color,r){ const s=new THREE.Mesh(new THREE.SphereGeometry(r||.14,10,10),
+  new THREE.MeshBasicMaterial({color,transparent:true,opacity:.96,depthWrite:false,depthTest:false,fog:false}));
+  s.material.userData={base:.96,noPulse:true}; s.renderOrder=7; s.position.copy(pos); cubeComm.add(s); return s; }
 /* ---- microbatch F→B 追踪通道：播放时一块半透明扫板沿 stage 轴 前向→反向 往返，
         标签实时显示 F/B · mb 编号 · 当前 stage 层段（标准=Y 轴 · PP 流水=X 轴） ---- */
 const mbGrp = new THREE.Group(); mbGrp.visible=false; scene.add(mbGrp);
@@ -1987,43 +1995,54 @@ function buildComm(){
     // 线色随主题（浅色用深变体，否则白底上淡显维几乎不可见）；淡显维不透明度抬高保证可发现
     const dk=isDark();
     const LNC={ tp:dk?0x39c5cf:0x0d6b75, pp:dk?0xFFAA3B:0x9a6a00, ep:dk?0x9B3CF6:0x6b2cba, dp:dk?0x4369EF:0x2b4bc0 };
-    { const on=(ph==='TP'); const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,cubeMode,new THREE.Vector3()));
+    // 选卡后：以「关联」维（activeRel）为主角加亮；未选卡（仅播放）时跟随当前阶段。
+    // 只有主角维画节点球 + 标签 + 流动粒子；其余三维留作淡显上下文（可点选触发路径，但不喧宾夺主）。
+    const emph = S.filterHost!=null ? activeRel() : ph;
+    const nodeStateCol = h => { const v=health[h]; return v>.95?0xFF4B7B:v<.4?0x04D793:v<.7?0xfbbf24:0xFF4B7B; };
+    // 焦点卡：大白环节点 + 状态芯（无论主角是哪个维都标出「你选的是这张」）
+    if(S.filterHost!=null || S.playing){
+      const fp = chipCubeM(fh*8+tpF,cubeMode,new THREE.Vector3());
+      cubeDot(fp, 0xffffff, .30); cubeDot(fp, nodeStateCol(fh), .18);
+      if(S.filterHost!=null) cubeLab(`● 焦点 rank ${fh*8+tpF} · Host${fh}`, '#ffffff', 5.5, fp.clone().add(V3(0,1.0,0)));
+    }
+    { const on=(emph==='TP'); const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,cubeMode,new THREE.Vector3()));
       const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
       const ring = pts.concat(back,[pts[0].clone()]);
-      cubeLine(ring, LNC.tp, on?.85:.3, on?.17:.09, { dim:'TP', a:fh*8+tpF, b:fh*8+((tpF+1)&7) });
-      if(on||S.filterHost!=null) cubeLab(`TP 组 · Host ${fh} 的 8 卡`, '#7ee8f4', on?5.5:4, pts[0].clone().add(V3(0,1.3,0)));
-      if(on){                                        // 需求5·TP：RS 去（前半程·沿去程链）+ AG 回（后半程·沿抬升回程链）两段可区分
-        const fwd = pts.concat([pts[0].clone()]);
-        addCubeMover(fwd, 0x39e6f4, .65, .085, {gate:'firstHalf'});
-        addCubeMover(fwd, 0x39e6f4, .65, .07,  {gate:'firstHalf'});
+      cubeLine(ring, LNC.tp, on?.9:.12, on?.18:.06, { dim:'TP', a:fh*8+tpF, b:fh*8+((tpF+1)&7) });
+      if(on){ pts.forEach(p=>cubeDot(p, 0x39c5cf, .12));
+        cubeLab(`TP 组 · Host ${fh} 的 8 卡（节点内 AllReduce）`, '#7ee8f4', 6, pts[0].clone().add(V3(0,1.5,0)));
+        const fwd = pts.concat([pts[0].clone()]);         // 需求5·TP：RS 去（前半）+ AG 回（后半）两段可区分
+        addCubeMover(fwd, 0x39e6f4, .65, .09, {gate:'firstHalf'});
         const ret = back.concat([back[0].clone()]);
-        addCubeMover(ret, 0xd7fbff, .65, .085, {gate:'secondHalf'});
-        addCubeMover(ret, 0xd7fbff, .65, .07,  {gate:'secondHalf'});
-        cubeLab('RS 去 ↓ / AG 回 ↑（前/后半程）', '#7ee8f4', 6.5, pts[4].clone().add(V3(0,2.1,0))); } }
-    { const on=(ph==='PP'); const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+tpF,cubeMode,new THREE.Vector3()));
-      for(let k=0;k<15;k++) cubeLine([pts[k].clone(),pts[k+1].clone()], LNC.pp, on?.85:.3, on?.17:.09,
+        addCubeMover(ret, 0xd7fbff, .65, .09, {gate:'secondHalf'});
+        if(S.playing) cubeLab('RS 去 ↓ / AG 回 ↑（前/后半程）', '#7ee8f4', 6.5, pts[4].clone().add(V3(0,2.3,0))); } }
+    { const on=(emph==='PP'); const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+tpF,cubeMode,new THREE.Vector3()));
+      for(let k=0;k<15;k++) cubeLine([pts[k].clone(),pts[k+1].clone()], LNC.pp, on?.9:.12, on?.18:.06,
         { dim:'PP', a:(dpF*16+k)*8+tpF, b:(dpF*16+k+1)*8+tpF });
-      if(on||S.filterHost!=null) cubeLab(`PP 链 · 副本${dpF} 的 16 段`, '#ffe0a0', on?5.5:4, pts[15].clone().add(V3(0,1.3,0)));
-      if(on){ addCubeMover(pts, 0xffe08a, .55, .08); addCubeMover(pts, 0xffe08a, .28, .065); } }
-    { const on=(ph==='EP'); const dom=epDomOf(fh);   // A2A 域内 8 副本同位 rank 互发（各持 1 桶）
+      if(on){ pts.forEach((p,i)=>cubeDot(p, nodeStateCol(dpF*16+i), .1));
+        cubeLab(`PP 链 · 副本 ${dpF} 的 16 段（Stage0→15 接力）`, '#ffe0a0', 6, pts[15].clone().add(V3(0,1.5,0)));
+        addCubeMover(pts, 0xffe08a, .5, .1); } }
+    { const on=(emph==='EP'); const dom=epDomOf(fh);   // A2A 域内 8 副本同位 rank 互发（各持 1 桶）
       const a=chipCubeM(fh*8+tpF,cubeMode,new THREE.Vector3());
       let last=a;
       for(let d=dom*EP; d<dom*EP+EP; d++){ const h2=d*16+ppF; if(h2===fh) continue;
         const b=chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()); last=b;
-        cubeLine([a.clone(), b], LNC.ep, on?.5:.26, on?.14:.08, { dim:'EP', a:fh*8+tpF, b:h2*8+tpF });
-        if(on){ addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07);
-          addCubeMover([b.clone(),a.clone()], 0xd2a8ff, .45, .055); } }   // 需求5·EP：dispatch/combine 双向全交叉粒子
-      if(on||S.filterHost!=null) cubeLab(`EP 域 ${dom} · 8 副本互发`, '#d2a8ff', on?5.5:4, last.clone().add(V3(0,1.6,0)));
-      if(S.anomaly&&on) for(let k2=0;k2<4;k2++){ const h2=anomPods[k2*2]*16+ppF;
-        cubeLine([chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } }
-    { const on=(ph==='DP'); const pts=[]; const dps=[]; for(let d=0;d<64;d+=4){ dps.push(d); pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3())); }
+        cubeLine([a.clone(), b], LNC.ep, on?.7:.1, on?.15:.06, { dim:'EP', a:fh*8+tpF, b:h2*8+tpF });
+        if(on){ cubeDot(b, nodeStateCol(h2), .12);
+          addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .09);
+          addCubeMover([b.clone(),a.clone()], 0xd2a8ff, .45, .07); } }   // 需求5·EP：dispatch/combine 双向全交叉
+      if(on){ cubeLab(`EP·A2A 域 ${dom} · 8 副本同位互发`, '#d2a8ff', 6, last.clone().add(V3(0,1.8,0)));
+        if(S.anomaly) for(let k2=0;k2<4;k2++){ const h2=anomPods[k2*2]*16+ppF;
+          cubeLine([chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } } }
+    { const on=(emph==='DP'); const pts=[]; const dps=[]; for(let d=0;d<64;d+=4){ dps.push(d); pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3())); }
       for(let k=0;k<pts.length;k++){ const dNext=dps[(k+1)%dps.length];
-        const seg=cubeLine([pts[k].clone(), pts[(k+1)%pts.length].clone()], LNC.dp, on?.75:.28, on?.17:.09,
+        const seg=cubeLine([pts[k].clone(), pts[(k+1)%pts.length].clone()], LNC.dp, on?.85:.12, on?.18:.06,
           { dim:'DP', a:(dps[k]*16+ppF)*8+tpF, b:(dNext*16+ppF)*8+tpF });
-        if(seg&&on) seg.material.userData.dpPulse = true; }             // 需求5·DP：外圈整体脉冲闪烁
-      if(on||S.filterHost!=null) cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', on?6:4.5, pts[8].clone().add(V3(0,1.3,0)));
-      if(on){ const loop=pts.map(p=>p.clone()); loop.push(pts[0].clone());
-        addCubeMover(loop, 0x9ecbff, .5, .08); addCubeMover(loop, 0x9ecbff, .28, .065); } }
+        if(seg&&on&&S.playing) seg.material.userData.dpPulse = true; }   // 需求5·DP：外圈整体脉冲闪烁
+      if(on){ pts.forEach((p,i)=>cubeDot(p, nodeStateCol(dps[i]*16+ppF), .1));
+        cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', 6, pts[8].clone().add(V3(0,1.5,0)));
+        const loop=pts.map(p=>p.clone()); loop.push(pts[0].clone());
+        addCubeMover(loop, 0x9ecbff, .5, .1); } }
     /* 需求1 反向高亮：选中物理链路 → 亮显所有经过它的通信域边 */
     if(S.selLink) S.selLink.edges.forEach(e=>{
       const pa=chipCubeM(e.a,cubeMode,new THREE.Vector3()), pb=chipCubeM(e.b,cubeMode,new THREE.Vector3());
@@ -2988,13 +3007,37 @@ function updateCommPulse(now){
     let kk = m.userData.noPulse ? 1 : k;
     if(m.userData.dpPulse) kk = dpK;
     m.opacity = Math.min(1, m.userData.base*kk); });
+  // 选卡后淡化坐标轴教学文字（否则大字盖住选中的卡组）；网格框保留
+  if(cubeAxes.visible && S.filterHost!=null){
+    cubeAxes.children.forEach(o=>{
+      if(!o.isSprite || !o.material) return;
+      const b = (o.material.userData && o.material.userData.base!=null)? o.material.userData.base : 1;
+      o.material.opacity = Math.min(1, b*Wgt.cube)*0.28;
+    });
+  }
   tickMovers(now);
+}
+/* 选卡后：把镜头框到「焦点卡 + 当前关联维成员」的包围盒，让选中的卡组看得清、不再淹没在整墙 8192 方块里 */
+function selGroupFrame(){
+  if(S.filterHost==null || S.wire!=='AUTO') return null;
+  const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh);
+  const tpF=(S.focusChip>>3)===fh ? (S.focusChip&7) : 3;
+  const rel=activeRel(); let members=[];
+  if(rel==='TP') for(let s=0;s<8;s++) members.push(fh*8+s);
+  else if(rel==='PP') for(let k=0;k<16;k++) members.push((dpF*16+k)*8+tpF);
+  else if(rel==='DP') for(let d=0;d<64;d+=4) members.push((d*16+ppF)*8+tpF);
+  else { const dom=epDomOf(fh); for(let d=dom*EP;d<dom*EP+EP;d++) members.push((d*16+ppF)*8+tpF); }
+  const c=new THREE.Vector3(), ps=members.map(m=>chipCubeM(m,cubeMode,new THREE.Vector3()));
+  ps.forEach(p=>c.add(p)); c.multiplyScalar(1/ps.length);
+  let rad=6; ps.forEach(p=>rad=Math.max(rad,p.distanceTo(c)));
+  return { t:c, d: Math.min(130, rad*2.0+22) };
 }
 /* ---- 相机：单一视角 + 层级驱动飞行缩放 ---- */
 let yaw = .82, pitch = .58, zoomBias = 1;
 const camCur = { t:V3(0,2,0), d:52 };
 function camGoal(){
   if(S.form==='cube' || Wgt.cube>0.5){
+    const sf = selGroupFrame(); if(sf) return sf;      // 选卡 → 镜头贴近焦点卡 + 其关联组（看得清「哪几张卡」）
     if(cubeMode===1) return { t:V3(0,10,0), d:150 };
     if(cubeMode===2) return { t:V3(0,16,0), d:95 };
     if(cubeMode===3) return { t:V3(0,17,0), d:118 };
@@ -3047,7 +3090,7 @@ function updateCamera(dt){
   memMat.opacity = hostMat.opacity; memMat.depthWrite = hostMat.depthWrite;
   // 魔方形态下有筛选高亮（点卡/TopN/告警下钻）→ 其余方块整体半透明，减少对通信线/焦点的遮挡
   const cubeHi = Wgt.cube>.5 && S.filterHost!=null;
-  const chipTgt = (deepZoom && S.level!=='L3' && Wgt.phys>.5) ? .15 : (cubeHi ? .3 : 1);
+  const chipTgt = (deepZoom && S.level!=='L3' && Wgt.phys>.5) ? .15 : (cubeHi ? .5 : 1);   // 选卡后其余方块半透明但仍可见（焦点/关联卡靠节点球+连线加亮）
   chipMat.opacity += (chipTgt - chipMat.opacity)*k;
   chipMat.depthWrite = chipMat.opacity > .5;
 }
@@ -3078,6 +3121,13 @@ window.addEventListener('pointerup', (e)=>{
     const t = pickCommAt(e.clientX, e.clientY);
     if(t && t.edge){ selectEdge(t.edge); dragging=false; return; }
     if(t && t.link && t.link.pods){ selectLink(t.link); dragging=false; return; }
+  }
+  // 点空白处（既没点到卡、也没点到连线/链路）→ 取消当前选中（选卡 / 选边 / 选链路）
+  if(dragging && !dragMoved && S.hoverHost<0 && !pickCommAt(e.clientX, e.clientY)){
+    let cleared=false;
+    if(S.selEdge||S.selLink){ clearPathSel(); cleared=true; }
+    if(S.filterHost!=null){ setFilter(S.filterHost); cleared=true; }   // setFilter 同值 = 取消
+    if(cleared){ dragging=false; return; }
   }
   if(dragging && !dragMoved && S.hoverHost>=0){
     S.focusHost=S.hoverHost; S.focusChip=S.focusHost*8;
