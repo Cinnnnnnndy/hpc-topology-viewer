@@ -893,8 +893,18 @@ $$('#l4pods i').forEach((el,i)=>{
   el.addEventListener('mouseenter', ()=>setHover(i*16+8,'L4'));
   el.addEventListener('mouseleave', ()=>setHover(-1,'')); });
 $('#clusterBar').addEventListener('click', e=>{ e.stopPropagation(); setPod(0,'L6'); });
-function setPod(i,lv){ S.focusPod = (S.focusPod===i && S.level===lv)? 0 : i;
-  renderPodRows(); colorsDirty = true; updateCounts(); setLevel(lv); drawArcs(); }
+function setPod(i,lv){
+  const off = (S.focusPod===i && S.level===lv);
+  S.focusPod = off ? 0 : i;
+  if(!off){                                   // 选中 Pod → 焦点移入该 Pod，L3/L2 及 3D 随之刷新（保留原 PP/TP 偏移）
+    const pp = ppOf(S.focusHost), tp = S.focusChip & 7;
+    S.focusHost = i*16 + pp; S.focusChip = S.focusHost*8 + tp;
+    if(S.filterHost!=null){ S.filterHost = S.focusHost; invalidateRel(); }   // 有选卡时同步筛选到新 Pod 的同位卡
+  }
+  renderPodRows(); colorsDirty = true; commDirty = true; updateCounts(); setLevel(lv);
+  renderL3(); renderL2(); renderL4(); drawArcs();
+  try{ wakeLoop(30); }catch(_){ }
+}
 function renderPodRows(){
   // 选中态由 S.focusPod 驱动：L5 高亮所属服务池（focusPod/4），L4 高亮 Pod 瓦片本身
   const selPool = (S.focusPod/4)|0;
@@ -926,6 +936,11 @@ function renderL3(){
     g3.fillStyle = hostColor(h);
     rr3(g3,x+.5,y+.5,w-1,hh-1); g3.fill();
   }
+  // 选中 Pod → 框出该 Pod 的 16 台 Host（L3 随所点 Pod 变化）
+  if(S.focusPod>0 || S.level==='L4'){ const pod=dpOf(S.focusHost);
+    g3.strokeStyle=COL.DP; g3.lineWidth=1.4; g3.globalAlpha=.9;
+    for(let k=0;k<16;k++){ const [x,y,w,hh]=cellRectL3(pod*16+k); rr3(g3,x+.5,y+.5,w-1,hh-1); g3.stroke(); }
+    g3.globalAlpha=1; }
   const flt = filterInfo();
   if(flt){ g3.strokeStyle = flt.color; g3.lineWidth = 1;
     flt.set.forEach(h=>{ const [x,y,w,hh]=cellRectL3(h); rr3(g3,x+.5,y+.5,w-1,hh-1); g3.stroke(); });
@@ -2738,25 +2753,36 @@ function buildNet3Lines(){
       }
     });
   }
-  /* ② RDMA 平面（蓝·按 rail 分色）：每卡直出 RoCE 口，同号口成 rail；只承载跨 Pod 流量 */
+  /* ② RDMA 平面（蓝·按 rail 分色）：每卡直出 RoCE 口，同号口成 rail；只承载跨 Pod 流量。
+     清晰化：每 Pod 一个「出口节点」方块 + 标签；rail 各自在 z/y 错开成独立泳道（不再糊成一束）；
+     每段两端画端点球，一眼看清「从哪个 Pod 到哪个 Pod、走第几条 rail」。 */
   if(show('RDMA')){
     planeFrame(yRD, PATHC.RAIL, .55, '② RDMA·rail');
+    const fp = dpOf(S.focusHost);
+    const netDot=(p,color,r)=>{ const s=new THREE.Mesh(new THREE.SphereGeometry(r||.12,10,10),
+      new THREE.MeshBasicMaterial({color,transparent:true,opacity:.96,depthWrite:false}));
+      s.material.userData={base:.96,noPulse:true}; s.position.copy(p); commGroup.add(s); };
+    const exit = pod => V3(podXZ(pod).x, yRD, podXZ(pod).z);
+    podsShown.forEach(pod=>{ const p=exit(pod), foc=pod===fp;   // Pod 出口节点 + 竖直 NIC 直出（从机柜顶上方起，不插进机柜）
+      const box=new THREE.Mesh(new THREE.BoxGeometry(.66,.26,.66),
+        new THREE.MeshBasicMaterial({color:foc?PATHC.RAIL:0x8aa0d8,transparent:true,opacity:.95,depthWrite:false}));
+      box.material.userData={base:.95,noPulse:true}; box.position.copy(p); commGroup.add(box);
+      wireLab('Pod'+pod+' 出口', foc?PATHCS.RAIL:'#8aa0d8', 5, p.clone().add(V3(0,.6,0)));
+      protoLink(commGroup, [V3(p.x, 3.35, p.z), p.clone()], PATHC.RAIL, 'RDMA', 1, .32,
+        { plane:'RDMA rail', rail:null, pods:[pod,pod], bw:'RoCE 直出', load:.3, desc:`Pod${pod} 每卡 RoCE 口直出上 rail 平面` }); });
     const rails = solo==='RDMA' ? [0,1,2,3,4,5,6,7] : [0,2,4,6];
-    rails.forEach(r=>{
-      const col = railColor(r), y = yRD + .32 + r*.16;
-      for(let k=0;k<podsShown.length;k++){
-        const pi=podsShown[k], pj=podsShown[(k+1)%podsShown.length];
-        if(pi===pj) continue;                          // 红线：RDMA 平面上绝不连同 Pod 两卡
-        const A=podXZ(pi), B=podXZ(pj);
-        protoLink(commGroup, bez(V3(A.x, y, A.z), V3(B.x, y, B.z), 1.1+r*.12), col, 'RDMA', r<2?3:2, .8,
+    rails.forEach((r,ri)=>{ const col=railColor(r), n=rails.length;
+      const zoff=(ri-(n-1)/2)*.85, yoff=.14+ri*.12;
+      for(let k=0;k<podsShown.length-1;k++){         // 相邻 Pod 连一段（成链非环 → 端点清楚）
+        const pi=podsShown[k], pj=podsShown[k+1];    // 红线：只连不同 Pod
+        const a=exit(pi).add(V3(0,yoff,zoff)), b=exit(pj).add(V3(0,yoff,zoff));
+        protoLink(commGroup, bez(a.clone(),b.clone(),.45), col, 'RDMA', r<2?2:1.4, .88,
           { plane:'RDMA rail', rail:r, pods:[pi,pj], bw: r<2?'RoCE 400G 档':'RoCE 200G 档',
             load:.2+rng(pi*8+pj+r)*.6, desc:`rail-${r} · Pod${pi} ⇄ Pod${pj}（跨 Pod RDMA）` });
+        netDot(a,col,.1); netDot(b,col,.1);
       }
-      if(r%2===0) wireLab('rail-'+r, railColorCss(r), 3.4, V3(-17.6, y, -9.5+r*.9));
+      wireLab('rail-'+r, railColorCss(r), 3.2, exit(podsShown[0]).add(V3(-2, yoff, zoff)));
     });
-    podsShown.forEach(pod=>{ const P0=podXZ(pod);     // NIC 直出竖联（Pod → RDMA 平面）
-      protoLink(commGroup, [V3(P0.x, explode? 4.2 : 3.6, P0.z), V3(P0.x, yRD+.3, P0.z)], PATHC.RAIL, 'RDMA', 1, .4,
-        { plane:'RDMA rail', rail:null, pods:[pod,pod], bw:'RoCE 直出', load:.3, desc:`Pod${pod} 每卡 RoCE 口直出上 rail` }); });
   }
   /* ③ VPC 平面（灰·弱化半透明）：管理/存储 */
   if(show('VPC')){
@@ -2968,12 +2994,16 @@ function pulseK(){ return S.playing ? .5+.5*Math.sin(performance.now()/180) : 0;
 function candyBoost(c){ const hsl={}; c.getHSL(hsl); c.setHSL(hsl.h, Math.min(1,hsl.s*1.2), Math.min(0.72,hsl.l+0.05)); return c; }
 function applyColors(chipsToo){
   const pk = pulseK();
-  for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h)); candyBoost(cTmp);
+  // 三张网 lens：机柜/卡的负载色（黄/绿/红）会与三张网平面线抢视觉 → 中性化，让"色=网络平面"唯一
+  const net3 = S.wire==='NET3' && S.form==='phys';
+  const NEUTRAL = new THREE.Color(themeC(0x2a3240, 0xdfe3ea));
+  const neut = c => { if(net3) c.lerp(NEUTRAL, .82); return c; };
+  for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h)); candyBoost(cTmp); neut(cTmp);
     if(S.playing && hostActive(h)) cTmp.lerp(WHITE, pk*.55);
     hostsMesh.setColorAt(h,cTmp); }
   hostsMesh.instanceColor.needsUpdate = true;
   if(chipsToo){
-    for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); candyBoost(cTmp); chipsMesh.setColorAt(c,cTmp); }
+    for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); candyBoost(cTmp); neut(cTmp); chipsMesh.setColorAt(c,cTmp); }
     chipsMesh.instanceColor.needsUpdate = true;
     if(stackL5){ stackL5.setColorAt(1, cTmp.set(S.anomaly?0x8b1a1a:0x21262d));
       stackL5.instanceColor.needsUpdate = true; }
@@ -3128,6 +3158,9 @@ function updateCommPulse(now){
   cubeComm.visible = Wgt.cube>0.5 && S.wire==='AUTO' && (S.playing || S.filterHost!=null);
   // 需求1：物理路径高亮只在物理形态显示（正向选边后自动飞到物理层级）
   pathGroup.visible = Wgt.phys>0.6 && !!S.selEdge;
+  // 三张网 lens：隐藏显存水位条（其青/黄/红会混入"蓝黄"困惑），让机柜中性、三张网平面唯一带色
+  const net3phys = S.wire==='NET3' && S.form==='phys';
+  if(memMesh) memMesh.visible = Wgt.phys>0.6 && !net3phys;
   const k = S.playing ? .45+.55*Math.abs(Math.sin(now/260)) : .8;
   const emph = S.hudEmph;                         // HUD step 分解 hover → 软硬联动
   commGroup.children.forEach(o=>{ const m=o.material;
@@ -3329,7 +3362,7 @@ if($('#fbClear')) $('#fbClear').onclick = ()=>{ if(S.filterHost!=null) setFilter
 $$('.wirebtn').forEach(b=>b.onclick = ()=>{ S.wire = b.dataset.wire;
   $$('.wirebtn').forEach(x=>x.classList.toggle('on', x===b));
   if(S.wire==='FLOW' && !S.mxShow){ S.mxShow=true; syncMxCard(); }   // 互联流量 → 自动挂出矩阵卡
-  commDirty = true; renderViewlab();
+  commDirty = true; colorsDirty = true; renderViewlab();   // 切到/离开 三张网 需要重算机柜中性色
   try{ updateNet3Tab(); syncNet3Ctl(); }catch(_){ } });
 /* ---- v20：控件层级整理 ----
    顶栏三层：任务入口（场景剧本）｜视图配置（着色+连线+形态 同层级 → 一个面板集体配置）｜演练注入
