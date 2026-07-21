@@ -479,6 +479,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <button id="tabHier" class="on">层级剖面</button>
         <button id="tabModel">整网分隔映射</button>
         <button id="tabAlgo" style="display:none">算法展开</button>
+        <button id="tabNet3" style="display:none">三张网</button>
       </div>
       <!-- ============ 页签 1：物理层级剖面 ============ -->
       <div class="pane show" id="paneHier">
@@ -577,6 +578,14 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         </div>
         <canvas id="algocv" width="404" height="480" style="display:block;width:100%;border:1px solid var(--border);border-radius:6px;cursor:pointer"></canvas>
         <div id="algoDesc" style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:40px"></div>
+      </div>
+      <!-- ── 左侧页签 4：三张网 2D 平面图（需求3 · 与右侧 3D「三张网」lens 同源联动）──
+           UB scale-up（紫·域内）/ RDMA rail（蓝·按 rail 分色·仅跨 Pod）/ VPC（灰·弱化）。
+           点某一平面带 = 单显该平面（同步 3D）；线型=协议：实线 UB / 长虚线 RDMA / 点线 VPC。 -->
+      <div class="pane" id="paneNet3">
+        <div id="net3Head" style="font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:8px"></div>
+        <canvas id="net3cv" width="404" height="470" style="display:block;width:100%;border:1px solid var(--border);border-radius:6px;cursor:pointer"></canvas>
+        <div id="net3Desc" style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:36px"></div>
       </div>
     </div>
     <div id="right">
@@ -1156,7 +1165,8 @@ function touchLeft(){
   if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); }
   else if(S.tab==='model') renderMM();
   else if(S.tab==='algo') renderAlgo();
-  try{ updateAlgoTab(); }catch(_){ }
+  else if(S.tab==='net3') renderNet3Panel();
+  try{ updateAlgoTab(); updateNet3Tab(); }catch(_){ }
   renderProbe(); updateFoldHeads();
   try{ if(drawer.classList.contains('show')) syncDrawer(); }catch(e){}
   updateLevelKPI(); renderTopN();
@@ -1309,13 +1319,16 @@ function renderMemPanel(){
 $('#tabHier').onclick = ()=>setTab('hier');
 $('#tabModel').onclick = ()=>setTab('model');
 $('#tabAlgo').onclick = ()=>setTab('algo');
+$('#tabNet3').onclick = ()=>setTab('net3');
 function setTab(t){ S.tab=t;
   $('#tabHier').classList.toggle('on',t==='hier');
   $('#tabModel').classList.toggle('on',t==='model');
   $('#tabAlgo').classList.toggle('on',t==='algo');
+  $('#tabNet3').classList.toggle('on',t==='net3');
   $('#paneHier').classList.toggle('show',t==='hier');
   $('#paneModel').classList.toggle('show',t==='model');
   $('#paneAlgo').classList.toggle('show',t==='algo');
+  $('#paneNet3').classList.toggle('show',t==='net3');
   commsvg.style.display = t==='hier'?'block':'none';
   // 整网图子页已展开时保持宽面板；切回层级剖面恢复正常宽度
   const netExpanded = t==='model' && $('#netWrap').style.display!=='none';
@@ -1323,12 +1336,20 @@ function setTab(t){ S.tab=t;
   if(t==='hier'){ renderL3(); renderL2(); requestAnimationFrame(drawArcs); }
   else if(t==='model') renderMM();
   else if(t==='algo') renderAlgo();
+  else if(t==='net3') renderNet3Panel();
 }
 /* 算法展开 tab 入口：任意视图选中一个通信域（= 选卡 + 关联维）后出现 */
 function updateAlgoTab(){
   const has = S.filterHost!=null;
   $('#tabAlgo').style.display = has ? '' : 'none';
   if(!has && S.tab==='algo') setTab('hier');
+}
+/* 三张网 tab 入口：连线镜头 = 三张网 时出现（左 2D 与右 3D 同源） */
+function updateNet3Tab(){
+  const on = S.wire==='NET3';
+  $('#tabNet3').style.display = on ? '' : 'none';
+  if(!on && S.tab==='net3') setTab('hier');
+  if(on && S.tab==='net3') renderNet3Panel();
 }
 /* ================= 左侧页签 3：通信域算法展开（L3 算法层 · 需求2） =================
    纯 2D 逻辑图：ring（多 channel 同心）/ tree（Double Binary Tree 两棵互补树并排）/
@@ -1434,11 +1455,11 @@ function renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2){
   gA.fillStyle=dim2; gA.font='10px sans-serif'; gA.textAlign='center';
   gA.fillText(`Ring 展开 · ${S.algoCh} channel（同心圈）· 箭头=数据流向`, cx, 462);
   $('#algoDesc').innerHTML =
-    `环序即算法序：每 rank 只与左右邻收发（Reduce-Scatter ${N-1} 步 + AllGather ${N-1} 步）。` +
+    `每张卡只跟左右邻收发（RS ${N-1} 步 + AG ${N-1} 步）。` +
     (crossDomain
-      ? `<br>跨域环为<b>开环拼接</b>：域内段闭合、域间在拼接点（◆ 青）经 rail 出网再接回 —— 每环跨接数 = 2×(nDC−1)。${S.scatter?'<b style="color:#04D793">散射</b>已开：不同 channel 的拼接点落在不同节点（降低单出口压力，对比顶栏“散射跨域路由”）。':'开启顶栏「注入 EP 异常 → 散射跨域路由」可看拼接点错开效果。'}`
-      : '<br>该域完全落在一个 Pod 内 → 全程 UB，不存在开环拼接（红线：域内环不画拼接点）。') +
-    '<br>点<b>节点</b>=三视图同步高亮该卡 · 点<b>边</b>=物理路径分段回放（需求1）。';
+      ? ` 跨域环处<b>开环拼接</b>（◆ 青）经 rail 出网再接回。${S.scatter?'散射已开：各 channel 拼接点错开。':''}`
+      : ' 全在 1 个 Pod 内 → 全程 UB。') +
+    `<br><span style="color:${dimC}">悬停/点节点 → 3D 同步高亮该卡 · 点边 → 回放物理路径</span>`;
 }
 function renderAlgoTree(M, dimC, N, ink, dim2){
   // Double Binary Tree：两棵互补树并排，节点角色互换（收益=带宽互补：每棵各承载一半数据，同时收发）
@@ -1476,9 +1497,8 @@ function renderAlgoTree(M, dimC, N, ink, dim2){
   gA.fillStyle=dim2; gA.font='10px sans-serif'; gA.textAlign='center';
   gA.fillText(`Double Binary Tree${sampled?` · 示 ${Ms}/${N} rank`:''} · 双环圈=内部节点（该棵中转发）`, 202, yTop+(depth-1)*dy+52);
   $('#algoDesc').innerHTML =
-    '两棵树同时工作：<b>树 A 的叶 ≈ 树 B 的内部节点</b>（角色互换）——收益机制是<b>带宽互补</b>：' +
-    '每棵各承载一半数据，每 rank 在一棵里只收、另一棵里只发，上下行带宽同时打满；<b>不是步数减半</b>。' +
-    '<br>点<b>节点</b>=三视图同步高亮该卡 · 点<b>边</b>=物理路径分段回放（需求1）。';
+    '两棵树同时工作、角色互换：每张卡在一棵里只<b>收</b>、另一棵里只<b>发</b> → 上下行带宽同时打满（<b>带宽互补</b>，不是步数减半）。' +
+    `<br><span style="color:${dimC}">悬停/点节点 → 3D 同步高亮该卡 · 点边 → 回放物理路径</span>`;
 }
 /* 算法展开交互：点节点→全站同步高亮；点边→需求1 路径 */
 if(algocv){
@@ -1500,6 +1520,17 @@ if(algocv){
       const d=d2seg(h.x1,h.y1,h.x2,h.y2); if(d<bd){ bd=d; best=h; } }
     if(best){ const M=algoMembers(); selectEdge({dim:M?M.dim:'DP', a:best.a, b:best.b}); }
   });
+  // 悬停算法节点 → 3D 同步高亮该卡（强化联动）
+  algocv.addEventListener('mousemove', ev=>{
+    const r=algocv.getBoundingClientRect();
+    const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*480;
+    let hit=-1;
+    for(const h of algoHits) if(h.type==='node' && (x-h.x)**2+(y-h.y)**2 <= (h.r+2)**2){ hit=h.host; break; }
+    algocv.style.cursor = hit>=0 ? 'pointer' : 'default';
+    if(hit>=0 && S.hoverHost!==hit){ setHover(hit,'algo'); try{ wakeLoop(20); }catch(_){ } }
+    else if(hit<0 && S.hoverSide==='algo'){ setHover(-1,''); }
+  });
+  algocv.addEventListener('mouseleave', ()=>{ if(S.hoverSide==='algo') setHover(-1,''); });
   $('#algoRing').onclick=()=>{ S.algoView='ring';
     $('#algoRing').classList.add('on'); $('#algoTree').classList.remove('on');
     $('#algoRing').style.background='var(--panel)'; $('#algoTree').style.background='transparent';
@@ -2749,8 +2780,111 @@ function syncNet3Ctl(){
 }
 $$('#net3ctl .n3btn').forEach(b=>b.onclick=()=>{
   const p=b.dataset.plane; S.net3.solo = p==='ALL'? null : (S.net3.solo===p? null : p);
-  commDirty=true; syncNet3Ctl(); renderStageLeg(); try{ wakeLoop(30); }catch(_){ } });
+  commDirty=true; syncNet3Ctl(); renderStageLeg(); try{ renderNet3Panel(); wakeLoop(30); }catch(_){ } });
 $('#n3explode').onclick=()=>{ S.net3.explode=!S.net3.explode; commDirty=true; syncNet3Ctl(); try{ wakeLoop(30); }catch(_){ } };
+/* ── 左侧 2D 三张网面板（需求6：左 2D 与右 3D 同源）──
+   三条横带 = 三张网平面，配色/线型与右侧 3D 完全一致（PATHCS + railColorCss）：
+   实线=UB · 长虚线=RDMA · 点线=VPC。点某带 = 单显该平面（同步 3D solo）。 */
+const net3cv = $('#net3cv'), gN = net3cv ? net3cv.getContext('2d') : null;
+let net3Hits = [];   // {plane, x,y,w,h} | {kind:'rail', rail, pods, x1,y1,x2,y2}
+function renderNet3Panel(){
+  if(!gN) return;
+  net3Hits = [];
+  hidpi(net3cv, 404, 470);
+  gN.clearRect(0,0,404,470);
+  const ink = themeC('#c9d1d9','rgba(0,0,0,.78)'), dim2 = themeC('#8b949e','rgba(0,0,0,.5)');
+  const solo = S.net3.solo, fp = S.filterHost!=null ? dpOf(S.filterHost) : null;
+  // 代表性 Pod：焦点 Pod + 采样
+  const pods = (()=>{ const s=new Set(); if(fp!=null) s.add(fp);
+    for(let d=0; s.size<6 && d<DP; d+=11) s.add(d);
+    return [...s].slice(0,6).sort((a,b)=>a-b); })();
+  const bandH = 138, pad = 12, x0 = 44, x1 = 404-14, bw = x1-x0;
+  const px = i => x0 + (pods.length>1 ? i/(pods.length-1) : .5)*bw;
+  $('#net3Head').innerHTML =
+    `<div style="color:var(--sys-text-bright);font-weight:600;font-size:11.5px;margin-bottom:2px">三张网平面（这张 = 每张卡同时挂的 3 张网）· 左 2D ⇄ 右 3D 同源</div>` +
+    `点某一条平面带 = 单显该平面（同步右侧 3D）· ${solo?('当前单显 <b>'+solo+'</b>'):'当前显示全部'}${fp!=null?' · 焦点 Pod'+fp:''}`;
+  const bands = [
+    { key:'UB',   y: 8,          col:PATHCS.UB,   title:'① UB · scale-up（域内）', sub:'域内 UB-Mesh 经 leaf/spine any-to-any（非星型）· 域内一切通信走此平面', dash:null },
+    { key:'RDMA', y: 8+bandH+6,  col:PATHCS.RAIL, title:'② RDMA · rail（仅跨 Pod）', sub:'每卡直出 RoCE 口 · 同号口成 rail（0-7 分色）· 只承载跨 Pod 流量', dash:[7,4] },
+    { key:'VPC',  y: 8+2*(bandH+6), col:PATHCS.VPC, title:'③ VPC · 管理/存储', sub:'南北向汇聚 · 视觉弱化', dash:[1.5,3] },
+  ];
+  bands.forEach(b=>{
+    const on = !solo || solo===b.key, y=b.y, h=bandH, al = on?1:0.28;
+    gN.globalAlpha = al;
+    // 带背景 + 标题（点击热区 = 单显）
+    gN.fillStyle = themeC('rgba(255,255,255,.02)','rgba(0,0,0,.015)');
+    gN.strokeStyle = on ? b.col : themeC('#30363d','#c8d2de'); gN.lineWidth = on?1.4:1;
+    gN.beginPath(); gN.roundRect(4, y, 396, h, 7); gN.fill(); gN.stroke();
+    gN.fillStyle = on ? b.col : dim2; gN.font='600 11px sans-serif'; gN.textAlign='left';
+    gN.fillText(b.title, 12, y+16);
+    gN.fillStyle = dim2; gN.font='9px sans-serif';
+    wrapText(gN, b.sub, 12, y+30, 384, 11);
+    net3Hits.push({ plane:b.key, x:4, y, w:396, h });
+    const cy = y + 78, r = 5;
+    if(b.key==='UB'){
+      // 每 Pod = 一簇卡经交换 any-to-any（画 leaf/spine 小方 + 放射到卡，但强调"经交换"非中心辐射）
+      pods.forEach((pod,i)=>{ const cx=px(i), sw = cx;
+        gN.fillStyle = (pod===fp)? b.col : themeC('#484f58','#9aa7bb');
+        gN.beginPath(); gN.roundRect(sw-9, cy-6, 18, 12, 3); gN.fill();
+        gN.fillStyle = ink; gN.font='8px ui-monospace,monospace'; gN.textAlign='center';
+        gN.fillText('Pod'+pod, cx, cy+22);
+        gN.fillText('leaf/spine', cx, cy-12);
+        for(let k=0;k<4;k++){ const a=Math.PI+(k+.5)/4*Math.PI, nx=cx+Math.cos(a)*22, ny=cy+34+Math.sin(a)*10;
+          gN.strokeStyle=b.col; gN.lineWidth=1; gN.setLineDash([]);
+          gN.beginPath(); gN.moveTo(cx,cy+6); gN.lineTo(nx,ny); gN.stroke();
+          gN.fillStyle=(pod===fp)?b.col:themeC('#6b7686','#b6c0d0'); gN.beginPath(); gN.arc(nx,ny,r-1.5,0,7); gN.fill(); }
+      });
+      gN.fillStyle=dim2; gN.font='8.5px sans-serif'; gN.textAlign='left';
+      gN.fillText('（红线：RDMA 平面上绝不出现同 Pod 内两卡的连线 → 那些都在此 UB 平面）', 12, y+h-8);
+    } else if(b.key==='RDMA'){
+      // rail 泳道：每条 rail 一条横线（railColorCss 分色·长虚线），跨相邻 Pod 连接
+      const rails = solo==='RDMA' ? [0,1,2,3,4,5,6,7] : [0,2,4,6];
+      pods.forEach((pod,i)=>{ const cx=px(i);
+        gN.fillStyle=(pod===fp)?b.col:themeC('#484f58','#9aa7bb');
+        gN.beginPath(); gN.roundRect(cx-7, cy+8, 14, 40, 2); gN.fill();
+        gN.fillStyle=ink; gN.font='8px ui-monospace,monospace'; gN.textAlign='center'; gN.fillText('Pod'+pod, cx, cy+60); });
+      rails.forEach((rl,ri)=>{ const ry = cy+12 + ri*(solo==='RDMA'?4.4:9);
+        gN.strokeStyle = railColorCss(rl); gN.lineWidth = rl<2?2:1.4; gN.setLineDash([7,4]);
+        for(let i=0;i<pods.length-1;i++){ const a=px(i), c2=px(i+1);
+          gN.beginPath(); gN.moveTo(a+7, ry); gN.lineTo(c2-7, ry); gN.stroke();
+          net3Hits.push({ kind:'rail', rail:rl, pods:[pods[i],pods[i+1]], x1:a+7,y1:ry,x2:c2-7,y2:ry }); }
+        gN.setLineDash([]);
+        if(ri===0||solo==='RDMA'){ gN.fillStyle=railColorCss(rl); gN.font='8px ui-monospace,monospace'; gN.textAlign='right';
+          gN.fillText('rail'+rl, x0-4, ry+3); } });
+    } else {
+      // VPC：Pod → 中央汇聚（点线·弱化）
+      const mx=202, my=cy+38;
+      gN.fillStyle=dim2; gN.beginPath(); gN.roundRect(mx-18, my-8, 36, 16, 3); gN.fill();
+      gN.fillStyle=ink; gN.font='8px sans-serif'; gN.textAlign='center'; gN.fillText('VPC 汇聚', mx, my+4);
+      pods.forEach((pod,i)=>{ const cx=px(i);
+        gN.strokeStyle=b.col; gN.lineWidth=1; gN.setLineDash([1.5,3]);
+        gN.beginPath(); gN.moveTo(cx, cy+4); gN.lineTo(mx, my-8); gN.stroke(); gN.setLineDash([]);
+        gN.fillStyle=(pod===fp)?b.col:themeC('#6b7686','#b6c0d0'); gN.beginPath(); gN.arc(cx, cy, 4,0,7); gN.fill(); });
+    }
+    gN.globalAlpha = 1;
+  });
+  $('#net3Desc').innerHTML =
+    `线型=协议：<b style="color:${PATHCS.UB}">实线 UB</b> · <b style="color:${PATHCS.RAIL}">长虚线 RDMA</b>（按 rail 分色）· <b style="color:${PATHCS.VPC}">点线 VPC</b>。` +
+    `<br>点 RDMA 里一条 rail 线 → 反查经过它的通信域边（触发路径高亮 · 需求1）；点平面标题带 → 单显该平面并同步右侧 3D。`;
+}
+function wrapText(ctx, text, x, y, maxW, lh){ const words=[...text]; let line='', yy=y;
+  for(const ch of words){ if(ctx.measureText(line+ch).width>maxW){ ctx.fillText(line,x,yy); line=ch; yy+=lh; } else line+=ch; }
+  if(line) ctx.fillText(line,x,yy); }
+if(net3cv){
+  net3cv.addEventListener('click', ev=>{
+    const r=net3cv.getBoundingClientRect();
+    const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*470;
+    // 先判 rail 线（细命中）
+    const d2=(x1,y1,x2,y2)=>{ const dx=x2-x1,dy=y2-y1,L=dx*dx+dy*dy||1; let t=((x-x1)*dx+(y-y1)*dy)/L; t=Math.max(0,Math.min(1,t)); const px2=x1+t*dx,py2=y1+t*dy; return (x-px2)**2+(y-py2)**2; };
+    for(const h of net3Hits) if(h.kind==='rail' && d2(h.x1,h.y1,h.x2,h.y2)<20){
+      selectLink({ plane:'RDMA rail', rail:h.rail, pods:h.pods, bw:h.rail<2?'RoCE 400G 档':'RoCE 200G 档', load:.3, desc:`rail-${h.rail} · Pod${h.pods[0]} ⇄ Pod${h.pods[1]}` });
+      return; }
+    for(const h of net3Hits) if(h.plane && x>=h.x && x<=h.x+h.w && y>=h.y && y<=h.y+h.h){
+      S.net3.solo = S.net3.solo===h.plane ? null : h.plane;
+      commDirty=true; syncNet3Ctl(); renderNet3Panel(); try{ wakeLoop(30); }catch(_){ }
+      return; }
+  });
+}
 /* ======== 互联矩阵叠加卡：浅色 2D 版 Host×Host 的 3D 联动版 ======== */
 const mxcv = $('#mxcv'), gmx = mxcv.getContext('2d');
 const mxHiGroup = new THREE.Group(); scene.add(mxHiGroup);
@@ -3195,7 +3329,8 @@ if($('#fbClear')) $('#fbClear').onclick = ()=>{ if(S.filterHost!=null) setFilter
 $$('.wirebtn').forEach(b=>b.onclick = ()=>{ S.wire = b.dataset.wire;
   $$('.wirebtn').forEach(x=>x.classList.toggle('on', x===b));
   if(S.wire==='FLOW' && !S.mxShow){ S.mxShow=true; syncMxCard(); }   // 互联流量 → 自动挂出矩阵卡
-  commDirty = true; renderViewlab(); });
+  commDirty = true; renderViewlab();
+  try{ updateNet3Tab(); syncNet3Ctl(); }catch(_){ } });
 /* ---- v20：控件层级整理 ----
    顶栏三层：任务入口（场景剧本）｜视图配置（着色+连线+形态 同层级 → 一个面板集体配置）｜演练注入
    视图面板展开后不自动收起，便于多行连续调整；收起名=当前组合摘要 */
