@@ -359,6 +359,32 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #mxcv{display:block;width:100%;border:1px solid var(--border);border-radius:4px;cursor:crosshair;margin-top:5px}
 #mxinfo{font-size:10px;line-height:1.5;margin-top:5px;min-height:30px}
 #mxinfo b{color:var(--sys-text-bright)}
+/* ---- 三张网平面控制浮层（wire=NET3）---- */
+#net3ctl{position:absolute;left:14px;bottom:44px;z-index:6;display:none;align-items:center;gap:4px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 10px;box-shadow:var(--shadow-sm)}
+#net3ctl.show{display:inline-flex}
+#net3ctl button{min-height:22px;padding:0 9px;font-size:10.5px;border-radius:var(--radius-pill)}
+#net3ctl .n3btn[data-plane="UB"].on{background:color-mix(in srgb,#a78bfa 16%,transparent);border-color:#a78bfa;color:#7c5bd6}
+#net3ctl .n3btn[data-plane="RDMA"].on{background:color-mix(in srgb,var(--blue) 14%,transparent);border-color:var(--blue);color:var(--blue)}
+#net3ctl .n3btn[data-plane="VPC"].on{background:color-mix(in srgb,#8b949e 16%,transparent);border-color:#8b949e;color:#6e7681}
+/* ---- 路径联动信息卡（需求1）---- */
+#pathinfo{position:absolute;left:14px;bottom:78px;z-index:6;width:290px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 11px;display:none;font-size:11px;color:var(--dim);box-shadow:var(--shadow-md)}
+#pathinfo.show{display:block}
+#pathinfo h4{font-size:11px;color:var(--sys-text-bright);font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:5px}
+#pathinfo h4 .x{margin-left:auto;cursor:pointer;color:var(--dim);padding:0 4px}
+#pathinfo h4 .x:hover{color:var(--sys-text-bright)}
+#pathinfo .seg{display:flex;align-items:center;gap:7px;margin:3px 0;line-height:1.4}
+#pathinfo .seg i{display:inline-block;width:14px;height:0;border-top-width:3px;flex-shrink:0}
+#pathinfo .seg i.solid{border-top-style:solid}
+#pathinfo .seg i.dash{border-top-style:dashed}
+#pathinfo .seg i.dot{border-top-style:dotted}
+#pathinfo b{color:var(--sys-text-bright)}
+#pathinfo .edgebtn{display:inline-block;margin:2px 4px 2px 0;padding:1px 8px;border-radius:var(--radius-pill);border:1px solid var(--sys-border);cursor:pointer;font-size:10px}
+#pathinfo .edgebtn:hover{border-color:var(--sys-border-strong);background:var(--state-hover)}
+#pathinfo .note{font-size:10px;color:var(--foreground-muted);margin-top:5px;line-height:1.45}
+#probe.link::before{content:"链路详情"}
+/* ---- 算法展开面板小控件 ---- */
+#algoViewTabs button.on{background:var(--panel)!important;color:var(--sys-text-bright);box-shadow:var(--shadow-sm)}
+.algoch.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
 #stageleg{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;display:flex;gap:12px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 14px;font-size:10px;color:var(--dim);pointer-events:none;white-space:nowrap;box-shadow:var(--shadow-sm)}
 #stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* ===== 模式 B 抽屉 ===== */
@@ -425,6 +451,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button class="wirebtn" data-wire="FLOW" title="互联带宽流带：总线占用量与方向">互联流量</button>
           <button class="wirebtn" data-wire="LINK" title="物理线缆拓扑：NVLink / IB 实际链路">物理链路</button>
           <button class="wirebtn" data-wire="PATH" title="消息路由路径：逐跳可视化">消息路径</button>
+          <button class="wirebtn" data-wire="NET3" title="三张网平面：UB scale-up（紫）/ RDMA rail（蓝·按 rail 分色·仅跨 Pod）/ VPC 管理存储（灰）分层渲染">三张网</button>
           <button id="btnMx">▦ 矩阵</button>
         </div>
       </div>
@@ -451,6 +478,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div id="lefttabs">
         <button id="tabHier" class="on">层级剖面</button>
         <button id="tabModel">整网分隔映射</button>
+        <button id="tabAlgo" style="display:none">算法展开</button>
       </div>
       <!-- ============ 页签 1：物理层级剖面 ============ -->
       <div class="pane show" id="paneHier">
@@ -531,6 +559,25 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <div id="netStage"></div>
         </div>
       </div>
+      <!-- ── 左侧页签 3：通信域算法展开（L3 算法层 · ring/tree/开环拼接/散射/多 channel）──
+           入口：任意视图选中一个通信域（点选卡→关联维 = communicator）后本 tab 出现。 -->
+      <div class="pane" id="paneAlgo">
+        <div id="algoHead" style="font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:8px"></div>
+        <div id="algoCtl" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span id="algoViewTabs" style="display:flex;gap:2px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px">
+            <button id="algoRing" class="on" style="border:none;box-shadow:none;background:var(--panel);min-height:24px;padding:3px 12px;font-size:11px">Ring 展开</button>
+            <button id="algoTree" style="border:none;box-shadow:none;background:transparent;min-height:24px;padding:3px 12px;font-size:11px">Tree 展开</button>
+          </span>
+          <span id="algoChWrap" style="display:inline-flex;align-items:center;gap:3px">
+            <span style="font-size:10px;color:var(--dim)">channel</span>
+            <button class="algoch" data-ch="1" style="min-height:22px;padding:0 8px;font-size:10px;border-radius:var(--radius-pill)">×1</button>
+            <button class="algoch on" data-ch="2" style="min-height:22px;padding:0 8px;font-size:10px;border-radius:var(--radius-pill)">×2</button>
+            <button class="algoch" data-ch="4" style="min-height:22px;padding:0 8px;font-size:10px;border-radius:var(--radius-pill)">×4</button>
+          </span>
+        </div>
+        <canvas id="algocv" width="404" height="480" style="display:block;width:100%;border:1px solid var(--border);border-radius:6px;cursor:pointer"></canvas>
+        <div id="algoDesc" style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:40px"></div>
+      </div>
     </div>
     <div id="right">
       <canvas id="stage"></canvas>
@@ -560,6 +607,20 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div id="viewlab"></div>
       <div id="probe"></div>
       <div id="hud" style="display:none"></div>
+      <!-- 三张网平面控制（wire=NET3 时显示）：单显某一平面 / 垂直展开 -->
+      <div id="net3ctl">
+        <span style="font-size:10px;color:var(--dim);margin-right:2px">三张网</span>
+        <button class="n3btn on" data-plane="ALL">全部</button>
+        <button class="n3btn" data-plane="UB">UB</button>
+        <button class="n3btn" data-plane="RDMA">RDMA</button>
+        <button class="n3btn" data-plane="VPC">VPC</button>
+        <button id="n3explode" class="on" title="平面间垂直展开（分解视图）">垂直展开</button>
+      </div>
+      <!-- 路径联动信息卡（需求1）：魔方边 → 物理路径分段；物理链路 → 承载的通信域边 -->
+      <div id="pathinfo">
+        <h4 id="pathinfoTitle">通信路径<span class="x" id="pathClose">✕</span></h4>
+        <div id="pathinfoBody"></div>
+      </div>
       <div id="mxcard">
         <h4>本集群 · Pod↔Pod 互联矩阵（64 单元）<span class="x" id="mxClose">✕</span></h4>
         <div id="mxmedia"></div>
@@ -629,7 +690,12 @@ const S = {
   tab:'hier',
   filterHost:null, rel:'AUTO', focusPod:0, wire:'AUTO', scatter:false,
   mxShow:false, mxPin:null, mxHover:null, mxMedium:null, hudEmph:null,   // v20：矩阵叠加卡 / HUD 联动
-  selLayer:null, selCard:null            // 整网映射选择：selCard={pp,tp|null}
+  selLayer:null, selCard:null,           // 整网映射选择：selCard={pp,tp|null}
+  // ── 通信关系可视化（本次需求）──
+  selEdge:null,                          // 需求1：选中的逻辑通信域边 {dim,a,b}（a/b=chip rank；TP 域内 b 可与 a 同 Host）
+  selLink:null,                          // 需求1反向：选中的物理链路 {plane,rail,pods,desc,edges:[...]}
+  net3:{ solo:null, explode:true },      // 需求3：三张网 lens 状态（solo=单显平面 | null=全部）
+  algoView:'ring', algoCh:2              // 需求2：算法展开面板（ring/tree · channel 数）
 };
 const rng = (i)=>{ let x = Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); };
 const health = new Float32Array(N_HOST);
@@ -1087,7 +1153,10 @@ function drawArcs(){
     p1.style.boxShadow = S.anomaly?'0 0 4px #FF4B7B':''; }
 }
 function touchLeft(){
-  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); } else renderMM();
+  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); }
+  else if(S.tab==='model') renderMM();
+  else if(S.tab==='algo') renderAlgo();
+  try{ updateAlgoTab(); }catch(_){ }
   renderProbe(); updateFoldHeads();
   try{ if(drawer.classList.contains('show')) syncDrawer(); }catch(e){}
   updateLevelKPI(); renderTopN();
@@ -1239,17 +1308,204 @@ function renderMemPanel(){
 /* ---- 页签切换 ---- */
 $('#tabHier').onclick = ()=>setTab('hier');
 $('#tabModel').onclick = ()=>setTab('model');
+$('#tabAlgo').onclick = ()=>setTab('algo');
 function setTab(t){ S.tab=t;
   $('#tabHier').classList.toggle('on',t==='hier');
   $('#tabModel').classList.toggle('on',t==='model');
+  $('#tabAlgo').classList.toggle('on',t==='algo');
   $('#paneHier').classList.toggle('show',t==='hier');
   $('#paneModel').classList.toggle('show',t==='model');
+  $('#paneAlgo').classList.toggle('show',t==='algo');
   commsvg.style.display = t==='hier'?'block':'none';
   // 整网图子页已展开时保持宽面板；切回层级剖面恢复正常宽度
   const netExpanded = t==='model' && $('#netWrap').style.display!=='none';
   left.classList.toggle('net-expand', netExpanded);
   if(t==='hier'){ renderL3(); renderL2(); requestAnimationFrame(drawArcs); }
-  else renderMM();
+  else if(t==='model') renderMM();
+  else if(t==='algo') renderAlgo();
+}
+/* 算法展开 tab 入口：任意视图选中一个通信域（= 选卡 + 关联维）后出现 */
+function updateAlgoTab(){
+  const has = S.filterHost!=null;
+  $('#tabAlgo').style.display = has ? '' : 'none';
+  if(!has && S.tab==='algo') setTab('hier');
+}
+/* ================= 左侧页签 3：通信域算法展开（L3 算法层 · 需求2） =================
+   纯 2D 逻辑图：ring（多 channel 同心）/ tree（Double Binary Tree 两棵互补树并排）/
+   跨域开环拼接点（每环跨接数 = 2×(nDC−1)）/ 散射（不同 channel 拼接点错开）。
+   红线：rank≡卡（节点=卡，不出现 die/core）；域内环不画拼接点；DBT 必须两棵并排。 */
+const algocv = $('#algocv'), gA = algocv ? algocv.getContext('2d') : null;
+let algoHits = [];                                  // {type:'node',x,y,r,host,chip} | {type:'edge',x1,y1,x2,y2,a,b}
+function algoMembers(){
+  if(S.filterHost==null) return null;
+  const fh = S.filterHost, dim = activeRel();
+  const tpF = (S.focusChip>>3)===fh ? (S.focusChip&7) : 0;
+  if(dim==='TP') return { dim, chips: Array.from({length:8},(_,s)=>fh*8+s), name:`TP 域 · Host ${fh}（8 rank · 域内）` };
+  const hs = relSet(fh).hosts;
+  const nm = { PP:`PP 链 · DP 副本 ${dpOf(fh)}（16 rank）`, DP:`DP 域 · Stage${ppOf(fh)}（64 rank · 跨 64 Pod）`,
+               EP:`EP·A2A 域 ${epDomOf(fh)}（8 rank · 跨 8 Pod）` }[dim] || dim;
+  return { dim, chips: hs.map(h=>h*8+tpF), name: nm };
+}
+function algoNodeColor(h){ const v=health[h];                       // 颜色只表状态（全站规范）
+  return (v>.95)? '#FF4B7B' : v<.4 ? '#04D793' : v<.7 ? '#fbbf24' : '#FF4B7B'; }
+function algoDimColor(dim){ return {TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'}[dim]||'#8b949e'; }
+function renderAlgo(){
+  if(!gA) return;
+  algoHits = [];
+  const M = algoMembers();
+  hidpi(algocv,404,480);
+  gA.clearRect(0,0,404,480);
+  const ink = themeC('#c9d1d9','rgba(0,0,0,.75)'), dim2 = themeC('#8b949e','rgba(0,0,0,.45)');
+  if(!M){ gA.fillStyle=dim2; gA.font='12px sans-serif'; gA.textAlign='center';
+    gA.fillText('先在任意视图点选一张卡（= 选中一个通信域）', 202, 220);
+    $('#algoHead').innerHTML=''; $('#algoDesc').innerHTML=''; return; }
+  const dimC = algoDimColor(M.dim), N = M.chips.length;
+  // 域界与拼接：超域 = A2A 域（DP·8 Pod/域）或 Pod 本身（EP）；TP/PP 全在 1 Pod 内 → 无拼接
+  const superDom = c => M.dim==='DP' ? epDomOf(hostOf(c)) : dpOf(hostOf(c));
+  const doms = [...new Set(M.chips.map(superDom))], nDC = doms.length;
+  const crossDomain = nDC > 1;
+  $('#algoHead').innerHTML =
+    `<b style="color:${dimC}">${M.name}</b> · communicator 成员 ${N} rank（节点=卡 · 色=状态）` +
+    (crossDomain ? ` · 跨 <b>${nDC}</b> 个${M.dim==='DP'?'超域（A2A 域）':'Pod'} → 开环拼接点 <b>2×(nDC−1)=${2*(nDC-1)}</b>${S.scatter?' · <b style="color:#04D793">散射开启：各 channel 拼接点错开</b>':''}`
+                 : ' · <b>域内</b> communicator（不跨 Pod → 无拼接点）');
+  gA.font='10px sans-serif';
+  if(S.algoView==='ring') renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2);
+  else renderAlgoTree(M, dimC, N, ink, dim2);
+}
+function renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2){
+  const cx=202, cy=225, ch=S.algoCh;
+  const R0 = 158;
+  const ang = i => -Math.PI/2 + i/N*Math.PI*2;
+  const pos = (i,r) => [cx+Math.cos(ang(i))*r, cy+Math.sin(ang(i))*r];
+  // ── 多 channel：同心多圈（外圈带节点，内圈只画边流向），标注 channel 数 ──
+  for(let c=ch-1;c>=0;c--){
+    const r = R0 - 14 - c*13;
+    // 散射：不同 channel 的开环缺口（拼接点）落在不同节点位置
+    const gapAt = crossDomain ? (S.scatter ? (c*Math.max(1,(N/ch))|0)%N : 0) : -1;
+    gA.strokeStyle = dimC; gA.globalAlpha = c===0? .9 : .45; gA.lineWidth = c===0? 1.6 : 1.1;
+    for(let i=0;i<N;i++){
+      if(i===gapAt && crossDomain){ continue; }              // 开环：拼接处断开
+      const [x1,y1]=pos(i,r), [x2,y2]=pos((i+1)%N,r);
+      const cross = superDom(M.chips[i])!==superDom(M.chips[(i+1)%N]);
+      gA.setLineDash(cross? [5,3] : []);                     // 跨域边=虚线（线型表结构，颜色仍表维度/状态）
+      gA.strokeStyle = cross ? '#22d3ee' : dimC;
+      gA.beginPath(); gA.moveTo(x1,y1); gA.lineTo(x2,y2); gA.stroke(); gA.setLineDash([]);
+      if(c===0) algoHits.push({type:'edge',x1,y1,x2,y2,a:M.chips[i],b:M.chips[(i+1)%N]});
+      // 流向箭头（每 1/4 环一枚）
+      if(c===0 && i%Math.max(1,(N/8)|0)===0){
+        const mx=(x1+x2)/2, my=(y1+y2)/2, a2=Math.atan2(y2-y1,x2-x1);
+        gA.fillStyle=cross?'#22d3ee':dimC; gA.beginPath();
+        gA.moveTo(mx+Math.cos(a2)*5,my+Math.sin(a2)*5);
+        gA.lineTo(mx+Math.cos(a2+2.6)*4,my+Math.sin(a2+2.6)*4);
+        gA.lineTo(mx+Math.cos(a2-2.6)*4,my+Math.sin(a2-2.6)*4);
+        gA.closePath(); gA.fill(); }
+    }
+    // 拼接点标记：开环两端点（仅跨域环 · 红线⑥）
+    if(crossDomain && gapAt>=0){
+      [gapAt,(gapAt+1)%N].forEach(i=>{ const [x,y]=pos(i,r);
+        gA.fillStyle='#22d3ee'; gA.beginPath();
+        gA.moveTo(x,y-5); gA.lineTo(x+5,y); gA.lineTo(x,y+5); gA.lineTo(x-5,y); gA.closePath(); gA.fill(); });
+      const [gx,gy]=pos(gapAt,r);
+      if(c===0||S.scatter){ gA.fillStyle='#22d3ee'; gA.font='9px sans-serif'; gA.textAlign='center';
+        gA.fillText('拼接 ch'+c, gx+(gx>cx?26:-26), gy+(gy>cy?12:-8)); }
+    }
+    gA.globalAlpha = 1;
+  }
+  // ── 节点=卡：rank 号 + 所属 Pod/Host · 色=状态 ──
+  const showEvery = N<=16 ? 1 : 4;
+  for(let i=0;i<N;i++){
+    const [x,y]=pos(i,R0), c0=M.chips[i], h=hostOf(c0);
+    const focus = h===S.filterHost;
+    gA.fillStyle=algoNodeColor(h); gA.beginPath(); gA.arc(x,y,N<=16?7:4,0,7); gA.fill();
+    if(focus){ gA.strokeStyle=themeC('#fff','#000'); gA.lineWidth=2; gA.beginPath(); gA.arc(x,y,(N<=16?7:4)+2,0,7); gA.stroke(); }
+    // 域界弧色带：同超域的成员共享一段弧（跨域环可读出分段）
+    if(crossDomain){ gA.strokeStyle=`hsl(${(superDom(c0)*47)%360},50%,${isDark()?42:62}%)`; gA.globalAlpha=.5; gA.lineWidth=3;
+      gA.beginPath(); gA.arc(cx,cy,R0+9,ang(i)-Math.PI/N*.9,ang(i)+Math.PI/N*.9); gA.stroke(); gA.globalAlpha=1; }
+    if(i%showEvery===0){ gA.fillStyle=ink; gA.font='8.5px ui-monospace,monospace'; gA.textAlign='center';
+      const lx=cx+Math.cos(ang(i))*(R0+22), ly=cy+Math.sin(ang(i))*(R0+22);
+      gA.fillText(`r${c0}`, lx, ly);
+      gA.fillStyle=dim2; gA.fillText(`P${dpOf(h)}·H${h}`, lx, ly+9); }
+    algoHits.push({type:'node',x,y,r:N<=16?11:8,host:h,chip:c0});
+  }
+  gA.fillStyle=dim2; gA.font='10px sans-serif'; gA.textAlign='center';
+  gA.fillText(`Ring 展开 · ${S.algoCh} channel（同心圈）· 箭头=数据流向`, cx, 462);
+  $('#algoDesc').innerHTML =
+    `环序即算法序：每 rank 只与左右邻收发（Reduce-Scatter ${N-1} 步 + AllGather ${N-1} 步）。` +
+    (crossDomain
+      ? `<br>跨域环为<b>开环拼接</b>：域内段闭合、域间在拼接点（◆ 青）经 rail 出网再接回 —— 每环跨接数 = 2×(nDC−1)。${S.scatter?'<b style="color:#04D793">散射</b>已开：不同 channel 的拼接点落在不同节点（降低单出口压力，对比顶栏“散射跨域路由”）。':'开启顶栏「注入 EP 异常 → 散射跨域路由」可看拼接点错开效果。'}`
+      : '<br>该域完全落在一个 Pod 内 → 全程 UB，不存在开环拼接（红线：域内环不画拼接点）。') +
+    '<br>点<b>节点</b>=三视图同步高亮该卡 · 点<b>边</b>=物理路径分段回放（需求1）。';
+}
+function renderAlgoTree(M, dimC, N, ink, dim2){
+  // Double Binary Tree：两棵互补树并排，节点角色互换（收益=带宽互补：每棵各承载一半数据，同时收发）
+  const Ms = Math.min(N, 16), sampled = N>Ms;
+  const chips = M.chips.slice(0,Ms);
+  const treeW = 186, x0A = 8, x0B = 210, yTop = 40, dy = 62;
+  const depth = Math.ceil(Math.log2(Ms+1));
+  const drawTree = (x0, order, tag)=>{
+    const posOf = idx => {                                    // 完全二叉树（heap 序）布局
+      const d = Math.floor(Math.log2(idx+1)), k = idx - ((1<<d)-1), n = 1<<d;
+      return [x0 + (k+.5)/n*treeW, yTop + d*dy];
+    };
+    for(let i=1;i<Ms;i++){ const [x,y]=posOf(i), [px,py]=posOf((i-1)>>1|0);
+      gA.strokeStyle=dimC; gA.globalAlpha=.75; gA.lineWidth=1.4;
+      gA.beginPath(); gA.moveTo(px,py); gA.lineTo(x,y); gA.stroke(); gA.globalAlpha=1;
+      algoHits.push({type:'edge',x1:px,y1:py,x2:x,y2:y,a:order[(i-1)>>1],b:order[i]}); }
+    for(let i=0;i<Ms;i++){ const [x,y]=posOf(i), c0=order[i], h=hostOf(c0);
+      const interior = (2*i+1)<Ms;                            // 是否内部节点（有孩子）
+      gA.fillStyle=algoNodeColor(h); gA.beginPath(); gA.arc(x,y,7,0,7); gA.fill();
+      if(interior){ gA.strokeStyle=dimC; gA.lineWidth=2; gA.beginPath(); gA.arc(x,y,9.5,0,7); gA.stroke(); }
+      if(h===S.filterHost){ gA.strokeStyle=themeC('#fff','#000'); gA.lineWidth=2; gA.beginPath(); gA.arc(x,y,11.5,0,7); gA.stroke(); }
+      gA.fillStyle=ink; gA.font='8px ui-monospace,monospace'; gA.textAlign='center';
+      gA.fillText('r'+c0, x, y+18);
+      gA.fillStyle=dim2; gA.fillText('P'+dpOf(h), x, y+27);
+      algoHits.push({type:'node',x,y,r:11,host:h,chip:c0}); }
+    gA.fillStyle=dimC; gA.font='700 10.5px sans-serif'; gA.textAlign='center';
+    gA.fillText(tag, x0+treeW/2, 22);
+  };
+  const orderA = chips;
+  const orderB = chips.slice(1).concat(chips.slice(0,1));     // 互补树：成员轮转 1 位 → 叶/内部角色互换
+  drawTree(x0A, orderA, '树 A');
+  drawTree(x0B, orderB, '树 B（互补 · 角色互换）');
+  gA.strokeStyle=dim2; gA.setLineDash([3,4]);
+  gA.beginPath(); gA.moveTo(202,32); gA.lineTo(202, yTop+(depth-1)*dy+30); gA.stroke(); gA.setLineDash([]);
+  gA.fillStyle=dim2; gA.font='10px sans-serif'; gA.textAlign='center';
+  gA.fillText(`Double Binary Tree${sampled?` · 示 ${Ms}/${N} rank`:''} · 双环圈=内部节点（该棵中转发）`, 202, yTop+(depth-1)*dy+52);
+  $('#algoDesc').innerHTML =
+    '两棵树同时工作：<b>树 A 的叶 ≈ 树 B 的内部节点</b>（角色互换）——收益机制是<b>带宽互补</b>：' +
+    '每棵各承载一半数据，每 rank 在一棵里只收、另一棵里只发，上下行带宽同时打满；<b>不是步数减半</b>。' +
+    '<br>点<b>节点</b>=三视图同步高亮该卡 · 点<b>边</b>=物理路径分段回放（需求1）。';
+}
+/* 算法展开交互：点节点→全站同步高亮；点边→需求1 路径 */
+if(algocv){
+  algocv.addEventListener('click', ev=>{
+    const r=algocv.getBoundingClientRect();
+    const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*480;
+    for(const h of algoHits) if(h.type==='node'){                // 节点优先
+      if((x-h.x)*(x-h.x)+(y-h.y)*(y-h.y) <= h.r*h.r){
+        S.focusHost=h.host; S.focusChip=h.chip;
+        if(S.filterHost!==h.host){ S.filterHost=h.host; invalidateRel(); }
+        renderFilterBar(); updateCounts(); commDirty=true; colorsDirty=true;
+        renderAlgo(); renderProbe(); renderStageLeg(); try{ wakeLoop(60); }catch(_){ }
+        return; } }
+    const d2seg=(x1,y1,x2,y2)=>{ const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy||1;
+      let t=((x-x1)*dx+(y-y1)*dy)/L2; t=Math.max(0,Math.min(1,t));
+      const px=x1+t*dx, py=y1+t*dy; return (x-px)*(x-px)+(y-py)*(y-py); };
+    let best=null, bd=36;
+    for(const h of algoHits) if(h.type==='edge'){
+      const d=d2seg(h.x1,h.y1,h.x2,h.y2); if(d<bd){ bd=d; best=h; } }
+    if(best){ const M=algoMembers(); selectEdge({dim:M?M.dim:'DP', a:best.a, b:best.b}); }
+  });
+  $('#algoRing').onclick=()=>{ S.algoView='ring';
+    $('#algoRing').classList.add('on'); $('#algoTree').classList.remove('on');
+    $('#algoRing').style.background='var(--panel)'; $('#algoTree').style.background='transparent';
+    $('#algoChWrap').style.display='inline-flex'; renderAlgo(); };
+  $('#algoTree').onclick=()=>{ S.algoView='tree';
+    $('#algoTree').classList.add('on'); $('#algoRing').classList.remove('on');
+    $('#algoTree').style.background='var(--panel)'; $('#algoRing').style.background='transparent';
+    $('#algoChWrap').style.display='none'; renderAlgo(); };
+  $$('.algoch').forEach(b=>b.onclick=()=>{ S.algoCh=+b.dataset.ch;
+    $$('.algoch').forEach(x=>x.classList.toggle('on', x===b)); renderAlgo(); });
 }
 /* ================= 右侧：统一 3D 拓扑（Three.js · 单场景单相机） ================= */
 const right = $('#right'), stage = $('#stage');
@@ -1660,7 +1916,7 @@ function renderCubeAxes(){
     axArrow(V3(b.x0-2,b.y1,b.z0),V3(b.x0-2,b.y0,b.z0),TPw); axText('段内竖=TP×8',TPc,4.6,V3(b.x0-2,b.y1+1.4,b.z0));
   }
 }
-function cubeLine(points, color, base, r){
+function cubeLine(points, color, base, r, edge){
   if(points.length < 2) return null;
   const curve = new THREE.CatmullRomCurve3(points);
   const g = new THREE.TubeGeometry(curve, Math.max(6, points.length*3), r||.16, 6, false);
@@ -1668,7 +1924,9 @@ function cubeLine(points, color, base, r){
   // 关雾（fog:false），否则被场景雾洗淡到难以辨认
   const m = new THREE.MeshBasicMaterial({color, transparent:true, opacity:base, depthWrite:false, depthTest:false, fog:false});
   m.userData.base = base;
-  const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6; cubeComm.add(mesh); return mesh;
+  const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6;
+  if(edge) mesh.userData.edge = edge;               // 需求1：魔方通信线可点选 → 物理路径高亮
+  cubeComm.add(mesh); return mesh;
 }
 function cubeLab(text,color,w,pos){ const l=makeLabel(text,color,w); l.material.fog=false; l.renderOrder=7; l.position.copy(pos); cubeComm.add(l); }
 /* ---- microbatch F→B 追踪通道：播放时一块半透明扫板沿 stage 轴 前向→反向 往返，
@@ -1732,11 +1990,19 @@ function buildComm(){
     { const on=(ph==='TP'); const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,cubeMode,new THREE.Vector3()));
       const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
       const ring = pts.concat(back,[pts[0].clone()]);
-      cubeLine(ring, LNC.tp, on?.85:.3, on?.17:.09);
+      cubeLine(ring, LNC.tp, on?.85:.3, on?.17:.09, { dim:'TP', a:fh*8+tpF, b:fh*8+((tpF+1)&7) });
       if(on||S.filterHost!=null) cubeLab(`TP 组 · Host ${fh} 的 8 卡`, '#7ee8f4', on?5.5:4, pts[0].clone().add(V3(0,1.3,0)));
-      if(on){ addCubeMover(ring, 0x7ee8f4, .65, .08); addCubeMover(ring, 0x7ee8f4, .38, .065); } }
+      if(on){                                        // 需求5·TP：RS 去（前半程·沿去程链）+ AG 回（后半程·沿抬升回程链）两段可区分
+        const fwd = pts.concat([pts[0].clone()]);
+        addCubeMover(fwd, 0x39e6f4, .65, .085, {gate:'firstHalf'});
+        addCubeMover(fwd, 0x39e6f4, .65, .07,  {gate:'firstHalf'});
+        const ret = back.concat([back[0].clone()]);
+        addCubeMover(ret, 0xd7fbff, .65, .085, {gate:'secondHalf'});
+        addCubeMover(ret, 0xd7fbff, .65, .07,  {gate:'secondHalf'});
+        cubeLab('RS 去 ↓ / AG 回 ↑（前/后半程）', '#7ee8f4', 6.5, pts[4].clone().add(V3(0,2.1,0))); } }
     { const on=(ph==='PP'); const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+tpF,cubeMode,new THREE.Vector3()));
-      cubeLine(pts, LNC.pp, on?.85:.3, on?.17:.09);
+      for(let k=0;k<15;k++) cubeLine([pts[k].clone(),pts[k+1].clone()], LNC.pp, on?.85:.3, on?.17:.09,
+        { dim:'PP', a:(dpF*16+k)*8+tpF, b:(dpF*16+k+1)*8+tpF });
       if(on||S.filterHost!=null) cubeLab(`PP 链 · 副本${dpF} 的 16 段`, '#ffe0a0', on?5.5:4, pts[15].clone().add(V3(0,1.3,0)));
       if(on){ addCubeMover(pts, 0xffe08a, .55, .08); addCubeMover(pts, 0xffe08a, .28, .065); } }
     { const on=(ph==='EP'); const dom=epDomOf(fh);   // A2A 域内 8 副本同位 rank 互发（各持 1 桶）
@@ -1744,23 +2010,46 @@ function buildComm(){
       let last=a;
       for(let d=dom*EP; d<dom*EP+EP; d++){ const h2=d*16+ppF; if(h2===fh) continue;
         const b=chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()); last=b;
-        cubeLine([a.clone(), b], LNC.ep, on?.5:.26, on?.14:.08); if(on) addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07); }
+        cubeLine([a.clone(), b], LNC.ep, on?.5:.26, on?.14:.08, { dim:'EP', a:fh*8+tpF, b:h2*8+tpF });
+        if(on){ addCubeMover([a.clone(),b.clone()], 0xd2a8ff, .45, .07);
+          addCubeMover([b.clone(),a.clone()], 0xd2a8ff, .45, .055); } }   // 需求5·EP：dispatch/combine 双向全交叉粒子
       if(on||S.filterHost!=null) cubeLab(`EP 域 ${dom} · 8 副本互发`, '#d2a8ff', on?5.5:4, last.clone().add(V3(0,1.6,0)));
       if(S.anomaly&&on) for(let k2=0;k2<4;k2++){ const h2=anomPods[k2*2]*16+ppF;
         cubeLine([chipCubeM(h2*8+tpF,cubeMode,new THREE.Vector3()), V3(16,17-k2,2)], 0xFF4B7B, .95); } }
-    { const on=(ph==='DP'); const pts=[]; for(let d=0;d<64;d+=4) pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3()));
-      pts.push(pts[0].clone().add(V3(0,.6,0)));
-      cubeLine(pts, LNC.dp, on?.75:.28, on?.17:.09);
+    { const on=(ph==='DP'); const pts=[]; const dps=[]; for(let d=0;d<64;d+=4){ dps.push(d); pts.push(chipCubeM((d*16+ppF)*8+tpF,cubeMode,new THREE.Vector3())); }
+      for(let k=0;k<pts.length;k++){ const dNext=dps[(k+1)%dps.length];
+        const seg=cubeLine([pts[k].clone(), pts[(k+1)%pts.length].clone()], LNC.dp, on?.75:.28, on?.17:.09,
+          { dim:'DP', a:(dps[k]*16+ppF)*8+tpF, b:(dNext*16+ppF)*8+tpF });
+        if(seg&&on) seg.material.userData.dpPulse = true; }             // 需求5·DP：外圈整体脉冲闪烁
       if(on||S.filterHost!=null) cubeLab(`DP 环 · Stage${ppF} 的 64 同位副本（示 16）`, '#9ecbff', on?6:4.5, pts[8].clone().add(V3(0,1.3,0)));
-      if(on){ addCubeMover(pts, 0x9ecbff, .5, .08); addCubeMover(pts, 0x9ecbff, .28, .065); } }
+      if(on){ const loop=pts.map(p=>p.clone()); loop.push(pts[0].clone());
+        addCubeMover(loop, 0x9ecbff, .5, .08); addCubeMover(loop, 0x9ecbff, .28, .065); } }
+    /* 需求1 反向高亮：选中物理链路 → 亮显所有经过它的通信域边 */
+    if(S.selLink) S.selLink.edges.forEach(e=>{
+      const pa=chipCubeM(e.a,cubeMode,new THREE.Vector3()), pb=chipCubeM(e.b,cubeMode,new THREE.Vector3());
+      const col = e.anom? 0xFF4B7B : ({TP:0x39c5cf,PP:0xFFAA3B,DP:0x4369EF,EP:0x9B3CF6})[e.dim];
+      const m=cubeLine(bez(pa,pb,1.2), col, .95, .24, e);
+      if(m){ m.material.userData.noPulse=true; }
+      cubeLab(`${e.dim}${e.anom?'·越界':''}`, '#'+new THREE.Color(col).getHexString(), 3.4, pa.clone().lerp(pb,.5).add(V3(0,1.4,0)));
+    });
+    /* 需求1 正向：选中的逻辑边在魔方内也亮显（白描边感） */
+    if(S.selEdge){ const e=S.selEdge;
+      const pa=chipCubeM(e.a,cubeMode,new THREE.Vector3()), pb=chipCubeM(e.b,cubeMode,new THREE.Vector3());
+      const m=cubeLine(bez(pa,pb,.9), 0xffffff, .9, .2, e);
+      if(m) m.material.userData.noPulse=true;
+      cubeLab('已选边 → 物理路径', '#e6edf3', 6, pa.clone().lerp(pb,.5).add(V3(0,1.8,0))); }
   }
   clearMovers();
+  pickLinks = [];                                    // 链路拾取列表随 commGroup 重建
   const wire = S.wire || 'AUTO';
   if(wire==='AUTO') buildPhaseLines(ph);
   else if(wire==='COMM') buildDomainLines(['TP','PP','DP','EP'].includes(S.lens)? S.lens : ph);
   else if(wire==='FLOW') buildFlowLines();
   else if(wire==='LINK') buildLinkLines();
   else if(wire==='PATH') buildPathLines();
+  else if(wire==='NET3') buildNet3Lines();
+  buildEdgePath();                                   // 需求1：路径高亮随主题/相位/重建同步重画
+  try{ syncNet3Ctl(); }catch(_){ }
   renderMxHi();
   if(S.mxShow) renderMxCard();
 }
@@ -1790,12 +2079,12 @@ function addMover(pts, color, speed, size, medium){      // 方向粒子：沿�
   movers.push({pts, mesh, speed:speed||.5, off:rng(movers.length*7.7)});
 }
 let cubeMovers = [];
-function addCubeMover(pts, color, speed, size){          // 魔方通信线方向粒子
+function addCubeMover(pts, color, speed, size, opts){    // 魔方通信线方向粒子（opts.gate：firstHalf/secondHalf → RS/AG 分段）
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(size||.08, 7, 7),
-    new THREE.MeshBasicMaterial({color, transparent:true, opacity:.9, depthWrite:false}));
-  mesh.material.userData.base = .9;
+    new THREE.MeshBasicMaterial({color, transparent:true, opacity:.9, depthWrite:false, depthTest:false}));
+  mesh.material.userData.base = .9; mesh.renderOrder = 7;
   cubeComm.add(mesh);
-  cubeMovers.push({pts, mesh, speed:speed||.6, off:rng(cubeMovers.length*5.3)});
+  cubeMovers.push({pts, mesh, speed:speed||.6, off:rng(cubeMovers.length*5.3), gate:opts&&opts.gate});
 }
 function tickMovers(now){
   const t0 = now/1000;
@@ -1804,7 +2093,10 @@ function tickMovers(now){
     const i = Math.min(n-1, (f*n)|0), k = f*n-i;
     mv.mesh.position.lerpVectors(mv.pts[i], mv.pts[i+1], k);
   }
+  const phF = (S.t*4)%1;                              // 当前 phase 内进度：TP 原语 RS 去(前半)/AG 回(后半)
   if(cubeComm.visible) for(const mv of cubeMovers){
+    if(mv.gate){ const vis = mv.gate==='firstHalf' ? phF<.5 : phF>=.5;
+      mv.mesh.visible = vis; if(!vis) continue; }
     const f = (t0*mv.speed + mv.off)%1, n = mv.pts.length-1;
     const i = Math.min(n-1, (f*n)|0), k = f*n-i;
     mv.mesh.position.lerpVectors(mv.pts[i], mv.pts[i+1], k);
@@ -2176,6 +2468,270 @@ function buildPathLines(){
   wireLab('PXN 1-hop：UB 挪轨→同轨 NIC 直达 ≈1.1μs（-66%）· 支持 8 消息聚合','#04D793',20,V3((a.x+b.x)/2,3.6,(a.z+b.z)/2));
   wireLab(`Host ${srcH} → Host ${dstH} · 粒子速度=实际时延对比`,'#e6edf3',13,V3(a.x,a.y+1.5,a.z));
 }
+/* ================================================================
+   通信关系可视化（本次需求 · 参见《通信关系与视图映射》）
+   需求1(P0)：魔方↔物理 联动路径高亮 —— 逻辑边落到物理路径，分段：
+     UB 域内段(紫·实线) / rail 平面段(蓝·长虚线·标 rail 号) / 跨 Pod 段(青) / 换轨段显式标出
+   需求3(P1)：三张网平面 lens（UB / RDMA rail / VPC）
+   需求6(P3)：线型=协议(实线UB/长虚线RDMA/点线VPC)·粗细=带宽档·tooltip
+   ================================================================ */
+const PATHC = { UB:0xa78bfa, RAIL:0x4369EF, XD:0x22d3ee, VPC:0x8b949e };
+const PATHCS = { UB:'#a78bfa', RAIL:'#4369EF', XD:'#22d3ee', VPC:'#8b949e' };
+const railOf = c => slotOf(c);                     // 同号 RoCE 口成 rail：rail 号 = 卡槽位（TP 槽）
+const DIM_NAME = { TP:'TP·AllReduce', PP:'PP·接力', EP:'EP·AllToAll', DP:'DP·梯度同步' };
+/* 路径/三张网高亮组：独立于 commGroup（不随连线镜头重建而闪没），只在物理形态显示 */
+const pathGroup = new THREE.Group(); scene.add(pathGroup);
+let pickLinks = [];                                // 可拾取链路（tooltip + 反向联动）：{mesh,info}
+/* 长虚线/点线（需求6：线型=协议）。宽度用 baseR 半透明管承载（Line 不支持 linewidth），
+   虚线叠在管芯上表达协议线型。 */
+function dashLine(group, pts, color, dashSize, gapSize, opacity){
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const m = new THREE.LineDashedMaterial({ color, transparent:true, opacity, dashSize, gapSize, depthWrite:false });
+  m.userData.base = opacity; m.userData.noPulse = true;
+  const l = new THREE.Line(g, m); l.computeLineDistances(); group.add(l); return l;
+}
+/* 带协议线型的链路：proto UB=实线管 / RDMA=细管+长虚线 / VPC=极细管+点线；
+   bwTier(1-3)=带宽档→粗细；info 挂 tooltip/拾取。 */
+function protoLink(group, pts, colorHex, proto, bwTier, opacity, info){
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const r = (proto==='UB' ? .07 : proto==='RDMA' ? .05 : .03) * (bwTier||1) * .9;
+  const tubeOp = proto==='UB' ? opacity : opacity*.28;   // 虚线协议：管只作宽度/拾取载体
+  const g = new THREE.TubeGeometry(curve, Math.max(8, pts.length*2), r, 5, false);
+  const m = new THREE.MeshBasicMaterial({ color:colorHex, transparent:true, opacity:tubeOp, depthWrite:false });
+  m.userData.base = tubeOp; m.userData.noPulse = true;
+  const mesh = new THREE.Mesh(g, m); group.add(mesh);
+  if(proto==='RDMA') dashLine(group, curve.getPoints(28), colorHex, .9, .5, opacity);
+  else if(proto==='VPC') dashLine(group, curve.getPoints(28), colorHex, .16, .3, opacity);
+  if(info){ mesh.userData.link = info; pickLinks.push(mesh); }
+  return mesh;
+}
+/* Pod 出口位（跨域出网点）：互联柜两翼，按 rail 号错开高度 */
+function podExitPos(pod, rail, out){
+  const p = podXZ(pod), side = (rail%2 ? 15.4 : -15.4);
+  (out=out||new THREE.Vector3()).set(side, 1.4+rail*.28, p.z*.55 + (rail>>1)*.22); return out;
+}
+/* ── 需求1 正向：逻辑边 {dim,a,b} → 物理路径分段（换轨段显式，不许画成直线）── */
+function pathSegsForEdge(e){
+  const segs = [];                                  // {kind:'UB'|'RAIL'|'XD', pts, label}
+  const a=e.a, b=e.b, ha=hostOf(a), hb=hostOf(b), pa=dpOf(ha), pb=dpOf(hb);
+  const pA = chipPhys(a,new THREE.Vector3()).add(V3(0,.1,0));
+  const pB = chipPhys(b,new THREE.Vector3()).add(V3(0,.1,0));
+  if(pa===pb){                                      // 域内（同 Pod）：整段走 UB（含同 Host）
+    segs.push({ kind:'UB', pts:bez(pA,pB, ha===hb? .5 : 1.8),
+      label: ha===hb ? 'UB 域内 · 节点内' : `UB 域内 · Pod${pa} · UB-Mesh 经交换` });
+    return segs;
+  }
+  const ra = railOf(a), rb = railOf(b);
+  let hop = a, pHop = pA;
+  if(ra!==rb){                                      // ① 换轨段（PXN 同构）：UB 域内搬到与目标同轨的卡再出网
+    hop = ha*8+rb;
+    pHop = chipPhys(hop,new THREE.Vector3()).add(V3(0,.1,0));
+    segs.push({ kind:'UB', swap:true, pts:bez(pA.clone(),pHop.clone(),.7),
+      label:`换轨 · UB 域内 TP${ra}→TP${rb}（先搬到与目标同 rail 的卡）` });
+  }
+  const exA = podExitPos(pa, rb, new THREE.Vector3());
+  const exB = podExitPos(pb, rb, new THREE.Vector3());
+  segs.push({ kind:'RAIL', pts:bez(pHop.clone(), exA.clone(), 1.6),
+    label:`rail-${rb} · RDMA/RoCE 直出 → Pod${pa} 出口 Host${pa*16+8}` });
+  segs.push({ kind:'XD', pts:bez(exA.clone(), exB.clone(), 4.2),
+    label:`跨 Pod · Pod${pa} → Pod${pb} · 出口节点 Host${pa*16+8} ⇄ Host${pb*16+8}` });
+  segs.push({ kind:'RAIL', pts:bez(exB.clone(), pB.clone(), 1.6),
+    label:`rail-${rb} · 入 Pod${pb} → rank ${b}` });
+  return segs;
+}
+function buildEdgePath(){
+  for(let i=pathGroup.children.length-1;i>=0;i--){ const o=pathGroup.children[i];
+    if(o.isSprite){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    else { if(o.geometry) o.geometry.dispose(); if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } }
+    pathGroup.remove(o); }
+  if(!S.selEdge) return;
+  const e = S.selEdge, segs = pathSegsForEdge(e);
+  const grpLab = (text,color,w,pos)=>{ const l=makeLabel(text,color,w); l.material.userData={base:1,noPulse:true};
+    l.material.fog=false; l.renderOrder=8; l.position.copy(pos); pathGroup.add(l); };
+  const grpDot = (p,c,r)=>{ const s=new THREE.Mesh(new THREE.SphereGeometry(r||.16,10,10),
+    new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:.95,depthWrite:false}));
+    s.material.userData={base:.95,noPulse:true}; s.renderOrder=7; s.position.copy(p); pathGroup.add(s); return s; };
+  segs.forEach(sg=>{
+    const col = PATHC[sg.kind==='RAIL'?'RAIL':sg.kind==='XD'?'XD':'UB'];
+    const proto = sg.kind==='UB' ? 'UB' : 'RDMA';
+    const mesh = protoLink(pathGroup, sg.pts, col, proto, sg.kind==='XD'?3:2, .95,
+      { plane: sg.kind==='UB'?'UB':sg.kind==='XD'?'跨域(RDMA)':'RDMA rail', rail: sg.kind==='UB'?null:railOf(e.b),
+        bw: sg.kind==='UB'?'UB 400G 档':'RoCE 200G 档', load: .3+rng(e.a+e.b)*.5, desc: sg.label });
+    mesh.renderOrder = 6; mesh.material.depthTest = false;
+    grpDot(sg.pts[0], col, .13); grpDot(sg.pts[sg.pts.length-1], col, .13);
+    if(sg.swap){                                     // 换轨段：箭头 + “换轨”标签（红线③：必须显式）
+      const p0=sg.pts[sg.pts.length-2], p1=sg.pts[sg.pts.length-1];
+      const dir=p1.clone().sub(p0).normalize();
+      const cone=new THREE.Mesh(new THREE.ConeGeometry(.14,.4,8),
+        new THREE.MeshBasicMaterial({color:PATHC.UB,transparent:true,opacity:.95,depthWrite:false,depthTest:false}));
+      cone.material.userData={base:.95,noPulse:true}; cone.renderOrder=7;
+      cone.position.copy(p1); cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+      pathGroup.add(cone);
+      const mid=sg.pts[(sg.pts.length/2)|0];
+      grpLab('换轨', PATHCS.UB, 3.2, mid.clone().add(V3(0,.6,0)));
+    }
+  });
+  // 起终点小签（摘要在左下信息卡，不在场景挂大字）
+  grpLab(`r${e.a}`, '#e6edf3', 2.6, segs[0].pts[0].clone().add(V3(0,.8,0)));
+  const last = segs[segs.length-1];
+  grpLab(`r${e.b}`, '#e6edf3', 2.6, last.pts[last.pts.length-1].clone().add(V3(0,.8,0)));
+}
+/* ── 需求1 反向：物理链路 → 经过它的通信域边（可多条）── */
+function edgesThroughLink(info){
+  const edges = [];
+  const fh=S.focusHost, ppF=ppOf(fh), tpF=(S.focusChip>>3)===fh ? (S.focusChip&7) : 0;
+  if(info.plane==='UB'){                             // UB 域内链路：该 Pod 内 TP/PP（域内一切通信走 UB）
+    const pod = (info.pods&&info.pods[0])!=null ? info.pods[0] : dpOf(fh), h0 = pod*16+ppF;
+    edges.push({ dim:'TP', a:h0*8+tpF, b:h0*8+((tpF+1)&7) });
+    edges.push({ dim:'PP', a:h0*8+tpF, b:(pod*16+((ppF+1)%16))*8+tpF });
+    // EP 跨域边的域内段（dispatch 出网前/combine 入网后）同样经过本 Pod 的 UB
+    edges.push({ dim:'EP', a:h0*8+tpF, b:((((dpOf(h0)/EP)|0)*EP+((dpOf(h0)%EP)+1)%EP)*16+ppF)*8+tpF });
+  } else {                                            // RDMA rail：跨 Pod 的 DP 环边 / EP 跨域边
+    const [pi,pj] = info.pods, r = info.rail==null? tpF : info.rail;
+    edges.push({ dim:'DP', a:(pi*16+ppF)*8+r, b:(pj*16+ppF)*8+r });
+    if(((pi/EP)|0)===((pj/EP)|0)) edges.push({ dim:'EP', a:(pi*16+ppF)*8+r, b:(pj*16+ppF)*8+r });
+    if(S.anomaly && (pi%EP===ANOM_BUCKET||pj%EP===ANOM_BUCKET)) edges.push({ dim:'EP', anom:true, a:(pi*16+ppF)*8+r, b:(pj*16+ppF)*8+r });
+  }
+  return edges;
+}
+function selectEdge(e, opts){
+  S.selEdge = e; S.selLink = null;
+  buildEdgePath(); renderPathInfo(); commDirty = true;
+  if(!opts || opts.fly!==false){ formTarget='phys'; formBtns(); }
+  renderStageLeg(); try{ wakeLoop(90); }catch(_){ }
+}
+function selectLink(info){
+  S.selLink = { info, edges: edgesThroughLink(info) };
+  S.selEdge = null; buildEdgePath(); renderPathInfo(); commDirty = true;
+  formTarget='cube'; formBtns();                      // 反向联动：飞到逻辑魔方看这些通信域边
+  renderStageLeg(); try{ wakeLoop(90); }catch(_){ }
+}
+function clearPathSel(){ S.selEdge=null; S.selLink=null; buildEdgePath(); renderPathInfo(); commDirty=true; try{ wakeLoop(30); }catch(_){ } }
+function renderPathInfo(){
+  const card = $('#pathinfo'); if(!card) return;
+  if(S.selEdge){
+    const e=S.selEdge, segs=pathSegsForEdge(e);
+    $('#pathinfoTitle').innerHTML = `逻辑边 → 物理路径<span class="x" id="pathClose">✕</span>`;
+    $('#pathinfoBody').innerHTML =
+      `<div style="margin-bottom:4px"><b>${DIM_NAME[e.dim]||e.dim}</b> · rank ${e.a}（P${dpOf(hostOf(e.a))}·H${hostOf(e.a)}）→ rank ${e.b}（P${dpOf(hostOf(e.b))}·H${hostOf(e.b)}）</div>`
+      + segs.map(sg=>{ const c = sg.kind==='RAIL'?PATHCS.RAIL:sg.kind==='XD'?PATHCS.XD:PATHCS.UB;
+          const lt = sg.kind==='UB' ? 'solid' : 'dash';
+          return `<div class="seg"><i class="${lt}" style="border-top-color:${c}"></i><span>${sg.label}</span></div>`; }).join('')
+      + `<div class="note">分段：<b style="color:${PATHCS.UB}">紫=UB 域内</b>（含换轨）· <b style="color:${PATHCS.RAIL}">蓝=rail 平面</b>（RDMA/RoCE）· <b style="color:${PATHCS.XD}">青=跨 Pod</b> · 判据是域界不是并行类型 · <span id="pathToCube" style="text-decoration:underline;cursor:pointer">⇄ 切回魔方</span></div>`;
+    card.classList.add('show');
+    const tc=$('#pathToCube'); if(tc) tc.onclick=()=>{ formTarget = formTarget==='cube'?'phys':'cube'; formBtns(); };
+  } else if(S.selLink){
+    const L=S.selLink;
+    $('#pathinfoTitle').innerHTML = `物理链路 → 通信域边<span class="x" id="pathClose">✕</span>`;
+    $('#pathinfoBody').innerHTML =
+      `<div style="margin-bottom:4px"><b>${L.info.desc||L.info.plane}</b>${L.info.rail!=null?` · rail-${L.info.rail}`:''}</div>
+       <div>经过此链路的通信域边（点选看路径）：</div>
+       <div style="margin-top:3px">${L.edges.map((e,i)=>`<span class="edgebtn" data-ei="${i}" style="color:${({TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'})[e.dim]}">${e.dim}${e.anom?'·越界':''} · r${e.a}⇄r${e.b}</span>`).join('')}</div>
+       <div class="note">魔方中已高亮这些边 · 点任一枚回放其完整物理路径（需求1 正向）</div>`;
+    card.classList.add('show');
+    card.querySelectorAll('.edgebtn').forEach(b=>{ b.onclick=()=>selectEdge(L.edges[+b.dataset.ei]); });
+  } else { card.classList.remove('show'); }
+  const x=$('#pathClose'); if(x) x.onclick=clearPathSel;
+}
+/* ── 需求3：三张网平面 lens（wire=NET3）──
+   业务红线：域内流量永远画在 UB 平面；RDMA 平面上不得出现同 Pod 内两卡的连线（判据=域界）。 */
+function railColor(r){ const c=new THREE.Color(); c.setHSL(.60-r*.022, .72, .38+r*.045); return c.getHex(); }
+function railColorCss(r){ return '#'+new THREE.Color(railColor(r)).getHexString(); }
+function buildNet3Lines(){
+  const { solo, explode } = S.net3;
+  const show = p => !solo || solo===p;
+  const yRD = explode ? 8.2 : 4.6, yVP = explode ? 12.4 : 6.4;
+  const planeFrame = (y, color, op, label)=>{
+    const b={x0:-16.5,x1:16.5,z0:-10.5,z1:10.5};
+    const pts=[V3(b.x0,y,b.z0),V3(b.x1,y,b.z0),V3(b.x1,y,b.z1),V3(b.x0,y,b.z1),V3(b.x0,y,b.z0)];
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    const m=new THREE.LineBasicMaterial({color,transparent:true,opacity:op}); m.userData={base:op,noPulse:true};
+    commGroup.add(new THREE.Line(g,m));
+    wireLab(label, '#'+new THREE.Color(color).getHexString(), 7, V3(b.x0+3.4, y+.55, b.z0+1));
+  };
+  const podsShown = (()=>{ const s=new Set([dpOf(S.focusHost)]);
+    for(let d=0;d<DP;d+=8) s.add(d);
+    if(S.anomaly) anomPods.slice(0,4).forEach(p=>s.add(p));
+    return [...s].sort((a,b)=>a-b); })();
+  /* ① UB 平面（紫）：域内 UB-Mesh + leaf/spine 交换（红线④：经交换的 any-to-any，非星型 hub） */
+  if(show('UB')){
+    planeFrame(explode? 4.9 : 3.4, PATHC.UB, .5, '① UB 平面·域内');
+    const fp = dpOf(S.focusHost);
+    podsShown.forEach(pod=>{
+      const focus = pod===fp, P0=podXZ(pod);
+      if(focus){                                      // 焦点 Pod：两级交换详画（host→leaf→spine · leaf 互联）
+        const cabA=pod*2, cabB=pod*2+1;
+        const leafY = explode? 4.0 : 3.6, spineY = explode? 4.8 : 4.2;
+        const leafA=V3((cabA%16-7.5)*1.8, leafY, ((cabA>>4)-3.5)*2.4);
+        const leafB=V3((cabB%16-7.5)*1.8, leafY, ((cabB>>4)-3.5)*2.4);
+        const spine=V3((leafA.x+leafB.x)/2, spineY, (leafA.z+leafB.z)/2);
+        [ [leafA,'UB leaf'], [leafB,'UB leaf'], [spine,'UB spine'] ].forEach(([p,t])=>{
+          const d=new THREE.Mesh(new THREE.BoxGeometry(.5,.22,.5),
+            new THREE.MeshBasicMaterial({color:PATHC.UB,transparent:true,opacity:.9,depthWrite:false}));
+          d.material.userData={base:.9,noPulse:true}; d.position.copy(p); commGroup.add(d);
+          wireLab(t, PATHCS.UB, 4.5, p.clone().add(V3(0,.5,0))); });
+        for(let s2=0;s2<8;s2++){
+          [[cabA,leafA],[cabB,leafB]].forEach(([cab,leaf])=>{
+            const h=cab*8+s2; hostPos(h,vA);
+            protoLink(commGroup, [vA.clone().add(V3(0,.1,0)), leaf.clone()], PATHC.UB, 'UB', 1, .5,
+              { plane:'UB', rail:null, pods:[pod], bw:'UB 400G 档', load:.3+rng(h)*.4, desc:`UB 域内 · Host${h} ↔ leaf（Pod${pod}）` }); });
+        }
+        protoLink(commGroup,[leafA.clone(),spine.clone()],PATHC.UB,'UB',2,.7,{plane:'UB',rail:null,pods:[pod],bw:'UB 800G 档',load:.5,desc:`UB leaf↔spine · Pod${pod}`});
+        protoLink(commGroup,[leafB.clone(),spine.clone()],PATHC.UB,'UB',2,.7,{plane:'UB',rail:null,pods:[pod],bw:'UB 800G 档',load:.5,desc:`UB leaf↔spine · Pod${pod}`});
+        protoLink(commGroup,bez(leafA.clone(),leafB.clone(),.8),PATHC.UB,'UB',2,.6,{plane:'UB',rail:null,pods:[pod],bw:'UB 800G 档',load:.44,desc:`UB leaf↔leaf · Pod${pod} · any-to-any（非星型）`});
+        wireLab(`Pod${pod}·UB 域`, PATHCS.UB, 5.5, spine.clone().add(V3(0,1.2,0)));
+      } else {                                        // 其它 Pod：小环示意（域轮廓）
+        const loop=[]; for(let k=0;k<=12;k++){ const a2=k/12*Math.PI*2;
+          loop.push(V3(P0.x+Math.cos(a2)*.9, explode? 3.9 : 3.5, P0.z+Math.sin(a2)*.8)); }
+        protoLink(commGroup, loop, PATHC.UB, 'UB', 1, .3,
+          { plane:'UB', rail:null, pods:[pod], bw:'UB 400G 档', load:.3, desc:`UB 域 · Pod${pod}（域内 any-to-any）` });
+      }
+    });
+  }
+  /* ② RDMA 平面（蓝·按 rail 分色）：每卡直出 RoCE 口，同号口成 rail；只承载跨 Pod 流量 */
+  if(show('RDMA')){
+    planeFrame(yRD, PATHC.RAIL, .55, '② RDMA·rail');
+    const rails = solo==='RDMA' ? [0,1,2,3,4,5,6,7] : [0,2,4,6];
+    rails.forEach(r=>{
+      const col = railColor(r), y = yRD + .32 + r*.16;
+      for(let k=0;k<podsShown.length;k++){
+        const pi=podsShown[k], pj=podsShown[(k+1)%podsShown.length];
+        if(pi===pj) continue;                          // 红线：RDMA 平面上绝不连同 Pod 两卡
+        const A=podXZ(pi), B=podXZ(pj);
+        protoLink(commGroup, bez(V3(A.x, y, A.z), V3(B.x, y, B.z), 1.1+r*.12), col, 'RDMA', r<2?3:2, .8,
+          { plane:'RDMA rail', rail:r, pods:[pi,pj], bw: r<2?'RoCE 400G 档':'RoCE 200G 档',
+            load:.2+rng(pi*8+pj+r)*.6, desc:`rail-${r} · Pod${pi} ⇄ Pod${pj}（跨 Pod RDMA）` });
+      }
+      if(r%2===0) wireLab('rail-'+r, railColorCss(r), 3.4, V3(-17.6, y, -9.5+r*.9));
+    });
+    podsShown.forEach(pod=>{ const P0=podXZ(pod);     // NIC 直出竖联（Pod → RDMA 平面）
+      protoLink(commGroup, [V3(P0.x, explode? 4.2 : 3.6, P0.z), V3(P0.x, yRD+.3, P0.z)], PATHC.RAIL, 'RDMA', 1, .4,
+        { plane:'RDMA rail', rail:null, pods:[pod,pod], bw:'RoCE 直出', load:.3, desc:`Pod${pod} 每卡 RoCE 口直出上 rail` }); });
+  }
+  /* ③ VPC 平面（灰·弱化半透明）：管理/存储 */
+  if(show('VPC')){
+    const op = solo==='VPC' ? .8 : .3;
+    planeFrame(yVP, PATHC.VPC, solo==='VPC'? .6 : .25, '③ VPC·管理');
+    const mgmt = V3(0, yVP+.6, 0);
+    podsShown.slice(0, solo==='VPC'? podsShown.length : 5).forEach(pod=>{ const P0=podXZ(pod);
+      protoLink(commGroup, bez(V3(P0.x, explode? 4.0 : 3.5, P0.z), mgmt.clone(), 1.2), PATHC.VPC, 'VPC', 1, op,
+        { plane:'VPC', rail:null, bw:'25/100G 档', load:.1+rng(pod)*.15, desc:`VPC 管理/存储 · Pod${pod} → 汇聚` }); });
+    wireLab('VPC 汇聚', PATHCS.VPC, 5.5, mgmt.clone().add(V3(0,.7,0)));
+  }
+}
+/* net3 控制浮层 */
+function syncNet3Ctl(){
+  const on = S.wire==='NET3' && S.form==='phys';
+  $('#net3ctl').classList.toggle('show', on);
+  $$('#net3ctl .n3btn').forEach(b=>{
+    const p=b.dataset.plane;
+    b.classList.toggle('on', p==='ALL' ? !S.net3.solo : S.net3.solo===p); });
+  $('#n3explode').classList.toggle('on', S.net3.explode);
+}
+$$('#net3ctl .n3btn').forEach(b=>b.onclick=()=>{
+  const p=b.dataset.plane; S.net3.solo = p==='ALL'? null : (S.net3.solo===p? null : p);
+  commDirty=true; syncNet3Ctl(); renderStageLeg(); try{ wakeLoop(30); }catch(_){ } });
+$('#n3explode').onclick=()=>{ S.net3.explode=!S.net3.explode; commDirty=true; syncNet3Ctl(); try{ wakeLoop(30); }catch(_){ } };
 /* ======== 互联矩阵叠加卡：浅色 2D 版 Host×Host 的 3D 联动版 ======== */
 const mxcv = $('#mxcv'), gmx = mxcv.getContext('2d');
 const mxHiGroup = new THREE.Group(); scene.add(mxHiGroup);
@@ -2417,6 +2973,8 @@ function updateCommPulse(now){
   const autoGate = S.wire!=='AUTO' || S.playing || S.filterHost!=null;
   commGroup.visible = Wgt.phys>0.6 && autoGate;
   cubeComm.visible = Wgt.cube>0.5 && S.wire==='AUTO' && (S.playing || S.filterHost!=null);
+  // 需求1：物理路径高亮只在物理形态显示（正向选边后自动飞到物理层级）
+  pathGroup.visible = Wgt.phys>0.6 && !!S.selEdge;
   const k = S.playing ? .45+.55*Math.abs(Math.sin(now/260)) : .8;
   const emph = S.hudEmph;                         // HUD step 分解 hover → 软硬联动
   commGroup.children.forEach(o=>{ const m=o.material;
@@ -2424,7 +2982,12 @@ function updateCommPulse(now){
     let kk = m.userData.noPulse ? 1 : k;
     if(emph) kk = emph==='comm' ? Math.min(1.4, kk*1.6) : .08;
     m.opacity = Math.min(1, m.userData.base*kk); });
-  cubeComm.children.forEach(o=>{ const m=o.material; if(m && m.userData.base!=null) m.opacity = Math.min(1, m.userData.base*k); });
+  // 需求5·DP：梯度同步 = DP 外圈整体脉冲闪烁（比普通呼吸更强的开合）
+  const dpK = (S.playing && PHASES[S.phase].id==='DP') ? .25+.75*Math.abs(Math.sin(now/170)) : 1;
+  cubeComm.children.forEach(o=>{ const m=o.material; if(!m || m.userData.base==null) return;
+    let kk = m.userData.noPulse ? 1 : k;
+    if(m.userData.dpPulse) kk = dpK;
+    m.opacity = Math.min(1, m.userData.base*kk); });
   tickMovers(now);
 }
 /* ---- 相机：单一视角 + 层级驱动飞行缩放 ---- */
@@ -2495,7 +3058,27 @@ window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
-window.addEventListener('pointerup', ()=>{
+/* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
+const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
+function pickCommAt(clientX, clientY){
+  const r = stage.getBoundingClientRect();
+  edgeMouse.set(((clientX-r.left)/r.width)*2-1, -((clientY-r.top)/r.height)*2+1);
+  edgeRay.setFromCamera(edgeMouse, camera);
+  if(Wgt.cube>0.5){
+    const hits = edgeRay.intersectObjects(cubeComm.children.filter(o=>o.userData&&o.userData.edge), false);
+    if(hits.length) return { edge: hits[0].object.userData.edge };
+  } else if(Wgt.phys>0.5 && pickLinks.length){
+    const hits = edgeRay.intersectObjects(pickLinks, false);
+    if(hits.length) return { link: hits[0].object.userData.link };
+  }
+  return null;
+}
+window.addEventListener('pointerup', (e)=>{
+  if(dragging && !dragMoved){
+    const t = pickCommAt(e.clientX, e.clientY);
+    if(t && t.edge){ selectEdge(t.edge); dragging=false; return; }
+    if(t && t.link && t.link.pods){ selectLink(t.link); dragging=false; return; }
+  }
   if(dragging && !dragMoved && S.hoverHost>=0){
     S.focusHost=S.hoverHost; S.focusChip=S.focusHost*8;
     if(S.tab==='model'){ S.selCard={pp:ppOf(S.focusHost),tp:null}; S.selLayer=null;
@@ -2524,8 +3107,30 @@ stage.addEventListener('mousemove', ev=>{
     let lx=ev.clientX-rc.left+16, ty=ev.clientY-rc.top+16;
     if(lx+pw>rc.width) lx=ev.clientX-rc.left-pw-14;
     if(ty+ph2>rc.height) ty=rc.height-ph2-8;
-    pr.style.left=Math.max(8,lx)+'px'; pr.style.top=Math.max(8,ty)+'px'; }
-  else { setHover(-1,''); stage.style.cursor='default'; } });
+    pr.style.left=Math.max(8,lx)+'px'; pr.style.top=Math.max(8,ty)+'px';
+    pr.classList.remove('link'); }
+  else {
+    setHover(-1,'');
+    // 需求6：链路 tooltip —— 悬停链路显示 类型/带宽档/占用/rail/平面（线型=协议 · 粗细=带宽档）
+    const t = pickCommAt(ev.clientX, ev.clientY);
+    const pr=$('#probe');
+    if(t && t.link){
+      const L=t.link;
+      pr.classList.add('link'); pr.style.display='block';
+      pr.innerHTML = `<b>${L.desc||L.plane}</b><br>
+        平面 <b>${L.plane}</b>${L.rail!=null?` · rail-<b>${L.rail}</b>`:''} · 带宽 <b>${L.bw||'—'}</b> · 当前占用 <b style="color:${stateCss(L.load||0)}">${((L.load||0)*100)|0}%</b><br>
+        <span style="color:var(--foreground-muted)">线型=协议（实线 UB / 长虚线 RDMA / 点线 VPC）· 粗细=带宽档${L.pods?' · 点击反查经过的通信域边':''}</span>`;
+      const rc=$('#right').getBoundingClientRect();
+      let lx=ev.clientX-rc.left+16, ty=ev.clientY-rc.top+16;
+      const pw=pr.offsetWidth||260, ph2=pr.offsetHeight||90;
+      if(lx+pw>rc.width) lx=ev.clientX-rc.left-pw-14;
+      if(ty+ph2>rc.height) ty=rc.height-ph2-8;
+      pr.style.left=Math.max(8,lx)+'px'; pr.style.top=Math.max(8,ty)+'px';
+      stage.style.cursor='pointer'; return;
+    }
+    if(t && t.edge){ stage.style.cursor='pointer'; pr.classList.remove('link'); return; }
+    pr.classList.remove('link');
+    stage.style.cursor='default'; } });
 stage.addEventListener('mouseleave', ()=>setHover(-1,''));
 /* ================= 全局状态机 ================= */
 $$('.lensbtn').forEach(b=>b.onclick = ()=>{
@@ -2552,7 +3157,7 @@ document.addEventListener('click', ev=>{
   if(!ev.target.closest('.fold')) $$('.fold').forEach(x=>x.classList.remove('open')); });
 function updateFoldHeads(){
   const lensS = {NONE:'健康度',TP:'TP',PP:'PP',DP:'DP',EP:'EP',SP:'SP',CP:'CP',JOB:'任务'}[S.lens]||S.lens;
-  const wireS = {AUTO:'自动',COMM:'通信域',FLOW:'流量',LINK:'链路',PATH:'路径'}[S.wire]||S.wire;
+  const wireS = {AUTO:'自动',COMM:'通信域',FLOW:'流量',LINK:'链路',PATH:'路径',NET3:'三张网'}[S.wire]||S.wire;
   const formS = {phys:'物理',cube:'魔方'+(cubeMode?('·'+['','DP','EP','TP','PP'][cubeMode]):''),stack:'堆叠'}[S.form]||S.form;
   const fv=document.getElementById('fhView');
   if(fv) fv.innerHTML = `视图 · 着色 <b>${lensS}</b> · 连线 <b>${wireS}</b> · 形态 <b>${formS}</b> ▾`;
@@ -2573,7 +3178,8 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#btnStack').classList.toggle('on', formTarget==='stack');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
-  S.form = formTarget; renderViewlab(); }
+  S.form = formTarget; renderViewlab();
+  try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ } }
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 [0,1,2,3,4].forEach(k=>{ $('#cm'+k).onclick = ()=>{ if(cubeMode===k) return;
@@ -2808,7 +3414,7 @@ function renderViewlab(){
     CP:'<br><span style="color:#9B3CF6">CP 上下文并行：本作业未启用（长序列场景）· Ring Attention 跨节点环形传递</span>',
     JOB:'<br><span style="color:#4369EF">任务透镜：框架（MindSpeed/vLLM）编译整网→按 P 策略切分→调度到物理卡 · 蓝=训练 768 台 · 青=推理 192 台 · 暗=空闲 64 台</span>' }[S.lens]||'';
   const wireNote = S.wire && S.wire!=='AUTO'
-    ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=8 个 A2A 域轮廓·8 副本/域）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比'})[S.wire]}</span>` : '';
+    ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=8 个 A2A 域轮廓·8 副本/域）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比',NET3:'三张网平面 · UB(紫·域内)/RDMA(蓝·rail 分色·仅跨 Pod)/VPC(灰·弱化) · 线型=协议 粗细=带宽档'})[S.wire]}</span>` : '';
   const granNote = `<br><span style="color:#6e7681">粒度：${({
     pod:'Pod↔Pod 聚合流（下钻 L4 展开柜级）', field:'柜/Host 级全景',
     cab:'本机视角 · 焦点 Host 的直接对端', chip:'卡级 · 本卡在算子中的角色',
@@ -2830,7 +3436,8 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
   // ② 连线图例（随 S.wire）——AUTO 连线只在播放/选卡时显示，图例只描述屏幕上真实存在的线
   const autoOn = S.playing || S.filterHost!=null;
   let line=null;
-  if(w==='FLOW') line=chip('#04D793','空闲')+chip('#fbbf24','中')+chip('#FF4B7B','繁忙')+'<span>宽=占用</span>';
+  if(w==='NET3') line=chip('#a78bfa','UB 域内(实线)')+chip('#4369EF','RDMA rail(长虚线·rail 分色)')+chip('#22d3ee','跨域段')+chip('#8b949e','VPC(点线·弱化)')+'<span>粗=带宽档 · 域内永不上 RDMA</span>';
+  else if(w==='FLOW') line=chip('#04D793','空闲')+chip('#fbbf24','中')+chip('#FF4B7B','繁忙')+'<span>宽=占用</span>';
   else if(w==='LINK') line=chip('#04D793','正常')+chip('#fbbf24','降级')+chip('#FF4B7B','中断');
   else if(w==='PATH') line=chip('#FF4B7B','跨轨 3-hop')+chip('#04D793','PXN 1-hop');
   else if(w==='COMM') line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')+'<span>轮廓=通信域</span>';
@@ -3018,6 +3625,8 @@ function scenario(k){
     S.focusPod=0; renderPodRows(); closeDrawer();
     S.wire='AUTO'; $$('.wirebtn').forEach(x=>x.classList.toggle('on', x.dataset.wire==='AUTO'));
     S.mxShow=false; S.mxPin=null; S.mxHover=null; S.mxMedium=null; S.hudEmph=null;
+    S.selEdge=null; S.selLink=null; S.net3={solo:null,explode:true};
+    try{ buildEdgePath(); renderPathInfo(); }catch(_){ }
     syncMxCard(); renderMxHi();
     if(S.anomaly && k==='reset') $('#btnAnom').onclick();
     formTarget='phys'; formBtns();

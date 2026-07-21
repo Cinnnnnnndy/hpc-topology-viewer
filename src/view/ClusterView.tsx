@@ -38,7 +38,7 @@ const CUBE_LENS: [string, string][] = [
   ['EP', 'EP·MoE'], ['SP', 'SP·序列'], ['CP', 'CP·上下文'], ['JOB', '任务·部署'],
 ];
 const CUBE_WIRE: [string, string][] = [
-  ['AUTO', '自动·随阶段'], ['COMM', '通信域'], ['FLOW', '互联流量'], ['LINK', '物理链路'], ['PATH', '消息路径'],
+  ['AUTO', '自动·随阶段'], ['COMM', '通信域'], ['FLOW', '互联流量'], ['LINK', '物理链路'], ['PATH', '消息路径'], ['NET3', '三张网'],
 ];
 const CUBE_SCRIPT: [string, string][] = [
   ['scPatrol', '巡检大盘'], ['scMoe', 'MoE 越界'], ['scSlow', '慢 DP 副本'], ['scDeep', '单机深潜'], ['scDeploy', '部署审视'],
@@ -367,7 +367,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   // lifted per-view filter state (shown in center-pill dropdown; child views receive these as props)
   const [consoleLens, setConsoleLens] = useState<'heat' | 'flow' | 'domain' | 'phys'>('heat');
   const [consoleDir, setConsoleDir] = useState<'all' | 'up' | 'down'>('all');
-  const [statusLens, setStatusLens] = useState<'heat' | 'flow' | 'domain' | 'phys'>('heat');
+  const [statusLens, setStatusLens] = useState<'heat' | 'flow' | 'domain' | 'phys' | 'matrix'>('heat');
   const [statusRelHi, setStatusRelHi] = useState(true);
   const [commScope, setCommScope] = useState<'intra' | 'inter'>('intra');
   const [commDim, setCommDim] = useState<'all' | ParDim>('all');
@@ -812,7 +812,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
                           <div className="hpc-wb-ctrl-group">
                             <span className="hpc-wb-ctrl-label">镜头</span>
                             <div className="hpc-wb-ctrl-btns">
-                              {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路']] as const).map(([l, label]) => (
+                              {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路'], ['matrix', '通信矩阵']] as const).map(([l, label]) => (
                                 <button key={l} onClick={() => setStatusLens(l)} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 600, borderRadius: 7, cursor: 'pointer', ...navBtn(statusLens === l) }}>{label}</button>
                               ))}
                             </div>

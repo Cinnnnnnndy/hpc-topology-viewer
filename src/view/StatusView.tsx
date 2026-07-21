@@ -59,7 +59,7 @@ const MONO = "'JetBrains Mono','Consolas',ui-monospace,monospace";
 
 type Phase = 'pretrain' | 'prefill' | 'decode';
 type Metric = 'util' | 'strag' | 'fault';
-type Lens = 'heat' | 'flow' | 'domain' | 'phys';
+type Lens = 'heat' | 'flow' | 'domain' | 'phys' | 'matrix';
 // full hierarchy chain (hw-native-sys L7→L0) — EXACTLY 8 levels, identical to every other view.
 // L7 global → L6 cluster → L5 pool(服务池) → L4 super(Pod) → L3 node(Host) →
 // L2 rank(Chip·NPU) → L1 die(可选) → L0 core(Core-Group·最深层级).
@@ -121,6 +121,10 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
   const playing = sync?.playing ?? playingL;
   const [tip, setTip] = useState<{ x: number; y: number; t: string } | null>(null);
   const flowRef = useRef(0);   // 连线彗星流动相位 —— 始终推进（即使未播放，连线持续流动）
+  // ── N×N 通信矩阵 lens（需求4）：聚合三档 + 泳道 phase(并行维) 过滤 ──
+  const [matAgg, setMatAgg] = useState<'pod' | 'host' | 'rank'>('host');
+  const [matDim, setMatDim] = useState<'TP' | 'PP' | 'EP' | 'DP'>('EP');
+  const matGeom = useRef<{ mx: number; my: number; cs: number; N: number } | null>(null);
 
   useEffect(() => { setSelPool(0); setSelSpod(0); setSelCab(0); setSelNode(0); setSelNpu(-1); }, [gen]);
   useEffect(() => {
@@ -347,7 +351,7 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
     const pc = parentCtx();
     const topY = pc ? PAD + STRIP_H : PAD;
     if (pc) drawParentStrip(pc);
-    if (lens === 'heat') drawHeat(topY); else if (lens === 'flow') drawFlow(topY); else if (lens === 'domain') drawDomain(topY); else drawPhys(topY);
+    if (lens === 'heat') drawHeat(topY); else if (lens === 'flow') drawFlow(topY); else if (lens === 'domain') drawDomain(topY); else if (lens === 'matrix') drawMatrix(topY); else drawPhys(topY);
 
     // parent (上一层) context: the level we drilled FROM; click a sibling to switch without going up
     function parentCtx(): { name: string; n: number; val: (i: number) => number; sel: number; kind: string; lab: (i: number) => string } | null {
@@ -504,6 +508,91 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
         : phase === 'prefill' ? 'Prefill·计算为主+EP A2A → 近对角软带 + 负载纹理'
         : '预训练·DP Ring 邻近带 + EP A2A 底噪 + 负载纹理';
       tx(`行/列 = 通信单元 · ${patNote} · 颜色=通信强度(状态色)` + (SUBCARD.includes(selLevel) ? ' · 卡内片上 NoC 无跨卡矩阵，显示所属 Host' : ''), mLeft, H - 8, P.mut, '10.5px Inter');
+    }
+
+    // ════════ N×N 通信矩阵（需求4）：rank/Host/Pod 三档聚合 · 按 phase(并行维) 过滤 ════════
+    // 矩阵形态即通信模式指纹：TP=对角块状 · EP AllToAll=簇间棋盘 · DP=环带 · PP=次对角线
+    function matPattern(dim: 'TP' | 'PP' | 'EP' | 'DP', i: number, j: number, N: number): number {
+      if (i === j) return 0;
+      const blk = Math.max(2, N / 8);
+      if (dim === 'TP') return ((i / blk) | 0) === ((j / blk) | 0) ? 0.85 : 0.06;          // 对角块状（组内 AllReduce）
+      if (dim === 'PP') { const d = Math.abs(i - j); return d === 1 ? 0.85 : d === N - 1 ? 0.4 : 0.05; }  // 次对角线（stage 接力）
+      if (dim === 'EP') {                                                                    // 簇间棋盘（A2A 域同位互发）
+        const ci = (i / blk) | 0, cj = (j / blk) | 0;
+        if (ci !== cj && i % blk === j % blk) return 0.85;
+        return ci === cj ? 0.3 : 0.05;
+      }
+      const s = Math.max(1, (N / 8) | 0), d2 = (j - i + N) % N;                              // 环带（Ring 步进 stride）
+      return (d2 === s || d2 === N - s) ? 0.8 : (d2 === 1 || d2 === N - 1) ? 0.3 : 0.05;
+    }
+    function drawMatrix(topY: number) {
+      const aggCfg = { pod: { N: 16, unit: 'Pod', lab: 'Pod×Pod（16 Pod 采样）' }, host: { N: 64, unit: 'Host', lab: `Host×Host（Pod#${selSpod + 1} 采样 64 Host）` }, rank: { N: 64, unit: 'rank', lab: `rank×rank（机柜${((selNode / NODES_PER_CAB) | 0) + 1} · 8 Host×8 rank）` } }[matAgg];
+      const N = aggCfg.N;
+      tx(`N×N 通信矩阵 · ${aggCfg.lab} · phase=${matDim} · 矩阵形态=通信模式指纹`, PAD, topY + 15, P.ink2, '12.5px Inter');
+      // 档位 + phase 过滤 chips
+      let bx = PAD;
+      const chipBtn = (label: string, on: boolean, kind: string, idx: number, col?: string) => {
+        ctx.font = '10.5px Inter'; const w = ctx.measureText(label).width + 18;
+        fbox(bx, topY + 24, w, 20, on ? (col ?? ACCENT) : (dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'));
+        tx(label, bx + 9, topY + 38, on ? inkOf(col ?? ACCENT) : P.ink2, '10.5px Inter');
+        cells.current.push({ x: bx, y: topY + 24, w, h: 20, kind, idx });
+        bx += w + 6;
+      };
+      (['rank', 'host', 'pod'] as const).forEach((a, i) => chipBtn(a === 'rank' ? 'rank×rank' : a === 'host' ? 'Host×Host' : 'Pod×Pod', matAgg === a, 'magg', i));
+      bx += 10;
+      (['TP', 'PP', 'EP', 'DP'] as const).forEach((d, i) => chipBtn(d, matDim === d, 'mdim', i, PARALLEL_COLORS[d.toLowerCase() as 'tp' | 'pp' | 'ep' | 'dp']));
+      // 矩阵主体（正方形自适应铺满，右侧留指纹图例宽度）
+      const LEG_W = 148, mTop = topY + 56, mLeft = PAD + 26;
+      const matH = H - 26 - mTop, matW = W - mLeft - PAD - LEG_W;
+      const cs = Math.max(2, Math.floor(Math.min(matH, matW) / N));
+      const m = N * cs, mx = mLeft, my = mTop + Math.max(0, (matH - m) / 2);
+      const salt = selSpod * 3.1 + (matAgg === 'rank' ? selNode * 0.7 : 0);
+      const val = (i: number, j: number) => {
+        const base = matPattern(matDim, i, j, N);
+        const tex = (rnd(i * 3.3 + salt) - 0.5) * 0.14 + (rnd(j * 2.9 + salt + 4) - 0.5) * 0.14;
+        const live = (rnd(i * 0.7 + j * 0.9 + step * 0.06 + flowRef.current * 0.7) - 0.5) * 0.22;
+        const hot = ev && selSpod === 0 && matAgg !== 'pod' && (i === (EVT_CAB * 2) % N || j === (EVT_CAB * 2) % N) ? 0.3 : 0;
+        return clamp01(base + tex + live + hot);
+      };
+      const tops: { i: number; j: number; v: number }[] = [];
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const v = val(i, j);
+        ctx.fillStyle = i === j ? (dark ? '#10141b' : '#e8ebf2') : loadColor(v);
+        ctx.globalAlpha = i === j ? 1 : 0.28 + v * 0.72;
+        ctx.fillRect(mx + j * cs, my + i * cs, cs - (cs > 5 ? 1 : 0.4), cs - (cs > 5 ? 1 : 0.4));
+        if (i !== j) { tops.push({ i, j, v }); if (tops.length > 400) tops.sort((a, b) => b.v - a.v).length = 200; }
+      }
+      ctx.globalAlpha = 1;
+      cells.current.push({ x: mx, y: my, w: m, h: m, kind: 'mcell', idx: 0 });
+      // Top-N 热点红框（与 Davis 问题卡联动：通信热点可成为根因证据）
+      tops.sort((a, b) => b.v - a.v);
+      ctx.strokeStyle = '#e5484d'; ctx.lineWidth = Math.max(1.2, cs * 0.12);
+      tops.slice(0, 5).forEach(({ i, j }) => ctx.strokeRect(mx + j * cs - 0.5, my + i * cs - 0.5, cs, cs));
+      const labStep = N <= 16 ? 1 : 8;
+      for (let i = 0; i < N; i += labStep) { tx('' + i, mx + i * cs + 1, my - 3, P.mut, `8.5px ${MONO}`); tx('' + i, mx - 22, my + i * cs + cs, P.mut, `8.5px ${MONO}`); }
+      // 指纹图例：四种矩阵形态小样（8×8 纯模式，不加噪）
+      const lx = W - PAD - LEG_W + 10; let ly = mTop + 4;
+      tx('指纹图例', lx, ly, P.ink, '700 10.5px Inter'); ly += 8;
+      (([['TP', '对角块状 · 组内 AllReduce'], ['EP', '簇间棋盘 · A2A 同位互发'], ['DP', '环带 · Ring 步进'], ['PP', '次对角线 · stage 接力']]) as ['TP' | 'EP' | 'DP' | 'PP', string][]).forEach(([d, note]) => {
+        const tcs = 5.5, tn = 8;
+        for (let i = 0; i < tn; i++) for (let j = 0; j < tn; j++) {
+          const v = matPattern(d, i, j, tn);
+          ctx.fillStyle = i === j ? (dark ? '#10141b' : '#e8ebf2') : loadColor(v);
+          ctx.globalAlpha = i === j ? 1 : 0.25 + v * 0.75;
+          ctx.fillRect(lx + j * tcs, ly + 4 + i * tcs, tcs - 0.6, tcs - 0.6);
+        }
+        ctx.globalAlpha = 1;
+        if (matDim === d) { ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.6; ctx.strokeRect(lx - 2, ly + 2, tn * tcs + 4, tn * tcs + 4); }
+        tx(d, lx + tn * tcs + 8, ly + 18, PARALLEL_COLORS[d.toLowerCase() as 'tp' | 'pp' | 'ep' | 'dp'], '700 10px Inter');
+        tx(note.split(' · ')[0], lx + tn * tcs + 8, ly + 30, P.ink2, '9px Inter');
+        tx(note.split(' · ')[1], lx + tn * tcs + 8, ly + 41, P.mut, '8.5px Inter');
+        ly += tn * tcs + 14;
+      });
+      tx('红框=Top-5 热点', lx, ly + 8, '#e5484d', '9.5px Inter');
+      tx('(通信热点=Davis 根因证据)', lx, ly + 20, P.mut, '8.5px Inter');
+      tx(`点矩阵格 → 定位对应${aggCfg.unit}对并下钻（联动详情栏 · 物理路径见 集群驾驶舱·需求1）· 颜色=通信强度(状态色) · 回放时逐帧流动`, PAD, H - 8, P.mut, '10px Inter');
+      // hover/click 用：把几何参数塞进闭包外的 ref（复用 cells 命中后换算行列）
+      matGeom.current = { mx, my, cs, N };
     }
 
     // ════════ 通信域：每个并行维度画真实集合通信图元 ════════
@@ -807,14 +896,14 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
         tx('1 卡 = 2 计算 Die(UMA·OS 视为单 device) + 2 IO Die · 对外 UB口(绿)/RDMA口(橙)', PAD, H - 8, P.mut, '10px Inter');
       } else tx(isCore ? `32 Core-Group（Cube∶Vector≈8∶1）· 选中核 ${selCore} · L0 内部：GM/L2→UB/L1→L0A/B/C · Tile/lane` : '2 计算 Die（各 ≈16 Core-Group，UMA 合并为单 device）· 在热力镜头点 Die 看核', PAD, H - 8, P.mut, '10px Inter');
     }
-  }, [lens, selLevel, selPool, selSpod, selNode, selNpu, selCore, pods, pools, podsInPool, CAB, NODES, NPN, NPC, NPU_TOT, step, P, metricVal, util01, faultAt, nodeMean, cabMean, spodMean, poolMean, clusterMean, dieVal, coreVal, scopeName, planeUtil, domains, domActive, tcell, flowCfg, pm, relHi, cardJ]);
+  }, [lens, selLevel, selPool, selSpod, selNode, selNpu, selCore, pods, pools, podsInPool, CAB, NODES, NPN, NPC, NPU_TOT, step, P, metricVal, util01, faultAt, nodeMean, cabMean, spodMean, poolMean, clusterMean, dieVal, coreVal, scopeName, planeUtil, domains, domActive, tcell, flowCfg, pm, relHi, cardJ, matAgg, matDim, ev, EVT_CAB, dark]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => { const onR = () => draw(); window.addEventListener('resize', onR); return () => window.removeEventListener('resize', onR); }, [draw]);
   // 逐帧重绘：通信域/物理链路始终让连线彗星流动；互联流量矩阵在【播放时】逐帧刷新，
   // 让通信强度真正随回放流动（暂停=定格快照，非静态写死）。
   useEffect(() => {
-    const animate = lens === 'domain' || lens === 'phys' || (lens === 'flow' && playing);
+    const animate = lens === 'domain' || lens === 'phys' || ((lens === 'flow' || lens === 'matrix') && playing);
     if (!animate) return;
     let last = performance.now(), raf = 0;
     const loop = (now: number) => { const dt = Math.min(0.05, (now - last) / 1000); last = now; flowRef.current += dt * 1.2; draw(); raf = requestAnimationFrame(loop); };
@@ -845,6 +934,15 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
     else if (h.kind === 'pspod') t = `Pod#${h.idx + 1} · 平均 ${Math.round(spodMean(h.idx) * 100)}%（点击切换）`;
     else if (h.kind === 'pnode') { const cb = (selNode / NODES_PER_CAB) | 0; t = `Host${h.idx + 1} · 均值 ${Math.round(nodeMean(selSpod, cb * NODES_PER_CAB + h.idx) * 100)}%（机柜${cb + 1} 物理分组）`; }
     else if (h.kind === 'pcard') t = `Chip r${h.idx}（rank ${selNode * NPN + h.idx}）· ${Math.round(util01(selSpod, selNode, h.idx) * 100)}%（点击切换）`;
+    // 通信矩阵 lens：档位/维度 chips + 矩阵格（行列换算成单元对）
+    else if (h.kind === 'magg') t = `聚合档位：${['rank×rank', 'Host×Host', 'Pod×Pod'][h.idx]}（点击切换）`;
+    else if (h.kind === 'mdim') t = `按泳道 phase 过滤：${['TP · 对角块状', 'PP · 次对角线', 'EP · 簇间棋盘', 'DP · 环带'][h.idx]}`;
+    else if (h.kind === 'mcell' && matGeom.current) {
+      const g = matGeom.current, mxr = e.clientX - r.left, myr = e.clientY - r.top;
+      const j = Math.min(g.N - 1, Math.max(0, ((mxr - g.mx) / g.cs) | 0)), i = Math.min(g.N - 1, Math.max(0, ((myr - g.my) / g.cs) | 0));
+      const unit = matAgg === 'pod' ? 'Pod' : matAgg === 'host' ? 'Host' : 'rank';
+      t = i === j ? `${unit}${i} · 对角线=自身（不通信）` : `${unit}${i} ⇄ ${unit}${j} · ${matDim} 通信对 · 点击定位该${unit}对`;
+    }
     if (!t) { if (tip) setTip(null); return; }
     setTip({ x: e.clientX, y: e.clientY, t });
   };
@@ -863,6 +961,16 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
     else if (h.kind === 'pspod') { setSelSpod(h.idx); setSelPool((h.idx / PODS_PER_POOL) | 0); setSelCab(0); setSelNode(0); setSelNpu(-1); }
     else if (h.kind === 'pnode') { const cb = (selNode / NODES_PER_CAB) | 0; setSelNode(cb * NODES_PER_CAB + h.idx); setSelNpu(-1); }
     else if (h.kind === 'pcard') setSelNpu(h.idx);
+    // 通信矩阵 lens：档位/维度切换 + 点格定位对应卡对（空间锚点=rank：任一处点选全站同步）
+    else if (h.kind === 'magg') setMatAgg((['rank', 'host', 'pod'] as const)[h.idx]);
+    else if (h.kind === 'mdim') setMatDim((['TP', 'PP', 'EP', 'DP'] as const)[h.idx]);
+    else if (h.kind === 'mcell' && matGeom.current) {
+      const g = matGeom.current, myr = e.clientY - r.top;
+      const i = Math.min(g.N - 1, Math.max(0, ((myr - g.my) / g.cs) | 0));
+      if (matAgg === 'pod') { const gp = Math.min(i, pods - 1); setSelPool((gp / PODS_PER_POOL) | 0); setSelSpod(gp); setSelNode(0); setSelNpu(-1); setSelLevel('super'); }
+      else if (matAgg === 'host') { setSelNode(Math.min(i, NODES - 1)); setSelCab((i / NODES_PER_CAB) | 0); setSelNpu(-1); setSelLevel('node'); }
+      else { const cb = (selNode / NODES_PER_CAB) | 0, hostI = cb * NODES_PER_CAB + (i >> 3); setSelNode(Math.min(hostI, NODES - 1)); setSelNpu(i & 7); setSelLevel('node'); }
+    }
   };
 
   // level navigation (axis + breadcrumb)
@@ -946,7 +1054,7 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>镜头</span>
-          {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路']] as [Lens, string][]).map(([v, l]) => (<button key={v} onClick={() => setLens(v)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(lens === v) }}>{l}</button>))}
+          {([['heat', '状态热力'], ['flow', '互联流量'], ['domain', '通信域'], ['phys', '物理链路'], ['matrix', '通信矩阵']] as [Lens, string][]).map(([v, l]) => (<button key={v} onClick={() => setLens(v)} style={{ padding: '4px 11px', fontSize: 11.5, borderRadius: 8, cursor: 'pointer', ...navBtn(lens === v) }}>{l}</button>))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={LBL}>并行</span>
@@ -1023,7 +1131,7 @@ export function StatusView({ gen, dark, sync, lens: lensP, setLens: setLensP, re
         {/* detail rail */}
         <div style={{ width: 272, flexShrink: 0, overflowY: 'auto', borderRadius: 12, ...(workbenchProfile ? { boxShadow: 'var(--shadow-sm)' } : { border: '1px solid var(--bd)' }), background: 'var(--panel-solid)', padding: '12px 14px' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#5b86ff', marginBottom: 2 }}>{scopeName()}</div>
-          <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 10 }}>{({ heat: '状态热力', flow: '互联流量', domain: '通信域', phys: '物理链路' })[lens]} · {({ util: '利用率', strag: 'straggler 落后度', fault: '故障' })[metric]}</div>
+          <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 10 }}>{({ heat: '状态热力', flow: '互联流量', domain: '通信域', phys: '物理链路', matrix: 'N×N 通信矩阵' })[lens]} · {({ util: '利用率', strag: 'straggler 落后度', fault: '故障' })[metric]}</div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 1, padding: '7px 9px', borderRadius: 8, background: 'var(--btn)' }}>
