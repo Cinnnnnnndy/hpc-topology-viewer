@@ -1673,6 +1673,24 @@ const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshStandardMa
 focusHostMesh.visible = focusChipsMesh.visible = false;
 for(let s=0;s<8;s++) focusChipsMesh.setColorAt(s, new THREE.Color(0x334455));
 scene.add(focusHostMesh, focusChipsMesh);
+/* 关联对象标记层：选中卡后，其「当前关联维」的每个成员卡都套一个维度色半透明方框，
+   与焦点卡的白色框成一套（焦点=白·关联=维度色），cube/物理/堆叠随形变一起过渡。 */
+const PEER_MAX = 64;
+const peerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),
+  new THREE.MeshBasicMaterial({transparent:true, opacity:.5, depthWrite:false, depthTest:false}), PEER_MAX);
+peerMesh.renderOrder = 5; peerMesh.visible = false; peerMesh.count = 0; scene.add(peerMesh);
+// 关联卡用实心半透明盒（peerMesh）标记；焦点卡保留白色线框（focusChipBox），二者成套。
+const DIMHEX = { TP:0x39c5cf, PP:0xFFAA3B, DP:0x4369EF, EP:0x9B3CF6 };
+function activePeerChips(){                       // 当前关联维的成员卡（不含焦点卡自身）
+  if(S.filterHost==null) return { rel:null, chips:[] };
+  const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh), tpF=(S.focusChip>>3)===fh?(S.focusChip&7):3;
+  const rel=activeRel(), out=[];
+  if(rel==='TP'){ for(let s=0;s<8;s++){ const c=fh*8+s; if(c!==S.focusChip) out.push(c);} }
+  else if(rel==='PP'){ for(let k=0;k<16;k++){ const c=(dpF*16+k)*8+tpF; if(c!==S.focusChip) out.push(c);} }
+  else if(rel==='DP'){ for(let d=0;d<64;d+=4){ const c=(d*16+ppF)*8+tpF; if(c!==S.focusChip) out.push(c);} }
+  else { const dom=epDomOf(fh); for(let d=dom*EP;d<dom*EP+EP;d++){ const c=(d*16+ppF)*8+tpF; if(c!==S.focusChip) out.push(c);} }
+  return { rel, chips: out.slice(0,PEER_MAX) };
+}
 /* 显存水位条：每 Host 左侧竖条，高度=水位（形变通道，独立于着色透镜） */
 const memMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true});
 const memMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.1,1,.86), memMat, N_HOST);
@@ -3108,6 +3126,20 @@ function updateIndicators(){
   vA.addScaledVector(chipCube(S.focusChip,vB),nC).addScaledVector(chipStack(S.focusChip,vB),nS);
   focusChipBox.position.copy(vA);
   focusChipBox.scale.set(bl(.26,1.2,.3), bl(.2,.9,.26), bl(.34,.7,.36));
+  // 关联对象标记：当前关联维的每个成员卡套一个维度色半透明盒（与焦点白框成套 · 随形变过渡）
+  { const pc = (S.filterHost!=null && S.wire!=='NET3') ? activePeerChips() : {rel:null,chips:[]};
+    if(pc.chips.length){
+      peerMesh.material.color.set(DIMHEX[pc.rel] || 0x9ecbff).lerp(WHITE, .35);   // 提亮，避免与同色连线糊在一起
+      const sx=bl(.46,1.7,.46), sy=bl(.36,1.28,.4), sz=bl(.58,1.0,.54);
+      let n=0;
+      for(const c of pc.chips){ if(n>=PEER_MAX) break;
+        chipPhys(c,vA).multiplyScalar(nP);
+        vA.addScaledVector(chipCube(c,vB),nC).addScaledVector(chipStack(c,vB),nS);
+        dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(sx,sy,sz); dummy.updateMatrix();
+        peerMesh.setMatrixAt(n++, dummy.matrix); }
+      peerMesh.count=n; peerMesh.instanceMatrix.needsUpdate=true; peerMesh.visible = (nC>0.4||nP>0.5);
+    } else { peerMesh.visible=false; peerMesh.count=0; }
+  }
   // L1/L0 下钻细节（仅物理形态）
   detail.visible = (S.level==='L1'||S.level==='L0') && nP>0.7;
   if(detail.visible){ chipPhys(S.focusChip,vA); detail.position.copy(vA); }
@@ -3661,7 +3693,7 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
   else if(w==='COMM') line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')+'<span>轮廓=通信域</span>';
   else if(!autoOn) line=null;   // AUTO 且未播放/未选卡：无线 → 不显示连线图例，只留一句唤起提示
   else if(S.form==='cube') line=chip('#39c5cf','TP')+chip('#FFAA3B','PP')+chip('#4369EF','DP')+chip('#9B3CF6','EP')
-    +'<span>焦点卡的四维通信组线 · 当前算子维加亮（点卡换焦点）</span>';
+    + (S.filterHost!=null ? '<span>⬜焦点卡=白框 · ▢关联卡=维度色框（点卡换焦点）</span>' : '<span>焦点卡的四维通信组线 · 当前算子维加亮（点卡换焦点）</span>');
   else { const pid=PHASES[S.phase].id;
     line=chip(COL[pid],pid)+'<span>流带=当前算子 '+PHASES[S.phase].name.split('·')[0].trim()+' 的通信组 · 挂焦点 Host</span>'; }
   const sep = '<span style="opacity:.35;margin:0 2px">|</span>';
