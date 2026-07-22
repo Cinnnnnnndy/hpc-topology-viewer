@@ -398,6 +398,14 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #axis2d .cross-pill{fill:var(--sys-accent)}
 #axis2d .tick-hi{fill:var(--sys-accent);font-weight:700}
 #axis2d .ax-dot{fill:var(--sys-accent);stroke:#fff;stroke-width:1.5}
+/* 剖面控制条 */
+#sliceCtl{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:6px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 8px 4px 12px;box-shadow:var(--shadow-sm)}
+#sliceCtl.show{display:inline-flex}
+#sliceCtl .sc-lab{font-size:11px;color:var(--dim);font-weight:600}
+#sliceCtl button{min-height:24px;padding:0 9px;font-size:11px;border-radius:var(--radius-pill)}
+#sliceCtl #scToggle.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
+#sliceCtl #scVal{font-family:var(--font-mono);font-size:11.5px;font-weight:600;color:var(--sys-text-bright);min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+#sliceCtl input[type=range]{width:130px;accent-color:var(--sys-accent);cursor:pointer}
 #stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* ===== 模式 B 抽屉 ===== */
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
@@ -603,6 +611,15 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
     <div id="right">
       <canvas id="stage"></canvas>
       <svg id="axis2d"></svg>
+      <!-- 剖面控制（正交 2D 视角时显示）：选看某一层深度、前后逐层翻 -->
+      <div id="sliceCtl">
+        <span class="sc-lab">剖面</span>
+        <button id="scToggle" title="单层剖面 / 全部叠加">全部叠加</button>
+        <button id="scPrev" title="上一层">◀</button>
+        <span id="scVal">DP 31</span>
+        <button id="scNext" title="下一层">▶</button>
+        <input id="scRange" type="range" min="0" max="63" value="31" title="拖动逐层查看">
+      </div>
       <div id="formmode">
         <div class="fm-row">
           <button id="btnPhys" class="on">物理层级</button>
@@ -718,8 +735,11 @@ const S = {
   selLink:null,                          // 需求1反向：选中的物理链路 {plane,rail,pods,desc,edges:[...]}
   net3:{ solo:null, explode:true },      // 需求3：三张网 lens 状态（solo=单显平面 | null=全部）
   algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree · channel 数）
-  orthoView:0                            // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
+  orthoView:0,                           // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
+  sliceOn:false, sliceVal:31             // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
 };
+// 正交视角折叠掉的「深度」维（可被剖面逐层翻）：顶视折 PP、前视折 DP、侧视折 TP
+const ORTHO_DEPTH = { 1:{dim:'pp',N:16,lab:'PP',def:7}, 2:{dim:'dp',N:64,lab:'DP',def:31}, 3:{dim:'tp',N:8,lab:'TP',def:3} };
 const rng = (i)=>{ let x = Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); };
 const health = new Float32Array(N_HOST);
 for(let h=0;h<N_HOST;h++){ health[h] = .25 + .5*rng(h); }
@@ -3051,13 +3071,19 @@ function applyMorph(){
   const sum = Wgt.phys + wC + wS || 1;
   const wP = Wgt.phys/sum, wCn = wC/sum, wSn = wS/sum;
   const s1 = wP + 5*wCn + 1.25*wSn, s3 = wP + 2.6*wCn + 1.1*wSn;
+  // 剖面：单层查看时，隐藏不在当前深度层的卡（缩到 0，只留选中那一层）
+  const slice = (S.sliceOn && S.orthoView>0 && cubeMode===0 && Wgt.cube>0.6) ? ORTHO_DEPTH[S.orthoView] : null;
+  const sVal = S.sliceVal;
   for(let c=0;c<N_CHIP;c++){
     chipPhys(c,vA).multiplyScalar(wP);
     chipCubeM(c,cubeMode,vB);
     if(cubeBlend<1){ chipCubeM(c,cubePrev,vT); vB.lerpVectors(vT,vB,ease(cubeBlend)); }
     vA.addScaledVector(vB, wCn);
     vA.addScaledVector(chipStack(c,vB), wSn);
-    dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(s1,s1,s3);
+    let hide=false;
+    if(slice){ const hh=c>>3, dv = slice.dim==='dp'?(hh>>4) : slice.dim==='tp'?(c&7) : (hh%16); hide = dv!==sVal; }
+    dummy.position.copy(vA); dummy.rotation.set(0,0,0);
+    if(hide) dummy.scale.set(0.0001,0.0001,0.0001); else dummy.scale.set(s1,s1,s3);
     dummy.updateMatrix(); chipsMesh.setMatrixAt(c,dummy.matrix); }
   chipsMesh.instanceMatrix.needsUpdate = true;
   const hw = Wgt.phys + wS || 1, aP = Wgt.phys/hw, aS = wS/hw;
@@ -3348,13 +3374,14 @@ function render2dAxis(){
   const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2) return;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const cfg=AX2D[S.orthoView];
+  const depthVal = S.sliceOn ? S.sliceVal : cfg.depth.val;   // 剖面：轴与十字线落在当前查看的那一层深度上
   const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const P=v=>{ const p=v.clone().project(camera); return [(p.x*.5+.5)*W,(-p.y*.5+.5)*H]; };
   const wf=o=>worldOf(o.tp,o.pp,o.dp);
-  const cen=P(wf(cfg.center));
+  const cen=P(wf({...cfg.center,[cfg.depth.dim]:depthVal}));
   const mkPts=(axis,fixed)=>axis.vals.map(val=>({val, s:P(wf({...fixed,[axis.dim]:val}))}));
-  const hPts=mkPts(cfg.h,{[cfg.depth.dim]:cfg.depth.val,[cfg.v.dim]:cfg.hEdgeV});
-  const vPts=mkPts(cfg.v,{[cfg.depth.dim]:cfg.depth.val,[cfg.h.dim]:cfg.vEdgeV});
+  const hPts=mkPts(cfg.h,{[cfg.depth.dim]:depthVal,[cfg.v.dim]:cfg.hEdgeV});
+  const vPts=mkPts(cfg.v,{[cfg.depth.dim]:depthVal,[cfg.h.dim]:cfg.vEdgeV});
   const out=[];
   const clX=x=>Math.max(30,Math.min(W-30,x)), clY=y=>Math.max(14,Math.min(H-14,y));
   const mDP=d=>{ let s=0; for(let pp=0;pp<16;pp++) s+=health[d*16+pp]; return s/16; };   // 该 DP 副本平均负载（跨 16 段）
@@ -3389,7 +3416,7 @@ function render2dAxis(){
   marginal(cfg.h,hPts,hHi); marginal(cfg.v,vPts,vHi);
   axisSvg(hPts,cfg.h,cfg.hT,hHi); axisSvg(vPts,cfg.v,cfg.vT,vHi);
   if(S.hoverHost>=0){ const h=S.hoverHost,pp=ppOf(h),dp=dpOf(h);
-    const card=P(wf({tp:3,pp,dp}));
+    const card=P(wf({tp:(cfg.depth.dim==='tp'?depthVal:3),pp,dp}));
     const hAxisY=(hPts[0].s[1]+hPts[hPts.length-1].s[1])/2;
     const vAxisX=(vPts[0].s[0]+vPts[vPts.length-1].s[0])/2;
     out.push(`<line class="cross" x1="${card[0].toFixed(1)}" y1="${card[1].toFixed(1)}" x2="${card[0].toFixed(1)}" y2="${hAxisY.toFixed(1)}"/>`);
@@ -3409,7 +3436,7 @@ stage.addEventListener('pointerdown', e=>{ dragging=true; dragMoved=false; px=e.
 window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
-  if(S.orthoView){ S.orthoView=0; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视
+  if(S.orthoView){ S.orthoView=0; S.sliceOn=false; morphDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面复位
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -3541,6 +3568,7 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   S.form = formTarget; renderViewlab();
   try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ }
+  try{ syncSliceCtl(); }catch(_){ }   // 离开 cube 形态时收起剖面控制条
   try{ wakeLoop(90); }catch(_){ } }   // 立刻推进形变动画（否则要等下次交互才morph）
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
@@ -3559,8 +3587,31 @@ const CV_PRESET = [
 ];
 CV_PRESET.forEach((v,k)=>{
   $('#cv'+k).onclick = ()=>{ yaw=v.yaw; pitch=v.pitch; zoomBias=1; S.orthoView=v.ortho;
+    if(v.ortho){ S.sliceVal=ORTHO_DEPTH[v.ortho].def; }  // 切视角 → 剖面复位到该深度维中心
+    S.sliceOn=false; morphDirty=true;
     [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===k));
-    render2dAxis(); try{ wakeLoop(90); }catch(e){} }; });
+    syncSliceCtl(); render2dAxis(); try{ wakeLoop(90); }catch(e){} }; });
+/* 剖面控制：单层查看被折叠的深度维、逐层前后翻（顶=PP · 前=DP · 侧=TP） */
+function syncSliceCtl(){
+  const ctl=$('#sliceCtl'); if(!ctl) return;
+  const on = S.orthoView>0 && S.form==='cube';
+  ctl.classList.toggle('show', on);
+  if(!on) return;
+  const cfg=ORTHO_DEPTH[S.orthoView];
+  const rg=$('#scRange'); rg.max=cfg.N-1; rg.value=S.sliceVal;
+  $('#scVal').textContent = cfg.lab+' '+S.sliceVal + ' / '+(cfg.N-1);
+  $('#scToggle').textContent = S.sliceOn?'单层':'全部叠加';
+  $('#scToggle').classList.toggle('on', S.sliceOn);
+}
+function setSliceVal(v){ const cfg=ORTHO_DEPTH[S.orthoView]; if(!cfg) return;
+  S.sliceVal=Math.max(0,Math.min(cfg.N-1, v|0)); S.sliceOn=true;
+  morphDirty=true; syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } }
+if($('#scToggle')){
+  $('#scToggle').onclick=()=>{ S.sliceOn=!S.sliceOn; morphDirty=true; syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } };
+  $('#scPrev').onclick=()=>setSliceVal(S.sliceVal-1);
+  $('#scNext').onclick=()=>setSliceVal(S.sliceVal+1);
+  $('#scRange').oninput=e=>setSliceVal(+e.target.value);
+}
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
