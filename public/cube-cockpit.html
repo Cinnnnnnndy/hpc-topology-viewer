@@ -635,7 +635,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         </div>
         <div class="fm-row" id="cubeViews" style="display:none">
           <button id="cv0" class="on" title="默认斜视角">斜视</button>
-          <button id="cv1" title="俯视：只看 X×Z 平面 → 读 TP×DP 切分">顶 TP×DP</button>
+          <button id="cv1" title="俯视：只看 DP×TP 平面 → DP 长轴水平铺开、读 TP×DP 切分">顶 DP×TP</button>
           <button id="cv2" title="正视：只看 X×Y 平面 → 读 TP×PP 切分">前 TP×PP</button>
           <button id="cv3" title="侧视：只看 Z×Y 平面 → 读 DP×PP 切分">侧 DP×PP</button>
         </div>
@@ -3249,7 +3249,7 @@ function updateCommPulse(now){
     m.opacity = Math.min(1, m.userData.base*kk); });
   // 正交 2D 视角：隐藏 3D 教学轴标注 + 层段标尺（改由 #axis2d 干净的 2D 轴承担），只留方块网格
   const ortho2d = S.orthoView>0 && Wgt.cube>0.5 && cubeMode===0;
-  if(ortho2d) cubeAxes.visible=false;
+  if(ortho2d){ cubeAxes.visible=false; cubeGroup.visible=false; }   // 干净 2D 图表：连教学刀面/层段标尺一起收掉，只留方块网格 + #axis2d
   else if(Wgt.cube>0.05 && !cubeAxes.visible) cubeAxes.visible=true;   // 退出正交 → 恢复 3D 轴标注
   rulerSprites.forEach(sp=>{ sp.visible = !ortho2d; });
   // 选卡后淡化坐标轴教学文字（否则大字盖住选中的卡组）；网格框保留
@@ -3283,7 +3283,7 @@ const camCur = { t:V3(0,2,0), d:52 };
 function camGoal(){
   if(S.form==='cube' || Wgt.cube>0.5){
     if(S.orthoView>0 && cubeMode===0)                  // 正交 2D 视角：贴合可见平面取景，填满画布（顶/前/侧各自框法）
-      return { t:V3(0,17,0), d:({1:70,2:34,3:62})[S.orthoView] };
+      return { t:V3(0,17,0), d:({1:62,2:34,3:62})[S.orthoView] };
     const sf = selGroupFrame(); if(sf) return sf;      // 选卡 → 镜头贴近焦点卡 + 其关联组（看得清「哪几张卡」）
     if(cubeMode===1) return { t:V3(0,10,0), d:150 };
     if(cubeMode===2) return { t:V3(0,16,0), d:95 };
@@ -3352,10 +3352,10 @@ function updateCamera(dt){
    拉十字虚线到两轴、读出它在该视角下的两维坐标（强化「位置=四维身份」的可读性）。 */
 function worldOf(tp,pp,dp){ return new THREE.Vector3((tp-3.5)*1.6, 17+(7.5-pp)*1.15, (dp-31.5)*.75); }
 const AX2D = {
-  1:{ h:{dim:'tp',vals:[0,1,2,3,4,5,6,7],lab:t=>'TP'+t},
-      v:{dim:'dp',vals:[0,8,16,24,32,40,48,56,63],lab:d=>'DP'+d},
+  1:{ h:{dim:'dp',vals:[0,8,16,24,32,40,48,56,63],lab:d=>'DP'+d},
+      v:{dim:'tp',vals:[0,1,2,3,4,5,6,7],lab:t=>'TP'+t},
       depth:{dim:'pp',val:7}, hEdgeV:0, vEdgeV:0,
-      center:{tp:3.5,pp:7,dp:31.5}, hT:'TP · 张量切片(8)', vT:'DP · 数据副本(64)' },
+      center:{tp:3.5,pp:7,dp:31.5}, hT:'DP · 数据副本(64)', vT:'TP · 张量切片(8)' },
   2:{ h:{dim:'tp',vals:[0,1,2,3,4,5,6,7],lab:t=>'TP'+t},
       v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
       depth:{dim:'dp',val:31}, hEdgeV:15, vEdgeV:0,
@@ -3581,7 +3581,7 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 // 标准形态坐标：X=TP · Y=PP(模型深度) · Z=DP。
 const CV_PRESET = [
   { yaw:.82,          pitch:.58,     ortho:0 },   // 斜视
-  { yaw:0,            pitch:1.5698,  ortho:1 },   // 顶 TP×DP（俯视 X-Z）
+  { yaw:Math.PI/2,    pitch:1.5698,  ortho:1 },   // 顶 DP×TP（俯视 Z-X，长轴 DP 水平铺开）
   { yaw:0,            pitch:.0016,   ortho:2 },   // 前 TP×PP（正视 X-Y）
   { yaw:Math.PI/2,    pitch:.0016,   ortho:3 },   // 侧 DP×PP（正视 Z-Y）
 ];
