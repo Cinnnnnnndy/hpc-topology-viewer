@@ -398,6 +398,17 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #axis2d .cross-pill{fill:var(--sys-accent)}
 #axis2d .tick-hi{fill:var(--sys-accent);font-weight:700}
 #axis2d .ax-dot{fill:var(--sys-accent);stroke:#fff;stroke-width:1.5}
+/* 相位通信叠加（把当前相位的通信画在 2D 平面上） */
+#axis2d .comm-strand{fill:none;stroke-width:2.6;opacity:.92;stroke-linecap:round;stroke-linejoin:round}
+#axis2d .comm-ring{fill:none;stroke-width:1.5;opacity:.5;stroke-dasharray:3 3}
+#axis2d .comm-node{stroke:#fff;stroke-width:.9}
+#axis2d .comm-lab{fill:#fff;font:600 10.5px var(--font-sans)}
+/* hover 器件明细卡（运行状态 · 四维身份 · 当前剖面） */
+#axis2d .card-bg{fill:var(--sys-overlay);stroke:var(--sys-border-strong);stroke-width:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.18))}
+#axis2d .card-t{fill:var(--sys-text-bright);font:600 11.5px var(--font-mono)}
+#axis2d .card-s{fill:var(--foreground-secondary);font:10.5px var(--font-sans)}
+#axis2d .card-hot{fill:var(--danger);font:700 10.5px var(--font-sans)}
+#axis2d .card-bar-bg{fill:var(--sys-border)}
 /* 剖面控制条 */
 #sliceCtl{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:6px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 8px 4px 12px;box-shadow:var(--shadow-sm)}
 #sliceCtl.show{display:inline-flex}
@@ -2048,7 +2059,8 @@ function mbSetLab(txt,color){
   mbLab = makeLabel(txt,color,7); mbLab.material.fog=false; mbLab.renderOrder=8; mbGrp.add(mbLab); mbLabTxt=txt;
 }
 function updateMbTracer(){
-  const on = Wgt.cube>0.5 && S.playing && (cubeMode===0||cubeMode===4) && cubeBlend>=1;
+  const on = Wgt.cube>0.5 && S.playing && (cubeMode===0||cubeMode===4) && cubeBlend>=1
+    && !(S.orthoView>0);   // 正交 2D 视角：微批扫板会横穿平面成噪声，收掉（通信改由 2D 相位叠加读）
   mbGrp.visible = on; if(!on) return;
   const f2 = (S.t*4%1)*2, fwd = f2<1, prog = fwd? f2 : 2-f2;   // 每相位周期一个 F→B 往返
   const stage = Math.min(15.999, prog*15.999), si = stage|0;
@@ -3249,7 +3261,7 @@ function updateCommPulse(now){
     m.opacity = Math.min(1, m.userData.base*kk); });
   // 正交 2D 视角：隐藏 3D 教学轴标注 + 层段标尺（改由 #axis2d 干净的 2D 轴承担），只留方块网格
   const ortho2d = S.orthoView>0 && Wgt.cube>0.5 && cubeMode===0;
-  if(ortho2d){ cubeAxes.visible=false; cubeGroup.visible=false; }   // 干净 2D 图表：连教学刀面/层段标尺一起收掉，只留方块网格 + #axis2d
+  if(ortho2d){ cubeAxes.visible=false; cubeGroup.visible=false; cubeComm.visible=false; }   // 干净 2D 图表：教学刀面/层段标尺/3D 通信线全收掉，通信改由 #axis2d 的 2D 相位叠加承担
   else if(Wgt.cube>0.05 && !cubeAxes.visible) cubeAxes.visible=true;   // 退出正交 → 恢复 3D 轴标注
   rulerSprites.forEach(sp=>{ sp.visible = !ortho2d; });
   // 选卡后淡化坐标轴教学文字（否则大字盖住选中的卡组）；网格框保留
@@ -3415,6 +3427,35 @@ function render2dAxis(){
   };
   marginal(cfg.h,hPts,hHi); marginal(cfg.v,vPts,vHi);
   axisSvg(hPts,cfg.h,cfg.hT,hHi); axisSvg(vPts,cfg.v,cfg.vT,vHi);
+  // ── 相位通信叠加：把「当前相位」的通信原语画在本 2D 平面上（随剖面/视角变化）──
+  const phId = (typeof PHASES!=='undefined' && PHASES[S.phase]) ? PHASES[S.phase].id : null;
+  if(S.playing && phId){
+    const phDim = phId==='PP'?'pp' : phId==='TP'?'tp' : 'dp';   // DP/EP 都沿 DP 轴通信
+    const phCol = {TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'}[phId];
+    const phName = {TP:'前向 AllReduce · 张量并行',PP:'阶段接力 P2P · 流水并行',
+                    DP:'梯度同步 AllReduce 环 · 数据并行',EP:'MoE AllToAll · 专家并行(8桶)'}[phId];
+    const chip=(cx,cy,txt)=>{ const w=[...txt].reduce((a,c)=>a+(c.charCodeAt(0)>255?10:6),0)+18;
+      out.push(`<rect x="${(clX(cx)-w/2).toFixed(1)}" y="${(clY(cy)-11).toFixed(1)}" width="${w.toFixed(1)}" height="22" rx="7" fill="${phCol}" opacity=".96"/>`);
+      out.push(`<text class="comm-lab" x="${clX(cx).toFixed(1)}" y="${(clY(cy)+4).toFixed(1)}" text-anchor="middle">${esc(txt)}</text>`); };
+    if(phDim===cfg.h.dim || phDim===cfg.v.dim){
+      const horiz = phDim===cfg.h.dim, other = horiz? cfg.v : cfg.h;
+      const axv = horiz? cfg.h : cfg.v;
+      const oc = other.dim==='pp'?7 : other.dim==='tp'?3 : 31;   // 另一维取中心行/列，strand 画在平面中央
+      const sp = axv.vals.map(v=> P(wf({[cfg.depth.dim]:depthVal,[other.dim]:oc,[phDim]:v})));
+      out.push(`<polyline class="comm-strand" points="${sp.map(s=>s[0].toFixed(1)+','+s[1].toFixed(1)).join(' ')}" stroke="${phCol}"/>`);
+      if(phId==='DP'||phId==='EP'){   // 环：端到端回连弧
+        const a=sp[0],b=sp[sp.length-1],mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
+        out.push(`<path class="comm-ring" stroke="${phCol}" d="M${a[0].toFixed(1)},${a[1].toFixed(1)} Q${(mx-dy/L*46).toFixed(1)},${(my+dx/L*46).toFixed(1)} ${b[0].toFixed(1)},${b[1].toFixed(1)}"/>`); }
+      if(phId==='PP'){   // 链：相邻段箭头
+        for(let i=0;i<sp.length-1;i++){ const a=sp[i],b=sp[i+1],mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,px=-uy,py=ux;
+          out.push(`<path fill="${phCol}" d="M${(mx+ux*5).toFixed(1)},${(my+uy*5).toFixed(1)} L${(mx-ux*3+px*4).toFixed(1)},${(my-uy*3+py*4).toFixed(1)} L${(mx-ux*3-px*4).toFixed(1)},${(my-uy*3-py*4).toFixed(1)} Z"/>`); } }
+      sp.forEach(s=> out.push(`<circle class="comm-node" cx="${s[0].toFixed(1)}" cy="${s[1].toFixed(1)}" r="3.4" fill="${phCol}"/>`));
+      chip(sp[0][0], sp[0][1]-18, phName);
+    } else {   // 相位通信垂直本平面（沿被折叠的深度维）→ 提示切视角
+      const sug = phDim==='tp'?'前/顶视' : phDim==='pp'?'前/侧视' : '顶/侧视';
+      chip(W/2, 72, `本相位 ${phName}｜垂直本平面（沿 ${phDim.toUpperCase()}）· 切 ${sug} 可见`);
+    }
+  }
   if(S.hoverHost>=0){ const h=S.hoverHost,pp=ppOf(h),dp=dpOf(h);
     const card=P(wf({tp:(cfg.depth.dim==='tp'?depthVal:3),pp,dp}));
     const hAxisY=(hPts[0].s[1]+hPts[hPts.length-1].s[1])/2;
@@ -3427,6 +3468,25 @@ function render2dAxis(){
       out.push(`<rect class="cross-pill" x="${(clX(x)-w/2).toFixed(1)}" y="${(clY(y)-9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="5"/><text class="cross-lab" x="${clX(x).toFixed(1)}" y="${(clY(y)+4).toFixed(1)}" text-anchor="middle">${esc(txt)}</text>`); };
     pill(card[0], hAxisY+16, dv(cfg.h.dim));
     pill(vAxisX-34, card[1], dv(cfg.v.dim));
+    // ── 运行状态明细卡：四维身份 + 负载/显存 + 承载层 + 当前剖面（2D 才放得下的「细节分析」）──
+    const util = Math.round(40+health[h]*55), mem = Math.round(((typeof memLevel!=='undefined'?memLevel[h]:0))*100);
+    const ep = (typeof epOf==='function')?epOf(h):0, dom=(typeof epDomOf==='function')?epDomOf(h):0;
+    const hot = health[h]>0.95, anom = (typeof isAnomHost!=='undefined' && S.anomaly && isAnomHost[h]);
+    const L0=`DP${dp} · PP${pp} · TP0–7`;
+    const L1=`EP 桶${ep} · 域${dom} · 承载 L${pp*3+1}–${pp*3+3}`;
+    const L2=`负载 ${util}%　显存 ${mem}%`;
+    const L3=`当前剖面 ${ORTHO_DEPTH[S.orthoView].lab} ${depthVal}${S.sliceOn?'（单层）':'（全部叠加）'}`;
+    const cw=176, ch=(hot||anom?92:78);
+    let cx=card[0]+16, cy=card[1]-ch-10;
+    if(cx+cw>W-8) cx=card[0]-cw-16; if(cx<8) cx=8;
+    if(cy<8) cy=card[1]+14; if(cy+ch>H-8) cy=H-ch-8;
+    out.push(`<rect class="card-bg" x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="${cw}" height="${ch}" rx="8"/>`);
+    out.push(`<rect x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" width="4" height="${ch}" rx="2" fill="${hot||anom?'var(--danger)':stateCss(health[h])}"/>`);
+    out.push(`<text class="card-t" x="${(cx+12).toFixed(1)}" y="${(cy+19).toFixed(1)}">${esc(L0)}</text>`);
+    out.push(`<text class="card-s" x="${(cx+12).toFixed(1)}" y="${(cy+37).toFixed(1)}">${esc(L1)}</text>`);
+    out.push(`<text class="card-s" x="${(cx+12).toFixed(1)}" y="${(cy+54).toFixed(1)}">${esc(L2)}</text>`);
+    out.push(`<text class="card-s" x="${(cx+12).toFixed(1)}" y="${(cy+71).toFixed(1)}">${esc(L3)}</text>`);
+    if(hot||anom) out.push(`<text class="card-hot" x="${(cx+12).toFixed(1)}" y="${(cy+88).toFixed(1)}">⚠ ${anom?'异常节点':'热点 · 负载>95%'}</text>`);
   }
   svg.innerHTML=out.join('');
 }
