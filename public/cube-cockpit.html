@@ -387,7 +387,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 .algoch.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
 #stageleg{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;display:flex;gap:12px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 14px;font-size:10px;color:var(--dim);pointer-events:none;white-space:nowrap;box-shadow:var(--shadow-sm)}
 /* ── 正交相机 2D 坐标图层：把 顶/前/侧 视角拍平成 2D 图表，画清晰的轴 + 刻度 + hover 十字线 ── */
-#axis2d{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:visible;display:none}
+#axis2d{position:absolute;inset:0;width:100%;height:100%;z-index:5;pointer-events:none;overflow:visible;display:none}
 #axis2d.show{display:block}
 #axis2d .ax-line{stroke:var(--sys-border-strong);stroke-width:1.4}
 #axis2d .ax-tick{stroke:var(--sys-border);stroke-width:1}
@@ -818,8 +818,17 @@ function baseHostColor(h){
   return COL.DIM;
 }
 function hostColor(h){ if(!carrierHost(h) || !filterPassHost(h)) return themeC('#151b23','#c8cacc'); return baseHostColor(h); }
+// 正交 2D「全部叠加」：每个平面 cell 取跨深度维的均值负载（运行状态热力，直接融进 2D 图）
+function orthoCellLoad(c){
+  const h=c>>3, pp=h%16, dp=h>>4, dim=ORTHO_DEPTH[S.orthoView].dim;
+  if(dim==='dp'){ let s=0; for(let d=0;d<64;d++) s+=health[d*16+pp]; return s/64; }        // 前视 cell=(TP,PP)：聚合 64 DP
+  if(dim==='pp'){ let s=0; for(let p=0;p<16;p++) s+=health[dp*16+p]; return s/16; }         // 顶视 cell=(TP,DP)：聚合 16 PP
+  return health[dp*16+pp];                                                                  // 侧视 depth=TP：health 与 TP 无关
+}
 function chipColor(c){
   if(!carrierChip(c) || !filterPassHost(hostOf(c))) return themeC('#141a21','#caccce');
+  if(S.orthoView>0 && cubeMode===0 && !S.sliceOn && Wgt.cube>0.6)
+    return stateCss(orthoCellLoad(c));   // 全部叠加 = 该 cell 跨深度均值负载 → 运行状态热力
   const h = hostOf(c), s = slotOf(c), D = isDark();
   if(S.lens==='TP'){ const k = .72 + .32*(s/7); return `hsl(185,${(88*k)|0}%,${(52*k)|0}%)`; }
   if(S.lens==='SP'){ const k = .72 + .32*(s/7); return `hsl(158,${(88*k)|0}%,${(48*k)|0}%)`; }
@@ -3083,9 +3092,14 @@ function applyMorph(){
   const sum = Wgt.phys + wC + wS || 1;
   const wP = Wgt.phys/sum, wCn = wC/sum, wSn = wS/sum;
   const s1 = wP + 5*wCn + 1.25*wSn, s3 = wP + 2.6*wCn + 1.1*wSn;
-  // 剖面：单层查看时，隐藏不在当前深度层的卡（缩到 0，只留选中那一层）
-  const slice = (S.sliceOn && S.orthoView>0 && cubeMode===0 && Wgt.cube>0.6) ? ORTHO_DEPTH[S.orthoView] : null;
-  const sVal = S.sliceVal;
+  // 正交 2D：把被折叠的「深度」维压平到轴平面（消除透视/错位，变成真正的 2D 图表）；单层只留一层，全部叠加压平成一片
+  const ortho = (S.orthoView>0 && cubeMode===0 && Wgt.cube>0.6) ? ORTHO_DEPTH[S.orthoView] : null;
+  const oTarget = ortho ? (S.sliceOn ? S.sliceVal : ortho.def) : 0;
+  let pinAx=0, pinV=0;   // 压平轴：1=x(TP) 2=y(PP) 3=z(DP)
+  if(ortho){ if(ortho.dim==='pp'){ pinAx=2; pinV=17+(7.5-oTarget)*1.15; }
+    else if(ortho.dim==='dp'){ pinAx=3; pinV=(oTarget-31.5)*0.75; }
+    else { pinAx=1; pinV=(oTarget-3.5)*1.6; } }
+  const flatEps = ortho ? .0009 : 0;   // 全部叠加：按深度序给极小错位，避免 z 冲突（同 cell 各层同色，重叠不显脏）
   for(let c=0;c<N_CHIP;c++){
     chipPhys(c,vA).multiplyScalar(wP);
     chipCubeM(c,cubeMode,vB);
@@ -3093,7 +3107,10 @@ function applyMorph(){
     vA.addScaledVector(vB, wCn);
     vA.addScaledVector(chipStack(c,vB), wSn);
     let hide=false;
-    if(slice){ const hh=c>>3, dv = slice.dim==='dp'?(hh>>4) : slice.dim==='tp'?(c&7) : (hh%16); hide = dv!==sVal; }
+    if(ortho){ const hh=c>>3, dv = ortho.dim==='dp'?(hh>>4) : ortho.dim==='tp'?(c&7) : (hh%16);
+      if(S.sliceOn) hide = dv!==oTarget;
+      const pv = pinV + (S.sliceOn?0:dv*flatEps);
+      if(pinAx===1) vA.x=pv; else if(pinAx===2) vA.y=pv; else vA.z=pv; }
     dummy.position.copy(vA); dummy.rotation.set(0,0,0);
     if(hide) dummy.scale.set(0.0001,0.0001,0.0001); else dummy.scale.set(s1,s1,s3);
     dummy.updateMatrix(); chipsMesh.setMatrixAt(c,dummy.matrix); }
@@ -3383,8 +3400,8 @@ function render2dAxis(){
   const on = S.orthoView>0 && Wgt.cube>0.98 && S.form==='cube' && cubeMode===0 && cubeBlend>=1;
   if(svg.classList.contains('show')!==on) svg.classList.toggle('show', on);
   if(!on){ if(svg.childNodes.length) svg.textContent=''; return; }
-  const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2) return;
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2||H<2) return;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
   const cfg=AX2D[S.orthoView];
   const depthVal = S.sliceOn ? S.sliceVal : cfg.depth.val;   // 剖面：轴与十字线落在当前查看的那一层深度上
   const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -3496,7 +3513,7 @@ stage.addEventListener('pointerdown', e=>{ dragging=true; dragMoved=false; px=e.
 window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
-  if(S.orthoView){ S.orthoView=0; S.sliceOn=false; morphDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面复位
+  if(S.orthoView){ S.orthoView=0; S.sliceOn=false; morphDirty=true; colorsDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面/热力复位
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -3627,6 +3644,8 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   S.form = formTarget; renderViewlab();
+  if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
+    [0,1,2,3].forEach(i=>{ try{ $('#cv'+i).classList.toggle('on', i===0); }catch(_){ } }); }
   try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ }
   try{ syncSliceCtl(); }catch(_){ }   // 离开 cube 形态时收起剖面控制条
   try{ wakeLoop(90); }catch(_){ } }   // 立刻推进形变动画（否则要等下次交互才morph）
@@ -3648,7 +3667,7 @@ const CV_PRESET = [
 CV_PRESET.forEach((v,k)=>{
   $('#cv'+k).onclick = ()=>{ yaw=v.yaw; pitch=v.pitch; zoomBias=1; S.orthoView=v.ortho;
     if(v.ortho){ S.sliceVal=ORTHO_DEPTH[v.ortho].def; }  // 切视角 → 剖面复位到该深度维中心
-    S.sliceOn=false; morphDirty=true;
+    S.sliceOn=false; morphDirty=true; colorsDirty=true;   // 进正交=全部叠加 → 重算为运行状态热力
     [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===k));
     syncSliceCtl(); render2dAxis(); try{ wakeLoop(90); }catch(e){} }; });
 /* 剖面控制：单层查看被折叠的深度维、逐层前后翻（顶=PP · 前=DP · 侧=TP） */
@@ -3664,10 +3683,11 @@ function syncSliceCtl(){
   $('#scToggle').classList.toggle('on', S.sliceOn);
 }
 function setSliceVal(v){ const cfg=ORTHO_DEPTH[S.orthoView]; if(!cfg) return;
-  S.sliceVal=Math.max(0,Math.min(cfg.N-1, v|0)); S.sliceOn=true;
-  morphDirty=true; syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } }
+  S.sliceVal=Math.max(0,Math.min(cfg.N-1, v|0)); const was=S.sliceOn; S.sliceOn=true;
+  morphDirty=true; if(!was) colorsDirty=true;   // 全部叠加→单层：热力(聚合) → 本层真实负载
+  syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } }
 if($('#scToggle')){
-  $('#scToggle').onclick=()=>{ S.sliceOn=!S.sliceOn; morphDirty=true; syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } };
+  $('#scToggle').onclick=()=>{ S.sliceOn=!S.sliceOn; morphDirty=true; colorsDirty=true; syncSliceCtl(); render2dAxis(); try{ wakeLoop(30); }catch(_){ } };
   $('#scPrev').onclick=()=>setSliceVal(S.sliceVal-1);
   $('#scNext').onclick=()=>setSliceVal(S.sliceVal+1);
   $('#scRange').oninput=e=>setSliceVal(+e.target.value);
