@@ -386,6 +386,18 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #algoViewTabs button.on{background:var(--panel)!important;color:var(--sys-text-bright);box-shadow:var(--shadow-sm)}
 .algoch.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
 #stageleg{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;display:flex;gap:12px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 14px;font-size:10px;color:var(--dim);pointer-events:none;white-space:nowrap;box-shadow:var(--shadow-sm)}
+/* ── 正交相机 2D 坐标图层：把 顶/前/侧 视角拍平成 2D 图表，画清晰的轴 + 刻度 + hover 十字线 ── */
+#axis2d{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:visible;display:none}
+#axis2d.show{display:block}
+#axis2d .ax-line{stroke:var(--sys-border-strong);stroke-width:1.4}
+#axis2d .ax-tick{stroke:var(--sys-border);stroke-width:1}
+#axis2d .ax-lab{fill:var(--foreground-secondary);font:10px var(--font-mono)}
+#axis2d .ax-title{fill:var(--sys-text-bright);font:600 12px var(--font-sans)}
+#axis2d .cross{stroke:var(--sys-accent);stroke-width:1.3;stroke-dasharray:5 4}
+#axis2d .cross-lab{fill:#fff;font:600 11px var(--font-mono)}
+#axis2d .cross-pill{fill:var(--sys-accent)}
+#axis2d .tick-hi{fill:var(--sys-accent);font-weight:700}
+#axis2d .ax-dot{fill:var(--sys-accent);stroke:#fff;stroke-width:1.5}
 #stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* ===== 模式 B 抽屉 ===== */
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
@@ -590,6 +602,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
     </div>
     <div id="right">
       <canvas id="stage"></canvas>
+      <svg id="axis2d"></svg>
       <div id="formmode">
         <div class="fm-row">
           <button id="btnPhys" class="on">物理层级</button>
@@ -704,7 +717,8 @@ const S = {
   selEdge:null,                          // 需求1：选中的逻辑通信域边 {dim,a,b}（a/b=chip rank；TP 域内 b 可与 a 同 Host）
   selLink:null,                          // 需求1反向：选中的物理链路 {plane,rail,pods,desc,edges:[...]}
   net3:{ solo:null, explode:true },      // 需求3：三张网 lens 状态（solo=单显平面 | null=全部）
-  algoView:'ring', algoCh:2              // 需求2：算法展开面板（ring/tree · channel 数）
+  algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree · channel 数）
+  orthoView:0                            // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
 };
 const rng = (i)=>{ let x = Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); };
 const health = new Float32Array(N_HOST);
@@ -1050,7 +1064,8 @@ cvL2.addEventListener('mouseleave', ()=>setHover(-1,''));
 cvL2.addEventListener('click', ev=>{ const c=pickL2(ev); S.focusChip=c; S.focusHost=hostOf(c); touchLeft(); });
 function setHover(h,side){ if(S.hoverHost===h&&S.hoverSide===side) return;
   S.hoverHost=h; S.hoverSide=side;
-  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); } renderProbe(); }
+  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); } renderProbe();
+  if(S.orthoView){ try{ render2dAxis(); }catch(_){ } } }
 $$('.lvrow').forEach(row=>row.addEventListener('click', ()=>setLevel(row.dataset.level)));
 function setLevel(lv){ S.level=lv;
   $$('.lvrow').forEach(r=>r.classList.toggle('focus', r.dataset.level===lv));
@@ -3206,8 +3221,13 @@ function updateCommPulse(now){
     let kk = m.userData.noPulse ? 1 : k;
     if(m.userData.dpPulse) kk = dpK;
     m.opacity = Math.min(1, m.userData.base*kk); });
+  // 正交 2D 视角：隐藏 3D 教学轴标注 + 层段标尺（改由 #axis2d 干净的 2D 轴承担），只留方块网格
+  const ortho2d = S.orthoView>0 && Wgt.cube>0.5 && cubeMode===0;
+  if(ortho2d) cubeAxes.visible=false;
+  else if(Wgt.cube>0.05 && !cubeAxes.visible) cubeAxes.visible=true;   // 退出正交 → 恢复 3D 轴标注
+  rulerSprites.forEach(sp=>{ sp.visible = !ortho2d; });
   // 选卡后淡化坐标轴教学文字（否则大字盖住选中的卡组）；网格框保留
-  if(cubeAxes.visible && S.filterHost!=null){
+  if(!ortho2d && cubeAxes.visible && S.filterHost!=null){
     cubeAxes.children.forEach(o=>{
       if(!o.isSprite || !o.material) return;
       const b = (o.material.userData && o.material.userData.base!=null)? o.material.userData.base : 1;
@@ -3236,6 +3256,8 @@ let yaw = .82, pitch = .58, zoomBias = 1;
 const camCur = { t:V3(0,2,0), d:52 };
 function camGoal(){
   if(S.form==='cube' || Wgt.cube>0.5){
+    if(S.orthoView>0 && cubeMode===0)                  // 正交 2D 视角：贴合可见平面取景，填满画布（顶/前/侧各自框法）
+      return { t:V3(0,17,0), d:({1:70,2:34,3:62})[S.orthoView] };
     const sf = selGroupFrame(); if(sf) return sf;      // 选卡 → 镜头贴近焦点卡 + 其关联组（看得清「哪几张卡」）
     if(cubeMode===1) return { t:V3(0,10,0), d:150 };
     if(cubeMode===2) return { t:V3(0,16,0), d:95 };
@@ -3267,14 +3289,20 @@ function updateCamera(dt){
   const g = camGoal();
   const k = 1-Math.exp(-dt*3.4);
   camCur.t.lerp(g.t,k); camCur.d += (g.d*zoomBias-camCur.d)*k;
+  // 正交视角（顶/前/侧）：极小 FOV + 拉远 = 近似正交投影，透视被压没，读成 2D 图表。
+  const ortho = S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube';
+  const FOV_STD = 40, FOV_ORTHO = 2.2;
+  const orthoK = ortho ? Math.tan(FOV_STD/2*Math.PI/180)/Math.tan(FOV_ORTHO/2*Math.PI/180) : 1;  // ≈19×，保持取景高度不变
+  camera.fov = ortho ? FOV_ORTHO : FOV_STD;
+  const dpos = camCur.d * orthoK;
   const cp = Math.cos(pitch);
   camera.position.set(
-    camCur.t.x + cp*Math.sin(yaw)*camCur.d,
-    camCur.t.y + Math.sin(pitch)*camCur.d,
-    camCur.t.z + cp*Math.cos(yaw)*camCur.d);
+    camCur.t.x + cp*Math.sin(yaw)*dpos,
+    camCur.t.y + Math.sin(pitch)*dpos,
+    camCur.t.z + cp*Math.cos(yaw)*dpos);
   camera.lookAt(camCur.t);
-  camera.near = Math.max(.02, camCur.d*.02);
-  camera.far = camCur.d*30+900;
+  camera.near = Math.max(.02, dpos*.02);
+  camera.far = dpos*30+900;
   camera.updateProjectionMatrix();
   // 深下钻时机柜自动变透明，避免遮挡
   const zoomLv = ({L3:.13, L2:.06, L1:.05, L0:.05})[S.level];
@@ -3293,12 +3321,76 @@ function updateCamera(dt){
   chipMat.opacity += (chipTgt - chipMat.opacity)*k;
   chipMat.depthWrite = chipMat.opacity > .5;
 }
+/* ================= 正交 2D 坐标图层（顶/前/侧视角）=================
+   把三个正交相机拍平成 2D 图表：画清晰的两条轴 + 刻度标签，hover 一张卡时
+   拉十字虚线到两轴、读出它在该视角下的两维坐标（强化「位置=四维身份」的可读性）。 */
+function worldOf(tp,pp,dp){ return new THREE.Vector3((tp-3.5)*1.6, 17+(7.5-pp)*1.15, (dp-31.5)*.75); }
+const AX2D = {
+  1:{ h:{dim:'tp',vals:[0,1,2,3,4,5,6,7],lab:t=>'TP'+t},
+      v:{dim:'dp',vals:[0,8,16,24,32,40,48,56,63],lab:d=>'DP'+d},
+      depth:{dim:'pp',val:7}, hEdgeV:0, vEdgeV:0,
+      center:{tp:3.5,pp:7,dp:31.5}, hT:'TP · 张量切片(8)', vT:'DP · 数据副本(64)' },
+  2:{ h:{dim:'tp',vals:[0,1,2,3,4,5,6,7],lab:t=>'TP'+t},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'dp',val:31}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3.5,pp:7.5,dp:31}, hT:'TP · 张量切片(8)', vT:'PP · 模型深度 L1→48' },
+  3:{ h:{dim:'dp',vals:[0,8,16,24,32,40,48,56,63],lab:d=>'DP'+d},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'tp',val:3}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3,pp:7.5,dp:31.5}, hT:'DP · 数据副本(64)', vT:'PP · 模型深度 L1→48' },
+};
+function render2dAxis(){
+  const svg=$('#axis2d'); if(!svg) return;
+  const on = S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube' && cubeMode===0 && cubeBlend>=1;
+  if(svg.classList.contains('show')!==on) svg.classList.toggle('show', on);
+  if(!on){ if(svg.childNodes.length) svg.textContent=''; return; }
+  const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2) return;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  const cfg=AX2D[S.orthoView];
+  const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const P=v=>{ const p=v.clone().project(camera); return [(p.x*.5+.5)*W,(-p.y*.5+.5)*H]; };
+  const wf=o=>worldOf(o.tp,o.pp,o.dp);
+  const cen=P(wf(cfg.center));
+  const mkPts=(axis,fixed)=>axis.vals.map(val=>({val, s:P(wf({...fixed,[axis.dim]:val}))}));
+  const hPts=mkPts(cfg.h,{[cfg.depth.dim]:cfg.depth.val,[cfg.v.dim]:cfg.hEdgeV});
+  const vPts=mkPts(cfg.v,{[cfg.depth.dim]:cfg.depth.val,[cfg.h.dim]:cfg.vEdgeV});
+  const out=[];
+  const axisSvg=(pts,axis,title,hiVal)=>{
+    const a=pts[0].s,b=pts[pts.length-1].s;
+    out.push(`<line class="ax-line" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"/>`);
+    pts.forEach(p=>{ const dx=p.s[0]-cen[0],dy=p.s[1]-cen[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,hi=hiVal!=null&&hiVal===p.val;
+      out.push(`<line class="ax-tick" x1="${p.s[0].toFixed(1)}" y1="${p.s[1].toFixed(1)}" x2="${(p.s[0]+ux*5).toFixed(1)}" y2="${(p.s[1]+uy*5).toFixed(1)}"/>`);
+      out.push(`<text class="ax-lab${hi?' tick-hi':''}" x="${(p.s[0]+ux*16).toFixed(1)}" y="${(p.s[1]+uy*16+3).toFixed(1)}" text-anchor="middle">${esc(axis.lab(p.val))}</text>`); });
+    const m=pts[(pts.length/2)|0].s,dx=m[0]-cen[0],dy=m[1]-cen[1],L=Math.hypot(dx,dy)||1;
+    out.push(`<text class="ax-title" x="${(m[0]+dx/L*46).toFixed(1)}" y="${(m[1]+dy/L*46).toFixed(1)}" text-anchor="middle">${esc(title)}</text>`);
+  };
+  let hHi=null,vHi=null;
+  if(S.hoverHost>=0){ const pp=ppOf(S.hoverHost),dp=dpOf(S.hoverHost);
+    if(cfg.h.dim==='pp')hHi=pp; if(cfg.h.dim==='dp')hHi=dp;
+    if(cfg.v.dim==='pp')vHi=pp; if(cfg.v.dim==='dp')vHi=dp; }
+  axisSvg(hPts,cfg.h,cfg.hT,hHi); axisSvg(vPts,cfg.v,cfg.vT,vHi);
+  if(S.hoverHost>=0){ const h=S.hoverHost,pp=ppOf(h),dp=dpOf(h);
+    const card=P(wf({tp:3,pp,dp}));
+    const hAxisY=(hPts[0].s[1]+hPts[hPts.length-1].s[1])/2;
+    const vAxisX=(vPts[0].s[0]+vPts[vPts.length-1].s[0])/2;
+    out.push(`<line class="cross" x1="${card[0].toFixed(1)}" y1="${card[1].toFixed(1)}" x2="${card[0].toFixed(1)}" y2="${hAxisY.toFixed(1)}"/>`);
+    out.push(`<line class="cross" x1="${card[0].toFixed(1)}" y1="${card[1].toFixed(1)}" x2="${vAxisX.toFixed(1)}" y2="${card[1].toFixed(1)}"/>`);
+    out.push(`<circle class="ax-dot" cx="${card[0].toFixed(1)}" cy="${card[1].toFixed(1)}" r="4.5"/>`);
+    const dv=dim=>dim==='tp'?'TP0-7':dim==='pp'?('PP'+pp+' · L'+(pp*3+1)):('DP'+dp);
+    const pill=(x,y,txt)=>{ const w=[...txt].reduce((a,c)=>a+(c.charCodeAt(0)>255?9:6.6),0)+14;
+      out.push(`<rect class="cross-pill" x="${(x-w/2).toFixed(1)}" y="${(y-9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="5"/><text class="cross-lab" x="${x.toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="middle">${esc(txt)}</text>`); };
+    pill(card[0], hAxisY+15, dv(cfg.h.dim));
+    pill(Math.max(38,vAxisX-34), card[1], dv(cfg.v.dim));
+  }
+  svg.innerHTML=out.join('');
+}
 /* ---- 交互：拖拽旋转 / 滚轮 / 拾取 ---- */
 let dragging=false, dragMoved=false, px=0, py=0;
 stage.addEventListener('pointerdown', e=>{ dragging=true; dragMoved=false; px=e.clientX; py=e.clientY; });
 window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
+  if(S.orthoView){ S.orthoView=0; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -3437,11 +3529,18 @@ renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
   [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
   renderCubeAxes(); renderViewlab(); commDirty = true;   // 四维通信线随新变形坐标重布
   if(typeof window.__netSyncCubeMode==='function') window.__netSyncCubeMode(k); }; });
-// 视角预设：顶/前/侧视图用视角「压平」一维 → 专注读某两维切分（标准形态：X=TP·Y=PP·Z=DP）
-[[.82,.58],[.02,1.47],[.02,.06],[Math.PI/2-.02,.06]].forEach((v,k)=>{
-  $('#cv'+k).onclick = ()=>{ yaw=v[0]; pitch=v[1];
+// 视角预设：顶/前/侧 = 精确正交方向（正交投影 · 拍平成 2D 图表），斜视 = 透视。
+// 标准形态坐标：X=TP · Y=PP(模型深度) · Z=DP。
+const CV_PRESET = [
+  { yaw:.82,          pitch:.58,     ortho:0 },   // 斜视
+  { yaw:0,            pitch:1.5698,  ortho:1 },   // 顶 TP×DP（俯视 X-Z）
+  { yaw:0,            pitch:.0016,   ortho:2 },   // 前 TP×PP（正视 X-Y）
+  { yaw:Math.PI/2,    pitch:.0016,   ortho:3 },   // 侧 DP×PP（正视 Z-Y）
+];
+CV_PRESET.forEach((v,k)=>{
+  $('#cv'+k).onclick = ()=>{ yaw=v.yaw; pitch=v.pitch; zoomBias=1; S.orthoView=v.ortho;
     [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===k));
-    try{ wakeLoop(60); }catch(e){} }; });
+    render2dAxis(); try{ wakeLoop(90); }catch(e){} }; });
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
@@ -4016,7 +4115,9 @@ function loop(now){
   _camPrev.copy(camera.position); updateCamera(dt);
   if(_camPrev.distanceToSquared(camera.position) > 2e-4) busy = true;
   if(busy) renderBudget = Math.max(renderBudget, 3);
-  if(renderBudget > 0){ renderer.render(scene, camera); renderBudget--; }
+  if(renderBudget > 0){ renderer.render(scene, camera); renderBudget--;
+    if(S.orthoView) render2dAxis();   // 正交 2D 坐标图层跟随相机
+  }
   if(renderBudget > 0 || busy) loopRaf = requestAnimationFrame(loop);
   // 真正空闲：停止 rAF，完全释放主线程
 }
