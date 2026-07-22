@@ -3341,7 +3341,8 @@ const AX2D = {
 };
 function render2dAxis(){
   const svg=$('#axis2d'); if(!svg) return;
-  const on = S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube' && cubeMode===0 && cubeBlend>=1;
+  // 只在形变完全落定(Wgt.cube≈1)后显示，否则方块还在半途、交点会对不上卡
+  const on = S.orthoView>0 && Wgt.cube>0.98 && S.form==='cube' && cubeMode===0 && cubeBlend>=1;
   if(svg.classList.contains('show')!==on) svg.classList.toggle('show', on);
   if(!on){ if(svg.childNodes.length) svg.textContent=''; return; }
   const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2) return;
@@ -3355,19 +3356,37 @@ function render2dAxis(){
   const hPts=mkPts(cfg.h,{[cfg.depth.dim]:cfg.depth.val,[cfg.v.dim]:cfg.hEdgeV});
   const vPts=mkPts(cfg.v,{[cfg.depth.dim]:cfg.depth.val,[cfg.h.dim]:cfg.vEdgeV});
   const out=[];
-  const axisSvg=(pts,axis,title,hiVal)=>{
-    const a=pts[0].s,b=pts[pts.length-1].s;
-    out.push(`<line class="ax-line" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"/>`);
-    pts.forEach(p=>{ const dx=p.s[0]-cen[0],dy=p.s[1]-cen[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,hi=hiVal!=null&&hiVal===p.val;
-      out.push(`<line class="ax-tick" x1="${p.s[0].toFixed(1)}" y1="${p.s[1].toFixed(1)}" x2="${(p.s[0]+ux*5).toFixed(1)}" y2="${(p.s[1]+uy*5).toFixed(1)}"/>`);
-      out.push(`<text class="ax-lab${hi?' tick-hi':''}" x="${(p.s[0]+ux*16).toFixed(1)}" y="${(p.s[1]+uy*16+3).toFixed(1)}" text-anchor="middle">${esc(axis.lab(p.val))}</text>`); });
-    const m=pts[(pts.length/2)|0].s,dx=m[0]-cen[0],dy=m[1]-cen[1],L=Math.hypot(dx,dy)||1;
-    out.push(`<text class="ax-title" x="${(m[0]+dx/L*46).toFixed(1)}" y="${(m[1]+dy/L*46).toFixed(1)}" text-anchor="middle">${esc(title)}</text>`);
-  };
+  const clX=x=>Math.max(30,Math.min(W-30,x)), clY=y=>Math.max(14,Math.min(H-14,y));
+  const mDP=d=>{ let s=0; for(let pp=0;pp<16;pp++) s+=health[d*16+pp]; return s/16; };   // 该 DP 副本平均负载（跨 16 段）
+  const mPP=pp=>{ let s=0; for(let d=0;d<64;d++) s+=health[d*16+pp]; return s/64; };      // 该 PP 段平均负载（跨 64 副本）
   let hHi=null,vHi=null;
   if(S.hoverHost>=0){ const pp=ppOf(S.hoverHost),dp=dpOf(S.hoverHost);
     if(cfg.h.dim==='pp')hHi=pp; if(cfg.h.dim==='dp')hHi=dp;
     if(cfg.v.dim==='pp')vHi=pp; if(cfg.v.dim==='dp')vHi=dp; }
+  // ── 边缘负载分布条：沿轴显示每个 DP 副本 / PP 段 的平均负载（找慢副本/慢段）。TP 维=host 级恒定，无分布 ──
+  const marginal=(axis,pts,hiVal)=>{
+    if(axis.dim==='tp') return;
+    const a=pts[0].s,b=pts[pts.length-1].s, N=axis.dim==='pp'?16:64;
+    const dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1; let px=-dy/L,py=dx/L;
+    if(px*(a[0]-cen[0])+py*(a[1]-cen[1])<0){ px=-px; py=-py; }   // 指向远离网格中心（外侧）
+    const horiz=Math.abs(dy)<Math.abs(dx), segW=(L/N)*0.9, off=6;
+    for(let i=0;i<N;i++){ const t=N>1?i/(N-1):0, cx=a[0]+dx*t+px*off, cy=a[1]+dy*t+py*off;
+      const col=stateCss(axis.dim==='dp'?mDP(i):mPP(i)), hi=hiVal===i;
+      if(horiz) out.push(`<rect x="${(cx-segW/2).toFixed(1)}" y="${cy.toFixed(1)}" width="${segW.toFixed(1)}" height="8" fill="${col}" opacity="${hi?1:.85}"${hi?' stroke="#fff" stroke-width="1.4"':''}/>`);
+      else out.push(`<rect x="${cx.toFixed(1)}" y="${(cy-segW/2).toFixed(1)}" width="8" height="${segW.toFixed(1)}" fill="${col}" opacity="${hi?1:.85}"${hi?' stroke="#fff" stroke-width="1.4"':''}/>`);
+    }
+  };
+  const axisSvg=(pts,axis,title,hiVal)=>{
+    const a=pts[0].s,b=pts[pts.length-1].s;
+    out.push(`<line class="ax-line" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"/>`);
+    pts.forEach((p,i)=>{ const dx=p.s[0]-cen[0],dy=p.s[1]-cen[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,hi=hiVal!=null&&hiVal===p.val;
+      if(axis.dim!=='tp'&&i===pts.length-1) return;   // 略过角落最外刻度标签，避免与另一轴撞
+      out.push(`<line class="ax-tick" x1="${p.s[0].toFixed(1)}" y1="${p.s[1].toFixed(1)}" x2="${(p.s[0]+ux*5).toFixed(1)}" y2="${(p.s[1]+uy*5).toFixed(1)}"/>`);
+      out.push(`<text class="ax-lab${hi?' tick-hi':''}" x="${clX(p.s[0]+ux*22).toFixed(1)}" y="${clY(p.s[1]+uy*22+3).toFixed(1)}" text-anchor="middle">${esc(axis.lab(p.val))}</text>`); });
+    const b2=pts[pts.length-1].s,dx=b2[0]-cen[0],dy=b2[1]-cen[1],L=Math.hypot(dx,dy)||1;   // 标题放在轴末端外侧（避开中部十字线）
+    out.push(`<text class="ax-title" x="${clX(b2[0]+dx/L*30).toFixed(1)}" y="${clY(b2[1]+dy/L*30+4).toFixed(1)}" text-anchor="middle">${esc(title)}</text>`);
+  };
+  marginal(cfg.h,hPts,hHi); marginal(cfg.v,vPts,vHi);
   axisSvg(hPts,cfg.h,cfg.hT,hHi); axisSvg(vPts,cfg.v,cfg.vT,vHi);
   if(S.hoverHost>=0){ const h=S.hoverHost,pp=ppOf(h),dp=dpOf(h);
     const card=P(wf({tp:3,pp,dp}));
@@ -3378,9 +3397,9 @@ function render2dAxis(){
     out.push(`<circle class="ax-dot" cx="${card[0].toFixed(1)}" cy="${card[1].toFixed(1)}" r="4.5"/>`);
     const dv=dim=>dim==='tp'?'TP0-7':dim==='pp'?('PP'+pp+' · L'+(pp*3+1)):('DP'+dp);
     const pill=(x,y,txt)=>{ const w=[...txt].reduce((a,c)=>a+(c.charCodeAt(0)>255?9:6.6),0)+14;
-      out.push(`<rect class="cross-pill" x="${(x-w/2).toFixed(1)}" y="${(y-9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="5"/><text class="cross-lab" x="${x.toFixed(1)}" y="${(y+4).toFixed(1)}" text-anchor="middle">${esc(txt)}</text>`); };
-    pill(card[0], hAxisY+15, dv(cfg.h.dim));
-    pill(Math.max(38,vAxisX-34), card[1], dv(cfg.v.dim));
+      out.push(`<rect class="cross-pill" x="${(clX(x)-w/2).toFixed(1)}" y="${(clY(y)-9).toFixed(1)}" width="${w.toFixed(1)}" height="18" rx="5"/><text class="cross-lab" x="${clX(x).toFixed(1)}" y="${(clY(y)+4).toFixed(1)}" text-anchor="middle">${esc(txt)}</text>`); };
+    pill(card[0], hAxisY+16, dv(cfg.h.dim));
+    pill(vAxisX-34, card[1], dv(cfg.v.dim));
   }
   svg.innerHTML=out.join('');
 }
@@ -3521,7 +3540,8 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   S.form = formTarget; renderViewlab();
-  try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ } }
+  try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ }
+  try{ wakeLoop(90); }catch(_){ } }   // 立刻推进形变动画（否则要等下次交互才morph）
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 [0,1,2,3,4].forEach(k=>{ $('#cm'+k).onclick = ()=>{ if(cubeMode===k) return;
