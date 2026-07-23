@@ -3514,8 +3514,32 @@ const AX2D_EP = {
 };
 const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP, 1:AX2D_DP, 2:AX2D_EP };
 function curAX2D(){ const t=AX2D_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
+// 层级堆叠·顶视 → 纯 2D 扁平热力格（收起 3D 瓦片；拖拽旋转时恢复 3D）。运行状态主分析面：L2 芯片 / L3 主机 + Top-5 热点描红
+function render2dGrid(){
+  const svg=$('#axis2d'); if(!svg) return false;
+  const on = S.form==='stack' && S.stackView===2 && Wgt.stack>0.9 && !dragging && (S.level==='L2'||S.level==='L3');
+  if(!on) return false;
+  const isChip=(S.level==='L2'), N=isChip?N_CHIP:N_HOST, posFn=isChip?chipStack:hostStack;
+  if(!svg.classList.contains('show')) svg.classList.add('show');   // 先显形再量尺寸（否则 display:none → rect=0）
+  const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2||H<2) return true;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
+  const gv=new THREE.Vector3();
+  const Pj=(i)=>{ const v=posFn(i,gv).project(camera); return [(v.x*.5+.5)*W,(-v.y*.5+.5)*H]; };
+  const a=Pj(0), bx=Pj(isChip?8:1), by=Pj(isChip?256:32);
+  const cw=Math.max(Math.abs(bx[0]-a[0]),Math.abs(by[0]-a[0]),2)*0.82, ch=Math.max(Math.abs(bx[1]-a[1]),Math.abs(by[1]-a[1]),2)*0.82;
+  const hot=new Set(Array.from({length:N_HOST},(_,i)=>i).sort((x,y)=>health[y]-health[x]).slice(0,5));
+  cells2d.length=0; const out=[];
+  for(let i=0;i<N;i++){ const host=isChip?(i>>3):i, s=Pj(i);
+    const seld=sel2d&&sel2d.host===host&&(isChip?sel2d.tp===(i&7):true), hovd=!seld&&host===S.hoverHost;
+    const st = seld?' stroke="#1f6feb" stroke-width="2"' : hovd?' stroke="#111" stroke-width="1.4"' : hot.has(host)?' stroke="#FF4B7B" stroke-width="1.2"':'';
+    out.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="${stateCss(health[host])}"${st}/>`);
+    cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp:isChip?(i&7):3,pp:ppOf(host),dp:dpOf(host)}); }
+  svg.innerHTML=out.join(''); if(!svg.classList.contains('show')) svg.classList.add('show');
+  return true;
+}
 function render2dAxis(){
   const svg=$('#axis2d'); if(!svg) return;
+  if(render2dGrid()) return;   // 堆叠·顶视的纯 2D 格由 render2dGrid 接管
   // 只在形变完全落定(Wgt.cube≈1)后显示，否则方块还在半途、交点会对不上卡
   const cfg = has2D() ? curAX2D() : null;
   const on = S.orthoView>0 && Wgt.cube>0.98 && S.form==='cube' && !!cfg && cubeBlend>=1;
@@ -3680,7 +3704,7 @@ function pickCommAt(clientX, clientY){
 }
 window.addEventListener('pointerup', (e)=>{
   // 纯 2D 热力格：点一张卡=只选这一张（不再整台 Host 8 张一起选）；再点同一张 / 点空白=取消
-  if(dragging && !dragMoved && cells2d.length && S.orthoView>0 && has2D() && !chipsMesh.visible){
+  if(dragging && !dragMoved && cells2d.length && !chipsMesh.visible && !hostsMesh.visible && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2))){
     if(hoverCell2d){ sel2d = (sel2d && sel2d.host===hoverCell2d.host && sel2d.tp===hoverCell2d.tp) ? null : {host:hoverCell2d.host, tp:hoverCell2d.tp, pp:hoverCell2d.pp, dp:hoverCell2d.dp};
       if(sel2d){ S.focusHost=sel2d.host; S.focusChip=sel2d.host*8+sel2d.tp; } }
     else sel2d = null;
@@ -3714,7 +3738,7 @@ stage.addEventListener('mousemove', ev=>{
   if(dragging) return;
   const r = stage.getBoundingClientRect();
   // 纯 2D 热力格：3D 方块已隐藏 → 命中改为对 SVG 格子做命中（悬停详情卡靠 #axis2d 的 2D 卡呈现）
-  if(cells2d.length && S.orthoView>0 && has2D() && !chipsMesh.visible){
+  if(cells2d.length && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2)) && !chipsMesh.visible && !hostsMesh.visible){
     const mx=ev.clientX-r.left, my=ev.clientY-r.top; let found=null;
     for(const c of cells2d){ if(Math.abs(mx-c.x)<=c.w/2+1 && Math.abs(my-c.y)<=c.h/2+1){ found=c; break; } }
     hoverCell2d = found;
@@ -3881,8 +3905,9 @@ let stackIsoLv = '__all';
 function updateStackView(){
   const stackForm = S.form==='stack' || Wgt.stack>0.5;
   const top = stackForm && S.stackView===2 && Wgt.stack>0.6, lv=S.level, ly=STACK[lv];
-  if(top){ chipsMesh.visible=(lv==='L2'); hostsMesh.visible=(lv==='L3');
-    [stackL4,stackL5,stackT6,stackG7].forEach(m=>{ if(m) m.frustumCulled=false; }); }   // 每帧强制可见 + 关视锥剔除（俯视拉远会误剔堆叠瓦片）
+  if(top){ const d3=dragging;   // 顶视纯 2D：不拖拽=收起 3D 瓦片（由 render2dGrid 画扁平格）；拖拽旋转=恢复 3D
+    chipsMesh.visible = d3 && lv==='L2'; hostsMesh.visible = d3 && lv==='L3';
+    for(const kk in stackPlats){ const pf=stackPlats[kk]; if(pf){ if(pf.floor) pf.floor.visible=false; if(pf.label) pf.label.visible=false; } } }
   const key = top ? lv : (stackForm ? '__all' : '__off');
   if(key===stackIsoLv) return;   // 只有层级/视角变化时才重刷 stackGroup 可见性（省开销）
   stackIsoLv = key;
@@ -3900,7 +3925,7 @@ SV_PRESET.forEach((v,k)=>{ const el=$('#sv'+k); if(!el) return;
   el.onclick=()=>{ S.stackView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
     [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===k));
     if(k===2 && !TOP_LV.includes(S.level)) setLevel('L2');
-    colorsDirty=true; syncLvlCtl(); try{ updateStackView(); wakeLoop(90); }catch(e){} }; });
+    colorsDirty=true; syncLvlCtl(); try{ updateStackView(); render2dAxis(); wakeLoop(90); }catch(e){} }; });
 function stepLevel(dir){ const cur=TOP_LV.indexOf(S.level); const ni=Math.max(0,Math.min(TOP_LV.length-1,(cur<0?0:cur)+dir));
   setLevel(TOP_LV[ni]); syncLvlCtl(); try{ updateStackView(); wakeLoop(60); }catch(_){ } }
 if($('#lvPrev')){ $('#lvPrev').onclick=()=>stepLevel(-1); $('#lvNext').onclick=()=>stepLevel(1); }
@@ -4486,7 +4511,7 @@ function loop(now){
   if(_camPrev.distanceToSquared(camera.position) > 2e-4) busy = true;
   if(busy) renderBudget = Math.max(renderBudget, 3);
   if(renderBudget > 0){ renderer.render(scene, camera); renderBudget--;
-    if(S.orthoView) render2dAxis();   // 正交 2D 坐标图层跟随相机
+    if(S.orthoView || (S.form==='stack' && S.stackView===2)) render2dAxis();   // 正交 2D 坐标图层 / 堆叠顶视纯 2D 格 跟随相机
   }
   if(renderBudget > 0 || busy) loopRaf = requestAnimationFrame(loop);
   // 真正空闲：停止 rAF，完全释放主线程
