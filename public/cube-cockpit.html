@@ -755,7 +755,7 @@ const ORTHO_DEPTH = { 1:{dim:'pp',N:16,lab:'PP',def:7}, 2:{dim:'dp',N:64,lab:'DP
 const ODEP_PP     = { 1:{dim:'tp',N:8,lab:'TP',def:3}, 2:{dim:'dp',N:64,lab:'DP',def:31}, 3:{dim:'pp',N:16,lab:'PP',def:7} };   // PP流水：X=PP·Y=TP·Z=DP
 // 已支持 2D 正交拍平的魔方布局。其余布局（TP切片/PP流水/DP平铺/EP聚）暂只走自由 3D 斜视，
 // 2D 正交拍平仍在打磨（拍平后 InstancedMesh 有渲染同步问题待解），届时并入本表即可全量启用。
-const ODEP_BY_MODE = { 0:ORTHO_DEPTH };
+const ODEP_BY_MODE = { 0:ORTHO_DEPTH, 3:ORTHO_DEPTH, 4:ODEP_PP };
 const VIEW_PIN = { 1:'y', 2:'z', 3:'x' };                          // 顶↓世界Y · 前↓世界Z · 侧↓世界X（= 被压平的轴）
 function curODEP(){ const t=ODEP_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function has2D(){ return !!ODEP_BY_MODE[cubeMode]; }
@@ -3360,7 +3360,7 @@ function updateCamera(dt){
   camCur.t.lerp(g.t,k); camCur.d += (g.d*zoomBias-camCur.d)*k;
   // 正交视角（顶/前/侧）：极小 FOV + 拉远 = 近似正交投影，透视被压没，读成 2D 图表。
   const ortho = S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube';
-  const FOV_STD = 40, FOV_ORTHO = 2.2;
+  const FOV_STD = 40, FOV_ORTHO = 12;
   const orthoK = ortho ? Math.tan(FOV_STD/2*Math.PI/180)/Math.tan(FOV_ORTHO/2*Math.PI/180) : 1;  // ≈19×，保持取景高度不变
   camera.fov = ortho ? FOV_ORTHO : FOV_STD;
   const dpos = camCur.d * orthoK;
@@ -3423,7 +3423,7 @@ const AX2D_PP = {
       depth:{dim:'pp',val:7}, hEdgeV:0, vEdgeV:0,
       center:{tp:3.5,pp:7,dp:31.5}, hT:'DP · 数据副本(64)', vT:'TP · 张量切片(8)' },
 };
-const AX2D_BY_MODE = { 0:AX2D };   // 与 ODEP_BY_MODE 同步：目前仅标准布局启用 2D 正交
+const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP };
 function curAX2D(){ const t=AX2D_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function render2dAxis(){
   const svg=$('#axis2d'); if(!svg) return;
