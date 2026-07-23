@@ -417,6 +417,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #sliceCtl #scToggle.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
 #sliceCtl #scVal{font-family:var(--font-mono);font-size:11.5px;font-weight:600;color:var(--sys-text-bright);min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
 #sliceCtl input[type=range]{width:130px;accent-color:var(--sys-accent);cursor:pointer}
+/* 层级切片控制条（层级堆叠·顶视） */
+#lvlCtl{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:6px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 8px 4px 12px;box-shadow:var(--shadow-sm)}
+#lvlCtl.show{display:inline-flex}
+#lvlCtl .sc-lab{font-size:11px;color:var(--dim);font-weight:600}
+#lvlCtl button{min-height:24px;padding:0 9px;font-size:11px;border-radius:var(--radius-pill)}
+#lvlCtl #lvVal{font-family:var(--font-mono);font-size:11.5px;font-weight:600;color:var(--sys-text-bright);min-width:78px;text-align:center}
 #stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* ===== 模式 B 抽屉 ===== */
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
@@ -631,6 +637,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <button id="scNext" title="下一层">▶</button>
         <input id="scRange" type="range" min="0" max="63" value="31" title="拖动逐层查看">
       </div>
+      <!-- 层级切片（层级堆叠·顶视时显示）：逐层查看 L0→L7 的 2D 运行状态图 -->
+      <div id="lvlCtl">
+        <span class="sc-lab">层级</span>
+        <button id="lvPrev" title="上一层（更细）">◀</button>
+        <span id="lvVal">L2 · Chip</span>
+        <button id="lvNext" title="下一层（更粗）">▶</button>
+      </div>
       <div id="formmode">
         <div class="fm-row">
           <button id="btnPhys" class="on">物理层级</button>
@@ -649,6 +662,11 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="cv1" title="俯视：只看 DP×TP 平面 → DP 长轴水平铺开、读 TP×DP 切分">顶 DP×TP</button>
           <button id="cv2" title="正视：只看 X×Y 平面 → 读 TP×PP 切分">前 TP×PP</button>
           <button id="cv3" title="侧视：只看 Z×Y 平面 → 读 DP×PP 切分">侧 DP×PP</button>
+        </div>
+        <div class="fm-row" id="stackViews" style="display:none">
+          <button id="sv0" class="on" title="轴测：斜看整个层级栈">轴测</button>
+          <button id="sv1" title="前视：正面看 L0→L7 层级剖面">前视 · 层级</button>
+          <button id="sv2" title="顶视：俯看单层的 2D 运行状态图，配合层级逐层查看">顶视 · 单层</button>
         </div>
       </div>
       <div id="formctl">
@@ -747,8 +765,11 @@ const S = {
   net3:{ solo:null, explode:true },      // 需求3：三张网 lens 状态（solo=单显平面 | null=全部）
   algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree · channel 数）
   orthoView:0,                           // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
-  sliceOn:false, sliceVal:31             // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
+  sliceOn:false, sliceVal:31,            // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
+  stackView:0                            // 层级堆叠视角：0=轴测 · 1=前视(层级剖面) · 2=顶视(单层 2D 运行状态图)
 };
+const STACK_LV = ['L0','L1','L2','L3','L4','L5','L6','L7'];   // 由细到粗
+const STACK_LV_NAME = { L7:'L7 · Global', L6:'L6 · Cluster', L5:'L5 · Pool', L4:'L4 · Pod', L3:'L3 · Host', L2:'L2 · Chip', L1:'L1 · Die', L0:'L0 · Core' };
 // 正交视角折叠掉的「深度」维（可被剖面逐层翻）。相机固定看下去世界轴：顶↓Y · 前↓Z · 侧↓X，
 // 被折叠的「逻辑维」= 当前魔方布局里落在那条世界轴上的维 → 各布局不同。
 // dim 语义：pp/dp/tp=逻辑维；ehi=DP 高 3 位（DP平铺 gz 行 / EP聚 A2A 域 b）；elo=DP 低 3 位（gx 列 / EP 桶 e）
@@ -3355,6 +3376,10 @@ function camGoal(){
     if(cubeMode===4) return { t:V3(0,12,0), d:152 };
     return { t:V3(CUBE.cx,CUBE.cy,CUBE.cz), d:82 }; }
   if(S.form==='stack' || Wgt.stack>0.5){
+    if(S.stackView===1) return { t:V3(0,15.5,0), d:76 };   // 前视：正面框住 L0→L7 整个层级剖面
+    if(S.stackView===2){                                    // 顶视：俯看当前单层的 2D 运行状态图
+      const D = { L7:10, L6:34, L5:30, L4:22, L3:26, L2:28, L1:12, L0:12 };
+      return { t:V3(0,STACK[S.level],0), d:D[S.level]||24 }; }
     const ST = { L7:[15,58], L6:[STACK.L6,32], L5:[STACK.L5,26], L4:[STACK.L4,18],
                  L3:[STACK.L3,30], L2:[STACK.L2,32], L1:[STACK.L1,14], L0:[STACK.L0,14] };
     const s = ST[S.level]||ST.L4; return { t:V3(0,s[0],0), d:s[1] }; }
@@ -3770,7 +3795,9 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#btnStack').classList.toggle('on', formTarget==='stack');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
+  try{ $('#stackViews').style.display = formTarget==='stack' ? 'flex' : 'none'; }catch(_){ }
   S.form = formTarget; renderViewlab();
+  try{ syncLvlCtl(); updateStackView(); }catch(_){ }
   if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
     [0,1,2,3].forEach(i=>{ try{ $('#cv'+i).classList.toggle('on', i===0); }catch(_){ } }); }
   try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ }
@@ -3829,6 +3856,36 @@ if($('#scToggle')){
   $('#scNext').onclick=()=>setSliceVal(S.sliceVal+1);
   $('#scRange').oninput=e=>setSliceVal(+e.target.value);
 }
+/* ===== 层级堆叠 视角：轴测 / 前视(层级剖面) / 顶视(单层 2D 运行状态图 · 逐层切片) ===== */
+const SV_PRESET = [ {yaw:.82,pitch:.58}, {yaw:0,pitch:.02}, {yaw:0,pitch:1.5698} ];   // 轴测 / 前视 / 顶视
+function syncLvlCtl(){ const ctl=$('#lvlCtl'); if(!ctl) return;
+  const on = (S.form==='stack') && S.stackView===2;
+  ctl.classList.toggle('show', on);
+  if(on) $('#lvVal').textContent = STACK_LV_NAME[S.level]||S.level; }
+// 顶视单层：只留当前层的 2D 网格，其余层收起（运行状态由各层瓦片着色直接呈现）
+let stackIsoLv = '__all';
+function updateStackView(){
+  const stackForm = S.form==='stack' || Wgt.stack>0.5;
+  const top = stackForm && S.stackView===2 && Wgt.stack>0.6, lv=S.level, ly=STACK[lv];
+  if(top){ chipsMesh.visible=(lv==='L2'); hostsMesh.visible=(lv==='L3'); }   // 每帧强制（updateCommPulse 每帧会把它们重置为可见）
+  const key = top ? lv : (stackForm ? '__all' : '__off');
+  if(key===stackIsoLv) return;   // 只有层级/视角变化时才重刷 stackGroup 可见性（省开销）
+  stackIsoLv = key;
+  if(top){   // 俯视看单层：只留当前层高度附近的几何（瓦片/底板/轮廓），其余层收起，避免俯视时各层投影叠一起
+    stackGroup.children.forEach(o=>{ if(o===stackPath){ o.visible=false; return; }
+      const oy=(o.position&&o.position.y)||0; o.visible = Math.abs(oy-ly)<3.2; });
+  } else if(stackForm){   // 轴测/前视：恢复全部层
+    stackGroup.children.forEach(o=>{ o.visible=true; });
+  }
+}
+SV_PRESET.forEach((v,k)=>{ const el=$('#sv'+k); if(!el) return;
+  el.onclick=()=>{ S.stackView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
+    [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===k));
+    if(k===2 && !['L0','L1','L2','L3','L4','L5','L6','L7'].includes(S.level)) setLevel('L2');
+    colorsDirty=true; syncLvlCtl(); try{ updateStackView(); wakeLoop(90); }catch(e){} }; });
+function stepLevel(dir){ const i=STACK_LV.indexOf(S.level); const ni=Math.max(0,Math.min(7,(i<0?2:i)+dir));
+  setLevel(STACK_LV[ni]); syncLvlCtl(); try{ updateStackView(); wakeLoop(60); }catch(_){ } }
+if($('#lvPrev')){ $('#lvPrev').onclick=()=>stepLevel(-1); $('#lvNext').onclick=()=>stepLevel(1); }
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
@@ -4400,6 +4457,7 @@ function loop(now){
   if(colorsDirty){ applyColors(true); colorsDirty=false; busy=true; }
   else if(S.playing) applyColors(false);
   updateIndicators(); updateCommPulse(now);
+  try{ updateStackView(); }catch(_){ }   // 层级堆叠·顶视：单层隔离每帧维持
   _camPrev.copy(camera.position); updateCamera(dt);
   if(_camPrev.distanceToSquared(camera.position) > 2e-4) busy = true;
   if(busy) renderBudget = Math.max(renderBudget, 3);
