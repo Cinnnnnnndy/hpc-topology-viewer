@@ -3537,7 +3537,7 @@ function render2dGrid(){
   const hot = new Set(Array.from({length:N_HOST},(_,i)=>i).sort((x,y)=>health[y]-health[x]).slice(0,5));
   cells2d.length=0; const out=[];
   for(let i=0;i<N;i++){ const host=hostOfI(i), tp=tpOfI(i), s=Pj(i);
-    const seld=sel2d&&sel2d.host===host&&(sel2d.tp===tp), hovd=!seld&&host===S.hoverHost;
+    const seld=host===S.focusHost, hovd=!seld&&host===S.hoverHost;   // 选中卡（左右任一处选都点亮 → 双向联动）
     const st = seld?' stroke="#1f6feb" stroke-width="2"' : hovd?' stroke="#111" stroke-width="1.4"' : (hot.has(host))?' stroke="#FF4B7B" stroke-width="1.2"':'';
     out.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="${fillFn(i)}"${st}/>`);
     cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp,pp:ppOf(host),dp:dpOf(host)}); }
@@ -3565,8 +3565,10 @@ function renderPhysGrid(svg,W,H){
   out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.4).toFixed(0)}" text-anchor="middle">${front
     ? '机柜立面图 · 16 列 × 8 槽位（U 位高度）· 色 = 同槽位沿 8 排深度均值负载 · 看机架高度上的负载分布'
     : '机房地面俯视图 · 128 机柜（16 列 × 8 排）· 色 = 机柜 8 卡均值负载 · 定位物理热点 / 散热域'}</text>`);
+  // 选中卡定位到本视图的格：顶视=同机柜(列,排)；前视=同(列,槽位)。左右任一处选都点亮 → 双向联动
+  const fCab=S.focusHost>>3, fCol=fCab%16, fRow=fCab>>4, fSlot=S.focusHost&7;
   for(const c of scored){ const x=mx+c.col*gw+(gw-cw)/2, y=myTop+c.ry*gh+(gh-ch)/2, cx=x+cw/2, cy=y+ch/2;
-    const seld=sel2d&&sel2d.host===c.host, hovd=!seld&&c.host===S.hoverHost;
+    const seld=front ? (c.col===fCol && c.ry===fSlot) : (c.col===fCol && c.ry===fRow), hovd=!seld&&c.host===S.hoverHost;
     const st = seld?' stroke="#1f6feb" stroke-width="2.5"' : hovd?' stroke="#111" stroke-width="1.8"' : hot.has(c.col+','+c.ry)?' stroke="#FF4B7B" stroke-width="1.6"':' stroke="#ffffff" stroke-width="1"';
     out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${stateCss(c.load)}"${st}/>`);
     cells2d.push({x:cx,y:cy,w:cw,h:ch,host:c.host,tp:-1,pp:ppOf(c.host),dp:dpOf(c.host),physCell:{col:c.col,ry:c.ry,load:c.load,front}}); }
@@ -3621,16 +3623,31 @@ function render2dAxis(){
   const cw=Math.max(Math.abs(_sH[0]-_s0[0]),Math.abs(_sV[0]-_s0[0]),3)*0.82,
         ch=Math.max(Math.abs(_sH[1]-_s0[1]),Math.abs(_sV[1]-_s0[1]),3)*0.82;
   cells2d.length=0; const _cell=[];
+  // ── 通信域(L5)叠加：选中一张卡后，按「关联维」在这张逻辑面上把同 communicator 的卡描虚线框（rank 锚点 → 通信域可见）──
+  const _rel = activeRel(), _domHex = {TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'}[_rel];
+  const _fH=S.focusHost, _fTp=S.focusChip&7, _fDp=dpOf(_fH), _fPp=ppOf(_fH),
+        _fDom=(typeof epDomOf==='function')?epDomOf(_fH):-1;
+  const _inDom=(host,tp)=>{ if(S.filterHost==null||!_domHex) return false;
+    if(_rel==='TP') return host===_fH;                             // TP 域：同 Host 8 卡（域内·走 UB）
+    if(_rel==='PP') return dpOf(host)===_fDp && tp===_fTp;         // PP 链：同 DP 副本 16 段
+    if(_rel==='DP') return ppOf(host)===_fPp && tp===_fTp;         // DP 域：同段跨 64 副本
+    if(_rel==='EP') return epDomOf(host)===_fDom && tp===_fTp;     // EP·A2A 域：同 A2A 域 8 卡
+    return false; };
   for(let hv=0;hv<NH;hv++) for(let vv=0;vv<NV;vv++){
     const cc=coordOf(hv,vv), host=cc.dp*16+cc.pp, s=P(wf(cc.o));
     const load = S.sliceOn ? health[host] : orthoCellLoad(host*8+cc.tp);
-    const seld = sel2d && sel2d.host===host && sel2d.tp===cc.tp;
-    const hovd = !seld && host===S.hoverHost;
-    const stroke = seld?' stroke="#1f6feb" stroke-width="2.6"' : hovd?' stroke="#111" stroke-width="1.8"' : '';
+    const isFocus = (host*8+cc.tp)===S.focusChip;                  // 选中卡（左右任一处选都点亮 → 双向联动）
+    const hovd = !isFocus && host===S.hoverHost;
+    const dom = !isFocus && _inDom(host,cc.tp);
+    const stroke = isFocus?' stroke="#1f6feb" stroke-width="2.6"' : hovd?' stroke="#111" stroke-width="1.8"'
+                 : dom?` stroke="${_domHex}" stroke-width="1.5" stroke-dasharray="3 2"`:'';
     _cell.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="1.5" fill="${stateCss(load)}"${stroke}/>`);
     cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp:cc.tp,pp:cc.pp,dp:cc.dp});
   }
   out.push(_cell.join(''));
+  if(S.filterHost!=null && _domHex){ const dn={TP:'TP 域·同 Host 8 卡',PP:'PP 链·同副本 16 段',DP:'DP 域·同段 64 副本',EP:'EP·A2A 域 8 卡'}[_rel]||_rel;
+    out.push(`<rect x="10" y="8" width="12" height="12" rx="2" fill="none" stroke="${_domHex}" stroke-width="1.5" stroke-dasharray="3 2"/>`);
+    out.push(`<text x="28" y="18" font-size="11" fill="${_domHex}">通信域 · ${dn}（虚线框 = 与选中卡同 ${_rel} communicator · 走 UB 域内）</text>`); }
   const clX=x=>Math.max(30,Math.min(W-30,x)), clY=y=>Math.max(14,Math.min(H-14,y));
   const mDP=d=>{ let s=0; for(let pp=0;pp<16;pp++) s+=health[d*16+pp]; return s/16; };   // 该 DP 副本平均负载（跨 16 段）
   const mPP=pp=>{ let s=0; for(let d=0;d<64;d++) s+=health[d*16+pp]; return s/64; };      // 该 PP 段平均负载（跨 64 副本）
@@ -3758,9 +3775,13 @@ window.addEventListener('pointerup', (e)=>{
   // 纯 2D 热力格：点一张卡=只选这一张（不再整台 Host 8 张一起选）；再点同一张 / 点空白=取消
   if(dragging && !dragMoved && cells2d.length && !chipsMesh.visible && !hostsMesh.visible && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2) || (S.form==='phys' && S.physView>0))){
     if(hoverCell2d){ sel2d = (sel2d && sel2d.host===hoverCell2d.host && sel2d.tp===hoverCell2d.tp) ? null : {host:hoverCell2d.host, tp:hoverCell2d.tp, pp:hoverCell2d.pp, dp:hoverCell2d.dp};
-      if(sel2d){ S.focusHost=sel2d.host; S.focusChip=sel2d.host*8+sel2d.tp; } }
-    else sel2d = null;
-    try{ render2dAxis(); }catch(_){ } dragging=false; return;
+      if(sel2d){ const tp0=sel2d.tp>=0?sel2d.tp:0; S.focusHost=sel2d.host; S.focusChip=sel2d.host*8+tp0; S.filterHost=sel2d.host; }
+      else { S.filterHost=null; } }
+    else { sel2d=null; S.filterHost=null; }
+    // 联动：选卡 = 选中一个通信域 → 算法展开 tab 出现 + 左侧 分隔矩阵/算法展开 随右侧同步刷新（rank 锚点）
+    try{ invalidateRel(); }catch(_){ } try{ updateCounts(); }catch(_){ } try{ updateAlgoTab(); }catch(_){ }
+    try{ render2dAxis(); }catch(_){ } try{ touchLeft(); }catch(_){ }
+    dragging=false; return;
   }
   if(dragging && !dragMoved){
     const t = pickCommAt(e.clientX, e.clientY);
