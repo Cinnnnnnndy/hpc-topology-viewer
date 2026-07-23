@@ -605,6 +605,20 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <span id="algoViewTabs" style="display:flex;gap:2px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px">
             <button id="algoRing" class="on" style="border:none;box-shadow:none;background:var(--panel);min-height:24px;padding:3px 12px;font-size:11px">Ring 展开</button>
             <button id="algoTree" style="border:none;box-shadow:none;background:transparent;min-height:24px;padding:3px 12px;font-size:11px">Tree 展开</button>
+            <button id="algoFlow" style="border:none;box-shadow:none;background:transparent;min-height:24px;padding:3px 12px;font-size:11px" title="原语数据流：把该通信域跑的集合原语画成 NPU 列 before→after 数据块图">原语数据流</button>
+          </span>
+          <span id="algoPrimWrap" style="display:none;align-items:center;gap:3px;flex-wrap:wrap">
+            <span style="font-size:10px;color:var(--dim)">原语</span>
+            <button class="algoprim on" data-prim="AUTO" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">跟随 phase</button>
+            <button class="algoprim" data-prim="AllReduce" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">AllReduce</button>
+            <button class="algoprim" data-prim="ReduceScatter" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">ReduceScatter</button>
+            <button class="algoprim" data-prim="AllGather" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">AllGather</button>
+            <button class="algoprim" data-prim="AllToAll" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">AllToAll</button>
+            <button class="algoprim" data-prim="Broadcast" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">Broadcast</button>
+            <button class="algoprim" data-prim="Scatter" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">Scatter</button>
+            <button class="algoprim" data-prim="Gather" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">Gather</button>
+            <button class="algoprim" data-prim="Reduce" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">Reduce</button>
+            <button class="algoprim" data-prim="P2P" style="min-height:22px;padding:0 7px;font-size:10px;border-radius:var(--radius-pill)">P2P 接力</button>
           </span>
           <span id="algoChWrap" style="display:inline-flex;align-items:center;gap:3px">
             <span style="font-size:10px;color:var(--dim)">channel</span>
@@ -769,7 +783,8 @@ const S = {
   selEdge:null,                          // 需求1：选中的逻辑通信域边 {dim,a,b}（a/b=chip rank；TP 域内 b 可与 a 同 Host）
   selLink:null,                          // 需求1反向：选中的物理链路 {plane,rail,pods,desc,edges:[...]}
   net3:{ solo:null, explode:true },      // 需求3：三张网 lens 状态（solo=单显平面 | null=全部）
-  algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree · channel 数）
+  algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree/flow · channel 数）
+  algoPrim:'AUTO',                       // 原语数据流：AUTO=跟随 phase/关联维 · 或指定某集合原语
   orthoView:0,                           // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
   sliceOn:false, sliceVal:31,            // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
   stackView:0,                           // 层级堆叠视角：0=轴测 · 1=前视(层级剖面) · 2=顶视(单层 2D 运行状态图)
@@ -1515,13 +1530,79 @@ function renderAlgo(){
   const crossDomain = nDC > 1;
   // 一句话「这是什么」：把选中的通信域画成 NCCL 组织收发的算法图（ring/tree），节点=卡
   $('#algoHead').innerHTML =
-    `<div style="color:var(--sys-text-bright);font-weight:600;font-size:11.5px;margin-bottom:2px">这张图 = 你选中的「${M.dim} 通信域」按 NCCL 算法怎么收发（${S.algoView==='ring'?'Ring 环':'Tree 树'}）</div>` +
+    `<div style="color:var(--sys-text-bright);font-weight:600;font-size:11.5px;margin-bottom:2px">这张图 = 你选中的「${M.dim} 通信域」按 NCCL 算法怎么收发（${S.algoView==='ring'?'Ring 环':S.algoView==='tree'?'Tree 树':'原语数据流'}）</div>` +
     `<b style="color:${dimC}">${M.name}</b> · 成员 ${N} 张卡（每个节点=1 张卡 · 颜色=负载状态）` +
     (crossDomain ? `<br>跨 <b>${nDC}</b> 个${M.dim==='DP'?'超域（每 8 Pod 一个 A2A 域）':'Pod'} → 需<b>开环拼接</b> <b>2×(${nDC}−1)=${2*(nDC-1)}</b> 处${S.scatter?' · <b style="color:#04D793">散射开启：各 channel 拼接点错开</b>':''}`
                  : '<br><b>域内</b>通信（全在 1 个 Pod 内 · 走 UB · 无跨域拼接点）');
   gA.font='10px sans-serif';
-  if(S.algoView==='ring') renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2);
+  if(S.algoView==='flow') renderAlgoFlow(M, ink, dim2);
+  else if(S.algoView==='ring') renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2);
   else renderAlgoTree(M, dimC, N, ink, dim2);
+}
+/* ── 原语数据流（L4 集合原语语义）：NPU 列 + 彩色数据块 before→after，参考 NCCL 标准画法 ──
+   缺省按该通信域的关联维选原语：TP/DP→AllReduce · EP→AllToAll · PP→P2P 接力；也可手动切 8 种原语。 */
+function primForDim(dim){ return dim==='EP'?'AllToAll' : dim==='PP'?'P2P' : 'AllReduce'; }   // TP/DP=AllReduce
+function primSpec(name){
+  const CH=['#04D793','#FF4B7B','#FFAA3B','#4369EF'], L=['A','B','C','D'];
+  const c=i=>({t:L[i],c:CH[i]}), sum={t:'Σ',c:'#7d8590'}, e=null;
+  const S4=[[],[],[],[]], row=fn=>[0,1,2,3].map(fn);
+  const specs={
+    Broadcast:{ sem:'1 卡的数据 → 复制到全部卡', before:[[c(0)],[],[],[]], after:row(()=> [c(0)]) },
+    Scatter:{ sem:'1 卡的 N 块 → 切分下发各卡 1 块', before:[[c(0),c(1),c(2),c(3)],[],[],[]], after:row(i=>[c(i)]) },
+    Gather:{ sem:'各卡 1 块 → 汇聚到 1 卡', before:row(i=>[c(i)]), after:[[c(0),c(1),c(2),c(3)],[],[],[]] },
+    AllGather:{ sem:'各卡 1 块 → 全卡都收齐（拼接）', before:row(i=>[c(i)]), after:row(()=>[c(0),c(1),c(2),c(3)]) },
+    Reduce:{ sem:'各卡的块 → 求和到 1 卡', before:row(i=>[c(i)]), after:[[sum],[],[],[]] },
+    AllReduce:{ sem:'全卡都得全和 = ReduceScatter + AllGather', before:row(i=>[c(i)]), after:row(()=>[sum]) },
+    ReduceScatter:{ sem:'各卡求和后每卡只留 1 段（AllReduce 前半）',
+      before:row(()=>[c(0),c(1),c(2),c(3)]), after:row(i=>[{t:'Σ'+L[i],c:CH[i]}]) },
+    AllToAll:{ sem:'N×N 转置：每卡把第 j 块发给卡 j（MoE dispatch）',
+      before:row(i=>[0,1,2,3].map(j=>({t:L[i]+(j+1),c:CH[i]}))),
+      after:row(i=>[0,1,2,3].map(j=>({t:L[j]+(i+1),c:CH[j]}))) },
+    P2P:{ sem:'阶段接力 Send/Recv：激活值逐段前推', before:row(i=>[c(i)]), after:[[],[c(0)],[c(1)],[c(2)]] },
+  };
+  return specs[name]||specs.AllReduce;
+}
+function renderAlgoFlow(M, ink, dim2){
+  const prim = (S.algoPrim==='AUTO') ? primForDim(M.dim) : S.algoPrim;
+  const sp = primSpec(prim);
+  hidpi(algocv,404,480); gA.clearRect(0,0,404,480);
+  gA.textAlign='center';
+  gA.fillStyle=ink; gA.font='bold 13px sans-serif'; gA.fillText(prim, 202, 22);
+  gA.fillStyle=dim2; gA.font='10.5px sans-serif'; gA.fillText(sp.sem, 202, 40);
+  const nR=4, colW=32, gap=5, gW=nR*colW+(nR-1)*gap;   // 148
+  const cellH=22, top=98, x0B=8, x0A=404-8-gW;         // before 左 · after 右
+  const maxCells=(st)=>st.reduce((m,r)=>Math.max(m,r.length),0);
+  const drawGroup=(st,x0,tag)=>{
+    gA.fillStyle=dim2; gA.font='11px sans-serif'; gA.fillText(tag, x0+gW/2, top-24);
+    const mc=maxCells(st);
+    for(let r=0;r<nR;r++){ const cx=x0+r*(colW+gap);
+      gA.fillStyle=dim2; gA.font='9px sans-serif'; gA.fillText('NPU'+r, cx+colW/2, top-8);
+      const cells=st[r]||[];
+      // 空列画一个灰底占位（对齐视觉，参考图示）
+      if(cells.length===0){ gA.fillStyle=isDark()?'#30363d':'#e6e9ee';
+        gA.fillRect(cx, top, colW, cellH*mc); }
+      for(let k=0;k<cells.length;k++){ const cell=cells[k]; if(!cell) continue;
+        const y=top+k*cellH;
+        gA.fillStyle=cell.c; gA.fillRect(cx+1, y+1, colW-2, cellH-2);
+        gA.fillStyle='#fff'; gA.font='bold 9px sans-serif'; gA.textAlign='center';
+        gA.fillText(cell.t, cx+colW/2, y+cellH/2+3.5); }
+    }
+  };
+  drawGroup(sp.before, x0B, '发送前 (before)');
+  drawGroup(sp.after, x0A, '完成后 (after)');
+  // 中间箭头
+  const midY=top+cellH*maxCells(sp.before)/2, ax=x0B+gW+6, bx=x0A-6;
+  gA.strokeStyle=dim2; gA.lineWidth=2; gA.beginPath(); gA.moveTo(ax,midY); gA.lineTo(bx-6,midY); gA.stroke();
+  gA.fillStyle=dim2; gA.beginPath(); gA.moveTo(bx-6,midY-5); gA.lineTo(bx,midY); gA.lineTo(bx-6,midY+5); gA.fill();
+  gA.textAlign='center'; gA.font='9px sans-serif'; gA.fillText(prim, (ax+bx)/2, midY-10);
+  // 底部：与本域/泳道的对应
+  const dimNm={TP:'TP·前向/反向 AllReduce',DP:'DP·梯度同步 AllReduce',EP:'EP·MoE AllToAll',PP:'PP·阶段接力 Send/Recv'}[M.dim]||M.dim;
+  gA.fillStyle=ink; gA.font='10px sans-serif'; gA.textAlign='center';
+  gA.fillText(`本「${M.dim} 域」默认原语 = ${primForDim(M.dim)}（${dimNm}）`, 202, 456);
+  gA.fillStyle=dim2; gA.font='9px sans-serif';
+  gA.fillText('节点=卡·颜色块=数据分片；示 4 卡（真实域成员见 Ring/Tree）', 202, 472);
+  algoHits=[];   // flow 视图无节点命中
+  $('#algoDesc').innerHTML = `<b>${prim}</b> · ${sp.sem}` + (prim==='AllReduce'?'。<br>AllReduce = 先 ReduceScatter（各卡留一段和）再 AllGather（拼回全和），环上带宽最优。':'');
 }
 function renderAlgoRing(M, dimC, N, crossDomain, superDom, ink, dim2){
   const cx=202, cy=225, ch=S.algoCh;
@@ -1657,16 +1738,20 @@ if(algocv){
     else if(hit<0 && S.hoverSide==='algo'){ setHover(-1,''); }
   });
   algocv.addEventListener('mouseleave', ()=>{ if(S.hoverSide==='algo') setHover(-1,''); });
-  $('#algoRing').onclick=()=>{ S.algoView='ring';
-    $('#algoRing').classList.add('on'); $('#algoTree').classList.remove('on');
-    $('#algoRing').style.background='var(--panel)'; $('#algoTree').style.background='transparent';
-    $('#algoChWrap').style.display='inline-flex'; renderAlgo(); };
-  $('#algoTree').onclick=()=>{ S.algoView='tree';
-    $('#algoTree').classList.add('on'); $('#algoRing').classList.remove('on');
-    $('#algoTree').style.background='var(--panel)'; $('#algoRing').style.background='transparent';
-    $('#algoChWrap').style.display='none'; renderAlgo(); };
+  const algoViewBtns=['algoRing','algoTree','algoFlow'];
+  const setAlgoView=(view,el)=>{ S.algoView=view;
+    algoViewBtns.forEach(id=>{ const b=$('#'+id); if(!b) return; const on=b===el;
+      b.classList.toggle('on',on); b.style.background=on?'var(--panel)':'transparent'; });
+    $('#algoChWrap').style.display = view==='ring'?'inline-flex':'none';
+    $('#algoPrimWrap').style.display = view==='flow'?'inline-flex':'none';
+    renderAlgo(); };
+  $('#algoRing').onclick=()=>setAlgoView('ring',$('#algoRing'));
+  $('#algoTree').onclick=()=>setAlgoView('tree',$('#algoTree'));
+  if($('#algoFlow')) $('#algoFlow').onclick=()=>setAlgoView('flow',$('#algoFlow'));
   $$('.algoch').forEach(b=>b.onclick=()=>{ S.algoCh=+b.dataset.ch;
     $$('.algoch').forEach(x=>x.classList.toggle('on', x===b)); renderAlgo(); });
+  $$('.algoprim').forEach(b=>b.onclick=()=>{ S.algoPrim=b.dataset.prim;
+    $$('.algoprim').forEach(x=>x.classList.toggle('on', x===b)); renderAlgo(); });
 }
 /* ================= 右侧：统一 3D 拓扑（Three.js · 单场景单相机） ================= */
 const right = $('#right'), stage = $('#stage');
