@@ -3389,7 +3389,7 @@ function camGoal(){
   if(S.form==='stack' || Wgt.stack>0.5){
     if(S.stackView===1) return { t:V3(0,15.5,0), d:76 };   // 前视：正面框住 L0→L7 整个层级剖面
     if(S.stackView===2){                                    // 顶视：俯看当前单层的 2D 运行状态图
-      const D = { L7:10, L6:34, L5:30, L4:22, L3:26, L2:28, L1:12, L0:12 };
+      const D = { L7:12, L6:40, L5:36, L4:26, L3:38, L2:40, L1:14, L0:14 };  // L2/L3 拉远留白：避免顶栏/图例遮住外圈卡
       return { t:V3(0,STACK[S.level],0), d:D[S.level]||24 }; }
     const ST = { L7:[15,58], L6:[STACK.L6,32], L5:[STACK.L5,26], L4:[STACK.L4,18],
                  L3:[STACK.L3,30], L2:[STACK.L2,32], L1:[STACK.L1,14], L0:[STACK.L0,14] };
@@ -3514,28 +3514,78 @@ const AX2D_EP = {
 };
 const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP, 1:AX2D_DP, 2:AX2D_EP };
 function curAX2D(){ const t=AX2D_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
-// 层级堆叠·顶视 → 纯 2D 扁平热力格（收起 3D 瓦片；拖拽旋转时恢复 3D）。运行状态主分析面：L2 芯片 / L3 主机 + Top-5 热点描红
+const RAIL_COL = ['#4369EF','#04D793','#FFAA3B','#FF4B7B','#9B3CF6','#39c5cf','#f59e0b','#ec4899'];   // 8 条 rail 分色（RoCE 口/TP 槽）
+// 纯 2D 扁平格：① 层级堆叠·顶视 = 运行状态热力(L2芯片/L3主机)+Top5热点 · ② 物理·顶/前视 = 机房 rail 分布图（按 rail 着色=网络视角）。拖拽旋转恢复 3D
 function render2dGrid(){
   const svg=$('#axis2d'); if(!svg) return false;
-  const on = S.form==='stack' && S.stackView===2 && Wgt.stack>0.9 && !dragging && (S.level==='L2'||S.level==='L3');
-  if(!on) return false;
-  const isChip=(S.level==='L2'), N=isChip?N_CHIP:N_HOST, posFn=isChip?chipStack:hostStack;
+  const stackTop = S.form==='stack' && S.stackView===2 && Wgt.stack>0.9 && !dragging && (S.level==='L2'||S.level==='L3');
+  const physOrtho = S.form==='phys' && S.physView>0 && Wgt.phys>0.9 && !dragging;
+  if(!(stackTop||physOrtho)) return false;
   if(!svg.classList.contains('show')) svg.classList.add('show');   // 先显形再量尺寸（否则 display:none → rect=0）
   const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2||H<2) return true;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
+  if(physOrtho) return renderPhysGrid(svg,W,H);   // 物理·顶/前视：机柜级负载热力（专用规整网格）
+  // ── 堆叠·顶视：沿真实 3D 位置投影（旋转即无缝回 3D），单元格尺寸取最近邻间距+留白 ──
+  const isChip=(S.level==='L2'), N=isChip?N_CHIP:N_HOST, posFn=isChip?chipStack:hostStack;
+  const fillFn=(i)=>stateCss(health[isChip?(i>>3):i]), hostOfI=(i)=>isChip?(i>>3):i, tpOfI=(i)=>isChip?(i&7):3;
   const gv=new THREE.Vector3();
   const Pj=(i)=>{ const v=posFn(i,gv).project(camera); return [(v.x*.5+.5)*W,(-v.y*.5+.5)*H]; };
-  const a=Pj(0), bx=Pj(isChip?8:1), by=Pj(isChip?256:32);
-  const cw=Math.max(Math.abs(bx[0]-a[0]),Math.abs(by[0]-a[0]),2)*0.82, ch=Math.max(Math.abs(bx[1]-a[1]),Math.abs(by[1]-a[1]),2)*0.82;
-  const hot=new Set(Array.from({length:N_HOST},(_,i)=>i).sort((x,y)=>health[y]-health[x]).slice(0,5));
+  const rowStep = (S.level==='L3') ? 32 : 4;   // L3:主机 32/行；否则组内 4 卡/行
+  const a=Pj(0), nx=Pj(1), ny=Pj(rowStep);
+  const GAP=0.66;   // 单元格只占最近邻间距的 66%，留出可读间隙
+  const cw=Math.max(Math.abs(nx[0]-a[0]),2)*GAP, ch=Math.max(Math.abs(ny[1]-a[1]),2)*GAP;
+  const hot = new Set(Array.from({length:N_HOST},(_,i)=>i).sort((x,y)=>health[y]-health[x]).slice(0,5));
   cells2d.length=0; const out=[];
-  for(let i=0;i<N;i++){ const host=isChip?(i>>3):i, s=Pj(i);
-    const seld=sel2d&&sel2d.host===host&&(isChip?sel2d.tp===(i&7):true), hovd=!seld&&host===S.hoverHost;
-    const st = seld?' stroke="#1f6feb" stroke-width="2"' : hovd?' stroke="#111" stroke-width="1.4"' : hot.has(host)?' stroke="#FF4B7B" stroke-width="1.2"':'';
-    out.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="${stateCss(health[host])}"${st}/>`);
-    cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp:isChip?(i&7):3,pp:ppOf(host),dp:dpOf(host)}); }
-  svg.innerHTML=out.join(''); if(!svg.classList.contains('show')) svg.classList.add('show');
+  for(let i=0;i<N;i++){ const host=hostOfI(i), tp=tpOfI(i), s=Pj(i);
+    const seld=sel2d&&sel2d.host===host&&(sel2d.tp===tp), hovd=!seld&&host===S.hoverHost;
+    const st = seld?' stroke="#1f6feb" stroke-width="2"' : hovd?' stroke="#111" stroke-width="1.4"' : (hot.has(host))?' stroke="#FF4B7B" stroke-width="1.2"':'';
+    out.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" fill="${fillFn(i)}"${st}/>`);
+    cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp,pp:ppOf(host),dp:dpOf(host)}); }
+  svg.innerHTML=out.join('');
   return true;
+}
+// 物理·顶/前视：机柜级负载热力图（规整网格，不投影 3D——机柜内 8 主机沿高度叠放，投影会糊成一坨）
+function renderPhysGrid(svg,W,H){
+  const front = S.physView===2;         // 2=前视立面（列×槽位）  1=顶视平面（列×排）
+  const COLS=16, ROWS=8;
+  const mx=W*0.055, myTop=H*0.135, myBot=H*0.075;
+  const gw=(W-2*mx)/COLS, gh=(H-myTop-myBot)/ROWS;
+  const cw=gw*0.8, ch=gh*0.8;
+  // 每格：主机集合 → 均值负载 + 代表主机（供悬停）
+  const cellHosts=(col,ry)=>{ const hs=[];
+    if(front){ for(let cr=0;cr<ROWS;cr++){ const cab=cr*COLS+col; hs.push(cab*8+ry); } }   // 前视：同(列,槽位)沿 8 排深度
+    else { const cab=ry*COLS+col; for(let s=0;s<8;s++) hs.push(cab*8+s); }                    // 顶视：机柜 8 主机
+    return hs; };
+  const cellLoad=(hs)=>{ let s=0; for(const h of hs) s+=health[h]; return s/hs.length; };
+  // 找最热 6 格（物理热点/散热域）
+  const scored=[];
+  for(let ry=0;ry<ROWS;ry++) for(let col=0;col<COLS;col++){ const hs=cellHosts(col,ry); scored.push({col,ry,load:cellLoad(hs),host:hs[0]}); }
+  const hot=new Set(scored.slice().sort((a,b)=>b.load-a.load).slice(0,6).map(c=>c.col+','+c.ry));
+  cells2d.length=0; const out=[];
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.4).toFixed(0)}" text-anchor="middle">${front
+    ? '机柜立面图 · 16 列 × 8 槽位（U 位高度）· 色 = 同槽位沿 8 排深度均值负载 · 看机架高度上的负载分布'
+    : '机房地面俯视图 · 128 机柜（16 列 × 8 排）· 色 = 机柜 8 卡均值负载 · 定位物理热点 / 散热域'}</text>`);
+  for(const c of scored){ const x=mx+c.col*gw+(gw-cw)/2, y=myTop+c.ry*gh+(gh-ch)/2, cx=x+cw/2, cy=y+ch/2;
+    const seld=sel2d&&sel2d.host===c.host, hovd=!seld&&c.host===S.hoverHost;
+    const st = seld?' stroke="#1f6feb" stroke-width="2.5"' : hovd?' stroke="#111" stroke-width="1.8"' : hot.has(c.col+','+c.ry)?' stroke="#FF4B7B" stroke-width="1.6"':' stroke="#ffffff" stroke-width="1"';
+    out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${stateCss(c.load)}"${st}/>`);
+    cells2d.push({x:cx,y:cy,w:cw,h:ch,host:c.host,tp:-1,pp:ppOf(c.host),dp:dpOf(c.host),physCell:{col:c.col,ry:c.ry,load:c.load,front}}); }
+  // 轴标签
+  const axL='#8b949e';
+  out.push(`<text class="ax-lab" x="${mx.toFixed(0)}" y="${(H-myBot*0.35).toFixed(0)}" fill="${axL}">列 0</text>`);
+  out.push(`<text class="ax-lab" x="${(W-mx).toFixed(0)}" y="${(H-myBot*0.35).toFixed(0)}" text-anchor="end" fill="${axL}">列 15 · ${front?'（→ 机房宽）':'（→ 机房宽）'}</text>`);
+  out.push(`<text class="ax-lab" x="${(mx*0.35).toFixed(0)}" y="${(myTop+gh*0.5).toFixed(0)}" fill="${axL}">${front?'顶槽':'排0'}</text>`);
+  out.push(`<text class="ax-lab" x="${(mx*0.35).toFixed(0)}" y="${(myTop+gh*7.5).toFixed(0)}" fill="${axL}">${front?'底槽':'排7'}</text>`);
+  svg.innerHTML=out.join('');
+  return true;
+}
+// 物理·顶/前视 纯 2D：收起机房 3D 几何（拖拽旋转恢复）
+function updatePhysView(){
+  const physForm = S.form==='phys' && Wgt.phys>0.9;
+  if(!physForm) return;   // 只在物理形态完全落定时接管可见性（否则会误显 cube/stack 已隐藏的网格）
+  const pure2d = S.physView>0 && !dragging;   // 顶/前视且未拖拽 → 收起机房 3D 几何，露出纯 2D 格
+  [chipsMesh,hostsMesh,memMesh,physGroup].forEach(m=>{ if(m && m.visible===pure2d) m.visible=!pure2d; });
+  if(pure2d){ [focusHostMesh,focusChipsMesh,peerMesh,hoverBox,focusHostBox,focusChipBox,focusCabBox,detail].forEach(m=>{ if(m) m.visible=false; }); }   // 收起选中/peer/hover 高亮框（3D 残影）
 }
 function render2dAxis(){
   const svg=$('#axis2d'); if(!svg) return;
@@ -3686,6 +3736,8 @@ window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
   if(S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; morphDirty=true; colorsDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面/热力复位
+  else if(S.form==='phys' && S.physView>0){ S.physView=0; sel2d=null; [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===0)); try{ updatePhysView(); render2dAxis(); }catch(_){ } }  // 拖拽 → 退出物理 2D 平面/立面，回斜视 3D
+  else if(S.form==='stack' && S.stackView===2){ S.stackView=0; sel2d=null; [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===0)); try{ updateStackView(); render2dAxis(); }catch(_){ } }  // 拖拽 → 退出堆叠 2D 顶视，回轴测 3D
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -3704,7 +3756,7 @@ function pickCommAt(clientX, clientY){
 }
 window.addEventListener('pointerup', (e)=>{
   // 纯 2D 热力格：点一张卡=只选这一张（不再整台 Host 8 张一起选）；再点同一张 / 点空白=取消
-  if(dragging && !dragMoved && cells2d.length && !chipsMesh.visible && !hostsMesh.visible && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2))){
+  if(dragging && !dragMoved && cells2d.length && !chipsMesh.visible && !hostsMesh.visible && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2) || (S.form==='phys' && S.physView>0))){
     if(hoverCell2d){ sel2d = (sel2d && sel2d.host===hoverCell2d.host && sel2d.tp===hoverCell2d.tp) ? null : {host:hoverCell2d.host, tp:hoverCell2d.tp, pp:hoverCell2d.pp, dp:hoverCell2d.dp};
       if(sel2d){ S.focusHost=sel2d.host; S.focusChip=sel2d.host*8+sel2d.tp; } }
     else sel2d = null;
@@ -3738,7 +3790,7 @@ stage.addEventListener('mousemove', ev=>{
   if(dragging) return;
   const r = stage.getBoundingClientRect();
   // 纯 2D 热力格：3D 方块已隐藏 → 命中改为对 SVG 格子做命中（悬停详情卡靠 #axis2d 的 2D 卡呈现）
-  if(cells2d.length && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2)) && !chipsMesh.visible && !hostsMesh.visible){
+  if(cells2d.length && ((S.orthoView>0 && has2D() && S.form==='cube') || (S.form==='stack' && S.stackView===2) || (S.form==='phys' && S.physView>0)) && !chipsMesh.visible && !hostsMesh.visible){
     const mx=ev.clientX-r.left, my=ev.clientY-r.top; let found=null;
     for(const c of cells2d){ if(Math.abs(mx-c.x)<=c.w/2+1 && Math.abs(my-c.y)<=c.h/2+1){ found=c; break; } }
     hoverCell2d = found;
@@ -3907,6 +3959,7 @@ function updateStackView(){
   const top = stackForm && S.stackView===2 && Wgt.stack>0.6, lv=S.level, ly=STACK[lv];
   if(top){ const d3=dragging;   // 顶视纯 2D：不拖拽=收起 3D 瓦片（由 render2dGrid 画扁平格）；拖拽旋转=恢复 3D
     chipsMesh.visible = d3 && lv==='L2'; hostsMesh.visible = d3 && lv==='L3';
+    if(!d3){ [focusHostMesh,focusChipsMesh,peerMesh,hoverBox,focusHostBox,focusChipBox,focusCabBox,stackPath].forEach(m=>{ if(m) m.visible=false; }); }   // 收起选中/hover 高亮框 + 层级引导折线（否则纯 2D 上残留 3D 线框）
     for(const kk in stackPlats){ const pf=stackPlats[kk]; if(pf){ if(pf.floor) pf.floor.visible=false; if(pf.label) pf.label.visible=false; } } }
   const key = top ? lv : (stackForm ? '__all' : '__off');
   if(key===stackIsoLv) return;   // 只有层级/视角变化时才重刷 stackGroup 可见性（省开销）
@@ -3933,7 +3986,9 @@ if($('#lvPrev')){ $('#lvPrev').onclick=()=>stepLevel(-1); $('#lvNext').onclick=(
 const PV_PRESET = [ {yaw:.82,pitch:.58}, {yaw:0,pitch:1.5698}, {yaw:0,pitch:.06} ];   // 斜视 / 顶视 / 前视
 PV_PRESET.forEach((v,k)=>{ const el=$('#pv'+k); if(!el) return;
   el.onclick=()=>{ S.physView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
+    if(k===0){ sel2d=null; }   // 回斜视 → 退出纯 2D 选卡
     [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===k));
+    try{ updatePhysView(); render2dAxis(); }catch(_){ }
     try{ wakeLoop(90); }catch(e){} }; });
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
@@ -4507,11 +4562,12 @@ function loop(now){
   else if(S.playing) applyColors(false);
   updateIndicators(); updateCommPulse(now);
   try{ updateStackView(); }catch(_){ }   // 层级堆叠·顶视：单层隔离每帧维持
+  try{ updatePhysView(); }catch(_){ }    // 物理·顶/前视：纯 2D 时收起机房 3D 几何
   _camPrev.copy(camera.position); updateCamera(dt);
   if(_camPrev.distanceToSquared(camera.position) > 2e-4) busy = true;
   if(busy) renderBudget = Math.max(renderBudget, 3);
   if(renderBudget > 0){ renderer.render(scene, camera); renderBudget--;
-    if(S.orthoView || (S.form==='stack' && S.stackView===2)) render2dAxis();   // 正交 2D 坐标图层 / 堆叠顶视纯 2D 格 跟随相机
+    if(S.orthoView || (S.form==='stack' && S.stackView===2) || (S.form==='phys' && S.physView>0)) render2dAxis();   // 正交 2D 坐标图层 / 堆叠顶视 / 物理顶前视 纯 2D 格 跟随相机
   }
   if(renderBudget > 0 || busy) loopRaf = requestAnimationFrame(loop);
   // 真正空闲：停止 rAF，完全释放主线程
