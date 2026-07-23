@@ -766,6 +766,7 @@ const VIEW_LABELS = {
   2:{1:'顶 桶×域',2:'前 桶×PP',3:'侧 域×PP'},
 };
 let cells2d = [];   // 纯 2D 热力格：{x,y,w,h,host,tp,pp,dp} 供 hover / 选卡命中
+let hoverCell2d = null, sel2d = null;   // 2D 视图里的悬停格 / 选中的单张卡（单卡选择）
 function curODEP(){ const t=ODEP_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function has2D(){ return !!ODEP_BY_MODE[cubeMode]; }
 function depthIdxOf(c, dim){ const h=c>>3, dp=h>>4;
@@ -3511,8 +3512,10 @@ function render2dAxis(){
   for(let hv=0;hv<NH;hv++) for(let vv=0;vv<NV;vv++){
     const cc=coordOf(hv,vv), host=cc.dp*16+cc.pp, s=P(wf(cc.o));
     const load = S.sliceOn ? health[host] : orthoCellLoad(host*8+cc.tp);
-    const hovd = host===S.hoverHost;
-    _cell.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="1.5" fill="${stateCss(load)}"${hovd?' stroke="#111" stroke-width="1.8"':''}/>`);
+    const seld = sel2d && sel2d.host===host && sel2d.tp===cc.tp;
+    const hovd = !seld && host===S.hoverHost;
+    const stroke = seld?' stroke="#1f6feb" stroke-width="2.6"' : hovd?' stroke="#111" stroke-width="1.8"' : '';
+    _cell.push(`<rect x="${(s[0]-cw/2).toFixed(1)}" y="${(s[1]-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="1.5" fill="${stateCss(load)}"${stroke}/>`);
     cells2d.push({x:s[0],y:s[1],w:cw,h:ch,host,tp:cc.tp,pp:cc.pp,dp:cc.dp});
   }
   out.push(_cell.join(''));
@@ -3620,7 +3623,7 @@ stage.addEventListener('pointerdown', e=>{ dragging=true; dragMoved=false; px=e.
 window.addEventListener('pointermove', e=>{ if(!dragging) return;
   const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
-  if(S.orthoView){ S.orthoView=0; S.sliceOn=false; morphDirty=true; colorsDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面/热力复位
+  if(S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; morphDirty=true; colorsDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面/热力复位
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -3638,6 +3641,13 @@ function pickCommAt(clientX, clientY){
   return null;
 }
 window.addEventListener('pointerup', (e)=>{
+  // 纯 2D 热力格：点一张卡=只选这一张（不再整台 Host 8 张一起选）；再点同一张 / 点空白=取消
+  if(dragging && !dragMoved && cells2d.length && S.orthoView>0 && has2D() && !chipsMesh.visible){
+    if(hoverCell2d){ sel2d = (sel2d && sel2d.host===hoverCell2d.host && sel2d.tp===hoverCell2d.tp) ? null : {host:hoverCell2d.host, tp:hoverCell2d.tp, pp:hoverCell2d.pp, dp:hoverCell2d.dp};
+      if(sel2d){ S.focusHost=sel2d.host; S.focusChip=sel2d.host*8+sel2d.tp; } }
+    else sel2d = null;
+    try{ render2dAxis(); }catch(_){ } dragging=false; return;
+  }
   if(dragging && !dragMoved){
     const t = pickCommAt(e.clientX, e.clientY);
     if(t && t.edge){ selectEdge(t.edge); dragging=false; return; }
@@ -3669,6 +3679,7 @@ stage.addEventListener('mousemove', ev=>{
   if(cells2d.length && S.orthoView>0 && has2D() && !chipsMesh.visible){
     const mx=ev.clientX-r.left, my=ev.clientY-r.top; let found=null;
     for(const c of cells2d){ if(Math.abs(mx-c.x)<=c.w/2+1 && Math.abs(my-c.y)<=c.h/2+1){ found=c; break; } }
+    hoverCell2d = found;
     setHover(found?found.host:-1, found?'2d':'');
     stage.style.cursor = found?'pointer':'default';
     try{ render2dAxis(); }catch(_){ }
@@ -3760,10 +3771,12 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   S.form = formTarget; renderViewlab();
-  if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
+  if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
     [0,1,2,3].forEach(i=>{ try{ $('#cv'+i).classList.toggle('on', i===0); }catch(_){ } }); }
   try{ $('#net3ctl').classList.toggle('show', S.wire==='NET3' && formTarget==='phys'); }catch(_){ }
   try{ syncSliceCtl(); }catch(_){ }   // 离开 cube 形态时收起剖面控制条
+  try{ chipsMesh.visible = true; }catch(_){ }   // 离开正交 2D → 恢复 3D 方块
+  try{ render2dAxis(); }catch(_){ }   // 立刻清掉 #axis2d 2D 叠加（否则 桶/轴 标尺会残留到 堆叠/物理 视图）
   try{ wakeLoop(90); }catch(_){ } }   // 立刻推进形变动画（否则要等下次交互才morph）
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
@@ -3774,7 +3787,7 @@ updateViewLabels();
   cubePrev = cubeMode; cubeMode = k; cubeBlend = 0;
   [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
   renderCubeAxes(); renderViewlab(); updateViewLabels(); commDirty = true;   // 四维通信线随新变形坐标重布 + 视图名称随布局
-  if(S.orthoView){ S.sliceOn=false; morphDirty=true; colorsDirty=true;   // 换布局时正交剖面/热力随新布局重算
+  if(S.orthoView){ S.sliceOn=false; sel2d=null; morphDirty=true; colorsDirty=true;   // 换布局时正交剖面/热力随新布局重算
     try{ if(od2=ODEP_BY_MODE[cubeMode]) S.sliceVal=(od2[S.orthoView]||{def:0}).def; }catch(_){ }
     try{ syncSliceCtl(); render2dAxis(); }catch(_){ } }
   if(typeof window.__netSyncCubeMode==='function') window.__netSyncCubeMode(k); }; });
@@ -3791,7 +3804,7 @@ CV_PRESET.forEach((v,k)=>{
   $('#cv'+k).onclick = ()=>{ yaw=v.yaw; pitch=v.pitch; zoomBias=1; S.orthoView=v.ortho;
     const od = v.ortho ? (ODEP_BY_MODE[cubeMode]||{})[v.ortho] : null;
     if(od){ S.sliceVal=od.def; }  // 切视角 → 剖面复位到该布局该视角的深度维中心
-    S.sliceOn=false; morphDirty=true; colorsDirty=true;   // 进正交=全部叠加 → 重算为运行状态热力
+    S.sliceOn=false; sel2d=null; morphDirty=true; colorsDirty=true;   // 进正交=全部叠加 → 重算为运行状态热力，清单卡选择
     [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===k));
     syncSliceCtl(); render2dAxis(); try{ wakeLoop(90); }catch(e){} }; });
 /* 剖面控制：单层查看被折叠的深度维、逐层前后翻（顶=PP · 前=DP · 侧=TP） */
