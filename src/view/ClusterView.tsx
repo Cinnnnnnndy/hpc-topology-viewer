@@ -128,8 +128,8 @@ const CAMERA: Record<ViewMode, { pos: [number, number, number]; target: [number,
 const ISO_DIR = new THREE.Vector3(1, 0.82, 1).normalize();   // 2.5-D axonometric direction
 
 const MODE_TABS: { id: ViewMode; label: string }[] = [
-  { id: 'console',  label: '联动控制台' },
   { id: 'cube',     label: '集群驾驶舱' },
+  { id: 'console',  label: '经典工作台 · 备用' },
   { id: 'netcut',   label: '整网切分' },
   { id: 'plane',    label: '平面视图' },
   { id: 'status',   label: '运行状态' },
@@ -153,7 +153,7 @@ function modeFromHash(): ViewMode | null {
   return VALID_MODES.has(h as ViewMode) ? (h as ViewMode) : null;
 }
 
-type WorkbenchViewGroupId = 'console' | 'threeD' | 'twoD' | 'engineering';
+type WorkbenchViewGroupId = 'cube' | 'threeD' | 'twoD' | 'engineering';
 const WORKBENCH_VIEW_GROUPS: {
   id: WorkbenchViewGroupId;
   label: string;
@@ -161,19 +161,19 @@ const WORKBENCH_VIEW_GROUPS: {
   title?: string;
   items?: { id: ViewMode; label: string; note: string }[];
 }[] = [
-  { id: 'console', label: '工作台', mode: 'console' },
+  { id: 'cube', label: '集群驾驶舱', mode: 'cube' },   // 主视图（替代原工作台）
   {
     id: 'threeD',
     label: '3D 对象',
     title: '对象 / 层级',
     items: [
-      { id: 'cube', label: '集群驾驶舱', note: '按 TP/PP/DP/EP 换堆法 · 异常显形状' },
       { id: 'netcut', label: '整网切分', note: '整网图 × 立方 · 前向/反向 · 算子↔切分维联动' },
       { id: 'fullpod', label: 'Pod 阵列', note: '全量 3D 阵列 · 运行相位' },
       { id: 'overview', label: 'Pod 物理机房', note: '机柜=物理分组 · 通信柜总览' },
       { id: 'rack', label: '机柜（物理分组）', note: '机柜内部 · Host/交换' },
       { id: 'node', label: 'Host / Chip', note: 'Chip·NPU · Die · Core-Group' },
       { id: 'topology', label: '互联层级', note: '8 级漏斗 · DCN→NoC' },
+      { id: 'console', label: '经典工作台 · 备用', note: '原联动控制台/工作台 · 保留备用' },
     ],
   },
   {
@@ -296,7 +296,7 @@ export function ClusterView({ chrome = 'classic' }: { chrome?: 'classic' | 'work
   const visualProfile = useContext(SceneVisualProfileContext);
   const workbench = chrome === 'workbench';
   const [gen, setGen] = useState<Gen>(DEFAULT_GEN);
-  const [mode, setMode] = useState<ViewMode>(() => modeFromHash() ?? 'console');   // 初始 mode：URL hash 优先，否则联动控制台
+  const [mode, setMode] = useState<ViewMode>(() => modeFromHash() ?? 'cube');   // 初始 mode：URL hash 优先，否则集群驾驶舱（原工作台已收进 3D 组备用）
   // cross-view sync (运行状态 ⇄ 工作台): shared 工况 / 时间 / 播放 so switching tabs keeps the same world
   const [syncWorkload, setSyncWorkload] = useState<ParallelWorkload>('decode');
   const [syncStep, setSyncStep] = useState(0);
