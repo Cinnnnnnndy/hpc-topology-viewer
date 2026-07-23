@@ -112,6 +112,20 @@
   </section>
 
   <section>
+    <h2>节点内细节 <span class="tag">8 卡 · UB-Mesh + 环 + 出口</span></h2>
+    <p class="sub">放大看一个节点里的 8 张卡：<b>UB-Mesh / NVSwitch 是 any-to-any 全互联（非星型 hub）</b>；NCCL/HCCL 在这张网上<b>搜出一条环</b>（每卡只和环上前后邻居收发）；跨节点时从某卡的<b>网口(NIC)上 rail 出网</b>。三种链路各司其职。</p>
+    <div class="panel" style="box-shadow:inset 3px 0 0 var(--ub)">
+      <div id="svg-node"></div>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="border-color:var(--ub)"></i> UB-Mesh · NVLink ↔ <b style="color:var(--ub)">AccLink</b>（域内 any-to-any）</span>
+      <span><i class="sw" style="border-color:var(--path)"></i> NCCL/HCCL 搜出的<b>环</b>（ring · 数据流向）</span>
+      <span><i class="sw" style="border-color:var(--rail)"></i> 网口→rail 出网（跨节点）</span>
+      <span><i class="sw dot" style="border-color:var(--mgmt)"></i> PCIe/QPI ↔ VPC 管理面（不载集合通信）</span>
+    </div>
+  </section>
+
+  <section>
     <h2>术语对照 <span class="tag">NVIDIA → 昇腾</span></h2>
     <p class="sub">按通信五层从下往上；同一行是同一个东西的两种叫法。</p>
     <div class="tblwrap">
@@ -201,7 +215,55 @@
   const ASC={brandVar:'--asc',domain:'超节点 · Pod UBL128',fabric:'RDMA scale-out',leaf:'L',
     mesh:'UB-Mesh / AccSwitch',meshNote:'UB 域内 any-to-any · 非星型',nic:'口',
     acc:'NPU',accsub:'',pxn:'换轨(PXN)',aria:'昇腾超节点 8-NPU 拓扑与换轨路径'};
-  function render(){ draw('svg-nv',NV); draw('svg-asc',ASC); }
+  // 节点内细节：8 卡 DGX-1 式布局 · UB-Mesh 全互联 + 一条环 + NIC 出口
+  function drawNode(){
+    const host=document.getElementById('svg-node'); if(!host) return; host.innerHTML='';
+    const W=760,H=300; const svg=el('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':'节点内 8 卡 UB-Mesh 与环'});
+    const ink=css('--ink'),dim=css('--dim'),ub=css('--ub'),rail=css('--rail'),mgmt=css('--mgmt'),
+      accel=css('--accel'),aline=css('--accel-line'),path=css('--path');
+    // 8 卡坐标（左 quad:0,1,2,3 · 右 quad:5,4,7,6，DGX-1 编号），2 行 × 4 列
+    const cw=88,ch=48, y0=96,y1=182;
+    const X=[70,180, 470,580];           // 两个 quad 的列
+    const P={0:[X[0],y0],1:[X[1],y0],2:[X[0],y1],3:[X[1],y1],
+             5:[X[2],y0],4:[X[3],y0],7:[X[2],y1],6:[X[3],y1]};
+    const c=(i)=>[P[i][0]+cw/2,P[i][1]+ch/2];
+    // UB-Mesh：quad 内全互联（含对角）+ quad 间对位连（0-5,1-4,2-7,3-6）
+    const meshE=[[0,1],[2,3],[0,2],[1,3],[0,3],[1,2],[5,4],[7,6],[5,7],[4,6],[5,6],[4,7],[0,5],[1,4],[2,7],[3,6]];
+    meshE.forEach(([a,b])=>{const p=c(a),q=c(b);
+      svg.appendChild(el('line',{x1:p[0],y1:p[1],x2:q[0],y2:q[1],stroke:ub,'stroke-width':1.2,opacity:.28}));});
+    // 环（NCCL 搜出的 Hamiltonian ring）：0→1→4→5→7→6→3→2→0，箭头示流向
+    const ring=[0,1,4,5,7,6,3,2];
+    for(let i=0;i<ring.length;i++){const a=ring[i],b=ring[(i+1)%ring.length];const p=c(a),q=c(b);
+      svg.appendChild(el('line',{x1:p[0],y1:p[1],x2:q[0],y2:q[1],stroke:path,'stroke-width':2.6,'stroke-linecap':'round',opacity:.92}));
+      const mx=(p[0]+q[0])/2,my=(p[1]+q[1])/2,ang=Math.atan2(q[1]-p[1],q[0]-p[0]);
+      const ar=(dx,dy)=>[mx+Math.cos(ang+dx)*dy,my+Math.sin(ang+dx)*dy];
+      const t=ar(0,0),l=ar(Math.PI*0.82,9),r=ar(-Math.PI*0.82,9);
+      svg.appendChild(el('path',{d:`M${l[0]},${l[1]} L${t[0]},${t[1]} L${r[0]},${r[1]}`,fill:'none',stroke:path,'stroke-width':2.4}));}
+    // 卡
+    for(const i of [0,1,2,3,4,5,6,7]){const [x,y]=P[i];
+      svg.appendChild(el('rect',{x,y,width:cw,height:ch,rx:8,fill:accel,stroke:aline,'stroke-width':1.4}));
+      const t=el('text',{x:x+cw/2,y:y+ch/2+4,'text-anchor':'middle','font-size':13,'font-family':css('--mono'),
+        'font-weight':600,fill:ink});t.textContent='NPU'+i;svg.appendChild(t);}
+    // NIC 出口（左 quad 顶两卡 + 右 quad 顶两卡各一个口，向上 rail 出网）
+    [[0,'口0'],[1,'口1'],[5,'口5'],[4,'口4']].forEach(([i,lb])=>{const [x,y]=P[i];const nx=x+cw/2;
+      svg.appendChild(el('line',{x1:nx,y1:y,x2:nx,y2:44,stroke:rail,'stroke-width':1.6}));
+      svg.appendChild(el('rect',{x:nx-24,y:26,width:48,height:20,rx:4,fill:'none',stroke:rail,'stroke-width':1.4}));
+      const t=el('text',{x:nx,y:40,'text-anchor':'middle','font-size':10,'font-family':css('--mono'),fill:rail});
+      t.textContent=lb;svg.appendChild(t);});
+    const rt=el('text',{x:20,y:18,'font-size':10.5,'font-family':css('--mono'),'font-weight':700,fill:rail});
+    rt.textContent='↑ 网口 → rail 出网（跨节点）'; svg.appendChild(rt);
+    // PCIe/QPI 管理面（示意：quad 顶部一条灰线到中央）
+    svg.appendChild(el('line',{x1:X[1]+cw/2,y1:y0-6,x2:W/2,y2:70,stroke:mgmt,'stroke-width':1.2,'stroke-dasharray':'4 3',opacity:.7}));
+    svg.appendChild(el('line',{x1:X[2]+cw/2,y1:y0-6,x2:W/2,y2:70,stroke:mgmt,'stroke-width':1.2,'stroke-dasharray':'4 3',opacity:.7}));
+    const pm=el('text',{x:W/2,y:64,'text-anchor':'middle','font-size':9.5,'font-family':css('--mono'),fill:mgmt});
+    pm.textContent='PCIe/QPI ↔ VPC（管理面）'; svg.appendChild(pm);
+    // quad 标注
+    [['左 UB 子域',X[0]+cw],['右 UB 子域',X[2]+cw]].forEach(([lb,mx])=>{
+      const t=el('text',{x:mx,y:H-12,'text-anchor':'middle','font-size':10,'font-family':css('--mono'),fill:ub,opacity:.8});
+      t.textContent=lb;svg.appendChild(t);});
+    host.appendChild(svg);
+  }
+  function render(){ draw('svg-nv',NV); draw('svg-asc',ASC); drawNode(); }
   render();
   // 主题切换时重画（拿到新的 CSS 变量色）
   const mo=new MutationObserver(render);
