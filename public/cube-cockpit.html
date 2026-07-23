@@ -751,15 +751,22 @@ const S = {
 };
 // 正交视角折叠掉的「深度」维（可被剖面逐层翻）。相机固定看下去世界轴：顶↓Y · 前↓Z · 侧↓X，
 // 被折叠的「逻辑维」= 当前魔方布局里落在那条世界轴上的维 → 各布局不同。
+// dim 语义：pp/dp/tp=逻辑维；ehi=DP 高 3 位（DP平铺 gz 行 / EP聚 A2A 域 b）；elo=DP 低 3 位（gx 列 / EP 桶 e）
 const ORTHO_DEPTH = { 1:{dim:'pp',N:16,lab:'PP',def:7}, 2:{dim:'dp',N:64,lab:'DP',def:31}, 3:{dim:'tp',N:8,lab:'TP',def:3} };  // 标准/TP切片：X=TP·Y=PP·Z=DP
 const ODEP_PP     = { 1:{dim:'tp',N:8,lab:'TP',def:3}, 2:{dim:'dp',N:64,lab:'DP',def:31}, 3:{dim:'pp',N:16,lab:'PP',def:7} };   // PP流水：X=PP·Y=TP·Z=DP
-// 已支持 2D 正交拍平的魔方布局。其余布局（TP切片/PP流水/DP平铺/EP聚）暂只走自由 3D 斜视，
-// 2D 正交拍平仍在打磨（拍平后 InstancedMesh 有渲染同步问题待解），届时并入本表即可全量启用。
-const ODEP_BY_MODE = { 0:ORTHO_DEPTH, 3:ORTHO_DEPTH, 4:ODEP_PP };
+const ODEP_DP     = { 1:{dim:'pp',N:16,lab:'PP',def:7}, 2:{dim:'ehi',N:8,lab:'副本行',def:0}, 3:{dim:'elo',N:8,lab:'副本列',def:0} };  // DP平铺：X=gx·Y=PP·Z=gz
+const ODEP_EP     = { 1:{dim:'pp',N:16,lab:'PP',def:7}, 2:{dim:'ehi',N:8,lab:'A2A域',def:0}, 3:{dim:'elo',N:8,lab:'专家桶',def:0} };  // EP聚：X=桶·Y=PP·Z=域
+const ODEP_BY_MODE = { 0:ORTHO_DEPTH, 3:ORTHO_DEPTH, 4:ODEP_PP, 1:ODEP_DP, 2:ODEP_EP };
 const VIEW_PIN = { 1:'y', 2:'z', 3:'x' };                          // 顶↓世界Y · 前↓世界Z · 侧↓世界X（= 被压平的轴）
 function curODEP(){ const t=ODEP_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function has2D(){ return !!ODEP_BY_MODE[cubeMode]; }
-function depthIdxOf(c, dim){ const h=c>>3; return dim==='dp'?(h>>4) : dim==='tp'?(c&7) : (h%16); }
+function depthIdxOf(c, dim){ const h=c>>3, dp=h>>4;
+  return dim==='dp'?dp : dim==='tp'?(c&7) : dim==='ehi'?(dp>>3) : dim==='elo'?(dp&7) : (h%16); }
+// 把「代表卡」的深度维设成目标层（用于压平取平面世界坐标）：ehi/elo 折进 dp
+function repChipOf(dim, val){ let tp=3, pp=7, dp=31;
+  if(dim==='pp') pp=val; else if(dim==='tp') tp=val; else if(dim==='dp') dp=val;
+  else if(dim==='ehi') dp=val*8+(dp&7); else if(dim==='elo') dp=(dp>>3)*8+val;
+  return (dp*16+pp)*8+tp; }
 const rng = (i)=>{ let x = Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); };
 const health = new Float32Array(N_HOST);
 for(let h=0;h<N_HOST;h++){ health[h] = .25 + .5*rng(h); }
@@ -832,6 +839,8 @@ function orthoCellLoad(c){
   const h=c>>3, pp=h%16, dp=h>>4, od=curODEP(), dim=od?od.dim:'tp';
   if(dim==='dp'){ let s=0; for(let d=0;d<64;d++) s+=health[d*16+pp]; return s/64; }        // 折 DP：cell 聚合 64 DP
   if(dim==='pp'){ let s=0; for(let p=0;p<16;p++) s+=health[dp*16+p]; return s/16; }         // 折 PP：cell 聚合 16 PP
+  if(dim==='ehi'){ const elo=dp&7; let s=0; for(let g=0;g<8;g++) s+=health[(g*8+elo)*16+pp]; return s/8; }  // 折 gz/域：聚合同列/桶的 8 组
+  if(dim==='elo'){ const ehi=dp>>3; let s=0; for(let e=0;e<8;e++) s+=health[(ehi*8+e)*16+pp]; return s/8; } // 折 gx/桶：聚合同行/域的 8 个
   return health[dp*16+pp];                                                                  // 折 TP：health 与 TP 无关
 }
 function chipColor(c){
@@ -3108,8 +3117,7 @@ function applyMorph(){
   let pinAx=0, pinV=0;   // 压平轴：1=x 2=y 3=z（由视角固定）
   if(ortho){ pinAx = {x:1,y:2,z:3}[VIEW_PIN[S.orthoView]];
     // 压平到 depthVal 那一层的世界坐标（用当前布局的实际摆位算，各布局自适应）
-    const rc = ({tp:3,pp:7,dp:31}); rc[ortho.dim]=oTarget;   // 代表卡：折叠维=目标层、其余取中
-    const w = chipCubeM((rc.dp*16+rc.pp)*8+rc.tp, cubeMode, vT);
+    const w = chipCubeM(repChipOf(ortho.dim, oTarget), cubeMode, vT);
     pinV = pinAx===1? w.x : pinAx===2? w.y : w.z; }
   const flatEps = ortho ? .0009 : 0;   // 全部叠加：按深度序给极小错位，避免 z 冲突（同 cell 各层同色，重叠不显脏）
   for(let c=0;c<N_CHIP;c++){
@@ -3324,8 +3332,9 @@ const camCur = { t:V3(0,2,0), d:52 };
 function camGoal(){
   if(S.form==='cube' || Wgt.cube>0.5){
     if(S.orthoView>0 && has2D()){                      // 正交 2D 视角：贴合可见平面取景，填满画布（各布局各自框法）
-      const ty = cubeMode===4 ? 12 : 17;               // PP流水中心 y=12，其余=17
-      const D = ({ 0:{1:62,2:34,3:62}, 3:{1:80,2:80,3:62}, 4:{1:104,2:104,3:62} })[cubeMode] || {1:62,2:34,3:62};
+      const ty = cubeMode===4 ? 12 : cubeMode===1 ? 10 : 17;   // PP流水 y=12 · DP平铺 y=10 · 其余 17
+      const D = ({ 0:{1:62,2:34,3:62}, 3:{1:80,2:80,3:62}, 4:{1:104,2:104,3:62},
+                   1:{1:132,2:100,3:100}, 2:{1:70,2:56,3:56} })[cubeMode] || {1:62,2:34,3:62};
       return { t:V3(0,ty,0), d:D[S.orthoView] }; }
     const sf = selGroupFrame(); if(sf) return sf;      // 选卡 → 镜头贴近焦点卡 + 其关联组（看得清「哪几张卡」）
     if(cubeMode===1) return { t:V3(0,10,0), d:150 };
@@ -3423,7 +3432,37 @@ const AX2D_PP = {
       depth:{dim:'pp',val:7}, hEdgeV:0, vEdgeV:0,
       center:{tp:3.5,pp:7,dp:31.5}, hT:'DP · 数据副本(64)', vT:'TP · 张量切片(8)' },
 };
-const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP };
+// DP平铺布局（X=gx列·Y=PP·Z=gz行）：顶=64 副本网格(gx×gz)、前=gx×PP、侧=gz×PP
+const AX2D_DP = {
+  1:{ h:{dim:'ehi',vals:[0,1,2,3,4,5,6,7],lab:g=>'行'+g},
+      v:{dim:'elo',vals:[0,1,2,3,4,5,6,7],lab:g=>'列'+g},
+      depth:{dim:'pp',val:7}, hEdgeV:7, vEdgeV:0,
+      center:{tp:3,pp:7,ehi:3,elo:3}, hT:'DP 副本 · gz 行(8)', vT:'DP 副本 · gx 列(8)' },
+  2:{ h:{dim:'elo',vals:[0,1,2,3,4,5,6,7],lab:g=>'列'+g},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'ehi',val:0}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3,pp:7.5,ehi:0,elo:3}, hT:'DP 副本 · gx 列(8)', vT:'PP · 模型深度 L1→48' },
+  3:{ h:{dim:'ehi',vals:[0,1,2,3,4,5,6,7],lab:g=>'行'+g},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'elo',val:0}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3,pp:7.5,ehi:3,elo:0}, hT:'DP 副本 · gz 行(8)', vT:'PP · 模型深度 L1→48' },
+};
+// EP聚布局（X=专家桶·Y=PP·Z=A2A域）：顶=桶×域、前=桶×PP、侧=域×PP
+const AX2D_EP = {
+  1:{ h:{dim:'ehi',vals:[0,1,2,3,4,5,6,7],lab:b=>'域'+b},
+      v:{dim:'elo',vals:[0,1,2,3,4,5,6,7],lab:e=>'桶'+e},
+      depth:{dim:'pp',val:7}, hEdgeV:7, vEdgeV:0,
+      center:{tp:3,pp:7,ehi:3,elo:3}, hT:'A2A · 域(8)', vT:'EP · 专家桶(8)' },
+  2:{ h:{dim:'elo',vals:[0,1,2,3,4,5,6,7],lab:e=>'桶'+e},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'ehi',val:0}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3,pp:7.5,ehi:0,elo:3}, hT:'EP · 专家桶(8)', vT:'PP · 模型深度 L1→48' },
+  3:{ h:{dim:'ehi',vals:[0,1,2,3,4,5,6,7],lab:b=>'域'+b},
+      v:{dim:'pp',vals:[0,3,6,9,12,15],lab:p=>'PP'+p},
+      depth:{dim:'elo',val:0}, hEdgeV:15, vEdgeV:0,
+      center:{tp:3,pp:7.5,ehi:3,elo:0}, hT:'A2A · 域(8)', vT:'PP · 模型深度 L1→48' },
+};
+const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP, 1:AX2D_DP, 2:AX2D_EP };
 function curAX2D(){ const t=AX2D_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function render2dAxis(){
   const svg=$('#axis2d'); if(!svg) return;
@@ -3437,7 +3476,10 @@ function render2dAxis(){
   const depthVal = S.sliceOn ? S.sliceVal : cfg.depth.val;   // 剖面：轴与十字线落在当前查看的那一层深度上
   const esc=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const P=v=>{ const p=v.clone().project(camera); return [(p.x*.5+.5)*W,(-p.y*.5+.5)*H]; };
-  const wf=o=>chipCubeM((o.dp*16+o.pp)*8+o.tp, cubeMode, new THREE.Vector3());   // 用当前布局的实际摆位（标准/TP切片/PP流水）
+  const wf=o=>{ let dp = o.dp!=null?o.dp:31;                                     // ehi/elo（DP平铺 gz/gx · EP聚 域/桶）折进 dp
+      if(o.ehi!=null||o.elo!=null){ const hi=o.ehi!=null?o.ehi:(dp>>3), lo=o.elo!=null?o.elo:(dp&7); dp=hi*8+lo; }
+      const pp=o.pp!=null?o.pp:7, tp=o.tp!=null?o.tp:3;
+      return chipCubeM((dp*16+pp)*8+tp, cubeMode, new THREE.Vector3()); };   // 用当前布局的实际摆位
   const cen=P(wf({...cfg.center,[cfg.depth.dim]:depthVal}));
   const mkPts=(axis,fixed)=>axis.vals.map(val=>({val, s:P(wf({...fixed,[axis.dim]:val}))}));
   const hPts=mkPts(cfg.h,{[cfg.depth.dim]:depthVal,[cfg.v.dim]:cfg.hEdgeV});
@@ -3452,7 +3494,7 @@ function render2dAxis(){
     if(cfg.v.dim==='pp')vHi=pp; if(cfg.v.dim==='dp')vHi=dp; }
   // ── 边缘负载分布条：沿轴显示每个 DP 副本 / PP 段 的平均负载（找慢副本/慢段）。TP 维=host 级恒定，无分布 ──
   const marginal=(axis,pts,hiVal)=>{
-    if(axis.dim==='tp') return;
+    if(axis.dim!=='dp' && axis.dim!=='pp') return;   // 仅 DP/PP 轴有真实分布条；TP/gx/gz/桶/域 轴略过
     const a=pts[0].s,b=pts[pts.length-1].s, N=axis.dim==='pp'?16:64;
     const dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1; let px=-dy/L,py=dx/L;
     if(px*(a[0]-cen[0])+py*(a[1]-cen[1])<0){ px=-px; py=-py; }   // 指向远离网格中心（外侧）
@@ -3488,7 +3530,7 @@ function render2dAxis(){
     if(phDim===cfg.h.dim || phDim===cfg.v.dim){
       const horiz = phDim===cfg.h.dim, other = horiz? cfg.v : cfg.h;
       const axv = horiz? cfg.h : cfg.v;
-      const oc = other.dim==='pp'?7 : other.dim==='tp'?3 : 31;   // 另一维取中心行/列，strand 画在平面中央
+      const oc = other.dim==='pp'?7 : other.dim==='tp'?3 : (other.dim==='elo'||other.dim==='ehi')?3 : 31;   // 另一维取中心行/列，strand 画在平面中央
       const sp = axv.vals.map(v=> P(wf({[cfg.depth.dim]:depthVal,[other.dim]:oc,[phDim]:v})));
       out.push(`<polyline class="comm-strand" points="${sp.map(s=>s[0].toFixed(1)+','+s[1].toFixed(1)).join(' ')}" stroke="${phCol}"/>`);
       if(phId==='DP'||phId==='EP'){   // 环：端到端回连弧
