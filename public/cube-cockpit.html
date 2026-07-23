@@ -672,6 +672,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="pv0" class="on" title="斜视：默认斜看机房">斜视</button>
           <button id="pv1" title="顶视：俯看机柜阵平面图（楼层平面）">顶视 · 平面</button>
           <button id="pv2" title="前视：正面看机柜立面（机架高度）">前视 · 立面</button>
+          <button id="pvNet" title="着色切换：负载热力 ↔ 网络域（按超节点/A2A 域分色，看逻辑通信域的物理落位）" style="margin-left:6px">着色 · 负载</button>
         </div>
       </div>
       <div id="formctl">
@@ -772,7 +773,8 @@ const S = {
   orthoView:0,                           // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
   sliceOn:false, sliceVal:31,            // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
   stackView:0,                           // 层级堆叠视角：0=轴测 · 1=前视(层级剖面) · 2=顶视(单层 2D 运行状态图)
-  physView:0                             // 物理层级视角：0=斜视 · 1=顶视(机柜平面) · 2=前视(机架立面)
+  physView:0,                            // 物理层级视角：0=斜视 · 1=顶视(机柜平面) · 2=前视(机架立面)
+  physNet:false                          // 物理楼层图着色：false=负载热力 · true=网络域(超节点/A2A 分色)
 };
 const STACK_LV = ['L0','L1','L2','L3','L4','L5','L6','L7'];   // 由细到粗
 const STACK_LV_NAME = { L7:'L7 · Global', L6:'L6 · Cluster', L5:'L5 · Pool', L4:'L4 · Pod', L3:'L3 · Host', L2:'L2 · Chip', L1:'L1 · Die', L0:'L0 · Core' };
@@ -3544,6 +3546,39 @@ function render2dGrid(){
   svg.innerHTML=out.join('');
   return true;
 }
+// 需求1 路径投影：选中卡 → 楼层图上画该通信域的物理路径分段
+//   域界判据：同 Pod=UB 域内(紫·走 NVSwitch/UB-Mesh any-to-any) · 跨 Pod=RDMA rail(蓝·经 NIC 出网) · ◇=换轨(PXN)
+function physPathOverlay(out, g){
+  if(S.filterHost==null) return;
+  const {front,mx,myTop,gw,gh,cw,ch,W,H}=g;
+  const rel = activeRel();
+  const fH=S.focusHost, fTp=S.focusChip&7, fDp=dpOf(fH), fPp=ppOf(fH), fDom=epDomOf(fH);
+  const cellCenter=(h)=>{ const cab=h>>3, col=cab%16, ry= front?(h&7):(cab>>4);
+    return [mx+col*gw+gw/2, myTop+ry*gh+gh/2]; };
+  const [fx,fy]=cellCenter(fH);
+  let peers=[];
+  if(rel==='TP') peers=[fH];                                       // 同 Host 8 卡 → 1 机柜
+  else if(rel==='PP'){ for(let k=0;k<16;k++) peers.push(fDp*16+k); }   // 同副本 16 段 → ≤2 机柜
+  else if(rel==='DP'){ for(let d=0;d<64;d++) peers.push(d*16+fPp); }   // 同段 64 副本 → 跨 64 Pod
+  else { for(let d=fDom*8; d<fDom*8+8; d++) peers.push(d*16+fPp); }    // EP·A2A 域 8 副本
+  const UBc='#9B3CF6', RAILc='#4369EF';
+  const seen=new Set(); let crossN=0; const lines=[], boxes=[]; const many=peers.length>20;
+  for(const ph of peers){ if(ph===fH) continue;
+    const cross = dpOf(ph)!==fDp, col = cross?RAILc:UBc; if(cross) crossN++;
+    const [px,py]=cellCenter(ph), key=px.toFixed(0)+'|'+py.toFixed(0);
+    if(!seen.has(key)){ seen.add(key);
+      boxes.push(`<rect x="${(px-cw/2).toFixed(1)}" y="${(py-ch/2).toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="none" stroke="${col}" stroke-width="2"/>`); }
+    if(!many) lines.push(`<line x1="${fx.toFixed(1)}" y1="${fy.toFixed(1)}" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="${col}" stroke-width="1.1" opacity="0.42"${cross?' stroke-dasharray="5 3"':''}/>`);
+  }
+  out.push(lines.join('')); out.push(boxes.join(''));
+  if(crossN>0){ out.push(`<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="5.5" fill="${RAILc}" stroke="#fff" stroke-width="1.5"/>`);
+    out.push(`<text x="${(fx+9).toFixed(1)}" y="${(fy-7).toFixed(1)}" font-size="10" fill="${RAILc}">◇换轨(PXN)→ rail ${fTp} 出网</text>`); }
+  const cap = rel==='TP' ? 'TP 域 · 同 Host 8 卡 → 全走 UB 域内（NVSwitch/UB-Mesh · any-to-any）· 不出网'
+    : rel==='PP' ? 'PP 链 · 同副本 16 段（≤2 机柜）→ 走 UB 域内 · 不出网'
+    : rel==='DP' ? `DP 域 · 跨 ${crossN} Pod → 出 RDMA rail ${fTp} 平面 · 域内先经 UB 换轨(PXN)`
+    : `EP·A2A 域 · 跨 8 Pod（同超节点）→ AccLink / RDMA rail ${fTp}`;
+  out.push(`<text x="${(W/2).toFixed(0)}" y="${(myTop*0.78).toFixed(0)}" text-anchor="middle" font-size="11" fill="#8b949e">${cap} ｜ <tspan fill="${UBc}">紫=UB域内</tspan> · <tspan fill="${RAILc}">蓝=跨Pod rail</tspan></text>`);
+}
 // 物理·顶/前视：机柜级负载热力图（规整网格，不投影 3D——机柜内 8 主机沿高度叠放，投影会糊成一坨）
 function renderPhysGrid(svg,W,H){
   const front = S.physView===2;         // 2=前视立面（列×槽位）  1=顶视平面（列×排）
@@ -3562,16 +3597,22 @@ function renderPhysGrid(svg,W,H){
   for(let ry=0;ry<ROWS;ry++) for(let col=0;col<COLS;col++){ const hs=cellHosts(col,ry); scored.push({col,ry,load:cellLoad(hs),host:hs[0]}); }
   const hot=new Set(scored.slice().sort((a,b)=>b.load-a.load).slice(0,6).map(c=>c.col+','+c.ry));
   cells2d.length=0; const out=[];
-  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.4).toFixed(0)}" text-anchor="middle">${front
-    ? '机柜立面图 · 16 列 × 8 槽位（U 位高度）· 色 = 同槽位沿 8 排深度均值负载 · 看机架高度上的负载分布'
-    : '机房地面俯视图 · 128 机柜（16 列 × 8 排）· 色 = 机柜 8 卡均值负载 · 定位物理热点 / 散热域'}</text>`);
+  const netMode = S.physNet;
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.4).toFixed(0)}" text-anchor="middle">${
+    netMode ? (front?'机柜立面图 · 色 = 超节点/A2A 域（8 域分色）· 看逻辑通信域的物理落位'
+                    :'机房地面俯视图 · 128 机柜 · 色 = 超节点/A2A 域（8 域分色 · 同色=域内走 UB · 跨色=跨域上 RDMA rail）')
+            : (front?'机柜立面图 · 16 列 × 8 槽位（U 位高度）· 色 = 同槽位沿 8 排深度均值负载 · 看机架高度上的负载分布'
+                    :'机房地面俯视图 · 128 机柜（16 列 × 8 排）· 色 = 机柜 8 卡均值负载 · 定位物理热点 / 散热域')}</text>`);
   // 选中卡定位到本视图的格：顶视=同机柜(列,排)；前视=同(列,槽位)。左右任一处选都点亮 → 双向联动
   const fCab=S.focusHost>>3, fCol=fCab%16, fRow=fCab>>4, fSlot=S.focusHost&7;
   for(const c of scored){ const x=mx+c.col*gw+(gw-cw)/2, y=myTop+c.ry*gh+(gh-ch)/2, cx=x+cw/2, cy=y+ch/2;
     const seld=front ? (c.col===fCol && c.ry===fSlot) : (c.col===fCol && c.ry===fRow), hovd=!seld&&c.host===S.hoverHost;
     const st = seld?' stroke="#1f6feb" stroke-width="2.5"' : hovd?' stroke="#111" stroke-width="1.8"' : hot.has(c.col+','+c.ry)?' stroke="#FF4B7B" stroke-width="1.6"':' stroke="#ffffff" stroke-width="1"';
-    out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${stateCss(c.load)}"${st}/>`);
+    const fillCss = netMode ? RAIL_COL[epDomOf(c.host)%8] : stateCss(c.load);
+    out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="2" fill="${fillCss}"${netMode?' opacity="0.9"':''}${st}/>`);
     cells2d.push({x:cx,y:cy,w:cw,h:ch,host:c.host,tp:-1,pp:ppOf(c.host),dp:dpOf(c.host),physCell:{col:c.col,ry:c.ry,load:c.load,front}}); }
+  // ── 需求1 路径投影：选中卡 → 在楼层图上画该通信域的物理路径分段（同 Pod=UB紫 · 跨 Pod=RDMA rail 蓝 · ◇=换轨 PXN）──
+  physPathOverlay(out, {front,mx,myTop,myBot,gw,gh,cw,ch,W,H});
   // 轴标签
   const axL='#8b949e';
   out.push(`<text class="ax-lab" x="${mx.toFixed(0)}" y="${(H-myBot*0.35).toFixed(0)}" fill="${axL}">列 0</text>`);
@@ -4011,6 +4052,10 @@ PV_PRESET.forEach((v,k)=>{ const el=$('#pv'+k); if(!el) return;
     [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===k));
     try{ updatePhysView(); render2dAxis(); }catch(_){ }
     try{ wakeLoop(90); }catch(e){} }; });
+if($('#pvNet')) $('#pvNet').onclick=()=>{ S.physNet=!S.physNet;
+  $('#pvNet').textContent = S.physNet ? '着色 · 网络域' : '着色 · 负载';
+  $('#pvNet').classList.toggle('on', S.physNet);
+  try{ render2dAxis(); wakeLoop(30); }catch(_){ } };
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
