@@ -3133,8 +3133,13 @@ function applyColors(chipsToo){
   if(chipsToo){
     for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); candyBoost(cTmp); neut(cTmp); chipsMesh.setColorAt(c,cTmp); }
     chipsMesh.instanceColor.needsUpdate = true;
-    if(stackL5){ stackL5.setColorAt(1, cTmp.set(S.anomaly?0x8b1a1a:0x21262d));
-      stackL5.instanceColor.needsUpdate = true; }
+    // 运行状态：所有堆叠层瓦片都按聚合负载着色 → 「层级堆叠·顶视」= 统一的逐层状态面（L6 Pod / L5 池 / L7 集群 也上色，不再是灰块）
+    const meanH=(a,b)=>{ let s=0; for(let h=a;h<b;h++) s+=health[h]; return s/((b-a)||1); };
+    if(stackT6){ for(let i=0;i<64;i++){ cTmp.setStyle(stateCss(meanH(i*16,i*16+16))); candyBoost(cTmp); stackT6.setColorAt(i,cTmp); }
+      stackT6.instanceColor.needsUpdate = true; }                                   // L6 Cluster：64 Pod 均值负载
+    if(stackL5){ for(let i=0;i<8;i++){ cTmp.setStyle(stateCss(meanH(i*128,i*128+128))); candyBoost(cTmp); stackL5.setColorAt(i,cTmp); }
+      stackL5.instanceColor.needsUpdate = true; }                                   // L5 Pool：8 池均值负载
+    if(stackG7){ cTmp.setStyle(stateCss(meanH(0,N_HOST))); candyBoost(cTmp); stackG7.material.color.copy(cTmp); }   // L7 Global：全集群均值
     if(stackL4){ for(let cab=0;cab<128;cab++){ let hot=cab*8;
         for(let s=1;s<8;s++) if(health[cab*8+s]>health[hot]) hot=cab*8+s;
         cTmp.setStyle(hostColor(hot)); candyBoost(cTmp); stackL4.setColorAt(cab, cTmp); }
@@ -3410,8 +3415,10 @@ function updateCamera(dt){
   const g = camGoal();
   const k = 1-Math.exp(-dt*3.4);
   camCur.t.lerp(g.t,k); camCur.d += (g.d*zoomBias-camCur.d)*k;
-  // 正交视角（顶/前/侧）：极小 FOV + 拉远 = 近似正交投影，透视被压没，读成 2D 图表。
-  const ortho = S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube';
+  // 正交视角（顶/前/侧）：极小 FOV + 拉远 = 近似正交投影，透视被压没，读成 2D 图表。三个形态的视角图都走正交，不留透视。
+  const ortho = (S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube')
+    || (S.form==='stack' && S.stackView===1 && Wgt.stack>0.5)    // 层级堆叠 前视 → 平铺（顶视本就俯视=平，无需）
+    || (S.form==='phys' && S.physView>0 && Wgt.phys>0.5);        // 物理 顶视/前视 → 平铺（机柜不再向两侧散开）
   const FOV_STD = 40, FOV_ORTHO = 12;
   const orthoK = ortho ? Math.tan(FOV_STD/2*Math.PI/180)/Math.tan(FOV_ORTHO/2*Math.PI/180) : 1;  // ≈19×，保持取景高度不变
   camera.fov = ortho ? FOV_ORTHO : FOV_STD;
@@ -3874,24 +3881,28 @@ let stackIsoLv = '__all';
 function updateStackView(){
   const stackForm = S.form==='stack' || Wgt.stack>0.5;
   const top = stackForm && S.stackView===2 && Wgt.stack>0.6, lv=S.level, ly=STACK[lv];
-  if(top){ chipsMesh.visible=(lv==='L2'); hostsMesh.visible=(lv==='L3'); }   // 每帧强制（updateCommPulse 每帧会把它们重置为可见）
+  if(top){ chipsMesh.visible=(lv==='L2'); hostsMesh.visible=(lv==='L3');
+    [stackL4,stackL5,stackT6,stackG7].forEach(m=>{ if(m) m.frustumCulled=false; }); }   // 每帧强制可见 + 关视锥剔除（俯视拉远会误剔堆叠瓦片）
   const key = top ? lv : (stackForm ? '__all' : '__off');
   if(key===stackIsoLv) return;   // 只有层级/视角变化时才重刷 stackGroup 可见性（省开销）
   stackIsoLv = key;
-  if(top){   // 俯视看单层：只留当前层高度附近的几何（瓦片/底板/轮廓），其余层收起，避免俯视时各层投影叠一起
+  if(top){   // 俯视看单层：只留当前层高度附近的瓦片，其余层收起，标注隐藏
     stackGroup.children.forEach(o=>{ if(o===stackPath){ o.visible=false; return; }
       const oy=(o.position&&o.position.y)||0; o.visible = Math.abs(oy-ly)<3.2; });
+    for(const kk in stackPlats){ const pf=stackPlats[kk]; if(pf&&pf.label) pf.label.visible=false; }
   } else if(stackForm){   // 轴测/前视：恢复全部层
     stackGroup.children.forEach(o=>{ o.visible=true; });
   }
 }
+// 顶视·单层 的运行状态热力，只在有 per-对象 负载的两层间切：L2 芯片(8192) ↔ L3 主机(1024)（更粗的 Pod/池/集群 汇总看前视/轴测）
+const TOP_LV = ['L2','L3'];
 SV_PRESET.forEach((v,k)=>{ const el=$('#sv'+k); if(!el) return;
   el.onclick=()=>{ S.stackView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
     [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===k));
-    if(k===2 && !['L0','L1','L2','L3','L4','L5','L6','L7'].includes(S.level)) setLevel('L2');
+    if(k===2 && !TOP_LV.includes(S.level)) setLevel('L2');
     colorsDirty=true; syncLvlCtl(); try{ updateStackView(); wakeLoop(90); }catch(e){} }; });
-function stepLevel(dir){ const i=STACK_LV.indexOf(S.level); const ni=Math.max(0,Math.min(7,(i<0?2:i)+dir));
-  setLevel(STACK_LV[ni]); syncLvlCtl(); try{ updateStackView(); wakeLoop(60); }catch(_){ } }
+function stepLevel(dir){ const cur=TOP_LV.indexOf(S.level); const ni=Math.max(0,Math.min(TOP_LV.length-1,(cur<0?0:cur)+dir));
+  setLevel(TOP_LV[ni]); syncLvlCtl(); try{ updateStackView(); wakeLoop(60); }catch(_){ } }
 if($('#lvPrev')){ $('#lvPrev').onclick=()=>stepLevel(-1); $('#lvNext').onclick=()=>stepLevel(1); }
 /* ===== 物理层级 视角：斜视 / 顶视(机柜平面图) / 前视(机架立面) ===== */
 const PV_PRESET = [ {yaw:.82,pitch:.58}, {yaw:0,pitch:1.5698}, {yaw:0,pitch:.06} ];   // 斜视 / 顶视 / 前视
