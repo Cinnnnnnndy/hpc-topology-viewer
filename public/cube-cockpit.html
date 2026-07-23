@@ -515,6 +515,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
       <div id="lefttabs">
         <button id="tabHier" class="on">层级剖面</button>
         <button id="tabModel">整网分隔映射</button>
+        <button id="tabMap">拓扑映射</button>
         <button id="tabAlgo" style="display:none">算法展开</button>
         <button id="tabNet3" style="display:none">三张网</button>
       </div>
@@ -638,6 +639,34 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <canvas id="net3cv" width="404" height="470" style="display:block;width:100%;border:1px solid var(--border);border-radius:6px;cursor:pointer"></canvas>
         <div id="net3Desc" style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:36px"></div>
       </div>
+      <!-- ============ 页签：拓扑映射（昇腾超节点网络结构参考）============ -->
+      <div class="pane" id="paneMap" style="overflow-y:auto">
+        <div style="font-size:11px;color:var(--dim);line-height:1.5;margin-bottom:10px">昇腾超节点的网络结构与通信含义。<b style="color:var(--sys-text-bright)">形状/位置管"是什么"，颜色管"忙不忙"</b>——这里只讲结构。</div>
+        <!-- 结构简图（自上而下：超节点→UB域内→rail出网→管理面）-->
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+          <div style="border:1.5px dashed #9B3CF6;border-radius:8px;padding:8px 10px">
+            <div style="font-size:11.5px;font-weight:600;color:#9B3CF6">超节点 · Pod UBL128（Scale-Up 域）</div>
+            <div style="font-size:10.5px;color:var(--dim);margin-top:3px">128 NPU · 域内高带宽 · 跨域才出网</div>
+            <div style="margin-top:7px;background:rgba(155,60,246,.14);border-radius:6px;padding:6px 9px;font-size:11px;color:var(--sys-text-bright)">8× NPU — <b style="color:#9B3CF6">UB-Mesh / AccLink</b> 全互联<div style="font-size:10px;color:var(--dim)">any-to-any · 非星型 hub · 域内一切通信走这里</div></div>
+          </div>
+          <div style="background:rgba(67,105,239,.14);border-radius:6px;padding:6px 9px;font-size:11px;color:var(--sys-text-bright)">每卡 RDMA 口 → <b style="color:#4369EF">rail 平面</b>（跨超节点）<div style="font-size:10px;color:var(--dim)">同号口成一条 rail · 只承载跨 Pod 流量 · <b style="color:#4369EF">◇换轨(PXN)</b>=域内先搬到对齐 rail 的卡再出</div></div>
+          <div style="background:var(--state-muted);border-radius:6px;padding:6px 9px;font-size:11px;color:var(--dim)">管理 / 存储 → <b>VPC 平面（PCIe）</b> · 视觉弱化 · 不载集合通信</div>
+        </div>
+        <!-- 节点内细节：选中一台 Host → 展开它的 8 卡 UB-Mesh + 环 + 出口 -->
+        <div id="mapNodeCap" style="font-size:11px;color:var(--dim);margin:2px 0 6px">节点内细节 · <b style="color:var(--sys-text-bright)">在任意视图点一台卡</b>看它所在 Host 的 8 卡结构</div>
+        <canvas id="mapNodeCv" width="404" height="210" style="display:block;width:100%;border:1px solid var(--border);border-radius:6px;margin-bottom:12px"></canvas>
+        <!-- 结构术语表 -->
+        <table id="mapTbl" style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="color:var(--dim);text-align:left">
+            <th style="padding:5px 6px;border-bottom:1px solid var(--border);font-weight:600">结构</th>
+            <th style="padding:5px 6px;border-bottom:1px solid var(--border);font-weight:600">昇腾超节点</th>
+            <th style="padding:5px 6px;border-bottom:1px solid var(--border);font-weight:600">通信含义</th>
+            <th style="padding:5px 6px;border-bottom:1px solid var(--border);font-weight:600;opacity:.7">参考</th>
+          </tr></thead>
+          <tbody id="mapRows"></tbody>
+        </table>
+        <div style="font-size:10px;color:var(--dim);margin-top:10px;line-height:1.5">集合原语（AllReduce/AllToAll…）与算法（ring/tree）是逻辑层，不随硬件变——见「算法展开」页。</div>
+      </div>
     </div>
     <div id="right">
       <canvas id="stage"></canvas>
@@ -687,6 +716,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="pv1" title="顶视：俯看机柜阵平面图（楼层平面）">顶视 · 平面</button>
           <button id="pv2" title="前视：正面看机柜立面（机架高度）">前视 · 立面</button>
           <button id="pvNet" title="着色切换：负载热力 ↔ 网络域（按超节点/A2A 域分色，看逻辑通信域的物理落位）" style="margin-left:6px">着色 · 负载</button>
+          <button id="pvMap" title="打开左侧「拓扑映射」：昇腾超节点网络结构 + 节点内 8 卡 UB-Mesh/环/出口" style="margin-left:6px">拓扑参考</button>
         </div>
       </div>
       <div id="formctl">
@@ -1305,6 +1335,7 @@ function drawArcs(){
 function touchLeft(){
   if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); }
   else if(S.tab==='model') renderMM();
+  else if(S.tab==='map') renderMapNode();
   else if(S.tab==='algo') renderAlgo();
   else if(S.tab==='net3') renderNet3Panel();
   try{ updateAlgoTab(); updateNet3Tab(); }catch(_){ }
@@ -1459,15 +1490,18 @@ function renderMemPanel(){
 /* ---- 页签切换 ---- */
 $('#tabHier').onclick = ()=>setTab('hier');
 $('#tabModel').onclick = ()=>setTab('model');
+$('#tabMap').onclick = ()=>setTab('map');
 $('#tabAlgo').onclick = ()=>setTab('algo');
 $('#tabNet3').onclick = ()=>setTab('net3');
 function setTab(t){ S.tab=t;
   $('#tabHier').classList.toggle('on',t==='hier');
   $('#tabModel').classList.toggle('on',t==='model');
+  $('#tabMap').classList.toggle('on',t==='map');
   $('#tabAlgo').classList.toggle('on',t==='algo');
   $('#tabNet3').classList.toggle('on',t==='net3');
   $('#paneHier').classList.toggle('show',t==='hier');
   $('#paneModel').classList.toggle('show',t==='model');
+  $('#paneMap').classList.toggle('show',t==='map');
   $('#paneAlgo').classList.toggle('show',t==='algo');
   $('#paneNet3').classList.toggle('show',t==='net3');
   commsvg.style.display = t==='hier'?'block':'none';
@@ -1476,8 +1510,69 @@ function setTab(t){ S.tab=t;
   left.classList.toggle('net-expand', netExpanded);
   if(t==='hier'){ renderL3(); renderL2(); requestAnimationFrame(drawArcs); }
   else if(t==='model') renderMM();
+  else if(t==='map') renderMapPanel();
   else if(t==='algo') renderAlgo();
   else if(t==='net3') renderNet3Panel();
+}
+function renderMapPanel(){ const tb=$('#mapRows'); if(!tb||tb.childElementCount) return;   // 一次性填充结构术语表
+  const R=[
+    ['加速器','NPU（昇腾 950DT）','通信参与者=卡(rank)；die/core 不算节点','GPU'],
+    ['节点内网','UB-Mesh · AccLink','域内 any-to-any 全互联·非星型','NVLink · NVSwitch'],
+    ['出网口','RDMA 网口','每卡直出·同号口=一条 rail','RoCE NIC'],
+    ['rail 平面','RDMA rail','仅承载跨超节点流量·按 rail 分层','rail-optimized · Spine/Leaf'],
+    ['换轨','换轨（PXN 同构逻辑）','域内先搬到对齐 rail 的卡再出网','PXN'],
+    ['Scale-Up 域','超节点 · Pod UBL128','域内走 UB·跨域才上 RDMA','NVLink domain'],
+    ['管理/存储','VPC 平面（PCIe）','不承载集合通信','PCIe / QPI'],
+    ['算法/原语','HCCL','ring/tree/AllReduce…（逻辑层）','NCCL'],
+  ];
+  tb.innerHTML=R.map(r=>`<tr>
+    <td style="padding:5px 6px;border-bottom:1px solid var(--border);color:var(--dim)">${r[0]}</td>
+    <td style="padding:5px 6px;border-bottom:1px solid var(--border);color:var(--sys-text-bright);font-weight:600">${r[1]}</td>
+    <td style="padding:5px 6px;border-bottom:1px solid var(--border);color:var(--dim)">${r[2]}</td>
+    <td style="padding:5px 6px;border-bottom:1px solid var(--border);color:var(--dim);opacity:.65">${r[3]}</td></tr>`).join('');
+  renderMapNode();
+}
+// 节点内细节：选中 Host 的 8 卡 UB-Mesh 全互联 + NCCL 环 + NIC 出口（随选卡更新）
+function renderMapNode(){ const cv=$('#mapNodeCv'); if(!cv) return; const g=cv.getContext('2d');
+  hidpi(cv,404,210); g.clearRect(0,0,404,210);
+  const ink=themeC('#c9d1d9','rgba(0,0,0,.8)'), dim=themeC('#8b949e','rgba(0,0,0,.45)'),
+    UB='#9B3CF6', RAIL='#4369EF', RING='#d838b0', card=themeC('#1d2634','#eef1f6'), cl=themeC('#38455a','#c3ccdb');
+  const cw=64,chh=34, cols=[20,116,212,308], yT=78,yB=138;
+  const P=[[cols[0],yT],[cols[1],yT],[cols[2],yT],[cols[3],yT],[cols[0],yB],[cols[1],yB],[cols[2],yB],[cols[3],yB]];
+  const c=i=>[P[i][0]+cw/2,P[i][1]+chh/2];
+  const fh=S.focusHost, fs=((S.focusChip>>3)===fh)?slotOf(S.focusChip):-1;   // 焦点卡在本 Host 内的槽位（否则 -1）
+  // UB-Mesh：任意两卡（any-to-any，非星型）
+  g.strokeStyle=UB; g.globalAlpha=.22; g.lineWidth=1;
+  for(let a=0;a<8;a++)for(let b=a+1;b<8;b++){const p=c(a),q=c(b);g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();}
+  g.globalAlpha=1;
+  // NCCL 环：0→1→2→3→7→6→5→4→0（蛇形），带箭头
+  const ring=[0,1,2,3,7,6,5,4]; g.strokeStyle=RING; g.fillStyle=RING; g.lineWidth=2.4;
+  for(let i=0;i<8;i++){const p=c(ring[i]),q=c(ring[(i+1)%8]);
+    g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);g.stroke();
+    const mx=(p[0]+q[0])/2,my=(p[1]+q[1])/2,an=Math.atan2(q[1]-p[1],q[0]-p[0]);
+    g.beginPath();g.moveTo(mx+Math.cos(an)*5,my+Math.sin(an)*5);
+    g.lineTo(mx+Math.cos(an+2.6)*7,my+Math.sin(an+2.6)*7);
+    g.lineTo(mx+Math.cos(an-2.6)*7,my+Math.sin(an-2.6)*7);g.closePath();g.fill();}
+  // 卡
+  g.textAlign='center'; g.font='11px sans-serif';
+  for(let i=0;i<8;i++){const [x,y]=P[i], sel=(i===fs);
+    g.fillStyle=card; g.strokeStyle=sel?RAIL:cl; g.lineWidth=sel?2.4:1.2;
+    g.beginPath(); g.roundRect(x,y,cw,chh,6); g.fill(); g.stroke();
+    g.fillStyle=ink; g.fillText('NPU'+i, x+cw/2, y+chh/2+4);}
+  // NIC 出口（上排 4 卡各一个口 → rail）
+  g.strokeStyle=RAIL; g.fillStyle=RAIL; g.lineWidth=1.4; g.font='9px sans-serif';
+  for(let i=0;i<4;i++){const nx=cols[i]+cw/2;
+    g.beginPath();g.moveTo(nx,yT);g.lineTo(nx,44);g.stroke();
+    g.strokeRect(nx-20,26,40,16); g.fillText('口'+i, nx, 38);}
+  g.fillStyle=RAIL; g.textAlign='left'; g.fillText('↑ 网口 → rail 出网（跨节点）', 12, 16);
+  // 图例
+  g.textAlign='center'; g.font='9px sans-serif';
+  g.fillStyle=UB; g.fillText('紫=UB-Mesh 全互联', 90, 200);
+  g.fillStyle=RING; g.fillText('粉=NCCL 环', 210, 200);
+  g.fillStyle=RAIL; g.fillText('蓝=rail 出口', 310, 200);
+  // 标题随选卡
+  const capEl=$('#mapNodeCap');
+  if(capEl) capEl.innerHTML=`节点内细节 · <b style="color:var(--sys-text-bright)">Host ${fh}</b> · 8×NPU · UB-Mesh 全互联（域内 any-to-any）`;
 }
 /* 算法展开 tab 入口：任意视图选中一个通信域（= 选卡 + 关联维）后出现 */
 function updateAlgoTab(){
@@ -4141,6 +4236,7 @@ if($('#pvNet')) $('#pvNet').onclick=()=>{ S.physNet=!S.physNet;
   $('#pvNet').textContent = S.physNet ? '着色 · 网络域' : '着色 · 负载';
   $('#pvNet').classList.toggle('on', S.physNet);
   try{ render2dAxis(); wakeLoop(30); }catch(_){ } };
+if($('#pvMap')) $('#pvMap').onclick=()=>{ try{ setTab('map'); }catch(_){ } };
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
