@@ -668,6 +668,11 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="sv1" title="前视：正面看 L0→L7 层级剖面">前视 · 层级</button>
           <button id="sv2" title="顶视：俯看单层的 2D 运行状态图，配合层级逐层查看">顶视 · 单层</button>
         </div>
+        <div class="fm-row" id="physViews" style="display:none">
+          <button id="pv0" class="on" title="斜视：默认斜看机房">斜视</button>
+          <button id="pv1" title="顶视：俯看机柜阵平面图（楼层平面）">顶视 · 平面</button>
+          <button id="pv2" title="前视：正面看机柜立面（机架高度）">前视 · 立面</button>
+        </div>
       </div>
       <div id="formctl">
         <span class="hint">拖拽旋转 · 滚轮缩放 · 选层=相机飞行</span>
@@ -766,7 +771,8 @@ const S = {
   algoView:'ring', algoCh:2,             // 需求2：算法展开面板（ring/tree · channel 数）
   orthoView:0,                           // 正交 2D 视角：0=斜视(透视) · 1=顶TP×DP · 2=前TP×PP · 3=侧DP×PP
   sliceOn:false, sliceVal:31,            // 剖面：单层查看被折叠的「深度」维（顶=PP · 前=DP · 侧=TP）；逐层前后翻
-  stackView:0                            // 层级堆叠视角：0=轴测 · 1=前视(层级剖面) · 2=顶视(单层 2D 运行状态图)
+  stackView:0,                           // 层级堆叠视角：0=轴测 · 1=前视(层级剖面) · 2=顶视(单层 2D 运行状态图)
+  physView:0                             // 物理层级视角：0=斜视 · 1=顶视(机柜平面) · 2=前视(机架立面)
 };
 const STACK_LV = ['L0','L1','L2','L3','L4','L5','L6','L7'];   // 由细到粗
 const STACK_LV_NAME = { L7:'L7 · Global', L6:'L6 · Cluster', L5:'L5 · Pool', L4:'L4 · Pod', L3:'L3 · Host', L2:'L2 · Chip', L1:'L1 · Die', L0:'L0 · Core' };
@@ -3796,6 +3802,7 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   try{ $('#stackViews').style.display = formTarget==='stack' ? 'flex' : 'none'; }catch(_){ }
+  try{ $('#physViews').style.display = formTarget==='phys' ? 'flex' : 'none'; }catch(_){ }
   S.form = formTarget; renderViewlab();
   try{ syncLvlCtl(); updateStackView(); }catch(_){ }
   if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
@@ -3886,6 +3893,12 @@ SV_PRESET.forEach((v,k)=>{ const el=$('#sv'+k); if(!el) return;
 function stepLevel(dir){ const i=STACK_LV.indexOf(S.level); const ni=Math.max(0,Math.min(7,(i<0?2:i)+dir));
   setLevel(STACK_LV[ni]); syncLvlCtl(); try{ updateStackView(); wakeLoop(60); }catch(_){ } }
 if($('#lvPrev')){ $('#lvPrev').onclick=()=>stepLevel(-1); $('#lvNext').onclick=()=>stepLevel(1); }
+/* ===== 物理层级 视角：斜视 / 顶视(机柜平面图) / 前视(机架立面) ===== */
+const PV_PRESET = [ {yaw:.82,pitch:.58}, {yaw:0,pitch:1.5698}, {yaw:0,pitch:.06} ];   // 斜视 / 顶视 / 前视
+PV_PRESET.forEach((v,k)=>{ const el=$('#pv'+k); if(!el) return;
+  el.onclick=()=>{ S.physView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
+    [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===k));
+    try{ wakeLoop(90); }catch(e){} }; });
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
