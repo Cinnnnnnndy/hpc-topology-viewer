@@ -1,0 +1,105 @@
+/* pto rubik-cube pattern —— 逻辑魔方独立 pattern 的 UI 样式（.prc- 前缀，随 [data-theme] 明暗联动） */
+.prc-root {
+  --prc-bg: #0d1117;
+  --prc-panel: rgba(13, 17, 23, 0.82);
+  --prc-border: #30363d;
+  --prc-tx: #e6edf3;
+  --prc-tx2: #9aa7b4;
+  --prc-tx3: #6e7681;
+  --prc-btn: #161b22;
+  --prc-btn-on: #1f6feb;
+  --prc-hot: #ff4b6e;
+  --prc-ok: #3fb950;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--prc-bg);
+  color: var(--prc-tx);
+  font-family: 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 12px;
+}
+.prc-root[data-theme="light"] {
+  --prc-bg: #f4f6fa;
+  --prc-panel: rgba(255, 255, 255, 0.9);
+  --prc-border: #d0d7e2;
+  --prc-tx: #1f2733;
+  --prc-tx2: #4a5768;
+  --prc-tx3: #6e7681;
+  --prc-btn: #ffffff;
+}
+.prc-stage { position: absolute; inset: 0; }
+.prc-stage canvas { display: block; }
+
+/* 顶部工具栏：形态 / 视角(+剖面) / 着色 / 注入 */
+.prc-topbar {
+  position: absolute; top: 10px; left: 10px; z-index: 5;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--prc-panel); border: 1px solid var(--prc-border);
+  backdrop-filter: blur(6px); max-width: min(92vw, 620px);
+}
+.prc-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.prc-lab { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--prc-tx3); width: 30px; flex-shrink: 0; }
+.prc-btn {
+  padding: 3px 10px; font-size: 11.5px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx2);
+  font-family: inherit;
+}
+.prc-btn:hover { color: var(--prc-tx); border-color: var(--prc-tx3); }
+.prc-btn.on { background: var(--prc-btn-on); border-color: var(--prc-btn-on); color: #fff; font-weight: 600; }
+.prc-btn.on.hot { background: var(--prc-hot); border-color: var(--prc-hot); }
+.prc-slice { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
+.prc-slice input[type="range"] { width: 110px; accent-color: var(--prc-btn-on); }
+.prc-slicelab { font-size: 10.5px; font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace; color: var(--prc-tx2); }
+
+/* 读图钥匙 HUD（左下） */
+.prc-hud {
+  position: absolute; left: 10px; bottom: 10px; z-index: 5;
+  max-width: min(92vw, 640px); padding: 8px 12px; border-radius: 10px;
+  background: var(--prc-panel); border: 1px solid var(--prc-border);
+  backdrop-filter: blur(6px); line-height: 1.65; font-size: 12px;
+}
+.prc-dim { color: var(--prc-tx3); font-size: 11px; }
+.prc-warn { color: var(--prc-hot); font-size: 11px; }
+.prc-ok { color: var(--prc-ok); }
+.prc-hot { color: #f0883e; }
+
+/* 「每格=几张卡」粒度小贴士：只在正交 2D 现身 */
+.prc-pill {
+  position: absolute; top: 10px; right: 10px; z-index: 5;
+  padding: 5px 11px; border-radius: 999px; font-size: 11.5px;
+  background: var(--prc-panel); border: 1px solid var(--prc-border);
+  backdrop-filter: blur(6px); display: none;
+}
+.prc-pill.show { display: block; }
+
+/* 维度图例（右下） */
+.prc-legend {
+  position: absolute; right: 10px; bottom: 10px; z-index: 5;
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  padding: 6px 11px; border-radius: 10px; font-size: 11px;
+  background: var(--prc-panel); border: 1px solid var(--prc-border);
+  backdrop-filter: blur(6px); max-width: min(92vw, 560px);
+}
+.prc-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--prc-tx2); }
+.prc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.prc-legend .prc-ramp i { width: 42px; background: linear-gradient(90deg, #2ea043, #d29922, #f85149); }
+
+/* 选中卡信息卡（右上，粒度贴士/宿主主题按钮下方） */
+.prc-info {
+  position: absolute; top: 80px; right: 10px; z-index: 5;
+  padding: 8px 12px; border-radius: 10px; line-height: 1.7; font-size: 12px;
+  background: var(--prc-panel); border: 1px solid var(--prc-border);
+  backdrop-filter: blur(6px); display: none;
+  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+}
+.prc-info.show { display: block; }
+
+/* 悬停 tooltip */
+.prc-tip {
+  position: absolute; z-index: 9; display: none; pointer-events: none;
+  padding: 4px 9px; border-radius: 7px; font-size: 11px; white-space: nowrap;
+  background: var(--prc-panel); border: 1px solid var(--prc-border); color: var(--prc-tx);
+  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+}

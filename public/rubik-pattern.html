@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>逻辑魔方 Pattern · TP2·PP4·EP8·DP16 · rank 1024</title>
+<script src="./vendor/three-r128.min.js"></script>
+<link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
+<script src="./vendor/rubik-cube/pattern.js"></script>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
+  #app { width: 100%; height: 100%; }
+  #themeBtn {
+    position: absolute; top: 10px; right: 10px; z-index: 20;
+    padding: 4px 11px; font-size: 11.5px; border-radius: 7px; cursor: pointer;
+    border: 1px solid #30363d; background: rgba(13,17,23,.82); color: #9aa7b4;
+    font-family: 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+    transform: translateY(32px);   /* 让位给粒度贴士（正交 2D 时出现在同一角） */
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<button id="themeBtn">☀ 浅色</button>
+<script>
+/* 逻辑魔方 pattern 的独立迭代页：全屏挂载，主题支持 ?theme= 初始值与宿主 postMessage 联动
+   （与 cube-cockpit.html 同一套约定，之后可被宿主以 iframe 嵌入）。 */
+(function(){
+  var qs = new URLSearchParams(location.search);
+  var theme = qs.get('theme') === 'light' ? 'light' : 'dark';
+
+  var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
+    theme: theme,
+    // 并行度配置：tp·pp·ep·dp 之积 = rank 总数 → 2×4×8×16 = 1024
+    //（dp=A2A 域数；稠密层 DP 副本 = ep×dp = 128）
+    config: { tp: 2, pp: 4, ep: 8, dp: 16 },
+    onSelect: function(sel){
+      // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
+      try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}
+    },
+  });
+  window.rubik = handle;   // 控制台可直接迭代调试：rubik.setMode(2) / rubik.selectBucket(3) …
+
+  function applyTheme(t){
+    theme = t === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.style.background = theme === 'light' ? '#f4f6fa' : '#0d1117';
+    var btn = document.getElementById('themeBtn');
+    btn.textContent = theme === 'light' ? '☾ 深色' : '☀ 浅色';
+    btn.style.background = theme === 'light' ? 'rgba(255,255,255,.9)' : 'rgba(13,17,23,.82)';
+    btn.style.borderColor = theme === 'light' ? '#d0d7e2' : '#30363d';
+    btn.style.color = theme === 'light' ? '#4a5768' : '#9aa7b4';
+    handle.setTheme(theme);
+  }
+  applyTheme(theme);
+  document.getElementById('themeBtn').addEventListener('click', function(){
+    applyTheme(theme === 'light' ? 'dark' : 'light');
+  });
+  window.addEventListener('message', function(e){
+    var d = e.data || {};
+    if (d.type === 'rubik-theme' || d.type === 'cockpit-theme') applyTheme(d.theme);
+    if (d.type === 'rubik-cmd'){                   // 宿主 → pattern 指令桥（与 cockpit-cmd 同思路）
+      if (d.cmd === 'mode') handle.setMode(d.value|0);
+      else if (d.cmd === 'layer') handle.selectLayer(d.value == null ? null : d.value|0);
+      else if (d.cmd === 'bucket') handle.selectBucket(d.value == null ? null : d.value|0);
+      else if (d.cmd === 'anom') handle.setAnomaly(d.value || 'none');
+    }
+  });
+})();
+</script>
+</body>
+</html>

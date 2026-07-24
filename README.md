@@ -20,6 +20,16 @@ download guide.
 Every interactive element shows a hover tooltip. The seven recurring colors map to
 the seven independent switch planes (each plane is its own non-blocking fabric).
 
+## Rubik-cube pattern（逻辑魔方 · 独立迭代）
+
+The cockpit's 逻辑魔方 (5 形态重排 · 轴标注 · 正交 2D/剖面 · 四维通信组) is also
+extracted as a standalone, parallelism-configurable pattern for independent
+iteration — default **TP2×PP4×EP8×DP16 = 1024 ranks**. Entry page:
+`public/rubik-pattern.html` (dev: `/hpc-topology-viewer/rubik-pattern.html`);
+sources & docs: [`public/vendor/rubik-cube/`](public/vendor/rubik-cube/README.md).
+Integration hooks for the whole-network graph / expert graph are pre-wired
+(`selectLayer` / `selectBucket` / `onSelect`).
+
 ## Develop
 
 ```bash
