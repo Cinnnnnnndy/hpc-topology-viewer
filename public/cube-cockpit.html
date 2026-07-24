@@ -1912,7 +1912,10 @@ function chipCubeM(c,mode,out){ const h=c>>3, tp=c&7, pp=h%16, dp=h>>4;
   if(mode===3)                     // TP 切片：8 片"权重墙"沿 X 拉开，一面墙=全集群同槽位切片（查同槽位系统性问题）
     return out.set((tp-3.5)*7, 17+(7.5-pp)*1.15, (dp-31.5)*.75);
   if(mode===4)                     // PP 流水：16 段横向展开成流水线（找慢段/气泡）
-    return out.set((pp-7.5)*6.2, 12+(tp-3.5)*1.2, (dp-31.5)*.75);
+    // PP 间距原先 6.2，相对 TP(1.2)/DP(.75) 悬殊太多（8×/5×）——2D 正交把两轴投影到同一屏幕时，
+    // 强制方形格子只能取两轴里更密的那个当边长，PP 轴就被拉出一堆空隙、显得稀疏；斜视里也一样被拉得过扁。
+    // 缩到 2.4（= TP 间距的 2 倍，仍看得出"横向展开"，但比例不再离谱），顶/前/斜视三个视角一起改善。
+    return out.set((pp-7.5)*2.4, 12+(tp-3.5)*1.2, (dp-31.5)*.75);
   return out.set(CUBE.cx+(tp-3.5)*CUBE.sx, CUBE.cy+(7.5-pp)*CUBE.sy, CUBE.cz+(dp-31.5)*CUBE.sz);
 }
 function chipCube(c,out){ return chipCubeM(c, cubeMode, out); }
@@ -3583,14 +3586,14 @@ function camGoal(){
   if(S.form==='cube' || Wgt.cube>0.5){
     if(S.orthoView>0 && has2D()){                      // 正交 2D 视角：贴合可见平面取景，填满画布（各布局各自框法）
       const ty = cubeMode===4 ? 12 : cubeMode===1 ? 10 : 17;   // PP流水 y=12 · DP平铺 y=10 · 其余 17
-      const D = ({ 0:{1:62,2:34,3:62}, 3:{1:80,2:80,3:62}, 4:{1:104,2:104,3:62},
+      const D = ({ 0:{1:62,2:34,3:62}, 3:{1:80,2:80,3:62}, 4:{1:66,2:42,3:62},   // PP流水 间距缩小后取景距离同步收窄（视角1/2 含 PP 轴，视角3 不含，不变）
                    1:{1:132,2:100,3:100}, 2:{1:70,2:56,3:56} })[cubeMode] || {1:62,2:34,3:62};
       return { t:V3(0,ty,0), d:D[S.orthoView] }; }
     const sf = selGroupFrame(); if(sf) return sf;      // 选卡 → 镜头贴近焦点卡 + 其关联组（看得清「哪几张卡」）
     if(cubeMode===1) return { t:V3(0,10,0), d:150 };
     if(cubeMode===2) return { t:V3(0,16,0), d:95 };
     if(cubeMode===3) return { t:V3(0,17,0), d:118 };
-    if(cubeMode===4) return { t:V3(0,12,0), d:152 };
+    if(cubeMode===4) return { t:V3(0,12,0), d:90 };   // PP 轴间距收窄后取景距离同步收窄，避免斜视里内容缩成一小团
     return { t:V3(CUBE.cx,CUBE.cy,CUBE.cz), d:82 }; }
   if(S.form==='stack' || Wgt.stack>0.5){
     if(S.stackView===1) return { t:V3(0,15.5,0), d:76 };   // 前视：正面框住 L0→L7 整个层级剖面
