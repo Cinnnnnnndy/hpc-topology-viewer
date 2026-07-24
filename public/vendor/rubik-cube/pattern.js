@@ -22,12 +22,12 @@
 (function registerPtoRubikCubePattern(global) {
   'use strict';
 
-  /* ── 并行度配置：tp·pp·ep·dp 四数之积 = rank 总数（默认 2×4×8×16 = 1024）。
-        dp 语义 = A2A 域数（专家数据并行组）；稠密层的 DP 副本数 = ep×dp（默认 128），
-        与 cockpit 白皮书语义一致：EP 折入 DP 轴，副本 rep 持有专家桶 rep%ep，
-        相邻 ep 个副本构成 1 个 A2A 域。 ── */
+  /* ── 并行度配置：rank 总数 = tp × pp × dp（默认 2×4×128 = 1024）。
+        EP 不参与乘法（与 cockpit 白皮书语义一致：EP 折入 DP 轴，不新增轴）——
+        ep 只要求整除 dp：副本 rep 持有专家桶 rep%ep，相邻 ep 个副本构成
+        1 个 A2A 域，共 dp/ep 个域（默认 128/8 = 16）。 ── */
   const DEFAULTS = {
-    tp: 2, pp: 4, ep: 8, dp: 16,
+    tp: 2, pp: 4, dp: 128, ep: 8,
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（★）
@@ -48,9 +48,11 @@
   /* ════════════════════════ 纯布局模型 ════════════════════════ */
   function createModel(userCfg) {
     const C = Object.assign({}, DEFAULTS, userCfg || {});
-    const TP = C.tp | 0, PP = C.pp | 0, EP = C.ep | 0, DOM = C.dp | 0;
-    const REP = EP * DOM;                 // 稠密层 DP 副本数
-    const N = TP * PP * REP;              // rank 总数
+    const TP = C.tp | 0, PP = C.pp | 0, EP = C.ep | 0;
+    const REP = C.dp | 0;                 // 稠密层 DP 副本数（EP 折入其中，不参与乘法）
+    if (REP % EP) throw new Error(`rubik-cube: ep(${EP}) 须整除 dp(${REP})——EP 折入 DP 轴`);
+    const DOM = REP / EP;                 // A2A 域数（专家数据并行组）
+    const N = TP * PP * REP;              // rank 总数 = tp × pp × dp
     const LPS = Math.max(1, Math.round(C.layers / PP));            // 每段层数
     const EXP_PER = Math.max(1, Math.floor(C.experts / EP));       // 每桶专家数
     // DP 平铺宫格：找到能整除副本数、最接近方形的列数

@@ -15,18 +15,19 @@ pto-design-system 风格的 **rubik-cube** pattern —— 把 `public/cube-cockp
 ## 并行度配置（本次迭代的规格）
 
 ```js
-PtoRubikCubePattern.mount(el, { config: { tp: 2, pp: 4, ep: 8, dp: 16 } });
+PtoRubikCubePattern.mount(el, { config: { tp: 2, pp: 4, dp: 128, ep: 8 } });
 ```
 
-四数之积 = rank 总数：**TP2 × PP4 × EP8 × DP16 = 1024 rank**。语义与
-cockpit 白皮书一致：**EP 折入 DP 轴**——`dp` 是 A2A 域数（专家数据并行组），
-稠密层的完整 DP 副本数 = `ep × dp` = 128；副本 `rep` 持有专家桶 `rep % ep`，
-相邻 `ep` 个副本构成 1 个 A2A 域（桶↔卡非 1:1）。`layers`（默认 48 →
-每 PP 段 12 层）、`experts`（默认 64 → 每桶 8 个）、`hotBuckets` 均可配。
+rank 总数 = **tp × pp × dp = 2 × 4 × 128 = 1024**。**EP 不参与乘法**——语义与
+cockpit 白皮书一致：EP 折入 DP 轴、不新增轴，`ep` 只要求整除 `dp`：副本
+`rep` 持有专家桶 `rep % ep`（8 桶），相邻 `ep` 个副本构成 1 个 A2A 域
+（共 `dp/ep` = 16 域；桶↔卡非 1:1）。`layers`（默认 48 → 每 PP 段 12 层）、
+`experts`（默认 64 → 每桶 8 个）、`hotBuckets` 均可配。
 
-> 注：需求原文写的是「pp4、tp2、ep8、dp6、rank1024」，但 2×4×8×6=384、
-> 2×4×6=48，均无法凑出 1024；按 2×4×8×**16**=1024 取 dp=16（疑为笔误）。
-> 若本意不同，改 `rubik-pattern.html` 里的一行 config 即可。
+> 注：需求原文「pp4、tp2、ep8、dp6、rank1024」中，rank1024 与 tp2×pp4 定死
+> 稠密副本 dp=128；ep8 折入其中（8 桶×16 域），不进乘法；「dp6」无法与
+> 1024 吻合（2×4×6=48），故按 dp=128 取值。若本意不同，改
+> `rubik-pattern.html` 里的一行 config 即可。
 
 ## 保留的表达（与 cockpit 逻辑魔方逐项对齐）
 

@@ -1,8 +1,15 @@
 name: Deploy to GitHub Pages
 
+# 本分支（claude/rubik-view-pattern-extraction-7pk0qt）的部署策略：
+# 站点框架（工作台/驾驶舱）永远从 main 构建——本分支不进 Pages 框架；
+# 本分支只贡献一个静态子目录 /rubik/（逻辑魔方 pattern 独立迭代页），
+# 叠加在 main 构建产物之上一起发布。push 本分支即可刷新 /rubik/。
+# 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，
+# main 一发布 /rubik/ 会暂时消失，重跑本分支的 workflow（push 或
+# workflow_dispatch 选本分支）即可找回。
 on:
   push:
-    branches: [main]
+    branches: [main, claude/rubik-view-pattern-extraction-7pk0qt]
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -20,8 +27,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main (site framework)
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,6 +43,23 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Checkout rubik pattern branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/rubik-view-pattern-extraction-7pk0qt
+          path: rubik-src
+
+      - name: Overlay rubik pattern at /rubik/
+        # 自包含子目录：index.html 里的相对路径 ./vendor/... 解析到 /rubik/vendor/...；
+        # three-r128 直接取 main 构建产物里的同一份。
+        run: |
+          mkdir -p dist/rubik/vendor/rubik-cube
+          cp rubik-src/public/rubik-pattern.html dist/rubik/index.html
+          cp dist/vendor/three-r128.min.js dist/rubik/vendor/three-r128.min.js
+          cp rubik-src/public/vendor/rubik-cube/pattern.js \
+             rubik-src/public/vendor/rubik-cube/pattern.css \
+             dist/rubik/vendor/rubik-cube/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

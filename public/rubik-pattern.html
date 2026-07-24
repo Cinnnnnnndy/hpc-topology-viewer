@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>逻辑魔方 Pattern · TP2·PP4·EP8·DP16 · rank 1024</title>
+<title>逻辑魔方 Pattern · TP2×PP4×DP128=1024 rank · EP8 折入 DP</title>
 <script src="./vendor/three-r128.min.js"></script>
 <link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
 <script src="./vendor/rubik-cube/pattern.js"></script>
@@ -32,9 +32,9 @@
 
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,
-    // 并行度配置：tp·pp·ep·dp 之积 = rank 总数 → 2×4×8×16 = 1024
-    //（dp=A2A 域数；稠密层 DP 副本 = ep×dp = 128）
-    config: { tp: 2, pp: 4, ep: 8, dp: 16 },
+    // 并行度配置：rank 总数 = tp×pp×dp = 2×4×128 = 1024。
+    // EP 不参与乘法（折入 DP 轴）：ep=8 只把 128 副本分成 8 桶 × 16 个 A2A 域。
+    config: { tp: 2, pp: 4, dp: 128, ep: 8 },
     onSelect: function(sel){
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
       try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}

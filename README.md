@@ -24,7 +24,7 @@ the seven independent switch planes (each plane is its own non-blocking fabric).
 
 The cockpit's 逻辑魔方 (5 形态重排 · 轴标注 · 正交 2D/剖面 · 四维通信组) is also
 extracted as a standalone, parallelism-configurable pattern for independent
-iteration — default **TP2×PP4×EP8×DP16 = 1024 ranks**. Entry page:
+iteration — default **TP2×PP4×DP128 = 1024 ranks** (EP8 folded into DP). Entry page:
 `public/rubik-pattern.html` (dev: `/hpc-topology-viewer/rubik-pattern.html`);
 sources & docs: [`public/vendor/rubik-cube/`](public/vendor/rubik-cube/README.md).
 Integration hooks for the whole-network graph / expert graph are pre-wired
