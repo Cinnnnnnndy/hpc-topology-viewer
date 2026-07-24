@@ -438,12 +438,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #sliceCtl #scToggle.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
 #sliceCtl #scVal{font-family:var(--font-mono);font-size:11.5px;font-weight:600;color:var(--sys-text-bright);min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
 #sliceCtl input[type=range]{width:130px;accent-color:var(--sys-accent);cursor:pointer}
-/* 层级切片控制条（层级堆叠·顶视） */
-#lvlCtl{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:6px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 8px 4px 12px;box-shadow:var(--shadow-sm)}
+/* 层级切片控制条（层级堆叠·顶视）：竖排，贴右侧画布的左边界，和左侧「层级剖面」的竖向 L7(上)→L0(下) 顺序对应
+   （▲=更粗层级=对应左侧列表更上面的行，▼=更细层级=对应左侧列表更下面的行）。 */
+#lvlCtl{position:absolute;top:50%;left:10px;transform:translateY(-50%);z-index:6;display:none;flex-direction:column;align-items:center;gap:6px;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-lg);padding:10px 8px;box-shadow:var(--shadow-sm);width:56px}
 #lvlCtl.show{display:inline-flex}
-#lvlCtl .sc-lab{font-size:11px;color:var(--dim);font-weight:600}
-#lvlCtl button{min-height:24px;padding:0 9px;font-size:11px;border-radius:var(--radius-pill)}
-#lvlCtl #lvVal{font-family:var(--font-mono);font-size:11.5px;font-weight:600;color:var(--sys-text-bright);min-width:78px;text-align:center}
+#lvlCtl .sc-lab{font-size:10px;color:var(--dim);font-weight:600}
+#lvlCtl button{min-height:24px;min-width:24px;padding:0;font-size:11px;border-radius:var(--radius-pill)}
+#lvlCtl #lvVal{font-family:var(--font-mono);font-size:10.5px;font-weight:600;color:var(--sys-text-bright);text-align:center;line-height:1.25;white-space:normal;padding:2px 0}
 #stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 /* ===== 模式 B 抽屉 ===== */
 #drawer{display:none;height:340px;flex-shrink:0;background:var(--sys-sunken);border-top:1px solid var(--sys-border);flex-direction:column;padding:8px 12px 10px}
@@ -698,12 +699,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <button id="scNext" title="下一层">▶</button>
         <input id="scRange" type="range" min="0" max="63" value="31" title="拖动逐层查看">
       </div>
-      <!-- 层级切片（层级堆叠·顶视时显示）：逐层查看 L0→L7 的 2D 运行状态图 -->
+      <!-- 层级切片（层级堆叠·顶视时显示）：逐层查看 L0→L7 的 2D 运行状态图。
+           竖排，紧贴左侧「层级剖面」的边界——粗粒度在上/细粒度在下，和左侧 L7(上)→L0(下) 的竖向顺序对应上。 -->
       <div id="lvlCtl">
         <span class="sc-lab">层级</span>
-        <button id="lvPrev" title="上一层（更细）">◀</button>
+        <button id="lvNext" title="上一层（更粗，向左侧列表的上方靠）">▲</button>
         <span id="lvVal">L2 · Chip</span>
-        <button id="lvNext" title="下一层（更粗）">▶</button>
+        <button id="lvPrev" title="下一层（更细，向左侧列表的下方靠）">▼</button>
       </div>
       <div id="formmode">
         <div class="fm-row">
@@ -3624,10 +3626,9 @@ function updateCamera(dt){
   const g = camGoal();
   const k = 1-Math.exp(-dt*3.4);
   camCur.t.lerp(g.t,k); camCur.d += (g.d*zoomBias-camCur.d)*k;
-  // 正交视角（顶/前/侧）：极小 FOV + 拉远 = 近似正交投影，透视被压没，读成 2D 图表。三个形态的视角图都走正交，不留透视。
-  const ortho = (S.orthoView>0 && Wgt.cube>0.5 && S.form==='cube')
-    || (S.form==='stack' && S.stackView===1 && Wgt.stack>0.5)    // 层级堆叠 前视 → 平铺（顶视本就俯视=平，无需）
-    || (S.form==='phys' && S.physView>0 && Wgt.phys>0.5);        // 物理 顶视/前视 → 平铺（机柜不再向两侧散开）
+  // 全局不留透视：极小 FOV + 拉远 = 近似正交投影，物体近大远小的透视变形被压没，读成等距/轴测图。
+  // 之前只有顶/前/侧几个正交视角这样处理，默认的斜视/轴测（自由旋转）还是标准透视——现在统一，斜视/轴测也是无透视的等距视角。
+  const ortho = true;
   const FOV_STD = 40, FOV_ORTHO = 12;
   const orthoK = ortho ? Math.tan(FOV_STD/2*Math.PI/180)/Math.tan(FOV_ORTHO/2*Math.PI/180) : 1;  // ≈19×，保持取景高度不变
   camera.fov = ortho ? FOV_ORTHO : FOV_STD;
