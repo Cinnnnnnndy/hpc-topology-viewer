@@ -322,11 +322,17 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #formctl{position:absolute;top:10px;right:12px;display:flex;gap:6px;z-index:5;align-items:center}
 #formctl .hint{font-size:10px;color:var(--dim);background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:4px 11px;box-shadow:var(--shadow-sm)}
 /* 3D 形态控制浮层（画布左上角） */
-#formmode{position:absolute;top:10px;left:14px;z-index:5;display:flex;flex-direction:row;align-items:flex-start;gap:6px;flex-wrap:wrap}
+#formmode{position:absolute;top:10px;left:14px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:6px;max-width:min(70vw,640px)}
 #formmode .fm-row{display:flex;gap:2px;align-items:center;background:color-mix(in srgb,var(--sys-border) 55%,var(--panel));border:1px solid var(--sys-border);border-radius:var(--radius-lg);padding:3px;box-shadow:none}
 #formmode .fm-row button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-lg) - 3px);padding:4px 12px;font-size:11px;color:var(--dim);font-weight:500;min-height:26px}
 #formmode .fm-row button:hover{background:var(--state-hover)}
 #formmode .fm-row button.on{background:var(--panel);color:var(--sys-text-bright);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* 辅助行（非视角选择，如「本图」的叠加维度/参考跳转）：弱化底色 + 小标签，视觉上与上面的视角单选组区分开 */
+#formmode .fm-row.fm-aux{background:transparent;border-style:dashed;padding:2px 3px;gap:4px}
+#formmode .fm-aux-lab{font-size:9.5px;color:var(--dim);padding:0 2px 0 6px;opacity:.75}
+#formmode .fm-row.fm-aux button.on{background:color-mix(in srgb,var(--sys-accent) 16%,var(--panel));color:var(--sys-accent);box-shadow:none}
+@keyframes fm-tab-flash{0%,100%{box-shadow:none}50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--sys-accent) 45%,transparent)}}
+#lefttabs button.flash{animation:fm-tab-flash .9s ease 2}
 #viewlab{position:absolute;top:60px;left:14px;z-index:5;font-size:11.5px;line-height:1.45;color:var(--dim);pointer-events:none;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:6px 11px;box-shadow:var(--shadow-sm);max-width:58%}
 #viewlab b{color:var(--sys-text-bright)}
 #probe{position:absolute;z-index:6;display:none;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--dim);min-width:230px;max-width:340px;pointer-events:none;box-shadow:var(--shadow-md)}
@@ -382,6 +388,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #pathinfo .edgebtn:hover{border-color:var(--sys-border-strong);background:var(--state-hover)}
 #pathinfo .note{font-size:10px;color:var(--foreground-muted);margin-top:5px;line-height:1.45}
 #probe.link::before{content:"链路详情"}
+#probe.cab::before{content:"机柜聚合详情 · 非单卡"}
 /* ---- 算法展开面板小控件 ---- */
 #algoViewTabs button.on{background:var(--panel)!important;color:var(--sys-text-bright);box-shadow:var(--shadow-sm)}
 .algoch.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--blue) 45%,var(--sys-border-strong));color:var(--blue)}
@@ -715,8 +722,13 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="pv0" class="on" title="斜视：默认斜看机房">斜视</button>
           <button id="pv1" title="顶视：俯看机柜阵平面图（楼层平面）">顶视 · 平面</button>
           <button id="pv2" title="前视：正面看机柜立面（机架高度）">前视 · 立面</button>
-          <button id="pvNet" title="着色切换：负载热力 ↔ 网络域（按超节点/A2A 域分色，看逻辑通信域的物理落位）" style="margin-left:6px">着色 · 负载</button>
-          <button id="pvMap" title="打开左侧「拓扑映射」：昇腾超节点网络结构 + 节点内 8 卡 UB-Mesh/环/出口" style="margin-left:6px">拓扑参考</button>
+        </div>
+        <!-- 顶/前视专属的辅助控件：不是视角选择，故独立成一行、样式弱化，避免和上面的斜视/顶视/前视радио组混淆；
+             pvNet 不用「着色」二字（顶部「视图控制▾ · 着色」已是全局透镜，这里只是本图专属的叠加维度切换）。 -->
+        <div class="fm-row fm-aux" id="physAux" style="display:none">
+          <span class="fm-aux-lab">本图</span>
+          <button id="pvNet" title="切换本图的叠加维度：负载热力 ↔ 网络域（按超节点/A2A 域分色，看逻辑通信域的物理落位；与顶部全局「着色」透镜是两回事）">网络域</button>
+          <button id="pvMap" title="在左侧打开「拓扑映射」参考：昇腾超节点网络结构 + 节点内 8 卡 UB-Mesh/环/出口">◇ 拓扑参考</button>
         </div>
       </div>
       <div id="formctl">
@@ -841,6 +853,7 @@ const VIEW_LABELS = {
 };
 let cells2d = [];   // 纯 2D 热力格：{x,y,w,h,host,tp,pp,dp} 供 hover / 选卡命中
 let hoverCell2d = null, sel2d = null;   // 2D 视图里的悬停格 / 选中的单张卡（单卡选择）
+let hot2dSet = new Set();               // 物理·顶/前视 当前帧的热点机柜集合（col,ry）· 供 renderProbe 复用
 function curODEP(){ const t=ODEP_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function has2D(){ return !!ODEP_BY_MODE[cubeMode]; }
 function depthIdxOf(c, dim){ const h=c>>3, dp=h>>4;
@@ -3776,13 +3789,16 @@ function renderPhysGrid(svg,W,H){
   const scored=[];
   for(let ry=0;ry<ROWS;ry++) for(let col=0;col<COLS;col++){ const hs=cellHosts(col,ry); scored.push({col,ry,load:cellLoad(hs),host:hs[0]}); }
   const hot=new Set(scored.slice().sort((a,b)=>b.load-a.load).slice(0,6).map(c=>c.col+','+c.ry));
+  hot2dSet = hot;
   cells2d.length=0; const out=[];
   const netMode = S.physNet;
-  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.4).toFixed(0)}" text-anchor="middle">${
-    netMode ? (front?'机柜立面图 · 色 = 超节点/A2A 域（8 域分色）· 看逻辑通信域的物理落位'
-                    :'机房地面俯视图 · 128 机柜 · 色 = 超节点/A2A 域（8 域分色 · 同色=域内走 UB · 跨色=跨域上 RDMA rail）')
-            : (front?'机柜立面图 · 16 列 × 8 槽位（U 位高度）· 色 = 同槽位沿 8 排深度均值负载 · 看机架高度上的负载分布'
-                    :'机房地面俯视图 · 128 机柜（16 列 × 8 排）· 色 = 机柜 8 卡均值负载 · 定位物理热点 / 散热域')}</text>`);
+  // 注意尺度：这一屏不是"卡"或"主机"级 —— 每格聚合 8 台 Host = 64 张卡（顶视=整机柜；前视=跨 8 排同槽位切片）
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.32).toFixed(0)}" text-anchor="middle">${
+    netMode ? (front?'机柜立面图 · 每格=U 位切片(8 Host·64卡) · 色=超节点/A2A 域（8 域分色）'
+                    :'机房地面俯视图 · 每格=1 整机柜(8 Host·64卡) · 色=超节点/A2A 域（同色=域内走 UB · 跨色=跨域上 RDMA rail）')
+            : (front?'机柜立面图 · 16 列 × 8 槽位（U 位高度）· 每格=同列同槽位跨 8 排机柜(8 Host·64卡)均值负载'
+                    :'机房地面俯视图 · 16 列 × 8 排 = 128 整机柜 · 每格=1 机柜(8 Host·64卡)均值负载 · 定位物理热点')}</text>`);
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.62).toFixed(0)}" text-anchor="middle" style="font-size:10px;opacity:.7">⚠ 这不是单卡/单主机视图——想看卡级请切「斜视」3D 或左侧「层级堆叠」</text>`);
   // 选中卡定位到本视图的格：顶视=同机柜(列,排)；前视=同(列,槽位)。左右任一处选都点亮 → 双向联动
   const fCab=S.focusHost>>3, fCol=fCab%16, fRow=fCab>>4, fSlot=S.focusHost&7;
   for(const c of scored){ const x=mx+c.col*gw+(gw-cw)/2, y=myTop+c.ry*gh+(gh-ch)/2, cx=x+cw/2, cy=y+ch/2;
@@ -4128,6 +4144,7 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   $('#cubeViews').style.display = formTarget==='cube' ? 'flex' : 'none';
   try{ $('#stackViews').style.display = formTarget==='stack' ? 'flex' : 'none'; }catch(_){ }
   try{ $('#physViews').style.display = formTarget==='phys' ? 'flex' : 'none'; }catch(_){ }
+  try{ $('#physAux').style.display = formTarget==='phys' ? 'flex' : 'none'; }catch(_){ }
   S.form = formTarget; renderViewlab();
   try{ syncLvlCtl(); updateStackView(); }catch(_){ }
   if(formTarget!=='cube' && S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; colorsDirty=true;   // 离开魔方 → 退出正交/剖面，恢复常规着色
@@ -4136,7 +4153,12 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   try{ syncSliceCtl(); }catch(_){ }   // 离开 cube 形态时收起剖面控制条
   try{ chipsMesh.visible = true; }catch(_){ }   // 离开正交 2D → 恢复 3D 方块
   try{ render2dAxis(); }catch(_){ }   // 立刻清掉 #axis2d 2D 叠加（否则 桶/轴 标尺会残留到 堆叠/物理 视图）
-  try{ wakeLoop(90); }catch(_){ } }   // 立刻推进形变动画（否则要等下次交互才morph）
+  try{ wakeLoop(90); }catch(_){ }     // 立刻推进形变动画（否则要等下次交互才morph）
+  try{ repositionViewlab(); }catch(_){ } }
+// #formmode 现在按需堆叠多行（基础形态 + 子模式/视角行），高度不固定 → #viewlab 贴着其实际底部动态摆放，
+// 避免（如层级堆叠展开 轴测/前视/顶视 三键时）静态坐标与其他浮层重叠。
+function repositionViewlab(){ const fm=$('#formmode'), vl=$('#viewlab'); if(!fm||!vl) return;
+  vl.style.top = (fm.offsetTop + fm.offsetHeight + 10) + 'px'; }
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 function updateViewLabels(){ const L=VIEW_LABELS[cubeMode]||VIEW_LABELS[0];   // 各布局的 顶/前/侧 平面名称不同
@@ -4232,11 +4254,14 @@ PV_PRESET.forEach((v,k)=>{ const el=$('#pv'+k); if(!el) return;
     [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===k));
     try{ updatePhysView(); render2dAxis(); }catch(_){ }
     try{ wakeLoop(90); }catch(e){} }; });
+// 按钮文案 = 点击后会切到的目标状态（与 #scToggle「全部叠加」同一套约定），不用「着色」二字避免和顶部全局透镜撞名
 if($('#pvNet')) $('#pvNet').onclick=()=>{ S.physNet=!S.physNet;
-  $('#pvNet').textContent = S.physNet ? '着色 · 网络域' : '着色 · 负载';
+  $('#pvNet').textContent = S.physNet ? '负载' : '网络域';
   $('#pvNet').classList.toggle('on', S.physNet);
   try{ render2dAxis(); wakeLoop(30); }catch(_){ } };
-if($('#pvMap')) $('#pvMap').onclick=()=>{ try{ setTab('map'); }catch(_){ } };
+if($('#pvMap')) $('#pvMap').onclick=()=>{ try{ setTab('map'); }catch(_){ }
+  const t=$('#tabMap'); if(t){ t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+    setTimeout(()=>t.classList.remove('flash'), 1900); } };   // 左侧 tab 闪两下，让「点右上角按钮 → 左侧面板切换」这条跳转看得见
 
 /* ===== 整网图（整网分隔映射页 · 子页「整网图」）：逻辑计算图 → 点算子按其切分维重排右侧立方 =====
    直接复用 model-graphviz pattern（window.PtoModelGraphvizPattern）+ 抽取的 openPangu 已定位图。
@@ -4499,6 +4524,27 @@ function renderStageLeg(){                    // 舞台底部编码图例（左 
 function renderProbe(){
   const probe = $('#probe');
   if(S.hoverHost < 0){ probe.style.display='none'; return; }   // 仅悬停时显示，随鼠标跟随定位（见 stage mousemove）
+  // 物理·顶/前视：一格 聚合 8 台 Host（64 张卡），不是单张主机——单独给一张详情卡，
+  // 避免复用下面的「主机详情」文案让人误以为鼠标下是一张卡/一台主机（尺度不对会认错）。
+  // 顶视一格=1 整机柜（8 Host 连续编号）；前视一格=跨 8 排机柜、同列同槽位的切片（8 Host 不连续）——两种聚合方式不同，分别说清楚。
+  if(hoverCell2d && hoverCell2d.physCell && S.hoverSide==='2d'){
+    const pc=hoverCell2d.physCell;
+    const pct=(pc.load*100).toFixed(0), lvl=pc.load>.7?'繁忙':pc.load>.4?'中等':'空闲';
+    const domTxt = S.physNet ? ` · 超节点/A2A 域 <b>${epDomOf(hoverCell2d.host)}</b>（同域=UB 域内 · 跨域=RDMA rail）` : '';
+    const hotTxt = hot2dSet.has(pc.col+','+pc.ry) ? ' · <b style="color:#FF4B7B">物理热点 Top-6</b>' : '';
+    let head, body;
+    if(pc.front){ head=`U 位切片 · 列${pc.col} 槽位${pc.ry}`;
+      body=`跨 <b>8 排机柜</b>（同列同槽位、非同一机柜）共 <b>8 台 Host = 64 张卡</b>`; }
+    else{ const cab=pc.ry*16+pc.col, h0=cab*8, h7=cab*8+7;
+      head=`机柜 ${cab} · 列${pc.col} 排${pc.ry}`;
+      body=`本机柜 <b>8 台 Host</b>（Host ${h0}–${h7}）· 每台 8×NPU = <b>64 张卡</b>`; }
+    probe.style.display='block'; probe.classList.add('cab');
+    probe.innerHTML = `<b>${head}</b>${domTxt}<br>${body}<br>
+      色 = 格内均值负载：<b>${pct}%</b> · ${lvl}${hotTxt}<br>
+      <span style="color:var(--dim);font-size:9.5px">想看单张卡/单台 Host：切「斜视」，或左侧「层级堆叠 · 顶视」</span>`;
+    return;
+  }
+  probe.classList.remove('cab');
   const h = S.hoverHost;
   const exp = ` · 持专家桶 ${epOf(h)}（${expRange(epOf(h))}${hotBuckets.has(epOf(h))?' · 热点':''}）`;
   const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#FF4B7B">EP 越界成员</b>' : '';
