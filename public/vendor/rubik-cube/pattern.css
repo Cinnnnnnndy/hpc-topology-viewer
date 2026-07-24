@@ -1,87 +1,97 @@
-/* pto rubik-cube pattern —— 逻辑魔方独立 pattern 的 UI 样式（.prc- 前缀，随 [data-theme] 明暗联动） */
+/* pto rubik-cube pattern —— 逻辑魔方独立 pattern 的 UI 样式（.prc- 前缀）。
+   组件/字体/颜色对齐工作台的 pto 设计系统：优先消费 pto-tokens 的语义 token
+   （--background、--foreground、--primary、--button-secondary-xx、--font-xx，
+   随 :root[data-theme] 明暗联动）；token 未加载时落到 --prc-fb-xx 后备值，
+   pattern 独立打开仍可用。 */
 .prc-root {
-  --prc-bg: #0d1117;
-  --prc-panel: rgba(13, 17, 23, 0.82);
-  --prc-border: #30363d;
-  --prc-tx: #e6edf3;
-  --prc-tx2: #9aa7b4;
-  --prc-tx3: #6e7681;
-  --prc-btn: #161b22;
-  --prc-btn-on: #1f6feb;
-  --prc-hot: #ff4b6e;
-  --prc-ok: #3fb950;
+  /* 后备值（深色） */
+  --prc-fb-bg: #0d1117;
+  --prc-fb-panel: rgba(13, 17, 23, 0.82);
+  --prc-fb-border: #30363d;
+  --prc-fb-tx: #e6edf3;
+  --prc-fb-tx2: #9aa7b4;
+  --prc-fb-tx3: #6e7681;
+  --prc-fb-btn: #161b22;
+  /* pto 语义 token 优先 */
+  --prc-bg: var(--background, var(--prc-fb-bg));
+  --prc-panel: var(--glass-surface-bg, var(--prc-fb-panel));
+  --prc-border: var(--border-default, var(--prc-fb-border));
+  --prc-tx: var(--foreground, var(--prc-fb-tx));
+  --prc-tx2: var(--foreground-secondary, var(--prc-fb-tx2));
+  --prc-tx3: var(--foreground-muted, var(--prc-fb-tx3));
+  --prc-btn: var(--button-secondary-bg, var(--prc-fb-btn));
+  --prc-btn-border: var(--button-secondary-border, var(--prc-fb-border));
+  --prc-btn-fg: var(--button-secondary-fg, var(--prc-fb-tx2));
+  --prc-btn-on: var(--primary, #4369ef);
+  --prc-btn-on-fg: var(--primary-foreground, #ffffff);
+  --prc-hot: var(--danger, #ff4b7b);
+  --prc-ok: var(--success, #04d793);
+  --prc-warn: var(--warning, #ffaa3b);
+  --prc-mono: var(--font-mono, 'JetBrains Mono', 'Fira Code', 'Consolas', monospace);
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: var(--prc-bg);
   color: var(--prc-tx);
-  font-family: 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans, 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Noto Sans SC', sans-serif);
   font-size: 12px;
 }
 .prc-root[data-theme="light"] {
-  --prc-bg: #f4f6fa;
-  --prc-panel: rgba(255, 255, 255, 0.9);
-  --prc-border: #d0d7e2;
-  --prc-tx: #1f2733;
-  --prc-tx2: #4a5768;
-  --prc-tx3: #6e7681;
-  --prc-btn: #ffffff;
+  /* 后备值（浅色）——token 存在时由 :root[data-theme='light'] 的语义 token 接管 */
+  --prc-fb-bg: #f4f6fa;
+  --prc-fb-panel: rgba(255, 255, 255, 0.9);
+  --prc-fb-border: #d0d7e2;
+  --prc-fb-tx: #1f2733;
+  --prc-fb-tx2: #4a5768;
+  --prc-fb-tx3: #6e7681;
+  --prc-fb-btn: #ffffff;
 }
 .prc-stage { position: absolute; inset: 0; }
 .prc-stage canvas { display: block; }
 
-/* 顶部工具栏：形态 / 视角(+剖面) / 着色 / 注入 */
+/* 顶部工具栏（左上配置卡片）：形态 / 视角(+剖面) / 着色 / 注入 / 时间轴 / 并行 */
 .prc-topbar {
   position: absolute; top: 10px; left: 10px; z-index: 5;
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px; border-radius: 10px;
   background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: blur(6px); max-width: min(92vw, 620px);
+  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
+  max-width: min(92vw, 640px);
 }
 .prc-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.prc-lab { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--prc-tx3); width: 30px; flex-shrink: 0; }
+.prc-lab { font: var(--text-label, 500 10px/1.2 inherit); letter-spacing: 1px; color: var(--prc-tx3); width: 30px; flex-shrink: 0; }
 .prc-btn {
-  padding: 3px 10px; font-size: 11.5px; border-radius: 7px; cursor: pointer;
-  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx2);
-  font-family: inherit;
+  padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  font: var(--button-font, 500 11.5px/1 inherit); font-family: inherit;
+  border: 1px solid var(--prc-btn-border); background: var(--prc-btn); color: var(--prc-btn-fg);
 }
-.prc-btn:hover { color: var(--prc-tx); border-color: var(--prc-tx3); }
-.prc-btn.on { background: var(--prc-btn-on); border-color: var(--prc-btn-on); color: #fff; font-weight: 600; }
+.prc-btn:hover { background: var(--button-secondary-bg-hover, var(--prc-btn)); color: var(--prc-tx); border-color: var(--border-strong, var(--prc-tx3)); }
+.prc-btn.on { background: var(--prc-btn-on); border-color: var(--prc-btn-on); color: var(--prc-btn-on-fg); font-weight: 600; }
 .prc-btn.on.hot { background: var(--prc-hot); border-color: var(--prc-hot); }
 .prc-slice { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
 .prc-slice input[type="range"] { width: 110px; accent-color: var(--prc-btn-on); }
-.prc-slicelab { font-size: 10.5px; font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace; color: var(--prc-tx2); }
-
-/* 「并行」输入排：TP/PP/DP/EP 自由填数重建魔方 */
-.prc-cfgitem { display: inline-flex; align-items: center; gap: 3px; }
-.prc-cfgitem > span { font-size: 10.5px; font-weight: 600; color: var(--prc-tx2); }
-.prc-cfgitem input {
-  width: 52px; padding: 2px 5px; font-size: 11.5px; border-radius: 6px;
-  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx);
-  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
-}
-.prc-cfgread { font-size: 10.5px; font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace; color: var(--prc-tx2); }
-.prc-cfgerr { font-size: 10.5px; color: var(--prc-hot); }
+.prc-slicelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
 
 /* 读图钥匙 HUD（左下） */
 .prc-hud {
   position: absolute; left: 10px; bottom: 10px; z-index: 5;
   max-width: min(92vw, 640px); padding: 8px 12px; border-radius: 10px;
   background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: blur(6px); line-height: 1.65; font-size: 12px;
+  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
+  line-height: 1.65; font-size: 12px;
 }
 .prc-dim { color: var(--prc-tx3); font-size: 11px; }
 .prc-warn { color: var(--prc-hot); font-size: 11px; }
 .prc-ok { color: var(--prc-ok); }
-.prc-hot { color: #f0883e; }
+.prc-hot { color: var(--prc-warn); }
 
 /* 「每格=几张卡」粒度小贴士：只在正交 2D 现身 */
 .prc-pill {
   position: absolute; top: 10px; right: 10px; z-index: 5;
   padding: 5px 11px; border-radius: 999px; font-size: 11.5px;
   background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: blur(6px); display: none;
+  backdrop-filter: var(--surface-backdrop-filter, blur(6px)); display: none;
 }
 .prc-pill.show { display: block; }
 
@@ -91,19 +101,20 @@
   display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
   padding: 6px 11px; border-radius: 10px; font-size: 11px;
   background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: blur(6px); max-width: min(92vw, 560px);
+  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
+  max-width: min(92vw, 560px);
 }
 .prc-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--prc-tx2); }
 .prc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.prc-legend .prc-ramp i { width: 42px; background: linear-gradient(90deg, #2ea043, #d29922, #f85149); }
+.prc-legend .prc-ramp i { width: 42px; background: linear-gradient(90deg, var(--prc-ok), var(--prc-warn), var(--prc-hot)); }
 
 /* 选中卡信息卡（右上，粒度贴士/宿主主题按钮下方） */
 .prc-info {
   position: absolute; top: 80px; right: 10px; z-index: 5;
   padding: 8px 12px; border-radius: 10px; line-height: 1.7; font-size: 12px;
   background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: blur(6px); display: none;
-  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+  backdrop-filter: var(--surface-backdrop-filter, blur(6px)); display: none;
+  font-family: var(--prc-mono);
 }
 .prc-info.show { display: block; }
 
@@ -112,5 +123,20 @@
   position: absolute; z-index: 9; display: none; pointer-events: none;
   padding: 4px 9px; border-radius: 7px; font-size: 11px; white-space: nowrap;
   background: var(--prc-panel); border: 1px solid var(--prc-border); color: var(--prc-tx);
-  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+  font-family: var(--prc-mono);
 }
+
+/* 「并行」输入排：TP/PP/DP/EP 自由填数重建魔方 */
+.prc-cfgitem { display: inline-flex; align-items: center; gap: 3px; }
+.prc-cfgitem > span { font: var(--text-label, 500 10.5px/1.2 inherit); color: var(--prc-tx2); }
+.prc-cfgitem input {
+  width: 52px; padding: 2px 5px; font-size: 11.5px; border-radius: 6px;
+  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx);
+  font-family: var(--prc-mono);
+}
+.prc-cfgread { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
+.prc-cfgerr { font-size: 10.5px; color: var(--prc-hot); }
+
+/* 时间轴：播放/暂停 + 可拖游标（状态热力的时间维） */
+.prc-row-time input[type="range"] { width: 190px; accent-color: var(--prc-btn-on); }
+.prc-timelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }

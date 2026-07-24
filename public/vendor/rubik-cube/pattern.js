@@ -228,7 +228,7 @@
     /* ── 状态 ── */
     const S = {
       mode: opts.mode | 0,
-      view: 0,                       // 0=斜视 · 1=顶 · 2=前 · 3=侧
+      view: 0,                       // 0=轴测 · 1=顶 · 2=前 · 3=侧
       sliceOn: false, sliceVal: 0,   // 正交剖面：单层查看被折叠的深度维
       colorBy: 'load',               // load | tp | pp | dp | ep
       anom: 'none',                  // none | tp | pp | dp | ep（异常注入 → 「异常的形状」）
@@ -254,6 +254,7 @@
         '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
+        '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
         '<div class="prc-hud"></div>',
@@ -403,8 +404,8 @@
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
     }
-    // 长文案「读图横幅」（w≥5）只在斜视显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本长度
-    // 膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
+    // 长文案「读图横幅」（w≥5）只在轴测视图显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本
+    // 长度膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
     function axText(text, color, w, pos) {
       const l = makeLabel(text, color, w * 1.25);
       l.position.copy(pos);
@@ -606,7 +607,7 @@
     }
     function reScale() { let dirty = false; for (let r = 0; r < N; r++) { const want = ghosted(r) ? 0.3 : 1; if (scl[r] !== want) { scl[r] = want; dirty = true; } } if (dirty) settling = true; }
 
-    /* ── 相机：斜视（等距可旋转）+ 顶/前/侧 正交锁轴，取景随形态包围盒 ── */
+    /* ── 相机：轴测（等距可旋转）+ 顶/前/侧 正交锁轴（拖动即转回 3D），取景随形态包围盒 ── */
     const cam = { theta: Math.PI / 4, phi: 0.66, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
     function fitView() {
       const b = model.boundsOf(S.mode);
@@ -721,6 +722,14 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
+    let timeRange = null, timeLab = null;
+    const T_CYCLE = 60;                          // 时间轴显示周期（负载场循环观感）
+    function syncTimeUI() {
+      if (!timeRange) return;
+      const tc = S.t % T_CYCLE;
+      timeRange.value = String(Math.round(tc * 10));
+      timeLab.textContent = `${tc.toFixed(1)}s / ${T_CYCLE}s`;
+    }
     // 「并行」输入排：TP/PP/DP/EP 任意填数 → setConfig 整体重建魔方（回车或「应用」提交）
     function applyCfg() {
       if (!cfgInputs) return;
@@ -758,7 +767,7 @@
     if (opts.chrome !== false) {
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
-      viewBtns = ['斜视', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
+      viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
@@ -768,7 +777,19 @@
       rowViews.appendChild(sliceBox);
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep']]
         .map(([t, k]) => rowLens.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
-      playBtn = rowLens.appendChild(chipBtn('⏸ 暂停', () => { S.playing = !S.playing; syncChrome(); }));
+      // 时间轴（状态热力的时间维）：播放/暂停 + 可拖游标定位任一时刻
+      const rowTime = $('.prc-row-time');
+      playBtn = rowTime.appendChild(chipBtn('⏸ 暂停', () => { S.playing = !S.playing; syncChrome(); }));
+      timeRange = document.createElement('input');
+      timeRange.type = 'range'; timeRange.min = '0'; timeRange.max = String(T_CYCLE * 10); timeRange.step = '1';
+      timeRange.addEventListener('input', () => {
+        S.t = (timeRange.value | 0) / 10;
+        if (S.colorBy === 'load' && S.anom === 'none') recolor();
+        syncTimeUI();
+      });
+      rowTime.appendChild(timeRange);
+      timeLab = document.createElement('span'); timeLab.className = 'prc-timelab';
+      rowTime.appendChild(timeLab);
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
       const rowCfg = $('.prc-row-cfg');
@@ -791,7 +812,7 @@
     }
     function refresh2D() { reScale(); recolor(); renderPill(); syncChrome(); }
 
-    /* ── 交互：悬停 tooltip / 点选 / 拖拽旋转（斜视）或平移（正交）/ 滚轮缩放 ── */
+    /* ── 交互：悬停 tooltip / 点选 / 拖拽旋转（任何视角，正交下转回 3D）/ 滚轮缩放 ── */
     const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
     function pick(ev) {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -808,8 +829,15 @@
       if (drag && (ev.buttons & 1)) {
         const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-        if (S.view === 0) { cam.theta += dx * 0.006; cam.phi = Math.max(0.08, Math.min(1.45, cam.phi + dy * 0.005)); }
-        else { const k = cam.half / (stageEl.clientHeight || 600) * 2; cam.panX -= dx * k; cam.panY += dy * k; }
+        // 任何视角拖动都是旋转：正交 顶/前/侧 下拖动 → 从当前朝向无缝转回 3D（轴测态）
+        if (S.view !== 0 && drag.moved) {
+          if (S.view === 1) cam.phi = 1.35;                                    // 顶 → 近俯视起步
+          else { cam.phi = 0.14; cam.theta = S.view === 2 ? Math.PI / 2 : 0; } // 前/侧 → 对应方位起步
+          S.view = 0;
+          applyAxVisibility(); refresh2D(); renderPill();
+        }
+        cam.theta += dx * 0.006;
+        cam.phi = Math.max(0.08, Math.min(1.45, cam.phi + dy * 0.005));
         drag.x = ev.clientX; drag.y = ev.clientY;
         return;
       }
@@ -835,12 +863,16 @@
     }, { passive: false });
 
     /* ── 主循环 ── */
-    let raf = 0, lastRecolor = -1;
+    let raf = 0, lastRecolor = -1, lastMs = null, lastTimeUi = -1;
     function frame(nowMs) {
       raf = global.requestAnimationFrame(frame);
-      if (S.playing) S.t = nowMs / 1000;
+      // 累加制时钟：时间轴游标可拖动定位（绝对时钟会把拖动的 S.t 覆盖掉）
+      const dt = lastMs == null ? 0 : (nowMs - lastMs) / 1000;
+      lastMs = nowMs;
+      if (S.playing) S.t += Math.min(dt, 0.1);
       // 状态热力随时间流动（350ms 重染一次；透镜/异常静态无需重染）
       if (S.playing && S.colorBy === 'load' && S.anom === 'none' && nowMs - lastRecolor > 350) { lastRecolor = nowMs; recolor(); }
+      if (S.playing && nowMs - lastTimeUi > 250) { lastTimeUi = nowMs; syncTimeUI(); }
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
         let moving = false;
@@ -929,7 +961,7 @@
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
         root.setAttribute('data-theme', S.theme);
-        scene.background = new THREE.Color(isDark() ? 0x0d1117 : 0xf4f6fa);
+        applySceneBg();
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
@@ -944,10 +976,16 @@
     };
 
     /* ── 启动 ── */
-    scene.background = new THREE.Color(isDark() ? 0x0d1117 : 0xf4f6fa);
+    // 场景底色跟随 pto 设计系统的 --background（经 .prc-root 的 --prc-bg 解析，含无 token 后备）
+    function applySceneBg() {
+      let c = '';
+      try { c = getComputedStyle(root).getPropertyValue('--prc-bg').trim(); } catch (e) { /* noop */ }
+      scene.background = new THREE.Color(c || (isDark() ? '#0d1117' : '#f4f6fa'));
+    }
+    applySceneBg();
     resize(); updateBoxScale(); bsC.x = bsT.x; bsC.y = bsT.y; bsC.z = bsT.z;
     renderAxes(); applyAxVisibility(); updateSlab(); fitView();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI();
+    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }

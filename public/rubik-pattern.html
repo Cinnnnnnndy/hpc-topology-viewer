@@ -6,16 +6,23 @@
 <meta name="robots" content="noindex, nofollow">
 <title>逻辑魔方 Pattern · TP2×PP4×DP128=1024 rank · EP8 折入 DP</title>
 <script src="./vendor/three-r128.min.js"></script>
+<!-- pto 设计系统 token（与工作台同一套）：组件/字体/颜色随 :root[data-theme] 明暗联动 -->
+<link rel="stylesheet" href="./vendor/pto-tokens/foundation.css">
+<link rel="stylesheet" href="./vendor/pto-tokens/semantic.css">
+<link rel="stylesheet" href="./vendor/pto-tokens/components.css">
 <link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
 <script src="./vendor/rubik-cube/pattern.js"></script>
 <style>
-  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f4f6fa; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--background, #f4f6fa); }
   #app { width: 100%; height: 100%; }
   #themeBtn {
     position: absolute; top: 10px; right: 10px; z-index: 20;
-    padding: 4px 11px; font-size: 11.5px; border-radius: 7px; cursor: pointer;
-    border: 1px solid #30363d; background: rgba(13,17,23,.82); color: #9aa7b4;
-    font-family: 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+    padding: 4px 11px; border-radius: 7px; cursor: pointer;
+    font: var(--button-font, 500 11.5px/1 sans-serif);
+    font-family: var(--font-sans, 'Inter','Source Han Sans SC','PingFang SC',sans-serif);
+    border: 1px solid var(--button-secondary-border, #d0d7e2);
+    background: var(--button-secondary-bg, rgba(255,255,255,.9));
+    color: var(--button-secondary-fg, #4a5768);
     transform: translateY(32px);   /* 让位给粒度贴士（正交 2D 时出现在同一角） */
   }
 </style>
@@ -45,13 +52,8 @@
 
   function applyTheme(t){
     theme = t === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    document.body.style.background = theme === 'light' ? '#f4f6fa' : '#0d1117';
-    var btn = document.getElementById('themeBtn');
-    btn.textContent = theme === 'light' ? '☾ 深色' : '☀ 浅色';
-    btn.style.background = theme === 'light' ? 'rgba(255,255,255,.9)' : 'rgba(13,17,23,.82)';
-    btn.style.borderColor = theme === 'light' ? '#d0d7e2' : '#30363d';
-    btn.style.color = theme === 'light' ? '#4a5768' : '#9aa7b4';
+    document.documentElement.setAttribute('data-theme', theme);   // token 随之切换，按钮/底色走 CSS 变量
+    document.getElementById('themeBtn').textContent = theme === 'light' ? '☾ 深色' : '☀ 浅色';
     handle.setTheme(theme);
   }
   applyTheme(theme);

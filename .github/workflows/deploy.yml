@@ -57,6 +57,7 @@ jobs:
           mkdir -p dist/rubik/vendor/rubik-cube
           cp rubik-src/public/rubik-pattern.html dist/rubik/index.html
           cp dist/vendor/three-r128.min.js dist/rubik/vendor/three-r128.min.js
+          cp -r dist/vendor/pto-tokens dist/rubik/vendor/pto-tokens
           cp rubik-src/public/vendor/rubik-cube/pattern.js \
              rubik-src/public/vendor/rubik-cube/pattern.css \
              dist/rubik/vendor/rubik-cube/
