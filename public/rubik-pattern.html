@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
 <script src="./vendor/rubik-cube/pattern.js"></script>
 <style>
-  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0d1117; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f4f6fa; }
   #app { width: 100%; height: 100%; }
   #themeBtn {
     position: absolute; top: 10px; right: 10px; z-index: 20;
@@ -28,12 +28,13 @@
    （与 cube-cockpit.html 同一套约定，之后可被宿主以 iframe 嵌入）。 */
 (function(){
   var qs = new URLSearchParams(location.search);
-  var theme = qs.get('theme') === 'light' ? 'light' : 'dark';
+  var theme = qs.get('theme') === 'dark' ? 'dark' : 'light';   // 默认浅色
 
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,
-    // 并行度配置：rank 总数 = tp×pp×dp = 2×4×128 = 1024。
+    // 并行度配置（默认值，工具栏「并行」输入排可随时改）：rank 总数 = tp×pp×dp = 2×4×128 = 1024。
     // EP 不参与乘法（折入 DP 轴）：ep=8 只把 128 副本分成 8 桶 × 16 个 A2A 域。
+    // 预设里带盘古 Pro MoE 真实训练策略 8·5·100·2（data/ascend-workload-pangu-moe.json）。
     config: { tp: 2, pp: 4, dp: 128, ep: 8 },
     onSelect: function(sel){
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）

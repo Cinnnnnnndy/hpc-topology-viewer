@@ -24,6 +24,16 @@ cockpit 白皮书一致：EP 折入 DP 轴、不新增轴，`ep` 只要求整除
 （共 `dp/ep` = 16 域；桶↔卡非 1:1）。`layers`（默认 48 → 每 PP 段 12 层）、
 `experts`（默认 64 → 每桶 8 个）、`hotBuckets` 均可配。
 
+**维度可自由输入**：工具栏「并行」一排是 TP/PP/DP/EP 数字输入框（回车或
+「应用」提交），任意组合即时重建魔方——布局、飞行重排、轴标注、正交折叠维、
+图例、HUD、异常注入桶号全部跟随新配置（DP 平铺板间距、EP 墙内 TP 偏移等随
+TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超限报错不应用）。
+内置两个快捷预设：**示意 2·4·128·8**（默认）与 **盘古ProMoE 8·5·100·2**
+（真实训练策略 TP8·EP2·PP5·4K NPU，出处 `data/ascend-workload-pangu-moe.json`
+← arXiv 2505.21411：dp = 4000/(8×5) = 100，EP2 折入 → 50 个 A2A 域）。
+程序侧同能力：`handle.setConfig({tp,pp,dp,ep})` → `{ok}` 或 `{ok:false,error}`。
+`rubik-pattern.html` 默认浅色主题（`?theme=dark` 或右上按钮切换）。
+
 > 注：需求原文「pp4、tp2、ep8、dp6、rank1024」中，rank1024 与 tp2×pp4 定死
 > 稠密副本 dp=128；ep8 折入其中（8 桶×16 域），不进乘法；「dp6」无法与
 > 1024 吻合（2×4×6=48），故按 dp=128 取值。若本意不同，改
@@ -56,7 +66,7 @@ cockpit 白皮书一致：EP 折入 DP 轴、不新增轴，`ep` 只要求整除
 `commGroup(rank, dim)`、`stageLayerRange(s)`、`boundsOf(mode)`、`modes` 元数据
 （含各形态正交视角的折叠维表）。
 
-`mount(container, opts)` → handle：`setMode(0-4)` / `setView(0-3)` /
+`mount(container, opts)` → handle：`setConfig({tp,pp,dp,ep,…})` / `setMode(0-4)` / `setView(0-3)` /
 `setSlice(on, val)` / `setColorBy('load'|'tp'|'pp'|'dp'|'ep')` /
 `setAnomaly(...)` / `select(rank)` / `setTheme('dark'|'light')` /
 `setPlaying(bool)` / `resize()` / `destroy()`。

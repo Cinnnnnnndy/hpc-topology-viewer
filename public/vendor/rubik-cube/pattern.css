@@ -53,6 +53,17 @@
 .prc-slice input[type="range"] { width: 110px; accent-color: var(--prc-btn-on); }
 .prc-slicelab { font-size: 10.5px; font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace; color: var(--prc-tx2); }
 
+/* 「并行」输入排：TP/PP/DP/EP 自由填数重建魔方 */
+.prc-cfgitem { display: inline-flex; align-items: center; gap: 3px; }
+.prc-cfgitem > span { font-size: 10.5px; font-weight: 600; color: var(--prc-tx2); }
+.prc-cfgitem input {
+  width: 52px; padding: 2px 5px; font-size: 11.5px; border-radius: 6px;
+  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx);
+  font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
+}
+.prc-cfgread { font-size: 10.5px; font-family: 'JetBrains Mono', 'Consolas', ui-monospace, monospace; color: var(--prc-tx2); }
+.prc-cfgerr { font-size: 10.5px; color: var(--prc-hot); }
+
 /* 读图钥匙 HUD（左下） */
 .prc-hud {
   position: absolute; left: 10px; bottom: 10px; z-index: 5;

@@ -50,7 +50,8 @@
     const C = Object.assign({}, DEFAULTS, userCfg || {});
     const TP = C.tp | 0, PP = C.pp | 0, EP = C.ep | 0;
     const REP = C.dp | 0;                 // 稠密层 DP 副本数（EP 折入其中，不参与乘法）
-    if (REP % EP) throw new Error(`rubik-cube: ep(${EP}) 须整除 dp(${REP})——EP 折入 DP 轴`);
+    if (TP < 1 || PP < 1 || EP < 1 || REP < 1) throw new Error('rubik-cube: tp/pp/dp/ep 均须 ≥ 1');
+    if (REP % EP) throw new Error(`ep(${EP}) 须整除 dp(${REP})——EP 折入 DP 轴，不参与乘法`);
     const DOM = REP / EP;                 // A2A 域数（专家数据并行组）
     const N = TP * PP * REP;              // rank 总数 = tp × pp × dp
     const LPS = Math.max(1, Math.round(C.layers / PP));            // 每段层数
@@ -79,8 +80,10 @@
        避免正交 2D 强制方形格子时一根轴被拖成一堆小块。 */
     const SP = {
       std: { sx: 1.6, sy: 1.6, sz: 0.42, cy: 9 },
-      dpt: { gapX: 4.6, gapZ: 4.2, tp: 1.15, pp: 1.4, y0: 1.0 },
-      ep: { gapE: 3.0, pp: 1.5, dom: 1.35, tp: 0.4, cy: 9 },
+      // DP 平铺的列间距随 TP 自适应：板宽 = TP×1.15，间距 = 板宽 + 缝，避免 TP 大时同行板粘连
+      dpt: { gapX: TP * 1.15 + 2.4, gapZ: 4.2, tp: 1.15, pp: 1.4, y0: 1.0 },
+      // EP 墙内 TP 沿 Z 的微偏移：总散布压在域步距(1.35)的 ~2/3 内，TP 大时自动收窄
+      ep: { gapE: 3.0, pp: 1.5, dom: 1.35, tp: TP > 1 ? Math.min(0.4, 0.9 / (TP - 1)) : 0, cy: 9 },
       tps: { gapT: 1.8, pp: 1.5, rep: 0.42, cy: 9 },
       ppf: { gapP: 1.7, tp: 1.3, rep: 0.42, cy: 6 },
     };
@@ -206,7 +209,7 @@
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
-      hotBuckets: new Set(C.hotBuckets),
+      hotBuckets: new Set((C.hotBuckets || []).filter((e) => e < EP)),
     };
   }
 
@@ -215,8 +218,12 @@
     opts = opts || {};
     const THREE = global.THREE;
     if (!THREE) throw new Error('PtoRubikCubePattern.mount 需要 window.THREE（three r128）先行加载');
-    const model = createModel(opts.config);
-    const { TP, PP, EP, DOM, REP, N, LPS } = model;
+    // 模型可整体重建（工具栏「并行」输入排 / setConfig API 自由改维度）：
+    // 维度快照用 let + syncDims 同步，mount 内所有引用自动跟随新配置。
+    let model = createModel(opts.config);
+    let TP, PP, EP, DOM, REP, N, LPS;
+    const syncDims = () => { ({ TP, PP, EP, DOM, REP, N, LPS } = model); };
+    syncDims();
 
     /* ── 状态 ── */
     const S = {
@@ -247,6 +254,7 @@
         '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
+        '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
         '<div class="prc-hud"></div>',
         '<div class="prc-pill"></div>',
@@ -271,17 +279,19 @@
     const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
     const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 
-    // 卡阵列：InstancedMesh，1 小块 = 1 卡（rank）
+    // 卡阵列：InstancedMesh，1 小块 = 1 卡（rank）。维度改变时整体重建（buildField）。
     const BOXG = new THREE.BoxGeometry(0.9, 0.6, 0.3);
     const boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.02 });
-    const chips = new THREE.InstancedMesh(BOXG, boxMat, N);
-    chips.frustumCulled = false;
-    scene.add(chips);
-
-    // 位置缓冲：cur → target 飞行 lerp（切形态的重排动画）
-    const cur = new Float32Array(N * 3), target = new Float32Array(N * 3), scl = new Float32Array(N);
+    let chips = null;
+    let cur, target, scl;
     let settling = true;
-    {
+    function buildField() {
+      if (chips) { scene.remove(chips); if (chips.dispose) chips.dispose(); }
+      chips = new THREE.InstancedMesh(BOXG, boxMat, N);
+      chips.frustumCulled = false;
+      scene.add(chips);
+      // 位置缓冲：cur → target 飞行 lerp（切形态的重排动画）
+      cur = new Float32Array(N * 3); target = new Float32Array(N * 3); scl = new Float32Array(N);
       const v = { x: 0, y: 0, z: 0 };
       for (let r = 0; r < N; r++) {
         model.posOf(r, S.mode, v);
@@ -289,7 +299,9 @@
         target[r * 3] = v.x; target[r * 3 + 1] = v.y; target[r * 3 + 2] = v.z;
         scl[r] = 1;
       }
+      settling = true;
     }
+    buildField();
     function retarget() {
       const v = { x: 0, y: 0, z: 0 };
       for (let r = 0; r < N; r++) {
@@ -538,11 +550,12 @@
       if (model.hotBuckets.has(model.epOf(r))) v += 0.1;
       return Math.max(0.04, Math.min(1, v));
     }
+    const anomBucket = () => Math.min(3, EP - 1);            // 注入的示意桶号（EP 小时自动收到合法桶）
     function inAnomGroup(r) {
       if (S.anom === 'tp') return model.tpOf(r) === 0;       // TP 槽 0：全网同槽位卡
       if (S.anom === 'pp') return model.ppOf(r) === 0;       // PP 级 0：一整个流水段
       if (S.anom === 'dp') return model.repOf(r) === 0;      // DP 副本 0：一份完整拷贝
-      if (S.anom === 'ep') return model.epOf(r) === 3;       // EP 桶 3：持有该桶的所有 rank（越区示意）
+      if (S.anom === 'ep') return model.epOf(r) === anomBucket();   // EP 桶：持有该桶的所有 rank（越区示意）
       return false;
     }
     const loadColor = (v) => cTmp.setHSL(Math.max(0, 0.33 - v * 0.33), 0.72, isDark() ? 0.42 + v * 0.12 : 0.38 + v * 0.1);
@@ -648,7 +661,7 @@
         tp: `注入 TP 槽 0：全网同槽位卡集体标红 → 切「TP切片」= 一面墙集体异常（同槽位系统性坏件的形状）`,
         pp: `注入 PP 级 0：物理上散成条纹 → 切「PP流水」= 最左一整段全红（慢段/坏段的形状）`,
         dp: `注入 DP 副本 0：切「DP平铺」= 宫格里干净的一块板全红（慢副本的形状）`,
-        ep: `注入 EP 桶 3：标准形态下是周期条带 → 切「EP聚簇」= 一整面墙同红（热点/坏桶的形状 · 桶↔卡非 1:1）`,
+        ep: `注入 EP 桶 ${anomBucket()}：标准形态下是周期条带 → 切「EP聚簇」= 一整面墙同红（热点/坏桶的形状 · 桶↔卡非 1:1）`,
       }[S.anom];
       hud.innerHTML = `<b>逻辑魔方 · ${esc(m.sub)}</b>${S.selLayer != null && S.mode === 0 ? ` · 高亮 L${S.selLayer + 1} 切片` : ''}` +
         `<br><span class="prc-dim">◇ 为什么这样摆：${esc(m.why)}</span>` +
@@ -692,7 +705,21 @@
       return b;
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
+    let cfgInputs = null, cfgRead = null, cfgErr = null;
+    // 「并行」输入排：TP/PP/DP/EP 任意填数 → setConfig 整体重建魔方（回车或「应用」提交）
+    function applyCfg() {
+      if (!cfgInputs) return;
+      const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
+      if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
+    }
+    function syncCfgUI() {
+      if (!cfgInputs) return;
+      cfgInputs.tp.value = TP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
+      cfgRead.textContent = `rank = ${TP}×${PP}×${REP} = ${N} · EP${EP} 折入 DP → ${DOM} 域`;
+      cfgErr.textContent = '';
+    }
     function syncChrome() {
+      if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('on', i === S.mode));
       viewBtns.forEach((b, i) => { b.classList.toggle('on', i === S.view); if (i > 0) b.textContent = model.modes[S.mode].viewLabels[i]; });
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep'];
@@ -729,6 +756,24 @@
       playBtn = rowLens.appendChild(chipBtn('⏸ 暂停', () => { S.playing = !S.playing; syncChrome(); }));
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
+      const rowCfg = $('.prc-row-cfg');
+      const mkDim = (lab) => {
+        const wrap = document.createElement('span'); wrap.className = 'prc-cfgitem';
+        const l = document.createElement('span'); l.textContent = lab; wrap.appendChild(l);
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.min = '1'; inp.step = '1';
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applyCfg(); });
+        wrap.appendChild(inp); rowCfg.appendChild(wrap);
+        return inp;
+      };
+      cfgInputs = { tp: mkDim('TP'), pp: mkDim('PP'), dp: mkDim('DP'), ep: mkDim('EP') };
+      rowCfg.appendChild(chipBtn('应用', applyCfg));
+      cfgRead = document.createElement('span'); cfgRead.className = 'prc-cfgread'; rowCfg.appendChild(cfgRead);
+      cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
+      // 快捷预设：默认示意规格 · 盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
+      // TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中）
+      rowCfg.appendChild(chipBtn('示意 2·4·128·8', () => api.setConfig({ tp: 2, pp: 4, dp: 128, ep: 8 })));
+      rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); syncChrome(); }
 
@@ -820,7 +865,22 @@
 
     /* ── 对外 API ── */
     const api = {
-      model, state: S,
+      get model() { return model; }, state: S,
+      // 自由改并行度：整体重建（校验 ep 整除 dp、rank 上限），布局/轴标/图例/HUD 全部跟随新配置
+      setConfig(cfg) {
+        let next;
+        try { next = createModel(Object.assign({}, model.config, cfg || {})); }
+        catch (e) { return { ok: false, error: e.message.replace(/^rubik-cube: /, '') }; }
+        if (next.N > 65536) return { ok: false, error: `rank = ${next.N} 超出渲染上限 65536` };
+        model = next; syncDims();
+        S.sel = null; S.hover = null; S.sliceVal = 0;
+        buildField();
+        clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
+        renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+        refresh2D(); renderPill();
+        renderHud(); renderLegend(); renderInfo(); syncCfgUI();
+        return { ok: true, ranks: model.N };
+      },
       setMode(m) {
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         retarget(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
@@ -865,7 +925,7 @@
     /* ── 启动 ── */
     scene.background = new THREE.Color(isDark() ? 0x0d1117 : 0xf4f6fa);
     resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome();
+    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }
