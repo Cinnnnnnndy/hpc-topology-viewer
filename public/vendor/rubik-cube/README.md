@@ -28,9 +28,10 @@ cockpit 白皮书一致：EP 折入 DP 轴、不新增轴，`ep` 只要求整除
 「应用」提交），任意组合即时重建魔方——布局、飞行重排、轴标注、正交折叠维、
 图例、HUD、异常注入桶号全部跟随新配置（DP 平铺板间距、EP 墙内 TP 偏移等随
 TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超限报错不应用）。
-内置两个快捷预设：**示意 2·4·128·8**（默认）与 **盘古ProMoE 8·5·100·2**
-（真实训练策略 TP8·EP2·PP5·4K NPU，出处 `data/ascend-workload-pangu-moe.json`
-← arXiv 2505.21411：dp = 4000/(8×5) = 100，EP2 折入 → 50 个 A2A 域）。
+内置一个快捷预设：**盘古ProMoE 8·5·100·2**（真实训练策略
+TP8·EP2·PP5·4K NPU，出处 `data/ascend-workload-pangu-moe.json`
+← arXiv 2505.21411：dp = 4000/(8×5) = 100，EP2 折入 → 50 个 A2A 域）；
+回默认规格直接在输入框填 2·4·128·8 即可。
 程序侧同能力：`handle.setConfig({tp,pp,dp,ep})` → `{ok}` 或 `{ok:false,error}`。
 `rubik-pattern.html` 默认浅色主题（`?theme=dark` 或右上按钮切换）。
 

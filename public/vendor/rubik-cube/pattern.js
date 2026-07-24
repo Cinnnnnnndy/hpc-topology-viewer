@@ -770,9 +770,8 @@
       rowCfg.appendChild(chipBtn('应用', applyCfg));
       cfgRead = document.createElement('span'); cfgRead.className = 'prc-cfgread'; rowCfg.appendChild(cfgRead);
       cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
-      // 快捷预设：默认示意规格 · 盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
+      // 快捷预设：盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
       // TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中）
-      rowCfg.appendChild(chipBtn('示意 2·4·128·8', () => api.setConfig({ tp: 2, pp: 4, dp: 128, ep: 8 })));
       rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); syncChrome(); }
