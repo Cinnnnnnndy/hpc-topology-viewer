@@ -82,8 +82,9 @@
       std: { sx: 1.6, sy: 1.6, sz: 0.42, cy: 9 },
       // DP 平铺的列间距随 TP 自适应：板宽 = TP×1.15，间距 = 板宽 + 缝，避免 TP 大时同行板粘连
       dpt: { gapX: TP * 1.15 + 2.4, gapZ: 4.2, tp: 1.15, pp: 1.4, y0: 1.0 },
-      // EP 墙内 TP 沿 Z 的微偏移：总散布压在域步距(1.35)的 ~2/3 内，TP 大时自动收窄
-      ep: { gapE: 3.0, pp: 1.5, dom: 1.35, tp: TP > 1 ? Math.min(0.4, 0.9 / (TP - 1)) : 0, cy: 9 },
+      // EP 墙内 X=TP 成列（墙宽 = TP×1.05，墙距 = 墙宽 + 缝）· Z=域。卡块尺寸全形态恒定，
+      // 靠布局保证任何配置下步距 ≥ 卡块（不再缩放卡块）。
+      ep: { gapE: TP * 1.05 + 1.6, tp: 1.05, pp: 1.5, dom: 1.35, cy: 9 },
       tps: { gapT: 1.8, pp: 1.5, rep: 0.42, cy: 9 },
       ppf: { gapP: 1.7, tp: 1.3, rep: 0.42, cy: 6 },
     };
@@ -99,11 +100,11 @@
         out.z = (gzOf(r) - cZ) * s.gapZ;
         return out;
       }
-      if (mode === 2) {          // EP 专家桶墙：桶成墙（同墙=持有相同专家）· 墙内 Y=PP · Z=A2A 域×TP
+      if (mode === 2) {          // EP 专家桶墙：桶成墙（同墙=持有相同专家）· 墙内 X=TP 列 · Y=PP · Z=A2A 域
         const s = SP.ep;
-        out.x = (epOf(r) - cE) * s.gapE;
+        out.x = (epOf(r) - cE) * s.gapE + (tp - cT) * s.tp;
         out.y = s.cy + (cP - pp) * s.pp;
-        out.z = (domOf(r) - cD) * s.dom + (tp - cT) * s.tp;
+        out.z = (domOf(r) - cD) * s.dom;
         return out;
       }
       if (mode === 3) {          // TP 切片：权重墙沿 X 拉开，一面墙=全集群同槽位切片
@@ -286,21 +287,8 @@
     let chips = null;
     let cur, target, scl;
     let settling = true;
-    // 卡块逐轴缩放：按当前形态各轴的最小格步距自动收缩，保证任何并行配置下卡块
-    // 都不越过邻格（例：EP 聚簇 TP=8 时墙内 Z 步距收到 ~0.13，固定 0.3 深的块会大量重叠）。
-    // 切形态时与位置一起 lerp 过渡。
-    const bsC = { x: 1, y: 1, z: 1 };            // 当前缩放（动画中）
-    let bsT = { x: 1, y: 1, z: 1 };              // 目标缩放
-    function boxScaleOf(mode) {
-      const sp = model.SP;
-      const f = (step, dim) => Math.min(1, Math.max(0.12, (step * 0.8) / dim));
-      if (mode === 1) return { x: f(sp.dpt.tp, 0.9), y: f(sp.dpt.pp, 0.6), z: f(sp.dpt.gapZ, 0.3) };
-      if (mode === 2) return { x: f(sp.ep.gapE, 0.9), y: f(sp.ep.pp, 0.6), z: f(TP > 1 ? sp.ep.tp : sp.ep.dom, 0.3) };
-      if (mode === 3) return { x: f(sp.tps.gapT, 0.9), y: f(sp.tps.pp, 0.6), z: f(sp.tps.rep, 0.3) };
-      if (mode === 4) return { x: f(sp.ppf.gapP, 0.9), y: f(sp.ppf.tp, 0.6), z: f(sp.ppf.rep, 0.3) };
-      return { x: f(sp.std.sx, 0.9), y: f(sp.std.sy, 0.6), z: f(sp.std.sz, 0.3) };
-    }
-    function updateBoxScale() { bsT = boxScaleOf(S.mode); settling = true; }
+    // 卡块尺寸全形态恒定（用户约定：换形态不改变一张卡的大小）——各形态布局的格步距
+    // 均按「装得下固定卡块」设计（见 SP 注释），无需按形态缩放。
     function buildField() {
       if (chips) { scene.remove(chips); if (chips.dispose) chips.dispose(); }
       chips = new THREE.InstancedMesh(BOXG, boxMat, N);
@@ -504,7 +492,7 @@
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? themeC('#FFAA3B', '#b45f06') : EPc, 3,
-            V3(bb.x0 + e * s.gapE, b.y1 + 1.2 + (e % 2) * 1.1, 0));
+            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + 1.2 + (e % 2) * 1.1, 0));
         }
         axText(`${EP} 面墙 = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`, EPc, 10, V3(0, b.y1 + 4.2, 0));
         const rowY = s.cy, rowZ = bb.z0;
@@ -876,11 +864,6 @@
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
         let moving = false;
-        // 卡块尺寸随形态过渡（与位置同节奏 lerp）
-        for (const k of ['x', 'y', 'z']) {
-          bsC[k] += (bsT[k] - bsC[k]) * 0.14;
-          if (Math.abs(bsT[k] - bsC[k]) > 0.004) moving = true;
-        }
         for (let r = 0; r < N; r++) {
           const i = r * 3;
           for (let k = 0; k < 3; k++) {
@@ -889,9 +872,7 @@
             cur[i + k] = nv;
           }
           dummy.position.set(cur[i], cur[i + 1], cur[i + 2]);
-          dummy.rotation.set(0, 0, 0);
-          dummy.scale.set(bsC.x * scl[r], bsC.y * scl[r], bsC.z * scl[r]);
-          dummy.updateMatrix();
+          dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(scl[r]); dummy.updateMatrix();
           chips.setMatrixAt(r, dummy.matrix);
         }
         chips.instanceMatrix.needsUpdate = true;
@@ -927,7 +908,7 @@
         if (next.N > 65536) return { ok: false, error: `rank = ${next.N} 超出渲染上限 65536` };
         model = next; syncDims();
         S.sel = null; S.hover = null; S.sliceVal = 0;
-        buildField(); updateBoxScale();
+        buildField();
         clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
         renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         refresh2D(); renderPill();
@@ -936,7 +917,7 @@
       },
       setMode(m) {
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
-        retarget(); updateBoxScale(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+        retarget(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         renderHud(); renderPill(); syncChrome(); refresh2D();
       },
       setView(v) { S.view = v | 0; fitView(); applyAxVisibility(); refresh2D(); renderPill(); },
@@ -983,8 +964,7 @@
       scene.background = new THREE.Color(c || (isDark() ? '#0d1117' : '#f4f6fa'));
     }
     applySceneBg();
-    resize(); updateBoxScale(); bsC.x = bsT.x; bsC.y = bsT.y; bsC.z = bsT.z;
-    renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+    resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
     recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;

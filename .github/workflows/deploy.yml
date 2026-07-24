@@ -60,6 +60,7 @@ jobs:
           cp -r dist/vendor/pto-tokens dist/rubik/vendor/pto-tokens
           cp rubik-src/public/vendor/rubik-cube/pattern.js \
              rubik-src/public/vendor/rubik-cube/pattern.css \
+             rubik-src/public/vendor/rubik-cube/favicon.svg \
              dist/rubik/vendor/rubik-cube/
 
       - name: Setup Pages
