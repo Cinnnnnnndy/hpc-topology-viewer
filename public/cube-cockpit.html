@@ -713,10 +713,11 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
           <button id="cv2" title="正视：只看 X×Y 平面 → 读 TP×PP 切分">前 TP×PP</button>
           <button id="cv3" title="侧视：只看 Z×Y 平面 → 读 DP×PP 切分">侧 DP×PP</button>
         </div>
+        <!-- 前视已去掉：正面看 L0→L7 层级剖面这件事，左侧「层级剖面」已经是更清楚的纯 2D 呈现，
+             3D 前视只是它的透视重复版，价值不大——只留 轴测(空间直觉) 与 顶视(逐层运行状态) 两种。 -->
         <div class="fm-row" id="stackViews" style="display:none">
           <button id="sv0" class="on" title="轴测：斜看整个层级栈">轴测</button>
-          <button id="sv1" title="前视：正面看 L0→L7 层级剖面">前视 · 层级</button>
-          <button id="sv2" title="顶视：俯看单层的 2D 运行状态图，配合层级逐层查看">顶视 · 单层</button>
+          <button id="sv2" title="顶视：逐层运行状态图，L2 Chip → L6 Cluster 逐级下钻/上卷，色=该层聚合负载">顶视 · 分层状态</button>
         </div>
         <div class="fm-row" id="physViews" style="display:none">
           <button id="pv0" class="on" title="斜视：默认斜看机房">斜视</button>
@@ -854,6 +855,7 @@ const VIEW_LABELS = {
 let cells2d = [];   // 纯 2D 热力格：{x,y,w,h,host,tp,pp,dp} 供 hover / 选卡命中
 let hoverCell2d = null, sel2d = null;   // 2D 视图里的悬停格 / 选中的单张卡（单卡选择）
 let hot2dSet = new Set();               // 物理·顶/前视 当前帧的热点机柜集合（col,ry）· 供 renderProbe 复用
+let hotAggSet = new Set();              // 堆叠·顶视 L4/L5/L6 当前帧的热点聚合单元下标 · 供 renderProbe 复用
 function curODEP(){ const t=ODEP_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 function has2D(){ return !!ODEP_BY_MODE[cubeMode]; }
 function depthIdxOf(c, dim){ const h=c>>3, dp=h>>4;
@@ -3711,15 +3713,60 @@ const AX2D_BY_MODE = { 0:AX2D, 3:AX2D, 4:AX2D_PP, 1:AX2D_DP, 2:AX2D_EP };
 function curAX2D(){ const t=AX2D_BY_MODE[cubeMode]; return t ? (t[S.orthoView]||null) : null; }
 const RAIL_COL = ['#4369EF','#04D793','#FFAA3B','#FF4B7B','#9B3CF6','#39c5cf','#f59e0b','#ec4899'];   // 8 条 rail 分色（RoCE 口/TP 槽）
 // 纯 2D 扁平格：① 层级堆叠·顶视 = 运行状态热力(L2芯片/L3主机)+Top5热点 · ② 物理·顶/前视 = 机房 rail 分布图（按 rail 着色=网络视角）。拖拽旋转恢复 3D
+// 顶视·分层状态：L4 Pod(64)/L5 服务池(16)/L6 集群(1) —— 这些层没有像 Chip/Host 那样各自独立散布的 3D 位置
+// （Pod/Pool 只是"若干连续 Host 的集合"），投影 3D 没有意义，改用规整网格。聚合口径与左侧「层级剖面」完全一致：
+//   L4 = 64 Pod，每 Pod = 连续 16 Host（对齐 dpOf）；L5 = 16 服务池，每池 = 连续 4 Pod = 64 Host（对齐"池0..池15"按钮）；
+//   L6 = 1 集群 = 全部 1024 Host。L7 全球在本模型里只是"N 个 Cluster 经 DCN"的示意，没有更细结构，不进顶视；
+//   L1/L0 是片内结构，没有独立空间位置，同样不铺网格——这两头仍只在左侧「层级剖面」看。
+function renderStackAggGrid(svg,W,H){
+  const lv=S.level;
+  const DEF = {
+    L4: { n:64, cols:8, per:16, short:'Pod',  ct:'#ctL4' },
+    L5: { n:16, cols:4, per:64, short:'池',   ct:'#ctL5' },
+    L6: { n:1,  cols:1, per:1024, short:'',   ct:'#ctL6' },
+  }[lv];
+  const rows = Math.ceil(DEF.n/DEF.cols);
+  const mx=W*0.06, myTop=H*0.16, myBot=H*0.06;
+  const gw=(W-2*mx)/DEF.cols, gh=(H-myTop-myBot)/rows;
+  const cw=gw*0.82, ch=gh*0.82;
+  const meanOf=(lo,hi)=>{ let s=0; for(let h=lo;h<hi;h++) s+=health[h]; return s/(hi-lo); };
+  const units=[]; for(let i=0;i<DEF.n;i++){ const lo=i*DEF.per, hi=lo+DEF.per; units.push({i,lo,hi,load:meanOf(lo,hi)}); }
+  const hotN = DEF.n>=8 ? Math.min(5,Math.ceil(DEF.n*0.08)) : 0;
+  const hot=new Set(units.slice().sort((a,b)=>b.load-a.load).slice(0,hotN).map(u=>u.i));
+  hotAggSet = hot;
+  // 状态统计：典型/红/峰——和左侧 updateLevelKPI 同一套公式，但只算"这一层聚合后"的值，不是逐 Host
+  let sum=0, peak=0, red=0;
+  units.forEach(u=>{ const pct=40+u.load*55; sum+=pct; if(pct>peak) peak=pct; if(u.load>.95) red++; });
+  const typ=(sum/DEF.n)|0, redP=DEF.n?((red/DEF.n)*100).toFixed(0):'0';
+  const ctEl=$(DEF.ct), ctText = (ctEl && ctEl.textContent) || '';
+  cells2d.length=0; const out=[];
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.34).toFixed(0)}" text-anchor="middle">${STACK_LV_NAME[lv]||lv} · 顶视分层状态 · ${esc2d(ctText)}</text>`);
+  out.push(`<text class="ax-title" x="${(W/2).toFixed(0)}" y="${(myTop*0.62).toFixed(0)}" text-anchor="middle" style="font-size:10.5px;opacity:.8">典型 <tspan fill="#c9d1d9">${typ}%</tspan> · 红 <tspan fill="${red>0?'#FF4B7B':'#8b949e'}">${redP}%</tspan> · 峰 <tspan fill="#FFAA3B">${peak|0}%</tspan>（本层 ${DEF.n} 个${DEF.short||'集群'}聚合，非逐 Host）</text>`);
+  const fUnit = lv==='L4' ? dpOf(S.focusHost) : lv==='L5' ? (dpOf(S.focusHost)>>2) : 0;
+  units.forEach(u=>{
+    const col=u.i%DEF.cols, row=(u.i/DEF.cols)|0;
+    const x=mx+col*gw+(gw-cw)/2, y=myTop+row*gh+(gh-ch)/2, cx=x+cw/2, cy=y+ch/2;
+    const seld = DEF.n>1 && u.i===fUnit, hovd=!seld && S.hoverSide==='2d' && u.lo<=S.hoverHost && S.hoverHost<u.hi;   // L6 只有 1 个单元，"选中"没有意义，不画常驻蓝框
+    const st = seld?' stroke="#1f6feb" stroke-width="2.4"' : hovd?' stroke="#111" stroke-width="1.8"' : hot.has(u.i)?' stroke="#FF4B7B" stroke-width="1.5"':' stroke="#ffffff" stroke-width="1"';
+    out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw.toFixed(1)}" height="${ch.toFixed(1)}" rx="3" fill="${stateCss(u.load)}"${st}/>`);
+    if(cw>28){ const lab = DEF.short ? DEF.short+u.i : '本集群';
+      out.push(`<text x="${cx.toFixed(1)}" y="${(cy+3.5).toFixed(1)}" text-anchor="middle" font-size="${DEF.short?10:13}" fill="#fff" opacity=".88">${lab}</text>`); }
+    cells2d.push({x:cx,y:cy,w:cw,h:ch,host:u.lo,tp:-1,pp:ppOf(u.lo),dp:dpOf(u.lo),aggCell:{level:lv,idx:u.i,lo:u.lo,hi:u.hi,load:u.load}});
+  });
+  svg.innerHTML=out.join('');
+  return true;
+}
+function esc2d(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function render2dGrid(){
   const svg=$('#axis2d'); if(!svg) return false;
-  const stackTop = S.form==='stack' && S.stackView===2 && Wgt.stack>0.9 && !dragging && (S.level==='L2'||S.level==='L3');
+  const stackTop = S.form==='stack' && S.stackView===2 && Wgt.stack>0.9 && !dragging && TOP_LV.includes(S.level);
   const physOrtho = S.form==='phys' && S.physView>0 && Wgt.phys>0.9 && !dragging;
   if(!(stackTop||physOrtho)) return false;
   if(!svg.classList.contains('show')) svg.classList.add('show');   // 先显形再量尺寸（否则 display:none → rect=0）
   const r=svg.getBoundingClientRect(), W=r.width, H=r.height; if(W<2||H<2) return true;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('preserveAspectRatio','none');
   if(physOrtho) return renderPhysGrid(svg,W,H);   // 物理·顶/前视：机柜级负载热力（专用规整网格）
+  if(S.level==='L4'||S.level==='L5'||S.level==='L6') return renderStackAggGrid(svg,W,H);   // 顶视·分层状态：粗粒度层（无独立空间散布位置，走规整网格而非 3D 投影）
   // ── 堆叠·顶视：沿真实 3D 位置投影（旋转即无缝回 3D），单元格尺寸取最近邻间距+留白 ──
   const isChip=(S.level==='L2'), N=isChip?N_CHIP:N_HOST, posFn=isChip?chipStack:hostStack;
   const fillFn=(i)=>stateCss(health[isChip?(i>>3):i]), hostOfI=(i)=>isChip?(i>>3):i, tpOfI=(i)=>isChip?(i&7):3;
@@ -3991,7 +4038,7 @@ window.addEventListener('pointermove', e=>{ if(!dragging) return;
   if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
   if(S.orthoView){ S.orthoView=0; S.sliceOn=false; sel2d=null; morphDirty=true; colorsDirty=true; [0,1,2,3].forEach(i=>$('#cv'+i).classList.toggle('on', i===0)); try{ syncSliceCtl(); }catch(_){ } render2dAxis(); }  // 拖拽旋转 → 退出正交 2D，回斜视透视，剖面/热力复位
   else if(S.form==='phys' && S.physView>0){ S.physView=0; sel2d=null; [0,1,2].forEach(i=>$('#pv'+i).classList.toggle('on', i===0)); try{ updatePhysView(); render2dAxis(); }catch(_){ } }  // 拖拽 → 退出物理 2D 平面/立面，回斜视 3D
-  else if(S.form==='stack' && S.stackView===2){ S.stackView=0; sel2d=null; [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===0)); try{ updateStackView(); render2dAxis(); }catch(_){ } }  // 拖拽 → 退出堆叠 2D 顶视，回轴测 3D
+  else if(S.form==='stack' && S.stackView===2){ S.stackView=0; sel2d=null; [0,1,2].forEach(i=>{ const b=$('#sv'+i); if(b) b.classList.toggle('on', i===0); }); try{ updateStackView(); render2dAxis(); }catch(_){ } }  // 拖拽 → 退出堆叠 2D 顶视，回轴测 3D
   yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
 /* 通信线/链路拾取（需求1）：魔方形态点通信线=选逻辑边→物理路径；物理形态点链路=反查通信域边 */
 const edgeRay = new THREE.Raycaster(), edgeMouse = new THREE.Vector2();
@@ -4217,6 +4264,10 @@ function syncLvlCtl(){ const ctl=$('#lvlCtl'); if(!ctl) return;
   ctl.classList.toggle('show', on);
   if(on) $('#lvVal').textContent = STACK_LV_NAME[S.level]||S.level; }
 // 顶视单层：只留当前层的 2D 网格，其余层收起（运行状态由各层瓦片着色直接呈现）
+// 已知边界：L4/L5/L6 的纯 2D 顶视（renderStackAggGrid）用的是「64 Pod/16 服务池/1 集群」这套canonical 聚合口径（对齐左侧层级剖面）；
+// 而下面这段"拖拽退回 3D"揭示的 stackT6/stackL5/stackL4 三个历史 InstancedMesh 用的是另一套更早的分层方案（高度/数量都对不上）。
+// 即：L4/L5/L6 顶视拖拽转 3D 时，看到的轴测瓦片粒度会和刚才顶视看到的不是同一套分组——这是本次改动前就存在的历史遗留，
+// 不在本次「顶视补齐层级」的范围内，之后要做「3D 轴测瓦片对齐 canonical 分层」可以另起一版。
 let stackIsoLv = '__all';
 function updateStackView(){
   const stackForm = S.form==='stack' || Wgt.stack>0.5;
@@ -4236,11 +4287,12 @@ function updateStackView(){
     stackGroup.children.forEach(o=>{ o.visible=true; });
   }
 }
-// 顶视·单层 的运行状态热力，只在有 per-对象 负载的两层间切：L2 芯片(8192) ↔ L3 主机(1024)（更粗的 Pod/池/集群 汇总看前视/轴测）
-const TOP_LV = ['L2','L3'];
+// 顶视·分层状态：L2 芯片(8192)→L3 主机(1024)→L4 Pod(64)→L5 服务池(16)→L6 集群(1) 逐级上卷，对照左侧「层级剖面」的同一套层级/口径
+// （L7 全球在本模型里只是示意单集群，无更细结构，不在顶视里；L1/L0 是片内结构，没有独立空间位置，不适合铺成网格，仍只在左侧层级剖面看）
+const TOP_LV = ['L2','L3','L4','L5','L6'];
 SV_PRESET.forEach((v,k)=>{ const el=$('#sv'+k); if(!el) return;
   el.onclick=()=>{ S.stackView=k; yaw=v.yaw; pitch=v.pitch; zoomBias=1;
-    [0,1,2].forEach(i=>$('#sv'+i).classList.toggle('on', i===k));
+    [0,1,2].forEach(i=>{ const b=$('#sv'+i); if(b) b.classList.toggle('on', i===k); });
     if(k===2 && !TOP_LV.includes(S.level)) setLevel('L2');
     colorsDirty=true; syncLvlCtl(); try{ updateStackView(); render2dAxis(); wakeLoop(90); }catch(e){} }; });
 function stepLevel(dir){ const cur=TOP_LV.indexOf(S.level); const ni=Math.max(0,Math.min(TOP_LV.length-1,(cur<0?0:cur)+dir));
@@ -4542,6 +4594,19 @@ function renderProbe(){
     probe.innerHTML = `<b>${head}</b>${domTxt}<br>${body}<br>
       色 = 格内均值负载：<b>${pct}%</b> · ${lvl}${hotTxt}<br>
       <span style="color:var(--dim);font-size:9.5px">想看单张卡/单台 Host：切「斜视」，或左侧「层级堆叠 · 顶视」</span>`;
+    return;
+  }
+  // 堆叠·顶视 L4/L5/L6：一格聚合若干 Host（Pod/服务池/集群），同样不是单卡/单主机——给对应聚合详情卡
+  if(hoverCell2d && hoverCell2d.aggCell && S.hoverSide==='2d'){
+    const ac=hoverCell2d.aggCell, n=ac.hi-ac.lo;
+    const nmMap={L4:'Pod',L5:'服务池',L6:'集群'}, unitNm=nmMap[ac.level]||ac.level;
+    const head = ac.level==='L6' ? '本集群（全部）' : `${unitNm} ${ac.idx}`;
+    const pct=(ac.load*100).toFixed(0), lvl=ac.load>.7?'繁忙':ac.load>.4?'中等':'空闲';
+    const hotTxt = hotAggSet.has(ac.idx) ? ' · <b style="color:#FF4B7B">本层热点 Top</b>' : '';
+    probe.style.display='block'; probe.classList.add('cab');
+    probe.innerHTML = `<b>${head}</b>（悬停 · 聚合 <b>${n}</b> 台 Host = <b>${n*8}</b> 张卡，非单卡/单主机）<br>
+      色 = 组内均值负载：<b>${pct}%</b> · ${lvl}${hotTxt}<br>
+      <span style="color:var(--dim);font-size:9.5px">想看单张卡/单台 Host：用左侧「层级」◀▶ 切到 L2/L3</span>`;
     return;
   }
   probe.classList.remove('cab');
