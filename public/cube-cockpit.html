@@ -335,6 +335,12 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
 #lefttabs button.flash{animation:fm-tab-flash .9s ease 2}
 #viewlab{position:absolute;top:60px;left:14px;z-index:5;font-size:11.5px;line-height:1.45;color:var(--dim);pointer-events:none;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:6px 11px;box-shadow:var(--shadow-sm);max-width:58%}
 #viewlab b{color:var(--sys-text-bright)}
+/* 卡/Host 粒度小贴士：正交 2D 时告知这一格是 1 张卡还是 1 台 Host 聚合——同一套魔方换个视角/模式两者长得一样，得写清楚。
+   独立于 #viewlab（那是旧的大段说明文字，已按"界面精简"要求隐藏），只用一行、显示才占位，不常驻不抢视线。 */
+#cardGran{position:absolute;left:14px;z-index:5;font-size:10.5px;line-height:1.4;pointer-events:none;
+  background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-pill);padding:3px 10px;box-shadow:var(--shadow-sm);display:none}
+#cardGran.show{display:inline-block}
+#cardGran b{color:var(--sys-text-bright)}
 #probe{position:absolute;z-index:6;display:none;background:var(--sys-overlay);border:1px solid var(--sys-border);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--dim);min-width:230px;max-width:340px;pointer-events:none;box-shadow:var(--shadow-md)}
 #probe b{color:var(--sys-text-bright)}
 #probe .lg{color:var(--teal);font-family:ui-monospace,monospace}
@@ -736,6 +742,7 @@ canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4p
         <span class="hint">拖拽旋转 · 滚轮缩放 · 选层=相机飞行</span>
       </div>
       <div id="viewlab"></div>
+      <div id="cardGran"></div>
       <div id="probe"></div>
       <div id="hud" style="display:none"></div>
       <!-- 三张网平面控制（wire=NET3 时显示）：单显某一平面 / 垂直展开 -->
@@ -3904,8 +3911,12 @@ function render2dAxis(){
     return {tp,pp,dp,o}; };
   const _mh=NH>>1,_mv=NV>>1, _s0=P(wf(coordOf(_mh,_mv).o)),
         _sH=P(wf(coordOf(Math.min(NH-1,_mh+1),_mv).o)), _sV=P(wf(coordOf(_mh,Math.min(NV-1,_mv+1)).o));
-  const cw=Math.max(Math.abs(_sH[0]-_s0[0]),Math.abs(_sV[0]-_s0[0]),3)*0.82,
-        ch=Math.max(Math.abs(_sH[1]-_s0[1]),Math.abs(_sV[1]-_s0[1]),3)*0.82;
+  // 方形统一：h/v 两轴在世界空间的间距经常不一样（各 cube 模式的轴向缩放常数本就不同），
+  // 之前 cw/ch 各自独立取值，导致同样是"一张卡"，换个视角/模式就从正方形变长方形，认不出是同一种东西。
+  // 现在统一取两轴间距中较小的一个做正方形边长（取小而非取大，保证方块不会因为另一轴更密而互相压住/超界）。
+  const cwRaw=Math.max(Math.abs(_sH[0]-_s0[0]),Math.abs(_sV[0]-_s0[0]),3),
+        chRaw=Math.max(Math.abs(_sH[1]-_s0[1]),Math.abs(_sV[1]-_s0[1]),3);
+  const _side=Math.min(cwRaw,chRaw)*0.82, cw=_side, ch=_side;
   cells2d.length=0; const _cell=[];
   // ── 通信域(L5)叠加：选中一张卡后，按「关联维」在这张逻辑面上把同 communicator 的卡描虚线框（rank 锚点 → 通信域可见）──
   const _rel = activeRel(), _domHex = {TP:'#39c5cf',PP:'#FFAA3B',DP:'#4369EF',EP:'#9B3CF6'}[_rel];
@@ -4202,10 +4213,12 @@ function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
   try{ render2dAxis(); }catch(_){ }   // 立刻清掉 #axis2d 2D 叠加（否则 桶/轴 标尺会残留到 堆叠/物理 视图）
   try{ wakeLoop(90); }catch(_){ }     // 立刻推进形变动画（否则要等下次交互才morph）
   try{ repositionViewlab(); }catch(_){ } }
-// #formmode 现在按需堆叠多行（基础形态 + 子模式/视角行），高度不固定 → #viewlab 贴着其实际底部动态摆放，
+// #formmode 现在按需堆叠多行（基础形态 + 子模式/视角行），高度不固定 → #viewlab/#cardGran 贴着其实际底部动态摆放，
 // 避免（如层级堆叠展开 轴测/前视/顶视 三键时）静态坐标与其他浮层重叠。
-function repositionViewlab(){ const fm=$('#formmode'), vl=$('#viewlab'); if(!fm||!vl) return;
-  vl.style.top = (fm.offsetTop + fm.offsetHeight + 10) + 'px'; }
+function repositionViewlab(){ const fm=$('#formmode'); if(!fm) return;
+  const y = (fm.offsetTop + fm.offsetHeight + 10) + 'px';
+  const vl=$('#viewlab'); if(vl) vl.style.top = y;
+  const cg=$('#cardGran'); if(cg) cg.style.top = y; }
 let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
 renderCubeAxes();   // cubeMode 已声明，安全初始化坐标轴标注
 function updateViewLabels(){ const L=VIEW_LABELS[cubeMode]||VIEW_LABELS[0];   // 各布局的 顶/前/侧 平面名称不同
@@ -4540,8 +4553,23 @@ function renderViewlab(){
   const granNote = `<br><span style="color:#6e7681">粒度：${({
     pod:'Pod↔Pod 聚合流（下钻 L4 展开柜级）', field:'柜/Host 级全景',
     cab:'本机视角 · 焦点 Host 的直接对端', chip:'卡级 · 本卡在算子中的角色',
-    die:'片上占位 · 无跨卡连线'})[levelBand()]}</span>`;
-  $('#viewlab').innerHTML = vtxt;
+    die:'片上占位 · 无跨卡连线'})[levelBand()]}</span>`; void granNote;   // 暂未接线（levelBand 语境不适配正交 2D），保留供之后用
+  $('#viewlab').innerHTML = vtxt;   // 注：#viewlab 按早前"界面精简"要求常驻隐藏（见样式表），这里只是保留原有赋值不动
+  // 正交 2D 时明确"这一格是 1 张卡还是 1 台 Host"——同一套魔方在不同模式/视角下 TP 有时是坐标轴（1 格=1 卡）
+  // 有时被折进深度（1 格=8 卡聚合成 1 Host），肉眼看两者都是同样的方块，必须用文字说清楚，别让人猜。
+  // 用独立的 #cardGran 小标签承载（不是 #viewlab——那个已隐藏），只在正交 2D 时才现身，一行文字，不常驻占地方。
+  const cg = $('#cardGran');
+  if(cg){ let cardNote='', cardOn=false;
+    if(S.form==='cube' && S.orthoView>0 && has2D()){
+      const cfg2 = curAX2D();
+      if(cfg2){ cardOn=true;
+        cardNote = cfg2.depth.dim==='tp'
+          ? '▦ 每格 = <b style="color:#f0883e">1 台 Host</b>（TP 折入深度，8 张卡聚合负载）'
+          : '▦ 每格 = <b style="color:#3fb950">1 张卡</b>（TP 是坐标轴）'; }
+    }
+    cg.innerHTML = cardNote; cg.classList.toggle('show', cardOn);
+    try{ repositionViewlab(); }catch(_){ }
+  }
   renderStageLeg(); updateFoldHeads(); }
 function renderStageLeg(){                    // 舞台底部编码图例（左 2D 与右 3D 同一套色，随镜头切换）
   const w = S.wire||'AUTO', L = S.lens||'NONE';
