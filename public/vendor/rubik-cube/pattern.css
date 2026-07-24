@@ -72,6 +72,7 @@
 .prc-slice { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
 .prc-slice input[type="range"] { width: 110px; accent-color: var(--prc-btn-on); }
 .prc-slicelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
+.prc-viewnote { font-size: 10.5px; color: var(--prc-tx3); }
 
 /* 读图钥匙 HUD（左下） */
 .prc-hud {

@@ -85,8 +85,10 @@
       // EP 墙内 X=TP 成列（墙宽 = TP×1.05，墙距 = 墙宽 + 缝）· Z=域。卡块尺寸全形态恒定，
       // 靠布局保证任何配置下步距 ≥ 卡块（不再缩放卡块）。
       ep: { gapE: TP * 1.05 + 1.6, tp: 1.05, pp: 1.5, dom: 1.35, cy: 9 },
-      tps: { gapT: 1.8, pp: 1.5, rep: 0.42, cy: 9 },
-      ppf: { gapP: 1.7, tp: 1.3, rep: 0.42, cy: 6 },
+      // TP切片/PP流水 是「强调类」形态：2D 投影与标准完全重合，已收编到标准形态（views 门控），
+      // 因此 3D 间距不再受正交方格比例约束，放开拉大以强调「墙拉开 / 段拉开」的读法。
+      tps: { gapT: 4.2, pp: 1.5, rep: 0.42, cy: 9 },
+      ppf: { gapP: 4.6, tp: 1.3, rep: 0.42, cy: 6 },
     };
 
     // 5 种形态的 rank → 世界坐标（out 为 {x,y,z} 或 THREE.Vector3 均可）
@@ -138,13 +140,19 @@
       : dim === 'rep' ? repOf(r) : dim === 'ep' ? epOf(r) : dim === 'dom' ? domOf(r)
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r) : 0;
 
+    // 视角收编（方案 A）：每个 2D 平面只属于一个形态。标准/TP切片/PP流水 共享同一坐标系
+    // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP×TP·TP×PP·DP×PP）由
+    // 「标准」独占；TP切片/PP流水 只保留轴测（价值在 3D 的强调读法），note2d 指路。
+    // DP平铺/EP聚簇 引入新分组轴，三个 2D 平面均独有，全保留。
     const D_STD = { 1: 'pp', 2: 'rep', 3: 'tp' };
+    const NOTE_2D = '正交 2D 与「标准」形态重合 → 格阵平面到标准里看';
     const modes = [
       {
         key: 'std', name: '标准',
         sub: `标准 X=TP Y=PP(模型深度) Z=DP`,
         why: `位置即多维坐标：X=TP·Y=PP·Z=DP 同屏三维 · 着色透镜再叠第 4 维（换形态只换投影轴）`,
         viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
+        views: [0, 1, 2, 3],
       },
       {
         key: 'dpt', name: 'DP平铺',
@@ -152,6 +160,7 @@
         why: `副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本`,
         viewLabels: { 1: '顶 副本网格', 2: '前 列×PP', 3: '侧 行×PP' },
         depth: { 1: 'pp', 2: 'gz', 3: 'gx' },
+        views: [0, 1, 2, 3],
       },
       {
         key: 'ep', name: 'EP聚簇',
@@ -159,12 +168,14 @@
         why: `桶故障 = 整面墙同红 · 域热点 = 横穿 ${EP} 墙的一排过热 · 桶↔卡非 1:1`,
         viewLabels: { 1: '顶 桶×域', 2: '前 桶×PP', 3: '侧 域×PP' },
         depth: { 1: 'pp', 2: 'dom', 3: 'ep' },
+        views: [0, 1, 2, 3],
       },
       {
         key: 'tps', name: 'TP切片',
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
         viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
+        views: [0], note2d: NOTE_2D,
       },
       {
         key: 'ppf', name: 'PP流水',
@@ -172,6 +183,7 @@
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
         viewLabels: { 1: '顶 DP×PP', 2: '前 PP×TP', 3: '侧 DP×TP' },
         depth: { 1: 'tp', 2: 'rep', 3: 'pp' },
+        views: [0], note2d: NOTE_2D,
       },
     ];
 
@@ -710,7 +722,7 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
-    let timeRange = null, timeLab = null;
+    let timeRange = null, timeLab = null, viewNote = null;
     const T_CYCLE = 60;                          // 时间轴显示周期（负载场循环观感）
     function syncTimeUI() {
       if (!timeRange) return;
@@ -733,7 +745,13 @@
     function syncChrome() {
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('on', i === S.mode));
-      viewBtns.forEach((b, i) => { b.classList.toggle('on', i === S.view); if (i > 0) b.textContent = model.modes[S.mode].viewLabels[i]; });
+      const md = model.modes[S.mode];
+      viewBtns.forEach((b, i) => {
+        b.style.display = (md.views || [0, 1, 2, 3]).includes(i) ? '' : 'none';   // 视角收编：重合平面不出按钮
+        b.classList.toggle('on', i === S.view);
+        if (i > 0) b.textContent = md.viewLabels[i];
+      });
+      if (viewNote) { viewNote.textContent = md.note2d || ''; viewNote.style.display = md.note2d ? '' : 'none'; }
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep'];
       lensBtns.forEach((b, i) => b.classList.toggle('on', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
@@ -756,6 +774,7 @@
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
+      viewNote = document.createElement('span'); viewNote.className = 'prc-viewnote'; rowViews.appendChild(viewNote);
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
@@ -917,10 +936,15 @@
       },
       setMode(m) {
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
+        // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
+        if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
         retarget(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         renderHud(); renderPill(); syncChrome(); refresh2D();
       },
-      setView(v) { S.view = v | 0; fitView(); applyAxVisibility(); refresh2D(); renderPill(); },
+      setView(v) {
+        if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
+        S.view = v | 0; fitView(); applyAxVisibility(); refresh2D(); renderPill();
+      },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
       setColorBy(k) { S.colorBy = k; recolor(); renderLegend(); syncChrome(); },
       setAnomaly(k) { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); },
