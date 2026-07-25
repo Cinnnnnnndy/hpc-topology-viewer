@@ -148,7 +148,7 @@
 .prc-helptip {
   display: none;
   position: absolute; left: 0; top: calc(100% + var(--space-1)); z-index: 20;
-  width: min(70vw, 400px);
+  width: min(74vw, 440px);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-default);
@@ -157,9 +157,35 @@
   color: var(--foreground-secondary);
   font: var(--type-body-sm); line-height: var(--line-height-body);
   white-space: normal; text-transform: none; letter-spacing: normal;
+  max-height: min(72vh, 620px); overflow: hidden;
   /* 气泡不吃指针：否则它悬在下一排控件上面，会挡住点击（也会把 hover 粘住不放） */
   pointer-events: none;
 }
+/* 气泡内部像一小段文档：标题 / 正文 / 定义清单 / 注意事项 / 「此刻」状态块 */
+.prc-helptip h4 {
+  margin: 0 0 var(--space-1);
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--primary);
+}
+.prc-helptip p { margin: 0 0 var(--space-2); }
+.prc-helptip p:last-child { margin-bottom: 0; }
+.prc-helptip dl {
+  margin: 0 0 var(--space-2);
+  display: grid; grid-template-columns: auto 1fr; gap: 2px var(--space-2);
+}
+.prc-helptip dt { font: var(--type-mono); color: var(--foreground); white-space: nowrap; }
+.prc-helptip dd { margin: 0; }
+.prc-helptip ul { margin: var(--space-1) 0 0; padding-left: 1.1em; }
+.prc-helptip li { margin: 0; }
+.prc-helpnote { color: var(--foreground-muted); }
+.prc-helpnow {
+  margin-top: var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: var(--radius-md);
+}
+.prc-helpnow > p { margin: var(--space-1) 0 0; }
+.prc-helpnow > b { color: var(--foreground); }
+
 .prc-help.is-right .prc-helptip { left: auto; right: 0; }
 .prc-help.is-up .prc-helptip { top: auto; bottom: calc(100% + var(--space-1)); }
 .prc-helptip b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
