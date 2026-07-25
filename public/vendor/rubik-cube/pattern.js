@@ -523,9 +523,29 @@
       const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.34, CARD.y * 1.34, CARD.z * 1.34));
       return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
     }
-    const selBox = edgeBox(0xffffff), hovBox = edgeBox(0x9ecbff);
-    selBox.visible = hovBox.visible = false; selBox.renderOrder = hovBox.renderOrder = 7;
-    scene.add(selBox, hovBox);
+    const hovBox = edgeBox(0x9ecbff);
+    hovBox.visible = false; hovBox.renderOrder = 7;
+    scene.add(hovBox);
+    /* 选中框用「有厚度的笼子」而不是细线：WebGL 里 LineBasicMaterial 的 linewidth 是被
+       忽略的，一根 1px 的白线压在 4000 张卡里根本找不到。12 根细管拼成的框在任何缩放
+       下都看得见，配上轻微呼吸（缩放 + 不透明度）就更抓眼——但幅度压得很小，
+       它是「告诉你在哪」，不是要抢走注意力。 */
+    function edgeCage(colorHex, size, rad) {
+      const g = new THREE.Group();
+      const geo = new THREE.CylinderGeometry(rad, rad, size, 6, 1);
+      const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex), transparent: true, opacity: 0.95, depthTest: false });
+      const h = size / 2;
+      [[-h, -h], [-h, h], [h, -h], [h, h]].forEach(([a, b]) => {
+        const mx = new THREE.Mesh(geo, mat); mx.rotation.z = Math.PI / 2; mx.position.set(0, a, b); g.add(mx);
+        const my = new THREE.Mesh(geo, mat); my.position.set(a, 0, b); g.add(my);
+        const mz = new THREE.Mesh(geo, mat); mz.rotation.x = Math.PI / 2; mz.position.set(a, b, 0); g.add(mz);
+      });
+      g.userData.mat = mat;
+      return g;
+    }
+    const selBox = edgeCage(tokHex('--foreground'), CARD.x * 1.5, CARD.x * 0.04);
+    selBox.visible = false; selBox.renderOrder = 7;
+    scene.add(selBox);
     // 选中的那一段通信边：加粗重画一根管（点选后要看得见自己点中了哪一段）
     let selEdgeMesh = null;
     function drawSelEdge() {
@@ -1085,7 +1105,8 @@
     function reScale() {
       let dirty = false;
       for (let r = 0; r < N; r++) {
-        const lv = dimLv(r), want = lv === 2 ? 0.3 : lv === 1 ? 0.42 : 1;
+        // 选中的那张卡本身也长大一档：只有框的话，缩得很小时框和卡糊成一个点
+        const lv = dimLv(r), want = r === S.sel ? 1.45 : lv === 2 ? 0.3 : lv === 1 ? 0.42 : 1;
         if (scl[r] !== want) { scl[r] = want; dirty = true; }
       }
       if (dirty) settling = true;
@@ -1915,6 +1936,11 @@
         box.visible = true; box.position.set(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
       };
       place(selBox, S.sel); place(hovBox, S.hover === S.sel ? null : S.hover);
+      if (selBox.visible) {                       // 轻微呼吸：幅度很小，只为"找得到"
+        const b = 1 + 0.05 * Math.sin(nowMs / 340);
+        selBox.scale.setScalar(b);
+        selBox.userData.mat.opacity = 0.78 + 0.18 * (b - 1) / 0.05 * 0.5 + 0.09;
+      }
       updateMovers();
       applyCamera();
       renderer.render(scene, camera);
@@ -1994,6 +2020,7 @@
         root.setAttribute('data-theme', S.theme);
         readTokens();                     // 色卡随主题重解析
         applySceneBg();
+        selBox.userData.mat.color.set(tokHex('--foreground'));
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
