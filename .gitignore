@@ -27,6 +27,9 @@ pnpm-debug.log*
 
 # Claude Code tooling state (session / worktree scratch — never tracked)
 .claude/
+# 项目级 skill 要随仓库走（团队共享），本地设置仍然忽略
+!.claude/skills/
+!.claude/skills/**
 
 # Local content generation (kept out of VCS by design)
 scripts/gen-content.mjs
