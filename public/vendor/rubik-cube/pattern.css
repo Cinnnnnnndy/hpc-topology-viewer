@@ -119,6 +119,9 @@
 }
 /* 多选开关（连线那排）：各自独立的胶囊，之间留出明确间距，不连成一条 */
 .prc-chips { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 互斥组的外壳一律胶囊圆角——顶栏与抽屉同一种语气（设计系统默认 10px 的圆角矩形
+   夹在一堆胶囊按钮和大圆角卡片中间，看起来就是没对齐）。 */
+.prc-root .segmented-control { border-radius: var(--radius-pill); }
 /* 抽屉里的互斥组与顶栏同款外壳（底更淡、不投影，卡是抽屉那一层） */
 .prc-more .segmented-control { background: var(--segmented-control-bg); box-shadow: none; }
 /* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
