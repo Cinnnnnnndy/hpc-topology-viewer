@@ -26,8 +26,10 @@
         EP 不参与乘法（与 cockpit 白皮书语义一致：EP 折入 DP 轴，不新增轴）——
         ep 只要求整除 dp：副本 rep 持有专家桶 rep%ep，相邻 ep 个副本构成
         1 个 A2A 域，共 dp/ep 个域（默认 128/8 = 16）。 ── */
+  // 默认 = 盘古 Pro MoE 真实训练策略（TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，
+  // EP2 折入其中 → 50 个 A2A 域）。出处 data/ascend-workload-pangu-moe.json ← arXiv 2505.21411。
   const DEFAULTS = {
-    tp: 2, pp: 4, dp: 128, ep: 8,
+    tp: 8, pp: 5, dp: 100, ep: 2,
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（★）
@@ -42,7 +44,11 @@
           成员越多缝越紧（长轴不被拉成细丝），越少缝越松（短轴不退化成薄片）；
           层级倍率表达意图：dense 密排 · normal 常规 · spread 留白 · emph 强调分离；
        ③ 复合轴（外维分块 · 内维紧邻，如「板 / 墙」）：外维步距 = 内维总跨度 +
-          分块留白（按跨度成比例），于是任何规模下块与块都清楚分开、不重叠。
+          分块留白（按跨度成比例），于是任何规模下块与块都清楚分开、不重叠；
+       ④ 2D 可读性约束：任一正交视角（顶/前/侧）下，屏幕两根轴的「最细步距」之比
+          ≤ MAX_RATIO。否则一轴被拉成稀疏条纹——例如 DP 平铺的板在顶视里只有 1 张卡
+          厚，若行距按板宽取（方形宫格），每格 98% 是空的、完全读不出结构。因此
+          分块轴的块间距以「同屏另一轴最细步距 × MAX_RATIO」封顶（见 clampFor2D）。
 
      不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝（0.13×0.55 ≈ 0.07）→ 永不重叠。 */
   const CARD = { x: 0.9, y: 0.6, z: 0.3 };
@@ -50,6 +56,10 @@
   const TIER = { dense: 0.55, normal: 1, spread: 1.8, emph: 4 };
   const stepOf = (ax, n, tier) => CARD[ax] + GAP_BY_N(n) * TIER[tier || 'normal'];
   const padOf = (span) => Math.max(0.9, span * 0.34);        // 块间留白（随块跨度成比例）
+  const MAX_RATIO = 4;                                       // 同屏两轴最细步距的比值上限
+  // 把分块步距压到「同屏另一轴最细步距」的 MAX_RATIO 倍以内（下限 = 该轴卡块 + 缝）
+  const clampFor2D = (want, ax, ...coPitches) =>
+    Math.max(CARD[ax] + 0.3, Math.min(want, MAX_RATIO * Math.min(...coPitches)));
 
   // 维度签名色（深色主题 / 浅色主题），与 cockpit DIMHEX 一致
   const DIMC = {
@@ -98,13 +108,17 @@
        每个形态只声明「哪根轴放哪个维、用什么层级」，换任何并行数字都自动成立。 */
     const CY = 9;                                    // 逻辑体离地高度（各形态统一）
     const tpStep = stepOf('x', TP);                  // 板 / 墙内 TP 列步距
+    const ppStep = stepOf('y', PP);                  // 板 / 墙内 PP 行步距
     const blockW = TP * tpStep;                      // 一块板 / 一面墙的宽度（内维总跨）
-    const gridCell = Math.max(blockW, CARD.z);       // DP 平铺：宫格取方形格（板薄，按板宽定）
+    // DP 平铺宫格：列距 = 板宽 + 留白；行距同值，但受 2D 可读性约束封顶——板在顶视/侧视里
+    // 只有 1 张卡厚，行距若也按板宽取，两视角都会退化成稀疏条纹（每格几乎全空）。
+    const dptCellX = blockW + padOf(blockW);
+    const dptCellZ = clampFor2D(dptCellX, 'z', tpStep, ppStep);
     const SP = {
       // 标准：三根语义轴各一维，常规层级 —— 位置即多维坐标
-      std: { sx: tpStep, sy: stepOf('y', PP), sz: stepOf('z', REP), cy: CY },
-      // DP 平铺：外维 = 副本宫格（方形格 = 板宽 + 块间留白）· 内维 = 板内 TP 列 / PP 行
-      dpt: { gapX: gridCell + padOf(gridCell), gapZ: gridCell + padOf(gridCell), tp: tpStep, pp: stepOf('y', PP), y0: 1.0 },
+      std: { sx: tpStep, sy: ppStep, sz: stepOf('z', REP), cy: CY },
+      // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
+      dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, pp: ppStep, y0: 1.0 },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
       ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepOf('y', PP), dom: stepOf('z', DOM, 'spread'), cy: CY },
       // TP切片 / PP流水 是「强调类」形态（2D 已收编到标准）：主轴用 emph 层级拉开，
@@ -166,7 +180,7 @@
     // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP×TP·TP×PP·DP×PP）由
     // 「标准」独占；TP切片/PP流水 只保留轴测（价值在 3D 的强调读法），note2d 指路。
     // DP平铺/EP聚簇 引入新分组轴，三个 2D 平面均独有，全保留。
-    const D_STD = { 1: 'pp', 2: 'rep', 3: 'tp' };
+    const D_STD = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };   // 视角 → 被折进视线的维（可多个）
     const NOTE_2D = '正交 2D 与「标准」形态重合 → 格阵平面到标准里看';
     const modes = [
       {
@@ -181,15 +195,18 @@
         sub: `DP 平铺：${REP} 副本各自成板（找慢副本）`,
         why: `副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本`,
         viewLabels: { 1: '顶 副本网格', 2: '前 列×PP', 3: '侧 行×PP' },
-        depth: { 1: 'pp', 2: 'gz', 3: 'gx' },
-        views: [0, 1, 2, 3],
+        // 侧视会把「副本列」和「板内 TP」一起折进视线 → 每格 = 列×TP 张卡重叠，
+        // 整屏只剩 行×PP 个孤立点（4000 卡 → 50 点），信息塌陷，故不给出（见 §2D 可读性）。
+        depth: { 1: ['pp'], 2: ['gz'], 3: ['gx', 'tp'] },
+        views: [0, 1, 2],
+        note2d: '侧视会把 副本列×板内TP 一起折叠 → 信息塌陷，已略去',
       },
       {
         key: 'ep', name: 'EP聚簇',
         sub: `EP 聚簇：${EP} 专家桶成墙（桶=MoE 组 · 每桶复现于 ${DOM} 个 A2A 域 · 桶↔卡非 1:1）`,
         why: `桶故障 = 整面墙同红 · 域热点 = 横穿 ${EP} 墙的一排过热 · 桶↔卡非 1:1`,
         viewLabels: { 1: '顶 桶×域', 2: '前 桶×PP', 3: '侧 域×PP' },
-        depth: { 1: 'pp', 2: 'dom', 3: 'ep' },
+        depth: { 1: ['pp'], 2: ['dom'], 3: ['ep', 'tp'] },   // 侧视同时折叠墙序与墙内 TP（域数多，仍成阵）
         views: [0, 1, 2, 3],
       },
       {
@@ -204,7 +221,7 @@
         sub: `PP 流水：${PP} 段横向展开 · 左=Stage0 右=Stage${PP - 1}（找慢段/气泡）`,
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
         viewLabels: { 1: '顶 DP×PP', 2: '前 PP×TP', 3: '侧 DP×TP' },
-        depth: { 1: 'tp', 2: 'rep', 3: 'pp' },
+        depth: { 1: ['tp'], 2: ['rep'], 3: ['pp'] },
         views: [0], note2d: NOTE_2D,
       },
     ];
@@ -518,8 +535,12 @@
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
         const bb = model.boundsOf(1);
-        const b = { x0: bb.x0 - s.gapX / 2, x1: bb.x1 + s.gapX / 2, y0: 0, y1: bb.y1 + 0.6, z0: bb.z0 - s.gapZ / 2, z1: bb.z1 + s.gapZ / 2 };
-        axGridBox(b, R(COLS + 1, (i) => b.x0 + i * s.gapX), [], R(ROWS + 1, (i) => b.z0 + i * s.gapZ), true);
+        // 网格 = 宫格的「格边界」（由板中心 ± 半格推出）。若沿用 rank 包围盒，X 会整体
+        // 偏掉半个板宽 → 板落在格子左侧、网格与内容对不上。
+        const xL = R(COLS + 1, (i) => (i - COLS / 2) * s.gapX);
+        const zL = R(ROWS + 1, (i) => (i - ROWS / 2) * s.gapZ);
+        const b = { x0: xL[0], x1: xL[COLS], y0: 0, y1: bb.y1 + 0.6, z0: zL[0], z1: zL[ROWS] };
+        axGridBox(b, xL, [], zL, true);
         R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
         R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
         axText('DP0', DPc, 1.8, pos(0, 0, 0).add(V3(0, 1.6, 0)));
@@ -533,8 +554,13 @@
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
-        const b = { x0: bb.x0 - s.gapE / 2, x1: bb.x1 + s.gapE / 2, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: bb.z0 - 0.9, z1: bb.z1 + 0.9 };
-        axGridBox(b, R(EP + 1, (i) => b.x0 + i * s.gapE), R(PP, (p) => s.cy + ((PP - 1) / 2 - p) * s.pp), R(5, (i) => b.z0 + i * (b.z1 - b.z0) / 4));
+        // X 网格 = 墙的格边界（同上，避免整体偏掉半个墙宽）；Z 网格线落在真实的域位置上
+        // （域少则逐域画，域多则等间隔抽 5 条），不再是与内容无关的等分线。
+        const xL = R(EP + 1, (i) => (i - EP / 2) * s.gapE);
+        const zAt = (d) => (d - (DOM - 1) / 2) * s.dom;
+        const zL = (DOM <= 9 ? R(DOM, (i) => i) : R(5, (i) => Math.round(i * (DOM - 1) / 4))).map(zAt);
+        const b = { x0: xL[0], x1: xL[EP], y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: zAt(0) - s.dom / 2, z1: zAt(DOM - 1) + s.dom / 2 };
+        axGridBox(b, xL, R(PP, (p) => s.cy + ((PP - 1) / 2 - p) * s.pp), zL);
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? themeC('#FFAA3B', '#b45f06') : EPc, 3,
@@ -622,14 +648,23 @@
       return loadColor(load01(r));
     }
     // 正交剖面：非当前层 → 压暗（并在写矩阵时缩小），保持空间参照又不喧宾
+    // 一个正交视角可能同时折叠多个维（例：EP 聚簇的侧视把「墙序 ep」与「墙内 tp」
+    // 一起折进视线）→ 每格重叠的卡数 = 各折叠维成员数之积。剖面按最外层维逐层翻。
     function curDepth() {
       if (S.view === 0) return null;
-      const dim = model.modes[S.mode].depth[S.view];
-      return dim ? { dim, info: model.depthDims[dim] } : null;
+      const dims = model.modes[S.mode].depth[S.view];
+      if (!dims || !dims.length) return null;
+      const info = dims.map((k) => Object.assign({ key: k }, model.depthDims[k]));
+      return {
+        dims: info,
+        slice: info[0],                                           // 剖面翻的是最外层维
+        fold: info.reduce((a, d) => a * d.n, 1),                  // 每格重叠卡数
+        label: info.map((d) => `${d.lab}×${d.n}`).join(' × '),
+      };
     }
     const ghosted = (r) => {
       const d = curDepth();
-      return !!(d && S.sliceOn && model.depthIdxOf(r, d.dim) !== S.sliceVal);
+      return !!(d && S.sliceOn && model.depthIdxOf(r, d.slice.key) !== S.sliceVal);
     };
     function recolor() {
       for (let r = 0; r < N; r++) {
@@ -642,7 +677,10 @@
     function reScale() { let dirty = false; for (let r = 0; r < N; r++) { const want = ghosted(r) ? 0.3 : 1; if (scl[r] !== want) { scl[r] = want; dirty = true; } } if (dirty) settling = true; }
 
     /* ── 相机：轴测（等距可旋转）+ 顶/前/侧 正交锁轴（拖动即转回 3D），取景随形态包围盒 ── */
-    const cam = { theta: Math.PI / 4, phi: 0.66, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
+    // 等距轴测（isometric）的标准机位：方位 45°、仰角 asin(tan30°) ≈ 35.26°
+    // —— 三根世界轴等比缩短、互成 120°，这才是「轴测」该有的样子。
+    const ISO = { theta: Math.PI / 4, phi: Math.asin(Math.tan(Math.PI / 6)) };
+    const cam = { theta: ISO.theta, phi: ISO.phi, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
     function fitView() {
       const b = model.boundsOf(S.mode);
       // 轴标注留白随模型尺度自适应（固定留白会让小规格模型只占画面一小块）
@@ -693,11 +731,14 @@
         camera.up.set(0, 1, 0);
       }
       camera.lookAt(c);
-      // 正交视角的拖拽平移（沿相机右/上向量）
+      // 平移（拖拽 / 让开工具栏的取景偏移）：位置与视线目标必须偏移同一个向量，
+      // 否则视线方向被改变 → 投影斜切（不再是正经的等距轴测）。
       camera.updateMatrixWorld();
-      const right = V3(1, 0, 0).applyQuaternion(camera.quaternion), up = V3(0, 1, 0).applyQuaternion(camera.quaternion);
-      camera.position.add(right.multiplyScalar(cam.panX)).add(up.multiplyScalar(cam.panY));
-      camera.lookAt(c.clone().add(right.normalize().multiplyScalar(cam.panX)).add(up.normalize().multiplyScalar(cam.panY)));
+      const right = V3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+      const up = V3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+      const shift = right.multiplyScalar(cam.panX).add(up.multiplyScalar(cam.panY));
+      camera.position.add(shift);
+      camera.lookAt(c.clone().add(shift));
       camera.updateProjectionMatrix();
     }
 
@@ -744,10 +785,14 @@
       const d = curDepth();
       if (!d) { pill.classList.remove('show'); pill.innerHTML = ''; return; }
       pill.classList.add('show');
-      // 「每格=几张卡」：正交 2D 里同一格可能是 1 张卡，也可能是被折叠维的 n 张卡重叠——必须写清楚，别让人猜
+      // 「每格=几张卡」：正交 2D 里同一格可能是 1 张卡，也可能是多个折叠维的乘积张卡
+      // 重叠（例：侧视同时折叠墙序与墙内 TP）——必须如实写清楚，别让人以为一格一卡。
+      const rest = d.fold / d.slice.n;   // 开剖面后仍被折叠的卡数（多折叠维时 > 1）
       pill.innerHTML = S.sliceOn
-        ? `▦ 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.info.lab)}=${S.sliceVal}）`
-        : `▦ 每格 = <b class="prc-hot">${d.info.n} 张卡重叠</b>（${esc(d.info.lab)}×${d.info.n} 折入视线 · 开剖面逐层翻）`;
+        ? (rest > 1
+          ? `▦ 每格 = <b class="prc-hot">${rest} 张卡重叠</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal} · 其余维仍折叠）`
+          : `▦ 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal}）`)
+        : `▦ 每格 = <b class="prc-hot">${d.fold} 张卡重叠</b>（${esc(d.label)} 折入视线 · 开剖面逐层翻）`;
     }
     function renderLegend() {
       const lg = $('.prc-legend'); if (!lg) return;
@@ -817,11 +862,11 @@
         const d = curDepth();
         sliceBox.style.display = d ? '' : 'none';
         if (d) {
-          sliceRange.max = String(d.info.n - 1);
-          if (S.sliceVal > d.info.n - 1) S.sliceVal = 0;
+          sliceRange.max = String(d.slice.n - 1);
+          if (S.sliceVal > d.slice.n - 1) S.sliceVal = 0;
           sliceRange.value = String(S.sliceVal);
           sliceRange.disabled = !S.sliceOn;
-          sliceLab.textContent = S.sliceOn ? `${d.info.lab}=${S.sliceVal}` : `剖面关（${d.info.lab}×${d.info.n} 折叠）`;
+          sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `剖面关（${d.label} 折叠）`;
           sliceBox.querySelector('.prc-btn').classList.toggle('on', S.sliceOn);
         }
       }
@@ -1002,6 +1047,8 @@
       },
       setView(v) {
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
+        // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
+        if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
         S.view = v | 0; fitView(); applyAxVisibility(); refresh2D(); renderPill();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
