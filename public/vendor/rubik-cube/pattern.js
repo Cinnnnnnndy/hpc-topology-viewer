@@ -404,10 +404,21 @@
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
     }
+    // 字牌尺度：世界尺寸随模型尺度伸缩，使标注在屏幕上占比恒定（相机按包围盒取景，
+    // 固定世界尺寸的字牌在小规格下会被放大到盖满画面——128 卡与 4000 卡差 6 倍）。
+    let LS = 1;
+    function updateLabelScale() {
+      const b = model.boundsOf(S.mode);
+      const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+      LS = Math.min(1.6, Math.max(0.3, span / 52));
+    }
+    // 标注离盒子的偏移量同样随尺度收缩（固定偏移会让小规格下的横幅飘到画布外/被工具栏遮住），
+    // 但留 0.5 下限，避免贴到方块上。
+    const D = (v) => v * Math.max(0.5, LS);
     // 长文案「读图横幅」（w≥5）只在轴测视图显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本
     // 长度膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
     function axText(text, color, w, pos) {
-      const l = makeLabel(text, color, w * 1.25);
+      const l = makeLabel(text, color, w * 1.25 * LS);
       l.position.copy(pos);
       l.userData.banner = w >= 5;
       axGroup.add(l);
@@ -458,6 +469,7 @@
     // 每种形态 = 换一根投影轴：讲清「为什么这样重排 · 这个形状帮你看什么」——一个小方块 = 1 颗卡（rank）
     function renderAxes() {
       clearAxes();
+      updateLabelScale();
       const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'), NTc = dimc('NT');
       const hx = (c) => new THREE.Color(c).getHex();
       const TPw = hx(TPc), PPw = hx(PPc), EPw = hx(EPc), NTw = hx(NTc);
@@ -468,29 +480,29 @@
         const s = sp.std, xT = (t) => (t - (TP - 1) / 2) * s.sx, yS = (p) => s.cy + ((PP - 1) / 2 - p) * s.sy, zD = (d) => (d - (REP - 1) / 2) * s.sz;
         const b = { x0: xT(0) - 1.2, x1: xT(TP - 1) + 1.2, y0: yS(PP - 1) - 1, y1: yS(0) + 1, z0: zD(0) - 1.2, z1: zD(REP - 1) + 1.2 };
         axGridBox(b, R(TP, xT), R(PP, yS), R(9, (i) => zD(Math.round(i * (REP - 1) / 8))));
-        axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - 1, b.z1 + 1.4)); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - 1, b.z1 + 1.4));
-        axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce`, TPc, 7, V3(0, b.y0 - 2.6, b.z1 + 3.2));
-        axText('DP0', DPc, 1.6, V3(b.x1 + 1.6, b.y0 - 1, zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + 1.8, b.y0 - 1, zD(REP - 1)));
-        axText(`DP×${REP} 完整副本 · 数据不同 · 梯度 AllReduce`, DPc, 8, V3(b.x1 + 5, b.y0 - 2.6, 0));
-        axArrow(V3(b.x0 - 1.5, b.y1, b.z0), V3(b.x0 - 1.5, b.y0, b.z0), PPw);
-        axText(`PP×${PP} 模型深度 L1→L${model.config.layers} · 段间 P2P`, PPc, 7, V3(b.x0 - 1.5, b.y1 + 1.6, b.z0));
-        axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + 3.6, 0));
+        axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
+        axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce`, TPc, 7, V3(0, b.y0 - D(2.6), b.z1 + D(3.2)));
+        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1)));
+        axText(`DP×${REP} 完整副本 · 数据不同 · 梯度 AllReduce`, DPc, 8, V3(b.x1 + D(5), b.y0 - D(2.6), 0));
+        axArrow(V3(b.x0 - D(1.5), b.y1, b.z0), V3(b.x0 - D(1.5), b.y0, b.z0), PPw);
+        axText(`PP×${PP} 模型深度 L1→L${model.config.layers} · 段间 P2P`, PPc, 7, V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0));
+        axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + D(3.6), 0));
         // 层段标尺：每个 PP 段 "S0·L1-12"（左后棱一列）
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
-          const l = makeLabel(`S${s2}·L${lr.lo}-${lr.hi}`, '#ffe0a0', 2.6);
-          l.position.set(b.x0 - 3.4, yS(s2), b.z0 - 1); axGroup.add(l);
+          const l = makeLabel(`S${s2}·L${lr.lo}-${lr.hi}`, '#ffe0a0', 2.6 * LS);
+          l.position.set(b.x0 - D(3.4), yS(s2), b.z0 - D(1)); axGroup.add(l);
         }
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
         const bb = model.boundsOf(1);
         const b = { x0: bb.x0 - s.gapX / 2, x1: bb.x1 + s.gapX / 2, y0: 0, y1: bb.y1 + 0.6, z0: bb.z0 - s.gapZ / 2, z1: bb.z1 + s.gapZ / 2 };
         axGridBox(b, R(COLS + 1, (i) => b.x0 + i * s.gapX), [], R(ROWS + 1, (i) => b.z0 + i * s.gapZ), true);
-        R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + 1.8)));
-        R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + 2.2, b.y0, b.z0 + (i + 0.5) * s.gapZ)));
+        R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
+        R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
         axText('DP0', DPc, 1.8, pos(0, 0, 0).add(V3(0, 1.6, 0)));
         axText('DP' + (REP - 1), DPc, 2.1, pos(0, 0, REP - 1).add(V3(0, 1.6, 0)));
-        axText(`DP 平铺 · ${REP} 块板 = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`, DPc, 11, V3(0, b.y1 + 3.4, 0));
+        axText(`DP 平铺 · ${REP} 块板 = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`, DPc, 11, V3(0, b.y1 + D(3.4), 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
         axArrow(p00.clone().add(V3(-0.9, -0.8, 0)), p10.clone().add(V3(0.9, -0.8, 0)), TPw);
         axText(`板内横=TP×${TP}`, TPc, 3.4, p00.clone().add(V3(0.6, -1.9, 0)));
@@ -504,30 +516,30 @@
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? themeC('#FFAA3B', '#b45f06') : EPc, 3,
-            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + 1.2 + (e % 2) * 1.1, 0));
+            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 2) * 1.1, 0));
         }
-        axText(`${EP} 面墙 = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`, EPc, 10, V3(0, b.y1 + 4.2, 0));
+        axText(`${EP} 面墙 = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`, EPc, 10, V3(0, b.y1 + D(4.2), 0));
         const rowY = s.cy, rowZ = bb.z0;
         axLine(V3(b.x0, rowY, rowZ), V3(b.x1, rowY, rowZ), EPw, 0.07);
-        axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - 1.7, rowZ));
-        axArrow(V3(b.x1 + 1.4, b.y0 - 0.5, bb.z0), V3(b.x1 + 1.4, b.y0 - 0.5, bb.z1), NTw);
-        axText(`域0→域${DOM - 1}`, NTc, 2.8, V3(b.x1 + 3.2, b.y0 - 1.5, 0));
-        axArrow(V3(b.x0 - 1.4, b.y1, 0), V3(b.x0 - 1.4, b.y0, 0), PPw);
-        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - 1.4, b.y1 + 1.3, 0));
+        axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - D(1.7), rowZ));
+        axArrow(V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z0), V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z1), NTw);
+        axText(`域0→域${DOM - 1}`, NTc, 2.8, V3(b.x1 + D(3.2), b.y0 - D(1.5), 0));
+        axArrow(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
+        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
         const b = { x0: bb.x0 - s.gapT / 2, x1: bb.x1 + s.gapT / 2, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: bb.z0 - 1.2, z1: bb.z1 + 1.2 };
         axGridBox(b, R(TP + 1, (i) => b.x0 + i * s.gapT), R(PP, (p) => s.cy + ((PP - 1) / 2 - p) * s.pp), R(5, (i) => zD(Math.round(i * (REP - 1) / 4))));
-        for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + 1.2 + (t % 2) * 1.1, 0));
-        axText(`${TP} 面墙 = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`, TPc, 9.5, V3(0, b.y1 + 4.2, 0));
-        const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + 0.4, b.z0));
+        for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + D(1.2) + (t % 2) * 1.1, 0));
+        axText(`${TP} 面墙 = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`, TPc, 9.5, V3(0, b.y1 + D(4.2), 0));
+        const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
         for (let k = 0; k < TP - 1; k++) axLine(dots[k], dots[k + 1], TPw, 0.07);
         dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
-        axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + 0.4, b.z0 - 2.4));
-        axText('DP0', DPc, 1.6, V3(b.x1 + 1.5, b.y0 - 0.7, zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + 1.7, b.y0 - 0.7, zD(REP - 1)));
-        axArrow(V3(b.x0 - 1.4, b.y1, 0), V3(b.x0 - 1.4, b.y0, 0), PPw);
-        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - 1.4, b.y1 + 1.3, 0));
+        axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
+        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1)));
+        axArrow(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
+        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
@@ -535,13 +547,13 @@
         axGridBox(b, R(PP + 1, (i) => b.x0 + i * s.gapP), [], R(5, (i) => zD(Math.round(i * (REP - 1) / 4))), true);
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st);
-          axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + 1.6, 0));
+          axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0));
         }
-        axArrow(V3(b.x0, b.y1 + 3.4, 0), V3(b.x1, b.y1 + 3.4, 0), PPw);
-        axText(`前向激活 →（反向梯度 ←）· 段间 P2P · 每段=连续 ${LPS} 层`, PPc, 9, V3(0, b.y1 + 4.9, 0));
-        axText('DP0', DPc, 1.6, V3(b.x1 + 1.6, b.y0 - 0.5, zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + 1.8, b.y0 - 0.5, zD(REP - 1)));
-        axArrow(V3(b.x0 - 1.6, b.y1, b.z0), V3(b.x0 - 1.6, b.y0, b.z0), hx(TPc));
-        axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - 1.6, b.y1 + 1.3, b.z0));
+        axArrow(V3(b.x0, b.y1 + D(3.4), 0), V3(b.x1, b.y1 + D(3.4), 0), PPw);
+        axText(`前向激活 →（反向梯度 ←）· 段间 P2P · 每段=连续 ${LPS} 层`, PPc, 9, V3(0, b.y1 + D(4.9), 0));
+        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1)));
+        axArrow(V3(b.x0 - D(1.6), b.y1, b.z0), V3(b.x0 - D(1.6), b.y0, b.z0), hx(TPc));
+        axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0));
       }
     }
 
@@ -611,16 +623,26 @@
     const cam = { theta: Math.PI / 4, phi: 0.66, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
     function fitView() {
       const b = model.boundsOf(S.mode);
-      const mx = 6;                                   // 轴标注留白
-      const ex = (b.x1 - b.x0) / 2 + mx, ey = (b.y1 - b.y0) / 2 + mx * 0.7, ez = (b.z1 - b.z0) / 2 + mx;
+      // 轴标注留白随模型尺度自适应（固定留白会让小规格模型只占画面一小块）
+      const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+      const mx = Math.min(8, Math.max(1.6, span * 0.1));
+      // 半尺寸 = rank 中心包围盒 + 卡块自身半尺寸（包围盒只含中心点）+ 标注留白
+      const ex = (b.x1 - b.x0) / 2 + 0.45 + mx;
+      const ey = (b.y1 - b.y0) / 2 + 0.3 + mx * 0.6;
+      const ez = (b.z1 - b.z0) / 2 + 0.15 + mx;
       cam.cx = (b.x0 + b.x1) / 2; cam.cy = (b.y0 + b.y1) / 2; cam.cz = (b.z0 + b.z1) / 2;
       cam.panX = 0; cam.panY = 0;
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
-      const need = (hw, hh) => Math.max(hh, hw / asp);
-      if (S.view === 1) cam.half = need(ex, ez) * 1.06;
-      else if (S.view === 2) cam.half = need(ex, ey) * 1.06;
-      else if (S.view === 3) cam.half = need(ez, ey) * 1.06;
-      else cam.half = need(Math.max(ex, ez) * 1.1, Math.max(ey, (ex + ez) / 2)) * 1.02;
+      const need = (hw, hh) => Math.max(hh, hw / asp) * 1.05;
+      if (S.view === 1) cam.half = need(ex, ez);          // 顶视：屏幕 横=X 纵=Z
+      else if (S.view === 2) cam.half = need(ex, ey);     // 前视：横=X 纵=Y
+      else if (S.view === 3) cam.half = need(ez, ey);     // 侧视：横=Z 纵=Y
+      else {
+        // 轴测：把包围盒精确投影到相机的右/上基向量上（近似式在小尺度下会让方块溢出画布）
+        const st = Math.abs(Math.sin(cam.theta)), ct = Math.abs(Math.cos(cam.theta));
+        const sp = Math.abs(Math.sin(cam.phi)), cp = Math.abs(Math.cos(cam.phi));
+        cam.half = need(ex * st + ez * ct, ey * cp + sp * (ex * ct + ez * st));
+      }
     }
     function applyCamera() {
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
@@ -663,8 +685,8 @@
         else commLine(pts, colorHex, 0.85, d === 'TP' ? 0.1 : 0.07);   // TP 环 / PP 链 / DP 采样折线
       });
       const selP = gp(S.sel);
-      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP}`, themeC('#c8d2dc', '#3f4c63'), 6.5);
-      lab.position.copy(selP.clone().add(V3(0, 3.2, 0))); lab.renderOrder = 7; commGroupG.add(lab);
+      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP}`, themeC('#c8d2dc', '#3f4c63'), 6.5 * LS);
+      lab.position.copy(selP.clone().add(V3(0, 2 + 1.2 * LS, 0))); lab.renderOrder = 7; commGroupG.add(lab);
     }
 
     /* ── HUD / 图例 / 粒度贴士 / 信息卡 ── */
@@ -813,9 +835,12 @@
       rowCfg.appendChild(chipBtn('应用', applyCfg));
       cfgRead = document.createElement('span'); cfgRead.className = 'prc-cfgread'; rowCfg.appendChild(cfgRead);
       cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
-      // 快捷预设：盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
-      // TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中）
+      // 快捷预设（标签按 TP·PP·DP·EP 顺序）：
+      //  · 盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
+      //    TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中）；
+      //  · 128 卡小规格（单超节点量级）：tp2×pp4×dp16 = 128，EP8 折入 DP → 2 个 A2A 域。
       rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
+      rowCfg.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); syncChrome(); }
 
