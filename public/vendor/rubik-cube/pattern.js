@@ -439,15 +439,14 @@
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
-        '<div class="prc-topbar panel-shell">',
-        '  <div class="prc-brand">',
-        '    <span class="prc-brandname">逻辑魔方 · 并行域重排</span>',
-        '    <span class="prc-brandchip"></span>',
-        '  </div>',
+        '<div class="prc-topbar">',
+        '  <div class="prc-brandname">逻辑魔方</div>',
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',
         '    <button class="prc-morebtn btn btn-sm" type="button"></button>',
+        // 宿主控件（主题切换等）的插槽：放进同一张卡，按钮才成套
+        '    <span class="prc-toolslot"></span>',
         '  </div>',
         '</div>',
         '<div class="prc-more panel-shell">',
@@ -1502,10 +1501,6 @@
       const bar = root.querySelector('.prc-topbar');
       if (bar) root.style.setProperty('--prc-barh', Math.round(bar.getBoundingClientRect().height) + 'px');
     }
-    function syncBrand() {
-      const el = $('.prc-brandchip'); if (!el) return;
-      el.textContent = `${N} rank · TP${TP}·PP${PP}·DP${REP}·EP${EP} · ${DOM} 域`;
-    }
     function syncCfgUI() {
       if (!cfgInputs) return;
       cfgInputs.tp.value = TP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
@@ -1513,7 +1508,7 @@
       cfgErr.textContent = '';
     }
     function syncChrome() {
-      syncHelp(); syncBrand(); syncBarH();                                           // 问号气泡与标题规格随状态更新
+      syncHelp(); syncBarH();                                           // 问号气泡与标题规格随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];

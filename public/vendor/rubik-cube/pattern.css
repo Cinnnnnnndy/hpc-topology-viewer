@@ -21,31 +21,34 @@
 .prc-stage canvas { display: block; }
 
 /* ── 左上控制面板（.panel-shell + 分行）────────────────────────────── */
-/* ── 顶栏：左=这张图叫什么，右=配置（对齐设计系统 sidecar 的页头）────────── */
+/* ── 顶栏：左=这张图叫什么（裸文字，不放卡片上），右=配置（一张卡）────────── */
 .prc-topbar {
   position: absolute; top: var(--space-3); left: var(--space-3); right: var(--space-3); z-index: 6;
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  /* 右端给宿主的主题按钮留位（页面把它绝对定位在同一行） */
-  padding-right: 104px;
-  min-height: 46px; flex-wrap: wrap;
+  flex-wrap: wrap; pointer-events: none;
 }
-.prc-brand { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.prc-brandname { font: var(--type-body); font-weight: 700; color: var(--foreground); white-space: nowrap; }
-.prc-brandchip {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
-  color: var(--foreground-muted);
-  font: var(--type-mono); white-space: nowrap;
+.prc-brandname {
+  font: var(--type-body); font-weight: 700; color: var(--foreground);
+  white-space: nowrap; padding-left: var(--space-1);
 }
-.prc-tools { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
+.prc-tools {
+  /* 不再套一张大卡：每组自己就是一张胶囊卡（segmented-control / btn），
+     叠两层底会让底色看起来是错的。 */
+  display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  justify-content: flex-end; flex: 0 1 auto; min-width: 0;
+  pointer-events: auto;
+}
+/* 组本身要有卡的质感（浮在画面上）：描边 + 底 + 轻阴影 */
+.prc-root .segmented-control { box-shadow: var(--shadow-sm); background: var(--surface-1); }
+.prc-tools > .btn { box-shadow: var(--shadow-sm); background: var(--surface-1); }
+.prc-group { flex: 0 0 auto; }
+.prc-toolslot { display: inline-flex; align-items: center; gap: var(--space-2); }
+.prc-toolslot:empty { display: none; }
 /* 顶栏里的互斥组：选中项用主色（与设计系统页面上的分段控件同款） */
 .prc-root .segmented-control > .btn.is-selected,
 .prc-root .segmented-control > .btn.is-selected:hover {
   background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
 }
-.prc-group { flex: 0 0 auto; }
 
 /* 抽屉挂在顶栏下方、靠右——从「更多」按钮那边落下来 */
 .prc-more {
