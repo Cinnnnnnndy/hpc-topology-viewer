@@ -367,8 +367,8 @@
       playing: true,
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
-      // 连线图层（每项都可单独关闭）与集合算法
-      wire: { members: true, lines: true, outline: true, movers: true },
+      // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗
+      wire: { members: true, lines: true, outline: true, movers: true, focus: true },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
@@ -470,7 +470,9 @@
 
     // 焦点/悬停/关联标记
     function edgeBox(color) {
-      const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.15, 0.85, 0.55));
+      // 焦点线框跟着卡块尺寸走（CARD 是正方体）——沿用旧的各向异性尺寸会框成扁盒子，
+      // 与卡对不上、也更难看清选中的是哪一张。
+      const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.34, CARD.y * 1.34, CARD.z * 1.34));
       return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
     }
     const selBox = edgeBox(0xffffff), hovBox = edgeBox(0x9ecbff);
@@ -481,7 +483,7 @@
     const PEER_MAX = 64;
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
     const peerMeshes = peerDims.map((d) => {
-      const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1.25, 0.95, 0.62),
+      const m = new THREE.InstancedMesh(new THREE.BoxGeometry(CARD.x * 1.18, CARD.y * 1.18, CARD.z * 1.18),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.34, depthWrite: false, depthTest: false }), PEER_MAX);
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
@@ -585,12 +587,19 @@
 
     /* ── 轴标注（每形态一套：网格框 + 刻度 + 语义标注 + 关键结构线）── */
     const axGroup = new THREE.Group(); scene.add(axGroup);
+    // 网格线材质登记表：聚焦（选中压暗）时整体提亮——卡退成背景，格子接手空间参照
+    const gridMats = [];
     function clearAxes() {
+      gridMats.length = 0;
       while (axGroup.children.length) {
         const o = axGroup.children.pop();
         if (o.geometry) o.geometry.dispose();
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
+    }
+    function applyGridEmphasis() {
+      const k = focusOn() ? 1.6 : 1;
+      gridMats.forEach((m) => { m.opacity = Math.min(1, m.userData.baseOp * k); });
     }
     // 字牌尺度：世界尺寸随模型尺度伸缩，使标注在屏幕上占比恒定（相机按包围盒取景，
     // 固定世界尺寸的字牌在小规格下会被放大到盖满画面——128 卡与 4000 卡差 6 倍）。
@@ -615,8 +624,13 @@
       axGroup.traverse((o) => { if (o.isSprite && o.userData.banner) o.visible = S.view === 0; });
     }
     function axSeg(pairs, color, opacity) {
+      if (!pairs.length) return null;
       const g = new THREE.BufferGeometry().setFromPoints(pairs);
-      axGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent: true, opacity })));
+      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+      mat.userData.baseOp = opacity;
+      gridMats.push(mat);
+      axGroup.add(new THREE.LineSegments(g, mat));
+      return mat;
     }
     function axLine(a, b, colorHex, r) {
       const dir = b.clone().sub(a), len = dir.length();
@@ -626,24 +640,24 @@
       mesh.quaternion.setFromUnitVectors(V3(0, 1, 0), dir.normalize());
       axGroup.add(mesh);
     }
-    function axArrow(a, b, colorHex) {
-      axLine(a, b, colorHex, 0.07);
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.8, 10),
-        new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.92 }));
-      cone.position.copy(b);
-      cone.quaternion.setFromUnitVectors(V3(0, 1, 0), b.clone().sub(a).normalize());
-      axGroup.add(cone);
-    }
-    // 大 3D 坐标网格框（底 XZ + 背 XY + 左 YZ 三张淡网格 + 描边棱线；floorOnly 只铺地面）
-    function axGridBox(b, xt, yt, zt, floorOnly) {
+    // 轴脊：标出一根轴的起止范围（细线，不带箭头锥——3D 建模风格的箭头在这套正交
+    // 画面里既抢眼又不好看；方向交给文案与刻度标，范围交给这根线 + 网格）。
+    function axRule(a, b, colorHex) { axLine(a, b, colorHex, 0.05); }
+    /* 大 3D 坐标网格框（底 XZ + 背 XY + 左 YZ 三张网格 + 描边棱线；floorOnly 只铺地面）。
+       tint = {x,y,z} 时，该轴的格边界线用这一维的签名色画并加一档不透明度——
+       网格自己就说明「这根轴切的是哪一维、切成几格」，因此不再需要轴向箭头。 */
+    function axGridBox(b, xt, yt, zt, floorOnly, tint) {
       const hx = (c) => new THREE.Color(c).getHex();
       const grid = hx(tokHex('--border-default')), frame = hx(tokHex('--border-strong'));
-      const gridOp = isDark() ? 0.42 : 0.6, frameOp = isDark() ? 0.85 : 0.95;
-      const seg = [];
-      xt.forEach((x) => { seg.push(V3(x, b.y0, b.z0), V3(x, b.y0, b.z1)); if (!floorOnly) seg.push(V3(x, b.y0, b.z0), V3(x, b.y1, b.z0)); });
-      if (!floorOnly) yt.forEach((y) => { seg.push(V3(b.x0, y, b.z0), V3(b.x1, y, b.z0), V3(b.x0, y, b.z0), V3(b.x0, y, b.z1)); });
-      zt.forEach((z) => { seg.push(V3(b.x0, b.y0, z), V3(b.x1, b.y0, z)); if (!floorOnly) seg.push(V3(b.x0, b.y0, z), V3(b.x0, b.y1, z)); });
-      axSeg(seg, grid, gridOp);
+      const gridOp = isDark() ? 0.42 : 0.6, tintOp = isDark() ? 0.62 : 0.78, frameOp = isDark() ? 0.85 : 0.95;
+      const t = tint || {};
+      const sx = [], sy = [], sz = [];
+      xt.forEach((x) => { sx.push(V3(x, b.y0, b.z0), V3(x, b.y0, b.z1)); if (!floorOnly) sx.push(V3(x, b.y0, b.z0), V3(x, b.y1, b.z0)); });
+      if (!floorOnly) yt.forEach((y) => { sy.push(V3(b.x0, y, b.z0), V3(b.x1, y, b.z0), V3(b.x0, y, b.z0), V3(b.x0, y, b.z1)); });
+      zt.forEach((z) => { sz.push(V3(b.x0, b.y0, z), V3(b.x1, b.y0, z)); if (!floorOnly) sz.push(V3(b.x0, b.y0, z), V3(b.x0, b.y1, z)); });
+      axSeg(sx, t.x ? hx(t.x) : grid, t.x ? tintOp : gridOp);
+      axSeg(sy, t.y ? hx(t.y) : grid, t.y ? tintOp : gridOp);
+      axSeg(sz, t.z ? hx(t.z) : grid, t.z ? tintOp : gridOp);
       const E = floorOnly
         ? [[b.x0, b.y0, b.z0, b.x1, b.y0, b.z0], [b.x0, b.y0, b.z1, b.x1, b.y0, b.z1], [b.x0, b.y0, b.z0, b.x0, b.y0, b.z1], [b.x1, b.y0, b.z0, b.x1, b.y0, b.z1]]
         : [[b.x0, b.y0, b.z0, b.x1, b.y0, b.z0], [b.x0, b.y0, b.z1, b.x1, b.y0, b.z1], [b.x0, b.y0, b.z0, b.x0, b.y0, b.z1], [b.x1, b.y0, b.z0, b.x1, b.y0, b.z1],
@@ -681,13 +695,13 @@
         const s = sp.std, xT = (t) => (t - (TP - 1) / 2) * s.sx, yS = (p) => s.cy + ((PP - 1) / 2 - p) * s.sy, zD = (d) => (d - (REP - 1) / 2) * s.sz;
         const xL = cellLines(TP, s.sx, 0), yL = cellLines(PP, s.sy, s.cy), zL = cellLines(REP, s.sz, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
-        axGridBox(b, xL, yL, zL);
+        axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
-        axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce`, TPc, 7, V3(0, b.y0 - D(2.6), b.z1 + D(3.2)));
+        axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`, TPc, 7, V3(0, b.y0 - D(2.6), b.z1 + D(3.2)));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1)));
         axText(`DP×${REP} 完整副本 · 数据不同 · 梯度 AllReduce`, DPc, 8, V3(b.x1 + D(5), b.y0 - D(2.6), 0));
-        axArrow(V3(b.x0 - D(1.5), b.y1, b.z0), V3(b.x0 - D(1.5), b.y0, b.z0), PPw);
-        axText(`PP×${PP} 模型深度 L1→L${model.config.layers} · 段间 P2P`, PPc, 7, V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0));
+        axRule(V3(b.x0 - D(1.5), b.y1, b.z0), V3(b.x0 - D(1.5), b.y0, b.z0), PPw);
+        axText(`PP×${PP} 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`, PPc, 7.6, V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0));
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + D(3.6), 0));
         // 层段标尺：每个 PP 段 "S0·L1-12"（左后棱一列）
         for (let s2 = 0; s2 < PP; s2++) {
@@ -702,18 +716,20 @@
         // 偏掉半个板宽 → 板落在格子左侧、网格与内容对不上。
         const xL = cellLines(COLS, s.gapX, 0, 14), zL = cellLines(ROWS, s.gapZ, 0, 14);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: 0, y1: bb.y1 + 0.6, z0: span1(zL).lo, z1: span1(zL).hi };
-        axGridBox(b, xL, [], zL, true);
+        axGridBox(b, xL, [], zL, true, { x: DPc, z: DPc });
         R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
         R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
         axText('DP0', DPc, 1.8, pos(0, 0, 0).add(V3(0, 1.6, 0)));
         axText('DP' + (REP - 1), DPc, 2.1, pos(0, 0, REP - 1).add(V3(0, 1.6, 0)));
         axText(`DP 平铺 · ${REP} 块板 = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`, DPc, 11, V3(0, b.y1 + D(3.4), 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
-        axArrow(p00.clone().add(V3(-0.9, -0.8, 0)), p10.clone().add(V3(0.9, -0.8, 0)), TPw);
+        // 板内两根轴用「轴脊 + 文案」标注（不画箭头锥）：板内格线试过——一块板上单独铺一层
+        // 格子，在一字排开的 100 块板里反而像块悬空的面板，不如让宫格线自己说话。
+        axRule(p00.clone().add(V3(-0.9, -0.8, 0)), p10.clone().add(V3(0.9, -0.8, 0)), TPw);
         axText(model.TPD > 1 ? `板内 TP×${TP} = ${model.TPC}列×${model.TPD}排` : `板内横=TP×${TP}`,
           TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0)));
-        axArrow(pTop.clone().add(V3(-1.7, 0.4, 0)), p00.clone().add(V3(-1.7, -0.4, 0)), PPw);
-        axText(`板内竖=PP×${PP} L1→L${model.config.layers}`, PPc, 4.6, pTop.clone().add(V3(0.4, 1.7, 0)));
+        axRule(pTop.clone().add(V3(-1.7, 0.4, 0)), p00.clone().add(V3(-1.7, -0.4, 0)), PPw);
+        axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5, pTop.clone().add(V3(0.4, 1.7, 0)));
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
@@ -721,7 +737,7 @@
         // （域少则逐域画，域多则等间隔抽 5 条），不再是与内容无关的等分线。
         const xL = cellLines(EP, s.gapE, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(DOM, s.dom, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
-        axGridBox(b, xL, yL, zL);
+        axGridBox(b, xL, yL, zL, false, { x: EPc, y: PPc, z: DPc });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? tokHex('--warning') : EPc, 3,
@@ -731,16 +747,16 @@
         const rowY = s.cy, rowZ = bb.z0;
         axLine(V3(b.x0, rowY, rowZ), V3(b.x1, rowY, rowZ), EPw, 0.07);
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - D(1.7), rowZ));
-        axArrow(V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z0), V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z1), NTw);
-        axText(`域0→域${DOM - 1}`, NTc, 2.8, V3(b.x1 + D(3.2), b.y0 - D(1.5), 0));
-        axArrow(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
+        axRule(V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z0), V3(b.x1 + D(1.4), b.y0 - D(0.5), bb.z1), NTw);
+        axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0));
+        axRule(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
         axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
         const xL = cellLines(TP, s.gapT, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
-        axGridBox(b, xL, yL, zL);
+        axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + D(1.2) + (t % 2) * 1.1, 0));
         axText(`${TP} 面墙 = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`, TPc, 9.5, V3(0, b.y1 + D(4.2), 0));
         const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
@@ -748,24 +764,25 @@
         dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
         axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1)));
-        axArrow(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
+        axRule(V3(b.x0 - D(1.4), b.y1, 0), V3(b.x0 - D(1.4), b.y0, 0), PPw);
         axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
         const xL = cellLines(PP, s.gapP, 0), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
-        axGridBox(b, xL, [], zL, true);
+        axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st);
           axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0));
         }
-        axArrow(V3(b.x0, b.y1 + D(3.4), 0), V3(b.x1, b.y1 + D(3.4), 0), PPw);
-        axText(`前向激活 →（反向梯度 ←）· 段间 P2P · 每段=连续 ${LPS} 层`, PPc, 9, V3(0, b.y1 + D(4.9), 0));
+        axRule(V3(b.x0, b.y1 + D(3.4), 0), V3(b.x1, b.y1 + D(3.4), 0), PPw);
+        axText(`前向激活 S0→S${PP - 1}（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`, PPc, 10.5, V3(0, b.y1 + D(4.9), 0));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1)));
-        axArrow(V3(b.x0 - D(1.6), b.y1, b.z0), V3(b.x0 - D(1.6), b.y0, b.z0), hx(TPc));
+        axRule(V3(b.x0 - D(1.6), b.y1, b.z0), V3(b.x0 - D(1.6), b.y0, b.z0), hx(TPc));
         axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0));
       }
+      applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
 
     // 选中整网层 → 魔方水平切片（标准形态的紫色 slab —— 整网图联动挂点）
@@ -852,15 +869,44 @@
       const d = curDepth();
       return !!(d && S.sliceOn && model.depthIdxOf(r, d.slice.key) !== S.sliceVal);
     };
+    /* 选中聚焦：选中一张卡后，与它四个通信域都无关的卡退成背景。
+       上千张卡各自有色时，四维高亮会被淹没（尤其分组着色）——把无关的压暗 + 缩小，
+       让「这张卡和谁一组」当场跳出来；网格与外框此时反过来加强，空间参照不丢。
+       和剖面共用一套 dim 机制，可在「连线」行随时关掉。 */
+    const relSet = new Set();
+    function buildRelSet() {
+      relSet.clear();
+      if (S.sel == null) return;
+      relSet.add(S.sel);
+      peerDims.forEach((d) => model.commGroup(S.sel, d).forEach((r) => relSet.add(r)));
+    }
+    const focusOn = () => S.wire.focus && S.sel != null;
+    // 0=正常 · 1=聚焦压暗（保留形体做参照）· 2=剖面压暗（更狠）
+    const dimLv = (r) => (ghosted(r) ? 2 : focusOn() && !relSet.has(r) ? 1 : 0);
+    const BG_C = new THREE.Color();
     function recolor() {
+      BG_C.set(tokHex('--background'));
       for (let r = 0; r < N; r++) {
         colorOfRank(r);
-        if (ghosted(r)) cTmp.multiplyScalar(isDark() ? 0.22 : 0.55).lerp(new THREE.Color(isDark() ? 0x0d1117 : 0xf6f8fa), 0.35);
+        const lv = dimLv(r);
+        if (lv === 2) cTmp.multiplyScalar(isDark() ? 0.22 : 0.55).lerp(BG_C, 0.35);
+        // 卡是 MeshStandard 材质（环境光 0.85 + 平行光 0.55 ≈ ×1.4 提亮），压暗系数要压得比
+        // 直觉更狠，否则暗色主题下「压暗」看起来还是一片亮
+        else if (lv === 1) cTmp.multiplyScalar(isDark() ? 0.18 : 0.66).lerp(BG_C, isDark() ? 0.58 : 0.66);
         chips.setColorAt(r, cTmp);
       }
       if (chips.instanceColor) chips.instanceColor.needsUpdate = true;
     }
-    function reScale() { let dirty = false; for (let r = 0; r < N; r++) { const want = ghosted(r) ? 0.3 : 1; if (scl[r] !== want) { scl[r] = want; dirty = true; } } if (dirty) settling = true; }
+    function reScale() {
+      let dirty = false;
+      for (let r = 0; r < N; r++) {
+        const lv = dimLv(r), want = lv === 2 ? 0.3 : lv === 1 ? 0.42 : 1;
+        if (scl[r] !== want) { scl[r] = want; dirty = true; }
+      }
+      if (dirty) settling = true;
+    }
+    // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
+    function refreshFocus() { buildRelSet(); reScale(); recolor(); applyGridEmphasis(); }
 
     /* ── 相机：轴测（等距可旋转）+ 顶/前/侧 正交锁轴（拖动即转回 3D），取景随形态包围盒 ── */
     // 等距轴测（isometric）的标准机位：方位 45°、仰角 asin(tan30°) ≈ 35.26°
@@ -964,6 +1010,7 @@
       peerMeshes.forEach((m) => { m.count = 0; m.visible = false; });
       moverPaths = [];
       outlineBoxes.forEach((o) => { o.visible = false; });
+      buildRelSet();               // 关联集合与连线同源：谁被画成对端，谁就不被聚焦压暗
       if (S.sel == null) return;
       const gp = (r) => V3(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
       const curDim = PHASES[phaseIdx()].dim;
@@ -1083,7 +1130,32 @@
       clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
       key: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3M16 7l2 2M13.5 9.5l2 2"/></svg>',
       alert: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3 20h18L12 4z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+      help: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a3 3 0 0 1 5.8 1c0 2-2.9 2.6-2.9 4"/><path d="M12 17.5v.5"/></svg>',
     };
+    /* 每一排控件的「这是什么」——hover / 键盘聚焦弹出说明。
+       控件名本身只有两个字，说不清「注入和着色是什么关系」这类问题，
+       又不该把长文案常驻在工具栏里挤占画面 → 收进问号气泡。 */
+    const HELP = {
+      modes: '<b>形态 = 同一批卡换一种堆法。</b>只改变卡摆在哪（谁挨着谁），不改变卡本身、也不改变颜色。哪一维被堆成「一整块」，那一维的问题就现出形状——例如慢副本在「DP平铺」里是干净的一整块板。',
+      views: '<b>视角 = 怎么看这堆卡。</b>轴测＝可拖拽旋转的等距 3D；顶/前/侧＝正交锁轴的 2D 投影，会把与视线平行的维折叠（每格重叠多少张卡见右上贴士）。<b>剖面</b>＝只看被折叠那一维的某一层，其余压暗。',
+      lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」。',
+      anom: '<b>注入 = 假装某一维出故障，看它长什么形状。</b>与着色的关系：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。<br>用法：注入 EP桶3 → 标准形态下是一圈周期条带，切到「EP聚簇」就 snap 成一整面墙——这就是「热点桶」的形状。',
+      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。',
+      time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱）：TP 前向 AllReduce → PP 阶段接力 → EP MoE AllToAll 浪涌 → DP 梯度 AllReduce。热力着色与方向粒子都跟着阶段走；轨道可拖拽定位，Play/Pause 控制自动推进。',
+      cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
+    };
+    function helpDot(key) {
+      const s = document.createElement('span');
+      s.className = 'prc-help';
+      s.tabIndex = 0;
+      s.setAttribute('aria-label', '说明');
+      s.innerHTML = ICON.help;
+      const bub = document.createElement('span');
+      bub.className = 'prc-helptip';
+      bub.innerHTML = HELP[key] || '';
+      s.appendChild(bub);
+      return s;
+    }
     // 设计系统按钮：secondary(.btn) + 小号(.btn-sm)，选中态用 .is-selected
     function chipBtn(label, onClick) {
       const b = document.createElement('button');
@@ -1130,13 +1202,18 @@
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
       anomBtns.forEach((b, i) => b.classList.toggle('is-selected', anomKeys[i] === S.anom));
-      const wireKeys = ['members', 'lines', 'outline', 'movers'];
+      const wireKeys = ['members', 'lines', 'outline', 'movers', 'focus'];
       wireBtns.forEach((b, i) => b.classList.toggle('is-selected', !!S.wire[wireKeys[i]]));
       const algoKeys = ['auto', 'ring', 'tree'];
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
-      if (wireNote2) wireNote2.textContent = S.sel == null
-        ? '选中一张卡后显示其四维通信域'
-        : `TP/DP=AllReduce(${S.algo === 'tree' ? 'Tree' : 'Ring'}) · PP=P2P 链 · EP=AllToAll`;
+      if (wireNote2) {
+        const none = S.sel == null;
+        // 空态说清楚为什么画面上没有线：连线是「选中卡的通信域」，不选卡就没有对象
+        wireNote2.textContent = none
+          ? '还没选卡 → 没有连线可画：点画面里任意一个小方块（点图层按钮会自动替你选一张）'
+          : `TP/DP=AllReduce(${S.algo === 'tree' ? 'Tree' : 'Ring'}) · PP=P2P 链 · EP=AllToAll${S.wire.focus ? ' · 聚焦：无关卡已压暗' : ''}`;
+        wireNote2.classList.toggle('prc-hot', none);
+      }
       if (playBtn) {
         playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
         playBtn.classList.toggle('is-selected', S.playing);
@@ -1155,6 +1232,10 @@
       }
     }
     if (opts.chrome !== false) {
+      // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
+      [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
+        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'], ['cfg', '.prc-row-cfg']]
+        .forEach(([k, sel]) => { const lab = $(sel + ' .prc-lab'); if (lab) lab.insertAdjacentElement('afterend', helpDot(k)); });
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
@@ -1193,13 +1274,18 @@
       rowTime.appendChild(timeTrack);
       timeLab = document.createElement('span'); timeLab.className = 'prc-note';
       rowTime.appendChild(timeLab);
-      // 连线图层：三个独立开关（都可关）+ 集合算法选择
+      // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
-      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers']]
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus']]
         .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
-          rebuildComm(); syncChrome();
+          // 连线只在「选中一张卡」之后才有东西可画：开图层时若还没选卡，先替用户选一张
+          // 居中的代表卡（否则按钮亮着、画面却毫无变化，看上去像开关坏了）。
+          if (S.sel == null && (S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers)) {
+            api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1));
+          }
+          else { rebuildComm(); refreshFocus(); syncChrome(); }
         })));
       rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
@@ -1369,7 +1455,7 @@
       setAnomaly(k) { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); },
       select(r) {
         S.sel = r;
-        rebuildComm(); renderInfo(); syncChrome();
+        rebuildComm(); refreshFocus(); renderInfo(); syncChrome();
         if (opts.onSelect) {
           opts.onSelect(r == null ? null : {
             rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
@@ -1391,7 +1477,11 @@
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
       // 连线图层开关（可全关）与集合算法
-      setWire(w) { Object.assign(S.wire, w || {}); if (!S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; }); rebuildComm(); syncChrome(); },
+      setWire(w) {
+        Object.assign(S.wire, w || {});
+        if (!S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
+        rebuildComm(); refreshFocus(); syncChrome();
+      },
       setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); syncChrome(); },
       // 定位到 step 内的某个位置（0→1）或某个阶段：t 可传 0..1，或 {phase:'EP'}
       setTime(t) {

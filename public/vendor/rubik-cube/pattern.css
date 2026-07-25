@@ -37,6 +37,34 @@
   width: 34px; flex-shrink: 0;
 }
 .prc-note { font: var(--type-body-sm); color: var(--foreground-muted); }
+
+/* ── 行首问号：hover / 键盘聚焦弹出该排控件的解释 ────────────────────── */
+.prc-help {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: calc(var(--space-1) * -1);
+  flex-shrink: 0; cursor: help; color: var(--foreground-muted);
+  border-radius: var(--radius-pill);
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.prc-help:hover, .prc-help:focus-visible { color: var(--primary); outline: none; }
+.prc-helptip {
+  display: none;
+  position: absolute; left: 0; top: calc(100% + var(--space-1)); z-index: 20;
+  width: min(70vw, 400px);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+  color: var(--foreground-secondary);
+  font: var(--type-body-sm); line-height: var(--line-height-body);
+  white-space: normal; text-transform: none; letter-spacing: normal;
+  /* 气泡不吃指针：否则它悬在下一排控件上面，会挡住点击（也会把 hover 粘住不放） */
+  pointer-events: none;
+}
+.prc-helptip b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
+.prc-help:hover .prc-helptip, .prc-help:focus-visible .prc-helptip { display: block; }
 .prc-mono { font: var(--type-mono); color: var(--foreground-secondary); }
 
 /* 按钮内的图标（Lucide 线性 SVG，随文字色） */

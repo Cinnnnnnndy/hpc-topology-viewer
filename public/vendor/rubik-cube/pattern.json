@@ -21,7 +21,8 @@
     "需要在同一屏同时呈现一张卡的多维身份（选中 rank → TP/PP/DP/EP 四个通信组同时高亮）",
     "需要按训练 step 的通信阶段（TP 前向 AllReduce / PP 接力 / EP AllToAll 浪涌 / DP 梯度 AllReduce）观察热力随时间迁移",
     "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动",
-    "需要看一个通信域按什么集合算法收发：Ring（前半 ReduceScatter / 后半 AllGather，方向粒子跟着阶段时间轴跑）/ Tree / P2P 链 / AllToAll，并用域轮廓看清该组在当前堆法下是什么形状"
+    "需要看一个通信域按什么集合算法收发：Ring（前半 ReduceScatter / 后半 AllGather，方向粒子跟着阶段时间轴跑）/ Tree / P2P 链 / AllToAll，并用域轮廓看清该组在当前堆法下是什么形状",
+    "需要在几千张各自有色的卡里把一张卡的关系读出来：选中聚焦把无关卡压暗、网格加强，四维高亮不再被整片颜色淹没"
   ],
   "requiredApis": [
     "window.PtoRubikCubePattern.createModel(config) → 纯布局/拓扑模型（无 Three.js 依赖）：posOf(rank, mode, out) / tpOf,ppOf,repOf,epOf,domOf / rankOf / commGroup(rank, dim) / stageLayerRange(stage) / boundsOf(mode) / modes / depthDims / depthIdxOf / CARD / SP",
@@ -31,7 +32,7 @@
     "handle.setColorBy('load'|'tp'|'pp'|'dp'|'ep') / handle.setAnomaly('none'|'tp'|'pp'|'dp'|'ep')",
     "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
-    "handle.setWire({members,lines,outline,movers}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关），算法决定 AllReduce 画成 Ring 还是 Tree",
+    "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
   ],
@@ -40,7 +41,7 @@
     "② 单维轴步距 = CARD[轴] + 缝隙(成员数) × 层级倍率；缝隙按成员数分档（多则紧、少则松），层级倍率表达意图（dense / normal / spread / emph）",
     "③ 复合轴（外维分块 + 内维紧邻）：外维步距 = 内维总跨度 + padOf(该跨度)，逐轴各算各的",
     "④ 2D 可读性：任一正交视角下屏幕两轴最细步距之比 ≤ 4；块的内维在会退化成薄片时折成 2D（DP 平铺的板内 TP → 列×排），否则该视角只剩稀疏条纹",
-    "⑤ 网格线 = 格边界，各形态各轴同一约定（cellLines：卡永远落在格子里、不被线穿过；线过多时每 k 格一条，外框即首尾边界线）；分组行列数按世界跨度取近方形，而不是按数量取方阵",
+    "⑤ 网格线 = 格边界，各形态各轴同一约定（cellLines：卡永远落在格子里、不被线穿过；线过多时每 k 格一条，外框即首尾边界线）；分组行列数按世界跨度取近方形，而不是按数量取方阵。网格同时承担轴语义与强调：一根轴的格边界用该维签名色画（不再外挂圆锥箭头——3D 建模语汇，与卡块语言不搭；只留不带箭头的轴脊细线标范围，方向交给文案），选中聚焦时网格整体提亮",
     "⑥ 视角收编：每个 2D 平面只属于一个形态；折叠如实标注（每格重叠卡数 = 各折叠维成员数之积）",
     "不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝 → 任何并行度组合下永不重叠（已在 1 卡至 8192 卡、含退化与极端形状的配置上逐对验证）",
     "⑦ 着色一律来自设计系统色卡：负载热力 = --success→--warning→--danger（与图例色带同源）· 异常 = --danger · 分组 = highlight 六族 400/600 共 12 色 · 网格/外框/字牌/场景底 = --border-*/--surface-*/--background · 字牌字体 = --font-sans；Three.js 材质在挂载与切主题时由 readTokens() 解析 token 得到具体色值。唯一例外：TP 签名色需要色卡没有的青族 → pattern 提供 --dim-tp，待回补上游"
@@ -59,6 +60,8 @@
     "在正交 2D 里隐瞒折叠：每格重叠卡数必须如实呈现（粒度贴士），信息塌陷的视角应收编而不是硬给",
     "硬编码颜色 / 圆角 / 阴影 / 间距，或自造按钮与面板样式——一律用设计系统 token 与 .btn/.panel-shell/.stat-chip 等类实现",
     "用 emoji 或装饰字形当图标（▶/⏸/▦/◇ 等）——图标一律内联 SVG，stroke=currentColor",
+    "用 3D 建模风格的圆锥箭头标轴向：轴语义交给带签名色的网格 + 轴脊细线，方向交给文案与刻度",
+    "把控件的长解释常驻在工具栏里：行首问号气泡（HELP 表）承载「这排是什么、和别的排什么关系」",
     "在 3D 里另起一套色（HSL 公式、写死 hex）——所有材质色必须经 readTokens() 从设计系统 token 解析，图例与画面因此天然一致"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
