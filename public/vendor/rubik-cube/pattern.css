@@ -1,167 +1,149 @@
-/* pto rubik-cube pattern —— 逻辑魔方独立 pattern 的 UI 样式（.prc- 前缀）。
-   组件/字体/颜色对齐工作台的 pto 设计系统：优先消费 pto-tokens 的语义 token
-   （--background、--foreground、--primary、--button-secondary-xx、--font-xx，
-   随 :root[data-theme] 明暗联动）；token 未加载时落到 --prc-fb-xx 后备值，
-   pattern 独立打开仍可用。 */
+/* pto rubik-cube pattern —— 逻辑魔方的组件样式。
+ *
+ * 遵循 PTO Design System（vendor/pto-design-system）：
+ *  · 控件一律复用设计系统的类实现——面板 .panel-shell / 按钮 .btn(.btn-sm/.btn-ghost/.is-selected)
+ *    / 互斥组 .segmented-control / 读数 .stat-chip；本文件只补 pattern 独有的东西（3D 舞台、
+ *    阶段轨道、图例色块、tooltip 定位）。
+ *  · 不硬编码颜色 / 圆角 / 阴影 / 间距——一律 var(--token)；间距只用 --space-1..6。
+ *  · 深色优先，明暗随 :root[data-theme] 由 token 层切换，本文件不写第二套色值。
+ *  · 无 emoji：图标为内联 SVG（stroke=currentColor），见 pattern.js。
+ */
 .prc-root {
-  /* 后备值（深色） */
-  --prc-fb-bg: #0d1117;
-  --prc-fb-panel: rgba(13, 17, 23, 0.82);
-  --prc-fb-border: #30363d;
-  --prc-fb-tx: #e6edf3;
-  --prc-fb-tx2: #9aa7b4;
-  --prc-fb-tx3: #6e7681;
-  --prc-fb-btn: #161b22;
-  /* pto 语义 token 优先 */
-  --prc-bg: var(--background, var(--prc-fb-bg));
-  --prc-panel: var(--glass-surface-bg, var(--prc-fb-panel));
-  --prc-border: var(--border-default, var(--prc-fb-border));
-  --prc-tx: var(--foreground, var(--prc-fb-tx));
-  --prc-tx2: var(--foreground-secondary, var(--prc-fb-tx2));
-  --prc-tx3: var(--foreground-muted, var(--prc-fb-tx3));
-  --prc-btn: var(--button-secondary-bg, var(--prc-fb-btn));
-  --prc-btn-border: var(--button-secondary-border, var(--prc-fb-border));
-  --prc-btn-fg: var(--button-secondary-fg, var(--prc-fb-tx2));
-  --prc-btn-on: var(--primary, #4369ef);
-  --prc-btn-on-fg: var(--primary-foreground, #ffffff);
-  --prc-hot: var(--danger, #ff4b7b);
-  --prc-ok: var(--success, #04d793);
-  --prc-warn: var(--warning, #ffaa3b);
-  --prc-mono: var(--font-mono, 'JetBrains Mono', 'Fira Code', 'Consolas', monospace);
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--prc-bg);
-  color: var(--prc-tx);
-  font-family: var(--font-sans, 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Noto Sans SC', sans-serif);
-  font-size: 12px;
-}
-.prc-root[data-theme="light"] {
-  /* 后备值（浅色）——token 存在时由 :root[data-theme='light'] 的语义 token 接管 */
-  --prc-fb-bg: #f4f6fa;
-  --prc-fb-panel: rgba(255, 255, 255, 0.9);
-  --prc-fb-border: #d0d7e2;
-  --prc-fb-tx: #1f2733;
-  --prc-fb-tx2: #4a5768;
-  --prc-fb-tx3: #6e7681;
-  --prc-fb-btn: #ffffff;
+  background: var(--background);
+  color: var(--foreground);
+  font: var(--type-body-sm);
 }
 .prc-stage { position: absolute; inset: 0; }
 .prc-stage canvas { display: block; }
 
-/* 顶部工具栏（左上配置卡片）：形态 / 视角(+剖面) / 着色 / 注入 / 时间轴 / 并行 */
+/* ── 左上控制面板（.panel-shell + 分行）────────────────────────────── */
 .prc-topbar {
-  position: absolute; top: 10px; left: 10px; z-index: 5;
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 10px; border-radius: 10px;
-  background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
-  max-width: min(92vw, 640px);
+  position: absolute; top: var(--space-3); left: var(--space-3); z-index: 5;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3);
+  max-width: min(92vw, 680px);
 }
-.prc-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.prc-lab { font: var(--text-label, 500 10px/1.2 inherit); letter-spacing: 1px; color: var(--prc-tx3); width: 30px; flex-shrink: 0; }
-.prc-btn {
-  padding: 4px 10px; border-radius: 7px; cursor: pointer;
-  font: var(--button-font, 500 11.5px/1 inherit); font-family: inherit;
-  border: 1px solid var(--prc-btn-border); background: var(--prc-btn); color: var(--prc-btn-fg);
+.prc-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
+.prc-lab {
+  font: var(--type-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--foreground-muted);
+  width: 34px; flex-shrink: 0;
 }
-.prc-btn:hover { background: var(--button-secondary-bg-hover, var(--prc-btn)); color: var(--prc-tx); border-color: var(--border-strong, var(--prc-tx3)); }
-.prc-btn.on { background: var(--prc-btn-on); border-color: var(--prc-btn-on); color: var(--prc-btn-on-fg); font-weight: 600; }
-.prc-btn.on.hot { background: var(--prc-hot); border-color: var(--prc-hot); }
-.prc-slice { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
-.prc-slice input[type="range"] { width: 110px; accent-color: var(--prc-btn-on); }
-.prc-slicelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
-.prc-viewnote { font-size: 10.5px; color: var(--prc-tx3); }
+.prc-note { font: var(--type-body-sm); color: var(--foreground-muted); }
+.prc-mono { font: var(--type-mono); color: var(--foreground-secondary); }
 
-/* 读图钥匙 HUD（左下） */
-.prc-hud {
-  position: absolute; left: 10px; bottom: 10px; z-index: 5;
-  max-width: min(92vw, 640px); padding: 8px 12px; border-radius: 10px;
-  background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
-  line-height: 1.65; font-size: 12px;
-}
-.prc-dim { color: var(--prc-tx3); font-size: 11px; }
-.prc-warn { color: var(--prc-hot); font-size: 11px; }
-.prc-ok { color: var(--prc-ok); }
-.prc-hot { color: var(--prc-warn); }
+/* 按钮内的图标（Lucide 线性 SVG，随文字色） */
+.prc-root .btn svg { flex: 0 0 auto; }
 
-/* 「每格=几张卡」粒度小贴士：只在正交 2D 现身 */
-.prc-pill {
-  position: absolute; top: 10px; right: 10px; z-index: 5;
-  padding: 5px 11px; border-radius: 999px; font-size: 11.5px;
-  background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: var(--surface-backdrop-filter, blur(6px)); display: none;
-}
-.prc-pill.show { display: block; }
-
-/* 维度图例（右下） */
-.prc-legend {
-  position: absolute; right: 10px; bottom: 10px; z-index: 5;
-  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
-  padding: 6px 11px; border-radius: 10px; font-size: 11px;
-  background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: var(--surface-backdrop-filter, blur(6px));
-  max-width: min(92vw, 560px);
-}
-.prc-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--prc-tx2); }
-.prc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.prc-legend .prc-ramp i { width: 42px; background: linear-gradient(90deg, var(--prc-ok), var(--prc-warn), var(--prc-hot)); }
-
-/* 选中卡信息卡（右上，粒度贴士/宿主主题按钮下方） */
-.prc-info {
-  position: absolute; top: 80px; right: 10px; z-index: 5;
-  padding: 8px 12px; border-radius: 10px; line-height: 1.7; font-size: 12px;
-  background: var(--prc-panel); border: 1px solid var(--prc-border);
-  backdrop-filter: var(--surface-backdrop-filter, blur(6px)); display: none;
-  font-family: var(--prc-mono);
-}
-.prc-info.show { display: block; }
-
-/* 悬停 tooltip */
-.prc-tip {
-  position: absolute; z-index: 9; display: none; pointer-events: none;
-  padding: 4px 9px; border-radius: 7px; font-size: 11px; white-space: nowrap;
-  background: var(--prc-panel); border: 1px solid var(--prc-border); color: var(--prc-tx);
-  font-family: var(--prc-mono);
-}
-
-/* 「并行」输入排：TP/PP/DP/EP 自由填数重建魔方 */
-.prc-cfgitem { display: inline-flex; align-items: center; gap: 3px; }
-.prc-cfgitem > span { font: var(--text-label, 500 10.5px/1.2 inherit); color: var(--prc-tx2); }
+/* ── 剖面滑杆 / 并行度输入 ─────────────────────────────────────────── */
+.prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
+.prc-root input[type="range"] { accent-color: var(--primary); }
+.prc-slice input[type="range"] { width: 108px; }
+.prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
+.prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
 .prc-cfgitem input {
-  width: 52px; padding: 2px 5px; font-size: 11.5px; border-radius: 6px;
-  border: 1px solid var(--prc-border); background: var(--prc-btn); color: var(--prc-tx);
-  font-family: var(--prc-mono);
+  width: 54px;
+  min-height: var(--button-height-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--input-radius);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--foreground);
+  font: var(--type-mono);
 }
-.prc-cfgread { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
-.prc-cfgerr { font-size: 10.5px; color: var(--prc-hot); }
+.prc-cfgitem input:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-color: var(--primary); }
+.prc-cfgerr { font: var(--type-body-sm); color: var(--danger); }
 
-/* 时间轴：播放/暂停 + 可拖游标（状态热力的时间维） */
-.prc-row-time input[type="range"] { width: 190px; accent-color: var(--prc-btn-on); }
-.prc-timelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
-
-/* 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：可拖拽定位 */
+/* ── 时间轴 = 一个 step 的 4 个通信阶段（可拖拽定位）──────────────── */
 .prc-phasetrack {
-  position: relative; display: flex; width: 260px; height: 18px;
-  border-radius: 5px; overflow: hidden; cursor: ew-resize;
-  border: 1px solid var(--prc-border); user-select: none;
+  position: relative; display: flex; width: 248px;
+  min-height: var(--button-height-sm);
+  border-radius: var(--radius-md); overflow: hidden;
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  cursor: ew-resize; user-select: none;
 }
 .prc-pseg {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  font-size: 9.5px; font-weight: 600; letter-spacing: .5px;
-  color: var(--prc-tx2); opacity: .42; transition: opacity .25s;
-  border-right: 1px solid var(--prc-bg);
+  font: var(--type-label);
+  color: var(--foreground-secondary); opacity: 0.45;
+  transition: opacity var(--duration-fast) var(--easing-default);
+  border-right: 1px solid var(--border-subtle);
 }
 .prc-pseg:last-child { border-right: none; }
-.prc-pseg.on { opacity: 1; color: var(--prc-tx); }
-.prc-ph-TP { background: color-mix(in srgb, #39c5cf 26%, transparent); }
-.prc-ph-PP { background: color-mix(in srgb, #FFAA3B 26%, transparent); }
-.prc-ph-EP { background: color-mix(in srgb, #9B3CF6 24%, transparent); }
-.prc-ph-DP { background: color-mix(in srgb, #4369EF 24%, transparent); }
+.prc-pseg.on { opacity: 1; color: var(--foreground); }
+/* 阶段底色 = 该阶段主导维的签名色，低饱和薄涂（不做大面积高饱和填充） */
+.prc-ph-TP { background: color-mix(in srgb, var(--dim-tp) 20%, transparent); }
+.prc-ph-PP { background: color-mix(in srgb, var(--dim-pp) 20%, transparent); }
+.prc-ph-EP { background: color-mix(in srgb, var(--dim-ep) 18%, transparent); }
+.prc-ph-DP { background: color-mix(in srgb, var(--dim-dp) 18%, transparent); }
 .prc-playhead {
   position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
-  background: var(--prc-tx); opacity: .8;
+  background: var(--foreground); opacity: 0.8;
 }
-.prc-legend b { font-weight: 600; color: var(--prc-tx3); font-size: 10px; }
+
+/* ── 读图钥匙 HUD（左下）──────────────────────────────────────────── */
+.prc-hud {
+  position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: 5;
+  max-width: min(92vw, 660px);
+  padding: var(--space-3);
+  font: var(--type-body-sm); line-height: var(--line-height-body);
+}
+.prc-dim { color: var(--foreground-muted); }
+.prc-warn { color: var(--danger); }
+.prc-ok { color: var(--success); }
+.prc-hot { color: var(--warning); }
+
+/* ── 「每格=几张卡」粒度贴士（右上）· 用 .stat-chip 承载 ───────────── */
+.prc-pill { position: absolute; top: var(--space-3); right: var(--space-3); z-index: 5; display: none; }
+.prc-pill.show { display: inline-flex; }
+
+/* ── 卡块着色图例（右下）──────────────────────────────────────────── */
+.prc-legend {
+  position: absolute; right: var(--space-3); bottom: var(--space-3); z-index: 5;
+  display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center;
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-body-sm);
+  max-width: min(92vw, 560px);
+}
+.prc-legend span { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--foreground-secondary); }
+.prc-legend b { font: var(--type-label); text-transform: uppercase; letter-spacing: 0.5px; color: var(--foreground-muted); }
+.prc-legend i { width: 10px; height: 10px; border-radius: var(--radius-sm); display: inline-block; }
+.prc-legend .prc-ramp i { width: 44px; background: linear-gradient(90deg, var(--success), var(--warning), var(--danger)); }
+
+/* ── 选中卡信息卡（右上，贴士下方）────────────────────────────────── */
+.prc-info {
+  position: absolute; top: calc(var(--space-6) * 2 + var(--space-2)); right: var(--space-3); z-index: 5;
+  padding: var(--space-3);
+  font: var(--type-mono); line-height: 1.7;
+  display: none;
+}
+.prc-info.show { display: block; }
+
+/* ── 悬停 tooltip ─────────────────────────────────────────────────── */
+.prc-tip {
+  position: absolute; z-index: 9; display: none; pointer-events: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface-2); border: 1px solid var(--border-default);
+  color: var(--foreground); font: var(--type-mono); white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── 维度签名色（3D 轴标注 / 通信组线框用；卡块着色不使用）─────────── */
+.prc-root {
+  --dim-tp: #39c5cf;
+  --dim-pp: #ffaa3b;
+  --dim-dp: #4369ef;
+  --dim-ep: #9b3cf6;
+}
+
+/* HUD/贴士里的内联图标：与文字基线对齐、随文字色 */
+.prc-hud svg, .prc-pill svg { vertical-align: -2px; margin-right: var(--space-1); opacity: 0.75; }

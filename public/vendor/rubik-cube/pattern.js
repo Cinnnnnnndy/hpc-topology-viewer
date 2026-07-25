@@ -51,7 +51,10 @@
           分块轴的块间距以「同屏另一轴最细步距 × MAX_RATIO」封顶（见 clampFor2D）。
 
      不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝（0.13×0.55 ≈ 0.07）→ 永不重叠。 */
-  const CARD = { x: 0.9, y: 0.6, z: 0.3 };
+  // 卡块是正方体：同一张卡在任何形态、任何视角下都呈现同样的形状。若做成长方体，
+  // 某个维度落到哪根轴上、卡就把哪个面朝向你，读起来像「卡被转了 90°」——同一种东西
+  // 在不同视图里长得不一样，正是 cockpit 当年修过的失衡问题。
+  const CARD = { x: 0.6, y: 0.6, z: 0.6 };
   const GAP_BY_N = (n) => (n <= 4 ? 0.85 : n <= 12 ? 0.6 : n <= 48 ? 0.3 : 0.13);
   const TIER = { dense: 0.55, normal: 1, spread: 1.8, emph: 4 };
   const stepOf = (ax, n, tier) => CARD[ax] + GAP_BY_N(n) * TIER[tier || 'normal'];
@@ -61,7 +64,8 @@
   const clampFor2D = (want, ax, ...coPitches) =>
     Math.max(CARD[ax] + 0.3, Math.min(want, MAX_RATIO * Math.min(...coPitches)));
 
-  // 维度签名色（深色主题 / 浅色主题），与 cockpit DIMHEX 一致
+  // 维度签名色（深色主题 / 浅色主题），与 cockpit DIMHEX 一致。
+  // 注：pattern.css 里的 --dim-tp/pp/dp/ep 是本表的镜像（阶段轨道底色要用），改这里请同步那里。
   const DIMC = {
     TP: { dark: '#39c5cf', light: '#0d6b75' },
     PP: { dark: '#FFAA3B', light: '#8a5f00' },
@@ -340,7 +344,7 @@
     root.innerHTML = [
       '<div class="prc-stage"></div>',
       opts.chrome === false ? '' : [
-        '<div class="prc-topbar">',
+        '<div class="prc-topbar panel-shell">',
         '  <div class="prc-row prc-row-modes"><span class="prc-lab">形态</span></div>',
         '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
@@ -348,10 +352,10 @@
         '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
-        '<div class="prc-hud"></div>',
-        '<div class="prc-pill"></div>',
-        '<div class="prc-legend"></div>',
-        '<div class="prc-info"></div>',
+        '<div class="prc-hud panel-shell"></div>',
+        '<div class="prc-pill stat-chip"></div>',
+        '<div class="prc-legend panel-shell"></div>',
+        '<div class="prc-info panel-shell"></div>',
       ].join(''),
       '<div class="prc-tip"></div>',
     ].join('');
@@ -852,9 +856,9 @@
       }[S.anom];
       const ph = PHASES[phaseIdx()];
       hud.innerHTML = `<b>逻辑魔方 · ${esc(m.sub)}</b>${S.selLayer != null && S.mode === 0 ? ` · 高亮 L${S.selLayer + 1} 切片` : ''}` +
-        `<br><span class="prc-dim">◇ 为什么这样摆：${esc(m.why)}</span>` +
-        `<br><span class="prc-dim">◷ 此刻（step 内 ${Math.round(S.t * 100)}%）：<b style="color:${dimc(ph.dim)}">${esc(ph.name)}</b> · ${esc(ph.bus)}</span>` +
-        (anomNote ? `<br><span class="prc-warn">⚠ ${esc(anomNote)}</span>` : '');
+        `<br><span class="prc-dim">${ICON.key} 为什么这样摆：${esc(m.why)}</span>` +
+        `<br><span class="prc-dim">${ICON.clock} 此刻（step 内 ${Math.round(S.t * 100)}%）：<b style="color:${dimc(ph.dim)}">${esc(ph.name)}</b> · ${esc(ph.bus)}</span>` +
+        (anomNote ? `<br><span class="prc-warn">${ICON.alert} ${esc(anomNote)}</span>` : '');
     }
     function renderPill() {
       const pill = $('.prc-pill'); if (!pill) return;
@@ -866,9 +870,9 @@
       const rest = d.fold / d.slice.n;   // 开剖面后仍被折叠的卡数（多折叠维时 > 1）
       pill.innerHTML = S.sliceOn
         ? (rest > 1
-          ? `▦ 每格 = <b class="prc-hot">${rest} 张卡重叠</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal} · 其余维仍折叠）`
-          : `▦ 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal}）`)
-        : `▦ 每格 = <b class="prc-hot">${d.fold} 张卡重叠</b>（${esc(d.label)} 折入视线 · 开剖面逐层翻）`;
+          ? `${ICON.grid} 每格 = <b class="prc-hot">${rest} 张卡重叠</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal} · 其余维仍折叠）`
+          : `${ICON.grid} 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal}）`)
+        : `${ICON.grid} 每格 = <b class="prc-hot">${d.fold} 张卡重叠</b>（${esc(d.label)} 折入视线 · 开剖面逐层翻）`;
     }
     // 图例必须跟着「当前卡块着色」走：分组着色时列出各组的实际配色，负载着色时给色带，
     // 注入异常时给异常组——否则切了着色图例纹丝不动，读者按图例根本对不上画面。
@@ -879,7 +883,7 @@
       if (S.anom !== 'none') {
         const what = { tp: `TP 槽 0（全网同槽位卡）`, pp: `PP 级 0（一整个流水段）`,
           dp: `DP 副本 0（一份完整拷贝）`, ep: `EP 桶 ${anomBucket()}（持有该桶的所有 rank）` }[S.anom];
-        parts.push(`<b>卡块着色</b>`, chip('#ff4b6e', `异常组 = ${what}`), chip(rgbCss(loadColor(0.2)), '其余（平静）'));
+        parts.push(`<b>卡块着色</b>`, chip('var(--danger)', `异常组 = ${what}`), chip(rgbCss(loadColor(0.2)), '其余（平静）'));
       } else if (S.colorBy === 'load') {
         parts.push(`<b>卡块着色</b>`, `<span class="prc-ramp"><i></i>负载 低→高 · 当前阶段 ${esc(PHASES[phaseIdx()].id)}</span>`);
       } else {
@@ -909,9 +913,22 @@
     }
 
     /* ── 工具栏 ── */
+    // Lucide 风格线性图标（内联 SVG · stroke=currentColor · 无 emoji）
+    const ICON = {
+      play: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+      grid: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>',
+      clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      key: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3M16 7l2 2M13.5 9.5l2 2"/></svg>',
+      alert: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3 20h18L12 4z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+    };
+    // 设计系统按钮：secondary(.btn) + 小号(.btn-sm)，选中态用 .is-selected
     function chipBtn(label, onClick) {
       const b = document.createElement('button');
-      b.className = 'prc-btn'; b.textContent = label; b.addEventListener('click', onClick);
+      b.type = 'button';
+      b.className = 'btn btn-sm';
+      b.textContent = label;
+      b.addEventListener('click', onClick);
       return b;
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
@@ -938,19 +955,22 @@
     }
     function syncChrome() {
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
-      modeBtns.forEach((b, i) => b.classList.toggle('on', i === S.mode));
+      modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];
       viewBtns.forEach((b, i) => {
         b.style.display = (md.views || [0, 1, 2, 3]).includes(i) ? '' : 'none';   // 视角收编：重合平面不出按钮
-        b.classList.toggle('on', i === S.view);
+        b.classList.toggle('is-selected', i === S.view);
         if (i > 0) b.textContent = md.viewLabels[i];
       });
       if (viewNote) { viewNote.textContent = md.note2d || ''; viewNote.style.display = md.note2d ? '' : 'none'; }
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep'];
-      lensBtns.forEach((b, i) => b.classList.toggle('on', lensKeys[i] === S.colorBy));
+      lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
-      anomBtns.forEach((b, i) => { b.classList.toggle('on', anomKeys[i] === S.anom); b.classList.toggle('hot', anomKeys[i] === S.anom && S.anom !== 'none'); });
-      if (playBtn) { playBtn.textContent = S.playing ? '⏸ 暂停' : '▶ 播放'; playBtn.classList.toggle('on', S.playing); }
+      anomBtns.forEach((b, i) => b.classList.toggle('is-selected', anomKeys[i] === S.anom));
+      if (playBtn) {
+        playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
+        playBtn.classList.toggle('is-selected', S.playing);
+      }
       if (sliceBox) {
         const d = curDepth();
         sliceBox.style.display = d ? '' : 'none';
@@ -960,7 +980,7 @@
           sliceRange.value = String(S.sliceVal);
           sliceRange.disabled = !S.sliceOn;
           sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `剖面关（${d.label} 折叠）`;
-          sliceBox.querySelector('.prc-btn').classList.toggle('on', S.sliceOn);
+          sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
         }
       }
     }
@@ -968,19 +988,19 @@
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
-      viewNote = document.createElement('span'); viewNote.className = 'prc-viewnote'; rowViews.appendChild(viewNote);
+      viewNote = document.createElement('span'); viewNote.className = 'prc-note'; rowViews.appendChild(viewNote);
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
       sliceRange.addEventListener('input', () => { S.sliceVal = sliceRange.value | 0; refresh2D(); });
-      sliceLab = document.createElement('span'); sliceLab.className = 'prc-slicelab';
+      sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
       sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
       rowViews.appendChild(sliceBox);
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep']]
         .map(([t, k]) => rowLens.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
       // 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：播放/暂停 + 阶段轨道拖拽定位
       const rowTime = $('.prc-row-time');
-      playBtn = rowTime.appendChild(chipBtn('⏸ 暂停', () => { S.playing = !S.playing; syncChrome(); }));
+      playBtn = rowTime.appendChild(chipBtn('', () => { S.playing = !S.playing; syncChrome(); }));
       timeTrack = document.createElement('div'); timeTrack.className = 'prc-phasetrack';
       PHASES.forEach((ph, i) => {
         const seg = document.createElement('div');
@@ -1001,7 +1021,7 @@
       timeTrack.addEventListener('pointerdown', (ev) => { timeTrack.setPointerCapture(ev.pointerId); scrub(ev); });
       timeTrack.addEventListener('pointermove', (ev) => { if (ev.buttons & 1) scrub(ev); });
       rowTime.appendChild(timeTrack);
-      timeLab = document.createElement('span'); timeLab.className = 'prc-timelab';
+      timeLab = document.createElement('span'); timeLab.className = 'prc-note';
       rowTime.appendChild(timeLab);
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
@@ -1016,8 +1036,8 @@
         return inp;
       };
       cfgInputs = { tp: mkDim('TP'), pp: mkDim('PP'), dp: mkDim('DP'), ep: mkDim('EP') };
-      rowCfg.appendChild(chipBtn('应用', applyCfg));
-      cfgRead = document.createElement('span'); cfgRead.className = 'prc-cfgread'; rowCfg.appendChild(cfgRead);
+      { const b = chipBtn('Apply', applyCfg); b.classList.add('btn-solid'); rowCfg.appendChild(b); }
+      cfgRead = document.createElement('span'); cfgRead.className = 'prc-mono'; rowCfg.appendChild(cfgRead);
       cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
       // 快捷预设（标签按 TP·PP·DP·EP 顺序）：
       //  · 盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
@@ -1206,11 +1226,11 @@
     };
 
     /* ── 启动 ── */
-    // 场景底色跟随 pto 设计系统的 --background（经 .prc-root 的 --prc-bg 解析，含无 token 后备）
+    // 场景底色 = 设计系统的 --background（同页面外壳，明暗由 token 层切换）
     function applySceneBg() {
       let c = '';
-      try { c = getComputedStyle(root).getPropertyValue('--prc-bg').trim(); } catch (e) { /* noop */ }
-      scene.background = new THREE.Color(c || (isDark() ? '#0d1117' : '#f4f6fa'));
+      try { c = getComputedStyle(root).getPropertyValue('--background').trim(); } catch (e) { /* noop */ }
+      scene.background = new THREE.Color(c || (isDark() ? '#101010' : '#F5F5F5'));
     }
     applySceneBg();
     resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();

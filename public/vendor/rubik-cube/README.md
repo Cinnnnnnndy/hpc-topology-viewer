@@ -11,7 +11,7 @@ pto-design-system 风格的 **rubik-cube** pattern —— 把 `public/cube-cockp
 |---|---|
 | `pattern.json` | **设计系统契约**（同 `memory-architecture` 约定）：id/type/描述、来源、`useWhen`、`requiredApis`、`layoutRules`、允许与禁止的覆盖、`agentReuseRule`。改动或复用前先读它。 |
 | `pattern.js` | 布局模型 + Three.js（r128，全局 `THREE`）渲染器。公开 API：`createModel(config)` / `mount(container, opts)`。 |
-| `pattern.css` | 工具栏 / HUD / 图例 / 粒度贴士 / 信息卡 / 阶段轨道样式（`.prc-` 前缀，消费 pto 语义 token）。 |
+| `pattern.css` | pattern 独有的样式（3D 舞台 / 阶段轨道 / 图例色块 / tooltip 定位）；控件本身复用设计系统的 `.panel-shell` / `.btn` / `.stat-chip`，颜色圆角阴影间距一律 `var(--token)`。 |
 | `favicon.svg` | 等距魔方图标（维度签名色）。 |
 
 ## 并行度配置（本次迭代的规格）
@@ -51,8 +51,10 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 间距不再是逐形态手调的常量，而是由 `pattern.js` 顶部一处规则推导——**换任何
 并行数字都自动成立，新增维度（CP/SP…）或新增形态只需按同样规则声明轴的意图**：
 
-1. **卡块尺寸恒定**（`CARD = {x:.9, y:.6, z:.3}`）——换形态、换配置都不改变一
-   张卡的大小；卡块几何、取景留白都以它为唯一事实源。
+1. **卡块是恒定的正方体**（`CARD = {x:.6, y:.6, z:.6}`）——换形态、换配置都不改变一
+   张卡的大小与形状；卡块几何、取景留白都以它为唯一事实源。用长方体会让「某个维度落到
+   哪根轴上、卡就把哪个面朝向你」，读起来像卡被转了 90°，同一种东西在不同视图里长得
+   不一样（cockpit 当年修过的失衡问题）。
 2. **单维轴步距 = `CARD[轴] + 缝隙(成员数) × 层级倍率`**。缝隙按成员数分档
    （`GAP_BY_N`：≤4 → .85 · ≤12 → .6 · ≤48 → .3 · 更多 → .13）：成员越多缝越紧，
    长轴不被拉成细丝；成员越少缝越松，短轴不退化成薄片。层级倍率（`TIER`）表达
@@ -116,15 +118,18 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   DP 梯度 AllReduce。阶段轨道可拖拽定位，热力场随阶段变形（TP 组齐动 / PP 接力波沿
   流水级前进 / EP 浪涌点亮热点桶 / DP 全网梯度），选中卡的四维通信组里**当前阶段
   主导的那一维加亮**，其余淡显；`setTime(t | {phase:'EP'})` 可程序驱动；
-- UI 组件/字体/颜色采用 **pto 设计系统**（`vendor/pto-tokens` 的语义 token，
-  与工作台一致，随 `:root[data-theme]` 明暗联动；token 未加载时有内置后备值）；
+- UI 全量采用 **PTO Design System**（`vendor/pto-design-system/` 是
+  [上游仓库](https://github.com/yinyucheng0601/pto-design-system) 的快照：`tokens/` +
+  `css/style.css`）：面板用 `.panel-shell`、按钮用 `.btn`（`.btn-sm` / `.btn-solid` /
+  选中态 `.is-selected`）、读数用 `.stat-chip`，颜色/圆角/阴影/间距一律 `var(--token)`，
+  明暗随 `:root[data-theme]` 切换；**核心 UI 无 emoji**，图标为 Lucide 风格内联 SVG
+  （`stroke=currentColor`），数字与 ID 一律 mono，行首标签 ALL CAPS + 字距；
 - 选中一张卡 → **TP/PP/DP/EP 四维通信组同屏高亮**（签名色：TP 青 #39c5cf ·
   PP 橙 #FFAA3B · DP 蓝 #4369EF · EP 紫 #9B3CF6；TP 环 / PP 链 / DP 采样 /
   EP A2A 星形互发），随重排飞行跟随；
 - **着色透镜**（状态热力 / 按 TP·PP·DP·EP 分组）——图例跟着当前着色走：分组时列出
   各组实际配色（组数超过色环时注明「同色非同组」），负载时给色带并标当前阶段，注入
-  异常时标出异常组是什么；维度签名色单列一区，说明它属于「轴标/通信组」而非卡块着色。
-  与 **异常注入**（TP槽0 /
+  异常时标出异常组是什么；维度签名色不画在卡上，故不进图例。与 **异常注入**（TP槽0 /
   PP级0 / DP副本0 / EP桶3）——「异常的形状」直接对应根因类别，HUD 同步给出
   「切到哪个形态 snap 成一块」的读图钥匙；
 - 每形态的「为什么这样摆」（CUBE_WHY）HUD 文案、明暗主题联动。
