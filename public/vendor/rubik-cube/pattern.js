@@ -33,9 +33,6 @@
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（★）
-    /* 每条边一次集合的报文量（MB · 可覆盖）：只用来把「段数」换算成带宽需求量级，
-       真实值随模型规模/精度而变——宿主传 traffic 即按自己的数据算。 */
-    traffic: { TP: 64, PP: 16, EP: 96, DP: 128 },
   };
 
   /* ══ 布局规则（单一事实源）════════════════════════════════════════════
@@ -216,11 +213,6 @@
     const podOf = (r) => (slotOf(r) / CPP) | 0;
     const HOSTS = Math.ceil(N / CPH), PODS = Math.ceil(N / CPP);
     // 一条逻辑边实际跨了哪层链路
-    const TIERS = [
-      { key: 'ub', lab: '同机 UB', note: '节点内全互联 · 最快' },
-      { key: 'rail', lab: 'Pod 内跨机', note: 'rail / Scale-Up' },
-      { key: 'out', lab: '跨 Pod', note: 'Scale-Out · 最贵的一跳' },
-    ];
     const tierOf = (a, b) => (hostOf(a) === hostOf(b) ? 'ub' : podOf(a) === podOf(b) ? 'rail' : 'out');
 
     // 居中偏移
@@ -357,23 +349,6 @@
       return out;
     }
 
-    /* 流量统计用（D 档）：commGroup 的 DP 组为了显示做了采样，统计必须用完整成员；
-       groupReps 给出每一维的「不重复的组」各一个代表 rank——全网每条边只数一次。 */
-    function commGroupFull(r, dim) {
-      if (dim !== 'DP') return commGroup(r, dim);
-      const tp = tpOf(r), pp = ppOf(r), out = [];
-      for (let d = 0; d < REP; d++) out.push(rankOf(tp, pp, d));
-      return out;
-    }
-    function groupReps(dim) {
-      const out = [];
-      if (dim === 'TP') { for (let p = 0; p < PP; p++) for (let d = 0; d < REP; d++) out.push(rankOf(0, p, d)); }
-      else if (dim === 'PP') { for (let t = 0; t < TP; t++) for (let d = 0; d < REP; d++) out.push(rankOf(t, 0, d)); }
-      else if (dim === 'DP') { for (let t = 0; t < TP; t++) for (let p = 0; p < PP; p++) out.push(rankOf(t, p, 0)); }
-      else { for (let t = 0; t < TP; t++) for (let p = 0; p < PP; p++) for (let g = 0; g < DOM; g++) out.push(rankOf(t, p, g * EP)); }
-      return out;
-    }
-
     // 各形态包围盒（轴标注/取景用）
     const boundsCache = {};
     function boundsOf(mode) {
@@ -393,12 +368,10 @@
       config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, TPC, TPD, SP, CARD,
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
-      modes, depthDims, depthIdxOf, commGroup, commGroupFull, groupReps,
+      modes, depthDims, depthIdxOf, commGroup,
       // 物理落位
       placement: { cardsPerHost: CPH, hostsPerPod: HPP, cardsPerPod: CPP, hosts: HOSTS, pods: PODS },
-      hostOf, podOf, tierOf, TIERS,
-      hostMembers: (r) => { const h = hostOf(r), out = []; for (let i = 0; i < N; i++) if (hostOf(i) === h) out.push(i); return out; },
-      podMembers: (r) => { const p = podOf(r), out = []; for (let i = 0; i < N; i++) if (podOf(i) === p) out.push(i); return out; },
+      hostOf, podOf, tierOf,
       hotBuckets: new Set((C.hotBuckets || []).filter((e) => e < EP)),
     };
   }
@@ -430,7 +403,6 @@
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
-      flow: false,                   // 流量矩阵卡（D 档）
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -474,7 +446,6 @@
         '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
-        '<div class="prc-flow panel-shell"></div>',
       ].join(''),
       '<div class="prc-tip"></div>',
     ].join('');
@@ -1274,90 +1245,6 @@
         [one('ub', '同机'), one('rail', 'Pod内'), one('out', '跨Pod')].filter(Boolean).join(' · ');
     }
 
-    /* ══ 流量矩阵卡（D 档）══════════════════════════════════════════════
-       把「此刻这一维的全网走线」按物理层级归并：同机 UB / Pod 内 rail / 跨 Pod。
-       段数是结构性的事实（由并行度 + 落位 + 集合算法唯一决定），报文量则乘上
-       config.traffic 的每边 MB —— 后者是量级估算，卡上如实标注。
-       Pod 数不多时再列一张 Pod×Pod 的热度网格；很多时只列最重的若干对。 */
-    const MAT_MAX = 12, TOP_PAIRS = 6;
-    let flowCache = {};
-    const flowKey = () => {
-      const pl = model.placement;
-      return `${TP}/${PP}/${REP}/${EP}/${pl.cardsPerHost}/${pl.hostsPerPod}/${S.algo}`;
-    };
-    function flowStats(dim) {
-      const key = flowKey() + '/' + dim;
-      if (flowCache[key]) return flowCache[key];
-      const v = flowCompute(dim);
-      if (Object.keys(flowCache).length > 24) flowCache = {};
-      flowCache[key] = v;
-      return v;
-    }
-    function flowCompute(dim) {
-      const reps = model.groupReps(dim);
-      const cnt = { ub: 0, rail: 0, out: 0 };
-      const pair = new Map();                         // "podA>podB" → 段数（仅跨 Pod）
-      const pods = model.placement.pods;
-      const grid = pods <= MAT_MAX ? Array.from({ length: pods }, () => new Array(pods).fill(0)) : null;
-      reps.forEach((r) => {
-        const segs = edgesOf(dim, model.commGroupFull(r, dim));
-        segs.forEach((sg) => {
-          const rs = sg.ranks;
-          for (let i = 1; i < rs.length; i++) {
-            const a = rs[i - 1], b = rs[i], t = model.tierOf(a, b);
-            cnt[t]++;
-            const pa = model.podOf(a), pb = model.podOf(b);
-            if (grid) { grid[pa][pb]++; if (pa !== pb) grid[pb][pa]++; }
-            if (t === 'out') {
-              const k = pa < pb ? `${pa}>${pb}` : `${pb}>${pa}`;
-              pair.set(k, (pair.get(k) || 0) + 1);
-            }
-          }
-        });
-      });
-      const top = [...pair.entries()].sort((a, b) => b[1] - a[1]).slice(0, TOP_PAIRS);
-      return { cnt, grid, top, total: cnt.ub + cnt.rail + cnt.out };
-    }
-    const fmtMB = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
-    function renderFlow() {
-      const el = $('.prc-flow'); if (!el) return;
-      if (!S.flow) { el.classList.remove('show'); el.innerHTML = ''; return; }
-      el.classList.add('show');
-      const dim = PHASES[phaseIdx()].dim;
-      const per = (model.config.traffic || {})[dim] || 0;
-      const f = flowStats(dim);
-      const rows = model.TIERS.map((t) => {
-        const n = f.cnt[t.key], pct = f.total ? (n / f.total) * 100 : 0;
-        return `<div class="prc-flowrow">
-            <i style="background:${tierc(t.key)}"></i>
-            <span class="prc-flowlab">${esc(t.lab)}</span>
-            <span class="prc-flowbar"><b style="width:${pct.toFixed(1)}%;background:${tierc(t.key)}"></b></span>
-            <span class="prc-mono">${n} 段${per ? ' · ' + fmtMB(n * per) : ''}</span>
-          </div>`;
-      }).join('');
-      let grid = '';
-      if (f.grid && f.grid.length > 1) {         // 只有 1 个 Pod 时没有「对」可比，别画一个大方块
-        const max = Math.max(1, ...f.grid.flat());
-        grid = `<div class="prc-flowgrid" style="grid-template-columns:repeat(${f.grid.length}, 1fr)">` +
-          f.grid.map((row, i) => row.map((v, j) => {
-            const a = v / max;
-            return `<i title="Pod${i} ↔ Pod${j}：${v} 段" style="opacity:${(0.08 + a * 0.92).toFixed(2)};background:${i === j ? tierc('ub') : tierc('out')}"></i>`;
-          }).join('')).join('') + '</div>' +
-          `<div class="prc-dim">Pod×Pod 段数热度（对角=Pod 内）</div>`;
-      } else if (f.top.length) {
-        grid = `<div class="prc-dim">Pod 共 ${model.placement.pods} 个 → 只列最重的 ${f.top.length} 对：</div>` +
-          f.top.map(([k, v]) => `<div class="prc-flowrow"><span class="prc-mono">Pod${k.replace('>', ' ↔ Pod')}</span><span class="prc-mono">${v} 段</span></div>`).join('');
-      }
-      // 位置：贴在信息卡下方（信息卡高度随选中态变化 → 每次渲染实测一次，避免叠住）
-      const info = $('.prc-info');
-      const rr = root.getBoundingClientRect();
-      const ir = info && info.classList.contains('show') ? info.getBoundingClientRect() : null;
-      el.style.top = ir ? `${Math.round(ir.bottom - rr.top + 8)}px` : '';
-      el.innerHTML = `<b>流量矩阵 · 此刻 ${esc(dim)} ${esc(primOf(dim))}</b>` +
-        `<div class="prc-dim">全网 ${f.total} 段（每条边计一次）${per ? ` · 每边 ${per} MB（config.traffic，量级估算）` : ' · 未给 traffic，只数段数'}</div>` +
-        rows + grid;
-    }
-
     /* ── 工具栏 ── */
     // Lucide 风格线性图标（内联 SVG · stroke=currentColor · 无 emoji）
     const ICON = {
@@ -1377,7 +1264,7 @@
       views: '<b>视角 = 怎么看这堆卡。</b>轴测＝可拖拽旋转的等距 3D；顶/前/侧＝正交锁轴的 2D 投影，会把与视线平行的维折叠（每格重叠多少张卡见右上贴士）。<b>剖面</b>＝只看被折叠那一维的某一层，其余压暗。',
       lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」。',
       anom: '<b>注入 = 假装某一维出故障，看它长什么形状。</b>与着色的关系：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。<br>用法：注入 EP桶3 → 标准形态下是一圈周期条带，切到「EP聚簇」就 snap 成一整面墙——这就是「热点桶」的形状。',
-      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。<br><b>流量矩阵</b>＝把此刻这一维的全网走线按物理层级归并：同机 UB / Pod 内跨机 rail / 跨 Pod Scale-Out 各多少段、折多少 GB（每边 MB 由 config.traffic 给，量级估算），Pod 不多时再给一张 Pod×Pod 热度网格。落位默认 8 卡/机 · 32 机/Pod（rank 连号装机，TP 组因此天然同机），要改走 setPlacement API。',
+      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。<br>选中卡的信息卡里还有一行「此刻 X 走线 N 段：同机/Pod内/跨Pod」——物理落位默认 8 卡/机 · 32 机/Pod（rank 连号装机，TP 组因此天然同机），要改走 setPlacement API。',
       time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱），走的是哪层总线也不同：<br>· <b>TP</b> 前向 AllReduce —— 节点内 UB · 高频<br>· <b>PP</b> 阶段接力 Send/Recv —— Pod 内跨 Host · 中频<br>· <b>EP</b> MoE AllToAll 浪涌 —— Pod 内全互联 · 浪涌<br>· <b>DP</b> 梯度 AllReduce —— 跨 Pod Scale-Out · 低频大包<br>热力着色与方向粒子都跟着阶段走；轨道可拖拽定位（悬停某段看它是什么），Play/Pause 控制自动推进。当前阶段常驻在左下 HUD 的「此刻」一行。',
       cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
     };
@@ -1435,7 +1322,6 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
-    let flowBtn = null;
     let wireBtns = [], algoBtns = [];
     let timeTrack = null, timeHead = null, viewNote = null;
     function syncTimeUI() {
@@ -1478,7 +1364,6 @@
       const algoKeys = ['auto', 'ring', 'tree'];
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
 
-      if (flowBtn) flowBtn.classList.toggle('is-selected', S.flow);
       if (playBtn) {
         playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
         playBtn.classList.toggle('is-selected', S.playing);
@@ -1554,10 +1439,6 @@
       rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
         .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); renderLegend(); syncChrome(); })));
-      // 流量矩阵卡（D 档）挂在「连线」行——它讲的就是这些走线在物理上有多贵。
-      // 物理落位不再占工具栏的一排（那排只有配置、看不出画面变化）：默认 8 卡/机 ·
-      // 32 机/Pod，需要改就走 setPlacement API。
-      flowBtn = rowWire.appendChild(chipBtn('流量矩阵', () => api.setFlow(!S.flow)));
 
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
@@ -1695,7 +1576,7 @@
       if (S.playing && nowMs - lastTimeUi > 200) {
         lastTimeUi = nowMs;
         const ph = phaseIdx(); syncTimeUI();
-        if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); renderInfo(); rebuildComm(); renderFlow(); }   // 换阶段 → 主导维/图例/信息卡随之切换
+        if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); renderInfo(); rebuildComm(); }   // 换阶段 → 主导维/图例/信息卡随之切换
       }
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
@@ -1749,7 +1630,7 @@
         clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
         renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         refresh2D(); renderPill();
-        renderHud(); renderLegend(); renderInfo(); renderFlow(); syncCfgUI();
+        renderHud(); renderLegend(); renderInfo(); syncCfgUI();
         return { ok: true, ranks: model.N };
       },
       setMode(m) {
@@ -1814,16 +1695,14 @@
         if (res.ok && keep != null && keep < model.N) api.select(keep);
         return res;
       },
-      setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); renderLegend(); renderFlow(); syncChrome(); },
-      // 流量矩阵卡（D 档）：全网走线按物理层级归并 · config.traffic 给每边 MB 时换算带宽
-      setFlow(on) { S.flow = !!on; renderFlow(); syncChrome(); },
+      setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); renderLegend(); syncChrome(); },
       // 定位到 step 内的某个位置（0→1）或某个阶段：t 可传 0..1，或 {phase:'EP'}
       setTime(t) {
         const v = (t && typeof t === 'object' && t.phase)
           ? (Math.max(0, PHASES.findIndex((p) => p.id === t.phase)) + 0.5) / PHASES.length
           : Math.min(0.999, Math.max(0, +t || 0));
         S.t = v;
-        recolor(); rebuildComm(); syncTimeUI(); renderHud(); renderLegend(); renderInfo(); renderFlow();
+        recolor(); rebuildComm(); syncTimeUI(); renderHud(); renderLegend(); renderInfo();
         return { t: S.t, phase: PHASES[phaseIdx()].id };
       },
       phases: PHASES,
@@ -1846,7 +1725,7 @@
     }
     applySceneBg();
     resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); renderFlow(); syncChrome(); syncCfgUI(); syncTimeUI();
+    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }

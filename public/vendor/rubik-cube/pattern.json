@@ -23,7 +23,7 @@
     "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动",
     "需要看一个通信域按什么集合算法收发：Ring（前半 ReduceScatter / 后半 AllGather，方向粒子跟着阶段时间轴跑）/ Tree / P2P 链 / AllToAll，并用域轮廓看清该组在当前堆法下是什么形状",
     "需要在几千张各自有色的卡里把一张卡的关系读出来：选中聚焦把无关卡压暗、网格加强，四维高亮不再被整片颜色淹没",
-    "需要把逻辑并行度与物理落位对上：按主机/Pod 着色看 rail 亲和，用流量矩阵卡数清同机 UB / Pod 内 rail / 跨 Pod 各多少段与多少 GB，点某条走线追问它跨了哪层"
+    "需要把逻辑并行度与物理落位对上：按主机/Pod 着色看 rail 亲和，选中卡的信息卡给出「此刻这一维走线各跨了哪层」，点某条走线追问它跨的是同机 UB / Pod 内 rail / 跨 Pod"
   ],
   "requiredApis": [
     "window.PtoRubikCubePattern.createModel(config) → 纯布局/拓扑模型（无 Three.js 依赖）：posOf(rank, mode, out) / tpOf,ppOf,repOf,epOf,domOf / rankOf / commGroup(rank, dim) / stageLayerRange(stage) / boundsOf(mode) / modes / depthDims / depthIdxOf / CARD / SP",
@@ -34,9 +34,7 @@
     "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
     "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
-    "handle.setPlacement({cardsPerHost,hostsPerPod,slots}) —— 物理落位（可选）：决定每条逻辑边跨的是 UB / rail / 跨 Pod；配 setColorBy('host'|'pod') 看 rail 亲和、setFlow(true) 看流量矩阵；默认 8 卡/机 · 32 机/Pod，工具栏不占排（纯配置、画面无反馈）",
     "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
-    "handle.setFlow(bool) —— 流量矩阵卡：此刻这一维的全网走线按物理层级归并（段数 + config.traffic 换算的量），Pod 少时给 Pod×Pod 热度网格",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
   ],
@@ -68,7 +66,6 @@
     "把控件的长解释常驻在工具栏里：行首问号气泡（HELP 表）承载「这排是什么、和别的排什么关系」",
     "在 3D 里另起一套色（HSL 公式、写死 hex）——所有材质色必须经 readTokens() 从设计系统 token 解析，图例与画面因此天然一致",
     "把物理层级画成 3D 里的细线或包围框：试过——线太细、机的范围又与 TP 组几乎重合，读不出差别；物理的事用文字（段数行 / 悬停提示）与流量矩阵卡表达",
-    "用显示用的 commGroup 做流量统计：DP 组为显示做了采样，统计必须用 commGroupFull + groupReps（每条边只数一次）",
     "把 Ring 的闭合边、Tree 的跨层边也画成直线：组内成员多数形态下共线，长边会与相邻链重叠 → 切算法只有文字在变；长边一律画成两端落在卡心的外凸弧",
     "用半透明实体盒罩住卡来表示「它是通信组成员」：罩色与卡色相叠，卡自己的着色就读不准了——成员标记一律用只有棱的线框",
     "把状态解释常驻在画面上（左下 HUD、工具栏行尾说明）：占画面、还会把工具栏挤成两行——一律收进行首问号气泡，并随当前形态/注入/选中态更新"

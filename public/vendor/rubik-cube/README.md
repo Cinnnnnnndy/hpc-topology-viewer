@@ -183,19 +183,10 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   - **着色 → 主机 / Pod**（rail 亲和）：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里；
   - **信息卡的段数行**：`此刻 DP 走线 4000 段：跨Pod 4000` —— 选中卡这一维的走线各跨了
     哪层；悬停任意一条连线也直接报这一段跨的是哪层；
-  - **流量矩阵卡**（见下）：全网层面的归并。
 
   > 试过、又撤掉的两个图层：把走线**逐段按链路层级上色**、把选中卡所在的**机 / Pod 框出来**。
   > 线太细、机的范围又与 TP 组几乎重合，两者在 3D 里基本看不出差别——物理的事改用文字
   > （段数行、悬停提示）与矩阵卡表达，更准也更省画面。
-- **流量矩阵卡（D 档 · `setFlow(true)`，「连线」行开关）**：把**此刻这一维的全网走线**
-  按物理层级归并——同机 UB / Pod 内跨机 rail / 跨 Pod Scale-Out 各多少段、占比多少；
-  给了 `config.traffic`（每条边的 MB，默认 TP64/PP16/EP96/DP128，属量级估算并在卡上
-  标明）就同时换算成 GB。Pod 数 ≤12 时给一张 **Pod×Pod 段数热度网格**（对角 = Pod 内），
-  更多时只列最重的若干对。段数是结构性事实：由并行度 + 落位 + 集合算法唯一决定，
-  每条边只数一次（`groupReps` 给出各维不重复的组，`commGroupFull` 用完整成员——
-  显示用的 `commGroup` 对 DP 组做了采样，统计不能用它）。结果按
-  「并行度/落位/算法/维度」缓存，换阶段不重算；
 - **连线可点（C 档 · `onSelectEdge`）**：悬停一条走线 → 报「谁 → 谁 · 哪一维哪种原语 ·
   跨的是同机 UB / Pod 内 rail / 跨 Pod」；点一下选中该段（场景里加粗高亮、信息卡多一行），
   并把 `{dim, from, to, prim, algo, tier, hosts, pods}` 抛给宿主——驾驶舱可据此点亮
@@ -221,14 +212,13 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 视图复用）：`posOf(rank, mode, out)`、`tpOf/ppOf/repOf/epOf/domOf`、
 `commGroup(rank, dim)`、`stageLayerRange(s)`、`boundsOf(mode)`、`modes` 元数据
 （含各形态正交视角的折叠维表）；物理落位 `placement`、`hostOf/podOf`、
-`tierOf(a,b) → 'ub'|'rail'|'out'`、`hostMembers/podMembers`、`TIERS`；
-流量统计用的 `commGroupFull(rank,dim)`（不采样）与 `groupReps(dim)`（各维不重复的组代表）。
+`tierOf(a,b) → 'ub'|'rail'|'out'`。
 
 `mount(container, opts)` → handle：`setConfig({tp,pp,dp,ep,…})` / `setMode(0-4)` / `setView(0-3)` /
 `setSlice(on, val)` / `setColorBy('load'|'tp'|'pp'|'dp'|'ep')` /
 `setAnomaly(...)` / `select(rank)` / `setTime(t | {phase:'TP'|'PP'|'EP'|'DP'})` /
 `setWire({members,lines,outline,movers,focus})` / `setAlgo('auto'|'ring'|'tree')` /
-`setPlacement({cardsPerHost,hostsPerPod,slots})` / `selectEdge(edge|null)` / `setFlow(bool)` /
+`setPlacement({cardsPerHost,hostsPerPod,slots})` / `selectEdge(edge|null)` /
 `setTheme('dark'|'light')` / `setPlaying(bool)` / `resize()` / `destroy()`；
 只读：`handle.model`、`handle.state`、`handle.phases`。
 opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接管）, onSelect, onSelectEdge }`。

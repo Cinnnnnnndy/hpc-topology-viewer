@@ -149,37 +149,6 @@
 }
 .prc-info.show { display: block; }
 
-/* ── 流量矩阵卡（右侧，信息卡下方）· 全网走线按物理层级归并 ───────────── */
-.prc-flow {
-  /* top 由 renderFlow 实测信息卡底边后写入（信息卡高度随选中态变化） */
-  position: absolute; right: var(--space-3); top: calc(var(--space-6) * 4);
-  z-index: 5; width: min(88vw, 320px);
-  max-height: 46vh; overflow: auto;
-  padding: var(--space-3);
-  font: var(--type-body-sm); line-height: var(--line-height-body);
-  display: none;
-}
-.prc-flow.show { display: block; }
-.prc-flow > b { display: block; margin-bottom: var(--space-1); color: var(--foreground); }
-.prc-flowrow {
-  display: flex; align-items: center; gap: var(--space-2);
-  margin-top: var(--space-1);
-}
-.prc-flowrow i { width: 8px; height: 8px; border-radius: var(--radius-sm); flex: 0 0 auto; }
-.prc-flowlab { color: var(--foreground-secondary); white-space: nowrap; }
-.prc-flowbar {
-  flex: 1 1 auto; min-width: 40px; height: 6px;
-  border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden;
-}
-.prc-flowbar b { display: block; height: 100%; border-radius: var(--radius-pill); }
-.prc-flow .prc-mono { font: var(--type-mono); white-space: nowrap; }
-.prc-flowgrid {
-  display: grid; gap: 1px; margin: var(--space-2) 0 var(--space-1);
-  max-width: 200px;   /* Pod 少时别把格子撑成大色块 */
-  border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 1px;
-}
-.prc-flowgrid i { display: block; aspect-ratio: 1; border-radius: 1px; }
-
 /* ── 悬停 tooltip ─────────────────────────────────────────────────── */
 .prc-tip {
   position: absolute; z-index: 9; display: none; pointer-events: none;
