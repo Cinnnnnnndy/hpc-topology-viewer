@@ -877,10 +877,15 @@
         for (let i = 0; i < shown; i++) parts.push(chip(GROUP_PALETTE[i % GROUP_PALETTE.length], `${lab}${i}`));
         if (n > shown) parts.push(`<span class="prc-dim">… 共 ${n} 组${n > GROUP_PALETTE.length ? `（${GROUP_PALETTE.length} 色循环，同色非同组）` : ''}</span>`);
       }
-      // 维度签名色是另一套：给 3D 轴标注与选中卡的通信组用，与卡块着色互不相干，分区标明
-      parts.push(`<span class="prc-sep"></span><b>轴标/通信组</b>`,
-        chip(dimc('TP'), `TP×${TP}`), chip(dimc('PP'), `PP×${PP}`),
-        chip(dimc('DP'), `DP×${REP}`), chip(dimc('EP'), `EP桶×${EP}`));
+      // 维度签名色是另一套语言（3D 里的高亮线框/连线），只在它真的出现在画面上时才进图例
+      // ——即选中了某张卡、四维通信组亮起时。否则同一个维度会在图例里出现两次、两套颜色。
+      // 样式也刻意区分：卡块着色 = 实心块，通信组 = 线框（与 3D 中的呈现一致）。
+      if (S.sel != null) {
+        const ring = (c, t) => `<span><i class="prc-ring" style="border-color:${c}"></i>${esc(t)}</span>`;
+        const cur = PHASES[phaseIdx()].dim;
+        parts.push(`<span class="prc-sep"></span><b>选中卡的通信组 · 线框</b>`,
+          ...['TP', 'PP', 'DP', 'EP'].map((d) => ring(dimc(d), d === cur ? `${d}（此刻主导）` : d)));
+      }
       lg.innerHTML = parts.join('');
     }
     function renderInfo() {
@@ -1153,7 +1158,7 @@
       setAnomaly(k) { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); },
       select(r) {
         S.sel = r;
-        rebuildComm(); renderInfo();
+        rebuildComm(); renderInfo(); renderLegend();
         if (opts.onSelect) {
           opts.onSelect(r == null ? null : {
             rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
