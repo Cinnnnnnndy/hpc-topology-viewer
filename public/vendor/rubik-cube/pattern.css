@@ -21,12 +21,32 @@
 .prc-stage canvas { display: block; }
 
 /* ── 左上控制面板（.panel-shell + 分行）────────────────────────────── */
-.prc-topbar {
+.prc-topwrap {
   position: absolute; top: var(--space-3); left: var(--space-3); z-index: 5;
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  max-width: calc(100% - var(--space-6));
+}
+.prc-topbar {
   display: flex; flex-direction: column; gap: var(--space-2);
   padding: var(--space-3);
-  max-width: min(92vw, 680px);
+  /* 形态 + 视角 要能并成一行（窄屏才回落成两行） */
+  max-width: min(92vw, 1010px);
 }
+/* 视图标题块（左上角）：kicker + 名称 + 当前规格 */
+.prc-brand { display: grid; gap: 2px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-subtle, var(--border-default)); }
+.prc-brandname { font: var(--type-body); font-weight: 700; color: var(--foreground); }
+.prc-brandsub { font: var(--type-mono); color: var(--foreground-muted); }
+
+/* 形态 / 视角 同一行，中间一根细分隔 */
+.prc-row-top { flex-wrap: wrap; }
+.prc-row-modes, .prc-row-views { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.prc-rowsep {
+  width: 1px; align-self: stretch; min-height: var(--button-height-sm);
+  background: var(--border-subtle, var(--border-default));
+  margin: 0 var(--space-1);
+}
+/* 「更多」是独立按钮：与面板并排，不挤在任何一行里 */
+.prc-morebtn { flex: 0 0 auto; }
 .prc-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 /* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */
 .prc-more { display: none; flex-direction: column; gap: var(--space-2); }
@@ -35,7 +55,6 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle, var(--border-default));
 }
-.prc-morebtn { margin-left: auto; }
 /* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
 .prc-lab {
   font: var(--type-label);

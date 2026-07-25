@@ -32,7 +32,7 @@
     tp: 8, pp: 5, dp: 100, ep: 2,
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
-    hotBuckets: [0, 2],    // 示意热点专家桶（★）
+    hotBuckets: [0, 2],    // 示意热点专家桶（标暖色）
   };
 
   /* ══ 布局规则（单一事实源）════════════════════════════════════════════
@@ -437,9 +437,20 @@
       opts.chrome === false ? '' : [
         // 常驻只留「形态 / 视角」——它们决定画面本身怎么摆；其余（着色/注入/连线/时间/
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
+        '<div class="prc-topwrap">',
         '<div class="prc-topbar panel-shell">',
-        '  <div class="prc-row prc-row-modes"><span class="prc-lab">形态</span></div>',
-        '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
+        // 视图标题：kicker（这是什么类别的图）+ 名称 + 一行当前规格
+        '  <div class="prc-brand">',
+        '    <div class="prc-kicker">PARALLEL LAYOUT</div>',
+        '    <div class="prc-brandname">逻辑魔方 · 并行域重排</div>',
+        '    <div class="prc-brandsub prc-mono"></div>',
+        '  </div>',
+        // 形态与视角同一行：它们是「画面怎么摆」的一对，放一起读；「更多」是独立按钮
+        '  <div class="prc-row prc-row-top">',
+        '    <span class="prc-row-modes"><span class="prc-lab">形态</span></span>',
+        '    <span class="prc-rowsep"></span>',
+        '    <span class="prc-row-views"><span class="prc-lab">视角</span></span>',
+        '  </div>',
         '  <div class="prc-more">',
         '    <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '    <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
@@ -447,6 +458,8 @@
         '    <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '    <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '  </div>',
+        '</div>',
+        '<button class="prc-morebtn btn btn-sm panel-shell" type="button"></button>',
         '</div>',
         '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
@@ -531,16 +544,18 @@
     }
 
     /* 四维通信组的成员标记。原先是半透明实体盒罩在卡上——盒色与卡色叠在一起，卡自己的
-       着色（负载 / 分组 / 异常）就读不准了；改成「只有棱、没有面」的线框套：同样点出
-       谁是成员，卡面颜色一点不改。
+       着色（负载 / 分组 / 异常）就读不准了；改成「只有棱、没有面」的线框，并且**贴着卡的
+       外沿**（1.02×）：比卡大一圈时，一串框在等距视角下棱线互相错开、叠成菱形格纹，
+       看着像一排箭头——贴合之后它就只是卡自己的描边。谁是成员主要靠聚焦（无关卡压暗），
+       这层描边只是补一个「就是这几张」的确认。
        实例上限要盖住最大的通信域（DP 组可达 dp 张卡），否则线连过去的卡有一半没有标记，
        看上去就是「线没连到卡上」。 */
     const PEER_MAX = 1024;
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
     const peerMeshes = peerDims.map((d) => {
       const m = new THREE.InstancedMesh(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.12, CARD.y * 1.12, CARD.z * 1.12)),
-        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.75, depthTest: false }), PEER_MAX);
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.02, CARD.y * 1.02, CARD.z * 1.02)),
+        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.6, depthTest: false }), PEER_MAX);
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
     });
@@ -576,26 +591,39 @@
       }
       return pts[pts.length - 1];
     }
+    const pathLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += pts[i].distanceTo(pts[i - 1]); return L; };
+    /* 流动点：点数按「路有多长」分配，不是把 10 个点全撒到同一条路上——
+       短路（比如 TP=2 的两卡之间只有一格）本来只放得下一个点，撒十个就挤成一条毛毛虫。 */
     function updateMovers() {
       if (!S.wire.movers || !moverPaths.length) { moverMeshes.forEach((m) => { m.visible = false; }); return; }
       const u = phaseU();
-      // Ring：RS 段跑一圈、AG 段再跑一圈。跑的快慢按这一阶段的通信节奏给（图元库里
+      // Ring：RS 段跑一圈、AG 段再跑一圈。快慢按这一阶段的通信节奏给（图元库里
       // 「速率对应带宽·时延」的同一约定）：TP 节点内 UB 最快 · EP 浪涌次之 ·
       // PP 接力常规 · DP 跨 Pod 低频大包最慢。
       const RATE = { TP: 2.2, EP: 1.6, PP: 1.0, DP: 0.65 };
-      const half = ((u < 0.5 ? u * 2 : (u - 0.5) * 2) * (RATE[PHASES[phaseIdx()].dim] || 1)) % 1;
-      moverMeshes.forEach((m, i) => {
-        const path = moverPaths[i % moverPaths.length];
-        if (!path || path.pts.length < 2) { m.visible = false; return; }
-        const lane = Math.floor(i / moverPaths.length);
-        m.position.copy(pointOnPath(path.pts, half + (i % moverPaths.length) * 0.0 + lane * 0.37));
-        // 「暗点」取线芯同色的深色调（同色系压暗，不是中性黑）：点落在线上，对比来自
-        // 它与线芯的明度差，同色系因此既看得清又与整条线和谐；中性黑在浅色卡阵上太硬。
-        _hsl.copy(new THREE.Color(path.color)).getHSL(_h);
-        m.material.color.setHSL(_h.h, Math.min(1, _h.s * 1.05), Math.min(_h.l * 0.42, 0.26));
-        m.material.opacity = 0.92;
-        m.visible = true;
-      });
+      const t = ((u < 0.5 ? u * 2 : (u - 0.5) * 2) * (RATE[PHASES[phaseIdx()].dim] || 1)) % 1;
+      const lens = moverPaths.map((p) => pathLen(p.pts));
+      const total = lens.reduce((a, b) => a + b, 0) || 1;
+      const SPACING = CARD.x * 3.2;            // 两点之间至少隔三格卡宽，看得出是「一串在跑」
+      let k = 0;
+      for (let i = 0; i < moverPaths.length && k < MOVERS; i++) {
+        const path = moverPaths[i];
+        if (!path || path.pts.length < 2 || lens[i] <= 0) continue;
+        const byLen = Math.max(1, Math.floor(lens[i] / SPACING));
+        const byShare = Math.max(1, Math.round(MOVERS * lens[i] / total));
+        const n = Math.min(byLen, byShare, MOVERS - k);
+        for (let j = 0; j < n; j++) {
+          const m = moverMeshes[k++];
+          m.position.copy(pointOnPath(path.pts, (t + j / n) % 1));
+          // 「暗点」取线芯同色的深色调（同色系压暗，不是中性黑）：点落在线上，对比来自
+          // 它与线芯的明度差，同色系因此既看得清又与整条线和谐。
+          _hsl.copy(new THREE.Color(path.color)).getHSL(_h);
+          m.material.color.setHSL(_h.h, Math.min(1, _h.s * 1.05), Math.min(_h.l * 0.42, 0.26));
+          m.material.opacity = 0.92;
+          m.visible = true;
+        }
+      }
+      for (; k < MOVERS; k++) moverMeshes[k].visible = false;
     }
 
     // 通信线（TubeGeometry 曲线 + 标签）——穿透方块可见
@@ -658,15 +686,20 @@
       const FONT = `850 ${fontPx}px ${TOK['--font-mono'] || "'JetBrains Mono','Fira Code','Consolas',monospace"}`;
       const meas = document.createElement('canvas').getContext('2d');
       meas.font = FONT;
-      const tw = Math.ceil(meas.measureText(text).width) + padX * 2, th = fontPx + padY * 2;
+      const bw = Math.ceil(meas.measureText(text).width) + padX * 2, bh = fontPx + padY * 2;
+      // 四周留一圈完全空白的画布边（PAD）：贴图的透明像素 RGB 是黑的，线性过滤/多级
+      // 渐远纹理会把黑边混进最外一圈——描边若压在画布边界上，圆角处就会渗出黑边。
+      // 底与描边都往里缩，非透明像素永远被同色包着，边缘再插值也只会插到底色。
+      const PAD = 5;
+      const tw = bw + PAD * 2, th = bh + PAD * 2;
       const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
       const c = cv.getContext('2d'); c.scale(SS, SS);
       const bg = tokHex('--background'), fg = tokHex('--foreground');
       const rr = fontPx * 0.47;
       c.fillStyle = mixHex(bg, color, 0.1);
-      c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.fill();
+      c.beginPath(); c.roundRect(PAD, PAD, bw, bh, rr); c.fill();
       c.lineWidth = 1.6; c.strokeStyle = mixHex(bg, color, 0.3);
-      c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.stroke();
+      c.beginPath(); c.roundRect(PAD + 1, PAD + 1, bw - 2, bh - 2, rr); c.stroke();
       c.font = FONT; c.textAlign = 'left'; c.textBaseline = 'middle';
       c.shadowColor = bg; c.shadowBlur = 7;                 // 底色光晕：压在卡上也读得清
       let x = (tw - meas.measureText(text).width) / 2;
@@ -871,10 +904,10 @@
         axGridBox(b, xL, yL, zL, false, { x: EPc, y: PPc, z: DPc });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
-          axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? tokHex('--warning') : EPc, 3,
+          axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, hot ? tokHex('--warning') : EPc, 3.6,
             V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 2) * 1.1, 0));
         }
-        axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`), EPc, 10,
+        axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
         const rowZ = bb.z0;
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - D(1.7), rowZ));
@@ -1193,7 +1226,7 @@
         const on = curDim === d;
         // 线要细：一屏可能同时有四维的走线，管壁按卡宽的 1/12 起算，主导维再粗一档。
         const op = on ? 0.95 : 0.45, rad = (on ? 1.2 : 0.8) * CARD.x * 0.085;
-        mesh.material.opacity = on ? 0.8 : 0.35;
+        mesh.material.opacity = on ? 0.7 : 0.28;
         const segs = edgesOf(d, members);
         const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
         if (S.wire.lines) {
@@ -1443,6 +1476,10 @@
       const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
       if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
     }
+    function syncBrand() {
+      const el = $('.prc-brandsub'); if (!el) return;
+      el.textContent = `TP${TP} · PP${PP} · DP${REP} · EP${EP} = ${N} rank · ${DOM} 个 A2A 域`;
+    }
     function syncCfgUI() {
       if (!cfgInputs) return;
       cfgInputs.tp.value = TP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
@@ -1450,7 +1487,7 @@
       cfgErr.textContent = '';
     }
     function syncChrome() {
-      syncHelp();                                                        // 问号气泡里的「此刻」随状态更新
+      syncHelp(); syncBrand();                                           // 问号气泡与标题规格随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];
@@ -1497,13 +1534,13 @@
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
-      // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）
-      moreBtn = rowViews.appendChild(chipBtn('', () => {
+      // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）——独立按钮，不挤在视角行里
+      moreBtn = $('.prc-morebtn');
+      moreBtn.addEventListener('click', () => {
         S.more = !S.more;
         root.querySelector('.prc-topbar').classList.toggle('is-open', S.more);
         syncChrome(); resize();
-      }));
-      moreBtn.classList.add('prc-morebtn');
+      });
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
