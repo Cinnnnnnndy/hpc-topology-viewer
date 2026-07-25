@@ -543,6 +543,18 @@
       axSeg(fr, frame, frameOp);
     }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+    /* 网格线 = 格边界（卡永远落在格子里、不被线穿过）——各形态各轴统一这一条约定。
+       原先分块轴画边界、其余轴画「穿过卡中心的刻度」，同一个框里两种约定混用，
+       看起来就是「和网格没对齐」。线过多时等间隔抽样（每 k 格一条，仍是边界）。 */
+    function cellLines(n, step, center, maxLines) {
+      const first = (center || 0) - n * step / 2, last = first + n * step;
+      const stride = Math.max(1, Math.ceil(n / (maxLines || 12)));
+      const out = [];
+      for (let i = 0; i <= n; i += stride) out.push(first + i * step);
+      if (out[out.length - 1] !== last) out.push(last);
+      return out;
+    }
+    const span1 = (a) => ({ lo: a[0], hi: a[a.length - 1] });
 
     // 每种形态 = 换一根投影轴：讲清「为什么这样重排 · 这个形状帮你看什么」——一个小方块 = 1 颗卡（rank）
     function renderAxes() {
@@ -556,8 +568,9 @@
       const pos = (tp, pp, rep) => { model.posOf(model.rankOf(tp, pp, rep), S.mode, v); return V3(v.x, v.y, v.z); };
       if (S.mode === 0) {
         const s = sp.std, xT = (t) => (t - (TP - 1) / 2) * s.sx, yS = (p) => s.cy + ((PP - 1) / 2 - p) * s.sy, zD = (d) => (d - (REP - 1) / 2) * s.sz;
-        const b = { x0: xT(0) - 1.2, x1: xT(TP - 1) + 1.2, y0: yS(PP - 1) - 1, y1: yS(0) + 1, z0: zD(0) - 1.2, z1: zD(REP - 1) + 1.2 };
-        axGridBox(b, R(TP, xT), R(PP, yS), R(9, (i) => zD(Math.round(i * (REP - 1) / 8))));
+        const xL = cellLines(TP, s.sx, 0), yL = cellLines(PP, s.sy, s.cy), zL = cellLines(REP, s.sz, 0, 9);
+        const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
+        axGridBox(b, xL, yL, zL);
         axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
         axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce`, TPc, 7, V3(0, b.y0 - D(2.6), b.z1 + D(3.2)));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1)));
@@ -576,9 +589,8 @@
         const bb = model.boundsOf(1);
         // 网格 = 宫格的「格边界」（由板中心 ± 半格推出）。若沿用 rank 包围盒，X 会整体
         // 偏掉半个板宽 → 板落在格子左侧、网格与内容对不上。
-        const xL = R(COLS + 1, (i) => (i - COLS / 2) * s.gapX);
-        const zL = R(ROWS + 1, (i) => (i - ROWS / 2) * s.gapZ);
-        const b = { x0: xL[0], x1: xL[COLS], y0: 0, y1: bb.y1 + 0.6, z0: zL[0], z1: zL[ROWS] };
+        const xL = cellLines(COLS, s.gapX, 0, 14), zL = cellLines(ROWS, s.gapZ, 0, 14);
+        const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: 0, y1: bb.y1 + 0.6, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true);
         R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
         R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
@@ -596,11 +608,9 @@
         const bb = model.boundsOf(2);
         // X 网格 = 墙的格边界（同上，避免整体偏掉半个墙宽）；Z 网格线落在真实的域位置上
         // （域少则逐域画，域多则等间隔抽 5 条），不再是与内容无关的等分线。
-        const xL = R(EP + 1, (i) => (i - EP / 2) * s.gapE);
-        const zAt = (d) => (d - (DOM - 1) / 2) * s.dom;
-        const zL = (DOM <= 9 ? R(DOM, (i) => i) : R(5, (i) => Math.round(i * (DOM - 1) / 4))).map(zAt);
-        const b = { x0: xL[0], x1: xL[EP], y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: zAt(0) - s.dom / 2, z1: zAt(DOM - 1) + s.dom / 2 };
-        axGridBox(b, xL, R(PP, (p) => s.cy + ((PP - 1) / 2 - p) * s.pp), zL);
+        const xL = cellLines(EP, s.gapE, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(DOM, s.dom, 0, 9);
+        const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
+        axGridBox(b, xL, yL, zL);
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? themeC('#FFAA3B', '#b45f06') : EPc, 3,
@@ -617,8 +627,9 @@
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
-        const b = { x0: bb.x0 - s.gapT / 2, x1: bb.x1 + s.gapT / 2, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: bb.z0 - 1.2, z1: bb.z1 + 1.2 };
-        axGridBox(b, R(TP + 1, (i) => b.x0 + i * s.gapT), R(PP, (p) => s.cy + ((PP - 1) / 2 - p) * s.pp), R(5, (i) => zD(Math.round(i * (REP - 1) / 4))));
+        const xL = cellLines(TP, s.gapT, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(REP, s.rep, 0, 9);
+        const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
+        axGridBox(b, xL, yL, zL);
         for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + D(1.2) + (t % 2) * 1.1, 0));
         axText(`${TP} 面墙 = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`, TPc, 9.5, V3(0, b.y1 + D(4.2), 0));
         const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
@@ -631,8 +642,9 @@
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
-        const b = { x0: bb.x0 - s.gapP / 2, x1: bb.x1 + s.gapP / 2, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: bb.z0 - 1.2, z1: bb.z1 + 1.2 };
-        axGridBox(b, R(PP + 1, (i) => b.x0 + i * s.gapP), [], R(5, (i) => zD(Math.round(i * (REP - 1) / 4))), true);
+        const xL = cellLines(PP, s.gapP, 0), zL = cellLines(REP, s.rep, 0, 9);
+        const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
+        axGridBox(b, xL, [], zL, true);
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st);
           axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0));
