@@ -91,10 +91,13 @@
     '--background', '--surface-1', '--surface-2', '--foreground', '--foreground-secondary',
     '--foreground-muted', '--border-default', '--border-strong', '--primary', '--success',
     '--warning', '--danger', '--accent', '--font-sans', '--font-mono',
+    '--highlight-copy-blue-300', '--highlight-accum-orange-300', '--highlight-l0a-violet-300',
+    '--highlight-ub-green-300', '--highlight-mte-amber-300', '--highlight-l0b-deep-violet-300',
     '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
     '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
     '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
     '--highlight-ub-green-600', '--highlight-mte-amber-600', '--highlight-l0b-deep-violet-600',
+    '--highlight-ub-green-700', '--highlight-mte-amber-500',
     '--dim-tp',
   ];
   // css 颜色 → {r,g,b,a}（支持 #rgb/#rrggbb/#rrggbbaa 与 rgb()/rgba()）
@@ -126,12 +129,21 @@
     rail: '--highlight-mte-amber-400',
     out: '--highlight-l0b-deep-violet-600',
   };
-  // 分组着色调色板：highlight 六族 400 档 → 再接 600 档（相邻组尽量不同族，色相差最大）
+  /* 分组着色调色板：六族 × 两档（深 600 → 浅 300），共 12 色。
+     不用 400/500 档：那两档是色卡里彩度最高的一段（ub-green-400 #B3F141、
+     mte-amber-400 #F4CB22 尤甚），几百上千张卡同屏铺满时会糊成一片荧光。
+     600 档饱和度相当但明度低一截、300 档明度高但彩度降下来——两档都落在"能分辨、
+     不刺眼"的区间，且深浅交替本身又多给了一层区分度。
+     ub-green 整族偏荧光，深档取 700（橄榄绿）而不是 600。
+     排序不是「先排完深档再排浅档」：六族里蓝 / 靛 / 紫三族色相只差 25~55°，一旦同档相邻
+     就分不开（PP0 深蓝 vs PP4 深靛）。所以两档交错着排——前 6 位先用四个真正拉得开的
+     色相（蓝·橙·橄榄·紫），第 5、6 位改用浅档的琥珀与靛，靠明度差把近色相拆开。
+     分组数通常 ≤8，前几位的可分辨度最值钱。 */
   const GROUP_TOKENS = [
-    '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
-    '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
-    '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
-    '--highlight-ub-green-600', '--highlight-mte-amber-600', '--highlight-l0b-deep-violet-600',
+    '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-ub-green-700',
+    '--highlight-l0a-violet-600', '--highlight-mte-amber-500', '--highlight-l0b-deep-violet-300',
+    '--highlight-accum-orange-300', '--highlight-copy-blue-300', '--highlight-ub-green-300',
+    '--highlight-l0a-violet-300', '--highlight-l0b-deep-violet-600', '--highlight-mte-amber-300',
   ];
 
   /* ════════════════════════ 纯布局模型 ════════════════════════ */
@@ -286,7 +298,7 @@
           : dim === 'tpc' ? tpOf(r) % TPC : dim === 'tpd' ? (tpOf(r) / TPC) | 0 : 0;
 
     // 视角收编（方案 A）：每个 2D 平面只属于一个形态。标准/TP切片/PP流水 共享同一坐标系
-    // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP×TP·TP×PP·DP×PP）由
+    // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP-TP·TP-PP·DP-PP）由
     // 「标准」独占；TP切片/PP流水 只保留轴测（价值在 3D 的强调读法），note2d 指路。
     // DP平铺/EP聚簇 引入新分组轴，三个 2D 平面均独有，全保留。
     const D_STD = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };   // 视角 → 被折进视线的维（可多个）
@@ -296,14 +308,14 @@
         key: 'std', name: '标准', short: '标准',
         sub: `标准 X=TP Y=PP(模型深度) Z=DP`,
         why: `位置即多维坐标：X=TP·Y=PP·Z=DP 同屏三维 · 着色透镜再叠第 4 维（换形态只换投影轴）`,
-        viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
+        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
         views: [0, 1, 2, 3],
       },
       {
         key: 'dpt', name: 'DP平铺', short: 'DP',
         sub: `DP 平铺：${REP} 副本各自成板（找慢副本）`,
         why: `副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本`,
-        viewLabels: { 1: '顶 副本网格', 2: '前 列×PP', 3: '侧 行×PP' },
+        viewLabels: { 1: '顶 副本网格', 2: '前 列-PP 面', 3: '侧 行-PP 面' },
         // 板内 TP 折成「列×排」后板有了厚度：顶视每个副本是一片瓦（而非一条线），
         // 侧视也不再塌陷 → 三个正交视角都成立。
         depth: { 1: ['pp'], 2: ['gz', 'tpd'], 3: ['gx', 'tpc'] },
@@ -313,7 +325,7 @@
         key: 'ep', name: 'EP聚簇', short: 'EP',
         sub: `EP 聚簇：${EP} 专家桶成墙（桶=MoE 组 · 每桶复现于 ${DOM} 个 A2A 域 · 桶↔卡非 1:1）`,
         why: `桶故障 = 整面墙同红 · 域热点 = 横穿 ${EP} 墙的一排过热 · 桶↔卡非 1:1`,
-        viewLabels: { 1: '顶 桶×域', 2: '前 桶×PP', 3: '侧 域×PP' },
+        viewLabels: { 1: '顶 桶-域 面', 2: '前 桶-PP 面', 3: '侧 域-PP 面' },
         depth: { 1: ['pp'], 2: ['dom'], 3: ['ep', 'tp'] },   // 侧视同时折叠墙序与墙内 TP（域数多，仍成阵）
         views: [0, 1, 2, 3],
       },
@@ -321,14 +333,14 @@
         key: 'tps', name: 'TP切片', short: 'TP',
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
-        viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
+        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
         views: [0], note2d: NOTE_2D,
       },
       {
         key: 'ppf', name: 'PP流水', short: 'PP',
         sub: `PP 流水：${PP} 段横向展开 · 左=Stage0 右=Stage${PP - 1}（找慢段/气泡）`,
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
-        viewLabels: { 1: '顶 DP×PP', 2: '前 PP×TP', 3: '侧 DP×TP' },
+        viewLabels: { 1: '顶 DP-PP 面', 2: '前 PP-TP 面', 3: '侧 DP-TP 面' },
         depth: { 1: ['tp'], 2: ['rep'], 3: ['pp'] },
         views: [0], note2d: NOTE_2D,
       },
@@ -476,8 +488,14 @@
     stageEl.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 1000);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-    const dl = new THREE.DirectionalLight(0xffffff, 0.55); dl.position.set(18, 30, 12); scene.add(dl);
+    /* 打光总增益必须 ≈ 1：MeshStandard 的出射色 = 材质色 ×(环境 + 平行×N·L)，
+       原来 0.85+0.55 意味着朝光的顶面拿到 1.4× —— token 里本就高彩度的色一乘就顶到
+       通道上限，几百张卡铺满屏幕时集体读成荧光。改成 环境 0.74 + 主光 0.32 + 背光 0.10：
+       顶面 ≈1.0（所见即 token 色），立面 ≈0.85，背面靠背光托住不发死，
+       三个可见面仍差出 ~15% 的明度阶梯，立体感不丢。 */
+    scene.add(new THREE.AmbientLight(0xffffff, 0.74));
+    const dl = new THREE.DirectionalLight(0xffffff, 0.32); dl.position.set(18, 30, 12); scene.add(dl);
+    const dlFill = new THREE.DirectionalLight(0xffffff, 0.10); dlFill.position.set(-14, 6, -18); scene.add(dlFill);
 
     const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
     const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
@@ -1063,10 +1081,21 @@
       RAMP_A.set(tokHex(lo)); RAMP_B.set(tokHex(hi));
       return cTmp.copy(RAMP_A).lerp(RAMP_B, v < 0.5 ? v * 2 : (v - 0.5) * 2);
     }
+    /* 注入态的「其余」：健康色但压成背景。
+       用满彩度的 --success 会让红绿各占半屏、势均力敌，注入的那一组反而不跳——
+       注入这个模式的全部意义就是「异常组一眼看见」，其余是参照物不是并列项。
+       故按低负载取色后再向 --background 拉一半：色相还在（还读得出「这些是好的」），
+       但明度/彩度都退到红组之下。图例的「其余」色块走同一个函数，因此永远等于画面。 */
+    const REST_BG = new THREE.Color();
+    function restColor(r) {
+      loadColor(0.16 + rng(r * 3.1) * 0.1);
+      REST_BG.set(tokHex('--background'));
+      return cTmp.lerp(REST_BG, isDark() ? 0.55 : 0.48);
+    }
     function colorOfRank(r) {
       if (S.anom !== 'none') {
         if (inAnomGroup(r)) return cTmp.set(tokHex('--danger'));
-        return loadColor(0.16 + rng(r * 3.1) * 0.1);
+        return restColor(r);
       }
       if (S.colorBy !== 'load') {
         // 逻辑分组（TP/PP/DP/EP）与物理分组（主机 / Pod）用同一套分组色环：
@@ -1113,8 +1142,8 @@
     const dimLv = (r) => (ghosted(r) ? 2 : focusOn() && !relSet.has(r) ? 1 : 0);
     const BG_C = new THREE.Color();
     // 压暗的唯一算法（图例色块与卡块共用，图例因此永远等于画面）：
-    // 卡是 MeshStandard 材质（环境光 0.85 + 平行光 0.55 ≈ ×1.4 提亮），系数要比直觉更狠，
-    // 否则暗色主题下「压暗」看起来还是一片亮。
+    // 打光总增益已归到 ≈1（见上方光源注释），所以这里的系数就是最终看到的压暗幅度；
+    // 若哪天又调亮打光，这几个系数要跟着往下压，否则「压暗」会看起来还是一片亮。
     function applyDim(c, lv) {
       if (!lv) return c;
       BG_C.set(tokHex('--background'));
@@ -1371,7 +1400,7 @@
       const parts = [];
       if (S.anom !== 'none') {
         const what = { tp: 'TP 槽 0', pp: 'PP 级 0', dp: 'DP 副本 0', ep: `EP 桶 ${anomBucket()}` }[S.anom];
-        parts.push(sec('着色 · 异常注入'), row('var(--danger)', `异常组 ${what}`), row(rgbCss(loadColor(0.2)), '其余'));
+        parts.push(sec('着色 · 异常注入'), row('var(--danger)', `异常组 ${what}`), row(rgbCss(restColor(2)), '其余'));
       } else if (S.colorBy === 'load') {
         parts.push(sec('着色 · 状态热力'),
           `<div class="prc-lgrow prc-ramp"><i></i><span>负载 低→高</span></div>`);
@@ -1494,6 +1523,7 @@
           <dt>顶 / 前 / 侧</dt><dd>正交锁轴的 2D 投影，会把与视线平行的维折叠</dd>
           <dt>剖面</dt><dd>只看被折叠那一维的某一层，其余压暗</dd>
         </dl>
+        <p>按钮上的「DP-TP 面」读作<b>平面</b>而不是乘法：破折号两侧是这一屏留下的两根屏幕轴（横 DP、纵 TP），没写出来的第三根就是被折进视线的那一维。这一格里真正相乘的只有 rank 总数 TP×PP×DP，视角本身不改变任何数量。</p>
         <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡写在右上角的粒度贴士里。任何正交视角下拖动，都会从当前朝向无缝转回 3D。</p>`,
       lens: `<h4>着色 · 给卡上色的镜头</h4>
         <p>只改颜色，不改结构。</p>

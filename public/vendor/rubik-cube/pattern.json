@@ -85,7 +85,10 @@
     "把解释写进图例：图例只列颜色与名字，读法与为什么一律进问号气泡",
     "用 InstancedMesh 画 EdgesGeometry：InstancedMesh 是 Mesh，会把边的顶点当三角形画，卡面上会浮出斜三角——线框一律用 LineSegments（成员框用一条合并缓冲的 LineSegments）",
     "按帧固定系数做重排缓动：规模一大帧率就掉，cur 到不了 target，卡与线一起停在半路（表现为「线没连到卡上」）——缓动按时间算，收尾精确吸附 cur = target",
-    "把整条折线交给一个 TubeGeometry：它按 getPointAt（等弧长）采样，长短不一的段会让采样点落不到拐点上，线从卡旁边抄近路——直线折线一律逐段建管，改动后跑 scripts/verify-rubik-cube.mjs"
+    "把整条折线交给一个 TubeGeometry：它按 getPointAt（等弧长）采样，长短不一的段会让采样点落不到拐点上，线从卡旁边抄近路——直线折线一律逐段建管，改动后跑 scripts/verify-rubik-cube.mjs",
+    "用色卡 400/500 档铺满卡阵：那是彩度最高的一段（ub-green-400 #B3F141、mte-amber-400 #F4CB22 尤甚），几百上千张卡同屏时会糊成一片荧光——分组色一律取深档 600/700 与浅档 300，且两档交错排（蓝/靛/紫三族色相只差 25~55°，同档相邻分不开）",
+    "把打光总增益调到 1 以上：卡是 MeshStandardMaterial，出射色 = 材质色 ×(环境 + 平行×N·L)，增益 >1 会把 token 色顶到通道上限（读成荧光）并让图例与画面对不上——环境 0.74 + 主光 0.32 + 背光 0.10，顶面 ≈1.0 即所见即 token 色",
+    "在视角按钮上用 × 连接两根屏幕轴（「顶 DP×TP」）：本 pattern 里 × 是真的乘法（rank = TP×PP×DP），会被读成数量相乘——正交视角写作平面「顶 DP-TP 面」"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }
