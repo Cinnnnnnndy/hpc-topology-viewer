@@ -825,14 +825,16 @@
         const colorHex = new THREE.Color(DIMC[d].dark).getHex();
         const pts = members.map(gp);
         // 当前阶段主导的维加亮加粗，其余淡显——四维通信组始终同屏，谁在此刻真正忙一眼可见
+        // 四维一律清晰可见（都是这张卡真实的通信组），当前阶段主导的那一维再加一档
+        // 亮度与粗细作为「此刻」的强调。对比不能拉太大——否则非主导维看着像没画出来。
         const on = PHASES[phaseIdx()].dim === d;
-        const op = on ? 0.95 : 0.22, rad = (on ? 1 : 0.6) * (d === 'TP' ? 0.1 : 0.07);
-        mesh.material.opacity = on ? 0.5 : 0.16;
+        const op = on ? 0.95 : 0.55, rad = (on ? 1.15 : 0.85) * (d === 'TP' ? 0.1 : 0.07);
+        mesh.material.opacity = on ? 0.5 : 0.32;
         if (d === 'EP') { pts.forEach((p) => { if (!p.equals(gp(S.sel))) commLine([gp(S.sel), p], colorHex, op, rad * 0.9); }); }   // A2A 互发（星形）
         else commLine(pts, colorHex, op, rad);   // TP 环 / PP 链 / DP 采样折线
       });
       const selP = gp(S.sel);
-      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP}`, themeC('#c8d2dc', '#3f4c63'), 6.5 * LS);
+      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP} · 加亮=此刻 ${PHASES[phaseIdx()].dim}`, themeC('#c8d2dc', '#3f4c63'), 7.6 * LS);
       lab.position.copy(selP.clone().add(V3(0, 2 + 1.2 * LS, 0))); lab.renderOrder = 7; commGroupG.add(lab);
     }
 
@@ -903,7 +905,7 @@
         `<span style="color:${dimc('PP')}">PP${st}（S${st}·L${lr.lo}-${lr.hi}）</span> · ` +
         `<span style="color:${dimc('DP')}">DP副本${model.repOf(r)}</span>` +
         `<br><span style="color:${dimc('EP')}">EP桶${e}（${model.expRange(e)}）· A2A域${model.domOf(r)}</span>` +
-        `<br><span class="prc-dim">四维通信组已同屏高亮 · 再点空白处取消</span>`;
+        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导 · 再点空白处取消</span>`;
     }
 
     /* ── 工具栏 ── */
@@ -1089,7 +1091,7 @@
       if (S.playing && nowMs - lastTimeUi > 200) {
         lastTimeUi = nowMs;
         const ph = phaseIdx(); syncTimeUI();
-        if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); rebuildComm(); }   // 换阶段 → 主导维/图例随之切换
+        if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); renderInfo(); rebuildComm(); }   // 换阶段 → 主导维/图例/信息卡随之切换
       }
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
@@ -1189,7 +1191,7 @@
           ? (Math.max(0, PHASES.findIndex((p) => p.id === t.phase)) + 0.5) / PHASES.length
           : Math.min(0.999, Math.max(0, +t || 0));
         S.t = v;
-        recolor(); rebuildComm(); syncTimeUI(); renderHud(); renderLegend();
+        recolor(); rebuildComm(); syncTimeUI(); renderHud(); renderLegend(); renderInfo();
         return { t: S.t, phase: PHASES[phaseIdx()].id };
       },
       phases: PHASES,
