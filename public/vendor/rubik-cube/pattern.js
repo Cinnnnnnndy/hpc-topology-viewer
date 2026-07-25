@@ -1523,11 +1523,18 @@
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];
+      const vlist = md.views || [0, 1, 2, 3];
       viewBtns.forEach((b, i) => {
-        b.style.display = (md.views || [0, 1, 2, 3]).includes(i) ? '' : 'none';   // 视角收编：重合平面不出按钮
+        b.style.display = vlist.includes(i) ? '' : 'none';        // 视角收编：重合平面不出按钮
         b.classList.toggle('is-selected', i === S.view);
         if (i > 0) b.textContent = md.viewLabels[i];
       });
+      // 只剩 3D 一个视角的形态（TP切片 / PP流水，2D 与标准重合）：整组不显示，
+      // 一个孤零零的「3D」按钮既没有可切换的对象，也让人以为别的被禁用了
+      const vg = root.querySelector('.prc-row-views');
+      if (vg) vg.style.display = vlist.length > 1 ? '' : 'none';
+      const vhelp = vg && vg.nextElementSibling && vg.nextElementSibling.classList.contains('prc-help') ? vg.nextElementSibling : null;
+      if (vhelp) vhelp.style.display = vlist.length > 1 ? '' : 'none';
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
@@ -1577,7 +1584,7 @@
         b.title = m.name; b.setAttribute('aria-label', m.name);   // 短名按钮，全名进 title
         return b;
       });
-      viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
+      viewBtns = ['3D', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
       // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）——独立按钮，不挤在视角行里
       moreBtn = $('.prc-morebtn');
       moreBtn.addEventListener('click', () => {
@@ -1592,9 +1599,10 @@
       sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
       sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
       rowViews.appendChild(sliceBox);
+      const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
-        .map(([t, k]) => rowLens.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
+        .map(([t, k]) => lensSeg.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
       // 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：播放/暂停 + 阶段轨道拖拽定位
       const rowTime = $('.prc-row-time');
       playBtn = rowTime.appendChild(chipBtn('', () => { S.playing = !S.playing; syncChrome(); }));
@@ -1620,8 +1628,9 @@
       rowTime.appendChild(timeTrack);
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
+      const wireSeg = rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-chips' }));
       wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus']]
-        .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => {
+        .map(([t, k]) => wireSeg.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
           // 连线只在「选中一张卡」之后才有东西可画：开图层时若还没选卡，先替用户选一张
@@ -1632,11 +1641,13 @@
           else { rebuildComm(); refreshFocus(); renderInfo(); syncChrome(); }
         })));
       rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab prc-lab-inline', textContent: '算法' }));
+      const algoSeg = rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
-        .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); renderLegend(); syncChrome(); })));
+        .map(([t, k]) => algoSeg.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); renderLegend(); syncChrome(); })));
 
+      const anomSeg = rowAnom.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
-        .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
+        .map(([t, k]) => anomSeg.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
       const rowCfg = $('.prc-row-cfg');
       const mkDim = (lab) => {
         const wrap = document.createElement('span'); wrap.className = 'prc-cfgitem';
@@ -1785,15 +1796,20 @@
           m.opacity = m.userData.baseOp * (settling ? 0.45 : 1);
         });
       }
-      // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
+      /* 位置飞行（切形态重排动画；稳定后停写省 CPU）。
+         用「按时间」的缓动而不是「按帧」的固定系数：4000 卡时每帧要写 4000 个矩阵、
+         还要重建连线，帧率掉到 10fps 上下——固定 0.14/帧 就变成了要飞好几秒，而且
+         期间卡与线都停在半路，看上去就像「线没连到卡上」。
+         收尾一律精确吸附（cur = target），杜绝残留误差。 */
       if (settling) {
+        const k = dt > 0 ? 1 - Math.pow(0.0015, Math.min(dt, 0.25) / 0.5) : 1;   // 0.5s 走完 99.85%
         let moving = false;
         for (let r = 0; r < N; r++) {
           const i = r * 3;
-          for (let k = 0; k < 3; k++) {
-            const nv = cur[i + k] + (target[i + k] - cur[i + k]) * 0.14;
-            if (Math.abs(target[i + k] - nv) > 0.004) moving = true;
-            cur[i + k] = nv;
+          for (let c = 0; c < 3; c++) {
+            const d = target[i + c] - cur[i + c];
+            if (Math.abs(d) > 0.004) { cur[i + c] += d * k; moving = true; }
+            else cur[i + c] = target[i + c];                                     // 到位就吸附
           }
           dummy.position.set(cur[i], cur[i + 1], cur[i + 2]);
           dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(scl[r]); dummy.updateMatrix();
@@ -1915,6 +1931,7 @@
         return { t: S.t, phase: PHASES[phaseIdx()].id };
       },
       phases: PHASES,
+      scene,                       // 只读挂点：宿主联动与自动化校验（连线端点是否落在卡心）用
       resize,
       destroy() {
         global.cancelAnimationFrame(raf);

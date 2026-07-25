@@ -45,7 +45,8 @@
 .prc-root .prc-tools > .btn,
 .prc-root .prc-toolslot > .btn {
   height: var(--prc-toolh); min-height: var(--prc-toolh);
-  border-radius: var(--segmented-control-radius);
+  /* 胶囊圆角：与设计系统页面上的分段控件一致（外壳与内部选中项都是全圆角） */
+  border-radius: var(--radius-pill);
   background: var(--surface-1);
   border: 1px solid var(--segmented-control-border);
   box-shadow: var(--prc-float-shadow);
@@ -75,12 +76,24 @@
 .prc-more {
   position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); right: var(--space-3); z-index: 6;
   padding: var(--space-3);
-  width: max-content; max-width: min(92vw, 660px);
+  /* 宽度上限还要给左侧详情卡让出位置（320 + 边距），否则宽屏下抽屉会压住它 */
+  width: max-content;
+  max-width: max(300px, min(calc(100vw - 380px), 900px));
 }
 
 /* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */
 .prc-more { display: none; flex-direction: column; gap: var(--space-2); }
 .prc-root.is-open .prc-more { display: flex; }
+/* 一排控件：横向排布、统一间距、窄了才换行（丢了这条规则，行会退回 block，
+   相位轨道这种块级元素就自己占一行，看起来就是「时间不在一行了」） */
+.prc-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--space-2); min-height: var(--button-height-sm);
+}
+/* 多选开关（连线那排）：各自独立的胶囊，之间留出明确间距，不连成一条 */
+.prc-chips { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 抽屉里的互斥组与顶栏同款外壳（底更淡、不投影，卡是抽屉那一层） */
+.prc-more .segmented-control { background: var(--segmented-control-bg); box-shadow: none; }
 /* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
 .prc-lab {
   font: var(--type-label);
@@ -130,7 +143,7 @@
 /* 按钮：与设计系统页面上的控件同款——胶囊形、细描边、克制的字色。
    （.btn 的其余表现全部来自设计系统，本文件只统一圆角与图标对齐。） */
 .prc-root .btn { border-radius: var(--radius-pill); }
-.prc-root .segmented-control > .btn { border-radius: var(--segmented-control-item-radius, var(--radius-pill)); }
+.prc-root .segmented-control > .btn { border-radius: var(--radius-pill); }
 .prc-root .btn svg { flex: 0 0 auto; }
 /* 数字输入也跟着做成胶囊，与同一排的按钮成套 */
 .prc-cfgitem input { border-radius: var(--radius-pill); }
