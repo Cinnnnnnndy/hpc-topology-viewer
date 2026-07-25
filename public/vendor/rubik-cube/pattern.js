@@ -556,6 +556,7 @@
       m.renderOrder = 8; m.visible = false; moverGroup.add(m); return m;
     });
     let moverPaths = [];
+    const _hsl = new THREE.Color(), _h = { h: 0, s: 0, l: 0 };
     // 折线上按参数 s∈[0,1) 取点
     const _mv = new THREE.Vector3();
     function pointOnPath(pts, s) {
@@ -583,10 +584,11 @@
         if (!path || path.pts.length < 2) { m.visible = false; return; }
         const lane = Math.floor(i / moverPaths.length);
         m.position.copy(pointOnPath(path.pts, half + (i % moverPaths.length) * 0.0 + lane * 0.37));
-        // 图元库的三层结构里跑的是「暗点」而不是彩色点。但 --foreground 在浅色主题下
-        // 接近纯黑，压在淡色卡阵上太重 → 用次级前景色，并把不透明度降到 0.78。
-        m.material.color.set(tokHex('--foreground-secondary'));
-        m.material.opacity = 0.78;
+        // 「暗点」取线芯同色的深色调（同色系压暗，不是中性黑）：点落在线上，对比来自
+        // 它与线芯的明度差，同色系因此既看得清又与整条线和谐；中性黑在浅色卡阵上太硬。
+        _hsl.copy(new THREE.Color(path.color)).getHSL(_h);
+        m.material.color.setHSL(_h.h, Math.min(1, _h.s * 1.05), Math.min(_h.l * 0.42, 0.26));
+        m.material.opacity = 0.92;
         m.visible = true;
       });
     }
