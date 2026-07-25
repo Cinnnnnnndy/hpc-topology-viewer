@@ -50,20 +50,38 @@ jobs:
           ref: claude/rubik-view-pattern-extraction-7pk0qt
           path: rubik-src
 
-      - name: Overlay rubik pattern at /rubik/
-        # 自包含子目录：index.html 里的相对路径 ./vendor/... 解析到 /rubik/vendor/...；
-        # three-r128 直接取 main 构建产物里的同一份。
+      - name: Overlay rubik pattern at /rubik/ and /patterns/rubik-cube-logical/
+        # 两个入口，同一份内容：
+        #  · /rubik/                       —— 老链接，保持可用（自包含子目录）
+        #  · /patterns/rubik-cube-logical/ —— 设计系统 pattern 库的规范位置：
+        #    pattern.html 与 pattern.css / pattern.js / pattern.json 同级，
+        #    别人可以直接 <script src=".../pattern.js"> 复用，或读 pattern.json 契约。
+        # 资源链接统一打上 ?v=<短 SHA>：分享出去的链接不会吃到旧缓存。
         run: |
+          SHA=$(git -C rubik-src rev-parse --short HEAD)
+          SRC=rubik-src/public/vendor/rubik-cube
+
+          # ① 老入口 /rubik/（结构不变）
           mkdir -p dist/rubik/vendor/rubik-cube
-          cp rubik-src/public/rubik-pattern.html dist/rubik/index.html
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              rubik-src/public/rubik-pattern.html > dist/rubik/index.html
           cp dist/vendor/three-r128.min.js dist/rubik/vendor/three-r128.min.js
           cp -r dist/vendor/pto-tokens dist/rubik/vendor/pto-tokens
           cp -r rubik-src/public/vendor/pto-design-system dist/rubik/vendor/pto-design-system
-          cp rubik-src/public/vendor/rubik-cube/pattern.js \
-             rubik-src/public/vendor/rubik-cube/pattern.css \
-             rubik-src/public/vendor/rubik-cube/pattern.json \
-             rubik-src/public/vendor/rubik-cube/favicon.svg \
-             dist/rubik/vendor/rubik-cube/
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg dist/rubik/vendor/rubik-cube/
+
+          # ② 规范入口 /patterns/rubik-cube-logical/（pattern.* 同级）
+          PAT=dist/patterns/rubik-cube-logical
+          mkdir -p $PAT/vendor
+          sed -e 's#\./vendor/rubik-cube/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              rubik-src/public/rubik-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp dist/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
+          cp -r rubik-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # 版本落到契约里，方便对方核对拿到的是哪一版
+          node -e "const f='$PAT/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version='$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
+          echo "published: /patterns/rubik-cube-logical/pattern.html?v=$SHA"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

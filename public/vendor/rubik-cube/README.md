@@ -46,6 +46,48 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 > 改用真实数据后，默认与预设都收敛到盘古 Pro MoE 与 128 卡两组；1024 那组仍可
 > 在输入框手填 2·4·128·8 得到。
 
+## 分享 / 复用这套 pattern（两个入口 + URL 即状态）
+
+发布后有两个等价入口：
+
+| 入口 | 用途 |
+|---|---|
+| `…/patterns/rubik-cube-logical/pattern.html` | **规范位置**（对齐 pto-design-system 的 pattern 库）：`pattern.css` / `pattern.js` / `pattern.json` 就在同级，别人可以直接 `<script src=".../pattern.js">` 复用，或先读 `pattern.json` 契约 |
+| `…/rubik/` | 早先的短链接，保持可用 |
+
+**URL 即状态**——链接本身带着一个具体视图，发出去对方打开就是那一屏：
+
+```
+…/pattern.html?mode=tp&view=3d&color=ep&phase=EP&sel=1234&theme=light&v=<短SHA>
+```
+
+| 参数 | 取值 |
+|---|---|
+| `mode` | `std` / `dp` / `ep` / `tp` / `pp`（或 0-4） |
+| `view` | `3d` / `top` / `front` / `side`（或 0-3） |
+| `tp` `pp` `dp` `ep` | 并行度（给几个改几个） |
+| `color` | `load` / `tp` / `pp` / `dp` / `ep` / `host` / `pod` |
+| `anom` | `none` / `tp` / `pp` / `dp` / `ep` |
+| `phase` 或 `t` | `TP`/`PP`/`EP`/`DP` 或 0..1 |
+| `play` | `0` / `1` |
+| `sel` | rank 序号 |
+| `v` | 版本戳，页面忽略它，只用来跳过缓存 |
+
+不认识的参数一律忽略，非法值退回默认，不报错。发布时每个资源链接都会打上 `?v=<短 SHA>`，
+`pattern.json` 里也写入同一个 `version` —— 对方能核对自己拿到的是哪一版。
+
+嵌进自己的页面时（GitHub Pages 对静态资源发 `access-control-allow-origin: *`，可跨站引用）：
+
+```html
+<script src="https://<host>/patterns/rubik-cube-logical/vendor/three-r128.min.js"></script>
+<link rel="stylesheet" href="https://<host>/patterns/rubik-cube-logical/vendor/pto-design-system/styles.css">
+<link rel="stylesheet" href="https://<host>/patterns/rubik-cube-logical/pattern.css">
+<script src="https://<host>/patterns/rubik-cube-logical/pattern.js"></script>
+<script>
+  PtoRubikCubePattern.mount(el, { config: { tp: 8, pp: 5, dp: 100, ep: 2 }, theme: 'light' });
+</script>
+```
+
 ## 布局规则（任何数字都自动排布好 · 扩展只需声明）
 
 间距不再是逐形态手调的常量，而是由 `pattern.js` 顶部一处规则推导——**换任何

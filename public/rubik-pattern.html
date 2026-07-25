@@ -27,16 +27,41 @@
 /* 逻辑魔方 pattern 的独立迭代页：全屏挂载，主题支持 ?theme= 初始值与宿主 postMessage 联动
    （与 cube-cockpit.html 同一套约定，之后可被宿主以 iframe 嵌入）。 */
 (function(){
+  /* ── URL 即状态：链接本身就能带着一个具体视图发出去 ─────────────────────
+     ?theme=light|dark
+     ?mode=std|dp|ep|tp|pp（或 0-4）      形态
+     ?view=3d|top|front|side（或 0-3）    视角
+     ?tp= &pp= &dp= &ep=                  并行度（四个都给才重建）
+     ?color=load|tp|pp|dp|ep|host|pod     着色镜头
+     ?anom=none|tp|pp|dp|ep               异常注入
+     ?phase=TP|PP|EP|DP  或 ?t=0..1       时间轴位置
+     ?play=0|1                            是否自动播放
+     ?sel=<rank>                          直接选中某张卡
+     ?v=<任意串>                          版本戳，仅用于跳过缓存，页面忽略它
+     不认识的参数一律忽略；参数非法时退回默认值，不报错。 */
   var qs = new URLSearchParams(location.search);
   var theme = qs.get('theme') === 'dark' ? 'dark' : 'light';   // 默认浅色
+  var num = function(k){ var v = parseInt(qs.get(k), 10); return isFinite(v) && v > 0 ? v : null; };
+  var pick = function(k, map, dflt){
+    var v = (qs.get(k) || '').toLowerCase();
+    if (v === '') return dflt;
+    if (map[v] != null) return map[v];
+    var n = parseInt(v, 10);
+    return isFinite(n) ? n : dflt;
+  };
+  var MODES = { std: 0, standard: 0, dp: 1, dpt: 1, ep: 2, tp: 3, tps: 3, pp: 4, ppf: 4 };
+  var VIEWS = { '3d': 0, iso: 0, top: 1, front: 2, side: 3 };
+  var cfg = { tp: 8, pp: 5, dp: 100, ep: 2 };   // 默认 = 盘古 Pro MoE 真实训练策略
+  ['tp', 'pp', 'dp', 'ep'].forEach(function(k){ if (num(k)) cfg[k] = num(k); });
 
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,
+    mode: pick('mode', MODES, 0),
     // 并行度配置（默认值，工具栏「并行」输入排可随时改）：盘古 Pro MoE 真实训练策略
     // TP8·EP2·PP5·4K NPU → rank = tp×pp×dp = 8×5×100 = 4000（EP 不参与乘法，折入 DP 轴：
     // ep2 把 100 副本分成 2 桶 × 50 个 A2A 域）。出处 data/ascend-workload-pangu-moe.json。
     // 想细看结构时用工具栏的「128卡 2·4·16·8」预设。
-    config: { tp: 8, pp: 5, dp: 100, ep: 2 },
+    config: cfg,
     onSelect: function(sel){
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
       try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}
@@ -48,6 +73,19 @@
     },
   });
   window.rubik = handle;   // 控制台可直接迭代调试：rubik.setMode(2) / rubik.selectBucket(3) …
+
+  // 把余下的 URL 参数落到句柄上（mount 之后依次应用，非法值由各 setter 自行忽略）
+  var view = pick('view', VIEWS, null);
+  if (view != null) handle.setView(view);
+  if (qs.get('color')) handle.setColorBy(qs.get('color').toLowerCase());
+  if (qs.get('anom')) handle.setAnomaly(qs.get('anom').toLowerCase());
+  if (qs.get('phase')) handle.setTime({ phase: qs.get('phase').toUpperCase() });
+  else if (qs.get('t') != null) handle.setTime(parseFloat(qs.get('t')));
+  if (qs.get('play') != null) handle.setPlaying(qs.get('play') !== '0' && qs.get('play') !== 'false');
+  if (qs.get('sel') != null) {
+    var r = parseInt(qs.get('sel'), 10);
+    if (isFinite(r) && r >= 0 && r < handle.model.N) handle.select(r);
+  }
 
   // 把主题按钮放进 pattern 顶栏的工具插槽，和「更多」等按钮成套
   var slot = document.querySelector('.prc-toolslot');

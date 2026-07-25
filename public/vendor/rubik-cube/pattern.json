@@ -15,7 +15,11 @@
     "patternCss": "public/vendor/rubik-cube/pattern.css",
     "renderScript": "public/vendor/rubik-cube/pattern.js",
     "defaultPreset": "pangu-pro-moe (tp8 · pp5 · dp100 · ep2 = 4000 rank)",
-    "designSystem": "PTO Design System · https://github.com/yinyucheng0601/pto-design-system（dark-first · 无 emoji · 图标为内联 SVG · 数字用 mono · 控件复用 .panel-shell/.btn/.stat-chip）"
+    "designSystem": "PTO Design System · https://github.com/yinyucheng0601/pto-design-system（dark-first · 无 emoji · 图标为内联 SVG · 数字用 mono · 控件复用 .panel-shell/.btn/.stat-chip）",
+    "publishedAt": [
+      "…/patterns/rubik-cube-logical/pattern.html —— 规范位置：pattern.css/js/json 同级，可直接 <script src> 复用",
+      "…/rubik/ —— 早先的短链接，保持可用"
+    ]
   },
   "useWhen": [
     "需要把大规模训练/推理集群的 rank 按并行维（TP/PP/DP/EP）重排，用「形状」回答谁和谁一组",
@@ -39,7 +43,8 @@
     "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "handle.scene / handle.camera —— 只读 Three.js 挂点：宿主联动与自动化校验用（scripts/verify-rubik-cube.mjs 据此断言连线端点落在卡心）",
-    "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
+    "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }",
+    "URL 参数（rubik-pattern.html）：mode / view / tp,pp,dp,ep / color / anom / phase|t / play / sel / theme / v(版本戳，页面忽略) —— 链接即状态，发出去对方打开就是那一屏"
   ],
   "layoutRules": [
     "① 卡块尺寸恒定（CARD）：换形态、换配置都不改变一张卡的大小；卡块几何与取景留白同源于它",
