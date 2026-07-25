@@ -534,8 +534,8 @@
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
     const peerMeshes = peerDims.map((d) => {
       const m = new THREE.InstancedMesh(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.26, CARD.y * 1.26, CARD.z * 1.26)),
-        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.9, depthTest: false }), PEER_MAX);
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.12, CARD.y * 1.12, CARD.z * 1.12)),
+        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.75, depthTest: false }), PEER_MAX);
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
     });
@@ -583,9 +583,10 @@
         if (!path || path.pts.length < 2) { m.visible = false; return; }
         const lane = Math.floor(i / moverPaths.length);
         m.position.copy(pointOnPath(path.pts, half + (i % moverPaths.length) * 0.0 + lane * 0.37));
-        // 图元库的三层结构里，跑的是「暗点」而不是彩色点：取 --foreground（明暗主题
-        // 各自与底色对比最强的那个色），于是点在任何线色上都看得见，也不喧宾夺主。
-        m.material.color.set(tokHex('--foreground'));
+        // 图元库的三层结构里跑的是「暗点」而不是彩色点。但 --foreground 在浅色主题下
+        // 接近纯黑，压在淡色卡阵上太重 → 用次级前景色，并把不透明度降到 0.78。
+        m.material.color.set(tokHex('--foreground-secondary'));
+        m.material.opacity = 0.78;
         m.visible = true;
       });
     }
@@ -1175,7 +1176,7 @@
         const on = curDim === d;
         // 线要细：一屏可能同时有四维的走线，管壁按卡宽的 1/12 起算，主导维再粗一档。
         const op = on ? 0.95 : 0.45, rad = (on ? 1.2 : 0.8) * CARD.x * 0.085;
-        mesh.material.opacity = on ? 0.95 : 0.5;
+        mesh.material.opacity = on ? 0.8 : 0.35;
         const segs = edgesOf(d, members);
         const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
         if (S.wire.lines) {
