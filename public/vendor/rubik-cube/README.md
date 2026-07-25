@@ -78,9 +78,10 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
    会把顶视与轴测拉成长条（例：100 副本 → 5 列 × 20 行，而不是 10×10）。
    **网格自己说明轴的语义、也承担强调**：一根轴的格边界线用这一维的签名色画
    （标准：X=TP 青 · Y=PP 橙 · Z=DP 蓝；EP聚簇：X=EP 紫 · Z=域 蓝；PP流水：X=PP 橙），
-   所以不需要轴向箭头——原先每根轴外挂的「圆锥箭头」是 3D 建模工具的语汇，在这套正交
-   画面里既抢眼又与卡块语言不搭，已全部换成不带箭头的**轴脊细线**（只标范围），方向交给
-   文案与刻度（`L1（上）→L48（下）`、`S0→S4（左→右）`、`域0（近）→域N（远）`）。
+   所以**轴向不再画任何裸线**：原先每根轴外挂的「圆锥箭头」是 3D 建模工具的语汇，在这套
+   正交画面里既抢眼又与卡块语言不搭；改成的「轴脊细线」同样不行——散落在模型外的短线读者
+   认不出是什么，反而像画错的通信连线。两者都撤掉，方向交给刻度标与文案
+   （`L1（上）→L48（下）`、`S0→S4（左→右）`、`域0（近）→域N（远）`）。
    选中聚焦时网格整体提亮 1.6 倍（`applyGridEmphasis`）：卡退成背景，格子接手空间参照。
 6. **视角收编 + 折叠如实标注**：若某视角把「块维」和「块内维」同时折进视线、剩下的
    信息塌陷，则不给出该视角（并在视角行给出原因）。保留的视角一律用粒度贴士如实报出
@@ -144,8 +145,11 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   另有 **域轮廓**（把整组用线框包起来——切到对应形态时组 snap 成整块，轮廓直接画出
   「这一组在这种堆法下是什么形状」）与 **方向粒子**（沿此刻主导维的走线跑，进度 =
   阶段内进度，于是 Ring 的 RS→AG 两段跟着时间轴走完）。
-  **「连线」一排的五个图层——成员 / 通信线 / 域轮廓 / 粒子 / 聚焦——各自独立开关，可以全关**
-  （程序侧 `setWire({members,lines,outline,movers,focus})` / `setAlgo('auto'|'ring'|'tree')`）。
+  走线是**逐段直线**（不是样条：CatmullRom 会在控制点之间外扩成弧，成员散布时整条线从卡
+  旁边绕过去——「线没连到卡上」），对端高亮实例上限覆盖最大的通信域。
+  **「连线」一排的七个图层——成员 / 通信线 / 域轮廓 / 粒子 / 聚焦 / 物理线 / 物理框——各自
+  独立开关，可以全关**（程序侧 `setWire({members,lines,outline,movers,focus,phys,physbox})`
+  / `setAlgo('auto'|'ring'|'tree')`）。
   连线是「选中卡的通信域」，**没选卡就没有对象可画**：因此开图层时若还没选卡，会自动
   替你选一张居中的代表卡（否则按钮亮着、画面毫无变化，看上去像开关坏了），空态的提示
   文案也直说这一点；
@@ -159,11 +163,27 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   **TP 是唯一的例外**——它需要一个既不占用红黄绿（状态色专用）、又不与 DP 蓝 / EP 紫
   撞色的青，而上游色卡没有青族，故由本 pattern 提供 `--dim-tp`，**待回补上游**
   （同上游对 `.toggle-outline` 的处理方式）；
-- **着色透镜**（状态热力 / 按 TP·PP·DP·EP 分组）——图例跟着当前着色走：分组时列出
-  各组实际配色（组数超过色环时注明「同色非同组」），负载时给色带并标当前阶段，注入
-  异常时标出异常组是什么；维度签名色不画在卡上，故不进图例。与 **异常注入**（TP槽0 /
+- **着色透镜**（状态热力 / 按 TP·PP·DP·EP 分组 / 按主机·Pod 分组）——图例跟着当前着色
+  走：分组时列出各组实际配色（组数超过色环时注明「同色非同组」），负载时给色带并标当前
+  阶段，注入异常时标出异常组是什么；**压暗态也进图例**（剖面压暗 / 聚焦压暗，色块与卡块
+  共用同一个 `applyDim`，图例色 = 画面色）。维度签名色原本不画在卡上、故不进图例，但连线
+  开着时它们确实以线/盒/轮廓出现在画面里 → 图例单列「连线」一段（四维 × 集合原语，或物理
+  透镜下的三层链路色），画面上有什么颜色，图例就解释什么。与 **异常注入**（TP槽0 /
   PP级0 / DP副本0 / EP桶3）——「异常的形状」直接对应根因类别，HUD 同步给出
   「切到哪个形态 snap 成一块」的读图钥匙；
+- **物理落位（可选输入 `placement`）**：逻辑魔方只讲「谁和谁一组」，落位讲「谁和谁插在
+  一起」——两者重合得越多，通信越便宜。默认按 rank 连号装机（rank 编码本就是 TP 最内层，
+  TP 组因此天然落在同一台机内，与真实作业的 rank-to-node 映射一致），宿主可传
+  `{cardsPerHost, hostsPerPod}` 或 `slots`（rank→槽位任意映射）。三条读法：
+  - **着色 → 主机 / Pod**（rail 亲和）：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里；
+  - **连线 → 物理线**：同一条逻辑边**逐段**按实际跨越的链路层级着色——同机 UB
+    (`--highlight-ub-green-400`) / Pod 内跨机 rail (`--highlight-mte-amber-400`) /
+    跨 Pod Scale-Out (`--highlight-l0b-deep-violet-600`)，一个 Ring 因此自己交代它踩了
+    几次贵的那一跳；信息卡同时给出量：`此刻 DP 走线 16 段：Pod内 12 · 跨Pod 4`；
+  - **连线 → 物理框**：把选中卡所在的机与 Pod 在逻辑空间里框出来。
+  三者都在「连线」行独立开关（`setWire({phys,physbox})`、`setColorBy('host'|'pod')`、
+  `setPlacement({cardsPerHost,hostsPerPod})`）。链路层级色不占用红黄绿——红/黄在本
+  pattern 里是状态色（负载/异常）专用；
 - 每形态的「为什么这样摆」（CUBE_WHY）HUD 文案、明暗主题联动；
 - **每排控件行首的问号**（hover / 键盘聚焦弹出）：两个字的行名说不清「注入和着色是什么
   关系」这类问题，长文案又不该常驻工具栏 → 收进问号气泡（`HELP` 文案表）。其中把
@@ -176,12 +196,14 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 `createModel(config)` —— 纯布局/拓扑模型，无 Three.js 依赖（可单测、可被其他
 视图复用）：`posOf(rank, mode, out)`、`tpOf/ppOf/repOf/epOf/domOf`、
 `commGroup(rank, dim)`、`stageLayerRange(s)`、`boundsOf(mode)`、`modes` 元数据
-（含各形态正交视角的折叠维表）。
+（含各形态正交视角的折叠维表）；物理落位 `placement`、`hostOf/podOf`、
+`tierOf(a,b) → 'ub'|'rail'|'out'`、`hostMembers/podMembers`、`TIERS`。
 
 `mount(container, opts)` → handle：`setConfig({tp,pp,dp,ep,…})` / `setMode(0-4)` / `setView(0-3)` /
 `setSlice(on, val)` / `setColorBy('load'|'tp'|'pp'|'dp'|'ep')` /
 `setAnomaly(...)` / `select(rank)` / `setTime(t | {phase:'TP'|'PP'|'EP'|'DP'})` /
-`setWire({members,lines,outline,movers,focus})` / `setAlgo('auto'|'ring'|'tree')` /
+`setWire({members,lines,outline,movers,focus,phys,physbox})` / `setAlgo('auto'|'ring'|'tree')` /
+`setPlacement({cardsPerHost,hostsPerPod,slots})` /
 `setTheme('dark'|'light')` / `setPlaying(bool)` / `resize()` / `destroy()`；
 只读：`handle.model`、`handle.state`、`handle.phases`。
 opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接管）, onSelect }`。

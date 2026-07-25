@@ -118,6 +118,14 @@
 
   /* 维度签名色的 token 映射（PP/DP/EP 在色卡里有精确对应，TP 见上文说明） */
   const DIM_TOKEN = { TP: '--dim-tp', PP: '--warning', DP: '--primary', EP: '--highlight-l0a-violet-400' };
+  /* 物理链路层级色（B 档）：同机 UB 用色卡里的 ub-green（名字与语义天然对上），
+     Pod 内 rail 用 mte-amber，跨 Pod 用 l0b-deep-violet——三者都不与四维签名色撞。
+     不用红黄绿是因为红/黄在本 pattern 里是状态色（负载/异常）专用。 */
+  const TIER_TOKEN = {
+    ub: '--highlight-ub-green-400',
+    rail: '--highlight-mte-amber-400',
+    out: '--highlight-l0b-deep-violet-600',
+  };
   // 分组着色调色板：highlight 六族 400 档 → 再接 600 档（相邻组尽量不同族，色相差最大）
   const GROUP_TOKENS = [
     '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
@@ -186,6 +194,31 @@
     const rankOf = (tp, pp, rep) => (rep * PP + pp) * TP + tp;
     const stageLayerRange = (s) => ({ lo: s * LPS + 1, hi: Math.min(C.layers, (s + 1) * LPS) });
     const expRange = (e) => 'E' + (e * EXP_PER) + '-' + (e * EXP_PER + EXP_PER - 1);
+
+    /* ── 物理落位（可选输入）：逻辑 rank → 装在哪台机、哪个 Pod ──────────────
+       逻辑魔方本身只讲「谁和谁一组」，不讲「谁和谁插在一起」。给出落位后，同一条
+       逻辑边就能标出它实际跨了哪层链路：
+         同机  → UB（节点内全互联，带宽最高、延迟最低）
+         同 Pod 跨机 → Pod 内 rail / Scale-Up
+         跨 Pod → Scale-Out（最贵的一跳）
+       默认按 rank 连号装机（rank 编码本就是 TP 最内层 → TP 组自然落在同一台机内，
+       与真实作业的 rank-to-node 映射一致）。宿主可用 placement 覆盖每机卡数/每 Pod
+       机数，或直接给 slots 数组做任意映射。 */
+    const PLC = Object.assign({ cardsPerHost: 8, hostsPerPod: 32 }, C.placement || {});
+    const CPH = Math.max(1, PLC.cardsPerHost | 0);          // 每台机的卡数
+    const HPP = Math.max(1, PLC.hostsPerPod | 0);           // 每个 Pod 的机数
+    const CPP = CPH * HPP;                                  // 每个 Pod 的卡数
+    const slotOf = (r) => (PLC.slots && PLC.slots[r] != null ? PLC.slots[r] | 0 : r);
+    const hostOf = (r) => (slotOf(r) / CPH) | 0;
+    const podOf = (r) => (slotOf(r) / CPP) | 0;
+    const HOSTS = Math.ceil(N / CPH), PODS = Math.ceil(N / CPP);
+    // 一条逻辑边实际跨了哪层链路
+    const TIERS = [
+      { key: 'ub', lab: '同机 UB', note: '节点内全互联 · 最快' },
+      { key: 'rail', lab: 'Pod 内跨机', note: 'rail / Scale-Up' },
+      { key: 'out', lab: '跨 Pod', note: 'Scale-Out · 最贵的一跳' },
+    ];
+    const tierOf = (a, b) => (hostOf(a) === hostOf(b) ? 'ub' : podOf(a) === podOf(b) ? 'rail' : 'out');
 
     // 居中偏移
     const cT = (TP - 1) / 2, cP = (PP - 1) / 2, cR = (REP - 1) / 2,
@@ -341,6 +374,11 @@
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
+      // 物理落位
+      placement: { cardsPerHost: CPH, hostsPerPod: HPP, cardsPerPod: CPP, hosts: HOSTS, pods: PODS },
+      hostOf, podOf, tierOf, TIERS,
+      hostMembers: (r) => { const h = hostOf(r), out = []; for (let i = 0; i < N; i++) if (hostOf(i) === h) out.push(i); return out; },
+      podMembers: (r) => { const p = podOf(r), out = []; for (let i = 0; i < N; i++) if (podOf(i) === p) out.push(i); return out; },
       hotBuckets: new Set((C.hotBuckets || []).filter((e) => e < EP)),
     };
   }
@@ -362,13 +400,14 @@
       mode: opts.mode | 0,
       view: 0,                       // 0=轴测 · 1=顶 · 2=前 · 3=侧
       sliceOn: false, sliceVal: 0,   // 正交剖面：单层查看被折叠的深度维
-      colorBy: 'load',               // load | tp | pp | dp | ep
+      colorBy: 'load',               // load | tp | pp | dp | ep | host | pod（后两个 = 物理落位透镜）
       anom: 'none',                  // none | tp | pp | dp | ep（异常注入 → 「异常的形状」）
       playing: true,
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
-      // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗
-      wire: { members: true, lines: true, outline: true, movers: true, focus: true },
+      // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗；
+      // phys=走线按实际跨越的物理层级着色；physbox=选中卡所在机/Pod 的边界轮廓
+      wire: { members: true, lines: true, outline: true, movers: true, focus: true, phys: false, physbox: false },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
@@ -392,6 +431,7 @@
     }
     const tokHex = (key, fallback) => { const c = tokRGB(key, fallback); return '#' + hex2(c.r) + hex2(c.g) + hex2(c.b); };
     const dimc = (d) => tokHex(DIM_TOKEN[d]);
+    const tierc = (k) => tokHex(TIER_TOKEN[k]);          // 物理链路层级色（同机 / Pod 内 / 跨 Pod）
     const groupColor = (i) => tokHex(GROUP_TOKENS[i % GROUP_TOKENS.length]);
 
     /* ── DOM 骨架 ── */
@@ -409,6 +449,7 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
+        '  <div class="prc-row prc-row-phys"><span class="prc-lab">物理</span></div>',
         '</div>',
         '<div class="prc-hud panel-shell"></div>',
         '<div class="prc-pill stat-chip"></div>',
@@ -495,6 +536,16 @@
       const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
       const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.6, depthTest: false });
       const box = new THREE.LineSegments(geo, mat);
+      box.renderOrder = 6; box.visible = false; scene.add(box);
+      return box;
+    });
+    /* 物理边界轮廓（B 档）：把选中卡所在的「一台机 / 一个 Pod」在逻辑空间里框出来。
+       逻辑魔方讲的是谁和谁一组，这两个框讲的是谁和谁插在一起——两者重合得越多，
+       通信越便宜。框色 = 该层链路色（同机 UB 绿 / Pod 内 amber）。 */
+    const physBoxes = ['ub', 'rail'].map((k) => {
+      const box = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+        new THREE.LineBasicMaterial({ color: new THREE.Color(tierc(k)), transparent: true, opacity: k === 'ub' ? 0.85 : 0.45, depthTest: false }));
       box.renderOrder = 6; box.visible = false; scene.add(box);
       return box;
     });
@@ -841,8 +892,11 @@
         return loadColor(0.16 + rng(r * 3.1) * 0.1);
       }
       if (S.colorBy !== 'load') {
+        // 逻辑分组（TP/PP/DP/EP）与物理分组（主机 / Pod）用同一套分组色环：
+        // 「按主机着色」正是看逻辑组与物理落位的亲和度——同色连成块 = 这一组正好装在一台机里。
         const g = S.colorBy === 'tp' ? model.tpOf(r) : S.colorBy === 'pp' ? model.ppOf(r)
-          : S.colorBy === 'dp' ? model.repOf(r) : model.epOf(r);
+          : S.colorBy === 'dp' ? model.repOf(r) : S.colorBy === 'host' ? model.hostOf(r)
+            : S.colorBy === 'pod' ? model.podOf(r) : model.epOf(r);
         return cTmp.set(groupColor(g));
       }
       return loadColor(load01(r));
@@ -988,21 +1042,20 @@
       if (d === 'EP' || d === 'PP') return d === 'EP' ? 'a2a' : 'chain';
       return S.algo === 'tree' ? 'tree' : 'ring';        // auto/ring → Ring AllReduce
     }
-    // 一个域的「走线」：返回若干条折线（世界坐标点数组）——粒子也沿这些折线跑
-    function edgesOf(d, members, gp) {
-      const P = members.map(gp), out = [];
-      const algo = algoOf(d);
-      if (algo === 'chain') { out.push(P); return out; }                     // PP 接力链
-      if (algo === 'ring') { out.push(P.concat([P[0]])); return out; }        // Ring：闭合成环
+    /* 一个域的「走线」：返回若干条 rank 折线（不是坐标——每一段要知道两端是谁，
+       才能判断它实际跨了哪层物理链路）。粒子沿同样的折线跑。 */
+    function edgesOf(d, members) {
+      const out = [], algo = algoOf(d);
+      if (algo === 'chain') { out.push(members.slice()); return out; }        // PP 接力链
+      if (algo === 'ring') { out.push(members.concat([members[0]])); return out; }   // Ring：闭合成环
       if (algo === 'tree') {                                                 // Tree：二叉树边
-        for (let i = 1; i < P.length; i++) out.push([P[(i - 1) >> 1], P[i]]);
+        for (let i = 1; i < members.length; i++) out.push([members[(i - 1) >> 1], members[i]]);
         return out;
       }
-      const self = gp(S.sel);                                                // AllToAll
-      if (P.length <= A2A_MESH_MAX) {
-        for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) out.push([P[i], P[j]]);
-      } else {
-        P.forEach((p) => { if (!p.equals(self)) out.push([self, p]); });
+      if (members.length <= A2A_MESH_MAX) {                                  // AllToAll：全连
+        for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) out.push([members[i], members[j]]);
+      } else {                                                               // 成员多 → 退化成星形
+        members.forEach((r) => { if (r !== S.sel) out.push([S.sel, r]); });
       }
       return out;
     }
@@ -1012,9 +1065,22 @@
       peerMeshes.forEach((m) => { m.count = 0; m.visible = false; });
       moverPaths = [];
       outlineBoxes.forEach((o) => { o.visible = false; });
+      physBoxes.forEach((o) => { o.visible = false; });
       buildRelSet();               // 关联集合与连线同源：谁被画成对端，谁就不被聚焦压暗
       if (S.sel == null) return;
       const gp = (r) => V3(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
+      if (S.wire.physbox) {
+        const fit = (box, ranks, pad) => {
+          const bb = new THREE.Box3();
+          ranks.forEach((r) => bb.expandByPoint(gp(r)));
+          bb.expandByScalar(pad);
+          const size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
+          box.scale.set(Math.max(size.x, 0.01), Math.max(size.y, 0.01), Math.max(size.z, 0.01));
+          box.position.copy(ctr); box.visible = true;
+        };
+        fit(physBoxes[0], model.hostMembers(S.sel), CARD.x * 0.62);
+        if (model.placement.pods > 1) fit(physBoxes[1], model.podMembers(S.sel), CARD.x * 0.95);
+      }
       const curDim = PHASES[phaseIdx()].dim;
       peerDims.forEach((d, di) => {
         const members = model.commGroup(S.sel, d);
@@ -1027,9 +1093,21 @@
         const on = curDim === d;
         const op = on ? 0.95 : 0.55, rad = (on ? 1.15 : 0.85) * (d === 'TP' ? 0.1 : 0.07);
         mesh.material.opacity = on ? 0.5 : 0.32;
-        const segs = edgesOf(d, members, gp);
-        if (S.wire.lines) segs.forEach((pts) => commLine(pts, colorHex, op, rad));
-        if (on) moverPaths = segs.map((pts) => ({ pts, color: colorHex }));   // 粒子只跑「此刻」这一维
+        const segs = edgesOf(d, members);
+        const paths = segs.map((rs) => rs.map(gp));
+        if (S.wire.lines) {
+          if (S.wire.phys) {
+            // 物理透镜：同一条逻辑边逐段按「实际跨了哪层链路」着色——同机 UB / Pod 内
+            // rail / 跨 Pod。一个 Ring 因此会在颜色上自己交代它踩了几次贵的那一跳。
+            segs.forEach((rs) => {
+              for (let i = 1; i < rs.length; i++) {
+                const th = new THREE.Color(tierc(model.tierOf(rs[i - 1], rs[i]))).getHex();
+                commLine([gp(rs[i - 1]), gp(rs[i])], th, op, rad);
+              }
+            });
+          } else paths.forEach((pts) => commLine(pts, colorHex, op, rad));
+        }
+        if (on) moverPaths = paths.map((pts) => ({ pts, color: colorHex }));   // 粒子只跑「此刻」这一维
         // 域轮廓：把这一组的成员用一个线框包起来——切到对应形态时组会 snap 成整块，
         // 轮廓于是直接画出「这一组在这种堆法下是什么形状」（对齐驾驶舱 COMM 镜头的域轮廓）
         if (S.wire.outline) {
@@ -1099,8 +1177,10 @@
         parts.push(`<b>卡块着色</b>`, `<span class="prc-ramp"><i></i>负载 低→高 · 当前阶段 ${esc(PHASES[phaseIdx()].id)}</span>`);
       } else {
         const key = S.colorBy;
-        const n = key === 'tp' ? TP : key === 'pp' ? PP : key === 'dp' ? REP : EP;
-        const lab = { tp: 'TP', pp: 'PP', dp: 'DP副本', ep: 'EP桶' }[key];
+        const pl = model.placement;
+        const n = key === 'tp' ? TP : key === 'pp' ? PP : key === 'dp' ? REP
+          : key === 'host' ? pl.hosts : key === 'pod' ? pl.pods : EP;
+        const lab = { tp: 'TP', pp: 'PP', dp: 'DP副本', ep: 'EP桶', host: '主机', pod: 'Pod' }[key];
         const MAXC = 8, shown = Math.min(n, MAXC);
         parts.push(`<b>卡块着色 · 按 ${esc(lab)} 分组</b>`);
         for (let i = 0; i < shown; i++) parts.push(chip(groupColor(i), `${lab}${i}`));
@@ -1121,11 +1201,22 @@
         if (on.length) {
           const cur = PHASES[phaseIdx()].dim;
           parts.push(`<b>连线 · ${esc(on.join('/'))}</b>`);
-          peerDims.forEach((dm) => {
-            const algo = dm === 'EP' ? 'AllToAll' : dm === 'PP' ? 'P2P 链'
-              : `AllReduce ${S.algo === 'tree' ? 'Tree' : 'Ring'}`;
-            parts.push(chip(dimc(dm), `${dm} ${algo}${dm === cur ? '（此刻主导 · 加亮 + 粒子）' : ''}`));
-          });
+          if (S.wire.phys && S.wire.lines) {
+            // 物理透镜开着时走线不再按维着色 → 图例必须换成物理层级色，否则对不上画面
+            model.TIERS.forEach((t) => parts.push(chip(tierc(t.key), `${t.lab}（${t.note}）`)));
+            parts.push(`<span class="prc-dim">线色 = 该段跨越的链路层级 · 盒/轮廓仍按维</span>`);
+          } else {
+            peerDims.forEach((dm) => {
+              const algo = dm === 'EP' ? 'AllToAll' : dm === 'PP' ? 'P2P 链'
+                : `AllReduce ${S.algo === 'tree' ? 'Tree' : 'Ring'}`;
+              parts.push(chip(dimc(dm), `${dm} ${algo}${dm === cur ? '（此刻主导 · 加亮 + 粒子）' : ''}`));
+            });
+          }
+        }
+        if (S.wire.physbox) {
+          parts.push(`<b>物理边界</b>`,
+            chip(tierc('ub'), `这张卡所在的机（${model.placement.cardsPerHost} 卡）`),
+            chip(tierc('rail'), `所在 Pod（${model.placement.cardsPerPod} 卡）`));
         }
       }
       lg.innerHTML = parts.join('');
@@ -1140,7 +1231,25 @@
         `<span style="color:${dimc('PP')}">PP${st}（S${st}·L${lr.lo}-${lr.hi}）</span> · ` +
         `<span style="color:${dimc('DP')}">DP副本${model.repOf(r)}</span>` +
         `<br><span style="color:${dimc('EP')}">EP桶${e}（${model.expRange(e)}）· A2A域${model.domOf(r)}</span>` +
-        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导 · 再点空白处取消</span>`;
+        `<br><span style="color:${tierc('ub')}">机${model.hostOf(r)}</span> · ` +
+        `<span style="color:${tierc('rail')}">Pod${model.podOf(r)}</span>` +
+        `<span class="prc-dim">（${model.placement.cardsPerHost} 卡/机 · ${model.placement.hostsPerPod} 机/Pod）</span>` +
+        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导 · 再点空白处取消</span>` +
+        (S.wire.phys ? physTally(r) : '');
+    }
+
+    /* 物理透镜开着时，把「此刻这一维的走线各跨了哪层」数出来——颜色给的是分布，
+       这一行给的是代价的量级（跨 Pod 的段越多，这次集合越贵）。 */
+    function physTally(r) {
+      const d = PHASES[phaseIdx()].dim;
+      const segs = edgesOf(d, model.commGroup(r, d));
+      const cnt = { ub: 0, rail: 0, out: 0 };
+      segs.forEach((rs) => { for (let i = 1; i < rs.length; i++) cnt[model.tierOf(rs[i - 1], rs[i])]++; });
+      const tot = cnt.ub + cnt.rail + cnt.out;
+      if (!tot) return '';
+      const one = (k, lab) => (cnt[k] ? `<span style="color:${tierc(k)}">${lab} ${cnt[k]}</span>` : '');
+      return `<br><span class="prc-dim">此刻 ${d} 走线 ${tot} 段：</span> ` +
+        [one('ub', '同机'), one('rail', 'Pod内'), one('out', '跨Pod')].filter(Boolean).join(' · ');
     }
 
     /* ── 工具栏 ── */
@@ -1163,7 +1272,8 @@
       lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」。',
       anom: '<b>注入 = 假装某一维出故障，看它长什么形状。</b>与着色的关系：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。<br>用法：注入 EP桶3 → 标准形态下是一圈周期条带，切到「EP聚簇」就 snap 成一整面墙——这就是「热点桶」的形状。',
       wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。',
-      time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱）：TP 前向 AllReduce → PP 阶段接力 → EP MoE AllToAll 浪涌 → DP 梯度 AllReduce。热力着色与方向粒子都跟着阶段走；轨道可拖拽定位，Play/Pause 控制自动推进。',
+      time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱），走的是哪层总线也不同：<br>· <b>TP</b> 前向 AllReduce —— 节点内 UB · 高频<br>· <b>PP</b> 阶段接力 Send/Recv —— Pod 内跨 Host · 中频<br>· <b>EP</b> MoE AllToAll 浪涌 —— Pod 内全互联 · 浪涌<br>· <b>DP</b> 梯度 AllReduce —— 跨 Pod Scale-Out · 低频大包<br>热力着色与方向粒子都跟着阶段走；轨道可拖拽定位（悬停某段看它是什么），Play/Pause 控制自动推进。当前阶段常驻在左下 HUD 的「此刻」一行。',
+      phys: '<b>物理 = 这些卡实际插在哪。</b>逻辑魔方只讲「谁和谁一组」，落位讲的是「谁和谁插在一起」——两者重合得越多，通信越便宜。默认按 rank 连号装机（rank 编码本就是 TP 最内层，所以 TP 组自然落在同一台机里）。配上落位后可以：<br>· <b>着色 → 主机 / Pod</b>：同色连成块 = 这一组正好装在一台机/一个 Pod 里（rail 亲和度）；<br>· <b>连线 → 物理线</b>：同一条逻辑边逐段按实际跨越的链路着色——<b>同机 UB</b>（绿）/ <b>Pod 内跨机 rail</b>（琥珀）/ <b>跨 Pod Scale-Out</b>（深紫），一个 Ring 因此自己交代它踩了几次贵的那一跳；<br>· <b>连线 → 物理框</b>：把选中卡所在的机与 Pod 在逻辑空间里框出来。<br>程序侧还可用 placement.slots 传任意 rank→槽位映射。',
       cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
     };
     function helpDot(key) {
@@ -1189,20 +1299,32 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
+    let physInputs = null, physRead = null;
     let wireBtns = [], algoBtns = [], wireNote2 = null;
-    let timeTrack = null, timeHead = null, timeLab = null, viewNote = null;
+    let timeTrack = null, timeHead = null, viewNote = null;
     function syncTimeUI() {
       if (!timeTrack) return;
       const pi = phaseIdx();
       timeTrack.querySelectorAll('.prc-pseg').forEach((el, i) => el.classList.toggle('on', i === pi));
       timeHead.style.left = (S.t * 100) + '%';
-      timeLab.innerHTML = `<b>${esc(PHASES[pi].name)}</b> <span class="prc-dim">${esc(PHASES[pi].bus)}</span>`;
+      // 阶段名/总线不再挂在时间行：文案长度随阶段变化，会把整排挤成两行、上下跳动。
+      // 常驻位置交给左下 HUD 的「此刻」一行，解释交给行首问号，轨道段自己带 title。
     }
     // 「并行」输入排：TP/PP/DP/EP 任意填数 → setConfig 整体重建魔方（回车或「应用」提交）
     function applyCfg() {
       if (!cfgInputs) return;
       const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
       if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
+    }
+    function applyPhys() {
+      if (!physInputs) return;
+      api.setPlacement({ cardsPerHost: +physInputs.cph.value, hostsPerPod: +physInputs.hpp.value });
+    }
+    function syncPhysUI() {
+      if (!physInputs) return;
+      const pl = model.placement;
+      physInputs.cph.value = pl.cardsPerHost; physInputs.hpp.value = pl.hostsPerPod;
+      physRead.textContent = `${N} 卡 = ${pl.hosts} 台机 / ${pl.pods} 个 Pod（每 Pod ${pl.cardsPerPod} 卡）`;
     }
     function syncCfgUI() {
       if (!cfgInputs) return;
@@ -1220,11 +1342,11 @@
         if (i > 0) b.textContent = md.viewLabels[i];
       });
       if (viewNote) { viewNote.textContent = md.note2d || ''; viewNote.style.display = md.note2d ? '' : 'none'; }
-      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep'];
+      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
       anomBtns.forEach((b, i) => b.classList.toggle('is-selected', anomKeys[i] === S.anom));
-      const wireKeys = ['members', 'lines', 'outline', 'movers', 'focus'];
+      const wireKeys = ['members', 'lines', 'outline', 'movers', 'focus', 'phys', 'physbox'];
       wireBtns.forEach((b, i) => b.classList.toggle('is-selected', !!S.wire[wireKeys[i]]));
       const algoKeys = ['auto', 'ring', 'tree'];
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
@@ -1256,7 +1378,8 @@
     if (opts.chrome !== false) {
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
       [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
-        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'], ['cfg', '.prc-row-cfg']]
+        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'],
+        ['cfg', '.prc-row-cfg'], ['phys', '.prc-row-phys']]
         .forEach(([k, sel]) => { const lab = $(sel + ' .prc-lab'); if (lab) lab.insertAdjacentElement('afterend', helpDot(k)); });
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
@@ -1269,7 +1392,8 @@
       sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
       sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
       rowViews.appendChild(sliceBox);
-      lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep']]
+      lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
+        ['主机', 'host'], ['Pod', 'pod']]
         .map(([t, k]) => rowLens.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
       // 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：播放/暂停 + 阶段轨道拖拽定位
       const rowTime = $('.prc-row-time');
@@ -1294,20 +1418,19 @@
       timeTrack.addEventListener('pointerdown', (ev) => { timeTrack.setPointerCapture(ev.pointerId); scrub(ev); });
       timeTrack.addEventListener('pointermove', (ev) => { if (ev.buttons & 1) scrub(ev); });
       rowTime.appendChild(timeTrack);
-      timeLab = document.createElement('span'); timeLab.className = 'prc-note';
-      rowTime.appendChild(timeLab);
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
-      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus']]
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'],
+        ['聚焦', 'focus'], ['物理线', 'phys'], ['物理框', 'physbox']]
         .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
           // 连线只在「选中一张卡」之后才有东西可画：开图层时若还没选卡，先替用户选一张
           // 居中的代表卡（否则按钮亮着、画面却毫无变化，看上去像开关坏了）。
-          if (S.sel == null && (S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers)) {
+          if (S.sel == null && (S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers || S.wire.physbox)) {
             api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1));
           }
-          else { rebuildComm(); refreshFocus(); syncChrome(); }
+          else { rebuildComm(); refreshFocus(); renderInfo(); syncChrome(); }
         })));
       rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
@@ -1336,6 +1459,22 @@
       //  · 128 卡小规格（单超节点量级）：tp2×pp4×dp16 = 128，EP8 折入 DP → 2 个 A2A 域。
       rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
       rowCfg.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
+      // 「物理」输入排：每机卡数 / 每 Pod 机数 → 决定每条逻辑边跨的是 UB / rail / 跨 Pod
+      const rowPhys = $('.prc-row-phys');
+      const mkPhys = (lab, w) => {
+        const wrap = document.createElement('span'); wrap.className = 'prc-cfgitem';
+        wrap.appendChild(Object.assign(document.createElement('span'), { textContent: lab }));
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.min = '1'; inp.step = '1'; if (w) inp.style.width = w;
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applyPhys(); });
+        wrap.appendChild(inp); rowPhys.appendChild(wrap);
+        return inp;
+      };
+      physInputs = { cph: mkPhys('每机卡'), hpp: mkPhys('每Pod机') };
+      { const b = chipBtn('Apply', applyPhys); b.classList.add('btn-solid'); rowPhys.appendChild(b); }
+      physRead = document.createElement('span'); physRead.className = 'prc-mono'; rowPhys.appendChild(physRead);
+      rowPhys.appendChild(chipBtn('8卡/机 · 32机/Pod', () => api.setPlacement({ cardsPerHost: 8, hostsPerPod: 32 })));
+      rowPhys.appendChild(chipBtn('16卡/机 · 24机/Pod', () => api.setPlacement({ cardsPerHost: 16, hostsPerPod: 24 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); renderLegend(); syncChrome(); }
 
@@ -1456,7 +1595,7 @@
         clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
         renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         refresh2D(); renderPill();
-        renderHud(); renderLegend(); renderInfo(); syncCfgUI();
+        renderHud(); renderLegend(); renderInfo(); syncCfgUI(); syncPhysUI();
         return { ok: true, ranks: model.N };
       },
       setMode(m) {
@@ -1502,7 +1641,14 @@
       setWire(w) {
         Object.assign(S.wire, w || {});
         if (!S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
-        rebuildComm(); refreshFocus(); syncChrome();
+        rebuildComm(); refreshFocus(); renderInfo(); syncChrome();
+      },
+      // 物理落位（B 档）：每机卡数 / 每 Pod 机数，或 slots 数组做任意 rank→槽位映射
+      setPlacement(pl) {
+        const keep = S.sel;        // 只是换装机方式，逻辑魔方没变 → 选中的卡不该被清掉
+        const res = api.setConfig({ placement: Object.assign({}, model.config.placement, pl || {}) });
+        if (res.ok) { syncPhysUI(); if (keep != null && keep < model.N) api.select(keep); }
+        return res;
       },
       setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); renderLegend(); syncChrome(); },
       // 定位到 step 内的某个位置（0→1）或某个阶段：t 可传 0..1，或 {phase:'EP'}
@@ -1534,7 +1680,7 @@
     }
     applySceneBg();
     resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
+    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncPhysUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }
