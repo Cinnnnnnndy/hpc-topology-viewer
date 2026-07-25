@@ -367,6 +367,10 @@
       playing: true,
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
+      // 连线图层（每项都可单独关闭）与集合算法
+      wire: { members: true, lines: true, outline: true, movers: true },
+      algo: 'auto',                  // auto（按维选原语）/ ring / tree
+
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -402,6 +406,7 @@
         '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
+        '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
@@ -481,6 +486,50 @@
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
     });
+    // 域轮廓：每维一个线框盒（把该组成员整体包起来），穿透方块可见
+    const outlineBoxes = peerDims.map((d) => {
+      const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+      const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.6, depthTest: false });
+      const box = new THREE.LineSegments(geo, mat);
+      box.renderOrder = 6; box.visible = false; scene.add(box);
+      return box;
+    });
+    // 方向粒子：沿「此刻主导维」的走线跑，进度 = 阶段内进度（Ring 前半 RS / 后半 AG）
+    const MOVERS = 10;
+    const moverGroup = new THREE.Group(); scene.add(moverGroup);
+    const moverMeshes = Array.from({ length: MOVERS }, () => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(CARD.x * 0.22, 8, 8),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthTest: false }));
+      m.renderOrder = 8; m.visible = false; moverGroup.add(m); return m;
+    });
+    let moverPaths = [];
+    // 折线上按参数 s∈[0,1) 取点
+    const _mv = new THREE.Vector3();
+    function pointOnPath(pts, s) {
+      if (pts.length < 2) return pts[0] || _mv.set(0, 0, 0);
+      let total = 0; const segLen = [];
+      for (let i = 1; i < pts.length; i++) { const l = pts[i].distanceTo(pts[i - 1]); segLen.push(l); total += l; }
+      if (total <= 0) return pts[0];
+      let want = (s - Math.floor(s)) * total;
+      for (let i = 0; i < segLen.length; i++) {
+        if (want <= segLen[i]) return _mv.copy(pts[i]).lerp(pts[i + 1], segLen[i] ? want / segLen[i] : 0);
+        want -= segLen[i];
+      }
+      return pts[pts.length - 1];
+    }
+    function updateMovers() {
+      if (!S.wire.movers || !moverPaths.length) { moverMeshes.forEach((m) => { m.visible = false; }); return; }
+      const u = phaseU(), half = u < 0.5 ? u * 2 : (u - 0.5) * 2;   // Ring：RS 段跑一圈，AG 段再跑一圈
+      moverMeshes.forEach((m, i) => {
+        const path = moverPaths[i % moverPaths.length];
+        if (!path || path.pts.length < 2) { m.visible = false; return; }
+        const lane = Math.floor(i / moverPaths.length);
+        m.position.copy(pointOnPath(path.pts, half + (i % moverPaths.length) * 0.0 + lane * 0.37));
+        m.material.color.set(path.color);
+        m.visible = true;
+      });
+    }
+
     // 通信线（TubeGeometry 曲线 + 标签）——穿透方块可见
     const commGroupG = new THREE.Group(); scene.add(commGroupG);
     function clearComm() {
@@ -880,30 +929,78 @@
     }
 
     /* ── 通信组重建（选中 rank → 四维对端 + 连线 + 标签）── */
+    /* 集合原语的数据流（对齐驾驶舱「算法展开」）：一个通信域按什么算法收发，就画什么形状。
+         TP / DP = AllReduce → Ring（成环，前半程 ReduceScatter、后半程 AllGather）或 Tree（二叉树）
+         PP      = P2P 接力  → 链
+         EP      = AllToAll  → 域内互发（成员少画全连，多则退化成星形，避免边数爆炸）
+       S.algo='auto' 时按上表选，也可强制 ring / tree。 */
+    const A2A_MESH_MAX = 10;
+    function primOf(d) { return d === 'EP' ? 'AllToAll' : d === 'PP' ? 'P2P' : 'AllReduce'; }
+    function algoOf(d) {
+      if (d === 'EP' || d === 'PP') return d === 'EP' ? 'a2a' : 'chain';
+      return S.algo === 'tree' ? 'tree' : 'ring';        // auto/ring → Ring AllReduce
+    }
+    // 一个域的「走线」：返回若干条折线（世界坐标点数组）——粒子也沿这些折线跑
+    function edgesOf(d, members, gp) {
+      const P = members.map(gp), out = [];
+      const algo = algoOf(d);
+      if (algo === 'chain') { out.push(P); return out; }                     // PP 接力链
+      if (algo === 'ring') { out.push(P.concat([P[0]])); return out; }        // Ring：闭合成环
+      if (algo === 'tree') {                                                 // Tree：二叉树边
+        for (let i = 1; i < P.length; i++) out.push([P[(i - 1) >> 1], P[i]]);
+        return out;
+      }
+      const self = gp(S.sel);                                                // AllToAll
+      if (P.length <= A2A_MESH_MAX) {
+        for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) out.push([P[i], P[j]]);
+      } else {
+        P.forEach((p) => { if (!p.equals(self)) out.push([self, p]); });
+      }
+      return out;
+    }
+
     function rebuildComm() {
       clearComm();
       peerMeshes.forEach((m) => { m.count = 0; m.visible = false; });
+      moverPaths = [];
+      outlineBoxes.forEach((o) => { o.visible = false; });
       if (S.sel == null) return;
       const gp = (r) => V3(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
+      const curDim = PHASES[phaseIdx()].dim;
       peerDims.forEach((d, di) => {
         const members = model.commGroup(S.sel, d);
         const mesh = peerMeshes[di];
         let n = 0;
         members.forEach((r) => { if (r !== S.sel && n < PEER_MAX) { dummy.position.copy(gp(r)); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); mesh.setMatrixAt(n++, dummy.matrix); } });
-        mesh.count = n; mesh.visible = n > 0; mesh.instanceMatrix.needsUpdate = true;
+        mesh.count = n; mesh.visible = S.wire.members && n > 0; mesh.instanceMatrix.needsUpdate = true;
         const colorHex = new THREE.Color(dimc(d)).getHex();
-        const pts = members.map(gp);
-        // 当前阶段主导的维加亮加粗，其余淡显——四维通信组始终同屏，谁在此刻真正忙一眼可见
-        // 四维一律清晰可见（都是这张卡真实的通信组），当前阶段主导的那一维再加一档
-        // 亮度与粗细作为「此刻」的强调。对比不能拉太大——否则非主导维看着像没画出来。
-        const on = PHASES[phaseIdx()].dim === d;
+        // 当前阶段主导的那一维加一档亮度与粗细（四维一律清晰可见，只是主导维更亮）
+        const on = curDim === d;
         const op = on ? 0.95 : 0.55, rad = (on ? 1.15 : 0.85) * (d === 'TP' ? 0.1 : 0.07);
         mesh.material.opacity = on ? 0.5 : 0.32;
-        if (d === 'EP') { pts.forEach((p) => { if (!p.equals(gp(S.sel))) commLine([gp(S.sel), p], colorHex, op, rad * 0.9); }); }   // A2A 互发（星形）
-        else commLine(pts, colorHex, op, rad);   // TP 环 / PP 链 / DP 采样折线
+        const segs = edgesOf(d, members, gp);
+        if (S.wire.lines) segs.forEach((pts) => commLine(pts, colorHex, op, rad));
+        if (on) moverPaths = segs.map((pts) => ({ pts, color: colorHex }));   // 粒子只跑「此刻」这一维
+        // 域轮廓：把这一组的成员用一个线框包起来——切到对应形态时组会 snap 成整块，
+        // 轮廓于是直接画出「这一组在这种堆法下是什么形状」（对齐驾驶舱 COMM 镜头的域轮廓）
+        if (S.wire.outline) {
+          const box = outlineBoxes[di];
+          const bb = new THREE.Box3();
+          members.forEach((r) => bb.expandByPoint(gp(r)));
+          bb.expandByScalar(CARD.x * 0.75);
+          const size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
+          box.scale.set(Math.max(size.x, 0.01), Math.max(size.y, 0.01), Math.max(size.z, 0.01));
+          box.position.copy(ctr);
+          box.material.color.set(colorHex);
+          box.material.opacity = on ? 0.8 : 0.3;
+          box.visible = true;
+        }
       });
       const selP = gp(S.sel);
-      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP} · 加亮=此刻 ${PHASES[phaseIdx()].dim}`, tokHex('--foreground-secondary'), 7.6 * LS);
+      const ph = PHASES[phaseIdx()], u = phaseU();
+      const stage = primOf(ph.dim) === 'AllReduce' && algoOf(ph.dim) === 'ring'
+        ? `Ring ${u < 0.5 ? 'ReduceScatter' : 'AllGather'} 段` : primOf(ph.dim);
+      const lab = makeLabel(`此刻 ${ph.dim} · ${stage} · 其余三维为该卡的常在通信域`, tokHex('--foreground-secondary'), 7.6 * LS);
       lab.position.copy(selP.clone().add(V3(0, 2 + 1.2 * LS, 0))); lab.renderOrder = 7; commGroupG.add(lab);
     }
 
@@ -998,6 +1095,7 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
+    let wireBtns = [], algoBtns = [], wireNote2 = null;
     let timeTrack = null, timeHead = null, timeLab = null, viewNote = null;
     function syncTimeUI() {
       if (!timeTrack) return;
@@ -1032,6 +1130,13 @@
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
       anomBtns.forEach((b, i) => b.classList.toggle('is-selected', anomKeys[i] === S.anom));
+      const wireKeys = ['members', 'lines', 'outline', 'movers'];
+      wireBtns.forEach((b, i) => b.classList.toggle('is-selected', !!S.wire[wireKeys[i]]));
+      const algoKeys = ['auto', 'ring', 'tree'];
+      algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
+      if (wireNote2) wireNote2.textContent = S.sel == null
+        ? '选中一张卡后显示其四维通信域'
+        : `TP/DP=AllReduce(${S.algo === 'tree' ? 'Tree' : 'Ring'}) · PP=P2P 链 · EP=AllToAll`;
       if (playBtn) {
         playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
         playBtn.classList.toggle('is-selected', S.playing);
@@ -1088,6 +1193,19 @@
       rowTime.appendChild(timeTrack);
       timeLab = document.createElement('span'); timeLab.className = 'prc-note';
       rowTime.appendChild(timeLab);
+      // 连线图层：三个独立开关（都可关）+ 集合算法选择
+      const rowWire = $('.prc-row-wire');
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers']]
+        .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => {
+          S.wire[k] = !S.wire[k];
+          if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
+          rebuildComm(); syncChrome();
+        })));
+      rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
+      algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
+        .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); syncChrome(); })));
+      wireNote2 = document.createElement('span'); wireNote2.className = 'prc-note'; rowWire.appendChild(wireNote2);
+
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
       const rowCfg = $('.prc-row-cfg');
@@ -1202,6 +1320,7 @@
         box.visible = true; box.position.set(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
       };
       place(selBox, S.sel); place(hovBox, S.hover === S.sel ? null : S.hover);
+      updateMovers();
       applyCamera();
       renderer.render(scene, camera);
     }
@@ -1250,7 +1369,7 @@
       setAnomaly(k) { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); },
       select(r) {
         S.sel = r;
-        rebuildComm(); renderInfo();
+        rebuildComm(); renderInfo(); syncChrome();
         if (opts.onSelect) {
           opts.onSelect(r == null ? null : {
             rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
@@ -1271,6 +1390,9 @@
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
+      // 连线图层开关（可全关）与集合算法
+      setWire(w) { Object.assign(S.wire, w || {}); if (!S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; }); rebuildComm(); syncChrome(); },
+      setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); syncChrome(); },
       // 定位到 step 内的某个位置（0→1）或某个阶段：t 可传 0..1，或 {phase:'EP'}
       setTime(t) {
         const v = (t && typeof t === 'object' && t.phase)

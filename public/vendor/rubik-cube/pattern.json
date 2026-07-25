@@ -20,7 +20,8 @@
     "需要让异常的根因类别当场可见：注入某维异常后切到对应形态，异常组 snap 成一整块",
     "需要在同一屏同时呈现一张卡的多维身份（选中 rank → TP/PP/DP/EP 四个通信组同时高亮）",
     "需要按训练 step 的通信阶段（TP 前向 AllReduce / PP 接力 / EP AllToAll 浪涌 / DP 梯度 AllReduce）观察热力随时间迁移",
-    "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动"
+    "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动",
+    "需要看一个通信域按什么集合算法收发：Ring（前半 ReduceScatter / 后半 AllGather，方向粒子跟着阶段时间轴跑）/ Tree / P2P 链 / AllToAll，并用域轮廓看清该组在当前堆法下是什么形状"
   ],
   "requiredApis": [
     "window.PtoRubikCubePattern.createModel(config) → 纯布局/拓扑模型（无 Three.js 依赖）：posOf(rank, mode, out) / tpOf,ppOf,repOf,epOf,domOf / rankOf / commGroup(rank, dim) / stageLayerRange(stage) / boundsOf(mode) / modes / depthDims / depthIdxOf / CARD / SP",
@@ -30,6 +31,7 @@
     "handle.setColorBy('load'|'tp'|'pp'|'dp'|'ep') / handle.setAnomaly('none'|'tp'|'pp'|'dp'|'ep')",
     "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
+    "handle.setWire({members,lines,outline,movers}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关），算法决定 AllReduce 画成 Ring 还是 Tree",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
   ],

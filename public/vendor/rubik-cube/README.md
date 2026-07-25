@@ -131,8 +131,16 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   mte-amber / l0b-deep-violet）的 400 与 600 两档共 12 色循环 · 网格与外框 =
   `--border-default` / `--border-strong` · 字牌底 = `--surface-1`、描边 =
   `--border-strong`、字体 = `--font-sans` · 场景底 = `--background`；
-- 选中一张卡 → **TP/PP/DP/EP 四维通信组同屏高亮**（TP 环 / PP 链 / DP 采样 /
-  EP A2A 星形互发），随重排飞行跟随；签名色取自设计系统色卡：
+- 选中一张卡 → **TP/PP/DP/EP 四维通信组同屏高亮**，随重排飞行跟随。连线按
+  **集合原语的实际算法**画（对齐驾驶舱的「算法展开」）：TP/DP = AllReduce →
+  **Ring**（闭合成环，前半程 ReduceScatter、后半程 AllGather）或 **Tree**（二叉树，
+  工具栏可切）· PP = P2P **接力链** · EP = **AllToAll**（成员少画全连、多则退化为星形）。
+  另有 **域轮廓**（把整组用线框包起来——切到对应形态时组 snap 成整块，轮廓直接画出
+  「这一组在这种堆法下是什么形状」）与 **方向粒子**（沿此刻主导维的走线跑，进度 =
+  阶段内进度，于是 Ring 的 RS→AG 两段跟着时间轴走完）。
+  **「连线」一排的四个图层——成员 / 通信线 / 域轮廓 / 粒子——各自独立开关，可以全关**
+  （程序侧 `setWire({members,lines,outline,movers})` / `setAlgo('auto'|'ring'|'tree')`）。
+  签名色取自设计系统色卡：
   PP=`--warning` · DP=`--primary` · EP=`--highlight-l0a-violet-400`；
   **TP 是唯一的例外**——它需要一个既不占用红黄绿（状态色专用）、又不与 DP 蓝 / EP 紫
   撞色的青，而上游色卡没有青族，故由本 pattern 提供 `--dim-tp`，**待回补上游**
@@ -154,6 +162,7 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 `mount(container, opts)` → handle：`setConfig({tp,pp,dp,ep,…})` / `setMode(0-4)` / `setView(0-3)` /
 `setSlice(on, val)` / `setColorBy('load'|'tp'|'pp'|'dp'|'ep')` /
 `setAnomaly(...)` / `select(rank)` / `setTime(t | {phase:'TP'|'PP'|'EP'|'DP'})` /
+`setWire({members,lines,outline,movers})` / `setAlgo('auto'|'ring'|'tree')` /
 `setTheme('dark'|'light')` / `setPlaying(bool)` / `resize()` / `destroy()`；
 只读：`handle.model`、`handle.state`、`handle.phases`。
 opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接管）, onSelect }`。
