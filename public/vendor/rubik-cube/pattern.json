@@ -1,0 +1,58 @@
+{
+  "id": "rubik-cube-logical",
+  "name": "Logical Rubik Cube (逻辑魔方)",
+  "type": "renderer",
+  "description": "把同一批 rank 按不同并行轴「换一种堆法」的 3D 重排组件：五种形态（标准 / DP平铺 / EP聚簇 / TP切片 / PP流水）共享一套布局规则，切形态即换投影轴并以飞行动画重排；配轴标注、正交 2D 视角与剖面、四维通信组高亮、按训练 step 通信阶段驱动的状态热力、异常注入。并行度（TP/PP/DP/EP）可任意配置，布局由规则推导而非逐形态手调常量，任何数字都自动排布好。",
+  "source": {
+    "visualContract": [
+      "public/cube-cockpit.html 逻辑魔方（chipCubeM 五形态 / renderCubeAxes 轴标注 / ODEP 折叠维表 / CUBE_WHY 读图钥匙 / #cardGran 粒度贴士 / DIMHEX 维度签名色 / PHASES 通信阶段）",
+      "data/ascend-workload-pangu-moe.json parallel_mapping_runtime（盘古 Pro MoE 真实并行策略 TP8·EP2·PP5·4K NPU）",
+      "src/vendor/pto-tokens/*.css 语义 token（组件/字体/颜色与工作台同源）"
+    ],
+    "patternHtml": "public/rubik-pattern.html",
+    "patternCss": "public/vendor/rubik-cube/pattern.css",
+    "renderScript": "public/vendor/rubik-cube/pattern.js",
+    "defaultPreset": "pangu-pro-moe (tp8 · pp5 · dp100 · ep2 = 4000 rank)"
+  },
+  "useWhen": [
+    "需要把大规模训练/推理集群的 rank 按并行维（TP/PP/DP/EP）重排，用「形状」回答谁和谁一组",
+    "需要让异常的根因类别当场可见：注入某维异常后切到对应形态，异常组 snap 成一整块",
+    "需要在同一屏同时呈现一张卡的多维身份（选中 rank → TP/PP/DP/EP 四个通信组同时高亮）",
+    "需要按训练 step 的通信阶段（TP 前向 AllReduce / PP 接力 / EP AllToAll 浪涌 / DP 梯度 AllReduce）观察热力随时间迁移",
+    "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动"
+  ],
+  "requiredApis": [
+    "window.PtoRubikCubePattern.createModel(config) → 纯布局/拓扑模型（无 Three.js 依赖）：posOf(rank, mode, out) / tpOf,ppOf,repOf,epOf,domOf / rankOf / commGroup(rank, dim) / stageLayerRange(stage) / boundsOf(mode) / modes / depthDims / depthIdxOf / CARD / SP",
+    "window.PtoRubikCubePattern.mount(container, opts) → handle",
+    "handle.setConfig({tp,pp,dp,ep,layers,experts,hotBuckets}) → {ok} | {ok:false,error}",
+    "handle.setMode(0-4) / handle.setView(0-3) / handle.setSlice(on, val)",
+    "handle.setColorBy('load'|'tp'|'pp'|'dp'|'ep') / handle.setAnomaly('none'|'tp'|'pp'|'dp'|'ep')",
+    "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
+    "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
+    "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
+    "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
+  ],
+  "layoutRules": [
+    "① 卡块尺寸恒定（CARD）：换形态、换配置都不改变一张卡的大小；卡块几何与取景留白同源于它",
+    "② 单维轴步距 = CARD[轴] + 缝隙(成员数) × 层级倍率；缝隙按成员数分档（多则紧、少则松），层级倍率表达意图（dense / normal / spread / emph）",
+    "③ 复合轴（外维分块 + 内维紧邻）：外维步距 = 内维总跨度 + padOf(该跨度)，逐轴各算各的",
+    "④ 2D 可读性：任一正交视角下屏幕两轴最细步距之比 ≤ 4；块的内维在会退化成薄片时折成 2D（DP 平铺的板内 TP → 列×排），否则该视角只剩稀疏条纹",
+    "⑤ 网格线 = 结构边界（块中心 ± 半格），不按 rank 包围盒；分组行列数按世界跨度取近方形，而不是按数量取方阵",
+    "⑥ 视角收编：每个 2D 平面只属于一个形态；折叠如实标注（每格重叠卡数 = 各折叠维成员数之积）",
+    "不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝 → 任何并行度组合下永不重叠（已在 1 卡至 8192 卡、含退化与极端形状的配置上逐对验证）"
+  ],
+  "allowedOverrides": [
+    "并行度与工况：config 的 tp/pp/dp/ep、layers、experts、hotBuckets",
+    "初始形态 / 主题 / 是否显示自带工具栏（chrome:false 时由宿主接管，取景也不再为面板让位）",
+    "宿主通过 setMode/setView/setColorBy/setAnomaly/setTime/select* 驱动，或用 onSelect 反查 rank 的多维身份",
+    "容器外的排版与外框；页面级 token 覆盖（pattern 只消费语义 token，不写死颜色）"
+  ],
+  "forbiddenOverrides": [
+    "在宿主里逐形态手调间距常量：布局必须由 pattern.js 顶部的规则推导，改规则不改调用点",
+    "为了某个视角好看而改变卡块尺寸（卡块恒定是本 pattern 的读图前提）",
+    "把 EP 当作独立轴乘进 rank 数（EP 折入 DP 轴，只要求整除 dp）",
+    "复制渲染后的 DOM/几何到新页面，而不是调用 mount()",
+    "在正交 2D 里隐瞒折叠：每格重叠卡数必须如实呈现（粒度贴士），信息塌陷的视角应收编而不是硬给"
+  ],
+  "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
+}

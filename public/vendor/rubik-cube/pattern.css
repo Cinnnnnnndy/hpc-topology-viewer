@@ -141,3 +141,28 @@
 /* 时间轴：播放/暂停 + 可拖游标（状态热力的时间维） */
 .prc-row-time input[type="range"] { width: 190px; accent-color: var(--prc-btn-on); }
 .prc-timelab { font-size: 10.5px; font-family: var(--prc-mono); color: var(--prc-tx2); }
+
+/* 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：可拖拽定位 */
+.prc-phasetrack {
+  position: relative; display: flex; width: 260px; height: 18px;
+  border-radius: 5px; overflow: hidden; cursor: ew-resize;
+  border: 1px solid var(--prc-border); user-select: none;
+}
+.prc-pseg {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .5px;
+  color: var(--prc-tx2); opacity: .42; transition: opacity .25s;
+  border-right: 1px solid var(--prc-bg);
+}
+.prc-pseg:last-child { border-right: none; }
+.prc-pseg.on { opacity: 1; color: var(--prc-tx); }
+.prc-ph-TP { background: color-mix(in srgb, #39c5cf 26%, transparent); }
+.prc-ph-PP { background: color-mix(in srgb, #FFAA3B 26%, transparent); }
+.prc-ph-EP { background: color-mix(in srgb, #9B3CF6 24%, transparent); }
+.prc-ph-DP { background: color-mix(in srgb, #4369EF 24%, transparent); }
+.prc-playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  background: var(--prc-tx); opacity: .8;
+}
+.prc-legend .prc-sep { width: 1px; height: 12px; background: var(--prc-border); margin: 0 2px; }
+.prc-legend b { font-weight: 600; color: var(--prc-tx3); font-size: 10px; }

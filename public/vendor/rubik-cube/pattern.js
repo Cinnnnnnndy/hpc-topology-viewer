@@ -69,6 +69,18 @@
     EP: { dark: '#9B3CF6', light: '#6b2cba' },
     NT: { dark: '#c8d2dc', light: '#3f4c63' },   // 中性注释
   };
+  /* 一个训练 step 的通信阶段（与集群驾驶舱 cube-cockpit.html 的 PHASES 同一套语义）：
+     时间轴按阶段读，而不是抽象的秒——每个阶段由哪根并行轴主导、走哪层总线、负载多高
+     都不同，热力场因此随阶段变化（TP 组齐动 / PP 接力波沿流水级前进 / EP 浪涌点亮热点桶 /
+     DP 全网梯度）。 */
+  const PHASES = [
+    { id: 'TP', dim: 'TP', name: 'TP · 前向 AllReduce', bus: '节点内 UB · 高频', load: 0.92 },
+    { id: 'PP', dim: 'PP', name: 'PP · 阶段接力 Send/Recv', bus: 'Pod 内跨 Host · 中频', load: 0.45 },
+    { id: 'EP', dim: 'EP', name: 'EP · MoE AllToAll 浪涌', bus: 'Pod 内全互联 · 浪涌', load: 0.88 },
+    { id: 'DP', dim: 'DP', name: 'DP · 梯度 AllReduce', bus: '跨 Pod Scale-Out · 低频大包', load: 0.60 },
+  ];
+  const STEP_SEC = 12;                                       // 一个 step 的墙钟时长（每阶段 3s）
+
   // 分组着色透镜的循环调色板（组数可能 > 色数 → 取模循环）
   const GROUP_PALETTE = ['#39c5cf', '#FFAA3B', '#4369EF', '#9B3CF6', '#04D793', '#FF4B7B',
     '#f0883e', '#a5d6ff', '#d2a8ff', '#7ee787', '#ffa198', '#79c0ff', '#e3b341', '#56d364', '#ff7b72', '#8b949e'];
@@ -84,8 +96,42 @@
     const N = TP * PP * REP;              // rank 总数 = tp × pp × dp
     const LPS = Math.max(1, Math.round(C.layers / PP));            // 每段层数
     const EXP_PER = Math.max(1, Math.floor(C.experts / EP));       // 每桶专家数
-    // DP 平铺宫格：找到能整除副本数、最接近方形的列数
-    let COLS = Math.ceil(Math.sqrt(REP)); while (REP % COLS) COLS++;
+    // ── 轴步距（布局规则推导）──
+    const CY = 9;                                    // 逻辑体离地高度（各形态统一）
+    const tpStep = stepOf('x', TP);                  // 板 / 墙内 TP 列步距
+    const ppStep = stepOf('y', PP);                  // 板 / 墙内 PP 行步距
+    const blockW = TP * tpStep;                      // 一面墙的宽度（EP 聚簇：内维 TP 一字排开）
+    /* DP 平铺的「板」：把板内 TP 折成 (TPC 列 × TPD 排)，让板有厚度——一字排开的板
+       只有 1 张卡厚，在顶视/侧视里都退化成稀疏条纹。取「宽 ≥ 深」且世界跨度最接近
+       方形的分法（TP=8 → 4×2 · TP=16 → 4×4 · TP=2 → 2×1）。 */
+    const tpStepZ = stepOf('z', TP);                 // 板内 TP「排」的纵深步距
+    const TPC = (() => {
+      const ideal = Math.sqrt(TP * tpStepZ / tpStep), lo = Math.sqrt(TP) - 1e-9;
+      let best = TP, err = Infinity;
+      for (let c = 1; c <= TP; c++) {
+        if (TP % c || c < lo) continue;              // 只取宽 ≥ 深的分法，保住「板」的横向读法
+        const e = Math.abs(Math.log(c / ideal));
+        if (e < err) { err = e; best = c; }
+      }
+      return best;
+    })();
+    const TPD = TP / TPC;
+    // 分块格距统一用同一条公式：「块在该轴的跨度 + padOf(该跨度)」，逐轴各算各的。
+    const dptBlockW = TPC * tpStep, dptBlockD = TPD * tpStepZ;
+    const dptCellX = dptBlockW + padOf(dptBlockW);
+    const dptCellZ = clampFor2D(dptBlockD + padOf(dptBlockD), 'z', tpStep, ppStep);
+    // 宫格行列数：按「世界跨度近方形」取，而不是按数量取方阵——板是宽而薄的
+    // （列距 ≫ 行距），数量方阵会把顶视与轴测拉成长条。
+    const COLS = (() => {
+      const ideal = Math.max(1, Math.sqrt(REP * dptCellZ / dptCellX));
+      let best = 1, err = Infinity;
+      for (let c = 1; c <= REP; c++) {
+        if (REP % c) continue;
+        const e = Math.abs(Math.log(c / ideal));
+        if (e < err) { err = e; best = c; }
+      }
+      return best;
+    })();
     const ROWS = REP / COLS;
 
     // rank 编码：rank = (rep*PP + pp)*TP + tp
@@ -106,19 +152,11 @@
 
     /* 各形态的轴间距——全部由上面的布局规则推导（不再逐形态手调常量）。
        每个形态只声明「哪根轴放哪个维、用什么层级」，换任何并行数字都自动成立。 */
-    const CY = 9;                                    // 逻辑体离地高度（各形态统一）
-    const tpStep = stepOf('x', TP);                  // 板 / 墙内 TP 列步距
-    const ppStep = stepOf('y', PP);                  // 板 / 墙内 PP 行步距
-    const blockW = TP * tpStep;                      // 一块板 / 一面墙的宽度（内维总跨）
-    // DP 平铺宫格：列距 = 板宽 + 留白；行距同值，但受 2D 可读性约束封顶——板在顶视/侧视里
-    // 只有 1 张卡厚，行距若也按板宽取，两视角都会退化成稀疏条纹（每格几乎全空）。
-    const dptCellX = blockW + padOf(blockW);
-    const dptCellZ = clampFor2D(dptCellX, 'z', tpStep, ppStep);
     const SP = {
       // 标准：三根语义轴各一维，常规层级 —— 位置即多维坐标
       std: { sx: tpStep, sy: ppStep, sz: stepOf('z', REP), cy: CY },
       // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
-      dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, pp: ppStep, y0: 1.0 },
+      dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
       ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepOf('y', PP), dom: stepOf('z', DOM, 'spread'), cy: CY },
       // TP切片 / PP流水 是「强调类」形态（2D 已收编到标准）：主轴用 emph 层级拉开，
@@ -131,11 +169,11 @@
     function posOf(r, mode, out) {
       out = out || { x: 0, y: 0, z: 0 };
       const tp = tpOf(r), pp = ppOf(r), rep = repOf(r);
-      if (mode === 1) {          // DP 平铺：副本宫格，每副本一块直立 TP×PP 板（找慢副本）
-        const s = SP.dpt;
-        out.x = (gxOf(r) - cG) * s.gapX + (tp - cT) * s.tp;
+      if (mode === 1) {          // DP 平铺：副本宫格，每副本一块 TP(列×排)×PP 的板（找慢副本）
+        const s = SP.dpt, tc = tp % TPC, td = (tp / TPC) | 0;
+        out.x = (gxOf(r) - cG) * s.gapX + (tc - (TPC - 1) / 2) * s.tp;
         out.y = s.y0 + (PP - 1 - pp) * s.pp;
-        out.z = (gzOf(r) - cZ) * s.gapZ;
+        out.z = (gzOf(r) - cZ) * s.gapZ + (td - (TPD - 1) / 2) * s.tpz;
         return out;
       }
       if (mode === 2) {          // EP 专家桶墙：桶成墙（同墙=持有相同专家）· 墙内 X=TP 列 · Y=PP · Z=A2A 域
@@ -171,10 +209,12 @@
       tp: { n: TP, lab: 'TP' }, pp: { n: PP, lab: 'PP' }, rep: { n: REP, lab: 'DP' },
       ep: { n: EP, lab: '专家桶' }, dom: { n: DOM, lab: 'A2A域' },
       gx: { n: COLS, lab: '副本列' }, gz: { n: ROWS, lab: '副本行' },
+      tpc: { n: TPC, lab: '板内TP列' }, tpd: { n: TPD, lab: '板内TP排' },
     };
     const depthIdxOf = (r, dim) => dim === 'tp' ? tpOf(r) : dim === 'pp' ? ppOf(r)
       : dim === 'rep' ? repOf(r) : dim === 'ep' ? epOf(r) : dim === 'dom' ? domOf(r)
-        : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r) : 0;
+        : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
+          : dim === 'tpc' ? tpOf(r) % TPC : dim === 'tpd' ? (tpOf(r) / TPC) | 0 : 0;
 
     // 视角收编（方案 A）：每个 2D 平面只属于一个形态。标准/TP切片/PP流水 共享同一坐标系
     // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP×TP·TP×PP·DP×PP）由
@@ -195,11 +235,10 @@
         sub: `DP 平铺：${REP} 副本各自成板（找慢副本）`,
         why: `副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本`,
         viewLabels: { 1: '顶 副本网格', 2: '前 列×PP', 3: '侧 行×PP' },
-        // 侧视会把「副本列」和「板内 TP」一起折进视线 → 每格 = 列×TP 张卡重叠，
-        // 整屏只剩 行×PP 个孤立点（4000 卡 → 50 点），信息塌陷，故不给出（见 §2D 可读性）。
-        depth: { 1: ['pp'], 2: ['gz'], 3: ['gx', 'tp'] },
-        views: [0, 1, 2],
-        note2d: '侧视会把 副本列×板内TP 一起折叠 → 信息塌陷，已略去',
+        // 板内 TP 折成「列×排」后板有了厚度：顶视每个副本是一片瓦（而非一条线），
+        // 侧视也不再塌陷 → 三个正交视角都成立。
+        depth: { 1: ['pp'], 2: ['gz', 'tpd'], 3: ['gx', 'tpc'] },
+        views: [0, 1, 2, 3],
       },
       {
         key: 'ep', name: 'EP聚簇',
@@ -257,7 +296,7 @@
     }
 
     return {
-      config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, SP, CARD,
+      config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, TPC, TPD, SP, CARD,
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
@@ -548,7 +587,8 @@
         axText(`DP 平铺 · ${REP} 块板 = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`, DPc, 11, V3(0, b.y1 + D(3.4), 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
         axArrow(p00.clone().add(V3(-0.9, -0.8, 0)), p10.clone().add(V3(0.9, -0.8, 0)), TPw);
-        axText(`板内横=TP×${TP}`, TPc, 3.4, p00.clone().add(V3(0.6, -1.9, 0)));
+        axText(model.TPD > 1 ? `板内 TP×${TP} = ${model.TPC}列×${model.TPD}排` : `板内横=TP×${TP}`,
+          TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0)));
         axArrow(pTop.clone().add(V3(-1.7, 0.4, 0)), p00.clone().add(V3(-1.7, -0.4, 0)), PPw);
         axText(`板内竖=PP×${PP} L1→L${model.config.layers}`, PPc, 4.6, pTop.clone().add(V3(0.4, 1.7, 0)));
       } else if (S.mode === 2) {
@@ -620,11 +660,26 @@
 
     /* ── 着色：状态热力 / 分组透镜 / 异常注入 ── */
     const rng = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-    function load01(r) {                             // 合成负载场（时间平滑波动 + 热点桶微抬）
+    // 时间 = 一个 step 内的位置（0→1），按 4 个通信阶段读（对齐集群驾驶舱）
+    const phaseIdx = () => Math.min(PHASES.length - 1, (S.t * PHASES.length) | 0);
+    const phaseU = () => S.t * PHASES.length - phaseIdx();       // 阶段内进度 0→1
+    // 负载场随阶段变化：每个阶段由哪根并行轴主导，就在那根轴上呈现相应的形状
+    function load01(r) {
+      const ph = PHASES[phaseIdx()], u = phaseU();
       const h1 = rng(r), h2 = rng(r * 7.3);
-      let v = 0.34 + 0.2 * Math.sin(S.t * 0.9 + h1 * 6.283) + 0.16 * Math.sin(S.t * 0.37 + h2 * 6.283) + 0.12 * (h2 - 0.5);
-      if (model.hotBuckets.has(model.epOf(r))) v += 0.1;
-      return Math.max(0.04, Math.min(1, v));
+      let v = ph.load;
+      if (ph.id === 'TP') {                          // 层内 AllReduce：同 TP 组齐动，副本间轻微错峰
+        v *= 0.88 + 0.24 * Math.sin(6.283 * (u + model.repOf(r) * 0.013));
+      } else if (ph.id === 'PP') {                   // 阶段接力：波锋沿流水级前进，其余级在等
+        const d = Math.abs((model.ppOf(r) + 0.5) / PP - u);
+        v *= d < 0.5 / PP + 0.1 ? 1.35 : 0.5 + 0.3 * h1;
+      } else if (ph.id === 'EP') {                   // A2A 浪涌：热点桶更烫，各 A2A 域错峰互发
+        v *= (model.hotBuckets.has(model.epOf(r)) ? 1.12 : 0.8)
+          * (0.9 + 0.22 * Math.sin(6.283 * (u + model.domOf(r) * 0.07)));
+      } else {                                       // 梯度 AllReduce：全网齐动，个体差异露出慢副本
+        v *= 0.85 + 0.3 * h2;
+      }
+      return Math.max(0.04, Math.min(1, v * (0.94 + 0.12 * h1)));
     }
     const anomBucket = () => Math.min(3, EP - 1);            // 注入的示意桶号（EP 小时自动收到合法桶）
     function inAnomGroup(r) {
@@ -634,6 +689,7 @@
       if (S.anom === 'ep') return model.epOf(r) === anomBucket();   // EP 桶：持有该桶的所有 rank（越区示意）
       return false;
     }
+    const rgbCss = (c) => `#${c.getHexString()}`;
     const loadColor = (v) => cTmp.setHSL(Math.max(0, 0.33 - v * 0.33), 0.72, isDark() ? 0.42 + v * 0.12 : 0.38 + v * 0.1);
     function colorOfRank(r) {
       if (S.anom !== 'none') {
@@ -756,8 +812,12 @@
         mesh.count = n; mesh.visible = n > 0; mesh.instanceMatrix.needsUpdate = true;
         const colorHex = new THREE.Color(DIMC[d].dark).getHex();
         const pts = members.map(gp);
-        if (d === 'EP') { pts.forEach((p) => { if (!p.equals(gp(S.sel))) commLine([gp(S.sel), p], colorHex, 0.8, 0.06); }); }   // A2A 互发（星形）
-        else commLine(pts, colorHex, 0.85, d === 'TP' ? 0.1 : 0.07);   // TP 环 / PP 链 / DP 采样折线
+        // 当前阶段主导的维加亮加粗，其余淡显——四维通信组始终同屏，谁在此刻真正忙一眼可见
+        const on = PHASES[phaseIdx()].dim === d;
+        const op = on ? 0.95 : 0.22, rad = (on ? 1 : 0.6) * (d === 'TP' ? 0.1 : 0.07);
+        mesh.material.opacity = on ? 0.5 : 0.16;
+        if (d === 'EP') { pts.forEach((p) => { if (!p.equals(gp(S.sel))) commLine([gp(S.sel), p], colorHex, op, rad * 0.9); }); }   // A2A 互发（星形）
+        else commLine(pts, colorHex, op, rad);   // TP 环 / PP 链 / DP 采样折线
       });
       const selP = gp(S.sel);
       const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP}`, themeC('#c8d2dc', '#3f4c63'), 6.5 * LS);
@@ -776,8 +836,10 @@
         dp: `注入 DP 副本 0：切「DP平铺」= 宫格里干净的一块板全红（慢副本的形状）`,
         ep: `注入 EP 桶 ${anomBucket()}：标准形态下是周期条带 → 切「EP聚簇」= 一整面墙同红（热点/坏桶的形状 · 桶↔卡非 1:1）`,
       }[S.anom];
+      const ph = PHASES[phaseIdx()];
       hud.innerHTML = `<b>逻辑魔方 · ${esc(m.sub)}</b>${S.selLayer != null && S.mode === 0 ? ` · 高亮 L${S.selLayer + 1} 切片` : ''}` +
         `<br><span class="prc-dim">◇ 为什么这样摆：${esc(m.why)}</span>` +
+        `<br><span class="prc-dim">◷ 此刻（step 内 ${Math.round(S.t * 100)}%）：<b style="color:${dimc(ph.dim)}">${esc(ph.name)}</b> · ${esc(ph.bus)}</span>` +
         (anomNote ? `<br><span class="prc-warn">⚠ ${esc(anomNote)}</span>` : '');
     }
     function renderPill() {
@@ -794,13 +856,32 @@
           : `▦ 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal}）`)
         : `▦ 每格 = <b class="prc-hot">${d.fold} 张卡重叠</b>（${esc(d.label)} 折入视线 · 开剖面逐层翻）`;
     }
+    // 图例必须跟着「当前卡块着色」走：分组着色时列出各组的实际配色，负载着色时给色带，
+    // 注入异常时给异常组——否则切了着色图例纹丝不动，读者按图例根本对不上画面。
     function renderLegend() {
       const lg = $('.prc-legend'); if (!lg) return;
       const chip = (c, t) => `<span><i style="background:${c}"></i>${esc(t)}</span>`;
-      let rows = [chip(dimc('TP'), `TP×${TP}`), chip(dimc('PP'), `PP×${PP}`), chip(dimc('DP'), `DP×${REP}（=EP${EP}×域${DOM}）`), chip(dimc('EP'), `EP桶×${EP} ★=热点`)].join('');
-      if (S.colorBy === 'load' && S.anom === 'none') rows += `<span class="prc-ramp"><i></i>负载 低→高</span>`;
-      if (S.anom !== 'none') rows += chip('#ff4b6e', '异常组');
-      lg.innerHTML = rows;
+      const parts = [];
+      if (S.anom !== 'none') {
+        const what = { tp: `TP 槽 0（全网同槽位卡）`, pp: `PP 级 0（一整个流水段）`,
+          dp: `DP 副本 0（一份完整拷贝）`, ep: `EP 桶 ${anomBucket()}（持有该桶的所有 rank）` }[S.anom];
+        parts.push(`<b>卡块着色</b>`, chip('#ff4b6e', `异常组 = ${what}`), chip(rgbCss(loadColor(0.2)), '其余（平静）'));
+      } else if (S.colorBy === 'load') {
+        parts.push(`<b>卡块着色</b>`, `<span class="prc-ramp"><i></i>负载 低→高 · 当前阶段 ${esc(PHASES[phaseIdx()].id)}</span>`);
+      } else {
+        const key = S.colorBy;
+        const n = key === 'tp' ? TP : key === 'pp' ? PP : key === 'dp' ? REP : EP;
+        const lab = { tp: 'TP', pp: 'PP', dp: 'DP副本', ep: 'EP桶' }[key];
+        const MAXC = 8, shown = Math.min(n, MAXC);
+        parts.push(`<b>卡块着色 · 按 ${esc(lab)} 分组</b>`);
+        for (let i = 0; i < shown; i++) parts.push(chip(GROUP_PALETTE[i % GROUP_PALETTE.length], `${lab}${i}`));
+        if (n > shown) parts.push(`<span class="prc-dim">… 共 ${n} 组${n > GROUP_PALETTE.length ? `（${GROUP_PALETTE.length} 色循环，同色非同组）` : ''}</span>`);
+      }
+      // 维度签名色是另一套：给 3D 轴标注与选中卡的通信组用，与卡块着色互不相干，分区标明
+      parts.push(`<span class="prc-sep"></span><b>轴标/通信组</b>`,
+        chip(dimc('TP'), `TP×${TP}`), chip(dimc('PP'), `PP×${PP}`),
+        chip(dimc('DP'), `DP×${REP}`), chip(dimc('EP'), `EP桶×${EP}`));
+      lg.innerHTML = parts.join('');
     }
     function renderInfo() {
       const info = $('.prc-info'); if (!info) return;
@@ -823,13 +904,13 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
-    let timeRange = null, timeLab = null, viewNote = null;
-    const T_CYCLE = 60;                          // 时间轴显示周期（负载场循环观感）
+    let timeTrack = null, timeHead = null, timeLab = null, viewNote = null;
     function syncTimeUI() {
-      if (!timeRange) return;
-      const tc = S.t % T_CYCLE;
-      timeRange.value = String(Math.round(tc * 10));
-      timeLab.textContent = `${tc.toFixed(1)}s / ${T_CYCLE}s`;
+      if (!timeTrack) return;
+      const pi = phaseIdx();
+      timeTrack.querySelectorAll('.prc-pseg').forEach((el, i) => el.classList.toggle('on', i === pi));
+      timeHead.style.left = (S.t * 100) + '%';
+      timeLab.innerHTML = `<b>${esc(PHASES[pi].name)}</b> <span class="prc-dim">${esc(PHASES[pi].bus)}</span>`;
     }
     // 「并行」输入排：TP/PP/DP/EP 任意填数 → setConfig 整体重建魔方（回车或「应用」提交）
     function applyCfg() {
@@ -885,17 +966,29 @@
       rowViews.appendChild(sliceBox);
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep']]
         .map(([t, k]) => rowLens.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
-      // 时间轴（状态热力的时间维）：播放/暂停 + 可拖游标定位任一时刻
+      // 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：播放/暂停 + 阶段轨道拖拽定位
       const rowTime = $('.prc-row-time');
       playBtn = rowTime.appendChild(chipBtn('⏸ 暂停', () => { S.playing = !S.playing; syncChrome(); }));
-      timeRange = document.createElement('input');
-      timeRange.type = 'range'; timeRange.min = '0'; timeRange.max = String(T_CYCLE * 10); timeRange.step = '1';
-      timeRange.addEventListener('input', () => {
-        S.t = (timeRange.value | 0) / 10;
-        if (S.colorBy === 'load' && S.anom === 'none') recolor();
-        syncTimeUI();
+      timeTrack = document.createElement('div'); timeTrack.className = 'prc-phasetrack';
+      PHASES.forEach((ph, i) => {
+        const seg = document.createElement('div');
+        seg.className = `prc-pseg prc-ph-${ph.id}`;
+        seg.textContent = ph.id;
+        seg.title = `${ph.name} · ${ph.bus}`;
+        seg.dataset.ph = String(i);
+        timeTrack.appendChild(seg);
       });
-      rowTime.appendChild(timeRange);
+      timeHead = document.createElement('div'); timeHead.className = 'prc-playhead';
+      timeTrack.appendChild(timeHead);
+      const scrub = (ev) => {
+        const r = timeTrack.getBoundingClientRect();
+        S.t = Math.min(0.999, Math.max(0, (ev.clientX - r.left) / r.width));
+        if (S.colorBy === 'load' && S.anom === 'none') recolor();
+        rebuildComm(); syncTimeUI(); renderHud();
+      };
+      timeTrack.addEventListener('pointerdown', (ev) => { timeTrack.setPointerCapture(ev.pointerId); scrub(ev); });
+      timeTrack.addEventListener('pointermove', (ev) => { if (ev.buttons & 1) scrub(ev); });
+      rowTime.appendChild(timeTrack);
       timeLab = document.createElement('span'); timeLab.className = 'prc-timelab';
       rowTime.appendChild(timeLab);
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
@@ -974,16 +1067,20 @@
     }, { passive: false });
 
     /* ── 主循环 ── */
-    let raf = 0, lastRecolor = -1, lastMs = null, lastTimeUi = -1;
+    let raf = 0, lastRecolor = -1, lastMs = null, lastTimeUi = -1, lastPhase = -1;
     function frame(nowMs) {
       raf = global.requestAnimationFrame(frame);
       // 累加制时钟：时间轴游标可拖动定位（绝对时钟会把拖动的 S.t 覆盖掉）
       const dt = lastMs == null ? 0 : (nowMs - lastMs) / 1000;
       lastMs = nowMs;
-      if (S.playing) S.t += Math.min(dt, 0.1);
-      // 状态热力随时间流动（350ms 重染一次；透镜/异常静态无需重染）
-      if (S.playing && S.colorBy === 'load' && S.anom === 'none' && nowMs - lastRecolor > 350) { lastRecolor = nowMs; recolor(); }
-      if (S.playing && nowMs - lastTimeUi > 250) { lastTimeUi = nowMs; syncTimeUI(); }
+      if (S.playing) S.t = (S.t + Math.min(dt, 0.1) / STEP_SEC) % 1;   // t ∈ [0,1) = 一个 step 内的位置
+      // 状态热力随阶段流动（280ms 重染一次；透镜/异常静态无需重染）
+      if (S.playing && S.colorBy === 'load' && S.anom === 'none' && nowMs - lastRecolor > 280) { lastRecolor = nowMs; recolor(); }
+      if (S.playing && nowMs - lastTimeUi > 200) {
+        lastTimeUi = nowMs;
+        const ph = phaseIdx(); syncTimeUI();
+        if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); rebuildComm(); }   // 换阶段 → 主导维/图例随之切换
+      }
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
         let moving = false;
@@ -1076,6 +1173,16 @@
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
+      // 定位到 step 内的某个位置（0→1）或某个阶段：t 可传 0..1，或 {phase:'EP'}
+      setTime(t) {
+        const v = (t && typeof t === 'object' && t.phase)
+          ? (Math.max(0, PHASES.findIndex((p) => p.id === t.phase)) + 0.5) / PHASES.length
+          : Math.min(0.999, Math.max(0, +t || 0));
+        S.t = v;
+        recolor(); rebuildComm(); syncTimeUI(); renderHud(); renderLegend();
+        return { t: S.t, phase: PHASES[phaseIdx()].id };
+      },
+      phases: PHASES,
       resize,
       destroy() {
         global.cancelAnimationFrame(raf);
