@@ -471,7 +471,6 @@
         '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
-        '<div class="prc-hud panel-shell"></div>',
         '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
@@ -555,14 +554,17 @@
       selEdgeMesh.renderOrder = 9; scene.add(selEdgeMesh);
     }
 
-    // 四维通信组高亮：每维一个半透明盒 InstancedMesh（维度签名色）
-    // 对端高亮的实例上限：要盖住最大的通信域（DP 组可达 dp 张卡），否则线连到的卡
-    // 有一半没有高亮盒，看上去就是「线没连到卡上」。
+    /* 四维通信组的成员标记。原先是半透明实体盒罩在卡上——盒色与卡色叠在一起，卡自己的
+       着色（负载 / 分组 / 异常）就读不准了；改成「只有棱、没有面」的线框套：同样点出
+       谁是成员，卡面颜色一点不改。
+       实例上限要盖住最大的通信域（DP 组可达 dp 张卡），否则线连过去的卡有一半没有标记，
+       看上去就是「线没连到卡上」。 */
     const PEER_MAX = 1024;
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
     const peerMeshes = peerDims.map((d) => {
-      const m = new THREE.InstancedMesh(new THREE.BoxGeometry(CARD.x * 1.18, CARD.y * 1.18, CARD.z * 1.18),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.34, depthWrite: false, depthTest: false }), PEER_MAX);
+      const m = new THREE.InstancedMesh(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.26, CARD.y * 1.26, CARD.z * 1.26)),
+        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.9, depthTest: false }), PEER_MAX);
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
     });
@@ -625,7 +627,7 @@
       if (points.length < 2) return null;
       const path = new THREE.CurvePath();
       for (let i = 1; i < points.length; i++) path.add(new THREE.LineCurve3(points[i - 1], points[i]));
-      const g = new THREE.TubeGeometry(path, Math.max(6, (points.length - 1) * 2), r || 0.08, 6, false);
+      const g = new THREE.TubeGeometry(path, Math.max(4, points.length - 1), r || 0.08, 5, false);
       const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false });
       const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6;
       if (meta) mesh.userData.edge = meta;      // 这段线是谁到谁 → 可被点选，交给宿主去点亮物理路径
@@ -1070,21 +1072,50 @@
       return S.algo === 'tree' ? 'tree' : 'ring';        // auto/ring → Ring AllReduce
     }
     /* 一个域的「走线」：返回若干条 rank 折线（不是坐标——每一段要知道两端是谁，
-       才能判断它实际跨了哪层物理链路）。粒子沿同样的折线跑。 */
+       才能判断它实际跨了哪层物理链路），并标出这一段该不该画成外凸弧。
+       为什么要弧：一个通信组的成员在多数形态里是共线的（标准形态的 TP 组是一行、
+       DP 组是一列），此时 Ring 的闭合边、Tree 的跨层边若也走直线，就与相邻链完全
+       重叠——两种算法画出来一模一样，只有文字在变。跨越多个成员的「长边」因此外凸，
+       Ring 成了「一条链 + 一道回程弧」，Tree 成了经典的弧形二叉树。 */
     function edgesOf(d, members) {
       const out = [], algo = algoOf(d);
-      if (algo === 'chain') { out.push(members.slice()); return out; }        // PP 接力链
-      if (algo === 'ring') { out.push(members.concat([members[0]])); return out; }   // Ring：闭合成环
-      if (algo === 'tree') {                                                 // Tree：二叉树边
-        for (let i = 1; i < members.length; i++) out.push([members[(i - 1) >> 1], members[i]]);
+      const seg = (ranks, arc) => out.push({ ranks, arc: !!arc });
+      if (algo === 'chain') { seg(members.slice()); return out; }             // PP 接力链
+      if (algo === 'ring') {                                                  // Ring：链 + 回程弧
+        seg(members.slice());
+        if (members.length > 2) seg([members[members.length - 1], members[0]], true);
         return out;
       }
-      if (members.length <= A2A_MESH_MAX) {                                  // AllToAll：全连
-        for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) out.push([members[i], members[j]]);
-      } else {                                                               // 成员多 → 退化成星形
-        members.forEach((r) => { if (r !== S.sel) out.push([S.sel, r]); });
+      if (algo === 'tree') {                                                  // Tree：二叉树边
+        for (let i = 1; i < members.length; i++) {
+          const par = (i - 1) >> 1;
+          seg([members[par], members[i]], i - par > 1);
+        }
+        return out;
+      }
+      if (members.length <= A2A_MESH_MAX) {                                   // AllToAll：全连
+        for (let i = 0; i < members.length; i++) for (let j = i + 1; j < members.length; j++) seg([members[i], members[j]], j - i > 1);
+      } else {                                                                // 成员多 → 退化成星形
+        members.forEach((r) => { if (r !== S.sel) seg([S.sel, r]); });
       }
       return out;
+    }
+    /* 长边的外凸弧：二次贝塞尔，两端严格落在卡心（端点不许飘——「线没连到卡上」修过一次），
+       只有中间鼓出去。鼓的方向取与边垂直、尽量朝上的那一侧；鼓的高度随边长增长但封顶。 */
+    function arcPts(a, b) {
+      const dir = b.clone().sub(a), len = dir.length();
+      if (len < 1e-6) return [a, b];
+      dir.divideScalar(len);
+      let up = V3(0, 1, 0);
+      if (Math.abs(dir.dot(up)) > 0.9) up = V3(0, 0, 1);
+      const perp = up.sub(dir.clone().multiplyScalar(up.dot(dir))).normalize();
+      const c = a.clone().add(b).multiplyScalar(0.5).add(perp.multiplyScalar(Math.min(len * 0.3, CARD.x * 9)));
+      const pts = [], K = 8;   // 8 段足够圆滑；再细会把重排动画期间的每帧重建拖慢
+      for (let i = 0; i <= K; i++) {
+        const t = i / K, u = 1 - t;
+        pts.push(a.clone().multiplyScalar(u * u).add(c.clone().multiplyScalar(2 * u * t)).add(b.clone().multiplyScalar(t * t)));
+      }
+      return pts;
     }
 
     function rebuildComm() {
@@ -1106,15 +1137,15 @@
         // 当前阶段主导的那一维加一档亮度与粗细（四维一律清晰可见，只是主导维更亮）
         const on = curDim === d;
         const op = on ? 0.95 : 0.55, rad = (on ? 1.15 : 0.85) * (d === 'TP' ? 0.1 : 0.07);
-        mesh.material.opacity = on ? 0.5 : 0.32;
+        mesh.material.opacity = on ? 0.95 : 0.5;
         const segs = edgesOf(d, members);
-        const paths = segs.map((rs) => rs.map(gp));
+        const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
         if (S.wire.lines) {
           // 每条折线是一根管（重排动画期间每帧重建，逐段建管会把几何数放大百倍），
           // 段的身份记在 userData.ranks 里，点选时按命中点就近判定是哪一段。
           // 走线只按「维」着色：试过按物理层级逐段上色，线太细、又和 TP 组重合，
           // 基本看不出层级差别 → 物理的事交给流量矩阵卡与信息卡的段数统计（文字更准）。
-          segs.forEach((rs, i) => commLine(paths[i], colorHex, op, rad, { dim: d, ranks: rs }));
+          segs.forEach((sg, i) => commLine(paths[i], colorHex, op, rad, { dim: d, ranks: sg.ranks }));
         }
         if (on) moverPaths = paths.map((pts) => ({ pts, color: colorHex }));   // 粒子只跑「此刻」这一维
         // 域轮廓：把这一组的成员用一个线框包起来——切到对应形态时组会 snap 成整块，
@@ -1142,22 +1173,9 @@
 
     /* ── HUD / 图例 / 粒度贴士 / 信息卡 ── */
     function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
-    function renderHud() {
-      const hud = $('.prc-hud'); if (!hud) return;
-      const m = model.modes[S.mode];
-      const anomNote = {
-        none: '',
-        tp: `注入 TP 槽 0：全网同槽位卡集体标红 → 切「TP切片」= 一面墙集体异常（同槽位系统性坏件的形状）`,
-        pp: `注入 PP 级 0：物理上散成条纹 → 切「PP流水」= 最左一整段全红（慢段/坏段的形状）`,
-        dp: `注入 DP 副本 0：切「DP平铺」= 宫格里干净的一块板全红（慢副本的形状）`,
-        ep: `注入 EP 桶 ${anomBucket()}：标准形态下是周期条带 → 切「EP聚簇」= 一整面墙同红（热点/坏桶的形状 · 桶↔卡非 1:1）`,
-      }[S.anom];
-      const ph = PHASES[phaseIdx()];
-      hud.innerHTML = `<b>逻辑魔方 · ${esc(m.sub)}</b>${S.selLayer != null && S.mode === 0 ? ` · 高亮 L${S.selLayer + 1} 切片` : ''}` +
-        `<br><span class="prc-dim">${ICON.key} 为什么这样摆：${esc(m.why)}</span>` +
-        `<br><span class="prc-dim">${ICON.clock} 此刻（step 内 ${Math.round(S.t * 100)}%）：<b style="color:${dimc(ph.dim)}">${esc(ph.name)}</b> · ${esc(ph.bus)}</span>` +
-        (anomNote ? `<br><span class="prc-warn">${ICON.alert} ${esc(anomNote)}</span>` : '');
-    }
+    /* 左下的「读图钥匙」HUD 已删除：常驻大段文字太占画面。形态的读法进了「形态」问号
+       气泡（随当前形态变化），异常读法在「注入」问号里，当前阶段看时间轴与图例。 */
+    function renderHud() { }
     function renderPill() {
       const pill = $('.prc-pill'); if (!pill) return;
       const d = curDepth();
@@ -1203,7 +1221,7 @@
       // 但连线开着时它们确实以线/盒/轮廓的形式出现在画面里 → 单列一段解释。
       if (S.sel != null) {
         const on = [];
-        if (S.wire.members) on.push('成员盒');
+        if (S.wire.members) on.push('成员框');
         if (S.wire.lines) on.push('走线');
         if (S.wire.outline) on.push('域轮廓');
         if (S.wire.movers) on.push('方向粒子');
@@ -1248,7 +1266,7 @@
       const d = PHASES[phaseIdx()].dim;
       const segs = edgesOf(d, model.commGroup(r, d));
       const cnt = { ub: 0, rail: 0, out: 0 };
-      segs.forEach((rs) => { for (let i = 1; i < rs.length; i++) cnt[model.tierOf(rs[i - 1], rs[i])]++; });
+      segs.forEach((sg) => { const rs = sg.ranks; for (let i = 1; i < rs.length; i++) cnt[model.tierOf(rs[i - 1], rs[i])]++; });
       const tot = cnt.ub + cnt.rail + cnt.out;
       if (!tot) return '';
       const one = (k, lab) => (cnt[k] ? `<span style="color:${tierc(k)}">${lab} ${cnt[k]}</span>` : '');
@@ -1283,7 +1301,8 @@
       const grid = pods <= MAT_MAX ? Array.from({ length: pods }, () => new Array(pods).fill(0)) : null;
       reps.forEach((r) => {
         const segs = edgesOf(dim, model.commGroupFull(r, dim));
-        segs.forEach((rs) => {
+        segs.forEach((sg) => {
+          const rs = sg.ranks;
           for (let i = 1; i < rs.length; i++) {
             const a = rs[i - 1], b = rs[i], t = model.tierOf(a, b);
             cnt[t]++;
@@ -1362,6 +1381,36 @@
       time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱），走的是哪层总线也不同：<br>· <b>TP</b> 前向 AllReduce —— 节点内 UB · 高频<br>· <b>PP</b> 阶段接力 Send/Recv —— Pod 内跨 Host · 中频<br>· <b>EP</b> MoE AllToAll 浪涌 —— Pod 内全互联 · 浪涌<br>· <b>DP</b> 梯度 AllReduce —— 跨 Pod Scale-Out · 低频大包<br>热力着色与方向粒子都跟着阶段走；轨道可拖拽定位（悬停某段看它是什么），Play/Pause 控制自动推进。当前阶段常驻在左下 HUD 的「此刻」一行。',
       cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
     };
+    /* 问号气泡里的「当前状态」部分：形态的读法、注入的读法、连线的空态提示——
+       这些原先常驻在画面上（左下 HUD、工具栏行尾的说明），太占地方，一律收进气泡。 */
+    const DYN = {
+      modes: () => {
+        const m = model.modes[S.mode];
+        return `<br><b>此刻：${esc(m.sub)}</b><br>为什么这样摆：${esc(m.why)}` +
+          (S.selLayer != null && S.mode === 0 ? `<br>正高亮整网 L${S.selLayer + 1} 切片` : '');
+      },
+      anom: () => {
+        const note = {
+          none: '', 
+          tp: '当前注入 TP 槽 0：全网同槽位卡集体标红 → 切「TP切片」= 一面墙集体异常（同槽位系统性坏件的形状）',
+          pp: '当前注入 PP 级 0：物理上散成条纹 → 切「PP流水」= 最左一整段全红（慢段/坏段的形状）',
+          dp: '当前注入 DP 副本 0：切「DP平铺」= 宫格里干净的一块板全红（慢副本的形状）',
+          ep: `当前注入 EP 桶 ${anomBucket()}：标准形态下是周期条带 → 切「EP聚簇」= 一整面墙同红（热点/坏桶的形状 · 桶↔卡非 1:1）`,
+        }[S.anom];
+        return note ? `<br><b>${esc(note)}</b>` : '';
+      },
+      wire: () => (S.sel == null
+        ? '<br><b>现在还没选卡 → 没有连线可画</b>：点画面里任意一个小方块（点上面任一图层按钮也会自动替你选一张）。'
+        : `<br><b>此刻：</b>TP/DP=AllReduce(${S.algo === 'tree' ? 'Tree' : 'Ring'}) · PP=P2P 链 · EP=AllToAll` +
+          (S.wire.focus ? ' · 聚焦开：无关卡已压暗' : '')),
+    };
+    const helpBubbles = {};
+    function syncHelp() {
+      Object.keys(DYN).forEach((k) => {
+        const b = helpBubbles[k];
+        if (b) b.innerHTML = (HELP[k] || '') + DYN[k]();
+      });
+    }
     function helpDot(key) {
       const s = document.createElement('span');
       s.className = 'prc-help';
@@ -1370,7 +1419,8 @@
       s.innerHTML = ICON.help;
       const bub = document.createElement('span');
       bub.className = 'prc-helptip';
-      bub.innerHTML = HELP[key] || '';
+      bub.innerHTML = (HELP[key] || '') + (DYN[key] ? DYN[key]() : '');
+      helpBubbles[key] = bub;
       s.appendChild(bub);
       return s;
     }
@@ -1386,7 +1436,7 @@
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
     let flowBtn = null;
-    let wireBtns = [], algoBtns = [], wireNote2 = null;
+    let wireBtns = [], algoBtns = [];
     let timeTrack = null, timeHead = null, viewNote = null;
     function syncTimeUI() {
       if (!timeTrack) return;
@@ -1409,6 +1459,7 @@
       cfgErr.textContent = '';
     }
     function syncChrome() {
+      syncHelp();                                                        // 问号气泡里的「此刻」随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];
@@ -1426,14 +1477,7 @@
       wireBtns.forEach((b, i) => b.classList.toggle('is-selected', !!S.wire[wireKeys[i]]));
       const algoKeys = ['auto', 'ring', 'tree'];
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
-      if (wireNote2) {
-        const none = S.sel == null;
-        // 空态说清楚为什么画面上没有线：连线是「选中卡的通信域」，不选卡就没有对象
-        wireNote2.textContent = none
-          ? '还没选卡 → 没有连线可画：点画面里任意一个小方块（点图层按钮会自动替你选一张）'
-          : `TP/DP=AllReduce(${S.algo === 'tree' ? 'Tree' : 'Ring'}) · PP=P2P 链 · EP=AllToAll${S.wire.focus ? ' · 聚焦：无关卡已压暗' : ''}`;
-        wireNote2.classList.toggle('prc-hot', none);
-      }
+
       if (flowBtn) flowBtn.classList.toggle('is-selected', S.flow);
       if (playBtn) {
         playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
@@ -1514,7 +1558,6 @@
       // 物理落位不再占工具栏的一排（那排只有配置、看不出画面变化）：默认 8 卡/机 ·
       // 32 机/Pod，需要改就走 setPlacement API。
       flowBtn = rowWire.appendChild(chipBtn('流量矩阵', () => api.setFlow(!S.flow)));
-      wireNote2 = document.createElement('span'); wireNote2.className = 'prc-note'; rowWire.appendChild(wireNote2);
 
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
         .map(([t, k]) => rowAnom.appendChild(chipBtn(t, () => { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); })));
@@ -1745,7 +1788,7 @@
         renderInfo();
         return S.selEdge;
       },
-      selectLayer(l) { S.selLayer = l; updateSlab(); renderHud(); },            // 整网图 → 魔方水平切片
+      selectLayer(l) { S.selLayer = l; updateSlab(); syncChrome(); },            // 整网图 → 魔方水平切片
       selectBucket(e) {                                                        // 专家图 → 整面墙（切 EP 聚簇并选中桶内代表卡）
         if (e == null) { api.select(null); return; }
         api.setMode(2); api.select(model.rankOf(0, 0, (e | 0) % EP));

@@ -117,13 +117,7 @@
   background: var(--foreground); opacity: 0.8;
 }
 
-/* ── 读图钥匙 HUD（左下）──────────────────────────────────────────── */
-.prc-hud {
-  position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: 5;
-  max-width: min(92vw, 660px);
-  padding: var(--space-3);
-  font: var(--type-body-sm); line-height: var(--line-height-body);
-}
+/* 状态文字色（图例 / 贴士 / 气泡内共用） */
 .prc-dim { color: var(--foreground-muted); }
 .prc-warn { color: var(--danger); }
 .prc-ok { color: var(--success); }
@@ -204,5 +198,5 @@
   --dim-ep: #9b3cf6;
 }
 
-/* HUD/贴士里的内联图标：与文字基线对齐、随文字色 */
-.prc-hud svg, .prc-pill svg { vertical-align: -2px; margin-right: var(--space-1); opacity: 0.75; }
+/* 贴士里的内联图标：与文字基线对齐、随文字色 */
+.prc-pill svg { vertical-align: -2px; margin-right: var(--space-1); opacity: 0.75; }
