@@ -715,7 +715,16 @@
     const D = (v) => v * Math.max(0.5, LS);
     // 长文案「读图横幅」（w≥5）只在轴测视图显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本
     // 长度膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
+    /* 长横幅（w ≥ 5 的整句解释）不再画进 3D：它们是「散文」而不是「标记」——浮在模型上
+       又大又抢，还挡卡。按设计系统 sidecar pattern 的分工，几何标注只留短标记
+       （TP0 / DP99 / S0·L1-10 / 桶3 / 列2…），整句解释交给固定屏幕位置的 UI——
+       这里收进「形态」问号气泡（axNotes → DYN.modes），信息一句不少。 */
+    let axNotes = [];
     function axText(text, color, w, pos, anchor) {
+      if (w >= 5) {
+        axNotes.push(Array.isArray(text) ? text.map((x) => x.t).join('') : String(text));
+        return null;
+      }
       const l = makeLabel(text, color, w * 1.25 * LS);
       l.position.copy(pos);
       l.userData.banner = w >= 5;
@@ -798,6 +807,7 @@
     // 每种形态 = 换一根投影轴：讲清「为什么这样重排 · 这个形状帮你看什么」——一个小方块 = 1 颗卡（rank）
     function renderAxes() {
       clearAxes();
+      axNotes = [];
       updateLabelScale();
       const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'),
         NTc = tokHex('--foreground-secondary');   // 中性注释 = 次级前景色
@@ -1344,6 +1354,7 @@
       modes: () => {
         const m = model.modes[S.mode];
         return `<br><b>此刻：${esc(m.sub)}</b><br>为什么这样摆：${esc(m.why)}` +
+          (axNotes.length ? '<br>' + axNotes.map((t) => `· ${esc(t)}`).join('<br>') : '') +
           (S.selLayer != null && S.mode === 0 ? `<br>正高亮整网 L${S.selLayer + 1} 切片` : '');
       },
       anom: () => {
