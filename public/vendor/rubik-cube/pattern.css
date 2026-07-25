@@ -164,7 +164,4 @@
   position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
   background: var(--prc-tx); opacity: .8;
 }
-.prc-legend .prc-sep { width: 1px; height: 12px; background: var(--prc-border); margin: 0 2px; }
 .prc-legend b { font-weight: 600; color: var(--prc-tx3); font-size: 10px; }
-/* 通信组图例用线框色块（与 3D 里的高亮线框/连线一致），区别于卡块着色的实心块 */
-.prc-legend i.prc-ring { background: none; border: 2px solid currentColor; border-radius: 3px; }
