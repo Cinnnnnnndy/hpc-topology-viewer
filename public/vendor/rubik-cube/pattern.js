@@ -551,7 +551,7 @@
     const MOVERS = 10;
     const moverGroup = new THREE.Group(); scene.add(moverGroup);
     const moverMeshes = Array.from({ length: MOVERS }, () => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(CARD.x * 0.22, 8, 8),
+      const m = new THREE.Mesh(new THREE.SphereGeometry(CARD.x * 0.15, 8, 8),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95, depthTest: false }));
       m.renderOrder = 8; m.visible = false; moverGroup.add(m); return m;
     });
@@ -572,13 +572,20 @@
     }
     function updateMovers() {
       if (!S.wire.movers || !moverPaths.length) { moverMeshes.forEach((m) => { m.visible = false; }); return; }
-      const u = phaseU(), half = u < 0.5 ? u * 2 : (u - 0.5) * 2;   // Ring：RS 段跑一圈，AG 段再跑一圈
+      const u = phaseU();
+      // Ring：RS 段跑一圈、AG 段再跑一圈。跑的快慢按这一阶段的通信节奏给（图元库里
+      // 「速率对应带宽·时延」的同一约定）：TP 节点内 UB 最快 · EP 浪涌次之 ·
+      // PP 接力常规 · DP 跨 Pod 低频大包最慢。
+      const RATE = { TP: 2.2, EP: 1.6, PP: 1.0, DP: 0.65 };
+      const half = ((u < 0.5 ? u * 2 : (u - 0.5) * 2) * (RATE[PHASES[phaseIdx()].dim] || 1)) % 1;
       moverMeshes.forEach((m, i) => {
         const path = moverPaths[i % moverPaths.length];
         if (!path || path.pts.length < 2) { m.visible = false; return; }
         const lane = Math.floor(i / moverPaths.length);
         m.position.copy(pointOnPath(path.pts, half + (i % moverPaths.length) * 0.0 + lane * 0.37));
-        m.material.color.set(path.color);
+        // 图元库的三层结构里，跑的是「暗点」而不是彩色点：取 --foreground（明暗主题
+        // 各自与底色对比最强的那个色），于是点在任何线色上都看得见，也不喧宾夺主。
+        m.material.color.set(tokHex('--foreground'));
         m.visible = true;
       });
     }
@@ -592,23 +599,47 @@
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
     }
-    // 走线 = 逐段直线的管（不是样条！）：CatmullRom 会在控制点之间外扩成弧，
-    // 成员散布时整条线看起来「不连在卡上」——通信是点到点的，线就必须点到点。
+    /* 走线 = 逐段直线的管（不是样条！CatmullRom 会在控制点之间外扩成弧，成员散布时
+       整条线看起来「不连在卡上」——通信是点到点的，线就必须点到点）。
+       画法沿用硬件图元库「连线样式 Pattern」的三层结构（hpc-topology-node 图元库 · 第 6 组）：
+         ① casing —— 比线芯粗一圈的「底色外套」，把线从它穿过的卡面上剥离出来，
+            于是线清楚、卡也没被染色（图元库里是白色 casing，这里取 --background，
+            明暗主题各自成立）；
+         ② glow core —— 彩色线芯（维度签名色），细而实；
+         ③ 流动暗点 —— 见 moverMeshes：沿线跑的小圆点，方向即数据流向，
+            速度对应这一阶段的通信节奏。三层里只有 ③ 表达方向，不用箭头。 */
     function commLine(points, color, opacity, r, meta) {
       if (points.length < 2) return null;
       const path = new THREE.CurvePath();
       for (let i = 1; i < points.length; i++) path.add(new THREE.LineCurve3(points[i - 1], points[i]));
-      const g = new THREE.TubeGeometry(path, Math.max(4, points.length - 1), r || 0.08, 5, false);
-      const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false });
-      const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 6;
+      const seg = Math.max(4, points.length - 1), rad = r || 0.08;
+      const casing = new THREE.Mesh(
+        new THREE.TubeGeometry(path, seg, rad * 2.3, 5, false),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(tokHex('--background')), transparent: true, opacity: opacity * 0.62, depthWrite: false, depthTest: false }));
+      casing.renderOrder = 5; commGroupG.add(casing);
+      const mesh = new THREE.Mesh(
+        new THREE.TubeGeometry(path, seg, rad, 5, false),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false }));
+      mesh.renderOrder = 6;
       if (meta) mesh.userData.edge = meta;      // 这段线是谁到谁 → 可被点选，交给宿主去点亮物理路径
       commGroupG.add(mesh);
       return mesh;
     }
 
-    /* ── 字牌（高分辨率圆角 label，随主题）── */
+    /* ── 字牌（高分辨率圆角 label，随主题）──────────────────────────────────
+       排版纪律对齐设计系统的 model-architecture-training-sidecar pattern：
+         · 字牌是「跟着场景缩放的几何标注」，因此允许小于 UI 的 12px 下限，但要有下限
+           与兜底——这里给 MIN_LABEL_PX 的屏幕像素地板（按当前相机换算世界尺寸），
+           兜底是悬停 tooltip 与右上信息卡（固定屏幕尺寸、同样的信息）；
+         · 语义色只落在「名字」上，解释性文字用中性次级前景色（两段式字牌），
+           annotation 的对比度始终低于模型本身；
+         · 字牌绝不盖住它所标注的东西：远离盒子的横幅用中性引线牵回去，而不是压上去。 */
+    const MIN_LABEL_PX = 11;
+    const worldPerPx = () => (2 * cam.half) / Math.max(1, stageEl.clientHeight);
     function makeLabel(text, color, w) {
       const SS = 4, fontPx = 44, padX = 22, padY = 11;
+      const segs = Array.isArray(text) ? text : [{ t: String(text), c: color }];
+      text = segs.map((x) => x.t).join('');
       // 字体取自设计系统的 --font-sans（3D 字牌是 canvas 绘制，需具体字体栈）
       const FONT = `700 ${fontPx}px ${TOK['--font-sans'] || "'Inter','Source Han Sans SC','PingFang SC',sans-serif"}`;
       const meas = document.createElement('canvas').getContext('2d');
@@ -624,20 +655,31 @@
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.fill();
       c.lineWidth = 2; c.strokeStyle = tokHex('--border-strong');
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.stroke();
-      let fill = color;
-      if (light) {
-        const tc = new THREE.Color(color), hsl = {}; tc.getHSL(hsl);
-        tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(hsl.l, 0.28)); fill = '#' + tc.getHexString();
-      }
-      c.font = FONT; c.fillStyle = fill; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(text, tw / 2, th / 2);
+      c.font = FONT; c.textAlign = 'left'; c.textBaseline = 'middle';
+      // 两段式：每段各自的色（名字用语义色、解释用中性色）；单段时与原来完全一致
+      const dark = (col) => {
+        if (!light) return col;
+        const tc = new THREE.Color(col), hsl = {}; tc.getHSL(hsl);
+        tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(hsl.l, 0.28));
+        return '#' + tc.getHexString();
+      };
+      let x = (tw - meas.measureText(text).width) / 2;
+      segs.forEach((sg) => {
+        c.fillStyle = dark(sg.c || color);
+        c.fillText(sg.t, x, th / 2);
+        x += meas.measureText(sg.t).width;
+      });
       const tex = new THREE.CanvasTexture(cv);
       tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter; tex.generateMipmaps = true;
       try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch (e) { /* noop */ }
       tex.needsUpdate = true;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-      const worldW = w * tw / 512;
+      let worldW = w * tw / 512;
+      // 屏幕像素地板：字号（世界尺寸里的 fontPx/tw 那一份）换算到屏幕不得低于 MIN_LABEL_PX
+      const px = (worldW * (fontPx / tw)) / worldPerPx();
+      if (px < MIN_LABEL_PX) worldW *= Math.min(1.8, MIN_LABEL_PX / px);   // 封顶 1.8×：地板是兜底，不是放大器
       sp.scale.set(worldW, worldW * th / tw, 1);
+      sp.material.userData.baseOp = 1;
       return sp;
     }
 
@@ -655,7 +697,7 @@
     }
     function applyGridEmphasis() {
       const k = focusOn() ? 1.6 : 1;
-      gridMats.forEach((m) => { m.opacity = Math.min(1, m.userData.baseOp * k); });
+      gridMats.forEach((m) => { m.opacity = Math.min(1, m.userData.baseOp * k * (settling ? 0.45 : 1)); });
     }
     // 字牌尺度：世界尺寸随模型尺度伸缩，使标注在屏幕上占比恒定（相机按包围盒取景，
     // 固定世界尺寸的字牌在小规格下会被放大到盖满画面——128 卡与 4000 卡差 6 倍）。
@@ -670,12 +712,25 @@
     const D = (v) => v * Math.max(0.5, LS);
     // 长文案「读图横幅」（w≥5）只在轴测视图显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本
     // 长度膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
-    function axText(text, color, w, pos) {
+    function axText(text, color, w, pos, anchor) {
       const l = makeLabel(text, color, w * 1.25 * LS);
       l.position.copy(pos);
       l.userData.banner = w >= 5;
       axGroup.add(l);
+      // 引线：横幅坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
+      // 也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
+      if (anchor) {
+        const from = l.position.clone().lerp(anchor, Math.min(0.5, (l.scale.y * 0.7) / Math.max(0.01, l.position.distanceTo(anchor))));
+        const g = new THREE.BufferGeometry().setFromPoints([from, anchor]);
+        const m = new THREE.LineBasicMaterial({ color: new THREE.Color(tokHex('--border-strong')), transparent: true, opacity: isDark() ? 0.5 : 0.6 });
+        const ln = new THREE.Line(g, m);
+        ln.userData.banner = l.userData.banner;      // 与横幅同进退（2D 视角里一起隐藏）
+        axGroup.add(ln);
+      }
+      return l;
     }
+    // 两段式横幅：名字用维度签名色、解释用中性次级前景色
+    const seg2 = (head, hc, rest) => [{ t: head, c: hc }, { t: rest, c: tokHex('--foreground-secondary') }];
     function applyAxVisibility() {
       axGroup.traverse((o) => { if (o.isSprite && o.userData.banner) o.visible = S.view === 0; });
     }
@@ -754,10 +809,13 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
-        axText(`TP×${TP} 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`, TPc, 7, V3(0, b.y0 - D(2.6), b.z1 + D(3.2)));
+        axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7,
+          V3(0, b.y0 - D(2.6), b.z1 + D(3.2)), V3(0, b.y0, b.z1));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1)));
-        axText(`DP×${REP} 完整副本 · 数据不同 · 梯度 AllReduce`, DPc, 8, V3(b.x1 + D(5), b.y0 - D(2.6), 0));
-        axText(`PP×${PP} 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`, PPc, 7.6, V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0));
+        axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8,
+          V3(b.x1 + D(5), b.y0 - D(2.6), 0), V3(b.x1, b.y0, 0));
+        axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6,
+          V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0), V3(b.x0, b.y1, b.z0));
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + D(3.6), 0));
         // 层段标尺：每个 PP 段 "S0·L1-12"（左后棱一列）
         for (let s2 = 0; s2 < PP; s2++) {
@@ -777,7 +835,8 @@
         R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
         axText('DP0', DPc, 1.8, pos(0, 0, 0).add(V3(0, 1.6, 0)));
         axText('DP' + (REP - 1), DPc, 2.1, pos(0, 0, REP - 1).add(V3(0, 1.6, 0)));
-        axText(`DP 平铺 · ${REP} 块板 = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`, DPc, 11, V3(0, b.y1 + D(3.4), 0));
+        axText(seg2(`DP 平铺 · ${REP} 块板`, DPc, ` = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`), DPc, 11,
+          V3(0, b.y1 + D(3.4), 0), V3(0, b.y1, 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
         // 板内两根轴只用文案标注：板内格线试过（一块板上单独铺一层格子，在一字排开的
         // 100 块板里像块悬空面板）、轴脊短线也试过（散在模型外，像画错的连线）——都撤了。
@@ -797,7 +856,8 @@
           axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? tokHex('--warning') : EPc, 3,
             V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 2) * 1.1, 0));
         }
-        axText(`${EP} 面墙 = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`, EPc, 10, V3(0, b.y1 + D(4.2), 0));
+        axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`), EPc, 10,
+          V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
         const rowZ = bb.z0;
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - D(1.7), rowZ));
         axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0));
@@ -809,7 +869,8 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + D(1.2) + (t % 2) * 1.1, 0));
-        axText(`${TP} 面墙 = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`, TPc, 9.5, V3(0, b.y1 + D(4.2), 0));
+        axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5,
+          V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
         const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
         for (let k = 0; k < TP - 1; k++) axLine(dots[k], dots[k + 1], TPw, 0.07);
         dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
@@ -826,7 +887,8 @@
           const lr = model.stageLayerRange(st);
           axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0));
         }
-        axText(`前向激活 S0→S${PP - 1}（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`, PPc, 10.5, V3(0, b.y1 + D(4.9), 0));
+        axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5,
+          V3(0, b.y1 + D(4.9), 0), V3(0, b.y1 + D(0.6), 0));
         axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1)));
         axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0));
       }
@@ -1569,7 +1631,7 @@
     }, { passive: false });
 
     /* ── 主循环 ── */
-    let raf = 0, lastRecolor = -1, lastMs = null, lastTimeUi = -1, lastPhase = -1;
+    let raf = 0, lastRecolor = -1, lastMs = null, lastTimeUi = -1, lastPhase = -1, lastSettling = false;
     function frame(nowMs) {
       raf = global.requestAnimationFrame(frame);
       // 累加制时钟：时间轴游标可拖动定位（绝对时钟会把拖动的 S.t 覆盖掉）
@@ -1582,6 +1644,17 @@
         lastTimeUi = nowMs;
         const ph = phaseIdx(); syncTimeUI();
         if (ph !== lastPhase) { lastPhase = ph; renderHud(); renderLegend(); renderInfo(); rebuildComm(); }   // 换阶段 → 主导维/图例/信息卡随之切换
+      }
+      // 重排飞行期间标注降一档不透明度（结束后恢复）：飞行中卡在动、标注还在原位，
+      // 满不透明的字牌会看着像卡在半空的贴纸。
+      if (settling !== lastSettling) {
+        lastSettling = settling;
+        axGroup.traverse((o) => {
+          const m = o.material;
+          if (!m || m.opacity == null) return;
+          if (m.userData.baseOp == null) m.userData.baseOp = m.opacity;
+          m.opacity = m.userData.baseOp * (settling ? 0.45 : 1);
+        });
       }
       // 位置飞行 lerp（切形态重排动画；稳定后停写省 CPU）
       if (settling) {
@@ -1633,7 +1706,7 @@
         S.sel = null; S.hover = null; S.sliceVal = 0;
         buildField();
         clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
-        renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+        fitView(); renderAxes(); applyAxVisibility(); updateSlab();
         refresh2D(); renderPill();
         renderHud(); renderLegend(); renderInfo(); syncCfgUI();
         return { ok: true, ranks: model.N };
@@ -1642,7 +1715,7 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); updateSlab();
         renderHud(); renderPill(); syncChrome(); refresh2D();
       },
       setView(v) {
@@ -1729,7 +1802,7 @@
       scene.background = new THREE.Color(c || (isDark() ? '#101010' : '#F5F5F5'));
     }
     applySceneBg();
-    resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
+    resize(); fitView(); renderAxes(); applyAxVisibility(); updateSlab();
     recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
