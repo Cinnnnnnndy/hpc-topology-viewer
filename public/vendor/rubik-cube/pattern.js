@@ -403,6 +403,7 @@
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
+      more: false,                   // 工具栏抽屉（着色/注入/连线/时间/并行）是否展开
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -434,14 +435,18 @@
     root.innerHTML = [
       '<div class="prc-stage"></div>',
       opts.chrome === false ? '' : [
+        // 常驻只留「形态 / 视角」——它们决定画面本身怎么摆；其余（着色/注入/连线/时间/
+        // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         '<div class="prc-topbar panel-shell">',
         '  <div class="prc-row prc-row-modes"><span class="prc-lab">形态</span></div>',
         '  <div class="prc-row prc-row-views"><span class="prc-lab">视角</span></div>',
-        '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
-        '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
-        '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
-        '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
-        '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
+        '  <div class="prc-more">',
+        '    <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
+        '    <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
+        '    <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
+        '    <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
+        '    <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
+        '  </div>',
         '</div>',
         '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
@@ -1239,46 +1244,42 @@
     }
     // 图例必须跟着「当前卡块着色」走：分组着色时列出各组的实际配色，负载着色时给色带，
     // 注入异常时给异常组——否则切了着色图例纹丝不动，读者按图例根本对不上画面。
+    /* 图例 = 只回答「这个颜色叫什么」：分「着色 / 连线」两段，每段一行一条，
+       条目只有色块 + 名字。为什么、怎么读（此刻主导是什么意思、压暗代表什么、
+       同色非同组…）一律收进对应那排控件的问号气泡——图例不承担解释。 */
     function renderLegend() {
       const lg = $('.prc-legend'); if (!lg) return;
-      const chip = (c, t) => `<span><i style="background:${c}"></i>${esc(t)}</span>`;
+      const row = (c, t) => `<div class="prc-lgrow"><i style="background:${c}"></i><span>${esc(t)}</span></div>`;
+      const sec = (t) => `<div class="prc-lgsec">${esc(t)}</div>`;
       const parts = [];
       if (S.anom !== 'none') {
-        const what = { tp: `TP 槽 0（全网同槽位卡）`, pp: `PP 级 0（一整个流水段）`,
-          dp: `DP 副本 0（一份完整拷贝）`, ep: `EP 桶 ${anomBucket()}（持有该桶的所有 rank）` }[S.anom];
-        parts.push(`<b>卡块着色</b>`, chip('var(--danger)', `异常组 = ${what}`), chip(rgbCss(loadColor(0.2)), '其余（平静）'));
+        const what = { tp: 'TP 槽 0', pp: 'PP 级 0', dp: 'DP 副本 0', ep: `EP 桶 ${anomBucket()}` }[S.anom];
+        parts.push(sec('着色 · 异常注入'), row('var(--danger)', `异常组 ${what}`), row(rgbCss(loadColor(0.2)), '其余'));
       } else if (S.colorBy === 'load') {
-        parts.push(`<b>卡块着色</b>`, `<span class="prc-ramp"><i></i>负载 低→高 · 当前阶段 ${esc(PHASES[phaseIdx()].id)}</span>`);
+        parts.push(sec('着色 · 状态热力'),
+          `<div class="prc-lgrow prc-ramp"><i></i><span>负载 低→高</span></div>`);
       } else {
-        const key = S.colorBy;
-        const pl = model.placement;
+        const key = S.colorBy, pl = model.placement;
         const n = key === 'tp' ? TP : key === 'pp' ? PP : key === 'dp' ? REP
           : key === 'host' ? pl.hosts : key === 'pod' ? pl.pods : EP;
         const lab = { tp: 'TP', pp: 'PP', dp: 'DP副本', ep: 'EP桶', host: '主机', pod: 'Pod' }[key];
-        const MAXC = 8, shown = Math.min(n, MAXC);
-        parts.push(`<b>卡块着色 · 按 ${esc(lab)} 分组</b>`);
-        for (let i = 0; i < shown; i++) parts.push(chip(groupColor(i), `${lab}${i}`));
-        if (n > shown) parts.push(`<span class="prc-dim">… 共 ${n} 组${n > GROUP_TOKENS.length ? `（${GROUP_TOKENS.length} 色循环，同色非同组）` : ''}</span>`);
+        const MAXC = 6, shown = Math.min(n, MAXC);
+        parts.push(sec(`着色 · 按 ${lab} 分组`));
+        for (let i = 0; i < shown; i++) parts.push(row(groupColor(i), `${lab}${i}`));
+        if (n > shown) parts.push(`<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">… 共 ${n} 组</span></div>`);
       }
-      // 压暗也是一种「卡块着色」：不说清楚，读者会以为那些卡是另一个组
       const d = curDepth();
-      if (d && S.sliceOn) parts.push(chip(dimSwatch(2), `压暗 = 非当前剖面层（${esc(d.slice.lab)}≠${S.sliceVal}）`));
-      if (focusOn()) parts.push(chip(dimSwatch(1), '压暗 = 与选中卡无关'));
-      // 图例只解释「屏幕上真的出现的颜色」：维度签名色原本不画在卡上、故不进图例；
-      // 但连线开着时它们确实以线/盒/轮廓的形式出现在画面里 → 单列一段解释。
+      if (d && S.sliceOn) parts.push(row(dimSwatch(2), '剖面外'));
+      if (focusOn()) parts.push(row(dimSwatch(1), '无关卡'));
       if (S.sel != null) {
-        const on = [];
-        if (S.wire.members) on.push('成员框');
-        if (S.wire.lines) on.push('走线');
-        if (S.wire.outline) on.push('域轮廓');
-        if (S.wire.movers) on.push('方向粒子');
-        if (on.length) {
+        const anyOn = S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers;
+        if (anyOn) {
           const cur = PHASES[phaseIdx()].dim;
-          parts.push(`<b>连线 · ${esc(on.join('/'))}</b>`);
+          parts.push(sec('连线 · 通信域'));
           peerDims.forEach((dm) => {
             const algo = dm === 'EP' ? 'AllToAll' : dm === 'PP' ? 'P2P 链'
               : `AllReduce ${S.algo === 'tree' ? 'Tree' : 'Ring'}`;
-            parts.push(chip(dimc(dm), `${dm} ${algo}${dm === cur ? '（此刻主导 · 加亮 + 粒子）' : ''}`));
+            parts.push(`<div class="prc-lgrow${dm === cur ? ' is-now' : ''}"><i style="background:${dimc(dm)}"></i><span>${esc(dm + ' ' + algo)}</span></div>`);
           });
         }
       }
@@ -1290,27 +1291,42 @@
       if (primOf(d) === 'AllReduce' && algoOf(d) === 'ring') return `Ring ${phaseU() < 0.5 ? 'ReduceScatter' : 'AllGather'} 段`;
       return primOf(d);
     }
+    // 选中的那条通信边（点线之后）：谁到谁、跨了哪层物理链路
     function edgeLine() {
       const e = S.selEdge; if (!e) return '';
-      return `<br><span class="prc-dim">选中边</span> <b>${e.dim} ${e.prim}</b> rank ${e.from} → ${e.to}` +
+      return `<b>${e.dim} ${e.prim}</b> rank ${e.from} → ${e.to}` +
         ` · <span style="color:${tierc(e.tier)}">${TIER_LAB[e.tier]}</span>` +
         `<span class="prc-dim">（机${e.hosts[0]}→${e.hosts[1]} · Pod${e.pods[0]}→${e.pods[1]}）</span>`;
+    }
+    /* 点选详情面板：结构照搬设计系统 sidecar 的 inspector——kicker（类别）→ 标题（是谁）
+       → 一句定义 → 键值表（取值）→ 结论条（此刻状态 / 选中的那条边）。 */
+    function kv(lab, val) {
+      return `<div class="prc-kvrow"><span class="prc-kvlab">${lab}</span><span class="prc-kvval">${val}</span></div>`;
     }
     function renderInfo() {
       const info = $('.prc-info'); if (!info) return;
       if (S.sel == null) { info.classList.remove('show'); info.innerHTML = ''; return; }
       const r = S.sel, st = model.ppOf(r), lr = model.stageLayerRange(st), e = model.epOf(r);
+      const ph = PHASES[phaseIdx()], pl = model.placement;
       info.classList.add('show');
-      info.innerHTML = `<b>rank ${r}</b> / ${N}` +
-        `<br><span style="color:${dimc('TP')}">TP${model.tpOf(r)}</span> · ` +
-        `<span style="color:${dimc('PP')}">PP${st}（S${st}·L${lr.lo}-${lr.hi}）</span> · ` +
-        `<span style="color:${dimc('DP')}">DP副本${model.repOf(r)}</span>` +
-        `<br><span style="color:${dimc('EP')}">EP桶${e}（${model.expRange(e)}）· A2A域${model.domOf(r)}</span>` +
-        `<br><span style="color:${tierc('ub')}">机${model.hostOf(r)}</span> · ` +
-        `<span style="color:${tierc('rail')}">Pod${model.podOf(r)}</span>` +
-        `<span class="prc-dim">（${model.placement.cardsPerHost} 卡/机 · ${model.placement.hostsPerPod} 机/Pod）</span>` +
-        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导（${esc(ringStage())}）· 再点空白处取消</span>` +
-        physTally(r) + edgeLine();
+      const tally = physTally(r), edge = edgeLine();
+      info.innerHTML =
+        `<button class="prc-infoclose btn btn-sm" type="button" aria-label="取消选中">${ICON.close}</button>` +
+        `<div class="prc-kicker">RANK</div>` +
+        `<div class="prc-title">rank ${r} <span class="prc-dim">/ ${N}</span></div>` +
+        `<p class="prc-prose">这张卡同时属于四个通信域：换形态只改变它摆在哪，不改变下面这四个身份。</p>` +
+        `<div class="prc-kv">` +
+        kv('TP 槽位', `<b style="color:${dimc('TP')}">TP${model.tpOf(r)}</b> <span class="prc-dim">/ ${TP}</span>`) +
+        kv('PP 段', `<b style="color:${dimc('PP')}">PP${st}</b> <span class="prc-dim">S${st}·L${lr.lo}-${lr.hi}</span>`) +
+        kv('DP 副本', `<b style="color:${dimc('DP')}">${model.repOf(r)}</b> <span class="prc-dim">/ ${REP}</span>`) +
+        kv('EP 桶 · A2A 域', `<b style="color:${dimc('EP')}">桶${e}</b> <span class="prc-dim">${model.expRange(e)} · 域${model.domOf(r)}</span>`) +
+        kv('物理落位', `<b>机${model.hostOf(r)} · Pod${model.podOf(r)}</b> <span class="prc-dim">${pl.cardsPerHost} 卡/机</span>`) +
+        `</div>` +
+        `<div class="prc-status">此刻 <b style="color:${dimc(ph.dim)}">${ph.dim}</b> 主导 · ${esc(ringStage())}` +
+        (tally ? ` · ${tally.replace(/^<br>/, '')}` : '') + `</div>` +
+        (edge ? `<div class="prc-status is-edge">${edge.replace(/^<br>/, '')}</div>` : '');
+      const close = info.querySelector('.prc-infoclose');
+      if (close) close.addEventListener('click', () => api.select(null));
     }
 
     /* 「此刻这一维的走线各跨了哪层」——3D 里画层级色线看不出来（线太细、又和 TP 组
@@ -1336,6 +1352,8 @@
       clock: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
       key: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3M16 7l2 2M13.5 9.5l2 2"/></svg>',
       alert: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 3 20h18L12 4z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+      sliders: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+      close: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
       help: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a3 3 0 0 1 5.8 1c0 2-2.9 2.6-2.9 4"/><path d="M12 17.5v.5"/></svg>',
     };
     /* 每一排控件的「这是什么」——hover / 键盘聚焦弹出说明。
@@ -1344,9 +1362,9 @@
     const HELP = {
       modes: '<b>形态 = 同一批卡换一种堆法。</b>只改变卡摆在哪（谁挨着谁），不改变卡本身、也不改变颜色。哪一维被堆成「一整块」，那一维的问题就现出形状——例如慢副本在「DP平铺」里是干净的一整块板。',
       views: '<b>视角 = 怎么看这堆卡。</b>轴测＝可拖拽旋转的等距 3D；顶/前/侧＝正交锁轴的 2D 投影，会把与视线平行的维折叠（每格重叠多少张卡见右上贴士）。<b>剖面</b>＝只看被折叠那一维的某一层，其余压暗。',
-      lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」。',
+      lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」；主机/Pod＝按物理落位上色，看 rail 亲和。<br>右下角图例只列「颜色 + 名字」：组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；<b>剖面外 / 无关卡</b>那两条灰色是被压暗的卡（不是另一个组）。',
       anom: '<b>注入 = 假装某一维出故障，看它长什么形状。</b>与着色的关系：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。<br>用法：注入 EP桶3 → 标准形态下是一圈周期条带，切到「EP聚簇」就 snap 成一整面墙——这就是「热点桶」的形状。',
-      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。<br>选中卡的信息卡里还有一行「此刻 X 走线 N 段：同机/Pod内/跨Pod」——物理落位默认 8 卡/机 · 32 机/Pod（rank 连号装机，TP 组因此天然同机），要改走 setPlacement API。',
+      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>右下角图例的「连线」一段只列颜色与名字，<b>加粗的那条 = 此刻主导维</b>（走线加亮、方向粒子只跑它）。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。<br>选中卡的信息卡里还有一行「此刻 X 走线 N 段：同机/Pod内/跨Pod」——物理落位默认 8 卡/机 · 32 机/Pod（rank 连号装机，TP 组因此天然同机），要改走 setPlacement API。',
       time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱），走的是哪层总线也不同：<br>· <b>TP</b> 前向 AllReduce —— 节点内 UB · 高频<br>· <b>PP</b> 阶段接力 Send/Recv —— Pod 内跨 Host · 中频<br>· <b>EP</b> MoE AllToAll 浪涌 —— Pod 内全互联 · 浪涌<br>· <b>DP</b> 梯度 AllReduce —— 跨 Pod Scale-Out · 低频大包<br>热力着色与方向粒子都跟着阶段走；轨道可拖拽定位（悬停某段看它是什么），Play/Pause 控制自动推进。当前阶段常驻在左下 HUD 的「此刻」一行。',
       cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
     };
@@ -1358,6 +1376,10 @@
         return `<br><b>此刻：${esc(m.sub)}</b><br>为什么这样摆：${esc(m.why)}` +
           (axNotes.length ? '<br>' + axNotes.map((t) => `· ${esc(t)}`).join('<br>') : '') +
           (S.selLayer != null && S.mode === 0 ? `<br>正高亮整网 L${S.selLayer + 1} 切片` : '');
+      },
+      views: () => {
+        const md = model.modes[S.mode];
+        return md.note2d ? `<br><b>此刻：</b>${esc(md.note2d)}` : '';
       },
       anom: () => {
         const note = {
@@ -1406,7 +1428,7 @@
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
     let wireBtns = [], algoBtns = [];
-    let timeTrack = null, timeHead = null, viewNote = null;
+    let timeTrack = null, timeHead = null, moreBtn = null;
     function syncTimeUI() {
       if (!timeTrack) return;
       const pi = phaseIdx();
@@ -1437,7 +1459,6 @@
         b.classList.toggle('is-selected', i === S.view);
         if (i > 0) b.textContent = md.viewLabels[i];
       });
-      if (viewNote) { viewNote.textContent = md.note2d || ''; viewNote.style.display = md.note2d ? '' : 'none'; }
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
@@ -1447,6 +1468,10 @@
       const algoKeys = ['auto', 'ring', 'tree'];
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
 
+      if (moreBtn) {
+        moreBtn.innerHTML = ICON.sliders + `<span>${S.more ? '收起' : '更多'}</span>`;
+        moreBtn.classList.toggle('is-selected', S.more);
+      }
       if (playBtn) {
         playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
         playBtn.classList.toggle('is-selected', S.playing);
@@ -1472,7 +1497,13 @@
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
-      viewNote = document.createElement('span'); viewNote.className = 'prc-note'; rowViews.appendChild(viewNote);
+      // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）
+      moreBtn = rowViews.appendChild(chipBtn('', () => {
+        S.more = !S.more;
+        root.querySelector('.prc-topbar').classList.toggle('is-open', S.more);
+        syncChrome(); resize();
+      }));
+      moreBtn.classList.add('prc-morebtn');
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';

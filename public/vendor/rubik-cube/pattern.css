@@ -28,6 +28,14 @@
   max-width: min(92vw, 680px);
 }
 .prc-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */
+.prc-more { display: none; flex-direction: column; gap: var(--space-2); }
+.prc-topbar.is-open .prc-more {
+  display: flex;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle, var(--border-default));
+}
+.prc-morebtn { margin-left: auto; }
 /* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
 .prc-lab {
   font: var(--type-label);
@@ -67,8 +75,12 @@
 .prc-help:hover .prc-helptip, .prc-help:focus-visible .prc-helptip { display: block; }
 .prc-mono { font: var(--type-mono); color: var(--foreground-secondary); }
 
-/* 按钮内的图标（Lucide 线性 SVG，随文字色） */
+/* 按钮：与设计系统页面上的控件同款——胶囊形、细描边、克制的字色。
+   （.btn 的其余表现全部来自设计系统，本文件只统一圆角与图标对齐。） */
+.prc-root .btn { border-radius: var(--radius-pill); }
 .prc-root .btn svg { flex: 0 0 auto; }
+/* 数字输入也跟着做成胶囊，与同一排的按钮成套 */
+.prc-cfgitem input { border-radius: var(--radius-pill); }
 
 /* ── 剖面滑杆 / 并行度输入 ─────────────────────────────────────────── */
 .prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
@@ -128,26 +140,79 @@
 .prc-pill.show { display: inline-flex; }
 
 /* ── 卡块着色图例（右下）──────────────────────────────────────────── */
+/* 图例只回答「这个颜色叫什么」：分段 + 一行一条 + 只有色块和名字；
+   解释一律在对应控件行的问号气泡里。 */
 .prc-legend {
   position: absolute; right: var(--space-3); bottom: var(--space-3); z-index: 5;
-  display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center;
+  display: flex; flex-direction: column; gap: 2px;
   padding: var(--space-2) var(--space-3);
   font: var(--type-body-sm);
-  max-width: min(92vw, 560px);
+  width: max-content; max-width: min(92vw, 260px);
 }
-.prc-legend span { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--foreground-secondary); }
-.prc-legend b { font: var(--type-label); text-transform: uppercase; letter-spacing: 0.5px; color: var(--foreground-muted); }
-.prc-legend i { width: 10px; height: 10px; border-radius: var(--radius-sm); display: inline-block; }
-.prc-legend .prc-ramp i { width: 44px; background: linear-gradient(90deg, var(--success), var(--warning), var(--danger)); }
+.prc-lgsec {
+  margin-top: var(--space-2);
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--foreground-muted);
+}
+.prc-lgsec:first-child { margin-top: 0; }
+.prc-lgrow { display: flex; align-items: center; gap: var(--space-2); color: var(--foreground-secondary); }
+.prc-lgrow i { width: 10px; height: 10px; border-radius: var(--radius-sm); flex: 0 0 auto; }
+.prc-lgrow span { font: var(--type-mono); }
+.prc-lgrow.is-now span { color: var(--foreground); font-weight: 700; }
+.prc-legend .prc-ramp i {
+  width: 34px; border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--success), var(--warning), var(--danger));
+}
 
-/* ── 选中卡信息卡（右上，贴士下方）────────────────────────────────── */
+/* ── 选中卡详情面板（右上，贴士下方）─────────────────────────────────
+   结构与观感对齐设计系统 sidecar 的 inspector：
+   kicker（类别）→ 标题（是谁）→ 一句定义 → 键值表（取值）→ 结论条（此刻状态）。 */
 .prc-info {
   position: absolute; top: calc(var(--space-6) * 2 + var(--space-2)); right: var(--space-3); z-index: 5;
-  padding: var(--space-3);
-  font: var(--type-mono); line-height: 1.7;
+  width: min(88vw, 330px);
+  padding: var(--space-4, var(--space-3));
   display: none;
 }
 .prc-info.show { display: block; }
+.prc-infoclose {
+  position: absolute; top: var(--space-2); right: var(--space-2);
+  width: 26px; min-width: 26px; height: 26px; padding: 0;
+  border-radius: var(--radius-pill);
+}
+.prc-kicker {
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--primary);
+}
+.prc-title {
+  margin-top: var(--space-1);
+  font: var(--type-title, 700 16px/1.3 var(--font-sans));
+  font-family: var(--font-mono); font-weight: 700;
+  color: var(--foreground);
+}
+.prc-prose {
+  margin: var(--space-2) 0 var(--space-3);
+  font: var(--type-body-sm); line-height: var(--line-height-body);
+  color: var(--foreground-secondary);
+}
+.prc-kv {
+  display: grid; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--background));
+}
+.prc-kvrow { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.prc-kvlab { font: var(--type-mono); color: var(--foreground-muted); white-space: nowrap; }
+.prc-kvval { font: var(--type-mono); color: var(--foreground); text-align: right; }
+.prc-kvval b { font-weight: 700; }
+.prc-status {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: var(--radius-md);
+  font: var(--type-mono); line-height: var(--line-height-body);
+  color: var(--foreground-secondary);
+}
+.prc-status.is-edge { border-color: color-mix(in srgb, var(--foreground) 18%, transparent); }
 
 /* ── 悬停 tooltip ─────────────────────────────────────────────────── */
 .prc-tip {
