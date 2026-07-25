@@ -33,6 +33,24 @@
     hotBuckets: [0, 2],    // 示意热点专家桶（★）
   };
 
+  /* ══ 布局规则（单一事实源）════════════════════════════════════════════
+     目标：任何 (tp,pp,dp,ep) 组合都自动排布好，形态只声明「意图」不写死数值，
+     以后加维度（CP/SP…）或加形态只需按同样规则声明。三条规则：
+
+       ① 卡块尺寸恒定（CARD）——换形态、换配置都不改变一张卡的大小；
+       ② 单维轴步距 = CARD[轴] + 缝隙(成员数) × 层级倍率。缝隙按成员数分档：
+          成员越多缝越紧（长轴不被拉成细丝），越少缝越松（短轴不退化成薄片）；
+          层级倍率表达意图：dense 密排 · normal 常规 · spread 留白 · emph 强调分离；
+       ③ 复合轴（外维分块 · 内维紧邻，如「板 / 墙」）：外维步距 = 内维总跨度 +
+          分块留白（按跨度成比例），于是任何规模下块与块都清楚分开、不重叠。
+
+     不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝（0.13×0.55 ≈ 0.07）→ 永不重叠。 */
+  const CARD = { x: 0.9, y: 0.6, z: 0.3 };
+  const GAP_BY_N = (n) => (n <= 4 ? 0.85 : n <= 12 ? 0.6 : n <= 48 ? 0.3 : 0.13);
+  const TIER = { dense: 0.55, normal: 1, spread: 1.8, emph: 4 };
+  const stepOf = (ax, n, tier) => CARD[ax] + GAP_BY_N(n) * TIER[tier || 'normal'];
+  const padOf = (span) => Math.max(0.9, span * 0.34);        // 块间留白（随块跨度成比例）
+
   // 维度签名色（深色主题 / 浅色主题），与 cockpit DIMHEX 一致
   const DIMC = {
     TP: { dark: '#39c5cf', light: '#0d6b75' },
@@ -76,19 +94,23 @@
     const cT = (TP - 1) / 2, cP = (PP - 1) / 2, cR = (REP - 1) / 2,
       cE = (EP - 1) / 2, cD = (DOM - 1) / 2, cG = (COLS - 1) / 2, cZ = (ROWS - 1) / 2;
 
-    /* 轴间距：遵守 cockpit「轴间距失衡修正」的教训——同屏两轴的步距比控制在 ~4× 以内，
-       避免正交 2D 强制方形格子时一根轴被拖成一堆小块。 */
+    /* 各形态的轴间距——全部由上面的布局规则推导（不再逐形态手调常量）。
+       每个形态只声明「哪根轴放哪个维、用什么层级」，换任何并行数字都自动成立。 */
+    const CY = 9;                                    // 逻辑体离地高度（各形态统一）
+    const tpStep = stepOf('x', TP);                  // 板 / 墙内 TP 列步距
+    const blockW = TP * tpStep;                      // 一块板 / 一面墙的宽度（内维总跨）
+    const gridCell = Math.max(blockW, CARD.z);       // DP 平铺：宫格取方形格（板薄，按板宽定）
     const SP = {
-      std: { sx: 1.6, sy: 1.6, sz: 0.42, cy: 9 },
-      // DP 平铺的列间距随 TP 自适应：板宽 = TP×1.15，间距 = 板宽 + 缝，避免 TP 大时同行板粘连
-      dpt: { gapX: TP * 1.15 + 2.4, gapZ: 4.2, tp: 1.15, pp: 1.4, y0: 1.0 },
-      // EP 墙内 X=TP 成列（墙宽 = TP×1.05，墙距 = 墙宽 + 缝）· Z=域。卡块尺寸全形态恒定，
-      // 靠布局保证任何配置下步距 ≥ 卡块（不再缩放卡块）。
-      ep: { gapE: TP * 1.05 + 1.6, tp: 1.05, pp: 1.5, dom: 1.35, cy: 9 },
-      // TP切片/PP流水 是「强调类」形态：2D 投影与标准完全重合，已收编到标准形态（views 门控），
-      // 因此 3D 间距不再受正交方格比例约束，放开拉大以强调「墙拉开 / 段拉开」的读法。
-      tps: { gapT: 4.2, pp: 1.5, rep: 0.42, cy: 9 },
-      ppf: { gapP: 4.6, tp: 1.3, rep: 0.42, cy: 6 },
+      // 标准：三根语义轴各一维，常规层级 —— 位置即多维坐标
+      std: { sx: tpStep, sy: stepOf('y', PP), sz: stepOf('z', REP), cy: CY },
+      // DP 平铺：外维 = 副本宫格（方形格 = 板宽 + 块间留白）· 内维 = 板内 TP 列 / PP 行
+      dpt: { gapX: gridCell + padOf(gridCell), gapZ: gridCell + padOf(gridCell), tp: tpStep, pp: stepOf('y', PP), y0: 1.0 },
+      // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
+      ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepOf('y', PP), dom: stepOf('z', DOM, 'spread'), cy: CY },
+      // TP切片 / PP流水 是「强调类」形态（2D 已收编到标准）：主轴用 emph 层级拉开，
+      // 强调「墙拉开查同槽位 / 段拉开找慢段」的读法，其余轴与标准同构。
+      tps: { gapT: stepOf('x', TP, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
+      ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TP), rep: stepOf('z', REP), cy: CY },
     };
 
     // 5 种形态的 rank → 世界坐标（out 为 {x,y,z} 或 THREE.Vector3 均可）
@@ -218,7 +240,7 @@
     }
 
     return {
-      config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, SP,
+      config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, SP, CARD,
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
@@ -294,7 +316,7 @@
     const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
 
     // 卡阵列：InstancedMesh，1 小块 = 1 卡（rank）。维度改变时整体重建（buildField）。
-    const BOXG = new THREE.BoxGeometry(0.9, 0.6, 0.3);
+    const BOXG = new THREE.BoxGeometry(CARD.x, CARD.y, CARD.z);   // 卡块尺寸 = 布局规则的 CARD（恒定）
     const boxMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.02 });
     let chips = null;
     let cur, target, scl;
@@ -627,22 +649,34 @@
       const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
       const mx = Math.min(8, Math.max(1.6, span * 0.1));
       // 半尺寸 = rank 中心包围盒 + 卡块自身半尺寸（包围盒只含中心点）+ 标注留白
-      const ex = (b.x1 - b.x0) / 2 + 0.45 + mx;
-      const ey = (b.y1 - b.y0) / 2 + 0.3 + mx * 0.6;
-      const ez = (b.z1 - b.z0) / 2 + 0.15 + mx;
+      const ex = (b.x1 - b.x0) / 2 + CARD.x / 2 + mx;
+      const ey = (b.y1 - b.y0) / 2 + CARD.y / 2 + mx * 0.6;
+      const ez = (b.z1 - b.z0) / 2 + CARD.z / 2 + mx;
       cam.cx = (b.x0 + b.x1) / 2; cam.cy = (b.y0 + b.y1) / 2; cam.cz = (b.z0 + b.z1) / 2;
       cam.panX = 0; cam.panY = 0;
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
-      const need = (hw, hh) => Math.max(hh, hw / asp) * 1.05;
-      if (S.view === 1) cam.half = need(ex, ez);          // 顶视：屏幕 横=X 纵=Z
-      else if (S.view === 2) cam.half = need(ex, ey);     // 前视：横=X 纵=Y
-      else if (S.view === 3) cam.half = need(ez, ey);     // 侧视：横=Z 纵=Y
+      // 模型在屏幕右/上方向的半跨度（hw, hh）——正交三视图直取，轴测按相机基向量投影
+      // （近似式在小尺度下会让方块溢出画布）
+      let hw, hh;
+      if (S.view === 1) { hw = ex; hh = ez; }             // 顶视：屏幕 横=X 纵=Z
+      else if (S.view === 2) { hw = ex; hh = ey; }        // 前视：横=X 纵=Y
+      else if (S.view === 3) { hw = ez; hh = ey; }        // 侧视：横=Z 纵=Y
       else {
-        // 轴测：把包围盒精确投影到相机的右/上基向量上（近似式在小尺度下会让方块溢出画布）
         const st = Math.abs(Math.sin(cam.theta)), ct = Math.abs(Math.cos(cam.theta));
         const sp = Math.abs(Math.sin(cam.phi)), cp = Math.abs(Math.cos(cam.phi));
-        cam.half = need(ex * st + ez * ct, ey * cp + sp * (ex * ct + ez * st));
+        hw = ex * st + ez * ct;
+        hh = ey * cp + sp * (ex * ct + ez * st);
       }
+      // 让开左上角的工具栏卡片：放宽取景后把模型偏向右下。偏移量以「放宽后的实际余量」
+      // 封顶，宽扁模型不会被推出画布（面板尺寸从 DOM 实测；chrome:false 的嵌入用法无面板 → 不偏移）。
+      const bar = root.querySelector('.prc-topbar');
+      const br = bar ? bar.getBoundingClientRect() : null;
+      const bx = br ? Math.min(0.18, (br.width / w) * 0.3) : 0;
+      const by = br ? Math.min(0.18, (br.height / h) * 0.42) : 0;
+      cam.half = Math.max(hh, hw / asp) * 1.05 * (1 + Math.max(bx, by));
+      const halfW = cam.half * asp;
+      cam.panX = -Math.min(bx * halfW, Math.max(0, halfW - hw));    // 相机左移 → 模型右移
+      cam.panY = Math.min(by * cam.half, Math.max(0, cam.half - hh)); // 相机上移 → 模型下移
     }
     function applyCamera() {
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
