@@ -53,6 +53,24 @@
 }
 .prc-root .prc-tools > .btn,
 .prc-root .prc-toolslot > .btn { padding: 0 calc(var(--space-3) + var(--segmented-control-padding)); }
+/* 实心按钮（Apply）也用主色：一屏里只有它是黑的，会被当成另一类控件 */
+.prc-root .btn-solid,
+.prc-root .btn-solid:hover {
+  background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
+}
+
+/* 时间：播放/暂停常驻顶栏，阶段轨道悬停才弹出（拖拽期间不收起） */
+.prc-timewrap { position: relative; display: inline-flex; }
+.prc-timepop {
+  display: none;
+  position: absolute; top: calc(100% + var(--space-2)); right: 0; z-index: 8;
+  padding: var(--space-2) var(--space-3);
+  align-items: center; gap: var(--space-2);
+}
+.prc-timewrap:hover .prc-timepop,
+.prc-timewrap:focus-within .prc-timepop,
+.prc-timewrap.is-dragging .prc-timepop { display: flex; }
+
 /* 只有图标的按钮：正方形，图标居中 */
 .prc-root .prc-iconbtn {
   width: var(--prc-toolh, var(--button-height-sm)); min-width: 0; padding: 0;
@@ -76,9 +94,9 @@
 .prc-more {
   position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); right: var(--space-3); z-index: 6;
   padding: var(--space-3);
-  /* 宽度上限还要给左侧详情卡让出位置（320 + 边距），否则宽屏下抽屉会压住它 */
-  width: max-content;
-  max-width: max(300px, min(calc(100vw - 380px), 900px));
+  /* 抽屉是固定宽度的下拉面板：max-content 会被最宽的一行（并行读数 + 两个预设）
+     撑到很宽，其余行右边就空一大片。定宽 + 行内换行更整齐；同时给左侧详情卡让位。 */
+  width: min(560px, calc(100vw - 380px), 92vw);
 }
 
 /* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */
@@ -137,8 +155,10 @@
 .prc-more .prc-mono { white-space: normal; }
 /* 行内小标题（如「算法」）与前一组拉开距离 */
 .prc-lab-inline { margin-left: var(--space-3); }
-/* 一行里的「附加行」：读数、预设各自独占一行，不与输入框交错 */
+/* 一行里的「附加行」：读数、预设各自独占一行，不与输入框交错。
+   读数再独占一行，抽屉的宽度就由最宽的控件排决定，右侧不会拖出一大片空白。 */
 .prc-rowfoot { flex: 1 0 100%; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.prc-rowfoot > .prc-mono { flex: 1 0 100%; }
 
 /* 按钮：与设计系统页面上的控件同款——胶囊形、细描边、克制的字色。
    （.btn 的其余表现全部来自设计系统，本文件只统一圆角与图标对齐。） */

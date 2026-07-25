@@ -444,6 +444,10 @@
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',
+        '    <span class="prc-timewrap">',
+        '      <button class="prc-playbtn btn btn-sm prc-iconbtn" type="button"></button>',
+        '      <div class="prc-timepop panel-shell"><span class="prc-lab">时间</span></div>',
+        '    </span>',
         '    <button class="prc-morebtn btn btn-sm prc-iconbtn" type="button"></button>',
         // 宿主控件（主题切换等）的插槽：放进同一张卡，按钮才成套
         '    <span class="prc-toolslot"></span>',
@@ -453,7 +457,6 @@
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
-        '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
         '<div class="prc-pill stat-chip"></div>',
@@ -1552,7 +1555,9 @@
         moreBtn.classList.toggle('is-selected', S.more);
       }
       if (playBtn) {
-        playBtn.innerHTML = (S.playing ? ICON.pause : ICON.play) + `<span>${S.playing ? 'Pause' : 'Play'}</span>`;
+        playBtn.innerHTML = S.playing ? ICON.pause : ICON.play;
+        playBtn.title = S.playing ? `暂停（此刻 ${PHASES[phaseIdx()].id}）` : `播放（此刻 ${PHASES[phaseIdx()].id}）`;
+        playBtn.setAttribute('aria-label', playBtn.title);
         playBtn.classList.toggle('is-selected', S.playing);
       }
       if (sliceBox) {
@@ -1571,7 +1576,7 @@
     if (opts.chrome !== false) {
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
       [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
-        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'], ['cfg', '.prc-row-cfg']]
+        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-timepop'], ['cfg', '.prc-row-cfg']]
         .forEach(([k, sel]) => {
           const lab = $(sel + ' .prc-lab');
           if (lab) { lab.insertAdjacentElement('afterend', helpDot(k)); return; }
@@ -1603,9 +1608,12 @@
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
         .map(([t, k]) => lensSeg.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
-      // 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）：播放/暂停 + 阶段轨道拖拽定位
-      const rowTime = $('.prc-row-time');
-      playBtn = rowTime.appendChild(chipBtn('', () => { S.playing = !S.playing; syncChrome(); }));
+      /* 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）。
+         播放/暂停常驻顶栏（只有图标），阶段轨道悬停时才弹出——它不是常用控件，
+         但要随手够得着；弹层里可以直接拖拽定位，拖拽期间不收起。 */
+      const rowTime = $('.prc-timepop');
+      playBtn = $('.prc-playbtn');
+      playBtn.addEventListener('click', () => { S.playing = !S.playing; syncChrome(); });
       timeTrack = document.createElement('div'); timeTrack.className = 'prc-phasetrack';
       PHASES.forEach((ph, i) => {
         const seg = document.createElement('div');
@@ -1623,8 +1631,12 @@
         if (S.colorBy === 'load' && S.anom === 'none') recolor();
         rebuildComm(); syncTimeUI(); renderHud();
       };
-      timeTrack.addEventListener('pointerdown', (ev) => { timeTrack.setPointerCapture(ev.pointerId); scrub(ev); });
+      const timeWrap = $('.prc-timewrap');
+      timeTrack.addEventListener('pointerdown', (ev) => {
+        timeTrack.setPointerCapture(ev.pointerId); timeWrap.classList.add('is-dragging'); scrub(ev);
+      });
       timeTrack.addEventListener('pointermove', (ev) => { if (ev.buttons & 1) scrub(ev); });
+      global.addEventListener('pointerup', () => timeWrap.classList.remove('is-dragging'));
       rowTime.appendChild(timeTrack);
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
