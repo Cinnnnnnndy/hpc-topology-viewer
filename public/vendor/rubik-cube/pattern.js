@@ -654,11 +654,17 @@
          ② glow core —— 彩色线芯（维度签名色），细而实；
          ③ 流动暗点 —— 见 moverMeshes：沿线跑的小圆点，方向即数据流向，
             速度对应这一阶段的通信节奏。三层里只有 ③ 表达方向，不用箭头。 */
+    /* 一段管 = 一条折线。注意：**不能把整条折线交给一个 TubeGeometry**——
+       TubeGeometry 内部按 getPointAt（等弧长）采样，长短不一的段会让采样点落不到折线
+       拐点上，线于是从卡旁边抄近路（端点仍然精确，只测端点查不出来，这是「线没连到卡上」
+       第三次复发的成因）。所以直线折线由 rebuildComm 拆成逐段调用，这里只画两点之间的
+       一根直管；外凸弧（长边）本来就没有中间的卡要对齐，可以整条交给曲线。 */
     function commLine(points, color, opacity, r, meta) {
       if (points.length < 2) return null;
-      const path = new THREE.CurvePath();
-      for (let i = 1; i < points.length; i++) path.add(new THREE.LineCurve3(points[i - 1], points[i]));
-      const seg = Math.max(4, points.length - 1), rad = r || 0.08;
+      const path = points.length === 2
+        ? new THREE.LineCurve3(points[0], points[1])
+        : new THREE.CatmullRomCurve3(points.slice(), false, 'catmullrom', 0);
+      const seg = Math.max(2, (points.length - 1) * 3), rad = r || 0.08;
       const casing = new THREE.Mesh(
         new THREE.TubeGeometry(path, seg, rad * 2.3, 5, false),
         new THREE.MeshBasicMaterial({ color: new THREE.Color(tokHex('--background')), transparent: true, opacity: opacity * 0.62, depthWrite: false, depthTest: false }));
@@ -1253,11 +1259,17 @@
         const segs = edgesOf(d, members);
         const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
         if (S.wire.lines) {
-          // 每条折线是一根管（重排动画期间每帧重建，逐段建管会把几何数放大百倍），
-          // 段的身份记在 userData.ranks 里，点选时按命中点就近判定是哪一段。
+          // 折线逐段建管：每段两点，端点与拐点都严格落在卡心（整条折线交给一个
+          // TubeGeometry 会按弧长采样，中间拐点被抄近路）。弧（长边）整条画。
           // 走线只按「维」着色：试过按物理层级逐段上色，线太细、又和 TP 组重合，
-          // 基本看不出层级差别 → 物理的事交给流量矩阵卡与信息卡的段数统计（文字更准）。
-          segs.forEach((sg, i) => commLine(paths[i], colorHex, op, rad, { dim: d, ranks: sg.ranks }));
+          // 基本看不出层级差别 → 物理的事交给信息卡的段数统计（文字更准）。
+          segs.forEach((sg, i) => {
+            if (sg.arc) { commLine(paths[i], colorHex, op, rad, { dim: d, ranks: sg.ranks }); return; }
+            const pts = paths[i];
+            for (let k = 1; k < pts.length; k++) {
+              commLine([pts[k - 1], pts[k]], colorHex, op, rad, { dim: d, ranks: [sg.ranks[k - 1], sg.ranks[k]] });
+            }
+          });
         }
         if (on) moverPaths = paths.map((pts) => ({ pts, color: colorHex }));   // 粒子只跑「此刻」这一维
         // 域轮廓：把这一组的成员用一个线框包起来——切到对应形态时组会 snap 成整块，
@@ -1943,7 +1955,7 @@
         return { t: S.t, phase: PHASES[phaseIdx()].id };
       },
       phases: PHASES,
-      scene,                       // 只读挂点：宿主联动与自动化校验（连线端点是否落在卡心）用
+      scene, camera,               // 只读挂点：宿主联动与自动化校验（连线端点是否落在卡心）用
       resize,
       destroy() {
         global.cancelAnimationFrame(raf);

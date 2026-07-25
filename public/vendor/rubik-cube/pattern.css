@@ -90,13 +90,22 @@
   background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
 }
 
+/* 浮在画面上的卡片一律用大圆角（--radius-xl），比 panel-shell 默认的 14px 更圆，
+   与顶栏那排胶囊控件是同一种语气 */
+.prc-root .prc-more,
+.prc-root .prc-info,
+.prc-root .prc-legend,
+.prc-root .prc-timepop,
+.prc-root .prc-helptip { border-radius: var(--radius-xl); }
+
 /* 抽屉挂在顶栏下方、靠右——从「更多」按钮那边落下来 */
 .prc-more {
   position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); right: var(--space-3); z-index: 6;
   padding: var(--space-3);
   /* 抽屉是固定宽度的下拉面板：max-content 会被最宽的一行（并行读数 + 两个预设）
      撑到很宽，其余行右边就空一大片。定宽 + 行内换行更整齐；同时给左侧详情卡让位。 */
-  width: min(560px, calc(100vw - 380px), 92vw);
+  /* 宽度要能让「连线」那排（五个开关 + 算法组）不换行 */
+  width: min(700px, calc(100vw - 380px), 92vw);
 }
 
 /* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */

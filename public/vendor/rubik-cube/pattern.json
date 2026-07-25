@@ -38,7 +38,7 @@
     "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
     "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
-    "handle.scene —— 只读 Three.js 场景挂点：宿主联动与自动化校验用（scripts/verify-rubik-cube.mjs 据此断言连线端点落在卡心）",
+    "handle.scene / handle.camera —— 只读 Three.js 挂点：宿主联动与自动化校验用（scripts/verify-rubik-cube.mjs 据此断言连线端点落在卡心）",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
   ],
   "layoutRules": [
@@ -79,7 +79,8 @@
     "把整句解释做成 3D 里的浮动横幅：大字牌挡卡又抢戏——几何标注只留短标记，散文交给固定屏幕位置的问号气泡",
     "把解释写进图例：图例只列颜色与名字，读法与为什么一律进问号气泡",
     "用 InstancedMesh 画 EdgesGeometry：InstancedMesh 是 Mesh，会把边的顶点当三角形画，卡面上会浮出斜三角——线框一律用 LineSegments（成员框用一条合并缓冲的 LineSegments）",
-    "按帧固定系数做重排缓动：规模一大帧率就掉，cur 到不了 target，卡与线一起停在半路（表现为「线没连到卡上」）——缓动按时间算，收尾精确吸附 cur = target"
+    "按帧固定系数做重排缓动：规模一大帧率就掉，cur 到不了 target，卡与线一起停在半路（表现为「线没连到卡上」）——缓动按时间算，收尾精确吸附 cur = target",
+    "把整条折线交给一个 TubeGeometry：它按 getPointAt（等弧长）采样，长短不一的段会让采样点落不到拐点上，线从卡旁边抄近路——直线折线一律逐段建管，改动后跑 scripts/verify-rubik-cube.mjs"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }
