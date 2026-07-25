@@ -181,6 +181,7 @@
 .prc-flow .prc-mono { font: var(--type-mono); white-space: nowrap; }
 .prc-flowgrid {
   display: grid; gap: 1px; margin: var(--space-2) 0 var(--space-1);
+  max-width: 200px;   /* Pod 少时别把格子撑成大色块 */
   border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 1px;
 }
 .prc-flowgrid i { display: block; aspect-ratio: 1; border-radius: 1px; }

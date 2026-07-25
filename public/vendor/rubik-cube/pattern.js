@@ -470,7 +470,6 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
-        '  <div class="prc-row prc-row-phys"><span class="prc-lab">物理</span></div>',
         '</div>',
         '<div class="prc-hud panel-shell"></div>',
         '<div class="prc-pill stat-chip"></div>',
@@ -1318,7 +1317,7 @@
           </div>`;
       }).join('');
       let grid = '';
-      if (f.grid) {
+      if (f.grid && f.grid.length > 1) {         // 只有 1 个 Pod 时没有「对」可比，别画一个大方块
         const max = Math.max(1, ...f.grid.flat());
         grid = `<div class="prc-flowgrid" style="grid-template-columns:repeat(${f.grid.length}, 1fr)">` +
           f.grid.map((row, i) => row.map((v, j) => {
@@ -1359,9 +1358,8 @@
       views: '<b>视角 = 怎么看这堆卡。</b>轴测＝可拖拽旋转的等距 3D；顶/前/侧＝正交锁轴的 2D 投影，会把与视线平行的维折叠（每格重叠多少张卡见右上贴士）。<b>剖面</b>＝只看被折叠那一维的某一层，其余压暗。',
       lens: '<b>着色 = 给卡上色的镜头，只改颜色不改结构。</b>状态热力＝当前通信阶段的负载（绿→黄→红，跟着时间轴走）；TP/PP/DP/EP＝按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」。',
       anom: '<b>注入 = 假装某一维出故障，看它长什么形状。</b>与着色的关系：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。<br>用法：注入 EP桶3 → 标准形态下是一圈周期条带，切到「EP聚簇」就 snap 成一整面墙——这就是「热点桶」的形状。',
-      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。',
+      wire: '<b>连线 = 选中卡的四个通信域怎么收发。</b>必须先选中一张卡（点画面里的小方块），否则没有对象可画。成员＝同域的对端卡；通信线＝按集合算法画的走线；域轮廓＝把该组整体框起来（看这组在当前堆法下是什么形状）；粒子＝沿「此刻主导维」的走线跑的方向点；<b>聚焦＝把与选中卡无关的卡压暗、网格反过来加强</b>。五个图层各自可关。算法决定 AllReduce 画成 Ring（前半 ReduceScatter / 后半 AllGather）还是 Tree。<br>连线本身也可点：<b>悬停</b>报这一段是谁到谁、跨的是同机 UB / Pod 内 rail / 跨 Pod；<b>点一下</b>选中该段（加粗高亮），并把它抛给宿主（onSelectEdge）去点亮对应的物理链路。<br><b>流量矩阵</b>＝把此刻这一维的全网走线按物理层级归并：同机 UB / Pod 内跨机 rail / 跨 Pod Scale-Out 各多少段、折多少 GB（每边 MB 由 config.traffic 给，量级估算），Pod 不多时再给一张 Pod×Pod 热度网格。落位默认 8 卡/机 · 32 机/Pod（rank 连号装机，TP 组因此天然同机），要改走 setPlacement API。',
       time: '<b>时间 = 一个训练 step 内的 4 个通信阶段</b>（对齐集群驾驶舱），走的是哪层总线也不同：<br>· <b>TP</b> 前向 AllReduce —— 节点内 UB · 高频<br>· <b>PP</b> 阶段接力 Send/Recv —— Pod 内跨 Host · 中频<br>· <b>EP</b> MoE AllToAll 浪涌 —— Pod 内全互联 · 浪涌<br>· <b>DP</b> 梯度 AllReduce —— 跨 Pod Scale-Out · 低频大包<br>热力着色与方向粒子都跟着阶段走；轨道可拖拽定位（悬停某段看它是什么），Play/Pause 控制自动推进。当前阶段常驻在左下 HUD 的「此刻」一行。',
-      phys: '<b>物理 = 这些卡实际插在哪。</b>逻辑魔方只讲「谁和谁一组」，落位讲的是「谁和谁插在一起」——两者重合得越多，通信越便宜。默认按 rank 连号装机（rank 编码本就是 TP 最内层，所以 TP 组自然落在同一台机里）。配上落位后可以：<br>· <b>着色 → 主机 / Pod</b>：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里（rail 亲和度）；<br>· <b>流量矩阵</b>：把此刻这一维的全网走线按物理层级归并——<b>同机 UB</b> / <b>Pod 内跨机 rail</b> / <b>跨 Pod Scale-Out</b> 各多少段、折多少 GB（每边 MB 由 config.traffic 给，量级估算），Pod 不多时再给一张 Pod×Pod 热度网格；<br>· 选中卡的信息卡里也有一行「此刻 X 走线 N 段：同机/Pod内/跨Pod」，鼠标悬停任意一条连线还会直接报这一段跨的是哪层。<br>（3D 里按层级给线上色试过——线太细又与 TP 组重合，基本看不出来，所以物理的事一律用文字与矩阵给。）<br>程序侧还可用 placement.slots 传任意 rank→槽位映射。',
       cfg: '<b>并行 = 这套魔方由多少卡、怎么切。</b>rank 总数 = TP×PP×DP；<b>EP 不乘进卡数</b>——它折在 DP 轴上（要求 EP 整除 DP），DP/EP = AllToAll 域的个数。改完数字按 Apply 整体重建。下方两个预设：盘古 Pro MoE 真实训练策略、128 卡小规格。',
     };
     function helpDot(key) {
@@ -1387,7 +1385,7 @@
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
-    let physInputs = null, physRead = null, flowBtn = null;
+    let flowBtn = null;
     let wireBtns = [], algoBtns = [], wireNote2 = null;
     let timeTrack = null, timeHead = null, viewNote = null;
     function syncTimeUI() {
@@ -1403,16 +1401,6 @@
       if (!cfgInputs) return;
       const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
       if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
-    }
-    function applyPhys() {
-      if (!physInputs) return;
-      api.setPlacement({ cardsPerHost: +physInputs.cph.value, hostsPerPod: +physInputs.hpp.value });
-    }
-    function syncPhysUI() {
-      if (!physInputs) return;
-      const pl = model.placement;
-      physInputs.cph.value = pl.cardsPerHost; physInputs.hpp.value = pl.hostsPerPod;
-      physRead.textContent = `${N} 卡 = ${pl.hosts} 台机 / ${pl.pods} 个 Pod（每 Pod ${pl.cardsPerPod} 卡）`;
     }
     function syncCfgUI() {
       if (!cfgInputs) return;
@@ -1467,8 +1455,7 @@
     if (opts.chrome !== false) {
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
       [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
-        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'],
-        ['cfg', '.prc-row-cfg'], ['phys', '.prc-row-phys']]
+        ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'], ['cfg', '.prc-row-cfg']]
         .forEach(([k, sel]) => { const lab = $(sel + ' .prc-lab'); if (lab) lab.insertAdjacentElement('afterend', helpDot(k)); });
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
@@ -1523,6 +1510,10 @@
       rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
         .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); renderLegend(); syncChrome(); })));
+      // 流量矩阵卡（D 档）挂在「连线」行——它讲的就是这些走线在物理上有多贵。
+      // 物理落位不再占工具栏的一排（那排只有配置、看不出画面变化）：默认 8 卡/机 ·
+      // 32 机/Pod，需要改就走 setPlacement API。
+      flowBtn = rowWire.appendChild(chipBtn('流量矩阵', () => api.setFlow(!S.flow)));
       wireNote2 = document.createElement('span'); wireNote2.className = 'prc-note'; rowWire.appendChild(wireNote2);
 
       anomBtns = [['无', 'none'], ['TP槽0', 'tp'], ['PP级0', 'pp'], ['DP副本0', 'dp'], ['EP桶3', 'ep']]
@@ -1547,23 +1538,6 @@
       //  · 128 卡小规格（单超节点量级）：tp2×pp4×dp16 = 128，EP8 折入 DP → 2 个 A2A 域。
       rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
       rowCfg.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
-      // 「物理」输入排：每机卡数 / 每 Pod 机数 → 决定每条逻辑边跨的是 UB / rail / 跨 Pod
-      const rowPhys = $('.prc-row-phys');
-      const mkPhys = (lab, w) => {
-        const wrap = document.createElement('span'); wrap.className = 'prc-cfgitem';
-        wrap.appendChild(Object.assign(document.createElement('span'), { textContent: lab }));
-        const inp = document.createElement('input');
-        inp.type = 'number'; inp.min = '1'; inp.step = '1'; if (w) inp.style.width = w;
-        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applyPhys(); });
-        wrap.appendChild(inp); rowPhys.appendChild(wrap);
-        return inp;
-      };
-      physInputs = { cph: mkPhys('每机卡'), hpp: mkPhys('每Pod机') };
-      { const b = chipBtn('Apply', applyPhys); b.classList.add('btn-solid'); rowPhys.appendChild(b); }
-      physRead = document.createElement('span'); physRead.className = 'prc-mono'; rowPhys.appendChild(physRead);
-      flowBtn = rowPhys.appendChild(chipBtn('流量矩阵', () => api.setFlow(!S.flow)));
-      rowPhys.appendChild(chipBtn('8卡/机 · 32机/Pod', () => api.setPlacement({ cardsPerHost: 8, hostsPerPod: 32 })));
-      rowPhys.appendChild(chipBtn('16卡/机 · 24机/Pod', () => api.setPlacement({ cardsPerHost: 16, hostsPerPod: 24 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); renderLegend(); syncChrome(); }
 
@@ -1732,7 +1706,7 @@
         clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
         renderAxes(); applyAxVisibility(); updateSlab(); fitView();
         refresh2D(); renderPill();
-        renderHud(); renderLegend(); renderInfo(); renderFlow(); syncCfgUI(); syncPhysUI();
+        renderHud(); renderLegend(); renderInfo(); renderFlow(); syncCfgUI();
         return { ok: true, ranks: model.N };
       },
       setMode(m) {
@@ -1794,7 +1768,7 @@
       setPlacement(pl) {
         const keep = S.sel;        // 只是换装机方式，逻辑魔方没变 → 选中的卡不该被清掉
         const res = api.setConfig({ placement: Object.assign({}, model.config.placement, pl || {}) });
-        if (res.ok) { syncPhysUI(); if (keep != null && keep < model.N) api.select(keep); }
+        if (res.ok && keep != null && keep < model.N) api.select(keep);
         return res;
       },
       setAlgo(a) { S.algo = a === 'tree' ? 'tree' : a === 'ring' ? 'ring' : 'auto'; rebuildComm(); renderLegend(); renderFlow(); syncChrome(); },
@@ -1829,7 +1803,7 @@
     }
     applySceneBg();
     resize(); renderAxes(); applyAxVisibility(); updateSlab(); fitView();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); renderFlow(); syncChrome(); syncCfgUI(); syncPhysUI(); syncTimeUI();
+    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); renderFlow(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }

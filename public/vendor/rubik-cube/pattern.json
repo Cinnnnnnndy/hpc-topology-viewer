@@ -34,7 +34,7 @@
     "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
     "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
-    "handle.setPlacement({cardsPerHost,hostsPerPod,slots}) —— 物理落位（可选）：决定每条逻辑边跨的是 UB / rail / 跨 Pod；配 setColorBy('host'|'pod') 看 rail 亲和、setFlow(true) 看流量矩阵",
+    "handle.setPlacement({cardsPerHost,hostsPerPod,slots}) —— 物理落位（可选）：决定每条逻辑边跨的是 UB / rail / 跨 Pod；配 setColorBy('host'|'pod') 看 rail 亲和、setFlow(true) 看流量矩阵；默认 8 卡/机 · 32 机/Pod，工具栏不占排（纯配置、画面无反馈）",
     "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
     "handle.setFlow(bool) —— 流量矩阵卡：此刻这一维的全网走线按物理层级归并（段数 + config.traffic 换算的量），Pod 少时给 Pod×Pod 热度网格",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
