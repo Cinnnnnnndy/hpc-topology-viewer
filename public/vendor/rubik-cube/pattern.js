@@ -90,7 +90,7 @@
   const TOKEN_KEYS = [
     '--background', '--surface-1', '--surface-2', '--foreground', '--foreground-secondary',
     '--foreground-muted', '--border-default', '--border-strong', '--primary', '--success',
-    '--warning', '--danger', '--accent', '--font-sans',
+    '--warning', '--danger', '--accent', '--font-sans', '--font-mono',
     '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
     '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
     '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
@@ -637,48 +637,46 @@
          · 语义色只落在「名字」上，解释性文字用中性次级前景色（两段式字牌），
            annotation 的对比度始终低于模型本身；
          · 字牌绝不盖住它所标注的东西：远离盒子的横幅用中性引线牵回去，而不是压上去。 */
-    const MIN_LABEL_PX = 11;
+    const MIN_LABEL_PX = 9;
     const worldPerPx = () => (2 * cam.half) / Math.max(1, stageEl.clientHeight);
+    /* 字牌样式逐条复刻设计系统 sidecar pattern 的 operator-label / stage-label：
+         · 极小号 850 字重的 mono（技术标记的语气，不是标题）；
+         · 底 = 语义色 10% 兑底色（几乎只是一层薄纸），描边 = 语义色 30%，圆角 ≈0.47em；
+         · 字色 = 语义色 68% 兑 --foreground（明暗主题都够暗/够亮，且保住色相）；
+         · 底色光晕（text-shadow 的 canvas 等价物）代替不透明大白板，压在卡上也读得清。 */
+    const _mA = new THREE.Color(), _mB = new THREE.Color();
+    const mixHex = (a, b, t) => '#' + _mA.set(a).lerp(_mB.set(b), t).getHexString();
     function makeLabel(text, color, w) {
-      const SS = 4, fontPx = 44, padX = 22, padY = 11;
+      const SS = 4, fontPx = 40, padX = 26, padY = 9;
       const segs = Array.isArray(text) ? text : [{ t: String(text), c: color }];
       text = segs.map((x) => x.t).join('');
-      // 字体取自设计系统的 --font-sans（3D 字牌是 canvas 绘制，需具体字体栈）
-      const FONT = `700 ${fontPx}px ${TOK['--font-sans'] || "'Inter','Source Han Sans SC','PingFang SC',sans-serif"}`;
+      const FONT = `850 ${fontPx}px ${TOK['--font-mono'] || "'JetBrains Mono','Fira Code','Consolas',monospace"}`;
       const meas = document.createElement('canvas').getContext('2d');
       meas.font = FONT;
       const tw = Math.ceil(meas.measureText(text).width) + padX * 2, th = fontPx + padY * 2;
       const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
       const c = cv.getContext('2d'); c.scale(SS, SS);
-      const light = !isDark();
-      // 字牌底 = --surface-1（略透以透出场景）· 描边 = --border-strong（均来自设计系统）
-      const plate = tokRGB('--surface-1', light ? '#FFFFFF' : '#161616');
-      c.fillStyle = `rgba(${Math.round(plate.r * 255)},${Math.round(plate.g * 255)},${Math.round(plate.b * 255)},0.94)`;
-      const rr = th * 0.38;
+      const bg = tokHex('--background'), fg = tokHex('--foreground');
+      const rr = fontPx * 0.47;
+      c.fillStyle = mixHex(bg, color, 0.1);
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.fill();
-      c.lineWidth = 2; c.strokeStyle = tokHex('--border-strong');
+      c.lineWidth = 1.6; c.strokeStyle = mixHex(bg, color, 0.3);
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.stroke();
       c.font = FONT; c.textAlign = 'left'; c.textBaseline = 'middle';
-      // 两段式：每段各自的色（名字用语义色、解释用中性色）；单段时与原来完全一致
-      const dark = (col) => {
-        if (!light) return col;
-        const tc = new THREE.Color(col), hsl = {}; tc.getHSL(hsl);
-        tc.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), Math.min(hsl.l, 0.28));
-        return '#' + tc.getHexString();
-      };
+      c.shadowColor = bg; c.shadowBlur = 7;                 // 底色光晕：压在卡上也读得清
       let x = (tw - meas.measureText(text).width) / 2;
       segs.forEach((sg) => {
-        c.fillStyle = dark(sg.c || color);
+        c.fillStyle = mixHex(fg, sg.c || color, 0.68);
         c.fillText(sg.t, x, th / 2);
         x += meas.measureText(sg.t).width;
       });
+      c.shadowBlur = 0;
       const tex = new THREE.CanvasTexture(cv);
       tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter; tex.generateMipmaps = true;
       try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch (e) { /* noop */ }
       tex.needsUpdate = true;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
       let worldW = w * tw / 512;
-      // 屏幕像素地板：字号（世界尺寸里的 fontPx/tw 那一份）换算到屏幕不得低于 MIN_LABEL_PX
       const px = (worldW * (fontPx / tw)) / worldPerPx();
       if (px < MIN_LABEL_PX) worldW *= Math.min(1.8, MIN_LABEL_PX / px);   // 封顶 1.8×：地板是兜底，不是放大器
       sp.scale.set(worldW, worldW * th / tw, 1);
@@ -712,7 +710,9 @@
     }
     // 标注离盒子的偏移量同样随尺度收缩（固定偏移会让小规格下的横幅飘到画布外/被工具栏遮住），
     // 但留 0.5 下限，避免贴到方块上。
-    const D = (v) => v * Math.max(0.5, LS);
+    // 标记与网格/轴的距离：横幅撤掉后没必要再留大留白，整体收到原来的 55%——
+    // 标记贴着它标注的那根格线，读图时不用来回找对应关系。
+    const D = (v) => v * 0.55 * Math.max(0.5, LS);
     // 长文案「读图横幅」（w≥5）只在轴测视图显示：正交 2D 取景很紧，横幅字牌（世界尺寸随文本
     // 长度膨胀）会盖满画面——2D 里只留短刻度标（TP0/DP127/层段标尺…），语义讲解交给 HUD。
     /* 长横幅（w ≥ 5 的整句解释）不再画进 3D：它们是「散文」而不是「标记」——浮在模型上
@@ -725,7 +725,7 @@
         axNotes.push(Array.isArray(text) ? text.map((x) => x.t).join('') : String(text));
         return null;
       }
-      const l = makeLabel(text, color, w * 1.25 * LS);
+      const l = makeLabel(text, color, w * 0.92 * LS);   // 标记要小：语气是技术注记，不是标题
       l.position.copy(pos);
       l.userData.banner = w >= 5;
       axGroup.add(l);
@@ -1048,7 +1048,7 @@
       const b = model.boundsOf(S.mode);
       // 轴标注留白随模型尺度自适应（固定留白会让小规格模型只占画面一小块）
       const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
-      const mx = Math.min(8, Math.max(1.6, span * 0.1));
+      const mx = Math.min(5, Math.max(1.0, span * 0.06));
       // 半尺寸 = rank 中心包围盒 + 卡块自身半尺寸（包围盒只含中心点）+ 标注留白
       const ex = (b.x1 - b.x0) / 2 + CARD.x / 2 + mx;
       const ey = (b.y1 - b.y0) / 2 + CARD.y / 2 + mx * 0.6;
@@ -1214,12 +1214,8 @@
           box.visible = true;
         }
       });
-      const selP = gp(S.sel);
-      const ph = PHASES[phaseIdx()], u = phaseU();
-      const stage = primOf(ph.dim) === 'AllReduce' && algoOf(ph.dim) === 'ring'
-        ? `Ring ${u < 0.5 ? 'ReduceScatter' : 'AllGather'} 段` : primOf(ph.dim);
-      const lab = makeLabel(`此刻 ${ph.dim} · ${stage} · 其余三维为该卡的常在通信域`, tokHex('--foreground-secondary'), 7.6 * LS);
-      lab.position.copy(selP.clone().add(V3(0, 2 + 1.2 * LS, 0))); lab.renderOrder = 7; commGroupG.add(lab);
+      // 选中卡上方原先挂一句「此刻 TP · Ring ReduceScatter 段 · 其余三维…」：
+      // 同样是散文，而且信息卡与图例已经在说同一件事 → 从 3D 里撤掉（同 axNotes 的道理）。
     }
 
     /* ── HUD / 图例 / 粒度贴士 / 信息卡 ── */
@@ -1288,6 +1284,12 @@
       }
       lg.innerHTML = parts.join('');
     }
+    // 此刻主导维走到集合原语的哪一段（Ring 前半 ReduceScatter / 后半 AllGather）
+    function ringStage() {
+      const d = PHASES[phaseIdx()].dim;
+      if (primOf(d) === 'AllReduce' && algoOf(d) === 'ring') return `Ring ${phaseU() < 0.5 ? 'ReduceScatter' : 'AllGather'} 段`;
+      return primOf(d);
+    }
     function edgeLine() {
       const e = S.selEdge; if (!e) return '';
       return `<br><span class="prc-dim">选中边</span> <b>${e.dim} ${e.prim}</b> rank ${e.from} → ${e.to}` +
@@ -1307,7 +1309,7 @@
         `<br><span style="color:${tierc('ub')}">机${model.hostOf(r)}</span> · ` +
         `<span style="color:${tierc('rail')}">Pod${model.podOf(r)}</span>` +
         `<span class="prc-dim">（${model.placement.cardsPerHost} 卡/机 · ${model.placement.hostsPerPod} 机/Pod）</span>` +
-        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导 · 再点空白处取消</span>` +
+        `<br><span class="prc-dim">四维通信组同屏高亮 · <b style="color:${dimc(PHASES[phaseIdx()].dim)}">${PHASES[phaseIdx()].dim}</b> 加亮=此刻主导（${esc(ringStage())}）· 再点空白处取消</span>` +
         physTally(r) + edgeLine();
     }
 
