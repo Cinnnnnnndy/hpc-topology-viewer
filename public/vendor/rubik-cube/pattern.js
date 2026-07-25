@@ -64,15 +64,6 @@
   const clampFor2D = (want, ax, ...coPitches) =>
     Math.max(CARD[ax] + 0.3, Math.min(want, MAX_RATIO * Math.min(...coPitches)));
 
-  // 维度签名色（深色主题 / 浅色主题），与 cockpit DIMHEX 一致。
-  // 注：pattern.css 里的 --dim-tp/pp/dp/ep 是本表的镜像（阶段轨道底色要用），改这里请同步那里。
-  const DIMC = {
-    TP: { dark: '#39c5cf', light: '#0d6b75' },
-    PP: { dark: '#FFAA3B', light: '#8a5f00' },
-    DP: { dark: '#4369EF', light: '#2b4bc0' },
-    EP: { dark: '#9B3CF6', light: '#6b2cba' },
-    NT: { dark: '#c8d2dc', light: '#3f4c63' },   // 中性注释
-  };
   /* 一个训练 step 的通信阶段（与集群驾驶舱 cube-cockpit.html 的 PHASES 同一套语义）：
      时间轴按阶段读，而不是抽象的秒——每个阶段由哪根并行轴主导、走哪层总线、负载多高
      都不同，热力场因此随阶段变化（TP 组齐动 / PP 接力波沿流水级前进 / EP 浪涌点亮热点桶 /
@@ -85,9 +76,55 @@
   ];
   const STEP_SEC = 12;                                       // 一个 step 的墙钟时长（每阶段 3s）
 
-  // 分组着色透镜的循环调色板（组数可能 > 色数 → 取模循环）
-  const GROUP_PALETTE = ['#39c5cf', '#FFAA3B', '#4369EF', '#9B3CF6', '#04D793', '#FF4B7B',
-    '#f0883e', '#a5d6ff', '#d2a8ff', '#7ee787', '#ffa198', '#79c0ff', '#e3b341', '#56d364', '#ff7b72', '#8b949e'];
+  /* ════════ 设计系统色卡解析（3D 用不了 CSS 变量 → 挂载/切主题时把 token 读成色值）════════
+     所有 3D 着色都从 PTO Design System 的 token 取：
+       · 负载热力 = --success → --warning → --danger（与图例色带同源，颜色逐格一致）
+       · 异常组   = --danger
+       · 分组着色 = highlight 六族（copy-blue / accum-orange / l0a-violet / ub-green /
+                    mte-amber / l0b-deep-violet）的 400 与 600 两档，共 12 色循环
+       · 网格 / 外框 / 字牌底与描边 = --border-* · --surface-* · --foreground-*
+       · 字牌字体 = --font-sans
+     唯一的例外：TP 的维度签名色需要一个既非红黄绿（状态色专用）又不与 DP 蓝 / EP 紫
+     撞色的青，而设计系统色卡里没有青族 → 由 pattern 提供 --dim-tp，并在 README 标记
+     为待回portal 上游（同上游对 .toggle-outline 的处理方式）。 */
+  const TOKEN_KEYS = [
+    '--background', '--surface-1', '--surface-2', '--foreground', '--foreground-secondary',
+    '--foreground-muted', '--border-default', '--border-strong', '--primary', '--success',
+    '--warning', '--danger', '--accent', '--font-sans',
+    '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
+    '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
+    '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
+    '--highlight-ub-green-600', '--highlight-mte-amber-600', '--highlight-l0b-deep-violet-600',
+    '--dim-tp',
+  ];
+  // css 颜色 → {r,g,b,a}（支持 #rgb/#rrggbb/#rrggbbaa 与 rgb()/rgba()）
+  function cssRGBA(c) {
+    c = (c || '').trim();
+    let m = /^#([0-9a-f]{3,8})$/i.exec(c);
+    if (m) {
+      let h = m[1];
+      if (h.length === 3) h = h.split('').map((x) => x + x).join('');
+      const n = parseInt(h.slice(0, 6), 16);
+      return { r: (n >> 16 & 255) / 255, g: (n >> 8 & 255) / 255, b: (n & 255) / 255, a: h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1 };
+    }
+    m = /^rgba?\(([^)]+)\)$/i.exec(c);
+    if (m) {
+      const p = m[1].split(/[,/\s]+/).filter(Boolean).map(parseFloat);
+      return { r: p[0] / 255, g: p[1] / 255, b: p[2] / 255, a: p.length > 3 ? p[3] : 1 };
+    }
+    return { r: 0.5, g: 0.5, b: 0.5, a: 1 };
+  }
+  const hex2 = (v) => ('0' + Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16)).slice(-2);
+
+  /* 维度签名色的 token 映射（PP/DP/EP 在色卡里有精确对应，TP 见上文说明） */
+  const DIM_TOKEN = { TP: '--dim-tp', PP: '--warning', DP: '--primary', EP: '--highlight-l0a-violet-400' };
+  // 分组着色调色板：highlight 六族 400 档 → 再接 600 档（相邻组尽量不同族，色相差最大）
+  const GROUP_TOKENS = [
+    '--highlight-copy-blue-400', '--highlight-accum-orange-400', '--highlight-l0a-violet-400',
+    '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
+    '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
+    '--highlight-ub-green-600', '--highlight-mte-amber-600', '--highlight-l0b-deep-violet-600',
+  ];
 
   /* ════════════════════════ 纯布局模型 ════════════════════════ */
   function createModel(userCfg) {
@@ -335,7 +372,23 @@
     };
     const isDark = () => S.theme !== 'light';
     const themeC = (dark, light) => (isDark() ? dark : light);
-    const dimc = (d) => DIMC[d][isDark() ? 'dark' : 'light'];
+    /* 设计系统 token → 具体色值（切主题时重读；3D 材质只能吃具体色值） */
+    const TOK = {};
+    function readTokens() {
+      let cs = null;
+      try { cs = getComputedStyle(root); } catch (e) { /* noop */ }
+      TOKEN_KEYS.forEach((k) => { TOK[k] = cs ? (cs.getPropertyValue(k) || '').trim() : ''; });
+    }
+    // token → 不透明色（半透明 token 先按 --background 合成，Three 的材质吃不了 alpha 色）
+    function tokRGB(key, fallback) {
+      const c = cssRGBA(TOK[key] || fallback || '#808080');
+      if (c.a >= 0.999) return c;
+      const bg = cssRGBA(TOK['--background'] || '#101010');
+      return { r: bg.r + (c.r - bg.r) * c.a, g: bg.g + (c.g - bg.g) * c.a, b: bg.b + (c.b - bg.b) * c.a, a: 1 };
+    }
+    const tokHex = (key, fallback) => { const c = tokRGB(key, fallback); return '#' + hex2(c.r) + hex2(c.g) + hex2(c.b); };
+    const dimc = (d) => tokHex(DIM_TOKEN[d]);
+    const groupColor = (i) => tokHex(GROUP_TOKENS[i % GROUP_TOKENS.length]);
 
     /* ── DOM 骨架 ── */
     const root = document.createElement('div');
@@ -360,6 +413,7 @@
       '<div class="prc-tip"></div>',
     ].join('');
     container.appendChild(root);
+    readTokens();   // 挂进文档后才能解析 token（detached 元素读不到 computed style）
     const $ = (sel) => root.querySelector(sel);
     const stageEl = $('.prc-stage'), tipEl = $('.prc-tip');
 
@@ -423,7 +477,7 @@
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
     const peerMeshes = peerDims.map((d) => {
       const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1.25, 0.95, 0.62),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color(DIMC[d].dark), transparent: true, opacity: 0.34, depthWrite: false, depthTest: false }), PEER_MAX);
+        new THREE.MeshBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.34, depthWrite: false, depthTest: false }), PEER_MAX);
       m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
       return m;
     });
@@ -448,17 +502,20 @@
     /* ── 字牌（高分辨率圆角 label，随主题）── */
     function makeLabel(text, color, w) {
       const SS = 4, fontPx = 44, padX = 22, padY = 11;
-      const FONT = `700 ${fontPx}px 'Inter','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif`;
+      // 字体取自设计系统的 --font-sans（3D 字牌是 canvas 绘制，需具体字体栈）
+      const FONT = `700 ${fontPx}px ${TOK['--font-sans'] || "'Inter','Source Han Sans SC','PingFang SC',sans-serif"}`;
       const meas = document.createElement('canvas').getContext('2d');
       meas.font = FONT;
       const tw = Math.ceil(meas.measureText(text).width) + padX * 2, th = fontPx + padY * 2;
       const cv = document.createElement('canvas'); cv.width = tw * SS; cv.height = th * SS;
       const c = cv.getContext('2d'); c.scale(SS, SS);
       const light = !isDark();
-      c.fillStyle = light ? 'rgba(255,255,255,0.96)' : 'rgba(10,14,24,0.78)';
+      // 字牌底 = --surface-1（略透以透出场景）· 描边 = --border-strong（均来自设计系统）
+      const plate = tokRGB('--surface-1', light ? '#FFFFFF' : '#161616');
+      c.fillStyle = `rgba(${Math.round(plate.r * 255)},${Math.round(plate.g * 255)},${Math.round(plate.b * 255)},0.94)`;
       const rr = th * 0.38;
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.fill();
-      c.lineWidth = 2; c.strokeStyle = light ? 'rgba(45,58,80,0.48)' : 'rgba(139,148,158,0.4)';
+      c.lineWidth = 2; c.strokeStyle = tokHex('--border-strong');
       c.beginPath(); c.roundRect(1, 1, tw - 2, th - 2, rr); c.stroke();
       let fill = color;
       if (light) {
@@ -531,7 +588,7 @@
     // 大 3D 坐标网格框（底 XZ + 背 XY + 左 YZ 三张淡网格 + 描边棱线；floorOnly 只铺地面）
     function axGridBox(b, xt, yt, zt, floorOnly) {
       const hx = (c) => new THREE.Color(c).getHex();
-      const grid = hx(themeC('#33415c', '#93a5bd')), frame = hx(themeC('#54678a', '#54678a'));
+      const grid = hx(tokHex('--border-default')), frame = hx(tokHex('--border-strong'));
       const gridOp = isDark() ? 0.42 : 0.6, frameOp = isDark() ? 0.85 : 0.95;
       const seg = [];
       xt.forEach((x) => { seg.push(V3(x, b.y0, b.z0), V3(x, b.y0, b.z1)); if (!floorOnly) seg.push(V3(x, b.y0, b.z0), V3(x, b.y1, b.z0)); });
@@ -564,7 +621,8 @@
     function renderAxes() {
       clearAxes();
       updateLabelScale();
-      const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'), NTc = dimc('NT');
+      const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'),
+        NTc = tokHex('--foreground-secondary');   // 中性注释 = 次级前景色
       const hx = (c) => new THREE.Color(c).getHex();
       const TPw = hx(TPc), PPw = hx(PPc), EPw = hx(EPc), NTw = hx(NTc);
       const sp = model.SP;
@@ -585,7 +643,7 @@
         // 层段标尺：每个 PP 段 "S0·L1-12"（左后棱一列）
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
-          const l = makeLabel(`S${s2}·L${lr.lo}-${lr.hi}`, '#ffe0a0', 2.6 * LS);
+          const l = makeLabel(`S${s2}·L${lr.lo}-${lr.hi}`, tokHex('--warning'), 2.6 * LS);
           l.position.set(b.x0 - D(3.4), yS(s2), b.z0 - D(1)); axGroup.add(l);
         }
       } else if (S.mode === 1) {
@@ -617,7 +675,7 @@
         axGridBox(b, xL, yL, zL);
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
-          axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? themeC('#FFAA3B', '#b45f06') : EPc, 3,
+          axText(`桶${e} ${model.expRange(e)}${hot ? '★' : ''}`, hot ? tokHex('--warning') : EPc, 3,
             V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 2) * 1.1, 0));
         }
         axText(`${EP} 面墙 = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · ★=热点）`, EPc, 10, V3(0, b.y1 + D(4.2), 0));
@@ -706,16 +764,23 @@
       return false;
     }
     const rgbCss = (c) => `#${c.getHexString()}`;
-    const loadColor = (v) => cTmp.setHSL(Math.max(0, 0.33 - v * 0.33), 0.72, isDark() ? 0.42 + v * 0.12 : 0.38 + v * 0.1);
+    // 负载热力 = 图例那条色带本身：--success → --warning → --danger 三段线性插值
+    const RAMP_A = new THREE.Color(), RAMP_B = new THREE.Color();
+    function loadColor(v) {
+      v = Math.max(0, Math.min(1, v));
+      const lo = v < 0.5 ? '--success' : '--warning', hi = v < 0.5 ? '--warning' : '--danger';
+      RAMP_A.set(tokHex(lo)); RAMP_B.set(tokHex(hi));
+      return cTmp.copy(RAMP_A).lerp(RAMP_B, v < 0.5 ? v * 2 : (v - 0.5) * 2);
+    }
     function colorOfRank(r) {
       if (S.anom !== 'none') {
-        if (inAnomGroup(r)) return cTmp.set(0xff4b6e);
+        if (inAnomGroup(r)) return cTmp.set(tokHex('--danger'));
         return loadColor(0.16 + rng(r * 3.1) * 0.1);
       }
       if (S.colorBy !== 'load') {
         const g = S.colorBy === 'tp' ? model.tpOf(r) : S.colorBy === 'pp' ? model.ppOf(r)
           : S.colorBy === 'dp' ? model.repOf(r) : model.epOf(r);
-        return cTmp.set(GROUP_PALETTE[g % GROUP_PALETTE.length]);
+        return cTmp.set(groupColor(g));
       }
       return loadColor(load01(r));
     }
@@ -826,7 +891,7 @@
         let n = 0;
         members.forEach((r) => { if (r !== S.sel && n < PEER_MAX) { dummy.position.copy(gp(r)); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); mesh.setMatrixAt(n++, dummy.matrix); } });
         mesh.count = n; mesh.visible = n > 0; mesh.instanceMatrix.needsUpdate = true;
-        const colorHex = new THREE.Color(DIMC[d].dark).getHex();
+        const colorHex = new THREE.Color(dimc(d)).getHex();
         const pts = members.map(gp);
         // 当前阶段主导的维加亮加粗，其余淡显——四维通信组始终同屏，谁在此刻真正忙一眼可见
         // 四维一律清晰可见（都是这张卡真实的通信组），当前阶段主导的那一维再加一档
@@ -838,7 +903,7 @@
         else commLine(pts, colorHex, op, rad);   // TP 环 / PP 链 / DP 采样折线
       });
       const selP = gp(S.sel);
-      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP} · 加亮=此刻 ${PHASES[phaseIdx()].dim}`, themeC('#c8d2dc', '#3f4c63'), 7.6 * LS);
+      const lab = makeLabel(`TP×${TP} · PP链×${PP} · DP采样${Math.min(16, REP)}/${REP} · A2A×${EP} · 加亮=此刻 ${PHASES[phaseIdx()].dim}`, tokHex('--foreground-secondary'), 7.6 * LS);
       lab.position.copy(selP.clone().add(V3(0, 2 + 1.2 * LS, 0))); lab.renderOrder = 7; commGroupG.add(lab);
     }
 
@@ -892,8 +957,8 @@
         const lab = { tp: 'TP', pp: 'PP', dp: 'DP副本', ep: 'EP桶' }[key];
         const MAXC = 8, shown = Math.min(n, MAXC);
         parts.push(`<b>卡块着色 · 按 ${esc(lab)} 分组</b>`);
-        for (let i = 0; i < shown; i++) parts.push(chip(GROUP_PALETTE[i % GROUP_PALETTE.length], `${lab}${i}`));
-        if (n > shown) parts.push(`<span class="prc-dim">… 共 ${n} 组${n > GROUP_PALETTE.length ? `（${GROUP_PALETTE.length} 色循环，同色非同组）` : ''}</span>`);
+        for (let i = 0; i < shown; i++) parts.push(chip(groupColor(i), `${lab}${i}`));
+        if (n > shown) parts.push(`<span class="prc-dim">… 共 ${n} 组${n > GROUP_TOKENS.length ? `（${GROUP_TOKENS.length} 色循环，同色非同组）` : ''}</span>`);
       }
       // 图例只解释「卡块的颜色」。维度签名色（轴标注、通信组线框）不画在卡上，
       // 因此不进图例——否则同一个维度会以两套颜色出现，读者对不上。
@@ -1201,6 +1266,7 @@
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
         root.setAttribute('data-theme', S.theme);
+        readTokens();                     // 色卡随主题重解析
         applySceneBg();
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
@@ -1239,5 +1305,5 @@
     return api;
   }
 
-  global.PtoRubikCubePattern = { version: '0.1.0', DEFAULTS, DIMC, createModel, mount };
+  global.PtoRubikCubePattern = { version: '0.2.0', DEFAULTS, DIM_TOKEN, GROUP_TOKENS, createModel, mount };
 })(typeof window !== 'undefined' ? window : this);

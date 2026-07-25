@@ -40,7 +40,8 @@
     "④ 2D 可读性：任一正交视角下屏幕两轴最细步距之比 ≤ 4；块的内维在会退化成薄片时折成 2D（DP 平铺的板内 TP → 列×排），否则该视角只剩稀疏条纹",
     "⑤ 网格线 = 格边界，各形态各轴同一约定（cellLines：卡永远落在格子里、不被线穿过；线过多时每 k 格一条，外框即首尾边界线）；分组行列数按世界跨度取近方形，而不是按数量取方阵",
     "⑥ 视角收编：每个 2D 平面只属于一个形态；折叠如实标注（每格重叠卡数 = 各折叠维成员数之积）",
-    "不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝 → 任何并行度组合下永不重叠（已在 1 卡至 8192 卡、含退化与极端形状的配置上逐对验证）"
+    "不变量：任一轴步距 ≥ 该轴卡块尺寸 + 最小缝 → 任何并行度组合下永不重叠（已在 1 卡至 8192 卡、含退化与极端形状的配置上逐对验证）",
+    "⑦ 着色一律来自设计系统色卡：负载热力 = --success→--warning→--danger（与图例色带同源）· 异常 = --danger · 分组 = highlight 六族 400/600 共 12 色 · 网格/外框/字牌/场景底 = --border-*/--surface-*/--background · 字牌字体 = --font-sans；Three.js 材质在挂载与切主题时由 readTokens() 解析 token 得到具体色值。唯一例外：TP 签名色需要色卡没有的青族 → pattern 提供 --dim-tp，待回补上游"
   ],
   "allowedOverrides": [
     "并行度与工况：config 的 tp/pp/dp/ep、layers、experts、hotBuckets",
@@ -55,7 +56,8 @@
     "复制渲染后的 DOM/几何到新页面，而不是调用 mount()",
     "在正交 2D 里隐瞒折叠：每格重叠卡数必须如实呈现（粒度贴士），信息塌陷的视角应收编而不是硬给",
     "硬编码颜色 / 圆角 / 阴影 / 间距，或自造按钮与面板样式——一律用设计系统 token 与 .btn/.panel-shell/.stat-chip 等类实现",
-    "用 emoji 或装饰字形当图标（▶/⏸/▦/◇ 等）——图标一律内联 SVG，stroke=currentColor"
+    "用 emoji 或装饰字形当图标（▶/⏸/▦/◇ 等）——图标一律内联 SVG，stroke=currentColor",
+    "在 3D 里另起一套色（HSL 公式、写死 hex）——所有材质色必须经 readTokens() 从设计系统 token 解析，图例与画面因此天然一致"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }

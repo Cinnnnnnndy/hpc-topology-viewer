@@ -123,10 +123,20 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   `css/style.css`）：面板用 `.panel-shell`、按钮用 `.btn`（`.btn-sm` / `.btn-solid` /
   选中态 `.is-selected`）、读数用 `.stat-chip`，颜色/圆角/阴影/间距一律 `var(--token)`，
   明暗随 `:root[data-theme]` 切换；**核心 UI 无 emoji**，图标为 Lucide 风格内联 SVG
-  （`stroke=currentColor`），数字与 ID 一律 mono，行首标签 ALL CAPS + 字距；
-- 选中一张卡 → **TP/PP/DP/EP 四维通信组同屏高亮**（签名色：TP 青 #39c5cf ·
-  PP 橙 #FFAA3B · DP 蓝 #4369EF · EP 紫 #9B3CF6；TP 环 / PP 链 / DP 采样 /
-  EP A2A 星形互发），随重排飞行跟随；
+  （`stroke=currentColor`），数字与 ID 一律 mono，行首标签 ALL CAPS + 字距。
+  **3D 场景内的着色同样全部取自色卡**——Three.js 用不了 CSS 变量，故挂载与切主题时
+  把 token 解析成色值再喂给材质（`readTokens`）：负载热力 = `--success → --warning →
+  --danger` 三段插值（与图例那条色带同源，颜色逐格一致）· 异常组 = `--danger` ·
+  分组着色 = highlight 六族（copy-blue / accum-orange / l0a-violet / ub-green /
+  mte-amber / l0b-deep-violet）的 400 与 600 两档共 12 色循环 · 网格与外框 =
+  `--border-default` / `--border-strong` · 字牌底 = `--surface-1`、描边 =
+  `--border-strong`、字体 = `--font-sans` · 场景底 = `--background`；
+- 选中一张卡 → **TP/PP/DP/EP 四维通信组同屏高亮**（TP 环 / PP 链 / DP 采样 /
+  EP A2A 星形互发），随重排飞行跟随；签名色取自设计系统色卡：
+  PP=`--warning` · DP=`--primary` · EP=`--highlight-l0a-violet-400`；
+  **TP 是唯一的例外**——它需要一个既不占用红黄绿（状态色专用）、又不与 DP 蓝 / EP 紫
+  撞色的青，而上游色卡没有青族，故由本 pattern 提供 `--dim-tp`，**待回补上游**
+  （同上游对 `.toggle-outline` 的处理方式）；
 - **着色透镜**（状态热力 / 按 TP·PP·DP·EP 分组）——图例跟着当前着色走：分组时列出
   各组实际配色（组数超过色环时注明「同色非同组」），负载时给色带并标当前阶段，注入
   异常时标出异常组是什么；维度签名色不画在卡上，故不进图例。与 **异常注入**（TP槽0 /
