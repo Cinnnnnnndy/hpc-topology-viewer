@@ -526,26 +526,54 @@
     const hovBox = edgeBox(0x9ecbff);
     hovBox.visible = false; hovBox.renderOrder = 7;
     scene.add(hovBox);
-    /* 选中框用「有厚度的笼子」而不是细线：WebGL 里 LineBasicMaterial 的 linewidth 是被
-       忽略的，一根 1px 的白线压在 4000 张卡里根本找不到。12 根细管拼成的框在任何缩放
-       下都看得见，配上轻微呼吸（缩放 + 不透明度）就更抓眼——但幅度压得很小，
-       它是「告诉你在哪」，不是要抢走注意力。 */
-    function edgeCage(colorHex, size, rad) {
-      const g = new THREE.Group();
-      const geo = new THREE.CylinderGeometry(rad, rad, size, 6, 1);
-      const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex), transparent: true, opacity: 0.95, depthTest: false });
-      const h = size / 2;
-      [[-h, -h], [-h, h], [h, -h], [h, h]].forEach(([a, b]) => {
-        const mx = new THREE.Mesh(geo, mat); mx.rotation.z = Math.PI / 2; mx.position.set(0, a, b); g.add(mx);
-        const my = new THREE.Mesh(geo, mat); my.position.set(a, 0, b); g.add(my);
-        const mz = new THREE.Mesh(geo, mat); mz.rotation.x = Math.PI / 2; mz.position.set(a, b, 0); g.add(mz);
+    /* 选中标记 = 卡自己的颜色做的「涟漪呼吸灯」，不是外框。
+       深色细框在浅底上又硬又抢，而且和卡是两种语言；改成两样东西：
+         · 光晕：一个比卡略大的盒子，只渲染背面（BackSide）——于是它只在卡的四周
+           透出一圈光，不会盖在卡的正面上（正面一旦被盖，卡自己的着色就读不准了）；
+         · 涟漪：两圈线框从卡向外扩散并淡出，错相位循环，像水波一样一圈接一圈。
+       两者的颜色都取「这张卡此刻的颜色」（负载/分组/异常都跟着变），所以它读起来是
+       这张卡在发光，而不是有人在它外面套了个框。 */
+    const selColor = new THREE.Color();
+    const selHalo = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.3, side: THREE.BackSide, depthWrite: false, depthTest: false }));
+    selHalo.renderOrder = 4; selHalo.visible = false; scene.add(selHalo);
+    const selRipples = [0, 1].map(() => {
+      const m = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+        new THREE.LineBasicMaterial({ transparent: true, opacity: 0.6, depthWrite: false, depthTest: false }));
+      m.renderOrder = 7; m.visible = false; scene.add(m);
+      return m;
+    });
+    let selColorAt = -1;
+    function updateSelFx(nowMs) {
+      const on = S.sel != null && S.sel < N;
+      selHalo.visible = on; selRipples.forEach((m) => { m.visible = on; });
+      if (!on) return;
+      if (nowMs - selColorAt > 200) {              // 颜色跟着卡走（热力随阶段变），不必每帧算
+        selColorAt = nowMs;
+        selColor.copy(colorOfRank(S.sel));
+        // 太暗的卡（暗色主题的低负载）给一点提亮，光晕才透得出来
+        const hsl = {}; selColor.getHSL(hsl);
+        if (hsl.l < 0.42) selColor.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), 0.52);
+        selHalo.material.color.copy(selColor);
+        selRipples.forEach((m) => m.material.color.copy(selColor));
+      }
+      const p = V3(cur[S.sel * 3], cur[S.sel * 3 + 1], cur[S.sel * 3 + 2]);
+      // 光晕：随呼吸轻微起伏
+      const b = 1 + 0.06 * Math.sin(nowMs / 380);
+      selHalo.position.copy(p);
+      selHalo.scale.setScalar(CARD.x * 2.05 * b);
+      selHalo.material.opacity = 0.26 + 0.08 * (b - 1) / 0.06;
+      // 涟漪：两圈错相位向外扩散并淡出
+      selRipples.forEach((m, i) => {
+        const t = ((nowMs / 1500) + i * 0.5) % 1;
+        m.position.copy(p);
+        m.scale.setScalar(CARD.x * (1.5 + t * 2.6));
+        m.material.opacity = 0.55 * (1 - t) * (1 - t);
       });
-      g.userData.mat = mat;
-      return g;
     }
-    const selBox = edgeCage(tokHex('--foreground'), CARD.x * 1.5, CARD.x * 0.04);
-    selBox.visible = false; selBox.renderOrder = 7;
-    scene.add(selBox);
+
     // 选中的那一段通信边：加粗重画一根管（点选后要看得见自己点中了哪一段）
     let selEdgeMesh = null;
     function drawSelEdge() {
@@ -1935,12 +1963,8 @@
         if (r == null || r < 0 || r >= N) { box.visible = false; return; }
         box.visible = true; box.position.set(cur[r * 3], cur[r * 3 + 1], cur[r * 3 + 2]);
       };
-      place(selBox, S.sel); place(hovBox, S.hover === S.sel ? null : S.hover);
-      if (selBox.visible) {                       // 轻微呼吸：幅度很小，只为"找得到"
-        const b = 1 + 0.05 * Math.sin(nowMs / 340);
-        selBox.scale.setScalar(b);
-        selBox.userData.mat.opacity = 0.78 + 0.18 * (b - 1) / 0.05 * 0.5 + 0.09;
-      }
+      place(hovBox, S.hover === S.sel ? null : S.hover);
+      updateSelFx(nowMs);
       updateMovers();
       applyCamera();
       renderer.render(scene, camera);
@@ -2020,7 +2044,6 @@
         root.setAttribute('data-theme', S.theme);
         readTokens();                     // 色卡随主题重解析
         applySceneBg();
-        selBox.userData.mat.color.set(tokHex('--foreground'));
         renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
