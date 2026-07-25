@@ -147,9 +147,8 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   阶段内进度，于是 Ring 的 RS→AG 两段跟着时间轴走完）。
   走线是**逐段直线**（不是样条：CatmullRom 会在控制点之间外扩成弧，成员散布时整条线从卡
   旁边绕过去——「线没连到卡上」），对端高亮实例上限覆盖最大的通信域。
-  **「连线」一排的七个图层——成员 / 通信线 / 域轮廓 / 粒子 / 聚焦 / 物理线 / 物理框——各自
-  独立开关，可以全关**（程序侧 `setWire({members,lines,outline,movers,focus,phys,physbox})`
-  / `setAlgo('auto'|'ring'|'tree')`）。
+  **「连线」一排的五个图层——成员 / 通信线 / 域轮廓 / 粒子 / 聚焦——各自独立开关，可以全关**
+  （程序侧 `setWire({members,lines,outline,movers,focus})` / `setAlgo('auto'|'ring'|'tree')`）。
   连线是「选中卡的通信域」，**没选卡就没有对象可画**：因此开图层时若还没选卡，会自动
   替你选一张居中的代表卡（否则按钮亮着、画面毫无变化，看上去像开关坏了），空态的提示
   文案也直说这一点；
@@ -176,14 +175,28 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
   TP 组因此天然落在同一台机内，与真实作业的 rank-to-node 映射一致），宿主可传
   `{cardsPerHost, hostsPerPod}` 或 `slots`（rank→槽位任意映射）。三条读法：
   - **着色 → 主机 / Pod**（rail 亲和）：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里；
-  - **连线 → 物理线**：同一条逻辑边**逐段**按实际跨越的链路层级着色——同机 UB
-    (`--highlight-ub-green-400`) / Pod 内跨机 rail (`--highlight-mte-amber-400`) /
-    跨 Pod Scale-Out (`--highlight-l0b-deep-violet-600`)，一个 Ring 因此自己交代它踩了
-    几次贵的那一跳；信息卡同时给出量：`此刻 DP 走线 16 段：Pod内 12 · 跨Pod 4`；
-  - **连线 → 物理框**：把选中卡所在的机与 Pod 在逻辑空间里框出来。
-  三者都在「连线」行独立开关（`setWire({phys,physbox})`、`setColorBy('host'|'pod')`、
-  `setPlacement({cardsPerHost,hostsPerPod})`）。链路层级色不占用红黄绿——红/黄在本
-  pattern 里是状态色（负载/异常）专用；
+  - **信息卡的段数行**：`此刻 DP 走线 4000 段：跨Pod 4000` —— 选中卡这一维的走线各跨了
+    哪层；悬停任意一条连线也直接报这一段跨的是哪层；
+  - **流量矩阵卡**（见下）：全网层面的归并。
+
+  > 试过、又撤掉的两个图层：把走线**逐段按链路层级上色**、把选中卡所在的**机 / Pod 框出来**。
+  > 线太细、机的范围又与 TP 组几乎重合，两者在 3D 里基本看不出差别——物理的事改用文字
+  > （段数行、悬停提示）与矩阵卡表达，更准也更省画面。
+- **流量矩阵卡（D 档 · `setFlow(true)`，「物理」行开关）**：把**此刻这一维的全网走线**
+  按物理层级归并——同机 UB / Pod 内跨机 rail / 跨 Pod Scale-Out 各多少段、占比多少；
+  给了 `config.traffic`（每条边的 MB，默认 TP64/PP16/EP96/DP128，属量级估算并在卡上
+  标明）就同时换算成 GB。Pod 数 ≤12 时给一张 **Pod×Pod 段数热度网格**（对角 = Pod 内），
+  更多时只列最重的若干对。段数是结构性事实：由并行度 + 落位 + 集合算法唯一决定，
+  每条边只数一次（`groupReps` 给出各维不重复的组，`commGroupFull` 用完整成员——
+  显示用的 `commGroup` 对 DP 组做了采样，统计不能用它）。结果按
+  「并行度/落位/算法/维度」缓存，换阶段不重算；
+- **连线可点（C 档 · `onSelectEdge`）**：悬停一条走线 → 报「谁 → 谁 · 哪一维哪种原语 ·
+  跨的是同机 UB / Pod 内 rail / 跨 Pod」；点一下选中该段（场景里加粗高亮、信息卡多一行），
+  并把 `{dim, from, to, prim, algo, tier, hosts, pods}` 抛给宿主——驾驶舱可据此点亮
+  自己那套物理路径（本 pattern 不搬运物理拓扑几何）。走线每条折线仍是一根管
+  （重排动画期间每帧重建，逐段建管会把几何数放大百倍），段的身份记在 `userData.ranks`，
+  点选时按命中点就近判定是哪一段；链路层级色不占用红黄绿——红/黄在本 pattern 里是状态色
+  （负载/异常）专用；
 - 每形态的「为什么这样摆」（CUBE_WHY）HUD 文案、明暗主题联动；
 - **每排控件行首的问号**（hover / 键盘聚焦弹出）：两个字的行名说不清「注入和着色是什么
   关系」这类问题，长文案又不该常驻工具栏 → 收进问号气泡（`HELP` 文案表）。其中把
@@ -197,16 +210,17 @@ TP 自适应）。校验：四数 ≥1、`ep` 整除 `dp`、rank ≤ 65536（超
 视图复用）：`posOf(rank, mode, out)`、`tpOf/ppOf/repOf/epOf/domOf`、
 `commGroup(rank, dim)`、`stageLayerRange(s)`、`boundsOf(mode)`、`modes` 元数据
 （含各形态正交视角的折叠维表）；物理落位 `placement`、`hostOf/podOf`、
-`tierOf(a,b) → 'ub'|'rail'|'out'`、`hostMembers/podMembers`、`TIERS`。
+`tierOf(a,b) → 'ub'|'rail'|'out'`、`hostMembers/podMembers`、`TIERS`；
+流量统计用的 `commGroupFull(rank,dim)`（不采样）与 `groupReps(dim)`（各维不重复的组代表）。
 
 `mount(container, opts)` → handle：`setConfig({tp,pp,dp,ep,…})` / `setMode(0-4)` / `setView(0-3)` /
 `setSlice(on, val)` / `setColorBy('load'|'tp'|'pp'|'dp'|'ep')` /
 `setAnomaly(...)` / `select(rank)` / `setTime(t | {phase:'TP'|'PP'|'EP'|'DP'})` /
-`setWire({members,lines,outline,movers,focus,phys,physbox})` / `setAlgo('auto'|'ring'|'tree')` /
-`setPlacement({cardsPerHost,hostsPerPod,slots})` /
+`setWire({members,lines,outline,movers,focus})` / `setAlgo('auto'|'ring'|'tree')` /
+`setPlacement({cardsPerHost,hostsPerPod,slots})` / `selectEdge(edge|null)` / `setFlow(bool)` /
 `setTheme('dark'|'light')` / `setPlaying(bool)` / `resize()` / `destroy()`；
 只读：`handle.model`、`handle.state`、`handle.phases`。
-opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接管）, onSelect }`。
+opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接管）, onSelect, onSelectEdge }`。
 
 ## 与整网图 / 专家图结合的挂点（预留）
 

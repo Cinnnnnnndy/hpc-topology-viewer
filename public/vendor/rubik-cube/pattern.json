@@ -23,7 +23,7 @@
     "需要对任意并行度组合快速出图（输入 TP/PP/DP/EP 即时重建），或与整网图 / 专家图做选区联动",
     "需要看一个通信域按什么集合算法收发：Ring（前半 ReduceScatter / 后半 AllGather，方向粒子跟着阶段时间轴跑）/ Tree / P2P 链 / AllToAll，并用域轮廓看清该组在当前堆法下是什么形状",
     "需要在几千张各自有色的卡里把一张卡的关系读出来：选中聚焦把无关卡压暗、网格加强，四维高亮不再被整片颜色淹没",
-    "需要把逻辑并行度与物理落位对上：按主机/Pod 着色看 rail 亲和，按「同机 UB / Pod 内 rail / 跨 Pod」给同一条逻辑边逐段着色，并数出这次集合踩了几次贵的那一跳"
+    "需要把逻辑并行度与物理落位对上：按主机/Pod 着色看 rail 亲和，用流量矩阵卡数清同机 UB / Pod 内 rail / 跨 Pod 各多少段与多少 GB，点某条走线追问它跨了哪层"
   ],
   "requiredApis": [
     "window.PtoRubikCubePattern.createModel(config) → 纯布局/拓扑模型（无 Three.js 依赖）：posOf(rank, mode, out) / tpOf,ppOf,repOf,epOf,domOf / rankOf / commGroup(rank, dim) / stageLayerRange(stage) / boundsOf(mode) / modes / depthDims / depthIdxOf / CARD / SP",
@@ -33,8 +33,10 @@
     "handle.setColorBy('load'|'tp'|'pp'|'dp'|'ep'|'host'|'pod') / handle.setAnomaly('none'|'tp'|'pp'|'dp'|'ep')",
     "handle.setTime(t | {phase:'TP'|'PP'|'EP'|'DP'}) / handle.setPlaying(bool) / handle.phases",
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
-    "handle.setWire({members,lines,outline,movers,focus,phys,physbox}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
-    "handle.setPlacement({cardsPerHost,hostsPerPod,slots}) —— 物理落位（可选）：决定每条逻辑边跨的是 UB / rail / 跨 Pod；配 setColorBy('host'|'pod') 看 rail 亲和",
+    "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
+    "handle.setPlacement({cardsPerHost,hostsPerPod,slots}) —— 物理落位（可选）：决定每条逻辑边跨的是 UB / rail / 跨 Pod；配 setColorBy('host'|'pod') 看 rail 亲和、setFlow(true) 看流量矩阵",
+    "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
+    "handle.setFlow(bool) —— 流量矩阵卡：此刻这一维的全网走线按物理层级归并（段数 + config.traffic 换算的量），Pod 少时给 Pod×Pod 热度网格",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }"
   ],
@@ -64,7 +66,9 @@
     "用 emoji 或装饰字形当图标（▶/⏸/▦/◇ 等）——图标一律内联 SVG，stroke=currentColor",
     "用 3D 建模风格的圆锥箭头标轴向：轴语义交给带签名色的网格 + 轴脊细线，方向交给文案与刻度",
     "把控件的长解释常驻在工具栏里：行首问号气泡（HELP 表）承载「这排是什么、和别的排什么关系」",
-    "在 3D 里另起一套色（HSL 公式、写死 hex）——所有材质色必须经 readTokens() 从设计系统 token 解析，图例与画面因此天然一致"
+    "在 3D 里另起一套色（HSL 公式、写死 hex）——所有材质色必须经 readTokens() 从设计系统 token 解析，图例与画面因此天然一致",
+    "把物理层级画成 3D 里的细线或包围框：试过——线太细、机的范围又与 TP 组几乎重合，读不出差别；物理的事用文字（段数行 / 悬停提示）与流量矩阵卡表达",
+    "用显示用的 commGroup 做流量统计：DP 组为显示做了采样，统计必须用 commGroupFull + groupReps（每条边只数一次）"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }

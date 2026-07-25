@@ -43,6 +43,11 @@
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
       try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}
     },
+    onSelectEdge: function(edge){
+      // 联动挂点：点中一条通信边 → 谁到谁、哪一维、哪种原语、跨了哪层物理链路。
+      // 驾驶舱可据此点亮自己那套物理路径（本 pattern 不搬运物理拓扑几何）。
+      try { parent.postMessage({ type: 'rubik-edge', edge: edge }, '*'); } catch(e) {}
+    },
   });
   window.rubik = handle;   // 控制台可直接迭代调试：rubik.setMode(2) / rubik.selectBucket(3) …
 
