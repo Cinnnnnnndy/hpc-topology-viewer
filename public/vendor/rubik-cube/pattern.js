@@ -1036,7 +1036,9 @@
          PP      = P2P 接力  → 链
          EP      = AllToAll  → 域内互发（成员少画全连，多则退化成星形，避免边数爆炸）
        S.algo='auto' 时按上表选，也可强制 ring / tree。 */
-    const A2A_MESH_MAX = 10;
+    // AllToAll 画全连的成员上限：8 个成员就是 28 条边，糊成一片什么也看不清 →
+    // 超过就退化成「以选中卡为中心的星形」（它自己收发谁，本来也是读图的重点）。
+    const A2A_MESH_MAX = 5;
     function primOf(d) { return d === 'EP' ? 'AllToAll' : d === 'PP' ? 'P2P' : 'AllReduce'; }
     function algoOf(d) {
       if (d === 'EP' || d === 'PP') return d === 'EP' ? 'a2a' : 'chain';
@@ -1080,7 +1082,9 @@
       let up = V3(0, 1, 0);
       if (Math.abs(dir.dot(up)) > 0.9) up = V3(0, 0, 1);
       const perp = up.sub(dir.clone().multiplyScalar(up.dot(dir))).normalize();
-      const c = a.clone().add(b).multiplyScalar(0.5).add(perp.multiplyScalar(Math.min(len * 0.3, CARD.x * 9)));
+      // 鼓的高度：够把长边从相邻链上分开就行——按边长给一点、封顶在两格卡宽以内。
+      // 早期按边长 30% 起鼓（封顶 9 格），几条弧就把整个模型盖住了。
+      const c = a.clone().add(b).multiplyScalar(0.5).add(perp.multiplyScalar(Math.min(len * 0.12, CARD.x * 2.2)));
       const pts = [], K = 8;   // 8 段足够圆滑；再细会把重排动画期间的每帧重建拖慢
       for (let i = 0; i <= K; i++) {
         const t = i / K, u = 1 - t;
@@ -1107,7 +1111,8 @@
         const colorHex = new THREE.Color(dimc(d)).getHex();
         // 当前阶段主导的那一维加一档亮度与粗细（四维一律清晰可见，只是主导维更亮）
         const on = curDim === d;
-        const op = on ? 0.95 : 0.55, rad = (on ? 1.15 : 0.85) * (d === 'TP' ? 0.1 : 0.07);
+        // 线要细：一屏可能同时有四维的走线，管壁按卡宽的 1/12 起算，主导维再粗一档。
+        const op = on ? 0.95 : 0.45, rad = (on ? 1.2 : 0.8) * CARD.x * 0.085;
         mesh.material.opacity = on ? 0.95 : 0.5;
         const segs = edgesOf(d, members);
         const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
