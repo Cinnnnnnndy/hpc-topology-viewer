@@ -437,29 +437,25 @@
       opts.chrome === false ? '' : [
         // 常驻只留「形态 / 视角」——它们决定画面本身怎么摆；其余（着色/注入/连线/时间/
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
-        '<div class="prc-topwrap">',
+        // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
+        // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
         '<div class="prc-topbar panel-shell">',
-        // 视图标题：kicker（这是什么类别的图）+ 名称 + 一行当前规格
         '  <div class="prc-brand">',
-        '    <div class="prc-kicker">PARALLEL LAYOUT</div>',
-        '    <div class="prc-brandname">逻辑魔方 · 并行域重排</div>',
-        '    <div class="prc-brandsub prc-mono"></div>',
+        '    <span class="prc-brandname">逻辑魔方 · 并行域重排</span>',
+        '    <span class="prc-brandchip"></span>',
         '  </div>',
-        // 形态与视角同一行：它们是「画面怎么摆」的一对，放一起读；「更多」是独立按钮
-        '  <div class="prc-row prc-row-top">',
-        '    <span class="prc-row-modes"><span class="prc-lab">形态</span></span>',
-        '    <span class="prc-rowsep"></span>',
-        '    <span class="prc-row-views"><span class="prc-lab">视角</span></span>',
-        '  </div>',
-        '  <div class="prc-more">',
-        '    <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
-        '    <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
-        '    <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
-        '    <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
-        '    <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
+        '  <div class="prc-tools">',
+        '    <span class="prc-group segmented-control prc-row-modes"></span>',
+        '    <span class="prc-group segmented-control prc-row-views"></span>',
+        '    <button class="prc-morebtn btn btn-sm" type="button"></button>',
         '  </div>',
         '</div>',
-        '<button class="prc-morebtn btn btn-sm panel-shell" type="button"></button>',
+        '<div class="prc-more panel-shell">',
+        '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
+        '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
+        '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
+        '  <div class="prc-row prc-row-time"><span class="prc-lab">时间</span></div>',
+        '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
         '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
@@ -552,11 +548,23 @@
        看上去就是「线没连到卡上」。 */
     const PEER_MAX = 1024;
     const peerDims = ['TP', 'PP', 'DP', 'EP'];
+    /* 注意：不能用 InstancedMesh + EdgesGeometry —— InstancedMesh 是 Mesh，会把
+       EdgesGeometry 的「每两点一条边」当成「每三点一个三角形」来画，卡面上于是浮出
+       一个个斜三角。正确做法是一条 LineSegments，把所有成员的框顶点合并进一个缓冲，
+       在 rebuildComm 里按当前成员位置重填。 */
+    const EDGE_TPL = (() => {
+      const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.02, CARD.y * 1.02, CARD.z * 1.02));
+      const a = Float32Array.from(g.attributes.position.array);
+      g.dispose();
+      return a;                                   // 24 个点（12 条棱）的相对坐标
+    })();
     const peerMeshes = peerDims.map((d) => {
-      const m = new THREE.InstancedMesh(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(CARD.x * 1.02, CARD.y * 1.02, CARD.z * 1.02)),
-        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.6, depthTest: false }), PEER_MAX);
-      m.renderOrder = 5; m.count = 0; m.visible = false; scene.add(m);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PEER_MAX * EDGE_TPL.length), 3));
+      geo.setDrawRange(0, 0);
+      const m = new THREE.LineSegments(geo,
+        new THREE.LineBasicMaterial({ color: new THREE.Color(dimc(d)), transparent: true, opacity: 0.6, depthTest: false }));
+      m.frustumCulled = false; m.renderOrder = 5; m.visible = false; scene.add(m);
       return m;
     });
     // 域轮廓：每维一个线框盒（把该组成员整体包起来），穿透方块可见
@@ -1110,7 +1118,7 @@
       // 封顶，宽扁模型不会被推出画布（面板尺寸从 DOM 实测；chrome:false 的嵌入用法无面板 → 不偏移）。
       const bar = root.querySelector('.prc-topbar');
       const br = bar ? bar.getBoundingClientRect() : null;
-      const bx = br ? Math.min(0.18, (br.width / w) * 0.3) : 0;
+      const bx = br && br.width < w * 0.8 ? Math.min(0.18, (br.width / w) * 0.3) : 0;
       const by = br ? Math.min(0.18, (br.height / h) * 0.42) : 0;
       cam.half = Math.max(hh, hw / asp) * 1.05 * (1 + Math.max(bx, by));
       const halfW = cam.half * asp;
@@ -1208,7 +1216,7 @@
 
     function rebuildComm() {
       clearComm();
-      peerMeshes.forEach((m) => { m.count = 0; m.visible = false; });
+      peerMeshes.forEach((m) => { m.geometry.setDrawRange(0, 0); m.visible = false; });
       moverPaths = [];
       outlineBoxes.forEach((o) => { o.visible = false; });
       buildRelSet();               // 关联集合与连线同源：谁被画成对端，谁就不被聚焦压暗
@@ -1218,9 +1226,22 @@
       peerDims.forEach((d, di) => {
         const members = model.commGroup(S.sel, d);
         const mesh = peerMeshes[di];
+        const buf = mesh.geometry.attributes.position;
+        const V = EDGE_TPL.length;                 // 每个成员 24 点 × 3 分量
         let n = 0;
-        members.forEach((r) => { if (r !== S.sel && n < PEER_MAX) { dummy.position.copy(gp(r)); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); mesh.setMatrixAt(n++, dummy.matrix); } });
-        mesh.count = n; mesh.visible = S.wire.members && n > 0; mesh.instanceMatrix.needsUpdate = true;
+        members.forEach((r) => {
+          if (r === S.sel || n >= PEER_MAX) return;
+          const p = gp(r), base = n * V;
+          for (let k = 0; k < V; k += 3) {
+            buf.array[base + k] = EDGE_TPL[k] + p.x;
+            buf.array[base + k + 1] = EDGE_TPL[k + 1] + p.y;
+            buf.array[base + k + 2] = EDGE_TPL[k + 2] + p.z;
+          }
+          n++;
+        });
+        mesh.geometry.setDrawRange(0, n * (V / 3));
+        buf.needsUpdate = true;
+        mesh.visible = S.wire.members && n > 0;
         const colorHex = new THREE.Color(dimc(d)).getHex();
         // 当前阶段主导的那一维加一档亮度与粗细（四维一律清晰可见，只是主导维更亮）
         const on = curDim === d;
@@ -1476,9 +1497,14 @@
       const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
       if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
     }
+    // 顶栏会随宽度换行变高 → 把实际高度写回 CSS 变量，抽屉/贴士/详情卡都据此让位
+    function syncBarH() {
+      const bar = root.querySelector('.prc-topbar');
+      if (bar) root.style.setProperty('--prc-barh', Math.round(bar.getBoundingClientRect().height) + 'px');
+    }
     function syncBrand() {
-      const el = $('.prc-brandsub'); if (!el) return;
-      el.textContent = `TP${TP} · PP${PP} · DP${REP} · EP${EP} = ${N} rank · ${DOM} 个 A2A 域`;
+      const el = $('.prc-brandchip'); if (!el) return;
+      el.textContent = `${N} rank · TP${TP}·PP${PP}·DP${REP}·EP${EP} · ${DOM} 域`;
     }
     function syncCfgUI() {
       if (!cfgInputs) return;
@@ -1487,7 +1513,7 @@
       cfgErr.textContent = '';
     }
     function syncChrome() {
-      syncHelp(); syncBrand();                                           // 问号气泡与标题规格随状态更新
+      syncHelp(); syncBrand(); syncBarH();                                           // 问号气泡与标题规格随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
       const md = model.modes[S.mode];
@@ -1530,7 +1556,12 @@
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
       [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
         ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-row-time'], ['cfg', '.prc-row-cfg']]
-        .forEach(([k, sel]) => { const lab = $(sel + ' .prc-lab'); if (lab) lab.insertAdjacentElement('afterend', helpDot(k)); });
+        .forEach(([k, sel]) => {
+          const lab = $(sel + ' .prc-lab');
+          if (lab) { lab.insertAdjacentElement('afterend', helpDot(k)); return; }
+          const row = $(sel);                       // 顶栏里的形态/视角没有行首标签 → 问号跟在这一组后面
+          if (row) row.insertAdjacentElement('afterend', helpDot(k));
+        });
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
       modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
@@ -1538,7 +1569,7 @@
       moreBtn = $('.prc-morebtn');
       moreBtn.addEventListener('click', () => {
         S.more = !S.more;
-        root.querySelector('.prc-topbar').classList.toggle('is-open', S.more);
+        root.classList.toggle('is-open', S.more);
         syncChrome(); resize();
       });
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
@@ -1773,6 +1804,8 @@
     function resize() {
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600;
       renderer.setSize(w, h);
+      syncBarH();                 // 顶栏换行会变高，抽屉与右上角的卡都靠这个变量让位
+      fitView();
     }
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
     if (ro) ro.observe(stageEl);
@@ -1789,7 +1822,7 @@
         model = next; syncDims();
         S.sel = null; S.hover = null; S.sliceVal = 0;
         buildField();
-        clearComm(); peerMeshes.forEach((m2) => { m2.count = 0; m2.visible = false; });
+        clearComm(); peerMeshes.forEach((m2) => { m2.geometry.setDrawRange(0, 0); m2.visible = false; });
         fitView(); renderAxes(); applyAxVisibility(); updateSlab();
         refresh2D(); renderPill();
         renderHud(); renderLegend(); renderInfo(); syncCfgUI();

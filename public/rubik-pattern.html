@@ -16,9 +16,8 @@
   html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--background); }
   #app { width: 100%; height: 100%; }
   #themeBtn {
-    position: absolute; top: var(--space-3); right: var(--space-3); z-index: 20;
-    /* 让位给正交 2D 时出现在同一角的粒度贴士 */
-    transform: translateY(calc(var(--space-6) + var(--space-2)));
+    /* 与 pattern 顶栏同一行：顶栏右端已经留出这块位置 */
+    position: absolute; top: calc(var(--space-3) + 5px); right: calc(var(--space-3) * 2); z-index: 20;
   }
 </style>
 </head>
