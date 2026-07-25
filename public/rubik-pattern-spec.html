@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>逻辑魔方 LogicalRubikCube · 设计 Pattern 规范</title>
+<link rel="icon" type="image/svg+xml" href="./vendor/rubik-cube/favicon.svg">
+<script src="./vendor/three-r128.min.js"></script>
+<!-- PTO Design System：唯一 token/类实现入口（上游快照，见 vendor/pto-design-system/README.md） -->
+<link rel="stylesheet" href="./vendor/pto-design-system/styles.css">
+<link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
+<script src="./vendor/rubik-cube/pattern.js"></script>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   逻辑魔方 · 设计 Pattern 规范文档
+   规范文档本身也守设计系统：颜色 / 圆角 / 阴影 / 间距一律 var(--token)，
+   只有「插图规范」明文规定的数值（872 / 424 / 20 / 8px 圆角 / 页面阴影 /
+   背景灰 #F5F5F5）作为规范值写死，并在附录里以尺寸说明图自证。
+   浅色为默认主题（:root[data-theme='light']），右上角可切深色。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 插图规范值（规范硬值，文档自证用）───────────────────────────────── */
+:root {
+  --spec-card-lg: 872px;      /* 大卡片总宽（含两侧边距各 20px） */
+  --spec-card-sm: 424px;      /* 小卡片总宽（含两侧边距各 20px） */
+  --spec-card-pad: 20px;      /* 卡片两侧边距 */
+  --spec-board-radius: 8px;   /* 页面/画板圆角 */
+  --spec-page-shadow: 0 2px 6px 0 rgba(37, 43, 58, 0.12);   /* #252B3A · 12% · X0 Y2 B6 S0 */
+  --spec-mat: #F5F5F5;        /* 背景灰垫底 */
+  --spec-gap: 24px;           /* 两张小卡并排时的间距（424 + 24 + 424 = 872） */
+
+  /* TP 的维度签名色：上游色卡没有青族 → pattern 自备 --dim-tp（见 pattern.css 的 .prc-root，
+     标记为待回补上游）。那处声明作用域只到 .prc-root，文档里的示意图与色点在其外，
+     故在此按同值镜像一份；PP/DP/EP 一律直接用设计系统 token，不再另立变量。 */
+  --dim-tp: #39c5cf;
+}
+:root[data-theme='dark'] {
+  /* 深色下背景灰换成同角色的表面色（规范值仍是浅色那一档，见附录说明） */
+  --spec-mat: var(--surface-2);
+  --spec-page-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.40);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 顶栏 ──────────────────────────────────────────────────────────── */
+.doc-top {
+  position: sticky; top: 0; z-index: var(--z-dropdown);
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.doc-top-name { font: var(--type-title-3); font-weight: 700; white-space: nowrap; }
+.doc-top-en {
+  font-family: var(--font-mono); font-size: var(--font-size-label-xs);
+  color: var(--foreground-muted); letter-spacing: var(--letter-spacing-label);
+}
+.doc-top-spacer { flex: 1 1 auto; }
+.doc-top .btn { white-space: nowrap; }
+
+/* ── 页面骨架 ───────────────────────────────────────────────────────── */
+.doc-main {
+  display: grid;
+  grid-template-columns: 208px minmax(0, var(--spec-card-lg));
+  gap: 48px;
+  justify-content: center;
+  padding: var(--space-6) var(--space-5) 96px;
+}
+.doc-toc {
+  position: sticky; top: 72px; align-self: start;
+  max-height: calc(100vh - 96px); overflow: auto;
+  padding-right: var(--space-2);
+}
+.doc-toc-title {
+  font: var(--type-micro); text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted);
+  margin-bottom: var(--space-2);
+}
+.doc-toc a {
+  display: block; padding: 6px var(--space-2); border-radius: var(--radius-sm);
+  font: var(--type-body-sm); color: var(--foreground-secondary); text-decoration: none;
+}
+.doc-toc a:hover { background: var(--state-hover); color: var(--foreground); }
+.doc-toc a.is-active { background: var(--state-selected); color: var(--foreground); font-weight: 600; }
+.doc-toc a .n {
+  font-family: var(--font-mono); font-size: var(--font-size-label-xs);
+  color: var(--foreground-muted); margin-right: 6px;
+}
+.doc-body { min-width: 0; max-width: var(--spec-card-lg); }
+
+/* ── 文档头 ─────────────────────────────────────────────────────────── */
+.doc-kicker {
+  font: var(--type-micro); text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted);
+}
+h1 { font: var(--type-display); margin: var(--space-2) 0 var(--space-3); }
+h1 .h1-en {
+  font-family: var(--font-mono); font-size: var(--font-size-title-sm);
+  font-weight: 500; color: var(--foreground-muted); margin-left: var(--space-3);
+}
+.doc-lede { font: var(--type-body); color: var(--foreground-secondary); margin: 0 0 var(--space-4); }
+.doc-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
+.doc-meta .stat-chip { white-space: nowrap; }
+.doc-meta .k {
+  font: var(--type-micro); text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted); margin-right: 6px;
+}
+.doc-meta .v { font-family: var(--font-mono); font-size: var(--font-size-body-sm); color: var(--foreground); }
+
+/* ── 章节 ───────────────────────────────────────────────────────────── */
+section { margin-top: 56px; scroll-margin-top: 76px; }
+h2 {
+  font: var(--type-title-1); margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-default);
+  display: flex; align-items: baseline; gap: var(--space-3);
+}
+h2 .n { font-family: var(--font-mono); font-size: var(--font-size-body-md); color: var(--primary); }
+h2 .req {
+  margin-left: auto; font: var(--type-micro); letter-spacing: var(--letter-spacing-label);
+  color: var(--foreground-muted); border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill); padding: 2px var(--space-2);
+}
+h3 { font: var(--type-title-2); margin: var(--space-6) 0 var(--space-2); }
+p { margin: 0 0 var(--space-3); }
+.sub { color: var(--foreground-secondary); }
+ul, ol { margin: 0 0 var(--space-3); padding-left: 1.35em; }
+li { margin-bottom: 6px; }
+b, strong { font-weight: 600; }
+code {
+  font-family: var(--font-mono); font-size: 0.9em;
+  background: var(--surface-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 1px 5px;
+}
+a { color: var(--primary); }
+
+/* 维度签名色的小圆点（文中提到某一维时带上） */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.dot-tp { background: var(--dim-tp); }
+.dot-pp { background: var(--warning); }
+.dot-dp { background: var(--primary); }
+.dot-ep { background: var(--highlight-l0a-violet-400); }
+
+/* ── 表格 ───────────────────────────────────────────────────────────── */
+table {
+  width: 100%; border-collapse: collapse; margin: 0 0 var(--space-4);
+  font: var(--type-body-sm);
+}
+th, td {
+  text-align: left; vertical-align: top;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+th {
+  font: var(--type-micro); text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted);
+  border-bottom: 1px solid var(--border-default); white-space: nowrap;
+}
+tbody tr:hover { background: var(--state-hover); }
+td.mono, th.mono, .mono { font-family: var(--font-mono); }
+td.nw { white-space: nowrap; }
+
+/* ── 提示条 ─────────────────────────────────────────────────────────── */
+.note {
+  border-left: 2px solid var(--primary); background: var(--tone-info-bg);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: var(--space-3) var(--space-4); margin: 0 0 var(--space-4);
+  font: var(--type-body-sm); color: var(--foreground-secondary);
+}
+.note.is-warn { border-left-color: var(--warning); background: var(--tone-warning-bg); }
+.note b { color: var(--foreground); }
+
+/* ── 插图卡片（规范值：大 872 / 小 424 · 两侧边距 20 · 画板圆角 8 · 页面阴影）── */
+figure { margin: 0 0 var(--space-5); }
+.fig { width: 100%; max-width: var(--spec-card-lg); }
+.fig-sm { max-width: var(--spec-card-sm); }
+.fig-mat {
+  background: var(--spec-mat);
+  padding: var(--spec-card-pad);
+  border-radius: var(--radius-md);
+}
+.board {
+  position: relative; overflow: hidden;
+  background: var(--surface-1);
+  border-radius: var(--spec-board-radius);
+  box-shadow: var(--spec-page-shadow);
+}
+.board.is-live { height: 470px; }
+.board.is-live.is-tall { height: 560px; }   /* 带自带工具栏与图例的完整形态需要更多高度 */
+.fig-sm .board.is-live { height: 300px; }
+figcaption {
+  margin-top: var(--space-2); font: var(--type-body-sm);
+  color: var(--foreground-secondary); display: flex; gap: var(--space-2); align-items: baseline;
+}
+figcaption .cap-n {
+  font-family: var(--font-mono); font-size: var(--font-size-label-xs);
+  color: var(--foreground-muted); white-space: nowrap;
+}
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spec-gap); margin-bottom: var(--space-5); }
+.pair figure { margin: 0; }
+
+/* Do / Don't 徽标 */
+.verdict {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: var(--type-micro); letter-spacing: var(--letter-spacing-label);
+  border-radius: var(--radius-pill); padding: 2px var(--space-2); white-space: nowrap;
+}
+.verdict svg { width: 12px; height: 12px; }
+.is-do { color: var(--success); background: var(--tone-green-strong); }
+.is-dont { color: var(--danger); background: var(--tone-critical-bg); }
+
+/* ── 示意图（SVG 线稿）─────────────────────────────────────────────── */
+.sv { display: block; width: 100%; height: auto; }
+.sv text { font-family: var(--font-sans); fill: var(--foreground-secondary); font-size: 10px; }
+.sv text.m { font-family: var(--font-mono); fill: var(--foreground-muted); font-size: 9px; }
+.sv text.hd { fill: var(--foreground); font-size: 11px; font-weight: 600; }
+.sv .badge { fill: var(--surface-3); stroke: var(--border-default); stroke-width: 1; }
+.sv text.bn { fill: var(--foreground); font-size: 9px; font-weight: 700; }
+.sv .card { fill: color-mix(in srgb, var(--primary) 16%, var(--surface-1)); stroke: color-mix(in srgb, var(--primary) 38%, transparent); stroke-width: 1; }
+.sv .card-w { fill: color-mix(in srgb, var(--warning) 20%, var(--surface-1)); stroke: color-mix(in srgb, var(--warning) 45%, transparent); }
+.sv .card-g { fill: color-mix(in srgb, var(--success) 20%, var(--surface-1)); stroke: color-mix(in srgb, var(--success) 45%, transparent); }
+.sv .card-d { fill: color-mix(in srgb, var(--danger) 26%, var(--surface-1)); stroke: color-mix(in srgb, var(--danger) 50%, transparent); }
+.sv .grid { fill: none; stroke: var(--border-default); stroke-width: 1; }
+.sv .grid-tp { stroke: var(--dim-tp); }
+.sv .frame { fill: none; stroke: var(--border-strong); stroke-width: 1; }
+.sv .wire { fill: none; stroke: var(--dim-tp); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sv .casing { fill: none; stroke: var(--surface-1); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.sv .bad { fill: none; stroke: var(--danger); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.sv .badfill { fill: color-mix(in srgb, var(--danger) 16%, transparent); stroke: var(--danger); stroke-width: 1; }
+.sv .chip { fill: var(--surface-2); stroke: var(--border-default); stroke-width: 1; }
+.sv .lead { stroke: var(--foreground-muted); stroke-width: 1; fill: none; }
+.sv .dim { stroke: var(--primary); stroke-width: 1; fill: none; }
+.sv .label-box { fill: color-mix(in srgb, var(--dim-tp) 10%, var(--background)); stroke: color-mix(in srgb, var(--dim-tp) 30%, transparent); stroke-width: 1; }
+
+/* ── 演示卡的控制条（复用设计系统控件类）───────────────────────────── */
+.demo-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle); background: var(--surface-2);
+}
+.demo-bar .lb {
+  font: var(--type-micro); text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted);
+}
+/* 选中态一律主色——与 pattern.css 对 .prc-root .btn.is-selected 的处理同款
+   （上游默认是 --foreground，在浅色下是一块黑，与 pattern 顶栏不成套） */
+.demo-bar .btn.is-selected,
+.demo-bar .btn.is-selected:hover {
+  background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
+}
+.board.has-bar .stage { position: absolute; inset: 41px 0 0; }
+.board .stage { position: absolute; inset: 0; }
+.board .ph {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font: var(--type-body-sm); color: var(--foreground-muted); gap: var(--space-2);
+}
+
+/* ── 代码块 ─────────────────────────────────────────────────────────── */
+pre {
+  margin: 0 0 var(--space-4); padding: var(--space-4);
+  background: var(--surface-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); overflow: auto;
+  font: var(--type-mono); color: var(--foreground); line-height: 1.6;
+}
+pre .c { color: var(--foreground-muted); }
+pre .k { color: var(--primary); }
+
+/* ── 资源清单 ───────────────────────────────────────────────────────── */
+.res-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.res-card {
+  display: block; border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4); background: var(--surface-1);
+  color: inherit; text-decoration: none;
+  transition: border-color var(--duration-fast) var(--easing-default), background var(--duration-fast) var(--easing-default);
+}
+.res-card:hover { border-color: var(--primary); background: var(--state-hover); }
+.res-card .t {
+  font-family: var(--font-mono); font-size: var(--font-size-body-sm); font-weight: 600;
+  color: var(--primary); margin-bottom: 4px; word-break: break-all;
+}
+.res-card .d { font: var(--type-body-sm); color: var(--foreground-secondary); }
+
+/* ── FAQ ────────────────────────────────────────────────────────────── */
+.faq { border-top: 1px solid var(--border-subtle); padding: var(--space-3) 0; }
+.faq .q { font: var(--type-title-3); margin-bottom: 4px; }
+.faq .a { font: var(--type-body-sm); color: var(--foreground-secondary); margin: 0; }
+
+footer {
+  margin-top: 64px; padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font: var(--type-body-sm); color: var(--foreground-muted);
+}
+
+/* ── 窄屏 ───────────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .doc-main { grid-template-columns: minmax(0, var(--spec-card-lg)); }
+  .doc-toc { display: none; }
+}
+@media (max-width: 900px) {
+  .pair, .res-grid { grid-template-columns: minmax(0, 1fr); }
+  .board.is-live { height: 380px; }
+}
+</style>
+</head>
+<body>
+
+<header class="doc-top">
+  <span class="doc-top-name">逻辑魔方</span>
+  <span class="doc-top-en">LogicalRubikCube</span>
+  <span class="doc-top-spacer"></span>
+  <a class="btn btn-sm" href="./rubik-pattern.html">打开可交互 Pattern</a>
+  <button id="themeBtn" class="btn btn-sm" type="button" aria-label="切换明暗主题"></button>
+</header>
+
+<div class="doc-main">
+
+  <nav class="doc-toc" aria-label="目录">
+    <div class="doc-toc-title">目录</div>
+    <a href="#s1"><span class="n">01</span>场景说明</a>
+    <a href="#s2"><span class="n">02</span>场景引导</a>
+    <a href="#s3"><span class="n">03</span>场景设计</a>
+    <a href="#s4"><span class="n">04</span>正例与反例</a>
+    <a href="#s5"><span class="n">05</span>设计资源</a>
+    <a href="#s6"><span class="n">06</span>设计原则</a>
+    <a href="#s7"><span class="n">07</span>插图与尺寸规范</a>
+    <a href="#s8"><span class="n">08</span>FAQ</a>
+  </nav>
+
+  <main class="doc-body">
+
+    <div class="doc-kicker">Pattern · 逻辑重排视图</div>
+    <h1>逻辑魔方<span class="h1-en">LogicalRubikCube</span></h1>
+    <p class="doc-lede">
+      把同一批 rank 按不同并行轴「换一种堆法」的 3D 重排视图：五种形态共享一套布局规则，
+      切形态即换投影轴并以飞行动画重排，用<b>形状</b>回答「谁和谁一组」「这批异常属于哪一维」。
+    </p>
+    <div class="doc-meta">
+      <span class="stat-chip"><span class="k">ID</span><span class="v">rubik-cube-logical</span></span>
+      <span class="stat-chip"><span class="k">类型</span><span class="v">renderer</span></span>
+      <span class="stat-chip"><span class="k">默认预设</span><span class="v">TP8 · PP5 · DP100 · EP2 = 4000 rank</span></span>
+      <span class="stat-chip"><span class="k">设计系统</span><span class="v">PTO Design System</span></span>
+      <span class="stat-chip"><span class="k">主题</span><span class="v">浅色默认 · 明暗联动</span></span>
+    </div>
+
+    <!-- ══════════ 01 场景说明 ══════════ -->
+    <section id="s1">
+      <h2><span class="n">01</span>场景说明<span class="req">必填</span></h2>
+
+      <p>
+        逻辑魔方把一个训练/推理作业里的每一张加速卡（rank）画成一个恒定大小的小方块：
+        <b>1 小块 = 1 卡 = <span class="mono">(TP, PP, DP)</span> 坐标的交点</b>，另叠一层 EP 桶身份。
+        整堆卡可以按不同并行轴重新堆放——这就是「形态」。切形态只换投影轴、不改变卡本身，
+        卡群以 0.5s 飞行动画落到新位置。
+      </p>
+      <p>
+        <b>它解决的问题</b>：大规模并行作业里「谁和谁一组」是四维关系（TP / PP / DP / EP），
+        一张二维表或一张物理拓扑图只能表达其中一层；而现场真正要回答的问题是
+        「这批异常卡属于哪一维」「这一维的通信此刻在跟谁收发」。
+        逻辑魔方把维度关系变成空间形状：<b>异常若沿某一维成组，切到对应形态就 snap 成一整块</b>
+        （一面墙 / 一块板 / 一整段），根因类别当场可见。
+      </p>
+
+      <figure class="fig">
+        <div class="fig-mat">
+          <div class="board is-live" data-demo="hero">
+            <div class="ph">正在装载可交互示例…</div>
+          </div>
+        </div>
+        <figcaption><span class="cap-n">图 1.1</span>标准形态 · 盘古 Pro MoE 真实训练策略 TP8×PP5×DP100 = 4000 rank（EP2 折入 DP 轴）。可拖拽旋转、点选任意一张卡。</figcaption>
+      </figure>
+
+      <h3>四个维度分别是什么</h3>
+      <table>
+        <thead><tr><th>维度</th><th>含义</th><th>在魔方里的表现</th><th>签名色</th></tr></thead>
+        <tbody>
+          <tr><td class="mono nw">TP</td><td>张量并行：同一层被切成 N 片，片间每层做 AllReduce</td><td>标准形态的 X 轴；TP切片形态里每片是一面墙</td><td class="nw"><span class="dot dot-tp"></span>青 <code>--dim-tp</code></td></tr>
+          <tr><td class="mono nw">PP</td><td>流水并行：模型按层切成 N 段，段间 P2P 接力</td><td>标准形态的 Y 轴（模型深度，上→下）</td><td class="nw"><span class="dot dot-pp"></span>橙 <code>--warning</code></td></tr>
+          <tr><td class="mono nw">DP</td><td>数据并行：N 个完整副本，步末做梯度 AllReduce</td><td>标准形态的 Z 轴；DP平铺形态里每副本是一块板</td><td class="nw"><span class="dot dot-dp"></span>蓝 <code>--primary</code></td></tr>
+          <tr><td class="mono nw">EP</td><td>专家并行：MoE 专家分桶，桶间 AllToAll</td><td><b>不占独立轴</b>，折入 DP 轴：副本 <code>rep</code> 持桶 <code>rep % ep</code></td><td class="nw"><span class="dot dot-ep"></span>紫 <code>--highlight-l0a-violet-400</code></td></tr>
+        </tbody>
+      </table>
+      <p class="sub">
+        rank 总数 = <code>tp × pp × dp</code>；<b>EP 不参与乘法</b>，只要求整除 <code>dp</code>。
+        相邻 <code>ep</code> 个副本构成一个 AllToAll 域，共 <code>dp / ep</code> 个域。
+      </p>
+
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="一小块等于一张卡的坐标示意">
+              <text class="hd" x="16" y="22">1 小块 = 1 卡（rank）</text>
+              <text x="16" y="38">位置即多维坐标：X=TP · Y=PP · Z=DP</text>
+              <g transform="translate(52,58)">
+                <g class="grid">
+                  <path d="M0 0 H210 M0 36 H210 M0 72 H210 M0 108 H210"/>
+                  <path d="M0 0 V108 M42 0 V108 M84 0 V108 M126 0 V108 M168 0 V108 M210 0 V108"/>
+                </g>
+                <rect class="card" x="8" y="8" width="26" height="20" rx="2"/>
+                <rect class="card" x="50" y="8" width="26" height="20" rx="2"/>
+                <rect class="card" x="92" y="8" width="26" height="20" rx="2"/>
+                <rect class="card" x="134" y="8" width="26" height="20" rx="2"/>
+                <rect class="card" x="176" y="8" width="26" height="20" rx="2"/>
+                <rect class="card" x="8" y="44" width="26" height="20" rx="2"/>
+                <rect class="card-w" x="50" y="44" width="26" height="20" rx="2"/>
+                <rect class="card" x="92" y="44" width="26" height="20" rx="2"/>
+                <rect class="card" x="134" y="44" width="26" height="20" rx="2"/>
+                <rect class="card" x="176" y="44" width="26" height="20" rx="2"/>
+                <rect class="card" x="8" y="80" width="26" height="20" rx="2"/>
+                <rect class="card" x="50" y="80" width="26" height="20" rx="2"/>
+                <rect class="card" x="92" y="80" width="26" height="20" rx="2"/>
+                <rect class="card" x="134" y="80" width="26" height="20" rx="2"/>
+                <rect class="card" x="176" y="80" width="26" height="20" rx="2"/>
+                <path class="lead" d="M63 44 L63 30 L110 30"/>
+                <rect class="label-box" x="110" y="20" width="96" height="16" rx="7"/>
+                <text class="m" x="116" y="31">rank · TP1 PP1 DP0</text>
+                <text class="m" x="-40" y="16">PP ↓</text>
+                <text class="m" x="0" y="126">TP →</text>
+              </g>
+            </svg>
+          </div></div>
+          <figcaption><span class="cap-n">图 1.2</span>卡的身份由位置给出，颜色留给「此刻状态」。</figcaption>
+        </figure>
+
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="切形态等于换投影轴示意">
+              <text class="hd" x="16" y="22">切形态 = 换投影轴</text>
+              <text x="16" y="38">同一批卡，换一种堆法：异常沿哪一维成组就现出形状</text>
+              <g transform="translate(24,56)">
+                <rect class="frame" x="0" y="0" width="132" height="104" rx="3"/>
+                <text class="m" x="4" y="-4">标准形态</text>
+                <g>
+                  <rect class="card" x="12" y="14" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="14" width="16" height="14" rx="2"/><rect class="card" x="56" y="14" width="16" height="14" rx="2"/><rect class="card" x="78" y="14" width="16" height="14" rx="2"/><rect class="card-d" x="100" y="14" width="16" height="14" rx="2"/>
+                  <rect class="card" x="12" y="38" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="38" width="16" height="14" rx="2"/><rect class="card" x="56" y="38" width="16" height="14" rx="2"/><rect class="card" x="78" y="38" width="16" height="14" rx="2"/><rect class="card-d" x="100" y="38" width="16" height="14" rx="2"/>
+                  <rect class="card" x="12" y="62" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="62" width="16" height="14" rx="2"/><rect class="card" x="56" y="62" width="16" height="14" rx="2"/><rect class="card" x="78" y="62" width="16" height="14" rx="2"/><rect class="card-d" x="100" y="62" width="16" height="14" rx="2"/>
+                </g>
+                <text class="m" x="12" y="94">散成周期条带 · 读不出根因</text>
+              </g>
+              <path class="lead" d="M166 108 H196" marker-end="url(#spec-arrow)"/>
+              <g transform="translate(212,56)">
+                <rect class="frame" x="0" y="0" width="132" height="104" rx="3"/>
+                <text class="m" x="4" y="-4">EP聚簇形态</text>
+                <g>
+                  <rect class="card-d" x="12" y="14" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="14" width="16" height="14" rx="2"/><rect class="card" x="66" y="14" width="16" height="14" rx="2"/><rect class="card" x="88" y="14" width="16" height="14" rx="2"/><rect class="card" x="110" y="14" width="16" height="14" rx="2"/>
+                  <rect class="card-d" x="12" y="38" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="38" width="16" height="14" rx="2"/><rect class="card" x="66" y="38" width="16" height="14" rx="2"/><rect class="card" x="88" y="38" width="16" height="14" rx="2"/><rect class="card" x="110" y="38" width="16" height="14" rx="2"/>
+                  <rect class="card-d" x="12" y="62" width="16" height="14" rx="2"/><rect class="card-d" x="34" y="62" width="16" height="14" rx="2"/><rect class="card" x="66" y="62" width="16" height="14" rx="2"/><rect class="card" x="88" y="62" width="16" height="14" rx="2"/><rect class="card" x="110" y="62" width="16" height="14" rx="2"/>
+                </g>
+                <rect class="bad" x="8" y="10" width="46" height="70" rx="3"/>
+                <text class="m" x="12" y="94">snap 成一整面墙 = 热点桶</text>
+              </g>
+              <defs>
+                <marker id="spec-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 z" fill="currentColor" style="color:var(--foreground-muted)"/>
+                </marker>
+              </defs>
+            </svg>
+          </div></div>
+          <figcaption><span class="cap-n">图 1.3</span>同一次 EP 桶异常，在两种形态下的读法差别。</figcaption>
+        </figure>
+      </div>
+
+      <div class="note">
+        <b>它不负责什么。</b>不画物理拓扑几何（机柜、线缆走向、板卡内部结构）——那是硬件拓扑视图与图元库的分工；
+        不做精确数值比较——那是图表的分工。逻辑魔方只讲<b>逻辑分组</b>，物理落位只以「着色透镜 + 文字」的方式出现
+        （见 <a href="#s3">03 场景设计</a>）。
+      </div>
+    </section>
+
+    <!-- ══════════ 02 场景引导 ══════════ -->
+    <section id="s2">
+      <h2><span class="n">02</span>场景引导<span class="req">必填</span></h2>
+
+      <p>入局设计师用三个问题判断该不该用这个 Pattern：</p>
+      <ol>
+        <li><b>对象是不是「同一批同构单元」？</b>——rank / 卡 / 实例，成千上万个，个体没有独立形状。</li>
+        <li><b>它们之间是不是<b>多维</b>分组关系？</b>——同一个个体同时属于 2 个及以上分组维度（TP 组、PP 段、DP 副本、EP 桶）。</li>
+        <li><b>用户要回答的是不是「形状问题」？</b>——谁和谁一组、异常属于哪一维、这一维此刻在跟谁通信。</li>
+      </ol>
+      <p>三个都为「是」→ 用逻辑魔方。任意一个为「否」→ 见下表的替代方案。</p>
+
+      <h3>该用（Use When）</h3>
+      <table>
+        <thead><tr><th style="width:34%">页面要回答的问题</th><th>逻辑魔方怎么答</th></tr></thead>
+        <tbody>
+          <tr><td>这批异常卡是同一个 TP 槽位坏了，还是某个副本慢了？</td><td>注入/着色后逐个形态切换，异常 snap 成整块的那个形态就是根因类别</td></tr>
+          <tr><td>选中的这张卡，它的四个通信域各是谁？</td><td>选中 rank → TP/PP/DP/EP 四组同屏高亮，重排飞行时跟随</td></tr>
+          <tr><td>一个训练 step 里，热点什么时候在哪一维？</td><td>时间轴 = 4 个通信阶段，热力场随阶段变形，主导维加亮</td></tr>
+          <tr><td>这一维的集合通信按什么算法收发？</td><td>Ring（前半 ReduceScatter / 后半 AllGather）/ Tree / P2P 链 / AllToAll，可切换对照</td></tr>
+          <tr><td>逻辑分组和物理落位对得上吗？</td><td>按主机 / Pod 着色看 rail 亲和；详情卡给「此刻这一维走线各跨了哪层」</td></tr>
+          <tr><td>换一套并行度会变成什么样？</td><td>输入 TP/PP/DP/EP 即时重建，布局由规则推导，任何数字都自动排好</td></tr>
+        </tbody>
+      </table>
+
+      <h3>不该用（Don't Use When）</h3>
+      <table>
+        <thead><tr><th style="width:34%">场景</th><th>为什么不合适</th><th class="nw">改用</th></tr></thead>
+        <tbody>
+          <tr><td>只有一个分组维度（例如纯 DP 的推理集群）</td><td>重排没有对象，五个形态会退化成同一张图</td><td>列表 / 热力表</td></tr>
+          <tr><td>要看链路走向、端口、机柜与线缆</td><td>本 Pattern 明确不搬运物理拓扑几何</td><td>硬件拓扑视图</td></tr>
+          <tr><td>要精确比较数值（吞吐、时延曲线）</td><td>3D 里的色差读不出量级差</td><td>图表 / 指标看板</td></tr>
+          <tr><td>要看单卡内部结构（NPU / HBM / 片上互联）</td><td>一张卡在这里是不可再分的最小块</td><td>Node / 芯片视图</td></tr>
+          <tr><td>要看长时间跨度的趋势与事件序列</td><td>时间轴只表达<b>一个 step 内</b>的 4 个通信阶段</td><td>时序泳道</td></tr>
+          <tr><td>规模极小（&lt; 16 卡）且只关心逐卡明细</td><td>形状信息不足以支撑重排，表格更直接</td><td>表格</td></tr>
+        </tbody>
+      </table>
+
+      <h3>接入前要准备的输入</h3>
+      <table>
+        <thead><tr><th class="nw">输入</th><th class="nw">必需</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">tp / pp / dp / ep</td><td>必需</td><td>并行度。校验：四数 ≥ 1、<code>ep</code> 整除 <code>dp</code>、<code>tp×pp×dp</code> ≤ 65536</td></tr>
+          <tr><td class="mono">layers / experts</td><td>可选</td><td>模型层数（默认 48）与专家总数（默认 64），决定 PP 段的层标尺与桶内专家号</td></tr>
+          <tr><td class="mono">hotBuckets</td><td>可选</td><td>热点桶号，用暖色标出</td></tr>
+          <tr><td class="mono">placement</td><td>可选</td><td>物理落位 <code>{cardsPerHost, hostsPerPod}</code> 或 <code>slots</code>；默认 8 卡/机 · 32 机/Pod、rank 连号装机</td></tr>
+          <tr><td class="mono">onSelect / onSelectEdge</td><td>可选</td><td>选中卡 / 选中一条通信边的回调，宿主据此联动自己的视图</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note is-warn">
+        <b>规模适配。</b>布局规则已在 1 卡至 8192 卡（含 <code>tp=1</code> / <code>tp=32</code> / <code>pp=60</code> 等退化与极端形状）× 5 形态上逐对包围盒验证：零重叠。
+        超过 65536 rank 会拒绝应用并报错——不是渲染不动，而是那个规模下「逐卡可读」这个前提本身不成立，应先在上层做聚合。
+      </div>
+    </section>
+
+    <!-- ══════════ 03 场景设计 ══════════ -->
+    <section id="s3">
+      <h2><span class="n">03</span>场景设计<span class="req">必填</span></h2>
+
+      <h3>3.1 画面结构</h3>
+      <p>
+        整个 Pattern 是<b>一块画布 + 四组浮层</b>。浮层一律浮在画布上，不切分画布——3D 场景的取景会自动为浮层留白
+        （<code>chrome:false</code> 嵌入时由宿主接管工具栏，也不再留白）。
+      </p>
+
+      <figure class="fig">
+        <div class="fig-mat"><div class="board">
+          <svg class="sv" viewBox="0 0 832 452" role="img" aria-label="逻辑魔方画面结构与区块划分">
+            <rect x="0" y="0" width="832" height="452" fill="var(--surface-1)"/>
+
+            <!-- ① 名称：裸文字，不套卡片 -->
+            <text class="hd" x="20" y="30">逻辑魔方</text>
+            <g transform="translate(84,14)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">1</text></g>
+
+            <!-- ② 顶栏右侧的配置 -->
+            <g transform="translate(452,10)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">2</text></g>
+            <g transform="translate(480,8)">
+              <rect class="chip" x="0" y="0" width="146" height="24" rx="12"/>
+              <text class="m" x="10" y="16">标准 DP EP TP PP</text>
+              <rect class="chip" x="154" y="0" width="104" height="24" rx="12"/>
+              <text class="m" x="164" y="16">3D 顶 前 侧</text>
+              <rect class="chip" x="266" y="0" width="28" height="24" rx="12"/>
+              <g fill="var(--foreground-muted)"><circle cx="274" cy="12" r="1.6"/><circle cx="280" cy="12" r="1.6"/><circle cx="286" cy="12" r="1.6"/></g>
+              <rect class="chip" x="302" y="0" width="28" height="24" rx="12"/>
+              <path d="M312 6 L322 12 L312 18 z" fill="var(--foreground-muted)"/>
+            </g>
+
+            <!-- 画布：卡阵 + 网格（格边界）+ 一条走线 + 短标记 -->
+            <g transform="translate(250,110)">
+              <g class="grid"><path d="M0 0 H360 V180 H0 Z M60 0 V180 M120 0 V180 M180 0 V180 M240 0 V180 M300 0 V180 M0 45 H360 M0 90 H360 M0 135 H360"/></g>
+              <g>
+                <rect class="card" x="12" y="10" width="36" height="25" rx="3"/><rect class="card" x="72" y="10" width="36" height="25" rx="3"/><rect class="card-w" x="132" y="10" width="36" height="25" rx="3"/><rect class="card" x="192" y="10" width="36" height="25" rx="3"/><rect class="card" x="252" y="10" width="36" height="25" rx="3"/><rect class="card" x="312" y="10" width="36" height="25" rx="3"/>
+                <rect class="card" x="12" y="55" width="36" height="25" rx="3"/><rect class="card-g" x="72" y="55" width="36" height="25" rx="3"/><rect class="card" x="132" y="55" width="36" height="25" rx="3"/><rect class="card" x="192" y="55" width="36" height="25" rx="3"/><rect class="card-w" x="252" y="55" width="36" height="25" rx="3"/><rect class="card" x="312" y="55" width="36" height="25" rx="3"/>
+                <rect class="card" x="12" y="100" width="36" height="25" rx="3"/><rect class="card" x="72" y="100" width="36" height="25" rx="3"/><rect class="card" x="132" y="100" width="36" height="25" rx="3"/><rect class="card-d" x="192" y="100" width="36" height="25" rx="3"/><rect class="card" x="252" y="100" width="36" height="25" rx="3"/><rect class="card" x="312" y="100" width="36" height="25" rx="3"/>
+                <rect class="card" x="12" y="145" width="36" height="25" rx="3"/><rect class="card" x="72" y="145" width="36" height="25" rx="3"/><rect class="card" x="132" y="145" width="36" height="25" rx="3"/><rect class="card" x="192" y="145" width="36" height="25" rx="3"/><rect class="card" x="252" y="145" width="36" height="25" rx="3"/><rect class="card-w" x="312" y="145" width="36" height="25" rx="3"/>
+              </g>
+              <path class="casing" d="M30 22 H330"/><path class="wire" d="M30 22 H330"/>
+              <g fill="color-mix(in srgb, var(--dim-tp) 42%, #000)"><circle cx="110" cy="22" r="3"/><circle cx="210" cy="22" r="3"/><circle cx="300" cy="22" r="3"/></g>
+              <rect class="label-box" x="10" y="-22" width="40" height="16" rx="7"/><text class="m" x="17" y="-10">TP0</text>
+              <rect class="label-box" x="366" y="98" width="56" height="16" rx="7"/><text class="m" x="372" y="110">S2·L25-36</text>
+            </g>
+
+            <!-- ③ 详情卡（inspector） -->
+            <g transform="translate(20,74)">
+              <rect class="chip" x="0" y="0" width="190" height="196" rx="10"/>
+              <text class="m" x="14" y="22">RANK</text>
+              <text class="hd" x="14" y="42">rank 37 / 128</text>
+              <text x="14" y="60">这张卡在四个维度上的身份</text>
+              <path class="grid" d="M14 72 H176 M14 100 H176 M14 128 H176 M14 156 H176"/>
+              <text class="m" x="14" y="90">TP 槽位 · 1 / 2</text>
+              <text class="m" x="14" y="118">PP 段 · S2（L25-36）</text>
+              <text class="m" x="14" y="146">DP 副本 · 4</text>
+              <text class="m" x="14" y="174">EP 桶 3 · A2A 域 0</text>
+              <text class="m" x="14" y="190">此刻 TP 主导 · Ring RS 段</text>
+            </g>
+            <g transform="translate(196,66)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">3</text></g>
+
+            <!-- ④ 图例 -->
+            <g transform="translate(650,196)">
+              <rect class="chip" x="0" y="0" width="162" height="116" rx="10"/>
+              <text class="m" x="14" y="22">着色</text>
+              <rect class="card-g" x="14" y="30" width="11" height="11" rx="2"/><text class="m" x="32" y="39">低负载</text>
+              <rect class="card-w" x="14" y="47" width="11" height="11" rx="2"/><text class="m" x="32" y="56">中负载</text>
+              <rect class="card-d" x="14" y="64" width="11" height="11" rx="2"/><text class="m" x="32" y="73">高负载 / 异常</text>
+              <text class="m" x="14" y="92">连线</text>
+              <rect x="14" y="98" width="11" height="11" rx="2" fill="var(--dim-tp)"/><text class="m" x="32" y="107">TP · Ring（主导）</text>
+            </g>
+            <g transform="translate(632,188)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">4</text></g>
+
+            <!-- ⑤ 阶段轨道 -->
+            <g transform="translate(250,340)">
+              <rect class="chip" x="0" y="0" width="360" height="28" rx="14"/>
+              <rect x="10" y="8" width="80" height="12" rx="6" fill="color-mix(in srgb, var(--dim-tp) 45%, transparent)"/>
+              <rect x="94" y="8" width="80" height="12" rx="6" fill="color-mix(in srgb, var(--warning) 30%, transparent)"/>
+              <rect x="178" y="8" width="80" height="12" rx="6" fill="color-mix(in srgb, var(--highlight-l0a-violet-400) 30%, transparent)"/>
+              <rect x="262" y="8" width="88" height="12" rx="6" fill="color-mix(in srgb, var(--primary) 30%, transparent)"/>
+              <text class="m" x="18" y="18">TP</text><text class="m" x="102" y="18">PP</text><text class="m" x="186" y="18">EP</text><text class="m" x="270" y="18">DP</text>
+            </g>
+            <g transform="translate(222,344)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">5</text></g>
+
+            <!-- 区块名一行说清，不用长引线压画面 -->
+            <g transform="translate(20,404)">
+              <path class="grid" d="M0 0 H792"/>
+              <g transform="translate(0,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">1</text><text x="22" y="12">名称（裸文字，不套卡片）</text></g>
+              <g transform="translate(180,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">2</text><text x="22" y="12">形态 / 视角 / 更多 / 播放</text></g>
+              <g transform="translate(370,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">3</text><text x="22" y="12">详情卡（inspector）</text></g>
+              <g transform="translate(540,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">4</text><text x="22" y="12">图例（只列颜色与名字）</text></g>
+              <g transform="translate(710,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">5</text><text x="22" y="12">阶段轨道</text></g>
+            </g>
+          </svg>
+        </div></div>
+        <figcaption><span class="cap-n">图 3.1</span>页面大区块划分：顶栏只留高频的形态 / 视角，其余控件收进「更多」抽屉。</figcaption>
+      </figure>
+
+      <table>
+        <thead><tr><th class="nw">区块</th><th class="nw">位置</th><th>放什么 / 不放什么</th></tr></thead>
+        <tbody>
+          <tr><td>① 名称</td><td>顶栏左</td><td>裸文字浮在画面上，<b>不套卡片</b>——叠两层底会让底色发虚</td></tr>
+          <tr><td>② 配置</td><td>顶栏右</td><td>常驻只有「形态」「视角」两组 segmented-control（选中态 <code>--primary</code>）+ 播放 + 「更多」抽屉 + 宿主控件插槽。着色 / 注入 / 连线 / 时间 / 并行一律进抽屉</td></tr>
+          <tr><td>③ 详情卡</td><td>画布左侧</td><td>选中一张卡后出现，结构见 3.7；右上角 × 取消选中</td></tr>
+          <tr><td>④ 图例</td><td>画布右下</td><td>分「着色 / 连线」两段，<b>一行一条，只有色块 + 名字</b>；读法与为什么不写在这里</td></tr>
+          <tr><td>⑤ 阶段轨道</td><td>画布底部</td><td>悬停弹出，可拖拽定位；播放/暂停常驻顶栏</td></tr>
+          <tr><td>问号气泡</td><td>各控件行首</td><td>承载「这排是什么、和别的排什么关系」，随当前形态 / 注入 / 选中态更新</td></tr>
+        </tbody>
+      </table>
+
+      <h3>3.2 五种形态</h3>
+      <p>
+        形态只改变卡摆在哪（谁挨着谁），<b>不改变卡本身、也不改变颜色</b>。
+        哪一维被堆成一整块，那一维的问题就现出形状。
+      </p>
+
+      <figure class="fig">
+        <div class="fig-mat"><div class="board is-live is-tall" data-demo="modes">
+          <div class="ph">正在装载可交互示例…</div>
+        </div></div>
+        <figcaption><span class="cap-n">图 3.2</span>Pattern 自带工具栏的完整形态（128 卡小规格 TP2 · PP4 · DP16 · EP8）：切「形态 / 视角」，其余控件在「更多」抽屉里；切到正交视角会出现折叠粒度贴士，点一张卡出详情。</figcaption>
+      </figure>
+
+      <table>
+        <thead><tr><th class="nw">形态</th><th class="nw">怎么摆</th><th>回答什么问题</th><th class="nw">异常长什么样</th></tr></thead>
+        <tbody>
+          <tr><td class="nw"><b>标准</b><br><span class="mono">std</span></td><td>X=TP · Y=PP · Z=DP</td><td>一张卡的三维身份、整体规模；位置即多维坐标</td><td>各维都看得见，但都不成块</td></tr>
+          <tr><td class="nw"><b>DP平铺</b><br><span class="mono">dpt</span></td><td>每副本一块板，板排成宫格（板内 TP 折成 列×排）</td><td>哪个副本慢 / 掉队（副本间只在步末做梯度 AllReduce）</td><td>宫格里干净的<b>一块板</b>全红</td></tr>
+          <tr><td class="nw"><b>EP聚簇</b><br><span class="mono">ep</span></td><td>每个专家桶一面墙，A2A 域横穿各墙</td><td>热点桶 / 桶故障 / 域热点（桶 ↔ 卡非 1:1）</td><td><b>一整面墙</b>同红；域热点 = 横穿各墙的一排过热</td></tr>
+          <tr><td class="nw"><b>TP切片</b><br><span class="mono">tps</span></td><td>每个 TP 槽位一片权重墙，墙间拉开</td><td>同槽位系统性故障（整批同号卡坏件）</td><td><b>一面墙</b>集体异常</td></tr>
+          <tr><td class="nw"><b>PP流水</b><br><span class="mono">ppf</span></td><td>PP 段横向展开，左 S0 → 右 S<sub>n-1</sub></td><td>慢段 / 流水气泡（慢段拖住下游）</td><td><b>一整段</b>全红，右侧板随之变暗；空档 = bubble</td></tr>
+        </tbody>
+      </table>
+
+      <h3>3.3 视角与剖面</h3>
+      <p>
+        轴测 3D 可拖拽旋转；顶 / 前 / 侧是正交锁轴的 2D 投影，会把与视线平行的维<b>折叠</b>。
+        视角按「每个 2D 平面只属于一个形态」收编：与标准形态坐标系重合的形态不再重复给出 2D，
+        并在视角行说明原因。<b>任何正交视角下拖动即从当前朝向无缝转回 3D。</b>
+      </p>
+      <table>
+        <thead><tr><th class="nw">形态</th><th class="nw">轴测 3D</th><th class="nw">顶</th><th class="nw">前</th><th class="nw">侧</th></tr></thead>
+        <tbody>
+          <tr><td>标准</td><td>✓</td><td>DP×TP</td><td>TP×PP</td><td>DP×PP</td></tr>
+          <tr><td>DP平铺</td><td>✓</td><td>副本网格</td><td>列×PP</td><td>行×PP</td></tr>
+          <tr><td>EP聚簇</td><td>✓</td><td>桶×域</td><td>桶×PP</td><td>域×PP</td></tr>
+          <tr><td>TP切片</td><td>✓</td><td colspan="3" class="sub">2D 与标准重合 → 收编（价值在 3D 的「墙拉开」读法）</td></tr>
+          <tr><td>PP流水</td><td>✓</td><td colspan="3" class="sub">2D 与标准重合 → 收编（价值在 3D 的「段拉开」读法）</td></tr>
+        </tbody>
+      </table>
+      <p class="sub">
+        折叠必须<b>如实标注</b>：每个正交视角给出粒度贴士「每格重叠卡数 = 各折叠维成员数之积」
+        （例：EP聚簇侧视 = 专家桶 2 × TP 8 = 16 张卡重叠）。
+        <b>剖面</b>按最外层折叠维逐层翻，只看某一层、其余压暗。
+      </p>
+
+      <h3>3.4 时间轴 = 一个训练 step 的 4 个通信阶段</h3>
+      <p>时间轴按<b>阶段</b>读，而不是抽象的秒——每个阶段由哪根并行轴主导、走哪层总线、负载多高都不同。</p>
+      <table>
+        <thead><tr><th class="nw">阶段</th><th class="nw">主导维</th><th class="nw">集合原语</th><th>走哪层总线</th><th class="nw">负载</th></tr></thead>
+        <tbody>
+          <tr><td class="nw"><span class="dot dot-tp"></span>TP · 前向 AllReduce</td><td>TP</td><td>AllReduce（Ring / Tree）</td><td>节点内 UB · 高频</td><td class="mono">0.92</td></tr>
+          <tr><td class="nw"><span class="dot dot-pp"></span>PP · 阶段接力</td><td>PP</td><td>P2P Send/Recv 接力链</td><td>Pod 内跨 Host · 中频</td><td class="mono">0.45</td></tr>
+          <tr><td class="nw"><span class="dot dot-ep"></span>EP · MoE 浪涌</td><td>EP</td><td>AllToAll</td><td>Pod 内全互联 · 浪涌</td><td class="mono">0.88</td></tr>
+          <tr><td class="nw"><span class="dot dot-dp"></span>DP · 梯度 AllReduce</td><td>DP</td><td>AllReduce（Ring / Tree）</td><td>跨 Pod Scale-Out · 低频大包</td><td class="mono">0.60</td></tr>
+        </tbody>
+      </table>
+      <p class="sub">一个 step = 12s（每阶段 3s）。热力场随阶段变形：TP 组齐动 / PP 接力波沿流水级前进 / EP 浪涌点亮热点桶 / DP 全网梯度；选中卡的四维通信组里，<b>当前阶段主导的那一维加亮</b>，其余淡显。</p>
+
+      <h3>3.5 通信组与走线</h3>
+
+      <figure class="fig">
+        <div class="fig-mat"><div class="board is-live has-bar" data-demo="comm">
+          <div class="demo-bar">
+            <span class="lb">阶段</span>
+            <span class="segmented-control" data-role="phase"></span>
+            <span class="lb" title="AllReduce 画成 Ring 还是 Tree">算法</span>
+            <span class="segmented-control" data-role="algo"></span>
+            <span class="lb" data-role="hint" style="margin-left:auto">已选中一张代表卡</span>
+          </div>
+          <div class="stage"><div class="ph">正在装载可交互示例…</div></div>
+        </div></div>
+        <figcaption><span class="cap-n">图 3.3</span>选中一张卡 → 四维通信组同屏高亮；切阶段看主导维迁移，切算法看 Ring 与 Tree 的形状差别。</figcaption>
+      </figure>
+
+      <p>连线按<b>集合原语的实际算法</b>画，五个图层各自独立开关（可全关）：</p>
+      <table>
+        <thead><tr><th class="nw">图层</th><th>画什么</th><th>规则</th></tr></thead>
+        <tbody>
+          <tr><td class="nw">成员</td><td>同域对端卡的标记</td><td>只有棱的<b>线框</b>，不用半透明外罩——罩色会和卡自己的着色相叠</td></tr>
+          <tr><td class="nw">通信线</td><td>Ring / Tree / P2P 链 / AllToAll 的走线</td><td>逐段直线，顶点严格落在卡心；<b>只有长边</b>（Ring 闭合边、Tree 跨层边）画成两端落在卡心的外凸弧</td></tr>
+          <tr><td class="nw">域轮廓</td><td>把整组用线框包起来</td><td>切到对应形态时组 snap 成整块，轮廓直接画出「这组在这种堆法下是什么形状」</td></tr>
+          <tr><td class="nw">粒子</td><td>沿此刻主导维走线跑的流动暗点</td><td><b>方向由点的流向表达，不画箭头</b>；快慢对应该阶段的通信节奏</td></tr>
+          <tr><td class="nw">聚焦</td><td>无关卡压暗并缩到 0.42，网格反过来加强</td><td>几千张卡各自有色时，四维高亮会被整片颜色淹没</td></tr>
+        </tbody>
+      </table>
+
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="走线三层结构示意">
+              <text class="hd" x="16" y="22">走线的三层结构</text>
+              <g transform="translate(28,54)">
+                <rect class="card" x="0" y="30" width="30" height="24" rx="3"/>
+                <rect class="card" x="96" y="30" width="30" height="24" rx="3"/>
+                <rect class="card" x="192" y="30" width="30" height="24" rx="3"/>
+                <rect class="card" x="288" y="30" width="30" height="24" rx="3"/>
+                <path class="casing" d="M15 42 H111 M111 42 H207 M207 42 H303"/>
+                <path class="wire" d="M15 42 H303"/>
+                <circle cx="60" cy="42" r="3.5" fill="color-mix(in srgb, var(--dim-tp) 42%, #000)"/>
+                <circle cx="150" cy="42" r="3.5" fill="color-mix(in srgb, var(--dim-tp) 42%, #000)"/>
+                <circle cx="246" cy="42" r="3.5" fill="color-mix(in srgb, var(--dim-tp) 42%, #000)"/>
+                <path class="lead" d="M60 60 L60 78 L96 78"/>
+                <text class="m" x="100" y="81">③ 流动暗点：线芯同色压暗 · 方向</text>
+                <path class="lead" d="M180 42 L180 26 L216 26"/>
+                <text class="m" x="220" y="29">② 彩色线芯（维度签名色）</text>
+                <path class="lead" d="M110 36 L110 12 L146 12"/>
+                <text class="m" x="150" y="15">① casing：底色外套，把线从卡面剥离</text>
+              </g>
+            </svg>
+          </div></div>
+          <figcaption><span class="cap-n">图 3.4</span>沿用硬件图元库「连线样式 Pattern」的三层结构。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="Ring 与 Tree 的形状差别">
+              <text class="hd" x="16" y="22">Ring 与 Tree 的形状差别</text>
+              <g transform="translate(24,50)">
+                <text class="m" x="0" y="0">Ring = 一条链 + 一道回程弧</text>
+                <rect class="card" x="0" y="10" width="20" height="16" rx="2"/><rect class="card" x="40" y="10" width="20" height="16" rx="2"/>
+                <rect class="card" x="80" y="10" width="20" height="16" rx="2"/><rect class="card" x="120" y="10" width="20" height="16" rx="2"/>
+                <path class="casing" d="M10 18 H130"/><path class="wire" d="M10 18 H130"/>
+                <path class="casing" d="M130 18 Q70 -12 10 18"/><path class="wire" d="M130 18 Q70 -12 10 18"/>
+              </g>
+              <g transform="translate(212,50)">
+                <text class="m" x="0" y="0">Tree = 一把弧形二叉树</text>
+                <rect class="card" x="0" y="10" width="20" height="16" rx="2"/><rect class="card" x="40" y="10" width="20" height="16" rx="2"/>
+                <rect class="card" x="80" y="10" width="20" height="16" rx="2"/><rect class="card" x="120" y="10" width="20" height="16" rx="2"/>
+                <path class="casing" d="M10 18 Q30 -4 50 18 M90 18 Q110 -4 130 18 M10 18 Q50 -22 90 18"/>
+                <path class="wire" d="M10 18 Q30 -4 50 18 M90 18 Q110 -4 130 18 M10 18 Q50 -22 90 18"/>
+              </g>
+              <g transform="translate(24,120)">
+                <text class="m" x="0" y="0">P2P 接力链（PP）</text>
+                <rect class="card" x="0" y="10" width="20" height="16" rx="2"/><rect class="card" x="40" y="10" width="20" height="16" rx="2"/><rect class="card" x="80" y="10" width="20" height="16" rx="2"/>
+                <path class="casing" d="M10 18 H90"/><path d="M10 18 H90" fill="none" stroke="var(--warning)" stroke-width="2"/>
+              </g>
+              <g transform="translate(212,120)">
+                <text class="m" x="0" y="0">AllToAll（EP）</text>
+                <rect class="card" x="0" y="10" width="20" height="16" rx="2"/><rect class="card" x="55" y="10" width="20" height="16" rx="2"/><rect class="card" x="110" y="10" width="20" height="16" rx="2"/>
+                <path class="casing" d="M10 18 H120 M10 18 Q65 -8 120 18"/>
+                <path d="M10 18 H120 M10 18 Q65 -8 120 18" fill="none" stroke="var(--highlight-l0a-violet-400)" stroke-width="2"/>
+              </g>
+              <text class="m" x="24" y="188">组内成员多数形态下共线 → 长边若走直线，两种算法画出来一模一样</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="cap-n">图 3.5</span>切算法要当场看得出差别，靠的就是长边的外凸弧。</figcaption>
+        </figure>
+      </div>
+
+      <h3>3.6 着色透镜、异常注入与物理落位</h3>
+      <p>
+        <b>着色</b>是给卡上色的镜头，只改颜色不改结构：状态热力（跟着阶段走的绿→黄→红）/ 按 TP·PP·DP·EP 分组 /
+        按主机·Pod 分组（物理落位透镜）。<b>注入</b>不是另一种镜头，而是<b>接管</b>着色——
+        一旦注入非「无」，卡色改由故障决定（受影响卡 = <code>--danger</code>，其余按低负载淡色），
+        着色镜头暂时让位、图例同步切换，选回「无」即恢复。
+      </p>
+      <table>
+        <thead><tr><th class="nw">色的用途</th><th>取自</th><th>约束</th></tr></thead>
+        <tbody>
+          <tr><td>负载热力</td><td><code>--success → --warning → --danger</code> 三段插值</td><td>与图例那条色带同源，颜色逐格一致</td></tr>
+          <tr><td>异常组</td><td><code>--danger</code></td><td>红黄绿是状态色<b>专用</b>，其他语义不得占用</td></tr>
+          <tr><td>分组着色</td><td>highlight 六族的 400 / 600 两档共 12 色循环</td><td>组数超过色环时图例注明「同色非同组」</td></tr>
+          <tr><td>维度签名色</td><td>TP <code>--dim-tp</code> · PP <code>--warning</code> · DP <code>--primary</code> · EP <code>--highlight-l0a-violet-400</code></td><td>画在网格与走线上，不画在卡面</td></tr>
+          <tr><td>物理链路层级</td><td>同机 UB <code>ub-green</code> · Pod 内 rail <code>mte-amber</code> · 跨 Pod <code>l0b-deep-violet-600</code></td><td>只出现在文字与悬停提示里，不画成 3D 细线或包围框</td></tr>
+          <tr><td>网格 / 外框 / 字牌 / 场景底</td><td><code>--border-*</code> / <code>--surface-*</code> / <code>--background</code></td><td>Three.js 吃不了 CSS 变量 → 挂载与切主题时 <code>readTokens()</code> 解析成色值</td></tr>
+        </tbody>
+      </table>
+
+      <h3>3.7 信息结构与文案分工</h3>
+      <p>同一件事只在一个地方说，按「看多久」分配位置：</p>
+      <table>
+        <thead><tr><th class="nw">承载位置</th><th>放什么</th><th>不放什么</th></tr></thead>
+        <tbody>
+          <tr><td class="nw">3D 场景内</td><td>短标记：<code>TP0</code> / <code>DP99</code> / <code>S0·L1-10</code> / <code>桶1 E32-63</code></td><td>整句解释、浮动横幅、箭头</td></tr>
+          <tr><td class="nw">详情卡（inspector）</td><td>kicker（RANK）→ 标题（rank 37 / 128）→ 一句定义 → 键值表（TP 槽位 / PP 段 / DP 副本 / EP 桶·A2A 域 / 物理落位）→ 结论条（此刻哪一维主导、走到 Ring 的哪一段、这一维走线各跨了哪层）</td><td>与图例重复的颜色说明</td></tr>
+          <tr><td class="nw">图例</td><td>「着色 / 连线」两段，一行一条，色块 + 名字；加粗那条 = 此刻主导维</td><td>读法、为什么、同色非同组的解释</td></tr>
+          <tr><td class="nw">问号气泡</td><td>「这排是什么、和别的排什么关系」，随当前形态 / 注入 / 选中态实时更新</td><td>—</td></tr>
+          <tr><td class="nw">悬停 tooltip</td><td>单卡 / 单条边的即时信息（谁到谁、哪一维哪种原语、跨的是哪层）</td><td>需要对照阅读的长文</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <b>字牌的排版纪律</b>（对齐 <code>model-architecture-training-sidecar</code>）：极小号 850 字重 mono；
+        底 = 语义色 10% 兑 <code>--background</code>、描边 30%、字色 68% 兑 <code>--foreground</code>；
+        跟着场景缩放但有屏幕像素地板（<code>MIN_LABEL_PX = 11</code>，封顶 1.8×），兜底是 tooltip 与详情卡；
+        标记贴着它标注的那根格线走；重排飞行期间整体降一档不透明度，落位后恢复。
+      </div>
+    </section>
+
+    <!-- ══════════ 04 正例与反例 ══════════ -->
+    <section id="s4">
+      <h2><span class="n">04</span>正例与反例<span class="req">必填</span></h2>
+      <p>以下七组都是这个 Pattern 在迭代中真实修过的问题，反例即当初的错误做法。</p>
+
+      <!-- 1 -->
+      <h3>4.1 卡块恒定</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：三种形态里卡块大小形状不变">
+              <text class="hd" x="16" y="24">三种形态，同一张卡长得一样</text>
+              <g transform="translate(20,44)">
+                <text class="m" x="0" y="0">标准</text>
+                <rect class="card" x="0" y="8" width="22" height="22" rx="3"/><rect class="card" x="28" y="8" width="22" height="22" rx="3"/><rect class="card" x="56" y="8" width="22" height="22" rx="3"/>
+                <rect class="card" x="0" y="36" width="22" height="22" rx="3"/><rect class="card" x="28" y="36" width="22" height="22" rx="3"/><rect class="card" x="56" y="36" width="22" height="22" rx="3"/>
+              </g>
+              <g transform="translate(148,44)">
+                <text class="m" x="0" y="0">DP平铺</text>
+                <rect class="card" x="0" y="8" width="22" height="22" rx="3"/><rect class="card" x="28" y="8" width="22" height="22" rx="3"/>
+                <rect class="card" x="0" y="36" width="22" height="22" rx="3"/><rect class="card" x="28" y="36" width="22" height="22" rx="3"/>
+                <rect class="card" x="62" y="8" width="22" height="22" rx="3"/><rect class="card" x="90" y="8" width="22" height="22" rx="3"/>
+                <rect class="card" x="62" y="36" width="22" height="22" rx="3"/><rect class="card" x="90" y="36" width="22" height="22" rx="3"/>
+              </g>
+              <g transform="translate(288,44)">
+                <text class="m" x="0" y="0">TP切片</text>
+                <rect class="card" x="0" y="8" width="22" height="22" rx="3"/><rect class="card" x="0" y="36" width="22" height="22" rx="3"/>
+                <rect class="card" x="46" y="8" width="22" height="22" rx="3"/><rect class="card" x="46" y="36" width="22" height="22" rx="3"/>
+              </g>
+              <text x="20" y="140">卡块是恒定的正方体（CARD = .6³）：换形态、换配置都不改变一张卡的</text>
+              <text x="20" y="156">大小与形状。卡块几何与取景留白以它为唯一事实源。</text>
+              <text class="m" x="20" y="180">规则 ①</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>卡块恒定，读图前提稳定。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：卡块随轴拉伸">
+              <text class="hd" x="16" y="24">卡块随轴拉伸</text>
+              <g transform="translate(20,44)">
+                <text class="m" x="0" y="0">标准</text>
+                <rect class="card" x="0" y="8" width="34" height="14" rx="3"/><rect class="card" x="40" y="8" width="34" height="14" rx="3"/>
+                <rect class="card" x="0" y="30" width="34" height="14" rx="3"/><rect class="card" x="40" y="30" width="34" height="14" rx="3"/>
+              </g>
+              <g transform="translate(148,44)">
+                <text class="m" x="0" y="0">DP平铺</text>
+                <rect class="card" x="0" y="8" width="14" height="34" rx="3"/><rect class="card" x="20" y="8" width="14" height="34" rx="3"/>
+                <rect class="card" x="40" y="8" width="14" height="34" rx="3"/><rect class="card" x="60" y="8" width="14" height="34" rx="3"/>
+              </g>
+              <g transform="translate(288,44)">
+                <text class="m" x="0" y="0">TP切片</text>
+                <rect class="card" x="0" y="8" width="26" height="20" rx="3"/><rect class="card" x="0" y="34" width="26" height="20" rx="3"/>
+                <rect class="card" x="34" y="8" width="26" height="20" rx="3"/><rect class="card" x="34" y="34" width="26" height="20" rx="3"/>
+              </g>
+              <rect class="bad" x="12" y="38" width="360" height="62" rx="4"/>
+              <text x="20" y="140">卡被转了 90°？还是换了一种东西？——用长方体会让「某个维度落到哪根</text>
+              <text x="20" y="156">轴上，卡就把哪个面朝向你」，同一种东西在不同视图里长得不一样。</text>
+              <text class="m" x="20" y="180">违反规则 ①</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>为了某个视角好看而改卡块尺寸。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 2 -->
+      <h3>4.2 网格线画在格边界上，轴向不画箭头</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：网格线画在格边界">
+              <text class="hd" x="16" y="24">网格线 = 格边界 · 用维度签名色</text>
+              <g transform="translate(56,48)">
+                <g class="grid"><path d="M0 0 H264 M0 30 H264 M0 60 H264 M0 90 H264"/></g>
+                <g class="grid grid-tp"><path d="M0 0 V90 M44 0 V90 M88 0 V90 M132 0 V90 M176 0 V90 M220 0 V90 M264 0 V90"/></g>
+                <rect class="card" x="11" y="7" width="22" height="16" rx="2"/><rect class="card" x="55" y="7" width="22" height="16" rx="2"/><rect class="card" x="99" y="7" width="22" height="16" rx="2"/><rect class="card" x="143" y="7" width="22" height="16" rx="2"/><rect class="card" x="187" y="7" width="22" height="16" rx="2"/><rect class="card" x="231" y="7" width="22" height="16" rx="2"/>
+                <rect class="card" x="11" y="37" width="22" height="16" rx="2"/><rect class="card" x="55" y="37" width="22" height="16" rx="2"/><rect class="card" x="99" y="37" width="22" height="16" rx="2"/><rect class="card" x="143" y="37" width="22" height="16" rx="2"/><rect class="card" x="187" y="37" width="22" height="16" rx="2"/><rect class="card" x="231" y="37" width="22" height="16" rx="2"/>
+                <rect class="card" x="11" y="67" width="22" height="16" rx="2"/><rect class="card" x="55" y="67" width="22" height="16" rx="2"/><rect class="card" x="99" y="67" width="22" height="16" rx="2"/><rect class="card" x="143" y="67" width="22" height="16" rx="2"/><rect class="card" x="187" y="67" width="22" height="16" rx="2"/><rect class="card" x="231" y="67" width="22" height="16" rx="2"/>
+                <rect class="label-box" x="0" y="98" width="42" height="14" rx="6"/><text class="m" x="6" y="108">TP0</text>
+                <text class="m" x="200" y="108">TP0（左）→ TP5（右）</text>
+              </g>
+              <text x="16" y="176">卡永远落在格子里、不被线穿过；外框即首尾两条边界线。方向交给刻度标与文案。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>网格自己说明轴的语义。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：穿心刻度线与圆锥箭头">
+              <text class="hd" x="16" y="24">穿心刻度 + 圆锥箭头</text>
+              <g transform="translate(56,48)">
+                <g class="grid"><path d="M0 15 H264 M0 45 H264 M0 75 H264"/></g>
+                <g class="grid"><path d="M22 0 V90 M66 0 V90 M110 0 V90 M154 0 V90 M198 0 V90 M242 0 V90"/></g>
+                <rect class="card" x="11" y="7" width="22" height="16" rx="2"/><rect class="card" x="55" y="7" width="22" height="16" rx="2"/><rect class="card" x="99" y="7" width="22" height="16" rx="2"/><rect class="card" x="143" y="7" width="22" height="16" rx="2"/><rect class="card" x="187" y="7" width="22" height="16" rx="2"/><rect class="card" x="231" y="7" width="22" height="16" rx="2"/>
+                <rect class="card" x="11" y="37" width="22" height="16" rx="2"/><rect class="card" x="55" y="37" width="22" height="16" rx="2"/><rect class="card" x="99" y="37" width="22" height="16" rx="2"/><rect class="card" x="143" y="37" width="22" height="16" rx="2"/><rect class="card" x="187" y="37" width="22" height="16" rx="2"/><rect class="card" x="231" y="37" width="22" height="16" rx="2"/>
+                <rect class="card" x="11" y="67" width="22" height="16" rx="2"/><rect class="card" x="55" y="67" width="22" height="16" rx="2"/><rect class="card" x="99" y="67" width="22" height="16" rx="2"/><rect class="card" x="143" y="67" width="22" height="16" rx="2"/><rect class="card" x="187" y="67" width="22" height="16" rx="2"/><rect class="card" x="231" y="67" width="22" height="16" rx="2"/>
+                <path class="bad" d="M0 100 H250"/>
+                <path d="M250 100 l14 -5 v10 z" fill="var(--danger)"/>
+                <text class="m" x="0" y="118">线穿过卡 · 外挂圆锥箭头</text>
+              </g>
+              <text x="16" y="176">线穿过卡看起来「和网格没对齐」；圆锥箭头是 3D 建模工具的语汇，与卡块语言不搭。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>同一个框里混用两种网格约定。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 3 -->
+      <h3>4.3 2D 可读性：屏幕两轴最细步距之比 ≤ 4</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：板内 TP 折成列乘排">
+              <text class="hd" x="16" y="24">板内 TP 折成 列 × 排 → 板有厚度</text>
+              <g transform="translate(40,48)">
+                <g class="grid"><path d="M0 0 H300 V96 H0 Z M100 0 V96 M200 0 V96 M0 32 H300 M0 64 H300"/></g>
+                <g>
+                  <rect class="card" x="14" y="6" width="32" height="9" rx="2"/><rect class="card" x="52" y="6" width="32" height="9" rx="2"/>
+                  <rect class="card" x="14" y="18" width="32" height="9" rx="2"/><rect class="card" x="52" y="18" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="6" width="32" height="9" rx="2"/><rect class="card" x="152" y="6" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="18" width="32" height="9" rx="2"/><rect class="card" x="152" y="18" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="6" width="32" height="9" rx="2"/><rect class="card" x="252" y="6" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="18" width="32" height="9" rx="2"/><rect class="card" x="252" y="18" width="32" height="9" rx="2"/>
+                  <rect class="card" x="14" y="38" width="32" height="9" rx="2"/><rect class="card" x="52" y="38" width="32" height="9" rx="2"/>
+                  <rect class="card" x="14" y="50" width="32" height="9" rx="2"/><rect class="card" x="52" y="50" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="38" width="32" height="9" rx="2"/><rect class="card" x="152" y="38" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="50" width="32" height="9" rx="2"/><rect class="card" x="152" y="50" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="38" width="32" height="9" rx="2"/><rect class="card" x="252" y="38" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="50" width="32" height="9" rx="2"/><rect class="card" x="252" y="50" width="32" height="9" rx="2"/>
+                  <rect class="card" x="14" y="70" width="32" height="9" rx="2"/><rect class="card" x="52" y="70" width="32" height="9" rx="2"/>
+                  <rect class="card" x="14" y="82" width="32" height="9" rx="2"/><rect class="card" x="52" y="82" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="70" width="32" height="9" rx="2"/><rect class="card" x="152" y="70" width="32" height="9" rx="2"/>
+                  <rect class="card" x="114" y="82" width="32" height="9" rx="2"/><rect class="card" x="152" y="82" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="70" width="32" height="9" rx="2"/><rect class="card" x="252" y="70" width="32" height="9" rx="2"/>
+                  <rect class="card" x="214" y="82" width="32" height="9" rx="2"/><rect class="card" x="252" y="82" width="32" height="9" rx="2"/>
+                </g>
+              </g>
+              <text x="16" y="176">顶视里每个副本是一片瓦，格子填满，结构读得出来。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>会退化成薄片的内维折成 2D。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：稀疏条纹">
+              <text class="hd" x="16" y="24">板只有一卡厚，行距按板宽取方形宫格</text>
+              <g transform="translate(40,48)">
+                <g class="grid"><path d="M0 0 H300 V96 H0 Z M100 0 V96 M200 0 V96 M0 32 H300 M0 64 H300"/></g>
+                <rect class="card" x="10" y="14" width="80" height="5" rx="2"/><rect class="card" x="110" y="14" width="80" height="5" rx="2"/><rect class="card" x="210" y="14" width="80" height="5" rx="2"/>
+                <rect class="card" x="10" y="46" width="80" height="5" rx="2"/><rect class="card" x="110" y="46" width="80" height="5" rx="2"/><rect class="card" x="210" y="46" width="80" height="5" rx="2"/>
+                <rect class="card" x="10" y="78" width="80" height="5" rx="2"/><rect class="card" x="110" y="78" width="80" height="5" rx="2"/><rect class="card" x="210" y="78" width="80" height="5" rx="2"/>
+                <rect class="bad" x="0" y="0" width="300" height="96" rx="3"/>
+              </g>
+              <text x="16" y="176">每格 98% 是空的：一根轴被拉成稀疏条纹，副本之间是什么关系完全读不出。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>3D 摆法只对轴测成立、不管正交视角。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 4 -->
+      <h3>4.4 折叠必须如实标注</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：粒度贴士标注每格重叠卡数">
+              <text class="hd" x="16" y="24">EP聚簇 · 侧视</text>
+              <g transform="translate(40,50)">
+                <g class="grid"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
+                <rect class="card" x="16" y="6" width="28" height="16" rx="2"/><rect class="card" x="76" y="6" width="28" height="16" rx="2"/><rect class="card" x="136" y="6" width="28" height="16" rx="2"/><rect class="card" x="196" y="6" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="34" width="28" height="16" rx="2"/><rect class="card" x="76" y="34" width="28" height="16" rx="2"/><rect class="card" x="136" y="34" width="28" height="16" rx="2"/><rect class="card" x="196" y="34" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="62" width="28" height="16" rx="2"/><rect class="card" x="76" y="62" width="28" height="16" rx="2"/><rect class="card" x="136" y="62" width="28" height="16" rx="2"/><rect class="card" x="196" y="62" width="28" height="16" rx="2"/>
+              </g>
+              <g transform="translate(196,20)">
+                <rect class="chip" x="0" y="0" width="152" height="20" rx="10"/>
+                <text class="m" x="10" y="14">每格 = 16 卡重叠（桶2 × TP8）</text>
+              </g>
+              <text x="16" y="164">被折叠的维在贴士里如实报出；要逐层看就开剖面，按最外层折叠维逐层翻。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>粒度贴士 + 剖面。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：不标注折叠">
+              <text class="hd" x="16" y="24">EP聚簇 · 侧视</text>
+              <g transform="translate(40,50)">
+                <g class="grid"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
+                <rect class="card" x="16" y="6" width="28" height="16" rx="2"/><rect class="card" x="76" y="6" width="28" height="16" rx="2"/><rect class="card" x="136" y="6" width="28" height="16" rx="2"/><rect class="card" x="196" y="6" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="34" width="28" height="16" rx="2"/><rect class="card" x="76" y="34" width="28" height="16" rx="2"/><rect class="card" x="136" y="34" width="28" height="16" rx="2"/><rect class="card" x="196" y="34" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="62" width="28" height="16" rx="2"/><rect class="card" x="76" y="62" width="28" height="16" rx="2"/><rect class="card" x="136" y="62" width="28" height="16" rx="2"/><rect class="card" x="196" y="62" width="28" height="16" rx="2"/>
+              </g>
+              <g transform="translate(232,20)">
+                <rect class="badfill" x="0" y="0" width="116" height="20" rx="10"/>
+                <text class="m" x="10" y="14">（没有任何提示）</text>
+              </g>
+              <text x="16" y="164">读者会把每格当成一张卡：12 格看起来是 12 卡，实际是 192 卡——结论全错。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>在正交 2D 里隐瞒折叠。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 5 -->
+      <h3>4.5 成员标记用线框，不用半透明外罩</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：成员用线框标记">
+              <text class="hd" x="16" y="24">只有棱、没有面</text>
+              <g transform="translate(48,52)">
+                <rect class="card-g" x="0" y="0" width="40" height="28" rx="3"/><rect class="card-w" x="60" y="0" width="40" height="28" rx="3"/>
+                <rect class="card-d" x="120" y="0" width="40" height="28" rx="3"/><rect class="card-g" x="180" y="0" width="40" height="28" rx="3"/>
+                <rect class="card-w" x="240" y="0" width="40" height="28" rx="3"/>
+                <g fill="none" stroke="var(--dim-tp)" stroke-width="1.6">
+                  <rect x="-2" y="-2" width="44" height="32" rx="4"/><rect x="58" y="-2" width="44" height="32" rx="4"/>
+                  <rect x="118" y="-2" width="44" height="32" rx="4"/><rect x="178" y="-2" width="44" height="32" rx="4"/>
+                  <rect x="238" y="-2" width="44" height="32" rx="4"/>
+                </g>
+                <text class="m" x="0" y="52">谁是成员：框告诉你 · 卡是什么状态：色告诉你</text>
+              </g>
+              <text x="16" y="164">两套信息互不干扰，负载 / 分组 / 异常的颜色一点不改。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>线框（<code>LineSegments</code>，合并到同一缓冲）。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：半透明外罩把卡色染脏">
+              <text class="hd" x="16" y="24">半透明外罩</text>
+              <g transform="translate(48,52)">
+                <rect class="card-g" x="0" y="0" width="40" height="28" rx="3"/><rect class="card-w" x="60" y="0" width="40" height="28" rx="3"/>
+                <rect class="card-d" x="120" y="0" width="40" height="28" rx="3"/><rect class="card-g" x="180" y="0" width="40" height="28" rx="3"/>
+                <rect class="card-w" x="240" y="0" width="40" height="28" rx="3"/>
+                <g fill="color-mix(in srgb, var(--dim-tp) 45%, transparent)" stroke="none">
+                  <rect x="-2" y="-2" width="44" height="32" rx="4"/><rect x="58" y="-2" width="44" height="32" rx="4"/>
+                  <rect x="118" y="-2" width="44" height="32" rx="4"/><rect x="178" y="-2" width="44" height="32" rx="4"/>
+                  <rect x="238" y="-2" width="44" height="32" rx="4"/>
+                </g>
+                <text class="m" x="0" y="52">五张卡现在看起来一样——负载 / 异常读不出来了</text>
+              </g>
+              <text x="16" y="164">罩色与卡色相叠，卡自己的着色就读不准了；用 InstancedMesh 画边还会浮出斜三角。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>用半透明实体盒罩住卡。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 6 -->
+      <h3>4.6 走线逐段直线，长边才画弧</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：折线顶点落在卡心">
+              <text class="hd" x="16" y="24">每个折线顶点都落在卡心</text>
+              <g transform="translate(40,58)">
+                <rect class="card" x="0" y="52" width="26" height="20" rx="3"/><rect class="card" x="70" y="30" width="26" height="20" rx="3"/>
+                <rect class="card" x="140" y="52" width="26" height="20" rx="3"/><rect class="card" x="210" y="8" width="26" height="20" rx="3"/>
+                <rect class="card" x="278" y="52" width="26" height="20" rx="3"/>
+                <path class="casing" d="M13 62 L83 40 L153 62 L223 18 L291 62"/>
+                <path class="wire" d="M13 62 L83 40 L153 62 L223 18 L291 62"/>
+                <g fill="var(--success)"><circle cx="13" cy="62" r="2.5"/><circle cx="83" cy="40" r="2.5"/><circle cx="153" cy="62" r="2.5"/><circle cx="223" cy="18" r="2.5"/><circle cx="291" cy="62" r="2.5"/></g>
+              </g>
+              <text x="16" y="164">直线折线逐段建管（每段两点，拐点必然精确）；只有 Ring 闭合边与 Tree 跨层边整条交给曲线。</text>
+              <text class="m" x="16" y="184">回归脚本 scripts/verify-rubik-cube.mjs 断言每个顶点</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>逐段建管 + 按时间缓动 + 收尾精确吸附。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：样条外扩使线不连到卡">
+              <text class="hd" x="16" y="24">整条线交给样条 / 单根 TubeGeometry</text>
+              <g transform="translate(40,58)">
+                <rect class="card" x="0" y="52" width="26" height="20" rx="3"/><rect class="card" x="70" y="30" width="26" height="20" rx="3"/>
+                <rect class="card" x="140" y="52" width="26" height="20" rx="3"/><rect class="card" x="210" y="8" width="26" height="20" rx="3"/>
+                <rect class="card" x="278" y="52" width="26" height="20" rx="3"/>
+                <path class="casing" d="M13 62 C 50 10 60 12 153 44 C 200 60 190 -6 291 62"/>
+                <path class="wire" d="M13 62 C 50 10 60 12 153 44 C 200 60 190 -6 291 62"/>
+                <circle cx="83" cy="40" r="9" class="bad"/><circle cx="223" cy="18" r="9" class="bad"/>
+              </g>
+              <text x="16" y="164">控制点之间外扩成弧、等弧长采样落不到拐点上——线从卡旁边抄近路（端点仍精确，只测端点查不出来）。</text>
+              <text class="m" x="16" y="184">「线没连到卡上」复发过三次，成因各不相同</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>样条走线 / 按帧固定系数缓动。</figcaption>
+        </figure>
+      </div>
+
+      <!-- 7 -->
+      <h3>4.7 3D 里只留短标记，散文进问号气泡</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：短标记贴着网格">
+              <text class="hd" x="16" y="24">场景里只留短标记</text>
+              <g transform="translate(52,52)">
+                <g class="grid"><path d="M0 0 H272 V90 H0 Z M68 0 V90 M136 0 V90 M204 0 V90 M0 30 H272 M0 60 H272"/></g>
+                <g>
+                  <rect class="card" x="20" y="8" width="28" height="14" rx="2"/><rect class="card" x="88" y="8" width="28" height="14" rx="2"/><rect class="card" x="156" y="8" width="28" height="14" rx="2"/><rect class="card" x="224" y="8" width="28" height="14" rx="2"/>
+                  <rect class="card" x="20" y="38" width="28" height="14" rx="2"/><rect class="card" x="88" y="38" width="28" height="14" rx="2"/><rect class="card" x="156" y="38" width="28" height="14" rx="2"/><rect class="card" x="224" y="38" width="28" height="14" rx="2"/>
+                  <rect class="card" x="20" y="68" width="28" height="14" rx="2"/><rect class="card" x="88" y="68" width="28" height="14" rx="2"/><rect class="card" x="156" y="68" width="28" height="14" rx="2"/><rect class="card" x="224" y="68" width="28" height="14" rx="2"/>
+                </g>
+                <rect class="label-box" x="-46" y="6" width="42" height="14" rx="6"/><text class="m" x="-40" y="16">S0·L1-10</text>
+                <rect class="label-box" x="16" y="-18" width="34" height="14" rx="6"/><text class="m" x="22" y="-8">TP0</text>
+              </g>
+              <g transform="translate(316,26)"><circle r="8" cx="8" cy="8" class="chip"/><text class="m" x="5" y="11">?</text></g>
+              <text x="16" y="176">整句解释收进行首问号气泡，随当前形态 / 注入 / 选中态更新，信息一句不少。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>几何标注 vs 固定屏幕 UI 各司其职。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：3D 里的浮动大横幅">
+              <text class="hd" x="16" y="24">浮动横幅压在模型上</text>
+              <g transform="translate(52,52)">
+                <g class="grid"><path d="M0 0 H272 V90 H0 Z M68 0 V90 M136 0 V90 M204 0 V90 M0 30 H272 M0 60 H272"/></g>
+                <g>
+                  <rect class="card" x="20" y="8" width="28" height="14" rx="2"/><rect class="card" x="88" y="8" width="28" height="14" rx="2"/><rect class="card" x="156" y="8" width="28" height="14" rx="2"/><rect class="card" x="224" y="8" width="28" height="14" rx="2"/>
+                  <rect class="card" x="20" y="38" width="28" height="14" rx="2"/><rect class="card" x="88" y="38" width="28" height="14" rx="2"/><rect class="card" x="156" y="38" width="28" height="14" rx="2"/><rect class="card" x="224" y="38" width="28" height="14" rx="2"/>
+                  <rect class="card" x="20" y="68" width="28" height="14" rx="2"/><rect class="card" x="88" y="68" width="28" height="14" rx="2"/><rect class="card" x="156" y="68" width="28" height="14" rx="2"/><rect class="card" x="224" y="68" width="28" height="14" rx="2"/>
+                </g>
+                <rect class="badfill" x="6" y="14" width="252" height="26" rx="4"/>
+                <text x="16" y="31" style="font-size:10px">TP×8 同一层切 8 片，片间每层做一次 AllReduce…</text>
+                <rect class="badfill" x="6" y="54" width="220" height="26" rx="4"/>
+                <text x="16" y="71" style="font-size:10px">1 小块 = 1 卡 =（TP,PP,DP）坐标交点…</text>
+              </g>
+              <text x="16" y="176">又大又抢戏、还挡卡；文字长短不一还会把工具栏挤成两行。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>把整句解释做成 3D 浮动横幅或常驻 HUD。</figcaption>
+        </figure>
+      </div>
+
+      <h3>4.8 速查：还有哪些明确禁止</h3>
+      <table>
+        <thead><tr><th style="width:42%">禁止</th><th>为什么</th></tr></thead>
+        <tbody>
+          <tr><td>在宿主里逐形态手调间距常量</td><td>布局必须由规则推导；改规则不改调用点，否则换一组并行度就全乱</td></tr>
+          <tr><td>把 EP 当独立轴乘进 rank 数</td><td>EP 折入 DP 轴，只要求整除 <code>dp</code>；乘进去会得到不存在的卡</td></tr>
+          <tr><td>复制渲染后的 DOM / 几何到新页面</td><td>必须调用 <code>mount()</code>，否则拿不到重排、联动与后续修复</td></tr>
+          <tr><td>硬编码颜色 / 圆角 / 阴影 / 间距，或自造按钮与面板</td><td>一律 token 与 <code>.btn</code> / <code>.panel-shell</code> / <code>.stat-chip</code>；3D 材质色必须经 <code>readTokens()</code></td></tr>
+          <tr><td>用 emoji 或装饰字形当图标（▶ ⏸ ▦ ◇）</td><td>图标一律内联 SVG，<code>stroke=currentColor</code></td></tr>
+          <tr><td>用箭头表达方向</td><td>方向由沿线流动的暗点表达；箭头在正交画面里抢眼且与卡块语言不搭</td></tr>
+          <tr><td>把物理层级画成 3D 细线或包围框</td><td>试过：线太细、机的范围与 TP 组几乎重合，读不出差别 → 改用文字与矩阵</td></tr>
+          <tr><td>把解释写进图例</td><td>图例只列颜色与名字，读法进问号气泡</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ══════════ 05 设计资源 ══════════ -->
+    <section id="s5">
+      <h2><span class="n">05</span>设计资源<span class="req">必填</span></h2>
+
+      <div class="res-grid">
+        <a class="res-card" href="./rubik-pattern.html">
+          <div class="t">public/rubik-pattern.html</div>
+          <div class="d">可交互 Pattern 独立迭代页（默认浅色，<code>?theme=dark</code> 切深色）。控制台 <code>window.rubik</code> 可直接调 API。</div>
+        </a>
+        <a class="res-card" href="./vendor/rubik-cube/pattern.json">
+          <div class="t">vendor/rubik-cube/pattern.json</div>
+          <div class="d"><b>设计系统契约</b>：id / 来源 / useWhen / requiredApis / layoutRules / 允许与禁止的覆盖 / agentReuseRule。<b>改动或复用前先读它。</b></div>
+        </a>
+        <a class="res-card" href="./vendor/rubik-cube/pattern.js">
+          <div class="t">vendor/rubik-cube/pattern.js</div>
+          <div class="d">布局模型 + Three.js（r128）渲染器。公开 <code>createModel(config)</code> / <code>mount(container, opts)</code>。</div>
+        </a>
+        <a class="res-card" href="./vendor/rubik-cube/pattern.css">
+          <div class="t">vendor/rubik-cube/pattern.css</div>
+          <div class="d">Pattern 独有样式（3D 舞台 / 阶段轨道 / 图例色块 / tooltip 定位）；控件本身复用设计系统类。</div>
+        </a>
+        <a class="res-card" href="./vendor/pto-design-system/styles.css">
+          <div class="t">vendor/pto-design-system/</div>
+          <div class="d">PTO Design System 上游快照（<code>tokens/</code> + <code>css/style.css</code>）——token 与类实现的唯一入口。</div>
+        </a>
+        <a class="res-card" href="./vendor/rubik-cube/favicon.svg">
+          <div class="t">vendor/rubik-cube/favicon.svg</div>
+          <div class="d">等距魔方图标（维度签名色），用于入口页与文档页。</div>
+        </a>
+      </div>
+
+      <h3>5.1 接入代码</h3>
+      <pre><span class="c">&lt;!-- 依赖：three r128（全局 THREE）→ 设计系统 → pattern --&gt;</span>
+&lt;script src="./vendor/three-r128.min.js"&gt;&lt;/script&gt;
+&lt;link rel="stylesheet" href="./vendor/pto-design-system/styles.css"&gt;
+&lt;link rel="stylesheet" href="./vendor/rubik-cube/pattern.css"&gt;
+&lt;script src="./vendor/rubik-cube/pattern.js"&gt;&lt;/script&gt;
+
+<span class="k">const</span> handle = PtoRubikCubePattern.mount(el, {
+  config: { tp: 8, pp: 5, dp: 100, ep: 2 },   <span class="c">// rank = tp×pp×dp = 4000（EP 折入 DP）</span>
+  theme: 'light',
+  <span class="c">// chrome: false,                          // 宿主接管工具栏时打开</span>
+  onSelect: (sel) =&gt; { <span class="c">/* {rank, tp, pp, rep, bucket, domain, stage} */</span> },
+  onSelectEdge: (e) =&gt; { <span class="c">/* {dim, from, to, prim, algo, tier, hosts, pods} */</span> },
+});</pre>
+
+      <h3>5.2 API 速查</h3>
+      <table>
+        <thead><tr><th class="nw">API</th><th>作用</th></tr></thead>
+        <tbody>
+          <tr><td class="mono nw">createModel(config)</td><td>纯布局/拓扑模型，无 Three.js 依赖（可单测、可被其他视图复用）：<code>posOf</code> / <code>commGroup</code> / <code>boundsOf</code> / <code>modes</code> / <code>tierOf</code> …</td></tr>
+          <tr><td class="mono nw">setConfig({tp,pp,dp,ep,…})</td><td>整体重建。返回 <code>{ok}</code> 或 <code>{ok:false,error}</code>（校验：≥1 · <code>ep|dp</code> · rank ≤ 65536）</td></tr>
+          <tr><td class="mono nw">setMode(0-4) / setView(0-3)</td><td>形态 / 视角（3D · 顶 · 前 · 侧）</td></tr>
+          <tr><td class="mono nw">setSlice(on, val)</td><td>正交剖面：只看被折叠那一维的某一层</td></tr>
+          <tr><td class="mono nw">setColorBy(...) / setAnomaly(...)</td><td>着色透镜 <code>load|tp|pp|dp|ep|host|pod</code> / 异常注入 <code>none|tp|pp|dp|ep</code></td></tr>
+          <tr><td class="mono nw">setTime(t | {phase}) / setPlaying(b)</td><td>时间轴定位（<code>{phase:'TP'|'PP'|'EP'|'DP'}</code>）与播放</td></tr>
+          <tr><td class="mono nw">setWire({...}) / setAlgo(...)</td><td>连线五图层各自开关 / AllReduce 画 <code>auto|ring|tree</code></td></tr>
+          <tr><td class="mono nw">select(rank) / selectEdge(edge)</td><td>选中一张卡 / 一条通信边</td></tr>
+          <tr><td class="mono nw">selectLayer(l) / selectBucket(e)</td><td><b>联动挂点</b>：整网图选中层 → 标准形态水平切片；专家图选中桶 → 切 EP聚簇并聚焦整面墙</td></tr>
+          <tr><td class="mono nw">setPlacement({...})</td><td>物理落位：<code>cardsPerHost</code> / <code>hostsPerPod</code> / <code>slots</code></td></tr>
+          <tr><td class="mono nw">setTheme / resize / destroy</td><td>主题、尺寸、销毁</td></tr>
+          <tr><td class="mono nw">handle.scene / handle.camera</td><td>只读 Three.js 挂点，供宿主联动与自动化校验</td></tr>
+        </tbody>
+      </table>
+
+      <h3>5.3 允许改 / 不允许改</h3>
+      <table>
+        <thead><tr><th style="width:50%">允许覆盖</th><th>禁止覆盖</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>并行度与工况（<code>config</code> / <code>layers</code> / <code>experts</code> / <code>hotBuckets</code> / <code>placement</code>）；初始形态与主题；<code>chrome:false</code> 由宿主接管工具栏；容器外的排版与外框；<b>页面级 token 覆盖</b></td>
+            <td>宿主 CSS 里覆盖 <code>.prc-*</code> 的具体色值；逐形态手调间距常量；直接改 pattern 内部状态（联动一律走 <code>selectLayer</code> / <code>selectBucket</code> / <code>onSelect</code>）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        <b>改动后必跑</b>：<code>scripts/verify-rubik-cube.mjs</code>——两套配置 × 五形态，断言每条通信线的<b>每个折线顶点</b>都落在对应 rank 的卡心。
+        涉及连线几何或重排动画的改动尤其不要跳过（这个问题复发过三次，成因各不相同）。
+      </div>
+    </section>
+
+    <!-- ══════════ 06 设计原则 ══════════ -->
+    <section id="s6">
+      <h2><span class="n">06</span>设计原则<span class="req">非必填</span></h2>
+      <p>规则的价值在于：<b>换任何并行数字都自动成立</b>，新增维度（CP / SP…）或新增形态只需按同样规则声明轴的意图，不引入新的魔法数字。</p>
+      <table>
+        <thead><tr><th class="nw" style="width:18%">原则名称</th><th style="width:44%">描述说明</th><th>应用建议</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>① 卡块恒定</b></td>
+            <td>一张卡是恒定的正方体，换形态、换配置都不改变它的大小与形状。</td>
+            <td>卡块几何与取景留白都以它为唯一事实源；需要「更好看的比例」时改的是步距，不是卡。</td>
+          </tr>
+          <tr>
+            <td><b>② 步距由规则推导</b></td>
+            <td>单维轴步距 = 卡块尺寸 + 缝隙(成员数) × 层级倍率。缝隙按成员数分档（多则紧、少则松），层级倍率表达意图：dense / normal / spread / emph。</td>
+            <td>新增一根轴时只声明「成员数」和「意图」，不要写死数值；长轴不被拉成细丝，短轴不退化成薄片。</td>
+          </tr>
+          <tr>
+            <td><b>③ 复合轴分块</b></td>
+            <td>外维分块 + 内维紧邻：外维步距 = 内维总跨度 + 随跨度成比例的块间留白。</td>
+            <td>板 / 墙一类结构一律这样声明，任何规模下块与块都清楚分开。</td>
+          </tr>
+          <tr>
+            <td><b>④ 2D 可读性</b></td>
+            <td>3D 摆法必须同时对每个正交视角成立：任一视角下屏幕两轴的最细步距之比 ≤ 4；会退化成薄片的内维折成 2D。</td>
+            <td>出图前把顶 / 前 / 侧都过一遍；出现稀疏条纹就是这条被违反了。</td>
+          </tr>
+          <tr>
+            <td><b>⑤ 网格即语义</b></td>
+            <td>网格线一律画在格边界上（卡落在格子里、不被线穿过）；一根轴的格边界用该维签名色画，轴向不画任何裸线与箭头；选中聚焦时网格整体提亮。</td>
+            <td>方向交给刻度标与文案（<code>L1（上）→L48（下）</code>）；分组行列数按<b>世界跨度</b>取近方形，不按数量取方阵。</td>
+          </tr>
+          <tr>
+            <td><b>⑥ 视角收编 · 如实折叠</b></td>
+            <td>每个 2D 平面只属于一个形态；信息塌陷的视角不给出并说明原因；保留的视角必须报出每格重叠卡数。</td>
+            <td>宁可少给一个视角，也不要给一个会让人读错的视角；需要逐层看就用剖面。</td>
+          </tr>
+          <tr>
+            <td><b>⑦ 色出一源</b></td>
+            <td>所有颜色来自设计系统 token；3D 材质在挂载与切主题时由 <code>readTokens()</code> 解析 token 得到色值。红黄绿是状态色专用。</td>
+            <td>图例与画面因此天然一致；缺色族（如 TP 的青）由 pattern 自备并标记「待回补上游」，不要就地造一套 HSL。</td>
+          </tr>
+          <tr>
+            <td><b>⑧ 注释纪律</b></td>
+            <td>3D 里只留短标记，整句解释进问号气泡；字牌随场景缩放但有屏幕像素地板；语义色只落在名字上，注释对比度低于模型本身。</td>
+            <td>标记贴着它标注的那根格线走；标记若必须坐在模型外，用中性引线牵回锚点，不要盖在卡上。</td>
+          </tr>
+          <tr>
+            <td><b>⑨ 走线三层</b></td>
+            <td>casing（底色外套）+ 彩色线芯 + 流动暗点；方向只由点的流向表达；点的快慢对应该阶段的通信节奏。</td>
+            <td>直线折线逐段建管保证顶点精确，只有长边画成两端落在卡心的外凸弧；改完跑回归脚本。</td>
+          </tr>
+          <tr>
+            <td><b>⑩ 界面分工</b></td>
+            <td>常驻只留决定画面怎么摆的控件（形态 / 视角），筛选与工况收进抽屉；图例只列颜色与名字；详情卡按 inspector 结构给「定义 · 当前值 · 状态判断 · 执行上下文」。</td>
+            <td>任何想常驻在画面上的解释性文字，先问一句「它能不能进问号气泡」。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ══════════ 07 插图与尺寸规范 ══════════ -->
+    <section id="s7">
+      <h2><span class="n">07</span>插图与尺寸规范<span class="req">文档纪律</span></h2>
+      <p>本文档所有插图卡片都按这套规范排布，可直接量取自证。</p>
+
+      <figure class="fig">
+        <div class="fig-mat"><div class="board">
+          <svg class="sv" viewBox="0 0 832 436" role="img" aria-label="插图卡片尺寸说明图">
+            <rect x="0" y="0" width="832" height="436" fill="var(--surface-1)"/>
+
+            <!-- 大卡片 -->
+            <g transform="translate(40,54)">
+              <rect x="0" y="0" width="436" height="150" rx="4" fill="var(--spec-mat)" stroke="var(--border-default)"/>
+              <rect x="10" y="10" width="416" height="130" rx="4" fill="var(--surface-1)" stroke="var(--border-subtle)" style="filter:drop-shadow(0 1px 3px rgba(37,43,58,0.12))"/>
+              <text class="hd" x="24" y="34">页面 / 画板</text>
+              <text class="m" x="24" y="50">圆角 8px · 阴影 #252B3A 12% · X0 Y2 B6 S0</text>
+              <text class="m" x="24" y="66">@2x 导出</text>
+              <!-- 尺寸线 -->
+              <g class="dim">
+                <path d="M0 -14 H436"/><path d="M0 -18 V-10"/><path d="M436 -18 V-10"/>
+                <path d="M0 166 H10"/><path d="M0 162 V170"/><path d="M10 162 V170"/>
+                <path d="M426 166 H436"/><path d="M426 162 V170"/><path d="M436 162 V170"/>
+              </g>
+              <text class="m" x="160" y="-20" style="fill:var(--primary)">大卡片 872px（@1x 规范值）</text>
+              <text class="m" x="-6" y="186" style="fill:var(--primary)">20px</text>
+              <text class="m" x="406" y="186" style="fill:var(--primary)">20px</text>
+              <text class="m" x="120" y="186">背景灰 #F5F5F5 垫底（主体已足够清晰时可省）</text>
+            </g>
+
+            <!-- 小卡片 -->
+            <g transform="translate(540,54)">
+              <rect x="0" y="0" width="212" height="150" rx="4" fill="var(--spec-mat)" stroke="var(--border-default)"/>
+              <rect x="10" y="10" width="192" height="130" rx="4" fill="var(--surface-1)" stroke="var(--border-subtle)" style="filter:drop-shadow(0 1px 3px rgba(37,43,58,0.12))"/>
+              <text class="hd" x="24" y="34">小卡片</text>
+              <text class="m" x="24" y="50">两张并排 = 一张大卡</text>
+              <text class="m" x="24" y="66">424 + 24 + 424 = 872</text>
+              <g class="dim">
+                <path d="M0 -14 H212"/><path d="M0 -18 V-10"/><path d="M212 -18 V-10"/>
+              </g>
+              <text class="m" x="76" y="-20" style="fill:var(--primary)">424px</text>
+            </g>
+
+            <!-- 参数表 -->
+            <g transform="translate(40,300)">
+              <path class="grid" d="M0 0 H712 M0 34 H712 M0 68 H712 M0 102 H712"/>
+              <text class="hd" x="0" y="-8">阴影参数</text>
+              <text class="m" x="0" y="22">颜色 #252B3A</text>
+              <text class="m" x="150" y="22">透明度 12%</text>
+              <text class="m" x="300" y="22">X 0 · Y 2 · Blur 6 · Spread 0</text>
+              <text class="m" x="540" y="22">弹窗不加阴影</text>
+              <text class="m" x="0" y="56">画板圆角 8px</text>
+              <text class="m" x="150" y="56">卡片两侧边距各 20px</text>
+              <text class="m" x="300" y="56">导出倍率 @2x</text>
+              <text class="m" x="540" y="56">背景灰 #F5F5F5</text>
+              <text class="m" x="0" y="90">必要配图：尺寸说明图</text>
+              <text class="m" x="150" y="90">页面 / 大区块案例图</text>
+              <text class="m" x="300" y="90">Do / Don't 对比图</text>
+              <text class="m" x="540" y="90">严禁竞品界面截图</text>
+            </g>
+          </svg>
+        </div></div>
+        <figcaption><span class="cap-n">图 7.1</span>尺寸说明图：大卡 872px / 小卡 424px（均含两侧边距各 20px），画板圆角 8px + 页面阴影，背景灰垫底。</figcaption>
+      </figure>
+
+      <table>
+        <thead><tr><th class="nw">项</th><th class="nw">规范值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>大卡片宽度</td><td class="mono">872px</td><td>含两侧边距各 20px；本文档正文列宽即 872px</td></tr>
+          <tr><td>小卡片宽度</td><td class="mono">424px</td><td>两张并排 + 24px 间距 = 872px，用于 Do / Don't 对比</td></tr>
+          <tr><td>页面 / 画板圆角</td><td class="mono">8px</td><td>画板展示整个页面时统一加</td></tr>
+          <tr><td>页面阴影</td><td class="mono">#252B3A · 12% · X0 Y2 B6 S0</td><td>除弹窗外的页面都加</td></tr>
+          <tr><td>背景色垫底</td><td class="mono">#F5F5F5</td><td>图片在白底边缘已足够清晰时（如主体是彩色的）可不垫</td></tr>
+          <tr><td>导出倍率</td><td class="mono">@2x</td><td>统一二倍图</td></tr>
+          <tr><td>竞品截图</td><td class="mono">禁止</td><td>规范文档中严禁出现竞品界面的直接截图</td></tr>
+        </tbody>
+      </table>
+      <p class="sub">
+        深色主题下，背景灰与阴影按同角色的 token 替换（<code>--surface-2</code> / 深色阴影档）——
+        规范值以浅色为准，深色是同一角色的等价映射，不是另一套规范。
+      </p>
+    </section>
+
+    <!-- ══════════ 08 FAQ ══════════ -->
+    <section id="s8">
+      <h2><span class="n">08</span>FAQ<span class="req">拓展</span></h2>
+
+      <div class="faq">
+        <div class="q">EP 为什么不乘进 rank 总数？</div>
+        <p class="a">EP 折入 DP 轴、不新增轴：副本 <code>rep</code> 持有专家桶 <code>rep % ep</code>，相邻 <code>ep</code> 个副本构成一个 AllToAll 域。所以 <code>rank = tp × pp × dp</code>，<code>ep</code> 只要求整除 <code>dp</code>。默认配置 8·5·100·2 = 4000 rank、2 个桶、50 个 A2A 域。</p>
+      </div>
+      <div class="faq">
+        <div class="q">TP切片 / PP流水 为什么没有 2D 视角？</div>
+        <p class="a">它们与标准形态共享坐标系，正交 2D 投影完全重合——给出来只是同一张图的三份副本，还会让人以为是别的东西。价值在 3D 的「墙拉开 / 段拉开」读法，因此整组视角不显示（只剩一个孤零零的「3D」按钮既无可切换对象，也像是别的被禁用了），并在视角行说明原因。</p>
+      </div>
+      <div class="faq">
+        <div class="q">4000 卡会不会卡？</div>
+        <p class="a">重排缓动<b>按时间</b>算（0.5s，与帧率无关）并在收尾精确吸附，所以低帧率下卡与线仍然落到位；走线逐段建管、成员框合并进同一条 <code>LineSegments</code>。布局已在 1 至 8192 卡上验证零重叠，超过 65536 rank 会拒绝应用。</p>
+      </div>
+      <div class="faq">
+        <div class="q">能不能改配色 / 换成业务自己的品牌色？</div>
+        <p class="a">可以，但只能在<b>页面级</b>覆盖设计系统 token——pattern 只消费语义 token，3D 材质也经 <code>readTokens()</code> 读同一批 token，所以覆盖后画面与图例会一起变。禁止在宿主 CSS 里覆盖 <code>.prc-*</code> 的具体色值。</p>
+      </div>
+      <div class="faq">
+        <div class="q">只想嵌一块画布、工具栏用我自己的，怎么做？</div>
+        <p class="a"><code>mount(el, { chrome: false })</code>：pattern 不再渲染自带工具栏，取景也不为面板留白，全部控制走 handle 上的 <code>setMode</code> / <code>setView</code> / <code>setColorBy</code> … 一组 API。</p>
+      </div>
+      <div class="faq">
+        <div class="q">要新增一个并行维度（CP / SP）怎么办？</div>
+        <p class="a">不要新写一套坐标计算。在 <code>pattern.js</code> 的 <code>SP</code> / <code>modes</code> 里按原则 ①–⑥ 声明这根轴的意图（放哪根轴、用什么层级倍率、正交视角折叠哪些维），布局会自动推导出来；同时补上该维的签名色与图例条目。</p>
+      </div>
+    </section>
+
+    <footer>
+      逻辑魔方 · LogicalRubikCube — 设计 Pattern 规范。规则与文案的唯一事实源是
+      <code>public/vendor/rubik-cube/pattern.json</code> 与 <code>README.md</code>；本文档与之保持一致，冲突时以契约为准。
+    </footer>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── 主题：浅色默认（?theme=dark 或右上角切换）───────────────────── */
+  var ICON_SUN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>';
+  var ICON_MOON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  var theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';
+  var handles = [];
+  var themeBtn = document.getElementById('themeBtn');
+
+  function applyTheme(t) {
+    theme = t === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+    themeBtn.innerHTML = theme === 'light' ? ICON_MOON : ICON_SUN;
+    themeBtn.title = theme === 'light' ? '切换到深色' : '切换到浅色';
+    themeBtn.setAttribute('aria-label', themeBtn.title);
+    handles.forEach(function (h) { try { h.setTheme(theme); } catch (e) {} });
+  }
+  applyTheme(theme);
+  themeBtn.addEventListener('click', function () { applyTheme(theme === 'light' ? 'dark' : 'light'); });
+
+  /* ── 目录高亮 ──────────────────────────────────────────────────── */
+  var links = [].slice.call(document.querySelectorAll('.doc-toc a'));
+  var secs = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  if ('IntersectionObserver' in window) {
+    var tocObs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var i = secs.indexOf(en.target);
+        links.forEach(function (a, k) { a.classList.toggle('is-active', k === i); });
+      });
+    }, { rootMargin: '-76px 0px -70% 0px' });
+    secs.forEach(function (s) { if (s) tocObs.observe(s); });
+  }
+
+  /* ── 可交互示例：进入视口才挂载（每个示例一个 WebGL 上下文）────────── */
+  var PHASE_IDS = ['TP', 'PP', 'EP', 'DP'];
+  var ALGOS = [['auto', '自动'], ['ring', 'Ring'], ['tree', 'Tree']];
+
+  function seg(container, items, onPick, initial) {
+    var btns = items.map(function (it, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sm' + (i === initial ? ' is-selected' : '');
+      b.textContent = it.label;
+      if (it.title) b.title = it.title;
+      b.addEventListener('click', function () {
+        if (b.disabled) return;
+        btns.forEach(function (x) { x.classList.remove('is-selected'); });
+        b.classList.add('is-selected');
+        onPick(i);
+      });
+      container.appendChild(b);
+      return b;
+    });
+    return btns;
+  }
+
+  function buildHero(board) {
+    var ph = board.querySelector('.ph');
+    if (ph) ph.remove();
+    var h = window.PtoRubikCubePattern.mount(board, {
+      theme: theme, chrome: false, config: { tp: 8, pp: 5, dp: 100, ep: 2 },
+    });
+    handles.push(h);
+  }
+
+  /* 这一张按「原样的 Pattern」给：带自带工具栏、图例、粒度贴士与详情卡——
+     3.1 讲的画面结构、3.3 的视角收编、3.7 的信息分工都能就地验证。 */
+  function buildModes(board) {
+    var ph = board.querySelector('.ph');
+    if (ph) ph.remove();
+    handles.push(window.PtoRubikCubePattern.mount(board, {
+      theme: theme, config: { tp: 2, pp: 4, dp: 16, ep: 8 },
+    }));
+  }
+
+  function buildComm(board) {
+    var stage = board.querySelector('.stage');
+    stage.innerHTML = '';
+    var h = window.PtoRubikCubePattern.mount(stage, {
+      theme: theme, chrome: false, config: { tp: 2, pp: 4, dp: 16, ep: 8 },
+    });
+    handles.push(h);
+    h.setPlaying(false);
+    h.setTime({ phase: 'TP' });
+    h.select(37);
+
+    seg(board.querySelector('[data-role="phase"]'),
+      PHASE_IDS.map(function (p) { return { label: p }; }),
+      function (i) { h.setTime({ phase: PHASE_IDS[i] }); }, 0);
+
+    seg(board.querySelector('[data-role="algo"]'),
+      ALGOS.map(function (a) { return { label: a[1] }; }),
+      function (i) { h.setAlgo(ALGOS[i][0]); }, 0);
+  }
+
+  var BUILDERS = { hero: buildHero, modes: buildModes, comm: buildComm };
+  var boards = [].slice.call(document.querySelectorAll('[data-demo]'));
+
+  function build(board) {
+    if (board.dataset.built) return;
+    board.dataset.built = '1';
+    try {
+      BUILDERS[board.dataset.demo](board);
+    } catch (e) {
+      var ph = board.querySelector('.ph') || board.querySelector('.stage');
+      if (ph) ph.textContent = '示例装载失败：' + (e && e.message ? e.message : e);
+    }
+  }
+
+  if ('IntersectionObserver' in window) {
+    var demoObs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        demoObs.unobserve(en.target);
+        build(en.target);
+      });
+    }, { rootMargin: '200px 0px' });
+    boards.forEach(function (b) { demoObs.observe(b); });
+  } else {
+    boards.forEach(build);
+  }
+})();
+</script>
+</body>
+</html>

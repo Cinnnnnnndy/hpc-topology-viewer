@@ -28,6 +28,9 @@ iteration — default **TP8×PP5×DP100 = 4000 ranks**, Pangu Pro MoE's real
 training strategy (EP2 folded into DP). Entry page:
 `public/rubik-pattern.html` (dev: `/hpc-topology-viewer/rubik-pattern.html`);
 sources & docs: [`public/vendor/rubik-cube/`](public/vendor/rubik-cube/README.md).
+设计 Pattern 规范（场景说明 / 场景引导 / 场景设计 / 正例与反例 / 设计资源 /
+设计原则 · 浅色默认 · 内嵌可交互示例）：`public/rubik-pattern-spec.html`
+(dev: `/hpc-topology-viewer/rubik-pattern-spec.html`)。
 Integration hooks for the whole-network graph / expert graph are pre-wired
 (`selectLayer` / `selectBucket` / `onSelect`).
 
