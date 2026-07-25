@@ -1530,7 +1530,8 @@
     function syncCfgUI() {
       if (!cfgInputs) return;
       cfgInputs.tp.value = TP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
-      cfgRead.textContent = `rank = ${TP}×${PP}×${REP} = ${N} · EP${EP} 折入 DP → ${DOM} 域`;
+      // 读数只补输入框没说的部分（乘法与折叠结果），别把已经摆在旁边的四个数再抄一遍
+      cfgRead.textContent = `= ${N} rank · EP 折入 DP → ${DOM} 域`;
       cfgErr.textContent = '';
     }
     function syncChrome() {
