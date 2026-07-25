@@ -22,7 +22,7 @@
 </head>
 <body>
 <div id="app"></div>
-<button id="themeBtn" class="btn btn-sm" type="button" aria-label="切换明暗主题"></button>
+<button id="themeBtn" class="btn btn-sm prc-iconbtn" type="button" aria-label="切换明暗主题"></button>
 <script>
 /* 逻辑魔方 pattern 的独立迭代页：全屏挂载，主题支持 ?theme= 初始值与宿主 postMessage 联动
    （与 cube-cockpit.html 同一套约定，之后可被宿主以 iframe 嵌入）。 */
@@ -61,8 +61,10 @@
   function applyTheme(t){
     theme = t === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);   // token 随之切换，按钮/底色走 CSS 变量
-    document.getElementById('themeBtn').innerHTML =
-      (theme === 'light' ? ICON_MOON : ICON_SUN) + '<span>' + (theme === 'light' ? 'Dark' : 'Light') + '</span>';
+    var tb = document.getElementById('themeBtn');
+    tb.innerHTML = (theme === 'light' ? ICON_MOON : ICON_SUN);   // 只要图标，不要文字
+    tb.title = theme === 'light' ? '切换到深色' : '切换到浅色';
+    tb.setAttribute('aria-label', tb.title);
     handle.setTheme(theme);
   }
   applyTheme(theme);

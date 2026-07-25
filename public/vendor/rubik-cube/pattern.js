@@ -293,14 +293,14 @@
     const NOTE_2D = '正交 2D 与「标准」形态重合 → 格阵平面到标准里看';
     const modes = [
       {
-        key: 'std', name: '标准',
+        key: 'std', name: '标准', short: '标准',
         sub: `标准 X=TP Y=PP(模型深度) Z=DP`,
         why: `位置即多维坐标：X=TP·Y=PP·Z=DP 同屏三维 · 着色透镜再叠第 4 维（换形态只换投影轴）`,
         viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
         views: [0, 1, 2, 3],
       },
       {
-        key: 'dpt', name: 'DP平铺',
+        key: 'dpt', name: 'DP平铺', short: 'DP',
         sub: `DP 平铺：${REP} 副本各自成板（找慢副本）`,
         why: `副本间只在步末做梯度 AllReduce · 发暗/掉队的那块板 = 慢副本`,
         viewLabels: { 1: '顶 副本网格', 2: '前 列×PP', 3: '侧 行×PP' },
@@ -310,7 +310,7 @@
         views: [0, 1, 2, 3],
       },
       {
-        key: 'ep', name: 'EP聚簇',
+        key: 'ep', name: 'EP聚簇', short: 'EP',
         sub: `EP 聚簇：${EP} 专家桶成墙（桶=MoE 组 · 每桶复现于 ${DOM} 个 A2A 域 · 桶↔卡非 1:1）`,
         why: `桶故障 = 整面墙同红 · 域热点 = 横穿 ${EP} 墙的一排过热 · 桶↔卡非 1:1`,
         viewLabels: { 1: '顶 桶×域', 2: '前 桶×PP', 3: '侧 域×PP' },
@@ -318,14 +318,14 @@
         views: [0, 1, 2, 3],
       },
       {
-        key: 'tps', name: 'TP切片',
+        key: 'tps', name: 'TP切片', short: 'TP',
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
         viewLabels: { 1: '顶 DP×TP', 2: '前 TP×PP', 3: '侧 DP×PP' }, depth: D_STD,
         views: [0], note2d: NOTE_2D,
       },
       {
-        key: 'ppf', name: 'PP流水',
+        key: 'ppf', name: 'PP流水', short: 'PP',
         sub: `PP 流水：${PP} 段横向展开 · 左=Stage0 右=Stage${PP - 1}（找慢段/气泡）`,
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
         viewLabels: { 1: '顶 DP×PP', 2: '前 PP×TP', 3: '侧 DP×TP' },
@@ -444,7 +444,7 @@
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',
-        '    <button class="prc-morebtn btn btn-sm" type="button"></button>',
+        '    <button class="prc-morebtn btn btn-sm prc-iconbtn" type="button"></button>',
         // 宿主控件（主题切换等）的插槽：放进同一张卡，按钮才成套
         '    <span class="prc-toolslot"></span>',
         '  </div>',
@@ -1462,6 +1462,14 @@
       s.tabIndex = 0;
       s.setAttribute('aria-label', '说明');
       s.innerHTML = ICON.help;
+      // 气泡贴边翻转：问号靠右时改成右对齐、靠下时改成向上弹，免得跑到屏幕外
+      const place = () => {
+        const rr = root.getBoundingClientRect(), dr = s.getBoundingClientRect();
+        s.classList.toggle('is-right', dr.left - rr.left > rr.width * 0.5);
+        s.classList.toggle('is-up', dr.bottom - rr.top > rr.height * 0.6);
+      };
+      s.addEventListener('pointerenter', place);
+      s.addEventListener('focus', place);
       const bub = document.createElement('span');
       bub.className = 'prc-helptip';
       bub.innerHTML = (HELP[key] || '') + (DYN[key] ? DYN[key]() : '');
@@ -1500,6 +1508,9 @@
     function syncBarH() {
       const bar = root.querySelector('.prc-topbar');
       if (bar) root.style.setProperty('--prc-barh', Math.round(bar.getBoundingClientRect().height) + 'px');
+      const more = root.querySelector('.prc-more');
+      const open = root.classList.contains('is-open');
+      root.style.setProperty('--prc-moreh', (open && more ? Math.round(more.getBoundingClientRect().height) : 0) + 'px');
     }
     function syncCfgUI() {
       if (!cfgInputs) return;
@@ -1527,7 +1538,10 @@
       algoBtns.forEach((b, i) => b.classList.toggle('is-selected', algoKeys[i] === S.algo));
 
       if (moreBtn) {
-        moreBtn.innerHTML = ICON.sliders + `<span>${S.more ? '收起' : '更多'}</span>`;
+        // 只留图标：顶栏右侧那两个按钮不带文字（标题交给 title/aria-label）
+        moreBtn.innerHTML = ICON.sliders;
+        moreBtn.title = moreBtn.ariaLabel = S.more ? '收起设置' : '更多设置';
+        moreBtn.setAttribute('aria-label', moreBtn.title);
         moreBtn.classList.toggle('is-selected', S.more);
       }
       if (playBtn) {
@@ -1558,7 +1572,11 @@
           if (row) row.insertAdjacentElement('afterend', helpDot(k));
         });
       const rowModes = $('.prc-row-modes'), rowViews = $('.prc-row-views'), rowLens = $('.prc-row-lens'), rowAnom = $('.prc-row-anom');
-      modeBtns = model.modes.map((m, i) => rowModes.appendChild(chipBtn(m.name, () => api.setMode(i))));
+      modeBtns = model.modes.map((m, i) => {
+        const b = rowModes.appendChild(chipBtn(m.short || m.name, () => api.setMode(i)));
+        b.title = m.name; b.setAttribute('aria-label', m.name);   // 短名按钮，全名进 title
+        return b;
+      });
       viewBtns = ['轴测', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
       // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）——独立按钮，不挤在视角行里
       moreBtn = $('.prc-morebtn');
@@ -1613,7 +1631,7 @@
           }
           else { rebuildComm(); refreshFocus(); renderInfo(); syncChrome(); }
         })));
-      rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab', textContent: '算法' }));
+      rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-lab prc-lab-inline', textContent: '算法' }));
       algoBtns = [['自动', 'auto'], ['Ring', 'ring'], ['Tree', 'tree']]
         .map(([t, k]) => rowWire.appendChild(chipBtn(t, () => { S.algo = k; rebuildComm(); renderLegend(); syncChrome(); })));
 
@@ -1631,14 +1649,15 @@
       };
       cfgInputs = { tp: mkDim('TP'), pp: mkDim('PP'), dp: mkDim('DP'), ep: mkDim('EP') };
       { const b = chipBtn('Apply', applyCfg); b.classList.add('btn-solid'); rowCfg.appendChild(b); }
-      cfgRead = document.createElement('span'); cfgRead.className = 'prc-mono'; rowCfg.appendChild(cfgRead);
       cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
+      const cfgFoot = document.createElement('div'); cfgFoot.className = 'prc-rowfoot'; rowCfg.appendChild(cfgFoot);
+      cfgRead = document.createElement('span'); cfgRead.className = 'prc-mono'; cfgFoot.appendChild(cfgRead);
       // 快捷预设（标签按 TP·PP·DP·EP 顺序）：
       //  · 盘古 Pro MoE 真实训练策略（data/ascend-workload-pangu-moe.json，
       //    TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中）；
       //  · 128 卡小规格（单超节点量级）：tp2×pp4×dp16 = 128，EP8 折入 DP → 2 个 A2A 域。
-      rowCfg.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
-      rowCfg.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
+      cfgFoot.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
+      cfgFoot.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
     }
     function refresh2D() { reScale(); recolor(); renderPill(); renderLegend(); syncChrome(); }
 

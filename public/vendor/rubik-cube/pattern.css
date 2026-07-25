@@ -33,20 +33,41 @@
 }
 .prc-tools {
   /* 不再套一张大卡：每组自己就是一张胶囊卡（segmented-control / btn），
-     叠两层底会让底色看起来是错的。 */
+     叠两层底会让底色看起来是错的。窄屏时整组换行，绝不横向溢出。 */
   display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
   justify-content: flex-end; flex: 0 1 auto; min-width: 0;
   pointer-events: auto;
 }
-/* 组本身要有卡的质感（浮在画面上）：描边 + 底 + 轻阴影 */
-.prc-root .segmented-control { box-shadow: var(--shadow-sm); background: var(--surface-1); }
-.prc-tools > .btn { box-shadow: var(--shadow-sm); background: var(--surface-1); }
+/* 顶栏里的每一组都是一张浮在画面上的卡：同高、同圆角、同阴影。
+   互斥组的总高 = 内部按钮高 + 上下内边距，独立按钮要按同一个数对齐，否则一排高低不一。 */
+.prc-root .prc-tools > * { --prc-toolh: calc(var(--button-height-sm) + var(--segmented-control-padding) * 2); }
+.prc-root .prc-tools .segmented-control,
+.prc-root .prc-tools > .btn,
+.prc-root .prc-toolslot > .btn {
+  height: var(--prc-toolh); min-height: var(--prc-toolh);
+  border-radius: var(--segmented-control-radius);
+  background: var(--surface-1);
+  border: 1px solid var(--segmented-control-border);
+  box-shadow: var(--prc-float-shadow);
+}
+.prc-root .prc-tools > .btn,
+.prc-root .prc-toolslot > .btn { padding: 0 calc(var(--space-3) + var(--segmented-control-padding)); }
+/* 只有图标的按钮：正方形，图标居中 */
+.prc-root .prc-iconbtn {
+  width: var(--prc-toolh, var(--button-height-sm)); min-width: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.prc-toolslot { --prc-toolh: calc(var(--button-height-sm) + var(--segmented-control-padding) * 2); }
+/* 组内部的按钮不再各自带阴影/描边（卡是外面那一层） */
+.prc-root .segmented-control > .btn { box-shadow: none; }
+.prc-root .segmented-control > .btn:not(.is-selected) { border-color: transparent; }
 .prc-group { flex: 0 0 auto; }
 .prc-toolslot { display: inline-flex; align-items: center; gap: var(--space-2); }
 .prc-toolslot:empty { display: none; }
 /* 顶栏里的互斥组：选中项用主色（与设计系统页面上的分段控件同款） */
-.prc-root .segmented-control > .btn.is-selected,
-.prc-root .segmented-control > .btn.is-selected:hover {
+/* 选中态一律主色（顶栏的互斥组与抽屉里的开关同款，不再一处黑一处蓝） */
+.prc-root .btn.is-selected,
+.prc-root .btn.is-selected:hover {
   background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
 }
 
@@ -95,10 +116,16 @@
   /* 气泡不吃指针：否则它悬在下一排控件上面，会挡住点击（也会把 hover 粘住不放） */
   pointer-events: none;
 }
+.prc-help.is-right .prc-helptip { left: auto; right: 0; }
+.prc-help.is-up .prc-helptip { top: auto; bottom: calc(100% + var(--space-1)); }
 .prc-helptip b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
 .prc-help:hover .prc-helptip, .prc-help:focus-visible .prc-helptip { display: block; }
 .prc-mono { font: var(--type-mono); color: var(--foreground-secondary); }
 .prc-more .prc-mono { white-space: normal; }
+/* 行内小标题（如「算法」）与前一组拉开距离 */
+.prc-lab-inline { margin-left: var(--space-3); }
+/* 一行里的「附加行」：读数、预设各自独占一行，不与输入框交错 */
+.prc-rowfoot { flex: 1 0 100%; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
 /* 按钮：与设计系统页面上的控件同款——胶囊形、细描边、克制的字色。
    （.btn 的其余表现全部来自设计系统，本文件只统一圆角与图标对齐。） */
@@ -194,8 +221,8 @@
    结构与观感对齐设计系统 sidecar 的 inspector：
    kicker（类别）→ 标题（是谁）→ 一句定义 → 键值表（取值）→ 结论条（此刻状态）。 */
 .prc-info {
-  position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-6) + var(--space-3)); right: var(--space-3); z-index: 5;
-  width: min(88vw, 330px);
+  position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); left: var(--space-3); z-index: 5;
+  width: min(88vw, 320px);
   padding: var(--space-4, var(--space-3));
   display: none;
 }
@@ -252,6 +279,9 @@
 
 /* ── 维度签名色（3D 轴标注 / 通信组线框用；卡块着色不使用）─────────── */
 .prc-root {
+  /* 浮在画布上的控件用的柔和投影：上游色卡的 --shadow-* 是深色优先（0.28 黑），
+     压在浅色底上发脏 → pattern 自备一档，待回补上游（同 --dim-tp 的处理）。 */
+  --prc-float-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.06);
   --dim-tp: #39c5cf;
   --dim-pp: #ffaa3b;
   --dim-dp: #4369ef;
@@ -260,3 +290,24 @@
 
 /* 贴士里的内联图标：与文字基线对齐、随文字色 */
 .prc-pill svg { vertical-align: -2px; margin-right: var(--space-1); opacity: 0.75; }
+
+/* ── 窄屏适配：顶栏换行、面板改为不互相遮挡的堆叠 ─────────────────────── */
+@media (max-width: 900px) {
+  .prc-topbar { gap: var(--space-2); }
+  .prc-brandname { flex: 1 0 100%; }            /* 名字独占一行，控件整排落到下一行 */
+  .prc-tools { justify-content: flex-start; }
+  .prc-more, .prc-info { width: min(94vw, 420px); }
+  /* 窄屏抽屉会横跨整宽 → 展开时详情卡让到抽屉下面，不互相压 */
+  .prc-root.is-open .prc-info {
+    top: calc(var(--prc-barh, 46px) + var(--prc-moreh, 0px) + var(--space-3) * 3);
+    max-height: calc(100% - var(--prc-barh, 46px) - var(--prc-moreh, 0px) - var(--space-3) * 5);
+    overflow: auto;
+  }
+  /* 详情卡与图例都在左/右下角时，窄屏下让图例退到详情卡下方 */
+  .prc-legend { max-width: min(60vw, 220px); }
+}
+@media (max-width: 620px) {
+  .prc-info { top: auto; bottom: var(--space-3); left: var(--space-3); right: var(--space-3); width: auto; }
+  .prc-root.is-open .prc-info { display: none; }   /* 空间实在不够：开着设置就先不显示详情 */
+  .prc-legend { display: none; }                 /* 空间不够时先让位给详情卡（图例信息在问号里） */
+}
