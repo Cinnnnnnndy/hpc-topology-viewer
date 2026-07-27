@@ -10,6 +10,11 @@ name: Deploy to GitHub Pages
 # 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，且两个 pattern
 # 分支各自的 workflow 只叠加自己那份，所以 main 或另一分支一发布，本分支的目录会
 # 暂时消失，重跑本分支的 workflow（push 或 workflow_dispatch 选本分支）即可找回。
+# 另注意：deploy 这一步走 github-pages environment，**只有被该 environment 允许的
+# 分支才能部署**。新分支第一次跑会在 build 成功之后、deploy 秒失败且没有日志——
+# 那不是构建有问题，是分支没在允许列表里。到
+# Settings → Environments → github-pages → Deployment branches and tags
+# 把分支名加进去，再重跑本次 run 即可。
 on:
   push:
     branches:
