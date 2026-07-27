@@ -900,10 +900,44 @@
 
     /* ── 轴标注（每形态一套：网格框 + 刻度 + 语义标注 + 关键结构线）── */
     const axGroup = new THREE.Group(); scene.add(axGroup);
+    /* 分段的**命中区**：一块分段就是一个看不见的盒子，悬停它就报出这一段是谁、里面有什么。
+       这是「摆不下就少摆标签」的配套——抽样之后多数块没有牌，但块本身还在那儿；
+       没有牌的那几块，靠悬停一样问得出来，信息一条没少，只是不常驻画面。
+       材质是「画不出东西但参与拾取」的：opacity 0 + 不写深度，射线照样命中。 */
+    const pickGroup = new THREE.Group(); scene.add(pickGroup);
+    const PICK_MAT = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+    const PICK_GEO = new THREE.BoxGeometry(1, 1, 1);
+    function axRegion(q, meta) {
+      const m = new THREE.Mesh(PICK_GEO, PICK_MAT);
+      m.position.set((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2, (q.z0 + q.z1) / 2);
+      m.scale.set(Math.max(1e-3, q.x1 - q.x0), Math.max(1e-3, q.y1 - q.y0), Math.max(1e-3, q.z1 - q.z0));
+      m.userData.region = meta;
+      pickGroup.add(m);
+    }
+    /* 沿一根轴的一串分段各注册一个命中区（其余两轴取满场）。
+       区间**按分割线切满**（上一条分割 → 下一条分割），不是只裹住卡本身：
+       块与块之间那段空档也属于某一段，鼠标落在空档上照样该答得出「这是第几段」——
+       只裹卡的话，TP 切片有 57% 的地方悬停无反应。首尾两段延到场边。 */
+    function axRegionsAlong(n, axis, at, bb, mk) {
+      const m = BM;
+      const base = {
+        x0: bb.x0 - CARD.x / 2 - m, x1: bb.x1 + CARD.x / 2 + m,
+        y0: bb.y0 - CARD.y / 2 - m, y1: bb.y1 + CARD.y / 2 + m,
+        z0: bb.z0 - CARD.z / 2 - m, z1: bb.z1 + CARD.z / 2 + m,
+      };
+      const cut = (i) => (at(i - 1) + at(i)) / 2;
+      for (let i = 0; i < n; i++) {
+        const q = Object.assign({}, base);
+        q[axis + '0'] = i === 0 ? Math.min(base[axis + '0'], at(0) - m) : cut(i);
+        q[axis + '1'] = i === n - 1 ? Math.max(base[axis + '1'], at(n - 1) + m) : cut(i + 1);
+        axRegion(q, mk(i));
+      }
+    }
     // 网格线材质登记表：聚焦（选中压暗）时整体提亮——卡退成背景，格子接手空间参照
     const gridMats = [];
     function clearAxes() {
       gridMats.length = 0;
+      while (pickGroup.children.length) pickGroup.remove(pickGroup.children[0]);
       axPad = {}; axSeries = [];       // 边带与轴上标记登记随标注一起重算
       while (axGroup.children.length) {
         const o = axGroup.children.pop();
@@ -1301,6 +1335,8 @@
            与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
            三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
         axBlockDividers('y', cutsBetween(PP, yS), bb, PPc);
+        axRegionsAlong(PP, 'y', yS, bb, (i) => { const r = model.stageLayerRange(i);
+          return { title: `PP Stage ${i} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'y', yS, bb, { sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, plate: true });
@@ -1329,6 +1365,14 @@
         // 宫格是二维的 → 两根轴各出一组分割线（列间 + 行间），交叉出一格一块板
         axBlockDividers('x', cutsBetween(COLS, (i) => (i - (COLS - 1) / 2) * s.gapX), bb, DPc, isDark() ? 0.4 : 0.5);
         axBlockDividers('z', cutsBetween(ROWS, (i) => (i - (ROWS - 1) / 2) * s.gapZ), bb, DPc, isDark() ? 0.4 : 0.5);
+        // 板是二维宫格里的一格 → 命中区逐块建（列×行），悬停任一块板即知它是第几个副本
+        const hbx = (model.TPC - 1) / 2 * s.tp + CARD.x / 2, hbz = (model.TPD - 1) / 2 * s.tpz + CARD.z / 2;
+        R(REP, (r) => {
+          const cx = (r % COLS - (COLS - 1) / 2) * s.gapX, cz = (((r / COLS) | 0) - (ROWS - 1) / 2) * s.gapZ;
+          axRegion({ x0: cx - s.gapX / 2, x1: cx + s.gapX / 2, y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
+            z0: cz - s.gapZ / 2, z1: cz + s.gapZ / 2 },
+          { title: `DP 副本 ${r}`, sub: `行${(r / COLS) | 0} 列${r % COLS} · TP ×${TP} · PP ×${PP} = ${TP * PP} 卡`, color: DPc });
+        });
         // 列沿 X、行沿 Z：2D 里各自落到「自己那根轴此刻是横还是纵」对应的边上
         R(COLS, (i) => { const x = b.x0 + (i + 0.5) * s.gapX;
           axOnly(axText('列' + i, DPc, 1.7, V3(x, b.y0, b.z1 + D(1.8))), [0]);
@@ -1371,6 +1415,10 @@
         /* canonical 分段 = 每个专家桶一面墙。墙内 TP 一字排开，所以块的半厚是
            「(TP-1)/2 个 TP 步距 + 半张卡」，不是单张卡的一半。 */
         axBlockDividers('x', cutsBetween(EP, (e) => (e - (EP - 1) / 2) * s.gapE), bb, EPc);
+        axRegionsAlong(EP, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
+          (e) => ({ title: `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
+            sub: `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`,
+            color: model.hotBuckets.has(e) ? tokHex('--warning') : EPc }));
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         axOnAxisSeries(EP, (e) => `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
           EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
@@ -1397,6 +1445,8 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         axBlockDividers('x', cutsBetween(TP, (t) => bb.x0 + t * s.gapT), bb, TPc);
+        axRegionsAlong(TP, 'x', (t) => bb.x0 + t * s.gapT, bb,
+          (t) => ({ title: `TP 切片 ${t} · ${t + 1}/${TP}`, sub: `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`, color: TPc }));
         /* 块标做成两行牌：第一行「这块是谁」，第二行「这块里面有什么」。
            3D 里等距投影会把 +X（右下）与 +Y（上）几乎抵消，错行救不了、加宽更糟，
            而分段本来就由块框交代清楚了 → 3D 只给一枚身份小牌。
@@ -1428,6 +1478,8 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
         axBlockDividers('x', cutsBetween(PP, (st) => bb.x0 + st * s.gapP), bb, PPc);
+        axRegionsAlong(PP, 'x', (st) => bb.x0 + st * s.gapP, bb, (st) => { const r = model.stageLayerRange(st);
+          return { title: `PP Stage ${st} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true });
@@ -2153,7 +2205,18 @@
     function syncChrome() {
       syncHelp(); syncBarH();                                           // 问号气泡与标题规格随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
-      modeBtns.forEach((b, i) => b.classList.toggle('is-selected', i === S.mode));
+      /* 形态按钮的**显示顺序**：PP · TP · EP · DP · 标准。
+         前四个按并行维排（与设计系统 sidecar 的并行切换同一顺序，读者的肌肉记忆一致），
+         「标准」排到最后——它不是第五种问题导向的形态，而是那四种的基准投影：
+         三根轴地位相同、三个密排平面的归属地。摆在末位，「先挑一个问题，实在要看全貌
+         再回到标准」这层关系不用读文案就看得出来。
+         用 CSS order 调换，DOM 顺序与形态序号保持一致，免得 URL 参数 / 键盘序 / 测试跟着错位。 */
+      const MODE_ORDER = ['ppf', 'tps', 'ep', 'dpt', 'std'];
+      modeBtns.forEach((b, i) => {
+        b.classList.toggle('is-selected', i === S.mode);
+        const k = MODE_ORDER.indexOf(model.modes[i].key);
+        b.style.order = k < 0 ? MODE_ORDER.length : k;
+      });
       const md = model.modes[S.mode];
       const vlist = md.views || [0, 1, 2, 3];
       viewBtns.forEach((b, i) => {
@@ -2372,6 +2435,12 @@
         distance: hit.distance,
       };
     }
+    function pickRegion(ev) {
+      if (!pickGroup.children.length) return null;
+      aimAt(ev);
+      const hit = ray.intersectObjects(pickGroup.children, false)[0];
+      return hit ? hit.object.userData.region : null;
+    }
     const TIER_LAB = { ub: '同机 UB', rail: 'Pod 内跨机 rail', out: '跨 Pod Scale-Out' };
     /* 拖拽有两种：**空手拖 = 转**（任何视角都转回 3D 轴测）、**按住 Ctrl / ⌘ 拖 = 平移**。
        平移复用相机本就有的 pan 向量（原本只用于让开左上角工具栏）——位置与视线目标偏移
@@ -2418,6 +2487,7 @@
       }
       const r = pick(ev);
       const e = r == null ? pickEdge(ev) : null;      // 卡优先；没命中卡再看连线
+      const g = r == null && !e ? pickRegion(ev) : null;   // 都没中 → 落在哪一段上
       S.hover = r;
       const showTip = (html) => {
         const rc = root.getBoundingClientRect();
@@ -2431,6 +2501,9 @@
         showTip(`rank ${r} · TP${model.tpOf(r)} PP${st}(L${lr.lo}-${lr.hi}) DP${model.repOf(r)} · 桶${model.epOf(r)} 域${model.domOf(r)}`);
       } else if (e) {
         showTip(`${e.dim} ${e.prim} · rank ${e.from} → ${e.to} · <span style="color:${tierc(e.tier)}">${TIER_LAB[e.tier]}</span>`);
+      } else if (g) {
+        // 分段的悬停：与规格牌一模一样的两行，牌被抽掉的那几块靠这里问出来
+        showTip(`<b style="color:${esc(g.color)}">${esc(g.title)}</b><br>${esc(g.sub)}`);
       } else tipEl.style.display = 'none';
     });
     renderer.domElement.addEventListener('pointerleave', () => { S.hover = null; tipEl.style.display = 'none'; });
