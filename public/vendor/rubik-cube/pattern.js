@@ -1352,7 +1352,10 @@
         /* 牌上只留**身份 + 这个形态最要紧的那个限定**（哪一段 · 管哪几层），
            规格（里面有多少张卡）收进悬停——牌一短，一条边上就摆得下全部几段，
            不用再靠抽样丢掉几枚。信息一条没少，只是分了两层。 */
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `S${i} · L${r.lo}-L${r.hi}`; },
+        /* 画面上一律用**维度名**（PP0/TP0/DP0/桶0），不掺第二套叫法。
+             「Stage」是这一维在训练侧的行话，写在悬停与横幅里够了；常驻标记上再叫一次
+             「S0」，读者就得同时记住 S 和 PP 是同一根轴——同一个东西两个名字，最不该有。 */
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'y', yS, bb, { plate: true });
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
@@ -1361,7 +1364,7 @@
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
           // 字牌固定屏幕尺寸后不再随模型缩小 → 层步距只有 1 个多世界单位时五把标尺会叠死。
           // 3D 里只留首尾两把（中间几段由块框数得出来），完整规格牌在前视/侧视。
-          if (s2 === 0 || s2 === PP - 1) axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
+          if (s2 === 0 || s2 === PP - 1) axOnly(axText(`PP${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
           // PP 是 Y 轴 → 在前视/侧视里是纵轴 → 自动落到左侧；顶视 PP 被折掉，自动不出
           void lr;
         }
@@ -1495,16 +1498,16 @@
         axRegionsAlong(PP, 'x', (st) => bb.x0 + st * s.gapP, bb, (st) => { const r = model.stageLayerRange(st);
           return { title: `PP Stage ${st} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `S${i} · L${r.lo}-L${r.hi}`; },
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { plate: true });
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st), px = bb.x0 + st * s.gapP;
           // 3D 不错行：沿块步距自然排开已经形成一道斜梯，反而是读得清的那种
-          axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(px, b.y1 + D(1.6), 0)), [0]);
+          axOnly(axText(`PP${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(px, b.y1 + D(1.6), 0)), [0]);
           // PP 是 X 轴 → 顶视里是纵轴（落左侧）· 前视里是横轴（落下方）· 侧视已收编
 
         }
-        axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
+        axText(seg2(`前向激活 PP0→PP${PP - 1}`, PPc, `（左→右，即 Stage0→Stage${PP - 1}）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0]);
         axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0]);
