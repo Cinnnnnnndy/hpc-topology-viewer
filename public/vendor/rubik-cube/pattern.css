@@ -214,17 +214,12 @@
    动线反而绕。 */
 /* 剖面自己一张小卡（右上，只在正交 2D 出现）：读数在上、开关与滑杆在下，
    控件与它的说明在一起，不占工具栏的常驻宽度。 */
-.prc-slicecard {
-  position: absolute; right: var(--space-3); top: calc(var(--prc-barh, 46px) + var(--space-3) * 2);
-  z-index: 5; display: none; flex-direction: column; gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  width: max-content; max-width: min(92vw, 260px);
-}
-.prc-slicecard.show { display: flex; }
-.prc-scread { font: var(--type-body-sm); color: var(--foreground-secondary); }
-.prc-scrow { display: flex; align-items: center; gap: var(--space-2); }
+/* 剖面 = 顶栏里跟在「视角」后面的第三组控件（同一排，不另起一行）：
+   开关 + 滑杆 + 一句最短读数，说明收进它自己的问号气泡。 */
+.prc-row-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
+.prc-scread { font: var(--type-body-sm); color: var(--foreground-secondary); white-space: nowrap; }
 .prc-root input[type="range"] { accent-color: var(--primary); }
-.prc-scrow input[type="range"] { width: 108px; }
+.prc-row-slice input[type="range"] { width: 92px; }
 .prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
 .prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
 .prc-cfgitem input {

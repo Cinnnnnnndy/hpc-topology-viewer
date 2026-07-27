@@ -26,10 +26,14 @@
         EP 不参与乘法（与 cockpit 白皮书语义一致：EP 折入 DP 轴，不新增轴）——
         ep 只要求整除 dp：副本 rep 持有专家桶 rep%ep，相邻 ep 个副本构成
         1 个 A2A 域，共 dp/ep 个域（默认 128/8 = 16）。 ── */
-  // 默认 = 盘古 Pro MoE 真实训练策略（TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，
-  // EP2 折入其中 → 50 个 A2A 域）。出处 data/ascend-workload-pangu-moe.json ← arXiv 2505.21411。
+  /* 默认 = 128 卡小规格（2·4·16·8）。落地这一档是为了**第一眼能读**：4000 卡时一张卡只有
+     两三个像素，四种形态之间的差别（墙 / 段 / 桶 / 板）都糊成一片色块，读者看到的是一团颜色
+     而不是一种堆法；128 卡下每张卡看得清、每一段数得出，形态到底在说什么当场就成立。
+     真实规格（盘古 Pro MoE：TP8·EP2·PP5·4K NPU → dp = 4000/(8×5) = 100，EP2 折入其中
+     → 50 个 A2A 域，出处 data/ascend-workload-pangu-moe.json ← arXiv 2505.21411）留作
+     「并行」那排的预设，一键就能切过去看真实体量。 */
   const DEFAULTS = {
-    tp: 8, pp: 5, dp: 100, ep: 2,
+    tp: 2, pp: 4, dp: 16, ep: 8,
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（标暖色）
@@ -490,6 +494,11 @@
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',
+        /* 剖面跟在「视角」后面，同一排、不另起一行：它讲的是「这一屏被折掉的那一维翻到
+           第几层」——是视角的下游，紧挨着才读得出这层关系；另起一行/另做一张浮卡都会让它
+           看起来是与视角平级的第三种设置。说明（折了几张、正翻哪一层）收进它自己的问号
+           气泡，与形态/视角两组同一套做法，所以这一排不长个子。 */
+        '    <span class="prc-group prc-row-slice"></span>',
         '    <span class="prc-timewrap">',
         '      <button class="prc-playbtn btn btn-sm prc-iconbtn" type="button"></button>',
         '      <div class="prc-timepop panel-shell"><span class="prc-lab">时间</span></div>',
@@ -505,11 +514,6 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
-        /* 剖面自己一张小卡：它讲的是**这一屏的粒度**（一格里叠了几张卡、正翻到第几层），
-           这句话既不属于「视角」那一排按钮，也不该常驻在画面上当散文——放进它自己的卡里，
-           控件与它的说明就在一起：读数在上、开关与滑杆在下，一眼看完一件事。
-           只在正交 2D 出现（3D 没有折叠维），所以不占工具栏的常驻宽度。 */
-        '<div class="prc-slicecard panel-shell"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
       ].join(''),
@@ -935,11 +939,20 @@
        横轴的末位与纵轴的末位各自合规，投到屏幕上照样叠在一起（3D 里 DP99 压住 PP4·L40-47 就是）。
        所以补一遍跨轴的屏幕盒相交检查：段名（PP4·L40-47）比刻度（DP99）信息量大，冲突时留段名；
        同级则留先建的那枚。同一根轴内部不再动手——那是抽样的地盘，两套解法叠上去会排成锯齿。 */
+    /* 往里缩一点再判：精灵的四边是**贴图边**，牌的底与描边在贴图里本就留了一圈空白
+       （makeLabel 的 PAD），所以两块牌的贴图刚好挨上时，眼睛看到的是两块分开的牌。
+       不缩的话相邻两边一个 0.3px 的接触就会误判成压住——顶视的 DP0 正是这么被判掉的
+       （它的上沿与 TP0 的下沿差不到一个像素）。 */
+    const RECT_INSET = 3;
     function labelRect(sp) {
       const c = toPx(sp.position), k = worldPerPx();
       const w = sp.scale.x / k, h = sp.scale.y / k;
       const cx = sp.center.x, cy = sp.center.y;
-      return { x0: c.x - cx * w, x1: c.x + (1 - cx) * w, y0: c.y - (1 - cy) * h, y1: c.y + cy * h };
+      const ix = Math.min(RECT_INSET, w / 4), iy = Math.min(RECT_INSET, h / 4);
+      return {
+        x0: c.x - cx * w + ix, x1: c.x + (1 - cx) * w - ix,
+        y0: c.y - (1 - cy) * h + iy, y1: c.y + cy * h - iy,
+      };
     }
     const rectHit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
     function dropCornerClashes() {
@@ -1707,8 +1720,12 @@
     function reScale() {
       let dirty = false;
       for (let r = 0; r < N; r++) {
-        // 选中的那张卡本身也长大一档：只有框的话，缩得很小时框和卡糊成一个点
-        const lv = dimLv(r), want = r === S.sel ? 1.45 : lv === 2 ? 0.3 : lv === 1 ? 0.42 : 1;
+        /* 剖面外的卡（lv 2）**不画**。剖面只在正交 2D 存在（curDepth 在 3D 返回 null），
+           而 2D 里被折的那一维正对着视线——缩小压暗的那一粒和剖面内那张卡在屏幕上完全重合，
+           于是每张卡正中多出一个灰方块，既不是数据也不是结构，只是同一个格子的另一层漏了出来。
+           「这一格底下还压着几层」由剖面那组控件的读数说，不必在画面上再摆一遍。
+           聚焦压暗（lv 1）不这么处理：那些卡各占各的格子，缩小是读得出的对比。 */
+        const lv = dimLv(r), want = r === S.sel ? 1.45 : lv === 2 ? 0 : lv === 1 ? 0.42 : 1;
         if (scl[r] !== want) { scl[r] = want; dirty = true; }
       }
       if (dirty) settling = true;
@@ -1996,8 +2013,7 @@
         for (let i = 0; i < shown; i++) parts.push(row(groupColor(i), `${lab}${i}`));
         if (n > shown) parts.push(`<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">… 共 ${n} 组</span></div>`);
       }
-      const d = curDepth();
-      if (d && S.sliceOn) parts.push(row(dimSwatch(2), '剖面外'));
+      // 剖面外的卡已经不画（在屏幕上与剖面内那张完全重合），图例里也就没有这一条可对
       if (focusOn()) parts.push(row(dimSwatch(1), '无关卡'));
       if (S.sel != null) {
         const anyOn = S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers;
@@ -2113,6 +2129,13 @@
           <dt>滚轮</dt><dd>缩放。切形态或切视角会重新取景，平移量一并归零</dd>
         </dl>
         <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。</p>`,
+      slice: `<h4>剖面 · 折掉的那一维翻到第几层</h4>
+        <p>正交 2D 会把与视线平行的那一维折进屏幕，于是一格里叠着好几张卡。剖面就是<b>只看这一维的某一层</b>，其余压暗——它跟着视角走（换一屏，折掉的是另一维，剖面翻的也就换成那一维），所以排在「视角」后面而不是自成一档。</p>
+        <dl>
+          <dt>剖面</dt><dd>开 / 关。关掉 = 把 N 张叠在一起看</dd>
+          <dt>滑杆</dt><dd>翻到第几层。拖它会自动开——抓住把手本身就是「我要逐层看」</dd>
+        </dl>
+        <p class="prc-helpnote">3D 没有被折叠的维，因此这一组不出现。多折叠维的形态（如 EP 聚簇的 3D）开了剖面仍可能剩下重叠，「此刻」那行会照实写。</p>`,
       lens: `<h4>着色 · 给卡上色的镜头</h4>
         <p>只改颜色，不改结构。</p>
         <dl>
@@ -2120,7 +2143,7 @@
           <dt>TP / PP / DP / EP</dt><dd>按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」</dd>
           <dt>主机 / Pod</dt><dd>按物理落位上色，看 rail 亲和：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里</dd>
         </dl>
-        <p class="prc-helpnote">右下角图例只列「颜色 + 名字」。组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；图例里的灰色两条是被压暗的卡（剖面外 / 与选中卡无关），不是另一个组。</p>`,
+        <p class="prc-helpnote">右下角图例只列「颜色 + 名字」。组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；图例里那条灰色是「与选中卡无关」的压暗卡，不是另一个组。</p>`,
       anom: `<h4>注入 · 假装某一维出故障</h4>
         <p>看它在各形态下长什么形状。</p>
         <p><b>与着色的关系</b>：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。</p>
@@ -2193,6 +2216,12 @@
           + (bv != null ? `<br><b>这个形态最该看：${esc(bvName)}</b>——${esc(bvWhy || '')}` : '')
           + '</div>';
       },
+      slice: () => {
+        const d = curDepth();
+        if (!d) return '';
+        return `<div class="prc-helpnow"><b>此刻：</b>这一屏折掉的是 ${esc(d.label)}（共 ${d.fold} 层）`
+          + `，${esc(granText())}</div>`;
+      },
       anom: () => {
         const note = {
           none: '', 
@@ -2245,7 +2274,7 @@
       b.addEventListener('click', onClick);
       return b;
     }
-    let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null, sliceHint = null;
+    let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
     let wireBtns = [], algoBtns = [];
     let timeTrack = null, timeHead = null, moreBtn = null;
@@ -2337,22 +2366,24 @@
       }
       if (sliceBox) {
         const d = curDepth();
-        sliceBox.classList.toggle('show', !!d);
+        // 没有折叠维（3D）就整组连同它的问号一起收起——留一个翻不动的滑杆比不留更费解
+        const shown = !!d;
+        sliceBox.style.display = shown ? '' : 'none';
+        const sh = sliceBox.nextElementSibling;
+        if (sh && sh.classList.contains('prc-help')) sh.style.display = shown ? '' : 'none';
         if (d) {
-          sliceHint.textContent = granText();      // 这张卡自己的提示：这一屏的粒度
           sliceRange.max = String(d.slice.n - 1);
           if (S.sliceVal > d.slice.n - 1) S.sliceVal = 0;
           sliceRange.value = String(S.sliceVal);
-          // 工具栏里只放最短的读数（「这一屏叠了几张卡」的完整说法在视角问号气泡里）
+          // 这一排只放最短的读数，「折了几张、正翻哪一层」的完整说法在它自己的问号气泡里
           sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `关（${d.label} 折叠）`;
           sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
-
         }
       }
     }
     if (opts.chrome !== false) {
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
-      [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['lens', '.prc-row-lens'],
+      [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['slice', '.prc-row-slice'], ['lens', '.prc-row-lens'],
         ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-timepop'], ['cfg', '.prc-row-cfg']]
         .forEach(([k, sel]) => {
           const lab = $(sel + ' .prc-lab');
@@ -2374,11 +2405,8 @@
         root.classList.toggle('is-open', S.more);
         syncChrome(); resize();
       });
-      sliceBox = $('.prc-slicecard');
-      const scKick = document.createElement('div'); scKick.className = 'prc-lgsec'; scKick.textContent = '剖面';
-      sliceHint = document.createElement('div'); sliceHint.className = 'prc-scread';
-      const scRow = document.createElement('div'); scRow.className = 'prc-scrow';
-      scRow.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
+      sliceBox = $('.prc-row-slice');
+      sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
       /* 滑杆**不置灰**：置灰的滑杆读作「这功能不可用」，而不是「先按一下旁边那个按钮」——
          剖面因此看着像坏的。改成拖它就自动开：抓住把手本身就是「我要逐层看」的意思，
@@ -2388,9 +2416,8 @@
         if (!S.sliceOn) S.sliceOn = true;
         refresh2D();
       });
-      sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
-      scRow.appendChild(sliceRange); scRow.appendChild(sliceLab);
-      sliceBox.appendChild(scKick); sliceBox.appendChild(sliceHint); sliceBox.appendChild(scRow);
+      sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono prc-scread';
+      sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
       const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
