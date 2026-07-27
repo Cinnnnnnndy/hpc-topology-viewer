@@ -291,6 +291,10 @@
 .prc-lgrow i { width: 10px; height: 10px; border-radius: var(--radius-sm); flex: 0 0 auto; }
 .prc-lgrow span { font: var(--type-mono); }
 .prc-lgrow.is-now span { color: var(--foreground); font-weight: 700; }
+/* 这一维在这一屏被折进视线 → 画不出走线。整行压暗（含色块），
+   但不移除：这一维的通信是真实存在的，缺的只是「这一屏画不了」这句话。 */
+.prc-lgrow.is-flat { opacity: 0.5; }
+.prc-lgrow.is-flat i { opacity: 0.6; }
 .prc-legend .prc-ramp i {
   width: 34px; border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--success), var(--warning), var(--danger));
