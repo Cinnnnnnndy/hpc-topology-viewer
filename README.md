@@ -22,10 +22,11 @@ the seven independent switch planes (each plane is its own non-blocking fabric).
 
 ## Rubik-cube pattern（逻辑魔方 · 独立迭代）
 
-The cockpit's 逻辑魔方 (5 形态重排 · 轴标注 · 正交 2D/剖面 · 四维通信组) is also
-extracted as a standalone, parallelism-configurable pattern for independent
-iteration — default **TP8×PP5×DP100 = 4000 ranks**, Pangu Pro MoE's real
-training strategy (EP2 folded into DP). Entry page:
+The cockpit's 逻辑魔方 (4 问题导向形态 + 1 基准投影 · 轴标注 · 正交 2D/剖面 ·
+四维通信组) is also extracted as a standalone, parallelism-configurable pattern
+for independent iteration — lands on **PP流水 · TP2×PP4×DP16 = 128 ranks**
+(EP8 folded into DP), with Pangu Pro MoE's real strategy (TP8×PP5×DP100 = 4000)
+one click away as a preset. Entry page:
 `public/rubik-pattern.html` (dev: `/hpc-topology-viewer/rubik-pattern.html`);
 sources & docs: [`public/vendor/rubik-cube/`](public/vendor/rubik-cube/README.md).
 设计 Pattern 规范（场景说明 / 场景引导 / 场景设计 / 正例与反例 / 设计资源 /

@@ -340,13 +340,14 @@ footer {
     <div class="doc-kicker">Pattern · 逻辑重排视图</div>
     <h1>逻辑魔方<span class="h1-en">LogicalRubikCube</span></h1>
     <p class="doc-lede">
-      把同一批 rank 按不同并行轴「换一种堆法」的 3D 重排视图：五种形态共享一套布局规则，
-      切形态即换投影轴并以飞行动画重排，用<b>形状</b>回答「谁和谁一组」「这批异常属于哪一维」。
+      把同一批 rank 按不同并行轴「换一种堆法」的 3D 重排视图：四个问题导向的形态 + 一个基准投影，
+      共享一套布局规则，切形态即换投影轴并以飞行动画重排，用<b>形状</b>回答「谁和谁一组」「这批异常属于哪一维」。
     </p>
     <div class="doc-meta">
       <span class="stat-chip"><span class="k">ID</span><span class="v">rubik-cube-logical</span></span>
       <span class="stat-chip"><span class="k">类型</span><span class="v">renderer</span></span>
-      <span class="stat-chip"><span class="k">默认预设</span><span class="v">TP8 · PP5 · DP100 · EP2 = 4000 rank</span></span>
+      <span class="stat-chip"><span class="k">落地配置</span><span class="v">TP2 · PP4 · DP16 · EP8 = 128 rank</span></span>
+      <span class="stat-chip"><span class="k">落地形态</span><span class="v">PP流水</span></span>
       <span class="stat-chip"><span class="k">设计系统</span><span class="v">PTO Design System</span></span>
       <span class="stat-chip"><span class="k">主题</span><span class="v">浅色默认 · 明暗联动</span></span>
     </div>
@@ -368,6 +369,12 @@ footer {
         逻辑魔方把维度关系变成空间形状：<b>异常若沿某一维成组，切到对应形态就 snap 成一整块</b>
         （一面墙 / 一块板 / 一整段），根因类别当场可见。
       </p>
+      <p>
+        形态一共五种，但分工不对称：<b>PP流水 / TP切片 / EP聚簇 / DP平铺 四个各冲着一个具体问题去</b>
+        （慢段 · 同槽位坏件 · 桶故障 · 慢副本），<b>「标准」不是第五种形态，是那四种的基准投影</b>——
+        它自己不回答任何问题，留着是为了当对照系、当密排 2D 平面的归属地、当整网层联动的入口（见 3.2）。
+        按钮因此按 <span class="mono">PP · TP · EP · DP · 标准</span> 排，落地在第一个。
+      </p>
 
       <figure class="fig">
         <div class="fig-mat">
@@ -375,7 +382,7 @@ footer {
             <div class="ph">正在装载可交互示例…</div>
           </div>
         </div>
-        <figcaption><span class="cap-n">图 1.1</span>标准形态 · 盘古 Pro MoE 真实训练策略 TP8×PP5×DP100 = 4000 rank（EP2 折入 DP 轴）。可拖拽旋转、点选任意一张卡。</figcaption>
+        <figcaption><span class="cap-n">图 1.1</span>落地形态 PP流水 · 落地配置 128 卡（TP2 × PP4 × DP16 = 128 rank，EP8 折入 DP 轴）。空手拖 = 转 · Ctrl/⌘ 拖 = 平移 · 滚轮 = 缩放 · 点一张卡出详情。</figcaption>
       </figure>
 
       <h3>四个维度分别是什么</h3>
@@ -420,8 +427,8 @@ footer {
                 <rect class="card" x="134" y="80" width="26" height="20" rx="2"/>
                 <rect class="card" x="176" y="80" width="26" height="20" rx="2"/>
                 <path class="lead" d="M63 44 L63 30 L110 30"/>
-                <rect class="label-box" x="110" y="20" width="96" height="16" rx="7"/>
-                <text class="m" x="116" y="31">rank · TP1 PP1 DP0</text>
+                <rect class="label-box" x="110" y="19" width="112" height="18" rx="8"/>
+                <text class="m" x="118" y="32">rank · TP1 PP1 DP0</text>
                 <text class="m" x="-40" y="16">PP ↓</text>
                 <text class="m" x="0" y="126">TP →</text>
               </g>
@@ -517,8 +524,10 @@ footer {
       <table>
         <thead><tr><th class="nw">输入</th><th class="nw">必需</th><th>说明</th></tr></thead>
         <tbody>
-          <tr><td class="mono">tp / pp / dp / ep</td><td>必需</td><td>并行度。校验：四数 ≥ 1、<code>ep</code> 整除 <code>dp</code>、<code>tp×pp×dp</code> ≤ 65536</td></tr>
-          <tr><td class="mono">layers / experts</td><td>可选</td><td>模型层数（默认 48）与专家总数（默认 64），决定 PP 段的层标尺与桶内专家号</td></tr>
+          <tr><td class="mono">tp / pp / dp / ep</td><td>必需</td><td>并行度。校验：四数 ≥ 1、<code>ep</code> 整除 <code>dp</code>、<code>tp×pp×dp</code> ≤ 65536。不传则用落地档 <span class="mono">2·4·16·8</span></td></tr>
+          <tr><td class="mono">mode</td><td>可选</td><td>初始形态，不传落地 <b>PP流水</b>（<code>4</code>）</td></tr>
+          <tr><td class="mono">labelPx</td><td>可选</td><td>3D 标注字号，<b>全局唯一入口</b>（默认 16px，范围 9–28，越界回落 16）；运行时走 <code>setLabelPx()</code></td></tr>
+          <tr><td class="mono">layers / experts</td><td>可选</td><td>模型层数（默认 48）与专家总数（默认 64），决定 PP 段的层标尺（<span class="mono">PP0 · L0-9</span>）与桶内专家号</td></tr>
           <tr><td class="mono">hotBuckets</td><td>可选</td><td>热点桶号，用暖色标出</td></tr>
           <tr><td class="mono">placement</td><td>可选</td><td>物理落位 <code>{cardsPerHost, hostsPerPod}</code> 或 <code>slots</code>；默认 8 卡/机 · 32 机/Pod、rank 连号装机</td></tr>
           <tr><td class="mono">onSelect / onSelectEdge</td><td>可选</td><td>选中卡 / 选中一条通信边的回调，宿主据此联动自己的视图</td></tr>
@@ -526,8 +535,10 @@ footer {
       </table>
 
       <div class="note is-warn">
-        <b>规模适配。</b>布局规则已在 1 卡至 8192 卡（含 <code>tp=1</code> / <code>tp=32</code> / <code>pp=60</code> 等退化与极端形状）× 5 形态上逐对包围盒验证：零重叠。
-        超过 65536 rank 会拒绝应用并报错——不是渲染不动，而是那个规模下「逐卡可读」这个前提本身不成立，应先在上层做聚合。
+        <b>落地给多少卡？给 128，不给真实体量。</b>布局规则已在 1 卡至 8192 卡（含 <code>tp=1</code> / <code>tp=32</code> / <code>pp=60</code> 等退化与极端形状）× 5 形态上逐对包围盒验证：零重叠，
+        所以「跑不跑得动」从来不是问题；<b>问题是读不读得出</b>——4000 卡时一张卡只剩两三个像素，四种形态的差别（墙 / 段 / 桶 / 板）糊成一片色块，第一眼读到的是一团颜色而不是一种堆法。
+        落地 <span class="mono">2·4·16·8 = 128 卡</span>：每张卡看得清、每一段数得出，形态在说什么当场成立；真实体量（盘古 Pro MoE <span class="mono">8·5·100·2 = 4000</span>）在「并行」那排一键切过去，看的是同一套规则在大规格下的样子。
+        超过 65536 rank 会拒绝应用并报错——那个规模下「逐卡可读」这个前提本身不成立，应先在上层做聚合。
       </div>
     </section>
 
@@ -550,17 +561,22 @@ footer {
             <text class="hd" x="20" y="30">逻辑魔方</text>
             <g transform="translate(84,14)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">1</text></g>
 
-            <!-- ② 顶栏右侧的配置 -->
-            <g transform="translate(452,10)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">2</text></g>
-            <g transform="translate(480,8)">
-              <rect class="chip" x="0" y="0" width="146" height="24" rx="12"/>
-              <text class="m" x="10" y="16">标准 DP EP TP PP</text>
-              <rect class="chip" x="154" y="0" width="104" height="24" rx="12"/>
-              <text class="m" x="164" y="16">3D 顶 前 侧</text>
-              <rect class="chip" x="266" y="0" width="28" height="24" rx="12"/>
-              <g fill="var(--foreground-muted)"><circle cx="274" cy="12" r="1.6"/><circle cx="280" cy="12" r="1.6"/><circle cx="286" cy="12" r="1.6"/></g>
-              <rect class="chip" x="302" y="0" width="28" height="24" rx="12"/>
-              <path d="M312 6 L322 12 L312 18 z" fill="var(--foreground-muted)"/>
+            <!-- ② 顶栏右侧的配置：形态 / 视角 / 剖面 三组同一排 -->
+            <g transform="translate(300,10)"><circle class="badge" cx="9" cy="9" r="9"/><text class="bn" x="6" y="12">2</text></g>
+            <g transform="translate(328,8)">
+              <rect class="chip" x="0" y="0" width="140" height="24" rx="12"/>
+              <text class="m" x="10" y="16">PP TP EP DP 标准</text>
+              <rect class="chip" x="148" y="0" width="128" height="24" rx="12"/>
+              <text class="m" x="158" y="16">3D 前 顶</text>
+              <rect class="chip" x="284" y="0" width="132" height="24" rx="12"/>
+              <text class="m" x="292" y="16">剖面</text>
+              <rect x="322" y="10" width="56" height="4" rx="2" fill="var(--border-strong)"/>
+              <circle cx="336" cy="12" r="5" fill="var(--primary)"/>
+              <text class="m" x="384" y="16">PP=0</text>
+              <rect class="chip" x="424" y="0" width="28" height="24" rx="12"/>
+              <g fill="var(--foreground-muted)"><circle cx="432" cy="12" r="1.6"/><circle cx="438" cy="12" r="1.6"/><circle cx="444" cy="12" r="1.6"/></g>
+              <rect class="chip" x="460" y="0" width="28" height="24" rx="12"/>
+              <path d="M470 6 L480 12 L470 18 z" fill="var(--foreground-muted)"/>
             </g>
 
             <!-- 画布：卡阵 + 网格（格边界）+ 一条走线 + 短标记 -->
@@ -575,7 +591,6 @@ footer {
               <path class="casing" d="M30 22 H330"/><path class="wire" d="M30 22 H330"/>
               <g fill="color-mix(in srgb, var(--dim-tp) 42%, #000)"><circle cx="110" cy="22" r="3"/><circle cx="210" cy="22" r="3"/><circle cx="300" cy="22" r="3"/></g>
               <rect class="label-box" x="10" y="-22" width="40" height="16" rx="7"/><text class="m" x="17" y="-10">TP0</text>
-              <rect class="label-box" x="366" y="98" width="56" height="16" rx="7"/><text class="m" x="372" y="110">S2·L25-36</text>
             </g>
 
             <!-- ③ 详情卡（inspector） -->
@@ -586,7 +601,7 @@ footer {
               <text x="14" y="60">这张卡在四个维度上的身份</text>
               <path class="grid" d="M14 72 H176 M14 100 H176 M14 128 H176 M14 156 H176"/>
               <text class="m" x="14" y="90">TP 槽位 · 1 / 2</text>
-              <text class="m" x="14" y="118">PP 段 · S2（L25-36）</text>
+              <text class="m" x="14" y="118">PP 段 · PP2（L20-29）</text>
               <text class="m" x="14" y="146">DP 副本 · 4</text>
               <text class="m" x="14" y="174">EP 桶 3 · A2A 域 0</text>
               <text class="m" x="14" y="190">此刻 TP 主导 · Ring RS 段</text>
@@ -620,75 +635,247 @@ footer {
             <g transform="translate(20,404)">
               <path class="grid" d="M0 0 H792"/>
               <g transform="translate(0,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">1</text><text x="22" y="12">名称（裸文字，不套卡片）</text></g>
-              <g transform="translate(180,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">2</text><text x="22" y="12">形态 / 视角 / 更多 / 播放</text></g>
+              <g transform="translate(180,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">2</text><text x="22" y="12">形态 / 视角 / 剖面 / 播放 / 更多</text></g>
               <g transform="translate(370,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">3</text><text x="22" y="12">详情卡（inspector）</text></g>
               <g transform="translate(540,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">4</text><text x="22" y="12">图例（只列颜色与名字）</text></g>
               <g transform="translate(710,12)"><circle class="badge" cx="8" cy="8" r="8"/><text class="bn" x="5" y="11">5</text><text x="22" y="12">阶段轨道</text></g>
             </g>
           </svg>
         </div></div>
-        <figcaption><span class="cap-n">图 3.1</span>页面大区块划分：顶栏只留高频的形态 / 视角，其余控件收进「更多」抽屉。</figcaption>
+        <figcaption><span class="cap-n">图 3.1</span>页面大区块划分：顶栏常驻「形态 → 视角 → 剖面」三组，其余控件收进「更多」抽屉。</figcaption>
       </figure>
 
       <table>
         <thead><tr><th class="nw">区块</th><th class="nw">位置</th><th>放什么 / 不放什么</th></tr></thead>
         <tbody>
           <tr><td>① 名称</td><td>顶栏左</td><td>裸文字浮在画面上，<b>不套卡片</b>——叠两层底会让底色发虚</td></tr>
-          <tr><td>② 配置</td><td>顶栏右</td><td>常驻只有「形态」「视角」两组 segmented-control（选中态 <code>--primary</code>）+ 播放 + 「更多」抽屉 + 宿主控件插槽。着色 / 注入 / 连线 / 时间 / 并行一律进抽屉</td></tr>
-          <tr><td>③ 详情卡</td><td>画布左侧</td><td>选中一张卡后出现，结构见 3.7；右上角 × 取消选中</td></tr>
+          <tr><td>② 配置</td><td>顶栏右</td><td>常驻三组 segmented-control（选中态 <code>--primary</code>）：<b>形态 → 视角 → 剖面</b>，同一排、不另起一行 + 播放 + 「更多」抽屉 + 宿主控件插槽。着色 / 注入 / 连线 / 时间 / 并行一律进抽屉</td></tr>
+          <tr><td>③ 详情卡</td><td>画布左侧</td><td>选中一张卡后出现，结构见 3.8；右上角 × 取消选中</td></tr>
           <tr><td>④ 图例</td><td>画布右下</td><td>分「着色 / 连线」两段，<b>一行一条，只有色块 + 名字</b>；读法与为什么不写在这里</td></tr>
           <tr><td>⑤ 阶段轨道</td><td>画布底部</td><td>悬停弹出，可拖拽定位；播放/暂停常驻顶栏</td></tr>
-          <tr><td>问号气泡</td><td>各控件行首</td><td>承载「这排是什么、和别的排什么关系」，随当前形态 / 注入 / 选中态更新</td></tr>
+          <tr><td>问号气泡</td><td>各控件行首</td><td>写成一小段文档：kicker → 一句定义 → 选项清单 → 注意事项 → 一块带边框的「此刻」。随当前形态 / 视角 / 注入 / 选中态更新</td></tr>
         </tbody>
       </table>
+      <div class="note">
+        <b>剖面为什么排在「视角」后面而不是另起一行。</b>视角答「从哪个方向看」，剖面答「这一屏被折掉的那一维翻到第几层」——
+        后者随视角而变，是视角的<b>下游</b>：紧挨着才读得出这层关系。这一排只放最短的形态：开关 + 滑杆 + 一句读数（<span class="mono">PP=0</span>），
+        「折了几张、正翻哪一层」收进它自己的问号气泡，顶栏因此不长个子（仍是一行）。3D 下没有折叠维，整组连同问号一起收起——留一个翻不动的滑杆比不留更费解。
+      </div>
 
-      <h3>3.2 五种形态</h3>
+      <h3>3.2 五种形态：四个问题 + 一个基准</h3>
       <p>
         形态只改变卡摆在哪（谁挨着谁），<b>不改变卡本身、也不改变颜色</b>。
         哪一维被堆成一整块，那一维的问题就现出形状。
+      </p>
+      <p>
+        <b>「标准」不是第五种形态。</b>另外四个各冲着一个问题去，它没有——留着它是因为三件具体的事，文案就直说这三件：
+      </p>
+      <ol>
+        <li><b>对照系</b>——三根轴地位相同、都是常规密排，「换形态只是换投影轴」才有个基准；</li>
+        <li><b>三个密排 2D 平面的归属地</b>——别的形态把自己那根 <code>emph</code> 轴折进视线时，那一屏就退回成标准的同名平面（TP切片 / PP流水 的侧视因此收编掉，不重复给）；</li>
+        <li><b>整网层联动的入口</b>——<code>selectLayer()</code> 的紫色切片只在这个坐标系里成立，所以它会<b>主动切到标准</b>（与 <code>selectBucket()</code> 切到 EP聚簇 一致）。原先只记状态不切形态：在别的形态里调用它，画面静默地什么都不发生。</li>
+      </ol>
+      <p>
+        按钮的<b>显示顺序 = PP · TP · EP · DP · 标准</b>：前四个按并行维排（与设计系统 sidecar 的并行切换同一顺序，读者的肌肉记忆一致），
+        标准排到末位——「先挑一个问题，实在要看全貌再回到标准」这层关系不用读文案就看得出来。
+        顺序用 CSS <code>order</code> 调，<b>DOM 顺序与形态序号保持一致</b>，URL 参数 / 键盘序 / 测试都不受影响。
       </p>
 
       <figure class="fig">
         <div class="fig-mat"><div class="board is-live is-tall" data-demo="modes">
           <div class="ph">正在装载可交互示例…</div>
         </div></div>
-        <figcaption><span class="cap-n">图 3.2</span>Pattern 自带工具栏的完整形态（128 卡小规格 TP2 · PP4 · DP16 · EP8）：切「形态 / 视角」，其余控件在「更多」抽屉里；切到正交视角会出现折叠粒度贴士，点一张卡出详情。</figcaption>
+        <figcaption><span class="cap-n">图 3.2</span>Pattern 自带工具栏的完整形态（落地档 TP2 · PP4 · DP16 · EP8 = 128 卡，落地形态 PP流水）：形态按 PP·TP·EP·DP·标准 排，切到正交视角会多出「剖面」一组，点一张卡出详情。</figcaption>
       </figure>
 
       <table>
         <thead><tr><th class="nw">形态</th><th class="nw">怎么摆</th><th>回答什么问题</th><th class="nw">异常长什么样</th></tr></thead>
         <tbody>
-          <tr><td class="nw"><b>标准</b><br><span class="mono">std</span></td><td>X=TP · Y=PP · Z=DP</td><td>一张卡的三维身份、整体规模；位置即多维坐标</td><td>各维都看得见，但都不成块</td></tr>
-          <tr><td class="nw"><b>DP平铺</b><br><span class="mono">dpt</span></td><td>每副本一块板，板排成宫格（板内 TP 折成 列×排）</td><td>哪个副本慢 / 掉队（副本间只在步末做梯度 AllReduce）</td><td>宫格里干净的<b>一块板</b>全红</td></tr>
+          <tr><td class="nw"><b>PP流水</b><br><span class="mono">ppf</span> · 落地</td><td><b>换轴</b>：X=PP 段 · Y=TP（段间 <code>emph</code> 步距拉开）</td><td>哪一段慢 / 流水气泡；左→右就是前向数据流</td><td><b>一整段</b>偏暗且下游跟着暗；空档 = bubble</td></tr>
+          <tr><td class="nw"><b>TP切片</b><br><span class="mono">tps</span></td><td>坐标系同标准，只把 X=TP 拉到 <code>emph</code> 档：<b>一面墙 = 全网同槽位的卡</b></td><td>同槽位系统性故障（整批同号卡坏件）</td><td><b>一面墙</b>集体异常（标准里只是周期细条纹）</td></tr>
           <tr><td class="nw"><b>EP聚簇</b><br><span class="mono">ep</span></td><td>每个专家桶一面墙，A2A 域横穿各墙</td><td>热点桶 / 桶故障 / 域热点（桶 ↔ 卡非 1:1）</td><td><b>一整面墙</b>同红；域热点 = 横穿各墙的一排过热</td></tr>
-          <tr><td class="nw"><b>TP切片</b><br><span class="mono">tps</span></td><td>每个 TP 槽位一片权重墙，墙间拉开</td><td>同槽位系统性故障（整批同号卡坏件）</td><td><b>一面墙</b>集体异常</td></tr>
-          <tr><td class="nw"><b>PP流水</b><br><span class="mono">ppf</span></td><td>PP 段横向展开，左 S0 → 右 S<sub>n-1</sub></td><td>慢段 / 流水气泡（慢段拖住下游）</td><td><b>一整段</b>全红，右侧板随之变暗；空档 = bubble</td></tr>
+          <tr><td class="nw"><b>DP平铺</b><br><span class="mono">dpt</span></td><td>每副本一块板，板排成宫格（板内 TP 折成 列×排）</td><td>哪个副本慢 / 掉队（副本间只在步末做梯度 AllReduce）</td><td>宫格里干净的<b>一块板</b>全红</td></tr>
+          <tr><td class="nw"><b>标准</b><br><span class="mono">std</span> · 基准</td><td>X=TP · Y=PP · Z=DP，三根轴地位相同、常规密排</td><td><b>不回答问题</b>：对照系 / 密排 2D 平面的归属地 / 整网层联动入口</td><td>各维都看得见，但都不成块</td></tr>
         </tbody>
       </table>
 
-      <h3>3.3 视角与剖面</h3>
       <p>
-        轴测 3D 可拖拽旋转；顶 / 前 / 侧是正交锁轴的 2D 投影，会把与视线平行的维<b>折叠</b>。
-        视角按「每个 2D 平面只属于一个形态」收编：与标准形态坐标系重合的形态不再重复给出 2D，
-        并在视角行说明原因。<b>任何正交视角下拖动即从当前朝向无缝转回 3D。</b>
+        <b>五种形态各有一套 canonical 分段，一律用同一套语汇呈现</b>——「这堆卡是按什么分的」不该靠读者去猜，
+        也不该每个形态换一种说法（分段的画法见 3.5）：
       </p>
       <table>
-        <thead><tr><th class="nw">形态</th><th class="nw">轴测 3D</th><th class="nw">顶</th><th class="nw">前</th><th class="nw">侧</th></tr></thead>
+        <thead><tr><th class="nw">形态</th><th class="nw">canonical 分段</th><th class="nw">切的方向</th><th>块内是什么（示例按 4000 卡）</th></tr></thead>
         <tbody>
-          <tr><td>标准</td><td>✓</td><td>DP×TP</td><td>TP×PP</td><td>DP×PP</td></tr>
-          <tr><td>DP平铺</td><td>✓</td><td>副本网格</td><td>列×PP</td><td>行×PP</td></tr>
-          <tr><td>EP聚簇</td><td>✓</td><td>桶×域</td><td>桶×PP</td><td>域×PP</td></tr>
-          <tr><td>TP切片</td><td>✓</td><td colspan="3" class="sub">2D 与标准重合 → 收编（价值在 3D 的「墙拉开」读法）</td></tr>
-          <tr><td>PP流水</td><td>✓</td><td colspan="3" class="sub">2D 与标准重合 → 收编（价值在 3D 的「段拉开」读法）</td></tr>
+          <tr><td>PP流水</td><td>每流水段一块</td><td>X（<code>emph</code> 步距）</td><td class="mono">TP ×8 · DP ×100 = 800 卡</td></tr>
+          <tr><td>TP切片</td><td>每 TP 槽位一片墙</td><td>X（<code>emph</code> 步距）</td><td class="mono">PP ×5 · DP ×100 = 500 卡</td></tr>
+          <tr><td>EP聚簇</td><td>每专家桶一面墙</td><td>X（块内 TP 一字排开）</td><td class="mono">域 ×50 · PP ×5 · TP ×8 = 2000 卡</td></tr>
+          <tr><td>DP平铺</td><td>每副本一块板</td><td>X·Z 二维宫格</td><td class="mono">TP ×8 · PP ×5 = 40 卡</td></tr>
+          <tr><td>标准</td><td>PP 层带（模型深度）</td><td>Y</td><td class="mono">TP ×8 · DP ×100 = 800 卡</td></tr>
+        </tbody>
+      </table>
+
+      <h3>3.3 视角、主屏与剖面</h3>
+      <p>
+        轴测 3D 可拖拽旋转；顶 / 前 / 侧是正交锁轴的 2D 投影，会把与视线平行的维<b>折叠</b>。
+        <b>任何正交视角下拖动即从当前朝向无缝转回 3D</b>（平移不算，见 3.7）。
+      </p>
+      <table>
+        <thead><tr><th class="nw">形态</th><th class="nw">3D</th><th class="nw">顶</th><th class="nw">前</th><th class="nw">侧</th></tr></thead>
+        <tbody>
+          <tr><td>PP流水</td><td>✓</td><td>DP-PP 面</td><td><b>PP-TP 面</b> ★</td><td class="sub">折掉 emph 轴 → 收编</td></tr>
+          <tr><td>TP切片</td><td>✓</td><td><b>DP-TP 面</b> ★</td><td>TP-PP 面</td><td class="sub">折掉 emph 轴 → 收编</td></tr>
+          <tr><td>EP聚簇</td><td>✓</td><td><b>桶-域 面</b> ★</td><td>桶-PP 面</td><td>域-PP 面</td></tr>
+          <tr><td>DP平铺</td><td>✓</td><td><b>副本网格</b> ★</td><td>列-PP 面</td><td>行-PP 面</td></tr>
+          <tr><td>标准</td><td><b>✓</b> ★</td><td>DP-TP 面</td><td>TP-PP 面</td><td>DP-PP 面</td></tr>
         </tbody>
       </table>
       <p class="sub">
-        折叠必须<b>如实标注</b>：每个正交视角给出粒度贴士「每格重叠卡数 = 各折叠维成员数之积」
-        （例：EP聚簇侧视 = 专家桶 2 × TP 8 = 16 张卡重叠）。
-        <b>剖面</b>按最外层折叠维逐层翻，只看某一层、其余压暗。
+        ★ = 该形态的<b>主屏</b>（<code>bestView</code>，见下）。表头的 <span class="mono">A-B 面</span> 读作<b>平面</b>：
+        破折号两侧是这一屏留下的两根屏幕轴，没写出来的第三根被折进视线。
+        <b>不写作 <span class="mono">A×B</span></b>——本 Pattern 里 × 是真的乘法（<span class="mono">rank = TP×PP×DP</span>），写在视角上会被读成数量相乘。
       </p>
 
-      <h3>3.4 时间轴 = 一个训练 step 的 4 个通信阶段</h3>
+      <div class="note">
+        <b>视角收编的判据是逐屏的，不是逐形态的。</b>一个形态之所以不同于标准，全在它那根被拉开的 <code>emph</code> 轴（TP切片的墙、PP流水的段，步距 4×）：
+        这根轴<b>留在屏幕上</b>的两屏（顶 / 前），墙与墙之间是看得见的空档，「这是第几片 / 第几段」在这里才数得清 → 保留；
+        这根轴<b>被折进视线</b>的那一屏（两者都是侧视），空档随之消失，剩下的步距签名与标准的同名平面逐位相同 → 那一屏就是标准，不重复给出。
+        早先「与标准共享三轴 ⇒ 三平面全重合」是把这条判据用到了整个形态上，<b>收多了</b>——PP流水 甚至换了轴分配（X=PP · Y=TP），顶 / 前两屏是标准根本没有的平面。
+        已发出的 <span class="mono">?view=side</span> 链接不会报错：非法视角回落到 3D。
+      </div>
+
+      <p>
+        <b>每个形态有一个主屏「最该看的一屏」</b>——由它要回答的问题决定，不是由好不好看决定；主屏在视角按钮里排到 3D 后面的第一个（<b>位置本身就是推荐</b>，DOM 顺序仍与视角序号一致）。
+      </p>
+      <table>
+        <thead><tr><th class="nw">形态</th><th class="nw">主屏</th><th>为什么</th></tr></thead>
+        <tbody>
+          <tr><td>PP流水</td><td>前 PP-TP 面</td><td>「哪一段慢」里段身份就是答案、DP 是噪声 → 段一字排开，慢段 = 整列偏暗</td></tr>
+          <tr><td>TP切片</td><td>顶 DP-TP 面</td><td>同槽位系统性故障要在<b>全集群范围</b>内看，DP 轴必须在场——一整列红 = 那个槽位整批坏</td></tr>
+          <tr><td>EP聚簇</td><td>顶 桶-域 面</td><td>桶故障（整墙同色）与域热点（横穿一排）是两个正交方向，只有这一屏同屏放得下</td></tr>
+          <tr><td>DP平铺</td><td>顶 副本网格</td><td>找慢副本要扫一遍整个宫格，一屏看全所有板</td></tr>
+          <tr><td>标准</td><td>3D</td><td>三根轴地位相同、位置即坐标——3D 才是它本身</td></tr>
+        </tbody>
+      </table>
+      <p class="sub">
+        注意<b>主屏 ≠ 规格牌摆在哪</b>：规格牌是图例，去它读得清的那一屏（TP切片的主屏顶视含 DP 轴、整幅被拉成细长条，牌钉宽后字会小到读不出）。两件事分开定，各自服从各自的约束。
+        另外<b>顶视把模型的长边横放</b>（Z 跨度比 X 长就转 90°）：画布是横的，不转的话整幅缩成一根细长条、两边全是空白——转过来「一整行红 = 那个槽位整批坏」才真的看得见。
+      </p>
+
+      <h3>3.4 剖面：默认开在第 0 层</h3>
+      <p>
+        剖面只在正交 2D 出现，按最外层折叠维逐层翻。三条约束是一体的：
+      </p>
+      <ul>
+        <li><b>默认开、开在第 0 层</b>——默认关等于让人第一眼就吃一个折叠（每格 N 张卡叠着），还得先发现有这么个开关。<b>把需要解释的那个状态放在默认，是反的。</b>现在 2D 一进来每格就只有一张卡、所见即所得，关掉才是「把 N 张叠在一起看」。</li>
+        <li><b>滑杆任何时候都不置灰</b>——置灰读作「这功能不可用」，而不是「先按一下旁边那个按钮」；拖滑杆本身就是「我要逐层看」的意思，所以拖动即自动开。</li>
+        <li><b>剖面外的卡不画</b>（不是缩小压暗）——2D 里被折的那一维正对着视线，缩小的那一粒与剖面内那张卡在屏幕上完全重合，读出来就是每张卡正中多了个灰方块。图例里的「剖面外」一条随之撤掉：画面上已经没有这个颜色可对。<b>聚焦压暗不这么处理</b>——那些卡各占各的格子，缩小是读得出的对比。</li>
+      </ul>
+      <p class="sub">
+        「这一格叠了几张、正翻到第几层」由剖面那组的读数（<span class="mono">PP=0</span>）与它的问号气泡说，<b>画面上不再常驻粒度贴士</b>——这是本 Pattern 最后一处「解释常驻画面」的例外，已撤。
+      </p>
+
+      <h3>3.5 标注：落位由「标的是哪根轴」推导</h3>
+      <p>
+        一个标记标的永远是「某根世界轴上的某个位置」，那么它摆哪儿就不该由人逐处去猜。
+        <b>2D 的落位规律：下方 = 横轴 · 左侧 = 纵轴 · 被折进视线 = 这一屏不出 · 场内不放标记</b>（与二维图表一致）。
+        这么定死之后：① 标签之间永远不会互相压（各自占着自己那条边上的一个位置）；② 换视角、顶视转 90°、换配置，标记都自动跟到该去的边上，不需要逐处再调。
+      </p>
+
+      <figure class="fig">
+        <div class="fig-mat"><div class="board">
+          <svg class="sv" viewBox="0 0 832 436" role="img" aria-label="2D 标注的落位规律与分段分割线">
+            <rect x="0" y="0" width="832" height="436" fill="var(--surface-1)"/>
+            <text class="hd" x="24" y="30">正交 2D：下方 = 横轴 · 左侧 = 纵轴 · 场内不放标记</text>
+
+            <g transform="translate(150,60)">
+              <!-- 细分格线：虚线 · 细 · 中性淡 -->
+              <g class="grid" stroke-dasharray="3 3">
+                <path d="M0 0 H540 M0 44 H540 M0 88 H540 M0 132 H540 M0 176 H540 M0 220 H540"/>
+                <path d="M0 0 V220 M60 0 V220 M120 0 V220 M180 0 V220 M240 0 V220 M300 0 V220 M360 0 V220 M420 0 V220 M480 0 V220 M540 0 V220"/>
+              </g>
+              <!-- 外框 -->
+              <rect class="frame" x="0" y="0" width="540" height="220"/>
+              <!-- 卡 -->
+              <g>
+                <rect class="card" x="14" y="10" width="32" height="24" rx="3"/><rect class="card" x="74" y="10" width="32" height="24" rx="3"/><rect class="card" x="134" y="10" width="32" height="24" rx="3"/><rect class="card-w" x="194" y="10" width="32" height="24" rx="3"/><rect class="card" x="254" y="10" width="32" height="24" rx="3"/><rect class="card" x="314" y="10" width="32" height="24" rx="3"/><rect class="card" x="374" y="10" width="32" height="24" rx="3"/><rect class="card" x="434" y="10" width="32" height="24" rx="3"/><rect class="card" x="494" y="10" width="32" height="24" rx="3"/>
+                <rect class="card" x="14" y="54" width="32" height="24" rx="3"/><rect class="card" x="74" y="54" width="32" height="24" rx="3"/><rect class="card" x="134" y="54" width="32" height="24" rx="3"/><rect class="card" x="194" y="54" width="32" height="24" rx="3"/><rect class="card" x="254" y="54" width="32" height="24" rx="3"/><rect class="card-w" x="314" y="54" width="32" height="24" rx="3"/><rect class="card" x="374" y="54" width="32" height="24" rx="3"/><rect class="card" x="434" y="54" width="32" height="24" rx="3"/><rect class="card" x="494" y="54" width="32" height="24" rx="3"/>
+                <rect class="card" x="14" y="98" width="32" height="24" rx="3"/><rect class="card" x="74" y="98" width="32" height="24" rx="3"/><rect class="card" x="134" y="98" width="32" height="24" rx="3"/><rect class="card" x="194" y="98" width="32" height="24" rx="3"/><rect class="card" x="254" y="98" width="32" height="24" rx="3"/><rect class="card" x="314" y="98" width="32" height="24" rx="3"/><rect class="card" x="374" y="98" width="32" height="24" rx="3"/><rect class="card" x="434" y="98" width="32" height="24" rx="3"/><rect class="card" x="494" y="98" width="32" height="24" rx="3"/>
+                <rect class="card" x="14" y="142" width="32" height="24" rx="3"/><rect class="card" x="74" y="142" width="32" height="24" rx="3"/><rect class="card" x="134" y="142" width="32" height="24" rx="3"/><rect class="card" x="194" y="142" width="32" height="24" rx="3"/><rect class="card" x="254" y="142" width="32" height="24" rx="3"/><rect class="card" x="314" y="142" width="32" height="24" rx="3"/><rect class="card" x="374" y="142" width="32" height="24" rx="3"/><rect class="card" x="434" y="142" width="32" height="24" rx="3"/><rect class="card" x="494" y="142" width="32" height="24" rx="3"/>
+                <rect class="card" x="14" y="186" width="32" height="24" rx="3"/><rect class="card" x="74" y="186" width="32" height="24" rx="3"/><rect class="card" x="134" y="186" width="32" height="24" rx="3"/><rect class="card" x="194" y="186" width="32" height="24" rx="3"/><rect class="card" x="254" y="186" width="32" height="24" rx="3"/><rect class="card" x="314" y="186" width="32" height="24" rx="3"/><rect class="card" x="374" y="186" width="32" height="24" rx="3"/><rect class="card" x="434" y="186" width="32" height="24" rx="3"/><rect class="card" x="494" y="186" width="32" height="24" rx="3"/>
+              </g>
+              <!-- 分段分割线：实线 · 签名色 · 只画在块与块之间（3 块出 2 条） -->
+              <path d="M180 -6 V226 M360 -6 V226" stroke="var(--warning)" stroke-width="1.6" fill="none"/>
+              <!-- 下方 = 横轴：刻度 + 段牌，一条边只排一行 -->
+              <g transform="translate(0,238)">
+                <g fill="color-mix(in srgb, var(--warning) 12%, var(--background))" stroke="color-mix(in srgb, var(--warning) 34%, transparent)">
+                  <rect x="56" y="0" width="72" height="18" rx="8"/><rect x="236" y="0" width="80" height="18" rx="8"/><rect x="416" y="0" width="80" height="18" rx="8"/>
+                </g>
+                <text class="m" x="63" y="13">PP0 · L0-9</text>
+                <text class="m" x="243" y="13">PP1 · L10-19</text>
+                <text class="m" x="423" y="13">PP2 · L20-29</text>
+                <text class="m" x="16" y="38">TP0</text><text class="m" x="136" y="38">TP2</text><text class="m" x="256" y="38">TP4</text><text class="m" x="376" y="38">TP6</text><text class="m" x="496" y="38">TP8</text>
+              </g>
+              <!-- 左侧 = 纵轴 -->
+              <g>
+                <text class="m" x="-46" y="26">DP0</text><text class="m" x="-46" y="70">DP1</text><text class="m" x="-46" y="114">DP2</text><text class="m" x="-46" y="158">DP3</text><text class="m" x="-46" y="202">DP4</text>
+              </g>
+              <!-- 折进视线的轴：这一屏不出 -->
+              <g transform="translate(556,96)">
+                <text class="m" x="0" y="0">被折进视线的轴</text>
+                <text class="m" x="0" y="16">这一屏不出标记</text>
+                <text class="m" x="0" y="32">（要逐层看 → 剖面）</text>
+              </g>
+            </g>
+            <text class="m" x="150" y="368">分段边界 = 实线 · 签名色 · 只画在块与块之间（n 块出 n−1 条），最外沿交给外框</text>
+            <text class="m" x="150" y="388">细分格线 = 虚线 · 细 · 中性淡；两级一分开，格子退成背景，「这是第几段」由实线直接说</text>
+            <text class="m" x="150" y="408">牌上只留身份 + 最要紧的限定（哪一段 · 管哪几层），规格「里面有多少张卡」收进悬停</text>
+          </svg>
+        </div></div>
+        <figcaption><span class="cap-n">图 3.3</span>2D 标注的落位规律与两级线型。层号从 0 起，画面一律用维度名（<span class="mono">PP0</span>），不掺第二套叫法。</figcaption>
+      </figure>
+
+      <table>
+        <thead><tr><th class="nw">规则</th><th>怎么做</th><th>不这样会怎样</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="nw">3D 的刻度也贴轴</td>
+            <td>三根轴各认一条棱（X 地面前沿 · Z 地面右沿 · Y 左后竖棱），整排出刻度，疏密与 2D 共用一套算法（间距按<b>真投影量</b>，不是世界距离除以每像素世界量）</td>
+            <td>那边整排、这边只剩一句「墙内竖=PP×5」的散文，读者得换一套读法；块标浮在半空则转个角度就飘走</td>
+          </tr>
+          <tr>
+            <td class="nw">两种字牌，两套尺寸规则</td>
+            <td><b>贴边的</b>（轴刻度、分段牌）= 图表框架 → <b>固定屏幕尺寸</b>（<code>LABEL_PX</code>，默认 16px）；<b>贴几何体的</b>（<span class="mono">TP0</span> / <span class="mono">桶0</span> / <span class="mono">列0</span>）= 场景标注 → 世界尺寸固定 + 屏幕像素地板兜底</td>
+            <td>混成一种：要么 3D 里的注记不跟着结构走，要么轴刻度缩远了读不出</td>
+          </tr>
+          <tr>
+            <td class="nw">字号只有一个入口</td>
+            <td><code>mount({labelPx})</code> / <code>setLabelPx()</code> / <span class="mono">?label=</span>，9–28，越界回落 16</td>
+            <td>散落的字号常量会让「整体调大一点」变成逐处翻找</td>
+          </tr>
+          <tr>
+            <td class="nw">摆不下就少摆几枚</td>
+            <td>牌是固定屏幕尺寸 →「摆不摆得下」可算：量出占位除以相邻两项间距就是抽样步长；<b>逐屏各算各的</b>（同一批标记在横轴量宽、在纵轴量高），疏密交给相机<b>实时算</b>而不是建的时候定死</td>
+            <td>建时定死的步长偏大（明明放得下却少了几枚），缩放后更全不作数</td>
+          </tr>
+          <tr>
+            <td class="nw">一条边上只排一行</td>
+            <td>抽样已经保证摆得下，不再错行；3D 沿块步距自然排开已是一道斜梯，也不错行</td>
+            <td>抽样 + 错行两套办法叠上去，排成上上下下的锯齿</td>
+          </tr>
+          <tr>
+            <td class="nw">再补一遍跨轴检查</td>
+            <td>抽样只管一根轴自己，两根轴共用的那个角落它管不着 → 疏密算完做一次屏幕盒相交检查，冲突时<b>留段名、丢刻度</b>（刻度还能悬停问出来）</td>
+            <td>横轴末位与纵轴末位各自合规，投到屏幕上照样叠在一起</td>
+          </tr>
+          <tr>
+            <td class="nw">抽掉的块靠悬停问出来</td>
+            <td>每一段都有一个看不见的命中盒，<b>按分割线切满</b>（不是只裹住卡），悬停报出与规格牌一样的两行；命中优先级 <b>卡 &gt; 连线 &gt; 分段</b></td>
+            <td>抽样之后多数块没有牌，块却还在那儿；只裹卡的话块间空档悬停无反应</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.6 时间轴 = 一个训练 step 的 4 个通信阶段</h3>
       <p>时间轴按<b>阶段</b>读，而不是抽象的秒——每个阶段由哪根并行轴主导、走哪层总线、负载多高都不同。</p>
       <table>
         <thead><tr><th class="nw">阶段</th><th class="nw">主导维</th><th class="nw">集合原语</th><th>走哪层总线</th><th class="nw">负载</th></tr></thead>
@@ -701,7 +888,24 @@ footer {
       </table>
       <p class="sub">一个 step = 12s（每阶段 3s）。热力场随阶段变形：TP 组齐动 / PP 接力波沿流水级前进 / EP 浪涌点亮热点桶 / DP 全网梯度；选中卡的四维通信组里，<b>当前阶段主导的那一维加亮</b>，其余淡显。</p>
 
-      <h3>3.5 通信组与走线</h3>
+      <h3>3.7 画布交互与选中标记</h3>
+      <p><b>画布上的三件事互不串味</b>：</p>
+      <table>
+        <thead><tr><th class="nw">操作</th><th class="nw">动作</th><th>约定</th></tr></thead>
+        <tbody>
+          <tr><td class="nw">空手拖</td><td>转</td><td>任何正交视角一拖就从<b>当前朝向</b>无缝转回 3D 轴测</td></tr>
+          <tr><td class="nw">Ctrl / ⌘ + 拖<br>（中键同）</td><td>平移</td><td><b>平移不把正交视角踢回 3D</b>——在顶视里挪一下看别的区域是很自然的动作，跟着转成轴测会让人觉得「碰一下就散架」。按住 Ctrl 时光标先变 <span class="mono">grab</span>，不用先拖一下才发现有这个功能；拖拽模式在按下时就锁定，拖到一半按 Ctrl 不改变行为</td></tr>
+          <tr><td class="nw">滚轮</td><td>缩放</td><td>切形态 / 切视角会重新取景，平移量一并归零</td></tr>
+          <tr><td class="nw">悬停</td><td>问</td><td>卡 → 这张卡是谁；连线 → 这一段谁到谁、跨的是哪层；分段 → 与规格牌一样的两行。优先级 <b>卡 &gt; 连线 &gt; 分段</b></td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <b>选中标记 = 卡自己颜色做的「涟漪呼吸灯」，不是外框。</b>两圈线框从卡向外扩散并淡出、错相位循环，卡本身同时轻微呼吸。
+        用一只黑色笼子罩住选中卡的老做法有两个毛病：黑色不在这套色卡里（画面上突然多出一个非 token 色），而且笼子会盖住卡自己的着色——
+        而卡的颜色正是此刻要读的那条信息。
+      </div>
+
+      <h3>3.8 通信组与走线</h3>
 
       <figure class="fig">
         <div class="fig-mat"><div class="board is-live has-bar" data-demo="comm">
@@ -714,7 +918,7 @@ footer {
           </div>
           <div class="stage"><div class="ph">正在装载可交互示例…</div></div>
         </div></div>
-        <figcaption><span class="cap-n">图 3.3</span>选中一张卡 → 四维通信组同屏高亮；切阶段看主导维迁移，切算法看 Ring 与 Tree 的形状差别。</figcaption>
+        <figcaption><span class="cap-n">图 3.5</span>选中一张卡 → 四维通信组同屏高亮；切阶段看主导维迁移，切算法看 Ring 与 Tree 的形状差别。</figcaption>
       </figure>
 
       <p>连线按<b>集合原语的实际算法</b>画，五个图层各自独立开关（可全关）：</p>
@@ -753,7 +957,7 @@ footer {
               </g>
             </svg>
           </div></div>
-          <figcaption><span class="cap-n">图 3.4</span>沿用硬件图元库「连线样式 Pattern」的三层结构。</figcaption>
+          <figcaption><span class="cap-n">图 3.6</span>沿用硬件图元库「连线样式 Pattern」的三层结构。</figcaption>
         </figure>
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -787,11 +991,11 @@ footer {
               <text class="m" x="24" y="188">组内成员多数形态下共线 → 长边若走直线，两种算法画出来一模一样</text>
             </svg>
           </div></div>
-          <figcaption><span class="cap-n">图 3.5</span>切算法要当场看得出差别，靠的就是长边的外凸弧。</figcaption>
+          <figcaption><span class="cap-n">图 3.7</span>切算法要当场看得出差别，靠的就是长边的外凸弧。</figcaption>
         </figure>
       </div>
 
-      <h3>3.6 着色透镜、异常注入与物理落位</h3>
+      <h3>3.9 着色透镜、异常注入与打光</h3>
       <p>
         <b>着色</b>是给卡上色的镜头，只改颜色不改结构：状态热力（跟着阶段走的绿→黄→红）/ 按 TP·PP·DP·EP 分组 /
         按主机·Pod 分组（物理落位透镜）。<b>注入</b>不是另一种镜头，而是<b>接管</b>着色——
@@ -803,37 +1007,43 @@ footer {
         <tbody>
           <tr><td>负载热力</td><td><code>--success → --warning → --danger</code> 三段插值</td><td>与图例那条色带同源，颜色逐格一致</td></tr>
           <tr><td>异常组</td><td><code>--danger</code></td><td>红黄绿是状态色<b>专用</b>，其他语义不得占用</td></tr>
-          <tr><td>分组着色</td><td>highlight 六族的 400 / 600 两档共 12 色循环</td><td>组数超过色环时图例注明「同色非同组」</td></tr>
+          <tr><td>分组着色</td><td>highlight 六族的<b>深档 600/700 与浅档 300</b>共 12 色循环，两档<b>交错</b>排</td><td><b>不取 400/500</b>：那是色卡里彩度最高的一段，几百上千张卡铺满会糊成一片荧光。交错而非分块，是因为蓝 / 靛 / 紫三族色相只差 25~55°，同档相邻分不开——前几位先用真正拉得开的色相，再靠明度差拆开近色相。组数超过色环时图例注明「同色非同组」</td></tr>
           <tr><td>维度签名色</td><td>TP <code>--dim-tp</code> · PP <code>--warning</code> · DP <code>--primary</code> · EP <code>--highlight-l0a-violet-400</code></td><td>画在网格与走线上，不画在卡面</td></tr>
           <tr><td>物理链路层级</td><td>同机 UB <code>ub-green</code> · Pod 内 rail <code>mte-amber</code> · 跨 Pod <code>l0b-deep-violet-600</code></td><td>只出现在文字与悬停提示里，不画成 3D 细线或包围框</td></tr>
           <tr><td>网格 / 外框 / 字牌 / 场景底</td><td><code>--border-*</code> / <code>--surface-*</code> / <code>--background</code></td><td>Three.js 吃不了 CSS 变量 → 挂载与切主题时 <code>readTokens()</code> 解析成色值</td></tr>
         </tbody>
       </table>
+      <div class="note is-warn">
+        <b>打光总增益必须 ≈ 1。</b>卡是 <code>MeshStandardMaterial</code>，出射色 = 材质色 ×（环境 + 平行×N·L）。
+        增益 &gt; 1 会把 token 色顶到通道上限（读成荧光），并且<b>图例色块（CSS 直接取 token）与画面对不上</b>——图例与画面一致这件事，一半靠 <code>readTokens()</code>，另一半就靠这里。
+        现为环境 <span class="mono">0.74</span> + 主光 <span class="mono">0.32</span> + 背光 <span class="mono">0.10</span>：顶面 ≈1.0（所见即 token 色）、立面 ≈0.85、背面靠背光托住不发死，三个可见面仍差出约 15% 的明度阶梯，立体感不丢。
+        若哪天调亮打光，聚焦压暗的系数要跟着往下压，否则「压暗」看起来还是一片亮。
+      </div>
 
-      <h3>3.7 信息结构与文案分工</h3>
+      <h3>3.10 信息结构与文案分工</h3>
       <p>同一件事只在一个地方说，按「看多久」分配位置：</p>
       <table>
         <thead><tr><th class="nw">承载位置</th><th>放什么</th><th>不放什么</th></tr></thead>
         <tbody>
-          <tr><td class="nw">3D 场景内</td><td>短标记：<code>TP0</code> / <code>DP99</code> / <code>S0·L1-10</code> / <code>桶1 E32-63</code></td><td>整句解释、浮动横幅、箭头</td></tr>
+          <tr><td class="nw">3D 场景内</td><td>短标记：<code>TP0</code> / <code>DP99</code> / <code>PP0·L0-9</code> / <code>桶1 E32-63</code>，以及三根轴各自那排刻度</td><td>整句解释、浮动横幅、箭头、常驻贴士</td></tr>
+          <tr><td class="nw">2D 场内</td><td><b>什么都不放</b>——标记一律去它那根轴的边上（下方 / 左侧）</td><td>任何压在卡阵上的标记</td></tr>
           <tr><td class="nw">详情卡（inspector）</td><td>kicker（RANK）→ 标题（rank 37 / 128）→ 一句定义 → 键值表（TP 槽位 / PP 段 / DP 副本 / EP 桶·A2A 域 / 物理落位）→ 结论条（此刻哪一维主导、走到 Ring 的哪一段、这一维走线各跨了哪层）</td><td>与图例重复的颜色说明</td></tr>
           <tr><td class="nw">图例</td><td>「着色 / 连线」两段，一行一条，色块 + 名字；加粗那条 = 此刻主导维</td><td>读法、为什么、同色非同组的解释</td></tr>
-          <tr><td class="nw">问号气泡</td><td>「这排是什么、和别的排什么关系」，随当前形态 / 注入 / 选中态实时更新</td><td>—</td></tr>
-          <tr><td class="nw">悬停 tooltip</td><td>单卡 / 单条边的即时信息（谁到谁、哪一维哪种原语、跨的是哪层）</td><td>需要对照阅读的长文</td></tr>
+          <tr><td class="nw">问号气泡</td><td><b>写成一小段文档</b>：kicker → 一句定义 → 选项清单（<code>&lt;dl&gt;</code>）→ 注意事项 → 一块带边框的「此刻」。形态气泡对每个形态直说「这个形态到底给你看什么」；视角 / 剖面气泡带上「这一格叠了几张、正翻到第几层」</td><td>—</td></tr>
+          <tr><td class="nw">悬停 tooltip</td><td>单卡 / 单条边 / 一整段的即时信息（谁到谁、哪一维哪种原语、跨的是哪层；这一段是谁、里面有什么）</td><td>需要对照阅读的长文</td></tr>
         </tbody>
       </table>
       <div class="note">
-        <b>字牌的排版纪律</b>（对齐 <code>model-architecture-training-sidecar</code>）：极小号 850 字重 mono；
-        底 = 语义色 10% 兑 <code>--background</code>、描边 30%、字色 68% 兑 <code>--foreground</code>；
-        跟着场景缩放但有屏幕像素地板（<code>MIN_LABEL_PX = 11</code>，封顶 1.8×），兜底是 tooltip 与详情卡；
-        标记贴着它标注的那根格线走；重排飞行期间整体降一档不透明度，落位后恢复。
+        <b>字牌样式的排版纪律</b>（对齐 <code>model-architecture-training-sidecar</code>）：极小号 850 字重 mono；
+        底 = 语义色 10% 兑 <code>--background</code>、描边 30%、字色 68% 兑 <code>--foreground</code>；语义色只落在名字上，解释性文字用次级前景色；
+        标记贴着它标注的那根格线 / 那一块走；重排飞行期间整体降一档不透明度，落位后恢复。<b>尺寸规则见 3.5</b>——贴边的固定屏幕尺寸，贴几何体的世界尺寸固定 + 像素地板。
       </div>
     </section>
 
     <!-- ══════════ 04 正例与反例 ══════════ -->
     <section id="s4">
       <h2><span class="n">04</span>正例与反例<span class="req">必填</span></h2>
-      <p>以下七组都是这个 Pattern 在迭代中真实修过的问题，反例即当初的错误做法。</p>
+      <p>以下十一组都是这个 Pattern 在迭代中真实修过的问题，反例即当初的错误做法。</p>
 
       <!-- 1 -->
       <h3>4.1 卡块恒定</h3>
@@ -896,25 +1106,26 @@ footer {
       </div>
 
       <!-- 2 -->
-      <h3>4.2 网格线画在格边界上，轴向不画箭头</h3>
+      <h3>4.2 线分两级：细分格线画在格边界，分段边界用签名色实线</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
             <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：网格线画在格边界">
-              <text class="hd" x="16" y="24">网格线 = 格边界 · 用维度签名色</text>
+              <text class="hd" x="16" y="24">虚线细格 + 实线分段边界</text>
               <g transform="translate(56,48)">
-                <g class="grid"><path d="M0 0 H264 M0 30 H264 M0 60 H264 M0 90 H264"/></g>
-                <g class="grid grid-tp"><path d="M0 0 V90 M44 0 V90 M88 0 V90 M132 0 V90 M176 0 V90 M220 0 V90 M264 0 V90"/></g>
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H264 M0 30 H264 M0 60 H264 M0 90 H264"/></g>
+                <g class="grid grid-tp" stroke-dasharray="3 3"><path d="M0 0 V90 M44 0 V90 M132 0 V90 M220 0 V90 M264 0 V90"/></g>
+                <path d="M88 -6 V96 M176 -6 V96" stroke="var(--dim-tp)" stroke-width="1.6" fill="none"/>
                 <rect class="card" x="11" y="7" width="22" height="16" rx="2"/><rect class="card" x="55" y="7" width="22" height="16" rx="2"/><rect class="card" x="99" y="7" width="22" height="16" rx="2"/><rect class="card" x="143" y="7" width="22" height="16" rx="2"/><rect class="card" x="187" y="7" width="22" height="16" rx="2"/><rect class="card" x="231" y="7" width="22" height="16" rx="2"/>
                 <rect class="card" x="11" y="37" width="22" height="16" rx="2"/><rect class="card" x="55" y="37" width="22" height="16" rx="2"/><rect class="card" x="99" y="37" width="22" height="16" rx="2"/><rect class="card" x="143" y="37" width="22" height="16" rx="2"/><rect class="card" x="187" y="37" width="22" height="16" rx="2"/><rect class="card" x="231" y="37" width="22" height="16" rx="2"/>
                 <rect class="card" x="11" y="67" width="22" height="16" rx="2"/><rect class="card" x="55" y="67" width="22" height="16" rx="2"/><rect class="card" x="99" y="67" width="22" height="16" rx="2"/><rect class="card" x="143" y="67" width="22" height="16" rx="2"/><rect class="card" x="187" y="67" width="22" height="16" rx="2"/><rect class="card" x="231" y="67" width="22" height="16" rx="2"/>
-                <rect class="label-box" x="0" y="98" width="42" height="14" rx="6"/><text class="m" x="6" y="108">TP0</text>
-                <text class="m" x="200" y="108">TP0（左）→ TP5（右）</text>
+                <rect class="label-box" x="0" y="100" width="42" height="15" rx="6"/><text class="m" x="6" y="111">TP0</text>
+                <text class="m" x="196" y="111">TP0（左）→ TP5（右）</text>
               </g>
-              <text x="16" y="176">卡永远落在格子里、不被线穿过；外框即首尾两条边界线。方向交给刻度标与文案。</text>
+              <text x="16" y="176">卡永远落在格子里、不被线穿过；格子退成背景，「这是第几片」由实线直接说。</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>网格自己说明轴的语义。</figcaption>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>两级线型 + 网格自己说明轴的语义。</figcaption>
         </figure>
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -930,15 +1141,74 @@ footer {
                 <path d="M250 100 l14 -5 v10 z" fill="var(--danger)"/>
                 <text class="m" x="0" y="118">线穿过卡 · 外挂圆锥箭头</text>
               </g>
-              <text x="16" y="176">线穿过卡看起来「和网格没对齐」；圆锥箭头是 3D 建模工具的语汇，与卡块语言不搭。</text>
+              <text x="16" y="176">线穿过卡看起来「和网格没对齐」；一种线型时格线与分段边界分不出主次；圆锥箭头是 3D 建模语汇。</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>同一个框里混用两种网格约定。</figcaption>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>同一个框里混用两种网格约定、只有一级线型。</figcaption>
         </figure>
       </div>
 
+      <h3>4.3 分段用块与块之间的分割线，不给每块套框</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：分段用分割线">
+              <text class="hd" x="16" y="24">3 块 → 2 条分割线</text>
+              <g transform="translate(40,52)">
+                <rect class="frame" x="0" y="0" width="300" height="96"/>
+                <g>
+                  <rect class="card" x="14" y="12" width="30" height="20" rx="3"/><rect class="card" x="54" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="14" y="40" width="30" height="20" rx="3"/><rect class="card" x="54" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="14" y="68" width="30" height="20" rx="3"/><rect class="card" x="54" y="68" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="12" width="30" height="20" rx="3"/><rect class="card" x="154" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="40" width="30" height="20" rx="3"/><rect class="card" x="154" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="68" width="30" height="20" rx="3"/><rect class="card" x="154" y="68" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="12" width="30" height="20" rx="3"/><rect class="card" x="254" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="40" width="30" height="20" rx="3"/><rect class="card" x="254" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="68" width="30" height="20" rx="3"/><rect class="card" x="254" y="68" width="30" height="20" rx="3"/>
+                </g>
+                <path d="M100 0 V96 M200 0 V96" stroke="var(--warning)" stroke-width="1.6" fill="none"/>
+              </g>
+              <text x="16" y="172">一条边界只有一条线，最外沿交给外框——天生不重叠（照搬 sidecar 的 stage-guide）。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>n 块出 n−1 条分割线。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：每块各套一个框">
+              <text class="hd" x="16" y="24">每块各套一个框</text>
+              <g transform="translate(40,52)">
+                <rect class="frame" x="0" y="0" width="300" height="96"/>
+                <g>
+                  <rect class="card" x="14" y="12" width="30" height="20" rx="3"/><rect class="card" x="54" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="14" y="40" width="30" height="20" rx="3"/><rect class="card" x="54" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="14" y="68" width="30" height="20" rx="3"/><rect class="card" x="54" y="68" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="12" width="30" height="20" rx="3"/><rect class="card" x="154" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="40" width="30" height="20" rx="3"/><rect class="card" x="154" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="114" y="68" width="30" height="20" rx="3"/><rect class="card" x="154" y="68" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="12" width="30" height="20" rx="3"/><rect class="card" x="254" y="12" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="40" width="30" height="20" rx="3"/><rect class="card" x="254" y="40" width="30" height="20" rx="3"/>
+                  <rect class="card" x="214" y="68" width="30" height="20" rx="3"/><rect class="card" x="254" y="68" width="30" height="20" rx="3"/>
+                </g>
+                <g fill="none" stroke="var(--warning)" stroke-width="1.6">
+                  <rect x="2" y="2" width="96" height="92"/><rect x="102" y="2" width="96" height="92"/><rect x="202" y="2" width="96" height="92"/>
+                </g>
+                <path class="bad" d="M100 -8 V104 M200 -8 V104 M-2 -4 H302"/>
+              </g>
+              <text x="16" y="172">相邻两块共用边界各画一遍、最外沿又与外框重合——「多种框同时在」，边缘互相错开半像素就是脏。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>同一条线画好几遍。</figcaption>
+        </figure>
+      </div>
+      <p class="sub">
+        同理，<b>正交 2D 只画屏幕那一面的线</b>：3D 格箱有三面格线、块框是个六面盒子，投影到 2D 后另外两面会整整齐齐落在同一批位置上（EP 前视因此从 13 组线降到 4 组）；
+        <b>3D 的角落框用去重后的唯一棱</b>——三个平面矩形两两共用一条棱，一起画就有三条棱各画两遍，斜视时框看着「毛」。
+      </p>
+
       <!-- 3 -->
-      <h3>4.3 2D 可读性：屏幕两轴最细步距之比 ≤ 4</h3>
+      <h3>4.4 2D 可读性：屏幕两轴最细步距之比 ≤ 4</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -991,50 +1261,158 @@ footer {
       </div>
 
       <!-- 4 -->
-      <h3>4.4 折叠必须如实标注</h3>
+      <h3>4.5 2D 标注按「标的是哪根轴」落位</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
-            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：粒度贴士标注每格重叠卡数">
-              <text class="hd" x="16" y="24">EP聚簇 · 侧视</text>
-              <g transform="translate(40,50)">
-                <g class="grid"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
-                <rect class="card" x="16" y="6" width="28" height="16" rx="2"/><rect class="card" x="76" y="6" width="28" height="16" rx="2"/><rect class="card" x="136" y="6" width="28" height="16" rx="2"/><rect class="card" x="196" y="6" width="28" height="16" rx="2"/>
-                <rect class="card" x="16" y="34" width="28" height="16" rx="2"/><rect class="card" x="76" y="34" width="28" height="16" rx="2"/><rect class="card" x="136" y="34" width="28" height="16" rx="2"/><rect class="card" x="196" y="34" width="28" height="16" rx="2"/>
-                <rect class="card" x="16" y="62" width="28" height="16" rx="2"/><rect class="card" x="76" y="62" width="28" height="16" rx="2"/><rect class="card" x="136" y="62" width="28" height="16" rx="2"/><rect class="card" x="196" y="62" width="28" height="16" rx="2"/>
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="正例：标注落在对应的边上">
+              <text class="hd" x="16" y="24">下方 = 横轴 · 左侧 = 纵轴 · 场内不放</text>
+              <g transform="translate(70,52)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H260 V96 H0 Z M65 0 V96 M130 0 V96 M195 0 V96 M0 32 H260 M0 64 H260"/></g>
+                <g>
+                  <rect class="card" x="18" y="8" width="30" height="16" rx="2"/><rect class="card" x="83" y="8" width="30" height="16" rx="2"/><rect class="card" x="148" y="8" width="30" height="16" rx="2"/><rect class="card" x="213" y="8" width="30" height="16" rx="2"/>
+                  <rect class="card" x="18" y="40" width="30" height="16" rx="2"/><rect class="card" x="83" y="40" width="30" height="16" rx="2"/><rect class="card" x="148" y="40" width="30" height="16" rx="2"/><rect class="card" x="213" y="40" width="30" height="16" rx="2"/>
+                  <rect class="card" x="18" y="72" width="30" height="16" rx="2"/><rect class="card" x="83" y="72" width="30" height="16" rx="2"/><rect class="card" x="148" y="72" width="30" height="16" rx="2"/><rect class="card" x="213" y="72" width="30" height="16" rx="2"/>
+                </g>
+                <text class="m" x="-46" y="20">DP0</text><text class="m" x="-46" y="52">DP1</text><text class="m" x="-46" y="84">DP2</text>
+                <text class="m" x="20" y="112">TP0</text><text class="m" x="85" y="112">TP1</text><text class="m" x="150" y="112">TP2</text><text class="m" x="215" y="112">TP3</text>
               </g>
-              <g transform="translate(196,20)">
-                <rect class="chip" x="0" y="0" width="152" height="20" rx="10"/>
-                <text class="m" x="10" y="14">每格 = 16 卡重叠（桶2 × TP8）</text>
-              </g>
-              <text x="16" y="164">被折叠的维在贴士里如实报出；要逐层看就开剖面，按最外层折叠维逐层翻。</text>
+              <text x="16" y="192">换视角、顶视转 90°、换配置，标记都自动跟到该去的边上，不需要逐处再调。</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>粒度贴士 + 剖面。</figcaption>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>落位由规律推导。</figcaption>
         </figure>
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
-            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：不标注折叠">
-              <text class="hd" x="16" y="24">EP聚簇 · 侧视</text>
-              <g transform="translate(40,50)">
-                <g class="grid"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="反例：逐处手写偏移导致标签互相压">
+              <text class="hd" x="16" y="24">逐处手写偏移</text>
+              <g transform="translate(70,52)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H260 V96 H0 Z M65 0 V96 M130 0 V96 M195 0 V96 M0 32 H260 M0 64 H260"/></g>
+                <g>
+                  <rect class="card" x="18" y="8" width="30" height="16" rx="2"/><rect class="card" x="83" y="8" width="30" height="16" rx="2"/><rect class="card" x="148" y="8" width="30" height="16" rx="2"/><rect class="card" x="213" y="8" width="30" height="16" rx="2"/>
+                  <rect class="card" x="18" y="40" width="30" height="16" rx="2"/><rect class="card" x="83" y="40" width="30" height="16" rx="2"/><rect class="card" x="148" y="40" width="30" height="16" rx="2"/><rect class="card" x="213" y="40" width="30" height="16" rx="2"/>
+                  <rect class="card" x="18" y="72" width="30" height="16" rx="2"/><rect class="card" x="83" y="72" width="30" height="16" rx="2"/><rect class="card" x="148" y="72" width="30" height="16" rx="2"/><rect class="card" x="213" y="72" width="30" height="16" rx="2"/>
+                </g>
+                <rect class="label-box" x="30" y="30" width="52" height="15" rx="6"/><text class="m" x="35" y="41">DP 副本 1</text>
+                <rect class="label-box" x="62" y="34" width="34" height="15" rx="6"/><text class="m" x="68" y="45">列 8</text>
+                <rect class="label-box" x="190" y="6" width="40" height="15" rx="6"/><text class="m" x="196" y="17">TP3</text>
+                <path class="bad" d="M26 26 H102 V52 H26 Z"/>
+              </g>
+              <text x="16" y="192">标签互相压；换视角 / 转 90° / 换配置都要重调。不属于任何一根轴的标记（副本板）根本没有该去的边。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>把标记硬摆在场内或逐处调偏移。</figcaption>
+        </figure>
+      </div>
+
+      <h3>4.6 贴边的字牌固定屏幕尺寸</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="正例：字牌固定屏幕尺寸">
+              <text class="hd" x="16" y="24">缩放两档，牌一样大</text>
+              <g transform="translate(30,48)">
+                <text class="m" x="0" y="0">缩得远</text>
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 8 H140 V78 H0 Z M46 8 V78 M93 8 V78"/></g>
+                <rect class="card" x="12" y="20" width="22" height="14" rx="2"/><rect class="card" x="58" y="20" width="22" height="14" rx="2"/><rect class="card" x="105" y="20" width="22" height="14" rx="2"/>
+                <rect class="card" x="12" y="50" width="22" height="14" rx="2"/><rect class="card" x="58" y="50" width="22" height="14" rx="2"/><rect class="card" x="105" y="50" width="22" height="14" rx="2"/>
+                <rect class="label-box" x="6" y="86" width="60" height="16" rx="7"/><text class="m" x="12" y="97">PP0 · L0-9</text>
+              </g>
+              <g transform="translate(206,48)">
+                <text class="m" x="0" y="0">拉得近</text>
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 8 H148 V78 H0 Z M74 8 V78"/></g>
+                <rect class="card" x="16" y="22" width="42" height="26" rx="3"/><rect class="card" x="90" y="22" width="42" height="26" rx="3"/>
+                <rect class="label-box" x="6" y="86" width="60" height="16" rx="7"/><text class="m" x="12" y="97">PP0 · L0-9</text>
+              </g>
+              <text x="16" y="174">牌永远这么大、永远读得出，摆在它标的那块旁边就够了。</text>
+              <text class="m" x="16" y="192">字号只有 LABEL_PX 一个全局入口；缩得远时牌会挤——宁可挤，不可读不出。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>贴边的牌 = 图表框架，语气同 UI。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="反例：字牌跟着场景缩放">
+              <text class="hd" x="16" y="24">跟着场景缩放 → 一串补救机关</text>
+              <g transform="translate(30,48)">
+                <text class="m" x="0" y="0">缩得远</text>
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 8 H140 V78 H0 Z M46 8 V78 M93 8 V78"/></g>
+                <rect class="card" x="12" y="20" width="22" height="14" rx="2"/><rect class="card" x="58" y="20" width="22" height="14" rx="2"/><rect class="card" x="105" y="20" width="22" height="14" rx="2"/>
+                <rect class="card" x="12" y="50" width="22" height="14" rx="2"/><rect class="card" x="58" y="50" width="22" height="14" rx="2"/><rect class="card" x="105" y="50" width="22" height="14" rx="2"/>
+                <rect class="label-box" x="6" y="88" width="30" height="9" rx="4"/><text x="9" y="95" style="font-size:5px">PP0 · L0-9</text>
+                <path class="lead" d="M20 88 V70"/>
+              </g>
+              <g transform="translate(206,48)">
+                <text class="m" x="0" y="0">拉得近</text>
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 8 H148 V78 H0 Z M74 8 V78"/></g>
+                <rect class="card" x="16" y="22" width="42" height="26" rx="3"/><rect class="card" x="90" y="22" width="42" height="26" rx="3"/>
+                <rect class="badfill" x="4" y="18" width="112" height="24" rx="6"/><text x="10" y="34" style="font-size:12px">PP0 · L0-9</text>
+              </g>
+              <text x="16" y="176">同一张牌在不同规格 / 缩放下大小不一：小的时候读不出、大的时候压卡。</text>
+              <text class="m" x="16" y="194">为补救长出按块步距钉宽、量牌高错行、牵引线——越补越绕，引线本身还细到看不见。</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>让所有字牌用同一条尺寸规则。</figcaption>
+        </figure>
+      </div>
+
+      <h3>4.7 剖面默认开在第 0 层，滑杆不置灰</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="正例：剖面默认开在第 0 层">
+              <text class="hd" x="16" y="24">默认开 · 每格就是一张卡</text>
+              <g transform="translate(24,40)">
+                <rect class="chip" x="0" y="0" width="150" height="22" rx="11"/>
+                <rect x="8" y="4" width="34" height="14" rx="7" fill="var(--primary)"/><text class="m" x="14" y="14" style="fill:var(--primary-foreground)">剖面</text>
+                <rect x="52" y="10" width="60" height="3" rx="1.5" fill="var(--border-strong)"/>
+                <circle cx="60" cy="11" r="5" fill="var(--primary)"/>
+                <text class="m" x="118" y="15">PP=0</text>
+              </g>
+              <g transform="translate(56,80)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
                 <rect class="card" x="16" y="6" width="28" height="16" rx="2"/><rect class="card" x="76" y="6" width="28" height="16" rx="2"/><rect class="card" x="136" y="6" width="28" height="16" rx="2"/><rect class="card" x="196" y="6" width="28" height="16" rx="2"/>
                 <rect class="card" x="16" y="34" width="28" height="16" rx="2"/><rect class="card" x="76" y="34" width="28" height="16" rx="2"/><rect class="card" x="136" y="34" width="28" height="16" rx="2"/><rect class="card" x="196" y="34" width="28" height="16" rx="2"/>
                 <rect class="card" x="16" y="62" width="28" height="16" rx="2"/><rect class="card" x="76" y="62" width="28" height="16" rx="2"/><rect class="card" x="136" y="62" width="28" height="16" rx="2"/><rect class="card" x="196" y="62" width="28" height="16" rx="2"/>
               </g>
-              <g transform="translate(232,20)">
-                <rect class="badfill" x="0" y="0" width="116" height="20" rx="10"/>
-                <text class="m" x="10" y="14">（没有任何提示）</text>
-              </g>
-              <text x="16" y="164">读者会把每格当成一张卡：12 格看起来是 12 卡，实际是 192 卡——结论全错。</text>
+              <text x="16" y="176">所见即所得；剖面外的卡不画。</text>
+              <text class="m" x="16" y="194">「底下还压着几层」由读数与问号气泡说</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>在正交 2D 里隐瞒折叠。</figcaption>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>把需要解释的状态从默认里拿走。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="反例：剖面默认关且滑杆置灰">
+              <text class="hd" x="16" y="24">默认关 · 滑杆置灰</text>
+              <g transform="translate(24,40)">
+                <rect class="chip" x="0" y="0" width="150" height="22" rx="11"/>
+                <rect x="8" y="4" width="34" height="14" rx="7" fill="var(--surface-3)"/><text class="m" x="14" y="14">剖面</text>
+                <rect x="52" y="10" width="60" height="3" rx="1.5" fill="var(--border-subtle)"/>
+                <circle cx="60" cy="11" r="5" fill="var(--surface-4)"/>
+                <text class="m" x="118" y="15" style="opacity:.5">关</text>
+                <path class="bad" d="M46 -4 H150 V26 H46 Z"/>
+              </g>
+              <g transform="translate(56,80)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H240 V84 H0 Z M60 0 V84 M120 0 V84 M180 0 V84 M0 28 H240 M0 56 H240"/></g>
+                <g opacity="0.55">
+                  <rect class="card" x="22" y="10" width="28" height="16" rx="2"/><rect class="card" x="82" y="10" width="28" height="16" rx="2"/><rect class="card" x="142" y="10" width="28" height="16" rx="2"/><rect class="card" x="202" y="10" width="28" height="16" rx="2"/>
+                  <rect class="card" x="22" y="38" width="28" height="16" rx="2"/><rect class="card" x="82" y="38" width="28" height="16" rx="2"/><rect class="card" x="142" y="38" width="28" height="16" rx="2"/><rect class="card" x="202" y="38" width="28" height="16" rx="2"/>
+                  <rect class="card" x="22" y="66" width="28" height="16" rx="2"/><rect class="card" x="82" y="66" width="28" height="16" rx="2"/><rect class="card" x="142" y="66" width="28" height="16" rx="2"/><rect class="card" x="202" y="66" width="28" height="16" rx="2"/>
+                </g>
+                <rect class="card" x="16" y="6" width="28" height="16" rx="2"/><rect class="card" x="76" y="6" width="28" height="16" rx="2"/><rect class="card" x="136" y="6" width="28" height="16" rx="2"/><rect class="card" x="196" y="6" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="34" width="28" height="16" rx="2"/><rect class="card" x="76" y="34" width="28" height="16" rx="2"/><rect class="card" x="136" y="34" width="28" height="16" rx="2"/><rect class="card" x="196" y="34" width="28" height="16" rx="2"/>
+                <rect class="card" x="16" y="62" width="28" height="16" rx="2"/><rect class="card" x="76" y="62" width="28" height="16" rx="2"/><rect class="card" x="136" y="62" width="28" height="16" rx="2"/><rect class="card" x="196" y="62" width="28" height="16" rx="2"/>
+              </g>
+              <text x="16" y="176">第一眼就吃一个折叠，还得先发现有这么个开关。</text>
+              <text class="m" x="16" y="194">置灰读作「功能不可用」，而不是「还差一步」</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>用 disabled 表达「先按开关再用」。</figcaption>
         </figure>
       </div>
 
-      <!-- 5 -->
-      <h3>4.5 成员标记用线框，不用半透明外罩</h3>
+      <h3>4.8 成员标记用线框，不用半透明外罩</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -1079,7 +1457,7 @@ footer {
       </div>
 
       <!-- 6 -->
-      <h3>4.6 走线逐段直线，长边才画弧</h3>
+      <h3>4.9 走线逐段直线，长边才画弧</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -1120,52 +1498,116 @@ footer {
       </div>
 
       <!-- 7 -->
-      <h3>4.7 3D 里只留短标记，散文进问号气泡</h3>
+      <h3>4.10 3D 的刻度也整排贴着轴走</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
-            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：短标记贴着网格">
-              <text class="hd" x="16" y="24">场景里只留短标记</text>
-              <g transform="translate(52,52)">
-                <g class="grid"><path d="M0 0 H272 V90 H0 Z M68 0 V90 M136 0 V90 M204 0 V90 M0 30 H272 M0 60 H272"/></g>
-                <g>
-                  <rect class="card" x="20" y="8" width="28" height="14" rx="2"/><rect class="card" x="88" y="8" width="28" height="14" rx="2"/><rect class="card" x="156" y="8" width="28" height="14" rx="2"/><rect class="card" x="224" y="8" width="28" height="14" rx="2"/>
-                  <rect class="card" x="20" y="38" width="28" height="14" rx="2"/><rect class="card" x="88" y="38" width="28" height="14" rx="2"/><rect class="card" x="156" y="38" width="28" height="14" rx="2"/><rect class="card" x="224" y="38" width="28" height="14" rx="2"/>
-                  <rect class="card" x="20" y="68" width="28" height="14" rx="2"/><rect class="card" x="88" y="68" width="28" height="14" rx="2"/><rect class="card" x="156" y="68" width="28" height="14" rx="2"/><rect class="card" x="224" y="68" width="28" height="14" rx="2"/>
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="正例：三根轴各认一条棱整排出刻度">
+              <text class="hd" x="16" y="24">三根轴各认一条棱</text>
+              <g transform="translate(96,54)">
+                <g class="grid" stroke-dasharray="3 3">
+                  <path d="M0 30 L120 0 M0 60 L120 30 M0 90 L120 60"/>
+                  <path d="M0 30 V90 M40 20 V80 M80 10 V70 M120 0 V60"/>
                 </g>
-                <rect class="label-box" x="-46" y="6" width="42" height="14" rx="6"/><text class="m" x="-40" y="16">S0·L1-10</text>
-                <rect class="label-box" x="16" y="-18" width="34" height="14" rx="6"/><text class="m" x="22" y="-8">TP0</text>
+                <rect class="card" x="10" y="26" width="22" height="14" rx="2"/><rect class="card" x="50" y="16" width="22" height="14" rx="2"/><rect class="card" x="90" y="6" width="22" height="14" rx="2"/>
+                <rect class="card" x="10" y="56" width="22" height="14" rx="2"/><rect class="card" x="50" y="46" width="22" height="14" rx="2"/><rect class="card" x="90" y="36" width="22" height="14" rx="2"/>
+                <!-- X：地面前沿整排刻度 -->
+                <text class="m" x="8" y="112">TP0</text><text class="m" x="48" y="102">TP1</text><text class="m" x="88" y="92">TP2</text>
+                <!-- Y：左后竖棱 -->
+                <text class="m" x="-42" y="40">PP0</text><text class="m" x="-42" y="70">PP1</text>
+                <!-- Z：地面右沿 -->
+                <text class="m" x="132" y="16">DP0</text><text class="m" x="132" y="46">DP1</text>
               </g>
-              <g transform="translate(316,26)"><circle r="8" cx="8" cy="8" class="chip"/><text class="m" x="5" y="11">?</text></g>
-              <text x="16" y="176">整句解释收进行首问号气泡，随当前形态 / 注入 / 选中态更新，信息一句不少。</text>
+              <text x="16" y="184">与 2D 同一套读法：每根轴都有整排刻度、密了自动减（间距按真投影量算，不是世界距离）。</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>几何标注 vs 固定屏幕 UI 各司其职。</figcaption>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>X 地面前沿 · Z 地面右沿 · Y 左后竖棱。</figcaption>
         </figure>
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
-            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：3D 里的浮动大横幅">
-              <text class="hd" x="16" y="24">浮动横幅压在模型上</text>
-              <g transform="translate(52,52)">
-                <g class="grid"><path d="M0 0 H272 V90 H0 Z M68 0 V90 M136 0 V90 M204 0 V90 M0 30 H272 M0 60 H272"/></g>
-                <g>
-                  <rect class="card" x="20" y="8" width="28" height="14" rx="2"/><rect class="card" x="88" y="8" width="28" height="14" rx="2"/><rect class="card" x="156" y="8" width="28" height="14" rx="2"/><rect class="card" x="224" y="8" width="28" height="14" rx="2"/>
-                  <rect class="card" x="20" y="38" width="28" height="14" rx="2"/><rect class="card" x="88" y="38" width="28" height="14" rx="2"/><rect class="card" x="156" y="38" width="28" height="14" rx="2"/><rect class="card" x="224" y="38" width="28" height="14" rx="2"/>
-                  <rect class="card" x="20" y="68" width="28" height="14" rx="2"/><rect class="card" x="88" y="68" width="28" height="14" rx="2"/><rect class="card" x="156" y="68" width="28" height="14" rx="2"/><rect class="card" x="224" y="68" width="28" height="14" rx="2"/>
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="反例：用散文交代轴、块标浮在半空">
+              <text class="hd" x="16" y="24">散文交代轴 · 块标浮在半空</text>
+              <g transform="translate(96,54)">
+                <g class="grid" stroke-dasharray="3 3">
+                  <path d="M0 30 L120 0 M0 60 L120 30 M0 90 L120 60"/>
+                  <path d="M0 30 V90 M40 20 V80 M80 10 V70 M120 0 V60"/>
                 </g>
-                <rect class="badfill" x="6" y="14" width="252" height="26" rx="4"/>
-                <text x="16" y="31" style="font-size:10px">TP×8 同一层切 8 片，片间每层做一次 AllReduce…</text>
-                <rect class="badfill" x="6" y="54" width="220" height="26" rx="4"/>
-                <text x="16" y="71" style="font-size:10px">1 小块 = 1 卡 =（TP,PP,DP）坐标交点…</text>
+                <rect class="card" x="10" y="26" width="22" height="14" rx="2"/><rect class="card" x="50" y="16" width="22" height="14" rx="2"/><rect class="card" x="90" y="6" width="22" height="14" rx="2"/>
+                <rect class="card" x="10" y="56" width="22" height="14" rx="2"/><rect class="card" x="50" y="46" width="22" height="14" rx="2"/><rect class="card" x="90" y="36" width="22" height="14" rx="2"/>
+                <rect class="badfill" x="-56" y="-30" width="96" height="18" rx="6"/><text x="-50" y="-17">墙内竖 = PP×5</text>
+                <rect class="badfill" x="56" y="-34" width="86" height="18" rx="6"/><text x="62" y="-21">S0 · L1-12</text>
+                <path class="bad" d="M60 -16 V4"/>
               </g>
-              <text x="16" y="176">又大又抢戏、还挡卡；文字长短不一还会把工具栏挤成两行。</text>
+              <text x="16" y="184">这边整排刻度、那边一句散文，读者得换一套读法；浮在半空的标记转个角度就飘走。</text>
+              <text class="m" x="16" y="200">同轴两个名字（块标 S0 / 刻度 PP0）更是要读者同时记住两套叫法。</text>
             </svg>
           </div></div>
-          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>把整句解释做成 3D 浮动横幅或常驻 HUD。</figcaption>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>3D 里用散文替某根轴说话。</figcaption>
         </figure>
       </div>
 
-      <h3>4.8 速查：还有哪些明确禁止</h3>
+      <h3>4.11 分组色取深浅两档，打光增益 ≈ 1</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="正例：深档 600/700 与浅档 300 交错">
+              <text class="hd" x="16" y="24">深档 600/700 + 浅档 300 · 交错排</text>
+              <g transform="translate(20,42)">
+                <rect x="0" y="0" width="52" height="26" rx="4" fill="var(--highlight-copy-blue-600)"/>
+                <rect x="58" y="0" width="52" height="26" rx="4" fill="var(--highlight-accum-orange-600)"/>
+                <rect x="116" y="0" width="52" height="26" rx="4" fill="var(--highlight-ub-green-700)"/>
+                <rect x="174" y="0" width="52" height="26" rx="4" fill="var(--highlight-l0a-violet-600)"/>
+                <rect x="232" y="0" width="52" height="26" rx="4" fill="var(--highlight-mte-amber-500)"/>
+                <rect x="290" y="0" width="52" height="26" rx="4" fill="var(--highlight-l0b-deep-violet-300)"/>
+                <text class="m" x="0" y="44">前几位先用真正拉得开的色相，第 5、6 位换档</text>
+                <text class="m" x="0" y="60">靠明度差把蓝 / 靛 / 紫这些近色相拆开</text>
+              </g>
+              <g transform="translate(20,124)">
+                <rect x="0" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-copy-blue-600)"/>
+                <rect x="34" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-accum-orange-600)"/>
+                <rect x="68" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-ub-green-700)"/>
+                <rect x="102" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-l0a-violet-600)"/>
+                <text class="m" x="142" y="14">顶面 ≈ 1.0 = 所见即 token 色</text>
+              </g>
+              <text class="m" x="20" y="170">图例与画面因此对得上</text>
+              <text class="m" x="20" y="188">环境 0.74 + 主光 0.32 + 背光 0.10 · 三面仍差约 15% 明度阶梯</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>色卡里挑得出、打光不改色。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 200" role="img" aria-label="反例：400/500 档铺满并把打光调到 1.4 倍">
+              <text class="hd" x="16" y="24">400/500 档铺满 · 打光 1.4×</text>
+              <g transform="translate(20,42)">
+                <rect x="0" y="0" width="52" height="26" rx="4" fill="var(--highlight-ub-green-400)"/>
+                <rect x="58" y="0" width="52" height="26" rx="4" fill="var(--highlight-mte-amber-400)"/>
+                <rect x="116" y="0" width="52" height="26" rx="4" fill="var(--highlight-accum-orange-400)"/>
+                <rect x="174" y="0" width="52" height="26" rx="4" fill="var(--highlight-copy-blue-400)"/>
+                <rect x="232" y="0" width="52" height="26" rx="4" fill="var(--highlight-l0a-violet-400)"/>
+                <rect x="290" y="0" width="52" height="26" rx="4" fill="var(--highlight-l0b-deep-violet-400)"/>
+                <text class="m" x="0" y="44">彩度最高的一段，几百上千张卡同屏会糊成一片荧光</text>
+                <text class="m" x="0" y="60">增益 &gt; 1 还会把 token 色顶到通道上限</text>
+              </g>
+              <g transform="translate(20,124)">
+                <g style="filter:brightness(1.4)">
+                  <rect x="0" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-ub-green-400)"/>
+                  <rect x="34" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-mte-amber-400)"/>
+                  <rect x="68" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-accum-orange-400)"/>
+                  <rect x="102" y="0" width="30" height="20" rx="3" style="fill:var(--highlight-copy-blue-400)"/>
+                </g>
+                <path class="bad" d="M-4 -4 H136 V24 H-4 Z"/>
+                <text class="m" x="142" y="14">画面被增益顶亮</text>
+              </g>
+              <text class="m" x="20" y="170">图例色块（CSS 直接取 token）与画面对不上</text>
+              <text class="m" x="20" y="188">「压暗」也会看起来还是一片亮</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>用最高彩度那一段，再乘一个 &gt;1 的增益。</figcaption>
+        </figure>
+      </div>
+
+      <h3>4.12 速查：还有哪些明确禁止</h3>
       <table>
         <thead><tr><th style="width:42%">禁止</th><th>为什么</th></tr></thead>
         <tbody>
@@ -1177,6 +1619,18 @@ footer {
           <tr><td>用箭头表达方向</td><td>方向由沿线流动的暗点表达；箭头在正交画面里抢眼且与卡块语言不搭</td></tr>
           <tr><td>把物理层级画成 3D 细线或包围框</td><td>试过：线太细、机的范围与 TP 组几乎重合，读不出差别 → 改用文字与矩阵</td></tr>
           <tr><td>把解释写进图例</td><td>图例只列颜色与名字，读法进问号气泡</td></tr>
+          <tr><td>在画面上常驻「每格 = 几张卡」这类贴士</td><td>解释一律进问号气泡，画面只留几何——这是本 Pattern 最后一处例外，已撤，信息移进「视角 / 剖面」气泡且更完整</td></tr>
+          <tr><td>在视角按钮上用 × 连接两根屏幕轴（「顶 DP×TP」）</td><td>本 Pattern 里 × 是真的乘法（<span class="mono">rank = TP×PP×DP</span>），会被读成数量相乘 → 写作平面「顶 DP-TP 面」</td></tr>
+          <tr><td>为了 2D 可读性把 <code>emph</code> 主轴的步距压回常规档</td><td>TP切片 / PP流水 的全部意义就是「墙拉开 / 段拉开」，压了就没有了 → 稀疏主轴用块框 + 分割线解决</td></tr>
+          <tr><td>按形态整体决定给不给 2D</td><td>判据是<b>逐屏</b>的：<code>emph</code> 轴留在屏幕上的那几屏才是它自己的，被折进视线的那一屏才是标准</td></tr>
+          <tr><td>同一根轴在画面上有两个名字（块标 <span class="mono">S0</span> / 刻度 <span class="mono">PP0</span>）</td><td>常驻标记一律用维度名，行话（Stage）写在悬停与横幅里</td></tr>
+          <tr><td>层号从 1 起</td><td>同一幅图里 TP0 / PP0 / DP0 都从 0 数，唯独层号从 1 起会被读成另一套坐标 → <span class="mono">PP0 · L0-9</span></td></tr>
+          <tr><td>把真实体量（4000 卡）当落地配置</td><td>一张卡只剩两三个像素，四种形态的差别糊成一片色块 → 落地 128 卡，真实体量留作预设</td></tr>
+          <tr><td>让平移也把正交视角踢回 3D</td><td>在顶视里挪一下看别的区域是很自然的动作——转是转、挪是挪</td></tr>
+          <tr><td>靠调整 DOM 顺序改按钮的显示次序</td><td>形态 / 视角的序号是 URL 参数、键盘序、测试的依据 → 显示次序用 CSS <code>order</code> 调</td></tr>
+          <tr><td>给某个单独的标记开字号小灶</td><td>字号只有 <code>LABEL_PX</code> 一个全局入口，散落的常量会让「整体调大一点」变成逐处翻找</td></tr>
+          <tr><td>把固定屏幕尺寸的字牌尺寸并进取景包围盒</td><td>牌的世界尺寸由相机反算，并进去会自我反馈（取景放宽 → 牌变大 → 再放宽，永不收敛）——只并锚点位置</td></tr>
+          <tr><td>用黑色笼子罩住选中卡</td><td>黑不在这套色卡里，笼子还盖住卡自己的着色 → 用卡同色的涟漪呼吸灯</td></tr>
         </tbody>
       </table>
     </section>
@@ -1188,7 +1642,7 @@ footer {
       <div class="res-grid">
         <a class="res-card" href="./rubik-pattern.html">
           <div class="t">public/rubik-pattern.html</div>
-          <div class="d">可交互 Pattern 独立迭代页（默认浅色，<code>?theme=dark</code> 切深色）。控制台 <code>window.rubik</code> 可直接调 API。</div>
+          <div class="d">可交互 Pattern 独立迭代页：默认浅色 · 落地 PP流水 · 128 卡；<b>URL 即状态</b>（<span class="mono">?mode= &amp;view= &amp;sel= &amp;label=</span>…，见 5.1）。控制台 <code>window.rubik</code> 可直接调 API。</div>
         </a>
         <a class="res-card" href="./vendor/rubik-cube/pattern.json">
           <div class="t">vendor/rubik-cube/pattern.json</div>
@@ -1210,9 +1664,45 @@ footer {
           <div class="t">vendor/rubik-cube/favicon.svg</div>
           <div class="d">等距魔方图标（维度签名色），用于入口页与文档页。</div>
         </a>
+        <div class="res-card">
+          <div class="t">.claude/skills/shareable-pattern-link/</div>
+          <div class="d">把一个 pattern 发布成<b>可分享链接</b>的做法（规范路径 + URL 即状态 + 版本戳），含发布后核对脚本。</div>
+        </div>
+        <div class="res-card">
+          <div class="t">scripts/verify-rubik-cube.mjs</div>
+          <div class="d">连线几何回归：两套配置 × 五形态，断言每条通信线的<b>每个折线顶点</b>都落在对应 rank 的卡心。改动连线或重排动画后必跑。</div>
+        </div>
       </div>
 
-      <h3>5.1 接入代码</h3>
+      <h3>5.1 两个发布入口 · 链接即状态</h3>
+      <p>发布后有两个等价入口，同一份内容：</p>
+      <table>
+        <thead><tr><th class="nw">入口</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td class="mono nw">…/patterns/rubik-cube-logical/pattern.html</td><td><b>规范位置</b>（对齐 pto-design-system 的 pattern 库）：<code>pattern.css</code> / <code>pattern.js</code> / <code>pattern.json</code> 就在同级，别人可以直接 <code>&lt;script src&gt;</code> 复用，或先读契约</td></tr>
+          <tr><td class="mono nw">…/rubik/</td><td>早先的短链接，保持可用</td></tr>
+        </tbody>
+      </table>
+      <p>
+        <b>URL 即状态</b>——链接本身带着一个具体视图，发出去对方打开就是那一屏。
+        不认识的参数一律忽略，非法值退回默认，不报错：
+      </p>
+      <pre>…/pattern.html?mode=tp&amp;view=top&amp;color=ep&amp;phase=EP&amp;sel=1234&amp;theme=light&amp;v=&lt;短SHA&gt;</pre>
+      <table>
+        <thead><tr><th class="nw">参数</th><th>取值</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">mode</td><td><span class="mono">std / dp / ep / tp / pp</span>（或 0-4）。<b>不给则落地 <span class="mono">pp</span>（PP流水）</b></td></tr>
+          <tr><td class="mono">view</td><td><span class="mono">3d / top / front / side</span>（或 0-3）。形态不支持的视角回落到 3D</td></tr>
+          <tr><td class="mono">tp pp dp ep</td><td>并行度（给几个改几个）</td></tr>
+          <tr><td class="mono">color / anom</td><td>着色镜头 / 异常注入</td></tr>
+          <tr><td class="mono">phase 或 t</td><td><span class="mono">TP/PP/EP/DP</span> 或 <span class="mono">0..1</span></td></tr>
+          <tr><td class="mono">play / sel</td><td>是否自动播放 / 直接选中某个 rank</td></tr>
+          <tr><td class="mono">label</td><td>3D 标注字号（px，9–28，默认 16）——全局唯一入口</td></tr>
+          <tr><td class="mono">v</td><td>版本戳，页面忽略它，只用来跳过缓存；<code>pattern.json</code> 里写入同一个 <span class="mono">version</span>，对方能核对拿到的是哪一版</td></tr>
+        </tbody>
+      </table>
+
+      <h3>5.2 接入代码</h3>
       <pre><span class="c">&lt;!-- 依赖：three r128（全局 THREE）→ 设计系统 → pattern --&gt;</span>
 &lt;script src="./vendor/three-r128.min.js"&gt;&lt;/script&gt;
 &lt;link rel="stylesheet" href="./vendor/pto-design-system/styles.css"&gt;
@@ -1220,33 +1710,40 @@ footer {
 &lt;script src="./vendor/rubik-cube/pattern.js"&gt;&lt;/script&gt;
 
 <span class="k">const</span> handle = PtoRubikCubePattern.mount(el, {
-  config: { tp: 8, pp: 5, dp: 100, ep: 2 },   <span class="c">// rank = tp×pp×dp = 4000（EP 折入 DP）</span>
+  config: { tp: 2, pp: 4, dp: 16, ep: 8 },   <span class="c">// 落地档：rank = tp×pp×dp = 128（EP 折入 DP）</span>
+  mode: 4,                                  <span class="c">// 落地形态 = PP流水（不传也是它）</span>
   theme: 'light',
-  <span class="c">// chrome: false,                          // 宿主接管工具栏时打开</span>
+  labelPx: 16,                              <span class="c">// 3D 标注字号的全局唯一入口（9–28）</span>
+  <span class="c">// chrome: false,                         // 宿主接管工具栏时打开</span>
   onSelect: (sel) =&gt; { <span class="c">/* {rank, tp, pp, rep, bucket, domain, stage} */</span> },
   onSelectEdge: (e) =&gt; { <span class="c">/* {dim, from, to, prim, algo, tier, hosts, pods} */</span> },
 });</pre>
+      <p class="sub">
+        嵌进自己的页面时可直接引用发布出去的那一份（GitHub Pages 对静态资源发 <span class="mono">access-control-allow-origin: *</span>，可跨站引用）：
+        把上面四个 <code>src</code> / <code>href</code> 换成 <span class="mono">https://&lt;host&gt;/patterns/rubik-cube-logical/…</span> 即可。
+      </p>
 
-      <h3>5.2 API 速查</h3>
+      <h3>5.3 API 速查</h3>
       <table>
         <thead><tr><th class="nw">API</th><th>作用</th></tr></thead>
         <tbody>
           <tr><td class="mono nw">createModel(config)</td><td>纯布局/拓扑模型，无 Three.js 依赖（可单测、可被其他视图复用）：<code>posOf</code> / <code>commGroup</code> / <code>boundsOf</code> / <code>modes</code> / <code>tierOf</code> …</td></tr>
           <tr><td class="mono nw">setConfig({tp,pp,dp,ep,…})</td><td>整体重建。返回 <code>{ok}</code> 或 <code>{ok:false,error}</code>（校验：≥1 · <code>ep|dp</code> · rank ≤ 65536）</td></tr>
-          <tr><td class="mono nw">setMode(0-4) / setView(0-3)</td><td>形态 / 视角（3D · 顶 · 前 · 侧）</td></tr>
-          <tr><td class="mono nw">setSlice(on, val)</td><td>正交剖面：只看被折叠那一维的某一层</td></tr>
+          <tr><td class="mono nw">setMode(0-4) / setView(0-3)</td><td>形态 / 视角（3D · 顶 · 前 · 侧）。序号不受按钮显示次序影响；形态不支持的视角回落到 3D</td></tr>
+          <tr><td class="mono nw">setSlice(on, val)</td><td>正交剖面：只看被折叠那一维的某一层（默认已开在第 0 层）</td></tr>
+          <tr><td class="mono nw">setLabelPx(9..28) / labelPx</td><td>3D 标注字号的<b>全局唯一入口</b>（默认 16）</td></tr>
           <tr><td class="mono nw">setColorBy(...) / setAnomaly(...)</td><td>着色透镜 <code>load|tp|pp|dp|ep|host|pod</code> / 异常注入 <code>none|tp|pp|dp|ep</code></td></tr>
           <tr><td class="mono nw">setTime(t | {phase}) / setPlaying(b)</td><td>时间轴定位（<code>{phase:'TP'|'PP'|'EP'|'DP'}</code>）与播放</td></tr>
           <tr><td class="mono nw">setWire({...}) / setAlgo(...)</td><td>连线五图层各自开关 / AllReduce 画 <code>auto|ring|tree</code></td></tr>
           <tr><td class="mono nw">select(rank) / selectEdge(edge)</td><td>选中一张卡 / 一条通信边</td></tr>
-          <tr><td class="mono nw">selectLayer(l) / selectBucket(e)</td><td><b>联动挂点</b>：整网图选中层 → 标准形态水平切片；专家图选中桶 → 切 EP聚簇并聚焦整面墙</td></tr>
+          <tr><td class="mono nw">selectLayer(l) / selectBucket(e)</td><td><b>联动挂点</b>：整网图选中层 → 紫色水平切片，<b>会主动切到标准形态</b>（切片只在那个坐标系里成立）；专家图选中桶 → 切 EP聚簇并聚焦整面墙</td></tr>
           <tr><td class="mono nw">setPlacement({...})</td><td>物理落位：<code>cardsPerHost</code> / <code>hostsPerPod</code> / <code>slots</code></td></tr>
           <tr><td class="mono nw">setTheme / resize / destroy</td><td>主题、尺寸、销毁</td></tr>
           <tr><td class="mono nw">handle.scene / handle.camera</td><td>只读 Three.js 挂点，供宿主联动与自动化校验</td></tr>
         </tbody>
       </table>
 
-      <h3>5.3 允许改 / 不允许改</h3>
+      <h3>5.4 允许改 / 不允许改</h3>
       <table>
         <thead><tr><th style="width:50%">允许覆盖</th><th>禁止覆盖</th></tr></thead>
         <tbody>
@@ -1292,13 +1789,13 @@ footer {
           </tr>
           <tr>
             <td><b>⑤ 网格即语义</b></td>
-            <td>网格线一律画在格边界上（卡落在格子里、不被线穿过）；一根轴的格边界用该维签名色画，轴向不画任何裸线与箭头；选中聚焦时网格整体提亮。</td>
-            <td>方向交给刻度标与文案（<code>L1（上）→L48（下）</code>）；分组行列数按<b>世界跨度</b>取近方形，不按数量取方阵。</td>
+            <td>网格线一律画在格边界上（卡落在格子里、不被线穿过）；<b>线分两级</b>——细分格线虚线·细·中性淡，分段边界 / 块框实线·签名色·高一档不透明度；轴向不画任何裸线与箭头；选中聚焦时网格整体提亮。</td>
+            <td>方向交给刻度与文案（<code>L0（上）→L47（下）</code>）；分段一律用块与块之间的<b>分割线</b>（n 块出 n−1 条），最外沿交给外框；每组线登记它躺在哪个平面，正交 2D 只画屏幕那一面。</td>
           </tr>
           <tr>
             <td><b>⑥ 视角收编 · 如实折叠</b></td>
-            <td>每个 2D 平面只属于一个形态；信息塌陷的视角不给出并说明原因；保留的视角必须报出每格重叠卡数。</td>
-            <td>宁可少给一个视角，也不要给一个会让人读错的视角；需要逐层看就用剖面。</td>
+            <td>判据是<b>逐屏</b>的：形态的 <code>emph</code> 轴留在屏幕上的那几屏才是它自己的，被折进视线的那一屏与标准逐位相同 → 收编。每个形态另标一个<b>主屏</b>，由它要回答的问题决定。</td>
+            <td>宁可少给一屏，也不要给一屏会让人读错的；折叠交给<b>剖面</b>（默认开在第 0 层、滑杆不置灰、剖面外的卡不画），「叠了几张」写在读数与气泡里，不常驻画面。</td>
           </tr>
           <tr>
             <td><b>⑦ 色出一源</b></td>
@@ -1307,8 +1804,8 @@ footer {
           </tr>
           <tr>
             <td><b>⑧ 注释纪律</b></td>
-            <td>3D 里只留短标记，整句解释进问号气泡；字牌随场景缩放但有屏幕像素地板；语义色只落在名字上，注释对比度低于模型本身。</td>
-            <td>标记贴着它标注的那根格线走；标记若必须坐在模型外，用中性引线牵回锚点，不要盖在卡上。</td>
+            <td>落位由「标的是哪根轴」推导——2D：下方 = 横轴 · 左侧 = 纵轴 · 折进视线则不出 · 场内不放；3D：三根轴各认一条棱整排出刻度。整句解释一律进问号气泡。</td>
+            <td>牌摆不下就按屏抽样少摆几枚（抽掉的靠悬停问出来），一条边只排一行；疏密交给相机实时算，不在建的时候定死；再补一遍跨轴的屏幕盒相交检查。</td>
           </tr>
           <tr>
             <td><b>⑨ 走线三层</b></td>
@@ -1317,8 +1814,23 @@ footer {
           </tr>
           <tr>
             <td><b>⑩ 界面分工</b></td>
-            <td>常驻只留决定画面怎么摆的控件（形态 / 视角），筛选与工况收进抽屉；图例只列颜色与名字；详情卡按 inspector 结构给「定义 · 当前值 · 状态判断 · 执行上下文」。</td>
-            <td>任何想常驻在画面上的解释性文字，先问一句「它能不能进问号气泡」。</td>
+            <td>常驻只留决定画面怎么摆的控件（形态 → 视角 → 剖面，同一排），筛选与工况收进抽屉；图例只列颜色与名字；详情卡按 inspector 结构给「定义 · 当前值 · 状态判断 · 执行上下文」；问号气泡写成一小段文档。</td>
+            <td>任何想常驻在画面上的解释性文字，先问一句「它能不能进问号气泡」；<b>需要解释的状态不要放在默认</b>（剖面默认开、滑杆不置灰），也不要用 disabled 表达「还差一步」。</td>
+          </tr>
+          <tr>
+            <td><b>⑪ 一名一物</b></td>
+            <td>同一根轴在画面上只有一个名字（常驻标记一律用维度名 <span class="mono">PP0</span>，行话 Stage 只写在悬停与横幅里）；层号一律 0 基；视角写作平面 <span class="mono">A-B 面</span>，× 只留给真的乘法。</td>
+            <td>牌上只留「身份 + 这个形态最要紧的那个限定」，规格收进悬停——信息分两层，而不是减少。</td>
+          </tr>
+          <tr>
+            <td><b>⑫ 落地给能读出东西的那一档</b></td>
+            <td>落地形态 = 四个问题导向形态中的第一个（PP流水），不是基准投影；落地配置 = 每张卡看得清的规格（128 卡），真实体量作预设一键切。</td>
+            <td>开门第一眼要能读出东西。规模大不是问题，「读不读得出」才是。</td>
+          </tr>
+          <tr>
+            <td><b>⑬ 色与光是一件事</b></td>
+            <td>分组色取深档 600/700 与浅档 300 交错，避开彩度最高的 400/500；打光总增益 ≈ 1（顶面所见即 token 色）。</td>
+            <td>图例色块是 CSS 直接取的 token——画面只要被增益顶亮，图例就与画面对不上；调亮打光时，压暗系数要跟着往下压。</td>
           </tr>
         </tbody>
       </table>
@@ -1412,27 +1924,43 @@ footer {
 
       <div class="faq">
         <div class="q">EP 为什么不乘进 rank 总数？</div>
-        <p class="a">EP 折入 DP 轴、不新增轴：副本 <code>rep</code> 持有专家桶 <code>rep % ep</code>，相邻 <code>ep</code> 个副本构成一个 AllToAll 域。所以 <code>rank = tp × pp × dp</code>，<code>ep</code> 只要求整除 <code>dp</code>。默认配置 8·5·100·2 = 4000 rank、2 个桶、50 个 A2A 域。</p>
+        <p class="a">EP 折入 DP 轴、不新增轴：副本 <code>rep</code> 持有专家桶 <code>rep % ep</code>，相邻 <code>ep</code> 个副本构成一个 AllToAll 域。所以 <code>rank = tp × pp × dp</code>，<code>ep</code> 只要求整除 <code>dp</code>。落地档 <span class="mono">2·4·16·8</span> = 128 rank、8 个桶、2 个 A2A 域。</p>
       </div>
       <div class="faq">
-        <div class="q">TP切片 / PP流水 为什么没有 2D 视角？</div>
-        <p class="a">它们与标准形态共享坐标系，正交 2D 投影完全重合——给出来只是同一张图的三份副本，还会让人以为是别的东西。价值在 3D 的「墙拉开 / 段拉开」读法，因此整组视角不显示（只剩一个孤零零的「3D」按钮既无可切换对象，也像是别的被禁用了），并在视角行说明原因。</p>
+        <div class="q">为什么「标准」排在最后，落地却是 PP流水？</div>
+        <p class="a">四个形态各回答一个具体问题，标准是它们的基准投影、自己不回答问题。开门第一眼给一个<b>能读出东西</b>的形态，比给一个「全都在这儿」的对照系更有用；按钮又是按 <span class="mono">PP·TP·EP·DP·标准</span> 排的，落地在第一个，选中态就在最左边。<code>mount({mode})</code> / <span class="mono">?mode=</span> 照旧覆盖。</p>
       </div>
       <div class="faq">
-        <div class="q">4000 卡会不会卡？</div>
-        <p class="a">重排缓动<b>按时间</b>算（0.5s，与帧率无关）并在收尾精确吸附，所以低帧率下卡与线仍然落到位；走线逐段建管、成员框合并进同一条 <code>LineSegments</code>。布局已在 1 至 8192 卡上验证零重叠，超过 65536 rank 会拒绝应用。</p>
+        <div class="q">TP切片 / PP流水 为什么只少了侧视？</div>
+        <p class="a">收编的判据是<b>逐屏</b>的。这两个形态与标准的差别全在那根被拉开的 <code>emph</code> 轴：它留在屏幕上的两屏（顶 / 前），墙与墙之间有看得见的空档，「这是第几片 / 第几段」在这里才数得清 → 保留；它被折进视线的那一屏（侧视），空档消失、步距签名与标准的同名平面逐位相同 → 那一屏就是标准，不重复给。早先按「与标准共享三轴」把整个形态的 2D 都收掉了，<b>收多了</b>——PP流水 甚至换了轴分配（X=PP · Y=TP）。</p>
+      </div>
+      <div class="faq">
+        <div class="q">为什么落地 128 卡，而不是真实的 4000 卡？</div>
+        <p class="a">不是跑不动——布局已在 1 至 8192 卡上验证零重叠。是<b>读不出</b>：4000 卡时一张卡只剩两三个像素，墙 / 段 / 桶 / 板的差别糊成一片色块，第一眼读到的是一团颜色而不是一种堆法。128 卡下每张卡看得清、每一段数得出；真实体量在「并行」那排一键切过去。</p>
+      </div>
+      <div class="faq">
+        <div class="q">2D 里的标记为什么有时少几枚？</div>
+        <p class="a">牌是固定屏幕尺寸，所以「摆不摆得下」是可算的：量出牌在这条边上占几像素，再与相邻两项的间距一比，摆不下就按步长抽样少摆几枚——像正经的图表轴，缩放时还会自动加密 / 变疏。<b>抽掉的那几块靠悬停问出来</b>（命中区按分割线切满，块间空档也有反应），信息一条没少。</p>
+      </div>
+      <div class="faq">
+        <div class="q">3D 标注太小 / 太大，怎么调？</div>
+        <p class="a">只有一个入口：<code>mount({labelPx})</code> / <code>setLabelPx(9..28)</code> / <span class="mono">?label=</span>，默认 16px，越界回落 16。不要为某个单独的标记开小灶——散落的字号常量会让「整体调大一点」变成逐处翻找。</p>
+      </div>
+      <div class="faq">
+        <div class="q">怎么把当前这一屏发给别人？</div>
+        <p class="a">直接复制地址栏：<b>URL 即状态</b>（形态 / 视角 / 并行度 / 着色 / 注入 / 阶段 / 选中 rank / 主题 / 字号，见 5.1）。发布时每个资源链接都会打上 <span class="mono">?v=&lt;短 SHA&gt;</span>，<code>pattern.json</code> 里写入同一个 <span class="mono">version</span>，对方能核对自己拿到的是哪一版。</p>
       </div>
       <div class="faq">
         <div class="q">能不能改配色 / 换成业务自己的品牌色？</div>
-        <p class="a">可以，但只能在<b>页面级</b>覆盖设计系统 token——pattern 只消费语义 token，3D 材质也经 <code>readTokens()</code> 读同一批 token，所以覆盖后画面与图例会一起变。禁止在宿主 CSS 里覆盖 <code>.prc-*</code> 的具体色值。</p>
+        <p class="a">可以，但只能在<b>页面级</b>覆盖设计系统 token——pattern 只消费语义 token，3D 材质也经 <code>readTokens()</code> 读同一批 token，所以覆盖后画面与图例会一起变。禁止在宿主 CSS 里覆盖 <code>.prc-*</code> 的具体色值，也不要调打光增益（见 3.9）。</p>
       </div>
       <div class="faq">
         <div class="q">只想嵌一块画布、工具栏用我自己的，怎么做？</div>
-        <p class="a"><code>mount(el, { chrome: false })</code>：pattern 不再渲染自带工具栏，取景也不为面板留白，全部控制走 handle 上的 <code>setMode</code> / <code>setView</code> / <code>setColorBy</code> … 一组 API。</p>
+        <p class="a"><code>mount(el, { chrome: false })</code>：pattern 不再渲染自带工具栏，取景也不为面板留白，全部控制走 handle 上的 <code>setMode</code> / <code>setView</code> / <code>setSlice</code> / <code>setColorBy</code> … 一组 API。</p>
       </div>
       <div class="faq">
         <div class="q">要新增一个并行维度（CP / SP）怎么办？</div>
-        <p class="a">不要新写一套坐标计算。在 <code>pattern.js</code> 的 <code>SP</code> / <code>modes</code> 里按原则 ①–⑥ 声明这根轴的意图（放哪根轴、用什么层级倍率、正交视角折叠哪些维），布局会自动推导出来；同时补上该维的签名色与图例条目。</p>
+        <p class="a">不要新写一套坐标计算。在 <code>pattern.js</code> 的 <code>SP</code> / <code>modes</code> 里按原则 ①–⑥ 声明这根轴的意图（放哪根轴、用什么层级倍率、正交视角折叠哪些维、主屏是哪一屏），布局会自动推导出来；同时补上该维的签名色与图例条目、以及这个形态的 canonical 分段。</p>
       </div>
     </section>
 
@@ -1503,13 +2031,13 @@ footer {
     return btns;
   }
 
+  /* hero = 落地那一屏：落地形态 PP流水 + 落地档 128 卡（与 rubik-pattern.html 的默认一致） */
   function buildHero(board) {
     var ph = board.querySelector('.ph');
     if (ph) ph.remove();
-    var h = window.PtoRubikCubePattern.mount(board, {
-      theme: theme, chrome: false, config: { tp: 8, pp: 5, dp: 100, ep: 2 },
-    });
-    handles.push(h);
+    handles.push(window.PtoRubikCubePattern.mount(board, {
+      theme: theme, chrome: false, mode: 4, config: { tp: 2, pp: 4, dp: 16, ep: 8 },
+    }));
   }
 
   /* 这一张按「原样的 Pattern」给：带自带工具栏、图例、粒度贴士与详情卡——
@@ -1518,7 +2046,7 @@ footer {
     var ph = board.querySelector('.ph');
     if (ph) ph.remove();
     handles.push(window.PtoRubikCubePattern.mount(board, {
-      theme: theme, config: { tp: 2, pp: 4, dp: 16, ep: 8 },
+      theme: theme, mode: 4, config: { tp: 2, pp: 4, dp: 16, ep: 8 },
     }));
   }
 
