@@ -1959,27 +1959,6 @@
       return (h1 - h0) < eps && (v1 - v0) < eps;
     }
     const flatDims = () => (S.sel == null ? [] : peerDims.filter((d) => groupFlat(model.commGroup(S.sel, d))));
-    /* 两根维在同一屏上**共线**时错开半格（地铁图并行线路的老办法）。
-       EP 域是 DP 组的子集——两组成员只在同一根轴上错开，于是两条线叠在同一列里，
-       紫色整根压在蓝色底下，跨度不是 0 却一样读不出来。
-       只在 2D 做：那里才有确定的「屏幕平面」，3D 轴测里转一下共线关系就变了。
-       让开的方向是这一组**没有铺开的**那根屏幕轴，让开量按维序号分道并居中。 */
-    function laneShift(di, members) {
-      const A = screenAxes(S.view);
-      if (!A || members.length < 2) return null;
-      const v3 = { x: 0, y: 0, z: 0 };
-      let h0 = Infinity, h1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-      members.forEach((r) => {
-        model.posOf(r, S.mode, v3);
-        h0 = Math.min(h0, v3[A.h]); h1 = Math.max(h1, v3[A.h]);
-        v0 = Math.min(v0, v3[A.v]); v1 = Math.max(v1, v3[A.v]);
-      });
-      const eps = CARD.x * 0.5, flatH = (h1 - h0) < eps, flatV = (v1 - v0) < eps;
-      if (flatH === flatV) return null;          // 两轴都铺开（斜着走）或都没铺开（塌成点）→ 不分道
-      const axis = flatV ? A.v : A.h;            // 沿横轴铺开（纵向是平的）→ 往纵轴让
-      const lane = di - (peerDims.length - 1) / 2;                       // 居中分道：−1.5 … +1.5
-      return { axis, d: lane * CARD.x * 0.24 };
-    }
     function rebuildComm() {
       clearComm();
       peerMeshes.forEach((m) => { m.geometry.setDrawRange(0, 0); m.visible = false; });
@@ -2019,11 +1998,8 @@
            「此刻主导维」、信息卡也写着「此刻 TP 主导」，而画面上一根青线都找不到。
            不画，改由图例那一行注明「这一屏折进视线 · N 张卡重合」，并指去哪一屏看。 */
         const flat = groupFlat(members);
-        const lane = flat ? null : laneShift(di, members);
         const segs = flat ? [] : edgesOf(d, members);
-        const shift = (v3) => (lane ? v3.setComponent('xyz'.indexOf(lane.axis), v3[lane.axis] + lane.d) : v3);
-        const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp))
-          .map(shift));
+        const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
         if (S.wire.lines) {
           // 折线逐段建管：每段两点，端点与拐点都严格落在卡心（整条折线交给一个
           // TubeGeometry 会按弧长采样，中间拐点被抄近路）。弧（长边）整条画。
@@ -2840,8 +2816,8 @@
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
         // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
         if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
-        /* 换屏要重建走线：哪一维塌成点、哪两维要分道让开，都是**逐屏**的判断
-           （groupFlat / laneShift 读 screenAxes(S.view)），不重建就还留着上一屏的画法。 */
+        /* 换屏要重建走线：哪一维塌成点是**逐屏**的判断（groupFlat 读 screenAxes(S.view)），
+           不重建就还留着上一屏的画法。 */
         S.view = v | 0; fitView(); applyAxVisibility(); fitView(); rebuildComm(); refresh2D(); syncHelp(); renderInfo();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
