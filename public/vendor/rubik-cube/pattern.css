@@ -212,9 +212,19 @@
 /* 剖面跟着「视角」走，就摆在视角那一组里：它改的是「这一屏怎么看」，与 3D/顶/前/侧
    是同一件事的延续。做成画面上的独立卡片试过——读数与控件合一了，但和视角断开，
    动线反而绕。 */
-.prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* 剖面自己一张小卡（右上，只在正交 2D 出现）：读数在上、开关与滑杆在下，
+   控件与它的说明在一起，不占工具栏的常驻宽度。 */
+.prc-slicecard {
+  position: absolute; right: var(--space-3); top: calc(var(--prc-barh, 46px) + var(--space-3) * 2);
+  z-index: 5; display: none; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  width: max-content; max-width: min(92vw, 260px);
+}
+.prc-slicecard.show { display: flex; }
+.prc-scread { font: var(--type-body-sm); color: var(--foreground-secondary); }
+.prc-scrow { display: flex; align-items: center; gap: var(--space-2); }
 .prc-root input[type="range"] { accent-color: var(--primary); }
-.prc-slice input[type="range"] { width: 108px; }
+.prc-scrow input[type="range"] { width: 108px; }
 .prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
 .prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
 .prc-cfgitem input {
