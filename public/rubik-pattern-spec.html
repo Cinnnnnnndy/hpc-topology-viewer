@@ -389,9 +389,9 @@ footer {
       <table>
         <thead><tr><th>维度</th><th>含义</th><th>在魔方里的表现</th><th>签名色</th></tr></thead>
         <tbody>
-          <tr><td class="mono nw">TP</td><td>张量并行：同一层被切成 N 片，片间每层做 AllReduce</td><td>标准形态的 X 轴；TP切片形态里每片是一面墙</td><td class="nw"><span class="dot dot-tp"></span>青 <code>--dim-tp</code></td></tr>
-          <tr><td class="mono nw">PP</td><td>流水并行：模型按层切成 N 段，段间 P2P 接力</td><td>标准形态的 Y 轴（模型深度，上→下）</td><td class="nw"><span class="dot dot-pp"></span>橙 <code>--warning</code></td></tr>
-          <tr><td class="mono nw">DP</td><td>数据并行：N 个完整副本，步末做梯度 AllReduce</td><td>标准形态的 Z 轴；DP平铺形态里每副本是一块板</td><td class="nw"><span class="dot dot-dp"></span>蓝 <code>--primary</code></td></tr>
+          <tr><td class="mono nw">TP</td><td>张量并行：同一层被切成 N 片，片间每层做 AllReduce</td><td>标准形态的 <b>Z 轴（纵深）</b>——一整根纵深行就是一个 TP 组；TP切片形态里每片是一面墙</td><td class="nw"><span class="dot dot-tp"></span>青 <code>--dim-tp</code></td></tr>
+          <tr><td class="mono nw">PP</td><td>流水并行：模型按层切成 N 段，段间 P2P 接力</td><td>标准形态的 <b>X 轴</b>（左→右 = Stage0→末，与 PP流水 同向）</td><td class="nw"><span class="dot dot-pp"></span>橙 <code>--warning</code></td></tr>
+          <tr><td class="mono nw">DP</td><td>数据并行：N 个完整副本，步末做梯度 AllReduce</td><td>标准形态的 <b>Y 轴</b>（上→下 = DP0→末）；DP平铺形态里每副本是一块板</td><td class="nw"><span class="dot dot-dp"></span>蓝 <code>--primary</code></td></tr>
           <tr><td class="mono nw">EP</td><td>专家并行：MoE 专家分桶，桶间 AllToAll</td><td><b>不占独立轴</b>，折入 DP 轴：副本 <code>rep</code> 持桶 <code>rep % ep</code></td><td class="nw"><span class="dot dot-ep"></span>紫 <code>--highlight-l0a-violet-400</code></td></tr>
         </tbody>
       </table>
@@ -405,7 +405,7 @@ footer {
           <div class="fig-mat"><div class="board">
             <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="一小块等于一张卡的坐标示意">
               <text class="hd" x="16" y="22">1 小块 = 1 卡（rank）</text>
-              <text x="16" y="38">位置即多维坐标：X=TP · Y=PP · Z=DP</text>
+              <text x="16" y="38">位置即多维坐标：X=PP · Y=DP · Z=TP（标准）</text>
               <g transform="translate(52,58)">
                 <g class="grid">
                   <path d="M0 0 H210 M0 36 H210 M0 72 H210 M0 108 H210"/>
@@ -428,9 +428,9 @@ footer {
                 <rect class="card" x="176" y="80" width="26" height="20" rx="2"/>
                 <path class="lead" d="M63 44 L63 30 L110 30"/>
                 <rect class="label-box" x="110" y="19" width="112" height="18" rx="8"/>
-                <text class="m" x="118" y="32">rank · TP1 PP1 DP0</text>
-                <text class="m" x="-40" y="16">PP ↓</text>
-                <text class="m" x="0" y="126">TP →</text>
+                <text class="m" x="118" y="32">rank · PP1 DP1 TP0</text>
+                <text class="m" x="-40" y="16">DP ↓</text>
+                <text class="m" x="0" y="126">PP →</text>
               </g>
             </svg>
           </div></div>
@@ -671,10 +671,19 @@ footer {
         <b>「标准」不是第五种形态。</b>另外四个各冲着一个问题去，它没有——留着它是因为三件具体的事，文案就直说这三件：
       </p>
       <ol>
-        <li><b>对照系</b>——三根轴地位相同、都是常规密排，「换形态只是换投影轴」才有个基准；</li>
+        <li><b>对照系</b>——三根轴都<b>不做 <code>emph</code> 拉开</b>，「换形态只是换投影轴」才有个基准；</li>
         <li><b>三个密排 2D 平面的归属地</b>——别的形态把自己那根 <code>emph</code> 轴折进视线时，那一屏就退回成标准的同名平面（TP切片 / PP流水 的侧视因此收编掉，不重复给）；</li>
         <li><b>整网层联动的入口</b>——<code>selectLayer()</code> 的紫色切片只在这个坐标系里成立，所以它会<b>主动切到标准</b>（与 <code>selectBucket()</code> 切到 EP聚簇 一致）。原先只记状态不切形态：在别的形态里调用它，画面静默地什么都不发生。</li>
       </ol>
+      <div class="note">
+        <b>轴分配的判据：这一维要不要一段段地读。</b>标准的三根轴是 <b>X=PP · Y=DP · Z=TP</b>（曾是 X=TP · Y=PP · Z=DP）——
+        PP（第几段 · 管哪几层）与 DP（第几个副本）都要一段段读，TP 不要：标准里<b>一整根纵深行就是一个 TP 组</b>，组内没有歧义可分。
+        所以把要读的那两维摆上屏幕的横纵两轴，<b>前 PP-DP 面因此是一张现成的「哪一段 × 哪个副本」表</b>；TP 收进纵深，翻它用剖面。
+        方向也有讲究：PP 左→右 = Stage0→末（<b>与 PP流水 同向</b>，两个形态之间不用重新学一次），DP 上→下 = DP0→末。
+        PP 在这里走 <code>spread</code> 档（1.8×）而不是 PP流水 的 <code>emph</code> 档（4×）：段与段之间有看得见的空档、读得出是「四组」而不是「一片」，
+        但「把这根轴拉开」这个动作仍然归 PP流水——两者差一个量级，而不是差一点点。
+        连带两处：整网层的紫色切片变成<b>竖着的一张板</b>（跨 Y=DP 与 Z=TP），PP 分段的分割线与命中区切的方向从 Y 改成 X。
+      </div>
       <p>
         按钮的<b>显示顺序 = PP · TP · EP · DP · 标准</b>：前四个按并行维排（与设计系统 sidecar 的并行切换同一顺序，读者的肌肉记忆一致），
         标准排到末位——「先挑一个问题，实在要看全貌再回到标准」这层关系不用读文案就看得出来。
@@ -692,10 +701,10 @@ footer {
         <thead><tr><th class="nw">形态</th><th class="nw">怎么摆</th><th>回答什么问题</th><th class="nw">异常长什么样</th></tr></thead>
         <tbody>
           <tr><td class="nw"><b>PP流水</b><br><span class="mono">ppf</span> · 落地</td><td><b>换轴</b>：X=PP 段 · Y=TP（段间 <code>emph</code> 步距拉开）</td><td>哪一段慢 / 流水气泡；左→右就是前向数据流</td><td><b>一整段</b>偏暗且下游跟着暗；空档 = bubble</td></tr>
-          <tr><td class="nw"><b>TP切片</b><br><span class="mono">tps</span></td><td>坐标系同标准，只把 X=TP 拉到 <code>emph</code> 档：<b>一面墙 = 全网同槽位的卡</b></td><td>同槽位系统性故障（整批同号卡坏件）</td><td><b>一面墙</b>集体异常（标准里只是周期细条纹）</td></tr>
+          <tr><td class="nw"><b>TP切片</b><br><span class="mono">tps</span></td><td><b>X=TP</b>（拉到 <code>emph</code> 档）<b>· Y=PP · Z=DP</b>：<b>一面墙 = 全网同槽位的卡</b></td><td>同槽位系统性故障（整批同号卡坏件）</td><td><b>一面墙</b>集体异常（标准里只是周期细条纹）</td></tr>
           <tr><td class="nw"><b>EP聚簇</b><br><span class="mono">ep</span></td><td>每个专家桶一面墙，A2A 域横穿各墙</td><td>热点桶 / 桶故障 / 域热点（桶 ↔ 卡非 1:1）</td><td><b>一整面墙</b>同红；域热点 = 横穿各墙的一排过热</td></tr>
           <tr><td class="nw"><b>DP平铺</b><br><span class="mono">dpt</span></td><td>每副本一块板，板排成宫格（板内 TP 折成 列×排）</td><td>哪个副本慢 / 掉队（副本间只在步末做梯度 AllReduce）</td><td>宫格里干净的<b>一块板</b>全红</td></tr>
-          <tr><td class="nw"><b>标准</b><br><span class="mono">std</span> · 基准</td><td>X=TP · Y=PP · Z=DP，三根轴地位相同、常规密排</td><td><b>不回答问题</b>：对照系 / 密排 2D 平面的归属地 / 整网层联动入口</td><td>各维都看得见，但都不成块</td></tr>
+          <tr><td class="nw"><b>标准</b><br><span class="mono">std</span> · 基准</td><td><b>X=PP · Y=DP · Z=TP</b>（PP 走 <code>spread</code> 档 1.8×，不是 PP流水 的 <code>emph</code> 4×）</td><td><b>不回答问题</b>：对照系 / 密排 2D 平面的归属地 / 整网层联动入口</td><td>各维都看得见，但都不成块</td></tr>
         </tbody>
       </table>
 
@@ -710,7 +719,7 @@ footer {
           <tr><td>TP切片</td><td>每 TP 槽位一片墙</td><td>X（<code>emph</code> 步距）</td><td class="mono">PP ×5 · DP ×100 = 500 卡</td></tr>
           <tr><td>EP聚簇</td><td>每专家桶一面墙</td><td>X（块内 TP 一字排开）</td><td class="mono">域 ×50 · PP ×5 · TP ×8 = 2000 卡</td></tr>
           <tr><td>DP平铺</td><td>每副本一块板</td><td>X·Z 二维宫格</td><td class="mono">TP ×8 · PP ×5 = 40 卡</td></tr>
-          <tr><td>标准</td><td>PP 层带（模型深度）</td><td>Y</td><td class="mono">TP ×8 · DP ×100 = 800 卡</td></tr>
+          <tr><td>标准</td><td>PP 段（第几段 · 管哪几层）</td><td>X</td><td class="mono">TP ×8 · DP ×100 = 800 卡</td></tr>
         </tbody>
       </table>
 
@@ -726,7 +735,7 @@ footer {
           <tr><td>TP切片</td><td>✓</td><td><b>DP-TP 面</b> ★</td><td>TP-PP 面</td><td class="sub">折掉 emph 轴 → 收编</td></tr>
           <tr><td>EP聚簇</td><td>✓</td><td><b>桶-域 面</b> ★</td><td>桶-PP 面</td><td>域-PP 面</td></tr>
           <tr><td>DP平铺</td><td>✓</td><td><b>副本网格</b> ★</td><td>列-PP 面</td><td>行-PP 面</td></tr>
-          <tr><td>标准</td><td><b>✓</b> ★</td><td>DP-TP 面</td><td>TP-PP 面</td><td>DP-PP 面</td></tr>
+          <tr><td>标准</td><td><b>✓</b> ★</td><td>PP-TP 面</td><td><b>PP-DP 面</b></td><td>TP-DP 面</td></tr>
         </tbody>
       </table>
       <p class="sub">
@@ -739,7 +748,8 @@ footer {
         <b>视角收编的判据是逐屏的，不是逐形态的。</b>一个形态之所以不同于标准，全在它那根被拉开的 <code>emph</code> 轴（TP切片的墙、PP流水的段，步距 4×）：
         这根轴<b>留在屏幕上</b>的两屏（顶 / 前），墙与墙之间是看得见的空档，「这是第几片 / 第几段」在这里才数得清 → 保留；
         这根轴<b>被折进视线</b>的那一屏（两者都是侧视），空档随之消失，剩下的步距签名与标准的同名平面逐位相同 → 那一屏就是标准，不重复给出。
-        早先「与标准共享三轴 ⇒ 三平面全重合」是把这条判据用到了整个形态上，<b>收多了</b>——PP流水 甚至换了轴分配（X=PP · Y=TP），顶 / 前两屏是标准根本没有的平面。
+        早先「与标准共享三轴 ⇒ 三平面全重合」是把这条判据用到了整个形态上，<b>收多了</b>——两个形态的顶 / 前两屏都是标准没有的平面。
+        被收编的那一屏与标准的同名平面仍是同一批格子，只差一次 90° 转（TP切片侧 = DP×PP ↔ 标准前 PP-DP；PP流水侧 = DP×TP ↔ 标准侧 TP-DP）。
         已发出的 <span class="mono">?view=side</span> 链接不会报错：非法视角回落到 3D。
       </div>
 
@@ -753,7 +763,7 @@ footer {
           <tr><td>TP切片</td><td>顶 DP-TP 面</td><td>同槽位系统性故障要在<b>全集群范围</b>内看，DP 轴必须在场——一整列红 = 那个槽位整批坏</td></tr>
           <tr><td>EP聚簇</td><td>顶 桶-域 面</td><td>桶故障（整墙同色）与域热点（横穿一排）是两个正交方向，只有这一屏同屏放得下</td></tr>
           <tr><td>DP平铺</td><td>顶 副本网格</td><td>找慢副本要扫一遍整个宫格，一屏看全所有板</td></tr>
-          <tr><td>标准</td><td>3D</td><td>三根轴地位相同、位置即坐标——3D 才是它本身</td></tr>
+          <tr><td>标准</td><td>3D</td><td>三根轴都不拉开、位置即坐标——3D 才是它本身；要读「哪一段 × 哪个副本」去<b>前 PP-DP 面</b></td></tr>
         </tbody>
       </table>
       <p class="sub">
@@ -783,9 +793,9 @@ footer {
 
       <figure class="fig">
         <div class="fig-mat"><div class="board">
-          <svg class="sv" viewBox="0 0 832 436" role="img" aria-label="2D 标注的落位规律与分段分割线">
-            <rect x="0" y="0" width="832" height="436" fill="var(--surface-1)"/>
-            <text class="hd" x="24" y="30">正交 2D：下方 = 横轴 · 左侧 = 纵轴 · 场内不放标记</text>
+          <svg class="sv" viewBox="0 0 832 452" role="img" aria-label="2D 标注的落位规律与分段分割线">
+            <rect x="0" y="0" width="832" height="452" fill="var(--surface-1)"/>
+            <text class="hd" x="24" y="30">标准 · 前 PP-DP 面：下方 = 横轴 · 左侧 = 纵轴 · 场内不放标记</text>
 
             <g transform="translate(150,60)">
               <!-- 细分格线：虚线 · 细 · 中性淡 -->
@@ -808,30 +818,33 @@ footer {
               <!-- 下方 = 横轴：刻度 + 段牌，一条边只排一行 -->
               <g transform="translate(0,238)">
                 <g fill="color-mix(in srgb, var(--warning) 12%, var(--background))" stroke="color-mix(in srgb, var(--warning) 34%, transparent)">
-                  <rect x="56" y="0" width="72" height="18" rx="8"/><rect x="236" y="0" width="80" height="18" rx="8"/><rect x="416" y="0" width="80" height="18" rx="8"/>
+                  <rect x="58" y="0" width="64" height="32" rx="8"/><rect x="238" y="0" width="64" height="32" rx="8"/><rect x="418" y="0" width="64" height="32" rx="8"/>
                 </g>
-                <text class="m" x="63" y="13">PP0 · L0-9</text>
-                <text class="m" x="243" y="13">PP1 · L10-19</text>
-                <text class="m" x="423" y="13">PP2 · L20-29</text>
-                <text class="m" x="16" y="38">TP0</text><text class="m" x="136" y="38">TP2</text><text class="m" x="256" y="38">TP4</text><text class="m" x="376" y="38">TP6</text><text class="m" x="496" y="38">TP8</text>
+                <text class="m" x="66" y="13">PP0</text><text class="m" x="66" y="27">L0-L11</text>
+                <text class="m" x="246" y="13">PP1</text><text class="m" x="246" y="27">L12-L23</text>
+                <text class="m" x="426" y="13">PP2</text><text class="m" x="426" y="27">L24-L35</text>
+                <text class="m" x="150" y="52">段标落到下方 → 抽样量的是宽度 → 拆两行，四段全摆得下</text>
               </g>
               <!-- 左侧 = 纵轴 -->
               <g>
                 <text class="m" x="-46" y="26">DP0</text><text class="m" x="-46" y="70">DP1</text><text class="m" x="-46" y="114">DP2</text><text class="m" x="-46" y="158">DP3</text><text class="m" x="-46" y="202">DP4</text>
+                <text class="m" x="-92" y="234">左侧那条边量高度 → 一行更省</text>
               </g>
               <!-- 折进视线的轴：这一屏不出 -->
-              <g transform="translate(556,96)">
-                <text class="m" x="0" y="0">被折进视线的轴</text>
-                <text class="m" x="0" y="16">这一屏不出标记</text>
+              <g transform="translate(556,88)">
+                <text class="m" x="0" y="0">Z=TP 被折进视线</text>
+                <text class="m" x="0" y="16">这一屏不出它的标记</text>
                 <text class="m" x="0" y="32">（要逐层看 → 剖面）</text>
+                <text class="m" x="0" y="52">这一维的走线也不画</text>
+                <text class="m" x="0" y="68">（图例那行压暗并注明）</text>
               </g>
             </g>
-            <text class="m" x="150" y="368">分段边界 = 实线 · 签名色 · 只画在块与块之间（n 块出 n−1 条），最外沿交给外框</text>
-            <text class="m" x="150" y="388">细分格线 = 虚线 · 细 · 中性淡；两级一分开，格子退成背景，「这是第几段」由实线直接说</text>
-            <text class="m" x="150" y="408">牌上只留身份 + 最要紧的限定（哪一段 · 管哪几层），规格「里面有多少张卡」收进悬停</text>
+            <text class="m" x="150" y="382">分段边界 = 实线 · 签名色 · 只画在块与块之间（n 块出 n−1 条），最外沿交给外框</text>
+            <text class="m" x="150" y="402">细分格线 = 虚线 · 细 · 中性淡；两级一分开，格子退成背景，「这是第几段」由实线直接说</text>
+            <text class="m" x="150" y="422">牌上只留身份 + 最要紧的限定（哪一段 · 管哪几层），规格「里面有多少张卡」收进悬停</text>
           </svg>
         </div></div>
-        <figcaption><span class="cap-n">图 3.3</span>2D 标注的落位规律与两级线型。层号从 0 起，画面一律用维度名（<span class="mono">PP0</span>），不掺第二套叫法。</figcaption>
+        <figcaption><span class="cap-n">图 3.3</span>2D 标注的落位规律与两级线型。层号从 0 起，画面一律用维度名（<span class="mono">PP0</span>），不掺第二套叫法；段标按边选形状（下方两行 / 左侧一行）。</figcaption>
       </figure>
 
       <table>
@@ -866,6 +879,21 @@ footer {
             <td class="nw">再补一遍跨轴检查</td>
             <td>抽样只管一根轴自己，两根轴共用的那个角落它管不着 → 疏密算完做一次屏幕盒相交检查，冲突时<b>留段名、丢刻度</b>（刻度还能悬停问出来）</td>
             <td>横轴末位与纵轴末位各自合规，投到屏幕上照样叠在一起</td>
+          </tr>
+          <tr>
+            <td class="nw">段标按边选形状</td>
+            <td>落到<b>下方</b>那条边时抽样量的是<b>宽度</b>，段标拆成两行（<span class="mono">PP0</span> / <span class="mono">L0-L11</span>）宽度减半；落到<b>左侧</b>时量的是高度，一行更省 → 保持一行。3D 用同一个两行形状（轴测里投影会缩短，更需要窄牌）</td>
+            <td>一行 <span class="mono">PP0 · L0-L11</span> 要约 140px 而列距约 118px，四段被丢掉两段——那不是「密了少摆几枚」，是把主要信息摆没了</td>
+          </tr>
+          <tr>
+            <td class="nw">判叠优先级显式声明</td>
+            <td>跨轴冲突时<b>留段名、丢刻度</b>，优先级在建标记时用 <code>rank</code> 传进去</td>
+            <td>段标为了跟着抽样一起疏密也走了 series，「非 series 才是段名」的旧判据就失效了，变成谁先建谁赢（纯看代码顺序）</td>
+          </tr>
+          <tr>
+            <td class="nw">3D 里 X 与 Z 的刻度坐不同半径</td>
+            <td>两条边都贴着地面走、在近角交汇 → 外让距离分档（Z 比 X/Y 远一档），角落自然分开</td>
+            <td>同一个距离会让两串刻度在角上挤成一堆（标准 3D 里 <span class="mono">PP3</span> 与 <span class="mono">TP1</span> 只差 35px），判叠必然枪毙一枚——而 TP 一共才两枚，丢一枚就丢掉一半</td>
           </tr>
           <tr>
             <td class="nw">抽掉的块靠悬停问出来</td>
@@ -932,6 +960,30 @@ footer {
           <tr><td class="nw">聚焦</td><td>无关卡压暗并缩到 0.42，网格反过来加强</td><td>几千张卡各自有色时，四维高亮会被整片颜色淹没</td></tr>
         </tbody>
       </table>
+
+      <h4 style="font:var(--type-title-3);margin:var(--space-5) 0 var(--space-2)">「谁和谁一组」不随视角变，「画不画得出来」随视角变</h4>
+      <p>
+        哪些 rank 是对端，是作业本身的事实——<b>若随相机变，就成了「换个角度看，同组的人换了一批」，那是假的</b>。
+        所以通信组的计算与视角无关，详情卡那四行身份也不动。<b>随视角变的只能是画法</b>：
+      </p>
+      <ul>
+        <li>
+          <b>折叠维不画走线。</b>正交 2D 把一根世界轴折进视线，沿那根轴排开的组全部投影到同一个像素——走线长度是 0。
+          实测（标准 · 选中一张卡）：前 PP-DP 面 <span class="mono">TP=0px</span> · 顶 PP-TP 面 <span class="mono">DP</span> 与 <span class="mono">EP</span> 都是 <span class="mono">0px</span> · 侧 TP-DP 面 <span class="mono">PP=0px</span>——
+          <b>每个 2D 视角都至少有一维如此</b>，这不是巧合而是折叠的定义。
+          问题不在于画了根看不见的线，而在于<b>画面与文案打架</b>：图例把这一维加粗成「此刻主导维」、详情卡写着「此刻 TP 主导」，读者去画面上找那根青线找不到，合理的结论是「这个图坏了」。
+          现在不画，改由<b>图例那一行压暗 + 注明「折进视线 · N 卡重合，去 3D 看」</b>，详情卡的「此刻」下面也补一句。
+          这一维的通信真实存在，所以<b>行不删、量照给</b>，缺的只是「这一屏画不出来」这句话。
+        </li>
+        <li>
+          <b>判定读「这一屏留下哪两根轴」，不读相机</b>——同一形态同一屏结论恒定，与缩放平移无关，因此不必挂进渲染循环；代价是<b>换视角必须重建走线</b>，否则还留着上一屏的画法。
+        </li>
+      </ul>
+      <div class="note is-warn">
+        <b>还欠一笔：共线的两维。</b>EP 域是 DP 组的子集，两组成员只在同一根轴上错开，于是两条线叠在同一列里——紫色整根压在蓝色底下，跨度不是 0 却一样读不出来。
+        试过按地铁图并行线路的老办法<b>错开半格</b>，实机看下来代价更大：<b>走线唯一的锚是「端点落在卡心」</b>，线一挪开，读者就得先在心里把它挪回它连的那两张卡上——EP 与 DP 叠着至少还各自指得准，错开之后两根都不指着谁了。
+        <b>已回退</b>，2D 与 3D 重新走同一套端点规则。真要解，方向多半是<b>同屏只画一维</b>（跟着「此刻主导维」走），而不是把两根都画出来再想办法分开。
+      </div>
 
       <div class="pair">
         <figure class="fig fig-sm">
@@ -1027,8 +1079,8 @@ footer {
         <tbody>
           <tr><td class="nw">3D 场景内</td><td>短标记：<code>TP0</code> / <code>DP99</code> / <code>PP0·L0-9</code> / <code>桶1 E32-63</code>，以及三根轴各自那排刻度</td><td>整句解释、浮动横幅、箭头、常驻贴士</td></tr>
           <tr><td class="nw">2D 场内</td><td><b>什么都不放</b>——标记一律去它那根轴的边上（下方 / 左侧）</td><td>任何压在卡阵上的标记</td></tr>
-          <tr><td class="nw">详情卡（inspector）</td><td>kicker（RANK）→ 标题（rank 37 / 128）→ 一句定义 → 键值表（TP 槽位 / PP 段 / DP 副本 / EP 桶·A2A 域 / 物理落位）→ 结论条（此刻哪一维主导、走到 Ring 的哪一段、这一维走线各跨了哪层）</td><td>与图例重复的颜色说明</td></tr>
-          <tr><td class="nw">图例</td><td>「着色 / 连线」两段，一行一条，色块 + 名字；加粗那条 = 此刻主导维</td><td>读法、为什么、同色非同组的解释</td></tr>
+          <tr><td class="nw">详情卡（inspector）</td><td>kicker（RANK）→ 标题（rank 37 / 128）→ 一句定义 → 键值表（TP 槽位 / PP 段 / DP 副本 / EP 桶·A2A 域 / 物理落位）→ 结论条（此刻哪一维主导、走到 Ring 的哪一段、这一维走线各跨了哪层；主导维在这一屏画不出来时当场补一句）</td><td>与图例重复的颜色说明</td></tr>
+          <tr><td class="nw">图例</td><td>「着色 / 连线」两段，一行一条，色块 + 名字；加粗那条 = 此刻主导维。<b>这一屏画不出来的那一维照旧列出</b>（通信真实存在），但压暗并注明「折进视线 · N 卡重合，去 3D 看」</td><td>读法、为什么、同色非同组的解释</td></tr>
           <tr><td class="nw">问号气泡</td><td><b>写成一小段文档</b>：kicker → 一句定义 → 选项清单（<code>&lt;dl&gt;</code>）→ 注意事项 → 一块带边框的「此刻」。形态气泡对每个形态直说「这个形态到底给你看什么」；视角 / 剖面气泡带上「这一格叠了几张、正翻到第几层」</td><td>—</td></tr>
           <tr><td class="nw">悬停 tooltip</td><td>单卡 / 单条边 / 一整段的即时信息（谁到谁、哪一维哪种原语、跨的是哪层；这一段是谁、里面有什么）</td><td>需要对照阅读的长文</td></tr>
         </tbody>
@@ -1043,7 +1095,7 @@ footer {
     <!-- ══════════ 04 正例与反例 ══════════ -->
     <section id="s4">
       <h2><span class="n">04</span>正例与反例<span class="req">必填</span></h2>
-      <p>以下十一组都是这个 Pattern 在迭代中真实修过的问题，反例即当初的错误做法。</p>
+      <p>以下十二组都是这个 Pattern 在迭代中真实修过的问题，反例即当初的错误做法。</p>
 
       <!-- 1 -->
       <h3>4.1 卡块恒定</h3>
@@ -1498,7 +1550,70 @@ footer {
       </div>
 
       <!-- 7 -->
-      <h3>4.10 3D 的刻度也整排贴着轴走</h3>
+      <h3>4.10 折叠维不画走线，图例把话说清楚</h3>
+      <div class="pair">
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="正例：折叠维不画线，图例注明">
+              <text class="hd" x="16" y="24">不画 · 但在图例里说清楚</text>
+              <g transform="translate(28,44)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H200 V96 H0 Z M50 0 V96 M100 0 V96 M150 0 V96 M0 32 H200 M0 64 H200"/></g>
+                <rect class="card" x="12" y="8" width="26" height="16" rx="2"/><rect class="card" x="62" y="8" width="26" height="16" rx="2"/><rect class="card-w" x="112" y="8" width="26" height="16" rx="2"/><rect class="card" x="162" y="8" width="26" height="16" rx="2"/>
+                <rect class="card" x="12" y="40" width="26" height="16" rx="2"/><rect class="card" x="62" y="40" width="26" height="16" rx="2"/><rect class="card" x="112" y="40" width="26" height="16" rx="2"/><rect class="card" x="162" y="40" width="26" height="16" rx="2"/>
+                <rect class="card" x="12" y="72" width="26" height="16" rx="2"/><rect class="card" x="62" y="72" width="26" height="16" rx="2"/><rect class="card" x="112" y="72" width="26" height="16" rx="2"/><rect class="card" x="162" y="72" width="26" height="16" rx="2"/>
+                <path class="casing" d="M25 16 H175"/><path class="wire" d="M25 16 H175" style="stroke:var(--primary)"/>
+              </g>
+              <g transform="translate(248,52)">
+                <rect class="chip" x="0" y="0" width="118" height="76" rx="10"/>
+                <text class="m" x="10" y="18">连线 · 通信域</text>
+                <rect x="10" y="26" width="9" height="9" rx="2" style="fill:var(--primary)"/><text class="m" x="24" y="34">DP Ring</text>
+                <g opacity="0.42">
+                  <rect x="10" y="42" width="9" height="9" rx="2" style="fill:var(--dim-tp)"/><text class="m" x="24" y="50">TP Ring</text>
+                  <text class="m" x="10" y="64">折进视线 · 2 卡重合</text>
+                  <text class="m" x="10" y="74">去 3D 看</text>
+                </g>
+              </g>
+              <text x="16" y="176">这一维的通信真实存在 → 行不删、量照给，缺的只是「这一屏画不出来」这句话。</text>
+              <text class="m" x="16" y="194">详情卡的「此刻」下面也补同一句</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-do"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>DO</span>画法逐屏判，身份不随视角变。</figcaption>
+        </figure>
+        <figure class="fig fig-sm">
+          <div class="fig-mat"><div class="board">
+            <svg class="sv" viewBox="0 0 384 210" role="img" aria-label="反例：在折叠维上照画走线">
+              <text class="hd" x="16" y="24">照画 · 于是画面与文案打架</text>
+              <g transform="translate(28,44)">
+                <g class="grid" stroke-dasharray="3 3"><path d="M0 0 H200 V96 H0 Z M50 0 V96 M100 0 V96 M150 0 V96 M0 32 H200 M0 64 H200"/></g>
+                <rect class="card" x="12" y="8" width="26" height="16" rx="2"/><rect class="card" x="62" y="8" width="26" height="16" rx="2"/><rect class="card-w" x="112" y="8" width="26" height="16" rx="2"/><rect class="card" x="162" y="8" width="26" height="16" rx="2"/>
+                <rect class="card" x="12" y="40" width="26" height="16" rx="2"/><rect class="card" x="62" y="40" width="26" height="16" rx="2"/><rect class="card" x="112" y="40" width="26" height="16" rx="2"/><rect class="card" x="162" y="40" width="26" height="16" rx="2"/>
+                <rect class="card" x="12" y="72" width="26" height="16" rx="2"/><rect class="card" x="62" y="72" width="26" height="16" rx="2"/><rect class="card" x="112" y="72" width="26" height="16" rx="2"/><rect class="card" x="162" y="72" width="26" height="16" rx="2"/>
+                <path class="casing" d="M25 16 H175"/><path class="wire" d="M25 16 H175" style="stroke:var(--primary)"/>
+                <circle cx="125" cy="16" r="9" class="bad"/>
+                <path class="lead" d="M125 26 V104 H150"/>
+                <text class="m" x="0" y="112">TP 组全落在同一个像素 → 走线长度 0</text>
+              </g>
+              <g transform="translate(248,52)">
+                <rect class="chip" x="0" y="0" width="118" height="76" rx="10"/>
+                <text class="m" x="10" y="18">连线 · 通信域</text>
+                <rect x="10" y="26" width="9" height="9" rx="2" style="fill:var(--primary)"/><text class="m" x="24" y="34">DP Ring</text>
+                <rect x="10" y="42" width="9" height="9" rx="2" style="fill:var(--dim-tp)"/><text class="m" x="24" y="50" style="font-weight:700">TP Ring</text>
+                <rect class="badfill" x="6" y="58" width="106" height="14" rx="5"/>
+                <text class="m" x="10" y="69">加粗 = 此刻主导维</text>
+              </g>
+              <text x="16" y="176">图例把它加粗成「此刻主导维」，画面上却一根青线都找不到。</text>
+              <text class="m" x="16" y="194">读者的合理结论是「这个图坏了」</text>
+            </svg>
+          </div></div>
+          <figcaption><span class="verdict is-dont"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>DON'T</span>在折叠维上照画，或让通信组随视角变。</figcaption>
+        </figure>
+      </div>
+      <p class="sub">
+        试过、又回退的补救：把共线的两维<b>错开半格</b>让开（EP 相对 DP）。走线唯一的锚是「端点落在卡心」——线一挪开就不指着谁了，
+        宁可两根叠着。<b>「每条通信线的每个折线顶点都落在卡心」因此仍是全局不变量</b>，回归脚本照旧断言它。
+      </p>
+
+      <h3>4.11 3D 的刻度也整排贴着轴走</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -1546,7 +1661,7 @@ footer {
         </figure>
       </div>
 
-      <h3>4.11 分组色取深浅两档，打光增益 ≈ 1</h3>
+      <h3>4.12 分组色取深浅两档，打光增益 ≈ 1</h3>
       <div class="pair">
         <figure class="fig fig-sm">
           <div class="fig-mat"><div class="board">
@@ -1607,7 +1722,7 @@ footer {
         </figure>
       </div>
 
-      <h3>4.12 速查：还有哪些明确禁止</h3>
+      <h3>4.13 速查：还有哪些明确禁止</h3>
       <table>
         <thead><tr><th style="width:42%">禁止</th><th>为什么</th></tr></thead>
         <tbody>
@@ -1630,6 +1745,15 @@ footer {
           <tr><td>靠调整 DOM 顺序改按钮的显示次序</td><td>形态 / 视角的序号是 URL 参数、键盘序、测试的依据 → 显示次序用 CSS <code>order</code> 调</td></tr>
           <tr><td>给某个单独的标记开字号小灶</td><td>字号只有 <code>LABEL_PX</code> 一个全局入口，散落的常量会让「整体调大一点」变成逐处翻找</td></tr>
           <tr><td>把固定屏幕尺寸的字牌尺寸并进取景包围盒</td><td>牌的世界尺寸由相机反算，并进去会自我反馈（取景放宽 → 牌变大 → 再放宽，永不收敛）——只并锚点位置</td></tr>
+          <tr><td>标准把要一段段读的维藏进纵深、把无歧义的 TP 摆上屏幕轴</td><td>轴分配的判据是「这一维要不要一段段地读」——PP / DP 要，TP 不要 → <span class="mono">X=PP · Y=DP · Z=TP</span>，前 PP-DP 面才是一张现成的表</td></tr>
+          <tr><td>给标准的 PP 上 <code>emph</code> 档（4×）</td><td>那是 PP流水 的定义动作，标准跟着拉开就没有基准可对照了 → 标准用 <code>spread</code>（1.8×），两者差一个量级</td></tr>
+          <tr><td>把段标塞成一行然后指望抽样兜底</td><td>下方那条边量的是宽度，一行 ~140px 而列距 ~118px，四段丢两段 = 把主要信息摆没了 → 拆两行；左侧那条边量高度，一行更省</td></tr>
+          <tr><td>靠「是不是 series」判断跨轴判叠的优先级</td><td>段标也走 series 之后这个判据就失效了，变成谁先建谁赢 → 优先级显式传 <code>rank</code>，规则是段名 &gt; 刻度</td></tr>
+          <tr><td>3D 里 X 与 Z 的刻度用同一个外让距离</td><td>两条边贴地面走、在近角交汇，同距离会挤成一堆并被判叠裁掉 → 两根轴的标注坐在不同半径上</td></tr>
+          <tr><td>让走线的「谁和谁一组」随视角变</td><td>那等于说换个角度看同组的人就换了一批——通信组必须视角无关，随视角变的只能是「这一屏画不画得出来」</td></tr>
+          <tr><td>在折叠维上照画走线</td><td>成员全落在同一个像素，画出来是长度为 0 的管子，而图例还把它加粗成「此刻主导维」→ 不画，图例那行压暗并注明</td></tr>
+          <tr><td>拿相机去判断「这一维在这一屏塌了没有」</td><td>读「这一屏留下哪两根轴」就够，结论与缩放平移无关；代价是换视角必须重建走线</td></tr>
+          <tr><td>把重叠的走线整条挪开来分辨</td><td>走线唯一的锚是「端点落在卡心」，挪开就不指着谁了——错开半格试过已回退，宁可叠着</td></tr>
           <tr><td>用黑色笼子罩住选中卡</td><td>黑不在这套色卡里，笼子还盖住卡自己的着色 → 用卡同色的涟漪呼吸灯</td></tr>
         </tbody>
       </table>
@@ -1736,7 +1860,7 @@ footer {
           <tr><td class="mono nw">setTime(t | {phase}) / setPlaying(b)</td><td>时间轴定位（<code>{phase:'TP'|'PP'|'EP'|'DP'}</code>）与播放</td></tr>
           <tr><td class="mono nw">setWire({...}) / setAlgo(...)</td><td>连线五图层各自开关 / AllReduce 画 <code>auto|ring|tree</code></td></tr>
           <tr><td class="mono nw">select(rank) / selectEdge(edge)</td><td>选中一张卡 / 一条通信边</td></tr>
-          <tr><td class="mono nw">selectLayer(l) / selectBucket(e)</td><td><b>联动挂点</b>：整网图选中层 → 紫色水平切片，<b>会主动切到标准形态</b>（切片只在那个坐标系里成立）；专家图选中桶 → 切 EP聚簇并聚焦整面墙</td></tr>
+          <tr><td class="mono nw">selectLayer(l) / selectBucket(e)</td><td><b>联动挂点</b>：整网图选中层 → 紫色切片（PP 现在是 X 轴，切片是<b>竖着的一张板</b>），<b>会主动切到标准形态</b>（切片只在那个坐标系里成立）；专家图选中桶 → 切 EP聚簇并聚焦整面墙</td></tr>
           <tr><td class="mono nw">setPlacement({...})</td><td>物理落位：<code>cardsPerHost</code> / <code>hostsPerPod</code> / <code>slots</code></td></tr>
           <tr><td class="mono nw">setTheme / resize / destroy</td><td>主题、尺寸、销毁</td></tr>
           <tr><td class="mono nw">handle.scene / handle.camera</td><td>只读 Three.js 挂点，供宿主联动与自动化校验</td></tr>
@@ -1774,7 +1898,7 @@ footer {
           </tr>
           <tr>
             <td><b>② 步距由规则推导</b></td>
-            <td>单维轴步距 = 卡块尺寸 + 缝隙(成员数) × 层级倍率。缝隙按成员数分档（多则紧、少则松），层级倍率表达意图：dense / normal / spread / emph。</td>
+            <td>单维轴步距 = 卡块尺寸 + 缝隙(成员数) × 层级倍率。缝隙按成员数分档（多则紧、少则松），层级倍率表达意图：dense / normal / spread / emph。<b>哪一维放哪根轴，看它要不要一段段地读</b>——要读的摆上屏幕的横纵轴，不要读的收进纵深。</td>
             <td>新增一根轴时只声明「成员数」和「意图」，不要写死数值；长轴不被拉成细丝，短轴不退化成薄片。</td>
           </tr>
           <tr>
@@ -1831,6 +1955,11 @@ footer {
             <td><b>⑬ 色与光是一件事</b></td>
             <td>分组色取深档 600/700 与浅档 300 交错，避开彩度最高的 400/500；打光总增益 ≈ 1（顶面所见即 token 色）。</td>
             <td>图例色块是 CSS 直接取的 token——画面只要被增益顶亮，图例就与画面对不上；调亮打光时，压暗系数要跟着往下压。</td>
+          </tr>
+          <tr>
+            <td><b>⑭ 画不出来就说出来</b></td>
+            <td>「谁和谁一组」是作业的事实、不随视角变；「这一屏画不画得出来」随视角变，必须逐屏判：折叠维的走线长度是 0，不画，改由图例那一行压暗并注明「折进视线 · N 卡重合，去 3D 看」。</td>
+            <td>行不删、量照给——缺的只是那句话。画面与文案打架比少画一根线严重得多：读者找不到被加粗的那一维，只会认为图坏了。</td>
           </tr>
         </tbody>
       </table>
@@ -1929,6 +2058,14 @@ footer {
       <div class="faq">
         <div class="q">为什么「标准」排在最后，落地却是 PP流水？</div>
         <p class="a">四个形态各回答一个具体问题，标准是它们的基准投影、自己不回答问题。开门第一眼给一个<b>能读出东西</b>的形态，比给一个「全都在这儿」的对照系更有用；按钮又是按 <span class="mono">PP·TP·EP·DP·标准</span> 排的，落地在第一个，选中态就在最左边。<code>mount({mode})</code> / <span class="mono">?mode=</span> 照旧覆盖。</p>
+      </div>
+      <div class="faq">
+        <div class="q">标准的三根轴为什么是 X=PP · Y=DP · Z=TP？</div>
+        <p class="a">判据是<b>这一维要不要一段段地读</b>：PP（第几段 · 管哪几层）与 DP（第几个副本）都要，TP 不要——标准里一整根纵深行就是一个 TP 组，组内没有歧义可分。把要读的那两维摆上屏幕的横纵两轴，<b>前 PP-DP 面就是一张现成的「哪一段 × 哪个副本」表</b>；TP 收进纵深，翻它用剖面。PP 走 <code>spread</code>（1.8×）而不是 PP流水 的 <code>emph</code>（4×）：读得出是几组，但「把这根轴拉开」仍然归 PP流水。</p>
+      </div>
+      <div class="faq">
+        <div class="q">切到 2D 之后，某一维的走线不见了？</div>
+        <p class="a">那一维被折进了视线：它的成员在这一屏全落在同一个像素上，走线长度是 0。画出来是一根看不见的管子，而图例还把它加粗成「此刻主导维」——画面与文案打架。所以<b>不画</b>，改由图例那一行压暗并注明「折进视线 · N 卡重合，去 3D 看」，详情卡的「此刻」下面也补一句。通信本身真实存在，<b>身份与量都照给</b>；切回 3D 就能看到。</p>
       </div>
       <div class="faq">
         <div class="q">TP切片 / PP流水 为什么只少了侧视？</div>
