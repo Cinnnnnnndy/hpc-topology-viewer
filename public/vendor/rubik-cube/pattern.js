@@ -487,6 +487,12 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
+        /* 剖面卡：控件与它的读数合成一张卡，摆在画面上而不是工具栏里。
+           理由是**它讲的就是眼前这一屏**——「这一格里叠了几张卡、正翻到第几层」是画面的
+           属性，不是一项配置；而且它只在正交 2D 出现，常驻工具栏白占一大条宽度。
+           读数与控件本来是两个东西（右上角一枚贴士 + 工具栏一条滑杆），说的却是同一件事，
+           合成一张卡之后：折叠有多严重 → 就在滑杆上方；要拆开看 → 滑杆就在手边。 */
+        '<div class="prc-slicecard panel-shell"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
       ].join(''),
@@ -991,6 +997,62 @@
        当年 2D 被收编正是因为这个。给每一块套一圈签名色细框，条纹当场读成整块。
        框贴着卡本身（不是网格框）：只外扩半张卡 + 一点余量，既不与卡穿插，也不像另起一个
        坐标系。四条竖棱只画到块高的两端，中间留空——满框在 3D 里会织成一片网。 */
+    /* ── 2D 标注的落位规律（与二维图表一致，不再各处手写偏移）───────────────
+       一个标记标的永远是「某根世界轴上的某个位置」。那么它摆哪儿就不该由人逐处去猜：
+         · 这根轴在当前这一屏是**横轴** → 摆到**图的下方**；
+         · 是**纵轴** → 摆到**图的左侧**；
+         · 被折进视线 → 这一屏根本不出这个标。
+       右侧留给剖面卡。场内不放任何标记。
+       这么定死之后：① 标签之间永远不会互相压（各自占着自己那条边上的一个位置）；
+       ② 换视角、顶视转 90°、换配置，标记都自动跟到该去的边上，不需要逐处再调。
+       3D 轴测不受此约束——那里没有「屏幕横纵轴」，标记贴着它标注的结构本身。 */
+    // 每个 2D 视角的屏幕坐标系：哪根世界轴是横轴/纵轴，以及该轴的正方向在屏幕上是右/上
+    function screenAxes(v) {
+      if (v === 1) {
+        return topRotated()
+          ? { h: 'z', v: 'x', hR: 1, vU: 1 }     // 转 90°：横=Z（右为 +）· 纵=X（上为 +）
+          : { h: 'x', v: 'z', hR: 1, vU: -1 };   // 不转：  横=X（右为 +）· 纵=Z（上为 −，Z 向下）
+      }
+      if (v === 2) return { h: 'x', v: 'y', hR: 1, vU: 1 };   // 前视：横=X 纵=Y
+      if (v === 3) return { h: 'z', v: 'y', hR: 1, vU: 1 };   // 侧视：横=Z 纵=Y
+      return null;                                            // 3D 没有屏幕轴
+    }
+    // 沿某根轴的 along 处，落到该屏的「下边」或「左边」，向外让开 gap
+    function axEdgePos(v, kind, axis, along, bb, gap) {
+      const A = screenAxes(v);
+      const lo = { x: bb.x0, y: bb.y0, z: bb.z0 }, hi = { x: bb.x1, y: bb.y1, z: bb.z1 };
+      const o = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2, z: (lo.z + hi.z) / 2 };
+      o[axis] = along;
+      // 让开半张卡（bb 是卡心包围盒）再加 gap
+      const half = { x: CARD.x / 2, y: CARD.y / 2, z: CARD.z / 2 };
+      if (kind === 'bottom') o[A.v] = A.vU > 0 ? lo[A.v] - half[A.v] - gap : hi[A.v] + half[A.v] + gap;
+      else o[A.h] = A.hR > 0 ? lo[A.h] - half[A.h] - gap : hi[A.h] + half[A.h] + gap;
+      return V3(o.x, o.y, o.z);
+    }
+    /* 把一个「轴上标记」在它出得来的每个 2D 视角各摆一份（各自只在自己那屏可见）。
+       row 用来错行：同一条边上标记多而密时往外再让一层，不是随手挪。 */
+    function axOnAxis(text, color, w, axis, along, bb, opt) {
+      const o = opt || {};
+      [1, 2, 3].forEach((v) => {
+        const A = screenAxes(v);
+        if (!A || (o.views && o.views.indexOf(v) < 0)) return;
+        const kind = A.h === axis ? 'bottom' : A.v === axis ? 'left' : null;
+        if (!kind) return;                       // 这根轴在这一屏被折进视线了
+        /* 让开的距离也按**屏幕**算，不按世界：牌是固定屏幕尺寸，用随模型缩放的 D() 让开，
+           小规格下牌就会压到图上、大规格下又飘得老远。gp = 一个字高对应的世界尺寸。 */
+        /* 错行只在**下方**才需要：那里一排牌肩并肩，宽的会撞上。
+           左侧的牌是上下叠着的（各占自己那一行），再错行只会让它们左右参差。 */
+        const gp = worldPerPx() * LABEL_PX;
+        const gap = gp * 1.2 + (kind === 'bottom' ? (o.row || 0) * gp * 2.9 : 0);
+        const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
+        if (!l) return;
+        /* 精灵是**居中**摆放的：只按 gap 定位的话，牌会有一半探进图里。
+           所以还要让开自己的半个身位——牌是固定屏幕尺寸，这个半身位是确定的
+           （scale 直接由 LABEL_PX 反算），不是又回到「量出来再摆」那套补救。 */
+        l.position.copy(axEdgePos(v, kind, axis, along, bb, gap + (kind === 'bottom' ? l.scale.y : l.scale.x) / 2));
+        axOnly(l, [v]);
+      });
+    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
     function axBlockFrames(boxes, colorHex, op) {
@@ -1052,15 +1114,17 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         const bb = model.boundsOf(0);
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
-        axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
-        axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7,
-          V3(0, b.y0 - D(2.6), b.z1 + D(3.2)), V3(0, b.y0, b.z1));
-        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1)));
-        axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8,
-          V3(b.x1 + D(5), b.y0 - D(2.6), 0), V3(b.x1, b.y0, 0));
-        axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6,
-          V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0), V3(b.x0, b.y1, b.z0));
-        axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + D(3.6), 0));
+        axOnly(axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))), [0]);
+        axOnly(axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4))), [0]);
+        axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7);
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))), [0]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1))), [0]);
+        axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8);
+        // 2D：刻度按「它标的是哪根轴」自动落到下方 / 左侧
+        axOnAxis('TP0', TPc, 1.6, 'x', xT(0), bb); axOnAxis(`TP${TP - 1}`, TPc, 1.6, 'x', xT(TP - 1), bb);
+        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
+        axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6);
+        axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9);
         /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
            与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
            三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
@@ -1072,8 +1136,8 @@
           // 完整规格牌给两个仍保留 PP 轴的正交面（前视 TP-PP、侧视 DP-PP），
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
           axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
-          axOnly(axText(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6,
-            V3(b.x0 - D(5.6), yS(s2), b.z0), null, sub, true), [2, 3]);
+          // PP 是 Y 轴 → 在前视/侧视里是纵轴 → 自动落到左侧；顶视 PP 被折掉，自动不出
+          axOnAxis(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6, 'y', yS(s2), bb, { sub, plate: true });
         }
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
@@ -1095,17 +1159,24 @@
             z0: cz - halfBZ - BM, z1: cz + halfBZ + BM,
           };
         }), DPc, isDark() ? 0.4 : 0.5);
-        R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
-        R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
+        // 列沿 X、行沿 Z：2D 里各自落到「自己那根轴此刻是横还是纵」对应的边上
+        R(COLS, (i) => { const x = b.x0 + (i + 0.5) * s.gapX;
+          axOnly(axText('列' + i, DPc, 1.7, V3(x, b.y0, b.z1 + D(1.8))), [0]);
+          axOnAxis('列' + i, DPc, 1.7, 'x', x, bb); });
+        R(ROWS, (i) => { const z = b.z0 + (i + 0.5) * s.gapZ;
+          axOnly(axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, z)), [0]);
+          axOnAxis('行' + i, DPc, 1.7, 'z', z, bb); });
         /* 板有 REP 块，逐块挂牌会糊掉——只给首尾两块两行规格牌，说明「一块板里装了什么」。
            顶视把 PP（Y）折进视线，「浮在板上方」这个偏移当场失效、牌会压在板上 →
            顶视改用 Z 方向把牌推到宫格外（首块推到近侧、末块推到远侧）。 */
         const dSub = `TP ×${TP} · PP ×${PP} = ${TP * PP} 卡`;
+        /* 副本板是**二维宫格里的一个点**，不属于任何一根轴——按落位规律，它没有该去的那条边。
+           2D 因此不出这两张牌：板的身份由「列 i」「行 j」两条轴刻度交叉读出来本就够了，
+           硬摆到边上只会跟轴刻度抢位置（原先就是「列8」和「DP 副本 99」压在一起）。
+           「一块板里装了什么」留在 3D 与形态问号气泡。 */
         const d0 = pos(0, 0, 0), dN = pos(0, 0, REP - 1);
-        axOnly(axText('DP 副本 0', DPc, 6, d0.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0, 2, 3]);
-        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, dN.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0, 2, 3]);
-        axOnly(axText('DP 副本 0', DPc, 6, V3(d0.x, b.y0, b.z0 - D(2.2)), null, dSub, true), [1]);
-        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, V3(dN.x, b.y0, b.z1 + D(2.2)), null, dSub, true), [1]);
+        axOnly(axText('DP 副本 0', DPc, 6, d0.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0]);
+        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, dN.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0]);
         axText(seg2(`DP 平铺 · ${REP} 块板`, DPc, ` = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`), DPc, 11,
           V3(0, b.y1 + D(3.4), 0), V3(0, b.y1, 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
@@ -1114,9 +1185,12 @@
         // 这两句说的是「板里面怎么排」，都挂在板上：顶视把 PP 折掉、板内的列×排本来就一览无余，
         // 再压一张牌上去纯属挡卡 → 顶视不出。
         axOnly(axText(model.TPD > 1 ? `板内 TP×${TP} = ${model.TPC}列×${model.TPD}排` : `板内横=TP×${TP}`,
-          TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0))), [0, 2, 3]);
+          TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0))), [0]);
         axOnly(axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5,
-          pTop.clone().add(V3(0.4, 1.7, 0))), [0, 2, 3]);
+          pTop.clone().add(V3(0.4, 1.7, 0))), [0]);
+        // PP 是 Y 轴：前视/侧视里是纵轴 → 落左侧；顶视 PP 被折掉 → 不出
+        axOnAxis('PP0', PPc, 1.6, 'y', s.y0 + (PP - 1) * s.pp, bb);
+        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.y0, bb);
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
@@ -1132,20 +1206,21 @@
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
-          const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE, ej = (e % 2) * D(3.8);
-          // 3D 不错行（+X 右下与 +Y 上互相抵消）；2D 才错行——与 TP切片/PP流水 同一条约定
+          const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE;
           axOnly(axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 3.2,
             V3(ex, b.y1 + D(1.2), 0)), [0]);
-          axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
-            V3(ex, b.y0 - D(1.4) - ej, 0), null, eSub, true), [2]);
-          axOnly(axText(`桶${e}`, c, 2.4, V3(ex, b.y0, b.z1 + D(1.5))), [1]);
+          // 桶墙沿 X → 顶视里 X 是纵轴（落左侧）· 前视里 X 是横轴（落下方）· 侧视 EP 被折掉（不出）
+          axOnAxis(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6, 'x', ex, bb,
+            { sub: eSub, plate: true, row: e % 2 });
         }
-        axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
-          V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
-        const rowZ = bb.z0;
-        axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9, V3(0, b.y0 - D(1.7), rowZ));
-        axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0));
-        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
+        axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10);
+        axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9);
+        axOnly(axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0)), [0]);
+        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
+        const zDm = (i) => (i - (DOM - 1) / 2) * s.dom;
+        axOnAxis('域0', DPc, 1.6, 'z', zDm(0), bb); axOnAxis(`域${DOM - 1}`, DPc, 2, 'z', zDm(DOM - 1), bb);
+        axOnAxis(`PP0`, PPc, 1.6, 'y', s.cy + (PP - 1) / 2 * s.pp, bb);
+        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.cy - (PP - 1) / 2 * s.pp, bb);
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
@@ -1153,40 +1228,30 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         axBlockFrames(blocksAlong('x', TP, (t) => bb.x0 + t * s.gapT, CARD.x / 2, bb), TPc);
+        /* 块标做成两行牌：第一行「这块是谁」，第二行「这块里面有什么」。
+           3D 里等距投影会把 +X（右下）与 +Y（上）几乎抵消，错行救不了、加宽更糟，
+           而分段本来就由块框交代清楚了 → 3D 只给一枚身份小牌。
+           2D 里落位交给 axOnAxis：TP 是 X 轴，顶视里 X 是纵轴（落左侧）、前视里是横轴
+           （落下方），不用再逐屏手写偏移。 */
+        const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
         for (let t = 0; t < TP; t++) {
-          /* 块标做成两行牌：第一行「这块是谁」（TP 切片 0 · 第 1/8 片），
-             第二行「这块里面有什么」（PP ×5 · DP ×100 = 500 卡）。
-             尺寸与错行是一对：块步距只有 3 个世界单位，而标记有屏幕像素下限
-             （最多放大 1.8×）——单排放不下这么宽的牌，错两行后同排相邻隔了两个块步距，
-             放大到头也不撞。 */
-          // 牌宽钉在 1.75 个块步距上、并错两行：同排相邻隔两个步距，怎么都不撞。
-          // 三个落点：3D 浮在块顶 · 前视摆到场下（场上那条带被右上角粒度贴士占着）·
-          // 顶视 Y 被折掉 → 改摆到 z 方向的场外。
-          /* 详略按视角分：等距轴测里 +X 投影向右下、+Y 向上，两者几乎抵消——错行救不了，
-             把牌加宽只会更糟。3D 里分段本来就由块框交代清楚了，所以只给一枚身份小牌；
-             两行的完整规格牌留给正交 2D（那里横向摆得开，且下方大片空着）。 */
-          const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
-          // 错行位移同样走 D()：写死世界单位的话，小规格（相机贴得近）会把牌甩出取景框
-          const tTit = `TP 切片 ${t} · ${t + 1}/${TP}`, tj = (t % 2) * D(3.8);
-          axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y1 + D(1.3) + tj, 0)), [0]);
-          const tx = bb.x0 + t * s.gapT;
-          axOnly(axText(tTit, TPc, 6, V3(tx, b.y0 - D(1.4) - tj, 0), null, tSub, true), [2]);
-          // 顶视留下的两根轴里有 DP（成员最多的那根，默认 100）——整幅被拉成细长条，
-          // 规格牌按块步距钉宽后字会小到读不出，这里只给身份小牌，规格看前视那一屏。
-          // 顶视转 90° 后各块本来就分居不同的屏幕行，不再需要错行——错行只会让它们左右参差
-          axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y0, b.z1 + D(1.5))), [1]);
+          const tx = bb.x0 + t * s.gapT, tj = (t % 2) * D(3.8);
+          axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y1 + D(1.3) + tj, 0)), [0]);
+          axOnAxis(`TP 切片 ${t} · ${t + 1}/${TP}`, TPc, 6, 'x', tx, bb,
+            { sub: tSub, plate: true, row: t % 2 });
         }
-        axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5,
-          V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
+        axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5);
         /* 这里曾有一条「墙间连点」（8 个球 + 一根粗线），本意是说「同一 TP 组的卡分属 8 面墙」。
            撤掉了：① 这件事选中任意一张卡就由真正的 TP AllReduce Ring 连线画出来，
            而且画的是实际算法（Ring/Tree），比一根示意横杆准确得多；② 它横在墙顶，
            又粗又抢，小规格下还会顶到工具栏。文字说明留在下面那句（→ 问号气泡）。 */
-        axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
-        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0, 1]);
-        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0, 1]);
-        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0, 2]);
-        axOnly(axText(`同槽位 TP0…TP${TP - 1} 各一面墙`, TPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
+        axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5);
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0]);
+        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
+        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
+        axOnAxis('PP0', PPc, 1.6, 'y', s.cy + (PP - 1) / 2 * s.pp, bb);
+        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.cy - (PP - 1) / 2 * s.pp, bb);
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
@@ -1194,24 +1259,21 @@
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
         axBlockFrames(blocksAlong('x', PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2, bb), PPc);
+        const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
         for (let st = 0; st < PP; st++) {
-          const lr = model.stageLayerRange(st);
-          // PP 只有几段、块步距更宽 → 牌钉在 0.94 个步距上，单排就摆得下（落点同上）
-          const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
-          const pTit = `PP Stage ${st} · L${lr.lo}-L${lr.hi}`;
-          // 3D 里不错行：+X 向右下、+Y 向上，错行会把两枚牌推到一起；沿块步距自然排开
-          // 已经形成一道斜梯，反而是读得清的那种
-          axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0)), [0]);
-          const px = bb.x0 + st * s.gapP;
-          axOnly(axText(pTit, PPc, 6, V3(px, b.y0 - D(1.4), 0), null, pSub, true), [2]);
-          axOnly(axText(`S${st}`, PPc, 2.4, V3(px, b.y0, b.z1 + D(1.5))), [1]);   // 同上：顶视含 DP 轴，只给身份牌
+          const lr = model.stageLayerRange(st), px = bb.x0 + st * s.gapP;
+          // 3D 不错行：沿块步距自然排开已经形成一道斜梯，反而是读得清的那种
+          axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(px, b.y1 + D(1.6), 0)), [0]);
+          // PP 是 X 轴 → 顶视里是纵轴（落左侧）· 前视里是横轴（落下方）· 侧视已收编
+          axOnAxis(`PP Stage ${st} · L${lr.lo}-L${lr.hi}`, PPc, 6, 'x', px, bb, { sub: pSub, plate: true });
         }
-        axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5,
-          V3(0, b.y1 + D(4.9), 0), V3(0, b.y1 + D(0.6), 0));
-        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0, 1]);
-        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0, 1]);
-        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0, 2]);
-        axOnly(axText(`S0（首段）→S${PP - 1}（末段）`, PPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
+        axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0]);
+        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0]);
+        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
+        axOnAxis('TP0', TPc, 1.6, 'y', s.cy + (TP - 1) / 2 * s.tp, bb);
+        axOnAxis(`TP${TP - 1}`, TPc, 2, 'y', s.cy - (TP - 1) / 2 * s.tp, bb);
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
@@ -1922,10 +1984,7 @@
            免得别处（键盘序、URL 参数、测试）跟着错位。 */
         b.style.order = i === 0 ? 0 : i === md.bestView ? 1 : i + 1;
       });
-      // 同一个 flex 容器里只要有人设了 order，没设的就按 0 排到最前——剖面控件因此会插到
-      // 视角按钮前面。显式排到末尾。
-      root.querySelectorAll('.prc-row-views .prc-slicewrap, .prc-row-views .prc-slice')
-        .forEach((el) => { el.style.order = 99; });
+
       // 只剩 3D 一个视角的形态（TP切片 / PP流水，2D 与标准重合）：整组不显示，
       // 一个孤零零的「3D」按钮既没有可切换的对象，也让人以为别的被禁用了
       const vg = root.querySelector('.prc-row-views');
@@ -1956,13 +2015,14 @@
       }
       if (sliceBox) {
         const d = curDepth();
-        sliceBox.style.display = d ? '' : 'none';
+        sliceBox.classList.toggle('show', !!d);
         if (d) {
           sliceRange.max = String(d.slice.n - 1);
           if (S.sliceVal > d.slice.n - 1) S.sliceVal = 0;
           sliceRange.value = String(S.sliceVal);
           sliceRange.disabled = !S.sliceOn;
-          sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `剖面关（${d.label} 折叠）`;
+          // 读数就是原来那枚贴士的原话：控件与它的读数从此是一件事，不再各说各的
+          sliceLab.textContent = granText();
           sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
         }
       }
@@ -1991,13 +2051,15 @@
         root.classList.toggle('is-open', S.more);
         syncChrome(); resize();
       });
-      sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
-      sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
+      sliceBox = $('.prc-slicecard');
+      const scKick = document.createElement('div'); scKick.className = 'prc-lgsec'; scKick.textContent = '正交折叠';
+      sliceLab = document.createElement('div'); sliceLab.className = 'prc-scread';
+      const scRow = document.createElement('div'); scRow.className = 'prc-scrow';
+      scRow.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
       sliceRange.addEventListener('input', () => { S.sliceVal = sliceRange.value | 0; refresh2D(); });
-      sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
-      sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
-      rowViews.appendChild(sliceBox);
+      scRow.appendChild(sliceRange);
+      sliceBox.appendChild(scKick); sliceBox.appendChild(sliceLab); sliceBox.appendChild(scRow);
       const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
