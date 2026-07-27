@@ -853,6 +853,14 @@
       if (!L) return;
       const worldW = LABEL_PX * worldPerPx() / L.fontFrac;
       sp.scale.set(worldW, worldW * L.aspect, 1);
+      placeEdgeLabel(sp);
+    }
+    // 贴边标记：坐标 = 锚点 + 外让；外让量按屏幕算并随相机重算，各边留白因此恒等
+    function placeEdgeLabel(sp) {
+      const E = sp.userData.edge;
+      if (!E) return;
+      sp.position.copy(E.anchor);
+      sp.position[E.axis] += E.sign * worldPerPx() * LABEL_PX * E.k;
     }
     let lastLabHalf = -1, lastLabH = -1;
     function syncLabelSizes(force) {
@@ -1026,14 +1034,26 @@
       Object.keys(G).forEach((pl) => Object.keys(G[pl]).forEach((ax) => {
         axSeg(G[pl][ax], t[ax] ? hx(t[ax]) : grid, t[ax] ? tintOp : gridOp, { plane: pl, dashed: true });
       }));
-      // 外框拆成三个平面矩形：3D 拼成角落框，2D 只留屏幕那一面
+      /* 外框：2D 用「屏幕那一面的矩形」，3D 用**去重后的角落框**。
+         三个平面矩形两两共用一条棱（地面与背墙共用后底棱……），3D 下三个矩形一起画
+         就有三条棱各画两遍——正是斜视时框看着「毛」的原因。 */
       const rect = (pts) => { const o = []; for (let i = 0; i < 4; i++) o.push(pts[i], pts[(i + 1) % 4]); return o; };
       const FR = {
         zx: rect([V3(b.x0, b.y0, b.z0), V3(b.x1, b.y0, b.z0), V3(b.x1, b.y0, b.z1), V3(b.x0, b.y0, b.z1)]),
         xy: floorOnly ? [] : rect([V3(b.x0, b.y0, b.z0), V3(b.x1, b.y0, b.z0), V3(b.x1, b.y1, b.z0), V3(b.x0, b.y1, b.z0)]),
         yz: floorOnly ? [] : rect([V3(b.x0, b.y0, b.z0), V3(b.x0, b.y0, b.z1), V3(b.x0, b.y1, b.z1), V3(b.x0, b.y1, b.z0)]),
       };
-      Object.keys(FR).forEach((pl) => axSeg(FR[pl], frame, frameOp, { plane: pl }));
+      Object.keys(FR).forEach((pl) => axSeg(FR[pl], frame, frameOp, { plane: pl, flat: true }));
+      const seen = {}, corner = [];
+      Object.keys(FR).forEach((pl) => {
+        for (let i = 0; i < FR[pl].length; i += 2) {
+          const a2 = FR[pl][i], b2 = FR[pl][i + 1];
+          const k = [a2.x, a2.y, a2.z, b2.x, b2.y, b2.z].map((v) => v.toFixed(3)).sort().join(',');
+          if (seen[k]) continue;
+          seen[k] = 1; corner.push(a2, b2);
+        }
+      });
+      axSeg(corner, frame, frameOp, { plane: '3d' });
     }
     /* 强调块的框：TP切片 / PP流水 把主轴按 emph（4×）拉开成「墙 / 段」。轴测下空档本身
        就说明了分段，但正交 2D 里主轴一稀疏，卡就散成条纹——数不清「这是第几片 / 第几段」，
@@ -1085,17 +1105,25 @@
         if (!kind) return;                       // 这根轴在这一屏被折进视线了
         /* 让开的距离也按**屏幕**算，不按世界：牌是固定屏幕尺寸，用随模型缩放的 D() 让开，
            小规格下牌就会压到图上、大规格下又飘得老远。gp = 一个字高对应的世界尺寸。 */
-        /* 错行只在**下方**才需要：那里一排牌肩并肩，宽的会撞上。
-           左侧的牌是上下叠着的（各占自己那一行），再错行只会让它们左右参差。 */
-        // 贴着轴放：只留大半个字高的呼吸，远了就跟它标的那根轴断开了
-        const gp = worldPerPx() * LABEL_PX;
-        const gap = gp * 0.55 + (kind === 'bottom' ? (o.row || 0) * gp * 2.9 : 0);
         const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
         if (!l) return;
-        /* 精灵是**居中**摆放的：只按 gap 定位的话，牌会有一半探进图里。
-           所以还要让开自己的半个身位——牌是固定屏幕尺寸，这个半身位是确定的
-           （scale 直接由 LABEL_PX 反算），不是又回到「量出来再摆」那套补救。 */
-        l.position.copy(axEdgePos(v, kind, axis, along, bb, gap + (kind === 'bottom' ? l.scale.y : l.scale.x) / 2));
+        /* 让牌**贴边对齐**，而不是把自己的半个身位算进坐标里。
+           精灵默认居中（center 0.5,0.5），若靠「坐标再退半个身位」来让开，就把当时的
+           scale 烙进了坐标——之后 syncLabelSizes 一重算尺寸，宽牌退得多、窄牌退得少，
+           同一条边上的留白就参差了（实测下方 0.195、左侧 0.48，差 2.5 倍）。
+           改用 sprite.center 把「贴哪条边」交给渲染：左侧的牌右边缘对齐锚点、
+           下方的牌上边缘对齐锚点，尺寸怎么变，留白都恰好是那一个 gap。
+           锚点与外让方向存下来，缩放时跟着 syncLabelSize 一起重算，各边留白因此永远相等。
+           错行只在**下方**需要：那里一排牌肩并肩，宽的会撞；左侧的牌各占自己一行。 */
+        if (kind === 'bottom') l.center.set(0.5, 1); else l.center.set(1, 0.5);
+        const A2 = screenAxes(v);
+        l.userData.edge = {
+          anchor: axEdgePos(v, kind, axis, along, bb, 0),
+          axis: kind === 'bottom' ? A2.v : A2.h,
+          sign: (kind === 'bottom' ? A2.vU : A2.hR) > 0 ? -1 : 1,
+          k: 0.55 + (kind === 'bottom' ? (o.row || 0) * 2.9 : 0),
+        };
+        placeEdgeLabel(l);
         axOnly(l, [v]);
       });
     }
@@ -1120,6 +1148,7 @@
        3D 画整只盒子；正交 2D 只画屏幕那一面的矩形——盒子的前后两面加四条竖棱在 2D 里
        会全部投影成同一批线，一个框画出四五根重线，正是画面糊掉的主因。 */
     function axBlockFrames(boxes, colorHex, op) {
+      if (!boxes || !boxes.length) return;               // blocksAlong 判定「贴着」时返回 null
       const box = [], P = { xy: [], yz: [], zx: [] };
       const rect = (pts) => { const o = []; for (let i = 0; i < 4; i++) o.push(pts[i], pts[(i + 1) % 4]); return o; };
       boxes.forEach((q) => {
@@ -1143,7 +1172,17 @@
     /* 沿一根轴把卡阵切成 n 块，每块外扩半张卡 + 余量 → 一组框。
        `span` 是该轴上「一块」的半厚（卡厚的一半 or 块内多张卡的一半跨度）。 */
     const BM = 0.34;
+    /* 块与块**贴着或叠着**时不画框：相邻两块共用一条边界，各画一遍就是两根重线，
+       块一多就成了一道梯子（标准形态的 PP 层带正是这样——块厚 1.28 > 层步距 1.2，
+       框其实互相压着）。这种情况本来就不需要框：格线里那根轴的边界线用的就是这一维的
+       签名色，一条边界只画一次，说的是同一件事。
+       框留给**块与块之间有空档**的形态（TP 墙 / PP 段 / EP 桶墙 / DP 板），
+       那里格线画不出「这一块的范围」，非框不可。 */
     function blocksAlong(ax, n, centerAt, span, bb) {
+      if (n > 1) {
+        const pitch = Math.abs(centerAt(1) - centerAt(0));
+        if (pitch <= (span + BM) * 2) return null;      // 贴着或叠着 → 交给格线
+      }
       const full = {
         x0: bb.x0 - CARD.x / 2 - BM, x1: bb.x1 + CARD.x / 2 + BM,
         y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
