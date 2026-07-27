@@ -431,7 +431,11 @@
     const S = {
       mode: opts.mode == null ? DEFAULT_MODE : opts.mode | 0,
       view: 0,                       // 0=轴测 · 1=顶 · 2=前 · 3=侧
-      sliceOn: false, sliceVal: 0,   // 正交剖面：单层查看被折叠的深度维
+      /* 正交剖面**默认开在第 0 层**：2D 一进来每格就只有一张卡，所见即所得；
+         关掉才是「把 N 张叠在一起看」。反过来（默认关）会让人第一眼就吃一个折叠，
+         还得先发现有这么个开关——把需要解释的那个状态放在默认，是反的。
+         3D 下 curDepth() 为空，这个状态不起作用，也不显示控件。 */
+      sliceOn: true, sliceVal: 0,
       colorBy: 'load',               // load | tp | pp | dp | ep | host | pod（后两个 = 物理落位透镜）
       anom: 'none',                  // none | tp | pp | dp | ep（异常注入 → 「异常的形状」）
       playing: true,
@@ -2287,7 +2291,7 @@
           // 工具栏里只放最短的读数（「这一屏叠了几张卡」的完整说法在视角问号气泡里）
           sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `关（${d.label} 折叠）`;
           sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
-          sliceRange.classList.toggle('is-on', S.sliceOn);   // 关着时压淡（但仍可拖）
+
         }
       }
     }
