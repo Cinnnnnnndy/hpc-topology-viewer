@@ -1100,7 +1100,7 @@
        身位」来让开，就把当时的 scale 烙进了坐标——之后重算尺寸时宽牌退得多、窄牌退得少，
        同一条边上的留白就参差了（实测下方 0.195、左侧 0.48，差 2.5 倍）。改成左侧的牌右
        边缘对齐锚点、下方的牌上边缘对齐锚点，锚点与外让方向存下来随相机重算，留白恒等。
-       row 用来错行：只有**下方**需要（那里一排牌肩并肩会撞；左侧的牌各占自己一行）。 */
+       不做错行：摆不下由 axOnAxisSeries 抽样解决，两个解法一起上只会排成锯齿。 */
     function axEmit(v, kind, text, color, w, axis, along, bb, o) {
       const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
       if (!l) return null;
@@ -1110,7 +1110,7 @@
         anchor: axEdgePos(v, kind, axis, along, bb, 0),
         axis: kind === 'bottom' ? A.v : A.h,
         sign: (kind === 'bottom' ? A.vU : A.hR) > 0 ? -1 : 1,
-        k: 0.55 + (kind === 'bottom' ? (o.row || 0) * 2.9 : 0),
+        k: 0.55,
       };
       placeEdgeLabel(l);
       // 记下这一屏该留多宽/多高的边带（牌自身 px + 外让 px）
@@ -1147,14 +1147,16 @@
         if (o.views && o.views.indexOf(v) < 0) return;
         const kind = edgeKind(v, axis);
         if (!kind) return;
-        const rows = kind === 'bottom' ? (o.rows || 1) : 1;
+        /* 不错行：错行与「摆不下就少摆」是同一个问题的两个解法，两个一起上就成了
+           这种上上下下的锯齿——抽样已经保证摆得下，再错行纯属添乱。
+           一条边上只排一行，是图表轴的常规读法。 */
         // 拿文案最长的一枚当样品（末位通常最长：DP99 / L41-L48），量完即弃
         const probe = makeLabel(textOf(n - 1), color, w, o.sub);
         const need = (kind === 'bottom' ? probe.scale.x : probe.scale.y) * 1.08;
         if (probe.material.map) probe.material.map.dispose();
         probe.material.dispose();
         const pitch = n > 1 ? Math.abs(at(1) - at(0)) : Infinity;
-        const stride = Math.max(1, Math.ceil(need / Math.max(1e-6, pitch * rows)));
+        const stride = Math.max(1, Math.ceil(need / Math.max(1e-6, pitch)));
         const idx = [];
         for (let i = 0; i < n; i += stride) idx.push(i);
         const last = idx[idx.length - 1];
@@ -1162,8 +1164,7 @@
           if (n - 1 - last < stride) idx.pop();   // 不足一整个间隔就顶掉上一枚，否则末位会贴上去
           idx.push(n - 1);
         }
-        idx.forEach((i, k) => axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb,
-          Object.assign({}, o, { row: k % rows })));
+        idx.forEach((i) => axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb, o));
       });
     }
     // 轴刻度 = 最简单的一串轴上标记，密了自动减
@@ -1350,7 +1351,7 @@
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         axOnAxisSeries(EP, (e) => `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
           EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
-          { sub: eSub, plate: true, rows: 2, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
+          { sub: eSub, plate: true, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE;
@@ -1380,7 +1381,7 @@
            （落下方），不用再逐屏手写偏移。 */
         const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
         axOnAxisSeries(TP, (t) => `TP 切片 ${t} · ${t + 1}/${TP}`, TPc, 6, 'x',
-          (t) => bb.x0 + t * s.gapT, bb, { sub: tSub, plate: true, rows: 2 });
+          (t) => bb.x0 + t * s.gapT, bb, { sub: tSub, plate: true });
         for (let t = 0; t < TP; t++) {
           const tx = bb.x0 + t * s.gapT, tj = (t % 2) * D(3.8);
           axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y1 + D(1.3) + tj, 0)), [0]);
@@ -1406,7 +1407,7 @@
         axBlockFrames(blocksAlong('x', PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2, bb), PPc);
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
-          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true, rows: 2 });
+          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true });
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st), px = bb.x0 + st * s.gapP;
           // 3D 不错行：沿块步距自然排开已经形成一道斜梯，反而是读得清的那种
