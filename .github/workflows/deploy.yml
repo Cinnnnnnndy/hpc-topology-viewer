@@ -1,15 +1,21 @@
 name: Deploy to GitHub Pages
 
-# 本分支（claude/rubik-view-pattern-extraction-7pk0qt）的部署策略：
-# 站点框架（工作台/驾驶舱）永远从 main 构建——本分支不进 Pages 框架；
-# 本分支只贡献一个静态子目录 /rubik/（逻辑魔方 pattern 独立迭代页），
-# 叠加在 main 构建产物之上一起发布。push 本分支即可刷新 /rubik/。
-# 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，
-# main 一发布 /rubik/ 会暂时消失，重跑本分支的 workflow（push 或
-# workflow_dispatch 选本分支）即可找回。
+# 部署策略：站点框架（工作台/驾驶舱）永远从 main 构建，两个 pattern 分支都不进框架，
+# 各自只贡献一个自包含的静态子目录，叠加在 main 构建产物之上一起发布：
+#   · claude/rubik-view-pattern-extraction-7pk0qt
+#       → /rubik/ 与 /patterns/rubik-cube-logical/（逻辑魔方 pattern 本体）
+#   · claude/logic-cube-pattern-spec-3oycmv
+#       → /rubik-spec/（逻辑魔方的设计 Pattern 规范页，自包含、不进框架）
+# push 任一分支即刷新它自己的目录。
+# 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，且两个 pattern
+# 分支各自的 workflow 只叠加自己那份，所以 main 或另一分支一发布，本分支的目录会
+# 暂时消失，重跑本分支的 workflow（push 或 workflow_dispatch 选本分支）即可找回。
 on:
   push:
-    branches: [main, claude/rubik-view-pattern-extraction-7pk0qt]
+    branches:
+      - main
+      - claude/rubik-view-pattern-extraction-7pk0qt
+      - claude/logic-cube-pattern-spec-3oycmv
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -82,6 +88,38 @@ jobs:
           # 版本落到契约里，方便对方核对拿到的是哪一版
           node -e "const f='$PAT/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version='$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
           echo "published: /patterns/rubik-cube-logical/pattern.html?v=$SHA"
+
+      - name: Checkout spec branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/logic-cube-pattern-spec-3oycmv
+          path: spec-src
+
+      - name: Overlay pattern spec at /rubik-spec/
+        # 规范页自己一条链接，不并进 /patterns/ 那套目录：那里放的是「可复用的
+        # pattern 本体」（pattern.html/css/js/json 同级），规范页是讲这套 pattern
+        # 怎么用的文档，混在一起会让 <script src=".../pattern.js"> 该引哪个变得含糊。
+        # 目录自包含（自带 vendor 依赖），页面里指向 pattern 的那几条链接改写到
+        # /patterns/rubik-cube-logical/ 的规范位置——文档告诉读者去哪儿取，
+        # 取的就是别人能直接引用的那一份。
+        # 资源链接统一打上 ?v=<短 SHA>（代码示例那几行含 &lt; 的不动）。
+        run: |
+          SHA=$(git -C spec-src rev-parse --short HEAD)
+          SPEC=dist/rubik-spec
+          mkdir -p $SPEC/vendor/rubik-cube
+          cp spec-src/public/vendor/three-r128.min.js $SPEC/vendor/three-r128.min.js
+          cp -r spec-src/public/vendor/pto-design-system $SPEC/vendor/pto-design-system
+          cp spec-src/public/vendor/rubik-cube/pattern.js \
+             spec-src/public/vendor/rubik-cube/pattern.css \
+             spec-src/public/vendor/rubik-cube/pattern.json \
+             spec-src/public/vendor/rubik-cube/favicon.svg \
+             $SPEC/vendor/rubik-cube/
+          sed -e 's#class="res-card" href="\./vendor/rubik-cube/#class="res-card" href="../patterns/rubik-cube-logical/#g' \
+              -e 's#class="res-card" href="\./vendor/pto-design-system/#class="res-card" href="../patterns/rubik-cube-logical/vendor/pto-design-system/#g' \
+              -e 's#href="\./rubik-pattern\.html"#href="../patterns/rubik-cube-logical/pattern.html"#g' \
+              -e '/&lt;/!s#\(\(src\|href\)="\)\(\.\./patterns/[A-Za-z0-9._/-]*\|\./vendor/[A-Za-z0-9._/-]*\)\(\.\(js\|css\|svg\|json\|html\)\)"#\1\3\4?v='"$SHA"'"#g' \
+              spec-src/public/rubik-pattern-spec.html > $SPEC/index.html
+          echo "published: /rubik-spec/?v=$SHA"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
