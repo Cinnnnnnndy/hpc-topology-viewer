@@ -208,10 +208,23 @@
 /* 数字输入也跟着做成胶囊，与同一排的按钮成套 */
 .prc-cfgitem input { border-radius: var(--radius-pill); }
 
-/* ── 剖面滑杆 / 并行度输入 ─────────────────────────────────────────── */
-.prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* ── 剖面卡（右侧）· 并行度输入 ────────────────────────────────────
+   2D 标注的落位规律：**下方 = 横轴 · 左侧 = 纵轴 · 右侧 = 剖面卡**（与二维图表一致）。
+   剖面讲的就是眼前这一屏（这一格叠了几张卡、正翻到第几层），所以它属于画面而不是
+   工具栏；又只在正交 2D 出现，常驻工具栏白占一大条宽度。
+   读数与控件本来是两个东西（右上一枚贴士 + 工具栏一条滑杆）却说的是同一件事，
+   合成一张卡：折叠有多严重就在滑杆上方，要拆开看滑杆就在手边。 */
+.prc-slicecard {
+  position: absolute; right: var(--space-3); top: calc(var(--prc-barh, 46px) + var(--space-3) * 2);
+  z-index: 5; display: none; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  width: max-content; max-width: min(92vw, 260px);
+}
+.prc-slicecard.show { display: flex; }
+.prc-scread { font: var(--type-body-sm); color: var(--foreground-secondary); }
+.prc-scrow { display: flex; align-items: center; gap: var(--space-2); }
 .prc-root input[type="range"] { accent-color: var(--primary); }
-.prc-slice input[type="range"] { width: 108px; }
+.prc-scrow input[type="range"] { width: 108px; }
 .prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
 .prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
 .prc-cfgitem input {
