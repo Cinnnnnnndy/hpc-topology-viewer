@@ -241,8 +241,17 @@
     /* 各形态的轴间距——全部由上面的布局规则推导（不再逐形态手调常量）。
        每个形态只声明「哪根轴放哪个维、用什么层级」，换任何并行数字都自动成立。 */
     const SP = {
-      // 标准：三根语义轴各一维，常规层级 —— 位置即多维坐标
-      std: { sx: tpStep, sy: ppStep, sz: stepOf('z', REP), cy: CY },
+      /* 标准：三根语义轴各一维，常规层级 —— 位置即多维坐标。
+         轴分配 X=PP · Y=DP · Z=TP：把**有编号、要一段段读**的两维（PP 段 · DP 副本）
+         摆到屏幕的横纵两轴上，于是「哪一段 × 哪个副本」在前视里是一张现成的表；
+         TP 收进纵深，因为一整根 X 行就是一个 TP 组（组内无歧义，翻它用剖面）。
+         步距按**各轴自己的枚数**取（GAP_BY_N），不是三轴共用一个数——PP 只有几段、
+         DP 常有上百个，共用一个步距要么段挤成一团、要么副本拉得满屏放不下。
+         PP 走 spread 档（1.8×）而不是 PP流水 的 emph 档（4×）：段与段之间有看得见的
+         空档、读得出是「四组」而不是「一片」，但「把这根轴拉开」这个动作仍然归 PP流水
+         ——两者因此还是差一个量级，而不是差一点点。三轴步距比也都在 MAX_RATIO 以内
+         （128 卡：2.13 / 0.90 / 1.45），2D 不会散成稀疏条纹。 */
+      std: { sx: stepOf('x', PP, 'spread'), sy: stepOf('y', REP), sz: stepOf('z', TP), cy: CY },
       // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
       dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
@@ -287,10 +296,10 @@
         out.z = (rep - cR) * s.rep;
         return out;
       }
-      const s = SP.std;          // 标准：X=TP · Y=PP · Z=DP（位置即多维坐标）
-      out.x = (tp - cT) * s.sx;
-      out.y = s.cy + (cP - pp) * s.sy;
-      out.z = (rep - cR) * s.sz;
+      const s = SP.std;          // 标准：X=PP（左→右 Stage0→末） · Y=DP（上→下 DP0→末） · Z=TP
+      out.x = (pp - cP) * s.sx;
+      out.y = s.cy + (cR - rep) * s.sy;
+      out.z = (tp - cT) * s.sz;
       return out;
     }
 
@@ -316,7 +325,11 @@
        PP流水 甚至换了轴分配（X=PP · Y=TP），顶/前两屏是标准根本没有的平面。
        剩下的真问题是 emph 步距会让 2D 散成稀疏条纹，交给块框（axBlockFrames）解决。
        bestView = 这个形态「最该看的一屏」——由它要回答的问题决定，不是由好不好看决定。 */
-    const D_STD = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };   // 视角 → 被折进视线的维（可多个）
+    /* 视角 → 被折进视线的维（可多个）。两套：
+         D_STD  标准的 X=PP · Y=DP · Z=TP  →  顶折 DP · 前折 TP · 侧折 PP
+         D_TPS  TP切片的 X=TP · Y=PP · Z=DP →  顶折 PP · 前折 DP · 侧折 TP */
+    const D_STD = { 1: ['rep'], 2: ['tp'], 3: ['pp'] };
+    const D_TPS = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };
     const modes = [
       {
         /* 标准不是「第五种形态」，是前四种的**基准投影**。它自己不回答任何问题——
@@ -327,9 +340,9 @@
                 就退回成标准的同名平面（TP切片/PP流水 的侧视因此收编掉，不重复给）；
              ③ 整网层联动的入口：selectLayer() 的紫色切片只在这个坐标系里成立。 */
         key: 'std', name: '标准', short: '标准',
-        sub: `标准 · 基准投影 X=TP Y=PP(模型深度) Z=DP`,
+        sub: `标准 · 基准投影 X=PP(模型深度) Y=DP Z=TP`,
         why: `前四个形态的基准投影，自己不查问题 · 三根轴地位相同（换形态只是换投影轴）· 三个密排 2D 平面的归属地 · 整网层联动的入口`,
-        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
+        viewLabels: { 1: '顶 PP-TP 面', 2: '前 PP-DP 面', 3: '侧 TP-DP 面' }, depth: D_STD,
         // 三根轴地位相同，3D 才是它本身；2D 三屏都是它的
         views: [0, 1, 2, 3], bestView: 0,
       },
@@ -357,8 +370,9 @@
         key: 'tps', name: 'TP切片', short: 'TP',
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
-        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面' }, depth: D_STD,
-        // 侧视折掉 TP（本形态的 emph 轴）→ 与标准侧视逐位相同，不重复给。
+        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面' }, depth: D_TPS,
+        // 侧视折掉 TP（本形态的 emph 轴）→ 剩下的 DP×PP 密排与标准前视是同一批格子
+        // （只差一次 90° 转），不重复给。
         // 「同槽位系统性故障」要在全集群范围内看，DP 轴必须在场 → 顶视是这一形态的主屏：
         // 一整列红 = 那个槽位的卡整批坏。
         views: [0, 1, 2], bestView: 1,
@@ -964,7 +978,12 @@
            否则转一次相机就少一枚、越转越空。 */
         if (sp.userData.views) sp.visible = sp.userData.views.indexOf(S.view) >= 0 && !sp.userData.tickHide;
         if (!sp.visible) return;
-        cand.push({ sp, ser: sp.userData.tickSer || null, rank: sp.userData.tickSer ? 0 : 1 });
+        /* 冲突时谁留下：**段名 > 刻度**。段名（`PP3·L36-47`）是这一段唯一的那块牌，
+           刻度（`TP1`）是一串里的一枚、丢了还能悬停问出来。段标现在也走 series
+           （为了跟着抽样一起疏密），所以不能再靠「是不是 series」区分，改由建的时候
+           显式声明 rank——否则谁先建谁赢，纯看代码顺序。 */
+        const rk = sp.userData.tickSer ? (sp.userData.tickRank || 0) : 2;
+        cand.push({ sp, ser: sp.userData.tickSer || null, rank: rk });
       });
       cand.sort((a, b) => b.rank - a.rank);
       cand.forEach((c) => {
@@ -1302,8 +1321,13 @@
         /* 不错行：错行与「摆不下就少摆」是同一个问题的两个解法，两个一起上就成了
            这种上上下下的锯齿——抽样已经保证摆得下，再错行纯属添乱。
            一条边上只排一行，是图表轴的常规读法。 */
+        /* `subOf` = 第二行按序号取（如 PP 段的 `L0-L11`）。分成两行是为了让牌**变窄**：
+           落到下方那条边时，占位量的是宽度，`PP0 · L0-L11` 一行摆要 ~140px、而 PP 只有
+           几列、列距 ~118px，抽样就会把四段丢掉两段——四段丢两段不是「密了少摆几枚」，
+           是把主要信息摆没了。拆成 `PP0` / `L0-L11` 两行后宽度减半，全部摆得下。 */
+        const subAt = (i) => (o.subOf ? o.subOf(i) : o.sub);
         // 拿文案最长的一枚当样品（末位通常最长：DP99 / L41-L48），量出它在这条边上占几像素
-        const probe = makeLabel(textOf(n - 1), color, w, o.sub);
+        const probe = makeLabel(textOf(n - 1), color, w, subAt(n - 1));
         const L = probe.userData.lab, wpx = LABEL_PX / L.fontFrac;
         const need = (kind === 'bottom' ? wpx : wpx * L.aspect) * 1.15;
         if (probe.material.map) probe.material.map.dispose();
@@ -1319,8 +1343,9 @@
         if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
         const ser = { view: v, needPx: need, items: [] };
         idx.forEach((i) => {
-          const l = axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb, o);
-          if (l) { l.userData.tickSer = ser; ser.items.push({ sp: l, at: at(i) }); }
+          const oi = o.subOf ? Object.assign({}, o, { sub: subAt(i) }) : o;
+          const l = axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb, oi);
+          if (l) { l.userData.tickSer = ser; l.userData.tickRank = o.rank || 0; ser.items.push({ sp: l, at: at(i) }); }
         });
         if (ser.items.length) axSeries.push(ser);
       });
@@ -1336,7 +1361,13 @@
        原来只给首尾两枚、块标还浮在场上：首尾读不出中间是第几个，浮着的块标又挡卡。
        疏密仍交给 syncTickDensity 按当前相机实时算（轴测下会随旋转变，所以必须实时）。 */
     function ax3dTicks(fmt, color, w, axis, n, at, bb, opt) {
-      const o = opt || {}, off = D(o.off == null ? 1.8 : o.off);
+      /* X 与 Z 都贴着地面走，两条边在近角**交汇**——同一个外让距离会让两串刻度在那儿
+         挤成一堆（标准 3D 里 PP3 与 TP1 只差 35px，跨轴判叠必然要枪毙一枚，而 TP 一共
+         才两枚，丢一枚就丢掉一半）。所以让 Z 退得更远一档：真正的 3D 图表也是这么摆的
+         ——两根轴的标注坐在不同的半径上，角落自然分开，不必靠判叠去裁。 */
+      const o = opt || {};
+      const DEF_OFF = { x: 1.8, z: 3.4, y: 1.8 };
+      const off = D(o.off == null ? DEF_OFF[axis] : o.off);
       const pos = (i) => (axis === 'x' ? V3(at(i), bb.y0, bb.z1 + off)
         : axis === 'z' ? V3(bb.x1 + off, bb.y0, at(i))
           : V3(bb.x0 - off, at(i), bb.z0));
@@ -1344,14 +1375,16 @@
       const idx = [];
       for (let i = 0; i < n; i += step0) idx.push(i);
       if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
-      const probe = makeLabel(fmt(n - 1), color, w);
+      // 与 2D 同一套：subOf 把牌拆成两行，宽度减半 → 轴测里投影缩短也摆得下
+      const subAt = (i) => (o.subOf ? o.subOf(i) : o.sub);
+      const probe = makeLabel(fmt(n - 1), color, w, subAt(n - 1));
       const L = probe.userData.lab, wpx = LABEL_PX / L.fontFrac;
       if (probe.material.map) probe.material.map.dispose();
       probe.material.dispose();
       const ser = { view: 0, needPx: wpx * 1.15, items: [] };
       idx.forEach((i) => {
-        const l = axOnly(axText(fmt(i), o.colorOf ? o.colorOf(i) : color, w, pos(i)), [0]);
-        if (l) { l.userData.tickSer = ser; ser.items.push({ sp: l, at: at(i) }); }
+        const l = axOnly(axText(fmt(i), o.colorOf ? o.colorOf(i) : color, w, pos(i), null, subAt(i), o.plate), [0]);
+        if (l) { l.userData.tickSer = ser; l.userData.tickRank = o.rank || 0; ser.items.push({ sp: l, at: at(i) }); }
       });
       if (ser.items.length) axSeries.push(ser);
     }
@@ -1421,25 +1454,27 @@
       const v = { x: 0, y: 0, z: 0 };
       const pos = (tp, pp, rep) => { model.posOf(model.rankOf(tp, pp, rep), S.mode, v); return V3(v.x, v.y, v.z); };
       if (S.mode === 0) {
-        const s = sp.std, xT = (t) => (t - (TP - 1) / 2) * s.sx, yS = (p) => s.cy + ((PP - 1) / 2 - p) * s.sy, zD = (d) => (d - (REP - 1) / 2) * s.sz;
-        const xL = cellLines(TP, s.sx, 0), yL = cellLines(PP, s.sy, s.cy), zL = cellLines(REP, s.sz, 0, 9);
+        /* 轴分配 X=PP · Y=DP · Z=TP：有编号、要一段段读的两维摆上屏幕横纵轴，
+           前 PP-DP 面因此是一张现成的「哪一段 × 哪个副本」表；TP 收进纵深。 */
+        const s = sp.std, xS = (p) => (p - (PP - 1) / 2) * s.sx, yD = (d) => s.cy + ((REP - 1) / 2 - d) * s.sy, zT = (t) => (t - (TP - 1) / 2) * s.sz;
+        const xL = cellLines(PP, s.sx, 0), yL = cellLines(REP, s.sy, s.cy, 9), zL = cellLines(TP, s.sz, 0);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         const bb = model.boundsOf(0);
-        axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
-        ax3dTicks((i) => `TP${i}`, TPc, 1.6, 'x', TP, xT, bb);
-        axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7);
-        ax3dTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
-        axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8);
+        axGridBox(b, xL, yL, zL, false, { x: PPc, y: DPc, z: TPc });
+        ax3dTicks((i) => `TP${i}`, TPc, 1.6, 'z', TP, zT, bb);
+        axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（一整根纵深行 = 一个 TP 组）`), TPc, 7);
+        ax3dTicks((i) => `DP${i}`, DPc, 1.6, 'y', REP, yD, bb);
+        axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce（上→下 DP0→末）'), DPc, 8);
         // 2D：刻度按「它标的是哪根轴」自动落到下方 / 左侧
-        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'x', TP, xT, bb);
-        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
-        axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L0（上）→L${model.config.layers - 1}（下） · 段间 P2P`), PPc, 7.6);
+        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'z', TP, zT, bb);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'y', REP, yD, bb);
+        axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L0→L${model.config.layers - 1}（左→右 Stage0→末） · 段间 P2P`), PPc, 7.6);
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9);
-        /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
-           与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
-           三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
-        axBlockDividers('y', cutsBetween(PP, yS), bb, PPc);
-        axRegionsAlong(PP, 'y', yS, bb, (i) => { const r = model.stageLayerRange(i);
+        /* 标准形态的 canonical 分段 = PP 段（模型深度），现在切的方向是 X。
+           与 TP切片/PP流水 用同一套语汇——分割线 + 规格牌，几何一动不动：
+           分段靠**线**标，间距是留给「强调形态」的唯一手段，标准用掉了 PP流水 就没得拉。 */
+        axBlockDividers('x', cutsBetween(PP, xS), bb, PPc);
+        axRegionsAlong(PP, 'x', xS, bb, (i) => { const r = model.stageLayerRange(i);
           return { title: `PP Stage ${i} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
         /* 牌上只留**身份 + 这个形态最要紧的那个限定**（哪一段 · 管哪几层），
@@ -1448,10 +1483,13 @@
         /* 画面上一律用**维度名**（PP0/TP0/DP0/桶0），不掺第二套叫法。
              「Stage」是这一维在训练侧的行话，写在悬停与横幅里够了；常驻标记上再叫一次
              「S0」，读者就得同时记住 S 和 PP 是同一根轴——同一个东西两个名字，最不该有。 */
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}-L${r.hi}`; },
-          PPc, 6, 'y', yS, bb, { plate: true });
-        // 3D：层带标整排贴着 Y 轴（与 DP 平铺的列/行同一种做法）
-        ax3dTicks((i) => { const r = model.stageLayerRange(i); return `PP${i}·L${r.lo}-${r.hi}`; }, PPc, 2.6, 'y', PP, yS, bb);
+        // 段标两行：`PP0` / `L0-L11`。PP 现在落在下方那条边，占位量的是**宽度**——
+        // 一行摆的话四段只摆得下两段（见 axOnAxisSeries 的 subOf 注释）。
+        axOnAxisSeries(PP, (i) => `PP${i}`, PPc, 6, 'x', xS, bb,
+          { plate: true, rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
+        // 3D：段标整排贴着 X 轴（与 DP 平铺的列/行同一种做法）
+        ax3dTicks((i) => `PP${i}`, PPc, 2.6, 'x', PP, xS, bb,
+          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
         const bb = model.boundsOf(1);
@@ -1523,14 +1561,14 @@
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         axOnAxisSeries(EP, (e) => `桶${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
           EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
-          { plate: true, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
+          { plate: true, rank: 1, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10);
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9);
         const zDm = (i) => (i - (DOM - 1) / 2) * s.dom;
         // 3D：域（Z）与墙内 PP（Y）各补首尾刻度，替掉原来那两句散文
         ax3dTicks((e) => `桶${e}${model.hotBuckets.has(e) ? ' 热点' : ''}`, EPc, 2.4, 'x', EP,
           (e) => (e - (EP - 1) / 2) * s.gapE, bb,
-          { colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
+          { rank: 1, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
         ax3dTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb);
         ax3dTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb);
         axAxisTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb);
@@ -1551,7 +1589,7 @@
            （落下方），不用再逐屏手写偏移。 */
         const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
         axOnAxisSeries(TP, (t) => `TP${t} · ${t + 1}/${TP}`, TPc, 6, 'x',
-          (t) => bb.x0 + t * s.gapT, bb, { plate: true });
+          (t) => bb.x0 + t * s.gapT, bb, { plate: true, rank: 1 });
         axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5);
         /* 这里曾有一条「墙间连点」（8 个球 + 一根粗线），本意是说「同一 TP 组的卡分属 8 面墙」。
            撤掉了：① 这件事选中任意一张卡就由真正的 TP AllReduce Ring 连线画出来，
@@ -1574,10 +1612,10 @@
           return { title: `PP Stage ${st} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}-L${r.hi}`; },
-          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { plate: true });
+          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { plate: true, rank: 1 });
         axText(seg2(`前向激活 PP0→PP${PP - 1}`, PPc, `（左→右，即 Stage0→Stage${PP - 1}）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
-        ax3dTicks((i) => { const r = model.stageLayerRange(i); return `PP${i}·L${r.lo}-${r.hi}`; }, PPc, 2.6, 'x', PP,
-          (i) => bb.x0 + i * s.gapP, bb);
+        ax3dTicks((i) => `PP${i}`, PPc, 2.6, 'x', PP, (i) => bb.x0 + i * s.gapP, bb,
+          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
         ax3dTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         ax3dTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb);
         axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
@@ -1594,8 +1632,9 @@
       if (S.selLayer == null || S.mode !== 0) { slab.visible = false; return; }
       const st = Math.min(PP - 1, (S.selLayer / LPS) | 0);
       const s = model.SP.std, b = model.boundsOf(0);
-      slab.scale.set((b.x1 - b.x0) + 2.4, s.sy * 0.92, (b.z1 - b.z0) + 2.4);
-      slab.position.set(0, s.cy + ((PP - 1) / 2 - st) * s.sy, 0);
+      // PP 现在是 X 轴 → 层切片是一张**竖着的**板（跨 Y=DP 与 Z=TP），不再是水平薄片
+      slab.scale.set(s.sx * 0.92, (b.y1 - b.y0) + 2.4, (b.z1 - b.z0) + 2.4);
+      slab.position.set((st - (PP - 1) / 2) * s.sx, s.cy, 0);
       slab.visible = true;
     }
 
@@ -2112,7 +2151,7 @@
           <dt>TP</dt><dd>坐标系与标准相同，只把 TP 轴拉开成墙 —— 查同槽位系统性坏件</dd>
           <dt>EP</dt><dd>每个专家桶一面墙 —— 桶故障 = 整面墙同红</dd>
           <dt>DP</dt><dd>每个副本一块板、排成宫格 —— 找慢副本</dd>
-          <dt>标准</dt><dd><b>前四个的基准投影，自己不查问题。</b>三根轴地位相同、都是常规密排，位置即多维坐标（X=TP · Y=PP 上→下 = L0→末层 · Z=DP）；三个密排 2D 平面归它所有；整网层联动也从这儿进</dd>
+          <dt>标准</dt><dd><b>前四个的基准投影，自己不查问题。</b>位置即多维坐标（X=PP 左→右 = Stage0→末 · Y=DP 上→下 · Z=TP 纵深），前 PP-DP 面是一张「哪一段 × 哪个副本」的表；三个密排 2D 平面归它所有；整网层联动也从这儿进</dd>
         </dl>
         <p class="prc-helpnote">前四个各冲着一个问题去，所以开门落在 PP；标准不回答问题、只做参照系，按钮排在最后也是这个意思——先挑一个形态查问题，要看全貌再回来。</p>`,
       views: `<h4>视角 · 怎么看这堆卡</h4>
@@ -2178,8 +2217,11 @@
         const m = model.modes[S.mode];
         // 当前形态「给你看什么」——一格之隔 vs 一堵墙之隔，各自对应哪类问题
         const DETAIL = {
-          std: `三根语义轴各放一维，一张卡的位置就是它的 (TP,PP,DP) 坐标；`
-            + `第 4 维 EP 靠着色透镜叠上去。这是「查身份」的形态，不是「找形状」的形态。`,
+          std: `三根语义轴各放一维（X=PP 左→右 Stage0→末 · Y=DP 上→下 · Z=TP 纵深），`
+            + `一张卡的位置就是它的 (TP,PP,DP) 坐标；第 4 维 EP 靠着色透镜叠上去。`
+            + `<b>前 PP-DP 面是一张现成的「哪一段 × 哪个副本」表</b>——两根有编号、要一段段读的`
+            + `轴都在屏幕上；TP 收进纵深，因为一整根纵深行就是一个 TP 组，翻它用剖面。`
+            + `这是「查身份」的形态，不是「找形状」的形态。`,
           dpt: `一块板 = 一份完整副本（板内 TP×${TP} 折成 ${model.TPC}列×${model.TPD}排、竖向是 PP×${PP}），`
             + `${REP} 块板排成宫格。副本之间只在步末做梯度 AllReduce → <b>慢副本 = 宫格里干净的一整块板发暗</b>。`,
           ep: `一面墙 = 一个专家桶（同墙 = 持有同一批专家），每桶复现于 ${DOM} 个 A2A 域。`
