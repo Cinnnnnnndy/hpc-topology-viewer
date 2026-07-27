@@ -2284,10 +2284,10 @@
           sliceRange.max = String(d.slice.n - 1);
           if (S.sliceVal > d.slice.n - 1) S.sliceVal = 0;
           sliceRange.value = String(S.sliceVal);
-          sliceRange.disabled = !S.sliceOn;
           // 工具栏里只放最短的读数（「这一屏叠了几张卡」的完整说法在视角问号气泡里）
           sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `关（${d.label} 折叠）`;
           sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
+          sliceRange.classList.toggle('is-on', S.sliceOn);   // 关着时压淡（但仍可拖）
         }
       }
     }
@@ -2322,7 +2322,14 @@
       sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
       sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
-      sliceRange.addEventListener('input', () => { S.sliceVal = sliceRange.value | 0; refresh2D(); });
+      /* 滑杆**不置灰**：置灰的滑杆读作「这功能不可用」，而不是「先按一下旁边那个按钮」——
+         剖面因此看着像坏的。改成拖它就自动开：抓住把手本身就是「我要逐层看」的意思，
+         按钮留着做显式开关（也用来关）。 */
+      sliceRange.addEventListener('input', () => {
+        S.sliceVal = sliceRange.value | 0;
+        if (!S.sliceOn) S.sliceOn = true;
+        refresh2D();
+      });
       sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
       sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
       rowViews.appendChild(sliceBox);
