@@ -969,23 +969,36 @@
        当年 2D 被收编正是因为这个。给每一块套一圈签名色细框，条纹当场读成整块。
        框贴着卡本身（不是网格框）：只外扩半张卡 + 一点余量，既不与卡穿插，也不像另起一个
        坐标系。四条竖棱只画到块高的两端，中间留空——满框在 3D 里会织成一片网。 */
-    function axBlockFrames(n, centerX, half, bb, colorHex) {
-      const m = 0.34, y0 = bb.y0 - CARD.y / 2 - m, y1 = bb.y1 + CARD.y / 2 + m;
-      const z0 = bb.z0 - CARD.z / 2 - m, z1 = bb.z1 + CARD.z / 2 + m;
-      const pts = [];
-      for (let i = 0; i < n; i++) {
-        const c = centerX(i), x0 = c - half, x1 = c + half;
-        [y0, y1].forEach((y) => {                                  // 上下两圈
-          pts.push(V3(x0, y, z0), V3(x1, y, z0), V3(x1, y, z0), V3(x1, y, z1),
-            V3(x1, y, z1), V3(x0, y, z1), V3(x0, y, z1), V3(x0, y, z0));
-        });
-        [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].forEach(([x, z]) => {   // 四角竖棱（整根：只画两端会读成断开的括号）
-          pts.push(V3(x, y0, z), V3(x, y1, z));
-        });
-      }
-      axSeg(pts, new THREE.Color(colorHex).getHex(), isDark() ? 0.5 : 0.62);
-    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+    // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
+    function axBlockFrames(boxes, colorHex, op) {
+      const pts = [];
+      boxes.forEach((q) => {
+        [q.y0, q.y1].forEach((y) => {                               // 上下两圈
+          pts.push(V3(q.x0, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z1),
+            V3(q.x1, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z0));
+        });
+        [[q.x0, q.z0], [q.x1, q.z0], [q.x1, q.z1], [q.x0, q.z1]].forEach(([x, z]) => {  // 四角竖棱（整根：只画两端会读成断开的括号）
+          pts.push(V3(x, q.y0, z), V3(x, q.y1, z));
+        });
+      });
+      axSeg(pts, new THREE.Color(colorHex).getHex(), op || (isDark() ? 0.5 : 0.62));
+    }
+    /* 沿一根轴把卡阵切成 n 块，每块外扩半张卡 + 余量 → 一组框。
+       `span` 是该轴上「一块」的半厚（卡厚的一半 or 块内多张卡的一半跨度）。 */
+    const BM = 0.34;
+    function blocksAlong(ax, n, centerAt, span, bb) {
+      const full = {
+        x0: bb.x0 - CARD.x / 2 - BM, x1: bb.x1 + CARD.x / 2 + BM,
+        y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
+        z0: bb.z0 - CARD.z / 2 - BM, z1: bb.z1 + CARD.z / 2 + BM,
+      };
+      return R(n, (i) => {
+        const c = centerAt(i), q = Object.assign({}, full);
+        q[ax + '0'] = c - span - BM; q[ax + '1'] = c + span + BM;
+        return q;
+      });
+    }
     /* 网格线 = 格边界（卡永远落在格子里、不被线穿过）——各形态各轴统一这一条约定。
        原先分块轴画边界、其余轴画「穿过卡中心的刻度」，同一个框里两种约定混用，
        看起来就是「和网格没对齐」。线过多时等间隔抽样（每 k 格一条，仍是边界）。 */
@@ -1015,6 +1028,7 @@
         const s = sp.std, xT = (t) => (t - (TP - 1) / 2) * s.sx, yS = (p) => s.cy + ((PP - 1) / 2 - p) * s.sy, zD = (d) => (d - (REP - 1) / 2) * s.sz;
         const xL = cellLines(TP, s.sx, 0), yL = cellLines(PP, s.sy, s.cy), zL = cellLines(REP, s.sz, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
+        const bb = model.boundsOf(0);
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
         axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))); axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4)));
         axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7,
@@ -1025,11 +1039,19 @@
         axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6,
           V3(b.x0 - D(1.5), b.y1 + D(1.6), b.z0), V3(b.x0, b.y1, b.z0));
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9, V3(0, b.y1 + D(3.6), 0));
-        // 层段标尺：每个 PP 段 "S0·L1-12"（左后棱一列）
+        /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
+           与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
+           三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
+        axBlockFrames(blocksAlong('y', PP, yS, CARD.y / 2, bb), PPc);
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
-          const l = makeLabel(`S${s2}·L${lr.lo}-${lr.hi}`, tokHex('--warning'), 2.6 * LS);
-          l.position.set(b.x0 - D(3.4), yS(s2), b.z0 - D(1)); axGroup.add(l);
+          const sub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
+          // 与 TP切片/PP流水 同一条约定：3D 里分段由框交代，只留一把细标尺；
+          // 完整规格牌给两个仍保留 PP 轴的正交面（前视 TP-PP、侧视 DP-PP），
+          // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
+          axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
+          axOnly(axText(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6,
+            V3(b.x0 - D(5.6), yS(s2), b.z0), null, sub, s.sy * 3.4), [2, 3]);
         }
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
@@ -1039,18 +1061,40 @@
         const xL = cellLines(COLS, s.gapX, 0, 14), zL = cellLines(ROWS, s.gapZ, 0, 14);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: 0, y1: bb.y1 + 0.6, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: DPc, z: DPc });
+        /* canonical 分段 = 每个副本一块板。板是二维排布（列×行），所以不走 blocksAlong，
+           直接按板的实际跨度建框。板多时（默认 100 块）框就是这个形态的主视觉：
+           「一块板 = 一份完整副本」这句话，靠框比靠文字说得清。 */
+        const halfBX = (model.TPC - 1) / 2 * s.tp + CARD.x / 2, halfBZ = (model.TPD - 1) / 2 * s.tpz + CARD.z / 2;
+        axBlockFrames(R(REP, (r) => {
+          const cx = (r % COLS - (COLS - 1) / 2) * s.gapX, cz = (((r / COLS) | 0) - (ROWS - 1) / 2) * s.gapZ;
+          return {
+            x0: cx - halfBX - BM, x1: cx + halfBX + BM,
+            y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
+            z0: cz - halfBZ - BM, z1: cz + halfBZ + BM,
+          };
+        }), DPc, isDark() ? 0.4 : 0.5);
         R(COLS, (i) => axText('列' + i, DPc, 1.7, V3(b.x0 + (i + 0.5) * s.gapX, b.y0, b.z1 + D(1.8))));
         R(ROWS, (i) => axText('行' + i, DPc, 1.7, V3(b.x1 + D(2.2), b.y0, b.z0 + (i + 0.5) * s.gapZ)));
-        axText('DP0', DPc, 1.8, pos(0, 0, 0).add(V3(0, 1.6, 0)));
-        axText('DP' + (REP - 1), DPc, 2.1, pos(0, 0, REP - 1).add(V3(0, 1.6, 0)));
+        /* 板有 REP 块，逐块挂牌会糊掉——只给首尾两块两行规格牌，说明「一块板里装了什么」。
+           顶视把 PP（Y）折进视线，「浮在板上方」这个偏移当场失效、牌会压在板上 →
+           顶视改用 Z 方向把牌推到宫格外（首块推到近侧、末块推到远侧）。 */
+        const dSub = `TP ×${TP} · PP ×${PP} = ${TP * PP} 卡`, dW = s.gapX * 1.5;
+        const d0 = pos(0, 0, 0), dN = pos(0, 0, REP - 1);
+        axOnly(axText('DP 副本 0', DPc, 6, d0.clone().add(V3(0, D(3.4), 0)), null, dSub, dW), [0, 2, 3]);
+        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, dN.clone().add(V3(0, D(3.4), 0)), null, dSub, dW), [0, 2, 3]);
+        axOnly(axText('DP 副本 0', DPc, 6, V3(d0.x, b.y0, b.z0 - D(2.2)), null, dSub, dW), [1]);
+        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, V3(dN.x, b.y0, b.z1 + D(2.2)), null, dSub, dW), [1]);
         axText(seg2(`DP 平铺 · ${REP} 块板`, DPc, ` = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`), DPc, 11,
           V3(0, b.y1 + D(3.4), 0), V3(0, b.y1, 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
         // 板内两根轴只用文案标注：板内格线试过（一块板上单独铺一层格子，在一字排开的
         // 100 块板里像块悬空面板）、轴脊短线也试过（散在模型外，像画错的连线）——都撤了。
-        axText(model.TPD > 1 ? `板内 TP×${TP} = ${model.TPC}列×${model.TPD}排` : `板内横=TP×${TP}`,
-          TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0)));
-        axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5, pTop.clone().add(V3(0.4, 1.7, 0)));
+        // 这两句说的是「板里面怎么排」，都挂在板上：顶视把 PP 折掉、板内的列×排本来就一览无余，
+        // 再压一张牌上去纯属挡卡 → 顶视不出。
+        axOnly(axText(model.TPD > 1 ? `板内 TP×${TP} = ${model.TPC}列×${model.TPD}排` : `板内横=TP×${TP}`,
+          TPc, model.TPD > 1 ? 4.6 : 3.4, p00.clone().add(V3(0.6, -1.9, 0))), [0, 2, 3]);
+        axOnly(axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5,
+          pTop.clone().add(V3(0.4, 1.7, 0))), [0, 2, 3]);
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
@@ -1059,10 +1103,20 @@
         const xL = cellLines(EP, s.gapE, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(DOM, s.dom, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: EPc, y: PPc, z: DPc });
+        /* canonical 分段 = 每个专家桶一面墙。墙内 TP 一字排开，所以块的半厚是
+           「(TP-1)/2 个 TP 步距 + 半张卡」，不是单张卡的一半。 */
+        const halfW = (TP - 1) / 2 * s.tp + CARD.x / 2;
+        axBlockFrames(blocksAlong('x', EP, (e) => (e - (EP - 1) / 2) * s.gapE, halfW, bb), EPc);
+        const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
-          axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, hot ? tokHex('--warning') : EPc, 3.2,
-            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 3) * 1.45, 0));
+          const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE, ej = (e % 2) * D(3.8);
+          // 3D 不错行（+X 右下与 +Y 上互相抵消）；2D 才错行——与 TP切片/PP流水 同一条约定
+          axOnly(axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 3.2,
+            V3(ex, b.y1 + D(1.2), 0)), [0]);
+          axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
+            V3(ex, b.y0 - D(1.6) - ej, 0), null, eSub, s.gapE * 1.6), [2]);
+          axOnly(axText(`桶${e}`, c, 2.4, V3(ex, b.y0, b.z1 + D(1.5) + ej)), [1]);
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
@@ -1076,7 +1130,7 @@
         const xL = cellLines(TP, s.gapT, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
-        axBlockFrames(TP, (t) => bb.x0 + t * s.gapT, CARD.x / 2 + 0.34, bb, TPc);
+        axBlockFrames(blocksAlong('x', TP, (t) => bb.x0 + t * s.gapT, CARD.x / 2, bb), TPc);
         for (let t = 0; t < TP; t++) {
           /* 块标做成两行牌：第一行「这块是谁」（TP 切片 0 · 第 1/8 片），
              第二行「这块里面有什么」（PP ×5 · DP ×100 = 500 卡）。
@@ -1116,7 +1170,7 @@
         const xL = cellLines(PP, s.gapP, 0), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
-        axBlockFrames(PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2 + 0.34, bb, PPc);
+        axBlockFrames(blocksAlong('x', PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2, bb), PPc);
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st);
           // PP 只有几段、块步距更宽 → 牌钉在 0.94 个步距上，单排就摆得下（落点同上）
