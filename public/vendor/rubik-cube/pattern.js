@@ -1349,8 +1349,11 @@
         axRegionsAlong(PP, 'y', yS, bb, (i) => { const r = model.stageLayerRange(i);
           return { title: `PP Stage ${i} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
-          PPc, 6, 'y', yS, bb, { sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, plate: true });
+        /* 牌上只留**身份 + 这个形态最要紧的那个限定**（哪一段 · 管哪几层），
+           规格（里面有多少张卡）收进悬停——牌一短，一条边上就摆得下全部几段，
+           不用再靠抽样丢掉几枚。信息一条没少，只是分了两层。 */
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `S${i} · L${r.lo}-L${r.hi}`; },
+          PPc, 6, 'y', yS, bb, { plate: true });
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
           // 与 TP切片/PP流水 同一条约定：3D 里分段由框交代，只留一把细标尺；
@@ -1431,9 +1434,9 @@
             sub: `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`,
             color: model.hotBuckets.has(e) ? tokHex('--warning') : EPc }));
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
-        axOnAxisSeries(EP, (e) => `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
+        axOnAxisSeries(EP, (e) => `桶${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
           EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
-          { sub: eSub, plate: true, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
+          { plate: true, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE;
@@ -1464,8 +1467,8 @@
            2D 里落位交给 axOnAxis：TP 是 X 轴，顶视里 X 是纵轴（落左侧）、前视里是横轴
            （落下方），不用再逐屏手写偏移。 */
         const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
-        axOnAxisSeries(TP, (t) => `TP 切片 ${t} · ${t + 1}/${TP}`, TPc, 6, 'x',
-          (t) => bb.x0 + t * s.gapT, bb, { sub: tSub, plate: true });
+        axOnAxisSeries(TP, (t) => `TP${t} · ${t + 1}/${TP}`, TPc, 6, 'x',
+          (t) => bb.x0 + t * s.gapT, bb, { plate: true });
         for (let t = 0; t < TP; t++) {
           const tx = bb.x0 + t * s.gapT, tj = (t % 2) * D(3.8);
           axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y1 + D(1.3) + tj, 0)), [0]);
@@ -1492,8 +1495,8 @@
         axRegionsAlong(PP, 'x', (st) => bb.x0 + st * s.gapP, bb, (st) => { const r = model.stageLayerRange(st);
           return { title: `PP Stage ${st} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
-          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true });
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `S${i} · L${r.lo}-L${r.hi}`; },
+          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { plate: true });
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st), px = bb.x0 + st * s.gapP;
           // 3D 不错行：沿块步距自然排开已经形成一道斜梯，反而是读得清的那种
