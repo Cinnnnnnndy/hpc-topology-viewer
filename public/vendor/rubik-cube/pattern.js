@@ -1735,7 +1735,12 @@
         </dl>
         <p>不是每个形态都给满三屏：一个形态之所以不同于标准，全在它那根被拉开的轴（TP 切片的墙、PP 流水的段，步距 4×）。这根轴<b>被折进视线</b>的那一屏，空档随之消失，剩下的与标准的同名平面逐位相同——那一屏就是标准，不重复给出（两个形态都少了侧视）。轴还留在屏幕上的顶 / 前两屏，墙与墙之间是看得见的空档，「这是第几片 / 第几段」在那里才数得清。</p>
         <p>按钮上的「DP-TP 面」读作<b>平面</b>而不是乘法：破折号两侧是这一屏留下的两根屏幕轴（横 DP、纵 TP），没写出来的第三根就是被折进视线的那一维。这一格里真正相乘的只有 rank 总数 TP×PP×DP，视角本身不改变任何数量。</p>
-        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。任何正交视角下拖动，都会从当前朝向无缝转回 3D。</p>`,
+        <dl>
+          <dt>拖动</dt><dd>转视角。正交视角下一拖就从当前朝向无缝转回 3D</dd>
+          <dt>Ctrl / ⌘ + 拖动</dt><dd>平移画布（中键拖同样）。<b>不会</b>把正交视角踢回 3D——挪到哪儿看还是那一屏</dd>
+          <dt>滚轮</dt><dd>缩放。切形态或切视角会重新取景，平移量一并归零</dd>
+        </dl>
+        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。</p>`,
       lens: `<h4>着色 · 给卡上色的镜头</h4>
         <p>只改颜色，不改结构。</p>
         <dl>
@@ -2120,10 +2125,34 @@
       };
     }
     const TIER_LAB = { ub: '同机 UB', rail: 'Pod 内跨机 rail', out: '跨 Pod Scale-Out' };
+    /* 拖拽有两种：**空手拖 = 转**（任何视角都转回 3D 轴测）、**按住 Ctrl / ⌘ 拖 = 平移**。
+       平移复用相机本就有的 pan 向量（原本只用于让开左上角工具栏）——位置与视线目标偏移
+       同一个向量，视线方向不变，正交投影不会被斜切。
+       两点刻意的差别：
+         · 平移**不把正交视角踢回 3D**。在顶视里挪一下看别的区域是很自然的动作，
+           若跟着转成轴测，用户会觉得「碰一下就散架」；转是转、挪是挪，两件事。
+         · 模式在 pointerdown 就锁定，拖到一半按下 Ctrl 不会中途改变行为（免得手一抖
+           从转变成挪）。中键拖同样是平移（很多人手上的肌肉记忆）。 */
     let drag = null;
-    renderer.domElement.addEventListener('pointerdown', (ev) => { drag = { x: ev.clientX, y: ev.clientY, moved: false }; });
+    const panMode = (ev) => ev.ctrlKey || ev.metaKey || ev.button === 1;
+    renderer.domElement.addEventListener('pointerdown', (ev) => {
+      drag = { x: ev.clientX, y: ev.clientY, moved: false, pan: panMode(ev) };
+      if (drag.pan) ev.preventDefault();
+    });
+    // Ctrl+拖在部分平台会被当成右键 → 拖动期间吞掉右键菜单
+    renderer.domElement.addEventListener('contextmenu', (ev) => { if (drag && drag.pan) ev.preventDefault(); });
     global.addEventListener('pointerup', () => { drag = null; });
     renderer.domElement.addEventListener('pointermove', (ev) => {
+      if (drag && drag.pan && (ev.buttons & 5)) {          // 左键或中键
+        const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+        // 内容跟手：往右拖 → 模型右移 → 相机左移（panX 减），往下拖同理（panY 增）
+        const wpp = worldPerPx();
+        cam.panX -= dx * wpp; cam.panY += dy * wpp;
+        drag.x = ev.clientX; drag.y = ev.clientY;
+        tipEl.style.display = 'none';
+        return;
+      }
       if (drag && (ev.buttons & 1)) {
         const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -2157,8 +2186,13 @@
       } else tipEl.style.display = 'none';
     });
     renderer.domElement.addEventListener('pointerleave', () => { S.hover = null; tipEl.style.display = 'none'; });
+    // 光标提示：按住 Ctrl / ⌘ 就变成「可抓」，不用先拖一下才知道有这个功能
+    const syncPanCursor = (on) => stageEl.classList.toggle('is-pan', !!on);
+    global.addEventListener('keydown', (ev) => { if (ev.key === 'Control' || ev.key === 'Meta') syncPanCursor(true); });
+    global.addEventListener('keyup', (ev) => { if (ev.key === 'Control' || ev.key === 'Meta') syncPanCursor(false); });
+    global.addEventListener('blur', () => syncPanCursor(false));
     renderer.domElement.addEventListener('click', (ev) => {
-      if (drag && drag.moved) return;
+      if (drag && (drag.moved || drag.pan)) return;
       const r = pick(ev);
       if (r == null) {
         const e = pickEdge(ev);

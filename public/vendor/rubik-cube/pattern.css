@@ -18,6 +18,9 @@
   font: var(--type-body-sm);
 }
 .prc-stage { position: absolute; inset: 0; }
+/* 按住 Ctrl / ⌘ → 光标变「可抓」，不用先拖一下才发现能平移；按下去变「抓住」 */
+.prc-stage.is-pan canvas { cursor: grab; }
+.prc-stage.is-pan canvas:active { cursor: grabbing; }
 .prc-stage canvas { display: block; }
 
 /* ── 左上控制面板（.panel-shell + 分行）────────────────────────────── */
