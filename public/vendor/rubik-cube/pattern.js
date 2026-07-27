@@ -240,8 +240,10 @@
       dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
       ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepOf('y', PP), dom: stepOf('z', DOM, 'spread'), cy: CY },
-      // TP切片 / PP流水 是「强调类」形态（2D 已收编到标准）：主轴用 emph 层级拉开，
-      // 强调「墙拉开查同槽位 / 段拉开找慢段」的读法，其余轴与标准同构。
+      // TP切片 / PP流水 是「强调类」形态：主轴用 emph 层级（4×）拉开，强调
+      // 「墙拉开查同槽位 / 段拉开找慢段」的读法。这个 4× 正好卡在 MAX_RATIO 上，
+      // 2D 里主轴会显得稀疏 —— 靠 axBlockFrames 给每块套框把条纹读成整块，不靠压步距
+      // （压了这两个形态就没意义了）。
       tps: { gapT: stepOf('x', TP, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
       ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TP), rep: stepOf('z', REP), cy: CY },
     };
@@ -297,12 +299,14 @@
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
           : dim === 'tpc' ? tpOf(r) % TPC : dim === 'tpd' ? (tpOf(r) / TPC) | 0 : 0;
 
-    // 视角收编（方案 A）：每个 2D 平面只属于一个形态。标准/TP切片/PP流水 共享同一坐标系
-    // （TP/PP/DP 三轴），三者的 顶/前/侧 两两重合——格阵三平面（DP-TP·TP-PP·DP-PP）由
-    // 「标准」独占；TP切片/PP流水 只保留轴测（价值在 3D 的强调读法），note2d 指路。
-    // DP平铺/EP聚簇 引入新分组轴，三个 2D 平面均独有，全保留。
+    /* 五种形态都给满 顶/前/侧。曾经把 TP切片/PP流水 的 2D 收编掉（只留轴测），理由是
+       「与标准共享 TP/PP/DP 三轴、三平面两两重合」——那个判断只对了一半：
+         · TP切片 的轴分配确实与标准相同，但主轴是 emph 层级（步距 4×），2D 里墙与墙之间
+           是看得见的空档，而标准里是密排——同一个平面，「哪一片」在这里才数得清；
+         · PP流水 干脆换了轴分配（X=PP · Y=TP，标准是 X=TP · Y=PP），三个平面全是新的。
+       真正的问题从来不是重合，而是主轴 4× 步距会让 2D 散成稀疏条纹。解法是给每一块套框
+       （axBlockFrames），条纹立刻读成「一面墙 / 一段」。 */
     const D_STD = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };   // 视角 → 被折进视线的维（可多个）
-    const NOTE_2D = '正交 2D 与「标准」形态重合 → 格阵平面到标准里看';
     const modes = [
       {
         key: 'std', name: '标准', short: '标准',
@@ -334,7 +338,7 @@
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
         viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
-        views: [0], note2d: NOTE_2D,
+        views: [0, 1, 2, 3],
       },
       {
         key: 'ppf', name: 'PP流水', short: 'PP',
@@ -342,7 +346,7 @@
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
         viewLabels: { 1: '顶 DP-PP 面', 2: '前 PP-TP 面', 3: '侧 DP-TP 面' },
         depth: { 1: ['tp'], 2: ['rep'], 3: ['pp'] },
-        views: [0], note2d: NOTE_2D,
+        views: [0, 1, 2, 3],
       },
     ];
 
@@ -761,14 +765,23 @@
          · 底色光晕（text-shadow 的 canvas 等价物）代替不透明大白板，压在卡上也读得清。 */
     const _mA = new THREE.Color(), _mB = new THREE.Color();
     const mixHex = (a, b, t) => '#' + _mA.set(a).lerp(_mB.set(b), t).getHexString();
-    function makeLabel(text, color, w) {
-      const SS = 4, fontPx = 40, padX = 26, padY = 9;
+    /* sub：第二行「规格」——照搬 sidecar 的 stage-label 分工，第一行是这块**是谁**
+       （维度签名色），第二行是这块**里面有什么**（中性次级色、更小号、带字距）。
+       两行合一张牌，比「一个名字 + 旁边另起一个标记」少一次视线跳转，也不会各自飘走。 */
+    function makeLabel(text, color, w, sub, maxWorld) {
+      const SS = 4, fontPx = 40, subPx = 27, gapY = 7, padX = 26, padY = 9;
       const segs = Array.isArray(text) ? text : [{ t: String(text), c: color }];
       text = segs.map((x) => x.t).join('');
       const FONT = `850 ${fontPx}px ${TOK['--font-mono'] || "'JetBrains Mono','Fira Code','Consolas',monospace"}`;
+      const SUBF = `600 ${subPx}px ${TOK['--font-mono'] || "'JetBrains Mono','Fira Code','Consolas',monospace"}`;
       const meas = document.createElement('canvas').getContext('2d');
       meas.font = FONT;
-      const bw = Math.ceil(meas.measureText(text).width) + padX * 2, bh = fontPx + padY * 2;
+      const titleW = Math.ceil(meas.measureText(text).width);
+      meas.font = SUBF;
+      const subW = sub ? Math.ceil(meas.measureText(sub).width) : 0;
+      meas.font = FONT;
+      const bw = Math.max(titleW, subW) + padX * 2;
+      const bh = fontPx + (sub ? gapY + subPx : 0) + padY * 2;
       // 四周留一圈完全空白的画布边（PAD）：贴图的透明像素 RGB 是黑的，线性过滤/多级
       // 渐远纹理会把黑边混进最外一圈——描边若压在画布边界上，圆角处就会渗出黑边。
       // 底与描边都往里缩，非透明像素永远被同色包着，边缘再插值也只会插到底色。
@@ -784,12 +797,18 @@
       c.beginPath(); c.roundRect(PAD + 1, PAD + 1, bw - 2, bh - 2, rr); c.stroke();
       c.font = FONT; c.textAlign = 'left'; c.textBaseline = 'middle';
       c.shadowColor = bg; c.shadowBlur = 7;                 // 底色光晕：压在卡上也读得清
-      let x = (tw - meas.measureText(text).width) / 2;
+      const titleY = sub ? PAD + padY + fontPx / 2 : th / 2;
+      let x = (tw - titleW) / 2;
       segs.forEach((sg) => {
         c.fillStyle = mixHex(fg, sg.c || color, 0.68);
-        c.fillText(sg.t, x, th / 2);
+        c.fillText(sg.t, x, titleY);
         x += meas.measureText(sg.t).width;
       });
+      if (sub) {
+        c.font = SUBF;
+        c.fillStyle = mixHex(bg, tokHex('--foreground-secondary'), 0.86);
+        c.fillText(sub, (tw - subW) / 2, titleY + fontPx / 2 + gapY + subPx / 2);
+      }
       c.shadowBlur = 0;
       const tex = new THREE.CanvasTexture(cv);
       tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter; tex.generateMipmaps = true;
@@ -799,6 +818,11 @@
       let worldW = w * tw / 512;
       const px = (worldW * (fontPx / tw)) / worldPerPx();
       if (px < MIN_LABEL_PX) worldW *= Math.min(1.8, MIN_LABEL_PX / px);   // 封顶 1.8×：地板是兜底，不是放大器
+      /* maxWorld：把牌宽钉死在一个世界尺寸上。w 是「512px 贴图 = w 个世界单位」的比例，
+         贴图宽度又随文案长度变——所以同一个 w，字多的牌就更宽，靠调 w 控宽度必然失手。
+         块标必须按**块步距**定宽（否则压到隔壁块头上），且不能被上面的像素地板放大出去，
+         故给一个硬上限：文案长短、缩放远近都不改变它占几个块位。 */
+      if (maxWorld) worldW = Math.min(worldW, maxWorld);
       sp.scale.set(worldW, worldW * th / tw, 1);
       sp.material.userData.baseOp = 1;
       return sp;
@@ -815,6 +839,23 @@
         if (o.geometry) o.geometry.dispose();
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
+    }
+    /* 标注的世界包围盒：取景只按卡的包围盒算的话，摆在模型外侧的标记（尤其块标那种
+       又宽又要错行的）在小规格下会被推出画布——相机贴得越近，同样的世界偏移越出框。
+       这里记录当前视角下**真正会显示**的标记占了多大，fitView 把它并进取景范围，
+       于是「标记跑到画布外」这一类问题在任何配置下都不会再出现。 */
+    let axBox = null;
+    function axBoxAdd(sp) {
+      const w = sp.scale.x / 2, h = sp.scale.y / 2, p = sp.position;
+      const e = { x0: p.x - w, x1: p.x + w, y0: p.y - h, y1: p.y + h, z0: p.z - w, z1: p.z + w };
+      if (!axBox) { axBox = e; return; }
+      axBox.x0 = Math.min(axBox.x0, e.x0); axBox.x1 = Math.max(axBox.x1, e.x1);
+      axBox.y0 = Math.min(axBox.y0, e.y0); axBox.y1 = Math.max(axBox.y1, e.y1);
+      axBox.z0 = Math.min(axBox.z0, e.z0); axBox.z1 = Math.max(axBox.z1, e.z1);
+    }
+    function rebuildAxBox() {
+      axBox = null;
+      axGroup.traverse((o) => { if (o.isSprite && o.visible) axBoxAdd(o); });
     }
     function applyGridEmphasis() {
       const k = focusOn() ? 1.6 : 1;
@@ -840,14 +881,16 @@
        （TP0 / DP99 / S0·L1-10 / 桶3 / 列2…），整句解释交给固定屏幕位置的 UI——
        这里收进「形态」问号气泡（axNotes → DYN.modes），信息一句不少。 */
     let axNotes = [];
-    function axText(text, color, w, pos, anchor) {
-      if (w >= 5) {
+    function axText(text, color, w, pos, anchor, sub, maxWorld) {
+      // w >= 5 = 散文横幅 → 不画，收进问号气泡。给了 maxWorld 的是块标：它的 w 只是
+      // 「先按文案量出宽度，再由 maxWorld 钉死」的起点，不是横幅，别被这条拦下。
+      if (w >= 5 && !maxWorld) {
         axNotes.push(Array.isArray(text) ? text.map((x) => x.t).join('') : String(text));
         return null;
       }
-      const l = makeLabel(text, color, w * 0.92 * LS);   // 标记要小：语气是技术注记，不是标题
+      const l = makeLabel(text, color, w * 0.92 * LS, sub, maxWorld);   // 标记要小：语气是技术注记，不是标题
       l.position.copy(pos);
-      l.userData.banner = w >= 5;
+      l.userData.banner = w >= 5 && !maxWorld;   // 同上：块标不是横幅，别跟着「只在 3D 出现」
       axGroup.add(l);
       // 引线：横幅坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
       // 也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
@@ -863,8 +906,19 @@
     }
     // 两段式横幅：名字用维度签名色、解释用中性次级前景色
     const seg2 = (head, hc, rest) => [{ t: head, c: hc }, { t: rest, c: tokHex('--foreground-secondary') }];
+    /* 只在某几个视角出现的标记。正交 2D 把一根轴折进视线，标记在那根轴上的偏移随之
+       失效——3D 里「浮在块顶上方」的一排块标，到顶视会全部塌到 z=0 那一行、互相叠死。
+       所以块标做成两份：3D/前视用长名（浮在块顶），顶视换一份短名摆到场外，
+       标注轴被折掉的视角（TP 切片的侧视、PP 流水的侧视）干脆不出。
+       视角切换只改可见性，不重建场景（renderAxes 很贵）。 */
+    const axOnly = (l, views) => { if (l) l.userData.views = views; return l; };
     function applyAxVisibility() {
-      axGroup.traverse((o) => { if (o.isSprite && o.userData.banner) o.visible = S.view === 0; });
+      axGroup.traverse((o) => {
+        if (!o.isSprite) return;
+        if (o.userData.banner) { o.visible = S.view === 0; return; }
+        if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0;
+      });
+      rebuildAxBox();
     }
     function axSeg(pairs, color, opacity) {
       if (!pairs.length) return null;
@@ -909,6 +963,27 @@
         [b.x0, b.y1, b.z0, b.x1, b.y1, b.z0], [b.x0, b.y1, b.z0, b.x0, b.y1, b.z1]];
       const fr = []; E.forEach((e) => fr.push(V3(e[0], e[1], e[2]), V3(e[3], e[4], e[5])));
       axSeg(fr, frame, frameOp);
+    }
+    /* 强调块的框：TP切片 / PP流水 把主轴按 emph（4×）拉开成「墙 / 段」。轴测下空档本身
+       就说明了分段，但正交 2D 里主轴一稀疏，卡就散成条纹——数不清「这是第几片 / 第几段」，
+       当年 2D 被收编正是因为这个。给每一块套一圈签名色细框，条纹当场读成整块。
+       框贴着卡本身（不是网格框）：只外扩半张卡 + 一点余量，既不与卡穿插，也不像另起一个
+       坐标系。四条竖棱只画到块高的两端，中间留空——满框在 3D 里会织成一片网。 */
+    function axBlockFrames(n, centerX, half, bb, colorHex) {
+      const m = 0.34, y0 = bb.y0 - CARD.y / 2 - m, y1 = bb.y1 + CARD.y / 2 + m;
+      const z0 = bb.z0 - CARD.z / 2 - m, z1 = bb.z1 + CARD.z / 2 + m;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const c = centerX(i), x0 = c - half, x1 = c + half;
+        [y0, y1].forEach((y) => {                                  // 上下两圈
+          pts.push(V3(x0, y, z0), V3(x1, y, z0), V3(x1, y, z0), V3(x1, y, z1),
+            V3(x1, y, z1), V3(x0, y, z1), V3(x0, y, z1), V3(x0, y, z0));
+        });
+        [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].forEach(([x, z]) => {   // 四角竖棱（整根：只画两端会读成断开的括号）
+          pts.push(V3(x, y0, z), V3(x, y1, z));
+        });
+      }
+      axSeg(pts, new THREE.Color(colorHex).getHex(), isDark() ? 0.5 : 0.62);
     }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     /* 网格线 = 格边界（卡永远落在格子里、不被线穿过）——各形态各轴统一这一条约定。
@@ -986,8 +1061,8 @@
         axGridBox(b, xL, yL, zL, false, { x: EPc, y: PPc, z: DPc });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
-          axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, hot ? tokHex('--warning') : EPc, 3.6,
-            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 2) * 1.1, 0));
+          axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, hot ? tokHex('--warning') : EPc, 3.2,
+            V3((e - (EP - 1) / 2) * s.gapE, b.y1 + D(1.2) + (e % 3) * 1.45, 0));
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
@@ -1001,29 +1076,64 @@
         const xL = cellLines(TP, s.gapT, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
-        for (let t = 0; t < TP; t++) axText(`TP${t} 第${t + 1}/${TP}片`, TPc, 3, V3(bb.x0 + t * s.gapT, b.y1 + D(1.2) + (t % 2) * 1.1, 0));
+        axBlockFrames(TP, (t) => bb.x0 + t * s.gapT, CARD.x / 2 + 0.34, bb, TPc);
+        for (let t = 0; t < TP; t++) {
+          /* 块标做成两行牌：第一行「这块是谁」（TP 切片 0 · 第 1/8 片），
+             第二行「这块里面有什么」（PP ×5 · DP ×100 = 500 卡）。
+             尺寸与错行是一对：块步距只有 3 个世界单位，而标记有屏幕像素下限
+             （最多放大 1.8×）——单排放不下这么宽的牌，错两行后同排相邻隔了两个块步距，
+             放大到头也不撞。 */
+          // 牌宽钉在 1.75 个块步距上、并错两行：同排相邻隔两个步距，怎么都不撞。
+          // 三个落点：3D 浮在块顶 · 前视摆到场下（场上那条带被右上角粒度贴士占着）·
+          // 顶视 Y 被折掉 → 改摆到 z 方向的场外。
+          /* 详略按视角分：等距轴测里 +X 投影向右下、+Y 向上，两者几乎抵消——错行救不了，
+             把牌加宽只会更糟。3D 里分段本来就由块框交代清楚了，所以只给一枚身份小牌；
+             两行的完整规格牌留给正交 2D（那里横向摆得开，且下方大片空着）。 */
+          const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
+          // 错行位移同样走 D()：写死世界单位的话，小规格（相机贴得近）会把牌甩出取景框
+          const tTit = `TP 切片 ${t} · ${t + 1}/${TP}`, tW = s.gapT * 1.6, tj = (t % 2) * D(3.8);
+          axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y1 + D(1.3) + tj, 0)), [0]);
+          axOnly(axText(tTit, TPc, 6, V3(bb.x0 + t * s.gapT, b.y0 - D(1.6) - tj, 0), null, tSub, tW), [2]);
+          // 顶视留下的两根轴里有 DP（成员最多的那根，默认 100）——整幅被拉成细长条，
+          // 规格牌按块步距钉宽后字会小到读不出，这里只给身份小牌，规格看前视那一屏。
+          axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y0, b.z1 + D(1.5) + tj)), [1]);
+        }
         axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
         const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
-        for (let k = 0; k < TP - 1; k++) axLine(dots[k], dots[k + 1], TPw, 0.07);
-        dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
+        for (let k = 0; k < TP - 1; k++) axLine(dots[k], dots[k + 1], TPw, 0.07 * Math.max(0.45, LS));
+        // 连点的半径也随尺度走：固定 0.2 在小规格下（相机贴得近）会胀成大圆球
+        const dotR = 0.2 * Math.max(0.45, LS);
+        dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(dotR, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
         axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
-        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1)));
-        axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0));
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0, 1, 3]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0, 1, 3]);
+        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0, 2, 3]);
+        axOnly(axText(`同槽位 TP0…TP${TP - 1} 各一面墙`, TPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
         const xL = cellLines(PP, s.gapP, 0), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
+        axBlockFrames(PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2 + 0.34, bb, PPc);
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st);
-          axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0));
+          // PP 只有几段、块步距更宽 → 牌钉在 0.94 个步距上，单排就摆得下（落点同上）
+          const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
+          const pTit = `PP Stage ${st} · L${lr.lo}-L${lr.hi}`, pW = s.gapP * 0.94;
+          // 3D 里不错行：+X 向右下、+Y 向上，错行会把两枚牌推到一起；沿块步距自然排开
+          // 已经形成一道斜梯，反而是读得清的那种
+          axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0)), [0]);
+          axOnly(axText(pTit, PPc, 6, V3(bb.x0 + st * s.gapP, b.y0 - D(1.9), 0), null, pSub, pW), [2]);
+          axOnly(axText(`S${st}`, PPc, 2.4, V3(bb.x0 + st * s.gapP, b.y0, b.z1 + D(1.5))), [1]);   // 同上：顶视含 DP 轴，只给身份牌
         }
         axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5,
           V3(0, b.y1 + D(4.9), 0), V3(0, b.y1 + D(0.6), 0));
-        axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))); axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1)));
-        axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0));
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0, 1, 3]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0, 1, 3]);
+        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0, 2, 3]);
+        axOnly(axText(`S0（首段）→S${PP - 1}（末段）`, PPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
@@ -1182,10 +1292,18 @@
       const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
       const mx = Math.min(5, Math.max(1.0, span * 0.06));
       // 半尺寸 = rank 中心包围盒 + 卡块自身半尺寸（包围盒只含中心点）+ 标注留白
-      const ex = (b.x1 - b.x0) / 2 + CARD.x / 2 + mx;
-      const ey = (b.y1 - b.y0) / 2 + CARD.y / 2 + mx * 0.6;
-      const ez = (b.z1 - b.z0) / 2 + CARD.z / 2 + mx;
+      let ex = (b.x1 - b.x0) / 2 + CARD.x / 2 + mx;
+      let ey = (b.y1 - b.y0) / 2 + CARD.y / 2 + mx * 0.6;
+      let ez = (b.z1 - b.z0) / 2 + CARD.z / 2 + mx;
       cam.cx = (b.x0 + b.x1) / 2; cam.cy = (b.y0 + b.y1) / 2; cam.cz = (b.z0 + b.z1) / 2;
+      // 并入当前视角下真正会显示的标记：取景以卡心为中心，所以每根轴取「标记探出中心
+      // 多远」的最大值。封 3 倍，防某个异常标记把整幅缩成一小团。
+      if (axBox) {
+        const capX = ex * 3, capY = ey * 3, capZ = ez * 3;
+        ex = Math.min(capX, Math.max(ex, Math.abs(axBox.x0 - cam.cx), Math.abs(axBox.x1 - cam.cx)));
+        ey = Math.min(capY, Math.max(ey, Math.abs(axBox.y0 - cam.cy), Math.abs(axBox.y1 - cam.cy)));
+        ez = Math.min(capZ, Math.max(ez, Math.abs(axBox.z0 - cam.cz), Math.abs(axBox.z1 - cam.cz)));
+      }
       cam.panX = 0; cam.panY = 0;
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
       // 模型在屏幕右/上方向的半跨度（hw, hh）——正交三视图直取，轴测按相机基向量投影
@@ -1590,8 +1708,13 @@
           (S.selLayer != null && S.mode === 0 ? `<p>正高亮整网 L${S.selLayer + 1} 切片</p>` : '') + '</div>';
       },
       views: () => {
-        const md = model.modes[S.mode];
-        return md.note2d ? `<div class="prc-helpnow"><b>此刻：</b>${esc(md.note2d)}</div>` : '';
+        const md = model.modes[S.mode], d = curDepth();
+        const what = S.view === 0
+          ? '3D 等距轴测 · 三根轴同屏，拖动可转'
+          : `${md.viewLabels[S.view]} —— 屏幕两根轴之外，${d ? esc(d.label) : '第三根轴'} 被折进视线`;
+        return `<div class="prc-helpnow"><b>此刻：</b>${esc(md.name)} · ${what}`
+          + (d ? `，每格重叠 ${d.fold} 张卡${S.sliceOn ? `（正翻 ${d.slice.lab} 第 ${S.sliceVal + 1} 层）` : '（可开剖面逐层翻）'}` : '')
+          + '</div>';
       },
       anom: () => {
         const note = {
@@ -2023,7 +2146,7 @@
         S.sel = null; S.hover = null; S.sliceVal = 0;
         buildField();
         clearComm(); peerMeshes.forEach((m2) => { m2.geometry.setDrawRange(0, 0); m2.visible = false; });
-        fitView(); renderAxes(); applyAxVisibility(); updateSlab();
+        fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
         refresh2D(); renderPill();
         renderHud(); renderLegend(); renderInfo(); syncCfgUI();
         return { ok: true, ranks: model.N };
@@ -2032,14 +2155,14 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); fitView(); renderAxes(); applyAxVisibility(); updateSlab();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
         renderHud(); renderPill(); syncChrome(); refresh2D();
       },
       setView(v) {
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
         // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
         if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
-        S.view = v | 0; fitView(); applyAxVisibility(); refresh2D(); renderPill();
+        S.view = v | 0; fitView(); applyAxVisibility(); fitView(); refresh2D(); renderPill();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
       setColorBy(k) { S.colorBy = k; recolor(); renderLegend(); syncChrome(); },
@@ -2074,7 +2197,7 @@
         root.setAttribute('data-theme', S.theme);
         readTokens();                     // 色卡随主题重解析
         applySceneBg();
-        renderAxes(); applyAxVisibility(); recolor(); rebuildComm(); renderLegend(); renderHud();
+        renderAxes(); applyAxVisibility(); fitView(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
       // 连线图层开关（可全关）与集合算法
@@ -2120,7 +2243,7 @@
       scene.background = new THREE.Color(c || (isDark() ? '#101010' : '#F5F5F5'));
     }
     applySceneBg();
-    resize(); fitView(); renderAxes(); applyAxVisibility(); updateSlab();
+    resize(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
     recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
