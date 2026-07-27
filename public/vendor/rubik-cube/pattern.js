@@ -417,8 +417,12 @@
     syncDims();
 
     /* ── 状态 ── */
+    /* 落地形态 = PP流水（4），不是标准。四个形态各回答一个具体问题，标准是它们的基准投影
+       ——开门第一眼给一个**能读出东西**的形态，比给一个「全都在这儿」的对照系更有用；
+       形态按钮也是按 PP·TP·EP·DP·标准 排的，落地在第一个，选中态就在最左边。 */
+    const DEFAULT_MODE = 4;
     const S = {
-      mode: opts.mode | 0,
+      mode: opts.mode == null ? DEFAULT_MODE : opts.mode | 0,
       view: 0,                       // 0=轴测 · 1=顶 · 2=前 · 3=侧
       sliceOn: false, sliceVal: 0,   // 正交剖面：单层查看被折叠的深度维
       colorBy: 'load',               // load | tp | pp | dp | ep | host | pod（后两个 = 物理落位透镜）
