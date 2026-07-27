@@ -56,7 +56,7 @@
 
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,
-    mode: pick('mode', MODES, 0),
+    mode: pick('mode', MODES, 4),        // 落地 = PP流水（能直接读出「哪一段慢」；标准是基准投影，排在最后）
     // 全局字牌字号（?label=16）：整套 3D 标注只此一个入口，越界回落 16
     labelPx: num('label'),
     // 并行度配置（默认值，工具栏「并行」输入排可随时改）：盘古 Pro MoE 真实训练策略
