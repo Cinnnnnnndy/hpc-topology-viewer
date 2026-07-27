@@ -487,12 +487,6 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
-        /* 剖面卡：控件与它的读数合成一张卡，摆在画面上而不是工具栏里。
-           理由是**它讲的就是眼前这一屏**——「这一格里叠了几张卡、正翻到第几层」是画面的
-           属性，不是一项配置；而且它只在正交 2D 出现，常驻工具栏白占一大条宽度。
-           读数与控件本来是两个东西（右上角一枚贴士 + 工具栏一条滑杆），说的却是同一件事，
-           合成一张卡之后：折叠有多严重 → 就在滑杆上方；要拆开看 → 滑杆就在手边。 */
-        '<div class="prc-slicecard panel-shell"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
       ].join(''),
@@ -876,6 +870,7 @@
     const gridMats = [];
     function clearAxes() {
       gridMats.length = 0;
+      axPad = {};                      // 边带随标注一起重算
       while (axGroup.children.length) {
         const o = axGroup.children.pop();
         if (o.geometry) o.geometry.dispose();
@@ -888,6 +883,12 @@
        （取景放宽 → worldPerPx 变大 → 牌的世界尺寸跟着变大 → 再放宽…never settles）。
        牌本身占的那点屏幕空间，由 fitView 末尾一个固定比例的留白吸收。 */
     let axBox = null;
+    /* 贴边标记要占掉画布左边 / 下边一条**固定像素**的带子（牌是固定屏幕尺寸）。
+       把这条带子按视角记下来，fitView 先从视口里扣掉它再去装模型——
+       这样既不会像「把牌的世界尺寸并进包围盒」那样自我反馈（放宽→牌变大→再放宽），
+       也不会出现「牌被挤出画布」（宽的规格牌尤其容易，一张就近 300px）。 */
+    let axPad = {};
+    const axPadOf = (v) => axPad[v] || { left: 0, bottom: 0 };
     function axBoxAdd(sp) {
       const p = sp.position;
       const e = { x0: p.x, x1: p.x, y0: p.y, y1: p.y, z0: p.z, z1: p.z };
@@ -1094,52 +1095,80 @@
       else o[A.h] = A.hR > 0 ? lo[A.h] - half[A.h] - gap : hi[A.h] + half[A.h] + gap;
       return V3(o.x, o.y, o.z);
     }
-    /* 把一个「轴上标记」在它出得来的每个 2D 视角各摆一份（各自只在自己那屏可见）。
-       row 用来错行：同一条边上标记多而密时往外再让一层，不是随手挪。 */
+    /* 把一个「轴上标记」摆到某一屏的边上。
+       贴边用 sprite.center，不把自己的半个身位算进坐标：精灵默认居中，若靠「坐标再退半个
+       身位」来让开，就把当时的 scale 烙进了坐标——之后重算尺寸时宽牌退得多、窄牌退得少，
+       同一条边上的留白就参差了（实测下方 0.195、左侧 0.48，差 2.5 倍）。改成左侧的牌右
+       边缘对齐锚点、下方的牌上边缘对齐锚点，锚点与外让方向存下来随相机重算，留白恒等。
+       row 用来错行：只有**下方**需要（那里一排牌肩并肩会撞；左侧的牌各占自己一行）。 */
+    function axEmit(v, kind, text, color, w, axis, along, bb, o) {
+      const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
+      if (!l) return null;
+      if (kind === 'bottom') l.center.set(0.5, 1); else l.center.set(1, 0.5);
+      const A = screenAxes(v);
+      l.userData.edge = {
+        anchor: axEdgePos(v, kind, axis, along, bb, 0),
+        axis: kind === 'bottom' ? A.v : A.h,
+        sign: (kind === 'bottom' ? A.vU : A.hR) > 0 ? -1 : 1,
+        k: 0.55 + (kind === 'bottom' ? (o.row || 0) * 2.9 : 0),
+      };
+      placeEdgeLabel(l);
+      // 记下这一屏该留多宽/多高的边带（牌自身 px + 外让 px）
+      const L = l.userData.lab, wpx = LABEL_PX / L.fontFrac;
+      const need = (kind === 'bottom' ? wpx * L.aspect : wpx) + LABEL_PX * l.userData.edge.k;
+      const pad = axPad[v] || (axPad[v] = { left: 0, bottom: 0 });
+      pad[kind] = Math.max(pad[kind], need);
+      axOnly(l, [v]);
+      return l;
+    }
+    // 这根轴在第 v 屏上落哪条边（null = 被折进视线，这一屏不出）
+    function edgeKind(v, axis) {
+      const A = screenAxes(v);
+      if (!A) return null;
+      return A.h === axis ? 'bottom' : A.v === axis ? 'left' : null;
+    }
+    // 单个轴上标记：在它出得来的每个 2D 视角各摆一份（各自只在自己那屏可见）
     function axOnAxis(text, color, w, axis, along, bb, opt) {
       const o = opt || {};
       [1, 2, 3].forEach((v) => {
-        const A = screenAxes(v);
-        if (!A || (o.views && o.views.indexOf(v) < 0)) return;
-        const kind = A.h === axis ? 'bottom' : A.v === axis ? 'left' : null;
-        if (!kind) return;                       // 这根轴在这一屏被折进视线了
-        /* 让开的距离也按**屏幕**算，不按世界：牌是固定屏幕尺寸，用随模型缩放的 D() 让开，
-           小规格下牌就会压到图上、大规格下又飘得老远。gp = 一个字高对应的世界尺寸。 */
-        const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
-        if (!l) return;
-        /* 让牌**贴边对齐**，而不是把自己的半个身位算进坐标里。
-           精灵默认居中（center 0.5,0.5），若靠「坐标再退半个身位」来让开，就把当时的
-           scale 烙进了坐标——之后 syncLabelSizes 一重算尺寸，宽牌退得多、窄牌退得少，
-           同一条边上的留白就参差了（实测下方 0.195、左侧 0.48，差 2.5 倍）。
-           改用 sprite.center 把「贴哪条边」交给渲染：左侧的牌右边缘对齐锚点、
-           下方的牌上边缘对齐锚点，尺寸怎么变，留白都恰好是那一个 gap。
-           锚点与外让方向存下来，缩放时跟着 syncLabelSize 一起重算，各边留白因此永远相等。
-           错行只在**下方**需要：那里一排牌肩并肩，宽的会撞；左侧的牌各占自己一行。 */
-        if (kind === 'bottom') l.center.set(0.5, 1); else l.center.set(1, 0.5);
-        const A2 = screenAxes(v);
-        l.userData.edge = {
-          anchor: axEdgePos(v, kind, axis, along, bb, 0),
-          axis: kind === 'bottom' ? A2.v : A2.h,
-          sign: (kind === 'bottom' ? A2.vU : A2.hR) > 0 ? -1 : 1,
-          k: 0.55 + (kind === 'bottom' ? (o.row || 0) * 2.9 : 0),
-        };
-        placeEdgeLabel(l);
-        axOnly(l, [v]);
+        if (o.views && o.views.indexOf(v) < 0) return;
+        const kind = edgeKind(v, axis);
+        if (kind) axEmit(v, kind, text, color, w, axis, along, bb, o);
       });
     }
-    /* 轴刻度：与格线**同一套抽样**逐个出（不是只给首尾两个）——刻度密一点，
-       「这是第几行 / 第几个副本」才不用从两端去数。数量多时等间隔抽，并且必然带上末位。 */
-    function axAxisTicks(fmt, color, w, axis, n, at, bb, maxTicks) {
-      const stride = Math.max(1, Math.ceil(n / (maxTicks || 10)));
-      const idx = [];
-      for (let i = 0; i < n; i += stride) idx.push(i);
-      // 末位要带上，但若它离上一个抽样点不足半个间隔就顶掉那个——否则两枚牌贴在一起
-      const last = idx[idx.length - 1];
-      if (last !== n - 1) {
-        if (n - 1 - last < stride / 2) idx.pop();
-        idx.push(n - 1);
-      }
-      idx.forEach((i) => axOnAxis(fmt(i), color, w, axis, at(i), bb));
+    /* 一条边上摆不下就**少摆几枚**（图表轴的老办法）。
+       牌是固定屏幕尺寸，所以「摆不摆得下」是可算的：先建一枚量出它在这条边上的占位，
+       再和相邻两项的间距一比——隔几个出一枚 = ⌈占位 ÷ (间距 × 错行档数)⌉。
+       同一批标记在不同屏上落的边不同（横 vs 纵），占位也就不同（量宽 vs 量高），
+       所以抽样必须**逐屏各算各的**，不能算一次用到底。末位必带上，且不与上一枚贴在一起。 */
+    function axOnAxisSeries(n, textOf, color, w, axis, at, bb, opt) {
+      const o = opt || {};
+      [1, 2, 3].forEach((v) => {
+        if (o.views && o.views.indexOf(v) < 0) return;
+        const kind = edgeKind(v, axis);
+        if (!kind) return;
+        const rows = kind === 'bottom' ? (o.rows || 1) : 1;
+        // 拿文案最长的一枚当样品（末位通常最长：DP99 / L41-L48），量完即弃
+        const probe = makeLabel(textOf(n - 1), color, w, o.sub);
+        const need = (kind === 'bottom' ? probe.scale.x : probe.scale.y) * 1.08;
+        if (probe.material.map) probe.material.map.dispose();
+        probe.material.dispose();
+        const pitch = n > 1 ? Math.abs(at(1) - at(0)) : Infinity;
+        const stride = Math.max(1, Math.ceil(need / Math.max(1e-6, pitch * rows)));
+        const idx = [];
+        for (let i = 0; i < n; i += stride) idx.push(i);
+        const last = idx[idx.length - 1];
+        if (last !== n - 1) {
+          if (n - 1 - last < stride) idx.pop();   // 不足一整个间隔就顶掉上一枚，否则末位会贴上去
+          idx.push(n - 1);
+        }
+        idx.forEach((i, k) => axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb,
+          Object.assign({}, o, { row: k % rows })));
+      });
+    }
+    // 轴刻度 = 最简单的一串轴上标记，密了自动减
+    function axAxisTicks(fmt, color, w, axis, n, at, bb) {
+      axOnAxisSeries(n, fmt, color, w, axis, at, bb, {});
     }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
@@ -1233,17 +1262,19 @@
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(4.2), b.y0 - D(1), zD(REP - 1))), [0]);
         axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8);
         // 2D：刻度按「它标的是哪根轴」自动落到下方 / 左侧
-        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'x', TP, xT, bb, 10);
-        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
+        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'x', TP, xT, bb);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6);
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9);
         /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
            与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
            三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
         axBlockFrames(blocksAlong('y', PP, yS, CARD.y / 2, bb), PPc);
+        // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
+          PPc, 6, 'y', yS, bb, { sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, plate: true });
         for (let s2 = 0; s2 < PP; s2++) {
           const lr = model.stageLayerRange(s2);
-          const sub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
           // 与 TP切片/PP流水 同一条约定：3D 里分段由框交代，只留一把细标尺；
           // 完整规格牌给两个仍保留 PP 轴的正交面（前视 TP-PP、侧视 DP-PP），
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
@@ -1251,7 +1282,7 @@
           // 3D 里只留首尾两把（中间几段由块框数得出来），完整规格牌在前视/侧视。
           if (s2 === 0 || s2 === PP - 1) axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
           // PP 是 Y 轴 → 在前视/侧视里是纵轴 → 自动落到左侧；顶视 PP 被折掉，自动不出
-          axOnAxis(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6, 'y', yS(s2), bb, { sub, plate: true });
+          void lr;
         }
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
@@ -1303,7 +1334,7 @@
         axOnly(axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5,
           pTop.clone().add(V3(0.4, 1.7, 0))), [0]);
         // PP 是 Y 轴：前视/侧视里是纵轴 → 落左侧；顶视 PP 被折掉 → 不出
-        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.y0 + (PP - 1 - i) * s.pp, bb, 10);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.y0 + (PP - 1 - i) * s.pp, bb);
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
@@ -1317,22 +1348,24 @@
         const halfW = (TP - 1) / 2 * s.tp + CARD.x / 2;
         axBlockFrames(blocksAlong('x', EP, (e) => (e - (EP - 1) / 2) * s.gapE, halfW, bb), EPc);
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
+        axOnAxisSeries(EP, (e) => `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
+          EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
+          { sub: eSub, plate: true, rows: 2, colorOf: (e) => (model.hotBuckets.has(e) ? tokHex('--warning') : EPc) });
         for (let e = 0; e < EP; e++) {
           const hot = model.hotBuckets.has(e);
           const c = hot ? tokHex('--warning') : EPc, ex = (e - (EP - 1) / 2) * s.gapE;
           axOnly(axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 3.2,
             V3(ex, b.y1 + D(1.2), 0)), [0]);
           // 桶墙沿 X → 顶视里 X 是纵轴（落左侧）· 前视里 X 是横轴（落下方）· 侧视 EP 被折掉（不出）
-          axOnAxis(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6, 'x', ex, bb,
-            { sub: eSub, plate: true, row: e % 2 });
+
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10);
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9);
         axOnly(axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0)), [0]);
         axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
         const zDm = (i) => (i - (DOM - 1) / 2) * s.dom;
-        axAxisTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb, 9);
-        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb, 10);
+        axAxisTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb);
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
@@ -1346,11 +1379,12 @@
            2D 里落位交给 axOnAxis：TP 是 X 轴，顶视里 X 是纵轴（落左侧）、前视里是横轴
            （落下方），不用再逐屏手写偏移。 */
         const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
+        axOnAxisSeries(TP, (t) => `TP 切片 ${t} · ${t + 1}/${TP}`, TPc, 6, 'x',
+          (t) => bb.x0 + t * s.gapT, bb, { sub: tSub, plate: true, rows: 2 });
         for (let t = 0; t < TP; t++) {
           const tx = bb.x0 + t * s.gapT, tj = (t % 2) * D(3.8);
           axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y1 + D(1.3) + tj, 0)), [0]);
-          axOnAxis(`TP 切片 ${t} · ${t + 1}/${TP}`, TPc, 6, 'x', tx, bb,
-            { sub: tSub, plate: true, row: t % 2 });
+
         }
         axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5);
         /* 这里曾有一条「墙间连点」（8 个球 + 一根粗线），本意是说「同一 TP 组的卡分属 8 面墙」。
@@ -1361,8 +1395,8 @@
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0]);
         axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
-        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
-        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb, 10);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb);
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
@@ -1371,19 +1405,21 @@
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
         axBlockFrames(blocksAlong('x', PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2, bb), PPc);
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
+          PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true, rows: 2 });
         for (let st = 0; st < PP; st++) {
           const lr = model.stageLayerRange(st), px = bb.x0 + st * s.gapP;
           // 3D 不错行：沿块步距自然排开已经形成一道斜梯，反而是读得清的那种
           axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(px, b.y1 + D(1.6), 0)), [0]);
           // PP 是 X 轴 → 顶视里是纵轴（落左侧）· 前视里是横轴（落下方）· 侧视已收编
-          axOnAxis(`PP Stage ${st} · L${lr.lo}-L${lr.hi}`, PPc, 6, 'x', px, bb, { sub: pSub, plate: true });
+
         }
         axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0]);
         axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0]);
-        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
-        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb, 10);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
+        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb);
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
@@ -1583,11 +1619,23 @@
       const br = bar ? bar.getBoundingClientRect() : null;
       const bx = br && br.width < w * 0.8 ? Math.min(0.18, (br.width / w) * 0.3) : 0;
       const by = br ? Math.min(0.18, (br.height / h) * 0.42) : 0;
-      // 1.14：给固定屏幕尺寸的字牌留的余量（牌本身不进包围盒，见 axBox 注释）
-      cam.half = Math.max(hh, hw / asp) * (axBox ? 1.14 : 1.05) * (1 + Math.max(bx, by));
+      /* 先从视口里扣掉贴边标记占的那条像素带，再去装模型：
+         模型的 2·hh 世界高要塞进 (h − padBottom) 像素里 → 所需 cam.half = hh·h/(h−padBottom)。
+         宽度同理。像素带与 cam.half 无关，所以这个式子一次就收敛，不会来回放大。 */
+      const pad = axPadOf(S.view);
+      const fy = h > pad.bottom + 40 ? h / (h - pad.bottom) : 1;
+      const fx = w > pad.left + 40 ? w / (w - pad.left) : 1;
+      cam.half = Math.max(hh * fy, (hw / asp) * fx) * 1.05 * (1 + Math.max(bx, by));
       const halfW = cam.half * asp;
       cam.panX = -Math.min(bx * halfW, Math.max(0, halfW - hw));    // 相机左移 → 模型右移
       cam.panY = Math.min(by * cam.half, Math.max(0, cam.half - hh)); // 相机上移 → 模型下移
+      /* 边带只在**左边和下边**需要，取景放宽却是四边一起放的——不补偿的话右边和上边就白空
+         一大条，模型看着偏在一角。所以再把模型往右上推半条边带，空出来的正好落在要用的
+         那两侧。（这也是「左右间距要把标签宽度算进去」的意思：留白算的是标签占的地方，
+         不是把整幅缩小。） */
+      const wpp = (2 * cam.half) / Math.max(1, h);
+      cam.panX -= (pad.left * wpp) / 2;      // 相机再左移 → 模型右移，左边空出标签带
+      cam.panY -= (pad.bottom * wpp) / 2;    // 相机下移 → 模型上移，下边空出标签带
     }
     function applyCamera() {
       syncLabelSizes();          // 牌是固定屏幕尺寸 → 相机/窗口一变就得重算世界尺寸
@@ -2094,6 +2142,8 @@
            免得别处（键盘序、URL 参数、测试）跟着错位。 */
         b.style.order = i === 0 ? 0 : i === md.bestView ? 1 : i + 1;
       });
+      // 同一个 flex 容器里只要有人设了 order，没设的就按 0 排到最前 —— 剖面显式排到末尾
+      if (sliceBox) sliceBox.style.order = 99;
 
       // 只剩 3D 一个视角的形态（TP切片 / PP流水，2D 与标准重合）：整组不显示，
       // 一个孤零零的「3D」按钮既没有可切换的对象，也让人以为别的被禁用了
@@ -2125,14 +2175,14 @@
       }
       if (sliceBox) {
         const d = curDepth();
-        sliceBox.classList.toggle('show', !!d);
+        sliceBox.style.display = d ? '' : 'none';
         if (d) {
           sliceRange.max = String(d.slice.n - 1);
           if (S.sliceVal > d.slice.n - 1) S.sliceVal = 0;
           sliceRange.value = String(S.sliceVal);
           sliceRange.disabled = !S.sliceOn;
-          // 读数就是原来那枚贴士的原话：控件与它的读数从此是一件事，不再各说各的
-          sliceLab.textContent = granText();
+          // 工具栏里只放最短的读数（「这一屏叠了几张卡」的完整说法在视角问号气泡里）
+          sliceLab.textContent = S.sliceOn ? `${d.slice.lab}=${S.sliceVal}` : `关（${d.label} 折叠）`;
           sliceBox.querySelector('.btn').classList.toggle('is-selected', S.sliceOn);
         }
       }
@@ -2161,15 +2211,17 @@
         root.classList.toggle('is-open', S.more);
         syncChrome(); resize();
       });
-      sliceBox = $('.prc-slicecard');
-      const scKick = document.createElement('div'); scKick.className = 'prc-lgsec'; scKick.textContent = '正交折叠';
-      sliceLab = document.createElement('div'); sliceLab.className = 'prc-scread';
-      const scRow = document.createElement('div'); scRow.className = 'prc-scrow';
-      scRow.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
+      /* 剖面跟着「视角」走，就摆在视角那一组里：它改的是**这一屏怎么看**（把折进视线的
+         那一维逐层翻出来），和 3D/顶/前/侧 是同一件事的延续，不是另起一项配置。
+         （试过做成画面右侧的独立卡片——读数和控件是合一了，但它和视角断开了，
+         要先在工具栏切视角、再到画面另一头去翻层，动线绕。） */
+      sliceBox = document.createElement('span'); sliceBox.className = 'prc-slice';
+      sliceBox.appendChild(chipBtn('剖面', () => { S.sliceOn = !S.sliceOn; refresh2D(); }));
       sliceRange = document.createElement('input'); sliceRange.type = 'range'; sliceRange.min = '0'; sliceRange.max = '1'; sliceRange.value = '0';
       sliceRange.addEventListener('input', () => { S.sliceVal = sliceRange.value | 0; refresh2D(); });
-      scRow.appendChild(sliceRange);
-      sliceBox.appendChild(scKick); sliceBox.appendChild(sliceLab); sliceBox.appendChild(scRow);
+      sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono';
+      sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
+      rowViews.appendChild(sliceBox);
       const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
