@@ -215,8 +215,6 @@
 .prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
 .prc-root input[type="range"] { accent-color: var(--primary); }
 .prc-slice input[type="range"] { width: 108px; }
-/* 剖面关着的时候滑杆压淡但**可用**（拖它就自动开）——置灰会被读成「功能不可用」 */
-.prc-slice input[type="range"]:not(.is-on) { opacity: 0.55; }
 .prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
 .prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
 .prc-cfgitem input {
