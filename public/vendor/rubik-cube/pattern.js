@@ -777,6 +777,8 @@
        改成固定屏幕尺寸后这些机关全部不需要：牌永远这么大、永远读得出，摆在它标的那块
        旁边就够了。代价是**缩得很远时牌会互相挤**——这是自觉的取舍：宁可挤，不可读不出。 */
     let LABEL_PX = clampLabelPx(opts.labelPx);
+    // 随场景缩放的那些字牌的可读下限（贴边的用 LABEL_PX，不吃这条）
+    const MIN_LABEL_PX = 11;
     const worldPerPx = () => (2 * cam.half) / Math.max(1, stageEl.clientHeight);
     /* 字牌样式逐条复刻设计系统 sidecar pattern 的 operator-label / stage-label：
          · 极小号 850 字重的 mono（技术标记的语气，不是标题）；
@@ -835,9 +837,14 @@
       try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch (e) { /* noop */ }
       tex.needsUpdate = true;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-      // 贴图里正文占 fontPx/tw，于是「正文 = LABEL_PX 屏幕像素」反解出牌该有多大的世界尺寸。
-      // 相机一变（换视角、缩放、改窗口）就重算一次 —— syncLabelSizes。
-      sp.userData.lab = { fontFrac: fontPx / tw, aspect: th / tw };
+      /* 两种字牌，语气不同、尺寸规则也不同：
+           · **贴边的**（轴刻度、分段规格牌）= 图表框架的一部分，语气同 UI ——
+             固定屏幕尺寸（LABEL_PX），怎么缩放都这么大、永远读得出；
+           · **贴在几何体上的**（3D 里的 TP0 / 桶0 / 列0 / 板内注记）= 场景的一部分，
+             语气是标注 —— 世界尺寸固定，于是跟着视角一起放大缩小，始终"长在"它标的
+             那块结构上，缩远了自然退成背景，不会喧宾夺主。
+         判定：经 axEmit 落到边上的标 fixedPx=true，其余都随场景。 */
+      sp.userData.lab = { fontFrac: fontPx / tw, aspect: th / tw, world: w * 0.92 * LS * tw / 512 };
       syncLabelSize(sp);
       sp.material.userData.baseOp = 1;
       return sp;
@@ -845,7 +852,11 @@
     function syncLabelSize(sp) {
       const L = sp.userData.lab;
       if (!L) return;
-      const worldW = LABEL_PX * worldPerPx() / L.fontFrac;
+      const px = (n) => n * worldPerPx() / L.fontFrac;      // 正文 n 屏幕像素 → 牌的世界宽
+      /* 贴边的按 LABEL_PX 定死；随场景的保持世界尺寸（于是跟视角一起放大缩小），
+         但给一个**屏幕像素地板**——缩远了它会一起变小是对的，小到读不出就不对了。
+         地板是兜底不是放大器：只在低于下限时才顶上去。 */
+      const worldW = sp.userData.fixedPx ? px(LABEL_PX) : Math.max(L.world, px(MIN_LABEL_PX));
       sp.scale.set(worldW, worldW * L.aspect, 1);
       placeEdgeLabel(sp);
     }
@@ -862,7 +873,30 @@
       if (!force && cam.half === lastLabHalf && h === lastLabH) return;
       lastLabHalf = cam.half; lastLabH = h;
       axGroup.traverse((o) => { if (o.isSprite) syncLabelSize(o); });
+      syncTickDensity();
     }
+    /* 疏密随相机实时算：牌占几像素是定值，两枚之间隔几像素随缩放变——
+       两者一比就知道该隔几枚出一枚。缩放时因此会自动加密 / 变疏，像正经的图表轴。
+       末位永远保留，且与它前一枚保留项不足一个间隔时把那一枚藏掉。 */
+    function syncTickDensity() {
+      const wpp = worldPerPx();
+      axSeries.forEach((ser) => {
+        const it = ser.items;
+        if (it.length < 2) return;
+        const pitchPx = Math.abs(it[1].at - it[0].at) / Math.max(1e-9, wpp);
+        const m = Math.max(1, Math.ceil(ser.needPx / Math.max(1e-6, pitchPx)));
+        const lastI = it.length - 1;
+        it.forEach((x, k) => { x.sp.userData.tickHide = !(k % m === 0) && k !== lastI; });
+        // 末位与上一枚保留项挨得太近 → 藏掉上一枚
+        for (let k = lastI - 1; k >= 0; k--) {
+          if (x0Hidden(it[k])) continue;
+          if ((lastI - k) * pitchPx < ser.needPx) it[k].sp.userData.tickHide = true;
+          break;
+        }
+        it.forEach((x) => { if (x.sp.userData.views) x.sp.visible = x.sp.userData.views.indexOf(S.view) >= 0 && !x.sp.userData.tickHide; });
+      });
+    }
+    const x0Hidden = (x) => !!x.sp.userData.tickHide;
 
     /* ── 轴标注（每形态一套：网格框 + 刻度 + 语义标注 + 关键结构线）── */
     const axGroup = new THREE.Group(); scene.add(axGroup);
@@ -870,7 +904,7 @@
     const gridMats = [];
     function clearAxes() {
       gridMats.length = 0;
-      axPad = {};                      // 边带随标注一起重算
+      axPad = {}; axSeries = [];       // 边带与轴上标记登记随标注一起重算
       while (axGroup.children.length) {
         const o = axGroup.children.pop();
         if (o.geometry) o.geometry.dispose();
@@ -888,6 +922,7 @@
        这样既不会像「把牌的世界尺寸并进包围盒」那样自我反馈（放宽→牌变大→再放宽），
        也不会出现「牌被挤出画布」（宽的规格牌尤其容易，一张就近 300px）。 */
     let axPad = {};
+    let axSeries = [];      // 轴上标记的成组登记：疏密随相机实时定
     const axPadOf = (v) => axPad[v] || { left: 0, bottom: 0 };
     function axBoxAdd(sp) {
       const p = sp.position;
@@ -963,7 +998,7 @@
         }
         if (!o.isSprite && !o.isLine) return;
         if (o.userData.banner) { o.visible = S.view === 0; return; }
-        if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0;
+        if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0 && !o.userData.tickHide;
       });
       rebuildAxBox();
     }
@@ -1104,6 +1139,8 @@
     function axEmit(v, kind, text, color, w, axis, along, bb, o) {
       const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
       if (!l) return null;
+      l.userData.fixedPx = true;                   // 贴边 = 图表框架 → 固定屏幕尺寸
+      syncLabelSize(l);
       if (kind === 'bottom') l.center.set(0.5, 1); else l.center.set(1, 0.5);
       const A = screenAxes(v);
       l.userData.edge = {
@@ -1150,21 +1187,27 @@
         /* 不错行：错行与「摆不下就少摆」是同一个问题的两个解法，两个一起上就成了
            这种上上下下的锯齿——抽样已经保证摆得下，再错行纯属添乱。
            一条边上只排一行，是图表轴的常规读法。 */
-        // 拿文案最长的一枚当样品（末位通常最长：DP99 / L41-L48），量完即弃
+        // 拿文案最长的一枚当样品（末位通常最长：DP99 / L41-L48），量出它在这条边上占几像素
         const probe = makeLabel(textOf(n - 1), color, w, o.sub);
-        const need = (kind === 'bottom' ? probe.scale.x : probe.scale.y) * 1.08;
+        const L = probe.userData.lab, wpx = LABEL_PX / L.fontFrac;
+        const need = (kind === 'bottom' ? wpx : wpx * L.aspect) * 1.15;
         if (probe.material.map) probe.material.map.dispose();
         probe.material.dispose();
-        const pitch = n > 1 ? Math.abs(at(1) - at(0)) : Infinity;
-        const stride = Math.max(1, Math.ceil(need / Math.max(1e-6, pitch)));
+        /* 疏密**不在建的时候定死**。建的时候相机还没最终取景（fitView 要等标注量出边带才
+           算得准），此时定下的步长往往偏大——「明明放得下却少了几枚」就是这么来的；
+           缩放之后更是全不作数。所以：先按上限均匀多摆一批，真正显示哪几枚交给
+           syncTickDensity 按当前相机算，缩放时自动加密 / 变疏。 */
+        const CAP = 28;
+        const step0 = Math.max(1, Math.ceil(n / CAP));
         const idx = [];
-        for (let i = 0; i < n; i += stride) idx.push(i);
-        const last = idx[idx.length - 1];
-        if (last !== n - 1) {
-          if (n - 1 - last < stride) idx.pop();   // 不足一整个间隔就顶掉上一枚，否则末位会贴上去
-          idx.push(n - 1);
-        }
-        idx.forEach((i) => axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb, o));
+        for (let i = 0; i < n; i += step0) idx.push(i);
+        if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
+        const ser = { view: v, needPx: need, items: [] };
+        idx.forEach((i) => {
+          const l = axEmit(v, kind, textOf(i), o.colorOf ? o.colorOf(i) : color, w, axis, at(i), bb, o);
+          if (l) ser.items.push({ sp: l, at: at(i) });
+        });
+        if (ser.items.length) axSeries.push(ser);
       });
     }
     // 轴刻度 = 最简单的一串轴上标记，密了自动减
@@ -1173,56 +1216,43 @@
     }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
-    /* 块框是**实线 + 签名色**（对齐 sidecar 的 stage-guide）：格线虚、块框实，
-       「这是第几片 / 第几段」就由这一层直接说。
-       3D 画整只盒子；正交 2D 只画屏幕那一面的矩形——盒子的前后两面加四条竖棱在 2D 里
-       会全部投影成同一批线，一个框画出四五根重线，正是画面糊掉的主因。 */
-    function axBlockFrames(boxes, colorHex, op) {
-      if (!boxes || !boxes.length) return;               // blocksAlong 判定「贴着」时返回 null
+    const BM = 0.34;                     // 分割线/框相对卡阵向外让开的余量
+    /* 分段照搬设计系统 sidecar 的 `stage-guide`：**一条分割线**，不给每块套框。
+       套框的毛病是同一条线要画好几遍——相邻两块共用边界（各画一遍）、最外块的外沿又与
+       外框重合（再画一遍），于是「多种框同时在」。分割线只画在**块与块之间**
+       （n 块出 n−1 条），一条边界只有一条线；最外沿交给外框，天生不重叠。
+       3D 里一条分割是一张矩形（跨另外两根轴），2D 里就是屏幕上的一根线。 */
+    function axBlockDividers(axis, cuts, bb, colorHex, op) {
+      if (!cuts || !cuts.length) return;
+      const m = BM;
+      const lo = { x: bb.x0 - CARD.x / 2 - m, y: bb.y0 - CARD.y / 2 - m, z: bb.z0 - CARD.z / 2 - m };
+      const hi = { x: bb.x1 + CARD.x / 2 + m, y: bb.y1 + CARD.y / 2 + m, z: bb.z1 + CARD.z / 2 + m };
+      const mid = { x: (lo.x + hi.x) / 2, y: (lo.y + hi.y) / 2, z: (lo.z + hi.z) / 2 };
+      const other = ['x', 'y', 'z'].filter((k) => k !== axis);   // 分割面横跨的两根轴
+      const at = (p, a, va, b, vb) => { const o = Object.assign({}, mid); o[axis] = p; o[a] = va; o[b] = vb; return V3(o.x, o.y, o.z); };
       const box = [], P = { xy: [], yz: [], zx: [] };
-      const rect = (pts) => { const o = []; for (let i = 0; i < 4; i++) o.push(pts[i], pts[(i + 1) % 4]); return o; };
-      boxes.forEach((q) => {
-        [q.y0, q.y1].forEach((y) => {
-          box.push(V3(q.x0, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z1),
-            V3(q.x1, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z0));
+      cuts.forEach((p) => {
+        const [a, b] = other;
+        // 3D：分割面的矩形轮廓
+        const c = [at(p, a, lo[a], b, lo[b]), at(p, a, hi[a], b, lo[b]), at(p, a, hi[a], b, hi[b]), at(p, a, lo[a], b, hi[b])];
+        for (let i = 0; i < 4; i++) box.push(c[i], c[(i + 1) % 4]);
+        // 2D：这根轴还在屏幕上的那两个平面里，各画一根线（跨该平面的另一根轴）
+        other.forEach((k) => {
+          const pl = [axis, k].sort().join('').replace('xz', 'zx');
+          const o0 = Object.assign({}, mid), o1 = Object.assign({}, mid);
+          o0[axis] = o1[axis] = p; o0[k] = lo[k]; o1[k] = hi[k];
+          P[pl].push(V3(o0.x, o0.y, o0.z), V3(o1.x, o1.y, o1.z));
         });
-        [[q.x0, q.z0], [q.x1, q.z0], [q.x1, q.z1], [q.x0, q.z1]].forEach(([x, z]) => {
-          box.push(V3(x, q.y0, z), V3(x, q.y1, z));
-        });
-        // 2D 用的那三个矩形摆在块的中截面上：与卡同深度，不会在斜视下与盒子的棱重影
-        const mx = (q.x0 + q.x1) / 2, my = (q.y0 + q.y1) / 2, mz = (q.z0 + q.z1) / 2;
-        P.xy.push.apply(P.xy, rect([V3(q.x0, q.y0, mz), V3(q.x1, q.y0, mz), V3(q.x1, q.y1, mz), V3(q.x0, q.y1, mz)]));
-        P.zx.push.apply(P.zx, rect([V3(q.x0, my, q.z0), V3(q.x1, my, q.z0), V3(q.x1, my, q.z1), V3(q.x0, my, q.z1)]));
-        P.yz.push.apply(P.yz, rect([V3(mx, q.y0, q.z0), V3(mx, q.y0, q.z1), V3(mx, q.y1, q.z1), V3(mx, q.y1, q.z0)]));
       });
-      const c = new THREE.Color(colorHex).getHex(), o = op || (isDark() ? 0.62 : 0.72);
-      axSeg(box, c, o, { plane: '3d' });
-      Object.keys(P).forEach((pl) => axSeg(P[pl], c, o, { plane: pl, flat: true }));
+      const col = new THREE.Color(colorHex).getHex(), o = op || (isDark() ? 0.62 : 0.72);
+      axSeg(box, col, o, { plane: '3d' });
+      Object.keys(P).forEach((pl) => axSeg(P[pl], col, o, { plane: pl, flat: true }));
     }
-    /* 沿一根轴把卡阵切成 n 块，每块外扩半张卡 + 余量 → 一组框。
-       `span` 是该轴上「一块」的半厚（卡厚的一半 or 块内多张卡的一半跨度）。 */
-    const BM = 0.34;
-    /* 块与块**贴着或叠着**时不画框：相邻两块共用一条边界，各画一遍就是两根重线，
-       块一多就成了一道梯子（标准形态的 PP 层带正是这样——块厚 1.28 > 层步距 1.2，
-       框其实互相压着）。这种情况本来就不需要框：格线里那根轴的边界线用的就是这一维的
-       签名色，一条边界只画一次，说的是同一件事。
-       框留给**块与块之间有空档**的形态（TP 墙 / PP 段 / EP 桶墙 / DP 板），
-       那里格线画不出「这一块的范围」，非框不可。 */
-    function blocksAlong(ax, n, centerAt, span, bb) {
-      if (n > 1) {
-        const pitch = Math.abs(centerAt(1) - centerAt(0));
-        if (pitch <= (span + BM) * 2) return null;      // 贴着或叠着 → 交给格线
-      }
-      const full = {
-        x0: bb.x0 - CARD.x / 2 - BM, x1: bb.x1 + CARD.x / 2 + BM,
-        y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
-        z0: bb.z0 - CARD.z / 2 - BM, z1: bb.z1 + CARD.z / 2 + BM,
-      };
-      return R(n, (i) => {
-        const c = centerAt(i), q = Object.assign({}, full);
-        q[ax + '0'] = c - span - BM; q[ax + '1'] = c + span + BM;
-        return q;
-      });
+    // 相邻两块中点 = 分割位置（n 块 → n−1 条）
+    function cutsBetween(n, centerAt) {
+      const out = [];
+      for (let i = 1; i < n; i++) out.push((centerAt(i - 1) + centerAt(i)) / 2);
+      return out;
     }
     /* 网格线 = 格边界（卡永远落在格子里、不被线穿过）——各形态各轴统一这一条约定。
        原先分块轴画边界、其余轴画「穿过卡中心的刻度」，同一个框里两种约定混用，
@@ -1270,7 +1300,7 @@
         /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
            与 TP切片/PP流水 用同一套语汇——框 + 两行规格牌，只是切的方向是 Y。
            三根轴同屏时 Y 方向的带最容易被读成「一堆卡」而不是「五段」，框把它们分开。 */
-        axBlockFrames(blocksAlong('y', PP, yS, CARD.y / 2, bb), PPc);
+        axBlockDividers('y', cutsBetween(PP, yS), bb, PPc);
         // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'y', yS, bb, { sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, plate: true });
@@ -1296,15 +1326,9 @@
         /* canonical 分段 = 每个副本一块板。板是二维排布（列×行），所以不走 blocksAlong，
            直接按板的实际跨度建框。板多时（默认 100 块）框就是这个形态的主视觉：
            「一块板 = 一份完整副本」这句话，靠框比靠文字说得清。 */
-        const halfBX = (model.TPC - 1) / 2 * s.tp + CARD.x / 2, halfBZ = (model.TPD - 1) / 2 * s.tpz + CARD.z / 2;
-        axBlockFrames(R(REP, (r) => {
-          const cx = (r % COLS - (COLS - 1) / 2) * s.gapX, cz = (((r / COLS) | 0) - (ROWS - 1) / 2) * s.gapZ;
-          return {
-            x0: cx - halfBX - BM, x1: cx + halfBX + BM,
-            y0: bb.y0 - CARD.y / 2 - BM, y1: bb.y1 + CARD.y / 2 + BM,
-            z0: cz - halfBZ - BM, z1: cz + halfBZ + BM,
-          };
-        }), DPc, isDark() ? 0.4 : 0.5);
+        // 宫格是二维的 → 两根轴各出一组分割线（列间 + 行间），交叉出一格一块板
+        axBlockDividers('x', cutsBetween(COLS, (i) => (i - (COLS - 1) / 2) * s.gapX), bb, DPc, isDark() ? 0.4 : 0.5);
+        axBlockDividers('z', cutsBetween(ROWS, (i) => (i - (ROWS - 1) / 2) * s.gapZ), bb, DPc, isDark() ? 0.4 : 0.5);
         // 列沿 X、行沿 Z：2D 里各自落到「自己那根轴此刻是横还是纵」对应的边上
         R(COLS, (i) => { const x = b.x0 + (i + 0.5) * s.gapX;
           axOnly(axText('列' + i, DPc, 1.7, V3(x, b.y0, b.z1 + D(1.8))), [0]);
@@ -1346,8 +1370,7 @@
         axGridBox(b, xL, yL, zL, false, { x: EPc, y: PPc, z: DPc });
         /* canonical 分段 = 每个专家桶一面墙。墙内 TP 一字排开，所以块的半厚是
            「(TP-1)/2 个 TP 步距 + 半张卡」，不是单张卡的一半。 */
-        const halfW = (TP - 1) / 2 * s.tp + CARD.x / 2;
-        axBlockFrames(blocksAlong('x', EP, (e) => (e - (EP - 1) / 2) * s.gapE, halfW, bb), EPc);
+        axBlockDividers('x', cutsBetween(EP, (e) => (e - (EP - 1) / 2) * s.gapE), bb, EPc);
         const eSub = `域 ×${DOM} · PP ×${PP} · TP ×${TP} = ${DOM * PP * TP} 卡`;
         axOnAxisSeries(EP, (e) => `EP 桶 ${e} · ${model.expRange(e)}${model.hotBuckets.has(e) ? ' 热点' : ''}`,
           EPc, 6, 'x', (e) => (e - (EP - 1) / 2) * s.gapE, bb,
@@ -1373,7 +1396,7 @@
         const xL = cellLines(TP, s.gapT, 0), yL = cellLines(PP, s.pp, s.cy), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: span1(yL).lo, y1: span1(yL).hi, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, yL, zL, false, { x: TPc, y: PPc, z: DPc });
-        axBlockFrames(blocksAlong('x', TP, (t) => bb.x0 + t * s.gapT, CARD.x / 2, bb), TPc);
+        axBlockDividers('x', cutsBetween(TP, (t) => bb.x0 + t * s.gapT), bb, TPc);
         /* 块标做成两行牌：第一行「这块是谁」，第二行「这块里面有什么」。
            3D 里等距投影会把 +X（右下）与 +Y（上）几乎抵消，错行救不了、加宽更糟，
            而分段本来就由块框交代清楚了 → 3D 只给一枚身份小牌。
@@ -1404,7 +1427,7 @@
         const xL = cellLines(PP, s.gapP, 0), zL = cellLines(REP, s.rep, 0, 9);
         const b = { x0: span1(xL).lo, x1: span1(xL).hi, y0: bb.y0 - 0.8, y1: bb.y1 + 0.8, z0: span1(zL).lo, z1: span1(zL).hi };
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
-        axBlockFrames(blocksAlong('x', PP, (st) => bb.x0 + st * s.gapP, CARD.x / 2, bb), PPc);
+        axBlockDividers('x', cutsBetween(PP, (st) => bb.x0 + st * s.gapP), bb, PPc);
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
         axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP Stage ${i} · L${r.lo}-L${r.hi}`; },
           PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { sub: pSub, plate: true });
