@@ -941,22 +941,50 @@
        视角切换只改可见性，不重建场景（renderAxes 很贵）。 */
     const axOnly = (l, views) => { if (l) l.userData.views = views; return l; };
     function applyAxVisibility() {
+      const sp = screenPlane();
       axGroup.traverse((o) => {
+        /* 线的收放：
+             plane='3d'  → 只在 3D 出（块框的整只盒子）
+             flat=true   → 只在 2D 出，且只出屏幕那一面（块框拍平成的矩形）
+             其余带 plane → 3D 三面拼成角落格箱；2D 只留屏幕那一面 */
+        const pl = o.userData.plane;
+        if (pl) {
+          o.visible = pl === '3d' ? !sp : o.userData.flat ? (!!sp && pl === sp) : (!sp || pl === sp);
+          return;
+        }
         if (!o.isSprite && !o.isLine) return;
         if (o.userData.banner) { o.visible = S.view === 0; return; }
         if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0;
       });
       rebuildAxBox();
     }
-    function axSeg(pairs, color, opacity) {
+    /* 线的分级借鉴设计系统 sidecar 的 layer-guide / stage-guide：
+         · **细分格线** = 虚线 · 细 · 中性淡（`layer-guide` 是 0.9px + dash 2 5 + 前景 20%）
+         · **分段边界 / 块框** = 实线 · 签名色 · 高一档不透明度（`stage-guide`）
+       两级一分开，格子就退成背景，「这是第几片」由实线块框直接说，画面立刻清爽。
+       plane：这组线躺在哪个平面（xy / yz / zx）。正交 2D 只画**屏幕所在的那个平面**——
+       否则另外两个平面的线全部投影成与它重合的直线，一根线画三遍，就是「很多重合的线」。 */
+    function axSeg(pairs, color, opacity, opt) {
       if (!pairs.length) return null;
+      const o = opt || {};
       const g = new THREE.BufferGeometry().setFromPoints(pairs);
-      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+      const mat = o.dashed
+        ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: CARD.x * 0.34, gapSize: CARD.x * 0.85 })
+        : new THREE.LineBasicMaterial({ color, transparent: true, opacity });
       mat.userData.baseOp = opacity;
       gridMats.push(mat);
-      axGroup.add(new THREE.LineSegments(g, mat));
+      const ln = new THREE.LineSegments(g, mat);
+      if (o.dashed) ln.computeLineDistances();
+      if (o.plane) ln.userData.plane = o.plane;
+      if (o.flat) ln.userData.flat = true;
+      axGroup.add(ln);
       return mat;
     }
+    // 当前这一屏躺在哪个平面（3D 返回 null = 三个平面全画）
+    const screenPlane = () => {
+      const A = screenAxes(S.view);
+      return A ? [A.h, A.v].sort().join('').replace('xz', 'zx') : null;
+    };
     function axLine(a, b, colorHex, r) {
       const dir = b.clone().sub(a), len = dir.length();
       const geo = new THREE.CylinderGeometry(r || 0.07, r || 0.07, len, 8, 1);
@@ -975,22 +1003,37 @@
     function axGridBox(b, xt, yt, zt, floorOnly, tint) {
       const hx = (c) => new THREE.Color(c).getHex();
       const grid = hx(tokHex('--border-default')), frame = hx(tokHex('--border-strong'));
-      const gridOp = isDark() ? 0.42 : 0.6, tintOp = isDark() ? 0.62 : 0.78, frameOp = isDark() ? 0.85 : 0.95;
+      // 格线退成背景（虚线 + 更低不透明度），实线与不透明度留给块框和外框
+      const gridOp = isDark() ? 0.30 : 0.42, tintOp = isDark() ? 0.44 : 0.55, frameOp = isDark() ? 0.7 : 0.8;
       const t = tint || {};
-      const sx = [], sy = [], sz = [];
-      xt.forEach((x) => { sx.push(V3(x, b.y0, b.z0), V3(x, b.y0, b.z1)); if (!floorOnly) sx.push(V3(x, b.y0, b.z0), V3(x, b.y1, b.z0)); });
-      if (!floorOnly) yt.forEach((y) => { sy.push(V3(b.x0, y, b.z0), V3(b.x1, y, b.z0), V3(b.x0, y, b.z0), V3(b.x0, y, b.z1)); });
-      zt.forEach((z) => { sz.push(V3(b.x0, b.y0, z), V3(b.x1, b.y0, z)); if (!floorOnly) sz.push(V3(b.x0, b.y0, z), V3(b.x0, b.y1, z)); });
-      axSeg(sx, t.x ? hx(t.x) : grid, t.x ? tintOp : gridOp);
-      axSeg(sy, t.y ? hx(t.y) : grid, t.y ? tintOp : gridOp);
-      axSeg(sz, t.z ? hx(t.z) : grid, t.z ? tintOp : gridOp);
-      const E = floorOnly
-        ? [[b.x0, b.y0, b.z0, b.x1, b.y0, b.z0], [b.x0, b.y0, b.z1, b.x1, b.y0, b.z1], [b.x0, b.y0, b.z0, b.x0, b.y0, b.z1], [b.x1, b.y0, b.z0, b.x1, b.y0, b.z1]]
-        : [[b.x0, b.y0, b.z0, b.x1, b.y0, b.z0], [b.x0, b.y0, b.z1, b.x1, b.y0, b.z1], [b.x0, b.y0, b.z0, b.x0, b.y0, b.z1], [b.x1, b.y0, b.z0, b.x1, b.y0, b.z1],
-        [b.x0, b.y0, b.z0, b.x0, b.y1, b.z0], [b.x1, b.y0, b.z0, b.x1, b.y1, b.z0], [b.x0, b.y0, b.z1, b.x0, b.y1, b.z1],
-        [b.x0, b.y1, b.z0, b.x1, b.y1, b.z0], [b.x0, b.y1, b.z0, b.x0, b.y1, b.z1]];
-      const fr = []; E.forEach((e) => fr.push(V3(e[0], e[1], e[2]), V3(e[3], e[4], e[5])));
-      axSeg(fr, frame, frameOp);
+      /* 格线按**它躺在哪个平面**分组（每根轴各出两组：地面一组、竖墙一组）。
+         3D 三组全画（就是那个经典的角落格箱）；正交 2D 只画屏幕那一面——
+         另外两面的线会整整齐齐投影到同一批位置上，一根线画三遍，就是「很多重合的线」。 */
+      const G = { xy: { x: [], y: [] }, zx: { x: [], z: [] }, yz: { y: [], z: [] } };
+      xt.forEach((x) => {
+        G.zx.x.push(V3(x, b.y0, b.z0), V3(x, b.y0, b.z1));                        // 地面：沿 Z
+        if (!floorOnly) G.xy.x.push(V3(x, b.y0, b.z0), V3(x, b.y1, b.z0));        // 背墙：沿 Y
+      });
+      if (!floorOnly) yt.forEach((y) => {
+        G.xy.y.push(V3(b.x0, y, b.z0), V3(b.x1, y, b.z0));                        // 背墙：沿 X
+        G.yz.y.push(V3(b.x0, y, b.z0), V3(b.x0, y, b.z1));                        // 左墙：沿 Z
+      });
+      zt.forEach((z) => {
+        G.zx.z.push(V3(b.x0, b.y0, z), V3(b.x1, b.y0, z));                        // 地面：沿 X
+        if (!floorOnly) G.yz.z.push(V3(b.x0, b.y0, z), V3(b.x0, b.y1, z));        // 左墙：沿 Y
+      });
+      // 细分格线一律虚线（对齐 sidecar 的 layer-guide）：格子退成背景，实线留给块框
+      Object.keys(G).forEach((pl) => Object.keys(G[pl]).forEach((ax) => {
+        axSeg(G[pl][ax], t[ax] ? hx(t[ax]) : grid, t[ax] ? tintOp : gridOp, { plane: pl, dashed: true });
+      }));
+      // 外框拆成三个平面矩形：3D 拼成角落框，2D 只留屏幕那一面
+      const rect = (pts) => { const o = []; for (let i = 0; i < 4; i++) o.push(pts[i], pts[(i + 1) % 4]); return o; };
+      const FR = {
+        zx: rect([V3(b.x0, b.y0, b.z0), V3(b.x1, b.y0, b.z0), V3(b.x1, b.y0, b.z1), V3(b.x0, b.y0, b.z1)]),
+        xy: floorOnly ? [] : rect([V3(b.x0, b.y0, b.z0), V3(b.x1, b.y0, b.z0), V3(b.x1, b.y1, b.z0), V3(b.x0, b.y1, b.z0)]),
+        yz: floorOnly ? [] : rect([V3(b.x0, b.y0, b.z0), V3(b.x0, b.y0, b.z1), V3(b.x0, b.y1, b.z1), V3(b.x0, b.y1, b.z0)]),
+      };
+      Object.keys(FR).forEach((pl) => axSeg(FR[pl], frame, frameOp, { plane: pl }));
     }
     /* 强调块的框：TP切片 / PP流水 把主轴按 emph（4×）拉开成「墙 / 段」。轴测下空档本身
        就说明了分段，但正交 2D 里主轴一稀疏，卡就散成条纹——数不清「这是第几片 / 第几段」，
@@ -1014,7 +1057,9 @@
           : { h: 'x', v: 'z', hR: 1, vU: -1 };   // 不转：  横=X（右为 +）· 纵=Z（上为 −，Z 向下）
       }
       if (v === 2) return { h: 'x', v: 'y', hR: 1, vU: 1 };   // 前视：横=X 纵=Y
-      if (v === 3) return { h: 'z', v: 'y', hR: 1, vU: 1 };   // 侧视：横=Z 纵=Y
+      /* 侧视的横轴是**反的**：相机在 +X 看向 −X、up=+Y，算出来的屏幕右方向是 −Z。
+         照抄前视写成 hR:+1 的话，「摆到左边」会摆到右边去（PP 刻度跑到图外右侧就是这个）。 */
+      if (v === 3) return { h: 'z', v: 'y', hR: -1, vU: 1 };   // 侧视：横=Z（右为 −）纵=Y
       return null;                                            // 3D 没有屏幕轴
     }
     // 沿某根轴的 along 处，落到该屏的「下边」或「左边」，向外让开 gap
@@ -1042,8 +1087,9 @@
            小规格下牌就会压到图上、大规格下又飘得老远。gp = 一个字高对应的世界尺寸。 */
         /* 错行只在**下方**才需要：那里一排牌肩并肩，宽的会撞上。
            左侧的牌是上下叠着的（各占自己那一行），再错行只会让它们左右参差。 */
+        // 贴着轴放：只留大半个字高的呼吸，远了就跟它标的那根轴断开了
         const gp = worldPerPx() * LABEL_PX;
-        const gap = gp * 1.2 + (kind === 'bottom' ? (o.row || 0) * gp * 2.9 : 0);
+        const gap = gp * 0.55 + (kind === 'bottom' ? (o.row || 0) * gp * 2.9 : 0);
         const l = axText(text, color, w, V3(0, 0, 0), null, o.sub, o.plate);
         if (!l) return;
         /* 精灵是**居中**摆放的：只按 gap 定位的话，牌会有一半探进图里。
@@ -1053,20 +1099,46 @@
         axOnly(l, [v]);
       });
     }
+    /* 轴刻度：与格线**同一套抽样**逐个出（不是只给首尾两个）——刻度密一点，
+       「这是第几行 / 第几个副本」才不用从两端去数。数量多时等间隔抽，并且必然带上末位。 */
+    function axAxisTicks(fmt, color, w, axis, n, at, bb, maxTicks) {
+      const stride = Math.max(1, Math.ceil(n / (maxTicks || 10)));
+      const idx = [];
+      for (let i = 0; i < n; i += stride) idx.push(i);
+      // 末位要带上，但若它离上一个抽样点不足半个间隔就顶掉那个——否则两枚牌贴在一起
+      const last = idx[idx.length - 1];
+      if (last !== n - 1) {
+        if (n - 1 - last < stride / 2) idx.pop();
+        idx.push(n - 1);
+      }
+      idx.forEach((i) => axOnAxis(fmt(i), color, w, axis, at(i), bb));
+    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
+    /* 块框是**实线 + 签名色**（对齐 sidecar 的 stage-guide）：格线虚、块框实，
+       「这是第几片 / 第几段」就由这一层直接说。
+       3D 画整只盒子；正交 2D 只画屏幕那一面的矩形——盒子的前后两面加四条竖棱在 2D 里
+       会全部投影成同一批线，一个框画出四五根重线，正是画面糊掉的主因。 */
     function axBlockFrames(boxes, colorHex, op) {
-      const pts = [];
+      const box = [], P = { xy: [], yz: [], zx: [] };
+      const rect = (pts) => { const o = []; for (let i = 0; i < 4; i++) o.push(pts[i], pts[(i + 1) % 4]); return o; };
       boxes.forEach((q) => {
-        [q.y0, q.y1].forEach((y) => {                               // 上下两圈
-          pts.push(V3(q.x0, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z1),
+        [q.y0, q.y1].forEach((y) => {
+          box.push(V3(q.x0, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z0), V3(q.x1, y, q.z1),
             V3(q.x1, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z1), V3(q.x0, y, q.z0));
         });
-        [[q.x0, q.z0], [q.x1, q.z0], [q.x1, q.z1], [q.x0, q.z1]].forEach(([x, z]) => {  // 四角竖棱（整根：只画两端会读成断开的括号）
-          pts.push(V3(x, q.y0, z), V3(x, q.y1, z));
+        [[q.x0, q.z0], [q.x1, q.z0], [q.x1, q.z1], [q.x0, q.z1]].forEach(([x, z]) => {
+          box.push(V3(x, q.y0, z), V3(x, q.y1, z));
         });
+        // 2D 用的那三个矩形摆在块的中截面上：与卡同深度，不会在斜视下与盒子的棱重影
+        const mx = (q.x0 + q.x1) / 2, my = (q.y0 + q.y1) / 2, mz = (q.z0 + q.z1) / 2;
+        P.xy.push.apply(P.xy, rect([V3(q.x0, q.y0, mz), V3(q.x1, q.y0, mz), V3(q.x1, q.y1, mz), V3(q.x0, q.y1, mz)]));
+        P.zx.push.apply(P.zx, rect([V3(q.x0, my, q.z0), V3(q.x1, my, q.z0), V3(q.x1, my, q.z1), V3(q.x0, my, q.z1)]));
+        P.yz.push.apply(P.yz, rect([V3(mx, q.y0, q.z0), V3(mx, q.y0, q.z1), V3(mx, q.y1, q.z1), V3(mx, q.y1, q.z0)]));
       });
-      axSeg(pts, new THREE.Color(colorHex).getHex(), op || (isDark() ? 0.5 : 0.62));
+      const c = new THREE.Color(colorHex).getHex(), o = op || (isDark() ? 0.62 : 0.72);
+      axSeg(box, c, o, { plane: '3d' });
+      Object.keys(P).forEach((pl) => axSeg(P[pl], c, o, { plane: pl, flat: true }));
     }
     /* 沿一根轴把卡阵切成 n 块，每块外扩半张卡 + 余量 → 一组框。
        `span` 是该轴上「一块」的半厚（卡厚的一半 or 块内多张卡的一半跨度）。 */
@@ -1117,12 +1189,13 @@
         axOnly(axText('TP0', TPc, 1.6, V3(xT(0), b.y0 - D(1), b.z1 + D(1.4))), [0]);
         axOnly(axText('TP' + (TP - 1), TPc, 1.6, V3(xT(TP - 1), b.y0 - D(1), b.z1 + D(1.4))), [0]);
         axText(seg2(`TP×${TP}`, TPc, ` 同一层切 ${TP} 片 · 层内 AllReduce（横向格线）`), TPc, 7);
+        // DP99 往外多让一档：它与 TP7 落在同一个近角上，固定字号后两枚牌会叠在一起
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(1), zD(0))), [0]);
-        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(1), zD(REP - 1))), [0]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(4.2), b.y0 - D(1), zD(REP - 1))), [0]);
         axText(seg2(`DP×${REP}`, DPc, ' 完整副本 · 数据不同 · 梯度 AllReduce'), DPc, 8);
         // 2D：刻度按「它标的是哪根轴」自动落到下方 / 左侧
-        axOnAxis('TP0', TPc, 1.6, 'x', xT(0), bb); axOnAxis(`TP${TP - 1}`, TPc, 1.6, 'x', xT(TP - 1), bb);
-        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
+        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'x', TP, xT, bb, 10);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
         axText(seg2(`PP×${PP}`, PPc, ` 模型深度 L1（上）→L${model.config.layers}（下） · 段间 P2P`), PPc, 7.6);
         axText('1 小块 = 1 卡（rank）= (TP,PP,DP) 坐标交点 · 另叠 EP 桶', NTc, 9);
         /* 标准形态的 canonical 分段 = PP 层带（模型深度）：一整层横切面就是一个流水段。
@@ -1135,7 +1208,9 @@
           // 与 TP切片/PP流水 同一条约定：3D 里分段由框交代，只留一把细标尺；
           // 完整规格牌给两个仍保留 PP 轴的正交面（前视 TP-PP、侧视 DP-PP），
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
-          axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
+          // 字牌固定屏幕尺寸后不再随模型缩小 → 层步距只有 1 个多世界单位时五把标尺会叠死。
+          // 3D 里只留首尾两把（中间几段由块框数得出来），完整规格牌在前视/侧视。
+          if (s2 === 0 || s2 === PP - 1) axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
           // PP 是 Y 轴 → 在前视/侧视里是纵轴 → 自动落到左侧；顶视 PP 被折掉，自动不出
           axOnAxis(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6, 'y', yS(s2), bb, { sub, plate: true });
         }
@@ -1189,8 +1264,7 @@
         axOnly(axText(`板内竖=PP×${PP} L1（上）→L${model.config.layers}（下）`, PPc, 5,
           pTop.clone().add(V3(0.4, 1.7, 0))), [0]);
         // PP 是 Y 轴：前视/侧视里是纵轴 → 落左侧；顶视 PP 被折掉 → 不出
-        axOnAxis('PP0', PPc, 1.6, 'y', s.y0 + (PP - 1) * s.pp, bb);
-        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.y0, bb);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.y0 + (PP - 1 - i) * s.pp, bb, 10);
       } else if (S.mode === 2) {
         const s = sp.ep;
         const bb = model.boundsOf(2);
@@ -1218,9 +1292,8 @@
         axOnly(axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0)), [0]);
         axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
         const zDm = (i) => (i - (DOM - 1) / 2) * s.dom;
-        axOnAxis('域0', DPc, 1.6, 'z', zDm(0), bb); axOnAxis(`域${DOM - 1}`, DPc, 2, 'z', zDm(DOM - 1), bb);
-        axOnAxis(`PP0`, PPc, 1.6, 'y', s.cy + (PP - 1) / 2 * s.pp, bb);
-        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.cy - (PP - 1) / 2 * s.pp, bb);
+        axAxisTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb, 9);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb, 10);
       } else if (S.mode === 3) {
         const s = sp.tps, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(3);
@@ -1249,9 +1322,8 @@
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0]);
         axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
-        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
-        axOnAxis('PP0', PPc, 1.6, 'y', s.cy + (PP - 1) / 2 * s.pp, bb);
-        axOnAxis(`PP${PP - 1}`, PPc, 2, 'y', s.cy - (PP - 1) / 2 * s.pp, bb);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
+        axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb, 10);
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
         const bb = model.boundsOf(4);
@@ -1271,9 +1343,8 @@
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0]);
         axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0]);
-        axOnAxis('DP0', DPc, 1.6, 'z', zD(0), bb); axOnAxis(`DP${REP - 1}`, DPc, 2, 'z', zD(REP - 1), bb);
-        axOnAxis('TP0', TPc, 1.6, 'y', s.cy + (TP - 1) / 2 * s.tp, bb);
-        axOnAxis(`TP${TP - 1}`, TPc, 2, 'y', s.cy - (TP - 1) / 2 * s.tp, bb);
+        axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb, 9);
+        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb, 10);
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
