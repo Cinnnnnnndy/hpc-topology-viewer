@@ -14,7 +14,7 @@
     "patternHtml": "public/rubik-pattern.html",
     "patternCss": "public/vendor/rubik-cube/pattern.css",
     "renderScript": "public/vendor/rubik-cube/pattern.js",
-    "defaultPreset": "pangu-pro-moe (tp8 · pp5 · dp100 · ep2 = 4000 rank)",
+    "defaultPreset": "128-card (tp2 · pp4 · dp16 · ep8 = 128 rank)；真实体量 pangu-pro-moe (tp8 · pp5 · dp100 · ep2 = 4000 rank) 作为「并行」那排的预设一键可切",
     "designSystem": "PTO Design System · https://github.com/yinyucheng0601/pto-design-system（dark-first · 无 emoji · 图标为内联 SVG · 数字用 mono · 控件复用 .panel-shell/.btn/.stat-chip）",
     "publishedAt": [
       "…/patterns/rubik-cube-logical/pattern.html —— 规范位置：pattern.css/js/json 同级，可直接 <script src> 复用",
@@ -132,7 +132,8 @@
     "在 updateProjectionMatrix 之前调 syncLabelSizes：疏密按当前相机的真投影算，用上一帧的投影矩阵就全错——顶视因此只剩 9 枚刻度（应为 21）；这一句必须放在 applyCamera 的最后",
     "只靠逐轴抽样就以为标签不会叠：抽样只管一根轴自己排不排得下，两根轴共用的那个角落它管不着（3D 里 DP99 压住 PP4·L40-47）——疏密算完再补一遍跨轴的屏幕盒相交检查，冲突时留段名、丢刻度（刻度还能悬停问出来），且判叠前必须先按「这一屏该不该出」复位，否则转一次相机就永久少一枚",
     "把剖面控制塞进视角那组分段控件：视角答「从哪个方向看」、剖面答「这一屏折掉的那一维翻到第几层」，后者是前者的下游而不是同级——剖面自己占右侧一张小卡，带自己那句提示（折了几张、正翻哪一层），落位规律才齐（下方=横轴·左侧=纵轴·右侧=剖面）",
-    "层号从 1 起：同一幅图里 TP0/PP0/DP0 都从 0 数，唯独层号从 1 起会被读成另一套坐标（设计系统 sidecar 的层也是 L0-L11）——stageLayerRange 一律 0 基，写成 PP0 · L0-9"
+    "层号从 1 起：同一幅图里 TP0/PP0/DP0 都从 0 数，唯独层号从 1 起会被读成另一套坐标（设计系统 sidecar 的层也是 L0-L11）——stageLayerRange 一律 0 基，写成 PP0 · L0-9",
+    "把真实体量（4000 卡）当落地配置：一张卡只剩两三个像素，四种形态的差别（墙/段/桶/板）糊成一片色块，第一眼读到的是一团颜色而不是一种堆法——落地 128 卡（2·4·16·8），每张卡看得清、每一段数得出，真实体量留作预设一键切换"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }
