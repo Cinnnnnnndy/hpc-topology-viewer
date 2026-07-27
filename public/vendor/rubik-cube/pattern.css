@@ -1,0 +1,383 @@
+/* pto rubik-cube pattern —— 逻辑魔方的组件样式。
+ *
+ * 遵循 PTO Design System（vendor/pto-design-system）：
+ *  · 控件一律复用设计系统的类实现——面板 .panel-shell / 按钮 .btn(.btn-sm/.btn-ghost/.is-selected)
+ *    / 互斥组 .segmented-control / 读数 .stat-chip；本文件只补 pattern 独有的东西（3D 舞台、
+ *    阶段轨道、图例色块、tooltip 定位）。
+ *  · 不硬编码颜色 / 圆角 / 阴影 / 间距——一律 var(--token)；间距只用 --space-1..6。
+ *  · 深色优先，明暗随 :root[data-theme] 由 token 层切换，本文件不写第二套色值。
+ *  · 无 emoji：图标为内联 SVG（stroke=currentColor），见 pattern.js。
+ */
+.prc-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font: var(--type-body-sm);
+}
+.prc-stage { position: absolute; inset: 0; }
+/* 按住 Ctrl / ⌘ → 光标变「可抓」，不用先拖一下才发现能平移；按下去变「抓住」 */
+.prc-stage.is-pan canvas { cursor: grab; }
+.prc-stage.is-pan canvas:active { cursor: grabbing; }
+.prc-stage canvas { display: block; }
+
+/* ── 左上控制面板（.panel-shell + 分行）────────────────────────────── */
+/* ── 顶栏：左=这张图叫什么（裸文字，不放卡片上），右=配置（一张卡）────────── */
+.prc-topbar {
+  position: absolute; top: var(--space-3); left: var(--space-3); right: var(--space-3); z-index: 6;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  flex-wrap: wrap; pointer-events: none;
+}
+.prc-brandname {
+  font: var(--type-body); font-weight: 700; color: var(--foreground);
+  white-space: nowrap; padding-left: var(--space-1);
+}
+.prc-tools {
+  /* 不再套一张大卡：每组自己就是一张胶囊卡（segmented-control / btn），
+     叠两层底会让底色看起来是错的。窄屏时整组换行，绝不横向溢出。 */
+  display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  justify-content: flex-end; flex: 0 1 auto; min-width: 0;
+  pointer-events: auto;
+}
+/* 顶栏里的每一组都是一张浮在画面上的卡：同高、同圆角、同阴影。
+   互斥组的总高 = 内部按钮高 + 上下内边距，独立按钮要按同一个数对齐，否则一排高低不一。 */
+.prc-root .prc-tools > * { --prc-toolh: calc(var(--button-height-sm) + var(--segmented-control-padding) * 2); }
+.prc-root .prc-tools .segmented-control,
+.prc-root .prc-tools > .btn,
+.prc-root .prc-toolslot > .btn {
+  height: var(--prc-toolh); min-height: var(--prc-toolh);
+  /* 胶囊圆角：与设计系统页面上的分段控件一致（外壳与内部选中项都是全圆角） */
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--segmented-control-border);
+  box-shadow: var(--prc-float-shadow);
+}
+.prc-root .prc-tools > .btn,
+.prc-root .prc-toolslot > .btn { padding: 0 calc(var(--space-3) + var(--segmented-control-padding)); }
+/* 实心按钮（Apply）也用主色：一屏里只有它是黑的，会被当成另一类控件 */
+.prc-root .btn-solid,
+.prc-root .btn-solid:hover {
+  background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
+}
+
+/* 时间：播放/暂停常驻顶栏，阶段轨道悬停才弹出（拖拽期间不收起） */
+.prc-timewrap { position: relative; display: inline-flex; }
+.prc-timepop {
+  display: none;
+  position: absolute; top: calc(100% + var(--space-2)); right: 0; z-index: 8;
+  padding: var(--space-2) var(--space-3);
+  align-items: center; gap: var(--space-2);
+}
+.prc-timewrap:hover .prc-timepop,
+.prc-timewrap:focus-within .prc-timepop,
+.prc-timewrap.is-dragging .prc-timepop { display: flex; }
+
+/* 只有图标的按钮：正方形，图标居中 */
+.prc-root .prc-iconbtn {
+  width: var(--prc-toolh, var(--button-height-sm)); min-width: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.prc-toolslot { --prc-toolh: calc(var(--button-height-sm) + var(--segmented-control-padding) * 2); }
+/* 组内部的按钮不再各自带阴影/描边（卡是外面那一层） */
+.prc-root .segmented-control > .btn { box-shadow: none; }
+.prc-root .segmented-control > .btn:not(.is-selected) { border-color: transparent; }
+.prc-group { flex: 0 0 auto; }
+.prc-toolslot { display: inline-flex; align-items: center; gap: var(--space-2); }
+.prc-toolslot:empty { display: none; }
+/* 顶栏里的互斥组：选中项用主色（与设计系统页面上的分段控件同款） */
+/* 选中态一律主色（顶栏的互斥组与抽屉里的开关同款，不再一处黑一处蓝） */
+.prc-root .btn.is-selected,
+.prc-root .btn.is-selected:hover {
+  background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
+}
+
+/* 浮在画面上的卡片一律用大圆角（--radius-xl），比 panel-shell 默认的 14px 更圆，
+   与顶栏那排胶囊控件是同一种语气 */
+.prc-root .prc-more,
+.prc-root .prc-info,
+.prc-root .prc-legend,
+.prc-root .prc-timepop,
+.prc-root .prc-helptip { border-radius: var(--radius-xl); }
+
+/* 抽屉挂在顶栏下方、靠右——从「更多」按钮那边落下来 */
+.prc-more {
+  position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); right: var(--space-3); z-index: 6;
+  padding: var(--space-3);
+  /* 抽屉是固定宽度的下拉面板：max-content 会被最宽的一行（并行读数 + 两个预设）
+     撑到很宽，其余行右边就空一大片。定宽 + 行内换行更整齐；同时给左侧详情卡让位。 */
+  /* 宽度按「最宽的那一排不换行」定（连线：五个开关 + 算法组 ≈ 550），再窄就换行。
+     用 max-content 反而会按「所有行不换行的总和」算，永远顶到上限、右边留一大片白。 */
+  width: min(584px, calc(100vw - 380px), 92vw);
+}
+
+/* 抽屉：着色/注入/连线/时间/并行 —— 默认收起，点「更多」展开 */
+.prc-more { display: none; flex-direction: column; gap: var(--space-2); }
+.prc-root.is-open .prc-more { display: flex; }
+/* 一排控件：横向排布、统一间距、窄了才换行（丢了这条规则，行会退回 block，
+   相位轨道这种块级元素就自己占一行，看起来就是「时间不在一行了」） */
+.prc-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--space-2); min-height: var(--button-height-sm);
+}
+/* 多选开关（连线那排）：各自独立的胶囊，之间留出明确间距，不连成一条 */
+.prc-chips { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* 互斥组的外壳一律胶囊圆角——顶栏与抽屉同一种语气（设计系统默认 10px 的圆角矩形
+   夹在一堆胶囊按钮和大圆角卡片中间，看起来就是没对齐）。 */
+.prc-root .segmented-control { border-radius: var(--radius-pill); }
+/* 抽屉里的互斥组与顶栏同款外壳（底更淡、不投影，卡是抽屉那一层） */
+.prc-more .segmented-control { background: var(--segmented-control-bg); box-shadow: none; }
+/* 行首 kicker：ALL CAPS + 字距（设计系统的 section kicker 规则） */
+.prc-lab {
+  font: var(--type-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--foreground-muted);
+  min-width: 34px; margin-right: var(--space-1); flex-shrink: 0;
+}
+.prc-note { font: var(--type-body-sm); color: var(--foreground-muted); }
+
+/* ── 行首问号：hover / 键盘聚焦弹出该排控件的解释 ────────────────────── */
+.prc-help {
+  position: relative; margin-right: var(--space-1);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px;
+  flex-shrink: 0; cursor: help; color: var(--foreground-muted);
+  border-radius: var(--radius-pill);
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.prc-help:hover, .prc-help:focus-visible { color: var(--primary); outline: none; }
+.prc-helptip {
+  display: none;
+  position: absolute; left: 0; top: calc(100% + var(--space-1)); z-index: 20;
+  width: min(74vw, 440px);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-md);
+  color: var(--foreground-secondary);
+  font: var(--type-body-sm); line-height: var(--line-height-body);
+  white-space: normal; text-transform: none; letter-spacing: normal;
+  max-height: min(72vh, 620px); overflow: hidden;
+  /* 气泡不吃指针：否则它悬在下一排控件上面，会挡住点击（也会把 hover 粘住不放） */
+  pointer-events: none;
+}
+/* 气泡内部像一小段文档：标题 / 正文 / 定义清单 / 注意事项 / 「此刻」状态块 */
+.prc-helptip h4 {
+  margin: 0 0 var(--space-1);
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--primary);
+}
+.prc-helptip p { margin: 0 0 var(--space-2); }
+.prc-helptip p:last-child { margin-bottom: 0; }
+.prc-helptip dl {
+  margin: 0 0 var(--space-2);
+  display: grid; grid-template-columns: auto 1fr; gap: 2px var(--space-2);
+}
+.prc-helptip dt { font: var(--type-mono); color: var(--foreground); white-space: nowrap; }
+.prc-helptip dd { margin: 0; }
+.prc-helptip ul { margin: var(--space-1) 0 0; padding-left: 1.1em; }
+.prc-helptip li { margin: 0; }
+.prc-helpnote { color: var(--foreground-muted); }
+.prc-helpnow {
+  margin-top: var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: var(--radius-md);
+}
+.prc-helpnow > p { margin: var(--space-1) 0 0; }
+.prc-helpnow > b { color: var(--foreground); }
+
+.prc-help.is-right .prc-helptip { left: auto; right: 0; }
+.prc-help.is-up .prc-helptip { top: auto; bottom: calc(100% + var(--space-1)); }
+.prc-helptip b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
+.prc-help:hover .prc-helptip, .prc-help:focus-visible .prc-helptip { display: block; }
+.prc-mono { font: var(--type-mono); color: var(--foreground-secondary); }
+.prc-more .prc-mono { white-space: normal; }
+/* 行内小标题（如「算法」）与前一组拉开距离 */
+.prc-lab-inline { margin-left: var(--space-3); }
+/* 一行里的「附加行」：读数与预设合成一行接在输入框下面（不与输入框交错，也不各占一行） */
+.prc-rowfoot { flex: 1 0 100%; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+/* 按钮：与设计系统页面上的控件同款——胶囊形、细描边、克制的字色。
+   （.btn 的其余表现全部来自设计系统，本文件只统一圆角与图标对齐。） */
+.prc-root .btn { border-radius: var(--radius-pill); }
+.prc-root .segmented-control > .btn { border-radius: var(--radius-pill); }
+.prc-root .btn svg { flex: 0 0 auto; }
+/* 数字输入也跟着做成胶囊，与同一排的按钮成套 */
+.prc-cfgitem input { border-radius: var(--radius-pill); }
+
+/* ── 剖面滑杆 / 并行度输入 ─────────────────────────────────────────── */
+.prc-slice { display: inline-flex; align-items: center; gap: var(--space-2); }
+.prc-root input[type="range"] { accent-color: var(--primary); }
+.prc-slice input[type="range"] { width: 108px; }
+.prc-cfgitem { display: inline-flex; align-items: center; gap: var(--space-1); }
+.prc-cfgitem > span { font: var(--type-label); color: var(--foreground-secondary); }
+.prc-cfgitem input {
+  width: 54px;
+  min-height: var(--button-height-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--input-radius);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--foreground);
+  font: var(--type-mono);
+}
+.prc-cfgitem input:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); border-color: var(--primary); }
+.prc-cfgerr { font: var(--type-body-sm); color: var(--danger); }
+
+/* ── 时间轴 = 一个 step 的 4 个通信阶段（可拖拽定位）──────────────── */
+.prc-phasetrack {
+  position: relative; display: flex; width: 248px;
+  min-height: var(--button-height-sm);
+  border-radius: var(--radius-md); overflow: hidden;
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  cursor: ew-resize; user-select: none;
+}
+.prc-pseg {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font: var(--type-label);
+  color: var(--foreground-secondary); opacity: 0.45;
+  transition: opacity var(--duration-fast) var(--easing-default);
+  border-right: 1px solid var(--border-subtle);
+}
+.prc-pseg:last-child { border-right: none; }
+.prc-pseg.on { opacity: 1; color: var(--foreground); }
+/* 阶段底色 = 该阶段主导维的签名色，低饱和薄涂（不做大面积高饱和填充） */
+.prc-ph-TP { background: color-mix(in srgb, var(--dim-tp) 20%, transparent); }
+.prc-ph-PP { background: color-mix(in srgb, var(--dim-pp) 20%, transparent); }
+.prc-ph-EP { background: color-mix(in srgb, var(--dim-ep) 18%, transparent); }
+.prc-ph-DP { background: color-mix(in srgb, var(--dim-dp) 18%, transparent); }
+.prc-playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  background: var(--foreground); opacity: 0.8;
+}
+
+/* 状态文字色（图例 / 贴士 / 气泡内共用） */
+.prc-dim { color: var(--foreground-muted); }
+.prc-warn { color: var(--danger); }
+.prc-ok { color: var(--success); }
+.prc-hot { color: var(--warning); }
+
+/* ── 「每格=几张卡」粒度贴士（右上）· 用 .stat-chip 承载 ───────────── */
+
+/* ── 卡块着色图例（右下）──────────────────────────────────────────── */
+/* 图例只回答「这个颜色叫什么」：分段 + 一行一条 + 只有色块和名字；
+   解释一律在对应控件行的问号气泡里。 */
+.prc-legend {
+  position: absolute; right: var(--space-3); bottom: var(--space-3); z-index: 5;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  font: var(--type-body-sm);
+  width: max-content; max-width: min(92vw, 260px);
+}
+.prc-lgsec {
+  margin-top: var(--space-2);
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--foreground-muted);
+}
+.prc-lgsec:first-child { margin-top: 0; }
+.prc-lgrow { display: flex; align-items: center; gap: var(--space-2); color: var(--foreground-secondary); }
+.prc-lgrow i { width: 10px; height: 10px; border-radius: var(--radius-sm); flex: 0 0 auto; }
+.prc-lgrow span { font: var(--type-mono); }
+.prc-lgrow.is-now span { color: var(--foreground); font-weight: 700; }
+.prc-legend .prc-ramp i {
+  width: 34px; border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--success), var(--warning), var(--danger));
+}
+
+/* ── 选中卡详情面板（右上，贴士下方）─────────────────────────────────
+   结构与观感对齐设计系统 sidecar 的 inspector：
+   kicker（类别）→ 标题（是谁）→ 一句定义 → 键值表（取值）→ 结论条（此刻状态）。 */
+.prc-info {
+  position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); left: var(--space-3); z-index: 5;
+  width: min(88vw, 320px);
+  padding: var(--space-4, var(--space-3));
+  display: none;
+}
+.prc-info.show { display: block; }
+.prc-infoclose {
+  position: absolute; top: var(--space-2); right: var(--space-2);
+  width: 26px; min-width: 26px; height: 26px; padding: 0;
+  border-radius: var(--radius-pill);
+}
+.prc-kicker {
+  font: var(--type-label); text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--primary);
+}
+.prc-title {
+  margin-top: var(--space-1);
+  font: var(--type-title, 700 16px/1.3 var(--font-sans));
+  font-family: var(--font-mono); font-weight: 700;
+  color: var(--foreground);
+}
+.prc-prose {
+  margin: var(--space-2) 0 var(--space-3);
+  font: var(--type-body-sm); line-height: var(--line-height-body);
+  color: var(--foreground-secondary);
+}
+.prc-kv {
+  display: grid; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--background));
+}
+.prc-kvrow { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.prc-kvlab { font: var(--type-mono); color: var(--foreground-muted); white-space: nowrap; }
+.prc-kvval { font: var(--type-mono); color: var(--foreground); text-align: right; }
+.prc-kvval b { font-weight: 700; }
+.prc-status {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-radius: var(--radius-md);
+  font: var(--type-mono); line-height: var(--line-height-body);
+  color: var(--foreground-secondary);
+}
+.prc-status.is-edge { border-color: color-mix(in srgb, var(--foreground) 18%, transparent); }
+
+/* ── 悬停 tooltip ─────────────────────────────────────────────────── */
+.prc-tip {
+  position: absolute; z-index: 9; display: none; pointer-events: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--surface-2); border: 1px solid var(--border-default);
+  color: var(--foreground); font: var(--type-mono); white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── 维度签名色（3D 轴标注 / 通信组线框用；卡块着色不使用）─────────── */
+.prc-root {
+  /* 浮在画布上的控件用的柔和投影：上游色卡的 --shadow-* 是深色优先（0.28 黑），
+     压在浅色底上发脏 → pattern 自备一档，待回补上游（同 --dim-tp 的处理）。 */
+  --prc-float-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.06);
+  --dim-tp: #39c5cf;
+  --dim-pp: #ffaa3b;
+  --dim-dp: #4369ef;
+  --dim-ep: #9b3cf6;
+}
+
+/* 贴士里的内联图标：与文字基线对齐、随文字色 */
+
+/* ── 窄屏适配：顶栏换行、面板改为不互相遮挡的堆叠 ─────────────────────── */
+@media (max-width: 900px) {
+  .prc-topbar { gap: var(--space-2); }
+  .prc-brandname { flex: 1 0 100%; }            /* 名字独占一行，控件整排落到下一行 */
+  .prc-tools { justify-content: flex-start; }
+  .prc-more, .prc-info { width: min(94vw, 420px); }
+  /* 窄屏抽屉会横跨整宽 → 展开时详情卡让到抽屉下面，不互相压 */
+  .prc-root.is-open .prc-info {
+    top: calc(var(--prc-barh, 46px) + var(--prc-moreh, 0px) + var(--space-3) * 3);
+    max-height: calc(100% - var(--prc-barh, 46px) - var(--prc-moreh, 0px) - var(--space-3) * 5);
+    overflow: auto;
+  }
+  /* 详情卡与图例都在左/右下角时，窄屏下让图例退到详情卡下方 */
+  .prc-legend { max-width: min(60vw, 220px); }
+}
+@media (max-width: 620px) {
+  .prc-info { top: auto; bottom: var(--space-3); left: var(--space-3); right: var(--space-3); width: auto; }
+  .prc-root.is-open .prc-info { display: none; }   /* 空间实在不够：开着设置就先不显示详情 */
+  .prc-legend { display: none; }                 /* 空间不够时先让位给详情卡（图例信息在问号里） */
+}
