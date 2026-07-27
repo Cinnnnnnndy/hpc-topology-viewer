@@ -487,7 +487,6 @@
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
         '  <div class="prc-row prc-row-cfg"><span class="prc-lab">并行</span></div>',
         '</div>',
-        '<div class="prc-pill stat-chip"></div>',
         '<div class="prc-legend panel-shell"></div>',
         '<div class="prc-info panel-shell"></div>',
       ].join(''),
@@ -768,7 +767,16 @@
          · 语义色只落在「名字」上，解释性文字用中性次级前景色（两段式字牌），
            annotation 的对比度始终低于模型本身；
          · 字牌绝不盖住它所标注的东西：远离盒子的横幅用中性引线牵回去，而不是压上去。 */
-    const MIN_LABEL_PX = 9;
+    // 全局字牌字号：整套标注只此一个入口（mount 的 labelPx · setLabelPx() · URL 的 ?label=）
+    // ——不给任何单个标记开小灶，否则「调大一点」就得逐处去找。
+    const clampLabelPx = (v) => Math.max(9, Math.min(28, Number(v) > 0 ? Number(v) : 16));
+    /* 字牌一律**固定屏幕尺寸**：正文默认 16px，和 UI 文字一个量级。
+       曾经让字牌「跟着场景缩放」（世界尺寸固定、再加一个像素地板兜底），代价是同一张牌
+       在不同规格/不同缩放下大小不一，小的时候读不出、大的时候压卡；为了补救又长出一堆
+       机关（按块步距钉宽、量牌高错行、牵引线指回去），越补越绕，引线本身还细到看不见。
+       改成固定屏幕尺寸后这些机关全部不需要：牌永远这么大、永远读得出，摆在它标的那块
+       旁边就够了。代价是**缩得很远时牌会互相挤**——这是自觉的取舍：宁可挤，不可读不出。 */
+    let LABEL_PX = clampLabelPx(opts.labelPx);
     const worldPerPx = () => (2 * cam.half) / Math.max(1, stageEl.clientHeight);
     /* 字牌样式逐条复刻设计系统 sidecar pattern 的 operator-label / stage-label：
          · 极小号 850 字重的 mono（技术标记的语气，不是标题）；
@@ -780,7 +788,7 @@
     /* sub：第二行「规格」——照搬 sidecar 的 stage-label 分工，第一行是这块**是谁**
        （维度签名色），第二行是这块**里面有什么**（中性次级色、更小号、带字距）。
        两行合一张牌，比「一个名字 + 旁边另起一个标记」少一次视线跳转，也不会各自飘走。 */
-    function makeLabel(text, color, w, sub, maxWorld) {
+    function makeLabel(text, color, w, sub) {
       const SS = 4, fontPx = 40, subPx = 27, gapY = 7, padX = 26, padY = 9;
       const segs = Array.isArray(text) ? text : [{ t: String(text), c: color }];
       text = segs.map((x) => x.t).join('');
@@ -827,17 +835,25 @@
       try { tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); } catch (e) { /* noop */ }
       tex.needsUpdate = true;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-      let worldW = w * tw / 512;
-      const px = (worldW * (fontPx / tw)) / worldPerPx();
-      if (px < MIN_LABEL_PX) worldW *= Math.min(1.8, MIN_LABEL_PX / px);   // 封顶 1.8×：地板是兜底，不是放大器
-      /* maxWorld：把牌宽钉死在一个世界尺寸上。w 是「512px 贴图 = w 个世界单位」的比例，
-         贴图宽度又随文案长度变——所以同一个 w，字多的牌就更宽，靠调 w 控宽度必然失手。
-         块标必须按**块步距**定宽（否则压到隔壁块头上），且不能被上面的像素地板放大出去，
-         故给一个硬上限：文案长短、缩放远近都不改变它占几个块位。 */
-      if (maxWorld) worldW = Math.min(worldW, maxWorld);
-      sp.scale.set(worldW, worldW * th / tw, 1);
+      // 贴图里正文占 fontPx/tw，于是「正文 = LABEL_PX 屏幕像素」反解出牌该有多大的世界尺寸。
+      // 相机一变（换视角、缩放、改窗口）就重算一次 —— syncLabelSizes。
+      sp.userData.lab = { fontFrac: fontPx / tw, aspect: th / tw };
+      syncLabelSize(sp);
       sp.material.userData.baseOp = 1;
       return sp;
+    }
+    function syncLabelSize(sp) {
+      const L = sp.userData.lab;
+      if (!L) return;
+      const worldW = LABEL_PX * worldPerPx() / L.fontFrac;
+      sp.scale.set(worldW, worldW * L.aspect, 1);
+    }
+    let lastLabHalf = -1, lastLabH = -1;
+    function syncLabelSizes(force) {
+      const h = stageEl.clientHeight || 0;
+      if (!force && cam.half === lastLabHalf && h === lastLabH) return;
+      lastLabHalf = cam.half; lastLabH = h;
+      axGroup.traverse((o) => { if (o.isSprite) syncLabelSize(o); });
     }
 
     /* ── 轴标注（每形态一套：网格框 + 刻度 + 语义标注 + 关键结构线）── */
@@ -852,14 +868,15 @@
         if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
       }
     }
-    /* 标注的世界包围盒：取景只按卡的包围盒算的话，摆在模型外侧的标记（尤其块标那种
-       又宽又要错行的）在小规格下会被推出画布——相机贴得越近，同样的世界偏移越出框。
-       这里记录当前视角下**真正会显示**的标记占了多大，fitView 把它并进取景范围，
-       于是「标记跑到画布外」这一类问题在任何配置下都不会再出现。 */
+    /* 标注锚点的世界包围盒：取景只按卡的包围盒算的话，摆在模型外侧的标记在小规格下会被
+       推出画布——相机贴得越近，同样的世界偏移越出框。fitView 把它并进取景范围。
+       只并**锚点位置**、不并牌的尺寸：牌是固定屏幕尺寸，尺寸并进去会自我反馈
+       （取景放宽 → worldPerPx 变大 → 牌的世界尺寸跟着变大 → 再放宽…never settles）。
+       牌本身占的那点屏幕空间，由 fitView 末尾一个固定比例的留白吸收。 */
     let axBox = null;
     function axBoxAdd(sp) {
-      const w = sp.scale.x / 2, h = sp.scale.y / 2, p = sp.position;
-      const e = { x0: p.x - w, x1: p.x + w, y0: p.y - h, y1: p.y + h, z0: p.z - w, z1: p.z + w };
+      const p = sp.position;
+      const e = { x0: p.x, x1: p.x, y0: p.y, y1: p.y, z0: p.z, z1: p.z };
       if (!axBox) { axBox = e; return; }
       axBox.x0 = Math.min(axBox.x0, e.x0); axBox.x1 = Math.max(axBox.x1, e.x1);
       axBox.y0 = Math.min(axBox.y0, e.y0); axBox.y1 = Math.max(axBox.y1, e.y1);
@@ -893,35 +910,21 @@
        （TP0 / DP99 / S0·L1-10 / 桶3 / 列2…），整句解释交给固定屏幕位置的 UI——
        这里收进「形态」问号气泡（axNotes → DYN.modes），信息一句不少。 */
     let axNotes = [];
-    function axText(text, color, w, pos, anchor, sub, maxWorld) {
-      // w >= 5 = 散文横幅 → 不画，收进问号气泡。给了 maxWorld 的是块标：它的 w 只是
-      // 「先按文案量出宽度，再由 maxWorld 钉死」的起点，不是横幅，别被这条拦下。
-      if (w >= 5 && !maxWorld) {
+    /* w 只剩一个语义：**这句是散文还是标记**（w ≥ 5 = 整句解释 → 不画进 3D，收进问号
+       气泡）。字号不再由它决定——所有字牌都是 LABEL_PX 的固定屏幕尺寸。
+       plate=true 的是块标：文案带「规格」第二行，同样不是横幅。 */
+    function axText(text, color, w, pos, anchor, sub, plate) {
+      if (w >= 5 && !plate) {
         axNotes.push(Array.isArray(text) ? text.map((x) => x.t).join('') : String(text));
         return null;
       }
-      const l = makeLabel(text, color, w * 0.92 * LS, sub, maxWorld);   // 标记要小：语气是技术注记，不是标题
+      const l = makeLabel(text, color, w, sub);
       l.position.copy(pos);
-      l.userData.banner = w >= 5 && !maxWorld;   // 同上：块标不是横幅，别跟着「只在 3D 出现」
+      l.userData.banner = w >= 5 && !plate;
       axGroup.add(l);
       // 引线：横幅坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
       // 也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
-      if (anchor) axLeader(l, anchor);
       return l;
-    }
-    /* 引线：标记坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
-       也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
-       单独成函数是因为块标要「先建牌量出高度、再落位」，落位之后才知道引线从哪儿画；
-       跟着标记同进退（视角切换时一起收）。 */
-    function axLeader(l, anchor) {
-      const from = l.position.clone().lerp(anchor, Math.min(0.5, (l.scale.y * 0.7) / Math.max(0.01, l.position.distanceTo(anchor))));
-      const g = new THREE.BufferGeometry().setFromPoints([from, anchor]);
-      const m = new THREE.LineBasicMaterial({ color: new THREE.Color(tokHex('--border-strong')), transparent: true, opacity: isDark() ? 0.5 : 0.6 });
-      const ln = new THREE.Line(g, m);
-      ln.userData.banner = l.userData.banner;
-      ln.userData.views = l.userData.views;
-      axGroup.add(ln);
-      return ln;
     }
     // 两段式横幅：名字用维度签名色、解释用中性次级前景色
     const seg2 = (head, hc, rest) => [{ t: head, c: hc }, { t: rest, c: tokHex('--foreground-secondary') }];
@@ -988,17 +991,6 @@
        当年 2D 被收编正是因为这个。给每一块套一圈签名色细框，条纹当场读成整块。
        框贴着卡本身（不是网格框）：只外扩半张卡 + 一点余量，既不与卡穿插，也不像另起一个
        坐标系。四条竖棱只画到块高的两端，中间留空——满框在 3D 里会织成一片网。 */
-    /* 块标落位：牌**必须贴着它标的那块**，否则一排牌摆在下面，读者根本对不上号
-       （错行尤其致命：第二行离场边两三个牌高，看上去像另一组东西）。
-       落位靠**量出来的牌高**而不是猜的常数——牌高随文案与 maxWorld 变，写死的偏移
-       要么叠在一起要么飘出去。row=0 贴场边，row=1 紧接其下（留 6% 呼吸），
-       再从牌牵一根引线回块，哪张牌对哪块就没有歧义了。 */
-    function axPlaceBlockLabel(l, x, z, edgeY, dir, row, anchor) {
-      if (!l) return null;
-      const h = l.scale.y;
-      l.position.set(x, edgeY + dir * (h * (0.5 + row * 1.06) + D(0.5)), z);
-      return axLeader(l, anchor);
-    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
     function axBlockFrames(boxes, colorHex, op) {
@@ -1081,7 +1073,7 @@
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
           axOnly(axText(`S${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
           axOnly(axText(`PP Stage ${s2} · L${lr.lo}-L${lr.hi}`, PPc, 6,
-            V3(b.x0 - D(5.6), yS(s2), b.z0), null, sub, s.sy * 3.4), [2, 3]);
+            V3(b.x0 - D(5.6), yS(s2), b.z0), null, sub, true), [2, 3]);
         }
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
@@ -1108,12 +1100,12 @@
         /* 板有 REP 块，逐块挂牌会糊掉——只给首尾两块两行规格牌，说明「一块板里装了什么」。
            顶视把 PP（Y）折进视线，「浮在板上方」这个偏移当场失效、牌会压在板上 →
            顶视改用 Z 方向把牌推到宫格外（首块推到近侧、末块推到远侧）。 */
-        const dSub = `TP ×${TP} · PP ×${PP} = ${TP * PP} 卡`, dW = s.gapX * 1.5;
+        const dSub = `TP ×${TP} · PP ×${PP} = ${TP * PP} 卡`;
         const d0 = pos(0, 0, 0), dN = pos(0, 0, REP - 1);
-        axOnly(axText('DP 副本 0', DPc, 6, d0.clone().add(V3(0, D(3.4), 0)), null, dSub, dW), [0, 2, 3]);
-        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, dN.clone().add(V3(0, D(3.4), 0)), null, dSub, dW), [0, 2, 3]);
-        axOnly(axText('DP 副本 0', DPc, 6, V3(d0.x, b.y0, b.z0 - D(2.2)), null, dSub, dW), [1]);
-        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, V3(dN.x, b.y0, b.z1 + D(2.2)), null, dSub, dW), [1]);
+        axOnly(axText('DP 副本 0', DPc, 6, d0.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0, 2, 3]);
+        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, dN.clone().add(V3(0, D(3.4), 0)), null, dSub, true), [0, 2, 3]);
+        axOnly(axText('DP 副本 0', DPc, 6, V3(d0.x, b.y0, b.z0 - D(2.2)), null, dSub, true), [1]);
+        axOnly(axText(`DP 副本 ${REP - 1}`, DPc, 6, V3(dN.x, b.y0, b.z1 + D(2.2)), null, dSub, true), [1]);
         axText(seg2(`DP 平铺 · ${REP} 块板`, DPc, ` = ${REP} 份完整副本（副本号=行×${COLS}+列 · 参数相同 · 各吃不同数据）`), DPc, 11,
           V3(0, b.y1 + D(3.4), 0), V3(0, b.y1, 0));
         const p00 = pos(0, PP - 1, 0), p10 = pos(TP - 1, PP - 1, 0), pTop = pos(0, 0, 0);
@@ -1144,10 +1136,9 @@
           // 3D 不错行（+X 右下与 +Y 上互相抵消）；2D 才错行——与 TP切片/PP流水 同一条约定
           axOnly(axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 3.2,
             V3(ex, b.y1 + D(1.2), 0)), [0]);
-          axPlaceBlockLabel(axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
-            V3(ex, 0, 0), null, eSub, s.gapE * 1.6), [2]),
-          ex, 0, b.y0, -1, e % 2, V3(ex, b.y0, 0));
-          axOnly(axText(`桶${e}`, c, 2.4, V3(ex, b.y0, b.z1 + D(1.5) + ej)), [1]);
+          axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
+            V3(ex, b.y0 - D(1.4) - ej, 0), null, eSub, true), [2]);
+          axOnly(axText(`桶${e}`, c, 2.4, V3(ex, b.y0, b.z1 + D(1.5))), [1]);
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
@@ -1176,22 +1167,21 @@
              两行的完整规格牌留给正交 2D（那里横向摆得开，且下方大片空着）。 */
           const tSub = `PP ×${PP} · DP ×${REP} = ${PP * REP} 卡`;
           // 错行位移同样走 D()：写死世界单位的话，小规格（相机贴得近）会把牌甩出取景框
-          const tTit = `TP 切片 ${t} · ${t + 1}/${TP}`, tW = s.gapT * 1.6, tj = (t % 2) * D(3.8);
+          const tTit = `TP 切片 ${t} · ${t + 1}/${TP}`, tj = (t % 2) * D(3.8);
           axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y1 + D(1.3) + tj, 0)), [0]);
           const tx = bb.x0 + t * s.gapT;
-          axPlaceBlockLabel(axOnly(axText(tTit, TPc, 6, V3(tx, 0, 0), null, tSub, tW), [2]),
-            tx, 0, b.y0, -1, t % 2, V3(tx, b.y0, 0));
+          axOnly(axText(tTit, TPc, 6, V3(tx, b.y0 - D(1.4) - tj, 0), null, tSub, true), [2]);
           // 顶视留下的两根轴里有 DP（成员最多的那根，默认 100）——整幅被拉成细长条，
           // 规格牌按块步距钉宽后字会小到读不出，这里只给身份小牌，规格看前视那一屏。
-          axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y0, b.z1 + D(1.5) + tj)), [1]);
+          // 顶视转 90° 后各块本来就分居不同的屏幕行，不再需要错行——错行只会让它们左右参差
+          axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y0, b.z1 + D(1.5))), [1]);
         }
         axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
-        const dots = R(TP, (t) => V3(bb.x0 + t * s.gapT, b.y1 + D(0.4), b.z0));
-        for (let k = 0; k < TP - 1; k++) axLine(dots[k], dots[k + 1], TPw, 0.07 * Math.max(0.45, LS));
-        // 连点的半径也随尺度走：固定 0.2 在小规格下（相机贴得近）会胀成大圆球
-        const dotR = 0.2 * Math.max(0.45, LS);
-        dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(dotR, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
+        /* 这里曾有一条「墙间连点」（8 个球 + 一根粗线），本意是说「同一 TP 组的卡分属 8 面墙」。
+           撤掉了：① 这件事选中任意一张卡就由真正的 TP AllReduce Ring 连线画出来，
+           而且画的是实际算法（Ring/Tree），比一根示意横杆准确得多；② 它横在墙顶，
+           又粗又抢，小规格下还会顶到工具栏。文字说明留在下面那句（→ 问号气泡）。 */
         axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0, 1]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0, 1]);
@@ -1208,14 +1198,13 @@
           const lr = model.stageLayerRange(st);
           // PP 只有几段、块步距更宽 → 牌钉在 0.94 个步距上，单排就摆得下（落点同上）
           const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
-          const pTit = `PP Stage ${st} · L${lr.lo}-L${lr.hi}`, pW = s.gapP * 0.94;
+          const pTit = `PP Stage ${st} · L${lr.lo}-L${lr.hi}`;
           // 3D 里不错行：+X 向右下、+Y 向上，错行会把两枚牌推到一起；沿块步距自然排开
           // 已经形成一道斜梯，反而是读得清的那种
           axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0)), [0]);
           const px = bb.x0 + st * s.gapP;
-          axPlaceBlockLabel(axOnly(axText(pTit, PPc, 6, V3(px, 0, 0), null, pSub, pW), [2]),
-            px, 0, b.y0, -1, 0, V3(px, b.y0, 0));
-          axOnly(axText(`S${st}`, PPc, 2.4, V3(bb.x0 + st * s.gapP, b.y0, b.z1 + D(1.5))), [1]);   // 同上：顶视含 DP 轴，只给身份牌
+          axOnly(axText(pTit, PPc, 6, V3(px, b.y0 - D(1.4), 0), null, pSub, true), [2]);
+          axOnly(axText(`S${st}`, PPc, 2.4, V3(px, b.y0, b.z1 + D(1.5))), [1]);   // 同上：顶视含 DP 轴，只给身份牌
         }
         axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5,
           V3(0, b.y1 + D(4.9), 0), V3(0, b.y1 + D(0.6), 0));
@@ -1375,6 +1364,11 @@
     // —— 三根世界轴等比缩短、互成 120°，这才是「轴测」该有的样子。
     const ISO = { theta: Math.PI / 4, phi: Math.asin(Math.tan(Math.PI / 6)) };
     const cam = { theta: ISO.theta, phi: ISO.phi, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
+    // 顶视是否转 90°：Z 跨度比 X 长就转（依据只此一条，fitView 与 applyCamera 共用）
+    function topRotated() {
+      const b = model.boundsOf(S.mode);
+      return (b.z1 - b.z0) > (b.x1 - b.x0);
+    }
     function fitView() {
       const b = model.boundsOf(S.mode);
       // 轴标注留白随模型尺度自适应（固定留白会让小规格模型只占画面一小块）
@@ -1398,7 +1392,11 @@
       // 模型在屏幕右/上方向的半跨度（hw, hh）——正交三视图直取，轴测按相机基向量投影
       // （近似式在小尺度下会让方块溢出画布）
       let hw, hh;
-      if (S.view === 1) { hw = ex; hh = ez; }             // 顶视：屏幕 横=X 纵=Z
+      // 顶视把模型的**长边横放**：画布是横的，而顶视保留的两根轴常常一长一短
+      // （TP切片 顶视 = TP×8 对 DP×100），不转的话整幅缩成一根细长条，两边全是空白。
+      // 转 90° 后 100 张一行横着摆开、8 行竖着叠起来——「一整行红 = 那个槽位整批坏」
+      // 这句话才真的看得见。
+      if (S.view === 1) { const r = ez > ex; hw = r ? ez : ex; hh = r ? ex : ez; }
       else if (S.view === 2) { hw = ex; hh = ey; }        // 前视：横=X 纵=Y
       else if (S.view === 3) { hw = ez; hh = ey; }        // 侧视：横=Z 纵=Y
       else {
@@ -1413,18 +1411,24 @@
       const br = bar ? bar.getBoundingClientRect() : null;
       const bx = br && br.width < w * 0.8 ? Math.min(0.18, (br.width / w) * 0.3) : 0;
       const by = br ? Math.min(0.18, (br.height / h) * 0.42) : 0;
-      cam.half = Math.max(hh, hw / asp) * 1.05 * (1 + Math.max(bx, by));
+      // 1.14：给固定屏幕尺寸的字牌留的余量（牌本身不进包围盒，见 axBox 注释）
+      cam.half = Math.max(hh, hw / asp) * (axBox ? 1.14 : 1.05) * (1 + Math.max(bx, by));
       const halfW = cam.half * asp;
       cam.panX = -Math.min(bx * halfW, Math.max(0, halfW - hw));    // 相机左移 → 模型右移
       cam.panY = Math.min(by * cam.half, Math.max(0, cam.half - hh)); // 相机上移 → 模型下移
     }
     function applyCamera() {
+      syncLabelSizes();          // 牌是固定屏幕尺寸 → 相机/窗口一变就得重算世界尺寸
       const w = stageEl.clientWidth || 800, h = stageEl.clientHeight || 600, asp = w / h;
       camera.left = -cam.half * asp; camera.right = cam.half * asp;
       camera.top = cam.half; camera.bottom = -cam.half;
       const c = V3(cam.cx, cam.cy, cam.cz);
       const D = 300;
-      if (S.view === 1) { camera.position.set(c.x, c.y + D, c.z); camera.up.set(0, 0, -1); }
+      if (S.view === 1) {
+        camera.position.set(c.x, c.y + D, c.z);
+        // up=(0,0,-1)：横=X 纵=Z（Z 向下）· up=(1,0,0)：横=Z（左→右）纵=X —— 长边横放时用后者
+        camera.up.copy(topRotated() ? V3(1, 0, 0) : V3(0, 0, -1));
+      }
       else if (S.view === 2) { camera.position.set(c.x, c.y, c.z + D); camera.up.set(0, 1, 0); }
       else if (S.view === 3) { camera.position.set(c.x + D, c.y, c.z); camera.up.set(0, 1, 0); }
       else {
@@ -1581,19 +1585,18 @@
     /* 左下的「读图钥匙」HUD 已删除：常驻大段文字太占画面。形态的读法进了「形态」问号
        气泡（随当前形态变化），异常读法在「注入」问号里，当前阶段看时间轴与图例。 */
     function renderHud() { }
-    function renderPill() {
-      const pill = $('.prc-pill'); if (!pill) return;
+    /* 「每格=几张卡」曾经是画面右上角一枚常驻贴士。撤掉了：本 pattern 自己的约定就是
+       「解释一律收进问号气泡，画面只留几何」，它是最后一处例外。信息一句没少——
+       现在写在「视角」问号气泡的「此刻」一行里（见 DYN.views），且比原来更完整
+       （多说了正在翻哪一层）。 */
+    function granText() {
       const d = curDepth();
-      if (!d) { pill.classList.remove('show'); pill.innerHTML = ''; return; }
-      pill.classList.add('show');
-      // 「每格=几张卡」：正交 2D 里同一格可能是 1 张卡，也可能是多个折叠维的乘积张卡
-      // 重叠（例：侧视同时折叠墙序与墙内 TP）——必须如实写清楚，别让人以为一格一卡。
+      if (!d) return '';
       const rest = d.fold / d.slice.n;   // 开剖面后仍被折叠的卡数（多折叠维时 > 1）
-      pill.innerHTML = S.sliceOn
-        ? (rest > 1
-          ? `${ICON.grid} 每格 = <b class="prc-hot">${rest} 张卡重叠</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal} · 其余维仍折叠）`
-          : `${ICON.grid} 每格 = <b class="prc-ok">1 张卡</b>（剖面 ${esc(d.slice.lab)}=${S.sliceVal}）`)
-        : `${ICON.grid} 每格 = <b class="prc-hot">${d.fold} 张卡重叠</b>（${esc(d.label)} 折入视线 · 开剖面逐层翻）`;
+      if (!S.sliceOn) return `每格 ${d.fold} 张卡重叠（${d.label} 折入视线，可开剖面逐层翻）`;
+      return rest > 1
+        ? `每格 ${rest} 张卡重叠（正翻 ${d.slice.lab}=${S.sliceVal}，其余维仍折叠）`
+        : `每格 1 张卡（正翻 ${d.slice.lab}=${S.sliceVal}）`;
     }
     // 图例必须跟着「当前卡块着色」走：分组着色时列出各组的实际配色，负载着色时给色带，
     // 注入异常时给异常组——否则切了着色图例纹丝不动，读者按图例根本对不上画面。
@@ -1732,7 +1735,7 @@
         </dl>
         <p>不是每个形态都给满三屏：一个形态之所以不同于标准，全在它那根被拉开的轴（TP 切片的墙、PP 流水的段，步距 4×）。这根轴<b>被折进视线</b>的那一屏，空档随之消失，剩下的与标准的同名平面逐位相同——那一屏就是标准，不重复给出（两个形态都少了侧视）。轴还留在屏幕上的顶 / 前两屏，墙与墙之间是看得见的空档，「这是第几片 / 第几段」在那里才数得清。</p>
         <p>按钮上的「DP-TP 面」读作<b>平面</b>而不是乘法：破折号两侧是这一屏留下的两根屏幕轴（横 DP、纵 TP），没写出来的第三根就是被折进视线的那一维。这一格里真正相乘的只有 rank 总数 TP×PP×DP，视角本身不改变任何数量。</p>
-        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡写在右上角的粒度贴士里。任何正交视角下拖动，都会从当前朝向无缝转回 3D。</p>`,
+        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。任何正交视角下拖动，都会从当前朝向无缝转回 3D。</p>`,
       lens: `<h4>着色 · 给卡上色的镜头</h4>
         <p>只改颜色，不改结构。</p>
         <dl>
@@ -1809,7 +1812,7 @@
           ? '3D 等距轴测 · 三根轴同屏，拖动可转'
           : `${md.viewLabels[S.view]} —— 屏幕两根轴之外，${d ? esc(d.label) : '第三根轴'} 被折进视线`;
         return `<div class="prc-helpnow"><b>此刻：</b>${esc(md.name)} · ${what}`
-          + (d ? `，每格重叠 ${d.fold} 张卡${S.sliceOn ? `（正翻 ${d.slice.lab} 第 ${S.sliceVal + 1} 层）` : '（可开剖面逐层翻）'}` : '')
+          + (d ? `，${granText()}` : '')
           + (bv != null ? `<br><b>这个形态最该看：${esc(bvName)}</b>——${esc(bvWhy || '')}` : '')
           + '</div>';
       },
@@ -1908,7 +1911,16 @@
         b.style.display = vlist.includes(i) ? '' : 'none';        // 视角收编：重合平面不出按钮
         b.classList.toggle('is-selected', i === S.view);
         if (i > 0) b.textContent = md.viewLabels[i];
+        /* 主屏（bestView）排到 3D 后面的第一个：一排按钮里位置本身就是推荐——
+           顺序按「顶/前/侧」的固有次序排，读者只会理解成方位表，不会理解成
+           「这个形态该先看哪一屏」。用 CSS order 调换，DOM 顺序与视角序号保持一致，
+           免得别处（键盘序、URL 参数、测试）跟着错位。 */
+        b.style.order = i === 0 ? 0 : i === md.bestView ? 1 : i + 1;
       });
+      // 同一个 flex 容器里只要有人设了 order，没设的就按 0 排到最前——剖面控件因此会插到
+      // 视角按钮前面。显式排到末尾。
+      root.querySelectorAll('.prc-row-views .prc-slicewrap, .prc-row-views .prc-slice')
+        .forEach((el) => { el.style.order = 99; });
       // 只剩 3D 一个视角的形态（TP切片 / PP流水，2D 与标准重合）：整组不显示，
       // 一个孤零零的「3D」按钮既没有可切换的对象，也让人以为别的被禁用了
       const vg = root.querySelector('.prc-row-views');
@@ -2059,7 +2071,7 @@
       cfgFoot.appendChild(chipBtn('盘古ProMoE 8·5·100·2', () => api.setConfig({ tp: 8, pp: 5, dp: 100, ep: 2 })));
       cfgFoot.appendChild(chipBtn('128卡 2·4·16·8', () => api.setConfig({ tp: 2, pp: 4, dp: 16, ep: 8 })));
     }
-    function refresh2D() { reScale(); recolor(); renderPill(); renderLegend(); syncChrome(); }
+    function refresh2D() { reScale(); recolor(); syncHelp(); renderLegend(); syncChrome(); }
 
     /* ── 交互：悬停 tooltip / 点选 / 拖拽旋转（任何视角，正交下转回 3D）/ 滚轮缩放 ── */
     const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
@@ -2120,7 +2132,7 @@
           if (S.view === 1) cam.phi = 1.35;                                    // 顶 → 近俯视起步
           else { cam.phi = 0.14; cam.theta = S.view === 2 ? Math.PI / 2 : 0; } // 前/侧 → 对应方位起步
           S.view = 0;
-          applyAxVisibility(); refresh2D(); renderPill();
+          applyAxVisibility(); refresh2D(); syncHelp();
         }
         cam.theta += dx * 0.006;
         cam.phi = Math.max(0.08, Math.min(1.45, cam.phi + dy * 0.005));
@@ -2244,7 +2256,7 @@
         buildField();
         clearComm(); peerMeshes.forEach((m2) => { m2.geometry.setDrawRange(0, 0); m2.visible = false; });
         fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
-        refresh2D(); renderPill();
+        refresh2D(); syncHelp();
         renderHud(); renderLegend(); renderInfo(); syncCfgUI();
         return { ok: true, ranks: model.N };
       },
@@ -2253,13 +2265,13 @@
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
         retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
-        renderHud(); renderPill(); syncChrome(); refresh2D();
+        renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
       setView(v) {
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
         // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
         if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
-        S.view = v | 0; fitView(); applyAxVisibility(); fitView(); refresh2D(); renderPill();
+        S.view = v | 0; fitView(); applyAxVisibility(); fitView(); refresh2D(); syncHelp();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
       setColorBy(k) { S.colorBy = k; recolor(); renderLegend(); syncChrome(); },
@@ -2297,6 +2309,9 @@
         renderAxes(); applyAxVisibility(); fitView(); recolor(); rebuildComm(); renderLegend(); renderHud();
       },
       setPlaying(p) { S.playing = !!p; syncChrome(); },
+      // 全局字牌字号（唯一入口，见 LABEL_PX 注释）：9–28px，越界或非数字回落到 16
+      setLabelPx(px) { LABEL_PX = clampLabelPx(px); syncLabelSizes(true); fitView(); },
+      get labelPx() { return LABEL_PX; },
       // 连线图层开关（可全关）与集合算法
       setWire(w) {
         Object.assign(S.wire, w || {});
@@ -2341,7 +2356,7 @@
     }
     applySceneBg();
     resize(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
-    recolor(); renderHud(); renderPill(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
+    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
   }

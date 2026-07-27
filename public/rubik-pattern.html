@@ -57,6 +57,8 @@
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,
     mode: pick('mode', MODES, 0),
+    // 全局字牌字号（?label=16）：整套 3D 标注只此一个入口，越界回落 16
+    labelPx: num('label'),
     // 并行度配置（默认值，工具栏「并行」输入排可随时改）：盘古 Pro MoE 真实训练策略
     // TP8·EP2·PP5·4K NPU → rank = tp×pp×dp = 8×5×100 = 4000（EP 不参与乘法，折入 DP 轴：
     // ep2 把 100 副本分成 2 桶 × 50 个 A2A 域）。出处 data/ascend-workload-pangu-moe.json。

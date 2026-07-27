@@ -41,6 +41,7 @@
     "handle.select(rank|null) / handle.selectLayer(layer|null) / handle.selectBucket(bucket|null)",
     "handle.setWire({members,lines,outline,movers,focus}) / handle.setAlgo('auto'|'ring'|'tree') —— 连线图层各自可开关（可全关）；focus=选中聚焦（无关卡压暗 + 网格加强），算法决定 AllReduce 画成 Ring 还是 Tree",
     "handle.selectEdge(edge|null) + opts.onSelectEdge(edge) —— 点选一条通信边：{dim,from,to,prim,algo,tier:'ub'|'rail'|'out',hosts,pods}，宿主据此点亮自己的物理链路",
+    "handle.setLabelPx(9..28) / handle.labelPx —— 3D 标注字号的全局唯一入口（固定屏幕尺寸，默认 16px；也可 mount({labelPx}) 或 ?label=）",
     "handle.setTheme('dark'|'light') / handle.resize() / handle.destroy()",
     "handle.scene / handle.camera —— 只读 Three.js 挂点：宿主联动与自动化校验用（scripts/verify-rubik-cube.mjs 据此断言连线端点落在卡心）",
     "opts: { config, theme, mode, chrome:false（宿主接管工具栏）, onSelect(sel) }",
@@ -96,7 +97,12 @@
     "用写死的世界单位给标记加偏移（含错行位移）：小规格下相机贴得近，同样的偏移会把标记推出画布——偏移一律走 D() 随尺度缩放，且取景要把当前视角真正会显示的标记并进包围盒（axBox → fitView）",
     "只给某几个形态做分段标注：五种形态各有一套 canonical 分段（标准=PP 层带 · DP平铺=副本板 · EP聚簇=桶墙 · TP切片=TP 墙 · PP流水=流水段），一律用同一套语汇（axBlockFrames 的框 + 两行规格牌）呈现——每个形态换一种说法，读者每次都要重新学一遍怎么读",
     "按形态整体决定给不给 2D：判据是逐屏的——形态的 emph 轴留在屏幕上的那几屏才是它自己的（空档让「第几片/第几段」数得清），emph 轴被折进视线的那一屏步距签名与标准同名平面逐位相同，就是标准，不重复给出",
-    "把块标摆在离场边两三个牌高的地方（尤其错行的第二行）：读者对不上号，看上去像另一组东西——牌必须贴着它标的那块，落位用量出来的牌高（sprite.scale.y）而不是猜的常数，并牵一根引线回块上"
+    "把块标摆在离场边两三个牌高的地方（尤其错行的第二行）：读者对不上号，看上去像另一组东西——牌必须贴着它标的那块，落位用量出来的牌高（sprite.scale.y）而不是猜的常数，并牵一根引线回块上",
+    "让字牌跟着场景缩放（世界尺寸固定 + 像素地板兜底）：同一张牌在不同规格/缩放下大小不一，小的时候读不出、大的时候压卡，为补救会长出一串机关（按块步距钉宽、量牌高错行、牵引线）——字牌一律固定屏幕尺寸，字号只留 LABEL_PX 一个全局入口（mount labelPx / setLabelPx / ?label=）",
+    "给某个单独的标记开字号小灶：字号只有 LABEL_PX 一个全局入口，散落的字号常量会让「整体调大一点」变成逐处翻找",
+    "把固定屏幕尺寸的字牌尺寸并进取景包围盒：牌的世界尺寸由相机反算，并进去会自我反馈（取景放宽 → 牌变大 → 再放宽，永不收敛）——只并锚点位置，牌占的屏幕空间用一个固定比例的留白吸收",
+    "在画面上常驻「每格=几张卡」这类贴士：解释一律收进问号气泡，画面只留几何（这是本 pattern 最后一处例外，已撤，信息移进「视角」气泡的「此刻」一行且更完整）",
+    "把 TP 墙之间画一条示意连杆（球 + 粗线）表示「同一 TP 组分属各墙」：选中任意一张卡就由真正的 AllReduce Ring/Tree 连线画出来，比示意横杆准确；那根杆横在墙顶又粗又抢，小规格下还会顶到工具栏"
   ],
   "agentReuseRule": "先读本 JSON。新建逻辑重排类视图时，直接 mount() 本 pattern 并用 setConfig 传并行度，不要另写一套坐标计算；需要新形态或新维度时，在 pattern.js 的 SP/modes 里按①-⑥规则声明轴的意图（哪根轴放哪个维、用什么层级、正交视角折叠哪些维），不要引入新的魔法数字。与整网图（model-graphviz）/ 专家图联动走 selectLayer / selectBucket / onSelect 三个挂点，不要在宿主里直接改 pattern 内部状态。样式一律经 pto-tokens 语义 token，不在宿主 CSS 里覆盖 .prc-* 具体色值。"
 }

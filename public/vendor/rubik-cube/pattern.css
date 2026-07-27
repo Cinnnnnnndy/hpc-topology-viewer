@@ -259,8 +259,6 @@
 .prc-hot { color: var(--warning); }
 
 /* ── 「每格=几张卡」粒度贴士（右上）· 用 .stat-chip 承载 ───────────── */
-.prc-pill { position: absolute; top: calc(var(--prc-barh, 46px) + var(--space-3) * 2); right: var(--space-3); z-index: 5; display: none; }
-.prc-pill.show { display: inline-flex; }
 
 /* ── 卡块着色图例（右下）──────────────────────────────────────────── */
 /* 图例只回答「这个颜色叫什么」：分段 + 一行一条 + 只有色块和名字；
@@ -359,7 +357,6 @@
 }
 
 /* 贴士里的内联图标：与文字基线对齐、随文字色 */
-.prc-pill svg { vertical-align: -2px; margin-right: var(--space-1); opacity: 0.75; }
 
 /* ── 窄屏适配：顶栏换行、面板改为不互相遮挡的堆叠 ─────────────────────── */
 @media (max-width: 900px) {
