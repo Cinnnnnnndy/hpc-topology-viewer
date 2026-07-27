@@ -299,13 +299,16 @@
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
           : dim === 'tpc' ? tpOf(r) % TPC : dim === 'tpd' ? (tpOf(r) / TPC) | 0 : 0;
 
-    /* 五种形态都给满 顶/前/侧。曾经把 TP切片/PP流水 的 2D 收编掉（只留轴测），理由是
-       「与标准共享 TP/PP/DP 三轴、三平面两两重合」——那个判断只对了一半：
-         · TP切片 的轴分配确实与标准相同，但主轴是 emph 层级（步距 4×），2D 里墙与墙之间
-           是看得见的空档，而标准里是密排——同一个平面，「哪一片」在这里才数得清；
-         · PP流水 干脆换了轴分配（X=PP · Y=TP，标准是 X=TP · Y=PP），三个平面全是新的。
-       真正的问题从来不是重合，而是主轴 4× 步距会让 2D 散成稀疏条纹。解法是给每一块套框
-       （axBlockFrames），条纹立刻读成「一面墙 / 一段」。 */
+    /* 视角收编的判据是**逐屏**的，不是逐形态的：
+       一个形态之所以不同于标准，全在它那根 emph 轴（TP切片的墙、PP流水的段，步距 4×）。于是——
+         · emph 轴**留在屏幕上**的那两屏（顶 / 前）：墙与墙之间是看得见的空档，
+           「这是第几片 / 第几段」在这里才数得清 → 保留；
+         · emph 轴**被折进视线**的那一屏（两个形态都是侧视）：空档随之消失，剩下的步距
+           签名与标准的同名平面逐位相同（0.730 × 1.200）→ 这一屏就是标准，不重复给出。
+       早先「与标准共享三轴 ⇒ 三平面全重合」是把这条判据用到了整个形态上，收多了：
+       PP流水 甚至换了轴分配（X=PP · Y=TP），顶/前两屏是标准根本没有的平面。
+       剩下的真问题是 emph 步距会让 2D 散成稀疏条纹，交给块框（axBlockFrames）解决。
+       bestView = 这个形态「最该看的一屏」——由它要回答的问题决定，不是由好不好看决定。 */
     const D_STD = { 1: ['pp'], 2: ['rep'], 3: ['tp'] };   // 视角 → 被折进视线的维（可多个）
     const modes = [
       {
@@ -313,7 +316,8 @@
         sub: `标准 X=TP Y=PP(模型深度) Z=DP`,
         why: `位置即多维坐标：X=TP·Y=PP·Z=DP 同屏三维 · 着色透镜再叠第 4 维（换形态只换投影轴）`,
         viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
-        views: [0, 1, 2, 3],
+        // 三根轴地位相同，3D 才是它本身；2D 三屏都是它的
+        views: [0, 1, 2, 3], bestView: 0,
       },
       {
         key: 'dpt', name: 'DP平铺', short: 'DP',
@@ -323,7 +327,8 @@
         // 板内 TP 折成「列×排」后板有了厚度：顶视每个副本是一片瓦（而非一条线），
         // 侧视也不再塌陷 → 三个正交视角都成立。
         depth: { 1: ['pp'], 2: ['gz', 'tpd'], 3: ['gx', 'tpc'] },
-        views: [0, 1, 2, 3],
+        // 找慢副本 = 扫一遍整个宫格 → 顶视一屏看全 100 块板
+        views: [0, 1, 2, 3], bestView: 1,
       },
       {
         key: 'ep', name: 'EP聚簇', short: 'EP',
@@ -331,22 +336,29 @@
         why: `桶故障 = 整面墙同红 · 域热点 = 横穿 ${EP} 墙的一排过热 · 桶↔卡非 1:1`,
         viewLabels: { 1: '顶 桶-域 面', 2: '前 桶-PP 面', 3: '侧 域-PP 面' },
         depth: { 1: ['pp'], 2: ['dom'], 3: ['ep', 'tp'] },   // 侧视同时折叠墙序与墙内 TP（域数多，仍成阵）
-        views: [0, 1, 2, 3],
+        // 桶故障（整墙）与域热点（横穿一排）是两个正交方向，只有顶视同屏放得下
+        views: [0, 1, 2, 3], bestView: 1,
       },
       {
         key: 'tps', name: 'TP切片', short: 'TP',
         sub: `TP 切片：${TP} 片权重墙 · 一面墙=全集群同槽位切片（查同槽位系统性故障）`,
         why: `同槽位系统性故障（整批同号卡坏件）= 一面墙集体异常`,
-        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面', 3: '侧 DP-PP 面' }, depth: D_STD,
-        views: [0, 1, 2, 3],
+        viewLabels: { 1: '顶 DP-TP 面', 2: '前 TP-PP 面' }, depth: D_STD,
+        // 侧视折掉 TP（本形态的 emph 轴）→ 与标准侧视逐位相同，不重复给。
+        // 「同槽位系统性故障」要在全集群范围内看，DP 轴必须在场 → 顶视是这一形态的主屏：
+        // 一整列红 = 那个槽位的卡整批坏。
+        views: [0, 1, 2], bestView: 1,
       },
       {
         key: 'ppf', name: 'PP流水', short: 'PP',
         sub: `PP 流水：${PP} 段横向展开 · 左=Stage0 右=Stage${PP - 1}（找慢段/气泡）`,
         why: `只有 PP 适合说「哪段层在哪」· ${PP} 段各 ${LPS} 层 · 慢段拖住下游 = 右侧板变暗 · 空档=bubble`,
-        viewLabels: { 1: '顶 DP-PP 面', 2: '前 PP-TP 面', 3: '侧 DP-TP 面' },
-        depth: { 1: ['tp'], 2: ['rep'], 3: ['pp'] },
-        views: [0, 1, 2, 3],
+        viewLabels: { 1: '顶 DP-PP 面', 2: '前 PP-TP 面' },
+        depth: { 1: ['tp'], 2: ['rep'] },
+        // 侧视折掉 PP（本形态的 emph 轴）→ 退回标准已有的 DP-TP 平面，不重复给。
+        // 「哪一段慢」里段身份就是答案、DP 是噪声 → 前视把 100 副本折进每格，
+        // 5 列一字排开，慢段=整列偏暗，是这一形态的主屏。
+        views: [0, 1, 2], bestView: 2,
       },
     ];
 
@@ -894,15 +906,22 @@
       axGroup.add(l);
       // 引线：横幅坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
       // 也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
-      if (anchor) {
-        const from = l.position.clone().lerp(anchor, Math.min(0.5, (l.scale.y * 0.7) / Math.max(0.01, l.position.distanceTo(anchor))));
-        const g = new THREE.BufferGeometry().setFromPoints([from, anchor]);
-        const m = new THREE.LineBasicMaterial({ color: new THREE.Color(tokHex('--border-strong')), transparent: true, opacity: isDark() ? 0.5 : 0.6 });
-        const ln = new THREE.Line(g, m);
-        ln.userData.banner = l.userData.banner;      // 与横幅同进退（2D 视角里一起隐藏）
-        axGroup.add(ln);
-      }
+      if (anchor) axLeader(l, anchor);
       return l;
+    }
+    /* 引线：标记坐在模型外面时，用一根中性细线牵回它标注的位置——既不压住卡，
+       也不让读者去猜这句话说的是哪根轴（对比度低于模型本身，annotation 不抢戏）。
+       单独成函数是因为块标要「先建牌量出高度、再落位」，落位之后才知道引线从哪儿画；
+       跟着标记同进退（视角切换时一起收）。 */
+    function axLeader(l, anchor) {
+      const from = l.position.clone().lerp(anchor, Math.min(0.5, (l.scale.y * 0.7) / Math.max(0.01, l.position.distanceTo(anchor))));
+      const g = new THREE.BufferGeometry().setFromPoints([from, anchor]);
+      const m = new THREE.LineBasicMaterial({ color: new THREE.Color(tokHex('--border-strong')), transparent: true, opacity: isDark() ? 0.5 : 0.6 });
+      const ln = new THREE.Line(g, m);
+      ln.userData.banner = l.userData.banner;
+      ln.userData.views = l.userData.views;
+      axGroup.add(ln);
+      return ln;
     }
     // 两段式横幅：名字用维度签名色、解释用中性次级前景色
     const seg2 = (head, hc, rest) => [{ t: head, c: hc }, { t: rest, c: tokHex('--foreground-secondary') }];
@@ -914,7 +933,7 @@
     const axOnly = (l, views) => { if (l) l.userData.views = views; return l; };
     function applyAxVisibility() {
       axGroup.traverse((o) => {
-        if (!o.isSprite) return;
+        if (!o.isSprite && !o.isLine) return;
         if (o.userData.banner) { o.visible = S.view === 0; return; }
         if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0;
       });
@@ -969,6 +988,17 @@
        当年 2D 被收编正是因为这个。给每一块套一圈签名色细框，条纹当场读成整块。
        框贴着卡本身（不是网格框）：只外扩半张卡 + 一点余量，既不与卡穿插，也不像另起一个
        坐标系。四条竖棱只画到块高的两端，中间留空——满框在 3D 里会织成一片网。 */
+    /* 块标落位：牌**必须贴着它标的那块**，否则一排牌摆在下面，读者根本对不上号
+       （错行尤其致命：第二行离场边两三个牌高，看上去像另一组东西）。
+       落位靠**量出来的牌高**而不是猜的常数——牌高随文案与 maxWorld 变，写死的偏移
+       要么叠在一起要么飘出去。row=0 贴场边，row=1 紧接其下（留 6% 呼吸），
+       再从牌牵一根引线回块，哪张牌对哪块就没有歧义了。 */
+    function axPlaceBlockLabel(l, x, z, edgeY, dir, row, anchor) {
+      if (!l) return null;
+      const h = l.scale.y;
+      l.position.set(x, edgeY + dir * (h * (0.5 + row * 1.06) + D(0.5)), z);
+      return axLeader(l, anchor);
+    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
     function axBlockFrames(boxes, colorHex, op) {
@@ -1114,8 +1144,9 @@
           // 3D 不错行（+X 右下与 +Y 上互相抵消）；2D 才错行——与 TP切片/PP流水 同一条约定
           axOnly(axText(`桶${e} ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 3.2,
             V3(ex, b.y1 + D(1.2), 0)), [0]);
-          axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
-            V3(ex, b.y0 - D(1.6) - ej, 0), null, eSub, s.gapE * 1.6), [2]);
+          axPlaceBlockLabel(axOnly(axText(`EP 桶 ${e} · ${model.expRange(e)}${hot ? ' 热点' : ''}`, c, 6,
+            V3(ex, 0, 0), null, eSub, s.gapE * 1.6), [2]),
+          ex, 0, b.y0, -1, e % 2, V3(ex, b.y0, 0));
           axOnly(axText(`桶${e}`, c, 2.4, V3(ex, b.y0, b.z1 + D(1.5) + ej)), [1]);
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10,
@@ -1147,10 +1178,12 @@
           // 错行位移同样走 D()：写死世界单位的话，小规格（相机贴得近）会把牌甩出取景框
           const tTit = `TP 切片 ${t} · ${t + 1}/${TP}`, tW = s.gapT * 1.6, tj = (t % 2) * D(3.8);
           axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y1 + D(1.3) + tj, 0)), [0]);
-          axOnly(axText(tTit, TPc, 6, V3(bb.x0 + t * s.gapT, b.y0 - D(1.6) - tj, 0), null, tSub, tW), [2]);
+          const tx = bb.x0 + t * s.gapT;
+          axPlaceBlockLabel(axOnly(axText(tTit, TPc, 6, V3(tx, 0, 0), null, tSub, tW), [2]),
+            tx, 0, b.y0, -1, t % 2, V3(tx, b.y0, 0));
           // 顶视留下的两根轴里有 DP（成员最多的那根，默认 100）——整幅被拉成细长条，
           // 规格牌按块步距钉宽后字会小到读不出，这里只给身份小牌，规格看前视那一屏。
-          axOnly(axText(`TP${t}`, TPc, 2.4, V3(bb.x0 + t * s.gapT, b.y0, b.z1 + D(1.5) + tj)), [1]);
+          axOnly(axText(`TP${t}`, TPc, 2.4, V3(tx, b.y0, b.z1 + D(1.5) + tj)), [1]);
         }
         axText(seg2(`${TP} 面墙`, TPc, ` = 每层权重的 ${TP} 个切片 · 一面墙 = 全网同槽位卡`), TPc, 9.5,
           V3(0, b.y1 + D(4.2), 0), V3(0, b.y1, 0));
@@ -1160,9 +1193,9 @@
         const dotR = 0.2 * Math.max(0.45, LS);
         dots.forEach((p) => { const d = new THREE.Mesh(new THREE.SphereGeometry(dotR, 8, 8), new THREE.MeshBasicMaterial({ color: TPw })); d.position.copy(p); axGroup.add(d); });
         axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5, V3(0, b.y1 + D(0.4), b.z0 - D(2.4)));
-        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0, 1, 3]);
-        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0, 1, 3]);
-        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0, 2, 3]);
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0, 1]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0, 1]);
+        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0, 2]);
         axOnly(axText(`同槽位 TP0…TP${TP - 1} 各一面墙`, TPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
       } else {
         const s = sp.ppf, zD = (d) => (d - (REP - 1) / 2) * s.rep;
@@ -1179,14 +1212,16 @@
           // 3D 里不错行：+X 向右下、+Y 向上，错行会把两枚牌推到一起；沿块步距自然排开
           // 已经形成一道斜梯，反而是读得清的那种
           axOnly(axText(`S${st} L${lr.lo}-${lr.hi}`, PPc, 3.2, V3(bb.x0 + st * s.gapP, b.y1 + D(1.6), 0)), [0]);
-          axOnly(axText(pTit, PPc, 6, V3(bb.x0 + st * s.gapP, b.y0 - D(1.9), 0), null, pSub, pW), [2]);
+          const px = bb.x0 + st * s.gapP;
+          axPlaceBlockLabel(axOnly(axText(pTit, PPc, 6, V3(px, 0, 0), null, pSub, pW), [2]),
+            px, 0, b.y0, -1, 0, V3(px, b.y0, 0));
           axOnly(axText(`S${st}`, PPc, 2.4, V3(bb.x0 + st * s.gapP, b.y0, b.z1 + D(1.5))), [1]);   // 同上：顶视含 DP 轴，只给身份牌
         }
         axText(seg2(`前向激活 S0→S${PP - 1}`, PPc, `（左→右）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5,
           V3(0, b.y1 + D(4.9), 0), V3(0, b.y1 + D(0.6), 0));
-        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0, 1, 3]);
-        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0, 1, 3]);
-        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0, 2, 3]);
+        axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0, 1]);
+        axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0, 1]);
+        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0, 2]);
         axOnly(axText(`S0（首段）→S${PP - 1}（末段）`, PPc, 3.4, V3(0, b.y0, b.z0 - D(1.6))), [1]);
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
@@ -1695,6 +1730,7 @@
           <dt>顶 / 前 / 侧</dt><dd>正交锁轴的 2D 投影，会把与视线平行的维折叠</dd>
           <dt>剖面</dt><dd>只看被折叠那一维的某一层，其余压暗</dd>
         </dl>
+        <p>不是每个形态都给满三屏：一个形态之所以不同于标准，全在它那根被拉开的轴（TP 切片的墙、PP 流水的段，步距 4×）。这根轴<b>被折进视线</b>的那一屏，空档随之消失，剩下的与标准的同名平面逐位相同——那一屏就是标准，不重复给出（两个形态都少了侧视）。轴还留在屏幕上的顶 / 前两屏，墙与墙之间是看得见的空档，「这是第几片 / 第几段」在那里才数得清。</p>
         <p>按钮上的「DP-TP 面」读作<b>平面</b>而不是乘法：破折号两侧是这一屏留下的两根屏幕轴（横 DP、纵 TP），没写出来的第三根就是被折进视线的那一维。这一格里真正相乘的只有 rank 总数 TP×PP×DP，视角本身不改变任何数量。</p>
         <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡写在右上角的粒度贴士里。任何正交视角下拖动，都会从当前朝向无缝转回 3D。</p>`,
       lens: `<h4>着色 · 给卡上色的镜头</h4>
@@ -1763,11 +1799,18 @@
       },
       views: () => {
         const md = model.modes[S.mode], d = curDepth();
+        const bv = md.bestView, bvName = bv === 0 ? '3D' : (md.viewLabels[bv] || '');
+        const bvWhy = { std: '三根轴地位相同，位置即坐标——3D 才是它本身',
+          dpt: '找慢副本要扫一遍整个宫格，顶视一屏看全所有板',
+          ep: '桶故障（整墙同色）与域热点（横穿一排）是两个正交方向，只有这一屏同屏放得下',
+          tps: '同槽位系统性故障要在全集群范围内看，DP 轴必须在场——一整列红 = 那个槽位整批坏',
+          ppf: '「哪一段慢」里段身份就是答案、DP 是噪声，5 列一字排开，慢段 = 整列偏暗' }[md.key];
         const what = S.view === 0
           ? '3D 等距轴测 · 三根轴同屏，拖动可转'
           : `${md.viewLabels[S.view]} —— 屏幕两根轴之外，${d ? esc(d.label) : '第三根轴'} 被折进视线`;
         return `<div class="prc-helpnow"><b>此刻：</b>${esc(md.name)} · ${what}`
           + (d ? `，每格重叠 ${d.fold} 张卡${S.sliceOn ? `（正翻 ${d.slice.lab} 第 ${S.sliceVal + 1} 层）` : '（可开剖面逐层翻）'}` : '')
+          + (bv != null ? `<br><b>这个形态最该看：${esc(bvName)}</b>——${esc(bvWhy || '')}` : '')
           + '</div>';
       },
       anom: () => {
