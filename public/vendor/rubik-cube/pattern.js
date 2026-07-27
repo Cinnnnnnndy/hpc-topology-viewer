@@ -1263,6 +1263,20 @@
     function axAxisTicks(fmt, color, w, axis, n, at, bb) {
       axOnAxisSeries(n, fmt, color, w, axis, at, bb, {});
     }
+    /* 3D 里给一根轴补**首尾两个刻度**。2D 的贴边规律在轴测里不成立（没有屏幕横纵轴），
+       所以那边每根轴都有整排刻度、这边却只剩一句「墙内竖=PP×5」这样的散文——
+       同一根轴，一屏有刻度一屏没有，读者得换一套读法。补上首尾两枚，
+       方向与范围就都由刻度自己说，散文那句可以撤掉。 */
+    function ax3dEnds(fmt, color, axis, n, at, off) {
+      if (n < 1) return;
+      const mk = (i, w) => {
+        const p = { x: off.x || 0, y: off.y || 0, z: off.z || 0 };
+        p[axis] = at(i);
+        axOnly(axText(fmt(i), color, w, V3(p.x, p.y, p.z)), [0]);
+      };
+      mk(0, 1.6);
+      if (n > 1) mk(n - 1, 2);
+    }
     const R = (n, f) => Array.from({ length: n }, (_, i) => f(i));
     // boxes：一组 {x0,x1,y0,y1,z0,z1}（已含外扩），画成一组线框
     const BM = 0.34;                     // 分割线/框相对卡阵向外让开的余量
@@ -1366,9 +1380,8 @@
           // 与 TP切片/PP流水 同一条约定：3D 里分段由框交代，只留一把细标尺；
           // 完整规格牌给两个仍保留 PP 轴的正交面（前视 TP-PP、侧视 DP-PP），
           // 顶视把 PP 折进视线 → 不出 PP 的标。层带是横着摞的，牌宽因此按**层步距**钉。
-          // 字牌固定屏幕尺寸后不再随模型缩小 → 层步距只有 1 个多世界单位时五把标尺会叠死。
-          // 3D 里只留首尾两把（中间几段由块框数得出来），完整规格牌在前视/侧视。
-          if (s2 === 0 || s2 === PP - 1) axOnly(axText(`PP${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
+          // 牌短了（PP0·L1-10）之后五把标尺摆得下，不必再只留首尾
+          axOnly(axText(`PP${s2}·L${lr.lo}-${lr.hi}`, PPc, 2.6, V3(b.x0 - D(3.4), yS(s2), b.z0 - D(1))), [0]);
           // PP 是 Y 轴 → 在前视/侧视里是纵轴 → 自动落到左侧；顶视 PP 被折掉，自动不出
           void lr;
         }
@@ -1454,9 +1467,10 @@
         }
         axText(seg2(`${EP} 面墙`, EPc, ` = ${EP} 个专家分桶（桶=MoE 组 · 同墙=同专家 · 热点桶标暖色）`), EPc, 10);
         axText(`1 个 A2A 域 = 横穿 ${EP} 面墙的同一排 · 每桶各出 1 员互发`, EPc, 9);
-        axOnly(axText(`域0（近）→域${DOM - 1}（远）`, NTc, 3.6, V3(b.x1 + D(3.6), b.y0 - D(1.5), 0)), [0]);
-        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
         const zDm = (i) => (i - (DOM - 1) / 2) * s.dom;
+        // 3D：域（Z）与墙内 PP（Y）各补首尾刻度，替掉原来那两句散文
+        ax3dEnds((i) => `域${i}`, DPc, 'z', DOM, zDm, { x: b.x1 + D(2.4), y: b.y0 - D(1.2) });
+        ax3dEnds((i) => `PP${i}`, PPc, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, { x: b.x0 - D(2.2), z: b.z0 });
         axAxisTicks((i) => `域${i}`, DPc, 1.6, 'z', DOM, zDm, bb);
         axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb);
       } else if (S.mode === 3) {
@@ -1489,7 +1503,7 @@
         axText(`同一 TP 组的 ${TP} 卡 → 分属 ${TP} 面墙 · 层内 AllReduce 拼回完整权重`, TPc, 9.5);
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.5), b.y0 - D(0.7), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.7), b.y0 - D(0.7), zD(REP - 1))), [0]);
-        axOnly(axText(`墙内竖=PP×${PP}`, PPc, 3.6, V3(b.x0 - D(1.4), b.y1 + D(1.3), 0)), [0]);
+        ax3dEnds((i) => `PP${i}`, PPc, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, { x: b.x0 - D(2.2), z: b.z0 });
         axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         axAxisTicks((i) => `PP${i}`, PPc, 1.6, 'y', PP, (i) => s.cy + ((PP - 1) / 2 - i) * s.pp, bb);
       } else {
@@ -1514,7 +1528,7 @@
         axText(seg2(`前向激活 PP0→PP${PP - 1}`, PPc, `（左→右，即 Stage0→Stage${PP - 1}）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
         axOnly(axText('DP0', DPc, 1.6, V3(b.x1 + D(1.6), b.y0 - D(0.5), zD(0))), [0]);
         axOnly(axText('DP' + (REP - 1), DPc, 2, V3(b.x1 + D(1.8), b.y0 - D(0.5), zD(REP - 1))), [0]);
-        axOnly(axText(`段内竖=TP×${TP}`, TPc, 3.4, V3(b.x0 - D(1.6), b.y1 + D(1.3), b.z0)), [0]);
+        ax3dEnds((i) => `TP${i}`, TPc, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, { x: b.x0 - D(2.2), z: b.z0 });
         axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb);
       }
