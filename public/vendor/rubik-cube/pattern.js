@@ -1939,6 +1939,47 @@
       return pts;
     }
 
+    /* 一组成员在**当前这一屏**上塌成一个点了没有。
+       正交 2D 会把一根世界轴折进视线，沿那根轴排开的通信组于是全部投影到同一个像素——
+       实测：标准前 PP-DP 面里 TP 组跨度 0px、顶 PP-TP 面里 DP 与 EP 都是 0px、
+       侧 TP-DP 面里 PP 是 0px。每个 2D 视角都至少有一维如此，这不是巧合而是折叠的定义。
+       判定只看**屏幕上留下的那两根世界轴**（screenAxes），不看相机——同一个形态在同一屏
+       下结论恒定，与缩放平移无关，也就不必挂在渲染循环里。 */
+    function groupFlat(members) {
+      const A = screenAxes(S.view);
+      if (!A || members.length < 2) return false;      // 3D 没有被折的轴
+      const v3 = { x: 0, y: 0, z: 0 };
+      let h0 = Infinity, h1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      members.forEach((r) => {
+        model.posOf(r, S.mode, v3);
+        h0 = Math.min(h0, v3[A.h]); h1 = Math.max(h1, v3[A.h]);
+        v0 = Math.min(v0, v3[A.v]); v1 = Math.max(v1, v3[A.v]);
+      });
+      const eps = CARD.x * 0.5;
+      return (h1 - h0) < eps && (v1 - v0) < eps;
+    }
+    const flatDims = () => (S.sel == null ? [] : peerDims.filter((d) => groupFlat(model.commGroup(S.sel, d))));
+    /* 两根维在同一屏上**共线**时错开半格（地铁图并行线路的老办法）。
+       EP 域是 DP 组的子集——两组成员只在同一根轴上错开，于是两条线叠在同一列里，
+       紫色整根压在蓝色底下，跨度不是 0 却一样读不出来。
+       只在 2D 做：那里才有确定的「屏幕平面」，3D 轴测里转一下共线关系就变了。
+       让开的方向是这一组**没有铺开的**那根屏幕轴，让开量按维序号分道并居中。 */
+    function laneShift(di, members) {
+      const A = screenAxes(S.view);
+      if (!A || members.length < 2) return null;
+      const v3 = { x: 0, y: 0, z: 0 };
+      let h0 = Infinity, h1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      members.forEach((r) => {
+        model.posOf(r, S.mode, v3);
+        h0 = Math.min(h0, v3[A.h]); h1 = Math.max(h1, v3[A.h]);
+        v0 = Math.min(v0, v3[A.v]); v1 = Math.max(v1, v3[A.v]);
+      });
+      const eps = CARD.x * 0.5, flatH = (h1 - h0) < eps, flatV = (v1 - v0) < eps;
+      if (flatH === flatV) return null;          // 两轴都铺开（斜着走）或都没铺开（塌成点）→ 不分道
+      const axis = flatV ? A.v : A.h;            // 沿横轴铺开（纵向是平的）→ 往纵轴让
+      const lane = di - (peerDims.length - 1) / 2;                       // 居中分道：−1.5 … +1.5
+      return { axis, d: lane * CARD.x * 0.24 };
+    }
     function rebuildComm() {
       clearComm();
       peerMeshes.forEach((m) => { m.geometry.setDrawRange(0, 0); m.visible = false; });
@@ -1973,8 +2014,16 @@
         // 线要细：一屏可能同时有四维的走线，管壁按卡宽的 1/12 起算，主导维再粗一档。
         const op = on ? 0.95 : 0.45, rad = (on ? 1.2 : 0.8) * CARD.x * 0.085;
         mesh.material.opacity = on ? 0.7 : 0.28;
-        const segs = edgesOf(d, members);
-        const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp)));
+        /* 折叠维**不画走线**：它的成员在这一屏全落在同一个像素上，画出来是一根长度为 0 的
+           管子——读者只会认为图坏了。更糟的是画面与文案会打架：图例把这一维加粗成
+           「此刻主导维」、信息卡也写着「此刻 TP 主导」，而画面上一根青线都找不到。
+           不画，改由图例那一行注明「这一屏折进视线 · N 张卡重合」，并指去哪一屏看。 */
+        const flat = groupFlat(members);
+        const lane = flat ? null : laneShift(di, members);
+        const segs = flat ? [] : edgesOf(d, members);
+        const shift = (v3) => (lane ? v3.setComponent('xyz'.indexOf(lane.axis), v3[lane.axis] + lane.d) : v3);
+        const paths = segs.map((sg) => (sg.arc ? arcPts(gp(sg.ranks[0]), gp(sg.ranks[1])) : sg.ranks.map(gp))
+          .map(shift));
         if (S.wire.lines) {
           // 折线逐段建管：每段两点，端点与拐点都严格落在卡心（整条折线交给一个
           // TubeGeometry 会按弧长采样，中间拐点被抄近路）。弧（长边）整条画。
@@ -2058,11 +2107,19 @@
         const anyOn = S.wire.members || S.wire.lines || S.wire.outline || S.wire.movers;
         if (anyOn) {
           const cur = PHASES[phaseIdx()].dim;
+          const flat = flatDims();
           parts.push(sec('连线 · 通信域'));
           peerDims.forEach((dm) => {
             const algo = dm === 'EP' ? 'AllToAll' : dm === 'PP' ? 'P2P 链'
               : `AllReduce ${S.algo === 'tree' ? 'Tree' : 'Ring'}`;
-            parts.push(`<div class="prc-lgrow${dm === cur ? ' is-now' : ''}"><i style="background:${dimc(dm)}"></i><span>${esc(dm + ' ' + algo)}</span></div>`);
+            /* 画不出来的那一维要**在图例里说清楚**，而不是留一行空指望。
+               这一行照旧列出（这一维的通信是真实存在的，只是这一屏画不了），
+               但压暗 + 注明「折进视线 · N 卡重合」，并指出去哪一屏看。 */
+            const isFlat = flat.indexOf(dm) >= 0;
+            const n = model.commGroup(S.sel, dm).length;
+            const note = isFlat ? `<span class="prc-dim">（折进视线 · ${n} 卡重合，去 3D 看）</span>` : '';
+            parts.push(`<div class="prc-lgrow${dm === cur && !isFlat ? ' is-now' : ''}${isFlat ? ' is-flat' : ''}">`
+              + `<i style="background:${dimc(dm)}"></i><span>${esc(dm + ' ' + algo)}${note}</span></div>`);
           });
         }
       }
@@ -2105,8 +2162,14 @@
         kv('EP 桶 · A2A 域', `<b style="color:${dimc('EP')}">桶${e}</b> <span class="prc-dim">${model.expRange(e)} · 域${model.domOf(r)}</span>`) +
         kv('物理落位', `<b>机${model.hostOf(r)} · Pod${model.podOf(r)}</b> <span class="prc-dim">${pl.cardsPerHost} 卡/机</span>`) +
         `</div>` +
+        /* 主导维在这一屏画不出来时要**当场说明**：不说的话，这行写着「此刻 TP 主导」、
+           图例把 TP 加粗，而画面上一根青线都没有，读者只会认为图坏了。
+           通信本身照旧存在（所以这一行照旧给量），缺的只是「这一屏画不出来」这句话。 */
         `<div class="prc-status">此刻 <b style="color:${dimc(ph.dim)}">${ph.dim}</b> 主导 · ${esc(ringStage())}` +
-        (tally ? ` · ${tally.replace(/^<br>/, '')}` : '') + `</div>` +
+        (tally ? ` · ${tally.replace(/^<br>/, '')}` : '')
+        + (flatDims().indexOf(ph.dim) >= 0
+          ? `<br><span class="prc-dim">这一屏 ${ph.dim} 被折进视线，整组重合成一点 → 走线不画，切 3D 看</span>` : '')
+        + `</div>` +
         (edge ? `<div class="prc-status is-edge">${edge.replace(/^<br>/, '')}</div>` : '');
       const close = info.querySelector('.prc-infoclose');
       if (close) close.addEventListener('click', () => api.select(null));
@@ -2777,7 +2840,9 @@
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
         // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
         if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
-        S.view = v | 0; fitView(); applyAxVisibility(); fitView(); refresh2D(); syncHelp();
+        /* 换屏要重建走线：哪一维塌成点、哪两维要分道让开，都是**逐屏**的判断
+           （groupFlat / laneShift 读 screenAxes(S.view)），不重建就还留着上一屏的画法。 */
+        S.view = v | 0; fitView(); applyAxVisibility(); fitView(); rebuildComm(); refresh2D(); syncHelp(); renderInfo();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
       setColorBy(k) { S.colorBy = k; recolor(); renderLegend(); syncChrome(); },
