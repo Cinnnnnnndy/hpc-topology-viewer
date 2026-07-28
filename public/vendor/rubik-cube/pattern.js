@@ -637,6 +637,7 @@
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
       more: false,                   // 工具栏抽屉（着色/注入/连线/时间/并行）是否展开
       tour: null,                    // 缩放穿梭导览：null=未开 · 0..n=当前在第几层
+      faces: false,                  // 六面助记参考图（导览期间自动出现）
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -672,6 +673,7 @@
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
+        '<div class="prc-faces panel-shell"></div>',
         '<div class="prc-tour panel-shell"></div>',
         '<div class="prc-topbar">',
         '  <div class="prc-brandname">逻辑魔方</div>',
@@ -2090,6 +2092,51 @@
       syncShard();
     }
 
+    /* ── 六面助记参考魔方 ────────────────────────────────────────────────────
+       资料里那张 6D 图把六个维度画在一个立方体的六个面上。**它是助记图，不是坐标图** ——
+       立方体只有 3 根轴（3 对面），对面必然共享同一根轴，所以「六面各管一维」这件事
+       在几何上只可能是三对：
+
+         顶 DP / 底 EP  —— **这一对是真的**：本模型 EP 就折入 DP 轴（相邻 EP 个副本 = 一个 A2A 域）
+         前 PP / 背 TP  —— 假的：PP 与 TP 无关，摆成对面只是为了凑满六面
+         左 SP / 右 CP  —— 半真：两者都切序列，但 SP 复用 TP 组、CP 是独立维
+
+       所以这块图**明确标成「助记」**，并把三对的真假直接写在上面 —— 与其让读者以为
+       卡的位置真是这么摆的，不如把这层关系说破。它同时是导览的指示器：走到哪一层，
+       对应那个面就亮起来。 */
+    const FACES = [
+      { dim: 'DP', face: '顶', cut: '切数据批次（整模型复制）', real: true },
+      { dim: 'EP', face: '底', cut: '切 MoE 专家', real: true },
+      { dim: 'PP', face: '前', cut: '切模型层（Stage）', real: false },
+      { dim: 'TP', face: '背', cut: '切单层权重矩阵', real: false },
+      { dim: 'SP', face: '左', cut: '切序列 token（norm 区）', real: false },
+      { dim: 'CP', face: '右', cut: '切上下文长度', real: false },
+    ];
+    const FACE_PAIRS = [
+      { a: 'DP', b: 'EP', axis: 'Y 轴', verdict: '真', why: 'EP 折入 DP 轴，这一对确实共享一根轴' },
+      { a: 'PP', b: 'TP', axis: 'Z 轴', verdict: '助记', why: 'PP 与 TP 无关，摆成对面只为凑满六面' },
+      { a: 'SP', b: 'CP', axis: 'X 轴', verdict: '半真', why: '都切序列，但 SP 复用 TP 组、CP 是独立维' },
+    ];
+    function faceRender() {
+      const el = $('.prc-faces'); if (!el) return;
+      const on = S.faces || S.tour != null;      // 导览期间自动出现（它是导览的指示器）
+      el.classList.toggle('show', !!on);
+      if (!on) return;
+      const cur = S.tour != null && TOUR[S.tour] ? TOUR[S.tour].key.toUpperCase() : null;
+      const c = (d) => dimc(d === 'SP' ? 'TP' : d);
+      const chip = (f) => `<span class="prc-face${cur === f.dim ? ' is-on' : ''}${f.real ? '' : ' is-mnemonic'}"`
+        + ` style="--c:${c(f.dim)}" title="${esc(f.face)}面 · ${esc(f.cut)}">`
+        + `<i></i><b>${f.dim}</b><em>${esc(f.face)}</em></span>`;
+      el.innerHTML =
+        `<div class="prc-faces-h">六面助记 <span>立方体只有 3 根轴 → 对面共享一根轴</span></div>`
+        + `<div class="prc-faces-grid">${FACES.map(chip).join('')}</div>`
+        + `<div class="prc-faces-pairs">${FACE_PAIRS.map((p) =>
+          `<div class="prc-facepair is-${p.verdict === '真' ? 'true' : p.verdict === '半真' ? 'half' : 'mnemonic'}" title="${esc(p.why)}">`
+          + `<b style="color:${c(p.a)}">${p.a}</b>↔<b style="color:${c(p.b)}">${p.b}</b>`
+          + `<span>${p.axis} · ${p.verdict}</span></div>`).join('')}</div>`
+        + `<div class="prc-faces-note">这是<b>读图助记</b>，不是卡的真实坐标——卡的位置由当前形态决定。</div>`;
+    }
+
     /* ── 缩放穿梭导览 ───────────────────────────────────────────────────────
        资料（6D 并行架构图解）的骨架是一张**逐级 Zoom-in 的嵌套图**：
          宏观 DP 复制 → 一个 PP Stage → Stage 内 TP 碎裂 / EP 分发 → 微观 SP / CP 序列线。
@@ -2125,7 +2172,7 @@
            所以「在 FFN 处打开 EP」并不是留在原来那个副本里 —— 如实标注，不假装是纯嵌套。 */
         scope: (m, r) => (x) => m.domOf(x) === m.domOf(r) && m.ppOf(x) === m.ppOf(r) && m.tpOf(x) === m.tpOf(r),
         crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › A2A域${m.domOf(r)}`,
-        note: 'EP 折入 DP 轴：打开专家这一层会**跨出单个副本**，走到相邻 EP 个副本组成的 A2A 域。',
+        note: 'EP 折入 DP 轴：打开专家这一层会<b>跨出单个副本</b>，走到相邻 EP 个副本组成的 A2A 域。',
         say: (m) => `底面看 <b>EP</b>：${m.config.experts} 个路由专家分成 <b>${m.EP}</b> 桶，`
           + `一面墙 = 一个专家桶。token 经路由器被 <b>All-to-All</b> 派发到专家所在的卡，`
           + `算完再 Combine 送回 —— MoE 最密集的通信。` },
@@ -2189,7 +2236,7 @@
         api.setMode(tourSaved.mode); api.setView(tourSaved.view);
         tourSaved = null;
       }
-      refreshFocus(); tourRender();
+      refreshFocus(); tourRender(); faceRender();
     }
     function tourGo(d) {
       if (S.tour == null) return;
@@ -2222,6 +2269,7 @@
         + `<button class="prc-tour-btn is-next" data-d="1" type="button">${S.tour === TOUR.length - 1 ? '完成' : '下一层 ›'}</button>`
         + `<button class="prc-tour-btn is-exit" data-x="1" type="button" aria-label="退出导览">✕</button>`
         + `</div>`;
+      faceRender();
       el.querySelectorAll('.prc-tour-btn').forEach((b) => {
         b.addEventListener('click', () => { if (b.dataset.x) tourExit(); else tourGo(+b.dataset.d); });
       });
@@ -3871,6 +3919,7 @@
         S.tour = Math.max(0, Math.min(TOUR.length - 1, i | 0)); tourApply();
       },
       get tourSteps() { return TOUR.map((t) => t.key); },
+      setFaces(on) { S.faces = !!on; faceRender(); },   // 六面助记图（导览期间无条件出现）
       get netObjects() { return model.netObjects; },
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
@@ -3931,7 +3980,7 @@
     // 若这里再飞一次，带 obj 的链接会覆盖掉同一条链接里写明的 mode。
     if (opts.obj && model.netObjBy[opts.obj]) S.obj = opts.obj;
     carrySet = objCarrySet();
-    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender();
+    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender(); faceRender();
     raf = global.requestAnimationFrame(frame);
     return api;
   }
