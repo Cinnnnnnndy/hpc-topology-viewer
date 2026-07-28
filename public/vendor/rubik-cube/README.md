@@ -58,6 +58,26 @@ arXiv 2505.21411（dp = 4000/(8×5) = 100，EP2 折入 → 50 个 A2A 域）。
 | `…/patterns/rubik-cube-logical/pattern.html` | **规范位置**（对齐 pto-design-system 的 pattern 库）：`pattern.css` / `pattern.js` / `pattern.json` 就在同级，别人可以直接 `<script src=".../pattern.js">` 复用，或先读 `pattern.json` 契约 |
 | `…/rubik/` | 早先的短链接，保持可用 |
 
+**带整网对象透镜的这一版另有一条自己的链接**（本分支
+`claude/rank-view-network-analysis-htowfc` 发布）：
+
+| 入口 | 用途 |
+|---|---|
+| `…/patterns/rubik-cube-netobj/pattern.html` | 规范位置，`pattern.*` 同级；契约里 `id: rubik-cube-netobj` · `variantOf: rubik-cube-logical` |
+| `…/rubik-netobj/` | 短链接 |
+
+**为什么不覆盖 `…/patterns/rubik-cube-logical/`**：那条链接已经发出去、且由
+`claude/rubik-view-pattern-extraction-7pk0qt` 分支持有。两个分支的 workflow 写同一个目录
+就是「谁最后跑谁赢」，已发出的链接内容会随机变。所以新能力走新 id，老链接保持指向老那一版。
+
+> Pages 每次部署**整体替换**：本分支的 workflow 累积叠加了三份 overlay
+> （`/rubik/` + `/patterns/rubik-cube-logical/`、`/rubik-spec/`、以及本版），
+> 但 main 或另外两个分支发布时用的是**它们自己**那份 workflow，本版目录会暂时消失，
+> 重跑本分支的 workflow 即可找回。
+> 另：`deploy` 走 `github-pages` environment，**分支必须在该 environment 的允许列表里**，
+> 否则 build 成功而 deploy 秒失败且无日志（Settings → Environments → github-pages →
+> Deployment branches and tags）。
+
 **URL 即状态**——链接本身带着一个具体视图，发出去对方打开就是那一屏：
 
 ```
@@ -75,7 +95,17 @@ arXiv 2505.21411（dp = 4000/(8×5) = 100，EP2 折入 → 50 个 A2A 域）。
 | `play` | `0` / `1` |
 | `sel` | rank 序号 |
 | `label` | 3D 标注字号（px，9–28，默认 16）——全局唯一入口，越界回落 16 |
+| `obj` | **整网对象透镜**：`embedding` / `qkv` / `attn_core` / `o_proj` / `norm` / `dense_ffn` / `router` / `experts` / `shared_expert` / `lm_head` / `c_tp` / `c_sp` / `c_ep` / `c_pp` / `c_dp`。**不带 `mode` 时会飞到该对象的主屏**（`?obj=experts` 直接落在 EP聚簇 的 8 面墙上）；同时写了 `mode` 就以 `mode` 为准 |
 | `v` | 版本戳，页面忽略它，只用来跳过缓存 |
+
+几条现成的、发出去就是那一屏的链接：
+
+```
+…/pattern.html?obj=experts          路由专家按 EP 切 → EP聚簇，8 面墙 = 8 个专家桶
+…/pattern.html?obj=qkv&sel=37       QKV 按 TP 沿 head 切 → TP切片，选中卡持有 h32-h63
+…/pattern.html?obj=embedding        词嵌入只落 PP 首段 → PP流水，只有第一段亮着
+…/pattern.html?obj=c_ep&sel=37      EP AllToAll：高亮选中卡所属的那个 A2A 通信组
+```
 
 不认识的参数一律忽略，非法值退回默认，不报错。发布时每个资源链接都会打上 `?v=<短 SHA>`，
 `pattern.json` 里也写入同一个 `version` —— 对方能核对自己拿到的是哪一版。
