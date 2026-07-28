@@ -90,60 +90,60 @@
   };
 
   const NET_OBJ = [
-    { id: 'embedding', fam: 'embedding', band: 'Embedding', name: '词嵌入 Vocab Parallel Embedding',
+    { id: 'embedding', fam: 'embedding', short: '词嵌入', band: 'Embedding', name: '词嵌入 Vocab Parallel Embedding',
       by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', firstStage: true,
       note: '词表并行：词表按 TP 切，查表后组内归约。只落在 PP 首段——别的段没有这个对象。',
       carry: (m, r) => m.ppOf(r) === 0,
       shard: (m, r) => ({ dim: 'TP', axis: '词表', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.vocab, m.TP, m.tpOf(r)) }) },
 
-    { id: 'qkv', fam: 'linear', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
+    { id: 'qkv', fam: 'linear', short: 'QKV', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
       by: [{ dim: 'TP', axis: 'head' }], best: 'tps',
       note: '注意力头按 TP 切：每张卡只算自己那几个 head。一整根纵深行 = 一个 TP 组，组内 8 片拼成全部 head。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
-    { id: 'attn_core', fam: 'attention', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
+    { id: 'attn_core', fam: 'attention', short: 'Attn', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
       by: [{ dim: 'TP', axis: 'head' }, { dim: 'CP', axis: 'ctx' }], best: 'tps',
       note: '只算自己那几个 head。若启用 CP，上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
-    { id: 'o_proj', fam: 'linear', band: 'Attention', name: 'Output Projection（行切）',
+    { id: 'o_proj', fam: 'linear', short: 'O 投影', band: 'Attention', name: 'Output Projection（行切）',
       by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
       note: '行并行：每张卡算出来的是 partial sum，必须在 TP 组内归约才是完整输出。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '隐藏维', idx: m.tpOf(r), of: m.TP }) },
 
-    { id: 'norm', fam: 'norm', band: 'Attention', name: 'RMSNorm 区（SP）',
+    { id: 'norm', fam: 'norm', short: 'RMSNorm', band: 'Attention', name: 'RMSNorm 区（SP）',
       by: [{ dim: 'SP', axis: 'seq' }], best: 'tps',
       note: 'norm 不改变特征维 → 沿 token 切最省显存，这就是 SP。SP 复用 TP 组，不新增 rank 维。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'SP', axis: '序列 token', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.seqLen, m.TP, m.tpOf(r), 'tok') }) },
 
-    { id: 'dense_ffn', fam: 'mlp', band: 'MoE', name: 'Dense FFN（列切→行切）',
+    { id: 'dense_ffn', fam: 'mlp', short: 'Dense FFN', band: 'MoE', name: 'Dense FFN（列切→行切）',
       by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
       note: '列并行算 gate/up，行并行算 down —— 中间维按 TP 切，出口归约。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.ffnHidden, m.TP, m.tpOf(r)) }) },
 
-    { id: 'router', fam: 'gate', band: 'MoE', name: 'Router Gate / TopK（复制）',
+    { id: 'router', fam: 'gate', short: 'Router', band: 'MoE', name: 'Router Gate / TopK（复制）',
       by: [], best: null,
       note: '路由门是复制的：每张卡都独立算一遍 token 该去哪个专家——先知道去哪，才谈得上把 token 发出去。',
       carry: () => true, shard: () => null },
 
-    { id: 'experts', fam: 'moe', band: 'MoE', name: '路由专家 bank Routed Experts',
+    { id: 'experts', fam: 'moe', short: '路由专家', band: 'MoE', name: '路由专家 bank Routed Experts',
       by: [{ dim: 'EP', axis: 'expert' }], best: 'ep',
       note: '专家按 EP 切：每张卡只持有自己那一桶专家的权重 —— MoE 显存不爆的根本原因。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'EP', axis: '专家', idx: m.epOf(r), of: m.EP, range: m.expRange(m.epOf(r)) }) },
 
-    { id: 'shared_expert', fam: 'mlp', band: 'MoE', name: '共享专家 Shared Expert',
+    { id: 'shared_expert', fam: 'mlp', short: '共享专家', band: 'MoE', name: '共享专家 Shared Expert',
       by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
       note: '共享专家每张卡都有（不按 EP 切），内部按 TP 切中间维 —— 与路由专家正好相反，值得对照着看。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP }) },
 
-    { id: 'lm_head', fam: 'head', band: 'Head', name: 'LM Head 输出头',
+    { id: 'lm_head', fam: 'head', short: 'LM Head', band: 'Head', name: 'LM Head 输出头',
       by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', lastStage: true,
       note: '输出头按词表切，与 embedding 同一根轴。只落在 PP 末段。',
       carry: (m, r) => m.ppOf(r) === m.PP - 1,
@@ -605,7 +605,7 @@
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
       // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗
-      wire: { members: true, lines: true, outline: true, movers: true, focus: true },
+      wire: { members: true, lines: true, outline: true, movers: true, focus: true, payload: true },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       /* 整网对象透镜：选中一个整网对象（算子/模块/HCCL 算子）→ 承载它的卡亮起、
@@ -1950,7 +1950,7 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
     function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); }
@@ -2057,6 +2057,134 @@
          但刻度疏密要拿 camera 真投影去量两枚之间隔几像素——放在前面就量的是上一帧的相机，
          一进来会算出一个离谱的步长，整条轴只剩末位一枚。 */
       syncLabelSizes();
+      syncPayload();
+    }
+
+    /* ── 装载板：把选中的这张卡在 3D 里摊开成「它持有的那些碎片」──────────────
+       编码沿用 6D 并行可视化的通行做法（main-horse「Visualizing 6-D Mesh Parallelism」：
+       *sharded tensors use subdivision and selective coloring within device squares*）——
+       **把设备方块细分，持有的那一片着色、其余留空**。这里把它立体化：
+
+         一条积木 = 一个整网对象的**全部**分片（跨所有卡）
+         实心段   = 本卡持有的那一片（族色）· 位置就是第几片
+         空槽     = 其余片，在别的卡上
+         整条空   = 这张卡完全没有这个对象（如词嵌入只落 PP 首段）
+         整条实   = 复制的对象（router），不被任何维切
+
+       为什么不是侧栏那份文字清单的翻版：清单给的是**读数**（5/8 h40-h47），
+       这块板给的是**比例与位置**——一眼看出「我只占这么一小段」「专家那条我占了一半」
+       「这条整根是空的」。两者互补，所以侧栏那份保留。
+
+       整块板面向相机（billboard）而不是贴世界轴：贴轴的话换到某些正交视角会退化成
+       一条线，而它是「随时想看就看」的检视件，不该有看不见的角度。 */
+    const payGroup = new THREE.Group(); payGroup.renderOrder = 9; scene.add(payGroup);
+    const payPanel = new THREE.Group(); payGroup.add(payPanel);
+    let payLeader = null;
+    const PAY = { W: 300, H: 15, STEP: 21, D: 6, LAB: 13 };   // px 空间（整块按 worldPerPx 缩放）
+
+    function clearPay() {
+      const kill = (o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+      };
+      payPanel.traverse((o) => { if (o !== payPanel) kill(o); });
+      while (payPanel.children.length) payPanel.remove(payPanel.children[0]);
+      if (payLeader) { kill(payLeader); payGroup.remove(payLeader); payLeader = null; }
+    }
+
+    function buildPayload() {
+      clearPay();
+      payGroup.visible = !!(S.wire.payload && S.sel != null);
+      if (!payGroup.visible) return;
+      const r = S.sel;
+      const objs = model.netObjects.filter((o) => !o.comm);
+      const bg = tokHex('--background'), bd = tokHex('--border-strong');
+      const box = (w, h, d, color, op, x, y) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthTest: false }));
+        m.material.userData = { base: op, noPulse: true };
+        m.position.set(x, y, 0); m.renderOrder = 9; payPanel.add(m);
+        return m;
+      };
+      const lab = (text, color, hPx, x, y, anchor) => {
+        const sp = makeLabel(text, color, 1);
+        const L = sp.userData.lab;
+        /* 父组已按 worldPerPx 缩放，这里必须用 px 空间自己定尺 ——
+           makeLabel 内部的 syncLabelSize 是按世界尺寸算的，留着会被缩放两次。 */
+        const w = hPx / L.aspect;
+        sp.scale.set(w, hPx, 1);
+        sp.center.set(anchor === 'right' ? 1 : 0, 0.5);
+        sp.position.set(x, y, PAY.D); sp.renderOrder = 10;
+        payPanel.add(sp);
+        return sp;
+      };
+
+      let y = 0;
+      objs.forEach((o) => {
+        const carried = model.objCarry(o.id, r);
+        const sh = carried ? model.objShard(o.id, r) : null;
+        const fam = OPV[o.fam] || OPV.linear;
+        const of = sh ? sh.of : 1, idx = sh ? sh.idx : 0;
+        const focused = objOn() && S.obj === o.id;
+        // 底槽：这个对象的全部分片（其余片在别的卡上 → 只给一层很淡的底）
+        box(PAY.W, PAY.H, PAY.D * 0.6, bd, carried ? 0.30 : 0.16, 0, y);
+        // 分片刻线：切成几份，一眼数得出
+        if (of > 1 && of <= 32) {
+          for (let i = 1; i < of; i++) {
+            box(0.7, PAY.H, PAY.D * 0.62, bg, 0.55, -PAY.W / 2 + (PAY.W / of) * i, y);
+          }
+        }
+        // 实心段 = 本卡持有的那一片（复制的对象 of=1 → 整条实心）
+        if (carried) {
+          const w = PAY.W / of;
+          box(w, PAY.H * 1.16, PAY.D, fam, focused ? 1 : 0.9,
+            -PAY.W / 2 + w * (idx + 0.5), y);
+        }
+        // 左侧对象名（缺席的压暗）· 右侧读数
+        lab(o.short || o.name.split(/[ （(]/)[0], carried ? fam : bd, PAY.LAB,
+          -PAY.W / 2 - 7, y, 'right');
+        const read = !carried ? '—' : sh ? `${idx}/${of}` : '整份';
+        lab(read, carried ? (sh ? dimc(sh.dim === 'SP' ? 'TP' : sh.dim) : bd) : bd,
+          PAY.LAB, PAY.W / 2 + 7, y, 'left');
+        y -= PAY.STEP;
+      });
+      // 标题：这块板说的是哪张卡
+      lab([{ t: `rank ${r}`, c: tokHex('--foreground') }], tokHex('--foreground'),
+        PAY.LAB * 1.15, -PAY.W / 2 - 7, PAY.STEP * 0.95, 'right');
+      lab('整条=全部分片 · 实心=本卡这一片', tokHex('--foreground-secondary'),
+        PAY.LAB * 0.92, -PAY.W / 2, PAY.STEP * 0.95, 'left');
+      // 引线：把板和它说的那张卡连起来（不缩放，走世界坐标，每帧随卡位重算）
+      const g = new THREE.BufferGeometry().setFromPoints([V3(0, 0, 0), V3(0, 0, 0)]);
+      const mm = new THREE.LineBasicMaterial({ color: bd, transparent: true, opacity: 0.95, depthTest: false });
+      mm.userData = { base: 0.95, noPulse: true };
+      payLeader = new THREE.Line(g, mm); payLeader.renderOrder = 8; payGroup.add(payLeader);
+      syncPayload();
+    }
+
+    /* 位置与尺寸随相机走：整块板保持**恒定屏幕尺寸**（同「贴边字牌固定屏幕尺寸」那条纪律
+       ——它是检视件，缩远了也得读得出），朝向锁相机，锚点跟着选中卡飞。 */
+    const _pc = new THREE.Vector3(), _pr = new THREE.Vector3(), _pu = new THREE.Vector3();
+    function syncPayload() {
+      if (!payGroup.visible || S.sel == null) return;
+      const k = worldPerPx();
+      payPanel.scale.setScalar(k);
+      payPanel.quaternion.copy(camera.quaternion);
+      _pr.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      _pu.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      _pc.set(cur[S.sel * 3], cur[S.sel * 3 + 1], cur[S.sel * 3 + 2]);
+      const objs = model.netObjects.filter((o) => !o.comm).length;
+      /* 挂在卡的**正右方**、竖向以卡为中心：挂右上方时板顶常撞顶栏，引线也被拉得老长
+         ——引线一长，「这块板说的是哪张卡」就得靠找，而那正是它唯一要交代的事。 */
+      const dx = (PAY.W / 2 + 108) * k, dy = (objs - 1) * PAY.STEP * 0.5 * k;
+      payPanel.position.copy(_pc).add(_pr.clone().multiplyScalar(dx)).add(_pu.clone().multiplyScalar(dy));
+      if (payLeader) {
+        const a = _pc.clone();
+        const b = payPanel.position.clone()
+          .add(_pr.clone().multiplyScalar(-(PAY.W / 2 + 6) * k))
+          .add(_pu.clone().multiplyScalar(-(objs - 1) * PAY.STEP * 0.5 * k));
+        payLeader.geometry.setFromPoints([a, b]);
+        payLeader.geometry.attributes.position.needsUpdate = true;
+      }
     }
 
     /* ── 通信组重建（选中 rank → 四维对端 + 连线 + 标签）── */
@@ -2892,7 +3020,7 @@
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
       const wireSeg = rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-chips' }));
-      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus']]
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus'], ['装载', 'payload']]
         .map(([t, k]) => wireSeg.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
