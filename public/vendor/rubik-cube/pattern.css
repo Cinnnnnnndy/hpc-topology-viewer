@@ -393,3 +393,41 @@
   .prc-root.is-open .prc-info { display: none; }   /* 空间实在不够：开着设置就先不显示详情 */
   .prc-legend { display: none; }                 /* 空间不够时先让位给详情卡（图例信息在问号里） */
 }
+
+/* ── 整网对象那一排（本次深化）────────────────────────────────────────────
+   对象有十几个还分带，胶囊摆不下 → <select>。外观对齐设计系统的输入控件，
+   不自造一套：同高、同圆角、同边框色，与「并行」那排的数字输入框成套。 */
+.prc-objsel {
+  min-height: 26px;
+  max-width: 260px;
+  padding: 2px 8px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--foreground);
+  background: var(--surface-2, transparent);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.prc-objsel:focus { outline: none; border-color: var(--primary); }
+.prc-objsel optgroup { font-size: 11px; color: var(--foreground-secondary); }
+
+/* 对象接管着色时，「着色」那一排整体让位：压暗 + 不可点，并说明为什么。
+   两套颜色不能同时在画面上（同注入的约定）——把失效的那排留成常亮会让人以为它还生效。 */
+.prc-row.is-superseded { opacity: .42; pointer-events: none; }
+.prc-row.is-superseded::after {
+  content: '对象透镜已接管着色';
+  font-size: 10.5px;
+  color: var(--foreground-secondary);
+  margin-left: var(--space-2);
+}
+
+/* 信息卡里的对象名：mono、次级色，语气是「标记」不是标题（同 sidecar 的 operator-label） */
+.prc-objname {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 2px 0 5px;
+  color: var(--foreground);
+}

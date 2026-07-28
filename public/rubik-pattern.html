@@ -37,6 +37,9 @@
      ?phase=TP|PP|EP|DP  或 ?t=0..1       时间轴位置
      ?play=0|1                            是否自动播放
      ?sel=<rank>                          直接选中某张卡
+     ?obj=<对象 id>                       整网对象透镜（embedding/qkv/attn_core/o_proj/norm/
+                                          dense_ffn/router/experts/shared_expert/lm_head/
+                                          c_tp/c_sp/c_ep/c_pp/c_dp）——看这个对象怎么切、落在哪些卡
      ?v=<任意串>                          版本戳，仅用于跳过缓存，页面忽略它
      不认识的参数一律忽略；参数非法时退回默认值，不报错。 */
   var qs = new URLSearchParams(location.search);
@@ -64,6 +67,12 @@
     // 分成 8 桶 × 2 个 A2A 域）。落地这一档是因为每张卡看得清、每一段数得出，
     // 四种形态的差别当场成立；真实体量用工具栏的「盘古ProMoE 8·5·100·2」预设。
     config: cfg,
+    // 整网对象透镜（?obj=）：mount 时只设状态、不飞形态——同一条链接里若还写了 ?mode=，
+    // 那个 mode 说了算；想要「顺便切到该对象的主屏」就用 handle.selectObject(id)。
+    obj: qs.get('obj') || null,
+    onSelectObject: function(id, o){
+      try { parent.postMessage({ type: 'rubik-object', obj: id, band: o && o.band }, '*'); } catch(e) {}
+    },
     onSelect: function(sel){
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
       try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}

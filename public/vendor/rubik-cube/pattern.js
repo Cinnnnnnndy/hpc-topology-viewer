@@ -37,7 +37,125 @@
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（标暖色）
+    // ── 整网对象透镜用的模型规格（只影响「持有哪一片」的读数，不影响布局）──
+    heads: 64,             // 注意力头总数 → TP 沿 head 轴切
+    vocab: 153376,         // 词表大小 → TP 沿 vocab 轴切（Embedding / LM Head）
+    ffnHidden: 14336,      // FFN 中间维 → TP 沿 ffn 轴切
+    sharedExperts: 4,      // 共享专家（每 rank 都有，不按 EP 切）
+    seqLen: 4096,          // 序列长度 → SP 沿 token 轴切（norm 区）
   };
+
+  /* ══ 整网对象目录（本次深化的事实源）════════════════════════════════════
+     魔方原本只回答「谁和谁一组」。这张表让它多回答一件事：
+     **整网（模型计算图）上的一个对象，是怎么被切开、落到哪些 rank 上的。**
+
+     分带（band）沿用设计系统 `model-architecture-training-sidecar` 契约里的
+     `semanticBands.module = ["Embedding","Attention","MoE","Head"]`，不另立一套；
+     算子名沿用 openPangu 图里那批有据可查的算子（该契约明令禁止用通用
+     Transformer 栈替换它们），另加一个「通信」带装 HCCL 算子。
+
+     每条声明四件事：
+       `by`      切它的维 × 张量轴 —— 判据不是算子长什么样，而是**它的权重/激活的
+                 哪根轴上有可分的份数**：线性层按输出维列切 / 按输入维行切（行切的
+                 输出是 partial sum，必须归约）；norm 不改变特征维、沿 token 切最省
+                 显存，这正是 SP 的存在理由；MoE 专家 bank 沿 expert 轴切。
+       `carry`   哪些 rank 承载它（PP 首/末段专属的对象只落在那一段）
+       `shard`   这张卡持有的是第几片、区间是什么
+       `best`    切到哪个形态，这个对象的分片会 snap 成规整的块/墙
+                 —— 这是魔方「异常的形状 = 根因类别」那条设计语言的推广：
+                    **切分的形状 = 这个对象被哪一维切**。
+
+     通信算子（band='通信'）按 md 笔记 §6 的规则特殊处理：**它不属于单个 rank，
+     而属于一个通信组**，在组内每个 rank 上各有一个实例。所以它的「承载集合」
+     取选中卡的那个通信组，而不是某批固定的卡。 */
+  const OBJ_BAND = ['Embedding', 'Attention', 'MoE', 'Head', '通信'];
+  // 等分某根轴：不能整除时前面的片多拿一个（与 stageLayerRange 同口径）
+  function axSlice(total, parts, idx) {
+    const base = Math.floor(total / parts), rem = total % parts;
+    const lo = idx * base + Math.min(idx, rem);
+    return { lo, hi: Math.max(lo, lo + base + (idx < rem ? 1 : 0) - 1) };
+  }
+  const rgOf = (t, n, i, pre) => { const s = axSlice(t, n, i); return `${pre || ''}${s.lo}-${pre || ''}${s.hi}`; };
+
+  const NET_OBJ = [
+    { id: 'embedding', band: 'Embedding', name: '词嵌入 Vocab Parallel Embedding',
+      by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', firstStage: true,
+      note: '词表并行：词表按 TP 切，查表后组内归约。只落在 PP 首段——别的段没有这个对象。',
+      carry: (m, r) => m.ppOf(r) === 0,
+      shard: (m, r) => ({ dim: 'TP', axis: '词表', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.vocab, m.TP, m.tpOf(r)) }) },
+
+    { id: 'qkv', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
+      by: [{ dim: 'TP', axis: 'head' }], best: 'tps',
+      note: '注意力头按 TP 切：每张卡只算自己那几个 head。一整根纵深行 = 一个 TP 组，组内 8 片拼成全部 head。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
+
+    { id: 'attn_core', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
+      by: [{ dim: 'TP', axis: 'head' }, { dim: 'CP', axis: 'ctx' }], best: 'tps',
+      note: '只算自己那几个 head。若启用 CP，上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
+
+    { id: 'o_proj', band: 'Attention', name: 'Output Projection（行切）',
+      by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
+      note: '行并行：每张卡算出来的是 partial sum，必须在 TP 组内归约才是完整输出。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'TP', axis: '隐藏维', idx: m.tpOf(r), of: m.TP }) },
+
+    { id: 'norm', band: 'Attention', name: 'RMSNorm 区（SP）',
+      by: [{ dim: 'SP', axis: 'seq' }], best: 'tps',
+      note: 'norm 不改变特征维 → 沿 token 切最省显存，这就是 SP。SP 复用 TP 组，不新增 rank 维。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'SP', axis: '序列 token', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.seqLen, m.TP, m.tpOf(r), 'tok') }) },
+
+    { id: 'dense_ffn', band: 'MoE', name: 'Dense FFN（列切→行切）',
+      by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
+      note: '列并行算 gate/up，行并行算 down —— 中间维按 TP 切，出口归约。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.ffnHidden, m.TP, m.tpOf(r)) }) },
+
+    { id: 'router', band: 'MoE', name: 'Router Gate / TopK（复制）',
+      by: [], best: null,
+      note: '路由门是复制的：每张卡都独立算一遍 token 该去哪个专家——先知道去哪，才谈得上把 token 发出去。',
+      carry: () => true, shard: () => null },
+
+    { id: 'experts', band: 'MoE', name: '路由专家 bank Routed Experts',
+      by: [{ dim: 'EP', axis: 'expert' }], best: 'ep',
+      note: '专家按 EP 切：每张卡只持有自己那一桶专家的权重 —— MoE 显存不爆的根本原因。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'EP', axis: '专家', idx: m.epOf(r), of: m.EP, range: m.expRange(m.epOf(r)) }) },
+
+    { id: 'shared_expert', band: 'MoE', name: '共享专家 Shared Expert',
+      by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
+      note: '共享专家每张卡都有（不按 EP 切），内部按 TP 切中间维 —— 与路由专家正好相反，值得对照着看。',
+      carry: () => true,
+      shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP }) },
+
+    { id: 'lm_head', band: 'Head', name: 'LM Head 输出头',
+      by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', lastStage: true,
+      note: '输出头按词表切，与 embedding 同一根轴。只落在 PP 末段。',
+      carry: (m, r) => m.ppOf(r) === m.PP - 1,
+      shard: (m, r) => ({ dim: 'TP', axis: '词表', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.vocab, m.TP, m.tpOf(r)) }) },
+
+    /* ── 通信带：属于通信组，不属于单张卡 ── */
+    { id: 'c_tp', band: '通信', name: 'TP AllReduce（注意力/FFN 输出合并）',
+      comm: 'TP', prim: 'AllReduce', best: 'tps',
+      note: '行切算子的 partial sum 在 TP 组内求和。HCCL：HcclAllReduce。' },
+    { id: 'c_sp', band: '通信', name: 'SP AllGather / ReduceScatter（布局转换）',
+      comm: 'TP', prim: 'AllGather', best: 'tps',
+      note: '进 TP 区收齐序列、出 TP 区归约并散开。绑定的仍是 TP 组（SP 与 TP 同域）。',
+      alias: 'SP' },
+    { id: 'c_ep', band: '通信', name: 'EP AllToAll（Dispatch / Combine）',
+      comm: 'EP', prim: 'AllToAll', best: 'ep',
+      note: 'token 按路由结果重分布到专家所在的卡，算完再送回。HCCL：HcclAlltoAll（token 不均时用 V 变体）。' },
+    { id: 'c_pp', band: '通信', name: 'PP Send / Recv（阶段接力）',
+      comm: 'PP', prim: 'P2P', best: 'ppf',
+      note: '只在 stage 边界传激活与梯度，通信量最小。HCCL：HcclSend / HcclRecv。' },
+    { id: 'c_dp', band: '通信', name: 'DP AllReduce（梯度同步）',
+      comm: 'DP', prim: 'AllReduce', best: 'dpt',
+      note: '副本间同步梯度，可与反向重叠。HCCL：HcclAllReduce。' },
+  ];
+  const NET_OBJ_BY = {}; NET_OBJ.forEach((o) => { NET_OBJ_BY[o.id] = o; });
 
   /* ══ 布局规则（单一事实源）════════════════════════════════════════════
      目标：任何 (tp,pp,dp,ep) 组合都自动排布好，形态只声明「意图」不写死数值，
@@ -425,6 +543,18 @@
       tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
+      /* ── 整网对象透镜 ──
+         objCarry：这张卡承载这个对象吗（PP 首/末段专属的对象只落在那一段）；
+         objShard：这张卡持有的是第几片、区间是什么（通信算子没有「片」，返回 null）。 */
+      netObjects: NET_OBJ, netObjBands: OBJ_BAND, netObjBy: NET_OBJ_BY,
+      objCarry(id, r) {
+        const o = NET_OBJ_BY[id]; if (!o) return true;
+        return o.comm ? true : o.carry(this, r);
+      },
+      objShard(id, r) {
+        const o = NET_OBJ_BY[id]; if (!o || o.comm || !o.shard) return null;
+        return o.shard(this, r);
+      },
       // 物理落位
       placement: { cardsPerHost: CPH, hostsPerPod: HPP, cardsPerPod: CPP, hosts: HOSTS, pods: PODS },
       hostOf, podOf, tierOf,
@@ -466,6 +596,10 @@
       wire: { members: true, lines: true, outline: true, movers: true, focus: true },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
+      /* 整网对象透镜：选中一个整网对象（算子/模块/HCCL 算子）→ 承载它的卡亮起、
+         按「持有第几片」着色，其余退成背景。与异常注入同一个约定——**它接管着色**，
+         而不是再加一种并列的着色镜头（否则两套颜色叠在一起，卡色读不准）。 */
+      obj: null,                     // null | NET_OBJ 的 id
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
       more: false,                   // 工具栏抽屉（着色/注入/连线/时间/并行）是否展开
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
@@ -523,6 +657,7 @@
         '  </div>',
         '</div>',
         '<div class="prc-more panel-shell">',
+        '  <div class="prc-row prc-row-obj"><span class="prc-lab">对象</span></div>',
         '  <div class="prc-row prc-row-lens"><span class="prc-lab">着色</span></div>',
         '  <div class="prc-row prc-row-anom"><span class="prc-lab">注入</span></div>',
         '  <div class="prc-row prc-row-wire"><span class="prc-lab">连线</span></div>',
@@ -1689,7 +1824,36 @@
       REST_BG.set(tokHex('--background'));
       return cTmp.lerp(REST_BG, isDark() ? 0.55 : 0.48);
     }
+    /* ── 整网对象：承载集合 + 分片序号 ──
+       通信算子按 md 笔记 §6 的规则特殊处理：它不属于单张卡而属于一个通信组，
+       所以承载集合取**选中卡的那个组**；没选卡时无组可言，整网对象退化成「全网都参与」。 */
+    function objCarrySet() {
+      if (!S.obj) return null;
+      const o = model.netObjBy[S.obj]; if (!o) return null;
+      if (o.comm) {
+        if (S.sel == null) return null;                       // 没选卡 → 不压暗，图例里说明
+        return new Set(model.commGroup(S.sel, o.comm));
+      }
+      const s = new Set();
+      for (let r = 0; r < N; r++) if (model.objCarry(S.obj, r)) s.add(r);
+      return s;
+    }
+    let carrySet = null;
+    const objOn = () => S.obj != null;
+    // 分片序号 → 组色；没有「片」的对象（复制 / 通信）用同一色，避免假装它被切开
+    function objShardIdx(r) {
+      const sh = model.objShard(S.obj, r);
+      return sh ? sh.idx : -1;
+    }
     function colorOfRank(r) {
+      /* 对象透镜接管着色（同异常注入的约定）：承载者按「持有第几片」着色，
+         于是「谁持有同一片」当场同色 —— 切到该对象的 best 形态，同色的会 snap 成一整块。 */
+      if (objOn()) {
+        const inSet = !carrySet || carrySet.has(r);
+        if (!inSet) return restColor(r);
+        const i = objShardIdx(r);
+        return i < 0 ? cTmp.set(tokHex('--foreground-secondary')) : cTmp.set(groupColor(i));
+      }
       if (S.anom !== 'none') {
         if (inAnomGroup(r)) return cTmp.set(tokHex('--danger'));
         return restColor(r);
@@ -1736,7 +1900,11 @@
     }
     const focusOn = () => S.wire.focus && S.sel != null;
     // 0=正常 · 1=聚焦压暗（保留形体做参照）· 2=剖面压暗（更狠）
-    const dimLv = (r) => (ghosted(r) ? 2 : focusOn() && !relSet.has(r) ? 1 : 0);
+    // 整网对象透镜下，不承载该对象的卡走同一档压暗——「这个对象根本不在这些卡上」
+    // 与「这些卡和选中卡无关」是同一件事的两种说法，用同一个视觉档位表达。
+    const dimLv = (r) => (ghosted(r) ? 2
+      : (objOn() && carrySet && !carrySet.has(r)) ? 1
+        : focusOn() && !relSet.has(r) ? 1 : 0);
     const BG_C = new THREE.Color();
     // 压暗的唯一算法（图例色块与卡块共用，图例因此永远等于画面）：
     // 打光总增益已归到 ≈1（见上方光源注释），所以这里的系数就是最终看到的压暗幅度；
@@ -1770,7 +1938,10 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); }
+    /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
+       （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
+    function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); }
 
     /* ── 相机：轴测（等距可旋转）+ 顶/前/侧 正交锁轴（拖动即转回 3D），取景随形态包围盒 ── */
     // 等距轴测（isometric）的标准机位：方位 45°、仰角 asin(tan30°) ≈ 35.26°
@@ -2061,6 +2232,29 @@
       const row = (c, t) => `<div class="prc-lgrow"><i style="background:${c}"></i><span>${esc(t)}</span></div>`;
       const sec = (t) => `<div class="prc-lgsec">${esc(t)}</div>`;
       const parts = [];
+      if (objOn()) {
+        /* 对象透镜接管了着色 → 图例这一段解释的就是画面上真正出现的那批颜色。 */
+        const o = model.netObjBy[S.obj];
+        parts.push(sec(`着色 · 整网对象「${o.name}」`));
+        if (o.comm) {
+          const gl = o.alias || o.comm;
+          parts.push(row(dimc(o.comm), `${gl} 组 · ${o.prim}`));
+          parts.push(S.sel == null
+            ? `<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">通信算子属于通信组、不属于单张卡 —— 先选一张卡，才有「哪个组」可高亮</span></div>`
+            : row(rgbCss(restColor(2)), '组外'));
+        } else if (!o.by.length) {
+          parts.push(row(tokHex('--foreground-secondary'), '复制 · 每张卡各一份完整的'));
+        } else {
+          const b = o.by[0];
+          const n = b.dim === 'EP' ? EP : TP;
+          const MAXC = 6, shown = Math.min(n, MAXC);
+          for (let i = 0; i < shown; i++) parts.push(row(groupColor(i), `第 ${i} 片（沿${b.axis === 'expert' ? '专家' : b.axis === 'head' ? '注意力头' : b.axis === 'vocab' ? '词表' : b.axis === 'seq' ? '序列' : '张量'}轴）`));
+          if (n > shown) parts.push(`<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">… 共 ${n} 片（${b.dim} 切）</span></div>`);
+          if (carrySet && carrySet.size < N) parts.push(row(rgbCss(restColor(2)), '不承载这个对象的卡'));
+        }
+        lg.innerHTML = parts.join('');
+        return;
+      }
       if (S.anom !== 'none') {
         const what = { tp: 'TP 槽 0', pp: 'PP 级 0', dp: 'DP 副本 0', ep: `EP 桶 ${anomBucket()}` }[S.anom];
         parts.push(sec('着色 · 异常注入'), row('var(--danger)', `异常组 ${what}`), row(rgbCss(restColor(2)), '其余'));
@@ -2138,6 +2332,7 @@
         kv('EP 桶 · A2A 域', `<b style="color:${dimc('EP')}">桶${e}</b> <span class="prc-dim">${model.expRange(e)} · 域${model.domOf(r)}</span>`) +
         kv('物理落位', `<b>机${model.hostOf(r)} · Pod${model.podOf(r)}</b> <span class="prc-dim">${pl.cardsPerHost} 卡/机</span>`) +
         `</div>` +
+        objLine(r) +
         /* 主导维在这一屏画不出来时要**当场说明**：不说的话，这行写着「此刻 TP 主导」、
            图例把 TP 加粗，而画面上一根青线都没有，读者只会认为图坏了。
            通信本身照旧存在（所以这一行照旧给量），缺的只是「这一屏画不出来」这句话。 */
@@ -2149,6 +2344,37 @@
         (edge ? `<div class="prc-status is-edge">${edge.replace(/^<br>/, '')}</div>` : '');
       const close = info.querySelector('.prc-infoclose');
       if (close) close.addEventListener('click', () => api.select(null));
+    }
+
+    /* 选中整网对象时，信息卡多给一段：**这张卡持有这个对象的哪一片**。
+       这正是「把算子装进对应的 rank 里」那句话在单卡尺度上的读数——
+       不是「这个算子归 TP」，而是「Q 升维投影沿注意力头轴切成 8 份，本卡持有 h0-h7」。 */
+    function objLine(r) {
+      if (!objOn()) return '';
+      const o = model.netObjBy[S.obj]; if (!o) return '';
+      const head = `<div class="prc-kicker" style="margin-top:9px">整网对象</div>`
+        + `<div class="prc-objname">${esc(o.name)}</div>`;
+      if (o.comm) {
+        const g = model.commGroup(r, o.comm);
+        return head + `<div class="prc-kv">`
+          + kv('通信组', `<b style="color:${dimc(o.comm)}">${esc(o.alias || o.comm)} 组</b> <span class="prc-dim">${g.length} 员</span>`)
+          + kv('集合原语', `<b>${esc(o.prim)}</b>`)
+          + `</div><p class="prc-prose">通信算子不属于单张卡，而属于一个通信组：组内每张卡上各有一个实例。上面这一组就是本卡参与的那个。</p>`;
+      }
+      const sh = model.objShard(S.obj, r);
+      const carried = model.objCarry(S.obj, r);
+      if (!carried) {
+        return head + `<div class="prc-status">本卡<b>不承载</b>这个对象`
+          + `<span class="prc-dim">（${o.firstStage ? '只落在 PP 首段' : o.lastStage ? '只落在 PP 末段' : '不在本段'}，本卡在 PP${model.ppOf(r)}）</span></div>`;
+      }
+      if (!sh) {
+        return head + `<div class="prc-status">复制 —— 每张卡各持一份完整的<span class="prc-dim">（不被任何维切开）</span></div>`;
+      }
+      return head + `<div class="prc-kv">`
+        + kv(`${sh.dim} 沿${esc(sh.axis)}切`, `<b style="color:${dimc(sh.dim === 'SP' ? 'TP' : sh.dim)}">第 ${sh.idx} 片</b> <span class="prc-dim">/ ${sh.of}</span>`)
+        + (sh.range ? kv('本卡持有', `<b>${esc(sh.range)}</b>`) : '')
+        + `</div>`
+        + (o.partial ? `<div class="prc-status">行切算子 —— 本卡算出的是 <b>partial sum</b>，要在 TP 组内归约才完整</div>` : '');
     }
 
     /* 「此刻这一维的走线各跨了哪层」——3D 里画层级色线看不出来（线太细、又和 TP 组
@@ -2207,6 +2433,17 @@
           <dt>滚轮</dt><dd>缩放。切形态或切视角会重新取景，平移量一并归零</dd>
         </dl>
         <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。</p>`,
+      obj: `<h4>对象 · 整网的一个东西被切成了什么样</h4>
+        <p>魔方本来回答「谁和谁一组」。选一个<b>整网对象</b>（模型计算图上的一个模块 / 算子 / HCCL 算子），它多回答一件事：<b>这个对象是怎么被切开、落到哪些卡上的</b>。</p>
+        <p>选中后<b>对象接管着色</b>（与注入同一个约定，两套颜色不能同时在）：承载它的卡按「持有第几片」着色，不承载的退成背景。于是——</p>
+        <dl>
+          <dt>路由专家</dt><dd>按 EP 切 → 切到 EP聚簇，每面墙就是一个专家桶</dd>
+          <dt>QKV 投影</dt><dd>按 TP 沿注意力头切 → 切到 TP切片，每片墙是一个 head 分片</dd>
+          <dt>词嵌入 / LM Head</dt><dd>只落在 PP 首 / 末段 → 切到 PP流水，只有那一段亮着</dd>
+          <dt>Router</dt><dd>复制的：每张卡各一份完整的，没有「片」可言</dd>
+        </dl>
+        <p class="prc-helpnote"><b>切分的形状 = 这个对象被哪一维切</b> —— 这是「异常的形状 = 根因类别」那条读法的推广。每个对象都知道自己该去哪一屏，「去 XX」按钮直接飞过去。</p>
+        <p>通信算子（HCCL）那一带按另一条规则：<b>它不属于单张卡，而属于一个通信组</b>，组内每张卡上各有一个实例。所以要先选一张卡，才有「哪个组」可高亮。</p>`,
       slice: `<h4>剖面 · 折掉的那一维翻到第几层</h4>
         <p>正交 2D 会把与视线平行的那一维折进屏幕，于是一格里叠着好几张卡。剖面就是<b>只看这一维的某一层</b>，其余压暗——它跟着视角走（换一屏，折掉的是另一维，剖面翻的也就换成那一维），所以排在「视角」后面而不是自成一档。</p>
         <dl>
@@ -2356,6 +2593,7 @@
       return b;
     }
     let modeBtns = [], viewBtns = [], lensBtns = [], anomBtns = [], playBtn = null, sliceBox = null, sliceRange = null, sliceLab = null;
+    let objSel = null, objGo = null;
     let cfgInputs = null, cfgRead = null, cfgErr = null;
     let wireBtns = [], algoBtns = [];
     let timeTrack = null, timeHead = null, moreBtn = null;
@@ -2425,6 +2663,22 @@
       if (vhelp) vhelp.style.display = vlist.length > 1 ? '' : 'none';
       const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
+      if (objSel) objSel.value = S.obj || '';
+      if (objGo) {
+        const o = S.obj && model.netObjBy[S.obj];
+        // 没选对象、或这个对象没有「该去哪一屏」的答案（如复制的 Router）→ 按钮不出现，
+        // 留一个按下去没反应的按钮比不留更费解（同剖面那一排的处理）。
+        const on = !!(o && o.best);
+        objGo.style.display = on ? '' : 'none';
+        if (on) {
+          const m = model.modes.find((mm) => mm.key === o.best);
+          objGo.textContent = m ? `去 ${m.short || m.name}` : '去主屏';
+          objGo.classList.toggle('is-selected', model.modes[S.mode].key === o.best);
+        }
+      }
+      // 对象透镜接管着色时，把「着色」那一排整体压暗并说明——两套颜色不能同时在
+      const rowLensEl = $('.prc-row-lens');
+      if (rowLensEl) rowLensEl.classList.toggle('is-superseded', objOn());
       const anomKeys = ['none', 'tp', 'pp', 'dp', 'ep'];
       anomBtns.forEach((b, i) => b.classList.toggle('is-selected', anomKeys[i] === S.anom));
       const wireKeys = ['members', 'lines', 'outline', 'movers', 'focus'];
@@ -2464,7 +2718,8 @@
     }
     if (opts.chrome !== false) {
       // 每排行首「名称 + 问号」：问号 hover/聚焦弹出这一排是什么、和别的排什么关系
-      [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['slice', '.prc-row-slice'], ['lens', '.prc-row-lens'],
+      [['modes', '.prc-row-modes'], ['views', '.prc-row-views'], ['slice', '.prc-row-slice'], ['obj', '.prc-row-obj'],
+        ['lens', '.prc-row-lens'],
         ['anom', '.prc-row-anom'], ['wire', '.prc-row-wire'], ['time', '.prc-timepop'], ['cfg', '.prc-row-cfg']]
         .forEach(([k, sel]) => {
           const lab = $(sel + ' .prc-lab');
@@ -2499,6 +2754,39 @@
       });
       sliceLab = document.createElement('span'); sliceLab.className = 'prc-mono prc-scread';
       sliceBox.appendChild(sliceRange); sliceBox.appendChild(sliceLab);
+      /* ── 整网对象那一排 ──
+         对象有十几个、还分带，用互斥胶囊摆不下 → 走 <select>（按 band 分组）。
+         旁边一个「去主屏」按钮：每个对象都知道自己在哪个形态下 snap 成规整的块/墙，
+         按一下就飞过去——这是本次深化最要紧的动作，不该让人自己去猜该切哪个形态。 */
+      const rowObj = $('.prc-row-obj');
+      objSel = document.createElement('select');
+      objSel.className = 'prc-objsel';
+      objSel.setAttribute('aria-label', '选择整网对象');
+      const optNone = document.createElement('option');
+      optNone.value = ''; optNone.textContent = '— 不选（看卡本身）—';
+      objSel.appendChild(optNone);
+      model.netObjBands.forEach((band) => {
+        const list = model.netObjects.filter((o) => o.band === band);
+        if (!list.length) return;
+        const g = document.createElement('optgroup'); g.label = band;
+        list.forEach((o) => {
+          const op = document.createElement('option');
+          op.value = o.id; op.textContent = o.name; op.title = o.note || '';
+          g.appendChild(op);
+        });
+        objSel.appendChild(g);
+      });
+      objSel.addEventListener('change', () => { api.selectObject(objSel.value || null); });
+      rowObj.appendChild(objSel);
+      objGo = chipBtn('去主屏', () => {
+        const o = S.obj && model.netObjBy[S.obj];
+        if (!o || !o.best) return;
+        const i = model.modes.findIndex((m) => m.key === o.best);
+        if (i >= 0) api.setMode(i);
+      });
+      objGo.title = '切到这个对象的分片会 snap 成整块/整墙的那个形态';
+      rowObj.appendChild(objGo);
+
       const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
         ['主机', 'host'], ['Pod', 'pod']]
@@ -2798,6 +3086,7 @@
         if (next.N > 65536) return { ok: false, error: `rank = ${next.N} 超出渲染上限 65536` };
         model = next; syncDims();
         S.sel = null; S.hover = null; S.sliceVal = 0;
+        carrySet = objCarrySet();          // 承载集合按新维度重算（EP/PP 一变，谁承载就变了）
         buildField();
         clearComm(); peerMeshes.forEach((m2) => { m2.geometry.setDrawRange(0, 0); m2.visible = false; });
         fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
@@ -2855,6 +3144,23 @@
         if (e == null) { api.select(null); return; }
         api.setMode(2); api.select(model.rankOf(0, 0, (e | 0) % EP));
       },
+      /* 整网对象透镜（本次深化的主入口）。
+         与 selectLayer / selectBucket 一致：**主动切到该对象的主屏**——那两个挂点当年
+         就是因为「只记状态不切形态」而在别的形态里静默地什么都不发生。这里不重犯：
+         对象的分片只有在它的 best 形态下才 snap 成规整的块/墙，不飞过去等于没给答案。
+         `fly:false` 可关掉（宿主自己控形态时用）。 */
+      selectObject(id, o2) {
+        const next = id && model.netObjBy[id] ? id : null;
+        S.obj = next;
+        const ob = next && model.netObjBy[next];
+        if (ob && ob.best && (!o2 || o2.fly !== false)) {
+          const i = model.modes.findIndex((m) => m.key === ob.best);
+          if (i >= 0 && i !== S.mode) { api.setMode(i); }
+        }
+        refreshObj(); syncChrome();
+        if (opts.onSelectObject) opts.onSelectObject(next, ob || null);
+      },
+      get netObjects() { return model.netObjects; },
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
         root.setAttribute('data-theme', S.theme);
@@ -2910,6 +3216,10 @@
     }
     applySceneBg();
     resize(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
+    // 整网对象初值（mount({obj}) / ?obj=）：不飞形态——落地形态由 mount({mode}) 说了算，
+    // 若这里再飞一次，带 obj 的链接会覆盖掉同一条链接里写明的 mode。
+    if (opts.obj && model.netObjBy[opts.obj]) S.obj = opts.obj;
+    carrySet = objCarrySet();
     recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
     raf = global.requestAnimationFrame(frame);
     return api;
