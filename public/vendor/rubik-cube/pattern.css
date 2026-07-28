@@ -466,3 +466,53 @@
   flex: none; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px;
   font-weight: 650;
 }
+
+/* ── 片选择条：切换片的可靠入口 ─────────────────────────────────────────────
+   在 3D 里点小方块受遮挡与透视影响、很容易误触（片是空框时尤其点不中），
+   所以把「切到第几片」做成信息卡里的一排编号。两条路并存，这条永远点得中。 */
+.prc-shardrow { display: flex; align-items: baseline; gap: 7px; margin-top: 6px; flex-wrap: wrap; }
+.prc-shardlab { font-size: 10.5px; color: var(--foreground-secondary); flex: none; }
+.prc-shardstrip { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.prc-shardchip {
+  min-width: 20px; min-height: 20px; padding: 0 5px; margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; font-weight: 650;
+  color: var(--foreground-secondary);
+  background: var(--surface-2, rgba(127, 127, 127, .12));
+  border: 1px solid transparent; border-radius: var(--radius-sm, 4px);
+  cursor: pointer; line-height: 1;
+}
+.prc-shardchip:hover { border-color: var(--c); color: var(--foreground); }
+.prc-shardchip:focus-visible { outline: 1px solid var(--primary); outline-offset: 1px; }
+.prc-shardchip.is-cur { background: var(--c); color: var(--background); border-color: var(--c); }
+.prc-shardchip.is-step { font-size: 11px; }
+.prc-shardnow {
+  font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
+  color: var(--c); padding: 0 4px;
+}
+
+/* ── 放大细节视窗：只画选中卡那一块 ──────────────────────────────────────────
+   卡上切分是就地的，忠实但会被卡阵与连线埋住（几片只有几个像素）。这里开一块
+   自己的视口，同一份几何克隆一份单独取景。框是 DOM（只画边与标题，背景透明，
+   3D 从底下透上来）；不接鼠标，避免和画布的拖拽/拾取抢事件。 */
+.prc-detail {
+  position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: 4;
+  width: 260px; height: 260px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg, 10px);
+  /* 接鼠标：切换片就在这儿点 —— 主场景里片太小又被挡，这里每片几十像素、四周无物。 */
+  background: transparent; pointer-events: auto; cursor: default; display: none;
+  box-shadow: var(--prc-float-shadow, 0 2px 10px rgba(0, 0, 0, .10));
+  overflow: hidden;
+}
+.prc-detail.show { display: block; }
+.prc-detail.is-hit { cursor: pointer; border-color: var(--primary); }
+.prc-detail-cap {
+  position: absolute; left: 0; right: 0; top: 0; padding: 4px 8px;
+  pointer-events: none;                       /* 标题条不抢下面那几片的点击 */
+  font-size: 10.5px; line-height: 1.4; color: var(--foreground-secondary);
+  background: color-mix(in srgb, var(--surface-1, var(--background)) 88%, transparent);
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prc-detail-cap b { color: var(--foreground); font-family: var(--font-mono, monospace); }
+.prc-detail-cap span { font-family: var(--font-mono, monospace); }
+@media (max-width: 900px) { .prc-detail { display: none !important; } }

@@ -1950,7 +1950,7 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
     function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); }
@@ -2268,8 +2268,17 @@
                      : wire(dims.x, dims.y, dims.z, p.x, p.y, p.z, bd, 0.4);
         /* 片可点：点某片 → 跳到持有该片的 rank（同一形态、同一对象），于是这堆片
            本身就是「切换片」的控件，不用另做一排按钮。 */
-        m.userData.shardPick = { obj: o.id, dim, i };
-        shardPicks.push(m);
+        /* 拾取代理：没持有的片是线框，而 Raycaster 对 Line 的命中阈值只有几个世界单位
+           的千分之一 —— 肉眼看着点在片里，实际一条棱都没碰到，于是「点不动」。
+           补一个整片体积的透明实体专门用来接点击（opacity:0 仍可拾取；visible:false
+           会被 Raycaster 直接跳过，不能用）。 */
+        const proxy = new THREE.Mesh(new THREE.BoxGeometry(dims.x, dims.y, dims.z),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+        proxy.material.userData = { base: 0, noPulse: true };
+        proxy.position.set(p.x, p.y, p.z); proxy.renderOrder = 6;
+        proxy.userData.shardPick = { obj: o.id, dim, i };
+        shardGroup.add(proxy);
+        shardPicks.push(proxy);
         if (me || i === 0 || i === of - 1 || i % labelEvery === 0) {
           const txt = me ? (sh.range || `${i}/${of}`) : String(i);
           const sp = makeLabel(txt, me ? fam : bd, me ? 3.4 : 1.9);
@@ -2279,6 +2288,134 @@
         }
       }
     }
+    /* ── 放大细节视窗 ────────────────────────────────────────────────────────
+       卡上切分是「就地」的，忠实但也因此**被埋在卡阵与连线里**（几片只有几个像素，
+       还被邻卡挡住）。所以另开一块只画这一件事的小视口：同一份几何克隆一份，
+       放在自己的场景里、用自己的相机取景，画在画布左下角。
+       朝向跟主相机走——主视图转，细节窗跟着转，两边看到的是同一个东西的同一面，
+       不用在心里做一次旋转对应。 */
+    /* 细节窗的取景与字号：视锥固定（不随主相机缩放），于是这一窗里「一片有多大」恒定，
+       换配置、换对象都一样读得出。字牌按这个视锥自己的像素比定尺（见 buildDetail）。 */
+    const DETAIL_PX = 260, DETAIL_LABEL_PX = 11, DETAIL_HALF = CARD.x * 1.5 * 1.22;
+    const detailScene = new THREE.Scene();
+    const detailCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
+    let detailRoot = null;
+    function buildDetail() {
+      if (detailRoot) { detailScene.remove(detailRoot); detailRoot = null; }
+      if (!shardGroup.visible) return;
+      /* 克隆而不是重建：几何与材质共享，因此细节窗与就地那份**永远一模一样**，
+         不会出现「改了一处忘了另一处」。共享也意味着这里不能 dispose。 */
+      detailRoot = shardGroup.clone(true);
+      detailRoot.position.set(0, 0, 0);
+      /* 字牌是**世界尺寸**的（在主场景里由 worldPerPx 定尺）。细节窗的视锥只有一点点，
+         同一个世界尺寸搬进来就被放大成半个窗那么大（实机可见「E16-31」糊住整块）。
+         所以按细节窗自己的像素比重算一遍：牌在这里也占固定几个像素。 */
+      const wpp = (2 * DETAIL_HALF) / DETAIL_PX;
+      detailRoot.traverse((o) => {
+        if (!o.isSprite) return;
+        const L = o.userData.lab;
+        if (!L || !L.fontFrac) { o.scale.multiplyScalar(0.12); return; }
+        const w = (DETAIL_LABEL_PX * wpp) / L.fontFrac;
+        o.scale.set(w, w * L.aspect, 1);
+      });
+      detailScene.add(detailRoot);
+    }
+    const detailEl = document.createElement('div');
+    detailEl.className = 'prc-detail';
+    detailEl.innerHTML = '<div class="prc-detail-cap"></div>';
+    root.appendChild(detailEl);
+    function syncDetailCap() {
+      const on = shardGroup.visible && S.sel != null;
+      detailEl.classList.toggle('show', !!on);
+      if (!on) return;
+      const o = model.netObjBy[S.obj];
+      const sh = model.objCarry(o.id, S.sel) ? model.objShard(o.id, S.sel) : null;
+      detailEl.firstChild.innerHTML =
+        `<b>rank ${S.sel}</b> · ${esc(o.short || o.name)}`
+        + (sh ? ` <span>${sh.idx}/${sh.of}</span>` : '');
+    }
+    /* ── 细节窗里切换片 ─────────────────────────────────────────────────────
+       「点片切换」的正确落点是这里，不是主场景：主场景里片只有几个像素、被邻卡和连线
+       盖住，空框的片更是几乎点不中（线框的拾取阈值极小）——那是热区问题的根源。
+       细节窗里每片都占几十像素、四周没有东西，点哪片就是哪片。
+       主场景那份保留（点得中就点），信息卡那条选择条作为第三条路。 */
+    function detailPick(ev) {
+      if (!shardGroup.visible || !detailRoot) return null;
+      const dr = detailEl.getBoundingClientRect();
+      mouse.x = ((ev.clientX - dr.left) / dr.width) * 2 - 1;
+      mouse.y = -((ev.clientY - dr.top) / dr.height) * 2 + 1;
+      ray.setFromCamera(mouse, detailCam);
+      const hits = ray.intersectObjects(detailRoot.children, true);
+      for (const h of hits) {
+        const d = h.object.userData && h.object.userData.shardPick;
+        if (d) return d;
+      }
+      return null;
+    }
+    function shardRankOf(i, dim) {
+      const r0 = S.sel; if (r0 == null) return null;
+      const tp = model.tpOf(r0), pp = model.ppOf(r0), rep = model.repOf(r0);
+      if (dim === 'TP') return model.rankOf(i % TP, pp, rep);
+      if (dim === 'PP') return model.rankOf(tp, i % PP, rep);
+      if (dim === 'DP') return model.rankOf(tp, pp, i % REP);
+      if (dim === 'EP') return model.rankOf(tp, pp, model.domOf(r0) * EP + (i % EP));
+      return null;
+    }
+    detailEl.addEventListener('click', (ev) => {
+      const d = detailPick(ev); if (!d) return;
+      const t = shardRankOf(d.i, d.dim);
+      if (t != null) api.select(t);
+    });
+    detailEl.addEventListener('pointermove', (ev) => {
+      const d = detailPick(ev);
+      detailEl.classList.toggle('is-hit', !!d);
+      if (!d) { tipEl.style.display = 'none'; return; }
+      const o = model.netObjBy[S.obj];
+      const rr = shardRankOf(d.i, d.dim);
+      const rc = root.getBoundingClientRect();
+      tipEl.style.display = 'block';
+      tipEl.style.left = (ev.clientX - rc.left + 14) + 'px';
+      tipEl.style.top = (ev.clientY - rc.top + 12) + 'px';
+      tipEl.innerHTML = `第 ${d.i} 片 · ${esc(o.short || o.name)}`
+        + (rr != null ? `<br><span style="opacity:.75">点一下 → 切到 rank ${rr}</span>` : '');
+    });
+    detailEl.addEventListener('pointerleave', () => {
+      detailEl.classList.remove('is-hit'); tipEl.style.display = 'none';
+    });
+
+    /* 在主画面之上开一块自己的视口画细节窗。用 scissor 把这块矩形单独清一次底色，
+       于是它是真正的「另一幅图」，不会和主场景的像素混在一起。 */
+    function renderDetail() {
+      if (!shardGroup.visible) return;
+      const cr = renderer.domElement.getBoundingClientRect();
+      const dr = detailEl.getBoundingClientRect();
+      const w = dr.width, h = dr.height;
+      if (w < 8 || h < 8) return;
+      const x = dr.left - cr.left, yTop = dr.top - cr.top;
+      const y = cr.height - (yTop + h);
+      const half = DETAIL_HALF;
+      const asp = w / h;
+      detailCam.left = -half * asp; detailCam.right = half * asp;
+      detailCam.top = half; detailCam.bottom = -half;
+      /* 朝向与主相机一致、位置沿视线退到原点外：细节窗看到的是同一个东西的同一面，
+         主视图转它就跟着转，读者不用在心里做一次旋转对应。 */
+      detailCam.quaternion.copy(camera.quaternion);
+      detailCam.position.copy(V3(0, 0, 1).applyQuaternion(camera.quaternion).multiplyScalar(60));
+      detailCam.updateProjectionMatrix();
+      const prevAuto = renderer.autoClear;
+      renderer.autoClear = false;
+      renderer.setScissorTest(true);
+      renderer.setViewport(x, y, w, h);
+      renderer.setScissor(x, y, w, h);
+      renderer.setClearColor(tokHex('--surface-1') || tokHex('--background'), 1);
+      renderer.clear(true, true, false);
+      renderer.render(detailScene, detailCam);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, cr.width, cr.height);
+      renderer.setClearColor(tokHex('--background'), 1);
+      renderer.autoClear = prevAuto;
+    }
+
     function syncShard() {
       if (!shardGroup.visible || S.sel == null) return;
       shardGroup.position.set(cur[S.sel * 3], cur[S.sel * 3 + 1], cur[S.sel * 3 + 2]);
@@ -2586,6 +2723,43 @@
       info.querySelectorAll('.prc-rosterrow').forEach((b) => {
         b.addEventListener('click', () => api.selectObject(b.dataset.obj));
       });
+      /* 片选择条 → 跳到持有那一片的 rank（其余坐标不动，形态/对象/视角接着看）。 */
+      info.querySelectorAll('.prc-shardchip').forEach((b) => {
+        b.addEventListener('click', () => {
+          const i = +b.dataset.shard, d = b.dataset.sdim, r0 = S.sel;
+          if (r0 == null) return;
+          const tp = model.tpOf(r0), pp = model.ppOf(r0), rep = model.repOf(r0);
+          let t = null;
+          if (d === 'TP') t = model.rankOf(i % TP, pp, rep);
+          else if (d === 'PP') t = model.rankOf(tp, i % PP, rep);
+          else if (d === 'DP') t = model.rankOf(tp, pp, i % REP);
+          else if (d === 'EP') t = model.rankOf(tp, pp, model.domOf(r0) * EP + (i % EP));
+          if (t != null) api.select(t);
+        });
+      });
+    }
+
+    /* 片选择条：一排编号 = 这个对象的全部分片，当前这片高亮，点别的片就跳到持有它的 rank。
+       片数很多时（如 vocab 按 TP 切成 64 片）只摆一排数字会太长 → 超过 24 片时改成
+       「上一片 / 读数 / 下一片」的步进器，两端仍可直达首尾。 */
+    function shardStrip(r, o, sh) {
+      if (!sh || sh.of <= 1) return '';
+      const dim = sh.dim === 'SP' ? 'TP' : sh.dim, c = dimc(dim);
+      const btn = (i, txt, cls) =>
+        `<button class="prc-shardchip${cls || ''}${i === sh.idx ? ' is-cur' : ''}" type="button"`
+        + ` data-shard="${i}" data-sdim="${dim}" style="--c:${c}"`
+        + ` title="第 ${i} 片 / ${sh.of}">${esc(txt)}</button>`;
+      let body;
+      if (sh.of <= 24) {
+        body = Array.from({ length: sh.of }, (_, i) => btn(i, i)).join('');
+      } else {
+        const prev = (sh.idx - 1 + sh.of) % sh.of, next = (sh.idx + 1) % sh.of;
+        body = btn(0, '⏮', ' is-step') + btn(prev, '‹', ' is-step')
+          + `<span class="prc-shardnow" style="--c:${c}">${sh.idx} / ${sh.of}</span>`
+          + btn(next, '›', ' is-step') + btn(sh.of - 1, '⏭', ' is-step');
+      }
+      return `<div class="prc-shardrow"><span class="prc-shardlab">切到第几片</span>`
+        + `<span class="prc-shardstrip">${body}</span></div>`;
     }
 
     /* ── 装载清单：把这张卡展开成「整网的哪一堆碎片」──────────────────────────
@@ -2667,6 +2841,10 @@
         + kv(`${sh.dim} 沿${esc(sh.axis)}切`, `<b style="color:${dimc(sh.dim === 'SP' ? 'TP' : sh.dim)}">第 ${sh.idx} 片</b> <span class="prc-dim">/ ${sh.of}</span>`)
         + (sh.range ? kv('本卡持有', `<b>${esc(sh.range)}</b>`) : '')
         + `</div>`
+        /* 片选择条：切换片的**可靠**入口。在 3D 里点小方块受遮挡与透视影响，
+           很容易误触（尤其片是空框时）；这里一排编号，点哪片就跳到持有那片的 rank。
+           两条路并存：场景里点得中就点，点不中来这儿。 */
+        + shardStrip(r, o, sh)
         + (o.partial ? `<div class="prc-status">行切算子 —— 本卡算出的是 <b>partial sum</b>，要在 TP 组内归约才完整</div>` : '');
     }
 
@@ -3376,6 +3554,7 @@
       updateMovers();
       applyCamera();
       renderer.render(scene, camera);
+      renderDetail();          // 细节窗画在主画面之上（自己的视口 + scissor）
     }
 
     /* ── 尺寸 ── */
@@ -3411,7 +3590,7 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap();
         renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
       setView(v) {
