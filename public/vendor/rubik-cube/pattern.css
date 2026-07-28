@@ -598,3 +598,43 @@
   color: var(--primary); margin-top: 3px;
 }
 .prc-tour-crumb span { color: var(--foreground-muted); font-weight: 400; }
+
+/* ── 六面助记参考图 ────────────────────────────────────────────────────────
+   资料里那张 6D 图把六维画在立方体六个面上。它是**助记**不是坐标：立方体只有 3 根轴，
+   对面必然共享一根轴。所以这块图不画立方体几何（画了就是在暗示那是真坐标），
+   改成「六个面 + 三对轴的真假判定」——把关系说破，比画一个漂亮但会误导的方块诚实。 */
+.prc-faces {
+  position: absolute; right: var(--space-3); z-index: 6;
+  top: calc(var(--prc-barh, 46px) + var(--space-3) * 2);
+  width: 232px; padding: var(--space-3);
+  display: none; flex-direction: column; gap: var(--space-2);
+  border-radius: var(--radius-xl);
+}
+.prc-faces.show { display: flex; }
+.prc-faces-h { font-size: 11.5px; font-weight: 700; }
+.prc-faces-h span {
+  display: block; font-weight: 400; font-size: 10px; color: var(--foreground-muted); margin-top: 1px;
+}
+.prc-faces-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.prc-face {
+  display: flex; align-items: baseline; gap: 5px;
+  padding: 3px 6px; border-radius: var(--radius-sm, 4px);
+  background: var(--surface-2, rgba(127, 127, 127, .10));
+  border: 1px solid transparent; cursor: help;
+}
+.prc-face i { width: 7px; height: 7px; border-radius: 2px; background: var(--c); align-self: center; flex: none; }
+.prc-face b { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--c); }
+.prc-face em { font-style: normal; font-size: 10px; color: var(--foreground-muted); margin-left: auto; }
+/* 助记（非真轴）的面用虚线框标出来，不与「真的那一对」混为一谈 */
+.prc-face.is-mnemonic { border-style: dashed; border-color: var(--border-default); }
+.prc-face.is-on { background: color-mix(in srgb, var(--c) 20%, transparent); border-color: var(--c); }
+.prc-faces-pairs { display: flex; flex-direction: column; gap: 2px; }
+.prc-facepair {
+  display: flex; align-items: baseline; gap: 5px; font-size: 10px;
+  font-family: var(--font-mono, monospace); cursor: help;
+}
+.prc-facepair span { margin-left: auto; font-family: var(--font-sans); color: var(--foreground-muted); }
+.prc-facepair.is-true span { color: var(--success, #04d793); }
+.prc-facepair.is-half span { color: var(--warning, #ffaa3b); }
+.prc-faces-note { font-size: 10px; line-height: 1.5; color: var(--foreground-muted); }
+@media (max-width: 900px) { .prc-faces { display: none !important; } }
