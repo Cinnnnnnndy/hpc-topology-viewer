@@ -495,7 +495,10 @@
    自己的视口，同一份几何克隆一份单独取景。框是 DOM（只画边与标题，背景透明，
    3D 从底下透上来）；不接鼠标，避免和画布的拖拽/拾取抢事件。 */
 .prc-detail {
-  position: absolute; left: var(--space-3); bottom: var(--space-3); z-index: 4;
+  /* 挪到**右**下角：信息卡带上装载清单后高达 ~900px、一直垂到左下，
+     细节窗原本摆左下正好被它压住（实测 info 12,60,320×896 vs detail 12,708,260×260 相交）。
+     右下有图例，所以再往上让出图例的高度。 */
+  position: absolute; right: var(--space-3); bottom: 148px; z-index: 4;
   width: 260px; height: 260px;
   border: 1px solid var(--border-strong); border-radius: var(--radius-lg, 10px);
   /* 接鼠标：切换片就在这儿点 —— 主场景里片太小又被挡，这里每片几十像素、四周无物。 */
