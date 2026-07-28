@@ -516,3 +516,26 @@
 .prc-detail-cap b { color: var(--foreground); font-family: var(--font-mono, monospace); }
 .prc-detail-cap span { font-family: var(--font-mono, monospace); }
 @media (max-width: 900px) { .prc-detail { display: none !important; } }
+
+/* 细节窗页脚：「本卡对象」步进 —— 这是**在 rank 内部走**（不换卡），
+   与窗里点片（换卡）是两条正交的导航，所以分开摆、各自写清楚。 */
+.prc-detail-foot {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 3px 8px; pointer-events: auto;
+  background: color-mix(in srgb, var(--surface-1, var(--background)) 88%, transparent);
+  border-top: 1px solid var(--border-default);
+}
+.prc-objstep {
+  min-width: 20px; min-height: 18px; padding: 0 6px; margin: 0;
+  font-size: 12px; line-height: 1; color: var(--foreground-secondary);
+  background: var(--surface-2, rgba(127, 127, 127, .12));
+  border: 1px solid transparent; border-radius: var(--radius-sm, 4px); cursor: pointer;
+}
+.prc-objstep:hover { border-color: var(--primary); color: var(--foreground); }
+.prc-objnow { font-size: 10px; color: var(--foreground-secondary); }
+.prc-objnow b { font-family: var(--font-mono, monospace); color: var(--foreground); }
+/* 标题条第二行：说清楚整块画的是「对象的全部分片」，不是这张卡的内部 */
+.prc-detail-cap em {
+  display: block; font-style: normal; font-size: 9.5px; opacity: .75; margin-top: 1px;
+}

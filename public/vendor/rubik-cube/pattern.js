@@ -1953,7 +1953,7 @@
     function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
-    function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); }
+    function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
 
     /* ── 相机：轴测（等距可旋转）+ 顶/前/侧 正交锁轴（拖动即转回 3D），取景随形态包围盒 ── */
     // 等距轴测（isometric）的标准机位：方位 45°、仰角 asin(tan30°) ≈ 35.26°
@@ -2322,17 +2322,49 @@
     }
     const detailEl = document.createElement('div');
     detailEl.className = 'prc-detail';
-    detailEl.innerHTML = '<div class="prc-detail-cap"></div>';
+    /* 细节窗里有**两条正交的导航**，必须各自说清楚变不变卡，否则方块的样子会让人以为
+       它画的是「这张卡的内部」——而点一片其实是跳到别的卡：
+         · 换**片**（同一对象的别的分片）→ **换 rank**：片本来就长在别的卡上；
+         · 换**对象**（本卡持有的别的东西）→ **不换 rank**：这才是「在 rank 内部走」。
+       后者原先只藏在侧栏清单里，3D 里没有入口。 */
+    detailEl.innerHTML = '<div class="prc-detail-cap"></div>'
+      + '<div class="prc-detail-foot">'
+      + '<button class="prc-objstep" data-d="-1" type="button" title="本卡持有的上一个对象（不换卡）">‹</button>'
+      + '<span class="prc-objnow"></span>'
+      + '<button class="prc-objstep" data-d="1" type="button" title="本卡持有的下一个对象（不换卡）">›</button>'
+      + '</div>';
     root.appendChild(detailEl);
+    /* 本卡持有的对象序列（不含通信算子与不承载的）——「rank 内部」走的就是这一串。 */
+    function carriedObjs(r) {
+      return model.netObjects.filter((o) => !o.comm && model.objCarry(o.id, r));
+    }
+    detailEl.querySelectorAll('.prc-objstep').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();                       // 别让它落到画布的「点片」上
+        if (S.sel == null || !objOn()) return;
+        const list = carriedObjs(S.sel);
+        if (!list.length) return;
+        const i = Math.max(0, list.findIndex((o) => o.id === S.obj));
+        const j = (i + (+b.dataset.d) + list.length) % list.length;
+        api.selectObject(list[j].id, { fly: false });   // 换对象但不换卡、也不飞形态
+      });
+    });
     function syncDetailCap() {
       const on = shardGroup.visible && S.sel != null;
       detailEl.classList.toggle('show', !!on);
       if (!on) return;
       const o = model.netObjBy[S.obj];
       const sh = model.objCarry(o.id, S.sel) ? model.objShard(o.id, S.sel) : null;
+      /* 标题把「这画的是什么」说死：整块是**这个对象的全部分片**，不是这张卡的内部；
+         只有亮的那一片属于本卡，其余片在别的卡上（所以点它们会换卡）。 */
       detailEl.firstChild.innerHTML =
         `<b>rank ${S.sel}</b> · ${esc(o.short || o.name)}`
-        + (sh ? ` <span>${sh.idx}/${sh.of}</span>` : '');
+        + (sh ? ` <span>${sh.idx}/${sh.of}</span>` : ' <span>整份</span>')
+        + (sh ? `<em>全 ${sh.of} 片 · 亮的是本卡 · 其余在别的卡</em>` : '<em>复制 · 每张卡各一份</em>');
+      const list = carriedObjs(S.sel);
+      const i = list.findIndex((x) => x.id === S.obj);
+      const now = detailEl.querySelector('.prc-objnow');
+      if (now) now.innerHTML = `本卡对象 <b>${i < 0 ? '—' : i + 1}/${list.length}</b>`;
     }
     /* ── 细节窗里切换片 ─────────────────────────────────────────────────────
        「点片切换」的正确落点是这里，不是主场景：主场景里片只有几个像素、被邻卡和连线
