@@ -8,6 +8,7 @@ name: Deploy to GitHub Pages
 #       → /rubik-spec/（逻辑魔方的设计 Pattern 规范页，自包含、不进框架）
 #   · claude/rank-view-network-analysis-htowfc
 #       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
+#       → /patterns/rank-card-expansion/ 与 /rank-card/（rank 卡 = 整网的并行化展开）
 # push 任一分支即刷新它自己的目录。
 #
 # 为什么整网对象那版单独占一条路径、而不是覆盖 /patterns/rubik-cube-logical/：
@@ -185,6 +186,45 @@ jobs:
 
           echo "published: /patterns/rubik-cube-netobj/pattern.html?v=$SHA"
           echo "published: /rubik-netobj/?v=$SHA"
+
+      - name: Overlay rank 卡（并行化展开）at /patterns/rank-card-expansion/ 与 /rank-card/
+        # rank 卡 = 整网图的**并行化展开**（共享布局 + 差分着色的 small multiples）。
+        # 与逻辑魔方是互补的两个 pattern，各自一条链接：魔方讲「谁和谁一组」，
+        # 这张讲「一张卡里的算子图相对逻辑整网既减了什么、又增了什么」。
+        # 依赖 model-graphviz 的预定位图数据（graph.js 里的 window.OPENPANGU_GRAPH）。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C netobj-src rev-parse --short HEAD)
+          SRC=netobj-src/public/vendor/net-sharding
+
+          PAT=dist/patterns/rank-card-expansion
+          mkdir -p $PAT/vendor/model-graphviz
+          sed -e 's#\./vendor/net-sharding/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              netobj-src/public/net-sharding-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp netobj-src/public/vendor/model-graphviz/graph.js \
+             netobj-src/public/vendor/model-graphviz/pattern.js \
+             netobj-src/public/vendor/model-graphviz/pattern.css $PAT/vendor/model-graphviz/
+          cp -r netobj-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          node -e "
+            const fs=require('fs'), f='$PAT/pattern.json';
+            const o=JSON.parse(fs.readFileSync(f,'utf8'));
+            o.id='rank-card-expansion'; o.version='$SHA';
+            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
+          "
+
+          ALIAS=dist/rank-card
+          mkdir -p $ALIAS/vendor/net-sharding
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              netobj-src/public/net-sharding-pattern.html > $ALIAS/index.html
+          cp -r netobj-src/public/vendor/model-graphviz $ALIAS/vendor/model-graphviz
+          cp -r netobj-src/public/vendor/pto-design-system $ALIAS/vendor/pto-design-system
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/favicon.svg $ALIAS/vendor/net-sharding/
+          cp $PAT/pattern.json $ALIAS/vendor/net-sharding/pattern.json
+
+          echo "published: /patterns/rank-card-expansion/pattern.html?v=$SHA"
+          echo "published: /rank-card/?v=$SHA"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
