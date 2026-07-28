@@ -605,7 +605,7 @@
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
       // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗
-      wire: { members: true, lines: true, outline: true, movers: true, focus: true, payload: true },
+      wire: { members: true, lines: true, outline: true, movers: true, focus: true, payload: true, board: false },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       /* 整网对象透镜：选中一个整网对象（算子/模块/HCCL 算子）→ 承载它的卡亮起、
@@ -2095,7 +2095,7 @@
 
     function buildPayload() {
       clearPay();
-      payGroup.visible = !!(S.wire.payload && S.sel != null);
+      payGroup.visible = !!(S.wire.board && S.sel != null);
       if (!payGroup.visible) return;
       const r = S.sel;
       const objs = model.netObjects.filter((o) => !o.comm);
@@ -2207,8 +2207,10 @@
       while (shardGroup.children.length) shardGroup.remove(shardGroup.children[0]);
     }
 
+    let shardPicks = [];
     function buildShard() {
       clearShard();
+      shardPicks = [];
       const on = S.wire.payload && objOn() && S.sel != null;
       shardGroup.visible = on;
       if (!on) return;
@@ -2253,12 +2255,28 @@
       }
       const sign = dv[ax] >= 0 ? 1 : -1;
       const seg = L / of, gap = seg * 0.16;
+      /* 片上直接标读数（而不是把话都放到旁边那个框里）：每片挂一枚小牌，
+         本卡这片给族色 + 区间（E32-39），其余片给淡的片号——「第几片是谁」在片上就读得出。
+         片数多时只标本卡这片与首尾，否则牌糊成一片（同轴刻度「摆不下就少摆」那条）。 */
+      const labelEvery = of <= 8 ? 1 : Math.ceil(of / 6);
       for (let i = 0; i < of; i++) {
         const off = sign * (i - (of - 1) / 2) * seg;
         const p = { x: 0, y: 0, z: 0 }; p[ax] = off;
         const dims = { x: L, y: L, z: L }; dims[ax] = seg - gap;
-        if (i === idx) solid(dims.x, dims.y, dims.z, p.x, p.y, p.z, fam, 0.92);
-        else wire(dims.x, dims.y, dims.z, p.x, p.y, p.z, bd, 0.4);
+        const me = i === idx;
+        const m = me ? solid(dims.x, dims.y, dims.z, p.x, p.y, p.z, fam, 0.92)
+                     : wire(dims.x, dims.y, dims.z, p.x, p.y, p.z, bd, 0.4);
+        /* 片可点：点某片 → 跳到持有该片的 rank（同一形态、同一对象），于是这堆片
+           本身就是「切换片」的控件，不用另做一排按钮。 */
+        m.userData.shardPick = { obj: o.id, dim, i };
+        shardPicks.push(m);
+        if (me || i === 0 || i === of - 1 || i % labelEvery === 0) {
+          const txt = me ? (sh.range || `${i}/${of}`) : String(i);
+          const sp = makeLabel(txt, me ? fam : bd, me ? 3.4 : 1.9);
+          sp.position.set(p.x, p.y + L * 0.62, p.z);
+          sp.material.opacity = me ? 1 : 0.5; sp.material.userData = { base: me ? 1 : 0.5, noPulse: true };
+          sp.renderOrder = 9; shardGroup.add(sp);
+        }
       }
     }
     function syncShard() {
@@ -3099,7 +3117,7 @@
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
       const wireSeg = rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-chips' }));
-      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus'], ['装载', 'payload']]
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus'], ['切分', 'payload'], ['装载板', 'board']]
         .map(([t, k]) => wireSeg.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
@@ -3188,6 +3206,22 @@
         distance: hit.distance,
       };
     }
+    /* 点某一片 → 持有该片的 rank。「切换片」不另做一排按钮：片本身就摆在那儿，
+       点它就是「我要看这一片」，而看这一片 = 去到持有它的那张卡（其余坐标不动，
+       于是形态、对象、视角全都接着看，只有这一维的坐标换了）。 */
+    function pickShard(ev) {
+      if (!shardGroup.visible || !shardPicks.length || S.sel == null) return null;
+      aimAt(ev);
+      const hit = ray.intersectObjects(shardPicks, false)[0];
+      const d = hit && hit.object.userData.shardPick;
+      if (!d) return null;
+      const r = S.sel, tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r);
+      if (d.dim === 'TP') return model.rankOf(d.i % TP, pp, rep);
+      if (d.dim === 'PP') return model.rankOf(tp, d.i % PP, rep);
+      if (d.dim === 'DP') return model.rankOf(tp, pp, d.i % REP);
+      if (d.dim === 'EP') return model.rankOf(tp, pp, model.domOf(r) * EP + (d.i % EP));
+      return null;
+    }
     function pickRegion(ev) {
       if (!pickGroup.children.length) return null;
       aimAt(ev);
@@ -3267,6 +3301,10 @@
     global.addEventListener('blur', () => syncPanCursor(false));
     renderer.domElement.addEventListener('click', (ev) => {
       if (drag && (drag.moved || drag.pan)) return;
+      /* 切分片优先于卡：点某一片 = 「切到这一片去看」——跳到持有该片的 rank。
+         片就摞在选中卡原地，不抢先判的话点上去命中的永远是它盖住的那张卡。 */
+      const spk = pickShard(ev);
+      if (spk) { api.select(spk); return; }
       const r = pick(ev);
       if (r == null) {
         const e = pickEdge(ev);
