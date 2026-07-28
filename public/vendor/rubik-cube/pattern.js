@@ -2265,6 +2265,77 @@
         pred: (x) => model.repOf(x) === rep && model.ppOf(x) === pp && model.cpOf(x) === cp });
       return out;
     }
+    /* ── 未选中时的「结构示例」：DP 副本 ⊃ PP 段 ⊃（CP>1 时）TP 组 ⊃ 卡 ────────
+       上一版在这里把**每个副本各画一个壳**，被指出没意义——那是把**同一层级**重复了
+       N 遍（16 个一模一样的盒子只是把空间平铺一遍），而要表达的是**层级**。
+       现在只拿**一个副本**当样本，把它逐层拆开、每层挂一枚说明牌：
+       「一个副本 → 切成几段 → 段里是什么」。一次说清，不铺满屏幕。
+
+       层级数随配置变，不硬画三层——`(dp,pp)` 固定之后剩下的卡数就是 TP×CP：
+         CP=1 → 一个 PP 段**正好就是一个 TP 组**（段内 2 卡 = TP 组 2 卡），只有两层容器；
+         CP>1 → 段里才真的装着 CP 个 TP 组（16 卡 = 2 个 TP 组），这时第三层才存在。
+       牌上照实写，不假装永远有三层。 */
+    function buildNestExemplar() {
+      const v = { x: 0, y: 0, z: 0 };
+      /* 取**中间**那个副本当样本，不取第 0 个：标准形态里 DP 是纵轴、rep0 在最顶上，
+         它的说明牌会直接撞进顶栏（实机可见）。中间那个在模型正中，四周都有余地。 */
+      const rep = REP >> 1;
+      const boxOf = (pred) => {
+        const b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
+        let n = 0;
+        for (let r = 0; r < N; r++) {
+          if (!pred(r)) continue;
+          model.posOf(r, S.mode, v); n++;
+          if (v.x < b.x0) b.x0 = v.x; if (v.x > b.x1) b.x1 = v.x;
+          if (v.y < b.y0) b.y0 = v.y; if (v.y > b.y1) b.y1 = v.y;
+          if (v.z < b.z0) b.z0 = v.z; if (v.z > b.z1) b.z1 = v.z;
+        }
+        return n ? Object.assign(b, { n }) : null;
+      };
+      const draw = (b, pad, dim, title, sub, strong) => {
+        if (!b) return;
+        const w = (b.x1 - b.x0) + CARD.x + pad * 2;
+        const h = (b.y1 - b.y0) + CARD.y + pad * 2;
+        const d = (b.z1 - b.z0) + CARD.z + pad * 2;
+        const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, cz = (b.z0 + b.z1) / 2;
+        const col = dimc(dim);
+        const sh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+          new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: strong ? 0.10 : 0.055, depthWrite: false, side: THREE.BackSide }));
+        sh.material.userData = { base: strong ? 0.10 : 0.055, noPulse: true };
+        sh.position.set(cx, cy, cz); sh.renderOrder = 4; nestGroup.add(sh);
+        const eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
+        const em = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: strong ? 0.9 : 0.5, depthTest: false });
+        em.userData = { base: strong ? 0.9 : 0.5, noPulse: true };
+        const ln = new THREE.LineSegments(eg, em);
+        ln.position.copy(sh.position); ln.renderOrder = 5; nestGroup.add(ln);
+        if (title) {
+          const lab = makeLabel(title, col, 3.6, sub);
+          lab.position.set(cx - w / 2, cy + h / 2 + CARD.y * 0.55, cz - d / 2);
+          lab.material.userData = { base: 1, noPulse: true };
+          lab.renderOrder = 6; nestGroup.add(lab);
+        }
+      };
+      const stageN = boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === 0);
+      const sameAsTP = stageN && stageN.n === TP;      // CP=1 时段就是 TP 组
+      // ① 一个副本
+      draw(boxOf((r) => model.repOf(r) === rep), CARD.x * 1.15, 'DP',
+        `DP 副本 ×${REP}`, `一个副本 = 整模型一份 · 切成 ${PP} 段`, true);
+      // ② 副本切成的每一段（只给第 0 段挂牌，其余靠框）
+      for (let pp = 0; pp < PP; pp++) {
+        draw(boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === pp), CARD.x * 0.5, 'PP',
+          pp === 0 ? `PP 段 ×${PP}` : null,
+          pp === 0 ? (sameAsTP ? `一段 = 一个 TP 组 ×${TP} 卡` : `一段 = ${CP} 个 TP 组 · 共 ${TP * CP} 卡`) : null,
+          false);
+      }
+      // ③ 只有 CP>1 时段内才真的还有一层（CP=1 时段就是 TP 组，画了就是假层级）
+      if (!sameAsTP) {
+        for (let cp = 0; cp < CP; cp++) {
+          draw(boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === 0 && model.cpOf(r) === cp),
+            CARD.x * 0.18, 'TP', cp === 0 ? `TP 组 ×${TP}` : null,
+            cp === 0 ? '组内每卡持有不同的 head 分片' : null, false);
+        }
+      }
+    }
     function tourBuildNest() {
       clearNest();
       const inTour = S.tour != null;
@@ -2275,7 +2346,7 @@
          也说不出「谁在谁里面」——DP 轴刻度已经把副本分界交代过了，壳只是重复一遍噪音。
          嵌套的意思只在**有一个具体的 rank 作锚**时才成立：DP2 ⊃ PP1 ⊃ 这张卡。
          所以壳跟着选中走；没选中就什么都不画。 */
-      if (S.sel == null) { nestGroup.visible = false; return; }
+      if (S.sel == null) { buildNestExemplar(); return; }   // 没选卡：给一个「结构示例」
       const v = { x: 0, y: 0, z: 0 };
       /* 导览时用导览自己的链（含 EP 那层「跨出副本」），平时用天然包含链。
          第 0 层（全网）不画——把整个模型框起来没有信息量。 */
