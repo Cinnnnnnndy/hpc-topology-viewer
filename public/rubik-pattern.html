@@ -67,9 +67,12 @@
     // 分成 8 桶 × 2 个 A2A 域）。落地这一档是因为每张卡看得清、每一段数得出，
     // 四种形态的差别当场成立；真实体量用工具栏的「盘古ProMoE 8·5·100·2」预设。
     config: cfg,
-    // 整网对象透镜（?obj=）：mount 时只设状态、不飞形态——同一条链接里若还写了 ?mode=，
-    // 那个 mode 说了算；想要「顺便切到该对象的主屏」就用 handle.selectObject(id)。
-    obj: qs.get('obj') || null,
+    /* 整网对象透镜（?obj=）。这里只在**同时显式给了 ?mode=** 时才由 mount 直接设状态；
+       否则留到 mount 之后调 selectObject()，让它飞到该对象的主屏——
+       理由是分享链接的用途：`?obj=experts` 想说的是「看路由专家怎么切」，
+       而分片只有在 EP聚簇 下才 snap 成 8 面墙；停在默认形态等于把话说了一半。
+       显式写了 mode 的链接则以 mode 为准（作者已经指明了要哪一屏）。 */
+    obj: qs.get('mode') ? (qs.get('obj') || null) : null,
     onSelectObject: function(id, o){
       try { parent.postMessage({ type: 'rubik-object', obj: id, band: o && o.band }, '*'); } catch(e) {}
     },
@@ -97,6 +100,8 @@
     var r = parseInt(qs.get('sel'), 10);
     if (isFinite(r) && r >= 0 && r < handle.model.N) handle.select(r);
   }
+  // 没显式写 mode 的 ?obj= 链接：飞到该对象的主屏（见上方 mount 里的说明）
+  if (qs.get('obj') && !qs.get('mode')) handle.selectObject(qs.get('obj'));
 
   // 把主题按钮放进 pattern 顶栏的工具插槽，和「更多」等按钮成套
   var slot = document.querySelector('.prc-toolslot');

@@ -1,15 +1,35 @@
 name: Deploy to GitHub Pages
 
-# 本分支（claude/rubik-view-pattern-extraction-7pk0qt）的部署策略：
-# 站点框架（工作台/驾驶舱）永远从 main 构建——本分支不进 Pages 框架；
-# 本分支只贡献一个静态子目录 /rubik/（逻辑魔方 pattern 独立迭代页），
-# 叠加在 main 构建产物之上一起发布。push 本分支即可刷新 /rubik/。
-# 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，
-# main 一发布 /rubik/ 会暂时消失，重跑本分支的 workflow（push 或
-# workflow_dispatch 选本分支）即可找回。
+# 部署策略：站点框架（工作台/驾驶舱）永远从 main 构建，两个 pattern 分支都不进框架，
+# 各自只贡献一个自包含的静态子目录，叠加在 main 构建产物之上一起发布：
+#   · claude/rubik-view-pattern-extraction-7pk0qt
+#       → /rubik/ 与 /patterns/rubik-cube-logical/（逻辑魔方 pattern 本体）
+#   · claude/logic-cube-pattern-spec-3oycmv
+#       → /rubik-spec/（逻辑魔方的设计 Pattern 规范页，自包含、不进框架）
+#   · claude/rank-view-network-analysis-htowfc
+#       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
+# push 任一分支即刷新它自己的目录。
+#
+# 为什么整网对象那版单独占一条路径、而不是覆盖 /patterns/rubik-cube-logical/：
+# 那条链接已经发出去了，且由 rubik-view-pattern-extraction 分支持有——两个分支
+# 各自的 workflow 都写同一个目录的话，谁最后跑谁赢，已发出的链接内容会随机变。
+# 所以新能力走新 id（rubik-cube-netobj，契约里用 variantOf 标明它是谁的变体），
+# 老链接保持指向老分支那一版，互不相干。
+# 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，且两个 pattern
+# 分支各自的 workflow 只叠加自己那份，所以 main 或另一分支一发布，本分支的目录会
+# 暂时消失，重跑本分支的 workflow（push 或 workflow_dispatch 选本分支）即可找回。
+# 另注意：deploy 这一步走 github-pages environment，**只有被该 environment 允许的
+# 分支才能部署**。新分支第一次跑会在 build 成功之后、deploy 秒失败且没有日志——
+# 那不是构建有问题，是分支没在允许列表里。到
+# Settings → Environments → github-pages → Deployment branches and tags
+# 把分支名加进去，再重跑本次 run 即可。
 on:
   push:
-    branches: [main, claude/rubik-view-pattern-extraction-7pk0qt]
+    branches:
+      - main
+      - claude/rubik-view-pattern-extraction-7pk0qt
+      - claude/logic-cube-pattern-spec-3oycmv
+      - claude/rank-view-network-analysis-htowfc
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -82,6 +102,89 @@ jobs:
           # 版本落到契约里，方便对方核对拿到的是哪一版
           node -e "const f='$PAT/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version='$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
           echo "published: /patterns/rubik-cube-logical/pattern.html?v=$SHA"
+
+      - name: Checkout spec branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/logic-cube-pattern-spec-3oycmv
+          path: spec-src
+
+      - name: Overlay pattern spec at /rubik-spec/
+        # 规范页自己一条链接，不并进 /patterns/ 那套目录：那里放的是「可复用的
+        # pattern 本体」（pattern.html/css/js/json 同级），规范页是讲这套 pattern
+        # 怎么用的文档，混在一起会让 <script src=".../pattern.js"> 该引哪个变得含糊。
+        # 目录自包含（自带 vendor 依赖），页面里指向 pattern 的那几条链接改写到
+        # /patterns/rubik-cube-logical/ 的规范位置——文档告诉读者去哪儿取，
+        # 取的就是别人能直接引用的那一份。
+        # 资源链接统一打上 ?v=<短 SHA>（代码示例那几行含 &lt; 的不动）。
+        run: |
+          SHA=$(git -C spec-src rev-parse --short HEAD)
+          SPEC=dist/rubik-spec
+          mkdir -p $SPEC/vendor/rubik-cube
+          cp spec-src/public/vendor/three-r128.min.js $SPEC/vendor/three-r128.min.js
+          cp -r spec-src/public/vendor/pto-design-system $SPEC/vendor/pto-design-system
+          cp spec-src/public/vendor/rubik-cube/pattern.js \
+             spec-src/public/vendor/rubik-cube/pattern.css \
+             spec-src/public/vendor/rubik-cube/pattern.json \
+             spec-src/public/vendor/rubik-cube/favicon.svg \
+             $SPEC/vendor/rubik-cube/
+          sed -e 's#class="res-card" href="\./vendor/rubik-cube/#class="res-card" href="../patterns/rubik-cube-logical/#g' \
+              -e 's#class="res-card" href="\./vendor/pto-design-system/#class="res-card" href="../patterns/rubik-cube-logical/vendor/pto-design-system/#g' \
+              -e 's#href="\./rubik-pattern\.html"#href="../patterns/rubik-cube-logical/pattern.html"#g' \
+              -e '/&lt;/!s#\(\(src\|href\)="\)\(\.\./patterns/[A-Za-z0-9._/-]*\|\./vendor/[A-Za-z0-9._/-]*\)\(\.\(js\|css\|svg\|json\|html\)\)"#\1\3\4?v='"$SHA"'"#g' \
+              spec-src/public/rubik-pattern-spec.html > $SPEC/index.html
+          echo "published: /rubik-spec/?v=$SHA"
+
+      - name: Checkout netobj branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/rank-view-network-analysis-htowfc
+          path: netobj-src
+
+      - name: Overlay 整网对象透镜版 at /patterns/rubik-cube-netobj/ 与 /rubik-netobj/
+        # 逻辑魔方 + 整网对象透镜（选一个整网对象 → 承载它的卡按「持有第几片」着色，
+        # 切到该对象的主屏后分片 snap 成整块/整墙）。自成一条链接的理由见文件头注释。
+        # 两个入口同一份内容：
+        #  · /patterns/rubik-cube-netobj/ —— 规范位置，pattern.html 与 pattern.css /
+        #    pattern.js / pattern.json 同级，别人可直接 <script src> 复用或先读契约；
+        #  · /rubik-netobj/               —— 短链接，好念、好发。
+        # 目录自包含（自带 three 与设计系统快照），不依赖 main 构建产物里有什么。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C netobj-src rev-parse --short HEAD)
+          SRC=netobj-src/public/vendor/rubik-cube
+
+          # ① 规范入口：pattern.* 同级（把 ./vendor/rubik-cube/ 拍平成 ./）
+          PAT=dist/patterns/rubik-cube-netobj
+          mkdir -p $PAT/vendor
+          sed -e 's#\./vendor/rubik-cube/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              netobj-src/public/rubik-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp netobj-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
+          cp -r netobj-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # 契约落地：version 供对账；id 与所在路径一致（否则读契约的人拿到的 id
+          # 指向另一条链接）；variantOf 保留血缘，说明它是 rubik-cube-logical 的变体。
+          node -e "
+            const fs=require('fs'), f='$PAT/pattern.json';
+            const o=JSON.parse(fs.readFileSync(f,'utf8'));
+            o.variantOf=o.id; o.id='rubik-cube-netobj'; o.version='$SHA';
+            o.name=(o.name||'')+' + 整网对象透镜';
+            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 短链接别名：同一份内容，保持 ./vendor/rubik-cube/ 结构
+          ALIAS=dist/rubik-netobj
+          mkdir -p $ALIAS/vendor/rubik-cube
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              netobj-src/public/rubik-pattern.html > $ALIAS/index.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/favicon.svg $ALIAS/vendor/rubik-cube/
+          cp $PAT/pattern.json $ALIAS/vendor/rubik-cube/pattern.json
+          cp netobj-src/public/vendor/three-r128.min.js $ALIAS/vendor/three-r128.min.js
+          cp -r netobj-src/public/vendor/pto-design-system $ALIAS/vendor/pto-design-system
+
+          echo "published: /patterns/rubik-cube-netobj/pattern.html?v=$SHA"
+          echo "published: /rubik-netobj/?v=$SHA"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
