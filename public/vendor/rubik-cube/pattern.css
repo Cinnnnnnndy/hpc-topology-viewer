@@ -592,3 +592,9 @@
 /* 导览期间图例让位（旁白已经在说这一屏是什么，两块话叠在一起是噪音） */
 .prc-root.is-tour .prc-legend { display: none; }
 @media (max-width: 900px) { .prc-tour { width: calc(100vw - var(--space-3) * 2); } }
+/* 层级面包屑：此刻「在谁的里面」。嵌套关系不该靠读者去猜，也不该只由画面暗示。 */
+.prc-tour-crumb {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px;
+  color: var(--primary); margin-top: 3px;
+}
+.prc-tour-crumb span { color: var(--foreground-muted); font-weight: 400; }

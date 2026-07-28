@@ -1940,8 +1940,12 @@
     // 整网对象透镜下，不承载该对象的卡走同一档压暗——「这个对象根本不在这些卡上」
     // 与「这些卡和选中卡无关」是同一件事的两种说法，用同一个视觉档位表达。
     const dimLv = (r) => (ghosted(r) ? 2
-      : (objOn() && carrySet && !carrySet.has(r)) ? 1
-        : focusOn() && !relSet.has(r) ? 1 : 0);
+      /* 导览作用域：不在当前这一层「里面」的卡退成背景 —— 嵌套关系因此是看得见的
+         （全网 → 一个副本 → 一个 Stage → 一个 TP 组，亮着的那块每层缩小一圈）。
+         与对象透镜/聚焦共用同一档 dim，图例色与画面永远一致。 */
+      : (tourScope && !tourScope.has(r)) ? 1
+        : (objOn() && carrySet && !carrySet.has(r)) ? 1
+          : focusOn() && !relSet.has(r) ? 1 : 0);
     const BG_C = new THREE.Color();
     // 压暗的唯一算法（图例色块与卡块共用，图例因此永远等于画面）：
     // 打光总增益已归到 ≈1（见上方光源注释），所以这里的系数就是最终看到的压暗幅度；
@@ -2098,30 +2102,63 @@
        并在退出时还原 —— 不静默改用户的配置。 */
     const TOUR = [
       { key: 'dp', title: '宏观 · 整模型复制了 N 份', mode: 1, view: 1, obj: null,
+        scope: null, crumb: () => '全网',
         say: (m) => `顶面看 <b>DP</b>：整个模型被复制成 <b>${m.REP}</b> 份副本，每份吃不同的数据批次。`
           + `一块板 = 一个完整副本（板内是 TP×PP 的卡）。找慢副本就扫这一屏。` },
       { key: 'pp', title: '宏观 · 一个副本切成流水段', mode: 4, view: 2, obj: null,
+        /* 收窄到**一个副本**：这才叫「进到 DP 里面」。 */
+        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r),
+        crumb: (m, r) => `DP${m.repOf(r)}`,
         say: (m) => `前面看 <b>PP</b>：一个副本像千层蛋糕被切成 <b>${m.PP}</b> 段，`
           + `每段管 ${m.LPS} 层，激活值沿 Stage0→Stage${m.PP - 1} 依次传递（P2P Send/Recv）。`
           + `慢段会拖住下游 —— 一整列偏暗就是它。` },
       { key: 'tp', title: '熔炉 · 权重矩阵碎裂', mode: 3, view: 0, obj: 'qkv',
+        /* 再收窄到**这个副本的这一段**：剩下的正好是一个 TP 组（×CP）——
+           「在一个 Stage 内部打开 TP」在画面上就是这么发生的。 */
+        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r),
+        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)}`,
         say: (m) => `背面看 <b>TP</b>：注意力头按 <b>${m.TP}</b> 片切开，每张卡只拿一角`
           + `（Q/K/V heads shard）。一面墙 = 全集群同一个 TP 槽位；`
           + `算完要在 TP 组内 <b>All-Reduce</b> 才拼回完整输出。` },
       { key: 'ep', title: '熔炉 · MoE 分发中心', mode: 2, view: 0, obj: 'experts',
+        /* **这一层会跨出副本**：本模型里 EP 折入 DP 轴（相邻 EP 个副本组成一个 A2A 域），
+           所以「在 FFN 处打开 EP」并不是留在原来那个副本里 —— 如实标注，不假装是纯嵌套。 */
+        scope: (m, r) => (x) => m.domOf(x) === m.domOf(r) && m.ppOf(x) === m.ppOf(r) && m.tpOf(x) === m.tpOf(r),
+        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › A2A域${m.domOf(r)}`,
+        note: 'EP 折入 DP 轴：打开专家这一层会**跨出单个副本**，走到相邻 EP 个副本组成的 A2A 域。',
         say: (m) => `底面看 <b>EP</b>：${m.config.experts} 个路由专家分成 <b>${m.EP}</b> 桶，`
           + `一面墙 = 一个专家桶。token 经路由器被 <b>All-to-All</b> 派发到专家所在的卡，`
           + `算完再 Combine 送回 —— MoE 最密集的通信。` },
       { key: 'sp', title: '微观 · 序列被切开，各算各的', mode: 3, view: 0, obj: 'norm',
+        /* 回到 stage 内：SP 复用 TP 组，作用域就是这一个 TP 组。 */
+        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r) && m.cpOf(x) === m.cpOf(r),
+        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › TP组`,
         say: (m) => `左面看 <b>SP</b>：norm/dropout 不改变特征维 → 沿 token 切成 <b>${m.TP}</b> 段`
           + `（复用 TP 组）。这些操作只管自己那段，<b>四周一片寂静</b>，没有跨卡通信 —— 纯省显存。` },
       { key: 'cp', title: '微观 · 寂静被打破：CP 收齐上下文', mode: 3, view: 0, obj: 'attn_core',
         needCP: true,
+        /* 最里面一层：同一个 TP 槽位、不同上下文段 —— 这就是那条 sequence line。 */
+        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r) && m.tpOf(x) === m.tpOf(r),
+        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › TP${m.tpOf(r)} › CP段`,
         say: (m) => `右面看 <b>CP</b>：上下文沿序列切成 <b>${m.CP}</b> 段，每卡只持有一段。`
           + `但算 attention 要看<b>全局</b> —— 于是 CP 组内 <b>All-Gather(KV)</b> 收齐上下文，`
           + `这就是切开长序列的代价。` },
     ];
     let tourSaved = null;                    // 进导览前的配置/状态，退出时还原
+    /* 当前层的作用域：只有落在里面的卡是「亮的」，外面的压暗。
+       嵌套关系因此是**看得见的**：从全网 → 一个副本 → 一个 Stage → 一个 TP 组 …
+       每往下一层，亮着的那块就缩小一圈。null = 全网（第一层不收窄）。 */
+    let tourScope = null;
+    function tourBuildScope() {
+      tourScope = null;
+      if (S.tour == null || S.sel == null) return;
+      const st = TOUR[S.tour];
+      if (!st || !st.scope) return;
+      const pred = st.scope(model, S.sel);
+      const set = new Set();
+      for (let r = 0; r < N; r++) if (pred(r)) set.add(r);
+      tourScope = set;
+    }
 
     function tourApply() {
       if (S.tour == null) return;
@@ -2136,6 +2173,7 @@
       api.setMode(st.mode);
       api.setView(st.view);
       if (S.sel == null) api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1, 0));
+      tourBuildScope(); refreshFocus();       // 作用域随层收窄 → 外面的卡退成背景
       tourRender();
     }
     function tourStart() {
@@ -2144,14 +2182,14 @@
       tourApply();
     }
     function tourExit() {
-      S.tour = null; root.classList.remove('is-tour');
+      S.tour = null; tourScope = null; root.classList.remove('is-tour');
       if (tourSaved) {
         if (tourSaved.cfg.cp !== model.config.cp) api.setConfig({ cp: tourSaved.cfg.cp });
         api.selectObject(tourSaved.obj, { fly: false });
         api.setMode(tourSaved.mode); api.setView(tourSaved.view);
         tourSaved = null;
       }
-      tourRender();
+      refreshFocus(); tourRender();
     }
     function tourGo(d) {
       if (S.tour == null) return;
@@ -2169,8 +2207,13 @@
           `<i class="${i === S.tour ? 'is-cur' : ''}${i < S.tour ? ' is-done' : ''}" title="${esc(t.title)}"></i>`).join('')}</div>`
         + `<div class="prc-tour-body">`
         + `<div class="prc-tour-kick">缩放穿梭 · ${S.tour + 1}/${TOUR.length}</div>`
+        + (st.crumb && S.sel != null
+          ? `<div class="prc-tour-crumb">${esc(st.crumb(model, S.sel))}`
+            + (tourScope ? ` <span>· 亮着的 ${tourScope.size} 卡</span>` : ' <span>· 全部 ' + N + ' 卡</span>')
+            + `</div>` : '')
         + `<div class="prc-tour-title">${esc(st.title)}</div>`
         + `<p class="prc-tour-say">${st.say(model)}</p>`
+        + (st.note ? `<p class="prc-tour-note">${st.note}</p>` : '')
         + (st.needCP && tourSaved && tourSaved.cfg.cp < 2
           ? `<p class="prc-tour-note">已临时把 CP 设为 2 好让上下文有段可看，退出导览会还原成 CP=${tourSaved.cfg.cp}。</p>` : '')
         + `</div>`
