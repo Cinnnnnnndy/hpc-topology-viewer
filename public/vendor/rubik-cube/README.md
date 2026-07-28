@@ -841,7 +841,34 @@ opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接�
 Provenance：布局/语义/文案抽取自 `public/cube-cockpit.html` 的逻辑魔方
 （`chipCubeM` 五形态、`renderCubeAxes` 轴标注、ODEP 折叠维表、`CUBE_WHY`
 读图钥匙、`#cardGran` 粒度贴士、DIMHEX 维度色），并行度由写死的
-8192（TP8×PP16×DP64）参数化为任意 `tp×pp×ep×dp`。cockpit 本体未改动。## CP 上下文并行（第五根真实维）
+8192（TP8×PP16×DP64）参数化为任意 `tp×pp×ep×dp`。cockpit 本体未改动。## 缩放穿梭导览（`导览` 按钮 · `?tour=1`）
+
+资料（6D 并行架构图解）的骨架是一张**逐级 Zoom-in 的嵌套图**：宏观 DP 复制 →
+一个 PP Stage → Stage 内 TP 碎裂 / EP 分发 → 微观 SP / CP 序列线。
+
+这套魔方本来就是「转动去看不同切面」（DP平铺=顶面 DP · PP流水=前面 PP ·
+TP切片=背面 TP · EP聚簇=底面 EP），所以导览**不新建任何几何**——只是把现成的
+`形态 + 视角 + 对象` 切换串成一条带旁白的下钻路径，每层换一个切面 + 一句话说这一屏在看什么。
+「宏观→微观」的体验因此成立，而画面永远是**同一批真实的 rank**，不是示意图。
+
+六层：
+
+| 层 | 切面 | 这一屏在说 |
+|---|---|---|
+| 1 | DP平铺 · 顶视 | 整模型复制成 N 份，一块板 = 一个副本 |
+| 2 | PP流水 · 前视 | 一个副本切成 P 段千层蛋糕，激活沿 Stage 传递 |
+| 3 | TP切片 · `qkv` | 注意力头切成 TP 片，一面墙 = 全集群同槽位；算完 All-Reduce |
+| 4 | EP聚簇 · `experts` | 专家分桶，一面墙 = 一桶；token 经 All-to-All 派发 |
+| 5 | TP切片 · `norm` | SP 沿 token 切，各算各的，**四周一片寂静**（无跨卡通信） |
+| 6 | TP切片 · `attn_core` | CP 切上下文，但 attention 要看全局 → **All-Gather(KV)** 打破寂静 |
+
+**CP 那层需要 `CP>1` 才有空间可看**（CP=1 时上下文没被切开）。导览会**临时**把 `cp` 设为 2，
+旁白里明说，退出导览时**还原原配置**——不静默改用户的设置。
+（实测：进入前 cp=1·N=4000 → 第 6 层 cp=2·N=8000 → 完成后回到 cp=1·N=4000。）
+
+程序侧：`handle.tour(0)` 进 · `handle.tour(null)` 退 · `handle.tourSteps` 拿层的 key。
+
+## CP 上下文并行（第五根真实维）
 
 魔方原本只有 TP/PP/DP/EP 四维（SP 折在 TP 组、CP 缺席）。现在 **CP 是真实的 rank 维**
 （与 SP/EP 不同：SP 复用 TP 组、EP 折入 DP 轴，都不进乘法；CP 进乘法）：

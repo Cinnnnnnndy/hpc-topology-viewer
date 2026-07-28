@@ -101,7 +101,9 @@
     if (isFinite(r) && r >= 0 && r < handle.model.N) handle.select(r);
   }
   // 没显式写 mode 的 ?obj= 链接：飞到该对象的主屏（见上方 mount 里的说明）
-  if (qs.get('obj') && !qs.get('mode')) handle.selectObject(qs.get('obj'));
+  if (qs.get("obj") && !qs.get("mode")) handle.selectObject(qs.get("obj"));
+  // ?tour=1 直接进缩放穿梭导览（从 DP 复制一路下钻到 CP 序列线）
+  if (qs.get("tour") && qs.get("tour") !== "0") handle.tour(0);
 
   // 把主题按钮放进 pattern 顶栏的工具插槽，和「更多」等按钮成套
   var slot = document.querySelector('.prc-toolslot');
