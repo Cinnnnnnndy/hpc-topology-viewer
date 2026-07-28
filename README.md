@@ -31,6 +31,21 @@ sources & docs: [`public/vendor/rubik-cube/`](public/vendor/rubik-cube/README.md
 Integration hooks for the whole-network graph / expert graph are pre-wired
 (`selectLayer` / `selectBucket` / `onSelect`).
 
+## 整网切分 · rank 装载（net-sharding · 独立迭代）
+
+与逻辑魔方并列的第二个独立 pattern，坐标系是**模型计算图**而不是并行超立方：把 openPangu
+整网图的每个算子标注成「被哪个并行维、沿张量的哪根轴切成几份」，据此算出任意一个 rank
+到底装了什么（层段 / 注意力头片 / FFN 中间维 / 词表片 / 专家桶 / 上下文段 / 序列片 / 数据副本），
+并把 **HCCL 集合原语呈现为分片状态的转换器**——AllGather / ReduceScatter / AllToAll /
+AllReduce / P2P 各自把张量从一种分片状态搬到另一种。支持 6 维 **TP·CP·SP·PP·EP·DP**
+（CP/SP 是现有 `NODE_DIM` 四维标签所没有的）。默认盘古 Pro MoE 真实策略
+tp8·pp5·dp100·ep2 = 4000 rank。入口页：`public/net-sharding-pattern.html`
+（dev: `/hpc-topology-viewer/net-sharding-pattern.html`）；
+sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/README.md)。
+
+魔方答「谁和谁一组」，它答「这一组各自装了什么」——两者互为反查，
+挂点见 `pattern.json` 的 `integrationHooks`。
+
 ## Develop
 
 ```bash
