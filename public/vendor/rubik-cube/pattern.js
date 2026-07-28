@@ -129,7 +129,7 @@
 
     { id: 'norm', fam: 'norm', short: 'RMSNorm', band: 'Attention', name: 'RMSNorm 区（SP）',
       by: [{ dim: 'SP', axis: 'seq' }], best: 'tps',
-      note: 'norm 不改变特征维 → 沿 token 切最省显存，这就是 SP。SP 复用 TP 组，不新增 rank 维。',
+      note: 'norm 不改变特征维 → 沿 token 切最省显存，这就是 SP。SP 复用 TP 组但不是 TP：同一组卡，TP 区里每卡持有部分 head（AllReduce 合并），SP 区里每卡持有部分 token（AllGather/ReduceScatter 转换布局）——同一批卡在计算图的不同位置扮演两种角色。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'SP', axis: '序列 token', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.seqLen, m.TP, m.tpOf(r), 'tok') }) },
 
@@ -247,7 +247,7 @@
     '--highlight-ub-green-400', '--highlight-mte-amber-400', '--highlight-l0b-deep-violet-400',
     '--highlight-copy-blue-600', '--highlight-accum-orange-600', '--highlight-l0a-violet-600',
     '--highlight-ub-green-600', '--highlight-mte-amber-600', '--highlight-l0b-deep-violet-600',
-    '--highlight-ub-green-700', '--highlight-mte-amber-500',
+    '--highlight-ub-green-700', '--highlight-mte-amber-500', '--highlight-ub-green-600',
     '--dim-tp',
   ];
   // css 颜色 → {r,g,b,a}（支持 #rgb/#rrggbb/#rrggbbaa 与 rgb()/rgba()）
@@ -270,7 +270,14 @@
   const hex2 = (v) => ('0' + Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16)).slice(-2);
 
   /* 维度签名色的 token 映射（PP/DP/EP 在色卡里有精确对应，TP 见上文说明） */
-  const DIM_TOKEN = { TP: '--dim-tp', PP: '--warning', DP: '--primary', EP: '--highlight-l0a-violet-400' };
+  /* 六维签名色。SP 原先借用 TP 的青（因为 SP 复用 TP 组）——但「共用通信组」不等于
+     「是同一维」：SP 切的是 seq 轴、跑的是 AllGather/ReduceScatter，TP 切的是 head 轴、
+     跑的是 AllReduce。借色的结果是同一屏里两者长得一模一样，读者分不出此刻在说哪一维。
+     所以给 SP 与 CP 各自的色：都取色卡里未被四维占用、且与 TP 青拉得开的族。 */
+  const DIM_TOKEN = {
+    TP: '--dim-tp', PP: '--warning', DP: '--primary', EP: '--highlight-l0a-violet-400',
+    SP: '--highlight-mte-amber-500', CP: '--highlight-ub-green-600',
+  };
   /* 物理链路层级色（B 档）：同机 UB 用色卡里的 ub-green（名字与语义天然对上），
      Pod 内 rail 用 mte-amber，跨 Pod 用 l0b-deep-violet——三者都不与四维签名色撞。
      不用红黄绿是因为红/黄在本 pattern 里是状态色（负载/异常）专用。 */
@@ -2126,7 +2133,7 @@
       { dim: 'EP', face: '底', cut: '切 MoE 专家', real: true },
       { dim: 'PP', face: '前', cut: '切模型层（Stage）', real: false },
       { dim: 'TP', face: '背', cut: '切单层权重矩阵', real: false },
-      { dim: 'SP', face: '左', cut: '切序列 token（norm 区）', real: false },
+      { dim: 'SP', face: '左', cut: '切序列 token（norm 区）· 复用 TP 组，不新增 rank 维', real: false },
       { dim: 'CP', face: '右', cut: '切上下文长度', real: false },
     ];
     const FACE_PAIRS = [
@@ -2140,7 +2147,7 @@
       el.classList.toggle('show', !!on);
       if (!on) return;
       const cur = S.tour != null && TOUR[S.tour] ? TOUR[S.tour].key.toUpperCase() : null;
-      const c = (d) => dimc(d === 'SP' ? 'TP' : d);
+      const c = (d) => dimc(d);
       const chip = (f) => `<span class="prc-face${cur === f.dim ? ' is-on' : ''}${f.real ? '' : ' is-mnemonic'}"`
         + ` style="--c:${c(f.dim)}" title="${esc(f.face)}面 · ${esc(f.cut)}">`
         + `<i></i><b>${f.dim}</b><em>${esc(f.face)}</em></span>`;
@@ -2151,7 +2158,9 @@
           `<div class="prc-facepair is-${p.verdict === '真' ? 'true' : p.verdict === '半真' ? 'half' : 'mnemonic'}" title="${esc(p.why)}">`
           + `<b style="color:${c(p.a)}">${p.a}</b>↔<b style="color:${c(p.b)}">${p.b}</b>`
           + `<span>${p.axis} · ${p.verdict}</span></div>`).join('')}</div>`
-        + `<div class="prc-faces-note">这是<b>读图助记</b>，不是卡的真实坐标——卡的位置由当前形态决定。</div>`;
+        + `<div class="prc-faces-note">这是<b>读图助记</b>，不是卡的真实坐标——卡的位置由当前形态决定。`
+        + `<br><b>SP</b> 复用 TP 组（不新增 rank 维），但切的是 seq 轴、跑 AllGather/ReduceScatter；`
+        + `<b>CP</b> 是真实 rank 维，与 TP 共用一根空间轴。</div>`;
     }
 
     /* ── 缩放穿梭导览 ───────────────────────────────────────────────────────
@@ -2259,7 +2268,7 @@
         const h = (b.y1 - b.y0) + CARD.y + pad * 2;
         const d = (b.z1 - b.z0) + CARD.z + pad * 2;
         const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, cz = (b.z0 + b.z1) / 2;
-        const col = dimc(st.key.toUpperCase() === 'SP' ? 'TP' : st.key.toUpperCase());
+        const col = dimc(st.key.toUpperCase());
         const cur = li === S.tour;
         const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
         const m = new THREE.LineBasicMaterial({
@@ -2440,7 +2449,7 @@
         lab(o.short || o.name.split(/[ （(]/)[0], carried ? fam : bd, PAY.LAB,
           -PAY.W / 2 - 7, y, 'right');
         const read = !carried ? '—' : sh ? `${idx}/${of}` : '整份';
-        lab(read, carried ? (sh ? dimc(sh.dim === 'SP' ? 'TP' : sh.dim) : bd) : bd,
+        lab(read, carried ? (sh ? dimc(sh.dim) : bd) : bd,
           PAY.LAB, PAY.W / 2 + 7, y, 'left');
         y -= PAY.STEP;
       });
@@ -3135,7 +3144,7 @@
        「上一片 / 读数 / 下一片」的步进器，两端仍可直达首尾。 */
     function shardStrip(r, o, sh) {
       if (!sh || sh.of <= 1) return '';
-      const dim = sh.dim === 'SP' ? 'TP' : sh.dim, c = dimc(dim);
+      const dim = sh.dim === 'SP' ? 'TP' : sh.dim, c = dimc(sh.dim);   // 组走 TP（SP 复用它），色用 SP 自己的
       const btn = (i, txt, cls) =>
         `<button class="prc-shardchip${cls || ''}${i === sh.idx ? ' is-cur' : ''}" type="button"`
         + ` data-shard="${i}" data-sdim="${dim}" style="--c:${c}"`
@@ -3185,7 +3194,7 @@
         } else {
           const sh = model.objShard(o.id, r);
           state = sh
-            ? `<span style="color:${dimc(sh.dim === 'SP' ? 'TP' : sh.dim)}">${sh.idx}</span><span class="prc-dim">/${sh.of}</span>`
+            ? `<span style="color:${dimc(sh.dim)}">${sh.idx}</span><span class="prc-dim">/${sh.of}</span>`
               + (sh.range ? ` <span class="prc-dim">${esc(sh.range)}</span>` : '')
             : `<span class="prc-dim">完整一份</span>`;
           cls = sh ? '' : ' is-whole';
@@ -3234,7 +3243,7 @@
       const grid = alls.length >= 2;
       return head + `<div class="prc-kv">`
         + alls.map((x) => kv(`${x.dim} 沿${esc(x.axis)}切`,
-          `<b style="color:${dimc(x.dim === 'SP' ? 'TP' : x.dim)}">第 ${x.idx} 片</b> <span class="prc-dim">/ ${x.of}</span>`
+          `<b style="color:${dimc(x.dim)}">第 ${x.idx} 片</b> <span class="prc-dim">/ ${x.of}</span>`
           + (x.range ? ` <span class="prc-dim">${esc(x.range)}</span>` : ''))).join('')
         + (grid ? kv('这张卡 = 网格一格',
           `<b>${alls.map((x) => x.idx).join(' × ')}</b> <span class="prc-dim">/ ${alls.map((x) => x.of).join(' × ')} = ${alls.reduce((a, x) => a * x.of, 1)} 格</span>`) : '')

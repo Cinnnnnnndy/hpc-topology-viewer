@@ -841,7 +841,30 @@ opts：`{ config, theme, mode, chrome:false（隐藏自带工具栏，宿主接�
 Provenance：布局/语义/文案抽取自 `public/cube-cockpit.html` 的逻辑魔方
 （`chipCubeM` 五形态、`renderCubeAxes` 轴标注、ODEP 折叠维表、`CUBE_WHY`
 读图钥匙、`#cardGran` 粒度贴士、DIMHEX 维度色），并行度由写死的
-8192（TP8×PP16×DP64）参数化为任意 `tp×pp×ep×dp`。cockpit 本体未改动。## 双切对象的完整表达（`attn_core` = TP head × CP ctx）
+8192（TP8×PP16×DP64）参数化为任意 `tp×pp×ep×dp`。cockpit 本体未改动。## SP 作为可读维（六维各有签名色）
+
+SP 原先**借用 TP 的青色**（理由是它复用 TP 组）——但「共用通信组」不等于「是同一维」：
+
+| | 切的张量轴 | 跑的原语 |
+|---|---|---|
+| **TP** | head / hidden / ffn / vocab | AllReduce |
+| **SP** | seq（token） | AllGather / ReduceScatter（进出 TP 区的布局转换） |
+
+借色的结果是同一屏里两者长得一模一样，读者分不出此刻在说哪一维。现在六维**各有签名色**：
+
+`TP --dim-tp 青` · `PP --warning 橙` · `DP --primary 蓝` · `EP l0a-violet 紫` ·
+`SP mte-amber 琥珀` · `CP ub-green 绿`
+
+> **已知张力，如实记下**：本 pattern 有「红黄绿留给状态色（负载/异常）」的纪律，而
+> SP 的琥珀与 PP 的橙相邻、CP 的绿与 `--success` 同族。四维已占掉蓝/橙/紫/青之后，
+> 色卡里剩下能拉开的色相不多。缓解办法是**颜色从不单独承载信息**——每处 SP/CP 出现时
+> 都同时带着文字标识（`SP` / `CP` 与「左/右」面名），所以相邻色不会造成歧义。
+> 若日后上游色卡补进品红族，这两维应优先换过去。
+
+「同一批卡在计算图的不同位置扮演两种角色」这句话写进了 `norm` 对象的说明与六面图脚注 ——
+这才是 SP 真正需要被读懂的地方，颜色只是让它在画面上认得出来。
+
+## 双切对象的完整表达（`attn_core` = TP head × CP ctx）
 
 一个对象可能被**多维同时切**。`attn_core` 就是：TP 沿注意力头切、CP 沿上下文段切，
 所以这张卡持有的不是「第 i 片」，而是**二维网格里的一格** `(i, j)`，总份数 = TP × CP。
