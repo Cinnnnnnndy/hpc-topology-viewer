@@ -1950,7 +1950,7 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
     function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); }
@@ -2058,6 +2058,7 @@
          一进来会算出一个离谱的步长，整条轴只剩末位一枚。 */
       syncLabelSizes();
       syncPayload();
+      syncShard();
     }
 
     /* ── 装载板：把选中的这张卡在 3D 里摊开成「它持有的那些碎片」──────────────
@@ -2185,6 +2186,84 @@
         payLeader.geometry.setFromPoints([a, b]);
         payLeader.geometry.attributes.position.needsUpdate = true;
       }
+    }
+
+    /* ── 卡上切分：把选中卡的正方体**就地切开**，点亮它持有的那一片 ──────────────
+       这是「切分与正方体结合」最忠实的一版：不再是浮在旁边的板，而是这张卡的方块本身
+       沿**当前聚焦对象的切分维**切成 of 段、亮第 idx 段（族色），其余是空槽（细线框）。
+       换形态 = 换一根轴切（selectObject 会飞到该对象的主屏，轴自动对上）——正好对应
+       「转动魔方去看另一个切面」。轴不写死：采样该维 +1 的邻居卡位置，看世界坐标沿哪根
+       轴变、变多少，于是任何形态、任何配置都自对齐；若这一维在当前视图里被折叠成一点
+       （邻居位置几乎不动），就画整块族色 + 交给信息卡说明，不画假的切法。 */
+    const shardGroup = new THREE.Group(); shardGroup.renderOrder = 7; scene.add(shardGroup);
+    const _sp0 = new THREE.Vector3(), _sp1 = new THREE.Vector3();
+
+    function clearShard() {
+      shardGroup.traverse((o) => {
+        if (o === shardGroup) return;
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+      while (shardGroup.children.length) shardGroup.remove(shardGroup.children[0]);
+    }
+
+    function buildShard() {
+      clearShard();
+      const on = S.wire.payload && objOn() && S.sel != null;
+      shardGroup.visible = on;
+      if (!on) return;
+      const r = S.sel, o = model.netObjBy[S.obj];
+      if (!o || o.comm) { shardGroup.visible = false; return; }
+      const carried = model.objCarry(o.id, r);
+      const sh = carried ? model.objShard(o.id, r) : null;
+      const fam = OPV[o.fam] || OPV.linear;
+      const L = CARD.x * 1.5;                                   // 略大于选中卡（1.45）→ 包住它
+      const solid = (w, h, d, x, y, z, color, op) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthTest: false }));
+        m.material.userData = { base: op, noPulse: true };
+        m.position.set(x, y, z); m.renderOrder = 7; shardGroup.add(m); return m;
+      };
+      const wire = (w, h, d, x, y, z, color, op) => {
+        const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
+        const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity: op, depthTest: false });
+        m.userData = { base: op, noPulse: true };
+        const ln = new THREE.LineSegments(g, m); ln.position.set(x, y, z); ln.renderOrder = 8; shardGroup.add(ln); return ln;
+      };
+      const bd = tokHex('--border-strong');
+
+      if (!carried) { wire(L, L, L, 0, 0, 0, bd, 0.35); return; }     // 不承载 → 空框
+      if (!sh || sh.of <= 1) { solid(L, L, L, 0, 0, 0, fam, 0.5); wire(L, L, L, 0, 0, 0, fam, 0.9); return; } // 复制 → 整块
+
+      // 采样切分维在当前形态下落在哪根轴
+      const of = sh.of, idx = sh.idx, tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r);
+      const dim = sh.dim === 'SP' ? 'TP' : sh.dim;
+      let nb = r;
+      if (dim === 'TP') nb = model.rankOf((tp + 1) % TP, pp, rep);
+      else if (dim === 'PP') nb = model.rankOf(tp, (pp + 1) % PP, rep);
+      else if (dim === 'DP') nb = model.rankOf(tp, pp, (rep + 1) % REP);
+      else if (dim === 'EP') { const dom = model.domOf(r); nb = model.rankOf(tp, pp, dom * EP + ((model.epOf(r) + 1) % EP)); }
+      model.posOf(r, S.mode, _sp0); model.posOf(nb, S.mode, _sp1);
+      const dv = { x: _sp1.x - _sp0.x, y: _sp1.y - _sp0.y, z: _sp1.z - _sp0.z };
+      const ax = Math.abs(dv.x) >= Math.abs(dv.y) && Math.abs(dv.x) >= Math.abs(dv.z) ? 'x'
+        : Math.abs(dv.y) >= Math.abs(dv.z) ? 'y' : 'z';
+      if (Math.abs(dv[ax]) < CARD.x * 0.12) {                        // 这一维在本视图折成一点
+        solid(L, L, L, 0, 0, 0, fam, 0.42); wire(L, L, L, 0, 0, 0, fam, 0.85);
+        return;
+      }
+      const sign = dv[ax] >= 0 ? 1 : -1;
+      const seg = L / of, gap = seg * 0.16;
+      for (let i = 0; i < of; i++) {
+        const off = sign * (i - (of - 1) / 2) * seg;
+        const p = { x: 0, y: 0, z: 0 }; p[ax] = off;
+        const dims = { x: L, y: L, z: L }; dims[ax] = seg - gap;
+        if (i === idx) solid(dims.x, dims.y, dims.z, p.x, p.y, p.z, fam, 0.92);
+        else wire(dims.x, dims.y, dims.z, p.x, p.y, p.z, bd, 0.4);
+      }
+    }
+    function syncShard() {
+      if (!shardGroup.visible || S.sel == null) return;
+      shardGroup.position.set(cur[S.sel * 3], cur[S.sel * 3 + 1], cur[S.sel * 3 + 2]);
     }
 
     /* ── 通信组重建（选中 rank → 四维对端 + 连线 + 标签）── */
@@ -3294,7 +3373,7 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard();
         renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
       setView(v) {
