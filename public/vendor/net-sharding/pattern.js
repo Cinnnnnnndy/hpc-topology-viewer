@@ -354,10 +354,47 @@
     };
   }
 
+
   /* ══════════════════════════════════════════════════════════════════════════
-     mount —— 渲染层
-     布局：顶栏（并行度 / rank 选择） · 左=整网图 · 右=rank 装载卡 · 底=分片状态流水
+     rank 卡 = 整网图的**并行化展开**，不是它的裁剪
+     ──────────────────────────────────────────────────────────────────────────
+     一张 rank 卡里的节点集合相对逻辑整网图**既减也增**：
+
+       减 —— 别的 stage 的层在这张卡上**根本不存在**（不是画淡，是没有）：
+             词嵌入只落 PP 首段、LM Head 只落末段。
+       增 —— HCCL 集合原语是**并行化产生的**，逻辑图里没有这些节点：
+             TP AllReduce（行切算子的 partial sum）· PP Send/Recv（段边界）·
+             DP 梯度 AllReduce · CP AllGather(KV)。
+             （AllGather/ReduceScatter/AllToAll 那几个图里本来就有，属「保留」。）
+       余下的是**分片**：节点还在，但只持有一片（head 第 i 片 / 专家第 j 桶 / …）。
+
+     显示形式：**共享布局 + 差分着色**。这张图是预定位的（55 个节点各带 x/y），
+     所以 small multiples 是白送的——三张卡并排、位置逐点对齐，于是三个结论
+     **不靠文字**就能读出来：
+       · 同 TP 组：结构完全相同，只有分片区间不同；
+       · 跨 PP 段：结构不同（词嵌入/LM Head 出现或消失）；
+       · 跨 EP 桶：结构相同，专家桶不同。
      ══════════════════════════════════════════════════════════════════════════ */
+
+  /* 只落在 PP 首/末段的节点——「减」的来源 */
+  const FIRST_ONLY = new Set(['input_tokens', 'token_embedding', 'embedding_weight']);
+  const LAST_ONLY = new Set(['final_norm', 'lm_head', 'lm_head_weight', 'logits', 'mtp_module']);
+
+  /* 「增」：并行化插入的 HCCL 节点，逻辑图里没有。锚在它插入点那个节点旁边。 */
+  const ADDED = [
+    { id: '+tp_ar', label: 'TP AllReduce', dim: 'tp', anchor: 'o_proj', dx: 1.06, dy: 0,
+      why: '行切算子（o_proj / dense_down）算出的是 partial sum，要在 TP 组内归约才完整' },
+    { id: '+cp_ag', label: 'CP AllGather(KV)', dim: 'cp', anchor: 'key_tensor', dx: 1.06, dy: 0,
+      when: (m) => m.sizes.CP > 1,
+      why: '上下文按 CP 切段后，算 attention 前要在 CP 组内收齐全局 K/V' },
+    { id: '+pp_sr', label: 'PP Send/Recv', dim: 'pp', anchor: 'block_post_norm', dx: 1.06, dy: 0,
+      when: (m) => m.sizes.PP > 1,
+      why: 'stage 边界把激活传给下一段（反向传梯度）' },
+    { id: '+dp_ar', label: 'DP 梯度 AllReduce', dim: 'dp', anchor: 'attention_projection_weights', dx: -1.06, dy: 0,
+      when: (m) => m.sizes.DP > 1,
+      why: '副本间同步梯度，可与反向重叠' },
+  ];
+
   function mount(container, opts) {
     opts = opts || {};
     const el = typeof container === 'string' ? document.querySelector(container) : container;
@@ -365,311 +402,136 @@
 
     let model = createModel(opts.config);
     let theme = opts.theme === 'dark' ? 'dark' : 'light';
-    let selRank = opts.rank != null ? opts.rank : Math.floor(model.N / 2);
-    let selNode = opts.node || null;
-    let hiDim = opts.dim || null;          // 高亮某一维切的算子
-    let graphCtrl = null;
+    let axis = opts.axis || 'tp';          // 比较轴：tp / pp / ep —— 决定并排的是哪三张卡
+    let base = opts.rank != null ? opts.rank : Math.floor(model.N / 2);
 
     el.classList.add('ns-root');
-    el.innerHTML = '';
-
-    /* ── 顶栏 ── */
-    const bar = document.createElement('div');
-    bar.className = 'ns-bar';
-    el.appendChild(bar);
-
-    /* ── 主体 ── */
-    const main = document.createElement('div');
-    main.className = 'ns-main';
-    el.appendChild(main);
-
-    const graphWrap = document.createElement('div');
-    /* `pto-model-graphviz-pattern-page` 不是装饰类：model-graphviz 的 pattern.css 把
-       节点填色/线色等一整套 CSS 变量都作用域在这个类下（`.pto-model-graphviz-pattern-page{--model-graphviz-*}`）。
-       不挂它，张量节点的 `--model-graphviz-tensor-fill` 解析不出来，整排权重/张量框会渲染成近黑色、字读不出。 */
-    graphWrap.className = 'ns-graph pto-model-graphviz-pattern-page';
-    main.appendChild(graphWrap);
-
-    const side = document.createElement('div');
-    side.className = 'ns-side';
-    main.appendChild(side);
-
-    const flowBand = document.createElement('div');
-    flowBand.className = 'ns-flow';
-    el.appendChild(flowBand);
-
-    /* ── 顶栏内容 ── */
-    function buildBar() {
-      const s = model.sizes;
-      bar.innerHTML = '';
-      const title = document.createElement('div');
-      title.className = 'ns-title';
-      title.innerHTML = '<b>整网切分 · rank 装载</b><span class="ns-sub">算子怎么切 → 这张卡装了什么</span>';
-      bar.appendChild(title);
-
-      const cfgRow = document.createElement('div');
-      cfgRow.className = 'ns-ctl';
-      const mk = (key, label, val) => {
-        const w = document.createElement('label');
-        w.className = 'ns-num';
-        w.innerHTML = `<span>${label}</span>`;
-        const i = document.createElement('input');
-        i.type = 'number'; i.min = '1'; i.value = val; i.dataset.key = key;
-        i.addEventListener('change', applyCfg);
-        i.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCfg(); });
-        w.appendChild(i);
-        return w;
-      };
-      cfgRow.appendChild(mk('tp', 'TP', s.TP));
-      cfgRow.appendChild(mk('cp', 'CP', s.CP));
-      cfgRow.appendChild(mk('pp', 'PP', s.PP));
-      cfgRow.appendChild(mk('ep', 'EP', s.EP));
-      cfgRow.appendChild(mk('dp', 'DP', s.DP));
-
-      const rk = document.createElement('label');
-      rk.className = 'ns-num ns-rank';
-      rk.innerHTML = '<span>rank</span>';
-      const ri = document.createElement('input');
-      ri.type = 'number'; ri.min = '0'; ri.max = String(model.N - 1); ri.value = String(selRank);
-      ri.id = 'ns-rank-input';
-      ri.addEventListener('change', () => { setRank(+ri.value); });
-      rk.appendChild(ri);
-      cfgRow.appendChild(rk);
-
-      const tot = document.createElement('span');
-      tot.className = 'ns-chip';
-      tot.textContent = `${s.TP}×${s.CP}×${s.PP}×${s.DP} = ${model.N} rank`;
-      tot.title = 'SP 复用 TP 组、EP 折入 DP 轴，故不进乘法';
-      cfgRow.appendChild(tot);
-      bar.appendChild(cfgRow);
-
-      /* 维度高亮开关：点一个维 → 整网图上被它切的算子亮起 */
-      const dimRow = document.createElement('div');
-      dimRow.className = 'ns-dims';
-      DIM_ORDER.forEach((d) => {
-        const b = document.createElement('button');
-        b.className = 'ns-dimbtn' + (hiDim === d ? ' is-on' : '');
-        b.dataset.dim = d;
-        b.style.setProperty('--c', `var(${DIM_META[d].cssVar})`);
-        b.innerHTML = `<i></i>${DIM_META[d].name}`;
-        b.title = `${DIM_META[d].full} · ${DIM_META[d].axis}`;
-        b.onclick = () => { hiDim = (hiDim === d ? null : d); buildBar(); applyGraphDim(); };
-        dimRow.appendChild(b);
-      });
-      bar.appendChild(dimRow);
-
-      const slot = document.createElement('div');
-      slot.className = 'ns-toolslot';
-      bar.appendChild(slot);
-    }
-
-    function applyCfg() {
-      const next = {};
-      bar.querySelectorAll('input[data-key]').forEach((i) => { next[i.dataset.key] = Math.max(1, +i.value || 1); });
-      const cfg = Object.assign({}, model.config, next);
-      if (cfg.dp % cfg.ep !== 0) { flash('EP 必须整除 DP'); buildBar(); return; }
-      const total = cfg.tp * cfg.cp * cfg.pp * cfg.dp;
-      if (total > 65536) { flash('rank 总数超过 65536'); buildBar(); return; }
-      model = createModel(cfg);
-      if (selRank >= model.N) selRank = model.N - 1;
-      buildBar(); renderSide(); renderFlow(); applyGraphDim();
-    }
-
-    let flashT = null;
-    function flash(msg) {
-      let f = el.querySelector('.ns-flash');
-      if (!f) { f = document.createElement('div'); f.className = 'ns-flash'; el.appendChild(f); }
-      f.textContent = msg; f.classList.add('is-on');
-      clearTimeout(flashT);
-      flashT = setTimeout(() => f.classList.remove('is-on'), 2200);
-    }
-
-    /* ── 整网图 ── */
-    function buildGraph() {
-      const G = global.OPENPANGU_GRAPH;
-      const P = global.PtoModelGraphvizPattern;
-      if (!G || !P) {
-        graphWrap.innerHTML = '<div class="ns-empty">整网图资源未加载<br><small>需要 vendor/model-graphviz/graph.js + pattern.js</small></div>';
-        return;
-      }
-      graphWrap.innerHTML = '';
-      const stage = document.createElement('div');
-      stage.className = 'ns-graph-stage';
-      graphWrap.appendChild(stage);
-      const colormap = (theme === 'light' && P.modelArchitectureColormap)
-        ? P.modelArchitectureColormap(G, { theme: 'light', lightHsl: { hue: 2, saturation: 79, lightness: 76 } })
-        : undefined;
-      graphCtrl = P.renderController(stage, G, {
-        theme, colormap, reportOverlays: false, evidence: false,
-        onSelect: (info) => {
-          const id = (info && info.nodeId) || null;
-          selNode = id;
-          renderSide();
-          if (opts.onSelectNode) opts.onSelectNode(id, id ? model.primaryDim(id) : null);
-        },
-      });
-      if (graphCtrl && graphCtrl.svg) {
-        graphCtrl.svg.style.width = '100%';
-        graphCtrl.svg.style.height = 'auto';
-        graphCtrl.svg.style.display = 'block';
-        /* 静态定位图：收起手柄不会重排，藏掉避免右缘一排无效小点（同 WholeNetGraph） */
-        graphCtrl.svg.querySelectorAll('.pto-model-graphviz-toggle, .pto-model-graphviz-toggle-icon')
-          .forEach((n) => { n.style.display = 'none'; });
-        decorateGraph();
-        applyGraphDim();
-      }
-    }
-
-    /* 给每个被切的算子打上维度签名边框（切分规格直接画在图上） */
-    function decorateGraph() {
-      if (!graphCtrl || !graphCtrl.svg) return;
-      graphCtrl.svg.querySelectorAll('[data-node-id]').forEach((n) => {
-        const id = n.getAttribute('data-node-id');
-        const d = model.primaryDim(id);
-        n.classList.toggle('ns-has-shard', !!d);
-        if (d) n.setAttribute('data-ns-dim', d); else n.removeAttribute('data-ns-dim');
-        const spec = model.SHARD[id];
-        if (spec && spec.prim) n.setAttribute('data-ns-prim', spec.prim);
-      });
-    }
-
-    function applyGraphDim() {
-      if (!graphCtrl || !graphCtrl.svg) return;
-      const svg = graphCtrl.svg;
-      svg.setAttribute('data-ns-hi', hiDim || '');
-      const set = hiDim ? new Set(model.dimNodes[hiDim] || []) : null;
-      svg.querySelectorAll('[data-node-id]').forEach((n) => {
-        const id = n.getAttribute('data-node-id');
-        n.classList.toggle('ns-dim-off', !!set && !set.has(id));
-        n.classList.toggle('ns-dim-on', !!set && set.has(id));
-      });
-    }
-
-    /* ── 右侧：rank 装载卡 ── */
-    function renderSide() {
-      const p = model.payloadOf(selRank);
-      const co = p.coord, s = model.sizes, cfg = model.config;
-      const row = (k, v, tone) => `<div class="ns-kv${tone ? ' is-' + tone : ''}"><span>${k}</span><b>${v}</b></div>`;
-      const rng = (r, unit) => r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`;
-
-      let html = '';
-      html += `<div class="ns-card">
-        <div class="ns-kicker">RANK</div>
-        <div class="ns-h">rank ${p.rank} <small>/ ${model.N}</small></div>
-        <div class="ns-lede">整网被六维切开之后，落在这张卡上的那一份。</div>
-        <div class="ns-coord">
-          ${DIM_ORDER.map((d) => `<span class="ns-cc" style="--c:var(${DIM_META[d].cssVar})">
-             <i>${DIM_META[d].name}</i>${d === 'sp' ? co.tp : co[d]}</span>`).join('')}
-        </div>
-      </div>`;
-
-      html += `<div class="ns-card">
-        <div class="ns-kicker">这张卡持有什么</div>
-        ${row('模型层（PP）', `L${p.layers[0]}–L${p.layers[1]} · 共 ${p.layerCount} 层`, 'pp')}
-        ${row('注意力头（TP）', `h${rng(p.heads)} · ${p.headCount}/${cfg.heads}`, 'tp')}
-        ${row('FFN 中间维（TP）', `${p.ffnCount} / ${cfg.ffnHidden}`, 'tp')}
-        ${row('词表片（TP）', p.isFirstStage || p.isLastStage ? `${rng(p.vocab)} · ${p.vocabCount}` : '—（非首末段）', 'tp')}
-        ${row('路由专家（EP）', `E${rng(p.experts)} · ${p.expertCount}/${cfg.experts}`, 'ep')}
-        ${row('共享专家', `${p.sharedExperts} 个（每 rank 都有，不按 EP 切）`, '')}
-        ${row('上下文段（CP）', s.CP > 1 ? `tok ${rng(p.ctx)} · ${p.ctxCount}` : `全序列 ${cfg.seqLen}（CP=1）`, 'cp')}
-        ${row('序列片（SP）', `tok ${rng(p.spTokens)} · ${p.spCount}（norm 区）`, 'sp')}
-        ${row('数据副本（DP）', `副本 ${co.dp} / ${s.DP}`, 'dp')}
-      </div>`;
-
-      html += `<div class="ns-card">
-        <div class="ns-kicker">HCCL 通信域</div>
-        <div class="ns-lede">这张卡同时属于这几个 communicator。</div>
-        ${DIM_ORDER.filter((d) => d !== 'sp').map((d) => {
-          const g = model.groupOf(selRank, d, 9);
-          const size = d === 'tp' ? s.TP : d === 'cp' ? s.CP : d === 'pp' ? s.PP : d === 'ep' ? s.EP : s.DP;
-          const prim = d === 'tp' ? 'AllReduce / AllGather / ReduceScatter'
-                     : d === 'cp' ? 'AllGather(KV)' : d === 'pp' ? 'P2P Send/Recv'
-                     : d === 'ep' ? 'AllToAll' : 'AllReduce（梯度）';
-          return `<div class="ns-grp" style="--c:var(${DIM_META[d].cssVar})">
-            <div class="ns-grp-h"><i></i><b>${DIM_META[d].name}</b><span>×${size}</span><em>${prim}</em></div>
-            <div class="ns-grp-m">${g.map((r) => `<u class="${r === selRank ? 'is-me' : ''}">${r}</u>`).join('')}${size > g.length ? '<u class="is-more">…</u>' : ''}</div>
-          </div>`;
-        }).join('')}
-      </div>`;
-
-      /* 选中算子 → 它在本 rank 上的那一片 */
-      if (selNode) {
-        const sh = model.shardOfNode(selNode, selRank);
-        if (sh) {
-          const spec = sh.spec;
-          html += `<div class="ns-card is-node">
-            <div class="ns-kicker">选中算子</div>
-            <div class="ns-h2">${selNode}</div>
-            ${spec.prim ? `<div class="ns-prim">${spec.prim}<small>${spec.group ? ' · ' + DIM_META[spec.group].name + ' 组内' : ''}</small></div>` : ''}
-            <div class="ns-lede">${spec.note || ''}</div>
-            ${sh.replicated
-              ? `<div class="ns-kv is-none"><span>切分</span><b>复制 —— 每 rank 各一份完整的</b></div>`
-              : sh.parts.map((pt) => `<div class="ns-kv is-${pt.dim}">
-                   <span>${pt.dimName} 沿 ${pt.axisName}</span>
-                   <b>${pt.range ? (pt.range[0] === pt.range[1] ? pt.range[0] : pt.range[0] + '–' + pt.range[1]) : '按批次'}${pt.total ? ` / ${pt.total}` : ''}</b></div>`).join('')}
-            ${sh.partial ? `<div class="ns-warn">行并行输出 = partial sum，必须经 TP 组归约才完整</div>` : ''}
-          </div>`;
-        }
-      } else {
-        html += `<div class="ns-card is-hint">点整网图上任意算子 → 这里显示它被怎么切、本 rank 持有哪一片。</div>`;
-      }
-
-      side.innerHTML = html;
-      const ri = bar.querySelector('#ns-rank-input');
-      if (ri && +ri.value !== selRank) ri.value = String(selRank);
-    }
-
-    /* ── 底部：分片状态流水 ── */
-    function renderFlow() {
-      const steps = model.flowOf();
-      flowBand.innerHTML = `<div class="ns-flow-h">
-          <b>一个 decoder layer 内的分片状态流水</b>
-          <span>HCCL 集合原语 = 分片状态的转换器 · 悬停看为什么</span>
-        </div>
-        <div class="ns-flow-track">${steps.map((st) => {
-          const c = st.dim ? `var(${DIM_META[st.dim].cssVar})` : 'var(--ns-neutral)';
-          return `<div class="ns-step ${st.kind === 'comm' ? 'is-comm' : 'is-op'}" style="--c:${c}" title="${st.why}">
-            <div class="ns-step-t">${st.label}</div>
-            <div class="ns-step-s">${st.state}</div>
-            ${st.prim ? `<div class="ns-step-p">${st.prim}</div>` : ''}
-          </div>`;
-        }).join('<div class="ns-arrow">›</div>')}</div>`;
-    }
-
-    function setRank(r) {
-      if (!isFinite(r)) return;
-      selRank = Math.max(0, Math.min(model.N - 1, Math.floor(r)));
-      renderSide();
-      if (opts.onSelectRank) opts.onSelectRank(selRank, model.payloadOf(selRank));
-    }
-
-    function setTheme(t) {
-      theme = t === 'dark' ? 'dark' : 'light';
-      el.setAttribute('data-theme', theme);
-      buildGraph();
-    }
-
     el.setAttribute('data-theme', theme);
-    buildBar(); buildGraph(); renderSide(); renderFlow();
+    el.innerHTML = '<div class="ns-bar"></div><div class="ns-mult"></div><div class="ns-foot"></div>';
+    const bar = el.querySelector('.ns-bar');
+    const mult = el.querySelector('.ns-mult');
+    const foot = el.querySelector('.ns-foot');
 
+    const G = () => global.OPENPANGU_GRAPH;
+
+    /* 三张卡选谁：固定其余坐标、只让比较轴那一维变 —— 与「通信域 = 坐标切面」同一条规则。 */
+    function tripletOf() {
+      const m = model, co = m.coordOf(base), s = m.sizes, out = [];
+      const pick = (n, cap) => {
+        const k = Math.min(cap, n), step = Math.max(1, Math.floor(n / k));
+        const idx = []; for (let i = 0; idx.length < k && i < n; i += step) idx.push(i);
+        return idx;
+      };
+      if (axis === 'tp') pick(s.TP, 3).forEach((i) => out.push(m.rankOf({ ...co, tp: i })));
+      else if (axis === 'pp') pick(s.PP, 3).forEach((i) => out.push(m.rankOf({ ...co, pp: i })));
+      else pick(s.EP, 3).forEach((i) => out.push(m.rankOf({ ...co, dp: Math.floor(co.dp / s.EP) * s.EP + i })));
+      return out;
+    }
+
+    /* 一个节点在这张卡上处于什么状态：absent（根本不存在）/ shard（只持一片）/ full（完整一份） */
+    function nodeState(nodeId, rank) {
+      const p = model.payloadOf(rank);
+      if (FIRST_ONLY.has(nodeId) && !p.isFirstStage) return { k: 'absent', why: '词嵌入只落 PP 首段' };
+      if (LAST_ONLY.has(nodeId) && !p.isLastStage) return { k: 'absent', why: 'LM Head 只落 PP 末段' };
+      const sh = model.shardOfNode(nodeId, rank);
+      if (!sh || sh.replicated) return { k: 'full' };
+      const part = sh.parts[0];
+      return { k: 'shard', dim: part.dim, range: part.range, of: part.total, label: part.dimName };
+    }
+
+    const STATE_COLOR = {
+      absent: 'var(--ns-absent)', full: 'var(--ns-full)', added: 'var(--ns-added)',
+    };
+
+    /* 一张 rank 卡：共享布局（节点用图自带的 x/y）+ 差分着色 */
+    function cardSVG(rank) {
+      const g = G(); if (!g) return '<div class="ns-empty">整网图未加载</div>';
+      const W = g.width, H = g.height;
+      const byId = {}; g.nodes.forEach((n) => { byId[n.id] = n; });
+      const p = model.payloadOf(rank), co = p.coord;
+      let s = '';
+      // 边：两端都在才画（一端被减掉 → 这条边也不存在）
+      g.edges.forEach((e) => {
+        const a = byId[e.source], b = byId[e.target]; if (!a || !b) return;
+        const sa = nodeState(e.source, rank), sb = nodeState(e.target, rank);
+        const gone = sa.k === 'absent' || sb.k === 'absent';
+        s += `<line x1="${a.x + a.width / 2}" y1="${a.y + a.height / 2}" x2="${b.x + b.width / 2}" y2="${b.y + b.height / 2}"`
+          + ` class="ns-e${gone ? ' is-gone' : ''}"/>`;
+      });
+      // 节点
+      g.nodes.forEach((n) => {
+        const st = nodeState(n.id, rank);
+        const fam = st.k === 'absent' ? STATE_COLOR.absent
+          : st.k === 'shard' ? `var(--ns-${st.dim})` : STATE_COLOR.full;
+        s += `<rect x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" rx="10"`
+          + ` class="ns-n is-${st.k}" style="--c:${fam}"><title>${esc(n.label)} · `
+          + (st.k === 'absent' ? esc(st.why) : st.k === 'full' ? '完整一份（复制）'
+            : `${st.label}切 · 持有 ${esc(String(st.range ? st.range.join('–') : ''))}`) + `</title></rect>`;
+      });
+      // 增：并行化插入的 HCCL 节点（逻辑图里没有）
+      ADDED.forEach((a) => {
+        if (a.when && !a.when(model)) return;
+        const an = byId[a.anchor]; if (!an) return;
+        const w = 300, h = 62;
+        const x = an.x + a.dx * an.width * 0.62, y = an.y + a.dy * 60;
+        s += `<line x1="${an.x + an.width / 2}" y1="${an.y + an.height / 2}" x2="${x + w / 2}" y2="${y + h / 2}" class="ns-e is-added"/>`
+          + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="31" class="ns-n is-added" style="--c:var(--ns-${a.dim})">`
+          + `<title>${esc(a.label)} · 并行化新增 · ${esc(a.why)}</title></rect>`;
+      });
+      const s2 = model.sizes;
+      const badge = axis === 'tp' ? `TP${co.tp}` : axis === 'pp' ? `PP${co.pp}` : `桶${co.ep}`;
+      const sub = axis === 'tp' ? `head ${p.heads[0]}–${p.heads[1]}`
+        : axis === 'pp' ? `L${p.layers[0]}–L${p.layers[1]}`
+          : `E${p.experts[0]}–${p.experts[1]}`;
+      return `<figure class="ns-card">`
+        + `<figcaption><b>rank ${rank}</b><span class="ns-badge" style="--c:var(--ns-${axis})">${badge}</span>`
+        + `<em>${esc(sub)}</em></figcaption>`
+        + `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet">${s}</svg></figure>`;
+    }
+
+    function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+    const AXIS_SAY = {
+      tp: '同 TP 组：<b>结构完全相同</b>，只有分片区间不同（每卡拿不同的 head）。',
+      pp: '跨 PP 段：<b>结构不同</b> —— 词嵌入只在首段、LM Head 只在末段，别的段这些节点<b>根本不存在</b>。',
+      ep: '跨 EP 桶：<b>结构相同</b>，专家桶不同（每卡只持有自己那一桶专家的权重）。',
+    };
+
+    function render() {
+      const s = model.sizes;
+      bar.innerHTML = `<div class="ns-title"><b>rank 卡 = 整网的并行化展开</b>`
+        + `<span class="ns-sub">节点既减（别的段的层不存在）也增（HCCL 是并行化产生的）</span></div>`
+        + `<div class="ns-axis">${['tp', 'pp', 'ep'].map((a) =>
+          `<button class="ns-axbtn${a === axis ? ' is-on' : ''}" data-a="${a}" style="--c:var(--ns-${a})">`
+          + `并排比 ${a.toUpperCase()}</button>`).join('')}</div>`
+        + `<span class="ns-chip">${s.TP}×${s.CP}×${s.PP}×${s.DP} = ${model.N} rank</span>`;
+      bar.querySelectorAll('.ns-axbtn').forEach((b) => {
+        b.addEventListener('click', () => { axis = b.dataset.a; render(); });
+      });
+      mult.innerHTML = tripletOf().map(cardSVG).join('');
+      foot.innerHTML = `<div class="ns-say">${AXIS_SAY[axis]}</div>`
+        + `<div class="ns-key">`
+        + `<span class="ns-k"><i style="background:var(--ns-full)"></i>完整一份</span>`
+        + `<span class="ns-k"><i style="background:var(--ns-tp)"></i>分片（色=切它的维）</span>`
+        + `<span class="ns-k"><i class="is-absent"></i>这张卡上不存在</span>`
+        + `<span class="ns-k"><i class="is-added" style="background:var(--ns-added)"></i>并行化新增的 HCCL</span>`
+        + `</div>`;
+    }
+
+    render();
     return {
       get model() { return model; },
-      get state() { return { rank: selRank, node: selNode, dim: hiDim, theme }; },
+      get state() { return { axis, rank: base, theme }; },
+      setAxis(a) { if (['tp', 'pp', 'ep'].includes(a)) { axis = a; render(); } },
+      selectRank(r) { base = Math.max(0, Math.min(model.N - 1, r | 0)); render(); },
       setConfig(cfg) {
         const c2 = Object.assign({}, model.config, cfg);
         if (c2.dp % c2.ep !== 0) return { ok: false, error: 'ep 必须整除 dp' };
-        if (c2.tp * c2.cp * c2.pp * c2.dp > 65536) return { ok: false, error: 'rank 超过 65536' };
-        model = createModel(c2);
-        if (selRank >= model.N) selRank = model.N - 1;
-        buildBar(); renderSide(); renderFlow(); applyGraphDim();
-        return { ok: true };
+        model = createModel(c2); if (base >= model.N) base = model.N - 1;
+        render(); return { ok: true };
       },
-      selectRank: setRank,
-      selectNode(id) { selNode = id; if (graphCtrl && id) graphCtrl.selectNode(id, { source: 'api' }); renderSide(); },
-      highlightDim(d) { hiDim = d || null; buildBar(); applyGraphDim(); },
-      setTheme,
-      toolSlot() { return bar.querySelector('.ns-toolslot'); },
-      destroy() { if (graphCtrl && graphCtrl.destroy) graphCtrl.destroy(); el.innerHTML = ''; },
+      setTheme(t) { theme = t === 'dark' ? 'dark' : 'light'; el.setAttribute('data-theme', theme); },
+      destroy() { el.innerHTML = ''; },
     };
   }
 
