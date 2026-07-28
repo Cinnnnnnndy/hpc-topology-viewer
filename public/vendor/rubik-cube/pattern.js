@@ -107,11 +107,19 @@
       by: [{ dim: 'TP', axis: 'head' }, { dim: 'CP', axis: 'ctx' }], best: 'tps',
       note: '只算自己那几个 head。启用 CP 后上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV —— 这是 CP 唯一会打破「各算各的」的地方。',
       carry: () => true,
-      /* 被两维同时切：CP>1 时报上下文段（CP 是此时更值得看的那一维，head 切法与 QKV 同），
-         CP=1 时退回报 head —— 与改动前一致。 */
+      /* 被两维同时切：`shard` 给**主导那一维**（着色与主屏按它），`shards` 给**全部维**。
+         主导维的选法：CP>1 时是 CP（此时更值得看，head 切法与 QKV 完全相同），
+         CP=1 时退回 TP —— 与 CP 引入前逐位一致。 */
       shard: (m, r) => (m.CP > 1
         ? { dim: 'CP', axis: '上下文段', idx: m.cpOf(r), of: m.CP, range: rgOf(m.config.seqLen, m.CP, m.cpOf(r), 'tok') }
-        : { dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
+        : { dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }),
+      shards: (m, r) => {
+        const head = { dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') };
+        if (m.CP <= 1) return [head];
+        /* 两维同时切 → 这张卡持有的是**二维网格里的一格**：
+           (head 第 i 片) × (上下文第 j 段)。总份数 = TP × CP。 */
+        return [head, { dim: 'CP', axis: '上下文段', idx: m.cpOf(r), of: m.CP, range: rgOf(m.config.seqLen, m.CP, m.cpOf(r), 'tok') }];
+      } },
 
     { id: 'o_proj', fam: 'linear', short: 'O 投影', band: 'Attention', name: 'Output Projection（行切）',
       by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
@@ -588,6 +596,15 @@
       objShard(id, r) {
         const o = NET_OBJ_BY[id]; if (!o || o.comm || !o.shard) return null;
         return o.shard(this, r);
+      },
+      /* 一个对象可能被**多维同时切**（attn_core = TP head × CP ctx）。
+         objShard 只给主导那一维（着色与主屏要一个确定的维）；要完整表达就用这个。
+         单维对象退化成 [shard]，调用方不必分情况。 */
+      objShards(id, r) {
+        const o = NET_OBJ_BY[id]; if (!o || o.comm) return [];
+        if (o.shards) return o.shards(this, r) || [];
+        const one = o.shard ? o.shard(this, r) : null;
+        return one ? [one] : [];
       },
       // 物理落位
       placement: { cardsPerHost: CPH, hostsPerPod: HPP, cardsPerPod: CPP, hosts: HOSTS, pods: PODS },
@@ -2196,6 +2213,70 @@
        嵌套关系因此是**看得见的**：从全网 → 一个副本 → 一个 Stage → 一个 TP 组 …
        每往下一层，亮着的那块就缩小一圈。null = 全网（第一层不收窄）。 */
     let tourScope = null;
+    /* ── 嵌套框：把「在谁的里面」画进 3D，而不是只写在面包屑上 ──────────────────
+       每往下一层，就在**上一层的范围**外面留一圈、画一个线框盒子。于是画面上真的出现
+       一层套一层的容器：全网 ⊃ 这个副本 ⊃ 这一段 ⊃ 这个 TP 组 …
+       盒子按该层的维度签名色画，角上挂一枚牌写这一层是谁（DP50 / PP2 / …）。
+
+       盒子从**目标位置**（posOf）算，不是从飞行中的 cur：重排动画期间卡在飞，
+       盒子直接落在终点等着，比让它跟着抖更好读。
+       一处如实：EP 那层会跨出副本，它的盒子因此**不被上一层的盒子包住** ——
+       画面会直接暴露这件事，这正是我们想让人看见的，不去修饰。 */
+    const nestGroup = new THREE.Group(); nestGroup.renderOrder = 5; scene.add(nestGroup);
+    function clearNest() {
+      nestGroup.traverse((o) => {
+        if (o === nestGroup) return;
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+      });
+      while (nestGroup.children.length) nestGroup.remove(nestGroup.children[0]);
+    }
+    function tourBuildNest() {
+      clearNest();
+      nestGroup.visible = S.tour != null && S.sel != null;
+      if (!nestGroup.visible) return;
+      const v = { x: 0, y: 0, z: 0 };
+      /* 逐层：第 0 层（全网）不画盒子——把整个模型框起来没有信息量。
+         从第 1 层起，每层画一个把该层成员都包住的盒子。 */
+      for (let li = 1; li <= S.tour; li++) {
+        const st = TOUR[li];
+        if (!st || !st.scope) continue;
+        const pred = st.scope(model, S.sel);
+        const b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
+        let cnt = 0;
+        for (let r = 0; r < N; r++) {
+          if (!pred(r)) continue;
+          model.posOf(r, S.mode, v); cnt++;
+          if (v.x < b.x0) b.x0 = v.x; if (v.x > b.x1) b.x1 = v.x;
+          if (v.y < b.y0) b.y0 = v.y; if (v.y > b.y1) b.y1 = v.y;
+          if (v.z < b.z0) b.z0 = v.z; if (v.z > b.z1) b.z1 = v.z;
+        }
+        if (!cnt) continue;
+        /* 外层留更宽的边：里外两个盒子才不会贴在一起看成一个。
+           `S.tour - li` = 这一层离当前层还有几级，越外面留白越大。 */
+        const pad = CARD.x * (0.62 + (S.tour - li) * 0.5);
+        const w = (b.x1 - b.x0) + CARD.x + pad * 2;
+        const h = (b.y1 - b.y0) + CARD.y + pad * 2;
+        const d = (b.z1 - b.z0) + CARD.z + pad * 2;
+        const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, cz = (b.z0 + b.z1) / 2;
+        const col = dimc(st.key.toUpperCase() === 'SP' ? 'TP' : st.key.toUpperCase());
+        const cur = li === S.tour;
+        const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
+        const m = new THREE.LineBasicMaterial({
+          color: col, transparent: true, opacity: cur ? 0.95 : 0.34, depthTest: false,
+        });
+        m.userData = { base: cur ? 0.95 : 0.34, noPulse: true };
+        const box = new THREE.LineSegments(g, m);
+        box.position.set(cx, cy, cz); box.renderOrder = 5; nestGroup.add(box);
+        // 角上挂一枚牌：这一层是谁
+        const lab = makeLabel(st.crumb ? st.crumb(model, S.sel).split('›').pop().trim() : st.key,
+          col, cur ? 3.2 : 2.4);
+        lab.position.set(cx - w / 2, cy + h / 2 + CARD.y * 0.5, cz - d / 2);
+        lab.material.opacity = cur ? 1 : 0.6;
+        lab.material.userData = { base: cur ? 1 : 0.6, noPulse: true };
+        lab.renderOrder = 6; nestGroup.add(lab);
+      }
+    }
     function tourBuildScope() {
       tourScope = null;
       if (S.tour == null || S.sel == null) return;
@@ -2220,7 +2301,7 @@
       api.setMode(st.mode);
       api.setView(st.view);
       if (S.sel == null) api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1, 0));
-      tourBuildScope(); refreshFocus();       // 作用域随层收窄 → 外面的卡退成背景
+      tourBuildScope(); tourBuildNest(); refreshFocus();   // 收窄作用域 + 画出嵌套容器盒
       tourRender();
     }
     function tourStart() {
@@ -2229,7 +2310,7 @@
       tourApply();
     }
     function tourExit() {
-      S.tour = null; tourScope = null; root.classList.remove('is-tour');
+      S.tour = null; tourScope = null; root.classList.remove('is-tour'); clearNest();
       if (tourSaved) {
         if (tourSaved.cfg.cp !== model.config.cp) api.setConfig({ cp: tourSaved.cfg.cp });
         api.selectObject(tourSaved.obj, { fly: false });
@@ -2451,25 +2532,78 @@
       if (!carried) { wire(L, L, L, 0, 0, 0, bd, 0.35); return; }     // 不承载 → 空框
       if (!sh || sh.of <= 1) { solid(L, L, L, 0, 0, 0, fam, 0.5); wire(L, L, L, 0, 0, 0, fam, 0.9); return; } // 复制 → 整块
 
-      // 采样切分维在当前形态下落在哪根轴
-      const of = sh.of, idx = sh.idx, tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r);
+      const tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r), cp0 = model.cpOf(r);
+      /* 「这一维在当前形态下落在哪根世界轴、朝哪个方向」——采样该维 +1 的邻居卡即可，
+         不写死任何形态。双切对象要问两次，所以抽成函数。 */
+      function axisOf(dimName) {
+        const d = dimName === 'SP' ? 'TP' : dimName;
+        let nb = r;
+        if (d === 'TP') nb = model.rankOf((tp + 1) % TP, pp, rep, cp0);
+        else if (d === 'CP') nb = model.rankOf(tp, pp, rep, (cp0 + 1) % CP);
+        else if (d === 'PP') nb = model.rankOf(tp, (pp + 1) % PP, rep, cp0);
+        else if (d === 'DP') nb = model.rankOf(tp, pp, (rep + 1) % REP, cp0);
+        else if (d === 'EP') { const dom = model.domOf(r); nb = model.rankOf(tp, pp, dom * EP + ((model.epOf(r) + 1) % EP), cp0); }
+        model.posOf(r, S.mode, _sp0); model.posOf(nb, S.mode, _sp1);
+        const dv = { x: _sp1.x - _sp0.x, y: _sp1.y - _sp0.y, z: _sp1.z - _sp0.z };
+        const ax = Math.abs(dv.x) >= Math.abs(dv.y) && Math.abs(dv.x) >= Math.abs(dv.z) ? 'x'
+          : Math.abs(dv.y) >= Math.abs(dv.z) ? 'y' : 'z';
+        return { ax, sign: dv[ax] >= 0 ? 1 : -1, flat: Math.abs(dv[ax]) < CARD.x * 0.12 };
+      }
+
+      /* ── 双切：被两维同时切的对象（attn_core = TP head × CP ctx）────────────
+         这张卡持有的不是「第 i 片」，而是**二维网格里的一格** (i, j)。只画一维等于
+         把话说了一半。两维落在不同世界轴时就切成网格；落在同一根轴（或有一维在本视图
+         折成一点）时退回单维 + 由信息卡补齐另一维 —— 不画假的二维。 */
+      const all = model.objShards(o.id, r);
+      if (all.length >= 2) {
+        const A = axisOf(all[0].dim);
+        let B = axisOf(all[1].dim), folded = false;
+        /* 两维落在**同一根世界轴**上是常态而非例外：本模型 CP 与 TP 就共用一根轴
+           （lane = cp·TP + tp），attn_core 的 TP×CP 因此永远同轴。若就此退回单维，
+           3D 里就永远表达不出双切 —— 而这正是要表达的东西。
+           解法沿用本 pattern 已有的**折叠** idiom（DP平铺把板内 TP 折成「列×排」）：
+           第二维改画到一根垂直轴上，并在牌上标「折」。这不是假坐标——那一维的分片
+           确实沿第一根轴排布，折过来只是为了在一张卡上把二维读出来。 */
+        if (!A.flat && !B.flat && A.ax === B.ax) {
+          B = { ax: A.ax === 'y' ? 'x' : 'y', sign: 1, flat: false };
+          folded = true;
+        }
+        if (!A.flat && !B.flat && A.ax !== B.ax) {
+          const segA = L / all[0].of, segB = L / all[1].of, g = 0.16;
+          for (let i = 0; i < all[0].of; i++) {
+            for (let j = 0; j < all[1].of; j++) {
+              const p = { x: 0, y: 0, z: 0 };
+              p[A.ax] = A.sign * (i - (all[0].of - 1) / 2) * segA;
+              p[B.ax] = B.sign * (j - (all[1].of - 1) / 2) * segB;
+              const dims = { x: L, y: L, z: L };
+              dims[A.ax] = segA * (1 - g); dims[B.ax] = segB * (1 - g);
+              const me = i === all[0].idx && j === all[1].idx;
+              const m2 = me ? solid(dims.x, dims.y, dims.z, p.x, p.y, p.z, fam, 0.92)
+                            : wire(dims.x, dims.y, dims.z, p.x, p.y, p.z, bd, 0.34);
+              m2.userData.shardPick = { obj: o.id, dim: all[0].dim, i, dim2: all[1].dim, j };
+              shardPicks.push(m2);
+              if (me) {
+                const sp = makeLabel(`${all[0].range || i} × ${all[1].range || j}${folded ? ' 折' : ''}`, fam, 3.6);
+                sp.position.set(p.x, p.y + L * 0.62, p.z);
+                sp.material.userData = { base: 1, noPulse: true };
+                sp.renderOrder = 9; shardGroup.add(sp);
+              }
+            }
+          }
+          return;
+        }
+      }
+
+      // 采样切分维在当前形态下落在哪根轴（单维）
+      const of = sh.of, idx = sh.idx;
       const dim = sh.dim === 'SP' ? 'TP' : sh.dim;
-      let nb = r;
-      const cp0 = model.cpOf(r);
-      if (dim === 'TP') nb = model.rankOf((tp + 1) % TP, pp, rep, cp0);
-      else if (dim === 'CP') nb = model.rankOf(tp, pp, rep, (cp0 + 1) % CP);
-      else if (dim === 'PP') nb = model.rankOf(tp, (pp + 1) % PP, rep, cp0);
-      else if (dim === 'DP') nb = model.rankOf(tp, pp, (rep + 1) % REP, cp0);
-      else if (dim === 'EP') { const dom = model.domOf(r); nb = model.rankOf(tp, pp, dom * EP + ((model.epOf(r) + 1) % EP), cp0); }
-      model.posOf(r, S.mode, _sp0); model.posOf(nb, S.mode, _sp1);
-      const dv = { x: _sp1.x - _sp0.x, y: _sp1.y - _sp0.y, z: _sp1.z - _sp0.z };
-      const ax = Math.abs(dv.x) >= Math.abs(dv.y) && Math.abs(dv.x) >= Math.abs(dv.z) ? 'x'
-        : Math.abs(dv.y) >= Math.abs(dv.z) ? 'y' : 'z';
-      if (Math.abs(dv[ax]) < CARD.x * 0.12) {                        // 这一维在本视图折成一点
+      const A1 = axisOf(dim);
+      const ax = A1.ax;
+      if (A1.flat) {                                                 // 这一维在本视图折成一点
         solid(L, L, L, 0, 0, 0, fam, 0.42); wire(L, L, L, 0, 0, 0, fam, 0.85);
         return;
       }
-      const sign = dv[ax] >= 0 ? 1 : -1;
+      const sign = A1.sign;
       const seg = L / of, gap = seg * 0.16;
       /* 片上直接标读数（而不是把话都放到旁边那个框里）：每片挂一枚小牌，
          本卡这片给族色 + 区间（E32-39），其余片给淡的片号——「第几片是谁」在片上就读得出。
@@ -3094,14 +3228,21 @@
       if (!sh) {
         return head + `<div class="prc-status">复制 —— 每张卡各持一份完整的<span class="prc-dim">（不被任何维切开）</span></div>`;
       }
+      /* 被多维同时切的对象（attn_core = TP head × CP ctx）要**每一维各给一行**：
+         只报主导那一维等于把话说了一半。单维对象 objShards 退化成 [shard]，同一段代码。 */
+      const alls = model.objShards(o.id, r);
+      const grid = alls.length >= 2;
       return head + `<div class="prc-kv">`
-        + kv(`${sh.dim} 沿${esc(sh.axis)}切`, `<b style="color:${dimc(sh.dim === 'SP' ? 'TP' : sh.dim)}">第 ${sh.idx} 片</b> <span class="prc-dim">/ ${sh.of}</span>`)
-        + (sh.range ? kv('本卡持有', `<b>${esc(sh.range)}</b>`) : '')
+        + alls.map((x) => kv(`${x.dim} 沿${esc(x.axis)}切`,
+          `<b style="color:${dimc(x.dim === 'SP' ? 'TP' : x.dim)}">第 ${x.idx} 片</b> <span class="prc-dim">/ ${x.of}</span>`
+          + (x.range ? ` <span class="prc-dim">${esc(x.range)}</span>` : ''))).join('')
+        + (grid ? kv('这张卡 = 网格一格',
+          `<b>${alls.map((x) => x.idx).join(' × ')}</b> <span class="prc-dim">/ ${alls.map((x) => x.of).join(' × ')} = ${alls.reduce((a, x) => a * x.of, 1)} 格</span>`) : '')
         + `</div>`
         /* 片选择条：切换片的**可靠**入口。在 3D 里点小方块受遮挡与透视影响，
            很容易误触（尤其片是空框时）；这里一排编号，点哪片就跳到持有那片的 rank。
            两条路并存：场景里点得中就点，点不中来这儿。 */
-        + shardStrip(r, o, sh)
+        + model.objShards(o.id, r).map((x) => shardStrip(r, o, x)).join('')
         + (o.partial ? `<div class="prc-status">行切算子 —— 本卡算出的是 <b>partial sum</b>，要在 TP 组内归约才完整</div>` : '');
     }
 
@@ -3851,7 +3992,7 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap(); tourBuildNest();
         renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
       setView(v) {
