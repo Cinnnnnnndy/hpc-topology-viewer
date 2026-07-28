@@ -1,0 +1,249 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   net-sharding pattern —— 样式
+   控件本身复用设计系统的 .btn / .panel-shell / .stat-chip；这里只放本 pattern
+   独有的东西：维度签名色、装载卡、分片状态流水带、整网图上的切分标记。
+   颜色 / 圆角 / 阴影 / 间距一律走 var(--token)，明暗随 [data-theme] 切换。
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.ns-root {
+  /* 维度签名色：TP/PP/DP/EP 与 rubik-cube 逐位相同（两个 pattern 并看时同维同色），
+     CP/SP 是本 pattern 新增的两维，取色卡里未被占用、且与四维都拉得开的两族。
+     红黄绿留给状态（负载 / 异常），签名色一律不碰。 */
+  --ns-tp: var(--dim-tp, #22d3ee);
+  --ns-pp: var(--warning, #ffaa3b);
+  --ns-dp: var(--primary, #4369ef);
+  --ns-ep: var(--highlight-l0a-violet-400, #9b3cf6);
+  --ns-cp: var(--highlight-ub-green-600, #04d793);
+  --ns-sp: var(--highlight-mte-amber-600, #d99a00);
+  --ns-neutral: var(--foreground-secondary, #8b949e);
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+/* ── 顶栏 ───────────────────────────────────────────────────────────────── */
+.ns-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 14px);
+  flex-wrap: wrap;
+  padding: var(--space-3, 10px) var(--space-4, 14px);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1, var(--background));
+  flex: none;
+}
+.ns-title { display: flex; align-items: baseline; gap: var(--space-2, 8px); }
+.ns-title b { font-size: 14px; letter-spacing: -0.01em; }
+.ns-title .ns-sub { font-size: 11.5px; color: var(--foreground-secondary); }
+
+.ns-ctl { display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap; }
+.ns-num {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--foreground-secondary);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.ns-num input {
+  width: 52px; min-height: 26px; padding: 2px 6px;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px;
+  color: var(--foreground); background: var(--surface-2, transparent);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 6px);
+}
+.ns-num input:focus { outline: none; border-color: var(--primary); }
+.ns-rank input { width: 74px; }
+
+.ns-chip {
+  font-family: var(--font-mono, monospace); font-size: 11px;
+  padding: 3px 9px; border-radius: var(--radius-pill, 999px);
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  color: var(--foreground-secondary); border: 1px solid var(--border-default);
+  cursor: help;
+}
+
+/* 维度按钮：色块 + 名字，选中即高亮该维切的算子 */
+.ns-dims { display: flex; gap: 3px; margin-left: auto; }
+.ns-dimbtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 26px; padding: 0 9px;
+  font-size: 11px; font-weight: 600; font-family: var(--font-mono, monospace);
+  color: var(--foreground-secondary);
+  background: transparent; border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill, 999px); cursor: pointer;
+}
+.ns-dimbtn i { width: 9px; height: 9px; border-radius: 2px; background: var(--c); display: block; }
+.ns-dimbtn:hover { border-color: var(--c); color: var(--foreground); }
+.ns-dimbtn.is-on { border-color: var(--c); color: var(--foreground); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.ns-toolslot { display: flex; gap: 6px; align-items: center; }
+
+/* ── 主体：左图 + 右卡 ──────────────────────────────────────────────────── */
+.ns-main { display: flex; flex: 1 1 auto; min-height: 0; }
+.ns-graph { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; padding: var(--space-3, 10px); }
+/* 我们挂 `pto-model-graphviz-pattern-page` 只是为了让上游那套 `--model-graphviz-*` 变量
+   解析得出来（它们全作用域在这个类下）。但上游同时在这个类上写了 `min-height:100vh`
+   —— 那是给整页容器准备的，嵌进 flex 布局后会把图撑出父容器、直接盖住底部流水带。
+   借变量、不借布局。 */
+.ns-graph.pto-model-graphviz-pattern-page { min-height: 0; }
+.ns-graph-stage { width: 100%; }
+.ns-empty {
+  display: grid; place-content: center; height: 100%;
+  color: var(--foreground-secondary); font-size: 13px; text-align: center; line-height: 1.7;
+}
+
+.ns-side {
+  flex: none; width: 340px; overflow-y: auto;
+  border-left: 1px solid var(--border-default);
+  padding: var(--space-3, 10px);
+  display: flex; flex-direction: column; gap: var(--space-3, 10px);
+  background: var(--surface-1, var(--background));
+}
+
+/* ── 装载卡 ─────────────────────────────────────────────────────────────── */
+.ns-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg, 10px);
+  padding: var(--space-3, 10px) var(--space-3, 11px);
+  background: var(--surface-2, transparent);
+}
+.ns-card.is-hint { color: var(--foreground-secondary); font-size: 11.5px; line-height: 1.65; }
+.ns-card.is-node { border-color: var(--primary); }
+.ns-kicker {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--foreground-secondary); margin-bottom: 5px;
+}
+.ns-h { font-size: 17px; font-weight: 650; font-family: var(--font-mono, monospace); letter-spacing: -0.01em; }
+.ns-h small { font-size: 11px; font-weight: 400; color: var(--foreground-secondary); }
+.ns-h2 { font-size: 13px; font-weight: 650; font-family: var(--font-mono, monospace); word-break: break-all; }
+.ns-lede { font-size: 11.5px; color: var(--foreground-secondary); line-height: 1.6; margin-top: 3px; }
+
+/* 六维坐标：一眼看出这张卡在每个维上是第几号 */
+.ns-coord { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+.ns-cc {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 2px 7px; border-radius: var(--radius-md, 6px);
+  font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 650;
+  background: color-mix(in srgb, var(--c) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+  color: var(--foreground);
+}
+.ns-cc i { font-style: normal; font-size: 9.5px; font-weight: 700; color: var(--c); letter-spacing: 0.05em; }
+
+/* 键值行：左标签右读数，读数一律 mono */
+.ns-kv {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 4px 0; border-top: 1px solid var(--border-subtle, var(--border-default));
+  font-size: 11.5px;
+}
+.ns-kv:first-of-type { border-top: none; }
+.ns-kv span { color: var(--foreground-secondary); flex: none; }
+.ns-kv b { font-family: var(--font-mono, monospace); font-size: 11.5px; text-align: right; font-weight: 600; }
+.ns-kv.is-tp b { color: var(--ns-tp); }
+.ns-kv.is-cp b { color: var(--ns-cp); }
+.ns-kv.is-sp b { color: var(--ns-sp); }
+.ns-kv.is-pp b { color: var(--ns-pp); }
+.ns-kv.is-ep b { color: var(--ns-ep); }
+.ns-kv.is-dp b { color: var(--ns-dp); }
+.ns-kv.is-none b { color: var(--foreground-secondary); font-weight: 500; }
+
+.ns-warn {
+  margin-top: 7px; padding: 5px 8px; font-size: 11px; line-height: 1.55;
+  border-radius: var(--radius-md, 6px);
+  background: color-mix(in srgb, var(--warning, #ffaa3b) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #ffaa3b) 38%, transparent);
+}
+.ns-prim {
+  display: inline-block; margin: 5px 0 2px; padding: 2px 8px;
+  font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 700;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 42%, transparent);
+}
+.ns-prim small { font-weight: 400; color: var(--foreground-secondary); }
+
+/* 通信域 */
+.ns-grp { margin-top: 8px; }
+.ns-grp-h { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
+.ns-grp-h i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); flex: none; align-self: center; }
+.ns-grp-h b { font-family: var(--font-mono, monospace); color: var(--c); }
+.ns-grp-h span { color: var(--foreground-secondary); font-family: var(--font-mono, monospace); }
+.ns-grp-h em { margin-left: auto; font-style: normal; font-size: 10px; color: var(--foreground-secondary); }
+.ns-grp-m { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.ns-grp-m u {
+  text-decoration: none; font-family: var(--font-mono, monospace); font-size: 10px;
+  padding: 1px 5px; border-radius: var(--radius-sm, 4px);
+  background: var(--surface-3, rgba(127, 127, 127, 0.12)); color: var(--foreground-secondary);
+}
+.ns-grp-m u.is-me { background: var(--c); color: var(--background); font-weight: 700; }
+.ns-grp-m u.is-more { opacity: 0.55; }
+
+/* ── 底部：分片状态流水带 ──────────────────────────────────────────────── */
+.ns-flow {
+  flex: none; border-top: 1px solid var(--border-default);
+  background: var(--surface-1, var(--background));
+  padding: var(--space-2, 8px) var(--space-4, 14px) var(--space-3, 11px);
+}
+.ns-flow-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+.ns-flow-h b { font-size: 12px; }
+.ns-flow-h span { font-size: 11px; color: var(--foreground-secondary); }
+.ns-flow-track {
+  display: flex; align-items: stretch; gap: 2px;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.ns-step {
+  flex: none; min-width: 96px; max-width: 150px;
+  padding: 5px 8px; border-radius: var(--radius-md, 7px);
+  border: 1px solid color-mix(in srgb, var(--c) 42%, transparent);
+  background: color-mix(in srgb, var(--c) 9%, transparent);
+  cursor: help;
+}
+/* 通信算子实心一档：它是「状态被搬动」的那一步，不该和普通算子一样轻 */
+.ns-step.is-comm { border-style: solid; border-width: 1.5px; background: color-mix(in srgb, var(--c) 17%, transparent); }
+.ns-step.is-op { border-style: dashed; }
+.ns-step-t { font-size: 11px; font-weight: 650; line-height: 1.3; }
+.ns-step-s {
+  font-family: var(--font-mono, monospace); font-size: 10px;
+  color: var(--foreground-secondary); margin-top: 2px; line-height: 1.35;
+}
+.ns-step-p {
+  display: inline-block; margin-top: 3px; padding: 0 5px;
+  font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 700;
+  border-radius: var(--radius-pill, 999px); background: var(--c); color: var(--background);
+}
+.ns-arrow { flex: none; align-self: center; color: var(--foreground-secondary); font-size: 15px; opacity: 0.6; }
+
+/* ── 整网图上的切分标记 ────────────────────────────────────────────────── */
+/* 被某一维切的算子，底部一道该维签名色的粗线 —— 不改节点填色（那是图自己的语义），
+   只在它身上补一条「这个算子被谁切开」的边。 */
+.pto-model-graphviz-node.ns-has-shard rect { stroke-width: 1.6px; }
+[data-ns-dim='tp'] rect { stroke: var(--ns-tp) !important; }
+[data-ns-dim='cp'] rect { stroke: var(--ns-cp) !important; }
+[data-ns-dim='sp'] rect { stroke: var(--ns-sp) !important; }
+[data-ns-dim='pp'] rect { stroke: var(--ns-pp) !important; }
+[data-ns-dim='ep'] rect { stroke: var(--ns-ep) !important; }
+[data-ns-dim='dp'] rect { stroke: var(--ns-dp) !important; }
+/* HCCL 原语节点：加一圈更实的描边，它们是状态转换点 */
+[data-ns-prim] rect { stroke-width: 2.2px !important; }
+
+.ns-dim-off { opacity: 0.16; transition: opacity 0.18s ease; }
+.ns-dim-on { opacity: 1; transition: opacity 0.18s ease; }
+
+/* ── 提示条 ─────────────────────────────────────────────────────────────── */
+.ns-flash {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(6px);
+  padding: 6px 14px; border-radius: var(--radius-pill, 999px);
+  background: var(--danger, #d1242f); color: #fff; font-size: 12px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 40;
+}
+.ns-flash.is-on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── 窄屏 ───────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .ns-main { flex-direction: column; }
+  .ns-side { width: auto; border-left: none; border-top: 1px solid var(--border-default); max-height: 46%; }
+  .ns-dims { margin-left: 0; }
+}
