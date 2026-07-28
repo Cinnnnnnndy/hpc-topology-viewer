@@ -194,6 +194,8 @@ figure { margin: 0 0 var(--space-5); }
   border-radius: var(--spec-board-radius);
   box-shadow: var(--spec-page-shadow);
 }
+/* 触屏上纵向滑动一律归翻页（横向拖仍可转），与滚轮那条同一个取向：文档先是文档 */
+.board.is-live canvas { touch-action: pan-y; }
 .board.is-live { height: 470px; }
 .board.is-live.is-tall { height: 560px; }   /* 带自带工具栏与图例的完整形态需要更多高度 */
 .fig-sm .board.is-live { height: 300px; }
@@ -263,6 +265,17 @@ figcaption .cap-n {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font: var(--type-body-sm); color: var(--foreground-muted); gap: var(--space-2);
 }
+/* 滚到示例上时提示一次：文档里滚轮归翻页，缩放要按住 Ctrl/⌘（见页尾脚本 guardWheel） */
+.board .demo-hint {
+  position: absolute; left: 50%; bottom: var(--space-4); transform: translateX(-50%);
+  z-index: 8; pointer-events: none; white-space: nowrap;
+  padding: 5px var(--space-3); border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--background) 86%, transparent);
+  border: 1px solid var(--border-default); color: var(--foreground-secondary);
+  font: var(--type-micro); letter-spacing: var(--letter-spacing-label);
+  opacity: 0; transition: opacity var(--duration-base) var(--easing-default);
+}
+.board .demo-hint.is-on { opacity: 1; }
 
 /* ── 代码块 ─────────────────────────────────────────────────────────── */
 pre {
@@ -2208,8 +2221,28 @@ footer {
       function (i) { h.setAlgo(ALGOS[i][0]); }, 0);
   }
 
+  /* 内嵌示例默认会吃掉滚轮（pattern 用滚轮缩放并 preventDefault），而三块画面占了大半个
+     阅读区——鼠标一落到示例上，整页就滚不动了，读起来像卡住。文档里滚轮的第一用途是翻页：
+     捕获阶段拦下不带修饰键的滚轮，画布收不到、页面照常滚；按住 Ctrl/⌘ 才放行给 pattern 缩放
+     （与它「Ctrl/⌘ + 拖 = 平移」的约定同一套修饰键）。拖拽/点选不受影响。 */
+  function guardWheel(board) {
+    var hint = document.createElement('div');
+    hint.className = 'demo-hint';
+    hint.textContent = 'Ctrl / ⌘ + 滚轮 缩放';
+    board.appendChild(hint);
+    var t = 0;
+    board.addEventListener('wheel', function (ev) {
+      if (ev.ctrlKey || ev.metaKey) return;      // 放行：交给 pattern 缩放
+      ev.stopPropagation();                      // 拦下：画布收不到，页面正常滚动
+      hint.classList.add('is-on');
+      clearTimeout(t);
+      t = setTimeout(function () { hint.classList.remove('is-on'); }, 1400);
+    }, { capture: true });
+  }
+
   var BUILDERS = { hero: buildHero, modes: buildModes, comm: buildComm };
   var boards = [].slice.call(document.querySelectorAll('[data-demo]'));
+  boards.forEach(guardWheel);
 
   function build(board) {
     if (board.dataset.built) return;
