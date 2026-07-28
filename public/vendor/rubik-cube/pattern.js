@@ -2265,49 +2265,17 @@
         pred: (x) => model.repOf(x) === rep && model.ppOf(x) === pp && model.cpOf(x) === cp });
       return out;
     }
-    /* 未选卡时画**所有**副本的容器壳：嵌套是这个模型本来就有的结构，
-       不该等到点了才出现（实机反馈就是这条）。选中一张卡之后再往里钻出完整的包含链。 */
-    function buildNestAll() {
-      const v = { x: 0, y: 0, z: 0 };
-      const bs = new Array(REP);
-      for (let r = 0; r < N; r++) {
-        const rep = model.repOf(r);
-        let b = bs[rep];
-        if (!b) b = bs[rep] = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
-        model.posOf(r, S.mode, v);
-        if (v.x < b.x0) b.x0 = v.x; if (v.x > b.x1) b.x1 = v.x;
-        if (v.y < b.y0) b.y0 = v.y; if (v.y > b.y1) b.y1 = v.y;
-        if (v.z < b.z0) b.z0 = v.z; if (v.z > b.z1) b.z1 = v.z;
-      }
-      const col = dimc('DP');
-      /* 副本很多时把壳压得更淡：100 个壳各自 0.06 会糊成一片雾。
-         壳数不做抽样——抽样等于谎报「一共有几个副本」，那正是这张图要说的事。 */
-      const op = REP <= 8 ? 0.075 : REP <= 32 ? 0.045 : 0.022;
-      const eop = REP <= 8 ? 0.5 : REP <= 32 ? 0.32 : 0.17;
-      const pad = CARD.x * 0.5;
-      for (let rep = 0; rep < REP; rep++) {
-        const b = bs[rep]; if (!b) continue;
-        const w = (b.x1 - b.x0) + CARD.x + pad * 2;
-        const h = (b.y1 - b.y0) + CARD.y + pad * 2;
-        const d = (b.z1 - b.z0) + CARD.z + pad * 2;
-        const sh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
-          new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, side: THREE.BackSide }));
-        sh.material.userData = { base: op, noPulse: true };
-        sh.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
-        sh.renderOrder = 4; nestGroup.add(sh);
-        const eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
-        const em = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: eop, depthTest: false });
-        em.userData = { base: eop, noPulse: true };
-        const box = new THREE.LineSegments(eg, em);
-        box.position.copy(sh.position); box.renderOrder = 5; nestGroup.add(box);
-      }
-    }
     function tourBuildNest() {
       clearNest();
       const inTour = S.tour != null;
       nestGroup.visible = !!S.wire.nest;
       if (!nestGroup.visible) return;
-      if (S.sel == null) { buildNestAll(); return; }   // 没选卡：先把结构摆出来
+      /* 没选卡 → **不画壳**。曾经在这里把所有副本各画一个壳（为了「不点击也能看到」），
+         但那 N 个一模一样的盒子只是把空间平铺了一遍：它们既不指向任何一张卡，
+         也说不出「谁在谁里面」——DP 轴刻度已经把副本分界交代过了，壳只是重复一遍噪音。
+         嵌套的意思只在**有一个具体的 rank 作锚**时才成立：DP2 ⊃ PP1 ⊃ 这张卡。
+         所以壳跟着选中走；没选中就什么都不画。 */
+      if (S.sel == null) { nestGroup.visible = false; return; }
       const v = { x: 0, y: 0, z: 0 };
       /* 导览时用导览自己的链（含 EP 那层「跨出副本」），平时用天然包含链。
          第 0 层（全网）不画——把整个模型框起来没有信息量。 */
