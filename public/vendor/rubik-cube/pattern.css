@@ -308,6 +308,12 @@
   width: min(88vw, 320px);
   padding: var(--space-4, var(--space-3));
   display: none;
+  /* 卡自己滚，不许顶出视口。装载清单把这张卡撑到了十几行——原先只有窄屏媒体查询里
+     写了 max-height，桌面端不限高，于是末尾的「此刻 X 主导」被切在屏幕外。
+     信息卡是固定屏幕尺寸的 UI，长度随内容变是常态，限高要写在基础规则上。 */
+  max-height: calc(100% - var(--prc-barh, 46px) - var(--space-3) * 4);
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* 滚到底不把画布一起滚走 */
 }
 .prc-info.show { display: block; }
 .prc-infoclose {
@@ -430,4 +436,33 @@
   line-height: 1.4;
   margin: 2px 0 5px;
   color: var(--foreground);
+}
+
+/* ── 装载清单（信息卡内）：这张卡是整网的哪一堆碎片 ─────────────────────────
+   与「整网对象」那一排是互逆的两种读法，样式上刻意同源：族色点 + 维度签名色读数。
+   行是按钮（可点选对象），但**长得不像按钮**——它首先是一份清单，可点是附带的，
+   做成一排实心按钮会把信息卡变成控件面板，喧宾夺主。 */
+.prc-rosterband {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--foreground-secondary); margin: 7px 0 2px; opacity: .8;
+}
+.prc-rosterrow {
+  display: flex; align-items: baseline; gap: 6px; width: 100%;
+  padding: 2px 4px; margin: 0; border: 0; border-radius: var(--radius-sm, 4px);
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+  font: inherit; line-height: 1.5;
+}
+.prc-rosterrow:hover { background: var(--surface-2, rgba(127,127,127,.12)); }
+.prc-rosterrow:focus-visible { outline: 1px solid var(--primary); outline-offset: -1px; }
+/* 「完全没有」整行压暗——缺席是这份清单里占比最大的状态，但它不该抢读者的注意力；
+   压暗之后，一眼扫过去先看到的是「这张卡真正有什么」。 */
+.prc-rosterrow.is-none { opacity: .42; }
+.prc-fam { width: 7px; height: 7px; border-radius: 2px; flex: none; align-self: center; }
+.prc-rostername {
+  flex: 1 1 auto; min-width: 0; font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prc-rosterval {
+  flex: none; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px;
+  font-weight: 650;
 }

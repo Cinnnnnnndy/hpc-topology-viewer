@@ -77,81 +77,93 @@
   }
   const rgOf = (t, n, i, pre) => { const s = axSlice(t, n, i); return `${pre || ''}${s.lo}-${pre || ''}${s.hi}`; };
 
+  /* 算子族色 —— **不是本 pattern 自己定的**，是已发布的整网图 pattern 那一套：
+     `patterns/model-architecture-3d-deck` 的 `COLOR_FALLBACKS`，其 key 与本仓库
+     `openpangu-graph.json` 节点上的 `opv:* / io:*` colorKey 同源。
+     两个 pattern 并排看时，「哪一族算子」必须是同一个颜色——否则读者要在两套色里
+     各记一遍。维度签名色（TP/PP/DP/EP/CP/SP）与这套是**两个正交的色系**：
+     族色答「这是什么算子」，签名色答「它被哪一维切」，装载清单里同屏出现、各管各的。 */
+  const OPV = {
+    embedding: '#14B8A6', norm: '#38BDF8', attention: '#3B82F6', linear: '#4F46E5',
+    head: '#7C3AED', mlp: '#A855F7', act: '#8B5CF6', gate: '#F59E0B', moe: '#EA580C',
+    comm: '#06B6D4', decoder: '#0D9488',
+  };
+
   const NET_OBJ = [
-    { id: 'embedding', band: 'Embedding', name: '词嵌入 Vocab Parallel Embedding',
+    { id: 'embedding', fam: 'embedding', band: 'Embedding', name: '词嵌入 Vocab Parallel Embedding',
       by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', firstStage: true,
       note: '词表并行：词表按 TP 切，查表后组内归约。只落在 PP 首段——别的段没有这个对象。',
       carry: (m, r) => m.ppOf(r) === 0,
       shard: (m, r) => ({ dim: 'TP', axis: '词表', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.vocab, m.TP, m.tpOf(r)) }) },
 
-    { id: 'qkv', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
+    { id: 'qkv', fam: 'linear', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
       by: [{ dim: 'TP', axis: 'head' }], best: 'tps',
       note: '注意力头按 TP 切：每张卡只算自己那几个 head。一整根纵深行 = 一个 TP 组，组内 8 片拼成全部 head。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
-    { id: 'attn_core', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
+    { id: 'attn_core', fam: 'attention', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
       by: [{ dim: 'TP', axis: 'head' }, { dim: 'CP', axis: 'ctx' }], best: 'tps',
       note: '只算自己那几个 head。若启用 CP，上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
-    { id: 'o_proj', band: 'Attention', name: 'Output Projection（行切）',
+    { id: 'o_proj', fam: 'linear', band: 'Attention', name: 'Output Projection（行切）',
       by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
       note: '行并行：每张卡算出来的是 partial sum，必须在 TP 组内归约才是完整输出。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '隐藏维', idx: m.tpOf(r), of: m.TP }) },
 
-    { id: 'norm', band: 'Attention', name: 'RMSNorm 区（SP）',
+    { id: 'norm', fam: 'norm', band: 'Attention', name: 'RMSNorm 区（SP）',
       by: [{ dim: 'SP', axis: 'seq' }], best: 'tps',
       note: 'norm 不改变特征维 → 沿 token 切最省显存，这就是 SP。SP 复用 TP 组，不新增 rank 维。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'SP', axis: '序列 token', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.seqLen, m.TP, m.tpOf(r), 'tok') }) },
 
-    { id: 'dense_ffn', band: 'MoE', name: 'Dense FFN（列切→行切）',
+    { id: 'dense_ffn', fam: 'mlp', band: 'MoE', name: 'Dense FFN（列切→行切）',
       by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
       note: '列并行算 gate/up，行并行算 down —— 中间维按 TP 切，出口归约。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.ffnHidden, m.TP, m.tpOf(r)) }) },
 
-    { id: 'router', band: 'MoE', name: 'Router Gate / TopK（复制）',
+    { id: 'router', fam: 'gate', band: 'MoE', name: 'Router Gate / TopK（复制）',
       by: [], best: null,
       note: '路由门是复制的：每张卡都独立算一遍 token 该去哪个专家——先知道去哪，才谈得上把 token 发出去。',
       carry: () => true, shard: () => null },
 
-    { id: 'experts', band: 'MoE', name: '路由专家 bank Routed Experts',
+    { id: 'experts', fam: 'moe', band: 'MoE', name: '路由专家 bank Routed Experts',
       by: [{ dim: 'EP', axis: 'expert' }], best: 'ep',
       note: '专家按 EP 切：每张卡只持有自己那一桶专家的权重 —— MoE 显存不爆的根本原因。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'EP', axis: '专家', idx: m.epOf(r), of: m.EP, range: m.expRange(m.epOf(r)) }) },
 
-    { id: 'shared_expert', band: 'MoE', name: '共享专家 Shared Expert',
+    { id: 'shared_expert', fam: 'mlp', band: 'MoE', name: '共享专家 Shared Expert',
       by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
       note: '共享专家每张卡都有（不按 EP 切），内部按 TP 切中间维 —— 与路由专家正好相反，值得对照着看。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP }) },
 
-    { id: 'lm_head', band: 'Head', name: 'LM Head 输出头',
+    { id: 'lm_head', fam: 'head', band: 'Head', name: 'LM Head 输出头',
       by: [{ dim: 'TP', axis: 'vocab' }], best: 'ppf', lastStage: true,
       note: '输出头按词表切，与 embedding 同一根轴。只落在 PP 末段。',
       carry: (m, r) => m.ppOf(r) === m.PP - 1,
       shard: (m, r) => ({ dim: 'TP', axis: '词表', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.vocab, m.TP, m.tpOf(r)) }) },
 
     /* ── 通信带：属于通信组，不属于单张卡 ── */
-    { id: 'c_tp', band: '通信', name: 'TP AllReduce（注意力/FFN 输出合并）',
+    { id: 'c_tp', fam: 'comm', band: '通信', name: 'TP AllReduce（注意力/FFN 输出合并）',
       comm: 'TP', prim: 'AllReduce', best: 'tps',
       note: '行切算子的 partial sum 在 TP 组内求和。HCCL：HcclAllReduce。' },
-    { id: 'c_sp', band: '通信', name: 'SP AllGather / ReduceScatter（布局转换）',
+    { id: 'c_sp', fam: 'comm', band: '通信', name: 'SP AllGather / ReduceScatter（布局转换）',
       comm: 'TP', prim: 'AllGather', best: 'tps',
       note: '进 TP 区收齐序列、出 TP 区归约并散开。绑定的仍是 TP 组（SP 与 TP 同域）。',
       alias: 'SP' },
-    { id: 'c_ep', band: '通信', name: 'EP AllToAll（Dispatch / Combine）',
+    { id: 'c_ep', fam: 'comm', band: '通信', name: 'EP AllToAll（Dispatch / Combine）',
       comm: 'EP', prim: 'AllToAll', best: 'ep',
       note: 'token 按路由结果重分布到专家所在的卡，算完再送回。HCCL：HcclAlltoAll（token 不均时用 V 变体）。' },
-    { id: 'c_pp', band: '通信', name: 'PP Send / Recv（阶段接力）',
+    { id: 'c_pp', fam: 'comm', band: '通信', name: 'PP Send / Recv（阶段接力）',
       comm: 'PP', prim: 'P2P', best: 'ppf',
       note: '只在 stage 边界传激活与梯度，通信量最小。HCCL：HcclSend / HcclRecv。' },
-    { id: 'c_dp', band: '通信', name: 'DP AllReduce（梯度同步）',
+    { id: 'c_dp', fam: 'comm', band: '通信', name: 'DP AllReduce（梯度同步）',
       comm: 'DP', prim: 'AllReduce', best: 'dpt',
       note: '副本间同步梯度，可与反向重叠。HCCL：HcclAllReduce。' },
   ];
@@ -2332,7 +2344,7 @@
         kv('EP 桶 · A2A 域', `<b style="color:${dimc('EP')}">桶${e}</b> <span class="prc-dim">${model.expRange(e)} · 域${model.domOf(r)}</span>`) +
         kv('物理落位', `<b>机${model.hostOf(r)} · Pod${model.podOf(r)}</b> <span class="prc-dim">${pl.cardsPerHost} 卡/机</span>`) +
         `</div>` +
-        objLine(r) +
+        objLine(r) + objRoster(r) +
         /* 主导维在这一屏画不出来时要**当场说明**：不说的话，这行写着「此刻 TP 主导」、
            图例把 TP 加粗，而画面上一根青线都没有，读者只会认为图坏了。
            通信本身照旧存在（所以这一行照旧给量），缺的只是「这一屏画不出来」这句话。 */
@@ -2344,6 +2356,62 @@
         (edge ? `<div class="prc-status is-edge">${edge.replace(/^<br>/, '')}</div>` : '');
       const close = info.querySelector('.prc-infoclose');
       if (close) close.addEventListener('click', () => api.select(null));
+      /* 清单行 → 选中该对象（走与「整网对象」那一排按钮同一条路径：着色 + 飞主屏），
+         选中的卡不变，于是「这张卡的这一片」在新形态里是接着看的，不是重新找。 */
+      info.querySelectorAll('.prc-rosterrow').forEach((b) => {
+        b.addEventListener('click', () => api.selectObject(b.dataset.obj));
+      });
+    }
+
+    /* ── 装载清单：把这张卡展开成「整网的哪一堆碎片」──────────────────────────
+       与 objLine 正好是一对**互逆**的读法，缺哪一个都只讲了一半：
+         objLine  ：选一个对象 → 它被切成什么样、这张卡拿到第几片（对象视角）；
+         objRoster：选一张卡  → 它是整网的哪一堆碎片（rank 视角）。
+       后者才回答「rank 本身也被整网切分」这件事，而且它给出的是**三种并存的状态**：
+         ✗ 完全没有（词嵌入只落 PP 首段——对整网的绝大部分，这张卡持有的是「无」）
+         ● 完整一份（router 权重是复制的，不被任何维切）
+         ▧ 第 n/m 片（其余）
+       「这张卡持有模型的几分之一」因此没有单一答案：每个对象切的维不同、份数不同。
+       没选对象时默认给清单（一张卡的全貌），选了对象就收敛到那一个（避免两段重复）。
+       行是可点的：点一行 = 选中该对象 → 透镜着色 + 飞到它的主屏，清单于是也是导航。 */
+    function objRoster(r) {
+      if (objOn()) return '';                       // 已聚焦某个对象 → 由 objLine 负责
+      const bands = [];
+      model.netObjects.forEach((o) => {
+        let b = bands.find((x) => x.name === o.band);
+        if (!b) bands.push(b = { name: o.band, items: [] });
+        b.items.push(o);
+      });
+      const row = (o) => {
+        const dot = `<i class="prc-fam" style="background:${OPV[o.fam] || OPV.linear}"></i>`;
+        let state, cls = '';
+        if (o.comm) {
+          const g = model.commGroup(r, o.comm);
+          const full = o.comm === 'DP' ? REP : g.length;   // DP 组画面按采样显示，这里给真值
+          state = `<span style="color:${dimc(o.comm)}">${esc(o.alias || o.comm)} 组</span> <span class="prc-dim">${full} 员</span>`;
+          cls = ' is-comm';
+        } else if (!model.objCarry(o.id, r)) {
+          state = `<span class="prc-dim">完全没有</span>`; cls = ' is-none';
+        } else {
+          const sh = model.objShard(o.id, r);
+          state = sh
+            ? `<span style="color:${dimc(sh.dim === 'SP' ? 'TP' : sh.dim)}">${sh.idx}</span><span class="prc-dim">/${sh.of}</span>`
+              + (sh.range ? ` <span class="prc-dim">${esc(sh.range)}</span>` : '')
+            : `<span class="prc-dim">完整一份</span>`;
+          cls = sh ? '' : ' is-whole';
+        }
+        return `<button class="prc-rosterrow${cls}" type="button" data-obj="${o.id}" title="${esc(o.note || '')}">`
+          + `${dot}<span class="prc-rostername">${esc(o.name)}</span><span class="prc-rosterval">${state}</span></button>`;
+      };
+      const lr = model.stageLayerRange(model.ppOf(r));
+      return `<div class="prc-kicker" style="margin-top:9px">装载清单 · 这张卡是整网的哪一堆碎片</div>`
+        + `<p class="prc-prose">rank 不是先存在、再由对象落上去——它就是六维切分切出来的那个格子。`
+        + `本段只有 <b>L${lr.lo}-L${lr.hi}</b>（${lr.hi - lr.lo + 1}/${model.config.layers} 层），`
+        + `其余 ${model.config.layers - (lr.hi - lr.lo + 1)} 层这张卡一个字节都没有。点一行看那个对象。</p>`
+        + bands.map((b) => `<div class="prc-rosterband">${esc(b.name)}</div>` + b.items.map(row).join('')).join('')
+        /* 两个色系的解释放悬停里，不占四行散文（同「行尾说明一律进问号气泡」那条纪律）。 */
+        + `<p class="prc-prose prc-dim" title="族色取自已发布的整网图 pattern（model-architecture-3d-deck / …-training-sidecar）的 COLOR_FALLBACKS，其 key 与 openpangu 图节点的 opv:* colorKey 同源，两边同一族算子同一个色。维度签名色则是 TP/PP/DP/EP/CP/SP 那一套。">`
+        + `<b>色点</b> = 算子族（同整网图 pattern） · <b>数字色</b> = 切它的那一维</p>`;
     }
 
     /* 选中整网对象时，信息卡多给一段：**这张卡持有这个对象的哪一片**。
