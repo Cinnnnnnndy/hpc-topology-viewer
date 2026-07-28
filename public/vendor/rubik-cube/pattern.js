@@ -651,7 +651,7 @@
       theme: opts.theme === 'light' ? 'light' : 'dark',
       sel: null, hover: null,        // 选中/悬停 rank
       // 连线图层（每项都可单独关闭）与集合算法。focus=选中聚焦：与选中卡无关的卡压暗
-      wire: { members: true, lines: true, outline: true, movers: true, focus: true, payload: true, board: false },
+      wire: { members: true, lines: true, outline: true, movers: true, focus: true, payload: true, board: false, nest: true },
       algo: 'auto',                  // auto（按维选原语）/ ring / tree
 
       /* 整网对象透镜：选中一个整网对象（算子/模块/HCCL 算子）→ 承载它的卡亮起、
@@ -697,7 +697,6 @@
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
-        '<div class="prc-faces panel-shell"></div>',
         '<div class="prc-tour panel-shell"></div>',
         '<div class="prc-topbar">',
         '  <div class="prc-brandname">逻辑魔方</div>',
@@ -2005,7 +2004,7 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); tourBuildNest(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
     function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
@@ -2141,9 +2140,21 @@
       { a: 'PP', b: 'TP', axis: 'Z 轴', verdict: '助记', why: 'PP 与 TP 无关，摆成对面只为凑满六面' },
       { a: 'SP', b: 'CP', axis: 'X 轴', verdict: '半真', why: '都切序列，但 SP 复用 TP 组、CP 是独立维' },
     ];
+    /* 六面助记原本是一块独立面板 —— 撤掉了：面板堆太多，而这套东西只在导览时有用。
+       现在压缩成导览旁白里的**一行**（当前这一维在立方体的哪个面、这一对轴真不真）。 */
+    function faceLine() {
+      if (S.tour == null || !TOUR[S.tour]) return '';
+      const key = TOUR[S.tour].key.toUpperCase();
+      const f = FACES.find((x) => x.dim === key); if (!f) return '';
+      const pr = FACE_PAIRS.find((x) => x.a === key || x.b === key);
+      const other = pr ? (pr.a === key ? pr.b : pr.a) : null;
+      return `<div class="prc-tour-face">立方体的 <b style="color:${dimc(key)}">${f.face}面</b>`
+        + (pr ? ` · 对面是 <b style="color:${dimc(other)}">${other}</b>（${pr.axis}·${pr.verdict}）` : '')
+        + `<span>${esc(f.cut)}</span></div>`;
+    }
     function faceRender() {
       const el = $('.prc-faces'); if (!el) return;
-      const on = S.faces || S.tour != null;      // 导览期间自动出现（它是导览的指示器）
+      const on = S.faces;
       el.classList.toggle('show', !!on);
       if (!on) return;
       const cur = S.tour != null && TOUR[S.tour] ? TOUR[S.tour].key.toUpperCase() : null;
@@ -2240,17 +2251,75 @@
       });
       while (nestGroup.children.length) nestGroup.remove(nestGroup.children[0]);
     }
+    /* 不在导览时也有一条**天然的包含链**：副本 ⊃ 段（= TP 组）⊃ 上下文段。
+       嵌套是这套模型本来就有的结构，不该只在导览里才看得见。 */
+    function nestChain() {
+      const r = S.sel;
+      if (r == null) return [];
+      const rep = model.repOf(r), pp = model.ppOf(r), cp = model.cpOf(r);
+      const out = [
+        { key: 'dp', label: `DP${rep}`, pred: (x) => model.repOf(x) === rep },
+        { key: 'pp', label: `PP${pp}`, pred: (x) => model.repOf(x) === rep && model.ppOf(x) === pp },
+      ];
+      if (CP > 1) out.push({ key: 'cp', label: `CP${cp}`,
+        pred: (x) => model.repOf(x) === rep && model.ppOf(x) === pp && model.cpOf(x) === cp });
+      return out;
+    }
+    /* 未选卡时画**所有**副本的容器壳：嵌套是这个模型本来就有的结构，
+       不该等到点了才出现（实机反馈就是这条）。选中一张卡之后再往里钻出完整的包含链。 */
+    function buildNestAll() {
+      const v = { x: 0, y: 0, z: 0 };
+      const bs = new Array(REP);
+      for (let r = 0; r < N; r++) {
+        const rep = model.repOf(r);
+        let b = bs[rep];
+        if (!b) b = bs[rep] = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
+        model.posOf(r, S.mode, v);
+        if (v.x < b.x0) b.x0 = v.x; if (v.x > b.x1) b.x1 = v.x;
+        if (v.y < b.y0) b.y0 = v.y; if (v.y > b.y1) b.y1 = v.y;
+        if (v.z < b.z0) b.z0 = v.z; if (v.z > b.z1) b.z1 = v.z;
+      }
+      const col = dimc('DP');
+      /* 副本很多时把壳压得更淡：100 个壳各自 0.06 会糊成一片雾。
+         壳数不做抽样——抽样等于谎报「一共有几个副本」，那正是这张图要说的事。 */
+      const op = REP <= 8 ? 0.075 : REP <= 32 ? 0.045 : 0.022;
+      const eop = REP <= 8 ? 0.5 : REP <= 32 ? 0.32 : 0.17;
+      const pad = CARD.x * 0.5;
+      for (let rep = 0; rep < REP; rep++) {
+        const b = bs[rep]; if (!b) continue;
+        const w = (b.x1 - b.x0) + CARD.x + pad * 2;
+        const h = (b.y1 - b.y0) + CARD.y + pad * 2;
+        const d = (b.z1 - b.z0) + CARD.z + pad * 2;
+        const sh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+          new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, side: THREE.BackSide }));
+        sh.material.userData = { base: op, noPulse: true };
+        sh.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+        sh.renderOrder = 4; nestGroup.add(sh);
+        const eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
+        const em = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: eop, depthTest: false });
+        em.userData = { base: eop, noPulse: true };
+        const box = new THREE.LineSegments(eg, em);
+        box.position.copy(sh.position); box.renderOrder = 5; nestGroup.add(box);
+      }
+    }
     function tourBuildNest() {
       clearNest();
-      nestGroup.visible = S.tour != null && S.sel != null;
+      const inTour = S.tour != null;
+      nestGroup.visible = !!S.wire.nest;
       if (!nestGroup.visible) return;
+      if (S.sel == null) { buildNestAll(); return; }   // 没选卡：先把结构摆出来
       const v = { x: 0, y: 0, z: 0 };
-      /* 逐层：第 0 层（全网）不画盒子——把整个模型框起来没有信息量。
-         从第 1 层起，每层画一个把该层成员都包住的盒子。 */
-      for (let li = 1; li <= S.tour; li++) {
-        const st = TOUR[li];
-        if (!st || !st.scope) continue;
-        const pred = st.scope(model, S.sel);
+      /* 导览时用导览自己的链（含 EP 那层「跨出副本」），平时用天然包含链。
+         第 0 层（全网）不画——把整个模型框起来没有信息量。 */
+      const levels = inTour
+        ? TOUR.slice(1, S.tour + 1).filter((t) => t.scope)
+          .map((t) => ({ key: t.key, label: t.crumb ? t.crumb(model, S.sel).split('›').pop().trim() : t.key, pred: t.scope(model, S.sel) }))
+        : nestChain();
+      const top = levels.length - 1;
+      for (let li = 0; li <= top; li++) {
+        const st = levels[li];
+        if (!st) continue;
+        const pred = st.pred;
         const b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
         let cnt = 0;
         for (let r = 0; r < N; r++) {
@@ -2263,23 +2332,32 @@
         if (!cnt) continue;
         /* 外层留更宽的边：里外两个盒子才不会贴在一起看成一个。
            `S.tour - li` = 这一层离当前层还有几级，越外面留白越大。 */
-        const pad = CARD.x * (0.62 + (S.tour - li) * 0.5);
+        const pad = CARD.x * (0.62 + (top - li) * 0.55);
         const w = (b.x1 - b.x0) + CARD.x + pad * 2;
         const h = (b.y1 - b.y0) + CARD.y + pad * 2;
         const d = (b.z1 - b.z0) + CARD.z + pad * 2;
         const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, cz = (b.z0 + b.z1) / 2;
         const col = dimc(st.key.toUpperCase());
-        const cur = li === S.tour;
+        const cur = li === top;                                   // 最里面那层 = 当前所在
+        /* **实体容器壳**：只画线框，在满屏卡块之间根本看不出来（实机反馈就是这条）。
+           加一层很淡的半透明填充，多层嵌套时填充叠加、越往里越深 ——
+           「里面还有一层」不用数框就读得出。BackSide + 不写深度，才不会糊住里面的卡。 */
+        const shell = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+          new THREE.MeshBasicMaterial({
+            color: col, transparent: true, opacity: cur ? 0.15 : 0.08,
+            depthWrite: false, side: THREE.BackSide,
+          }));
+        shell.material.userData = { base: cur ? 0.15 : 0.08, noPulse: true };
+        shell.position.set(cx, cy, cz); shell.renderOrder = 4; nestGroup.add(shell);
         const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d));
         const m = new THREE.LineBasicMaterial({
-          color: col, transparent: true, opacity: cur ? 0.95 : 0.34, depthTest: false,
+          color: col, transparent: true, opacity: cur ? 1 : 0.62, depthTest: false,
         });
-        m.userData = { base: cur ? 0.95 : 0.34, noPulse: true };
+        m.userData = { base: cur ? 1 : 0.62, noPulse: true };
         const box = new THREE.LineSegments(g, m);
         box.position.set(cx, cy, cz); box.renderOrder = 5; nestGroup.add(box);
         // 角上挂一枚牌：这一层是谁
-        const lab = makeLabel(st.crumb ? st.crumb(model, S.sel).split('›').pop().trim() : st.key,
-          col, cur ? 3.2 : 2.4);
+        const lab = makeLabel(st.label, col, cur ? 3.2 : 2.6);
         lab.position.set(cx - w / 2, cy + h / 2 + CARD.y * 0.5, cz - d / 2);
         lab.material.opacity = cur ? 1 : 0.6;
         lab.material.userData = { base: cur ? 1 : 0.6, noPulse: true };
@@ -2350,6 +2428,7 @@
             + `</div>` : '')
         + `<div class="prc-tour-title">${esc(st.title)}</div>`
         + `<p class="prc-tour-say">${st.say(model)}</p>`
+        + faceLine()
         + (st.note ? `<p class="prc-tour-note">${st.note}</p>` : '')
         + (st.needCP && tourSaved && tourSaved.cfg.cp < 2
           ? `<p class="prc-tour-note">已临时把 CP 设为 2 好让上下文有段可看，退出导览会还原成 CP=${tourSaved.cfg.cp}。</p>` : '')
@@ -3704,7 +3783,7 @@
       // 连线图层：五个独立开关（都可关）+ 集合算法选择
       const rowWire = $('.prc-row-wire');
       const wireSeg = rowWire.appendChild(Object.assign(document.createElement('span'), { className: 'prc-chips' }));
-      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus'], ['切分', 'payload'], ['装载板', 'board']]
+      wireBtns = [['成员', 'members'], ['通信线', 'lines'], ['域轮廓', 'outline'], ['粒子', 'movers'], ['聚焦', 'focus'], ['切分', 'payload'], ['嵌套', 'nest'], ['装载板', 'board']]
         .map(([t, k]) => wireSeg.appendChild(chipBtn(t, () => {
           S.wire[k] = !S.wire[k];
           if (k === 'movers' && !S.wire.movers) moverMeshes.forEach((m) => { m.visible = false; });
@@ -4130,7 +4209,7 @@
     // 若这里再飞一次，带 obj 的链接会覆盖掉同一条链接里写明的 mode。
     if (opts.obj && model.netObjBy[opts.obj]) S.obj = opts.obj;
     carrySet = objCarrySet();
-    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender(); faceRender();
+    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender(); faceRender(); tourBuildNest();   // 一进来就把嵌套结构摆出来（不必先点卡）
     raf = global.requestAnimationFrame(frame);
     return api;
   }
