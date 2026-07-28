@@ -539,3 +539,56 @@
 .prc-detail-cap em {
   display: block; font-style: normal; font-size: 9.5px; opacity: .75; margin-top: 1px;
 }
+
+/* ── 缩放穿梭导览：贴底居中的一张旁白卡 ───────────────────────────────────
+   资料里的 6D 图是逐级 Zoom-in 的嵌套图；导览不新建几何，只把现成的
+   形态+视角+对象切换串成一条下钻路径，每层配一句话。所以它是**旁白**，
+   不是控件面板：贴底、窄、不抢画面，画面本身才是内容。 */
+.prc-tour {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: var(--space-3); z-index: 7;
+  width: min(92vw, 620px); padding: var(--space-3);
+  display: none; flex-direction: column; gap: var(--space-2);
+  border-radius: var(--radius-xl);
+}
+.prc-tour.show { display: flex; }
+/* 进度点：走到第几层一眼看得出，也点得回去（title 说明每层是什么） */
+.prc-tour-dots { display: flex; gap: 5px; align-items: center; }
+.prc-tour-dots i {
+  flex: 1 1 0; height: 3px; border-radius: 2px; display: block;
+  background: var(--border-default);
+}
+.prc-tour-dots i.is-done { background: color-mix(in srgb, var(--primary) 45%, transparent); }
+.prc-tour-dots i.is-cur { background: var(--primary); }
+.prc-tour-kick {
+  font: var(--type-label); text-transform: uppercase; letter-spacing: .1em;
+  color: var(--foreground-muted);
+}
+.prc-tour-title { font-weight: 700; font-size: 13.5px; margin-top: 2px; }
+.prc-tour-say {
+  margin: 4px 0 0; font-size: 12px; line-height: 1.65; color: var(--foreground-secondary);
+}
+.prc-tour-say b { color: var(--foreground); }
+.prc-tour-note {
+  margin: 5px 0 0; padding: 4px 8px; font-size: 11px; line-height: 1.55;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning, #ffaa3b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #ffaa3b) 34%, transparent);
+  color: var(--foreground-secondary);
+}
+.prc-tour-nav { display: flex; gap: var(--space-2); align-items: center; justify-content: flex-end; }
+.prc-tour-btn {
+  min-height: var(--button-height-sm); padding: 0 var(--space-3);
+  font-size: 12px; color: var(--foreground-secondary);
+  background: var(--surface-2, transparent);
+  border: 1px solid var(--border-default); border-radius: var(--radius-pill); cursor: pointer;
+}
+.prc-tour-btn:hover { border-color: var(--primary); color: var(--foreground); }
+.prc-tour-btn.is-next {
+  background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
+  font-weight: 600;
+}
+.prc-tour-btn.is-exit { padding: 0 10px; }
+/* 导览期间图例让位（旁白已经在说这一屏是什么，两块话叠在一起是噪音） */
+.prc-root.is-tour .prc-legend { display: none; }
+@media (max-width: 900px) { .prc-tour { width: calc(100vw - var(--space-3) * 2); } }

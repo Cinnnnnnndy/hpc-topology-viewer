@@ -636,6 +636,7 @@
       obj: null,                     // null | NET_OBJ 的 id
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
       more: false,                   // 工具栏抽屉（着色/注入/连线/时间/并行）是否展开
+      tour: null,                    // 缩放穿梭导览：null=未开 · 0..n=当前在第几层
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -671,6 +672,7 @@
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
+        '<div class="prc-tour panel-shell"></div>',
         '<div class="prc-topbar">',
         '  <div class="prc-brandname">逻辑魔方</div>',
         '  <div class="prc-tools">',
@@ -685,6 +687,7 @@
         '      <button class="prc-playbtn btn btn-sm prc-iconbtn" type="button"></button>',
         '      <div class="prc-timepop panel-shell"><span class="prc-lab">时间</span></div>',
         '    </span>',
+        '    <button class="prc-tourbtn btn btn-sm" type="button" title="缩放穿梭导览：从 DP 复制一路下钻到 CP 序列线">导览</button>',
         '    <button class="prc-morebtn btn btn-sm prc-iconbtn" type="button"></button>',
         // 宿主控件（主题切换等）的插槽：放进同一张卡，按钮才成套
         '    <span class="prc-toolslot"></span>',
@@ -2083,6 +2086,104 @@
       syncShard();
     }
 
+    /* ── 缩放穿梭导览 ───────────────────────────────────────────────────────
+       资料（6D 并行架构图解）的骨架是一张**逐级 Zoom-in 的嵌套图**：
+         宏观 DP 复制 → 一个 PP Stage → Stage 内 TP 碎裂 / EP 分发 → 微观 SP / CP 序列线。
+       这套魔方本来就是「转动去看不同切面」——DP平铺=顶面 DP · PP流水=前面 PP ·
+       TP切片=背面 TP · EP聚簇=底面 EP。所以导览**不新建任何几何**，只是把现成的
+       `形态 + 视角 + 对象` 切换串成一条带旁白的下钻路径：每一步换一个切面 + 一句话说
+       这一屏在看什么。这样「宏观→微观」的体验成立，而画面永远是同一批真实的 rank。
+
+       CP 那一步需要 CP>1 才有空间可看（CP=1 时上下文没被切）。导览会**临时**把 cp 设为 2，
+       并在退出时还原 —— 不静默改用户的配置。 */
+    const TOUR = [
+      { key: 'dp', title: '宏观 · 整模型复制了 N 份', mode: 1, view: 1, obj: null,
+        say: (m) => `顶面看 <b>DP</b>：整个模型被复制成 <b>${m.REP}</b> 份副本，每份吃不同的数据批次。`
+          + `一块板 = 一个完整副本（板内是 TP×PP 的卡）。找慢副本就扫这一屏。` },
+      { key: 'pp', title: '宏观 · 一个副本切成流水段', mode: 4, view: 2, obj: null,
+        say: (m) => `前面看 <b>PP</b>：一个副本像千层蛋糕被切成 <b>${m.PP}</b> 段，`
+          + `每段管 ${m.LPS} 层，激活值沿 Stage0→Stage${m.PP - 1} 依次传递（P2P Send/Recv）。`
+          + `慢段会拖住下游 —— 一整列偏暗就是它。` },
+      { key: 'tp', title: '熔炉 · 权重矩阵碎裂', mode: 3, view: 0, obj: 'qkv',
+        say: (m) => `背面看 <b>TP</b>：注意力头按 <b>${m.TP}</b> 片切开，每张卡只拿一角`
+          + `（Q/K/V heads shard）。一面墙 = 全集群同一个 TP 槽位；`
+          + `算完要在 TP 组内 <b>All-Reduce</b> 才拼回完整输出。` },
+      { key: 'ep', title: '熔炉 · MoE 分发中心', mode: 2, view: 0, obj: 'experts',
+        say: (m) => `底面看 <b>EP</b>：${m.config.experts} 个路由专家分成 <b>${m.EP}</b> 桶，`
+          + `一面墙 = 一个专家桶。token 经路由器被 <b>All-to-All</b> 派发到专家所在的卡，`
+          + `算完再 Combine 送回 —— MoE 最密集的通信。` },
+      { key: 'sp', title: '微观 · 序列被切开，各算各的', mode: 3, view: 0, obj: 'norm',
+        say: (m) => `左面看 <b>SP</b>：norm/dropout 不改变特征维 → 沿 token 切成 <b>${m.TP}</b> 段`
+          + `（复用 TP 组）。这些操作只管自己那段，<b>四周一片寂静</b>，没有跨卡通信 —— 纯省显存。` },
+      { key: 'cp', title: '微观 · 寂静被打破：CP 收齐上下文', mode: 3, view: 0, obj: 'attn_core',
+        needCP: true,
+        say: (m) => `右面看 <b>CP</b>：上下文沿序列切成 <b>${m.CP}</b> 段，每卡只持有一段。`
+          + `但算 attention 要看<b>全局</b> —— 于是 CP 组内 <b>All-Gather(KV)</b> 收齐上下文，`
+          + `这就是切开长序列的代价。` },
+    ];
+    let tourSaved = null;                    // 进导览前的配置/状态，退出时还原
+
+    function tourApply() {
+      if (S.tour == null) return;
+      const st = TOUR[S.tour];
+      if (!st) return;
+      if (st.needCP && CP < 2) {
+        /* 临时启用 CP=2：不改 rank 总量的量级（只翻一倍），退出导览时还原。
+           不静默改配置——旁白里明说了。 */
+        api.setConfig({ cp: 2 });
+      }
+      api.selectObject(st.obj, { fly: false });
+      api.setMode(st.mode);
+      api.setView(st.view);
+      if (S.sel == null) api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1, 0));
+      tourRender();
+    }
+    function tourStart() {
+      tourSaved = { cfg: Object.assign({}, model.config), mode: S.mode, view: S.view, obj: S.obj, sel: S.sel };
+      S.tour = 0; root.classList.add('is-tour');
+      tourApply();
+    }
+    function tourExit() {
+      S.tour = null; root.classList.remove('is-tour');
+      if (tourSaved) {
+        if (tourSaved.cfg.cp !== model.config.cp) api.setConfig({ cp: tourSaved.cfg.cp });
+        api.selectObject(tourSaved.obj, { fly: false });
+        api.setMode(tourSaved.mode); api.setView(tourSaved.view);
+        tourSaved = null;
+      }
+      tourRender();
+    }
+    function tourGo(d) {
+      if (S.tour == null) return;
+      const n = S.tour + d;
+      if (n < 0 || n >= TOUR.length) { tourExit(); return; }
+      S.tour = n; tourApply();
+    }
+    function tourRender() {
+      const el = $('.prc-tour'); if (!el) return;
+      el.classList.toggle('show', S.tour != null);
+      if (S.tour == null) return;
+      const st = TOUR[S.tour];
+      el.innerHTML =
+        `<div class="prc-tour-dots">${TOUR.map((t, i) =>
+          `<i class="${i === S.tour ? 'is-cur' : ''}${i < S.tour ? ' is-done' : ''}" title="${esc(t.title)}"></i>`).join('')}</div>`
+        + `<div class="prc-tour-body">`
+        + `<div class="prc-tour-kick">缩放穿梭 · ${S.tour + 1}/${TOUR.length}</div>`
+        + `<div class="prc-tour-title">${esc(st.title)}</div>`
+        + `<p class="prc-tour-say">${st.say(model)}</p>`
+        + (st.needCP && tourSaved && tourSaved.cfg.cp < 2
+          ? `<p class="prc-tour-note">已临时把 CP 设为 2 好让上下文有段可看，退出导览会还原成 CP=${tourSaved.cfg.cp}。</p>` : '')
+        + `</div>`
+        + `<div class="prc-tour-nav">`
+        + `<button class="prc-tour-btn" data-d="-1" type="button">‹ 上一层</button>`
+        + `<button class="prc-tour-btn is-next" data-d="1" type="button">${S.tour === TOUR.length - 1 ? '完成' : '下一层 ›'}</button>`
+        + `<button class="prc-tour-btn is-exit" data-x="1" type="button" aria-label="退出导览">✕</button>`
+        + `</div>`;
+      el.querySelectorAll('.prc-tour-btn').forEach((b) => {
+        b.addEventListener('click', () => { if (b.dataset.x) tourExit(); else tourGo(+b.dataset.d); });
+      });
+    }
+
     /* ── 装载板：把选中的这张卡在 3D 里摊开成「它持有的那些碎片」──────────────
        编码沿用 6D 并行可视化的通行做法（main-horse「Visualizing 6-D Mesh Parallelism」：
        *sharded tensors use subdivision and selective coloring within device squares*）——
@@ -3271,6 +3372,8 @@
       });
       viewBtns = ['3D', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
       // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）——独立按钮，不挤在视角行里
+      const tourBtn = $('.prc-tourbtn');
+      if (tourBtn) tourBtn.addEventListener('click', () => { if (S.tour == null) tourStart(); else tourExit(); });
       moreBtn = $('.prc-morebtn');
       moreBtn.addEventListener('click', () => {
         S.more = !S.more;
@@ -3719,6 +3822,12 @@
         refreshObj(); syncChrome();
         if (opts.onSelectObject) opts.onSelectObject(next, ob || null);
       },
+      tour(i) {                                   // 程序侧驱动导览：tour(0) 开 · tour(null) 关
+        if (i == null) { tourExit(); return; }
+        if (S.tour == null) tourStart();
+        S.tour = Math.max(0, Math.min(TOUR.length - 1, i | 0)); tourApply();
+      },
+      get tourSteps() { return TOUR.map((t) => t.key); },
       get netObjects() { return model.netObjects; },
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
@@ -3779,7 +3888,7 @@
     // 若这里再飞一次，带 obj 的链接会覆盖掉同一条链接里写明的 mode。
     if (opts.obj && model.netObjBy[opts.obj]) S.obj = opts.obj;
     carrySet = objCarrySet();
-    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI();
+    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender();
     raf = global.requestAnimationFrame(frame);
     return api;
   }
