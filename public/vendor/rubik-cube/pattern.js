@@ -660,8 +660,6 @@
       obj: null,                     // null | NET_OBJ 的 id
       selEdge: null,                 // 选中的通信边（C 档：宿主据此点亮物理链路）
       more: false,                   // 工具栏抽屉（着色/注入/连线/时间/并行）是否展开
-      tour: null,                    // 缩放穿梭导览：null=未开 · 0..n=当前在第几层
-      faces: false,                  // 六面助记参考图（导览期间自动出现）
       selLayer: null,                // 整网层 → 魔方水平切片（整网图联动挂点）
       t: 0,
     };
@@ -697,7 +695,6 @@
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
-        '<div class="prc-tour panel-shell"></div>',
         '<div class="prc-topbar">',
         '  <div class="prc-brandname">逻辑魔方</div>',
         '  <div class="prc-tools">',
@@ -712,7 +709,6 @@
         '      <button class="prc-playbtn btn btn-sm prc-iconbtn" type="button"></button>',
         '      <div class="prc-timepop panel-shell"><span class="prc-lab">时间</span></div>',
         '    </span>',
-        '    <button class="prc-tourbtn btn btn-sm" type="button" title="缩放穿梭导览：从 DP 复制一路下钻到 CP 序列线">导览</button>',
         '    <button class="prc-morebtn btn btn-sm prc-iconbtn" type="button"></button>',
         // 宿主控件（主题切换等）的插槽：放进同一张卡，按钮才成套
         '    <span class="prc-toolslot"></span>',
@@ -1968,7 +1964,6 @@
       /* 导览作用域：不在当前这一层「里面」的卡退成背景 —— 嵌套关系因此是看得见的
          （全网 → 一个副本 → 一个 Stage → 一个 TP 组，亮着的那块每层缩小一圈）。
          与对象透镜/聚焦共用同一档 dim，图例色与画面永远一致。 */
-      : (tourScope && !tourScope.has(r)) ? 1
         : (objOn() && carrySet && !carrySet.has(r)) ? 1
           : focusOn() && !relSet.has(r) ? 1 : 0);
     const BG_C = new THREE.Color();
@@ -2004,7 +1999,7 @@
       if (dirty) settling = true;
     }
     // 选中/聚焦开关变化后统一刷新（重算关联集合 → 压暗与缩放）
-    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); tourBuildNest(); }
+    function refreshFocus() { buildRelSet(); carrySet = objCarrySet(); reScale(); recolor(); applyGridEmphasis(); renderLegend(); buildPayload(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); buildNest(); }
     /* 选中/切换整网对象：承载集合与着色一起重算，并把「该去哪个形态看」交给调用方决定
        （selectObject 会主动飞过去，与 selectLayer/selectBucket 的既有做法一致）。 */
     function refreshObj() { carrySet = objCarrySet(); reScale(); recolor(); renderLegend(); renderInfo(); buildShard(); syncShard(); buildDetail(); syncDetailCap(); }
@@ -2115,124 +2110,6 @@
       syncShard();
     }
 
-    /* ── 六面助记参考魔方 ────────────────────────────────────────────────────
-       资料里那张 6D 图把六个维度画在一个立方体的六个面上。**它是助记图，不是坐标图** ——
-       立方体只有 3 根轴（3 对面），对面必然共享同一根轴，所以「六面各管一维」这件事
-       在几何上只可能是三对：
-
-         顶 DP / 底 EP  —— **这一对是真的**：本模型 EP 就折入 DP 轴（相邻 EP 个副本 = 一个 A2A 域）
-         前 PP / 背 TP  —— 假的：PP 与 TP 无关，摆成对面只是为了凑满六面
-         左 SP / 右 CP  —— 半真：两者都切序列，但 SP 复用 TP 组、CP 是独立维
-
-       所以这块图**明确标成「助记」**，并把三对的真假直接写在上面 —— 与其让读者以为
-       卡的位置真是这么摆的，不如把这层关系说破。它同时是导览的指示器：走到哪一层，
-       对应那个面就亮起来。 */
-    const FACES = [
-      { dim: 'DP', face: '顶', cut: '切数据批次（整模型复制）', real: true },
-      { dim: 'EP', face: '底', cut: '切 MoE 专家', real: true },
-      { dim: 'PP', face: '前', cut: '切模型层（Stage）', real: false },
-      { dim: 'TP', face: '背', cut: '切单层权重矩阵', real: false },
-      { dim: 'SP', face: '左', cut: '切序列 token（norm 区）· 复用 TP 组，不新增 rank 维', real: false },
-      { dim: 'CP', face: '右', cut: '切上下文长度', real: false },
-    ];
-    const FACE_PAIRS = [
-      { a: 'DP', b: 'EP', axis: 'Y 轴', verdict: '真', why: 'EP 折入 DP 轴，这一对确实共享一根轴' },
-      { a: 'PP', b: 'TP', axis: 'Z 轴', verdict: '助记', why: 'PP 与 TP 无关，摆成对面只为凑满六面' },
-      { a: 'SP', b: 'CP', axis: 'X 轴', verdict: '半真', why: '都切序列，但 SP 复用 TP 组、CP 是独立维' },
-    ];
-    /* 六面助记原本是一块独立面板 —— 撤掉了：面板堆太多，而这套东西只在导览时有用。
-       现在压缩成导览旁白里的**一行**（当前这一维在立方体的哪个面、这一对轴真不真）。 */
-    function faceLine() {
-      if (S.tour == null || !TOUR[S.tour]) return '';
-      const key = TOUR[S.tour].key.toUpperCase();
-      const f = FACES.find((x) => x.dim === key); if (!f) return '';
-      const pr = FACE_PAIRS.find((x) => x.a === key || x.b === key);
-      const other = pr ? (pr.a === key ? pr.b : pr.a) : null;
-      return `<div class="prc-tour-face">立方体的 <b style="color:${dimc(key)}">${f.face}面</b>`
-        + (pr ? ` · 对面是 <b style="color:${dimc(other)}">${other}</b>（${pr.axis}·${pr.verdict}）` : '')
-        + `<span>${esc(f.cut)}</span></div>`;
-    }
-    function faceRender() {
-      const el = $('.prc-faces'); if (!el) return;
-      const on = S.faces;
-      el.classList.toggle('show', !!on);
-      if (!on) return;
-      const cur = S.tour != null && TOUR[S.tour] ? TOUR[S.tour].key.toUpperCase() : null;
-      const c = (d) => dimc(d);
-      const chip = (f) => `<span class="prc-face${cur === f.dim ? ' is-on' : ''}${f.real ? '' : ' is-mnemonic'}"`
-        + ` style="--c:${c(f.dim)}" title="${esc(f.face)}面 · ${esc(f.cut)}">`
-        + `<i></i><b>${f.dim}</b><em>${esc(f.face)}</em></span>`;
-      el.innerHTML =
-        `<div class="prc-faces-h">六面助记 <span>立方体只有 3 根轴 → 对面共享一根轴</span></div>`
-        + `<div class="prc-faces-grid">${FACES.map(chip).join('')}</div>`
-        + `<div class="prc-faces-pairs">${FACE_PAIRS.map((p) =>
-          `<div class="prc-facepair is-${p.verdict === '真' ? 'true' : p.verdict === '半真' ? 'half' : 'mnemonic'}" title="${esc(p.why)}">`
-          + `<b style="color:${c(p.a)}">${p.a}</b>↔<b style="color:${c(p.b)}">${p.b}</b>`
-          + `<span>${p.axis} · ${p.verdict}</span></div>`).join('')}</div>`
-        + `<div class="prc-faces-note">这是<b>读图助记</b>，不是卡的真实坐标——卡的位置由当前形态决定。`
-        + `<br><b>SP</b> 复用 TP 组（不新增 rank 维），但切的是 seq 轴、跑 AllGather/ReduceScatter；`
-        + `<b>CP</b> 是真实 rank 维，与 TP 共用一根空间轴。</div>`;
-    }
-
-    /* ── 缩放穿梭导览 ───────────────────────────────────────────────────────
-       资料（6D 并行架构图解）的骨架是一张**逐级 Zoom-in 的嵌套图**：
-         宏观 DP 复制 → 一个 PP Stage → Stage 内 TP 碎裂 / EP 分发 → 微观 SP / CP 序列线。
-       这套魔方本来就是「转动去看不同切面」——DP平铺=顶面 DP · PP流水=前面 PP ·
-       TP切片=背面 TP · EP聚簇=底面 EP。所以导览**不新建任何几何**，只是把现成的
-       `形态 + 视角 + 对象` 切换串成一条带旁白的下钻路径：每一步换一个切面 + 一句话说
-       这一屏在看什么。这样「宏观→微观」的体验成立，而画面永远是同一批真实的 rank。
-
-       CP 那一步需要 CP>1 才有空间可看（CP=1 时上下文没被切）。导览会**临时**把 cp 设为 2，
-       并在退出时还原 —— 不静默改用户的配置。 */
-    const TOUR = [
-      { key: 'dp', title: '宏观 · 整模型复制了 N 份', mode: 1, view: 1, obj: null,
-        scope: null, crumb: () => '全网',
-        say: (m) => `顶面看 <b>DP</b>：整个模型被复制成 <b>${m.REP}</b> 份副本，每份吃不同的数据批次。`
-          + `一块板 = 一个完整副本（板内是 TP×PP 的卡）。找慢副本就扫这一屏。` },
-      { key: 'pp', title: '宏观 · 一个副本切成流水段', mode: 4, view: 2, obj: null,
-        /* 收窄到**一个副本**：这才叫「进到 DP 里面」。 */
-        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r),
-        crumb: (m, r) => `DP${m.repOf(r)}`,
-        say: (m) => `前面看 <b>PP</b>：一个副本像千层蛋糕被切成 <b>${m.PP}</b> 段，`
-          + `每段管 ${m.LPS} 层，激活值沿 Stage0→Stage${m.PP - 1} 依次传递（P2P Send/Recv）。`
-          + `慢段会拖住下游 —— 一整列偏暗就是它。` },
-      { key: 'tp', title: '熔炉 · 权重矩阵碎裂', mode: 3, view: 0, obj: 'qkv',
-        /* 再收窄到**这个副本的这一段**：剩下的正好是一个 TP 组（×CP）——
-           「在一个 Stage 内部打开 TP」在画面上就是这么发生的。 */
-        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r),
-        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)}`,
-        say: (m) => `背面看 <b>TP</b>：注意力头按 <b>${m.TP}</b> 片切开，每张卡只拿一角`
-          + `（Q/K/V heads shard）。一面墙 = 全集群同一个 TP 槽位；`
-          + `算完要在 TP 组内 <b>All-Reduce</b> 才拼回完整输出。` },
-      { key: 'ep', title: '熔炉 · MoE 分发中心', mode: 2, view: 0, obj: 'experts',
-        /* **这一层会跨出副本**：本模型里 EP 折入 DP 轴（相邻 EP 个副本组成一个 A2A 域），
-           所以「在 FFN 处打开 EP」并不是留在原来那个副本里 —— 如实标注，不假装是纯嵌套。 */
-        scope: (m, r) => (x) => m.domOf(x) === m.domOf(r) && m.ppOf(x) === m.ppOf(r) && m.tpOf(x) === m.tpOf(r),
-        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › A2A域${m.domOf(r)}`,
-        note: 'EP 折入 DP 轴：打开专家这一层会<b>跨出单个副本</b>，走到相邻 EP 个副本组成的 A2A 域。',
-        say: (m) => `底面看 <b>EP</b>：${m.config.experts} 个路由专家分成 <b>${m.EP}</b> 桶，`
-          + `一面墙 = 一个专家桶。token 经路由器被 <b>All-to-All</b> 派发到专家所在的卡，`
-          + `算完再 Combine 送回 —— MoE 最密集的通信。` },
-      { key: 'sp', title: '微观 · 序列被切开，各算各的', mode: 3, view: 0, obj: 'norm',
-        /* 回到 stage 内：SP 复用 TP 组，作用域就是这一个 TP 组。 */
-        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r) && m.cpOf(x) === m.cpOf(r),
-        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › TP组`,
-        say: (m) => `左面看 <b>SP</b>：norm/dropout 不改变特征维 → 沿 token 切成 <b>${m.TP}</b> 段`
-          + `（复用 TP 组）。这些操作只管自己那段，<b>四周一片寂静</b>，没有跨卡通信 —— 纯省显存。` },
-      { key: 'cp', title: '微观 · 寂静被打破：CP 收齐上下文', mode: 3, view: 0, obj: 'attn_core',
-        needCP: true,
-        /* 最里面一层：同一个 TP 槽位、不同上下文段 —— 这就是那条 sequence line。 */
-        scope: (m, r) => (x) => m.repOf(x) === m.repOf(r) && m.ppOf(x) === m.ppOf(r) && m.tpOf(x) === m.tpOf(r),
-        crumb: (m, r) => `DP${m.repOf(r)} › PP${m.ppOf(r)} › TP${m.tpOf(r)} › CP段`,
-        say: (m) => `右面看 <b>CP</b>：上下文沿序列切成 <b>${m.CP}</b> 段，每卡只持有一段。`
-          + `但算 attention 要看<b>全局</b> —— 于是 CP 组内 <b>All-Gather(KV)</b> 收齐上下文，`
-          + `这就是切开长序列的代价。` },
-    ];
-    let tourSaved = null;                    // 进导览前的配置/状态，退出时还原
-    /* 当前层的作用域：只有落在里面的卡是「亮的」，外面的压暗。
-       嵌套关系因此是**看得见的**：从全网 → 一个副本 → 一个 Stage → 一个 TP 组 …
-       每往下一层，亮着的那块就缩小一圈。null = 全网（第一层不收窄）。 */
-    let tourScope = null;
     /* ── 嵌套框：把「在谁的里面」画进 3D，而不是只写在面包屑上 ──────────────────
        每往下一层，就在**上一层的范围**外面留一圈、画一个线框盒子。于是画面上真的出现
        一层套一层的容器：全网 ⊃ 这个副本 ⊃ 这一段 ⊃ 这个 TP 组 …
@@ -2336,9 +2213,8 @@
         }
       }
     }
-    function tourBuildNest() {
+    function buildNest() {
       clearNest();
-      const inTour = S.tour != null;
       nestGroup.visible = !!S.wire.nest;
       if (!nestGroup.visible) return;
       /* 没选卡 → **不画壳**。曾经在这里把所有副本各画一个壳（为了「不点击也能看到」），
@@ -2350,10 +2226,7 @@
       const v = { x: 0, y: 0, z: 0 };
       /* 导览时用导览自己的链（含 EP 那层「跨出副本」），平时用天然包含链。
          第 0 层（全网）不画——把整个模型框起来没有信息量。 */
-      const levels = inTour
-        ? TOUR.slice(1, S.tour + 1).filter((t) => t.scope)
-          .map((t) => ({ key: t.key, label: t.crumb ? t.crumb(model, S.sel).split('›').pop().trim() : t.key, pred: t.scope(model, S.sel) }))
-        : nestChain();
+      const levels = nestChain();
       const top = levels.length - 1;
       for (let li = 0; li <= top; li++) {
         const st = levels[li];
@@ -2370,7 +2243,7 @@
         }
         if (!cnt) continue;
         /* 外层留更宽的边：里外两个盒子才不会贴在一起看成一个。
-           `S.tour - li` = 这一层离当前层还有几级，越外面留白越大。 */
+           `top - li` = 这一层离最内层还有几级，越外面留白越大。 */
         const pad = CARD.x * (0.62 + (top - li) * 0.55);
         const w = (b.x1 - b.x0) + CARD.x + pad * 2;
         const h = (b.y1 - b.y0) + CARD.y + pad * 2;
@@ -2403,85 +2276,10 @@
         lab.renderOrder = 6; nestGroup.add(lab);
       }
     }
-    function tourBuildScope() {
-      tourScope = null;
-      if (S.tour == null || S.sel == null) return;
-      const st = TOUR[S.tour];
-      if (!st || !st.scope) return;
-      const pred = st.scope(model, S.sel);
-      const set = new Set();
-      for (let r = 0; r < N; r++) if (pred(r)) set.add(r);
-      tourScope = set;
-    }
 
-    function tourApply() {
-      if (S.tour == null) return;
-      const st = TOUR[S.tour];
-      if (!st) return;
-      if (st.needCP && CP < 2) {
-        /* 临时启用 CP=2：不改 rank 总量的量级（只翻一倍），退出导览时还原。
-           不静默改配置——旁白里明说了。 */
-        api.setConfig({ cp: 2 });
-      }
-      api.selectObject(st.obj, { fly: false });
-      api.setMode(st.mode);
-      api.setView(st.view);
-      if (S.sel == null) api.select(model.rankOf(TP >> 1, PP >> 1, REP >> 1, 0));
-      tourBuildScope(); tourBuildNest(); refreshFocus();   // 收窄作用域 + 画出嵌套容器盒
-      tourRender();
-    }
-    function tourStart() {
-      tourSaved = { cfg: Object.assign({}, model.config), mode: S.mode, view: S.view, obj: S.obj, sel: S.sel };
-      S.tour = 0; root.classList.add('is-tour');
-      tourApply();
-    }
-    function tourExit() {
-      S.tour = null; tourScope = null; root.classList.remove('is-tour'); clearNest();
-      if (tourSaved) {
-        if (tourSaved.cfg.cp !== model.config.cp) api.setConfig({ cp: tourSaved.cfg.cp });
-        api.selectObject(tourSaved.obj, { fly: false });
-        api.setMode(tourSaved.mode); api.setView(tourSaved.view);
-        tourSaved = null;
-      }
-      refreshFocus(); tourRender(); faceRender();
-    }
-    function tourGo(d) {
-      if (S.tour == null) return;
-      const n = S.tour + d;
-      if (n < 0 || n >= TOUR.length) { tourExit(); return; }
-      S.tour = n; tourApply();
-    }
-    function tourRender() {
-      const el = $('.prc-tour'); if (!el) return;
-      el.classList.toggle('show', S.tour != null);
-      if (S.tour == null) return;
-      const st = TOUR[S.tour];
-      el.innerHTML =
-        `<div class="prc-tour-dots">${TOUR.map((t, i) =>
-          `<i class="${i === S.tour ? 'is-cur' : ''}${i < S.tour ? ' is-done' : ''}" title="${esc(t.title)}"></i>`).join('')}</div>`
-        + `<div class="prc-tour-body">`
-        + `<div class="prc-tour-kick">缩放穿梭 · ${S.tour + 1}/${TOUR.length}</div>`
-        + (st.crumb && S.sel != null
-          ? `<div class="prc-tour-crumb">${esc(st.crumb(model, S.sel))}`
-            + (tourScope ? ` <span>· 亮着的 ${tourScope.size} 卡</span>` : ' <span>· 全部 ' + N + ' 卡</span>')
-            + `</div>` : '')
-        + `<div class="prc-tour-title">${esc(st.title)}</div>`
-        + `<p class="prc-tour-say">${st.say(model)}</p>`
-        + faceLine()
-        + (st.note ? `<p class="prc-tour-note">${st.note}</p>` : '')
-        + (st.needCP && tourSaved && tourSaved.cfg.cp < 2
-          ? `<p class="prc-tour-note">已临时把 CP 设为 2 好让上下文有段可看，退出导览会还原成 CP=${tourSaved.cfg.cp}。</p>` : '')
-        + `</div>`
-        + `<div class="prc-tour-nav">`
-        + `<button class="prc-tour-btn" data-d="-1" type="button">‹ 上一层</button>`
-        + `<button class="prc-tour-btn is-next" data-d="1" type="button">${S.tour === TOUR.length - 1 ? '完成' : '下一层 ›'}</button>`
-        + `<button class="prc-tour-btn is-exit" data-x="1" type="button" aria-label="退出导览">✕</button>`
-        + `</div>`;
-      faceRender();
-      el.querySelectorAll('.prc-tour-btn').forEach((b) => {
-        b.addEventListener('click', () => { if (b.dataset.x) tourExit(); else tourGo(+b.dataset.d); });
-      });
-    }
+    /* 导览（缩放穿梭）与六面助记参考图已整体移除 —— 一层层轮播视图 + 一堆面板，
+       并没有把「卡里装着什么」说清楚，反而堆出很多要读的框。
+       嵌套改由结构框表达，卡内交给「卡内魔方」。 */
 
     /* ── 装载板：把选中的这张卡在 3D 里摊开成「它持有的那些碎片」──────────────
        编码沿用 6D 并行可视化的通行做法（main-horse「Visualizing 6-D Mesh Parallelism」：
@@ -2630,9 +2428,67 @@
     }
 
     let shardPicks = [];
+    /* ── 卡内魔方：把一张卡本身当成一个小魔方 ────────────────────────────────
+       「卡内的卡内还是什么都没有」—— 说的就是这个：外面那层嵌套框把「这张卡在谁里面」
+       讲清楚了，但**卡自己肚子里装的东西**一直没画。
+       一张卡里装的是：它那一段的**每一层** × 每层里的**每类算子**，各持有一片。
+       所以把它摊成一个小立方阵：
+           X = 本卡持有的层（L20…L29）
+           Y = 算子（QKV / Attn / FFN / 专家 / …，按整网图的算子族色）
+           每格 = 该层该算子落在本卡上的那一份；本卡不承载的算子画成空框。
+       这就是「卡也是一个魔方」——外层魔方按并行维排卡，卡内魔方按模型结构排算子。 */
+    function buildCardCube() {
+      const r = S.sel;
+      const lr = model.stageLayerRange(model.ppOf(r));
+      const objs = model.netObjects.filter((o) => !o.comm);
+      const LN = Math.min(12, lr.hi - lr.lo + 1);          // 层多时只摆前 12 层，避免糊成一片
+      const CW = CARD.x * 0.34, GAP = CW * 0.42;           // 小格边长与缝
+      const w = LN * (CW + GAP), h = objs.length * (CW + GAP);
+      const bd = tokHex('--border-strong');
+      objs.forEach((o, yi) => {
+        const carried = model.objCarry(o.id, r);
+        const sh = carried ? model.objShard(o.id, r) : null;
+        const fam = OPV[o.fam] || OPV.linear;
+        for (let xi = 0; xi < LN; xi++) {
+          const px = (xi - (LN - 1) / 2) * (CW + GAP);
+          const py = ((objs.length - 1) / 2 - yi) * (CW + GAP);
+          if (!carried) {
+            const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(CW, CW, CW));
+            const m = new THREE.LineBasicMaterial({ color: bd, transparent: true, opacity: 0.3, depthTest: false });
+            m.userData = { base: 0.3, noPulse: true };
+            const ln = new THREE.LineSegments(g, m); ln.position.set(px, py, 0);
+            ln.renderOrder = 7; shardGroup.add(ln);
+          } else {
+            const mm = new THREE.Mesh(new THREE.BoxGeometry(CW, CW, CW),
+              new THREE.MeshBasicMaterial({ color: fam, transparent: true, opacity: sh ? 0.9 : 0.55, depthTest: false }));
+            mm.material.userData = { base: sh ? 0.9 : 0.55, noPulse: true };
+            mm.position.set(px, py, 0); mm.renderOrder = 7; shardGroup.add(mm);
+          }
+        }
+        // 行末挂算子名（本卡没有的压暗）
+        const lab = makeLabel(o.short || o.name.split(/[ （(]/)[0], carried ? fam : bd, 2.4);
+        lab.position.set(-w / 2 - CARD.x * 0.28, ((objs.length - 1) / 2 - yi) * (CW + GAP), 0);
+        lab.center.set(1, 0.5);
+        lab.material.opacity = carried ? 1 : 0.45;
+        lab.material.userData = { base: carried ? 1 : 0.45, noPulse: true };
+        lab.renderOrder = 8; shardGroup.add(lab);
+      });
+      // 顶部一枚牌交代这个小魔方的两根轴
+      const cap = makeLabel(`卡内 · L${lr.lo}-L${lr.hi}`, tokHex('--foreground'), 3.4,
+        `横=层 ×${LN} · 纵=算子 ×${objs.length}`);
+      cap.position.set(0, h / 2 + CARD.y * 0.42, 0);
+      cap.material.userData = { base: 1, noPulse: true };
+      cap.renderOrder = 8; shardGroup.add(cap);
+    }
+
     function buildShard() {
       clearShard();
       shardPicks = [];
+      /* 没聚焦某个对象时，卡内画「卡内魔方」（这张卡的层 × 算子）；
+         聚焦了某个对象，才切换成那个对象的分片切分。两者都在「切分」图层下。 */
+      if (S.wire.payload && !objOn() && S.sel != null) {
+        shardGroup.visible = true; buildCardCube(); return;
+      }
       const on = S.wire.payload && objOn() && S.sel != null;
       shardGroup.visible = on;
       if (!on) return;
@@ -2774,6 +2630,7 @@
     /* 细节窗的取景与字号：视锥固定（不随主相机缩放），于是这一窗里「一片有多大」恒定，
        换配置、换对象都一样读得出。字牌按这个视锥自己的像素比定尺（见 buildDetail）。 */
     const DETAIL_PX = 260, DETAIL_LABEL_PX = 11, DETAIL_HALF = CARD.x * 1.5 * 1.22;
+    let detailHalf = DETAIL_HALF;      // 实际用的半宽：随内容跨度变（见 buildDetail）
     const detailScene = new THREE.Scene();
     const detailCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 400);
     let detailRoot = null;
@@ -2784,10 +2641,19 @@
          不会出现「改了一处忘了另一处」。共享也意味着这里不能 dispose。 */
       detailRoot = shardGroup.clone(true);
       detailRoot.position.set(0, 0, 0);
+      /* 视锥按**内容**定，不用固定常数：分片切分只有一张卡那么大，而卡内魔方是
+         「层 × 算子」的一整片，跨度差好几倍——固定视锥会把后者的行标直接切在窗外
+         （实机可见左边算子名只剩半个字）。取几何包围盒（不含字牌，字牌自己会缩）。 */
+      const bb = new THREE.Box3();
+      detailRoot.traverse((o) => { if (o.isMesh || o.type === 'LineSegments') bb.expandByObject(o); });
+      if (!bb.isEmpty()) {
+        const sz = new THREE.Vector3(); bb.getSize(sz);
+        detailHalf = Math.max(CARD.x * 0.9, Math.max(sz.x, sz.y, sz.z) * 0.72);
+      } else detailHalf = DETAIL_HALF;
       /* 字牌是**世界尺寸**的（在主场景里由 worldPerPx 定尺）。细节窗的视锥只有一点点，
          同一个世界尺寸搬进来就被放大成半个窗那么大（实机可见「E16-31」糊住整块）。
          所以按细节窗自己的像素比重算一遍：牌在这里也占固定几个像素。 */
-      const wpp = (2 * DETAIL_HALF) / DETAIL_PX;
+      const wpp = (2 * detailHalf) / DETAIL_PX;
       detailRoot.traverse((o) => {
         if (!o.isSprite) return;
         const L = o.userData.lab;
@@ -2831,6 +2697,17 @@
       detailEl.classList.toggle('show', !!on);
       if (!on) return;
       const o = model.netObjBy[S.obj];
+      if (!o) {                                   // 没聚焦对象 → 细节窗里是「卡内魔方」
+        const lr = model.stageLayerRange(model.ppOf(S.sel));
+        const nObj = model.netObjects.filter((x) => !x.comm).length;
+        detailEl.firstChild.innerHTML = `<b>rank ${S.sel}</b> · 卡内`
+          + ` <span>L${lr.lo}-L${lr.hi}</span>`
+          + `<em>横=层 · 纵=算子 ×${nObj} · 空框=本卡没有</em>`;
+        const list0 = carriedObjs(S.sel);
+        const now0 = detailEl.querySelector('.prc-objnow');
+        if (now0) now0.innerHTML = `本卡对象 <b>${list0.length}</b>`;
+        return;
+      }
       const sh = model.objCarry(o.id, S.sel) ? model.objShard(o.id, S.sel) : null;
       /* 标题把「这画的是什么」说死：整块是**这个对象的全部分片**，不是这张卡的内部；
          只有亮的那一片属于本卡，其余片在别的卡上（所以点它们会换卡）。 */
@@ -2904,7 +2781,7 @@
       if (w < 8 || h < 8) return;
       const x = dr.left - cr.left, yTop = dr.top - cr.top;
       const y = cr.height - (yTop + h);
-      const half = DETAIL_HALF;
+      const half = detailHalf;
       const asp = w / h;
       detailCam.left = -half * asp; detailCam.right = half * asp;
       detailCam.top = half; detailCam.bottom = -half;
@@ -3731,8 +3608,6 @@
       });
       viewBtns = ['3D', '顶', '前', '侧'].map((t, i) => rowViews.appendChild(chipBtn(t, () => api.setView(i))));
       // 抽屉开关（着色 / 注入 / 连线 / 时间 / 并行）——独立按钮，不挤在视角行里
-      const tourBtn = $('.prc-tourbtn');
-      if (tourBtn) tourBtn.addEventListener('click', () => { if (S.tour == null) tourStart(); else tourExit(); });
       moreBtn = $('.prc-morebtn');
       moreBtn.addEventListener('click', () => {
         S.more = !S.more;
@@ -4119,7 +3994,7 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
-        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap(); tourBuildNest();
+        retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap(); buildNest();
         renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
       setView(v) {
@@ -4181,13 +4056,6 @@
         refreshObj(); syncChrome();
         if (opts.onSelectObject) opts.onSelectObject(next, ob || null);
       },
-      tour(i) {                                   // 程序侧驱动导览：tour(0) 开 · tour(null) 关
-        if (i == null) { tourExit(); return; }
-        if (S.tour == null) tourStart();
-        S.tour = Math.max(0, Math.min(TOUR.length - 1, i | 0)); tourApply();
-      },
-      get tourSteps() { return TOUR.map((t) => t.key); },
-      setFaces(on) { S.faces = !!on; faceRender(); },   // 六面助记图（导览期间无条件出现）
       get netObjects() { return model.netObjects; },
       setTheme(theme) {
         S.theme = theme === 'light' ? 'light' : 'dark';
@@ -4248,7 +4116,7 @@
     // 若这里再飞一次，带 obj 的链接会覆盖掉同一条链接里写明的 mode。
     if (opts.obj && model.netObjBy[opts.obj]) S.obj = opts.obj;
     carrySet = objCarrySet();
-    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); tourRender(); faceRender(); tourBuildNest();   // 一进来就把嵌套结构摆出来（不必先点卡）
+    recolor(); renderHud(); syncHelp(); renderLegend(); renderInfo(); syncChrome(); syncCfgUI(); syncTimeUI(); buildNest();   // 一进来就把结构框摆出来
     raf = global.requestAnimationFrame(frame);
     return api;
   }
