@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>整网切分 · rank 装载 —— 算子怎么切进 6D 并行（TP·CP·SP·PP·EP·DP）</title>
+<title>rank 卡 = 整网的并行化展开 —— 共享布局 + 差分着色（small multiples）</title>
 <link rel="icon" type="image/svg+xml" href="./vendor/net-sharding/favicon.svg">
 <link rel="stylesheet" href="./vendor/pto-design-system/styles.css">
 <link rel="stylesheet" href="./vendor/model-graphviz/pattern.css">
@@ -25,8 +25,7 @@
      ?theme=light|dark
      ?tp= &cp= &pp= &ep= &dp=     并行度（给几个改几个）
      ?rank=<n>                    直接选中某个 rank
-     ?node=<算子 id>              直接选中整网图上的某个算子
-     ?dim=tp|cp|sp|pp|ep|dp       高亮被该维切的算子
+     ?axis=tp|pp|ep               并排比较哪一维（决定三张卡选谁）
      ?layers= &heads= &experts= &seq=   模型规格
      ?v=<短SHA>                   版本戳，页面忽略它，只用来跳过缓存
    不认识的参数一律忽略，非法值退回默认，不报错。 */
@@ -52,32 +51,25 @@
   var handle = window.PtoNetShardingPattern.mount(document.getElementById('app'), {
     config: cfg,
     theme: theme,
-    dim: dim,
-    node: q.get('node') || null,
+    axis: ['tp','pp','ep'].indexOf(q.get('axis'))>=0 ? q.get('axis') : 'tp',
     rank: isFinite(rank) && rank >= 0 ? rank : undefined,
-    onSelectRank: function (r) { post({ type: 'net-sharding-rank', rank: r }); },
-    onSelectNode: function (id, d) { post({ type: 'net-sharding-node', node: id, dim: d }); },
   });
-  window.ns = handle;   // 控制台句柄：ns.selectRank(37) / ns.highlightDim('ep') / ns.setConfig({cp:2})
+  window.ns = handle;   // 控制台句柄：ns.setAxis('pp') / ns.selectRank(37) / ns.setConfig({cp:2})
 
-  /* 主题按钮塞进 pattern 自己的工具插槽，按钮才成套 */
-  var slot = handle.toolSlot();
-  if (slot) {
-    var btn = document.createElement('button');
-    btn.className = 'btn btn-sm';
-    btn.type = 'button';
-    btn.setAttribute('aria-label', '切换明暗主题');
-    var paint = function () { btn.textContent = theme === 'dark' ? '☀' : '☾'; };
-    paint();
-    btn.onclick = function () {
-      theme = theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', theme);
-      handle.setTheme(theme);
-      paint();
-      post({ type: 'net-sharding-theme', theme: theme });
-    };
-    slot.appendChild(btn);
-  }
+  /* 主题按钮：渲染层重写成 small multiples 后不再有工具插槽 → 固定在右上角 */
+  var btn = document.createElement('button');
+  btn.className = 'btn btn-sm';
+  btn.type = 'button';
+  btn.style.cssText = 'position:absolute;top:10px;right:14px;z-index:20';
+  btn.setAttribute('aria-label', '切换明暗主题');
+  var paint = function () { btn.textContent = theme === 'dark' ? '\u2600' : '\u263e'; };
+  paint();
+  btn.onclick = function () {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    handle.setTheme(theme); paint();
+  };
+  document.getElementById('app').appendChild(btn);
 
   /* 宿主可 iframe 嵌入：与 rubik-pattern.html 同一套 postMessage 约定 */
   function post(msg) { try { if (parent !== window) parent.postMessage(msg, '*'); } catch (e) {} }
@@ -90,8 +82,7 @@
     }
     if (d.type === 'net-sharding-cmd') {
       if (d.rank != null) handle.selectRank(+d.rank);
-      if (d.node) handle.selectNode(d.node);
-      if (d.dim !== undefined) handle.highlightDim(d.dim);
+      if (d.axis) handle.setAxis(d.axis);
       if (d.config) handle.setConfig(d.config);
     }
   });
