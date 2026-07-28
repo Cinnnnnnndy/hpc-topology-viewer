@@ -34,6 +34,7 @@
      「并行」那排的预设，一键就能切过去看真实体量。 */
   const DEFAULTS = {
     tp: 2, pp: 4, dp: 16, ep: 8,
+    cp: 1,                 // 上下文并行：沿序列切上下文段；与 TP 共用一根轴（TP 在内）
     layers: 48,            // 整网层数 → 每 PP 段 layers/pp 层
     experts: 64,           // 路由专家总数 → 每桶 experts/ep 个
     hotBuckets: [0, 2],    // 示意热点专家桶（标暖色）
@@ -104,9 +105,13 @@
 
     { id: 'attn_core', fam: 'attention', short: 'Attn', band: 'Attention', name: 'Sparse FlashAttention（注意力核）',
       by: [{ dim: 'TP', axis: 'head' }, { dim: 'CP', axis: 'ctx' }], best: 'tps',
-      note: '只算自己那几个 head。若启用 CP，上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV。',
+      note: '只算自己那几个 head。启用 CP 后上下文再沿序列切段，算之前要在 CP 组内 AllGather 收齐 KV —— 这是 CP 唯一会打破「各算各的」的地方。',
       carry: () => true,
-      shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
+      /* 被两维同时切：CP>1 时报上下文段（CP 是此时更值得看的那一维，head 切法与 QKV 同），
+         CP=1 时退回报 head —— 与改动前一致。 */
+      shard: (m, r) => (m.CP > 1
+        ? { dim: 'CP', axis: '上下文段', idx: m.cpOf(r), of: m.CP, range: rgOf(m.config.seqLen, m.CP, m.cpOf(r), 'tok') }
+        : { dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
     { id: 'o_proj', fam: 'linear', short: 'O 投影', band: 'Attention', name: 'Output Projection（行切）',
       by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
@@ -160,6 +165,9 @@
     { id: 'c_ep', fam: 'comm', band: '通信', name: 'EP AllToAll（Dispatch / Combine）',
       comm: 'EP', prim: 'AllToAll', best: 'ep',
       note: 'token 按路由结果重分布到专家所在的卡，算完再送回。HCCL：HcclAlltoAll（token 不均时用 V 变体）。' },
+    { id: 'c_cp', fam: 'comm', band: '通信', name: 'CP AllGather（收齐上下文 KV）',
+      comm: 'CP', prim: 'AllGather', best: 'tps',
+      note: '上下文按 CP 切段后，算 attention 前要在 CP 组内收齐全局 K/V —— 序列被切开、注意力却要看全局，这一步就是代价。HCCL：HcclAllGather。' },
     { id: 'c_pp', fam: 'comm', band: '通信', name: 'PP Send / Recv（阶段接力）',
       comm: 'PP', prim: 'P2P', best: 'ppf',
       note: '只在 stage 边界传激活与梯度，通信量最小。HCCL：HcclSend / HcclRecv。' },
@@ -284,33 +292,40 @@
   function createModel(userCfg) {
     const C = Object.assign({}, DEFAULTS, userCfg || {});
     const TP = C.tp | 0, PP = C.pp | 0, EP = C.ep | 0;
+    const CP = Math.max(1, C.cp | 0);     // 上下文并行度（真实 rank 维，进乘法）
     const REP = C.dp | 0;                 // 稠密层 DP 副本数（EP 折入其中，不参与乘法）
     if (TP < 1 || PP < 1 || EP < 1 || REP < 1) throw new Error('rubik-cube: tp/pp/dp/ep 均须 ≥ 1');
     if (REP % EP) throw new Error(`ep(${EP}) 须整除 dp(${REP})——EP 折入 DP 轴，不参与乘法`);
     const DOM = REP / EP;                 // A2A 域数（专家数据并行组）
-    const N = TP * PP * REP;              // rank 总数 = tp × pp × dp
+    /* CP 是**真实的 rank 维**（与 SP/EP 不同：SP 复用 TP 组、EP 折入 DP 轴，都不进乘法），
+       所以 rank 总数要乘它。空间上 CP 与 TP **共用一根轴**、TP 在内：
+       轴上的位置 = cp*TP + tp（记作 lane）。这样 ① TP 组仍然连续（一段 TP 个相邻格）；
+       ② CP 组是跨 TP 的等距抽样，读得出「同一 TP 槽位、不同上下文段」；
+       ③ CP=1 时 lane ≡ tp、TPL ≡ TP，全部布局与坐标**逐位不变**，已发出的链接不受影响。 */
+    const TPL = TP * CP;                  // 「TP 轴」的实际格数（TP 槽 × CP 段）
+    const N = TP * CP * PP * REP;         // rank 总数 = tp × cp × pp × dp
     const LPS = Math.max(1, Math.round(C.layers / PP));            // 每段层数
     const EXP_PER = Math.max(1, Math.floor(C.experts / EP));       // 每桶专家数
     // ── 轴步距（布局规则推导）──
     const CY = 9;                                    // 逻辑体离地高度（各形态统一）
-    const tpStep = stepOf('x', TP);                  // 板 / 墙内 TP 列步距
+    const tpStep = stepOf('x', TPL);                 // 板 / 墙内 TP(×CP) 列步距
     const ppStep = stepOf('y', PP);                  // 板 / 墙内 PP 行步距
-    const blockW = TP * tpStep;                      // 一面墙的宽度（EP 聚簇：内维 TP 一字排开）
+    const blockW = TPL * tpStep;                     // 一面墙的宽度（EP 聚簇：内维 TP(×CP) 一字排开）
     /* DP 平铺的「板」：把板内 TP 折成 (TPC 列 × TPD 排)，让板有厚度——一字排开的板
        只有 1 张卡厚，在顶视/侧视里都退化成稀疏条纹。取「宽 ≥ 深」且世界跨度最接近
        方形的分法（TP=8 → 4×2 · TP=16 → 4×4 · TP=2 → 2×1）。 */
-    const tpStepZ = stepOf('z', TP);                 // 板内 TP「排」的纵深步距
+    const tpStepZ = stepOf('z', TPL);                // 板内 TP(×CP)「排」的纵深步距
     const TPC = (() => {
-      const ideal = Math.sqrt(TP * tpStepZ / tpStep), lo = Math.sqrt(TP) - 1e-9;
-      let best = TP, err = Infinity;
-      for (let c = 1; c <= TP; c++) {
-        if (TP % c || c < lo) continue;              // 只取宽 ≥ 深的分法，保住「板」的横向读法
+      const ideal = Math.sqrt(TPL * tpStepZ / tpStep), lo = Math.sqrt(TPL) - 1e-9;
+      let best = TPL, err = Infinity;
+      for (let c = 1; c <= TPL; c++) {
+        if (TPL % c || c < lo) continue;              // 只取宽 ≥ 深的分法，保住「板」的横向读法
         const e = Math.abs(Math.log(c / ideal));
         if (e < err) { err = e; best = c; }
       }
       return best;
     })();
-    const TPD = TP / TPC;
+    const TPD = TPL / TPC;
     // 分块格距统一用同一条公式：「块在该轴的跨度 + padOf(该跨度)」，逐轴各算各的。
     const dptBlockW = TPC * tpStep, dptBlockD = TPD * tpStepZ;
     const dptCellX = dptBlockW + padOf(dptBlockW);
@@ -329,15 +344,17 @@
     })();
     const ROWS = REP / COLS;
 
-    // rank 编码：rank = (rep*PP + pp)*TP + tp
+    // rank 编码：rank = ((rep*PP + pp)*CP + cp)*TP + tp（TP 最内 → CP → PP → DP）
     const tpOf = (r) => r % TP;
-    const ppOf = (r) => ((r / TP) | 0) % PP;
-    const repOf = (r) => (r / (TP * PP)) | 0;
+    const cpOf = (r) => ((r / TP) | 0) % CP;          // 持有的上下文段
+    const laneOf = (r) => cpOf(r) * TP + tpOf(r);     // 「TP 轴」上的格号（CP=1 时 ≡ tp）
+    const ppOf = (r) => ((r / (TP * CP)) | 0) % PP;
+    const repOf = (r) => (r / (TP * CP * PP)) | 0;
     const epOf = (r) => repOf(r) % EP;            // 持有的专家桶
     const domOf = (r) => (repOf(r) / EP) | 0;     // 所属 A2A 域
     const gxOf = (r) => repOf(r) % COLS;          // DP 平铺列
     const gzOf = (r) => (repOf(r) / COLS) | 0;    // DP 平铺行
-    const rankOf = (tp, pp, rep) => (rep * PP + pp) * TP + tp;
+    const rankOf = (tp, pp, rep, cp) => (((rep * PP + pp) * CP + (((cp | 0) % CP) + CP) % CP) * TP + tp);
     /* 层号**从 0 起**，与 rank 侧的 TP0/PP0/DP0/桶0 一致，也与设计系统 sidecar 的
        `PP Stage 0 · L0-L11` 一致。原先写成 1 起（L1-L10）：同一屏里别的都从 0、只有 L 从 1，
        读者得记住这一个例外，而这个例外没有任何好处。 */
@@ -365,7 +382,7 @@
     const tierOf = (a, b) => (hostOf(a) === hostOf(b) ? 'ub' : podOf(a) === podOf(b) ? 'rail' : 'out');
 
     // 居中偏移
-    const cT = (TP - 1) / 2, cP = (PP - 1) / 2, cR = (REP - 1) / 2,
+    const cT = (TPL - 1) / 2, cP = (PP - 1) / 2, cR = (REP - 1) / 2,
       cE = (EP - 1) / 2, cD = (DOM - 1) / 2, cG = (COLS - 1) / 2, cZ = (ROWS - 1) / 2;
 
     /* 各形态的轴间距——全部由上面的布局规则推导（不再逐形态手调常量）。
@@ -381,7 +398,7 @@
          空档、读得出是「四组」而不是「一片」，但「把这根轴拉开」这个动作仍然归 PP流水
          ——两者因此还是差一个量级，而不是差一点点。三轴步距比也都在 MAX_RATIO 以内
          （128 卡：2.13 / 0.90 / 1.45），2D 不会散成稀疏条纹。 */
-      std: { sx: stepOf('x', PP, 'spread'), sy: stepOf('y', REP), sz: stepOf('z', TP), cy: CY },
+      std: { sx: stepOf('x', PP, 'spread'), sy: stepOf('y', REP), sz: stepOf('z', TPL), cy: CY },
       // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
       dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
@@ -390,14 +407,14 @@
       // 「墙拉开查同槽位 / 段拉开找慢段」的读法。这个 4× 正好卡在 MAX_RATIO 上，
       // 2D 里主轴会显得稀疏 —— 靠 axBlockFrames 给每块套框把条纹读成整块，不靠压步距
       // （压了这两个形态就没意义了）。
-      tps: { gapT: stepOf('x', TP, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
-      ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TP), rep: stepOf('z', REP), cy: CY },
+      tps: { gapT: stepOf('x', TPL, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
+      ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TPL), rep: stepOf('z', REP), cy: CY },
     };
 
     // 5 种形态的 rank → 世界坐标（out 为 {x,y,z} 或 THREE.Vector3 均可）
     function posOf(r, mode, out) {
       out = out || { x: 0, y: 0, z: 0 };
-      const tp = tpOf(r), pp = ppOf(r), rep = repOf(r);
+      const tp = laneOf(r), pp = ppOf(r), rep = repOf(r);   // tp 在这里是**轴上的格号**（含 CP）
       if (mode === 1) {          // DP 平铺：副本宫格，每副本一块 TP(列×排)×PP 的板（找慢副本）
         const s = SP.dpt, tc = tp % TPC, td = (tp / TPC) | 0;
         out.x = (gxOf(r) - cG) * s.gapX + (tc - (TPC - 1) / 2) * s.tp;
@@ -435,15 +452,17 @@
 
     // 正交 2D 被折叠的「深度」维（顶↓Y · 前↓Z · 侧↓X），随形态不同 —— 对齐 cockpit ODEP 表
     const depthDims = {
-      tp: { n: TP, lab: 'TP' }, pp: { n: PP, lab: 'PP' }, rep: { n: REP, lab: 'DP' },
+      tp: { n: TPL, lab: CP > 1 ? 'TP×CP' : 'TP' }, pp: { n: PP, lab: 'PP' }, rep: { n: REP, lab: 'DP' },
       ep: { n: EP, lab: '专家桶' }, dom: { n: DOM, lab: 'A2A域' },
       gx: { n: COLS, lab: '副本列' }, gz: { n: ROWS, lab: '副本行' },
       tpc: { n: TPC, lab: '板内TP列' }, tpd: { n: TPD, lab: '板内TP排' },
+      cp: { n: CP, lab: 'CP段' },
     };
-    const depthIdxOf = (r, dim) => dim === 'tp' ? tpOf(r) : dim === 'pp' ? ppOf(r)
+    const depthIdxOf = (r, dim) => dim === 'tp' ? laneOf(r) : dim === 'pp' ? ppOf(r)
       : dim === 'rep' ? repOf(r) : dim === 'ep' ? epOf(r) : dim === 'dom' ? domOf(r)
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
-          : dim === 'tpc' ? tpOf(r) % TPC : dim === 'tpd' ? (tpOf(r) / TPC) | 0 : 0;
+          : dim === 'cp' ? cpOf(r)
+            : dim === 'tpc' ? laneOf(r) % TPC : dim === 'tpd' ? (laneOf(r) / TPC) | 0 : 0;
 
     /* 视角收编的判据是**逐屏**的，不是逐形态的：
        一个形态之所以不同于标准，全在它那根 emph 轴（TP切片的墙、PP流水的段，步距 4×）。于是——
@@ -522,15 +541,18 @@
 
     // 四维通信组（选中 rank 的对端）——语义与 cockpit activePeerChips 一致
     function commGroup(r, dim) {
-      const tp = tpOf(r), pp = ppOf(r), rep = repOf(r), out = [];
-      if (dim === 'TP') { for (let t = 0; t < TP; t++) out.push(rankOf(t, pp, rep)); }
-      else if (dim === 'PP') { for (let p = 0; p < PP; p++) out.push(rankOf(tp, p, rep)); }
+      const tp = tpOf(r), pp = ppOf(r), rep = repOf(r), cp = cpOf(r), out = [];
+      /* 每个通信域 = 固定其余坐标、只让这一维跑遍。**cp 必须一起固定**，否则
+         TP/PP/DP/EP 组会把别的上下文段的卡也算进来——那不是同一个 communicator。 */
+      if (dim === 'TP') { for (let t = 0; t < TP; t++) out.push(rankOf(t, pp, rep, cp)); }
+      else if (dim === 'CP') { for (let c = 0; c < CP; c++) out.push(rankOf(tp, pp, rep, c)); }
+      else if (dim === 'PP') { for (let p = 0; p < PP; p++) out.push(rankOf(tp, p, rep, cp)); }
       else if (dim === 'DP') {                       // 同位副本（全量 AllReduce·显示采样）
         const step = Math.max(1, REP >> 4);
-        for (let d = 0; d < REP; d += step) out.push(rankOf(tp, pp, d));
+        for (let d = 0; d < REP; d += step) out.push(rankOf(tp, pp, d, cp));
       } else {                                       // EP：A2A 域内同位 rank（每桶各出 1 员互发）
         const d0 = domOf(r) * EP;
-        for (let e = 0; e < EP; e++) out.push(rankOf(tp, pp, d0 + e));
+        for (let e = 0; e < EP; e++) out.push(rankOf(tp, pp, d0 + e, cp));
       }
       return out;
     }
@@ -551,8 +573,8 @@
     }
 
     return {
-      config: C, TP, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, TPC, TPD, SP, CARD,
-      tpOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
+      config: C, TP, CP, TPL, PP, EP, DOM, REP, N, LPS, EXP_PER, COLS, ROWS, TPC, TPD, SP, CARD,
+      tpOf, cpOf, laneOf, ppOf, repOf, epOf, domOf, gxOf, gzOf, rankOf,
       stageLayerRange, expRange, posOf, boundsOf,
       modes, depthDims, depthIdxOf, commGroup,
       /* ── 整网对象透镜 ──
@@ -582,8 +604,8 @@
     // 模型可整体重建（工具栏「并行」输入排 / setConfig API 自由改维度）：
     // 维度快照用 let + syncDims 同步，mount 内所有引用自动跟随新配置。
     let model = createModel(opts.config);
-    let TP, PP, EP, DOM, REP, N, LPS;
-    const syncDims = () => { ({ TP, PP, EP, DOM, REP, N, LPS } = model); };
+    let TP, CP, TPL, PP, EP, DOM, REP, N, LPS;
+    const syncDims = () => { ({ TP, CP, TPL, PP, EP, DOM, REP, N, LPS } = model); };
     syncDims();
 
     /* ── 状态 ── */
@@ -2241,10 +2263,12 @@
       const of = sh.of, idx = sh.idx, tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r);
       const dim = sh.dim === 'SP' ? 'TP' : sh.dim;
       let nb = r;
-      if (dim === 'TP') nb = model.rankOf((tp + 1) % TP, pp, rep);
-      else if (dim === 'PP') nb = model.rankOf(tp, (pp + 1) % PP, rep);
-      else if (dim === 'DP') nb = model.rankOf(tp, pp, (rep + 1) % REP);
-      else if (dim === 'EP') { const dom = model.domOf(r); nb = model.rankOf(tp, pp, dom * EP + ((model.epOf(r) + 1) % EP)); }
+      const cp0 = model.cpOf(r);
+      if (dim === 'TP') nb = model.rankOf((tp + 1) % TP, pp, rep, cp0);
+      else if (dim === 'CP') nb = model.rankOf(tp, pp, rep, (cp0 + 1) % CP);
+      else if (dim === 'PP') nb = model.rankOf(tp, (pp + 1) % PP, rep, cp0);
+      else if (dim === 'DP') nb = model.rankOf(tp, pp, (rep + 1) % REP, cp0);
+      else if (dim === 'EP') { const dom = model.domOf(r); nb = model.rankOf(tp, pp, dom * EP + ((model.epOf(r) + 1) % EP), cp0); }
       model.posOf(r, S.mode, _sp0); model.posOf(nb, S.mode, _sp1);
       const dv = { x: _sp1.x - _sp0.x, y: _sp1.y - _sp0.y, z: _sp1.z - _sp0.z };
       const ax = Math.abs(dv.x) >= Math.abs(dv.y) && Math.abs(dv.x) >= Math.abs(dv.z) ? 'x'
@@ -2387,10 +2411,12 @@
     function shardRankOf(i, dim) {
       const r0 = S.sel; if (r0 == null) return null;
       const tp = model.tpOf(r0), pp = model.ppOf(r0), rep = model.repOf(r0);
-      if (dim === 'TP') return model.rankOf(i % TP, pp, rep);
-      if (dim === 'PP') return model.rankOf(tp, i % PP, rep);
-      if (dim === 'DP') return model.rankOf(tp, pp, i % REP);
-      if (dim === 'EP') return model.rankOf(tp, pp, model.domOf(r0) * EP + (i % EP));
+      const cp = model.cpOf(r0);
+      if (dim === 'TP') return model.rankOf(i % TP, pp, rep, cp);
+      if (dim === 'CP') return model.rankOf(tp, pp, rep, i % CP);
+      if (dim === 'PP') return model.rankOf(tp, i % PP, rep, cp);
+      if (dim === 'DP') return model.rankOf(tp, pp, i % REP, cp);
+      if (dim === 'EP') return model.rankOf(tp, pp, model.domOf(r0) * EP + (i % EP), cp);
       return null;
     }
     detailEl.addEventListener('click', (ev) => {
@@ -2651,10 +2677,17 @@
         } else if (!o.by.length) {
           parts.push(row(tokHex('--foreground-secondary'), '复制 · 每张卡各一份完整的'));
         } else {
-          const b = o.by[0];
-          const n = b.dim === 'EP' ? EP : TP;
+          /* 图例的「切成几片、沿哪根轴」必须与着色同源 —— 着色走 objShard（承载者按
+             持有第几片着色），所以这里也走 objShard，别用 o.by[0]。否则 attn_core 这类
+             被两维同时切的对象，CP>1 时着色按 CP、图例却仍写 TP head，画面与图例打架。
+             用选中卡问一份代表分片；没选卡时退回 o.by[0] 的静态口径。 */
+          const rep = S.sel != null ? S.sel : (carrySet && carrySet.size ? [...carrySet][0] : 0);
+          const rsh = model.objShard(o.id, rep);
+          const b = rsh ? { dim: rsh.dim, axisName: rsh.axis } : { dim: o.by[0].dim, axisName: null };
+          const n = rsh ? rsh.of : (o.by[0].dim === 'EP' ? EP : TP);
+          const axName = b.axisName || (o.by[0].axis === 'expert' ? '专家' : o.by[0].axis === 'head' ? '注意力头' : o.by[0].axis === 'vocab' ? '词表' : o.by[0].axis === 'seq' ? '序列' : o.by[0].axis === 'ctx' ? '上下文' : '张量');
           const MAXC = 6, shown = Math.min(n, MAXC);
-          for (let i = 0; i < shown; i++) parts.push(row(groupColor(i), `第 ${i} 片（沿${b.axis === 'expert' ? '专家' : b.axis === 'head' ? '注意力头' : b.axis === 'vocab' ? '词表' : b.axis === 'seq' ? '序列' : '张量'}轴）`));
+          for (let i = 0; i < shown; i++) parts.push(row(groupColor(i), `第 ${i} 片（沿${axName}轴）`));
           if (n > shown) parts.push(`<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">… 共 ${n} 片（${b.dim} 切）</span></div>`);
           if (carrySet && carrySet.size < N) parts.push(row(rgbCss(restColor(2)), '不承载这个对象的卡'));
         }
@@ -3111,7 +3144,7 @@
     // 「并行」输入排：TP/PP/DP/EP 任意填数 → setConfig 整体重建魔方（回车或「应用」提交）
     function applyCfg() {
       if (!cfgInputs) return;
-      const res = api.setConfig({ tp: +cfgInputs.tp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
+      const res = api.setConfig({ tp: +cfgInputs.tp.value, cp: +cfgInputs.cp.value, pp: +cfgInputs.pp.value, dp: +cfgInputs.dp.value, ep: +cfgInputs.ep.value });
       if (!res.ok && cfgErr) cfgErr.textContent = '✗ ' + res.error;
     }
     // 顶栏会随宽度换行变高 → 把实际高度写回 CSS 变量，抽屉/贴士/详情卡都据此让位
@@ -3124,9 +3157,9 @@
     }
     function syncCfgUI() {
       if (!cfgInputs) return;
-      cfgInputs.tp.value = TP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
+      cfgInputs.tp.value = TP; cfgInputs.cp.value = CP; cfgInputs.pp.value = PP; cfgInputs.dp.value = REP; cfgInputs.ep.value = EP;
       // 读数只补输入框没说的部分（乘法与折叠结果），别把已经摆在旁边的四个数再抄一遍
-      cfgRead.textContent = `= ${N} rank · EP 折入 DP → ${DOM} 域`;
+      cfgRead.textContent = `= ${N} rank${CP > 1 ? ` · CP${CP} 与 TP 共轴` : ''} · EP 折入 DP → ${DOM} 域`;
       cfgErr.textContent = '';
     }
     function syncChrome() {
@@ -3356,7 +3389,7 @@
         wrap.appendChild(inp); rowCfg.appendChild(wrap);
         return inp;
       };
-      cfgInputs = { tp: mkDim('TP'), pp: mkDim('PP'), dp: mkDim('DP'), ep: mkDim('EP') };
+      cfgInputs = { tp: mkDim('TP'), cp: mkDim('CP'), pp: mkDim('PP'), dp: mkDim('DP'), ep: mkDim('EP') };
       { const b = chipBtn('Apply', applyCfg); b.classList.add('btn-solid'); rowCfg.appendChild(b); }
       cfgErr = document.createElement('span'); cfgErr.className = 'prc-cfgerr'; rowCfg.appendChild(cfgErr);
       const cfgFoot = document.createElement('div'); cfgFoot.className = 'prc-rowfoot'; rowCfg.appendChild(cfgFoot);
@@ -3426,10 +3459,12 @@
       const d = hit && hit.object.userData.shardPick;
       if (!d) return null;
       const r = S.sel, tp = model.tpOf(r), pp = model.ppOf(r), rep = model.repOf(r);
-      if (d.dim === 'TP') return model.rankOf(d.i % TP, pp, rep);
-      if (d.dim === 'PP') return model.rankOf(tp, d.i % PP, rep);
-      if (d.dim === 'DP') return model.rankOf(tp, pp, d.i % REP);
-      if (d.dim === 'EP') return model.rankOf(tp, pp, model.domOf(r) * EP + (d.i % EP));
+      const cp = model.cpOf(r);
+      if (d.dim === 'TP') return model.rankOf(d.i % TP, pp, rep, cp);
+      if (d.dim === 'CP') return model.rankOf(tp, pp, rep, d.i % CP);
+      if (d.dim === 'PP') return model.rankOf(tp, d.i % PP, rep, cp);
+      if (d.dim === 'DP') return model.rankOf(tp, pp, d.i % REP, cp);
+      if (d.dim === 'EP') return model.rankOf(tp, pp, model.domOf(r) * EP + (d.i % EP), cp);
       return null;
     }
     function pickRegion(ev) {
