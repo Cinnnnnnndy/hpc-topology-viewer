@@ -46,17 +46,18 @@ sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/READ
 魔方答「谁和谁一组」，它答「这一组各自装了什么」——两者互为反查，
 挂点见 `pattern.json` 的 `integrationHooks`。
 
-## 并行拓扑 · 参照系与 PRD（文档，两条独立链接）
+## 并行拓扑 · 参照系 / PRD / Demo（三条独立链接）
 
-`public/parallel-topology/` 放同一套概念的两份文档，各自一条自包含的链接——
+`public/parallel-topology/` 放同一套概念的三个层次，各自一条自包含的链接——
 单文件打开即可，零外部依赖，互不影响：
 
 | 链接 | 是什么 |
 |---|---|
 | `/parallel-topology/concept-map.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误 |
 | `/parallel-topology/prd.html` | **《并行拓扑可视化工具 PRD》v0.1**：把参照系直接落成信息架构——四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准 |
+| `/parallel-topology/demo.html` | **并行拓扑可视化工具 · HTML Demo v0.1**：按 PRD 落地的可交互演示，覆盖 M1（FR-1~5）+ M2（FR-6~10）——配置校验（DP 自动推导、最近合法值）、TP×PP×DP 等轴测卡网格（CP 分面）、通信图层（维度⊗原语解耦、三种原语三种线型、抽离模式）、1F1B 时间线与归因提示、单卡容器（调 DP 纹丝不动）、DP×CP 输入分布、训练步动画；验收项 A1–A8 页内实时自检 |
 
-`/parallel-topology/` 本身是一张目录页，同时指向两者。
+`/parallel-topology/` 本身是一张目录页，同时指向三者。
 
 `prd.html` 是 `prd.md` 的**构建产物**，不要手改：改 md 之后跑
 `node scripts/build-prd-page.mjs public/parallel-topology/prd.md public/parallel-topology/prd.html`

@@ -10,7 +10,7 @@
 :root{
   --bg:#EEF1F3; --paper:#FFFFFF; --ink:#0E1418; --ink-2:#3D4B55; --ink-3:#6B7B86;
   --rule:#D2DADF; --rule-2:#E4EAEE;
-  --dp:#2E6E8E; --pp:#B3603A;
+  --dp:#2E6E8E; --pp:#B3603A; --cp:#3E7D5E;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
 }
@@ -45,6 +45,7 @@ a.card p{margin:0 0 12px; font-size:14px; color:var(--ink-2); line-height:1.7}
 a.card .path{font-family:var(--mono); font-size:11.5px; color:var(--dp); word-break:break-all}
 a.card.map{border-left:3px solid var(--dp)}
 a.card.prd{border-left:3px solid var(--pp)}
+a.card.demo{border-left:3px solid var(--cp)}
 
 .src{
   margin-top:30px; padding:14px 18px; background:var(--paper);
@@ -59,8 +60,8 @@ a.card.prd{border-left:3px solid var(--pp)}
 
 <header>
   <div class="eyebrow">Parallel Topology</div>
-  <h1>并行拓扑 <span class="thin">· 参照系与 PRD</span></h1>
-  <p class="sub">同一套概念的两份文档：一份讲「这套体系是什么」，一份讲「据此要做成什么工具」。两条链接各自独立、各自自包含。</p>
+  <h1>并行拓扑 <span class="thin">· 参照系 · PRD · Demo</span></h1>
+  <p class="sub">同一套概念的三个层次：参照系讲「这套体系是什么」，PRD 讲「据此要做成什么工具」，Demo 把工具本身做出来给你点。三条链接各自独立、各自自包含。</p>
 </header>
 
 <div class="cards">
@@ -77,6 +78,13 @@ a.card.prd{border-left:3px solid var(--pp)}
     <h2>并行拓扑可视化工具 PRD</h2>
     <p>把参照系直接落成信息架构：四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准。</p>
     <div class="path">./prd.html</div>
+  </a>
+
+  <a class="card demo" href="./demo.html">
+    <div class="tag">Demo · v0.1 · 可交互</div>
+    <h2>并行拓扑可视化工具 · HTML Demo</h2>
+    <p>按 PRD 落地的 M1+M2：配置校验（DP 自动推导）、卡网格 × 通信图层（维度⊗原语解耦）、时间线归因、容器视图、输入分布，验收项 A1–A8 页内自检。</p>
+    <div class="path">./demo.html</div>
   </a>
 
 </div>
