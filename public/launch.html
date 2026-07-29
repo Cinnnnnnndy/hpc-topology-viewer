@@ -10,7 +10,8 @@
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <!--
   项目启动页：把本仓库的工作台 / 驾驶舱 / 独立 pattern / 文档 / research 研究报告
-  整合成一页入口（浅色）。自包含单文件，无外部依赖；色板取自
+  整合成一页入口（浅色）。每张卡底部附它在仓库里的路径，直链 GitHub。
+  自包含单文件，无外部依赖；色板取自
   vendor/pto-design-system tokens（ark-blue #4369ef）与场景七平面色。
   · dev:  /hpc-topology-viewer/launch.html
   · 「研究报告」区链接的 /research/*.html 由 vite.config.ts 在构建时从仓库根
@@ -186,7 +187,32 @@ body {
 }
 .card-desc .mono { font-family: var(--mono); font-size: 11.5px; }
 
-.card-links { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px 16px 16px; position: relative; z-index: 1; }
+.card-links { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px 16px; position: relative; z-index: 1; }
+
+/* 卡片页脚：这张卡对应的仓库路径（点进去就是源） */
+.card-src {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 16px 12px;
+  border-top: 1px solid var(--line);
+  position: relative;
+  z-index: 1;
+}
+.src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  text-decoration: none;
+  word-break: break-all;
+  transition: color 130ms ease;
+}
+.src:hover { color: var(--blue); }
+.src svg { width: 12px; height: 12px; flex: none; opacity: .8; }
 .lnk {
   display: inline-flex;
   align-items: center;
@@ -241,6 +267,7 @@ body {
       <a class="pill pill--primary" href="./">进入统一工作台</a>
       <a class="pill" href="./cube-cockpit.html">AI Infra 驾驶舱 v22</a>
       <a class="pill" href="./parallel-reference/">分布式训练参照系</a>
+      <a class="pill" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer" target="_blank" rel="noopener">GitHub 仓库</a>
     </div>
   </header>
 
@@ -292,6 +319,11 @@ body {
           <div class="card-links">
             <a class="lnk lnk--primary" href="./">打开工作台</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/src" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>src/
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -339,6 +371,11 @@ body {
           <p class="card-desc">单文件驾驶舱原型：物理集群 ⇄ 逻辑魔方 ⇄ 层级堆叠统一 3D + 软硬结合连线镜头（互联矩阵联动）+ 模式 B 深潜（泳道 / busbw / 通信矩阵），内置巡检、MoE 越界、找慢副本、单机深潜四个场景剧本。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./cube-cockpit.html">打开驾驶舱</a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/cube-cockpit.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/cube-cockpit.html
+            </a>
           </div>
         </article>
 
@@ -394,6 +431,14 @@ body {
             <a class="lnk" href="./rubik/">/rubik/<sup>°</sup></a>
             <a class="lnk" href="./rubik-spec/">规范页<sup>°</sup></a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/vendor/rubik-cube/
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/claude/rubik-view-pattern-extraction-7pk0qt/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>° 分支 rubik-view-pattern-extraction-7pk0qt
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -438,6 +483,11 @@ body {
             <a class="lnk lnk--primary" href="./rubik-netobj/">/rubik-netobj/<sup>°</sup></a>
             <a class="lnk" href="./patterns/rubik-cube-netobj/pattern.html">规范位置<sup>°</sup></a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/claude/rank-view-network-analysis-htowfc/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>° 分支 rank-view-network-analysis-htowfc
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -478,6 +528,11 @@ body {
             <a class="lnk lnk--primary" href="./net-sharding-pattern.html">主线版</a>
             <a class="lnk" href="./rank-card/">/rank-card/<sup>°</sup></a>
             <a class="lnk" href="./patterns/rank-card-expansion/pattern.html">规范位置<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/vendor/net-sharding" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/vendor/net-sharding/
+            </a>
           </div>
         </article>
 
@@ -523,6 +578,11 @@ body {
           <div class="card-links">
             <a class="lnk lnk--primary" href="./parallel-reference/">打开参照系</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/parallel-reference/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/parallel-reference/index.html
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -567,6 +627,14 @@ body {
           <div class="card-links">
             <a class="lnk lnk--primary" href="./parallel-prd/">打开 PRD</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/docs/parallel-topology-prd.md" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>docs/parallel-topology-prd.md<span style="opacity:.7">（源）</span>
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/scripts/build-prd-page.mjs" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>scripts/build-prd-page.mjs
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -603,6 +671,14 @@ body {
           <p class="card-desc">把 NCCL / NVIDIA 侧的拓扑概念（communicator · channel · ring / tree · PXN …）逐项映射到超节点互联结构的对照简图，配套图分析落点笔记存于 <span class="mono">docs/</span>。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./nccl-ascend-map.html">打开简图</a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/nccl-ascend-map.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/nccl-ascend-map.html
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/docs/nccl-%E5%9B%BE%E5%88%86%E6%9E%90%E4%B8%8E%E8%90%BD%E7%82%B9.md" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>docs/nccl-图分析与落点.md
+            </a>
           </div>
         </article>
 
@@ -659,6 +735,11 @@ body {
           <div class="card-links">
             <a class="lnk lnk--primary" href="./research/3D可视化-概念解码器.html">打开报告</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/research/3D%E5%8F%AF%E8%A7%86%E5%8C%96-%E6%A6%82%E5%BF%B5%E8%A7%A3%E7%A0%81%E5%99%A8.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/3D可视化-概念解码器.html
+            </a>
+          </div>
         </article>
 
         <article class="card">
@@ -707,6 +788,11 @@ body {
           <div class="card-links">
             <a class="lnk lnk--primary" href="./research/昇腾超节点-3D可视化报告.html">打开报告</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/research/%E6%98%87%E8%85%BE%E8%B6%85%E8%8A%82%E7%82%B9-3D%E5%8F%AF%E8%A7%86%E5%8C%96%E6%8A%A5%E5%91%8A.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/昇腾超节点-3D可视化报告.html
+            </a>
+          </div>
         </article>
 
       </div>
@@ -753,6 +839,11 @@ body {
             <a class="lnk" href="./research/ai_infra_可视化原型_v3.html">v3</a>
             <a class="lnk lnk--primary" href="./research/ai_infra_可视化原型_v20.html">v20 深色分支</a>
           </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/research" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/
+            </a>
+          </div>
         </article>
 
       </div>
@@ -762,6 +853,7 @@ body {
 
   <footer class="foot">
     <div>° 标记的链接由对应 pattern 分支的 Deploy workflow 叠加发布；main 重新部署后可能暂时 404，重跑该分支的 workflow 即可找回（见 <span class="mono">.github/workflows/deploy.yml</span> 头注）。</div>
+    <div>每张卡片底部的灰色路径是它在仓库里的位置，点击直达 GitHub 上对应的文件或目录（未标分支的都在 <span class="mono">main</span> 上）。</div>
     <div>本页与全站均为 noindex；页面内容基于公开资料的示意抽象，不代表真实工程布局。</div>
   </footer>
 
