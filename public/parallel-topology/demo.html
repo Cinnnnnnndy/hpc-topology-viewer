@@ -1317,6 +1317,8 @@ function renderDetail(D){
       + '<table>'+holdRows(g,D).map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>'
       + '<div class="mono" style="font-size:10.5px;color:var(--pt-fg2)">参数 '+fmtP(paramsPerCard(D,co.p))+' · 权重 '+fmtGB(2*paramsPerCard(D,co.p))+' GB</div>'
       + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
+      + (D.world===128&&D.tp===2&&D.pp===4&&D.moe&&D.ep===8
+          ? '<br><a class="pt-go" href="../pto-ds/patterns/model-parallel-rank-deck/pattern.html" target="_blank" title="同构 128 卡配置：真实 openPangu 整网装进 128 个卡容器（嵌套：组框⊃卡⊃层⊃算子⊃片），载荷=交集片。两边 rank 枚举顺序不同，编号不一一对应。">⤷ 真实整网 rank-deck（128 卡 · 交集载荷）↗</a>' : '')
       + revHTML(D);
   }
   renderRevOut(D);
