@@ -589,7 +589,7 @@ function txt(x,y,t,size,fillVar,anchor,extra){
    粒度做竖轴：输入 → 整网 → 层 → 算子 → kernel；rank 柱（虚线容器）贯穿全高。
    块的横跨范围 = 共有关系；kernel 永不跨柱；通信画在对应粒度层的柱间。
    五个维共用同一模板——只有「归属边界线的位置」与「片的着色」在变（§02/§03/§07/§15）。 */
-var GY = {ker:0, op:3.4, lay:6.8, net:10.2, inp:13.4};
+var GY = {ker:0, op:3.4, lay:6.8, net:10.2, inp:14.4};   /* 输入与粒度链之间留缝：它是另一个对象，不在包含链里 */
 function quintRow(g, D){ /* 索引五元组：这张卡的 rank 元组 ⇢ 五根轴上的区间（§03，双链可逆 §07） */
   var co = coordsOf(g, D), l0 = co.p*D.layersPerStage;
   var hK = Math.floor(D.hidden/D.tp);
@@ -638,22 +638,27 @@ function renderDim(D){
   }
   if(dim==='ep') colRanks = epMembers(rankOf(0,0,0,0,D), D).slice(0,N);
 
-  /* ── rank 柱：容器（线框，贯穿全高）+ 透明命中面 + 门牌 ── */
+  /* ── rank 柱 = 卡（容器）：要一眼读出"这是一个有容量的盒子"，不是几条参考线。
+     线框加实、给一层极淡的体积感填充、柱脚标真实显存占用/HBM（容器约束 §15）。 ── */
   for(var i=0;i<N;i++){
     var isSel = sel===colRanks[i];
     var btm = -1.3, top = btm + GY.inp + 2.4, xc = xOf(i);
-    /* 整柱剪影（六点凸包）：透明填充，承接点击——粒度块都在上层且不吃事件 */
     var hull = ptsStr([proj(xc,btm,0,s), proj(xc+CW,btm,0,s), proj(xc+CW,btm,DZ,s),
                        proj(xc+CW,top,DZ,s), proj(xc,top,DZ,s), proj(xc,top,0,s)]);
     parts.push('<g class="dimcol" data-g="'+colRanks[i]+'" style="cursor:pointer">'
-      + '<polygon points="'+hull+'" style="fill:transparent;stroke:none"/>'
-      + boxSVG(xc, btm, 0, CW, GY.inp+2.4, DZ, s, {wire:true, stroke:isSel?'var(--pt-fg)':'var(--pt-bds)', sw:isSel?1.6:1, dash:isSel?'':'4 4'})
+      + '<polygon points="'+hull+'" style="fill:'+(isSel?mix('var(--pt-fg)',6):mix('var(--pt-fg)',3))+';stroke:none"/>'
+      + boxSVG(xc, btm, 0, CW, GY.inp+2.4, DZ, s, {wire:true, stroke:isSel?'var(--pt-fg)':'var(--pt-bds)', sw:isSel?1.8:1.25, dash:isSel?'':'7 3'})
       + '</g>');
     regBox(xc, btm, 0, CW, GY.inp+2.4, DZ);
     var lb = anchor(i, -2.1);
     parts.push(txt(lb[0], lb[1], dim+'_rank '+i, 10, col, 'middle', 'font-weight="700"'));
     parts.push(txt(lb[0], lb[1]+12, 'g='+colRanks[i], 8.5, 'var(--pt-fg3)'));
-    reg([lb[0], lb[1]+12], 30, 30, 6, 8);
+    /* 容器约束：这张卡的显存占用 / HBM 容量（真实数，随 stage 不同——PP 视图里 stage0 最高） */
+    var stI = coordsOf(colRanks[i], D).p;
+    var memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; }, 0);
+    var over = memI > D.hbm*Math.pow(2,30)*.9;
+    parts.push(txt(lb[0], lb[1]+24, '▮ '+fmtGB(memI)+'/'+D.hbm+' GB', 8.5, over?'var(--pt-danger)':'var(--pt-fg2)', 'middle', over?'font-weight="700"':''));
+    reg([lb[0], lb[1]+24], 40, 40, 6, 8);
   }
   var interactiveEnd = parts.length;   /* 此后一切图元不吃事件 */
   if(folded){
@@ -797,7 +802,9 @@ function renderDim(D){
     reg([cl[0]+6, cl[1]], 0, 300, 10, 6);
   }
 
-  /* ── 左侧粒度标尺（「共有」只对本组视野为真） ── */
+  /* ── 左侧粒度标尺（「共有」只对本组视野为真）。
+     竖轴是「粒度」坐标（§15）：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大，
+     不是四样东西堆叠；输入是另一个对象（激活体），不在这条包含链上。 ── */
   var spanN = '组内共有', single = '各柱一份';
   var layShared = D.pp>1 ? '本组=stage0 段' : spanN;
   var ruler = {
@@ -809,14 +816,33 @@ function renderDim(D){
   }[dim];
   [GY.inp, GY.net, GY.lay, GY.op, GY.ker].forEach(function(y, li){
     var lp = proj(-.9, y+BH+.15, DZ, s);
-    parts.push(txt(lp[0]-6, lp[1], ruler[li][0], 11, 'var(--pt-fg)', 'end', 'font-weight="700"'));
-    parts.push(txt(lp[0]-6, lp[1]+12, ruler[li][1], 8, 'var(--pt-fg3)', 'end'));
-    reg([lp[0]-6, lp[1]+12], 110, 0, 12, 4);
+    var name = li===0 ? '输入 ②' : ruler[li][0];
+    parts.push(txt(lp[0]-6, lp[1], name, 11, 'var(--pt-fg)', 'end', 'font-weight="700"'));
+    parts.push(txt(lp[0]-6, lp[1]+12, li===0 ? '另一对象·'+ruler[0][1] : ruler[li][1], 8, 'var(--pt-fg3)', 'end'));
+    reg([lp[0]-6, lp[1]+12], 116, 0, 12, 4);
   });
+  /* 包含/放大关系：模型四级之间画 ⊃ 连线（同一内容，放大一级）；输入与整网之间画「断」 */
+  [[GY.net, GY.lay], [GY.lay, GY.op], [GY.op, GY.ker]].forEach(function(pair){
+    var a = proj(-.55, pair[0]-.06, DZ, s), b = proj(-.55, pair[1]+BH+.12, DZ, s);
+    parts.push('<line x1="'+a[0]+'" y1="'+a[1]+'" x2="'+b[0]+'" y2="'+b[1]+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:2 3"/>');
+    var m = [(a[0]+b[0])/2, (a[1]+b[1])/2];
+    parts.push(txt(m[0]-6, m[1]+3, '⊃ 放大', 8, 'var(--pt-fg3)', 'end'));
+    reg([m[0]-6, m[1]], 60, 0, 8, 8);
+  });
+  var gapA = proj(-.55, GY.inp-.15, DZ, s), gapB = proj(-.55, GY.net+BH+.15, DZ, s);
+  parts.push(txt((gapA[0]+gapB[0])/2-6, (gapA[1]+gapB[1])/2+3, '⊥ 不在链上', 8, 'var(--pt-fg3)', 'end'));
+  reg([(gapA[0]+gapB[0])/2-6, (gapA[1]+gapB[1])/2], 70, 0, 8, 8);
+  var axTop = proj(-2.35, GY.net+BH+.3, DZ, s), axBot = proj(-2.35, GY.ker-.1, DZ, s);
+  parts.push('<line x1="'+axTop[0]+'" y1="'+axTop[1]+'" x2="'+axBot[0]+'" y2="'+axBot[1]+'" style="stroke:var(--pt-fg3);stroke-width:1.2;marker-end:url(#arrx)"/>');
+  parts.push(txt(axBot[0], axBot[1]+14, '粒度（坐标轴 §15）', 8.6, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+  reg([axTop[0], axTop[1]], 70, 40, 8, 0); reg([axBot[0], axBot[1]+14], 70, 70, 0, 10);
+  /* 输入带的对象隔离框：虚线围出「另一个对象」 */
+  parts.push(boxSVG(-.18, GY.inp-.2, -.15, span+.36, BH+.46, DZ+.3, s, {wire:true, stroke:'var(--pt-fg3)', sw:.8, dash:'5 4'}));
+  regBox(-.18, GY.inp-.2, -.15, span+.36, BH+.46, DZ+.3);
 
-  var pad = 24;
-  var vb = [Math.min.apply(0,bx)-pad, Math.min.apply(0,by)-pad,
-            (Math.max.apply(0,bx)-Math.min.apply(0,bx))+2*pad, (Math.max.apply(0,by)-Math.min.apply(0,by))+2*pad];
+  var pad = 24, padTop = 76;   /* 顶部多留：舞台工具条（HTML 浮层）盖在画布上 */
+  var vb = [Math.min.apply(0,bx)-pad, Math.min.apply(0,by)-padTop,
+            (Math.max.apply(0,bx)-Math.min.apply(0,bx))+2*pad, (Math.max.apply(0,by)-Math.min.apply(0,by))+pad+padTop];
   $('stage').innerHTML = '<svg viewBox="'+vb.map(function(v){return v.toFixed(0);}).join(' ')+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + parts.slice(0, interactiveEnd).join('')
     + '<g pointer-events="none">'+parts.slice(interactiveEnd).join('')+'</g></svg>';
@@ -1443,7 +1469,7 @@ function sayText(D){
       dp:'<b style="color:'+VC.dp+'">DP</b> 不切模型、切样本 b 轴——柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
       ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。'
     }[ui.cutDim];
-    s = verdict + ' 块的横跨范围=共有关系，kernel 永不跨柱；<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读该卡的五元组区间。';
+    s = verdict + ' 竖轴是<b>粒度坐标</b>：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大（不是四样东西）；输入是另一个对象，单独一格。<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读五元组区间。';
   }else if(ui.view==='compose'){
     s = '<b>合成·卡阵</b>：五维相乘后的全局（TP×PP×DP 三轴，CP 分面）。单维讲关系，这里讲落位。'
       + (layerOn('L5') ? ' 通信组=<b>'+DIMN[ui.commDim]+'</b>×<b>'+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+'</b>——维度管分组、原语管画法，互不绑定。' : ' 底栏开 L5 看通信；▶ 播放一个训练步。');
