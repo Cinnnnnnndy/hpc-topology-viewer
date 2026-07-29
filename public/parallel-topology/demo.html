@@ -466,6 +466,9 @@ function memParts(D, ppRank){
 function holdRows(g,D){
   var co = coordsOf(g,D), l0 = co.p*D.layersPerStage, l1 = (co.p+1)*D.layersPerStage-1, rows=[];
   rows.push(['五元组区间','<small>'+esc(quintRow(g,D))+'</small>（§03·可逆）']);
+  rows.push(['持有占比','<small>ℓ '+D.layersPerStage+'/'+D.layers+' · h '+fmt(Math.floor(D.hidden/D.tp))+'/'+fmt(D.hidden)
+    +(D.moe?' · e '+(D.experts/D.ep)+'/'+D.experts:'')+' · b '+(D.mbs*D.ga)+'/'+fmt(D.gbs)
+    +' · s '+(D.cp>1?fmt(D.seq/D.cp)+'/'+fmt(D.seq):'全部')+'</small>——卡=各维区间的<b>交集</b>，不是小整网']);
   rows.push(['层段','L'+l0+'–L'+l1+'（'+D.layersPerStage+' 层 / stage '+co.p+'）']);
   opBytes(D).forEach(function(o){ if(o.b || o.id==='attn.core') rows.push([o.id, '<code>'+esc(o.shape)+'</code>']); });
   if(D.moe){
@@ -684,33 +687,70 @@ function renderDim(D){
     reg([t[0]+6, t[1]], 0, 230, 10, 6);
   }
 
-  /* ── 五个粒度层，随维差分 ── */
+  /* ── 五个粒度层，随维差分。诚实纪律：其它维已经切掉的部分不冒充完整——
+     本组视野里「层」可能只是一个 stage 段、「输入」可能只是 dp0 的 b 区间。 ── */
   var kE = D.moe ? D.experts/D.ep : 0;
+  var groups = Math.round(D.world/size);
   /* 输入层 */
-  if(dim==='cp') { colBlocks(GY.inp, function(j){ return 's 段'+j+'∪段'+(2*size-1-j); }, function(j){ return mix(col, 20+Math.round(j/(N-1||1)*30)); }); var tI=proj(span+.35, GY.inp+BH/2,0,s); parts.push(txt(tI[0]+6,tI[1],'输入·序列被切 2·CP 段（因果双段）',9.5,col,'start','font-weight="700"')); reg([tI[0]+6,tI[1]],0,240,10,6); }
+  var inpCut = [];
+  if(dim!=='dp' && D.dp>1) inpCut.push('b 已被 DP 切（本组见 dp0 区间）');
+  if(dim!=='cp' && D.cp>1) inpCut.push('s 已被 CP 切（cp0）');
+  if(dim==='cp') { colBlocks(GY.inp, function(j){ return 's 段'+j+'∪段'+(2*size-1-j); }, function(j){ return mix(col, 20+Math.round(j/(N-1||1)*30)); }); var tI=proj(span+.35, GY.inp+BH/2,0,s); parts.push(txt(tI[0]+6,tI[1],'输入·序列被切 2·CP 段（因果双段）'+(D.dp>1?' · b 已被 DP 切（dp0）':''),9.5,col,'start','font-weight="700"')); reg([tI[0]+6,tI[1]],0,280,10,6); }
   else if(dim==='dp'){ colBlocks(GY.inp, function(j){ return 'b·副本'+j+'的样本'; }, function(j){ return mix(col, 20+Math.round(j/(N-1||1)*30)); }); var tD=proj(span+.35, GY.inp+BH/2,0,s); parts.push(txt(tD[0]+6,tD[1],'输入·样本批被切 ×DP（每副本 MBS·GA='+(D.mbs*D.ga)+'）',9.5,col,'start','font-weight="700"')); reg([tD[0]+6,tD[1]],0,260,10,6); }
-  else spanBlock(GY.inp, '输入 [B×S] — 本维不切输入', null, dim==='tp'?'TP 切的是权重体的 h/e 轴':dim==='pp'?'PP 切的是层序 ℓ 轴':'EP 重分组专家 e 轴');
+  else spanBlock(GY.inp, '输入 — 本维不切输入', null, inpCut.length?inpCut.join(' · '):(dim==='tp'?'TP 切的是权重体的 h/e 轴':dim==='pp'?'PP 切的是层序 ℓ 轴':'EP 重分组专家 e 轴'));
   /* 整网层 */
-  if(dim==='dp') colBlocks(GY.net, function(j){ return j===0?'整网副本（相同）':''; }, function(){ return mix('var(--pt-fg2)',22); });
-  else spanBlock(GY.net, '整网 — 逻辑上一张，不属于任何柱');
+  if(dim==='dp') colBlocks(GY.net, function(j){ return j===0?'同一片·逐字节相同':''; }, function(){ return mix('var(--pt-fg2)',22); });
+  else spanBlock(GY.net, '整网 — 逻辑上一张，不属于任何柱', null, '本组是 '+fmt(groups)+' 个同构组之一');
   /* 层层 */
   if(dim==='pp') colBlocks(GY.lay, function(j){ return 'stage'+j+'·L'+(j*D.layersPerStage)+'–L'+((j+1)*D.layersPerStage-1); }, function(j){ return mix(col, 30+Math.round(j/(N-1||1)*26)); });
   else if(dim==='dp') colBlocks(GY.lay, function(){ return ''; }, function(){ return mix('var(--pt-fg2)',22); });
+  else if(D.pp>1) spanBlock(GY.lay, '层 — 本组只持 stage0：L0–L'+(D.layersPerStage-1), mix(VC.pp,12), 'ℓ 已被 PP 切——那是 PP 干的，不是本维');
   else spanBlock(GY.lay, dim==='ep' ? '层 — MoE 层在每个 stage 里' : '层 — 不切 ℓ，每柱都过全部层');
-  /* 算子层（3 行示意） */
-  for(var r=0;r<3;r++){
-    var yo = GY.op - r*0; /* 单行即可读；用 z 偏移画 3 行 */
+  /* 算子层：画真算子（一层内的实际序列，宽度∝每卡字节；被本维切的画成片，没切的整块） */
+  function realOps(cutKind){
+    var ops = opBytes(D).filter(function(o){ return o.b>0 || o.id==='attn.core'; });
+    var totB = ops.reduce(function(a,o){ return a+o.b; }, 0);
+    /* 宽∝字节，但截顶+地板保证可读：单算子 ≤30%、≥7%（experts 会吃掉全部宽度） */
+    var wShare = ops.map(function(o){ return clamp(o.b, totB*.07, totB*.30); });
+    var wTot = wShare.reduce(function(a,x){ return a+x; }, 0);
+    var W = Math.max(span, 11);   /* 算子带用自己的宽度：真算子多，别挤进柱距里 */
+    var gapO = .16, usable = W - gapO*(ops.length-1), x = 0;
+    ops.forEach(function(o, oi){
+      var w = usable * wShare[oi] / wTot;
+      var isCut = cutKind==='tp' ? (o.cut==='tp') : cutKind==='ep' ? (o.cut==='ep') : false;
+      if(o.b===0){ /* attn.core：无参激活算子——结构线框 */
+        parts.push(boxSVG(x, GY.op, 0, w, .3, DZ*.8, s, {wire:true, stroke:'var(--pt-fg3)', sw:.7, dash:'3 3'}));
+      }else if(isCut){ /* 被本维切：一个算子的线框 + N 片各归各柱位置比例 */
+        parts.push(boxSVG(x, GY.op, 0, w, BH, DZ*.9, s, {wire:true, stroke:col, sw:.8}));
+        for(var q2=0;q2<N;q2++){
+          parts.push(boxSVG(x + q2*(w/N) + .02, GY.op+.04, .1, w/N-.04, BH*.82, DZ*.68, s,
+            {fill:mix(col, 40+q2*4), stroke:'transparent', attrs:' pointer-events="none"'}));
+        }
+      }else{ /* 没被本维切：整块（复制或随层归属） */
+        parts.push(boxSVG(x, GY.op, 0, w, BH*.8, DZ*.8, s, {fill:mix('var(--pt-fg2)',20), stroke:'var(--pt-bds)', sw:.6}));
+      }
+      var tc = proj(x+w/2, GY.op, DZ*.95, s);
+      var ty = tc[1] + 12 + (oi%3)*11;
+      parts.push(txt(tc[0], ty, o.id, 7.6, isCut?col:'var(--pt-fg3)', 'middle', isCut?'font-weight="700"':''));
+      reg([tc[0], ty], 26, 26, 0, 6);
+      x += w + gapO;
+    });
+    regBox(0, GY.op, 0, W, BH, DZ);
+    return W;
   }
-  if(dim==='tp'){ slicedSpan(GY.op, '算子 — 一个算子，切成 '+size+' 片（h/e 轴）：跨柱共有，片各归各柱'); }
+  if(dim==='tp'){
+    var Wt = realOps('tp');
+    var tT = proj(Wt+.35, GY.op+BH/2, 0, s);
+    parts.push(txt(tT[0]+6, tT[1], '一层的真算子序列（宽∝字节）：q/kv/out/mlp 被切 ×'+size+'，core/norm 不切', 9.5, col, 'start', 'font-weight="700"'));
+    parts.push(txt(tT[0]+6, tT[1]+11, '每柱权重 '+fmtGB(2*paramsPerCard(D,0))+' GB（片，不是整层×N）', 8, 'var(--pt-fg3)', 'start'));
+    reg([tT[0]+6, tT[1]+11], 0, 300, 10, 8);
+  }
   else if(dim==='ep'){
-    parts.push(boxSVG(0, GY.op+.75, 0, span, .3, DZ*.6, s, {fill:mix('var(--pt-fg2)',18), stroke:'var(--pt-bds)', sw:.6}));
-    var tA = proj(span+.35, GY.op+.9, 0, s);
-    parts.push(txt(tA[0]+6, tA[1], 'attn — 仍按 TP 逻辑（跨柱）', 8.5, 'var(--pt-fg3)', 'start'));
-    reg([tA[0]+6, tA[1]], 0, 200, 8, 4);
-    colBlocks(GY.op, function(j){ return 'E'+(j*kE)+'–E'+((j+1)*kE-1); }, function(j){ return mix(col, 34+j*3); });
-    var tE = proj(span+.35, GY.op+BH/2, 0, s);
-    parts.push(txt(tE[0]+6, tE[1], '专家桶 — e 轴重分组 ×EP（EP 是视图，不是新轴）', 9.5, col, 'start', 'font-weight="700"'));
-    reg([tE[0]+6, tE[1]], 0, 280, 10, 6);
+    var We = realOps('ep');
+    var tE = proj(We+.35, GY.op+BH/2, 0, s);
+    parts.push(txt(tE[0]+6, tE[1], '真算子序列：experts 被 e 轴重分组 ×'+size+'（每桶 '+kE+' 个），attn/router 不归本维', 9.5, col, 'start', 'font-weight="700"'));
+    parts.push(txt(tE[0]+6, tE[1]+11, 'EP 是视图，不是新轴（勘误 K）', 8, 'var(--pt-fg3)', 'start'));
+    reg([tE[0]+6, tE[1]+11], 0, 300, 10, 8);
   }
   else if(dim==='pp') colBlocks(GY.op, function(){ return ''; }, function(j){ return mix(col, 22+Math.round(j/(N-1||1)*18)); });
   else if(dim==='dp') colBlocks(GY.op, function(){ return ''; }, function(){ return mix('var(--pt-fg2)',22); });
@@ -726,7 +766,8 @@ function renderDim(D){
 
   /* ── 归属边界线（§02）：线下各柱内容开始不同 ── */
   var bY = {tp:(GY.lay+GY.op+BH)/2, ep:(GY.lay+GY.op+BH)/2, pp:(GY.net+GY.lay+BH)/2, cp:(GY.inp+GY.net+BH)/2, dp:(GY.inp+GY.net+BH)/2}[dim];
-  var b1 = proj(-1.4, bY, DZ, s), b2 = proj(span+1.2, bY, 0, s);
+  var bEnd = (dim==='tp'||dim==='ep') ? Math.max(span, 11)+1.0 : span+1.2;
+  var b1 = proj(-1.4, bY, DZ, s), b2 = proj(bEnd, bY, 0, s);
   parts.push('<line x1="'+b1[0]+'" y1="'+b1[1]+'" x2="'+b2[0]+'" y2="'+b2[1]+'" style="stroke:'+col+';stroke-width:2;stroke-dasharray:9 5"/>');
   parts.push(txt(b2[0]+8, b2[1]-16, '归属边界（§02）', 10, col, 'start', 'font-weight="800"'));
   parts.push(txt(b2[0]+8, b2[1]-4, (dim==='cp'||dim==='dp')?'边界在输入——模型侧'+(dim==='dp'?'整套复制':'完整共有'):'此线以下，各柱内容不同', 8.5, 'var(--pt-fg2)', 'start'));
@@ -744,20 +785,27 @@ function renderDim(D){
       parts.push('<line x1="'+p2[0]+'" y1="'+p2[1]+'" x2="'+top[0]+'" y2="'+top[1]+'" style="stroke:'+col+';stroke-width:1;stroke-dasharray:3 3;opacity:.6"/>');
     });
     var cl = proj(span+.35, cy-.85, 0, s);   /* 弧线下方，避开归属边界标签的水平带 */
-    var commTxt = {tp:'TP AllReduce · 对称无方向 · 每层两下', pp:'PP P2P · 有方向 · 段边界一递', dp:'DP 梯度 AllReduce · 整步静默，末尾一次',
-                   ep:'EP All-to-All · 各边载荷不等（路由决定）', cp:{p2p:'CP Ring（P2P 逐跳）', alltoall:'CP Ulysses（All-to-All）', allgather:'CP 朴素（AllGather）'}[prim]}[dim];
+    /* 真实载荷量级（示意公式，bf16）：让「每层两下」有一个可核对的数 */
+    var actB = D.mbs*(D.seq/D.cp)*D.hidden*2;
+    function mb(b){ return b>=Math.pow(2,30) ? fmtGB(b)+' GB' : Math.round(b/Math.pow(2,20))+' MB'; }
+    var commTxt = {tp:'TP AllReduce · 每层两下 · 每次≈'+mb(actB)+'（B·S/CP·H·2B）',
+                   pp:'PP P2P · 有方向 · 每 μbatch ≈'+mb(actB),
+                   dp:'DP 梯度 AllReduce · 步末一次 · 每卡≈'+mb(2*paramsPerCard(D,0))+'（2P 字节）',
+                   ep:'EP All-to-All · top-k='+(D.topk||'—')+' 路由 · 各边载荷不等',
+                   cp:{p2p:'CP Ring（P2P 逐跳传 KV 块）', alltoall:'CP Ulysses（All-to-All 换轴）', allgather:'CP 朴素（AllGather 收全序列）'}[prim]}[dim];
     parts.push(txt(cl[0]+6, cl[1], commTxt, 9.5, col, 'start', 'font-weight="700"'));
-    reg([cl[0]+6, cl[1]], 0, 260, 10, 6);
+    reg([cl[0]+6, cl[1]], 0, 300, 10, 6);
   }
 
-  /* ── 左侧粒度标尺 ── */
-  var spanN = '跨 '+N+' 柱', single = '各柱一份';
+  /* ── 左侧粒度标尺（「共有」只对本组视野为真） ── */
+  var spanN = '组内共有', single = '各柱一份';
+  var layShared = D.pp>1 ? '本组=stage0 段' : spanN;
   var ruler = {
-    tp: [['输入',spanN],['整网',spanN],['层',spanN],['算子',spanN+'·片各归各柱'],['kernel','不跨柱']],
+    tp: [['输入',spanN],['整网',spanN],['层',layShared],['算子',spanN+'·片各归各柱'],['kernel','不跨柱']],
     pp: [['输入',spanN],['整网',spanN+'·逻辑上一张'],['层',single+'·有序'],['算子','随层归属'],['kernel','不跨柱']],
-    cp: [['输入','s 轴切开'],['整网',spanN],['层',spanN],['算子',spanN+'·权重完整'],['kernel','不跨柱']],
-    dp: [['输入','b 轴切开'],['整网',single+'·内容相同'],['层',single+'·相同'],['算子',single+'·相同'],['kernel','不跨柱']],
-    ep: [['输入',spanN],['整网',spanN],['层',spanN],['算子','桶各归各柱'],['kernel','不跨柱']]
+    cp: [['输入','s 轴切开'],['整网',spanN],['层',D.pp>1?'本组=stage0 段':spanN],['算子',spanN+'·权重完整'],['kernel','不跨柱']],
+    dp: [['输入','b 轴切开'],['整网','同一片·相同'],['层','同一片·相同'],['算子','同一片·相同'],['kernel','不跨柱']],
+    ep: [['输入',spanN],['整网',spanN],['层',layShared],['算子','桶各归各柱'],['kernel','不跨柱']]
   }[dim];
   [GY.inp, GY.net, GY.lay, GY.op, GY.ker].forEach(function(y, li){
     var lp = proj(-.9, y+BH+.15, DZ, s);
@@ -794,10 +842,14 @@ function renderDim(D){
   $('detach').hidden = true;
 }
 function renderDimBar(D, dim){
+  var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim] || 1;
+  var fixed = COMM_DIMS.filter(function(dm){ return dm!==dim && ({tp:D.tp,pp:D.pp,cp:D.cp,dp:D.dp,ep:D.ep}[dm])>1; })
+    .map(function(dm){ return dm+'0'; }).join('·');
   var sb = '<span class="pt-cap">切分维（一次看一维）</span>'
     + COMM_DIMS.map(function(dm){
         return '<button class="pb mono'+(dim===dm?' is-on':'')+'" data-act="cutdim" data-d="'+dm+'" style="--c:'+VC[dm]+'">'+DIMN[dm]+'</button>';
-      }).join('');
+      }).join('')
+    + (size>1 ? '<span class="pt-chip" title="对称维折叠：看一个组等于看全部（DP-3）">折叠上下文：全网 '+fmt(D.world)+' 卡 = <b>'+fmt(Math.round(D.world/size))+' 组 × '+size+'</b>'+(fixed?'（其余维固定 '+fixed+'）':'')+'</span>' : '');
   if(dim==='cp' && D.cp>1){
     sb += '<span class="pt-sep"></span><span class="pt-cap">原语（N:M 可换，A1）</span>'
       + [['p2p','Ring'],['alltoall','Ulysses'],['allgather','朴素']].map(function(pr){
@@ -1388,7 +1440,7 @@ function sayText(D){
       tp:'<b style="color:'+VC.tp+'">TP</b> 在<b>算子内部</b>切 h/e 轴：结构跨柱共有，片各归各柱——归属边界落在算子片。每层两下 AllReduce 是切口的代价。',
       pp:'<b style="color:'+VC.pp+'">PP</b> 在<b>层级</b>切 ℓ 轴（唯一有序维）：pp_rank 本质是被空间化的时间下标（§12）——所以它同时出现在这里和时间视图里。',
       cp:'<b style="color:'+VC.cp+'">CP</b> 切的是<b>输入的 s 轴</b>，不切模型——归属边界在输入级。原语可选 Ring/Ulysses/朴素（N:M 不绑定，勘误 L）。',
-      dp:'<b style="color:'+VC.dp+'">DP</b> 什么都不切模型，<b>整套复制</b>、切样本 b 轴——复制≠共有：每柱一份完整参数，所以容器纹丝不动，加 DP 不买余量（§08 / A3）。',
+      dp:'<b style="color:'+VC.dp+'">DP</b> 不切模型、切样本 b 轴——柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
       ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。'
     }[ui.cutDim];
     s = verdict + ' 块的横跨范围=共有关系，kernel 永不跨柱；<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读该卡的五元组区间。';
