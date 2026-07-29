@@ -2,26 +2,30 @@
  * 把并行拓扑 PRD 的 markdown 渲染成一张自包含的 HTML 页。
  *
  * 为什么要有这个脚本、而不是手改 HTML：
- *   PRD 会改，而发出去的链接不能变。源文件是 `public/parallel-topology/prd.md`，
- *   `prd.html` 是它的构建产物——改 md、重跑本脚本、提交两者，链接内容就更新了。
- *   手改 HTML 的话，md 与页面会立刻分叉，之后没人说得清哪份是准的。
+ *   PRD 会改，而发出去的链接不能变。源文件是 `docs/parallel-topology-prd.md`，
+ *   `public/parallel-prd/index.html` 是它的构建产物——改 md、重跑本脚本、提交两者，
+ *   链接内容就更新了。手改 HTML 的话，md 与页面会立刻分叉，之后没人说得清哪份是准的。
+ *
+ * 为什么源文件在 docs/ 而不是 public/：
+ *   public/ 下的东西都会原样发布。md 跟着发出去就等于同一份内容有两条链接，
+ *   别人拿到哪条全看运气。源留在 docs/，发布出去的只有渲染好的那一张页。
  *
  * 为什么不引 markdown 运行时到页面里：
- *   这两条链接要能单文件打开（发给别人、存本地、塞进任何静态托管都一样），
+ *   这条链接要能单文件打开（发给别人、存本地、塞进任何静态托管都一样），
  *   所以 markdown 在构建期就吃掉，产物里只有 HTML + 内联 CSS/JS，零外部依赖。
  *
- * 视觉语言与同目录的 `concept-map.html`（《分布式训练参照系》）同源——同一套
- * token、同一套版心与章节标尺。两条链接是一对文档，不该长成两种东西。
+ * 视觉语言与《分布式训练参照系》那条链接（/parallel-reference/）同源——同一套
+ * token、同一套版心与章节标尺。两条链接各自独立，但是一对文档，不该长成两种东西。
  *
  * 用法：
  *   1) 装一次 marked：`npm i -D marked`（只在生成时需要，不进运行时依赖）；
- *   2) `node scripts/build-prd-page.mjs public/parallel-topology/prd.md public/parallel-topology/prd.html`
+ *   2) `node scripts/build-prd-page.mjs docs/parallel-topology-prd.md public/parallel-prd/index.html`
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { marked } from 'marked';
 
-const SRC = process.argv[2] || 'public/parallel-topology/prd.md';
-const OUT = process.argv[3] || 'public/parallel-topology/prd.html';
+const SRC = process.argv[2] || 'docs/parallel-topology-prd.md';
+const OUT = process.argv[3] || 'public/parallel-prd/index.html';
 const md = readFileSync(SRC, 'utf8');
 
 marked.setOptions({ mangle: false, headerIds: false, gfm: true });
@@ -216,7 +220,7 @@ ${rail.map((r) => `  <a href="#${r.id}">${r.num} ${r.label}</a>`).join('\n')}
   <h1>${inline(title.replace(/\s*PRD$/, ''))}</h1>
   ${sub ? `<p class="sub">${inline(sub)}</p>` : ''}
   <div class="meta">${meta.map((l) => `<span>${inline(l)}</span>`).join('')}</div>
-  <div class="pair">配套阅读 · <a href="./concept-map.html">分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标</a></div>
+  <div class="pair">配套阅读 · <a href="../parallel-reference/">分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标</a></div>
 </header>
 
 ${sections.join('\n\n')}

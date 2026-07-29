@@ -46,22 +46,23 @@ sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/READ
 魔方答「谁和谁一组」，它答「这一组各自装了什么」——两者互为反查，
 挂点见 `pattern.json` 的 `integrationHooks`。
 
-## 并行拓扑 · 参照系与 PRD（文档，两条独立链接）
+## 并行拓扑：参照系与 PRD（两条各自独立的链接）
 
-`public/parallel-topology/` 放同一套概念的两份文档，各自一条自包含的链接——
-单文件打开即可，零外部依赖，互不影响：
+同一套概念的两份文档，各占一条顶层链接，各自自包含（单文件打开即可，零外部依赖），
+互不依赖也不共用目录——打开就是内容本身，中间没有目录页：
 
-| 链接 | 是什么 |
-|---|---|
-| `/parallel-topology/concept-map.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误 |
-| `/parallel-topology/prd.html` | **《并行拓扑可视化工具 PRD》v0.1**：把参照系直接落成信息架构——四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准 |
+| 链接 | 源 | 是什么 |
+|---|---|---|
+| `/parallel-reference/` | `public/parallel-reference/index.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误 |
+| `/parallel-prd/` | `docs/parallel-topology-prd.md` | **《并行拓扑可视化工具 PRD》v0.1**：把参照系直接落成信息架构——四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准 |
 
-`/parallel-topology/` 本身是一张目录页，同时指向两者。
+PRD 那张页是**构建产物**，不要手改：改 `docs/parallel-topology-prd.md` 之后跑
+`node scripts/build-prd-page.mjs docs/parallel-topology-prd.md public/parallel-prd/index.html`
+重新生成（需先 `npm i -D marked`），md 与产物一起提交。手改 HTML 会让两者分叉，
+之后没人说得清哪份是准的。源放 `docs/` 而不是 `public/`：`public/` 下的东西会原样发布，
+md 跟着发出去就等于同一份内容有两条链接。
 
-`prd.html` 是 `prd.md` 的**构建产物**，不要手改：改 md 之后跑
-`node scripts/build-prd-page.mjs public/parallel-topology/prd.md public/parallel-topology/prd.html`
-重新生成（需先 `npm i -D marked`），两者一起提交。手改 HTML 会让 md 与页面分叉，
-之后没人说得清哪份是准的。视觉语言与 `concept-map.html` 同源——两条链接是一对文档，
+两条链接各自独立，但视觉语言同源（同一套 token、版心、章节标尺）——是一对文档，
 不该长成两种东西。
 
 ## Develop
