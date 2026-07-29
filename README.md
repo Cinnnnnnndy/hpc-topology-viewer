@@ -10,6 +10,14 @@ model instead — no code edits, automatic fall-back if absent. See
 [`src/scene/models/README.md`](src/scene/models/README.md) for the part list and
 download guide.
 
+## 启动页（一站入口）
+
+**<https://cinnnnnnndy.github.io/hpc-topology-viewer/launch.html>** —— 仓库里的
+工作台、驾驶舱、两个独立 pattern、参照系 / PRD / 映射简图、`research/` 研究报告
+按组整合在一张浅色启动页上，点开即看（dev:
+`/hpc-topology-viewer/launch.html`）。`research/` 顶层的报告 HTML 由构建带进站点
+（`/research/*.html`，见 `vite.config.ts` 的 `researchHtml` 插件），仓库里不存第二份。
+
 ## Views
 
 - **Overview** — 16 cabinets (12 compute + 4 switch) with inter-cabinet optical links.
