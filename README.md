@@ -73,6 +73,13 @@ sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/READ
 （main 的 `public/` 里另有 `/parallel-reference/` 与 `/parallel-prd/`——那是同一对文档在
 main 上的路径；`/parallel-topology/` 是含 Demo 的成套目录，两边互不影响。）
 
+另有一条**跨仓库**叠加：`Cinnnnnnndy/pto-design-system` 的
+`claude/rank-deck-intersection-payload` 分支（纠正版 rank-deck——Rank 装的是
+层段×TP片×EP桶的**交集**，不是缩小的整网；含五元组/持有占比/归属边界检查器）发布在
+<https://cinnnnnnndy.github.io/hpc-topology-viewer/pto-ds/patterns/model-parallel-rank-deck/pattern.html>
+（深链参数：`?rank= &layer= &scene=rank &topology= &theme=`）。该 fork 分支 push 后需
+重跑本分支 workflow 才会刷新此链接。
+
 `prd.html` 是 `prd.md` 的**构建产物**，不要手改：改 md 之后跑
 `node scripts/build-prd-page.mjs public/parallel-topology/prd.md public/parallel-topology/prd.html`
 重新生成（需先 `npm i -D marked`），两者一起提交。手改 HTML 会让 md 与页面分叉，

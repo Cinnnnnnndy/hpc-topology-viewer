@@ -12,6 +12,8 @@ name: Deploy to GitHub Pages
 #   · claude/parallel-topology-html-demo-ff10w3
 #       → /parallel-topology/（参照系 + PRD + Demo 三页目录，README 一直写的路径）
 #       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
+#       → /pto-ds/（跨仓库：Cinnnnnnndy/pto-design-system 的
+#         claude/rank-deck-intersection-payload 分支——纠正版 rank-deck 及其最小依赖闭包）
 #       注：main 的 public/ 里已有 /parallel-reference/ 与 /parallel-prd/（同一对文档
 #       在 main 的另一条路径），本分支不动它们；/parallel-topology/ 是含 Demo 的成套目录。
 # push 任一分支即刷新它自己的目录。
@@ -278,6 +280,30 @@ jobs:
 
           echo "published: /parallel-topology/demo.html?v=$SHA"
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
+
+      - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
+        uses: actions/checkout@v4
+        with:
+          repository: Cinnnnnnndy/pto-design-system
+          ref: claude/rank-deck-intersection-payload
+          path: ptods-src
+
+      - name: Overlay 纠正版 rank-deck at /pto-ds/
+        # 载荷原子修正版（Rank 装的是交集片，不是缩小的整网）。pattern.html 的相对引用
+        # （../../tokens、../model-graphviz、./vendor/three）要求保持原目录结构，
+        # 所以按原树叠加最小依赖闭包：tokens/ + css/ + 三个 pattern 目录（含 pinned three）。
+        # 不做任何 sed 改写——发布件与 fork 分支逐字节一致，方便对账。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptods-src rev-parse --short HEAD)
+          DST=dist/pto-ds
+          mkdir -p $DST/patterns
+          cp -r ptods-src/tokens $DST/tokens
+          cp -r ptods-src/css $DST/css
+          cp -r ptods-src/patterns/model-graphviz $DST/patterns/model-graphviz
+          cp -r ptods-src/patterns/model-architecture-3d-deck $DST/patterns/model-architecture-3d-deck
+          cp -r ptods-src/patterns/model-parallel-rank-deck $DST/patterns/model-parallel-rank-deck
+          echo "published: /pto-ds/patterns/model-parallel-rank-deck/pattern.html (rank-deck@$SHA)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
