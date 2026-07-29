@@ -1,0 +1,32 @@
+{
+  "id": "parallel-topology-demo",
+  "name": "并行拓扑可视化工具 · Demo",
+  "description": "按《并行拓扑可视化工具 PRD》v0.1 落地的应用形态 demo：V1 空间卡阵（TP×PP×DP，CP 分面）、V2 时间·流（1F1B + AllReduce 归因）、V3 卡内解剖（容器打开：层→算子→kernel→流）、V4 显存容器（调 DP 纹丝不动）、V5 输入分布；维度⊗原语解耦，验收 A1–A8 页内自检。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "upstream": {
+    "prd": "../../parallel-topology/prd.html",
+    "conceptMap": "../../parallel-topology/concept-map.html",
+    "source": "public/parallel-topology/demo.html"
+  },
+  "urlParams": {
+    "view": "v1|v2|v3|v4|v5 —— 视图（空间卡阵 / 时间·流 / 卡内解剖 / 显存容器 / 输入分布）",
+    "preset": "dense64|longcp|moe64|pangu|bad —— 预置配置（bad 为 A6 非法示例）",
+    "sel": "整数 global_rank —— 直接选中某张卡（跨视图保持，A8）",
+    "dim": "tp|cp|pp|dp|ep —— L5 通信维度（谁跟谁一组）",
+    "prim": "p2p|allgather|reducescatter|allreduce|alltoall —— L5 原语（怎么连线），与 dim 正交",
+    "l5": "1 —— 打开通信图层",
+    "axis": "tp|pp|dp|ep —— L4 axis 高亮（取值域不含 cp，A4）",
+    "facet": "整数 cp_rank —— CP 分面",
+    "skew": "0 —— 关闭 V2 的偏斜注入（默认开）",
+    "theme": "light|dark —— 主题；也接受宿主 postMessage {type:'theme', value}",
+    "world|tp|cp|pp|ep|etp|layers|hidden|heads|kv|ffn|vocab|seq|experts|topk|mbs|ga|hbm": "整数 —— 逐项覆盖配置（DP 恒为 world/(TP·CP·PP) 推导，不可传入）",
+    "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略"
+  },
+  "notes": [
+    "不认识的参数一律忽略，非法值退回默认，不报错。",
+    "rank 是地址不是容器：容器只有两个——卡（容量=显存）与流（容量=时间），据参照系 §08/§10/§15。",
+    "配置不合法时舞台封锁（DP-5 宁缺毋误），错误各带最近合法值。"
+  ]
+}

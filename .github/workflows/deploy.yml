@@ -9,6 +9,11 @@ name: Deploy to GitHub Pages
 #   · claude/rank-view-network-analysis-htowfc
 #       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
 #       → /patterns/rank-card-expansion/ 与 /rank-card/（rank 卡 = 整网的并行化展开）
+#   · claude/parallel-topology-html-demo-ff10w3
+#       → /parallel-topology/（参照系 + PRD + Demo 三页目录，README 一直写的路径）
+#       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
+#       注：main 的 public/ 里已有 /parallel-reference/ 与 /parallel-prd/（同一对文档
+#       在 main 的另一条路径），本分支不动它们；/parallel-topology/ 是含 Demo 的成套目录。
 # push 任一分支即刷新它自己的目录。
 #
 # 为什么整网对象那版单独占一条路径、而不是覆盖 /patterns/rubik-cube-logical/：
@@ -31,6 +36,7 @@ on:
       - claude/rubik-view-pattern-extraction-7pk0qt
       - claude/logic-cube-pattern-spec-3oycmv
       - claude/rank-view-network-analysis-htowfc
+      - claude/parallel-topology-html-demo-ff10w3
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -225,6 +231,53 @@ jobs:
 
           echo "published: /patterns/rank-card-expansion/pattern.html?v=$SHA"
           echo "published: /rank-card/?v=$SHA"
+
+      - name: Checkout parallel-topology branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/parallel-topology-html-demo-ff10w3
+          path: ptopo-src
+
+      - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/
+        # 三页一套：concept-map（参照系）、prd、demo（应用形态，单文件、CSS/JS 内联）。
+        # 两个入口：
+        #  · /parallel-topology/            —— README 与站内一直写的目录路径，整套照搬；
+        #    demo 的设计系统链接是 ../vendor/pto-design-system/…，恰好落在 main 构建
+        #    产物已有的 /vendor/ 上，只补 ?v= 版本戳。
+        #  · /patterns/parallel-topology-demo/ —— 规范入口，pattern.html 与 pattern.json
+        #    同级、自带依赖副本；文档链接改指 /parallel-topology/ 那份（同一次发布同一版）。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptopo-src rev-parse --short HEAD)
+          SRC=ptopo-src/public/parallel-topology
+
+          # ① 目录入口 /parallel-topology/
+          DIR=dist/parallel-topology
+          mkdir -p $DIR
+          cp $SRC/index.html $SRC/concept-map.html $SRC/prd.html $SRC/prd.md $DIR/
+          sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              $SRC/demo.html > $DIR/demo.html
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/pattern.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$DIR/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 规范入口 /patterns/parallel-topology-demo/（自包含）
+          PAT=dist/patterns/parallel-topology-demo
+          mkdir -p $PAT/vendor
+          sed -e 's#\.\./vendor/pto-design-system/#./vendor/pto-design-system/#g' \
+              -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+              -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              $SRC/demo.html > $PAT/pattern.html
+          cp -r ptopo-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          cp ptopo-src/public/favicon.svg $PAT/favicon.svg
+          cp $DIR/pattern.json $PAT/pattern.json
+
+          echo "published: /parallel-topology/demo.html?v=$SHA"
+          echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
