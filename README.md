@@ -57,7 +57,7 @@ sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/READ
 |---|---|
 | `/parallel-topology/concept-map.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误 |
 | `/parallel-topology/prd.html` | **《并行拓扑可视化工具 PRD》v0.1**：把参照系直接落成信息架构——四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准 |
-| `/parallel-topology/demo.html` | **并行拓扑可视化工具 · Demo v0.1（应用形态）**：顶栏切五个视图，底栏图层 × 维度⊗原语解耦选择器，右侧浮动坐标读出卡，配置/验收走抽屉。V1 TP×PP×DP 卡阵（CP 分面、折叠、训练步动画）、V2 时间·流（1F1B + AllReduce 放大与归因）、**V3 卡内解剖**（把一张卡当容器打开：层 → 算子（体积∝字节、切法着色）→ kernel 在「流=时间容器」里排队，通信是切口伸出的动作线）、V4 显存容器（调 DP 纹丝不动）、V5 输入分布。URL 即状态（`?view= &sel= &dim= &prim= &preset= &theme=`），明暗主题随 token 翻转，A1–A8 页内实时自检 |
+| `/parallel-topology/demo.html` | **并行拓扑可视化工具 · Demo v0.2（应用形态）**：主视图**单维切分**——一个切分一个视图，模板取参照系最后一张总图：粒度做竖轴（输入→整网→层→算子→kernel），rank 柱=容器贯穿全高，**块的横跨=共有、归属边界线（§02）随维移动、索引五元组条（§03）常驻**；切分的最小单位是片/段/桶而不是卡，卡只是各维区间交集的落位容器。另有合成·卡阵（五维相乘 + 通信 + 训练步动画）、卡内解剖（容器打开：层→算子→kernel→流）、时间·流（1F1B + AllReduce 归因）。默认 128 卡（tp2·cp1·pp4·dp16·ep8，EP 折入 DP）。URL 即状态（`?view= &cut= &sel= &dim= &prim= &preset= &theme=`，旧 `v1..v5` 别名兼容），明暗主题随 token 翻转，A1–A8 页内实时自检 |
 
 `/parallel-topology/` 本身是一张目录页，同时指向三者。
 

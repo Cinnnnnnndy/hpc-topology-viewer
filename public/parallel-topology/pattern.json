@@ -1,7 +1,7 @@
 {
   "id": "parallel-topology-demo",
   "name": "并行拓扑可视化工具 · Demo",
-  "description": "按《并行拓扑可视化工具 PRD》v0.1 落地的应用形态 demo：V1 空间卡阵（TP×PP×DP，CP 分面）、V2 时间·流（1F1B + AllReduce 归因）、V3 卡内解剖（容器打开：层→算子→kernel→流）、V4 显存容器（调 DP 纹丝不动）、V5 输入分布；维度⊗原语解耦，验收 A1–A8 页内自检。",
+  "description": "按《并行拓扑可视化工具 PRD》与《分布式训练参照系》落地的应用形态 demo。主视图「单维切分」以参照系总图为模板：粒度做竖轴（输入→整网→层→算子→kernel），rank 柱（容器）贯穿全高，块的横跨=共有、归属边界线随维移动、索引五元组条常驻；另有合成·卡阵 / 卡内解剖（容器+流）/ 时间·流三个视图。默认 128 卡（tp2·cp1·pp4·dp16·ep8，EP 折入 DP）。",
   "version": "dev",
   "entry": "pattern.html",
   "selfContained": true,
@@ -11,8 +11,8 @@
     "source": "public/parallel-topology/demo.html"
   },
   "urlParams": {
-    "view": "v1|v2|v3|v4|v5 —— 视图（空间卡阵 / 时间·流 / 卡内解剖 / 显存容器 / 输入分布）",
-    "preset": "dense64|longcp|moe64|pangu|bad —— 预置配置（bad 为 A6 非法示例）",
+    "view": "dim|compose|anatomy|time —— 视图（单维切分/合成卡阵/卡内解剖/时间·流）；旧值 v1..v5 仍兼容（v4→dim&cut=dp、v5→dim&cut=cp）",
+    "preset": "default128|dense64|longcp|moe64|pangu|bad —— 预置配置（默认 default128；bad 为 A6 非法示例）",
     "sel": "整数 global_rank —— 直接选中某张卡（跨视图保持，A8）",
     "dim": "tp|cp|pp|dp|ep —— L5 通信维度（谁跟谁一组）",
     "prim": "p2p|allgather|reducescatter|allreduce|alltoall —— L5 原语（怎么连线），与 dim 正交",
@@ -22,7 +22,8 @@
     "skew": "0 —— 关闭 V2 的偏斜注入（默认开）",
     "theme": "light|dark —— 主题；也接受宿主 postMessage {type:'theme', value}",
     "world|tp|cp|pp|ep|etp|layers|hidden|heads|kv|ffn|vocab|seq|experts|topk|mbs|ga|hbm": "整数 —— 逐项覆盖配置（DP 恒为 world/(TP·CP·PP) 推导，不可传入）",
-    "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略"
+    "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略",
+    "cut": "tp|pp|cp|dp|ep —— 单维切分视图当前看哪一维"
   },
   "notes": [
     "不认识的参数一律忽略，非法值退回默认，不报错。",
