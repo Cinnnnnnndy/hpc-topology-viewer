@@ -10,13 +10,15 @@ import { join } from 'node:path';
 // dist/research/（只取顶层 .html，local_* 会话档案不发布）。
 function researchHtml(): Plugin {
   const srcDir = fileURLToPath(new URL('./research', import.meta.url));
-  const pages = () => readdirSync(srcDir).filter((f) => f.endsWith('.html'));
+  // 参考他人资料的报告不对外发布（launch 页也不放它们）：
+  const EXCLUDED = new Set(['昇腾超节点-概念可视化报告.html', '昇腾超节点-全栈整合架构图.html']);
+  const pages = () => readdirSync(srcDir).filter((f) => f.endsWith('.html') && !EXCLUDED.has(f));
   return {
     name: 'research-html',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const m = /\/research\/([^/?#]+\.html)$/.exec(decodeURIComponent(req.url ?? ''));
-        const file = m && join(srcDir, m[1]);
+        const file = m && !EXCLUDED.has(m[1]) && join(srcDir, m[1]);
         if (!file || !existsSync(file)) return next();
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.end(readFileSync(file));
