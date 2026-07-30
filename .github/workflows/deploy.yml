@@ -260,7 +260,7 @@ jobs:
           cp $SRC/index.html $SRC/concept-map.html $SRC/prd.html $SRC/prd.md $DIR/
           # 逐页列举（不是 cp -r）——新增页面必须加到这一行，否则线上 404。
           # demo 与 atlas 都引 ../vendor/… ，统一打 ?v= 版本戳。
-          for page in demo atlas; do
+          for page in demo atlas cockpit; do
             sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
                 $SRC/$page.html > $DIR/$page.html
           done
@@ -324,6 +324,7 @@ jobs:
           PY
           grep -c 'parallel-topology/atlas.html' dist/launch.html
           test -s dist/parallel-topology/atlas.html
+          test -s dist/parallel-topology/cockpit.html
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4

@@ -173,6 +173,11 @@
 .pt-blocked .pb{margin-top:10px; justify-self:center}
 
 /* ── 底栏 ── */
+/* 嵌入模式（?host=cockpit）：藏掉本页顶栏——驾驶舱的格头已经写了这是哪一格，
+   配置与选中卡由宿主统一驱动，再留一条自己的顶栏就是两套控制器打架。
+   底部图层条保留：L5 通信 / 原语这些是**本格自己的**开关，宿主并不代管。 */
+.pt-root.embed .pt-bar{display:none}
+.pt-root.embed .pt-main{border-top:0}
 .pt-foot{flex:none; border-top:1px solid var(--pt-bd); background:var(--pt-s1); padding:6px 14px 8px; z-index:10; display:flex; flex-direction:column; gap:5px}
 .pt-lrow{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .pt-sep{width:1px; height:16px; background:var(--pt-bd); margin:0 4px}
@@ -337,6 +342,7 @@ function urlLoad(){
   else if(VIEWS.some(function(x){return x.id===vw;})) ui.view = vw;
   if(COMM_DIMS.indexOf(q.get('cut'))>=0) ui.cutDim = q.get('cut');
   var sl = parseInt(q.get('sel'),10); if(isFinite(sl) && sl>=0) sel = sl;
+  if(q.get('host')==='cockpit') $('app').classList.add('embed');
   if(AXIS_DOMAIN.indexOf(q.get('axis'))>=0) ui.axis = q.get('axis');
   if(COMM_DIMS.indexOf(q.get('dim'))>=0) ui.commDim = q.get('dim');
   if(PRIMS.some(function(x){return x.id===q.get('prim');})) ui.commPrim = q.get('prim');
@@ -1896,9 +1902,9 @@ document.addEventListener('input', function(ev){
 });
 document.addEventListener('click', function(ev){
   var card = ev.target.closest('.cardg');
-  if(card){ sel = +card.getAttribute('data-g'); render(); return; }
+  if(card){ sel = +card.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
   var dc = ev.target.closest('.dimcol');
-  if(dc){ sel = (sel === +dc.getAttribute('data-g')) ? null : +dc.getAttribute('data-g'); render(); return; }
+  if(dc){ sel = (sel === +dc.getAttribute('data-g')) ? null : +dc.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
   var lp = ev.target.closest('.l3pick');
   if(lp){ ui.selLayerOff = +lp.getAttribute('data-li'); render(); return; }
   var b = ev.target.closest('[data-act]');
@@ -1939,7 +1945,7 @@ document.addEventListener('click', function(ev){
       var ownerC2 = iv<Dq.cp ? iv : 2*Dq.cp-1-iv;
       sel = rankOf(c0.t, ownerC2, c0.d, c0.p, Dq);
     }
-    render();
+    render(); ptoNotifyHost();
   }
   else if(act==='axis'){ ui.axis = b.getAttribute('data-a'); render(); }
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
@@ -2001,10 +2007,34 @@ document.addEventListener('mousemove', function(ev){
 /* 宿主 postMessage 主题联动（与逻辑魔方同约定） */
 window.addEventListener('message', function(ev){
   var d = ev && ev.data;
-  if(d && (d.type==='theme'||d.type==='pto:theme') && (d.value==='dark'||d.value==='light')){
-    document.documentElement.setAttribute('data-theme', d.value); render();
+  if(!d) return;
+  if((d.type==='theme'||d.type==='pto:theme') && (d.value==='dark'||d.value==='light')){
+    document.documentElement.setAttribute('data-theme', d.value); render(); return;
+  }
+  /* 宿主（驾驶舱）驱动：不重载 iframe 也能换视图 / 选中卡 / 换预置。
+     只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
+  if(d.type==='pto:state'){
+    if(VIEWS.some(function(x){ return x.id===d.view; })) ui.view = d.view;
+    if(COMM_DIMS.indexOf(d.cut)>=0) ui.cutDim = d.cut;
+    if(d.preset){
+      var p2 = PRESETS.filter(function(x){ return x.id===d.preset; })[0];
+      if(p2){ cfg = JSON.parse(JSON.stringify(p2.cfg)); activePreset = p2.id; }
+    }
+    if(typeof d.sel === 'number' && d.sel >= 0) sel = d.sel;
+    if(d.sel === null) sel = null;
+    if(d.l5 === true || d.l5 === false) (ui.layersUser[ui.view] = ui.layersUser[ui.view]||{}).L5 = d.l5;
+    if(d.theme==='dark'||d.theme==='light') document.documentElement.setAttribute('data-theme', d.theme);
+    render();
+    /* 回报当前状态，宿主据此对齐别的格（选中卡可能被本页夹紧过） */
+    if(ev.source) ev.source.postMessage({type:'pto:state-ack', view:ui.view, cut:ui.cutDim, sel:sel, preset:activePreset}, '*');
   }
 });
+/* 页内换选中卡时主动上报，宿主用它联动别的组件（A8 的跨组件版）。
+   独立打开时 parent===window，函数存在但什么也不做。 */
+window.ptoNotifyHost = function(){
+  if(window.parent && window.parent !== window)
+    window.parent.postMessage({type:'pto:select', sel:sel, view:ui.view, cut:ui.cutDim}, '*');
+};
 
 urlLoad();
 render();
