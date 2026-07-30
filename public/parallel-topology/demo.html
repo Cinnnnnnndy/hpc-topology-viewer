@@ -964,7 +964,7 @@ function renderChain(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var MX = 150, MW = 500, IX = 770, IW = 250, H = 560;
-  var LY0=36, H0=34, LY1=132, H1=34, LY2=214, H2=34, LY3=318, H3=36, LY4=414, H4=48;
+  var LY0=36, H0=34, LY1=132, H1=34, LY2=214, H2=34, LY3=318, H3=36, LY4=414, H4=64;
   var parts = [];
   function rect(x,y,w,h,fill,stroke,sw,extra){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(0.5,w).toFixed(1)+'" height="'+h.toFixed(1)+'" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?0.8:sw)+'" '+(extra||'')+'/>';
@@ -1079,11 +1079,26 @@ function renderChain(D){
   var LX = MX+40, LW = (IX+IW)-MX-80;
   parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(LY3+H3+22)+'" x2="'+(LX+LW*.35)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push('<line x1="'+(IX+IW/2)+'" y1="'+(LY2+H2+6)+'" x2="'+(LX+LW*.8)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
-  parts.push(txt(LX+LW/2, LY4-8, '∩ 两条链在这里汇合', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+  parts.push(txt(LX+LW/2, LY4-8, '∩ 两条链在这里汇合（模型侧 ℓ·h·e ∩ 输入侧 b·s）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
   var stI = co.p, memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; },0);
   parts.push(rect(LX, LY4, LW, H4, mix('var(--pt-fg)',4), 'var(--pt-fg)', 1.6));
-  parts.push(txt(LX+16, LY4+18, '叶子 = 一张卡（容器）g='+g+'：模型侧交集 ∩ 输入侧份额——路径是这张卡的，链是全体的', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-  parts.push(txt(LX+16, LY4+35, 'ℓ L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)+' ∩ h 片'+co.t+'/'+D.tp+(me?' ∩ e 桶E'+(me.ep*(D.experts/D.ep))+'–E'+((me.ep+1)*(D.experts/D.ep)-1):'')+' ∩ b 份'+co.d+(D.cp>1?' ∩ s 段'+co.c+'∪'+(2*D.cp-1-co.c):'')+'　▮ '+fmtGB(memI)+'/'+D.hbm+' GB', 9, 'var(--pt-fg2)', 'start'));
+  parts.push(txt(LX+16, LY4+18, '叶子 = 一张卡（容器）g='+g+'：每把刀留下一个区间，交集 = 这张卡装的全部字节——不是链末那一小片', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  /* 五元组逐分量按「产出它的那把刀」染色——分量 ⇄ 刀，一一对应 */
+  var five = [
+    {c:VC.pp, s:'PP刀→ℓ L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)},
+    {c:VC.tp, s:'TP刀→h 片'+co.t+'/'+D.tp}
+  ];
+  if(me) five.push({c:VC.ep, s:'EP刀→e 桶E'+(me.ep*(D.experts/D.ep))+'–E'+((me.ep+1)*(D.experts/D.ep)-1)});
+  five.push({c:VC.dp, s:'DP刀→b 份'+co.d});
+  if(D.cp>1) five.push({c:VC.cp, s:'CP刀→s 段'+co.c+'∪'+(2*D.cp-1-co.c)});
+  parts.push('<text x="'+(LX+16)+'" y="'+(LY4+35)+'" text-anchor="start" font-size="9" font-family="var(--pt-mono)" font-weight="700">'
+    + five.map(function(f){ return '<tspan style="fill:'+f.c+'">'+f.s+'</tspan>'; }).join('<tspan style="fill:var(--pt-fg3)" font-weight="400"> ∩ </tspan>')
+    + '<tspan style="fill:var(--pt-fg2)">　▮ '+fmtGB(memI)+'/'+D.hbm+' GB</tspan></text>');
+  var readBits = [];
+  if(D.tp>1) readBits.push('每层都取 h 片'+co.t);
+  if(me) readBits.push('MoE 层都取这 '+(D.experts/D.ep)+' 个专家');
+  parts.push(txt(LX+16, LY4+51, '读法：分量颜色 = 产出它的那把刀；卡装的是区间交集'+(readBits.length?'——'+D.layersPerStage+' 层里'+readBits.join('、')+'，不止放大看的那一层':''), 7.8, 'var(--pt-fg3)', 'start'));
+  if(D.pp>1) parts.push(txt(LX+16, LY4+H4+13, '换 stage 对比：变的是 g（哪张卡）· ℓ（哪些层）· ▮（显存）——形状不变：段段同构是均切的目的；▮ 差异 = 静态角色（stage0 词嵌入 / stage'+(D.pp-1)+' 输出头）+ 在途激活（1F1B 越靠前压的 μbatch 越多）', 7.8, 'var(--pt-fg2)', 'start'));
   /* ── 左缘双向箭头（两种序，反向） ── */
   parts.push('<line x1="64" y1="'+(LY0+6)+'" x2="64" y2="'+(LY4+30)+'" style="stroke:var(--pt-fg2);stroke-width:1.4;marker-end:url(#arrx)"/>');
   parts.push('<g transform="rotate(-90 54 '+(LY0+230)+')">'+txt(54, LY0+230, '嵌套序：外 → 内（每刀切上一刀的产物）', 9, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
