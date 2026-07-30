@@ -275,6 +275,7 @@ var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
   {id:'dim', name:'单维切分'},
+  {id:'chain', name:'刀序·切分链'},
   {id:'compose', name:'合成·卡阵'},
   {id:'anatomy', name:'卡内解剖'},
   {id:'time', name:'时间·流'}
@@ -283,12 +284,14 @@ var LAYERS = ['L1','L2','L3','L4','L5'];
 var LAYER_NAME = {L1:'L1 结构', L2:'L2 内容', L3:'L3 容器', L4:'L4 地址', L5:'L5 通信'};
 var AVAIL = {
   dim:{L1:true, L2:true, L3:true,L4:true,L5:true},
+  chain:{L1:false,L2:true, L3:true,L4:true,L5:false},
   compose:{L1:false,L2:true,L3:true,L4:true,L5:true},
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
   anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true}
 };
 var DEFAULTS = {
   dim:{L1:true,L2:true,L3:true,L4:true,L5:true},
+  chain:{L2:true,L3:true,L4:true},
   compose:{L2:false,L3:true,L4:true,L5:false},
   time:{L3:true,L4:true,L5:true},
   anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true}
@@ -946,6 +949,138 @@ function renderDim(D){
     + '<div style="font-size:10.5px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
   $('detach').hidden = true;
 }
+/* ═════════ 刀序·切分链：用「先后/上下」把五把刀组织起来 ═════════
+   两种顺序，方向相反，都真实存在（§11 / §02）：
+   · 嵌套序（本图自上而下）：每一刀切在上一刀的产物里——DP 复制整网(最外) →
+     PP 切层段 → TP 锯进算子内部 / EP 重组专家(最深)；输入侧 全局批 →DP→ 样本份 →CP→ 双段
+   · 决策序（§11，自下而上）：①TP ②PP ③CP ④EP ⑤DP(残差)
+   反向不是巧合：刀越深 → 通信越密 → 越要先定、越要贴机内。 */
+function renderChain(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  var MX = 150, MW = 500, IX = 700, IW = 300, H = 512;
+  var LY0 = 34, LY1 = 128, LY2 = 226, LY3 = 330, LY4 = 428, ROWH = 34;
+  var parts = [];
+  function rect(x,y,w,h,fill,stroke,sw,extra){
+    return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(0.5,w).toFixed(1)+'" height="'+h.toFixed(1)+'" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?0.8:sw)+'" '+(extra||'')+'/>';
+  }
+  function conn(x1,y1,x2,y2,colr){
+    return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" style="stroke:'+(colr||'var(--pt-bd)')+';stroke-width:1;stroke-dasharray:3 3;opacity:.7"/>';
+  }
+  /* ── L0：整网 + 全局批 ── */
+  parts.push(rect(MX, LY0, MW, ROWH, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
+  parts.push(txt(MX+MW/2, LY0+21, '整网 · '+D.layers+' 层 · 逻辑上一张（模型侧）', 11, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+  parts.push(rect(IX, LY0, IW, ROWH, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
+  parts.push(txt(IX+IW/2, LY0+15, '全局批（输入侧 · 对象②）', 10, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+  parts.push(txt(IX+IW/2, LY0+27, 'GBS='+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq), 8.5, 'var(--pt-fg2)'));
+  /* ── 刀行helper ── */
+  function knife(y, x, w, dim2, title, ord, comm, near, active){
+    var c2 = VC[dim2];
+    var blade = '<path d="M'+(x+2)+' '+(y+9)+' l 12 0 l -5 6 z" style="fill:'+(active?c2:'var(--pt-bd)')+'"/>';
+    var alpha = active ? '' : ';opacity:.42';
+    return '<g style="'+alpha.slice(1)+'">'+blade
+      + txt(x+18, y+14, '刀·'+DIMN[dim2]+' '+title+(active?'':'（本配置未开）'), 9.5, active?c2:'var(--pt-fg3)', 'start', 'font-weight="800"')
+      + txt(x+18, y+26, '决策顺位'+ord+' · 通信:'+comm+' · 落位:'+near, 8, 'var(--pt-fg3)', 'start')+'</g>';
+  }
+  /* ── K1：DP 刀（两侧） ── */
+  var KY1 = LY0+ROWH+8;
+  parts.push(knife(KY1, MX, MW, 'dp', '复制整网——模型侧不切', '⑤（残差）', '步末 AllReduce ×1', '最外·跨机可容忍', D.dp>1));
+  parts.push(knife(KY1, IX, IW, 'dp', '切样本 b 轴 ×'+D.dp, '⑤', '（切数据，不通信）', '—', D.dp>1));
+  /* ── L1：副本 / 样本份 ── */
+  var nD = Math.min(D.dp, 6), gap = 6, wD = (MW-(nD-1)*gap)/nD;
+  for(var d1=0; d1<nD; d1++){
+    var hotD = d1===Math.min(co.d, nD-1);
+    parts.push(rect(MX+d1*(wD+gap), LY1, wD, ROWH, hotD?mix(VC.dp,16):'var(--pt-s2)', hotD?VC.dp:'var(--pt-bds)', hotD?1.4:0.7, 'data-act="chainpick" data-k="d" data-i="'+d1+'" style="cursor:pointer"'));
+    parts.push(txt(MX+d1*(wD+gap)+wD/2, LY1+15, '副本'+d1+(hotD&&co.d>=nD?'…'+co.d:''), 9, hotD?VC.dp:'var(--pt-fg2)', 'middle', (hotD?'font-weight="800" ':'')+'pointer-events="none"'));
+    parts.push(txt(MX+d1*(wD+gap)+wD/2, LY1+27, d1<nD-1?'≡ 相同':'≡ ×'+D.dp, 8, 'var(--pt-fg3)', 'middle', 'pointer-events="none"'));
+    parts.push(conn(MX+MW/2, LY0+ROWH, MX+d1*(wD+gap)+wD/2, LY1, VC.dp));
+  }
+  var wI = (IW-(nD-1)*gap)/nD;
+  for(var d2=0; d2<nD; d2++){
+    var hotI = d2===Math.min(co.d, nD-1);
+    parts.push(rect(IX+d2*(wI+gap), LY1, wI, ROWH, hotI?mix(VC.dp,20):'var(--pt-s2)', hotI?VC.dp:'var(--pt-bds)', hotI?1.4:0.7));
+    parts.push(txt(IX+d2*(wI+gap)+wI/2, LY1+21, 'b份'+d2, 8.5, hotI?VC.dp:'var(--pt-fg3)', 'middle'));
+    parts.push(conn(IX+IW/2, LY0+ROWH, IX+d2*(wI+gap)+wI/2, LY1, VC.dp));
+  }
+  /* ── K2：PP 刀（模型） + CP 刀（输入） ── */
+  var KY2 = LY1+ROWH+8;
+  parts.push(knife(KY2, MX, MW, 'pp', '切层序 ℓ ×'+D.pp+'（唯一有序维）', '②', '段间 P2P·每 μbatch', '较内', D.pp>1));
+  parts.push(knife(KY2, IX, IW, 'cp', '切序列 s ×'+D.cp+'（因果双段）', '③', 'Ring/Ulysses·每层', '较内', D.cp>1));
+  /* ── L2：层段（有序+接力箭头） / 双段配对 ── */
+  var selDx = MX + Math.min(co.d,nD-1)*(wD+gap), selDw = wD;
+  var nP = Math.min(D.pp, 8), wP = (MW-(nP-1)*gap)/nP;
+  for(var p1=0; p1<nP; p1++){
+    var hotP = p1===co.p;
+    parts.push(rect(MX+p1*(wP+gap), LY2, wP, ROWH, hotP?mix(VC.pp,20):mix(VC.pp,7), hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'data-act="chainpick" data-k="p" data-i="'+p1+'" style="cursor:pointer"'));
+    parts.push(txt(MX+p1*(wP+gap)+wP/2, LY2+15, 'stage'+p1, 9, hotP?VC.pp:'var(--pt-fg2)', 'middle', (hotP?'font-weight="800" ':'')+'pointer-events="none"'));
+    parts.push(txt(MX+p1*(wP+gap)+wP/2, LY2+27, 'L'+(p1*D.layersPerStage)+'–L'+((p1+1)*D.layersPerStage-1), 8, 'var(--pt-fg3)', 'middle', 'pointer-events="none"'));
+    if(p1<nP-1) parts.push('<line x1="'+(MX+p1*(wP+gap)+wP)+'" y1="'+(LY2+ROWH/2)+'" x2="'+(MX+(p1+1)*(wP+gap))+'" y2="'+(LY2+ROWH/2)+'" style="stroke:'+VC.pp+';stroke-width:1.6;marker-end:url(#arrpp)"/>');
+    parts.push(conn(selDx+selDw/2, LY1+ROWH, MX+p1*(wP+gap)+wP/2, LY2, VC.pp));
+  }
+  var segN = 2*D.cp, wS = (IW-(segN-1)*3)/segN;
+  var selIx = IX + Math.min(co.d,nD-1)*(wI+gap);
+  for(var s1=0; s1<segN; s1++){
+    var ownerS = s1<D.cp ? s1 : 2*D.cp-1-s1, hotS = D.cp>1 && ownerS===co.c;
+    parts.push(rect(IX+s1*(wS+3), LY2, wS, ROWH, hotS?mix(VC.cp,26):mix(VC.cp,8), hotS?VC.cp:'var(--pt-bds)', hotS?1.4:0.6));
+    if(wS>18) parts.push(txt(IX+s1*(wS+3)+wS/2, LY2+21, '段'+s1, 8, hotS?VC.cp:'var(--pt-fg3)', 'middle'));
+    parts.push(conn(selIx+wI/2, LY1+ROWH, IX+s1*(wS+3)+wS/2, LY2, VC.cp));
+  }
+  if(D.cp>1){ /* 选中 cp 的首尾配对弧 */
+    var aPx = IX+co.c*(wS+3)+wS/2, bPx = IX+(2*D.cp-1-co.c)*(wS+3)+wS/2;
+    parts.push('<path d="M'+aPx+' '+(LY2-3)+' C '+aPx+' '+(LY2-18)+', '+bPx+' '+(LY2-18)+', '+bPx+' '+(LY2-3)+'" style="fill:none;stroke:'+VC.cp+';stroke-width:1.3"/>');
+  }
+  /* ── K3：TP 刀 + EP 刀（模型段内） ── */
+  var KY3 = LY2+ROWH+8;
+  parts.push(knife(KY3, MX, MW/2, 'tp', '锯算子 h 轴 ×'+D.tp, '①（最先）', '每层两下 AllReduce', '最内·必须机内', D.tp>1));
+  parts.push(knife(KY3, MX+MW/2+10, MW/2, 'ep', '重组专家 e 轴 ×'+D.ep, '④', '每 MoE 层 All-to-All', '组内近', D.moe&&D.ep>1));
+  parts.push(txt(IX+IW/2, KY3+18, '（输入侧到此为止：s 双段 ∩ b 份 = 该卡的输入份额）', 8.5, 'var(--pt-fg3)', 'middle'));
+  /* ── L3：选中段展开为算子序列（TP 锯片 + EP 分桶） ── */
+  var ops3 = opBytes(D).filter(function(o){ return o.b>0; });
+  var totB3 = ops3.reduce(function(a,o){ return a+o.b; },0);
+  var x3 = MX, usable3 = MW - (ops3.length-1)*4;
+  var selPx = MX + co.p*(wP+gap);
+  ops3.forEach(function(o){
+    var w3 = usable3 * clamp(o.b, totB3*.07, totB3*.30) / ops3.reduce(function(a,oo){ return a+clamp(oo.b,totB3*.07,totB3*.30); },0);
+    if(o.cut==='tp' && D.tp>1){
+      for(var t3=0;t3<D.tp;t3++){
+        var hotT = t3===co.t;
+        parts.push(rect(x3+t3*(w3/D.tp), LY3, w3/D.tp-1, ROWH, hotT?mix(VC.tp,44):mix(VC.tp,12), hotT?VC.tp:'transparent', hotT?1.3:0, 'data-act="chainpick" data-k="t" data-i="'+t3+'" style="cursor:pointer"'));
+      }
+      parts.push(rect(x3, LY3, w3, ROWH, 'none', VC.tp, .8));
+    }else if(o.cut==='ep' && D.moe && D.ep>1){
+      for(var e3=0;e3<Math.min(D.ep,8);e3++){
+        var hotE = me && e3===me.ep;
+        parts.push(rect(x3+e3*(w3/Math.min(D.ep,8)), LY3, w3/Math.min(D.ep,8)-1, ROWH, hotE?mix(VC.ep,46):mix(VC.ep,12), hotE?VC.ep:'transparent', hotE?1.3:0, 'data-act="chainpick" data-k="e" data-i="'+e3+'" style="cursor:pointer"'));
+      }
+      parts.push(rect(x3, LY3, w3, ROWH, 'none', VC.ep, .8));
+    }else{
+      parts.push(rect(x3, LY3, w3, ROWH, mix('var(--pt-fg2)',14), 'var(--pt-bds)', .6));
+    }
+    if(w3>34) parts.push(txt(x3+w3/2, LY3+ROWH+11, o.id, 7.2, o.cut==='tp'?VC.tp:o.cut==='ep'?VC.ep:'var(--pt-fg3)', 'middle'));
+    parts.push(conn(selPx+wP/2, LY2+ROWH, x3+w3/2, LY3, o.cut==='ep'?VC.ep:VC.tp));
+    x3 += w3+4;
+  });
+  /* ── L4：叶子 = 一张卡（容器）——五把刀的交集 ── */
+  var stI = co.p, memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; },0);
+  parts.push(rect(MX+80, LY4, MW+IX-MX-160+IW-140, 46, mix('var(--pt-fg)',4), 'var(--pt-fg)', 1.6));
+  parts.push(txt(MX+96, LY4+18, '叶子 = 一张卡（容器）g='+g+'：五把刀的交集落位', 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(MX+96, LY4+34, 'ℓ L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)+' ∩ h 片'+co.t+'/'+D.tp+(me?' ∩ e 桶E'+(me.ep*(D.experts/D.ep))+'–E'+((me.ep+1)*(D.experts/D.ep)-1):'')+' ∩ b 份'+co.d+(D.cp>1?' ∩ s 段'+co.c+'∪'+(2*D.cp-1-co.c):'')+'　▮ '+fmtGB(memI)+'/'+D.hbm+' GB', 9, 'var(--pt-fg2)', 'start'));
+  parts.push(conn(MX+MW/2, LY3+ROWH, MX+MW/2, LY4, 'var(--pt-fg2)'));
+  parts.push(conn(IX+IW/2, LY2+ROWH, IX+IW/2, LY4, 'var(--pt-fg2)'));
+  /* ── 左缘：两根反向箭头 ── */
+  parts.push('<line x1="64" y1="'+(LY0+6)+'" x2="64" y2="'+(LY4+30)+'" style="stroke:var(--pt-fg2);stroke-width:1.4;marker-end:url(#arrx)"/>');
+  parts.push('<g transform="rotate(-90 54 '+(LY0+230)+')">'+txt(54, LY0+230, '嵌套序：外 → 内（每刀切上一刀的产物）', 9, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
+  parts.push('<line x1="24" y1="'+(LY4+30)+'" x2="24" y2="'+(LY0+6)+'" style="stroke:var(--pt-fg3);stroke-width:1.4;marker-end:url(#arrx)"/>');
+  parts.push('<g transform="rotate(-90 14 '+(LY0+230)+')">'+txt(14, LY0+230, '决策序 §11：①TP ②PP ③CP ④EP ⑤DP（反向！）', 9, 'var(--pt-fg3)', 'middle', 'font-weight="700"')+'</g>');
+  parts.push(txt(MX+MW/2, H-6, '反向不是巧合：刀越深 → 通信越密 → 越要先定 → 越要贴机内（§11 的道理本身）', 9.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1040 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()+parts.join('')+'</svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
+    + '<span class="pt-chip">上下=嵌套序（切分套切分） · ①–⑤=决策序 · 点任意块换路径</span>'
+    + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
+  $('stageNote').hidden = true; $('detach').hidden = true;
+}
+
 function renderDimBar(D, dim){
   var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim] || 1, col2 = VC[dim];
   var fixed = COMM_DIMS.filter(function(dm){ return dm!==dim && ({tp:D.tp,pp:D.pp,cp:D.cp,dp:D.dp,ep:D.ep}[dm])>1; })
@@ -1371,7 +1506,7 @@ function renderDetail(D){
   var el = $('detail');
   if(!D.ok){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
-    if(ui.view==='anatomy'||ui.view==='dim'){ el.hidden = (sel===null); if(sel===null) return; }
+    if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
     el.innerHTML = '<h4>结构总览 · 点卡读出</h4>'
       + '<table>'
@@ -1545,6 +1680,9 @@ function key(inner, label, w){
 function sayText(D){
   if(!D.ok) return '<b>配置不合法，舞台已封锁</b>——宁可不画，不可画错（DP-5）。点顶栏红色 chip 修正，每个错误都带最近合法值。';
   var s = '';
+  if(ui.view==='chain'){
+    return '<b>刀序</b>：切分有两种先后，方向相反——<b>嵌套序</b>（自上而下：每刀切上一刀的产物，DP 最外、TP/EP 最深）与 <b>决策序</b>（§11：①TP…⑤DP 残差）。反向是道理本身：<b>刀越深→通信越密→越先定→越贴机内</b>。点任意块换一条路径，叶子=那张卡的交集。';
+  }
   if(ui.view==='dim'){
     var verdict = {
       tp:'<b style="color:'+VC.tp+'">TP</b> 在<b>算子内部</b>切 h/e 轴：结构跨柱共有，片各归各柱——归属边界落在算子片。每层两下 AllReduce 是切口的代价。',
@@ -1581,6 +1719,7 @@ function render(){
     $('stage').innerHTML = '<div class="pt-blocked"><div><b>✕ 配置不合法，不渲染视图</b><br><span style="font-size:12px">'+D.errors.length+' 条整除约束未满足（DP-5 宁缺毋误）</span><br><button class="pb" data-act="drawer" data-d="cfg">打开配置修正</button></div></div>';
   }else{
     if(ui.view==='dim') renderDim(D);
+    else if(ui.view==='chain') renderChain(D);
     else if(ui.view==='compose') renderV1(D);
     else if(ui.view==='anatomy') renderV3(D);
     else renderV2(D);
@@ -1635,6 +1774,20 @@ document.addEventListener('click', function(ev){
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
+  else if(act==='chainpick'){
+    var Dq = derive(cfg); if(!Dq.ok) return;
+    var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
+    var kk = b.getAttribute('data-k'), iv = +b.getAttribute('data-i');
+    if(kk==='d') sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
+    else if(kk==='p') sel = rankOf(c0.t,c0.c,c0.d,iv,Dq);
+    else if(kk==='t') sel = rankOf(iv,c0.c,c0.d,c0.p,Dq);
+    else if(kk==='e' && Dq.moe){
+      var m0 = epOf(c0.t,c0.c,c0.d,Dq);
+      var q0 = (m0.mdp*Dq.ep+iv)*Dq.etp+m0.etp;
+      sel = rankOf(q0%Dq.tp, Math.floor(q0/Dq.tp)%Dq.cp, Math.floor(q0/(Dq.tp*Dq.cp))%Dq.dp, c0.p, Dq);
+    }
+    render();
+  }
   else if(act==='axis'){ ui.axis = b.getAttribute('data-a'); render(); }
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
   else if(act==='yaw'){ ui.yaw = (ui.yaw + (+b.getAttribute('data-d')) + 4) & 3; render(); }
