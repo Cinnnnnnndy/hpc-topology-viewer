@@ -15,7 +15,8 @@ name: Deploy to GitHub Pages
 #       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
 #         public/parallel-topology/launch-card.html，见下面那一步）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
-#       → /pto-ds/（纠正版 rank-deck：Rank 装的是层段×TP片×EP桶的交集，不是缩小的整网）
+#       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
+#       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
 # push 任一分支即刷新它自己的目录。
 #
 # 为什么整网对象那版单独占一条路径、而不是覆盖 /patterns/rubik-cube-logical/：
@@ -336,7 +337,10 @@ jobs:
           cp -r ptods-src/patterns/model-graphviz $DST/patterns/model-graphviz
           cp -r ptods-src/patterns/model-architecture-3d-deck $DST/patterns/model-architecture-3d-deck
           cp -r ptods-src/patterns/model-parallel-rank-deck $DST/patterns/model-parallel-rank-deck
+          # 训练语义 sidecar：组合总图 C 段引用它；依赖恰好是上面已拷的 tokens/css/3d-deck/graphviz
+          cp -r ptods-src/patterns/model-architecture-training-sidecar $DST/patterns/model-architecture-training-sidecar
           echo "published: /pto-ds/patterns/model-parallel-rank-deck/pattern.html (rank-deck@$SHA)"
+          echo "published: /pto-ds/patterns/model-architecture-training-sidecar/pattern.html (sidecar@$SHA)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
