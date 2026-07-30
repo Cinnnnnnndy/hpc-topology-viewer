@@ -216,6 +216,20 @@ h1 .thin{font-weight:300;color:var(--ink-2)}
 .ppcol .colhead{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--pp);margin-bottom:6px;
   white-space:nowrap;line-height:1.35}
 .ppcol .colhead em{display:block;font-style:normal;font-weight:400;font-size:9px;color:var(--ink-3)}
+/* 与时间滑块联动：整列显示这一刻它在算谁 */
+.ppcol .stchip{display:inline-block;margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;
+  border-radius:9px;border:1px solid var(--rule);color:var(--ink-3);vertical-align:1.5px;letter-spacing:.02em}
+.ppcol .stchip[data-empty]{display:none}
+.ppcol .rankgrid{transition:background .12s,opacity .12s;border-radius:6px}
+.ppcol.st-f .rankgrid{background:rgba(210,130,70,.16)}
+.ppcol.st-b .rankgrid{background:rgba(140,75,45,.20)}
+.ppcol.st-bub .rankgrid{opacity:.42}
+.ppcol.st-f .stchip{background:var(--fwd);border-color:var(--fwd);color:#fff}
+.ppcol.st-b .stchip{background:var(--bwd);border-color:var(--bwd);color:#fff}
+.ppcol.st-bub .stchip{background:var(--bubble);border-style:dashed;
+  background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--bubble-line) 3px 4px)}
+.nowline{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:0 0 9px}
+.nowline b{color:var(--ink-2)}
 .ppcol.emph .colhead{color:var(--ink)}
 .ppcol.emph .rankgrid{box-shadow:0 0 0 2px var(--rule);border-radius:6px}
 .rk.inchain{border-color:var(--pp);background:var(--paper);color:var(--pp);font-weight:750;
@@ -566,8 +580,8 @@ function renderUnfold(){
       for(let tp=0;tp<TPn;tp++) cells+=`<div class="rk axh" style="width:${cs}px;height:15px">⋮</div>`;
     }
     const [la,lb]=layerRange(pp);
-    colsHtml+=`<div class="ppcol${pp===sSel?' emph':''}">
-      <div class="colhead">Stage ${pp}<em>pp_rank ${pp} · L ${la}–${lb-1}</em></div>
+    colsHtml+=`<div class="ppcol${pp===sSel?' emph':''}" data-pp="${pp}">
+      <div class="colhead">Stage ${pp}<span class="stchip" data-empty="1"></span><em>pp_rank ${pp} · L ${la}–${lb-1}</em></div>
       <div class="rankgrid" style="grid-template-columns:repeat(${TPn+1},${cs}px)">${cells}</div></div>`;
   }
 
@@ -593,6 +607,8 @@ function renderUnfold(){
     每一列内部：横看 <b>+1</b>（tp 连续 ⇒ 机内），纵看 <b>+${TP*CP}</b>（换 dp 副本 ⇒ 可能跨机）——
     这套进位就是 Megatron 的 <code>order="tp-cp-ep-dp-pp"</code>。${truncNote}</p>
     ${cpChips}
+    <p class="nowline">拖下方<b>时间滑块</b> → 每列头上显示<b>这一刻它在算谁</b>，整列一起变色：
+    <b>同一个 Stage 的 ${stageSize.toLocaleString()} 张卡在任一时刻做的是同一件事</b>——这正是时间脸能把它们折成一格的理由。</p>
     <div class="stripscroll"><div class="ppstrip">
       <svg class="chainsvg" id="chainsvg" aria-hidden="true"></svg>${colsHtml}
     </div></div>
@@ -606,6 +622,26 @@ function renderUnfold(){
     CFG.chain.cp=+b.dataset.cp; renderUnfold();
   }));
   drawChain();
+  applyUnfoldTime();
+}
+
+// 时间滑块 ↔ 展开面联动：把 t 时刻各 Stage 的状态打到对应的列上
+function applyUnfoldTime(){
+  const strip=document.querySelector('.ppstrip'); if(!strip) return;
+  const t=CFG.tcur;
+  strip.querySelectorAll('.ppcol').forEach(col=>{
+    const pp=+col.dataset.pp, chip=col.querySelector('.stchip');
+    col.classList.remove('st-f','st-b','st-bub');
+    if(t<0){ if(chip){chip.textContent=''; chip.setAttribute('data-empty','1');} return; }
+    const c=STATE.grid[pp] && STATE.grid[pp][t];
+    if(chip) chip.removeAttribute('data-empty');
+    if(!c){ col.classList.add('st-bub'); if(chip){chip.textContent='气泡'; chip.title=`t=${t}：这 ${CFG.tp*CFG.dp*CFG.cp} 张卡都在空转`;} }
+    else{
+      col.classList.add(c.type==='F'?'st-f':'st-b');
+      if(chip){ chip.textContent=c.type+c.m;
+        chip.title=`t=${t}：这 ${CFG.tp*CFG.dp*CFG.cp} 张卡都在算 micro-batch ${c.m} 的${c.type==='F'?'前向':'反向'}`; }
+    }
+  });
 }
 
 // 把 PP 链画出来：一条穿过各列同一格的线 + 每个间隙一个箭头与 +stride 标注
@@ -756,7 +792,7 @@ grid.addEventListener('mousemove',e=>{
 });
 grid.addEventListener('mouseleave',()=>tip.style.opacity=0);
 
-$('tscrub').addEventListener('input',e=>{CFG.tcur=+e.target.value;applyTcol();updateStatus();});
+$('tscrub').addEventListener('input',e=>{CFG.tcur=+e.target.value;applyTcol();updateStatus();applyUnfoldTime();});
 
 // theme
 const root=document.documentElement, tb=$('themebtn');
