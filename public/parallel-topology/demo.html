@@ -892,7 +892,16 @@ function renderDim(D){
                    ep:'EP All-to-All · top-k='+(D.topk||'—')+' 路由 · 各边载荷不等',
                    cp:{p2p:'CP Ring（P2P 逐跳传 KV 块）', alltoall:'CP Ulysses（All-to-All 换轴）', allgather:'CP 朴素（AllGather 收全序列）'}[prim]}[dim];
     parts.push(txt(cl[0]+6, cl[1], commTxt, 9.5, col, 'start', 'font-weight="700"'));
-    reg([cl[0]+6, cl[1]], 0, 300, 10, 6);
+    /* 作用域（§06 通则：通信算子插在归属边界处）——层内 / 跨层 / 跨 step 三档 */
+    var SCOPE = {
+      tp:'作用域：层内（算子内部）· 每层 2 次，不跨层',
+      ep:'作用域：层内（层的内部·MoE 层）· 每 MoE 层 2 次 dispatch+combine，不跨层；路由逐层重算',
+      cp:'作用域：层内（attention 内部）· 每层一轮，不跨层',
+      pp:'作用域：跨层（层的边界）· stage 之间，每 μbatch 一次',
+      dp:'作用域：跨 step（整网之外）· 步末一次，层内不发生'
+    }[dim];
+    parts.push(txt(cl[0]+6, cl[1]+12, SCOPE, 8, 'var(--pt-fg2)', 'start'));
+    reg([cl[0]+6, cl[1]+12], 0, 320, 22, 8);
   }
 
   /* ── 左侧粒度标尺（「共有」只对本组视野为真）。
@@ -911,8 +920,10 @@ function renderDim(D){
     var lp = proj(-.9, y+BH+.15, DZ, s);
     var name = li===0 ? '输入 ②' : ruler[li][0];
     parts.push(txt(lp[0]-6, lp[1], name, 11, 'var(--pt-fg)', 'end', 'font-weight="700"'));
-    parts.push(txt(lp[0]-6, lp[1]+12, li===0 ? '另一对象·'+ruler[0][1] : ruler[li][1], 8, 'var(--pt-fg3)', 'end'));
-    reg([lp[0]-6, lp[1]+12], 116, 0, 12, 4);
+    parts.push(txt(lp[0]-6, lp[1]+12, li===0 ? '激活体②的入口·'+ruler[0][1] : ruler[li][1], 8, 'var(--pt-fg3)', 'end'));
+    /* 输入只是入口：激活体是它流过整网后逐层堆积的中间结果，不是同一样东西 */
+    if(li===0) parts.push(txt(lp[0]-6, lp[1]+23, '≠ 激活体本身（中间结果 ×几千倍）', 7.4, 'var(--pt-fg3)', 'end'));
+    reg([lp[0]-6, lp[1]+23], 150, 0, 12, 5);
   });
   /* 包含/放大关系：模型四级之间画 ⊃ 连线（同一内容，放大一级）；输入与整网之间画「断」 */
   [[GY.net, GY.lay], [GY.lay, GY.op], [GY.op, GY.ker]].forEach(function(pair){
@@ -989,9 +1000,12 @@ function renderChain(D){
   parts.push(rect(MX, LY0, MW, H0, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
   parts.push(txt(MX+MW/2, LY0+15, '整网（对象① 权重体） · '+D.layers+' 层 · 逻辑上一张', 10.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
   parts.push(txt(MX+MW/2, LY0+27, '链 = 全部 '+fmt(D.world)+' 卡共同经历的切分过程；高亮路径 = 选中那张卡的来历', 8, 'var(--pt-fg3)', 'middle'));
+  /* 输入 ≠ 激活体：参照系明确的第二处易错——输入只是入口（token id ~MB 级），
+     激活体是它流过整网后逐层堆积的中间结果（×几千倍）。这一列切的是 b·s 两根轴。 */
+  parts.push(txt(IX+IW/2, LY0-8, '输入 ≠ 激活体②：token id 只有 MB 级，激活体是它流过整网后逐层堆积的中间结果（×几千倍）', 7.4, 'var(--pt-fg3)', 'middle'));
   parts.push(rect(IX, LY0, IW, H0, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
-  parts.push(txt(IX+IW/2, LY0+15, '全局批（对象② 激活体）', 9.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
-  parts.push(txt(IX+IW/2, LY0+27, 'GBS='+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq), 8, 'var(--pt-fg2)'));
+  parts.push(txt(IX+IW/2, LY0+15, '全局批 = 输入（b·s 两轴的全长）', 9.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+  parts.push(txt(IX+IW/2, LY0+27, 'GBS='+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq)+' —— 激活体② 的来源', 8, 'var(--pt-fg2)'));
   /* ── 模型侧 刀1·DP = 复印（不切！尺寸不变）：一叠与整网等大的复印件 ── */
   var K = Math.min(D.dp, 4), selD = Math.min(co.d, K-1);
   parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(LY0+H0)+'" x2="'+(MX+MW/2)+'" y2="'+(LY1-(K-1)*7-4)+'" style="stroke:'+VC.dp+';stroke-width:1.4;marker-end:url(#arrdp)"/>');
@@ -1018,15 +1032,19 @@ function renderChain(D){
     if(hotP) parts.push(rect(sx, LY2+H2-11, segW/D.layersPerStage, 11, mix(VC.pp,55), VC.pp, 1, 'pointer-events="none"'));
     if(p1<D.pp-1) parts.push('<path d="M'+(sx+segW+1)+' '+(LY2-5)+' l 4 0 l -4 6 z" style="fill:'+VC.pp+'" pointer-events="none"/>');
   }
-  parts.push(txt(MX+co.p*(segW+2), LY2+H2+11, '取 stage'+co.p+' 的第 1 层（L'+(co.p*D.layersPerStage)+'）放大 ↓——段内 '+D.layersPerStage+' 层同构，看一层=看全部', 7.5, 'var(--pt-fg2)', 'start'));
   /* ── 层 → 算子：放大（不是切！尺寸不守恒，粒度坐标换挡） ── */
   var zx = MX + co.p*(segW+2), zw = segW/D.layersPerStage;
   parts.push('<line x1="'+zx+'" y1="'+(LY2+H2)+'" x2="'+MX+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push('<line x1="'+(zx+zw)+'" y1="'+(LY2+H2)+'" x2="'+(MX+MW)+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
-  parts.push(txt(MX+MW/2, LY2+H2+30, '⊕ 放大一层到算子级（粒度换挡——看得更细，不是又切了一刀；尺寸从此不守恒）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
-  parts.push(txt(MX+MW/2, LY2+H2+41, '层 = 下面这排算子；TP/EP 的刀口在算子内部（h/e 轴），必须放大到这一级才切得着', 7.8, 'var(--pt-fg3)', 'middle'));
-  parts.push(knifeLabel(MX+8, LY3-14, 'tp', '锯算子 h 轴 ×'+D.tp, '顺位①（最先）· 每层两下 AllReduce · 最内·必须机内', D.tp>1));
-  parts.push(knifeLabel(MX+MW*.56, LY3-14, 'ep', '重组专家 e 轴 ×'+D.ep, '顺位④ · 每 MoE 层 All-to-All · 组内近', D.moe&&D.ep>1));
+  /* 以下几行压在放大锥上：用背景色描边把锥线挖空，否则虚线穿过文字像删除线 */
+  var HALO = 'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="3.4" stroke-linejoin="round"';
+  /* 一条 vs 阵列：这条链排的是 ℓ（唯一有序轴），一格是层段；卡的二维阵列是落位，一格↔一列 */
+  parts.push(txt(MX+MW, LY2+H2+11, '一格 = 一个 stage = 层段，不是卡：由 TP·CP·DP='+(D.tp*D.cp*D.dp)+' 张卡共同持有 → 卡阵里的一整列（global_rank 每跨一格 +'+(D.tp*D.cp*D.dp)+'）', 7.5, 'var(--pt-fg3)', 'end', HALO));
+  parts.push(txt(zx, LY2+H2+23, '取 stage'+co.p+' 的第 1 层（L'+(co.p*D.layersPerStage)+'）放大 ↓——段内 '+D.layersPerStage+' 层同构，看一层=看全部', 7.5, 'var(--pt-fg2)', 'start', HALO));
+  parts.push(txt(MX+MW/2, LY2+H2+36, '⊕ 放大一层到算子级（粒度换挡——看得更细，不是又切了一刀；尺寸从此不守恒）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700" '+HALO));
+  parts.push(txt(MX+MW/2, LY2+H2+47, '层 = 下面这排算子；TP/EP 的刀口在算子内部（h/e 轴），必须放大到这一级才切得着', 7.8, 'var(--pt-fg3)', 'middle', HALO));
+  parts.push(knifeLabel(MX+8, LY3-14, 'tp', '锯算子 h 轴 ×'+D.tp, '顺位① · 层内：每层 2 次 AllReduce · 最内·必须机内', D.tp>1));
+  parts.push(knifeLabel(MX+MW*.56, LY3-14, 'ep', '重组专家 e 轴 ×'+D.ep, '顺位④ · 层内：每 MoE 层 2 次 A2A · 不跨层', D.moe&&D.ep>1));
   /* ── L3：一层的算子条（层内面积守恒：片贴片） ── */
   parts.push(txt(MX-8, LY3+H3/2+3, 'L'+(co.p*D.layersPerStage)+' 的内部', 8, 'var(--pt-fg2)', 'end', 'font-weight="700"'));
   var ops3 = opBytes(D).filter(function(o){ return o.b>0; });
@@ -1072,7 +1090,7 @@ function renderChain(D){
   parts.push(rect(IX, LY1, IW, H1, 'none', 'var(--pt-bds)', .7, 'pointer-events="none"'));
   parts.push(txt(IX+co.d*bw2+bw2/2, LY1+H1+10, 'b份'+co.d, 8, VC.dp, 'middle', 'font-weight="700"'));
   parts.push(morph(IX+co.d*bw2, bw2, LY1+H1, IX, IW, LY2, VC.cp));
-  parts.push(knifeLabel(IX+4, LY1+H1+26, 'cp', '切序列 s ×'+D.cp+'（因果双段）', '顺位③ · Ring/Ulysses·每层 · 较内', D.cp>1));
+  parts.push(knifeLabel(IX+4, LY1+H1+26, 'cp', '切序列 s ×'+D.cp+'（因果双段）', '顺位③ · 层内：attention 内部每层一轮（Ring/Ulysses）· 较内', D.cp>1));
   if(D.cp>1){
     var segN2 = 2*D.cp, wS2 = IW/segN2;
     for(var s2=0; s2<segN2; s2++){
@@ -1087,6 +1105,11 @@ function renderChain(D){
     parts.push(rect(IX, LY2, IW, H2, 'var(--pt-s2)', 'var(--pt-bds)', .7));
     parts.push(txt(IX+IW/2, LY2+21, '未切（CP=1）', 8.5, 'var(--pt-fg3)'));
   }
+  /* b·s 两刀 → 这张卡激活体的形状（其余三刀也参与：PP 定层数、TP 定宽、EP 定路由） */
+  parts.push(txt(IX, LY2+H2+18, '这两刀切 b·s → 定这张卡激活体的形状：', 7.8, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  parts.push(txt(IX, LY2+H2+29, 'MBS '+D.mbs+' × seq/CP '+fmt(D.seq/D.cp)+' × h '+fmt(D.hidden)+' × 本段 '+D.layersPerStage+' 层 × 在途 μbatch', 7.6, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(IX, LY2+H2+40, '激活体只认 MBS（不是 GBS/DP）——所以加 DP 不涨显存（A3）；', 7.6, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(IX, LY2+H2+51, '五把刀全都切它：b←DP · s←CP · h←TP · ℓ←PP · e←EP 路由', 7.6, VC.dp, 'start', 'font-weight="700"'));
   /* ── 汇合：两条链 ∩ 到叶子（一张卡） ── */
   var LX = MX+40, LW = (IX+IW)-MX-80;
   parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(LY3+H3+22)+'" x2="'+(LX+LW*.35)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
@@ -1116,6 +1139,9 @@ function renderChain(D){
   parts.push('<g transform="rotate(-90 54 '+(LY0+230)+')">'+txt(54, LY0+230, '嵌套序：外 → 内（每刀切上一刀的产物）', 9, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
   parts.push('<line x1="24" y1="'+(LY4+30)+'" x2="24" y2="'+(LY0+6)+'" style="stroke:var(--pt-fg3);stroke-width:1.4;marker-end:url(#arrx)"/>');
   parts.push('<g transform="rotate(-90 14 '+(LY0+230)+')">'+txt(14, LY0+230, '决策序 §11：①TP ②PP ③CP ④EP ⑤DP（反向！）', 9, 'var(--pt-fg3)', 'middle', 'font-weight="700"')+'</g>');
+  /* 通信作用域：三档（层内 / 跨层 / 跨 step）——§06 通则「通信算子插在归属边界处」 */
+  parts.push(txt(MX+MW/2, H-44, '通信作用域（§06 通则：通信算子插在归属边界处）—— TP 算子内部 · CP attention 内部 · EP MoE 层内部（dispatch 送去 + combine 送回，router 逐层重算）：三者都在<层内>，不跨层'.replace('<','「').replace('>','」'), 8, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(MX+MW/2, H-33, 'PP 在层的边界 = 跨层（每 μbatch 一次 P2P） · DP 在整网之外 = 跨 step（步末一次 AllReduce）', 8, 'var(--pt-fg2)', 'middle'));
   parts.push(txt(MX+MW/2, H-16, '尺寸纪律：复印=等大成叠 · 真切=面积守恒（子块贴合=父块） · 放大=尺寸不守恒（明确标 ⊕）。反向不是巧合：刀越深→通信越密→越要先定→越要贴机内（§11）', 8.6, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()+parts.join('')+'</svg>';
@@ -1763,7 +1789,7 @@ function sayText(D){
   if(!D.ok) return '<b>配置不合法，舞台已封锁</b>——宁可不画，不可画错（DP-5）。点顶栏红色 chip 修正，每个错误都带最近合法值。';
   var s = '';
   if(ui.view==='chain'){
-    return '<b>刀序</b>：链是<b>全体卡</b>共同的切分过程，高亮路径是<b>选中那张卡</b>的来历。尺寸有纪律：<b>复印=等大成叠</b>（DP 模型侧）、<b>真切=面积守恒</b>（子块贴合=父块）、<b>放大=尺寸不守恒</b>（层→算子，标 ⊕）。<b style="color:'+VC.dp+'">DP 是唯一一刀两动作的刀</b>：对<b>权重体复印</b>（逐字节相同，不省显存）＋对<b>激活体真切</b>（切样本 b 轴）——两个动作缺一不可：复印参数才能各算各的梯度，切样本才有并行度；步末 AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步<b>仍逐字节相同</b>。<b>决策序</b>=训练工程师<b>开训前写并行配置</b>时定旋钮的顺序（§11：约束越硬、通信越密的越先定——①TP…⑤DP 残差），与嵌套序反向。';
+    return '<b>刀序</b>：链是<b>全体卡</b>共同的切分过程，高亮路径是<b>选中那张卡</b>的来历。<b>「一条」与「阵列」不冲突</b>——这条链排的是 <b>ℓ 轴</b>（唯一有序的轴），一格是<b>层段</b>；卡阵排的是<b>落位</b>，二维是因为 tp/cp/dp 三轴无序、可任意铺。<b>链上一格 ↔ 卡阵里一整列</b>（'+(D.tp*D.cp*D.dp)+' 张卡装同一层段，只在 h 片/b 份上不同），所以 P2P 跨一格 = global_rank +'+(D.tp*D.cp*D.dp)+'（order="tp-cp-ep-dp-pp"，pp 是最高位）。尺寸有纪律：<b>复印=等大成叠</b>（DP 模型侧）、<b>真切=面积守恒</b>（子块贴合=父块）、<b>放大=尺寸不守恒</b>（层→算子，标 ⊕）。<b style="color:'+VC.dp+'">DP 是唯一一刀两动作的刀</b>：对<b>权重体复印</b>（逐字节相同，不省显存）＋对<b>激活体真切</b>（切样本 b 轴）——两个动作缺一不可：复印参数才能各算各的梯度，切样本才有并行度；步末 AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步<b>仍逐字节相同</b>。<b>决策序</b>=训练工程师<b>开训前写并行配置</b>时定旋钮的顺序（§11：约束越硬、通信越密的越先定——①TP…⑤DP 残差），与嵌套序反向。';
   }
   if(ui.view==='dim'){
     var verdict = {
@@ -1771,7 +1797,7 @@ function sayText(D){
       pp:'<b style="color:'+VC.pp+'">PP</b> 在<b>层级</b>切 ℓ 轴（唯一有序维）：pp_rank 本质是被空间化的时间下标（§12）——所以它同时出现在这里和时间视图里。',
       cp:'<b style="color:'+VC.cp+'">CP</b> 切的是<b>输入的 s 轴</b>，不切模型——归属边界在输入级。原语可选 Ring/Ulysses/朴素（N:M 不绑定，勘误 L）。',
       dp:'<b style="color:'+VC.dp+'">DP</b> <b>一刀两动作</b>：对模型<b>复印</b>（不切）＋对输入<b>真切</b> b 轴（切样本）。柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
-      ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。'
+      ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。它<b>只在层内</b>——每个 MoE 层 2 次（dispatch 送去 + combine 送回），反向同样 2 次，<b>不跨层</b>；router 逐层独立，同一个 token 换层就可能换专家。跨层的是 PP 的 P2P，跨 step 的是 DP 的 AllReduce（§06 通则：通信插在归属边界处）。'
     }[ui.cutDim];
     s = verdict + ' 竖轴是<b>粒度坐标</b>：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大（不是四样东西）；输入是另一个对象，单独一格。<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读五元组区间。';
   }else if(ui.view==='compose'){
