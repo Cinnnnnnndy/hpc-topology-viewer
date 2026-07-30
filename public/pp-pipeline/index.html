@@ -607,8 +607,9 @@ function renderUnfold(){
     每一列内部：横看 <b>+1</b>（tp 连续 ⇒ 机内），纵看 <b>+${TP*CP}</b>（换 dp 副本 ⇒ 可能跨机）——
     这套进位就是 Megatron 的 <code>order="tp-cp-ep-dp-pp"</code>。${truncNote}</p>
     ${cpChips}
-    <p class="nowline">拖下方<b>时间滑块</b> → 每列头上显示<b>这一刻它在算谁</b>，整列一起变色：
-    <b>同一个 Stage 的 ${stageSize.toLocaleString()} 张卡在任一时刻做的是同一件事</b>——这正是时间脸能把它们折成一格的理由。</p>
+    <p class="nowline">拖下方<b>时间滑块</b> → 每列头上显示<b>这一刻它在算谁</b>。注意整列是<b>一起亮，不是依次亮</b>：
+    <code>dp/cp/tp</code> 是空间维，这 ${stageSize.toLocaleString()} 张卡<b>同时</b>在做同一件事，只是各吃自己的样本与权重分片（SPMD）——
+    这正是时间脸能把它们折成一格的理由。<b>依次来的是 <code>mb</code> 号</b>：同一张卡先算 mb0 再算 mb1，所以拖滑块时变的是<b>芯片内容</b>，不是亮起的卡。</p>
     <div class="stripscroll"><div class="ppstrip">
       <svg class="chainsvg" id="chainsvg" aria-hidden="true"></svg>${colsHtml}
     </div></div>
@@ -616,7 +617,9 @@ function renderUnfold(){
       ${chainRanks.map((r,i)=>`<b class="cr">${r}</b>${i<P-1?` <span class="ar">─P2P→</span> `:''}`).join('')}
       　<span class="dim">每跳 +${stageSize}</span></div>
     <div class="unfold-note">竖着看是<b>行 = TP 组</b>（每层两次 AllReduce，必须机内）、<b>列 = DP 组</b>（step 末一次梯度 AllReduce，可跨机）；
-    横着穿过去的这条就是 <b>PP 组 = 一条链</b>。一共有 <b>${stageSize.toLocaleString()}</b> 条这样的链（每格一条），每条长 ${P}。</div>`;
+    横着穿过去的这条就是 <b>PP 组 = 一条链</b>。一共有 <b>${stageSize.toLocaleString()}</b> 条这样的链（每格一条），每条长 ${P}。<br>
+    <b>三种「顺序」别混：</b>沿 <code>dp</code>／<code>tp</code> <b>没有</b>顺序（全并行）；沿 <code>mb</code> 有（同一张卡先后）；固定一个 <code>mb</code> 沿 <code>pp</code> 有（主网格上那条斜线，一个 Stage 一个 Stage 地走）。<br>
+    <b>口径：</b>横轴是<b>调度步</b>不是墙上时钟。真实运行中 TP 组内近乎锁步，但不同 DP 副本<b>同构而异步</b>——各跑各的，到 step 末梯度 AllReduce 才对齐，中途会因变长序列与 padding 漂移。</div>`;
   $('unfold-close').addEventListener('click',()=>{ CFG.unfold=null; render(); });
   box.querySelectorAll('.cpchip').forEach(b=>b.addEventListener('click',()=>{
     CFG.chain.cp=+b.dataset.cp; renderUnfold();
