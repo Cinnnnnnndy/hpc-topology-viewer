@@ -771,6 +771,42 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
     <p>这条对应关系解释了一件常被误读的事：<strong>MoE 的 top-k 是「每个 token 的扇出」，不是「每层选 K 个 expert」。</strong>router 对每个 <code>(b,s)</code> 各做一次 top-k，所以一层的路由边数是 <code>T·K</code>——见 §01 基数表「MoE 层 → 路由边」那一行。</p>
   </div>
 
+  <h4>token 与 batch：数的不是同一样东西</h4>
+
+  <p><strong><code>batch size</code> 数的是序列，不是 token。</strong>「batch size = 256」不是 256 个 token，是 <b>256 条序列</b>，每条 <code>S</code> 个 token。这是最常见的一处量级误算：<code>S=8192</code> 时那是 200 万个 token，差三个数量级。</p>
+
+  <pre>batch ── B 条序列
+          └ 序列 ── S 个 token 位置
+                    └ token ── 一个 H 维向量
+
+token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H 是每个 token 的宽度）</pre>
+
+  <div class="note new">
+    <span class="lbl">token 集合是个矩形，不是一条长队</span>
+    <p>这一点决定了并行怎么切：<strong>token 不是「batch 的元素」，而是 <code>B × S</code> 这个二维网格的格点。</strong></p>
+    <pre>                s 方向（序列内位置，长 S）　←  CP 在这个方向切
+        ┌────────────────────────────────┐
+   b    │                                │
+   方   │        全局 token 矩形          │
+   向   │        GBS × S 个 token         │
+        └────────────────────────────────┘
+        ↑ DP 在这个方向切（空间）＋ GA 再切一刀（时间）</pre>
+    <p><strong>一张卡在任一时刻，手里是这个矩形的一个子矩形。</strong>这把前面几条串成一句话：<b>DP 切 <code>b</code>、CP 切 <code>s</code>——两刀切的是同一个 token 集合的两个不同方向</b>；GA 也切 <code>b</code>，只是切在时间上（本节前面那句「<code>b</code> 被切了两刀」）。</p>
+  </div>
+
+  <p>于是「一个 batch 有多少 token」这个问题，必须先问<strong>是哪个 batch</strong>。取一组自洽的数 <code>GBS=512 · S=8192 · DP=16 · GA=8 → MBS=4</code>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>说的是</th><th>序列数</th><th>token 数</th><th>谁看到它</th></tr></thead>
+    <tbody>
+      <tr><td><b>GBS</b> 全局一个 step</td><td>512</td><td><b>4,194,304</b>（≈4.2 M）</td><td>优化器视角，学习率跟着它调</td></tr>
+      <tr><td>一张卡一个 step 处理完的</td><td>32</td><td>262,144</td><td>它要跑 <code>GA=8</code> 个 micro-batch 才累完</td></tr>
+      <tr><td><b>MBS</b> 单卡任一时刻手里的</td><td><b>4</b></td><td><b>32,768</b></td><td><b>算子 shape · router · 激活体显存</b>看到的全是这一行</td></tr>
+    </tbody>
+  </table>
+
+  <p>核验 <code>GBS = MBS × GA × DP = 4 × 8 × 16 = 512</code> ✓。开了 CP 还要再除一次：<strong>单卡任一时刻的 token 数通用式是 <code>T = MBS × S / CP</code></strong>——§01 基数表里给 MoE 路由边数算的那个 <code>T</code> 就是它（那里举例 <code>CP=1</code>，故恰好等于 <code>MBS × S</code>）。</p>
+
   <h4>micro-batch 与整网 / 算子 / 卡是什么关系</h4>
 
   <p>这三者容易被摆成同一排来比，但按 §15 的五类对象一归类就会发现<strong>它们不是同一种东西</strong>：整网是<b>结构＋内容</b>（图 ＋ 权重体），算子是<b>结构</b>（图上一个节点），卡是<b>容器</b>，而 <strong>micro-batch 是<b>地址</b>——<code>b</code> 轴上的一段区间</strong>。它既不占体积也没有容量，只用来指认「哪一批样本」。所以它与另外三者的关系一律是「<em>一次执行</em>」，而不是「<em>一部分</em>」。</p>
