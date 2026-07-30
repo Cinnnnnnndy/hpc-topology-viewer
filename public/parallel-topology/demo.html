@@ -1002,7 +1002,7 @@ function renderChain(D){
   /* ── 刀2·PP = 真切：变形带 + 面积守恒（4 段紧贴，合宽 = 副本宽） ── */
   var segW = (MW - (D.pp-1)*2) / D.pp;
   parts.push(morph(MX, MW, LY1+H1, MX, MW, LY2, VC.pp));
-  parts.push(knifeLabel(MX+8, LY1+H1+26, 'pp', '切层序 ℓ ×'+D.pp+'（唯一有序维）——面积守恒：4 段合起来=1 个副本', '顺位② · 段间 P2P·每 μbatch · 较内', D.pp>1));
+  parts.push(knifeLabel(MX+8, LY1+H1+26, 'pp', '切层序 ℓ ×'+D.pp+'——切的是选中副本（其余 '+(D.dp-1)+' 份同样被切）；面积守恒：段合起来=1 个副本', '顺位② · 段间 P2P·每 μbatch · 段≠卡：每个 stage 由 TP×DP='+(D.tp*D.dp)+' 张卡共同持有——落到哪张卡，要等全部刀切完（叶子）', D.pp>1));
   for(var p1=0; p1<D.pp; p1++){
     var sx = MX + p1*(segW+2), hotP = p1===co.p;
     parts.push('<g class="cgrow">'+rect(sx, LY2, segW, H2, hotP?mix(VC.pp,20):mix(VC.pp,7), hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'data-act="chainpick" data-k="p" data-i="'+p1+'" style="cursor:pointer"')+'</g>');
@@ -1012,15 +1012,17 @@ function renderChain(D){
     if(hotP) parts.push(rect(sx, LY2+H2-11, segW/D.layersPerStage, 11, mix(VC.pp,55), VC.pp, 1, 'pointer-events="none"'));
     if(p1<D.pp-1) parts.push('<path d="M'+(sx+segW+1)+' '+(LY2-5)+' l 4 0 l -4 6 z" style="fill:'+VC.pp+'" pointer-events="none"/>');
   }
-  parts.push(txt(MX+co.p*(segW+2)+segW/D.layersPerStage/2, LY2+H2+11, '取 1 层 ↓', 7.5, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(MX+co.p*(segW+2), LY2+H2+11, '取 stage'+co.p+' 的第 1 层（L'+(co.p*D.layersPerStage)+'）放大 ↓——段内 '+D.layersPerStage+' 层同构，看一层=看全部', 7.5, 'var(--pt-fg2)', 'start'));
   /* ── 层 → 算子：放大（不是切！尺寸不守恒，粒度坐标换挡） ── */
   var zx = MX + co.p*(segW+2), zw = segW/D.layersPerStage;
   parts.push('<line x1="'+zx+'" y1="'+(LY2+H2)+'" x2="'+MX+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push('<line x1="'+(zx+zw)+'" y1="'+(LY2+H2)+'" x2="'+(MX+MW)+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
-  parts.push(txt(MX+MW/2, LY2+H2+30, '⊕ 放大一层（粒度换挡——这是看得更细，不是又切了一刀；尺寸从此不守恒）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+  parts.push(txt(MX+MW/2, LY2+H2+30, '⊕ 放大一层到算子级（粒度换挡——看得更细，不是又切了一刀；尺寸从此不守恒）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+  parts.push(txt(MX+MW/2, LY2+H2+41, '层 = 下面这排算子；TP/EP 的刀口在算子内部（h/e 轴），必须放大到这一级才切得着', 7.8, 'var(--pt-fg3)', 'middle'));
   parts.push(knifeLabel(MX+8, LY3-14, 'tp', '锯算子 h 轴 ×'+D.tp, '顺位①（最先）· 每层两下 AllReduce · 最内·必须机内', D.tp>1));
   parts.push(knifeLabel(MX+MW*.56, LY3-14, 'ep', '重组专家 e 轴 ×'+D.ep, '顺位④ · 每 MoE 层 All-to-All · 组内近', D.moe&&D.ep>1));
   /* ── L3：一层的算子条（层内面积守恒：片贴片） ── */
+  parts.push(txt(MX-8, LY3+H3/2+3, 'L'+(co.p*D.layersPerStage)+' 的内部', 8, 'var(--pt-fg2)', 'end', 'font-weight="700"'));
   var ops3 = opBytes(D).filter(function(o){ return o.b>0; });
   var totB3 = ops3.reduce(function(a,o){ return a+o.b; },0);
   var shares = ops3.map(function(o){ return clamp(o.b, totB3*.07, totB3*.30); });
