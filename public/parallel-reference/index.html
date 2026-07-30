@@ -486,7 +486,8 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <tr><td>算子 → 卡 <span class="cd e">※</span></td><td><span class="cd a">1:1</span> <span class="cd b">1:N</span></td><td>无 TP 时 1:1（算子完整落在一张卡）；有 TP 时 1:N（单个 matmul 跨卡）</td></tr>
       <tr><td>MoE 层 → expert</td><td><span class="cd b">1:N</span></td><td>N = expert 总数</td></tr>
       <tr><td>expert → 卡 <span class="cd e">※</span></td><td><span class="cd c">N:1</span> <span class="cd a">1:1</span> <span class="cd b">1:N</span></td><td>expert 数 &gt; EP 组大小时多个 expert 共卡（N:1，最常见）；相等时 1:1；叠加 expert 张量并行时单个 expert 也被切开（1:N）</td></tr>
-      <tr><td>token → expert</td><td><span class="cd b">1:K</span></td><td>top-k 路由，K 通常是 1 或 2；这是 <b>1:N 的一个受控特例</b>——N 由 router 固定</td></tr>
+      <tr><td>token → expert</td><td><span class="cd b">1:K</span></td><td>top-k 路由，K 通常是 1 或 2；这是 <b>1:N 的一个受控特例</b>——N 由 router 固定。<b>注意这是「逐 token」的基数</b>，别读成「一层只用 K 个 expert」，见下一行</td></tr>
+      <tr><td><b>MoE 层 → 路由边</b> <span class="cd e">※</span></td><td><span class="cd b">1:T·K</span></td><td><b>层级的合计基数，最容易被漏掉的一行。</b>一层里每个 token 各选 K 个，边数是 <code>T·K</code>（<code>T</code> = 本卡本 micro-batch 的 token 数 = <code>MBS×S</code>）。取 <code>T=8192、K=2、E=256</code>：<b>16384 条边、每 expert 均摊 64 条</b>——所以<strong>几乎每个 expert 都会被选到</strong>，差别只在被选多少次。均匀假设下某个 expert 一次都没中的概率是 <code>(1−1/E)<sup>T·K</sup> ≈ e<sup>−64</sup></code>，等于零</td></tr>
       <tr><td>序列 → CP 分片</td><td><span class="cd b">1:N</span></td><td>N = CP 组大小</td></tr>
       <tr><td><b>SP 组 → TP 组</b></td><td><span class="cd a">1:1</span></td><td><b>唯一严格 1:1 的并行维度关系。</b>SP 与 TP 同域同大小，SP 不占独立的乘数维</td></tr>
       <tr><td>EP 组 → DP × TP 平面</td><td><span class="cd c">N:1</span></td><td>EP 是对同一平面的重新分组，不是新增的轴（§04 勘误 A）。<b>新版实现的机制已变</b>，见 §13 勘误 M</td></tr>
@@ -750,6 +751,25 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <p><strong>PP 的 micro-batch 与 GA 的 micro-batch 是同一批东西。</strong>流水线用来填气泡的那些 micro-batch，正是梯度累积的那些。由此得到一条 §11 依赖链里没单列的隐含约束：<strong>用 PP 时必须 <code>GA ≥ PP</code></strong>，否则流水线根本填不满，气泡会占掉大半时间。</p>
 
   <p><strong>一条样本 = 一条序列。</strong><code>[B, S, H]</code> 里 <code>B</code> 是样本数、<code>S</code> 是每条样本的 token 数。注意有些实现用 packing 把多条短文本拼进一条定长序列，这时 <code>B</code> 与「文档数」就不再一一对应了。</p>
+
+  <h4>「输入」到底是什么：token 只在入口是 token</h4>
+
+  <table class="tbl">
+    <thead><tr><th>位置</th><th>shape</th><th>是什么</th></tr></thead>
+    <tbody>
+      <tr><td>网络入口</td><td><code>[B, S]</code> <b>整数</b></td><td><b>是 token</b>——词表里的编号。256×8192 条 int32 也就 8 MB 量级</td></tr>
+      <tr><td>过 embedding 之后</td><td><code>[B, S, H]</code> 浮点</td><td><b>每个 token 变成一个 <code>H</code> 维向量</b>，从这里起不再是 token id</td></tr>
+      <tr><td>其后每一层</td><td><code>[B, S, H]</code> 及其变体</td><td>层的「输入」是<b>上一层的激活张量</b>，不是 token</td></tr>
+    </tbody>
+  </table>
+
+  <p>所以「输入」这个词有两个所指：<strong>网络的输入</strong>（入口的 token id）与<strong>某一层 / 算子的输入</strong>（上一层的激活）。二者只在第一层重合。</p>
+
+  <div class="note new">
+    <span class="lbl">一个 <code>(b, s)</code> 对 = 一个 token</span>
+    <p><code>b</code> 索引第几条序列、<code>s</code> 索引这条序列里的第几个位置，所以 <strong>token 总数 <code>T = B × S</code></strong>；<code>h</code> 是这个 token 被表示成向量后的宽度。前面说的「CP 切 <code>s</code>」「SP 切 <code>s</code>」「router 逐 token」，切的与数的<strong>是同一样东西</strong>——只是一个从张量维度说、一个从语义单元说。</p>
+    <p>这条对应关系解释了一件常被误读的事：<strong>MoE 的 top-k 是「每个 token 的扇出」，不是「每层选 K 个 expert」。</strong>router 对每个 <code>(b,s)</code> 各做一次 top-k，所以一层的路由边数是 <code>T·K</code>——见 §01 基数表「MoE 层 → 路由边」那一行。</p>
+  </div>
 
   <h4>micro-batch 与整网 / 算子 / 卡是什么关系</h4>
 
@@ -1949,6 +1969,23 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
       <li><b>诊断流合进、分出。</b>入口用三个不分体的柄（卡坐标、容器总量、shape 除号），第二步才拆成权重体 / 激活体去开处方（§07 末）——且显存曲线的形状能自动完成这一步分拣，界面可以代替用户判断。</li>
     </ol>
     <p>五根轴（ℓ、h、e、b、s）在这套界面里<b>不需要作为概念教给用户</b>：它们只是卡的门牌号里的几位数字（§10），界面上表现为「这张卡管哪几层、哪段序列、哪批样本、矩阵的哪一条」——用户问的从来是后面这句话。</p>
+  </div>
+
+  <div class="note gov">
+    <span class="lbl">推论 8 · 元素数必须由配置界定，不能由数据量界定</span>
+    <p>以 MoE 路由为例。想「用动画精细呈现选专家的过程」是自然的念头，但它不可建——<strong>不是因为点太多，而是编码类别错了</strong>。§15 说关系画成连线；可 <code>token → expert</code> 的基数是 <code>T:E</code> 且 <code>T ≫ E</code>（§01：一层 <code>T·K</code> 条边，典型 16384 条），<strong>在这个基数下连线必须降级成密度／流量</strong>。画出一万多条边，观者能读到的信息量是零——真正的信号全是聚合量（哪个 expert 热、丢了多少 token、多少跨机），个体边只是统计现象的样本，不是被诊断的对象。</p>
+    <p>由此得到一条可以直接当准则用的判据：</p>
+    <p><strong>图上元素的数量必须由<em>配置</em>界定，不能由<em>数据量</em>界定。</strong>路由边数随 <code>MBS × S</code> 增长——那是运行时旋钮，与模型结构无关，所以任何元素数随 token 数增长的画法在<em>构造上</em>就不成立。而 <code>ep × ep</code> 的 token 流量矩阵是 <code>O(ep²)</code>（例如 8×8 = 64 格），由配置定死——这个能画。<b>拿不准一个画法能不能做，先问它的元素数由谁决定。</b></p>
+    <table class="tbl">
+      <thead><tr><th>想让人看清</th><th>该画什么</th><th>元素数</th></tr></thead>
+      <tbody>
+        <tr><td><b>负载不均</b>（EP 的真正诊断对象，§12）</td><td>每 expert 负载<b>直方图 / 热力条</b></td><td><code>E</code>（256，可画）</td></tr>
+        <tr><td>All-to-All 的实际流量与倾斜</td><td><b>源 ep × 目标 ep 矩阵热力</b>，格值 = token 数</td><td><code>ep²</code>（64，好画）</td></tr>
+        <tr><td>通信动画</td><td>按 <b>rank 对</b>画流带，宽度 ∝ token 数——<b>不按 token</b></td><td><code>ep²</code></td></tr>
+        <tr><td>「top-k 怎么工作」的教学</td><td><b>挑一枚 token</b> 画它那 K 条边，并<b>明确标注「示例一枚」</b></td><td><code>K</code>（1–2）</td></tr>
+      </tbody>
+    </table>
+    <p>最后一行值得单独记：<strong>逐 token 的动画不是没用，而是只能作为「一个示例个体」</strong>——它必须标明自己不是全景。把同一个动画叫作「呈现选专家的过程」就错了，叫作「示例一枚 token 的路由」就完全成立。这也是 <b>capacity factor</b> 那类机制在个体动画里必然缺席的原因：丢弃与否取决于<em>该 expert 收到的总量</em>，是个聚合量，个体视角看不见。</p>
   </div>
 
   <div class="note gov">
