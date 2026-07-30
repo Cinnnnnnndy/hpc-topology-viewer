@@ -1163,8 +1163,12 @@ function renderChain(D){
   parts.push('<line x1="'+(IX+IW/2)+'" y1="'+(LY2+H2+6)+'" x2="'+(LX+LW*.8)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push(txt(LX+LW/2, LY4-8, '∩ 两条链在这里汇合（模型侧 ℓ·h·e ∩ 输入侧 b·s）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
   var stI = co.p, memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; },0);
-  parts.push(rect(LX, LY4, LW, H4, mix('var(--pt-fg)',4), 'var(--pt-fg)', 1.6));
-  parts.push(txt(LX+16, LY4+18, '叶子 = 一张卡（容器）g='+g+'：每把刀留下一个区间，交集 = 这张卡装的全部字节——不是链末那一小片', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(rect(LX, LY4, LW, H4, mix('var(--pt-fg)',4), 'var(--pt-fg)', 1.6,
+    'data-act="leafopen" style="cursor:pointer"'));
+  parts.push(txt(LX+16, LY4+18, '叶子 = 一张卡（容器）g='+g+'：每把刀留下一个区间，交集 = 这张卡装的全部字节——不是链末那一小片', 10, 'var(--pt-fg)', 'start', 'font-weight="800" pointer-events="none"'));
+  /* 链的末端 = 解剖的入口：同一样东西的两问——链答「它怎么来的」，解剖答「它里面有什么」 */
+  parts.push(txt(LX+LW-14, LY4+18, '点开这张卡 → 卡内解剖 ↘', 9, 'var(--pt-fg)', 'end', 'font-weight="800" pointer-events="none"'));
+  parts.push(txt(LX+LW-14, LY4+31, '再放大一级：层 → 算子 → kernel → 流', 7.6, 'var(--pt-fg3)', 'end', 'pointer-events="none"'));
   /* 五元组逐分量按「产出它的那把刀」染色——分量 ⇄ 刀，一一对应 */
   var five = [
     {c:VC.pp, s:'PP刀→ℓ L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)},
@@ -1646,7 +1650,8 @@ function renderV3(D){
   $('stage').innerHTML = '<svg viewBox="'+vb.map(function(v){return v.toFixed(0);}).join(' ')+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()+parts.join('')+'</svg>';
 
   $('stagebar').innerHTML =
-    '<span class="pt-cap">解剖对象</span><span class="pt-chip">rank <b>'+g+'</b>'+(sel===null?'（未选卡，示例 0）':'')+'</span>'
+    '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
+    + '<span class="pt-cap">解剖对象</span><span class="pt-chip">rank <b>'+g+'</b>'+(sel===null?'（未选卡，示例 0）':'')+'</span>'
     + '<span class="pt-cap">抽哪一层</span>'
     + '<button class="pb mono" data-act="v3layer" data-d="-1">‹</button>'
     + '<span class="pt-chip">L'+(l0+picked)+'</span>'
@@ -1905,6 +1910,7 @@ document.addEventListener('click', function(ev){
   if(card){ sel = +card.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
   var dc = ev.target.closest('.dimcol');
   if(dc){ sel = (sel === +dc.getAttribute('data-g')) ? null : +dc.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
+  if(ev.target.closest('[data-act="leafopen"]')){ ui.view = 'anatomy'; ui.selLayerOff = 0; render(); return; }
   var lp = ev.target.closest('.l3pick');
   if(lp){ ui.selLayerOff = +lp.getAttribute('data-li'); render(); return; }
   var b = ev.target.closest('[data-act]');
