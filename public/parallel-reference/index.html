@@ -751,6 +751,27 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
 
   <p><strong>一条样本 = 一条序列。</strong><code>[B, S, H]</code> 里 <code>B</code> 是样本数、<code>S</code> 是每条样本的 token 数。注意有些实现用 packing 把多条短文本拼进一条定长序列，这时 <code>B</code> 与「文档数」就不再一一对应了。</p>
 
+  <h4>micro-batch 与整网 / 算子 / 卡是什么关系</h4>
+
+  <p>这三者容易被摆成同一排来比，但按 §15 的五类对象一归类就会发现<strong>它们不是同一种东西</strong>：整网是<b>结构＋内容</b>（图 ＋ 权重体），算子是<b>结构</b>（图上一个节点），卡是<b>容器</b>，而 <strong>micro-batch 是<b>地址</b>——<code>b</code> 轴上的一段区间</strong>。它既不占体积也没有容量，只用来指认「哪一批样本」。所以它与另外三者的关系一律是「<em>一次执行</em>」，而不是「<em>一部分</em>」。</p>
+
+  <table class="tbl">
+    <thead><tr><th>关系</th><th>micro-batch 在其中是什么</th><th>它改变什么 / 不改变什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>× 整网</b></td><td>一次<b>完整的穿行</b>。整网是管道，micro-batch 是一次放水</td><td><b>整网一个字节都不变</b>——同一份图、同一份权重被 GA 批数据先后穿过；变的只有激活体</td></tr>
+      <tr><td><b>× 算子</b></td><td>决定<b>执行次数</b>与 shape 第一维：图上一个算子节点，一个 step 内前向执行 <code>GA</code> 次、反向再 <code>GA</code> 次；它看到的第一维是 <b>MBS</b></td><td>不改变算子的定义与选中的 kernel；只改变它被调用几次</td></tr>
+      <tr><td><b>× 卡</b></td><td>决定<b>显存里压着几批中间结果</b>：<code>显存 = 权重体分片（与 mb 无关，常驻）＋「在飞」的那几个 micro-batch 的激活体</code></td><td>不改变权重体那一侧；「在飞几个」由调度定——<b>1F1B 是 PP 个，GPipe 是 GA 个</b>（§12）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">两条直接可用的推论</span>
+    <p><b>一 · <code>mb 号</code> 不是门牌号的第五位。</b>门牌号 <code>(pp,dp,cp,tp)</code> 四位全是<strong>空间</strong>——划分卡；<code>mb 号</code> 是<strong>时间</strong>——同一张卡按顺序把全部 <code>GA</code> 批都处理掉。两者正交：空间决定「哪张卡」，时间决定「第几批」。这也是 §12 里 PP 时间线横向宽度的<em>唯一</em>来源——把 <code>GA</code> 调到 1，横轴就塌成一条阶梯。</p>
+    <p><b>二 · profiling 时间线上有两级周期。</b>层级的波形（一个 micro-batch 内 <code>L/PP</code> 层重复）套在 micro-batch 级的波形里（<code>GA</code> 批重复）。§12 说「层在时间线上是周期性重复的波形」时讲的是内层；<strong>把外层误当成内层，就会把「一批」数成「一层」</strong>，整网基线直接算错一个数量级。</p>
+  </div>
+
+  <p>一句话收口：<strong>micro-batch 不改变「有什么」（图、权重、卡都不动），只决定「这一刻在算谁，以及显存里压着几批的中间结果」。</strong>可交互版见 <a href="../pp-pipeline/">PP 的两张脸</a>——那里的 <code>F0</code> / <code>B0</code> 里的数字就是 <code>mb 号</code>。</p>
+
   <div class="note">
     <span class="lbl">为什么 <code>b</code> 是五根轴里最便宜的一根</span>
     <p><strong>样本之间彼此完全独立</strong>——这是 DP 能成立的全部理由，也是 DP 通信最稀（整个 step 末才一次）的原因。对比另外四根：<code>s</code> 有 attention 的跨位置依赖、<code>h</code> 有矩阵乘的规约依赖、<code>ℓ</code> 有前后层的因果依赖、<code>e</code> 有路由依赖。<strong><code>b</code> 是唯一一根「切开就不用管」的轴</strong>，所以 DP 是最省事、也总是最先被用满的并行。</p>
