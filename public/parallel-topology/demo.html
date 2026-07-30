@@ -251,10 +251,16 @@ function mix(colVar, pct){ return 'color-mix(in srgb, '+colVar+' '+pct+'%, trans
 /* A4 锚点：卡网格 axis 取值域（常量，不含 cp） */
 var AXIS_DOMAIN = ['tp','pp','dp','ep'];
 var COMM_DIMS = ['tp','cp','pp','dp','ep'];
+/* 原语两类（§08）：P2P 是点对点，是所有集合原语的底座——ring AllReduce / AllGather
+   本身就是一串 send/recv 接起来的；集合原语是「一组卡一起完成一次状态转换」的封装。
+   两类都在计算图里以算子节点出现（send/recv、hcom_*），但在参照系里都是动作（线）：
+   不持有字节、不被切，只占链路与时间。 */
 var PRIMS = [
-  {id:'p2p', name:'P2P(Ring)'}, {id:'allgather', name:'AllGather'},
-  {id:'reducescatter', name:'ReduceScatter'}, {id:'allreduce', name:'AllReduce'},
-  {id:'alltoall', name:'All-to-All'}
+  {id:'p2p', name:'P2P(Ring)', kind:'点对点', why:'send/recv 一对一：不是集合通信，而是集合原语的底座——ring AllReduce/AllGather 都由一串 P2P 接成'},
+  {id:'allgather', name:'AllGather', kind:'集合', why:'组内每张卡把自己的片给所有人 → 人人持全份'},
+  {id:'reducescatter', name:'ReduceScatter', kind:'集合', why:'求和后按片散开 → 人人持一片的和'},
+  {id:'allreduce', name:'AllReduce', kind:'集合', why:'ReduceScatter + AllGather：人人持全份的和'},
+  {id:'alltoall', name:'All-to-All', kind:'集合', why:'每张卡给每张卡各发一份不同载荷 → 载荷不等（MoE 路由）'}
 ];
 var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall','allgather'], pp:['p2p'], dp:['allreduce'], ep:['alltoall'] };
 
@@ -1051,7 +1057,13 @@ function renderChain(D){
   });
   /* ── 输入侧：真切 ×2（DP 切样本 → CP 切双段） ── */
   parts.push(morph(IX, IW, LY0+H0, IX, IW, LY1, VC.dp));
-  parts.push(knifeLabel(IX+4, LY0+H0+22, 'dp', '切样本 b 轴 ×'+D.dp+'——这边是真切', '与左侧对比：同一把刀，对两个对象动作不同', D.dp>1));
+  parts.push(knifeLabel(IX+4, LY0+H0+22, 'dp', '切样本 b 轴 ×'+D.dp+'——这边是真切', '同一把 DP 刀的另一半：左复印 / 右真切', D.dp>1));
+  /* DP 一刀两动作：把左右两半用连线钉住，否则会被读成两把不同的刀 */
+  if(D.dp>1){
+    parts.push('<line x1="'+(MX+MW+8)+'" y1="'+(LY0+H0+16)+'" x2="'+(IX-8)+'" y2="'+(LY0+H0+16)+'" style="stroke:'+VC.dp+';stroke-width:1;stroke-dasharray:3 3"/>');
+    parts.push(txt((MX+MW+IX)/2, LY0+H0+11, '同一把 DP 刀', 7.4, VC.dp, 'middle', 'font-weight="700"'));
+    parts.push(txt((MX+MW+IX)/2, LY0+H0+27, '一刀两动作', 7.4, VC.dp, 'middle', 'font-weight="700"'));
+  }
   var bw2 = IW/D.dp;
   for(var d3=0; d3<D.dp; d3++){
     var hotB = d3===co.d;
@@ -1425,6 +1437,8 @@ function renderV3(D){
   var maxOpB = Math.max.apply(0, ops.map(function(o){return Math.max(o.b,1);}));
   var CW = 4.6, CH = 2.6, CD = Math.max(2.2, Math.min(6, Lps*.42));
   var picked = clamp(ui.selLayerOff, 0, Lps-1);
+  var CIRC = '①②③④⑤⑥⑦⑧⑨⑩';   /* 算子编号：算子↔kernel 用同号对应（N:M） */
+  var opIdx = {}, opFront = {};
   var parts = [];
   /* 包围盒：边生成边登记（文字给出估算宽度），最后据此定 viewBox */
   var bx=[], by=[];
@@ -1449,14 +1463,21 @@ function renderV3(D){
       + boxSVG(.3, .2, lz, CW-.6, lh, Math.max(.16,(CD-.7)/Lps*.72), s,
         {stroke: isPick?VC.pp:'var(--pt-bds)', sw:isPick?1.8:.8, topFill:isPick?mix(VC.pp,26):''})
       + '</g>');
+    /* 端点 + 选中层标全局层号：只标选中那层会让人以为 L 是卡内序号，逐层都标又会糊成一团 */
+    var lc = proj(CW-.3, .2+lh, lz, s);
     if(isPick){
-      var lc = proj(CW-.3, .2+lh, lz, s);
       parts.push(txt(lc[0]+8, lc[1]-2, 'L'+(l0+li), 10, VC.pp, 'start', 'font-weight="800"'));
+      reg([lc[0]+8, lc[1]-2], 0, 34, 8, 4);
+    }else if(li===0 || li===Lps-1){
+      parts.push(txt(lc[0]+7, lc[1]-1, 'L'+(l0+li), 7.2, 'var(--pt-fg3)', 'start'));
+      reg([lc[0]+7, lc[1]-1], 0, 26, 6, 3);
     }
   }
   var capL = proj(CW, 0, CD, s);   /* 容器最低点下方，谁也不压 */
   parts.push(txt(capL[0], capL[1]+20, '层段 L'+l0+'–L'+(l0+Lps-1)+'（'+Lps+' 层 · 点任一层抽出）', 9.5, 'var(--pt-fg3)', 'middle'));
-  reg([capL[0], capL[1]+20], 140, 140, 0, 8);
+  parts.push(txt(capL[0], capL[1]+32, 'L = 整网的全局层号（ℓ 轴 · 整网共 '+D.layers+' 层 L0–L'+(D.layers-1)+'）——不是卡内序号；PP 刀把它切成 '+D.pp+' 段，这张卡只装 stage'+co.p+' 这一段', 8.2, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(capL[0], capL[1]+44, '当前抽出：L'+(l0+picked)+' = 整网第 '+(l0+picked)+' 层 · 段内第 '+(picked+1)+'/'+Lps, 8.6, VC.pp, 'middle', 'font-weight="700"'));
+  reg([capL[0], capL[1]+44], 300, 300, 0, 10);
 
   /* ③ 抽出的层 → 算子块（体积∝字节；切法着色） */
   var opW = 1.05, gap = .38, opsDrawn = ops.filter(function(o){ return o.b>0 || o.id==='attn.core'; });
@@ -1471,7 +1492,8 @@ function renderV3(D){
     regBox(x0, oy, 0, opW, Math.max(hgt,.9), .9);
     var tc = proj(x0+opW/2, oy, .9, s);   /* 标注放块的前下方，斜排避让 */
     var ty = tc[1] + 14 + (oi%2)*18;
-    parts.push(txt(tc[0], ty, o.id, 8.8, 'var(--pt-fg)', 'middle', 'font-weight="600"'));
+    opIdx[o.id] = CIRC.charAt(oi); opFront[o.id] = tc;
+    parts.push(txt(tc[0], ty, opIdx[o.id]+' '+o.id, 8.8, 'var(--pt-fg)', 'middle', 'font-weight="600"'));
     parts.push(txt(tc[0], ty+10, o.how, 7.6, col));
     reg([tc[0], ty+10], 40, 40, 0, 8);
     hookPts[o.id] = proj(x0+opW/2, oy+hgt, .45, s);
@@ -1510,33 +1532,40 @@ function renderV3(D){
   var fw = Math.max(bandW+.6, 5.4), fh = .6, fx = ox - .2, fy = -3.9;
   parts.push(boxSVG(fx, fy, 0, fw, fh, .8, s, {wire:true, stroke:'var(--pt-fg)', sw:1.1}));
   regBox(fx, fy, 0, fw, fh, .8);
+  /* kernel 用 src 声明它由哪些算子来——标签打同号，并逐条画对应引线 */
   var kdefs = D.moe
-    ? [{w:1.5, from:'q+kv 融合', c:VC.tp}, {w:.9, from:'core', c:'var(--pt-fg3)'}, {w:.8, from:'out', c:VC.tp}, {w:.7, from:'router', c:VC.ep}, {w:1.6, from:'experts 组批', c:VC.ep}]
-    : [{w:1.5, from:'q+kv 融合 N:1', c:VC.tp}, {w:.9, from:'core', c:'var(--pt-fg3)'}, {w:.8, from:'out+add', c:VC.tp}, {w:1.1, from:'gate/up', c:VC.tp}, {w:.9, from:'down 1:N', c:VC.tp}];
-  var kx = fx+.15;
+    ? [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
+       {w:.8, src:['attn.out'], c:VC.tp}, {w:.7, src:['router'], c:VC.ep},
+       {w:.8, from:'组批 1/2', src:['experts'], c:VC.ep}, {w:.8, from:'组批 2/2', src:['experts'], c:VC.ep}]
+    : [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
+       {w:.8, src:['attn.out'], c:VC.tp}, {w:1.1, src:['mlp.gate/up'], c:VC.tp},
+       {w:.45, from:'分段 1/2', src:['mlp.down'], c:VC.tp}, {w:.45, from:'分段 2/2', src:['mlp.down'], c:VC.tp}];
+  var kx = fx+.15, kLines = [];
   kdefs.forEach(function(k, ki){
     parts.push(boxSVG(kx, fy+.07, .12, k.w, fh-.18, .5, s, {fill:mix(k.c,52), stroke:k.c, sw:.8}));
-    var kc = proj(kx+k.w/2, fy, .62, s);
-    var kty = kc[1] + 12 + (ki%2)*11;
-    parts.push(txt(kc[0], kty, k.from, 7.4, 'var(--pt-fg3)'));
-    reg([kc[0], kty], 34, 34, 0, 6);
+    var badges = k.src.map(function(id){ return opIdx[id]||'·'; }).join('+');
+    var kc = proj(kx+k.w/2, fy, .8, s);              /* 前下棱：标签落在轨道外侧 */
+    var kty = kc[1] + 24 + (ki%2)*13;
+    parts.push(txt(kc[0], kty, badges+(k.from?' '+k.from:''), 7.6, k.c, 'middle', 'font-weight="700"'));
+    reg([kc[0], kty], 38, 38, 0, 8);
+    var kTop = proj(kx+k.w/2, fy+fh, .3, s);
+    k.src.forEach(function(id){ if(opFront[id]) kLines.push([opFront[id], kTop, k.c]); });
     kx += k.w + .12;
+  });
+  kLines.forEach(function(L){                        /* 算子 → kernel：同号 + 引线双保险 */
+    parts.push('<path d="M'+L[0][0]+' '+(L[0][1]+34)+' C '+L[0][0]+' '+(L[0][1]+90)+', '+L[1][0]+' '+(L[1][1]-60)+', '+L[1][0]+' '+L[1][1]+'" style="fill:none;stroke:'+L[2]+';stroke-width:.8;stroke-dasharray:3 4;opacity:.6"/>');
   });
   var fl = proj(fx, fy+fh/2, .4, s);   /* 轨道左端外侧的空白区（容器正下方） */
   parts.push(txt(fl[0]-16, fl[1]-4, '流 = 另一个容器（容量 = 时间）', 10, 'var(--pt-fg)', 'end', 'font-weight="700"'));
   parts.push(txt(fl[0]-16, fl[1]+9, 'kernel 在此排队；装满不会崩，只是变慢（§08）', 8.6, 'var(--pt-fg2)', 'end'));
   reg([fl[0]-16, fl[1]+9], 300, 0, 14, 8);
-  var kn = proj(fx+fw, fy+fh, 0, s);
-  parts.push(txt(kn[0]+10, kn[1]+2, '算子→kernel = N:M（融合/分段）', 8.8, 'var(--pt-fg2)', 'start'));
-  parts.push(txt(kn[0]+10, kn[1]+13, 'kernel 永远单卡持有——逻辑与物理唯一的交点', 8, 'var(--pt-fg3)', 'start'));
-  reg([kn[0]+10, kn[1]+13], 0, 240, 12, 6);
-  /* 算子→kernel 对应引线（示意首个融合：q+kv 两个算子 → 一个 kernel，N:1） */
-  if(hookPts['attn.q']){
-    var kb = proj(fx+.15+.75, fy+fh, .3, s);
-    [proj(ox+opW*.5, 0, .9, s), proj(ox+(opW+gap)+opW*.5, 0, .9, s)].forEach(function(ka){
-      parts.push('<path d="M'+ka[0]+' '+(ka[1]+40)+' C '+ka[0]+' '+(ka[1]+80)+', '+kb[0]+' '+(kb[1]-46)+', '+kb[0]+' '+kb[1]+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:3 4"/>');
-    });
-  }
+  /* 流的全部说明都收到左列：右端会被读出卡浮层压住 */
+  var nDown = D.moe ? 'experts' : 'mlp.down';
+  parts.push(txt(fl[0]-16, fl[1]+26, '算子→kernel = N:M（融合 / 分段）', 8.8, 'var(--pt-fg2)', 'end', 'font-weight="600"'));
+  parts.push(txt(fl[0]-16, fl[1]+38, '同号对应：'+(opIdx['attn.q']||'①')+'+'+(opIdx['attn.kv']||'②')+' → 一个 kernel（融合 N:1）', 8, 'var(--pt-fg3)', 'end'));
+  parts.push(txt(fl[0]-16, fl[1]+50, (opIdx[nDown]||'⑥')+' → 两个 kernel（分段 1:N）· 标签在轨道下方，与块同号', 8, 'var(--pt-fg3)', 'end'));
+  parts.push(txt(fl[0]-16, fl[1]+62, 'kernel 永远单卡持有——逻辑与物理唯一的交点', 8, 'var(--pt-fg3)', 'end'));
+  reg([fl[0]-16, fl[1]+62], 340, 0, 12, 8);
 
   var pad = 22;
   var vb = [Math.min.apply(0,bx)-pad, Math.min.apply(0,by)-pad,
@@ -1713,10 +1742,10 @@ function renderFoot(D){
             var dis = dm==='ep' && !D.moe;
             return '<button class="pb mono'+(ui.commDim===dm&&layerOn('L5')?' is-on':'')+'" data-act="commdim" data-d="'+dm+'" style="--c:'+VC[dm]+'"'+(dis?' disabled':'')+'>'+DIMN[dm]+'</button>';
           }).join(''))
-    + '<span class="pt-cap">⊗ 原语</span>'
+    + '<span class="pt-cap" title="原语两类：P2P 是点对点，集合原语由一串 P2P 接成。两类都在计算图里以算子节点出现（send/recv、hcom_*），但在参照系里都是动作——不持有字节、不被切">⊗ 原语</span>'
     + PRIMS.map(function(pr){
         var cmn = (COMMON[ui.commDim]||[]).indexOf(pr.id)>=0;
-        return '<button class="pb mono'+(ui.commPrim===pr.id&&layerOn('L5')?' is-on':'')+'" data-act="commprim" data-p="'+pr.id+'">'+pr.name+(cmn?'<span class="cmn">常见</span>':'')+'</button>';
+        return '<button class="pb mono'+(ui.commPrim===pr.id&&layerOn('L5')?' is-on':'')+'" data-act="commprim" data-p="'+pr.id+'" title="'+esc(pr.kind+'：'+pr.why)+'">'+pr.name+'<span class="cmn">'+pr.kind+(cmn?'·常见':'')+'</span></button>';
       }).join('')
     + '<button class="pb'+(ui.detach?' is-on':'')+'" data-act="detach">抽离</button>';
   $('footCtl').innerHTML = out;
@@ -1724,7 +1753,8 @@ function renderFoot(D){
     key('<line x1="2" y1="6" x2="30" y2="6" style="stroke:var(--pt-fg2);stroke-width:2" marker-end="url(#arrx)"/>','P2P 有向链', 34)
     + key('<polygon points="5,10 16,2 27,10" style="fill:none;stroke:var(--pt-fg2);stroke-width:2.2"/>','AllReduce 闭合', 32)
     + key('<line x1="3" y1="2" x2="29" y2="11" style="stroke:var(--pt-fg2);stroke-width:.8"/><line x1="3" y1="6.5" x2="29" y2="2" style="stroke:var(--pt-fg2);stroke-width:1.9"/><line x1="3" y1="11" x2="29" y2="6.5" style="stroke:var(--pt-fg2);stroke-width:1.2"/>','A2A 载荷不等', 32)
-    + '<span class="pt-key">颜色=维度 · 线型=原语（正交 FR-4/5）</span>';
+    + '<span class="pt-key">颜色=维度 · 线型=原语（正交 FR-4/5）</span>'
+    + '<span class="pt-key" title="P2P=send/recv 一对一；ring AllReduce/AllGather 都是一串 P2P 接成的。两类都在计算图里以算子节点出现，但在参照系里是动作（线）：不持有字节、不被切，只占链路与时间（§08）">P2P=点对点（集合原语的底座）· 其余四种=集合通信</span>';
 }
 function key(inner, label, w){
   return '<span class="pt-key"><svg width="'+w+'" height="13">'+inner+'</svg>'+label+'</span>';
@@ -1733,14 +1763,14 @@ function sayText(D){
   if(!D.ok) return '<b>配置不合法，舞台已封锁</b>——宁可不画，不可画错（DP-5）。点顶栏红色 chip 修正，每个错误都带最近合法值。';
   var s = '';
   if(ui.view==='chain'){
-    return '<b>刀序</b>：链是<b>全体卡</b>共同的切分过程，高亮路径是<b>选中那张卡</b>的来历。尺寸有纪律：<b>复印=等大成叠</b>（DP 模型侧）、<b>真切=面积守恒</b>（子块贴合=父块）、<b>放大=尺寸不守恒</b>（层→算子，标 ⊕）。<b>决策序</b>=训练工程师<b>开训前写并行配置</b>时定旋钮的顺序（§11：约束越硬、通信越密的越先定——①TP…⑤DP 残差），与嵌套序反向。';
+    return '<b>刀序</b>：链是<b>全体卡</b>共同的切分过程，高亮路径是<b>选中那张卡</b>的来历。尺寸有纪律：<b>复印=等大成叠</b>（DP 模型侧）、<b>真切=面积守恒</b>（子块贴合=父块）、<b>放大=尺寸不守恒</b>（层→算子，标 ⊕）。<b style="color:'+VC.dp+'">DP 是唯一一刀两动作的刀</b>：对<b>权重体复印</b>（逐字节相同，不省显存）＋对<b>激活体真切</b>（切样本 b 轴）——两个动作缺一不可：复印参数才能各算各的梯度，切样本才有并行度；步末 AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步<b>仍逐字节相同</b>。<b>决策序</b>=训练工程师<b>开训前写并行配置</b>时定旋钮的顺序（§11：约束越硬、通信越密的越先定——①TP…⑤DP 残差），与嵌套序反向。';
   }
   if(ui.view==='dim'){
     var verdict = {
       tp:'<b style="color:'+VC.tp+'">TP</b> 在<b>算子内部</b>切 h/e 轴：结构跨柱共有，片各归各柱——归属边界落在算子片。每层两下 AllReduce 是切口的代价。',
       pp:'<b style="color:'+VC.pp+'">PP</b> 在<b>层级</b>切 ℓ 轴（唯一有序维）：pp_rank 本质是被空间化的时间下标（§12）——所以它同时出现在这里和时间视图里。',
       cp:'<b style="color:'+VC.cp+'">CP</b> 切的是<b>输入的 s 轴</b>，不切模型——归属边界在输入级。原语可选 Ring/Ulysses/朴素（N:M 不绑定，勘误 L）。',
-      dp:'<b style="color:'+VC.dp+'">DP</b> 不切模型、切样本 b 轴——柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
+      dp:'<b style="color:'+VC.dp+'">DP</b> <b>一刀两动作</b>：对模型<b>复印</b>（不切）＋对输入<b>真切</b> b 轴（切样本）。柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
       ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。'
     }[ui.cutDim];
     s = verdict + ' 竖轴是<b>粒度坐标</b>：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大（不是四样东西）；输入是另一个对象，单独一格。<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读五元组区间。';
@@ -1752,7 +1782,7 @@ function sayText(D){
     if(ui.zoomAR && ui.skew) s += ' <span class="a5">归因（A5）：段最短=最后进入的副本是嫌疑人；等最久的是受害者，不是根因（§12 诊断陷阱）。</span>';
     else s += ' 点 AllReduce 块放大「谁在等谁」。';
   }else{
-    s = '<b>卡内解剖</b>：钻进一张卡——外壳=显存容器，层→算子（体积∝字节，切法着色），底部<b>流=时间容器</b>装 kernel（算子→kernel N:M，永远单卡持有）。通信是从切口伸出去的动作线。';
+    s = '<b>卡内解剖</b>：钻进一张卡——外壳=显存容器，层→算子（体积∝字节，切法着色），底部<b>流=时间容器</b>装 kernel（<b>算子↔kernel 同号对应</b>，N:M：多算子可融合成一个 kernel、一个算子也可分段成多个）。<b>L 是整网的全局层号</b>（ℓ 轴，L0–L'+(D.layers-1)+'）——不是卡内序号，这张卡只装 PP 切出的那一段。通信是从切口伸出去的动作线。';
   }
   return s;
 }
