@@ -218,8 +218,8 @@ function epOf(co, p){
 var COMPS = {
   chain:{band:'a', name:'刀序 · 切分链', q:'五刀按嵌套序串成一条链（A 段主图）',
     kind:'demo', view:'chain', drive:'post'},
-  dim:{band:'a', name:'单维切分 · DP', q:'一把刀一个视图 · 容器柱 + 面积守恒',
-    kind:'demo', view:'dim', cut:'dp', drive:'post'},
+  dim:{band:'a', name:'单维切分（真算子）', q:'一把刀一个视图 · 容器柱 + 面积守恒 · 算子取 openPangu 真图与真切分标注',
+    kind:'demo', view:'dim', drive:'post'},
   rubik:{band:'b', name:'逻辑魔方（mount）', q:'谁和谁一组 —— 卡空间的形状',
     kind:'mount', drive:'handle'},
   netsh:{band:'c', name:'rank 卡（mount）', q:'这一组各自装了什么 —— 算子/张量轴粒度',
@@ -232,8 +232,10 @@ var COMPS = {
     kind:'ds-mount', drive:'handle'},
   time:{band:'d', name:'时间 · 流', q:'1F1B + 谁在等谁（A5 归因）',
     kind:'demo', view:'time', drive:'post'},
-  compose:{band:'b', name:'合成 · 卡阵', q:'五维相乘后的全局落位 + 通信图层',
-    kind:'demo', view:'compose', drive:'post'}
+  /* 这里原来还有「合成·卡阵」与我一时加的「真整网算子」，两处都去掉了：
+     · 卡阵与逻辑魔方答同一个问题（卡空间落位），魔方那份更成熟 → 重复
+     · 「真整网算子」= view:'dim' 且跟总线的刀走，和上面的「单维切分」逐字一样 → 也是重复
+     demo 里 ?view=compose 的视图本体保留（老链接不能失效，且它是单文件时唯一不依赖 three 的卡空间视图）。 */
 };
 /* 一次只看一个组件（?tab=）。旧的 ?slots=a,b,c,d 取第一个——发出去的链接不该失效。 */
 var TAB = 'chain';

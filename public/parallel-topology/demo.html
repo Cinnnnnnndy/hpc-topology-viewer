@@ -8,6 +8,14 @@
 <title>并行拓扑 · PRD Demo（应用形态）</title>
 <!-- PTO Design System：与逻辑魔方 / net-sharding 同一 token 层；缺失时以下所有 var() 均带回退值 -->
 <link rel="stylesheet" href="../vendor/pto-design-system/styles.css">
+<!-- 真数据层（缺失时本页自动退回内置口径，单文件打开仍可用）：
+     · model-graphviz/graph.js   —— openPangu 整网图：55 个真节点（35 个算子 + 6 个通信算子）
+     · net-sharding/pattern.js   —— createModel() 是**纯数据层**（它自己的契约写明无 DOM/无渲染），
+       带一张手工标注的 SHARD 表：每个节点被哪把刀沿哪根张量轴切、为什么、是否 partial、
+       通信原语把分片状态从什么搬到什么。shardOfNode(id, rank) 还给出这张卡实际持有的区间。
+     真图**没有 shape**，所以字节仍由配置算——算子行的宽度按类别权重，不冒充字节。 -->
+<script src="../vendor/model-graphviz/graph.js"></script>
+<script src="../vendor/net-sharding/pattern.js"></script>
 <style>
 /* ════════════════════════════════════════════════════════════════════
    parallel-topology demo —— PRD 的应用形态呈现（参照逻辑魔方 pattern 的壳）。
@@ -284,7 +292,7 @@ var activePreset = 'default128';
 var sel = null;
 var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
-  cpFacet:0, yaw:0, unfold:false, skew:true, zoomAR:false,
+  cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -464,6 +472,56 @@ function groupMembers(dim,g,D){
 
 /* ═════════ 持有内容 / 显存（FR-3 / FR-6：函数里没有 DP） ═════════ */
 function kvPerTp(D){ return Math.ceil(D.kv/D.tp); }
+/* ═════════ 真数据层：复用 net-sharding 的 createModel（它是纯数据层，专为被复用而写） ═════════
+   拿到的是真东西：openPangu 整网图的算子节点 + 一张手工标注的切分表（轴/原因/partial/原语）。
+   拿不到的是字节——真图不带 shape。所以：
+     · 算子**清单、切法、轴名、注解、通信原语** = 真数据
+     · 算子**宽度** = 按类别的粗略权重（线性层 ≫ norm/逐元素），并在图上标明口径
+     · 每卡显存仍走本页的配置口径（paramsPerCard/memParts），不与上面混淆
+   任一脚本缺失就整体退回内置的 7 算子示意口径，页面照常可用（单文件打开的场景）。 */
+var RD = {ok:false, key:'', model:null, ops:null};
+function realModel(D){
+  if(!window.OPENPANGU_GRAPH || !window.PtoNetShardingPattern) return null;
+  var key = [D.tp,D.cp,D.pp,D.ep,D.dp,D.layers,D.heads,D.experts,D.seq].join('/');
+  if(RD.ok && RD.key === key) return RD.model;
+  try{
+    RD.model = window.PtoNetShardingPattern.createModel({
+      tp:D.tp, cp:D.cp, pp:D.pp, ep:D.ep, dp:D.dp,
+      layers:D.layers, heads:D.heads, experts:D.experts, seqLen:D.seq });
+    RD.key = key; RD.ok = true; RD.ops = null;
+    return RD.model;
+  }catch(e){ RD.ok = false; return null; }
+}
+/* 类别 → 画多宽（真图没 shape，这是粗略权重不是字节；图上会写明） */
+var OPW = {'opv:linear':1, 'opv:moe':1.5, 'opv:embedding':1.2, 'opv:head':1.2, 'opv:mlp':1.1,
+           'opv:attention':.9, 'opv:gate':.45, 'opv:norm':.4, 'opv:act':.4, 'opv:comm':.5};
+function realOps(D, g){
+  var m = realModel(D); if(!m) return null;
+  var G = window.OPENPANGU_GRAPH;
+  var out = [];
+  G.nodes.forEach(function(n){
+    if(n.kind !== 'op') return;                       /* 只取算子；tensor/module 不是内容块 */
+    var sh = null;
+    try{ sh = m.shardOfNode(n.id, g); }catch(e){}
+    var by = (sh && sh.spec && sh.spec.by) || [];
+    var part = (sh && sh.parts && sh.parts[0]) || null;
+    var isComm = n.colorKey === 'opv:comm';
+    out.push({
+      id:n.id, label:n.label, cls:n.colorKey || 'opv:linear',
+      cut:(by[0] && by[0].dim) || 'none',             /* 真标注：这一刀沿哪根张量轴 */
+      axis:(by[0] && by[0].axis) || '',
+      axisName:(part && part.axisName) || '',
+      range:(part && part.range) || null, total:(part && part.total) || null,
+      partial:!!(sh && sh.partial), note:(sh && sh.spec && sh.spec.note) || '',
+      prim:(sh && sh.spec && sh.spec.prim) || (isComm ? 'comm' : ''),
+      group:(sh && sh.spec && sh.spec.group) || '',
+      w:OPW[n.colorKey] || .6, comm:isComm
+    });
+  });
+  /* 供页外核对（测试/控制台）：这一屏用的是哪几个真节点、各自的真切法与真区间 */
+  window.__ptoRealOps = out;
+  return out.length ? out : null;
+}
 function opBytes(D){ /* 单层各算子的每卡权重字节（bf16），供 V3 卡内解剖 & 读出 */
   var hd = D.headDim, o = [];
   o.push({id:'attn.q',  cut:'tp', how:'列切 ×'+D.tp, b:2*D.hidden*(D.heads/D.tp)*hd, shape:'['+fmt(D.hidden)+', '+(D.heads/D.tp)+'·'+hd+']'});
@@ -648,6 +706,7 @@ function quintRow(g, D){ /* 索引五元组：这张卡的 rank 元组 ⇢ 五�
   parts.push('b=副本'+co.d+'的 '+(D.mbs*D.ga)+' 样本', 's=段'+co.c+'∪段'+(2*D.cp-1-co.c));
   return parts.join(' · ');
 }
+function S0(){ return (sel!==null && sel<9999999) ? sel : 0; }
 function renderDim(D){
   var dim = ui.cutDim;
   var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim];
@@ -673,7 +732,9 @@ function renderDim(D){
   var R = {inp:46, net:126, lay:192, op:272, ker:348, card:398};
   var HR = {inp:30, net:30, lay:30, op:34, ker:20, card:60};
   var H = 512;
-  var LIM = 16, N = Math.min(size, LIM), tail = size - N;
+  /* 全量：不设上限——份数多到画不下时降级的是**标注**，不是份数本身。
+     压缩带因此不再出现（tail 恒 0），代码留着是为了万一以后又要给上限。 */
+  var N = size, tail = 0;
   var slot = MW / size, gap = Math.min(2, slot*.09);
   var groupsPer = Math.round(D.world/size);
   var kE = D.moe ? D.experts/D.ep : 0;
@@ -825,26 +886,45 @@ function renderDim(D){
 
   /* ── 算子（真算子序列，宽∝每卡字节；被本维切的画成 size 片） ── */
   var opPos = {};
+  var co0 = (function(){ var c = coordsOf(Math.min(S0(), D.world-1), D);
+    return {tp:c.t, cp:c.c, dp:c.d, pp:c.p, ep:(D.moe?epOf(c.t,c.c,c.d,D).ep:0)}[dim] || 0; })();
   function opLane(cutKind){
-    var ops = opBytes(D).filter(function(o){ return o.b>0 || o.id==='attn.core'; });
-    var totB = ops.reduce(function(a,o){ return a+o.b; }, 0);
-    var sh = ops.map(function(o){ return clamp(o.b, totB*.07, totB*.30); });
+    /* 优先用真整网的算子（35 个真节点 + 手工标注的切法/轴/原因），拿不到才退回内置示意口径。
+       宽度口径两者不同：真数据按类别权重（真图无 shape），内置按每卡字节——图上分别标明。 */
+    var rops = realOps(D, (sel!==null && sel<D.world) ? sel : 0), useReal = !!rops, ops, sh;
+    if(useReal){
+      ops = rops.filter(function(o){ return !o.comm; });        /* 通信算子是动作，另画成线 */
+      sh = ops.map(function(o){ return o.w; });
+    }else{
+      ops = opBytes(D).filter(function(o){ return o.b>0 || o.id==='attn.core'; });
+      var totB = ops.reduce(function(a,o){ return a+o.b; }, 0);
+      sh = ops.map(function(o){ return clamp(o.b, totB*.07, totB*.30); });
+    }
+    opLane.real = useReal; opLane.commOps = useReal ? rops.filter(function(o){ return o.comm; }) : [];
     var shT = sh.reduce(function(a,x){ return a+x; }, 0);
     var og = 2, usable = MW - og*(ops.length-1), x = X0;
     ops.forEach(function(o, oi){
       var w = usable*sh[oi]/shT;
       opPos[o.id] = {x:x, w:w};
-      var isCut = cutKind && o.cut===cutKind;
-      if(o.b===0) parts.push(wire3(x, R.op+6, w, HR.op-12, 'var(--pt-fg3)', .7, 'stroke-dasharray="3 3" pointer-events="none"'));
+      var isCut = cutKind && (o.cut===cutKind || (cutKind==='tp' && o.cut==='sp'));
+      var pieces = (useReal && o.total) ? o.total : size;      /* 真标注带 total：片数用真的 */
+      if(!useReal && o.b===0) parts.push(wire3(x, R.op+6, w, HR.op-12, 'var(--pt-fg3)', .7, 'stroke-dasharray="3 3" pointer-events="none"'));
+      else if(useReal && !isCut && o.cut==='none') parts.push(wire3(x, R.op+6, w, HR.op-12, 'var(--pt-fg3)', .7, 'stroke-dasharray="3 3" pointer-events="none"'));
       else if(isCut){
-        var pw = w/size;
+        /* 片数用真标注的 total（如 q_b_proj 沿 head 切 32 份，本卡持 16–31），
+           没有标注时退回本刀的份数 size。片贴片=面积守恒，跟别处一个纪律。 */
+        var np = Math.max(1, Math.min(pieces, 64)), pw = w/np;
+        var hot = (useReal && o.range && o.total) ? Math.floor(o.range[0]/(o.total/np)) : co0;
         parts.push(wire3(x, R.op, w, HR.op, col, 1, 'pointer-events="none"'));
-        for(var q=0;q<N;q++)
-          parts.push(slab(x+q*pw+.4, R.op+1.5, pw-.8, HR.op-3, mix(col, 38+q*4), 'transparent', 0, 'pointer-events="none"'));
-        if(tail>0) parts.push(slab(x+N*pw+.4, R.op+1.5, w-N*pw-.8, HR.op-3, mix(col,38), 'transparent', 0, 'opacity=".45" pointer-events="none"'));
+        for(var q=0;q<np;q++)
+          parts.push(slab(x+q*pw+.4, R.op+1.5, Math.max(.6,pw-.8), HR.op-3,
+            mix(col, q===hot ? 62 : 30), 'transparent', 0, 'pointer-events="none"'));
       }
       else parts.push(slab(x, R.op+3, w, HR.op-6, mix('var(--pt-fg2)',16), 'var(--pt-bds)', .6, 'pointer-events="none"'));
-      if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, o.id, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
+      var lbl = useReal ? (o.label||o.id) : o.id;
+      if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, lbl.length>16?lbl.slice(0,15)+'…':lbl, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
+      if(w>26 && useReal && isCut && o.axisName)
+        parts.push(txt(x+w/2, R.op+HR.op+18+(oi%2)*9, '沿'+o.axisName+(o.partial?'·partial':''), 6.4, col, 'middle', 'pointer-events="none"'));
       x += w + og;
     });
   }
@@ -1077,11 +1157,14 @@ function renderChain(D){
   parts.push(txt(IX+IW/2, LY0+15, '全局批 = 输入（b·s 两轴的全长）', 9.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
   parts.push(txt(IX+IW/2, LY0+27, 'GBS='+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq)+' —— 激活体② 的来源', 8, 'var(--pt-fg2)'));
   /* ── 模型侧 刀1·DP = 复印（不切！尺寸不变）：一叠与整网等大的复印件 ── */
-  var K = Math.min(D.dp, 4), selD = Math.min(co.d, K-1);
+  /* 全量：复印件全画（原来只画 4 份）。偏移按份数收缩，整叠横向不超过 ~64px——
+     份数是真的，占的地方是有限的。 */
+  var K = D.dp, selD = Math.min(co.d, K-1);
+  var kOffX = K>1 ? Math.min(12, 64/(K-1)) : 0, kOffY = K>1 ? Math.min(7, 34/(K-1)) : 0;
   parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(LY0+H0)+'" x2="'+(MX+MW/2)+'" y2="'+(LY1-(K-1)*7-4)+'" style="stroke:'+VC.dp+';stroke-width:1.4;marker-end:url(#arrdp)"/>');
   parts.push(knifeLabel(MX, LY0+H0+22, 'dp', '复印整网 ×'+D.dp+'——不切，每份与整网等大', '决策顺位⑤（残差）· 通信:步末 AllReduce ×1 · 落位:最外·跨机可容忍 · 谁决策:训练工程师开训前（§11）', D.dp>1));
   for(var k1=K-1; k1>=0; k1--){ /* 背后的复印件在上，前面（选中）最下、完整可见 */
-    var off = (K-1-k1), bx1 = MX + off*12, by1 = LY1 - off*7, isF = k1===0;
+    var off = (K-1-k1), bx1 = MX + off*kOffX, by1 = LY1 - off*kOffY, isF = k1===0;
     var dIdx = isF ? co.d : (co.d+k1)%D.dp;
     parts.push('<g class="cgrow">'+rect(bx1, by1, MW, H1, isF?mix(VC.dp,14):'var(--pt-s1)', isF?VC.dp:'var(--pt-bds)', isF?1.5:0.7, 'data-act="chainpick" data-k="d" data-i="'+dIdx+'" style="cursor:pointer"')
       + (isF ? txt(bx1+MW/2, by1+15, '副本'+co.d+'（选中）＝ 整网原尺寸 · ≡ 逐字节相同', 9.5, VC.dp, 'middle', 'font-weight="800" pointer-events="none"')
@@ -1272,7 +1355,11 @@ function renderDimBar(D, dim){
 var GEO = {w:.78, d:.78, h:.16};
 function v1Layout(D){
   var dpShown;
-  if(ui.unfold){ dpShown = D.dp; }
+  /* 全量优先，但只在**画得动的规模**上：默认 128 卡那套全部画出；
+     盘古 4000 卡不默认全量渲染（4000 个实例要 4s+），要看全量点「全部画出」。
+     ui.unfoldSet 记住用户是否显式表过态——表过就听他的，不要偷偷替他折叠。 */
+  var big = D.tp*D.dp*D.pp > 1000;
+  if(ui.unfold && (!big || ui.unfoldSet)){ dpShown = D.dp; }
   else{
     dpShown = Math.min(D.dp, Math.floor(88/D.pp - D.tp - 1.1));
     dpShown = Math.max(Math.min(D.dp,2), Math.min(dpShown, Math.max(1, Math.floor(1600/(D.tp*D.pp)))));
@@ -1381,7 +1468,9 @@ function renderV1(D){
   if(LYf || (ui.unfold && D.dp*D.tp*D.pp>1600)){
     $('stageNote').hidden = false;
     $('stageNote').innerHTML = LYf
-      ? 'DP='+D.dp+' 为对称维，只画前 '+DPn+' 个副本——看一个组等于看全部（DP-3/DP-5）。<button class="pb" data-act="unfold">全部画出</button>'
+      ? (D.tp*D.dp*D.pp>1000
+          ? '这套配置 '+fmt(D.tp*D.dp*D.pp)+' 个实例，默认不全量渲染（要几秒）——先画前 '+DPn+' 个 DP 副本。DP 是对称维，看一组等于看全部（DP-3）。<button class="pb" data-act="unfold">仍要全部画出</button>'
+          : 'DP='+D.dp+' 为对称维，只画前 '+DPn+' 个副本——看一个组等于看全部（DP-3/DP-5）。<button class="pb" data-act="unfold">全部画出</button>')
       : fmt(D.tp*DPn*D.pp)+' 张卡全量渲染中。<button class="pb" data-act="refold">恢复折叠</button>';
   }else{ $('stageNote').hidden = true; }
 
@@ -1942,7 +2031,7 @@ document.addEventListener('click', function(ev){
   if(act==='preset'){
     var p = PRESETS.filter(function(x){return x.id===b.getAttribute('data-id');})[0];
     cfg = JSON.parse(JSON.stringify(p.cfg)); activePreset = p.id; sel = null;
-    ui.cpFacet = 0; ui.unfold = false; stopAnim(); render();
+    ui.cpFacet = 0; ui.unfold = true; ui.unfoldSet = false; stopAnim(); render();
   }
   else if(act==='fix'){
     var D0 = derive(cfg);
@@ -1980,8 +2069,8 @@ document.addEventListener('click', function(ev){
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
   else if(act==='yaw'){ ui.yaw = (ui.yaw + (+b.getAttribute('data-d')) + 4) & 3; render(); }
   else if(act==='yawreset'){ ui.yaw = 0; render(); }
-  else if(act==='unfold'){ ui.unfold = true; render(); }
-  else if(act==='refold'){ ui.unfold = false; render(); }
+  else if(act==='unfold'){ ui.unfold = true; ui.unfoldSet = true; render(); }
+  else if(act==='refold'){ ui.unfold = false; ui.unfoldSet = true; render(); }
   else if(act==='commdim'){ ui.commDim = b.getAttribute('data-d'); setLayer('L5', true); render(); }
   else if(act==='commprim'){ ui.commPrim = b.getAttribute('data-p'); setLayer('L5', true); render(); }
   else if(act==='detach'){ ui.detach = !ui.detach; if(ui.detach) setLayer('L5', true); render(); }
