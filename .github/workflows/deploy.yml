@@ -281,6 +281,37 @@ jobs:
           echo "published: /parallel-topology/demo.html?v=$SHA"
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
+      - name: Overlay 并行拓扑卡片 into /launch.html
+        # 工作台总页面（main 的 public/launch.html）里给本分支加一张卡 + 顶栏一枚 pill。
+        # 走叠加而不是改 main：站点框架永远从 main 构建，本分支不进 main。片段本体在
+        # public/parallel-topology/launch-card.html（可评审、可本地渲染），这里只做定位插入。
+        # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
+        # 代价同其它 pattern 目录：main 或别的分支一发布这张卡会暂时消失，重跑本分支即可。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptopo-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('ptopo-src/public/parallel-topology/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'parallel-topology/demo.html' in html:
+              raise SystemExit('launch.html 已含并行拓扑链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+          # ① 卡片插进「独立迭代 Pattern」组的末尾（该组 </div></section> 就在文档组注释之前）
+          doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
+          close = html.rindex('      </div>\n    </section>\n', 0, doc)
+          html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
+          # ② 顶栏 pill：紧跟在参照系那枚后面
+          pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
+          at = html.index(pill) + len(pill)
+          html = html[:at] + '\n      <a class="pill" href="./parallel-topology/demo.html?v=' + sha + '">并行拓扑 · 刀序切分链</a>' + html[at:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          PY
+          grep -c 'parallel-topology/demo.html' dist/launch.html
+
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4
         with:
