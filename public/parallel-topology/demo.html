@@ -683,6 +683,28 @@ function renderDim(D){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(.6,w).toFixed(1)+'" height="'+h.toFixed(1)
       + '" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?.8:sw)+'" '+(extra||'')+'/>';
   }
+  /* ── 立体：斜投影（cabinet），深度只产生一个固定偏移向量 (D,-E)。
+     关键是 **X 不受深度影响**——等距投影里 screenX=(x−z) 会把 16 份柱列剪成一条斜带，
+     斜投影不会：份还是并排的，面积守恒照旧，同时块有了体积（内容=实心体，§15）。 ── */
+  var D3 = 11, E3 = 6.5;
+  function slab(x,y,w,h,fill,stroke,sw,extra){
+    var st = stroke||'var(--pt-bds)', sww = (sw===undefined?.8:sw), ex = extra||'';
+    var side = (x+w)+','+y+' '+(x+w+D3)+','+(y-E3)+' '+(x+w+D3)+','+(y+h-E3)+' '+(x+w)+','+(y+h);
+    var top  = x+','+y+' '+(x+w)+','+y+' '+(x+w+D3)+','+(y-E3)+' '+(x+D3)+','+(y-E3);
+    return '<polygon points="'+side+'" style="fill:'+fill+';stroke:'+st+';stroke-width:'+(sww*.7)+'" '+ex+'/>'
+      + '<polygon points="'+side+'" style="fill:rgba(0,0,0,.16);stroke:none" '+ex+'/>'
+      + '<polygon points="'+top+'" style="fill:'+fill+';stroke:'+st+';stroke-width:'+(sww*.7)+'" '+ex+'/>'
+      + '<polygon points="'+top+'" style="fill:rgba(255,255,255,.34);stroke:none" '+ex+'/>'
+      + rect(x, y, w, h, fill, st, sww, ex);
+  }
+  /* 线框盒（容器/父块外框）：只有棱，没有面——容器无厚度、不抢内容的视觉重量 */
+  function wire3(x,y,w,h,stroke,sw,extra){
+    var ex = extra||'', s = 'stroke:'+stroke+';stroke-width:'+sw+';fill:none';
+    return rect(x, y, w, h, 'none', stroke, sw, ex)
+      + '<polyline points="'+x+','+y+' '+(x+D3)+','+(y-E3)+' '+(x+w+D3)+','+(y-E3)+' '+(x+w)+','+y+'" style="'+s+'" '+ex+'/>'
+      + '<line x1="'+(x+w+D3)+'" y1="'+(y-E3)+'" x2="'+(x+w+D3)+'" y2="'+(y+h-E3)+'" style="'+s+'" '+ex+'/>'
+      + '<line x1="'+(x+w)+'" y1="'+(y+h)+'" x2="'+(x+w+D3)+'" y2="'+(y+h-E3)+'" style="'+s+'" '+ex+'/>';
+  }
   function sx(i){ return X0 + i*slot; }                       /* 第 i 份的左边 */
   function scx(i){ return X0 + i*slot + slot/2; }             /* 第 i 份的中心 */
   var wide = slot > 30;                                       /* 够宽才逐格标注 */
@@ -694,14 +716,14 @@ function renderDim(D){
   }
   /* 共有：一整块横跨全宽 —— 谁都没切它 */
   function spanLane(y, h, label, sub, tint){
-    parts.push(rect(X0, y, MW, h, tint||mix('var(--pt-fg2)',16), 'var(--pt-bds)', .8));
+    parts.push(slab(X0, y, MW, h, tint||mix('var(--pt-fg2)',16), 'var(--pt-bds)', .8));
     say(y+h/2-2, label, sub);
   }
   /* 真切：外框跨满（合起来=那一个）+ size 份紧贴（每份 1/size） */
   function cutLane(y, h, tintOf, labelOf){
-    parts.push(rect(X0, y, MW, h, 'none', col, 1.1));
+    parts.push(wire3(X0, y, MW, h, col, 1.1));
     for(var j=0;j<N;j++){
-      parts.push(rect(sx(j)+gap/2, y+1.5, slot-gap, h-3, tintOf(j), 'transparent', 0, 'pointer-events="none"'));
+      parts.push(slab(sx(j)+gap/2, y+1.5, slot-gap, h-3, tintOf(j), 'transparent', 0, 'pointer-events="none"'));
       var l = labelOf ? labelOf(j) : '';
       if(l && wide) parts.push(txt(scx(j), y+h/2+3, l, 7.4, 'var(--pt-fg)', 'middle', 'pointer-events="none"'));
     }
@@ -710,19 +732,19 @@ function renderDim(D){
   /* 压缩带：宽度就是 tail·slot（真实占比），不省面积、只省标注 */
   function tailBand(y, h, tint){
     var x0 = sx(N), w = X0+MW-x0;
-    parts.push(rect(x0+gap/2, y+1.5, w-gap, h-3, tint, 'transparent', 0, 'opacity=".45" pointer-events="none"'));
+    parts.push(slab(x0+gap/2, y+1.5, w-gap, h-3, tint, 'transparent', 0, 'opacity=".45" pointer-events="none"'));
     if(w > 34) parts.push(txt(x0+w/2, y+h/2+3, '+'+tail+' 份', 7.4, 'var(--pt-fg2)', 'middle', 'font-weight="700" pointer-events="none"'));
   }
   /* 复印：各自成框、等大 —— 不是变小（DP 在模型侧的动作） */
   function copyLane(y, h, tint, label){
     for(var j=0;j<N;j++){
-      parts.push(rect(sx(j)+gap/2, y, slot-gap, h, tint, 'var(--pt-bds)', .8, 'pointer-events="none"'));
+      parts.push(slab(sx(j)+gap/2, y, slot-gap, h, tint, 'var(--pt-bds)', .8, 'pointer-events="none"'));
       if(wide && j===0 && label) parts.push(txt(scx(j), y+h/2+3, label, 7.4, 'var(--pt-fg)', 'middle', 'pointer-events="none"'));
       if(j<N-1 && slot>16) parts.push(txt(sx(j+1), y+h/2+4, '≡', Math.min(13, slot*.4), col, 'middle', 'font-weight="800" pointer-events="none"'));
     }
     if(tail>0){
       var x0 = sx(N), w = X0+MW-x0;
-      parts.push(rect(x0+gap/2, y, w-gap, h, tint, 'var(--pt-bds)', .6, 'opacity=".5" pointer-events="none"'));
+      parts.push(slab(x0+gap/2, y, w-gap, h, tint, 'var(--pt-bds)', .6, 'opacity=".5" pointer-events="none"'));
       if(w > 34) parts.push(txt(x0+w/2, y+h/2+3, '+'+tail+' 份', 7.4, 'var(--pt-fg2)', 'middle', 'font-weight="700" pointer-events="none"'));
     }
   }
@@ -741,10 +763,10 @@ function renderDim(D){
   if(dim==='cp'){
     /* CP 的动词=切一条序列：2·CP 段 + 首尾配对弧（因果均衡） */
     var segN = 2*size, segW = MW/segN;
-    parts.push(rect(X0, R.inp, MW, HR.inp, 'none', col, 1.1));
+    parts.push(wire3(X0, R.inp, MW, HR.inp, col, 1.1));
     for(var sg=0;sg<segN;sg++){
       var ownerC = sg<size ? sg : 2*size-1-sg;
-      parts.push(rect(X0+sg*segW+.6, R.inp+1.5, segW-1.2, HR.inp-3, mix(col, 14+Math.round(ownerC/(size-1||1)*40)), 'transparent', 0, 'pointer-events="none"'));
+      parts.push(slab(X0+sg*segW+.6, R.inp+1.5, segW-1.2, HR.inp-3, mix(col, 14+Math.round(ownerC/(size-1||1)*40)), 'transparent', 0, 'pointer-events="none"'));
       if(segW>22) parts.push(txt(X0+sg*segW+segW/2, R.inp+HR.inp/2+3, '段'+sg, 7.2, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
     }
     for(var pc=0;pc<N;pc++){
@@ -779,10 +801,10 @@ function renderDim(D){
   /* ── 层 ── */
   if(dim==='pp'){
     var rise = Math.min(9, 26/size);
-    parts.push(rect(X0, R.lay, MW, HR.lay, 'none', col, 1.1));
+    parts.push(wire3(X0, R.lay, MW, HR.lay, col, 1.1));
     for(var jp=0;jp<N;jp++){
       var yj = R.lay + jp*rise;
-      parts.push(rect(sx(jp)+gap/2, yj, slot-gap, HR.lay-rise*.6, mix(col, 26+Math.round(jp/(N-1||1)*30)), 'var(--pt-bds)', .7, 'pointer-events="none"'));
+      parts.push(slab(sx(jp)+gap/2, yj, slot-gap, HR.lay-rise*.6, mix(col, 26+Math.round(jp/(N-1||1)*30)), 'var(--pt-bds)', .7, 'pointer-events="none"'));
       if(wide) parts.push(txt(scx(jp), yj+13, 'stage'+jp, 7.4, 'var(--pt-fg)', 'middle', 'font-weight="700" pointer-events="none"'));
       if(wide) parts.push(txt(scx(jp), yj+22, 'L'+(jp*D.layersPerStage)+'–L'+((jp+1)*D.layersPerStage-1), 6.8, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
       if(jp<N-1){
@@ -813,15 +835,15 @@ function renderDim(D){
       var w = usable*sh[oi]/shT;
       opPos[o.id] = {x:x, w:w};
       var isCut = cutKind && o.cut===cutKind;
-      if(o.b===0) parts.push(rect(x, R.op+6, w, HR.op-12, 'none', 'var(--pt-fg3)', .7, 'stroke-dasharray="3 3" pointer-events="none"'));
+      if(o.b===0) parts.push(wire3(x, R.op+6, w, HR.op-12, 'var(--pt-fg3)', .7, 'stroke-dasharray="3 3" pointer-events="none"'));
       else if(isCut){
         var pw = w/size;
-        parts.push(rect(x, R.op, w, HR.op, 'none', col, 1));
+        parts.push(wire3(x, R.op, w, HR.op, col, 1, 'pointer-events="none"'));
         for(var q=0;q<N;q++)
-          parts.push(rect(x+q*pw+.4, R.op+1.5, pw-.8, HR.op-3, mix(col, 38+q*4), 'transparent', 0, 'pointer-events="none"'));
-        if(tail>0) parts.push(rect(x+N*pw+.4, R.op+1.5, w-N*pw-.8, HR.op-3, mix(col,38), 'transparent', 0, 'opacity=".45" pointer-events="none"'));
+          parts.push(slab(x+q*pw+.4, R.op+1.5, pw-.8, HR.op-3, mix(col, 38+q*4), 'transparent', 0, 'pointer-events="none"'));
+        if(tail>0) parts.push(slab(x+N*pw+.4, R.op+1.5, w-N*pw-.8, HR.op-3, mix(col,38), 'transparent', 0, 'opacity=".45" pointer-events="none"'));
       }
-      else parts.push(rect(x, R.op+3, w, HR.op-6, mix('var(--pt-fg2)',16), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+      else parts.push(slab(x, R.op+3, w, HR.op-6, mix('var(--pt-fg2)',16), 'var(--pt-bds)', .6, 'pointer-events="none"'));
       if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, o.id, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
       x += w + og;
     });
@@ -864,7 +886,7 @@ function renderDim(D){
   for(var q2=0;q2<N;q2++){
     var kw = (slot-gap)/3.4;
     for(var kr=0;kr<3;kr++)
-      parts.push(rect(sx(q2)+gap/2+kr*(kw+1.5), R.ker, kw, HR.ker, mix('var(--pt-fg2)', 34-kr*7), 'transparent', 0, 'pointer-events="none"'));
+      parts.push(slab(sx(q2)+gap/2+kr*(kw+1.5), R.ker, kw, HR.ker, mix('var(--pt-fg2)', 34-kr*7), 'transparent', 0, 'pointer-events="none"'));
   }
   if(tail>0) tailBand(R.ker, HR.ker, mix('var(--pt-fg2)',28));
   say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）', '本刀不决定它 · 全部刀切完之后的事，细看去卡内解剖');
@@ -886,8 +908,9 @@ function renderDim(D){
       colBack.push(rect(cx0+go, CT-go, cw, CB-CT, 'var(--pt-bg)', 'var(--pt-bd)', .6, 'stroke-dasharray="2 3" opacity="'+(.5-gh*.13).toFixed(2)+'" pointer-events="none"'));
     }
     /* 柱身：极淡体积感 + 虚线壁（容器边界），选中转实线 */
-    colBack.push(rect(cx0, CT, cw, CB-CT, isSel?mix('var(--pt-fg)',5):mix('var(--pt-fg)',2), isSel?'var(--pt-fg)':'var(--pt-bds)',
-      isSel?1.6:1, isSel?'pointer-events="none"':'stroke-dasharray="7 3" pointer-events="none"'));
+    colBack.push(rect(cx0, CT, cw, CB-CT, isSel?mix('var(--pt-fg)',5):mix('var(--pt-fg)',2), 'transparent', 0, 'pointer-events="none"')
+      + wire3(cx0, CT, cw, CB-CT, isSel?'var(--pt-fg)':'var(--pt-bds)', isSel?1.6:1,
+              isSel?'pointer-events="none"':'stroke-dasharray="7 3" pointer-events="none"'));
     /* 柱脚：门牌区（与柱身同宽，底色略深，读作"这根柱的脚") */
     colBack.push(rect(cx0, R.card, cw, HR.card, isSel?mix('var(--pt-fg)',8):mix('var(--pt-fg)',4), 'transparent', 0, 'pointer-events="none"'));
     inter.push('<g class="dimcol" data-g="'+colRanks[i]+'" style="cursor:pointer">'

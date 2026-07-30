@@ -16,11 +16,13 @@
    不是文档、不是路由页：逻辑魔方与 rank 卡是 mount() 出来的真组件，
    切分链 / 时间·流 / 纠正版 rank-deck 是 iframe 里的真页面。
 
-   格位按讨论出的框架分：
-     A 刀对整网    切分链（iframe · postMessage 驱动）
-     B 刀对卡空间  逻辑魔方（mount · PtoRubikCubePattern）
-     C 映射        rank 卡（mount · PtoNetShardingPattern）
-     C′/D          纠正版 rank-deck（iframe · 只读 URL）/ 时间·流（iframe）
+   一块大画布 + 切换轨（不是四分格：每个组件都值得整屏，挤成 1/4 谁都看不清）：
+     A 刀对整网    切分链 · 单维切分（iframe · postMessage 驱动）
+     B 刀对卡空间  逻辑魔方（mount）· 合成卡阵
+     C 映射        rank 卡（mount）· 纠正版 rank-deck · 卡内解剖 · 训练语义 sidecar（mount）
+     D 时间        时间·流
+   切走的组件只 hidden 不 destroy——重挂一次 3D 场景的代价远大于留着，
+   而且切回来时选中卡与视角都还在。隐藏着的组件依然在总线上（换刀/换卡照样跟）。
 
    总线纪律：一处选中，全格跟随；**能驱动的直接调 handle，只能重载的如实标注**。
    rubik 的 onSelect 与 demo 的 pto:select 都会回灌总线，所以联动是双向的；
@@ -69,16 +71,30 @@
 .ck-sep{width:1px; align-self:stretch; background:var(--ck-bd); margin:0 2px}
 .ck-spacer{margin-left:auto}
 
-/* 格阵：两条可拖动的分隔条 */
-.ck-grid{flex:1 1 auto; display:grid; min-height:0;
-  grid-template-columns:var(--cw, 1fr) var(--ck-gut) 1fr;
-  grid-template-rows:var(--rh, 1fr) var(--ck-gut) 1fr}
-.ck-pane{min-width:0; min-height:0; display:flex; flex-direction:column;
-  background:var(--ck-s1); border:1px solid var(--ck-bd); border-radius:10px; overflow:hidden; margin:6px}
-.ck-pane[data-band=a]{border-top:2px solid var(--ck-pp)}
-.ck-pane[data-band=b]{border-top:2px solid var(--ck-dp)}
-.ck-pane[data-band=c]{border-top:2px solid var(--ck-ep)}
-.ck-pane[data-band=d]{border-top:2px solid var(--ck-cp)}
+/* 切换轨：按段分组的组件标签（一次只看一个，但都常驻不销毁） */
+.ck-rail{display:flex; align-items:stretch; gap:2px; flex-wrap:wrap; padding:0 10px;
+  border-bottom:1px solid var(--ck-bd); background:var(--ck-s1); flex:0 0 auto}
+.ck-rgrp{display:flex; align-items:center; gap:2px; padding:4px 8px 3px; border-right:1px dashed var(--ck-bd)}
+.ck-rgrp:last-child{border-right:0}
+.ck-rk{font-family:var(--ck-mono); font-weight:800; font-size:11px; margin-right:3px; opacity:.85}
+.ck-tab{font:inherit; font-size:11.5px; padding:5px 10px 6px; border:0; border-bottom:2px solid transparent;
+  background:none; color:var(--ck-fg2); cursor:pointer; white-space:nowrap; border-radius:6px 6px 0 0}
+.ck-tab:hover{color:var(--ck-fg); background:var(--ck-s2)}
+.ck-tab.on{color:var(--ck-fg); font-weight:750; border-bottom-color:currentColor; background:var(--ck-s2)}
+.ck-rgrp[data-band=a]{color:var(--ck-pp)} .ck-rgrp[data-band=b]{color:var(--ck-dp)}
+.ck-rgrp[data-band=c]{color:var(--ck-ep)} .ck-rgrp[data-band=d]{color:var(--ck-cp)}
+.ck-rgrp .ck-tab{color:var(--ck-fg2)} .ck-rgrp .ck-tab.on{color:inherit}
+
+/* 单画布：一整块，组件叠在里面，非当前的 hidden（保状态、不重挂） */
+.ck-stage{flex:1 1 auto; position:relative; min-height:0; margin:8px; overflow:hidden;
+  background:var(--ck-s1); border:1px solid var(--ck-bd); border-radius:12px}
+.ck-pane{position:absolute; inset:0; min-width:0; min-height:0; display:flex; flex-direction:column;
+  background:var(--ck-s1); overflow:hidden}
+.ck-pane[hidden]{display:none}
+.ck-pane[data-band=a]{border-top:3px solid var(--ck-pp)}
+.ck-pane[data-band=b]{border-top:3px solid var(--ck-dp)}
+.ck-pane[data-band=c]{border-top:3px solid var(--ck-ep)}
+.ck-pane[data-band=d]{border-top:3px solid var(--ck-cp)}
 .ck-ph{display:flex; align-items:center; gap:7px; padding:5px 9px; flex:0 0 auto;
   border-bottom:1px solid var(--ck-bd); background:var(--ck-s2)}
 .ck-band{font-family:var(--ck-mono); font-weight:800; font-size:13px; line-height:1}
@@ -97,12 +113,6 @@
 .ck-note{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   text-align:center; padding:18px; font-size:12px; color:var(--ck-fg2); line-height:1.7}
 .ck-note b{color:var(--ck-fg)}
-.ck-gut{background:transparent; position:relative}
-.ck-gut::after{content:""; position:absolute; inset:0; margin:auto; background:var(--ck-bd); border-radius:2px}
-.ck-gut.v{cursor:col-resize} .ck-gut.v::after{width:2px; height:36px}
-.ck-gut.h{cursor:row-resize} .ck-gut.h::after{height:2px; width:36px}
-.ck-gut:hover::after{background:var(--ck-bds)}
-.ck-gut.x{grid-column:2; grid-row:1/4} .ck-gut.y{grid-row:2; grid-column:1/4}
 
 /* 底栏 */
 .ck-bot{flex:0 0 auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
@@ -112,10 +122,7 @@
   border:1px solid var(--ck-bd); color:var(--ck-fg2)}
 .ck-tag.ok{border-color:color-mix(in srgb, var(--ck-ok) 42%, transparent); color:var(--ck-ok)}
 .ck-tag.no{border-color:color-mix(in srgb, var(--ck-danger) 36%, transparent); color:var(--ck-danger)}
-@media (max-width:900px){
-  .ck-grid{grid-template-columns:1fr; grid-template-rows:repeat(4, minmax(220px,1fr))}
-  .ck-gut{display:none}
-}
+@media (max-width:900px){ .ck-stage{margin:4px} .ck-rgrp{padding:3px 5px} }
 </style>
 </head>
 <body>
@@ -145,14 +152,8 @@
     <a class="ck-link" href="./">目录页</a>
   </div>
 
-  <div class="ck-grid" id="grid">
-    <div class="ck-pane" data-band="a" data-slot="0" style="grid-column:1;grid-row:1"></div>
-    <div class="ck-gut v x" id="gutX"></div>
-    <div class="ck-pane" data-band="b" data-slot="1" style="grid-column:3;grid-row:1"></div>
-    <div class="ck-gut h y" id="gutY"></div>
-    <div class="ck-pane" data-band="c" data-slot="2" style="grid-column:1;grid-row:3"></div>
-    <div class="ck-pane" data-band="d" data-slot="3" style="grid-column:3;grid-row:3"></div>
-  </div>
+  <div class="ck-rail" id="rail"></div>
+  <div class="ck-stage" id="stage"></div>
 
   <div class="ck-bot">
     <span><b id="botCfg">—</b></span>
@@ -195,6 +196,8 @@ var S = {
 var RUBIK_MODE = {dp:1, ep:2, tp:3, pp:4};           /* cp → 无形态，退回 std(0) */
 var DECK_MODE  = {tp:'tp', pp:'pp', ep:'ep', dp:'dp'}; /* cp → 'none' */
 function P(){ return PRESETS[S.preset]; }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 var diag = [];                       /* 挂载/驱动诊断：底栏如实报，不吞异常 */
 function safe(label, fn){
   try { return fn(); }
@@ -232,12 +235,16 @@ var COMPS = {
   compose:{band:'b', name:'合成 · 卡阵', q:'五维相乘后的全局落位 + 通信图层',
     kind:'demo', view:'compose', drive:'post'}
 };
-var SLOTS = ['chain','rubik','netsh','time'];    /* 默认占位：A / B / C / D */
-(function(){                                     /* ?slots=chain,rubik,deck,time */
+/* 一次只看一个组件（?tab=）。旧的 ?slots=a,b,c,d 取第一个——发出去的链接不该失效。 */
+var TAB = 'chain';
+(function(){
+  var t = q.get('tab');
+  if(COMPS[t]){ TAB = t; return; }
   var s = (q.get('slots')||'').split(',').filter(function(k){ return COMPS[k]; });
-  if(s.length === 4) SLOTS = s;
+  if(s.length) TAB = s[0];
 })();
-var panes = [];                                  /* 每格的运行时句柄 */
+/* 组件常驻：切走只 hidden，不 destroy——重挂一次 3D 场景的代价远大于留着 */
+var panes = {};                                  /* key → 运行时记录 */
 
 /* 喂给 sidecar 的拓扑串（它按标签级消费，不做几何切分） */
 function dimSummary(){
@@ -308,34 +315,57 @@ function standaloneHref(key){
   return './';
 }
 
-/* ── 建格 ── */
-function buildPane(el, slotIdx){
-  var key = SLOTS[slotIdx], c = COMPS[key];
-  el.setAttribute('data-band', c.band);
-  el.innerHTML = '';
+/* ── 切换轨 ── */
+function buildRail(){
+  var rail = document.getElementById('rail'), byBand = {a:[], b:[], c:[], d:[]};
+  Object.keys(COMPS).forEach(function(k){ byBand[COMPS[k].band].push(k); });
+  var BANDN = {a:'A 刀对整网', b:'B 刀对卡空间', c:'C 映射', d:'D 时间'};
+  rail.innerHTML = ['a','b','c','d'].map(function(bd){
+    return '<div class="ck-rgrp" data-band="'+bd+'" title="'+BANDN[bd]+'">'
+      + '<span class="ck-rk">'+bd.toUpperCase()+'</span>'
+      + byBand[bd].map(function(k){
+          return '<button class="ck-tab" data-tab="'+k+'" type="button" title="'+esc(COMPS[k].q)+'">'
+            + esc(COMPS[k].name.replace('（mount）','').replace('（路由表）',''))+'</button>';
+        }).join('') + '</div>';
+  }).join('');
+}
+/* ── 建格：一次只建当前那个；建过的留着（hidden），切回来即时且状态还在 ── */
+function showTab(key){
+  TAB = COMPS[key] ? key : 'chain';
+  var stage = document.getElementById('stage');
+  Object.keys(panes).forEach(function(k){ if(panes[k]) panes[k].el.hidden = (k !== TAB); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tab]'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-tab') === TAB);
+  });
+  if(!panes[TAB]) buildPane(stage, TAB);
+  else{
+    /* 切回来：尺寸可能变过（曾在隐藏中），让 3D 场景重新量一次 */
+    var rec = panes[TAB];
+    if(rec.handle && rec.handle.resize) safe('resize', function(){ rec.handle.resize(); });
+    if(rec.handle && rec.handle.fit) safe('fit', function(){ rec.handle.fit(); });
+    pushAll(null);
+  }
+  paintTop(); paintBottom(); pushURL();
+}
+function buildPane(stage, key){
+  var c = COMPS[key];
+  var el = document.createElement('div');
+  el.className = 'ck-pane'; el.setAttribute('data-band', c.band); el.setAttribute('data-tab-pane', key);
+  stage.appendChild(el);
   var ph = document.createElement('div'); ph.className = 'ck-ph';
   ph.innerHTML = '<span class="ck-band">'+c.band.toUpperCase()+'</span>'
-    + '<span class="ck-pn"></span><span class="ck-pq"></span>';
-  var sel = document.createElement('select');
-  Object.keys(COMPS).forEach(function(k){
-    var o = document.createElement('option');
-    o.value = k; o.textContent = COMPS[k].band.toUpperCase()+' · '+COMPS[k].name;
-    if(k===key) o.selected = true;
-    sel.appendChild(o);
-  });
-  sel.style.marginLeft = 'auto';
-  sel.addEventListener('change', function(){ SLOTS[slotIdx] = sel.value; buildPane(el, slotIdx); pushURL(); });
+    + '<span class="ck-pn">'+esc(c.name)+'</span><span class="ck-pq">'+esc(c.q)+'</span>';
   var open = document.createElement('a');
-  open.className = 'ck-link'; open.target = '_blank'; open.rel = 'noopener'; open.textContent = '单独打开 ↗';
-  ph.appendChild(sel); ph.appendChild(open);
-  ph.querySelector('.ck-pn').textContent = c.name;
-  ph.querySelector('.ck-pq').textContent = c.q;
+  open.className = 'ck-link'; open.target = '_blank'; open.rel = 'noopener';
+  open.textContent = '单独打开 ↗'; open.style.marginLeft = 'auto';
+  ph.appendChild(open);
   el.appendChild(ph);
   var body = document.createElement('div'); body.className = 'ck-body';
   el.appendChild(body);
-  var rec = {key:key, comp:c, body:body, open:open, handle:null, frame:null};
-  panes[slotIdx] = rec;
+  var rec = {key:key, comp:c, el:el, body:body, open:open, handle:null, frame:null, lastLayer:null};
+  panes[key] = rec;
   open.href = standaloneHref(key);
+  Object.keys(panes).forEach(function(k){ if(panes[k]) panes[k].el.hidden = (k !== TAB); });
 
   if(c.kind === 'demo'){
     var f = document.createElement('iframe');
@@ -364,12 +394,11 @@ function buildPane(el, slotIdx){
       wait.remove();
       rec.handle = window.PtoModelArchitectureTrainingSidecar.render(mp0, {
         theme:S.theme, initialLayer:deckLayer(),
-        /* 它真实现的并行拓扑入口：rank / parallelGroups / rankGroups / gradientSync */
         topology:{rank:S.sel, parallelGroups:dimSummary(), rankGroups:rankGroupsByStage(),
                   gradientSync:'all-reduce'},
-        /* 正常事件不进诊断（诊断只留给异常，灌满就没人看了）；层号回灌到底栏读数 */
+        /* 正常事件不进诊断（诊断只留给异常）；层号回灌到底栏读数 */
         onLayerSelect:function(l){
-          var n = (l && typeof l === 'object') ? (l.layer ?? l.index ?? null) : l;
+          var n = (l && typeof l === 'object') ? (l.layer != null ? l.layer : l.index) : l;
           rec.lastLayer = (typeof n === 'number') ? n : null;
           paintBottom();
         }
@@ -387,8 +416,8 @@ function buildPane(el, slotIdx){
     rec.handle = safe('逻辑魔方 mount', function(){
       if(!window.THREE) throw new Error('window.THREE 未加载');
       return window.PtoRubikCubePattern.mount(mp, {
-        theme:S.theme, mode:4,
-        /* 层数/专家数也要给：不给的话魔方用自己默认的 48 层，同一格阵里
+        theme:S.theme, mode:(RUBIK_MODE[S.cut] !== undefined ? RUBIK_MODE[S.cut] : 0),
+        /* 层数/专家数也要给：不给的话魔方用自己默认的 48 层，同一舱里
            就出现两个模型形状（魔方说 L0–L9、demo 说 L0–L7），对不上账 */
         config:{tp:P().tp, cp:P().cp, pp:P().pp, dp:P().dp, ep:P().ep,
                 layers:P().layers, experts:P().experts},
@@ -407,14 +436,16 @@ function buildPane(el, slotIdx){
     });
     if(!rec.handle) body.innerHTML = '<div class="ck-note"><div><b>rank 卡挂载失败</b><br>见底栏诊断</div></div>';
   }
+  pushAll(null);
   paintBottom();
 }
 
 /* ── 状态总线：一处变，全格跟 ── */
 function pushAll(origin){
   var p = P();
-  panes.forEach(function(rec, i){
-    if(!rec || i === origin) return;
+  Object.keys(panes).forEach(function(pk){
+    var rec = panes[pk];
+    if(!rec || pk === origin) return;
     var c = rec.comp;
     if(c.kind === 'demo' && rec.frame && rec.frame.contentWindow){
       safe(c.name+' postMessage', function(){
@@ -477,15 +508,16 @@ function paintTop(){
 function paintBottom(){
   var p = P();
   document.getElementById('botCfg').textContent = p.label + ' · ' + p.note + ' · 全量 ' + p.world + ' 卡 · 选中 g=' + S.sel;
-  var mounted = panes.filter(function(r){ return r && r.comp.kind==='mount' && r.handle; }).length;
-  var frames  = panes.filter(function(r){ return r && r.frame; }).length;
+  var vals = Object.keys(panes).map(function(k){ return panes[k]; }).filter(Boolean);
+  var mounted = vals.filter(function(r){ return r.handle; }).length;
+  var frames  = vals.filter(function(r){ return r.frame; }).length;
   document.getElementById('botLink').innerHTML =
     '<span class="ck-tag ok">mount ×'+mounted+'（直接调 handle）</span> '
     + '<span class="ck-tag ok">iframe ×'+frames+'（postMessage 驱动）</span> '
     + '<span class="ck-tag no">rank-deck 只读 URL → 换选中要重载</span> '
     + '<span class="ck-tag no">rank 卡单向（它的 onSelectRank 未接线）</span>'
     + (DECK_MODE[S.cut] ? '' : ' <span class="ck-tag no">CP：魔方与 3d-deck 都无此形态 → 两格退回默认</span>');
-  var sc = panes.filter(function(r){ return r && r.comp.kind==='ds-mount' && r.handle; })[0];
+  var sc = vals.filter(function(r){ return r.comp.kind==='ds-mount' && r.handle; })[0];
   if(sc){
     document.getElementById('botLink').innerHTML +=
       ' <span class="ck-tag ok">sidecar：真整网按 '+S.cut.toUpperCase()+(DECK_MODE[S.cut]?'':'→none')
@@ -496,7 +528,7 @@ function paintBottom(){
   d.className = 'ck-tag' + (diag.length ? ' no' : ' ok');
 }
 function pushURL(){
-  history.replaceState(null, '', '?preset='+S.preset+'&sel='+S.sel+'&cut='+S.cut+'&slots='+SLOTS.join(',')
+  history.replaceState(null, '', '?preset='+S.preset+'&sel='+S.sel+'&cut='+S.cut+'&tab='+TAB
     + (S.theme==='dark'?'&theme=dark':'') + (S.link?'':'&link=0'));
 }
 
@@ -527,36 +559,25 @@ window.addEventListener('message', function(ev){
   if(d.type === 'rubik-select' && typeof d.rank === 'number') onPick(d.rank, 'rubik-frame');
 });
 
-/* ── 分隔条拖动 ── */
-function drag(gut, cssVar, axis){
-  gut.addEventListener('pointerdown', function(ev){
-    ev.preventDefault(); gut.setPointerCapture(ev.pointerId);
-    var grid = document.getElementById('grid'), r = grid.getBoundingClientRect();
-    function move(m){
-      var frac = axis==='x' ? (m.clientX - r.left) / r.width : (m.clientY - r.top) / r.height;
-      frac = Math.max(.18, Math.min(.82, frac));
-      grid.style.setProperty(cssVar, (frac*100).toFixed(1)+'%');
-      panes.forEach(function(rec){ if(rec && rec.handle && rec.handle.resize) safe('resize', function(){ rec.handle.resize(); }); });
-    }
-    function up(){ gut.removeEventListener('pointermove', move); gut.removeEventListener('pointerup', up); }
-    gut.addEventListener('pointermove', move); gut.addEventListener('pointerup', up);
-  });
-}
-drag(document.getElementById('gutX'), '--cw', 'x');
-drag(document.getElementById('gutY'), '--rh', 'y');
+/* ── 轨：切组件 ── */
+document.getElementById('rail').addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-tab]');
+  if(b) showTab(b.getAttribute('data-tab'));
+});
 window.addEventListener('resize', function(){
-  panes.forEach(function(rec){ if(rec && rec.handle && rec.handle.resize) safe('resize', function(){ rec.handle.resize(); }); });
+  var r = panes[TAB];
+  if(r && r.handle && r.handle.resize) safe('resize', function(){ r.handle.resize(); });
+  if(r && r.handle && r.handle.fit) safe('fit', function(){ r.handle.fit(); });
 });
 
 /* ── 起飞 ── */
 document.documentElement.setAttribute('data-theme', S.theme);
-Array.prototype.forEach.call(document.querySelectorAll('.ck-pane'), function(el){
-  buildPane(el, +el.getAttribute('data-slot'));
-});
+buildRail();
+showTab(TAB);
 paintTop(); paintBottom(); pushURL();
 /* iframe 要等自己加载完才吃 postMessage：装载后补一次推送 */
 setTimeout(function(){ pushAll(null); }, 900);
-window.ptoCockpit = {state:S, panes:panes, slots:SLOTS, diag:diag, pushAll:pushAll};
+window.ptoCockpit = {state:S, panes:panes, tab:function(){ return TAB; }, show:showTab, diag:diag, pushAll:pushAll};
 })();
 </script>
 </body>
