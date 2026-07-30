@@ -1646,6 +1646,12 @@ global_rank = tp_rank + dp_rank·tp_size + pp_rank·tp_size·dp_size</pre>
     <div class="stage" id="fig-hinge"></div>
   </figure>
 
+  <div class="note new">
+    <span class="lbl">配套可交互原型</span>
+    <p><a href="../pp-pipeline/"><strong>PP 的两张脸 · 用 rank 看流水线</strong></a>——把 FIG 15 / 16 做成可动的：调 PP / micro-batch / 调度（1F1B ↔ GPipe），看斜线（一个 micro-batch 的因果链）、重叠（并行）、两角空白（气泡）怎么随配置变；再点任一 Stage，把折叠的 <code>TP×DP×CP</code> 张卡摊回来，逐格画出它的 PP 链。</p>
+    <p><b>那里顺手纠正了一个常见误解：</b>1F1B 与 GPipe 的<strong>气泡占比完全相同</strong>（makespan 都是 <code>2M+2(PP−1)</code>），1F1B 省的是<strong>显存</strong>——峰值在飞 micro-batch 从 <code>GA</code> 降到 <code>PP</code>。本节上面那句「1F1B 调度的全部目的就是让稳态尽量长」应据此理解为<em>显存约束下的调度</em>，而非减少气泡。</p>
+  </div>
+
   <h3>不同 stage 是并列的，还是一个跑完再跑下一个？</h3>
 
   <p>都不是——<strong>是错开重叠</strong>。这个问题要分成两句话答，因为答案取决于问的是「同一个 micro-batch」还是「不同的 micro-batch」：</p>

@@ -587,6 +587,63 @@ body {
 
         <article class="card">
           <div class="card-head">
+            <h3 class="card-title"><a href="./pp-pipeline/">PP 的两张脸 · 用 rank 看流水线</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">研究</span>
+              <span class="tag">可交互</span>
+              <span class="tag">Stage × 时间</span>
+              <span class="tag">PP 链</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 时间脸：1F1B 的阶梯 + 两角气泡 -->
+              <g>
+                <rect x="26"  y="118" width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="46"  y="118" width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="46"  y="98"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="66"  y="98"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="66"  y="78"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="86"  y="78"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="86"  y="58"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="106" y="58"  width="17" height="17" rx="3" fill="#b3603a"/>
+                <rect x="106" y="78"  width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+                <rect x="126" y="98"  width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+                <rect x="146" y="118" width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+              </g>
+              <g fill="none" stroke="rgba(19,26,42,.16)" stroke-width="1.2" stroke-dasharray="3 3">
+                <rect x="26" y="58" width="17" height="55" rx="3"/>
+                <rect x="146" y="58" width="17" height="55" rx="3"/>
+              </g>
+              <!-- 展开面：并排 Stage + PP 链 -->
+              <g>
+                <rect class="pv-box" x="196" y="30" width="26" height="106" rx="5"/>
+                <rect class="pv-box" x="234" y="30" width="26" height="106" rx="5"/>
+                <rect class="pv-box" x="272" y="30" width="26" height="106" rx="5"/>
+                <rect x="201" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <rect x="239" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <rect x="277" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <path d="M219 82 L236 82" stroke="#b3603a" stroke-width="1.8"/>
+                <path d="M257 82 L274 82" stroke="#b3603a" stroke-width="1.8"/>
+                <path d="M233 79 L237 82 L233 85" fill="#b3603a"/>
+                <path d="M271 79 L275 82 L271 85" fill="#b3603a"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">把流水并行摊成 <span class="mono">Stage × 时间</span> 网格：<span class="mono">F0/B0</span> 是同一 micro-batch 的一去一回，斜线是因果链、重叠是并行、两角空白是气泡。点任一 Stage 可把折叠的卡全摊开，再点一格即<b>画出它的 PP 链</b>——每跳一次 P2P、<span class="mono">global_rank +32</span>。回答「有序维为什么不能折叠」与「轴和 rank 是什么关系」。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./pp-pipeline/">打开原型</a>
+            <a class="lnk" href="./parallel-reference/#s6">对应 §12 运行时</a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/pp-pipeline/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/pp-pipeline/index.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
             <h3 class="card-title"><a href="./parallel-prd/">并行拓扑可视化工具 PRD</a></h3>
             <div class="card-tags">
               <span class="tag tag--k-doc">文档</span>
