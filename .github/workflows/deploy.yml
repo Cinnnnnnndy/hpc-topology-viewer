@@ -260,8 +260,12 @@ jobs:
           DIR=dist/parallel-topology
           mkdir -p $DIR
           cp $SRC/index.html $SRC/concept-map.html $SRC/prd.html $SRC/prd.md $DIR/
-          sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
-              $SRC/demo.html > $DIR/demo.html
+          # 逐页列举（不是 cp -r）——新增页面必须加到这一行，否则线上 404。
+          # demo 与 atlas 都引 ../vendor/… ，统一打 ?v= 版本戳。
+          for page in demo atlas; do
+            sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+                $SRC/$page.html > $DIR/$page.html
+          done
           node -e "
             const fs=require('fs');
             const o=JSON.parse(fs.readFileSync('$SRC/pattern.json','utf8'));
@@ -306,14 +310,22 @@ jobs:
           doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
           close = html.rindex('      </div>\n    </section>\n', 0, doc)
           html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
-          # ② 顶栏 pill：紧跟在参照系那枚后面
+          # ② 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
+          #    的地图，该领这一组的头（Demo 本体那张卡留在 Pattern 组末尾）
+          atlas = pathlib.Path('ptopo-src/public/parallel-topology/launch-card-atlas.html').read_text(encoding='utf-8')
+          atlas = atlas.replace('__SHA__', sha)
+          gdoc = html.index('<h2 class="group-title" id="g-doc">')
+          grid = html.index('      <div class="card-grid">\n', gdoc) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + atlas.rstrip('\n') + '\n' + html[grid:]
+          # ③ 顶栏 pill：紧跟在参照系那枚后面，指组合总图（它是入口）
           pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
           at = html.index(pill) + len(pill)
-          html = html[:at] + '\n      <a class="pill" href="./parallel-topology/demo.html?v=' + sha + '">并行拓扑 · 刀序切分链</a>' + html[at:]
+          html = html[:at] + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>' + html[at:]
           launch.write_text(html, encoding='utf-8')
-          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          print('patched dist/launch.html: +2 cards +1 pill @ ' + sha)
           PY
-          grep -c 'parallel-topology/demo.html' dist/launch.html
+          grep -c 'parallel-topology/atlas.html' dist/launch.html
+          test -s dist/parallel-topology/atlas.html
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4
