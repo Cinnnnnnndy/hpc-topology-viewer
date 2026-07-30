@@ -267,7 +267,7 @@ var cfg = JSON.parse(JSON.stringify(PRESETS[0].cfg));
 var activePreset = 'default128';
 var sel = null;
 var ui = {
-  view:'dim', cutDim:'tp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,
+  view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:false, skew:true, zoomAR:false,
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
@@ -338,7 +338,7 @@ function urlWrite(){
   var theme = document.documentElement.getAttribute('data-theme');
   if(theme==='dark') q.set('theme','dark');
   if(ui.view!=='dim') q.set('view', ui.view);
-  if(ui.view==='dim' && ui.cutDim!=='tp') q.set('cut', ui.cutDim);
+  if(ui.view==='dim' && ui.cutDim!=='dp') q.set('cut', ui.cutDim);
   if(activePreset && activePreset!=='default128') q.set('preset', activePreset);
   if(!activePreset){
     ['world','tp','cp','pp','ep','etp','layers','seq','experts'].forEach(function(k){ q.set(k, cfg[k]); });
@@ -1083,16 +1083,36 @@ function renderChain(D){
 
 function renderDimBar(D, dim){
   var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim] || 1, col2 = VC[dim];
-  var fixed = COMM_DIMS.filter(function(dm){ return dm!==dim && ({tp:D.tp,pp:D.pp,cp:D.cp,dp:D.dp,ep:D.ep}[dm])>1; })
-    .map(function(dm){ return dm+'0'; }).join('·');
   /* 每个维的「动词」——切的动作本质不同，先用一句话钉住，再由几何呈现 */
   var VERB = {tp:'锯开算子（同一算子 → N 片）', pp:'层的接力（一段传一段，有序）', cp:'切输入序列（首尾对称双段）', dp:'整套复印（模型不动，切样本）', ep:'专家分桶 + 按 token 路由'};
-  var sb = '<span class="pt-cap">切分维（一次看一维）</span>'
-    + COMM_DIMS.map(function(dm){
-        return '<button class="pb mono'+(dim===dm?' is-on':'')+'" data-act="cutdim" data-d="'+dm+'" style="--c:'+VC[dm]+'">'+DIMN[dm]+'</button>';
-      }).join('')
-    + '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>'
-    + (size>1 ? '<span class="pt-chip" title="对称维折叠：看一个组等于看全部（DP-3）">折叠上下文：全网 '+fmt(D.world)+' 卡 = <b>'+fmt(Math.round(D.world/size))+' 组 × '+size+'</b>'+(fixed?'（其余维固定 '+fixed+'）':'')+'</span>' : '');
+  /* 按嵌套序组织（与刀序·切分链同一根轴）：模型侧 刀1 DP → 刀2 PP → 刀3 TP → 刀4 EP；输入侧 CP。
+     角标 = 决策顺位（§11），与嵌套序反向。 */
+  var NEST_M = [['dp','⑤'],['pp','②'],['tp','①'],['ep','④']], NEST_I = [['cp','③']];
+  function pill(dm, ord, k){
+    return '<button class="pb mono'+(dim===dm?' is-on':'')+'" data-act="cutdim" data-d="'+dm+'" style="--c:'+VC[dm]+'" title="嵌套第'+k+'刀 · 决策顺位'+ord+'">'
+      + '刀'+k+'·'+DIMN[dm]+'<span class="cmn">'+ord+'</span></button>';
+  }
+  var sb = '<span class="pt-cap">按嵌套序看刀（角标=决策顺位）</span>'
+    + NEST_M.map(function(nm,i){ return pill(nm[0], nm[1], i+1); }).join('')
+    + '<span class="pt-sep"></span><span class="pt-cap">输入侧</span>' + pill('cp','③','—')
+    + '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>';
+  /* 刀序带：前面的刀已切（把视野缩到本组），本刀在切，后面的刀待切——
+     取代旧「折叠上下文」：固定坐标不是任意折叠，是前序刀的选择 */
+  var CUTS = {dp:D.dp, pp:D.pp, tp:D.tp, ep:(D.moe?D.ep:1), cp:D.cp};
+  var PICK = {dp:'副本0', pp:'stage0', tp:'片0', ep:'桶0', cp:'段0∪'+(2*D.cp-1)};
+  var seq = dim==='cp' ? ['dp','cp'] : ['dp','pp','tp','ep'];
+  var cur = seq.indexOf(dim);
+  var strip = seq.map(function(dm, i){
+    var n2 = CUTS[dm], st;
+    if(n2<=1) st = '<s style="opacity:.6">未开</s>';
+    else if(i<cur) st = '已切→'+PICK[dm];
+    else if(i===cur) st = '<b>本刀 ×'+n2+'</b>';
+    else st = '待切 ×'+n2;
+    var hot = i===cur;
+    return '<span class="pt-chip" style="'+(hot?'border-color:'+VC[dm]+';color:'+VC[dm]+';font-weight:800':'')+'">'+DIMN[dm]+' '+st+'</span>';
+  }).join('<span style="color:var(--pt-fg3);font-size:10px">▸</span>');
+  sb += '<span class="pt-sep"></span><span class="pt-cap">'+(dim==='cp'?'输入链':'模型链')+'</span>' + strip
+     + (size>1 ? '<span class="pt-chip">本刀组：全网 '+fmt(D.world)+' 卡 = '+fmt(Math.round(D.world/size))+' 组 × '+size+'</span>' : '');
   if(dim==='cp' && D.cp>1){
     sb += '<span class="pt-sep"></span><span class="pt-cap">原语（N:M 可换，A1）</span>'
       + [['p2p','Ring'],['alltoall','Ulysses'],['allgather','朴素']].map(function(pr){
