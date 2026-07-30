@@ -700,15 +700,60 @@ function renderDim(D){
   var inpCut = [];
   if(dim!=='dp' && D.dp>1) inpCut.push('b 已被 DP 切（本组见 dp0 区间）');
   if(dim!=='cp' && D.cp>1) inpCut.push('s 已被 CP 切（cp0）');
-  if(dim==='cp') { colBlocks(GY.inp, function(j){ return 's 段'+j+'∪段'+(2*size-1-j); }, function(j){ return mix(col, 20+Math.round(j/(N-1||1)*30)); }); var tI=proj(span+.35, GY.inp+BH/2,0,s); parts.push(txt(tI[0]+6,tI[1],'输入·序列被切 2·CP 段（因果双段）'+(D.dp>1?' · b 已被 DP 切（dp0）':''),9.5,col,'start','font-weight="700"')); reg([tI[0]+6,tI[1]],0,280,10,6); }
+  if(dim==='cp') {
+    /* CP 的动词=切一条序列：整条 s 轴横铺 → 2·CP 段 → 首尾配对弧 → 落入各柱 */
+    var segN = 2*size, segW = span/segN;
+    parts.push(boxSVG(0, GY.inp, 0, span, BH, DZ, s, {wire:true, stroke:col, sw:1}));
+    for(var sg=0; sg<segN; sg++){
+      var ownerC = sg<size ? sg : 2*size-1-sg;
+      parts.push(boxSVG(sg*segW+.03, GY.inp+.05, .1, segW-.06, BH*.78, DZ*.78, s, {fill:mix(col, 16+Math.round(ownerC/(size-1||1)*36)), stroke:'transparent', attrs:' pointer-events="none"'}));
+      if(segW*s > 15){ var tS = proj(sg*segW+segW/2, GY.inp+BH, DZ*.95, s); parts.push(txt(tS[0], tS[1]+11, '段'+sg, 7.2, ownerC<N?'var(--pt-fg2)':'var(--pt-fg3)')); }
+    }
+    for(var pc=0; pc<Math.min(size, N); pc++){
+      var aX = proj(pc*segW+segW/2, GY.inp+BH+.06, 0, s), bX2 = proj((2*size-1-pc)*segW+segW/2, GY.inp+BH+.06, 0, s);
+      var hArc = 13 + pc*6;
+      parts.push('<path d="M'+aX[0]+' '+aX[1]+' C '+aX[0]+' '+(aX[1]-hArc)+', '+bX2[0]+' '+(bX2[1]-hArc)+', '+bX2[0]+' '+bX2[1]+'" style="fill:none;stroke:'+mix(col,72)+';stroke-width:1.1"/>');
+      reg([(aX[0]+bX2[0])/2, aX[1]-hArc], 0, 0, 12, 0);
+      var colA = anchor(pc, GY.inp-.6);
+      [aX, bX2].forEach(function(pt2){ parts.push('<line x1="'+pt2[0]+'" y1="'+pt2[1]+'" x2="'+colA[0]+'" y2="'+colA[1]+'" style="stroke:'+col+';stroke-width:.9;stroke-dasharray:3 3;opacity:.6"/>'); });
+    }
+    var tI=proj(span+.35, GY.inp+BH/2,0,s);
+    parts.push(txt(tI[0]+6,tI[1],'一条序列 → 2·CP 段；cp_rank c 拿 段c ∪ 段'+(2*size-1)+'−c（弧=配对）',9.5,col,'start','font-weight="700"'));
+    parts.push(txt(tI[0]+6,tI[1]+11,'因果注意力下首尾配对才负载均衡——seq%(2·CP) 约束的来源'+(D.dp>1?' · b 已被 DP 切（dp0）':''),8,'var(--pt-fg3)','start'));
+    reg([tI[0]+6,tI[1]+11],0,300,10,6);
+  }
   else if(dim==='dp'){ colBlocks(GY.inp, function(j){ return 'b·副本'+j+'的样本'; }, function(j){ return mix(col, 20+Math.round(j/(N-1||1)*30)); }); var tD=proj(span+.35, GY.inp+BH/2,0,s); parts.push(txt(tD[0]+6,tD[1],'输入·样本批被切 ×DP（每副本 MBS·GA='+(D.mbs*D.ga)+'）',9.5,col,'start','font-weight="700"')); reg([tD[0]+6,tD[1]],0,260,10,6); }
   else spanBlock(GY.inp, '输入 — 本维不切输入', null, inpCut.length?inpCut.join(' · '):(dim==='tp'?'TP 切的是权重体的 h/e 轴':dim==='pp'?'PP 切的是层序 ℓ 轴':'EP 重分组专家 e 轴'));
   /* 整网层 */
   if(dim==='dp') colBlocks(GY.net, function(j){ return j===0?'同一片·逐字节相同':''; }, function(){ return mix('var(--pt-fg2)',22); });
   else spanBlock(GY.net, '整网 — 逻辑上一张，不属于任何柱', null, '本组是 '+fmt(groups)+' 个同构组之一');
   /* 层层 */
-  if(dim==='pp') colBlocks(GY.lay, function(j){ return 'stage'+j+'·L'+(j*D.layersPerStage)+'–L'+((j+1)*D.layersPerStage-1); }, function(j){ return mix(col, 30+Math.round(j/(N-1||1)*26)); });
-  else if(dim==='dp') colBlocks(GY.lay, function(){ return ''; }, function(){ return mix('var(--pt-fg2)',22); });
+  if(dim==='pp'){
+    /* PP 的动词=接力：层块沿柱升阶（有序！），块间画传递箭头（F 上行；B 反向虚线） */
+    for(var jp=0;jp<N;jp++){
+      var yj = GY.lay + jp*.36;
+      parts.push(boxSVG(xOf(jp), yj, 0, CW, BH, DZ, s, {fill:mix(col, 28+Math.round(jp/(N-1||1)*28)), stroke:'var(--pt-bds)', sw:.7, attrs:' pointer-events="none"'}));
+      var t2p = anchor(jp, yj+BH+.12); parts.push(txt(t2p[0], t2p[1]-4, 'stage'+jp+'·L'+(jp*D.layersPerStage)+'–L'+((jp+1)*D.layersPerStage-1), 7.8, 'var(--pt-fg)', 'middle'));
+      if(jp<N-1){
+        var aF = proj(xOf(jp)+CW, yj+BH*.7, DZ/2, s), bF = proj(xOf(jp+1), yj+.36+BH*.7, DZ/2, s);
+        parts.push('<line x1="'+aF[0]+'" y1="'+aF[1]+'" x2="'+bF[0]+'" y2="'+bF[1]+'" style="stroke:'+col+';stroke-width:1.8;marker-end:url(#arrpp)"/>');
+        var aB = proj(xOf(jp+1), yj+.36+BH*.25, DZ/2, s), bB = proj(xOf(jp)+CW, yj+BH*.25, DZ/2, s);
+        parts.push('<line x1="'+aB[0]+'" y1="'+aB[1]+'" x2="'+bB[0]+'" y2="'+bB[1]+'" style="stroke:'+col+';stroke-width:1;stroke-dasharray:4 3;opacity:.55;marker-end:url(#arrpp)"/>');
+      }
+    }
+    regBox(0, GY.lay, 0, span, BH+N*.36, DZ);
+    var tpp = proj(xOf(N-1)+CW+.3, GY.lay+(N-1)*.36+BH+.35, 0, s);
+    parts.push(txt(tpp[0], tpp[1], '实线=F 上行 · 虚线=B 下行（有序，不是分片）', 8, col, 'start'));
+    reg([tpp[0], tpp[1]], 0, 230, 8, 6);
+  }
+  else if(dim==='dp'){
+    colBlocks(GY.lay, function(){ return ''; }, function(){ return mix('var(--pt-fg2)',22); });
+    /* DP 的动词=复印：柱与柱之间打 ≡（逐字节相同）——不是相似，是同一份 */
+    for(var jq=0;jq<N-1;jq++){
+      var eqp = proj(xOf(jq)+CW+(RX-CW)/2, GY.lay+BH/2, DZ/2, s);
+      parts.push(txt(eqp[0], eqp[1]+5, '≡', 16, col, 'middle', 'font-weight="800"'));
+    }
+  }
   else if(D.pp>1) spanBlock(GY.lay, '层 — 本组只持 stage0：L0–L'+(D.layersPerStage-1), mix(VC.pp,12), 'ℓ 已被 PP 切——那是 PP 干的，不是本维');
   else spanBlock(GY.lay, dim==='ep' ? '层 — MoE 层在每个 stage 里' : '层 — 不切 ℓ，每柱都过全部层');
   /* 算子层：画真算子（一层内的实际序列，宽度∝每卡字节；被本维切的画成片，没切的整块） */
@@ -719,9 +764,10 @@ function renderDim(D){
     var wShare = ops.map(function(o){ return clamp(o.b, totB*.07, totB*.30); });
     var wTot = wShare.reduce(function(a,x){ return a+x; }, 0);
     var W = Math.max(span, 11);   /* 算子带用自己的宽度：真算子多，别挤进柱距里 */
-    var gapO = .16, usable = W - gapO*(ops.length-1), x = 0;
+    var gapO = .16, usable = W - gapO*(ops.length-1), x = 0, posMap = {};
     ops.forEach(function(o, oi){
       var w = usable * wShare[oi] / wTot;
+      posMap[o.id] = {x:x, w:w};
       var isCut = cutKind==='tp' ? (o.cut==='tp') : cutKind==='ep' ? (o.cut==='ep') : false;
       if(o.b===0){ /* attn.core：无参激活算子——结构线框 */
         parts.push(boxSVG(x, GY.op, 0, w, .3, DZ*.8, s, {wire:true, stroke:'var(--pt-fg3)', sw:.7, dash:'3 3'}));
@@ -741,21 +787,54 @@ function renderDim(D){
       x += w + gapO;
     });
     regBox(0, GY.op, 0, W, BH, DZ);
-    return W;
+    return {W:W, pos:posMap};
   }
   if(dim==='tp'){
-    var Wt = realOps('tp');
+    var Rt = realOps('tp'), Wt = Rt.W;
     var tT = proj(Wt+.35, GY.op+BH/2, 0, s);
     parts.push(txt(tT[0]+6, tT[1], '一层的真算子序列（宽∝字节）：q/kv/out/mlp 被切 ×'+size+'，core/norm 不切', 9.5, col, 'start', 'font-weight="700"'));
     parts.push(txt(tT[0]+6, tT[1]+11, '每柱权重 '+fmtGB(2*paramsPerCard(D,0))+' GB（片，不是整层×N）', 8, 'var(--pt-fg3)', 'start'));
     reg([tT[0]+6, tT[1]+11], 0, 300, 10, 8);
+    /* TP 的动词=锯开：给第一个被锯的算子加锯注 + 每片一条落线到自己的柱（片各归各柱，画实了） */
+    var saw = Rt.pos['attn.q'];
+    if(saw){
+      var bkA = proj(saw.x, GY.op+BH+.16, 0, s), bkB = proj(saw.x+saw.w, GY.op+BH+.16, 0, s);
+      parts.push('<path d="M'+bkA[0]+' '+(bkA[1]+4)+' L'+bkA[0]+' '+(bkA[1]-3)+' L'+bkB[0]+' '+(bkB[1]-3)+' L'+bkB[0]+' '+(bkB[1]+4)+'" style="fill:none;stroke:'+col+';stroke-width:1.2"/>');
+      parts.push(txt((bkA[0]+bkB[0])/2, bkA[1]-8, '锯开：1 个算子 → '+size+' 片', 8.6, col, 'middle', 'font-weight="800"'));
+      reg([(bkA[0]+bkB[0])/2, bkA[1]-8], 70, 70, 12, 0);
+      for(var q3=0;q3<N;q3++){
+        var sp3 = proj(saw.x+(q3+.5)*(saw.w/N), GY.op+.02, DZ*.7, s), cp3 = proj(mid(q3), GY.op-1.0, DZ/2, s);
+        parts.push('<line x1="'+sp3[0]+'" y1="'+sp3[1]+'" x2="'+cp3[0]+'" y2="'+cp3[1]+'" style="stroke:'+col+';stroke-width:.9;stroke-dasharray:3 3;opacity:.65"/>');
+        parts.push('<circle cx="'+cp3[0]+'" cy="'+cp3[1]+'" r="2.2" style="fill:'+col+'"/>');
+        reg([cp3[0], cp3[1]], 8, 8, 4, 6);
+      }
+      var dl = proj(mid(N-1)+1.1, GY.op-1.0, DZ/2, s);
+      parts.push(txt(dl[0], dl[1]+3, '片各归各柱（落线）', 7.6, col, 'start'));
+      reg([dl[0], dl[1]], 0, 110, 6, 6);
+    }
   }
   else if(dim==='ep'){
-    var We = realOps('ep');
+    var Re = realOps('ep'), We = Re.W;
     var tE = proj(We+.35, GY.op+BH/2, 0, s);
     parts.push(txt(tE[0]+6, tE[1], '真算子序列：experts 被 e 轴重分组 ×'+size+'（每桶 '+kE+' 个），attn/router 不归本维', 9.5, col, 'start', 'font-weight="700"'));
     parts.push(txt(tE[0]+6, tE[1]+11, 'EP 是视图，不是新轴（勘误 K）', 8, 'var(--pt-fg3)', 'start'));
     reg([tE[0]+6, tE[1]+11], 0, 300, 10, 8);
+    /* EP 的动词=路由：token 从 router 出发，动态挑 top-k 个桶（不是静态切开） */
+    var expP = Re.pos['experts'], rtP = Re.pos['router'];
+    if(expP){
+      var tok = proj((rtP?rtP.x+rtP.w/2:expP.x-.6), GY.op+BH+1.15, DZ*.4, s);
+      parts.push('<circle cx="'+tok[0]+'" cy="'+tok[1]+'" r="3.2" style="fill:'+col+'"/>');
+      parts.push(txt(tok[0], tok[1]-8, '一个 token', 8, col, 'middle', 'font-weight="700"'));
+      reg([tok[0], tok[1]-8], 34, 34, 12, 0);
+      var picks = [1, Math.min(N-1, 6)];
+      for(var bi=0;bi<N;bi++){
+        var tgt = proj(expP.x+(bi+.5)*(expP.w/N), GY.op+BH, DZ*.35, s);
+        var hit = picks.indexOf(bi)>=0;
+        parts.push('<line x1="'+tok[0]+'" y1="'+(tok[1]+4)+'" x2="'+tgt[0]+'" y2="'+tgt[1]+'" style="stroke:'+col+';stroke-width:'+(hit?1.7:.6)+';stroke-dasharray:'+(hit?'none':'2 4')+';opacity:'+(hit?.95:.3)+';'+(hit?'marker-end:url(#arrep)':'')+'"/>');
+      }
+      parts.push(txt(tok[0]+66, tok[1]+2, 'top-'+(D.topk||2)+' 动态路由：每个 token 挑自己的桶——路由是运行时的，切分是静态的', 8.4, 'var(--pt-fg2)', 'start'));
+      reg([tok[0]+66, tok[1]+2], 0, 320, 8, 6);
+    }
   }
   else if(dim==='pp') colBlocks(GY.op, function(){ return ''; }, function(j){ return mix(col, 22+Math.round(j/(N-1||1)*18)); });
   else if(dim==='dp') colBlocks(GY.op, function(){ return ''; }, function(){ return mix('var(--pt-fg2)',22); });
@@ -868,13 +947,16 @@ function renderDim(D){
   $('detach').hidden = true;
 }
 function renderDimBar(D, dim){
-  var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim] || 1;
+  var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim] || 1, col2 = VC[dim];
   var fixed = COMM_DIMS.filter(function(dm){ return dm!==dim && ({tp:D.tp,pp:D.pp,cp:D.cp,dp:D.dp,ep:D.ep}[dm])>1; })
     .map(function(dm){ return dm+'0'; }).join('·');
+  /* 每个维的「动词」——切的动作本质不同，先用一句话钉住，再由几何呈现 */
+  var VERB = {tp:'锯开算子（同一算子 → N 片）', pp:'层的接力（一段传一段，有序）', cp:'切输入序列（首尾对称双段）', dp:'整套复印（模型不动，切样本）', ep:'专家分桶 + 按 token 路由'};
   var sb = '<span class="pt-cap">切分维（一次看一维）</span>'
     + COMM_DIMS.map(function(dm){
         return '<button class="pb mono'+(dim===dm?' is-on':'')+'" data-act="cutdim" data-d="'+dm+'" style="--c:'+VC[dm]+'">'+DIMN[dm]+'</button>';
       }).join('')
+    + '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>'
     + (size>1 ? '<span class="pt-chip" title="对称维折叠：看一个组等于看全部（DP-3）">折叠上下文：全网 '+fmt(D.world)+' 卡 = <b>'+fmt(Math.round(D.world/size))+' 组 × '+size+'</b>'+(fixed?'（其余维固定 '+fixed+'）':'')+'</span>' : '');
   if(dim==='cp' && D.cp>1){
     sb += '<span class="pt-sep"></span><span class="pt-cap">原语（N:M 可换，A1）</span>'
