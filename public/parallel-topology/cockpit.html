@@ -276,14 +276,18 @@ function buildPane(el, slotIdx){
     f.src = demoSrc(c); f.setAttribute('title', c.name);
     body.appendChild(f); rec.frame = f;
   }else if(c.kind === 'ds'){
+    /* 跨仓库件：路径由发布流程叠加出来。**始终照常加载**——早先按 location.protocol
+       粗暴挡掉 file:，结果连本地按发布布局摆好的镜像也被挡了；那种守卫会替浏览器
+       说谎。加载不到就让这一格如实显示浏览器的错误页，另加一条提示说明原因。 */
+    var f2 = document.createElement('iframe');
+    f2.src = deckSrc(); f2.setAttribute('title', c.name);
+    body.appendChild(f2); rec.frame = f2;
     if(location.protocol === 'file:'){
-      body.innerHTML = '<div class="ck-note"><div><b>纠正版 rank-deck 只在发布站可用</b><br>'
-        + '它来自 <code>Cinnnnnnndy/pto-design-system</code>，由发布流程叠加到 <code>/pto-ds/</code>；'
-        + '本地以 file:// 打开时这条相对路径不存在。<br>发布站上这一格是活的。</div></div>';
-    }else{
-      var f2 = document.createElement('iframe');
-      f2.src = deckSrc(); f2.setAttribute('title', c.name);
-      body.appendChild(f2); rec.frame = f2;
+      var hint = document.createElement('div');
+      hint.style.cssText = 'position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:10.5px;'
+        + 'background:var(--ck-s2);border-top:1px solid var(--ck-bd);color:var(--ck-fg3)';
+      hint.textContent = '跨仓库件（pto-design-system → /pto-ds/）：本地 file:// 打开时需按发布布局摆好才在，发布站上一直在';
+      body.appendChild(hint);
     }
   }else if(key === 'rubik'){
     var mp = document.createElement('div'); mp.className = 'ck-mountpt'; body.appendChild(mp);
