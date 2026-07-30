@@ -429,6 +429,23 @@ function epMembers(g,D){
   }
   return out;
 }
+/* EP 组跨了哪几根轴——实算，不靠印象。
+   折叠是 q=(d·CP+c)·TP+t，低位是 t、再 c、再 d；EP 组是 q 上一段步长 ETP 的连续位置
+   （共 EP·ETP 个），所以它先填满 TP、再填 CP、最后才咬到 DP。判据就是大小比较：
+   EP·ETP ≤ TP·CP → 整组落在同一份 DP 副本里；> 才跨 DP。p 恒等于 co.p ⇒ 永不跨 PP。 */
+function epSpanText(D){
+  if(!D.moe) return '';
+  var g0 = (sel!==null && sel<D.world) ? sel : 0;
+  var co = epMembers(g0, D).map(function(r){ return coordsOf(r, D); });
+  function nUniq(k){ var s = {}; co.forEach(function(x){ s[x[k]] = 1; }); return Object.keys(s).length; }
+  var tot = D.ep*D.etp, plane2 = D.tp*D.cp, wide = tot > plane2;
+  return ' <b>这一组跨哪几根轴</b>：EP 组是折叠序 q 上连续 EP·ETP='+tot+' 个位置（步长 ETP），'
+    + 'q 的低位依次是 tp→cp→dp，所以先填满 TP、再 CP、最后才咬到 DP——判据只有一个大小比较：'
+    + '<b>'+tot+(wide?' &gt; ':' ≤ ')+'TP·CP='+plane2+'</b> ⇒ 本配置一组 '+co.length+' 张卡跨 '
+    + 'tp×'+nUniq('t')+(D.cp>1?' · cp×'+nUniq('c'):'')+' · <b>dp×'+nUniq('d')+'</b> · pp×'+nUniq('p')
+    + '。EP·ETP ≤ TP·CP 时整组落在<b>同一份 DP 副本</b>里（例：tp8·ep4 → 4 张卡全在 dp0）；'
+    + '<b>不跨 PP 恒成立</b>，与配置无关。';
+}
 function groupMembers(dim,g,D){
   var co = coordsOf(g,D), out=[], i;
   if(dim==='tp'){ for(i=0;i<D.tp;i++) out.push(rankOf(i,co.c,co.d,co.p,D)); }
@@ -1696,7 +1713,7 @@ function drawerHTML(D){
   return '<h4>配置 · FR-1（§11 五步决策顺序 · DP 不可手填）<button class="pt-x" data-act="drawer" data-d="" style="float:right">✕</button></h4>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+presets+'</div>'
     + '<div class="cfg-cols">'
-    + '<div>'+numIn('world','world',{hint:'=TP·CP·PP·DP'})+numIn('tp','张量并行',{k:'tp',step:1})+numIn('pp','流水线',{k:'pp',step:2})+numIn('cp','上下文',{k:'cp',step:3})+numIn('ep','专家并行',{k:'ep',step:4,dis:!moe})+numIn('etp','专家张量 ETP',{dis:!moe})
+    + '<div>'+numIn('world','world',{hint:'=TP·CP·PP·DP'})+numIn('tp','张量并行',{k:'tp',step:1})+numIn('pp','流水线',{k:'pp',step:2})+numIn('cp','上下文',{k:'cp',step:3})+numIn('ep','专家并行',{k:'ep',step:4,dis:!moe})+numIn('etp','专家张量 ETP',{dis:!moe,hint:'切专家内部的 ffn 维（EP 切专家之间，ETP 切专家之内）'})
     + '<div class="frow derived"><label><span class="stepn">5</span>数据并行 <span class="dk" style="--c:'+VC.dp+'">DP</span></label><span class="val">'+(D.dpOk?D.dp:'—')+'</span><span class="hint">= world/(TP·CP·PP)，自动</span></div></div>'
     + '<div>'+numIn('layers','层数')+numIn('hidden','hidden')+numIn('heads','heads')+numIn('kv','KV头(GQA)')+numIn('ffn','FFN'+(moe?'(每专家)':''))+numIn('vocab','vocab')+numIn('experts','专家数(0=稠密)',{min:0})+(moe?numIn('topk','top-k'):'')+'</div>'
     + '<div>'+numIn('seq','seq')+numIn('mbs','MBS')+numIn('ga','GA')+numIn('hbm','HBM(GB)',{min:8})
@@ -1797,7 +1814,7 @@ function sayText(D){
       pp:'<b style="color:'+VC.pp+'">PP</b> 在<b>层级</b>切 ℓ 轴（唯一有序维）：pp_rank 本质是被空间化的时间下标（§12）——所以它同时出现在这里和时间视图里。',
       cp:'<b style="color:'+VC.cp+'">CP</b> 切的是<b>输入的 s 轴</b>，不切模型——归属边界在输入级。原语可选 Ring/Ulysses/朴素（N:M 不绑定，勘误 L）。',
       dp:'<b style="color:'+VC.dp+'">DP</b> <b>一刀两动作</b>：对模型<b>复印</b>（不切）＋对输入<b>真切</b> b 轴（切样本）。柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
-      ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。它<b>只在层内</b>——每个 MoE 层 2 次（dispatch 送去 + combine 送回），反向同样 2 次，<b>不跨层</b>；router 逐层独立，同一个 token 换层就可能换专家。跨层的是 PP 的 P2P，跨 step 的是 DP 的 AllReduce（§06 通则：通信插在归属边界处）。'
+      ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。<b>两层切法</b>：EP 切<b>专家之间</b>（e 轴，'+D.experts+' 个专家→每卡 '+(D.moe?D.experts/D.ep:'—')+' 个），<b>ETP='+D.etp+'</b> 切<b>专家之内</b>（每个专家的 ffn 维 → ffn/ETP，本质是限定在专家权重上的 TP）。'+(D.etp>1?'ETP&gt;1 时专家内部还要各自 AllReduce，叠在两次 A2A 之外。':'')+' <b>只在层内</b>：每个 MoE 层 2 次（dispatch 送去 + combine 送回），反向同样 2 次，<b>不跨层</b>；router 逐层独立，同一 token 换层就可能换专家。跨层的是 PP 的 P2P，跨 step 的是 DP 的 AllReduce（§06 通则）。'+epSpanText(D)
     }[ui.cutDim];
     s = verdict + ' 竖轴是<b>粒度坐标</b>：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大（不是四样东西）；输入是另一个对象，单独一格。<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读五元组区间。';
   }else if(ui.view==='compose'){
