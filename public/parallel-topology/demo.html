@@ -1194,11 +1194,17 @@ function netScene(D, g, box, step){
   var DEP = 1.7;
   var CU = ui.spread ? 1.16 : 0.085, CV = ui.spread ? 0 : -0.055;
   var K = cutDP ? D.dp : 1, sel0 = cutDP ? Math.min(co.d, K-1) : 0;
-  /* 先算投影包围盒，再统一缩放平移——转到任何角度都不会跑出框 */
+  /* 先算投影包围盒，再统一缩放平移——转到任何角度都不会跑出框。
+     刀越深，框得越紧：前三刀框住全部复印件（要看清「有几份」），
+     第 3 刀起镜头推进到本卡那一段（要看清算子裂成几片）。
+     这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
+  var zoomIn = cutTP;
+  var zw0 = zoomIn ? DEP*co.p/D.pp : 0, zw1 = zoomIn ? DEP*(co.p+1)/D.pp : DEP;
+  var offLo = zoomIn ? sel0 : 0, offHi = zoomIn ? sel0 : (K-1);
   var xs = [], ys = [], i, j, k;
   for(i=0;i<2;i++) for(j=0;j<2;j++) for(k=0;k<2;k++) for(var q=0;q<2;q++){
-    var off = q*(K-1);
-    var p = turn3(i + off*CU, j*AR + off*CV, k*DEP, yaw, pitch);
+    var off = q ? offHi : offLo;
+    var p = turn3(i + off*CU, j*(AR + (cutPP?0.22:0)) + off*CV, zw0 + k*(zw1-zw0), yaw, pitch);
     xs.push(p[0]); ys.push(p[1]);
   }
   var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
@@ -1251,6 +1257,20 @@ function netScene(D, g, box, step){
         'fill:'+mix(VC.pp,mine?26:12)+';stroke:'+VC.pp+';stroke-width:'+(mine?1.1:.6)));
     body.push(pane(ww, off0, 'fill:'+(mine?mix(VC.pp,10):mix('var(--pt-fg)',5))
       + ';stroke:'+(mine?VC.pp:'var(--pt-bd)')+';stroke-width:'+(mine?.7:.4)));
+    /* 段可点：2D 段带撤掉之后，换 stage 的入口要留在这个场景里。
+       但整块段面在投影上是**完全重叠**的——拿它当命中区，最前面那片会吃掉所有点击。
+       改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
+    if(cutPP && li%lps===0){
+      var st9 = Math.floor(li/lps), wA = DEP*st9/D.pp, wB = DEP*(st9+1)/D.pp;
+      var rv = AR + 0.13;                          /* 放在 deck 下方：上方会被浮动状态条盖住，点不到 */
+      var ridge = [P(0,rv,wA,off0), P(1,rv,wA,off0), P(1,rv,wB,off0), P(0,rv,wB,off0)];
+      body.push(quad(ridge, 'fill:'+mix(VC.pp, st9===co.p?42:12)+';stroke:'+VC.pp+';stroke-width:'+(st9===co.p?1:.4)));
+      var rc9 = P(.5,rv,(wA+wB)/2,off0);
+      body.push(txt(rc9[0], rc9[1]+2, 'stage'+st9, 6.6, st9===co.p?VC.pp:'var(--pt-fg3)', 'middle',
+        st9===co.p?'font-weight="800"':''));
+      hit.push('<g class="cgrow">'+quad(ridge, 'fill:transparent;cursor:pointer',
+        'data-act="chainpick" data-k="p" data-i="'+st9+'"')+'</g>');
+    }
     /* 只有本卡那一段才铺真节点：其余 36 层这张卡根本没建（第 2 幕那句话的立体版） */
     if(mine && IXg && nodes < 900){
       IXg.G.nodes.forEach(function(n){
@@ -1287,11 +1307,11 @@ function netScene(D, g, box, step){
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
-  if(IXg && sh && s < 95){
+  if(IXg && sh && s < 95 && !zoomIn){
     lab.push(txt(box.x + box.w/2, box.y + box.h - 6,
       '复印件展开后每份只有 '+Math.round(s)+'px 宽，真节点标签省略了——切到「叠」或减少 DP 才读得到', 7.2, 'var(--pt-fg3)'));
   }
-  if(IXg && sh && s >= 95){
+  if(IXg && sh && (s >= 95 || zoomIn)){
     /* 只挑五条：一层里 35 个算子全标出来就是糊墙，五条足够认出「这是真图那一层」 */
     var pick = ['input_layernorm','q_a_proj','attention_core','dense_gate_up','block_post_norm'];
     var wf = DEP*(co.p*lps)/L;
@@ -1305,7 +1325,10 @@ function netScene(D, g, box, step){
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
-  return {body: body.join('') + lab.join(''), hit: hit.join(''), nodes: nodes, step: step, steps: ST,
+  var CID = 'scClip';
+  var wrapped = '<defs><clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+    + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
+  return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>', nodes: nodes, step: step, steps: ST, zoom: zoomIn,
           note: IXg ? '' : '（真图脚本未加载：单文件打开时退回素板）'};
 }
 
@@ -2318,9 +2341,9 @@ function renderChain(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var MX = 150, MW = 500, IX = 770, IW = 250;
-  var SCH = 324, sceneHit = '';               /* 3D 场景高度；总高由它推出来，别再留 75px 空档 */
-  var H = SCH + 522;                     /* 3D 场景的高度；命中层单独出（要压在最上面） */
-  var LY0=44, H0=34, LY1=132, H1=34, LY2=214, H2=34, LY3=SCH+264, H3=36, LY4=SCH+366, H4=64;
+  var SCH = 452, sceneHit = '';               /* 3D 场景高度；总高由它推出来，别再留 75px 空档 */
+  var H = SCH + 378;                     /* 3D 场景的高度；命中层单独出（要压在最上面） */
+  var LY0=44, H0=34, LY1=132, H1=34, LY2=214, H2=34, LY3=SCH+120, H3=36, LY4=SCH+214, H4=64;
   var parts = [];
   function rect(x,y,w,h,fill,stroke,sw,extra){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(0.5,w).toFixed(1)+'" height="'+h.toFixed(1)+'" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?0.8:sw)+'" '+(extra||'')+'/>';
@@ -2374,90 +2397,19 @@ function renderChain(D){
   parts.push(rect(IX, LY0, IW, H0, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
   parts.push(txt(IX+IW/2, LY0+15, '全局批 = 输入（b·s 两轴的全长）', 9.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
   parts.push(txt(IX+IW/2, LY0+27, 'GBS='+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq)+' —— 激活体② 的来源', 8, 'var(--pt-fg2)'));
-  parts.push(knifeLabel(SCB.x, SCB.y+SCH+40, 'dp', '复印整网 ×'+D.dp+'——不切，每份与整网等大', '决策顺位⑤（残差）· 通信:步末 AllReduce ×1 · 落位:最外·跨机可容忍', D.dp>1 && KS>=1));
-  parts.push(knifeLabel(SCB.x+330, SCB.y+SCH+40, 'pp', '切层序 ℓ ×'+D.pp+'——切的是每一份复制体', '顺位② · 段间 P2P·每 μbatch · 段≠卡：每个 stage 由 TP·CP·DP='+(D.tp*D.cp*D.dp)+' 张卡共同持有', D.pp>1 && KS>=2));
+  parts.push(knifeLabel(SCB.x, SCB.y+SCH+80, 'dp', '复印整网 ×'+D.dp+'——不切，每份与整网等大', '决策顺位⑤（残差）· 通信:步末 AllReduce ×1 · 落位:最外·跨机可容忍', D.dp>1 && KS>=1));
+  parts.push(knifeLabel(SCB.x+330, SCB.y+SCH+80, 'pp', '切层序 ℓ ×'+D.pp+'——切的是每一份复制体', '顺位② · 段间 P2P·每 μbatch · 段≠卡：每个 stage 由 TP·CP·DP='+(D.tp*D.cp*D.dp)+' 张卡共同持有', D.pp>1 && KS>=2));
   /* ── 层 → 算子：放大（不是切！尺寸不守恒，粒度坐标换挡） ── */
-  /* 3D 场景 → 2D 算子条的桥：场景里 PP 已经把 deck 切成段了，这里再摊平成一条
-     「段带」，只为了让放大锥有个出发点——立体里指不准，摊平了才指得准。 */
-  var SGY = SCB.y + SCH + 74, segW = (MW - (D.pp-1)*2)/D.pp;
-  parts.push(txt(MX, SGY-6, '把上面那叠摊平成一条段带（同一件东西，只为放大锥指得准）：', 7.6, 'var(--pt-fg3)', 'start'));
-  if(KS < 2){
-    parts.push(rect(MX, SGY, MW, 22, mix('var(--pt-fg)',5), 'var(--pt-bds)', .8, 'pointer-events="none"'));
-    parts.push(txt(MX+MW/2, SGY+14, 'PP 还没落刀 —— 整网还是一整条，'+D.layers+' 层都在这张卡上', 8, 'var(--pt-fg3)', 'middle'));
-  }
-  for(var p9=0; KS>=2 && p9<D.pp; p9++){
-    var sx9 = MX + p9*(segW+2), hot9 = p9===co.p;
-    parts.push('<g class="cgrow">'+rect(sx9, SGY, segW, 22, hot9?mix(VC.pp,26):mix(VC.pp,8), hot9?VC.pp:'var(--pt-bds)', hot9?1.4:.7,
-      'data-act="chainpick" data-k="p" data-i="'+p9+'" style="cursor:pointer"')+'</g>');
-    parts.push(txt(sx9+segW/2, SGY+14, 'stage'+p9+' · L'+(p9*D.layersPerStage)+'–L'+((p9+1)*D.layersPerStage-1), 7.6,
-      hot9?VC.pp:'var(--pt-fg2)', 'middle', (hot9?'font-weight="800" ':'')+'pointer-events="none"'));
-    if(hot9) parts.push(rect(sx9, SGY+22-7, segW/D.layersPerStage, 7, mix(VC.pp,55), VC.pp, 1, 'pointer-events="none"'));
-  }
-  var zx = MX + co.p*(segW+2), zw = segW/D.layersPerStage;
-  parts.push('<line x1="'+zx+'" y1="'+(SGY+22)+'" x2="'+MX+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
-  parts.push('<line x1="'+(zx+zw)+'" y1="'+(SGY+22)+'" x2="'+(MX+MW)+'" y2="'+LY3+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3"/>');
-  /* 以下几行压在放大锥上：用背景色描边把锥线挖空，否则虚线穿过文字像删除线 */
-  var HALO = 'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="3.4" stroke-linejoin="round"';
-  /* 一条 vs 阵列：这条链排的是 ℓ（唯一有序轴），一格是层段；卡的二维阵列是落位，一格↔一列 */
-  parts.push(txt(MX+MW, SGY+34, '一格 = 一个 stage = 层段，不是卡：由 TP·CP·DP='+(D.tp*D.cp*D.dp)+' 张卡共同持有 → 卡阵里的一整列（global_rank 每跨一格 +'+(D.tp*D.cp*D.dp)+'）', 7.5, 'var(--pt-fg3)', 'end', HALO));
-  parts.push(txt(MX, SGY+46, KS>=2
-    ? ('取 stage'+co.p+' 的第 1 层（L'+(co.p*D.layersPerStage)+'）放大 ↓ 段内 '+D.layersPerStage+' 层同构，看一层=看全部')
-    : ('取 L0 放大 ↓ 整网 '+D.layers+' 层同构，看一层=看全部'), 7.5, 'var(--pt-fg2)', 'start', HALO));
-  parts.push(txt(MX+MW/2, SGY+59, '⊕ 放大一层到算子级（粒度换挡：看得更细，不是又切了一刀；尺寸从此不守恒）· TP/EP 的刀口在算子内部（h/e 轴），必须放大到这一级才切得着', 7.8, 'var(--pt-fg2)', 'middle', 'font-weight="700" '+HALO));
-  parts.push(knifeLabel(MX+8, LY3-26, 'tp', '锯算子 h 轴 ×'+D.tp, '顺位① · 层内：每层 2 次 AllReduce · 最内·必须机内', D.tp>1 && KS>=3));
-  parts.push(knifeLabel(MX+MW*.56, LY3-26, 'ep', '重组专家 e 轴 ×'+D.ep, '顺位④ · 层内：每 MoE 层 2 次 A2A · 不跨层', D.moe&&D.ep>1 && KS>=4));
-  /* ── L3：一层的算子条，做成 3D ──
-     锯开算子是**把一个立体锯成几片**，平铺的色块看不出「片」这回事。
-     每个算子是一块有厚度的板；被 TP/EP 切到的，片与片之间留缝、本卡那片抬出来一点，
-     于是「片贴片=面积守恒」和「本卡只拿其中一片」在同一张图上同时成立。 */
-  var OD = 13, OE = 8;                              /* 算子板的深度偏移（右上） */
-  function opSlab(x, y, w, hh, fill, stroke, sw, lift, extra){
-    if(w <= .4) return '';
-    var yy = y - lift, dx = OD, dy = OE;
-    var st = ';stroke:'+(stroke||'none')+';stroke-width:'+(sw||0);
-    return '<polygon points="'+x.toFixed(1)+','+yy.toFixed(1)+' '+(x+w).toFixed(1)+','+yy.toFixed(1)+' '
-        + (x+w+dx).toFixed(1)+','+(yy-dy).toFixed(1)+' '+(x+dx).toFixed(1)+','+(yy-dy).toFixed(1)
-        + '" style="fill:color-mix(in srgb,'+fill+' 66%, #fff 34%)'+st+'" '+(extra||'')+'/>'
-      + '<polygon points="'+(x+w).toFixed(1)+','+yy.toFixed(1)+' '+(x+w+dx).toFixed(1)+','+(yy-dy).toFixed(1)+' '
-        + (x+w+dx).toFixed(1)+','+(yy+hh-dy).toFixed(1)+' '+(x+w).toFixed(1)+','+(yy+hh).toFixed(1)
-        + '" style="fill:color-mix(in srgb,'+fill+' 72%, #000 28%)'+st+'" '+(extra||'')+'/>'
-      + rect(x, yy, w, hh, fill, stroke||'none', sw||0, extra);
-  }
-  parts.push(txt(MX-10, LY3+H3/2+3, 'L'+(KS>=2 ? co.p*D.layersPerStage : 0)+' 的内部', 8, 'var(--pt-fg2)', 'end', 'font-weight="700"'));
-  var ops3 = opBytes(D).filter(function(o){ return o.b>0; });
-  var totB3 = ops3.reduce(function(a,o){ return a+o.b; },0);
-  var shares = ops3.map(function(o){ return clamp(o.b, totB3*.07, totB3*.30); });
-  var shTot = shares.reduce(function(a,x){ return a+x; },0);
-  var x3 = MX, usable3 = MW - (ops3.length-1)*3 - OD;
-  ops3.forEach(function(o, oi){
-    var w3 = usable3*shares[oi]/shTot;
-    if(o.cut==='tp' && D.tp>1 && KS>=3){
-      /* 自左向右画：右邻的正面盖住左块的暗侧面，缝里露出的那条就是锯口 */
-      for(var t3=0;t3<D.tp;t3++){
-        var hotT = t3===co.t, pw = w3/D.tp;
-        parts.push('<g class="cgrow">'+opSlab(x3+t3*pw, LY3, pw-1.2, H3, hotT?mix(VC.tp,50):mix(VC.tp,15),
-          hotT?VC.tp:'var(--pt-bds)', hotT?1.4:.4, hotT?7:0,
-          'data-act="chainpick" data-k="t" data-i="'+t3+'" style="cursor:pointer"')+'</g>');
-      }
-      parts.push(txt(x3+w3/2, LY3-OE-6, '×'+D.tp+' 片', 6.6, VC.tp, 'middle', 'pointer-events="none"'));
-    }else if(o.cut==='ep' && D.moe && D.ep>1 && KS>=4){
-      var nb = D.ep;
-      for(var e3=0;e3<nb;e3++){
-        var hotE = me && e3===me.ep, bw = w3/nb;
-        parts.push('<g class="cgrow">'+opSlab(x3+e3*bw, LY3, bw-Math.min(1.2,bw*.16), H3, hotE?mix(VC.ep,52):mix(VC.ep,15),
-          hotE?VC.ep:'var(--pt-bds)', hotE?1.4:.35, hotE?7:0,
-          'data-act="chainpick" data-k="e" data-i="'+e3+'" style="cursor:pointer"')+'</g>');
-      }
-      parts.push(txt(x3+w3/2, LY3-OE-6, '×'+D.ep+' 桶', 6.6, VC.ep, 'middle', 'pointer-events="none"'));
-    }else{
-      parts.push(opSlab(x3, LY3, w3, H3, mix('var(--pt-fg2)',13), 'var(--pt-bds)', .5, 0, 'pointer-events="none"'));
-    }
-    if(w3>28) parts.push(txt(x3+w3/2, LY3+H3+11+(oi%2)*10, o.id, 7.2, o.cut==='tp'?VC.tp:o.cut==='ep'?VC.ep:'var(--pt-fg3)', 'middle'));
-    x3 += w3+3;
-  });
-  parts.push(txt(MX+MW, LY3+H3+31, KS>=3
-    ? '锯开算子 = 把一个立体锯成几片：片贴片（面积守恒），抬起来那片就是本卡拿的那一片'
-    : '这一层的算子还是整块的 —— TP/EP 的刀要到第 3/4 刀才落下', 7.4, 'var(--pt-fg3)', 'end'));
+  /* 原来这里有两条 2D 带：把 3D 场景摊平的「段带」，和一条平铺的「算子条」。
+     两条都撤了——后面几刀不该掉回二维。PP 的段、TP 的片、EP 的桶现在全在上面那个
+     三维场景里；刀越深，镜头推得越近（⊕ 粒度换挡，不是又切了一刀）。
+     四把刀的标注留在场景两侧，按刀序逐条点亮。 */
+  parts.push(knifeLabel(MX+8, SCB.y+SCH+16, 'tp', '锯算子 h 轴 ×'+D.tp+'——刀口在算子内部，镜头推进后看得见片', '顺位① · 层内：每层 2 次 AllReduce · 最内·必须机内', D.tp>1 && KS>=3));
+  parts.push(knifeLabel(MX+MW*.56, SCB.y+SCH+16, 'ep', '重组专家 e 轴 ×'+D.ep+'——同一批卡按 e 重分组', '顺位④ · 层内：每 MoE 层 2 次 A2A · 不跨层', D.moe&&D.ep>1 && KS>=4));
+  parts.push(txt(SCB.x, SCB.y+SCH+44, scene.zoom
+    ? ('⊕ 镜头已推进到本卡那一段（L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)+'）—— 粒度换挡：看得更细，不是又切了一刀；尺寸从此不守恒')
+    : '前三刀框住全部复印件（要看清「有几份、每份一样大」）；第 3 刀起镜头会推进到本卡那一段', 8.2, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  parts.push(txt(SCB.x, SCB.y+SCH+56, '一段 = 一个 stage = 层段，不是卡：由 TP·CP·DP='+(D.tp*D.cp*D.dp)+' 张卡共同持有 → 卡阵里的一整列（global_rank 每跨一格 +'+(D.tp*D.cp*D.dp)+'）', 7.5, 'var(--pt-fg3)', 'start'));
   /* ── 输入侧：真切 ×2（DP 切样本 → CP 切双段） ── */
   parts.push(morph(IX, IW, LY0+H0, IX, IW, LY1, VC.dp));
   parts.push(knifeLabel(IX+4, LY0+H0+22, 'dp', '切样本 b 轴 ×'+D.dp+'——这边是真切', '同一把 DP 刀的另一半：左复印 / 右真切', D.dp>1));
@@ -2497,7 +2449,7 @@ function renderChain(D){
   parts.push(txt(IX, LY2+H2+51, '五把刀全都切它：b←DP · s←CP · h←TP · ℓ←PP · e←EP 路由', 7.6, VC.dp, 'start', 'font-weight="700"'));
   /* ── 汇合：两条链 ∩ 到叶子（一张卡） ── */
   var LX = MX+40, LW = (IX+IW)-MX-80;
-  parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(LY3+H3+22)+'" x2="'+(LX+LW*.35)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
+  parts.push('<line x1="'+(MX+MW/2)+'" y1="'+(SCB.y+SCH+104)+'" x2="'+(LX+LW*.35)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push('<line x1="'+(IX+IW/2)+'" y1="'+(LY2+H2+6)+'" x2="'+(LX+LW*.8)+'" y2="'+LY4+'" style="stroke:var(--pt-fg2);stroke-width:1;stroke-dasharray:4 3"/>');
   parts.push(txt(LX+LW/2, LY4-8, '∩ 两条链在这里汇合（模型侧 ℓ·h·e ∩ 输入侧 b·s）', 8.5, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
   var stI = co.p, memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; },0);
@@ -2545,6 +2497,12 @@ function renderChain(D){
         return '<button class="pb'+(i9===KS?' is-on':'')+'" data-act="knife" data-i="'+i9+'" title="'+esc(q9.s)+'">'+esc(q9.n)+'</button>';
       }).join('')
     + '<button class="pb'+(anim.on?' is-on':'')+'" data-act="knifeplay" title="从整网开始，一刀一刀往下切——每一刀切的是上一刀的产物">'+(anim.on?'⏸ 停':'▶ 逐刀切')+'</button>'
+    /* 段的**表达**在图里（每段一条基座，可点）；但镜头推进之后别的段会出框，
+       点不到了——所以换段这个**控制**放进状态条，图里不再塞 2D 段带。 */
+    + (D.pp>1 ? '<span class="pt-chip" style="border-color:'+VC.pp+';color:'+VC.pp+'">stage</span>'
+        + '<button class="pb" data-act="stagestep" data-d="-1" title="上一段">◀</button>'
+        + '<button class="pb" data-act="stagestep" data-d="0" style="pointer-events:none">'+co.p+' / '+(D.pp-1)+'</button>'
+        + '<button class="pb" data-act="stagestep" data-d="1" title="下一段">▶</button>' : '')
     + '<button class="pb'+(ui.spread?' is-on':'')+'" data-act="spread" title="复印件怎么排：展开=并排放好，看得清有几份、每份一模一样；叠=挤在一起省地方，份数一多会糊。">复印件 '+(ui.spread?'展开':'叠')+'</button>'
     + '<span class="pt-chip" title="整网是一叠真的层板（openPangu 真图每层一块）；DP 复印复制整只 deck；PP 切的就是这些复制体。">整网 = 真图层板叠 · 可拖动</span>'
 
@@ -3389,6 +3347,13 @@ document.addEventListener('click', function(ev){
   else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; render(); }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
+  else if(act==='stagestep'){
+    var Ds = derive(cfg); if(!Ds.ok) return;
+    var d0 = +b.getAttribute('data-d'); if(!d0) return;
+    var c0s = coordsOf((sel!==null&&sel<Ds.world)?sel:0, Ds);
+    sel = rankOf(c0s.t, c0s.c, c0s.d, (c0s.p + d0 + Ds.pp) % Ds.pp, Ds);
+    render(); ptoNotifyHost();
+  }
   else if(act==='knifeplay'){
     var Dk = derive(cfg); if(!Dk.ok) return;
     if(anim.on){ stopAnim(); render(); return; }
