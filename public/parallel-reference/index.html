@@ -1045,6 +1045,35 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
   <p>顺带也说清了 <span class="k tp">SP</span> 的位置：列切-行切这套只覆盖两个 matmul 之间那段，<strong>LayerNorm / Dropout 那些区域 TP 切不到</strong>（它们要的是完整的 <code>h</code>）。SP 补的正是这一段——沿 <code>s</code> 再切一刀，复用 TP 的通信域，进出 TP 区时用 AllGather / ReduceScatter 转布局。</p>
 
+  <h3>TP 与 EP 各切在整网的哪里</h3>
+
+  <p>把两者标在同一条算子链上，差别一眼可见：<strong>TP 的切点散布在每一个矩阵乘上、每层都有；EP 的切点只有一处，且只在 MoE 层存在。</strong></p>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 04B</span><span class="ftitle">TP 与 EP 的切点标注</span>
+      <span class="fnote">中间是一个 MoE 层的算子链，左侧标 <b style="color:var(--tp)">TP</b> 切哪里、右侧标 <b style="color:var(--ep)">EP</b> 切哪里；淡色 = 该维度<b>不切</b>它。左边纵条是整网，紫色是 MoE 层——<code>e</code> 轴只在那些层存在，所以 EP 的切点也只在那些层出现。</span></figcaption>
+    <div class="stage" id="fig-cut"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th></th><th><span class="k tp">TP</span></th><th><span class="k ep">EP</span></th></tr></thead>
+    <tbody>
+      <tr><td><b>切的对象</b></td><td>单个<b>权重矩阵</b>（沿 <code>h</code>）</td><td>层内<b>并列的 expert</b>（沿 <code>e</code>）</td></tr>
+      <tr><td><b>切点位置</b></td><td><b>算子内部</b>——算子被改写成分片算子</td><td><b>算子之间</b>——每个 expert 本身完整，算子没被改写</td></tr>
+      <tr><td><b>有几处切点</b></td><td>每层 <b>6 个矩阵</b>（QKVO ＋ FFN 两个），<b>每一层都有</b></td><td><b>只有一处</b>（expert 列表），且<b>只在 MoE 层</b></td></tr>
+      <tr><td><b>谁不被它切</b></td><td>LayerNorm · Dropout · Router（要完整的 <code>h</code>）</td><td>attention 整块 · LayerNorm · Router · shared expert</td></tr>
+      <tr><td><b>通信</b></td><td>每层<b>两次 AllReduce</b>（attention 块一次、FFN 块一次）</td><td>每 MoE 层<b>两次 All-to-All</b>（dispatch ＋ combine）</td></tr>
+      <tr><td><b>归属边界</b>（§02）</td><td>推到 <b>kernel</b>——最深</td><td>停在 <b>expert</b>——层内，比 TP 浅</td></tr>
+    </tbody>
+  </table>
+
+  <p>最后一行是两者本质差别的浓缩：<strong>EP 更像 PP 的兄弟</strong>——都是把<em>完整单元</em>分开放（PP 沿深度、EP 沿宽度）；<strong>TP 才是那个真正把算子劈开的</strong>。这与 §04 前面「划分 vs 分片」的区分是同一件事（见 §06 勘误）。</p>
+
+  <div class="note">
+    <span class="lbl">Router 值得单独看一眼</span>
+    <p>它是 MoE 层里<strong>唯一两个维度都不切</strong>的权重（<code>[H, E]</code>，每卡一份完整副本）。原因很实际：它必须为<em>本卡的每个 token</em> 算出完整的 <code>E</code> 个门控分数才能取 top-k，切了就得先聚合。它很小（<code>H×E</code> 对比 expert 的 <code>E×H×4H</code>），复制的代价可以忽略。</p>
+  </div>
+
   <div class="note fix">
     <span class="lbl">勘误 A · EP 不是第五个并行维度</span>
     <p>先前写作"总卡数 = TP × CP × PP × DP，EP 通常复用 DP 组的卡，或单独成维"，后半句不准确。EP <strong>不是</strong>独立于这四个并行维度之外的额外乘数——它是对 MoE 层<em>重新解释</em>已有的 DP × TP 平面上的那批卡：非 MoE 层按 TP/DP 走，MoE 层把同一批卡重新分组成 EP 组。实现上通常要求 EP 组大小能整除对应平面的大小。所以世界大小仍是 <code>TP × CP × PP × DP</code>，EP 是这个网格上的一个<strong>视图</strong>，不是一条新的边。FIG 06 里选「EP 组」时高亮的正是同一 stage 的整个 TP×DP 平面，而不是新增一个轴。</p>
@@ -2883,6 +2912,84 @@ function figContainer(){
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
 }
 
+/* ===================== FIG 04B · TP 与 EP 各切在整网的哪里 ===================== */
+function figCut(){
+  var m=document.getElementById('fig-cut'); if(!m) return;
+  var W=1040,H=680;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+  s+='<defs>'
+   +'<marker id="c-tp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+K.tp+'"/></marker>'
+   +'<marker id="c-ep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+K.ep+'"/></marker>'
+   +'</defs>';
+
+  /* 表头 */
+  s+='<text x="196" y="30" font-size="12.5" font-weight="750" fill="'+K.tp+'" text-anchor="end">TP 切在这里 ▸</text>';
+  s+='<text x="470" y="30" font-size="12.5" font-weight="750" fill="#0E1418" text-anchor="middle">一个 MoE 层的算子链</text>';
+  s+='<text x="672" y="30" font-size="12.5" font-weight="750" fill="'+K.ep+'">◂ EP 切在这里</text>';
+  s+='<text x="60" y="30" font-size="11.5" font-weight="700" fill="#6B7B86" text-anchor="middle">整网</text>';
+
+  /* 左：整网纵向（只有 MoE 层有 e 轴） */
+  var ly=54, lh=13, lg=4;
+  var stack=[['embedding',0],['L0 dense',0],['L1 MoE',1],['L2 dense',0],['L3 MoE',1],
+             ['⋮',2],['L46 dense',0],['L47 MoE',1],['lm_head',0]];
+  stack.forEach(function(it,i){
+    var y=ly+i*(lh+lg);
+    if(it[1]===2){ s+='<text x="60" y="'+(y+11)+'" font-size="11" fill="#B0BEC6" text-anchor="middle">⋮</text>'; return; }
+    var isM=it[1]===1;
+    s+='<rect x="20" y="'+y+'" width="80" height="'+lh+'" rx="3" fill="'+(isM?'#EFECF5':'#F2F5F7')+'" stroke="'+(isM?K.ep:'#CFD8DD')+'" stroke-width="'+(isM?1.4:1)+'"/>';
+    s+='<text x="60" y="'+(y+9.6)+'" font-size="7.6" fill="'+(isM?K.ep:'#8A98A2')+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">'+it[0]+'</text>';
+  });
+  s+='<text x="60" y="'+(ly+9*(lh+lg)+16)+'" font-size="9" fill="'+K.ep+'" text-anchor="middle" font-weight="700">只有 MoE 层</text>';
+  s+='<text x="60" y="'+(ly+9*(lh+lg)+28)+'" font-size="9" fill="'+K.ep+'" text-anchor="middle">才有 e 轴</text>';
+  /* 指向被展开的那一层 */
+  s+='<path d="M104 '+(ly+7*(lh+lg)+7)+' L 292 300" stroke="#CFD8DD" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/>';
+
+  /* 中：算子链 */
+  var ROWS=[
+    {n:'LayerNorm',            sub:'需要完整的 h',        tp:'不切',              tpDim:1, ep:'不切', epDim:1},
+    {n:'W_Q · W_K · W_V',      sub:'各 [H, H]',           tp:'按 attention head 切', ep:null},
+    {n:'attention core',       sub:'softmax(QKᵀ)V',       tp:'本卡局部 head 完整算', ep:null},
+    {n:'W_O',                  sub:'[H, H]',              tp:'行切 → 部分和',     ep:null},
+    {n:'AllReduce ①',          sub:'TP 组内',             comm:'tp'},
+    {n:'LayerNorm',            sub:'',                    tp:'不切', tpDim:1,     ep:'不切', epDim:1},
+    {n:'Router',               sub:'[H, E] · 逐 token top-k', tp:'不切 · 每卡完整副本', tpDim:1, ep:'不切它', epDim:1},
+    {n:'All-to-All  dispatch', sub:'EP 组内',             comm:'ep'},
+    {n:'Expert 0 … Expert E−1',sub:'每卡持 E/EP 个完整 expert', tp:'ETP 才切 · 通常 = 1', tpDim:1, ep:'按 e 切 ← EP 唯一的切点', epHot:1},
+    {n:'All-to-All  combine',  sub:'EP 组内',             comm:'ep'},
+    {n:'Shared Expert',        sub:'所有 token 都过',     tp:'TP 切',             ep:'不按 EP 切', epDim:1}
+  ];
+  var y0=50, RH=42, GAP=8;
+  ROWS.forEach(function(r,i){
+    var y=y0+i*(RH+GAP), cx=300, cw=340;
+    var isC=!!r.comm, col=isC?(r.comm==='tp'?K.tp:K.ep):'#D2DADF';
+    s+='<rect x="'+cx+'" y="'+y+'" width="'+cw+'" height="'+RH+'" rx="'+(isC?21:5)+'" fill="'+(isC?(r.comm==='tp'?'#FCF4F5':'#F4F2F8'):'#fff')+'" stroke="'+col+'" stroke-width="'+(isC?1.6:1.3)+'"'+(isC?' stroke-dasharray="5 3"':'')+'/>';
+    s+='<text x="'+(cx+16)+'" y="'+(y+18)+'" font-size="11.5" font-weight="'+(isC?600:700)+'" fill="#0E1418">'+r.n+'</text>';
+    if(r.sub) s+='<text x="'+(cx+16)+'" y="'+(y+33)+'" font-size="9" fill="#8A98A2" font-family="ui-monospace,Menlo,monospace">'+r.sub+'</text>';
+    if(r.tp){
+      var o=r.tpDim?.45:1;
+      s+='<text x="286" y="'+(y+26)+'" font-size="10.5" fill="'+K.tp+'" text-anchor="end" opacity="'+o+'" font-weight="'+(r.tpDim?400:700)+'">'+r.tp+'</text>';
+      if(!r.tpDim) s+='<path d="M290 '+(y+22)+' L '+(cx-4)+' '+(y+22)+'" stroke="'+K.tp+'" stroke-width="1.4" marker-end="url(#c-tp)"/>';
+    }
+    if(r.ep){
+      var o2=r.epDim?.45:1;
+      s+='<text x="654" y="'+(y+26)+'" font-size="10.5" fill="'+K.ep+'" opacity="'+o2+'" font-weight="'+(r.epHot?700:400)+'">'+r.ep+'</text>';
+      if(r.epHot) s+='<path d="M650 '+(y+22)+' L '+(cx+cw+4)+' '+(y+22)+'" stroke="'+K.ep+'" stroke-width="1.4" marker-end="url(#c-ep)"/>';
+    }
+  });
+
+  /* MoE 块的范围括号（EP 侧；TP 侧不画括号，避免压住左边的标注文字） */
+  s+='<path d="M660 300 L666 300 L666 '+(y0+10*(RH+GAP)+RH)+' L660 '+(y0+10*(RH+GAP)+RH)+'" fill="none" stroke="'+K.ep+'" stroke-width="1.2" opacity=".45"/>';
+  s+='<text x="672" y="'+(y0+5*(RH+GAP)+16)+'" font-size="9.5" fill="'+K.ep+'" opacity=".7" font-family="ui-monospace,Menlo,monospace">MoE 块</text>';
+
+  /* 结论条 */
+  s+='<rect x="20" y="612" width="1000" height="56" rx="7" fill="#FFF8F4" stroke="#0E1418" stroke-width="1.5"/>';
+  s+='<text x="38" y="634" font-size="11.5" fill="#3D4B55"><tspan font-weight="800" fill="'+K.tp+'">TP 切在算子内部</tspan>：把单个权重矩阵拆开，算子被改写成分片算子——切点全落在<tspan font-weight="700">矩阵乘</tspan>上，且贯穿每一层。</text>';
+  s+='<text x="38" y="655" font-size="11.5" fill="#3D4B55"><tspan font-weight="800" fill="'+K.ep+'">EP 切在算子之间</tspan>：把层内并列的 expert 分开放，<tspan font-weight="700">每个 expert 本身完整</tspan>——切点只有一处，且只在 MoE 层存在。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 09B · 从整网到卡：两条路 ===================== */
 function figBuild(){
   var m=document.getElementById('fig-build'); if(!m) return;
@@ -3754,7 +3861,7 @@ function setupRail(){
 /* ===================== 绑定与启动 ===================== */
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
-   ['fig-build',figBuild],
+   ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
