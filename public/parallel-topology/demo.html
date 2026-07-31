@@ -293,6 +293,7 @@ var sel = null;
 var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
+  net3d:true,                                                                /* 整网默认画成有体积的板；2D 平铺仍在，顶栏可切 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -302,6 +303,7 @@ var VIEWS = [
   {id:'chain', name:'刀序·切分链'},
   {id:'compose', name:'合成·卡阵'},
   {id:'anatomy', name:'卡内解剖'},
+  {id:'solid', name:'交集腔'},
   {id:'time', name:'时间·流'}
 ];
 var LAYERS = ['L1','L2','L3','L4','L5'];
@@ -311,14 +313,16 @@ var AVAIL = {
   chain:{L1:false,L2:true, L3:true,L4:true,L5:false},
   compose:{L1:false,L2:true,L3:true,L4:true,L5:true},
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
-  anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true}
+  anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true},
+  solid:{L1:true, L2:true, L3:true,L4:true,L5:false}
 };
 var DEFAULTS = {
   dim:{L1:true,L2:true,L3:true,L4:true,L5:true},
   chain:{L2:true,L3:true,L4:true},
   compose:{L2:false,L3:true,L4:true,L5:false},
   time:{L3:true,L4:true,L5:true},
-  anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true}
+  anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true},
+  solid:{L1:true,L2:true,L3:true,L4:true}
 };
 function layerOn(L){
   var v = ui.view;
@@ -357,6 +361,7 @@ function urlLoad(){
   if(q.get('l5')==='1') (ui.layersUser[ui.view]=ui.layersUser[ui.view]||{}).L5 = true;
   var fc = parseInt(q.get('facet'),10); if(isFinite(fc)&&fc>=0) ui.cpFacet = fc;
   if(q.get('skew')==='0') ui.skew = false;
+  if(q.get('net3d')==='0') ui.net3d = false;
 }
 function urlWrite(){
   var q = new URLSearchParams();
@@ -369,6 +374,7 @@ function urlWrite(){
     ['world','tp','cp','pp','ep','etp','layers','seq','experts'].forEach(function(k){ q.set(k, cfg[k]); });
   }
   if(sel!==null) q.set('sel', sel);
+  if(!ui.net3d && ui.view==='chain') q.set('net3d','0');
   if(layerOn('L5') && (ui.view==='compose'||ui.view==='time')) q.set('l5','1');
   if(ui.commDim!=='tp') q.set('dim', ui.commDim);
   if(ui.commPrim!=='allreduce') q.set('prim', ui.commPrim);
@@ -1121,6 +1127,287 @@ function renderDim(D){
     + '<div style="font-size:10.5px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
   $('detach').hidden = true;
 }
+/* ═════════ 视图六 · 交集腔：卡为什么是「这一块」 ═════════
+   前五视图各答一问：单维答「一把刀怎么切」、刀序答「几把刀什么次序」、解剖答「卡里有什么」。
+   这一张答最后一问——**为什么恰好是这一块**，而这一问只能靠三维说清楚。
+   两个对象各有自己的索引空间，轴数不同（§03 五元组：恰好一根轴对一把刀）：
+     · 权重体① = ℓ × h × e     三轴 ← PP 切 ℓ、TP 切 h、EP 切 e
+     · 激活体② = ℓ × h × b × s 四轴 ← 多出 DP 切的 b、CP 切的 s
+   每把刀是**一整片板**（切穿整只盒子，不是切一小块）；三片板相交剁出一个小长方体，
+   那就是这张卡持有的全部——体积 ∶ 全盒 = 持有占比。卡不是缩小的整网，是**区间的交集**。
+   两条不对称在轴数上直接看得见，不用一句口号：
+     · DP 在①上**没有轴** → 它只能把整只盒子复印一叠，格子数与格子大小全不变
+       ⇒ 换副本时腔纹丝不动、体积一点不少 = A3「加 DP 不买余量」的几何证明
+       （数值证明在单维切分的反事实里：若 DP=1，同一张卡还是这么多字节。两处互相印证。）
+     · EP 在②上没有轴 → 路由是动作（把 token 送去别的卡），不是静态切分。 */
+function renderSolid(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  var H = 700, parts = [], hits = [];
+  var L1 = layerOn('L1'), L2 = layerOn('L2'), L3 = layerOn('L3'), L4 = layerOn('L4');
+  var hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0, lps = D.layersPerStage;
+  var TY = 322, TX1 = 372, TX2 = 700, BW = 142, BH = 132;
+  var BD1 = D.moe ? 104 : 40, BD2 = 104;
+  /* 读数放**左栏**：右上角是常驻的读出卡（.pt-detail，304px），右栏会被它盖住——
+     版面必须按真实的浮层排，不能画完了让读者自己去关卡片。 */
+  var RX = 24, RW = 190;
+
+  function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  function p3(x,y,z){ return proj(x,y,z,1); }
+  function hexPts(w,h,d){ /* 盒子的屏幕轮廓（等轴测下恒是这个六边形）——复印件只画剪影 */
+    return [p3(0,h,0), p3(w,h,0), p3(w,0,0), p3(w,0,d), p3(0,0,d), p3(0,h,d)];
+  }
+
+  /* ── 一只索引空间盒 ──────────────────────────────────────────
+     外框（结构线）+ 三组刀面（每把刀在三个可见面上留下的线）+ 三片板 + 交集腔 + 三根可点的轴尺。
+     ax/ay/az = {n 份数, dim 哪把刀, i 本卡拿第几份, name 轴名, k chainpick 键, lab(i) 刻度文字}
+     x 轴走屏幕右下、z 轴走左下、y 轴朝上——三根轴各由一把刀认领，认领关系写在轴尺上。 */
+  function solidBox(o){
+    var W = o.w, HH = o.h, DD = o.d, ax = o.ax, ay = o.ay, az = o.az;
+    var dx = W/ax.n, dy = HH/ay.n, dz = DD/az.n;
+    var x0 = ax.i*dx, y0 = ay.i*dy, z0 = az.i*dz;
+    var body = '', hit = '', i;
+    /* 份数大到画不下时降的是线宽与标注，不是份数——细密纹理本身就是「真切了这么多刀」 */
+    function gridStyle(step, col){
+      var sw = step>4?.9:step>2?.6:.4, op = step>4?.58:step>2?.42:.26;
+      return 'stroke:'+col+';stroke-width:'+sw+';stroke-opacity:'+op;
+    }
+    if(L1){
+      body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:1, dash:'3 3'});
+      var st = gridStyle(dy, VC[ay.dim]);
+      for(i=1;i<ay.n;i++) body += ln(p3(0,i*dy,DD), p3(W,i*dy,DD), st) + ln(p3(W,i*dy,0), p3(W,i*dy,DD), st);
+      st = gridStyle(dx*C, VC[ax.dim]);
+      for(i=1;i<ax.n;i++) body += ln(p3(i*dx,HH,0), p3(i*dx,HH,DD), st) + ln(p3(i*dx,0,DD), p3(i*dx,HH,DD), st);
+      st = gridStyle(dz*C, VC[az.dim]);
+      for(i=1;i<az.n;i++) body += ln(p3(0,HH,i*dz), p3(W,HH,i*dz), st) + ln(p3(W,0,i*dz), p3(W,HH,i*dz), st);
+    }
+    /* 三片板：每把刀留下的区间**铺满另外两根轴**——刀是板不是块，这是「一整片切穿」的形 */
+    if(L2){
+      function slab(x,y,z,w,h,d,dim,n){
+        /* n=1 = 这把刀没切开：板就是整只盒子，照常上色会把盒子刷成一片纯色，压淡且不描棱 */
+        if(n===1) return '<g opacity=".07">'+boxSVG(x,y,z,w,h,d,1,{fill:VC[dim]})+'</g>';
+        return '<g opacity=".26">'+boxSVG(x,y,z,w,h,d,1,{fill:VC[dim]})+'</g>'
+             + boxSVG(x,y,z,w,h,d,1,{wire:true, stroke:VC[dim], sw:.7});
+      }
+      body += slab(0,0,z0,W,HH,Math.max(dz,.8), az.dim, az.n);
+      body += slab(x0,0,0,Math.max(dx,.8),HH,DD, ax.dim, ax.n);
+      body += slab(0,y0,0,W,Math.max(dy,.8),DD, ay.dim, ay.n);
+      body += boxSVG(x0,y0,z0,dx,dy,dz,1,{fill:'var(--pt-fg)', stroke:'var(--pt-fg)', sw:1});
+    }
+    /* 腔的棱始终画：薄到 1px 也得能定位（dz 小 = 这张卡真的只占这么一薄片，不放大骗人）。
+       data-cav 是给页外核对用的把手：换 DP 副本时 data-cav="w" 的坐标必须逐字不变（A3）。 */
+    body += boxSVG(x0,y0,z0,Math.max(dx,.7),Math.max(dy,.7),Math.max(dz,.7),1,
+                   {wire:true, stroke:o.cav||'var(--pt-fg)', sw:1.7,
+                    attrs:' data-cav="'+(o.cavId||'')+'" data-cav-size="'+dx.toFixed(3)+','+dy.toFixed(3)+','+dz.toFixed(3)+'"'});
+    /* ETP：在 e 腔**内部**再沿专家自己的 ffn 维切一刀（不是外面那根 h 轴，同属「算子内部」那一类） */
+    if(o.etp>1) for(i=1;i<o.etp;i++){
+      var ex = x0 + dx*i/o.etp;
+      body += ln(p3(ex,y0+dy,z0), p3(ex,y0+dy,z0+dz), 'stroke:'+VC.ep+';stroke-width:.8;stroke-dasharray:2 2;stroke-opacity:.8');
+    }
+
+    /* 轴尺：刀在这根轴上留下的刻度。点一格换卡（复用 chainpick 的可逆坐标算术 §07）。
+       画得下写全名，写不下降成序号，再写不下只标端点与选中——降的是标注，份数一个不少。 */
+    function ruler(a, A, B, out, pad, anchor){
+      var pa = p3(A[0],A[1],A[2]), pb = p3(B[0],B[1],B[2]);
+      var vx = (pb[0]-pa[0])/a.n, vy = (pb[1]-pa[1])/a.n;
+      var step = Math.sqrt(vx*vx+vy*vy), col = VC[a.dim];
+      var tier = step > 34 ? 2 : step > 13 ? 1 : 0;
+      var hw = Math.max(7, Math.min(24, step*.92));
+      body += ln([pa[0]+out[0]*pad, pa[1]+out[1]*pad], [pb[0]+out[0]*pad, pb[1]+out[1]*pad], 'stroke:'+col+';stroke-width:1;stroke-opacity:.65');
+      for(var j=0;j<a.n;j++){
+        var hot = j===a.i;
+        var mx = pa[0]+vx*(j+.5)+out[0]*pad, my = pa[1]+vy*(j+.5)+out[1]*pad;
+        body += ln([pa[0]+vx*j+out[0]*pad, pa[1]+vy*j+out[1]*pad], [pa[0]+vx*j+out[0]*(pad+4), pa[1]+vy*j+out[1]*(pad+4)],
+                   'stroke:'+col+';stroke-width:'+(hot?1.6:.7)+';stroke-opacity:'+(hot?1:.5));
+        if(L4 && (tier===2 || tier===1 || hot || j===0 || j===a.n-1))
+          body += txt(mx+out[0]*11, my+out[1]*11+3, esc(tier===2 ? a.lab(j) : String(j)), hot?8.6:7.3,
+                      hot?col:'var(--pt-fg3)', anchor||'middle', hot?'font-weight="800"':'');
+        if(a.k) hit += '<g class="cgrow"><rect x="'+(mx+out[0]*10-hw/2).toFixed(1)+'" y="'+(my+out[1]*10-7).toFixed(1)+'" width="'+hw.toFixed(1)+'" height="14" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="'+a.k+'" data-i="'+j+'"></rect></g>';
+      }
+      /* 轴名 = 「哪根轴 ← 哪把刀切了几份」，认领关系不靠记忆。
+         挂在尺的**中点**：x 尺与 z 尺共用同一个下角，挂端点会叠成一行。 */
+      var e2 = [(pa[0]+pb[0])/2+out[0]*(pad+27), (pa[1]+pb[1])/2+out[1]*(pad+27)];
+      body += txt(e2[0], e2[1], esc(a.name)+' <tspan style="fill:'+col+'" font-weight="800">← '+DIMN[a.dim]+'×'+a.n+'</tspan>', 8.2, 'var(--pt-fg2)', anchor||'middle', 'font-weight="700"');
+      return step;
+    }
+    ruler(ax, [0,0,DD], [W,0,DD], [-.5, C], 12);          /* x 尺：左下棱 */
+    ruler(az, [W,0,0], [W,0,DD], [.5, C], 12);            /* z 尺：右下棱 */
+    /* noY：ℓ 尺两只盒子共用一把 PP 刀，画两遍就成了「两把刀」的错觉，也挤掉两盒之间的间距 */
+    if(!o.noY) ruler(ay, [0,0,DD], [0,HH,DD], [-1, 0], 14, 'end');
+    return {body:body, hit:hit, dx:dx, dy:dy, dz:dz, x0:x0, y0:y0, z0:z0,
+            cc:p3(x0+dx/2, y0+dy/2, z0+dz/2)};
+  }
+
+  /* ═══ 抬头 ═══ */
+  parts.push(txt(600, 28, '一张卡 = 各轴区间的交集，不是缩小的整网', 13, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(600, 44, '每把刀是一整片板，切穿整只盒子；三片板相交剁出一个小长方体 —— 体积 ∶ 全盒 = 这张卡的持有占比', 9, 'var(--pt-fg2)'));
+
+  /* ═══ 盒① 权重体：ℓ × h × e ═══ */
+  var b1 = solidBox({w:BW, h:BH, d:BD1, etp:D.etp, cavId:'w',
+    ax:{n:D.tp, dim:'tp', i:co.t, name:'h 隐藏维', k:'t', lab:function(i){ return '片'+i; }},
+    ay:{n:D.pp, dim:'pp', i:co.p, name:'ℓ 层号',  k:'p', lab:function(i){ return 'L'+(i*lps)+'–L'+((i+1)*lps-1); }},
+    az:{n:D.moe?D.ep:1, dim:'ep', i:me?me.ep:0, name:D.moe?'e 专家号':'e 轴不存在', k:D.moe?'e':'',
+        lab:function(i){ return D.moe ? 'E'+(i*kE)+'–E'+((i+1)*kE-1) : '（稠密·无 e 轴）'; }}});
+  /* DP 在这只盒子上没有轴：它只能整只复印。复印件与原盒**等大**（尺寸纪律：复印=等大成叠），
+     格子数与格子大小一个不变——所以那一腔的体积与 DP 无关。 */
+  var K1 = D.dp, oX = K1>1 ? Math.min(9, 46/(K1-1)) : 0, oY = K1>1 ? Math.min(6, 36/(K1-1)) : 0;
+  for(var k1=K1-1; k1>=1; k1--){
+    parts.push('<g transform="translate('+(TX1+k1*oX).toFixed(1)+','+(TY-k1*oY).toFixed(1)+')" opacity="'+(0.26+0.5*(1-k1/K1)).toFixed(2)+'">'
+      + '<polygon points="'+ptsStr(hexPts(BW,BH,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.7"/></g>');
+  }
+  parts.push('<g transform="translate('+TX1+','+TY+')">'+b1.body+'</g>');
+  hits.push('<g transform="translate('+TX1+','+TY+')">'+b1.hit+'</g>');
+  parts.push(txt(TX1-4, 92, '① 权重体 · 索引空间 '+(D.moe?'ℓ × h × e（三轴）':'ℓ × h（两轴，无 MoE）'), 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TX1-4, 105, '被剁成 '+D.pp+'×'+D.tp+(D.moe?'×'+D.ep:'')+' = '+fmt(D.pp*D.tp*(D.moe?D.ep:1))+' 个腔，这张卡持有其中 1 个', 8.2, 'var(--pt-fg2)'));
+  if(K1>1){
+    parts.push(txt(TX1+BW*C+10, 128, '×'+D.dp+' 复印（DP）', 8.4, VC.dp, 'start', 'font-weight="800"'));
+    parts.push(txt(TX1+BW*C+10, 139, '≡ 逐字节相同 · 等大', 7.2, VC.dp, 'start'));
+    parts.push(txt(TX1+BW*C+10, 149, 'DP 在①上没有轴', 7.2, 'var(--pt-fg3)', 'start'));
+  }
+
+  /* 专家权重的 h 由 **ETP** 切，不由 TP 切：ETP=1 时它在 h 上压根没切开，
+     所以①的腔对专家那一块其实更宽——虚线框标出来，字节占比高过体积占比的主因就看得见。 */
+  if(D.moe && D.etp < D.tp){
+    var ew = BW/D.etp, ex0 = (me.etp % D.etp)*ew;
+    parts.push('<g transform="translate('+TX1+','+TY+')">'
+      + boxSVG(ex0, b1.y0, b1.z0, ew, b1.dy, b1.dz, 1, {wire:true, stroke:VC.ep, sw:1.2, dash:'4 3'})+'</g>');
+    var ec = proj(ex0+ew, b1.y0, b1.z0+b1.dz, 1);
+    parts.push(txt(TX1+ec[0]+6, TY+ec[1]+11, '专家腔：h 由 ETP='+D.etp+' 切，比 TP 那一格宽', 7, VC.ep, 'start', 'font-weight="700"'));
+  }
+
+  /* ═══ 盒② 激活体：ℓ × s × b（h 是它的第 4 根轴，三维画不下，写在旁边） ═══ */
+  var b2 = solidBox({w:BW, h:BH, d:BD2, cav:VC.dp, noY:true, cavId:'a',
+    ax:{n:D.cp, dim:'cp', i:co.c, name:'s 序列位', k:D.cp>1?'c':'',
+        lab:function(i){ return D.cp>1 ? '段'+i+'∪'+(2*D.cp-1-i) : '全部 s'; }},
+    ay:{n:D.pp, dim:'pp', i:co.p, name:'ℓ 层号',  k:'', lab:function(i){ return 'L'+(i*lps); }},
+    az:{n:D.dp, dim:'dp', i:co.d, name:'b 样本号', k:'d', lab:function(i){ return '副本'+i; }}});
+  parts.push('<g transform="translate('+TX2+','+TY+')">'+b2.body+'</g>');
+  hits.push('<g transform="translate('+TX2+','+TY+')">'+b2.hit+'</g>');
+  parts.push(txt(TX2-4, 92, '② 激活体 · 索引空间 ℓ × h × b × s（四轴）', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TX2-4, 105, '同一把 DP 刀在这里是轴：整盒被真切成 '+D.dp+' 份（面积守恒），不是复印', 8.2, VC.dp));
+  parts.push(txt(TX2-4, 117, 'h 是它的第 4 根轴（TP 也切它）· ℓ 与①同一把 PP 刀，尺不重复画', 7.4, 'var(--pt-fg3)'));
+
+  /* ═══ 两只盒子共用的刀：ℓ 的刀面是同一片，横穿两只盒子（连线取两盒同一层高的前棱） ═══ */
+  var yl = (co.p+.5)*BH/D.pp;                       /* 本卡那一层段的局部高度 */
+  var yA = TY + BW*S - yl, yB = TY + BD2*S - yl;    /* ①的右前棱 / ②的左前棱，同一层段 */
+  var gx0 = TX1+BW*C+8, gx1 = TX2-BD2*C-8;
+  parts.push(ln([gx0, yA], [gx1, yB], 'stroke:'+VC.pp+';stroke-width:1;stroke-dasharray:5 4;stroke-opacity:.7'));
+  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 - 8, 'PP·TP 的刀面', 7.4, VC.pp, 'middle', 'font-weight="700"'));
+  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 4, '横穿两只盒子', 7.4, VC.pp, 'middle', 'font-weight="700"'));
+  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 15, 'ℓ、h 共有', 6.8, 'var(--pt-fg3)'));
+
+  /* ═══ 左栏读数：腔的坐标 —— 引线从腔拉过来，左右联动看得见 ═══ */
+  var RY = 96;
+  function row(y, k, v, col){
+    parts.push(txt(RX, y, esc(k), 7.8, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(RX+RW, y, v, 8.4, col||'var(--pt-fg)', 'end', 'font-weight="700"'));
+  }
+  function hr(y){ parts.push(ln([RX, y], [RX+RW, y], 'stroke:var(--pt-bds);stroke-width:.7')); }
+  function head(y, t, col){ parts.push(txt(RX, y, esc(t), 9.2, col||'var(--pt-fg)', 'start', 'font-weight="800"')); }
+  parts.push(txt(RX, RY, '读数 · 这张卡 g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(RX, RY+12, '(tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+')　地址只标不画', 7.4, 'var(--pt-fg3)', 'start'));
+  head(RY+32, '① 权重体腔'); hr(RY+36);
+  row(RY+49, 'ℓ ← PP', 'L'+(co.p*lps)+'–L'+((co.p+1)*lps-1), VC.pp);
+  row(RY+62, 'h ← TP', '['+fmt(co.t*hK)+', '+fmt((co.t+1)*hK)+')', VC.tp);
+  row(RY+75, 'e ← EP', D.moe ? 'E'+(me.ep*kE)+'–E'+((me.ep+1)*kE-1) : '—（无 MoE）', D.moe?VC.ep:'var(--pt-fg3)');
+  var vol = D.pp*D.tp*(D.moe?D.ep:1);
+  /* 体积占比 = 索引空间里的份额；字节占比 = 真账（复制项不被任何刀切，所以略高）——两个数都给，差额说清 */
+  var pcTot = (function(){ var D2={},k2; for(k2 in D) D2[k2]=D[k2]; D2.tp=1; D2.ep=1; D2.etp=1;
+    var t=0,pi; for(pi=0;pi<D.pp;pi++) t += paramsPerCard(D2, pi); return t; })();
+  var pcMine = paramsPerCard(D, co.p), bytePc = pcTot>0 ? pcMine/pcTot*100 : 0;
+  row(RY+91, '体积占比', '1/'+fmt(vol)+' = '+(100/vol).toFixed(2)+'%');
+  row(RY+104, '字节占比', bytePc.toFixed(2)+'%', 'var(--pt-fg2)');
+  /* 两个数不等，原因要说准：本配置里主因是**专家权重的 h 由 ETP 切、不由 TP 切**，
+     ETP=1 时它在 h 上根本没切开 —— 盒子上那只虚线框就是它。复制项只是次因。 */
+  var etpGap = D.moe && D.etp < D.tp;
+  parts.push(txt(RX, RY+116, etpGap ? '差额主因：专家权重只被 EP 切，h 方向没切——那要 ETP'
+                                    : ('差额 = 复制项（norm'+(D.moe?' / router':'')+' / KV 头）：谁也不切它们，'), 6.8, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(RX, RY+125, etpGap ? '（本配置 ETP='+D.etp+'）。盒上虚线框就是这块。'
+                                    : '每卡各存一份，所以字节比体积多出来一点。', 6.8, 'var(--pt-fg3)', 'start'));
+  head(RY+145, '② 激活体腔', VC.dp); hr(RY+149);
+  row(RY+162, 'b ← DP', '副本'+co.d+' 的 '+fmt(D.mbs*D.ga)+' 样本', VC.dp);
+  row(RY+175, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
+  row(RY+188, 'ℓ、h', '与①同一区间', 'var(--pt-fg2)');
+  /* A3 要说准，不能图省事说「腔纹丝不动」：
+     不变的是**腔的三条边长**（ℓ 层数 / h 宽 / e 桶大小里都没有 d）⇒ 体积不变 ⇒ 显存不省。
+     **位置**则未必不动：EP 折叠是 q=(d·CP+c)·TP+t，d 被卷了进去，换副本可能换专家桶。
+     判据是一个整除：TP·CP % (EP·ETP) == 0 ⇒ 换 d 时 ep 不变，腔连位置都不动；否则平移一格。
+     换的是「哪一桶」，不是「几个专家」——边长不变，A3 照旧成立。 */
+  var memNow = memParts(D, co.p).reduce(function(a,x){ return a+x.bytes; },0);
+  var memNoDp = memWithoutKnife(D, 'dp', co.p);
+  var eFixed = !D.moe || (D.tp*D.cp) % (D.ep*D.etp) === 0;
+  parts.push('<rect x="'+(RX-6)+'" y="'+(RY+204)+'" width="'+(RW+14)+'" height="112" rx="4" style="fill:'+mix(VC.dp,7)+';stroke:'+VC.dp+';stroke-width:1"/>');
+  head(RY+220, 'A3 的几何证明', VC.dp);
+  parts.push(txt(RX, RY+233, '腔的三条边长：ℓ '+lps+' 层 · h '+fmt(hK)+(D.moe?' · e '+kE+' 专家':''), 7.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  parts.push(txt(RX, RY+243, '这三个数里没有 d —— 换任意 DP 副本逐字不变', 7.2, 'var(--pt-fg2)', 'start'));
+  parts.push(txt(RX, RY+252, '⇒ 体积不变 ⇒ 显存一点不省。', 7.2, 'var(--pt-fg2)', 'start'));
+  parts.push(txt(RX, RY+266, '若 DP=1：'+fmtGB(memNoDp)+' GB → 现在 '+fmtGB(memNow)+' GB', 8.2, VC.dp, 'start', 'font-weight="800"'));
+  parts.push(txt(RX, RY+277, D.dp>1 ? '一点没省 —— 加 DP 不买余量。' : '（本配置 DP=1，反事实即现状）', 7.2, 'var(--pt-fg2)', 'start'));
+  parts.push(txt(RX, RY+290, eFixed ? '位置也不动：TP·CP='+(D.tp*D.cp)+' 是 EP·ETP='+(D.moe?D.ep*D.etp:1)+' 的整数倍。'
+                                    : '位置会平移：EP 折叠 q=(d·CP+c)·TP+t 把 d 卷了进去，', 7, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(RX, RY+299, eFixed ? '省显存要动①的三根轴，不是复印的份数。'
+                                    : 'TP·CP='+(D.tp*D.cp)+' 不整除 EP·ETP='+(D.ep*D.etp)+' → 换副本换专家桶。', 7, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(RX, RY+308, eFixed ? '数值证明在「单维切分·DP」，两处互相印证。'
+                                    : '换的是哪一桶，不是几个专家：边长不变，A3 照旧。', 7, 'var(--pt-fg3)', 'start'));
+  /* 引线：腔 → 左栏对应段（左右联动的可视化，不靠读者自己找） */
+  parts.push(ln([TX1+b1.cc[0], TY+b1.cc[1]], [RX+RW+8, RY+49], 'stroke:var(--pt-fg3);stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.7'));
+  parts.push(ln([TX2+b2.cc[0], TY+b2.cc[1]], [RX+RW+8, RY+162], 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
+
+  /* ═══ 一轴一刀（§03）：哪个对象有这根轴，就由哪把刀在那个对象上动手 ═══
+     这张表本来该放 .pt-note 浮层，但那层压在舞台左下角、会盖住容器条——画进 SVG 里，版面自己说了算。 */
+  var TBX = 246, TBY = 500, TBW = 578;
+  var CLAIM = [
+    {a:'ℓ 层号',   d:'pp', w:1, c:1, why:'两个对象共有 —— 一刀切两处'},
+    {a:'h 隐藏维', d:'tp', w:1, c:1, why:'两个对象共有 —— 一刀切两处'},
+    {a:'e 专家号', d:'ep', w:1, c:0, why:'②上没有轴：路由是动作，不是静态切分'},
+    {a:'b 样本号', d:'dp', w:0, c:1, why:'①上没有轴：只能复印 ⇒ A3 加 DP 不买余量'},
+    {a:'s 序列位', d:'cp', w:0, c:1, why:'①上没有轴：权重根本没有 s 这根轴'}
+  ];
+  parts.push(txt(TBX, TBY-6, '一轴一刀（§03 索引五元组）：五根轴恰好被五把刀一一认领', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(TBX+168, TBY+8, '① 权重体', 7.2, 'var(--pt-fg3)'));
+  parts.push(txt(TBX+214, TBY+8, '② 激活体', 7.2, 'var(--pt-fg3)'));
+  CLAIM.forEach(function(r, ri){
+    var y5 = TBY + 20 + ri*15;
+    parts.push('<rect x="'+TBX+'" y="'+(y5-10)+'" width="'+TBW+'" height="14" style="fill:'+(ri%2?mix('var(--pt-fg)',3):'transparent')+'"/>');
+    parts.push(txt(TBX+4, y5, esc(r.a), 8.2, VC[r.d], 'start', 'font-weight="700"'));
+    parts.push(txt(TBX+80, y5, '← '+DIMN[r.d], 8, VC[r.d], 'start', 'font-weight="800"'));
+    parts.push(txt(TBX+168, y5, r.w?'✓':'✗', 9, r.w?VC[r.d]:'var(--pt-fg3)', 'middle', 'font-weight="800"'));
+    parts.push(txt(TBX+214, y5, r.c?'✓':'✗', 9, r.c?VC[r.d]:'var(--pt-fg3)', 'middle', 'font-weight="800"'));
+    parts.push(txt(TBX+240, y5, esc(r.why), 7.6, 'var(--pt-fg2)', 'start'));
+  });
+  parts.push(txt(TBX, TBY+112, 'ETP 是第六把刀，却不认领新轴 —— 它在 e 腔内部沿专家自己的 ffn 维再切一次（本配置 ETP='+D.etp+'）。这就是「6 把刀 ≠ 6 根轴」的来源。', 7.6, 'var(--pt-fg2)', 'start'));
+
+  /* ═══ 容器（L3）：两个腔加起来才是这张卡装的东西 ═══ */
+  if(L3){
+    var CBX = 246, CBW = 470, CBY = 630;
+    parts.push(txt(CBX, CBY-8, '容器只有两个（卡=显存 / 流=时间）—— 上面两个腔加起来，才是这张卡显存里装的东西：', 8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    parts.push(txt(CBX, CBY+2, '①腔 ⇒ 权重 + 梯度 + 优化器态　②腔 ⇒ 激活·在途 μbatch', 7.4, 'var(--pt-fg3)', 'start'));
+    var segs = memParts(D, co.p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
+    var cap = D.hbm*Math.pow(2,30), sc = CBW/Math.max(cap, tot), ax2 = CBX;
+    parts.push('<rect x="'+CBX+'" y="'+(CBY+8)+'" width="'+(cap*sc).toFixed(1)+'" height="22" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.2;stroke-dasharray:3 3"/>');
+    segs.forEach(function(sg){
+      var w4 = sg.bytes*sc;
+      parts.push('<rect x="'+ax2.toFixed(1)+'" y="'+(CBY+8)+'" width="'+Math.max(.5,w4).toFixed(1)+'" height="22" style="fill:'+sg.color+';fill-opacity:.55;stroke:var(--pt-bg);stroke-width:.6"/>');
+      if(w4 > 56) parts.push(txt(ax2+w4/2, CBY+22, esc(sg.label), 6.8, 'var(--pt-fg)', 'middle'));
+      ax2 += w4;
+    });
+    parts.push(txt(CBX+CBW+10, CBY+24, fmtGB(tot)+' / '+D.hbm+' GB', 9.5, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
+  }
+  parts.push(txt(RX, H-28, '尺寸纪律：真切=面积守恒（份合起来=父块） · 复印=等大成叠（②真切 / ①复印，同一把 DP 刀两种作用） · 放大=尺寸不守恒（⊕，本图不放大）', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  parts.push(txt(RX, H-14, '点任意轴尺的一格换卡：换 ℓ / h / e 三根轴，①的腔会移动；换 b（DP）只在②里移动，①纹丝不动 —— 这就是六把刀落到两个对象上的全部差别。', 8, 'var(--pt-fg2)', 'start'));
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">交集腔</span>'
+    + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
+    + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
+    + '<button class="pb" data-act="view" data-v="anatomy">腔里装了什么 ↗</button>';
+  /* 一轴一刀的表已经画进 SVG 了（见 TBX/TBY）——.pt-note 浮层压在舞台左下角会盖住容器条，
+     同一句话不放两遍，浮层这里就空着。 */
+  $('stageNote').hidden = true;
+  $('detach').hidden = true;
+}
+
 /* ═════════ 刀序·切分链：用「先后/上下」把五把刀组织起来 ═════════
    两种顺序，方向相反，都真实存在（§11 / §02）：
    · 嵌套序（本图自上而下）：每一刀切在上一刀的产物里——DP 复制整网(最外) →
@@ -1151,25 +1438,37 @@ function renderChain(D){
      这样 PP 切的是真层区间、DP 复印的是同一张真整网、放大进去就是那 35 个真算子。
      真数据取不到时退回素色条（单文件打开的场景）。 */
   var netOps = realOps(D, g);
-  function netMini(x, y, w, hh, l0, l1, alpha){
-    var s = '';
-    var nL = Math.max(1, (l1===undefined?D.layers:(l1-l0+1)));
-    var lw = w/nL, cls = netOps ? netOps.filter(function(o){ return !o.comm; }) : null;
-    if(!cls){ return rect(x, y, w, hh, 'var(--pt-s2)', 'transparent', 0, 'pointer-events="none"'); }
-    /* 层内不铺 35 个算子——那是噪声。按**大类**合并成连续色段：
-       注意力区 / MoE 区 / 归一化与逐元素。层与层同构，所以每层同一套纹理。 */
-    var BAND = {'opv:attention':'attn', 'opv:linear':'attn', 'opv:mlp':'attn',
-                'opv:moe':'moe', 'opv:gate':'moe',
-                'opv:norm':'norm', 'opv:act':'norm',
-                'opv:embedding':'io', 'opv:head':'io'};
-    var BC = {attn:VC.tp, moe:VC.ep, norm:'var(--pt-fg3)', io:VC.pp};
+  /* 层内不铺 35 个算子——那是噪声。按**大类**合并成连续色段：
+     注意力区 / MoE 区 / 归一化与逐元素 / 词嵌入与输出头。层与层同构，所以每层同一套纹理。 */
+  var BAND = {'opv:attention':'attn', 'opv:linear':'attn', 'opv:mlp':'attn',
+              'opv:moe':'moe', 'opv:gate':'moe',
+              'opv:norm':'norm', 'opv:act':'norm',
+              'opv:embedding':'io', 'opv:head':'io'};
+  var BC = {attn:VC.tp, moe:VC.ep, norm:'var(--pt-fg3)', io:VC.pp};
+  var netSegs = (function(){
+    if(!netOps) return null;
     var segs = [], tot = 0;
-    cls.forEach(function(o){
+    netOps.forEach(function(o){
+      if(o.comm) return;                                  /* 通信是动作（线），不占体积 */
       var b = BAND[o.cls] || 'norm';
       if(segs.length && segs[segs.length-1].b === b) segs[segs.length-1].w += o.w;
       else segs.push({b:b, w:o.w});
       tot += o.w;
     });
+    return segs.length ? {segs:segs, tot:tot} : null;
+  })();
+  /* 整网有两种画法，同一份真数据：
+       2D —— 平铺色段，密的时候最省地方，看得清「哪一段占多宽」；
+       3D —— 每个算子段是一块**有体积的板**（斜投影：只有深度偏移，X 不受影响，所以
+              层与层不会被剪成斜带）。整网因此是一叠真的板，不是一条填了色的带子。
+     两种都留着，顶上按钮切换——同一份 netSegs，只是投影不同。 */
+  var ND = 7, NE = 4.2;                                   /* 斜投影的深度偏移（右上） */
+  function netMini(x, y, w, hh, l0, l1, alpha){
+    var s = '';
+    var nL = Math.max(1, (l1===undefined?D.layers:(l1-l0+1)));
+    var lw = w/nL;
+    if(!netSegs) return rect(x, y, w, hh, 'var(--pt-s2)', 'transparent', 0, 'pointer-events="none"');
+    var segs = netSegs.segs, tot = netSegs.tot;
     for(var li=0; li<nL; li++){
       var lx = x + li*lw, acc = 0;
       for(var si=0; si<segs.length; si++){
@@ -1182,9 +1481,50 @@ function renderChain(D){
     }
     return '<g'+(alpha?' opacity="'+alpha+'"':'')+'>'+s+'</g>';
   }
+  /* 3D：一**层**是一块板（不是一个色段一块——3px 宽的段挤出 9px 深度只会变成噪声）。
+     板顶铺同一套色段，所以从上面也看得见层的内部结构；层与层留 0.7px 缝，
+     缝里露出的那条暗面就是板与板的接口。斜投影：深度恒为 (ND,−NE)，X 不受深度影响，
+     所以 32 层仍是并排的，不会像等轴测那样被剪成斜带。 */
+  var ND = 9, NE = 5.5;
+  function topFace(x, y, w, fill){
+    if(w <= .15) return '';
+    return '<polygon points="'+x.toFixed(1)+','+y.toFixed(1)+' '+(x+w).toFixed(1)+','+y.toFixed(1)+' '
+      + (x+w+ND).toFixed(1)+','+(y-NE).toFixed(1)+' '+(x+ND).toFixed(1)+','+(y-NE).toFixed(1)
+      + '" style="fill:'+fill+'" pointer-events="none"/>';
+  }
+  function sideFace(x, y, h, fill){
+    return '<polygon points="'+x.toFixed(1)+','+y.toFixed(1)+' '+(x+ND).toFixed(1)+','+(y-NE).toFixed(1)+' '
+      + (x+ND).toFixed(1)+','+(y+h-NE).toFixed(1)+' '+x.toFixed(1)+','+(y+h).toFixed(1)
+      + '" style="fill:'+fill+'" pointer-events="none"/>';
+  }
+  function netMini3(x, y, w, hh, l0, l1, alpha){
+    if(!netSegs || w <= ND+6 || hh <= NE+6) return netMini(x, y, w, hh, l0, l1, alpha);
+    /* 板要连深度一起塞进父框：正面缩到 (w−ND, hh−NE) 并下移 NE，
+       顶面的后缘正好压在父框上沿、右侧面正好压在父框右缘——体积是长出来的，不是溢出去的 */
+    var fy = y + NE, fh = hh - NE, fw = w - ND;
+    var nL = Math.max(1, (l1===undefined?D.layers:(l1-l0+1)));
+    var lw = fw/nL, s = '', si, ow, acc;
+    var segs = netSegs.segs, tot = netSegs.tot;
+    var gap = lw > 6 ? .7 : 0, lwv = lw - gap;
+    /* 板顶铺**整层一块**，不按色段铺：一层 15px 里色段只有 1px 上下，挤成顶面就是一片糊。
+       层的内部结构留在正面（那里是正视，1px 也还是一条可辨的竖纹）；顶面负责「有几块板」。 */
+    /* 自左向右：每块板的右暗面会被右邻的正面盖住，只在缝里露出一条——这正是相邻板贴合的样子 */
+    for(var li=0; li<nL; li++){
+      var lx = x + li*lw;
+      s += topFace(lx, fy, lwv, mix('var(--pt-fg2)', li%2 ? 15 : 11));
+      s += sideFace(lx+lwv, fy, fh, mix('var(--pt-fg)', 26));
+      for(si=0, acc=0; si<segs.length; si++){
+        ow = lwv*segs[si].w/tot;
+        if(ow > .3) s += rect(lx+acc, fy, ow, fh, mix(BC[segs[si].b], 34), 'transparent', 0, 'pointer-events="none"');
+        acc += ow;
+      }
+    }
+    return '<g'+(alpha?' opacity="'+alpha+'"':'')+' pointer-events="none">'+s+'</g>';
+  }
+  var netFill = ui.net3d ? netMini3 : netMini;
   /* ── L0：整网 + 全局批 ── */
   parts.push(rect(MX, LY0, MW, H0, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
-  parts.push(netMini(MX, LY0, MW, H0));
+  parts.push(netFill(MX, LY0, MW, H0));
   parts.push(rect(MX, LY0, MW, H0, 'none', 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
   parts.push(rect(MX+MW/2-186, LY0+3, 372, 28, mix('var(--pt-bg)',86), 'transparent', 0, 'pointer-events="none"'));
   parts.push(txt(MX+MW/2, LY0+15, '整网（对象① 权重体） · '+D.layers+' 层 · 逻辑上一张', 10.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
@@ -1206,7 +1546,7 @@ function renderChain(D){
     var off = (K-1-k1), bx1 = MX + off*kOffX, by1 = LY1 - off*kOffY, isF = k1===0;
     var dIdx = isF ? co.d : (co.d+k1)%D.dp;
     parts.push('<g class="cgrow">'+rect(bx1, by1, MW, H1, isF?mix(VC.dp,14):'var(--pt-s1)', isF?VC.dp:'var(--pt-bds)', isF?1.5:0.7, 'data-act="chainpick" data-k="d" data-i="'+dIdx+'" style="cursor:pointer"')
-      + netMini(bx1, by1, MW, H1, 0, undefined, isF?.85:.35)
+      + (isF ? netFill : netMini)(bx1, by1, MW, H1, 0, undefined, isF?.85:.35)
       + rect(bx1, by1, MW, H1, 'none', isF?VC.dp:'var(--pt-bds)', isF?1.5:0.7, 'pointer-events="none"')
       + (isF ? rect(bx1+MW/2-166, by1+3, 332, 26, mix('var(--pt-bg)',86), 'transparent', 0, 'pointer-events="none"')
              + txt(bx1+MW/2, by1+15, '副本'+co.d+'（选中）＝ 整网原尺寸 · ≡ 逐字节相同', 9.5, VC.dp, 'middle', 'font-weight="800" pointer-events="none"')
@@ -1221,7 +1561,7 @@ function renderChain(D){
   for(var p1=0; p1<D.pp; p1++){
     var sx = MX + p1*(segW+2), hotP = p1===co.p;
     parts.push('<g class="cgrow">'+rect(sx, LY2, segW, H2, hotP?mix(VC.pp,20):mix(VC.pp,7), hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'data-act="chainpick" data-k="p" data-i="'+p1+'" style="cursor:pointer"')
-      + netMini(sx, LY2, segW, H2, p1*D.layersPerStage, (p1+1)*D.layersPerStage-1, hotP?.9:.42)
+      + netFill(sx, LY2, segW, H2, p1*D.layersPerStage, (p1+1)*D.layersPerStage-1, hotP?.9:.42)
       + rect(sx, LY2, segW, H2, 'none', hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'pointer-events="none"')+'</g>');
     parts.push(txt(sx+segW/2, LY2+13, 'stage'+p1+' · L'+(p1*D.layersPerStage)+'–L'+((p1+1)*D.layersPerStage-1), 8.5, hotP?VC.pp:'var(--pt-fg2)', 'middle', (hotP?'font-weight="800" ':'')+'pointer-events="none"'));
     for(var li=1; li<D.layersPerStage && li<12; li++)
@@ -1347,6 +1687,7 @@ function renderChain(D){
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()+parts.join('')+'</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
+    + '<button class="pb'+(ui.net3d?' is-on':'')+'" data-act="net3d" title="整网怎么填：3D=每个算子段是一块有体积的板（斜投影，X 不受深度影响）；2D=平铺色段，密的时候更省地方。两种同一份真数据。">整网 '+(ui.net3d?'3D 板':'2D 带')+'</button>'
     + '<span class="pt-chip">链=全体卡的切分过程 · 高亮路径=选中卡的来历 · 点任意块换路径</span>'
     + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
   $('stageNote').hidden = true; $('detach').hidden = true;
@@ -1821,7 +2162,7 @@ function renderDetail(D){
   var el = $('detail');
   if(!D.ok){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
-    if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'){ el.hidden = (sel===null); if(sel===null) return; }
+    if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
     el.innerHTML = '<h4>结构总览 · 点卡读出</h4>'
       + '<table>'
@@ -2011,6 +2352,22 @@ function sayText(D){
   }else if(ui.view==='compose'){
     s = '<b>合成·卡阵</b>：五维相乘后的全局（TP×PP×DP 三轴，CP 分面）。单维讲关系，这里讲落位。'
       + (layerOn('L5') ? ' 通信组=<b>'+DIMN[ui.commDim]+'</b>×<b>'+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+'</b>——维度管分组、原语管画法，互不绑定。' : ' 底栏开 L5 看通信；▶ 播放一个训练步。');
+  }else if(ui.view==='solid'){
+    var vol2 = D.pp*D.tp*(D.moe?D.ep:1);
+    s = '<b>交集腔</b>：两个对象各有自己的索引空间，<b>轴数不同</b>——①<b>权重体</b> ℓ×h'+(D.moe?'×e':'')+'（'+(D.moe?3:2)+' 轴），②<b>激活体</b> ℓ×h×b×s（4 轴）。'
+      + '每把刀是<b>一整片板</b>（切穿整只盒子，不是切一小块），三片板相交剁出一个小长方体 = 这张卡持有的全部：'
+      + '<b>体积 ∶ 全盒 = 持有占比 1/'+fmt(vol2)+'</b>。这就是「卡不是缩小的整网、是<b>区间的交集</b>」的几何形。'
+      + ' <b style="color:'+VC.dp+'">DP 在①上没有轴</b>——它只能把整只盒子复印一叠，格子数与格子大小一个不变，'
+      + '所以腔的<b>三条边长</b>（ℓ '+D.layersPerStage+' 层 · h '+fmt(Math.floor(D.hidden/D.tp))+(D.moe?' · e '+(D.experts/D.ep)+' 专家':'')+'）里<b>没有 d</b>：'
+      + '换任意 DP 副本逐字不变 ⇒ 体积不变 ⇒ 显存一点不省。这是 A3「加 DP 不买余量」的<b>几何证明</b>'
+      + '（数值证明在单维切分的反事实里，两处互相印证）。'
+      + (D.moe && (D.tp*D.cp) % (D.ep*D.etp) !== 0
+          ? '注意别把它说过头：<b>位置</b>未必不动——EP 折叠 q=(d·CP+c)·TP+t 把 d 卷了进去，本配置 TP·CP='+(D.tp*D.cp)
+            +' 不整除 EP·ETP='+(D.ep*D.etp)+'，所以换副本会换专家桶。换的是<b>哪一桶</b>，不是<b>几个专家</b>——边长不变，A3 照旧。'
+          : '本配置 TP·CP='+(D.tp*D.cp)+' 是 EP·ETP='+(D.moe?D.ep*D.etp:1)+' 的整数倍，所以连位置都不动。')
+      + '反过来 <b style="color:'+VC.ep+'">EP 在②上没有轴</b>：路由是<b>动作</b>（把 token 送去别的卡），不是静态切分。'
+      + ' 五根轴恰好被五把刀一一认领（§03）；<b>ETP 是第六把刀却不认领新轴</b>——它在 e 腔内部沿专家自己的 ffn 维再切一次，'
+      + '这就是「6 把刀 ≠ 6 根轴」的来源。点轴尺的一格换卡。';
   }else if(ui.view==='time'){
     s = '<b>时间·流</b>：流=时间容器。空间折叠到只剩 PP；▲=P2P recv 进入时刻。气泡率≈(PP−1)/GA='+(D.bubble*100).toFixed(1)+'%。';
     if(ui.zoomAR && ui.skew) s += ' <span class="a5">归因（A5）：段最短=最后进入的副本是嫌疑人；等最久的是受害者，不是根因（§12 诊断陷阱）。</span>';
@@ -2038,6 +2395,7 @@ function render(){
     else if(ui.view==='chain') renderChain(D);
     else if(ui.view==='compose') renderV1(D);
     else if(ui.view==='anatomy') renderV3(D);
+    else if(ui.view==='solid') renderSolid(D);
     else renderV2(D);
   }
   renderDetail(D);
@@ -2091,6 +2449,7 @@ document.addEventListener('click', function(ev){
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
+  else if(act==='net3d'){ ui.net3d = !ui.net3d; render(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
