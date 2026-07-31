@@ -295,7 +295,7 @@ var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   net3d:true,                                                                /* 整网默认画成有体积的板；2D 平铺仍在，顶栏可切 */
-  act:0, act2:false,                                                         /* 故事视图当前是第几幕；交集腔是否展开激活体（第二视角） */
+  act:0, act2:false, persp:'map',                                                         /* 故事视图当前是第几幕；交集腔是否展开激活体（第二视角） */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -306,7 +306,7 @@ var VIEWS = [
   {id:'chain', name:'刀序·切分链'},
   {id:'compose', name:'合成·卡阵'},
   {id:'anatomy', name:'卡内解剖'},
-  {id:'solid', name:'交集腔'},
+  {id:'solid', name:'映射 · 双链/交集腔'},
   {id:'time', name:'时间·流'}
 ];
 var LAYERS = ['L1','L2','L3','L4','L5'];
@@ -369,6 +369,7 @@ function urlLoad(){
   if(q.get('net3d')==='0') ui.net3d = false;
   var ac = parseInt(q.get('act'),10); if(isFinite(ac) && ac>=0) ui.act = ac;
   if(q.get('act2')==='1') ui.act2 = true;
+  if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
 }
 function urlWrite(){
   var q = new URLSearchParams();
@@ -384,6 +385,7 @@ function urlWrite(){
   if(!ui.net3d && ui.view==='chain') q.set('net3d','0');
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='solid' && ui.act2) q.set('act2','1');
+  if(ui.view==='solid' && ui.persp!=='map') q.set('p', ui.persp);
   if(layerOn('L5') && (ui.view==='compose'||ui.view==='time')) q.set('l5','1');
   if(ui.commDim!=='tp') q.set('dim', ui.commDim);
   if(ui.commPrim!=='allreduce') q.set('prim', ui.commPrim);
@@ -1619,6 +1621,166 @@ function graphSVG(o){
   return out.join('') + acts.join('') + txts.join('');
 }
 
+/* ═════════ 视图六 · 映射（两个视角）═════════
+   C「映射」这一段要答两个不同的问题，所以是两个视角，不是两张图：
+     · 视角① 双链映射 —— 哪一级映到哪一级（结构）
+     · 视角② 交集腔   —— 这张卡装了哪一块（载荷）
+   默认给①：先知道刀落在哪一级，再看那一级交出来的腔是什么。 */
+function renderSolid(D){
+  if(ui.persp === 'cav') return renderSolidCav(D);
+  return renderSolidMap(D);
+}
+/* ═════════ 视角① 双链映射（FIG 09 的三维化）═════════
+   两条链都是包含链，各 5 级，但两条链的级与级并不对齐——所以连线是斜的，斜不是画风，是事实。
+   全图真正的主张只有一句：四个并行维度全部收在「卡」这一级。
+   往上两级（机 / 集群）只决定拓扑与带宽——它们不持有内容，所以画成空线框；
+   往下两级（计算单元 / 片上 buffer）与并行完全无关——算子融合与 tiling 不跨卡、不通信。
+   「卡」这一级不是一只盒子，是一整个卡阵平面（机内 8 卡 × 若干台机），四条梁全落在这个平面上；
+   顺带就能核对两条常被念错的约束：TP 分片必须机内（组要落在同一行）· PP 划分可跨机（链本来就跨行）。
+   机制框是扁的：机制是动作，不是容器——参照系里只有卡与流两个容器画成体。 */
+function renderSolidMap(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var H = 700, parts = [], hits = [];
+  var L4 = layerOn('L4');
+  var PER = 8, MACH = Math.ceil(D.world/PER);      /* 机 = 8 卡：FIG09 的拓扑假设，不由并行配置推出 */
+  function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  function poly(pts, st, extra){ return '<polygon points="'+ptsStr(pts)+'" style="'+st+'" '+(extra||'')+'/>'; }
+  /* 水平板：容器才有体积（斜投影，深度恒为 (dx,−dy)） */
+  function plate(px,py,w,dx,dy,th,o){
+    o = o || {};
+    var st = 'stroke:'+(o.stroke||'var(--pt-bds)')+';stroke-width:'+(o.sw||1)+(o.dash?';stroke-dasharray:'+o.dash:'');
+    var pc = o.pct || 0, base = o.base || 'var(--pt-fg)';
+    function F(k){ return pc ? mix(base, Math.min(70, pc*k)) : 'none'; }
+    return poly([[px,py],[px+w,py],[px+w+dx,py-dy],[px+dx,py-dy]], 'fill:'+F(1)+';'+st)
+         + poly([[px,py],[px+w,py],[px+w,py+th],[px,py+th]], 'fill:'+F(2.1)+';'+st)
+         + poly([[px+w,py],[px+w+dx,py-dy],[px+w+dx,py-dy+th],[px+w,py+th]], 'fill:'+F(3)+';'+st);
+  }
+  function cell(px,py,w,dx,dy,a0,a1,b0,b1){       /* 板上 (a 沿宽, b 沿深) 的一格 */
+    function P(a,b){ return [px + a*w + b*dx, py - b*dy]; }
+    return [P(a0,b0), P(a1,b0), P(a1,b1), P(a0,b1)];
+  }
+  var LX = 36, LW = 112, LDX = 32, LDY = 18, LTH = 6;
+  var MX0 = 224, MW0 = 244, MH0 = 30;
+  var PX0 = 540, PW0 = 118, PDX = 34, PDY = 19, PTH = 6;
+  var CDX = 104, CDY = 64, CW0 = 168, CTH = 9;      /* 卡阵平面：它是主角，给足深度 */
+  var LOG = [
+    {k:'net', y:132, t:'整网',      s:D.layers+' 层的图'},
+    {k:'lay', y:220, t:'层 ℓ',      s:'层子图 · PP 切成 '+D.pp+' 段'},
+    {k:'exp', y:308, t:'expert e',  s:D.moe?('仅 MoE 层存在 · '+D.experts+' 个'):'仅 MoE 层存在（本配置无）'},
+    {k:'op',  y:396, t:'算子',      s:'MatMul · Softmax'},
+    {k:'ten', y:484, t:'张量',      s:'权重 · 激活值'}
+  ];
+  var PHY = [
+    {k:'clu',  y:118, t:'集群',        s:'world_size '+fmt(D.world)+' 张卡'},
+    {k:'mac',  y:202, t:'机',          s:PER+' 卡 · 机内高带宽 · 共 '+fmt(MACH)+' 台'},
+    {k:'card', y:352, t:'卡',          s:'显存 + 计算单元 + 流', big:true},
+    {k:'unit', y:474, t:'计算单元',    s:'矩阵 + 向量单元'},
+    {k:'buf',  y:552, t:'片上 buffer', s:'各级缓存'}
+  ];
+  var LY = {}, PY = {};
+  LOG.forEach(function(q){ LY[q.k] = q.y; });
+  PHY.forEach(function(q){ PY[q.k] = q.y; });
+  var MAPS = [
+    {from:'net', to:'clu',  dim:null, t:'world_size = TP × CP × PP × DP', s:'是计数恒等式，不是一把刀'},
+    {from:'lay', to:'card', dim:'pp', t:'PP 划分', s:'按层号 ℓ 分给不同 stage · 可跨机'},
+    {from:'exp', to:'card', dim:'ep', t:'EP 划分', s:'按 expert 号 e 分开放 · 借用已有的卡'},
+    {from:'op',  to:'card', dim:'tp', t:'TP 分片', s:'沿 h 拆权重矩阵 · 必须机内'},
+    {from:'ten', to:'card', dim:'dp', t:'DP 切 b / CP 切 s', s:'权重全份复制，只切输入'},
+    {from:'op',  to:'unit', dim:null, t:'算子选择 + 算子融合 → 落成 kernel', s:'与并行无关'},
+    {from:'ten', to:'buf',  dim:null, t:'tiling', s:'不跨卡、不通信'}
+  ];
+  parts.push(txt(452, 58, '两条包含链，级与级并不对齐 —— 所以连线是斜的，斜不是画风', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(452, 74, '四条并行映射的源头在逻辑侧的四个不同层级，落点全是「卡」', 9.2, 'var(--pt-fg2)'));
+  parts.push(txt(LX+LW/2+LDX/2, 100, '逻辑侧', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  parts.push(txt(MX0+MW0/2, 100, '映射机制（是动作，不画成体）', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  parts.push(txt(PX0+PW0/2+PDX/2, 88, '物理侧', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  LOG.forEach(function(q){
+    var off = q.k==='exp' && !D.moe;
+    parts.push(plate(LX, q.y, LW, LDX, LDY, LTH, {pct: off?0:7, stroke: off?'var(--pt-bd)':'var(--pt-bds)', sw:1, dash: off?'3 2':''}));
+    parts.push(txt(LX+8, q.y-LDY/2, esc(q.t), 9.6, off?'var(--pt-fg3)':'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(LX+8, q.y-LDY/2+11, esc(q.s), 6.9, 'var(--pt-fg3)', 'start'));
+  });
+  PHY.forEach(function(q){
+    if(q.big) return;
+    parts.push(plate(PX0, q.y, PW0, PDX, PDY, PTH, {fill:'none', stroke:'var(--pt-bd)', sw:1, dash:'3 2'}));
+    parts.push(txt(PX0+8, q.y-PDY/2, esc(q.t), 9.6, 'var(--pt-fg2)', 'start', 'font-weight="800"'));
+    parts.push(txt(PX0+8, q.y-PDY/2+11, esc(q.s), 6.9, 'var(--pt-fg3)', 'start'));
+  });
+  /* ── 卡阵平面：机内 8 卡 × MACH 台机，全量画出 ── */
+  var cy = PY.card;
+  var tpM = groupMembers('tp', g, D), ppM = groupMembers('pp', g, D);
+  var tpMach = {}, ppMach = {};
+  tpM.forEach(function(x){ tpMach[Math.floor(x/PER)] = 1; });
+  ppM.forEach(function(x){ ppMach[Math.floor(x/PER)] = 1; });
+  var tpIn = Object.keys(tpMach).length === 1;
+  parts.push(plate(PX0, cy, CW0, CDX, CDY, CTH, {pct:5, stroke:'var(--pt-fg)', sw:1.6}));
+  var cw1 = 1/PER, cb1 = 1/MACH;
+  var tiny = (CW0/PER < 2.2) || (CDY/MACH < 1.4);
+  for(var mi=0; mi<MACH; mi++) for(var si=0; si<PER; si++){
+    var gg = mi*PER + si;
+    if(gg >= D.world) continue;
+    var q4 = cell(PX0, cy, CW0, CDX, CDY, si*cw1, (si+1)*cw1, mi*cb1, (mi+1)*cb1);
+    var f4 = gg===g ? 'var(--pt-fg)' : tpM.indexOf(gg)>=0 ? mix(VC.tp,55)
+           : ppM.indexOf(gg)>=0 ? mix(VC.pp,48) : mix('var(--pt-fg)',9);
+    parts.push(poly(q4, 'fill:'+f4+';stroke:'+(tiny?'none':'var(--pt-bg)')+';stroke-width:.3'));
+    if(!tiny) hits.push('<g class="cgrow">'+poly(q4, 'fill:transparent;cursor:pointer', 'data-act="pickg" data-g="'+gg+'"')+'</g>');
+  }
+  if(!tiny) for(var mj=1; mj<MACH; mj++){
+    var e4 = cell(PX0, cy, CW0, CDX, CDY, 0, 1, mj*cb1, mj*cb1);
+    parts.push(ln(e4[0], e4[1], 'stroke:var(--pt-fg3);stroke-width:.5;stroke-opacity:.65'));
+  }
+  parts.push(txt(PX0-8, cy+2, '卡', 11, 'var(--pt-fg)', 'end', 'font-weight="800"'));
+  parts.push(txt(PX0-8, cy+14, '显存+计算单元+流', 6.6, 'var(--pt-fg3)', 'end'));
+  parts.push(txt(PX0+CW0+CDX+8, cy-CDY+2, fmt(MACH)+' 台机 × '+PER+' 卡', 7.4, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(PX0+CW0+CDX+8, cy-CDY+12, '= '+fmt(D.world)+' 张（全画）', 7.4, 'var(--pt-fg3)', 'start'));
+  if(tiny) parts.push(txt(PX0, cy+CTH+16, fmt(D.world)+' 张全画出来了，但格子已细到点不动 —— 点选请用顶栏的「选中卡」输入框', 7, 'var(--pt-fg3)', 'start'));
+  /* ── 七条映射：四条并行的全部收在「卡」那一点 ── */
+  var CARD_IN = [PX0, cy];
+  MAPS.forEach(function(q, qi){
+    var my = 118 + qi*62, dead = (q.from==='exp' && !D.moe);
+    var col = q.dim ? VC[q.dim] : 'var(--pt-fg3)';
+    var d2 = q.to==='card' ? CARD_IN : [PX0, PY[q.to]];
+    var sw = q.dim ? 1.6 : .9;
+    parts.push('<g opacity="'+(dead?.3:1)+'">'
+      + ln([LX+LW, LY[q.from]], [MX0, my], 'stroke:'+col+';stroke-width:'+sw+';stroke-opacity:.8')
+      + ln([MX0+MW0, my], d2, 'stroke:'+col+';stroke-width:'+sw+';stroke-opacity:.85;marker-end:url(#'+(q.dim?'arr'+q.dim:'arrx')+')')
+      + '<rect x="'+MX0+'" y="'+(my-MH0/2)+'" width="'+MW0+'" height="'+MH0+'" rx="4" style="fill:var(--pt-s1);stroke:'+col+';stroke-width:'+(q.dim?1.6:1)+'"/>'
+      + txt(MX0+10, my-1, esc(q.t), 9, q.dim?col:'var(--pt-fg2)', 'start', 'font-weight="800"')
+      + txt(MX0+10, my+10, esc(q.s)+(dead?'（本配置无）':''), 6.9, 'var(--pt-fg3)', 'start')+'</g>');
+  });
+  /* ── 三句主张 ── */
+  var AX = 706;
+  parts.push('<rect x="'+PX0+'" y="'+(cy+CTH+8)+'" width="214" height="48" rx="5" style="fill:'+mix('var(--pt-fg)',5)+';stroke:var(--pt-fg);stroke-width:1.4"/>');
+  parts.push(txt(PX0+10, cy+CTH+25, '四个并行维度全部收在', 10.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(PX0+10, cy+CTH+38, '「卡」这一级　PP · EP · TP · DP/CP', 9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(AX, PY.clu-4, '上面两级只决定拓扑与带宽', 8, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  parts.push(txt(AX, PY.clu+7, '不持有内容 → 画成空线框', 6.8, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(AX, PY.unit+4, '下面两级与并行完全无关', 8, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  parts.push(txt(AX, PY.unit+15, '融合与 tiling 不跨卡、不通信', 6.8, 'var(--pt-fg3)', 'start'));
+  /* ── 两条常被念错的约束，在卡阵上直接验 ── */
+  var VY = 572;
+  parts.push(txt(36, VY, '把「卡」画成整个平面，这两条就验得了：', 9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(ln([36, VY+13], [48, VY+13], 'stroke:'+VC.tp+';stroke-width:3.4'));
+  parts.push(txt(54, VY+16, 'TP 分片必须机内：本卡 TP 组 '+tpM.length+' 张 → '
+    + (tpIn ? '同 1 台机 ✓' : '跨 '+Object.keys(tpMach).length+' 台机 ✗ 违反约束'), 8.4, tpIn?VC.tp:'var(--pt-danger)', 'start', 'font-weight="700"'));
+  parts.push(ln([36, VY+28], [48, VY+28], 'stroke:'+VC.pp+';stroke-width:3.4'));
+  parts.push(txt(54, VY+31, 'PP 划分可跨机：本卡 PP 链 '+ppM.length+' 张 → 跨 '+Object.keys(ppMach).length+' 台机'
+    + (Object.keys(ppMach).length>1 ? '（本来就该跨）' : '（恰好同机）'), 8.4, VC.pp, 'start', 'font-weight="700"'));
+  parts.push(txt(54, VY+43, '机 = '+PER+' 卡是拓扑假设（FIG 09 口径），不由并行配置推出 —— 换机器规格，这两条结论会变。', 7.2, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(36, H-30, '读法：连线的斜度就是「逻辑侧第 N 级 ≠ 物理侧第 N 级」。容器（板）有体积，机制（框）是扁的——参照系里只有卡与流两个容器。', 8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  parts.push(txt(36, H-16, '这一段的另一个问题「这张卡到底装了哪一块」，由第二视角『交集腔』回答：四条梁交出来的那个小长方体就是它。', 8, 'var(--pt-fg2)', 'start'));
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
+    + '<button class="pb is-on" data-act="persp" data-p="map">双链映射</button>'
+    + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
+    + '<span class="pt-chip">四个并行维度全部收在「卡」这一级</span>'
+    + '<span class="pt-chip" style="border-color:'+(tpIn?VC.tp:'var(--pt-danger)')+';color:'+(tpIn?VC.tp:'var(--pt-danger)')+'">TP '+(tpIn?'机内 ✓':'跨机 ✗')+'</span>';
+  $('stageNote').hidden = true;
+  $('detach').hidden = true;
+}
+
 /* ═════════ 视图六 · 交集腔：卡为什么是「这一块」 ═════════
    前五视图各答一问：单维答「一把刀怎么切」、刀序答「几把刀什么次序」、解剖答「卡里有什么」。
    这一张答最后一问——**为什么恰好是这一块**，而这一问只能靠三维说清楚。
@@ -1632,7 +1794,7 @@ function graphSVG(o){
        ⇒ 换副本时腔纹丝不动、体积一点不少 = A3「加 DP 不买余量」的几何证明
        （数值证明在单维切分的反事实里：若 DP=1，同一张卡还是这么多字节。两处互相印证。）
      · EP 在②上没有轴 → 路由是动作（把 token 送去别的卡），不是静态切分。 */
-function renderSolid(D){
+function renderSolidCav(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var H = 700, parts = [], hits = [];
@@ -1916,7 +2078,9 @@ function renderSolid(D){
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
-  $('stagebar').innerHTML = '<span class="pt-cap">交集腔</span>'
+  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
+    + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
+    + '<button class="pb is-on" data-act="persp" data-p="cav">交集腔</button>'
     + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
     + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
@@ -2887,6 +3051,22 @@ function sayText(D){
       + '第 2 幕放大的那一层是 <b>openPangu 真图</b>（真节点 · 真层级 · 真连边 · 真切分标注），不是示意。'
       + '第 4 幕是<b>两条链唯一的交点</b>：算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头（§02 · FIG 03）。'
       + '第 5 幕收束：'+D.ga+' 批前后向走完，才有这个 step <b>唯一的一次</b>梯度 AllReduce。点卡阵里的一格换一张卡跟。';
+  }else if(ui.view==='solid' && ui.persp!=='cav'){
+    var tp9 = groupMembers('tp', (sel!==null&&sel<D.world)?sel:0, D), m9 = {};
+    tp9.forEach(function(x){ m9[Math.floor(x/8)] = 1; });
+    var in9 = Object.keys(m9).length === 1;
+    s = '<b>双链映射</b>：逻辑侧（整网 ⊃ 层 ⊃ expert ⊃ 算子 ⊃ 张量）与物理侧（集群 ⊃ 机 ⊃ 卡 ⊃ 计算单元 ⊃ 片上 buffer）'
+      + '<b>都是包含链、都是 5 级，但级与级并不对齐</b>——所以连线是斜的，<b>斜不是画风，是事实</b>。'
+      + '全图真正的主张只有一句：<b>四个并行维度（PP · EP · TP · DP/CP）全部收在「卡」这一级</b>，'
+      + '而它们的源头在逻辑侧<b>四个不同层级</b>（层 ℓ / expert e / 算子 / 张量）。'
+      + '往上两级只决定<b>拓扑与带宽</b>——不持有内容，所以画成空线框；往下两级<b>与并行完全无关</b>——'
+      + '算子融合与 tiling 不跨卡、不通信。第五条 <b>world_size = TP×CP×PP×DP</b> 是<b>计数恒等式，不是一把刀</b>，'
+      + '所以它落在集群而不是卡。机制框画成<b>扁的</b>：机制是动作，不是容器——参照系里只有<b>卡与流</b>两个容器有体积。'
+      + ' 「卡」这一级不是一只盒子，是一整个<b>卡阵平面</b>（机内 '+8+' 卡 × '+fmt(Math.ceil(D.world/8))+' 台机，全量画出），'
+      + '于是两条常被念错的约束当场可验：<b style="color:'+(in9?VC.tp:'var(--pt-danger)')+'">TP 分片必须机内</b>（本配置 TP 组 '
+      + tp9.length+' 张 → '+(in9?'同 1 台机 ✓':'跨 '+Object.keys(m9).length+' 台机 ✗')+'）· <b style="color:'+VC.pp+'">PP 划分可跨机</b>。'
+      + '注意「机 = 8 卡」是<b>拓扑假设</b>（FIG 09 口径），不由并行配置推出——换机器规格这两条结论会变。'
+      + '这一段的另一个问题「这张卡到底装了哪一块」，切到第二视角<b>交集腔</b>看。';
   }else if(ui.view==='solid'){
     var vol2 = D.pp*D.tp*(D.moe?D.ep:1);
     s = '<b>交集腔</b>：两个对象各有自己的索引空间，<b>轴数不同</b>——①<b>权重体</b> ℓ×h'+(D.moe?'×e':'')+'（'+(D.moe?3:2)+' 轴），②<b>激活体</b> ℓ×h×b×s（4 轴）。'
@@ -2988,6 +3168,7 @@ document.addEventListener('click', function(ev){
   else if(act==='net3d'){ ui.net3d = !ui.net3d; render(); }
   else if(act==='storyact'){ ui.act = +b.getAttribute('data-i'); render(); }
   else if(act==='act2'){ ui.act2 = !ui.act2; render(); }
+  else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
   else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;

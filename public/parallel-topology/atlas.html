@@ -272,10 +272,14 @@ function CARDS(){ return {
      ask:'一张卡装的是「层段 × TP片 × EP桶」的交集载荷，不是缩小的整网。含索引五元组区间 / 持有占比 / 归属边界检查器；载荷原子按 1/count 片渲染。',
      tags:['交集载荷','Three.js 单场景'], state:['sel*'],
      go:[['rank-deck', rankDeckLink(), 1]]},
-    {t:'交集腔', who:'本仓库 · demo.html?view=solid',
+    {t:'双链映射（FIG 09 的三维化）', who:'本仓库 · demo.html?view=solid',
+     ask:'两条包含链各 5 级、级与级不对齐，所以连线是斜的——斜不是画风。四条并行映射的源头在逻辑侧四个不同层级（层 ℓ / expert e / 算子 / 张量），落点全是「卡」；world_size=TP×CP×PP×DP 是计数恒等式不是刀，落在集群。上两级只决定拓扑与带宽，下两级（算子融合 / tiling）与并行完全无关。「卡」画成整个平面（机内 8 卡 × N 台机，全量），于是 TP 必须机内 / PP 可跨机当场可验。',
+     tags:['FIG 09','四维全收在卡','TP 机内可验'], state:['cfg','sel'],
+     go:[['双链映射', demoLink('view=solid'), 1], ['TP=16 违反机内约束的样子（固定配置示范，不随状态走）', './demo.html?view=solid&sel=0&world=128&tp=16&cp=1&pp=4&ep=1&heads=32&layers=32']]},
+    {t:'交集腔', who:'本仓库 · demo.html?view=solid&p=cav',
      ask:'C 段本身那张图：两个对象各有自己的索引空间（权重体 ℓ×h×e 三轴 / 激活体 ℓ×h×b×s 四轴），每把刀是一整片板，三片板相交剁出一个腔——体积∶全盒 = 持有占比。DP 在权重体上没有轴，腔的三条边长里没有 d ⇒ 体积不变 ⇒ A3 的几何证明；EP 在激活体上没有轴（路由是动作）。',
      tags:['一轴一刀 §03','A3 几何证明','两个对象轴数不同'], state:['cfg','sel'],
-     go:[['交集腔', demoLink('view=solid'), 1], ['换 DP 副本看腔不变形', demoLink('view=solid')+'&cut=dp']]},
+     go:[['交集腔', demoLink('view=solid')+'&p=cav', 1], ['展开激活体（第二视角）', demoLink('view=solid')+'&p=cav&act2=1']]},
     {t:'卡内解剖', who:'本仓库 · demo.html?view=anatomy',
      ask:'钻进一张卡：外壳=显存容器，层→算子（体积∝字节），底部流=时间容器装 kernel。L 是整网全局层号，算子↔kernel 同号对应（N:M 融合/分段）。',
      tags:['两个容器','算子↔kernel'], state:['cfg','sel'],
@@ -297,7 +301,7 @@ function CARDS(){ return {
   ]
 }; }
 var GAPS = [
-  {t:'6 刀 → 卡网格 4 轴的落位图', ask:'补了一半：「交集腔」已经把 6 把刀落到两个对象的 5 根索引轴上画清楚了（ETP 是第六把刀却不认领新轴）。还缺的是另一半——这 5 根索引轴再折到 B 段那 4 根**卡网格**轴（tp/pp/dp/ep）上时，EP/ETP 靠折叠 q=(d·CP+c)·TP+t 占位的那一步，仍然只有文字与一个整除判据，没有专门的图。'},
+  {t:'EP 折叠那一步仍无专图', ask:'原来那条「6 刀 → 4 轴」的缺口已经补上了：「交集腔」画 6 把刀落到两个对象的 5 根索引轴（ETP 是第六把刀却不认领新轴），「双链映射」画这些刀最终全部收在物理侧的「卡」这一级。真正还缺的只剩最后一小步——EP/ETP 靠折叠 q=(d·CP+c)·TP+t 在 stage 内平面上占位的那个重排，目前仍只有文字与一个整除判据（EP·ETP vs TP·CP），没有专门的图。'},
   {t:'sidecar / 3d-deck 不读 URL', ask:'两者都不解析查询串，深链只能打开到默认态。要对齐得进去手动点层。接上 URL 契约（像 rank-deck 那样）就能纳入同一条状态链。'},
   {t:'真实整网图未接我们的刀', ask:'model-graphviz 有预定位的 openPangu 整网图，但还没按当前配置着色刀口——接上之后 A 段就能从示意图升级成真图。'}
 ];
