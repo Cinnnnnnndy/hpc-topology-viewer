@@ -282,6 +282,7 @@ var PRESETS = [
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   {id:'longcp', name:'长序列CP·64卡', cfg:{world:64, tp:4, cp:4, pp:2, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:131072, experts:0, topk:0, mbs:1, ga:16, hbm:64}},
   {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64}},
+  {id:'story128', name:'故事·128卡 tp2·pp4·dp16（48层·H8192）', cfg:{world:128, tp:2, cp:1, pp:4, ep:1, etp:1, layers:48, hidden:8192, heads:64, kv:8, ffn:32768, vocab:128256, seq:8192, experts:0, topk:0, mbs:4, ga:8, hbm:64}},
   {id:'pangu', name:'盘古ProMoE·4000卡', cfg:{world:4000, tp:8, cp:1, pp:5, ep:2, etp:1, layers:40, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:64, topk:8, mbs:1, ga:20, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}}
 ];
@@ -294,11 +295,13 @@ var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   net3d:true,                                                                /* 整网默认画成有体积的板；2D 平铺仍在，顶栏可切 */
+  act:0, act2:false,                                                         /* 故事视图当前是第几幕；交集腔是否展开激活体（第二视角） */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
+  {id:'story', name:'一个 step · 五幕'},
   {id:'dim', name:'单维切分'},
   {id:'chain', name:'刀序·切分链'},
   {id:'compose', name:'合成·卡阵'},
@@ -314,7 +317,8 @@ var AVAIL = {
   compose:{L1:false,L2:true,L3:true,L4:true,L5:true},
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
   anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true},
-  solid:{L1:true, L2:true, L3:true,L4:true,L5:false}
+  solid:{L1:true, L2:true, L3:true,L4:true,L5:false},
+  story:{L1:true, L2:true, L3:true,L4:true,L5:true}
 };
 var DEFAULTS = {
   dim:{L1:true,L2:true,L3:true,L4:true,L5:true},
@@ -322,7 +326,8 @@ var DEFAULTS = {
   compose:{L2:false,L3:true,L4:true,L5:false},
   time:{L3:true,L4:true,L5:true},
   anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true},
-  solid:{L1:true,L2:true,L3:true,L4:true}
+  solid:{L1:true,L2:true,L3:true,L4:true},
+  story:{L1:true,L2:true,L3:true,L4:true,L5:true}
 };
 function layerOn(L){
   var v = ui.view;
@@ -362,6 +367,8 @@ function urlLoad(){
   var fc = parseInt(q.get('facet'),10); if(isFinite(fc)&&fc>=0) ui.cpFacet = fc;
   if(q.get('skew')==='0') ui.skew = false;
   if(q.get('net3d')==='0') ui.net3d = false;
+  var ac = parseInt(q.get('act'),10); if(isFinite(ac) && ac>=0) ui.act = ac;
+  if(q.get('act2')==='1') ui.act2 = true;
 }
 function urlWrite(){
   var q = new URLSearchParams();
@@ -375,6 +382,8 @@ function urlWrite(){
   }
   if(sel!==null) q.set('sel', sel);
   if(!ui.net3d && ui.view==='chain') q.set('net3d','0');
+  if(ui.view==='story' && ui.act) q.set('act', ui.act);
+  if(ui.view==='solid' && ui.act2) q.set('act2','1');
   if(layerOn('L5') && (ui.view==='compose'||ui.view==='time')) q.set('l5','1');
   if(ui.commDim!=='tp') q.set('dim', ui.commDim);
   if(ui.commPrim!=='allreduce') q.set('prim', ui.commPrim);
@@ -488,12 +497,15 @@ function kvPerTp(D){ return Math.ceil(D.kv/D.tp); }
 var RD = {ok:false, key:'', model:null, ops:null};
 function realModel(D){
   if(!window.OPENPANGU_GRAPH || !window.PtoNetShardingPattern) return null;
-  var key = [D.tp,D.cp,D.pp,D.ep,D.dp,D.layers,D.heads,D.experts,D.seq].join('/');
+  /* 口径必须整套传过去：只传一半会拿到「本页 hidden=8192 而切分区间按它默认的 5120 算」
+     这种对不上的读数——两处数字打架比没有数字更糟。 */
+  var key = [D.tp,D.cp,D.pp,D.ep,D.dp,D.layers,D.heads,D.experts,D.seq,D.hidden,D.ffn,D.vocab].join('/');
   if(RD.ok && RD.key === key) return RD.model;
   try{
     RD.model = window.PtoNetShardingPattern.createModel({
       tp:D.tp, cp:D.cp, pp:D.pp, ep:D.ep, dp:D.dp,
-      layers:D.layers, heads:D.heads, experts:D.experts, seqLen:D.seq });
+      layers:D.layers, heads:D.heads, experts:D.experts, seqLen:D.seq,
+      hidden:D.hidden, ffnHidden:D.ffn, vocab:D.vocab });
     RD.key = key; RD.ok = true; RD.ops = null;
     return RD.model;
   }catch(e){ RD.ok = false; return null; }
@@ -1127,6 +1139,486 @@ function renderDim(D){
     + '<div style="font-size:10.5px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
   $('detach').hidden = true;
 }
+/* ═════════ 视图七 · 一个 step 的五幕：跟住一张卡走完全程 ═════════
+   前面几张图都是**静态的关系**。这张图补的是时间上的先后，以及一条最容易被跳过的分界：
+   哪些事**只做一次**（开机 / 报到 / 备料），哪些事**每个 micro-batch 都重来**（进料 / 开算 / 接力）。
+   把它讲成一个能复述的故事：跟住一张卡，从 128 个一模一样的进程，走到步末那一次梯度 AllReduce。
+   第 4 幕是两条链唯一的交点——算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头。 */
+var ACTS = [
+  {t:'开机',       s:'一模一样的进程',     once:true},
+  {t:'报到',       s:'一维编号 → 四位门牌', once:true},
+  {t:'备料',       s:'只建自己那一份',      once:true},
+  {t:'进料',       s:'token 每步换一批',    once:false},
+  {t:'开算',       s:'算子落成 kernel',     once:false},
+  {t:'接力与收束', s:'流水线 + 步末 AllReduce', once:false}
+];
+function renderStory(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
+  var A = clamp(ui.act|0, 0, ACTS.length-1), act = ACTS[A];
+  var H = 636, parts = [], hits = [];
+  var lps = D.layersPerStage, l0 = co.p*lps, l1 = (co.p+1)*lps-1;
+  var hK = Math.floor(D.hidden/D.tp), plane = D.tp*D.cp*D.dp;
+  function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  function rc(x,y,w,h,fill,stroke,sw,extra){
+    return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(.4,w).toFixed(1)+'" height="'+Math.max(.4,h).toFixed(1)
+      +'" style="fill:'+fill+';stroke:'+(stroke||'none')+';stroke-width:'+(sw===undefined?0:sw)+'" '+(extra||'')+'/>';
+  }
+  /* 有厚度的块（斜投影：深度恒为 (dx,−dy)，X 不受深度影响） */
+  function slab(x,y,w,h,fill,dx,dy,extra){
+    if(w<=.3) return '';
+    var s2 = '';
+    if(dx>0){
+      s2 += '<polygon points="'+x.toFixed(1)+','+y.toFixed(1)+' '+(x+w).toFixed(1)+','+y.toFixed(1)+' '
+        +(x+w+dx).toFixed(1)+','+(y-dy).toFixed(1)+' '+(x+dx).toFixed(1)+','+(y-dy).toFixed(1)
+        +'" style="fill:color-mix(in srgb,'+fill+' 70%, #fff 30%)" pointer-events="none"/>';
+      s2 += '<polygon points="'+(x+w).toFixed(1)+','+y.toFixed(1)+' '+(x+w+dx).toFixed(1)+','+(y-dy).toFixed(1)+' '
+        +(x+w+dx).toFixed(1)+','+(y+h-dy).toFixed(1)+' '+(x+w).toFixed(1)+','+(y+h).toFixed(1)
+        +'" style="fill:color-mix(in srgb,'+fill+' 72%, #000 28%)" pointer-events="none"/>';
+    }
+    return s2 + rc(x,y,w,h,fill,'',0,extra);
+  }
+  /* 卡阵：行 = stage（PP），列 = stage 内平面（tp·cp·dp）——三个组在这个排布上各有各的形状 */
+  function lattice(LX, LY, LW, LH, o){
+    o = o || {};
+    var cols = Math.max(1, plane), rows = Math.max(1, D.pp);
+    var cw = LW/cols, ch = LH/rows, s2 = '', hit = '';
+    var dep = cw > 9 ? Math.min(5, cw*.22) : 0;
+    for(var r=0; r<rows; r++) for(var c2=0; c2<cols; c2++){
+      var gg = r*cols + c2;
+      if(gg >= D.world) continue;
+      var x = LX + c2*cw, y = LY + r*ch, hot = gg===g;
+      var f = o.tint ? o.tint(gg, hot) : (hot ? 'var(--pt-fg)' : mix('var(--pt-fg)', 13));
+      s2 += slab(x, y+dep, Math.max(.5,cw-Math.max(.35,cw*.09)), Math.max(.5,ch-Math.max(.35,ch*.14)), f, dep, dep*.6, 'pointer-events="none"');
+    }
+    /* 命中层单独铺一遍透明格。格子细到 2px 以下就不铺了——那时候点谁都是碰运气；
+       但**格子照画**（份数是真的），只是把「这里点不动」如实说出来，不装成能点。 */
+    if(cw < 2) s2 += txt(LX, LY-8, '格子已细到 '+cw.toFixed(1)+'px：'+fmt(D.world)+' 张全画出来了，但点选请用顶栏的「选中卡」输入框',
+                         7.4, 'var(--pt-fg3)', 'start');
+    if(cw >= 2) for(var r2=0; r2<rows; r2++) for(var c3=0; c3<cols; c3++){
+      var g2 = r2*cols + c3;
+      if(g2 >= D.world) continue;
+      hit += '<g class="cgrow"><rect x="'+(LX+c3*cw).toFixed(1)+'" y="'+(LY+r2*ch).toFixed(1)+'" width="'+cw.toFixed(1)
+        +'" height="'+ch.toFixed(1)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+g2+'"></rect></g>';
+    }
+    for(var r3=0; r3<rows; r3++)
+      s2 += txt(LX-7, LY+r3*ch+ch/2+3, 'stage'+r3, 7.4, r3===co.p?VC.pp:'var(--pt-fg3)', 'end', r3===co.p?'font-weight="800"':'');
+    return {body:s2, hit:hit, cw:cw, ch:ch, cols:cols,
+            at:function(gg){ return [LX + (gg%cols)*cw + cw/2, LY + Math.floor(gg/cols)*ch + ch/2]; }};
+  }
+  function ring(p, col, rr){
+    return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+rr+'" style="fill:none;stroke:'+col+';stroke-width:1.6"/>';
+  }
+
+  /* ── 幕头：每一幕都要回答「这一步做几次」 ── */
+  parts.push(txt(28, 26, '第 '+A+' 幕 · '+act.t+' —— '+act.s, 13, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  var bw = act.once ? 96 : 128;
+  parts.push(rc(28, 34, bw, 15, act.once?mix(VC.pp,16):mix(VC.dp,16), act.once?VC.pp:VC.dp, 1, 'rx="7"'));
+  parts.push(txt(28+bw/2, 44.5, act.once?'只做一次':'每个 micro-batch 重来', 8, act.once?VC.pp:VC.dp, 'middle', 'font-weight="800"'));
+  parts.push(txt(866, 26, '跟住 global_rank = '+g, 11, 'var(--pt-fg)', 'end', 'font-weight="800"'));
+  parts.push(txt(866, 40, '(pp'+co.p+' · dp'+co.d+' · cp'+co.c+' · tp'+co.t+(me?' · ep'+me.ep:'')+')　'
+    + fmt(D.world)+' 卡 = TP'+D.tp+'·CP'+D.cp+'·PP'+D.pp+'·DP'+D.dp, 8, 'var(--pt-fg3)', 'end'));
+  var narr = [];
+
+  if(A===0){
+    /* ── 第 0 幕 · 开机：唯一的差别是一个数字 ── */
+    var L0 = lattice(110, 196, 750, 152, {tint:function(gg,hot){ return hot ? 'var(--pt-fg)' : mix('var(--pt-fg)', 16); }});
+    parts.push(txt(485, 96, '启动器拉起 '+fmt(D.world)+' 个进程，各绑一张卡 —— 代码完全相同', 11, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+    parts.push(txt(485, 112, '此刻它们一模一样：同一份代码、同一份权重定义、同一份配置。全图同色不是偷懒，是这一幕的事实。', 8.4, 'var(--pt-fg2)'));
+    parts.push('<g pointer-events="none">'+L0.body+'</g>');
+    hits.push(L0.hit);
+    parts.push(ring(L0.at(g), VC.dp, Math.max(6, L0.cw*.7)));
+    parts.push(txt(L0.at(g)[0], L0.at(g)[1]-Math.max(20,L0.ch*.72), 'global_rank '+g, 8.6, VC.dp, 'middle', 'font-weight="800"'));
+    parts.push(txt(485, 400, '唯一的差别 = 一个数字 global_rank（0…'+(D.world-1)+'）', 10.5, VC.dp, 'middle', 'font-weight="800"'));
+    parts.push(txt(485, 416, '谁也还不知道自己该干什么 —— 门牌号要到下一幕才算出来', 8.4, 'var(--pt-fg3)'));
+    narr = ['行 = stage，列 = stage 内平面（'+plane+' 张）—— 这个排布下三个并行组各有各的形状，下一幕就看得见。',
+            '这一幕是整个训练里唯一「所有卡完全对称」的时刻。'];
+  }
+
+  if(A===1){
+    /* ── 第 1 幕 · 报到：一维编号 → 四位门牌，顺带自己算出各组成员 ── */
+    var PX = 28, PY = 82;
+    parts.push(txt(PX, PY, '配置到位：order = tp-cp-ep-dp-pp', 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(PX, PY+15, '每个进程各自算了一遍同样的除法 —— 没有人告诉它这些', 8.2, 'var(--pt-fg2)', 'start'));
+    parts.push(rc(PX, PY+24, 300, 62, mix('var(--pt-fg)',4), 'var(--pt-bd)', 1, 'rx="5"'));
+    parts.push(txt(PX+10, PY+41, 'g = ((pp·DP + dp)·CP + cp)·TP + tp', 9.2, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(PX+10, PY+56, fmt(g)+' = (('+co.p+'·'+D.dp+' + '+co.d+')·'+D.cp+' + '+co.c+')·'+D.tp+' + '+co.t,
+      10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(PX+10, PY+74, '逆解：tp=g%TP · cp=⌊g/TP⌋%CP · dp=⌊g/TP·CP⌋%DP · pp=⌊g/TP·CP·DP⌋（可逆 §07）', 7.2, 'var(--pt-fg3)', 'start'));
+    var GATE = [['pp', co.p, VC.pp, '第 '+co.p+' 号 stage'], ['dp', co.d, VC.dp, '第 '+co.d+' 个副本'],
+                ['cp', co.c, VC.cp, '序列第 '+co.c+' 段'], ['tp', co.t, VC.tp, '权重矩阵第 '+co.t+' 条']];
+    GATE.forEach(function(q, qi){
+      var y2 = PY+100 + qi*30;
+      parts.push(rc(PX, y2, 116, 24, mix(q[2],14), q[2], 1.2, 'rx="4"'));
+      parts.push(txt(PX+8, y2+16, q[0]+'_rank = '+q[1], 10, q[2], 'start', 'font-weight="800"'));
+      parts.push(txt(PX+124, y2+16, esc(q[3]), 8.4, 'var(--pt-fg2)', 'start'));
+    });
+    /* 组成员：不是记下来的，是同一份公式算出来的 */
+    var GRP = [{d:'tp', n:'TP 组', m:groupMembers('tp',g,D), why:'层内两处 AllReduce 的伙伴'},
+               {d:'pp', n:'PP 链', m:groupMembers('pp',g,D), why:'流水线的前后站（Send/Recv）'},
+               {d:'dp', n:'DP 组', m:groupMembers('dp',g,D), why:'步末梯度 AllReduce 的伙伴'}];
+    if(D.cp>1) GRP.push({d:'cp', n:'CP 组', m:groupMembers('cp',g,D), why:'attention 内部换 KV'});
+    var L1b = lattice(410, 150, 450, 230, {tint:function(gg,hot){
+      if(hot) return 'var(--pt-fg)';
+      for(var i=0;i<GRP.length;i++) if(GRP[i].m.indexOf(gg)>=0) return mix(VC[GRP[i].d], 46);
+      return mix('var(--pt-fg)', 9);
+    }});
+    parts.push('<g pointer-events="none">'+L1b.body+'</g>');
+    hits.push(L1b.hit);
+    parts.push(ring(L1b.at(g), 'var(--pt-fg)', Math.max(5, L1b.cw*.62)));
+    parts.push(txt(635, 138, '同一张卡阵：三个组在这个排布上各有各的形状', 9.4, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+    GRP.forEach(function(q, qi){
+      var y3 = 402 + qi*26;
+      parts.push(rc(410, y3-9, 10, 10, mix(VC[q.d],46), VC[q.d], 1, 'rx="2"'));
+      var lst = q.m.length<=6 ? q.m.map(function(v){ return String(v); }).join(', ')
+              : q.m.slice(0,3).join(', ')+', …, '+q.m[q.m.length-1]+'（共 '+q.m.length+' 张）';
+      parts.push(txt(426, y3, q.n+' {'+lst+'}', 8.6, VC[q.d], 'start', 'font-weight="700"'));
+      parts.push(txt(426, y3+11, esc(q.why), 7.4, 'var(--pt-fg3)', 'start'));
+    });
+    parts.push(txt(PX, 508, '换个 order，它算出的就是另一组 —— 组是算出来的，不是配出来的。', 9, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    narr = ['TP 组在阵上是相邻的一小段（同 stage 同副本，只差 tp）；PP 链是同一列跨行（只差 stage）；DP 组是行内等间隔（步长 TP·CP='+(D.tp*D.cp)+'）。',
+            '这一幕之后，这张卡才第一次知道自己是谁。'];
+  }
+
+  if(A===2){
+    /* ── 第 2 幕 · 备料：整网从来没有在任何一处被完整实例化过 ── */
+    parts.push(txt(28, 72, '整网 '+D.layers+' 层。它看自己的 pp='+co.p+'，只实例化 L'+l0+'–L'+l1+' 这 '+lps+' 层', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(28, 86, '其余 '+(D.layers-lps)+' 层的权重，它连显存都没申请', 8.2, 'var(--pt-fg3)', 'start'));
+    /* 层叠：48 层往深处退，本卡那 12 层实心，其余幽灵 */
+    var DKX = 34, DKY = 340, DW = 132, DH = 14, sx = 2.5, sy = 4.3;
+    for(var li=D.layers-1; li>=0; li--){
+      var mine = li>=l0 && li<=l1;
+      var lx = DKX + li*sx, ly = DKY - li*sy;
+      parts.push(mine ? slab(lx, ly, DW, DH, mix(VC.pp, 42), 4, 2.4, 'pointer-events="none"')
+                      : rc(lx, ly, DW, DH, 'none', 'var(--pt-bd)', .7, 'stroke-dasharray="2 2" pointer-events="none"'));
+    }
+    parts.push(txt(DKX, DKY+30, 'L0', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX+(D.layers-1)*sx+DW, DKY-(D.layers-1)*sy-7, 'L'+(D.layers-1), 7.4, 'var(--pt-fg3)', 'end'));
+    parts.push(txt(DKX+l0*sx-6, DKY-l0*sy+DH+3, 'L'+l0+'–L'+l1, 9.6, VC.pp, 'end', 'font-weight="800"'));
+    parts.push(txt(DKX, 400, '实心 = 这张卡真的建了的 '+lps+' 层', 8, VC.pp, 'start', 'font-weight="700"'));
+    parts.push(txt(DKX, 412, '虚线 = 只存在于代码里的 '+(D.layers-lps)+' 层', 8, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX, 434, '整网从头到尾只存在于代码里，', 8.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(DKX, 446, '物理上从来没有在任何一处', 8.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(DKX, 458, '被完整实例化过。', 8.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(DKX, 484, 'SP 不是第 6 根 rank 轴：序列并行', 7.4, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+    parts.push(txt(DKX, 494, '复用 TP 组，把 norm / 逐元素沿 seq', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX, 504, '也切开——图上标 SP，借 TP 的色。', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX, 514, 'TP 区 ⇄ SP 区之间那两条虚线，', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX, 524, '就是 AllGather / Reduce-Scatter。', 7.4, 'var(--pt-fg3)', 'start'));
+    /* 放大一层：真图的真节点、真层级、真连边、真切分标注 */
+    var GX = 340, GY = 66, GW = 300, GH = 474;
+    parts.push(rc(GX-6, GY-6, GW+12, GH+12, 'none', 'var(--pt-bd)', 1, 'rx="5"'));
+    parts.push(txt(GX+GW/2, GY-12, '⊕ 放大 L'+l0+' 一层 —— openPangu 真图（真节点 · 真层级 · 真连边）', 8.6, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+    var gsvg = graphSVG({x:GX, y:GY, w:GW, h:GH, clip:'decoder-stack', g:g, D:D, label:true, tag3d:true,
+                         ghostClu: D.moe ? [] : ['moe-block']});
+    parts.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
+                    : txt(GX+GW/2, GY+GH/2, '（真图脚本未加载：单文件打开时退回示意）', 8, 'var(--pt-fg3)'));
+    /* 右栏：这一幕的产物 —— shape 已除小的权重片 + 插在切口上的通信算子 */
+    var RX2 = 650;
+    parts.push(txt(RX2, 92, '这一幕的产物（做完就冻结，整个训练不再变）', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(rc(RX2, 104, 230, 74, mix(VC.tp,7), VC.tp, 1, 'rx="5"'));
+    parts.push(txt(RX2+10, 121, '再看 tp='+co.t+'：每个权重矩阵', 8.6, VC.tp, 'start', 'font-weight="700"'));
+    parts.push(txt(RX2+10, 134, '只建 '+(D.tp>1?(co.t===0?'左':(co.t===D.tp-1?'右':'第 '+co.t+' 条')):'全')+'半边', 8.6, VC.tp, 'start', 'font-weight="700"'));
+    parts.push(txt(RX2+10, 150, '[ '+fmt(D.hidden)+', '+fmt(Math.floor(D.ffn/D.tp))+' ]', 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(RX2+10, 165, 'h 轴 ∈ ['+fmt(co.t*hK)+', '+fmt((co.t+1)*hK)+')　—— shape 已除小', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(RX2, 200, '在切口插好通信算子（§06 通则）', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    var CUTS = [{c:VC.tp, t:'层内 2× AllReduce', s:'和 '+groupMembers('tp',g,D).filter(function(v){return v!==g;}).join('、')+' 号一起（TP 组）'},
+                {c:VC.pp, t:'stage 边界 Send / Recv', s:(co.p>0?'收 '+rankOf(co.t,co.c,co.d,co.p-1,D)+' 号的':'stage0：从数据入口取')
+                   +'　'+(co.p<D.pp-1?'发给 '+rankOf(co.t,co.c,co.d,co.p+1,D)+' 号':'末 stage：出 logits')}];
+    if(D.moe) CUTS.push({c:VC.ep, t:'MoE 层 2× All-to-All', s:'dispatch 送去 + combine 送回（不跨层）'});
+    if(D.cp>1) CUTS.push({c:VC.cp, t:'attention 内部换 KV', s:'CP 组 '+groupMembers('cp',g,D).join('、')});
+    CUTS.forEach(function(q, qi){
+      var y4 = 214 + qi*38;
+      parts.push(ln([RX2, y4+8], [RX2+22, y4+8], 'stroke:'+q.c+';stroke-width:1.6;stroke-dasharray:5 3'));
+      parts.push(txt(RX2+28, y4+11, esc(q.t), 9, q.c, 'start', 'font-weight="800"'));
+      parts.push(txt(RX2+28, y4+23, esc(q.s), 7.6, 'var(--pt-fg3)', 'start'));
+    });
+    parts.push(txt(RX2, 214+CUTS.length*38+16, '通信在图里是动作：一条线，不是体 —— 它不持有字节、不被切，', 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(RX2, 214+CUTS.length*38+27, '只占链路与时间。左边真图里的 AllGather / Reduce-Scatter 就是这么画的。', 7.6, 'var(--pt-fg2)', 'start'));
+    narr = ['左边那叠板是 ℓ 轴的真相：'+D.layers+' 层里只有 '+lps+' 层是实心的。中间是把其中一层放大到真图——节点、层级、连边、切分标注全部取自 openPangu 真图与它的切分表，不是示意。',
+            '真图是 MoE 版；本配置 experts='+D.experts+(D.moe?'，所以 MoE 分支照常实例化。':'，所以 MoE 分支在图上标成「不实例化」，不假装它存在。')];
+  }
+
+  if(A===3){
+    /* ── 第 3 幕 · 进料：只有 dp 不同的卡才拿到不同的数据 ── */
+    var toks = D.gbs*D.seq;
+    var BX = 46, BW2 = 800, BY = 96, BH2 = 40;
+    parts.push(txt(BX, BY-10, '数据集 '+fmt(D.gbs)+' 条序列 × '+fmt(D.seq)+' token ＝ '+(toks>=1e6?(toks/1e6).toFixed(1)+' 百万':fmt(toks))+' 个 token', 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(slab(BX, BY, BW2, BH2, mix(VC.dp, 12), 7, 4.4, 'pointer-events="none"'));
+    parts.push(rc(BX, BY, BW2, BH2, 'none', 'var(--pt-bds)', 1));
+    parts.push(txt(BX+BW2/2, BY+24, '全局批 GBS='+fmt(D.gbs), 9.4, 'var(--pt-fg2)'));
+    /* DP 真切：DP 份，取第 co.d 份 */
+    var DY2 = 176, dW = BW2/D.dp;
+    parts.push(txt(BX, DY2-10, '① 按 dp='+co.d+' 取第 '+co.d+' 份 —— 全局批被真切成 '+D.dp+' 份（面积守恒）', 9.4, VC.dp, 'start', 'font-weight="800"'));
+    for(var d4=0; d4<D.dp; d4++){
+      var hotD = d4===co.d;
+      parts.push(slab(BX+d4*dW, DY2, Math.max(.6,dW-Math.max(.3,dW*.08)), 34, hotD?mix(VC.dp,58):mix(VC.dp,11), hotD?5:0, hotD?3:0, 'pointer-events="none"'));
+    }
+    parts.push(rc(BX, DY2, BW2, 34, 'none', 'var(--pt-bds)', .8));
+    parts.push(txt(BX+co.d*dW+dW/2, DY2+50, '份'+co.d+' · '+fmt(D.mbs*D.ga)+' 条', 8.4, VC.dp, 'middle', 'font-weight="800"'));
+    /* GA 再切：GA 批，本批 MBS 条 */
+    var AY = 268, aW = BW2/D.ga;
+    parts.push(txt(BX, AY-10, '② 按 GA='+D.ga+' 切成 '+D.ga+' 批，每批 MBS='+D.mbs+' 条 —— 这一层不是并行，是攒梯度', 9.4, 'var(--pt-fg2)', 'start', 'font-weight="800"'));
+    for(var a4=0; a4<D.ga; a4++)
+      parts.push(slab(BX+a4*aW, AY, Math.max(.6,aW-2), 30, a4===0?mix(VC.dp,58):mix(VC.dp,16), a4===0?5:0, a4===0?3:0, 'pointer-events="none"'));
+    parts.push(rc(BX, AY, BW2, 30, 'none', 'var(--pt-bds)', .8));
+    parts.push(txt(BX+aW/2, AY+44, 'μbatch 0（本幕跟这一批）', 8.4, VC.dp, 'middle', 'font-weight="800"'));
+    /* 手里的两个 shape */
+    var SY = 356;
+    parts.push(rc(BX, SY, 250, 56, mix(VC.dp,8), VC.dp, 1, 'rx="5"'));
+    parts.push(txt(BX+12, SY+20, '手里：token id', 8.6, VC.dp, 'start', 'font-weight="700"'));
+    parts.push(txt(BX+12, SY+38, '[ '+D.mbs+', '+fmt(Math.floor(D.seq/D.cp))+' ]', 11.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(BX+266, SY+32, '→ embedding →', 9, 'var(--pt-fg3)', 'start'));
+    parts.push(rc(BX+366, SY, 280, 56, mix(VC.dp,8), VC.dp, 1, 'rx="5"'));
+    parts.push(txt(BX+378, SY+20, '激活体②（对象二，这一步才诞生）', 8.6, VC.dp, 'start', 'font-weight="700"'));
+    parts.push(txt(BX+378, SY+38, '[ '+D.mbs+', '+fmt(Math.floor(D.seq/D.cp))+', '+fmt(D.hidden)+' ]', 11.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    /* 谁拿到一样的东西 —— 这是本幕真正的考点 */
+    var WY = 442;
+    parts.push(txt(BX, WY, '留意谁跟它拿到一样的东西：', 9.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    var SAME = [{c:VC.tp, t:groupMembers('tp',g,D).filter(function(v){return v!==g;}).join('、')+' 号（同 TP 组）', s:'逐字节相同的 token —— TP 切的是权重，不是数据'},
+                {c:VC.pp, t:groupMembers('pp',g,D).filter(function(v){return v!==g;}).join('、')+' 号（同 PP 链）', s:'同一批 —— 它们是流水线的前后站'},
+                {c:VC.dp, t:'只有 dp 不同的那些卡', s:'才真正拿到不同数据（DP 组共 '+D.dp+' 份，互不重叠）'}];
+    SAME.forEach(function(q, qi){
+      var y5 = WY + 16 + qi*22;
+      parts.push(rc(BX, y5-8, 9, 9, mix(q.c,50), q.c, 1, 'rx="2"'));
+      parts.push(txt(BX+16, y5, esc(q.t), 8.8, q.c, 'start', 'font-weight="700"'));
+      parts.push(txt(BX+250, y5, esc(q.s), 8.2, 'var(--pt-fg2)', 'start'));
+    });
+    narr = ['这一幕每个 micro-batch 都重来：权重那一份是第 2 幕冻结好的，token 这一份每步都换。',
+            'GA 与 DP 的区别常被混：DP 是空间上分给别的卡，GA 是同一张卡在时间上分批攒——所以 GA 不增加并行度，只降瞬时激活。'];
+  }
+
+  if(A===4){
+    /* ── 第 4 幕 · 开算：两条链唯一的交点在 kernel ── */
+    var CX = 120, CX2 = 620, CW2 = 180;
+    var LOGI = [{t:'整网', s:D.layers+' 层的图'}, {t:'层 ℓ', s:'本卡 L'+l0+'–L'+l1},
+                {t:'算子', s:'MatMul · Softmax'}, {t:'kernel', s:'挑实现 + 融合 + tiling', joint:true}];
+    var PHYS = [{t:'集群', s:'world_size '+fmt(D.world)+' 张卡'}, {t:'卡', s:'显存 + 计算单元 + 流'},
+                {t:'流', s:'时间容器（kernel 排队）'}, {t:'kernel', s:'两条链在这里碰头', joint:true}];
+    parts.push(txt(CX+CW2/2, 78, '逻辑侧（越往下越细）', 10, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+    parts.push(txt(CX2+CW2/2, 78, '物理侧（越往下越细）', 10, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+    function chain(x0, arr, col){
+      arr.forEach(function(q, qi){
+        var y6 = 100 + qi*86;
+        var jf = q.joint;
+        parts.push(slab(x0, y6, CW2, 46, jf?mix('var(--pt-fg)',18):mix(col, 11), 9, 5.4, 'pointer-events="none"'));
+        parts.push(rc(x0, y6, CW2, 46, 'none', jf?'var(--pt-fg)':col, jf?2:1));
+        parts.push(txt(x0+CW2/2, y6+20, esc(q.t), 10.5, jf?'var(--pt-fg)':col, 'middle', 'font-weight="800"'));
+        parts.push(txt(x0+CW2/2, y6+34, esc(q.s), 7.8, 'var(--pt-fg3)'));
+        if(qi < arr.length-1)
+          parts.push(ln([x0+CW2/2, y6+46], [x0+CW2/2, y6+86], 'stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:3 3;marker-end:url(#arrx)'));
+      });
+    }
+    chain(CX, LOGI, VC.pp);
+    chain(CX2, PHYS, VC.dp);
+    /* 唯一的交点 */
+    var JY = 100 + 3*86 + 23;
+    parts.push(ln([CX+CW2, JY], [CX2, JY], 'stroke:var(--pt-fg);stroke-width:2.2'));
+    parts.push(txt((CX+CW2+CX2)/2, JY-10, '两条链唯一的交点', 10.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+    parts.push(txt((CX+CW2+CX2)/2, JY+38, '算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头（§02 · FIG 03）', 7.8, 'var(--pt-fg2)'));
+    /* 上面几级不对齐：那才是「映射是斜的」的形 */
+    for(var qq=0; qq<3; qq++){
+      var ya = 100+qq*86+23, yb = 100+qq*86+23;
+      parts.push(ln([CX+CW2+6, ya], [CX2-6, yb+(qq===0?-6:qq===1?10:-4)],
+        'stroke:var(--pt-bd);stroke-width:.9;stroke-dasharray:4 4'));
+    }
+    parts.push(txt((CX+CW2+CX2)/2, 128, '上面几级不对齐 —— 逻辑侧的一级并不对应物理侧的一级', 8.4, 'var(--pt-fg3)'));
+    /* 两样都齐了 */
+    parts.push(rc(28, 452, 460, 62, mix('var(--pt-fg)',4), 'var(--pt-bd)', 1, 'rx="5"'));
+    parts.push(txt(40, 470, '两样都齐了，才开算：', 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(40, 487, '权重片 [ '+fmt(D.hidden)+', '+fmt(Math.floor(D.ffn/D.tp))+' ]（第 2 幕冻结）', 9, VC.tp, 'start', 'font-weight="700"'));
+    parts.push(txt(40, 503, '＋ token 片 [ '+D.mbs+', '+fmt(Math.floor(D.seq/D.cp))+' ]（第 3 幕每步换）', 9, VC.dp, 'start', 'font-weight="700"'));
+    parts.push(rc(500, 452, 366, 62, mix('var(--pt-fg)',4), 'var(--pt-bd)', 1, 'rx="5"'));
+    parts.push(txt(512, 470, '算子还不能直接跑，编译器要先：', 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(512, 487, '① 按 shape + dtype + 硬件挑一份 kernel 实现　② 把访存密集的几个融合掉', 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(512, 503, '③ 算好 tiling（不跨卡、不通信）　④ 把 kernel 逐个排进流', 7.6, 'var(--pt-fg2)', 'start'));
+    narr = ['每个算子看到的 shape 都已被除小 —— 这就是前三幕的全部成果：切分从来不是运行时的事，是第 2 幕一次性定死的。',
+            '算子 → kernel 是 N:M：多算子可融合成一个 kernel，一个算子也可分段成多个（卡内解剖里那条同号对应线画的就是它）。'];
+  }
+
+  if(A===5){
+    /* ── 第 5 幕 · 接力与收束：8 批走完，才有这个 step 唯一的一次梯度 AllReduce ── */
+    var sch = schedule(D), TX0 = 82, TW = 764, TH = 26, TY0 = 110;
+    parts.push(txt(28, 84, '前向算完 → P2P 发给下一站 → 转身接上一站送来的下一个 micro-batch —— 这就是流水线', 10, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    var uw = TW/Math.max(1, sch.T);
+    for(var st=0; st<D.pp; st++)
+      parts.push(rc(TX0, TY0+st*(TH+6), TW, TH, mix('var(--pt-fg)',3), 'var(--pt-bd)', .7));
+    sch.blocks.forEach(function(b){
+      var x5 = TX0 + b.t0*uw, w5 = (b.t1-b.t0)*uw, y5 = TY0 + b.s*(TH+6), mine = b.s===co.p;
+      var f5 = b.type==='AR' ? mix(VC.dp, mine?62:26) : b.type==='F' ? mix(VC.pp, mine?58:22) : mix(VC.tp, mine?52:20);
+      parts.push(slab(x5+.5, y5+3, Math.max(1,w5-1), TH-6, f5, mine?4:0, mine?2.4:0, 'pointer-events="none"'));
+      if(w5 > 13 && mine) parts.push(txt(x5+w5/2, y5+TH/2+3, b.type==='AR'?'AR':b.type+b.m, 7.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+    });
+    for(var st2=0; st2<D.pp; st2++)
+      parts.push(txt(TX0-8, TY0+st2*(TH+6)+TH/2+3, 'stage'+st2, 7.8, st2===co.p?VC.pp:'var(--pt-fg3)', 'end', st2===co.p?'font-weight="800"':''));
+    parts.push(txt(TX0, TY0+D.pp*(TH+6)+14, 'F=前向 · B=反向 · AR=步末梯度 AllReduce　　气泡率 ≈ (PP−1)/GA = '+(D.bubble*100).toFixed(1)+'%'
+      + (sch.truncated ? '（时间轴只画前 '+sch.GA+' 个 μbatch，实际 '+D.ga+' 个）' : ''), 8, 'var(--pt-fg2)', 'start'));
+    /* 两条链路：层内/跨层每 μbatch 一次，跨 step 一次 */
+    var EY = TY0 + D.pp*(TH+6) + 46;
+    var FLOW = [];
+    if(co.p<D.pp-1) FLOW.push({c:VC.pp, t:'P2P 发给 '+rankOf(co.t,co.c,co.d,co.p+1,D)+' 号', s:'每个 μbatch 一次 · 跨层', n:D.ga});
+    if(co.p>0) FLOW.push({c:VC.pp, t:'P2P 收 '+rankOf(co.t,co.c,co.d,co.p-1,D)+' 号的', s:'每个 μbatch 一次 · 跨层', n:D.ga});
+    FLOW.push({c:VC.tp, t:'层内 AllReduce × 2/层', s:'每个 μbatch、每层两次 · 层内', n:D.ga*lps*2});
+    FLOW.push({c:VC.dp, t:'梯度 AllReduce', s:'整个 step 只有一次 · 跨 step', n:1, big:true});
+    FLOW.forEach(function(q, qi){
+      var y7 = EY + qi*30;
+      parts.push(ln([28, y7+8], [56, y7+8], 'stroke:'+q.c+';stroke-width:'+(q.big?2.4:1.5)+';stroke-dasharray:5 3'));
+      parts.push(txt(64, y7+11, esc(q.t), q.big?10:9, q.c, 'start', 'font-weight="800"'));
+      parts.push(txt(280, y7+11, esc(q.s), 8, 'var(--pt-fg2)', 'start'));
+      parts.push(txt(620, y7+11, '本 step 共 '+fmt(q.n)+' 次'+(q.big?'':'（前向；反向同样一遍）'), 8.4, q.big?q.c:'var(--pt-fg3)', 'start', q.big?'font-weight="800"':''));
+    });
+    var LY9 = EY + FLOW.length*30 + 14;
+    parts.push(rc(28, LY9, 818, 44, mix(VC.dp,6), VC.dp, 1.2, 'rx="5"'));
+    parts.push(txt(42, LY9+18, D.ga+' 批的前向与反向都走完之后，它才和 DP 组的其他 '+(D.dp-1)+' 张卡做这个 step 唯一的一次梯度 AllReduce', 9.6, VC.dp, 'start', 'font-weight="800"'));
+    parts.push(txt(42, LY9+34, '参数更新 → 回到第 3 幕重来。第 0/1/2 幕不再执行 —— 这就是「只做一次」与「每 micro-batch」的分界。', 8.4, 'var(--pt-fg2)', 'start'));
+    narr = ['AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步仍逐字节相同 —— 复印必须靠这一次同步来维持。',
+            '一个 step = 1 次第 3–5 幕的循环 × '+D.ga+' 个 μbatch + 1 次 AllReduce + 1 次参数更新。'];
+  }
+
+  narr.forEach(function(t2, i2){
+    parts.push(txt(28, H-34+i2*15, t2, 8.6, i2===0?'var(--pt-fg)':'var(--pt-fg2)', 'start', i2===0?'font-weight="700"':''));
+  });
+
+  /* 状态条（幕轨）是绝对定位的浮层，压在舞台左上角——整幅下移一行，别让幕头钻到它底下 */
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+(H+30)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g transform="translate(0,30)"><g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</g></svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">一个 step</span>'
+    + ACTS.map(function(q, qi){
+        return '<button class="pb'+(qi===A?' is-on':'')+'" data-act="storyact" data-i="'+qi+'" title="'+esc(q.s)+'">'
+          + qi+' '+esc(q.t)+'</button>';
+      }).join('')
+    + '<span class="pt-chip" style="border-color:'+(act.once?VC.pp:VC.dp)+';color:'+(act.once?VC.pp:VC.dp)+'">'
+    + (act.once?'只做一次':'每 μbatch 重来')+'</span>';
+  $('stageNote').hidden = true;
+  $('detach').hidden = true;
+}
+
+/* ═════════ 真整网渲染器：画的就是那张真图本身 ═════════
+   OPENPANGU_GRAPH 自带一套预排好的布局（3d-deck / model-graphviz 用的就是这一套）：
+   **节点是中心坐标 + 宽高，cluster 是左上角 + 宽高**。这里直接用它，不另编一套坐标——
+   所以「整网」不再是示意成一条色带，而是真图的真节点、真层级、真连边。
+   每个节点的切法取 shardOfNode(id, rank) 的真结果（轴名 / 区间 / partial / 原语）；
+   通信节点按参照系画成**动作**（横线 + 原语记号）而不是体：它不持有字节、不被切。
+   一层 = decoder-stack 这个 repeat 簇；整网 = 它重复 D.layers 次 + 首尾的 embedding/head。 */
+/* 切分表里除了五把刀还会出现 sp —— 序列并行。它**不是**第 6 根 rank 轴：
+   SP 复用 TP 组（Megatron 口径），只是把 norm / 逐元素这类算子沿 seq 也切开，
+   于是 TP 区与 SP 区之间要用 AllGather / Reduce-Scatter 来回换布局。
+   所以它借 TP 的颜色，但标签如实写 SP，不把它冒充成 TP。 */
+function dimColor(d){ return d==='sp' ? VC.tp : (VC[d] || 'var(--pt-fg2)'); }
+var GIX = null;
+function graphIndex(){
+  if(GIX) return GIX;
+  var G = window.OPENPANGU_GRAPH; if(!G) return null;
+  var clu = {};
+  G.clusters.forEach(function(c){ clu[c.id] = c; });
+  GIX = {G:G, clu:clu};
+  return GIX;
+}
+function inClu(parent, root, clu){        /* 节点是否落在某个簇的子树里（簇会嵌套） */
+  var p = parent, guard = 8;
+  while(p && guard-- > 0){ if(p === root) return true; p = clu[p] ? clu[p].parentCluster : null; }
+  return false;
+}
+/* 真图节点 → 本卡的真切分标注（缓存一份，避免每帧重算 55 个节点） */
+var SHD = {key:'', map:null};
+function shardMap(D, g){
+  var m = realModel(D); if(!m) return null;
+  var key = RD.key + '/' + g;
+  if(SHD.key === key) return SHD.map;
+  var out = {};
+  window.OPENPANGU_GRAPH.nodes.forEach(function(n){
+    try{ out[n.id] = m.shardOfNode(n.id, g); }catch(e){ out[n.id] = null; }
+  });
+  SHD.key = key; SHD.map = out;
+  return out;
+}
+/* o = {x,y,w,h, clip:'decoder-stack', g, D, label:true, ghostClu:['moe-block'], tag3d:true} */
+function graphSVG(o){
+  var IX = graphIndex(); if(!IX) return '';
+  var G = IX.G, clu = IX.clu, D = o.D;
+  var root = o.clip ? clu[o.clip] : null;
+  var bx = root ? root.x : 0, by = root ? root.y : 0;
+  var bw = root ? root.width : G.width, bh = root ? root.height : G.height;
+  var sc = Math.min(o.w/bw, o.h/bh);
+  var ox = o.x + (o.w - bw*sc)/2, oy = o.y + (o.h - bh*sc)/2;
+  function TX(x){ return ox + (x-bx)*sc; }
+  function TY(y){ return oy + (y-by)*sc; }
+  var sh = shardMap(D, o.g) || {};
+  var ghost = o.ghostClu || [];
+  var pos = {}, out = [], acts = [], txts = [];
+  var E3x = o.tag3d ? Math.max(2.2, 5*sc*8) : 0, E3y = o.tag3d ? E3x*0.62 : 0;
+
+  /* 簇：结构线（无厚度），只画在 clip 子树里的 */
+  G.clusters.forEach(function(c){
+    if(o.clip && c.id !== o.clip && !inClu(c.parentCluster, o.clip, clu)) return;
+    if(o.clip && c.id === o.clip) return;                 /* 外框由调用方画 */
+    var gh = ghost.indexOf(c.id) >= 0;
+    out.push('<rect x="'+TX(c.x).toFixed(1)+'" y="'+TY(c.y).toFixed(1)+'" width="'+(c.width*sc).toFixed(1)
+      +'" height="'+(c.height*sc).toFixed(1)+'" rx="3" style="fill:none;stroke:var(--pt-bd);stroke-width:.8'
+      +(gh?';stroke-dasharray:3 2':'')+'"/>');
+    if(o.label && c.height*sc > 22)
+      txts.push(txt(TX(c.x)+3, TY(c.y)+7.5, esc(c.label)+(gh?' · 本配置不实例化':''), 5.6,
+                    gh?'var(--pt-fg3)':'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  });
+  /* 连边：先画，压在节点下面（边是关系，不抢戏） */
+  G.nodes.forEach(function(n){ pos[n.id] = n; });
+  G.edges.forEach(function(e){
+    var a = pos[e.source], b = pos[e.target];
+    if(!a || !b) return;
+    if(o.clip && !(inClu(a.parent, o.clip, clu) && inClu(b.parent, o.clip, clu))) return;
+    out.push('<line x1="'+TX(a.x).toFixed(1)+'" y1="'+TY(a.y).toFixed(1)+'" x2="'+TX(b.x).toFixed(1)
+      +'" y2="'+TY(b.y).toFixed(1)+'" style="stroke:var(--pt-bd);stroke-width:.5;stroke-opacity:.75'
+      +(e.dashed?';stroke-dasharray:2 2':'')+'"/>');
+  });
+  /* 节点 */
+  G.nodes.forEach(function(n){
+    if(o.clip && !inClu(n.parent, o.clip, clu)) return;
+    var x = TX(n.x - n.width/2), y = TY(n.y - n.height/2), w = n.width*sc, h = n.height*sc;
+    var gh = ghost.some(function(c){ return n.parent===c || inClu(n.parent, c, clu); });
+    var s1 = sh[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
+    var dim = by0 ? by0.dim : null, part = (s1 && s1.parts && s1.parts[0]) || null;
+    var col = dim ? dimColor(dim) : 'var(--pt-fg2)';
+    if(n.colorKey === 'opv:comm'){
+      /* 通信 = 动作：一条横线，不是体（§08：不持有字节、不被切，只占链路与时间） */
+      acts.push('<line x1="'+x.toFixed(1)+'" y1="'+(y+h/2).toFixed(1)+'" x2="'+(x+w).toFixed(1)+'" y2="'+(y+h/2).toFixed(1)
+        +'" style="stroke:'+(gh?'var(--pt-fg3)':VC.tp)+';stroke-width:1.3;stroke-dasharray:5 3;stroke-opacity:'+(gh?.35:.95)+'"/>');
+      if(o.label && w > 34) txts.push(txt(x+w/2, y+h/2-2.5, esc(n.label), 5.4, gh?'var(--pt-fg3)':VC.tp, 'middle', 'font-weight="700"'));
+      return;
+    }
+    if(n.kind !== 'op'){
+      /* module = 分组标题（虚线）· tensor = 张量（浅框）：都不是「这张卡持有的算子」 */
+      out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
+        +'" rx="2" style="fill:none;stroke:var(--pt-fg3);stroke-width:.6;stroke-dasharray:'+(n.kind==='module'?'3 2':'1 2')+';stroke-opacity:.7"/>');
+      if(o.label && w > 30 && h > 5) txts.push(txt(x+w/2, y+h/2+2, esc(n.label), 5.2, 'var(--pt-fg3)'));
+      return;
+    }
+    /* 算子 = 内容：有体积。切到了就用刀色，没切到是复制的 */
+    var op = gh ? .18 : 1;
+    if(E3x > 0){
+      out.push('<polygon points="'+x.toFixed(1)+','+y.toFixed(1)+' '+(x+w).toFixed(1)+','+y.toFixed(1)+' '
+        +(x+w+E3x).toFixed(1)+','+(y-E3y).toFixed(1)+' '+(x+E3x).toFixed(1)+','+(y-E3y).toFixed(1)
+        +'" style="fill:'+mix(col,26)+';fill-opacity:'+op+';stroke:none"/>');
+      out.push('<polygon points="'+(x+w).toFixed(1)+','+y.toFixed(1)+' '+(x+w+E3x).toFixed(1)+','+(y-E3y).toFixed(1)+' '
+        +(x+w+E3x).toFixed(1)+','+(y+h-E3y).toFixed(1)+' '+(x+w).toFixed(1)+','+(y+h).toFixed(1)
+        +'" style="fill:'+mix('var(--pt-fg)',26)+';fill-opacity:'+op+';stroke:none"/>');
+    }
+    out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
+      +'" rx="1.5" style="fill:'+mix(col, dim?46:16)+';fill-opacity:'+op+';stroke:'+(dim?col:'var(--pt-bds)')
+      +';stroke-width:'+(dim?.9:.5)+';stroke-opacity:'+op+'"/>');
+    if(o.label && w > 26 && h > 5){
+      /* 真标签 + 真区间：和 3d-deck 上写的那一行是同一份数据。
+         维名用切分表自己的 dimName（它会给出 SP 这种本页 DIMN 里没有的），
+         total=0 的退化情形（如 experts=0 的专家桶）不硬标一个假区间。 */
+      var tag = (part && part.total > 0)
+        ? ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '')
+        : '';
+      txts.push(txt(x+w/2, y+h/2+2, esc(n.label)+esc(tag), 5.4, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
+                    (dim?'font-weight="700" ':'')+'pointer-events="none"'));
+    }
+  });
+  return out.join('') + acts.join('') + txts.join('');
+}
+
 /* ═════════ 视图六 · 交集腔：卡为什么是「这一块」 ═════════
    前五视图各答一问：单维答「一把刀怎么切」、刀序答「几把刀什么次序」、解剖答「卡里有什么」。
    这一张答最后一问——**为什么恰好是这一块**，而这一问只能靠三维说清楚。
@@ -1146,7 +1638,10 @@ function renderSolid(D){
   var H = 700, parts = [], hits = [];
   var L1 = layerOn('L1'), L2 = layerOn('L2'), L3 = layerOn('L3'), L4 = layerOn('L4');
   var hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0, lps = D.layersPerStage;
-  var TY = 322, TX1 = 372, TX2 = 700, BW = 142, BH = 132;
+  /* 激活体是**第二视角**：主角是权重体（六把刀里有四把落在它上面，A3 也在它上面）。
+     默认只画①，②收起来——顶栏一键展开。展开时①仍在左、②小一号在右，主次分明。 */
+  var SEC = !!ui.act2;
+  var TY = 322, TX1 = SEC ? 372 : 500, TX2 = 700, BW = 142, BH = 132;
   var BD1 = D.moe ? 104 : 40, BD2 = 104;
   /* 读数放**左栏**：右上角是常驻的读出卡（.pt-detail，304px），右栏会被它盖住——
      版面必须按真实的浮层排，不能画完了让读者自己去关卡片。 */
@@ -1259,6 +1754,22 @@ function renderSolid(D){
   hits.push('<g transform="translate('+TX1+','+TY+')">'+b1.hit+'</g>');
   parts.push(txt(TX1-4, 92, '① 权重体 · 索引空间 '+(D.moe?'ℓ × h × e（三轴）':'ℓ × h（两轴，无 MoE）'), 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
   parts.push(txt(TX1-4, 105, '被剁成 '+D.pp+'×'+D.tp+(D.moe?'×'+D.ep:'')+' = '+fmt(D.pp*D.tp*(D.moe?D.ep:1))+' 个腔，这张卡持有其中 1 个', 8.2, 'var(--pt-fg2)'));
+  /* DP 副本尺：收起②之后它就没地方了，可它恰恰是 A3 的操作台——挪到①底下，
+     位置反而更对：「换副本 → 看①的腔」本来就该在同一只盒子旁边完成。 */
+  if(!SEC && D.dp>1){
+    var DRY = TY + (BW+BD1)*S + 62, DRW = Math.min(320, Math.max(120, D.dp*16));
+    var DRX = TX1 + (BW-BD1)*C/2 - DRW/2, dstep = DRW/D.dp;
+    parts.push(txt(DRX+DRW/2, DRY-10, '换 DP 副本 —— A3 的操作台：腔的三条边长一个数都不会变', 8, VC.dp, 'middle', 'font-weight="700"'));
+    parts.push(ln([DRX, DRY], [DRX+DRW, DRY], 'stroke:'+VC.dp+';stroke-width:1;stroke-opacity:.65'));
+    for(var dq=0; dq<D.dp; dq++){
+      var hotq = dq===co.d, mx2 = DRX+dstep*(dq+.5);
+      parts.push(ln([DRX+dstep*dq, DRY], [DRX+dstep*dq, DRY+4], 'stroke:'+VC.dp+';stroke-width:'+(hotq?1.6:.7)+';stroke-opacity:'+(hotq?1:.5)));
+      if(L4 && (dstep>22 || hotq || dq===0 || dq===D.dp-1))
+        parts.push(txt(mx2, DRY+15, dstep>22?('副本'+dq):String(dq), hotq?8.6:7.3, hotq?VC.dp:'var(--pt-fg3)', 'middle', hotq?'font-weight="800"':''));
+      hits.push('<g class="cgrow"><rect x="'+(mx2-Math.max(6,Math.min(22,dstep*.92))/2).toFixed(1)+'" y="'+(DRY+2).toFixed(1)
+        +'" width="'+Math.max(6,Math.min(22,dstep*.92)).toFixed(1)+'" height="16" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="d" data-i="'+dq+'"></rect></g>');
+    }
+  }
   if(K1>1){
     parts.push(txt(TX1+BW*C+10, 128, '×'+D.dp+' 复印（DP）', 8.4, VC.dp, 'start', 'font-weight="800"'));
     parts.push(txt(TX1+BW*C+10, 139, '≡ 逐字节相同 · 等大', 7.2, VC.dp, 'start'));
@@ -1275,26 +1786,33 @@ function renderSolid(D){
     parts.push(txt(TX1+ec[0]+6, TY+ec[1]+11, '专家腔：h 由 ETP='+D.etp+' 切，比 TP 那一格宽', 7, VC.ep, 'start', 'font-weight="700"'));
   }
 
-  /* ═══ 盒② 激活体：ℓ × s × b（h 是它的第 4 根轴，三维画不下，写在旁边） ═══ */
-  var b2 = solidBox({w:BW, h:BH, d:BD2, cav:VC.dp, noY:true, cavId:'a',
+  /* ═══ 盒② 激活体（第二视角，默认收起）：ℓ × s × b（h 是第 4 根轴，三维画不下，写在旁边） ═══ */
+  var b2 = SEC && solidBox({w:BW*.86, h:BH*.86, d:BD2*.86, cav:VC.dp, noY:true, cavId:'a',
     ax:{n:D.cp, dim:'cp', i:co.c, name:'s 序列位', k:D.cp>1?'c':'',
         lab:function(i){ return D.cp>1 ? '段'+i+'∪'+(2*D.cp-1-i) : '全部 s'; }},
     ay:{n:D.pp, dim:'pp', i:co.p, name:'ℓ 层号',  k:'', lab:function(i){ return 'L'+(i*lps); }},
     az:{n:D.dp, dim:'dp', i:co.d, name:'b 样本号', k:'d', lab:function(i){ return '副本'+i; }}});
-  parts.push('<g transform="translate('+TX2+','+TY+')">'+b2.body+'</g>');
-  hits.push('<g transform="translate('+TX2+','+TY+')">'+b2.hit+'</g>');
-  parts.push(txt(TX2-4, 92, '② 激活体 · 索引空间 ℓ × h × b × s（四轴）', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TX2-4, 105, '同一把 DP 刀在这里是轴：整盒被真切成 '+D.dp+' 份（面积守恒），不是复印', 8.2, VC.dp));
-  parts.push(txt(TX2-4, 117, 'h 是它的第 4 根轴（TP 也切它）· ℓ 与①同一把 PP 刀，尺不重复画', 7.4, 'var(--pt-fg3)'));
+  if(SEC){
+    parts.push('<g transform="translate('+TX2+','+TY+')">'+b2.body+'</g>');
+    hits.push('<g transform="translate('+TX2+','+TY+')">'+b2.hit+'</g>');
+    parts.push(txt(TX2-4, 92, '② 激活体（第二视角）· 索引空间 ℓ × h × b × s（四轴）', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+    parts.push(txt(TX2-4, 105, '同一把 DP 刀在这里是轴：整盒被真切成 '+D.dp+' 份（面积守恒），不是复印', 8.2, VC.dp));
+    parts.push(txt(TX2-4, 117, 'h 是它的第 4 根轴（TP 也切它）· ℓ 与①同一把 PP 刀，尺不重复画', 7.4, 'var(--pt-fg3)'));
+  }else{
+    parts.push(txt(TX2+10, 300, '② 激活体是第二视角，默认收起', 9.6, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+    parts.push(txt(TX2+10, 314, '顶栏「展开激活体」可以打开：它多出 b（DP 切）与 s（CP 切）两根轴', 7.6, 'var(--pt-fg3)'));
+  }
 
   /* ═══ 两只盒子共用的刀：ℓ 的刀面是同一片，横穿两只盒子（连线取两盒同一层高的前棱） ═══ */
   var yl = (co.p+.5)*BH/D.pp;                       /* 本卡那一层段的局部高度 */
   var yA = TY + BW*S - yl, yB = TY + BD2*S - yl;    /* ①的右前棱 / ②的左前棱，同一层段 */
   var gx0 = TX1+BW*C+8, gx1 = TX2-BD2*C-8;
-  parts.push(ln([gx0, yA], [gx1, yB], 'stroke:'+VC.pp+';stroke-width:1;stroke-dasharray:5 4;stroke-opacity:.7'));
-  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 - 8, 'PP·TP 的刀面', 7.4, VC.pp, 'middle', 'font-weight="700"'));
-  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 4, '横穿两只盒子', 7.4, VC.pp, 'middle', 'font-weight="700"'));
-  parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 15, 'ℓ、h 共有', 6.8, 'var(--pt-fg3)'));
+  if(SEC){
+    parts.push(ln([gx0, yA], [gx1, yB], 'stroke:'+VC.pp+';stroke-width:1;stroke-dasharray:5 4;stroke-opacity:.7'));
+    parts.push(txt((gx0+gx1)/2, (yA+yB)/2 - 8, 'PP·TP 的刀面', 7.4, VC.pp, 'middle', 'font-weight="700"'));
+    parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 4, '横穿两只盒子', 7.4, VC.pp, 'middle', 'font-weight="700"'));
+    parts.push(txt((gx0+gx1)/2, (yA+yB)/2 + 15, 'ℓ、h 共有', 6.8, 'var(--pt-fg3)'));
+  }
 
   /* ═══ 左栏读数：腔的坐标 —— 引线从腔拉过来，左右联动看得见 ═══ */
   var RY = 96;
@@ -1324,7 +1842,7 @@ function renderSolid(D){
                                     : ('差额 = 复制项（norm'+(D.moe?' / router':'')+' / KV 头）：谁也不切它们，'), 6.8, 'var(--pt-fg3)', 'start'));
   parts.push(txt(RX, RY+125, etpGap ? '（本配置 ETP='+D.etp+'）。盒上虚线框就是这块。'
                                     : '每卡各存一份，所以字节比体积多出来一点。', 6.8, 'var(--pt-fg3)', 'start'));
-  head(RY+145, '② 激活体腔', VC.dp); hr(RY+149);
+  head(RY+145, '② 激活体腔'+(SEC?'':'（第二视角·已收起）'), VC.dp); hr(RY+149);
   row(RY+162, 'b ← DP', '副本'+co.d+' 的 '+fmt(D.mbs*D.ga)+' 样本', VC.dp);
   row(RY+175, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
   row(RY+188, 'ℓ、h', '与①同一区间', 'var(--pt-fg2)');
@@ -1351,7 +1869,7 @@ function renderSolid(D){
                                     : '换的是哪一桶，不是几个专家：边长不变，A3 照旧。', 7, 'var(--pt-fg3)', 'start'));
   /* 引线：腔 → 左栏对应段（左右联动的可视化，不靠读者自己找） */
   parts.push(ln([TX1+b1.cc[0], TY+b1.cc[1]], [RX+RW+8, RY+49], 'stroke:var(--pt-fg3);stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.7'));
-  parts.push(ln([TX2+b2.cc[0], TY+b2.cc[1]], [RX+RW+8, RY+162], 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
+  if(SEC) parts.push(ln([TX2+b2.cc[0], TY+b2.cc[1]], [RX+RW+8, RY+162], 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
 
   /* ═══ 一轴一刀（§03）：哪个对象有这根轴，就由哪把刀在那个对象上动手 ═══
      这张表本来该放 .pt-note 浮层，但那层压在舞台左下角、会盖住容器条——画进 SVG 里，版面自己说了算。 */
@@ -1401,6 +1919,8 @@ function renderSolid(D){
   $('stagebar').innerHTML = '<span class="pt-cap">交集腔</span>'
     + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
+    + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
+    + (ui.act2?'收起激活体':'展开激活体（第二视角）')+'</button>'
     + '<button class="pb" data-act="view" data-v="anatomy">腔里装了什么 ↗</button>';
   /* 一轴一刀的表已经画进 SVG 了（见 TBX/TBY）——.pt-note 浮层压在舞台左下角会盖住容器条，
      同一句话不放两遍，浮层这里就空着。 */
@@ -2162,7 +2682,7 @@ function renderDetail(D){
   var el = $('detail');
   if(!D.ok){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
-    if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'){ el.hidden = (sel===null); if(sel===null) return; }
+    if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'||ui.view==='story'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
     el.innerHTML = '<h4>结构总览 · 点卡读出</h4>'
       + '<table>'
@@ -2352,6 +2872,21 @@ function sayText(D){
   }else if(ui.view==='compose'){
     s = '<b>合成·卡阵</b>：五维相乘后的全局（TP×PP×DP 三轴，CP 分面）。单维讲关系，这里讲落位。'
       + (layerOn('L5') ? ' 通信组=<b>'+DIMN[ui.commDim]+'</b>×<b>'+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+'</b>——维度管分组、原语管画法，互不绑定。' : ' 底栏开 L5 看通信；▶ 播放一个训练步。');
+  }else if(ui.view==='story'){
+    var A2 = clamp(ui.act|0, 0, ACTS.length-1), ac2 = ACTS[A2];
+    var g2 = (sel!==null && sel<D.world) ? sel : 0, c2 = coordsOf(g2, D);
+    s = '<b>一个 step 的五幕</b>：前面几张图讲的是<b>静态关系</b>，这张图补上<b>时间上的先后</b>，'
+      + '以及一条最容易被跳过的分界——<b style="color:'+VC.pp+'">只做一次</b>（0 开机 / 1 报到 / 2 备料）'
+      + ' vs <b style="color:'+VC.dp+'">每个 micro-batch 重来</b>（3 进料 / 4 开算 / 5 接力）。'
+      + '当前是<b>第 '+A2+' 幕 · '+ac2.t+'</b>（'+(ac2.once?'只做一次':'每 μbatch 重来')+'）。'
+      + '跟住 <b>g='+g2+'</b>：它开机时和另外 '+(D.world-1)+' 个进程<b>一模一样</b>，只有一个数字不同；'
+      + '报到时自己算出门牌 (pp'+c2.p+' dp'+c2.d+' cp'+c2.c+' tp'+c2.t+') 与各组成员——<b>组是算出来的，不是配出来的</b>；'
+      + '备料时只实例化 <b>L'+(c2.p*D.layersPerStage)+'–L'+((c2.p+1)*D.layersPerStage-1)+'</b> 这 '+D.layersPerStage+' 层、每个权重矩阵只建 '
+      + '<b>[' + fmt(D.hidden) + ', ' + fmt(Math.floor(D.ffn/D.tp)) + ']</b>——'
+      + '<b>整网从头到尾只存在于代码里，物理上从来没有在任何一处被完整实例化过</b>。'
+      + '第 2 幕放大的那一层是 <b>openPangu 真图</b>（真节点 · 真层级 · 真连边 · 真切分标注），不是示意。'
+      + '第 4 幕是<b>两条链唯一的交点</b>：算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头（§02 · FIG 03）。'
+      + '第 5 幕收束：'+D.ga+' 批前后向走完，才有这个 step <b>唯一的一次</b>梯度 AllReduce。点卡阵里的一格换一张卡跟。';
   }else if(ui.view==='solid'){
     var vol2 = D.pp*D.tp*(D.moe?D.ep:1);
     s = '<b>交集腔</b>：两个对象各有自己的索引空间，<b>轴数不同</b>——①<b>权重体</b> ℓ×h'+(D.moe?'×e':'')+'（'+(D.moe?3:2)+' 轴），②<b>激活体</b> ℓ×h×b×s（4 轴）。'
@@ -2396,6 +2931,7 @@ function render(){
     else if(ui.view==='compose') renderV1(D);
     else if(ui.view==='anatomy') renderV3(D);
     else if(ui.view==='solid') renderSolid(D);
+    else if(ui.view==='story') renderStory(D);
     else renderV2(D);
   }
   renderDetail(D);
@@ -2450,6 +2986,9 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
   else if(act==='net3d'){ ui.net3d = !ui.net3d; render(); }
+  else if(act==='storyact'){ ui.act = +b.getAttribute('data-i'); render(); }
+  else if(act==='act2'){ ui.act2 = !ui.act2; render(); }
+  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);

@@ -216,6 +216,8 @@ function epOf(co, p){
 
 /* ── 格位定义：每格可选的组件。mount 型直接调 handle，iframe 型走 postMessage 或 src ── */
 var COMPS = {
+  story:{band:'a', name:'一个 step · 五幕', q:'跟住一张卡走完一个 step：只做一次（开机/报到/备料）vs 每 micro-batch 重来（进料/开算/接力）。第 2 幕放大的是 openPangu 真图。',
+    kind:'demo', view:'story', drive:'post'},
   chain:{band:'a', name:'刀序 · 切分链', q:'五刀按嵌套序串成一条链（A 段主图）',
     kind:'demo', view:'chain', drive:'post'},
   dim:{band:'a', name:'单维切分（真算子）', q:'一把刀一个视图 · 容器柱 + 面积守恒 · 算子取 openPangu 真图与真切分标注',

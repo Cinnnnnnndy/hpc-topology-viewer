@@ -11,13 +11,15 @@
     "source": "public/parallel-topology/demo.html"
   },
   "urlParams": {
-    "view": "dim|chain|compose|anatomy|solid|time —— 视图（单维切分/刀序·切分链/合成卡阵/卡内解剖/交集腔/时间·流）；旧值 v1..v5 仍兼容（v4→dim&cut=dp、v5→dim&cut=cp）",
-    "preset": "default128|dense64|longcp|moe64|pangu|bad —— 预置配置（默认 default128；bad 为 A6 非法示例）",
+    "view": "story|dim|chain|compose|anatomy|solid|time —— 视图（一个step五幕/单维切分/刀序·切分链/合成卡阵/卡内解剖/交集腔/时间·流）；旧值 v1..v5 仍兼容（v4→dim&cut=dp、v5→dim&cut=cp）",
+    "preset": "default128|dense64|longcp|moe64|story128|pangu|bad —— 预置配置（默认 default128；story128 是五幕故事那一套 tp2·cp1·pp4·dp16 / 48 层 / H=8192 / MBS4·GA8 → GBS512；bad 为 A6 非法示例）",
     "sel": "整数 global_rank —— 直接选中某张卡（跨视图保持，A8）",
     "dim": "tp|cp|pp|dp|ep —— L5 通信维度（谁跟谁一组）",
     "prim": "p2p|allgather|reducescatter|allreduce|alltoall —— L5 原语（怎么连线），与 dim 正交",
     "l5": "1 —— 打开通信图层",
     "net3d": "0 —— 刀序视图里整网改回 2D 平铺色带（默认 3D 板：一层一块有顶面的板）",
+    "act": "0..5 —— 故事视图看第几幕（0 开机 / 1 报到 / 2 备料 / 3 进料 / 4 开算 / 5 接力与收束）",
+    "act2": "1 —— 交集腔里展开激活体（第二视角；默认只画权重体）",
     "axis": "tp|pp|dp|ep —— L4 axis 高亮（取值域不含 cp，A4）",
     "facet": "整数 cp_rank —— CP 分面",
     "skew": "0 —— 关闭 V2 的偏斜注入（默认开）",
