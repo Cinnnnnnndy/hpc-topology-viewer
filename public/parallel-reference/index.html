@@ -1177,6 +1177,39 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 
   <p>所以「整网怎么在卡上切分」这个问题，答案的全部信息都在卡这一级。这也解释了为什么单卡视角（显存里放了什么 / 流上排了什么）能撑起那么多诊断——并行的一切后果都在那里落地。</p>
 
+  <h3>机制：切分是怎么真的落到卡上的</h3>
+
+  <p>上面说的都是「对应关系」。但实际跑起来，配置写在整网上、执行发生在卡上，中间那段<em>过程</em>是什么？这里有一个反直觉的事实值得先摆出来：</p>
+
+  <div class="note new">
+    <span class="lbl">「切整网」从来没有真的发生过</span>
+    <p><strong>没有哪一刻存在一个完整的整网、然后被切开分发。</strong>每张卡从一开始就<strong>只构造自己那一份</strong>——PP 只实例化本 stage 的那几层，TP 只分配权重矩阵的那一条，EP 只建自己那几个 expert。<b>切分是「按 rank 各自少建」，不是「建好再分」</b>。</p>
+    <p>这正是 SPMD 成立的样子（§10）：所有卡跑<em>同一份代码</em>，各自按自己的门牌号取自己那一片。「整网被切开」是一句<strong>逻辑描述</strong>，不是<strong>物理过程</strong>。</p>
+  </div>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 09B</span><span class="ftitle">从整网到卡：两条路，在卡上汇合</span>
+      <span class="fnote">上路是<b>权重体</b>——建一次、全程冻结；下路是<b>激活体 / token</b>——每 step 流一次。两条路各自被不同的维度切，最后在同一张卡上相遇，才有算子可执行。图中数字取 <code>TP2·PP4·CP1·DP16 = 128 卡</code>，<code>GBS=512 · S=8192 · GA=8 → MBS=4</code>，追的是门牌号 <code>(pp=1, dp=4, cp=0, tp=1)</code> 那张卡。</span></figcaption>
+    <div class="stage" id="fig-build"></div>
+  </figure>
+
+  <h4>两条路的分工</h4>
+
+  <table class="tbl">
+    <thead><tr><th></th><th>静态路（权重体）</th><th>动态路（激活体 / token）</th></tr></thead>
+    <tbody>
+      <tr><td><b>什么时候走</b></td><td><b>建模时一次</b>，此后全程冻结</td><td><b>每个 step 走一遍</b>（每个 micro-batch 一次）</td></tr>
+      <tr><td><b>被谁切</b></td><td><code>ℓ</code>（PP）· <code>h</code>（TP）· <code>e</code>（EP）</td><td><code>b</code>（DP，再被 GA 切一次）· <code>s</code>（CP / SP）</td></tr>
+      <tr><td><b>怎么落到卡上</b></td><td><b>按 rank 只建自己那份</b>——显存是真的只分配了一片，不是分配全量再遮蔽</td><td><b>按 rank 只取自己那份</b>——DataLoader 按 <code>dp_rank</code> 取样本，CP 再按 <code>cp_rank</code> 切序列</td></tr>
+      <tr><td><b>同一 DP 组内的卡</b></td><td>权重<b>逐字节相同</b>（副本，§10）</td><td>拿到的 token <b>不同</b></td></tr>
+      <tr><td><b>同一 TP 组内的卡</b></td><td>权重是<b>不同分片</b></td><td>拿到的 token <b>完全相同</b></td></tr>
+    </tbody>
+  </table>
+
+  <p>最后两行合起来是一条很有用的判据：<strong>沿哪根轴走，是「权重变而 token 不变」还是「token 变而权重不变」，就说明那根轴切的是哪个对象。</strong>这也是 §10 那张「两张卡一样不一样」表的过程版。</p>
+
+  <p><strong>token 的位置由此明确：它只在动态路上。</strong>数据集里是 <code>[GBS, S]</code> 的整数 token id；按 <code>dp_rank</code> 分到本卡、按 <code>GA</code> 切成 micro-batch、（有 CP 则）按 <code>cp_rank</code> 切掉一段序列，才成为这张卡这一刻手里的 <code>[MBS, S/CP]</code> 个 token；过 embedding 变成激活张量，然后才与静态路早就备好的权重分片相遇。<strong>算子执行 = 权重分片 × token 分片</strong>——两条路缺一条，卡上就没有可算的东西。</p>
+
   <h3>追踪一个算子：从整网到单卡</h3>
 
   <figure>
@@ -2733,6 +2766,92 @@ function figContainer(){
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
 }
 
+/* ===================== FIG 09B · 从整网到卡：两条路 ===================== */
+function figBuild(){
+  var m=document.getElementById('fig-build'); if(!m) return;
+  var W=1000,H=590;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+  s+='<defs>'
+   + '<marker id="b-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+   + '<path d="M0 0 L10 5 L0 10 z" fill="#8A98A2"/></marker>'
+   + '<marker id="b-arp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+   + '<path d="M0 0 L10 5 L0 10 z" fill="'+K.pp+'"/></marker>'
+   + '<marker id="b-ard" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+   + '<path d="M0 0 L10 5 L0 10 z" fill="'+K.dp+'"/></marker>'
+   + '</defs>';
+
+  /* 一个方块：标题 + 若干行小字 */
+  function box(x,y,w,h,col,title,lines,fill){
+    var o='<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="5" fill="'+(fill||'#fff')+'" stroke="'+col+'" stroke-width="1.5"/>';
+    o+='<text x="'+(x+12)+'" y="'+(y+21)+'" font-size="12" font-weight="700" fill="#0E1418">'+title+'</text>';
+    (lines||[]).forEach(function(t,i){
+      o+='<text x="'+(x+12)+'" y="'+(y+38+i*14)+'" font-size="9.8" fill="#6B7B86" font-family="ui-monospace,Menlo,monospace">'+t+'</text>';
+    });
+    return o;
+  }
+  function arrow(x1,y1,x2,y2,mk,col){
+    return '<path d="M'+x1+' '+y1+' L'+x2+' '+y2+'" stroke="'+(col||'#B0BEC6')+'" stroke-width="1.5" fill="none" marker-end="url(#'+mk+')"/>';
+  }
+
+  /* ---- 轨道标题 ---- */
+  s+='<rect x="24" y="52" width="700" height="122" rx="7" fill="#FBF6F3" stroke="'+K.pp+'" stroke-width="1" stroke-dasharray="4 3" opacity=".75"/>';
+  s+='<text x="34" y="44" font-size="12.5" font-weight="750" fill="'+K.pp+'">静态路 · 权重体</text>';
+  s+='<text x="152" y="44" font-size="10.5" fill="#8A98A2">建模时走一次，此后全程冻结　·　被 ℓ(PP) · h(TP) · e(EP) 切</text>';
+
+  s+='<rect x="24" y="322" width="700" height="122" rx="7" fill="#F2F7FA" stroke="'+K.dp+'" stroke-width="1" stroke-dasharray="4 3" opacity=".75"/>';
+  s+='<text x="34" y="314" font-size="12.5" font-weight="750" fill="'+K.dp+'">动态路 · 激活体 / token</text>';
+  s+='<text x="212" y="314" font-size="10.5" fill="#8A98A2">每个 micro-batch 走一遍　·　被 b(DP·GA) · s(CP) 切</text>';
+
+  /* ---- 静态路四步 ---- */
+  var SY=72, BH=84;
+  s+=box(36, SY,150,BH,K.pp,'模型定义',['图 + 权重 shape','48 层 · H=8192','（代码，无显存）']);
+  s+=box(216,SY,158,BH,K.pp,'并行配置',['TP2·PP4·CP1·DP16','order=tp-cp-ep-dp-pp','→ world_size 128']);
+  s+=box(404,SY,142,BH,K.pp,'门牌号',['每卡 (pp,dp,cp,tp)','本例追这张：','(1, 4, 0, 1)']);
+  s+=box(576,SY,138,BH,K.pp,'只建自己那份',['PP→只建 L12–23','TP→权重只要一半','[8192, 16384]'],'#FDF3EE');
+  s+=arrow(186,SY+42,212,SY+42,'b-arp',K.pp);
+  s+=arrow(374,SY+42,400,SY+42,'b-arp',K.pp);
+  s+=arrow(546,SY+42,572,SY+42,'b-arp',K.pp);
+
+  /* ---- 动态路四步 ---- */
+  var DY=342;
+  s+=box(36, DY,150,BH,K.dp,'数据集',['token id [GBS, S]','[512, 8192] 整数','= 4.2 M token']);
+  s+=box(216,DY,158,BH,K.dp,'按 dp_rank 取',['512 / DP16 = 32 条','同 DP 组内各不同','同 TP 组内完全相同']);
+  s+=box(404,DY,142,BH,K.dp,'GA 切 micro-batch',['32 / GA8 = 4 条','= MBS','此刻手里就这批']);
+  s+=box(576,DY,138,BH,K.dp,'按 cp_rank 切 seq',['CP=1 → S 不变','token 分片','[4, 8192]'],'#EFF5F9');
+  s+=arrow(186,DY+42,212,DY+42,'b-ard',K.dp);
+  s+=arrow(374,DY+42,400,DY+42,'b-ard',K.dp);
+  s+=arrow(546,DY+42,572,DY+42,'b-ard',K.dp);
+
+  /* ---- 汇合到卡 ---- */
+  var CX=776, CY=176, CW=196, CH=196;
+  s+='<rect x="'+CX+'" y="'+CY+'" width="'+CW+'" height="'+CH+'" rx="7" fill="#FFF8F4" stroke="#0E1418" stroke-width="2.4"/>';
+  s+='<text x="'+(CX+14)+'" y="'+(CY+24)+'" font-size="13.5" font-weight="800" fill="#0E1418">卡 (1,4,0,1)</text>';
+  s+='<text x="'+(CX+14)+'" y="'+(CY+40)+'" font-size="9.5" fill="#8A98A2" font-family="ui-monospace,Menlo,monospace">global_rank = 41</text>';
+  s+='<rect x="'+(CX+14)+'" y="'+(CY+52)+'" width="'+(CW-28)+'" height="52" rx="5" fill="#fff" stroke="'+K.pp+'" stroke-width="1.3"/>';
+  s+='<text x="'+(CX+24)+'" y="'+(CY+70)+'" font-size="10.5" font-weight="700" fill="'+K.pp+'">权重分片　常驻</text>';
+  s+='<text x="'+(CX+24)+'" y="'+(CY+87)+'" font-size="9.5" fill="#6B7B86" font-family="ui-monospace,Menlo,monospace">L12–23 · [8192, 16384]</text>';
+  s+='<rect x="'+(CX+14)+'" y="'+(CY+114)+'" width="'+(CW-28)+'" height="52" rx="5" fill="#fff" stroke="'+K.dp+'" stroke-width="1.3"/>';
+  s+='<text x="'+(CX+24)+'" y="'+(CY+132)+'" font-size="10.5" font-weight="700" fill="'+K.dp+'">token 分片　每步换</text>';
+  s+='<text x="'+(CX+24)+'" y="'+(CY+149)+'" font-size="9.5" fill="#6B7B86" font-family="ui-monospace,Menlo,monospace">[4, 8192] → 激活</text>';
+  /* 两条汇合弧线 */
+  s+='<path d="M714 '+(SY+42)+' C 748 '+(SY+42)+', 752 '+(CY+78)+', '+(CX-4)+' '+(CY+78)+'" stroke="'+K.pp+'" stroke-width="1.8" fill="none" marker-end="url(#b-arp)"/>';
+  s+='<path d="M714 '+(DY+42)+' C 748 '+(DY+42)+', 752 '+(CY+140)+', '+(CX-4)+' '+(CY+140)+'" stroke="'+K.dp+'" stroke-width="1.8" fill="none" marker-end="url(#b-ard)"/>';
+
+  /* ---- 卡上执行 ---- */
+  s+='<text x="'+(CX+CW/2)+'" y="'+(CY+CH+26)+'" font-size="11.5" font-weight="700" fill="#0E1418" text-anchor="middle">算子执行 ＝ 权重片 × token 片</text>';
+  s+='<text x="'+(CX+CW/2)+'" y="'+(CY+CH+43)+'" font-size="10" fill="#8A98A2" text-anchor="middle">→ 落成 kernel，在流上排队</text>';
+  s+='<path d="M'+(CX+CW/2)+' '+(CY+CH+2)+' L '+(CX+CW/2)+' '+(CY+CH+14)+'" stroke="#8A98A2" stroke-width="1.4" marker-end="url(#b-ar)"/>';
+
+  /* ---- 关键提示 ---- */
+  s+='<rect x="24" y="484" width="948" height="78" rx="7" fill="#FFF8F4" stroke="#0E1418" stroke-width="1.6"/>';
+  s+='<text x="42" y="508" font-size="12.5" font-weight="800" fill="#0E1418">没有哪一刻存在「完整的整网」再被切开</text>';
+  s+='<text x="42" y="529" font-size="11" fill="#3D4B55">每张卡从一开始就只构造自己那一份 —— 切分是「按 rank 各自少建」，不是「建好再分」。所有卡跑同一份代码，各自按门牌号取自己那一片，这就是 SPMD。</text>';
+  s+='<text x="42" y="549" font-size="11" fill="#3D4B55">两条路缺一条，卡上就没有可算的东西：<tspan font-weight="700" fill="'+K.pp+'">权重片建好后不动</tspan>，<tspan font-weight="700" fill="'+K.dp+'">token 片每个 micro-batch 换一批</tspan>。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 function figChains(){
   var m=document.getElementById('fig-chains');
   var L=[['整网','L 层的图'],['层 ℓ','层子图'],['expert e','仅 MoE 层存在'],['算子','MatMul · Softmax'],['张量','权重 · 激活值']];
@@ -3518,6 +3637,7 @@ function setupRail(){
 /* ===================== 绑定与启动 ===================== */
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
+   ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
