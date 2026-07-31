@@ -12,9 +12,16 @@
 # 后面列出 workflow 路径、会触发发布的分支、站点 URL 与实际状态码。
 set -uo pipefail
 
-cd "${1:-.}" || exit 1
-git rev-parse --git-dir >/dev/null 2>&1 || { echo "不在 git 仓库里" >&2; exit 1; }
-cd "$(git rev-parse --show-toplevel)" || exit 1
+# 默认认「脚本所在的那个仓库」（每个仓库各有一份副本），给了路径参数就用参数。
+# 按 cwd 取仓库会在从别处调用时静默看错仓库。
+if [ $# -ge 1 ]; then
+  cd "$1" || exit 1
+else
+  cd "$(dirname "$0")" || exit 1
+fi
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$ROOT" ] || { echo "不在 git 仓库里" >&2; exit 1; }
+cd "$ROOT" || exit 1
 
 # origin 可能是 https://github.com/Owner/Repo(.git)，也可能是沙箱代理的
 # http://local_proxy@127.0.0.1:PORT/git/Owner/Repo —— 一律取最后两段。
