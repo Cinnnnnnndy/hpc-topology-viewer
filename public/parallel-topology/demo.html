@@ -192,7 +192,7 @@
 .pt-krow{display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--pt-fg2)}
 .pt-key{display:inline-flex; align-items:center; gap:5px; font-family:var(--pt-mono); font-size:10px; color:var(--pt-fg2); white-space:nowrap}
 .pt-key svg{display:block}
-.pt-say{flex:1 1 260px; min-width:200px; line-height:1.55}
+.pt-say{flex:1 1 260px; min-width:200px; line-height:1.55; max-height:110px; overflow-y:auto}
 .pt-say b{color:var(--pt-fg)}
 .pt-say .a5{color:var(--pt-danger); font-weight:700}
 
@@ -1434,11 +1434,11 @@ function netScene(D, g, box, step){
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
-  if(IXg && sh && s < 95 && !zoomIn){
+  if(IXg && sh && s < 72 && !zoomIn){
     lab.push(txt(box.x + box.w/2, box.y + box.h - 6,
       '复印件展开后每份只有 '+Math.round(s)+'px 宽，真节点标签省略了——切到「叠」或减少 DP 才读得到', 7.2, 'var(--pt-fg3)'));
   }
-  if(IXg && sh && (s >= 95 || zoomIn)){
+  if(IXg && sh && (s >= 72 || zoomIn)){
     /* 只挑五条：一层里 35 个算子全标出来就是糊墙，五条足够认出「这是真图那一层」 */
     var pick = ['input_layernorm','q_a_proj','attention_core','dense_gate_up','block_post_norm'];
     var wf = wOf(co.p*lps);
@@ -3217,19 +3217,21 @@ function renderFoot(D){
         return '<button class="pb mono'+(ui.axis===a?' is-on':'')+'" data-act="axis" data-a="'+a+'" style="--c:'+VC[a]+'"'+(dis?' disabled':'')+'>'+DIMN[a]+'</button>';
       }).join('')
     + '<button class="pb mono" disabled title="CP 不是卡网格的轴——输入分布见 V5，CP 通信组走抽离图（P2 修正 / A4）">CP⊘</button>';
-  out += '<span class="pt-sep"></span><span class="pt-cap">L5 维度</span>'
-    + (ui.view==='dim'
-        ? '<span class="pt-chip" title="单维视图里通信组就是当前切分维；到合成视图可自由组合维度×原语">跟随视图 = '+DIMN[ui.cutDim]+'</span>'
-        : COMM_DIMS.map(function(dm){
-            var dis = dm==='ep' && !D.moe;
-            return '<button class="pb mono'+(ui.commDim===dm&&layerOn('L5')?' is-on':'')+'" data-act="commdim" data-d="'+dm+'" style="--c:'+VC[dm]+'"'+(dis?' disabled':'')+'>'+DIMN[dm]+'</button>';
-          }).join(''))
-    + '<span class="pt-cap" title="原语两类：P2P 是点对点，集合原语由一串 P2P 接成。两类都在计算图里以算子节点出现（send/recv、hcom_*），但在参照系里都是动作——不持有字节、不被切">⊗ 原语</span>'
-    + PRIMS.map(function(pr){
-        var cmn = (COMMON[ui.commDim]||[]).indexOf(pr.id)>=0;
-        return '<button class="pb mono'+(ui.commPrim===pr.id&&layerOn('L5')?' is-on':'')+'" data-act="commprim" data-p="'+pr.id+'" title="'+esc(pr.kind+'：'+pr.why)+'">'+pr.name+'<span class="cmn">'+pr.kind+(cmn?'·常见':'')+'</span></button>';
-      }).join('')
-    + '<button class="pb'+(ui.detach?' is-on':'')+'" data-act="detach">抽离</button>';
+  if(AVAIL[ui.view]['L5']){
+    out += '<span class="pt-sep"></span><span class="pt-cap">L5 维度</span>'
+      + (ui.view==='dim'
+          ? '<span class="pt-chip" title="单维视图里通信组就是当前切分维；到合成视图可自由组合维度×原语">跟随视图 = '+DIMN[ui.cutDim]+'</span>'
+          : COMM_DIMS.map(function(dm){
+              var dis = dm==='ep' && !D.moe;
+              return '<button class="pb mono'+(ui.commDim===dm&&layerOn('L5')?' is-on':'')+'" data-act="commdim" data-d="'+dm+'" style="--c:'+VC[dm]+'"'+(dis?' disabled':'')+'>'+DIMN[dm]+'</button>';
+            }).join(''))
+      + '<span class="pt-cap" title="原语两类：P2P 是点对点，集合原语由一串 P2P 接成。两类都在计算图里以算子节点出现（send/recv、hcom_*），但在参照系里都是动作——不持有字节、不被切">⊗ 原语</span>'
+      + PRIMS.map(function(pr){
+          var cmn = (COMMON[ui.commDim]||[]).indexOf(pr.id)>=0;
+          return '<button class="pb mono'+(ui.commPrim===pr.id&&layerOn('L5')?' is-on':'')+'" data-act="commprim" data-p="'+pr.id+'" title="'+esc(pr.kind+'：'+pr.why)+'">'+pr.name+'<span class="cmn">'+pr.kind+(cmn?'·常见':'')+'</span></button>';
+        }).join('')
+      + '<button class="pb'+(ui.detach?' is-on':'')+'" data-act="detach">抽离</button>';
+  }
   $('footCtl').innerHTML = out;
   $('keys').innerHTML =
     key('<line x1="2" y1="6" x2="30" y2="6" style="stroke:var(--pt-fg2);stroke-width:2" marker-end="url(#arrx)"/>','P2P 有向链', 34)
@@ -3481,7 +3483,7 @@ document.addEventListener('click', function(ev){
     }
     render(); ptoNotifyHost();
   }
-  else if(act==='axis'){ ui.axis = b.getAttribute('data-a'); render(); }
+  else if(act==='axis'){ var a = b.getAttribute('data-a'); ui.axis = (ui.axis===a) ? '' : a; render(); }
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
   else if(act==='yaw'){ ui.yaw = (ui.yaw + (+b.getAttribute('data-d')) + 4) & 3; render(); }
   else if(act==='yawreset'){ ui.yaw = 0; render(); }
