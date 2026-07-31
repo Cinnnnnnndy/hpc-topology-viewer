@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/set-git-identity.sh",
+            "timeout": 15,
+            "statusMessage": "配置 git 提交身份…"
+          }
+        ]
+      }
+    ]
+  }
+}
