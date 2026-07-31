@@ -1218,6 +1218,55 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 4. 执行    本卡算子（shape 已除小）× 本卡 token
                         → 算子选择 / 融合 → kernel → 排进流       ← 每个 micro-batch</pre>
 
+  <h4>完整的故事链条：跟住一张卡走完一个 step</h4>
+
+  <p>把上面五步讲成一个能复述的故事。配置 <code>TP2·CP1·PP4·DP16 = 128 卡</code>，整网 48 层、<code>H=8192</code>，<code>GBS=512 · S=8192 · GA=8 → MBS=4</code>。我们跟住 <code>global_rank = 41</code> 这一张。</p>
+
+  <div class="note new">
+    <span class="lbl">第 0 幕 · 开机：128 个一模一样的进程</span>
+    <p>启动器拉起 128 个进程、各绑一张卡。此刻它们<strong>唯一的差别是一个数字</strong> <code>global_rank</code>（0…127），代码完全相同，谁也还不知道自己该干什么。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">第 1 幕 · 报到：一维编号变成四位门牌</span>
+    <p>配置到位：<code>order = tp-cp-ep-dp-pp</code>。每个进程<em>各自</em>算了一遍同样的除法，41 号解出 <code>(pp=1, dp=4, cp=0, tp=1)</code>——<strong>我是第 1 号 stage、第 4 个副本、权重矩阵的第 1 条</strong>。顺带它也算出自己在哪些组里：TP 组 <code>{40, 41}</code>、PP 链 <code>{9, 41, 73, 105}</code>、DP 组 <code>{33, 35, …, 63}</code>。</p>
+    <p><b>没有人告诉它这些，是它按同一份公式自己算出来的</b>——换个 <code>order</code>，它算出的就是另一组。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">第 2 幕 · 备料：只建自己那一份（只做一次）</span>
+    <p>整网 48 层。41 号看自己的 <code>pp=1</code>，<strong>只实例化 L12–23 这 12 层</strong>——其余 36 层的权重它连显存都没申请。再看 <code>tp=1</code>，每个权重矩阵只建右半边 <code>[8192, 16384]</code>。</p>
+    <p><strong>整网从头到尾只存在于代码里，物理上从来没有在任何一处被完整实例化过。</strong>最后它在切口插好通信算子：层内两处 AllReduce（和 40 号一起）、stage 边界的 Send/Recv（收 9 号的、发给 73 号）。<b>这一幕做完就冻结，整个训练不再变。</b></p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">第 3 幕 · 进料：token 每步换一批</span>
+    <p>数据集 512 条序列 × 8192 token ＝ 420 万个 token。41 号按 <code>dp=4</code> 取第 4 份的 32 条，再按 <code>GA=8</code> 切成 8 批、每批 4 条（<code>MBS</code>）。它此刻手里是 <code>[4, 8192]</code> 个 token id，过 embedding 成 <code>[4, 8192, 8192]</code> 的激活。</p>
+    <p>留意谁跟它拿到一样的东西：<b>40 号（同 TP 组）拿到逐字节相同的 token</b>（TP 切的是权重不是数据）；<b>9 号 / 73 号（同 PP 链）也是同一批</b>（它们是流水线的前后站）。真正拿到不同数据的，只有 <code>dp</code> 不同的那些卡。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">第 4 幕 · 开算：算子落成 kernel</span>
+    <p>两样都齐了：权重片 <code>[8192, 16384]</code> ＋ token 片 <code>[4, 8192]</code>。41 号开始跑 L12–23 的算子，每个算子看到的 shape 都已被除小。</p>
+    <p>但算子还不能直接跑：编译器按 <code>shape + dtype + 硬件</code> 挑一份 kernel 实现、把访存密集的几个融合掉、算好 tiling，再把 kernel 逐个排进流。<strong>这里正是两条链唯一的交点</strong>——算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头（§02 · FIG 03）。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">第 5 幕 · 接力与收束</span>
+    <p>前向算完，41 号把激活 P2P 发给 73 号，转身去接 9 号送来的下一个 micro-batch——这就是流水线。8 批的前向与反向都走完之后，它才和 DP 组的其他 15 张卡做<strong>这个 step 唯一的一次</strong>梯度 AllReduce。参数更新，<b>回到第 3 幕重来</b>。</p>
+  </div>
+
+  <table class="tbl">
+    <thead><tr><th></th><th>只做一次（冻结）</th><th>每个 micro-batch 重来</th></tr></thead>
+    <tbody>
+      <tr><td><b>幕</b></td><td>第 0–2 幕</td><td>第 3–5 幕</td></tr>
+      <tr><td><b>对象</b></td><td>门牌号 · 通信组 · 权重分片</td><td>token 分片 · 激活体 · kernel 执行</td></tr>
+      <tr><td><b>一句话</b></td><td>谁是谁、谁拿哪块——<b>定死</b></td><td>这一刻在算谁——<b>流动</b></td></tr>
+    </tbody>
+  </table>
+
+  <p>这个故事与 §14 推论 7 那份「五句话讲解脚本」是<strong>互补</strong>的：那份讲<em>结构</em>（切分怎么对应到卡），这份讲<em>过程</em>（这件事怎么发生）。讲给工程师听用这份，讲给不懂业务的人听用那份。</p>
+
   <figure>
     <figcaption><span class="fnum">FIG 09B</span><span class="ftitle">从整网到卡：两条路，在卡上汇合</span>
       <span class="fnote">上路是<b>权重体</b>——建一次、全程冻结；下路是<b>激活体 / token</b>——每 step 流一次。两条路各自被不同的维度切，最后在同一张卡上相遇，才有算子可执行。图中数字取 <code>TP2·PP4·CP1·DP16 = 128 卡</code>，<code>GBS=512 · S=8192 · GA=8 → MBS=4</code>，追的是门牌号 <code>(pp=1, dp=4, cp=0, tp=1)</code> 那张卡。</span></figcaption>
