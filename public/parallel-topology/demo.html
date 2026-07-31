@@ -1146,8 +1146,47 @@ function renderChain(D){
       + txt(x+15, y, '刀·'+DIMN[dim2]+' '+title+(active?'':'（本配置未开）'), 9.5, active?c2:'var(--pt-fg3)', 'start', 'font-weight="800"')
       + (meta?txt(x+15, y+11, meta, 7.8, 'var(--pt-fg3)', 'start'):'')+'</g>';
   }
+  /* 真整网缩影：整网不该是个空条——横向是真层序 ℓ，每层内按**真算子的类别**着色
+     （attention / MoE / norm / linear），层与层同构所以纹理一致。
+     这样 PP 切的是真层区间、DP 复印的是同一张真整网、放大进去就是那 35 个真算子。
+     真数据取不到时退回素色条（单文件打开的场景）。 */
+  var netOps = realOps(D, g);
+  function netMini(x, y, w, hh, l0, l1, alpha){
+    var s = '';
+    var nL = Math.max(1, (l1===undefined?D.layers:(l1-l0+1)));
+    var lw = w/nL, cls = netOps ? netOps.filter(function(o){ return !o.comm; }) : null;
+    if(!cls){ return rect(x, y, w, hh, 'var(--pt-s2)', 'transparent', 0, 'pointer-events="none"'); }
+    /* 层内不铺 35 个算子——那是噪声。按**大类**合并成连续色段：
+       注意力区 / MoE 区 / 归一化与逐元素。层与层同构，所以每层同一套纹理。 */
+    var BAND = {'opv:attention':'attn', 'opv:linear':'attn', 'opv:mlp':'attn',
+                'opv:moe':'moe', 'opv:gate':'moe',
+                'opv:norm':'norm', 'opv:act':'norm',
+                'opv:embedding':'io', 'opv:head':'io'};
+    var BC = {attn:VC.tp, moe:VC.ep, norm:'var(--pt-fg3)', io:VC.pp};
+    var segs = [], tot = 0;
+    cls.forEach(function(o){
+      var b = BAND[o.cls] || 'norm';
+      if(segs.length && segs[segs.length-1].b === b) segs[segs.length-1].w += o.w;
+      else segs.push({b:b, w:o.w});
+      tot += o.w;
+    });
+    for(var li=0; li<nL; li++){
+      var lx = x + li*lw, acc = 0;
+      for(var si=0; si<segs.length; si++){
+        var ow = lw*segs[si].w/tot;
+        if(ow > .35) s += rect(lx+acc, y, ow, hh, mix(BC[segs[si].b], 22), 'transparent', 0, 'pointer-events="none"');
+        acc += ow;
+      }
+      /* 层界只在画得下时才画，否则一层一根线本身就是噪声 */
+      if(lw > 5) s += '<line x1="'+lx.toFixed(1)+'" y1="'+y+'" x2="'+lx.toFixed(1)+'" y2="'+(y+hh)+'" style="stroke:var(--pt-bg);stroke-width:.6" pointer-events="none"/>';
+    }
+    return '<g'+(alpha?' opacity="'+alpha+'"':'')+'>'+s+'</g>';
+  }
   /* ── L0：整网 + 全局批 ── */
   parts.push(rect(MX, LY0, MW, H0, 'var(--pt-s2)', 'var(--pt-fg)', 1.3));
+  parts.push(netMini(MX, LY0, MW, H0));
+  parts.push(rect(MX, LY0, MW, H0, 'none', 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
+  parts.push(rect(MX+MW/2-186, LY0+3, 372, 28, mix('var(--pt-bg)',86), 'transparent', 0, 'pointer-events="none"'));
   parts.push(txt(MX+MW/2, LY0+15, '整网（对象① 权重体） · '+D.layers+' 层 · 逻辑上一张', 10.5, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
   parts.push(txt(MX+MW/2, LY0+27, '链 = 全部 '+fmt(D.world)+' 卡共同经历的切分过程；高亮路径 = 选中那张卡的来历', 8, 'var(--pt-fg3)', 'middle'));
   /* 输入 ≠ 激活体：参照系明确的第二处易错——输入只是入口（token id ~MB 级），
@@ -1167,7 +1206,10 @@ function renderChain(D){
     var off = (K-1-k1), bx1 = MX + off*kOffX, by1 = LY1 - off*kOffY, isF = k1===0;
     var dIdx = isF ? co.d : (co.d+k1)%D.dp;
     parts.push('<g class="cgrow">'+rect(bx1, by1, MW, H1, isF?mix(VC.dp,14):'var(--pt-s1)', isF?VC.dp:'var(--pt-bds)', isF?1.5:0.7, 'data-act="chainpick" data-k="d" data-i="'+dIdx+'" style="cursor:pointer"')
-      + (isF ? txt(bx1+MW/2, by1+15, '副本'+co.d+'（选中）＝ 整网原尺寸 · ≡ 逐字节相同', 9.5, VC.dp, 'middle', 'font-weight="800" pointer-events="none"')
+      + netMini(bx1, by1, MW, H1, 0, undefined, isF?.85:.35)
+      + rect(bx1, by1, MW, H1, 'none', isF?VC.dp:'var(--pt-bds)', isF?1.5:0.7, 'pointer-events="none"')
+      + (isF ? rect(bx1+MW/2-166, by1+3, 332, 26, mix('var(--pt-bg)',86), 'transparent', 0, 'pointer-events="none"')
+             + txt(bx1+MW/2, by1+15, '副本'+co.d+'（选中）＝ 整网原尺寸 · ≡ 逐字节相同', 9.5, VC.dp, 'middle', 'font-weight="800" pointer-events="none"')
              + txt(bx1+MW/2, by1+27, '复印不省显存——这就是 A3「加 DP 不买余量」', 7.8, 'var(--pt-fg3)', 'middle', 'pointer-events="none"')
              : txt(bx1+MW-10, by1+13, '副本'+dIdx, 8, 'var(--pt-fg3)', 'end', 'pointer-events="none"'))+'</g>');
   }
@@ -1178,7 +1220,9 @@ function renderChain(D){
   parts.push(knifeLabel(MX+8, LY1+H1+26, 'pp', '切层序 ℓ ×'+D.pp+'——切的是选中副本（其余 '+(D.dp-1)+' 份同样被切）；面积守恒：段合起来=1 个副本', '顺位② · 段间 P2P·每 μbatch · 段≠卡：每个 stage 由 TP×DP='+(D.tp*D.dp)+' 张卡共同持有——落到哪张卡，要等全部刀切完（叶子）', D.pp>1));
   for(var p1=0; p1<D.pp; p1++){
     var sx = MX + p1*(segW+2), hotP = p1===co.p;
-    parts.push('<g class="cgrow">'+rect(sx, LY2, segW, H2, hotP?mix(VC.pp,20):mix(VC.pp,7), hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'data-act="chainpick" data-k="p" data-i="'+p1+'" style="cursor:pointer"')+'</g>');
+    parts.push('<g class="cgrow">'+rect(sx, LY2, segW, H2, hotP?mix(VC.pp,20):mix(VC.pp,7), hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'data-act="chainpick" data-k="p" data-i="'+p1+'" style="cursor:pointer"')
+      + netMini(sx, LY2, segW, H2, p1*D.layersPerStage, (p1+1)*D.layersPerStage-1, hotP?.9:.42)
+      + rect(sx, LY2, segW, H2, 'none', hotP?VC.pp:'var(--pt-bds)', hotP?1.4:0.7, 'pointer-events="none"')+'</g>');
     parts.push(txt(sx+segW/2, LY2+13, 'stage'+p1+' · L'+(p1*D.layersPerStage)+'–L'+((p1+1)*D.layersPerStage-1), 8.5, hotP?VC.pp:'var(--pt-fg2)', 'middle', (hotP?'font-weight="800" ':'')+'pointer-events="none"'));
     for(var li=1; li<D.layersPerStage && li<12; li++)
       parts.push('<line x1="'+(sx+li*(segW/D.layersPerStage))+'" y1="'+(LY2+H2-11)+'" x2="'+(sx+li*(segW/D.layersPerStage))+'" y2="'+(LY2+H2)+'" style="stroke:'+mix(VC.pp,45)+';stroke-width:.7" pointer-events="none"/>');
