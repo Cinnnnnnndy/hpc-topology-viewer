@@ -2247,8 +2247,9 @@ function renderSolidCav(D){
 function renderChain(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  var MX = 150, MW = 500, IX = 770, IW = 250, H = 830;
-  var SCH = 300, sceneHit = '';                     /* 3D 场景的高度；命中层单独出（要压在最上面） */
+  var MX = 150, MW = 500, IX = 770, IW = 250;
+  var SCH = 324, sceneHit = '';               /* 3D 场景高度；总高由它推出来，别再留 75px 空档 */
+  var H = SCH + 490;                     /* 3D 场景的高度；命中层单独出（要压在最上面） */
   var LY0=44, H0=34, LY1=132, H1=34, LY2=214, H2=34, LY3=SCH+236, H3=36, LY4=SCH+334, H4=64;
   var parts = [];
   function rect(x,y,w,h,fill,stroke,sw,extra){
@@ -2275,7 +2276,7 @@ function renderChain(D){
      整网不是一条填了色的带子，是**一叠真的层板**（就是 3d-deck 上那个东西）；
      DP 复印复制的是整只 deck；PP 切的就是这些复制体。三件事放在同一个三维场景里，
      因为它们本来就发生在同一个物体上：复制 → 切段 → 再往里切。拖动可转动。 */
-  var SCB = {x:MX-124, y:LY0+40, w:MW+244, h:SCH};
+  var SCB = {x:MX-124, y:LY0+54, w:MW+244, h:SCH};
   var scene = netScene(D, g, SCB);
   parts.push('<g pointer-events="none">'+scene.body+'</g>');
   sceneHit = scene.hit;
@@ -2419,9 +2420,10 @@ function renderChain(D){
   parts.push('<line x1="24" y1="'+(LY4+30)+'" x2="24" y2="'+(LY0+6)+'" style="stroke:var(--pt-fg3);stroke-width:1.4;marker-end:url(#arrx)"/>');
   parts.push('<g transform="rotate(-90 14 '+(LY0+230)+')">'+txt(14, LY0+230, '决策序 §11：①TP ②PP ③CP ④EP ⑤DP（反向！）', 9, 'var(--pt-fg3)', 'middle', 'font-weight="700"')+'</g>');
   /* 通信作用域：三档（层内 / 跨层 / 跨 step）——§06 通则「通信算子插在归属边界处」 */
-  parts.push(txt(MX+MW/2, H-44, '通信作用域（§06 通则：通信算子插在归属边界处）—— TP 算子内部 · CP attention 内部 · EP MoE 层内部（dispatch 送去 + combine 送回，router 逐层重算）：三者都在<层内>，不跨层'.replace('<','「').replace('>','」'), 8, 'var(--pt-fg2)', 'middle'));
-  parts.push(txt(MX+MW/2, H-33, 'PP 在层的边界 = 跨层（每 μbatch 一次 P2P） · DP 在整网之外 = 跨 step（步末一次 AllReduce）', 8, 'var(--pt-fg2)', 'middle'));
-  parts.push(txt(MX+MW/2, H-16, '尺寸纪律：复印=等大成叠 · 真切=面积守恒（子块贴合=父块） · 放大=尺寸不守恒（明确标 ⊕）。反向不是巧合：刀越深→通信越密→越要先定→越要贴机内（§11）', 8.6, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+  var FTY = LY4 + H4 + 32;
+  parts.push(txt(MX+MW/2, FTY, '通信作用域（§06 通则：通信算子插在归属边界处）—— TP 算子内部 · CP attention 内部 · EP MoE 层内部（dispatch 送去 + combine 送回，router 逐层重算）：三者都在<层内>，不跨层'.replace('<','「').replace('>','」'), 8, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(MX+MW/2, FTY+11, 'PP 在层的边界 = 跨层（每 μbatch 一次 P2P） · DP 在整网之外 = 跨 step（步末一次 AllReduce）', 8, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(MX+MW/2, FTY+28, '尺寸纪律：复印=等大成叠 · 真切=面积守恒（子块贴合=父块） · 放大=尺寸不守恒（明确标 ⊕）。反向不是巧合：刀越深→通信越密→越要先定→越要贴机内（§11）', 8.6, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
@@ -2431,7 +2433,7 @@ function renderChain(D){
     + '<button class="pb" data-act="turn" data-y="0" data-p="1" title="抬头">↓</button>'
     + '<button class="pb" data-act="turnreset" title="回到默认视角">复位</button>'
     + '<span class="pt-chip" title="整网是一叠真的层板（openPangu 真图每层一块）；DP 复印复制整只 deck；PP 切的就是这些复制体。">整网 = 真图层板叠 · 可拖动</span>'
-    + '<span class="pt-chip">链=全体卡的切分过程 · 高亮路径=选中卡的来历 · 点任意块换路径</span>'
+
     + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
@@ -3200,15 +3202,20 @@ document.addEventListener('input', function(ev){
 var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
   if(ui.view !== 'chain') return;
-  if(ev.target.closest('[data-act]')) return;                 /* 让位给可点的元素 */
-  drag3 = {x:ev.clientX, y:ev.clientY, yaw:ui.yaw3, pitch:ui.pitch3, moved:false, raf:0};
-  $('stage').setPointerCapture(ev.pointerId);
-  $('stage').style.cursor = 'grabbing';
+  /* 先不抓指针：setPointerCapture 会把随后的 click 改派给 #stage，
+     那样 SVG 里所有可点的元素就都点不动了。等真的拖起来了再抓。 */
+  drag3 = {x:ev.clientX, y:ev.clientY, yaw:ui.yaw3, pitch:ui.pitch3, moved:false, raf:0, cap:false, id:ev.pointerId};
 });
 $('stage').addEventListener('pointermove', function(ev){
   if(!drag3) return;
   var dx = ev.clientX - drag3.x, dy = ev.clientY - drag3.y;
   if(Math.abs(dx) + Math.abs(dy) > 3) drag3.moved = true;
+  if(drag3.moved && !drag3.cap){
+    drag3.cap = true;
+    try{ $('stage').setPointerCapture(drag3.id); }catch(e){}
+    $('stage').style.cursor = 'grabbing';
+  }
+  if(!drag3.moved) return;
   ui.yaw3 = drag3.yaw + dx*0.008;
   ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.15);
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
@@ -3216,15 +3223,22 @@ $('stage').addEventListener('pointermove', function(ev){
     var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
   });
 });
+var swallowClick = false;
 function endDrag3(ev){
   if(!drag3) return;
   var moved = drag3.moved;
   if(drag3.raf) cancelAnimationFrame(drag3.raf);
+  var cap = drag3.cap;
   drag3 = null;
   $('stage').style.cursor = '';
-  try{ $('stage').releasePointerCapture(ev.pointerId); }catch(e){}
-  if(moved){ render(); }
+  if(cap) try{ $('stage').releasePointerCapture(ev.pointerId); }catch(e){}
+  /* 拖过就不是点击：吞掉紧跟着的那一次 click，否则松手会顺手换掉选中卡 */
+  swallowClick = moved;
+  if(moved) render();
 }
+$('stage').addEventListener('click', function(ev){
+  if(swallowClick){ swallowClick = false; ev.stopPropagation(); ev.preventDefault(); }
+}, true);
 $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
 document.addEventListener('click', function(ev){
