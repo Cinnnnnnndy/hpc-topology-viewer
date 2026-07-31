@@ -30,6 +30,13 @@ pnpm-debug.log*
 # 项目级 skill 要随仓库走（团队共享）；注意父目录若被整个排除，负号规则是无效的，
 # 所以这里排的是 .claude/* 而不是 .claude/
 !.claude/skills/
+# 项目级设置与 hook 同理，必须随仓库走：云端沙箱每次重建、~/.claude/settings.json
+# 不持久，提交署名的配置只有放在仓库里才对每个会话生效（settings.json 关掉 Claude
+# 的 commit/PR 署名，hooks 把 git 作者钉成仓库主人）。
+!.claude/settings.json
+!.claude/hooks/
+# 但本机私有覆盖不进版本库
+.claude/settings.local.json
 
 # Local content generation (kept out of VCS by design)
 scripts/gen-content.mjs
