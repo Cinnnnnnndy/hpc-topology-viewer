@@ -1008,6 +1008,43 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 
   <p><strong>每往外一层，就是把内层的整体当作一个单元再复制或切分</strong>——这就是嵌套关系的本质。</p>
 
+  <h3>TP 具体怎么切：列切与行切必须配对</h3>
+
+  <p>前面只说了「TP 沿 <code>h</code> 切权重矩阵」。但一个 Transformer 层里是<strong>两个连续的矩阵乘</strong>，怎么切才不会在中间也要通信？答案是：<strong>第一个列切、第二个行切，配成一对</strong>——这是 TP 全部机制所在。</p>
+
+  <h4>MLP 块：列切 → 行切</h4>
+
+  <pre>X [B,S,H] ──W1 [H,4H]──▶ Z [B,S,4H] ──GeLU──▶ ──W2 [4H,H]──▶ Y [B,S,H]
+
+TP=2 切法：
+  W1 <b>按列切</b>   [H, 4H] → 每卡 [H, 4H/2]      每卡算 X @ W1ᵢ → Zᵢ [B,S,4H/2]
+                                                   ← X 每卡都要完整的
+  GeLU            逐元素，<b>直接在分片上做</b>       ← 列切的关键理由
+  W2 <b>按行切</b>   [4H, H] → 每卡 [4H/2, H]      每卡算 Zᵢ @ W2ᵢ → <b>部分和</b> [B,S,H]
+  AllReduce       把各卡的部分和加起来 → 完整 Y     ← 全层唯一一次通信</pre>
+
+  <p><strong>为什么必须列-行配对？</strong>若 W1 也按行切，算完 Z 就是「按 <code>4H</code> 维分片的完整值」，而 W2 行切需要的正是这种分片——看似也行；但 GeLU 之前若 W1 按行切，每卡拿到的是<em>部分和</em>而非真值，非线性函数不能作用在部分和上（<code>GeLU(a+b) ≠ GeLU(a)+GeLU(b)</code>），就必须先 AllReduce 一次。<strong>列切 → 行切是唯一能让中间那步免通信的组合</strong>：列切让每卡拿到「一部分神经元的<em>真值</em>」，非线性可以逐元素照做；行切再把它们规约回来。</p>
+
+  <h4>Attention 块：按 head 切 → 行切</h4>
+
+  <pre>W_Q / W_K / W_V   <b>按 attention head 切</b>：每卡拿 num_heads/TP 个<b>完整的 head</b>
+                    ← head 之间本来就互不依赖，所以按 head 切<b>不需要任何通信</b>
+attention          在本卡的局部 head 上<b>完整算完</b>（含 softmax）
+W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
+
+  <p>所以<strong>一层两次 AllReduce</strong>：attention 块一次、MLP 块一次；反向同样两次。这就是 §01「MoE 层 → All-to-All 次数」旁边那条「TP 每层两次」的由来，也是 TP 必须绑机内高带宽域的全部理由——频率最高。</p>
+
+  <div class="note new">
+    <span class="lbl">这解释了 TP 的三条约束</span>
+    <ul>
+      <li><strong><code>num_attention_heads % TP == 0</code></strong>（§11）——因为切的粒度是<b>整个 head</b>，不能把一个 head 劈开。GQA / MQA 下还要 <code>num_query_groups % TP == 0</code>。</li>
+      <li><strong><code>TP ≤ 单节点高带宽域卡数</code></strong>——每层两次集合通信，频率碾压其他所有维度。</li>
+      <li><strong>TP 是「分片」不是「划分」</strong>（§01）——它把<b>单个权重矩阵拆开</b>，算子本身被改写成分片算子，各卡算的是<em>同一个 matmul 的不同部分</em>；PP / EP 则是把完整单元分开放。这正是 TP 的归属边界被推到 kernel 那么深的原因（§02）。</li>
+    </ul>
+  </div>
+
+  <p>顺带也说清了 <span class="k tp">SP</span> 的位置：列切-行切这套只覆盖两个 matmul 之间那段，<strong>LayerNorm / Dropout 那些区域 TP 切不到</strong>（它们要的是完整的 <code>h</code>）。SP 补的正是这一段——沿 <code>s</code> 再切一刀，复用 TP 的通信域，进出 TP 区时用 AllGather / ReduceScatter 转布局。</p>
+
   <div class="note fix">
     <span class="lbl">勘误 A · EP 不是第五个并行维度</span>
     <p>先前写作"总卡数 = TP × CP × PP × DP，EP 通常复用 DP 组的卡，或单独成维"，后半句不准确。EP <strong>不是</strong>独立于这四个并行维度之外的额外乘数——它是对 MoE 层<em>重新解释</em>已有的 DP × TP 平面上的那批卡：非 MoE 层按 TP/DP 走，MoE 层把同一批卡重新分组成 EP 组。实现上通常要求 EP 组大小能整除对应平面的大小。所以世界大小仍是 <code>TP × CP × PP × DP</code>，EP 是这个网格上的一个<strong>视图</strong>，不是一条新的边。FIG 06 里选「EP 组」时高亮的正是同一 stage 的整个 TP×DP 平面，而不是新增一个轴。</p>
