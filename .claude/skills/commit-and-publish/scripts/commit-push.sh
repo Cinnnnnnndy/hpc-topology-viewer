@@ -27,9 +27,15 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$MSG" ] || die '缺少 -m "<message>"'
 
-git rev-parse --git-dir >/dev/null 2>&1 || die "不在 git 仓库里"
-ROOT="$(git rev-parse --show-toplevel)"
+# 认「脚本所在的那个仓库」，而不是当前工作目录所在的仓库。每个仓库各有一份
+# 自己的副本，从别处调用时按 cwd 取仓库会静默作用到错误的仓库上——那种错误
+# 不报错、只是什么都没提交，最难发现。脚本不在任何仓库里时才退回 cwd。
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$ROOT" ] || ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$ROOT" ] || die "不在 git 仓库里"
 cd "$ROOT" || die "进不去仓库根目录 $ROOT"
+echo "repo: $ROOT"
 
 # ── 1. 身份 ────────────────────────────────────────────────────────────
 # 仓库自带的 hook 是身份的唯一事实来源（含「已经是本人就不动」的白名单）。
