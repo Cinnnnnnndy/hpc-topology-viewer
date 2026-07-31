@@ -1187,6 +1187,37 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
     <p>这正是 SPMD 成立的样子（§10）：所有卡跑<em>同一份代码</em>，各自按自己的门牌号取自己那一片。「整网被切开」是一句<strong>逻辑描述</strong>，不是<strong>物理过程</strong>。</p>
   </div>
 
+  <h4>三处最容易搞反的地方</h4>
+
+  <table class="tbl">
+    <thead><tr><th>常见说法</th><th>实际是</th><th>怎么验证</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>「卡一开始就有门牌号」</td>
+        <td><strong>一开始只有一维的 <code>global_rank</code></strong>（启动器分配）。四位门牌号是 <code>initialize_model_parallel</code> <b>算出来的</b>，方向是 <code>global_rank → (pp,dp,cp,tp)</code></td>
+        <td><b>换个 <code>order</code> 字符串，同一张物理卡的门牌号就变了</b>（§11）——若门牌号是卡固有的，这不可能发生</td>
+      </tr>
+      <tr>
+        <td>「整网和数据被<b>分配</b>到卡上」</td>
+        <td><strong>系统里没有分发者。</strong>权重是每张卡<b>按门牌号只建自己那份</b>；token 是每张卡<b>按 <code>dp_rank</code> 自己去数据集里索引</b>那一份。都是「各自服务自己」</td>
+        <td>所有卡跑同一份代码，差别只在读到的 rank 不同——这就是 SPMD 的定义（§10）</td>
+      </tr>
+      <tr>
+        <td>「切分直接形成 kernel」</td>
+        <td>中间还隔一层：<strong>切分只把 shape 除小</strong>；<code>shape + 硬件 + dtype</code> 再经<b>算子选择 / 算子融合</b>才落成 kernel（§02）</td>
+        <td>同一算子换个 shape 性能掉一截——选中的是<b>另一份 kernel</b>。另：切口处插入的通信算子同样落成 kernel，排在通信流上</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <pre>0. 启动    拉起 world_size 个进程，各拿一个 global_rank        ← 只做一次
+1. 配置    TP·CP·PP·DP ＋ order  →  各自解出门牌号 (pp,dp,cp,tp)   ← 只做一次
+                                 →  同时建好各并行组的成员表
+2. 静态路  每卡按门牌号只建自己那份权重 ＋ 在切口插入通信算子      ← 只做一次
+3. 动态路  每卡按 dp_rank / cp_rank 自己取那份 token              ← 每个 micro-batch
+4. 执行    本卡算子（shape 已除小）× 本卡 token
+                        → 算子选择 / 融合 → kernel → 排进流       ← 每个 micro-batch</pre>
+
   <figure>
     <figcaption><span class="fnum">FIG 09B</span><span class="ftitle">从整网到卡：两条路，在卡上汇合</span>
       <span class="fnote">上路是<b>权重体</b>——建一次、全程冻结；下路是<b>激活体 / token</b>——每 step 流一次。两条路各自被不同的维度切，最后在同一张卡上相遇，才有算子可执行。图中数字取 <code>TP2·PP4·CP1·DP16 = 128 卡</code>，<code>GBS=512 · S=8192 · GA=8 → MBS=4</code>，追的是门牌号 <code>(pp=1, dp=4, cp=0, tp=1)</code> 那张卡。</span></figcaption>
@@ -2806,7 +2837,7 @@ function figBuild(){
   var SY=72, BH=84;
   s+=box(36, SY,150,BH,K.pp,'模型定义',['图 + 权重 shape','48 层 · H=8192','（代码，无显存）']);
   s+=box(216,SY,158,BH,K.pp,'并行配置',['TP2·PP4·CP1·DP16','order=tp-cp-ep-dp-pp','→ world_size 128']);
-  s+=box(404,SY,142,BH,K.pp,'门牌号',['每卡 (pp,dp,cp,tp)','本例追这张：','(1, 4, 0, 1)']);
+  s+=box(404,SY,142,BH,K.pp,'门牌号',['由 global_rank 解出','41 → (1, 4, 0, 1)','换 order 就换一组']);
   s+=box(576,SY,138,BH,K.pp,'只建自己那份',['PP→只建 L12–23','TP→权重只要一半','[8192, 16384]'],'#FDF3EE');
   s+=arrow(186,SY+42,212,SY+42,'b-arp',K.pp);
   s+=arrow(374,SY+42,400,SY+42,'b-arp',K.pp);
