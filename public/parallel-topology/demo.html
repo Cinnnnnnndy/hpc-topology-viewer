@@ -1216,19 +1216,12 @@ function netScene(D, g, box, step){
   var K = cutDP ? D.dp : 1, sel0 = cutDP ? Math.min(co.d, K-1) : 0;
   /* PP 那一刀落下之后，段与段之间要**掰开一条缝**——不然「切开了」和「没切」长得一样。
      缝只在深度方向加，层内不动：面积守恒说的是层的面积，不是层间的间距。 */
-  var GAPW = cutPP ? DEP*0.11 : 0;
+  var GAPW = cutPP ? DEP*0.22 : 0;
   var TOTW = DEP + GAPW*Math.max(0, D.pp-1);
   function stOf(li){ return Math.min(D.pp-1, Math.floor(li/lps)); }
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
   function segW(st){ var a0 = DEP*(st*lps)/L + GAPW*st;
     return [a0, Math.min(DEP, DEP*((st+1)*lps)/L) + GAPW*st]; }
-  /* ── 输入侧也进这张画布：token 网格盖在整叠正上方 ──
-     u = 序列位置 s（CP 切它）· v = 样本 b（DP 切它）：两根轴，各归一把刀。
-     尺寸纪律：这边是**真切**，所以 DP 份数上去、每份就得按比例变薄；
-     对面整网是**复印**，份数上去每份纹丝不动。同一把刀，两种动作，一眼能对上。 */
-  var IH0 = 1.0, IGAP = 0.17;
-  var ihK = cutDP ? IH0/D.dp : IH0;
-  var ivB = -IGAP, ivT = ivB - ihK;
   var zoomIn = cutTP;
   /* 先算投影包围盒，再统一缩放平移——转到任何角度都不会跑出框。
      刀越深，框得越紧：前几刀框住全部复印件（要看清「有几份」），
@@ -1236,11 +1229,8 @@ function netScene(D, g, box, step){
      这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
   var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : 0;
   var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
-  var IDW = Math.min(DEP*0.26, Math.max(0.06, (zw1-zw0)*0.45));
-  var iw0 = zw0, iw1 = zw0 + IDW;
-  /* 下方要留出三条基座带（段 / 片 / 桶），上方要留出批带 */
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0);
-  var vLo = ivT - 0.06;
+  var vLo = -0.06;
   /* 复印件展开成**方阵**而不是一长排：16 份排成一行，画布只用得到中间一条，
      两边全是空白、每份细得看不清（这正是「查看区域没用满」的成因）。
      列数不猜——转台有 yaw/pitch 两重错切，纸上推的公式对不上，
@@ -1281,63 +1271,24 @@ function netScene(D, g, box, step){
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
-  /* ── 一份批带：正面就是 token 网格（横 = s 轴的 token 块，纵 = b 轴的样本块）── */
-  function batchSlab(off, hot){
-    var out = '', nSeg = cutCP ? 2*D.cp : 1, wSeg = 1/nSeg;
-    /* 顶面 + 右侧面：给它体积，别看成一张贴纸 */
-    out += quad([P(0,ivT,iw0,off), P(1,ivT,iw0,off), P(1,ivT,iw1,off), P(0,ivT,iw1,off)],
-      'fill:'+mix(VC.dp, hot?20:8)+';stroke:'+(hot?VC.dp:'var(--pt-bd)')+';stroke-width:.45');
-    out += quad([P(1,ivT,iw0,off), P(1,ivT,iw1,off), P(1,ivB,iw1,off), P(1,ivB,iw0,off)],
-      'fill:'+mix(VC.dp, hot?30:10)+';stroke:none');
-    for(var s9=0; s9<nSeg; s9++){
-      var sa = s9*wSeg, sb = sa + wSeg - (cutCP ? wSeg*0.06 : 0);
-      var ownC = cutCP ? (s9<D.cp ? s9 : 2*D.cp-1-s9) : 0, mineC = cutCP && ownC===co.c && hot;
-      var f9 = !hot ? mix(VC.dp,7) : (cutCP ? (mineC ? mix(VC.cp,42) : mix(VC.cp,10)) : mix(VC.dp,24));
-      out += quad([P(sa,ivT,iw0,off), P(sb,ivT,iw0,off), P(sb,ivB,iw0,off), P(sa,ivB,iw0,off)],
-        'fill:'+f9+';stroke:'+(cutCP ? VC.cp : (hot?VC.dp:'var(--pt-bd)'))+';stroke-width:'+(mineC?1.1:.4));
-      /* token 刻度：切的是 token，就得看得见 token 的格子 */
-      var tk = Math.max(2, Math.round(28/nSeg));
-      for(var q8=1; q8<tk; q8++){
-        var uq = sa + (sb-sa)*q8/tk;
-        out += seg(P(uq,ivT,iw0,off), P(uq,ivB,iw0,off), 'stroke:'+mix(hot?VC.dp:'var(--pt-fg)', hot?32:12)+';stroke-width:.3');
-      }
-      if(hot && cutCP) hit.push('<g class="cgrow">'+quad([P(sa,ivT,iw0,off), P(sb,ivT,iw0,off), P(sb,ivB,iw0,off), P(sa,ivB,iw0,off)],
-        'fill:transparent;cursor:pointer', 'data-act="chainpick" data-k="c" data-i="'+s9+'"')+'</g>');
-    }
-    /* 样本方向的格线：批带够厚才画得下（DP 切完只剩一条，那正是「薄了 N 倍」的样子） */
-    var NR = clamp(Math.round(ihK/0.085), 1, 9);
-    for(var r9=1; r9<NR; r9++){
-      var vr = ivT + (ivB-ivT)*r9/NR;
-      out += seg(P(0,vr,iw0,off), P(1,vr,iw0,off), 'stroke:'+mix(hot?VC.dp:'var(--pt-fg)', hot?26:10)+';stroke-width:.3');
-    }
-    /* CP 的因果双段是**一对**：把本卡那两段钉在一起，否则会被读成两张卡 */
-    if(hot && cutCP){
-      var m1 = P((co.c+0.5)*wSeg, (ivT+ivB)/2, iw0, off), m2 = P((2*D.cp-1-co.c+0.5)*wSeg, (ivT+ivB)/2, iw0, off);
-      out += seg(m1, m2, 'stroke:'+VC.cp+';stroke-width:1.1;stroke-dasharray:3 2');
-    }
-    return out;
-  }
   /* ── 后面的复印件：只画剪影，15 份实心真图只会糊成一团（份数是真的，细节不重复画）── */
   /* 画序 = 从左上往右下：每份的深度朝右后方伸，右边那列该压在左边那列上面。
      镜头推进之后别的复印件全在框外——不画（画了也被裁掉，白占 DOM 和命中层）。 */
   for(k = 0; !zoomIn && k < K; k++){
     var isF = k === sel0;
     if(isF) continue;
-    var a = ui.spread ? 0.62 : (0.10 + 0.16*(1 - Math.abs(k-sel0)/Math.max(1,K)));
+    var a = ui.spread ? 0.38 : (0.10 + 0.12*(1 - Math.abs(k-sel0)/Math.max(1,K)));
     var gh = '';
-    if(ui.spread){
-      /* 展开了就画得出层板：每份照样是 PP 段（复印件也一样被 PP 切），只是不铺真节点 */
-      for(var lj=(cutPP?D.pp:1)-1; lj>=0; lj--){
-        var wj = cutPP ? segW(lj)[0] : 0;
+    if(ui.spread && cutPP){
+      for(var lj=D.pp-1; lj>=0; lj--){
+        var wj = segW(lj)[0];
         gh += quad([P(0,0,wj,k), P(1,0,wj,k), P(1,AR,wj,k), P(0,AR,wj,k)],
-          'fill:'+mix(VC.pp, (cutPP&&lj===co.p)?15:6)+';stroke:'+((cutPP&&lj===co.p)?VC.pp:'var(--pt-bd)')+';stroke-width:.5');
+          'fill:'+mix(VC.pp, lj===co.p?12:4)+';stroke:'+((lj===co.p)?VC.pp:'var(--pt-bd)')+';stroke-width:.4');
       }
     }
     body.push('<g opacity="'+a.toFixed(2)+'">' + gh
-      + pane(0, k, 'fill:'+mix(VC.dp,ui.spread?12:26)+';stroke:'+VC.dp+';stroke-width:.6')
-      + quad([P(0,0,0,k), P(0,0,TOTW,k), P(0,AR,TOTW,k), P(0,AR,0,k)], 'fill:'+mix(VC.dp,16)+';stroke:none')
-      + quad([P(0,0,TOTW,k), P(1,0,TOTW,k), P(1,AR,TOTW,k), P(0,AR,TOTW,k)], 'fill:none;stroke:'+VC.dp+';stroke-width:.5')
-      + batchSlab(k, false)
+      + pane(0, k, 'fill:'+mix(VC.dp,ui.spread?8:18)+';stroke:'+VC.dp+';stroke-width:.5')
+      + quad([P(0,0,TOTW,k), P(1,0,TOTW,k), P(1,AR,TOTW,k), P(0,AR,TOTW,k)], 'fill:none;stroke:'+VC.dp+';stroke-width:.4')
       + '</g>');
     if(ui.spread && K <= 64)
       body.push(txt(P(.5,AR+.10,0,k)[0], P(.5,AR+.10,0,k)[1], '副本'+k, 6.4, VC.dp, 'middle'));
@@ -1408,7 +1359,7 @@ function netScene(D, g, box, step){
       });
     }
   }
-  body.push(batchSlab(off0, true));
+  /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 基座带二：TP 的片。刀口在算子内部，肉眼要在**每个算子里**找刀痕太费劲，
         所以另给一条尺：tp 格，本卡那格实心、别的打斜纹，点一格换卡。 ── */
   var sgm = segW(cutPP ? co.p : 0);
@@ -1452,14 +1403,7 @@ function netScene(D, g, box, step){
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
-  /* 批带的说明贴在它自己头上：这条是「输入」还是「上一段送来的激活体」，取决于镜头落在哪一段 */
-  var inLab = P(0, ivT-0.05, iw0, off0);
-  var inTxt = (zoomIn && co.p>0)
-    ? '上一段（stage'+(co.p-1)+'）经 P2P 送来的激活体② —— 不是输入：输入只在 stage0 进'
-    : (cutDP ? ('输入 b份'+off0+'：'+fmt(Math.round(D.gbs/D.dp))+' 样本 × seq '+fmt(D.seq)+'　真切成全局批的 1/'+D.dp+'（同一把 DP 刀的另一半：左复印 / 右真切 —— 一刀两动作）'
-              + (cutCP ? '；CP 再切 s：本卡拿段'+co.c+' ∪ 段'+(2*D.cp-1-co.c)+'（因果双段，长度才配平）' : ''))
-             : ('全局批（输入）：'+fmt(D.gbs)+' 样本 × seq '+fmt(D.seq)+' —— 横向格子 = s 轴的 token 块，纵向 = b 轴的样本'));
-  lab.push(txt(inLab[0], inLab[1], inTxt, 7.2, (zoomIn&&co.p>0) ? 'var(--pt-fg2)' : (cutCP?VC.cp:VC.dp), 'start', 'font-weight="700"'));
+  /* batchSlab 已移除——输入标注一并去掉 */
   var CID = 'scClip';
   var HX = '<pattern id="hxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
@@ -2516,7 +2460,7 @@ function renderChain(D){
   parts.push('<g pointer-events="none">'+scene.body+'</g>');
   sceneHit = scene.hit;
   parts.push(rect(SCB.x, SCB.y, SCB.w, SCB.h, 'none', 'var(--pt-bd)', .8, 'stroke-dasharray="4 4" pointer-events="none"'));
-  parts.push(txt(SCB.x, SCB.y-20, '一张画布，两个对象：上方 token 网格 = 输入（激活体②的来源）· 下方层板叠 = 整网（权重体①，'+D.layers+' 层真节点）· 拖动可转动——每块板 = 真图的一层（openPangu 真节点）', 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(SCB.x, SCB.y-20, '层板叠 = 整网（权重体①，'+D.layers+' 层真节点）· 拖动可转动——每块板 = 真图的一层（openPangu 真节点）', 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   parts.push(txt(SCB.x, SCB.y-8, '链 = 全部 '+fmt(D.world)+' 卡共同经历的切分过程；高亮 = 选中那张卡的来历'+scene.note, 7.6, 'var(--pt-fg3)', 'start'));
   /* 走到这一刀，本卡还持有整网的几分之一 —— 这条读数是 A3 的现场证据：
      ①DP 那一刀之后分母还是 1，一点没减；③CP 也一样（它切的是输入）。 */
@@ -3248,7 +3192,7 @@ function sayText(D){
   var s = '';
   if(ui.view==='chain'){
     return '<b>刀序</b>：链是<b>全体卡</b>共同的切分过程，高亮路径是<b>选中那张卡</b>的来历。<b>「一条」与「阵列」不冲突</b>——这条链排的是 <b>ℓ 轴</b>（唯一有序的轴），一格是<b>层段</b>；卡阵排的是<b>落位</b>，二维是因为 tp/cp/dp 三轴无序、可任意铺。<b>链上一格 ↔ 卡阵里一整列</b>（'+(D.tp*D.cp*D.dp)+' 张卡装同一层段，只在 h 片/b 份上不同），所以 P2P 跨一格 = global_rank +'+(D.tp*D.cp*D.dp)+'（order="tp-cp-ep-dp-pp"，pp 是最高位）。尺寸有纪律：<b>复印=等大成叠</b>（DP 模型侧）、<b>真切=面积守恒</b>（子块贴合=父块）、<b>放大=尺寸不守恒</b>（层→算子，标 ⊕）。<b style="color:'+VC.dp+'">DP 是唯一一刀两动作的刀</b>：对<b>权重体复印</b>（逐字节相同，不省显存）＋对<b>激活体真切</b>（切样本 b 轴）——两个动作缺一不可：复印参数才能各算各的梯度，切样本才有并行度；步末 AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步<b>仍逐字节相同</b>。<b>决策序</b>=训练工程师<b>开训前写并行配置</b>时定旋钮的顺序（§11：约束越硬、通信越密的越先定——①TP…⑤DP 残差），与嵌套序反向。'
-      + '<br><b>怎么读这张 3D 画布</b>：上方那块 <b style="color:'+VC.dp+'">token 网格</b>是输入（横 = s 轴的 token 块，纵 = b 轴的样本），下方层板叠是整网——两个对象在同一张画布上，所以<b>同一把 DP 刀的两个动作能直接对上</b>：整网复印后每份与原来<b>等大</b>，token 网格却<b>薄成 1/'+D.dp+'</b>（真切=面积守恒）。<b style="color:'+VC.pp+'">PP</b> 那一刀把整叠沿 ℓ 掰开成 '+D.pp+' 段，段与段之间留缝，缝就是刀口；<b style="color:'+VC.cp+'">CP</b> 切的是上方 token 网格的 s 轴（因果双段，两段用虚线钉成一对）；<b style="color:'+VC.tp+'">TP</b> 的刀口<b>在算子内部</b>，所以镜头会推进到本卡那一段，非本卡的片打成<b>斜纹</b>——斜纹本身就是刀痕，意思是「这块存在，只是不在这张卡上」；<b style="color:'+VC.ep+'">EP</b> 同理，斜纹反向。deck 下方三条基座带（段 / 片 / 桶）是三把刀各自的尺，点一格换一张卡。'
+      + '<br><b>怎么读这张 3D 画布</b>：层板叠是整网——每一块板对应真图的一层。<b style="color:'+VC.pp+'">PP</b> 那一刀把整叠沿 ℓ 掰开成 '+D.pp+' 段，段与段之间留缝，缝就是刀口；<b style="color:'+VC.tp+'">TP</b> 的刀口<b>在算子内部</b>，所以镜头会推进到本卡那一段，非本卡的片打成<b>斜纹</b>——斜纹本身就是刀痕，意思是「这块存在，只是不在这张卡上」；<b style="color:'+VC.ep+'">EP</b> 同理，斜纹反向。deck 下方三条基座带（段 / 片 / 桶）是三把刀各自的尺，点一格换一张卡。'
       + '<br><b>通信作用域</b>（§06 通则：通信算子插在归属边界处）—— 顺位① · 层内：每层 2 次 AllReduce（TP） · 顺位③ · 层内：attention 内部每层一轮（CP） · 顺位④ · 层内：每 MoE 层 2 次 A2A（EP）—— EP MoE 层内部（dispatch 送去 + combine 送回，router 逐层重算）：三者都在「层内」，不跨层；PP 在层的边界 = <b>跨层</b>（每 μbatch 一次 P2P）；DP 在整网之外 = <b>跨 step</b>（步末一次 AllReduce）。<b>全局批 = 输入</b>（b·s 两轴的全长），输入 ≠ 激活体②：token id 只有 MB 级，激活体②是逐层堆积的中间结果（×几千倍）。DP 和 CP 这两刀切 b·s → 定这张卡激活体的形状——<b>本卡激活体②的形状</b>：MBS '+D.mbs+' × seq/CP '+fmt(D.seq/D.cp)+' × h '+fmt(D.hidden)+' × 本段 '+D.layersPerStage+' 层 × 在途 μbatch——激活体只认 MBS（不是 GBS/DP），加 DP 不涨显存（A3）。五把刀全都切它：b←DP · s←CP · h←TP · ℓ←PP · e←EP 路由。'
       + (D.pp>1 ? '<b>换 stage 对比</b>：变的是 g（哪张卡）· ℓ（哪些层）· ▮（显存）——形状不变，段段同构是均切的目的；▮ 的差异 = 静态角色（stage0 词嵌入 / stage'+(D.pp-1)+' 输出头）+ 在途激活（1F1B 越靠前压的 μbatch 越多）。' : '');
   }
