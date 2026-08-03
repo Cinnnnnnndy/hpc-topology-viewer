@@ -295,7 +295,7 @@ var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
-  yaw3:0.42, pitch3:0.30, spread:true, knife:99,   /* 99 = 全部切完；逐刀播放时从 0 走起 */                                                    /* 整网 3D 场景的转台角度（可拖动） */                                                         /* 故事视图当前是第几幕；交集腔是否展开激活体（第二视角） */
+  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99,   /* 99 = 全部切完；逐刀播放时从 0 走起 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -373,6 +373,9 @@ function urlLoad(){
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.15);
+  var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
+  var px3 = parseFloat(q.get('px')); if(isFinite(px3)) ui.panX3 = px3;
+  var py3 = parseFloat(q.get('py')); if(isFinite(py3)) ui.panY3 = py3;
 }
 function urlWrite(){
   var q = new URLSearchParams();
@@ -390,6 +393,10 @@ function urlWrite(){
   if(ui.view==='chain' && ui.knife < 99) q.set('knife', ui.knife);
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
+  }
+  if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
+  if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
+    q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
   }
   if(ui.view==='solid' && ui.act2) q.set('act2','1');
   if(ui.view==='solid' && ui.persp!=='map') q.set('p', ui.persp);
@@ -1255,9 +1262,9 @@ function netScene(D, g, box, step){
   var ROWS = Math.ceil(K/COLS);
   function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
-  var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s, i, j, k;
-  var ox = box.x + (box.w - (x1-x0)*s)/2 - x0*s;
-  var oy = box.y + (box.h - (y1-y0)*s)/2 - y0*s;
+  var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s * ui.zoom3, i, j, k;
+  var ox = box.x + (box.w - (x1-x0)*s)/2 - x0*s + ui.panX3;
+  var oy = box.y + (box.h - (y1-y0)*s)/2 - y0*s + ui.panY3;
   function P(u,v,w,off){ var p = turn3(u+cx(off), v+cy(off), w, yaw, pitch); return [ox+p[0]*s, oy+p[1]*s]; }
   function quad(pts, st, extra){ return '<polygon points="'+ptsStr(pts)+'" style="'+st+'" '+(extra||'')+'/>'; }
   function seg(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
@@ -1407,7 +1414,7 @@ function netScene(D, g, box, step){
   if(cutEP && D.moe && D.ep>1){
     var perB = Math.max(1, Math.round(D.experts/D.ep));
     railBand(cutTP?0.08:0, D.ep, me?me.ep:0, VC.ep, 'hxEP',
-      function(b9){ return '桶'+b9+'·E'+(b9*perB)+'–E'+((b9+1)*perB-1); }, 'e');
+      function(b9){ return '桶'+b9; }, 'e');
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
@@ -3271,9 +3278,16 @@ document.addEventListener('input', function(ev){
 var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
   if(ui.view !== 'chain') return;
-  /* 先不抓指针：setPointerCapture 会把随后的 click 改派给 #stage，
-     那样 SVG 里所有可点的元素就都点不动了。等真的拖起来了再抓。 */
-  drag3 = {x:ev.clientX, y:ev.clientY, yaw:ui.yaw3, pitch:ui.pitch3, moved:false, raf:0, cap:false, id:ev.pointerId};
+  var pan = ev.shiftKey || ev.button === 1;
+  var cs = 1;
+  var svg = $('stage').querySelector('svg');
+  if(svg){
+    var ctm = svg.getScreenCTM();
+    if(ctm) cs = 1/ctm.a;
+  }
+  drag3 = {x:ev.clientX, y:ev.clientY, yaw:ui.yaw3, pitch:ui.pitch3,
+            panX:ui.panX3, panY:ui.panY3, pan:pan, cs:cs,
+            moved:false, raf:0, cap:false, id:ev.pointerId};
 });
 $('stage').addEventListener('pointermove', function(ev){
   if(!drag3) return;
@@ -3282,11 +3296,16 @@ $('stage').addEventListener('pointermove', function(ev){
   if(drag3.moved && !drag3.cap){
     drag3.cap = true;
     try{ $('stage').setPointerCapture(drag3.id); }catch(e){}
-    $('stage').style.cursor = 'grabbing';
+    $('stage').style.cursor = drag3.pan ? 'move' : 'grabbing';
   }
   if(!drag3.moved) return;
-  ui.yaw3 = drag3.yaw + dx*0.008;
-  ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.15);
+  if(drag3.pan){
+    ui.panX3 = drag3.panX + dx*drag3.cs;
+    ui.panY3 = drag3.panY + dy*drag3.cs;
+  } else {
+    ui.yaw3 = drag3.yaw + dx*0.008;
+    ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.15);
+  }
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
     var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
@@ -3310,6 +3329,66 @@ $('stage').addEventListener('click', function(ev){
 }, true);
 $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
+/* ── 滚轮缩放（向光标位置缩放）── */
+var wheelRaf3 = 0;
+$('stage').addEventListener('wheel', function(ev){
+  if(ui.view !== 'chain') return;
+  ev.preventDefault();
+  var svg = $('stage').querySelector('svg');
+  if(!svg) return;
+  var factor = ev.deltaY > 0 ? 1/1.15 : 1.15;
+  var next = clamp(ui.zoom3 * factor, 0.2, 20);
+  var r = next / ui.zoom3;
+  var ctm = svg.getScreenCTM();
+  if(ctm){
+    var inv = ctm.inverse();
+    var sx = inv.a*ev.clientX + inv.c*ev.clientY + inv.e;
+    var sy = inv.b*ev.clientX + inv.d*ev.clientY + inv.f;
+    var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+    var bCX = 84 + (vb[2]-100)/2, bCY = 62 + 248;
+    ui.panX3 = (1-r)*(sx - bCX) + r*ui.panX3;
+    ui.panY3 = (1-r)*(sy - bCY) + r*ui.panY3;
+  }
+  ui.zoom3 = next;
+  if(!wheelRaf3) wheelRaf3 = requestAnimationFrame(function(){
+    wheelRaf3 = 0;
+    var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
+  });
+}, {passive:false});
+/* ── 双击复位视角/缩放/平移 ── */
+$('stage').addEventListener('dblclick', function(ev){
+  if(ui.view !== 'chain') return;
+  if(ev.target.closest('[data-act]') || ev.target.closest('.cardg')) return;
+  ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
+  render();
+});
+/* ── 触屏双指缩放+平移 ── */
+var touch3 = null;
+$('stage').addEventListener('touchstart', function(ev){
+  if(ui.view !== 'chain' || ev.touches.length < 2) return;
+  ev.preventDefault();
+  var t = ev.touches;
+  var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
+  var dist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
+  touch3 = {mx:mx, my:my, dist:dist, zoom:ui.zoom3, panX:ui.panX3, panY:ui.panY3, cs:1};
+  var svg = $('stage').querySelector('svg');
+  if(svg){ var ctm = svg.getScreenCTM(); if(ctm) touch3.cs = 1/ctm.a; }
+}, {passive:false});
+$('stage').addEventListener('touchmove', function(ev){
+  if(!touch3 || ev.touches.length < 2) return;
+  ev.preventDefault();
+  var t = ev.touches;
+  var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
+  var dist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
+  var r = dist / touch3.dist;
+  ui.zoom3 = clamp(touch3.zoom * r, 0.2, 20);
+  ui.panX3 = touch3.panX + (mx - touch3.mx)*touch3.cs;
+  ui.panY3 = touch3.panY + (my - touch3.my)*touch3.cs;
+  var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
+}, {passive:false});
+$('stage').addEventListener('touchend', function(ev){
+  if(touch3 && ev.touches.length < 2){ touch3 = null; render(); }
+});
 document.addEventListener('click', function(ev){
   var card = ev.target.closest('.cardg');
   if(card){ sel = +card.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
@@ -3341,7 +3420,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
   else if(act==='turn'){ ui.yaw3 += (+b.getAttribute('data-y'))*0.35; ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.15); render(); }
-  else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; render(); }
+  else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render(); }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
   else if(act==='stagestep'){
