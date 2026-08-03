@@ -1287,7 +1287,16 @@ function netScene(D, g, box, step){
      deck 自己的深度也放开一点：48 层压在 1.15 个单位里，层与层根本分不开。 */
   var DEP = 1.7, L = D.layers;
   var CU = ui.spread ? 1.16 : 0.085, CV = ui.spread ? 0 : -0.055;
-  var K = cutDP ? D.dp : 1, sel0 = cutDP ? Math.min(co.d, K-1) : 0;
+  /* 卡维度画的是**全部** world 张卡，一张不少。空间上摊成 KD×KT 列 × pp 段：
+     DP 一列一个副本、TP 再把每个副本摊成 tp 个独立卡列（TP 切的是算子内部的
+     h 轴，不是空间轴，所以必须单独给它一个方向，否则两片卡会重叠在一起），
+     深度方向天然就是 pp 段。KD×KT×pp = world。 */
+  var KD = cutDP ? D.dp : 1;
+  var KT = (ui.cardMode && cutTP && D.tp > 1) ? D.tp : 1;
+  var K = KD * KT;
+  /* 列号 = 副本，行号 = tp 片。反过来（tp 占 u 轴）会摊成 32 列一条又扁又长的带子，
+     而且 DP 就不再是「一排」了。 */
+  var sel0 = (KT > 1 ? co.t : 0) * KD + (cutDP ? Math.min(co.d, KD-1) : 0);
   /* PP 那一刀落下之后，段与段之间要**掰开一条缝**——不然「切开了」和「没切」长得一样。
      缝只在深度方向加，层内不动：面积守恒说的是层的面积，不是层间的间距。 */
   var GAPW = cutPP ? DEP*0.22 : 0;
@@ -1303,9 +1312,7 @@ function netScene(D, g, box, step){
      这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
   var _bh = 0.09;
   var selectorDepth = 0;
-  /* 卡维度和 zoomIn 一样只占本卡那个 stage 的深度区间：画面里只剩这一张卡，
-     深度还按整网 46 层去量的话，卡会缩在角落，四周全是它并不占据的空间。 */
-  var focus1 = zoomIn || ui.cardMode;
+  var focus1 = zoomIn;
   var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
@@ -1332,7 +1339,7 @@ function netScene(D, g, box, step){
     return {s: Math.min(box.w*0.92/Math.max(.001,bx1-bx0), box.h*0.92/Math.max(.001,by1-by0)),
             x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
-  var COLS = K, fit = measure(K), ROWS = 1;
+  var COLS = KD, fit = measure(KD), ROWS = KT;
   function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
   var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s * ui.zoom3, i, j, k;
@@ -1452,8 +1459,12 @@ function netScene(D, g, box, step){
     k = copyOrder[ci].i;
     var kOff = k;
     var isF = k === sel0;
+    /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。 */
+    var tIdx = KT > 1 ? Math.floor(k / KD) : co.t;
     for(var li = L-1; li >= 0; li--){
-      var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
+      /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
+         非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
+      var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
@@ -1478,8 +1489,7 @@ function netScene(D, g, box, step){
              当前路径（副本 co.d · stage co.p · 片 co.t · 桶 me.ep）那一份才实心，
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
           if(!mine || !isF){
-            /* 卡维度只留这一张卡自己的东西：别的副本、别的 stage 一概不画 */
-            if(comm || lowDetail || ui.cardMode) return;
+            if(comm || lowDetail) return;
             /* 弱化的那批占了全场 92% 的图元（实测 13104 / 14172），也就是卡的
                全部来源。按节点下标抽稀到 1/3——取的是固定下标，所以每层每份
                抽到的是同一批，转起来不会闪；层里算子本来沿 DAG 铺开，抽掉三分
@@ -1498,8 +1508,13 @@ function netScene(D, g, box, step){
               'fill:none;stroke:'+VC.tp+';stroke-width:.8;stroke-dasharray:3 2'));
             nodes++; return;
           }
+          /* 卡维度下每列是一张独立的卡，卡里画的是**这一列**那个 tp 片，不是
+             全局选中的那片；128 张卡各拿各的，才谈得上「全量」。
+             另外非选中的卡抽稀一半——32 列 × 46 层 × 19 算子照单全画是 2.8 万个
+             图元，比全景还重，而这些卡本来就是给人看「有这么多张、各拿一份」的。 */
+          if(ui.cardMode && !isF && ni % 2 !== 0) return;
           var nSlice = 1, mySlice = 0, sCol = col, hx = 'hxTP';
-          if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = co.t; sCol = VC.tp; hx = 'hxTP'; }
+          if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = tIdx; sCol = VC.tp; hx = 'hxTP'; }
           else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = me ? me.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
           if(nSlice > 1){
             sawn++;
@@ -1539,32 +1554,46 @@ function netScene(D, g, box, step){
      这里给它一个边界——不然它只是浮在空中的一堆碎片，看不出「这是一个整体、
      一张卡就装这些」。壳只框住本卡真正占的深度区间（那个 stage），不是整网。 */
   if(ui.cardMode){
-    var cs0 = segW(co.p), cw0 = cs0[0] - GAPW*0.18, cw1 = cs0[1] + GAPW*0.18;
-    var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
-    var C8 = [ P(cu0,cv0,cw0,off0), P(cu1,cv0,cw0,off0), P(cu1,cv1,cw0,off0), P(cu0,cv1,cw0,off0),
-               P(cu0,cv0,cw1,off0), P(cu1,cv0,cw1,off0), P(cu1,cv1,cw1,off0), P(cu0,cv1,cw1,off0) ];
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-    /* 前后两个面各铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼 */
-    body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,5)+';stroke:none'));
-    CE.forEach(function(e){
-      body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+VC.dp+';stroke-width:.7;opacity:.85'));
-    });
-    /* 卡的门牌：rank 号 + 四维坐标——这一串就是它在整网里的地址 */
-    var cTop = P(0.5, cv0 - 0.09, cw0, off0);
-    var cTxt = 'rank ' + g;
-    var cSub = 'dp'+co.d+' · pp'+co.p+' · tp'+co.t + (me ? ' · ep'+me.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
-    var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
-    body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
-      +'style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:1.2"/>');
-    body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, VC.dp, 'middle', 'font-weight="800"'));
-    body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
+    var nSeg = cutPP ? D.pp : 1;
+    for(var kc = 0; kc < K; kc++){
+      var dc = kc % KD, tc = KT > 1 ? Math.floor(kc/KD) : co.t;
+      for(var pc2 = 0; pc2 < nSeg; pc2++){
+        var csx = segW(pc2), cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
+        var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
+        var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
+                   P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
+        var gc = rankOf(tc, co.c, dc, pc2, D);
+        var meC = gc === g;
+        /* 前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼 */
+        body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp, meC?12:4)+';stroke:none'));
+        CE.forEach(function(e){
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+VC.dp
+            +';stroke-width:'+(meC?.9:.35)+';opacity:'+(meC?.95:.4)));
+        });
+        /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
+        if(meC){
+          var cTop = P(0.5, cv0 - 0.10, cw0, kc);
+          var cTxt = 'rank ' + gc;
+          var cSub = 'dp'+dc+' · pp'+pc2+' · tp'+tc + (me ? ' · ep'+me.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
+          var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
+          body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
+            +'style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:1.2"/>');
+          body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, VC.dp, 'middle', 'font-weight="800"'));
+          body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
+        }
+        hit.push('<g class="cgrow"><polygon points="'+ptsStr([C8[0],C8[1],C8[2],C8[3]])
+          +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="card" data-i="'+gc+'"/></g>');
+      }
+    }
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
   var axOff = 0;
   var sgm = segW(0);
-  /* PP 左侧轴 */
-  if(cutPP){
+  /* PP 左侧轴。卡维度下三条选择器轴全收掉：那时画面上摆的就是全部 128 只卡，
+     每只卡自己的门牌已经写明它是谁，再挂一排「当前选谁」的切换器是另一套语法。 */
+  if(cutPP && !ui.cardMode){
     for(var ps9=0; ps9<D.pp; ps9++){
       var sgw9 = segW(ps9), isSel9 = ps9===co.p;
       var lu = -0.12;
@@ -1604,8 +1633,8 @@ function netScene(D, g, box, step){
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
     }
   }
-  if(cutTP && D.tp>1) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
-  if(cutEP && D.moe && D.ep>1){
+  if(cutTP && D.tp>1 && !ui.cardMode) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
+  if(cutEP && D.moe && D.ep>1 && !ui.cardMode){
     railBand(epBandV, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ return 'EP'+b9; }, 'e');
   }
@@ -3891,7 +3920,8 @@ document.addEventListener('click', function(ev){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
     var kk = b.getAttribute('data-k'), iv = +b.getAttribute('data-i');
-    if(kk==='d') sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
+    if(kk==='card') sel = iv;            /* 卡维度：整只卡壳就是一个可点的 rank */
+    else if(kk==='d') sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
     else if(kk==='p') sel = rankOf(c0.t,c0.c,c0.d,iv,Dq);
     else if(kk==='t') sel = rankOf(iv,c0.c,c0.d,c0.p,Dq);
     else if(kk==='e' && Dq.moe){
