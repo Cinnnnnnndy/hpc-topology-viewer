@@ -1285,15 +1285,22 @@ function netScene(D, g, box, step){
   var isFrontView = pAmt < 0.01 && dYpi < 0.12 && Math.abs(pitch) < 0.12 && IXg;
   if(isFrontView){
     var fvBody = [], fvHit = [];
-    var fvPad = 14, fvLabelH = 20;
+    var fvPad = 14, fvPillH = 15, fvPillGap = 2, fvTopPad = 3;
+    var fvHasTP = cutTP && D.tp > 1;
+    var fvHasEP = cutEP && D.moe && D.ep > 1;
+    var fvLabelRows = 1 + (fvHasTP?1:0) + (fvHasEP?1:0);
+    var fvLabelH = fvTopPad + fvPillH*fvLabelRows + fvPillGap*(fvLabelRows-1) + 2;
     var fvCols = K;
-    var fvRows = 1;
     var fvCellW = (box.w - fvPad*(fvCols+1)) / fvCols;
-    var fvCellH = box.h - fvPad*2;
+    var fvGraphW = fvCellW - 4;
+    var fvGraphH = fvGraphW * AR;
+    var fvCellH = fvLabelH + fvGraphH + 4;
+    var fvMaxH = box.h - fvPad*2;
+    if(fvCellH > fvMaxH) fvCellH = fvMaxH;
+    var fvYOff = box.y + (box.h - fvCellH) / 2;
     for(var fk=0; fk<K; fk++){
-      var fCol = fk % fvCols, fRow = Math.floor(fk / fvCols);
-      var fCx = box.x + fvPad + fCol*(fvCellW + fvPad);
-      var fCy = box.y + fvPad + fRow*(fvCellH + fvPad);
+      var fCx = box.x + fvPad + fk*(fvCellW + fvPad);
+      var fCy = fvYOff;
       var fSel = fk === sel0;
       var fRank = rankOf(co.t, co.c, fk, co.p, D);
       var fGsvg = graphSVG({x:fCx+2, y:fCy+fvLabelH, w:fvCellW-4, h:fvCellH-fvLabelH-4,
@@ -1303,10 +1310,28 @@ function netScene(D, g, box, step){
         fvBody.push('<g opacity="'+(fSel?1:.22)+'">');
         fvBody.push('<rect x="'+fCx+'" y="'+fCy+'" width="'+fvCellW+'" height="'+fvCellH+'" rx="5" '
           +'style="fill:var(--pt-bg);stroke:'+(fSel?VC.dp:'var(--pt-bd)')+';stroke-width:'+(fSel?1.8:.6)+'"/>');
-        var fPl = 'DP'+fk, fPw = fPl.length*5.2+8, fPh = 15;
-        fvBody.push('<rect x="'+(fCx+fvCellW/2-fPw/2)+'" y="'+(fCy+3)+'" width="'+fPw+'" height="'+fPh+'" rx="'+(fPh/2)+'" '
+        var pillY = fCy + fvTopPad;
+        var fPl = 'DP'+fk, fPw = fPl.length*5.2+8;
+        fvBody.push('<rect x="'+(fCx+fvCellW/2-fPw/2)+'" y="'+pillY+'" width="'+fPw+'" height="'+fvPillH+'" rx="'+(fvPillH/2)+'" '
           +'style="fill:'+(fSel?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(fSel?1.4:.6)+'"/>');
-        fvBody.push(txt(fCx+fvCellW/2, fCy+3+fPh/2+3.5, fPl, 8, fSel?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+        fvBody.push(txt(fCx+fvCellW/2, pillY+fvPillH/2+3.5, fPl, 8, fSel?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+        pillY += fvPillH + fvPillGap;
+        if(fvHasTP){
+          var tPl = 'TP'+co.t, tPw = tPl.length*5.2+8;
+          fvBody.push('<rect x="'+(fCx+fvCellW/2-tPw/2)+'" y="'+pillY+'" width="'+tPw+'" height="'+fvPillH+'" rx="'+(fvPillH/2)+'" '
+            +'style="fill:var(--pt-bg);stroke:'+VC.tp+';stroke-width:.6"/>');
+          fvBody.push(txt(fCx+fvCellW/2, pillY+fvPillH/2+3.5, tPl, 7, VC.tp, 'middle', 'font-weight="600"'));
+          pillY += fvPillH + fvPillGap;
+        }
+        if(fvHasEP){
+          var fMe = epOf(co.t, co.c, fk, D);
+          var perB = Math.max(1, Math.round(D.experts/D.ep));
+          var e0 = fMe ? fMe.ep*perB : 0;
+          var ePl = 'E'+e0+'–'+(e0+perB-1), ePw = ePl.length*4.6+8;
+          fvBody.push('<rect x="'+(fCx+fvCellW/2-ePw/2)+'" y="'+pillY+'" width="'+ePw+'" height="'+fvPillH+'" rx="'+(fvPillH/2)+'" '
+            +'style="fill:var(--pt-bg);stroke:'+VC.ep+';stroke-width:.6"/>');
+          fvBody.push(txt(fCx+fvCellW/2, pillY+fvPillH/2+3.5, ePl, 7, VC.ep, 'middle', 'font-weight="600"'));
+        }
         fvBody.push(fGsvg);
         fvBody.push('</g>');
         fvHit.push('<rect x="'+fCx+'" y="'+fCy+'" width="'+fvCellW+'" height="'+fvCellH+'" '
