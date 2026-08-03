@@ -1240,10 +1240,9 @@ function netScene(D, g, box, step){
   var selectorDepth = 0;
   if(cutTP && D.tp>1) selectorDepth += _bh + 0.04;
   if(cutEP && D.moe && D.ep>1) selectorDepth += _bh + 0.04;
-  if(K > 1) selectorDepth += _bh + 0.04;
   var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
-  var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.19:0);
+  var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
   var vLo = -0.06;
   /* 复印件展开成**方阵**而不是一长排：16 份排成一行，画布只用得到中间一条，
      两边全是空白、每份细得看不清（这正是「查看区域没用满」的成因）。
@@ -1382,72 +1381,66 @@ function netScene(D, g, box, step){
     }
     body.push(grd);
   }
-  /* ── 后面的复印件：画成 3D 体块（前 / 顶 / 右三面），份数真实，细节不重复 ── */
-  function box3(u0,v0,u1,v1,w0,w1,off,fB,fT,fS,fF,sc,sw){
-    return quad([P(u0,v0,w1,off),P(u1,v0,w1,off),P(u1,v1,w1,off),P(u0,v1,w1,off)],'fill:'+fB+';stroke:'+sc+';stroke-width:'+(sw*.6))
-      + quad([P(u0,v0,w0,off),P(u1,v0,w0,off),P(u1,v0,w1,off),P(u0,v0,w1,off)],'fill:'+fT+';stroke:'+sc+';stroke-width:'+(sw*.6))
-      + quad([P(u1,v0,w0,off),P(u1,v0,w1,off),P(u1,v1,w1,off),P(u1,v1,w0,off)],'fill:'+fS+';stroke:'+sc+';stroke-width:'+(sw*.6))
-      + quad([P(u0,v0,w0,off),P(u1,v0,w0,off),P(u1,v1,w0,off),P(u0,v1,w0,off)],'fill:'+fF+';stroke:'+sc+';stroke-width:'+sw);
+  /* ── 全量复印件：每份都画层板 + 算子，后面的先画（SVG z-order） ── */
+  var copyOrder = [];
+  for(k = 0; k < K; k++){
+    var cz = turn3(cx(k)+0.5, cy(k)+AR/2, TOTW/2, yaw, pitch);
+    copyOrder.push({i:k, z:cz[2]});
   }
-  for(k = 0; !zoomIn && k < K; k++){
-    var isF = k === sel0;
-    if(isF) continue;
-    var a = ui.spread ? 0.38 : (0.10 + 0.12*(1 - Math.abs(k-sel0)/Math.max(1,K)));
-    var gh = '';
-    gh += box3(0,0,1,AR, 0,TOTW, k,
-      'none', 'none', 'none', 'none', 'var(--pt-bd)', .3);
-    body.push('<g opacity="'+a.toFixed(2)+'">' + gh + '</g>');
-    hit.push('<g class="cgrow">'+pane(0, k, 'fill:transparent;cursor:pointer',
-      'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
-  }
-  /* ── 选中的那一份：层板逐块画，本卡那一段用真图，其余段是素板 ── */
+  copyOrder.sort(function(a,b){ return a.z - b.z; });
   var off0 = sel0;
-  for(var li = L-1; li >= 0; li--){
-    var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
-    /* PP 段界已移除——用户不需要中间黄色切分面 */
-    body.push(pane(ww, off0, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
-      + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
-    /* 段可点：2D 段带撤掉之后，换 stage 的入口要留在这个场景里。
-       但整块段面在投影上是**完全重叠**的——拿它当命中区，最前面那片会吃掉所有点击。
-       改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
-    /* PP 选择器移到下方统一绘制（axOff 固定） */
-    /* 只有本卡那一段才铺真节点：其余 36 层这张卡根本没建（第 2 幕那句话的立体版） */
-    if(mine && IXg && nodes < 900){
-      IXg.G.nodes.forEach(function(n){
-        if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
-        var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
-        var v0 = (n.y - n.height/2 - root.y)/GW, v1 = (n.y + n.height/2 - root.y)/GW;
-        var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
-        var dm = by0 ? by0.dim : null;
-        var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
-        var comm = n.colorKey === 'opv:comm';
-        if(comm){
-          body.push(quad([P(u0,v0,ww,off0), P(u1,v0,ww,off0), P(u1,v1,ww,off0), P(u0,v1,ww,off0)],
-            'fill:none;stroke:'+VC.tp+';stroke-width:.8;stroke-dasharray:3 2'));
-          nodes++; return;
-        }
-        /* 这一刀落下之前，算子还是整块的；落下之后才裂成片/桶，且只有一片是本卡的。
-           非本卡那几片打**斜纹**（TP 一个方向 / EP 反方向）：淡色填充看不出「这里被锯开了」，
-           斜纹能——纹路本身就是刀痕，还顺带说明「这块存在，只是不在这张卡上」。 */
-        var nSlice = 1, mySlice = 0, sCol = col, hx = 'hxTP';
-        if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = co.t; sCol = VC.tp; hx = 'hxTP'; }
-        else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = me ? me.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
-        if(nSlice > 1){
-          sawn++;
-          var kerf = (u1-u0)*0.17/nSlice;
-          for(var q9=0; q9<nSlice; q9++){
-            var a9 = u0 + (u1-u0)*q9/nSlice, b9 = a9 + (u1-u0)/nSlice - kerf;
-            var hit9 = q9===mySlice;
-            body.push(quad([P(a9,v0,ww,off0), P(b9,v0,ww,off0), P(b9,v1,ww,off0), P(a9,v1,ww,off0)],
-              'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35)));
+  for(var ci = 0; ci < copyOrder.length; ci++){
+    k = copyOrder[ci].i;
+    var kOff = k;
+    var isF = k === sel0;
+    for(var li = L-1; li >= 0; li--){
+      var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
+      body.push(pane(ww, kOff, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
+        + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
+      if(mine && IXg){
+        IXg.G.nodes.forEach(function(n){
+          if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
+          var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
+          var v0 = (n.y - n.height/2 - root.y)/GW, v1 = (n.y + n.height/2 - root.y)/GW;
+          var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
+          var dm = by0 ? by0.dim : null;
+          var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
+          var comm = n.colorKey === 'opv:comm';
+          if(comm){
+            body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+              'fill:none;stroke:'+VC.tp+';stroke-width:.8;stroke-dasharray:3 2'));
+            nodes++; return;
           }
-        }else{
-          whole++;
-          body.push(quad([P(u0,v0,ww,off0), P(u1,v0,ww,off0), P(u1,v1,ww,off0), P(u0,v1,ww,off0)],
-            'fill:'+mix(col, dm?52:20)+';stroke:'+(dm?col:'var(--pt-bds)')+';stroke-width:.45'));
-        }
-        nodes++;
-      });
+          var nSlice = 1, mySlice = 0, sCol = col, hx = 'hxTP';
+          if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = co.t; sCol = VC.tp; hx = 'hxTP'; }
+          else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = me ? me.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
+          if(nSlice > 1){
+            sawn++;
+            var kerf = (u1-u0)*0.17/nSlice;
+            for(var q9=0; q9<nSlice; q9++){
+              var a9 = u0 + (u1-u0)*q9/nSlice, b9 = a9 + (u1-u0)/nSlice - kerf;
+              var hit9 = q9===mySlice;
+              body.push(quad([P(a9,v0,ww,kOff), P(b9,v0,ww,kOff), P(b9,v1,ww,kOff), P(a9,v1,ww,kOff)],
+                'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35)));
+            }
+          }else{
+            whole++;
+            body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+              'fill:'+mix(col, dm?52:20)+';stroke:'+(dm?col:'var(--pt-bds)')+';stroke-width:.45'));
+          }
+          nodes++;
+        });
+      }
+    }
+    if(K > 1){
+      var dpLbl = 'DP'+k, dpMine = isF;
+      var dpPt = P(0.5, AR+0.04, 0, kOff);
+      var dpPw = dpLbl.length*4.2+6, dpPh = 11;
+      body.push('<rect x="'+(dpPt[0]-dpPw/2)+'" y="'+(dpPt[1]-dpPh/2+1)+'" width="'+dpPw+'" height="'+dpPh+'" rx="'+dpPh/2+'" '
+        +'style="fill:'+(dpMine?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(dpMine?1.4:.6)+'"/>');
+      body.push(txt(dpPt[0], dpPt[1]+3.5, dpLbl, 6.8, dpMine?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+      hit.push('<g class="cgrow">'+pane(0, kOff, 'fill:transparent;cursor:pointer',
+        'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
     }
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
@@ -1499,12 +1492,7 @@ function netScene(D, g, box, step){
     railBand(epOff, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ var e0=b9*perB; return 'E'+e0+'–'+(e0+perB-1); }, 'e');
   }
-  if(K > 1){
-    var dpOff = 0;
-    if(cutTP && D.tp>1) dpOff += bandH + 0.04;
-    if(cutEP && D.moe && D.ep>1) dpOff += bandH + 0.04;
-    railBand(dpOff, K, sel0, VC.dp, 'hxDP', function(b9){ return 'DP'+b9; }, 'd');
-  }
+  /* DP 选择器已改为每份复印件底部的独立标签，不再用共享 railBand */
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
   if(IXg && sh && (s >= 72 || zoomIn)){
