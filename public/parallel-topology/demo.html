@@ -360,6 +360,7 @@ var ui = {
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
+  cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -1302,8 +1303,11 @@ function netScene(D, g, box, step){
      这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
   var _bh = 0.09;
   var selectorDepth = 0;
-  var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
-  var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
+  /* 卡维度和 zoomIn 一样只占本卡那个 stage 的深度区间：画面里只剩这一张卡，
+     深度还按整网 46 层去量的话，卡会缩在角落，四周全是它并不占据的空间。 */
+  var focus1 = zoomIn || ui.cardMode;
+  var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
+  var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
   var vLo = -0.06;
   /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
@@ -1312,7 +1316,7 @@ function netScene(D, g, box, step){
   var ROWV = (vHi - vLo) + 0.30;
   function measure(cols){
     var rows = Math.ceil(K/cols), pr;
-    if(zoomIn) pr = [[ui.spread ? (sel0%cols)*CU : sel0*CU, ui.spread ? Math.floor(sel0/cols)*ROWV : sel0*CV]];
+    if(focus1) pr = [[ui.spread ? (sel0%cols)*CU : sel0*CU, ui.spread ? Math.floor(sel0/cols)*ROWV : sel0*CV]];
     else if(!ui.spread) pr = [[0,0], [(K-1)*CU, (K-1)*CV]];
     else pr = [[0,0], [(cols-1)*CU,0], [0,(rows-1)*ROWV], [(cols-1)*CU,(rows-1)*ROWV]];
     var X = [], Y = [], Z = [], a, i2, j2, k2;
@@ -1454,8 +1458,10 @@ function netScene(D, g, box, step){
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
       /* 降级后剩下的大头就是这堆板：46 层 × 16 份 = 736 块。拖动时非选中的副本
-         只留首尾两层当轮廓，够看出「那儿有一叠」就行。 */
-      if(!(lowDetail && !isF && li !== 0 && li !== L-1))
+         只留首尾两层当轮廓，够看出「那儿有一叠」就行。
+         卡维度下层板全部不画——那是「整网有多少层」的坐标纸，而这一屏问的是
+         「这一张卡拿到了什么」，层框留着只会把卡壳里塞满和它无关的格子。 */
+      if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1))
         body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
       if(IXg){
         IXg.G.nodes.forEach(function(n, ni){
@@ -1472,7 +1478,8 @@ function netScene(D, g, box, step){
              当前路径（副本 co.d · stage co.p · 片 co.t · 桶 me.ep）那一份才实心，
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
           if(!mine || !isF){
-            if(comm || lowDetail) return;
+            /* 卡维度只留这一张卡自己的东西：别的副本、别的 stage 一概不画 */
+            if(comm || lowDetail || ui.cardMode) return;
             /* 弱化的那批占了全场 92% 的图元（实测 13104 / 14172），也就是卡的
                全部来源。按节点下标抽稀到 1/3——取的是固定下标，所以每层每份
                抽到的是同一批，转起来不会闪；层里算子本来沿 DAG 铺开，抽掉三分
@@ -1500,6 +1507,9 @@ function netScene(D, g, box, step){
             for(var q9=0; q9<nSlice; q9++){
               var a9 = u0 + (u1-u0)*q9/nSlice, b9 = a9 + (u1-u0)/nSlice - kerf;
               var hit9 = q9===mySlice;
+              /* 卡维度下别人的片直接不画：斜纹表示的是「这块被锯走了、不归我」，
+                 一旦画面只剩这一张卡，那些空片就成了卡里凭空多出来的格子。 */
+              if(ui.cardMode && !hit9) continue;
               body.push(quad([P(a9,v0,ww,kOff), P(b9,v0,ww,kOff), P(b9,v1,ww,kOff), P(a9,v1,ww,kOff)],
                 'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35)));
             }
@@ -1512,7 +1522,7 @@ function netScene(D, g, box, step){
         });
       }
     }
-    if(K > 1){
+    if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
       var dpPw = dpLbl.length*4.2+6, dpPh = 11;
@@ -1522,6 +1532,32 @@ function netScene(D, g, box, step){
       hit.push('<g class="cgrow">'+pane(0, kOff, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
     }
+  }
+  /* ── 卡维度：把四刀的交集装进一只卡壳 ────────────────────────────────
+     四把刀切完，剩下的这一份就是**一张卡**：副本 co.d 里、stage co.p 那几层、
+     每个算子沿 h 轴的第 co.t 片、MoE 那段的第 me.ep 个桶。上面已经只画了这一份，
+     这里给它一个边界——不然它只是浮在空中的一堆碎片，看不出「这是一个整体、
+     一张卡就装这些」。壳只框住本卡真正占的深度区间（那个 stage），不是整网。 */
+  if(ui.cardMode){
+    var cs0 = segW(co.p), cw0 = cs0[0] - GAPW*0.18, cw1 = cs0[1] + GAPW*0.18;
+    var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
+    var C8 = [ P(cu0,cv0,cw0,off0), P(cu1,cv0,cw0,off0), P(cu1,cv1,cw0,off0), P(cu0,cv1,cw0,off0),
+               P(cu0,cv0,cw1,off0), P(cu1,cv0,cw1,off0), P(cu1,cv1,cw1,off0), P(cu0,cv1,cw1,off0) ];
+    var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    /* 前后两个面各铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼 */
+    body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,5)+';stroke:none'));
+    CE.forEach(function(e){
+      body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+VC.dp+';stroke-width:.7;opacity:.85'));
+    });
+    /* 卡的门牌：rank 号 + 四维坐标——这一串就是它在整网里的地址 */
+    var cTop = P(0.5, cv0 - 0.09, cw0, off0);
+    var cTxt = 'rank ' + g;
+    var cSub = 'dp'+co.d+' · pp'+co.p+' · tp'+co.t + (me ? ' · ep'+me.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
+    var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
+    body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
+      +'style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:1.2"/>');
+    body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, VC.dp, 'middle', 'font-weight="800"'));
+    body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
@@ -2870,9 +2906,12 @@ function renderChainBar(D){
     + '<button'+(ui.viewTab==='side'?' class="is-on"':'')+' data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
     + '<button'+(ui.viewTab==='top'?' class="is-on"':'')+' data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>'
     + '</span>';
+  /* 卡维度：四把刀的交集就是一张卡，单独收进一只卡壳里看它到底拿到了什么 */
+  var cBtn = '<span class="pt-seg"><button'+(ui.cardMode?' class="is-on"':'')
+    + ' data-act="cardmode" style="--c:'+VC.dp+'" title="把四刀交集收进一张卡：只看这张卡真正持有的那份">卡维度</button></span>';
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
-  $('stagebar').innerHTML = kBtns + vBtns;
+  $('stagebar').innerHTML = kBtns + cBtn + vBtns;
 }
 
 function renderDimBar(D, dim){
@@ -3808,6 +3847,7 @@ document.addEventListener('click', function(ev){
     })(t0);
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
+  else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; render(); }
   else if(act==='knifetoggle'){
     var kk2 = b.getAttribute('data-k');
     if(kk2==='dp') ui.kDP = !ui.kDP;
