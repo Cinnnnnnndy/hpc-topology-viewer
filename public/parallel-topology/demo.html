@@ -1453,7 +1453,7 @@ function netScene(D, g, box, step){
       var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
       body.push(pane(ww, kOff, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
         + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
-      if(mine && IXg){
+      if(IXg){
         IXg.G.nodes.forEach(function(n){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
@@ -1462,6 +1462,20 @@ function netScene(D, g, box, step){
           var dm = by0 ? by0.dim : null;
           var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
           var comm = n.colorKey === 'opv:comm';
+          /* 别的 stage、别的副本也画满——四段都有内容，整个模型才是完整的。
+             但只画一层淡实体：不切 TP/EP 的片、不进 sawn/whole 计数，
+             因为那些片是「本卡持有什么」的读数，不是别人段里、别人副本里的事。
+             当前路径（副本 co.d · stage co.p · 片 co.t · 桶 me.ep）那一份才实心，
+             其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
+          if(!mine || !isF){
+            if(comm) return;
+            /* 压得比直觉更狠：46 层沿深度一层层叠上来，单层看着很淡的颜色叠完
+               就是一堵实墙，选中的那一份反而被埋掉。本副本的别的 stage 留一点，
+               别的副本几乎只剩影子——「有东西在那儿」够了，细节归选中的那份。 */
+            body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+              'fill:'+mix(col, dm?9:4)+';stroke:none;opacity:'+(isF?.22:.07)));
+            return;
+          }
           if(comm){
             body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
               'fill:none;stroke:'+VC.tp+';stroke-width:.8;stroke-dasharray:3 2'));
