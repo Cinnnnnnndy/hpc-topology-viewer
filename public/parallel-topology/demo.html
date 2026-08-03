@@ -372,7 +372,7 @@ function urlLoad(){
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
-  var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.15);
+  var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
   var px3 = parseFloat(q.get('px')); if(isFinite(px3)) ui.panX3 = px3;
   var py3 = parseFloat(q.get('py')); if(isFinite(py3)) ui.panY3 = py3;
@@ -1162,7 +1162,9 @@ function renderDim(D){
    转台投影：yaw 绕竖轴转、pitch 抬头。u 向右 · w 向深处 · v 向下（v 就是真图自己的 y）。 */
 function turn3(u, v, w, yaw, pitch){
   var cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  return [u*cy + w*sy, v*cp - (w*cy - u*sy)*sp];
+  var rx = u*cy + w*sy;
+  var rz0 = w*cy - u*sy;
+  return [rx, v*cp - rz0*sp, v*sp + rz0*cp];
 }
 /* 场景：整网 deck × DP 复印 × PP 切段。返回 {body, hit, note} */
 /* 刀序 = 在同一个三维场景里一刀一刀往下切，每一刀切的是上一刀的产物。
@@ -1248,15 +1250,16 @@ function netScene(D, g, box, step){
     if(zoomIn) pr = [[ui.spread ? (sel0%cols)*CU : sel0*CU, ui.spread ? Math.floor(sel0/cols)*ROWV : sel0*CV]];
     else if(!ui.spread) pr = [[0,0], [(K-1)*CU, (K-1)*CV]];
     else pr = [[0,0], [(cols-1)*CU,0], [0,(rows-1)*ROWV], [(cols-1)*CU,(rows-1)*ROWV]];
-    var X = [], Y = [], a, i2, j2, k2;
+    var X = [], Y = [], Z = [], a, i2, j2, k2;
     for(a=0;a<pr.length;a++) for(i2=0;i2<2;i2++) for(j2=0;j2<2;j2++) for(k2=0;k2<2;k2++){
       var p = turn3(i2 + pr[a][0], (j2?vHi:vLo) + pr[a][1], k2?zw1:zw0, yaw, pitch);
-      X.push(p[0]); Y.push(p[1]);
+      X.push(p[0]); Y.push(p[1]); Z.push(p[2]);
     }
     var bx0 = Math.min.apply(null,X), bx1 = Math.max.apply(null,X);
     var by0 = Math.min.apply(null,Y), by1 = Math.max.apply(null,Y);
+    var bz0 = Math.min.apply(null,Z), bz1 = Math.max.apply(null,Z);
     return {s: Math.min(box.w/Math.max(.001,bx1-bx0), box.h/Math.max(.001,by1-by0)),
-            x0:bx0, x1:bx1, y0:by0, y1:by1};
+            x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
   var COLS = K, fit = measure(K);
   var ROWS = Math.ceil(K/COLS);
@@ -1265,7 +1268,20 @@ function netScene(D, g, box, step){
   var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s * ui.zoom3, i, j, k;
   var ox = box.x + (box.w - (x1-x0)*s)/2 - x0*s + ui.panX3;
   var oy = box.y + (box.h - (y1-y0)*s)/2 - y0*s + ui.panY3;
-  function P(u,v,w,off){ var p = turn3(u+cx(off), v+cy(off), w, yaw, pitch); return [ox+p[0]*s, oy+p[1]*s]; }
+  var PI2 = Math.PI/2;
+  var pYmod = ((yaw % PI2) + PI2) % PI2;
+  var pYdist = Math.min(pYmod, PI2 - pYmod);
+  var pHdist = Math.min(Math.abs(pitch), Math.abs(pitch + PI2));
+  var topCard = Math.abs(pitch - PI2);
+  var cardDist = Math.min(Math.sqrt(pYdist*pYdist + pHdist*pHdist), topCard);
+  var pAmt = cardDist < 0.06 ? 0 : cardDist > 0.28 ? 1 : (function(){ var t=(cardDist-0.06)/0.22; return t*t*(3-2*t); })();
+  var focalD = fit.zr * 2.5;
+  var zCenter = fit.zc;
+  function P(u,v,w,off){
+    var p = turn3(u+cx(off), v+cy(off), w, yaw, pitch);
+    var pf = pAmt > 0.001 ? focalD / (focalD + (p[2] - zCenter) * pAmt) : 1;
+    return [ox+p[0]*s*pf, oy+p[1]*s*pf];
+  }
   function quad(pts, st, extra){ return '<polygon points="'+ptsStr(pts)+'" style="'+st+'" '+(extra||'')+'/>'; }
   function seg(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   /* 一块层板：四角 (0,0)-(1,AR) 在深度 w 处 */
@@ -2512,6 +2528,10 @@ function renderChain(D){
         + '<button class="pb" data-act="stagestep" data-d="0" style="pointer-events:none">'+co.p+' / '+(D.pp-1)+'</button>'
         + '<button class="pb" data-act="stagestep" data-d="1" title="下一段">▶</button>' : '')
     + '<button class="pb'+(ui.spread?' is-on':'')+'" data-act="spread" title="复印件怎么排：展开=并排放好，看得清有几份、每份一模一样；叠=挤在一起省地方，份数一多会糊。">复印件 '+(ui.spread?'展开':'叠')+'</button>'
+    + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="0" title="正视图（2D）">正视</button>'
+    + '<button class="pb" data-act="viewsnap" data-yaw="1.5708" data-pitch="0" title="侧视图（2D）">侧视</button>'
+    + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="1.5708" title="顶视图（2D）">顶视</button>'
+    + '<button class="pb" data-act="viewsnap" data-yaw="0.42" data-pitch="0.30" title="透视3D（默认角度）">3D</button>'
     + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
      纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
@@ -3317,7 +3337,7 @@ $('stage').addEventListener('pointermove', function(ev){
     ui.panY3 = drag3.panY + dy*drag3.cs;
   } else {
     ui.yaw3 = drag3.yaw + dx*0.008;
-    ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.15);
+    ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
   }
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
@@ -3432,8 +3452,22 @@ document.addEventListener('click', function(ev){
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
-  else if(act==='turn'){ ui.yaw3 += (+b.getAttribute('data-y'))*0.35; ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.15); render(); }
+  else if(act==='turn'){ ui.yaw3 += (+b.getAttribute('data-y'))*0.35; ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.57); render(); }
   else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render(); }
+  else if(act==='viewsnap'){
+    var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
+    if(!isFinite(ty) || !isFinite(tp)) return;
+    var sy = ui.yaw3, sp = ui.pitch3, t0 = performance.now(), dur = 420;
+    function ease(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+    (function tick(now){
+      var t = Math.min(1, (now - t0) / dur), e = ease(t);
+      ui.yaw3 = sy + (ty - sy) * e;
+      ui.pitch3 = sp + (tp - sp) * e;
+      var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
+      if(t < 1) requestAnimationFrame(tick);
+      else render();
+    })(t0);
+  }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
   else if(act==='stagestep'){
