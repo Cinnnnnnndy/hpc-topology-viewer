@@ -126,12 +126,16 @@
    sidecar 自己只给一条说明性 badge，图元上看不出切没切——3D 那边是实心/斜纹
    分得清清楚楚的，这两个视图不能只剩一句话。算子带 data-node，id 和整网图
    同一套，所以 3D 用的那份切分表可以直接叠上来。 */
+/* 刀口画成**沿算子宽度的竖直分割**，不是底下一条细杠：TP 锯的就是算子的 h 轴，
+   EP 分的就是专家序号，两者都是把这个盒子横着均分成 n 份。本卡那份铺底色，
+   份与份之间留虚线刀痕——3px 的细杠在 80px 的格子里等于没画。 */
 .pt-deck .pt-cutbar{
-  position:absolute; left:1px; right:1px; bottom:1px; height:3px;
-  display:flex; gap:1px; pointer-events:none; z-index:4;
+  position:absolute; inset:0; display:flex; pointer-events:none; z-index:4;
+  border-radius:inherit; overflow:hidden;
 }
-.pt-deck .pt-cutbar i{flex:1; border-radius:1px; background:var(--c); opacity:.22}
-.pt-deck .pt-cutbar i.on{opacity:1}
+.pt-deck .pt-cutbar i{flex:1; border-right:1px dashed var(--c); opacity:.55}
+.pt-deck .pt-cutbar i:last-child{border-right:none}
+.pt-deck .pt-cutbar i.on{background:var(--c); opacity:.3}
 .pt-deck .pt-dpcut i{
   font-style:normal; padding:0 4px; border-radius:4px; line-height:13px;
   border:1px solid currentColor; background:var(--pt-bg);
@@ -2934,24 +2938,32 @@ function mountClone(slot, D){
       metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
     }));
     var made = deckClones[deckClones.length-1];
-    setTimeout(function(){ dualFrontMarks(made, D, slot); paintCuts(slot, D); }, 200);
+    setTimeout(function(){ dualFrontMarks(made, D, slot); paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct); }, 200);
   }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
   /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
-  slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>' + cutTag(D));
+  slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
+    + cutTag(D, +slot.dataset.cd, +slot.dataset.ct));
 }
 /* 这一格里 TP/EP 各切了几份。跟着刀开关走——关掉 TP 这一格就真的不写 TP，
    否则「TP 按钮按下去没有任何反应」。卡维度下还要标出本卡拿的是第几片/第几桶。 */
 /* 把 3D 那份切分表叠到 sidecar 的算子上：每个被切的算子底下画一条刀口条，
    n 格代表 n 片，本卡持有的那格实心。sidecar 的算子带 data-node，和整网图
    用的是同一套 id，所以 shardMap 的结果可以直接对上号。 */
-function paintCuts(rootEl, D){
+/* cellD / cellT：这一格代表的是哪张卡。每格是一张**不同**的卡（DP1·TP0 …），
+   片位、桶号都得按它自己的坐标算——照抄全局选中那张卡的话，32 个格子会画出
+   一模一样的刀口，等于没表达「各拿各的」。 */
+function paintCuts(rootEl, D, cellD, cellT){
   if(!rootEl) return;
   Array.prototype.slice.call(rootEl.querySelectorAll('.pt-cutbar')).forEach(function(e){ e.remove(); });
   if(!window.OPENPANGU_GRAPH) return;
-  var g2 = (sel !== null && sel < D.world) ? sel : null;
-  var co2 = g2 !== null ? coordsOf(g2, D) : null;
-  var me2 = (g2 !== null && D.moe) ? epOf(co2.t, co2.c, co2.d, D) : null;
-  var sh2 = shardMap(D, g2 !== null ? g2 : 0);
+  var gSel = (sel !== null && sel < D.world) ? sel : null;
+  var coS = gSel !== null ? coordsOf(gSel, D) : null;
+  var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
+  var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
+  var cOwn = coS ? coS.c : 0;
+  var me2 = D.moe ? epOf(tOwn, cOwn, dOwn, D) : null;
+  var co2 = {t: tOwn, c: cOwn, d: dOwn};
+  var sh2 = shardMap(D, rankOf(tOwn, cOwn, dOwn, coS ? coS.p : 0, D));
   if(!sh2) return;
   Object.keys(sh2).forEach(function(id){
     var s1 = sh2[id], by0 = s1 && s1.spec && s1.spec.by && s1.spec.by[0];
@@ -2973,15 +2985,21 @@ function paintCuts(rootEl, D){
     node.appendChild(bar);
   });
 }
-function cutTag(D){
-  var g2 = (sel !== null && sel < D.world) ? sel : null;
-  var c2 = g2 !== null ? coordsOf(g2, D) : null;
-  var m2 = (g2 !== null && D.moe) ? epOf(c2.t, c2.c, c2.d, D) : null;
+/* 角标写**这一格的编号**，不是份数：TP0/TP1、EP6 才说明这张卡拿的是哪一片、
+   哪一桶；「TP×2」32 个格子写的都一样，等于没说。份数交给轴标签去讲。
+   EP 还把桶对应的专家区间一并写出来（E48–E55），不然「第 6 桶」是个空号码。 */
+function cutTag(D, cellD, cellT){
+  var gSel = (sel !== null && sel < D.world) ? sel : null;
+  var coS = gSel !== null ? coordsOf(gSel, D) : null;
+  var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
+  var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
+  var m2 = D.moe ? epOf(tOwn, coS ? coS.c : 0, dOwn, D) : null;
   var s = '';
-  if(ui.kTP && D.tp > 1)
-    s += '<i style="color:'+VC.tp+'">TP×'+D.tp + (ui.cardMode && c2 ? ' · 第'+c2.t+'片' : '') + '</i>';
-  if(ui.kEP && D.moe && D.ep > 1)
-    s += '<i style="color:'+VC.ep+'">EP×'+D.ep + (ui.cardMode && m2 ? ' · 第'+m2.ep+'桶' : '') + '</i>';
+  if(ui.kTP && D.tp > 1) s += '<i style="color:'+VC.tp+'">TP'+tOwn+'</i>';
+  if(ui.kEP && D.moe && D.ep > 1 && m2){
+    var kE2 = Math.round(D.experts/D.ep), e02 = m2.ep*kE2;
+    s += '<i style="color:'+VC.ep+'">EP'+m2.ep+' · E'+e02+'–E'+(e02+kE2-1)+'</i>';
+  }
   return s ? '<span class="pt-dpcut">'+s+'</span>' : '';
 }
 function tileClone(n, D){
@@ -2995,19 +3013,23 @@ function tileClone(n, D){
   if(n <= 1){
     /* 卡维度只有一格，编号和切分角标同样要给——它就是当前那张卡 */
     if(ui.cardMode) cell.insertAdjacentHTML('beforeend', cutTag(D));
+    paintCuts(cell, D);
     return;
   }
   var rows2 = +host.dataset.rows || 1;
   /* grid-auto-flow:column 是先填满一列再进下一列，所以序号 i 的列号（=DP 副本）
      是 i/rows 取整、行号（=TP 片）是 i%rows。 */
   function cellCap(i){ return rows2 <= 1 ? 'DP'+i : 'DP'+Math.floor(i/rows2)+'·TP'+(i%rows2); }
-  cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D));
+  cell.dataset.cd = 0; cell.dataset.ct = 0;
+  cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D, 0, 0));
   var slots = [];
   for(var i2 = 1; i2 < n; i2++){
     var slot = document.createElement('div');
     slot.className = 'pt-deckhost pt-dpclone';
     slot.id = 'deckClone' + i2;
     slot.dataset.cap = cellCap(i2);
+    slot.dataset.cd = rows2 <= 1 ? i2 : Math.floor(i2/rows2);
+    slot.dataset.ct = rows2 <= 1 ? 0 : (i2 % rows2);
     slot.innerHTML = '<span class="pt-dpcap">' + cellCap(i2) + '</span>';
     host.appendChild(slot);
     slots.push(slot);
@@ -3872,7 +3894,12 @@ $('stage').addEventListener('pointerdown', function(ev){
   if(ui.view !== 'chain') return;
   /* 2D tab 下拖拽只平移：转台一动就离开了正交机位，正视立刻又变成斜的 3D。
      要转就先回 3D tab。 */
-  var pan = ev.shiftKey || ev.button === 1 || ui.viewTab !== '3d';
+  /* 平移：中键、Ctrl（Mac 上 ⌘ 同样认）、Shift 都行；2D tab 下拖拽本来就只平移。
+     Ctrl 是这类画布的通用手势，不该只有 Shift 一条路。 */
+  var pan = ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d';
+  /* 中键不挡会触发浏览器的自动滚动模式（那个四向箭头图标），Mac 上 Ctrl+按下
+     等同右键、会弹出上下文菜单——两个都会把拖拽打断。 */
+  if(ev.button === 1 || ev.ctrlKey) ev.preventDefault();
   var cs = 1;
   var svg = $('stage').querySelector('svg');
   if(svg){
