@@ -1267,6 +1267,10 @@ function netScene(D, g, box, step){
             x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
   var COLS = K, fit = measure(K);
+  for(var cc = 1; cc < K; cc++){
+    var mf = measure(cc);
+    if(mf.s > fit.s){ fit = mf; COLS = cc; }
+  }
   var ROWS = Math.ceil(K/COLS);
   function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
@@ -1280,9 +1284,8 @@ function netScene(D, g, box, step){
   var topCard = Math.abs(pitch - PI2);
   var cardDist = Math.min(Math.sqrt(pYdist*pYdist + pHdist*pHdist), topCard);
   var pAmt = cardDist < 0.06 ? 0 : cardDist > 0.28 ? 1 : (function(){ var t=(cardDist-0.06)/0.22; return t*t*(3-2*t); })();
-  /* ── 正视图替换：纯前/背视 + 有真图时，画 DP×K 份架构流程图 ── */
-  var dYpi = Math.abs(yaw % Math.PI); dYpi = Math.min(dYpi, Math.PI - dYpi);
-  var isFrontView = pAmt < 0.01 && dYpi < 0.12 && Math.abs(pitch) < 0.12 && IXg;
+  /* ── 正视图：不再替换为平铺格子，统一用 3D 链视图 + 下方选择器轴 ── */
+  var isFrontView = false;
   if(isFrontView){
     var fvBody = [], fvHit = [];
     var fvPad = 14, fvPillH = 15, fvPillGap = 2, fvTopPad = 3;
@@ -2601,7 +2604,7 @@ function renderChain(D){
     + '<button class="pb'+(anim.on?' is-on':'')+'" data-act="knifeplay" title="从整网开始，一刀一刀往下切——每一刀切的是上一刀的产物">'+(anim.on?'⏸ 停':'▶ 逐刀切')+'</button>'
     /* 段的**表达**在图里（每段一条基座，可点）；但镜头推进之后别的段会出框，
        点不到了——所以换段这个**控制**放进状态条，图里不再塞 2D 段带。 */
-    + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="0" title="正视图（2D）">正视</button>'
+    + '<button class="pb" data-act="viewsnap" data-yaw="0.12" data-pitch="0.08" title="正视图">正视</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="1.5708" data-pitch="0" title="侧视图（2D）">侧视</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="1.5708" title="顶视图（2D）">顶视</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="0.42" data-pitch="0.30" title="透视3D（默认角度）">3D</button>'
@@ -3519,7 +3522,7 @@ document.addEventListener('click', function(ev){
   else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
-    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0; ui.pitch3=0; ui.knife=99; }
+    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0.12; ui.pitch3=0.08; ui.knife=99; }
     else{ ui.view=gv; }
     stopAnim(); render();
   }
