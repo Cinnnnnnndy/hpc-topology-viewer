@@ -1411,10 +1411,6 @@ function netScene(D, g, box, step){
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
-  if(IXg && sh && s < 72 && !zoomIn){
-    lab.push(txt(box.x + box.w/2, box.y + box.h - 6,
-      '复印件展开后每份只有 '+Math.round(s)+'px 宽，真节点标签省略了——切到「叠」或减少 DP 才读得到', 7.2, 'var(--pt-fg3)'));
-  }
   if(IXg && sh && (s >= 72 || zoomIn)){
     /* 只挑五条：一层里 35 个算子全标出来就是糊墙，五条足够认出「这是真图那一层」 */
     var pick = ['input_layernorm','q_a_proj','attention_core','dense_gate_up','block_post_norm'];
