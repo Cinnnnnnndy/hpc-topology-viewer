@@ -106,7 +106,14 @@
    所以每格都是完整的一张图，不是抠出来的一层。 */
 /* scrollbar-gutter 必须 stable：副本一插进来就撑出滚动条，容器宽度一变
    sidecar 会重新 fit，而已经克隆好的副本停在旧缩放上，16 格就对不齐了 */
-.pt-deck.is-tiled{display:grid; gap:10px; overflow:auto; scrollbar-gutter:stable; padding:52px 14px 14px; align-content:start}
+.pt-deck.is-tiled{
+  display:grid; gap:6px; overflow:auto; scrollbar-gutter:stable;
+  padding:52px 14px 14px; align-content:center;
+}
+/* 一屏摆 16 份时每格才 80 来 px 宽，badge 比图还大、直接把内容盖死。
+   窄到这个程度就先收起来，放大到看得清算子了再露出来。 */
+.pt-deck.is-tiled.is-dense .pto-model-deck__annotation{display:none !important}
+.pt-deck.is-tiled.is-dense .pt-dpcap{font-size:9px; padding:0 5px; left:4px; top:4px}
 /* 高度不占满容器，按正视图自身的内容比例走。3d-deck 的 front fit 是
    min(w/850, h/1810)：格子一高，缩放就被宽度卡死，多出来的高度全是空白，
    卡片看着就是「一条特别高的白板中间浮着一小张图」。 */
@@ -2696,18 +2703,40 @@ function tileLayout(D){
   }
   /* 一排排开，不折行：DP 是同一份东西复印 n 遍，副本之间没有先后也没有行列
      关系，折成两排会让人以为行、列各自代表了点什么。排不下就横向滚。 */
-  /* 格宽由可用高度反推：高 = 宽 × 1810/850，让整张卡片正好放得下不用竖着滚 */
-  var Hh = host.clientHeight || 700;
-  var cw = clamp(Math.floor((Hh - 74) * 850 / 1810), 150, 320);
+  /* 默认一屏摆得下全部 n 份——「同一份东西复印了 n 遍」这件事要一眼看全，
+     不该先滚一遍才数得出来。格子因此很小，细节靠滚轮放大看（deckZoom）。
+     高度另外由 aspect-ratio 跟住，宽度算得下就一定放得下。 */
+  var W = host.clientWidth || 1200;
+  var cw = Math.max(34, Math.floor((W - 30 - (n-1)*6) / n));
   host.classList.add('is-tiled');
-  host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
+  host.dataset.cw = cw; host.dataset.n = n;
   host.style.removeProperty('--pt-cellh');
+  applyDeckZoom();
   return n;
 }
 /* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
    getBoundingClientRect 量出来再写进 inline style 的，静态克隆拿不到那套计算，
    复制出去就散成一条。所以每格挂一个真的 sidecar 实例，各自 fit 各自的格子。 */
-var deckClones = [], deckIO = null;
+var deckClones = [], deckZoom = 1;
+/* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
+   直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
+   放大出来的是真的更清楚，不是糊的。 */
+function applyDeckZoom(){
+  var host = $('deck');
+  if(!host.classList.contains('is-tiled')) return;
+  var base = +host.dataset.cw || 60, n = +host.dataset.n || 1;
+  var cw = Math.round(base * deckZoom);
+  host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
+  host.classList.toggle('is-dense', cw < 150);
+}
+$('deck').addEventListener('wheel', function(ev){
+  var host = $('deck');
+  if(!host.classList.contains('is-tiled')) return;
+  if(!(ev.ctrlKey || ev.metaKey) && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;  /* 横向滚就让它滚 */
+  ev.preventDefault();
+  deckZoom = clamp(deckZoom * (ev.deltaY < 0 ? 1.12 : 1/1.12), 1, 14);
+  applyDeckZoom();
+}, {passive:false});
 function mountClone(slot, D){
   if(slot.dataset.mounted) return;
   slot.dataset.mounted = '1';
@@ -2725,7 +2754,6 @@ function mountClone(slot, D){
 }
 function tileClone(n, D){
   var host = $('deck'), cell = $('deckHost');
-  if(deckIO){ deckIO.disconnect(); deckIO = null; }
   deckClones.forEach(function(c){ try{ c.destroy(); }catch(e){} });
   deckClones = [];
   Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'))
@@ -2743,21 +2771,16 @@ function tileClone(n, D){
     host.appendChild(slot);
     slots.push(slot);
   }
-  /* 一排 16 格，一屏只看得到七八个，却要为全部 16 份各建一只 sidecar（每份
-     5.5k 节点）——首屏白等好几秒，多数还是滚不到的。改成滚到哪建到哪，
-     提前 600px 起手，滚过去时那一格已经画好了。 */
-  if(typeof IntersectionObserver === 'function'){
-    deckIO = new IntersectionObserver(function(ents){
-      ents.forEach(function(en){
-        if(!en.isIntersecting) return;
-        deckIO.unobserve(en.target);
-        mountClone(en.target, D);
-      });
-    }, {root: host, rootMargin: '600px'});
-    slots.forEach(function(s){ deckIO.observe(s); });
-  } else {
-    slots.forEach(function(s){ mountClone(s, D); });
-  }
+  /* 默认一屏摆得下全部 n 份，格子全在视口里——滚到哪建到哪那套就不管用了。
+     每份 sidecar 有 5.5k 节点，一口气建完会把主线程焊死好几秒。改成一帧建一份：
+     总时长不变，但布局和编号立刻就在，格子一个接一个填上去，中途页面一直能动。 */
+  var queue = slots.slice();
+  (function pump(){
+    if(!queue.length) return;
+    if(ui.view!=='chain' || ui.viewTab!=='front') return;   /* 中途切走就别建了 */
+    mountClone(queue.shift(), D);
+    requestAnimationFrame(pump);
+  })();
 }
 function renderChain(D){
   if(ui.viewTab === 'front' || ui.viewTab === 'side'){
