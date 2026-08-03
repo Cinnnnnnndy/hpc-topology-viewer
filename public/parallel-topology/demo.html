@@ -107,7 +107,8 @@
 /* scrollbar-gutter 必须 stable：副本一插进来就撑出滚动条，容器宽度一变
    sidecar 会重新 fit，而已经克隆好的副本停在旧缩放上，16 格就对不齐了 */
 .pt-deck.is-tiled{
-  display:grid; gap:6px; overflow:auto; scrollbar-gutter:stable;
+  display:grid; grid-auto-flow:column; grid-auto-rows:auto; gap:6px;
+  overflow:auto; scrollbar-gutter:stable;
   padding:52px 14px 14px; align-content:center;
 }
 /* 一屏摆 16 份时每格才 80 来 px 宽，badge 比图还大、直接把内容盖死。
@@ -1454,7 +1455,10 @@ function netScene(D, g, box, step){
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
-      body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
+      /* 降级后剩下的大头就是这堆板：46 层 × 16 份 = 736 块。拖动时非选中的副本
+         只留首尾两层当轮廓，够看出「那儿有一叠」就行。 */
+      if(!(lowDetail && !isF && li !== 0 && li !== L-1))
+        body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
       if(IXg){
         IXg.G.nodes.forEach(function(n){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
@@ -1470,7 +1474,7 @@ function netScene(D, g, box, step){
              当前路径（副本 co.d · stage co.p · 片 co.t · 桶 me.ep）那一份才实心，
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
           if(!mine || !isF){
-            if(comm) return;
+            if(comm || lowDetail) return;
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
                抢。所以留细描边（形状靠它勾出来）、填充压到近乎无色——46 层沿
                深度叠上来时，是填充在堆成实墙，描边不会。 */
@@ -2734,6 +2738,9 @@ function tileLayout(D){
 /* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
    getBoundingClientRect 量出来再写进 inline style 的，静态克隆拿不到那套计算，
    复制出去就散成一条。所以每格挂一个真的 sidecar 实例，各自 fit 各自的格子。 */
+/* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
+   重排就是拖不动的直接原因；拖的时候只留选中那一份和层板骨架，松手再补回全量。 */
+var lowDetail = false;
 var deckClones = [], deckZoom = 1;
 /* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
    直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
@@ -2860,10 +2867,9 @@ function renderChainBar(D){
     + '<button'+(ui.viewTab==='side'?' class="is-on"':'')+' data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
     + '<button'+(ui.viewTab==='top'?' class="is-on"':'')+' data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>'
     + '</span>';
-  /* 读数排在控制组前面，两组胶囊才贴得住右边缘（换行时先掉的也是读数，不是控制） */
-  $('stagebar').innerHTML =
-    '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>'
-    + kBtns + vBtns;
+  /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
+     那一份就是它），再抄一遍文字只是占着画布右上角。 */
+  $('stagebar').innerHTML = kBtns + vBtns;
 }
 
 function renderDimBar(D, dim){
@@ -3662,6 +3668,7 @@ $('stage').addEventListener('pointermove', function(ev){
     ui.yaw3 = drag3.yaw + dx*0.008;
     ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
   }
+  lowDetail = true;
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
     var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
@@ -3671,6 +3678,7 @@ var swallowClick = false;
 function endDrag3(ev){
   if(!drag3) return;
   var moved = drag3.moved;
+  lowDetail = false;
   if(drag3.raf) cancelAnimationFrame(drag3.raf);
   var cap = drag3.cap;
   drag3 = null;
