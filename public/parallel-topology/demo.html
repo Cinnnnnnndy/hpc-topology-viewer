@@ -295,7 +295,7 @@ var ui = {
   view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
-  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99,   /* 99 = 全部切完；逐刀播放时从 0 走起 */
+  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -371,6 +371,8 @@ function urlLoad(){
   if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
+  if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
+  if(q.has('vtab')) ui.viewTab = q.get('vtab');
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -390,7 +392,7 @@ function urlWrite(){
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='chain' && !ui.spread) q.set('stack','1');
-  if(ui.view==='chain' && ui.knife < 99) q.set('knife', ui.knife);
+  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpte') q.set('cuts',cs2); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
@@ -1207,11 +1209,9 @@ function holdDenom(D, step){
 function netScene(D, g, box, step){
   var IXg = graphIndex();
   var co = coordsOf(g, D), lps = D.layersPerStage, me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  var ST = knifeSteps(D);
-  step = clamp(step===undefined ? ST.length-1 : step, 0, ST.length-1);
-  /* 哪几刀已经落下——按刀的**种类**问，不按下标：CP/EP 会被配置过滤掉，下标是浮动的 */
-  var cutDP = cutBy(ST, step, 'dp'), cutPP = cutBy(ST, step, 'pp'), cutCP = cutBy(ST, step, 'cp'),
-      cutTP = cutBy(ST, step, 'tp'), cutEP = cutBy(ST, step, 'ep');
+  /* 每把刀独立开关——不再按顺序；都关 = 整网 */
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = D.cp > 1,
+      cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var yaw = ui.yaw3, pitch = ui.pitch3;
   var root = IXg ? IXg.clu['decoder-stack'] : null;
   var GW = root ? root.width : 1000, GH = root ? root.height : 1700;
@@ -1351,10 +1351,10 @@ function netScene(D, g, box, step){
     var fvWrapped = '<defs>'+fvHX+'<clipPath id="'+fvCID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
       + '<g clip-path="url(#'+fvCID+')">' + fvBody.join('') + '</g>';
     return {body:fvWrapped, hit:'<g clip-path="url(#'+fvCID+')">' + fvHit.join('') + '</g>',
-            nodes:0, sawn:0, whole:0, step:step, steps:ST, zoom:false,
+            nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
             cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
   }
-  var focalD = fit.zr * 2.5;
+  var focalD = fit.zr * 6;
   var zCenter = fit.zc;
   function P(u,v,w,off){
     var p = turn3(u+cx(off), v+cy(off), w, yaw, pitch);
@@ -1520,7 +1520,7 @@ function netScene(D, g, box, step){
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
   return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>', nodes: nodes, sawn: sawn, whole: whole,
-          step: step, steps: ST, zoom: zoomIn, cut: {dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP},
+          step: 0, steps: [], zoom: zoomIn, cut: {dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP},
           note: IXg ? '' : '（真图脚本未加载：单文件打开时退回素板）'};
 }
 
@@ -2575,26 +2575,25 @@ function renderChain(D){
      DP 复印复制的是整只 deck，同一把刀把上方那块 token 网格真切开；
      PP 把每份复制体切段并掰开缝；CP 切 token 的 s 轴；TP 锯进算子内部；EP 重排专家。
      五把刀一刀一刀落在同一个物体上，所以放在同一个三维场景里。拖动可转动。 */
-  var ST9 = knifeSteps(D), KS = clamp(ui.knife|0, 0, ST9.length-1);
-  var scene = netScene(D, g, SCB, KS);
+  var scene = netScene(D, g, SCB);
   parts.push('<g pointer-events="none">'+scene.body+'</g>');
   sceneHit = scene.hit;
-  /* 虚线框移除——全画布 3D */
-  var cur9 = ST9[KS], den9 = holdDenom(D, KS), denPrev = holdDenom(D, Math.max(0, KS-1));
-  var flat9 = den9===denPrev && KS>0;
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
-  $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
-    + ST9.map(function(q9, i9){
-        return '<button class="pb'+(i9===KS?' is-on':'')+'" data-act="knife" data-i="'+i9+'" title="'+esc(q9.s)+'">'+esc(q9.n)+'</button>';
-      }).join('')
-    + '<button class="pb'+(anim.on?' is-on':'')+'" data-act="knifeplay" title="从整网开始，一刀一刀往下切——每一刀切的是上一刀的产物">'+(anim.on?'⏸ 停':'▶ 逐刀切')+'</button>'
-    /* 段的**表达**在图里（每段一条基座，可点）；但镜头推进之后别的段会出框，
-       点不到了——所以换段这个**控制**放进状态条，图里不再塞 2D 段带。 */
-    + '<button class="pb" data-act="viewsnap" data-yaw="0.12" data-pitch="0.08" title="正视图">正视</button>'
-    + '<button class="pb" data-act="viewsnap" data-yaw="1.5708" data-pitch="0" title="侧视图（2D）">侧视</button>'
-    + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="1.5708" title="顶视图（2D）">顶视</button>'
-    + '<button class="pb" data-act="viewsnap" data-yaw="0.42" data-pitch="0.30" title="透视3D（默认角度）">3D</button>'
+  /* ── 工具条：切分开关（叠加） + 视角 tab（互斥） ── */
+  var kBtns = '';
+  if(D.dp>1) kBtns += '<button class="pb'+(ui.kDP?' is-on':'')+'" data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
+  kBtns += '<button class="pb'+(ui.kPP?' is-on':'')+'" data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
+  if(D.tp>1) kBtns += '<button class="pb'+(ui.kTP?' is-on':'')+'" data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片">TP</button>';
+  if(D.moe&&D.ep>1) kBtns += '<button class="pb'+(ui.kEP?' is-on':'')+'" data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
+  var vBtns = ''
+    + '<button class="pb'+(ui.viewTab==='3d'?' is-on':'')+'" data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
+    + '<button class="pb'+(ui.viewTab==='front'?' is-on':'')+'" data-act="viewtab" data-tab="front" data-yaw="0.12" data-pitch="0.08" title="正视图">正视</button>'
+    + '<button class="pb'+(ui.viewTab==='side'?' is-on':'')+'" data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
+    + '<button class="pb'+(ui.viewTab==='top'?' is-on':'')+'" data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>';
+  $('stagebar').innerHTML = '<span class="pt-cap">切分</span>' + kBtns
+    + '<span style="border-left:1px solid var(--pt-bd);height:18px;margin:0 6px;display:inline-block;vertical-align:middle"></span>'
+    + '<span class="pt-cap">视角</span>' + vBtns
     + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
      纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
@@ -3509,7 +3508,7 @@ document.addEventListener('click', function(ev){
   else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
-    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0.12; ui.pitch3=0.08; ui.knife=99; }
+    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0.12; ui.pitch3=0.08; ui.viewTab='front'; }
     else{ ui.view=gv; }
     stopAnim(); render();
   }
@@ -3536,6 +3535,29 @@ document.addEventListener('click', function(ev){
     })(t0);
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
+  else if(act==='knifetoggle'){
+    var kk2 = b.getAttribute('data-k');
+    if(kk2==='dp') ui.kDP = !ui.kDP;
+    else if(kk2==='pp') ui.kPP = !ui.kPP;
+    else if(kk2==='tp') ui.kTP = !ui.kTP;
+    else if(kk2==='ep') ui.kEP = !ui.kEP;
+    render();
+  }
+  else if(act==='viewtab'){
+    ui.viewTab = b.getAttribute('data-tab');
+    var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
+    if(!isFinite(ty) || !isFinite(tp)) return;
+    var sy = ui.yaw3, sp = ui.pitch3, t0 = performance.now(), dur = 420;
+    function ease2(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+    (function tick(now){
+      var t = Math.min(1, (now - t0) / dur), e = ease2(t);
+      ui.yaw3 = sy + (ty - sy) * e;
+      ui.pitch3 = sp + (tp - sp) * e;
+      var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
+      if(t < 1) requestAnimationFrame(tick);
+      else render();
+    })(t0);
+  }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
   else if(act==='stagestep'){
     var Ds = derive(cfg); if(!Ds.ok) return;
