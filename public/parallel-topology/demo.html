@@ -101,11 +101,31 @@
 /* sidecar 的挂载面：和 SVG 舞台同一个盒子，二选一显示 */
 .pt-deck{position:absolute; inset:0; min-height:0}
 .pt-deck[hidden]{display:none}
+.pt-deckhost{width:100%; height:100%; min-height:0}
+/* DP 复印：整张正视图复制成方阵，每格一份副本。DP 切的是整网不是某一层，
+   所以每格都是完整的一张图，不是抠出来的一层。 */
+/* scrollbar-gutter 必须 stable：副本一插进来就撑出滚动条，容器宽度一变
+   sidecar 会重新 fit，而已经克隆好的副本停在旧缩放上，16 格就对不齐了 */
+.pt-deck.is-tiled{display:grid; gap:10px; overflow:auto; scrollbar-gutter:stable; padding:52px 14px 14px; align-content:start}
+.pt-deck.is-tiled > *{
+  position:relative; overflow:hidden; height:var(--pt-cellh, 300px);
+  border:1px solid var(--pt-bd); border-radius:10px; background:var(--pt-s1);
+}
+.pt-deck.is-tiled .pt-dpcap{
+  position:absolute; left:8px; top:6px; z-index:3; font-family:var(--pt-mono);
+  font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:999px;
+  border:1px solid var(--pt-dp); color:var(--pt-dp); background:var(--pt-bg);
+}
+/* 副本是死的克隆：不吃指针，也别让它里面的浮层跑到格子外面去 */
+.pt-deck.is-tiled > .pt-dpclone{pointer-events:none}
 /* sidecar 自带一整条顶栏（3D/正视/侧视 + PP/TP/EP/DP + 数据/主题/适配）——
    视角和刀都由本页工具条统管，它那条会是第二套互相打架的控件，藏掉。 */
 .pt-deck .pto-model-deck__toolbar,
 .pt-deck .pto-model-deck__topbar,
+.pt-deck .pto-model-deck__title,
 .pt-deck .pto-training-sidecar__toolbar{display:none !important}
+/* 每格都挂一条「PP ×4 · layer stages」既冗余又会被格子裁掉 */
+.pt-deck.is-tiled .pto-model-deck__annotation{display:none !important}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -250,8 +270,10 @@
   </header>
   <div class="pt-main" id="main">
     <div class="pt-stage" id="stage"></div>
-    <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG -->
-    <div class="pt-deck" id="deck" hidden></div>
+    <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG。
+         sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
+         是 #deckHost 的静态克隆，塞在它后面——这样重绘不会把 controller 打断。 -->
+    <div class="pt-deck" id="deck" hidden><div class="pt-deckhost" id="deckHost"></div></div>
     <div class="pt-stagebar" id="stagebar"></div>
     <div class="pt-animcap" id="animCap"></div>
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
@@ -2585,7 +2607,7 @@ function ensureDeck(){
   if(deckCtl || deckFail) return deckCtl;
   if(!deckAvailable()){ deckFail = 'sidecar 未加载'; return null; }
   try{
-    deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deck', {
+    deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deckHost', {
       preset:'openpangu-flash', initialView:'right', parallelMode:'pp',
       initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
       metricView:'structure', metricViews:[], initialLayer:null
@@ -2601,11 +2623,82 @@ function renderDeck(D){
     $('deck').hidden = true; $('stage').hidden = false;
     return false;
   }
+  /* 先把格子布好再让 sidecar 渲染：它的 fit 读的是容器尺寸，铺成方阵之后
+     #deckHost 从整屏缩成一格，顺序反了就会按整屏的尺寸算缩放。 */
+  var n = tileLayout(D);
+  void $('deckHost').offsetHeight;   /* 逼一次重排：fit 读的是 clientWidth/Height，栅格得先落地 */
   c.setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
   c.setView(ui.viewTab === 'front' ? 'front' : 'right');
   c.setParallelMode(deckMode(D));
   c.fit();
+  /* fit 自己排在后续帧里跑（还带一段过渡），克隆必须等它彻底落地——
+     早一帧复制到的就是没缩放好的画面，16 格全歪。 */
+  if(deckTileRaf) clearTimeout(deckTileRaf);
+  deckTileRaf = setTimeout(function(){
+    deckTileRaf = 0;
+    if(ui.view==='chain' && ui.viewTab==='front') tileClone(n);
+  }, 220);
   return true;
+}
+/* DP 复印：正视图按副本数铺成方阵。侧视不铺——那张图里 46 层已经沿层深排开，
+   16 份并排只会把每份压到看不清，而 DP 在侧视里本来就是重叠成一份的。 */
+var deckTileRaf = 0;
+function tileLayout(D){
+  var host = $('deck');
+  var n = (ui.viewTab==='front' && ui.kDP && D.dp>1) ? D.dp : 1;
+  Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone, .pt-dpcap'))
+    .forEach(function(el){ el.remove(); });
+  if(n <= 1){
+    host.classList.remove('is-tiled');
+    host.style.removeProperty('grid-template-columns');
+    host.style.removeProperty('--pt-cellh');
+    return 1;
+  }
+  /* 列数不猜：每种列数都量一遍，取每格最接近正视图竖长比例的那个 */
+  var W = host.clientWidth || 1200, Hh = host.clientHeight || 700;
+  var best = 1, bestScore = -1;
+  for(var c2 = 1; c2 <= n; c2++){
+    var rows = Math.ceil(n/c2);
+    var cw = (W - 28 - (c2-1)*10) / c2, ch = (Hh - 66 - (rows-1)*10) / rows;
+    if(cw < 70 || ch < 90) continue;
+    var score = Math.min(cw*1.5, ch);
+    if(score > bestScore){ bestScore = score; best = c2; }
+  }
+  var rows2 = Math.ceil(n/best);
+  host.classList.add('is-tiled');
+  host.style.gridTemplateColumns = 'repeat('+best+', minmax(0,1fr))';
+  host.style.setProperty('--pt-cellh', Math.max(150, Math.floor((Hh - 66 - (rows2-1)*10) / rows2)) + 'px');
+  return n;
+}
+/* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
+   getBoundingClientRect 量出来再写进 inline style 的，静态克隆拿不到那套计算，
+   复制出去就散成一条。所以每格挂一个真的 sidecar 实例，各自 fit 各自的格子。 */
+var deckClones = [];
+function tileClone(n){
+  var host = $('deck'), cell = $('deckHost');
+  deckClones.forEach(function(c){ try{ c.destroy(); }catch(e){} });
+  deckClones = [];
+  Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'))
+    .forEach(function(el){ el.remove(); });
+  if(n <= 1) return;
+  if(!cell.querySelector('.pt-dpcap'))
+    cell.insertAdjacentHTML('afterbegin', '<span class="pt-dpcap">DP0</span>');
+  var theme = document.documentElement.dataset.theme==='dark'?'dark':'light';
+  for(var i2 = 1; i2 < n; i2++){
+    var slot = document.createElement('div');
+    slot.className = 'pt-deckhost pt-dpclone';
+    slot.id = 'deckClone' + i2;
+    host.appendChild(slot);
+    try{
+      deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
+        preset:'openpangu-flash', initialView:'front', parallelMode:'none',
+        initialTheme:theme, metricView:'structure', metricViews:[], initialLayer:null,
+        showSideLabels:false
+      }));
+    }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
+    /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
+    slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">DP' + i2 + '</span>');
+  }
 }
 function renderChain(D){
   if(ui.viewTab === 'front' || ui.viewTab === 'side'){
