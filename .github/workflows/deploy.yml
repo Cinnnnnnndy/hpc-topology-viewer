@@ -254,6 +254,16 @@ jobs:
           SHA=$(git -C ptopo-src rev-parse --short HEAD)
           SRC=ptopo-src/public/parallel-topology
 
+          # ⓪ 本分支新引入的 vendor 依赖补进 dist/vendor/。
+          # demo 里写的是 ../vendor/…，落在 main 构建产物已有的 /vendor/ 上——
+          # 但 main 那份只有老几样，本分支新加的目录它没有，不补就是三个 404，
+          # sidecar 挂不上，正视/侧视会**静默**退回旧 SVG（页面不报错，最难查）。
+          for v in model-architecture-3d-deck model-architecture-training-sidecar; do
+            rm -rf dist/vendor/$v
+            mkdir -p dist/vendor/$v
+            cp -r ptopo-src/public/vendor/$v/. dist/vendor/$v/
+          done
+
           # ① 目录入口 /parallel-topology/
           DIR=dist/parallel-topology
           mkdir -p $DIR
@@ -274,12 +284,18 @@ jobs:
           # ② 规范入口 /patterns/parallel-topology-demo/（自包含）
           PAT=dist/patterns/parallel-topology-demo
           mkdir -p $PAT/vendor
-          sed -e 's#\.\./vendor/pto-design-system/#./vendor/pto-design-system/#g' \
+          # ../vendor/ 一律拍平成 ./vendor/：规范入口在 dist/patterns/<id>/ 下，
+          # ../vendor 指向的 dist/patterns/vendor/ 根本不存在——这份要自包含。
+          sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               $SRC/demo.html > $PAT/pattern.html
-          cp -r ptopo-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这一行，否则线上 404。
+          for v in pto-design-system pto-tokens model-graphviz net-sharding \
+                   model-architecture-3d-deck model-architecture-training-sidecar; do
+            cp -r ptopo-src/public/vendor/$v $PAT/vendor/$v
+          done
           cp ptopo-src/public/favicon.svg $PAT/favicon.svg
           cp $DIR/pattern.json $PAT/pattern.json
 
@@ -325,6 +341,17 @@ jobs:
           grep -c 'parallel-topology/atlas.html' dist/launch.html
           test -s dist/parallel-topology/atlas.html
           test -s dist/parallel-topology/cockpit.html
+          # demo 引到的每个 vendor 文件都得真的在 dist 里躺着。少一个不会让页面报错，
+          # 只会让正视/侧视静默退回旧 SVG——那种坏法从线上看不出来，必须在这里拦住。
+          python3 - <<'PY'
+          import re, pathlib, sys
+          demo = pathlib.Path('dist/parallel-topology/demo.html').read_text(encoding='utf-8')
+          refs = sorted(set(re.findall(r'\.\./(vendor/[A-Za-z0-9./_-]+\.(?:css|js))(?:\?[^"\']*)?', demo)))
+          missing = [r for r in refs if not pathlib.Path('dist', r).is_file()]
+          print(f'demo.html 引用 {len(refs)} 个 vendor 文件，dist 缺 {len(missing)} 个')
+          for m in missing: print('  MISSING dist/' + m)
+          sys.exit(1 if missing else 0)
+          PY
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4
