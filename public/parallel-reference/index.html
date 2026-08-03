@@ -1045,6 +1045,16 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
   <p>顺带也说清了 <span class="k tp">SP</span> 的位置：列切-行切这套只覆盖两个 matmul 之间那段，<strong>LayerNorm / Dropout 那些区域 TP 切不到</strong>（它们要的是完整的 <code>h</code>）。SP 补的正是这一段——沿 <code>s</code> 再切一刀，复用 TP 的通信域，进出 TP 区时用 AllGather / ReduceScatter 转布局。</p>
 
+  <h3>图解：列切-行切怎么配对</h3>
+
+  <p>上面的代码框是「每步做什么」，下面这张图画的是「<strong>矩阵长什么样、怎么被拆开</strong>」。跟着数据流从左到右走一遍，列切-行切的不对称性就清楚了。</p>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 04C</span><span class="ftitle">TP 列切-行切配对：MLP 块数据流</span>
+      <span class="fnote">以 TP=2 为例。上半是 MLP 块完整数据流：输入 X 不切，W1 按列切、W2 按行切，中间的 GeLU 直接在分片上做，只在最后 AllReduce 一次。下半是对照：如果 W1 也按行切会怎样——GeLU 之前就多一次通信。<b style="color:var(--tp)">红底</b>表示该矩阵/张量属于「各卡不同」的分片。</span></figcaption>
+    <div class="stage" id="fig-slice"></div>
+  </figure>
+
   <h3>TP 与 EP 各切在整网的哪里</h3>
 
   <p>把两者标在同一条算子链上，差别一眼可见：<strong>TP 的切点散布在每一个矩阵乘上、每层都有；EP 的切点只有一处，且只在 MoE 层存在。</strong></p>
@@ -2912,6 +2922,207 @@ function figContainer(){
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
 }
 
+/* ===================== FIG 04C · TP 列切-行切配对：MLP 块数据流 ===================== */
+function figSlice(){
+  var m=document.getElementById('fig-slice'); if(!m) return;
+  var W=980, H=580;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var TP=K.tp, DIM='#8A98A2', INK='#0E1418', BG='#F2F5F7', TPBG='#FCF0F1', TPBG2='#F9E3E5';
+
+  /* —— helpers —— */
+  function rect(x,y,w,h,fill,stroke,sw,rx){
+    return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+(rx||4)+'" fill="'+(fill||'#fff')+'" stroke="'+(stroke||'#CFD8DD')+'" stroke-width="'+(sw||1.3)+'"/>';
+  }
+  function txt(x,y,t,sz,fill,fw,anc,ff){
+    return '<text x="'+x+'" y="'+y+'" font-size="'+(sz||11)+'" fill="'+(fill||INK)+'" font-weight="'+(fw||400)+'"'+(anc?' text-anchor="'+anc+'"':'')+(ff?' font-family="'+ff+'"':'')+'>'+t+'</text>';
+  }
+  function mono(x,y,t,sz,fill){return txt(x,y,t,sz||9.5,fill||DIM,400,null,"ui-monospace,Menlo,monospace");}
+  function arrow(x1,y1,x2,y2,col){
+    return '<path d="M'+x1+' '+y1+' L'+x2+' '+y2+'" stroke="'+(col||DIM)+'" stroke-width="1.4" fill="none" marker-end="url(#sl-ar'+(col===TP?'t':'')+')" />';
+  }
+  function arrowC(pts,col){
+    return '<path d="M'+pts[0]+' '+pts[1]+' C'+pts[2]+' '+pts[3]+', '+pts[4]+' '+pts[5]+', '+pts[6]+' '+pts[7]+'" stroke="'+(col||DIM)+'" stroke-width="1.4" fill="none" marker-end="url(#sl-ar'+(col===TP?'t':'')+')" />';
+  }
+  function pill(x,y,w,t,fill,stroke,tFill){
+    return rect(x,y,w,18,fill,stroke,1.1,9)+txt(x+w/2,y+13,t,8.5,tFill,700,'middle');
+  }
+
+  s+='<defs>'
+   +'<marker id="sl-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+DIM+'"/></marker>'
+   +'<marker id="sl-art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+TP+'"/></marker>'
+   +'<marker id="sl-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+K.warn+'"/></marker>'
+   +'</defs>';
+
+  /* ===== 上半：正确的列切-行切配对（两行） ===== */
+  s+=txt(24,24,'正确配对 · 列切 → GeLU → 行切 → AllReduce',12.5,INK,800);
+  s+=txt(420,24,'（全层只需 1 次 AllReduce）',10.5,'#3E9E6E',700);
+
+  /* 两行布局：Row A = 卡0，Row B = 卡1 */
+  var BW=96, BH=28, G=10;
+  var RA=42, RB=RA+BH+G;
+
+  /* 输入 X — 两卡各一份完整副本 */
+  var x0=18;
+  s+=rect(x0,RA,72,BH,BG); s+=txt(x0+36,RA+13,'X',11,INK,700,'middle'); s+=mono(x0+36,RA+24,'[B·S, H]',7.5,DIM,'middle');
+  s+=rect(x0,RB,72,BH,BG); s+=txt(x0+36,RB+13,'X',11,INK,700,'middle'); s+=mono(x0+36,RB+24,'每卡完整',7.5,'#3E7D5E','middle');
+
+  /* W1 列切 */
+  var x1=x0+72+G;
+  s+=arrow(x0+72,RA+BH/2,x1,RA+BH/2,DIM);
+  s+=arrow(x0+72,RB+BH/2,x1,RB+BH/2,DIM);
+  s+=rect(x1,RA,BW,BH,TPBG,TP,1.4); s+=txt(x1+10,RA+12,'W1₀',10,TP,700); s+=mono(x1+50,RA+12,'[H, 4H/2]',7.5,TP);
+  s+=rect(x1,RB,BW,BH,TPBG,TP,1.4); s+=txt(x1+10,RB+12,'W1₁',10,TP,700); s+=mono(x1+50,RB+12,'[H, 4H/2]',7.5,TP);
+  /* column-cut label */
+  s+=txt(x1+BW/2,RA-4,'列切',9,TP,700,'middle');
+  s+='<path d="M'+(x1+BW/2)+' '+(RA-2)+' L'+(x1+BW/2)+' '+(RB+BH+2)+'" stroke="'+TP+'" stroke-width="0" />';
+
+  /* Z 真值 */
+  var x2=x1+BW+G;
+  s+=arrow(x1+BW,RA+BH/2,x2,RA+BH/2,TP);
+  s+=arrow(x1+BW,RB+BH/2,x2,RB+BH/2,TP);
+  s+=rect(x2,RA,BW,BH,TPBG2,TP,1); s+=txt(x2+8,RA+12,'Z₀',10,TP,600); s+=mono(x2+38,RA+12,'[B·S, 4H/2]',7.5,TP);
+  s+=rect(x2,RB,BW,BH,TPBG2,TP,1); s+=txt(x2+8,RB+12,'Z₁',10,TP,600); s+=mono(x2+38,RB+12,'[B·S, 4H/2]',7.5,TP);
+  s+=pill(x2+BW+4,RA+5,42,'真值 ✓','#E8F5E9','#3E9E6E','#2E7D4E');
+  s+=pill(x2+BW+4,RB+5,42,'真值 ✓','#E8F5E9','#3E9E6E','#2E7D4E');
+
+  /* GeLU */
+  var x3=x2+BW+50;
+  s+=arrow(x2+BW+46,RA+BH/2,x3,RA+BH/2,TP);
+  s+=arrow(x2+BW+46,RB+BH/2,x3,RB+BH/2,TP);
+  s+=rect(x3,RA,64,BH,'#FFF8F0','#D4A76A',1.2,14); s+=txt(x3+32,RA+16,'GeLU',10,'#A07030',700,'middle');
+  s+=rect(x3,RB,64,BH,'#FFF8F0','#D4A76A',1.2,14); s+=txt(x3+32,RB+16,'GeLU',10,'#A07030',700,'middle');
+  s+=txt(x3+32,RB+BH+12,'免通信 ✓',8.5,'#3E9E6E',700,'middle');
+
+  /* W2 行切 */
+  var x4=x3+64+G;
+  s+=arrow(x3+64,RA+BH/2,x4,RA+BH/2,TP);
+  s+=arrow(x3+64,RB+BH/2,x4,RB+BH/2,TP);
+  s+=rect(x4,RA,BW,BH,TPBG,TP,1.4); s+=txt(x4+10,RA+12,'W2₀',10,TP,700); s+=mono(x4+50,RA+12,'[4H/2, H]',7.5,TP);
+  s+=rect(x4,RB,BW,BH,TPBG,TP,1.4); s+=txt(x4+10,RB+12,'W2₁',10,TP,700); s+=mono(x4+50,RB+12,'[4H/2, H]',7.5,TP);
+  s+=txt(x4+BW/2,RA-4,'行切',9,TP,700,'middle');
+
+  /* 部分和 P */
+  var x5=x4+BW+G;
+  s+=arrow(x4+BW,RA+BH/2,x5,RA+BH/2,TP);
+  s+=arrow(x4+BW,RB+BH/2,x5,RB+BH/2,TP);
+  s+=rect(x5,RA,72,BH,TPBG2,TP,1); s+=txt(x5+8,RA+12,'P₀',10,TP,600); s+=mono(x5+35,RA+12,'[B·S, H]',7.5,TP);
+  s+=rect(x5,RB,72,BH,TPBG2,TP,1); s+=txt(x5+8,RB+12,'P₁',10,TP,600); s+=mono(x5+35,RB+12,'[B·S, H]',7.5,TP);
+  s+=pill(x5+72+4,RA+5,42,'部分和','#FFF3E0','#E89030','#C06820');
+  s+=pill(x5+72+4,RB+5,42,'部分和','#FFF3E0','#E89030','#C06820');
+
+  /* AllReduce */
+  var x6=x5+72+50;
+  var cy=RA+(RB+BH-RA)/2;
+  s+=arrowC([x5+72+46,RA+BH/2, x6-6,RA+BH/2, x6-6,cy-4, x6,cy],TP);
+  s+=arrowC([x5+72+46,RB+BH/2, x6-6,RB+BH/2, x6-6,cy+4, x6,cy],TP);
+  s+=rect(x6,cy-20,90,40,'#FCF4F5',TP,1.6,20);
+  s+=txt(x6+45,cy+2,'AllReduce',10,TP,700,'middle');
+  s+=mono(x6+45,cy+14,'P₀ + P₁',8,TP,'middle');
+
+  /* Y */
+  var x7=x6+90+G;
+  s+=arrow(x6+90,cy,x7,cy,DIM);
+  s+=rect(x7,cy-18,68,36,BG,'#CFD8DD',1.3);
+  s+=txt(x7+34,cy+2,'Y',12,INK,700,'middle');
+  s+=mono(x7+34,cy+14,'[B·S, H]',7.5,DIM,'middle');
+
+  /* ===== 分割线 ===== */
+  var SL=RB+BH+36;
+  s+='<line x1="18" y1="'+SL+'" x2="'+(W-18)+'" y2="'+SL+'" stroke="#DFE6EA" stroke-width="1.2"/>';
+
+  /* ===== 中间：矩阵示意图 ===== */
+  var MY=SL+18;
+  s+=txt(24,MY+12,'矩阵怎么分（TP = 2）',11,INK,700);
+
+  /* 列切小图 */
+  var mx1=200, mw=100, mh=50;
+  s+=rect(mx1,MY,mw,mh,'#E8E3DC','#B0A898',1);
+  s+='<line x1="'+(mx1+mw/2)+'" y1="'+MY+'" x2="'+(mx1+mw/2)+'" y2="'+(MY+mh)+'" stroke="'+TP+'" stroke-width="2.2" stroke-dasharray="4 2"/>';
+  s+=txt(mx1+mw/4,MY+mh/2+4,'卡 0',9,TP,700,'middle');
+  s+=txt(mx1+mw*3/4,MY+mh/2+4,'卡 1',9,TP,700,'middle');
+  s+=txt(mx1+mw/2,MY-5,'W1 [H, 4H]',9,INK,600,'middle');
+  s+=txt(mx1+mw+12,MY+14,'列切（沿输出维）',9.5,TP,700);
+  s+=txt(mx1+mw+12,MY+30,'每片输出是真值',9,'#3E9E6E',400);
+  s+=txt(mx1+mw+12,MY+44,'非线性可以直接做',9,'#3E9E6E',400);
+
+  /* → */
+  s+=txt(mx1+mw+180,MY+mh/2,'vs',11,DIM,400,'middle');
+
+  /* 行切小图 */
+  var mx2=mx1+mw+210;
+  s+=rect(mx2,MY,mw,mh,'#E8E3DC','#B0A898',1);
+  s+='<line x1="'+mx2+'" y1="'+(MY+mh/2)+'" x2="'+(mx2+mw)+'" y2="'+(MY+mh/2)+'" stroke="'+TP+'" stroke-width="2.2" stroke-dasharray="4 2"/>';
+  s+=txt(mx2+mw/2,MY+mh/4+4,'卡 0',9,TP,700,'middle');
+  s+=txt(mx2+mw/2,MY+mh*3/4+4,'卡 1',9,TP,700,'middle');
+  s+=txt(mx2+mw/2,MY-5,'W2 [4H, H]',9,INK,600,'middle');
+  s+=txt(mx2+mw+12,MY+14,'行切（沿输入维）',9.5,TP,700);
+  s+=txt(mx2+mw+12,MY+30,'每片输出是部分和',9,'#C06820',400);
+  s+=txt(mx2+mw+12,MY+44,'需要 AllReduce 加起来',9,'#C06820',400);
+
+  /* ===== 分割线 2 ===== */
+  var SL2=MY+mh+22;
+  s+='<line x1="18" y1="'+SL2+'" x2="'+(W-18)+'" y2="'+SL2+'" stroke="#DFE6EA" stroke-width="1.2"/>';
+
+  /* ===== 下半：错误对照 ===== */
+  var Y2=SL2+28;
+  s+=txt(24,Y2,'对照 · 如果 W1 也按行切',12.5,INK,800);
+  s+=txt(290,Y2,'（GeLU 之前多一次 AllReduce ✗）',10.5,K.warn,700);
+
+  var RA2=Y2+14, RB2=RA2+BH+G;
+
+  /* 输入 X */
+  s+=rect(x0,RA2,72,BH,BG); s+=txt(x0+36,RA2+13,'X',11,INK,700,'middle');
+  s+=rect(x0,RB2,72,BH,BG); s+=txt(x0+36,RB2+13,'X',11,INK,700,'middle');
+
+  s+=arrow(x0+72,RA2+BH/2,x1,RA2+BH/2,DIM);
+  s+=arrow(x0+72,RB2+BH/2,x1,RB2+BH/2,DIM);
+
+  /* W1 行切 */
+  s+=rect(x1,RA2,BW,BH,TPBG,TP,1.4); s+=txt(x1+10,RA2+12,'W1₀',10,TP,700); s+=mono(x1+50,RA2+12,'[H, 4H/2]',7.5,TP);
+  s+=rect(x1,RB2,BW,BH,TPBG,TP,1.4); s+=txt(x1+10,RB2+12,'W1₁',10,TP,700); s+=mono(x1+50,RB2+12,'[H, 4H/2]',7.5,TP);
+  s+=txt(x1+BW/2,RA2-4,'行切',9,TP,700,'middle');
+
+  /* Z 部分和 */
+  s+=arrow(x1+BW,RA2+BH/2,x2,RA2+BH/2,TP);
+  s+=arrow(x1+BW,RB2+BH/2,x2,RB2+BH/2,TP);
+  s+=rect(x2,RA2,BW,BH,TPBG2,TP,1); s+=txt(x2+8,RA2+12,'Z₀',10,TP,600); s+=mono(x2+38,RA2+12,'[B·S, 4H]',7.5,TP);
+  s+=rect(x2,RB2,BW,BH,TPBG2,TP,1); s+=txt(x2+8,RB2+12,'Z₁',10,TP,600); s+=mono(x2+38,RB2+12,'[B·S, 4H]',7.5,TP);
+  s+=pill(x2+BW+4,RA2+5,46,'部分和 ✗','#FFEBEE',K.warn,K.warn);
+  s+=pill(x2+BW+4,RB2+5,46,'部分和 ✗','#FFEBEE',K.warn,K.warn);
+
+  /* 多出来的 AllReduce */
+  var cy2=RA2+(RB2+BH-RA2)/2;
+  s+=arrowC([x2+BW+50,RA2+BH/2, x3-6,RA2+BH/2, x3-6,cy2-4, x3,cy2],K.warn);
+  s+=arrowC([x2+BW+50,RB2+BH/2, x3-6,RB2+BH/2, x3-6,cy2+4, x3,cy2],K.warn);
+  s+=rect(x3,cy2-20,90,40,'#FFEBEE',K.warn,2,20);
+  s+=txt(x3+45,cy2+2,'AllReduce',10,K.warn,700,'middle');
+  s+=mono(x3+45,cy2+14,'额外通信 ✗',8,K.warn,'middle');
+
+  /* GeLU */
+  var gx2=x3+90+G;
+  s+=arrow(x3+90,cy2,gx2,cy2,DIM);
+  s+=rect(gx2,cy2-14,64,BH,'#FFF8F0','#D4A76A',1.2,14); s+=txt(gx2+32,cy2+4,'GeLU',10,'#A07030',700,'middle');
+
+  s+=arrow(gx2+64,cy2,gx2+84,cy2,DIM);
+  s+=txt(gx2+92,cy2+4,'W2 → AllReduce …',10.5,DIM,400);
+
+  /* 对比标注 */
+  s+=txt(gx2+92,cy2+20,'每层两次 AllReduce（贵一倍）',9.5,K.warn,600);
+
+  /* ===== 结论底栏 ===== */
+  var CY=RB2+BH+36;
+  s+=rect(18,CY,W-36,96,'#FFF8F4',INK,1.6,7);
+
+  s+=txt(38,CY+22,'核心原理',12,INK,800);
+  s+=txt(38,CY+42,'列切 → 每卡拿到「一部分神经元的真值」—— GeLU(Z₀) 就是正确结果，不需要先通信。',11,'#3D4B55',400);
+  s+=txt(38,CY+60,'行切 → 每卡算出「完整 H 维上的部分和」—— 最后 AllReduce 一次加起来就行。',11,'#3D4B55',400);
+  s+=txt(38,CY+82,'关键等式：GeLU(a + b) ≠ GeLU(a) + GeLU(b)　→　非线性之前拿到的必须是真值，不能是部分和。',11,TP,700);
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 04B · TP 与 EP 各切在整网的哪里 ===================== */
 function figCut(){
   var m=document.getElementById('fig-cut'); if(!m) return;
@@ -3861,7 +4072,7 @@ function setupRail(){
 /* ===================== 绑定与启动 ===================== */
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
-   ['fig-cut',figCut], ['fig-build',figBuild],
+   ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
