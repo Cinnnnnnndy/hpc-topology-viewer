@@ -355,7 +355,7 @@ var cfg = JSON.parse(JSON.stringify(PRESETS[0].cfg));
 var activePreset = 'default128';
 var sel = null;
 var ui = {
-  view:'dim', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认从嵌套第 1 刀（DP）看起 */
+  view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
@@ -364,9 +364,9 @@ var ui = {
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
+  {id:'chain', name:'整网切分'},
   {id:'story', name:'一个 step · 五幕'},
   {id:'dim', name:'单维切分'},
-  {id:'chain', name:'刀序·切分链'},
   {id:'compose', name:'合成·卡阵'},
   {id:'anatomy', name:'卡内解剖'},
   {id:'solid', name:'映射 · 双链/交集腔'},
@@ -1451,8 +1451,10 @@ function netScene(D, g, box, step){
     var isF = k === sel0;
     for(var li = L-1; li >= 0; li--){
       var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
-      body.push(pane(ww, kOff, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
-        + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
+      /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
+         有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
+         什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
+      body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
       if(IXg){
         IXg.G.nodes.forEach(function(n){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
@@ -1469,11 +1471,12 @@ function netScene(D, g, box, step){
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
           if(!mine || !isF){
             if(comm) return;
-            /* 压得比直觉更狠：46 层沿深度一层层叠上来，单层看着很淡的颜色叠完
-               就是一堵实墙，选中的那一份反而被埋掉。本副本的别的 stage 留一点，
-               别的副本几乎只剩影子——「有东西在那儿」够了，细节归选中的那份。 */
+            /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
+               抢。所以留细描边（形状靠它勾出来）、填充压到近乎无色——46 层沿
+               深度叠上来时，是填充在堆成实墙，描边不会。 */
             body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
-              'fill:'+mix(col, dm?9:4)+';stroke:none;opacity:'+(isF?.22:.07)));
+              'fill:'+mix(col, dm?7:3)+';stroke:'+(dm?col:'var(--pt-bds)')
+              +';stroke-width:.18;opacity:'+(isF?.5:.3)));
             return;
           }
           if(comm){
