@@ -3361,7 +3361,9 @@ document.addEventListener('input', function(ev){
 var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
   if(ui.view !== 'chain') return;
-  var pan = ev.shiftKey || ev.button === 1;
+  /* 2D tab 下拖拽只平移：转台一动就离开了正交机位，正视立刻又变成斜的 3D。
+     要转就先回 3D tab。 */
+  var pan = ev.shiftKey || ev.button === 1 || ui.viewTab !== '3d';
   var cs = 1;
   var svg = $('stage').querySelector('svg');
   if(svg){
