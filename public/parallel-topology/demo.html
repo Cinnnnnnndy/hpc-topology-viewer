@@ -166,7 +166,9 @@
   border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,.14); padding:12px 14px;
 }
 /* 右侧读出卡（FR-3） */
-.pt-detail{top:10px; right:14px; width:304px; max-height:calc(100% - 20px); overflow:auto; font-size:12px}
+/* 从工具条下面起头：top:10px 时它会顶到胶囊那一排底下，把「EP」和「卡维度」
+   这两颗按钮压住——读出卡是次要信息，不该挡住控件。 */
+.pt-detail{top:52px; right:14px; width:290px; max-height:calc(100% - 64px); overflow:auto; font-size:12px}
 .pt-detail h4{margin:0 0 6px; font-family:var(--pt-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--pt-fg3); display:flex; justify-content:space-between; align-items:center; gap:8px}
 .pt-detail .grank{font-family:var(--pt-mono); font-size:21px; font-weight:800}
 .pt-detail .grank small{font-size:10px; font-weight:400; color:var(--pt-fg3); margin-left:6px}
@@ -1587,7 +1589,9 @@ function netScene(D, g, box, step){
         });
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
-          var cTop = P(0.5, cv0 - 0.10, cw0, kc);
+          /* 门牌挂卡**底下**。挂顶上时它会整块盖住斜后方那张卡（转台是俯视，
+             卡的上方正好压着后一排），底边外侧那一圈是空的。 */
+          var cTop = P(0.5, cv1 + 0.13, cw0, kc);
           var cTxt = 'rank ' + gc;
           var meCd = D.moe ? epOf(tc, co.c, dc, D) : null;
           var cSub = 'dp'+dc+' · pp'+pc2+' · tp'+tc + (meCd ? ' · ep'+meCd.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
@@ -1613,21 +1617,25 @@ function netScene(D, g, box, step){
       body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : 3), String(s1), 7, col, 'middle', 'font-weight="800"'));
       if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
     }
+    /* 轴标签一律压到**最下面那一行**卡的底边外侧（rowLast），只有 TP 例外——
+       它标的就是「第几行」，贴在行的侧面才说得通。原来 DP/PP 挂在第 0 行底下，
+       那是阵列中间，标签会盖住下一行的卡。 */
+    var rowLast = (KT - 1) * KD;
     /* DP：横轴。16 个全标会挤成一条，隔几个标一个，首尾一定标 */
     if(KD > 1){
       var dStep = KD > 10 ? 2 : 1;
       for(var da = 0; da < KD; da++){
         if(da % dStep !== 0 && da !== KD-1) continue;
-        axLab(P(0.5, AR + 0.22, wBack, da), 'DP'+da, null, VC.dp, da === co.d);
+        axLab(P(0.5, AR + 0.26, wBack, rowLast + da), 'DP'+da, null, VC.dp, da === co.d);
       }
     }
-    /* TP：竖轴（每个副本被锯成 tp 片，一片一行） */
+    /* TP：竖轴（每个副本被锯成 tp 片，一片一行），贴在每行左侧 */
     if(KT > 1) for(var ta = 0; ta < KT; ta++)
       axLab(P(-0.42, AR*0.5, wFront, ta*KD), 'TP'+ta, null, VC.tp, ta === co.t);
     /* PP：纵深轴。第二行写这一段真正含哪几层——段号本身不说明它有多厚 */
     if(cutPP) for(var pa = 0; pa < D.pp; pa++){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
-      axLab(P(-0.42, AR + 0.30, (sg2[0]+sg2[1])/2, 0), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, pa === co.p);
+      axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, pa === co.p);
     }
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
@@ -3475,16 +3483,28 @@ function renderDetail(D){
     }).join('');
     if(me) chips += '<span class="c'+(ui.axis==='ep'?' hot':'')+'" style="--c:'+VC.ep+'">ep_rank '+me.ep+'</span><span class="c">etp '+me.etp+'</span>';
     el.hidden = false;
+    /* 面板一屏读完：先给「这张卡是谁、拿了哪几层哪几个专家、多大」，
+       推导过程、逐算子形状、反查这些都收进折叠——它们是要坐下来查的，
+       不是扫一眼就要的。原来一口气铺 20 行，从工具条一直盖到画布底。 */
+    var l0d = co.p*D.layersPerStage, l1d = l0d + D.layersPerStage - 1;
+    var expRow = '';
+    if(D.moe && me){
+      var kEd = D.experts/D.ep, e0d = me.ep*kEd;
+      expRow = '<tr><td>专家桶</td><td>E'+e0d+'–E'+(e0d+kEd-1)+'（ep_rank '+me.ep+'）</td></tr>';
+    }
     el.innerHTML = '<h4>坐标读出 · FR-3 <button class="pt-x" data-act="clearsel" title="清除选中">✕</button></h4>'
-      + '<div class="grank">'+g+'<small>global_rank · 常驻不变（§5.3）</small></div>'
+      + '<div class="grank">'+g+'<small>global_rank</small></div>'
       + '<div class="coords">'+chips+'</div>'
+      + '<table><tr><td>层段</td><td>L'+l0d+'–L'+l1d+'（'+D.layersPerStage+' 层 / stage '+co.p+'）</td></tr>'
+      + expRow
+      + '<tr><td>权重</td><td>'+fmtP(paramsPerCard(D,co.p))+' 参数 · '+fmtGB(2*paramsPerCard(D,co.p))+' GB</td></tr></table>'
+      + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
+      + '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--pt-fg3)">推导 · 逐算子形状 · 反查</summary>'
       + '<div class="formula">g = ((pp·DP+dp)·CP+cp)·TP+tp<br>&nbsp;= (('+co.p+'·'+D.dp+'+'+co.d+')·'+D.cp+'+'+co.c+')·'+D.tp+'+'+co.t+' = <b>'+g+'</b><br>'
       + '<span style="opacity:.65">逆向: tp=g%TP · cp=⌊g/TP⌋%CP · dp=⌊g/TP·CP⌋%DP · pp=⌊g/TP·CP·DP⌋（可逆 §07/§10）</span></div>'
       + '<table>'+holdRows(g,D).map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>'
-      + '<div class="mono" style="font-size:10.5px;color:var(--pt-fg2)">参数 '+fmtP(paramsPerCard(D,co.p))+' · 权重 '+fmtGB(2*paramsPerCard(D,co.p))+' GB</div>'
-      + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
-      + '<br><span class="pt-go" data-act="gov" data-v="chainfront" title="正视刀序链：DP 副本×真图架构（decoder-stack 内所有算子的真切分标注）">⤷ 真实整网 rank-deck（正视）</span>'
-      + revHTML(D);
+      + '<span class="pt-go" data-act="gov" data-v="chainfront" title="正视刀序链：DP 副本×真图架构（decoder-stack 内所有算子的真切分标注）">⤷ 真实整网 rank-deck（正视）</span>'
+      + revHTML(D) + '</details>';
   }
   renderRevOut(D);
 }
