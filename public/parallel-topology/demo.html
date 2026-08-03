@@ -1236,9 +1236,14 @@ function netScene(D, g, box, step){
      刀越深，框得越紧：前几刀框住全部复印件（要看清「有几份」），
      TP 那一刀起镜头推进到本卡那一段（要看清算子裂成几片）。
      这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
-  var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : 0;
+  var _bh = 0.09;
+  var selectorDepth = 0;
+  if(cutTP && D.tp>1) selectorDepth += _bh + 0.04;
+  if(cutEP && D.moe && D.ep>1) selectorDepth += _bh + 0.04;
+  if(K > 1) selectorDepth += _bh + 0.04;
+  var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
-  var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0);
+  var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.19:0);
   var vLo = -0.06;
   /* 复印件展开成**方阵**而不是一长排：16 份排成一行，画布只用得到中间一条，
      两边全是空白、每份细得看不清（这正是「查看区域没用满」的成因）。
@@ -1275,6 +1280,46 @@ function netScene(D, g, box, step){
   var topCard = Math.abs(pitch - PI2);
   var cardDist = Math.min(Math.sqrt(pYdist*pYdist + pHdist*pHdist), topCard);
   var pAmt = cardDist < 0.06 ? 0 : cardDist > 0.28 ? 1 : (function(){ var t=(cardDist-0.06)/0.22; return t*t*(3-2*t); })();
+  /* ── 正视图替换：纯前/背视 + 有真图时，画 DP×K 份架构流程图 ── */
+  var dYpi = Math.abs(yaw % Math.PI); dYpi = Math.min(dYpi, Math.PI - dYpi);
+  var isFrontView = pAmt < 0.01 && dYpi < 0.12 && Math.abs(pitch) < 0.12 && IXg;
+  if(isFrontView){
+    var fvBody = [], fvHit = [];
+    var fvPad = 14, fvLabelH = 20;
+    var fvCols = K <= 4 ? K : Math.ceil(Math.sqrt(K));
+    var fvRows = Math.ceil(K / fvCols);
+    var fvCellW = (box.w - fvPad*(fvCols+1)) / fvCols;
+    var fvCellH = (box.h - fvPad*(fvRows+1)) / fvRows;
+    for(var fk=0; fk<K; fk++){
+      var fCol = fk % fvCols, fRow = Math.floor(fk / fvCols);
+      var fCx = box.x + fvPad + fCol*(fvCellW + fvPad);
+      var fCy = box.y + fvPad + fRow*(fvCellH + fvPad);
+      var fSel = fk === sel0;
+      var fRank = rankOf(co.t, co.c, fk, co.p, D);
+      var fGsvg = graphSVG({x:fCx+2, y:fCy+fvLabelH, w:fvCellW-4, h:fvCellH-fvLabelH-4,
+                            clip:'decoder-stack', g:fRank, D:D, label:fSel, tag3d:false,
+                            ghostClu: D.moe?[]:['moe-block']});
+      if(fGsvg){
+        fvBody.push('<g opacity="'+(fSel?1:.22)+'">');
+        fvBody.push('<rect x="'+fCx+'" y="'+fCy+'" width="'+fvCellW+'" height="'+fvCellH+'" rx="5" '
+          +'style="fill:var(--pt-bg);stroke:'+(fSel?VC.dp:'var(--pt-bd)')+';stroke-width:'+(fSel?1.8:.6)+'"/>');
+        var fPl = 'DP'+fk, fPw = fPl.length*5.2+8, fPh = 15;
+        fvBody.push('<rect x="'+(fCx+fvCellW/2-fPw/2)+'" y="'+(fCy+3)+'" width="'+fPw+'" height="'+fPh+'" rx="'+(fPh/2)+'" '
+          +'style="fill:'+(fSel?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(fSel?1.4:.6)+'"/>');
+        fvBody.push(txt(fCx+fvCellW/2, fCy+3+fPh/2+3.5, fPl, 8, fSel?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+        fvBody.push(fGsvg);
+        fvBody.push('</g>');
+        fvHit.push('<rect x="'+fCx+'" y="'+fCy+'" width="'+fvCellW+'" height="'+fvCellH+'" '
+          +'style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="d" data-i="'+fk+'"/>');
+      }
+    }
+    var fvCID = 'scClip';
+    var fvWrapped = '<defs><clipPath id="'+fvCID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+      + '<g clip-path="url(#'+fvCID+')">' + fvBody.join('') + '</g>';
+    return {body:fvWrapped, hit:'<g clip-path="url(#'+fvCID+')">' + fvHit.join('') + '</g>',
+            nodes:0, sawn:0, whole:0, step:step, steps:ST, zoom:false,
+            cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
+  }
   var focalD = fit.zr * 2.5;
   var zCenter = fit.zc;
   function P(u,v,w,off){
@@ -1417,17 +1462,11 @@ function netScene(D, g, box, step){
     railBand(epOff, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ var e0=b9*perB; return 'E'+e0+'–'+(e0+perB-1); }, 'e');
   }
-  /* DP 副本标签（pill 风格） */
-  if(K > 1 && K <= 64){
-    for(var dk=0; dk<K; dk++){
-      var dpPt = P(.5,AR+.10,0,dk);
-      var isDpS = dk===sel0;
-      var dpL = 'DP'+dk;
-      var dpW = dpL.length*4.2+6, dpH = 11;
-      body.push('<rect x="'+(dpPt[0]-dpW/2)+'" y="'+(dpPt[1]-dpH/2+1)+'" width="'+dpW+'" height="'+dpH+'" rx="'+dpH/2+'" '
-        +'style="fill:'+(isDpS?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(isDpS?1.4:.6)+'"/>');
-      body.push(txt(dpPt[0], dpPt[1]+3.5, dpL, 6.8, isDpS?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
-    }
+  if(K > 1){
+    var dpOff = 0;
+    if(cutTP && D.tp>1) dpOff += bandH + 0.04;
+    if(cutEP && D.moe && D.ep>1) dpOff += bandH + 0.04;
+    railBand(dpOff, K, sel0, VC.dp, 'hxDP', function(b9){ return 'DP'+b9; }, 'd');
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
@@ -1451,6 +1490,8 @@ function netScene(D, g, box, step){
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
     + '<pattern id="hxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>'
 ;
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
@@ -3015,8 +3056,7 @@ function renderDetail(D){
       + '<table>'+holdRows(g,D).map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>'
       + '<div class="mono" style="font-size:10.5px;color:var(--pt-fg2)">参数 '+fmtP(paramsPerCard(D,co.p))+' · 权重 '+fmtGB(2*paramsPerCard(D,co.p))+' GB</div>'
       + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
-      + (D.world===128&&D.tp===2&&D.pp===4&&D.moe&&D.ep===8
-          ? '<br><a class="pt-go" href="../pto-ds/patterns/model-parallel-rank-deck/pattern.html" target="_blank" title="同构 128 卡配置：真实 openPangu 整网装进 128 个卡容器（嵌套：组框⊃卡⊃层⊃算子⊃片），载荷=交集片。两边 rank 枚举顺序不同，编号不一一对应。">⤷ 真实整网 rank-deck（128 卡 · 交集载荷）↗</a>' : '')
+      + '<br><span class="pt-go" data-act="gov" data-v="chainfront" title="正视刀序链：DP 副本×真图架构（decoder-stack 内所有算子的真切分标注）">⤷ 真实整网 rank-deck（正视）</span>'
       + revHTML(D);
   }
   renderRevOut(D);
@@ -3425,7 +3465,12 @@ document.addEventListener('click', function(ev){
     if(f){ Object.keys(f.patch).forEach(function(k){ cfg[k]=f.patch[k]; }); activePreset=null; render(); }
   }
   else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
-  else if(act==='gov'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
+  else if(act==='gov'){
+    var gv = b.getAttribute('data-v');
+    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0; ui.pitch3=0; ui.knife=99; }
+    else{ ui.view=gv; }
+    stopAnim(); render();
+  }
   else if(act==='layer'){
     var L = b.getAttribute('data-l');
     if(!AVAIL[ui.view][L]) return;
