@@ -1326,8 +1326,8 @@ function netScene(D, g, box, step){
       body.push(quad([P(-0.06,-0.04,ww-GAPW*0.5,off0), P(1.06,-0.04,ww-GAPW*0.5,off0),
                       P(1.06,AR+0.04,ww-GAPW*0.5,off0), P(-0.06,AR+0.04,ww-GAPW*0.5,off0)],
         'fill:'+mix(VC.pp,mine?26:12)+';stroke:'+VC.pp+';stroke-width:'+(mine?1.1:.6)));
-    body.push(pane(ww, off0, 'fill:'+mix('var(--pt-fg)', mine?8:4)
-      + ';stroke:var(--pt-bd);stroke-width:'+(mine?.6:.3)));
+    body.push(pane(ww, off0, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
+      + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
     /* 段可点：2D 段带撤掉之后，换 stage 的入口要留在这个场景里。
        但整块段面在投影上是**完全重叠**的——拿它当命中区，最前面那片会吃掉所有点击。
        改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
@@ -2476,15 +2476,8 @@ function renderChain(D){
   parts.push('<g pointer-events="none">'+scene.body+'</g>');
   sceneHit = scene.hit;
   /* 虚线框移除——全画布 3D */
-  parts.push(txt(SCB.x, SCB.y-20, '整网 '+D.layers+' 层 · '+fmt(D.world)+' 卡 · 拖动可转动'+scene.note, 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-  /* 走到这一刀，本卡还持有整网的几分之一 —— 这条读数是 A3 的现场证据：
-     ①DP 那一刀之后分母还是 1，一点没减；③CP 也一样（它切的是输入）。 */
   var cur9 = ST9[KS], den9 = holdDenom(D, KS), denPrev = holdDenom(D, Math.max(0, KS-1));
-  var kc9 = cur9.k==='net' ? 'var(--pt-fg)' : VC[cur9.k];
-  parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-20, '第 '+KS+' 刀 · '+cur9.n+(cur9.k==='net'?'':' ×'+{dp:D.dp,pp:D.pp,cp:D.cp,tp:D.tp,ep:D.ep}[cur9.k]), 10, kc9, 'end', 'font-weight="800"'));
-  parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-8, esc(cur9.s), 7.6, 'var(--pt-fg3)', 'end'));
   var flat9 = den9===denPrev && KS>0;
-  parts.push(txt(SCB.x, SCB.y-8, '持有 1/'+fmt(den9)+(flat9 ? '（不变）' : '')+' · '+scene.nodes+' 算子', 7.6, flat9 ? VC[cur9.k] : 'var(--pt-fg2)', 'start', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
