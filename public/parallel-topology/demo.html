@@ -1314,34 +1314,7 @@ function netScene(D, g, box, step){
     var gh = '';
     gh += box3(0,0,1,AR, 0,TOTW, k,
       mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
-    /* 非选中副本也带 TP/EP 色条——前侧轴，只画色块 */
-    if(cutTP && D.tp>1){
-      var sgmK = segW(cutPP ? co.p : 0);
-      var fwK = sgmK[0] - 0.06;
-      for(var bt=0; bt<D.tp; bt++){
-        var ua9 = bt/D.tp, ub9 = (bt+1)/D.tp - Math.min(0.02, 0.35/D.tp);
-        gh += quad([P(ua9,AR,fwK,k), P(ub9,AR,fwK,k),
-                    P(ub9,AR,fwK+0.06,k), P(ua9,AR,fwK+0.06,k)],
-          'fill:'+(bt===co.t?mix(VC.tp,55):'url(#hxTP)')+';stroke:'+VC.tp+';stroke-width:'+(bt===co.t?1:.35));
-      }
-    }
-    if(cutEP && D.moe && D.ep>1){
-      var sgmE = segW(cutPP ? co.p : 0);
-      var fwE = sgmE[0] - 0.06 - (cutTP?0.08:0);
-      for(var be=0; be<D.ep; be++){
-        var ua9 = be/D.ep, ub9 = (be+1)/D.ep - Math.min(0.02, 0.35/D.ep);
-        var mineE = me ? be===me.ep : false;
-        gh += quad([P(ua9,AR,fwE,k), P(ub9,AR,fwE,k),
-                    P(ub9,AR,fwE+0.06,k), P(ua9,AR,fwE+0.06,k)],
-          'fill:'+(mineE?mix(VC.ep,55):'url(#hxEP)')+';stroke:'+VC.ep+';stroke-width:'+(mineE?1:.35));
-      }
-    }
     body.push('<g opacity="'+a.toFixed(2)+'">' + gh + '</g>');
-    if(ui.spread && K <= 64){
-      var cpPt = P(.5,AR+.10,0,k);
-      body.push(txt(cpPt[0], cpPt[1]+3, String(k), 6, k===sel0?VC.dp:'var(--pt-fg3)', 'middle',
-        'font-weight="'+(k===sel0?'800':'500')+'" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"'));
-    }
     hit.push('<g class="cgrow">'+pane(0, k, 'fill:transparent;cursor:pointer',
       'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
   }
@@ -1410,8 +1383,8 @@ function netScene(D, g, box, step){
       var pL9 = 'PP'+ps9;
       var pw9 = pL9.length*4.2+6, ph9 = 11;
       body.push('<rect x="'+(rc9[0]-pw9/2)+'" y="'+(rc9[1]-ph9/2+1)+'" width="'+pw9+'" height="'+ph9+'" rx="'+ph9/2+'" '
-        +'style="fill:'+(isSel9?mix(VC.pp,50):'var(--pt-bg)')+';stroke:'+VC.pp+';stroke-width:'+(isSel9?1.2:.6)+'"/>');
-      body.push(txt(rc9[0], rc9[1]+3.5, pL9, 6.8, isSel9?VC.pp:'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+        +'style="fill:'+(isSel9?VC.pp:'var(--pt-bg)')+';stroke:'+VC.pp+';stroke-width:'+(isSel9?1.4:.6)+'"/>');
+      body.push(txt(rc9[0], rc9[1]+3.5, pL9, 6.8, isSel9?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       hit.push('<g class="cgrow">'+quad(ridge, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="p" data-i="'+ps9+'"')+'</g>');
     }
@@ -1430,8 +1403,8 @@ function netScene(D, g, box, step){
         var lbT = lab2(b9);
         var pw = lbT.length*4.2+6, ph = 11;
         body.push('<rect x="'+(cc9[0]-pw/2)+'" y="'+(cc9[1]-ph/2+1)+'" width="'+pw+'" height="'+ph+'" rx="'+ph/2+'" '
-          +'style="fill:'+(mineB?mix(cc,50):'var(--pt-bg)')+';stroke:'+cc+';stroke-width:'+(mineB?1.2:.6)+'"/>');
-        body.push(txt(cc9[0], cc9[1]+3.5, lbT, 6.8, mineB?cc:'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+          +'style="fill:'+(mineB?cc:'var(--pt-bg)')+';stroke:'+cc+';stroke-width:'+(mineB?1.4:.6)+'"/>');
+        body.push(txt(cc9[0], cc9[1]+3.5, lbT, 6.8, mineB?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       }
       hit.push('<g class="cgrow">'+quad(cell, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
@@ -1443,6 +1416,18 @@ function netScene(D, g, box, step){
     var epOff = cutTP?bandH+0.02:0;
     railBand(epOff, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ var e0=b9*perB; return 'E'+e0+'–'+(e0+perB-1); }, 'e');
+  }
+  /* DP 副本标签（pill 风格） */
+  if(K > 1 && K <= 64){
+    for(var dk=0; dk<K; dk++){
+      var dpPt = P(.5,AR+.10,0,dk);
+      var isDpS = dk===sel0;
+      var dpL = 'DP'+dk;
+      var dpW = dpL.length*4.2+6, dpH = 11;
+      body.push('<rect x="'+(dpPt[0]-dpW/2)+'" y="'+(dpPt[1]-dpH/2+1)+'" width="'+dpW+'" height="'+dpH+'" rx="'+dpH/2+'" '
+        +'style="fill:'+(isDpS?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(isDpS?1.4:.6)+'"/>');
+      body.push(txt(dpPt[0], dpPt[1]+3.5, dpL, 6.8, isDpS?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+    }
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
