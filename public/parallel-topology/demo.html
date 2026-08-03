@@ -1303,9 +1303,13 @@ function netScene(D, g, box, step){
       var fCy = fvYOff;
       var fSel = fk === sel0;
       var fRank = rankOf(co.t, co.c, fk, co.p, D);
+      var fEpMe = fvHasEP ? epOf(co.t, co.c, fk, D) : null;
       var fGsvg = graphSVG({x:fCx+2, y:fCy+fvLabelH, w:fvCellW-4, h:fvCellH-fvLabelH-4,
                             clip:'decoder-stack', g:fRank, D:D, label:fSel, tag3d:false,
-                            ghostClu: D.moe?[]:['moe-block']});
+                            ghostClu: D.moe?[]:['moe-block'],
+                            cuts:{tp:fvHasTP?{count:D.tp, mine:co.t}:null,
+                                  ep:fvHasEP?{count:D.ep, mine:fEpMe?fEpMe.ep:0}:null,
+                                  hxTP:'fvHxTP', hxEP:'fvHxEP'}});
       if(fGsvg){
         fvBody.push('<g opacity="'+(fSel?1:.22)+'">');
         fvBody.push('<rect x="'+fCx+'" y="'+fCy+'" width="'+fvCellW+'" height="'+fvCellH+'" rx="5" '
@@ -1339,7 +1343,12 @@ function netScene(D, g, box, step){
       }
     }
     var fvCID = 'scClip';
-    var fvWrapped = '<defs><clipPath id="'+fvCID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+    var fvHX = (fvHasTP||fvHasEP) ?
+      '<pattern id="fvHxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+      +'<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
+      +'<pattern id="fvHxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
+      +'<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>' : '';
+    var fvWrapped = '<defs>'+fvHX+'<clipPath id="'+fvCID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
       + '<g clip-path="url(#'+fvCID+')">' + fvBody.join('') + '</g>';
     return {body:fvWrapped, hit:'<g clip-path="url(#'+fvCID+')">' + fvHit.join('') + '</g>',
             nodes:0, sawn:0, whole:0, step:step, steps:ST, zoom:false,
@@ -2036,6 +2045,24 @@ function graphSVG(o){
         +(x+w+E3x).toFixed(1)+','+(y+h-E3y).toFixed(1)+' '+(x+w).toFixed(1)+','+(y+h).toFixed(1)
         +'" style="fill:'+mix('var(--pt-fg)',26)+';fill-opacity:'+op+';stroke:none"/>');
     }
+    var didCut = false;
+    if(!gh && o.cuts && dim){
+      var cutCfg = null, hxRef = '';
+      if((dim==='tp'||dim==='sp') && o.cuts.tp){ cutCfg = o.cuts.tp; hxRef = o.cuts.hxTP||'hxTP'; }
+      else if(dim==='ep' && o.cuts.ep){ cutCfg = o.cuts.ep; hxRef = o.cuts.hxEP||'hxEP'; }
+      if(cutCfg && cutCfg.count > 1 && w/cutCfg.count >= 1.5){
+        var kerf = w*0.15/cutCfg.count;
+        for(var si=0; si<cutCfg.count; si++){
+          var sx = x + w*si/cutCfg.count, sw = w/cutCfg.count - kerf;
+          var isMine = si===cutCfg.mine;
+          out.push('<rect x="'+sx.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+sw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1" '
+            +'style="fill:'+(isMine?mix(col,55):'url(#'+hxRef+')')+';fill-opacity:'+op
+            +';stroke:'+col+';stroke-width:'+(isMine?.8:.3)+';stroke-opacity:'+op+'"/>');
+        }
+        didCut = true;
+      }
+    }
+    if(!didCut)
     out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
       +'" rx="1.5" style="fill:'+mix(col, dim?46:16)+';fill-opacity:'+op+';stroke:'+(dim?col:'var(--pt-bds)')
       +';stroke-width:'+(dim?.9:.5)+';stroke-opacity:'+op+'"/>');
