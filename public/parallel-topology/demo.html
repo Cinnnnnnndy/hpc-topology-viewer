@@ -64,7 +64,7 @@
   background:transparent; color:var(--pt-fg2);
 }
 .pt-seg button:hover{color:var(--pt-fg)}
-.pt-seg button.is-on{background:var(--pt-fg); color:var(--pt-bg)}
+.pt-seg button.is-on{background:var(--c, var(--pt-fg)); color:var(--pt-bg)}
 .pt-chips{display:inline-flex; gap:5px; flex-wrap:wrap; align-items:center}
 .pt-chip{
   font-family:var(--pt-mono); font-size:11px; padding:3px 10px; border-radius:999px;
@@ -86,8 +86,8 @@
 .pt-stage{position:absolute; inset:0; padding:0}
 .pt-stage svg{width:100%; height:100%; display:block}
 .pt-stagebar{
-  position:absolute; top:10px; left:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
-  max-width:min(64%, 720px);
+  position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+  justify-content:flex-end; max-width:min(72%, 780px);
 }
 .pb{
   min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
@@ -1275,12 +1275,7 @@ function netScene(D, g, box, step){
   var ox = box.x + (box.w - (x1-x0)*s)/2 - x0*s + ui.panX3;
   var oy = box.y + (box.h - (y1-y0)*s)/2 - y0*s + ui.panY3;
   var PI2 = Math.PI/2;
-  var pYmod = ((yaw % PI2) + PI2) % PI2;
-  var pYdist = Math.min(pYmod, PI2 - pYmod);
-  var pHdist = Math.min(Math.abs(pitch), Math.abs(pitch + PI2));
-  var topCard = Math.abs(pitch - PI2);
-  var cardDist = Math.min(Math.sqrt(pYdist*pYdist + pHdist*pHdist), topCard);
-  var pAmt = cardDist < 0.20 ? 0 : cardDist > 0.36 ? 1 : (function(){ var t=(cardDist-0.20)/0.16; return t*t*(3-2*t); })();
+  var pAmt = ui.viewTab === '3d' ? 1 : 0;
   /* ── 正视图：不再替换为平铺格子，统一用 3D 链视图 + 下方选择器轴 ── */
   var isFrontView = false;
   if(isFrontView){
@@ -2581,20 +2576,22 @@ function renderChain(D){
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
   /* ── 工具条：切分开关（叠加） + 视角 tab（互斥） ── */
-  var kBtns = '';
-  if(D.dp>1) kBtns += '<button class="pb'+(ui.kDP?' is-on':'')+'" data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
-  kBtns += '<button class="pb'+(ui.kPP?' is-on':'')+'" data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
-  if(D.tp>1) kBtns += '<button class="pb'+(ui.kTP?' is-on':'')+'" data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片">TP</button>';
-  if(D.moe&&D.ep>1) kBtns += '<button class="pb'+(ui.kEP?' is-on':'')+'" data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
-  var vBtns = ''
-    + '<button class="pb'+(ui.viewTab==='3d'?' is-on':'')+'" data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
-    + '<button class="pb'+(ui.viewTab==='front'?' is-on':'')+'" data-act="viewtab" data-tab="front" data-yaw="0.12" data-pitch="0.08" title="正视图">正视</button>'
-    + '<button class="pb'+(ui.viewTab==='side'?' is-on':'')+'" data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
-    + '<button class="pb'+(ui.viewTab==='top'?' is-on':'')+'" data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>';
-  $('stagebar').innerHTML = '<span class="pt-cap">切分</span>' + kBtns
-    + '<span style="border-left:1px solid var(--pt-bd);height:18px;margin:0 6px;display:inline-block;vertical-align:middle"></span>'
-    + '<span class="pt-cap">视角</span>' + vBtns
-    + '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>';
+  var kBtns = '<span class="pt-seg">';
+  if(D.dp>1) kBtns += '<button'+(ui.kDP?' class="is-on"':'')+' data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
+  kBtns += '<button'+(ui.kPP?' class="is-on"':'')+' data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
+  if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片">TP</button>';
+  if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
+  kBtns += '</span>';
+  var vBtns = '<span class="pt-seg">'
+    + '<button'+(ui.viewTab==='3d'?' class="is-on"':'')+' data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
+    + '<button'+(ui.viewTab==='front'?' class="is-on"':'')+' data-act="viewtab" data-tab="front" data-yaw="0" data-pitch="0" title="正视图">正视</button>'
+    + '<button'+(ui.viewTab==='side'?' class="is-on"':'')+' data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
+    + '<button'+(ui.viewTab==='top'?' class="is-on"':'')+' data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>'
+    + '</span>';
+  /* 读数排在控制组前面，两组胶囊才贴得住右边缘（换行时先掉的也是读数，不是控制） */
+  $('stagebar').innerHTML =
+    '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>'
+    + kBtns + vBtns;
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
      纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
   $('stageNote').hidden = true; $('detach').hidden = true;
@@ -3188,21 +3185,13 @@ function renderBar(D){
   $('viewSeg').innerHTML = VIEWS.map(function(v){
     return '<button data-act="view" data-v="'+v.id+'" class="'+(ui.view===v.id?'is-on':'')+'">'+v.name+'</button>';
   }).join('');
-  var chips = '<span class="pt-chip is-btn" data-act="drawer" data-d="cfg" style="cursor:pointer">'
-    + ['tp','cp','pp'].map(function(k){ return '<b style="color:'+VC[k]+'">'+DIMN[k]+cfg[k]+'</b>'; }).join('·')
-    + '·<b style="color:'+VC.dp+'">DP'+(D.dpOk?D.dp:'?')+'</b>'
-    + (D.moe?'·<b style="color:'+VC.ep+'">EP'+cfg.ep+'</b>':'')
-    + ' = '+fmt(D.world)+' 卡</span>';
-  if(activePreset){
-    var p = PRESETS.filter(function(x){return x.id===activePreset;})[0];
-    if(p) chips += '<span class="pt-chip">'+esc(p.name)+'</span>';
-  }
+  /* 配置摘要与预设名不再占顶栏——同样的数字「配置」抽屉里就有，顶栏只留必须当场看见的 */
+  var chips = '';
   if(D.errors.length) chips += '<span class="pt-chip err is-btn" data-act="drawer" data-d="cfg" style="cursor:pointer">✕ '+D.errors.length+' 个约束violated——点开修</span>';
   if(sel!==null && D.ok && sel<D.world) chips += '<span class="pt-chip">选中 <b>r'+sel+'</b> <span data-act="clearsel" style="cursor:pointer;opacity:.6">✕</span></span>';
   $('barChips').innerHTML = chips;
   $('barActs').innerHTML =
     '<button data-act="drawer" data-d="cfg" class="'+(ui.drawer==='cfg'?'is-on':'')+'">配置</button>'
-    + '<button data-act="drawer" data-d="acc" class="'+(ui.drawer==='acc'?'is-on':'')+'">验收 A1–A8</button>'
     + '<button data-act="theme" title="明暗主题">◐</button>';
 }
 function renderFoot(D){
@@ -3546,17 +3535,9 @@ document.addEventListener('click', function(ev){
   else if(act==='viewtab'){
     ui.viewTab = b.getAttribute('data-tab');
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
-    if(!isFinite(ty) || !isFinite(tp)) return;
-    var sy = ui.yaw3, sp = ui.pitch3, t0 = performance.now(), dur = 420;
-    function ease2(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-    (function tick(now){
-      var t = Math.min(1, (now - t0) / dur), e = ease2(t);
-      ui.yaw3 = sy + (ty - sy) * e;
-      ui.pitch3 = sp + (tp - sp) * e;
-      var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
-      if(t < 1) requestAnimationFrame(tick);
-      else render();
-    })(t0);
+    /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
+    if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
+    render();
   }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
   else if(act==='stagestep'){
