@@ -1290,24 +1290,25 @@ function netScene(D, g, box, step){
       gh += box3(0,0,1,AR, 0,TOTW, k,
         mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
     }
-    /* 非选中副本也带 TP/EP 色条——只画色块，不加文字和点击区 */
+    /* 非选中副本也带 TP/EP 色条——前侧轴，只画色块 */
     if(cutTP && D.tp>1){
       var sgmK = segW(cutPP ? co.p : 0);
+      var fwK = sgmK[0] - 0.06;
       for(var bt=0; bt<D.tp; bt++){
         var ua9 = bt/D.tp, ub9 = (bt+1)/D.tp - Math.min(0.02, 0.35/D.tp);
-        gh += quad([P(ua9,AR+0.30,sgmK[0],k), P(ub9,AR+0.30,sgmK[0],k),
-                    P(ub9,AR+0.30,sgmK[1],k), P(ua9,AR+0.30,sgmK[1],k)],
+        gh += quad([P(ua9,AR,fwK,k), P(ub9,AR,fwK,k),
+                    P(ub9,AR,fwK+0.06,k), P(ua9,AR,fwK+0.06,k)],
           'fill:'+(bt===co.t?mix(VC.tp,55):'url(#hxTP)')+';stroke:'+VC.tp+';stroke-width:'+(bt===co.t?1:.35));
       }
     }
     if(cutEP && D.moe && D.ep>1){
       var sgmE = segW(cutPP ? co.p : 0);
-      var rvE = AR+0.30+(cutTP?0.19:0);
+      var fwE = sgmE[0] - 0.06 - (cutTP?0.08:0);
       for(var be=0; be<D.ep; be++){
         var ua9 = be/D.ep, ub9 = (be+1)/D.ep - Math.min(0.02, 0.35/D.ep);
         var mineE = me ? be===me.ep : false;
-        gh += quad([P(ua9,rvE,sgmE[0],k), P(ub9,rvE,sgmE[0],k),
-                    P(ub9,rvE,sgmE[1],k), P(ua9,rvE,sgmE[1],k)],
+        gh += quad([P(ua9,AR,fwE,k), P(ub9,AR,fwE,k),
+                    P(ub9,AR,fwE+0.06,k), P(ua9,AR,fwE+0.06,k)],
           'fill:'+(mineE?mix(VC.ep,55):'url(#hxEP)')+';stroke:'+VC.ep+';stroke-width:'+(mineE?1:.35));
       }
     }
@@ -1333,11 +1334,12 @@ function netScene(D, g, box, step){
        改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
     if(cutPP && li%lps===0){
       var st9 = stOf(li), sgw = segW(st9);
-      var rv = AR + 0.13;                          /* 放在 deck 下方：上方会被浮动状态条盖住，点不到 */
-      var ridge = [P(0,rv,sgw[0],off0), P(1,rv,sgw[0],off0), P(1,rv,sgw[1],off0), P(0,rv,sgw[1],off0)];
+      /* PP 段选择放在左侧轴——沿深度排列，类似 y 轴刻度 */
+      var lu = -0.08;
+      var ridge = [P(lu,AR,sgw[0],off0), P(0,AR,sgw[0],off0), P(0,AR,sgw[1],off0), P(lu,AR,sgw[1],off0)];
       body.push(quad(ridge, 'fill:'+mix(VC.pp, st9===co.p?42:12)+';stroke:'+VC.pp+';stroke-width:'+(st9===co.p?1:.4)));
-      var rc9 = P(.5,rv,(sgw[0]+sgw[1])/2,off0);
-      body.push(txt(rc9[0], rc9[1]+2, 'stage'+st9, 6.6, st9===co.p?VC.pp:'var(--pt-fg3)', 'middle',
+      var rc9 = P(lu/2, AR, (sgw[0]+sgw[1])/2, off0);
+      body.push(txt(rc9[0], rc9[1]+3, 's'+st9, 6.4, st9===co.p?VC.pp:'var(--pt-fg3)', 'middle',
         st9===co.p?'font-weight="800"':''));
       hit.push('<g class="cgrow">'+quad(ridge, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="p" data-i="'+st9+'"')+'</g>');
@@ -1385,24 +1387,26 @@ function netScene(D, g, box, step){
   /* ── 基座带二：TP 的片。刀口在算子内部，肉眼要在**每个算子里**找刀痕太费劲，
         所以另给一条尺：tp 格，本卡那格实心、别的打斜纹，点一格换卡。 ── */
   var sgm = segW(cutPP ? co.p : 0);
-  function railBand(rv, n, mineI, cc, hxid, lab2, key){
+  /* TP/EP 选择放在前侧轴——沿 u 轴排列，类似 x 轴刻度 */
+  function railBand(fwOff, n, mineI, cc, hxid, lab2, key){
+    var fw = sgm[0] - 0.06 - fwOff;
     for(var b9=0; b9<n; b9++){
       var ua = b9/n, ub = (b9+1)/n - Math.min(0.02, 0.35/n);
-      var cell = [P(ua,rv,sgm[0],off0), P(ub,rv,sgm[0],off0), P(ub,rv,sgm[1],off0), P(ua,rv,sgm[1],off0)];
       var mineB = b9===mineI;
+      var cell = [P(ua,AR,fw,off0), P(ub,AR,fw,off0), P(ub,AR,fw+0.06,off0), P(ua,AR,fw+0.06,off0)];
       body.push(quad(cell, 'fill:'+(mineB?mix(cc,55):'url(#'+hxid+')')+';stroke:'+cc+';stroke-width:'+(mineB?1:.35)));
       if(n<=16){
-        var cc9 = P((ua+ub)/2, rv, (sgm[0]+sgm[1])/2, off0);
+        var cc9 = P((ua+ub)/2, AR, fw+0.03, off0);
         body.push(txt(cc9[0], cc9[1]+2, lab2(b9), 6.4, mineB?cc:'var(--pt-fg3)', 'middle', mineB?'font-weight="800"':''));
       }
       hit.push('<g class="cgrow">'+quad(cell, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
     }
   }
-  if(cutTP && D.tp>1) railBand(AR+0.30, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return '片'+b9; }, 't');
+  if(cutTP && D.tp>1) railBand(0, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return '片'+b9; }, 't');
   if(cutEP && D.moe && D.ep>1){
     var perB = Math.max(1, Math.round(D.experts/D.ep));
-    railBand(AR+0.30+(cutTP?0.19:0), D.ep, me?me.ep:0, VC.ep, 'hxEP',
+    railBand(cutTP?0.08:0, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ return '桶'+b9+'·E'+(b9*perB)+'–E'+((b9+1)*perB-1); }, 'e');
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
