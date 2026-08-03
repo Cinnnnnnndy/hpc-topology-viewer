@@ -1306,10 +1306,9 @@ function netScene(D, g, box, step){
   var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
   var vLo = -0.06;
-  /* 复印件展开成**方阵**而不是一长排：16 份排成一行，画布只用得到中间一条，
-     两边全是空白、每份细得看不清（这正是「查看区域没用满」的成因）。
-     列数不猜——转台有 yaw/pitch 两重错切，纸上推的公式对不上，
-     直接把 1..K 每种列数都量一遍，取**放得最大**的那个。K 最多几十，量得起。 */
+  /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
+     结果 16 份被折成 2×8——行和列都不代表任何东西，读者却会当成两个维度去读。
+     一排就是一排：DP 只有一根轴。 */
   var ROWV = (vHi - vLo) + 0.30;
   function measure(cols){
     var rows = Math.ceil(K/cols), pr;
@@ -1324,15 +1323,12 @@ function netScene(D, g, box, step){
     var bx0 = Math.min.apply(null,X), bx1 = Math.max.apply(null,X);
     var by0 = Math.min.apply(null,Y), by1 = Math.max.apply(null,Y);
     var bz0 = Math.min.apply(null,Z), bz1 = Math.max.apply(null,Z);
-    return {s: Math.min(box.w/Math.max(.001,bx1-bx0), box.h/Math.max(.001,by1-by0)),
+    /* 留 8% 边距：PP/TP/EP 那几条选择器挂在 DP0 左边和下边，不在这个包围盒里
+       （盒子只量卡体），贴边缩放会把它们直接裁到画布外。 */
+    return {s: Math.min(box.w*0.92/Math.max(.001,bx1-bx0), box.h*0.92/Math.max(.001,by1-by0)),
             x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
-  var COLS = K, fit = measure(K);
-  for(var cc = 1; cc < K; cc++){
-    var mf = measure(cc);
-    if(mf.s > fit.s){ fit = mf; COLS = cc; }
-  }
-  var ROWS = Math.ceil(K/COLS);
+  var COLS = K, fit = measure(K), ROWS = 1;
   function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
   var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s * ui.zoom3, i, j, k;
@@ -1413,7 +1409,9 @@ function netScene(D, g, box, step){
             nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
             cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
   }
-  var focalD = fit.zr * 6;
+  /* 焦距跟着副本数走。16 份摊成一排后 u 轴跨度很大，而 u 在 yaw 下也贡献深度，
+     短焦会把首尾两份的远近差放大成一条甩出画布的斜带。份数越多越趋近正交。 */
+  var focalD = fit.zr * (6 + Math.max(0, K - 2) * 1.6);
   var zCenter = fit.zc;
   function P(u,v,w,off){
     var p = turn3(u+cx(off), v+cy(off), w, yaw, pitch);
@@ -1460,7 +1458,7 @@ function netScene(D, g, box, step){
       if(!(lowDetail && !isF && li !== 0 && li !== L-1))
         body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
       if(IXg){
-        IXg.G.nodes.forEach(function(n){
+        IXg.G.nodes.forEach(function(n, ni){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = (n.y - n.height/2 - root.y)/GW, v1 = (n.y + n.height/2 - root.y)/GW;
@@ -1475,6 +1473,11 @@ function netScene(D, g, box, step){
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
           if(!mine || !isF){
             if(comm || lowDetail) return;
+            /* 弱化的那批占了全场 92% 的图元（实测 13104 / 14172），也就是卡的
+               全部来源。按节点下标抽稀到 1/3——取的是固定下标，所以每层每份
+               抽到的是同一批，转起来不会闪；层里算子本来沿 DAG 铺开，抽掉三分
+               之二轮廓照样认得出。 */
+            if(ni % 3 !== 0) return;
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
                抢。所以留细描边（形状靠它勾出来）、填充压到近乎无色——46 层沿
                深度叠上来时，是填充在堆成实墙，描边不会。 */
