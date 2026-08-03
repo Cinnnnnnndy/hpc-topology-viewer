@@ -16,6 +16,19 @@
      真图**没有 shape**，所以字节仍由配置算——算子行的宽度按类别权重，不冒充字节。 -->
 <script src="../vendor/model-graphviz/graph.js"></script>
 <script src="../vendor/net-sharding/pattern.js"></script>
+<!-- 正视/侧视不自己画：直接挂 pto-design-system 的 model-architecture 系列。
+     侧视 = right view（46 层沿层深 + PP Stage 分段），正视 = front view（一层的算子
+     DAG）。切分链画的本来就是同一个对象，那边画得准，所以是复用不是重画。
+     依赖必须按 model-graphviz → 3d-deck → training-sidecar 的顺序加载。 -->
+<link rel="stylesheet" href="../vendor/pto-tokens/foundation.css">
+<link rel="stylesheet" href="../vendor/pto-tokens/semantic.css">
+<link rel="stylesheet" href="../vendor/pto-tokens/components.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+<link rel="stylesheet" href="../vendor/model-architecture-3d-deck/pattern.css">
+<link rel="stylesheet" href="../vendor/model-architecture-training-sidecar/pattern.css">
+<script src="../vendor/model-graphviz/pattern.js"></script>
+<script src="../vendor/model-architecture-3d-deck/pattern.js"></script>
+<script src="../vendor/model-architecture-training-sidecar/pattern.js"></script>
 <style>
 /* ════════════════════════════════════════════════════════════════════
    parallel-topology demo —— PRD 的应用形态呈现（参照逻辑魔方 pattern 的壳）。
@@ -85,6 +98,14 @@
 .pt-main{flex:1 1 auto; position:relative; min-height:0}
 .pt-stage{position:absolute; inset:0; padding:0}
 .pt-stage svg{width:100%; height:100%; display:block}
+/* sidecar 的挂载面：和 SVG 舞台同一个盒子，二选一显示 */
+.pt-deck{position:absolute; inset:0; min-height:0}
+.pt-deck[hidden]{display:none}
+/* sidecar 自带一整条顶栏（3D/正视/侧视 + PP/TP/EP/DP + 数据/主题/适配）——
+   视角和刀都由本页工具条统管，它那条会是第二套互相打架的控件，藏掉。 */
+.pt-deck .pto-model-deck__toolbar,
+.pt-deck .pto-model-deck__topbar,
+.pt-deck .pto-training-sidecar__toolbar{display:none !important}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -229,6 +250,8 @@
   </header>
   <div class="pt-main" id="main">
     <div class="pt-stage" id="stage"></div>
+    <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG -->
+    <div class="pt-deck" id="deck" hidden></div>
     <div class="pt-stagebar" id="stagebar"></div>
     <div class="pt-animcap" id="animCap"></div>
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
@@ -2542,7 +2565,56 @@ function renderSolidCav(D){
      PP 切层段 → TP 锯进算子内部 / EP 重组专家(最深)；输入侧 全局批 →DP→ 样本份 →CP→ 双段
    · 决策序（§11，自下而上）：①TP ②PP ③CP ④EP ⑤DP(残差)
    反向不是巧合：刀越深 → 通信越密 → 越要先定、越要贴机内。 */
+/* ══ 正视/侧视：直接挂 model-architecture-training-sidecar ══════════════
+   侧视 = right view：46 层沿层深排开，顶上按 PP Stage 分段。
+   正视 = front view：一层的算子 DAG，DP 开着就按副本数复印成方阵。
+   这两张图切分链本来就在画，那边画得准，所以是复用不是重画；3D 那张卡阵
+   sidecar 没有对应物，仍走本页自己的 SVG。 */
+var deckCtl = null, deckFail = '';
+function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar); }
+/* 刀开关是叠加多选，sidecar 的 parallelMode 是互斥单选：全关就是没切过的整网
+   （none），有开的按 PP→TP→EP→DP 取第一把——侧视里 PP 分段信息量最大。 */
+function deckMode(D){
+  if(ui.kPP) return 'pp';
+  if(ui.kTP && D.tp>1) return 'tp';
+  if(ui.kEP && D.moe && D.ep>1) return 'ep';
+  if(ui.kDP && D.dp>1) return 'dp';
+  return 'none';
+}
+function ensureDeck(){
+  if(deckCtl || deckFail) return deckCtl;
+  if(!deckAvailable()){ deckFail = 'sidecar 未加载'; return null; }
+  try{
+    deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deck', {
+      preset:'openpangu-flash', initialView:'right', parallelMode:'pp',
+      initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
+      metricView:'structure', metricViews:[], initialLayer:null
+    });
+  }catch(e){ deckFail = e.message; deckCtl = null; }
+  return deckCtl;
+}
+function renderDeck(D){
+  var c = ensureDeck();
+  $('stage').hidden = true;
+  $('deck').hidden = false;
+  if(!c){
+    $('deck').hidden = true; $('stage').hidden = false;
+    return false;
+  }
+  c.setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
+  c.setView(ui.viewTab === 'front' ? 'front' : 'right');
+  c.setParallelMode(deckMode(D));
+  c.fit();
+  return true;
+}
 function renderChain(D){
+  if(ui.viewTab === 'front' || ui.viewTab === 'side'){
+    if(renderDeck(D)){
+      renderChainBar(D);
+      $('stageNote').hidden = true; $('detach').hidden = true;
+      return;
+    }
+  } else { $('deck').hidden = true; $('stage').hidden = false; }
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   /* 画布整张都归 3D 场景：模型侧（整网 deck × 复印 × 切段 × 锯片 × 分桶）和输入侧
@@ -2575,7 +2647,15 @@ function renderChain(D){
   sceneHit = scene.hit;
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
-  /* ── 工具条：切分开关（叠加） + 视角 tab（互斥） ── */
+  renderChainBar(D);
+  /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
+     纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
+  $('stageNote').hidden = true; $('detach').hidden = true;
+}
+/* ── 工具条：切分开关（叠加） + 视角 tab（互斥）。SVG 舞台和 sidecar 两条分支共用 ── */
+function renderChainBar(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var kBtns = '<span class="pt-seg">';
   if(D.dp>1) kBtns += '<button'+(ui.kDP?' class="is-on"':'')+' data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
   kBtns += '<button'+(ui.kPP?' class="is-on"':'')+' data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
@@ -2592,9 +2672,6 @@ function renderChain(D){
   $('stagebar').innerHTML =
     '<span class="pt-chip">当前路径：副本'+co.d+' → stage'+co.p+' → 片'+co.t+(me?' → 桶'+me.ep:'')+(D.cp>1?' · 段'+co.c:'')+' → g='+g+'</span>'
     + kBtns + vBtns;
-  /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
-     纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
-  $('stageNote').hidden = true; $('detach').hidden = true;
 }
 
 function renderDimBar(D, dim){
@@ -3317,6 +3394,8 @@ function render(){
   if(sel!==null && (!D.ok || sel>=D.world)) sel = null;
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
+  /* deck 只服务切分链的正视/侧视，别的视图一律先收起来，免得压住它们的 SVG */
+  if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('stage').hidden = false; }
   var foot = document.querySelector('.pt-foot');
   if(ui.view==='chain'){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
