@@ -1286,10 +1286,10 @@ function netScene(D, g, box, step){
   if(isFrontView){
     var fvBody = [], fvHit = [];
     var fvPad = 14, fvLabelH = 20;
-    var fvCols = K <= 4 ? K : Math.ceil(Math.sqrt(K));
-    var fvRows = Math.ceil(K / fvCols);
+    var fvCols = K;
+    var fvRows = 1;
     var fvCellW = (box.w - fvPad*(fvCols+1)) / fvCols;
-    var fvCellH = (box.h - fvPad*(fvRows+1)) / fvRows;
+    var fvCellH = box.h - fvPad*2;
     for(var fk=0; fk<K; fk++){
       var fCol = fk % fvCols, fRow = Math.floor(fk / fvCols);
       var fCx = box.x + fvPad + fCol*(fvCellW + fvPad);
