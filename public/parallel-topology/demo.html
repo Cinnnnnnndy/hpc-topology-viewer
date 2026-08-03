@@ -1282,13 +1282,13 @@ function netScene(D, g, box, step){
     var gh = '';
     if(ui.spread && cutPP){
       for(var lj=D.pp-1; lj>=0; lj--){
-        var sw9 = segW(lj), sc9 = lj===co.p ? VC.pp : 'var(--pt-bd)', sf9 = lj===co.p ? 12 : 4;
+        var sw9 = segW(lj);
         gh += box3(0,0,1,AR, sw9[0],sw9[1], k,
-          mix(VC.pp,sf9-1), mix(VC.pp,sf9+3), mix(VC.pp,sf9+5), mix(VC.pp,sf9), sc9, .4);
+          mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
       }
     } else {
       gh += box3(0,0,1,AR, 0,TOTW, k,
-        mix(VC.dp,6), mix(VC.dp,10), mix(VC.dp,16), mix(VC.dp,ui.spread?8:18), VC.dp, .5);
+        mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
     }
     /* 非选中副本也带 TP/EP 色条——只画色块，不加文字和点击区 */
     if(cutTP && D.tp>1){
@@ -1326,8 +1326,8 @@ function netScene(D, g, box, step){
       body.push(quad([P(-0.06,-0.04,ww-GAPW*0.5,off0), P(1.06,-0.04,ww-GAPW*0.5,off0),
                       P(1.06,AR+0.04,ww-GAPW*0.5,off0), P(-0.06,AR+0.04,ww-GAPW*0.5,off0)],
         'fill:'+mix(VC.pp,mine?26:12)+';stroke:'+VC.pp+';stroke-width:'+(mine?1.1:.6)));
-    body.push(pane(ww, off0, 'fill:'+(mine?mix(VC.pp,10):mix('var(--pt-fg)',5))
-      + ';stroke:'+(mine?VC.pp:'var(--pt-bd)')+';stroke-width:'+(mine?.7:.4)));
+    body.push(pane(ww, off0, 'fill:'+mix('var(--pt-fg)', mine?8:4)
+      + ';stroke:var(--pt-bd);stroke-width:'+(mine?.6:.3)));
     /* 段可点：2D 段带撤掉之后，换 stage 的入口要留在这个场景里。
        但整块段面在投影上是**完全重叠**的——拿它当命中区，最前面那片会吃掉所有点击。
        改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
@@ -2484,15 +2484,10 @@ function renderChain(D){
   parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-20, '第 '+KS+' 刀 · '+cur9.n+(cur9.k==='net'?'':' ×'+{dp:D.dp,pp:D.pp,cp:D.cp,tp:D.tp,ep:D.ep}[cur9.k]), 10, kc9, 'end', 'font-weight="800"'));
   parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-8, esc(cur9.s), 7.6, 'var(--pt-fg3)', 'end'));
   var flat9 = den9===denPrev && KS>0;
-  parts.push(txt(SCB.x, SCB.y-8, '持有 1/'+fmt(den9)+(flat9 ? '（不变）' : '')+' · '+scene.nodes+' 算子 · yaw '+Math.round(ui.yaw3*180/Math.PI)+'° / pitch '+Math.round(ui.pitch3*180/Math.PI)+'°', 7.6, flat9 ? VC[cur9.k] : 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  parts.push(txt(SCB.x, SCB.y-8, '持有 1/'+fmt(den9)+(flat9 ? '（不变）' : '')+' · '+scene.nodes+' 算子', 7.6, flat9 ? VC[cur9.k] : 'var(--pt-fg2)', 'start', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
-    + '<button class="pb" data-act="turn" data-y="-1" data-p="0" title="向左转">↺</button>'
-    + '<button class="pb" data-act="turn" data-y="1" data-p="0" title="向右转">↻</button>'
-    + '<button class="pb" data-act="turn" data-y="0" data-p="-1" title="低头">↑</button>'
-    + '<button class="pb" data-act="turn" data-y="0" data-p="1" title="抬头">↓</button>'
-    + '<button class="pb" data-act="turnreset" title="回到默认视角">复位</button>'
     + ST9.map(function(q9, i9){
         return '<button class="pb'+(i9===KS?' is-on':'')+'" data-act="knife" data-i="'+i9+'" title="'+esc(q9.s)+'">'+esc(q9.n)+'</button>';
       }).join('')
