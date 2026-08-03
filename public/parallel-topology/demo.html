@@ -1275,6 +1275,31 @@ function netScene(D, g, box, step){
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
+  /* ── 地板网格 + 轴标注（参考魔方视图 pattern）── */
+  if(ui.spread && K > 1 && !zoomIn){
+    var grd = '';
+    for(k = 0; k < K; k++){
+      var fl = [P(0,0,0,k), P(1,0,0,k), P(1,0,TOTW,k), P(0,0,TOTW,k)];
+      grd += quad(fl, 'fill:none;stroke:var(--pt-bd);stroke-width:.15;stroke-dasharray:3,3');
+    }
+    var a0 = P(0.5, -0.12, TOTW*0.5, 0), aE = P(0.5, -0.12, TOTW*0.5, K-1);
+    grd += seg(a0, aE, 'stroke:'+VC.dp+';stroke-width:1.2;marker-end:url(#arrdp)');
+    var aM = P(0.5, -0.12, TOTW*0.5, Math.floor(K/2));
+    grd += txt(aM[0], aM[1]-6, 'DP ×'+K, 8, VC.dp, 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
+    if(cutPP && D.pp > 1){
+      var ppA = P(-0.12, 0, 0, sel0), ppB = P(-0.12, 0, TOTW, sel0);
+      grd += seg(ppA, ppB, 'stroke:'+VC.pp+';stroke-width:1.2;marker-end:url(#arrpp)');
+      var ppM = P(-0.12, 0, TOTW*0.5, sel0);
+      grd += txt(ppM[0]-6, ppM[1], 'PP ×'+D.pp, 8, VC.pp, 'end', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
+    }
+    if(cutTP && D.tp > 1){
+      var tpA = P(0, -0.12, -0.08, sel0), tpB = P(1, -0.12, -0.08, sel0);
+      grd += seg(tpA, tpB, 'stroke:'+VC.tp+';stroke-width:1.2;marker-end:url(#arrtp)');
+      var tpM = P(0.5, -0.12, -0.08, sel0);
+      grd += txt(tpM[0], tpM[1]-6, 'TP ×'+D.tp, 8, VC.tp, 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
+    }
+    body.push(grd);
+  }
   /* ── 后面的复印件：画成 3D 体块（前 / 顶 / 右三面），份数真实，细节不重复 ── */
   function box3(u0,v0,u1,v1,w0,w1,off,fB,fT,fS,fF,sc,sw){
     return quad([P(u0,v0,w1,off),P(u1,v0,w1,off),P(u1,v1,w1,off),P(u0,v1,w1,off)],'fill:'+fB+';stroke:'+sc+';stroke-width:'+(sw*.6))
@@ -1287,16 +1312,8 @@ function netScene(D, g, box, step){
     if(isF) continue;
     var a = ui.spread ? 0.38 : (0.10 + 0.12*(1 - Math.abs(k-sel0)/Math.max(1,K)));
     var gh = '';
-    if(ui.spread && cutPP){
-      for(var lj=D.pp-1; lj>=0; lj--){
-        var sw9 = segW(lj);
-        gh += box3(0,0,1,AR, sw9[0],sw9[1], k,
-          mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
-      }
-    } else {
-      gh += box3(0,0,1,AR, 0,TOTW, k,
-        mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
-    }
+    gh += box3(0,0,1,AR, 0,TOTW, k,
+      mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
     /* 非选中副本也带 TP/EP 色条——前侧轴，只画色块 */
     if(cutTP && D.tp>1){
       var sgmK = segW(cutPP ? co.p : 0);
