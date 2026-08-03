@@ -1459,12 +1459,19 @@ function netScene(D, g, box, step){
     k = copyOrder[ci].i;
     var kOff = k;
     var isF = k === sel0;
-    /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。 */
+    /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。
+       EP 桶不是独立轴——epOf 是从 (t,c,d) 导出的，所以每一列必须用**它自己**的
+       坐标去算，不能沿用全局选中那张卡的桶号，否则 128 张卡会画成同一个桶。 */
     var tIdx = KT > 1 ? Math.floor(k / KD) : co.t;
+    var dIdx = cutDP ? (k % KD) : co.d;
+    var meCol = D.moe ? epOf(tIdx, co.c, dIdx, D) : null;
     for(var li = L-1; li >= 0; li--){
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
+      /* 实心只给**选中的那一张卡**。isF 匹配的是「列」（副本 × tp 片），而一列
+         纵深上串着 pp 段那么多张卡——只看 isF 会把整列 4 张一起点亮。段也得对上。 */
+      var focusCell = ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF);
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
@@ -1474,6 +1481,10 @@ function netScene(D, g, box, step){
          「这一张卡拿到了什么」，层框留着只会把卡壳里塞满和它无关的格子。 */
       if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1))
         body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
+      /* 卡维度：一张卡持有的那几层结构完全一样（都是同一个 decoder layer），
+         画满 8 遍只会在壳里堆成一团条纹，看不出那是什么。每段只画中间那一层
+         当代表，卡壳本身就是「这一段」的框——层数写在 PP 轴的刻度上。 */
+      if(ui.cardMode && li !== Math.min(L-1, stOf(li)*lps + (lps>>1))) continue;
       if(IXg){
         IXg.G.nodes.forEach(function(n, ni){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
@@ -1488,7 +1499,7 @@ function netScene(D, g, box, step){
              因为那些片是「本卡持有什么」的读数，不是别人段里、别人副本里的事。
              当前路径（副本 co.d · stage co.p · 片 co.t · 桶 me.ep）那一份才实心，
              其余一律压下去——一屏 16 份 × 46 层全画成一样饱和就没有主语了。 */
-          if(!mine || !isF){
+          if(!focusCell){
             if(comm || lowDetail) return;
             /* 弱化的那批占了全场 92% 的图元（实测 13104 / 14172），也就是卡的
                全部来源。按节点下标抽稀到 1/3——取的是固定下标，所以每层每份
@@ -1500,7 +1511,7 @@ function netScene(D, g, box, step){
                深度叠上来时，是填充在堆成实墙，描边不会。 */
             body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
               'fill:'+mix(col, dm?7:3)+';stroke:'+(dm?col:'var(--pt-bds)')
-              +';stroke-width:.18;opacity:'+(isF?.5:.3)));
+              +';stroke-width:.18;opacity:'+(isF?.5:.3)));   /* 同列稍亮一点，帮着定位选中的那张在哪 */
             return;
           }
           if(comm){
@@ -1515,7 +1526,7 @@ function netScene(D, g, box, step){
           if(ui.cardMode && !isF && ni % 2 !== 0) return;
           var nSlice = 1, mySlice = 0, sCol = col, hx = 'hxTP';
           if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = tIdx; sCol = VC.tp; hx = 'hxTP'; }
-          else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = me ? me.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
+          else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = meCol ? meCol.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
           if(nSlice > 1){
             sawn++;
             var kerf = (u1-u0)*0.17/nSlice;
@@ -1578,7 +1589,8 @@ function netScene(D, g, box, step){
         if(meC){
           var cTop = P(0.5, cv0 - 0.10, cw0, kc);
           var cTxt = 'rank ' + gc;
-          var cSub = 'dp'+dc+' · pp'+pc2+' · tp'+tc + (me ? ' · ep'+me.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
+          var meCd = D.moe ? epOf(tc, co.c, dc, D) : null;
+          var cSub = 'dp'+dc+' · pp'+pc2+' · tp'+tc + (meCd ? ' · ep'+meCd.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
           var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
           body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
             +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1"/>');
@@ -1617,19 +1629,6 @@ function netScene(D, g, box, step){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
       axLab(P(-0.42, AR + 0.30, (sg2[0]+sg2[1])/2, 0), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, pa === co.p);
     }
-    /* 维度总量：一份到底是什么，光看刻度看不出来 */
-    var tot = [];
-    if(KD > 1) tot.push(['DP 副本 ×'+D.dp, '一个副本 = 整模型一份', VC.dp]);
-    if(cutPP) tot.push(['PP 段 ×'+D.pp, '一段 = '+lps+' 层', VC.pp]);
-    if(KT > 1) tot.push(['TP 片 ×'+D.tp, '一片 = 每个算子的 1/'+D.tp, VC.tp]);
-    if(cutEP && D.moe && D.ep>1) tot.push(['EP 桶 ×'+D.ep, '一桶 = '+Math.round(D.experts/D.ep)+' 个专家', VC.ep]);
-    tot.forEach(function(t2, ti){
-      var bx2 = box.x + 16, by2 = box.y + 16 + ti*30;
-      body.push('<rect x="'+bx2+'" y="'+by2+'" width="150" height="26" rx="7" '
-        +'style="fill:var(--pt-bg);stroke:'+t2[2]+';stroke-width:1;opacity:.97"/>');
-      body.push(txt(bx2+9, by2+11, t2[0], 7.4, t2[2], 'start', 'font-weight="800"'));
-      body.push(txt(bx2+9, by2+20, t2[1], 5.8, 'var(--pt-fg3)', 'start'));
-    });
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
