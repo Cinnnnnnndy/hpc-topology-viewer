@@ -118,9 +118,20 @@
 /* 每格底部的切分角标。sidecar 自带的「TP ×2 · attention shard」是给整屏宽度设计
    的一条横幅，80px 的格子里放不下（is-dense 把它整条藏了），可 TP/EP 到底切没切
    是这一屏必须回答的事——换成只有份数的紧凑版顶上，格子再小也读得出。 */
+/* 轴标签：DP 沿列头排一行、TP 沿行头排一列，和 3D 那边同一套语法。
+   原来每格左下角挂一枚「TP×2 EP×8」的角标——那是把轴的信息抄进了每一个格子，
+   32 份重复，还占掉卡片底部。轴上标一次就够。 */
+.pt-deck .pt-axlab{
+  position:absolute; z-index:6; pointer-events:none;
+  font-family:var(--pt-mono); font-size:9.5px; font-weight:800; line-height:15px;
+  padding:0 7px; border-radius:999px; border:1px solid currentColor; background:var(--pt-bg);
+  white-space:nowrap;
+}
+.pt-deck .pt-axlab.is-on{color:var(--pt-bg) !important; background:currentColor; box-shadow:0 0 0 1px currentColor}
+.pt-deck .pt-axlab.is-on b{color:var(--pt-bg)}
 .pt-deck .pt-dpcut{
   position:absolute; left:4px; right:4px; bottom:4px; z-index:3;
-  display:flex; gap:3px; flex-wrap:wrap; font-family:var(--pt-mono); font-size:8.5px; font-weight:700;
+  display:none;
 }
 /* 叠在 sidecar 算子上的刀口条：这个算子被锯成几片、本卡拿的是哪一片。
    sidecar 自己只给一条说明性 badge，图元上看不出切没切——3D 那边是实心/斜纹
@@ -163,6 +174,11 @@
 /* 正视格子里的 TP/EP 标注是挂在具体算子上的小 badge，要留着——那正是这一格
    里「锯到哪、分到哪」的读数。只把横幅式的整体标注（is-side）挡掉：它是给
    整张侧视图用的一条通栏，塞进 190px 宽的格子只会被裁成半句话。 */
+/* sidecar 自带的那两条大 badge（TP ×2 · attention shard / EP ×8 · expert routing）
+   一概不要：它是给单张整屏图设计的一条横幅，在这里会横穿卡片、还重复 32 遍，
+   而且它只说「切成几份」，不说这张卡拿的是哪一份。切分改由刀口条直接画在算子
+   上、编号由角标给。 */
+.pt-deck .pto-model-deck__annotation{display:none !important}
 .pt-deck.is-tiled .pto-model-deck__annotation.is-side{display:none !important}
 /* badge 是给整屏宽度设计的一条横排，塞进 320px 的格子会被右边缘切掉半句话。
    统一贴到格子左边、限宽换行，才读得完整。 */
@@ -1535,7 +1551,18 @@ function netScene(D, g, box, step){
                全部来源。按节点下标抽稀到 1/3——取的是固定下标，所以每层每份
                抽到的是同一批，转起来不会闪；层里算子本来沿 DAG 铺开，抽掉三分
                之二轮廓照样认得出。 */
-            if(ni % 3 !== 0) return;
+            /* 卡维度不抽稀：每张卡每段本来就只画一层，内容量已经很小，再抽掉
+               三分之二就真的空了。抽稀是给全景那 46 层堆叠准备的。 */
+            if(!ui.cardMode && ni % 3 !== 0) return;
+            /* 卡维度下**每张卡都要看得见自己装了什么**——128 只空壳说明不了任何事。
+               没选中不等于没内容，只是不如选中的那张跳。所以这里给一档明显更实的
+               弱化：填充加重、描边加粗、透明度提到 .8。 */
+            if(ui.cardMode){
+              body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+                'fill:'+mix(col, dm?30:14)+';stroke:'+(dm?col:'var(--pt-bds)')
+                +';stroke-width:.3;opacity:.8'));
+              return;
+            }
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
                抢。所以留细描边（形状靠它勾出来）、填充压到近乎无色——46 层沿
                深度叠上来时，是填充在堆成实墙，描边不会。 */
@@ -2866,6 +2893,7 @@ function renderDeck(D){
        早接上去的那批会被它清掉 */
     if(ui.viewTab==='front'){ dualFrontMarks(deckCtl, D, $('deckHost')); tileClone(n, D); }
     paintCuts($('deckHost'), D);
+    setTimeout(function(){ paintDeckAxes(D); }, 60);
   }, 220);
   return true;
 }
@@ -2988,6 +3016,48 @@ function paintCuts(rootEl, D, cellD, cellT){
 /* 角标写**这一格的编号**，不是份数：TP0/TP1、EP6 才说明这张卡拿的是哪一片、
    哪一桶；「TP×2」32 个格子写的都一样，等于没说。份数交给轴标签去讲。
    EP 还把桶对应的专家区间一并写出来（E48–E55），不然「第 6 桶」是个空号码。 */
+/* 正视的轴标签：DP 沿列头排一行、TP 沿行头排一列，位置直接量格子的实际
+   矩形算——grid 的列宽会随缩放变，写死偏移会跟不上。 */
+function paintDeckAxes(D){
+  var host = $('deck');
+  Array.prototype.slice.call(host.querySelectorAll('.pt-axlab')).forEach(function(e){ e.remove(); });
+  if(!host.classList.contains('is-tiled')) return;
+  var cells = Array.prototype.slice.call(host.querySelectorAll(':scope > .pt-deckhost, :scope > .pt-dpclone'));
+  if(!cells.length) return;
+  var rows = +host.dataset.rows || 1;
+  var hb = host.getBoundingClientRect(), st = host.scrollTop, sl = host.scrollLeft;
+  var gSel = (sel !== null && sel < D.world) ? sel : null;
+  var coS = gSel !== null ? coordsOf(gSel, D) : null;
+  function put(el, txt2, col, on){
+    var s2 = document.createElement('span');
+    s2.className = 'pt-axlab' + (on ? ' is-on' : '');
+    s2.style.color = col;
+    s2.textContent = txt2;
+    host.appendChild(s2);
+    return s2;
+  }
+  cells.forEach(function(c, i){
+    var col2 = rows <= 1 ? i : Math.floor(i / rows), row2 = rows <= 1 ? 0 : (i % rows);
+    var r = c.getBoundingClientRect();
+    var x = r.left - hb.left + sl, y = r.top - hb.top + st;
+    /* DP：只在第一行的格子上方标，且列数多时隔一个标 */
+    if(row2 === 0){
+      var step2 = (D.dp > 10) ? 2 : 1;
+      if(col2 % step2 === 0 || col2 === Math.ceil(cells.length/rows) - 1){
+        var l1 = put(null, 'DP' + col2, VC.dp, coS && coS.d === col2);
+        l1.style.left = (x + r.width/2) + 'px';
+        l1.style.top = (y - 19) + 'px';
+        l1.style.transform = 'translateX(-50%)';
+      }
+    }
+    /* TP：只在第一列的格子左侧标 */
+    if(col2 === 0 && rows > 1){
+      var l2 = put(null, 'TP' + row2, VC.tp, coS && coS.t === row2);
+      l2.style.left = '2px';
+      l2.style.top = (y + r.height/2 - 8) + 'px';
+    }
+  });
+}
 function cutTag(D, cellD, cellT){
   var gSel = (sel !== null && sel < D.world) ? sel : null;
   var coS = gSel !== null ? coordsOf(gSel, D) : null;
