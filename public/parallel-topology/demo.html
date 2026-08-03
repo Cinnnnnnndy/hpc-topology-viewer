@@ -1222,7 +1222,7 @@ function netScene(D, g, box, step){
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
   function segW(st){ var a0 = DEP*(st*lps)/L + GAPW*st;
     return [a0, Math.min(DEP, DEP*((st+1)*lps)/L) + GAPW*st]; }
-  var zoomIn = cutTP;
+  var zoomIn = false;
   /* 先算投影包围盒，再统一缩放平移——转到任何角度都不会跑出框。
      刀越深，框得越紧：前几刀框住全部复印件（要看清「有几份」），
      TP 那一刀起镜头推进到本卡那一段（要看清算子裂成几片）。
@@ -2441,18 +2441,12 @@ function renderChain(D){
   var VW = clamp(Math.round(692*cAR), 1080, 2600);
   var SCB = {x:84, y:62, w:VW-100, h:496};
   var RY = SCB.y + SCB.h;
-  var KY = RY + 30, LY4 = RY + 46, H4 = 44, H = LY4 + H4 + 8;
+  var H = RY + 8;
   /* 右侧 .pt-detail 浮层宽 304px，会压住画布最右一条：右对齐的读数统一留出 RPAD */
   var RPAD = 118;
   var parts = [], sceneHit = '';
   function rect(x,y,w,h,fill,stroke,sw,extra){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(0.5,w).toFixed(1)+'" height="'+h.toFixed(1)+'" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?0.8:sw)+'" '+(extra||'')+'/>';
-  }
-  function knifeLabel(x,y,dim2,title,meta,active){
-    var c2 = VC[dim2], alpha = active?'':' opacity=".42"';
-    return '<g'+alpha+'><path d="M'+x+' '+(y-4)+' l 11 0 l -4.5 5.5 z" style="fill:'+(active?c2:'var(--pt-bd)')+'"/>'
-      + txt(x+15, y, '刀·'+DIMN[dim2]+' '+title, 9, active?c2:'var(--pt-fg3)', 'start', 'font-weight="800"')
-      + (meta?txt(x+15, y+11, meta, 7.2, 'var(--pt-fg3)', 'start'):'')+'</g>';
   }
   /* ── 一个可转动的 3D 场景，占满整张画布 ──
      整网不是一条填了色的带子，是**一叠真的层板**（就是 3d-deck 上那个东西）；
@@ -2472,42 +2466,7 @@ function renderChain(D){
   parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-20, '第 '+KS+' 刀 · '+cur9.n+(cur9.k==='net'?'':' ×'+{dp:D.dp,pp:D.pp,cp:D.cp,tp:D.tp,ep:D.ep}[cur9.k]), 10, kc9, 'end', 'font-weight="800"'));
   parts.push(txt(SCB.x+SCB.w-RPAD, SCB.y-8, esc(cur9.s), 7.6, 'var(--pt-fg3)', 'end'));
   var flat9 = den9===denPrev && KS>0;
-  parts.push(txt(SCB.x+SCB.w-RPAD, RY+14, '持有 1/'+fmt(den9)+(flat9 ? '（不变）' : ''),
-    9, flat9 ? VC[cur9.k] : 'var(--pt-fg)', 'end', 'font-weight="800"'));
-  parts.push(txt(SCB.x, RY+14, scene.nodes+' 算子 · yaw '+Math.round(ui.yaw3*180/Math.PI)+'° / pitch '+Math.round(ui.pitch3*180/Math.PI)+'°', 7.4, 'var(--pt-fg3)', 'start'));
-  /* ── 五把刀的图例 ── */
-  var KL = [
-    ['dp','复印 ×'+D.dp,'', D.dp>1 && scene.cut.dp],
-    ['pp','切层序 ×'+D.pp,'', D.pp>1 && scene.cut.pp],
-    ['cp','切序列 ×'+D.cp,'', D.cp>1 && scene.cut.cp],
-    ['tp','锯算子 ×'+D.tp,'', D.tp>1 && scene.cut.tp],
-    ['ep','分专家 ×'+D.ep,'', D.moe && D.ep>1 && scene.cut.ep]
-  ];
-  KL.forEach(function(kl, i9){
-    parts.push(knifeLabel(SCB.x + i9*(SCB.w/5), KY, kl[0], kl[1], kl[2], kl[3]));
-  });
-  /* ── 叶子卡：五元组交集 ── */
-  var LX = SCB.x, LW = SCB.w;
-  var stI = co.p, memI = memParts(D, stI).reduce(function(a,x){ return a+x.bytes; },0);
-  parts.push(rect(LX, LY4, LW, H4, mix('var(--pt-fg)',4), 'var(--pt-fg)', 1.6,
-    'data-act="leafopen" style="cursor:pointer"'));
-  parts.push(txt(LX+16, LY4+18, 'g='+g+'　交集 = 这张卡装的全部字节', 10, 'var(--pt-fg)', 'start', 'font-weight="800" pointer-events="none"'));
-  parts.push(txt(LX+LW-RPAD, LY4+18, '卡内解剖 ↗', 9, 'var(--pt-fg)', 'end', 'font-weight="800" pointer-events="none"'));
-  var five = [
-    {c:VC.pp, s:'ℓ L'+(co.p*D.layersPerStage)+'–L'+((co.p+1)*D.layersPerStage-1)},
-    {c:VC.tp, s:'h '+co.t+'/'+D.tp}
-  ];
-  if(me) five.push({c:VC.ep, s:'e E'+(me.ep*(D.experts/D.ep))+'–E'+((me.ep+1)*(D.experts/D.ep)-1)});
-  five.push({c:VC.dp, s:'b '+co.d});
-  if(D.cp>1) five.push({c:VC.cp, s:'s '+co.c+'∪'+(2*D.cp-1-co.c)});
-  parts.push('<text x="'+(LX+16)+'" y="'+(LY4+37)+'" text-anchor="start" font-size="9" font-family="var(--pt-mono)" font-weight="700" pointer-events="none">'
-    + five.map(function(f){ return '<tspan style="fill:'+f.c+'">'+f.s+'</tspan>'; }).join('<tspan style="fill:var(--pt-fg3)" font-weight="400"> ∩ </tspan>')
-    + '<tspan style="fill:var(--pt-fg2)">　▮ '+fmtGB(memI)+'/'+D.hbm+' GB</tspan></text>');
-  /* ── 左缘双向箭头（两种序，反向） ── */
-  parts.push('<line x1="64" y1="'+(SCB.y+4)+'" x2="64" y2="'+(LY4+H4)+'" style="stroke:var(--pt-fg2);stroke-width:1.4;marker-end:url(#arrx)"/>');
-  parts.push('<g transform="rotate(-90 54 '+(SCB.y+SCB.h/2)+')">'+txt(54, SCB.y+SCB.h/2, '嵌套序：外 → 内（每刀切上一刀的产物）', 9, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
-  parts.push('<line x1="24" y1="'+(LY4+H4)+'" x2="24" y2="'+(SCB.y+4)+'" style="stroke:var(--pt-fg3);stroke-width:1.4;marker-end:url(#arrx)"/>');
-  parts.push('<g transform="rotate(-90 14 '+(SCB.y+SCB.h/2)+')">'+txt(14, SCB.y+SCB.h/2, '决策序 §11：①TP ②PP ③CP ④EP ⑤DP（反向！）', 9, 'var(--pt-fg3)', 'middle', 'font-weight="700"')+'</g>');
+  parts.push(txt(SCB.x, SCB.y-8, '持有 1/'+fmt(den9)+(flat9 ? '（不变）' : '')+' · '+scene.nodes+' 算子 · yaw '+Math.round(ui.yaw3*180/Math.PI)+'° / pitch '+Math.round(ui.pitch3*180/Math.PI)+'°', 7.6, flat9 ? VC[cur9.k] : 'var(--pt-fg2)', 'start', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">刀序</span>'
