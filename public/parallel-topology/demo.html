@@ -1280,6 +1280,9 @@ function netScene(D, g, box, step){
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var yaw = ui.yaw3, pitch = ui.pitch3;
+  /* g 在没选中时会回落到 0，那是给坐标算术用的默认值——但**高亮**不能跟着回落，
+     否则 rank 0 永远亮着，「取消选中」就成了看不出效果的空操作。 */
+  var hasSel = sel !== null && sel < D.world;
   var root = IXg ? IXg.clu['decoder-stack'] : null;
   var GW = root ? root.width : 1000, GH = root ? root.height : 1700;
   var AR = GH/GW;                                   /* 板是竖的：真图一层就是这个长宽比 */
@@ -1473,7 +1476,7 @@ function netScene(D, g, box, step){
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
       /* 实心只给**选中的那一张卡**。isF 匹配的是「列」（副本 × tp 片），而一列
          纵深上串着 pp 段那么多张卡——只看 isF 会把整列 4 张一起点亮。段也得对上。 */
-      var focusCell = ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF);
+      var focusCell = hasSel && (ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF));
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
@@ -1551,7 +1554,7 @@ function netScene(D, g, box, step){
       }
     }
     if(K > 1 && !ui.cardMode){
-      var dpLbl = 'DP'+k, dpMine = isF;
+      var dpLbl = 'DP'+k, dpMine = hasSel && isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
       var dpPw = dpLbl.length*4.2+6, dpPh = 11;
       body.push('<rect x="'+(dpPt[0]-dpPw/2)+'" y="'+(dpPt[1]-dpPh/2+1)+'" width="'+dpPw+'" height="'+dpPh+'" rx="'+dpPh/2+'" '
@@ -1577,7 +1580,7 @@ function netScene(D, g, box, step){
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         var gc = rankOf(tc, co.c, dc, pc2, D);
-        var meC = gc === g;
+        var meC = hasSel && gc === g;
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -1626,16 +1629,16 @@ function netScene(D, g, box, step){
       var dStep = KD > 10 ? 2 : 1;
       for(var da = 0; da < KD; da++){
         if(da % dStep !== 0 && da !== KD-1) continue;
-        axLab(P(0.5, AR + 0.26, wBack, rowLast + da), 'DP'+da, null, VC.dp, da === co.d);
+        axLab(P(0.5, AR + 0.26, wBack, rowLast + da), 'DP'+da, null, VC.dp, hasSel && da === co.d);
       }
     }
     /* TP：竖轴（每个副本被锯成 tp 片，一片一行），贴在每行左侧 */
     if(KT > 1) for(var ta = 0; ta < KT; ta++)
-      axLab(P(-0.42, AR*0.5, wFront, ta*KD), 'TP'+ta, null, VC.tp, ta === co.t);
+      axLab(P(-0.42, AR*0.5, wFront, ta*KD), 'TP'+ta, null, VC.tp, hasSel && ta === co.t);
     /* PP：纵深轴。第二行写这一段真正含哪几层——段号本身不说明它有多厚 */
     if(cutPP) for(var pa = 0; pa < D.pp; pa++){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
-      axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, pa === co.p);
+      axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
@@ -2814,6 +2817,19 @@ function renderDeck(D){
   c.setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
   c.setView(ui.viewTab === 'front' ? 'front' : 'right');
   c.setParallelMode(deckMode(D));
+  /* 卡维度：把 sidecar 停在**这张卡真正持有的那一层**上，不要停在它默认的 L23。
+     卡的 stage 决定层区间，取该段中点映射到 sidecar 的 46 层；侧视再把那一层
+     展开（selectLayer 会把它翻成前平面），一眼看出这张卡在整条层链上占哪一截。 */
+  try{
+    if(ui.cardMode){
+      var cSel = (sel !== null && sel < D.world) ? sel : 0;
+      var coC = coordsOf(cSel, D);
+      var DECK_L = 46;
+      var lyrC = Math.max(0, Math.min(DECK_L-1, Math.floor((coC.p + 0.5) * DECK_L / D.pp)));
+      c.setFrontLayer(lyrC);
+      if(ui.viewTab === 'side') c.selectLayer(lyrC); else c.collapseLayer();
+    } else c.collapseLayer();
+  }catch(e){ /* sidecar 版本没有这几个 API 时不该拖垮整屏 */ }
   c.fit();
   /* fit 自己排在后续帧里跑（还带一段过渡），克隆必须等它彻底落地——
      早一帧复制到的就是没缩放好的画面，16 格全歪。 */
@@ -2832,7 +2848,8 @@ function renderDeck(D){
 var deckTileRaf = 0;
 function tileLayout(D){
   var host = $('deck');
-  var n = (ui.viewTab==='front' && ui.kDP && D.dp>1) ? D.dp : 1;
+  /* 卡维度看的是**一张**卡，不铺 DP 方阵——16 份副本是整网的事 */
+  var n = (ui.viewTab==='front' && ui.kDP && D.dp>1 && !ui.cardMode) ? D.dp : 1;
   Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone, .pt-dpcap'))
     .forEach(function(el){ el.remove(); });
   if(n <= 1){
