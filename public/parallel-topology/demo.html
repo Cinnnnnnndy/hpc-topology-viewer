@@ -107,8 +107,11 @@
 /* scrollbar-gutter 必须 stable：副本一插进来就撑出滚动条，容器宽度一变
    sidecar 会重新 fit，而已经克隆好的副本停在旧缩放上，16 格就对不齐了 */
 .pt-deck.is-tiled{display:grid; gap:10px; overflow:auto; scrollbar-gutter:stable; padding:52px 14px 14px; align-content:start}
+/* 高度不占满容器，按正视图自身的内容比例走。3d-deck 的 front fit 是
+   min(w/850, h/1810)：格子一高，缩放就被宽度卡死，多出来的高度全是空白，
+   卡片看着就是「一条特别高的白板中间浮着一小张图」。 */
 .pt-deck.is-tiled > *{
-  position:relative; overflow:hidden; height:var(--pt-cellh, 300px);
+  position:relative; overflow:hidden; aspect-ratio:850/1810; height:auto;
   border:1px solid var(--pt-bd); border-radius:10px; background:var(--pt-s1);
 }
 .pt-deck.is-tiled .pt-dpcap{
@@ -124,8 +127,16 @@
 .pt-deck .pto-model-deck__topbar,
 .pt-deck .pto-model-deck__title,
 .pt-deck .pto-training-sidecar__toolbar{display:none !important}
-/* 每格都挂一条「PP ×4 · layer stages」既冗余又会被格子裁掉 */
-.pt-deck.is-tiled .pto-model-deck__annotation{display:none !important}
+/* 正视格子里的 TP/EP 标注是挂在具体算子上的小 badge，要留着——那正是这一格
+   里「锯到哪、分到哪」的读数。只把横幅式的整体标注（is-side）挡掉：它是给
+   整张侧视图用的一条通栏，塞进 190px 宽的格子只会被裁成半句话。 */
+.pt-deck.is-tiled .pto-model-deck__annotation.is-side{display:none !important}
+/* badge 是给整屏宽度设计的一条横排，塞进 320px 的格子会被右边缘切掉半句话。
+   统一贴到格子左边、限宽换行，才读得完整。 */
+.pt-deck.is-tiled .pto-model-deck__annotation{
+  left:5px !important; right:auto !important; max-width:calc(100% - 10px);
+  white-space:normal; font-size:9px; line-height:1.3; text-align:left;
+}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -2600,8 +2611,34 @@ function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar);
    正视的标注每格都会重复一条，一律不挂。
    注意这里不碰刀开关本身——四把刀照旧各自独立叠加，只是侧视的标注不跟着跑。 */
 function deckMode(D){
-  if(ui.viewTab !== 'side') return 'none';
-  return ui.kPP ? 'pp' : 'none';
+  if(ui.viewTab === 'side') return ui.kPP ? 'pp' : 'none';
+  return frontMode(D);
+}
+/* 正视上有落点的是 TP 和 EP：锯口和分桶都在算子内部，标注挂得到具体算子上。
+   sidecar 的 parallelMode 一次只认一个，先渲染 TP。 */
+function frontMode(D){
+  if(ui.kTP && D.tp > 1) return 'tp';
+  if(ui.kEP && D.moe && D.ep > 1) return 'ep';
+  return 'none';
+}
+/* 两把刀同时开着时，parallelMode 单选就不够用了——切到 ep 会把 tp 的标注冲掉。
+   办法是先把 TP 那批 badge 抄下来，再切到 ep，然后把抄下来的接回同一个容器，
+   两套标注就并存了。badge 的定位是 inline style，克隆过去照样对得上算子。 */
+function dualFrontMarks(ctl, D, rootEl){
+  if(!ctl || !rootEl) return;
+  if(!(ui.kTP && D.tp > 1)) return;              // TP 没开，frontMode 已经给了 ep
+  if(!(ui.kEP && D.moe && D.ep > 1)) return;     // EP 没开，单 tp 就够
+  var box = rootEl.querySelector('.pto-model-deck__annotations'); if(!box) return;
+  var tpMarks = Array.prototype.map.call(box.children, function(el){ return el.cloneNode(true); });
+  if(!tpMarks.length) return;
+  ctl.setParallelMode('ep');
+  /* setParallelMode 触发的那次 annotations 重绘是异步的，同步接上去会被它清掉，
+     得等它画完 ep 那批之后再把 TP 那批补回同一个容器。 */
+  setTimeout(function(){
+    var box2 = rootEl.querySelector('.pto-model-deck__annotations'); if(!box2) return;
+    if(box2.querySelector('[data-kind="tp"]')) return;   // 已经补过，别叠第二遍
+    tpMarks.forEach(function(el){ box2.appendChild(el.cloneNode(true)); });
+  }, 160);
 }
 function ensureDeck(){
   if(deckCtl || deckFail) return deckCtl;
@@ -2636,7 +2673,10 @@ function renderDeck(D){
   if(deckTileRaf) clearTimeout(deckTileRaf);
   deckTileRaf = setTimeout(function(){
     deckTileRaf = 0;
-    if(ui.view==='chain' && ui.viewTab==='front') tileClone(n);
+    if(ui.view!=='chain') return;
+    /* 合并标注必须等 fit 落地：fit 会按 state.parallelMode 重绘一遍 annotations，
+       早接上去的那批会被它清掉 */
+    if(ui.viewTab==='front'){ dualFrontMarks(deckCtl, D, $('deckHost')); tileClone(n, D); }
   }, 220);
   return true;
 }
@@ -2656,18 +2696,36 @@ function tileLayout(D){
   }
   /* 一排排开，不折行：DP 是同一份东西复印 n 遍，副本之间没有先后也没有行列
      关系，折成两排会让人以为行、列各自代表了点什么。排不下就横向滚。 */
+  /* 格宽由可用高度反推：高 = 宽 × 1810/850，让整张卡片正好放得下不用竖着滚 */
   var Hh = host.clientHeight || 700;
+  var cw = clamp(Math.floor((Hh - 74) * 850 / 1810), 150, 320);
   host.classList.add('is-tiled');
-  host.style.gridTemplateColumns = 'repeat('+n+', minmax(190px, 1fr))';
-  host.style.setProperty('--pt-cellh', Math.max(200, Hh - 66) + 'px');
+  host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
+  host.style.removeProperty('--pt-cellh');
   return n;
 }
 /* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
    getBoundingClientRect 量出来再写进 inline style 的，静态克隆拿不到那套计算，
    复制出去就散成一条。所以每格挂一个真的 sidecar 实例，各自 fit 各自的格子。 */
-var deckClones = [];
-function tileClone(n){
+var deckClones = [], deckIO = null;
+function mountClone(slot, D){
+  if(slot.dataset.mounted) return;
+  slot.dataset.mounted = '1';
+  try{
+    deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
+      preset:'openpangu-flash', initialView:'front', parallelMode:frontMode(D),
+      initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
+      metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
+    }));
+    var made = deckClones[deckClones.length-1];
+    setTimeout(function(){ dualFrontMarks(made, D, slot); }, 200);
+  }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
+  /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
+  slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>');
+}
+function tileClone(n, D){
   var host = $('deck'), cell = $('deckHost');
+  if(deckIO){ deckIO.disconnect(); deckIO = null; }
   deckClones.forEach(function(c){ try{ c.destroy(); }catch(e){} });
   deckClones = [];
   Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'))
@@ -2675,21 +2733,30 @@ function tileClone(n){
   if(n <= 1) return;
   if(!cell.querySelector('.pt-dpcap'))
     cell.insertAdjacentHTML('afterbegin', '<span class="pt-dpcap">DP0</span>');
-  var theme = document.documentElement.dataset.theme==='dark'?'dark':'light';
+  var slots = [];
   for(var i2 = 1; i2 < n; i2++){
     var slot = document.createElement('div');
     slot.className = 'pt-deckhost pt-dpclone';
     slot.id = 'deckClone' + i2;
+    slot.dataset.cap = 'DP' + i2;
+    slot.innerHTML = '<span class="pt-dpcap">DP' + i2 + '</span>';
     host.appendChild(slot);
-    try{
-      deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
-        preset:'openpangu-flash', initialView:'front', parallelMode:'none',
-        initialTheme:theme, metricView:'structure', metricViews:[], initialLayer:null,
-        showSideLabels:false
-      }));
-    }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
-    /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
-    slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">DP' + i2 + '</span>');
+    slots.push(slot);
+  }
+  /* 一排 16 格，一屏只看得到七八个，却要为全部 16 份各建一只 sidecar（每份
+     5.5k 节点）——首屏白等好几秒，多数还是滚不到的。改成滚到哪建到哪，
+     提前 600px 起手，滚过去时那一格已经画好了。 */
+  if(typeof IntersectionObserver === 'function'){
+    deckIO = new IntersectionObserver(function(ents){
+      ents.forEach(function(en){
+        if(!en.isIntersecting) return;
+        deckIO.unobserve(en.target);
+        mountClone(en.target, D);
+      });
+    }, {root: host, rootMargin: '600px'});
+    slots.forEach(function(s){ deckIO.observe(s); });
+  } else {
+    slots.forEach(function(s){ mountClone(s, D); });
   }
 }
 function renderChain(D){
