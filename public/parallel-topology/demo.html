@@ -1251,10 +1251,7 @@ function netScene(D, g, box, step){
     return {s: Math.min(box.w/Math.max(.001,bx1-bx0), box.h/Math.max(.001,by1-by0)),
             x0:bx0, x1:bx1, y0:by0, y1:by1};
   }
-  var COLS = K, fit = null;
-  if(ui.spread && K > 1 && !zoomIn){
-    for(var c0=1; c0<=K; c0++){ var m0 = measure(c0); if(!fit || m0.s > fit.s){ fit = m0; COLS = c0; } }
-  }else fit = measure(K);
+  var COLS = K, fit = measure(K);
   var ROWS = Math.ceil(K/COLS);
   function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
@@ -1292,6 +1289,27 @@ function netScene(D, g, box, step){
     } else {
       gh += box3(0,0,1,AR, 0,TOTW, k,
         mix(VC.dp,6), mix(VC.dp,10), mix(VC.dp,16), mix(VC.dp,ui.spread?8:18), VC.dp, .5);
+    }
+    /* 非选中副本也带 TP/EP 色条——只画色块，不加文字和点击区 */
+    if(cutTP && D.tp>1){
+      var sgmK = segW(cutPP ? co.p : 0);
+      for(var bt=0; bt<D.tp; bt++){
+        var ua9 = bt/D.tp, ub9 = (bt+1)/D.tp - Math.min(0.02, 0.35/D.tp);
+        gh += quad([P(ua9,AR+0.30,sgmK[0],k), P(ub9,AR+0.30,sgmK[0],k),
+                    P(ub9,AR+0.30,sgmK[1],k), P(ua9,AR+0.30,sgmK[1],k)],
+          'fill:'+(bt===co.t?mix(VC.tp,55):'url(#hxTP)')+';stroke:'+VC.tp+';stroke-width:'+(bt===co.t?1:.35));
+      }
+    }
+    if(cutEP && D.moe && D.ep>1){
+      var sgmE = segW(cutPP ? co.p : 0);
+      var rvE = AR+0.30+(cutTP?0.19:0);
+      for(var be=0; be<D.ep; be++){
+        var ua9 = be/D.ep, ub9 = (be+1)/D.ep - Math.min(0.02, 0.35/D.ep);
+        var mineE = me ? be===me.ep : false;
+        gh += quad([P(ua9,rvE,sgmE[0],k), P(ub9,rvE,sgmE[0],k),
+                    P(ub9,rvE,sgmE[1],k), P(ua9,rvE,sgmE[1],k)],
+          'fill:'+(mineE?mix(VC.ep,55):'url(#hxEP)')+';stroke:'+VC.ep+';stroke-width:'+(mineE?1:.35));
+      }
     }
     body.push('<g opacity="'+a.toFixed(2)+'">' + gh + '</g>');
     if(ui.spread && K <= 64)
@@ -2457,7 +2475,7 @@ function renderChain(D){
   var scene = netScene(D, g, SCB, KS);
   parts.push('<g pointer-events="none">'+scene.body+'</g>');
   sceneHit = scene.hit;
-  parts.push(rect(SCB.x, SCB.y, SCB.w, SCB.h, 'none', 'var(--pt-bd)', .8, 'stroke-dasharray="4 4" pointer-events="none"'));
+  /* 虚线框移除——全画布 3D */
   parts.push(txt(SCB.x, SCB.y-20, '整网 '+D.layers+' 层 · '+fmt(D.world)+' 卡 · 拖动可转动'+scene.note, 9.4, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   /* 走到这一刀，本卡还持有整网的几分之一 —— 这条读数是 A3 的现场证据：
      ①DP 那一刀之后分母还是 1，一点没减；③CP 也一样（它切的是输入）。 */
@@ -3221,7 +3239,9 @@ function render(){
   if(sel!==null && (!D.ok || sel>=D.world)) sel = null;
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
-  renderFoot(D);
+  var foot = document.querySelector('.pt-foot');
+  if(ui.view==='chain'){ foot.style.display = 'none'; }
+  else { foot.style.display = ''; renderFoot(D); }
   if(!D.ok){
     $('stage').innerHTML = '';
     $('stagebar').innerHTML = '';
