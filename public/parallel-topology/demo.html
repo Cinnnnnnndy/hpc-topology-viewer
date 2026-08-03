@@ -1275,28 +1275,12 @@ function netScene(D, g, box, step){
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
-  /* ── 地板网格 + 轴标注（参考魔方视图 pattern）── */
+  /* ── 地板网格（参考魔方视图 pattern）── */
   if(ui.spread && K > 1 && !zoomIn){
     var grd = '';
     for(k = 0; k < K; k++){
       var fl = [P(0,0,0,k), P(1,0,0,k), P(1,0,TOTW,k), P(0,0,TOTW,k)];
       grd += quad(fl, 'fill:none;stroke:var(--pt-bd);stroke-width:.15;stroke-dasharray:3,3');
-    }
-    var a0 = P(0.5, -0.12, TOTW*0.5, 0), aE = P(0.5, -0.12, TOTW*0.5, K-1);
-    grd += seg(a0, aE, 'stroke:'+VC.dp+';stroke-width:1.2;marker-end:url(#arrdp)');
-    var aM = P(0.5, -0.12, TOTW*0.5, Math.floor(K/2));
-    grd += txt(aM[0], aM[1]-6, 'DP ×'+K, 8, VC.dp, 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
-    if(cutPP && D.pp > 1){
-      var ppA = P(-0.12, 0, 0, sel0), ppB = P(-0.12, 0, TOTW, sel0);
-      grd += seg(ppA, ppB, 'stroke:'+VC.pp+';stroke-width:1.2;marker-end:url(#arrpp)');
-      var ppM = P(-0.12, 0, TOTW*0.5, sel0);
-      grd += txt(ppM[0]-6, ppM[1], 'PP ×'+D.pp, 8, VC.pp, 'end', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
-    }
-    if(cutTP && D.tp > 1){
-      var tpA = P(0, -0.12, -0.08, sel0), tpB = P(1, -0.12, -0.08, sel0);
-      grd += seg(tpA, tpB, 'stroke:'+VC.tp+';stroke-width:1.2;marker-end:url(#arrtp)');
-      var tpM = P(0.5, -0.12, -0.08, sel0);
-      grd += txt(tpM[0], tpM[1]-6, 'TP ×'+D.tp, 8, VC.tp, 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2"');
     }
     body.push(grd);
   }
@@ -1337,8 +1321,13 @@ function netScene(D, g, box, step){
       }
     }
     body.push('<g opacity="'+a.toFixed(2)+'">' + gh + '</g>');
-    if(ui.spread && K <= 64)
-      body.push(txt(P(.5,AR+.10,0,k)[0], P(.5,AR+.10,0,k)[1], '副本'+k, 6.4, VC.dp, 'middle'));
+    if(ui.spread && K <= 64){
+      var cpPt = P(.5,AR+.10,0,k), cpLab = 'DP'+k;
+      var cpW = cpLab.length*4.2+6, cpH = 11;
+      body.push('<rect x="'+(cpPt[0]-cpW/2)+'" y="'+(cpPt[1]-cpH/2)+'" width="'+cpW+'" height="'+cpH+'" rx="'+cpH/2+'" '
+        +'style="fill:'+(k===sel0?mix(VC.dp,50):'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(k===sel0?1.2:.6)+'"/>');
+      body.push(txt(cpPt[0], cpPt[1]+3.5, cpLab, 6.8, k===sel0?VC.dp:'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+    }
     hit.push('<g class="cgrow">'+pane(0, k, 'fill:transparent;cursor:pointer',
       'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
   }
@@ -1346,11 +1335,7 @@ function netScene(D, g, box, step){
   var off0 = sel0;
   for(var li = L-1; li >= 0; li--){
     var ww = wOf(li), mine = cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true;
-    /* PP 段界：一整片刀面横切整叠，落在缝的正中——这一刀没落下就不该有面 */
-    if(cutPP && li%lps===0 && li>0)
-      body.push(quad([P(-0.06,-0.04,ww-GAPW*0.5,off0), P(1.06,-0.04,ww-GAPW*0.5,off0),
-                      P(1.06,AR+0.04,ww-GAPW*0.5,off0), P(-0.06,AR+0.04,ww-GAPW*0.5,off0)],
-        'fill:'+mix(VC.pp,mine?26:12)+';stroke:'+VC.pp+';stroke-width:'+(mine?1.1:.6)));
+    /* PP 段界已移除——用户不需要中间黄色切分面 */
     body.push(pane(ww, off0, 'fill:'+(mine?mix('var(--pt-fg)',2):'none')
       + ';stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
     /* 段可点：2D 段带撤掉之后，换 stage 的入口要留在这个场景里。
@@ -1358,13 +1343,15 @@ function netScene(D, g, box, step){
        改用每段顶上那条**沿深度不重叠**的脊带：一段一条，点谁是谁。 */
     if(cutPP && li%lps===0){
       var st9 = stOf(li), sgw = segW(st9);
-      /* PP 段选择放在左侧轴——沿深度排列，类似 y 轴刻度 */
-      var lu = -0.08;
+      var lu = -0.12, isSel9 = st9===co.p;
       var ridge = [P(lu,AR,sgw[0],off0), P(0,AR,sgw[0],off0), P(0,AR,sgw[1],off0), P(lu,AR,sgw[1],off0)];
-      body.push(quad(ridge, 'fill:'+mix(VC.pp, st9===co.p?42:12)+';stroke:'+VC.pp+';stroke-width:'+(st9===co.p?1:.4)));
+      body.push(quad(ridge, 'fill:'+mix(VC.pp, isSel9?50:15)+';stroke:'+VC.pp+';stroke-width:'+(isSel9?1.4:.5)));
       var rc9 = P(lu/2, AR, (sgw[0]+sgw[1])/2, off0);
-      body.push(txt(rc9[0], rc9[1]+3, 's'+st9, 6.4, st9===co.p?VC.pp:'var(--pt-fg3)', 'middle',
-        st9===co.p?'font-weight="800"':''));
+      var pLab = 'PP'+st9;
+      var pw9 = pLab.length*4.2+6, ph9 = 11;
+      body.push('<rect x="'+(rc9[0]-pw9/2)+'" y="'+(rc9[1]-ph9/2+1)+'" width="'+pw9+'" height="'+ph9+'" rx="'+ph9/2+'" '
+        +'style="fill:'+(isSel9?mix(VC.pp,50):'var(--pt-bg)')+';stroke:'+VC.pp+';stroke-width:'+(isSel9?1.2:.6)+'"/>');
+      body.push(txt(rc9[0], rc9[1]+3.5, pLab, 6.8, isSel9?VC.pp:'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       hit.push('<g class="cgrow">'+quad(ridge, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="p" data-i="'+st9+'"')+'</g>');
     }
@@ -1412,26 +1399,37 @@ function netScene(D, g, box, step){
         所以另给一条尺：tp 格，本卡那格实心、别的打斜纹，点一格换卡。 ── */
   var sgm = segW(cutPP ? co.p : 0);
   /* TP/EP 选择放在前侧轴——沿 u 轴排列，类似 x 轴刻度 */
+  var bandH = 0.09;
   function railBand(fwOff, n, mineI, cc, hxid, lab2, key){
-    var fw = sgm[0] - 0.06 - fwOff;
+    var fw = sgm[0] - bandH - fwOff;
     for(var b9=0; b9<n; b9++){
       var ua = b9/n, ub = (b9+1)/n - Math.min(0.02, 0.35/n);
       var mineB = b9===mineI;
-      var cell = [P(ua,AR,fw,off0), P(ub,AR,fw,off0), P(ub,AR,fw+0.06,off0), P(ua,AR,fw+0.06,off0)];
-      body.push(quad(cell, 'fill:'+(mineB?mix(cc,55):'url(#'+hxid+')')+';stroke:'+cc+';stroke-width:'+(mineB?1:.35)));
+      var cell = [P(ua,AR,fw,off0), P(ub,AR,fw,off0), P(ub,AR,fw+bandH,off0), P(ua,AR,fw+bandH,off0)];
+      body.push(quad(cell, 'fill:'+(mineB?mix(cc,55):'url(#'+hxid+')')+';stroke:'+cc+';stroke-width:'+(mineB?1.4:.5)));
       if(n<=16){
-        var cc9 = P((ua+ub)/2, AR, fw+0.03, off0);
-        body.push(txt(cc9[0], cc9[1]+2, lab2(b9), 6.4, mineB?cc:'var(--pt-fg3)', 'middle', mineB?'font-weight="800"':''));
+        var cc9 = P((ua+ub)/2, AR, fw+bandH/2, off0);
+        var lbT = lab2(b9);
+        var pw = lbT.length*4.2+6, ph = 11;
+        body.push('<rect x="'+(cc9[0]-pw/2)+'" y="'+(cc9[1]-ph/2+1)+'" width="'+pw+'" height="'+ph+'" rx="'+ph/2+'" '
+          +'style="fill:'+(mineB?mix(cc,50):'var(--pt-bg)')+';stroke:'+cc+';stroke-width:'+(mineB?1.2:.6)+'"/>');
+        body.push(txt(cc9[0], cc9[1]+3.5, lbT, 6.8, mineB?cc:'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       }
       hit.push('<g class="cgrow">'+quad(cell, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
     }
   }
-  if(cutTP && D.tp>1) railBand(0, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return '片'+b9; }, 't');
+  if(cutTP && D.tp>1) railBand(0, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
   if(cutEP && D.moe && D.ep>1){
     var perB = Math.max(1, Math.round(D.experts/D.ep));
-    railBand(cutTP?0.08:0, D.ep, me?me.ep:0, VC.ep, 'hxEP',
-      function(b9){ return '桶'+b9; }, 'e');
+    var epOff = cutTP?bandH+0.02:0;
+    railBand(epOff, D.ep, me?me.ep:0, VC.ep, 'hxEP',
+      function(b9){ return 'EP'+b9; }, 'e');
+  }
+  if(cutDP && K>1){
+    var dpOff = (cutTP?bandH+0.02:0) + (cutEP&&D.moe&&D.ep>1?bandH+0.02:0);
+    railBand(dpOff, K, sel0, VC.dp, 'hxDP',
+      function(b9){ return 'DP'+b9; }, 'd');
   }
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
@@ -1454,7 +1452,9 @@ function netScene(D, g, box, step){
   var HX = '<pattern id="hxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
     + '<pattern id="hxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>';
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>';
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
   return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>', nodes: nodes, sawn: sawn, whole: whole,
