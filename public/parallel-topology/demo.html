@@ -1398,7 +1398,7 @@ function netScene(D, g, box, step){
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
   var axOff = 0;
-  var sgm = segW(cutPP ? co.p : 0);
+  var sgm = segW(0);
   /* PP 左侧轴 */
   if(cutPP){
     for(var ps9=0; ps9<D.pp; ps9++){
@@ -2493,9 +2493,9 @@ function renderChain(D){
   var stEl = $('stage');
   var cAR = (stEl && stEl.clientHeight > 60) ? (stEl.clientWidth-20)/(stEl.clientHeight-12) : 1.9;
   var VW = clamp(Math.round(692*cAR), 1080, 2600);
-  var SCB = {x:84, y:62, w:VW-100, h:496};
+  var H = Math.max(500, Math.round(VW / Math.max(0.5, cAR)));
+  var SCB = {x:16, y:12, w:VW-32, h:H-24};
   var RY = SCB.y + SCB.h;
-  var H = RY + 8;
   /* 右侧 .pt-detail 浮层宽 304px，会压住画布最右一条：右对齐的读数统一留出 RPAD */
   var RPAD = 118;
   var parts = [], sceneHit = '';
@@ -2523,11 +2523,6 @@ function renderChain(D){
     + '<button class="pb'+(anim.on?' is-on':'')+'" data-act="knifeplay" title="从整网开始，一刀一刀往下切——每一刀切的是上一刀的产物">'+(anim.on?'⏸ 停':'▶ 逐刀切')+'</button>'
     /* 段的**表达**在图里（每段一条基座，可点）；但镜头推进之后别的段会出框，
        点不到了——所以换段这个**控制**放进状态条，图里不再塞 2D 段带。 */
-    + (D.pp>1 ? '<span class="pt-chip" style="border-color:'+VC.pp+';color:'+VC.pp+'">stage</span>'
-        + '<button class="pb" data-act="stagestep" data-d="-1" title="上一段">◀</button>'
-        + '<button class="pb" data-act="stagestep" data-d="0" style="pointer-events:none">'+co.p+' / '+(D.pp-1)+'</button>'
-        + '<button class="pb" data-act="stagestep" data-d="1" title="下一段">▶</button>' : '')
-    + '<button class="pb'+(ui.spread?' is-on':'')+'" data-act="spread" title="复印件怎么排：展开=并排放好，看得清有几份、每份一模一样；叠=挤在一起省地方，份数一多会糊。">复印件 '+(ui.spread?'展开':'叠')+'</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="0" title="正视图（2D）">正视</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="1.5708" data-pitch="0" title="侧视图（2D）">侧视</button>'
     + '<button class="pb" data-act="viewsnap" data-yaw="0" data-pitch="1.5708" title="顶视图（2D）">顶视</button>'
