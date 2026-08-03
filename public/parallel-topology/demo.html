@@ -2594,14 +2594,14 @@ function renderSolidCav(D){
    sidecar 没有对应物，仍走本页自己的 SVG。 */
 var deckCtl = null, deckFail = '';
 function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar); }
-/* 刀开关是叠加多选，sidecar 的 parallelMode 是互斥单选：全关就是没切过的整网
-   （none），有开的按 PP→TP→EP→DP 取第一把——侧视里 PP 分段信息量最大。 */
+/* 侧视只挂 PP 一种标注：那张图上真正在分段的就是 PP——层深方向上有实打实的
+   段边界可画。TP/EP/DP 在同一张图上没有对应的边界，挂上去只是把同一条横幅
+   换个词，反而让人以为那也是沿层深切的。PP 刀关掉就回到没有标注的原图。
+   正视的标注每格都会重复一条，一律不挂。
+   注意这里不碰刀开关本身——四把刀照旧各自独立叠加，只是侧视的标注不跟着跑。 */
 function deckMode(D){
-  if(ui.kPP) return 'pp';
-  if(ui.kTP && D.tp>1) return 'tp';
-  if(ui.kEP && D.moe && D.ep>1) return 'ep';
-  if(ui.kDP && D.dp>1) return 'dp';
-  return 'none';
+  if(ui.viewTab !== 'side') return 'none';
+  return ui.kPP ? 'pp' : 'none';
 }
 function ensureDeck(){
   if(deckCtl || deckFail) return deckCtl;
