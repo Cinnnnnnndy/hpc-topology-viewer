@@ -2654,20 +2654,12 @@ function tileLayout(D){
     host.style.removeProperty('--pt-cellh');
     return 1;
   }
-  /* 列数不猜：每种列数都量一遍，取每格最接近正视图竖长比例的那个 */
-  var W = host.clientWidth || 1200, Hh = host.clientHeight || 700;
-  var best = 1, bestScore = -1;
-  for(var c2 = 1; c2 <= n; c2++){
-    var rows = Math.ceil(n/c2);
-    var cw = (W - 28 - (c2-1)*10) / c2, ch = (Hh - 66 - (rows-1)*10) / rows;
-    if(cw < 70 || ch < 90) continue;
-    var score = Math.min(cw*1.5, ch);
-    if(score > bestScore){ bestScore = score; best = c2; }
-  }
-  var rows2 = Math.ceil(n/best);
+  /* 一排排开，不折行：DP 是同一份东西复印 n 遍，副本之间没有先后也没有行列
+     关系，折成两排会让人以为行、列各自代表了点什么。排不下就横向滚。 */
+  var Hh = host.clientHeight || 700;
   host.classList.add('is-tiled');
-  host.style.gridTemplateColumns = 'repeat('+best+', minmax(0,1fr))';
-  host.style.setProperty('--pt-cellh', Math.max(150, Math.floor((Hh - 66 - (rows2-1)*10) / rows2)) + 'px');
+  host.style.gridTemplateColumns = 'repeat('+n+', minmax(190px, 1fr))';
+  host.style.setProperty('--pt-cellh', Math.max(200, Hh - 66) + 'px');
   return n;
 }
 /* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
