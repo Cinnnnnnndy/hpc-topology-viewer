@@ -83,7 +83,7 @@
 
 /* ── 主区 ── */
 .pt-main{flex:1 1 auto; position:relative; min-height:0}
-.pt-stage{position:absolute; inset:0; padding:6px 10px}
+.pt-stage{position:absolute; inset:0; padding:0}
 .pt-stage svg{width:100%; height:100%; display:block}
 .pt-stagebar{
   position:absolute; top:10px; left:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
@@ -1238,8 +1238,6 @@ function netScene(D, g, box, step){
      这是**粒度换挡**，不是又切了一刀——尺寸从此不守恒，图上写明。 */
   var _bh = 0.09;
   var selectorDepth = 0;
-  if(cutTP && D.tp>1) selectorDepth += _bh + 0.04;
-  if(cutEP && D.moe && D.ep>1) selectorDepth += _bh + 0.04;
   var zw0 = zoomIn ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = zoomIn ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
@@ -1282,7 +1280,7 @@ function netScene(D, g, box, step){
   var pHdist = Math.min(Math.abs(pitch), Math.abs(pitch + PI2));
   var topCard = Math.abs(pitch - PI2);
   var cardDist = Math.min(Math.sqrt(pYdist*pYdist + pHdist*pHdist), topCard);
-  var pAmt = cardDist < 0.06 ? 0 : cardDist > 0.28 ? 1 : (function(){ var t=(cardDist-0.06)/0.22; return t*t*(3-2*t); })();
+  var pAmt = cardDist < 0.20 ? 0 : cardDist > 0.36 ? 1 : (function(){ var t=(cardDist-0.20)/0.16; return t*t*(3-2*t); })();
   /* ── 正视图：不再替换为平铺格子，统一用 3D 链视图 + 下方选择器轴 ── */
   var isFrontView = false;
   if(isFrontView){
@@ -1464,17 +1462,20 @@ function netScene(D, g, box, step){
         'data-act="chainpick" data-k="p" data-i="'+ps9+'"')+'</g>');
     }
   }
-  /* TP/EP 前侧轴 */
+  /* TP/EP/DP 选择器：三层分行，用 v 轴分隔而不是 w 轴深度 */
   var bandH = 0.09;
-  function railBand(fwOff, n, mineI, cc, hxid, lab2, key){
-    var fw = sgm[0] - bandH - fwOff;
+  var dpBandV = 0.04;
+  var tpBandV = dpBandV + (K>1 ? bandH+0.02 : 0);
+  var epBandV = tpBandV + (cutTP && D.tp>1 ? bandH+0.02 : 0);
+  function railBand(vOff, n, mineI, cc, hxid, lab2, key){
+    var bv = AR + vOff;
     for(var b9=0; b9<n; b9++){
       var ua = b9/n, ub = (b9+1)/n - Math.min(0.02, 0.35/n);
       var mineB = b9===mineI;
-      var cell = [P(ua,AR,fw,axOff), P(ub,AR,fw,axOff), P(ub,AR,fw+bandH,axOff), P(ua,AR,fw+bandH,axOff)];
+      var cell = [P(ua,bv,0,axOff), P(ub,bv,0,axOff), P(ub,bv+bandH,0,axOff), P(ua,bv+bandH,0,axOff)];
       body.push(quad(cell, 'fill:'+(mineB?mix(cc,55):'url(#'+hxid+')')+';stroke:'+cc+';stroke-width:'+(mineB?1.4:.5)));
       if(n<=16){
-        var cc9 = P((ua+ub)/2, AR, fw+bandH/2, axOff);
+        var cc9 = P((ua+ub)/2, bv+bandH/2, 0, axOff);
         var lbT = lab2(b9);
         var pw = lbT.length*4.2+6, ph = 11;
         body.push('<rect x="'+(cc9[0]-pw/2)+'" y="'+(cc9[1]-ph/2+1)+'" width="'+pw+'" height="'+ph+'" rx="'+ph/2+'" '
@@ -1485,12 +1486,10 @@ function netScene(D, g, box, step){
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
     }
   }
-  if(cutTP && D.tp>1) railBand(0, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
+  if(cutTP && D.tp>1) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
   if(cutEP && D.moe && D.ep>1){
-    var perB = Math.max(1, Math.round(D.experts/D.ep));
-    var epOff = cutTP?bandH+0.02:0;
-    railBand(epOff, D.ep, me?me.ep:0, VC.ep, 'hxEP',
-      function(b9){ var e0=b9*perB; return 'E'+e0+'–'+(e0+perB-1); }, 'e');
+    railBand(epBandV, D.ep, me?me.ep:0, VC.ep, 'hxEP',
+      function(b9){ return 'EP'+b9; }, 'e');
   }
   /* DP 选择器已改为每份复印件底部的独立标签，不再用共享 railBand */
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
@@ -2560,10 +2559,10 @@ function renderChain(D){
      这才是「查看区域没用满」的大头。改成按舞台长宽比反解 viewBox 宽度：
      高度不变 ⇒ 缩放比不变 ⇒ 字号在屏幕上一样大，多出来的全是真的作图面积。 */
   var stEl = $('stage');
-  var cAR = (stEl && stEl.clientHeight > 60) ? (stEl.clientWidth-20)/(stEl.clientHeight-12) : 1.9;
+  var cAR = (stEl && stEl.clientHeight > 60) ? stEl.clientWidth/stEl.clientHeight : 1.9;
   var VW = clamp(Math.round(692*cAR), 1080, 2600);
   var H = Math.max(500, Math.round(VW / Math.max(0.5, cAR)));
-  var SCB = {x:16, y:12, w:VW-32, h:H-24};
+  var SCB = {x:0, y:0, w:VW, h:H};
   var RY = SCB.y + SCB.h;
   /* 右侧 .pt-detail 浮层宽 304px，会压住画布最右一条：右对齐的读数统一留出 RPAD */
   var RPAD = 118;
