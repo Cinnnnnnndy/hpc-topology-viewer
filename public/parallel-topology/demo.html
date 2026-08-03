@@ -3896,6 +3896,12 @@ document.addEventListener('click', function(ev){
   var lp = ev.target.closest('.l3pick');
   if(lp){ ui.selLayerOff = +lp.getAttribute('data-li'); render(); return; }
   var b = ev.target.closest('[data-act]');
+  /* 点画布空白处取消选中。选中是一种「当前在看谁」的状态，得有办法退出来——
+     不然一旦点中某张卡，读出面板就再也关不掉了（只剩面板上那颗 ✕）。
+     只认舞台内的空白：点工具条、抽屉、面板都不算。 */
+  if(!b && sel !== null && ev.target.closest('#stage,#deck')){
+    sel = null; render(); ptoNotifyHost(); return;
+  }
   if(!b) return;
   var act = b.getAttribute('data-act');
   if(act==='preset'){
