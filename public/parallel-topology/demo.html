@@ -1358,7 +1358,7 @@ function netScene(D, g, box, step){
     var a = ui.spread ? 0.38 : (0.10 + 0.12*(1 - Math.abs(k-sel0)/Math.max(1,K)));
     var gh = '';
     gh += box3(0,0,1,AR, 0,TOTW, k,
-      mix('var(--pt-fg)',3), mix('var(--pt-fg)',5), mix('var(--pt-fg)',8), mix('var(--pt-fg)',4), 'var(--pt-bd)', .3);
+      'none', 'none', 'none', 'none', 'var(--pt-bd)', .3);
     body.push('<g opacity="'+a.toFixed(2)+'">' + gh + '</g>');
     hit.push('<g class="cgrow">'+pane(0, k, 'fill:transparent;cursor:pointer',
       'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
