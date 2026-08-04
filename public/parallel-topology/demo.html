@@ -1706,6 +1706,7 @@ function netScene(D, g, box, step){
         });
       }
     }
+    if(ui.cardMode) shellOf(k);
     if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
@@ -1923,11 +1924,14 @@ function netScene(D, g, box, step){
     }
   }
 
-  if(ui.cardMode){
+  /* 壳跟着自己那列的内容走（一列画完内容马上画它的壳）：原来内容一遍、壳一遍
+     分开画，前脸只敢用 3% 的近乎全透——一旦加磨砂，后列的壳会盖到前列已画好的
+     内容上，列与列的遮挡就乱了。copyOrder 排好的深度序只有内容与壳同走时才成立。 */
+  function shellOf(kc){
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
     var nSeg = cutPP ? D.pp : 1;
-    for(var kc = 0; kc < K; kc++){
       var dc = kc % KD, tc = KT > 1 ? Math.floor(kc/KD) : co.t;
+      var isFcol = hasSel && kc === sel0;      /* 选中那一列（副本 × tp 片）：整列不上雾 */
       for(var pc2 = 0; pc2 < nSeg; pc2++){
         /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
            转起来够看清阵列的骨架，松手再补全。 */
@@ -1962,8 +1966,15 @@ function netScene(D, g, box, step){
           body.push(quad([C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.pp, Math.max(8, lit-4))+';stroke:none'));
           body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.pp, lit)+';stroke:none'));
         } else {
-          body.push(quad([C8[0],C8[1],C8[2],C8[3]],
-            'fill:'+(meC ? mix('var(--pt-fg)',7) : mix('var(--pt-fg)',3))+';stroke:none'));
+          /* 磨砂：前脸 + 顶面各罩一层底色。里面 8 层的密纹隔着这层雾只剩个影子，
+             128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
+             **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
+             pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
+          if(!isFcol){
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',44)+';stroke:none'));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',56)+';stroke:none'));
+          }
+          if(meC) body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
         }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
@@ -1996,10 +2007,12 @@ function netScene(D, g, box, step){
         hit.push('<g class="cgrow"><polygon points="'+ptsStr([C8[0],C8[1],C8[2],C8[3]])
           +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="card" data-i="'+gc+'"/></g>');
       }
-    }
+  }
+  if(ui.cardMode){
     /* ── 轴标签（照魔方那套）：三根轴各自沿线标刻度 ──────────────────
        128 只壳摆在那儿，不标轴就只是一堆盒子——读者认不出「横着是副本、
        竖着是锯片、纵深是段」。每根轴用它自己的维度签名色。 */
+    var nSeg = cutPP ? D.pp : 1;      /* 壳循环挪进 shellOf 之后，这里要有自己的一份 */
     var wFront = segW(0)[0], wBack = segW(nSeg-1)[1];
     if(cutEP) drawEpFrames(true);
     /* 轴标签一律压到**最下面那一行**卡的底边外侧（rowLast），只有 TP 例外——
