@@ -291,23 +291,66 @@ jobs:
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               $SRC/demo.html > $PAT/pattern.html
-          # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这一行，否则线上 404。
+          # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这两行，否则线上 404。
+          # rubik-cube 与 three 是「关闭整网」时才 loadOnce 进来的，静态扫 <script> 看不见它们
+          # ——漏了不会在首屏报错，只在用户按下那颗开关时才 404，所以更要显式列上。
           for v in pto-design-system pto-tokens model-graphviz net-sharding \
-                   model-architecture-3d-deck model-architecture-training-sidecar; do
+                   model-architecture-3d-deck model-architecture-training-sidecar rubik-cube; do
             cp -r ptopo-src/public/vendor/$v $PAT/vendor/$v
           done
+          cp ptopo-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
           cp ptopo-src/public/favicon.svg $PAT/favicon.svg
           cp $DIR/pattern.json $PAT/pattern.json
+
+          # ③ 单视图 pattern /patterns/net-slicing/（全屏画布，自包含）
+          # 只交付「整网切分」这一屏：同一份实现，但默认落在 chain 视图、embed 形态
+          # （顶栏页脚全收），一条链接就是一张可转的图。三个 vendor 依赖比 ② 多不了，
+          # 直接把 ② 那份 vendor 硬链过来，省一次拷贝。
+          NS=dist/patterns/net-slicing
+          mkdir -p $NS
+          sed -e 's#\.\./vendor/#./vendor/#g' \
+              -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+              -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              -e 's#<title>[^<]*</title>#<title>整网切分 · 从一张网到 world 张卡</title>#' \
+              $SRC/demo.html > $NS/pattern.html
+          # 没带参数打开时也要落在这一屏：把默认值直接写进页面，而不是靠使用者补 query
+          node -e "
+            const fs=require('fs');
+            const f='$NS/pattern.html';
+            let h=fs.readFileSync(f,'utf8');
+            const inject=\"<script>(function(){var q=new URLSearchParams(location.search);\"
+              + \"if(!q.has('view'))q.set('view','chain');\"
+              + \"if(!q.has('embed'))q.set('embed','1');\"
+              + \"var t=location.pathname+'?'+q.toString()+location.hash;\"
+              + \"if(t!==location.pathname+location.search+location.hash)history.replaceState(null,'',t);\"
+              + \"})();</script>\";
+            h=h.replace('</head>', inject+'\\n</head>');
+            fs.writeFileSync(f,h);
+          "
+          cp -r $PAT/vendor $NS/vendor
+          cp ptopo-src/public/favicon.svg $NS/favicon.svg
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/net-slicing.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$NS/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+          echo "published: /patterns/net-slicing/pattern.html?v=$SHA"
 
           echo "published: /parallel-topology/demo.html?v=$SHA"
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
       - name: Overlay 并行拓扑卡片 into /launch.html
-        # 工作台总页面（main 的 public/launch.html）里给本分支加一张卡 + 顶栏一枚 pill。
+        # 工作台总页面（main 的 public/launch.html）里给本分支加三张卡 + 顶栏两枚 pill。
         # 走叠加而不是改 main：站点框架永远从 main 构建，本分支不进 main。片段本体在
-        # public/parallel-topology/launch-card.html（可评审、可本地渲染），这里只做定位插入。
+        # public/parallel-topology/launch-card*.html（可评审、可本地渲染），这里只做定位插入。
+        # 三张卡各归各组，因为它们是三种不同的东西：
+        #   · demo（应用形态，进来是用的）      → 「工作台 · 主线」
+        #   · net-slicing（自包含 pattern，可嵌）→ 「独立迭代 Pattern」
+        #   · atlas（整族组件的地图）           → 「参照系 · 文档」组的头
         # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
-        # 代价同其它 pattern 目录：main 或别的分支一发布这张卡会暂时消失，重跑本分支即可。
+        # 代价同其它 pattern 目录：main 或别的分支一发布这些卡会暂时消失，重跑本分支即可。
         run: |
           set -euo pipefail
           SHA=$(git -C ptopo-src rev-parse --short HEAD)
@@ -316,41 +359,86 @@ jobs:
           sha = sys.argv[1]
           launch = pathlib.Path('dist/launch.html')
           html = launch.read_text(encoding='utf-8')
-          card = pathlib.Path('ptopo-src/public/parallel-topology/launch-card.html').read_text(encoding='utf-8')
-          card = card.replace('__SHA__', sha)
+          frag = lambda n: pathlib.Path(
+              'ptopo-src/public/parallel-topology/' + n).read_text(encoding='utf-8').replace('__SHA__', sha)
           if 'parallel-topology/demo.html' in html:
               raise SystemExit('launch.html 已含并行拓扑链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
-          # ① 卡片插进「独立迭代 Pattern」组的末尾（该组 </div></section> 就在文档组注释之前）
-          doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
-          close = html.rindex('      </div>\n    </section>\n', 0, doc)
-          html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
-          # ② 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
-          #    的地图，该领这一组的头（Demo 本体那张卡留在 Pattern 组末尾）
-          atlas = pathlib.Path('ptopo-src/public/parallel-topology/launch-card-atlas.html').read_text(encoding='utf-8')
-          atlas = atlas.replace('__SHA__', sha)
+
+          def append_to_group(html, next_group_marker, card):
+              """插到某一组 card-grid 的末尾：下一组注释往前找最近的 </div></section>。"""
+              nxt = html.index(next_group_marker)
+              close = html.rindex('      </div>\n    </section>\n', 0, nxt)
+              return html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
+
+          # ① Demo 本体进「工作台 · 主线」——它是应用形态，不是拿去嵌的零件
+          html = append_to_group(html, '<!-- ═══ 独立迭代 Pattern ═══ -->', frag('launch-card.html'))
+          # ② 抽出来的 /patterns/net-slicing/ 进「独立迭代 Pattern」组末尾
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-net-slicing.html'))
+          # ③ 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
+          #    的地图，该领这一组的头
+          atlas = frag('launch-card-atlas.html')
           gdoc = html.index('<h2 class="group-title" id="g-doc">')
           grid = html.index('      <div class="card-grid">\n', gdoc) + len('      <div class="card-grid">\n')
           html = html[:grid] + '\n' + atlas.rstrip('\n') + '\n' + html[grid:]
-          # ③ 顶栏 pill：紧跟在参照系那枚后面，指组合总图（它是入口）
+          # ④ 顶栏 pill：紧跟在参照系那枚后面——组合总图（整族入口）与整网切分（一条链接一屏）
           pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
           at = html.index(pill) + len(pill)
-          html = html[:at] + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>' + html[at:]
+          html = (html[:at]
+                  + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>'
+                  + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">整网切分 Pattern</a>'
+                  + html[at:])
           launch.write_text(html, encoding='utf-8')
-          print('patched dist/launch.html: +2 cards +1 pill @ ' + sha)
+          print('patched dist/launch.html: +3 cards +2 pills @ ' + sha)
           PY
           grep -c 'parallel-topology/atlas.html' dist/launch.html
+          grep -c 'patterns/net-slicing/pattern.html' dist/launch.html
+          # 三张卡必须各落各组。按组的字节区间判定，不能只比先后：主线那张卡的链接里
+          # 也含 net-slicing 的地址，单看「第一次出现」会误判成插错了组。
+          python3 - <<'PY'
+          import pathlib, sys
+          html = pathlib.Path('dist/launch.html').read_text(encoding='utf-8')
+          g_app = html.index('<!-- ═══ 工作台 · 主线 ═══ -->')
+          g_pat = html.index('<!-- ═══ 独立迭代 Pattern ═══ -->')
+          g_doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
+          def card_in(lo, hi, title):
+              at = html.find('<h3 class="card-title"><a href="' + title, lo, hi)
+              return at
+          demo  = card_in(g_app, g_pat, './parallel-topology/demo.html')
+          nets  = card_in(g_pat, g_doc, './patterns/net-slicing/pattern.html')
+          atlas = card_in(g_doc, len(html), './parallel-topology/atlas.html')
+          for name, at, grp in (('Demo', demo, '工作台 · 主线'),
+                                ('net-slicing', nets, '独立迭代 Pattern'),
+                                ('组合总图', atlas, '参照系 · 文档')):
+              print(f'  {name} 卡 @ {at} in「{grp}」' + ('' if at >= 0 else '   ← 没找到！'))
+          sys.exit(0 if min(demo, nets, atlas) >= 0 else 1)
+          PY
           test -s dist/parallel-topology/atlas.html
           test -s dist/parallel-topology/cockpit.html
-          # demo 引到的每个 vendor 文件都得真的在 dist 里躺着。少一个不会让页面报错，
-          # 只会让正视/侧视静默退回旧 SVG——那种坏法从线上看不出来，必须在这里拦住。
+          # 三个入口引到的每个 vendor 文件都得真的在 dist 里躺着。少一个不会让页面报错，
+          # 只会让正视/侧视静默退回旧 SVG、或者按下「关闭整网」时才 404——那种坏法从线上
+          # 看不出来，必须在这里拦住。注意扫的是全文而不是 <script> 标签：rubik 与 three
+          # 是运行时 loadOnce 进来的，只在 JS 字符串里出现。
           python3 - <<'PY'
           import re, pathlib, sys
-          demo = pathlib.Path('dist/parallel-topology/demo.html').read_text(encoding='utf-8')
-          refs = sorted(set(re.findall(r'\.\./(vendor/[A-Za-z0-9./_-]+\.(?:css|js))(?:\?[^"\']*)?', demo)))
-          missing = [r for r in refs if not pathlib.Path('dist', r).is_file()]
-          print(f'demo.html 引用 {len(refs)} 个 vendor 文件，dist 缺 {len(missing)} 个')
-          for m in missing: print('  MISSING dist/' + m)
-          sys.exit(1 if missing else 0)
+          # (页面, vendor 前缀正则, 解析根) —— 目录入口共用 dist/vendor/，两个 pattern 各自自包含
+          targets = [
+              ('dist/parallel-topology/demo.html',                 r'\.\./(vendor/', 'dist'),
+              ('dist/patterns/parallel-topology-demo/pattern.html', r'\./(vendor/',  'dist/patterns/parallel-topology-demo'),
+              ('dist/patterns/net-slicing/pattern.html',            r'\./(vendor/',  'dist/patterns/net-slicing'),
+          ]
+          bad = 0
+          for page, prefix, root in targets:
+              html = pathlib.Path(page).read_text(encoding='utf-8')
+              refs = sorted(set(re.findall(prefix + r"[A-Za-z0-9./_-]+\.(?:css|js))(?:\?[^\"']*)?", html)))
+              missing = [r for r in refs if not pathlib.Path(root, r).is_file()]
+              print(f'{page} 引用 {len(refs)} 个 vendor 文件，缺 {len(missing)} 个')
+              for m in missing:
+                  print('  MISSING ' + root + '/' + m)
+              bad += len(missing)
+              if len(refs) < 15:
+                  print(f'  ← 只扫到 {len(refs)} 个引用，少于预期 15：正则或产物不对')
+                  bad += 1
+          sys.exit(1 if bad else 0)
           PY
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）

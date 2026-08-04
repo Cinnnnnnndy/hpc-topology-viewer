@@ -1,0 +1,45 @@
+{
+  "id": "net-slicing",
+  "name": "整网切分 · 从一张网到 world 张卡",
+  "description": "一个可转动的三维场景，把并行切分讲成一条连续的链：整网 → DP 复印 → PP 切段 → TP 锯片 → EP 分桶 → 四刀的交集恰好是一张卡 → 清空卡里的载荷，剩下的排列本身就是逻辑魔方。四把刀各自独立开关（叠加而非切换），视角在 3D / 正视 / 侧视 / 顶视之间切换——正视与侧视直接复用 model-architecture-training-sidecar 画的真图，魔方形态直接复用 rubik-cube pattern，都不是仿制。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "canvas": "full-bleed",
+  "upstream": {
+    "source": "public/parallel-topology/demo.html",
+    "fullTool": "../../parallel-topology/demo.html",
+    "prd": "../../parallel-topology/prd.html",
+    "conceptMap": "../../parallel-topology/concept-map.html"
+  },
+  "reuses": [
+    "model-graphviz —— openPangu 真图（55 个节点，算子布局与层级）",
+    "net-sharding —— 纯数据层 SHARD 表：每个算子被哪把刀沿哪根张量轴切",
+    "model-architecture-3d-deck + model-architecture-training-sidecar —— 正视（一层的算子 DAG）与侧视（46 层沿层深 + PP Stage 分段）",
+    "rubik-cube —— 关闭整网后的魔方形态（three.js，按需加载）"
+  ],
+  "urlParams": {
+    "cuts": "d/p/t/e 的任意组合 —— 哪几把刀是落下的（如 cuts=dpt 表示 DP+PP+TP，EP 不切）；缺省四把全落",
+    "vtab": "3d|front|side|top —— 视角。front/side 是真正的正交投影（yaw=pitch=0 与 ±π/2），只有 3d 带透视",
+    "card": "1 —— 打开 Rank（卡维度）：四刀的交集收进 world 只卡壳，每只装它自己那份",
+    "net": "0 —— 仅在 card=1 时生效。关掉整网：卡里不画算子，只剩 world 只方块，直接切到 rubik-cube pattern",
+    "sel": "整数 global_rank —— 选中某张卡；不给就是未选中态（此时整网照常看得见，没有主角要衬托）",
+    "embed": "1 —— 嵌入形态：收起顶栏与页脚，整页只剩画布与它自己的工具条",
+    "theme": "light|dark",
+    "preset": "default128|dense64|longcp|moe64|pangu —— 预置并行度",
+    "tp / cp / pp / dp / ep": "整数 —— 直接指定并行度（覆盖 preset）",
+    "yaw / pitch / zoom / px / py": "浮点 —— 3D 机位与缩放平移；vtab 切换会覆盖 yaw/pitch"
+  },
+  "interactions": [
+    "拖拽 = 转台；Ctrl / ⌘ / Shift / 中键 = 平移；滚轮 = 缩放。2D 视角下拖拽只平移——转台一动就离开了正交机位。",
+    "点卡壳选中该 rank，点画布空白取消选中。",
+    "正视方阵按 DP 铺开，默认一屏摆完，细节靠滚轮放大（改的是列宽，每只 sidecar 会跟着重新 fit，放大是真的更清楚）。"
+  ],
+  "notes": [
+    "不认识的参数一律忽略，非法值退回默认，不报错。",
+    "rank 是地址不是容器：容器只有两个——卡（容量=显存）与流（容量=时间）。",
+    "EP 不是独立轴：桶号由 (tp, cp, dp) 导出，所以每张卡的桶必须按它自己的坐标算。",
+    "顶视看不到 TP 的两层是对的：三个正交视图各看一个平面——正视 DP×TP、侧视 PP×TP、顶视 DP×PP，被压掉的那根轴落在深度方向。",
+    "配置不合法时舞台封锁（宁缺毋误），错误各带最近合法值。"
+  ]
+}

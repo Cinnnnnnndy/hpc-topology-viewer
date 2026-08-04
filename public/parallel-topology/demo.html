@@ -309,8 +309,11 @@
 /* 嵌入模式（?host=cockpit）：藏掉本页顶栏——驾驶舱的格头已经写了这是哪一格，
    配置与选中卡由宿主统一驱动，再留一条自己的顶栏就是两套控制器打架。
    底部图层条保留：L5 通信 / 原语这些是**本格自己的**开关，宿主并不代管。 */
+/* 嵌入形态：整页只剩画布。顶栏和页脚都收掉——分享出去的那条链接要的是一张图，
+   不是一个带导航的小站；舞台工具条留着，那是这张图自己的控件。 */
 .pt-root.embed .pt-bar{display:none}
 .pt-root.embed .pt-main{border-top:0}
+.pt-root.embed .pt-foot{display:none !important}
 .pt-foot{flex:none; border-top:1px solid var(--pt-bd); background:var(--pt-s1); padding:6px 14px 8px; z-index:10; display:flex; flex-direction:column; gap:5px}
 .pt-lrow{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .pt-sep{width:1px; height:16px; background:var(--pt-bd); margin:0 4px}
@@ -492,7 +495,9 @@ function urlLoad(){
   else if(VIEWS.some(function(x){return x.id===vw;})) ui.view = vw;
   if(COMM_DIMS.indexOf(q.get('cut'))>=0) ui.cutDim = q.get('cut');
   var sl = parseInt(q.get('sel'),10); if(isFinite(sl) && sl>=0) sel = sl;
-  if(q.get('host')==='cockpit') $('app').classList.add('embed');
+  /* embed=1：整页只剩画布——顶栏、页脚全收起来，给「一条链接就是一张图」的
+     嵌入形态用（host=cockpit 是早先驾驶舱用的写法，一并认）。 */
+  if(q.get('embed')==='1' || q.get('host')==='cockpit') $('app').classList.add('embed');
   if(AXIS_DOMAIN.indexOf(q.get('axis'))>=0) ui.axis = q.get('axis');
   if(COMM_DIMS.indexOf(q.get('dim'))>=0) ui.commDim = q.get('dim');
   if(PRIMS.some(function(x){return x.id===q.get('prim');})) ui.commPrim = q.get('prim');
@@ -506,6 +511,10 @@ function urlLoad(){
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
   if(q.has('vtab')) ui.viewTab = q.get('vtab');
+  /* Rank（卡维度）与整网开关也写进链接：这两条是「这一屏在讲什么」的开关，
+     口头交付里一定会提到的那句话，就该能塞进 URL。net=0 才是关掉整网。 */
+  if(q.get('card')==='1' || q.get('rank')==='1') ui.cardMode = true;
+  if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -529,6 +538,7 @@ function urlWrite(){
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
+  if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
   if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
