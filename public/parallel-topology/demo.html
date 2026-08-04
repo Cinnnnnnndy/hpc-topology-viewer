@@ -4562,7 +4562,11 @@ $('stage').addEventListener('pointermove', function(ev){
     ui.panX3 = drag3.panX + dx*drag3.cs;
     ui.panY3 = drag3.panY + dy*drag3.cs;
   } else {
-    ui.yaw3 = drag3.yaw + dx*0.008;
+    /* 转台跟手：**离你最近的那一面跟着手指走**。yaw 这里必须取负——turn3 里
+       yaw 转的是坐标架（+u 轴朝观者摆过来），从画面上看就是「抓住背面在推」，
+       与 pitch 那一轴（下拖 → 远侧抬高 → 更俯视，正是抓着前沿往下扳）相反。
+       一横一纵两套相反的直觉装在同一次拖拽里，就是那种「有时正有时反」的感觉。 */
+    ui.yaw3 = drag3.yaw - dx*0.008;
     ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
   }
   lowDetail = true;
@@ -4691,7 +4695,7 @@ document.addEventListener('click', function(ev){
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
-  else if(act==='turn'){ ui.yaw3 += (+b.getAttribute('data-y'))*0.35; ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.57); render(); }
+  else if(act==='turn'){ ui.yaw3 -= (+b.getAttribute('data-y'))*0.35;   /* 与拖拽同向 */ ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.57); render(); }
   else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render(); }
   else if(act==='viewsnap'){
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
