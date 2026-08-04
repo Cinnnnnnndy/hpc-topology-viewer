@@ -109,6 +109,12 @@
 .pt-rubik .prc-topbar{top:56px !important}
 .pt-rubik .prc-more{top:104px !important}
 .pt-rubik .prc-root{--prc-topbar-offset:56px}
+/* 但它的**标题**要收掉：魔方是被我们挂进来的一格画面，不是另一张图。它自带的
+   「逻辑魔方」一露出来，同一个左上角就有两个名字在争；名字统一由 .pt-stagetitle
+   那一条给（关闭整网时写在副标题里）。收掉之后顶栏只剩控件一个孩子，
+   space-between 会把它甩到左边，所以顺手改成靠右。 */
+.pt-rubik .prc-brandname{display:none}
+.pt-rubik .prc-topbar{justify-content:flex-end}
 .pt-deck[hidden]{display:none}
 .pt-deckhost{width:100%; height:100%; min-height:0}
 /* DP 复印：整张正视图复制成方阵，每格一份副本。DP 切的是整网不是某一层，
@@ -202,6 +208,15 @@
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
 }
+/* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
+   默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
+.pt-stagetitle{
+  position:absolute; top:10px; left:16px; z-index:6; display:none;
+  align-items:baseline; gap:8px; min-height:30px; pointer-events:none; max-width:min(46%, 520px);
+}
+.pt-root.embed .pt-stagetitle{display:flex}
+.pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
+.pt-stagetitle .sub{font-size:11.5px; color:var(--pt-fg3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .pb{
   min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
   border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
@@ -356,6 +371,9 @@
     <div class="pt-actions" id="barActs"></div>
   </header>
   <div class="pt-main" id="main">
+    <!-- 画布自己的名字，占舞台左上角那个位置。收起顶栏之后（嵌入形态）整屏只剩画布，
+         没有它就没人说得清这是什么；顶栏在的时候它自己让位，免得同一个名字印两遍。 -->
+    <div class="pt-stagetitle" id="stageTitle"></div>
     <div class="pt-stage" id="stage"></div>
     <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG。
          sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
@@ -4064,12 +4082,26 @@ function sayText(D){
   return s;
 }
 
+/* 画布左上角那个名字。整屏只认这一个标题：「并行拓扑」是这套东西的名字，副标题
+   说的是此刻在看哪一幕。关掉整网之后画面整屏交给魔方，但它仍是这一幕的一种形态，
+   不是另一张图——所以「逻辑魔方」写在副标题里，它自带的那个标题被 CSS 收掉。 */
+function renderStageTitle(D){
+  var el = $('stageTitle'); if(!el) return;
+  var view = VIEWS.filter(function(v){ return v.id === ui.view; })[0];
+  var sub = view ? view.name : '';
+  if(ui.view === 'chain' && ui.cardMode){
+    sub += ui.netOff ? ' · 关闭整网 = 逻辑魔方' : ' · Rank ' + D.world + ' 卡';
+  }
+  el.innerHTML = '<b>并行拓扑</b><span class="sub">' + sub + '</span>';
+}
+
 /* ═════════ 总渲染 ═════════ */
 function render(){
   var D = derive(cfg);
   if(sel!==null && (!D.ok || sel>=D.world)) sel = null;
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
+  renderStageTitle(D);
   /* deck 只服务切分链的正视/侧视，别的视图一律先收起来，免得压住它们的 SVG */
   if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('rubik').hidden = true; $('stage').hidden = false; }
   var foot = document.querySelector('.pt-foot');
