@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
 <link rel="stylesheet" href="../vendor/model-architecture-3d-deck/pattern.css">
 <link rel="stylesheet" href="../vendor/model-architecture-training-sidecar/pattern.css">
+<link rel="stylesheet" href="../vendor/rubik-cube/pattern.css">
 <script src="../vendor/model-graphviz/pattern.js"></script>
 <script src="../vendor/model-architecture-3d-deck/pattern.js"></script>
 <script src="../vendor/model-architecture-training-sidecar/pattern.js"></script>
@@ -100,6 +101,14 @@
 .pt-stage svg{width:100%; height:100%; display:block}
 /* sidecar 的挂载面：和 SVG 舞台同一个盒子，二选一显示 */
 .pt-deck{position:absolute; inset:0; min-height:0}
+.pt-rubik{position:absolute; inset:0; min-height:0}
+.pt-rubik[hidden]{display:none}
+/* 魔方自带一整条顶栏（着色/注入/连线/并行度输入/预设，就是它的配置面板入口）。
+   不能像 sidecar 那样一藏了之——藏掉配置就没了。往下挪开我们那排胶囊即可，
+   两套控件各管各的：我们的管「看哪一维、切哪几刀」，它的管魔方自己的读法。 */
+.pt-rubik .prc-topbar{top:56px !important}
+.pt-rubik .prc-more{top:104px !important}
+.pt-rubik .prc-root{--prc-topbar-offset:56px}
 .pt-deck[hidden]{display:none}
 .pt-deckhost{width:100%; height:100%; min-height:0}
 /* DP 复印：整张正视图复制成方阵，每格一份副本。DP 切的是整网不是某一层，
@@ -339,6 +348,8 @@
          sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
          是 #deckHost 的静态克隆，塞在它后面——这样重绘不会把 controller 打断。 -->
     <div class="pt-deck" id="deck" hidden><div class="pt-deckhost" id="deckHost"></div></div>
+    <!-- 关闭整网后直接挂真的魔方 pattern（three.js 按需加载） -->
+    <div class="pt-rubik" id="rubik" hidden></div>
     <div class="pt-stagebar" id="stagebar"></div>
     <div class="pt-animcap" id="animCap"></div>
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
@@ -2996,6 +3007,50 @@ function tileLayout(D){
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
    重排就是拖不动的直接原因；拖的时候只留选中那一份和层板骨架，松手再补回全量。 */
 var lowDetail = false;
+/* ══ 关闭整网 → 直接挂真的魔方 pattern ═════════════════════════════════
+   卡里清空之后剩下的就是「卡本身怎么排」，那正是逻辑魔方在讲的事——与其自己
+   拿 SVG 描一堆方块去像它，不如把那个 pattern 原样接进来（和正视/侧视复用
+   sidecar 同一个道理）。它自带着色、图例、切分动画和并行度输入。
+   three.js 603KB + pattern.js 279KB，按需加载：不开这个开关就一个字节都不拉。 */
+var rubikCtl = null, rubikBusy = false, rubikCfgKey = '';
+function loadOnce(src, cb){
+  var got = document.querySelector('script[data-lazy="'+src+'"]');
+  if(got){ got.dataset.done ? cb() : got.addEventListener('load', cb); return; }
+  var el = document.createElement('script');
+  el.src = src; el.dataset.lazy = src;
+  el.onload = function(){ el.dataset.done = '1'; cb(); };
+  el.onerror = function(){ rubikBusy = false; };
+  document.head.appendChild(el);
+}
+function ensureRubik(cb){
+  if(window.PtoRubikCubePattern && window.THREE) return cb();
+  if(rubikBusy) return;
+  rubikBusy = true;
+  loadOnce('../vendor/three-r128.min.js', function(){
+    loadOnce('../vendor/rubik-cube/pattern.js', function(){ rubikBusy = false; cb(); });
+  });
+}
+function renderRubik(D){
+  $('stage').hidden = true; $('deck').hidden = true; $('rubik').hidden = false;
+  var key = [D.tp, cfg.cp, D.pp, D.dp, D.ep, D.layers, D.experts].join('/');
+  ensureRubik(function(){
+    if(ui.view !== 'chain' || !ui.cardMode || !ui.netOff) return;
+    var conf = {tp:D.tp, cp:+cfg.cp||1, pp:D.pp, dp:D.dp, ep:D.ep,
+                layers:D.layers, experts:D.experts};
+    if(rubikCtl && rubikCfgKey === key) return;          /* 配置没变就别重建 */
+    if(rubikCtl && rubikCtl.setConfig){
+      var r = rubikCtl.setConfig(conf);
+      if(!r || r.ok !== false){ rubikCfgKey = key; return; }
+    }
+    if(rubikCtl && rubikCtl.destroy){ try{ rubikCtl.destroy(); }catch(e){} }
+    $('rubik').innerHTML = '';
+    try{
+      rubikCtl = window.PtoRubikCubePattern.mount($('rubik'), {config: conf});
+      rubikCfgKey = key;
+    }catch(e){ rubikCtl = null; }
+  });
+  return true;
+}
 var deckClones = [], deckZoom = 1;
 /* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
    直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
@@ -3176,6 +3231,13 @@ function tileClone(n, D){
   })();
 }
 function renderChain(D){
+  /* 关掉整网就整屏交给魔方 pattern——它自己就是一张完整的图，不再叠我们的场景 */
+  if(ui.cardMode && ui.netOff){
+    renderRubik(D); renderChainBar(D);
+    $('stageNote').hidden = true; $('detach').hidden = true;
+    return;
+  }
+  $('rubik').hidden = true;
   if(ui.viewTab === 'front' || ui.viewTab === 'side'){
     if(renderDeck(D)){
       renderChainBar(D);
@@ -3981,7 +4043,7 @@ function render(){
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
   /* deck 只服务切分链的正视/侧视，别的视图一律先收起来，免得压住它们的 SVG */
-  if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('stage').hidden = false; }
+  if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('rubik').hidden = true; $('stage').hidden = false; }
   var foot = document.querySelector('.pt-foot');
   if(ui.view==='chain'){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
