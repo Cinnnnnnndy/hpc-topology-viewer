@@ -212,11 +212,10 @@
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
 .pt-stagetitle{
   position:absolute; top:10px; left:16px; z-index:6; display:none;
-  align-items:baseline; gap:8px; min-height:30px; pointer-events:none; max-width:min(46%, 520px);
+  align-items:center; min-height:30px; pointer-events:none;
 }
 .pt-root.embed .pt-stagetitle{display:flex}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
-.pt-stagetitle .sub{font-size:11.5px; color:var(--pt-fg3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .pb{
   min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
   border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
@@ -4082,17 +4081,12 @@ function sayText(D){
   return s;
 }
 
-/* 画布左上角那个名字。整屏只认这一个标题：「并行拓扑」是这套东西的名字，副标题
-   说的是此刻在看哪一幕。关掉整网之后画面整屏交给魔方，但它仍是这一幕的一种形态，
-   不是另一张图——所以「逻辑魔方」写在副标题里，它自带的那个标题被 CSS 收掉。 */
-function renderStageTitle(D){
+/* 画布左上角那个名字。整屏只认这一个标题——就四个字，不带副标题：此刻在看哪一幕、
+   Rank 开着没有，右上角那排开关自己写着，标题再抄一遍只是把同一件事说两遍。 */
+function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
-  var view = VIEWS.filter(function(v){ return v.id === ui.view; })[0];
-  var sub = view ? view.name : '';
-  if(ui.view === 'chain' && ui.cardMode){
-    sub += ui.netOff ? ' · 关闭整网 = 逻辑魔方' : ' · Rank ' + D.world + ' 卡';
-  }
-  el.innerHTML = '<b>并行拓扑</b><span class="sub">' + sub + '</span>';
+  if(el.firstChild) return;
+  el.innerHTML = '<b>并行拓扑</b>';
 }
 
 /* ═════════ 总渲染 ═════════ */
@@ -4101,7 +4095,7 @@ function render(){
   if(sel!==null && (!D.ok || sel>=D.world)) sel = null;
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
-  renderStageTitle(D);
+  renderStageTitle();
   /* deck 只服务切分链的正视/侧视，别的视图一律先收起来，免得压住它们的 SVG */
   if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('rubik').hidden = true; $('stage').hidden = false; }
   var foot = document.querySelector('.pt-foot');
