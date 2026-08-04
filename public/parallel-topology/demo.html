@@ -1556,8 +1556,10 @@ function netScene(D, g, box, step){
             if(!ui.cardMode && ni % 3 !== 0) return;
             /* 卡维度下**每张卡都要看得见自己装了什么**——128 只空壳说明不了任何事。
                没选中不等于没内容，只是不如选中的那张跳。所以这里给一档明显更实的
-               弱化：填充加重、描边加粗、透明度提到 .8。 */
-            if(ui.cardMode){
+               弱化：填充加重、描边加粗、透明度提到 .8。
+               全景**未选中**时同理：这时没有「主角」要衬托，整网就该照常看得见，
+               和卡维度的默认亮度对齐。一旦选了卡，其余立刻退回淡档去衬托它。 */
+            if(ui.cardMode || !hasSel){
               body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
                 'fill:'+mix(col, dm?30:14)+';stroke:'+(dm?col:'var(--pt-bds)')
                 +';stroke-width:.3;opacity:.8'));
@@ -1722,12 +1724,19 @@ function netScene(D, g, box, step){
   var epBandV = tpBandV + (cutTP && D.tp>1 ? bandH+0.02 : 0);
   function railBand(vOff, n, mineI, cc, hxid, lab2, key){
     var bv = AR + vOff;
+    /* 标签隔几个标一个，按**屏幕实宽**算而不是按份数：n≤16 这种判断只看份数，
+       可转台一斜、缩放一小，8 个 EP 桶挤在几十像素里，标签照样叠成一坨。
+       量出一格投影后到底有多宽，放不下就跳着标；选中的那个无论如何都标。 */
+    var q0 = P(0, bv+bandH/2, 0, axOff), q1 = P(1/n, bv+bandH/2, 0, axOff);
+    var cellPx = Math.abs(q1[0]-q0[0]);
+    var labPx = String(lab2(n-1)).length*4.2 + 9;
+    var lstep = (cellPx > 0.4) ? Math.max(1, Math.ceil(labPx / cellPx)) : n;
     for(var b9=0; b9<n; b9++){
       var ua = b9/n, ub = (b9+1)/n - Math.min(0.02, 0.35/n);
       var mineB = b9===mineI;
       var cell = [P(ua,bv,0,axOff), P(ub,bv,0,axOff), P(ub,bv+bandH,0,axOff), P(ua,bv+bandH,0,axOff)];
       body.push(quad(cell, 'fill:'+(mineB?mix(cc,55):'url(#'+hxid+')')+';stroke:'+cc+';stroke-width:'+(mineB?1.4:.5)));
-      if(n<=16){
+      if(b9 % lstep === 0 || mineB){
         var cc9 = P((ua+ub)/2, bv+bandH/2, 0, axOff);
         var lbT = lab2(b9);
         var pw = lbT.length*4.2+6, ph = 11;
