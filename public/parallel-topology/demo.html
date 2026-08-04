@@ -3307,7 +3307,10 @@ function renderChainBar(D){
     + '</span>';
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
-  $('stagebar').innerHTML = kBtns + cBtn + vBtns;
+  /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
+     视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
+     件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + cBtn + vBtns);
 }
 
 function renderDimBar(D, dim){
