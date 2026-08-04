@@ -144,6 +144,14 @@
 }
 .pt-deck .pt-axlab.is-on{color:var(--pt-bg) !important; background:currentColor; box-shadow:0 0 0 1px currentColor}
 .pt-deck .pt-axlab.is-on b{color:var(--pt-bg)}
+/* EP 的框：与 3D 里那只框同一件事——框住的几张卡合起来凑齐一整套专家。
+   正视是把深度压掉的正投影，pp 段在这里是重叠的，所以一组只画一只框（3D 那边
+   是一段一只）。只描边不填底：填了就把框住的卡挡掉，而框的意义正是看里面有谁。 */
+.pt-deck .pt-epbox{
+  position:absolute; z-index:2; pointer-events:none; border-radius:5px;
+  border:1px solid currentColor; opacity:.42;
+}
+.pt-deck .pt-epbox.is-on{opacity:1; border-width:1.8px; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 12%, transparent)}
 .pt-deck .pt-dpcut{
   position:absolute; left:4px; right:4px; bottom:4px; z-index:3;
   display:none;
@@ -172,7 +180,10 @@
 /* 正视是竖长的（3d-deck 的 front fit 基准 850×1810），侧视是宽扁的（3000×1900）——
    两者共用一个比例的话，侧视那份会被压成一条。 */
 .pt-deck.is-tiled.is-side > *{aspect-ratio:3000/1900}
-.pt-deck.is-tiled > *{
+/* 只挑格子本身，不能写成 `> *`：轴标签和 EP 的框也是 #deck 的直接子节点，被这条
+   规则罩住就成了 position:relative 的**栅格项**——浏览器把它们一个个排进新的列里，
+   于是标签全飞到方阵右边（画面上看不见，只是把 scrollWidth 撑大），left/top 完全失效。 */
+.pt-deck.is-tiled > .pt-deckhost{
   position:relative; overflow:hidden; aspect-ratio:850/1810; height:auto;
   border:1px solid var(--pt-bd); border-radius:10px; background:var(--pt-s1);
 }
@@ -1411,6 +1422,25 @@ function netScene(D, g, box, step){
      缝要大到能一眼数出「纵深上串着 4 张卡」。 */
   var GAPW = cutPP ? DEP*(ui.cardMode ? 0.62 : 0.46) : 0;
   var TOTW = DEP + GAPW*Math.max(0, D.pp-1);
+  /* EP 那一刀落下时，组与组之间也掰开一条缝——和 PP 段之间掰缝同一个道理：
+     「这儿断开了」得看得见，不然一组八张和隔壁八张连成一片，得数着列才分得清。
+     缝按列加（一组正好占整数列时才加；ep·etp 不是列高的整数倍会出现半列，那时
+     缝会落在组中间，宁可不加）。 */
+  var EPGAP = 0, epColG = null;
+  if(cutEP && ui.spread && KD > 1){
+    var GS0 = D.ep * D.etp, qc0 = function(d0,t0){ return (d0*D.cp + co.c)*D.tp + t0; };
+    var gcol = [], okG = true;
+    for(var d0i = 0; d0i < KD && okG; d0i++){
+      var g0 = Math.floor(qc0(d0i, KT>1 ? 0 : co.t) / GS0);
+      for(var t0i = 1; t0i < KT; t0i++) if(Math.floor(qc0(d0i,t0i)/GS0) !== g0){ okG = false; break; }
+      gcol.push(g0);
+    }
+    if(okG && gcol.length && gcol[gcol.length-1] > gcol[0]){
+      EPGAP = CU*0.42;
+      epColG = function(c0){ return gcol[Math.max(0, Math.min(c0|0, gcol.length-1))] - gcol[0]; };
+    }
+  }
+  function colX(c0){ return c0*CU + (EPGAP ? epColG(c0)*EPGAP : 0); }
   function stOf(li){ return Math.min(D.pp-1, Math.floor(li/lps)); }
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
   function segW(st){ var a0 = DEP*(st*lps)/L + GAPW*st;
@@ -1435,7 +1465,7 @@ function netScene(D, g, box, step){
     var rows = Math.ceil(K/cols), pr;
     if(focus1) pr = [[ui.spread ? (sel0%cols)*CU : sel0*CU, ui.spread ? Math.floor(sel0/cols)*ROWV : sel0*CV]];
     else if(!ui.spread) pr = [[0,0], [(K-1)*CU, (K-1)*CV]];
-    else pr = [[0,0], [(cols-1)*CU,0], [0,(rows-1)*ROWV], [(cols-1)*CU,(rows-1)*ROWV]];
+    else pr = [[0,0], [colX(cols-1),0], [0,(rows-1)*ROWV], [colX(cols-1),(rows-1)*ROWV]];
     var X = [], Y = [], Z = [], a, i2, j2, k2;
     for(a=0;a<pr.length;a++) for(i2=0;i2<2;i2++) for(j2=0;j2<2;j2++) for(k2=0;k2<2;k2++){
       var p = turn3(i2 + pr[a][0], (j2?vHi:vLo) + pr[a][1], k2?zw1:zw0, yaw, pitch);
@@ -1450,7 +1480,7 @@ function netScene(D, g, box, step){
             x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
   var COLS = KD, fit = measure(KD), ROWS = KT;
-  function cx(o){ return ui.spread ? (o % COLS)*CU : o*CU; }
+  function cx(o){ return ui.spread ? colX(o % COLS) : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
   var x0 = fit.x0, x1 = fit.x1, y0 = fit.y0, y1 = fit.y1, s = fit.s * ui.zoom3, i, j, k;
   var ox = box.x + (box.w - (x1-x0)*s)/2 - x0*s + ui.panX3;
@@ -1689,6 +1719,93 @@ function netScene(D, g, box, step){
      每个算子沿 h 轴的第 co.t 片、MoE 那段的第 me.ep 个桶。上面已经只画了这一份，
      这里给它一个边界——不然它只是浮在空中的一堆碎片，看不出「这是一个整体、
      一张卡就装这些」。壳只框住本卡真正占的深度区间（那个 stage），不是整网。 */
+  /* 这一屏所有挂在图上的小字都走这一枚标签：底色 + 描边的胶囊。裸文字压在 128 只
+     卡的骨架上根本读不出来（哪一笔是字、哪一笔是棱分不清）。定义提到循环之前，
+     卡壳上的桶号和轴上的刻度共用同一个形状。 */
+  function axLab(pt, s1, s2, col, strong, sz){
+    var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
+    var h1 = s2 ? 20 : Math.round(f1*1.9);
+    body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(6,h1/2)+'" '
+      +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:'+(strong?1.3:.7)+';opacity:.96"/>');
+    body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : f1*0.36), String(s1), f1, col, 'middle', 'font-weight="800"'));
+    if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
+  }
+    /* ── EP 的框：一框 = 一整套专家 ──────────────────────────────────────
+       EP 不像 DP/PP/TP 有自己的一根轴——桶号是从 (tp, cp, dp) 导出来的，所以
+       128 只卡摆在那儿，EP 那一刀切在哪儿是看不见的。看得见的是**折叠**：
+       一个 PP 段的平面（tp·cp·dp 张卡）折成 ep·etp 组，同一组里每张卡各持一只
+       桶，合起来才凑齐全部专家——框住的就是这个「一整套」。
+       注意框不住的那一半：同一只桶的复本落在**别的**组里（列上跳着走，不相邻），
+       没法用一个矩形圈起来，那一半交给每张卡上写着的桶号去认。 */
+  function drawEpFrames(perStage){
+      var GSZ = D.ep * D.etp;
+      var offOf = function(d9, t9){ return (KT > 1 ? t9 : 0)*KD + d9; };
+      var grpOf = function(d9, t9){ return Math.floor(((d9*D.cp + co.c)*D.tp + t9) / GSZ); };
+      var rows9 = [];
+      if(KT > 1){ for(var r9 = 0; r9 < KT; r9++) rows9.push(r9); } else rows9.push(co.t);
+      var box9 = {};                                   // 组号 → 在网格里的包围矩形
+      for(var d8 = 0; d8 < KD; d8++) for(var t8i = 0; t8i < rows9.length; t8i++){
+        var t8 = rows9[t8i], m8 = grpOf(d8, t8), b8 = box9[m8];
+        if(!b8) box9[m8] = {d0:d8, d1:d8, t0:t8i, t1:t8i};
+        else { b8.d0 = Math.min(b8.d0,d8); b8.d1 = Math.max(b8.d1,d8);
+               b8.t0 = Math.min(b8.t0,t8i); b8.t1 = Math.max(b8.t1,t8i); }
+      }
+      var selG = hasSel ? grpOf(co.d, co.t) : -1;
+      Object.keys(box9).forEach(function(mk){
+        var m = +mk, b = box9[m], dd, tt, clean = true;
+        /* 只有「这个矩形里装的正好是这一组、没混进别人」时才画框。组的成员在网格里
+           是按 q 连续排的，绝大多数配置下正好落成整列；万一 ep·etp 不是 tp 的整数倍
+           就会出现半列，那时候框会把别组的卡也圈进去——宁可不画，也不画错。 */
+        for(dd = b.d0; dd <= b.d1 && clean; dd++)
+          for(tt = b.t0; tt <= b.t1; tt++)
+            if(grpOf(dd, rows9[tt]) !== m){ clean = false; break; }
+        if(!clean) return;
+        var strongG = m === selG, gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
+        /* Rank 打开时按**段**画：一套专家是一个 PP 段之内凑齐的（折叠发生在段内那张
+           平面上，段与段各折各的），一段一只框才说得对。Rank 关掉时画面上摆的是整份
+           副本、不是一张张卡，那时一列 = 一个副本，框住的是「这几个副本属于 EP 组 m」
+           ——这句话在整条层深上都成立，所以一组只画一只贯穿到底的框。 */
+        var nSegF = perStage && cutPP ? D.pp : 1;
+        for(var pg = 0; pg < nSegF; pg++){
+          var strong = strongG && (!hasSel || !perStage || !cutPP || pg === co.p);
+          var sw = perStage ? segW(pg) : [segW(0)[0], segW((cutPP?D.pp:1)-1)[1]];
+          var fw0 = sw[0] - GAPW*0.30, fw1 = sw[1] + GAPW*0.30;
+          /* 框刚好落在两只卡壳之间那条缝的正中（卡 u∈[-.05,1.05]，列距 1.16 →
+             缝在 1.05…1.11，中点 1.08）。贴太紧会被当成卡壳自己的边，出界又会压到隔壁组。 */
+          var fu0 = -0.08, fu1 = 1.08, fv0 = -0.16, fv1 = AR + 0.16;
+          var oTL = offOf(b.d0, rows9[b.t0]), oTR = offOf(b.d1, rows9[b.t0]);
+          var oBL = offOf(b.d0, rows9[b.t1]), oBR = offOf(b.d1, rows9[b.t1]);
+          var F = [ P(fu0,fv0,fw0,oTL), P(fu1,fv0,fw0,oTR), P(fu1,fv1,fw0,oBR), P(fu0,fv1,fw0,oBL),
+                    P(fu0,fv0,fw1,oTL), P(fu1,fv0,fw1,oTR), P(fu1,fv1,fw1,oBR), P(fu0,fv1,fw1,oBL) ];
+          /* 只描边不填色：填了就把框住的卡盖掉，而框的意义恰恰是「看里面有哪几张」。
+             也不打虚线——ep×pp 一共十几只框，虚线在这个密度下会糊成一片麻点。 */
+          [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e){
+            body.push(seg(F[e[0]], F[e[1]], 'stroke:'+VC.ep+';stroke-width:'+(strong?1.7:.6)
+              +';opacity:'+(strong?.95:(hasSel?.16:.3))));
+          });
+          F.forEach(function(q9){ gx0 = Math.min(gx0,q9[0]); gx1 = Math.max(gx1,q9[0]); gy0 = Math.min(gy0,q9[1]); });
+          /* 门牌挂在阵列**外面**（最后一行底边之下、DP 刻度再往下一格）。挂在框自己的
+             顶边上会正好压在斜后方那几张卡身上——转台是俯视，块的上方永远有东西。
+             只挂最前面那一段：每段都挂就是四排一模一样的标签叠在一起。 */
+          /* Rank 打开时门牌挂在阵列**外面**（最后一行底边之下、DP 刻度再往下一格）：
+             挂在框自己的顶边上会正好压在斜后方那几张卡身上——转台是俯视，块的上方
+             永远有东西。只挂最前面那一段，每段都挂就是四排一模一样的标签叠在一起。 */
+          if(pg === 0 && perStage && ui.viewTab !== 'top'){
+            var la = P(fu0, AR + 0.62, sw[0], offOf(b.d0, rows9[b.t1]));
+            var lb = P(fu1, AR + 0.62, sw[0], offOf(b.d1, rows9[b.t1]));
+            gLab([(la[0]+lb[0])/2, (la[1]+lb[1])/2]);
+          }
+        }
+        /* 另外两种情形改用屏幕坐标，贴在这一组框的最高点上方、横向居中：
+           · 顶视——那个机位把 v 轴压进了深度，靠 v 撑开距离的门牌会全叠到一块儿；
+           · Rank 关掉——阵列底下已经排着 PP/TP/EP 三条选择器轨，下面没位置了。 */
+        if((!perStage || ui.viewTab === 'top') && gx1 > gx0) gLab([(gx0+gx1)/2, gy0 - 14]);
+        /* 只写组号。「每段 8 卡 · ep0–ep7 齐」那一行删了——框里装着几张卡、各是哪只桶，
+           框自己和卡上的桶号已经写着了，再抄一遍是把同一件事说两遍。 */
+        function gLab(at){ axLab(at, 'EP 组 '+m, null, VC.ep, strongG); }
+      });
+    }
+
   if(ui.cardMode){
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
     var nSeg = cutPP ? D.pp : 1;
@@ -1743,9 +1860,7 @@ function netScene(D, g, box, step){
         if(cutEP && pc2 === 0 && !lowDetail && !ui.netOff && ui.viewTab !== 'top'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
-          var epPt = P(0.5, cv1 + 0.055, cw0, kc);
-          body.push(txt(epPt[0], epPt[1], 'ep'+epTag.ep, epSame ? 7.4 : 6.4, VC.ep, 'middle',
-            'font-weight="800" opacity="'+(epSame ? 1 : (hasSel ? .3 : .85))+'"'));
+          axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
         }
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
@@ -1769,88 +1884,7 @@ function netScene(D, g, box, step){
        128 只壳摆在那儿，不标轴就只是一堆盒子——读者认不出「横着是副本、
        竖着是锯片、纵深是段」。每根轴用它自己的维度签名色。 */
     var wFront = segW(0)[0], wBack = segW(nSeg-1)[1];
-    function axLab(pt, s1, s2, col, strong){
-      var w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*4.0 + 11;
-      var h1 = s2 ? 20 : 13;
-      body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(6,h1/2)+'" '
-        +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:'+(strong?1.3:.7)+';opacity:.96"/>');
-      body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : 3), String(s1), 7, col, 'middle', 'font-weight="800"'));
-      if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
-    }
-    /* ── EP 的框：一框 = 一整套专家 ──────────────────────────────────────
-       EP 不像 DP/PP/TP 有自己的一根轴——桶号是从 (tp, cp, dp) 导出来的，所以
-       128 只卡摆在那儿，EP 那一刀切在哪儿是看不见的。看得见的是**折叠**：
-       一个 PP 段的平面（tp·cp·dp 张卡）折成 ep·etp 组，同一组里每张卡各持一只
-       桶，合起来才凑齐全部专家——框住的就是这个「一整套」。
-       注意框不住的那一半：同一只桶的复本落在**别的**组里（列上跳着走，不相邻），
-       没法用一个矩形圈起来，那一半交给每张卡上写着的桶号去认。 */
-    if(cutEP){
-      var GSZ = D.ep * D.etp;
-      var offOf = function(d9, t9){ return (KT > 1 ? t9 : 0)*KD + d9; };
-      var grpOf = function(d9, t9){ return Math.floor(((d9*D.cp + co.c)*D.tp + t9) / GSZ); };
-      var rows9 = [];
-      if(KT > 1){ for(var r9 = 0; r9 < KT; r9++) rows9.push(r9); } else rows9.push(co.t);
-      var box9 = {};                                   // 组号 → 在网格里的包围矩形
-      for(var d8 = 0; d8 < KD; d8++) for(var t8i = 0; t8i < rows9.length; t8i++){
-        var t8 = rows9[t8i], m8 = grpOf(d8, t8), b8 = box9[m8];
-        if(!b8) box9[m8] = {d0:d8, d1:d8, t0:t8i, t1:t8i};
-        else { b8.d0 = Math.min(b8.d0,d8); b8.d1 = Math.max(b8.d1,d8);
-               b8.t0 = Math.min(b8.t0,t8i); b8.t1 = Math.max(b8.t1,t8i); }
-      }
-      var selG = hasSel ? grpOf(co.d, co.t) : -1;
-      Object.keys(box9).forEach(function(mk){
-        var m = +mk, b = box9[m], dd, tt, clean = true;
-        /* 只有「这个矩形里装的正好是这一组、没混进别人」时才画框。组的成员在网格里
-           是按 q 连续排的，绝大多数配置下正好落成整列；万一 ep·etp 不是 tp 的整数倍
-           就会出现半列，那时候框会把别组的卡也圈进去——宁可不画，也不画错。 */
-        for(dd = b.d0; dd <= b.d1 && clean; dd++)
-          for(tt = b.t0; tt <= b.t1; tt++)
-            if(grpOf(dd, rows9[tt]) !== m){ clean = false; break; }
-        if(!clean) return;
-        var strongG = m === selG, gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
-        for(var pg = 0; pg < nSeg; pg++){
-          /* 一套专家是**一个 PP 段之内**凑齐的：折叠发生在段内那张平面（tp·cp·dp 张卡）
-             上，段与段各折各的。所以选中一张卡时只加重它那一段的框，同一列块在别的段
-             上的框仍是浅的——不然会读成「这 32 张卡是一组」，那是错的。 */
-          var strong = strongG && (!hasSel || !cutPP || pg === co.p);
-          var sw = segW(pg), fw0 = sw[0] - GAPW*0.30, fw1 = sw[1] + GAPW*0.30;
-          /* 框刚好落在两只卡壳之间那条缝的正中（卡 u∈[-.05,1.05]，列距 1.16 →
-             缝在 1.05…1.11，中点 1.08）。贴太紧会被当成卡壳自己的边，出界又会压到隔壁组。 */
-          var fu0 = -0.08, fu1 = 1.08, fv0 = -0.16, fv1 = AR + 0.16;
-          var oTL = offOf(b.d0, rows9[b.t0]), oTR = offOf(b.d1, rows9[b.t0]);
-          var oBL = offOf(b.d0, rows9[b.t1]), oBR = offOf(b.d1, rows9[b.t1]);
-          var F = [ P(fu0,fv0,fw0,oTL), P(fu1,fv0,fw0,oTR), P(fu1,fv1,fw0,oBR), P(fu0,fv1,fw0,oBL),
-                    P(fu0,fv0,fw1,oTL), P(fu1,fv0,fw1,oTR), P(fu1,fv1,fw1,oBR), P(fu0,fv1,fw1,oBL) ];
-          /* 只描边不填色：填了就把框住的卡盖掉，而框的意义恰恰是「看里面有哪几张」。
-             也不打虚线——ep×pp 一共十几只框，虚线在这个密度下会糊成一片麻点。 */
-          [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e){
-            body.push(seg(F[e[0]], F[e[1]], 'stroke:'+VC.ep+';stroke-width:'+(strong?1.7:.6)
-              +';opacity:'+(strong?.95:(hasSel?.16:.3))));
-          });
-          F.forEach(function(q9){ gx0 = Math.min(gx0,q9[0]); gx1 = Math.max(gx1,q9[0]); gy0 = Math.min(gy0,q9[1]); });
-          /* 门牌挂在阵列**外面**（最后一行底边之下、DP 刻度再往下一格）。挂在框自己的
-             顶边上会正好压在斜后方那几张卡身上——转台是俯视，块的上方永远有东西。
-             只挂最前面那一段：每段都挂就是四排一模一样的标签叠在一起。 */
-          if(pg === 0 && ui.viewTab !== 'top'){
-            var la = P(fu0, AR + 0.62, sw[0], offOf(b.d0, rows9[b.t1]));
-            var lb = P(fu1, AR + 0.62, sw[0], offOf(b.d1, rows9[b.t1]));
-            gLab([(la[0]+lb[0])/2, (la[1]+lb[1])/2]);
-          }
-        }
-        /* 顶视把 v 轴压进了深度：所有靠 v 撑开距离的门牌都会叠到一块儿。那时改用
-           屏幕坐标——贴在这一组框的最高点上方，横向居中。 */
-        if(ui.viewTab === 'top' && gx1 > gx0) gLab([(gx0+gx1)/2, gy0 - 16]);
-        /* 副标题只说**框里真有的那几张**。TP 那一刀收起来的时候屏上每个副本只画
-           tp0 那一片，一组就只剩一半——照抄「8 卡齐」是在说一句画面上不成立的话。 */
-        function gLab(at){
-          var shown = (b.d1-b.d0+1) * (b.t1-b.t0+1);
-          axLab(at, 'EP 组 '+m,
-            (cutPP ? '每段 ' : '') + shown + ' 卡 · '
-            + (shown === GSZ ? 'ep0–ep'+(D.ep-1)+' 齐' : 'TP 未展开，另 '+(GSZ-shown)+' 张没画'),
-            VC.ep, strongG);
-        }
-      });
-    }
+    if(cutEP) drawEpFrames(true);
     /* 轴标签一律压到**最下面那一行**卡的底边外侧（rowLast），只有 TP 例外——
        它标的就是「第几行」，贴在行的侧面才说得通。原来 DP/PP 挂在第 0 行底下，
        那是阵列中间，标签会盖住下一行的卡。 */
@@ -1871,7 +1905,7 @@ function netScene(D, g, box, step){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
       axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
-  }
+  } else if(cutEP && KD > 1) drawEpFrames(false);
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
   var axOff = 0;
@@ -3124,10 +3158,21 @@ function tileLayout(D){
      高度另外由 aspect-ratio 跟住，宽度算得下就一定放得下。 */
   var W = host.clientWidth || 1200;
   var cols = Math.ceil(n / tRows);
-  var cw = Math.max(34, Math.floor((W - 30 - (cols-1)*6) / cols));
+  /* EP 打开时组与组之间掰开一条缝（和 3D 那边同一件事）。缝要先从可用宽度里扣掉，
+     否则格子按满宽算出来、加上缝就溢出去了。一组占整数列时才加。 */
+  var epEvery = 0, epGapPx = 0;
+  if(ui.cardMode && ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1){
+    var per = (D.ep * D.etp) / tRows;
+    if(per === Math.floor(per) && per >= 1 && cols % per === 0 && cols / per > 1){
+      epEvery = per; epGapPx = 18;
+    }
+  }
+  var nGap = epEvery ? (cols/epEvery - 1) : 0;
+  var cw = Math.max(34, Math.floor((W - 30 - (cols-1)*6 - nGap*epGapPx) / cols));
   host.classList.add('is-tiled');
   host.classList.toggle('is-side', ui.viewTab === 'side');
   host.dataset.cw = cw; host.dataset.n = cols; host.dataset.rows = tRows;
+  host.dataset.epevery = epEvery; host.dataset.epgap = epGapPx;
   host.style.gridTemplateRows = tRows > 1 ? 'repeat('+tRows+', auto)' : '';
   host.style.removeProperty('--pt-cellh');
   applyDeckZoom();
@@ -3303,6 +3348,57 @@ function paintDeckAxes(D){
       l2.style.left = '2px';
       l2.style.top = (y + r.height/2 - 8) + 'px';
     }
+    /* 每格自己的桶号。和 3D 那边同一件事：EP 是导出来的，格子上不写就无从看起。
+       挂在格子下沿，与 DP 那排列头（在上沿）分开。 */
+    if(ui.cardMode && ui.kEP && D.moe && D.ep > 1){
+      var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), coS ? coS.c : 0, col2, D);
+      var l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep);
+      l3.style.left = (x + r.width/2) + 'px';
+      /* 贴在格子**里面**的下沿，不是外面：挂到外面就正好压在下一行格子的顶上
+         （两行之间只有几个像素），第 0 行的桶号会盖住第 1 行的 DP·TP 门牌。 */
+      l3.style.top = (y + r.height - 18) + 'px';
+      l3.style.transform = 'translateX(-50%)';
+    }
+  });
+  /* ── EP 的框（与 3D 那只同一件事）───────────────────────────────────
+     只在正视：正视铺的是 dp×tp 的方阵，EP 组按列成块，框得出来。侧视铺的只有
+     tp 行（DP 副本在那个方向上是重叠的，本来就没铺），一屏里全是同一个 dp，
+     框住谁都没意义，所以不画。 */
+  Array.prototype.slice.call(host.querySelectorAll('.pt-epbox')).forEach(function(e){ e.remove(); });
+  if(!(ui.cardMode && ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1)) return;
+  var nCol = Math.ceil(cells.length / rows), GSZ = D.ep * D.etp;
+  var grpOf2 = function(d9, t9){ return Math.floor((((d9*D.cp + (coS?coS.c:0))*D.tp + t9)) / GSZ); };
+  var span = {};
+  for(var c9 = 0; c9 < nCol; c9++) for(var r9 = 0; r9 < rows; r9++){
+    var t9v = rows > 1 ? r9 : (coS ? coS.t : 0), m9 = grpOf2(c9, t9v);
+    if(!span[m9]) span[m9] = {c0:c9, c1:c9};
+    else { span[m9].c0 = Math.min(span[m9].c0, c9); span[m9].c1 = Math.max(span[m9].c1, c9); }
+  }
+  var selG2 = coS ? grpOf2(coS.d, coS.t) : -1;
+  Object.keys(span).forEach(function(mk){
+    var m = +mk, sp = span[mk], cc, rr, ok = true;
+    /* 同 3D：只有这一列块里装的正好是这一组才画。ep·etp 不是 tp 的整数倍时会
+       出现半列，框会把别组的卡也圈进来——宁可不画，也不画错。 */
+    for(cc = sp.c0; cc <= sp.c1 && ok; cc++)
+      for(rr = 0; rr < rows; rr++)
+        if(grpOf2(cc, rows > 1 ? rr : (coS ? coS.t : 0)) !== m){ ok = false; break; }
+    if(!ok) return;
+    var a = cells[sp.c0*rows], z = cells[Math.min(cells.length-1, sp.c1*rows + rows - 1)];
+    if(!a || !z) return;
+    var ra = a.getBoundingClientRect(), rz = z.getBoundingClientRect();
+    var bx = ra.left - hb.left + sl - 4, by = ra.top - hb.top + st - 4;
+    var bw = (rz.right - hb.left + sl + 4) - bx, bh = (rz.bottom - hb.top + st + 4) - by;
+    var on2 = m === selG2;
+    var el2 = document.createElement('div');
+    el2.className = 'pt-epbox' + (on2 ? ' is-on' : '');
+    el2.style.cssText = 'color:'+VC.ep+';left:'+bx+'px;top:'+by+'px;width:'+bw+'px;height:'+bh+'px';
+    host.appendChild(el2);
+    /* 门牌挂在框的正上方，与 DP 那一排刻度错开一行——两者都贴着列头，同一行会打架。
+       只写组号：框里几张卡、各是哪只桶，框自己和格子上的桶号已经写着了。 */
+    var lg = put(null, 'EP 组 ' + m, VC.ep, on2);
+    lg.style.left = (bx + bw/2) + 'px';
+    lg.style.top = (by - 38) + 'px';
+    lg.style.transform = 'translateX(-50%)';
   });
 }
 function cutTag(D, cellD, cellT){
@@ -3337,6 +3433,14 @@ function tileClone(n, D){
   /* grid-auto-flow:column 是先填满一列再进下一列，所以序号 i 的列号（=DP 副本）
      是 i/rows 取整、行号（=TP 片）是 i%rows。 */
   function cellCap(i){ return rows2 <= 1 ? 'DP'+i : 'DP'+Math.floor(i/rows2)+'·TP'+(i%rows2); }
+  /* EP 组之间的缝：加在每个组头那一列的所有格子上。必须在 sidecar 挂载之前设好——
+     它 fit 的时候读的是格子的实际宽度，先挂后加缝，画出来就偏出格子了。 */
+  var epEvery2 = +host.dataset.epevery || 0, epGap2 = +host.dataset.epgap || 0;
+  function epMargin(i){
+    var col = rows2 <= 1 ? i : Math.floor(i/rows2);
+    return (epEvery2 && col > 0 && col % epEvery2 === 0) ? epGap2 + 'px' : '';
+  }
+  cell.style.marginLeft = '';
   cell.dataset.cd = 0; cell.dataset.ct = 0;
   cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D, 0, 0));
   var slots = [];
@@ -3348,6 +3452,7 @@ function tileClone(n, D){
     slot.dataset.cd = rows2 <= 1 ? i2 : Math.floor(i2/rows2);
     slot.dataset.ct = rows2 <= 1 ? 0 : (i2 % rows2);
     slot.innerHTML = '<span class="pt-dpcap">' + cellCap(i2) + '</span>';
+    slot.style.marginLeft = epMargin(i2);
     host.appendChild(slot);
     slots.push(slot);
   }
