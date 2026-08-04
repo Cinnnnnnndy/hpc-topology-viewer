@@ -1,6 +1,6 @@
 {
   "id": "net-slicing",
-  "name": "整网切分 · 从一张网到 world 张卡",
+  "name": "并行拓扑 Pattern —— 从一张网到 world 张卡",
   "description": "一个可转动的三维场景，把并行切分讲成一条连续的链：整网 → DP 复印 → PP 切段 → TP 锯片 → EP 分桶 → 四刀的交集恰好是一张卡 → 清空卡里的载荷，剩下的排列本身就是逻辑魔方。四把刀各自独立开关（叠加而非切换），视角在 3D / 正视 / 侧视 / 顶视之间切换——正视与侧视直接复用 model-architecture-training-sidecar 画的真图，魔方形态直接复用 rubik-cube pattern，都不是仿制。",
   "version": "dev",
   "entry": "pattern.html",

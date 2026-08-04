@@ -312,7 +312,7 @@ jobs:
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
-              -e 's#<title>[^<]*</title>#<title>整网切分 · 从一张网到 world 张卡</title>#' \
+              -e 's#<title>[^<]*</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
               $SRC/demo.html > $NS/pattern.html
           # 没带参数打开时也要落在这一屏：把默认值直接写进页面，而不是靠使用者补 query
           node -e "
@@ -380,12 +380,12 @@ jobs:
           gdoc = html.index('<h2 class="group-title" id="g-doc">')
           grid = html.index('      <div class="card-grid">\n', gdoc) + len('      <div class="card-grid">\n')
           html = html[:grid] + '\n' + atlas.rstrip('\n') + '\n' + html[grid:]
-          # ④ 顶栏 pill：紧跟在参照系那枚后面——组合总图（整族入口）与整网切分（一条链接一屏）
+          # ④ 顶栏 pill：紧跟在参照系那枚后面——组合总图（整族入口）与并行拓扑 Pattern（一条链接一屏）
           pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
           at = html.index(pill) + len(pill)
           html = (html[:at]
                   + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>'
-                  + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">整网切分 Pattern</a>'
+                  + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">并行拓扑 Pattern</a>'
                   + html[at:])
           launch.write_text(html, encoding='utf-8')
           print('patched dist/launch.html: +3 cards +2 pills @ ' + sha)
