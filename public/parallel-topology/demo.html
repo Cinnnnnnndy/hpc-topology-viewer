@@ -407,6 +407,7 @@ var ui = {
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
   cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
+  netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -1517,7 +1518,10 @@ function netScene(D, g, box, step){
     var tIdx = KT > 1 ? Math.floor(k / KD) : co.t;
     var dIdx = cutDP ? (k % KD) : co.d;
     var meCol = D.moe ? epOf(tIdx, co.c, dIdx, D) : null;
-    for(var li = L-1; li >= 0; li--){
+    /* 关掉整网：卡里什么都不画，只留下面那圈卡壳。world 只方块摆在三根轴上，
+       那就是魔方——这条链走到头，看的不再是「模型被切成什么」，而是「这些卡
+       本身是怎么排列的」。 */
+    for(var li = ui.netOff ? -1 : L-1; li >= 0; li--){
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
@@ -1639,6 +1643,14 @@ function netScene(D, g, box, step){
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
         var csx = segW(pc2), cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
         var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
+        /* 关掉整网后壳变实心，必须四面收窄留缝：不然 128 个块边贴边糊成一整片
+           橙色，「有 128 个」这件事一个都数不出来——魔方之所以是魔方，靠的正是
+           块与块之间那条缝。 */
+        if(ui.netOff){
+          var padU = 0.16, padV = AR*0.10, padW = (csx[1]-csx[0])*0.14;
+          cu0 = padU; cu1 = 1 - padU; cv0 = padV; cv1 = AR - padV;
+          cw0 = csx[0] + padW; cw1 = csx[1] - padW;
+        }
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         var gc = rankOf(tc, co.c, dc, pc2, D);
@@ -1647,12 +1659,24 @@ function netScene(D, g, box, step){
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
         /* 壳的描边要压得住里面的载荷：之前 .3 宽、.55 透明的细线被卡内那堆青色
-           算子盖过去，128 只卡看着像一片散块，「一张卡是一个整体」这件事就没了。 */
-        body.push(quad([C8[0],C8[1],C8[2],C8[3]],
-          'fill:'+(meC ? mix('var(--pt-fg)',7) : mix('var(--pt-fg)',3))+';stroke:none'));
+           算子盖过去，128 只卡看着像一片散块，「一张卡是一个整体」这件事就没了。
+           关掉整网之后卡是空的，壳就该变成实心块——按 PP 段给色阶，纵深上一段
+           一个颜色，这正是魔方的读法：颜色是段，行是锯片，列是副本。 */
+        if(ui.netOff){
+          /* 色阶按 PP 段拉开：纵深上一段一个明度，这是魔方的读法——
+             颜色是段，行是锯片，列是副本。选中那只再跳一档。 */
+          var lit = meC ? 82 : (24 + pc2*17);
+          body.push(quad([C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.pp, Math.max(8, lit-16))+';stroke:none'));
+          body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.pp, Math.max(8, lit-8))+';stroke:none'));
+          body.push(quad([C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.pp, Math.max(8, lit-4))+';stroke:none'));
+          body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.pp, lit)+';stroke:none'));
+        } else {
+          body.push(quad([C8[0],C8[1],C8[2],C8[3]],
+            'fill:'+(meC ? mix('var(--pt-fg)',7) : mix('var(--pt-fg)',3))+';stroke:none'));
+        }
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
-            +';stroke-width:'+(meC?1.1:.55)+';opacity:'+(meC?1:.8)));
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
+            +';stroke-width:'+(meC?1.1:.55)+';opacity:'+(meC?1:(ui.netOff?.5:.8))));
         });
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
@@ -3214,7 +3238,11 @@ function renderChainBar(D){
     + '</span>';
   /* 卡维度：四把刀的交集就是一张卡，单独收进一只卡壳里看它到底拿到了什么 */
   var cBtn = '<span class="pt-seg"><button'+(ui.cardMode?' class="is-on"':'')
-    + ' data-act="cardmode" style="--c:'+VC.dp+'" title="把四刀交集收进一张卡：只看这张卡真正持有的那份">卡维度</button></span>';
+    + ' data-act="cardmode" style="--c:'+VC.dp+'" title="把四刀交集收进一张卡：只看这张卡真正持有的那份">卡维度</button>'
+    /* 关掉整网只在卡维度下有意义：没有卡壳的话，关掉内容就什么都不剩了 */
+    + (ui.cardMode ? '<button'+(ui.netOff?' class="is-on"':'')
+        + ' data-act="netoff" style="--c:'+VC.pp+'" title="卡里不再画算子，只剩 '+D.world+' 只方块——那就是魔方">关闭整网</button>' : '')
+    + '</span>';
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
   $('stagebar').innerHTML = kBtns + cBtn + vBtns;
@@ -4176,7 +4204,8 @@ document.addEventListener('click', function(ev){
     })(t0);
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
-  else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; render(); }
+  else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
+  else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   else if(act==='knifetoggle'){
     var kk2 = b.getAttribute('data-k');
     if(kk2==='dp') ui.kDP = !ui.kDP;
