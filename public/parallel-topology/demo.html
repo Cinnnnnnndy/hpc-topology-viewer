@@ -459,6 +459,7 @@ var ui = {
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
   cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
+  commOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
@@ -552,6 +553,7 @@ function urlLoad(){
      口头交付里一定会提到的那句话，就该能塞进 URL。net=0 才是关掉整网。 */
   if(q.get('card')==='1' || q.get('rank')==='1') ui.cardMode = true;
   if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
+  if(q.get('comm')==='1') ui.commOn = true;
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -576,6 +578,7 @@ function urlWrite(){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
   if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
+  if(ui.view==='chain' && ui.commOn) q.set('comm','1');
   if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
@@ -1806,6 +1809,120 @@ function netScene(D, g, box, step){
       });
     }
 
+
+  /* ── L5 · 算子级通信（开关「通信」，URL comm=1）──────────────────────────
+     四种维的通信各锚在**它自己的算子**上——不同的算子、不同的切分，通信关系
+     不同，这正是这层要画的事实（全部来自 net-sharding 的 flowOf/ADDED 真数据）：
+       TP —— AllGather / Reduce-Scatter：TP 区的进出口。行切算子（o_proj）算出的
+             是 partial sum，出口必须归约；真图里这四个 comm 节点本来就有。
+       EP —— AllToAll ×2：token 先送去专家所在的卡（dispatch）、算完送回（combine）。
+             对端 = epMembers——「EP 组」的框框住的正是这一群。
+       PP —— P2P：段边界只传激活，锚在段内最后一个算子（block_post_norm）。
+       DP —— 梯度 AllReduce：**反向**才发生（虚线以示区别），锚在权重算子的
+             代表 o_proj；副本挨个相连。
+     刀关着就没有那一维的通信（cutXX 门控）。焦点 = 选中的卡；没选中用 rank 0
+     的坐标当代表——这是示例读法，不带选中高亮语义。 */
+  function drawCommArcs(){
+    if(!IXg) return;
+    var NU = {};
+    function nUV(id){
+      if(NU[id] !== undefined) return NU[id];
+      var n = null, i9;
+      for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === id){ n = IXg.G.nodes[i9]; break; }
+      if(!n) return (NU[id] = null);
+      return (NU[id] = { uc:(n.x - root.x)/GW, vc:(n.y - root.y)/GW,
+                         u0:(n.x - n.width/2 - root.x)/GW, u1:(n.x + n.width/2 - root.x)/GW,
+                         v0:(n.y - n.height/2 - root.y)/GW });
+    }
+    function arc(a, b, col, wd, dash){
+      var lift = Math.min(34, 9 + (Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]))*0.10);
+      var d9 = 'M'+a[0].toFixed(1)+' '+a[1].toFixed(1)
+        +' Q '+((a[0]+b[0])/2).toFixed(1)+' '+(((a[1]+b[1])/2)-lift).toFixed(1)
+        +' '+b[0].toFixed(1)+' '+b[1].toFixed(1);
+      /* 白描边光晕垫底：弧线要压在两万多个算子图元上面，不垫这一层就融进背景里 */
+      body.push('<path d="'+d9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(wd+2.4)+';opacity:.85"/>');
+      body.push('<path d="'+d9+'" style="fill:none;stroke:'+col+';stroke-width:'+wd+';opacity:.95'
+        +(dash ? ';stroke-dasharray:'+dash : '')+'"/>');
+      body.push('<circle cx="'+a[0].toFixed(1)+'" cy="'+a[1].toFixed(1)+'" r="1.6" style="fill:'+col+';stroke:var(--pt-bg);stroke-width:.8"/>');
+      body.push('<circle cx="'+b[0].toFixed(1)+'" cy="'+b[1].toFixed(1)+'" r="1.6" style="fill:'+col+';stroke:var(--pt-bg);stroke-width:.8"/>');
+      return [(a[0]+b[0])/2, ((a[1]+b[1])/2) - lift];
+    }
+    var card = ui.cardMode;
+    var offC = function(d9, t9){ return card ? ((KT > 1 ? t9 : 0)*KD + d9) : (cutDP ? d9 : 0); };
+    var wMid = card
+      ? function(p9){ var s9 = segW(p9); return (s9[0]+s9[1])/2; }
+      : function(p9){ return wOf(Math.min(L-1, p9*lps + (lps >> 1))); };
+    var dF = cutDP ? Math.min(co.d, KD-1) : co.d, tF = co.t, pF = cutPP ? co.p : 0;
+
+    /* TP：卡维度下对端是另一**行**的卡；非卡维度 TP 没有独立空间轴（KT=1），
+       弧线画在算子自己的两片之间——被锯开的那条缝就是要通信的地方。 */
+    if(cutTP){
+      var nRS = nUV('attention_reduce_scatter') || nUV('o_proj');
+      var nOP = nUV('o_proj') || nRS;
+      if(nRS){
+        var mTP = null, t2, q2;
+        if(card && KT > 1){
+          for(t2 = 0; t2 < D.tp; t2++){
+            if(t2 === tF) continue;
+            mTP = arc(P(nRS.uc, nRS.v0 - 0.02, wMid(pF), offC(dF, tF)),
+                      P(nRS.uc, nRS.v0 - 0.02, wMid(pF), offC(dF, t2)), VC.tp, 1.2);
+          }
+        }else{
+          for(q2 = 0; q2 + 1 < D.tp; q2++){
+            var ua2 = nOP.u0 + (nOP.u1 - nOP.u0)*(q2 + .5)/D.tp;
+            var ub2 = nOP.u0 + (nOP.u1 - nOP.u0)*(q2 + 1.5)/D.tp;
+            mTP = arc(P(ua2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)),
+                      P(ub2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)), VC.tp, 1.1);
+          }
+        }
+        if(mTP) axLab([mTP[0], mTP[1] - 12], 'AllGather / Reduce-Scatter · TP 组内', null, VC.tp, true, 6);
+      }
+    }
+    /* EP：AllToAll。屏上画着的那几个对端才连（TP 未展开时另一半没画，连不了）。 */
+    if(cutEP){
+      var nA2A = nUV('moe_all_to_all_dispatch');
+      if(nA2A){
+        var gF2 = rankOf(tF, co.c, dF, pF, D), mEP = null;
+        epMembers(gF2, D).forEach(function(p9){
+          if(p9 === gF2) return;
+          var c9 = coordsOf(p9, D);
+          if(c9.c !== co.c) return;
+          if((!card || KT <= 1) && c9.t !== tF) return;
+          mEP = arc(P(nA2A.uc, nA2A.v0 - 0.02, wMid(pF), offC(dF, tF)),
+                    P(nA2A.uc, nA2A.v0 - 0.02, wMid(c9.p), offC(c9.d, c9.t)), VC.ep, 1.1);
+        });
+        if(mEP) axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', null, VC.ep, true, 6);
+      }
+    }
+    /* PP：段边界 P2P，只沿焦点那一列画——它讲的是「边界在哪、传的是什么」，
+       每列都画一遍就成了栅栏。 */
+    if(cutPP && D.pp > 1){
+      var nPN = nUV('block_post_norm');
+      if(nPN){
+        var mPP = null, p3;
+        for(p3 = 0; p3 + 1 < D.pp; p3++){
+          var wA3 = card ? segW(p3)[1] : wOf(Math.min(L-1, (p3+1)*lps - 1));
+          var wB3 = card ? segW(p3+1)[0] : wOf((p3+1)*lps);
+          mPP = arc(P(nPN.uc, nPN.vc, wA3, offC(dF, tF)),
+                    P(nPN.uc, nPN.vc, wB3, offC(dF, tF)), VC.pp, 1.2);
+        }
+        if(mPP) axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', null, VC.pp, true, 6);
+      }
+    }
+    /* DP：梯度 AllReduce（反向，虚线）。副本挨个相连。 */
+    if(cutDP && KD > 1){
+      var nDP = nUV('o_proj');
+      if(nDP){
+        var mDP = null, d3;
+        for(d3 = 0; d3 + 1 < KD; d3++){
+          mDP = arc(P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3, tF)),
+                    P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3+1, tF)), VC.dp, .9, '4 3');
+        }
+        if(mDP) axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', null, VC.dp, true, 6);
+      }
+    }
+  }
+
   if(ui.cardMode){
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
     var nSeg = cutPP ? D.pp : 1;
@@ -1906,6 +2023,7 @@ function netScene(D, g, box, step){
       axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
   } else if(cutEP && KD > 1) drawEpFrames(false);
+  if(ui.commOn && !lowDetail && !ui.netOff) drawCommArcs();
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
   var axOff = 0;
@@ -3538,6 +3656,11 @@ function renderChainBar(D){
   /* 这两颗是**模式开关**，不是筛选器——按钮上直接写「按下去会发生什么」，
      打开 Rank ⇄ 关闭 Rank、关闭整网 ⇄ 打开整网。写成静态名字（「卡维度」）的话
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
+  /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
+     不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
+  var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
+    + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
+    + '通信</button>';
   var cBtn = '<span class="pt-mode">'
     + '<button class="pt-mb'+(ui.cardMode?' is-on':'')+'" data-act="cardmode" style="--c:'+VC.dp+'"'
     + ' title="'+(ui.cardMode?'退回整网切分场景':'把四刀交集收进一张卡：只看这张卡真正持有的那份')+'">'
@@ -3552,7 +3675,7 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + commBtn + cBtn + vBtns);
 }
 
 function renderDimBar(D, dim){
@@ -4521,6 +4644,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
+  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; render(); }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   else if(act==='knifetoggle'){
     var kk2 = b.getAttribute('data-k');
