@@ -1596,7 +1596,21 @@ function netScene(D, g, box, step){
     var cz = turn3(cx(k)+0.5, cy(k)+AR/2, TOTW/2, yaw, pitch);
     copyOrder.push({i:k, z:cz[2]});
   }
-  copyOrder.sort(function(a,b){ return a.z - b.z; });
+  /* 画家算法：远的先画、近的后画。turn3 的 z 越大越远（透视除数就是按它算的），
+     所以要**降序**。原来写的升序是反的——从前壳只有 3% 的填充，谁盖谁看不出来；
+     一加磨砂立刻现形：后排卡的面糊在前排卡的棱上，前面的线反而更淡。 */
+  copyOrder.sort(function(a,b){ return b.z - a.z; });
+  /* 同一列里 pp 段之间也要远的先画。w 往哪个方向变远随 yaw 变号（转过 90° 就反
+     过来），所以不写死顺序，按投影的 z 量一次再排。 */
+  var segOrder = (function(){
+    var n9 = cutPP ? D.pp : 1, a9 = [], i9;
+    for(i9 = 0; i9 < n9; i9++){
+      var sw9 = segW(i9);
+      a9.push({i:i9, z:turn3(0.5, AR/2, (sw9[0]+sw9[1])/2, yaw, pitch)[2]});
+    }
+    a9.sort(function(x,y){ return y.z - x.z; });
+    return a9.map(function(o){ return o.i; });
+  })();
   var off0 = sel0;
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
@@ -1611,7 +1625,11 @@ function netScene(D, g, box, step){
     /* 关掉整网：卡里什么都不画，只留下面那圈卡壳。world 只方块摆在三根轴上，
        那就是魔方——这条链走到头，看的不再是「模型被切成什么」，而是「这些卡
        本身是怎么排列的」。 */
-    for(var li = ui.netOff ? -1 : L-1; li >= 0; li--){
+    /* 层同理：远的先画。默认机位下大 w 更远，所以从 L-1 往回走；yaw 转过 90°
+       之后 w 的远近方向反过来，那时要正着走——方向从 segOrder 里读，别写死。 */
+    var wDesc = segOrder.length < 2 || segOrder[0] > segOrder[segOrder.length-1];
+    for(var lq = 0; lq < (ui.netOff ? 0 : L); lq++){
+      var li = wDesc ? (L-1-lq) : lq;
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
@@ -1932,7 +1950,8 @@ function netScene(D, g, box, step){
     var nSeg = cutPP ? D.pp : 1;
       var dc = kc % KD, tc = KT > 1 ? Math.floor(kc/KD) : co.t;
       var isFcol = hasSel && kc === sel0;      /* 选中那一列（副本 × tp 片）：整列不上雾 */
-      for(var pc2 = 0; pc2 < nSeg; pc2++){
+      for(var si = 0; si < nSeg; si++){
+        var pc2 = segOrder[si];
         /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
            转起来够看清阵列的骨架，松手再补全。 */
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
@@ -1971,8 +1990,10 @@ function netScene(D, g, box, step){
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
              pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
           if(!isFcol){
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',44)+';stroke:none'));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',56)+';stroke:none'));
+            /* 雾会沿纵深累加（一列 4 段、每段两面），所以单层不能给太厚：给到看得出
+               「里面有东西但读不清」就够，维度签名色（TP 青 / EP 紫）还得透得出来。 */
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',34)+';stroke:none'));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',48)+';stroke:none'));
           }
           if(meC) body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
         }
