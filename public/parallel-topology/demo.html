@@ -1348,7 +1348,10 @@ function netScene(D, g, box, step){
   var sel0 = (KT > 1 ? co.t : 0) * KD + (cutDP ? Math.min(co.d, KD-1) : 0);
   /* PP 那一刀落下之后，段与段之间要**掰开一条缝**——不然「切开了」和「没切」长得一样。
      缝只在深度方向加，层内不动：面积守恒说的是层的面积，不是层间的间距。 */
-  var GAPW = cutPP ? DEP*0.22 : 0;
+  /* PP 段之间掰开的缝。0.22 太窄——46 层本来就密，段与段挨在一起时「这里断开了」
+     根本读不出来，四段看着像一整条。卡维度再宽一点：那儿每段是一只独立的卡壳，
+     缝要大到能一眼数出「纵深上串着 4 张卡」。 */
+  var GAPW = cutPP ? DEP*(ui.cardMode ? 0.62 : 0.46) : 0;
   var TOTW = DEP + GAPW*Math.max(0, D.pp-1);
   function stOf(li){ return Math.min(D.pp-1, Math.floor(li/lps)); }
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
@@ -1643,11 +1646,13 @@ function netScene(D, g, box, step){
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
+        /* 壳的描边要压得住里面的载荷：之前 .3 宽、.55 透明的细线被卡内那堆青色
+           算子盖过去，128 只卡看着像一片散块，「一张卡是一个整体」这件事就没了。 */
         body.push(quad([C8[0],C8[1],C8[2],C8[3]],
-          'fill:'+(meC ? mix('var(--pt-fg)',5) : mix('var(--pt-fg)',2))+';stroke:none'));
+          'fill:'+(meC ? mix('var(--pt-fg)',7) : mix('var(--pt-fg)',3))+';stroke:none'));
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg2)':'var(--pt-bd)')
-            +';stroke-width:'+(meC?.7:.3)+';opacity:'+(meC?.9:.55)));
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
+            +';stroke-width:'+(meC?1.1:.55)+';opacity:'+(meC?1:.8)));
         });
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
@@ -2893,10 +2898,18 @@ function renderDeck(D){
       var DECK_L = 46;
       var lyrC = Math.max(0, Math.min(DECK_L-1, Math.floor((coC.p + 0.5) * DECK_L / D.pp)));
       c.setFrontLayer(lyrC);
-      if(ui.viewTab === 'side') c.selectLayer(lyrC); else c.collapseLayer();
+      /* 侧视不再默认把那一层展开成前平面：它会弹出一块盖住半张图的大面板，
+         而这一屏要看的是「这张卡占了整条层链的哪一截」，不是某一层的内部。
+         想看内部点那一层即可。 */
+      c.collapseLayer();
     } else c.collapseLayer();
   }catch(e){ /* sidecar 版本没有这几个 API 时不该拖垮整屏 */ }
   c.fit();
+  /* 侧视 fit 完还是顶到边——46 层横着铺满整格，两侧一点余量都没有。回收一点
+     缩放，图和格子边界之间留出呼吸。 */
+  if(ui.viewTab === 'side'){
+    setTimeout(function(){ try{ c.setZoom(0.72); }catch(e){} }, 80);
+  }
   /* fit 自己排在后续帧里跑（还带一段过渡），克隆必须等它彻底落地——
      早一帧复制到的就是没缩放好的画面，16 格全歪。 */
   if(deckTileRaf) clearTimeout(deckTileRaf);
