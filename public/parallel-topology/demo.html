@@ -154,6 +154,9 @@
 /* 高度不占满容器，按正视图自身的内容比例走。3d-deck 的 front fit 是
    min(w/850, h/1810)：格子一高，缩放就被宽度卡死，多出来的高度全是空白，
    卡片看着就是「一条特别高的白板中间浮着一小张图」。 */
+/* 正视是竖长的（3d-deck 的 front fit 基准 850×1810），侧视是宽扁的（3000×1900）——
+   两者共用一个比例的话，侧视那份会被压成一条。 */
+.pt-deck.is-tiled.is-side > *{aspect-ratio:3000/1900}
 .pt-deck.is-tiled > *{
   position:relative; overflow:hidden; aspect-ratio:850/1810; height:auto;
   border:1px solid var(--pt-bd); border-radius:10px; background:var(--pt-s1);
@@ -1527,10 +1530,9 @@ function netScene(D, g, box, step){
          「这一张卡拿到了什么」，层框留着只会把卡壳里塞满和它无关的格子。 */
       if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1))
         body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
-      /* 卡维度：一张卡持有的那几层结构完全一样（都是同一个 decoder layer），
-         画满 8 遍只会在壳里堆成一团条纹，看不出那是什么。每段只画中间那一层
-         当代表，卡壳本身就是「这一段」的框——层数写在 PP 轴的刻度上。 */
-      if(ui.cardMode && li !== Math.min(L-1, stOf(li)*lps + (lps>>1))) continue;
+      /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
+         代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
+         小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
       if(IXg){
         IXg.G.nodes.forEach(function(n, ni){
           if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
@@ -1629,6 +1631,9 @@ function netScene(D, g, box, step){
     for(var kc = 0; kc < K; kc++){
       var dc = kc % KD, tc = KT > 1 ? Math.floor(kc/KD) : co.t;
       for(var pc2 = 0; pc2 < nSeg; pc2++){
+        /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
+           转起来够看清阵列的骨架，松手再补全。 */
+        if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
         var csx = segW(pc2), cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
         var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
@@ -1683,7 +1688,7 @@ function netScene(D, g, box, step){
       var dStep = KD > 10 ? 2 : 1;
       for(var da = 0; da < KD; da++){
         if(da % dStep !== 0 && da !== KD-1) continue;
-        axLab(P(0.5, AR + 0.26, wBack, rowLast + da), 'DP'+da, null, VC.dp, hasSel && da === co.d);
+        axLab(P(0.5, AR + 0.26, wFront, rowLast + da), 'DP'+da, null, VC.dp, hasSel && da === co.d);
       }
     }
     /* TP：竖轴（每个副本被锯成 tp 片，一片一行），贴在每行左侧 */
@@ -2900,7 +2905,9 @@ function renderDeck(D){
     if(ui.view!=='chain') return;
     /* 合并标注必须等 fit 落地：fit 会按 state.parallelMode 重绘一遍 annotations，
        早接上去的那批会被它清掉 */
-    if(ui.viewTab==='front'){ dualFrontMarks(deckCtl, D, $('deckHost')); tileClone(n, D); }
+    if(ui.viewTab==='front') dualFrontMarks(deckCtl, D, $('deckHost'));
+    /* 侧视同样要铺：卡维度下 TP 把模型锯成 tp 片，上下各一份 */
+    if(ui.viewTab==='front' || ui.viewTab==='side') tileClone(n, D);
     paintCuts($('deckHost'), D);
     setTimeout(function(){ paintDeckAxes(D); }, 60);
   }, 220);
@@ -2915,11 +2922,17 @@ function tileLayout(D){
      非卡维度 = DP 副本一排；卡维度 = 16 列 × tp 行（pp 段在深度方向，正视看进去
      是重叠的，所以不进格数）。 */
   var tRows = (ui.cardMode && ui.kTP && D.tp > 1) ? D.tp : 1;
-  var n = (ui.viewTab==='front' && ui.kDP && D.dp>1) ? D.dp * tRows : 1;
+  var n;
+  if(ui.viewTab === 'front') n = (ui.kDP && D.dp > 1) ? D.dp * tRows : tRows;
+  /* 侧视：46 层沿层深排开就是一份模型，DP 副本在这个方向上是重叠的（所以不铺
+     16 份）。但 TP 把每一份都锯成了 tp 片，那是实打实的两份不同的持有量——
+     上下各摆一份，和正视的两行、3D 的两层对上。 */
+  else if(ui.viewTab === 'side') n = tRows;
+  else n = 1;
   Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone, .pt-dpcap'))
     .forEach(function(el){ el.remove(); });
   if(n <= 1){
-    host.classList.remove('is-tiled');
+    host.classList.remove('is-tiled'); host.classList.remove('is-side');
     host.style.removeProperty('grid-template-columns');
     host.style.removeProperty('--pt-cellh');
     return 1;
@@ -2933,6 +2946,7 @@ function tileLayout(D){
   var cols = Math.ceil(n / tRows);
   var cw = Math.max(34, Math.floor((W - 30 - (cols-1)*6) / cols));
   host.classList.add('is-tiled');
+  host.classList.toggle('is-side', ui.viewTab === 'side');
   host.dataset.cw = cw; host.dataset.n = cols; host.dataset.rows = tRows;
   host.style.gridTemplateRows = tRows > 1 ? 'repeat('+tRows+', auto)' : '';
   host.style.removeProperty('--pt-cellh');
@@ -2970,7 +2984,7 @@ function mountClone(slot, D){
   slot.dataset.mounted = '1';
   try{
     deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
-      preset:'openpangu-flash', initialView:'front', parallelMode:frontMode(D),
+      preset:'openpangu-flash', initialView:(ui.viewTab==='side'?'right':'front'), parallelMode:frontMode(D),
       initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
       metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
     }));
@@ -3119,7 +3133,7 @@ function tileClone(n, D){
   var queue = slots.slice();
   (function pump(){
     if(!queue.length) return;
-    if(ui.view!=='chain' || ui.viewTab!=='front') return;   /* 中途切走就别建了 */
+    if(ui.view!=='chain' || (ui.viewTab!=='front' && ui.viewTab!=='side')) return;   /* 中途切走就别建了 */
     mountClone(queue.shift(), D);
     requestAnimationFrame(pump);
   })();
