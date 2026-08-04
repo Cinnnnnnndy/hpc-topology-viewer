@@ -1611,6 +1611,26 @@ function netScene(D, g, box, step){
     a9.sort(function(x,y){ return y.z - x.z; });
     return a9.map(function(o){ return o.i; });
   })();
+  /* ── 空气透视：远的更淡、更细、更雾 ────────────────────────────────────
+     128 只一模一样的壳，只靠位置是分不出前后的——所有棱一样黑、所有面一样白，
+     叠在一起就是一张平面的网格。真实世界里远处会被空气滤淡，这是人眼最先认的
+     那条深度线索，也是最省事的：不改几何，只按投影深度调三样东西（棱的粗细与
+     浓度、雾的厚度、卡内容的整体浓度）。 */
+  var zLo = Infinity, zHi = -Infinity;
+  (function(){
+    var kq, sq, nq = cutPP ? D.pp : 1;
+    for(kq = 0; kq < K; kq++) for(sq = 0; sq < nq; sq++){
+      var sw8 = segW(sq);
+      var z8 = turn3(cx(kq)+0.5, cy(kq)+AR/2, (sw8[0]+sw8[1])/2, yaw, pitch)[2];
+      if(z8 < zLo) zLo = z8;
+      if(z8 > zHi) zHi = z8;
+    }
+  })();
+  function depthT(kc, w9){                       /* 0 = 最近，1 = 最远 */
+    if(!(zHi - zLo > 1e-6)) return 0;
+    var z9 = turn3(cx(kc)+0.5, cy(kc)+AR/2, w9, yaw, pitch)[2];
+    return Math.max(0, Math.min(1, (z9 - zLo) / (zHi - zLo)));
+  }
   var off0 = sel0;
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
@@ -1628,6 +1648,11 @@ function netScene(D, g, box, step){
     /* 层同理：远的先画。默认机位下大 w 更远，所以从 L-1 往回走；yaw 转过 90°
        之后 w 的远近方向反过来，那时要正着走——方向从 segOrder 里读，别写死。 */
     var wDesc = segOrder.length < 2 || segOrder[0] > segOrder[segOrder.length-1];
+    /* 卡里的内容整列一起淡：粒度取「列」而不是「层」——这一屏最容易糊成一片的
+       正是 16 列沿纵深叠在一起，层与层之间本来就有壳隔着。选中那列不淡。 */
+    var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
+    var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
+    if(colFade < 0.999) body.push('<g opacity="'+colFade.toFixed(3)+'">');
     for(var lq = 0; lq < (ui.netOff ? 0 : L); lq++){
       var li = wDesc ? (L-1-lq) : lq;
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
@@ -1724,6 +1749,7 @@ function netScene(D, g, box, step){
         });
       }
     }
+    if(colFade < 0.999) body.push('</g>');
     if(ui.cardMode) shellOf(k);
     if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
@@ -1969,6 +1995,7 @@ function netScene(D, g, box, step){
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         var gc = rankOf(tc, co.c, dc, pc2, D);
         var meC = hasSel && gc === g;
+        var dT = depthT(kc, (csx[0]+csx[1])/2);
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -1992,14 +2019,18 @@ function netScene(D, g, box, step){
           if(!isFcol){
             /* 雾会沿纵深累加（一列 4 段、每段两面），所以单层不能给太厚：给到看得出
                「里面有东西但读不清」就够，维度签名色（TP 青 / EP 紫）还得透得出来。 */
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',34)+';stroke:none'));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',48)+';stroke:none'));
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
           if(meC) body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
         }
+        /* 棱：近的粗而浓、远的细而淡。这一条比雾更管用——雾说的是「里面看不清」，
+           棱说的是「这只盒子离你多远」，前后关系全靠它。 */
+        var eW = meC ? 1.1 : (ui.netOff ? .55 : (0.92 - dT*0.42));
+        var eO = meC ? 1 : (ui.netOff ? .5 : (0.98 - dT*0.46));
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
-            +';stroke-width:'+(meC?1.1:.55)+';opacity:'+(meC?1:(ui.netOff?.5:.8))));
+            +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
            卡里那条专家带在 128 只卡的尺度下只有几个像素，分不出谁是谁。
