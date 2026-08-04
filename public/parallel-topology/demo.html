@@ -206,6 +206,16 @@
   min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
   border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
 }
+/* 模式开关比旁边那些筛选胶囊重一档：它切换的是整屏在讲什么，不是过滤一个维度。
+   实心底、白字、更大的字号，一眼看得出「这是主开关」。 */
+.pt-mode{display:inline-flex; gap:6px}
+.pt-mb{
+  min-height:30px; padding:0 15px; font-size:12.5px; font-weight:800; border-radius:999px;
+  border:1.5px solid var(--c); background:var(--pt-bg); color:var(--c);
+  box-shadow:0 1px 3px rgba(0,0,0,.06);
+}
+.pt-mb:hover{background:color-mix(in srgb, var(--c) 12%, var(--pt-bg))}
+.pt-mb.is-on{background:var(--c); color:#fff; border-color:var(--c)}
 .pb:hover{border-color:var(--c, var(--pt-bds)); color:var(--pt-fg)}
 .pb.is-on{background:var(--c, var(--pt-fg)); border-color:var(--c, var(--pt-fg)); color:var(--pt-bg)}
 .pb:disabled{opacity:.38; cursor:not-allowed; text-decoration:line-through}
@@ -3298,12 +3308,17 @@ function renderChainBar(D){
     + '<button'+(ui.viewTab==='side'?' class="is-on"':'')+' data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
     + '<button'+(ui.viewTab==='top'?' class="is-on"':'')+' data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>'
     + '</span>';
-  /* 卡维度：四把刀的交集就是一张卡，单独收进一只卡壳里看它到底拿到了什么 */
-  var cBtn = '<span class="pt-seg"><button'+(ui.cardMode?' class="is-on"':'')
-    + ' data-act="cardmode" style="--c:'+VC.dp+'" title="把四刀交集收进一张卡：只看这张卡真正持有的那份">卡维度</button>'
-    /* 关掉整网只在卡维度下有意义：没有卡壳的话，关掉内容就什么都不剩了 */
-    + (ui.cardMode ? '<button'+(ui.netOff?' class="is-on"':'')
-        + ' data-act="netoff" style="--c:'+VC.pp+'" title="卡里不再画算子，只剩 '+D.world+' 只方块——那就是魔方">关闭整网</button>' : '')
+  /* 这两颗是**模式开关**，不是筛选器——按钮上直接写「按下去会发生什么」，
+     打开 Rank ⇄ 关闭 Rank、关闭整网 ⇄ 打开整网。写成静态名字（「卡维度」）的话
+     得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
+  var cBtn = '<span class="pt-mode">'
+    + '<button class="pt-mb'+(ui.cardMode?' is-on':'')+'" data-act="cardmode" style="--c:'+VC.dp+'"'
+    + ' title="'+(ui.cardMode?'退回整网切分场景':'把四刀交集收进一张卡：只看这张卡真正持有的那份')+'">'
+    + (ui.cardMode ? '关闭 Rank' : '打开 Rank') + '</button>'
+    /* 整网开关只在 Rank 打开时给：没有卡壳的话，关掉内容就什么都不剩了 */
+    + (ui.cardMode ? '<button class="pt-mb'+(ui.netOff?' is-on':'')+'" data-act="netoff" style="--c:'+VC.pp+'"'
+        + ' title="'+(ui.netOff?'把算子装回 '+D.world+' 只卡里':'卡里不再画算子，只剩 '+D.world+' 只方块——那就是魔方')+'">'
+        + (ui.netOff ? '打开整网' : '关闭整网') + '</button>' : '')
     + '</span>';
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
