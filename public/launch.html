@@ -18,6 +18,8 @@
     research/ 目录带入 dist（dev server 亦按需直读），仓库不存第二份。
   · 标 ° 的链接是各 pattern 分支 workflow 的发布叠加目录，main 重新部署后可能
     暂时 404，重跑对应分支的 Deploy workflow 即可找回（见 .github/workflows/deploy.yml）。
+  · 「图元库 · 跨仓」那组指向另一个仓库 hpc-topology-node 的 Pages 站点，本仓不复制
+    它的任何文件，也不参与本仓的构建——那边更新即时生效，这边只是一条外链。
 -->
 <style>
 :root {
@@ -168,6 +170,7 @@ body {
 .tag--k-pat    { background: rgba(157, 123, 255, 0.12); border-color: rgba(157, 123, 255, 0.34); color: #7a55d6; }
 .tag--k-doc    { background: rgba(4, 168, 120, 0.10); border-color: rgba(4, 168, 120, 0.30); color: #058a64; }
 .tag--k-report { background: rgba(255, 143, 15, 0.12); border-color: rgba(255, 143, 15, 0.32); color: #bb6a05; }
+.tag--k-ext    { background: rgba(74, 217, 231, 0.14); border-color: rgba(74, 217, 231, 0.46); color: #0b7f90; }
 
 .card-preview {
   margin: 4px 12px 0;
@@ -260,8 +263,8 @@ body {
     <div class="plane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <h1>HPC Topology Viewer<small>项目启动页</small></h1>
     <p class="hero-sub">
-      仓库里的工作台、驾驶舱、独立迭代 pattern、参照系与研究文档、历史原型，按组整合在这一页，
-      点开即看。标 <b>°</b> 的链接来自 pattern 分支的发布叠加目录，说明见页尾。
+      仓库里的工作台、驾驶舱、独立迭代 pattern、参照系与研究文档、历史原型，加上邻仓的硬件图元库，
+      按组整合在这一页，点开即看。标 <b>°</b> 的链接来自 pattern 分支的发布叠加目录，说明见页尾。
     </p>
     <div class="hero-actions">
       <a class="pill pill--primary" href="./">进入统一工作台</a>
@@ -532,6 +535,80 @@ body {
           <div class="card-src">
             <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/vendor/net-sharding" target="_blank" rel="noopener">
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/vendor/net-sharding/
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ═══ 图元库 · 跨仓 ═══ -->
+    <section class="card-group" aria-labelledby="g-ext">
+      <div class="group-header">
+        <h2 class="group-title" id="g-ext">图元库 · 跨仓</h2>
+        <span class="group-note">另一个仓库 hpc-topology-node 的发布页</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="https://cinnnnnnndy.github.io/hpc-topology-node/硬件图元库.dc.html" target="_blank" rel="noopener">硬件图元库</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-ext">邻仓</span>
+              <span class="tag">13 图元</span>
+              <span class="tag">L7 → L1</span>
+              <span class="tag">3D / 2D / 连线</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 左：SuperPoD → tile 的图元逐级嵌套 -->
+              <rect class="pv-soft" x="14" y="14" width="152" height="132" rx="13"/>
+              <rect class="pv-box"  x="26" y="26" width="128" height="108" rx="11"/>
+              <rect class="pv-soft" x="38" y="38" width="104" height="84"  rx="9"/>
+              <rect x="50" y="50" width="80" height="60" rx="7" fill="#ffffff" stroke="#4369ef" stroke-width="1.5"/>
+              <rect x="62" y="62" width="56" height="36" rx="5" fill="#fff8ec" stroke="#ffaa3b" stroke-width="1.4"/>
+              <rect x="72" y="71" width="36" height="18" rx="3.5" fill="#e6fbf3" stroke="#04d793" stroke-width="1.3"/>
+              <rect x="78" y="76" width="8" height="8" rx="2" fill="#04d793"/>
+              <!-- 右：四类连线，白色 casing + 彩色核心 + 流动暗点 -->
+              <g>
+                <rect class="pv-box" x="180" y="25.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="25.5" width="9" height="9" rx="2"/>
+                <path d="M191 30 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 30 H293" stroke="#ffaa3b" stroke-width="2.8" stroke-linecap="round"/>
+                <circle cx="226" cy="30" r="1.9" fill="rgba(19,26,42,.42)"/><circle cx="262" cy="30" r="1.9" fill="rgba(19,26,42,.42)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="61.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="61.5" width="9" height="9" rx="2"/>
+                <path d="M191 66 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 66 H293" stroke="#4369ef" stroke-width="2.4" stroke-dasharray="7 5"/>
+                <circle cx="240" cy="66" r="1.9" fill="rgba(19,26,42,.42)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="97.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="97.5" width="9" height="9" rx="2"/>
+                <path d="M191 102 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 102 H293" stroke="#2fb9c9" stroke-width="2.2" stroke-dasharray="4 7"/>
+                <circle cx="252" cy="102" r="1.7" fill="rgba(19,26,42,.34)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="133.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="133.5" width="9" height="9" rx="2"/>
+                <path d="M191 138 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 138 H293" stroke="#04d793" stroke-width="3.4" stroke-linecap="round"/>
+                <circle cx="216" cy="138" r="2" fill="rgba(19,26,42,.42)"/><circle cx="246" cy="138" r="2" fill="rgba(19,26,42,.42)"/><circle cx="276" cy="138" r="2" fill="rgba(19,26,42,.42)"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">13 个硬件图元按 L7 → L1 逐级拆开：SuperPoD → 机柜 → 刀片 → 昇腾 950 NPU → die+HBM → 达芬奇 AI Core → tile，另有 UB Switch / 鲲鹏 CPU / LPO 800G / 擎天 NIC，各备 3D 模型与 2D 图标两套画法；第三个页签是 6 轮连线样式探索——铜缆 LQC · 光纤 UB · 长距 UBoE · D2D 片内。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="https://cinnnnnnndy.github.io/hpc-topology-node/硬件图元库.dc.html" target="_blank" rel="noopener">打开图元库</a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-node" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Cinnnnnnndy/hpc-topology-node
             </a>
           </div>
         </article>
@@ -910,7 +987,7 @@ body {
 
   <footer class="foot">
     <div>° 标记的链接由对应 pattern 分支的 Deploy workflow 叠加发布；main 重新部署后可能暂时 404，重跑该分支的 workflow 即可找回（见 <span class="mono">.github/workflows/deploy.yml</span> 头注）。</div>
-    <div>每张卡片底部的灰色路径是它在仓库里的位置，点击直达 GitHub 上对应的文件或目录（未标分支的都在 <span class="mono">main</span> 上）。</div>
+    <div>每张卡片底部的灰色路径是它在仓库里的位置，点击直达 GitHub 上对应的文件或目录（未标分支的都在 <span class="mono">main</span> 上）。「图元库 · 跨仓」那组不在本仓，路径写的是它所属的仓库，链接也指向那个仓库自己的 Pages 站点。</div>
     <div>本页与全站均为 noindex；页面内容基于公开资料的示意抽象，不代表真实工程布局。</div>
   </footer>
 
