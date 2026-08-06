@@ -1072,6 +1072,25 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="stage" id="fig-sp-tp"></div>
   </figure>
 
+  <h3>SP 为什么几乎总是开</h3>
+
+  <p>SP 是极少数<strong>纯赚不赔</strong>的优化——它不加通信、不加卡、不改算子，唯一的效果是激活显存省 TP 倍。只要 TP &gt; 1，就该开 SP。Megatron-LM 中 TP &gt; 1 时 SP 默认启用。</p>
+
+  <p><strong>为什么是"免费"的？</strong>纯 TP 在每个 matmul 之后做 AllReduce（通信量 = 2×数据量）。SP 把 AllReduce 拆成两半：出 TP 区做 ReduceScatter（通信量 = 数据量），进 TP 区做 AllGather（通信量 = 数据量），加起来<b>总通信量完全一样</b>——只是把一次集合操作拆成两次更小的，分别放在 TP 区的两端。</p>
+
+  <p><strong>省下来的显存能干什么？</strong></p>
+  <ul>
+    <li><b>加大 micro-batch</b> → 每步处理更多样本，提高 GPU 利用率</li>
+    <li><b>加长序列</b> → 支持更长上下文（激活量随 S 线性增长）</li>
+    <li><b>减少 activation checkpointing</b> → checkpointing 是拿计算换显存的，显存够了就不用换，省下重算的时间</li>
+  </ul>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 04F</span><span class="ftitle">SP 的成本与收益：通信不变、显存减半</span>
+      <span class="fnote">左：通信量对比——纯 TP 的 AllReduce 和 SP 的 ReduceScatter + AllGather 总量相同。右：单卡显存对比——非 TP 区的激活从 [B,S,H] 缩到 [B,S/TP,H]，空出来的显存可以用于更大的 batch 或更长的序列。</span></figcaption>
+    <div class="stage" id="fig-sp-cost"></div>
+  </figure>
+
   <h3>图解：列切-行切怎么配对</h3>
 
   <p>上面的代码框是「每步做什么」，下面这张图画的是「<strong>矩阵长什么样、怎么被拆开</strong>」。跟着数据流从左到右走一遍，列切-行切的不对称性就清楚了。</p>
@@ -3245,6 +3264,117 @@ function figRingStep(){
   m.innerHTML=s;
 }
 
+/* ===================== FIG 04F · SP 成本与收益 ===================== */
+function figSPCost(){
+  var m=document.getElementById('fig-sp-cost'); if(!m) return;
+  var W=920, H=340;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var TPc=K.tp, CPc=K.cp, INK='#0E1418', DIM='#8A98A2';
+  var OK='#3E9E6E', OKBG='#E8F5E9';
+
+  /* ===== 左半：通信量对比 ===== */
+  s+='<text x="220" y="20" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">通信量对比</text>';
+
+  var BX=40, BY=40, BW=160, BH=28, BG=12;
+
+  /* 纯 TP: AllReduce = ReduceScatter + AllGather */
+  s+='<text x="'+BX+'" y="'+(BY+6)+'" font-size="9" fill="'+DIM+'" font-weight="600">纯 TP</text>';
+  s+='<rect x="'+(BX+60)+'" y="'+(BY-8)+'" width="'+BW+'" height="'+BH+'" rx="5" fill="#FCF0F1" stroke="'+TPc+'" stroke-width="1.2"/>';
+  s+='<text x="'+(BX+60+BW/2)+'" y="'+(BY+8)+'" font-size="9" fill="'+TPc+'" font-weight="700" text-anchor="middle">AllReduce</text>';
+  s+='<text x="'+(BX+60+BW+8)+'" y="'+(BY+8)+'" font-size="8" fill="'+DIM+'">通信量 = 2N</text>';
+
+  /* AllReduce = RS + AG 的拆解 */
+  var dy=BY+BH+BG;
+  s+='<text x="'+(BX+60+BW/2)+'" y="'+(dy-2)+'" font-size="8" fill="'+DIM+'" text-anchor="middle">其实 AllReduce 本身就 =</text>';
+  dy+=8;
+  s+='<rect x="'+(BX+60)+'" y="'+dy+'" width="'+(BW/2-4)+'" height="'+BH+'" rx="5" fill="#F8F5F0" stroke="#D4A76A" stroke-width="1"/>';
+  s+='<text x="'+(BX+60+(BW/2-4)/2)+'" y="'+(dy+16)+'" font-size="7.5" fill="#A07030" font-weight="600" text-anchor="middle">ReduceScatter</text>';
+  s+='<text x="'+(BX+60+BW/2)+'" y="'+(dy+16)+'" font-size="9" fill="'+DIM+'" text-anchor="middle">+</text>';
+  s+='<rect x="'+(BX+60+BW/2+4)+'" y="'+dy+'" width="'+(BW/2-4)+'" height="'+BH+'" rx="5" fill="#F8F5F0" stroke="#D4A76A" stroke-width="1"/>';
+  s+='<text x="'+(BX+60+BW/2+4+(BW/2-4)/2)+'" y="'+(dy+16)+'" font-size="7.5" fill="#A07030" font-weight="600" text-anchor="middle">AllGather</text>';
+  s+='<text x="'+(BX+60+BW+8)+'" y="'+(dy+16)+'" font-size="8" fill="'+DIM+'">N + N = 2N</text>';
+
+  /* TP + SP */
+  dy+=BH+BG+8;
+  s+='<text x="'+BX+'" y="'+(dy+6)+'" font-size="9" fill="'+CPc+'" font-weight="600">TP + SP</text>';
+  s+='<rect x="'+(BX+60)+'" y="'+(dy-8)+'" width="'+(BW/2-4)+'" height="'+BH+'" rx="5" fill="'+OKBG+'" stroke="'+OK+'" stroke-width="1.2"/>';
+  s+='<text x="'+(BX+60+(BW/2-4)/2)+'" y="'+(dy+8)+'" font-size="7.5" fill="'+OK+'" font-weight="600" text-anchor="middle">ReduceScatter</text>';
+  s+='<text x="'+(BX+60+BW/2)+'" y="'+(dy+8)+'" font-size="9" fill="'+DIM+'" text-anchor="middle">+</text>';
+  s+='<rect x="'+(BX+60+BW/2+4)+'" y="'+(dy-8)+'" width="'+(BW/2-4)+'" height="'+BH+'" rx="5" fill="'+OKBG+'" stroke="'+OK+'" stroke-width="1.2"/>';
+  s+='<text x="'+(BX+60+BW/2+4+(BW/2-4)/2)+'" y="'+(dy+8)+'" font-size="7.5" fill="'+OK+'" font-weight="600" text-anchor="middle">AllGather</text>';
+  s+='<text x="'+(BX+60+BW+8)+'" y="'+(dy+8)+'" font-size="8" fill="'+DIM+'">N + N = 2N</text>';
+
+  /* 等号结论 */
+  dy+=BH+BG;
+  s+='<rect x="'+(BX+40)+'" y="'+dy+'" width="220" height="26" rx="6" fill="'+OKBG+'" stroke="'+OK+'" stroke-width="1.2"/>';
+  s+='<text x="'+(BX+40+110)+'" y="'+(dy+16)+'" font-size="9.5" fill="'+OK+'" font-weight="700" text-anchor="middle">通信量完全相同 — SP 免费</text>';
+
+  /* 区别说明 */
+  dy+=36;
+  s+='<text x="'+(BX+40+110)+'" y="'+dy+'" font-size="8" fill="'+DIM+'" text-anchor="middle">唯一区别：SP 把一次 AllReduce 拆成两半，</text>';
+  s+='<text x="'+(BX+40+110)+'" y="'+(dy+13)+'" font-size="8" fill="'+DIM+'" text-anchor="middle">分别放在 TP 区的入口和出口</text>';
+
+  /* ===== 右半：显存对比 ===== */
+  var RX=500;
+  s+='<text x="'+(RX+190)+'" y="20" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">单卡显存对比（非 TP 区激活）</text>';
+
+  /* 显存柱状图 */
+  var barX=RX+20, barY=40, barW=70, maxH=180;
+  var fullH=maxH, halfH=maxH/2;
+
+  /* 纯 TP 柱 */
+  s+='<rect x="'+barX+'" y="'+barY+'" width="'+barW+'" height="'+fullH+'" rx="4" fill="#FCF0F1" stroke="'+TPc+'" stroke-width="1.4"/>';
+  s+='<text x="'+(barX+barW/2)+'" y="'+(barY+fullH/2-6)+'" font-size="8" fill="'+TPc+'" font-weight="700" text-anchor="middle">[B, S, H]</text>';
+  s+='<text x="'+(barX+barW/2)+'" y="'+(barY+fullH/2+6)+'" font-size="8" fill="'+TPc+'" text-anchor="middle">完整激活</text>';
+  s+='<text x="'+(barX+barW/2)+'" y="'+(barY+fullH+16)+'" font-size="9" fill="'+INK+'" font-weight="600" text-anchor="middle">纯 TP</text>';
+
+  /* TP+SP 柱 */
+  var bar2X=barX+barW+50;
+  /* 实际占用（半高） */
+  s+='<rect x="'+bar2X+'" y="'+(barY+fullH-halfH)+'" width="'+barW+'" height="'+halfH+'" rx="4" fill="'+OKBG+'" stroke="'+OK+'" stroke-width="1.4"/>';
+  s+='<text x="'+(bar2X+barW/2)+'" y="'+(barY+fullH-halfH/2-6)+'" font-size="8" fill="'+OK+'" font-weight="700" text-anchor="middle">[B, S/TP, H]</text>';
+  s+='<text x="'+(bar2X+barW/2)+'" y="'+(barY+fullH-halfH/2+6)+'" font-size="8" fill="'+OK+'" text-anchor="middle">SP 激活</text>';
+  /* 省出来的空间（虚线框） */
+  s+='<rect x="'+bar2X+'" y="'+barY+'" width="'+barW+'" height="'+(fullH-halfH)+'" rx="4" fill="#fff" stroke="'+OK+'" stroke-width="1" stroke-dasharray="4 2"/>';
+  s+='<text x="'+(bar2X+barW/2)+'" y="'+(barY+(fullH-halfH)/2-4)+'" font-size="8" fill="'+OK+'" font-weight="700" text-anchor="middle">省出来的</text>';
+  s+='<text x="'+(bar2X+barW/2)+'" y="'+(barY+(fullH-halfH)/2+8)+'" font-size="8" fill="'+OK+'" text-anchor="middle">显存</text>';
+  s+='<text x="'+(bar2X+barW/2)+'" y="'+(barY+fullH+16)+'" font-size="9" fill="'+INK+'" font-weight="600" text-anchor="middle">TP + SP</text>';
+
+  /* 省了多少的标注 */
+  s+='<path d="M'+(barX+barW+6)+' '+barY+' L'+(barX+barW+6)+' '+(barY+fullH)+'" stroke="'+TPc+'" stroke-width="1" stroke-dasharray="2 2"/>';
+  s+='<path d="M'+(bar2X-6)+' '+barY+' L'+(bar2X-6)+' '+(barY+fullH)+'" stroke="'+OK+'" stroke-width="1" stroke-dasharray="2 2"/>';
+
+  var midX=(barX+barW+bar2X)/2;
+  s+='<text x="'+midX+'" y="'+(barY+fullH/4)+'" font-size="18" fill="'+OK+'" font-weight="700" text-anchor="middle">↓</text>';
+  s+='<text x="'+midX+'" y="'+(barY+fullH/4+16)+'" font-size="9" fill="'+OK+'" font-weight="700" text-anchor="middle">省 TP 倍</text>';
+
+  /* 省出来的显存能干什么 */
+  var useX=bar2X+barW+30, useY=barY+10;
+  var uses=[
+    {icon:'B↑', text:'加大 micro-batch', sub:'提高 GPU 利用率'},
+    {icon:'S↑', text:'加长序列', sub:'支持更长上下文'},
+    {icon:'✓', text:'减少 checkpointing', sub:'省掉重算的时间'}
+  ];
+
+  s+='<text x="'+useX+'" y="'+(useY-4)+'" font-size="9" fill="'+OK+'" font-weight="700">省出来的显存 →</text>';
+  uses.forEach(function(u, i){
+    var uy=useY+12+i*46;
+    s+='<rect x="'+useX+'" y="'+uy+'" width="140" height="38" rx="6" fill="'+OKBG+'" stroke="'+OK+'" stroke-width=".8"/>';
+    s+='<text x="'+(useX+12)+'" y="'+(uy+16)+'" font-size="10" fill="'+OK+'" font-weight="700">'+u.icon+'</text>';
+    s+='<text x="'+(useX+32)+'" y="'+(uy+16)+'" font-size="9" fill="'+INK+'" font-weight="600">'+u.text+'</text>';
+    s+='<text x="'+(useX+32)+'" y="'+(uy+30)+'" font-size="7.5" fill="'+DIM+'">'+u.sub+'</text>';
+  });
+
+  /* 底部结论 */
+  var BY2=H-42;
+  s+='<rect x="30" y="'+BY2+'" width="'+(W-60)+'" height="34" rx="6" fill="#FFF8F4" stroke="'+INK+'" stroke-width="1.4"/>';
+  s+='<text x="460" y="'+(BY2+21)+'" font-size="11" fill="#3D4B55" font-weight="700" text-anchor="middle">结论：TP &gt; 1 时，SP 没有理由不开——通信零成本，激活省 TP 倍。Megatron-LM 默认启用。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 04E · SP 与 TP 切分关系：张量平面图 ===================== */
 function figSPTP(){
   var m=document.getElementById('fig-sp-tp'); if(!m) return;
@@ -4754,7 +4884,7 @@ function setupRail(){
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
    ['fig-sp',figSP], ['fig-ring-step',figRingStep],
-   ['fig-sp-tp',figSPTP],
+   ['fig-sp-tp',figSPTP], ['fig-sp-cost',figSPCost],
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
