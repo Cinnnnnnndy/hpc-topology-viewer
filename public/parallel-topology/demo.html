@@ -325,6 +325,40 @@
 /* 抽离图 / 折叠提示：舞台内底部浮动 */
 .pt-detach{left:14px; bottom:12px; width:min(600px, 62%); z-index:7; padding:10px 12px}
 .pt-detach svg{width:100%; height:auto; display:block}
+/* 层反查：工具条上那颗控件 + 左下角那张拆解卡。
+   拆解卡贴着图例的位置（两者不会同时打开——一个讲形状、一个讲某一层的去向）。 */
+.pt-revl{
+  display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 8px;
+  border:1px solid var(--pt-bd); border-radius:999px; background:var(--pt-bg);
+  font-size:11px; color:var(--pt-fg2); white-space:nowrap;
+}
+.pt-revl.is-on{border-color:var(--c); color:var(--c); box-shadow:0 0 0 1px var(--c)}
+.pt-revl b{font-size:11px; font-weight:700}
+.pt-revl input{
+  width:44px; height:18px; padding:0 4px; font-family:var(--pt-mono); font-size:11px;
+  border:1px solid var(--pt-bd); border-radius:5px; background:var(--pt-s1); color:inherit;
+}
+.pt-revl button{
+  border:0; background:none; color:var(--pt-fg3); cursor:pointer; font-size:13px; line-height:1; padding:0 1px;
+}
+.pt-revbox{
+  position:absolute; left:14px; bottom:12px; z-index:7;
+  width:min(330px, 48%); background:var(--pt-s1); border:1px solid var(--c, var(--pt-bd));
+  border-radius:12px; padding:9px 11px 10px; font-size:11.5px; color:var(--pt-fg2); line-height:1.55;
+  box-shadow:0 8px 28px rgba(0,0,0,.14);
+}
+.pt-revbox h5{
+  margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--pt-fg3);
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+}
+.pt-revbox h5 button{border:0;background:none;color:var(--pt-fg3);cursor:pointer;font-size:14px;line-height:1}
+.pt-revbox .rl{display:flex; gap:6px; align-items:flex-start; margin:3px 0}
+.pt-revbox .rl .dk{flex:none; margin-top:1px}
+.pt-revbox .sum{
+  margin-top:6px; padding-top:5px; border-top:1px solid var(--pt-bd);
+  font-size:11.5px; color:var(--pt-fg);
+}
 /* 图例：压在左下角的浮层。它是**对照表**不是正文——每行一个真形状 + 一句话，
    形状用内联 SVG 画，和画布上那一笔走同一套颜色与描边，不能是「差不多的示意」。 */
 .pt-legend{
@@ -440,6 +474,7 @@
     <div class="pt-card pt-drawer" id="drawer" hidden></div>
     <div class="pt-card pt-detach" id="detach" hidden></div>
     <div class="pt-legend" id="legend" hidden></div>
+    <div class="pt-revbox" id="revbox" hidden></div>
     <div class="pt-note" id="stageNote" hidden></div>
   </div>
   <footer class="pt-foot">
@@ -610,6 +645,10 @@ function urlLoad(){
   if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
   if(q.get('comm')==='1') ui.commOn = true;
   if(q.get('legend')==='1') ui.legendOn = true;
+  /* layer=ℓ：反查「这一层住在哪几张卡」。它是这一屏正向那一问的逆命题，
+     一样该能塞进链接——「你看 L37 牵动 32 张卡」得能一条链接发出去。 */
+  var lyq = parseInt(q.get('layer'), 10);
+  if(isFinite(lyq) && lyq >= 0) ui.revLayer = String(lyq);
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -636,6 +675,7 @@ function urlWrite(){
   if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
   if(ui.view==='chain' && ui.commOn) q.set('comm','1');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
+  if(ui.revLayer !== '' && isFinite(+ui.revLayer)) q.set('layer', Math.floor(+ui.revLayer));
   if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
@@ -1714,6 +1754,10 @@ function netScene(D, g, box, step){
     return quad([P(0,0,w,off), P(1,0,w,off), P(1,AR,w,off), P(0,AR,w,off)], st, extra);
   }
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
+  /* 反查选中的那一层（工具条上的「层反查」，也认 URL 的 layer=）。
+     判据必须和 revLiOn 一模一样：早先这里是 clamp，超范围的 layer=999 会被夹到
+     最后一层照样高亮，而拆解卡那边判的是「不在范围内就不显示」——一个画一个不画。 */
+  var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
   /* 前两层是 Dense FFN（真模型如此）；不开 MoE 的预设则整个模型都是 Dense。 */
@@ -1834,6 +1878,14 @@ function netScene(D, g, box, step){
         if(li === 0 || li === L-1){ pcol = 'var(--pt-fg2)'; pw = mine ? 1.1 : .6; }
         else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
+      }
+      /* ── 反查高亮：被问到的那一层横穿哪几张卡 ────────────────────────
+         这一屏别处答的都是「这张卡装了什么」，反查问的是它的逆命题——
+         「这一层住在哪」。图形形态就是这个：**同一张平面横穿这些卡**。
+         每一份复印件上都描一道（DP 复制的正是整套安排），一眼看出牵动的
+         是 world/PP 张卡，而不是一张。 */
+      if(li === revLi && !lowDetail){
+        body.push(pane(ww, kOff, 'fill:'+mix(VC.pp, 13)+';stroke:'+VC.pp+';stroke-width:1.7'));
       }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
@@ -2531,6 +2583,14 @@ function netScene(D, g, box, step){
       hit.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="8" '
         +'style="fill:transparent;cursor:help" data-tipk="'+it[2]+'"/>');
     });
+  }
+  /* 反查那一层的门牌：把「牵动多少张卡」这个数摆在图上。
+     「第 ℓ 层在哪张卡上」是这一屏最容易被说成单数的地方——数字写出来就没得含糊。 */
+  if(revLi >= 0 && IXg){
+    var hv9 = layerHome(D, revLi);
+    axLab(P(0.5, AR + 0.17, wOf(revLi), off0), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
+          hv9.frag > 1 ? ('各持 1/'+hv9.frag+'，无一张完整') : '每张持有完整的它',
+          VC.pp, true, 7.4);
   }
   /* batchSlab 已移除——输入标注一并去掉 */
   var CID = 'scClip';
@@ -4379,6 +4439,45 @@ function lgGlyph(inner, w, h){
   return '<svg width="'+(w||26)+'" height="'+(h||14)+'" viewBox="0 0 '+(w||26)+' '+(h||14)+'">'+inner+'</svg>';
 }
 function lgRow(g, t){ return '<div class="lg-row">'+g+'<div>'+t+'</div></div>'; }
+/* 这一屏此刻是不是正在反查某一层 */
+function revLiOn(D){
+  return ui.revLayer !== '' && isFinite(+ui.revLayer) && +ui.revLayer >= 0 && +ui.revLayer < D.layers;
+}
+/* 层反查的拆解卡：一层被三刀叠加之后到底住在哪。
+   要点不是那串 rank 号码，是**每一刀各自决定了什么**——
+     PP 决定这一层去哪几张卡 · TP/EP 决定它在那几张卡里怎么碎 · DP 决定这套
+     安排复制几遍。层作为概念自始至终没变，变的只是它映射到硬件上的方式。
+   末一行给结论：牵动 world/PP 张卡，而只要 TP 或 EP 落下，就没有哪一张持有
+   完整的它——这正是「层」在并行讨论里最容易被说成单数的地方。 */
+function renderRevBar(D){
+  var el = $('revbox'); if(!el) return;
+  if(!revLiOn(D) || (ui.cardMode && ui.netOff)){ el.hidden = true; el.innerHTML = ''; return; }
+  var L = clamp(Math.floor(+ui.revLayer), 0, D.layers-1), h = layerHome(D, L);
+  function row(dim, what, why){
+    return '<div class="rl"><span class="dk" style="--c:'+VC[dim]+'">'+dim.toUpperCase()+'</span>'
+      + '<span>'+what+'<br><span style="color:var(--pt-fg3);font-size:10.5px">'+why+'</span></span></div>';
+  }
+  el.hidden = false;
+  el.style.setProperty('--c', VC.pp);
+  el.innerHTML = '<h5><span>三者叠加时 · 第 '+L+' 层住在哪</span>'
+    + '<button data-act="revclear" title="收起">×</button></h5>'
+    + row('pp', '落在 <b>stage '+h.stage+'</b>（L'+h.l0+'–L'+h.l1+'）', '决定这一层<b>去哪几张卡</b>')
+    + row('tp', D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1 —— 不切',
+          '决定它<b>在那几张卡里怎么碎</b>')
+    + (D.moe ? row('ep', h.isMoe
+        ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>'
+        : '这一层是 <b>Dense</b>，没有 e 轴',
+        h.isMoe ? '同一批卡的<b>重分组</b>，不新增卡（EP 不是第五个乘数）'
+                : 'EP 这一刀在这一层落不下来') : '')
+    + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>', '切的是 s，权重持有量不变') : '')
+    + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>', '决定这套安排<b>重复几遍</b>')
+    + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张卡与第 '+L+' 层有关'
+    + '（world/PP = '+fmt(D.world)+'/'+D.pp+'）'
+    + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）'
+                : '，每张持有<b>完整</b>的它')
+    + '<div style="color:var(--pt-fg3);font-size:10.5px;margin-top:3px">'
+    + '层作为概念自始至终没变，变的只是它被映射到硬件上的方式。</div></div>';
+}
 function renderLegend(D){
   var el = $('legend'); if(!el) return;
   el.hidden = !ui.legendOn || (ui.cardMode && ui.netOff);
@@ -4475,7 +4574,13 @@ function renderLegend(D){
 
   el.innerHTML = h.join('');
 }
+/* 层反查那个输入框就长在工具条上，而 renderChain 收尾会重建整条工具条——
+   边打字边重建，输入框每敲一个数字就被换掉一次，第二位就打不进去了。
+   打字期间挂起工具条的重建（内容此刻也不需要变：变的是层号，工具条上只有
+   那圈 is-on 高亮跟着动，手动切一下即可）。 */
+var barFrozen = false;
 function renderChainBar(D){
+  if(barFrozen) return;
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var kBtns = '<span class="pt-seg">';
@@ -4507,6 +4612,17 @@ function renderChainBar(D){
   var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
     + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
     + '通信</button>';
+  /* 层反查：这一屏所有别的读数都在答「这张卡装了什么」，只有这一栏问的是它的
+     **逆命题**——「第 ℓ 层住在哪几张卡上」。原来它埋在读出卡的折叠里，而读出卡
+     没选中卡时整个是隐藏的，等于够不着；提到工具条上，它和「打开 Rank」一样是
+     一种看法，不是附属信息。 */
+  var revBtn = '<span class="pt-revl'+(revLiOn(D) ? ' is-on' : '')+'" style="--c:'+VC.pp+'"'
+    + ' title="反查：第 ℓ 层住在哪几张卡上——PP 决定它去哪几张卡、TP/EP 决定它在那几张卡里怎么碎、DP 决定这套安排复制几遍">'
+    /* id 与读出卡里那个反查框区分开：两处可以同时在屏上，重 id 会让
+       getElementById 只认得到第一个，另一个就成了死控件。 */
+    + '<b>层反查</b> L<input type="number" min="0" max="'+(D.layers-1)+'" id="revLayerBar" value="'+esc(ui.revLayer)+'" placeholder="?">'
+    + (revLiOn(D) ? '<button data-act="revclear" title="清除">×</button>' : '')
+    + '</span>';
   var cBtn = '<span class="pt-mode">'
     + '<button class="pt-mb'+(ui.cardMode?' is-on':'')+'" data-act="cardmode" style="--c:'+VC.dp+'"'
     + ' title="'+(ui.cardMode?'退回整网切分场景':'把四刀交集收进一张卡：只看这张卡真正持有的那份')+'">'
@@ -4521,8 +4637,9 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + revBtn + cBtn + vBtns);
   renderLegend(D);
+  renderRevBar(D);
 }
 
 function renderDimBar(D, dim){
@@ -5043,18 +5160,50 @@ function revHTML(D){
   return '<div class="rev"><b style="font-size:11px">反查（点区间得卡，可逆）</b><br>'
     + '<label style="font-size:11px">第 <input type="number" min="0" max="'+(D.layers-1)+'" id="revLayer" value="'+esc(ui.revLayer)+'" placeholder="L?"> 层在哪些卡上？</label><div id="revOut"></div></div>';
 }
+/* 反查一层落在哪几张卡上——**正向那一问的逆命题**。
+   这一屏别处答的都是「这张卡装了什么」，而这里问的是「这一层住在哪」：
+   两个方向合起来才是完整的映射。光给一串 rank 号码说明不了什么，真正要讲的是
+   那几刀**各自决定了什么**（也就是三者叠加时每一刀的分工）：
+     PP 决定这一层去哪几张卡 · TP/EP 决定它在那几张卡里怎么碎 · DP 决定这套安排
+     复制几遍；层作为概念自始至终没变，变的只是它被映射到硬件上的方式。
+   末一行是结论：一层牵动 world/PP 张卡，而 TP 或 EP 只要落下，就没有哪一张
+   持有完整的它。 */
+function layerHome(D, L){
+  var stage = Math.floor(L / D.layersPerStage);
+  var l0 = stage*D.layersPerStage, l1 = Math.min(D.layers-1, l0+D.layersPerStage-1);
+  var isMoe = D.moe && L >= Math.min(2, D.layers);       /* 与 netScene 的 denseTop 同口径 */
+  var tot = D.tp * D.cp * D.dp;
+  var frag = (ui.kTP && D.tp>1 ? D.tp : 1) * (isMoe && ui.kEP && D.ep>1 ? D.ep : 1);
+  return {stage:stage, l0:l0, l1:l1, isMoe:isMoe, tot:tot, frag:frag};
+}
 function renderRevOut(D){
   var out = document.getElementById('revOut');
   if(!out) return;
   var v = ui.revLayer;
   if(v===''||isNaN(+v)){ out.innerHTML=''; return; }
-  var L = clamp(Math.floor(+v), 0, D.layers-1), stage = Math.floor(L/D.layersPerStage);
+  var L = clamp(Math.floor(+v), 0, D.layers-1), h = layerHome(D, L), stage = h.stage;
   var mem=[], d,c,t;
   for(d=0;d<D.dp&&mem.length<20;d++) for(c=0;c<D.cp&&mem.length<20;c++) for(t=0;t<D.tp&&mem.length<20;t++) mem.push(rankOf(t,c,d,stage,D));
-  var tot = D.tp*D.cp*D.dp;
-  out.innerHTML = '<div style="font-size:11px;margin-top:4px">L'+L+' ∈ stage '+stage+' → '+fmt(tot)+' 张卡：</div>'
+  function step(dim, txt2){
+    return '<div style="margin:1px 0 1px 0"><span class="dk" style="--c:'+VC[dim]+'">'+dim.toUpperCase()
+      + '</span> <span style="font-size:10.5px">'+txt2+'</span></div>';
+  }
+  out.innerHTML = '<div class="formula" style="margin:5px 0 4px">'
+    + '<b>L'+L+'</b> 住在哪'
+    + step('pp', '落在 <b>stage '+stage+'</b>（L'+h.l0+'–L'+h.l1+'）—— 决定它<b>去哪几张卡</b>')
+    + step('tp', (D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1，不切')
+        + ' —— 决定它<b>在那几张卡里怎么碎</b>')
+    + (D.moe ? step('ep', h.isMoe
+        ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>（重分组，<b>不新增卡</b>）'
+        : '这一层是 Dense，<b>没有 e 轴</b>，EP 这一刀落不下来') : '')
+    + (D.cp>1 ? step('cp', '输入再切 <b>'+D.cp+' 段</b>（切的是 s，不减权重）') : '')
+    + step('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>')
+    + '<div style="margin-top:4px;border-top:1px solid var(--pt-bd);padding-top:3px">= 共 <b>'+fmt(h.tot)
+    + '</b> 张卡与 L'+L+' 有关（world/PP）'
+    + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
+    + '</div></div>'
     + '<div class="rankchips">'+mem.map(function(r){return '<button data-act="pick" data-g="'+r+'">'+r+'</button>';}).join('')
-    + (tot>mem.length?'<span style="font-size:10px;color:var(--pt-fg3)">…共 '+fmt(tot)+'</span>':'')+'</div>';
+    + (h.tot>mem.length?'<span style="font-size:10px;color:var(--pt-fg3)">…共 '+fmt(h.tot)+'</span>':'')+'</div>';
 }
 
 /* ═════════ 抽屉：配置 / 验收 ═════════ */
@@ -5314,7 +5463,23 @@ document.addEventListener('input', function(ev){
     activePreset = null; stopAnim(); render();
     var nf = document.querySelector('[data-cfg="'+k+'"]'); if(nf) nf.focus();
   }
-  if(t.id==='revLayer'){ ui.revLayer = t.value; renderRevOut(derive(cfg)); }
+  if(t.id==='revLayer' || t.id==='revLayerBar'){
+    ui.revLayer = t.value;
+    var Dv = derive(cfg);
+    /* 高亮与拆解卡都要跟着输入走，但**不能走 render()**：那会重建工具条与读出卡，
+       输入框当场失焦，第二个数字就打不进去了。所以只重画场景与拆解卡，
+       工具条上那圈高亮手动切一下。（3D/顶视那条 SVG 路径才有这道层板高亮，
+       正视/侧视挂的是 sidecar，没有层板可描。） */
+    renderRevOut(Dv);
+    renderRevBar(Dv);
+    var pill = t.closest('.pt-revl');
+    if(pill) pill.classList.toggle('is-on', revLiOn(Dv));
+    if(Dv.ok && ui.view==='chain' && ui.viewTab!=='front' && ui.viewTab!=='side'){
+      barFrozen = true;
+      try{ renderChain(Dv); } finally { barFrozen = false; }
+    }
+    urlWrite();
+  }
 });
 /* ── 拖动转场景（只在刀序视图）──
    全量重绘挂在指针移动上会卡，所以用 rAF 合并：一帧最多重绘一次。
@@ -5567,6 +5732,7 @@ document.addEventListener('click', function(ev){
     }
     render(); ptoNotifyHost();
   }
+  else if(act==='revclear'){ ui.revLayer = ''; render(); }
   else if(act==='axis'){ var a = b.getAttribute('data-a'); ui.axis = (ui.axis===a) ? '' : a; render(); }
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
   else if(act==='yaw'){ ui.yaw = (ui.yaw + (+b.getAttribute('data-d')) + 4) & 3; render(); }
