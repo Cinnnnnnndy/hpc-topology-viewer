@@ -1403,8 +1403,14 @@ function netScene(D, g, box, step){
      与 sidecar 画的是同一份；层数仍按本页配置，多出来的层按 MoE 计。
      注意：每卡字节那套读数（opBytes/paramsPerCard）是另一套粗口径，仍按「全部
      层都是 MoE」算——2 层 Dense 占比很小，但两处数字不是同一个口径，别混着引。 */
-  var HEAD_OPS = {token_embedding:1};                       /* 只在第 0 层 */
-  var TAIL_OPS = {final_norm:1, lm_head:1};                 /* 只在最后一层 */
+  /* 两头那两段（真图 model-core 里的 8 个节点）。注意这里**不只收 op**：
+     Token IDs 是 tensor，可它是整张图上唯一带 CP 的节点（DP 切 batch × CP 切 seq）；
+     Embedding Weight / LM Head Weight / Logits 也都是 tensor，却各自带着 TP 切 vocab。
+     只收 op 的话，「输入输出这两段」就只剩三个算子，切法反而漏掉一半。
+     Multi Token Predictor 在真图里是一个 collapsed 的 module，整条 MTP 尾巴收成一块，
+     就按一块画——真图没展开它，我们也不替它编。 */
+  var HEAD_OPS = {input_tokens:1, embedding_weight:1, token_embedding:1};   /* 只在第 0 层 */
+  var TAIL_OPS = {final_norm:1, lm_head:1, lm_head_weight:1, logits:1, mtp_module:1}; /* 只在最后一层 */
   var DENSE_OPS = {dense_gate_up:1, dense_silu:1, dense_down:1};
   var MOE_OPS = {router_gate:1, route_topk:1, routed_expert_bank:1, moe_combine:1,
                  moe_all_to_all_dispatch:1, moe_all_to_all_combine:1};
@@ -1426,8 +1432,7 @@ function netScene(D, g, box, step){
   var VTOP = 0, VBOT = GH/GW;
   if(IXg && root){
     IXg.G.nodes.forEach(function(n){
-      if(n.kind !== 'op') return;
-      if(!(HEAD_OPS[n.id] || TAIL_OPS[n.id] || inClu(n.parent, 'decoder-stack', IXg.clu))) return;
+      if(!(HEAD_OPS[n.id] || TAIL_OPS[n.id] || (n.kind === 'op' && inClu(n.parent, 'decoder-stack', IXg.clu)))) return;
       VTOP = Math.min(VTOP, (n.y - n.height/2 - root.y)/GW);
       VBOT = Math.max(VBOT, (n.y + n.height/2 - root.y)/GW);
     });
@@ -1492,7 +1497,7 @@ function netScene(D, g, box, step){
   var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
-  var vLo = -0.16;      /* 入口/出口门牌挂在层板上方 0.10，包围盒得留出这一截 */
+  var vLo = -0.25;      /* 入口/出口两枚门牌挂在层板上方 0.10 与 0.185，包围盒得留出这一截 */
   /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
      结果 16 份被折成 2×8——行和列都不代表任何东西，读者却会当成两个维度去读。
      一排就是一排：DP 只有一根轴。 */
@@ -1738,7 +1743,10 @@ function netScene(D, g, box, step){
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
       if(IXg){
         IXg.G.nodes.forEach(function(n, ni){
-          if(n.kind !== 'op' || !nodeInLayer(n, li)) return;
+          /* 两头那几个 tensor/module 放行（见 HEAD_OPS/TAIL_OPS 的注释）；
+             层内的权重张量仍然不画——那是「这一层有哪些参数」，不是这一屏的问题。 */
+          if(!(n.kind === 'op' || HEAD_OPS[n.id] || TAIL_OPS[n.id])) return;
+          if(!nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
           var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
@@ -2232,16 +2240,20 @@ function netScene(D, g, box, step){
        含末层的那段多标 Final RMSNorm（SP 切）与 LM Head（TP 切 vocab，出口）。
        每条各按**它自己所在的层**取深度，不能都挂在这一段的首层上。 */
     var lf = co.p*lps, ll = Math.min(L-1, lf+lps-1), pick = [];
-    if(lf === 0) pick.push(['token_embedding', 0]);
+    if(lf === 0) pick.push(['input_tokens', 0], ['token_embedding', 0]);
     pick.push(['input_layernorm', lf], ['q_a_proj', lf], ['attention_core', lf],
               [lf < denseTop ? 'dense_gate_up' : 'routed_expert_bank', lf],
               ['block_post_norm', lf]);
-    if(ll === L-1) pick.push(['final_norm', L-1], ['lm_head', L-1]);
+    if(ll === L-1) pick.push(['final_norm', L-1], ['lm_head', L-1], ['logits', L-1]);
     pick.forEach(function(it){
       var id = it[0];
       var n = IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
       if(!n) return;
-      var s1 = sh[id], part = (s1 && s1.parts && s1.parts[0]) || null;
+      /* 挑**第一条量得出区间的**切法，不能死取 parts[0]：Token IDs 的第一条是
+         DP 切 batch，而 batch 在这一屏没有基数（range/total 都是 null），
+         死取就什么都标不出来——它真正量得出的那条是 CP 切 seq。 */
+      var s1 = sh[id], pl = (s1 && s1.parts) || [];
+      var part = pl.filter(function(x){ return x && x.total > 0; })[0] || pl[0] || null;
       var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
       lab.push(txt(pc[0], pc[1]+2, esc(n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
@@ -2256,8 +2268,10 @@ function netScene(D, g, box, step){
          引线要从画面这头拉到那头，穿过三十层，比它说明的事还吵。 */
   if(IXg && !ui.cardMode && cutPP && L > 2){
     [[0, '入口 · 词嵌入(TP 切 vocab)' + (denseTop > 0 && denseTop < L ? ' · L0–L'+(denseTop-1)+' Dense FFN' : '')],
-     [L-1, '出口 · Final Norm(SP) + LM Head(TP)']].forEach(function(it){
-      var pt9 = P(0.5, -0.10, wOf(it[0]), off0);
+     [L-1, '出口 · Final Norm(SP) + LM Head(TP) + Logits']].forEach(function(it, ii){
+      /* 两枚门牌错开一行：正视是把层深压掉的正交投影，第 0 层与最后一层会投到
+         同一个位置，同一高度的话两枚门牌正好叠在一起。 */
+      var pt9 = P(0.5, -0.10 - ii*0.085, wOf(it[0]), off0);
       var w9 = String(it[1]).length*4.0 + 12;
       body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-7)+'" width="'+w9+'" height="14" rx="7" '
         +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:.9;opacity:.97"/>');
