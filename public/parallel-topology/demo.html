@@ -461,7 +461,7 @@ var ui = {
   view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
-  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kTP:true, kEP:true, viewTab:'3d',
+  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
   cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
@@ -545,7 +545,7 @@ function urlLoad(){
   if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
-  if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
+  if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
   /* vtab 带着机位一起落。只写 tab 不改 yaw/pitch 的话，?vtab=top 会高亮「顶视」
      却仍停在 3D 那个等轴机位——tab 说的是一回事，画面是另一回事。正视/侧视因为走
      sidecar 那条分支看不出来，顶视直接就错了。显式给了 yaw/pitch 的仍以它们为准。 */
@@ -577,7 +577,7 @@ function urlWrite(){
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='chain' && !ui.spread) q.set('stack','1');
-  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpte') q.set('cuts',cs2); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
+  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kCP?'c':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpcte') q.set('cuts',cs2); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
@@ -1421,8 +1421,14 @@ function netScene(D, g, box, step){
                  moe_all_to_all_dispatch:1, moe_all_to_all_combine:1};
   var co = coordsOf(g, D), lps = D.layersPerStage, me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   /* 每把刀独立开关——不再按顺序；都关 = 整网 */
-  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = D.cp > 1,
+  /* CP 是**第五把刀**，不是配置读数：world = TP × CP × PP × DP，它和另外四个
+     一样占一个乘数。以前这里写 `cutCP = D.cp > 1`，只是拿去填读数，图上没有
+     任何一处真按它切过——于是「CP 切的是 s」这件事在整网上看不见。
+     SP 不给独立开关：它复用 TP 组、同域同大小、不占乘数（§00 表 A / §04），
+     所以 TP 那一刀落下时 SP 跟着落下——但它切的是 s，画法归横切那一边。 */
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
+  var cutSP = cutTP;
   var yaw = ui.yaw3, pitch = ui.pitch3;
   /* g 在没选中时会回落到 0，那是给坐标算术用的默认值——但**高亮**不能跟着回落，
      否则 rank 0 永远亮着，「取消选中」就成了看不出效果的空操作。 */
@@ -1457,10 +1463,14 @@ function netScene(D, g, box, step){
      深度方向天然就是 pp 段。KD×KT×pp = world。 */
   var KD = cutDP ? D.dp : 1;
   var KT = (ui.cardMode && cutTP && D.tp > 1) ? D.tp : 1;
-  var K = KD * KT;
+  /* CP 也得占一根空间轴，否则 Rank 打开时画出来的卡数是 world/CP——长序列那个
+     预置（tp4·cp4·pp2·dp2 = 64 卡）只会画出 16 只，剩下 48 只凭空消失。
+     摊法与 TP 同理：CP 切的是 s，不是空间轴，所以必须单独给它一个方向。 */
+  var KC = (ui.cardMode && cutCP && D.cp > 1) ? D.cp : 1;
+  var K = KD * KT * KC;
   /* 列号 = 副本，行号 = tp 片。反过来（tp 占 u 轴）会摊成 32 列一条又扁又长的带子，
      而且 DP 就不再是「一排」了。 */
-  var sel0 = (KT > 1 ? co.t : 0) * KD + (cutDP ? Math.min(co.d, KD-1) : 0);
+  var sel0 = ((KT > 1 ? co.t : 0) * KC + (KC > 1 ? co.c : 0)) * KD + (cutDP ? Math.min(co.d, KD-1) : 0);
   /* PP 那一刀落下之后，段与段之间要**掰开一条缝**——不然「切开了」和「没切」长得一样。
      缝只在深度方向加，层内不动：面积守恒说的是层的面积，不是层间的间距。 */
   /* PP 段之间掰开的缝。0.22 太窄——46 层本来就密，段与段挨在一起时「这里断开了」
@@ -1483,7 +1493,10 @@ function netScene(D, g, box, step){
     }
     if(okG && gcol.length && gcol[gcol.length-1] > gcol[0]){
       EPGAP = CU*0.42;
-      epColG = function(c0){ return gcol[Math.max(0, Math.min(c0|0, gcol.length-1))] - gcol[0]; };
+      /* gcol 是按**副本号 d** 建的，而这里传进来的是列号；CP 并进列轴之后
+         列号 = c·KD + d，取模才拿得回 d（KC=1 时与原来完全一致）。 */
+      epColG = function(c0){ var d9 = ((c0|0) % KD + KD) % KD;
+        return gcol[Math.max(0, Math.min(d9, gcol.length-1))] - gcol[0]; };
     }
   }
   function colX(c0){ return c0*CU + (EPGAP ? epColG(c0)*EPGAP : 0); }
@@ -1526,7 +1539,11 @@ function netScene(D, g, box, step){
     return {s: Math.min(box.w*0.92/Math.max(.001,bx1-bx0), box.h*0.92/Math.max(.001,by1-by0)),
             x0:bx0, x1:bx1, y0:by0, y1:by1, zc:(bz0+bz1)/2, zr:Math.max(.001,bz1-bz0)};
   }
-  var COLS = KD, ROWS = KT;
+  /* 网格只有两个方向可用（列 = u、行 = v），却有三根空间轴要摆。CP 并到**列**
+     这一边：sel0 = ((t·KC + c)·KD + d) 恰好就是 col = c·KD + d、row = t，一个
+     公式两处读——同一份 CP 之内的那几列 DP 副本挨在一起，一眼看得出「这一小块
+     是一段序列上的整排副本」。并到行那边的话 longcp 会摊成 16 行 × 2 列的细长条。 */
+  var COLS = KC * KD, ROWS = KT;
   function cx(o){ return ui.spread ? colX(o % COLS) : o*CU; }
   function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
   /* ── 缩放不跟着转台走 ────────────────────────────────────────────────────
@@ -1536,11 +1553,11 @@ function netScene(D, g, box, step){
      现在只按**本视角 tab 的标准机位**量一次：每个 tab 有它自己稳定的大小，进来
      一屏摆得下；之后怎么转都是刚体，要放大缩小交给滚轮（zoom3）。 */
   var fitPose = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d'];
-  var fit = measure(KD, fitPose[0], fitPose[1]);
+  var fit = measure(COLS, fitPose[0], fitPose[1]);
   /* 定心与透视另算：这两样必须跟实时角度，否则转起来物体会飘、近大远小也不对。
      定心用**场景中心这一个点**（刚体上的固定点），而不是每帧的投影包围盒——
      用包围盒的话中心会随轮廓一起挪，转台就成了边转边平移。 */
-  var live = measure(KD);
+  var live = measure(COLS);
   var s = fit.s * ui.zoom3, i, j, k;
   var ctr3 = turn3((1 + colX(COLS-1))/2, (vLo + vHi + (ROWS-1)*ROWV)/2, (zw0+zw1)/2, yaw, pitch);
   var ox = box.x + box.w/2 - ctr3[0]*s + ui.panX3;
@@ -1706,9 +1723,10 @@ function netScene(D, g, box, step){
     /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。
        EP 桶不是独立轴——epOf 是从 (t,c,d) 导出的，所以每一列必须用**它自己**的
        坐标去算，不能沿用全局选中那张卡的桶号，否则 128 张卡会画成同一个桶。 */
-    var tIdx = KT > 1 ? Math.floor(k / KD) : co.t;
+    var tIdx = KT > 1 ? Math.floor(k / (KC*KD)) : co.t;
+    var cIdx = KC > 1 ? (Math.floor(k / KD) % KC) : co.c;
     var dIdx = cutDP ? (k % KD) : co.d;
-    var meCol = D.moe ? epOf(tIdx, co.c, dIdx, D) : null;
+    var meCol = D.moe ? epOf(tIdx, cIdx, dIdx, D) : null;
     /* 关掉整网：卡里什么都不画，只留下面那圈卡壳。world 只方块摆在三根轴上，
        那就是魔方——这条链走到头，看的不再是「模型被切成什么」，而是「这些卡
        本身是怎么排列的」。 */
@@ -1758,8 +1776,20 @@ function netScene(D, g, box, step){
           if(!nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
-          var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
-          if(!by0 && EXTRA_BY[n.id]) by0 = EXTRA_BY[n.id][0];   /* 补的那几个：切法按同类算子的规则推 */
+          var s1 = sh ? sh[n.id] : null;
+          var byL = (s1 && s1.spec && s1.spec.by) || EXTRA_BY[n.id] || [];
+          /* 切分表里一个算子可以被**两把刀从两个方向**切：attention 那几个是
+             head 归 TP（沿 h）、ctx 归 CP（沿 s）。以前这里只读 by[0]，第二把
+             刀整条被丢掉——于是 CP 在整网上一处都画不出来。
+             按轴分拣：h 那一枝（TP 的 head/hidden/ffn/vocab、EP 的 expert）与
+             s 那一枝（CP 的 ctx、SP 的 token）各留一条，两条都要画。 */
+          var byH = null, byS = null;
+          for(var bi9 = 0; bi9 < byL.length; bi9++){
+            var bb9 = byL[bi9];
+            if(bb9.dim === 'cp' || bb9.dim === 'sp'){ if(!byS) byS = bb9; }
+            else if(bb9.dim === 'tp' || bb9.dim === 'ep'){ if(!byH) byH = bb9; }
+          }
+          var by0 = byL[0] || null;
           var dm = by0 ? by0.dim : null;
           var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
           var comm = n.colorKey === 'opv:comm';
@@ -1816,20 +1846,68 @@ function netScene(D, g, box, step){
              另外非选中的卡抽稀一半——32 列 × 46 层 × 19 算子照单全画是 2.8 万个
              图元，比全景还重，而这些卡本来就是给人看「有这么多张、各拿一份」的。 */
           if(ui.cardMode && !isF && ni % 2 !== 0) return;
-          var nSlice = 1, mySlice = 0, sCol = col, hx = 'hxTP';
-          if(cutTP && (dm==='tp' || dm==='sp')){ nSlice = D.tp; mySlice = tIdx; sCol = VC.tp; hx = 'hxTP'; }
-          else if(cutEP && dm==='ep' && D.moe){ nSlice = D.ep; mySlice = meCol ? meCol.ep : 0; sCol = VC.ep; hx = 'hxEP'; }
-          if(nSlice > 1){
+          /* ── 一个算子被切成什么样：两根轴，两个方向 ──────────────────────
+             竖着切的是 **h**——特征维（TP 的 head / hidden / ffn / vocab、
+             EP 的 expert）；横着切的是 **s**——序列维（CP 的 ctx、SP 的 token）。
+             方向必须分开。SP 以前是照着 TP 竖切画的，于是「SP 切的是另一根轴」
+             在图上完全看不见，读者只会把它当成 TP 的别名；而 CP 干脆一处都没画。
+             两根轴同时被切的那几个（attention：head 归 TP、ctx 归 CP）画成一张
+             网格，本卡持有的是其中一格——那就是 [·, S/CP, H/TP] 的形状本身。 */
+          var nU = 1, myU = 0, colU = VC.tp, hxU = 'hxTP';
+          var nV = 1, myV = 0, colV = VC.cp, hxV = 'hxCP';
+          if(byH && cutTP && byH.dim==='tp'){ nU = D.tp; myU = tIdx; colU = VC.tp; hxU = 'hxTP'; }
+          else if(byH && cutEP && byH.dim==='ep' && D.moe){ nU = D.ep; myU = meCol ? meCol.ep : 0; colU = VC.ep; hxU = 'hxEP'; }
+          if(byS && byS.dim==='cp' && cutCP){ nV = D.cp; myV = cIdx; colV = VC.cp; hxV = 'hxCP'; }
+          else if(byS && byS.dim==='sp' && cutSP){
+            /* SP 借的是 TP 组（同域、同大小、不占乘数），但切在 s 上。CP 也开着
+               时这一根轴上就有**两个除号**——S/(CP×TP)：先按 CP 分段，段内再按
+               SP 分片（净分片口径与 net-sharding 的 payloadOf 一致）。除号能在
+               同一根轴上相乘，正是「SP 与 CP 切的是同一根轴」最硬的证据。 */
+            nV = (cutCP ? D.cp : 1) * D.tp;
+            myV = (cutCP ? cIdx : 0) * D.tp + tIdx;
+            colV = VC.tp; hxV = 'hxSP';
+          }
+          if(nU > 1 || nV > 1){
             sawn++;
-            var kerf = (u1-u0)*0.17/nSlice;
-            for(var q9=0; q9<nSlice; q9++){
-              var a9 = u0 + (u1-u0)*q9/nSlice, b9 = a9 + (u1-u0)/nSlice - kerf;
-              var hit9 = q9===mySlice;
+            /* 只切一根轴时颜色/纹路就取那一根。两根都切时**按格子分别记**：与本卡
+               同一列（h 片相同、s 段不同）的用 s 那一边的横纹，换了列的用 h 那一边
+               的斜纹——于是一张网格上「往下走是被 CP 拿走的、往旁边走是被 TP 拿走的」
+               直接读得出来，不必回头查图例。都用一种纹路的话，attention 那几个算子
+               恰好是唯一两把刀都过的地方，反而只剩一把刀的痕迹。 */
+            var oneV = nV > 1 && nU <= 1;
+            var sCol = oneV ? colV : colU;
+            /* 算子的盒子横着宽、竖着扁，而 s 轴上的除号可以叠到 CP×TP（长序列那个
+               预置就是 16）——16 条横带摊在一个几像素高的 norm 里，每条不到一个
+               像素，逐条画只会糊成一堵实心墙，把它想说明的事盖掉。
+               所以按**投影后一片到底有多高/多宽**决定画法：数得清就逐片画（刀痕
+               即片数），薄到亚像素就把「不归我」的两截各并成一块斜纹——我的那片
+               照旧精确画出来，片数本来也另有出处（轴上的刻度带、算子标签里的
+               SP0/131072）。同一个道理刻度带上早就用过：放不下就跳着标。 */
+            var pxU = Math.abs(P(u0 + (u1-u0)/nU, v0, ww, kOff)[0] - P(u0, v0, ww, kOff)[0]);
+            var pxV = Math.abs(P(u0, v0 + (v1-v0)/nV, ww, kOff)[1] - P(u0, v0, ww, kOff)[1]);
+            var spanOf = function(n9, mine9, px9){
+              var o9 = [], z9;
+              if(n9 <= 1) return [[0, 1, true]];
+              if(px9 >= 2.2){ for(z9 = 0; z9 < n9; z9++) o9.push([z9/n9, (z9+1)/n9, z9 === mine9]); return o9; }
+              if(mine9 > 0) o9.push([0, mine9/n9, false]);
+              o9.push([mine9/n9, (mine9+1)/n9, true]);
+              if(mine9 + 1 < n9) o9.push([(mine9+1)/n9, 1, false]);
+              return o9;
+            };
+            var spU = spanOf(nU, myU, pxU), spV = spanOf(nV, myV, pxV);
+            var kerfU = (u1-u0)*0.17/nU, kerfV = (v1-v0)*0.17/nV;
+            for(var q9=0; q9<spU.length; q9++) for(var r9=0; r9<spV.length; r9++){
+              var su = spU[q9], sv = spV[r9];
+              var a9 = u0 + (u1-u0)*su[0], b9 = u0 + (u1-u0)*su[1] - (nU>1?kerfU:0);
+              var e9 = v0 + (v1-v0)*sv[0], f9 = v0 + (v1-v0)*sv[1] - (nV>1?kerfV:0);
+              var hit9 = su[2] && sv[2];
               /* 卡维度下别人的片直接不画：斜纹表示的是「这块被锯走了、不归我」，
                  一旦画面只剩这一张卡，那些空片就成了卡里凭空多出来的格子。 */
               if(ui.cardMode && !hit9) continue;
-              body.push(quad([P(a9,v0,ww,kOff), P(b9,v0,ww,kOff), P(b9,v1,ww,kOff), P(a9,v1,ww,kOff)],
-                'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35),
+              var cC = hit9 ? sCol : ((nV > 1 && su[2]) ? colV : colU);
+              var cH = (nV > 1 && su[2]) ? hxV : hxU;
+              body.push(quad([P(a9,e9,ww,kOff), P(b9,e9,ww,kOff), P(b9,f9,ww,kOff), P(a9,f9,ww,kOff)],
+                'fill:'+(hit9 ? mix(cC,66) : 'url(#'+cH+')')+';stroke:'+cC+';stroke-width:'+(hit9?.8:.35),
                 hit9 ? 'data-op="'+n.id+'"' : ''));
             }
           }else{
@@ -1882,8 +1960,12 @@ function netScene(D, g, box, step){
        没法用一个矩形圈起来，那一半交给每张卡上写着的桶号去认。 */
   function drawEpFrames(perStage){
       var GSZ = D.ep * D.etp;
-      var offOf = function(d9, t9){ return (KT > 1 ? t9 : 0)*KD + d9; };
-      var grpOf = function(d9, t9){ return Math.floor(((d9*D.cp + co.c)*D.tp + t9) / GSZ); };
+      /* CP 也占一根列轴之后，框只画在**选中那张卡所在的那条 c 带**上：一组专家
+         是在固定 (pp, cp) 的那张平面里折出来的，跨到别的 c 带就不是同一组了。
+         别的 c 带上同样有它们各自的组，但那几只框圈不到选中的这张卡，画出来只是
+         一层与当前读数无关的网——宁可少画，不画错（下面 clean 那一步同一口径）。 */
+      var offOf = function(d9, t9){ return ((KT > 1 ? t9 : 0)*KC + (KC > 1 ? co.c : 0))*KD + d9; };
+      var grpOf = function(d9, t9, c9){ return Math.floor(((d9*D.cp + (c9 == null ? co.c : c9))*D.tp + t9) / GSZ); };
       var rows9 = [];
       if(KT > 1){ for(var r9 = 0; r9 < KT; r9++) rows9.push(r9); } else rows9.push(co.t);
       var box9 = {};                                   // 组号 → 在网格里的包围矩形
@@ -1972,7 +2054,7 @@ function netScene(D, g, box, step){
       if(!n) return (NU[id] = null);
       return (NU[id] = { uc:(n.x - root.x)/GW, vc:vOf(n.y),
                          u0:(n.x - n.width/2 - root.x)/GW, u1:(n.x + n.width/2 - root.x)/GW,
-                         v0:vOf(n.y - n.height/2) });
+                         v0:vOf(n.y - n.height/2), v1:vOf(n.y + n.height/2) });
     }
     function arc(a, b, col, wd, dash){
       var lift = Math.min(34, 9 + (Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]))*0.10);
@@ -1988,7 +2070,8 @@ function netScene(D, g, box, step){
       return [(a[0]+b[0])/2, ((a[1]+b[1])/2) - lift];
     }
     var card = ui.cardMode;
-    var offC = function(d9, t9){ return card ? ((KT > 1 ? t9 : 0)*KD + d9) : (cutDP ? d9 : 0); };
+    var offC = function(d9, t9, c9){
+      return card ? (((KT > 1 ? t9 : 0)*KC + (KC > 1 ? (c9 == null ? co.c : c9) : 0))*KD + d9) : (cutDP ? d9 : 0); };
     var wMid = card
       ? function(p9){ var s9 = segW(p9); return (s9[0]+s9[1])/2; }
       : function(p9){ return wOf(Math.min(L-1, p9*lps + (lps >> 1))); };
@@ -2015,7 +2098,39 @@ function netScene(D, g, box, step){
                       P(ub2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)), VC.tp, 1.1);
           }
         }
-        if(mTP) axLab([mTP[0], mTP[1] - 12], 'AllGather / Reduce-Scatter · TP 组内', null, VC.tp, true, 6);
+        /* 这两条不是「TP 的两次通信」，是**换轴器**：进 TP 区 AllGather 把沿 s
+           切开的激活收齐（s 切 → h 切），出 TP 区 Reduce-Scatter 归约的同时沿 s
+           散开（h 切 → s 切）。总通信量与纯 TP 的一次 AllReduce 完全相同——
+           SP 省下 TP 倍激活显存的代价就是把一次拆成两次，这是它「纯赚不赔」的
+           全部内容。名字里带上轴，才对得上图上横切/竖切换来换去那件事。 */
+        if(mTP) axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', null, VC.tp, true, 6);
+      }
+    }
+    /* CP：整网全程沿 s 切，但逐 token 独立的算子（linear / norm）天然不用通信——
+       只有 attention 要看到全序列，所以这一维的通信**只有一处**，锚在 KV 上。
+       原语随实现而变（Ring 逐跳传 KV / Ulysses All-to-All 换轴 / 朴素 AllGather），
+       这里标朴素那一种：它是三者里唯一能在这张图上原样画出来的。 */
+    if(cutCP && D.cp > 1){
+      var nKV = nUV('key_tensor') || nUV('attention_core');
+      if(nKV){
+        var mCP = null, c4;
+        if(card && KC > 1){
+          for(c4 = 0; c4 < D.cp; c4++){
+            if(c4 === co.c) continue;
+            mCP = arc(P(nKV.uc, nKV.v0 - 0.02, wMid(pF), offC(dF, tF, co.c)),
+                      P(nKV.uc, nKV.v0 - 0.02, wMid(pF), offC(dF, tF, c4)), VC.cp, 1.15);
+          }
+        }else{
+          /* CP 没展开成独立列时，弧线画在算子自己被横切开的那几段之间——那条缝
+             就是要通信的地方，和 TP 未展开时的画法同一口径。 */
+          for(c4 = 0; c4 + 1 < D.cp; c4++){
+            var va4 = nKV.v0 + (nKV.v1 - nKV.v0)*(c4 + .5)/D.cp;
+            var vb4 = nKV.v0 + (nKV.v1 - nKV.v0)*(c4 + 1.5)/D.cp;
+            mCP = arc(P(nKV.u1 + 0.02, va4, wMid(pF), offC(dF, tF)),
+                      P(nKV.u1 + 0.02, vb4, wMid(pF), offC(dF, tF)), VC.cp, 1.1);
+          }
+        }
+        if(mCP) axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', null, VC.cp, true, 6);
       }
     }
     /* EP：AllToAll。屏上画着的那几个对端才连（TP 未展开时另一半没画，连不了）。 */
@@ -2170,8 +2285,10 @@ function netScene(D, g, box, step){
     /* 轴标签一律压到**最下面那一行**卡的底边外侧（rowLast），只有 TP 例外——
        它标的就是「第几行」，贴在行的侧面才说得通。原来 DP/PP 挂在第 0 行底下，
        那是阵列中间，标签会盖住下一行的卡。 */
-    var rowLast = (KT - 1) * KD;
-    /* DP：横轴。16 个全标会挤成一条，隔几个标一个，首尾一定标 */
+    var rowLast = (KT - 1) * COLS;
+    /* DP：横轴。16 个全标会挤成一条，隔几个标一个，首尾一定标。
+       CP 也并在这根轴上时只标**第一块**：每一块 CP 里的 DP 排法一模一样，
+       四块各抄一遍就是四排重复标签；哪一块是哪个 cp，交给下面那行 CP 门牌。 */
     if(KD > 1){
       var dStep = KD > 10 ? 2 : 1;
       for(var da = 0; da < KD; da++){
@@ -2179,9 +2296,13 @@ function netScene(D, g, box, step){
         axLab(P(0.5, AR + 0.26, wFront, rowLast + da), 'DP'+da, null, VC.dp, hasSel && da === co.d);
       }
     }
+    /* CP：与 DP 共用横轴，一块 KD 列。门牌横跨整块居中，压在 DP 刻度再下面一行——
+       「这一整块 DP 副本吃的是同一段序列」正是要读出来的那句话。 */
+    if(KC > 1) for(var ca = 0; ca < KC; ca++)
+      axLab(P(0.5 + (KD-1)*CU/2, AR + 0.46, wFront, rowLast + ca*KD), 'CP'+ca, null, VC.cp, hasSel && ca === co.c);
     /* TP：竖轴（每个副本被锯成 tp 片，一片一行），贴在每行左侧 */
     if(KT > 1) for(var ta = 0; ta < KT; ta++)
-      axLab(P(-0.42, AR*0.5, wFront, ta*KD), 'TP'+ta, null, VC.tp, hasSel && ta === co.t);
+      axLab(P(-0.42, AR*0.5, wFront, ta*COLS), 'TP'+ta, null, VC.tp, hasSel && ta === co.t);
     /* PP：纵深轴。第二行写这一段真正含哪几层——段号本身不说明它有多厚 */
     if(cutPP) for(var pa = 0; pa < D.pp; pa++){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
@@ -2215,7 +2336,8 @@ function netScene(D, g, box, step){
   var bandH = 0.09;
   var dpBandV = 0.04;
   var tpBandV = dpBandV + (K>1 ? bandH+0.02 : 0);
-  var epBandV = tpBandV + (cutTP && D.tp>1 ? bandH+0.02 : 0);
+  var cpBandV = tpBandV + (cutTP && D.tp>1 ? bandH+0.02 : 0);
+  var epBandV = cpBandV + (cutCP && D.cp>1 ? bandH+0.02 : 0);
   function railBand(vOff, n, mineI, cc, hxid, lab2, key){
     var bv = AR + vOff;
     /* 标签隔几个标一个，按**屏幕实宽**算而不是按份数：n≤16 这种判断只看份数，
@@ -2243,6 +2365,9 @@ function netScene(D, g, box, step){
     }
   }
   if(cutTP && D.tp>1 && !ui.cardMode) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
+  /* CP 的刻度：它和 TP 一样是一根真轴（world = TP × CP × PP × DP），只是切的
+     方向不同——TP 那条带子上一格是一片 h，这条带子上一格是一段 s。 */
+  if(cutCP && D.cp>1 && !ui.cardMode) railBand(cpBandV, D.cp, co.c, VC.cp, 'hxCP', function(b9){ return 'CP'+b9; }, 'c');
   if(cutEP && D.moe && D.ep>1 && !ui.cardMode){
     railBand(epBandV, D.ep, me?me.ep:0, VC.ep, 'hxEP',
       function(b9){ return 'EP'+b9; }, 'e');
@@ -2312,6 +2437,13 @@ function netScene(D, g, box, step){
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
     + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
     + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>'
+    /* 切 s 的那两把（CP / SP）用**横**纹，切 h 的那两把（TP / EP）用斜纹——
+       纹路方向和刀的方向一致，斜着的锯 h、横着的锯 s，不用看颜色也认得出。
+       SP 借 TP 的颜色（它就是 TP 组），但纹路归 s 那一边——同域不等于同轴。 */
+    + '<pattern id="hxCP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.cp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.cp+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxSP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
 ;
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
@@ -3892,7 +4024,8 @@ function renderChainBar(D){
   var kBtns = '<span class="pt-seg">';
   if(D.dp>1) kBtns += '<button'+(ui.kDP?' class="is-on"':'')+' data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
   kBtns += '<button'+(ui.kPP?' class="is-on"':'')+' data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
-  if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片">TP</button>';
+  if(D.cp>1) kBtns += '<button'+(ui.kCP?' class="is-on"':'')+' data-act="knifetoggle" data-k="cp" style="--c:'+VC.cp+'" title="CP 切序列：整网全程沿 s 切；attention 是唯一要通信的地方">CP</button>';
+  if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片（同时带着 SP：同一组卡、TP 区切 h，TP 区之外切 s）">TP</button>';
   if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
   kBtns += '</span>';
   var vBtns = '<span class="pt-seg">'
@@ -4581,7 +4714,17 @@ function sayText(D){
       + ' <b style="color:'+VC.pp+'">PP</b> 沿 ℓ 掰成 '+D.pp+' 段。'
       + ' <b style="color:'+VC.tp+'">TP</b> 锯进算子内部（斜纹=刀痕）。'
       + (D.moe?' <b style="color:'+VC.ep+'">EP</b> 重组专家桶。':'')
-      + (D.cp>1?' <b style="color:'+VC.cp+'">CP</b> 切序列 s 轴。':'');
+      + (D.cp>1?' <b style="color:'+VC.cp+'">CP</b> 切序列 s 轴。':'')
+      /* 刀痕的**方向**本身就是读数，写在这里省得每次都要试：
+         竖着切的是特征维 h，横着切的是序列维 s。 */
+      + ' 刀痕方向即轴：<b>竖切=h</b>（<b style="color:'+VC.tp+'">TP</b> 的 head/hidden/ffn/vocab、'
+      + '<b style="color:'+VC.ep+'">EP</b> 的 expert，斜纹）· <b>横切=s</b>（'
+      + '<b style="color:'+VC.cp+'">CP</b> 的 ctx、<b style="color:'+VC.tp+'">SP</b> 的 token，横纹）。'
+      + '<b style="color:'+VC.tp+'">SP</b> 不是第 5 根轴：它复用 TP 组、同域同大小、不占乘数，'
+      + '只是把 TP 区之外（norm / 逐元素）的激活沿 s 也切一刀'
+      + (D.cp>1?'——于是层边界那根 s 轴上有<b>两个除号</b>：S/(CP×TP)。除号能相乘，正是「它们切的是同一根轴」的证据。'
+              :'，所以 norm 那几块是横着裂开的，和旁边竖着裂开的 matmul 一眼可分。')
+      + ' attention 是唯一<b>两把刀都过</b>的地方（head 归 TP、ctx 归 CP），所以画成网格，本卡拿其中一格。';
   }
   if(ui.view==='dim'){
     var verdict = {
@@ -4902,6 +5045,7 @@ document.addEventListener('click', function(ev){
     var kk2 = b.getAttribute('data-k');
     if(kk2==='dp') ui.kDP = !ui.kDP;
     else if(kk2==='pp') ui.kPP = !ui.kPP;
+    else if(kk2==='cp') ui.kCP = !ui.kCP;
     else if(kk2==='tp') ui.kTP = !ui.kTP;
     else if(kk2==='ep') ui.kEP = !ui.kEP;
     render();

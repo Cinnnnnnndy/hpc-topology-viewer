@@ -93,7 +93,7 @@ a.card.pat{border-left:3px solid #7A55D6}
   <a class="card pat" href="../patterns/net-slicing/pattern.html">
     <div class="tag">Pattern · 自包含 · 全屏画布</div>
     <h2>并行拓扑 Pattern —— 从一张网到 world 张卡</h2>
-    <p>把 Demo 的「切分链」那一屏单独抽出来发布：<b>全屏画布</b>，一条链接就是一屏状态。四把刀（DP 复印 / PP 切段 / TP 锯片 / EP 分桶）各自独立开关、<b>叠加而非切换</b>；<b>打开 Rank</b> 把四刀的交集收进 128 只卡壳，每只装它自己那份；<b>关闭整网</b> 清空卡内载荷——剩下的排列本身就是逻辑魔方，此刻直接把控制权交给 <code>rubik-cube</code> pattern 自己的工具条。正视 / 侧视不是仿制，是直接挂 <code>model-architecture-training-sidecar</code> 画的真图。契约在同级 <a href="../patterns/net-slicing/pattern.json">pattern.json</a>。</p>
+    <p>把 Demo 的「切分链」那一屏单独抽出来发布：<b>全屏画布</b>，一条链接就是一屏状态。五把刀（DP 复印 / PP 切段 / CP 切序列 / TP 锯片 / EP 分桶）各自独立开关、<b>叠加而非切换</b>；<b>刀痕方向即轴</b>——竖切=特征维 h、横切=序列维 s（CP 的 ctx 与 SP 的 token 切的是同一根轴，开着 CP 时那根轴上有两个除号：S/(CP×TP)）；<b>打开 Rank</b> 把五刀的交集收进 128 只卡壳，每只装它自己那份；<b>关闭整网</b> 清空卡内载荷——剩下的排列本身就是逻辑魔方，此刻直接把控制权交给 <code>rubik-cube</code> pattern 自己的工具条。正视 / 侧视不是仿制，是直接挂 <code>model-architecture-training-sidecar</code> 画的真图。契约在同级 <a href="../patterns/net-slicing/pattern.json">pattern.json</a>。</p>
     <div class="path">../patterns/net-slicing/pattern.html?cuts=dpte&amp;card=1&amp;net=0</div>
   </a>
 
