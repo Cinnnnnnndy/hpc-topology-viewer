@@ -1410,7 +1410,8 @@ function netScene(D, g, box, step){
      Multi Token Predictor 在真图里是一个 collapsed 的 module，整条 MTP 尾巴收成一块，
      就按一块画——真图没展开它，我们也不替它编。 */
   var HEAD_OPS = {input_tokens:1, embedding_weight:1, token_embedding:1};   /* 只在第 0 层 */
-  var TAIL_OPS = {final_norm:1, lm_head:1, lm_head_weight:1, logits:1, mtp_module:1}; /* 只在最后一层 */
+  var TAIL_OPS = {final_norm:1, lm_head:1, lm_head_weight:1, logits:1}; /* 只在最后一层 */
+  EXTRA_NODES.forEach(function(n){ (n.at === 'head' ? HEAD_OPS : TAIL_OPS)[n.id] = 1; });
   var DENSE_OPS = {dense_gate_up:1, dense_silu:1, dense_down:1};
   var MOE_OPS = {router_gate:1, route_topk:1, routed_expert_bank:1, moe_combine:1,
                  moe_all_to_all_dispatch:1, moe_all_to_all_combine:1};
@@ -1497,7 +1498,7 @@ function netScene(D, g, box, step){
   var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
-  var vLo = -0.25;      /* 入口/出口两枚门牌挂在层板上方 0.10 与 0.185，包围盒得留出这一截 */
+  var vLo = -0.30;      /* 入口/出口两枚门牌挂在层板上方 0.10 与 0.225，包围盒得留出这一截 */
   /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
      结果 16 份被折成 2×8——行和列都不代表任何东西，读者却会当成两个维度去读。
      一排就是一排：DP 只有一根轴。 */
@@ -1730,14 +1731,18 @@ function netScene(D, g, box, step){
          只留首尾两层当轮廓，够看出「那儿有一叠」就行。
          卡维度下层板全部不画——那是「整网有多少层」的坐标纸，而这一屏问的是
          「这一张卡拿到了什么」，层框留着只会把卡壳里塞满和它无关的格子。 */
-      if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1))
-        /* 层板的描边按「这一层特别在哪」分档。46 层沿层深叠在一起时，层里那点算子
-           差异是看不出来的——真正读得出的是**边框**：哪两层带着入口/出口、哪几层的
-           FFN 还是 Dense。其余的层保持中性灰，不然一片彩色反而什么都读不出。 */
+      /* 层板的描边按「这一层特别在哪」分档。46 层沿层深叠在一起时，层里那点算子
+         差异是看不出来的——真正读得出的是**边框**：哪两层带着入口/出口、哪几层的
+         FFN 还是 Dense。其余的层保持中性灰，不然一片彩色反而什么都读不出。
+         这个 if 必须带花括号：原来它只管一条语句，我往里加了几行之后 body.push
+         就掉到了条件外面——层板于是在卡维度里也照画，992 块 1.1 宽的深色框叠上去，
+         就是「加上 Rank 之后边框格外黑」的来源。 */
+      if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1)){
         var pcol = 'var(--pt-bd)', pw = mine ? .4 : .15;
         if(li === 0 || li === L-1){ pcol = 'var(--pt-fg2)'; pw = mine ? 1.1 : .6; }
         else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
+      }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
@@ -1750,6 +1755,7 @@ function netScene(D, g, box, step){
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
           var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
+          if(!by0 && EXTRA_BY[n.id]) by0 = EXTRA_BY[n.id][0];   /* 补的那几个：切法按同类算子的规则推 */
           var dm = by0 ? by0.dim : null;
           var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
           var comm = n.colorKey === 'opv:comm';
@@ -1779,9 +1785,13 @@ function netScene(D, g, box, step){
                一模一样的算子里根本挑不出来——加重一档，默认这一屏就看得见。 */
             var uniq = HEAD_OPS[n.id] || TAIL_OPS[n.id] || DENSE_OPS[n.id];
             if(ui.cardMode || !hasSel){
+              /* Rank 打开后一只卡里叠着 8 层、每层二十几个算子，描边在纵深上一条压
+                 一条，.3 宽 / .8 浓叠八遍就成了一道道黑梳子。卡阵这档把描边压到近乎
+                 只剩形状（填充照旧，填充不会沿纵深累加成线）。 */
+              var sw0 = ui.cardMode ? .26 : .3, so0 = ui.cardMode ? .62 : .8;
               body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
                 'fill:'+mix(col, uniq ? 62 : (dm?30:14))+';stroke:'+(dm?col:'var(--pt-bds)')
-                +';stroke-width:'+(uniq?.8:.3)+';opacity:'+(uniq?1:.8)));
+                +';stroke-width:'+(uniq?(ui.cardMode?.45:.8):sw0)+';opacity:'+(uniq?(ui.cardMode?.85:1):so0)));
               return;
             }
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
@@ -2108,8 +2118,11 @@ function netScene(D, g, box, step){
         }
         /* 棱：近的粗而浓、远的细而淡。这一条比雾更管用——雾说的是「里面看不清」，
            棱说的是「这只盒子离你多远」，前后关系全靠它。 */
-        var eW = meC ? 1.1 : (ui.netOff ? .55 : (0.92 - dT*0.42));
-        var eO = meC ? 1 : (ui.netOff ? .5 : (0.98 - dT*0.46));
+        /* Rank 打开之后是 128 只壳 × 12 条棱，投影上大量重叠——整网那档的浓度
+           （近处 0.92 宽 / 0.98 浓）叠起来就成了一团黑。卡阵这档整体轻一级，
+           前后的落差保持不变，该分得开的还是分得开。 */
+        var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
+        var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
@@ -2268,10 +2281,10 @@ function netScene(D, g, box, step){
          引线要从画面这头拉到那头，穿过三十层，比它说明的事还吵。 */
   if(IXg && !ui.cardMode && cutPP && L > 2){
     [[0, '入口 · 词嵌入(TP 切 vocab)' + (denseTop > 0 && denseTop < L ? ' · L0–L'+(denseTop-1)+' Dense FFN' : '')],
-     [L-1, '出口 · Final Norm(SP) + LM Head(TP) + Logits']].forEach(function(it, ii){
+     [L-1, '出口 · Final Norm(SP) + LM Head(TP) + Logits + MTP 尾巴']].forEach(function(it, ii){
       /* 两枚门牌错开一行：正视是把层深压掉的正交投影，第 0 层与最后一层会投到
          同一个位置，同一高度的话两枚门牌正好叠在一起。 */
-      var pt9 = P(0.5, -0.10 - ii*0.085, wOf(it[0]), off0);
+      var pt9 = P(0.5, -0.10 - ii*0.125, wOf(it[0]), off0);
       var w9 = String(it[1]).length*4.0 + 12;
       body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-7)+'" width="'+w9+'" height="14" rx="7" '
         +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:.9;opacity:.97"/>');
@@ -2709,12 +2722,55 @@ function renderStory(D){
    所以它借 TP 的颜色，但标签如实写 SP，不把它冒充成 TP。 */
 function dimColor(d){ return d==='sp' ? VC.tp : (VC[d] || 'var(--pt-fg2)'); }
 var GIX = null;
+/* ══ 真图缺的那两段：把 3d-deck 的静态输入/输出段补齐 ═══════════════════════
+   model-graphviz 的 model-core 只有 8 个节点，而 3d-deck 手搭的两张静态段还有
+   Position IDs / Attention Context / Logits All-Gather，以及展开的 MTP 尾巴
+   （L46–L48 ×3）。位置、标签、先后次序全部照抄 3d-deck 的 staticHtml（它标着
+   source checked），只是把坐标换算进 OPENPANGU_GRAPH 的那套（中心点 + 宽高）：
+   输入那一排跟 Token IDs 同一行往右接，输出那几个沿主轴往下接在 Logits 之后。
+
+   切法（by）不是抄来的——真图的 SHARD 表里没有这几个。这里按 net-sharding 对
+   **同类算子**已经用的那条规则推：norm 沿 seq 归 SP、linear/head 沿 vocab 或 hidden
+   归 TP、输入侧跟着 Token IDs 走 DP×batch + CP×seq、All-Gather 收的是 vocab 分片
+   所以归 TP。是推论不是抄录，图上因此不写区间，只给维度。 */
+var EXTRA_NODES = [
+  /* ── 输入段：与 Token IDs 同一行 ── */
+  {id:'positions', label:'Position IDs', kind:'op', parent:'model-core', colorKey:'io:input',
+   x:1315, y:115, width:230, height:66, at:'head',
+   by:[{dim:'dp', axis:'batch'}, {dim:'cp', axis:'seq'}]},
+  {id:'attention_context', label:'Attention Context', kind:'op', parent:'model-core', colorKey:'io:input',
+   x:1575, y:115, width:270, height:66, at:'head',
+   by:[{dim:'dp', axis:'batch'}, {dim:'cp', axis:'seq'}]},
+  /* ── 输出段：LM Head 之后、Logits 之前的那次归约 ── */
+  {id:'logits_allgather', label:'Logits All-Gather', kind:'op', parent:'model-core', colorKey:'opv:comm',
+   x:935, y:3693, width:480, height:34, at:'tail',
+   by:[{dim:'tp', axis:'vocab'}]},
+  /* ── MTP 尾巴：真图把它收成一个 collapsed module，这里按 3d-deck 展开成 5 步 ── */
+  {id:'mtp_input_norms', label:'MTP Input Norms', kind:'op', parent:'model-core', colorKey:'opv:norm',
+   x:935, y:3830, width:440, height:48, at:'tail', by:[{dim:'sp', axis:'seq'}]},
+  {id:'mtp_eh_proj', label:'EH Projection', kind:'op', parent:'model-core', colorKey:'opv:linear',
+   x:935, y:3894, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'hidden'}]},
+  {id:'mtp_decoder_layer', label:'MTP Decoder ×3', kind:'op', parent:'model-core', colorKey:'opv:decoder',
+   x:935, y:3958, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'hidden'}]},
+  {id:'mtp_head_weight', label:'MTP Head Weight', kind:'op', parent:'model-core', colorKey:'io:parameter',
+   x:545, y:4022, width:238, height:44, at:'tail', by:[{dim:'tp', axis:'vocab'}]},
+  {id:'mtp_shared_head', label:'MTP Shared Head', kind:'op', parent:'model-core', colorKey:'opv:head',
+   x:935, y:4022, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'vocab'}]},
+  {id:'mtp_logits', label:'MTP Logits', kind:'op', parent:'model-core', colorKey:'io:output',
+   x:935, y:4086, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'vocab'}]}
+];
+var EXTRA_BY = {};
+EXTRA_NODES.forEach(function(n){ EXTRA_BY[n.id] = n.by; });
 function graphIndex(){
   if(GIX) return GIX;
   var G = window.OPENPANGU_GRAPH; if(!G) return null;
   var clu = {};
   G.clusters.forEach(function(c){ clu[c.id] = c; });
-  GIX = {G:G, clu:clu};
+  /* 把补的那几个节点并进来，并撤掉被展开的 mtp_module —— 两份一起画就重了。
+     只并一次（GIX 有缓存），并且是浅拷贝一份新的 nodes 数组，不改动 vendor 里
+     那份真图对象本身：model-graphviz / 3d-deck / sidecar 还在共用它。 */
+  var nodes = G.nodes.filter(function(n){ return n.id !== 'mtp_module'; }).concat(EXTRA_NODES);
+  GIX = {G:{width:G.width, height:G.height, clusters:G.clusters, nodes:nodes, edges:G.edges}, clu:clu};
   return GIX;
 }
 function inClu(parent, root, clu){        /* 节点是否落在某个簇的子树里（簇会嵌套） */

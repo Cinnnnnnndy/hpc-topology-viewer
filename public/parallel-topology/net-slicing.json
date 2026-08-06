@@ -13,7 +13,7 @@
     "conceptMap": "../../parallel-topology/concept-map.html"
   },
   "reuses": [
-    "model-graphviz —— openPangu 真图（55 个节点，算子布局与层级）",
+    "model-graphviz —— openPangu 真图（55 个节点，算子布局与层级）；两头那两段按 model-architecture-3d-deck 的 staticHtml 补齐（Position IDs / Attention Context / Logits All-Gather / 展开的 MTP 尾巴——真图里没有，位置与次序照抄它，切法按同类算子的规则推）",
     "net-sharding —— 纯数据层 SHARD 表：每个算子被哪把刀沿哪根张量轴切",
     "model-architecture-3d-deck + model-architecture-training-sidecar —— 正视（一层的算子 DAG）与侧视（46 层沿层深 + PP Stage 分段）",
     "rubik-cube —— 关闭整网后的魔方形态（three.js，按需加载）"
