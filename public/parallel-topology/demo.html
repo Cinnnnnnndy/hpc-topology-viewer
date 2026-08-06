@@ -3720,6 +3720,7 @@ function renderDeck(D){
     var tiled0 = $('deck').classList.contains('is-tiled');
     if(tiled0) paintCuts($('deckHost'), D, 0, 0, 0);
     else paintCuts($('deckHost'), D);
+    deckAxD = D; watchDeckLayout();
     setTimeout(function(){ paintDeckAxes(D); }, 60);
   }, 220);
   return true;
@@ -3832,6 +3833,23 @@ function renderRubik(D){
   return true;
 }
 var deckClones = [], deckZoom = 1;
+/* 标注层（DP/CP/TP·SP/ep/EP 组框）的坐标是量格子矩形得来的——滚轮缩放、窗口
+   变宽、sidecar 逐格挂载都会让格子挪位置，量过一次就不管的话，牌子会留在
+   旧坐标上浮到卡片中腰。盯住 0 号格的尺寸，一变就防抖重画（重画先清旧的）。 */
+var deckAxD = null, deckAxRO = null, deckAxT = 0;
+function repaintDeckAxes(){
+  if(!deckAxD || ui.view !== 'chain') return;
+  if(ui.viewTab !== 'front' && ui.viewTab !== 'side') return;
+  paintDeckAxes(deckAxD);
+}
+function watchDeckLayout(){
+  if(deckAxRO || !window.ResizeObserver) return;
+  deckAxRO = new ResizeObserver(function(){
+    clearTimeout(deckAxT);
+    deckAxT = setTimeout(repaintDeckAxes, 120);
+  });
+  deckAxRO.observe($('deckHost'));
+}
 /* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
    直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
    放大出来的是真的更清楚，不是糊的。 */
@@ -3973,12 +3991,33 @@ function paintDeckAxes(D){
       l2.style.left = '2px';
       l2.style.top = (y + r.height/2 - 8) + 'px';
     }
+    /* 非 Rank 的正视一格 = 一份 (d,c) 复制体，TP 没铺成行——但 TP·SP 在这一屏
+       不该因此没有落点：左侧给一枚份数牌，说明每格里还叠着 tp 片。 */
+    if(col2 === 0 && rows === 1 && !ui.cardMode && ui.viewTab === 'front' && ui.kTP && D.tp > 1){
+      var lt = put(null, 'TP·SP ×' + D.tp, VC.tp, false);
+      lt.title = '每格是一份完整复制体，里面还叠着 ' + D.tp + ' 片 TP·SP——打开 Rank 才把它们摊成行';
+      lt.style.left = '2px';
+      lt.style.top = (y + r.height/2 - 8) + 'px';
+    }
     /* 每格自己的桶号。和 3D 那边同一件事：EP 是导出来的，格子上不写就无从看起。
        挂在格子下沿，与 DP 那排列头（在上沿）分开。桶号按**这一格自己的** (t,c,d)
-       算——CP 铺开后同一 dp 列里 c 不同，桶号也可能不同。 */
-    if(ui.cardMode && ui.kEP && D.moe && D.ep > 1){
-      var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), cc > 1 ? c2 : (coS ? coS.c : 0), d2, D);
-      var l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep, ['e', mE.ep]);
+       算——CP 铺开后同一 dp 列里 c 不同，桶号也可能不同。
+       非 Rank 时一格装着 tp 张卡，桶号写全它们各自的（如 ep0·ep1）。 */
+    if(ui.kEP && D.moe && D.ep > 1 && (ui.cardMode || ui.viewTab === 'front')){
+      var cCell = cc > 1 ? c2 : (coS ? coS.c : 0);
+      var l3;
+      if(ui.cardMode){
+        var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), cCell, d2, D);
+        l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep, ['e', mE.ep]);
+      } else {
+        var seen9 = {}, list9 = [];
+        for(var t9 = 0; t9 < D.tp; t9++){
+          var e9 = epOf(t9, cCell, d2, D).ep;
+          if(!seen9[e9]){ seen9[e9] = 1; list9.push(e9); }
+        }
+        var on9 = coS && coS.d === d2 && (cc <= 1 || coS.c === c2);
+        l3 = put(null, 'ep' + list9.join('·ep'), VC.ep, !!on9);
+      }
       l3.style.left = (x + r.width/2) + 'px';
       /* 贴在格子**里面**的下沿，不是外面：挂到外面就正好压在下一行格子的顶上
          （两行之间只有几个像素），第 0 行的桶号会盖住第 1 行的 DP·TP 门牌。 */
@@ -3991,7 +4030,9 @@ function paintDeckAxes(D){
      tp 行（DP 副本在那个方向上是重叠的，本来就没铺），一屏里全是同一个 dp，
      框住谁都没意义，所以不画。 */
   Array.prototype.slice.call(host.querySelectorAll('.pt-epbox')).forEach(function(e){ e.remove(); });
-  if(!(ui.cardMode && ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1)) return;
+  /* 非 Rank 的正视也画：一格是 (d,c) 的整份复制体、装着 tp 张卡——只要这几格
+     里**所有** tp 片都落在同一组（下面的 ok 检查会核对），框就框得成立。 */
+  if(!(ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1)) return;
   var nCol = Math.ceil(cells.length / rows), GSZ = D.ep * D.etp;
   /* 组号按**这一列自己的** (d, c) 算：CP 铺开后列号 = d·CP + c，正好就是折叠序
      q 的高位——EP 组是 q 上的连续段，所以一组必然框住连续几列。CP 没铺开时
@@ -4000,11 +4041,20 @@ function paintDeckAxes(D){
     var d9 = Math.floor(col9 / cc), c9 = cc > 1 ? (col9 % cc) : (coS ? coS.c : 0);
     return Math.floor(((d9*D.cp + c9)*D.tp + t9) / GSZ);
   };
+  /* 一格里到底有哪几个 t：Rank 铺开时一行一片；非 Rank 一格是整份复制体，
+     tp 片全在里面——组归属要对全部 t 成立才算数。 */
+  var tsOf = function(r9){
+    if(rows > 1) return [r9];
+    if(ui.cardMode) return [coS ? coS.t : 0];
+    var a9 = [], t8; for(t8 = 0; t8 < D.tp; t8++) a9.push(t8); return a9;
+  };
   var span = {};
   for(var c9 = 0; c9 < nCol; c9++) for(var r9 = 0; r9 < rows; r9++){
-    var t9v = rows > 1 ? r9 : (coS ? coS.t : 0), m9 = grpCol(c9, t9v);
-    if(!span[m9]) span[m9] = {c0:c9, c1:c9};
-    else { span[m9].c0 = Math.min(span[m9].c0, c9); span[m9].c1 = Math.max(span[m9].c1, c9); }
+    tsOf(r9).forEach(function(t9v){
+      var m9 = grpCol(c9, t9v);
+      if(!span[m9]) span[m9] = {c0:c9, c1:c9};
+      else { span[m9].c0 = Math.min(span[m9].c0, c9); span[m9].c1 = Math.max(span[m9].c1, c9); }
+    });
   }
   var selG2 = coS ? Math.floor(((coS.d*D.cp + coS.c)*D.tp + coS.t) / GSZ) : -1;
   Object.keys(span).forEach(function(mk){
@@ -4012,8 +4062,11 @@ function paintDeckAxes(D){
     /* 同 3D：只有这一列块里装的正好是这一组才画。ep·etp 不是 tp 的整数倍时会
        出现半列，框会把别组的卡也圈进来——宁可不画，也不画错。 */
     for(ci9 = sp.c0; ci9 <= sp.c1 && ok; ci9++)
-      for(rr = 0; rr < rows; rr++)
-        if(grpCol(ci9, rows > 1 ? rr : (coS ? coS.t : 0)) !== m){ ok = false; break; }
+      for(rr = 0; rr < rows && ok; rr++){
+        var ts9 = tsOf(rr), q8;
+        for(q8 = 0; q8 < ts9.length; q8++)
+          if(grpCol(ci9, ts9[q8]) !== m){ ok = false; break; }
+      }
     if(!ok) return;
     var a = cells[sp.c0*rows], z = cells[Math.min(cells.length-1, sp.c1*rows + rows - 1)];
     if(!a || !z) return;
