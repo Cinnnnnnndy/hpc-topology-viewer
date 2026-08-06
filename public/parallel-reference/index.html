@@ -3330,8 +3330,10 @@ function figSPTP(){
 
   /* 纯 TP（无 SP）对照 */
   var cy = sy + PH + 52;
-  s+='<text x="460" y="'+(cy)+'" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">对照：纯 TP（没有 SP）—— 非 TP 区每卡存完整 [S, H]，浪费</text>';
+  s+='<text x="460" y="'+(cy)+'" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">对照：纯 TP（没有 SP）—— 非 TP 区每卡各存完整 [S, H]</text>';
   cy += 14;
+
+  var FW=PW+30; /* 非 TP 区宽一些，放下两份 */
 
   var stagesNoSP=[
     {label:'非 TP 区\nLayerNorm', mode:'full'},
@@ -3342,23 +3344,30 @@ function figSPTP(){
   ];
 
   var totalW2=0;
-  stagesNoSP.forEach(function(st){ totalW2 += (st.mode==='comm'?56:PW) + GAP; });
+  stagesNoSP.forEach(function(st){ totalW2 += (st.mode==='full'?FW:(st.mode==='comm'?56:PW)) + GAP; });
   totalW2 -= GAP;
   var sx2 = (W - totalW2) / 2;
 
   stagesNoSP.forEach(function(st, si){
-    var w = st.mode==='comm' ? 56 : PW;
+    var w = st.mode==='full' ? FW : (st.mode==='comm' ? 56 : PW);
 
     if(st.mode==='full'){
-      /* 未切——整块都是"每卡一份完整副本" */
-      s+='<rect x="'+sx2+'" y="'+cy+'" width="'+w+'" height="'+PH+'" rx="0" fill="#F2F5F7" stroke="#CFD8DD" stroke-width="1.2"/>';
-      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2-4)+'" font-size="8" fill="'+DIM+'" font-weight="600" text-anchor="middle">每卡完整</text>';
-      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2+8)+'" font-size="8" fill="'+DIM+'" font-weight="600" text-anchor="middle">一份</text>';
-      s+='<text x="'+(sx2+w/2)+'" y="'+(cy-6)+'" font-size="7.5" fill="'+DIM+'" font-weight="700" text-anchor="middle">不切</text>';
-      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+14)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,S,H] ×TP 份</text>';
-      /* 浪费标记 */
-      s+='<rect x="'+(sx2+w/2-16)+'" y="'+(cy+PH+18)+'" width="32" height="14" rx="7" fill="#FDE8E8" stroke="'+K.warn+'" stroke-width=".7"/>';
-      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+28)+'" font-size="6.5" fill="'+K.warn+'" font-weight="700" text-anchor="middle">浪费</text>';
+      /* 两张卡各一份完整 [S,H]，并排放 */
+      var hw=(w-8)/2;
+      /* 卡0 完整 */
+      s+='<rect x="'+sx2+'" y="'+cy+'" width="'+hw+'" height="'+PH+'" rx="0" fill="'+C0+'" stroke="'+C0s+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx2+hw/2)+'" y="'+(cy+PH/2-4)+'" font-size="7.5" fill="'+C0s+'" font-weight="700" text-anchor="middle">卡 0</text>';
+      s+='<text x="'+(sx2+hw/2)+'" y="'+(cy+PH/2+8)+'" font-size="7" fill="'+C0s+'" text-anchor="middle">完整</text>';
+      /* 卡1 完整 */
+      s+='<rect x="'+(sx2+hw+8)+'" y="'+cy+'" width="'+hw+'" height="'+PH+'" rx="0" fill="'+C1+'" stroke="'+C1s+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx2+hw+8+hw/2)+'" y="'+(cy+PH/2-4)+'" font-size="7.5" fill="'+C1s+'" font-weight="700" text-anchor="middle">卡 1</text>';
+      s+='<text x="'+(sx2+hw+8+hw/2)+'" y="'+(cy+PH/2+8)+'" font-size="7" fill="'+C1s+'" text-anchor="middle">完整</text>';
+      /* 标注 */
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy-6)+'" font-size="7.5" fill="'+K.warn+'" font-weight="700" text-anchor="middle">不切 · 各存一份</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+14)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">各 [B,S,H]</text>';
+      /* 浪费标记——红色括号 + 标注 */
+      s+='<rect x="'+(sx2)+'" y="'+(cy+PH+20)+'" width="'+w+'" height="16" rx="8" fill="#FDE8E8" stroke="'+K.warn+'" stroke-width=".7"/>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+31)+'" font-size="7" fill="'+K.warn+'" font-weight="700" text-anchor="middle">总量 2×[B,S,H] — 卡 1 那份和上面 SP 区比多了一倍</text>';
     } else if(st.mode==='h'){
       s+='<rect x="'+sx2+'" y="'+cy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C0+'" stroke="'+C0s+'" stroke-width="1.2"/>';
       s+='<rect x="'+(sx2+w/2)+'" y="'+cy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C1+'" stroke="'+C1s+'" stroke-width="1.2"/>';
@@ -3378,6 +3387,18 @@ function figSPTP(){
     }
     sx2 += w + GAP;
   });
+
+  /* 两行之间的对比标注 */
+  var bx = (W-totalW)/2 - 4;
+  var spMid = sy + PH/2;
+  var noSpMid = cy + PH/2;
+  s+='<path d="M'+bx+' '+sy+' L'+(bx-8)+' '+sy+' L'+(bx-8)+' '+(sy+PH)+' L'+bx+' '+(sy+PH)+'" stroke="'+CPc+'" stroke-width="1.2" fill="none"/>';
+  s+='<text x="'+(bx-12)+'" y="'+(spMid-4)+'" font-size="7" fill="'+CPc+'" font-weight="700" text-anchor="end">SP：每卡</text>';
+  s+='<text x="'+(bx-12)+'" y="'+(spMid+6)+'" font-size="7" fill="'+CPc+'" font-weight="700" text-anchor="end">存半个</text>';
+
+  s+='<path d="M'+bx+' '+cy+' L'+(bx-8)+' '+cy+' L'+(bx-8)+' '+(cy+PH)+' L'+bx+' '+(cy+PH)+'" stroke="'+K.warn+'" stroke-width="1.2" fill="none"/>';
+  s+='<text x="'+(bx-12)+'" y="'+(noSpMid-4)+'" font-size="7" fill="'+K.warn+'" font-weight="700" text-anchor="end">无 SP：</text>';
+  s+='<text x="'+(bx-12)+'" y="'+(noSpMid+6)+'" font-size="7" fill="'+K.warn+'" font-weight="700" text-anchor="end">各存整个</text>';
 
   s+='</svg>';
   m.innerHTML=s;
