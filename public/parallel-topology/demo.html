@@ -1875,6 +1875,25 @@ function netScene(D, g, box, step){
                  块，读者只会当成 TP。横纹 = 切 s，方向即语义，和选中态的画法同一套。
                  两头那几个加重档（uniq）不动——入口/出口的「这里不重复」优先级更高。 */
               var spBg = !uniq && cutSP && byS && byS.dim === 'sp';
+              /* 前排那份是「带注释的代表」（标签、入口/出口牌都挂它）——SP 的横切在
+                 它身上画成**真缝**：切成 (CP×)TP 段、段间留缝，和选中卡后的切痕同一套
+                 画法，板转到任何角度都读得出「这是切开的」。横纹贴图是屏幕空间的，
+                 板一斜纹就不对着 s 轴，norm 条又扁，里面只剩一两道纹——这就是
+                 「SP 看着不明显」的来源。真缝只给前排这一份：画满全部复印件 × 全部
+                 层是几千个多边形，转台就拖不动了；段薄到亚像素时也退回横纹。 */
+              if(spBg && !ui.cardMode && k === off0){
+                var nS = (cutCP ? D.cp : 1) * D.tp;
+                var bandPx = Math.abs(P(u0, v0 + (v1-v0)/nS, ww, kOff)[1] - P(u0, v0, ww, kOff)[1]);
+                if(bandPx >= 2.2){
+                  var kerfS = (v1 - v0) * 0.16 / nS;
+                  for(var s9 = 0; s9 < nS; s9++){
+                    var e8 = v0 + (v1-v0)*s9/nS, f8 = v0 + (v1-v0)*(s9+1)/nS - (s9 < nS-1 ? kerfS : 0);
+                    body.push(quad([P(u0,e8,ww,kOff), P(u1,e8,ww,kOff), P(u1,f8,ww,kOff), P(u0,f8,ww,kOff)],
+                      'fill:'+mix(col,36)+';stroke:'+col+';stroke-width:.3;opacity:'+so0));
+                  }
+                  return;
+                }
+              }
               body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
                 'fill:'+(spBg ? 'url(#hxSP)' : mix(col, uniq ? 62 : (dm?30:14)))+';stroke:'+(dm?col:'var(--pt-bds)')
                 +';stroke-width:'+(uniq?(ui.cardMode?.45:.8):sw0)+';opacity:'+(uniq?(ui.cardMode?.85:1):so0)));
