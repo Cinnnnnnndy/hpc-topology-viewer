@@ -1391,6 +1391,23 @@ function holdDenom(D, step){
 }
 function netScene(D, g, box, step){
   var IXg = graphIndex();
+  /* ── 每一层并不都一样 ────────────────────────────────────────────────────
+     真图里**重复的只有 attn 与 ffn/moe 那一段**，两头是不重复的：
+       · 词嵌入（token_embedding）只落在整模型第 0 层之前 —— 沿 vocab 被 TP 切；
+       · Final RMSNorm 沿 seq 被 **SP** 切、LM Head 沿 vocab 被 TP 切，只落在最后一层；
+         这两个正是「出口」，也是 SP 这一刀在整张图上唯一露头的地方。
+       · FFN 那一段前 firstMoeLayer 层是 Dense（gate_up / silu / down），之后才换成
+         MoE（router → A2A dispatch → 专家桶 → A2A combine）——**Dense 层根本没有
+         EP 那一刀**，这是层与层之间最实在的一处不同。
+     口径取 model-architecture-3d-deck 的 openpangu-flash 预设（firstMoeLayer:2），
+     与 sidecar 画的是同一份；层数仍按本页配置，多出来的层按 MoE 计。
+     注意：每卡字节那套读数（opBytes/paramsPerCard）是另一套粗口径，仍按「全部
+     层都是 MoE」算——2 层 Dense 占比很小，但两处数字不是同一个口径，别混着引。 */
+  var HEAD_OPS = {token_embedding:1};                       /* 只在第 0 层 */
+  var TAIL_OPS = {final_norm:1, lm_head:1};                 /* 只在最后一层 */
+  var DENSE_OPS = {dense_gate_up:1, dense_silu:1, dense_down:1};
+  var MOE_OPS = {router_gate:1, route_topk:1, routed_expert_bank:1, moe_combine:1,
+                 moe_all_to_all_dispatch:1, moe_all_to_all_combine:1};
   var co = coordsOf(g, D), lps = D.layersPerStage, me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   /* 每把刀独立开关——不再按顺序；都关 = 整网 */
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = D.cp > 1,
@@ -1595,6 +1612,16 @@ function netScene(D, g, box, step){
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
+  /* 前两层是 Dense FFN（真模型如此）；不开 MoE 的预设则整个模型都是 Dense。 */
+  var denseTop = D.moe ? Math.min(2, L) : L;
+  function nodeInLayer(n, li){
+    if(HEAD_OPS[n.id]) return li === 0;
+    if(TAIL_OPS[n.id]) return li === L - 1;
+    if(!inClu(n.parent, 'decoder-stack', clu)) return false;
+    if(DENSE_OPS[n.id]) return li < denseTop;
+    if(MOE_OPS[n.id])   return li >= denseTop;
+    return true;
+  }
   /* ── 地板网格（参考魔方视图 pattern）── */
   if(ui.spread && K > 1 && !zoomIn){
     var grd = '';
@@ -1689,7 +1716,7 @@ function netScene(D, g, box, step){
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
       if(IXg){
         IXg.G.nodes.forEach(function(n, ni){
-          if(n.kind !== 'op' || !inClu(n.parent, 'decoder-stack', clu)) return;
+          if(n.kind !== 'op' || !nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = (n.y - n.height/2 - root.y)/GW, v1 = (n.y + n.height/2 - root.y)/GW;
           var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
@@ -1757,7 +1784,10 @@ function netScene(D, g, box, step){
           }else{
             whole++;
             body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
-              'fill:'+mix(col, dm?52:20)+';stroke:'+(dm?col:'var(--pt-bds)')+';stroke-width:.45'));
+              'fill:'+mix(col, dm?52:20)+';stroke:'+(dm?col:'var(--pt-bds)')+';stroke-width:.45',
+              /* 只给选中那张卡的算子挂 id：一屏就这几十个，代价忽略不计，但让「这一层
+                 到底画了哪些算子」可以被脚本直接问出来——不然只能靠肉眼数方块。 */
+              'data-op="'+n.id+'"'));
           }
           nodes++;
         });
@@ -1996,7 +2026,9 @@ function netScene(D, g, box, step){
            转起来够看清阵列的骨架，松手再补全。 */
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
         var csx = segW(pc2), cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
-        var cu0 = -0.05, cu1 = 1.05, cv0 = -0.05, cv1 = AR + 0.05;
+        /* v 方向的留白要装得下两头：词嵌入在 v≈-0.035、LM Head 在 v≈AR+0.09。
+           它们是真图自己的坐标，不做重映射——正好落在卡壳上下唇内侧。 */
+        var cu0 = -0.05, cu1 = 1.05, cv0 = -0.07, cv1 = AR + 0.12;
         /* 关掉整网后壳变实心，必须四面收窄留缝：不然 128 个块边贴边糊成一整片
            橙色，「有 128 个」这件事一个都数不出来——魔方之所以是魔方，靠的正是
            块与块之间那条缝。 */
@@ -2165,14 +2197,24 @@ function netScene(D, g, box, step){
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
   if(IXg && sh && (s >= 72 || zoomIn)){
-    /* 只挑五条：一层里 35 个算子全标出来就是糊墙，五条足够认出「这是真图那一层」 */
-    var pick = ['input_layernorm','q_a_proj','attention_core','dense_gate_up','block_post_norm'];
-    var wf = wOf(co.p*lps);
-    pick.forEach(function(id){
+    /* 只挑几条：一层里 35 个算子全标出来就是糊墙，几条足够认出「这是真图那一层」。
+       但**挑哪几条要跟着这一段真正含的层走**——原来写死了 dense_gate_up，于是
+       每一段都写着「Gate Up Projection」，可 L2 之后根本没有 Dense FFN 了。
+       现在：FFN 那一条按首层是 Dense 还是 MoE 换；含 L0 的那段多标词嵌入（入口），
+       含末层的那段多标 Final RMSNorm（SP 切）与 LM Head（TP 切 vocab，出口）。
+       每条各按**它自己所在的层**取深度，不能都挂在这一段的首层上。 */
+    var lf = co.p*lps, ll = Math.min(L-1, lf+lps-1), pick = [];
+    if(lf === 0) pick.push(['token_embedding', 0]);
+    pick.push(['input_layernorm', lf], ['q_a_proj', lf], ['attention_core', lf],
+              [lf < denseTop ? 'dense_gate_up' : 'routed_expert_bank', lf],
+              ['block_post_norm', lf]);
+    if(ll === L-1) pick.push(['final_norm', L-1], ['lm_head', L-1]);
+    pick.forEach(function(it){
+      var id = it[0];
       var n = IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
       if(!n) return;
       var s1 = sh[id], part = (s1 && s1.parts && s1.parts[0]) || null;
-      var pc = P((n.x - root.x)/GW, (n.y - root.y)/GW, wf, off0);
+      var pc = P((n.x - root.x)/GW, (n.y - root.y)/GW, wOf(it[1]), off0);
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
       lab.push(txt(pc[0], pc[1]+2, esc(n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
