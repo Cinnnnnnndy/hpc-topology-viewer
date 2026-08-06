@@ -1829,7 +1829,8 @@ function netScene(D, g, box, step){
                  一旦画面只剩这一张卡，那些空片就成了卡里凭空多出来的格子。 */
               if(ui.cardMode && !hit9) continue;
               body.push(quad([P(a9,v0,ww,kOff), P(b9,v0,ww,kOff), P(b9,v1,ww,kOff), P(a9,v1,ww,kOff)],
-                'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35)));
+                'fill:'+(hit9 ? mix(sCol,66) : 'url(#'+hx+')')+';stroke:'+sCol+';stroke-width:'+(hit9?.8:.35),
+                hit9 ? 'data-op="'+n.id+'"' : ''));
             }
           }else{
             whole++;
@@ -2283,7 +2284,10 @@ function netScene(D, g, box, step){
          颜色变的那一处就是模型换挡的地方，不需要文字；
        · 入口 / 出口 —— 只有两层有，给门牌。挂在它那层板的正上方，不拉引线：
          引线要从画面这头拉到那头，穿过三十层，比它说明的事还吵。 */
-  if(IXg && !ui.cardMode && cutPP && L > 2){
+  /* Rank 打开时也给。「哪几张卡带着入口、哪几张带着出口」正是卡与卡结构不同的
+     那件事——PP0 那一段的每张卡都多一份词嵌入，末段的每张卡都多一份 LM Head 与
+     MTP 尾巴，中间几段没有。挂在焦点那一列的首/末张卡上方。 */
+  if(IXg && cutPP && L > 2){
     /* 门牌只写两个字。这一屏上它是个**路标**——「这一头不重复」——具体不重复在
        哪几个算子、各被哪把刀切，展开写就是一条横贯半屏的长句，把它说明的那几层
        全挡住了。细节挪到 hover：想知道再问，不问就不占地方。 */
@@ -4992,7 +4996,9 @@ var TIPK = {
       + '<br>Token IDs · Position IDs · Attention Context —— DP 切 batch'
       + (D.cp > 1 ? ' · CP 切 seq ×'+D.cp : '（CP=1，序列未切）')
       + '<br>Embedding Weight → Parallel Embedding —— TP 切 vocab ×'+D.tp
-      + '<br><span style="opacity:.65">只落在第 0 层之前。前 '+Math.min(2, D.layers)+' 层的 FFN 还是 Dense，那几层根本没有 EP 那一刀。</span>';
+      + '<br><span style="opacity:.65">只落在第 0 层之前。前 '+Math.min(2, D.layers)+' 层的 FFN 还是 Dense，那几层根本没有 EP 那一刀。'
+      + (ui.cardMode ? '<br>Rank 里这一份归 <b>PP0 那一段的 '+(D.world/D.pp)+' 张卡</b>，别的段没有。' : '')
+      + '</span>';
   },
   tail: function(D){
     return '<b>出口 · 模型输出 + MTP 尾巴</b>'
@@ -5000,7 +5006,9 @@ var TIPK = {
       + '<br>LM Head / LM Head Weight —— TP 切 vocab ×'+D.tp
       + '<br>Logits All-Gather → Logits'
       + '<br>MTP L46–L48 ×3：Input Norms → EH Projection → Decoder ×3 → Shared Head → Logits'
-      + '<br><span style="opacity:.65">只落在最后一层之后。</span>';
+      + '<br><span style="opacity:.65">只落在最后一层之后。'
+      + (ui.cardMode ? '<br>Rank 里这一份归 <b>PP'+(D.pp-1)+' 那一段的 '+(D.world/D.pp)+' 张卡</b>，别的段没有。' : '')
+      + '</span>';
   }
 };
 document.addEventListener('mousemove', function(ev){
