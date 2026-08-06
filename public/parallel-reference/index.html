@@ -1170,6 +1170,25 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="stage" id="fig-ring-step"></div>
   </figure>
 
+  <h3>CP 贯穿全部 stage，不只在入口</h3>
+
+  <p>一个常见的误解是"CP 在第一个 stage 把序列切开，后面就拼回去了"。事实上<strong>CP 的切分从入口一直贯穿到最后一个 stage</strong>：</p>
+
+  <ol>
+    <li><strong>入口</strong>：Token IDs / Position IDs / Attention Context 的序列维被切成 S/CP 份，每张卡只拿到自己那一段。</li>
+    <li><strong>PP 传递</strong>：stage 边界传递的是激活 <code>[B, S/CP, H]</code>——<b>不会拼回完整序列</b>。PP 的 P2P 只负责"本卡的那份激活往下传"，跟 CP 正交。</li>
+    <li><strong>每个 stage 内部</strong>：所有 layer 都只处理 S/CP 个 token。Linear / LayerNorm / GeLU 不需要看全序列，直接算。只有 Attention 要看全序列，所以<b>每个 stage 的每层 attention 都要做 Ring Attention</b>。</li>
+    <li><strong>输出</strong>：只有在最终算 loss 时才需要把各 CP 卡的结果汇总。</li>
+  </ol>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 05C</span><span class="ftitle">CP 贯穿全部 PP stage</span>
+      <span class="fnote">PP=3、CP=2。每个 stage 内部 CP0 和 CP1 都只处理 S/2 个 token，激活值在 stage 边界传递时保持分开。Ring Attention 在每个 stage 的每层 attention 都要做——不是只做一次。</span></figcaption>
+    <div class="stage" id="fig-cp-stages"></div>
+  </figure>
+
+  <p>为什么不在 stage 之间拼回去再切开？因为没有好处——PP 的 P2P 通信只需要发送本卡那份激活，拼回去反而要一次 AllGather，白白加通信。CP 的切分是<b>全程常驻的状态</b>，不是一次性操作。</p>
+
   <h3>SP vs CP：名字像、本质不同</h3>
 
   <p>两者都涉及序列维 <code>s</code>，但一个是 TP 的附件、一个是独立维度。放在一起看差别一目了然：</p>
@@ -1189,6 +1208,60 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
   </table>
 
   <p>一句话：<strong>SP 是 TP 的省显存附件；CP 是处理长序列的独立并行维度。</strong></p>
+
+  <h3>SP 的原理：AllReduce 换成 ReduceScatter</h3>
+
+  <p>SP 的核心改动只有一处：把纯 TP 的 AllReduce 替换成 <strong>ReduceScatter</strong>。理解这一步，SP 就全明白了。</p>
+
+  <p>先看纯 TP（没有 SP）的通信：行切 matmul 之后每张卡持有 partial sum，需要 AllReduce 求和。AllReduce = ReduceScatter + AllGather，通信完成后<b>每卡都持有完整结果 <code>[B, S, H]</code></b>。但接下来的 LayerNorm / Dropout 是逐 token 独立的——不需要完整 S，只要自己分到的那几个 token 就够了。</p>
+
+  <p>SP 的改动：</p>
+  <ul>
+    <li><b>出 TP 区</b>：只做 ReduceScatter（AllReduce 的前半）→ 每卡得到 <code>[B, S/TP, H]</code>，只占 1/TP 的显存</li>
+    <li><b>进 TP 区</b>：做 AllGather（AllReduce 的后半）→ 拼回 <code>[B, S, H]</code>，送进列切 matmul</li>
+  </ul>
+
+  <p>把 AllReduce 拆成两半，分别放在 TP 区的两端——<b>通信总量完全相同</b>，但 TP 区外的激活从 <code>[B, S, H]</code> 缩到 <code>[B, S/TP, H]</code>，省 TP 倍。这就是 SP"不加通信、纯省显存"的原因。</p>
+
+  <div class="note">
+    <span class="lbl">布局切换的实质</span>
+    <p><b>TP 区</b>：每卡持有完整 S、切 H → 形状 <code>[B, S, H/TP]</code><br>
+    <b>SP 区</b>：每卡持有完整 H、切 S → 形状 <code>[B, S/TP, H]</code><br>
+    AllGather 和 ReduceScatter 就是这两种布局之间的<b>转换器</b>——沿 s 拼回 / 沿 s 切开。SP 没有自己的通信组，复用 TP 组。</p>
+  </div>
+
+  <h3>CP × SP：两者同时开启时发生什么</h3>
+
+  <p>CP 和 SP 都涉及序列维 <code>s</code>，但它们在<b>不同的通信组、不同的嵌套层次</b>上各切一刀，互不冲突。</p>
+
+  <p>以 <b>CP=2、TP=2（含 SP）</b>为例。假设完整序列长度 S=1024：</p>
+
+  <ol>
+    <li><strong>CP 先切</strong>（最外层）：CP0 拿到 token[0:512]，CP1 拿到 token[512:1024]。每张卡的序列维变成 S/CP = 512。</li>
+    <li><strong>SP 再切</strong>（TP 组内部）：在 CP0 内部，TP0 和 TP1 各拿到 256 个 token 的激活。序列维变成 S/(CP×TP) = 256。</li>
+    <li><strong>进 TP 区时</strong>：AllGather 沿 s 在 TP 组内拼回 → <code>[B, 512, H]</code>（注意不是 1024——CP 那一刀还在）。</li>
+    <li><strong>Attention 里</strong>：TP 组内的 head 并行照常做。CP 的 Ring Attention 独立于 TP 运行——传的 KV 块是 S/CP 长度的，在另一个通信域上。</li>
+  </ol>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 05D</span><span class="ftitle">CP × SP 交叉：两刀各切各的</span>
+      <span class="fnote">CP=2、TP=2（含 SP）。外层 CP 把 S 切成两半（绿色虚线），内层 SP 在 TP 组内再把 s 切一次（蓝色虚线）。两个切分在不同通信组上运行，互不干扰。进 TP 区时 AllGather 只在 TP 组内拼 s（拼到 S/CP，不是完整 S）。</span></figcaption>
+    <div class="stage" id="fig-cp-sp"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th></th><th><span class="k cp">CP 的切</span></th><th><span class="k tp">SP 的切</span></th></tr></thead>
+    <tbody>
+      <tr><td><b>切什么</b></td><td>输入 token 序列</td><td>TP 区外的激活</td></tr>
+      <tr><td><b>作用域</b></td><td>CP 通信组（独立维度）</td><td>TP 通信组内部</td></tr>
+      <tr><td><b>切分后形状</b></td><td><code>[B, S/CP, H]</code></td><td><code>[B, S/(CP·TP), H]</code></td></tr>
+      <tr><td><b>通信算子</b></td><td>P2P 环传 KV（Ring Attention）</td><td>AllGather / ReduceScatter（TP 组内）</td></tr>
+      <tr><td><b>嵌套关系</b></td><td>外层——先切</td><td>内层——在 CP 切完的基础上再切</td></tr>
+      <tr><td><b>能否单独关</b></td><td>能（独立维度）</td><td>能（但几乎总是跟 TP 一起开）</td></tr>
+    </tbody>
+  </table>
+
+  <p>关键结论：<strong>CP 和 SP 的效果是乘法关系</strong>——激活显存从 <code>[B, S, H]</code> 缩到 <code>[B, S/(CP·TP), H]</code>。CP 负责"把序列缩短"（解决长上下文），SP 负责"把每张卡实际存储的激活缩小"（解决显存浪费）。两者分属不同通信组，通信不冲突。</p>
 
   <div class="note gov">
     <span class="lbl">对 viewer 的推论</span>
@@ -3166,6 +3239,205 @@ function figRingStep(){
   m.innerHTML=s;
 }
 
+/* ===================== FIG 05C · CP 贯穿全部 PP stage ===================== */
+function figCPStages(){
+  var m=document.getElementById('fig-cp-stages'); if(!m) return;
+  var W=920, H=300;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var CPc=K.cp, PPc=K.pp, INK='#0E1418', DIM='#8A98A2', CPBG='#EFF5F9';
+
+  s+='<defs>'
+   +'<marker id="cs-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+PPc+'"/></marker>'
+   +'<marker id="cs-ra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+CPc+'"/></marker>'
+   +'</defs>';
+
+  s+='<text x="460" y="18" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">PP = 3、CP = 2 —— CP 在每个 stage 都存在</text>';
+
+  var stages=3, cpCards=2;
+  var SW=220, SH=150, SG=52, SY=38;
+  var SX0=(W - stages*SW - (stages-1)*SG)/2;
+
+  for(var si=0; si<stages; si++){
+    var sx=SX0+si*(SW+SG);
+
+    /* stage 框 */
+    s+='<rect x="'+sx+'" y="'+SY+'" width="'+SW+'" height="'+SH+'" rx="8" fill="none" stroke="'+PPc+'" stroke-width="1.8"/>';
+    s+='<text x="'+(sx+SW/2)+'" y="'+(SY-6)+'" font-size="10" fill="'+PPc+'" font-weight="700" text-anchor="middle">Stage '+si+' (Layer '+(si*8)+'–'+(si*8+7)+')</text>';
+
+    var CW=SW-24, CH=38, CY0=SY+16, CG=16;
+    for(var ci=0; ci<cpCards; ci++){
+      var cy=CY0+ci*(CH+CG);
+      var cx=sx+12;
+
+      /* CP 卡 */
+      s+='<rect x="'+cx+'" y="'+cy+'" width="'+CW+'" height="'+CH+'" rx="5" fill="'+CPBG+'" stroke="'+CPc+'" stroke-width="1.2"/>';
+      s+='<text x="'+(cx+8)+'" y="'+(cy+15)+'" font-size="9" fill="'+CPc+'" font-weight="700">CP'+ci+'</text>';
+      s+='<text x="'+(cx+42)+'" y="'+(cy+15)+'" font-size="8" fill="'+INK+'">token['+(ci===0?'0:S/2':'S/2:S')+']</text>';
+      s+='<text x="'+(cx+CW/2)+'" y="'+(cy+30)+'" font-size="7.5" fill="'+DIM+'" text-anchor="middle">激活 [B, S/2, H] · 完整权重</text>';
+    }
+
+    /* Ring Attention 标记 */
+    var raY=CY0+CH+2;
+    s+='<path d="M'+(cx+CW/2-20)+' '+raY+' L'+(cx+CW/2+20)+' '+raY+'" stroke="'+CPc+'" stroke-width="1.2" stroke-dasharray="3 2"/>';
+    s+='<text x="'+(cx+CW/2)+'" y="'+(raY+10)+'" font-size="7" fill="'+CPc+'" font-weight="600" text-anchor="middle">Ring Attn ↕</text>';
+
+    /* PP 传递箭头 */
+    if(si<stages-1){
+      var ax=sx+SW+4, bx=sx+SW+SG-4;
+      for(var ci2=0; ci2<cpCards; ci2++){
+        var ay=CY0+ci2*(CH+CG)+CH/2;
+        s+='<path d="M'+ax+' '+ay+' L'+bx+' '+ay+'" stroke="'+PPc+'" stroke-width="1.5" fill="none" marker-end="url(#cs-ar)"/>';
+      }
+      s+='<text x="'+(ax+(bx-ax)/2)+'" y="'+(CY0-4)+'" font-size="7" fill="'+PPc+'" font-weight="600" text-anchor="middle">PP P2P</text>';
+    }
+  }
+
+  /* 输入标注 */
+  var inX=SX0-10;
+  s+='<text x="'+inX+'" y="'+(SY+32)+'" font-size="8" fill="'+INK+'" font-weight="600" text-anchor="end">token[0:S/2] →</text>';
+  s+='<text x="'+inX+'" y="'+(SY+86)+'" font-size="8" fill="'+INK+'" font-weight="600" text-anchor="end">token[S/2:S] →</text>';
+
+  /* 输出标注 */
+  var outX=SX0+stages*SW+(stages-1)*SG+10;
+  s+='<text x="'+outX+'" y="'+(SY+32)+'" font-size="8" fill="'+INK+'" font-weight="600" text-anchor="start">→ loss 时</text>';
+  s+='<text x="'+outX+'" y="'+(SY+45)+'" font-size="8" fill="'+INK+'" font-weight="600" text-anchor="start">   汇总</text>';
+
+  /* 底部结论 */
+  var BY=SY+SH+24;
+  s+='<rect x="30" y="'+BY+'" width="'+(W-60)+'" height="70" rx="6" fill="#FFF8F4" stroke="'+INK+'" stroke-width="1.4"/>';
+  s+='<text x="48" y="'+(BY+18)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">切分是全程常驻的</tspan>：CP 不是"在入口切一刀然后拼回去"——激活值从头到尾都是 [B, S/CP, H]。</text>';
+  s+='<text x="48" y="'+(BY+36)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">Ring Attention 每个 stage 都要做</tspan>：每层 attention 都需要看全序列，所以每个 stage 的每层都有 CP 通信。</text>';
+  s+='<text x="48" y="'+(BY+54)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">PP 和 CP 正交</tspan>：PP 传的是本卡那份 S/CP 的激活，不做合并。两种切分互不干扰。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
+/* ===================== FIG 05D · CP × SP 交叉 ===================== */
+function figCPxSP(){
+  var m=document.getElementById('fig-cp-sp'); if(!m) return;
+  var W=920, H=380;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var CPc=K.cp, TPc=K.tp, INK='#0E1418', DIM='#8A98A2';
+  var CPBG='#EFF5F9', TPBG='#FCF0F1', SPBG='#F0F7F3';
+
+  s+='<defs>'
+   +'<marker id="csp-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+DIM+'"/></marker>'
+   +'</defs>';
+
+  s+='<text x="460" y="18" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">CP = 2、TP = 2（含 SP）—— 一个 stage 内的 4 张卡</text>';
+  s+='<text x="460" y="32" font-size="9" fill="'+DIM+'" text-anchor="middle">完整序列 S = 1024 token</text>';
+
+  /* 两个 CP 组，每组 2 张 TP 卡 */
+  var GW=400, GH=130, GG=60;
+  var GX0=(W-2*GW-GG)/2, GY=48;
+
+  var cpGroups=[
+    {label:'CP0 · token[0:512]', tokens:'S/CP = 512', color:CPc},
+    {label:'CP1 · token[512:1024]', tokens:'S/CP = 512', color:CPc}
+  ];
+
+  cpGroups.forEach(function(cg,gi){
+    var gx=GX0+gi*(GW+GG);
+    var gy=GY;
+
+    /* CP 组框 */
+    s+='<rect x="'+gx+'" y="'+gy+'" width="'+GW+'" height="'+GH+'" rx="8" fill="none" stroke="'+CPc+'" stroke-width="1.8" stroke-dasharray="6 3"/>';
+    s+='<text x="'+(gx+GW/2)+'" y="'+(gy-6)+'" font-size="10" fill="'+CPc+'" font-weight="700" text-anchor="middle">'+cg.label+'</text>';
+
+    /* 两张 TP 卡 */
+    var CW=170, CH=80, CG2=16;
+    var CX0=gx+(GW-2*CW-CG2)/2;
+    var CY=gy+24;
+
+    for(var ti=0; ti<2; ti++){
+      var cx=CX0+ti*(CW+CG2);
+
+      s+='<rect x="'+cx+'" y="'+CY+'" width="'+CW+'" height="'+CH+'" rx="5" fill="#fff" stroke="#CFD8DD" stroke-width="1.1"/>';
+      s+='<text x="'+(cx+CW/2)+'" y="'+(CY+14)+'" font-size="9" fill="'+INK+'" font-weight="700" text-anchor="middle">TP'+ti+' (cp='+gi+', tp='+ti+')</text>';
+
+      /* SP 区 */
+      s+='<rect x="'+(cx+6)+'" y="'+(CY+20)+'" width="'+(CW/2-10)+'" height="22" rx="3" fill="'+SPBG+'" stroke="'+CPc+'" stroke-width=".8"/>';
+      s+='<text x="'+(cx+6+(CW/2-10)/2)+'" y="'+(CY+32)+'" font-size="7" fill="'+CPc+'" font-weight="600" text-anchor="middle">SP 区</text>';
+      s+='<text x="'+(cx+6+(CW/2-10)/2)+'" y="'+(CY+40)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,256,H]</text>';
+
+      /* TP 区 */
+      s+='<rect x="'+(cx+CW/2+4)+'" y="'+(CY+20)+'" width="'+(CW/2-10)+'" height="22" rx="3" fill="'+TPBG+'" stroke="'+TPc+'" stroke-width=".8"/>';
+      s+='<text x="'+(cx+CW/2+4+(CW/2-10)/2)+'" y="'+(CY+32)+'" font-size="7" fill="'+TPc+'" font-weight="600" text-anchor="middle">TP 区</text>';
+      s+='<text x="'+(cx+CW/2+4+(CW/2-10)/2)+'" y="'+(CY+40)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,512,H/2]</text>';
+
+      /* 全序列标注 */
+      s+='<text x="'+(cx+CW/2)+'" y="'+(CY+62)+'" font-size="7" fill="'+DIM+'" text-anchor="middle">权重完整 · 序列 = S/CP</text>';
+    }
+
+    /* TP 组内通信 */
+    var arY=CY+CH/2;
+    s+='<path d="M'+(CX0+CW)+' '+arY+' L'+(CX0+CW+CG2)+' '+arY+'" stroke="'+TPc+'" stroke-width="1.2" stroke-dasharray="3 2"/>';
+    s+='<text x="'+(CX0+CW+CG2/2)+'" y="'+(arY-6)+'" font-size="6.5" fill="'+TPc+'" font-weight="600" text-anchor="middle">AG/RS</text>';
+  });
+
+  /* CP 间 Ring Attention 箭头 */
+  var raX1=GX0+GW+6, raX2=GX0+GW+GG-6;
+  var raY=GY+GH/2;
+  s+='<path d="M'+raX1+' '+(raY-4)+' L'+raX2+' '+(raY-4)+'" stroke="'+CPc+'" stroke-width="1.5" fill="none" marker-end="url(#csp-ar)"/>';
+  s+='<path d="M'+raX2+' '+(raY+4)+' L'+raX1+' '+(raY+4)+'" stroke="'+CPc+'" stroke-width="1.5" fill="none" marker-end="url(#csp-ar)"/>';
+  s+='<text x="'+((raX1+raX2)/2)+'" y="'+(raY-10)+'" font-size="7.5" fill="'+CPc+'" font-weight="700" text-anchor="middle">Ring Attn</text>';
+  s+='<text x="'+((raX1+raX2)/2)+'" y="'+(raY+18)+'" font-size="7" fill="'+CPc+'" text-anchor="middle">KV 环传</text>';
+
+  /* 下半：数据流时间线 */
+  var TY=GY+GH+40;
+  s+='<text x="460" y="'+(TY)+'" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">数据流：以 CP0 内的 TP0 为例</text>';
+
+  var steps=[
+    {l:'输入\nS/CP=512',         w:68,  fill:CPBG, stroke:CPc, shape:'[B,512,H]'},
+    {l:'SP 区\nLayerNorm',       w:72,  fill:SPBG, stroke:CPc, shape:'[B,256,H]', note:'SP 切 s'},
+    {l:'AllGather\n(TP 组内)',    w:62,  fill:'#F8F5F0', stroke:'#D4A76A', comm:1, note:'拼 s'},
+    {l:'TP 区\nAttn+MLP',        w:82,  fill:TPBG, stroke:TPc, shape:'[B,512,H/2]', note:'TP 切 h'},
+    {l:'ReduceScatter\n(TP 组内)', w:76, fill:'#F8F5F0', stroke:'#D4A76A', comm:1, note:'加+切 s'},
+    {l:'SP 区\nDropout',          w:68,  fill:SPBG, stroke:CPc, shape:'[B,256,H]'},
+    {l:'→ 下一层\n或 PP P2P',      w:72,  fill:'#fff', stroke:'#CFD8DD', shape:'[B,256,H]'}
+  ];
+
+  var tx=40, ty=TY+14, tGap=8;
+  steps.forEach(function(st,si){
+    var rx=st.comm?20:5;
+    s+='<rect x="'+tx+'" y="'+ty+'" width="'+st.w+'" height="54" rx="'+rx+'" fill="'+st.fill+'" stroke="'+st.stroke+'" stroke-width="'+(st.comm?1:1.2)+'"'+(st.comm?' stroke-dasharray="4 2"':'')+'/>';
+
+    var lines=st.l.split('\n');
+    lines.forEach(function(ln,li){
+      s+='<text x="'+(tx+st.w/2)+'" y="'+(ty+16+li*13)+'" font-size="8" fill="'+INK+'" font-weight="'+(st.comm?400:600)+'" text-anchor="middle">'+ln+'</text>';
+    });
+
+    if(st.shape){
+      s+='<text x="'+(tx+st.w/2)+'" y="'+(ty+44)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">'+st.shape+'</text>';
+    }
+    if(st.note){
+      s+='<text x="'+(tx+st.w/2)+'" y="'+(ty-4)+'" font-size="7" fill="'+(st.comm?'#A07030':CPc)+'" font-weight="600" text-anchor="middle">'+st.note+'</text>';
+    }
+
+    if(si<steps.length-1){
+      s+='<path d="M'+(tx+st.w)+' '+(ty+27)+' L'+(tx+st.w+tGap)+' '+(ty+27)+'" stroke="'+DIM+'" stroke-width="1" fill="none" marker-end="url(#csp-ar)"/>';
+    }
+
+    tx+=st.w+tGap;
+  });
+
+  /* Ring Attention 标注 */
+  var raBoxX=steps[0].w+steps[1].w+steps[2].w+3*tGap+40;
+  s+='<text x="'+(raBoxX+steps[3].w/2)+'" y="'+(ty+54+12)+'" font-size="7.5" fill="'+CPc+'" font-weight="700" text-anchor="middle">↕ 此处 Ring Attention 在 CP 组间交换 KV</text>';
+
+  /* 底部结论 */
+  var BY=H-56;
+  s+='<rect x="30" y="'+BY+'" width="'+(W-60)+'" height="48" rx="6" fill="#FFF8F4" stroke="'+INK+'" stroke-width="1.4"/>';
+  s+='<text x="48" y="'+(BY+18)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">两刀效果相乘</tspan>：激活显存从 [B, S, H] 缩到 [B, S/(CP·TP), H]。CP 缩短序列，SP 缩小每卡存储。</text>';
+  s+='<text x="48" y="'+(BY+36)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">通信互不冲突</tspan>：SP 的 AG/RS 在 <tspan fill="'+TPc+'" font-weight="700">TP 组内</tspan>，Ring Attention 在 <tspan fill="'+CPc+'" font-weight="700">CP 组间</tspan>——不同通信域，不同算子。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 04C · TP 列切-行切配对：MLP 块数据流 ===================== */
 function figSlice(){
   var m=document.getElementById('fig-slice'); if(!m) return;
@@ -4317,6 +4589,7 @@ function setupRail(){
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
    ['fig-sp',figSP], ['fig-ring-step',figRingStep],
+   ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
