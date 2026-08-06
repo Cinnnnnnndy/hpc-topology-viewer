@@ -200,6 +200,14 @@
 }
 /* 副本是死的克隆：不吃指针，也别让它里面的浮层跑到格子外面去 */
 .pt-deck.is-tiled > .pt-dpclone{pointer-events:none}
+/* 缩略骨架：密排时代替整份 DAG。块的位置用**百分比**给，格子一缩放它自己
+   跟着缩，不需要重排也不需要重克隆——这正是它比克隆便宜的第二层原因。 */
+.pt-deck .pt-thumb{position:absolute; inset:0; overflow:hidden; background:var(--pt-s1); z-index:1}
+.pt-deck .pt-thumb i{position:absolute; display:block; border-radius:1px; opacity:.85}
+/* 0 号格是活的 sidecar（克隆的来源，必须留着）。密排时它得和其余 31 格长一样，
+   否则一屏里唯独第一格是另一种画法，看着像渲染坏了——盖一层同样的骨架，
+   底下那份留在原地不动。 */
+.pt-deck.is-tiled.is-dense > .pt-deckhost.is-thumbed > *:not(.pt-thumb):not(.pt-dpcap):not(.pt-dpcut){visibility:hidden}
 /* sidecar 自带一整条顶栏（3D/正视/侧视 + PP/TP/EP/DP + 数据/主题/适配）——
    视角和刀都由本页工具条统管，它那条会是第二套互相打架的控件，藏掉。 */
 .pt-deck .pto-model-deck__toolbar,
@@ -1791,8 +1799,17 @@ function netScene(D, g, box, step){
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
     if(colFade < 0.999) body.push('<g opacity="'+colFade.toFixed(3)+'">');
-    for(var lq = 0; lq < (ui.netOff ? 0 : L); lq++){
+    /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
+       降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
+       `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
+       32 层 × 62 节点 ≈ 6.3 万次——实测每帧 79ms，转台拖不动就是这么来的。
+       画不出东西的循环不该跑：卡维度下非焦点列只剩卡壳（层板本来就不画），
+       全景下只留首尾两层的层板（那是「有一叠在那儿」的轮廓）。 */
+    var lqSkip = lowDetail && !isF;
+    var LQN = (ui.netOff || (lqSkip && ui.cardMode)) ? 0 : L;
+    for(var lq = 0; lq < LQN; lq++){
       var li = wDesc ? (L-1-lq) : lq;
+      if(lqSkip && li !== 0 && li !== L-1) continue;
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
@@ -3720,7 +3737,7 @@ function renderDeck(D){
     var tiled0 = $('deck').classList.contains('is-tiled');
     if(tiled0) paintCuts($('deckHost'), D, 0, 0, 0);
     else paintCuts($('deckHost'), D);
-    deckAxD = D; watchDeckLayout();
+    deckAxD = D; watchDeckLayout(); syncMasterThumb(D);
     setTimeout(function(){ paintDeckAxes(D); }, 60);
   }, 220);
   return true;
@@ -3853,13 +3870,25 @@ function watchDeckLayout(){
 /* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
    直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
    放大出来的是真的更清楚，不是糊的。 */
+var deckZoomRaf = 0;
 function applyDeckZoom(){
-  var host = $('deck');
-  if(!host.classList.contains('is-tiled')) return;
-  var base = +host.dataset.cw || 60, n = +host.dataset.n || 1;
-  var cw = Math.round(base * deckZoom);
-  host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
-  host.classList.toggle('is-dense', cw < 150);
+  /* 列宽的写入合并到下一帧：0 号格是**活的** sidecar，列宽一改它的
+     ResizeObserver 就重新 fit 一次（要把 5,686 个节点重新量一遍位置）。
+     滚轮一串十几格，每格都写就是十几次 fit——实测 8 格要 11 秒。
+     合并之后一串滚轮只落一次布局、一次 fit。 */
+  if(deckZoomRaf) return;
+  deckZoomRaf = requestAnimationFrame(function(){
+    deckZoomRaf = 0;
+    var host = $('deck');
+    if(!host.classList.contains('is-tiled')) return;
+    var base = +host.dataset.cw || 60, n = +host.dataset.n || 1;
+    var cw = Math.round(base * deckZoom);
+    host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
+    host.classList.toggle('is-dense', cw < 150);
+    /* 骨架用百分比定位，自己跟着格子缩，不用管；真 DAG 那几份是死 DOM，
+       尺寸变了要重抄——防抖到滚轮停下再抄。 */
+    if(deckAxD) recloneAll(deckAxD);
+  });
 }
 $('deck').addEventListener('wheel', function(ev){
   var host = $('deck');
@@ -3869,21 +3898,129 @@ $('deck').addEventListener('wheel', function(ev){
   deckZoom = clamp(deckZoom * (ev.deltaY < 0 ? 1.12 : 1/1.12), 1, 14);
   applyDeckZoom();
 }, {passive:false});
-function mountClone(slot, D){
-  if(slot.dataset.mounted) return;
-  slot.dataset.mounted = '1';
-  try{
-    deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
-      preset:'openpangu-flash', initialView:(ui.viewTab==='side'?'right':'front'), parallelMode:frontMode(D),
-      initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
-      metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
-    }));
-    var made = deckClones[deckClones.length-1];
-    setTimeout(function(){ dualFrontMarks(made, D, slot); paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)); }, 200);
-  }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
-  /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
+/* 放大之后横向滚动会换一批可见格子——真 DAG 那几份要跟着挪过去（防抖同缩放） */
+$('deck').addEventListener('scroll', function(){
+  if(deckAxD && $('deck').classList.contains('is-tiled')) recloneAll(deckAxD);
+}, {passive:true});
+/* ── 副本靠克隆，不各渲染一份 ──────────────────────────────────────────
+   32 只格子渲染的是**同一份**内容：同 preset、同 view、同 parallelMode，
+   sidecar 不知道也不关心这一格代表哪张卡——每格的不同全在我们自己那层叠加
+   （门牌 / 刀口条 / 桶号 / EP 框）。所以只让 0 号格真渲染，其余克隆它的 DOM。
+   省掉的是 31 次 5,686 节点的构建、31 只 ResizeObserver、31 次 fit——实测
+   32 格铺满从 10.7 秒降到 1 秒出头，滚轮缩放从每格 2 秒降到一次防抖重克隆。
+   克隆成立的前提是**每格等大**：grid 本来就是等宽等高，那套 inline style 量的
+   是同样大的容器，抄过去逐像素相同。
+   （早先注释说「克隆会散成一条」——那是在 master 还没 fit 完就抄的情形；
+   这里等 fit 彻底落地之后才抄，量出来的位置已经写进 style 了。） */
+/* ── 缩略骨架：密排格子里代替整份 DAG ─────────────────────────────────
+   一屏 32 格时每格才 50-60px 宽，那里塞一份 5,686 节点的完整 DAG，读者一个
+   字都看不见，浏览器却要为 31 份**一模一样**的内容做 18 万次样式解析——实测
+   铺满 10.7 秒、滚轮缩放一格 2 秒，卡的就是这个（换成 cloneNode 也一样慢：
+   贵的是节点进文档，不是怎么造出来的）。
+   密排时改画真图的骨架：同一份 OPENPANGU_GRAPH，40 来个算子按原坐标缩成小
+   块，位置用百分比 ⇒ 格子缩放它自己跟着缩。data-node 照给，所以刀口条那层
+   叠加一行都不用改。放大到读得清了（cw ≥ 150）再换回真 DAG。 */
+var THUMB_HTML = '';
+function deckThumb(D){
+  if(THUMB_HTML) return THUMB_HTML;
+  var IX = graphIndex(); if(!IX) return '';
+  var G = IX.G, W = G.width || 1000, H = G.height || 4200;
+  var sh0 = shardMap(D, 0) || {};
+  var out = [];
+  G.nodes.forEach(function(n){
+    if(n.kind !== 'op') return;                    /* 张量与分组框不进骨架：它们是标注不是内容 */
+    var s1 = sh0[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || (EXTRA_BY[n.id] || [])[0];
+    var col = by0 ? dimColor(by0.dim) : 'var(--pt-fg3)';
+    var comm = n.colorKey === 'opv:comm';
+    out.push('<i data-node="'+esc(n.id)+'" style="left:'+((n.x-n.width/2)/W*100).toFixed(2)
+      + '%;top:'+((n.y-n.height/2)/H*100).toFixed(2)
+      + '%;width:'+(n.width/W*100).toFixed(2)+'%;height:'+Math.max(0.25, n.height/H*100).toFixed(2)
+      + '%;background:'+(comm ? 'transparent' : mix(col, 46))
+      + ';box-shadow:inset 0 0 0 .5px '+col+'"></i>');
+  });
+  THUMB_HTML = '<div class="pt-thumb">'+out.join('')+'</div>';
+  return THUMB_HTML;
+}
+function cloneMaster(slot){
+  var master = $('deckHost');
+  if(!master || !slot || slot === master) return false;
+  var kids = master.children, frag = document.createDocumentFragment(), i, n = 0;
+  for(i = 0; i < kids.length; i++){
+    var el = kids[i];
+    /* 我们自己那层的直接子节点不抄：门牌与切分角标各格不同，另画 */
+    if(el.classList && (el.classList.contains('pt-dpcap') || el.classList.contains('pt-dpcut'))) continue;
+    frag.appendChild(el.cloneNode(true));
+    n++;
+  }
+  if(!n) return false;
+  slot.textContent = '';
+  slot.appendChild(frag);
+  return true;
+}
+/* 放大之后哪几格给真 DAG。两条约束：
+   ① 只给**看得见**的（视口外的格子读者根本不在看）；
+   ② 再设一个硬上限——32 格全给真 DAG 是 18 万节点、实测 76 秒，而且那 31 份
+      内容**一模一样**（sidecar 不知道自己代表哪张卡），多铺几份不多给一点信息，
+      每格真正的身份全在我们那层叠加上。 */
+var FULL_CAP = 4;
+function pickFull(host, slots){
+  if(host.classList.contains('is-dense')) return [];
+  var sl = host.scrollLeft, vw = host.clientWidth, st = host.scrollTop, vh = host.clientHeight, out = [];
+  slots.forEach(function(s){
+    if(out.length >= FULL_CAP) return;
+    var l = s.offsetLeft, t2 = s.offsetTop;
+    if(l + s.offsetWidth > sl && l < sl + vw && t2 + s.offsetHeight > st && t2 < st + vh) out.push(s);
+  });
+  return out;
+}
+function mountClone(slot, D, want){
+  want = want || 'thumb';
+  if(slot.dataset.mounted === want) return;
+  slot.dataset.mounted = want;
+  if(want === 'thumb'){
+    slot.innerHTML = deckThumb(D);
+  } else {
+    /* 克隆连 master 上那批刀口条一起抄了下来（它们挂在算子节点里面），
+       paintCuts 进门先清一遍再按**这一格自己的**坐标重画。 */
+    if(!cloneMaster(slot)) slot.innerHTML = deckThumb(D);
+  }
+  paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
   slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
     + cutTag(D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)));
+}
+/* 0 号格：活的 sidecar 留着（克隆的来源），密排时在它上面盖一层骨架，
+   让一屏 32 格是同一种画法。放大到读得清了就把骨架撤掉，露出真 DAG。 */
+function syncMasterThumb(D){
+  var host = $('deck'), m = $('deckHost');
+  if(!m) return;
+  var want = host.classList.contains('is-tiled') && host.classList.contains('is-dense');
+  var cur = m.querySelector(':scope > .pt-thumb');
+  m.classList.toggle('is-thumbed', want);
+  if(want && !cur){
+    m.insertAdjacentHTML('beforeend', deckThumb(D));
+    paintCuts(m, D, 0, 0, 0);                 /* 刀口条改挂到骨架上（paintCuts 里骨架优先） */
+  } else if(!want && cur){
+    cur.remove();
+    paintCuts(m, D, 0, 0, 0);
+  }
+}
+/* master 重新 fit（缩放 / 改尺寸）之后，各格的克隆是旧尺寸的——重抄一遍。
+   克隆是原生操作，31 份一起也就几十毫秒，比 31 次 fit 便宜两个数量级。 */
+var deckReclT = 0;
+function recloneAll(D){
+  clearTimeout(deckReclT);
+  deckReclT = setTimeout(function(){
+    if(ui.view !== 'chain' || (ui.viewTab !== 'front' && ui.viewTab !== 'side')) return;
+    var host = $('deck');
+    var slots = Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'));
+    if(!slots.length) return;                 /* 还没铺格子（tileLayout 刚清过），没什么可抄 */
+    /* 档位没变的格子 mountClone 直接返回——所以密排下滚轮缩放是零成本
+       （骨架用百分比定位，自己跟着格子缩，一个节点都不用动）。 */
+    var full = pickFull(host, slots);
+    slots.forEach(function(slot){ mountClone(slot, D, full.indexOf(slot) >= 0 ? 'full' : 'thumb'); });
+    syncMasterThumb(D);
+    paintDeckAxes(D);
+  }, 220);
 }
 /* 这一格里 TP/EP 各切了几份。跟着刀开关走——关掉 TP 这一格就真的不写 TP，
    否则「TP 按钮按下去没有任何反应」。卡维度下还要标出本卡拿的是第几片/第几桶。 */
@@ -3915,7 +4052,10 @@ function paintCuts(rootEl, D, cellD, cellT, cellC){
     } else if(by0.dim === 'ep' && ui.kEP && D.moe && D.ep > 1){
       n2 = D.ep; mineI = me2 ? me2.ep : -1; col2 = VC.ep;
     } else return;
-    var node = rootEl.querySelector('[data-node="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+    var q2 = '[data-node="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]';
+    /* 骨架优先：0 号格密排时骨架盖在活 sidecar 上面，刀口条得挂到看得见的
+       那一份上，否则它躲在被 visibility:hidden 的那棵子树里。 */
+    var node = rootEl.querySelector('.pt-thumb ' + q2) || rootEl.querySelector(q2);
     if(!node) return;
     var bar = document.createElement('span');
     bar.className = 'pt-cutbar';
@@ -4017,6 +4157,14 @@ function paintDeckAxes(D){
         }
         var on9 = coS && coS.d === d2 && (cc <= 1 || coS.c === c2);
         l3 = put(null, 'ep' + list9.join('·ep'), VC.ep, !!on9);
+        /* 为什么是两个桶：没开 Rank 时一格 = 一份完整复制体（DP·CP 定位），
+           里面还叠着 tp 张卡没摊开，而 EP 桶号是从 (t,c,d) 导出的——t 一变
+           桶号就变。所以这一格装着 tp 个桶，逐个写出来。打开 Rank 把 tp 摊成
+           行之后，每格就只剩一个桶号了。 */
+        l3.title = '这一格是一份完整复制体，里面叠着 ' + D.tp + ' 张卡（TP·SP 0–' + (D.tp-1)
+          + '）——EP 桶号由 (tp, cp, dp) 导出，t 一变桶就变，所以这一格装着 '
+          + list9.length + ' 个桶：' + list9.map(function(e){ return 'ep'+e; }).join('、')
+          + '。打开 Rank 把 TP 摊成行，每格就只剩一个桶。';
       }
       l3.style.left = (x + r.width/2) + 'px';
       /* 贴在格子**里面**的下沿，不是外面：挂到外面就正好压在下一行格子的顶上
@@ -4154,9 +4302,15 @@ function tileClone(n, D){
      总时长不变，但布局和编号立刻就在，格子一个接一个填上去，中途页面一直能动。 */
   var queue = slots.slice();
   (function pump(){
-    if(!queue.length) return;
+    if(!queue.length){
+      /* dualFrontMarks 把 TP 那批标注补回 master 是异步的（它自己排在 160ms
+         之后），克隆很可能抄在那之前。收尾再抄一遍，让各格和 master 一致。 */
+      if(ui.viewTab === 'front') recloneAll(D);
+      return;
+    }
     if(ui.view!=='chain' || (ui.viewTab!=='front' && ui.viewTab!=='side')) return;   /* 中途切走就别建了 */
-    mountClone(queue.shift(), D);
+    /* 骨架一份才 40 个块，一帧铺 8 份，32 格两三帧就落地 */
+    for(var b8 = 0; b8 < 8 && queue.length; b8++) mountClone(queue.shift(), D, 'thumb');
     requestAnimationFrame(pump);
   })();
 }
