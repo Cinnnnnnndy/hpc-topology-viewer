@@ -476,7 +476,11 @@ var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall
 var PRESETS = [
   {id:'default128', name:'默认·128卡 tp2·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
-  {id:'longcp', name:'长序列CP·64卡', cfg:{world:64, tp:4, cp:4, pp:2, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:131072, experts:0, topk:0, mbs:1, ga:16, hbm:64}},
+  /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
+     e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
+     写成 experts:0 会让 EP 按钮凭空不见，像是被 CP 挤掉了，实则是配置把模型换掉了。
+     ep·etp=8 ≤ tp·cp=16：EP 组不咬 DP，但会跨到 CP 轴——epSpanText 实算给出 cp×2。 */
+  {id:'longcp', name:'长序列CP·64卡 tp4·cp4·pp2·ep8', cfg:{world:64, tp:4, cp:4, pp:2, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:131072, experts:64, topk:8, mbs:1, ga:16, hbm:64}},
   {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64}},
   {id:'story128', name:'故事·128卡 tp2·pp4·dp16（48层·H8192）', cfg:{world:128, tp:2, cp:1, pp:4, ep:1, etp:1, layers:48, hidden:8192, heads:64, kv:8, ffn:32768, vocab:128256, seq:8192, experts:0, topk:0, mbs:4, ga:8, hbm:64}},
   {id:'pangu', name:'盘古ProMoE·4000卡', cfg:{world:4000, tp:8, cp:1, pp:5, ep:2, etp:1, layers:40, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:64, topk:8, mbs:1, ga:20, hbm:64}},
