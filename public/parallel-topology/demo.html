@@ -311,6 +311,35 @@
 /* 抽离图 / 折叠提示：舞台内底部浮动 */
 .pt-detach{left:14px; bottom:12px; width:min(600px, 62%); z-index:7; padding:10px 12px}
 .pt-detach svg{width:100%; height:auto; display:block}
+/* 图例：压在左下角的浮层。它是**对照表**不是正文——每行一个真形状 + 一句话，
+   形状用内联 SVG 画，和画布上那一笔走同一套颜色与描边，不能是「差不多的示意」。 */
+.pt-legend{
+  position:absolute; left:14px; bottom:12px; z-index:7;
+  width:min(310px, 46%); max-height:calc(100% - 96px); overflow:auto;
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:12px;
+  padding:9px 11px 10px; font-size:11px; color:var(--pt-fg2); line-height:1.5;
+  box-shadow:0 8px 28px rgba(0,0,0,.14);
+}
+.pt-legend h5{
+  margin:0 0 7px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--pt-fg3);
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+}
+.pt-legend h5 button{
+  border:0; background:none; color:var(--pt-fg3); cursor:pointer;
+  font-size:14px; line-height:1; padding:0 2px;
+}
+.pt-legend h5 button:hover{color:var(--pt-fg)}
+.pt-legend .lg-sec{
+  margin:8px 0 4px; font-weight:700; color:var(--pt-fg); font-size:10.5px;
+  border-top:1px solid var(--pt-bd); padding-top:7px;
+}
+.pt-legend .lg-sec:first-of-type{border-top:0; margin-top:0; padding-top:0}
+.pt-legend .lg-row{display:flex; gap:8px; align-items:flex-start; margin:4px 0}
+.pt-legend .lg-row svg{flex:0 0 auto; margin-top:1px}
+.pt-legend .lg-row b{color:var(--pt-fg); font-weight:700}
+.pt-legend .lg-row i{font-style:normal; color:var(--pt-fg3)}
+.pt-legend code{font-family:var(--pt-mono); font-size:10px; background:var(--pt-s2); padding:.5px 4px; border-radius:4px}
 .pt-note{
   position:absolute; left:14px; bottom:12px; z-index:5; max-width:min(520px, 60%);
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-left:3px solid var(--pt-fg);
@@ -396,6 +425,7 @@
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
     <div class="pt-card pt-drawer" id="drawer" hidden></div>
     <div class="pt-card pt-detach" id="detach" hidden></div>
+    <div class="pt-legend" id="legend" hidden></div>
     <div class="pt-note" id="stageNote" hidden></div>
   </div>
   <footer class="pt-foot">
@@ -463,7 +493,7 @@ var ui = {
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
   cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
-  commOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
+  commOn:false, legendOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
   layersUser:{}, revLayer:'', drawer:'', selLayerOff:0
 };
@@ -558,6 +588,7 @@ function urlLoad(){
   if(q.get('card')==='1' || q.get('rank')==='1') ui.cardMode = true;
   if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
   if(q.get('comm')==='1') ui.commOn = true;
+  if(q.get('legend')==='1') ui.legendOn = true;
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -583,6 +614,7 @@ function urlWrite(){
   }
   if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
   if(ui.view==='chain' && ui.commOn) q.set('comm','1');
+  if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
   if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
@@ -4018,6 +4050,114 @@ function renderChain(D){
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 /* ── 工具条：切分开关（叠加） + 视角 tab（互斥）。SVG 舞台和 sidecar 两条分支共用 ── */
+/* ── 图例：画面上每种形状到底在说什么 ────────────────────────────────────────
+   这一屏的信息全在**形状**里：斜纹不是装饰、横切和竖切不是同一件事、胶囊和
+   方块是两类东西（一个是地址，一个是容器）。不给一张对照表，这些只能靠猜。
+   两条纪律：
+     · 每一行的小图**用画布上同一套颜色与描边画**，不能是「差不多的示意」——
+       对照表跟被对照的东西长得不一样，就不是对照表了；
+     · 只列**这一屏此刻真有的**：刀抬起来了、模型不是 MoE、通信图层关着，
+       对应那几行就不出现。一张永远长一样的图例等于没有图例。 */
+function lgGlyph(inner, w, h){
+  return '<svg width="'+(w||26)+'" height="'+(h||14)+'" viewBox="0 0 '+(w||26)+' '+(h||14)+'">'+inner+'</svg>';
+}
+function lgRow(g, t){ return '<div class="lg-row">'+g+'<div>'+t+'</div></div>'; }
+function renderLegend(D){
+  var el = $('legend'); if(!el) return;
+  el.hidden = !ui.legendOn || (ui.cardMode && ui.netOff);
+  if(el.hidden){ el.innerHTML = ''; return; }
+  var cutTP = ui.kTP && D.tp > 1, cutCP = ui.kCP && D.cp > 1,
+      cutEP = ui.kEP && D.moe && D.ep > 1, cutDP = ui.kDP && D.dp > 1;
+  /* 纹路只在 defs 里定义过（那是舞台那张 SVG 的），这里各画各的小图，
+     所以斜纹/横纹直接用几条线画出来，不引 url(#hx…)。 */
+  function hatch(col, horiz){
+    var l = [], i;
+    for(i = -10; i < 30; i += 4)
+      l.push(horiz ? '<line x1="0" y1="'+(i%14+1)+'" x2="26" y2="'+(i%14+1)+'" style="stroke:'+col+';stroke-width:.9"/>'
+                   : '<line x1="'+i+'" y1="0" x2="'+(i+14)+'" y2="14" style="stroke:'+col+';stroke-width:.9"/>');
+    return '<clipPath id="lgc'+(horiz?'h':'v')+col.replace(/[^a-z0-9]/gi,'')+'"><rect width="26" height="14"/></clipPath>'
+      + '<g clip-path="url(#lgc'+(horiz?'h':'v')+col.replace(/[^a-z0-9]/gi,'')+')">'+l.join('')+'</g>'
+      + '<rect width="26" height="14" style="fill:none;stroke:'+col+';stroke-width:.9"/>';
+  }
+  var h = ['<h5><span>图例 · 这些形状在说什么</span><button data-act="legendtoggle" title="收起">×</button></h5>'];
+
+  h.push('<div class="lg-sec">刀痕的方向 = 它切的那根轴</div>');
+  h.push(lgRow(lgGlyph('<rect x=".5" y=".5" width="8" height="13" style="fill:'+mix(VC.tp,66)+';stroke:'+VC.tp+';stroke-width:.9"/>'
+    + '<g transform="translate(9,0)">'+hatch(VC.tp,false).replace(/26/g,'17')+'</g>'),
+    '<b>竖切 = h 轴</b>（特征维）。<b style="color:'+VC.tp+'">TP</b> 切 head / hidden / ffn / vocab'
+    + (D.moe ? '、<b style="color:'+VC.ep+'">EP</b> 切 expert' : '') + '。'));
+  h.push(lgRow(lgGlyph('<rect x=".5" y=".5" width="25" height="4" style="fill:'+mix(VC.cp,66)+';stroke:'+VC.cp+';stroke-width:.9"/>'
+    + '<g transform="translate(0,5)">'+hatch(VC.cp,true).replace(/height="14"/g,'height="9"')+'</g>'),
+    '<b>横切 = s 轴</b>（序列维）。<b style="color:'+VC.cp+'">CP</b> 切 ctx、<b style="color:'+VC.tp+'">SP</b> 切 token。'
+    + '<i> 两个都叫「序列并行」，切的确实是同一根轴。</i>'));
+  h.push(lgRow(lgGlyph('<rect x=".5" y=".5" width="12" height="6.5" style="fill:'+mix(VC.tp,66)+';stroke:'+VC.tp+';stroke-width:.9"/>'
+    + '<rect x="13" y=".5" width="12" height="6.5" style="fill:none;stroke:'+VC.tp+';stroke-width:.6;opacity:.5"/>'
+    + '<rect x=".5" y="7.5" width="12" height="6" style="fill:none;stroke:'+VC.cp+';stroke-width:.6;opacity:.5"/>'
+    + '<rect x="13" y="7.5" width="12" height="6" style="fill:none;stroke:'+VC.tp+';stroke-width:.6;opacity:.3"/>'),
+    '<b>网格 = 两把刀都过</b>。attention 的 head 归 TP、ctx 归 CP，本卡拿其中一格'
+    + '——那就是 <code>[·, S/CP, H/TP]</code> 的形状本身。'));
+  h.push(lgRow(lgGlyph('<rect x=".5" y=".5" width="11" height="13" style="fill:'+mix(VC.tp,66)+';stroke:'+VC.tp+';stroke-width:.9"/>'
+    + '<g transform="translate(13,0)">'+hatch('var(--pt-fg3)',false).replace(/26/g,'12')+'</g>'),
+    '<b>实心 = 本卡真持有的那一份</b>，<b>纹路 = 被锯走了、不归它</b>。'
+    + '<i> 打开 Rank 后不归它的直接不画（只剩一张卡时，空片会被读成卡里凭空多出来的格子）；'
+    + '片薄到一像素以下时也不逐片画，改成整块——片数看轴上的刻度带和算子标签，如 <code>SP0/131072</code>。</i>'));
+
+  h.push('<div class="lg-sec">画面上的几何体</div>');
+  h.push(lgRow(lgGlyph('<rect x="1" y="1" width="16" height="12" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.1"/>'
+    + '<path d="M17 1 L24 4 L24 13 L17 13" style="fill:none;stroke:var(--pt-fg2);stroke-width:.7"/>'),
+    (ui.cardMode ? '<b>卡壳</b>＝<b>一张卡</b>：五刀的交集恰好是它装的全部字节。'
+                 : '<b>层板</b>＝<b>一层</b>。打开 Rank 之后换成卡壳（一只 = 一张卡）。')));
+  h.push(lgRow(lgGlyph('<rect x="1" y="1" width="24" height="12" style="fill:none;stroke:var(--pt-bd);stroke-width:.8"/>'
+    + '<rect x="3.5" y="3.5" width="5" height="7" style="fill:'+mix(VC.tp,40)+';stroke:var(--pt-bds);stroke-width:.6"/>'
+    + '<rect x="10" y="3.5" width="4" height="7" style="fill:'+mix(VC.cp,40)+';stroke:var(--pt-bds);stroke-width:.6"/>'
+    + '<rect x="15.5" y="3.5" width="7" height="7" style="fill:'+mix(VC.ep,40)+';stroke:var(--pt-bds);stroke-width:.6"/>'),
+    '<b>层里的小方块 = 一个算子</b>，位置与大小照抄 openPangu 真图，不是示意。'));
+  h.push(lgRow(lgGlyph('<rect x="1" y="2" width="24" height="10" rx="5" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:1"/>'
+    + '<text x="13" y="9.4" text-anchor="middle" style="font:700 6.5px ui-monospace,monospace;fill:'+VC.dp+'">DP0</text>'),
+    '<b>胶囊门牌 = rank 坐标</b>（DP0 / TP1 / PP2 / CP0 / ep3…）。<i>它是地址，没有体积也没有容量——所以永远画成文字，不给几何体。</i>'));
+  h.push(lgRow(lgGlyph('<rect x="1" y="1" width="24" height="12" rx="6" style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1"/>'
+    + '<text x="13" y="9.6" text-anchor="middle" style="font:800 7px sans-serif;fill:var(--pt-fg)">入口</text>'),
+    '<b>入口 / 出口</b>：只有首末两层才有的算子（词嵌入 / Final Norm + LM Head + MTP 尾巴）。'
+    + '<i> 悬停看具体是哪几个、各被哪把刀切。</i>'));
+  if(cutEP) h.push(lgRow(lgGlyph('<rect x="1" y="1" width="24" height="12" style="fill:none;stroke:'+VC.ep+';stroke-width:1.4"/>'
+    + '<line x1="9" y1="1" x2="9" y2="13" style="stroke:'+VC.ep+';stroke-width:.5;opacity:.5"/>'
+    + '<line x1="17" y1="1" x2="17" y2="13" style="stroke:'+VC.ep+';stroke-width:.5;opacity:.5"/>'),
+    '<b style="color:'+VC.ep+'">EP 组框</b>：框住的那几张卡合起来正好凑齐<b>全部专家</b>，也就是 all-to-all 的对端。'
+    + '<i> 折叠发生在一个 PP 段之内，所以框按段画、不跨段。</i>'));
+
+  h.push('<div class="lg-sec">颜色 = 哪把刀</div>');
+  var dims = [['dp','DP','复印整网（切的是 batch，不是模型）', cutDP],
+              ['pp','PP','沿层深切成 '+D.pp+' 段', ui.kPP],
+              ['cp','CP','切输入序列 s（全程）', cutCP],
+              ['tp','TP','锯进算子内部切 h；带着 SP 切 s', cutTP],
+              ['ep','EP','专家分桶（只有 MoE 层有 e 这根轴）', cutEP]];
+  h.push('<div class="lg-row"><div>' + dims.map(function(d){
+    return '<span style="display:inline-flex;align-items:center;gap:4px;margin:0 9px 3px 0;opacity:'+(d[3]?1:.38)+'">'
+      + '<span style="width:9px;height:9px;border-radius:2px;background:'+VC[d[0]]+';display:inline-block"></span>'
+      + '<b style="color:'+VC[d[0]]+'">'+d[1]+'</b></span>';
+  }).join('') + '<br><i>灰掉的是这一屏没落下的刀（或这个模型没有那根轴）。</i></div></div>');
+
+  if(ui.commOn){
+    h.push('<div class="lg-sec">通信图层</div>');
+    h.push(lgRow(lgGlyph('<path d="M2 12 Q13 1 24 12" style="fill:none;stroke:'+VC.tp+';stroke-width:1.2"/>'
+      + '<circle cx="2" cy="12" r="1.6" style="fill:'+VC.tp+'"/><circle cx="24" cy="12" r="1.6" style="fill:'+VC.tp+'"/>'),
+      '<b>弧线 = 一次通信</b>，两端是参与的两张卡（或算子被锯开的那条缝）。'
+      + '<i> 每条都锚在<b>产生它的那个算子</b>上：切分在哪儿留下切口，通信就欠在哪儿。</i>'));
+    h.push(lgRow(lgGlyph('<path d="M2 12 Q13 1 24 12" style="fill:none;stroke:'+VC.dp+';stroke-width:1.2;stroke-dasharray:3 2"/>'),
+      '<b>虚线 = 反向</b>（DP 的梯度 AllReduce，一个 step 只有一次）。'));
+    h.push(lgRow(lgGlyph('<line x1="1" y1="7" x2="24" y2="7" style="stroke:'+VC.tp+';stroke-width:1.1"/>'),
+      '<b>AllGather(s→h) / Reduce-Scatter(h→s)</b> 是<b>换轴器</b>：进 TP 区把沿 s 切的收齐，出 TP 区归约的同时沿 s 散开。'
+      + '<i> 总通信量与一次 AllReduce 完全相同——SP 省 TP 倍激活显存的代价就是拆成两次。</i>'));
+  }
+
+  h.push('<div class="lg-sec">读远近</div>');
+  h.push(lgRow(lgGlyph('<rect x="1" y="2" width="10" height="10" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.1"/>'
+    + '<rect x="14" y="3.5" width="8" height="7" style="fill:none;stroke:var(--pt-fg2);stroke-width:.45;opacity:.45"/>'),
+    '<b>越远越淡越细</b>（空气透视），不表示别的意思。'
+    + (ui.cardMode ? '<i> 选中的那张卡不上雾。</i>' : '')));
+
+  el.innerHTML = h.join('');
+}
 function renderChainBar(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
@@ -4025,7 +4165,11 @@ function renderChainBar(D){
   if(D.dp>1) kBtns += '<button'+(ui.kDP?' class="is-on"':'')+' data-act="knifetoggle" data-k="dp" style="--c:'+VC.dp+'" title="DP 复印">DP</button>';
   kBtns += '<button'+(ui.kPP?' class="is-on"':'')+' data-act="knifetoggle" data-k="pp" style="--c:'+VC.pp+'" title="PP 切段">PP</button>';
   if(D.cp>1) kBtns += '<button'+(ui.kCP?' class="is-on"':'')+' data-act="knifetoggle" data-k="cp" style="--c:'+VC.cp+'" title="CP 切序列：整网全程沿 s 切；attention 是唯一要通信的地方">CP</button>';
-  if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片（同时带着 SP：同一组卡、TP 区切 h，TP 区之外切 s）">TP</button>';
+  /* 按钮上写 TP·SP 而不是 TP：SP 没有自己的开关（它复用 TP 组、不占乘数，跟着
+     TP 一起落下），但它必须在工具条上留下名字——不然「TP 一落 SP 也落」这件事
+     只存在于代码里，图上那些横着裂开的 norm 就成了没有出处的画法。
+     与 sidecar 的写法对齐：那边画的就是 TP/SP AllGather、TP/SP Reduce-Scatter。 */
+  if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片，同时带着 SP：同一组卡、同样大小——TP 区里切 h（竖），TP 区之外切 s（横）。SP 不占乘数，所以只有这一颗开关">TP·SP</button>';
   if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
   kBtns += '</span>';
   var vBtns = '<span class="pt-seg">'
@@ -4039,6 +4183,10 @@ function renderChainBar(D){
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
   /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
      不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
+  /* 图例：这一屏上每种形状都在说一件具体的事（斜纹≠装饰、横切≠竖切、
+     胶囊≠几何体），不给一张对照表就只能靠猜。默认收着，点开才占地方。 */
+  var legBtn = '<button class="pb'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle"'
+    + ' title="图例：画面上每种形状代表什么">图例</button>';
   var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
     + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
     + '通信</button>';
@@ -4056,7 +4204,8 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + commBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + cBtn + vBtns);
+  renderLegend(D);
 }
 
 function renderDimBar(D, dim){
@@ -5041,6 +5190,7 @@ document.addEventListener('click', function(ev){
   else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
   else if(act==='commtoggle'){ ui.commOn = !ui.commOn; render(); }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
+  else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; render(); }
   else if(act==='knifetoggle'){
     var kk2 = b.getAttribute('data-k');
     if(kk2==='dp') ui.kDP = !ui.kDP;
