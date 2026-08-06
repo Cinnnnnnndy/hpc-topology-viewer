@@ -3700,7 +3700,7 @@ function renderSolidCav(D){
    正视 = front view：一层的算子 DAG，DP 开着就按副本数复印成方阵。
    这两张图切分链本来就在画，那边画得准，所以是复用不是重画；3D 那张卡阵
    sidecar 没有对应物，仍走本页自己的 SVG。 */
-var deckCtl = null, deckFail = '';
+var deckCtl = null, deckFail = '', deckCfgKey = null;
 function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar); }
 /* 侧视只挂 PP 一种标注：那张图上真正在分段的就是 PP——层深方向上有实打实的
    段边界可画。TP/EP/DP 在同一张图上没有对应的边界，挂上去只是把同一条横幅
@@ -3737,20 +3737,89 @@ function dualFrontMarks(ctl, D, rootEl){
     tpMarks.forEach(function(el){ box2.appendChild(el.cloneNode(true)); });
   }, 160);
 }
-function ensureDeck(){
-  if(deckCtl || deckFail) return deckCtl;
+/* ── 正视 / 侧视那张真图必须画**本页这份配置**，不是它自带的那份 ──────────────
+   sidecar 原来是拿 preset:'openpangu-flash' 挂上去的——46 层、firstMoeLayer=2、
+   256 个路由专家、4 段 stage，全写死在 3d-deck 的预置里，跟本页的 cfg 一点关系
+   都没有。于是出现过一个当场就能看出来的矛盾：选了稠密预置（experts=0，工具条
+   按规矩不给 EP 按钮），正视里却照旧画着 Router · Top-8 / Expert Pool / EP
+   Dispatch——图上明明有专家层，却没有那把刀。**两处数字打架比没有数字更糟**。
+   3d-deck 的配置是按字段读的（layerCount 铺层、stageRanges 分段、firstMoeLayer
+   决定这一层画 Dense 还是 MoE），sidecar 又允许用 options.config 顶掉 preset，
+   所以这里照着它自带那份的形状、按本页 cfg 重算一份传进去。
+   按层号点名的那几项（DSA 层、block-post 层）按比例摊到新的层数上——它们说的是
+   「每隔几层来一次」，层数一变，原来那串下标就没有意义了。 */
+function deckConfig(D){
+  var deck = window.PtoModelArchitecture3dDeck;
+  var P = deck && deck.PRESETS && deck.PRESETS['openpangu-flash'];
+  if(!P || !D || !D.ok) return null;
+  var L = Math.max(2, D.layers|0), lps = Math.max(1, D.layersPerStage|0), i;
+  /* Dense→MoE 的换挡点与 3D 那边的 denseTop 同一口径：稠密配置下 = L，
+     也就是「一层 MoE 都没有」，3d-deck 那边 layerCount > firstMoeLayer 不成立，
+     MoE FFN 那一整条带子就不画了。 */
+  var firstMoe = D.moe ? Math.min(2, L) : L;
+  var ranges = [], reps = [];
+  for(i = 0; i < Math.max(1, D.pp); i++){
+    var lo = Math.min(L-1, i*lps), hi = Math.min(L-1, (i+1)*lps - 1);
+    ranges.push([lo, Math.max(lo, hi)]); reps.push(lo);
+  }
+  /* 保证 0..L-1 每一层都落在某个区间里：3d-deck 用 findIndex 找段，
+     找不到会拿 stageRanges[-1]，那是 undefined，当场炸。 */
+  if(ranges[ranges.length-1][1] < L-1) ranges[ranges.length-1][1] = L-1;
+  function scaleIdx(src, srcL){
+    var seen = {}, r = L / Math.max(1, srcL);
+    (src || []).forEach(function(v){ seen[Math.max(0, Math.min(L-1, Math.round(v*r)))] = 1; });
+    return Object.keys(seen).map(Number).sort(function(a,b){ return a-b; });
+  }
+  var dense = [];
+  for(i = 0; i < firstMoe && i < L; i++) dense.push(i);
+  var out = {};
+  Object.keys(P).forEach(function(k){ out[k] = P[k]; });   /* 其余字段照抄它自己的 */
+  out.layerCount = L;
+  out.firstMoeLayer = firstMoe;
+  out.denseLayers = dense;
+  out.dsaLayers = scaleIdx(P.dsaLayers, P.layerCount);
+  out.blockPostLayers = scaleIdx(P.blockPostLayers, P.layerCount);
+  out.stageRanges = ranges;
+  out.representativeLayers = reps;
+  out.frontLayer = Math.max(0, Math.min(L-1, Math.floor(L/2)));
+  out.routedExperts = D.moe ? D.experts : 0;
+  out.topK = D.moe ? D.topk : 0;
+  out.label = 'openPangu · 本页配置';
+  /* 横幅上的 ×N 也得是本页的数，不然又是一处「图上写着 EP ×8、配置里 ep=1」。
+     刀抬起来的那一维不列——它此刻没在切。 */
+  var ann = [];
+  if(ui.kTP && D.tp > 1) ann.push({kind:'tp', label:'TP ×'+D.tp+'（带 SP）· attention shard', nodeId:'attn_all_gather'});
+  if(ui.kEP && D.moe && D.ep > 1) ann.push({kind:'ep', label:'EP ×'+D.ep+' · expert routing', nodeId:'expert_pool'});
+  if(ui.kPP && D.pp > 1) ann.push({kind:'pp', label:'PP ×'+D.pp+' · layer stages', nodeId:'post_mlp_norm'});
+  if(ui.kDP && D.dp > 1) ann.push({kind:'dp', label:'DP ×'+D.dp+' · gradient replica', nodeId:'mhc_state_out'});
+  out.annotations = ann;
+  return out;
+}
+/* 同一份配置要不要重挂：sidecar 没有 setConfig，配置变了只能拆掉重来。
+   拿真正影响画面的那几项做键，别拿整个对象——annotations 每次都新建，
+   用它当键会变成每帧重挂。 */
+function deckKey(dc){
+  return dc ? [dc.layerCount, dc.firstMoeLayer, dc.routedExperts, dc.topK,
+               dc.stageRanges.map(function(r){ return r.join('-'); }).join(',')].join('/') : 'preset';
+}
+function ensureDeck(D){
+  if(deckFail) return deckCtl;
   if(!deckAvailable()){ deckFail = 'sidecar 未加载'; return null; }
+  var dc = deckConfig(D), key = deckKey(dc);
+  if(deckCtl && key === deckCfgKey) return deckCtl;
+  if(deckCtl){ try{ deckCtl.destroy(); }catch(e){} deckCtl = null; $('deckHost').innerHTML = ''; }
   try{
     deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deckHost', {
-      preset:'openpangu-flash', initialView:'right', parallelMode:'pp',
+      preset:'openpangu-flash', config:dc || undefined, initialView:'right', parallelMode:'pp',
       initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
       metricView:'structure', metricViews:[], initialLayer:null
     });
   }catch(e){ deckFail = e.message; deckCtl = null; }
+  deckCfgKey = deckCtl ? key : null;
   return deckCtl;
 }
 function renderDeck(D){
-  var c = ensureDeck();
+  var c = ensureDeck(D);
   $('stage').hidden = true;
   $('deck').hidden = false;
   if(!c){
@@ -4052,6 +4121,7 @@ function mountClone(slot, D, want){
     if(!cloneMaster(slot)) slot.innerHTML = deckThumb(D);
   }
   paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
+  /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
   slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
     + cutTag(D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)));
 }
