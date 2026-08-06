@@ -1066,6 +1066,12 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="stage" id="fig-sp"></div>
   </figure>
 
+  <figure>
+    <figcaption><span class="fnum">FIG 04E</span><span class="ftitle">SP 与 TP 的切分关系：同一组卡、不同的轴</span>
+      <span class="fnote">以 TP=2 为例。每个方块代表一层内某个位置的激活张量 [S, H] 平面。<b style="color:var(--cp)">蓝色 = 卡 0 持有</b>，<b style="color:var(--tp)">红色 = 卡 1 持有</b>。SP 区沿 s 切（横条），TP 区沿 h 切（竖条）——同一组卡在层内交替持有不同的维度。AllGather 和 ReduceScatter 就是"轴切换器"。</span></figcaption>
+    <div class="stage" id="fig-sp-tp"></div>
+  </figure>
+
   <h3>图解：列切-行切怎么配对</h3>
 
   <p>上面的代码框是「每步做什么」，下面这张图画的是「<strong>矩阵长什么样、怎么被拆开</strong>」。跟着数据流从左到右走一遍，列切-行切的不对称性就清楚了。</p>
@@ -3239,6 +3245,144 @@ function figRingStep(){
   m.innerHTML=s;
 }
 
+/* ===================== FIG 04E · SP 与 TP 切分关系：张量平面图 ===================== */
+function figSPTP(){
+  var m=document.getElementById('fig-sp-tp'); if(!m) return;
+  var W=920, H=340;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var TPc=K.tp, CPc=K.cp, INK='#0E1418', DIM='#8A98A2';
+  var C0='#D9EAF2', C1='#F9E3E5', C0s=CPc, C1s=TPc;
+
+  s+='<defs>'
+   +'<marker id="stp-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+DIM+'"/></marker>'
+   +'</defs>';
+
+  s+='<text x="460" y="18" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">一层内部的激活张量 [S, H]——同一组卡，切的轴在交替</text>';
+
+  var PW=90, PH=90, GAP=16;
+  var stages=[
+    {label:'SP 区\nLayerNorm', mode:'s', zone:'sp'},
+    {label:'AllGather', mode:'comm', op:'沿 s 拼回'},
+    {label:'TP 区\nAttention', mode:'h', zone:'tp'},
+    {label:'ReduceScatter', mode:'comm', op:'加 + 沿 s 切开'},
+    {label:'SP 区\nDropout', mode:'s', zone:'sp'},
+    {label:'AllGather', mode:'comm', op:'沿 s 拼回'},
+    {label:'TP 区\nMLP', mode:'h', zone:'tp'},
+    {label:'ReduceScatter', mode:'comm', op:'加 + 沿 s 切开'}
+  ];
+
+  var totalW=0;
+  stages.forEach(function(st){
+    totalW += (st.mode==='comm' ? 56 : PW) + GAP;
+  });
+  totalW -= GAP;
+  var sx = (W - totalW) / 2;
+  var sy = 50;
+
+  stages.forEach(function(st, si){
+    var w = st.mode==='comm' ? 56 : PW;
+
+    if(st.mode==='s'){
+      /* SP: 沿 s 切——上下两个横条 */
+      s+='<rect x="'+sx+'" y="'+sy+'" width="'+w+'" height="'+(PH/2)+'" rx="0" fill="'+C0+'" stroke="'+C0s+'" stroke-width="1.2"/>';
+      s+='<rect x="'+sx+'" y="'+(sy+PH/2)+'" width="'+w+'" height="'+(PH/2)+'" rx="0" fill="'+C1+'" stroke="'+C1s+'" stroke-width="1.2"/>';
+      /* 卡标签 */
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH/4+4)+'" font-size="8" fill="'+C0s+'" font-weight="700" text-anchor="middle">卡 0</text>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH*3/4+4)+'" font-size="8" fill="'+C1s+'" font-weight="700" text-anchor="middle">卡 1</text>';
+      /* 轴标签 */
+      s+='<text x="'+(sx-4)+'" y="'+(sy+PH/2+4)+'" font-size="7" fill="'+DIM+'" text-anchor="end" font-weight="600">S</text>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH+12)+'" font-size="7" fill="'+DIM+'" text-anchor="middle" font-weight="600">H</text>';
+      /* 切线 */
+      s+='<path d="M'+(sx-2)+' '+(sy+PH/2)+' L'+(sx+w+2)+' '+(sy+PH/2)+'" stroke="'+INK+'" stroke-width="1.8" stroke-dasharray="4 2"/>';
+      /* 维度标注 */
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy-6)+'" font-size="7.5" fill="'+(st.zone==='sp'?CPc:TPc)+'" font-weight="700" text-anchor="middle">切 s</text>';
+      /* shape 标注 */
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH+24)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,S/2,H]</text>';
+    } else if(st.mode==='h'){
+      /* TP: 沿 h 切——左右两个竖条 */
+      s+='<rect x="'+sx+'" y="'+sy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C0+'" stroke="'+C0s+'" stroke-width="1.2"/>';
+      s+='<rect x="'+(sx+w/2)+'" y="'+sy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C1+'" stroke="'+C1s+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx+w/4)+'" y="'+(sy+PH/2+4)+'" font-size="8" fill="'+C0s+'" font-weight="700" text-anchor="middle">卡 0</text>';
+      s+='<text x="'+(sx+w*3/4)+'" y="'+(sy+PH/2+4)+'" font-size="8" fill="'+C1s+'" font-weight="700" text-anchor="middle">卡 1</text>';
+      s+='<text x="'+(sx-4)+'" y="'+(sy+PH/2+4)+'" font-size="7" fill="'+DIM+'" text-anchor="end" font-weight="600">S</text>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH+12)+'" font-size="7" fill="'+DIM+'" text-anchor="middle" font-weight="600">H</text>';
+      /* 切线 */
+      s+='<path d="M'+(sx+w/2)+' '+(sy-2)+' L'+(sx+w/2)+' '+(sy+PH+2)+'" stroke="'+INK+'" stroke-width="1.8" stroke-dasharray="4 2"/>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy-6)+'" font-size="7.5" fill="'+TPc+'" font-weight="700" text-anchor="middle">切 h</text>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH+24)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,S,H/2]</text>';
+    } else {
+      /* 通信算子——药丸形 */
+      s+='<rect x="'+sx+'" y="'+(sy+PH/4)+'" width="'+w+'" height="'+(PH/2)+'" rx="'+(PH/4)+'" fill="#F8F5F0" stroke="#D4A76A" stroke-width="1" stroke-dasharray="4 2"/>';
+      var lines=st.label.split('\n');
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH/2-2)+'" font-size="7.5" fill="#A07030" font-weight="600" text-anchor="middle">'+st.label+'</text>';
+      s+='<text x="'+(sx+w/2)+'" y="'+(sy+PH/2+10)+'" font-size="6.5" fill="#A07030" text-anchor="middle">'+st.op+'</text>';
+    }
+
+    /* 箭头 */
+    if(si < stages.length-1){
+      var nw = stages[si+1].mode==='comm' ? 56 : PW;
+      s+='<path d="M'+(sx+w)+' '+(sy+PH/2)+' L'+(sx+w+GAP)+' '+(sy+PH/2)+'" stroke="'+DIM+'" stroke-width="1" fill="none" marker-end="url(#stp-ar)"/>';
+    }
+
+    sx += w + GAP;
+  });
+
+  /* 纯 TP（无 SP）对照 */
+  var cy = sy + PH + 52;
+  s+='<text x="460" y="'+(cy)+'" font-size="11" font-weight="700" fill="'+INK+'" text-anchor="middle">对照：纯 TP（没有 SP）—— 非 TP 区每卡存完整 [S, H]，浪费</text>';
+  cy += 14;
+
+  var stagesNoSP=[
+    {label:'非 TP 区\nLayerNorm', mode:'full'},
+    {label:'AllReduce', mode:'comm', op:'求和'},
+    {label:'TP 区\nAttention', mode:'h'},
+    {label:'AllReduce', mode:'comm', op:'求和'},
+    {label:'非 TP 区\nDropout', mode:'full'}
+  ];
+
+  var totalW2=0;
+  stagesNoSP.forEach(function(st){ totalW2 += (st.mode==='comm'?56:PW) + GAP; });
+  totalW2 -= GAP;
+  var sx2 = (W - totalW2) / 2;
+
+  stagesNoSP.forEach(function(st, si){
+    var w = st.mode==='comm' ? 56 : PW;
+
+    if(st.mode==='full'){
+      /* 未切——整块都是"每卡一份完整副本" */
+      s+='<rect x="'+sx2+'" y="'+cy+'" width="'+w+'" height="'+PH+'" rx="0" fill="#F2F5F7" stroke="#CFD8DD" stroke-width="1.2"/>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2-4)+'" font-size="8" fill="'+DIM+'" font-weight="600" text-anchor="middle">每卡完整</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2+8)+'" font-size="8" fill="'+DIM+'" font-weight="600" text-anchor="middle">一份</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy-6)+'" font-size="7.5" fill="'+DIM+'" font-weight="700" text-anchor="middle">不切</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+14)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,S,H] ×TP 份</text>';
+      /* 浪费标记 */
+      s+='<rect x="'+(sx2+w/2-16)+'" y="'+(cy+PH+18)+'" width="32" height="14" rx="7" fill="#FDE8E8" stroke="'+K.warn+'" stroke-width=".7"/>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+28)+'" font-size="6.5" fill="'+K.warn+'" font-weight="700" text-anchor="middle">浪费</text>';
+    } else if(st.mode==='h'){
+      s+='<rect x="'+sx2+'" y="'+cy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C0+'" stroke="'+C0s+'" stroke-width="1.2"/>';
+      s+='<rect x="'+(sx2+w/2)+'" y="'+cy+'" width="'+(w/2)+'" height="'+PH+'" rx="0" fill="'+C1+'" stroke="'+C1s+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx2+w/4)+'" y="'+(cy+PH/2+4)+'" font-size="8" fill="'+C0s+'" font-weight="700" text-anchor="middle">卡 0</text>';
+      s+='<text x="'+(sx2+w*3/4)+'" y="'+(cy+PH/2+4)+'" font-size="8" fill="'+C1s+'" font-weight="700" text-anchor="middle">卡 1</text>';
+      s+='<path d="M'+(sx2+w/2)+' '+(cy-2)+' L'+(sx2+w/2)+' '+(cy+PH+2)+'" stroke="'+INK+'" stroke-width="1.8" stroke-dasharray="4 2"/>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy-6)+'" font-size="7.5" fill="'+TPc+'" font-weight="700" text-anchor="middle">切 h</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH+14)+'" font-size="6.5" fill="'+DIM+'" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B,S,H/2]</text>';
+    } else {
+      s+='<rect x="'+sx2+'" y="'+(cy+PH/4)+'" width="'+w+'" height="'+(PH/2)+'" rx="'+(PH/4)+'" fill="#F8F5F0" stroke="#D4A76A" stroke-width="1" stroke-dasharray="4 2"/>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2-2)+'" font-size="7.5" fill="#A07030" font-weight="600" text-anchor="middle">'+st.label+'</text>';
+      s+='<text x="'+(sx2+w/2)+'" y="'+(cy+PH/2+10)+'" font-size="6.5" fill="#A07030" text-anchor="middle">'+st.op+'</text>';
+    }
+
+    if(si < stagesNoSP.length-1){
+      s+='<path d="M'+(sx2+w)+' '+(cy+PH/2)+' L'+(sx2+w+GAP)+' '+(cy+PH/2)+'" stroke="'+DIM+'" stroke-width="1" fill="none" marker-end="url(#stp-ar)"/>';
+    }
+    sx2 += w + GAP;
+  });
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 05C · CP 贯穿全部 PP stage ===================== */
 function figCPStages(){
   var m=document.getElementById('fig-cp-stages'); if(!m) return;
@@ -4589,6 +4733,7 @@ function setupRail(){
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
    ['fig-sp',figSP], ['fig-ring-step',figRingStep],
+   ['fig-sp-tp',figSPTP],
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
