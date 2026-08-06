@@ -1141,6 +1141,41 @@ function renderDim(D){
   }
   if(dim==='ep') colRanks = epMembers(rankOf(0,0,0,0,D), D).slice(0,N);
 
+  /* ── 包含链的样本层：整网⊃层⊃算子⊃kernel 不是四样东西，是同一份内容的
+     逐级放大——光在左侧标尺写「⊃」是**说**，不是**画**。这里选定一层（L·li）
+     当样本，让放大真的发生两跳：层→算子（⊕ 锥张开到整行）、算子→kernel
+     （⊕ 锥收进选中那张卡的柱里）。锥落在柱里那一下就是两条线的交点：
+     内容的包含链到 kernel 为止，落位的容器（卡）从 kernel 接手。
+     选哪层：MoE 模型选换挡后的第一层（算子最全，EP 那一刀也在场），
+     稠密模型选 L0。lps 覆盖不到时退回段首。 */
+  var Lc = D.layers, lpsC = D.layersPerStage;
+  var denseTopC = D.moe ? Math.min(2, Lc) : Lc;
+  var laySpanN = D.pp > 1 ? lpsC : Lc;               /* 层那一行代表的层数（stage0 段或全部） */
+  var liHi = (D.moe && denseTopC < laySpanN) ? denseTopC : 0;
+  /* 整网行的真图刻度：L 层逐层画出来，Dense 段与 MoE 段异色、两头是入口/出口——
+     和 3D 场景「层与层不一样」的那套事实同一口径，整网不再是一块无内容的灰板。 */
+  function netTicks(x0, w, y, h, mark){
+    var cap = Math.min(9, w*0.03), pad = 1.6, iw = (w - cap*2 - pad*2)/Lc;
+    parts.push(rect(x0, y+3, cap, h-6, mix('var(--pt-fg2)',34), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+    parts.push(rect(x0+w-cap, y+3, cap, h-6, mix('var(--pt-fg2)',34), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+    if(cap > 7){
+      parts.push(txt(x0+cap/2, y+h+8, '入口', 6.2, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
+      parts.push(txt(x0+w-cap/2, y+h+8, '出口', 6.2, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
+    }
+    for(var t9 = 0; t9 < Lc; t9++){
+      var tx = x0 + cap + pad + t9*iw;
+      var tc = t9 < denseTopC ? mix(VC.tp, 34) : (D.moe ? mix(VC.ep, 30) : mix('var(--pt-fg2)',22));
+      parts.push(rect(tx, y+5, Math.max(.5, iw*.78), h-10, tc, 'transparent', 0, 'pointer-events="none"'));
+    }
+    if(mark){
+      var mx = x0 + cap + pad + liHi*iw - .8;
+      parts.push(rect(mx, y+2.5, Math.max(1.4, iw*.78)+1.6, h-5, 'none', 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
+      return [mx, Math.max(1.4, iw*.78)+1.6];
+    }
+    return null;
+  }
+  var netMark = null, layMark = null;
+
   /* ── 输入②（激活体的入口）：另一个对象，虚线圈出、不在包含链上 ── */
   if(dim==='cp'){
     /* CP 的动词=切一条序列：2·CP 段 + 首尾配对弧（因果均衡） */
@@ -1174,11 +1209,17 @@ function renderDim(D){
 
   /* ── 整网 ── */
   if(dim==='dp'){
-    copyLane(R.net, HR.net, mix('var(--pt-fg2)',18), '≡ 等大');
+    copyLane(R.net, HR.net, mix('var(--pt-fg2)',18), null);
+    /* 复印件逐份画真图刻度：等大不是一句话，是每份里同样的 L 层排布 */
+    for(var nc9 = 0; nc9 < N; nc9++)
+      netMark = netTicks(sx(nc9)+gap/2+1, slot-gap-2, R.net+2, HR.net-4, nc9===0) || netMark;
     say(R.net+HR.net/2-2, '整网 — 复印 ×'+size+'（每份=原尺寸）',
         '同一把刀：输入变小 · 模型等大（A3）');
   }
-  else spanLane(R.net, HR.net, '整网 — 逻辑上一张，不属于任何格', '本组是 '+fmt(groups)+' 个同构组之一');
+  else{
+    spanLane(R.net, HR.net, '整网 — 逻辑上一张，不属于任何格', '本组是 '+fmt(groups)+' 个同构组之一');
+    netMark = netTicks(X0+2, MW-4, R.net+1, HR.net-2, true);
+  }
 
   /* ── 层 ── */
   if(dim==='pp'){
@@ -1204,6 +1245,30 @@ function renderDim(D){
   }
   else if(D.pp>1) spanLane(R.lay, HR.lay, '层 — 本组只持 stage0：L0–L'+(D.layersPerStage-1), 'ℓ 已被 PP 切——那是 PP 干的，不是本维', mix(VC.pp,10));
   else spanLane(R.lay, HR.lay, dim==='ep'?'层 — MoE 层在每个 stage 里':'层 — 不切 ℓ，每格都过全部层');
+
+  /* ── 层行上的样本层：同一层在整网行与层行各有位置，细线连起来——
+     这一跳是**同宽重读**（分层），不是放大；放大从下一跳才开始。 */
+  (function(){
+    var lx, lw;
+    if(dim==='pp'){
+      var j9 = Math.min(N-1, Math.floor(liHi/lpsC)), rise9 = Math.min(9, 26/size);
+      lw = (slot-gap)/lpsC;
+      lx = sx(j9)+gap/2 + ((liHi - j9*lpsC)/lpsC)*(slot-gap);
+      layMark = [lx, Math.max(1.4, lw), R.lay + j9*rise9, HR.lay - rise9*.6];
+    }else if(dim==='dp'){
+      lw = (slot-gap)/Lc;
+      lx = sx(0)+gap/2 + (liHi/Lc)*(slot-gap);
+      layMark = [lx, Math.max(1.4, lw), R.lay, HR.lay];
+    }else{
+      lw = MW/laySpanN;
+      lx = X0 + (liHi/laySpanN)*MW;
+      layMark = [lx, Math.max(1.4, lw), R.lay, HR.lay];
+    }
+    parts.push(rect(layMark[0], layMark[2], layMark[1], layMark[3], mix('var(--pt-fg)',7), 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
+    parts.push(txt(layMark[0]+layMark[1]/2, layMark[2]-3, 'L'+liHi, 6.8, 'var(--pt-fg)', 'middle', 'font-weight="800" pointer-events="none"'));
+    if(netMark) parts.push('<line x1="'+(netMark[0]+netMark[1]/2)+'" y1="'+(R.net+HR.net-2)+'" x2="'+(layMark[0]+layMark[1]/2)+'" y2="'+(layMark[2]+1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:.9" pointer-events="none"/>');
+  })();
 
   /* ── 算子（真算子序列，宽∝每卡字节；被本维切的画成 size 片） ── */
   var opPos = {};
@@ -1240,8 +1305,14 @@ function renderDim(D){
         for(var q=0;q<np;q++)
           parts.push(slab(x+q*pw+.4, R.op+1.5, Math.max(.6,pw-.8), HR.op-3,
             mix(col, q===hot ? 62 : 30), 'transparent', 0, 'pointer-events="none"'));
+        /* 被切最宽的那个算子当 kernel 锥的起点：热片（本卡那片）→ 本卡的柱 */
+        if(!opLane.tgt || w > opLane.tgt.w)
+          opLane.tgt = {id:o.id, label:(o.label||o.id), w:w, hotX:x+hot*pw+.4, hotW:Math.max(.6,pw-.8)};
       }
       else parts.push(slab(x, R.op+3, w, HR.op-6, mix('var(--pt-fg2)',16), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+      /* CP 不切权重，kernel 锥退而锚在 attention 上：CP 的通信与算子改写都发生在这儿 */
+      if(useReal && !opLane.attn && /attention|mla/i.test(o.id) && !o.comm)
+        opLane.attn = {id:o.id, label:(o.label||o.id), hotX:x, hotW:w};
       var lbl = useReal ? (o.label||o.id) : o.id;
       if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, lbl.length>16?lbl.slice(0,15)+'…':lbl, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
       if(w>26 && useReal && isCut && o.axisName)
@@ -1281,7 +1352,28 @@ function renderDim(D){
     copyLane(R.op, HR.op, mix('var(--pt-fg2)',16), null);
     say(R.op+HR.op/2-2, '算子 — 同一份，逐字节相同', '加 DP 不买余量（A3）');
   }
-  else spanLane(R.op, HR.op, '算子 — 权重完整（CP 只切激活的 s 轴）');
+  else{
+    /* CP 也走真算子带：它确实不切任何权重（isCut 全 false，35 个算子全画成整块），
+       但「不切」值得用真图说——每个算子都完整地在，s 轴上变少的是流过它们的 token。 */
+    opLane('cp');
+    say(R.op+HR.op/2-2, '算子 — 权重完整（CP 只切激活的 s 轴）',
+        '每卡 token 少 1/'+size+' · 算子一个不缺');
+  }
+
+  /* ── 放大锥①：层 → 算子。样本层张开成整行——「算子行就是 L·liHi 的内部」。
+     这一跳尺寸不守恒（一层张满全宽），所以标 ⊕，跟切分链同一条纪律。
+     PP 不画这只锥：它的算子行讲的是「随层归属」（哪段有哪些层的算子），
+     不是一层的内部——锥画上去就是把归属说成了放大。 */
+  if(layMark && dim!=='pp'){
+    var cnA = dim==='dp' ? sx(0)+gap/2 : X0, cnB = dim==='dp' ? sx(0)+slot-gap/2 : X0+MW;
+    var cnY0 = layMark[2]+layMark[3]+1, cnY1 = R.op-2;
+    ['<line x1="'+layMark[0]+'" y1="'+cnY0+'" x2="'+cnA+'" y2="'+cnY1+'"',
+     '<line x1="'+(layMark[0]+layMark[1])+'" y1="'+cnY0+'" x2="'+cnB+'" y2="'+cnY1+'"'].forEach(function(l9){
+      parts.push(l9+' style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3;opacity:.75" pointer-events="none"/>');
+    });
+    parts.push(txt(X0+4, cnY1-6, '⊕ 放大 · L'+liHi+' 的内部（算子级）', 7.2, 'var(--pt-fg2)', 'start',
+      'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+  }
 
   /* ── kernel：永不跨格 ── */
   for(var q2=0;q2<N;q2++){
@@ -1290,7 +1382,31 @@ function renderDim(D){
       parts.push(slab(sx(q2)+gap/2+kr*(kw+1.5), R.ker, kw, HR.ker, mix('var(--pt-fg2)', 34-kr*7), 'transparent', 0, 'pointer-events="none"'));
   }
   if(tail>0) tailBand(R.ker, HR.ker, mix('var(--pt-fg2)',28));
-  say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）', '本刀不决定它 · 全部刀切完之后的事，细看去卡内解剖');
+  /* ── 放大锥②：算子 → kernel，而且收进**选中那张卡的柱**。起点按刀选：
+     TP/EP 从被切最宽那个算子的**热片**出发（本卡拿的那一片）；CP 没有片，
+     从 attention 出发（它的通信与算子改写都在这儿）。DP 与 PP 不画这只锥：
+     DP 的算子行是复印件（没有单算子坐标）、PP 讲的是归属——两者的落位都由
+     竖直对齐说完了。终点是第 co0 根柱的 kernel 块。这一下把两条线钉在一起：
+     整网⊃层⊃算子⊃kernel 是**内容**的包含链，卡是**落位**的容器——
+     链的末端（kernel）永远整只落在某一根柱里，两条线在这儿相交。 */
+  (function(){
+    var src = (dim==='tp'||dim==='ep') ? opLane.tgt : opLane.attn;
+    if(!src || dim==='pp') return;
+    var i9 = Math.max(0, Math.min(N-1, co0));
+    var kx0 = sx(i9)+gap/2, kx1 = sx(i9)+slot-gap/2;
+    var ky0 = R.op+HR.op+1, ky1 = R.ker-2;
+    ['<line x1="'+src.hotX+'" y1="'+ky0+'" x2="'+kx0+'" y2="'+ky1+'"',
+     '<line x1="'+(src.hotX+src.hotW)+'" y1="'+ky0+'" x2="'+kx1+'" y2="'+ky1+'"'].forEach(function(l9){
+      parts.push(l9+' style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3;opacity:.75" pointer-events="none"/>');
+    });
+    parts.push(rect(kx0-1.2, R.ker-1.5, (kx1-kx0)+2.4, HR.ker+3, 'none', 'var(--pt-fg)', 1.2, 'pointer-events="none"'));
+    var midX9 = Math.max(X0+70, Math.min(X0+MW-70, (src.hotX+src.hotW/2+kx0+(kx1-kx0)/2)/2));
+    parts.push(txt(midX9, ky1-5, '⊕ '+(src.label.length>13?src.label.slice(0,12)+'…':src.label)
+      +((dim==='tp'||dim==='ep')?' 的本卡那片':'')+' → 这张卡的 kernel', 7.2, 'var(--pt-fg2)', 'middle',
+      'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+  })();
+  say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）',
+      '内容链（整网⊃层⊃算子⊃kernel）到这儿收进柱：末端整只落进卡，容器从此接手');
 
   /* ── 卡（容器）：一柱一份，虚线柱贯穿全高（rank 是柱上的门牌，容器是卡本身 §15）。
      柱脚放门牌与容量计；整柱可点。竖直对齐 = 映射：柱里那一份就是它持有的。 ── */
@@ -1402,11 +1518,12 @@ function renderDim(D){
     parts.push(txt(X0-10, rw[1]+24, li===0 ? '激活体②的入口·'+ruler[0][1] : ruler[li][1], 7.8, 'var(--pt-fg3)', 'end'));
     if(li===0) parts.push(txt(X0-10, rw[1]+34, '≠ 激活体本身（中间结果 ×几千倍）', 7, 'var(--pt-fg3)', 'end'));
   });
-  /* ⊃ 放大：模型四级之间；输入与整网之间是「断」 */
-  [[R.net,HR.net,R.lay],[R.lay,HR.lay,R.op],[R.op,HR.op,R.ker]].forEach(function(pr){
+  /* ⊃ 三跳各是各的关系：整网→层是**分层**（同宽重读，没放大）；层→算子与
+     算子→kernel 才是**放大**（⊕，尺寸不守恒）——和图里那两只锥一一对应。 */
+  [[R.net,HR.net,R.lay,'⊃ 分层（同宽）'],[R.lay,HR.lay,R.op,'⊃ 放大 ⊕'],[R.op,HR.op,R.ker,'⊃ 放大 ⊕']].forEach(function(pr){
     var y1 = pr[0]+pr[1]+2, y2 = pr[2]-2, xm = X0-118;
     parts.push('<line x1="'+xm+'" y1="'+y1+'" x2="'+xm+'" y2="'+y2+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:2 3" pointer-events="none"/>');
-    parts.push(txt(xm-4, (y1+y2)/2+3, '⊃ 放大', 7.6, 'var(--pt-fg3)', 'end'));
+    parts.push(txt(xm-4, (y1+y2)/2+3, pr[3], 7.6, 'var(--pt-fg3)', 'end'));
   });
   parts.push(txt(X0-122, (R.inp+HR.inp+R.net)/2+3, '⊥ 不在链上', 7.6, 'var(--pt-fg3)', 'end'));
   parts.push('<line x1="'+(X0-150)+'" y1="'+(R.net+2)+'" x2="'+(X0-150)+'" y2="'+(R.ker+HR.ker)+'" style="stroke:var(--pt-fg3);stroke-width:1.2;marker-end:url(#arrx)" pointer-events="none"/>');
