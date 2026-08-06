@@ -474,7 +474,10 @@ var PRIMS = [
 var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall','allgather'], pp:['p2p'], dp:['allreduce'], ep:['alltoall'] };
 
 var PRESETS = [
-  {id:'default128', name:'默认·128卡 tp2·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  /* 默认预置六刀齐全：CP 和 EP 一样按「配置里真切了才给按钮」门控——cp:1 时 CP
+     按钮不出现，看起来就像被别的刀挤掉了。默认页是 pattern 的门面，DP PP CP TP·SP
+     EP 都该在场，所以 cp 给 2（dp 相应 16→8，world 不变）。 */
+  {id:'default128', name:'默认·128卡 tp2·cp2·pp4·dp8·ep8', cfg:{world:128, tp:2, cp:2, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
@@ -1451,10 +1454,18 @@ function netScene(D, g, box, step){
      就按一块画——真图没展开它，我们也不替它编。 */
   var HEAD_OPS = {input_tokens:1, embedding_weight:1, token_embedding:1};   /* 只在第 0 层 */
   var TAIL_OPS = {final_norm:1, lm_head:1, lm_head_weight:1, logits:1}; /* 只在最后一层 */
-  EXTRA_NODES.forEach(function(n){ (n.at === 'head' ? HEAD_OPS : TAIL_OPS)[n.id] = 1; });
-  var DENSE_OPS = {dense_gate_up:1, dense_silu:1, dense_down:1};
+  EXTRA_NODES.forEach(function(n){ if(n.at === 'head') HEAD_OPS[n.id] = 1; else if(n.at === 'tail') TAIL_OPS[n.id] = 1; });   /* at:'layer' 的注入节点两头都不进，逐层画 */
+  /* Dense FFN 的那对 TP/SP 换轴通信只属于 Dense 层——MoE 层的 FFN 通信是 EP 的
+     A2A（对照 3d-deck 层模板：Dense FFN TP/SP AllGather/Reduce-Scatter 只在
+     Dense 分支里）。原来这两个落在「每层都画」的缺省分支，MoE 层里多出一对
+     根本不存在的通信算子。 */
+  var DENSE_OPS = {dense_gate_up:1, dense_silu:1, dense_down:1, ffn_all_gather:1, ffn_reduce_scatter:1};
   var MOE_OPS = {router_gate:1, route_topk:1, routed_expert_bank:1, moe_combine:1,
-                 moe_all_to_all_dispatch:1, moe_all_to_all_combine:1};
+                 moe_all_to_all_dispatch:1, moe_all_to_all_combine:1, shared_expert_mlp:1};
+  /* 真图把这两个记成 module（Shared Expert 没有子算子、mHC Merge 是四流状态的
+     汇合点），只按 kind==='op' 过滤会把它们整个丢掉——可 3d-deck 层模板里它们是
+     实打实的两行：少了 Shared Expert，MoE 段和正视 sidecar 画的那张真图对不上。 */
+  var MOD_OPS = {shared_expert_mlp:1, mhc_attention_post:1};
   var co = coordsOf(g, D), lps = D.layersPerStage, me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   /* 每把刀独立开关——不再按顺序；都关 = 整网 */
   /* CP 是**第五把刀**，不是配置读数：world = TP × CP × PP × DP，它和另外四个
@@ -1808,7 +1819,7 @@ function netScene(D, g, box, step){
         IXg.G.nodes.forEach(function(n, ni){
           /* 两头那几个 tensor/module 放行（见 HEAD_OPS/TAIL_OPS 的注释）；
              层内的权重张量仍然不画——那是「这一层有哪些参数」，不是这一屏的问题。 */
-          if(!(n.kind === 'op' || HEAD_OPS[n.id] || TAIL_OPS[n.id])) return;
+          if(!(n.kind === 'op' || HEAD_OPS[n.id] || TAIL_OPS[n.id] || MOD_OPS[n.id])) return;
           if(!nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
@@ -2420,9 +2431,15 @@ function netScene(D, g, box, step){
        每条各按**它自己所在的层**取深度，不能都挂在这一段的首层上。 */
     var lf = co.p*lps, ll = Math.min(L-1, lf+lps-1), pick = [];
     if(lf === 0) pick.push(['input_tokens', 0], ['token_embedding', 0]);
-    pick.push(['input_layernorm', lf], ['q_a_proj', lf], ['attention_core', lf],
+    /* AllGather 显示名带上 TP/SP——3d-deck 层模板的写法。SP 的落点就在这对
+       换轴器上（s→h 进 TP 区、h→s 回 SP 区），只写 AllGather 看不出 SP 参与。 */
+    pick.push(['input_layernorm', lf], ['attention_all_gather', lf, 'TP/SP AllGather'],
+              ['q_a_proj', lf], ['attention_core', lf],
               [lf < denseTop ? 'dense_gate_up' : 'routed_expert_bank', lf],
               ['block_post_norm', lf]);
+    /* MoE 段把 pattern 里的另一位主角也标出来。mHC FFN Merge 不进精选：它和
+       Block Post RMSNorm 在投影上几乎同点，两条标签会叠字——色块本体照画。 */
+    if(lf >= denseTop) pick.push(['shared_expert_mlp', lf]);
     if(ll === L-1) pick.push(['final_norm', L-1], ['lm_head', L-1], ['logits', L-1]);
     pick.forEach(function(it){
       var id = it[0];
@@ -2435,7 +2452,7 @@ function netScene(D, g, box, step){
       var part = pl.filter(function(x){ return x && x.total > 0; })[0] || pl[0] || null;
       var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
-      lab.push(txt(pc[0], pc[1]+2, esc(n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
+      lab.push(txt(pc[0], pc[1]+2, esc(it[2] || n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
@@ -2938,7 +2955,16 @@ var EXTRA_NODES = [
   {id:'mtp_shared_head', label:'MTP Shared Head', kind:'op', parent:'model-core', colorKey:'opv:head',
    x:935, y:4022, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'vocab'}]},
   {id:'mtp_logits', label:'MTP Logits', kind:'op', parent:'model-core', colorKey:'io:output',
-   x:935, y:4086, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'vocab'}]}
+   x:935, y:4086, width:440, height:48, at:'tail', by:[{dim:'tp', axis:'vocab'}]},
+  /* ── 层内补的一块：mHC FFN Merge ──
+     3d-deck 层模板的倒数第二行（那边叫 ffn_residual_add），真图 55 节点里没有
+     对应物——attention 侧的汇合点（mhc_attention_post）有节点，FFN 侧的没有，
+     于是层内容对不上正视 sidecar 画的那张。at:'layer' 表示逐层都有（不进两头）。
+     位置塞进 Post MLP RMSNorm(y3345+h62) 与 Block Post RMSNorm(y3437) 之间的空当。
+     切法照本文件 EXTRA_NODES 的既有惯例按同类算子推：它和两侧的 norm 同在
+     Reduce-Scatter 之后的 SP 区、逐元素合并 mHC 四流状态 → sp 沿 seq。 */
+  {id:'mhc_ffn_merge', label:'mHC FFN Merge', kind:'op', parent:'decoder-stack', colorKey:'opv:norm',
+   x:935, y:3391, width:480, height:28, at:'layer', by:[{dim:'sp', axis:'seq'}]}
 ];
 var EXTRA_BY = {};
 EXTRA_NODES.forEach(function(n){ EXTRA_BY[n.id] = n.by; });
@@ -3015,7 +3041,7 @@ function graphSVG(o){
     if(o.clip && !inClu(n.parent, o.clip, clu)) return;
     var x = TX(n.x - n.width/2), y = TY(n.y - n.height/2), w = n.width*sc, h = n.height*sc;
     var gh = ghost.some(function(c){ return n.parent===c || inClu(n.parent, c, clu); });
-    var s1 = sh[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
+    var s1 = sh[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || (EXTRA_BY[n.id] || [])[0] || null;
     var dim = by0 ? by0.dim : null, part = (s1 && s1.parts && s1.parts[0]) || null;
     var col = dim ? dimColor(dim) : 'var(--pt-fg2)';
     if(n.colorKey === 'opv:comm'){
