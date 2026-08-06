@@ -1418,7 +1418,23 @@ function netScene(D, g, box, step){
   var hasSel = sel !== null && sel < D.world;
   var root = IXg ? IXg.clu['decoder-stack'] : null;
   var GW = root ? root.width : 1000, GH = root ? root.height : 1700;
-  var AR = GH/GW;                                   /* 板是竖的：真图一层就是这个长宽比 */
+  /* 层板的高度得装得下这一层**真会画的东西**。decoder-stack 那个盒子只框住重复的
+     那一段，词嵌入 / Final Norm / LM Head 都落在它外面——照着盒子定高，两头就探出
+     板外，看着像溢出。这里量一遍所有可能画到的算子，把 v 的原点挪到内容顶端，
+     于是 v 仍然从 0 开始、AR 仍然是「一层有多高」，下游那些 AR+0.26 之类的位置
+     一个都不用改。 */
+  var VTOP = 0, VBOT = GH/GW;
+  if(IXg && root){
+    IXg.G.nodes.forEach(function(n){
+      if(n.kind !== 'op') return;
+      if(!(HEAD_OPS[n.id] || TAIL_OPS[n.id] || inClu(n.parent, 'decoder-stack', IXg.clu))) return;
+      VTOP = Math.min(VTOP, (n.y - n.height/2 - root.y)/GW);
+      VBOT = Math.max(VBOT, (n.y + n.height/2 - root.y)/GW);
+    });
+    VTOP -= 0.03; VBOT += 0.03;
+  }
+  function vOf(y){ return (y - root.y)/GW - VTOP; }   /* 真图 y → 层内 v（0 = 内容顶端） */
+  var AR = VBOT - VTOP;                             /* 板是竖的：一层就是这个长宽比 */
   /* 复印件的排法有两种，默认展开：
        展开 —— 每份并排放好，看得清「有 N 份、每份一模一样」（尺寸纪律：复印=等大）；
        叠   —— 挤在一起，省地方，但份数一多就糊成一团。
@@ -1476,7 +1492,7 @@ function netScene(D, g, box, step){
   var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
-  var vLo = -0.06;
+  var vLo = -0.16;      /* 入口/出口门牌挂在层板上方 0.10，包围盒得留出这一截 */
   /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
      结果 16 份被折成 2×8——行和列都不代表任何东西，读者却会当成两个维度去读。
      一排就是一排：DP 只有一根轴。 */
@@ -1710,7 +1726,13 @@ function netScene(D, g, box, step){
          卡维度下层板全部不画——那是「整网有多少层」的坐标纸，而这一屏问的是
          「这一张卡拿到了什么」，层框留着只会把卡壳里塞满和它无关的格子。 */
       if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1))
-        body.push(pane(ww, kOff, 'fill:none;stroke:var(--pt-bd);stroke-width:'+(mine?.4:.15)));
+        /* 层板的描边按「这一层特别在哪」分档。46 层沿层深叠在一起时，层里那点算子
+           差异是看不出来的——真正读得出的是**边框**：哪两层带着入口/出口、哪几层的
+           FFN 还是 Dense。其余的层保持中性灰，不然一片彩色反而什么都读不出。 */
+        var pcol = 'var(--pt-bd)', pw = mine ? .4 : .15;
+        if(li === 0 || li === L-1){ pcol = 'var(--pt-fg2)'; pw = mine ? 1.1 : .6; }
+        else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
+        body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
@@ -1718,7 +1740,7 @@ function netScene(D, g, box, step){
         IXg.G.nodes.forEach(function(n, ni){
           if(n.kind !== 'op' || !nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
-          var v0 = (n.y - n.height/2 - root.y)/GW, v1 = (n.y + n.height/2 - root.y)/GW;
+          var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
           var s1 = sh ? sh[n.id] : null, by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || null;
           var dm = by0 ? by0.dim : null;
           var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
@@ -1736,16 +1758,22 @@ function netScene(D, g, box, step){
                之二轮廓照样认得出。 */
             /* 卡维度不抽稀：每张卡每段本来就只画一层，内容量已经很小，再抽掉
                三分之二就真的空了。抽稀是给全景那 46 层堆叠准备的。 */
-            if(!ui.cardMode && ni % 3 !== 0) return;
+            /* 抽稀只在**有主角**的时候做：那时这些是背景，抽掉三分之二不影响读。
+               没选中的时候整网就是主体，一抽稀「哪几层不一样」就先被抽没了。 */
+            if(!ui.cardMode && hasSel && ni % 3 !== 0) return;
             /* 卡维度下**每张卡都要看得见自己装了什么**——128 只空壳说明不了任何事。
                没选中不等于没内容，只是不如选中的那张跳。所以这里给一档明显更实的
                弱化：填充加重、描边加粗、透明度提到 .8。
                全景**未选中**时同理：这时没有「主角」要衬托，整网就该照常看得见，
                和卡维度的默认亮度对齐。一旦选了卡，其余立刻退回淡档去衬托它。 */
+            /* 入口 / 出口 / Dense FFN 这几个是**只有某几层才有**的算子，也就是
+               「层与层不一样」的全部证据。它们跟重复段一个亮度的话，混在 30 层
+               一模一样的算子里根本挑不出来——加重一档，默认这一屏就看得见。 */
+            var uniq = HEAD_OPS[n.id] || TAIL_OPS[n.id] || DENSE_OPS[n.id];
             if(ui.cardMode || !hasSel){
               body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
-                'fill:'+mix(col, dm?30:14)+';stroke:'+(dm?col:'var(--pt-bds)')
-                +';stroke-width:.3;opacity:.8'));
+                'fill:'+mix(col, uniq ? 62 : (dm?30:14))+';stroke:'+(dm?col:'var(--pt-bds)')
+                +';stroke-width:'+(uniq?.8:.3)+';opacity:'+(uniq?1:.8)));
               return;
             }
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
@@ -1919,9 +1947,9 @@ function netScene(D, g, box, step){
       var n = null, i9;
       for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === id){ n = IXg.G.nodes[i9]; break; }
       if(!n) return (NU[id] = null);
-      return (NU[id] = { uc:(n.x - root.x)/GW, vc:(n.y - root.y)/GW,
+      return (NU[id] = { uc:(n.x - root.x)/GW, vc:vOf(n.y),
                          u0:(n.x - n.width/2 - root.x)/GW, u1:(n.x + n.width/2 - root.x)/GW,
-                         v0:(n.y - n.height/2 - root.y)/GW });
+                         v0:vOf(n.y - n.height/2) });
     }
     function arc(a, b, col, wd, dash){
       var lift = Math.min(34, 9 + (Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]))*0.10);
@@ -2214,10 +2242,26 @@ function netScene(D, g, box, step){
       var n = IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
       if(!n) return;
       var s1 = sh[id], part = (s1 && s1.parts && s1.parts[0]) || null;
-      var pc = P((n.x - root.x)/GW, (n.y - root.y)/GW, wOf(it[1]), off0);
+      var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
       lab.push(txt(pc[0], pc[1]+2, esc(n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
+    });
+  }
+  /* ── 层深轴：把「不重复的那两头」标出来 ──────────────────────────────
+     层与层的差异有两种，各归各的表达：
+       · Dense 还是 MoE —— 交给层板的描边颜色（前几层青、其余中性），沿层深看过去
+         颜色变的那一处就是模型换挡的地方，不需要文字；
+       · 入口 / 出口 —— 只有两层有，给门牌。挂在它那层板的正上方，不拉引线：
+         引线要从画面这头拉到那头，穿过三十层，比它说明的事还吵。 */
+  if(IXg && !ui.cardMode && cutPP && L > 2){
+    [[0, '入口 · 词嵌入(TP 切 vocab)' + (denseTop > 0 && denseTop < L ? ' · L0–L'+(denseTop-1)+' Dense FFN' : '')],
+     [L-1, '出口 · Final Norm(SP) + LM Head(TP)']].forEach(function(it){
+      var pt9 = P(0.5, -0.10, wOf(it[0]), off0);
+      var w9 = String(it[1]).length*4.0 + 12;
+      body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-7)+'" width="'+w9+'" height="14" rx="7" '
+        +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:.9;opacity:.97"/>');
+      body.push(txt(pt9[0], pt9[1]+3.4, esc(it[1]), 6.6, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
     });
   }
   /* batchSlab 已移除——输入标注一并去掉 */
