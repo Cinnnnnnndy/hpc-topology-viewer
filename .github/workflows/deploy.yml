@@ -489,3 +489,13 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # 默认 timeout 是 10 分钟。这一步不干活，只是每 5 秒问一次 Pages
+          # 「部署好了没有」——真正的排队在 GitHub 那边。产物上传成功之后，
+          # 状态会一直是 deployment_queued 直到 Pages 开始处理。
+          # 2026-08-06 的两次失败就是这么来的：队列变慢，10 分钟到点，这一步
+          # 自己 abort 并**取消掉那次部署**（日志末尾 "Canceling Pages
+          # deployment"），于是产物明明是好的、站点却没换版。
+          # 当天的耗时趋势：1m17 → 2m01 → 5m06 → 6m21 → 超时 → 超时，
+          # 10 分钟已经是边缘值。放宽到 20 分钟：慢没关系，等得起就不该白跑。
+          timeout: 1200000
