@@ -1870,8 +1870,13 @@ function netScene(D, g, box, step){
                  一条，.3 宽 / .8 浓叠八遍就成了一道道黑梳子。卡阵这档把描边压到近乎
                  只剩形状（填充照旧，填充不会沿纵深累加成线）。 */
               var sw0 = ui.cardMode ? .26 : .3, so0 = ui.cardMode ? .62 : .8;
+              /* SP 切的那几个（norm 区）平时也给横纹——不然没选中卡时 SP 在整张图上
+                 一处落点都没有：切痕只画给选中的卡，剩下的 sp 算子填的是 TP 色的素色
+                 块，读者只会当成 TP。横纹 = 切 s，方向即语义，和选中态的画法同一套。
+                 两头那几个加重档（uniq）不动——入口/出口的「这里不重复」优先级更高。 */
+              var spBg = !uniq && cutSP && byS && byS.dim === 'sp';
               body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
-                'fill:'+mix(col, uniq ? 62 : (dm?30:14))+';stroke:'+(dm?col:'var(--pt-bds)')
+                'fill:'+(spBg ? 'url(#hxSP)' : mix(col, uniq ? 62 : (dm?30:14)))+';stroke:'+(dm?col:'var(--pt-bds)')
                 +';stroke-width:'+(uniq?(ui.cardMode?.45:.8):sw0)+';opacity:'+(uniq?(ui.cardMode?.85:1):so0)));
               return;
             }
@@ -2411,7 +2416,10 @@ function netScene(D, g, box, step){
         'data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"')+'</g>');
     }
   }
-  if(cutTP && D.tp>1 && !ui.cardMode) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP'+b9; }, 't');
+  /* 轨的名字写 TP·SP：这条轨圈的那组卡**同时就是** SP 组——同一批卡、同一个组内
+     序号，t 既是 h 上的第几片也是 s 上的第几段。只写 TP 的话，SP 在整张图上就没有
+     任何常驻落点（切痕要选中卡才画，标签只有几行小字）。 */
+  if(cutTP && D.tp>1 && !ui.cardMode) railBand(tpBandV, D.tp, co.t, VC.tp, 'hxTP', function(b9){ return 'TP·SP'+b9; }, 't');
   /* CP 的刻度：它和 TP 一样是一根真轴（world = TP × CP × PP × DP），只是切的
      方向不同——TP 那条带子上一格是一片 h，这条带子上一格是一段 s。 */
   if(cutCP && D.cp>1 && !ui.cardMode) railBand(cpBandV, D.cp, co.c, VC.cp, 'hxCP', function(b9){ return 'CP'+b9; }, 'c');
