@@ -142,8 +142,14 @@
   padding:0 7px; border-radius:999px; border:1px solid currentColor; background:var(--pt-bg);
   white-space:nowrap;
 }
-.pt-deck .pt-axlab.is-on{color:var(--pt-bg) !important; background:currentColor; box-shadow:0 0 0 1px currentColor}
+/* 选中态：维度色作底、背景色作字。颜色从 --axc 取——不能用 currentColor：
+   下一行的 !important 先把 color 改成了背景色，currentColor 跟着变，结果
+   选中那枚牌子字和底全是背景色，整枚隐形（选中 r0 时 DP0/CP0/TP·SP0 全消失）。 */
+.pt-deck .pt-axlab.is-on{color:var(--pt-bg) !important; background:var(--axc, currentColor); box-shadow:0 0 0 1px var(--axc, currentColor)}
 .pt-deck .pt-axlab.is-on b{color:var(--pt-bg)}
+/* 轴标签兼作控件（和 3D 的轨一样点了换卡）时打开命中：.pt-axlab 默认 pointer-events:none */
+.pt-deck .pt-axlab.is-act{pointer-events:auto; cursor:pointer}
+.pt-deck .pt-axlab.is-act:hover{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 30%, transparent)}
 /* EP 的框：与 3D 里那只框同一件事——框住的几张卡合起来凑齐一整套专家。
    正视是把深度压掉的正投影，pp 段在这里是重叠的，所以一组只画一只框（3D 那边
    是一段一只）。只描边不填底：填了就把框住的卡挡掉，而框的意义正是看里面有谁。 */
@@ -3709,7 +3715,11 @@ function renderDeck(D){
     if(ui.viewTab==='front') dualFrontMarks(deckCtl, D, $('deckHost'));
     /* 侧视同样要铺：卡维度下 TP 把模型锯成 tp 片，上下各一份 */
     if(ui.viewTab==='front' || ui.viewTab==='side') tileClone(n, D);
-    paintCuts($('deckHost'), D);
+    /* 方阵铺开时 0 号格是 DP0·CP0·TP0 这张卡，刀口条按它自己的坐标画——
+       原来没传坐标就落到「全局选中那张」，门牌和刀口说的不是同一张卡。 */
+    var tiled0 = $('deck').classList.contains('is-tiled');
+    if(tiled0) paintCuts($('deckHost'), D, 0, 0, 0);
+    else paintCuts($('deckHost'), D);
     setTimeout(function(){ paintDeckAxes(D); }, 60);
   }, 220);
   return true;
@@ -3723,8 +3733,13 @@ function tileLayout(D){
      非卡维度 = DP 副本一排；卡维度 = 16 列 × tp 行（pp 段在深度方向，正视看进去
      是重叠的，所以不进格数）。 */
   var tRows = (ui.cardMode && ui.kTP && D.tp > 1) ? D.tp : 1;
+  /* CP 也占一根铺排轴（和 3D 卡阵同一个道理）：不铺的话 cp>1 时正视只画得出
+     dp×tp 份，其余的卡凭空消失，CP 在这一屏也就没有任何反馈。列序 DP 外层、
+     CP 内层（col = d·CP + c）——EP 组是折叠序 q 上的连续段（t 最快、c 次之、
+     d 最慢），这样一组框住的才是连续几列。 */
+  var cCols = (ui.viewTab === 'front' && ui.kCP && D.cp > 1) ? D.cp : 1;
   var n;
-  if(ui.viewTab === 'front') n = (ui.kDP && D.dp > 1) ? D.dp * tRows : tRows;
+  if(ui.viewTab === 'front') n = ((ui.kDP && D.dp > 1) ? D.dp : 1) * cCols * tRows;
   /* 侧视：46 层沿层深排开就是一份模型，DP 副本在这个方向上是重叠的（所以不铺
      16 份）。但 TP 把每一份都锯成了 tp 片，那是实打实的两份不同的持有量——
      上下各摆一份，和正视的两行、3D 的两层对上。 */
@@ -3759,6 +3774,7 @@ function tileLayout(D){
   host.classList.add('is-tiled');
   host.classList.toggle('is-side', ui.viewTab === 'side');
   host.dataset.cw = cw; host.dataset.n = cols; host.dataset.rows = tRows;
+  host.dataset.ccols = cCols;
   host.dataset.epevery = epEvery; host.dataset.epgap = epGapPx;
   host.style.gridTemplateRows = tRows > 1 ? 'repeat('+tRows+', auto)' : '';
   host.style.removeProperty('--pt-cellh');
@@ -3845,11 +3861,11 @@ function mountClone(slot, D){
       metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
     }));
     var made = deckClones[deckClones.length-1];
-    setTimeout(function(){ dualFrontMarks(made, D, slot); paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct); }, 200);
+    setTimeout(function(){ dualFrontMarks(made, D, slot); paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)); }, 200);
   }catch(e){ /* 某一份挂不上不该拖垮整屏，缺的那格留空 */ }
   /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
   slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
-    + cutTag(D, +slot.dataset.cd, +slot.dataset.ct));
+    + cutTag(D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)));
 }
 /* 这一格里 TP/EP 各切了几份。跟着刀开关走——关掉 TP 这一格就真的不写 TP，
    否则「TP 按钮按下去没有任何反应」。卡维度下还要标出本卡拿的是第几片/第几桶。 */
@@ -3859,7 +3875,7 @@ function mountClone(slot, D){
 /* cellD / cellT：这一格代表的是哪张卡。每格是一张**不同**的卡（DP1·TP0 …），
    片位、桶号都得按它自己的坐标算——照抄全局选中那张卡的话，32 个格子会画出
    一模一样的刀口，等于没表达「各拿各的」。 */
-function paintCuts(rootEl, D, cellD, cellT){
+function paintCuts(rootEl, D, cellD, cellT, cellC){
   if(!rootEl) return;
   Array.prototype.slice.call(rootEl.querySelectorAll('.pt-cutbar')).forEach(function(e){ e.remove(); });
   if(!window.OPENPANGU_GRAPH) return;
@@ -3867,7 +3883,7 @@ function paintCuts(rootEl, D, cellD, cellT){
   var coS = gSel !== null ? coordsOf(gSel, D) : null;
   var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
   var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
-  var cOwn = coS ? coS.c : 0;
+  var cOwn = cellC !== undefined ? cellC : (coS ? coS.c : 0);
   var me2 = D.moe ? epOf(tOwn, cOwn, dOwn, D) : null;
   var co2 = {t: tOwn, c: cOwn, d: dOwn};
   var sh2 = shardMap(D, rankOf(tOwn, cOwn, dOwn, coS ? coS.p : 0, D));
@@ -3904,42 +3920,65 @@ function paintDeckAxes(D){
   var cells = Array.prototype.slice.call(host.querySelectorAll(':scope > .pt-deckhost, :scope > .pt-dpclone'));
   if(!cells.length) return;
   var rows = +host.dataset.rows || 1;
+  var cc = +host.dataset.ccols || 1;
   var hb = host.getBoundingClientRect(), st = host.scrollTop, sl = host.scrollLeft;
   var gSel = (sel !== null && sel < D.world) ? sel : null;
   var coS = gSel !== null ? coordsOf(gSel, D) : null;
-  function put(el, txt2, col, on){
+  /* act = ['d'|'c'|'t'|'e', 序号]：轴标签兼作控件，点了换卡——和 3D 的轨同一套
+     chainpick 坐标算术（document 上那只委托监听认 data-act，无须另接线）。 */
+  function put(el, txt2, col, on, act){
     var s2 = document.createElement('span');
-    s2.className = 'pt-axlab' + (on ? ' is-on' : '');
+    s2.className = 'pt-axlab' + (on ? ' is-on' : '') + (act ? ' is-act' : '');
     s2.style.color = col;
+    s2.style.setProperty('--axc', col);
     s2.textContent = txt2;
+    if(act){
+      s2.setAttribute('data-act', 'chainpick');
+      s2.setAttribute('data-k', act[0]);
+      s2.setAttribute('data-i', act[1]);
+    }
     host.appendChild(s2);
     return s2;
   }
+  var dCols = Math.ceil(cells.length / rows) / cc;
   cells.forEach(function(c, i){
     var col2 = rows <= 1 ? i : Math.floor(i / rows), row2 = rows <= 1 ? 0 : (i % rows);
+    var d2 = Math.floor(col2 / cc), c2 = col2 % cc;
     var r = c.getBoundingClientRect();
     var x = r.left - hb.left + sl, y = r.top - hb.top + st;
-    /* DP：只在第一行的格子上方标，且列数多时隔一个标 */
-    if(row2 === 0){
+    /* DP：挂在它那组（cp 列）的头上、横跨整组居中；列数多时隔一个标。
+       cp 铺开时 DP 上移一行，把 -19 那一行让给 CP。 */
+    if(row2 === 0 && c2 === 0){
       var step2 = (D.dp > 10) ? 2 : 1;
-      if(col2 % step2 === 0 || col2 === Math.ceil(cells.length/rows) - 1){
-        var l1 = put(null, 'DP' + col2, VC.dp, coS && coS.d === col2);
-        l1.style.left = (x + r.width/2) + 'px';
-        l1.style.top = (y - 19) + 'px';
+      if(d2 % step2 === 0 || d2 === dCols - 1){
+        var cLast = cells[Math.min(cells.length - 1, (col2 + cc - 1) * rows)];
+        var rz2 = cLast ? cLast.getBoundingClientRect() : r;
+        var l1 = put(null, 'DP' + d2, VC.dp, coS && coS.d === d2, ['d', d2]);
+        l1.style.left = ((x + (rz2.right - hb.left + sl)) / 2) + 'px';
+        l1.style.top = (y - (cc > 1 ? 38 : 19)) + 'px';
         l1.style.transform = 'translateX(-50%)';
       }
     }
-    /* TP：只在第一列的格子左侧标 */
+    /* CP：每列一枚，贴着列头——正视的方阵里 CP 和 DP 一样是「这一格是哪张卡」的
+       一位坐标，缺了它 cp>1 的那些卡就分不出彼此。 */
+    if(row2 === 0 && cc > 1){
+      var lc = put(null, 'CP' + c2, VC.cp, coS && coS.c === c2, ['c', c2]);
+      lc.style.left = (x + r.width/2) + 'px';
+      lc.style.top = (y - 19) + 'px';
+      lc.style.transform = 'translateX(-50%)';
+    }
+    /* TP·SP：只在第一列的格子左侧标。名字带 SP——这一行的组同时就是 SP 组 */
     if(col2 === 0 && rows > 1){
-      var l2 = put(null, 'TP' + row2, VC.tp, coS && coS.t === row2);
+      var l2 = put(null, 'TP·SP' + row2, VC.tp, coS && coS.t === row2, ['t', row2]);
       l2.style.left = '2px';
       l2.style.top = (y + r.height/2 - 8) + 'px';
     }
     /* 每格自己的桶号。和 3D 那边同一件事：EP 是导出来的，格子上不写就无从看起。
-       挂在格子下沿，与 DP 那排列头（在上沿）分开。 */
+       挂在格子下沿，与 DP 那排列头（在上沿）分开。桶号按**这一格自己的** (t,c,d)
+       算——CP 铺开后同一 dp 列里 c 不同，桶号也可能不同。 */
     if(ui.cardMode && ui.kEP && D.moe && D.ep > 1){
-      var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), coS ? coS.c : 0, col2, D);
-      var l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep);
+      var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), cc > 1 ? c2 : (coS ? coS.c : 0), d2, D);
+      var l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep, ['e', mE.ep]);
       l3.style.left = (x + r.width/2) + 'px';
       /* 贴在格子**里面**的下沿，不是外面：挂到外面就正好压在下一行格子的顶上
          （两行之间只有几个像素），第 0 行的桶号会盖住第 1 行的 DP·TP 门牌。 */
@@ -3954,21 +3993,27 @@ function paintDeckAxes(D){
   Array.prototype.slice.call(host.querySelectorAll('.pt-epbox')).forEach(function(e){ e.remove(); });
   if(!(ui.cardMode && ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1)) return;
   var nCol = Math.ceil(cells.length / rows), GSZ = D.ep * D.etp;
-  var grpOf2 = function(d9, t9){ return Math.floor((((d9*D.cp + (coS?coS.c:0))*D.tp + t9)) / GSZ); };
+  /* 组号按**这一列自己的** (d, c) 算：CP 铺开后列号 = d·CP + c，正好就是折叠序
+     q 的高位——EP 组是 q 上的连续段，所以一组必然框住连续几列。CP 没铺开时
+     沿用选中卡（或 rank 0）的 c 当代表。 */
+  var grpCol = function(col9, t9){
+    var d9 = Math.floor(col9 / cc), c9 = cc > 1 ? (col9 % cc) : (coS ? coS.c : 0);
+    return Math.floor(((d9*D.cp + c9)*D.tp + t9) / GSZ);
+  };
   var span = {};
   for(var c9 = 0; c9 < nCol; c9++) for(var r9 = 0; r9 < rows; r9++){
-    var t9v = rows > 1 ? r9 : (coS ? coS.t : 0), m9 = grpOf2(c9, t9v);
+    var t9v = rows > 1 ? r9 : (coS ? coS.t : 0), m9 = grpCol(c9, t9v);
     if(!span[m9]) span[m9] = {c0:c9, c1:c9};
     else { span[m9].c0 = Math.min(span[m9].c0, c9); span[m9].c1 = Math.max(span[m9].c1, c9); }
   }
-  var selG2 = coS ? grpOf2(coS.d, coS.t) : -1;
+  var selG2 = coS ? Math.floor(((coS.d*D.cp + coS.c)*D.tp + coS.t) / GSZ) : -1;
   Object.keys(span).forEach(function(mk){
-    var m = +mk, sp = span[mk], cc, rr, ok = true;
+    var m = +mk, sp = span[mk], ci9, rr, ok = true;
     /* 同 3D：只有这一列块里装的正好是这一组才画。ep·etp 不是 tp 的整数倍时会
        出现半列，框会把别组的卡也圈进来——宁可不画，也不画错。 */
-    for(cc = sp.c0; cc <= sp.c1 && ok; cc++)
+    for(ci9 = sp.c0; ci9 <= sp.c1 && ok; ci9++)
       for(rr = 0; rr < rows; rr++)
-        if(grpOf2(cc, rows > 1 ? rr : (coS ? coS.t : 0)) !== m){ ok = false; break; }
+        if(grpCol(ci9, rows > 1 ? rr : (coS ? coS.t : 0)) !== m){ ok = false; break; }
     if(!ok) return;
     var a = cells[sp.c0*rows], z = cells[Math.min(cells.length-1, sp.c1*rows + rows - 1)];
     if(!a || !z) return;
@@ -3982,18 +4027,20 @@ function paintDeckAxes(D){
     host.appendChild(el2);
     /* 门牌挂在框的正上方，与 DP 那一排刻度错开一行——两者都贴着列头，同一行会打架。
        只写组号：框里几张卡、各是哪只桶，框自己和格子上的桶号已经写着了。 */
+    /* CP 铺开时列头有两行牌（DP 在 -38、CP 在 -19），EP 组的再上挪一行 */
     var lg = put(null, 'EP 组 ' + m, VC.ep, on2);
     lg.style.left = (bx + bw/2) + 'px';
-    lg.style.top = (by - 38) + 'px';
+    lg.style.top = (by - (cc > 1 ? 57 : 38)) + 'px';
     lg.style.transform = 'translateX(-50%)';
   });
 }
-function cutTag(D, cellD, cellT){
+function cutTag(D, cellD, cellT, cellC){
   var gSel = (sel !== null && sel < D.world) ? sel : null;
   var coS = gSel !== null ? coordsOf(gSel, D) : null;
   var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
   var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
-  var m2 = D.moe ? epOf(tOwn, coS ? coS.c : 0, dOwn, D) : null;
+  var cOwn3 = cellC !== undefined ? cellC : (coS ? coS.c : 0);
+  var m2 = D.moe ? epOf(tOwn, cOwn3, dOwn, D) : null;
   var s = '';
   if(ui.kTP && D.tp > 1) s += '<i style="color:'+VC.tp+'">TP'+tOwn+'</i>';
   if(ui.kEP && D.moe && D.ep > 1 && m2){
@@ -4017,9 +4064,14 @@ function tileClone(n, D){
     return;
   }
   var rows2 = +host.dataset.rows || 1;
-  /* grid-auto-flow:column 是先填满一列再进下一列，所以序号 i 的列号（=DP 副本）
-     是 i/rows 取整、行号（=TP 片）是 i%rows。 */
-  function cellCap(i){ return rows2 <= 1 ? 'DP'+i : 'DP'+Math.floor(i/rows2)+'·TP'+(i%rows2); }
+  var cc2 = +host.dataset.ccols || 1;
+  /* grid-auto-flow:column 是先填满一列再进下一列，所以序号 i 的列号是 i/rows
+     取整、行号（=TP 片）是 i%rows；列号再拆 DP（外层）与 CP（内层）。 */
+  function colD(i){ return Math.floor((rows2 <= 1 ? i : Math.floor(i/rows2)) / cc2); }
+  function colC(i){ return (rows2 <= 1 ? i : Math.floor(i/rows2)) % cc2; }
+  function cellCap(i){
+    return 'DP' + colD(i) + (cc2 > 1 ? '·CP' + colC(i) : '') + (rows2 > 1 ? '·TP' + (i % rows2) : '');
+  }
   /* EP 组之间的缝：加在每个组头那一列的所有格子上。必须在 sidecar 挂载之前设好——
      它 fit 的时候读的是格子的实际宽度，先挂后加缝，画出来就偏出格子了。 */
   var epEvery2 = +host.dataset.epevery || 0, epGap2 = +host.dataset.epgap || 0;
@@ -4028,15 +4080,16 @@ function tileClone(n, D){
     return (epEvery2 && col > 0 && col % epEvery2 === 0) ? epGap2 + 'px' : '';
   }
   cell.style.marginLeft = '';
-  cell.dataset.cd = 0; cell.dataset.ct = 0;
-  cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D, 0, 0));
+  cell.dataset.cd = 0; cell.dataset.ct = 0; cell.dataset.cc = 0;
+  cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D, 0, 0, 0));
   var slots = [];
   for(var i2 = 1; i2 < n; i2++){
     var slot = document.createElement('div');
     slot.className = 'pt-deckhost pt-dpclone';
     slot.id = 'deckClone' + i2;
     slot.dataset.cap = cellCap(i2);
-    slot.dataset.cd = rows2 <= 1 ? i2 : Math.floor(i2/rows2);
+    slot.dataset.cd = colD(i2);
+    slot.dataset.cc = colC(i2);
     slot.dataset.ct = rows2 <= 1 ? 0 : (i2 % rows2);
     slot.innerHTML = '<span class="pt-dpcap">' + cellCap(i2) + '</span>';
     slot.style.marginLeft = epMargin(i2);
