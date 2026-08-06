@@ -40,6 +40,17 @@ on:
       - claude/logic-cube-pattern-spec-3oycmv
       - claude/rank-view-network-analysis-htowfc
       - claude/parallel-topology-html-demo-ff10w3
+    # 只改这几处的推送不必整站重发一次。方向是**保守的**：用 paths-ignore 而不是
+    # paths——漏发一次（线上停在旧版、还查不出原因）比多发一次难受得多，所以这里
+    # 只排除「确定不进 dist」的目录，其余一律照发。
+    #   · data/ 不能进这个名单：src/scene/* 直接引它，它进构建；
+    #   · **/*.md 也不能一刀切：public/parallel-topology/prd.md 是要发布的。
+    paths-ignore:
+      - 'research/**'
+      - 'docs/**'
+      - '.claude/**'
+      - 'README.md'
+      - 'CLAUDE.md'
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
