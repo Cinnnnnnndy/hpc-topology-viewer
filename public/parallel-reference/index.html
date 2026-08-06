@@ -1043,7 +1043,28 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     </ul>
   </div>
 
-  <p>顺带也说清了 <span class="k tp">SP</span> 的位置：列切-行切这套只覆盖两个 matmul 之间那段，<strong>LayerNorm / Dropout 那些区域 TP 切不到</strong>（它们要的是完整的 <code>h</code>）。SP 补的正是这一段——沿 <code>s</code> 再切一刀，复用 TP 的通信域，进出 TP 区时用 AllGather / ReduceScatter 转布局。</p>
+  <h3>SP：TP 的省显存伴侣</h3>
+
+  <p>列切-行切这套只覆盖两个 matmul 之间那段——<strong>LayerNorm / Dropout 那些区域 TP 切不到</strong>（它们要的是完整的 <code>h</code>）。没有 SP 时，这些区域每卡存一份完整激活 <code>[B, S, H]</code>，浪费。</p>
+
+  <p><span class="k tp">SP</span> 补的正是这一段——在非 TP 区域沿 <code>s</code> 再切一刀，复用 TP 的通信域。<strong>SP 不是一个独立的并行维度</strong>——它不产生新的通信组、不改门牌号，只是在 TP 组内部把激活"转着存"：</p>
+
+  <pre>一层内部的布局切换（TP = 2 为例）
+
+ SP 区（LayerNorm / Dropout）      TP 区（matmul）
+ 每卡持有 [B, S/2, H]             每卡持有 [B, S, H/2]
+       ↓ 切 s，完整 h                   ↓ 完整 s，切 h
+
+ 进 TP 区：AllGather 沿 s 拼回 → 列切 matmul 自然沿 h 分开
+ 出 TP 区：ReduceScatter（= AllReduce + 沿 s 切开）→ 回到 SP 布局</pre>
+
+  <p>关键：ReduceScatter <strong>取代了</strong>原来的 AllReduce，通信量相同；但出来的激活从 <code>[B, S, H]</code> 变成 <code>[B, S/TP, H]</code>——<strong>省了 TP 倍激活显存</strong>。所以 SP 不加通信、不加新卡，纯粹是在 TP 组内部把激活"转着存"。实际项目里 SP 几乎总是跟 TP 一起开——开了没有代价，不开白浪费显存。</p>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 04D</span><span class="ftitle">SP 布局切换：一层内部 s 与 h 交替持有</span>
+      <span class="fnote">以 TP=2 为例。蓝色区域（LayerNorm / Dropout）按 <code>s</code> 切，每卡持有一半序列但完整隐藏维；红色区域（matmul）按 <code>h</code> 切。AllGather 和 ReduceScatter 负责两种布局之间的转换——通信量与纯 TP 的 AllReduce 完全相同。</span></figcaption>
+    <div class="stage" id="fig-sp"></div>
+  </figure>
 
   <h3>图解：列切-行切怎么配对</h3>
 
@@ -1130,9 +1151,53 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="stage" id="fig-ring"></div>
   </figure>
 
+  <h3>Ring Attention：CP 怎么对账</h3>
+
+  <p>CP 的代价全落在 attention 上。每张卡只有 S/CP 段的 Q 和 KV，但 attention 要求每个 query 位置看到<b>所有 key/value 位置</b>。Ring Attention 的做法：</p>
+
+  <ol>
+    <li><strong>初始状态</strong>：CP=4，4 张卡排成环。卡 i 持有 Q_i（本地 query）和 KV_i（本地 key/value）。</li>
+    <li><strong>Step 0</strong>：各卡用 Q_i 对本地 KV_i 算 partial attention，记录 running max 和 running sum。</li>
+    <li><strong>Step 1</strong>：KV 块沿环传递一步（卡 0→1, 1→2, 2→3, 3→0）。各卡用 Q_i 对收到的 KV 块再算一次 partial attention，用<b>online softmax</b> 累加到之前的结果上。</li>
+    <li><strong>Step 2–3</strong>：继续传，直到传完一圈。每卡看过了所有 KV，attention 结果完整。</li>
+  </ol>
+
+  <p>关键约束：<strong>必须用 online softmax</strong>（flash-attention 式的 running max + running sum 逐块累加）。普通 softmax 需要先看到所有 score 才能算分母，做不了分块。这就是 §04 勘误 B 说的"CP 也需要算子级改写"——改写的对象是 softmax 的规约方式，不是参数。</p>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 05B</span><span class="ftitle">Ring Attention 的三步环传</span>
+      <span class="fnote">CP=4。每步 KV 块沿环传一位，Q 不动。传完 CP−1 步后每张卡看过了全部 KV。通信只有 P2P（两两传），不是集合通信。只传 KV、不传 Q——通信量是 attention 激活的 2/3。</span></figcaption>
+    <div class="stage" id="fig-ring-step"></div>
+  </figure>
+
+  <h3>SP vs CP：名字像、本质不同</h3>
+
+  <p>两者都涉及序列维 <code>s</code>，但一个是 TP 的附件、一个是独立维度。放在一起看差别一目了然：</p>
+
+  <table class="tbl">
+    <thead><tr><th></th><th><span class="k tp">SP</span></th><th><span class="k cp">CP</span></th></tr></thead>
+    <tbody>
+      <tr><td><b>切什么</b></td><td>TP 区域之间的<b>激活</b>（非 matmul 区）</td><td><b>输入 token 本身</b>（从进模型那一刻开始）</td></tr>
+      <tr><td><b>在哪些卡上</b></td><td>TP 组内（同一批卡，不加新卡）</td><td>CP 组（独立的新一批卡）</td></tr>
+      <tr><td><b>门牌号里有它吗</b></td><td>没有，复用 TP 的位置</td><td>有，<code>cp_rank</code> 是独立坐标</td></tr>
+      <tr><td><b>通信方式</b></td><td>AllGather / ReduceScatter（融入已有 TP 通信）</td><td>P2P 环传 KV 块</td></tr>
+      <tr><td><b>通信代价</b></td><td>跟纯 TP <b>一样</b>（只是换了集合操作）</td><td><b>新增</b>的通信，但只传 KV 不传 Q</td></tr>
+      <tr><td><b>需要改写算子吗</b></td><td>不需要</td><td>需要（online softmax 累加）</td></tr>
+      <tr><td><b>解决什么问题</b></td><td>TP 区域外的激活显存浪费</td><td>序列太长一张卡放不下</td></tr>
+      <tr><td><b>典型场景</b></td><td>几乎总是跟 TP 一起开</td><td>长上下文（128K+ token）</td></tr>
+    </tbody>
+  </table>
+
+  <p>一句话：<strong>SP 是 TP 的省显存附件；CP 是处理长序列的独立并行维度。</strong></p>
+
   <div class="note gov">
     <span class="lbl">对 viewer 的推论</span>
     <p>CP 需要一个<strong>正交的视图</strong>，而不是在卡网格上硬加一根轴。卡网格回答「模型怎么分布」，CP 属于另一个问题——「输入怎么分布」。两个问题各配一张图，比塞进同一张更清楚：卡网格视图放 TP × PP（＋ EP 作为 MoE 层的重解释），输入分布视图放 DP × CP。这也界定了 <code>axis=</code> 这类参数的语义边界：CP 不属于卡网格的 axis 集合，它该是个独立的视图开关。</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">ZeRO-3 / FSDP 为什么不在这张表里</span>
+    <p>它们是 DP 维度内部的显存优化：把权重在 DP 组内再切一刀，用的时候临时 AllGather 拼回来。不产生新通信组、不改门牌号、不改并行拓扑——只改变了每张卡"平时常驻什么"。对拓扑视图来说，一条脚注足矣。</p>
   </div>
 </section>
 
@@ -2922,6 +2987,185 @@ function figContainer(){
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
 }
 
+/* ===================== FIG 04D · SP 布局切换 ===================== */
+function figSP(){
+  var m=document.getElementById('fig-sp'); if(!m) return;
+  var W=920, H=340;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var TP=K.tp, CP=K.cp, DIM='#8A98A2', INK='#0E1418';
+
+  s+='<defs>'
+   +'<marker id="sp-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+DIM+'"/></marker>'
+   +'</defs>';
+
+  s+='<text x="460" y="22" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">一个 Transformer 层内部（TP = 2）</text>';
+
+  /* 两行：卡0 和 卡1 */
+  var R0=40, R1=188, RH=120, LM=28;
+
+  /* 卡标签 */
+  s+='<text x="12" y="'+(R0+RH/2+4)+'" font-size="10" fill="'+INK+'" font-weight="700" text-anchor="middle" transform="rotate(-90,12,'+(R0+RH/2)+')">卡 0</text>';
+  s+='<text x="12" y="'+(R1+RH/2+4)+'" font-size="10" fill="'+INK+'" font-weight="700" text-anchor="middle" transform="rotate(-90,12,'+(R1+RH/2)+')">卡 1</text>';
+
+  /* 6 列: LN → QKV+Attn+WO → AllReduce(RS) → LN+Drop → FFN(W1+GeLU+W2) → AllReduce(RS) */
+  var cols=[
+    {l:'LayerNorm',  w:80, sp:1, label:'切 s'},
+    {l:'AllGather',  w:52, comm:1, note:'拼回完整 s'},
+    {l:'QKV → Attn → W_O', w:140, tp:1, label:'切 h'},
+    {l:'ReduceScatter', w:72, comm:1, note:'加 + 切 s'},
+    {l:'LayerNorm\n+ Dropout', w:80, sp:1, label:'切 s'},
+    {l:'AllGather',  w:52, comm:1, note:'拼回完整 s'},
+    {l:'W1 → GeLU → W2', w:120, tp:1, label:'切 h'},
+    {l:'ReduceScatter', w:72, comm:1, note:'加 + 切 s'}
+  ];
+
+  var cx=LM, GAP=6;
+  cols.forEach(function(c,ci){
+    var isSP=c.sp, isTP=c.tp, isC=c.comm;
+    var fill=isSP?'#EFF5F9':(isTP?'#FCF0F1':(isC?'#F8F5F0':'#fff'));
+    var stroke=isSP?CP:(isTP?TP:(isC?'#D4A76A':'#CFD8DD'));
+    var rx=isC?26:5;
+
+    /* 卡0 行 */
+    s+='<rect x="'+cx+'" y="'+R0+'" width="'+c.w+'" height="'+(RH/2-4)+'" rx="'+rx+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+(isC?1.2:1.3)+'"'+(isC?' stroke-dasharray="4 2"':'')+'/>';
+    /* 卡1 行 */
+    s+='<rect x="'+cx+'" y="'+R1+'" width="'+c.w+'" height="'+(RH/2-4)+'" rx="'+rx+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+(isC?1.2:1.3)+'"'+(isC?' stroke-dasharray="4 2"':'')+'/>';
+
+    /* 标签 */
+    var lines=c.l.split('\n');
+    lines.forEach(function(ln,li){
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R0+24+li*14)+'" font-size="'+(isC?9:10)+'" fill="'+INK+'" font-weight="'+(isC?400:600)+'" text-anchor="middle">'+ln+'</text>';
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R1+24+li*14)+'" font-size="'+(isC?9:10)+'" fill="'+INK+'" font-weight="'+(isC?400:600)+'" text-anchor="middle">'+ln+'</text>';
+    });
+
+    /* shape 标注 */
+    if(isSP){
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R0+48)+'" font-size="8" fill="'+CP+'" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B, S/2, H]</text>';
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R1+48)+'" font-size="8" fill="'+CP+'" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B, S/2, H]</text>';
+    }
+    if(isTP){
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R0+48)+'" font-size="8" fill="'+TP+'" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B, S, H/2]</text>';
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R1+48)+'" font-size="8" fill="'+TP+'" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">[B, S, H/2]</text>';
+    }
+    if(c.note){
+      s+='<text x="'+(cx+c.w/2)+'" y="'+(R0+RH/2-8)+'" font-size="7.5" fill="'+(isC?'#A07030':DIM)+'" text-anchor="middle">'+c.note+'</text>';
+    }
+
+    /* 顶部 zone 标签 */
+    if(ci===0) s+='<text x="'+(cx+c.w/2)+'" y="'+(R0-6)+'" font-size="9" fill="'+CP+'" font-weight="700" text-anchor="middle">SP 区</text>';
+    if(ci===2) s+='<text x="'+(cx+c.w/2)+'" y="'+(R0-6)+'" font-size="9" fill="'+TP+'" font-weight="700" text-anchor="middle">TP 区（attention 块）</text>';
+    if(ci===4) s+='<text x="'+(cx+c.w/2)+'" y="'+(R0-6)+'" font-size="9" fill="'+CP+'" font-weight="700" text-anchor="middle">SP 区</text>';
+    if(ci===6) s+='<text x="'+(cx+c.w/2)+'" y="'+(R0-6)+'" font-size="9" fill="'+TP+'" font-weight="700" text-anchor="middle">TP 区（MLP 块）</text>';
+
+    /* 箭头 */
+    if(ci<cols.length-1){
+      var nx=cx+c.w+GAP;
+      s+='<path d="M'+(cx+c.w)+' '+(R0+RH/4-2)+' L'+nx+' '+(R0+RH/4-2)+'" stroke="'+DIM+'" stroke-width="1.2" fill="none" marker-end="url(#sp-ar)"/>';
+      s+='<path d="M'+(cx+c.w)+' '+(R1+RH/4-2)+' L'+nx+' '+(R1+RH/4-2)+'" stroke="'+DIM+'" stroke-width="1.2" fill="none" marker-end="url(#sp-ar)"/>';
+    }
+
+    /* 通信：卡间双向箭头 */
+    if(isC){
+      s+='<path d="M'+(cx+c.w/2)+' '+(R0+RH/2-4)+' L'+(cx+c.w/2)+' '+(R1)+'" stroke="'+(isC?'#D4A76A':DIM)+'" stroke-width="1.6" stroke-dasharray="3 2"/>';
+      s+='<text x="'+(cx+c.w/2+3)+'" y="'+((R0+RH/2-4+R1)/2+4)+'" font-size="7.5" fill="#A07030">↕ TP 组内</text>';
+    }
+
+    cx+=c.w+GAP;
+  });
+
+  /* 底部结论 */
+  s+='<rect x="'+LM+'" y="'+(R1+RH/2+14)+'" width="'+(cx-LM-GAP)+'" height="46" rx="6" fill="#FFF8F4" stroke="'+INK+'" stroke-width="1.4"/>';
+  s+='<text x="'+(LM+16)+'" y="'+(R1+RH/2+36)+'" font-size="11" fill="#3D4B55"><tspan font-weight="700">SP 不加通信</tspan>：ReduceScatter 取代了纯 TP 的 AllReduce，通信量相同；但激活从 [B, S, H] 变成 [B, S/TP, H]——<tspan font-weight="700" fill="'+CP+'">省 TP 倍显存</tspan>。</text>';
+  s+='<text x="'+(LM+16)+'" y="'+(R1+RH/2+52)+'" font-size="10" fill="'+DIM+'">SP 不是独立维度，没有自己的通信组和门牌号坐标——它是 TP 的省显存附件。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
+/* ===================== FIG 05B · Ring Attention 环传 ===================== */
+function figRingStep(){
+  var m=document.getElementById('fig-ring-step'); if(!m) return;
+  var W=900, H=310;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var CP=K.cp, INK='#0E1418', DIM='#8A98A2', CPBG='#EFF5F9', CPBG2='#D9EAF2';
+
+  s+='<defs>'
+   +'<marker id="rs-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="'+CP+'"/></marker>'
+   +'</defs>';
+
+  var N=4;
+  /* 两行：Step 0（初始） + Step 1（传一步）在上面；Step 3（传完）+ 结论在下面 */
+  var stepsRow=[
+    [{t:'Step 0 · 初始',   sub:'各卡对本地 KV 算 partial attention', shift:0},
+     {t:'Step 1 · 传一步', sub:'KV 沿环传递，累加 online softmax',   shift:1}],
+    [{t:'Step 2',          sub:'继续传',                             shift:2},
+     {t:'Step CP−1 · 传完',sub:'所有 KV 看过，attention 完整',        shift:3, done:1}]
+  ];
+
+  var CW=50, CH=46, CG=12;
+  var GW=N*(CW+CG)-CG;
+  var COL=GW+60;
+
+  stepsRow.forEach(function(row,ri){
+    var RY=ri*140;
+    row.forEach(function(st,ci){
+      var sx=20+ci*COL;
+
+      s+='<text x="'+(sx+GW/2)+'" y="'+(RY+16)+'" font-size="10.5" font-weight="700" fill="'+INK+'" text-anchor="middle">'+st.t+'</text>';
+      s+='<text x="'+(sx+GW/2)+'" y="'+(RY+30)+'" font-size="8" fill="'+DIM+'" text-anchor="middle">'+st.sub+'</text>';
+
+      for(var i=0; i<N; i++){
+        var cx=sx+i*(CW+CG);
+        var cy=RY+38;
+
+        s+='<rect x="'+cx+'" y="'+cy+'" width="'+CW+'" height="'+CH+'" rx="5" fill="#fff" stroke="#CFD8DD" stroke-width="1.1"/>';
+        s+='<text x="'+(cx+CW/2)+'" y="'+(cy+13)+'" font-size="8" fill="'+INK+'" font-weight="600" text-anchor="middle">卡 '+i+'</text>';
+
+        /* Q 不动 */
+        s+='<rect x="'+(cx+3)+'" y="'+(cy+18)+'" width="'+(CW/2-5)+'" height="14" rx="3" fill="'+CPBG+'" stroke="'+CP+'" stroke-width=".7"/>';
+        s+='<text x="'+(cx+CW/4)+'" y="'+(cy+29)+'" font-size="6.5" fill="'+CP+'" font-weight="600" text-anchor="middle">Q'+i+'</text>';
+
+        /* KV 按 step 偏移 */
+        var kvIdx=(i-st.shift+N)%N;
+        var isLocal=(kvIdx===i);
+        s+='<rect x="'+(cx+CW/2+2)+'" y="'+(cy+18)+'" width="'+(CW/2-5)+'" height="14" rx="3" fill="'+(isLocal?CPBG:CPBG2)+'" stroke="'+CP+'" stroke-width="'+(isLocal?.7:1.1)+'"/>';
+        s+='<text x="'+(cx+CW*3/4+1)+'" y="'+(cy+29)+'" font-size="6.5" fill="'+CP+'" font-weight="'+(isLocal?400:700)+'" text-anchor="middle">KV'+kvIdx+'</text>';
+
+        /* 传递箭头 */
+        if(!st.done && i<N-1){
+          s+='<path d="M'+(cx+CW)+' '+(cy+CH/2)+' L'+(cx+CW+CG)+' '+(cy+CH/2)+'" stroke="'+CP+'" stroke-width="1" fill="none" marker-end="url(#rs-ar)"/>';
+        }
+        if(!st.done && i===N-1){
+          var ay=cy+CH+8;
+          s+='<path d="M'+(cx+CW)+' '+(cy+CH)+' L'+(cx+CW)+' '+ay+' L'+sx+' '+ay+' L'+sx+' '+(cy+CH)+'" stroke="'+CP+'" stroke-width=".8" fill="none" stroke-dasharray="3 2" marker-end="url(#rs-ar)"/>';
+        }
+
+        /* 完成标记 */
+        if(st.done){
+          s+='<rect x="'+(cx+4)+'" y="'+(cy+CH+4)+'" width="'+(CW-8)+'" height="12" rx="6" fill="#E8F5E9" stroke="#3E9E6E" stroke-width=".7"/>';
+          s+='<text x="'+(cx+CW/2)+'" y="'+(cy+CH+13)+'" font-size="6.5" fill="#2E7D4E" font-weight="600" text-anchor="middle">完整 ✓</text>';
+        }
+      }
+    });
+
+    /* 行间省略号 */
+    if(ri===0){
+      s+='<text x="'+(20+COL+GW+24)+'" y="'+(RY+38+CH/2+4)+'" font-size="14" fill="'+DIM+'" font-weight="400">→</text>';
+    }
+  });
+
+  /* 结论 */
+  var BY=H-56;
+  s+='<rect x="20" y="'+BY+'" width="'+(W-40)+'" height="48" rx="6" fill="#FFF8F4" stroke="'+INK+'" stroke-width="1.4"/>';
+  s+='<text x="38" y="'+(BY+20)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">通信特点</tspan>：P2P 环传（两两传），不是集合通信。每步只传 KV 不传 Q——通信量 ≈ attention 激活的 <tspan font-weight="700">2/3</tspan>。总共 CP−1 步。</text>';
+  s+='<text x="38" y="'+(BY+38)+'" font-size="10.5" fill="#3D4B55"><tspan font-weight="700">算子约束</tspan>：必须用 <tspan font-weight="700" fill="'+CP+'">online softmax</tspan>（flash-attention 式 running max + running sum）——普通 softmax 需要先看到所有 score，做不了分块累加。</text>';
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== FIG 04C · TP 列切-行切配对：MLP 块数据流 ===================== */
 function figSlice(){
   var m=document.getElementById('fig-slice'); if(!m) return;
@@ -4072,6 +4316,7 @@ function setupRail(){
 /* ===================== 绑定与启动 ===================== */
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
+   ['fig-sp',figSP], ['fig-ring-step',figRingStep],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
