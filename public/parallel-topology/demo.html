@@ -16,20 +16,16 @@
      真图**没有 shape**，所以字节仍由配置算——算子行的宽度按类别权重，不冒充字节。 -->
 <script src="../vendor/model-graphviz/graph.js"></script>
 <script src="../vendor/net-sharding/pattern.js"></script>
-<!-- 正视/侧视不自己画：直接挂 pto-design-system 的 model-architecture 系列。
-     侧视 = right view（46 层沿层深 + PP Stage 分段），正视 = front view（一层的算子
-     DAG）。切分链画的本来就是同一个对象，那边画得准，所以是复用不是重画。
-     依赖必须按 model-graphviz → 3d-deck → training-sidecar 的顺序加载。 -->
+<!-- 正视/侧视**不再嵌 sidecar**：这两张图改由本页自己的 SVG 渲染器重画（frontScene /
+     sideScene），画的仍是同一份 OPENPANGU_GRAPH 真图 + net-sharding 真切分表——内容
+     与 model-architecture-training-sidecar 那两张一致，但少了 3 份 vendor 脚本、每格
+     5,686 个 DOM 节点的挂载，以及 fit/clone 那一整条时序链（正是「嵌入导致加载问题」
+     的来源）。3d-deck / training-sidecar 的 css+js 因此不再引入。 -->
 <link rel="stylesheet" href="../vendor/pto-tokens/foundation.css">
 <link rel="stylesheet" href="../vendor/pto-tokens/semantic.css">
 <link rel="stylesheet" href="../vendor/pto-tokens/components.css">
 <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
-<link rel="stylesheet" href="../vendor/model-architecture-3d-deck/pattern.css">
-<link rel="stylesheet" href="../vendor/model-architecture-training-sidecar/pattern.css">
 <link rel="stylesheet" href="../vendor/rubik-cube/pattern.css">
-<script src="../vendor/model-graphviz/pattern.js"></script>
-<script src="../vendor/model-architecture-3d-deck/pattern.js"></script>
-<script src="../vendor/model-architecture-training-sidecar/pattern.js"></script>
 <style>
 /* ════════════════════════════════════════════════════════════════════
    parallel-topology demo —— PRD 的应用形态呈现（参照逻辑魔方 pattern 的壳）。
@@ -98,9 +94,9 @@
 /* ── 主区 ── */
 .pt-main{flex:1 1 auto; position:relative; min-height:0}
 .pt-stage{position:absolute; inset:0; padding:0}
-.pt-stage svg{width:100%; height:100%; display:block}
-/* sidecar 的挂载面：和 SVG 舞台同一个盒子，二选一显示 */
-.pt-deck{position:absolute; inset:0; min-height:0}
+/* will-change 提前把整张 SVG 提成合成层：gesture 中改它的 CSS transform 就只是
+   位图拉伸（GPU 上近乎免费），不触发两三万个矢量图元的重光栅化 */
+.pt-stage svg{width:100%; height:100%; display:block; will-change:transform}
 .pt-rubik{position:absolute; inset:0; min-height:0}
 .pt-rubik[hidden]{display:none}
 /* 魔方自带一整条顶栏（着色/注入/连线/并行度输入/预设，就是它的配置面板入口）。
@@ -115,120 +111,28 @@
    space-between 会把它甩到左边，所以顺手改成靠右。 */
 .pt-rubik .prc-brandname{display:none}
 .pt-rubik .prc-topbar{justify-content:flex-end}
-.pt-deck[hidden]{display:none}
-.pt-deckhost{width:100%; height:100%; min-height:0}
-/* DP 复印：整张正视图复制成方阵，每格一份副本。DP 切的是整网不是某一层，
-   所以每格都是完整的一张图，不是抠出来的一层。 */
-/* scrollbar-gutter 必须 stable：副本一插进来就撑出滚动条，容器宽度一变
-   sidecar 会重新 fit，而已经克隆好的副本停在旧缩放上，16 格就对不齐了 */
-.pt-deck.is-tiled{
-  display:grid; grid-auto-flow:column; grid-auto-rows:auto; gap:6px;
-  overflow:auto; scrollbar-gutter:stable;
-  padding:52px 14px 14px; align-content:center;
+/* ── 缩放 HUD：比例读数 + 步进 + 居中/复位（3D 与正/侧/顶视共用）───────────
+   浮在舞台右下角。比例是**当前视图的 zoom3**（1 = 该视角 tab 的标准机位刚好装下
+   整个场景），gesture 中由 applyViewTransform 直接改数字，不等重绘。 */
+.pt-zoomhud{
+  position:absolute; right:14px; bottom:12px; z-index:7;
+  display:flex; align-items:center; gap:4px;
+  padding:4px; border-radius:999px; border:1px solid var(--pt-bd);
+  background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
+  backdrop-filter:blur(6px);
 }
-/* 一屏摆 16 份时每格才 80 来 px 宽，badge 比图还大、直接把内容盖死。
-   窄到这个程度就先收起来，放大到看得清算子了再露出来。 */
-.pt-deck.is-tiled.is-dense .pto-model-deck__annotation{display:none !important}
-.pt-deck.is-tiled.is-dense .pt-dpcap{font-size:9px; padding:0 5px; left:4px; top:4px}
-/* 每格底部的切分角标。sidecar 自带的「TP ×2 · attention shard」是给整屏宽度设计
-   的一条横幅，80px 的格子里放不下（is-dense 把它整条藏了），可 TP/EP 到底切没切
-   是这一屏必须回答的事——换成只有份数的紧凑版顶上，格子再小也读得出。 */
-/* 轴标签：DP 沿列头排一行、TP 沿行头排一列，和 3D 那边同一套语法。
-   原来每格左下角挂一枚「TP×2 EP×8」的角标——那是把轴的信息抄进了每一个格子，
-   32 份重复，还占掉卡片底部。轴上标一次就够。 */
-.pt-deck .pt-axlab{
-  position:absolute; z-index:6; pointer-events:none;
-  font-family:var(--pt-mono); font-size:9.5px; font-weight:800; line-height:15px;
-  padding:0 7px; border-radius:999px; border:1px solid currentColor; background:var(--pt-bg);
-  white-space:nowrap;
+.pt-zoomhud[hidden]{display:none}
+.pt-zoomhud button{
+  min-width:26px; height:26px; padding:0 8px; border:none; border-radius:999px;
+  background:transparent; color:var(--pt-fg2); font-size:13px; font-weight:700; line-height:1;
 }
-/* 选中态：维度色作底、背景色作字。颜色从 --axc 取——不能用 currentColor：
-   下一行的 !important 先把 color 改成了背景色，currentColor 跟着变，结果
-   选中那枚牌子字和底全是背景色，整枚隐形（选中 r0 时 DP0/CP0/TP·SP0 全消失）。 */
-.pt-deck .pt-axlab.is-on{color:var(--pt-bg) !important; background:var(--axc, currentColor); box-shadow:0 0 0 1px var(--axc, currentColor)}
-.pt-deck .pt-axlab.is-on b{color:var(--pt-bg)}
-/* 轴标签兼作控件（和 3D 的轨一样点了换卡）时打开命中：.pt-axlab 默认 pointer-events:none */
-.pt-deck .pt-axlab.is-act{pointer-events:auto; cursor:pointer}
-.pt-deck .pt-axlab.is-act:hover{box-shadow:0 0 0 2px color-mix(in srgb, currentColor 30%, transparent)}
-/* EP 的框：与 3D 里那只框同一件事——框住的几张卡合起来凑齐一整套专家。
-   正视是把深度压掉的正投影，pp 段在这里是重叠的，所以一组只画一只框（3D 那边
-   是一段一只）。只描边不填底：填了就把框住的卡挡掉，而框的意义正是看里面有谁。 */
-.pt-deck .pt-epbox{
-  position:absolute; z-index:2; pointer-events:none; border-radius:5px;
-  border:1px solid currentColor; opacity:.42;
+.pt-zoomhud button:hover{background:var(--pt-s2); color:var(--pt-fg)}
+.pt-zoomhud .zpct{
+  font-family:var(--pt-mono); font-size:11px; font-weight:700; min-width:52px;
+  color:var(--pt-fg); text-align:center;
 }
-.pt-deck .pt-epbox.is-on{opacity:1; border-width:1.8px; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 12%, transparent)}
-.pt-deck .pt-dpcut{
-  position:absolute; left:4px; right:4px; bottom:4px; z-index:3;
-  display:none;
-}
-/* 叠在 sidecar 算子上的刀口条：这个算子被锯成几片、本卡拿的是哪一片。
-   sidecar 自己只给一条说明性 badge，图元上看不出切没切——3D 那边是实心/斜纹
-   分得清清楚楚的，这两个视图不能只剩一句话。算子带 data-node，id 和整网图
-   同一套，所以 3D 用的那份切分表可以直接叠上来。 */
-/* 刀口画成**沿算子宽度的竖直分割**，不是底下一条细杠：TP 锯的就是算子的 h 轴，
-   EP 分的就是专家序号，两者都是把这个盒子横着均分成 n 份。本卡那份铺底色，
-   份与份之间留虚线刀痕——3px 的细杠在 80px 的格子里等于没画。 */
-.pt-deck .pt-cutbar{
-  position:absolute; inset:0; display:flex; pointer-events:none; z-index:4;
-  border-radius:inherit; overflow:hidden;
-}
-.pt-deck .pt-cutbar i{flex:1; border-right:1px dashed var(--c); opacity:.55}
-.pt-deck .pt-cutbar i:last-child{border-right:none}
-.pt-deck .pt-cutbar i.on{background:var(--c); opacity:.3}
-.pt-deck .pt-dpcut i{
-  font-style:normal; padding:0 4px; border-radius:4px; line-height:13px;
-  border:1px solid currentColor; background:var(--pt-bg);
-}
-/* 高度不占满容器，按正视图自身的内容比例走。3d-deck 的 front fit 是
-   min(w/850, h/1810)：格子一高，缩放就被宽度卡死，多出来的高度全是空白，
-   卡片看着就是「一条特别高的白板中间浮着一小张图」。 */
-/* 正视是竖长的（3d-deck 的 front fit 基准 850×1810），侧视是宽扁的（3000×1900）——
-   两者共用一个比例的话，侧视那份会被压成一条。 */
-.pt-deck.is-tiled.is-side > *{aspect-ratio:3000/1900}
-/* 只挑格子本身，不能写成 `> *`：轴标签和 EP 的框也是 #deck 的直接子节点，被这条
-   规则罩住就成了 position:relative 的**栅格项**——浏览器把它们一个个排进新的列里，
-   于是标签全飞到方阵右边（画面上看不见，只是把 scrollWidth 撑大），left/top 完全失效。 */
-.pt-deck.is-tiled > .pt-deckhost{
-  position:relative; overflow:hidden; aspect-ratio:850/1810; height:auto;
-  border:1px solid var(--pt-bd); border-radius:10px; background:var(--pt-s1);
-}
-.pt-deck.is-tiled .pt-dpcap{
-  position:absolute; left:8px; top:6px; z-index:3; font-family:var(--pt-mono);
-  font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:999px;
-  border:1px solid var(--pt-dp); color:var(--pt-dp); background:var(--pt-bg);
-}
-/* 副本是死的克隆：不吃指针，也别让它里面的浮层跑到格子外面去 */
-.pt-deck.is-tiled > .pt-dpclone{pointer-events:none}
-/* 缩略骨架：密排时代替整份 DAG。块的位置用**百分比**给，格子一缩放它自己
-   跟着缩，不需要重排也不需要重克隆——这正是它比克隆便宜的第二层原因。 */
-.pt-deck .pt-thumb{position:absolute; inset:0; overflow:hidden; background:var(--pt-s1); z-index:1}
-.pt-deck .pt-thumb i{position:absolute; display:block; border-radius:1px; opacity:.85}
-/* 0 号格是活的 sidecar（克隆的来源，必须留着）。密排时它得和其余 31 格长一样，
-   否则一屏里唯独第一格是另一种画法，看着像渲染坏了——盖一层同样的骨架，
-   底下那份留在原地不动。 */
-.pt-deck.is-tiled > .pt-deckhost.is-thumbed > *:not(.pt-thumb):not(.pt-dpcap):not(.pt-dpcut){visibility:hidden}
-/* sidecar 自带一整条顶栏（3D/正视/侧视 + PP/TP/EP/DP + 数据/主题/适配）——
-   视角和刀都由本页工具条统管，它那条会是第二套互相打架的控件，藏掉。 */
-.pt-deck .pto-model-deck__toolbar,
-.pt-deck .pto-model-deck__topbar,
-.pt-deck .pto-model-deck__title,
-.pt-deck .pto-training-sidecar__toolbar{display:none !important}
-/* 正视格子里的 TP/EP 标注是挂在具体算子上的小 badge，要留着——那正是这一格
-   里「锯到哪、分到哪」的读数。只把横幅式的整体标注（is-side）挡掉：它是给
-   整张侧视图用的一条通栏，塞进 190px 宽的格子只会被裁成半句话。 */
-/* sidecar 自带的那两条大 badge（TP ×2 · attention shard / EP ×8 · expert routing）
-   一概不要：它是给单张整屏图设计的一条横幅，在这里会横穿卡片、还重复 32 遍，
-   而且它只说「切成几份」，不说这张卡拿的是哪一份。切分改由刀口条直接画在算子
-   上、编号由角标给。 */
-.pt-deck .pto-model-deck__annotation{display:none !important}
-.pt-deck.is-tiled .pto-model-deck__annotation.is-side{display:none !important}
-/* badge 是给整屏宽度设计的一条横排，塞进 320px 的格子会被右边缘切掉半句话。
-   统一贴到格子左边、限宽换行，才读得完整。 */
-.pt-deck.is-tiled .pto-model-deck__annotation{
-  left:5px !important; right:auto !important; max-width:calc(100% - 10px);
-  white-space:normal; font-size:9px; line-height:1.3; text-align:left;
-}
+.pt-zoomhud .zsep{width:1px; height:16px; background:var(--pt-bd); margin:0 2px}
+.pt-zoomhud .zword{font-size:11px; min-width:auto; padding:0 9px}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -511,13 +415,19 @@
     <!-- 搜索单独占中间那一段（名字在左、控件在右，它居中），不再挤在右侧工具条里 -->
     <div class="pt-qbar" id="qbar"></div>
     <div class="pt-stage" id="stage"></div>
-    <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG。
-         sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
-         是 #deckHost 的静态克隆，塞在它后面——这样重绘不会把 controller 打断。 -->
-    <div class="pt-deck" id="deck" hidden><div class="pt-deckhost" id="deckHost"></div></div>
     <!-- 关闭整网后直接挂真的魔方 pattern（three.js 按需加载） -->
     <div class="pt-rubik" id="rubik" hidden></div>
     <div class="pt-stagebar" id="stagebar"></div>
+    <!-- 缩放 HUD：读数即控件。gesture（滚轮/拖拽平移/双指）只改这块数字和一条
+         transform，不重建场景——重建防抖到手停之后（scheduleCrisp）。 -->
+    <div class="pt-zoomhud" id="zoomHud" hidden>
+      <button data-act="zoomout" title="缩小（滚轮/触控板同样可用）">−</button>
+      <button class="zpct" id="zoomPct" data-act="zoom100" title="回到 100%（该视角的标准大小）">100%</button>
+      <button data-act="zoomin" title="放大">＋</button>
+      <span class="zsep"></span>
+      <button class="zword" data-act="viewcenter" title="平移归零，把场景拉回画面中央（缩放不变）">居中</button>
+      <button class="zword" data-act="turnreset" title="复位机位：视角、缩放、平移全部回到本视图的标准机位">复位</button>
+    </div>
     <div class="pt-animcap" id="animCap"></div>
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
     <div class="pt-card pt-drawer" id="drawer" hidden></div>
@@ -684,8 +594,9 @@ function urlLoad(){
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
   /* vtab 带着机位一起落。只写 tab 不改 yaw/pitch 的话，?vtab=top 会高亮「顶视」
-     却仍停在 3D 那个等轴机位——tab 说的是一回事，画面是另一回事。正视/侧视因为走
-     sidecar 那条分支看不出来，顶视直接就错了。显式给了 yaw/pitch 的仍以它们为准。 */
+     却仍停在 3D 那个等轴机位——tab 说的是一回事，画面是另一回事。正视/侧视走
+     自己的 2D 渲染器（frontScene / sideScene）用不到机位，但切回 3D 时机位得是对的。
+     显式给了 yaw/pitch 的仍以它们为准。 */
   if(VTAB_POSE[q.get('vtab')]){
     ui.viewTab = q.get('vtab');
     ui.yaw3 = VTAB_POSE[ui.viewTab][0]; ui.pitch3 = VTAB_POSE[ui.viewTab][1];
@@ -2009,10 +1920,30 @@ function netScene(D, g, box, step){
     return Math.max(0, Math.min(1, (z9 - zLo) / (zHi - zLo)));
   }
   var off0 = sel0;
+  /* ── 视口剔除：放大之后画面外的列一根线都不画 ──────────────────────────
+     zoom>1 时真正看得见的往往只有几列，可全量场景里 90% 的图元都落在画布外——
+     构建字符串、innerHTML 解析、重排重绘，全是白费（卡维度全量 2.9 万图元、
+     一帧 1 秒出头，就是「打开卡转动/缩放非常卡」的大头）。列的包围盒拿 8 个
+     角点投影一次便宜地量出来；四周留 25% 边距，小幅平移不露白，露了也有
+     停手后的 crisp 重绘兜底。 */
+  var cullM = box.w * 0.25;
+  var cullX0 = box.x - cullM, cullX1 = box.x + box.w + cullM;
+  var cullY0 = box.y - cullM, cullY1 = box.y + box.h + cullM;
+  function colOnScreen(kc){
+    if(ui.zoom3 <= 1.01) return true;          /* 没放大就整场都在画面里，别白量角点 */
+    var xs0 = 1e9, xs1 = -1e9, ys0 = 1e9, ys1 = -1e9, iu, iv, iw;
+    for(iu = 0; iu < 2; iu++) for(iv = 0; iv < 2; iv++) for(iw = 0; iw < 2; iw++){
+      var p9 = P(iu ? 1.15 : -0.15, iv ? vHi + 0.3 : vLo - 0.3, iw ? zw1 : zw0, kc);
+      if(p9[0] < xs0) xs0 = p9[0]; if(p9[0] > xs1) xs1 = p9[0];
+      if(p9[1] < ys0) ys0 = p9[1]; if(p9[1] > ys1) ys1 = p9[1];
+    }
+    return xs1 >= cullX0 && xs0 <= cullX1 && ys1 >= cullY0 && ys0 <= cullY1;
+  }
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
     var kOff = k;
     var isF = k === sel0;
+    if(!isF && !colOnScreen(k)) continue;      /* 焦点列永远画：读出卡/门牌锚着它 */
     /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。
        EP 桶不是独立轴——epOf 是从 (t,c,d) 导出的，所以每一列必须用**它自己**的
        坐标去算，不能沿用全局选中那张卡的桶号，否则 128 张卡会画成同一个桶。 */
@@ -2797,20 +2728,11 @@ function netScene(D, g, box, step){
   }
   /* batchSlab 已移除——输入标注一并去掉 */
   var CID = 'scClip';
-  var HX = '<pattern id="hxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>'
-    /* 切 s 的那两把（CP / SP）用**横**纹，切 h 的那两把（TP / EP）用斜纹——
-       纹路方向和刀的方向一致，斜着的锯 h、横着的锯 s，不用看颜色也认得出。
-       SP 借 TP 的颜色（它就是 TP 组），但纹路归 s 那一边——同域不等于同轴。 */
-    + '<pattern id="hxCP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.cp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.cp+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxSP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
-;
+  /* 切 s 的那两把（CP / SP）用**横**纹，切 h 的那两把（TP / EP）用斜纹——
+     纹路方向和刀的方向一致，斜着的锯 h、横着的锯 s，不用看颜色也认得出。
+     SP 借 TP 的颜色（它就是 TP 组），但纹路归 s 那一边——同域不等于同轴。
+     defs 本体挪到 hatchDefsSVG()：正视/侧视的原生渲染器画的是同一套语义，共用。 */
+  var HX = hatchDefsSVG();
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
   return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>', nodes: nodes, sawn: sawn, whole: whole,
@@ -3311,13 +3233,18 @@ function shardMap(D, g){
   SHD.key = key; SHD.map = out;
   return out;
 }
-/* o = {x,y,w,h, clip:'decoder-stack', g, D, label:true, ghostClu:['moe-block'], tag3d:true} */
+/* o = {x,y,w,h, clip:'decoder-stack', g, D, label:true, ghostClu:['moe-block'], tag3d:true,
+        bounds:{x,y,w,h}     —— 覆盖取景框（EXTRA 的 MTP 尾巴探出 G.height 之外，画全图时要用量出来的包围盒）,
+        ghostIds:{id:1}      —— 按 id 弱化（正视按代表层二选一画 FFN 分支、按段扣掉两头）,
+        cuts:{tp,ep,sp,cp}   —— 每把刀 {count, mine}：竖切 = TP/EP（斜纹），横切 = SP/CP（横纹），
+                                attention 这类双刀算子画成网格，本卡拿其中一格 } */
 function graphSVG(o){
   var IX = graphIndex(); if(!IX) return '';
   var G = IX.G, clu = IX.clu, D = o.D;
   var root = o.clip ? clu[o.clip] : null;
   var bx = root ? root.x : 0, by = root ? root.y : 0;
   var bw = root ? root.width : G.width, bh = root ? root.height : G.height;
+  if(o.bounds){ bx = o.bounds.x; by = o.bounds.y; bw = o.bounds.w; bh = o.bounds.h; }
   var sc = Math.min(o.w/bw, o.h/bh);
   var ox = o.x + (o.w - bw*sc)/2, oy = o.y + (o.h - bh*sc)/2;
   function TX(x){ return ox + (x-bx)*sc; }
@@ -3353,21 +3280,53 @@ function graphSVG(o){
   G.nodes.forEach(function(n){
     if(o.clip && !inClu(n.parent, o.clip, clu)) return;
     var x = TX(n.x - n.width/2), y = TY(n.y - n.height/2), w = n.width*sc, h = n.height*sc;
-    var gh = ghost.some(function(c){ return n.parent===c || inClu(n.parent, c, clu); });
-    var s1 = sh[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || (EXTRA_BY[n.id] || [])[0] || null;
+    var gh = ghost.some(function(c){ return n.parent===c || inClu(n.parent, c, clu); })
+          || !!(o.ghostIds && o.ghostIds[n.id]);
+    var s1 = sh[n.id];
+    var byL = (s1 && s1.spec && s1.spec.by) || EXTRA_BY[n.id] || [];
+    var by0 = byL[0] || null;
+    /* 一个算子可以被两把刀从两个方向切（attention：head 归 TP 沿 h、ctx 归 CP 沿 s）。
+       按轴分拣，和 3D 那边同一套读法：h 枝 = TP/EP，s 枝 = CP/SP。 */
+    var byH = null, byS = null, bi9;
+    for(bi9 = 0; bi9 < byL.length; bi9++){
+      var bb9 = byL[bi9];
+      if(bb9.dim === 'cp' || bb9.dim === 'sp'){ if(!byS) byS = bb9; }
+      else if(bb9.dim === 'tp' || bb9.dim === 'ep'){ if(!byH) byH = bb9; }
+    }
     var dim = by0 ? by0.dim : null, part = (s1 && s1.parts && s1.parts[0]) || null;
     var col = dim ? dimColor(dim) : 'var(--pt-fg2)';
     if(n.colorKey === 'opv:comm'){
-      /* 通信 = 动作：一条横线，不是体（§08：不持有字节、不被切，只占链路与时间） */
+      /* 通信 = 动作：一条横线，不是体（§08：不持有字节、不被切，只占链路与时间）。
+         颜色跟通信属于哪把刀：EP 的 A2A 紫、其余（TP/SP 换轴、logits 收拢）青。 */
+      var cCol = (n.id === 'moe_all_to_all_dispatch' || n.id === 'moe_all_to_all_combine') ? VC.ep : VC.tp;
       acts.push('<line x1="'+x.toFixed(1)+'" y1="'+(y+h/2).toFixed(1)+'" x2="'+(x+w).toFixed(1)+'" y2="'+(y+h/2).toFixed(1)
-        +'" style="stroke:'+(gh?'var(--pt-fg3)':VC.tp)+';stroke-width:1.3;stroke-dasharray:5 3;stroke-opacity:'+(gh?.35:.95)+'"/>');
-      if(o.label && w > 34) txts.push(txt(x+w/2, y+h/2-2.5, esc(n.label), 5.4, gh?'var(--pt-fg3)':VC.tp, 'middle', 'font-weight="700"'));
+        +'" style="stroke:'+(gh?'var(--pt-fg3)':cCol)+';stroke-width:1.3;stroke-dasharray:5 3;stroke-opacity:'+(gh?.35:.95)+'"/>');
+      if(o.label && w > 34) txts.push(txt(x+w/2, y+h/2-2.5, esc(n.label), 5.4, gh?'var(--pt-fg3)':cCol, 'middle', 'font-weight="700"'));
       return;
     }
     if(n.kind !== 'op'){
       /* module = 分组标题（虚线）· tensor = 张量（浅框）：都不是「这张卡持有的算子」 */
       out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
         +'" rx="2" style="fill:none;stroke:var(--pt-fg3);stroke-width:.6;stroke-dasharray:'+(n.kind==='module'?'3 2':'1 2')+';stroke-opacity:.7"/>');
+      /* 被切的张量把刀痕也画上（Token IDs 被 CP 沿 s 横切、权重张量被 TP 竖切）——
+         输入侧是 CP 在整张正视图上少数几个落点之一，不画它 CP 就没了。 */
+      if(!gh && n.kind === 'tensor' && o.cuts){
+        if(byS && byS.dim === 'cp' && o.cuts.cp && o.cuts.cp.count > 1 && w > 3 && h/o.cuts.cp.count >= 1.2){
+          var nB = o.cuts.cp.count, kB = h*0.14/nB;
+          for(var bj = 0; bj < nB; bj++){
+            var byy = y + h*bj/nB, bhh = h/nB - kB, mB = bj === o.cuts.cp.mine;
+            out.push('<rect x="'+(x+1).toFixed(1)+'" y="'+byy.toFixed(1)+'" width="'+(w-2).toFixed(1)+'" height="'+Math.max(0.7,bhh).toFixed(1)
+              +'" style="fill:'+(mB?mix(VC.cp,40):'url(#'+(o.cuts.hxCP||'hxCP')+')')+';stroke:'+VC.cp+';stroke-width:'+(mB?.7:.25)+'"/>');
+          }
+        } else if(byH && byH.dim === 'tp' && o.cuts.tp && o.cuts.tp.count > 1 && h > 3 && w/o.cuts.tp.count >= 1.5){
+          var nT = o.cuts.tp.count, kT = w*0.14/nT;
+          for(var bi = 0; bi < nT; bi++){
+            var bxx = x + w*bi/nT, bww = w/nT - kT, mT = bi === o.cuts.tp.mine;
+            out.push('<rect x="'+bxx.toFixed(1)+'" y="'+(y+1).toFixed(1)+'" width="'+Math.max(0.7,bww).toFixed(1)+'" height="'+(h-2).toFixed(1)
+              +'" style="fill:'+(mT?mix(VC.tp,32):'url(#'+(o.cuts.hxTP||'hxTP')+')')+';stroke:'+VC.tp+';stroke-width:'+(mT?.6:.2)+';opacity:.8"/>');
+          }
+        }
+      }
       if(o.label && w > 30 && h > 5) txts.push(txt(x+w/2, y+h/2+2, esc(n.label), 5.2, 'var(--pt-fg3)'));
       return;
     }
@@ -3382,18 +3341,59 @@ function graphSVG(o){
         +'" style="fill:'+mix('var(--pt-fg)',26)+';fill-opacity:'+op+';stroke:none"/>');
     }
     var didCut = false;
-    if(!gh && o.cuts && dim){
-      var cutCfg = null, hxRef = '';
-      if((dim==='tp'||dim==='sp') && o.cuts.tp){ cutCfg = o.cuts.tp; hxRef = o.cuts.hxTP||'hxTP'; }
-      else if(dim==='ep' && o.cuts.ep){ cutCfg = o.cuts.ep; hxRef = o.cuts.hxEP||'hxEP'; }
-      if(cutCfg && cutCfg.count > 1 && w/cutCfg.count >= 1.5){
-        var kerf = w*0.15/cutCfg.count;
-        for(var si=0; si<cutCfg.count; si++){
-          var sx = x + w*si/cutCfg.count, sw = w/cutCfg.count - kerf;
-          var isMine = si===cutCfg.mine;
+    if(!gh && o.cuts){
+      /* h 枝（竖切）与 s 枝（横切）各配自己的刀；两把都在 = 网格，本卡拿其中一格 */
+      var cutH = null, hxH = '', colH = byH ? dimColor(byH.dim) : col;
+      if(byH && byH.dim === 'tp' && o.cuts.tp){ cutH = o.cuts.tp; hxH = o.cuts.hxTP||'hxTP'; }
+      else if(byH && byH.dim === 'ep' && o.cuts.ep){ cutH = o.cuts.ep; hxH = o.cuts.hxEP||'hxEP'; }
+      else if(!byH && dim === 'sp' && o.cuts.tp && !o.cuts.sp){ cutH = o.cuts.tp; hxH = o.cuts.hxTP||'hxTP'; colH = col; }
+      var cutV = null, hxV = '', colV = byS ? dimColor(byS.dim) : col;
+      if(byS && byS.dim === 'sp' && o.cuts.sp){ cutV = o.cuts.sp; hxV = o.cuts.hxSP||'hxSP'; }
+      else if(byS && byS.dim === 'cp' && o.cuts.cp){ cutV = o.cuts.cp; hxV = o.cuts.hxCP||'hxCP'; }
+      if(cutH && cutH.count > 1 && w/cutH.count < 1.5) { /* 片薄到亚像素：整块打纹，不逐片画 */
+        out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
+          +'" rx="1" style="fill:url(#'+hxH+');fill-opacity:'+op+';stroke:'+colH+';stroke-width:.4;stroke-opacity:'+op+'"/>');
+        didCut = true; cutH = null; cutV = null;
+      }
+      if(cutV && cutV.count > 1 && h/cutV.count < 1.4){
+        if(!didCut){
+          out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
+            +'" rx="1" style="fill:url(#'+hxV+');fill-opacity:'+op+';stroke:'+colV+';stroke-width:.4;stroke-opacity:'+op+'"/>');
+          didCut = true;
+        }
+        cutV = null;
+      }
+      if(cutH && cutH.count > 1 && cutV && cutV.count > 1){
+        /* 网格：竖 = h 上第几片，横 = s 上第几段；本卡那一格实心 */
+        var kw = w*0.12/cutH.count, kh = h*0.12/cutV.count;
+        for(var gi = 0; gi < cutH.count; gi++) for(var gj = 0; gj < cutV.count; gj++){
+          var gx = x + w*gi/cutH.count, gy = y + h*gj/cutV.count;
+          var gw2 = w/cutH.count - kw, gh2 = h/cutV.count - kh;
+          var mine2 = gi === cutH.mine && gj === cutV.mine;
+          var half = gi === cutH.mine || gj === cutV.mine;
+          out.push('<rect x="'+gx.toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+gw2.toFixed(1)+'" height="'+gh2.toFixed(1)+'" rx="0.8" '
+            +'style="fill:'+(mine2 ? mix(colH,58) : half ? mix(colH,14) : 'none')
+            +';fill-opacity:'+op+';stroke:'+(gj === cutV.mine ? colH : colV)+';stroke-width:'+(mine2?.9:.3)+';stroke-opacity:'+op+'"/>');
+        }
+        didCut = true;
+      } else if(cutH && cutH.count > 1){
+        var kerf = w*0.15/cutH.count;
+        for(var si = 0; si < cutH.count; si++){
+          var sx = x + w*si/cutH.count, sw = w/cutH.count - kerf;
+          var isMine = si === cutH.mine;
           out.push('<rect x="'+sx.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+sw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1" '
-            +'style="fill:'+(isMine?mix(col,55):'url(#'+hxRef+')')+';fill-opacity:'+op
-            +';stroke:'+col+';stroke-width:'+(isMine?.8:.3)+';stroke-opacity:'+op+'"/>');
+            +'style="fill:'+(isMine?mix(colH,55):'url(#'+hxH+')')+';fill-opacity:'+op
+            +';stroke:'+colH+';stroke-width:'+(isMine?.8:.3)+';stroke-opacity:'+op+'"/>');
+        }
+        didCut = true;
+      } else if(cutV && cutV.count > 1){
+        var kerfV = h*0.15/cutV.count;
+        for(var sj = 0; sj < cutV.count; sj++){
+          var sy2 = y + h*sj/cutV.count, sh2 = h/cutV.count - kerfV;
+          var isMineV = sj === cutV.mine;
+          out.push('<rect x="'+x.toFixed(1)+'" y="'+sy2.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(0.7,sh2).toFixed(1)+'" rx="1" '
+            +'style="fill:'+(isMineV?mix(colV,55):'url(#'+hxV+')')+';fill-opacity:'+op
+            +';stroke:'+colV+';stroke-width:'+(isMineV?.8:.3)+';stroke-opacity:'+op+'"/>');
         }
         didCut = true;
       }
@@ -3893,247 +3893,527 @@ function renderSolidCav(D){
      PP 切层段 → TP 锯进算子内部 / EP 重组专家(最深)；输入侧 全局批 →DP→ 样本份 →CP→ 双段
    · 决策序（§11，自下而上）：①TP ②PP ③CP ④EP ⑤DP(残差)
    反向不是巧合：刀越深 → 通信越密 → 越要先定、越要贴机内。 */
-/* ══ 正视/侧视：直接挂 model-architecture-training-sidecar ══════════════
-   侧视 = right view：46 层沿层深排开，顶上按 PP Stage 分段。
-   正视 = front view：一层的算子 DAG，DP 开着就按副本数复印成方阵。
-   这两张图切分链本来就在画，那边画得准，所以是复用不是重画；3D 那张卡阵
-   sidecar 没有对应物，仍走本页自己的 SVG。 */
-var deckCtl = null, deckFail = '', deckCfgKey = null;
-function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar); }
-/* 侧视只挂 PP 一种标注：那张图上真正在分段的就是 PP——层深方向上有实打实的
-   段边界可画。TP/EP/DP 在同一张图上没有对应的边界，挂上去只是把同一条横幅
-   换个词，反而让人以为那也是沿层深切的。PP 刀关掉就回到没有标注的原图。
-   正视的标注每格都会重复一条，一律不挂。
-   注意这里不碰刀开关本身——四把刀照旧各自独立叠加，只是侧视的标注不跟着跑。 */
-function deckMode(D){
-  if(ui.viewTab === 'side') return ui.kPP ? 'pp' : 'none';
-  return frontMode(D);
+/* ══ 正视/侧视：本页自己的 SVG 重画（不再嵌 sidecar）═════════════════════
+   内容与 model-architecture-training-sidecar 那两张一致——
+     正视 = 完整一条主线：模型输入段（Token IDs / Position IDs / Attention Context /
+            Embedding Weight → Parallel Embedding）+ 一层的算子 DAG（MLA attention ×
+            Dense/MoE FFN × mHC 汇合）+ 主输出与 MTP 尾巴——画的就是 OPENPANGU_GRAPH
+            那份真图本身（graphSVG），DP·CP 复印成方阵、TP 在 Rank 下摊成行；
+     侧视 = 全部层沿层深排开 + PP Stage 分段 + Dense/MoE 换挡带 + mHC residual 主干 +
+            两头的输入/输出列——层与层不一样的全部证据都在。
+   为什么重画而不是嵌：sidecar 每格要挂 5,686 个 DOM 节点、fit 是异步带过渡的，
+   克隆/骨架/防抖那一整条时序链就是「加载慢、偶发乱码」的来源；而这两张图要讲的
+   切分信息（TP/SP/CP/DP/EP 落在哪个算子的哪根轴上）本页的数据层本来就有——
+   graphSVG + net-sharding 的 SHARD 表直接画得出来，比隔着 sidecar 的 DOM 去叠
+   刀口条更准。同一份数据、同一套图元，快得多。 */
+
+/* 斜纹/横纹的 defs：三个场景（netScene / frontScene / sideScene）共用同一套语义——
+   斜纹 = 切 h（TP/EP），横纹 = 切 s（CP/SP，SP 借 TP 色）。 */
+function hatchDefsSVG(){
+  return '<pattern id="hxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxCP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.cp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.cp+';stroke-width:1"/></pattern>'
+    + '<pattern id="hxSP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
+    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>';
 }
-/* 正视上有落点的是 TP 和 EP：锯口和分桶都在算子内部，标注挂得到具体算子上。
-   sidecar 的 parallelMode 一次只认一个，先渲染 TP。 */
-function frontMode(D){
-  if(ui.kTP && D.tp > 1) return 'tp';
-  if(ui.kEP && D.moe && D.ep > 1) return 'ep';
-  return 'none';
+/* 两头/分支的节点集合：正视按代表层二选一画 FFN 分支，卡维度下两头只属于首末段 */
+var FS_HEAD = {input_tokens:1, embedding_weight:1, token_embedding:1, positions:1, attention_context:1};
+var FS_TAIL = {final_norm:1, lm_head:1, lm_head_weight:1, logits:1, logits_allgather:1,
+               mtp_input_norms:1, mtp_eh_proj:1, mtp_decoder_layer:1, mtp_head_weight:1,
+               mtp_shared_head:1, mtp_logits:1};
+var FS_DENSE = {dense_mlp:1, dense_gate_up:1, dense_silu:1, dense_down:1, dense_mlp_weights:1,
+                ffn_all_gather:1, ffn_reduce_scatter:1};
+var FS_MOE = {router_gate:1, route_topk:1, routed_expert_bank:1, moe_combine:1, router_weight:1,
+              moe_all_to_all_dispatch:1, moe_all_to_all_combine:1, shared_expert_mlp:1,
+              shared_expert_weights:1, expert_bank_weights:1, expert_parallel_state:1};
+/* 整张真图（含补齐的 MTP 尾巴）的包围盒——EXTRA_NODES 探出 G.height 之外，量一次缓存 */
+var FS_GB = null;
+function frontBounds(){
+  if(FS_GB) return FS_GB;
+  var IX = graphIndex(); if(!IX) return null;
+  var y0 = 1e9, y1 = -1e9, x0 = 1e9, x1 = -1e9;
+  IX.G.nodes.forEach(function(n){
+    x0 = Math.min(x0, n.x - n.width/2); x1 = Math.max(x1, n.x + n.width/2);
+    y0 = Math.min(y0, n.y - n.height/2); y1 = Math.max(y1, n.y + n.height/2);
+  });
+  FS_GB = {x:x0 - 24, y:y0 - 24, w:(x1 - x0) + 48, h:(y1 - y0) + 48};
+  return FS_GB;
 }
-/* 两把刀同时开着时，parallelMode 单选就不够用了——切到 ep 会把 tp 的标注冲掉。
-   办法是先把 TP 那批 badge 抄下来，再切到 ep，然后把抄下来的接回同一个容器，
-   两套标注就并存了。badge 的定位是 inline style，克隆过去照样对得上算子。 */
-function dualFrontMarks(ctl, D, rootEl){
-  if(!ctl || !rootEl) return;
-  if(!(ui.kTP && D.tp > 1)) return;              // TP 没开，frontMode 已经给了 ep
-  if(!(ui.kEP && D.moe && D.ep > 1)) return;     // EP 没开，单 tp 就够
-  var box = rootEl.querySelector('.pto-model-deck__annotations'); if(!box) return;
-  var tpMarks = Array.prototype.map.call(box.children, function(el){ return el.cloneNode(true); });
-  if(!tpMarks.length) return;
-  ctl.setParallelMode('ep');
-  /* setParallelMode 触发的那次 annotations 重绘是异步的，同步接上去会被它清掉，
-     得等它画完 ep 那批之后再把 TP 那批补回同一个容器。 */
-  setTimeout(function(){
-    var box2 = rootEl.querySelector('.pto-model-deck__annotations'); if(!box2) return;
-    if(box2.querySelector('[data-kind="tp"]')) return;   // 已经补过，别叠第二遍
-    tpMarks.forEach(function(el){ box2.appendChild(el.cloneNode(true)); });
-  }, 160);
+/* SVG 胶囊门牌（DP0 / CP1 / TP·SP0 / ep3 / PP2…）：和 3D 轨上的同一套长相。
+   点选走 hit 层的透明矩形（data-act=chainpick），body 里的这枚只管好看。 */
+function fsPill(body, hit, x, y, label, col, on, act, fs){
+  fs = fs || 7.2;
+  var w = String(label).length*(fs*0.62) + 10, h = fs + 7;
+  body.push('<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="'+(h/2).toFixed(1)
+    +'" style="fill:'+(on?col:'var(--pt-bg)')+';stroke:'+col+';stroke-width:'+(on?1.4:.7)+'"/>');
+  body.push(txt(x, y+fs*0.36+1, esc(String(label)), fs, on?'#fff':'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+  if(act && hit) hit.push('<rect x="'+(x-w/2-2).toFixed(1)+'" y="'+(y-h/2-2).toFixed(1)+'" width="'+(w+4).toFixed(1)+'" height="'+(h+4).toFixed(1)
+    +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="'+act[0]+'" data-i="'+act[1]+'"/>');
+  return w;
 }
-/* ── 正视 / 侧视那张真图必须画**本页这份配置**，不是它自带的那份 ──────────────
-   sidecar 原来是拿 preset:'openpangu-flash' 挂上去的——46 层、firstMoeLayer=2、
-   256 个路由专家、4 段 stage，全写死在 3d-deck 的预置里，跟本页的 cfg 一点关系
-   都没有。于是出现过一个当场就能看出来的矛盾：选了稠密预置（experts=0，工具条
-   按规矩不给 EP 按钮），正视里却照旧画着 Router · Top-8 / Expert Pool / EP
-   Dispatch——图上明明有专家层，却没有那把刀。**两处数字打架比没有数字更糟**。
-   3d-deck 的配置是按字段读的（layerCount 铺层、stageRanges 分段、firstMoeLayer
-   决定这一层画 Dense 还是 MoE），sidecar 又允许用 options.config 顶掉 preset，
-   所以这里照着它自带那份的形状、按本页 cfg 重算一份传进去。
-   按层号点名的那几项（DSA 层、block-post 层）按比例摊到新的层数上——它们说的是
-   「每隔几层来一次」，层数一变，原来那串下标就没有意义了。 */
-function deckConfig(D){
-  var deck = window.PtoModelArchitecture3dDeck;
-  var P = deck && deck.PRESETS && deck.PRESETS['openpangu-flash'];
-  if(!P || !D || !D.ok) return null;
-  var L = Math.max(2, D.layers|0), lps = Math.max(1, D.layersPerStage|0), i;
-  /* Dense→MoE 的换挡点与 3D 那边的 denseTop 同一口径：稠密配置下 = L，
-     也就是「一层 MoE 都没有」，3d-deck 那边 layerCount > firstMoeLayer 不成立，
-     MoE FFN 那一整条带子就不画了。 */
-  var firstMoe = D.moe ? Math.min(2, L) : L;
-  var ranges = [], reps = [];
-  for(i = 0; i < Math.max(1, D.pp); i++){
-    var lo = Math.min(L-1, i*lps), hi = Math.min(L-1, (i+1)*lps - 1);
-    ranges.push([lo, Math.max(lo, hi)]); reps.push(lo);
+
+/* ═════════ 正视图（原生）：一层的完整主线 × DP·CP 方阵 × TP 行 ═════════
+   格阵语法与旧 sidecar 方阵一致：列 = DP 外层 × CP 内层（col = d·CP + c），
+   行 = Rank 打开时的 TP 片；EP 组按连续列成块、组间掰缝。每格是**完整一条主线**
+   （输入段 + 代表层 + 输出与 MTP 尾巴），格内每个算子按 SHARD 表画切痕：
+   竖切 = TP/EP（斜纹为非本卡片），横切 = SP/CP（横纹），attention 双刀成网格。 */
+function frontScene(D, g, box){
+  var IXg = graphIndex(); if(!IXg) return null;
+  var GB = frontBounds(); if(!GB) return null;
+  var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
+      cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
+  var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
+  /* 代表层：反查了某层就画那一层；Rank 下画选中卡那段的中点层；否则画模型中段 */
+  var revOn = revLiOn(D), revLi = revOn ? clamp(Math.floor(+ui.revLayer), 0, L-1) : -1;
+  var pSel = cutPP ? co.p : 0;
+  var li = revOn ? revLi
+         : ui.cardMode ? Math.min(L-1, pSel*lps + (lps>>1))
+         : D.moe ? Math.min(L-1, Math.max(denseTop, Math.floor(L/2)))
+         : Math.floor(L/2);
+  if(revOn) pSel = Math.min(D.pp-1, Math.floor(li/lps));
+  var liDense = li < denseTop;
+  var liStage = Math.min(D.pp-1, Math.floor(li/lps));
+  var CC = cutCP ? D.cp : 1, DD = cutDP ? D.dp : 1;
+  var rows = (ui.cardMode && cutTP) ? D.tp : 1;
+  var cols = DD * CC;
+  /* EP 组占整数列时组间掰缝（同旧方阵/3D：「这儿断开了」要看得见） */
+  var GSZ = D.ep * D.etp;
+  var epEvery = 0;
+  if(cutEP){
+    var per = GSZ / (rows > 1 ? rows : D.tp);
+    if(per === Math.floor(per) && per >= 1 && cols % per === 0 && cols / per > 1) epEvery = per;
   }
-  /* 保证 0..L-1 每一层都落在某个区间里：3d-deck 用 findIndex 找段，
-     找不到会拿 stageRanges[-1]，那是 undefined，当场炸。 */
-  if(ranges[ranges.length-1][1] < L-1) ranges[ranges.length-1][1] = L-1;
-  function scaleIdx(src, srcL){
-    var seen = {}, r = L / Math.max(1, srcL);
-    (src || []).forEach(function(v){ seen[Math.max(0, Math.min(L-1, Math.round(v*r)))] = 1; });
-    return Object.keys(seen).map(Number).sort(function(a,b){ return a-b; });
-  }
-  var dense = [];
-  for(i = 0; i < firstMoe && i < L; i++) dense.push(i);
-  var out = {};
-  Object.keys(P).forEach(function(k){ out[k] = P[k]; });   /* 其余字段照抄它自己的 */
-  out.layerCount = L;
-  out.firstMoeLayer = firstMoe;
-  out.denseLayers = dense;
-  out.dsaLayers = scaleIdx(P.dsaLayers, P.layerCount);
-  out.blockPostLayers = scaleIdx(P.blockPostLayers, P.layerCount);
-  out.stageRanges = ranges;
-  out.representativeLayers = reps;
-  out.frontLayer = Math.max(0, Math.min(L-1, Math.floor(L/2)));
-  out.routedExperts = D.moe ? D.experts : 0;
-  out.topK = D.moe ? D.topk : 0;
-  out.label = 'openPangu · 本页配置';
-  /* 横幅上的 ×N 也得是本页的数，不然又是一处「图上写着 EP ×8、配置里 ep=1」。
-     刀抬起来的那一维不列——它此刻没在切。 */
-  var ann = [];
-  if(ui.kTP && D.tp > 1) ann.push({kind:'tp', label:'TP ×'+D.tp+'（带 SP）· attention shard', nodeId:'attn_all_gather'});
-  if(ui.kEP && D.moe && D.ep > 1) ann.push({kind:'ep', label:'EP ×'+D.ep+' · expert routing', nodeId:'expert_pool'});
-  if(ui.kPP && D.pp > 1) ann.push({kind:'pp', label:'PP ×'+D.pp+' · layer stages', nodeId:'post_mlp_norm'});
-  if(ui.kDP && D.dp > 1) ann.push({kind:'dp', label:'DP ×'+D.dp+' · gradient replica', nodeId:'mhc_state_out'});
-  out.annotations = ann;
-  return out;
-}
-/* 同一份配置要不要重挂：sidecar 没有 setConfig，配置变了只能拆掉重来。
-   拿真正影响画面的那几项做键，别拿整个对象——annotations 每次都新建，
-   用它当键会变成每帧重挂。 */
-function deckKey(dc){
-  return dc ? [dc.layerCount, dc.firstMoeLayer, dc.routedExperts, dc.topK,
-               dc.stageRanges.map(function(r){ return r.join('-'); }).join(',')].join('/') : 'preset';
-}
-function ensureDeck(D){
-  if(deckFail) return deckCtl;
-  if(!deckAvailable()){ deckFail = 'sidecar 未加载'; return null; }
-  var dc = deckConfig(D), key = deckKey(dc);
-  if(deckCtl && key === deckCfgKey) return deckCtl;
-  if(deckCtl){ try{ deckCtl.destroy(); }catch(e){} deckCtl = null; $('deckHost').innerHTML = ''; }
-  try{
-    deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deckHost', {
-      preset:'openpangu-flash', config:dc || undefined, initialView:'right', parallelMode:'pp',
-      initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
-      metricView:'structure', metricViews:[], initialLayer:null
-    });
-  }catch(e){ deckFail = e.message; deckCtl = null; }
-  deckCfgKey = deckCtl ? key : null;
-  return deckCtl;
-}
-function renderDeck(D){
-  var c = ensureDeck(D);
-  $('stage').hidden = true;
-  $('deck').hidden = false;
-  if(!c){
-    $('deck').hidden = true; $('stage').hidden = false;
-    return false;
-  }
-  /* 先把格子布好再让 sidecar 渲染：它的 fit 读的是容器尺寸，铺成方阵之后
-     #deckHost 从整屏缩成一格，顺序反了就会按整屏的尺寸算缩放。 */
-  var n = tileLayout(D);
-  void $('deckHost').offsetHeight;   /* 逼一次重排：fit 读的是 clientWidth/Height，栅格得先落地 */
-  c.setTheme(document.documentElement.dataset.theme==='dark'?'dark':'light');
-  c.setView(ui.viewTab === 'front' ? 'front' : 'right');
-  c.setParallelMode(deckMode(D));
-  /* 卡维度：把 sidecar 停在**这张卡真正持有的那一层**上，不要停在它默认的 L23。
-     卡的 stage 决定层区间，取该段中点映射到 sidecar 的 46 层；侧视再把那一层
-     展开（selectLayer 会把它翻成前平面），一眼看出这张卡在整条层链上占哪一截。 */
-  try{
-    if(ui.cardMode){
-      var cSel = (sel !== null && sel < D.world) ? sel : 0;
-      var coC = coordsOf(cSel, D);
-      var DECK_L = 46;
-      var lyrC = Math.max(0, Math.min(DECK_L-1, Math.floor((coC.p + 0.5) * DECK_L / D.pp)));
-      c.setFrontLayer(lyrC);
-      /* 侧视不再默认把那一层展开成前平面：它会弹出一块盖住半张图的大面板，
-         而这一屏要看的是「这张卡占了整条层链的哪一截」，不是某一层的内部。
-         想看内部点那一层即可。 */
-      c.collapseLayer();
-    } else c.collapseLayer();
-  }catch(e){ /* sidecar 版本没有这几个 API 时不该拖垮整屏 */ }
-  c.fit();
-  /* 侧视 fit 完还是顶到边——46 层横着铺满整格，两侧一点余量都没有。回收一点
-     缩放，图和格子边界之间留出呼吸。 */
-  if(ui.viewTab === 'side'){
-    setTimeout(function(){ try{ c.setZoom(0.72); }catch(e){} }, 80);
-  }
-  /* fit 自己排在后续帧里跑（还带一段过渡），克隆必须等它彻底落地——
-     早一帧复制到的就是没缩放好的画面，16 格全歪。 */
-  if(deckTileRaf) clearTimeout(deckTileRaf);
-  deckTileRaf = setTimeout(function(){
-    deckTileRaf = 0;
-    if(ui.view!=='chain') return;
-    /* 合并标注必须等 fit 落地：fit 会按 state.parallelMode 重绘一遍 annotations，
-       早接上去的那批会被它清掉 */
-    if(ui.viewTab==='front') dualFrontMarks(deckCtl, D, $('deckHost'));
-    /* 侧视同样要铺：卡维度下 TP 把模型锯成 tp 片，上下各一份 */
-    if(ui.viewTab==='front' || ui.viewTab==='side') tileClone(n, D);
-    /* 方阵铺开时 0 号格是 DP0·CP0·TP0 这张卡，刀口条按它自己的坐标画——
-       原来没传坐标就落到「全局选中那张」，门牌和刀口说的不是同一张卡。 */
-    var tiled0 = $('deck').classList.contains('is-tiled');
-    if(tiled0) paintCuts($('deckHost'), D, 0, 0, 0);
-    else paintCuts($('deckHost'), D);
-    deckAxD = D; watchDeckLayout(); syncMasterThumb(D);
-    setTimeout(function(){ paintDeckAxes(D); }, 60);
-  }, 220);
-  return true;
-}
-/* DP 复印：正视图按副本数铺成方阵。侧视不铺——那张图里 46 层已经沿层深排开，
-   16 份并排只会把每份压到看不清，而 DP 在侧视里本来就是重叠成一份的。 */
-var deckTileRaf = 0;
-function tileLayout(D){
-  var host = $('deck');
-  /* 正视是 3D 的正投影，格数就该和 3D 摆出来的一样：
-     非卡维度 = DP 副本一排；卡维度 = 16 列 × tp 行（pp 段在深度方向，正视看进去
-     是重叠的，所以不进格数）。 */
-  var tRows = (ui.cardMode && ui.kTP && D.tp > 1) ? D.tp : 1;
-  /* CP 也占一根铺排轴（和 3D 卡阵同一个道理）：不铺的话 cp>1 时正视只画得出
-     dp×tp 份，其余的卡凭空消失，CP 在这一屏也就没有任何反馈。列序 DP 外层、
-     CP 内层（col = d·CP + c）——EP 组是折叠序 q 上的连续段（t 最快、c 次之、
-     d 最慢），这样一组框住的才是连续几列。 */
-  var cCols = (ui.viewTab === 'front' && ui.kCP && D.cp > 1) ? D.cp : 1;
-  var n;
-  if(ui.viewTab === 'front') n = ((ui.kDP && D.dp > 1) ? D.dp : 1) * cCols * tRows;
-  /* 侧视：46 层沿层深排开就是一份模型，DP 副本在这个方向上是重叠的（所以不铺
-     16 份）。但 TP 把每一份都锯成了 tp 片，那是实打实的两份不同的持有量——
-     上下各摆一份，和正视的两行、3D 的两层对上。 */
-  else if(ui.viewTab === 'side') n = tRows;
-  else n = 1;
-  Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone, .pt-dpcap'))
-    .forEach(function(el){ el.remove(); });
-  if(n <= 1){
-    host.classList.remove('is-tiled'); host.classList.remove('is-side');
-    host.style.removeProperty('grid-template-columns');
-    host.style.removeProperty('--pt-cellh');
-    return 1;
-  }
-  /* 一排排开，不折行：DP 是同一份东西复印 n 遍，副本之间没有先后也没有行列
-     关系，折成两排会让人以为行、列各自代表了点什么。排不下就横向滚。 */
-  /* 默认一屏摆得下全部 n 份——「同一份东西复印了 n 遍」这件事要一眼看全，
-     不该先滚一遍才数得出来。格子因此很小，细节靠滚轮放大看（deckZoom）。
-     高度另外由 aspect-ratio 跟住，宽度算得下就一定放得下。 */
-  var W = host.clientWidth || 1200;
-  var cols = Math.ceil(n / tRows);
-  /* EP 打开时组与组之间掰开一条缝（和 3D 那边同一件事）。缝要先从可用宽度里扣掉，
-     否则格子按满宽算出来、加上缝就溢出去了。一组占整数列时才加。 */
-  var epEvery = 0, epGapPx = 0;
-  if(ui.cardMode && ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1){
-    var per = (D.ep * D.etp) / tRows;
-    if(per === Math.floor(per) && per >= 1 && cols % per === 0 && cols / per > 1){
-      epEvery = per; epGapPx = 18;
+  var nEpGap = epEvery ? (cols/epEvery - 1) : 0;
+  /* 布局：上方两行门牌（DP/CP，EP 组名再高一行），左侧 TP 行标，下沿 ep 桶号 */
+  var TM = 66 + (CC > 1 ? 15 : 0) + (cutEP ? 15 : 0);
+  var BM = 30 + (cutEP ? 14 : 0) + (ui.cardMode && cutPP ? 22 : 0);
+  var LM = 52, RM = 122;      /* 右侧给读出卡留一条（与 3D 的 RPAD 同理） */
+  var gapX = 10, gapY = 26, epGapPx = 16;
+  var iw = box.w - LM - RM - (cols-1)*gapX - nEpGap*epGapPx;
+  var ih = box.h - TM - BM - (rows-1)*gapY;
+  var aspect = GB.h / GB.w;
+  var cellW = Math.max(30, Math.min(iw/cols, (ih/rows)/aspect));
+  var cellH = cellW * aspect;
+  var gridW = cols*cellW + (cols-1)*gapX + nEpGap*epGapPx;
+  var gridH = rows*cellH + (rows-1)*gapY;
+  var gx0 = box.x + LM + Math.max(0, (iw + (cols-1)*gapX + nEpGap*epGapPx - gridW)/2);
+  var gy0 = box.y + TM + Math.max(0, (ih + (rows-1)*gapY - gridH)/2);
+  function cellX(cq){ return gx0 + cq*(cellW+gapX) + (epEvery ? Math.floor(cq/epEvery)*epGapPx : 0); }
+  function cellY(r){ return gy0 + r*(cellH+gapY); }
+  var body = [], hit = [];
+  /* LOD：格子在屏幕上的有效宽度（缩放计入）决定要不要标注——放大是真的更清楚 */
+  var effW = cellW * ui.zoom3;
+  var labAll = effW >= 230;
+  var spN = (cutCP ? D.cp : 1) * D.tp;      /* SP 与 CP 切同一根 s 轴：S/(CP×TP) */
+  var focusQ = ((cutDP ? co.d : 0) * CC + (CC > 1 ? co.c : 0));
+  var focusR = rows > 1 ? co.t : 0;
+  for(var r = 0; r < rows; r++){
+    for(var cq = 0; cq < cols; cq++){
+      var d9 = Math.floor(cq / CC), c9 = CC > 1 ? cq % CC : co.c;
+      var t9 = rows > 1 ? r : co.t;
+      var rk = rankOf(t9, c9, d9, pSel, D);
+      var me9 = D.moe ? epOf(t9, c9, d9, D) : null;
+      var isF = hasSel && cq === focusQ && r === focusR;
+      var x = cellX(cq), y = cellY(r);
+      var lab9 = labAll || (isF && effW >= 130) || (!hasSel && r === 0 && cq === 0 && effW >= 130);
+      /* 格框：容器画法（线框），选中的那格用 DP 色加粗 */
+      body.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
+        +'" rx="5" style="fill:var(--pt-s1);stroke:'+(isF?VC.dp:'var(--pt-bd)')+';stroke-width:'+(isF?1.8:.7)+'"/>');
+      if(ui.cardMode && Math.max(cellW, effW) >= 56)
+        body.push(txt(x + 5, y + 10, 'r'+rk, 6.2, isF ? VC.dp : 'var(--pt-fg3)', 'start',
+          'font-weight="800" paint-order="stroke" stroke="var(--pt-s1)" stroke-width="2.2"'));
+      var ghostIds = {};
+      Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
+      if(ui.cardMode && cutPP && pSel !== 0) Object.keys(FS_HEAD).forEach(function(k9){ ghostIds[k9] = 1; });
+      if(ui.cardMode && cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
+      var op9 = (hasSel && !isF) ? .38 : 1;
+      if(op9 < 1) body.push('<g opacity="'+op9+'">');
+      body.push(graphSVG({
+        x:x+3, y:y+3, w:cellW-6, h:cellH-6, g:rk, D:D,
+        label:lab9, bounds:GB, ghostIds:ghostIds,
+        ghostClu:(liDense || !D.moe) ? ['moe-block'] : [],
+        cuts:{
+          tp: cutTP ? {count:D.tp, mine:t9} : null,
+          ep: cutEP ? {count:D.ep, mine:me9 ? me9.ep : 0} : null,
+          sp: cutTP ? {count:spN, mine:(cutCP ? c9 : 0)*D.tp + t9} : null,
+          cp: cutCP ? {count:D.cp, mine:c9} : null
+        }
+      }));
+      if(op9 < 1) body.push('</g>');
+      /* 层徽章：这一格画的是哪一层的内容（真图重复段只画一层的算子） */
+      if(Math.max(cellW, effW) >= 78){
+        /* 非 Rank 时每格是整份复制体（头尾都有），badge 里的 PP 只会和底下的段轨
+           打架——只在 Rank 下写段号（那时格里装的才真是某一段的卡）。 */
+        var lb = 'L'+li + (ui.cardMode && cutPP ? ' · PP'+liStage : '') + ' · ' + (liDense ? 'Dense' : 'MoE') + ' 代表层';
+        body.push(txt(x + cellW/2, y - 4, esc(lb), 6.6, 'var(--pt-fg3)', 'middle',
+          'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+      }
+      /* ep 桶号（每格自己的坐标导出，不是全局选中的那份） */
+      if(cutEP && cellW >= 40){
+        var eb = me9 ? me9.ep : 0;
+        var kE9 = Math.round(D.experts/D.ep), e09 = eb*kE9;
+        fsPill(body, hit, x + cellW/2, y + cellH + 9,
+          'ep'+eb + (cellW >= 120 ? ' · E'+e09+'–E'+(e09+kE9-1) : ''), VC.ep,
+          hasSel && me9 && epOf(co.t, co.c, co.d, D).ep === eb, ['e', eb], 6.6);
+      }
+      /* 点格子 = 选中这张卡（正交方阵里格子就是卡/复制体本身） */
+      hit.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
+        +'" style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="card" data-i="'+rk+'"/>');
     }
   }
-  var nGap = epEvery ? (cols/epEvery - 1) : 0;
-  var cw = Math.max(34, Math.floor((W - 30 - (cols-1)*6 - nGap*epGapPx) / cols));
-  host.classList.add('is-tiled');
-  host.classList.toggle('is-side', ui.viewTab === 'side');
-  host.dataset.cw = cw; host.dataset.n = cols; host.dataset.rows = tRows;
-  host.dataset.ccols = cCols;
-  host.dataset.epevery = epEvery; host.dataset.epgap = epGapPx;
-  host.style.gridTemplateRows = tRows > 1 ? 'repeat('+tRows+', auto)' : '';
-  host.style.removeProperty('--pt-cellh');
-  applyDeckZoom();
-  return n;
+  /* ── 轴门牌：DP 跨组居中一排、CP 每列一枚、TP·SP 行头一列——它们就是卡的层级坐标 ── */
+  var yDP = gy0 - (CC > 1 ? 34 : 18) - (cutEP ? 15 : 0);
+  if(cutDP){
+    var stepD = D.dp > 10 ? 2 : 1;
+    for(var d2 = 0; d2 < DD; d2++){
+      if(d2 % stepD !== 0 && d2 !== DD-1) continue;
+      var xa = cellX(d2*CC), xb = cellX(d2*CC + CC - 1) + cellW;
+      fsPill(body, hit, (xa+xb)/2, yDP, 'DP'+d2, VC.dp, hasSel && co.d === d2, ['d', d2]);
+    }
+  } else if(D.dp > 1 && cellW >= 60){
+    fsPill(body, hit, gx0 + gridW/2, yDP, 'DP ×'+D.dp+'（刀抬起：副本重叠）', VC.dp, false, null, 6.4);
+  }
+  if(CC > 1){
+    for(var cq2 = 0; cq2 < cols; cq2++){
+      var c2 = cq2 % CC;
+      fsPill(body, hit, cellX(cq2) + cellW/2, gy0 - 16 - (cutEP ? 15 : 0), 'CP'+c2, VC.cp,
+        hasSel && co.c === c2, ['c', c2], 6.6);
+    }
+  }
+  if(rows > 1){
+    for(var r2 = 0; r2 < rows; r2++)
+      fsPill(body, hit, gx0 - 26, cellY(r2) + cellH/2, 'TP·SP'+r2, VC.tp, hasSel && co.t === r2, ['t', r2], 6.8);
+  } else if(cutTP){
+    var lt9 = fsPill(body, hit, gx0 - 24, gy0 + cellH/2, 'TP·SP ×'+D.tp, VC.tp, false, null, 6.6);
+    body.push(txt(gx0 - 24, gy0 + cellH/2 + 16, '每格还叠着 '+D.tp+' 片', 5.6, 'var(--pt-fg3)', 'middle'));
+  }
+  /* ── EP 组框：框住的那几列合起来凑齐全部专家（与 3D 的组框同一件事）── */
+  if(cutEP && cols > 1){
+    var tsOf = function(r9){
+      if(rows > 1) return [r9];
+      if(ui.cardMode) return [co.t];
+      var a9 = [], t8; for(t8 = 0; t8 < D.tp; t8++) a9.push(t8); return a9;
+    };
+    var grpOf = function(cq9, t8){
+      var d8 = Math.floor(cq9/CC), c8 = CC > 1 ? cq9 % CC : co.c;
+      return Math.floor(((d8*D.cp + c8)*D.tp + t8) / GSZ);
+    };
+    var span = {};
+    for(var cq3 = 0; cq3 < cols; cq3++) for(var r3 = 0; r3 < rows; r3++)
+      tsOf(r3).forEach(function(t8){
+        var m8 = grpOf(cq3, t8);
+        if(!span[m8]) span[m8] = {c0:cq3, c1:cq3};
+        else { span[m8].c0 = Math.min(span[m8].c0, cq3); span[m8].c1 = Math.max(span[m8].c1, cq3); }
+      });
+    var selG = hasSel ? Math.floor(((co.d*D.cp + co.c)*D.tp + co.t) / GSZ) : -1;
+    Object.keys(span).forEach(function(mk){
+      var m8 = +mk, sp8 = span[mk], ok = true, ci, rr;
+      for(ci = sp8.c0; ci <= sp8.c1 && ok; ci++) for(rr = 0; rr < rows && ok; rr++){
+        var ts9 = tsOf(rr);
+        for(var q8 = 0; q8 < ts9.length; q8++) if(grpOf(ci, ts9[q8]) !== m8){ ok = false; break; }
+      }
+      if(!ok) return;                       /* 半列组宁可不画，不画错 */
+      var bx = cellX(sp8.c0) - 5, bw = cellX(sp8.c1) + cellW + 5 - bx;
+      var by9 = gy0 - 5, bh9 = gridH + 10;
+      var on8 = m8 === selG;
+      body.push('<rect x="'+bx.toFixed(1)+'" y="'+by9.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh9.toFixed(1)
+        +'" rx="7" style="fill:none;stroke:'+VC.ep+';stroke-width:'+(on8?2:.9)+';opacity:'+(on8?1:.5)+'"/>');
+      fsPill(body, hit, bx + bw/2, gy0 - (CC > 1 ? 34 : 18), 'EP 组 '+m8, VC.ep, on8, null, 6.6);
+    });
+  }
+  /* ── PP：正视是把层深压掉的正交投影——段在这里重叠，给一条段选择轨（Rank 下）。
+     换段会换掉每格画的层区间与持有内容，正是「这摞卡里看哪一张」的深度坐标。 ── */
+  if(cutPP){
+    var yPP = box.y + box.h - 14;
+    var xPP = gx0;
+    body.push(txt(xPP - 8, yPP + 3, 'PP', 7, VC.pp, 'end', 'font-weight="800"'));
+    for(var p9 = 0; p9 < D.pp; p9++){
+      var lo9 = p9*lps, hi9 = Math.min(L-1, (p9+1)*lps - 1);
+      var plab = 'PP'+p9+' · L'+lo9+'–'+hi9;
+      var pw9 = fsPill(body, hit, xPP + 40, yPP, plab, VC.pp, p9 === pSel, ['p', p9], 6.6);
+      xPP += pw9 + 12;
+    }
+    body.push(txt(xPP + 6, yPP + 3, ui.cardMode ? '换段 = 看这一摞里深处那张卡' : '段沿深度重叠——层深方向看侧视', 6, 'var(--pt-fg3)', 'start'));
+  }
+  var CID = 'fsClip';
+  var wrapped = '<defs>'+hatchDefsSVG()+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+    + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
+  return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
+          nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
+          cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
 }
-/* 副本不能靠 cloneNode：正视的节点位置、连线、标注都是 3d-deck 在运行时用
-   getBoundingClientRect 量出来再写进 inline style 的，静态克隆拿不到那套计算，
-   复制出去就散成一条。所以每格挂一个真的 sidecar 实例，各自 fit 各自的格子。 */
+
+/* ═════════ 侧视图（原生）：全部层沿层深排开 + PP Stage 分段 ═════════
+   一列 = 一层，列里的每一小块 = 这一层真会跑的算子（同一份 OPENPANGU_GRAPH，
+   颜色 = 哪把刀切它）。层与层不一样的证据全部保留：Dense→MoE 换挡带、只在两头的
+   输入/输出段与 MTP 尾巴、mHC residual ×4 主干。PP 是这张图的主角：段头横幅
+   （附 TP/EP/DP 因子与每段卡数）、段边界线、段间掰缝；Rank 打开时每段下方铺出
+   这一段的卡架（tp 行 × dp·cp 列的点阵），点谁选谁——层级：段 → 卡。 */
+function sideScene(D, g, box){
+  var IXg = graphIndex(); if(!IXg) return null;
+  var G = IXg.G, clu = IXg.clu, root = clu['decoder-stack'];
+  if(!root) return null;
+  var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
+      cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
+  var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
+  var revOn = revLiOn(D), revLi = revOn ? clamp(Math.floor(+ui.revLayer), 0, L-1) : -1;
+  var body = [], hit = [];
+  /* ── 层内的行：decoder-stack 里的算子（含逐层补的 mHC FFN Merge），按真图 y 排 ── */
+  var rows = [];
+  IXg.G.nodes.forEach(function(n){
+    if(!(n.kind === 'op' || n.id === 'shared_expert_mlp' || n.id === 'mhc_attention_post')) return;
+    if(!inClu(n.parent, 'decoder-stack', clu)) return;
+    rows.push(n);
+  });
+  var vT = 1e9, vB = -1e9;
+  rows.forEach(function(n){ vT = Math.min(vT, n.y - n.height/2); vB = Math.max(vB, n.y + n.height/2); });
+  /* ── 布局 ── */
+  var rackOn = ui.cardMode;
+  var TM = 74, BM = rackOn ? 96 : 42, LM = 158, RM = 178;
+  var x0 = box.x + LM, x1 = box.x + box.w - RM;
+  var yRail = box.y + TM - 12;
+  var y0 = box.y + TM + 10, y1 = box.y + box.h - BM;
+  var stGap = cutPP ? Math.min(26, (x1 - x0) * 0.018) : 0;
+  var colGap = 2;
+  var colW = ((x1 - x0) - (D.pp > 1 && cutPP ? (D.pp - 1) * stGap : 0) - (L - 1) * colGap) / L;
+  function stOf(li){ return Math.min(D.pp - 1, Math.floor(li / lps)); }
+  function xOf(li){ return x0 + li * (colW + colGap) + (cutPP ? stOf(li) * stGap : 0); }
+  function rowY(yc){ return y0 + (yc - vT) / (vB - vT) * (y1 - y0); }
+  function nodeInLayer9(n, li){
+    if(FS_DENSE[n.id]) return li < denseTop;
+    if(FS_MOE[n.id]) return li >= denseTop;
+    return true;
+  }
+  var selStage = cutPP ? co.p : 0;
+  /* ── 段头横幅 + 段边界 + 段底色 ── */
+  if(cutPP){
+    for(var st9 = 0; st9 < D.pp; st9++){
+      var lo9 = st9 * lps, hi9 = Math.min(L - 1, (st9 + 1) * lps - 1);
+      var xa = xOf(lo9), xb = xOf(hi9) + colW;
+      var on9 = hasSel && st9 === selStage;
+      body.push('<rect x="'+xa.toFixed(1)+'" y="'+(box.y+34).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="20" rx="10" '
+        +'style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+(on9?1.6:.7)+'"/>');
+      body.push(txt((xa+xb)/2, box.y + 47, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
+        on9 ? VC.pp : 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+      /* 因子行：这一段里叠着哪几维（落下的刀才列）+ 这一段住着多少张卡 */
+      var chips = [];
+      if(cutTP) chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>');
+      if(cutCP) chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>');
+      if(cutEP) chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>');
+      if(cutDP) chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>');
+      chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
+      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(box.y+61).toFixed(1)+'" text-anchor="middle" font-size="6.4" '
+        +'font-family="var(--pt-mono)" font-weight="700">'+chips.join('<tspan fill="var(--pt-bds)"> · </tspan>')+'</text>');
+      hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(box.y+32).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="32" '
+        +'style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
+      if(st9 > 0){
+        var xd = xa - stGap/2 - colGap/2;
+        body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(y0-16).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(y1+10).toFixed(1)
+          +'" style="stroke:'+VC.pp+';stroke-width:1.2;stroke-dasharray:5 4"/>');
+      }
+    }
+  }
+  body.push(txt(box.x + 14, box.y + 47, 'MODEL DEPTH / TOPOLOGY', 6.4, 'var(--pt-fg3)', 'start',
+    'font-weight="700" letter-spacing="1.4"'));
+  /* ── mHC residual ×4 主干：贯穿全部层，接进两头 ── */
+  var railX0 = x0 - 26, railX1 = x1 + 26;
+  [-4.5, -1.5, 1.5, 4.5].forEach(function(dy){
+    body.push('<line x1="'+railX0.toFixed(1)+'" y1="'+(yRail+dy).toFixed(1)+'" x2="'+railX1.toFixed(1)+'" y2="'+(yRail+dy).toFixed(1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:.6;opacity:.55"/>');
+  });
+  var dotStep = Math.max(1, Math.ceil(3.2 / (colW + colGap)));
+  for(var ld = 0; ld < L; ld += dotStep){
+    var xc9 = xOf(ld) + colW/2;
+    body.push('<circle cx="'+xc9.toFixed(1)+'" cy="'+yRail.toFixed(1)+'" r="1.3" style="fill:var(--pt-fg3);opacity:.6"/>');
+  }
+  body.push(txt(railX0 - 6, yRail + 2.4, 'mHC residual state ×4', 6.2, 'var(--pt-fg2)', 'end',
+    'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+  /* ── 每层一列：L 刻度 + 算子小块 ── */
+  var lstep = Math.max(1, Math.ceil(13 / (colW + colGap)));
+  var sh0 = shardMap(D, g);
+  for(var li9 = 0; li9 < L; li9++){
+    var lx = xOf(li9);
+    var inSel = stOf(li9) === selStage;
+    if(li9 % lstep === 0 || li9 === L - 1)
+      body.push(txt(lx + colW/2, y0 - 4, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
+        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
+    /* 层列可点：点一层 = 反查这一层住在哪几张卡（落成 layer 标签） */
+    hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(y0-12).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-y0+16).toFixed(1)
+      +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
+    var dim9 = ui.cardMode && cutPP && !inSel;
+    if(dim9) body.push('<g opacity="0.45">');
+    for(var ri = 0; ri < rows.length; ri++){
+      var n9 = rows[ri];
+      if(!nodeInLayer9(n9, li9)) continue;
+      var by9 = (sh0 && sh0[n9.id] && sh0[n9.id].spec && sh0[n9.id].spec.by) || EXTRA_BY[n9.id] || [];
+      var b0 = by9[0] || null;
+      var col9 = b0 ? dimColor(b0.dim) : 'var(--pt-fg2)';
+      var ya = rowY(n9.y - n9.height/2), yb = rowY(n9.y + n9.height/2);
+      if(n9.colorKey === 'opv:comm'){
+        body.push('<line x1="'+lx.toFixed(1)+'" y1="'+((ya+yb)/2).toFixed(1)+'" x2="'+(lx+colW).toFixed(1)+'" y2="'+((ya+yb)/2).toFixed(1)
+          +'" style="stroke:'+col9+';stroke-width:.9;stroke-dasharray:2 1.6;opacity:.8"/>');
+        continue;
+      }
+      var dense9 = FS_DENSE[n9.id] ? 1 : 0;
+      body.push('<rect x="'+lx.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+colW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
+        +'" rx="0.8" style="fill:'+mix(col9, b0 ? (dense9?44:32) : 12)+';stroke:'+(b0?col9:'var(--pt-bds)')+';stroke-width:.25"/>');
+    }
+    if(dim9) body.push('</g>');
+  }
+  /* ── Dense→MoE 换挡带：层与层最实在的一处不同 ── */
+  function bandBox(ids, lo, hi, col, label, labAt){
+    var ya = 1e9, yb = -1e9;
+    rows.forEach(function(n){ if(ids[n.id]){ ya = Math.min(ya, rowY(n.y - n.height/2)); yb = Math.max(yb, rowY(n.y + n.height/2)); } });
+    if(ya > yb) return;
+    var xa = xOf(lo) - 3, xb = xOf(hi) + colW + 3;
+    body.push('<rect x="'+xa.toFixed(1)+'" y="'+(ya-6).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(yb-ya+12).toFixed(1)
+      +'" rx="6" style="fill:none;stroke:'+col+';stroke-width:1;stroke-dasharray:6 3;opacity:.8"/>');
+    body.push(txt(labAt === 'left' ? xa - 4 : (xa+xb)/2, ya - 10, esc(label), 6.8, col,
+      labAt === 'left' ? 'end' : 'middle',
+      'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
+  }
+  if(denseTop > 0) bandBox(FS_DENSE, 0, Math.min(denseTop, L) - 1, VC.tp,
+    'Dense FFN · L0–L'+(Math.min(denseTop, L)-1)+' · ×'+Math.min(denseTop, L), 'left');
+  if(D.moe && L > denseTop) bandBox(FS_MOE, denseTop, L - 1, VC.ep,
+    'MoE FFN · L'+denseTop+'–L'+(L-1)+' · ×'+(L-denseTop), 'mid');
+  /* ── 行标签：重复段的算子名标一次（居中）；名字带真切法 ── */
+  if(colW * ui.zoom3 >= 1.1){
+    var xm = (x0 + x1) / 2;
+    var lastY = -1e9;
+    rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
+      if(FS_DENSE[n9.id]) return;                 /* Dense 行的名字挂在 Dense 带子左侧，不进中列 */
+      var yc = rowY(n9.y);
+      if(yc - lastY < 7.4) return;                /* 挤不下就让位：行几何照画，名字隔行标 */
+      lastY = yc;
+      var by8 = (sh0 && sh0[n9.id] && sh0[n9.id].spec && sh0[n9.id].spec.by) || EXTRA_BY[n9.id] || [];
+      var b8 = by8[0] || null;
+      var lbl = n9.label;
+      if(n9.id === 'attention_all_gather' || n9.id === 'ffn_all_gather') lbl = 'TP/SP AllGather';
+      if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl = 'TP/SP Reduce-Scatter';
+      if(n9.id === 'attention_core') lbl = lbl + ' · DSA/SWA 按层';
+      var tag = b8 ? ' · '+(b8.dim === 'sp' ? 'SP' : b8.dim.toUpperCase())+'切'+(b8.axis||'') : '';
+      body.push(txt(xm, yc + 2, esc(lbl + tag), 6.2, b8 ? dimColor(b8.dim) : 'var(--pt-fg2)', 'middle',
+        'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
+    });
+    var lastY2 = -1e9;
+    rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
+      if(!FS_DENSE[n9.id] || denseTop <= 0) return;
+      var yc = rowY(n9.y);
+      if(yc - lastY2 < 7.4) return;
+      lastY2 = yc;
+      var lbl = n9.id === 'ffn_all_gather' ? 'Dense TP/SP AllGather'
+              : n9.id === 'ffn_reduce_scatter' ? 'Dense TP/SP Reduce-Scatter' : 'Dense '+n9.label.replace(/^Dense /,'');
+      body.push(txt(xOf(0) - 8, yc + 2, esc(lbl), 6, VC.tp, 'end',
+        'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
+    });
+  }
+  /* ── 两头：输入段（左）与 输出 + MTP 尾巴（右）——只属于首/末层的那两段 ── */
+  function sidePill(x, y, w, lbl, col, dashed, tag){
+    body.push('<rect x="'+(x - w/2).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" width="'+w.toFixed(1)+'" height="18" rx="9" '
+      +'style="fill:var(--pt-s1);stroke:'+col+';stroke-width:.9'+(dashed?';stroke-dasharray:4 2.6':'')+'"/>');
+    body.push(txt(x, y - (tag ? 1 : -2.2), esc(lbl), 6.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+    if(tag) body.push(txt(x, y + 6.4, esc(tag), 4.9, col, 'middle', 'font-weight="700"'));
+  }
+  var hx = box.x + LM/2 - 8, hw = LM - 34;
+  var headPills = [
+    ['Token IDs · Pos · Attn Ctx', VC.dp, false, 'DP 切 batch' + (cutCP ? ' · CP 切 seq ×'+D.cp : '')],
+    ['Embedding Weight', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
+    ['Parallel Embedding', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null]
+  ];
+  var hy = yRail + 24;
+  body.push(txt(hx, hy - 12, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  headPills.forEach(function(hp, i){ sidePill(hx, hy + 12 + i*24, hw, hp[0], hp[1], hp[2], hp[3]); });
+  body.push('<path d="M'+(hx + hw/2).toFixed(1)+' '+(hy + 12 + 48).toFixed(1)
+    +' C '+(x0 - 40).toFixed(1)+' '+(hy + 60).toFixed(1)+' '+(railX0 + 4).toFixed(1)+' '+yRail.toFixed(1)+' '+(x0 - 4).toFixed(1)+' '+yRail.toFixed(1)
+    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:1;opacity:.7"/>');
+  hit.push('<rect x="'+(hx - hw/2).toFixed(1)+'" y="'+(hy-12).toFixed(1)+'" width="'+hw.toFixed(1)+'" height="'+(24*3+18).toFixed(1)
+    +'" style="fill:transparent;cursor:help" data-tipk="head"/>');
+  var txr = box.x + box.w - RM/2 + 6, tw = RM - 34;
+  var tailPills = [
+    ['Final RMSNorm', VC.tp, false, cutTP ? 'SP 切 seq（借 TP 组）' : null],
+    ['LM Head Weight → LM Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
+    ['Logits All-Gather', VC.tp, true, null],
+    ['Logits', 'var(--pt-fg3)', false, null],
+    ['MTP Input Norms', VC.tp, false, cutTP ? 'SP 切 seq' : null],
+    ['EH Projection', VC.tp, false, cutTP ? 'TP 切 hidden' : null],
+    ['MTP Decoder ×3', VC.tp, false, null],
+    ['MTP Shared Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
+    ['MTP Logits', 'var(--pt-fg3)', false, null]
+  ];
+  var ty0 = yRail + 24;
+  body.push(txt(txr, ty0 - 12, '主输出 + MTP 尾巴 · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  body.push('<rect x="'+(txr - tw/2 - 5).toFixed(1)+'" y="'+(ty0 + 12 + 4*24 - 13).toFixed(1)+'" width="'+(tw+10).toFixed(1)+'" height="'+(5*24 + 4).toFixed(1)
+    +'" rx="7" style="fill:none;stroke:var(--pt-bd);stroke-width:.8;stroke-dasharray:3 2"/>');
+  body.push(txt(txr, ty0 + 12 + 4*24 - 17, 'Multi Token Predictor ×3', 5.4, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+  tailPills.forEach(function(tp9, i){ sidePill(txr, ty0 + 12 + i*24, tw, tp9[0], tp9[1], tp9[2], tp9[3]); });
+  body.push('<path d="M'+(x1 + 4).toFixed(1)+' '+yRail.toFixed(1)
+    +' C '+(railX1 - 2).toFixed(1)+' '+yRail.toFixed(1)+' '+(x1 + 44).toFixed(1)+' '+(ty0 + 30).toFixed(1)+' '+(txr - tw/2 - 2).toFixed(1)+' '+(ty0 + 12).toFixed(1)
+    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:1;opacity:.7"/>');
+  hit.push('<rect x="'+(txr - tw/2).toFixed(1)+'" y="'+(ty0-12).toFixed(1)+'" width="'+tw.toFixed(1)+'" height="'+(24*9+18).toFixed(1)
+    +'" style="fill:transparent;cursor:help" data-tipk="tail"/>');
+  /* ── 反查某一层：给那一列描个框 + 写清牵动多少张卡 ── */
+  if(revOn){
+    var rx = xOf(revLi);
+    var hv = layerHome(D, revLi);
+    body.push('<rect x="'+(rx-2).toFixed(1)+'" y="'+(y0-8).toFixed(1)+'" width="'+(colW+4).toFixed(1)+'" height="'+(y1-y0+14).toFixed(1)
+      +'" rx="3" style="fill:none;stroke:'+VC.dp+';stroke-width:1.8"/>');
+    fsPill(body, hit, rx + colW/2, y1 + 12, 'L'+revLi+' · '+fmt(hv.tot)+' 张卡'
+      + (hv.frag > 1 ? '，各持 1/'+hv.frag : ''), VC.dp, true, null, 6.6);
+  }
+  /* ── Rank：选中卡的段框 + 每段的卡架（段 → 卡的层级）── */
+  if(rackOn){
+    if(cutPP){
+      var sxa = xOf(selStage*lps) - 4, sxb = xOf(Math.min(L-1, (selStage+1)*lps - 1)) + colW + 4;
+      body.push('<rect x="'+sxa.toFixed(1)+'" y="'+(y0-10).toFixed(1)+'" width="'+(sxb-sxa).toFixed(1)+'" height="'+(y1-y0+18).toFixed(1)
+        +'" rx="6" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(hasSel?2:1)+';opacity:'+(hasSel?1:.55)+'"/>');
+      if(hasSel) body.push(txt((sxa+sxb)/2, y0 - 14, 'rank '+g+' 在这一段', 6.4, VC.dp, 'middle',
+        'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+    }
+    /* 卡架：每段 tp 行 × dp·cp 列。列序 = d·CP + c（与正视方阵同一套），点谁选谁 */
+    var rackTop = y1 + 26;
+    var CCr = D.cp, colsR = D.dp * D.cp, rowsR = D.tp;
+    body.push(txt(x0 - 8, rackTop + 8, '卡架', 6.2, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    for(var stR = 0; stR < D.pp; stR++){
+      var rxa = xOf(stR*lps), rxb = xOf(Math.min(L-1, (stR+1)*lps - 1)) + colW;
+      var dw = Math.min(9, (rxb - rxa - 4) / colsR - 1.4);
+      var dh = Math.min(8, (BM - 44) / rowsR - 1.4);
+      if(dw < 2 || dh < 2){
+        fsPill(body, hit, (rxa+rxb)/2, rackTop + 10, 'PP'+stR+' · ×'+fmt(D.world/D.pp)+' 卡', VC.pp, stR === selStage, ['p', stR], 6.2);
+        continue;
+      }
+      var rgx = rxa + ((rxb - rxa) - colsR*(dw+1.4))/2;
+      for(var rr9 = 0; rr9 < rowsR; rr9++) for(var cc9 = 0; cc9 < colsR; cc9++){
+        var dR = Math.floor(cc9 / CCr), cR = cc9 % CCr;
+        var rk9 = rankOf(rr9, cR, dR, stR, D);
+        var onR = hasSel && rk9 === g;
+        body.push('<rect x="'+(rgx + cc9*(dw+1.4)).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4)).toFixed(1)
+          +'" width="'+dw.toFixed(1)+'" height="'+dh.toFixed(1)+'" rx="1.4" style="fill:'
+          +(onR ? VC.dp : mix(VC.dp, stR === selStage ? 20 : 8))+';stroke:'+VC.dp+';stroke-width:'+(onR?1.2:.35)+'"/>');
+        hit.push('<rect x="'+(rgx + cc9*(dw+1.4) - .7).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - .7).toFixed(1)
+          +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
+          +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR+'</title></rect>');
+      }
+      if(rowsR > 1 && stR === 0){
+        body.push(txt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
+        body.push(txt(rgx - 4, rackTop + (rowsR-1)*(dh+1.4) + dh/2 + 2, 'TP·SP'+(rowsR-1), 4.9, VC.tp, 'end'));
+      }
+    }
+  }
+  var CID = 'ssClip';
+  var wrapped = '<defs>'+hatchDefsSVG()+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+    + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
+  return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
+          nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
+          cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
+}
+
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
    重排就是拖不动的直接原因；拖的时候只留选中那一份和层板骨架，松手再补回全量。 */
 var lowDetail = false;
@@ -4161,7 +4441,7 @@ function ensureRubik(cb){
   });
 }
 function renderRubik(D){
-  $('stage').hidden = true; $('deck').hidden = true; $('rubik').hidden = false;
+  $('stage').hidden = true; $('rubik').hidden = false;
   var key = [D.tp, cfg.cp, D.pp, D.dp, D.ep, D.layers, D.experts].join('/');
   ensureRubik(function(){
     if(ui.view !== 'chain' || !ui.cardMode || !ui.netOff) return;
@@ -4181,564 +4461,73 @@ function renderRubik(D){
   });
   return true;
 }
-var deckClones = [], deckZoom = 1;
-/* 标注层（DP/CP/TP·SP/ep/EP 组框）的坐标是量格子矩形得来的——滚轮缩放、窗口
-   变宽、sidecar 逐格挂载都会让格子挪位置，量过一次就不管的话，牌子会留在
-   旧坐标上浮到卡片中腰。盯住 0 号格的尺寸，一变就防抖重画（重画先清旧的）。 */
-var deckAxD = null, deckAxRO = null, deckAxT = 0;
-function repaintDeckAxes(){
-  if(!deckAxD || ui.view !== 'chain') return;
-  if(ui.viewTab !== 'front' && ui.viewTab !== 'side') return;
-  paintDeckAxes(deckAxD);
+/* ══ gesture 变换：缩放/平移不重建场景 ═════════════════════════════════════
+   卡顿的根源不是 SVG 本身，是**每个滚轮/指针事件都把 1.4 万个图元字符串重建 +
+   innerHTML 重新解析一遍**。而对固定视角来说，缩放与平移只是一条仿射变换：
+   任何 chain 场景画完后都满足 screen = C + pan + zoom·(base − C)（C = 画布中心，
+   3D 的 netScene 里 zoom 乘在 s 上、pan 加在 ox/oy 上，正视/侧视由 renderChain 包
+   一层同样约定的 <g>）。于是 gesture 中只改 #vroot 上的 transform——一个图元都不动，
+   帧率就是浏览器合成器的帧率。手停下来（260ms）再重画一次干净的：3D 恢复「文字
+   不随缩放变大」的地图式标注，正视/侧视按新缩放重估该显示多少标签（LOD）。
+   转台（yaw/pitch）没有这条捷径——投影非线性，仍走 lowDetail + rAF 重建。 */
+var viewRendered = null, crispT = 0;
+function applyViewTransform(){
+  var svg = $('stage').querySelector('svg');
+  var vr = viewRendered;
+  if(!svg || !vr){ scheduleCrisp(); return; }
+  /* 变换写在 **svg 元素**的 CSS transform 上，不写在内部 <g> 上：内部 <g> 的
+     transform 一变，Chrome 会把两三万个矢量图元整树重光栅化（实测一帧 240ms）；
+     而 svg 元素是个普通盒子，CSS transform 走合成器——已画好的位图拉一拉就行，
+     帧率立刻回到合成器帧率。代价是放大时位图会糊，停手 300ms 后 crisp 重绘
+     一帧矢量的补回清晰度（顺带按新缩放重估 LOD 与视口剔除）。
+     坐标换算：viewBox 单位 → CSS px。m = meet 缩放比，O = letterbox 偏移；
+     场景约定 screen = C + pan + zoom·(base − C)，从「上次真渲染」推到「当前 ui」
+     的增量是 translate(t)·scale(k)（viewBox 系），换到 CSS 系就是
+     translate(O(1−k) + m·t)·scale(k)，origin 取元素左上角。 */
+  var k = ui.zoom3 / vr.zoom;
+  var cx = vr.vw/2, cy = vr.vh/2;
+  var tx = (cx + ui.panX3) - k*(cx + vr.panX);
+  var ty = (cy + ui.panY3) - k*(cy + vr.panY);
+  var cw = svg.clientWidth || 1, ch = svg.clientHeight || 1;
+  var m = Math.min(cw/vr.vw, ch/vr.vh);
+  var Ox = (cw - m*vr.vw)/2, Oy = (ch - m*vr.vh)/2;
+  svg.style.transformOrigin = '0 0';
+  svg.style.transform = (Math.abs(k-1) < 1e-4 && Math.abs(tx) < .01 && Math.abs(ty) < .01)
+    ? '' : 'translate('+(Ox*(1-k) + m*tx).toFixed(2)+'px,'+(Oy*(1-k) + m*ty).toFixed(2)+'px) scale('+k.toFixed(4)+')';
+  syncZoomHud();
+  scheduleCrisp();
 }
-function watchDeckLayout(){
-  if(deckAxRO || !window.ResizeObserver) return;
-  deckAxRO = new ResizeObserver(function(){
-    clearTimeout(deckAxT);
-    deckAxT = setTimeout(repaintDeckAxes, 120);
-  });
-  deckAxRO.observe($('deckHost'));
+function scheduleCrisp(){
+  clearTimeout(crispT);
+  crispT = setTimeout(function(){
+    crispT = 0;
+    if(drag3 || touch3) return;               /* 手还按着：先别打断，停手后自然会再进来 */
+    var D9 = derive(cfg);
+    if(D9.ok && ui.view === 'chain'){ renderChain(D9); urlWrite(); }
+  }, 300);
 }
-/* 缩放不走 transform：那样 overflow 的滚动区域算不对，而且只是把像素拉大。
-   直接改列宽——grid 自然重排，每只 sidecar 的 ResizeObserver 会跟着重新 fit，
-   放大出来的是真的更清楚，不是糊的。 */
-var deckZoomRaf = 0;
-function applyDeckZoom(){
-  /* 列宽的写入合并到下一帧：0 号格是**活的** sidecar，列宽一改它的
-     ResizeObserver 就重新 fit 一次（要把 5,686 个节点重新量一遍位置）。
-     滚轮一串十几格，每格都写就是十几次 fit——实测 8 格要 11 秒。
-     合并之后一串滚轮只落一次布局、一次 fit。 */
-  if(deckZoomRaf) return;
-  deckZoomRaf = requestAnimationFrame(function(){
-    deckZoomRaf = 0;
-    var host = $('deck');
-    if(!host.classList.contains('is-tiled')) return;
-    var base = +host.dataset.cw || 60, n = +host.dataset.n || 1;
-    var cw = Math.round(base * deckZoom);
-    host.style.gridTemplateColumns = 'repeat('+n+', '+cw+'px)';
-    host.classList.toggle('is-dense', cw < 150);
-    /* 骨架用百分比定位，自己跟着格子缩，不用管；真 DAG 那几份是死 DOM，
-       尺寸变了要重抄——防抖到滚轮停下再抄。 */
-    if(deckAxD) recloneAll(deckAxD);
-  });
+function syncZoomHud(){
+  var el = $('zoomPct');
+  if(el) el.textContent = Math.round(ui.zoom3 * 100) + '%';
 }
-$('deck').addEventListener('wheel', function(ev){
-  var host = $('deck');
-  if(!host.classList.contains('is-tiled')) return;
-  if(!(ev.ctrlKey || ev.metaKey) && Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;  /* 横向滚就让它滚 */
-  ev.preventDefault();
-  deckZoom = clamp(deckZoom * (ev.deltaY < 0 ? 1.12 : 1/1.12), 1, 14);
-  applyDeckZoom();
-}, {passive:false});
-/* 放大之后横向滚动会换一批可见格子——真 DAG 那几份要跟着挪过去（防抖同缩放） */
-$('deck').addEventListener('scroll', function(){
-  if(deckAxD && $('deck').classList.contains('is-tiled')) recloneAll(deckAxD);
-}, {passive:true});
-/* ── 副本靠克隆，不各渲染一份 ──────────────────────────────────────────
-   32 只格子渲染的是**同一份**内容：同 preset、同 view、同 parallelMode，
-   sidecar 不知道也不关心这一格代表哪张卡——每格的不同全在我们自己那层叠加
-   （门牌 / 刀口条 / 桶号 / EP 框）。所以只让 0 号格真渲染，其余克隆它的 DOM。
-   省掉的是 31 次 5,686 节点的构建、31 只 ResizeObserver、31 次 fit——实测
-   32 格铺满从 10.7 秒降到 1 秒出头，滚轮缩放从每格 2 秒降到一次防抖重克隆。
-   克隆成立的前提是**每格等大**：grid 本来就是等宽等高，那套 inline style 量的
-   是同样大的容器，抄过去逐像素相同。
-   （早先注释说「克隆会散成一条」——那是在 master 还没 fit 完就抄的情形；
-   这里等 fit 彻底落地之后才抄，量出来的位置已经写进 style 了。） */
-/* ── 缩略骨架：密排格子里代替整份 DAG ─────────────────────────────────
-   一屏 32 格时每格才 50-60px 宽，那里塞一份 5,686 节点的完整 DAG，读者一个
-   字都看不见，浏览器却要为 31 份**一模一样**的内容做 18 万次样式解析——实测
-   铺满 10.7 秒、滚轮缩放一格 2 秒，卡的就是这个（换成 cloneNode 也一样慢：
-   贵的是节点进文档，不是怎么造出来的）。
-   密排时改画真图的骨架：同一份 OPENPANGU_GRAPH，40 来个算子按原坐标缩成小
-   块，位置用百分比 ⇒ 格子缩放它自己跟着缩。data-node 照给，所以刀口条那层
-   叠加一行都不用改。放大到读得清了（cw ≥ 150）再换回真 DAG。 */
-var THUMB_HTML = '';
-function deckThumb(D){
-  if(THUMB_HTML) return THUMB_HTML;
-  var IX = graphIndex(); if(!IX) return '';
-  var G = IX.G, W = G.width || 1000, H = G.height || 4200;
-  var sh0 = shardMap(D, 0) || {};
-  var out = [];
-  G.nodes.forEach(function(n){
-    if(n.kind !== 'op') return;                    /* 张量与分组框不进骨架：它们是标注不是内容 */
-    var s1 = sh0[n.id], by0 = (s1 && s1.spec && s1.spec.by && s1.spec.by[0]) || (EXTRA_BY[n.id] || [])[0];
-    var col = by0 ? dimColor(by0.dim) : 'var(--pt-fg3)';
-    var comm = n.colorKey === 'opv:comm';
-    out.push('<i data-node="'+esc(n.id)+'" style="left:'+((n.x-n.width/2)/W*100).toFixed(2)
-      + '%;top:'+((n.y-n.height/2)/H*100).toFixed(2)
-      + '%;width:'+(n.width/W*100).toFixed(2)+'%;height:'+Math.max(0.25, n.height/H*100).toFixed(2)
-      + '%;background:'+(comm ? 'transparent' : mix(col, 46))
-      + ';box-shadow:inset 0 0 0 .5px '+col+'"></i>');
-  });
-  THUMB_HTML = '<div class="pt-thumb">'+out.join('')+'</div>';
-  return THUMB_HTML;
-}
-function cloneMaster(slot){
-  var master = $('deckHost');
-  if(!master || !slot || slot === master) return false;
-  var kids = master.children, frag = document.createDocumentFragment(), i, n = 0;
-  for(i = 0; i < kids.length; i++){
-    var el = kids[i];
-    /* 我们自己那层的直接子节点不抄：门牌与切分角标各格不同，另画 */
-    if(el.classList && (el.classList.contains('pt-dpcap') || el.classList.contains('pt-dpcut'))) continue;
-    frag.appendChild(el.cloneNode(true));
-    n++;
-  }
-  if(!n) return false;
-  /* sidecar 是**直接渲染进宿主元素**的：它把 pto-model-deck / pto-model-training-sidecar
-     这些类挂在 #deckHost 自己身上，而它整套 CSS 的作用域正是这几个类。只抄子节点、
-     不抄宿主上的类，克隆出来就是一堆没有样式的裸节点——挤成一列小字，看着像乱码。 */
-  var mcls = String(master.className || '').split(/\s+/).filter(function(c){ return c.indexOf('pto') === 0; });
-  slot.className = 'pt-deckhost pt-dpclone' + (mcls.length ? ' ' + mcls.join(' ') : '');
-  slot.textContent = '';
-  slot.appendChild(frag);
-  return true;
-}
-/* 铺开时**一律用骨架**，一格真 DAG 都不克隆。理由不是性能（虽然也差 18 倍）：
-   32 格 sidecar 渲染的是**同一份**内容——它不知道自己代表哪张卡，每格真正的身份
-   全在我们那层叠加上（门牌 / 刀口条 / 桶号 / EP 框）。所以克隆再逼真也不多给
-   一点信息，却要一路对齐 sidecar 的内部状态：宿主上的 pto-* 类、scene 上的
-   scale/pan、正视与 3D 的视图状态……对齐差一样，格子里就是一坨看着像乱码的东西
-   （这一路踩过三次）。
-   想读真 DAG 的路径本来就有、而且更好用：点中那张卡 → 关闭 Rank，一张大图。
-   骨架也不是示意图：它是同一份 OPENPANGU_GRAPH 的真节点、按维度着色、带 data-node，
-   刀口条照常叠在上面。 */
-/* 哪几格给真 DAG。上一版把这里改成「一格都不给」，乱码是没有了，可正视也就
-   只剩一屏抽象方块——把要看的东西一起扔了，矫枉过正。
-   乱码的根源是**克隆**（抄来的 DOM 带着 master 旧的 transform 与状态类），
-   不是「显示真图」本身：直接挂真实例从来不会乱，原来的代码就是这么干的，
-   只是 32 个实例太慢（实测铺满 10.7 秒）。所以是**限量挂真实例**，不是不挂：
-     · 只给视口内看得见的（视口外的读者根本不在看）；
-     · 再设上限——一屏能读的本来也就这么几格，其余留骨架。 */
-/* 判据只有一条：**这一屏的格子读得清吗**（is-dense 就是那条线，cw < 150）。
-   读得清 → 视口内的格子**全部**给真图；读不清 → **全部**给骨架。
-   刻意不做「给前 N 格」：任何部分覆盖都会留下一两格落单的骨架，看着就像
-   那几格没渲染出来（用户先看到的正是这个）。全有或全无，一屏才是一致的。
-   代价可控：is-dense 的线保证了不密排时一屏最多摆十来格，62k 节点量级，
-   与当初 32 格 18 万节点那种卡死不是一个数量级；真密排时一格 55px，
-   真图本来也只是一团噪点，骨架反而更好读。
-   FULL_CAP 只是防线：窗口特别宽时兜住一个上限，正常情况下够不着。 */
-var FULL_CAP = 14;
-function pickFull(host, slots){
-  if(!host || !slots || !slots.length) return [];
-  if(host.classList.contains('is-dense')) return [];      /* 读不清 → 整屏骨架 */
-  var sl = host.scrollLeft, vw = host.clientWidth, st = host.scrollTop, vh = host.clientHeight, out = [];
-  slots.forEach(function(s){
-    if(out.length >= FULL_CAP) return;
-    var l = s.offsetLeft, t2 = s.offsetTop;
-    if(l + s.offsetWidth > sl && l < sl + vw && t2 + s.offsetHeight > st && t2 < st + vh) out.push(s);
-  });
-  return out;
-}
-function mountClone(slot, D, want){
-  want = want || 'thumb';
-  if(slot.dataset.mounted === want) return;
-  slot.dataset.mounted = want;
-  if(want === 'thumb'){
-    /* 退回骨架时也要把 sidecar 那几个类摘掉：它们带着一整套定位规则，
-       留在身上会把骨架那几个百分比定位的小块也一起摆歪。 */
-    slot.className = 'pt-deckhost pt-dpclone';
-    slot.innerHTML = deckThumb(D);
-  } else {
-    /* 挂**真实例**，不克隆。克隆要一路对齐 sidecar 的内部状态（宿主上的 pto-*
-       类、scene 上的 scale/pan、正视还是 3D 的视图状态），对齐差一样格子里就是
-       一坨乱码——这一路踩过三次。真实例是它自己 render 自己 fit，从来不会乱。
-       代价是每份 ~330ms，所以上面用视口 + FULL_CAP 限住份数。 */
-    slot.className = 'pt-deckhost pt-dpclone';
-    slot.innerHTML = '';
-    var ok9 = false;
-    try{
-      deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
-        /* config 必须和 master 传的是同一份（deckConfig(D)，按本页 cfg 算出来的）。
-           少传这一项，这几格就会退回 sidecar 自带的 openpangu-flash（46 层、
-           256 专家），和 master 并排放着就是两个模型——那正是 ac6738b 刚修掉的
-           矛盾，不能在这儿又漏回去。 */
-        preset:'openpangu-flash', config:deckConfig(D) || undefined,
-        initialView:(ui.viewTab==='side'?'right':'front'), parallelMode:frontMode(D),
-        initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
-        metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
-      }));
-      var made9 = deckClones[deckClones.length-1];
-      ok9 = true;
-      /* 它的 fit 排在后续帧，刀口条要等图元落位之后再叠上去 */
-      setTimeout(function(){
-        dualFrontMarks(made9, D, slot);
-        paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
-      }, 220);
-    }catch(e){ ok9 = false; }
-    if(!ok9){ slot.dataset.mounted = 'thumb'; slot.innerHTML = deckThumb(D); }
-  }
-  paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
-  /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
-  slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
-    + cutTag(D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)));
-}
-/* 0 号格：活的 sidecar 留着（克隆的来源），密排时在它上面盖一层骨架，
-   让一屏 32 格是同一种画法。放大到读得清了就把骨架撤掉，露出真 DAG。 */
-function syncMasterThumb(D){
-  var host = $('deck'), m = $('deckHost');
-  if(!m) return;
-  /* 0 号格是**活的** sidecar，永远是对的（乱码只出在克隆上，现在也不克隆了），
-     所以不再盖骨架——它和别的视口内格子一样，就该显示真图。
-     只有密排到读不清时才盖：那种尺寸下真图只是一团噪点，不如统一成骨架。 */
-  var want = host.classList.contains('is-tiled') && host.classList.contains('is-dense');
-  var cur = m.querySelector(':scope > .pt-thumb');
-  m.classList.toggle('is-thumbed', want);
-  if(want && !cur){
-    m.insertAdjacentHTML('beforeend', deckThumb(D));
-    paintCuts(m, D, 0, 0, 0);                 /* 刀口条改挂到骨架上（paintCuts 里骨架优先） */
-  } else if(!want && cur){
-    cur.remove();
-    paintCuts(m, D, 0, 0, 0);
-  }
-}
-/* master 的「画完了没有」签名：外框尺寸 + 内部那几条 scale/pan 的 inline style。
-   sidecar 的 zoom 就是 scene 上一条 CSS transform，fit 是异步的（还带过渡），
-   所以尺寸对上不等于内容画完。 */
-function masterSig(){
-  var m = $('deckHost'); if(!m) return '';
-  var r = m.getBoundingClientRect(), s = Math.round(r.width)+'x'+Math.round(r.height);
-  var sc = m.querySelectorAll('[class*="scene"], [class*="viewport"]');
-  for(var i = 0; i < sc.length && i < 4; i++) s += '|' + (sc[i].getAttribute('style') || '');
-  return s;
-}
-/* master 重新 fit（缩放 / 改尺寸）之后，各格的克隆还是旧的——重抄一遍。
-   分两步，顺序要紧：
-     ① 先全部退回骨架 —— 骨架用百分比定位，任何尺寸下都是对的；
-     ② **等 master 真的画完**再把视口内那几格提成真 DAG。
-   不等就抄的话，抄到的是 master 上一档的 transform：内容按窄格子 fit 好的
-   比例塞进宽格子里，就成了「一小条挤在中间的乱码」。fit 是异步的、还带过渡，
-   所以只能等签名连着两次不变才算落地。 */
-var deckReclT = 0, deckSettleT = 0;
-function recloneAll(D){
-  clearTimeout(deckReclT); clearTimeout(deckSettleT);
-  deckReclT = setTimeout(function(){
-    if(ui.view !== 'chain' || (ui.viewTab !== 'front' && ui.viewTab !== 'side')) return;
-    var host = $('deck');
-    var slots = Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'));
-    if(!slots.length) return;                 /* 还没铺格子（tileLayout 刚清过），没什么可抄 */
-    /* ① 一律先退骨架。档位没变的格子 mountClone 直接返回——所以密排下滚轮
-       缩放是零成本（骨架自己跟着格子缩，一个节点都不用动）。 */
-    /* ① 先让视口外的退回骨架（骨架用百分比定位，任何尺寸下都是对的）；
-       ② 视口内的挂真实例。不再需要「等 master 落地」那一步——那是克隆时代
-          才要的（抄早了会抄到旧 transform）；真实例各自 render 各自 fit，
-          彼此无关，可以立刻挂。 */
-    var full = pickFull(host, slots);
-    slots.forEach(function(slot){
-      mountClone(slot, D, full.indexOf(slot) >= 0 ? 'full' : 'thumb');
-    });
-    syncMasterThumb(D);
-    paintDeckAxes(D);
-    deckSettleT = setTimeout(function(){ paintDeckAxes(D); }, 420);   /* 真实例 fit 落位后再摆一次牌子 */
-  }, 200);
-}
-/* 这一格里 TP/EP 各切了几份。跟着刀开关走——关掉 TP 这一格就真的不写 TP，
-   否则「TP 按钮按下去没有任何反应」。卡维度下还要标出本卡拿的是第几片/第几桶。 */
-/* 把 3D 那份切分表叠到 sidecar 的算子上：每个被切的算子底下画一条刀口条，
-   n 格代表 n 片，本卡持有的那格实心。sidecar 的算子带 data-node，和整网图
-   用的是同一套 id，所以 shardMap 的结果可以直接对上号。 */
-/* cellD / cellT：这一格代表的是哪张卡。每格是一张**不同**的卡（DP1·TP0 …），
-   片位、桶号都得按它自己的坐标算——照抄全局选中那张卡的话，32 个格子会画出
-   一模一样的刀口，等于没表达「各拿各的」。 */
-function paintCuts(rootEl, D, cellD, cellT, cellC){
-  if(!rootEl) return;
-  Array.prototype.slice.call(rootEl.querySelectorAll('.pt-cutbar')).forEach(function(e){ e.remove(); });
-  if(!window.OPENPANGU_GRAPH) return;
-  var gSel = (sel !== null && sel < D.world) ? sel : null;
-  var coS = gSel !== null ? coordsOf(gSel, D) : null;
-  var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
-  var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
-  var cOwn = cellC !== undefined ? cellC : (coS ? coS.c : 0);
-  var me2 = D.moe ? epOf(tOwn, cOwn, dOwn, D) : null;
-  var co2 = {t: tOwn, c: cOwn, d: dOwn};
-  var sh2 = shardMap(D, rankOf(tOwn, cOwn, dOwn, coS ? coS.p : 0, D));
-  if(!sh2) return;
-  Object.keys(sh2).forEach(function(id){
-    var s1 = sh2[id], by0 = s1 && s1.spec && s1.spec.by && s1.spec.by[0];
-    if(!by0) return;
-    var n2, mineI, col2;
-    if((by0.dim === 'tp' || by0.dim === 'sp') && ui.kTP && D.tp > 1){
-      n2 = D.tp; mineI = co2 ? co2.t : -1; col2 = VC.tp;
-    } else if(by0.dim === 'ep' && ui.kEP && D.moe && D.ep > 1){
-      n2 = D.ep; mineI = me2 ? me2.ep : -1; col2 = VC.ep;
-    } else return;
-    var q2 = '[data-node="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]';
-    /* 骨架优先：0 号格密排时骨架盖在活 sidecar 上面，刀口条得挂到看得见的
-       那一份上，否则它躲在被 visibility:hidden 的那棵子树里。 */
-    var node = rootEl.querySelector('.pt-thumb ' + q2) || rootEl.querySelector(q2);
-    if(!node) return;
-    var bar = document.createElement('span');
-    bar.className = 'pt-cutbar';
-    bar.style.setProperty('--c', col2);
-    var cells = '';
-    for(var i9 = 0; i9 < n2; i9++) cells += '<i' + (i9 === mineI ? ' class="on"' : '') + '></i>';
-    bar.innerHTML = cells;
-    node.appendChild(bar);
-  });
-}
-/* 角标写**这一格的编号**，不是份数：TP0/TP1、EP6 才说明这张卡拿的是哪一片、
-   哪一桶；「TP×2」32 个格子写的都一样，等于没说。份数交给轴标签去讲。
-   EP 还把桶对应的专家区间一并写出来（E48–E55），不然「第 6 桶」是个空号码。 */
-/* 正视的轴标签：DP 沿列头排一行、TP 沿行头排一列，位置直接量格子的实际
-   矩形算——grid 的列宽会随缩放变，写死偏移会跟不上。 */
-function paintDeckAxes(D){
-  var host = $('deck');
-  Array.prototype.slice.call(host.querySelectorAll('.pt-axlab')).forEach(function(e){ e.remove(); });
-  if(!host.classList.contains('is-tiled')) return;
-  var cells = Array.prototype.slice.call(host.querySelectorAll(':scope > .pt-deckhost, :scope > .pt-dpclone'));
-  if(!cells.length) return;
-  var rows = +host.dataset.rows || 1;
-  var cc = +host.dataset.ccols || 1;
-  var hb = host.getBoundingClientRect(), st = host.scrollTop, sl = host.scrollLeft;
-  var gSel = (sel !== null && sel < D.world) ? sel : null;
-  var coS = gSel !== null ? coordsOf(gSel, D) : null;
-  /* act = ['d'|'c'|'t'|'e', 序号]：轴标签兼作控件，点了换卡——和 3D 的轨同一套
-     chainpick 坐标算术（document 上那只委托监听认 data-act，无须另接线）。 */
-  function put(el, txt2, col, on, act){
-    var s2 = document.createElement('span');
-    s2.className = 'pt-axlab' + (on ? ' is-on' : '') + (act ? ' is-act' : '');
-    s2.style.color = col;
-    s2.style.setProperty('--axc', col);
-    s2.textContent = txt2;
-    if(act){
-      s2.setAttribute('data-act', 'chainpick');
-      s2.setAttribute('data-k', act[0]);
-      s2.setAttribute('data-i', act[1]);
-    }
-    host.appendChild(s2);
-    return s2;
-  }
-  var dCols = Math.ceil(cells.length / rows) / cc;
-  cells.forEach(function(c, i){
-    var col2 = rows <= 1 ? i : Math.floor(i / rows), row2 = rows <= 1 ? 0 : (i % rows);
-    var d2 = Math.floor(col2 / cc), c2 = col2 % cc;
-    var r = c.getBoundingClientRect();
-    var x = r.left - hb.left + sl, y = r.top - hb.top + st;
-    /* DP：挂在它那组（cp 列）的头上、横跨整组居中；列数多时隔一个标。
-       cp 铺开时 DP 上移一行，把 -19 那一行让给 CP。 */
-    if(row2 === 0 && c2 === 0){
-      var step2 = (D.dp > 10) ? 2 : 1;
-      if(d2 % step2 === 0 || d2 === dCols - 1){
-        var cLast = cells[Math.min(cells.length - 1, (col2 + cc - 1) * rows)];
-        var rz2 = cLast ? cLast.getBoundingClientRect() : r;
-        var l1 = put(null, 'DP' + d2, VC.dp, coS && coS.d === d2, ['d', d2]);
-        l1.style.left = ((x + (rz2.right - hb.left + sl)) / 2) + 'px';
-        l1.style.top = (y - (cc > 1 ? 38 : 19)) + 'px';
-        l1.style.transform = 'translateX(-50%)';
-      }
-    }
-    /* CP：每列一枚，贴着列头——正视的方阵里 CP 和 DP 一样是「这一格是哪张卡」的
-       一位坐标，缺了它 cp>1 的那些卡就分不出彼此。 */
-    if(row2 === 0 && cc > 1){
-      var lc = put(null, 'CP' + c2, VC.cp, coS && coS.c === c2, ['c', c2]);
-      lc.style.left = (x + r.width/2) + 'px';
-      lc.style.top = (y - 19) + 'px';
-      lc.style.transform = 'translateX(-50%)';
-    }
-    /* TP·SP：只在第一列的格子左侧标。名字带 SP——这一行的组同时就是 SP 组 */
-    if(col2 === 0 && rows > 1){
-      var l2 = put(null, 'TP·SP' + row2, VC.tp, coS && coS.t === row2, ['t', row2]);
-      l2.style.left = '2px';
-      l2.style.top = (y + r.height/2 - 8) + 'px';
-    }
-    /* 非 Rank 的正视一格 = 一份 (d,c) 复制体，TP 没铺成行——但 TP·SP 在这一屏
-       不该因此没有落点：左侧给一枚份数牌，说明每格里还叠着 tp 片。 */
-    if(col2 === 0 && rows === 1 && !ui.cardMode && ui.viewTab === 'front' && ui.kTP && D.tp > 1){
-      var lt = put(null, 'TP·SP ×' + D.tp, VC.tp, false);
-      lt.title = '每格是一份完整复制体，里面还叠着 ' + D.tp + ' 片 TP·SP——打开 Rank 才把它们摊成行';
-      lt.style.left = '2px';
-      lt.style.top = (y + r.height/2 - 8) + 'px';
-    }
-    /* 每格自己的桶号。和 3D 那边同一件事：EP 是导出来的，格子上不写就无从看起。
-       挂在格子下沿，与 DP 那排列头（在上沿）分开。桶号按**这一格自己的** (t,c,d)
-       算——CP 铺开后同一 dp 列里 c 不同，桶号也可能不同。
-       非 Rank 时一格装着 tp 张卡，桶号写全它们各自的（如 ep0·ep1）。 */
-    if(ui.kEP && D.moe && D.ep > 1 && (ui.cardMode || ui.viewTab === 'front')){
-      var cCell = cc > 1 ? c2 : (coS ? coS.c : 0);
-      var l3;
-      if(ui.cardMode){
-        var mE = epOf(rows > 1 ? row2 : (coS ? coS.t : 0), cCell, d2, D);
-        l3 = put(null, 'ep' + mE.ep, VC.ep, coS && epOf(coS.t, coS.c, coS.d, D).ep === mE.ep, ['e', mE.ep]);
-      } else {
-        var seen9 = {}, list9 = [];
-        for(var t9 = 0; t9 < D.tp; t9++){
-          var e9 = epOf(t9, cCell, d2, D).ep;
-          if(!seen9[e9]){ seen9[e9] = 1; list9.push(e9); }
-        }
-        var on9 = coS && coS.d === d2 && (cc <= 1 || coS.c === c2);
-        l3 = put(null, 'ep' + list9.join('·ep'), VC.ep, !!on9);
-        /* 为什么是两个桶：没开 Rank 时一格 = 一份完整复制体（DP·CP 定位），
-           里面还叠着 tp 张卡没摊开，而 EP 桶号是从 (t,c,d) 导出的——t 一变
-           桶号就变。所以这一格装着 tp 个桶，逐个写出来。打开 Rank 把 tp 摊成
-           行之后，每格就只剩一个桶号了。 */
-        l3.title = '这一格是一份完整复制体，里面叠着 ' + D.tp + ' 张卡（TP·SP 0–' + (D.tp-1)
-          + '）——EP 桶号由 (tp, cp, dp) 导出，t 一变桶就变，所以这一格装着 '
-          + list9.length + ' 个桶：' + list9.map(function(e){ return 'ep'+e; }).join('、')
-          + '。打开 Rank 把 TP 摊成行，每格就只剩一个桶。';
-      }
-      l3.style.left = (x + r.width/2) + 'px';
-      /* 贴在格子**里面**的下沿，不是外面：挂到外面就正好压在下一行格子的顶上
-         （两行之间只有几个像素），第 0 行的桶号会盖住第 1 行的 DP·TP 门牌。 */
-      l3.style.top = (y + r.height - 18) + 'px';
-      l3.style.transform = 'translateX(-50%)';
-    }
-  });
-  /* ── EP 的框（与 3D 那只同一件事）───────────────────────────────────
-     只在正视：正视铺的是 dp×tp 的方阵，EP 组按列成块，框得出来。侧视铺的只有
-     tp 行（DP 副本在那个方向上是重叠的，本来就没铺），一屏里全是同一个 dp，
-     框住谁都没意义，所以不画。 */
-  Array.prototype.slice.call(host.querySelectorAll('.pt-epbox')).forEach(function(e){ e.remove(); });
-  /* 非 Rank 的正视也画：一格是 (d,c) 的整份复制体、装着 tp 张卡——只要这几格
-     里**所有** tp 片都落在同一组（下面的 ok 检查会核对），框就框得成立。 */
-  if(!(ui.viewTab === 'front' && ui.kEP && D.moe && D.ep > 1)) return;
-  var nCol = Math.ceil(cells.length / rows), GSZ = D.ep * D.etp;
-  /* 组号按**这一列自己的** (d, c) 算：CP 铺开后列号 = d·CP + c，正好就是折叠序
-     q 的高位——EP 组是 q 上的连续段，所以一组必然框住连续几列。CP 没铺开时
-     沿用选中卡（或 rank 0）的 c 当代表。 */
-  var grpCol = function(col9, t9){
-    var d9 = Math.floor(col9 / cc), c9 = cc > 1 ? (col9 % cc) : (coS ? coS.c : 0);
-    return Math.floor(((d9*D.cp + c9)*D.tp + t9) / GSZ);
-  };
-  /* 一格里到底有哪几个 t：Rank 铺开时一行一片；非 Rank 一格是整份复制体，
-     tp 片全在里面——组归属要对全部 t 成立才算数。 */
-  var tsOf = function(r9){
-    if(rows > 1) return [r9];
-    if(ui.cardMode) return [coS ? coS.t : 0];
-    var a9 = [], t8; for(t8 = 0; t8 < D.tp; t8++) a9.push(t8); return a9;
-  };
-  var span = {};
-  for(var c9 = 0; c9 < nCol; c9++) for(var r9 = 0; r9 < rows; r9++){
-    tsOf(r9).forEach(function(t9v){
-      var m9 = grpCol(c9, t9v);
-      if(!span[m9]) span[m9] = {c0:c9, c1:c9};
-      else { span[m9].c0 = Math.min(span[m9].c0, c9); span[m9].c1 = Math.max(span[m9].c1, c9); }
-    });
-  }
-  var selG2 = coS ? Math.floor(((coS.d*D.cp + coS.c)*D.tp + coS.t) / GSZ) : -1;
-  Object.keys(span).forEach(function(mk){
-    var m = +mk, sp = span[mk], ci9, rr, ok = true;
-    /* 同 3D：只有这一列块里装的正好是这一组才画。ep·etp 不是 tp 的整数倍时会
-       出现半列，框会把别组的卡也圈进来——宁可不画，也不画错。 */
-    for(ci9 = sp.c0; ci9 <= sp.c1 && ok; ci9++)
-      for(rr = 0; rr < rows && ok; rr++){
-        var ts9 = tsOf(rr), q8;
-        for(q8 = 0; q8 < ts9.length; q8++)
-          if(grpCol(ci9, ts9[q8]) !== m){ ok = false; break; }
-      }
-    if(!ok) return;
-    var a = cells[sp.c0*rows], z = cells[Math.min(cells.length-1, sp.c1*rows + rows - 1)];
-    if(!a || !z) return;
-    var ra = a.getBoundingClientRect(), rz = z.getBoundingClientRect();
-    var bx = ra.left - hb.left + sl - 4, by = ra.top - hb.top + st - 4;
-    var bw = (rz.right - hb.left + sl + 4) - bx, bh = (rz.bottom - hb.top + st + 4) - by;
-    var on2 = m === selG2;
-    var el2 = document.createElement('div');
-    el2.className = 'pt-epbox' + (on2 ? ' is-on' : '');
-    el2.style.cssText = 'color:'+VC.ep+';left:'+bx+'px;top:'+by+'px;width:'+bw+'px;height:'+bh+'px';
-    host.appendChild(el2);
-    /* 门牌挂在框的正上方，与 DP 那一排刻度错开一行——两者都贴着列头，同一行会打架。
-       只写组号：框里几张卡、各是哪只桶，框自己和格子上的桶号已经写着了。 */
-    /* CP 铺开时列头有两行牌（DP 在 -38、CP 在 -19），EP 组的再上挪一行 */
-    var lg = put(null, 'EP 组 ' + m, VC.ep, on2);
-    lg.style.left = (bx + bw/2) + 'px';
-    lg.style.top = (by - (cc > 1 ? 57 : 38)) + 'px';
-    lg.style.transform = 'translateX(-50%)';
-  });
-}
-function cutTag(D, cellD, cellT, cellC){
-  var gSel = (sel !== null && sel < D.world) ? sel : null;
-  var coS = gSel !== null ? coordsOf(gSel, D) : null;
-  var dOwn = cellD !== undefined ? cellD : (coS ? coS.d : 0);
-  var tOwn = cellT !== undefined ? cellT : (coS ? coS.t : 0);
-  var cOwn3 = cellC !== undefined ? cellC : (coS ? coS.c : 0);
-  var m2 = D.moe ? epOf(tOwn, cOwn3, dOwn, D) : null;
-  var s = '';
-  if(ui.kTP && D.tp > 1) s += '<i style="color:'+VC.tp+'">TP'+tOwn+'</i>';
-  if(ui.kEP && D.moe && D.ep > 1 && m2){
-    var kE2 = Math.round(D.experts/D.ep), e02 = m2.ep*kE2;
-    s += '<i style="color:'+VC.ep+'">EP'+m2.ep+' · E'+e02+'–E'+(e02+kE2-1)+'</i>';
-  }
-  return s ? '<span class="pt-dpcut">'+s+'</span>' : '';
-}
-function tileClone(n, D){
-  var host = $('deck'), cell = $('deckHost');
-  deckClones.forEach(function(c){ try{ c.destroy(); }catch(e){} });
-  deckClones = [];
-  Array.prototype.slice.call(host.querySelectorAll('.pt-dpclone'))
-    .forEach(function(el){ el.remove(); });
-  Array.prototype.slice.call(cell.querySelectorAll(':scope > .pt-dpcap, :scope > .pt-dpcut'))
-    .forEach(function(el){ el.remove(); });
-  if(n <= 1){
-    /* 卡维度只有一格，编号和切分角标同样要给——它就是当前那张卡 */
-    if(ui.cardMode) cell.insertAdjacentHTML('beforeend', cutTag(D));
-    paintCuts(cell, D);
-    return;
-  }
-  var rows2 = +host.dataset.rows || 1;
-  var cc2 = +host.dataset.ccols || 1;
-  /* grid-auto-flow:column 是先填满一列再进下一列，所以序号 i 的列号是 i/rows
-     取整、行号（=TP 片）是 i%rows；列号再拆 DP（外层）与 CP（内层）。 */
-  function colD(i){ return Math.floor((rows2 <= 1 ? i : Math.floor(i/rows2)) / cc2); }
-  function colC(i){ return (rows2 <= 1 ? i : Math.floor(i/rows2)) % cc2; }
-  function cellCap(i){
-    return 'DP' + colD(i) + (cc2 > 1 ? '·CP' + colC(i) : '') + (rows2 > 1 ? '·TP' + (i % rows2) : '');
-  }
-  /* EP 组之间的缝：加在每个组头那一列的所有格子上。必须在 sidecar 挂载之前设好——
-     它 fit 的时候读的是格子的实际宽度，先挂后加缝，画出来就偏出格子了。 */
-  var epEvery2 = +host.dataset.epevery || 0, epGap2 = +host.dataset.epgap || 0;
-  function epMargin(i){
-    var col = rows2 <= 1 ? i : Math.floor(i/rows2);
-    return (epEvery2 && col > 0 && col % epEvery2 === 0) ? epGap2 + 'px' : '';
-  }
-  cell.style.marginLeft = '';
-  cell.dataset.cd = 0; cell.dataset.ct = 0; cell.dataset.cc = 0;
-  cell.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+cellCap(0)+'</span>' + cutTag(D, 0, 0, 0));
-  var slots = [];
-  for(var i2 = 1; i2 < n; i2++){
-    var slot = document.createElement('div');
-    slot.className = 'pt-deckhost pt-dpclone';
-    slot.id = 'deckClone' + i2;
-    slot.dataset.cap = cellCap(i2);
-    slot.dataset.cd = colD(i2);
-    slot.dataset.cc = colC(i2);
-    slot.dataset.ct = rows2 <= 1 ? 0 : (i2 % rows2);
-    slot.innerHTML = '<span class="pt-dpcap">' + cellCap(i2) + '</span>';
-    slot.style.marginLeft = epMargin(i2);
-    host.appendChild(slot);
-    slots.push(slot);
-  }
-  /* 默认一屏摆得下全部 n 份，格子全在视口里——滚到哪建到哪那套就不管用了。
-     每份 sidecar 有 5.5k 节点，一口气建完会把主线程焊死好几秒。改成一帧建一份：
-     总时长不变，但布局和编号立刻就在，格子一个接一个填上去，中途页面一直能动。 */
-  var queue = slots.slice();
-  (function pump(){
-    if(!queue.length){
-      /* dualFrontMarks 把 TP 那批标注补回 master 是异步的（它自己排在 160ms
-         之后），克隆很可能抄在那之前。收尾再抄一遍，让各格和 master 一致。 */
-      if(ui.viewTab === 'front') recloneAll(D);
-      return;
-    }
-    if(ui.view!=='chain' || (ui.viewTab!=='front' && ui.viewTab!=='side')) return;   /* 中途切走就别建了 */
-    /* 骨架一份才 40 个块，一帧铺 8 份，32 格两三帧就落地 */
-    for(var b8 = 0; b8 < 8 && queue.length; b8++) mountClone(queue.shift(), D, 'thumb');
-    requestAnimationFrame(pump);
-  })();
+function nudgeZoom(f){
+  ui.zoom3 = clamp(ui.zoom3 * f, 0.2, 20);
+  applyViewTransform();
 }
 function renderChain(D){
+  clearTimeout(crispT); crispT = 0;          /* 正在真渲染：挂起的「补一帧干净的」作废 */
+  var zh = $('zoomHud');
   /* 关掉整网就整屏交给魔方 pattern——它自己就是一张完整的图，不再叠我们的场景 */
   if(ui.cardMode && ui.netOff){
     renderRubik(D); renderChainBar(D);
     $('stageNote').hidden = true; $('detach').hidden = true;
+    if(zh) zh.hidden = true;
     return;
   }
   $('rubik').hidden = true;
-  if(ui.viewTab === 'front' || ui.viewTab === 'side'){
-    if(renderDeck(D)){
-      renderChainBar(D);
-      $('stageNote').hidden = true; $('detach').hidden = true;
-      return;
-    }
-  } else { $('deck').hidden = true; $('stage').hidden = false; }
+  $('stage').hidden = false;
+  if(zh) zh.hidden = false;
+  syncZoomHud();
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   /* 画布整张都归 3D 场景：模型侧（整网 deck × 复印 × 切段 × 锯片 × 分桶）和输入侧
@@ -4761,22 +4550,33 @@ function renderChain(D){
   function rect(x,y,w,h,fill,stroke,sw,extra){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(0.5,w).toFixed(1)+'" height="'+h.toFixed(1)+'" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?0.8:sw)+'" '+(extra||'')+'/>';
   }
-  /* ── 一个可转动的 3D 场景，占满整张画布 ──
-     整网不是一条填了色的带子，是**一叠真的层板**（就是 3d-deck 上那个东西）；
-     DP 复印复制的是整只 deck，同一把刀把上方那块 token 网格真切开；
-     PP 把每份复制体切段并掰开缝；CP 切 token 的 s 轴；TP 锯进算子内部；EP 重排专家。
-     五把刀一刀一刀落在同一个物体上，所以放在同一个三维场景里。拖动可转动。 */
-  var scene = netScene(D, g, SCB);
-  parts.push('<g pointer-events="none">'+scene.body+'</g>');
-  sceneHit = scene.hit;
+  /* ── 场景分派 ──
+     3D/顶视：可转动的 3D 场景（netScene，zoom/pan 已折在投影里）。
+     正视/侧视：本页自己的 2D 渲染器（frontScene / sideScene），按 zoom=1 的基准坐标
+     画，再包一层满足 screen = C + pan + zoom·(base − C) 约定的 <g>——于是三条路径
+     共用同一套 gesture 变换（applyViewTransform），真图脚本缺失时退回 netScene。 */
+  var scene = null, flat = false;
+  if(ui.viewTab === 'front'){ scene = frontScene(D, g, SCB); flat = !!scene; }
+  else if(ui.viewTab === 'side'){ scene = sideScene(D, g, SCB); flat = !!scene; }
+  if(!scene) scene = netScene(D, g, SCB);
+  if(flat){
+    var z9 = ui.zoom3;
+    var bT = 'translate('+(VW/2*(1-z9) + ui.panX3).toFixed(2)+' '+(H/2*(1-z9) + ui.panY3).toFixed(2)+') scale('+z9.toFixed(4)+')';
+    parts.push('<g transform="'+bT+'"><g pointer-events="none">'+scene.body+'</g>'+scene.hit+'</g>');
+    sceneHit = '';
+  } else {
+    parts.push('<g pointer-events="none">'+scene.body+'</g>');
+    sceneHit = scene.hit;
+  }
 
-  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'">'+defsSVG()+parts.join('')+sceneHit+'</svg>';
+  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'"><g id="vroot">'+defsSVG()+parts.join('')+sceneHit+'</g></svg>';
+  viewRendered = {zoom:ui.zoom3, panX:ui.panX3, panY:ui.panY3, vw:VW, vh:H};
   renderChainBar(D);
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
      纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
-/* ── 工具条：切分开关（叠加） + 视角 tab（互斥）。SVG 舞台和 sidecar 两条分支共用 ── */
+/* ── 工具条：切分开关（叠加） + 视角 tab（互斥）。四个视角共用（全是本页 SVG） ── */
 /* ── 图例：画面上每种形状到底在说什么 ────────────────────────────────────────
    这一屏的信息全在**形状**里：斜纹不是装饰、横切和竖切不是同一件事、胶囊和
    方块是两类东西（一个是地址，一个是容器）。不给一张对照表，这些只能靠猜。
@@ -5989,8 +5789,11 @@ function render(){
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
   renderStageTitle();
-  /* deck 只服务切分链的正视/侧视，别的视图一律先收起来，免得压住它们的 SVG */
-  if(ui.view!=='chain' && $('deck')){ $('deck').hidden = true; $('rubik').hidden = true; $('stage').hidden = false; }
+  /* 魔方与缩放 HUD 只服务切分链视图，别的视图一律先收起来 */
+  if(ui.view!=='chain'){
+    $('rubik').hidden = true; $('stage').hidden = false;
+    var zh9 = $('zoomHud'); if(zh9) zh9.hidden = true;
+  }
   var foot = document.querySelector('.pt-foot');
   if(ui.view==='chain'){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
@@ -6034,13 +5837,13 @@ document.addEventListener('input', function(ev){
     ui.revLayer = t.value;
     /* 高亮与拆解卡都要跟着输入走，但**不能走 render()**：那会重建工具条与读出卡，
        输入框当场失焦，第二个数字就打不进去了。所以只重画场景与拆解卡，
-       工具条上那圈高亮手动切一下。（3D/顶视那条 SVG 路径才有这道层板高亮，
-       正视/侧视挂的是 sidecar，没有层板可描。） */
+       工具条上那圈高亮手动切一下。正视/侧视现在也是本页自己的 SVG（原生重画），
+       层反查在那两张图上同样有落点（正视换代表层、侧视描层列），一并重画。 */
     renderRevOut(Dv);
     renderRevBar(Dv);
     var pill = t.closest('.pt-revl');
     if(pill) pill.classList.toggle('is-on', revLiOn(Dv));
-    if(Dv.ok && ui.view==='chain' && ui.viewTab!=='front' && ui.viewTab!=='side'){
+    if(Dv.ok && ui.view==='chain'){
       barFrozen = true;
       try{ renderChain(Dv); } finally { barFrozen = false; }
     }
@@ -6082,16 +5885,20 @@ $('stage').addEventListener('pointermove', function(ev){
   }
   if(!drag3.moved) return;
   if(drag3.pan){
+    /* 平移是纯仿射：只改 #vroot 的 transform，一个图元都不重建（这就是拖平移
+       从「拖不动」变跟手的全部原因）。松手/停手后 scheduleCrisp 再补一帧干净的。 */
     ui.panX3 = drag3.panX + dx*drag3.cs;
     ui.panY3 = drag3.panY + dy*drag3.cs;
-  } else {
-    /* 转台跟手：**离你最近的那一面跟着手指走**。yaw 这里必须取负——turn3 里
-       yaw 转的是坐标架（+u 轴朝观者摆过来），从画面上看就是「抓住背面在推」，
-       与 pitch 那一轴（下拖 → 远侧抬高 → 更俯视，正是抓着前沿往下扳）相反。
-       一横一纵两套相反的直觉装在同一次拖拽里，就是那种「有时正有时反」的感觉。 */
-    ui.yaw3 = drag3.yaw - dx*0.008;
-    ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
+    applyViewTransform();
+    return;
   }
+  /* 转台跟手：**离你最近的那一面跟着手指走**。yaw 这里必须取负——turn3 里
+     yaw 转的是坐标架（+u 轴朝观者摆过来），从画面上看就是「抓住背面在推」，
+     与 pitch 那一轴（下拖 → 远侧抬高 → 更俯视，正是抓着前沿往下扳）相反。
+     一横一纵两套相反的直觉装在同一次拖拽里，就是那种「有时正有时反」的感觉。
+     转台没有仿射捷径（投影非线性），仍走 lowDetail + rAF 全量重建。 */
+  ui.yaw3 = drag3.yaw - dx*0.008;
+  ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
   lowDetail = true;
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
@@ -6101,7 +5908,7 @@ $('stage').addEventListener('pointermove', function(ev){
 var swallowClick = false;
 function endDrag3(ev){
   if(!drag3) return;
-  var moved = drag3.moved;
+  var moved = drag3.moved, wasPan = drag3.pan;
   lowDetail = false;
   if(drag3.raf) cancelAnimationFrame(drag3.raf);
   var cap = drag3.cap;
@@ -6110,15 +5917,20 @@ function endDrag3(ev){
   if(cap) try{ $('stage').releasePointerCapture(ev.pointerId); }catch(e){}
   /* 拖过就不是点击：吞掉紧跟着的那一次 click，否则松手会顺手换掉选中卡 */
   swallowClick = moved;
-  if(moved) render();
+  if(moved){
+    /* 平移的画面已经由 transform 摆对了，立刻全量重画只是把停手的瞬间变成一次
+       卡顿——写回 URL，让 crisp 防抖去补那帧清晰的。转台松手才需要立即全量
+       （lowDetail 期间少画的东西要立刻补回来）。 */
+    if(wasPan){ urlWrite(); scheduleCrisp(); }
+    else render();
+  }
 }
 $('stage').addEventListener('click', function(ev){
   if(swallowClick){ swallowClick = false; ev.stopPropagation(); ev.preventDefault(); }
 }, true);
 $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
-/* ── 滚轮缩放（向光标位置缩放）── */
-var wheelRaf3 = 0;
+/* ── 滚轮缩放（向光标位置缩放）：只改 transform，不重建场景 ── */
 $('stage').addEventListener('wheel', function(ev){
   if(ui.view !== 'chain') return;
   ev.preventDefault();
@@ -6133,21 +5945,30 @@ $('stage').addEventListener('wheel', function(ev){
     var sx = inv.a*ev.clientX + inv.c*ev.clientY + inv.e;
     var sy = inv.b*ev.clientX + inv.d*ev.clientY + inv.f;
     var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
-    var bCX = 84 + (vb[2]-100)/2, bCY = 62 + 248;
-    ui.panX3 = (1-r)*(sx - bCX) + r*ui.panX3;
-    ui.panY3 = (1-r)*(sy - bCY) + r*ui.panY3;
+    var cx9 = vb[2]/2, cy9 = vb[3]/2;
+    /* getScreenCTM 给的是**渲染基线**的用户坐标——连续滚动时上面还压着一层
+       gesture 的 CSS transform，先把光标换算到「当前 ui 状态」的约定坐标系里，
+       缩放锚点才不会一格一格漂。 */
+    var vr9 = viewRendered;
+    if(vr9){
+      var kk = ui.zoom3 / vr9.zoom;
+      sx = kk*(sx - cx9 - vr9.panX) + cx9 + ui.panX3;
+      sy = kk*(sy - cy9 - vr9.panY) + cy9 + ui.panY3;
+    }
+    /* 场景约定 screen = C + pan + zoom·(base − C)，C = viewBox 中心。
+       让光标那点不动 ⇒ pan' = (1−r)(光标 − C) + r·pan。 */
+    ui.panX3 = (1-r)*(sx - cx9) + r*ui.panX3;
+    ui.panY3 = (1-r)*(sy - cy9) + r*ui.panY3;
   }
   ui.zoom3 = next;
-  if(!wheelRaf3) wheelRaf3 = requestAnimationFrame(function(){
-    wheelRaf3 = 0;
-    var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
-  });
+  applyViewTransform();
 }, {passive:false});
-/* ── 双击复位视角/缩放/平移 ── */
+/* ── 双击复位到**当前视角 tab**的标准机位 ── */
 $('stage').addEventListener('dblclick', function(ev){
   if(ui.view !== 'chain') return;
   if(ev.target.closest('[data-act]') || ev.target.closest('.cardg')) return;
-  ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
+  var tp0 = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d'];
+  ui.yaw3 = tp0[0]; ui.pitch3 = tp0[1]; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
   render();
 });
 /* ── 触屏双指缩放+平移 ── */
@@ -6172,10 +5993,19 @@ $('stage').addEventListener('touchmove', function(ev){
   ui.zoom3 = clamp(touch3.zoom * r, 0.2, 20);
   ui.panX3 = touch3.panX + (mx - touch3.mx)*touch3.cs;
   ui.panY3 = touch3.panY + (my - touch3.my)*touch3.cs;
-  var D9 = derive(cfg); if(D9.ok && ui.view==='chain') renderChain(D9);
+  applyViewTransform();               /* 双指也是仿射：不重建，跟手 */
 }, {passive:false});
 $('stage').addEventListener('touchend', function(ev){
-  if(touch3 && ev.touches.length < 2){ touch3 = null; render(); }
+  if(touch3 && ev.touches.length < 2){ touch3 = null; urlWrite(); scheduleCrisp(); }
+});
+/* ── 键盘：＋/－ 缩放、0 回标准机位（打字时不抢） ── */
+document.addEventListener('keydown', function(ev){
+  if(ui.view !== 'chain' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  var t9 = ev.target;
+  if(t9 && (t9.tagName === 'INPUT' || t9.tagName === 'TEXTAREA' || t9.isContentEditable)) return;
+  if(ev.key === '+' || ev.key === '='){ nudgeZoom(1.25); ev.preventDefault(); }
+  else if(ev.key === '-' || ev.key === '_'){ nudgeZoom(1/1.25); ev.preventDefault(); }
+  else if(ev.key === '0'){ ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; applyViewTransform(); ev.preventDefault(); }
 });
 document.addEventListener('click', function(ev){
   var card = ev.target.closest('.cardg');
@@ -6189,7 +6019,7 @@ document.addEventListener('click', function(ev){
   /* 点画布空白处取消选中。选中是一种「当前在看谁」的状态，得有办法退出来——
      不然一旦点中某张卡，读出面板就再也关不掉了（只剩面板上那颗 ✕）。
      只认舞台内的空白：点工具条、抽屉、面板都不算。 */
-  if(!b && sel !== null && ev.target.closest('#stage,#deck')){
+  if(!b && sel !== null && ev.target.closest('#stage')){
     sel = null; render(); ptoNotifyHost(); return;
   }
   if(!b) return;
@@ -6208,7 +6038,7 @@ document.addEventListener('click', function(ev){
   else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
-    if(gv==='chainfront'){ ui.view='chain'; ui.yaw3=0.12; ui.pitch3=0.08; ui.viewTab='front'; }
+    if(gv==='chainfront'){ ui.view='chain'; ui.viewTab='front'; ui.yaw3=0; ui.pitch3=0; ui.zoom3=1; ui.panX3=0; ui.panY3=0; }
     else{ ui.view=gv; }
     stopAnim(); render();
   }
@@ -6219,7 +6049,14 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
   else if(act==='turn'){ ui.yaw3 -= (+b.getAttribute('data-y'))*0.35;   /* 与拖拽同向 */ ui.pitch3 = clamp(ui.pitch3 + (+b.getAttribute('data-p'))*0.18, -0.9, 1.57); render(); }
-  else if(act==='turnreset'){ ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render(); }
+  else if(act==='turnreset'){
+    var tp8 = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d'];
+    ui.yaw3 = tp8[0]; ui.pitch3 = tp8[1]; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render();
+  }
+  else if(act==='zoomin'){ nudgeZoom(1.25); }
+  else if(act==='zoomout'){ nudgeZoom(1/1.25); }
+  else if(act==='zoom100'){ ui.zoom3 = 1; applyViewTransform(); }
+  else if(act==='viewcenter'){ ui.panX3 = 0; ui.panY3 = 0; applyViewTransform(); }
   else if(act==='viewsnap'){
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     if(!isFinite(ty) || !isFinite(tp)) return;
@@ -6253,6 +6090,8 @@ document.addEventListener('click', function(ev){
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
+    /* 换视角 = 换一张图：上一张图里的缩放与平移对这张没有意义，回到标准机位 */
+    ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
     render();
   }
   else if(act==='knife'){ stopAnim(); ui.knife = +b.getAttribute('data-i'); render(); }
