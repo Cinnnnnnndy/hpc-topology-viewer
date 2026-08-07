@@ -2060,7 +2060,7 @@ function netScene(D, g, box, step){
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
       /* 实心只给**选中的那一张卡**。isF 匹配的是「列」（副本 × tp 片），而一列
          纵深上串着 pp 段那么多张卡——只看 isF 会把整列 4 张一起点亮。段也得对上。 */
-      var focusCell = hasSel && (ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF));
+      var focusCell = (hasSel && (ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF))) || (spotCol && spotLayerHit);
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
