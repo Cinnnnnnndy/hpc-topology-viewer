@@ -2048,9 +2048,13 @@ function netScene(D, g, box, step){
        全景下只留首尾两层的层板（那是「有一叠在那儿」的轮廓）。 */
     var lqSkip = lowDetail && !isF;
     var LQN = (ui.netOff || (lqSkip && ui.cardMode)) ? 0 : L;
+    var spotHasLayers = spot && Object.keys(spot.layers).length > 0;
     for(var lq = 0; lq < LQN; lq++){
       var li = wDesc ? (L-1-lq) : lq;
       if(lqSkip && li !== 0 && li !== L-1) continue;
+      var spotLayerHit = spotHasLayers && spot.layers[li];
+      var spotLayerMiss = spotHasLayers && spotCol && !spotLayerHit;
+      if(spotLayerMiss) body.push('<g opacity="0.10" style="filter:saturate(.15)">');
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
@@ -2077,7 +2081,7 @@ function netScene(D, g, box, step){
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
       }
       if(li === revLi && !lowDetail && spotCol){
-        body.push(pane(ww, kOff, 'fill:'+mix(VC.dp, 10)+';stroke:'+VC.dp+';stroke-width:1.4'));
+        body.push(pane(ww, kOff, 'fill:'+mix(VC.dp, 18)+';stroke:'+VC.dp+';stroke-width:2'));
       }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
@@ -2259,6 +2263,7 @@ function netScene(D, g, box, step){
           nodes++;
         });
       }
+      if(spotLayerMiss) body.push('</g>');
     }
     if(colOp < 0.999) body.push('</g>');
     if(ui.cardMode) shellOf(k);
