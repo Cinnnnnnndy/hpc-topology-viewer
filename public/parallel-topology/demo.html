@@ -577,10 +577,12 @@ var PRIMS = [
 var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall','allgather'], pp:['p2p'], dp:['allreduce'], ep:['alltoall'] };
 
 var PRESETS = [
-  /* 默认预置六刀齐全：CP 和 EP 一样按「配置里真切了才给按钮」门控——cp:1 时 CP
-     按钮不出现，看起来就像被别的刀挤掉了。默认页是 pattern 的门面，DP PP CP TP·SP
-     EP 都该在场，所以 cp 给 2（dp 相应 16→8，world 不变）。 */
-  {id:'default128', name:'默认·128卡 tp2·cp2·pp4·dp8·ep8', cfg:{world:128, tp:2, cp:2, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  /* 默认预置就是这一套，别动：tp2·cp1·pp4·dp16·ep8。
+     曾经为了「让 CP 按钮出现」把它改成 cp2·dp8——那是拿默认配置去迁就工具条，
+     本末倒置：CP=1 就是这个模型的事实，按钮不出现正是如实反映「这一刀没落下」。
+     SP 要看得见，靠的是把 SP 画出来（TP·SP 轨、norm 区横纹、TP/SP AllGather），
+     不是把 TP 的份数撑大。 */
+  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
