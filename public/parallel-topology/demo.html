@@ -2557,6 +2557,7 @@ function netScene(D, g, box, step){
         var gc = rankOf(tc, co.c, dc, pc2, D);
         var meC = hasSel && gc === g;
         var dT = depthT(kc, (csx[0]+csx[1])/2);
+        var spotShellDim = spot && !spotCol;
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -2577,9 +2578,7 @@ function netScene(D, g, box, step){
              128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
              pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
-          if(!isFcol){
-            /* 雾会沿纵深累加（一列 4 段、每段两面），所以单层不能给太厚：给到看得出
-               「里面有东西但读不清」就够，维度签名色（TP 青 / EP 紫）还得透得出来。 */
+          if(!isFcol && !spotShellDim){
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
@@ -2590,7 +2589,6 @@ function netScene(D, g, box, step){
         /* Rank 打开之后是 128 只壳 × 12 条棱，投影上大量重叠——整网那档的浓度
            （近处 0.92 宽 / 0.98 浓）叠起来就成了一团黑。卡阵这档整体轻一级，
            前后的落差保持不变，该分得开的还是分得开。 */
-        var spotShellDim = spot && !spotCol;
         var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
         if(spotShellDim){ eW *= 0.4; eO *= 0.3; }
