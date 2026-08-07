@@ -328,7 +328,17 @@
 /* 层反查：工具条上那颗控件 + 左下角那张拆解卡。
    拆解卡贴着图例的位置（两者不会同时打开——一个讲形状、一个讲某一层的去向）。 */
 /* 属性搜索：标签区 + 「＋ 搜索」按钮 + 弹出的属性/取值面板 */
-.pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; max-width:min(560px,46vw)}
+/* 搜索单独占中间那一段：左边是名字、右边是控件，它居中——三者互不挤压。
+   标签多起来会自动换行，宽度上限避免它把两侧顶掉。 */
+.pt-qbar{
+  position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:7;
+  display:flex; justify-content:center; max-width:min(46vw, 620px);
+}
+/* 居中放不下时的两级退让（由 layoutQBar 量出来后打上，不靠断点猜——
+   标签数量会改变宽度，纯 CSS 断点挡不住） */
+.pt-qbar.is-left{left:16px; transform:none; justify-content:flex-start; max-width:min(52vw,420px)}
+.pt-qbar.is-below{left:16px; transform:none; justify-content:flex-start; max-width:calc(100% - 32px)}
+.pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center}
 .pt-qchip{
   display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 4px 0 7px;
   border:1px solid var(--c); border-radius:999px; background:var(--pt-bg); color:var(--c);
@@ -338,11 +348,14 @@
 .pt-qchip.is-bad{border-style:dashed; opacity:.65}
 .pt-qchip button{border:0; background:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:.7}
 .pt-qchip button:hover{opacity:1}
+/* 和 .pb 同一套实心胶囊：虚线看着像「待填的占位框」，和这一屏别的控件不是一路 */
 .pt-padd{
-  height:26px; padding:0 9px; border:1px dashed var(--pt-bd); border-radius:999px;
-  background:var(--pt-bg); color:var(--pt-fg2); cursor:pointer; font-size:11px; white-space:nowrap;
+  min-height:26px; padding:0 11px; border:1px solid var(--pt-bd); border-radius:999px;
+  background:var(--pt-s1); color:var(--pt-fg2); cursor:pointer;
+  font-size:11.5px; font-weight:600; white-space:nowrap; transition:background .15s, color .15s;
 }
-.pt-padd:hover, .pt-psearch.is-open .pt-padd{border-style:solid; border-color:var(--pt-fg3); color:var(--pt-fg)}
+.pt-padd:hover{background:var(--pt-s2); color:var(--pt-fg)}
+.pt-psearch.is-open .pt-padd{background:var(--pt-fg); border-color:var(--pt-fg); color:var(--pt-bg)}
 .pt-pclr{border:0; background:none; color:var(--pt-fg3); cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
 .pt-pmenu{
   position:absolute; top:32px; right:0; z-index:20; min-width:206px;
@@ -391,9 +404,11 @@
 .pt-revbox{max-height:calc(100% - 120px); overflow:auto}
 /* 图例：压在左下角的浮层。它是**对照表**不是正文——每行一个真形状 + 一句话，
    形状用内联 SVG 画，和画布上那一笔走同一套颜色与描边，不能是「差不多的示意」。 */
+/* 图例改挂在标题下方、横铺一条：它是**对照表**，横着排一行一行读起来更快，
+   也不再压住画布左下角那些读数。位置够就一行，不够自适应换行。 */
 .pt-legend{
-  position:absolute; left:14px; bottom:12px; z-index:7;
-  width:min(310px, 46%); max-height:calc(100% - 96px); overflow:auto;
+  position:absolute; left:14px; right:14px; top:46px; z-index:7;
+  max-height:42%; overflow:auto;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:12px;
   padding:9px 11px 10px; font-size:11px; color:var(--pt-fg2); line-height:1.5;
   box-shadow:0 8px 28px rgba(0,0,0,.14);
@@ -413,7 +428,10 @@
   border-top:1px solid var(--pt-bd); padding-top:7px;
 }
 .pt-legend .lg-sec:first-of-type{border-top:0; margin-top:0; padding-top:0}
-.pt-legend .lg-row{display:flex; gap:8px; align-items:flex-start; margin:4px 0}
+.pt-legend .lg-body{display:flex; flex-wrap:wrap; gap:4px 14px; align-items:flex-start}
+.pt-legend .lg-row{display:flex; gap:7px; align-items:flex-start; margin:2px 0; flex:0 1 auto; max-width:330px}
+/* 分组标题在横铺里要自己占满一整行，否则它会挤在两条图例中间当第三条读 */
+.pt-legend .lg-sec{flex:1 0 100%}
 .pt-legend .lg-row svg{flex:0 0 auto; margin-top:1px}
 .pt-legend .lg-row b{color:var(--pt-fg); font-weight:700}
 .pt-legend .lg-row i{font-style:normal; color:var(--pt-fg3)}
@@ -473,6 +491,10 @@
 .cgrow{animation:cfade .55s ease-out both;animation-delay:.22s}
 @keyframes cfade{from{opacity:0}to{opacity:1}}
 
+/* 窄窗：右侧工具条会折行往左长，居中的搜索会被它压住。这时搜索不再居中，
+   退到左侧标题那一列；图例相应往下让，避开折成两行的工具条。
+   断点取 1560：工具条本身最宽能到 780px（max-width:min(72%,780px)），
+   居中的搜索要在两侧各留出这么多才不会撞上——比直觉的「窄屏才管」高不少。 */
 @media (max-width:900px){
   .pt-detail{width:min(86%, 304px)}
   .pt-stagebar{max-width:96%}
@@ -491,6 +513,8 @@
     <!-- 画布自己的名字，占舞台左上角那个位置。收起顶栏之后（嵌入形态）整屏只剩画布，
          没有它就没人说得清这是什么；顶栏在的时候它自己让位，免得同一个名字印两遍。 -->
     <div class="pt-stagetitle" id="stageTitle"></div>
+    <!-- 搜索单独占中间那一段（名字在左、控件在右，它居中），不再挤在右侧工具条里 -->
+    <div class="pt-qbar" id="qbar"></div>
     <div class="pt-stage" id="stage"></div>
     <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG。
          sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
@@ -4913,6 +4937,36 @@ function renderRevBar(D){
     + '<button data-act="revclear" title="清空">×</button></h5>' + secs;
 }
 
+/* 搜索条与图例的位置：量出来再定，不靠媒体查询。
+   右侧工具条的宽度随刀数、Rank 开关变化，搜索条的宽度随标签数变化——两边都会动，
+   断点挡不住（实测 1600px 四枚标签照样压上去）。所以量：
+     ① 居中放得下 → 居中；
+     ② 放不下 → 退到左侧那一列；
+     ③ 还放不下（工具条折了两行往左长）→ 整条挪到工具条下方。
+   图例再跟着这两者的下沿往下排。 */
+function layoutQBar(){
+  var q = $('qbar'), sb = document.querySelector('.pt-stagebar'), lg = $('legend');
+  if(!q || !sb) return;
+  q.classList.remove('is-left', 'is-below');
+  q.style.top = '';
+  var hit = function(){
+    var a = q.getBoundingClientRect(), b = sb.getBoundingClientRect();
+    return a.right > b.left - 8 && a.bottom > b.top && a.top < b.bottom;
+  };
+  if(q.innerHTML && hit()){
+    q.classList.add('is-left');
+    if(hit()){
+      q.classList.add('is-below');
+      q.style.top = Math.round(sb.getBoundingClientRect().bottom - sb.parentElement.getBoundingClientRect().top + 6) + 'px';
+    }
+  }
+  if(lg && !lg.hidden){
+    var host = sb.parentElement.getBoundingClientRect();
+    var bot = Math.max(sb.getBoundingClientRect().bottom, q.innerHTML ? q.getBoundingClientRect().bottom : 0);
+    lg.style.top = Math.round(bot - host.top + 10) + 'px';
+  }
+}
+window.addEventListener('resize', function(){ requestAnimationFrame(layoutQBar); });
 function renderLegend(D){
   var el = $('legend'); if(!el) return;
   el.hidden = !ui.legendOn || (ui.cardMode && ui.netOff);
@@ -5007,7 +5061,8 @@ function renderLegend(D){
     '<b>越远越淡越细</b>（空气透视），不表示别的意思。'
     + (ui.cardMode ? '<i> 选中的那张卡不上雾。</i>' : '')));
 
-  el.innerHTML = h.join('');
+  /* 标题单独一行，其余包进 lg-body 横铺：位置够就一行，不够自适应换行 */
+  el.innerHTML = h[0] + '<div class="lg-body">' + h.slice(1).join('') + '</div>';
 }
 /* 层反查那个输入框就长在工具条上，而 renderChain 收尾会重建整条工具条——
    边打字边重建，输入框每敲一个数字就被换掉一次，第二位就打不进去了。
@@ -5107,9 +5162,13 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + revBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + cBtn + vBtns);
+  /* 搜索走中间那个容器，不进右侧工具条 */
+  var qb = $('qbar');
+  if(qb){ qb.innerHTML = (ui.cardMode && ui.netOff) ? '' : revBtn; qb.hidden = (ui.cardMode && ui.netOff); }
   renderLegend(D);
   renderRevBar(D);
+  requestAnimationFrame(layoutQBar);
 }
 
 function renderDimBar(D, dim){
