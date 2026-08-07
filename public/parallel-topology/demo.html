@@ -2037,7 +2037,7 @@ function netScene(D, g, box, step){
     }
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
-    var spotDim = spot && !spotCol ? 0.22 : 1;
+    var spotDim = spot && !spotCol ? 0.10 : 1;
     var colOp = Math.min(colFade, spotDim);
     if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
@@ -5309,7 +5309,7 @@ function renderV1(D){
       inner = boxSVG(b.x+(GEO.w-iw)/2, y0+GEO.h, b.z+(GEO.d-idp)/2, iw, ih, idp, s, {fill:'var(--pt-fg2)', stroke:'transparent', attrs:' pointer-events="none"'});
     }
     var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
-    var cardOp = spotMiss ? 0.22 : (L3 ? 1 : .16);
+    var cardOp = spotMiss ? 0.10 : (L3 ? 1 : .16);
     cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.25)':'')+'">'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
