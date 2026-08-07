@@ -2037,9 +2037,9 @@ function netScene(D, g, box, step){
     }
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
-    var spotDim = spot && !spotCol ? 0.18 : 1;
+    var spotDim = spot && !spotCol ? 0.08 : 1;
     var colOp = Math.min(colFade, spotDim);
-    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.3)"':'') +'>');
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.15)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -4912,9 +4912,9 @@ function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
   if(!ui.chips.length || (ui.cardMode && ui.netOff)){ el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  function row(dim, what, why){
+  function row(dim, what){
     return '<div class="rl"><span class="dk" style="--c:'+(dim==='sp'?VC.tp:VC[dim])+'">'+dim.toUpperCase()+'</span>'
-      + '<span>'+what+'<br><span style="color:var(--pt-fg3);font-size:10.5px">'+why+'</span></span></div>';
+      + '<span>'+what+'</span></div>';
   }
   /* 一枚标签一段。多枚并存时依次列出——这正是「综合搜索」的意义：
      可以同时问「L29 住在哪」和「TP 组是谁跟谁」。 */
@@ -4925,12 +4925,11 @@ function renderRevBar(D){
     if(s2.kind === 'layer'){
       var h = layerHome(D, s2.li);
       return head
-        + row('pp', '落在 <b>stage '+h.stage+'</b>（L'+h.l0+'–L'+h.l1+'）', '决定这一层<b>去哪几张卡</b>')
-        + row('tp', D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1 —— 不切', '决定它<b>在那几张卡里怎么碎</b>')
-        + (D.moe ? row('ep', h.isMoe ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>' : '这一层是 <b>Dense</b>，没有 e 轴',
-              h.isMoe ? '同一批卡的<b>重分组</b>，不新增卡' : 'EP 这一刀在这一层落不下来') : '')
-        + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>', '切的是 s，权重持有量不变') : '')
-        + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>', '决定这套安排<b>重复几遍</b>')
+        + row('pp', '落在 <b>stage '+h.stage+'</b>（L'+h.l0+'–L'+h.l1+'）')
+        + row('tp', D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1 —— 不切')
+        + (D.moe ? row('ep', h.isMoe ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>' : '这一层是 <b>Dense</b>，没有 e 轴') : '')
+        + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>') : '')
+        + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>')
         + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张卡与第 '+s2.li+' 层有关（world/PP）'
         + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
         + '</div></div>';
@@ -4939,12 +4938,11 @@ function renderRevBar(D){
       var co = coordsOf(s2.g, D), mR = D.moe ? epOf(co.t, co.c, co.d, D) : null;
       var l0 = co.p*D.layersPerStage;
       return head
-        + row('pp', '<b>stage '+co.p+'</b> —— 持 L'+l0+'–L'+(l0+D.layersPerStage-1), '别的层它连显存都没申请')
-        + row('tp', '第 <b>'+co.t+'</b> 片（带着 SP）', '每个权重矩阵只建它那一份')
-        + (D.cp>1 ? row('cp', '第 <b>'+co.c+'</b> 段输入', '切的是 s，权重持有量不变') : '')
-        + (mR ? row('ep', '桶 <b>ep'+mR.ep+'</b>（E'+(mR.ep*(D.experts/D.ep))+'–E'+((mR.ep+1)*(D.experts/D.ep)-1)+'）',
-              '桶号由 (tp,cp,dp) 导出，不是独立轴') : '')
-        + row('dp', '第 <b>'+co.d+'</b> 份副本', '跑同样的模型、不同的数据')
+        + row('pp', '<b>stage '+co.p+'</b> —— 持 L'+l0+'–L'+(l0+D.layersPerStage-1))
+        + row('tp', '第 <b>'+co.t+'</b> 片（带着 SP）')
+        + (D.cp>1 ? row('cp', '第 <b>'+co.c+'</b> 段输入') : '')
+        + (mR ? row('ep', '桶 <b>ep'+mR.ep+'</b>（E'+(mR.ep*(D.experts/D.ep))+'–E'+((mR.ep+1)*(D.experts/D.ep)-1)+'）') : '')
+        + row('dp', '第 <b>'+co.d+'</b> 份副本')
         + '<div class="sum">g = ((pp·DP+dp)·CP+cp)·TP+tp = <b>'+s2.g+'</b>（可逆 §07）</div></div>';
     }
     /* dim */
@@ -4964,10 +4962,7 @@ function renderRevBar(D){
     }
     var grpLabel = s2.grp>=0 ? '第 <b>'+s2.grp+'</b> 组' : '以 <b>r'+g0+'</b> 为例';
     return head
-      + row(dm, '<b>×'+SZ+'</b> —— '+NM[dm], dm==='sp'
-          ? 'SP 不占乘数：组就是 TP 组，同一批卡、同一个组内序号'
-          : (dm==='ep' ? 'EP 是同一批卡的重分组，world 里没有它的乘数'
-                       : 'world = TP × CP × PP × DP，它占其中一个乘数'))
+      + row(dm, '<b>×'+SZ+'</b> —— '+NM[dm])
       + '<div class="sum">'+grpLabel+'，'+dm.toUpperCase()+' 组：'
       + '<div class="rankchips" style="margin-top:4px">'
       + mem.slice(0,16).map(function(r){ return '<button data-act="pick" data-g="'+r+'">'+r+'</button>'; }).join('')
@@ -5159,16 +5154,14 @@ function renderChainBar(D){
       + '</div>';
   } else if(ui.qOpen){
     var p9 = propOf(ui.qOpen);
-    if(p9) pane9 = '<div class="pt-pmenu">'
-      + '<div class="hd">'+esc(p9.n)+' · '+esc(p9.hint)+'</div>'
-      + (p9.opts
-          ? '<div class="opts">'+p9.opts.map(function(o){
-              return '<button data-act="qval" data-k="'+p9.k+'" data-v="'+o+'" style="--c:'
-                + (o==='sp'?VC.tp:VC[o])+'">'+o.toUpperCase()+'</button>';
-            }).join('')+'</div>'
-          : '<input type="number" min="0" id="qVal" data-k="'+p9.k+'" placeholder="'+esc(p9.ph)+'" autofocus>'
-            + '<div class="tip">填好按 Enter</div>')
-      + '</div>';
+    if(p9){
+      var maxV9 = p9.k==='layer'?(D.layers-1):p9.k==='rank'?(D.world-1):0;
+      pane9 = '<div class="pt-pmenu">'
+        + '<div class="hd">'+esc(p9.n)+' · '+esc(p9.hint)+'</div>'
+        + '<input type="number" min="0" max="'+maxV9+'" id="qVal" data-k="'+p9.k+'" placeholder="0–'+maxV9+'" autofocus>'
+        + '<div class="tip">填好按 Enter</div>'
+        + '</div>';
+    }
   }
   var revBtn = '<span class="pt-psearch'+(ui.qOpen?' is-open':'')+'">'
     + chipHTML
@@ -5311,8 +5304,8 @@ function renderV1(D){
       inner = boxSVG(b.x+(GEO.w-iw)/2, y0+GEO.h, b.z+(GEO.d-idp)/2, iw, ih, idp, s, {fill:'var(--pt-fg2)', stroke:'transparent', attrs:' pointer-events="none"'});
     }
     var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
-    var cardOp = spotMiss ? 0.18 : (L3 ? 1 : .16);
-    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.3)':'')+'">'
+    var cardOp = spotMiss ? 0.08 : (L3 ? 1 : .16);
+    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.15)':'')+'">'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
   });
