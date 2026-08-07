@@ -239,7 +239,7 @@
   position:absolute; top:10px; left:16px; z-index:6; display:none;
   align-items:center; min-height:30px; pointer-events:none;
 }
-.pt-root.embed .pt-stagetitle{display:flex}
+.pt-root.embed .pt-stagetitle{display:flex; gap:10px; pointer-events:auto; z-index:8}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
 .pb{
   min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
@@ -327,22 +327,56 @@
 .pt-detach svg{width:100%; height:auto; display:block}
 /* 层反查：工具条上那颗控件 + 左下角那张拆解卡。
    拆解卡贴着图例的位置（两者不会同时打开——一个讲形状、一个讲某一层的去向）。 */
-.pt-revl{
-  display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 8px;
-  border:1px solid var(--pt-bd); border-radius:999px; background:var(--pt-bg);
-  font-size:11px; color:var(--pt-fg2); white-space:nowrap;
+/* 属性搜索：标签区 + 「＋ 搜索」按钮 + 弹出的属性/取值面板 */
+.pt-qbar{
+  position:absolute; top:6px; left:14px; z-index:7;
+  display:flex; justify-content:flex-start; max-width:calc(100% - 28px);
 }
-.pt-revl.is-on{border-color:var(--c); color:var(--c); box-shadow:0 0 0 1px var(--c)}
-.pt-revl b{font-size:11px; font-weight:700}
-.pt-revl input{
-  width:44px; height:18px; padding:0 4px; font-family:var(--pt-mono); font-size:11px;
-  border:1px solid var(--pt-bd); border-radius:5px; background:var(--pt-s1); color:inherit;
+.pt-root.embed .pt-qbar{position:static; max-width:none}
+.pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center}
+.pt-qchip{
+  display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 4px 0 7px;
+  border:1px solid var(--c); border-radius:999px; background:var(--pt-bg); color:var(--c);
+  font-family:var(--pt-mono); font-size:11px; font-weight:700; white-space:nowrap;
 }
-.pt-revl button{
-  border:0; background:none; color:var(--pt-fg3); cursor:pointer; font-size:13px; line-height:1; padding:0 1px;
+.pt-qchip i{font-style:normal; font-weight:500; opacity:.7; font-family:var(--pt-sans,inherit)}
+.pt-qchip.is-bad{border-style:dashed; opacity:.65}
+.pt-qchip button{border:0; background:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:.7}
+.pt-qchip button:hover{opacity:1}
+/* 和 .pb 同一套实心胶囊：虚线看着像「待填的占位框」，和这一屏别的控件不是一路 */
+.pt-padd{
+  min-height:26px; padding:0 11px; border:1px solid var(--pt-bd); border-radius:999px;
+  background:var(--pt-s1); color:var(--pt-fg2); cursor:pointer;
+  font-size:11.5px; font-weight:600; white-space:nowrap; transition:background .15s, color .15s;
 }
+.pt-padd:hover{background:var(--pt-s2); color:var(--pt-fg)}
+.pt-psearch.is-open .pt-padd{background:var(--pt-fg); border-color:var(--pt-fg); color:var(--pt-bg)}
+.pt-pclr{border:0; background:none; color:var(--pt-fg3); cursor:pointer; font-size:14px; line-height:1; padding:0 2px}
+.pt-pmenu{
+  position:absolute; top:32px; left:0; z-index:20; min-width:min(206px, calc(100vw - 32px));
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:10px; padding:7px;
+  box-shadow:0 10px 30px rgba(0,0,0,.16);
+}
+.pt-pmenu .hd{font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--pt-fg3); margin:1px 3px 6px}
+.pt-pmenu > button{
+  display:flex; width:100%; align-items:baseline; gap:7px; text-align:left;
+  border:0; background:none; cursor:pointer; padding:5px 6px; border-radius:6px; color:var(--pt-fg);
+}
+.pt-pmenu > button:hover{background:var(--pt-s2)}
+.pt-pmenu > button b{font-size:12px}
+.pt-pmenu > button span{font-size:10.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-pmenu .opts{display:flex; flex-wrap:wrap; gap:4px}
+.pt-pmenu .opts button{
+  border:1px solid var(--c); color:var(--c); background:var(--pt-bg); cursor:pointer;
+  border-radius:999px; padding:3px 9px; font-family:var(--pt-mono); font-size:11px; font-weight:700;
+}
+.pt-pmenu input{
+  width:100%; height:26px; padding:0 7px; font-family:var(--pt-mono); font-size:12px;
+  border:1px solid var(--pt-bd); border-radius:6px; background:var(--pt-bg); color:var(--pt-fg);
+}
+.pt-pmenu .tip{font-size:10px; color:var(--pt-fg3); margin:5px 3px 1px}
 .pt-revbox{
-  position:absolute; left:14px; bottom:12px; z-index:7;
+  position:absolute; left:14px; top:42px; z-index:7;
   width:min(330px, 48%); background:var(--pt-s1); border:1px solid var(--c, var(--pt-bd));
   border-radius:12px; padding:9px 11px 10px; font-size:11.5px; color:var(--pt-fg2); line-height:1.55;
   box-shadow:0 8px 28px rgba(0,0,0,.14);
@@ -359,11 +393,17 @@
   margin-top:6px; padding-top:5px; border-top:1px solid var(--pt-bd);
   font-size:11.5px; color:var(--pt-fg);
 }
+.pt-revbox .qsec{border-top:1px solid var(--pt-bd); padding-top:6px; margin-top:7px}
+.pt-revbox .qsec:first-of-type{border-top:0; padding-top:0; margin-top:0}
+.pt-revbox .qsec h6{margin:0 0 4px; font-size:11px; font-weight:800; color:var(--c); font-family:var(--pt-mono)}
+.pt-revbox{max-height:calc(100% - 60px); overflow:auto}
 /* 图例：压在左下角的浮层。它是**对照表**不是正文——每行一个真形状 + 一句话，
    形状用内联 SVG 画，和画布上那一笔走同一套颜色与描边，不能是「差不多的示意」。 */
+/* 图例改挂在标题下方、横铺一条：它是**对照表**，横着排一行一行读起来更快，
+   也不再压住画布左下角那些读数。位置够就一行，不够自适应换行。 */
 .pt-legend{
-  position:absolute; left:14px; bottom:12px; z-index:7;
-  width:min(310px, 46%); max-height:calc(100% - 96px); overflow:auto;
+  position:absolute; left:14px; right:14px; top:46px; z-index:7;
+  max-height:42%; overflow:auto;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:12px;
   padding:9px 11px 10px; font-size:11px; color:var(--pt-fg2); line-height:1.5;
   box-shadow:0 8px 28px rgba(0,0,0,.14);
@@ -383,7 +423,10 @@
   border-top:1px solid var(--pt-bd); padding-top:7px;
 }
 .pt-legend .lg-sec:first-of-type{border-top:0; margin-top:0; padding-top:0}
-.pt-legend .lg-row{display:flex; gap:8px; align-items:flex-start; margin:4px 0}
+.pt-legend .lg-body{display:flex; flex-wrap:wrap; gap:4px 14px; align-items:flex-start}
+.pt-legend .lg-row{display:flex; gap:7px; align-items:flex-start; margin:2px 0; flex:0 1 auto; max-width:330px}
+/* 分组标题在横铺里要自己占满一整行，否则它会挤在两条图例中间当第三条读 */
+.pt-legend .lg-sec{flex:1 0 100%}
 .pt-legend .lg-row svg{flex:0 0 auto; margin-top:1px}
 .pt-legend .lg-row b{color:var(--pt-fg); font-weight:700}
 .pt-legend .lg-row i{font-style:normal; color:var(--pt-fg3)}
@@ -443,6 +486,10 @@
 .cgrow{animation:cfade .55s ease-out both;animation-delay:.22s}
 @keyframes cfade{from{opacity:0}to{opacity:1}}
 
+/* 窄窗：右侧工具条会折行往左长，居中的搜索会被它压住。这时搜索不再居中，
+   退到左侧标题那一列；图例相应往下让，避开折成两行的工具条。
+   断点取 1560：工具条本身最宽能到 780px（max-width:min(72%,780px)），
+   居中的搜索要在两侧各留出这么多才不会撞上——比直觉的「窄屏才管」高不少。 */
 @media (max-width:900px){
   .pt-detail{width:min(86%, 304px)}
   .pt-stagebar{max-width:96%}
@@ -461,6 +508,8 @@
     <!-- 画布自己的名字，占舞台左上角那个位置。收起顶栏之后（嵌入形态）整屏只剩画布，
          没有它就没人说得清这是什么；顶栏在的时候它自己让位，免得同一个名字印两遍。 -->
     <div class="pt-stagetitle" id="stageTitle"></div>
+    <!-- 搜索单独占中间那一段（名字在左、控件在右，它居中），不再挤在右侧工具条里 -->
+    <div class="pt-qbar" id="qbar"></div>
     <div class="pt-stage" id="stage"></div>
     <!-- 正视/侧视挂 model-architecture-training-sidecar；3D 仍走上面那张 SVG。
          sidecar 固定挂在 #deckHost（controller 一直指着它），DP 复印出来的副本
@@ -523,10 +572,12 @@ var PRIMS = [
 var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall','allgather'], pp:['p2p'], dp:['allreduce'], ep:['alltoall'] };
 
 var PRESETS = [
-  /* 默认预置六刀齐全：CP 和 EP 一样按「配置里真切了才给按钮」门控——cp:1 时 CP
-     按钮不出现，看起来就像被别的刀挤掉了。默认页是 pattern 的门面，DP PP CP TP·SP
-     EP 都该在场，所以 cp 给 2（dp 相应 16→8，world 不变）。 */
-  {id:'default128', name:'默认·128卡 tp2·cp2·pp4·dp8·ep8', cfg:{world:128, tp:2, cp:2, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  /* 默认预置就是这一套，别动：tp2·cp1·pp4·dp16·ep8。
+     曾经为了「让 CP 按钮出现」把它改成 cp2·dp8——那是拿默认配置去迁就工具条，
+     本末倒置：CP=1 就是这个模型的事实，按钮不出现正是如实反映「这一刀没落下」。
+     SP 要看得见，靠的是把 SP 画出来（TP·SP 轨、norm 区横纹、TP/SP AllGather），
+     不是把 TP 的份数撑大。 */
+  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
@@ -551,7 +602,7 @@ var ui = {
   cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:false, legendOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
-  layersUser:{}, revLayer:'', q:'', drawer:'', selLayerOff:0
+  layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
 
@@ -648,11 +699,15 @@ function urlLoad(){
   /* layer=ℓ：反查「这一层住在哪几张卡」。它是这一屏正向那一问的逆命题，
      一样该能塞进链接——「你看 L37 牵动 32 张卡」得能一条链接发出去。 */
   var lyq = parseInt(q.get('layer'), 10);
-  if(isFinite(lyq) && lyq >= 0){ ui.revLayer = String(lyq); ui.q = 'L'+lyq; }
+  if(isFinite(lyq) && lyq >= 0) ui.chips.push({k:'layer', v:String(lyq)});
   /* q=：搜索框原样进链接。层查有专门的 layer= （老链接得继续认），别的问法
      （r41 / tp / E12）它们各自的效果本来就落在 sel= / axis= 上，q= 只是把
      搜索框里那行字一并带上，打开时框里还是你发出去时的那句话。 */
-  if(q.get('q')) ui.q = String(q.get('q')).slice(0, 24);
+  /* q=layer:29,dim:tp —— 每枚标签一段，属性名:值。层查另有 layer= 兼容老链接。 */
+  if(q.get('q')) String(q.get('q')).slice(0,120).split(',').forEach(function(seg){
+    var kv = seg.split(':');
+    if(kv.length===2 && propOf(kv[0])) addChip(kv[0], kv[1]);
+  });
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
@@ -679,8 +734,7 @@ function urlWrite(){
   if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
   if(ui.view==='chain' && ui.commOn) q.set('comm','1');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
-  if(ui.revLayer !== '' && isFinite(+ui.revLayer)) q.set('layer', Math.floor(+ui.revLayer));
-  else if(ui.q) q.set('q', ui.q);          /* 层查走 layer=（老链接兼容），别的问法走 q= */
+  if(ui.chips.length) q.set('q', ui.chips.map(function(c){ return c.k+':'+c.v; }).join(','));
   if(ui.view==='chain' && Math.abs(ui.zoom3-1)>1e-3) q.set('zoom', ui.zoom3.toFixed(3));
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
@@ -785,6 +839,20 @@ function groupMembers(dim,g,D){
   else if(dim==='dp'){ for(i=0;i<D.dp;i++) out.push(rankOf(co.t,co.c,i,co.p,D)); }
   else if(dim==='pp'){ for(i=0;i<D.pp;i++) out.push(rankOf(co.t,co.c,co.d,i,D)); }
   else if(dim==='ep'){ out = D.moe ? epMembers(g,D) : [g]; }
+  return out;
+}
+function dimSlice(dim, idx, D){
+  var out=[];
+  for(var p=0;p<D.pp;p++) for(var d=0;d<D.dp;d++) for(var c=0;c<D.cp;c++) for(var t=0;t<D.tp;t++){
+    if(dim==='tp' && t===idx) out.push(rankOf(t,c,d,p,D));
+    else if(dim==='dp' && d===idx) out.push(rankOf(t,c,d,p,D));
+    else if(dim==='pp' && p===idx) out.push(rankOf(t,c,d,p,D));
+    else if(dim==='cp' && c===idx) out.push(rankOf(t,c,d,p,D));
+    else if(dim==='ep'){
+      var e=epOf(t,c,d,D);
+      if(e && e.ep===idx) out.push(rankOf(t,c,d,p,D));
+    }
+  }
   return out;
 }
 
@@ -1141,6 +1209,41 @@ function renderDim(D){
   }
   if(dim==='ep') colRanks = epMembers(rankOf(0,0,0,0,D), D).slice(0,N);
 
+  /* ── 包含链的样本层：整网⊃层⊃算子⊃kernel 不是四样东西，是同一份内容的
+     逐级放大——光在左侧标尺写「⊃」是**说**，不是**画**。这里选定一层（L·li）
+     当样本，让放大真的发生两跳：层→算子（⊕ 锥张开到整行）、算子→kernel
+     （⊕ 锥收进选中那张卡的柱里）。锥落在柱里那一下就是两条线的交点：
+     内容的包含链到 kernel 为止，落位的容器（卡）从 kernel 接手。
+     选哪层：MoE 模型选换挡后的第一层（算子最全，EP 那一刀也在场），
+     稠密模型选 L0。lps 覆盖不到时退回段首。 */
+  var Lc = D.layers, lpsC = D.layersPerStage;
+  var denseTopC = D.moe ? Math.min(2, Lc) : Lc;
+  var laySpanN = D.pp > 1 ? lpsC : Lc;               /* 层那一行代表的层数（stage0 段或全部） */
+  var liHi = (D.moe && denseTopC < laySpanN) ? denseTopC : 0;
+  /* 整网行的真图刻度：L 层逐层画出来，Dense 段与 MoE 段异色、两头是入口/出口——
+     和 3D 场景「层与层不一样」的那套事实同一口径，整网不再是一块无内容的灰板。 */
+  function netTicks(x0, w, y, h, mark){
+    var cap = Math.min(9, w*0.03), pad = 1.6, iw = (w - cap*2 - pad*2)/Lc;
+    parts.push(rect(x0, y+3, cap, h-6, mix('var(--pt-fg2)',34), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+    parts.push(rect(x0+w-cap, y+3, cap, h-6, mix('var(--pt-fg2)',34), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+    if(cap > 7){
+      parts.push(txt(x0+cap/2, y+h+8, '入口', 6.2, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
+      parts.push(txt(x0+w-cap/2, y+h+8, '出口', 6.2, 'var(--pt-fg2)', 'middle', 'pointer-events="none"'));
+    }
+    for(var t9 = 0; t9 < Lc; t9++){
+      var tx = x0 + cap + pad + t9*iw;
+      var tc = t9 < denseTopC ? mix(VC.tp, 34) : (D.moe ? mix(VC.ep, 30) : mix('var(--pt-fg2)',22));
+      parts.push(rect(tx, y+5, Math.max(.5, iw*.78), h-10, tc, 'transparent', 0, 'pointer-events="none"'));
+    }
+    if(mark){
+      var mx = x0 + cap + pad + liHi*iw - .8;
+      parts.push(rect(mx, y+2.5, Math.max(1.4, iw*.78)+1.6, h-5, 'none', 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
+      return [mx, Math.max(1.4, iw*.78)+1.6];
+    }
+    return null;
+  }
+  var netMark = null, layMark = null;
+
   /* ── 输入②（激活体的入口）：另一个对象，虚线圈出、不在包含链上 ── */
   if(dim==='cp'){
     /* CP 的动词=切一条序列：2·CP 段 + 首尾配对弧（因果均衡） */
@@ -1174,11 +1277,17 @@ function renderDim(D){
 
   /* ── 整网 ── */
   if(dim==='dp'){
-    copyLane(R.net, HR.net, mix('var(--pt-fg2)',18), '≡ 等大');
+    copyLane(R.net, HR.net, mix('var(--pt-fg2)',18), null);
+    /* 复印件逐份画真图刻度：等大不是一句话，是每份里同样的 L 层排布 */
+    for(var nc9 = 0; nc9 < N; nc9++)
+      netMark = netTicks(sx(nc9)+gap/2+1, slot-gap-2, R.net+2, HR.net-4, nc9===0) || netMark;
     say(R.net+HR.net/2-2, '整网 — 复印 ×'+size+'（每份=原尺寸）',
         '同一把刀：输入变小 · 模型等大（A3）');
   }
-  else spanLane(R.net, HR.net, '整网 — 逻辑上一张，不属于任何格', '本组是 '+fmt(groups)+' 个同构组之一');
+  else{
+    spanLane(R.net, HR.net, '整网 — 逻辑上一张，不属于任何格', '本组是 '+fmt(groups)+' 个同构组之一');
+    netMark = netTicks(X0+2, MW-4, R.net+1, HR.net-2, true);
+  }
 
   /* ── 层 ── */
   if(dim==='pp'){
@@ -1204,6 +1313,30 @@ function renderDim(D){
   }
   else if(D.pp>1) spanLane(R.lay, HR.lay, '层 — 本组只持 stage0：L0–L'+(D.layersPerStage-1), 'ℓ 已被 PP 切——那是 PP 干的，不是本维', mix(VC.pp,10));
   else spanLane(R.lay, HR.lay, dim==='ep'?'层 — MoE 层在每个 stage 里':'层 — 不切 ℓ，每格都过全部层');
+
+  /* ── 层行上的样本层：同一层在整网行与层行各有位置，细线连起来——
+     这一跳是**同宽重读**（分层），不是放大；放大从下一跳才开始。 */
+  (function(){
+    var lx, lw;
+    if(dim==='pp'){
+      var j9 = Math.min(N-1, Math.floor(liHi/lpsC)), rise9 = Math.min(9, 26/size);
+      lw = (slot-gap)/lpsC;
+      lx = sx(j9)+gap/2 + ((liHi - j9*lpsC)/lpsC)*(slot-gap);
+      layMark = [lx, Math.max(1.4, lw), R.lay + j9*rise9, HR.lay - rise9*.6];
+    }else if(dim==='dp'){
+      lw = (slot-gap)/Lc;
+      lx = sx(0)+gap/2 + (liHi/Lc)*(slot-gap);
+      layMark = [lx, Math.max(1.4, lw), R.lay, HR.lay];
+    }else{
+      lw = MW/laySpanN;
+      lx = X0 + (liHi/laySpanN)*MW;
+      layMark = [lx, Math.max(1.4, lw), R.lay, HR.lay];
+    }
+    parts.push(rect(layMark[0], layMark[2], layMark[1], layMark[3], mix('var(--pt-fg)',7), 'var(--pt-fg)', 1.3, 'pointer-events="none"'));
+    parts.push(txt(layMark[0]+layMark[1]/2, layMark[2]-3, 'L'+liHi, 6.8, 'var(--pt-fg)', 'middle', 'font-weight="800" pointer-events="none"'));
+    if(netMark) parts.push('<line x1="'+(netMark[0]+netMark[1]/2)+'" y1="'+(R.net+HR.net-2)+'" x2="'+(layMark[0]+layMark[1]/2)+'" y2="'+(layMark[2]+1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:.9" pointer-events="none"/>');
+  })();
 
   /* ── 算子（真算子序列，宽∝每卡字节；被本维切的画成 size 片） ── */
   var opPos = {};
@@ -1240,8 +1373,14 @@ function renderDim(D){
         for(var q=0;q<np;q++)
           parts.push(slab(x+q*pw+.4, R.op+1.5, Math.max(.6,pw-.8), HR.op-3,
             mix(col, q===hot ? 62 : 30), 'transparent', 0, 'pointer-events="none"'));
+        /* 被切最宽的那个算子当 kernel 锥的起点：热片（本卡那片）→ 本卡的柱 */
+        if(!opLane.tgt || w > opLane.tgt.w)
+          opLane.tgt = {id:o.id, label:(o.label||o.id), w:w, hotX:x+hot*pw+.4, hotW:Math.max(.6,pw-.8)};
       }
       else parts.push(slab(x, R.op+3, w, HR.op-6, mix('var(--pt-fg2)',16), 'var(--pt-bds)', .6, 'pointer-events="none"'));
+      /* CP 不切权重，kernel 锥退而锚在 attention 上：CP 的通信与算子改写都发生在这儿 */
+      if(useReal && !opLane.attn && /attention|mla/i.test(o.id) && !o.comm)
+        opLane.attn = {id:o.id, label:(o.label||o.id), hotX:x, hotW:w};
       var lbl = useReal ? (o.label||o.id) : o.id;
       if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, lbl.length>16?lbl.slice(0,15)+'…':lbl, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
       if(w>26 && useReal && isCut && o.axisName)
@@ -1281,7 +1420,28 @@ function renderDim(D){
     copyLane(R.op, HR.op, mix('var(--pt-fg2)',16), null);
     say(R.op+HR.op/2-2, '算子 — 同一份，逐字节相同', '加 DP 不买余量（A3）');
   }
-  else spanLane(R.op, HR.op, '算子 — 权重完整（CP 只切激活的 s 轴）');
+  else{
+    /* CP 也走真算子带：它确实不切任何权重（isCut 全 false，35 个算子全画成整块），
+       但「不切」值得用真图说——每个算子都完整地在，s 轴上变少的是流过它们的 token。 */
+    opLane('cp');
+    say(R.op+HR.op/2-2, '算子 — 权重完整（CP 只切激活的 s 轴）',
+        '每卡 token 少 1/'+size+' · 算子一个不缺');
+  }
+
+  /* ── 放大锥①：层 → 算子。样本层张开成整行——「算子行就是 L·liHi 的内部」。
+     这一跳尺寸不守恒（一层张满全宽），所以标 ⊕，跟切分链同一条纪律。
+     PP 不画这只锥：它的算子行讲的是「随层归属」（哪段有哪些层的算子），
+     不是一层的内部——锥画上去就是把归属说成了放大。 */
+  if(layMark && dim!=='pp'){
+    var cnA = dim==='dp' ? sx(0)+gap/2 : X0, cnB = dim==='dp' ? sx(0)+slot-gap/2 : X0+MW;
+    var cnY0 = layMark[2]+layMark[3]+1, cnY1 = R.op-2;
+    ['<line x1="'+layMark[0]+'" y1="'+cnY0+'" x2="'+cnA+'" y2="'+cnY1+'"',
+     '<line x1="'+(layMark[0]+layMark[1])+'" y1="'+cnY0+'" x2="'+cnB+'" y2="'+cnY1+'"'].forEach(function(l9){
+      parts.push(l9+' style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3;opacity:.75" pointer-events="none"/>');
+    });
+    parts.push(txt(X0+4, cnY1-6, '⊕ 放大 · L'+liHi+' 的内部（算子级）', 7.2, 'var(--pt-fg2)', 'start',
+      'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+  }
 
   /* ── kernel：永不跨格 ── */
   for(var q2=0;q2<N;q2++){
@@ -1290,7 +1450,31 @@ function renderDim(D){
       parts.push(slab(sx(q2)+gap/2+kr*(kw+1.5), R.ker, kw, HR.ker, mix('var(--pt-fg2)', 34-kr*7), 'transparent', 0, 'pointer-events="none"'));
   }
   if(tail>0) tailBand(R.ker, HR.ker, mix('var(--pt-fg2)',28));
-  say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）', '本刀不决定它 · 全部刀切完之后的事，细看去卡内解剖');
+  /* ── 放大锥②：算子 → kernel，而且收进**选中那张卡的柱**。起点按刀选：
+     TP/EP 从被切最宽那个算子的**热片**出发（本卡拿的那一片）；CP 没有片，
+     从 attention 出发（它的通信与算子改写都在这儿）。DP 与 PP 不画这只锥：
+     DP 的算子行是复印件（没有单算子坐标）、PP 讲的是归属——两者的落位都由
+     竖直对齐说完了。终点是第 co0 根柱的 kernel 块。这一下把两条线钉在一起：
+     整网⊃层⊃算子⊃kernel 是**内容**的包含链，卡是**落位**的容器——
+     链的末端（kernel）永远整只落在某一根柱里，两条线在这儿相交。 */
+  (function(){
+    var src = (dim==='tp'||dim==='ep') ? opLane.tgt : opLane.attn;
+    if(!src || dim==='pp') return;
+    var i9 = Math.max(0, Math.min(N-1, co0));
+    var kx0 = sx(i9)+gap/2, kx1 = sx(i9)+slot-gap/2;
+    var ky0 = R.op+HR.op+1, ky1 = R.ker-2;
+    ['<line x1="'+src.hotX+'" y1="'+ky0+'" x2="'+kx0+'" y2="'+ky1+'"',
+     '<line x1="'+(src.hotX+src.hotW)+'" y1="'+ky0+'" x2="'+kx1+'" y2="'+ky1+'"'].forEach(function(l9){
+      parts.push(l9+' style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:4 3;opacity:.75" pointer-events="none"/>');
+    });
+    parts.push(rect(kx0-1.2, R.ker-1.5, (kx1-kx0)+2.4, HR.ker+3, 'none', 'var(--pt-fg)', 1.2, 'pointer-events="none"'));
+    var midX9 = Math.max(X0+70, Math.min(X0+MW-70, (src.hotX+src.hotW/2+kx0+(kx1-kx0)/2)/2));
+    parts.push(txt(midX9, ky1-5, '⊕ '+(src.label.length>13?src.label.slice(0,12)+'…':src.label)
+      +((dim==='tp'||dim==='ep')?' 的本卡那片':'')+' → 这张卡的 kernel', 7.2, 'var(--pt-fg2)', 'middle',
+      'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+  })();
+  say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）',
+      '内容链（整网⊃层⊃算子⊃kernel）到这儿收进柱：末端整只落进卡，容器从此接手');
 
   /* ── 卡（容器）：一柱一份，虚线柱贯穿全高（rank 是柱上的门牌，容器是卡本身 §15）。
      柱脚放门牌与容量计；整柱可点。竖直对齐 = 映射：柱里那一份就是它持有的。 ── */
@@ -1402,11 +1586,12 @@ function renderDim(D){
     parts.push(txt(X0-10, rw[1]+24, li===0 ? '激活体②的入口·'+ruler[0][1] : ruler[li][1], 7.8, 'var(--pt-fg3)', 'end'));
     if(li===0) parts.push(txt(X0-10, rw[1]+34, '≠ 激活体本身（中间结果 ×几千倍）', 7, 'var(--pt-fg3)', 'end'));
   });
-  /* ⊃ 放大：模型四级之间；输入与整网之间是「断」 */
-  [[R.net,HR.net,R.lay],[R.lay,HR.lay,R.op],[R.op,HR.op,R.ker]].forEach(function(pr){
+  /* ⊃ 三跳各是各的关系：整网→层是**分层**（同宽重读，没放大）；层→算子与
+     算子→kernel 才是**放大**（⊕，尺寸不守恒）——和图里那两只锥一一对应。 */
+  [[R.net,HR.net,R.lay,'⊃ 分层（同宽）'],[R.lay,HR.lay,R.op,'⊃ 放大 ⊕'],[R.op,HR.op,R.ker,'⊃ 放大 ⊕']].forEach(function(pr){
     var y1 = pr[0]+pr[1]+2, y2 = pr[2]-2, xm = X0-118;
     parts.push('<line x1="'+xm+'" y1="'+y1+'" x2="'+xm+'" y2="'+y2+'" style="stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:2 3" pointer-events="none"/>');
-    parts.push(txt(xm-4, (y1+y2)/2+3, '⊃ 放大', 7.6, 'var(--pt-fg3)', 'end'));
+    parts.push(txt(xm-4, (y1+y2)/2+3, pr[3], 7.6, 'var(--pt-fg3)', 'end'));
   });
   parts.push(txt(X0-122, (R.inp+HR.inp+R.net)/2+3, '⊥ 不在链上', 7.6, 'var(--pt-fg3)', 'end'));
   parts.push('<line x1="'+(X0-150)+'" y1="'+(R.net+2)+'" x2="'+(X0-150)+'" y2="'+(R.ker+HR.ker)+'" style="stroke:var(--pt-fg3);stroke-width:1.2;marker-end:url(#arrx)" pointer-events="none"/>');
@@ -1759,10 +1944,8 @@ function netScene(D, g, box, step){
     return quad([P(0,0,w,off), P(1,0,w,off), P(1,AR,w,off), P(0,AR,w,off)], st, extra);
   }
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
-  /* 反查选中的那一层（工具条上的「层反查」，也认 URL 的 layer=）。
-     判据必须和 revLiOn 一模一样：早先这里是 clamp，超范围的 layer=999 会被夹到
-     最后一层照样高亮，而拆解卡那边判的是「不在范围内就不显示」——一个画一个不画。 */
   var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
+  var spot = spotlightHit(D);
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
   /* 前两层是 Dense FFN（真模型如此）；不开 MoE 的预设则整个模型都是 Dense。 */
@@ -1843,11 +2026,20 @@ function netScene(D, g, box, step){
     /* 层同理：远的先画。默认机位下大 w 更远，所以从 L-1 往回走；yaw 转过 90°
        之后 w 的远近方向反过来，那时要正着走——方向从 segOrder 里读，别写死。 */
     var wDesc = segOrder.length < 2 || segOrder[0] > segOrder[segOrder.length-1];
-    /* 卡里的内容整列一起淡：粒度取「列」而不是「层」——这一屏最容易糊成一片的
-       正是 16 列沿纵深叠在一起，层与层之间本来就有壳隔着。选中那列不淡。 */
+    /* 聚光灯：这一列有没有任何 rank 命中搜索。按列判（不按层），
+       因为一列沿纵深叠着好几张卡（PP 段），粒度到列已足够。 */
+    var spotCol = false;
+    if(spot){
+      for(var sp = 0; sp < (cutPP ? D.pp : 1); sp++){
+        var sRank = rankOf(tIdx, cIdx, dIdx, sp, D);
+        if(spot.ranks[sRank]){ spotCol = true; break; }
+      }
+    }
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
-    if(colFade < 0.999) body.push('<g opacity="'+colFade.toFixed(3)+'">');
+    var spotDim = spot && !spotCol ? 0.10 : 1;
+    var colOp = Math.min(colFade, spotDim);
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -1856,15 +2048,19 @@ function netScene(D, g, box, step){
        全景下只留首尾两层的层板（那是「有一叠在那儿」的轮廓）。 */
     var lqSkip = lowDetail && !isF;
     var LQN = (ui.netOff || (lqSkip && ui.cardMode)) ? 0 : L;
+    var spotHasLayers = spot && Object.keys(spot.layers).length > 0;
     for(var lq = 0; lq < LQN; lq++){
       var li = wDesc ? (L-1-lq) : lq;
       if(lqSkip && li !== 0 && li !== L-1) continue;
+      var spotLayerHit = spotHasLayers && spot.layers[li];
+      var spotLayerMiss = spotHasLayers && spotCol && !spotLayerHit;
+      if(spotLayerMiss) body.push('<g opacity="0.28" style="filter:saturate(.3)">');
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
       /* 实心只给**选中的那一张卡**。isF 匹配的是「列」（副本 × tp 片），而一列
          纵深上串着 pp 段那么多张卡——只看 isF 会把整列 4 张一起点亮。段也得对上。 */
-      var focusCell = hasSel && (ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF));
+      var focusCell = (hasSel && (ui.cardMode ? (isF && (!cutPP || stOf(li) === co.p)) : (mine && isF))) || (spotCol && spotLayerHit);
       /* 层板一律不填充。原来只有本卡那个 stage 的板带一层淡底，46 层里 11 层
          有底、35 层没有，叠起来就是「靠前那一段明显黑一块」——那不是在表达
          什么，纯粹是填充累积。主次交给描边粗细，它不会叠成色块。 */
@@ -1884,13 +2080,8 @@ function netScene(D, g, box, step){
         else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
       }
-      /* ── 反查高亮：被问到的那一层横穿哪几张卡 ────────────────────────
-         这一屏别处答的都是「这张卡装了什么」，反查问的是它的逆命题——
-         「这一层住在哪」。图形形态就是这个：**同一张平面横穿这些卡**。
-         每一份复印件上都描一道（DP 复制的正是整套安排），一眼看出牵动的
-         是 world/PP 张卡，而不是一张。 */
-      if(li === revLi && !lowDetail){
-        body.push(pane(ww, kOff, 'fill:'+mix(VC.pp, 13)+';stroke:'+VC.pp+';stroke-width:1.7'));
+      if(li === revLi && !lowDetail && spotCol){
+        body.push(pane(ww, kOff, 'fill:none;stroke:'+VC.dp+';stroke-width:2'));
       }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
@@ -2072,9 +2263,10 @@ function netScene(D, g, box, step){
           nodes++;
         });
       }
+      if(spotLayerMiss) body.push('</g>');
     }
-    if(colFade < 0.999) body.push('</g>');
     if(ui.cardMode) shellOf(k);
+    if(colOp < 0.999) body.push('</g>');
     if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
@@ -2126,17 +2318,22 @@ function netScene(D, g, box, step){
         else { b8.d0 = Math.min(b8.d0,d8); b8.d1 = Math.max(b8.d1,d8);
                b8.t0 = Math.min(b8.t0,t8i); b8.t1 = Math.max(b8.t1,t8i); }
       }
-      var selG = hasSel ? grpOf(co.d, co.t) : -1;
+      var selG = hasSel && !spot ? grpOf(co.d, co.t) : -1;
       Object.keys(box9).forEach(function(mk){
         var m = +mk, b = box9[m], dd, tt, clean = true;
-        /* 只有「这个矩形里装的正好是这一组、没混进别人」时才画框。组的成员在网格里
-           是按 q 连续排的，绝大多数配置下正好落成整列；万一 ep·etp 不是 tp 的整数倍
-           就会出现半列，那时候框会把别组的卡也圈进去——宁可不画，也不画错。 */
         for(dd = b.d0; dd <= b.d1 && clean; dd++)
           for(tt = b.t0; tt <= b.t1; tt++)
             if(grpOf(dd, rows9[tt]) !== m){ clean = false; break; }
         if(!clean) return;
-        var strongG = m === selG, gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
+        var spotEP = false;
+        if(spot && spot.epRelevant){
+          for(dd = b.d0; dd <= b.d1 && !spotEP; dd++)
+            for(tt = b.t0; tt <= b.t1 && !spotEP; tt++){
+              var spR = rankOf(rows9[tt], KC>1?co.c:0, dd, 0, D);
+              if(spot.ranks[spR]) spotEP = true;
+            }
+        }
+        var strongG = spot ? spotEP : (m === selG), gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
         /* Rank 打开时按**段**画：一套专家是一个 PP 段之内凑齐的（折叠发生在段内那张
            平面上，段与段各折各的），一段一只框才说得对。Rank 关掉时画面上摆的是整份
            副本、不是一张张卡，那时一列 = 一个副本，框住的是「这几个副本属于 EP 组 m」
@@ -2155,9 +2352,10 @@ function netScene(D, g, box, step){
                     P(fu0,fv0,fw1,oTL), P(fu1,fv0,fw1,oTR), P(fu1,fv1,fw1,oBR), P(fu0,fv1,fw1,oBL) ];
           /* 只描边不填色：填了就把框住的卡盖掉，而框的意义恰恰是「看里面有哪几张」。
              也不打虚线——ep×pp 一共十几只框，虚线在这个密度下会糊成一片麻点。 */
+          var epOp = (spot && spot.epRelevant) ? (spotEP ? .95 : .08) : (strong?.95:(hasSel?.16:.3));
           [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e){
             body.push(seg(F[e[0]], F[e[1]], 'stroke:'+VC.ep+';stroke-width:'+(strong?1.7:.6)
-              +';opacity:'+(strong?.95:(hasSel?.16:.3))));
+              +';opacity:'+epOp));
           });
           F.forEach(function(q9){ gx0 = Math.min(gx0,q9[0]); gx1 = Math.max(gx1,q9[0]); gy0 = Math.min(gy0,q9[1]); });
           /* 门牌挂在阵列**外面**（最后一行底边之下、DP 刻度再往下一格）。挂在框自己的
@@ -2359,6 +2557,7 @@ function netScene(D, g, box, step){
         var gc = rankOf(tc, co.c, dc, pc2, D);
         var meC = hasSel && gc === g;
         var dT = depthT(kc, (csx[0]+csx[1])/2);
+        var spotShellDim = spot && !spotCol;
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -2379,9 +2578,7 @@ function netScene(D, g, box, step){
              128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
              pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
-          if(!isFcol){
-            /* 雾会沿纵深累加（一列 4 段、每段两面），所以单层不能给太厚：给到看得出
-               「里面有东西但读不清」就够，维度签名色（TP 青 / EP 紫）还得透得出来。 */
+          if(!isFcol && !spot){
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
@@ -2394,6 +2591,7 @@ function netScene(D, g, box, step){
            前后的落差保持不变，该分得开的还是分得开。 */
         var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
+        if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
@@ -2595,7 +2793,7 @@ function netScene(D, g, box, step){
     var hv9 = layerHome(D, revLi);
     axLab(P(0.5, AR + 0.17, wOf(revLi), off0), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
           hv9.frag > 1 ? ('各持 1/'+hv9.frag+'，无一张完整') : '每张持有完整的它',
-          VC.pp, true, 7.4);
+          VC.dp, true, 7.4);
   }
   /* batchSlab 已移除——输入标注一并去掉 */
   var CID = 'scClip';
@@ -3700,7 +3898,7 @@ function renderSolidCav(D){
    正视 = front view：一层的算子 DAG，DP 开着就按副本数复印成方阵。
    这两张图切分链本来就在画，那边画得准，所以是复用不是重画；3D 那张卡阵
    sidecar 没有对应物，仍走本页自己的 SVG。 */
-var deckCtl = null, deckFail = '';
+var deckCtl = null, deckFail = '', deckCfgKey = null;
 function deckAvailable(){ return !!(window.PtoModelArchitectureTrainingSidecar); }
 /* 侧视只挂 PP 一种标注：那张图上真正在分段的就是 PP——层深方向上有实打实的
    段边界可画。TP/EP/DP 在同一张图上没有对应的边界，挂上去只是把同一条横幅
@@ -3737,20 +3935,89 @@ function dualFrontMarks(ctl, D, rootEl){
     tpMarks.forEach(function(el){ box2.appendChild(el.cloneNode(true)); });
   }, 160);
 }
-function ensureDeck(){
-  if(deckCtl || deckFail) return deckCtl;
+/* ── 正视 / 侧视那张真图必须画**本页这份配置**，不是它自带的那份 ──────────────
+   sidecar 原来是拿 preset:'openpangu-flash' 挂上去的——46 层、firstMoeLayer=2、
+   256 个路由专家、4 段 stage，全写死在 3d-deck 的预置里，跟本页的 cfg 一点关系
+   都没有。于是出现过一个当场就能看出来的矛盾：选了稠密预置（experts=0，工具条
+   按规矩不给 EP 按钮），正视里却照旧画着 Router · Top-8 / Expert Pool / EP
+   Dispatch——图上明明有专家层，却没有那把刀。**两处数字打架比没有数字更糟**。
+   3d-deck 的配置是按字段读的（layerCount 铺层、stageRanges 分段、firstMoeLayer
+   决定这一层画 Dense 还是 MoE），sidecar 又允许用 options.config 顶掉 preset，
+   所以这里照着它自带那份的形状、按本页 cfg 重算一份传进去。
+   按层号点名的那几项（DSA 层、block-post 层）按比例摊到新的层数上——它们说的是
+   「每隔几层来一次」，层数一变，原来那串下标就没有意义了。 */
+function deckConfig(D){
+  var deck = window.PtoModelArchitecture3dDeck;
+  var P = deck && deck.PRESETS && deck.PRESETS['openpangu-flash'];
+  if(!P || !D || !D.ok) return null;
+  var L = Math.max(2, D.layers|0), lps = Math.max(1, D.layersPerStage|0), i;
+  /* Dense→MoE 的换挡点与 3D 那边的 denseTop 同一口径：稠密配置下 = L，
+     也就是「一层 MoE 都没有」，3d-deck 那边 layerCount > firstMoeLayer 不成立，
+     MoE FFN 那一整条带子就不画了。 */
+  var firstMoe = D.moe ? Math.min(2, L) : L;
+  var ranges = [], reps = [];
+  for(i = 0; i < Math.max(1, D.pp); i++){
+    var lo = Math.min(L-1, i*lps), hi = Math.min(L-1, (i+1)*lps - 1);
+    ranges.push([lo, Math.max(lo, hi)]); reps.push(lo);
+  }
+  /* 保证 0..L-1 每一层都落在某个区间里：3d-deck 用 findIndex 找段，
+     找不到会拿 stageRanges[-1]，那是 undefined，当场炸。 */
+  if(ranges[ranges.length-1][1] < L-1) ranges[ranges.length-1][1] = L-1;
+  function scaleIdx(src, srcL){
+    var seen = {}, r = L / Math.max(1, srcL);
+    (src || []).forEach(function(v){ seen[Math.max(0, Math.min(L-1, Math.round(v*r)))] = 1; });
+    return Object.keys(seen).map(Number).sort(function(a,b){ return a-b; });
+  }
+  var dense = [];
+  for(i = 0; i < firstMoe && i < L; i++) dense.push(i);
+  var out = {};
+  Object.keys(P).forEach(function(k){ out[k] = P[k]; });   /* 其余字段照抄它自己的 */
+  out.layerCount = L;
+  out.firstMoeLayer = firstMoe;
+  out.denseLayers = dense;
+  out.dsaLayers = scaleIdx(P.dsaLayers, P.layerCount);
+  out.blockPostLayers = scaleIdx(P.blockPostLayers, P.layerCount);
+  out.stageRanges = ranges;
+  out.representativeLayers = reps;
+  out.frontLayer = Math.max(0, Math.min(L-1, Math.floor(L/2)));
+  out.routedExperts = D.moe ? D.experts : 0;
+  out.topK = D.moe ? D.topk : 0;
+  out.label = 'openPangu · 本页配置';
+  /* 横幅上的 ×N 也得是本页的数，不然又是一处「图上写着 EP ×8、配置里 ep=1」。
+     刀抬起来的那一维不列——它此刻没在切。 */
+  var ann = [];
+  if(ui.kTP && D.tp > 1) ann.push({kind:'tp', label:'TP ×'+D.tp+'（带 SP）· attention shard', nodeId:'attn_all_gather'});
+  if(ui.kEP && D.moe && D.ep > 1) ann.push({kind:'ep', label:'EP ×'+D.ep+' · expert routing', nodeId:'expert_pool'});
+  if(ui.kPP && D.pp > 1) ann.push({kind:'pp', label:'PP ×'+D.pp+' · layer stages', nodeId:'post_mlp_norm'});
+  if(ui.kDP && D.dp > 1) ann.push({kind:'dp', label:'DP ×'+D.dp+' · gradient replica', nodeId:'mhc_state_out'});
+  out.annotations = ann;
+  return out;
+}
+/* 同一份配置要不要重挂：sidecar 没有 setConfig，配置变了只能拆掉重来。
+   拿真正影响画面的那几项做键，别拿整个对象——annotations 每次都新建，
+   用它当键会变成每帧重挂。 */
+function deckKey(dc){
+  return dc ? [dc.layerCount, dc.firstMoeLayer, dc.routedExperts, dc.topK,
+               dc.stageRanges.map(function(r){ return r.join('-'); }).join(',')].join('/') : 'preset';
+}
+function ensureDeck(D){
+  if(deckFail) return deckCtl;
   if(!deckAvailable()){ deckFail = 'sidecar 未加载'; return null; }
+  var dc = deckConfig(D), key = deckKey(dc);
+  if(deckCtl && key === deckCfgKey) return deckCtl;
+  if(deckCtl){ try{ deckCtl.destroy(); }catch(e){} deckCtl = null; $('deckHost').innerHTML = ''; }
   try{
     deckCtl = window.PtoModelArchitectureTrainingSidecar.render('#deckHost', {
-      preset:'openpangu-flash', initialView:'right', parallelMode:'pp',
+      preset:'openpangu-flash', config:dc || undefined, initialView:'right', parallelMode:'pp',
       initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
       metricView:'structure', metricViews:[], initialLayer:null
     });
   }catch(e){ deckFail = e.message; deckCtl = null; }
+  deckCfgKey = deckCtl ? key : null;
   return deckCtl;
 }
 function renderDeck(D){
-  var c = ensureDeck();
+  var c = ensureDeck(D);
   $('stage').hidden = true;
   $('deck').hidden = false;
   if(!c){
@@ -4036,7 +4303,33 @@ function cloneMaster(slot){
    想读真 DAG 的路径本来就有、而且更好用：点中那张卡 → 关闭 Rank，一张大图。
    骨架也不是示意图：它是同一份 OPENPANGU_GRAPH 的真节点、按维度着色、带 data-node，
    刀口条照常叠在上面。 */
-function pickFull(){ return []; }
+/* 哪几格给真 DAG。上一版把这里改成「一格都不给」，乱码是没有了，可正视也就
+   只剩一屏抽象方块——把要看的东西一起扔了，矫枉过正。
+   乱码的根源是**克隆**（抄来的 DOM 带着 master 旧的 transform 与状态类），
+   不是「显示真图」本身：直接挂真实例从来不会乱，原来的代码就是这么干的，
+   只是 32 个实例太慢（实测铺满 10.7 秒）。所以是**限量挂真实例**，不是不挂：
+     · 只给视口内看得见的（视口外的读者根本不在看）；
+     · 再设上限——一屏能读的本来也就这么几格，其余留骨架。 */
+/* 判据只有一条：**这一屏的格子读得清吗**（is-dense 就是那条线，cw < 150）。
+   读得清 → 视口内的格子**全部**给真图；读不清 → **全部**给骨架。
+   刻意不做「给前 N 格」：任何部分覆盖都会留下一两格落单的骨架，看着就像
+   那几格没渲染出来（用户先看到的正是这个）。全有或全无，一屏才是一致的。
+   代价可控：is-dense 的线保证了不密排时一屏最多摆十来格，62k 节点量级，
+   与当初 32 格 18 万节点那种卡死不是一个数量级；真密排时一格 55px，
+   真图本来也只是一团噪点，骨架反而更好读。
+   FULL_CAP 只是防线：窗口特别宽时兜住一个上限，正常情况下够不着。 */
+var FULL_CAP = 14;
+function pickFull(host, slots){
+  if(!host || !slots || !slots.length) return [];
+  if(host.classList.contains('is-dense')) return [];      /* 读不清 → 整屏骨架 */
+  var sl = host.scrollLeft, vw = host.clientWidth, st = host.scrollTop, vh = host.clientHeight, out = [];
+  slots.forEach(function(s){
+    if(out.length >= FULL_CAP) return;
+    var l = s.offsetLeft, t2 = s.offsetTop;
+    if(l + s.offsetWidth > sl && l < sl + vw && t2 + s.offsetHeight > st && t2 < st + vh) out.push(s);
+  });
+  return out;
+}
 function mountClone(slot, D, want){
   want = want || 'thumb';
   if(slot.dataset.mounted === want) return;
@@ -4047,11 +4340,36 @@ function mountClone(slot, D, want){
     slot.className = 'pt-deckhost pt-dpclone';
     slot.innerHTML = deckThumb(D);
   } else {
-    /* 克隆连 master 上那批刀口条一起抄了下来（它们挂在算子节点里面），
-       paintCuts 进门先清一遍再按**这一格自己的**坐标重画。 */
-    if(!cloneMaster(slot)) slot.innerHTML = deckThumb(D);
+    /* 挂**真实例**，不克隆。克隆要一路对齐 sidecar 的内部状态（宿主上的 pto-*
+       类、scene 上的 scale/pan、正视还是 3D 的视图状态），对齐差一样格子里就是
+       一坨乱码——这一路踩过三次。真实例是它自己 render 自己 fit，从来不会乱。
+       代价是每份 ~330ms，所以上面用视口 + FULL_CAP 限住份数。 */
+    slot.className = 'pt-deckhost pt-dpclone';
+    slot.innerHTML = '';
+    var ok9 = false;
+    try{
+      deckClones.push(window.PtoModelArchitectureTrainingSidecar.render('#'+slot.id, {
+        /* config 必须和 master 传的是同一份（deckConfig(D)，按本页 cfg 算出来的）。
+           少传这一项，这几格就会退回 sidecar 自带的 openpangu-flash（46 层、
+           256 专家），和 master 并排放着就是两个模型——那正是 ac6738b 刚修掉的
+           矛盾，不能在这儿又漏回去。 */
+        preset:'openpangu-flash', config:deckConfig(D) || undefined,
+        initialView:(ui.viewTab==='side'?'right':'front'), parallelMode:frontMode(D),
+        initialTheme:(document.documentElement.dataset.theme==='dark'?'dark':'light'),
+        metricView:'structure', metricViews:[], initialLayer:null, showSideLabels:false
+      }));
+      var made9 = deckClones[deckClones.length-1];
+      ok9 = true;
+      /* 它的 fit 排在后续帧，刀口条要等图元落位之后再叠上去 */
+      setTimeout(function(){
+        dualFrontMarks(made9, D, slot);
+        paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
+      }, 220);
+    }catch(e){ ok9 = false; }
+    if(!ok9){ slot.dataset.mounted = 'thumb'; slot.innerHTML = deckThumb(D); }
   }
   paintCuts(slot, D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0));
+  /* 编号必须在 render 之后插：render 会把容器 innerHTML 清空 */
   slot.insertAdjacentHTML('beforeend', '<span class="pt-dpcap">'+slot.dataset.cap+'</span>'
     + cutTag(D, +slot.dataset.cd, +slot.dataset.ct, +(slot.dataset.cc||0)));
 }
@@ -4060,10 +4378,10 @@ function mountClone(slot, D, want){
 function syncMasterThumb(D){
   var host = $('deck'), m = $('deckHost');
   if(!m) return;
-  /* 铺开就盖骨架，不分密排与放大：全部 32 格用同一种画法，才没有「唯独第一格
-     长得不一样」这种看着像渲染坏了的画面。底下那份活的 sidecar 留着不动——
-     关掉 Rank 回到单格时它就是那张大图。 */
-  var want = host.classList.contains('is-tiled');
+  /* 0 号格是**活的** sidecar，永远是对的（乱码只出在克隆上，现在也不克隆了），
+     所以不再盖骨架——它和别的视口内格子一样，就该显示真图。
+     只有密排到读不清时才盖：那种尺寸下真图只是一团噪点，不如统一成骨架。 */
+  var want = host.classList.contains('is-tiled') && host.classList.contains('is-dense');
   var cur = m.querySelector(':scope > .pt-thumb');
   m.classList.toggle('is-thumbed', want);
   if(want && !cur){
@@ -4101,22 +4419,17 @@ function recloneAll(D){
     if(!slots.length) return;                 /* 还没铺格子（tileLayout 刚清过），没什么可抄 */
     /* ① 一律先退骨架。档位没变的格子 mountClone 直接返回——所以密排下滚轮
        缩放是零成本（骨架自己跟着格子缩，一个节点都不用动）。 */
-    slots.forEach(function(slot){ mountClone(slot, D, 'thumb'); });
+    /* ① 先让视口外的退回骨架（骨架用百分比定位，任何尺寸下都是对的）；
+       ② 视口内的挂真实例。不再需要「等 master 落地」那一步——那是克隆时代
+          才要的（抄早了会抄到旧 transform）；真实例各自 render 各自 fit，
+          彼此无关，可以立刻挂。 */
+    var full = pickFull(host, slots);
+    slots.forEach(function(slot){
+      mountClone(slot, D, full.indexOf(slot) >= 0 ? 'full' : 'thumb');
+    });
     syncMasterThumb(D);
     paintDeckAxes(D);
-    /* ② 等 master 落地再提真 DAG */
-    var last = masterSig(), tries = 0;
-    (function settle(){
-      deckSettleT = setTimeout(function(){
-        if(ui.view !== 'chain' || (ui.viewTab !== 'front' && ui.viewTab !== 'side')) return;
-        var now = masterSig();
-        if(now !== last && tries++ < 25){ last = now; return settle(); }
-        var full = pickFull(host, slots);
-        if(!full.length) return;
-        full.forEach(function(slot){ mountClone(slot, D, 'full'); });
-        paintDeckAxes(D);
-      }, 140);
-    })();
+    deckSettleT = setTimeout(function(){ paintDeckAxes(D); }, 420);   /* 真实例 fit 落位后再摆一次牌子 */
   }, 200);
 }
 /* 这一格里 TP/EP 各切了几份。跟着刀开关走——关掉 TP 这一格就真的不写 TP，
@@ -4478,146 +4791,202 @@ function lgGlyph(inner, w, h){
 function lgRow(g, t){ return '<div class="lg-row">'+g+'<div>'+t+'</div></div>'; }
 /* 这一屏此刻是不是正在反查某一层 */
 function revLiOn(D){
-  return ui.revLayer !== '' && isFinite(+ui.revLayer) && +ui.revLayer >= 0 && +ui.revLayer < D.layers;
+  var c = ui.chips.filter(function(x){ return x.k==='layer'; })[0];
+  if(!c) return false;
+  return chipState(c, D).kind === 'layer';
 }
-/* ══ 全局搜索：一个框，四种问法 ══════════════════════════════════════════
-   解析只做一件事——把输入归到「问的是哪一类」，具体答案由各自的卡去画。
-   数字不带前缀时按**层**解：这一屏最常问的就是「第几层住在哪」，而 rank
-   已经能直接点卡选中，专家和维度都有字母前缀不会撞。 */
-function qState(D){
-  var t = String(ui.q || '').trim().toLowerCase().replace(/[\s#]/g, '');
-  if(!t) return {kind:''};
-  var m;
-  if((m = t.match(/^(?:l|layer|层)(\d+)$/)) || (m = t.match(/^(\d+)$/))){
-    var li = +m[1];
-    return li < D.layers ? {kind:'layer', li:li, col:VC.pp}
-                         : {kind:'bad', msg:'只有 '+D.layers+' 层（L0–L'+(D.layers-1)+'）'};
-  }
-  if((m = t.match(/^(?:r|rank|卡)(\d+)$/))){
-    var g = +m[1];
-    return g < D.world ? {kind:'rank', g:g, col:VC.dp}
-                       : {kind:'bad', msg:'只有 '+fmt(D.world)+' 张卡（r0–r'+(D.world-1)+'）'};
-  }
-  if((m = t.match(/^(?:e|expert|专家)(\d+)$/))){
-    if(!D.moe) return {kind:'bad', msg:'本配置没有专家层（experts=0）'};
-    var e = +m[1];
-    return e < D.experts ? {kind:'expert', e:e, col:VC.ep}
-                         : {kind:'bad', msg:'只有 '+D.experts+' 个专家（E0–E'+(D.experts-1)+'）'};
-  }
-  if((m = t.match(/^(tp|sp|cp|pp|dp|ep)$/))){
-    var dm = m[1];
-    if(dm === 'ep' && !D.moe) return {kind:'bad', msg:'本配置没有专家层，EP 这一刀落不下来'};
-    if(dm === 'cp' && D.cp <= 1) return {kind:'bad', msg:'本配置 CP=1，这一刀没落下'};
-    return {kind:'dim', dim:dm, col:dm === 'sp' ? VC.tp : VC[dm]};
-  }
-  return {kind:'bad', msg:'认不出。试：L29（层）· r41（卡）· tp/cp/pp/dp/ep（刀）· E12（专家）'};
-}
-/* 层反查的拆解卡：一层被三刀叠加之后到底住在哪。
-   要点不是那串 rank 号码，是**每一刀各自决定了什么**——
-     PP 决定这一层去哪几张卡 · TP/EP 决定它在那几张卡里怎么碎 · DP 决定这套
-     安排复制几遍。层作为概念自始至终没变，变的只是它映射到硬件上的方式。
-   末一行给结论：牵动 world/PP 张卡，而只要 TP 或 EP 落下，就没有哪一张持有
-   完整的它——这正是「层」在并行讨论里最容易被说成单数的地方。 */
-/* 搜索的副作用：把解析结果落进真正的状态（层反查 / 选中卡 / 高亮维）。
-   搜索取代了原来的层反查框，所以查的不是层时要把 revLayer 清掉——否则上一次
-   查的那一层会一直描在图上，跟当前这一问不是一回事。 */
+/* 标签生效：把每一枚落进真正的状态（层反查 / 选中卡 / 高亮维）。
+   标签可以并存，所以这里是逐枚施加，不是二选一。 */
 function applyQuery(D){
-  var s = qState(D);
-  ui.revLayer = (s.kind === 'layer') ? String(s.li) : '';
-  if(s.kind === 'rank') sel = s.g;
-  if(s.kind === 'dim'){
-    var ax = s.dim === 'sp' ? 'tp' : s.dim;
-    if(AXIS_DOMAIN.indexOf(ax) >= 0) ui.axis = ax;
-    /* 刀抬着的话高亮无从谈起，顺手落下来 */
-    if(ax === 'tp') ui.kTP = true; else if(ax === 'pp') ui.kPP = true;
-    else if(ax === 'dp') ui.kDP = true; else if(ax === 'ep') ui.kEP = true;
-    if(s.dim === 'cp') ui.kCP = true;
-  }
-  return s;
+  ui.revLayer = '';
+  ui.chips.forEach(function(c){
+    var st = chipState(c, D);
+    if(st.kind === 'layer') ui.revLayer = String(st.li);
+    else if(st.kind === 'rank') sel = st.g;
+  });
 }
+/* ══ 属性搜索 ══════════════════════════════════════════════════════════ */
+/* ══ 属性搜索：先选属性 → 再填值 → 落成一枚标签 ══════════════════════════ */
+var PROPS = [
+  {k:'layer',  n:'层',    hint:'层号 ℓ',      ph:'如 29', col:VC.dp, tag:function(v){ return 'L'+v; }},
+  {k:'rank',   n:'rank',  hint:'global_rank', ph:'如 41', col:VC.dp, tag:function(v){ return 'r'+v; }},
+  {k:'dim',    n:'刀',    hint:'哪一维',      opts:['tp','sp','cp','pp','dp','ep'], col:VC.tp,
+   tag:function(v){ var s=String(v),i=s.indexOf(':'); return i<0?s.toUpperCase():s.slice(0,i).toUpperCase()+':'+s.slice(i+1); }}
+];
+function propOf(k){ return PROPS.filter(function(p){ return p.k===k; })[0] || null; }
+/* 一枚标签能不能成立、成立之后是什么意思。不合法的不落标签，当场给原因——
+   「只有 32 层」比一枚点了没反应的标签有用得多。 */
+function chipState(c, D){
+  var p = propOf(c.k); if(!p) return {kind:'bad', msg:'未知属性'};
+  var v = c.v;
+  if(c.k==='layer'){
+    var li = parseInt(v,10);
+    if(!isFinite(li) || li<0 || li>=D.layers) return {kind:'bad', msg:'只有 '+D.layers+' 层（L0–L'+(D.layers-1)+'）', col:p.col};
+    return {kind:'layer', li:li, col:p.col};
+  }
+  if(c.k==='rank'){
+    var g = parseInt(v,10);
+    if(!isFinite(g) || g<0 || g>=D.world) return {kind:'bad', msg:'只有 '+fmt(D.world)+' 张卡（r0–r'+(D.world-1)+'）', col:p.col};
+    return {kind:'rank', g:g, col:p.col};
+  }
+  if(c.k==='dim'){
+    var raw = String(v).toLowerCase(), ci = raw.indexOf(':'), dm = ci<0?raw:raw.slice(0,ci);
+    if(['tp','sp','cp','pp','dp','ep'].indexOf(dm)<0) return {kind:'bad', msg:'不认识这一维', col:p.col};
+    if(dm==='ep' && !D.moe) return {kind:'bad', msg:'本配置没有专家层，EP 这一刀落不下来', col:VC.ep};
+    if(dm==='cp' && D.cp<=1) return {kind:'bad', msg:'本配置 CP=1，这一刀没落下', col:VC.cp};
+    var dimCol = dm==='sp'?VC.tp:VC[dm];
+    if(ci>=0){
+      var gi = parseInt(raw.slice(ci+1),10), base = dm==='sp'?'tp':dm;
+      var sz = base==='ep'?D.ep:D[base];
+      if(!isFinite(gi)||gi<0||gi>=sz) return {kind:'bad', msg:base.toUpperCase()+' 只有 '+sz+' 组（0–'+(sz-1)+'）', col:dimCol};
+      return {kind:'dim', dim:dm, grp:gi, col:dimCol};
+    }
+    return {kind:'dim', dim:dm, grp:-1, col:dimCol};
+  }
+  return {kind:'bad', msg:'未知属性'};
+}
+function chipsWith(k){ return ui.chips.filter(function(c){ return c.k===k; })[0] || null; }
+/* ── 聚光灯命中集合 ──────────────────────────────────────────────────
+   把所有生效的搜索标签汇成一个 rank 集合（并集）和一个 layer 集合。
+   返回 null 表示没有搜索标签生效（不压暗任何东西）。 */
+function spotlightHit(D){
+  if(!ui.chips.length) return null;
+  var ranks = {}, layers = {}, any = false, epRelevant = false;
+  ui.chips.forEach(function(c){
+    var st = chipState(c, D);
+    if(st.kind === 'bad') return;
+    if(st.kind === 'layer'){
+      any = true;
+      layers[st.li] = true;
+      var h = layerHome(D, st.li);
+      for(var d=0;d<D.dp;d++) for(var cc=0;cc<D.cp;cc++) for(var t=0;t<D.tp;t++)
+        ranks[rankOf(t, cc, d, h.stage, D)] = true;
+    }
+    if(st.kind === 'rank'){
+      any = true;
+      ranks[st.g] = true;
+    }
+    if(st.kind === 'dim'){
+      any = true;
+      var base = st.dim === 'sp' ? 'tp' : st.dim;
+      if(base === 'ep') epRelevant = true;
+      if(st.grp >= 0){
+        dimSlice(base, st.grp, D).forEach(function(r){ ranks[r] = true; });
+      } else {
+        var ref = (sel !== null && sel < D.world) ? sel : 0;
+        var mem = base === 'ep' ? epMembers(ref, D) : groupMembers(base, ref, D);
+        mem.forEach(function(r){ ranks[r] = true; });
+      }
+    }
+  });
+  return any ? {ranks: ranks, layers: layers, epRelevant: epRelevant} : null;
+}
+function addChip(k, v){
+  ui.chips = ui.chips.filter(function(c){ return c.k!==k; });   /* 同一属性只留一枚 */
+  ui.chips.push({k:k, v:String(v)});
+}
+/* 这一屏此刻是不是有生效的搜索标签 */
+function revLiOn2(D){ return ui.chips.length > 0; }
+/* 选完属性之后光标直接落进输入框——不然还要再点一下，白多一步 */
+function focusQVal(){
+  setTimeout(function(){ var el = document.getElementById('qVal'); if(el) el.focus(); }, 0);
+}
+/* Enter 落成标签；Esc 收起。数值型属性走这里，有限取值那种直接点按钮。 */
+document.addEventListener('keydown', function(ev){
+  var t = ev.target;
+  if(!t || t.id !== 'qVal') return;
+  if(ev.key === 'Enter'){
+    ev.preventDefault();
+    var dk = t.getAttribute('data-k'), v = t.value.trim();
+    if(dk && dk.indexOf('dim:')===0){
+      var dn = dk.slice(4);
+      if(v === ''){ addChip('dim', dn); } else { addChip('dim', dn+':'+v); }
+      ui.qOpen = ''; applyQuery(derive(cfg)); render(); ptoNotifyHost();
+    } else if(v !== ''){
+      addChip(dk, v); ui.qOpen = ''; applyQuery(derive(cfg)); render(); ptoNotifyHost();
+    }
+  } else if(ev.key === 'Escape'){ ui.qOpen = ''; render(); }
+});
+/* 点面板外面收起。用捕获阶段，免得被画布那几个 stopPropagation 吃掉。 */
+document.addEventListener('click', function(ev){
+  if(!ui.qOpen) return;
+  if(ev.target.closest && ev.target.closest('.pt-psearch')) return;
+  ui.qOpen = ''; render();
+}, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
-  var s = qState(D);
-  if(!s.kind || (ui.cardMode && ui.netOff)){ el.hidden = true; el.innerHTML = ''; return; }
+  if(!ui.chips.length || (ui.cardMode && ui.netOff)){ el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  el.style.setProperty('--c', s.col || VC.pp);
-  function row(dim, what, why){
+  function row(dim, what){
     return '<div class="rl"><span class="dk" style="--c:'+(dim==='sp'?VC.tp:VC[dim])+'">'+dim.toUpperCase()+'</span>'
-      + '<span>'+what+'<br><span style="color:var(--pt-fg3);font-size:10.5px">'+why+'</span></span></div>';
+      + '<span>'+what+'</span></div>';
   }
-  if(s.kind === 'bad'){
-    el.style.setProperty('--c', 'var(--pt-bd)');
-    el.innerHTML = '<h5><span>搜索</span><button data-act="revclear" title="收起">×</button></h5>'
-      + '<div style="color:var(--pt-fg3)">'+esc(s.msg)+'</div>';
-    return;
-  }
-  if(s.kind === 'rank'){
-    var co = coordsOf(s.g, D), mR = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-    var l0 = co.p*D.layersPerStage, l1 = l0 + D.layersPerStage - 1;
-    el.innerHTML = '<h5><span>r'+s.g+' 是哪张卡</span><button data-act="revclear" title="收起">×</button></h5>'
-      + row('pp', '<b>stage '+co.p+'</b> —— 持 L'+l0+'–L'+l1+'（'+D.layersPerStage+' 层）', '别的层它连显存都没申请')
-      + row('tp', '第 <b>'+co.t+'</b> 片（带着 SP）', '每个权重矩阵只建它那一份')
-      + (D.cp>1 ? row('cp', '第 <b>'+co.c+'</b> 段输入', '切的是 s，权重持有量不变') : '')
-      + (mR ? row('ep', '桶 <b>ep'+mR.ep+'</b> —— E'+(mR.ep*(D.experts/D.ep))+'–E'+((mR.ep+1)*(D.experts/D.ep)-1),
-                 '桶号由 (tp,cp,dp) 导出，不是独立轴') : '')
-      + row('dp', '第 <b>'+co.d+'</b> 份副本', '和别的副本跑同样的模型、不同的数据')
-      + '<div class="sum">g = ((pp·DP+dp)·CP+cp)·TP+tp = <b>'+s.g+'</b>（可逆 §07）</div>';
-    return;
-  }
-  if(s.kind === 'expert'){
-    var per = D.experts/D.ep, bkt = Math.floor(s.e/per);
-    var hostCards = D.tp*D.cp*D.dp/D.ep*D.etp;      /* 一个桶落在几张卡上（每个 stage 内） */
-    el.innerHTML = '<h5><span>E'+s.e+' 这个专家在哪</span><button data-act="revclear" title="收起">×</button></h5>'
-      + row('ep', '落在桶 <b>ep'+bkt+'</b>（E'+(bkt*per)+'–E'+((bkt+1)*per-1)+'，每桶 '+per+' 个）',
-            '专家整个在它那张卡上，算子没被改写——这点和 TP 有本质区别')
-      + row('pp', '只在 <b>MoE 层</b>出现（前 '+Math.min(2,D.layers)+' 层是 Dense）',
-            'e 轴时有时无，撑不起一个全局并行维度')
-      + '<div class="sum">桶 ep'+bkt+' 在<b>每个 PP stage</b> 内都有一份宿主卡；'
-      + '整网共 <b>'+fmt(Math.max(1, Math.round(hostCards))*D.pp)+'</b> 张卡持有 E'+s.e
-      + '<div style="color:var(--pt-fg3);font-size:10.5px;margin-top:3px">'
-      + 'token 去哪个专家是 router 现场决定的（全文唯一「切分结果不静态」处）；'
-      + '专家放在哪张卡，初始化时就定死了。</div></div>';
-    return;
-  }
-  if(s.kind === 'dim'){
-    var dm = s.dim, NM = {tp:'锯开算子（同一算子 → N 片）', sp:'沿 s 切 norm/逐元素区（复用 TP 组）',
+  /* 一枚标签一段。多枚并存时依次列出——这正是「综合搜索」的意义：
+     可以同时问「L29 住在哪」和「TP 组是谁跟谁」。 */
+  var secs = ui.chips.map(function(c){
+    var s2 = chipState(c, D), p2 = propOf(c.k);
+    var head = '<div class="qsec" style="--c:'+(s2.col||p2.col)+'"><h6>'+esc(p2.n)+' · '+esc(p2.tag(c.v))+'</h6>';
+    if(s2.kind === 'bad') return head + '<div style="color:var(--pt-fg3)">'+esc(s2.msg)+'</div></div>';
+    if(s2.kind === 'layer'){
+      var h = layerHome(D, s2.li);
+      return head
+        + row('pp', '落在 <b>stage '+h.stage+'</b>（L'+h.l0+'–L'+h.l1+'）')
+        + row('tp', D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1 —— 不切')
+        + (D.moe ? row('ep', h.isMoe ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>' : '这一层是 <b>Dense</b>，没有 e 轴') : '')
+        + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>') : '')
+        + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>')
+        + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张卡与第 '+s2.li+' 层有关（world/PP）'
+        + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
+        + '</div></div>';
+    }
+    if(s2.kind === 'rank'){
+      var co = coordsOf(s2.g, D), mR = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+      var l0 = co.p*D.layersPerStage;
+      return head
+        + row('pp', '<b>stage '+co.p+'</b> —— 持 L'+l0+'–L'+(l0+D.layersPerStage-1))
+        + row('tp', '第 <b>'+co.t+'</b> 片（带着 SP）')
+        + (D.cp>1 ? row('cp', '第 <b>'+co.c+'</b> 段输入') : '')
+        + (mR ? row('ep', '桶 <b>ep'+mR.ep+'</b>（E'+(mR.ep*(D.experts/D.ep))+'–E'+((mR.ep+1)*(D.experts/D.ep)-1)+'）') : '')
+        + row('dp', '第 <b>'+co.d+'</b> 份副本')
+        + '<div class="sum">g = ((pp·DP+dp)·CP+cp)·TP+tp = <b>'+s2.g+'</b>（可逆 §07）</div></div>';
+    }
+    /* dim */
+    var dm = s2.dim;
+    var NM = {tp:'锯开算子（同一算子 → N 片）', sp:'沿 s 切 norm/逐元素区（复用 TP 组）',
       pp:'层的接力（一段传一段，有序）', cp:'切输入序列（首尾对称双段）',
       dp:'整套复印（模型不动，切样本）', ep:'专家分桶 + 按 token 路由'};
     var SZ = {tp:D.tp, sp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dm];
-    var g0 = (sel!==null && sel<D.world) ? sel : 0;
-    var mem = (dm==='sp'?'tp':dm) === 'ep' ? epMembers(g0, D) : groupMembers(dm==='sp'?'tp':dm, g0, D);
-    el.innerHTML = '<h5><span>'+dm.toUpperCase()+' 这一刀 · 谁跟谁一组</span>'
-      + '<button data-act="revclear" title="收起">×</button></h5>'
-      + row(dm, '<b>×'+SZ+'</b> —— '+NM[dm], dm==='sp'
-            ? 'SP 不占乘数：组就是 TP 组，同一批卡、同一个组内序号'
-            : (dm==='ep' ? 'EP 是同一批卡的重分组，world 里没有它的乘数'
-                         : 'world = TP × CP × PP × DP，它占其中一个乘数'))
-      + '<div class="sum">以 <b>r'+g0+'</b> 为例，它的 '+dm.toUpperCase()+' 组：'
+    var base = dm==='sp' ? 'tp' : dm;
+    var g0, mem;
+    if(s2.grp >= 0){
+      mem = dimSlice(base, s2.grp, D);
+      g0 = mem.length ? mem[0] : 0;
+    } else {
+      g0 = (sel!==null && sel<D.world) ? sel : 0;
+      mem = base==='ep' ? epMembers(g0, D) : groupMembers(base, g0, D);
+    }
+    var grpLabel = s2.grp>=0 ? '第 <b>'+s2.grp+'</b> 组' : '以 <b>r'+g0+'</b> 为例';
+    return head
+      + row(dm, '<b>×'+SZ+'</b> —— '+NM[dm])
+      + '<div class="sum">'+grpLabel+'，'+dm.toUpperCase()+' 组：'
       + '<div class="rankchips" style="margin-top:4px">'
       + mem.slice(0,16).map(function(r){ return '<button data-act="pick" data-g="'+r+'">'+r+'</button>'; }).join('')
       + (mem.length>16 ? '<span style="font-size:10px;color:var(--pt-fg3)">…共 '+mem.length+'</span>' : '')
-      + '</div></div>';
-    return;
-  }
-  var L = clamp(Math.floor(+ui.revLayer), 0, D.layers-1), h = layerHome(D, L);
-  el.innerHTML = '<h5><span>三者叠加时 · 第 '+L+' 层住在哪</span>'
-    + '<button data-act="revclear" title="收起">×</button></h5>'
-    + row('pp', '落在 <b>stage '+h.stage+'</b>（L'+h.l0+'–L'+h.l1+'）', '决定这一层<b>去哪几张卡</b>')
-    + row('tp', D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1 —— 不切',
-          '决定它<b>在那几张卡里怎么碎</b>')
-    + (D.moe ? row('ep', h.isMoe
-        ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>'
-        : '这一层是 <b>Dense</b>，没有 e 轴',
-        h.isMoe ? '同一批卡的<b>重分组</b>，不新增卡（EP 不是第五个乘数）'
-                : 'EP 这一刀在这一层落不下来') : '')
-    + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>', '切的是 s，权重持有量不变') : '')
-    + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>', '决定这套安排<b>重复几遍</b>')
-    + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张卡与第 '+L+' 层有关'
-    + '（world/PP = '+fmt(D.world)+'/'+D.pp+'）'
-    + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）'
-                : '，每张持有<b>完整</b>的它')
-    + '<div style="color:var(--pt-fg3);font-size:10.5px;margin-top:3px">'
-    + '层作为概念自始至终没变，变的只是它被映射到硬件上的方式。</div></div>';
+      + '</div></div></div>';
+  }).join('');
+  el.style.setProperty('--c', 'var(--pt-bd)');
+  el.innerHTML = '<h5><span>搜索结果 · '+ui.chips.length+' 个条件</span>'
+    + '<button data-act="revclear" title="清空">×</button></h5>' + secs;
+}
+
+function layoutQBar(){
+  var lg = $('legend');
+  if(!lg || lg.hidden) return;
+  var q = $('qbar'), sb = document.querySelector('.pt-stagebar');
+  if(!sb) return;
+  var host = sb.parentElement.getBoundingClientRect();
+  var bot = Math.max(sb.getBoundingClientRect().bottom, q && q.innerHTML ? q.getBoundingClientRect().bottom : 0);
+  lg.style.top = Math.round(bot - host.top + 10) + 'px';
 }
 function renderLegend(D){
   var el = $('legend'); if(!el) return;
@@ -4713,7 +5082,8 @@ function renderLegend(D){
     '<b>越远越淡越细</b>（空气透视），不表示别的意思。'
     + (ui.cardMode ? '<i> 选中的那张卡不上雾。</i>' : '')));
 
-  el.innerHTML = h.join('');
+  /* 标题单独一行，其余包进 lg-body 横铺：位置够就一行，不够自适应换行 */
+  el.innerHTML = h[0] + '<div class="lg-body">' + h.slice(1).join('') + '</div>';
 }
 /* 层反查那个输入框就长在工具条上，而 renderChain 收尾会重建整条工具条——
    边打字边重建，输入框每敲一个数字就被换掉一次，第二位就打不进去了。
@@ -4753,21 +5123,58 @@ function renderChainBar(D){
   var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
     + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
     + '通信</button>';
-  /* 全局搜索：一个框问四种问题，取代原来那个只能查层的框。
-     这一屏所有别的读数都在答「这张卡装了什么」，搜索把**别的几种问法**也接上：
-       L29 / 29  → 第 ℓ 层住在哪几张卡（正向那一问的逆命题）
-       r41       → 选中 global_rank 41
-       tp/ep/…   → 这一刀是谁跟谁一组
-       E12       → 第 12 号专家在哪个桶、哪几张卡上
-     点层板选层也想过——32 层在三维投影里每层只有几个像素，选不中；打字准得多。 */
-  var qOn = !!qState(D).kind;
-  var revBtn = '<span class="pt-revl'+(qOn ? ' is-on' : '')+'" style="--c:'+(qState(D).col || VC.pp)+'"'
-    + ' title="搜索：L29 查层住在哪几张卡 · r41 选中一张卡 · tp/cp/pp/dp/ep 查这一刀谁跟谁一组 · E12 查专家在哪">'
-    /* id 与读出卡里那个反查框区分开：两处可以同时在屏上，重 id 会让
-       getElementById 只认得到第一个，另一个就成了死控件。 */
-    + '<b>搜索</b><input type="text" id="qBox" value="'+esc(ui.q)+'" placeholder="L29 / r41 / tp / E12" style="width:96px">'
-    + (qOn ? '<button data-act="revclear" title="清除">×</button>' : '')
-    + '</span>';
+  /* 全局搜索：属性搜索——层 / rank / 刀（维度+组号）。 */
+  /* 属性搜索控件：标签在前，右边是「＋ 搜索」。三个状态由 ui.qOpen 决定：
+     ''=收起 · 'menu'=在选属性 · '<属性名>'=在填这个属性的值。 */
+  var chipHTML = ui.chips.map(function(c, i){
+    var p9 = propOf(c.k), st9 = chipState(c, D);
+    var bad9 = st9.kind === 'bad';
+    return '<span class="pt-qchip'+(bad9?' is-bad':'')+'" style="--c:'+(st9.col||p9.col)+'"'
+      + ' title="'+esc(p9.n+'：'+(bad9 ? st9.msg : p9.tag(c.v)))+'">'
+      + '<i>'+esc(p9.n)+'</i>'+esc(p9.tag(c.v))
+      + '<button data-act="chipdel" data-i="'+i+'" title="去掉这个条件">×</button></span>';
+  }).join('');
+  var pane9 = '';
+  if(ui.qOpen === 'menu'){
+    var vis9 = PROPS.filter(function(p9){ return p9.k!=='rank' || ui.cardMode; });
+    var dimP = propOf('dim');
+    pane9 = '<div class="pt-pmenu">'
+      + '<div class="hd">按哪个属性找</div>'
+      + vis9.filter(function(p9){ return p9.k!=='dim'; }).map(function(p9){
+          return '<button data-act="qprop" data-k="'+p9.k+'" style="--c:'+p9.col+'">'
+            + '<b>'+esc(p9.n)+'</b><span>'+esc(p9.hint)+'</span></button>';
+        }).join('')
+      + '<div class="opts" style="margin:4px 3px">' + dimP.opts.map(function(o){
+          return '<button data-act="qdim" data-v="'+o+'" style="--c:'
+            + (o==='sp'?VC.tp:VC[o])+'">'+o.toUpperCase()+'</button>';
+        }).join('') + '</div>'
+      + '</div>';
+  } else if(ui.qOpen && ui.qOpen.indexOf('dim:')===0){
+    var dimN = ui.qOpen.slice(4), dimBase = dimN==='sp'?'tp':dimN;
+    var dimSz = dimBase==='ep'?D.ep:D[dimBase];
+    pane9 = '<div class="pt-pmenu">'
+      + '<div class="hd">'+dimN.toUpperCase()+' · 哪一组（共 '+dimSz+' 组）</div>'
+      + '<input type="number" min="0" max="'+(dimSz-1)+'" id="qVal" data-k="dim:'+dimN+'" placeholder="组号 0–'+(dimSz-1)+'，留空选当前卡的组" autofocus>'
+      + '<div class="tip">填好按 Enter，留空则跟随选中卡</div>'
+      + '</div>';
+  } else if(ui.qOpen){
+    var p9 = propOf(ui.qOpen);
+    if(p9){
+      var maxV9 = p9.k==='layer'?(D.layers-1):p9.k==='rank'?(D.world-1):0;
+      pane9 = '<div class="pt-pmenu">'
+        + '<div class="hd">'+esc(p9.n)+' · '+esc(p9.hint)+'</div>'
+        + '<input type="number" min="0" max="'+maxV9+'" id="qVal" data-k="'+p9.k+'" placeholder="0–'+maxV9+'" autofocus>'
+        + '<div class="tip">填好按 Enter</div>'
+        + '</div>';
+    }
+  }
+  var revBtn = '<span class="pt-psearch'+(ui.qOpen?' is-open':'')+'">'
+    + chipHTML
+    + '<button class="pt-padd'+(ui.chips.length?'':' is-empty')+'" data-act="qopen"'
+    + ' title="属性搜索：先选属性，再填值，落成一枚标签；标签可以并存">'
+    + (ui.chips.length ? '＋' : '＋ 搜索') + '</button>'
+    + (ui.chips.length ? '<button class="pt-pclr" data-act="revclear" title="清空全部条件">×</button>' : '')
+    + pane9 + '</span>';
   var cBtn = '<span class="pt-mode">'
     + '<button class="pt-mb'+(ui.cardMode?' is-on':'')+'" data-act="cardmode" style="--c:'+VC.dp+'"'
     + ' title="'+(ui.cardMode?'退回整网切分场景':'把四刀交集收进一张卡：只看这张卡真正持有的那份')+'">'
@@ -4782,9 +5189,13 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + revBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + cBtn + vBtns);
+  /* 搜索走中间那个容器，不进右侧工具条 */
+  var qb = $('qbar');
+  if(qb){ qb.innerHTML = (ui.cardMode && ui.netOff) ? '' : revBtn; qb.hidden = (ui.cardMode && ui.netOff); }
   renderLegend(D);
   renderRevBar(D);
+  requestAnimationFrame(layoutQBar);
 }
 
 function renderDimBar(D, dim){
@@ -4869,8 +5280,9 @@ function renderV1(D){
   var showLabel = layerOn('L4') && TPn*DPn*PPn <= 480;
   var L3 = layerOn('L3'), L2 = layerOn('L2'), commActive = layerOn('L5');
   var refG = (sel!==null && sel<D.world) ? sel : rankOf(0, facet, 0, 0, D);
+  var spot = spotlightHit(D);
   var axisSet = {};
-  if(layerOn('L4') && ui.axis) groupMembers(ui.axis, refG, D).forEach(function(r){ axisSet[r]=1; });
+  if(!spot && layerOn('L4') && ui.axis) groupMembers(ui.axis, refG, D).forEach(function(r){ axisSet[r]=1; });
   var maxB = 1, pi;
   if(L2) for(pi=0;pi<PPn;pi++) maxB = Math.max(maxB, 2*paramsPerCard(D,pi));
 
@@ -4884,17 +5296,21 @@ function renderV1(D){
   var cells='';
   boxes.forEach(function(b){
     var y0 = b.p*ypitch, isSel = sel===b.g, inAxis = axisSet[b.g];
+    var spotHit = spot && spot.ranks[b.g];
+    var spotMiss = spot && !spotHit;
     var st = 'var(--pt-bds)', sw = .9, topFill = '';
-    if(inAxis){ st = VC[ui.axis]; topFill = mix(VC[ui.axis], 16); }
-    if(isSel){ st = 'var(--pt-fg)'; sw = 2; }
+    if(spotHit){ st = VC.dp; sw = 1.6; topFill = mix(VC.dp, 16); }
+    else if(inAxis){ st = VC[ui.axis]; topFill = mix(VC[ui.axis], 16); }
+    if(isSel && !spot){ st = 'var(--pt-fg)'; sw = 2; }
     var inner = '';
     if(L2){
       var share = (2*paramsPerCard(D,b.p))/maxB;
       var ih = GEO.h*.9*share, iw = GEO.w*.58, idp = GEO.d*.58;
       inner = boxSVG(b.x+(GEO.w-iw)/2, y0+GEO.h, b.z+(GEO.d-idp)/2, iw, ih, idp, s, {fill:'var(--pt-fg2)', stroke:'transparent', attrs:' pointer-events="none"'});
     }
-    var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
-    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer'+(L3?'':';opacity:.16')+'">'
+    var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
+    var cardOp = spotMiss ? 0.10 : (L3 ? 1 : .16);
+    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.25)':'')+'">'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
   });
@@ -5561,6 +5977,9 @@ function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
   if(el.firstChild) return;
   el.innerHTML = '<b>并行拓扑</b>';
+  if(document.querySelector('.pt-root.embed')){
+    var qb = $('qbar'); if(qb) el.appendChild(qb);
+  }
 }
 
 /* ═════════ 总渲染 ═════════ */
@@ -5608,10 +6027,11 @@ document.addEventListener('input', function(ev){
     activePreset = null; stopAnim(); render();
     var nf = document.querySelector('[data-cfg="'+k+'"]'); if(nf) nf.focus();
   }
-  if(t.id==='revLayer' || t.id==='qBox'){
+  if(t.id==='revLayer'){
     var Dv = derive(cfg);
-    if(t.id==='qBox'){ ui.q = t.value; applyQuery(Dv); }
-    else { ui.revLayer = t.value; ui.q = t.value==='' ? '' : ('L'+t.value); }
+    ui.chips = ui.chips.filter(function(c){ return c.k!=='layer'; });
+    if(t.value !== '') ui.chips.push({k:'layer', v:t.value});
+    ui.revLayer = t.value;
     /* 高亮与拆解卡都要跟着输入走，但**不能走 render()**：那会重建工具条与读出卡，
        输入框当场失焦，第二个数字就打不进去了。所以只重画场景与拆解卡，
        工具条上那圈高亮手动切一下。（3D/顶视那条 SVG 路径才有这道层板高亮，
@@ -5878,7 +6298,18 @@ document.addEventListener('click', function(ev){
     }
     render(); ptoNotifyHost();
   }
-  else if(act==='revclear'){ ui.revLayer = ''; ui.q = ''; render(); }
+  else if(act==='revclear'){ ui.chips = []; ui.revLayer = ''; ui.qOpen=''; applyQuery(derive(cfg)); render(); }
+  else if(act==='qopen'){ ui.qOpen = ui.qOpen ? '' : 'menu'; render(); focusQVal(); }
+  else if(act==='qprop'){ ui.qOpen = b.getAttribute('data-k'); render(); focusQVal(); }
+  else if(act==='qdim'){ ui.qOpen = 'dim:'+b.getAttribute('data-v'); render(); focusQVal(); }
+  else if(act==='qval'){
+    addChip(b.getAttribute('data-k'), b.getAttribute('data-v'));
+    ui.qOpen = ''; applyQuery(derive(cfg)); render(); ptoNotifyHost();
+  }
+  else if(act==='chipdel'){
+    ui.chips.splice(+b.getAttribute('data-i'), 1);
+    applyQuery(derive(cfg)); render();
+  }
   else if(act==='axis'){ var a = b.getAttribute('data-a'); ui.axis = (ui.axis===a) ? '' : a; render(); }
   else if(act==='facet'){ ui.cpFacet = +b.getAttribute('data-i'); render(); }
   else if(act==='yaw'){ ui.yaw = (ui.yaw + (+b.getAttribute('data-d')) + 4) & 3; render(); }
@@ -6016,7 +6447,7 @@ if(window.ResizeObserver){
 
 urlLoad();
 /* q= 带进来的那句话要真的生效（选中卡、落下刀），不能只是把字填回框里 */
-(function(){ var D0 = derive(cfg); if(D0.ok && ui.q) applyQuery(D0); })();
+(function(){ var D0 = derive(cfg); if(D0.ok && ui.chips.length) applyQuery(D0); })();
 render();
 })();
 </script>
