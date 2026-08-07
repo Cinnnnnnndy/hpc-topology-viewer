@@ -5137,25 +5137,17 @@ function renderChainBar(D){
   var pane9 = '';
   if(ui.qOpen === 'menu'){
     var vis9 = PROPS.filter(function(p9){ return p9.k!=='rank' || ui.cardMode; });
+    var dimP = propOf('dim');
     pane9 = '<div class="pt-pmenu">'
       + '<div class="hd">按哪个属性找</div>'
-      + vis9.map(function(p9){
-          if(p9.k==='dim'){
-            return '<button data-act="qprop" data-k="dim" style="--c:'+p9.col+'">'
-              + '<b>'+esc(p9.n)+'</b><span>'+esc(p9.hint)+'</span></button>';
-          }
+      + vis9.filter(function(p9){ return p9.k!=='dim'; }).map(function(p9){
           return '<button data-act="qprop" data-k="'+p9.k+'" style="--c:'+p9.col+'">'
             + '<b>'+esc(p9.n)+'</b><span>'+esc(p9.hint)+'</span></button>';
         }).join('')
-      + '</div>';
-  } else if(ui.qOpen === 'dim'){
-    var p9d = propOf('dim');
-    pane9 = '<div class="pt-pmenu">'
-      + '<div class="hd">'+esc(p9d.n)+' · 选一维</div>'
-      + '<div class="opts">'+p9d.opts.map(function(o){
+      + '<div class="opts" style="margin:4px 3px">' + dimP.opts.map(function(o){
           return '<button data-act="qdim" data-v="'+o+'" style="--c:'
             + (o==='sp'?VC.tp:VC[o])+'">'+o.toUpperCase()+'</button>';
-        }).join('')+'</div>'
+        }).join('') + '</div>'
       + '</div>';
   } else if(ui.qOpen && ui.qOpen.indexOf('dim:')===0){
     var dimN = ui.qOpen.slice(4), dimBase = dimN==='sp'?'tp':dimN;
