@@ -1939,11 +1939,30 @@ function netScene(D, g, box, step){
     }
     return xs1 >= cullX0 && xs0 <= cullX1 && ys1 >= cullY0 && ys0 <= cullY1;
   }
+  /* ── 弱化档合并成 path：卡模式全量近 3 万个 <polygon>，九成是各卡里同款样式的
+     小方块——每个都建元素，innerHTML 解析、样式解析、重绘全在为它们买单，这就是
+     「3D 放大缩小还是卡」里停手补帧的那一顿。同款式的并成一条 <path>（无数子路径），
+     非焦点列整列合并（列内先后无所谓：都是同一档弱化平涂）；焦点列保持逐个画，
+     选中卡的遮挡关系不动。每列画完各自 flush，列与列的画家序不变。 */
+  var qBatch = {}, qBatchN = 0, canBatch = false;
+  function wq(pts, style){
+    if(!canBatch){ body.push(quad(pts, style)); return; }
+    qBatch[style] = (qBatch[style] || '')
+      + 'M'+pts[0][0].toFixed(1)+' '+pts[0][1].toFixed(1)+'L'+pts[1][0].toFixed(1)+' '+pts[1][1].toFixed(1)
+      + 'L'+pts[2][0].toFixed(1)+' '+pts[2][1].toFixed(1)+'L'+pts[3][0].toFixed(1)+' '+pts[3][1].toFixed(1)+'Z';
+    qBatchN++;
+  }
+  function wqFlush(){
+    if(!qBatchN) return;
+    for(var st8 in qBatch) body.push('<path d="'+qBatch[st8]+'" style="'+st8+'"/>');
+    qBatch = {}; qBatchN = 0;
+  }
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
     var kOff = k;
     var isF = k === sel0;
     if(!isF && !colOnScreen(k)) continue;      /* 焦点列永远画：读出卡/门牌锚着它 */
+    canBatch = !isF;
     /* 这一列是哪个副本、哪个 tp 片。非卡维度时 KT=1，tIdx 回落到当前选中的片。
        EP 桶不是独立轴——epOf 是从 (t,c,d) 导出的，所以每一列必须用**它自己**的
        坐标去算，不能沿用全局选中那张卡的桶号，否则 128 张卡会画成同一个桶。 */
@@ -2096,17 +2115,17 @@ function netScene(D, g, box, step){
                   return;
                 }
               }
-              body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+              wq([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
                 'fill:'+(spBg ? 'url(#hxSP)' : mix(col, uniq ? 62 : (dm?30:14)))+';stroke:'+(dm?col:'var(--pt-bds)')
-                +';stroke-width:'+(uniq?(ui.cardMode?.45:.8):sw0)+';opacity:'+(uniq?(ui.cardMode?.85:1):so0)));
+                +';stroke-width:'+(uniq?(ui.cardMode?.45:.8):sw0)+';opacity:'+(uniq?(ui.cardMode?.85:1):so0));
               return;
             }
             /* 弱化不等于抹掉：每一层的算子形状都得看得出来，只是不跟选中的那份
                抢。所以留细描边（形状靠它勾出来）、填充压到近乎无色——46 层沿
                深度叠上来时，是填充在堆成实墙，描边不会。 */
-            body.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
+            wq([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
               'fill:'+mix(col, dm?7:3)+';stroke:'+(dm?col:'var(--pt-bds)')
-              +';stroke-width:.18;opacity:'+(isF?.5:.3)));   /* 同列稍亮一点，帮着定位选中的那张在哪 */
+              +';stroke-width:.18;opacity:'+(isF?.5:.3));   /* 同列稍亮一点，帮着定位选中的那张在哪 */
             return;
           }
           if(comm){
@@ -2196,6 +2215,7 @@ function netScene(D, g, box, step){
       }
       if(spotLayerMiss) body.push('</g>');
     }
+    wqFlush();                      /* 壳的磨砂要压在内容上面：壳前先落批 */
     if(ui.cardMode) shellOf(k);
     if(colOp < 0.999) body.push('</g>');
     if(K > 1 && !ui.cardMode){
@@ -3241,6 +3261,10 @@ function shardMap(D, g){
 function graphSVG(o){
   var IX = graphIndex(); if(!IX) return '';
   var G = IX.G, clu = IX.clu, D = o.D;
+  /* zs = 当前缩放。字号、描边、虚线、纹样阈值全按 1/zs 反除：场景被 wrapper 放大后
+     线在屏幕上仍是细线、字仍是那么大（地图式）；标签的显隐阈值乘 zs——放大到
+     屏幕上装得下，字才出现，越放大出现得越多。 */
+  var zs = o.zscale || 1;
   var root = o.clip ? clu[o.clip] : null;
   var bx = root ? root.x : 0, by = root ? root.y : 0;
   var bw = root ? root.width : G.width, bh = root ? root.height : G.height;
@@ -3253,6 +3277,7 @@ function graphSVG(o){
   var ghost = o.ghostClu || [];
   var pos = {}, out = [], acts = [], txts = [];
   var E3x = o.tag3d ? Math.max(2.2, 5*sc*8) : 0, E3y = o.tag3d ? E3x*0.62 : 0;
+  var HALO = 'paint-order="stroke" stroke="var(--pt-s1)" stroke-width="'+(2.2/zs).toFixed(2)+'" ';
 
   /* 簇：结构线（无厚度），只画在 clip 子树里的 */
   G.clusters.forEach(function(c){
@@ -3260,11 +3285,11 @@ function graphSVG(o){
     if(o.clip && c.id === o.clip) return;                 /* 外框由调用方画 */
     var gh = ghost.indexOf(c.id) >= 0;
     out.push('<rect x="'+TX(c.x).toFixed(1)+'" y="'+TY(c.y).toFixed(1)+'" width="'+(c.width*sc).toFixed(1)
-      +'" height="'+(c.height*sc).toFixed(1)+'" rx="3" style="fill:none;stroke:var(--pt-bd);stroke-width:.8'
-      +(gh?';stroke-dasharray:3 2':'')+'"/>');
-    if(o.label && c.height*sc > 22)
-      txts.push(txt(TX(c.x)+3, TY(c.y)+7.5, esc(c.label)+(gh?' · 本配置不实例化':''), 5.6,
-                    gh?'var(--pt-fg3)':'var(--pt-fg2)', 'start', 'font-weight="700"'));
+      +'" height="'+(c.height*sc).toFixed(1)+'" rx="3" style="fill:none;stroke:var(--pt-bd);stroke-width:'+(0.8/zs).toFixed(2)
+      +(gh?';stroke-dasharray:'+(3/zs).toFixed(2)+' '+(2/zs).toFixed(2):'')+'"/>');
+    if(o.label && c.height*sc*zs > 22)
+      txts.push(txt(TX(c.x)+3/zs, TY(c.y)+7.5/zs, esc(c.label)+(gh?' · 本配置不实例化':''), 5.8/zs,
+                    gh?'var(--pt-fg3)':'var(--pt-fg2)', 'start', 'font-weight="700" '+HALO));
   });
   /* 连边：先画，压在节点下面（边是关系，不抢戏） */
   G.nodes.forEach(function(n){ pos[n.id] = n; });
@@ -3273,8 +3298,8 @@ function graphSVG(o){
     if(!a || !b) return;
     if(o.clip && !(inClu(a.parent, o.clip, clu) && inClu(b.parent, o.clip, clu))) return;
     out.push('<line x1="'+TX(a.x).toFixed(1)+'" y1="'+TY(a.y).toFixed(1)+'" x2="'+TX(b.x).toFixed(1)
-      +'" y2="'+TY(b.y).toFixed(1)+'" style="stroke:var(--pt-bd);stroke-width:.5;stroke-opacity:.75'
-      +(e.dashed?';stroke-dasharray:2 2':'')+'"/>');
+      +'" y2="'+TY(b.y).toFixed(1)+'" style="stroke:var(--pt-bd);stroke-width:'+(0.5/zs).toFixed(2)+';stroke-opacity:.75'
+      +(e.dashed?';stroke-dasharray:'+(2/zs).toFixed(2)+' '+(2/zs).toFixed(2):'')+'"/>');
   });
   /* 节点 */
   G.nodes.forEach(function(n){
@@ -3300,34 +3325,38 @@ function graphSVG(o){
          颜色跟通信属于哪把刀：EP 的 A2A 紫、其余（TP/SP 换轴、logits 收拢）青。 */
       var cCol = (n.id === 'moe_all_to_all_dispatch' || n.id === 'moe_all_to_all_combine') ? VC.ep : VC.tp;
       acts.push('<line x1="'+x.toFixed(1)+'" y1="'+(y+h/2).toFixed(1)+'" x2="'+(x+w).toFixed(1)+'" y2="'+(y+h/2).toFixed(1)
-        +'" style="stroke:'+(gh?'var(--pt-fg3)':cCol)+';stroke-width:1.3;stroke-dasharray:5 3;stroke-opacity:'+(gh?.35:.95)+'"/>');
-      if(o.label && w > 34) txts.push(txt(x+w/2, y+h/2-2.5, esc(n.label), 5.4, gh?'var(--pt-fg3)':cCol, 'middle', 'font-weight="700"'));
+        +'" style="stroke:'+(gh?'var(--pt-fg3)':cCol)+';stroke-width:'+(1.3/zs).toFixed(2)
+        +';stroke-dasharray:'+(5/zs).toFixed(2)+' '+(3/zs).toFixed(2)+';stroke-opacity:'+(gh?.35:.95)+'"/>');
+      if(o.label && w*zs > Math.max(34, String(n.label).length*2.2))
+        txts.push(txt(x+w/2, y+h/2-2.5/zs, esc(n.label), 5.4/zs, gh?'var(--pt-fg3)':cCol, 'middle', 'font-weight="700" '+HALO));
       return;
     }
     if(n.kind !== 'op'){
       /* module = 分组标题（虚线）· tensor = 张量（浅框）：都不是「这张卡持有的算子」 */
       out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
-        +'" rx="2" style="fill:none;stroke:var(--pt-fg3);stroke-width:.6;stroke-dasharray:'+(n.kind==='module'?'3 2':'1 2')+';stroke-opacity:.7"/>');
+        +'" rx="2" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(0.6/zs).toFixed(2)+';stroke-dasharray:'
+        +(n.kind==='module' ? (3/zs).toFixed(2)+' '+(2/zs).toFixed(2) : (1/zs).toFixed(2)+' '+(2/zs).toFixed(2))+';stroke-opacity:.7"/>');
       /* 被切的张量把刀痕也画上（Token IDs 被 CP 沿 s 横切、权重张量被 TP 竖切）——
          输入侧是 CP 在整张正视图上少数几个落点之一，不画它 CP 就没了。 */
       if(!gh && n.kind === 'tensor' && o.cuts){
-        if(byS && byS.dim === 'cp' && o.cuts.cp && o.cuts.cp.count > 1 && w > 3 && h/o.cuts.cp.count >= 1.2){
+        if(byS && byS.dim === 'cp' && o.cuts.cp && o.cuts.cp.count > 1 && w > 3 && h*zs/o.cuts.cp.count >= 1.2){
           var nB = o.cuts.cp.count, kB = h*0.14/nB;
           for(var bj = 0; bj < nB; bj++){
             var byy = y + h*bj/nB, bhh = h/nB - kB, mB = bj === o.cuts.cp.mine;
-            out.push('<rect x="'+(x+1).toFixed(1)+'" y="'+byy.toFixed(1)+'" width="'+(w-2).toFixed(1)+'" height="'+Math.max(0.7,bhh).toFixed(1)
-              +'" style="fill:'+(mB?mix(VC.cp,40):'url(#'+(o.cuts.hxCP||'hxCP')+')')+';stroke:'+VC.cp+';stroke-width:'+(mB?.7:.25)+'"/>');
+            out.push('<rect x="'+(x+1).toFixed(1)+'" y="'+byy.toFixed(1)+'" width="'+(w-2).toFixed(1)+'" height="'+Math.max(0.7/zs,bhh).toFixed(2)
+              +'" style="fill:'+(mB?mix(VC.cp,40):'url(#'+(o.cuts.hxCP||'hxCP')+')')+';stroke:'+VC.cp+';stroke-width:'+((mB?.7:.25)/zs).toFixed(2)+'"/>');
           }
-        } else if(byH && byH.dim === 'tp' && o.cuts.tp && o.cuts.tp.count > 1 && h > 3 && w/o.cuts.tp.count >= 1.5){
+        } else if(byH && byH.dim === 'tp' && o.cuts.tp && o.cuts.tp.count > 1 && h > 3 && w*zs/o.cuts.tp.count >= 1.5){
           var nT = o.cuts.tp.count, kT = w*0.14/nT;
           for(var bi = 0; bi < nT; bi++){
             var bxx = x + w*bi/nT, bww = w/nT - kT, mT = bi === o.cuts.tp.mine;
-            out.push('<rect x="'+bxx.toFixed(1)+'" y="'+(y+1).toFixed(1)+'" width="'+Math.max(0.7,bww).toFixed(1)+'" height="'+(h-2).toFixed(1)
-              +'" style="fill:'+(mT?mix(VC.tp,32):'url(#'+(o.cuts.hxTP||'hxTP')+')')+';stroke:'+VC.tp+';stroke-width:'+(mT?.6:.2)+';opacity:.8"/>');
+            out.push('<rect x="'+bxx.toFixed(1)+'" y="'+(y+1).toFixed(1)+'" width="'+Math.max(0.7/zs,bww).toFixed(2)+'" height="'+(h-2).toFixed(1)
+              +'" style="fill:'+(mT?mix(VC.tp,32):'url(#'+(o.cuts.hxTP||'hxTP')+')')+';stroke:'+VC.tp+';stroke-width:'+((mT?.6:.2)/zs).toFixed(2)+';opacity:.8"/>');
           }
         }
       }
-      if(o.label && w > 30 && h > 5) txts.push(txt(x+w/2, y+h/2+2, esc(n.label), 5.2, 'var(--pt-fg3)'));
+      if(o.label && h*zs > 5 && w*zs > Math.max(30, String(n.label).length*2.2))
+        txts.push(txt(x+w/2, y+h/2+2/zs, esc(n.label), 5.2/zs, 'var(--pt-fg3)', 'middle', HALO));
       return;
     }
     /* 算子 = 内容：有体积。切到了就用刀色，没切到是复制的 */
@@ -3350,15 +3379,15 @@ function graphSVG(o){
       var cutV = null, hxV = '', colV = byS ? dimColor(byS.dim) : col;
       if(byS && byS.dim === 'sp' && o.cuts.sp){ cutV = o.cuts.sp; hxV = o.cuts.hxSP||'hxSP'; }
       else if(byS && byS.dim === 'cp' && o.cuts.cp){ cutV = o.cuts.cp; hxV = o.cuts.hxCP||'hxCP'; }
-      if(cutH && cutH.count > 1 && w/cutH.count < 1.5) { /* 片薄到亚像素：整块打纹，不逐片画 */
+      if(cutH && cutH.count > 1 && w*zs/cutH.count < 1.5) { /* 片薄到亚像素：整块打纹，不逐片画 */
         out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
-          +'" rx="1" style="fill:url(#'+hxH+');fill-opacity:'+op+';stroke:'+colH+';stroke-width:.4;stroke-opacity:'+op+'"/>');
+          +'" rx="1" style="fill:url(#'+hxH+');fill-opacity:'+op+';stroke:'+colH+';stroke-width:'+(0.4/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
         didCut = true; cutH = null; cutV = null;
       }
-      if(cutV && cutV.count > 1 && h/cutV.count < 1.4){
+      if(cutV && cutV.count > 1 && h*zs/cutV.count < 1.4){
         if(!didCut){
           out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
-            +'" rx="1" style="fill:url(#'+hxV+');fill-opacity:'+op+';stroke:'+colV+';stroke-width:.4;stroke-opacity:'+op+'"/>');
+            +'" rx="1" style="fill:url(#'+hxV+');fill-opacity:'+op+';stroke:'+colV+';stroke-width:'+(0.4/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
           didCut = true;
         }
         cutV = null;
@@ -3373,7 +3402,7 @@ function graphSVG(o){
           var half = gi === cutH.mine || gj === cutV.mine;
           out.push('<rect x="'+gx.toFixed(1)+'" y="'+gy.toFixed(1)+'" width="'+gw2.toFixed(1)+'" height="'+gh2.toFixed(1)+'" rx="0.8" '
             +'style="fill:'+(mine2 ? mix(colH,58) : half ? mix(colH,14) : 'none')
-            +';fill-opacity:'+op+';stroke:'+(gj === cutV.mine ? colH : colV)+';stroke-width:'+(mine2?.9:.3)+';stroke-opacity:'+op+'"/>');
+            +';fill-opacity:'+op+';stroke:'+(gj === cutV.mine ? colH : colV)+';stroke-width:'+((mine2?.9:.3)/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
         }
         didCut = true;
       } else if(cutH && cutH.count > 1){
@@ -3383,7 +3412,7 @@ function graphSVG(o){
           var isMine = si === cutH.mine;
           out.push('<rect x="'+sx.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+sw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1" '
             +'style="fill:'+(isMine?mix(colH,55):'url(#'+hxH+')')+';fill-opacity:'+op
-            +';stroke:'+colH+';stroke-width:'+(isMine?.8:.3)+';stroke-opacity:'+op+'"/>');
+            +';stroke:'+colH+';stroke-width:'+((isMine?.8:.3)/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
         }
         didCut = true;
       } else if(cutV && cutV.count > 1){
@@ -3391,9 +3420,9 @@ function graphSVG(o){
         for(var sj = 0; sj < cutV.count; sj++){
           var sy2 = y + h*sj/cutV.count, sh2 = h/cutV.count - kerfV;
           var isMineV = sj === cutV.mine;
-          out.push('<rect x="'+x.toFixed(1)+'" y="'+sy2.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(0.7,sh2).toFixed(1)+'" rx="1" '
+          out.push('<rect x="'+x.toFixed(1)+'" y="'+sy2.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(0.7/zs,sh2).toFixed(2)+'" rx="1" '
             +'style="fill:'+(isMineV?mix(colV,55):'url(#'+hxV+')')+';fill-opacity:'+op
-            +';stroke:'+colV+';stroke-width:'+(isMineV?.8:.3)+';stroke-opacity:'+op+'"/>');
+            +';stroke:'+colV+';stroke-width:'+((isMineV?.8:.3)/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
         }
         didCut = true;
       }
@@ -3401,16 +3430,19 @@ function graphSVG(o){
     if(!didCut)
     out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
       +'" rx="1.5" style="fill:'+mix(col, dim?46:16)+';fill-opacity:'+op+';stroke:'+(dim?col:'var(--pt-bds)')
-      +';stroke-width:'+(dim?.9:.5)+';stroke-opacity:'+op+'"/>');
-    if(o.label && w > 26 && h > 5){
+      +';stroke-width:'+((dim?.9:.5)/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
+    if(o.label && h*zs > 5){
       /* 真标签 + 真区间：和 3d-deck 上写的那一行是同一份数据。
          维名用切分表自己的 dimName（它会给出 SP 这种本页 DIMN 里没有的），
-         total=0 的退化情形（如 experts=0 的专家桶）不硬标一个假区间。 */
+         total=0 的退化情形（如 experts=0 的专家桶）不硬标一个假区间。
+         显隐按「字装不装得下」判：节点屏宽 ≥ 字长×2.2 才写——字号是恒定的（地图式），
+         早写会和邻居的字叠成一团，晚一点出现反而清楚（放大自然会露出来）。 */
       var tag = (part && part.total > 0)
         ? ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '')
         : '';
-      txts.push(txt(x+w/2, y+h/2+2, esc(n.label)+esc(tag), 5.4, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
-                    (dim?'font-weight="700" ':'')+'pointer-events="none"'));
+      if(w*zs > Math.max(26, (String(n.label).length + tag.length)*2.2))
+        txts.push(txt(x+w/2, y+h/2+2/zs, esc(n.label)+esc(tag), 5.4/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
+                    (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
     }
   });
   return out.join('') + acts.join('') + txts.join('');
@@ -3909,17 +3941,19 @@ function renderSolidCav(D){
 
 /* 斜纹/横纹的 defs：三个场景（netScene / frontScene / sideScene）共用同一套语义——
    斜纹 = 切 h（TP/EP），横纹 = 切 s（CP/SP，SP 借 TP 色）。 */
-function hatchDefsSVG(){
-  return '<pattern id="hxTP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxEP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.ep,7)+'"/><line x1="0" y1="0" x2="0" y2="3.4" style="stroke:'+VC.ep+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxDP" width="3.4" height="3.4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.dp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.dp+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxCP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.cp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.cp+';stroke-width:1"/></pattern>'
-    + '<pattern id="hxSP" width="3.4" height="3.4" patternUnits="userSpaceOnUse">'
-    + '<rect width="3.4" height="3.4" style="fill:'+mix(VC.tp,7)+'"/><line x1="0" y1="0" x2="3.4" y2="0" style="stroke:'+VC.tp+';stroke-width:1"/></pattern>';
+function hatchDefsSVG(k){
+  /* k = 当前缩放：纹样按 1/k 反除，放大后斜纹/横纹在屏幕上保持同样细密——
+     不然 3.4 一格的纹被 wrapper 放大 5 倍就成了粗条纹（「线条没做缩放适配」）。 */
+  k = k || 1;
+  var pz = (3.4/k).toFixed(3), sw = (1/k).toFixed(3);
+  function pat(id, rot, col){
+    return '<pattern id="'+id+'" width="'+pz+'" height="'+pz+'" patternUnits="userSpaceOnUse"'
+      + (rot ? ' patternTransform="rotate('+rot+')"' : '') + '>'
+      + '<rect width="'+pz+'" height="'+pz+'" style="fill:'+mix(col,7)+'"/>'
+      + '<line x1="0" y1="0" x2="'+(rot?0:pz)+'" y2="'+(rot?pz:0)+'" style="stroke:'+col+';stroke-width:'+sw+'"/></pattern>';
+  }
+  return pat('hxTP', 45, VC.tp) + pat('hxEP', -45, VC.ep) + pat('hxDP', 0, VC.dp)
+       + pat('hxCP', 0, VC.cp) + pat('hxSP', 0, VC.tp);
 }
 /* 两头/分支的节点集合：正视按代表层二选一画 FFN 分支，卡维度下两头只属于首末段 */
 var FS_HEAD = {input_tokens:1, embedding_weight:1, token_embedding:1, positions:1, attention_context:1};
@@ -3944,14 +3978,28 @@ function frontBounds(){
   FS_GB = {x:x0 - 24, y:y0 - 24, w:(x1 - x0) + 48, h:(y1 - y0) + 48};
   return FS_GB;
 }
-/* SVG 胶囊门牌（DP0 / CP1 / TP·SP0 / ep3 / PP2…）：和 3D 轨上的同一套长相。
-   点选走 hit 层的透明矩形（data-act=chainpick），body 里的这枚只管好看。 */
+/* ── 地图式文字：正/侧视被 wrapper 按 zoom 整体放大，字却不该跟着变大——
+   crisp 重绘时把字号、光晕、胶囊尺寸预先除回 1/FS_Z，屏幕上永远一个大小；
+   gesture 里的位图拉伸只是过渡，停手 0.4s 后就换成这份清晰的。
+   FS_Z 由 frontScene / sideScene 每次渲染时设置（netScene 自己把 zoom 折进投影，
+   不走这条）。缩得比 0.75 还小就不再放大字：那时格子比字还小，字定住只会互相叠。 */
+var FS_Z = 1;
+function fsTxt(x, y, t, size, fill, anchor, extra){
+  extra = String(extra || '').replace(/stroke-width="([\d.]+)"/g, function(m, w9){
+    return 'stroke-width="' + (parseFloat(w9)/FS_Z).toFixed(2) + '"';
+  }).replace(/letter-spacing="([\d.]+)"/g, function(m, w9){
+    return 'letter-spacing="' + (parseFloat(w9)/FS_Z).toFixed(2) + '"';
+  });
+  return txt(x, y, t, size/FS_Z, fill, anchor, extra);
+}
+/* SVG 胶囊门牌（DP0 / CP1 / TP·SP0 / ep3 / PP2…）：和 3D 轨上的同一套长相，
+   屏幕尺寸恒定（/FS_Z）。点选走 hit 层的透明矩形（data-act=chainpick）。 */
 function fsPill(body, hit, x, y, label, col, on, act, fs){
-  fs = fs || 7.2;
-  var w = String(label).length*(fs*0.62) + 10, h = fs + 7;
+  fs = (fs || 7.2) / FS_Z;
+  var w = String(label).length*(fs*0.62) + 10/FS_Z, h = fs + 7/FS_Z;
   body.push('<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="'+(h/2).toFixed(1)
-    +'" style="fill:'+(on?col:'var(--pt-bg)')+';stroke:'+col+';stroke-width:'+(on?1.4:.7)+'"/>');
-  body.push(txt(x, y+fs*0.36+1, esc(String(label)), fs, on?'#fff':'var(--pt-fg2)', 'middle', 'font-weight="700"'));
+    +'" style="fill:'+(on?col:'var(--pt-bg)')+';stroke:'+col+';stroke-width:'+((on?1.4:.7)/FS_Z).toFixed(2)+'"/>');
+  body.push(txt(x, y+fs*0.36+1/FS_Z, esc(String(label)), fs, on?'#fff':'var(--pt-fg2)', 'middle', 'font-weight="700"'));
   if(act && hit) hit.push('<rect x="'+(x-w/2-2).toFixed(1)+'" y="'+(y-h/2-2).toFixed(1)+'" width="'+(w+4).toFixed(1)+'" height="'+(h+4).toFixed(1)
     +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="'+act[0]+'" data-i="'+act[1]+'"/>');
   return w;
@@ -3965,7 +4013,9 @@ function fsPill(body, hit, x, y, label, col, on, act, fs){
 function frontScene(D, g, box){
   var IXg = graphIndex(); if(!IXg) return null;
   var GB = frontBounds(); if(!GB) return null;
+  FS_Z = Math.max(0.75, ui.zoom3);          /* 地图式文字/线宽的反除基准 */
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
+  var meF = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
@@ -4024,9 +4074,9 @@ function frontScene(D, g, box){
       var lab9 = labAll || (isF && effW >= 130) || (!hasSel && r === 0 && cq === 0 && effW >= 130);
       /* 格框：容器画法（线框），选中的那格用 DP 色加粗 */
       body.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
-        +'" rx="5" style="fill:var(--pt-s1);stroke:'+(isF?VC.dp:'var(--pt-bd)')+';stroke-width:'+(isF?1.8:.7)+'"/>');
+        +'" rx="5" style="fill:var(--pt-s1);stroke:'+(isF?VC.dp:'var(--pt-bd)')+';stroke-width:'+((isF?1.8:.7)/FS_Z).toFixed(2)+'"/>');
       if(ui.cardMode && Math.max(cellW, effW) >= 56)
-        body.push(txt(x + 5, y + 10, 'r'+rk, 6.2, isF ? VC.dp : 'var(--pt-fg3)', 'start',
+        body.push(fsTxt(x + 4/FS_Z, y + 9/FS_Z, 'r'+rk, 6.6, isF ? VC.dp : 'var(--pt-fg3)', 'start',
           'font-weight="800" paint-order="stroke" stroke="var(--pt-s1)" stroke-width="2.2"'));
       var ghostIds = {};
       Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
@@ -4035,7 +4085,7 @@ function frontScene(D, g, box){
       var op9 = (hasSel && !isF) ? .38 : 1;
       if(op9 < 1) body.push('<g opacity="'+op9+'">');
       body.push(graphSVG({
-        x:x+3, y:y+3, w:cellW-6, h:cellH-6, g:rk, D:D,
+        x:x+3, y:y+3, w:cellW-6, h:cellH-6, g:rk, D:D, zscale:FS_Z,
         label:lab9, bounds:GB, ghostIds:ghostIds,
         ghostClu:(liDense || !D.moe) ? ['moe-block'] : [],
         cuts:{
@@ -4046,14 +4096,6 @@ function frontScene(D, g, box){
         }
       }));
       if(op9 < 1) body.push('</g>');
-      /* 层徽章：这一格画的是哪一层的内容（真图重复段只画一层的算子） */
-      if(Math.max(cellW, effW) >= 78){
-        /* 非 Rank 时每格是整份复制体（头尾都有），badge 里的 PP 只会和底下的段轨
-           打架——只在 Rank 下写段号（那时格里装的才真是某一段的卡）。 */
-        var lb = 'L'+li + (ui.cardMode && cutPP ? ' · PP'+liStage : '') + ' · ' + (liDense ? 'Dense' : 'MoE') + ' 代表层';
-        body.push(txt(x + cellW/2, y - 4, esc(lb), 6.6, 'var(--pt-fg3)', 'middle',
-          'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
-      }
       /* ep 桶号（每格自己的坐标导出，不是全局选中的那份） */
       if(cutEP && cellW >= 40){
         var eb = me9 ? me9.ep : 0;
@@ -4068,7 +4110,15 @@ function frontScene(D, g, box){
     }
   }
   /* ── 轴门牌：DP 跨组居中一排、CP 每列一枚、TP·SP 行头一列——它们就是卡的层级坐标 ── */
+  /* 代表层徽章：所有格画的是**同一层**，写一次就够。原来每格头上重复一条，
+     这行字在场景坐标里比格子宽（两者随缩放等比变化，多大倍率都一样宽）——
+     相邻两条互相叠加、描边光晕互相抠字，看起来就是一行乱码。axis 级的信息
+     标在 axis 上，正是旧方阵注释里那句「32 份重复，轴上标一次就够」。 */
   var yDP = gy0 - (CC > 1 ? 34 : 18) - (cutEP ? 15 : 0);
+  var lbAll = 'L'+li + (ui.cardMode && cutPP ? ' · PP'+liStage : '') + ' · ' + (liDense ? 'Dense' : 'MoE')
+    + ' 代表层' + (revOn ? '（层反查）' : '') + '——每格画的是同一层';
+  body.push(fsTxt(gx0 + gridW/2, yDP - 15, esc(lbAll), 7.2, 'var(--pt-fg2)', 'middle',
+    'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
   if(cutDP){
     var stepD = D.dp > 10 ? 2 : 1;
     for(var d2 = 0; d2 < DD; d2++){
@@ -4091,7 +4141,7 @@ function frontScene(D, g, box){
       fsPill(body, hit, gx0 - 26, cellY(r2) + cellH/2, 'TP·SP'+r2, VC.tp, hasSel && co.t === r2, ['t', r2], 6.8);
   } else if(cutTP){
     var lt9 = fsPill(body, hit, gx0 - 24, gy0 + cellH/2, 'TP·SP ×'+D.tp, VC.tp, false, null, 6.6);
-    body.push(txt(gx0 - 24, gy0 + cellH/2 + 16, '每格还叠着 '+D.tp+' 片', 5.6, 'var(--pt-fg3)', 'middle'));
+    body.push(fsTxt(gx0 - 24, gy0 + cellH/2 + 16/FS_Z, '每格还叠着 '+D.tp+' 片', 5.6, 'var(--pt-fg3)', 'middle'));
   }
   /* ── EP 组框：框住的那几列合起来凑齐全部专家（与 3D 的组框同一件事）── */
   if(cutEP && cols > 1){
@@ -4123,26 +4173,52 @@ function frontScene(D, g, box){
       var by9 = gy0 - 5, bh9 = gridH + 10;
       var on8 = m8 === selG;
       body.push('<rect x="'+bx.toFixed(1)+'" y="'+by9.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh9.toFixed(1)
-        +'" rx="7" style="fill:none;stroke:'+VC.ep+';stroke-width:'+(on8?2:.9)+';opacity:'+(on8?1:.5)+'"/>');
+        +'" rx="7" style="fill:none;stroke:'+VC.ep+';stroke-width:'+((on8?2:.9)/FS_Z).toFixed(2)+';opacity:'+(on8?1:.5)+'"/>');
       fsPill(body, hit, bx + bw/2, gy0 - (CC > 1 ? 34 : 18), 'EP 组 '+m8, VC.ep, on8, null, 6.6);
     });
+  }
+  /* ── 组选择轨：和 3D 前沿那几条轨同一件事——TP·SP / EP 在非 Rank 的正视里
+     没有自己的空间轴，给一条可点的选择带：点第几格，「本卡」就换到那一片/那一桶，
+     每格里的实心/斜纹、桶号、EP 组框全部跟着换。DP/CP 的选择器就是列头那排门牌。 ── */
+  var railY9 = box.y + box.h - (cutPP ? 32 : 12) - 6/FS_Z;
+  if(!ui.cardMode && (cutTP || (cutEP && D.ep > 1))){
+    var railX9 = gx0 + 34/FS_Z;
+    function railH(n, mineI, colr, hxid, name, key, labFn){
+      var cw9 = Math.max(15, Math.min(38, 300/n)) / FS_Z, chh = 13/FS_Z;
+      body.push(fsTxt(railX9 - 6/FS_Z, railY9 + 3.4/FS_Z, name, 6.8, colr, 'end', 'font-weight="800"'));
+      var labStep = Math.max(1, Math.ceil((String(labFn(n-1)).length*4.4/FS_Z) / cw9));
+      for(var b9 = 0; b9 < n; b9++){
+        var bx9 = railX9 + b9*cw9, mine9 = b9 === mineI;
+        body.push('<rect x="'+bx9.toFixed(1)+'" y="'+(railY9 - chh/2).toFixed(1)+'" width="'+(cw9*0.9).toFixed(1)+'" height="'+chh.toFixed(1)
+          +'" rx="'+(2/FS_Z).toFixed(1)+'" style="fill:'+(mine9?mix(colr,55):'url(#'+hxid+')')+';stroke:'+colr
+          +';stroke-width:'+((mine9?1.3:.5)/FS_Z).toFixed(2)+'"/>');
+        if(mine9 || b9 % labStep === 0)
+          body.push(fsTxt(bx9 + cw9*0.45, railY9 + 3.4/FS_Z, labFn(b9), 6, mine9 ? '#fff' : 'var(--pt-fg3)', 'middle', mine9 ? 'font-weight="800"' : ''));
+        hit.push('<rect x="'+bx9.toFixed(1)+'" y="'+(railY9 - chh/2 - 2).toFixed(1)+'" width="'+(cw9*0.9).toFixed(1)+'" height="'+(chh+4).toFixed(1)
+          +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"/>');
+      }
+      railX9 += n*cw9 + 60/FS_Z;
+    }
+    if(cutTP) railH(D.tp, co.t, VC.tp, 'hxTP', 'TP·SP', 't', function(i){ return String(i); });
+    if(cutEP) railH(D.ep, meF ? meF.ep : 0, VC.ep, 'hxEP', 'EP', 'e', function(i){ return String(i); });
+    railY9 -= 20/FS_Z;
   }
   /* ── PP：正视是把层深压掉的正交投影——段在这里重叠，给一条段选择轨（Rank 下）。
      换段会换掉每格画的层区间与持有内容，正是「这摞卡里看哪一张」的深度坐标。 ── */
   if(cutPP){
     var yPP = box.y + box.h - 14;
     var xPP = gx0;
-    body.push(txt(xPP - 8, yPP + 3, 'PP', 7, VC.pp, 'end', 'font-weight="800"'));
+    body.push(fsTxt(xPP - 8, yPP + 3/FS_Z, 'PP', 7, VC.pp, 'end', 'font-weight="800"'));
     for(var p9 = 0; p9 < D.pp; p9++){
       var lo9 = p9*lps, hi9 = Math.min(L-1, (p9+1)*lps - 1);
       var plab = 'PP'+p9+' · L'+lo9+'–'+hi9;
-      var pw9 = fsPill(body, hit, xPP + 40, yPP, plab, VC.pp, p9 === pSel, ['p', p9], 6.6);
-      xPP += pw9 + 12;
+      var pw9 = fsPill(body, hit, xPP + 40/FS_Z, yPP, plab, VC.pp, p9 === pSel, ['p', p9], 6.6);
+      xPP += pw9 + 12/FS_Z;
     }
-    body.push(txt(xPP + 6, yPP + 3, ui.cardMode ? '换段 = 看这一摞里深处那张卡' : '段沿深度重叠——层深方向看侧视', 6, 'var(--pt-fg3)', 'start'));
+    body.push(fsTxt(xPP + 6/FS_Z, yPP + 3/FS_Z, ui.cardMode ? '换段 = 看这一摞里深处那张卡' : '段沿深度重叠——层深方向看侧视', 6, 'var(--pt-fg3)', 'start'));
   }
   var CID = 'fsClip';
-  var wrapped = '<defs>'+hatchDefsSVG()+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+  var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
   return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
           nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
@@ -4150,15 +4226,20 @@ function frontScene(D, g, box){
 }
 
 /* ═════════ 侧视图（原生）：全部层沿层深排开 + PP Stage 分段 ═════════
-   一列 = 一层，列里的每一小块 = 这一层真会跑的算子（同一份 OPENPANGU_GRAPH，
-   颜色 = 哪把刀切它）。层与层不一样的证据全部保留：Dense→MoE 换挡带、只在两头的
-   输入/输出段与 MTP 尾巴、mHC residual ×4 主干。PP 是这张图的主角：段头横幅
-   （附 TP/EP/DP 因子与每段卡数）、段边界线、段间掰缝；Rank 打开时每段下方铺出
-   这一段的卡架（tp 行 × dp·cp 列的点阵），点谁选谁——层级：段 → 卡。 */
+   一列 = 一层，列里是**竖着的一根算子条**（条状而非块状：条与条之间留白，
+   参考 sidecar 右视图那种边缘朝外的画法）。方位与 3D 侧视对齐：L0 在左、
+   末层在右；输入列在左上（L0 之前）、输出 + MTP 列在右下（末层之后），
+   两头都用「竖脊 + 每枚胶囊一根小刺」接进 mHC 主干，不再绕大弧。
+   层与层不一样的证据全部保留：Dense→MoE 换挡带、两头、mHC residual ×4 主干。
+   PP 是主角：段头横幅（附因子与每段卡数）、段边界、段间掰缝；Rank 打开时每段
+   下方铺卡架（段 → 卡的层级）。文字全部地图式：屏幕字号恒定（1/zoom 反除），
+   放大到条宽装得下时，算子条里直接写名字（越放大出现得越多）。 */
 function sideScene(D, g, box){
   var IXg = graphIndex(); if(!IXg) return null;
   var G = IXg.G, clu = IXg.clu, root = clu['decoder-stack'];
   if(!root) return null;
+  FS_Z = Math.max(0.75, ui.zoom3);
+  var Zv = Math.max(0.2, ui.zoom3);
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
@@ -4192,59 +4273,66 @@ function sideScene(D, g, box){
     return true;
   }
   var selStage = cutPP ? co.p : 0;
-  /* ── 段头横幅 + 段边界 + 段底色 ── */
+  /* 可见窗口（base 坐标）：字与逐条标注只给看得见的列 */
+  var cxC = box.x + box.w/2;
+  var vis0 = cxC + (box.x - cxC - ui.panX3)/Zv - 40;
+  var vis1 = cxC + (box.x + box.w - cxC - ui.panX3)/Zv + 40;
+  var opLab = colW * Zv >= 110;           /* 条在屏幕上宽到装得下横排字，才往条里写 */
+  /* ── 段头横幅 + 段边界 ── */
   if(cutPP){
+    var yH = box.y + 44;
     for(var st9 = 0; st9 < D.pp; st9++){
       var lo9 = st9 * lps, hi9 = Math.min(L - 1, (st9 + 1) * lps - 1);
       var xa = xOf(lo9), xb = xOf(hi9) + colW;
       var on9 = hasSel && st9 === selStage;
-      body.push('<rect x="'+xa.toFixed(1)+'" y="'+(box.y+34).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="20" rx="10" '
-        +'style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+(on9?1.6:.7)+'"/>');
-      body.push(txt((xa+xb)/2, box.y + 47, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
+      body.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 10/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(20/FS_Z).toFixed(1)
+        +'" rx="'+(10/FS_Z).toFixed(1)+'" style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+((on9?1.6:.7)/FS_Z).toFixed(2)+'"/>');
+      body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
         on9 ? VC.pp : 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-      /* 因子行：这一段里叠着哪几维（落下的刀才列）+ 这一段住着多少张卡 */
       var chips = [];
       if(cutTP) chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>');
       if(cutCP) chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>');
       if(cutEP) chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>');
       if(cutDP) chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>');
       chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
-      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(box.y+61).toFixed(1)+'" text-anchor="middle" font-size="6.4" '
+      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4/FS_Z).toFixed(2)+'" '
         +'font-family="var(--pt-mono)" font-weight="700">'+chips.join('<tspan fill="var(--pt-bds)"> · </tspan>')+'</text>');
-      hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(box.y+32).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="32" '
-        +'style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
+      hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 12/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(30/FS_Z).toFixed(1)
+        +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
       if(st9 > 0){
         var xd = xa - stGap/2 - colGap/2;
         body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(y0-16).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(y1+10).toFixed(1)
-          +'" style="stroke:'+VC.pp+';stroke-width:1.2;stroke-dasharray:5 4"/>');
+          +'" style="stroke:'+VC.pp+';stroke-width:'+(1.2/FS_Z).toFixed(2)+';stroke-dasharray:'+(5/FS_Z).toFixed(2)+' '+(4/FS_Z).toFixed(2)+'"/>');
       }
     }
   }
-  body.push(txt(box.x + 14, box.y + 47, 'MODEL DEPTH / TOPOLOGY', 6.4, 'var(--pt-fg3)', 'start',
+  body.push(fsTxt(box.x + 14, box.y + 47, 'MODEL DEPTH / TOPOLOGY', 6.4, 'var(--pt-fg3)', 'start',
     'font-weight="700" letter-spacing="1.4"'));
   /* ── mHC residual ×4 主干：贯穿全部层，接进两头 ── */
   var railX0 = x0 - 26, railX1 = x1 + 26;
   [-4.5, -1.5, 1.5, 4.5].forEach(function(dy){
     body.push('<line x1="'+railX0.toFixed(1)+'" y1="'+(yRail+dy).toFixed(1)+'" x2="'+railX1.toFixed(1)+'" y2="'+(yRail+dy).toFixed(1)
-      +'" style="stroke:var(--pt-fg3);stroke-width:.6;opacity:.55"/>');
+      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.6/FS_Z).toFixed(2)+';opacity:.55"/>');
   });
-  var dotStep = Math.max(1, Math.ceil(3.2 / (colW + colGap)));
+  var dotStep = Math.max(1, Math.ceil((3.2/FS_Z) / (colW + colGap)));
   for(var ld = 0; ld < L; ld += dotStep){
     var xc9 = xOf(ld) + colW/2;
-    body.push('<circle cx="'+xc9.toFixed(1)+'" cy="'+yRail.toFixed(1)+'" r="1.3" style="fill:var(--pt-fg3);opacity:.6"/>');
+    body.push('<circle cx="'+xc9.toFixed(1)+'" cy="'+yRail.toFixed(1)+'" r="'+(1.3/FS_Z).toFixed(2)+'" style="fill:var(--pt-fg3);opacity:.6"/>');
   }
-  body.push(txt(railX0 - 6, yRail + 2.4, 'mHC residual state ×4', 6.2, 'var(--pt-fg2)', 'end',
+  body.push(fsTxt(railX0 - 6, yRail + 2.4, 'mHC residual state ×4', 6.2, 'var(--pt-fg2)', 'end',
     'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
-  /* ── 每层一列：L 刻度 + 算子小块 ── */
-  var lstep = Math.max(1, Math.ceil(13 / (colW + colGap)));
+  /* ── 每层一列：L 刻度 + 算子条（条状：条宽约半个列距，居中） ── */
+  var lstep = Math.max(1, Math.ceil((14/FS_Z) / (colW + colGap)));
   var sh0 = shardMap(D, g);
+  var barW = colW * 0.52;
   for(var li9 = 0; li9 < L; li9++){
     var lx = xOf(li9);
+    var bx0 = lx + (colW - barW)/2;
     var inSel = stOf(li9) === selStage;
+    var liVis = lx + colW >= vis0 && lx <= vis1;
     if(li9 % lstep === 0 || li9 === L - 1)
-      body.push(txt(lx + colW/2, y0 - 4, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
+      body.push(fsTxt(lx + colW/2, y0 - 4, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
         li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
-    /* 层列可点：点一层 = 反查这一层住在哪几张卡（落成 layer 标签） */
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(y0-12).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-y0+16).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
     var dim9 = ui.cardMode && cutPP && !inSel;
@@ -4257,13 +4345,23 @@ function sideScene(D, g, box){
       var col9 = b0 ? dimColor(b0.dim) : 'var(--pt-fg2)';
       var ya = rowY(n9.y - n9.height/2), yb = rowY(n9.y + n9.height/2);
       if(n9.colorKey === 'opv:comm'){
-        body.push('<line x1="'+lx.toFixed(1)+'" y1="'+((ya+yb)/2).toFixed(1)+'" x2="'+(lx+colW).toFixed(1)+'" y2="'+((ya+yb)/2).toFixed(1)
-          +'" style="stroke:'+col9+';stroke-width:.9;stroke-dasharray:2 1.6;opacity:.8"/>');
-        continue;
+        body.push('<line x1="'+bx0.toFixed(1)+'" y1="'+((ya+yb)/2).toFixed(1)+'" x2="'+(bx0+barW).toFixed(1)+'" y2="'+((ya+yb)/2).toFixed(1)
+          +'" style="stroke:'+col9+';stroke-width:'+(0.9/FS_Z).toFixed(2)+';stroke-dasharray:'+(2/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2)+';opacity:.8"/>');
+      } else {
+        var dense9 = FS_DENSE[n9.id] ? 1 : 0;
+        body.push('<rect x="'+bx0.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
+          +'" rx="0.8" style="fill:'+mix(col9, b0 ? (dense9?44:32) : 12)+';stroke:'+(b0?col9:'var(--pt-bds)')+';stroke-width:'+(0.25/FS_Z).toFixed(2)+'"/>');
       }
-      var dense9 = FS_DENSE[n9.id] ? 1 : 0;
-      body.push('<rect x="'+lx.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+colW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
-        +'" rx="0.8" style="fill:'+mix(col9, b0 ? (dense9?44:32) : 12)+';stroke:'+(b0?col9:'var(--pt-bds)')+';stroke-width:.25"/>');
+      /* 放大到条里装得下字：算子名直接写进条中间（只写看得见的列，越放大越多） */
+      if(opLab && liVis && (yb - ya) >= 10.5/FS_Z){
+        var lbl9 = n9.label;
+        if(n9.id === 'attention_all_gather' || n9.id === 'ffn_all_gather') lbl9 = 'TP/SP AllGather';
+        if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl9 = 'TP/SP Reduce-Scatter';
+        var tag9 = (colW * Zv >= 220 && b0) ? ' · '+(b0.dim === 'sp' ? 'SP' : b0.dim.toUpperCase())+'切'+(b0.axis||'') : '';
+        body.push(fsTxt(lx + colW/2, (ya+yb)/2 + 2.1/FS_Z, esc(lbl9 + tag9), 5.8,
+          b0 ? dimColor(b0.dim) : 'var(--pt-fg2)',
+          'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+      }
     }
     if(dim9) body.push('</g>');
   }
@@ -4274,8 +4372,8 @@ function sideScene(D, g, box){
     if(ya > yb) return;
     var xa = xOf(lo) - 3, xb = xOf(hi) + colW + 3;
     body.push('<rect x="'+xa.toFixed(1)+'" y="'+(ya-6).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(yb-ya+12).toFixed(1)
-      +'" rx="6" style="fill:none;stroke:'+col+';stroke-width:1;stroke-dasharray:6 3;opacity:.8"/>');
-    body.push(txt(labAt === 'left' ? xa - 4 : (xa+xb)/2, ya - 10, esc(label), 6.8, col,
+      +'" rx="6" style="fill:none;stroke:'+col+';stroke-width:'+(1/FS_Z).toFixed(2)+';stroke-dasharray:'+(6/FS_Z).toFixed(2)+' '+(3/FS_Z).toFixed(2)+';opacity:.8"/>');
+    body.push(fsTxt(labAt === 'left' ? xa - 4 : (xa+xb)/2, ya - 10/FS_Z, esc(label), 6.8, col,
       labAt === 'left' ? 'end' : 'middle',
       'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
   }
@@ -4283,14 +4381,14 @@ function sideScene(D, g, box){
     'Dense FFN · L0–L'+(Math.min(denseTop, L)-1)+' · ×'+Math.min(denseTop, L), 'left');
   if(D.moe && L > denseTop) bandBox(FS_MOE, denseTop, L - 1, VC.ep,
     'MoE FFN · L'+denseTop+'–L'+(L-1)+' · ×'+(L-denseTop), 'mid');
-  /* ── 行标签：重复段的算子名标一次（居中）；名字带真切法 ── */
-  if(colW * ui.zoom3 >= 1.1){
+  /* ── 行标签总览：没放大时在模型中列标一次（放大后换成条内逐个写，这排就收起） ── */
+  if(!opLab && colW * Zv >= 1.1){
     var xm = (x0 + x1) / 2;
     var lastY = -1e9;
     rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
-      if(FS_DENSE[n9.id]) return;                 /* Dense 行的名字挂在 Dense 带子左侧，不进中列 */
+      if(FS_DENSE[n9.id]) return;
       var yc = rowY(n9.y);
-      if(yc - lastY < 7.4) return;                /* 挤不下就让位：行几何照画，名字隔行标 */
+      if(yc - lastY < 7.4/FS_Z) return;
       lastY = yc;
       var by8 = (sh0 && sh0[n9.id] && sh0[n9.id].spec && sh0[n9.id].spec.by) || EXTRA_BY[n9.id] || [];
       var b8 = by8[0] || null;
@@ -4299,43 +4397,58 @@ function sideScene(D, g, box){
       if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl = 'TP/SP Reduce-Scatter';
       if(n9.id === 'attention_core') lbl = lbl + ' · DSA/SWA 按层';
       var tag = b8 ? ' · '+(b8.dim === 'sp' ? 'SP' : b8.dim.toUpperCase())+'切'+(b8.axis||'') : '';
-      body.push(txt(xm, yc + 2, esc(lbl + tag), 6.2, b8 ? dimColor(b8.dim) : 'var(--pt-fg2)', 'middle',
+      body.push(fsTxt(xm, yc + 2/FS_Z, esc(lbl + tag), 6.2, b8 ? dimColor(b8.dim) : 'var(--pt-fg2)', 'middle',
         'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
     });
     var lastY2 = -1e9;
     rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
       if(!FS_DENSE[n9.id] || denseTop <= 0) return;
       var yc = rowY(n9.y);
-      if(yc - lastY2 < 7.4) return;
+      if(yc - lastY2 < 7.4/FS_Z) return;
       lastY2 = yc;
       var lbl = n9.id === 'ffn_all_gather' ? 'Dense TP/SP AllGather'
               : n9.id === 'ffn_reduce_scatter' ? 'Dense TP/SP Reduce-Scatter' : 'Dense '+n9.label.replace(/^Dense /,'');
-      body.push(txt(xOf(0) - 8, yc + 2, esc(lbl), 6, VC.tp, 'end',
+      body.push(fsTxt(xOf(0) - 8, yc + 2/FS_Z, esc(lbl), 6, VC.tp, 'end',
         'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
     });
   }
-  /* ── 两头：输入段（左）与 输出 + MTP 尾巴（右）——只属于首/末层的那两段 ── */
+  /* ── 两头：输入列（左上，L0 之前）与 输出 + MTP 列（右下，末层之后）──
+     竖脊 + 每枚胶囊一根小刺，脊再用一小段圆角接进 mHC 主干（参考 sidecar 的画法，
+     方位与 3D 对齐：入口在 L0 那一侧，出口在末层那一侧）。 */
   function sidePill(x, y, w, lbl, col, dashed, tag){
-    body.push('<rect x="'+(x - w/2).toFixed(1)+'" y="'+(y-9).toFixed(1)+'" width="'+w.toFixed(1)+'" height="18" rx="9" '
-      +'style="fill:var(--pt-s1);stroke:'+col+';stroke-width:.9'+(dashed?';stroke-dasharray:4 2.6':'')+'"/>');
-    body.push(txt(x, y - (tag ? 1 : -2.2), esc(lbl), 6.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
-    if(tag) body.push(txt(x, y + 6.4, esc(tag), 4.9, col, 'middle', 'font-weight="700"'));
+    var h9 = 18/FS_Z;
+    body.push('<rect x="'+(x - w/2).toFixed(1)+'" y="'+(y - h9/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h9.toFixed(1)+'" rx="'+(h9/2).toFixed(1)
+      +'" style="fill:var(--pt-s1);stroke:'+col+';stroke-width:'+(0.9/FS_Z).toFixed(2)
+      +(dashed?';stroke-dasharray:'+(4/FS_Z).toFixed(2)+' '+(2.6/FS_Z).toFixed(2):'')+'"/>');
+    body.push(fsTxt(x, y - (tag ? 1.2/FS_Z : -2.2/FS_Z), esc(lbl), 6.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+    if(tag) body.push(fsTxt(x, y + 6.6/FS_Z, esc(tag), 4.9, col, 'middle', 'font-weight="700"'));
   }
-  var hx = box.x + LM/2 - 8, hw = LM - 34;
+  var pitch = 24/FS_Z;
+  /* 输入列（左上） */
+  var hwZ = (LM - 34)/FS_Z, hx = box.x + LM/2 - 8;
   var headPills = [
     ['Token IDs · Pos · Attn Ctx', VC.dp, false, 'DP 切 batch' + (cutCP ? ' · CP 切 seq ×'+D.cp : '')],
     ['Embedding Weight', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
     ['Parallel Embedding', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null]
   ];
-  var hy = yRail + 24;
-  body.push(txt(hx, hy - 12, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
-  headPills.forEach(function(hp, i){ sidePill(hx, hy + 12 + i*24, hw, hp[0], hp[1], hp[2], hp[3]); });
-  body.push('<path d="M'+(hx + hw/2).toFixed(1)+' '+(hy + 12 + 48).toFixed(1)
-    +' C '+(x0 - 40).toFixed(1)+' '+(hy + 60).toFixed(1)+' '+(railX0 + 4).toFixed(1)+' '+yRail.toFixed(1)+' '+(x0 - 4).toFixed(1)+' '+yRail.toFixed(1)
-    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:1;opacity:.7"/>');
-  hit.push('<rect x="'+(hx - hw/2).toFixed(1)+'" y="'+(hy-12).toFixed(1)+'" width="'+hw.toFixed(1)+'" height="'+(24*3+18).toFixed(1)
+  var hy0 = yRail + 22/FS_Z + 14/FS_Z;
+  body.push(fsTxt(hx, hy0 - 22/FS_Z, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  var hsx = hx + hwZ/2 + 8/FS_Z;
+  headPills.forEach(function(hp, i){
+    var py = hy0 + i*pitch;
+    sidePill(hx, py, hwZ, hp[0], hp[1], hp[2], hp[3]);
+    body.push('<line x1="'+(hx + hwZ/2).toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+hsx.toFixed(1)+'" y2="'+py.toFixed(1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.9/FS_Z).toFixed(2)+';opacity:.8"/>');
+  });
+  body.push('<path d="M'+hsx.toFixed(1)+' '+(hy0 + (headPills.length-1)*pitch).toFixed(1)
+    +' L'+hsx.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
+    +' Q'+hsx.toFixed(1)+' '+yRail.toFixed(1)+' '+(hsx + 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
+    +' L'+(x0 - 4).toFixed(1)+' '+yRail.toFixed(1)
+    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';opacity:.8"/>');
+  hit.push('<rect x="'+(hx - hwZ/2).toFixed(1)+'" y="'+(hy0 - 30/FS_Z).toFixed(1)+'" width="'+hwZ.toFixed(1)+'" height="'+((headPills.length)*pitch + 28/FS_Z).toFixed(1)
     +'" style="fill:transparent;cursor:help" data-tipk="head"/>');
-  var txr = box.x + box.w - RM/2 + 6, tw = RM - 34;
+  /* 输出 + MTP 列（右下） */
+  var twZ = (RM - 34)/FS_Z, txr = box.x + box.w - RM/2 + 6;
   var tailPills = [
     ['Final RMSNorm', VC.tp, false, cutTP ? 'SP 切 seq（借 TP 组）' : null],
     ['LM Head Weight → LM Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
@@ -4347,23 +4460,33 @@ function sideScene(D, g, box){
     ['MTP Shared Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
     ['MTP Logits', 'var(--pt-fg3)', false, null]
   ];
-  var ty0 = yRail + 24;
-  body.push(txt(txr, ty0 - 12, '主输出 + MTP 尾巴 · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
-  body.push('<rect x="'+(txr - tw/2 - 5).toFixed(1)+'" y="'+(ty0 + 12 + 4*24 - 13).toFixed(1)+'" width="'+(tw+10).toFixed(1)+'" height="'+(5*24 + 4).toFixed(1)
-    +'" rx="7" style="fill:none;stroke:var(--pt-bd);stroke-width:.8;stroke-dasharray:3 2"/>');
-  body.push(txt(txr, ty0 + 12 + 4*24 - 17, 'Multi Token Predictor ×3', 5.4, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
-  tailPills.forEach(function(tp9, i){ sidePill(txr, ty0 + 12 + i*24, tw, tp9[0], tp9[1], tp9[2], tp9[3]); });
+  var tyEnd = y1 + (rackOn ? -6 : 4);
+  var ty0 = tyEnd - (tailPills.length - 1)*pitch;
+  var tsx = txr - twZ/2 - 8/FS_Z;
+  body.push(fsTxt(txr, ty0 - 22/FS_Z, '主输出 + MTP 尾巴 · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
+  body.push('<rect x="'+(txr - twZ/2 - 5/FS_Z).toFixed(1)+'" y="'+(ty0 + 4*pitch - 13/FS_Z).toFixed(1)+'" width="'+(twZ + 10/FS_Z).toFixed(1)
+    +'" height="'+(5*pitch + 4/FS_Z).toFixed(1)+'" rx="'+(7/FS_Z).toFixed(1)
+    +'" style="fill:none;stroke:var(--pt-bd);stroke-width:'+(0.8/FS_Z).toFixed(2)+';stroke-dasharray:'+(3/FS_Z).toFixed(2)+' '+(2/FS_Z).toFixed(2)+'"/>');
+  body.push(fsTxt(txr, ty0 + 4*pitch - 17/FS_Z, 'Multi Token Predictor ×3', 5.4, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+  tailPills.forEach(function(tp9, i){
+    var py = ty0 + i*pitch;
+    sidePill(txr, py, twZ, tp9[0], tp9[1], tp9[2], tp9[3]);
+    body.push('<line x1="'+tsx.toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+(txr - twZ/2).toFixed(1)+'" y2="'+py.toFixed(1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.9/FS_Z).toFixed(2)+';opacity:.8"/>');
+  });
   body.push('<path d="M'+(x1 + 4).toFixed(1)+' '+yRail.toFixed(1)
-    +' C '+(railX1 - 2).toFixed(1)+' '+yRail.toFixed(1)+' '+(x1 + 44).toFixed(1)+' '+(ty0 + 30).toFixed(1)+' '+(txr - tw/2 - 2).toFixed(1)+' '+(ty0 + 12).toFixed(1)
-    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:1;opacity:.7"/>');
-  hit.push('<rect x="'+(txr - tw/2).toFixed(1)+'" y="'+(ty0-12).toFixed(1)+'" width="'+tw.toFixed(1)+'" height="'+(24*9+18).toFixed(1)
+    +' L'+(tsx - 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
+    +' Q'+tsx.toFixed(1)+' '+yRail.toFixed(1)+' '+tsx.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
+    +' L'+tsx.toFixed(1)+' '+tyEnd.toFixed(1)
+    +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';opacity:.8"/>');
+  hit.push('<rect x="'+(txr - twZ/2).toFixed(1)+'" y="'+(ty0 - 30/FS_Z).toFixed(1)+'" width="'+twZ.toFixed(1)+'" height="'+(tailPills.length*pitch + 28/FS_Z).toFixed(1)
     +'" style="fill:transparent;cursor:help" data-tipk="tail"/>');
   /* ── 反查某一层：给那一列描个框 + 写清牵动多少张卡 ── */
   if(revOn){
     var rx = xOf(revLi);
     var hv = layerHome(D, revLi);
     body.push('<rect x="'+(rx-2).toFixed(1)+'" y="'+(y0-8).toFixed(1)+'" width="'+(colW+4).toFixed(1)+'" height="'+(y1-y0+14).toFixed(1)
-      +'" rx="3" style="fill:none;stroke:'+VC.dp+';stroke-width:1.8"/>');
+      +'" rx="3" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.8/FS_Z).toFixed(2)+'"/>');
     fsPill(body, hit, rx + colW/2, y1 + 12, 'L'+revLi+' · '+fmt(hv.tot)+' 张卡'
       + (hv.frag > 1 ? '，各持 1/'+hv.frag : ''), VC.dp, true, null, 6.6);
   }
@@ -4372,14 +4495,13 @@ function sideScene(D, g, box){
     if(cutPP){
       var sxa = xOf(selStage*lps) - 4, sxb = xOf(Math.min(L-1, (selStage+1)*lps - 1)) + colW + 4;
       body.push('<rect x="'+sxa.toFixed(1)+'" y="'+(y0-10).toFixed(1)+'" width="'+(sxb-sxa).toFixed(1)+'" height="'+(y1-y0+18).toFixed(1)
-        +'" rx="6" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(hasSel?2:1)+';opacity:'+(hasSel?1:.55)+'"/>');
-      if(hasSel) body.push(txt((sxa+sxb)/2, y0 - 14, 'rank '+g+' 在这一段', 6.4, VC.dp, 'middle',
+        +'" rx="6" style="fill:none;stroke:'+VC.dp+';stroke-width:'+((hasSel?2:1)/FS_Z).toFixed(2)+';opacity:'+(hasSel?1:.55)+'"/>');
+      if(hasSel) body.push(fsTxt((sxa+sxb)/2, y0 - 14, 'rank '+g+' 在这一段', 6.4, VC.dp, 'middle',
         'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
     }
-    /* 卡架：每段 tp 行 × dp·cp 列。列序 = d·CP + c（与正视方阵同一套），点谁选谁 */
     var rackTop = y1 + 26;
     var CCr = D.cp, colsR = D.dp * D.cp, rowsR = D.tp;
-    body.push(txt(x0 - 8, rackTop + 8, '卡架', 6.2, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    body.push(fsTxt(x0 - 8, rackTop + 8, '卡架', 6.2, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
     for(var stR = 0; stR < D.pp; stR++){
       var rxa = xOf(stR*lps), rxb = xOf(Math.min(L-1, (stR+1)*lps - 1)) + colW;
       var dw = Math.min(9, (rxb - rxa - 4) / colsR - 1.4);
@@ -4395,19 +4517,19 @@ function sideScene(D, g, box){
         var onR = hasSel && rk9 === g;
         body.push('<rect x="'+(rgx + cc9*(dw+1.4)).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4)).toFixed(1)
           +'" width="'+dw.toFixed(1)+'" height="'+dh.toFixed(1)+'" rx="1.4" style="fill:'
-          +(onR ? VC.dp : mix(VC.dp, stR === selStage ? 20 : 8))+';stroke:'+VC.dp+';stroke-width:'+(onR?1.2:.35)+'"/>');
+          +(onR ? VC.dp : mix(VC.dp, stR === selStage ? 20 : 8))+';stroke:'+VC.dp+';stroke-width:'+((onR?1.2:.35)/FS_Z).toFixed(2)+'"/>');
         hit.push('<rect x="'+(rgx + cc9*(dw+1.4) - .7).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - .7).toFixed(1)
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
           +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR+'</title></rect>');
       }
       if(rowsR > 1 && stR === 0){
-        body.push(txt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
-        body.push(txt(rgx - 4, rackTop + (rowsR-1)*(dh+1.4) + dh/2 + 2, 'TP·SP'+(rowsR-1), 4.9, VC.tp, 'end'));
+        body.push(fsTxt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
+        body.push(fsTxt(rgx - 4, rackTop + (rowsR-1)*(dh+1.4) + dh/2 + 2, 'TP·SP'+(rowsR-1), 4.9, VC.tp, 'end'));
       }
     }
   }
   var CID = 'ssClip';
-  var wrapped = '<defs>'+hatchDefsSVG()+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+  var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
   return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
           nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
@@ -4502,9 +4624,14 @@ function scheduleCrisp(){
   crispT = setTimeout(function(){
     crispT = 0;
     if(drag3 || touch3) return;               /* 手还按着：先别打断，停手后自然会再进来 */
+    /* 状态和上次真渲染一致就别重画：触控板滚轮常常一停一走，300ms 的空档里
+       白补一帧全量就是一次白卡。 */
+    var vr9 = viewRendered;
+    if(vr9 && Math.abs(vr9.zoom - ui.zoom3) < 1e-4
+       && Math.abs(vr9.panX - ui.panX3) < .05 && Math.abs(vr9.panY - ui.panY3) < .05) return;
     var D9 = derive(cfg);
     if(D9.ok && ui.view === 'chain'){ renderChain(D9); urlWrite(); }
-  }, 300);
+  }, 420);
 }
 function syncZoomHud(){
   var el = $('zoomPct');
