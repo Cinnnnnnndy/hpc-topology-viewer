@@ -2591,7 +2591,7 @@ function netScene(D, g, box, step){
            前后的落差保持不变，该分得开的还是分得开。 */
         var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
-        if(spotShellDim){ eW *= 0.4; eO *= 0.3; }
+        if(spotShellDim){ eW *= 0.18; eO *= 0.12; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
