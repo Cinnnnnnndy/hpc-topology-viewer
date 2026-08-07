@@ -2578,7 +2578,7 @@ function netScene(D, g, box, step){
              128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
              pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
-          if(!isFcol && !spotShellDim){
+          if(!isFcol && !spot){
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
@@ -2591,7 +2591,7 @@ function netScene(D, g, box, step){
            前后的落差保持不变，该分得开的还是分得开。 */
         var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
-        if(spotShellDim){ eW *= 0.18; eO *= 0.12; }
+        if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
