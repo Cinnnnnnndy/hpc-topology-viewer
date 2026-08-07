@@ -4262,9 +4262,18 @@ function cloneMaster(slot){
    只是 32 个实例太慢（实测铺满 10.7 秒）。所以是**限量挂真实例**，不是不挂：
      · 只给视口内看得见的（视口外的读者根本不在看）；
      · 再设上限——一屏能读的本来也就这么几格，其余留骨架。 */
-var FULL_CAP = 6;
+/* 判据只有一条：**这一屏的格子读得清吗**（is-dense 就是那条线，cw < 150）。
+   读得清 → 视口内的格子**全部**给真图；读不清 → **全部**给骨架。
+   刻意不做「给前 N 格」：任何部分覆盖都会留下一两格落单的骨架，看着就像
+   那几格没渲染出来（用户先看到的正是这个）。全有或全无，一屏才是一致的。
+   代价可控：is-dense 的线保证了不密排时一屏最多摆十来格，62k 节点量级，
+   与当初 32 格 18 万节点那种卡死不是一个数量级；真密排时一格 55px，
+   真图本来也只是一团噪点，骨架反而更好读。
+   FULL_CAP 只是防线：窗口特别宽时兜住一个上限，正常情况下够不着。 */
+var FULL_CAP = 14;
 function pickFull(host, slots){
   if(!host || !slots || !slots.length) return [];
+  if(host.classList.contains('is-dense')) return [];      /* 读不清 → 整屏骨架 */
   var sl = host.scrollLeft, vw = host.clientWidth, st = host.scrollTop, vh = host.clientHeight, out = [];
   slots.forEach(function(s){
     if(out.length >= FULL_CAP) return;
