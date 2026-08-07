@@ -328,16 +328,10 @@
 /* 层反查：工具条上那颗控件 + 左下角那张拆解卡。
    拆解卡贴着图例的位置（两者不会同时打开——一个讲形状、一个讲某一层的去向）。 */
 /* 属性搜索：标签区 + 「＋ 搜索」按钮 + 弹出的属性/取值面板 */
-/* 搜索单独占中间那一段：左边是名字、右边是控件，它居中——三者互不挤压。
-   标签多起来会自动换行，宽度上限避免它把两侧顶掉。 */
 .pt-qbar{
-  position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:7;
-  display:flex; justify-content:center; max-width:min(46vw, 620px);
+  position:absolute; top:6px; left:14px; z-index:7;
+  display:flex; justify-content:flex-start; max-width:calc(100% - 28px);
 }
-/* 居中放不下时的两级退让（由 layoutQBar 量出来后打上，不靠断点猜——
-   标签数量会改变宽度，纯 CSS 断点挡不住） */
-.pt-qbar.is-left{left:16px; transform:none; justify-content:flex-start; max-width:min(52vw,420px)}
-.pt-qbar.is-below{left:16px; transform:none; justify-content:flex-start; max-width:calc(100% - 32px)}
 .pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center}
 .pt-qchip{
   display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 4px 0 7px;
@@ -1935,10 +1929,8 @@ function netScene(D, g, box, step){
     return quad([P(0,0,w,off), P(1,0,w,off), P(1,AR,w,off), P(0,AR,w,off)], st, extra);
   }
   var body = [], hit = [], nodes = 0, sawn = 0, whole = 0;
-  /* 反查选中的那一层（工具条上的「层反查」，也认 URL 的 layer=）。
-     判据必须和 revLiOn 一模一样：早先这里是 clamp，超范围的 layer=999 会被夹到
-     最后一层照样高亮，而拆解卡那边判的是「不在范围内就不显示」——一个画一个不画。 */
   var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
+  var spot = spotlightHit(D);
   var sh = IXg ? shardMap(D, g) : null;
   var clu = IXg ? IXg.clu : {};
   /* 前两层是 Dense FFN（真模型如此）；不开 MoE 的预设则整个模型都是 Dense。 */
@@ -2019,11 +2011,20 @@ function netScene(D, g, box, step){
     /* 层同理：远的先画。默认机位下大 w 更远，所以从 L-1 往回走；yaw 转过 90°
        之后 w 的远近方向反过来，那时要正着走——方向从 segOrder 里读，别写死。 */
     var wDesc = segOrder.length < 2 || segOrder[0] > segOrder[segOrder.length-1];
-    /* 卡里的内容整列一起淡：粒度取「列」而不是「层」——这一屏最容易糊成一片的
-       正是 16 列沿纵深叠在一起，层与层之间本来就有壳隔着。选中那列不淡。 */
+    /* 聚光灯：这一列有没有任何 rank 命中搜索。按列判（不按层），
+       因为一列沿纵深叠着好几张卡（PP 段），粒度到列已足够。 */
+    var spotCol = false;
+    if(spot){
+      for(var sp = 0; sp < (cutPP ? D.pp : 1); sp++){
+        var sRank = rankOf(tIdx, cIdx, dIdx, sp, D);
+        if(spot.ranks[sRank]){ spotCol = true; break; }
+      }
+    }
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*0.40) : 1;
-    if(colFade < 0.999) body.push('<g opacity="'+colFade.toFixed(3)+'">');
+    var spotDim = spot && !spotCol ? 0.18 : 1;
+    var colOp = Math.min(colFade, spotDim);
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.3)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -2060,13 +2061,8 @@ function netScene(D, g, box, step){
         else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
       }
-      /* ── 反查高亮：被问到的那一层横穿哪几张卡 ────────────────────────
-         这一屏别处答的都是「这张卡装了什么」，反查问的是它的逆命题——
-         「这一层住在哪」。图形形态就是这个：**同一张平面横穿这些卡**。
-         每一份复印件上都描一道（DP 复制的正是整套安排），一眼看出牵动的
-         是 world/PP 张卡，而不是一张。 */
-      if(li === revLi && !lowDetail){
-        body.push(pane(ww, kOff, 'fill:'+mix(VC.pp, 13)+';stroke:'+VC.pp+';stroke-width:1.7'));
+      if(li === revLi && !lowDetail && spotCol){
+        body.push(pane(ww, kOff, 'fill:'+mix(VC.dp, 10)+';stroke:'+VC.dp+';stroke-width:1.4'));
       }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
@@ -2249,7 +2245,7 @@ function netScene(D, g, box, step){
         });
       }
     }
-    if(colFade < 0.999) body.push('</g>');
+    if(colOp < 0.999) body.push('</g>');
     if(ui.cardMode) shellOf(k);
     if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
@@ -2302,17 +2298,22 @@ function netScene(D, g, box, step){
         else { b8.d0 = Math.min(b8.d0,d8); b8.d1 = Math.max(b8.d1,d8);
                b8.t0 = Math.min(b8.t0,t8i); b8.t1 = Math.max(b8.t1,t8i); }
       }
-      var selG = hasSel ? grpOf(co.d, co.t) : -1;
+      var selG = hasSel && !spot ? grpOf(co.d, co.t) : -1;
       Object.keys(box9).forEach(function(mk){
         var m = +mk, b = box9[m], dd, tt, clean = true;
-        /* 只有「这个矩形里装的正好是这一组、没混进别人」时才画框。组的成员在网格里
-           是按 q 连续排的，绝大多数配置下正好落成整列；万一 ep·etp 不是 tp 的整数倍
-           就会出现半列，那时候框会把别组的卡也圈进去——宁可不画，也不画错。 */
         for(dd = b.d0; dd <= b.d1 && clean; dd++)
           for(tt = b.t0; tt <= b.t1; tt++)
             if(grpOf(dd, rows9[tt]) !== m){ clean = false; break; }
         if(!clean) return;
-        var strongG = m === selG, gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
+        var spotEP = false;
+        if(spot){
+          for(dd = b.d0; dd <= b.d1 && !spotEP; dd++)
+            for(tt = b.t0; tt <= b.t1 && !spotEP; tt++){
+              var spR = rankOf(rows9[tt], KC>1?co.c:0, dd, 0, D);
+              if(spot.ranks[spR]) spotEP = true;
+            }
+        }
+        var strongG = spot ? spotEP : (m === selG), gx0 = 1e9, gx1 = -1e9, gy0 = 1e9;
         /* Rank 打开时按**段**画：一套专家是一个 PP 段之内凑齐的（折叠发生在段内那张
            平面上，段与段各折各的），一段一只框才说得对。Rank 关掉时画面上摆的是整份
            副本、不是一张张卡，那时一列 = 一个副本，框住的是「这几个副本属于 EP 组 m」
@@ -2331,9 +2332,10 @@ function netScene(D, g, box, step){
                     P(fu0,fv0,fw1,oTL), P(fu1,fv0,fw1,oTR), P(fu1,fv1,fw1,oBR), P(fu0,fv1,fw1,oBL) ];
           /* 只描边不填色：填了就把框住的卡盖掉，而框的意义恰恰是「看里面有哪几张」。
              也不打虚线——ep×pp 一共十几只框，虚线在这个密度下会糊成一片麻点。 */
+          var epOp = spot ? (spotEP ? .95 : .08) : (strong?.95:(hasSel?.16:.3));
           [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e){
             body.push(seg(F[e[0]], F[e[1]], 'stroke:'+VC.ep+';stroke-width:'+(strong?1.7:.6)
-              +';opacity:'+(strong?.95:(hasSel?.16:.3))));
+              +';opacity:'+epOp));
           });
           F.forEach(function(q9){ gx0 = Math.min(gx0,q9[0]); gx1 = Math.max(gx1,q9[0]); gy0 = Math.min(gy0,q9[1]); });
           /* 门牌挂在阵列**外面**（最后一行底边之下、DP 刻度再往下一格）。挂在框自己的
@@ -2771,7 +2773,7 @@ function netScene(D, g, box, step){
     var hv9 = layerHome(D, revLi);
     axLab(P(0.5, AR + 0.17, wOf(revLi), off0), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
           hv9.frag > 1 ? ('各持 1/'+hv9.frag+'，无一张完整') : '每张持有完整的它',
-          VC.pp, true, 7.4);
+          VC.dp, true, 7.4);
   }
   /* batchSlab 已移除——输入标注一并去掉 */
   var CID = 'scClip';
@@ -4781,13 +4783,6 @@ function applyQuery(D){
     var st = chipState(c, D);
     if(st.kind === 'layer') ui.revLayer = String(st.li);
     else if(st.kind === 'rank') sel = st.g;
-    else if(st.kind === 'dim'){
-      var ax = st.dim === 'sp' ? 'tp' : st.dim;
-      if(AXIS_DOMAIN.indexOf(ax) >= 0) ui.axis = ax;
-      if(ax === 'tp') ui.kTP = true; else if(ax === 'pp') ui.kPP = true;
-      else if(ax === 'dp') ui.kDP = true; else if(ax === 'ep') ui.kEP = true;
-      if(st.dim === 'cp') ui.kCP = true;
-    }
   });
 }
 /* ══ 全局搜索：一个框，四种问法 ══════════════════════════════════════════
@@ -4802,7 +4797,7 @@ function applyQuery(D){
      ③ 落成一枚标签 —— 标签可以并存，于是能同时问「L29」和「TP 组」。
    每种属性至多一枚标签（再选同一种就替换），否则「两个层号」无从表达。 */
 var PROPS = [
-  {k:'layer',  n:'层',   hint:'层号 ℓ',   ph:'如 29', col:VC.pp, tag:function(v){ return 'L'+v; }},
+  {k:'layer',  n:'层',   hint:'层号 ℓ',   ph:'如 29', col:VC.dp, tag:function(v){ return 'L'+v; }},
   {k:'rank',   n:'卡',   hint:'global_rank', ph:'如 41', col:VC.dp, tag:function(v){ return 'r'+v; }},
   {k:'dim',    n:'刀',   hint:'哪一维',   opts:['tp','sp','cp','pp','dp','ep'], col:VC.tp,
    tag:function(v){ return String(v).toUpperCase(); }},
@@ -4840,6 +4835,47 @@ function chipState(c, D){
   return {kind:'bad', msg:'未知属性'};
 }
 function chipsWith(k){ return ui.chips.filter(function(c){ return c.k===k; })[0] || null; }
+/* ── 聚光灯命中集合 ──────────────────────────────────────────────────
+   把所有生效的搜索标签汇成一个 rank 集合（并集）和一个 layer 集合。
+   返回 null 表示没有搜索标签生效（不压暗任何东西）。 */
+function spotlightHit(D){
+  if(!ui.chips.length) return null;
+  var ranks = {}, layers = {}, any = false;
+  ui.chips.forEach(function(c){
+    var st = chipState(c, D);
+    if(st.kind === 'bad') return;
+    if(st.kind === 'layer'){
+      any = true;
+      layers[st.li] = true;
+      var h = layerHome(D, st.li);
+      for(var d=0;d<D.dp;d++) for(var cc=0;cc<D.cp;cc++) for(var t=0;t<D.tp;t++)
+        ranks[rankOf(t, cc, d, h.stage, D)] = true;
+    }
+    if(st.kind === 'rank'){
+      any = true;
+      ranks[st.g] = true;
+    }
+    if(st.kind === 'dim'){
+      any = true;
+      var base = st.dim === 'sp' ? 'tp' : st.dim;
+      var ref = (sel !== null && sel < D.world) ? sel : 0;
+      var mem = base === 'ep' ? epMembers(ref, D) : groupMembers(base, ref, D);
+      mem.forEach(function(r){ ranks[r] = true; });
+    }
+    if(st.kind === 'expert'){
+      any = true;
+      var per = D.experts / D.ep, bkt = Math.floor(st.e / per);
+      for(var d2=0;d2<D.dp;d2++) for(var c2=0;c2<D.cp;c2++){
+        var t2 = (bkt * D.etp) % D.tp;
+        for(var ei=0;ei<D.etp;ei++){
+          var ti = ((bkt * D.etp) + ei) % D.tp;
+          for(var p2=0;p2<D.pp;p2++) ranks[rankOf(ti, c2, d2, p2, D)] = true;
+        }
+      }
+    }
+  });
+  return any ? {ranks: ranks, layers: layers} : null;
+}
 function addChip(k, v){
   ui.chips = ui.chips.filter(function(c){ return c.k!==k; });   /* 同一属性只留一枚 */
   ui.chips.push({k:k, v:String(v)});
@@ -4939,36 +4975,15 @@ function renderRevBar(D){
     + '<button data-act="revclear" title="清空">×</button></h5>' + secs;
 }
 
-/* 搜索条与图例的位置：量出来再定，不靠媒体查询。
-   右侧工具条的宽度随刀数、Rank 开关变化，搜索条的宽度随标签数变化——两边都会动，
-   断点挡不住（实测 1600px 四枚标签照样压上去）。所以量：
-     ① 居中放得下 → 居中；
-     ② 放不下 → 退到左侧那一列；
-     ③ 还放不下（工具条折了两行往左长）→ 整条挪到工具条下方。
-   图例再跟着这两者的下沿往下排。 */
 function layoutQBar(){
-  var q = $('qbar'), sb = document.querySelector('.pt-stagebar'), lg = $('legend');
-  if(!q || !sb) return;
-  q.classList.remove('is-left', 'is-below');
-  q.style.top = '';
-  var hit = function(){
-    var a = q.getBoundingClientRect(), b = sb.getBoundingClientRect();
-    return a.right > b.left - 8 && a.bottom > b.top && a.top < b.bottom;
-  };
-  if(q.innerHTML && hit()){
-    q.classList.add('is-left');
-    if(hit()){
-      q.classList.add('is-below');
-      q.style.top = Math.round(sb.getBoundingClientRect().bottom - sb.parentElement.getBoundingClientRect().top + 6) + 'px';
-    }
-  }
-  if(lg && !lg.hidden){
-    var host = sb.parentElement.getBoundingClientRect();
-    var bot = Math.max(sb.getBoundingClientRect().bottom, q.innerHTML ? q.getBoundingClientRect().bottom : 0);
-    lg.style.top = Math.round(bot - host.top + 10) + 'px';
-  }
+  var lg = $('legend');
+  if(!lg || lg.hidden) return;
+  var q = $('qbar'), sb = document.querySelector('.pt-stagebar');
+  if(!sb) return;
+  var host = sb.parentElement.getBoundingClientRect();
+  var bot = Math.max(sb.getBoundingClientRect().bottom, q && q.innerHTML ? q.getBoundingClientRect().bottom : 0);
+  lg.style.top = Math.round(bot - host.top + 10) + 'px';
 }
-window.addEventListener('resize', function(){ requestAnimationFrame(layoutQBar); });
 function renderLegend(D){
   var el = $('legend'); if(!el) return;
   el.hidden = !ui.legendOn || (ui.cardMode && ui.netOff);
@@ -5255,8 +5270,9 @@ function renderV1(D){
   var showLabel = layerOn('L4') && TPn*DPn*PPn <= 480;
   var L3 = layerOn('L3'), L2 = layerOn('L2'), commActive = layerOn('L5');
   var refG = (sel!==null && sel<D.world) ? sel : rankOf(0, facet, 0, 0, D);
+  var spot = spotlightHit(D);
   var axisSet = {};
-  if(layerOn('L4') && ui.axis) groupMembers(ui.axis, refG, D).forEach(function(r){ axisSet[r]=1; });
+  if(!spot && layerOn('L4') && ui.axis) groupMembers(ui.axis, refG, D).forEach(function(r){ axisSet[r]=1; });
   var maxB = 1, pi;
   if(L2) for(pi=0;pi<PPn;pi++) maxB = Math.max(maxB, 2*paramsPerCard(D,pi));
 
@@ -5270,17 +5286,21 @@ function renderV1(D){
   var cells='';
   boxes.forEach(function(b){
     var y0 = b.p*ypitch, isSel = sel===b.g, inAxis = axisSet[b.g];
+    var spotHit = spot && spot.ranks[b.g];
+    var spotMiss = spot && !spotHit;
     var st = 'var(--pt-bds)', sw = .9, topFill = '';
-    if(inAxis){ st = VC[ui.axis]; topFill = mix(VC[ui.axis], 16); }
-    if(isSel){ st = 'var(--pt-fg)'; sw = 2; }
+    if(spotHit){ st = VC.dp; sw = 1.6; topFill = mix(VC.dp, 16); }
+    else if(inAxis){ st = VC[ui.axis]; topFill = mix(VC[ui.axis], 16); }
+    if(isSel && !spot){ st = 'var(--pt-fg)'; sw = 2; }
     var inner = '';
     if(L2){
       var share = (2*paramsPerCard(D,b.p))/maxB;
       var ih = GEO.h*.9*share, iw = GEO.w*.58, idp = GEO.d*.58;
       inner = boxSVG(b.x+(GEO.w-iw)/2, y0+GEO.h, b.z+(GEO.d-idp)/2, iw, ih, idp, s, {fill:'var(--pt-fg2)', stroke:'transparent', attrs:' pointer-events="none"'});
     }
-    var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
-    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer'+(L3?'':';opacity:.16')+'">'
+    var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
+    var cardOp = spotMiss ? 0.18 : (L3 ? 1 : .16);
+    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.3)':'')+'">'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
   });
