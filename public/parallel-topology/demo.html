@@ -329,15 +329,15 @@
    拆解卡贴着图例的位置（两者不会同时打开——一个讲形状、一个讲某一层的去向）。 */
 /* 属性搜索：标签区 + 「＋ 搜索」按钮 + 弹出的属性/取值面板 */
 .pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; max-width:min(560px,46vw)}
-.pt-chip{
+.pt-qchip{
   display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 4px 0 7px;
   border:1px solid var(--c); border-radius:999px; background:var(--pt-bg); color:var(--c);
   font-family:var(--pt-mono); font-size:11px; font-weight:700; white-space:nowrap;
 }
-.pt-chip i{font-style:normal; font-weight:500; opacity:.7; font-family:var(--pt-sans,inherit)}
-.pt-chip.is-bad{border-style:dashed; opacity:.65}
-.pt-chip button{border:0; background:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:.7}
-.pt-chip button:hover{opacity:1}
+.pt-qchip i{font-style:normal; font-weight:500; opacity:.7; font-family:var(--pt-sans,inherit)}
+.pt-qchip.is-bad{border-style:dashed; opacity:.65}
+.pt-qchip button{border:0; background:none; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 2px; opacity:.7}
+.pt-qchip button:hover{opacity:1}
 .pt-padd{
   height:26px; padding:0 9px; border:1px dashed var(--pt-bd); border-radius:999px;
   background:var(--pt-bg); color:var(--pt-fg2); cursor:pointer; font-size:11px; white-space:nowrap;
@@ -5059,7 +5059,7 @@ function renderChainBar(D){
   var chipHTML = ui.chips.map(function(c, i){
     var p9 = propOf(c.k), st9 = chipState(c, D);
     var bad9 = st9.kind === 'bad';
-    return '<span class="pt-chip'+(bad9?' is-bad':'')+'" style="--c:'+(st9.col||p9.col)+'"'
+    return '<span class="pt-qchip'+(bad9?' is-bad':'')+'" style="--c:'+(st9.col||p9.col)+'"'
       + ' title="'+esc(p9.n+'：'+(bad9 ? st9.msg : p9.tag(c.v)))+'">'
       + '<i>'+esc(p9.n)+'</i>'+esc(p9.tag(c.v))
       + '<button data-act="chipdel" data-i="'+i+'" title="去掉这个条件">×</button></span>';
