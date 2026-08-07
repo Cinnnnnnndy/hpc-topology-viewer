@@ -2265,8 +2265,8 @@ function netScene(D, g, box, step){
       }
       if(spotLayerMiss) body.push('</g>');
     }
-    if(colOp < 0.999) body.push('</g>');
     if(ui.cardMode) shellOf(k);
+    if(colOp < 0.999) body.push('</g>');
     if(K > 1 && !ui.cardMode){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
