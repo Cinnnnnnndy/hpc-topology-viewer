@@ -2081,7 +2081,7 @@ function netScene(D, g, box, step){
         body.push(pane(ww, kOff, 'fill:none;stroke:'+pcol+';stroke-width:'+pw));
       }
       if(li === revLi && !lowDetail && spotCol){
-        body.push(pane(ww, kOff, 'fill:'+mix(VC.dp, 6)+';stroke:'+VC.dp+';stroke-width:1.6'));
+        body.push(pane(ww, kOff, 'fill:none;stroke:'+VC.dp+';stroke-width:2'));
       }
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
