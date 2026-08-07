@@ -9,11 +9,15 @@ name: Deploy to GitHub Pages
 #   · claude/rank-view-network-analysis-htowfc
 #       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
 #       → /patterns/rank-card-expansion/ 与 /rank-card/（rank 卡 = 整网的并行化展开）
-#   · claude/parallel-topology-html-demo-ff10w3
-#       → /parallel-topology/（参照系 + PRD + Demo 三页目录）
+#   · 并行拓扑（源码已进 main 的 public/parallel-topology/，checkout 跟触发分支走：
+#     main push 发 main 的版本；claude/parallel-topology-pattern-display-yhghq8 等
+#     pattern 分支 push 发它自己的版本）
+#       → /parallel-topology/（参照系 + PRD + Demo + atlas + cockpit）
 #       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
-#       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
-#         public/parallel-topology/launch-card.html，见下面那一步）
+#       → /patterns/net-slicing/（「整网切分」单视图 pattern，全屏画布、自包含；
+#         正视/侧视为本页 SVG 原生重画，不再依赖 3d-deck / training-sidecar）
+#       → dist/launch.html 里插三张卡 + 顶栏两枚 pill（片段本体在
+#         public/parallel-topology/launch-card*.html，见下面那一步）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -42,6 +46,7 @@ on:
       - claude/logic-cube-pattern-spec-3oycmv
       - claude/rank-view-network-analysis-htowfc
       - claude/parallel-topology-html-demo-ff10w3
+      - claude/parallel-topology-pattern-display-yhghq8
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -237,10 +242,16 @@ jobs:
           echo "published: /patterns/rank-card-expansion/pattern.html?v=$SHA"
           echo "published: /rank-card/?v=$SHA"
 
-      - name: Checkout parallel-topology branch
+      - name: Checkout parallel-topology source（跟着触发分支走）
+        # 并行拓扑的源码已经进了 main（public/parallel-topology/ + 两个 vendor），
+        # 所以这里不再钉死在 ff10w3 分支上：谁触发本工作流，就发布谁的那份源码——
+        #   · main 推送 → 发布 main 的 public/parallel-topology/（合并后的最新版）；
+        #   · pattern 分支（如 claude/parallel-topology-pattern-display-yhghq8）推送 →
+        #     发布该分支的版本，分支上的改动不用先并进 main 就能上线预览。
+        # 注意：别的 pattern 分支跑的是它们自己那份 workflow 文件，不受这行影响。
         uses: actions/checkout@v4
         with:
-          ref: claude/parallel-topology-html-demo-ff10w3
+          ref: ${{ github.ref_name }}
           path: ptopo-src
 
       - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/
@@ -274,26 +285,74 @@ jobs:
           "
 
           # ② 规范入口 /patterns/parallel-topology-demo/（自包含）
+          # ../vendor/ 一律拍平成 ./vendor/：规范入口在 dist/patterns/<id>/ 下，
+          # ../vendor 指向的 dist/patterns/vendor/ 根本不存在——这份要自包含。
           PAT=dist/patterns/parallel-topology-demo
           mkdir -p $PAT/vendor
-          sed -e 's#\.\./vendor/pto-design-system/#./vendor/pto-design-system/#g' \
+          sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               $SRC/demo.html > $PAT/pattern.html
-          cp -r ptopo-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这两行，否则线上 404。
+          # 正视/侧视改为本页 SVG 原生重画之后，3d-deck 与 training-sidecar 不再是
+          # 依赖（这正是「嵌入导致加载问题」修掉的那三份脚本）；rubik-cube 与 three
+          # 是「关闭整网」时才 loadOnce 进来的，静态扫 <script> 看不见——漏了只在
+          # 用户按下那颗开关时才 404，所以更要显式列上。
+          for v in pto-design-system pto-tokens model-graphviz net-sharding rubik-cube; do
+            cp -r ptopo-src/public/vendor/$v $PAT/vendor/$v
+          done
+          cp ptopo-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
           cp ptopo-src/public/favicon.svg $PAT/favicon.svg
           cp $DIR/pattern.json $PAT/pattern.json
+
+          # ③ 单视图 pattern /patterns/net-slicing/（全屏画布，自包含）
+          # 只交付「整网切分」这一屏：同一份实现，但默认落在 chain 视图、embed 形态
+          # （顶栏页脚全收），一条链接就是一张可转的图。vendor 依赖与 ② 完全相同，
+          # 直接把 ② 那份拷过来。
+          NS=dist/patterns/net-slicing
+          mkdir -p $NS
+          sed -e 's#\.\./vendor/#./vendor/#g' \
+              -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+              -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              -e 's#<title>[^<]*</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
+              $SRC/demo.html > $NS/pattern.html
+          # 没带参数打开时也要落在这一屏：把默认值直接写进页面，而不是靠使用者补 query
+          node -e "
+            const fs=require('fs');
+            const f='$NS/pattern.html';
+            let h=fs.readFileSync(f,'utf8');
+            const inject=\"<script>(function(){var q=new URLSearchParams(location.search);\"
+              + \"if(!q.has('view'))q.set('view','chain');\"
+              + \"if(!q.has('embed'))q.set('embed','1');\"
+              + \"var t=location.pathname+'?'+q.toString()+location.hash;\"
+              + \"if(t!==location.pathname+location.search+location.hash)history.replaceState(null,'',t);\"
+              + \"})();</script>\";
+            h=h.replace('</head>', inject+'\n</head>');
+            fs.writeFileSync(f,h);
+          "
+          cp -r $PAT/vendor $NS/vendor
+          cp ptopo-src/public/favicon.svg $NS/favicon.svg
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/net-slicing.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$NS/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+          echo "published: /patterns/net-slicing/pattern.html?v=$SHA"
 
           echo "published: /parallel-topology/demo.html?v=$SHA"
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
       - name: Overlay 并行拓扑卡片 into /launch.html
-        # 工作台总页面（main 的 public/launch.html）里给本分支加一张卡 + 顶栏一枚 pill。
-        # 走叠加而不是改 main：站点框架永远从 main 构建，本分支不进 main。片段本体在
-        # public/parallel-topology/launch-card.html（可评审、可本地渲染），这里只做定位插入。
-        # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
-        # 代价同其它 pattern 目录：main 或别的分支一发布这张卡会暂时消失，重跑本分支即可。
+        # 工作台总页面（main 的 public/launch.html）里加三张卡 + 顶栏两枚 pill：
+        #   · Demo 本体（应用形态）              → 「工作台 · 主线」
+        #   · net-slicing（自包含 pattern，可嵌）→ 「独立迭代 Pattern」
+        #   · atlas（整族组件的地图）           → 「参照系 · 文档」组的头
+        # 片段本体在 public/parallel-topology/launch-card*.html（可评审、可本地渲染），
+        # 这里只做定位插入。锚点找不到就抛异常让整步失败——绝不静默发布一张没打上
+        # 补丁的总页面。
         run: |
           set -euo pipefail
           SHA=$(git -C ptopo-src rev-parse --short HEAD)
@@ -302,31 +361,42 @@ jobs:
           sha = sys.argv[1]
           launch = pathlib.Path('dist/launch.html')
           html = launch.read_text(encoding='utf-8')
-          card = pathlib.Path('ptopo-src/public/parallel-topology/launch-card.html').read_text(encoding='utf-8')
-          card = card.replace('__SHA__', sha)
+          frag = lambda n: pathlib.Path(
+              'ptopo-src/public/parallel-topology/' + n).read_text(encoding='utf-8').replace('__SHA__', sha)
           if 'parallel-topology/demo.html' in html:
               raise SystemExit('launch.html 已含并行拓扑链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
-          # ① 卡片插进「独立迭代 Pattern」组的末尾（该组 </div></section> 就在文档组注释之前）
-          doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
-          close = html.rindex('      </div>\n    </section>\n', 0, doc)
-          html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
-          # ② 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
-          #    的地图，该领这一组的头（Demo 本体那张卡留在 Pattern 组末尾）
-          atlas = pathlib.Path('ptopo-src/public/parallel-topology/launch-card-atlas.html').read_text(encoding='utf-8')
-          atlas = atlas.replace('__SHA__', sha)
+
+          def append_to_group(html, next_group_marker, card):
+              """插到某一组 card-grid 的末尾：下一组注释往前找最近的 </div></section>。"""
+              nxt = html.index(next_group_marker)
+              close = html.rindex('      </div>\n    </section>\n', 0, nxt)
+              return html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
+
+          # ① Demo 本体进「工作台 · 主线」——它是应用形态，不是拿去嵌的零件
+          html = append_to_group(html, '<!-- ═══ 独立迭代 Pattern ═══ -->', frag('launch-card.html'))
+          # ② 抽出来的 /patterns/net-slicing/ 进「独立迭代 Pattern」组末尾
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-net-slicing.html'))
+          # ③ 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
+          #    的地图，该领这一组的头
+          atlas = frag('launch-card-atlas.html')
           gdoc = html.index('<h2 class="group-title" id="g-doc">')
           grid = html.index('      <div class="card-grid">\n', gdoc) + len('      <div class="card-grid">\n')
           html = html[:grid] + '\n' + atlas.rstrip('\n') + '\n' + html[grid:]
-          # ③ 顶栏 pill：紧跟在参照系那枚后面，指组合总图（它是入口）
+          # ④ 顶栏 pill：紧跟在参照系那枚后面——组合总图（整族入口）与并行拓扑 Pattern（一条链接一屏）
           pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
           at = html.index(pill) + len(pill)
-          html = html[:at] + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>' + html[at:]
+          html = (html[:at]
+                  + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>'
+                  + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">并行拓扑 Pattern</a>'
+                  + html[at:])
           launch.write_text(html, encoding='utf-8')
-          print('patched dist/launch.html: +2 cards +1 pill @ ' + sha)
+          print('patched dist/launch.html: +3 cards +2 pills @ ' + sha)
           PY
           grep -c 'parallel-topology/atlas.html' dist/launch.html
+          grep -c 'patterns/net-slicing/pattern.html' dist/launch.html
           test -s dist/parallel-topology/atlas.html
           test -s dist/parallel-topology/cockpit.html
+          test -s dist/patterns/net-slicing/pattern.html
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4
