@@ -2222,7 +2222,7 @@ function netScene(D, g, box, step){
       var dpLbl = 'DP'+k, dpMine = hasSel && isF;
       var dpPt = P(0.5, AR+0.04, 0, kOff);
       var dpPw = dpLbl.length*4.2+6, dpPh = 11;
-      body.push('<rect x="'+(dpPt[0]-dpPw/2)+'" y="'+(dpPt[1]-dpPh/2+1)+'" width="'+dpPw+'" height="'+dpPh+'" rx="'+dpPh/2+'" '
+      body.push('<rect x="'+(dpPt[0]-dpPw/2)+'" y="'+(dpPt[1]-dpPh/2+1)+'" width="'+dpPw+'" height="'+dpPh+'" rx="3" '
         +'style="fill:'+(dpMine?VC.dp:'var(--pt-bg)')+';stroke:'+VC.dp+';stroke-width:'+(dpMine?1.4:.6)+'"/>');
       body.push(txt(dpPt[0], dpPt[1]+3.5, dpLbl, 6.8, dpMine?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       hit.push('<g class="cgrow">'+pane(0, kOff, 'fill:transparent;cursor:pointer',
@@ -2240,7 +2240,7 @@ function netScene(D, g, box, step){
   function axLab(pt, s1, s2, col, strong, sz){
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
-    body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(6,h1/2)+'" '
+    body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(3.5,h1/2)+'" '
       +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:'+(strong?1.3:.7)+';opacity:.96"/>');
     body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : f1*0.36), String(s1), f1, col, 'middle', 'font-weight="800"'));
     if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
@@ -2625,7 +2625,7 @@ function netScene(D, g, box, step){
       var rc9 = P(lu/2, AR, (sgw9[0]+sgw9[1])/2, axOff);
       var pL9 = 'PP'+ps9;
       var pw9 = pL9.length*4.2+6, ph9 = 11;
-      body.push('<rect x="'+(rc9[0]-pw9/2)+'" y="'+(rc9[1]-ph9/2+1)+'" width="'+pw9+'" height="'+ph9+'" rx="'+ph9/2+'" '
+      body.push('<rect x="'+(rc9[0]-pw9/2)+'" y="'+(rc9[1]-ph9/2+1)+'" width="'+pw9+'" height="'+ph9+'" rx="3" '
         +'style="fill:'+(isSel9?VC.pp:'var(--pt-bg)')+';stroke:'+VC.pp+';stroke-width:'+(isSel9?1.4:.6)+'"/>');
       body.push(txt(rc9[0], rc9[1]+3.5, pL9, 6.8, isSel9?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       hit.push('<g class="cgrow">'+quad(ridge, 'fill:transparent;cursor:pointer',
@@ -2656,7 +2656,7 @@ function netScene(D, g, box, step){
         var cc9 = P((ua+ub)/2, bv+bandH/2, 0, axOff);
         var lbT = lab2(b9);
         var pw = lbT.length*4.2+6, ph = 11;
-        body.push('<rect x="'+(cc9[0]-pw/2)+'" y="'+(cc9[1]-ph/2+1)+'" width="'+pw+'" height="'+ph+'" rx="'+ph/2+'" '
+        body.push('<rect x="'+(cc9[0]-pw/2)+'" y="'+(cc9[1]-ph/2+1)+'" width="'+pw+'" height="'+ph+'" rx="3" '
           +'style="fill:'+(mineB?cc:'var(--pt-bg)')+';stroke:'+cc+';stroke-width:'+(mineB?1.4:.6)+'"/>');
         body.push(txt(cc9[0], cc9[1]+3.5, lbT, 6.8, mineB?'#fff':'var(--pt-fg3)', 'middle', 'font-weight="700"'));
       }
@@ -2678,7 +2678,9 @@ function netScene(D, g, box, step){
   /* DP 选择器已改为每份复印件底部的独立标签，不再用共享 railBand */
   /* ── 前板加标签：真图那一层的关键算子，和 3d-deck 上写的是同一行 ── */
   var lab = [];
-  if(IXg && sh && (s >= 72 || zoomIn)){
+  /* 顶视把 v 轴压扁：正面板的算子标签全塌到同一条基线上，只剩一行乱字——
+     这套标注是给带竖直面的机位看的，顶视一律不画（组的门牌照旧）。 */
+  if(IXg && sh && (s >= 72 || zoomIn) && ui.viewTab !== 'top'){
     /* 只挑几条：一层里 35 个算子全标出来就是糊墙，几条足够认出「这是真图那一层」。
        但**挑哪几条要跟着这一段真正含的层走**——原来写死了 dense_gate_up，于是
        每一段都写着「Gate Up Projection」，可 L2 之后根本没有 Dense FFN 了。
@@ -2721,7 +2723,7 @@ function netScene(D, g, box, step){
   /* Rank 打开时也给。「哪几张卡带着入口、哪几张带着出口」正是卡与卡结构不同的
      那件事——PP0 那一段的每张卡都多一份词嵌入，末段的每张卡都多一份 LM Head 与
      MTP 尾巴，中间几段没有。挂在焦点那一列的首/末张卡上方。 */
-  if(IXg && cutPP && L > 2){
+  if(IXg && cutPP && L > 2 && ui.viewTab !== 'top'){
     /* 门牌只写两个字。这一屏上它是个**路标**——「这一头不重复」——具体不重复在
        哪几个算子、各被哪把刀切，展开写就是一条横贯半屏的长句，把它说明的那几层
        全挡住了。细节挪到 hover：想知道再问，不问就不占地方。 */
@@ -2730,7 +2732,7 @@ function netScene(D, g, box, step){
          同一个位置，同一高度的话两枚门牌正好叠在一起。 */
       var pt9 = P(0.5, -0.10 - ii*0.125, wOf(it[0]), off0);
       var w9 = 34, h9 = 16;
-      body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="8" '
+      body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="4" '
         +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1;opacity:.97"/>');
       body.push(txt(pt9[0], pt9[1]+3.6, esc(it[1]), 8, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
       /* 悬停靶子进 hit 层：body 整个是 pointer-events:none 的，挂在那儿收不到鼠标 */
@@ -3999,7 +4001,7 @@ function fsTxt(x, y, t, size, fill, anchor, extra){
 function fsPill(body, hit, x, y, label, col, on, act, fs){
   fs = (fs || 7.2) / FS_Z;
   var w = String(label).length*(fs*0.62) + 10/FS_Z, h = fs + 7/FS_Z;
-  body.push('<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="'+(h/2).toFixed(1)
+  body.push('<rect x="'+(x-w/2).toFixed(1)+'" y="'+(y-h/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="'+(3.5/FS_Z).toFixed(2)
     +'" style="fill:'+(on?col:'var(--pt-bg)')+';stroke:'+col+';stroke-width:'+((on?1.4:.7)/FS_Z).toFixed(2)+'"/>');
   body.push(txt(x, y+fs*0.36+1/FS_Z, esc(String(label)), fs, on?'#fff':'var(--pt-fg2)', 'middle', 'font-weight="700"'));
   if(act && hit) hit.push('<rect x="'+(x-w/2-2).toFixed(1)+'" y="'+(y-h/2-2).toFixed(1)+'" width="'+(w+4).toFixed(1)+'" height="'+(h+4).toFixed(1)
@@ -4015,7 +4017,7 @@ function fsPill(body, hit, x, y, label, col, on, act, fs){
 function frontScene(D, g, box){
   var IXg = graphIndex(); if(!IXg) return null;
   var GB = frontBounds(); if(!GB) return null;
-  FS_Z = Math.max(0.75, ui.zoom3);          /* 地图式文字/线宽的反除基准 */
+  FS_Z = Math.max(1, ui.zoom3);             /* 地图式反除基准；<1 不反向放大，缩小时随场景缩，绝不挤出边距 */
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
   var meF = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
@@ -4245,7 +4247,7 @@ function sideScene(D, g, box){
   var IXg = graphIndex(); if(!IXg) return null;
   var G = IXg.G, clu = IXg.clu, root = clu['decoder-stack'];
   if(!root) return null;
-  FS_Z = Math.max(0.75, ui.zoom3);
+  FS_Z = Math.max(1, ui.zoom3);             /* <1 不反向放大：反向放大会把两头的标签挤进条带（遮挡的根源） */
   var Zv = Math.max(0.2, ui.zoom3);
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
@@ -4419,75 +4421,82 @@ function sideScene(D, g, box){
         'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
     });
   }
-  /* ── 两头：输入列（左上，L0 之前）与 输出 + MTP 列（右下，末层之后）──
-     竖脊 + 每枚胶囊一根小刺，脊再用一小段圆角接进 mHC 主干（参考 sidecar 的画法，
-     方位与 3D 对齐：入口在 L0 那一侧，出口在末层那一侧）。 */
-  function sidePill(x, y, w, lbl, col, dashed, tag){
-    var h9 = 18/FS_Z;
-    body.push('<rect x="'+(x - w/2).toFixed(1)+'" y="'+(y - h9/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h9.toFixed(1)+'" rx="'+(h9/2).toFixed(1)
-      +'" style="fill:var(--pt-s1);stroke:'+col+';stroke-width:'+(0.9/FS_Z).toFixed(2)
-      +(dashed?';stroke-dasharray:'+(4/FS_Z).toFixed(2)+' '+(2.6/FS_Z).toFixed(2):'')+'"/>');
-    body.push(fsTxt(x, y - (tag ? 1.2/FS_Z : -2.2/FS_Z), esc(lbl), 6.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
-    if(tag) body.push(fsTxt(x, y + 6.6/FS_Z, esc(tag), 4.9, col, 'middle', 'font-weight="700"'));
+  /* ── 两头：输入（左上，L0 之前）与 输出 + MTP（右下，末层之后）──
+     参考 sidecar 的画法：一根浅灰竖轨，每个算子一枚**紧凑小圆角标签**贴在轨旁、
+     一根小刺接轨；轨再圆角拐进 mHC 主干。标签只写名字（切法在悬停提示里），
+     所以两头永远收在左右边距内，不会盖住条带。方位与 3D 对齐：入口在 L0 侧、
+     出口在末层侧。 */
+  function sideTag(arr, x, yC, lbl, col, dashed, anchor){
+    var f9 = 6.2/FS_Z, h9 = 13/FS_Z;
+    var w9 = String(lbl).length*(f9*0.6) + 12/FS_Z;
+    var xL = anchor === 'start' ? x : x - w9;
+    arr.push('<rect x="'+xL.toFixed(1)+'" y="'+(yC-h9/2).toFixed(1)+'" width="'+w9.toFixed(1)+'" height="'+h9.toFixed(1)
+      +'" rx="'+(3.5/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:'+col+';stroke-width:'+(0.8/FS_Z).toFixed(2)
+      +(dashed?';stroke-dasharray:'+(3/FS_Z).toFixed(2)+' '+(2/FS_Z).toFixed(2):'')+'"/>');
+    arr.push(fsTxt(xL + w9/2, yC + 2.2/FS_Z, esc(lbl), 6.2, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
+    return w9;
   }
-  var pitch = 24/FS_Z;
-  /* 输入列（左上） */
-  var hwZ = (LM - 34)/FS_Z, hx = box.x + LM/2 - 8;
-  var headPills = [
-    ['Token IDs · Pos · Attn Ctx', VC.dp, false, 'DP 切 batch' + (cutCP ? ' · CP 切 seq ×'+D.cp : '')],
-    ['Embedding Weight', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
-    ['Parallel Embedding', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null]
+  function track(xT, yA, yB){
+    body.push('<rect x="'+(xT - 3/FS_Z).toFixed(1)+'" y="'+yA.toFixed(1)+'" width="'+(6/FS_Z).toFixed(2)
+      +'" height="'+(yB - yA).toFixed(1)+'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:var(--pt-s2);stroke:var(--pt-bd);stroke-width:'+(0.5/FS_Z).toFixed(2)+'"/>');
+  }
+  var pitch = 19/FS_Z;
+  /* 输入（左上）：标签在轨左，轨顶圆角拐进主干左端 */
+  var headTags = [
+    ['Token IDs · Pos · Attn Ctx', VC.dp],
+    ['Embedding Weight', cutTP ? VC.tp : 'var(--pt-bds)'],
+    ['Parallel Embedding', cutTP ? VC.tp : 'var(--pt-bds)']
   ];
-  var hy0 = yRail + 22/FS_Z + 14/FS_Z;
-  body.push(fsTxt(hx, hy0 - 22/FS_Z, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
-  var hsx = hx + hwZ/2 + 8/FS_Z;
-  headPills.forEach(function(hp, i){
-    var py = hy0 + i*pitch;
-    sidePill(hx, py, hwZ, hp[0], hp[1], hp[2], hp[3]);
-    body.push('<line x1="'+(hx + hwZ/2).toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+hsx.toFixed(1)+'" y2="'+py.toFixed(1)
-      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.9/FS_Z).toFixed(2)+';opacity:.8"/>');
-  });
-  body.push('<path d="M'+hsx.toFixed(1)+' '+(hy0 + (headPills.length-1)*pitch).toFixed(1)
-    +' L'+hsx.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
-    +' Q'+hsx.toFixed(1)+' '+yRail.toFixed(1)+' '+(hsx + 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
+  var hTrackX = x0 - 22;
+  var hy0 = yRail + 26/FS_Z;
+  var hyB = hy0 + (headTags.length - 1)*pitch;
+  body.push(fsTxt(hTrackX - 8/FS_Z, hy0 - 16/FS_Z, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+  body.push('<path d="M'+hTrackX.toFixed(1)+' '+(hy0 - 8/FS_Z).toFixed(1)
+    +' L'+hTrackX.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
+    +' Q'+hTrackX.toFixed(1)+' '+yRail.toFixed(1)+' '+(hTrackX + 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
     +' L'+(x0 - 4).toFixed(1)+' '+yRail.toFixed(1)
     +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';opacity:.8"/>');
-  hit.push('<rect x="'+(hx - hwZ/2).toFixed(1)+'" y="'+(hy0 - 30/FS_Z).toFixed(1)+'" width="'+hwZ.toFixed(1)+'" height="'+((headPills.length)*pitch + 28/FS_Z).toFixed(1)
-    +'" style="fill:transparent;cursor:help" data-tipk="head"/>');
-  /* 输出 + MTP 列（右下） */
-  var twZ = (RM - 34)/FS_Z, txr = box.x + box.w - RM/2 + 6;
-  var tailPills = [
-    ['Final RMSNorm', VC.tp, false, cutTP ? 'SP 切 seq（借 TP 组）' : null],
-    ['LM Head Weight → LM Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
-    ['Logits All-Gather', VC.tp, true, null],
-    ['Logits', 'var(--pt-fg3)', false, null],
-    ['MTP Input Norms', VC.tp, false, cutTP ? 'SP 切 seq' : null],
-    ['EH Projection', VC.tp, false, cutTP ? 'TP 切 hidden' : null],
-    ['MTP Decoder ×3', VC.tp, false, null],
-    ['MTP Shared Head', VC.tp, false, cutTP ? 'TP 切 vocab ×'+D.tp : null],
-    ['MTP Logits', 'var(--pt-fg3)', false, null]
-  ];
-  var tyEnd = y1 + (rackOn ? -6 : 4);
-  var ty0 = tyEnd - (tailPills.length - 1)*pitch;
-  var tsx = txr - twZ/2 - 8/FS_Z;
-  body.push(fsTxt(txr, ty0 - 22/FS_Z, '主输出 + MTP 尾巴 · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
-  body.push('<rect x="'+(txr - twZ/2 - 5/FS_Z).toFixed(1)+'" y="'+(ty0 + 4*pitch - 13/FS_Z).toFixed(1)+'" width="'+(twZ + 10/FS_Z).toFixed(1)
-    +'" height="'+(5*pitch + 4/FS_Z).toFixed(1)+'" rx="'+(7/FS_Z).toFixed(1)
-    +'" style="fill:none;stroke:var(--pt-bd);stroke-width:'+(0.8/FS_Z).toFixed(2)+';stroke-dasharray:'+(3/FS_Z).toFixed(2)+' '+(2/FS_Z).toFixed(2)+'"/>');
-  body.push(fsTxt(txr, ty0 + 4*pitch - 17/FS_Z, 'Multi Token Predictor ×3', 5.4, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
-  tailPills.forEach(function(tp9, i){
-    var py = ty0 + i*pitch;
-    sidePill(txr, py, twZ, tp9[0], tp9[1], tp9[2], tp9[3]);
-    body.push('<line x1="'+tsx.toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+(txr - twZ/2).toFixed(1)+'" y2="'+py.toFixed(1)
+  track(hTrackX, hy0 - 8/FS_Z, hyB + 8/FS_Z);
+  headTags.forEach(function(hp, i){
+    var py = hy0 + i*pitch;
+    body.push('<line x1="'+(hTrackX - 3/FS_Z).toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+(hTrackX - 9/FS_Z).toFixed(1)+'" y2="'+py.toFixed(1)
       +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.9/FS_Z).toFixed(2)+';opacity:.8"/>');
+    sideTag(body, hTrackX - 9/FS_Z, py, hp[0], hp[1], false, 'end');
   });
+  hit.push('<rect x="'+(box.x + 4).toFixed(1)+'" y="'+(hy0 - 24/FS_Z).toFixed(1)+'" width="'+(hTrackX - box.x).toFixed(1)
+    +'" height="'+(headTags.length*pitch + 30/FS_Z).toFixed(1)+'" style="fill:transparent;cursor:help" data-tipk="head"/>');
+  /* 输出 + MTP（右下）：标签在轨右，轨顶从主干右端圆角拐下来；两组之间留一口气 */
+  var tailTags = [
+    ['Final RMSNorm', cutTP ? VC.tp : 'var(--pt-bds)', false, 0],
+    ['LM Head Weight → LM Head', cutTP ? VC.tp : 'var(--pt-bds)', false, 0],
+    ['Logits All-Gather', VC.tp, true, 0],
+    ['Logits', 'var(--pt-bds)', false, 0],
+    ['MTP Input Norms', cutTP ? VC.tp : 'var(--pt-bds)', false, 1],
+    ['EH Projection', cutTP ? VC.tp : 'var(--pt-bds)', false, 1],
+    ['MTP Decoder ×3', 'var(--pt-bds)', false, 1],
+    ['MTP Head Weight / MTP Shared Head', cutTP ? VC.tp : 'var(--pt-bds)', false, 1],
+    ['MTP Logits', 'var(--pt-bds)', false, 1]
+  ];
+  var mtpGap = 12/FS_Z;
+  var tTrackX = x1 + 22;
+  var tyEnd = y1 + (rackOn ? -6 : 2);
+  var ty0 = tyEnd - (tailTags.length - 1)*pitch - mtpGap;
+  function tagY(i){ return ty0 + i*pitch + (tailTags[i][3] ? mtpGap : 0); }
+  body.push(fsTxt(tTrackX + 8/FS_Z, ty0 - 16/FS_Z, '主输出 + MTP 尾巴 · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'start', 'font-weight="800"'));
   body.push('<path d="M'+(x1 + 4).toFixed(1)+' '+yRail.toFixed(1)
-    +' L'+(tsx - 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
-    +' Q'+tsx.toFixed(1)+' '+yRail.toFixed(1)+' '+tsx.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
-    +' L'+tsx.toFixed(1)+' '+tyEnd.toFixed(1)
+    +' L'+(tTrackX - 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
+    +' Q'+tTrackX.toFixed(1)+' '+yRail.toFixed(1)+' '+tTrackX.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
+    +' L'+tTrackX.toFixed(1)+' '+(ty0 - 8/FS_Z).toFixed(1)
     +'" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';opacity:.8"/>');
-  hit.push('<rect x="'+(txr - twZ/2).toFixed(1)+'" y="'+(ty0 - 30/FS_Z).toFixed(1)+'" width="'+twZ.toFixed(1)+'" height="'+(tailPills.length*pitch + 28/FS_Z).toFixed(1)
-    +'" style="fill:transparent;cursor:help" data-tipk="tail"/>');
+  track(tTrackX, ty0 - 8/FS_Z, tyEnd + 8/FS_Z);
+  tailTags.forEach(function(tp9, i){
+    var py = tagY(i);
+    body.push('<line x1="'+(tTrackX + 3/FS_Z).toFixed(1)+'" y1="'+py.toFixed(1)+'" x2="'+(tTrackX + 9/FS_Z).toFixed(1)+'" y2="'+py.toFixed(1)
+      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.9/FS_Z).toFixed(2)+';opacity:.8"/>');
+    sideTag(body, tTrackX + 9/FS_Z, py, tp9[0], tp9[1], tp9[2], 'start');
+  });
+  hit.push('<rect x="'+tTrackX.toFixed(1)+'" y="'+(ty0 - 24/FS_Z).toFixed(1)+'" width="'+(box.x + box.w - tTrackX - 4).toFixed(1)
+    +'" height="'+(tailTags.length*pitch + mtpGap + 30/FS_Z).toFixed(1)+'" style="fill:transparent;cursor:help" data-tipk="tail"/>');
   /* ── 反查某一层：给那一列描个框 + 写清牵动多少张卡 ── */
   if(revOn){
     var rx = xOf(revLi);
