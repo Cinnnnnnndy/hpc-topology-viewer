@@ -1631,6 +1631,9 @@ function netScene(D, g, box, step){
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var cutSP = cutTP;
+  /* 五把刀全抬着 + Rank 开着：整网没被切，此刻「每张卡各拿什么」无从谈起——
+     一只壳装完整的一叠层，壳里只画层理（层板堆叠），不摊算子。 */
+  var noCutsCard = ui.cardMode && !cutDP && !cutPP && !cutCP && !cutTP && !cutEP;
   var yaw = ui.yaw3, pitch = ui.pitch3;
   /* g 在没选中时会回落到 0，那是给坐标算术用的默认值——但**高亮**不能跟着回落，
      否则 rank 0 永远亮着，「取消选中」就成了看不出效果的空操作。 */
@@ -2024,7 +2027,7 @@ function netScene(D, g, box, step){
          这个 if 必须带花括号：原来它只管一条语句，我往里加了几行之后 body.push
          就掉到了条件外面——层板于是在卡维度里也照画，992 块 1.1 宽的深色框叠上去，
          就是「加上 Rank 之后边框格外黑」的来源。 */
-      if(!ui.cardMode && !(lowDetail && !isF && li !== 0 && li !== L-1)){
+      if((!ui.cardMode || noCutsCard) && !(lowDetail && !isF && li !== 0 && li !== L-1)){
         var pcol = 'var(--pt-bd)', pw = mine ? .4 : .15;
         if(li === 0 || li === L-1){ pcol = 'var(--pt-fg2)'; pw = mine ? 1.1 : .6; }
         else if(li < denseTop){ pcol = VC.tp; pw = mine ? .8 : .4; }
@@ -2036,7 +2039,7 @@ function netScene(D, g, box, step){
       /* 卡维度按 PP 的实际层数画满：一张卡持有的就是这一段的 lps 层，只画一层
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
-      if(IXg){
+      if(IXg && !noCutsCard){
         IXg.G.nodes.forEach(function(n, ni){
           /* 两头那几个 tensor/module 放行（见 HEAD_OPS/TAIL_OPS 的注释）；
              层内的权重张量仍然不画——那是「这一层有哪些参数」，不是这一屏的问题。 */
@@ -2228,6 +2231,9 @@ function netScene(D, g, box, step){
       hit.push('<g class="cgrow">'+pane(0, kOff, 'fill:transparent;cursor:pointer',
         'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
     }
+  }
+  if(noCutsCard){
+    axLab(P(0.5, AR + 0.22, TOTW/2, 0), '五把刀都抬着 · 整网未切', '这只壳装的是完整的 '+L+' 层——落下某把刀，才谈得上每张卡各拿哪一份', 'var(--pt-fg2)', true, 7.4);
   }
   /* ── 卡维度：把四刀的交集装进一只卡壳 ────────────────────────────────
      四把刀切完，剩下的这一份就是**一张卡**：副本 co.d 里、stage co.p 那几层、
@@ -2491,7 +2497,10 @@ function netScene(D, g, box, step){
         /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
            转起来够看清阵列的骨架，松手再补全。 */
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
-        var csx = segW(pc2), cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
+        /* PP 没落下时只有一只壳：它装的是**全部**层，深度必须包住整只 deck——
+           按单段深度算的话，壳只罩住 1/pp，其余层全洒在壳外（看着像内容漏了）。 */
+        var csx = cutPP ? segW(pc2) : [0, TOTW];
+        var cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
         /* v 方向的留白要装得下两头：词嵌入在 v≈-0.035、LM Head 在 v≈AR+0.09。
            它们是真图自己的坐标，不做重映射——正好落在卡壳上下唇内侧。 */
         var cu0 = -0.05, cu1 = 1.05, cv0 = -0.07, cv1 = AR + 0.12;
@@ -2680,7 +2689,7 @@ function netScene(D, g, box, step){
   var lab = [];
   /* 顶视把 v 轴压扁：正面板的算子标签全塌到同一条基线上，只剩一行乱字——
      这套标注是给带竖直面的机位看的，顶视一律不画（组的门牌照旧）。 */
-  if(IXg && sh && (s >= 72 || zoomIn) && ui.viewTab !== 'top'){
+  if(IXg && sh && (s >= 72 || zoomIn) && ui.viewTab !== 'top' && !noCutsCard){
     /* 只挑几条：一层里 35 个算子全标出来就是糊墙，几条足够认出「这是真图那一层」。
        但**挑哪几条要跟着这一段真正含的层走**——原来写死了 dense_gate_up，于是
        每一段都写着「Gate Up Projection」，可 L2 之后根本没有 Dense FFN 了。
