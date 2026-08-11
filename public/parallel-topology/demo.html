@@ -70,7 +70,10 @@
 .pt-title .sub a{color:inherit}
 /* 工具条上的控件统一成 32px 高、999 圆角：分段器（刀 / 视角）连壳算 32，
    单颗胶囊（图例 / 通信 / 数据）与开关（Rank / 整网）也是 32，一条线上齐平。 */
-.pt-seg{display:inline-flex; gap:2px; padding:3px; border:0; border-radius:999px; background:var(--pt-s2)}
+/* 控件要立在页面上，就得有自己的**面**和一条边：全去掉之后浅灰控件浮在浅灰页面上，
+   边界靠猜（实机就是「都看不清了」）。所以底色回到卡片白、加一条 1px 细边；
+   「少描边多填充」管的是控件**内部**（一格一框那种），不是控件与页面的分界。 */
+.pt-seg{display:inline-flex; gap:2px; padding:3px; border:1px solid var(--pt-bd); border-radius:999px; background:var(--pt-s1)}
 .pt-seg button{
   min-height:24px; padding:0 12px; font-size:12px; font-weight:600; border:none; border-radius:999px;
   background:transparent; color:var(--pt-fg2);
@@ -158,18 +161,19 @@
    颜色只留给**选中的那一格**（它是这排门牌唯一要回答的问题：现在看的是第几组）。 */
 .pt-ghgrp{
   display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
-  max-width:100%; padding:5px 11px; border-radius:12px; border:0;
-  background:color-mix(in srgb, var(--pt-s2) 92%, transparent);
+  max-width:100%; padding:5px 11px; border-radius:12px; border:1px solid var(--pt-bd);
+  background:color-mix(in srgb, var(--pt-s1) 92%, transparent);
+  box-shadow:0 1px 3px rgba(0,0,0,.05);
   backdrop-filter:blur(6px); pointer-events:auto;
 }
 .pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
 .pt-ghc{
   min-width:20px; height:19px; padding:0 6px; border-radius:8px; border:0;
-  background:color-mix(in srgb, var(--pt-fg) 7%, transparent);
+  background:color-mix(in srgb, var(--pt-fg) 10%, transparent);
   color:var(--pt-fg2); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:19px; white-space:nowrap;
 }
 .pt-ghc.is-on{background:var(--c); color:#fff}
-.pt-ghc:hover{background:color-mix(in srgb, var(--pt-fg) 14%, transparent); color:var(--pt-fg)}
+.pt-ghc:hover{background:color-mix(in srgb, var(--pt-fg) 20%, transparent); color:var(--pt-fg)}
 .pt-ghc.is-on:hover{background:var(--c); color:#fff}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
@@ -185,7 +189,7 @@
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
 .pb{
   height:32px; padding:0 14px; font-size:12.5px; font-weight:700; border-radius:999px;
-  border:0; background:var(--pt-s2); color:var(--pt-fg2);
+  border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
 }
 /* 模式开关比旁边那些筛选胶囊重一档：它切换的是整屏在讲什么，不是过滤一个维度。
    实心底、白字、更大的字号，一眼看得出「这是主开关」。 */
@@ -193,10 +197,10 @@
    颜色在这一屏是有含义的（每把刀一个色），模式开关借来用会串味；状态交给拨钮说。 */
 .pt-sw{
   display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 14px 0 10px;
-  border-radius:999px; border:0; background:var(--pt-s2);
+  border-radius:999px; border:1px solid var(--pt-bd); background:var(--pt-s1);
   color:var(--pt-fg2); font-size:12.5px; font-weight:700;
 }
-.pt-sw:hover{background:color-mix(in srgb, var(--pt-fg) 12%, transparent); color:var(--pt-fg)}
+.pt-sw:hover{background:var(--pt-s2); border-color:var(--pt-bds); color:var(--pt-fg)}
 .pt-sw i{
   flex:none; width:28px; height:16px; border-radius:999px; background:var(--pt-bds);
   position:relative; transition:background .16s;
@@ -205,10 +209,10 @@
   content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%;
   background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); transition:left .16s;
 }
-.pt-sw.is-on{color:var(--pt-fg); background:color-mix(in srgb, var(--pt-fg) 9%, transparent)}
+.pt-sw.is-on{color:var(--pt-fg); border-color:var(--pt-bds)}
 .pt-sw.is-on i{background:var(--pt-fg)}
 .pt-sw.is-on i::after{left:14px}
-.pb:hover{background:color-mix(in srgb, var(--pt-fg) 12%, transparent); color:var(--pt-fg)}
+.pb:hover{background:var(--pt-s2); border-color:var(--pt-bds); color:var(--pt-fg)}
 .pb.is-on{background:var(--pt-fg); color:var(--pt-bg)}
 .pb:disabled{opacity:.38; cursor:not-allowed; text-decoration:line-through}
 .pb.mono{font-family:var(--pt-mono); font-weight:600}
