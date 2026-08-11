@@ -68,9 +68,11 @@
 .pt-title b{font-size:14px}
 .pt-title .sub{display:block; font-size:10.5px; color:var(--pt-fg2)}
 .pt-title .sub a{color:inherit}
-.pt-seg{display:inline-flex; gap:2px; padding:3px; border:1px solid var(--pt-bd); border-radius:999px; background:var(--pt-s2)}
+/* 工具条上的控件统一成 32px 高、999 圆角：分段器（刀 / 视角）连壳算 32，
+   单颗胶囊（图例 / 通信 / 数据）与开关（Rank / 整网）也是 32，一条线上齐平。 */
+.pt-seg{display:inline-flex; gap:2px; padding:3px; border:0; border-radius:999px; background:var(--pt-s2)}
 .pt-seg button{
-  min-height:26px; padding:0 12px; font-size:12px; font-weight:600; border:none; border-radius:999px;
+  min-height:24px; padding:0 12px; font-size:12px; font-weight:600; border:none; border-radius:999px;
   background:transparent; color:var(--pt-fg2);
 }
 .pt-seg button:hover{color:var(--pt-fg)}
@@ -150,23 +152,28 @@
 }
 .pt-grouphud.is-lift{right:14px; bottom:52px}
 .pt-grouphud[hidden]{display:none}
+/* 一组一张卡：**填充**画出边界，不再描边。一排十几格、四组并排时，格格带框就是
+   几十条线堆在一起，颜色也跟着乘上去——颜色在这一屏是有含义的（每把刀一个色），
+   一旦每一格都染上，那个含义就被稀释成装饰了。所以：格子用中性填充，
+   颜色只留给**选中的那一格**（它是这排门牌唯一要回答的问题：现在看的是第几组）。 */
 .pt-ghgrp{
   display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
-  max-width:100%; padding:4px 10px; border-radius:11px; border:1px solid var(--pt-bd);
-  background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
+  max-width:100%; padding:5px 11px; border-radius:12px; border:0;
+  background:color-mix(in srgb, var(--pt-s2) 92%, transparent);
   backdrop-filter:blur(6px); pointer-events:auto;
 }
 .pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
 .pt-ghc{
-  min-width:20px; height:18px; padding:0 6px; border-radius:8px; border:1px solid var(--c);
-  background:transparent;
-  color:var(--c); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:16px; white-space:nowrap;
+  min-width:20px; height:19px; padding:0 6px; border-radius:8px; border:0;
+  background:color-mix(in srgb, var(--pt-fg) 7%, transparent);
+  color:var(--pt-fg2); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:19px; white-space:nowrap;
 }
-.pt-ghc.is-on{background:var(--c); border-color:var(--c); color:#fff}
-.pt-ghc:hover{background:color-mix(in srgb, var(--c) 12%, transparent); box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent)}
+.pt-ghc.is-on{background:var(--c); color:#fff}
+.pt-ghc:hover{background:color-mix(in srgb, var(--pt-fg) 14%, transparent); color:var(--pt-fg)}
+.pt-ghc.is-on:hover{background:var(--c); color:#fff}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
-  justify-content:flex-end; max-width:min(72%, 780px);
+  justify-content:flex-end; max-width:min(82%, 940px);
 }
 /* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
@@ -177,21 +184,32 @@
 .pt-root.embed .pt-stagetitle{display:flex; gap:10px; pointer-events:auto; z-index:8}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
 .pb{
-  min-height:26px; padding:0 11px; font-size:11.5px; font-weight:600; border-radius:999px;
-  border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
+  height:32px; padding:0 14px; font-size:12.5px; font-weight:700; border-radius:999px;
+  border:0; background:var(--pt-s2); color:var(--pt-fg2);
 }
 /* 模式开关比旁边那些筛选胶囊重一档：它切换的是整屏在讲什么，不是过滤一个维度。
    实心底、白字、更大的字号，一眼看得出「这是主开关」。 */
-.pt-mode{display:inline-flex; gap:6px}
-.pt-mb{
-  min-height:30px; padding:0 15px; font-size:12.5px; font-weight:800; border-radius:999px;
-  border:1.5px solid var(--c); background:var(--pt-bg); color:var(--c);
-  box-shadow:0 1px 3px rgba(0,0,0,.06);
+/* ── 模式开关（Rank / 整网）：二元状态用开关组件，不用动作按钮、不上颜色。
+   颜色在这一屏是有含义的（每把刀一个色），模式开关借来用会串味；状态交给拨钮说。 */
+.pt-sw{
+  display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 14px 0 10px;
+  border-radius:999px; border:0; background:var(--pt-s2);
+  color:var(--pt-fg2); font-size:12.5px; font-weight:700;
 }
-.pt-mb:hover{background:color-mix(in srgb, var(--c) 12%, var(--pt-bg))}
-.pt-mb.is-on{background:var(--c); color:#fff; border-color:var(--c)}
-.pb:hover{border-color:var(--c, var(--pt-bds)); color:var(--pt-fg)}
-.pb.is-on{background:var(--c, var(--pt-fg)); border-color:var(--c, var(--pt-fg)); color:var(--pt-bg)}
+.pt-sw:hover{background:color-mix(in srgb, var(--pt-fg) 12%, transparent); color:var(--pt-fg)}
+.pt-sw i{
+  flex:none; width:28px; height:16px; border-radius:999px; background:var(--pt-bds);
+  position:relative; transition:background .16s;
+}
+.pt-sw i::after{
+  content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); transition:left .16s;
+}
+.pt-sw.is-on{color:var(--pt-fg); background:color-mix(in srgb, var(--pt-fg) 9%, transparent)}
+.pt-sw.is-on i{background:var(--pt-fg)}
+.pt-sw.is-on i::after{left:14px}
+.pb:hover{background:color-mix(in srgb, var(--pt-fg) 12%, transparent); color:var(--pt-fg)}
+.pb.is-on{background:var(--pt-fg); color:var(--pt-bg)}
 .pb:disabled{opacity:.38; cursor:not-allowed; text-decoration:line-through}
 .pb.mono{font-family:var(--pt-mono); font-weight:600}
 .pb .cmn{font-size:9px; opacity:.75; margin-left:4px; font-weight:400}
@@ -210,7 +228,7 @@
    整条工具条的重心就跑到它身上了。改成描边 + 中性底，只有计数那颗小胶囊提示
    「开着几类」。菜单里同理——五个勾一律用中性色，行底不再各染各的。 */
 .pt-mv > .pb.is-on{
-  background:var(--pt-s1); color:var(--pt-fg); border-color:var(--pt-bds);
+  background:color-mix(in srgb, var(--pt-fg) 9%, transparent); color:var(--pt-fg);
 }
 .pt-mv > .pb.is-on b{background:var(--pt-s2); color:var(--pt-fg2)}
 .pt-mv > .pb i{font-style:normal; font-size:9px; opacity:.7}
@@ -625,14 +643,16 @@ var ui = {
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
   act:0, act2:false, persp:'map',
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
-  cardMode:false,   /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
+  /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
+     它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
+  cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:false, legendOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
   mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false,
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
-  netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
+  netOff:true,      /* 关掉整网：卡里不再画算子，只剩 world 只方块 */
   layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0
 };
 var anim = {on:false, timer:null, phases:[], i:0};
@@ -724,8 +744,13 @@ function urlLoad(){
   }
   /* Rank（卡维度）与整网开关也写进链接：这两条是「这一屏在讲什么」的开关，
      口头交付里一定会提到的那句话，就该能塞进 URL。net=0 才是关掉整网。 */
-  if(q.get('card')==='1' || q.get('rank')==='1') ui.cardMode = true;
-  if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
+  /* 默认改成开 Rank / 关整网之后，链接要能表达**关掉**它们（card=0 / net=1）；
+     card=1 / net=0 仍然认，老链接一条都不失效。 */
+  if(q.get('card')==='0' || q.get('rank')==='0') ui.cardMode = false;
+  else if(q.get('card')==='1' || q.get('rank')==='1') ui.cardMode = true;
+  if(q.get('net')==='1') ui.netOff = false;
+  else if(q.get('net')==='0') ui.netOff = true;
+  if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   if(q.get('legend')==='1') ui.legendOn = true;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
@@ -770,7 +795,10 @@ function urlWrite(){
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
-  if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
+  if(ui.view==='chain'){                       /* 只写偏离默认的那一半，链接才短 */
+    if(!ui.cardMode) q.set('card','0');
+    else if(!ui.netOff) q.set('net','1');
+  }
   if(ui.view==='chain' && ui.commOn) q.set('comm','1');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
   if(ui.view==='chain'){
@@ -5969,21 +5997,27 @@ function renderChainBar(D){
     + (ui.chips.length ? '＋' : '＋ 搜索') + '</button>'
     + (ui.chips.length ? '<button class="pt-pclr" data-act="revclear" title="清空全部条件">×</button>' : '')
     + pane9 + '</span>';
-  var cBtn = '<span class="pt-mode">'
-    + '<button class="pt-mb'+(ui.cardMode?' is-on':'')+'" data-act="cardmode" style="--c:'+VC.dp+'"'
-    + ' title="'+(ui.cardMode?'退回整网切分场景':'把四刀交集收进一张卡：只看这张卡真正持有的那份')+'">'
-    + (ui.cardMode ? '关闭 Rank' : '打开 Rank') + '</button>'
+  /* 两颗模式开关用**开关组件**：它们是二元状态（开着 / 关着），不是筛选器也不是
+     动作按钮。写成「关闭 Rank」这种动作名，按钮上说的是「按下去会发生什么」，
+     读者得先反推现在是什么状态；开关把状态直接摆在那儿，名字只说这是什么。
+     也不上颜色——颜色在这一屏是有含义的（每种刀一个色），模式开关借用会串味。 */
+  function swBtn(act, name, on, tip){
+    return '<button class="pt-sw'+(on?' is-on':'')+'" data-act="'+act+'" title="'+esc(tip)+'">'
+      + '<i></i>'+esc(name)+'</button>';
+  }
+  var cBtn = swBtn('cardmode', 'Rank', ui.cardMode,
+        ui.cardMode ? '关掉：退回整网切分场景' : '打开：把四刀交集收进一张卡，只看这张卡真正持有的那份')
     /* 整网开关只在 Rank 打开时给：没有卡壳的话，关掉内容就什么都不剩了 */
-    + (ui.cardMode ? '<button class="pt-mb'+(ui.netOff?' is-on':'')+'" data-act="netoff" style="--c:'+VC.pp+'"'
-        + ' title="'+(ui.netOff?'把算子装回 '+D.world+' 只卡里':'卡里不再画算子，只剩 '+D.world+' 只方块——那就是魔方')+'">'
-        + (ui.netOff ? '打开整网' : '关闭整网') + '</button>' : '')
-    + '</span>';
+    + (ui.cardMode ? swBtn('netoff', '整网', !ui.netOff,
+        ui.netOff ? '打开：把算子装回 '+D.world+' 只卡里' : '关掉：卡里不再画算子，只剩 '+D.world+' 只方块') : '');
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = kBtns + legBtn + commBtn + mvBtn + cBtn + vBtns;
+  /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
+     再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
+  $('stagebar').innerHTML = cBtn + kBtns + vBtns + legBtn + commBtn + mvBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
