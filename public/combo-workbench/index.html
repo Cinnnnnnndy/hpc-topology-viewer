@@ -481,7 +481,9 @@ var DATAK = [
 ];
 var dataOn = DATAK.map(function (x) { return x.k; });
 
-var DEFAULT_DOCK_H = 340;
+/* 抽屉默认高度：默认那一屏（训练步全貌）只有 5 条泳道，340px 有一大截是空的。
+   压到 288——正好装下表头 + 时间轴 + 5 条，既不留白也不夹掉行；要看展开后的 32 个 rank，拖分隔条即可。 */
+var DEFAULT_DOCK_H = 288;
 var DEFAULT_SIDE_W = 460;
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;

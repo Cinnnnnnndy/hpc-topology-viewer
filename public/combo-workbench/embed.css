@@ -40,6 +40,9 @@ html[data-chrome='0'] body {
 
 /* 顶栏：段控归宿主的格头，同一排控件出现两次没人知道该点哪个。
    状态栏：那两句是「点了会怎样」和数据出处的说明，格子里再占一行不划算——
-   出处该写在文档和文件头，不该长期占着界面。 */
+   出处该写在文档和文件头，不该长期占着界面。
+   底部图例那一行同理：五个色块的含义看一眼就够，长期占着 38px 不值——
+   台面上这一格是「什么时候动」，纵向每一像素都该给泳道本身。 */
 html[data-chrome='0'] .toolbar,
-html[data-chrome='0'] .statusbar { display: none; }
+html[data-chrome='0'] .statusbar,
+html[data-chrome='0'] .timeline-footer { display: none; }
