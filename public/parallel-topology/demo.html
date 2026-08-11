@@ -626,6 +626,7 @@ var ui = {
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
   mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false,
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
+  solo:false,       /* 正视「单卡铺满」：只画选中那一格、铺满整张画布——一屏读完一层的全部读数 */
   netOff:false,     /* 关掉整网：卡里不再画算子，只剩 world 只实心方块——那就是魔方 */
   layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0
 };
@@ -722,6 +723,7 @@ function urlLoad(){
   if(ui.cardMode && q.get('net')==='0') ui.netOff = true;
   if(q.get('comm')==='1') ui.commOn = true;
   if(q.get('legend')==='1') ui.legendOn = true;
+  if(q.get('solo')==='1') ui.solo = true;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
      mv= 空串 = 全部隐藏，这也是一个有意义的状态（只看结构），不能当成「没写就默认全开」。 */
   if(q.has('mv')){
@@ -767,6 +769,7 @@ function urlWrite(){
   if(ui.view==='chain' && ui.cardMode){ q.set('card','1'); if(ui.netOff) q.set('net','0'); }
   if(ui.view==='chain' && ui.commOn) q.set('comm','1');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
+  if(ui.view==='chain' && ui.solo) q.set('solo','1');
   if(ui.view==='chain'){
     var mv2 = (ui.mv.num?'n':'')+(ui.mv.grad?'g':'')+(ui.mv.perf?'p':'')+(ui.mv.moe?'m':'')+(ui.mv.train?'t':'');
     if(mv2 !== 'ngpmt') q.set('mv', mv2);       /* 全开是默认，不写进链接 */
@@ -3614,6 +3617,39 @@ function graphSVG(o){
     });
     return nrect;
   }
+  /* 右侧读数能写多长：写到**同一水平带上右边第一个节点**为止，不是写到格子边。
+     Q / KV 那两列是并排的，按格子边算的话左列的读数会横穿右列的算子框。 */
+  function roomRight(x9, y9, w9, h9){
+    var lim = o.x + o.w - 2;
+    nodeRects().forEach(function(r8){
+      if(r8[0] > x9 + w9 + 1 && !(y9 + h9 < r8[1] || y9 > r8[1] + r8[3])) lim = Math.min(lim, r8[0] - 4/zs);
+    });
+    return lim;
+  }
+  /* 左边同理。Q/KV 那两列并排时，左列右边紧挨着右列——留给它的空白在**左**边。
+     两边取宽的那一侧写，于是并排的两列各自朝外展开，中间不打架。 */
+  function roomLeft(x9, y9, h9){
+    var lim = o.x + 2;
+    nodeRects().forEach(function(r8){
+      if(r8[0] + r8[2] < x9 - 1 && !(y9 + h9 < r8[1] || y9 > r8[1] + r8[3])) lim = Math.max(lim, r8[0] + r8[2] + 4/zs);
+    });
+    return lim;
+  }
+  /* 把读数放到节点旁边空白更大的那一侧；写不下就返回 '' 交给调用方退回框内画法。 */
+  function sideMetric(n9, x9, y9, w9, h9, col9){
+    var rR = roomRight(x9, y9, w9, h9) - (x9 + w9 + 7/zs);
+    var rL = (x9 - 7/zs) - roomLeft(x9, y9, h9);
+    var right9 = rR >= rL, room9 = right9 ? rR : rL;
+    if(room9*zs < 30) return '';                       /* 连十个字符都放不下就别往旁边挤 */
+    var t9 = sdOpMetric(o.metricLi, n9, D, Math.floor(room9*zs/2.95));
+    if(!t9 || room9*zs < t9.length*2.95) return '';
+    var ax = right9 ? (x9 + w9 + 7/zs) : (x9 - 7/zs);
+    out.push('<line x1="'+(right9 ? x9+w9 : x9).toFixed(1)+'" y1="'+(y9+h9/2).toFixed(1)
+      +'" x2="'+(right9 ? ax-2/zs : ax+2/zs).toFixed(1)+'" y2="'+(y9+h9/2).toFixed(1)
+      +'" style="stroke:var(--pt-bds);stroke-width:'+(0.5/zs).toFixed(2)+'"/>');
+    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', HALO+'pointer-events="none"'));
+    return t9;
+  }
   G.clusters.forEach(function(c){
     if(o.clip && c.id !== o.clip && !inClu(c.parentCluster, o.clip, clu)) return;
     if(o.clip && c.id === o.clip) return;                 /* 外框由调用方画 */
@@ -3716,8 +3752,11 @@ function graphSVG(o){
       if(o.label && h*zs > 5 && w*zs > Math.max(30, String(n.label).length*3.2)){
         /* 张量的数据标注（mHC state / Q / K / V…）：名字与读数上下两行、同一条中轴，
            两行都收在框里（张量框本来就矮，写到框外就分不清是谁的了）。 */
-        var mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
-        if(mt9 && w*zs < mt9.length*3.0) mt9 = '';
+        var mt9 = '', tside9 = false;
+        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg3)');
+        if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
+        if(mt9 && !tside9 && w*zs < mt9.length*3.0) mt9 = '';
+        if(tside9) mt9 = '';
         txts.push(txt(x+w/2, y+h/2+(mt9?-1.4:2)/zs, esc(n.label), 5.2/zs, 'var(--pt-fg3)', 'middle', HALO));
         if(mt9)
           txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg3)', 'middle', HALO+'pointer-events="none"'));
@@ -3812,8 +3851,14 @@ function graphSVG(o){
          框实在太矮才退到框外，那时补一根从框底垂下来的短引线，把归属钉死。
          宽度不够整条时按重要性递减截断（sdOpMetric 的 maxCh），不整条丢。 */
       var nmW9 = (String(n.label).length + tag.length)*3.2;
-      var mtx9 = '', two9 = false, one9 = false;
-      if(labOn9 && o.metricLi != null && !gh){
+      var mtx9 = '', two9 = false, one9 = false, side9 = false;
+      /* 铺满取景里链两侧是大片空白（层模板本来就是一条竖链），读数就走**节点正右侧**、
+         与节点同一条基线，再拉一根短引线——和 sidecar 解剖图里那枚白胶囊同一个位置。
+         这在方阵里行不通（两列卡并排时右侧就是隔壁那张卡，归属会含糊），
+         但铺满时右边只有空白，一行一个读数，读起来就是一张表。 */
+      if(o.metricSide && o.metricLi != null && !gh && labOn9)
+        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg2)');
+      if(!side9 && labOn9 && o.metricLi != null && !gh){
         mtx9 = sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
            这两种都是「在框内」，归属没有歧义；写到框外一律不做——框外那条空当
@@ -3828,10 +3873,10 @@ function graphSVG(o){
       }
       if(labOn9)
         txts.push(txt(x+w/2, y+h/2+(two9 ? -1.4 : 2)/zs,
-                    esc(n.label)+esc(tag)+(one9 ? '<tspan fill="var(--pt-fg3)" font-weight="400">  '+esc(mtx9)+'</tspan>' : ''),
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg3)" font-weight="400">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
-      if(two9)
+      if(two9 && !side9)
         txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mtx9), 4.9/zs, 'var(--pt-fg2)', 'middle', HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
@@ -4458,8 +4503,13 @@ function frontScene(D, g, box){
   if(revOn) pSel = Math.min(D.pp-1, Math.floor(li/lps));
   var liDense = li < denseTop;
   var liStage = Math.min(D.pp-1, Math.floor(li/lps));
-  var CC = cutCP ? D.cp : 1, DD = cutDP ? D.dp : 1;
-  var rows = (ui.cardMode && cutTP) ? D.tp : 1;
+  /* 单卡铺满：只画选中那一格，铺满整张画布。方阵是用来看「有多少份、各拿哪一块」的，
+     而要读一层里每个算子的读数，方阵天然给不出版面——一格只有几十像素宽，得放到
+     2000% 才看得清一行字。铺满之后同样的内容在 100% 就读得完，是同一张图的另一个
+     取景，不是另一张图（用的还是同一个 graphSVG、同一份切痕与读数）。 */
+  var solo = !!ui.solo;
+  var CC = (cutCP && !solo) ? D.cp : 1, DD = (cutDP && !solo) ? D.dp : 1;
+  var rows = (!solo && ui.cardMode && cutTP) ? D.tp : 1;
   var cols = DD * CC;
   /* EP 组占整数列时组间掰缝（同旧方阵/3D：「这儿断开了」要看得见） */
   var GSZ = D.ep * D.etp;
@@ -4476,25 +4526,32 @@ function frontScene(D, g, box){
             卡的重解释，所以它整组沉到底下自成一片，不和上面的列轴门牌混排。
      原来「EP 组」挂在最上面、桶号在下面，同一件事被劈成上下两处；DP 又被 EP 组
      顶得离格子很远，读者要跨过两排别的门牌才找得到它对应哪一列。 */
-  var epRows = cutEP ? 1 : 0;                     /* 桶号一行 */
+  var epRows = (cutEP && !solo) ? 1 : 0;          /* 桶号一行 */
   var epGrpRow = (cutEP && cols > 1) ? 1 : 0;     /* 组名一行 */
-  var TM = 62 + (CC > 1 ? 20 : 0);
-  var BM = 26 + epRows*24 + epGrpRow*24 + (ui.cardMode && cutPP ? 24 : 0);
+  var TM = solo ? 68 : (62 + (CC > 1 ? 20 : 0));   /* 顶上那行坐标读数要让开浮在画布上的工具条 */
+  var BM = solo ? 18 : (26 + epRows*24 + epGrpRow*24 + (ui.cardMode && cutPP ? 24 : 0));
   /* 左右边距要装得下屏幕恒定尺寸的门牌（字号增益之后它们比以前宽），
      右侧还要给读出卡让一条（与 3D 的 RPAD 同理）。 */
-  var LM = 96, RM = 132;
+  var LM = solo ? 16 : 96, RM = solo ? 132 : 132;
   /* 多行（Rank + TP 切片）时行间要塞下一排 ep 桶号门牌，而门牌是屏幕恒定高度：
      行距写死 26 的话，字号增益之后门牌下沿会压到下一行格子上。 */
   var gapX = 10, gapY = (rows > 1 && cutEP) ? 58 : 26, epGapPx = 16;
   var iw = box.w - LM - RM - (cols-1)*gapX - nEpGap*epGapPx;
   var ih = box.h - TM - BM - (rows-1)*gapY;
   var aspect = GB.h / GB.w;
-  var cellW = Math.max(30, Math.min(iw/cols, (ih/rows)/aspect));
+  /* 铺满时不再「整张塞进一屏高」——这份层模板是一条竖着的链（高宽比近 2），
+     塞进 692 的画布高只剩 330 宽，算子框比一行字还窄，等于白铺。
+     改成按**可读性**定尺寸：让内容有 SOLO_H 屏那么高（竖着拖两下读完），
+     宽度换来的是每个算子框都装得下名字 + 一整行读数。宽度不够就退回按宽铺满。 */
+  var SOLO_H = 2.3;
+  var cellW = solo ? Math.max(30, Math.min(iw, (ih/aspect) * SOLO_H))
+                   : Math.max(30, Math.min(iw/cols, (ih/rows)/aspect));
   var cellH = cellW * aspect;
   var gridW = cols*cellW + (cols-1)*gapX + nEpGap*epGapPx;
   var gridH = rows*cellH + (rows-1)*gapY;
   var gx0 = box.x + LM + Math.max(0, (iw + (cols-1)*gapX + nEpGap*epGapPx - gridW)/2);
-  var gy0 = box.y + TM + Math.max(0, (ih + (rows-1)*gapY - gridH)/2);
+  /* 内容比画布高时顶对齐：居中会把开头那几个算子推到画面外，读者一进来就得先往上拖 */
+  var gy0 = box.y + TM + (gridH > ih ? 0 : Math.max(0, (ih + (rows-1)*gapY - gridH)/2));
   function cellX(cq){ return gx0 + cq*(cellW+gapX) + (epEvery ? Math.floor(cq/epEvery)*epGapPx : 0); }
   function cellY(r){ return gy0 + r*(cellH+gapY); }
   /* 算子命中面单独攒一叠、最后再叠上去：整格那只「选这张卡」的命中面在 DOM 里
@@ -4512,11 +4569,11 @@ function frontScene(D, g, box){
   var focusR = rows > 1 ? co.t : 0;
   for(var r = 0; r < rows; r++){
     for(var cq = 0; cq < cols; cq++){
-      var d9 = Math.floor(cq / CC), c9 = CC > 1 ? cq % CC : co.c;
+      var d9 = solo ? co.d : Math.floor(cq / CC), c9 = CC > 1 ? cq % CC : co.c;
       var t9 = rows > 1 ? r : co.t;
       var rk = rankOf(t9, c9, d9, pSel, D);
       var me9 = D.moe ? epOf(t9, c9, d9, D) : null;
-      var isF = hasSel && cq === focusQ && r === focusR;
+      var isF = solo ? hasSel : (hasSel && cq === focusQ && r === focusR);
       var x = cellX(cq), y = cellY(r);
       var lab9 = labAll || (isF && effW >= 130) || (!hasSel && r === 0 && cq === 0 && effW >= 130);
       /* 格框：容器画法（线框），选中的那格用 DP 色加粗 */
@@ -4535,7 +4592,7 @@ function frontScene(D, g, box){
         x:x+3, y:y+3, w:cellW-6, h:cellH-6, g:rk, D:D, zscale:FS_Z, metricLi:li,
         /* 只有放大到看得清标注时才铺算子命中面：没放大时一格里几十个算子挤在
            一百来个像素里，点谁都是碰运气，那时点整格选卡才是对的交互。 */
-        hitArr:(effW >= 130 ? hitOps : null), hitKey:'f'+r+'_'+cq,
+        hitArr:(solo || effW >= 130) ? hitOps : null, hitKey:'f'+r+'_'+cq, metricSide:solo,
         label:lab9, bounds:GB, ghostIds:ghostIds,
         ghostClu:(liDense || !D.moe) ? ['moe-block'] : [],
         cuts:{
@@ -4549,7 +4606,7 @@ function frontScene(D, g, box){
       /* ep 桶号（每格自己的坐标导出，不是全局选中的那份）。落在 EP 组框**外面**：
          框底在 gy0+gridH+5，门牌是屏幕恒定高度，两者随缩放脱钩——原来锚在
          cellH+9 这个场景固定量上，1× 时门牌上沿正好压在框线上。 */
-      if(cutEP && cellW >= 40){
+      if(cutEP && cellW >= 40 && !solo){
         var eb = me9 ? me9.ep : 0;
         var kE9 = Math.round(D.experts/D.ep), e09 = eb*kE9;
         fsPill(body, hit, x + cellW/2, y + cellH + 7 + PILLH/2,
@@ -4569,6 +4626,25 @@ function frontScene(D, g, box){
   /* 上方这一摞自下而上码：离格子最近的是 CP（每列一枚），再上面是 DP（跨组一排），
      最上面是代表层那行字。每一档的行距都按门牌实高 + 一条缝算（PILLH/PGAP），
      跟着同一套 1/FS_Z 反除走——任何倍率下缝宽都一样，不会有哪一档缩没了压上去。 */
+  if(solo){
+    /* 铺满时门牌没有排布可言（就一格），把这张卡的坐标写成顶上一行读数：
+       它回答的是「现在看的是哪一张卡的哪一层」，与方阵里门牌回答的是同一个问题。 */
+    var me8 = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+    var seg8 = [];
+    seg8.push(['r'+((sel !== null && sel < D.world) ? sel : 0), VC.dp]);
+    if(D.dp > 1) seg8.push(['DP'+co.d, VC.dp]);
+    if(D.cp > 1) seg8.push(['CP'+co.c, VC.cp]);
+    if(D.tp > 1) seg8.push(['TP·SP'+co.t, VC.tp]);
+    if(D.pp > 1) seg8.push(['PP'+co.p+'·L'+(co.p*lps)+'–L'+Math.min(L-1,(co.p+1)*lps-1), VC.pp]);
+    if(me8) seg8.push(['ep'+me8.ep, VC.ep]);
+    seg8.push(['L'+li+' · '+(liDense ? 'Dense' : 'MoE'), 'var(--pt-fg2)']);
+    var sx8 = gx0;
+    seg8.forEach(function(sg){
+      var w8 = fsW(sg[0], 6.6/FS_Z) + 10/FS_Z;
+      fsPill(body, hit, sx8 + w8/2, box.y + 48, sg[0], sg[1], sg[1] !== 'var(--pt-fg2)', null, 6.6);
+      sx8 += w8 + 7/FS_Z;
+    });
+  } else {
   var yTop = gy0 - (PILLH/2 + 8/FS_Z);
   var yCP = 0;
   if(CC > 1){ yCP = yTop; yTop -= PILLH + PGAP; }
@@ -4621,8 +4697,9 @@ function frontScene(D, g, box){
     /* 副标题贴着门牌下沿走（PILLH/2 + 一条缝 + 字的上伸），不写场景固定量 16 */
     body.push(fsTxt(lx9, gy0 + cellH/2 + PILLH/2 + 10/FS_Z, sb9, 5.6, 'var(--pt-fg3)', 'middle'));
   }
+  }
   /* ── EP 组框：框住的那几列合起来凑齐全部专家（与 3D 的组框同一件事）── */
-  if(cutEP && cols > 1){
+  if(cutEP && cols > 1 && !solo){
     var tsOf = function(r9){
       if(rows > 1) return [r9];
       if(ui.cardMode) return [co.t];
@@ -5762,6 +5839,14 @@ function renderChainBar(D){
           }).join('')
         + '</div>' : '')
     + '</span>';
+  /* 单卡铺满：只在正视给——它换的是正视这张图的取景（方阵 ⇄ 一格铺满），
+     不是全局模式。方阵回答「有多少份、各拿哪一块」，铺满回答「这一层每个算子
+     的读数是多少」：后者在方阵里要放到 2000% 才读得清，本来就该有个直接的取景。 */
+  var soloBtn = (ui.viewTab === 'front')
+    ? '<button class="pb'+(ui.solo?' is-on':'')+'" data-act="solotoggle" style="--c:'+VC.dp+'"'
+      + ' title="'+(ui.solo?'回到方阵：看 DP·CP·TP 各拿哪一块':'把选中的那一格铺满画布：一屏读完这一层每个算子的读数，不用放大')+'">'
+      + (ui.solo ? '回到方阵' : '单卡铺满') + '</button>'
+    : '';
   /* 全局搜索：属性搜索——层 / rank / 刀（维度+组号）。 */
   /* 属性搜索控件：标签在前，右边是「＋ 搜索」。三个状态由 ui.qOpen 决定：
      ''=收起 · 'menu'=在选属性 · '<属性名>'=在填这个属性的值。 */
@@ -5828,7 +5913,7 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + mvBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + mvBtn + soloBtn + cBtn + vBtns);
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = (ui.cardMode && ui.netOff) ? '' : revBtn; qb.hidden = (ui.cardMode && ui.netOff); }
@@ -6922,6 +7007,12 @@ document.addEventListener('click', function(ev){
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
+  else if(act==='solotoggle'){
+    ui.solo = !ui.solo;
+    ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;      /* 换取景 = 换一张图：机位回标准 */
+    ui.opSel = null;
+    render();
+  }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='mvpick'){ var mk9 = b.getAttribute('data-k'); ui.mv[mk9] = !ui.mv[mk9]; render(); }
   else if(act==='mvall'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = true; }); render(); }
@@ -6938,6 +7029,7 @@ document.addEventListener('click', function(ev){
   else if(act==='viewtab'){
     ui.viewTab = b.getAttribute('data-tab');
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
+    if(ui.viewTab !== 'front') ui.solo = false;
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
