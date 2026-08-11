@@ -133,6 +133,29 @@
 }
 .pt-zoomhud .zsep{width:1px; height:16px; background:var(--pt-bd); margin:0 2px}
 .pt-zoomhud .zword{font-size:11px; min-width:auto; padding:0 9px}
+/* ── 选组 HUD：TP·SP / CP / EP / DP / PP 的「看哪一组」切换，样式与缩放 HUD 同族。
+   这些切换在四个视角里是**同一个东西**，所以做成一条统一的悬浮配置栏钉在画布
+   下沿居中，不随图缩放平移；3D 场景里贴着图的那几条轨照旧（图内语境读数）。
+   点选走 data-act=chainpick，与图内轨/门牌同一套坐标算术。 */
+.pt-grouphud{
+  position:absolute; left:50%; transform:translateX(-50%); bottom:12px; z-index:7;
+  display:flex; align-items:center; gap:14px;
+  padding:5px 12px; border-radius:999px; border:1px solid var(--pt-bd);
+  background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
+  backdrop-filter:blur(6px);
+  max-width:calc(100% - 500px); overflow-x:auto; scrollbar-width:thin;
+}
+.pt-grouphud[hidden]{display:none}
+.pt-ghgrp{display:inline-flex; align-items:center; gap:3px; flex:none}
+.pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
+.pt-ghc{
+  min-width:20px; height:18px; padding:0 5px; border-radius:5px; border:1px solid var(--c);
+  background:repeating-linear-gradient(45deg, color-mix(in srgb, var(--c) 16%, transparent) 0 2px, transparent 2px 5px);
+  color:var(--c); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:16px; white-space:nowrap;
+}
+.pt-ghc.is-on{background:var(--c); border-color:var(--c); color:#fff}
+.pt-ghc:hover{box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent)}
+@media (max-width:1250px){ .pt-grouphud{max-width:calc(100% - 40px); bottom:52px} }
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -428,6 +451,8 @@
       <button class="zword" data-act="viewcenter" title="平移归零，把场景拉回画面中央（缩放不变）">居中</button>
       <button class="zword" data-act="turnreset" title="复位机位：视角、缩放、平移全部回到本视图的标准机位">复位</button>
     </div>
+    <!-- 选组 HUD：四个视角共用的一行切分组切换（TP·SP/CP/EP/DP/PP），钉在画布下沿 -->
+    <div class="pt-grouphud" id="groupHud" hidden></div>
     <div class="pt-animcap" id="animCap"></div>
     <aside class="pt-card pt-detail" id="detail" hidden></aside>
     <div class="pt-card pt-drawer" id="drawer" hidden></div>
@@ -4184,50 +4209,9 @@ function frontScene(D, g, box){
       fsPill(body, hit, bx + bw/2, gy0 - (CC > 1 ? 34 : 18), 'EP 组 '+m8, VC.ep, on8, null, 6.6);
     });
   }
-  /* ── 组选择轨（固定悬浮层）：和 3D 前沿那几条轨同一件事——TP·SP / EP 在正视里
-     没有自己的空间轴时给一条可点的选择带；PP 是深度方向的段选择轨。
-     这几条是**控件**不是图内容：画进缩放变换之外的固定层，钉在画面最下沿，
-     不随图的缩放平移变动（尺寸也不用再做 1/zoom 反除——它根本不被缩放）。 */
+  /* 组选择（TP·SP/EP/DP/CP/PP）统一走画布下沿的选组 HUD（renderGroupHud，
+     四个视角同一条 HTML 悬浮栏）——正视不再自己画一套 SVG 轨。 */
   var fx = [], fxHit = [];
-  (function(){
-    var _fz = FS_Z; FS_Z = 1;                /* 固定层不经过 wrapper：按屏幕原尺寸画 */
-    var railY9 = box.y + box.h - 38;
-    if(!ui.cardMode && (cutTP || (cutEP && D.ep > 1))){
-      var railX9 = box.x + 96;
-      function railH(n, mineI, colr, hxid, name, key, labFn){
-        var cw9 = Math.max(15, Math.min(38, 300/n)), chh = 13;
-        fx.push(fsTxt(railX9 - 6, railY9 + 3.4, name, 6.8, colr, 'end', 'font-weight="800"'));
-        var labStep = Math.max(1, Math.ceil((String(labFn(n-1)).length*4.4) / cw9));
-        for(var b9 = 0; b9 < n; b9++){
-          var bx9 = railX9 + b9*cw9, mine9 = b9 === mineI;
-          fx.push('<rect x="'+bx9.toFixed(1)+'" y="'+(railY9 - chh/2).toFixed(1)+'" width="'+(cw9*0.9).toFixed(1)+'" height="'+chh.toFixed(1)
-            +'" rx="2" style="fill:'+(mine9?mix(colr,55):'url(#'+hxid+'_f)')+';stroke:'+colr
-            +';stroke-width:'+(mine9?1.3:.5)+'"/>');
-          if(mine9 || b9 % labStep === 0)
-            fx.push(fsTxt(bx9 + cw9*0.45, railY9 + 3.4, labFn(b9), 6, mine9 ? '#fff' : 'var(--pt-fg3)', 'middle', mine9 ? 'font-weight="800"' : ''));
-          fxHit.push('<rect x="'+bx9.toFixed(1)+'" y="'+(railY9 - chh/2 - 2).toFixed(1)+'" width="'+(cw9*0.9).toFixed(1)+'" height="'+(chh+4).toFixed(1)
-            +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="'+key+'" data-i="'+b9+'"/>');
-        }
-        railX9 += n*cw9 + 60;
-      }
-      if(cutTP) railH(D.tp, co.t, VC.tp, 'hxTP', 'TP·SP', 't', function(i){ return String(i); });
-      if(cutEP) railH(D.ep, meF ? meF.ep : 0, VC.ep, 'hxEP', 'EP', 'e', function(i){ return String(i); });
-    }
-    if(cutPP){
-      var yPP = box.y + box.h - 16;
-      var xPP = box.x + 96;
-      fx.push(fsTxt(xPP - 8, yPP + 3, 'PP', 7, VC.pp, 'end', 'font-weight="800"'));
-      for(var p9 = 0; p9 < D.pp; p9++){
-        var lo9 = p9*lps, hi9 = Math.min(L-1, (p9+1)*lps - 1);
-        var plab = 'PP'+p9+' · L'+lo9+'–'+hi9;
-        var pw9 = fsPill(fx, fxHit, xPP + 40, yPP, plab, VC.pp, p9 === pSel, ['p', p9], 6.6);
-        xPP += pw9 + 12;
-      }
-      fx.push(fsTxt(xPP + 6, yPP + 3, ui.cardMode ? '换段 = 看这一摞里深处那张卡' : '段沿深度重叠——层深方向看侧视', 6, 'var(--pt-fg3)', 'start'));
-    }
-    if(fx.length) fx.unshift('<defs>'+hatchDefsSVG(1, '_f')+'</defs>');
-    FS_Z = _fz;
-  })();
   var CID = 'fsClip';
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
@@ -4656,6 +4640,33 @@ function syncZoomHud(){
   var el = $('zoomPct');
   if(el) el.textContent = Math.round(ui.zoom3 * 100) + '%';
 }
+/* 选组 HUD：落下的每把刀一组格子，点第几格「本卡」就换到那一组——四个视角同一条。
+   点选复用 chainpick（document 上那只委托监听认 data-act，无须另接线）。 */
+function renderGroupHud(D){
+  var el = $('groupHud'); if(!el) return;
+  if(ui.view !== 'chain' || (ui.cardMode && ui.netOff) || !D.ok){ el.hidden = true; return; }
+  var g = (sel !== null && sel < D.world) ? sel : 0;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  var lps = D.layersPerStage, L = D.layers;
+  var groups = [];
+  if(ui.kDP && D.dp > 1) groups.push({k:'d', name:'DP', n:D.dp, cur:co.d, col:VC.dp});
+  if(ui.kCP && D.cp > 1) groups.push({k:'c', name:'CP', n:D.cp, cur:co.c, col:VC.cp});
+  if(ui.kTP && D.tp > 1) groups.push({k:'t', name:'TP·SP', n:D.tp, cur:co.t, col:VC.tp});
+  if(ui.kEP && D.moe && D.ep > 1) groups.push({k:'e', name:'EP', n:D.ep, cur:me ? me.ep : 0, col:VC.ep});
+  if(ui.kPP && D.pp > 1) groups.push({k:'p', name:'PP', n:D.pp, cur:co.p, col:VC.pp,
+    lab:function(i){ return 'PP'+i+'·L'+(i*lps)+'–'+Math.min(L-1,(i+1)*lps-1); }});
+  if(!groups.length){ el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = groups.map(function(gr){
+    var cells = '', i;
+    for(i = 0; i < gr.n; i++){
+      cells += '<button class="pt-ghc'+(i === gr.cur ? ' is-on' : '')+'" data-act="chainpick" data-k="'+gr.k+'" data-i="'+i
+        +'" title="'+gr.name+' 第 '+i+' 组：点了把「本卡」换到这一组，图上的实心/斜纹、门牌全部跟着换">'
+        +(gr.lab ? esc(gr.lab(i)) : i)+'</button>';
+    }
+    return '<span class="pt-ghgrp" style="--c:'+gr.col+'"><b>'+gr.name+'</b>'+cells+'</span>';
+  }).join('');
+}
 function nudgeZoom(f){
   ui.zoom3 = clamp(ui.zoom3 * f, 0.2, 20);
   applyViewTransform();
@@ -4668,6 +4679,7 @@ function renderChain(D){
     renderRubik(D); renderChainBar(D);
     $('stageNote').hidden = true; $('detach').hidden = true;
     if(zh) zh.hidden = true;
+    renderGroupHud(D);
     return;
   }
   $('rubik').hidden = true;
@@ -4721,6 +4733,7 @@ function renderChain(D){
     ? '<g pointer-events="none">'+(scene.fixed||'')+'</g>'+(scene.fixedHit||'') : '';
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'"><g id="vroot">'+defsSVG()+parts.join('')+sceneHit+'</g>'+fixedLayer+'</svg>';
   viewRendered = {zoom:ui.zoom3, panX:ui.panX3, panY:ui.panY3, vw:VW, vh:H};
+  renderGroupHud(D);
   renderChainBar(D);
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
      纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
@@ -5943,6 +5956,7 @@ function render(){
   if(ui.view!=='chain'){
     $('rubik').hidden = true; $('stage').hidden = false;
     var zh9 = $('zoomHud'); if(zh9) zh9.hidden = true;
+    var gh9 = $('groupHud'); if(gh9) gh9.hidden = true;
   }
   var foot = document.querySelector('.pt-foot');
   if(ui.view==='chain'){ foot.style.display = 'none'; }
