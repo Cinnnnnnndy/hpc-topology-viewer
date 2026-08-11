@@ -49,15 +49,13 @@
 /* ① Foundation —— 抄自 cube-cockpit.html（浅色优先 + 主题无关的比例尺） */
 :root{
   --ark-neutral-1:#F5F5F5; --ark-neutral-2:#FFFFFF;
-  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6; --ark-domain-aux:#7C8DB8;
+  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6;
   --ark-green-500:#04D793; --ark-orange-500:#FFAA3B; --ark-red-500:#FF4B7B;
-  --ark-violet-400:#9B3CF6;
   --font-sans:'Inter','Source Han Sans SC','PingFang SC','Noto Sans SC',sans-serif;
   --font-mono:'JetBrains Mono','Fira Code','Consolas',monospace;
-  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
-  --panel-shell-radius:14px;
+  --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
   --duration-fast:100ms;
-  --comp-toolbar-h:44px; --scrollbar-w:5px;
+  --scrollbar-w:5px;
 }
 /* ② Semantic —— 浅色（默认） */
 :root, :root[data-theme="light"]{
@@ -70,34 +68,68 @@
   --state-hover:rgba(0,0,0,.05); --state-press:rgba(0,0,0,.09);
   --state-muted:rgba(0,0,0,.05); --state-selected:rgba(67,105,239,.10);
   --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12);
-  --stage-bg:#f5f5f5;
-  --dock-title:#8a5f00;      /* 驾驶舱抽屉标题那抹琥珀，浅色下的取值 */
 }
 /* ② Semantic —— 深色（单块覆盖） */
 :root[data-theme="dark"]{
-  --background:#0b0b0b; --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626;
+  --background:#101010; --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626;
   --foreground:rgba(255,255,255,.90); --foreground-secondary:rgba(255,255,255,.60); --foreground-muted:rgba(255,255,255,.40);
   --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.16);
   --focus-ring:rgba(67,105,239,.42);
   --state-hover:rgba(255,255,255,.06); --state-press:rgba(255,255,255,.10);
   --state-muted:rgba(255,255,255,.06); --state-selected:rgba(67,105,239,.14);
   --shadow-sm:0 1px 3px rgba(0,0,0,.28); --shadow-md:0 6px 18px rgba(0,0,0,.34);
-  --stage-bg:#101010;
-  --dock-title:var(--warning);
 }
-/* ③ 数据编码色 —— 主题无关 */
-:root{ --dv-tp:#39c5cf; --dv-pp:var(--warning); --dv-dp:var(--primary); --dv-ep:var(--ark-violet-400); }
-/* ④ 兼容别名 —— 与驾驶舱同名，方便两边互看 */
+/* ═══ ide-frame 层 ═══════════════════════════════════════════════════
+   背景、面板描边、标题字号字色照 pto-design-system 的 ide-frame pattern
+   （参考页：compute-graph-viewer/distributed-communication-observatory-3d-traffic）。
+   三件事：
+     · 页面底不是一块纯色，是**四团光晕压在一条竖向渐变上**（左上紫、右上蓝、
+       中上青、左下琥珀）；面板浮在它上面，所以面板必须半透明+磨砂，否则
+       等于拿几块不透明的板把底下的渐变全糊死，这套语言就白搭了；
+     · 面板描边用 --border-subtle（比 --border-default 更淡）+ radius-md 8px，
+       不是我先前那套 12/14px 的厚圆角；
+     · 标题统一 600 12.5px：顶栏那条用 --foreground-secondary（它是路径/身份，
+       不该抢戏），格头那条用 --foreground。
+   注意面板里塞的是 iframe（不透明），磨砂只在格头那一条和边缘读得出来——
+   这是内嵌整页的必然代价，不是没生效。
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ide-bg-start:#fdfdff; --ide-bg-mid:#f6f7fb; --ide-bg-end:#eceff6;
+  --ide-glow-left:155 96 170; --ide-glow-right:24 99 220;
+  --ide-glow-center:20 184 166; --ide-glow-lower:245 158 11;
+  --ide-a-left:.16; --ide-a-right:.14; --ide-a-center:.08; --ide-a-lower:.06;
+  --ide-frame-pane-bg:#ffffff;
+  --ide-frame-pane-fill:color-mix(in srgb, var(--ide-frame-pane-bg) 80%, transparent);
+  --ide-frame-pane-header-fill:color-mix(in srgb, var(--ide-frame-pane-bg) 72%, transparent);
+  --ide-frame-pane-backdrop-filter:blur(18px) saturate(1.18);
+  --ide-frame-pane-shadow:0 12px 30px color-mix(in srgb, var(--background) 10%, transparent);
+  --ide-frame-pane-border:var(--border-subtle);
+  --ide-frame-header-height:32px;
+  --ide-frame-title-font:600 12.5px/1.2 var(--font-sans);
+  --ide-frame-page-bg:
+    radial-gradient(circle at top left,  rgb(var(--ide-glow-left)   / var(--ide-a-left)),   transparent 28%),
+    radial-gradient(circle at top right, rgb(var(--ide-glow-right)  / var(--ide-a-right)),  transparent 30%),
+    radial-gradient(circle at 48% 6%,    rgb(var(--ide-glow-center) / var(--ide-a-center)), transparent 34%),
+    radial-gradient(circle at 18% 86%,   rgb(var(--ide-glow-lower)  / var(--ide-a-lower)),  transparent 34%),
+    linear-gradient(180deg, var(--ide-bg-start) 0%, var(--ide-bg-mid) 42%, var(--ide-bg-end) 100%);
+}
+:root[data-theme="dark"]{
+  --ide-bg-start:#17181d; --ide-bg-mid:#101114; --ide-bg-end:#0c0d10;
+  --ide-glow-right:67 105 239;
+  --ide-a-left:.12; --ide-a-right:.12; --ide-a-center:.06; --ide-a-lower:.05;
+  --ide-frame-pane-bg:var(--background);
+}
+/* ③ 兼容别名 —— 与驾驶舱同名，方便两边互看 */
 :root{
   --sys-border:var(--border-default); --sys-border-strong:var(--border-strong);
   --sys-raised:var(--surface-2); --sys-raised-hover:var(--surface-3);
-  --bg:var(--background); --panel:var(--surface-1); --panel2:var(--surface-2);
+  --bg:var(--background); --panel:var(--surface-1);
   --border:var(--border-default); --txt:var(--foreground); --dim:var(--foreground-secondary);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{background:var(--bg);color:var(--txt);font-family:var(--font-sans);font-size:13px;overflow:hidden}
+body{background:var(--ide-frame-page-bg);color:var(--txt);font-family:var(--font-sans);font-size:13px;overflow:hidden}
 *{scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.28) transparent}
 ::-webkit-scrollbar{width:var(--scrollbar-w);height:var(--scrollbar-w)}
 ::-webkit-scrollbar-track{background:transparent}
@@ -118,8 +150,8 @@ a.btn{text-decoration:none}
 /* ═══ 顶栏 ═══ */
 /* 顶栏坐在页面底色上：不铺自己的底色、不画下边框（照 HPC 拓扑查看器那条）。
    面板是浮在这层底色之上的圆角块，顶栏再来一条横线会把它切成上下两片。 */
-#topbar{height:var(--comp-toolbar-h);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px}
-#topbar .title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--txt);margin-right:6px;
+#topbar{min-height:48px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px}
+#topbar .title{font:var(--ide-frame-title-font);font-weight:700;color:var(--foreground-secondary);
   white-space:nowrap;display:inline-flex;align-items:center}
 #topbar .spacer{flex:1 1 auto}
 .icon-btn{min-width:30px;padding:0 8px;font-size:13px}
@@ -140,31 +172,39 @@ a.btn{text-decoration:none}
 .menu-sep{height:1px;margin:6px 4px;background:var(--border-subtle)}
 
 /* ═══ 舞台（上面那格） ═══ */
-#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0;background:var(--stage-bg)}
+#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0}
 
 /* 面板 = 一格。舞台格铺满剩余高度，抽屉格定高可拖。 */
-.slot{display:flex;flex-direction:column;min-height:0;background:var(--panel);
-  border:1px solid var(--sys-border);border-radius:var(--panel-shell-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+.slot{display:flex;flex-direction:column;min-height:0;overflow:hidden;
+  background:var(--ide-frame-pane-fill);background-clip:padding-box;
+  border:1px solid var(--ide-frame-pane-border);border-radius:var(--radius-md);
+  box-shadow:var(--ide-frame-pane-shadow);
+  backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+  -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter)}
 .slot[hidden]{display:none}
 #slot-topology{flex:1 1 auto}
 .slot[data-folded="1"]{flex:0 0 auto}
 .slot[data-folded="1"] .slot-body{display:none}
 
 /* 格头：标题 + 段控 + 动作，就是驾驶舱抽屉那一排 */
-.slot-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:7px 10px 7px 12px;
-  border-bottom:1px solid var(--border-subtle);background:var(--panel)}
-.slot-title{font-size:12px;font-weight:600;color:var(--txt);margin-right:2px;white-space:nowrap;
+.slot-head{flex:0 0 auto;min-height:var(--ide-frame-header-height);display:flex;align-items:center;gap:8px;
+  padding:3px 10px;border-bottom:0;background:var(--ide-frame-pane-header-fill);
+  backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+  -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter)}
+/* 格头里的控件按 32px 那条基线收一号，否则一排 28px 的按钮把头撑成 40px */
+.slot-head button{min-height:24px;padding:0 9px;font-size:11.5px}
+.slot-title{margin-right:2px;color:var(--foreground);font:var(--ide-frame-title-font);white-space:nowrap;
   display:flex;align-items:center;gap:6px}
 .slot-head .spacer{flex:1 1 auto}
 
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
-.tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
+.tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
 .tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
-  padding:4px 10px;color:var(--dim);font-weight:500;min-height:24px;font-size:12px}
+  padding:3px 9px;color:var(--dim);font-weight:500;min-height:22px;font-size:11.5px}
 .tabs button:hover{background:var(--state-hover);border-color:transparent;color:var(--txt)}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
-.slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--panel)}
+.slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--ide-frame-pane-fill)}
 .slot-body > iframe{display:block;width:100%;height:100%;border:0}
 .slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
   font-size:12px;line-height:1.8;color:var(--dim)}
@@ -174,12 +214,9 @@ a.btn{text-decoration:none}
 .slot-fallback code{font-family:var(--font-mono);font-size:11.5px;background:var(--state-muted);padding:1px 5px;border-radius:4px}
 
 /* ═══ 抽屉（下面那格）—— 驾驶舱 #drawer 的形制 ═══ */
-#dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;display:flex;flex-direction:column;
-  margin:0 8px 8px;background:var(--panel);border:1px solid var(--sys-border);
-  border-radius:var(--panel-shell-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+#dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;margin:0 8px 8px}
 #dock[hidden]{display:none}
 #dock[data-folded="1"]{height:auto;min-height:0}
-#dock .slot-title{color:var(--dock-title)}
 
 /* 舞台与抽屉之间的分隔条 */
 #splitter{flex:0 0 auto;height:10px;margin:0 8px;cursor:ns-resize;display:grid;place-items:center;touch-action:none}
