@@ -161,7 +161,7 @@ a.btn{text-decoration:none}
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0}
 
 /* 面板 = 一格。舞台格铺满剩余高度，抽屉格定高可拖。 */
-.slot{display:flex;flex-direction:column;min-height:0;overflow:hidden;
+.slot{position:relative;display:flex;flex-direction:column;min-height:0;overflow:hidden;
   background:var(--ide-frame-pane-fill);background-clip:padding-box;
   border:1px solid var(--ide-frame-pane-border);border-radius:var(--radius-md);
   box-shadow:var(--ide-frame-pane-shadow);
@@ -189,6 +189,19 @@ a.btn{text-decoration:none}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
 .slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--ide-frame-pane-fill)}
+
+/* 舞台格头压在画布上，与 demo 自己那排控件同一条基线。
+   demo 的控件浮在画布右上角，格头再单独占一行的话，就是「一个标题一行、
+   一排按钮一行」，白吃 30px 还把卡切成两截。坐标取自 demo 的 .pt-stagetitle
+   （top:10px / left:16px / min-height:30px —— 它那行注释写的就是「与右上工具条
+   同一条基线」），所以对齐是按它的规矩来的，不是我目测的。
+   （.slot 上那句 position:relative 是给这条绝对定位当锚的。不写也“碰巧”能用——
+   backdrop-filter 会让元素成为绝对定位后代的包含块——但那是副作用，哪天把磨砂
+   去掉，格头就会飞到视口左上角。显式写出来。）
+   pointer-events:none：这一格的格头只有一个标题，不该挡住底下画布的拖拽。
+   抽屉那格不这样——它的格头有段控和收起，必须能点，也没有浮在内容上的控件。 */
+#slot-topology .slot-head{position:absolute;top:10px;left:16px;z-index:5;
+  min-height:30px;padding:0;pointer-events:none}
 .slot-body > iframe{display:block;width:100%;height:100%;border:0}
 .slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
   font-size:12px;line-height:1.8;color:var(--dim)}
