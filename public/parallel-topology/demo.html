@@ -521,6 +521,15 @@ var PRESETS = [
      SP 要看得见，靠的是把 SP 画出来（TP·SP 轨、norm 区横纹、TP/SP AllGather），
      不是把 TP 的份数撑大。 */
   {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  /* 同为 128 卡的另外两档，用来在「四维各自出不出得来形状」上做对照——评审提的
+     「dp 是 16 合理么 / 要不要放大 EP」问的就是这件事，与其在默认里定死，不如三档
+     并排放进配置抽屉当场切。EP 组数 = (dp·cp·tp)/(ep·etp)：
+       default128  tp2·pp4·dp16·ep8 → 32/8  =  4 组，每组 4 列
+       ep4-128     tp2·pp4·dp16·ep4 → 32/4  =  8 组，每组 2 列（组更多、组框更密）
+       tp4-128     tp4·pp4·dp8 ·ep2 →  8/2… TP 加倍、DP 减半，换一条轴看形状
+     三条的模型规格逐位相同，只动并行度——否则比的就不是切法而是模型。 */
+  {id:'ep4d128', name:'128卡 tp2·pp4·dp16·ep4', cfg:{world:128, tp:2, cp:1, pp:4, ep:4, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  {id:'tp4d128', name:'128卡 tp4·pp4·dp8·ep2', cfg:{world:128, tp:4, cp:1, pp:4, ep:2, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
@@ -4154,18 +4163,32 @@ function frontScene(D, g, box){
      这行字在场景坐标里比格子宽（两者随缩放等比变化，多大倍率都一样宽）——
      相邻两条互相叠加、描边光晕互相抠字，看起来就是一行乱码。axis 级的信息
      标在 axis 上，正是旧方阵注释里那句「32 份重复，轴上标一次就够」。 */
-  var yDP = gy0 - (CC > 1 ? 34 : 18) - (cutEP ? 15 : 0);
+  /* 门牌本身是**屏幕恒定**尺寸（fsPill 内部把字号、内边距一律按 1/FS_Z 反除），
+     而这里的行距原来写成场景固定量 15——两者随缩放脱钩：放大到一定倍率，行距在
+     屏幕上缩没了，DP 门牌就压到下面那排「EP 组」门牌上（实机可见二者贴边）。
+     行距改成按门牌实高算，跟着同一套反除走，任何倍率下都留同样宽的一条缝。 */
+  var PILLH = 13.6/FS_Z;                       /* = fsPill 的 fs + 7/FS_Z，取默认 6.6 档 */
+  var yDP = gy0 - (CC > 1 ? 34 : 18) - (cutEP ? PILLH + 5/FS_Z : 0);
   var lbAll = 'L'+li + (ui.cardMode && cutPP ? ' · PP'+liStage : '') + ' · ' + (liDense ? 'Dense' : 'MoE')
     + ' 代表层' + (revOn ? '（层反查）' : '') + '——每格画的是同一层';
   body.push(fsTxt(gx0 + gridW/2, yDP - 15, esc(lbAll), 7.2, 'var(--pt-fg2)', 'middle',
     'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
   if(cutDP){
     var stepD = D.dp > 10 ? 2 : 1;
-    for(var d2 = 0; d2 < DD; d2++){
-      if(d2 % stepD !== 0 && d2 !== DD-1) continue;
+    /* 抽稀之后仍要把**最后一枚**画出来（读者得知道这排到哪儿收尾），但原来的写法是
+       在抽稀序列之外硬补一枚：dp=16 抽出 0,2,…,14，再补一个 15，于是 DP14 与 DP15
+       的间距只有其它相邻门牌的一半，两块贴在一起。改成先排好序列，末枚若与上一枚
+       挨得比 stepD 还近，就让上一枚让位——间距宁可不均，也不能撞。 */
+    var dIdx = [];
+    for(var d2 = 0; d2 < DD; d2++) if(d2 % stepD === 0) dIdx.push(d2);
+    if(dIdx[dIdx.length-1] !== DD-1){
+      if(DD-1 - dIdx[dIdx.length-1] < stepD) dIdx.pop();
+      dIdx.push(DD-1);
+    }
+    dIdx.forEach(function(d2){
       var xa = cellX(d2*CC), xb = cellX(d2*CC + CC - 1) + cellW;
       fsPill(body, hit, (xa+xb)/2, yDP, 'DP'+d2, VC.dp, hasSel && co.d === d2, ['d', d2]);
-    }
+    });
   } else if(D.dp > 1 && cellW >= 60){
     fsPill(body, hit, gx0 + gridW/2, yDP, 'DP ×'+D.dp+'（刀抬起：副本重叠）', VC.dp, false, null, 6.4);
   }
@@ -4176,12 +4199,23 @@ function frontScene(D, g, box){
         hasSel && co.c === c2, ['c', c2], 6.6);
     }
   }
+  /* 左侧行标同样是屏幕恒定尺寸、场景固定偏移（gx0−26）的组合：放大后那 26 个场景
+     单位在屏幕上不够放一块门牌，门牌就从画布左沿被 clip 切掉半截（实机可见「每格还
+     叠着 N 片」缺字）。按门牌实宽把锚点夹回来，保证左沿不越过 box.x。 */
+  function leftAnchor(halfW, want){ return Math.max(box.x + halfW + 2/FS_Z, want); }
+  /* fsPill 的宽：len×fs×0.62 + 10/FS_Z；中日文按 ~0.9em 估，比拉丁宽 */
+  function pillHalf(label, fs){ return (String(label).length*(fs/FS_Z*0.62) + 10/FS_Z)/2; }
   if(rows > 1){
-    for(var r2 = 0; r2 < rows; r2++)
-      fsPill(body, hit, gx0 - 26, cellY(r2) + cellH/2, 'TP·SP'+r2, VC.tp, hasSel && co.t === r2, ['t', r2], 6.8);
+    for(var r2 = 0; r2 < rows; r2++){
+      var lb2 = 'TP·SP'+r2;
+      fsPill(body, hit, leftAnchor(pillHalf(lb2, 6.8), gx0 - 26), cellY(r2) + cellH/2,
+        lb2, VC.tp, hasSel && co.t === r2, ['t', r2], 6.8);
+    }
   } else if(cutTP){
-    var lt9 = fsPill(body, hit, gx0 - 24, gy0 + cellH/2, 'TP·SP ×'+D.tp, VC.tp, false, null, 6.6);
-    body.push(fsTxt(gx0 - 24, gy0 + cellH/2 + 16/FS_Z, '每格还叠着 '+D.tp+' 片', 5.6, 'var(--pt-fg3)', 'middle'));
+    var lb9 = 'TP·SP ×'+D.tp, sb9 = '每格还叠着 '+D.tp+' 片';
+    var lx9 = leftAnchor(Math.max(pillHalf(lb9, 6.6), sb9.length*(5.6/FS_Z*0.9)/2), gx0 - 24);
+    fsPill(body, hit, lx9, gy0 + cellH/2, lb9, VC.tp, false, null, 6.6);
+    body.push(fsTxt(lx9, gy0 + cellH/2 + 16/FS_Z, sb9, 5.6, 'var(--pt-fg3)', 'middle'));
   }
   /* ── EP 组框：框住的那几列合起来凑齐全部专家（与 3D 的组框同一件事）── */
   if(cutEP && cols > 1){
