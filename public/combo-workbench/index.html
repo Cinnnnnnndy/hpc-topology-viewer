@@ -172,8 +172,10 @@ a.btn{text-decoration:none}
 .knives button[aria-pressed="true"]:hover{filter:brightness(1.06)}
 
 .dmenu{position:relative}
-.dmenu > button{min-height:24px;padding:0 9px;font-size:11.5px;border-radius:var(--radius-pill)}
-.dmenu > button b{font-weight:700;color:var(--primary)}
+.dmenu > button{min-height:24px;padding:0 9px;font-size:11.5px;border-radius:var(--radius-pill);gap:4px}
+.dmenu > button > *{line-height:1;display:inline-flex;align-items:center}
+.dmenu > button b{font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums}
+.dmenu > button .cv{font-size:9px;opacity:.55;margin-top:1px}
 .dmenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:40;display:none;min-width:220px;padding:6px;
   background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
 .dmenu.open .dmenu-pop{display:block}
@@ -229,7 +231,12 @@ body.is-resizing-x iframe{pointer-events:none}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
 .slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--ide-frame-pane-fill)}
-.slot-body > iframe{display:block;width:100%;height:100%;border:0}
+.slot-body > iframe{display:block;width:100%;height:100%;border:0;
+  opacity:0;transition:opacity 140ms ease}
+/* 装配完成才淡入。pattern 的工具条是 JS 后建的，我们要等它出来才能藏控件、
+   对主题、点适配；不挡这一下，用户就会先看到它自己的默认样子（深色、控件没藏、
+   没适配）再被我们改掉——那正是「有一个闪动」。 */
+.slot[data-ready="1"] .slot-body > iframe{opacity:1}
 .slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
   font-size:12px;line-height:1.8;color:var(--dim)}
 .slot[data-broken="1"] .slot-fallback{display:grid}
@@ -269,7 +276,7 @@ body.is-resizing iframe{pointer-events:none}
     <div class="knives" role="group" aria-label="落哪几把刀" id="knives"></div>
     <span class="sep" aria-hidden="true"></span>
     <div class="dmenu" id="dmenu">
-      <button id="dmenuBtn" aria-haspopup="true" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）">数据 <b id="dmenuCount">5</b> <span aria-hidden="true">⌄</span></button>
+      <button id="dmenuBtn" aria-haspopup="true" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）"><span>数据</span><b id="dmenuCount">5</b><span class="cv" aria-hidden="true">⌄</span></button>
       <div class="dmenu-pop" role="menu">
         <div class="dmenu-acts">
           <button type="button" data-dact="all">全选</button>
@@ -361,15 +368,27 @@ var SLOTS = [
        的控件，它的 setTheme 会顺带重算调色板和重绘）。 */
     id: 'sidecar',
     el: 'slot-sidecar',
-    themeByDom: true,
     /* 自带控件里被框架层接管的那几个：数据（提到顶栏）、浅色/深色（跟外壳走）、
        适配（缩放是这一格自己的事，但它和上面两颗挤在一排，留着就是半排废按钮）。
        数据那组有专属 class，CSS 藏得掉；浅色/适配只有通用 class，只能按文字找，
        所以走 hideByText——它们的节点在换主题时不重建（setTheme 只改文字和状态），
        内联 display:none 会一直留着。 */
-    hideCss: '.pto-training-sidecar__data-control{display:none!important}',
+    /* 三件事一起注入：
+       ① 数据那组归框架层了，藏掉；
+       ② 这一格是窄栏，pattern 在窄宽度下会把自己的标题藏掉、控件贴左——
+          把标题放回来、控件推到右边，恢复它宽屏时的那个排布；
+       ③ 段控换行时别把行撑歪。 */
+    hideCss: '.pto-training-sidecar__data-control{display:none!important}' +
+             '.pto-model-deck__title{display:flex!important}' +
+             '.pto-model-deck__toolbar{margin-left:auto;justify-content:flex-end;flex-wrap:wrap}',
     hideByText: ['浅色', '深色', '适配'],
     hideGroup: '.pto-model-deck__control',
+    /* 默认按「适配」显示：这一格宽度由台面决定，pattern 出厂那个缩放不认得它。
+       装配完点一次，之后每次拖分隔条/改窗口再点一次（见 refit）。 */
+    fitByText: '适配',
+    /* 主题：不比 data-theme（我们可能已经先把属性设过了），比它自己按钮上的字——
+       写着「浅色」说明它当前是深色。这是它内部状态唯一可靠的外部读数。 */
+    themeByDom: true,
     src: function () {
       return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html' + (BUILD ? '?v=' + BUILD : '');
     }
@@ -566,6 +585,7 @@ function load(id) {
   var next = BY_ID[id].src(state[id]);
   if (frame.getAttribute('src') === next) return;
   state[id].loaded = false;
+  delete slotEl(id).dataset.ready;
   frame.setAttribute('src', next);
 }
 
@@ -580,10 +600,7 @@ function wireFrame(slot) {
     clearTimeout(timer);
     state[slot.id].loaded = true;
     delete host.dataset.broken;
-    hideTakenOver(slot, frame);
-    if (slot.themeByDom) syncFrameTheme(frame);
-    applyKnives();
-    applyData();
+    settleFrame(slot, frame);
   });
 }
 
@@ -721,14 +738,58 @@ function syncFrameTheme(frame) {
   try {
     var doc = frame.contentDocument;
     if (!doc || !doc.documentElement) return;
-    if ((doc.documentElement.dataset.theme || 'dark') === theme()) return;
-    var btns = doc.querySelectorAll('button');
+    /* 判据是**它按钮上的字**，不是 data-theme：属性我们自己可能先设过，
+       而它内部还记着旧的 state.theme——按属性判会「看起来对了」却不重算调色板。
+       按钮写「浅色」＝它当前是深色（那是它给你的下一步），反之亦然。 */
+    var btns = doc.querySelectorAll('button'), want = theme(), hit = null;
     for (var i = 0; i < btns.length; i++) {
       var t = (btns[i].textContent || '').trim();
-      if (t === '浅色' || t === '深色') { btns[i].click(); return; }
+      if (t === '浅色' || t === '深色') { hit = { el: btns[i], now: t === '浅色' ? 'dark' : 'light' }; break; }
     }
-    doc.documentElement.dataset.theme = theme();   // 找不到按钮，退而求其次
+    if (hit) { if (hit.now !== want) hit.el.click(); return; }
+    doc.documentElement.dataset.theme = want;   // 连按钮都没有，退而求其次
   } catch (err) { /* 跨源，放弃 */ }
+}
+
+/* 点它自己的「适配」：这一格的宽度由台面决定，pattern 出厂的缩放不认得它。 */
+function fitFrame(slot, frame) {
+  if (!slot.fitByText) return;
+  try {
+    var doc = frame.contentDocument;
+    if (!doc) return;
+    var btns = doc.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      if ((btns[i].textContent || '').trim() === slot.fitByText) { btns[i].click(); return true; }
+    }
+  } catch (err) { /* 跨源 */ }
+  return false;
+}
+
+/* 装配：pattern 的工具条是 JS 后建的，load 事件那一刻多半还不在，
+   所以轮询等它出来，再一次性把「藏控件 / 对主题 / 落框架层状态 / 适配」做完，
+   最后才让这一格淡入。等不到就到点放行——宁可样式没接管，也不能白屏。 */
+function settleFrame(slot, frame) {
+  var host = slotEl(slot.id), tries = 0;
+  function ready() {
+    try {
+      var doc = frame.contentDocument;
+      if (!doc || doc.readyState === 'loading') return false;
+      if (slot.hideByText || slot.fitByText) return !!doc.querySelector('button');
+      return true;
+    } catch (err) { return true; }   // 跨源：没什么可等的
+  }
+  function done() {
+    hideTakenOver(slot, frame);
+    if (slot.themeByDom) syncFrameTheme(frame);
+    applyKnives();
+    applyData();
+    fitFrame(slot, frame);
+    host.dataset.ready = '1';
+  }
+  (function poll() {
+    if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
+    setTimeout(poll, 150);
+  })();
 }
 
 /* ── 格头动作 ─────────────────────────────────────────────────────── */
@@ -813,18 +874,34 @@ function wireSplit(sel, cls, onMove) {
   });
 }
 
+/* 格子宽高一变，「适配」算出来的缩放就过期了——重点一次。
+   防抖：拖动过程中每帧点一次既没必要也会卡。 */
+var refitTimer = 0;
+function refitAll() {
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(function () {
+    SLOTS.forEach(function (slot) {
+      if (!slot.fitByText || !state[slot.id] || !state[slot.id].loaded) return;
+      fitFrame(slot, $('iframe[data-slot="' + slot.id + '"]'));
+    });
+  }, 220);
+}
+window.addEventListener('resize', refitAll);
+
 function wireSplitters() {
   /* 横条：往下拖 = 抽屉变矮，所以是 h0 - clientY；上限留 180px 给舞台 */
   wireSplit('#splitter', 'is-resizing', function (start, e) {
     var max = Math.max(160, window.innerHeight - 180);
     dockH = Math.max(120, Math.min(max, Math.round(start.h0 - (e.clientY - start.y))));
     applyDockH();
+    refitAll();
   });
   /* 竖条：往右拖 = 左格变宽；右边至少留 320px 给并行拓扑 */
   wireSplit('#vsplit', 'is-resizing-x', function (start, e) {
     var max = Math.max(240, window.innerWidth - 320);
     sideW = Math.max(240, Math.min(max, Math.round(start.w0 + (e.clientX - start.x))));
     applySideW();
+    refitAll();
   });
 }
 
