@@ -1988,7 +1988,7 @@ function netScene(D, g, box, step){
   }
   /* 算子命中面单独攒一叠、最后再叠上去：卡壳那只「选这张卡」的命中面在 DOM 里
      排在后面，会整片盖住它们（实测点算子只会换选中卡，明细卡打不开）。 */
-  var body = [], hit = [], hitOps = [], nodes = 0, sawn = 0, whole = 0;
+  var body = [], hit = [], hitOps = [], rankTags = [], nodes = 0, sawn = 0, whole = 0;
   var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
   var spot = spotlightHit(D);
   var sh = IXg ? shardMap(D, g) : null;
@@ -2670,10 +2670,20 @@ function netScene(D, g, box, step){
              盒子糊成一片米色。参考页那套 rank deck 正是几乎不填色：顶面留一层
              极淡的底给体积感，其余交给棱。选中那只照旧要能一眼认出来。 */
           if(ui.netOff){
-            if(!spot) body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-fg)',(3 + dT*2).toFixed(1))+';stroke:none'));
+            /* 128 只空盒子 × 12 条棱 = 一千五百多条线全叠在画面上，谁也压不住谁，
+               读到的只是一团网。把**面**填起来、把**棱**压下去，问题就自解了：
+               填色不透明之后，近处的盒子直接把远处的挡住（画家序本来就是远→近），
+               画面上剩下的线立刻少一大半，而且前后关系比线更好读。
+               三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
+               卡不是某一个维度，它是四个维度的交点。 */
+            var lz = spot && !spotCol ? 0.35 : 1;
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(96 - dT*10).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(11 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(5 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
             if(meC){
-              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,38)+';stroke:none'));
-              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
+              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,46)+';stroke:none'));
+              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,60)+';stroke:none'));
+              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,30)+';stroke:none'));
             }
           } else {
           if(!isFcol && !spot){
@@ -2688,8 +2698,8 @@ function netScene(D, g, box, step){
         /* Rank 打开之后是 128 只壳 × 12 条棱，投影上大量重叠——整网那档的浓度
            （近处 0.92 宽 / 0.98 浓）叠起来就成了一团黑。卡阵这档整体轻一级，
            前后的落差保持不变，该分得开的还是分得开。 */
-        var eW = meC ? 1.1 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42));
-        var eO = meC ? 1 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46));
+        var eW = meC ? 1.1 : (ui.netOff ? (0.34 - dT*0.14) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
+        var eO = meC ? 1 : (ui.netOff ? (0.40 - dT*0.18) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
         if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
@@ -2714,8 +2724,11 @@ function netScene(D, g, box, step){
              顶上那一圈是空的，一只盒子一个号，正上正下对得死死的。 */
           var bw9 = Math.abs(C8[1][0] - C8[0][0]);
           var tp9 = P(0.5, cv0 - 0.05, (cw0+cw1)/2, kc);
+          /* 攒起来最后统一落笔：面填实之后，画家序里靠后的盒子会把前面那只的号盖掉
+             （实机可见半截 R117、R89）。号是**读图的索引**，不该参与遮挡关系——
+             参考页那枚门牌用的也正是 depthTest:false，永远浮在最上层。 */
           if(bw9 >= 15)
-            body.push(txt(tp9[0], tp9[1], 'R'+gc,
+            rankTags.push(txt(tp9[0], tp9[1], 'R'+gc,
               Math.min(9, Math.max(5.6, bw9*0.26)), 'var(--pt-fg2)', 'middle',
               'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="3" pointer-events="none"'));
         }
@@ -2917,6 +2930,10 @@ function netScene(D, g, box, step){
      SP 借 TP 的颜色（它就是 TP 组），但纹路归 s 那一边——同域不等于同轴。
      defs 本体挪到 hatchDefsSVG()：正视/侧视的原生渲染器画的是同一套语义，共用。 */
   var HX = hatchDefsSVG();
+  /* rank 标号最后落笔：它是读图的索引，不该参与遮挡关系（参考页那枚门牌用的
+     也正是 depthTest:false）。放在这儿才是真的最后——轴上的门牌、EP 框、
+     入口出口都是在列循环之后画的，插在中间照样会被它们压住。 */
+  if(rankTags.length) body.push(rankTags.join(''));
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
   return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+hitOps.join('')+'</g>', nodes: nodes, sawn: sawn, whole: whole,
