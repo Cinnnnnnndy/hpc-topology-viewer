@@ -1764,11 +1764,6 @@ function netScene(D, g, box, step){
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var cutSP = cutTP;
   var yaw = ui.yaw3, pitch = ui.pitch3;
-  /* rank 阵列必须站在等轴机位上：DP·PP·TP 是三根**空间**轴，正视/侧视/顶视那几个
-     正交机位各会把其中一根压进深度——128 只盒子于是叠成一片平面（实机表现就是
-     「怎么只有顶视图了」）。这一屏也不给视角 tab（工具条上只留进出的开关），
-     所以机位在这里直接钉死，不跟着上一屏留下的 vtab 走。 */
-  if(ui.netOff && ui.viewTab !== '3d'){ yaw = 0.42; pitch = 0.30; }
   /* g 在没选中时会回落到 0，那是给坐标算术用的默认值——但**高亮**不能跟着回落，
      否则 rank 0 永远亮着，「取消选中」就成了看不出效果的空操作。 */
   var hasSel = sel !== null && sel < D.world;
@@ -7074,13 +7069,7 @@ document.addEventListener('click', function(ev){
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
   else if(act==='commtoggle'){ ui.commOn = !ui.commOn; render(); }
-  else if(act==='netoff'){
-    ui.netOff = !ui.netOff;
-    /* 进 rank 阵列就摆到等轴机位（这一屏没有视角 tab，机位只能在这儿定）；
-       退回整网时保持不动——那一屏的 tab 还在，用户自己的机位该留着。 */
-    if(ui.netOff){ ui.viewTab = '3d'; ui.yaw3 = 0.42; ui.pitch3 = 0.30; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; }
-    render();
-  }
+  else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; render(); }
   else if(act==='opdetail'){
     ui.opSel = {nid:b.getAttribute('data-nid'), li:+b.getAttribute('data-li'), key:b.getAttribute('data-key')||''};
