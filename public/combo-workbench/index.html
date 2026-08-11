@@ -163,14 +163,7 @@ a.btn{text-decoration:none}
 .icon-btn{min-height:26px;min-width:28px;padding:0 7px;font-size:12.5px}
 #topbar .sep{width:1px;height:16px;background:var(--border-default);flex:0 0 auto}
 
-/* 框架层控件：刀键与数据标注。样式照 pattern 里那两组的形，好让人认出是同一个东西 */
-.knives{display:flex;gap:4px}
-.knives button{min-height:24px;padding:0 11px;border-radius:var(--radius-pill);font-size:11.5px;font-weight:650;
-  border:1px solid var(--sys-border);background:var(--sys-raised);color:var(--foreground-muted)}
-.knives button[aria-pressed="true"]{color:#fff;border-color:transparent;background:var(--k)}
-.knives button:hover{border-color:var(--sys-border-strong)}
-.knives button[aria-pressed="true"]:hover{filter:brightness(1.06)}
-
+/* 框架层控件：数据标注（两个 pattern 都有、分类相同，所以由台面统一出） */
 .dmenu{position:relative}
 .dmenu > button{min-height:24px;padding:0 9px;font-size:11.5px;border-radius:var(--radius-pill);gap:4px}
 .dmenu > button > *{line-height:1;display:inline-flex;align-items:center}
@@ -194,6 +187,17 @@ a.btn{text-decoration:none}
 /* ═══ 舞台：左 sidecar ｜ 右 并行拓扑 ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
 #slot-sidecar{flex:0 0 var(--side-w,460px);min-width:240px}
+/* 收起之后：格头是绝对定位的，整格会塌成 2px 宽——「展开」就再也点不到了。
+   所以收起时把格头放回文档流，这一格缩成「标题 + 展开」那么一条。 */
+#slot-sidecar[data-folded="1"]{flex:0 0 auto;min-width:0}
+#slot-sidecar[data-folded="1"] .slot-head{position:static;padding:7px 10px 7px 12px;pointer-events:auto}
+/* 这一格的标题与并行拓扑那格对齐：它的 .pt-stagetitle 是 top:10 / left:16、
+   15px / 800 / -.01em。格头压在画布上（pattern 的工具条本来就浮在右上），
+   只有「收起」需要能点。 */
+#slot-sidecar .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
+  min-height:30px;padding:0;background:transparent;pointer-events:none}
+#slot-sidecar .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
+#slot-sidecar .slot-head button{pointer-events:auto}
 #slot-topology{flex:1 1 auto;min-width:0}
 /* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
 #vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
@@ -273,8 +277,6 @@ body.is-resizing iframe{pointer-events:none}
 
     <!-- 框架层：管整块台面的开关。本来长在各个 pattern 自己身上，提上来统一出，
          格子里那份藏掉——同一排控件出现两次、两格各调各的，是最容易看错的一种界面。 -->
-    <div class="knives" role="group" aria-label="落哪几把刀" id="knives"></div>
-    <span class="sep" aria-hidden="true"></span>
     <div class="dmenu" id="dmenu">
       <button id="dmenuBtn" aria-haspopup="true" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）"><span>数据</span><b id="dmenuCount">5</b><span class="cv" aria-hidden="true">⌄</span></button>
       <div class="dmenu-pop" role="menu">
@@ -294,6 +296,11 @@ body.is-resizing iframe{pointer-events:none}
     <!-- 左：模型架构 · 训练语义 sidecar（跨仓 pattern，与右边同一套「自己报名字、
          自己带控件」的用法，所以这一格也不放我们的格头） -->
     <section class="slot" id="slot-sidecar">
+      <header class="slot-head">
+        <span class="slot-title">整网图</span>
+        <span class="spacer"></span>
+        <button data-act="fold" title="收起这一格，只留格头">收起</button>
+      </header>
       <div class="slot-body">
         <iframe data-slot="sidecar" title="Model Architecture Training Sidecar"></iframe>
         <div class="slot-fallback">
@@ -368,6 +375,7 @@ var SLOTS = [
        的控件，它的 setTheme 会顺带重算调色板和重绘）。 */
     id: 'sidecar',
     el: 'slot-sidecar',
+    foldable: true,        // 格头上有「收起」，与抽屉那格同一套
     /* 自带控件里被框架层接管的那几个：数据（提到顶栏）、浅色/深色（跟外壳走）、
        适配（缩放是这一格自己的事，但它和上面两颗挤在一排，留着就是半排废按钮）。
        数据那组有专属 class，CSS 藏得掉；浅色/适配只有通用 class，只能按文字找，
@@ -378,9 +386,12 @@ var SLOTS = [
        ② 这一格是窄栏，pattern 在窄宽度下会把自己的标题藏掉、控件贴左——
           把标题放回来、控件推到右边，恢复它宽屏时的那个排布；
        ③ 段控换行时别把行撑歪。 */
+    /* pattern 自己那行标题整条藏掉（含「CSS 3D · 46 layers」那枚标签）——
+       名字改由台面出（见 HTML 里这一格的格头），这样它才能和并行拓扑那格
+       用同一套字号字重、同一个左上间距。工具条推到右边、给它让出上边距。 */
     hideCss: '.pto-training-sidecar__data-control{display:none!important}' +
-             '.pto-model-deck__title{display:flex!important}' +
-             '.pto-model-deck__toolbar{margin-left:auto;justify-content:flex-end;flex-wrap:wrap}',
+             '.pto-model-deck__title{display:none!important}' +
+             '.pto-model-deck__toolbar{margin-left:auto;justify-content:flex-end;flex-wrap:wrap;padding-right:62px}',  /* 右边留出 62px 给格头那颗「收起」——它压在同一行的右端，不让位就会叠上 */
     hideByText: ['浅色', '深色', '适配'],
     hideGroup: '.pto-model-deck__control',
     /* 默认按「适配」显示：这一格宽度由台面决定，pattern 出厂那个缩放不认得它。
@@ -413,11 +424,10 @@ var SLOTS = [
       if (BUILD) q.set('v', BUILD);
       return '../patterns/net-slicing/pattern.html?' + q.toString();
     },
-    /* 刀键与数据标注提到顶栏，格子里那两组藏掉。用 :has() 定位刀键那一组——
-       它和视角那组同为 .pt-seg，只有「里面装着 knifetoggle」能把它们分开。
+    /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
+       怎么切，是并行拓扑自己的事，提到台面反而离它要影响的画面更远。
        用 CSS 而不是内联样式：这个 pattern 每次改状态都重画工具条，内联的会被冲掉。 */
-    hideCss: '.pt-seg:has([data-act="knifetoggle"]){display:none!important}' +
-             '.pt-mv{display:none!important}',
+    hideCss: '.pt-mv{display:none!important}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
@@ -460,12 +470,6 @@ SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
    不是某一格的私事，所以提到顶栏统一出，格子里那份藏掉。
    驱动一律「点它自己的控件」：同源翻进去按按钮，不碰任何内部状态——
    pattern 换了实现只要按钮还在就不散架，也不用它们为我们加 API。 */
-var KNIVES = [
-  { k: 'dp', t: 'DP',    c: '#4369ef' },
-  { k: 'pp', t: 'PP',    c: '#ffaa3b' },
-  { k: 'tp', t: 'TP·SP', c: '#22d3ee' },
-  { k: 'ep', t: 'EP',    c: '#9b3cf6' }
-];
 /* 五类数据标注两个 pattern 都有，分类相同、键名不同：
    net-slicing 用 num/grad/perf/moe/train，sidecar 用 numerics/gradient/… */
 var DATAK = [
@@ -475,7 +479,6 @@ var DATAK = [
   { k: 'moe',   sc: 'moe',         t: 'MoE',  c: '#04d793' },
   { k: 'train', sc: 'training',    t: '训练', c: '#ff4b7b' }
 ];
-var knives = KNIVES.map(function (x) { return x.k; });
 var dataOn = DATAK.map(function (x) { return x.k; });
 
 var DEFAULT_DOCK_H = 340;
@@ -491,7 +494,7 @@ var tabsOf = function (c) { return c.tabs || []; };   // 有的格子没有段�
 var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
 
 /* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
-   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&k=dp,pp&m=perf&fold=swimlane&ui=dark
+   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&m=perf&fold=sidecar&ui=dark
    off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
 /* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
@@ -517,9 +520,7 @@ function readURL() {
   dockH = (isFinite(h) && h >= 120 && h <= 1600) ? h : DEFAULT_DOCK_H;
   var w = parseInt(q.get('w'), 10);
   sideW = (isFinite(w) && w >= 240 && w <= 2000) ? w : DEFAULT_SIDE_W;
-  /* 默认是全开，所以只有**关掉过**的链接才带 k= / m=；空串表示一个都不开 */
-  knives = q.has('k') ? q.get('k').split(',').filter(function (x) { return KNIVES.some(function (y) { return y.k === x; }); })
-                      : KNIVES.map(function (x) { return x.k; });
+  /* 默认全开，所以只有**关掉过**的链接才带 m=；空串表示一类都不显示 */
   dataOn = q.has('m') ? q.get('m').split(',').filter(function (x) { return DATAK.some(function (y) { return y.k === x; }); })
                       : DATAK.map(function (x) { return x.k; });
   shellDark = q.get('ui') === 'dark';
@@ -537,7 +538,6 @@ function writeURL() {
   Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
   if (dockH !== DEFAULT_DOCK_H) q.set('h', String(dockH));
   if (sideW !== DEFAULT_SIDE_W) q.set('w', String(sideW));
-  if (knives.length !== KNIVES.length) q.set('k', knives.join(','));
   if (dataOn.length !== DATAK.length) q.set('m', dataOn.join(','));
   if (shellDark) q.set('ui', 'dark');
   var qs = q.toString();
@@ -612,8 +612,9 @@ function applySlotVisibility() {
     var fold = host.querySelector('[data-act="fold"]');
     if (fold) fold.textContent = state[c.id].folded ? '展开' : '收起';
   });
-  /* 抽屉收起来了，分隔条也没意义 */
+  /* 收起来的格子，旁边那条分隔条也没意义了 */
   $('#splitter').hidden = state.swimlane.folded;
+  $('#vsplit').hidden = state.sidecar.folded;
 }
 
 function applyDockH() {
@@ -647,19 +648,6 @@ function eachFrameDoc(fn) {
     var frame = $('iframe[data-slot="' + slot.id + '"]');
     if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
     try { var doc = frame.contentDocument; if (doc) fn(doc, slot); } catch (err) { /* 跨源 */ }
-  });
-}
-
-function applyKnives() {
-  eachFrameDoc(function (doc) {
-    KNIVES.forEach(function (x) {
-      var el = doc.querySelector('[data-act="knifetoggle"][data-k="' + x.k + '"]');
-      if (!el) return;
-      if (el.classList.contains('is-on') !== (knives.indexOf(x.k) >= 0)) el.click();
-    });
-  });
-  Array.prototype.forEach.call(document.querySelectorAll('#knives button'), function (b) {
-    b.setAttribute('aria-pressed', String(knives.indexOf(b.dataset.k) >= 0));
   });
 }
 
@@ -781,7 +769,6 @@ function settleFrame(slot, frame) {
   function done() {
     hideTakenOver(slot, frame);
     if (slot.themeByDom) syncFrameTheme(frame);
-    applyKnives();
     applyData();
     fitFrame(slot, frame);
     host.dataset.ready = '1';
@@ -808,18 +795,6 @@ function wireHead(slot) {
 
 /* ── 框架层控件的 UI ──────────────────────────────────────────────── */
 function buildFrameControls() {
-  $('#knives').innerHTML = KNIVES.map(function (x) {
-    return '<button type="button" data-k="' + x.k + '" style="--k:' + x.c + '" aria-pressed="true" title="' + x.t + '：这一维切不切（同时作用于两格）">' + x.t + '</button>';
-  }).join('');
-  $('#knives').addEventListener('click', function (ev) {
-    var b = ev.target.closest('button[data-k]');
-    if (!b) return;
-    var k = b.dataset.k, i = knives.indexOf(k);
-    if (i >= 0) knives.splice(i, 1); else knives.push(k);
-    applyKnives();
-    writeURL();
-  });
-
   $('#dmenuOpts').innerHTML = DATAK.map(function (x) {
     return '<button type="button" class="opt" role="menuitemcheckbox" data-k="' + x.k + '" style="--c:' + x.c + '" aria-checked="true">'
       + '<i aria-hidden="true"></i>' + x.t + '<span class="tick">✓</span></button>';
@@ -935,7 +910,6 @@ SLOTS.forEach(function (slot) {
 });
 applySlotVisibility();
 buildFrameControls();
-applyKnives();
 applyData();
 applyShellTheme();
 wireSplitters();
