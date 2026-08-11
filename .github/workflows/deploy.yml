@@ -311,9 +311,15 @@ jobs:
           card = card.replace('__SHA__', sha)
           if 'parallel-topology/demo.html' in html:
               raise SystemExit('launch.html 已含并行拓扑链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
-          # ① 卡片插进「独立迭代 Pattern」组的末尾（该组 </div></section> 就在文档组注释之前）
-          doc = html.index('<!-- ═══ 参照系 · 文档与研究报告 ═══ -->')
-          close = html.rindex('      </div>\n    </section>\n', 0, doc)
+          # ① Demo 那张卡插进「原型 · 版本脉络」组的末尾。
+          #    它原来在「独立迭代 Pattern」组末尾——2026-08-11 挪过来的：那一组现在
+          #    由「组合工作台」领头（Demo 是被它当成一张卡摞进台面的内容），
+          #    Demo 自己这条独立链接退成版本脉络里的一站。
+          #    注意：这一步的 launch-card.html 读的是 ptopo-src（并行拓扑分支）那份，
+          #    但插到哪儿由**本文件**决定；并行拓扑分支自己那份 deploy.yml 里还是老锚点，
+          #    从那边发布时这张卡仍会落回 Pattern 组，要一致得把这段同步过去。
+          gproto = html.index('<h2 class="group-title" id="g-proto">')
+          close = html.index('      </div>\n    </section>\n', gproto)
           html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
           # ② 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
           #    的地图，该领这一组的头（Demo 本体那张卡留在 Pattern 组末尾）
@@ -383,11 +389,11 @@ jobs:
           card = card.replace('__SHA__', sha)
           if 'combo-workbench' in html:
               raise SystemExit('launch.html 已含组合工作台链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
-          # ① 卡片插进「工作台 · 主线」组的末尾：它是台面，不是可嵌的 pattern。
-          #    该组的 </div></section> 就在「独立迭代 Pattern」那条注释之前。
-          pat = html.index('<!-- ═══ 独立迭代 Pattern ═══ -->')
-          close = html.rindex('      </div>\n    </section>\n', 0, pat)
-          html = html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
+          # ① 卡片插进「工作台 · 主线」组的**最前面**：它是台面，不是可嵌的 pattern，
+          #    而且后续的工作台组合都往它上面摞——该领这一组的头。
+          gapp = html.index('<h2 class="group-title" id="g-app">')
+          grid = html.index('      <div class="card-grid">\n', gapp) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + card.rstrip('\n') + '\n' + html[grid:]
           # ② 顶栏 pill：跟在驾驶舱那枚后面（都是「进来是用的」那一类入口）
           pill = '<a class="pill" href="./cube-cockpit.html">AI Infra 驾驶舱 v22</a>'
           at = html.index(pill) + len(pill)
