@@ -1821,7 +1821,10 @@ function netScene(D, g, box, step){
   /* PP 段之间的缝（纵深）：段与段之间要一眼看出「这儿断开了」。列/行两个方向的
      缝都放大之后，纵深这一条不跟上就成了整张图里最挤的一维——四段看着还是一整条。
      卡维度那档尤其要大：那儿每段是一只独立的卡壳，缝要大到能一眼数出纵深上串着几张。 */
-  var GAPW = cutPP ? DEP*(ui.cardMode ? 1.60 : 0.88) : 0;
+  /* 段间缝对齐 EP 组间那条缝的量级（EPGAP = 1.5 个列距）：两者是同一类东西——
+     「这儿断开了」。深度轴在等轴投影里是斜着走的，同样的场景距离看上去比横轴短
+     一截，所以数值上还要再压过去一些才在**画面上**一样宽。 */
+  var GAPW = cutPP ? DEP*(ui.cardMode ? 2.60 : 1.20) : 0;
   var TOTW = DEP + GAPW*Math.max(0, D.pp-1);
   /* EP 那一刀落下时，组与组之间也掰开一条缝——和 PP 段之间掰缝同一个道理：
      「这儿断开了」得看得见，不然一组八张和隔壁八张连成一片，得数着列才分得清。
@@ -2699,9 +2702,12 @@ function netScene(D, g, box, step){
                三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
                卡不是某一个维度，它是四个维度的交点。 */
             var lz = spot && !spotCol ? 0.35 : 1;
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(96 - dT*10).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(11 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(5 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
+            /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色、不透光，
+               后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
+               差得不够就只是三张半透明的纸片叠在一起。 */
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
             if(meC){
               body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,46)+';stroke:none'));
               body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,60)+';stroke:none'));
@@ -2720,8 +2726,10 @@ function netScene(D, g, box, step){
         /* Rank 打开之后是 128 只壳 × 12 条棱，投影上大量重叠——整网那档的浓度
            （近处 0.92 宽 / 0.98 浓）叠起来就成了一团黑。卡阵这档整体轻一级，
            前后的落差保持不变，该分得开的还是分得开。 */
-        var eW = meC ? 1.1 : (ui.netOff ? (0.34 - dT*0.20) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
-        var eO = meC ? 1 : (ui.netOff ? (0.42 - dT*0.28) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
+        /* 棱加回一档：面填实之后线不再是噪声的来源，反倒是盒子的轮廓——太细的话
+           盒子边缘化在背景里，实体感就散了。前后落差保持不变。 */
+        var eW = meC ? 1.15 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
+        var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
         if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
