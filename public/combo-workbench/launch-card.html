@@ -7,14 +7,15 @@
      为什么走叠加而不是直接改 launch.html：站点框架永远从 main 构建，本分支不进 main；
      代价是 main 或其他分支一发布，这张卡会暂时消失，重跑本分支 workflow 即可找回
      （与 /rubik/、/parallel-topology/ 等其它目录同一套约定，见 deploy.yml 头部注释）。
-     视觉语言沿用 launch.html 的 .card / .pv-* class；两张卡的签名色 = 台面上那两张
-     卡片的 accent（并行拓扑蓝 #4369ef / 泳道紫 #9d7bff）。 -->
+     卡本身沿用 launch.html 的 .card / .pv-* class（这里是启动页的地盘，按启动页的
+     样式走）；预览图画的是台面自己的形制——上面一格舞台、下面一格抽屉，各带一条
+     格头。台面**内部**是另一套语言（cube-cockpit 的 PTO token），两者不要混。 -->
         <article class="card">
           <div class="card-head">
             <h3 class="card-title"><a href="./combo-workbench/?v=__SHA__">组合工作台 · 并行拓扑 × 微批次生命周期</a></h3>
             <div class="card-tags">
               <span class="tag tag--k-app">工作台</span>
-              <span class="tag">纵向摞卡片</span>
+              <span class="tag">舞台 + 抽屉</span>
               <span class="tag">空间 × 时间</span>
               <span class="tag">URL 即这一屏</span>
             </div>
@@ -66,7 +67,7 @@
               </g>
             </svg>
           </div>
-          <p class="card-desc">一块<strong>纵向摞卡片</strong>的台面，先摞两张：上面<strong>并行拓扑</strong>（<span class="mono">/parallel-topology/</span> 的 Demo 整页嵌进来，收起它自带的顶栏，七个视图由卡片头的段控代管）回答<strong>空间</strong>——一张卡装的是模型的哪一块；下面<strong>微批次生命周期泳道</strong>（compute-graph-viewer 的上游拷贝，MB07 · step 18420）回答<strong>时间</strong>——那块东西在一个 step 里什么时候动、等了谁。卡片头统一收编视图切换、折叠、关闭与「独立打开」，卡片下沿可拖着改高度，关掉的卡收进托盘随时放回来。切视图走 <span class="mono">postMessage</span> 不重载，格子里选中的那张卡 / 那条事件不会丢。台面状态（看哪个视图、多高、折了谁）写进 URL，发出去的链接就是你现在那一屏。后续的工作台组合往这块台面上继续摞。</p>
+          <p class="card-desc">一块<strong>上下摞格子</strong>的应用台面（形制与视觉语言同 <span class="mono">cube-cockpit.html</span>：顶栏 + 舞台 + 底部抽屉，铺满视口自己不滚），先摞两格：舞台是<strong>并行拓扑</strong>（<span class="mono">/parallel-topology/</span> 的 Demo 整页嵌进来，收起它自带的顶栏只留画布，七个视图由格头的段控代管）回答<strong>空间</strong>——一张卡装的是模型的哪一块；抽屉是<strong>微批次生命周期泳道</strong>（compute-graph-viewer 的上游拷贝，MB07 · step 18420），就是驾驶舱那张「Profiling 视图」卡的形制，回答<strong>时间</strong>——那块东西在一个 step 里什么时候动、等了谁。格头统一收编视图切换、折叠、关闭与「独立打开」，两格之间是可拖的分隔条，关掉的格子从顶栏「视图控制 ▾」放回来；顶栏那颗月亮是<strong>主题桥</strong>，外壳与两格里的页面一起换明暗。切视图走 <span class="mono">postMessage</span> 不重载，格子里选中的那张卡 / 那条事件不会丢。台面状态（看哪个视图、抽屉多高、折了谁、明暗）写进 URL，发出去的链接就是你现在那一屏。后续的工作台组合往这块台面上继续摞。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./combo-workbench/?v=__SHA__">打开组合工作台<sup>°</sup></a>
             <a class="lnk" href="./combo-workbench/?a=time&amp;b=pp2&amp;v=__SHA__">时间·流 × PP2 生命周期<sup>°</sup></a>

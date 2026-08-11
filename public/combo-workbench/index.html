@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,279 +12,284 @@
   ══════════════════════════════════════════════════════════════════════
   组合工作台 —— 一块可以往上摞卡片的台面。
 
-  和已有那两个「工作台/驾驶舱」的分工：
-    · /            统一工作台   —— React 应用，一个主视图
-    · /parallel-topology/cockpit.html  驾驶舱 —— 一块大画布 + 切换轨，
-      一次只看一个组件（切走的只 hidden 不 destroy）
-    · 本页          组合工作台   —— **同屏纵向摞多张卡**，每张卡是一个完整
-      的已有页面，卡片头统一收编它的视图切换。为的是把「同一件事的不同层」
-      上下对齐着看：上面一张卡回答「这张卡装的是模型的哪一块」（空间），
-      下面一张回答「这块东西在一个 step 里什么时候动」（时间）。
+  形态是**应用外壳**，不是文档页：顶栏 + 一整块舞台 + 底部抽屉，铺满视口、
+  自己不滚动（滚动都发生在格子里面）。视觉语言照抄 cube-cockpit.html：
+  同一套 PTO token（浅色优先、[data-theme=dark] 单块覆盖）、同一种面板圆角与
+  段控、底部抽屉就是它那张「Profiling 视图」卡（标题的琥珀色 #8a5f00 也照搬）。
+  token 是**内联**的（值抄自驾驶舱的 ①②③④ 四段），不引 vendor：这一页少一条
+  外部依赖，主题就少一次闪白。
 
-  现在台面上两张（后续往 CARDS 里加即可，卡片壳、段控、折叠/关闭/拖高、
-  URL 状态都是按 N 张写的，不是硬编两张）：
-    ① 并行拓扑     iframe → ../parallel-topology/demo.html?embed=1
-       embed=1 把它自带的顶栏和页脚收起来，只剩画布；视图由卡片头的段控代管，
+  和已有那两个工作台/驾驶舱的分工：
+    · /            统一工作台   —— React 应用，一个主视图
+    · /parallel-topology/cockpit.html  并行拓扑驾驶舱 —— 一块大画布 + 切换轨，
+      一次只看一个组件（切走的只 hidden 不 destroy）
+    · 本页          组合工作台   —— **同屏上下摞多个格子**，每格是一个完整的
+      已有页面，格头统一收编它的视图切换。为的是把「同一件事的不同层」上下
+      对齐着看：上面回答「这张卡装的是模型的哪一块」（空间），下面回答
+      「这块东西在一个 step 里什么时候动」（时间）。
+
+  现在台面上两格（后续往 SLOTS 里加即可，格头、段控、折叠/关闭、URL 状态
+  都是按 N 格写的，不是硬编两格）：
+    ① 舞台 · 并行拓扑     iframe → ../parallel-topology/demo.html?embed=1
+       embed=1 把它自带的顶栏和页脚收起来，只剩画布；视图由格头的段控代管，
        用 postMessage {type:'pto:state', view} 驱动，不重载 iframe。
-       需要预置/图层那些开关时点卡片头的「工具条」，把它自己的顶栏放回来。
-    ② 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
+       需要预置/图层那些开关时点格头的「工具条」，把它自己的顶栏放回来。
+    ② 抽屉 · 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
        上游拷贝（见 swimlane.html 顶部说明），同一套 pto:state 约定。
+  舞台与抽屉之间是可拖的分隔条；抽屉高度、各格看哪个视图都写进 URL。
 
   依赖（都在 main 的构建产物里，本目录不复制第二份）：
-    · /parallel-topology/demo.html   —— main 的 public/parallel-topology/
-      （该分支的 workflow 会用它自己的新版覆盖同一路径，本页跟着走最新的）
+    · /parallel-topology/demo.html   —— 发布时由该 pattern 分支的版本覆盖同路径
     · /vendor/pto-design-system/     —— swimlane.html 的 ../vendor/ 落在这上面
-  本页自身是自包含单文件（色板照抄 launch.html，不引任何外部样式），
-  所以就算上面两条暂时 404，台面和卡片壳也还在，坏的只是某一格的内容。
+  本页自身是自包含单文件，上面两条哪条 404 都只坏那一格，外壳还在。
   ══════════════════════════════════════════════════════════════════════
 -->
 <style>
-:root {
-  --blue: #4369ef;
-  --violet: #9d7bff;
-  --orange: #ffaa3b;
-  --green: #04d793;
-  --cyan: #4ad9e7;
-  --pink: #ff4b7b;
-
-  --ink: #131a2a;
-  --ink-2: #47526b;
-  --ink-3: #8b95ab;
-  --line: rgba(19, 26, 42, 0.10);
-  --line-strong: rgba(19, 26, 42, 0.18);
-  --bg: #f4f6fb;
-  --card: #ffffff;
-  --track: #eef1f7;
-  --shadow: 0 1px 2px rgba(19, 26, 42, 0.04), 0 8px 24px rgba(19, 26, 42, 0.06);
-  --shadow-hover: 0 2px 4px rgba(19, 26, 42, 0.05), 0 14px 36px rgba(31, 51, 122, 0.12);
-  --font: -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
-  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+/* ① Foundation —— 抄自 cube-cockpit.html（浅色优先 + 主题无关的比例尺） */
+:root{
+  --ark-neutral-1:#F5F5F5; --ark-neutral-2:#FFFFFF;
+  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6; --ark-domain-aux:#7C8DB8;
+  --ark-green-500:#04D793; --ark-orange-500:#FFAA3B; --ark-red-500:#FF4B7B;
+  --ark-violet-400:#9B3CF6;
+  --font-sans:'Inter','Source Han Sans SC','PingFang SC','Noto Sans SC',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code','Consolas',monospace;
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
+  --panel-shell-radius:14px;
+  --duration-fast:100ms;
+  --comp-toolbar-h:44px; --scrollbar-w:5px;
+}
+/* ② Semantic —— 浅色（默认） */
+:root, :root[data-theme="light"]{
+  --background:var(--ark-neutral-1); --surface-1:#FFFFFF; --surface-2:#F2F2F2; --surface-3:#E6E6E6;
+  --foreground:rgba(0,0,0,.90); --foreground-secondary:rgba(0,0,0,.55); --foreground-muted:rgba(0,0,0,.38);
+  --border-subtle:rgba(0,0,0,.07); --border-default:rgba(0,0,0,.12); --border-strong:rgba(0,0,0,.18);
+  --primary:var(--ark-blue-500); --primary-hover:var(--ark-blue-600);
+  --success:var(--ark-green-500); --warning:var(--ark-orange-500); --danger:var(--ark-red-500);
+  --focus-ring:rgba(67,105,239,.36);
+  --state-hover:rgba(0,0,0,.05); --state-press:rgba(0,0,0,.09);
+  --state-muted:rgba(0,0,0,.05); --state-selected:rgba(67,105,239,.10);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12);
+  --stage-bg:#f5f5f5;
+  --dock-title:#8a5f00;      /* 驾驶舱抽屉标题那抹琥珀，浅色下的取值 */
+}
+/* ② Semantic —— 深色（单块覆盖） */
+:root[data-theme="dark"]{
+  --background:#0b0b0b; --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626;
+  --foreground:rgba(255,255,255,.90); --foreground-secondary:rgba(255,255,255,.60); --foreground-muted:rgba(255,255,255,.40);
+  --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.16);
+  --focus-ring:rgba(67,105,239,.42);
+  --state-hover:rgba(255,255,255,.06); --state-press:rgba(255,255,255,.10);
+  --state-muted:rgba(255,255,255,.06); --state-selected:rgba(67,105,239,.14);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.28); --shadow-md:0 6px 18px rgba(0,0,0,.34);
+  --stage-bg:#101010;
+  --dock-title:var(--warning);
+}
+/* ③ 数据编码色 —— 主题无关 */
+:root{ --dv-tp:#39c5cf; --dv-pp:var(--warning); --dv-dp:var(--primary); --dv-ep:var(--ark-violet-400); }
+/* ④ 兼容别名 —— 与驾驶舱同名，方便两边互看 */
+:root{
+  --sys-border:var(--border-default); --sys-border-strong:var(--border-strong);
+  --sys-raised:var(--surface-2); --sys-raised-hover:var(--surface-3);
+  --bg:var(--background); --panel:var(--surface-1); --panel2:var(--surface-2);
+  --border:var(--border-default); --txt:var(--foreground); --dim:var(--foreground-secondary);
 }
 
-* { box-sizing: border-box; }
-html, body { margin: 0; width: 100%; min-height: 100%; }
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font-family:var(--font-sans);font-size:13px;overflow:hidden}
+*{scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.28) transparent}
+::-webkit-scrollbar{width:var(--scrollbar-w);height:var(--scrollbar-w)}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(127,127,127,.28);border-radius:var(--radius-pill)}
 
-body {
-  font-family: var(--font);
-  color: var(--ink);
-  background:
-    radial-gradient(90rem 40rem at 110% -10%, rgba(67, 105, 239, 0.07), transparent 60%),
-    radial-gradient(70rem 36rem at -15% 8%, rgba(157, 123, 255, 0.06), transparent 55%),
-    var(--bg);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
+button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;
+  background:var(--sys-raised);color:var(--txt);border:1px solid var(--sys-border);border-radius:var(--radius-lg);
+  padding:0 11px;font:500 12px/1 var(--font-sans);white-space:nowrap;
+  transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast)}
+button:hover{background:var(--sys-raised-hover);border-color:var(--sys-border-strong)}
+button:active{background:var(--state-press)}
+button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--focus-ring)}
+button.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--primary) 45%,var(--sys-border-strong));color:var(--primary)}
+a.btn{text-decoration:none}
 
-.page { min-height: 100vh; padding: 34px 24px 48px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
-.wrap { width: min(1760px, 100%); }
+#app{display:flex;flex-direction:column;height:100vh}
 
-/* ── 页头 ── */
-.hero { display: grid; gap: 12px; }
-.plane-strip { display: flex; gap: 6px; }
-.plane-strip i { width: 26px; height: 6px; border-radius: 3px; }
-.plane-strip i:nth-child(1) { background: var(--blue); }
-.plane-strip i:nth-child(2) { background: var(--cyan); }
-.plane-strip i:nth-child(3) { background: var(--violet); }
-.plane-strip i:nth-child(4) { background: var(--orange); }
-.plane-strip i:nth-child(5) { background: var(--green); }
+/* ═══ 顶栏 ═══ */
+#topbar{height:var(--comp-toolbar-h);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px;
+  background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-bottom:1px solid var(--sys-border)}
+#topbar .title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--txt);margin-right:6px;
+  white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
+#topbar .title::before{content:"";width:9px;height:9px;border-radius:3px;background:var(--primary);flex-shrink:0}
+#topbar .title small{font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
+#topbar .spacer{flex:1 1 auto}
+.icon-btn{min-width:30px;padding:0 8px;font-size:13px}
 
-.hero h1 { margin: 0; font-size: 27px; font-weight: 800; letter-spacing: 0.005em; line-height: 1.2; }
-.hero h1 small { font-weight: 650; font-size: 15px; color: var(--ink-3); margin-left: 12px; letter-spacing: 0.02em; }
-.hero-sub { margin: 0; max-width: 84ch; color: var(--ink-2); font-size: 14px; line-height: 1.7; }
-.hero-sub b { color: var(--ink); font-weight: 700; }
-.hero-sub code { font-family: var(--mono); font-size: 12px; background: rgba(19, 26, 42, 0.05); padding: 1px 6px; border-radius: 6px; }
+/* 视图控制 ▾ —— 台面级开关（哪几格在场、拓扑工具条、恢复默认布局） */
+.menu{position:relative}
+.menu-pop{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:40;display:none;
+  min-width:250px;padding:8px;background:var(--panel);border:1px solid var(--sys-border);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.menu.open .menu-pop{display:block}
+.menu-lab{display:block;padding:6px 8px 4px;font-size:10.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--foreground-muted)}
+.menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:0;border-radius:var(--radius-md);
+  background:transparent;color:var(--txt);font:500 12px/1.3 var(--font-sans);text-align:left;min-height:30px;justify-content:flex-start}
+.menu-item:hover{background:var(--state-hover);border-color:transparent}
+.menu-item .tick{width:14px;flex:0 0 14px;color:var(--primary);font-size:11px}
+.menu-item[aria-checked="false"] .tick{color:transparent}
+.menu-sep{height:1px;margin:6px 4px;background:var(--border-subtle)}
 
-.hero-actions { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-top: 2px; }
-.pill {
-  height: 34px; padding: 0 16px; border-radius: 999px;
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 13px; font-weight: 650; text-decoration: none;
-  border: 1px solid var(--line-strong); color: var(--ink); background: var(--card);
-  box-shadow: var(--shadow); cursor: pointer;
-  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, filter 150ms ease;
-}
-.pill:hover { transform: translateY(-1px); box-shadow: var(--shadow-hover); border-color: rgba(67, 105, 239, 0.45); }
-.pill--primary { color: #fff; background: linear-gradient(135deg, var(--blue), #3453c8); border-color: transparent; }
-.pill--primary:hover { filter: brightness(1.06); }
+/* ═══ 舞台（上面那格） ═══ */
+#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0;background:var(--stage-bg)}
 
-/* ── 卡片栈 ── */
-.stack { display: flex; flex-direction: column; gap: 20px; }
+/* 面板 = 一格。舞台格铺满剩余高度，抽屉格定高可拖。 */
+.slot{display:flex;flex-direction:column;min-height:0;background:var(--panel);
+  border:1px solid var(--sys-border);border-radius:var(--panel-shell-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+.slot[hidden]{display:none}
+#slot-topology{flex:1 1 auto}
+.slot[data-folded="1"]{flex:0 0 auto}
+.slot[data-folded="1"] .slot-body{display:none}
 
-.card {
-  --accent: var(--blue);
-  position: relative;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-.card[hidden] { display: none; }
+/* 格头：标题 + 段控 + 动作，就是驾驶舱抽屉那一排 */
+.slot-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:7px 10px 7px 12px;
+  border-bottom:1px solid var(--border-subtle);background:var(--panel)}
+.slot-title{font-size:12px;font-weight:600;color:var(--txt);margin-right:2px;white-space:nowrap;
+  display:flex;align-items:center;gap:6px}
+.slot-title i{width:8px;height:8px;border-radius:2px;background:var(--accent-dot,var(--primary));flex:0 0 auto}
+.slot-title span{font-family:var(--font-mono);font-size:10px;font-weight:400;color:var(--foreground-muted)}
+.slot-head .spacer{flex:1 1 auto}
+.slot-meta{font-family:var(--font-mono);font-size:10.5px;color:var(--foreground-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34ch}
 
-/* 卡片头：左边身份 + 段控，右边动作。截图里那一排就是这个 */
-.chead {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px 10px 16px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, #fff, #fcfdff);
-}
-.cdot { width: 9px; height: 9px; border-radius: 3px; background: var(--accent); flex: 0 0 auto; }
-.cname { margin: 0; font-size: 15px; font-weight: 750; letter-spacing: 0.01em; white-space: nowrap; color: color-mix(in srgb, var(--accent) 62%, var(--ink)); }
-.cname small { display: block; font-family: var(--mono); font-size: 10px; font-weight: 400; letter-spacing: 0.04em; color: var(--ink-3); }
-.cgap { margin-left: auto; }
-.cmeta {
-  font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30ch;
-}
+/* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
+.tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
+.tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
+  padding:4px 10px;color:var(--dim);font-weight:500;min-height:24px;font-size:12px}
+.tabs button:hover{background:var(--state-hover);border-color:transparent;color:var(--txt)}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
-/* 段控：浅灰轨 + 白色活动块（launch.html 没有这个件，按截图新造） */
-.seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--track); border: 1px solid rgba(19, 26, 42, 0.05); flex-wrap: wrap; }
-.seg button {
-  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1;
-  padding: 7px 12px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--ink-2); cursor: pointer; white-space: nowrap;
-  transition: background 130ms ease, color 130ms ease, box-shadow 130ms ease;
-}
-.seg button:hover { color: var(--ink); background: rgba(255, 255, 255, 0.66); }
-.seg button[aria-selected='true'] {
-  background: var(--card); color: var(--ink); font-weight: 700;
-  box-shadow: 0 1px 2px rgba(19, 26, 42, 0.10), 0 0 0 1px rgba(19, 26, 42, 0.05);
-}
+.slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--panel)}
+.slot-body > iframe{display:block;width:100%;height:100%;border:0}
+.slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
+  font-size:12px;line-height:1.8;color:var(--dim)}
+.slot[data-broken="1"] .slot-fallback{display:grid}
+.slot[data-broken="1"] .slot-body > iframe{visibility:hidden}
+.slot-fallback b{color:var(--txt)}
+.slot-fallback code{font-family:var(--font-mono);font-size:11.5px;background:var(--state-muted);padding:1px 5px;border-radius:4px}
 
-.ghost {
-  font: inherit; font-size: 12px; font-weight: 600; line-height: 1;
-  height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 5px;
-  border: 1px solid var(--line-strong); border-radius: 9px;
-  background: var(--card); color: var(--ink-2); cursor: pointer; text-decoration: none;
-  transition: color 130ms ease, border-color 130ms ease, background 130ms ease;
-}
-.ghost:hover { color: var(--ink); border-color: rgba(67, 105, 239, 0.5); }
-.ghost[aria-pressed='true'] { color: #fff; background: var(--ink); border-color: var(--ink); }
-.ghost--x:hover { color: var(--pink); border-color: rgba(255, 75, 123, 0.55); }
-.ghost svg { width: 12px; height: 12px; }
+/* ═══ 抽屉（下面那格）—— 驾驶舱 #drawer 的形制 ═══ */
+#dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;display:flex;flex-direction:column;
+  margin:8px;margin-top:0;background:var(--panel);border:1px solid var(--sys-border);
+  border-radius:var(--panel-shell-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+#dock[hidden]{display:none}
+#dock[data-folded="1"]{height:auto;min-height:0}
+#dock .slot-title{color:var(--dock-title)}
+#dock .slot-title i{background:var(--dock-title)}
 
-/* 卡片体：高度可拖，内容是一整块 iframe */
-.cbody { position: relative; height: var(--h, 620px); min-height: 220px; background: #fbfcfe; }
-.card[data-folded='1'] .cbody { display: none; }
-.cbody > iframe { display: block; width: 100%; height: 100%; border: 0; }
-.cfallback {
-  position: absolute; inset: 0; display: none; place-content: center; text-align: center;
-  padding: 24px; font-size: 13px; line-height: 1.8; color: var(--ink-2);
-}
-.card[data-broken='1'] .cfallback { display: grid; }
-.card[data-broken='1'] > .cbody > iframe { visibility: hidden; }
-.cfallback b { color: var(--ink); }
-.cfallback code { font-family: var(--mono); font-size: 12px; background: rgba(19, 26, 42, 0.05); padding: 1px 6px; border-radius: 6px; }
+/* 舞台与抽屉之间的分隔条 */
+#splitter{flex:0 0 auto;height:10px;margin:0 8px;cursor:ns-resize;display:grid;place-items:center;touch-action:none}
+#splitter::after{content:"";width:52px;height:3px;border-radius:2px;background:var(--border-strong);opacity:.5}
+#splitter:hover::after{background:var(--primary);opacity:1}
+#splitter[hidden]{display:none}
+body.is-resizing{user-select:none;cursor:ns-resize}
+body.is-resizing iframe{pointer-events:none}
 
-.grip {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 11px;
-  cursor: ns-resize; display: grid; place-items: center;
-  background: linear-gradient(180deg, transparent, rgba(19, 26, 42, 0.045));
-  touch-action: none;
-}
-.grip::after { content: ''; width: 46px; height: 3px; border-radius: 2px; background: rgba(19, 26, 42, 0.16); }
-.grip:hover::after { background: var(--accent); }
-body.is-resizing { user-select: none; cursor: ns-resize; }
-body.is-resizing iframe { pointer-events: none; }
+/* ═══ 底部状态条 ═══ */
+#statusbar{flex:0 0 auto;height:26px;display:flex;align-items:center;gap:10px;padding:0 12px;
+  background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-top:1px solid var(--sys-border);
+  color:var(--foreground-muted);font-size:11px}
+#statusbar b{color:var(--dim);font-weight:500}
+#statusbar .spacer{flex:1 1 auto}
+#statusbar a{color:var(--foreground-muted)}
+#statusbar code{font-family:var(--font-mono);font-size:10.5px}
 
-/* 关掉的卡片收进这条托盘，随时放回来（关闭不该是单向门） */
-.tray { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-3); }
-.tray[hidden] { display: none; }
-.tray .ghost { border-style: dashed; }
-
-.foot { color: var(--ink-3); font-size: 12px; line-height: 1.85; }
-.foot a { color: var(--ink-2); }
-.foot code { font-family: var(--mono); font-size: 11.5px; }
-
-@media (max-width: 1080px) {
-  .page { padding: 22px 12px 36px; }
-  .chead { flex-wrap: wrap; }
-  .cgap { margin-left: 0; }
+@media (max-width:1080px){
+  .slot-head{flex-wrap:wrap}
+  .slot-meta{display:none}
 }
 </style>
 </head>
 <body>
-<div class="page">
+<div id="app">
 
-  <header class="wrap hero">
-    <div class="plane-strip"><i></i><i></i><i></i><i></i><i></i></div>
-    <h1>组合工作台<small>并行拓扑 × 微批次生命周期</small></h1>
-    <p class="hero-sub">
-      一块<b>纵向摞卡片</b>的台面：每张卡是一个完整的已有页面，卡片头统一收编它的视图切换、折叠与关闭，
-      卡片下沿可以拖着改高度。上面这张回答<b>空间</b>——一张卡装的是模型的哪一块；
-      下面这张回答<b>时间</b>——那块东西在一个 step 里什么时候动、等了谁。
-      台面状态写进 URL（<code>?a=…&amp;b=…&amp;h=…</code>），发出去的链接就是你现在这一屏。
-    </p>
-    <div class="hero-actions">
-      <a class="pill pill--primary" href="../launch.html">← 项目启动页</a>
-      <a class="pill" href="../">统一工作台</a>
-      <a class="pill" href="../parallel-topology/cockpit.html">并行拓扑 · 驾驶舱</a>
-      <button class="pill" type="button" data-page-act="reset">恢复默认布局</button>
+  <!-- ═══ 顶栏 ═══ -->
+  <header id="topbar">
+    <span class="title">组合工作台<small>并行拓扑 × 微批次生命周期</small></span>
+    <a class="btn" href="../launch.html" style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">项目启动页</a>
+    <a class="btn" href="../parallel-topology/cockpit.html" style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">并行拓扑驾驶舱</a>
+
+    <span class="spacer"></span>
+    <div class="menu" id="viewMenu">
+      <button id="viewMenuBtn" aria-haspopup="true" aria-expanded="false">视图控制 <span aria-hidden="true">▾</span></button>
+      <div class="menu-pop" role="menu">
+        <span class="menu-lab">台面上的格子</span>
+        <button class="menu-item" role="menuitemcheckbox" data-menu="slot" data-slot="topology" aria-checked="true"><span class="tick">✓</span>并行拓扑</button>
+        <button class="menu-item" role="menuitemcheckbox" data-menu="slot" data-slot="swimlane" aria-checked="true"><span class="tick">✓</span>微批次生命周期泳道</button>
+        <div class="menu-sep"></div>
+        <span class="menu-lab">格子选项</span>
+        <button class="menu-item" role="menuitemcheckbox" data-menu="chrome" data-slot="topology" aria-checked="false"><span class="tick">✓</span>并行拓扑 · 显示它自带的工具条</button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" data-menu="reset"><span class="tick"></span>恢复默认布局</button>
+      </div>
     </div>
+    <span class="spacer"></span>
+
+    <button class="icon-btn" id="themeBtn" title="切换明暗：外壳与两格里的页面一起换（与驾驶舱的主题桥同一套约定）" aria-label="切换明暗">☾</button>
   </header>
 
-  <main class="wrap stack" id="stack">
-
-    <!-- ① 并行拓扑 ───────────────────────────────────────────────── -->
-    <section class="card" id="card-topology" style="--accent: var(--blue)">
-      <header class="chead">
-        <span class="cdot" aria-hidden="true"></span>
-        <h2 class="cname">并行拓扑<small>parallel-topology · demo</small></h2>
-        <div class="seg" role="tablist" aria-label="并行拓扑视图" data-seg="topology"></div>
-        <span class="cgap"></span>
-        <span class="cmeta" data-meta="topology">128 卡 tp2·cp2·pp4·dp8·ep8</span>
-        <button class="ghost" type="button" data-act="chrome" aria-pressed="false" title="把 demo 自带的顶栏放回来：预置、图层、维度那些开关都在上面">工具条</button>
-        <a class="ghost" data-link="topology" href="../parallel-topology/demo.html" target="_blank" rel="noopener" title="在新窗口独立打开这一页">独立打开 ↗</a>
-        <button class="ghost" type="button" data-act="fold" title="折叠卡片">折叠</button>
-        <button class="ghost ghost--x" type="button" data-act="close" title="关闭卡片（可从下方托盘放回来）">✕ 关闭</button>
+  <!-- ═══ 舞台：并行拓扑 ═══ -->
+  <main id="stage">
+    <section class="slot" id="slot-topology" style="--accent-dot:var(--dv-dp)">
+      <header class="slot-head">
+        <span class="slot-title"><i aria-hidden="true"></i>并行拓扑<span>parallel-topology · demo</span></span>
+        <div class="tabs" role="tablist" aria-label="并行拓扑视图" data-tabs="topology"></div>
+        <span class="spacer"></span>
+        <span class="slot-meta" data-meta="topology"></span>
+        <button data-act="chrome" aria-pressed="false" title="把 demo 自带的顶栏放回来：预置、图层、维度那些开关都在上面">工具条</button>
+        <a class="btn" data-link="topology" href="../parallel-topology/demo.html" target="_blank" rel="noopener"
+           style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">独立打开 ↗</a>
+        <button data-act="fold" title="折叠这一格">折叠</button>
+        <button data-act="close" title="关闭这一格（从「视图控制」里放回来）">✕ 关闭</button>
       </header>
-      <div class="cbody" style="--h: 680px">
-        <iframe data-card="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
-        <div class="cfallback">
+      <div class="slot-body">
+        <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
+        <div class="slot-fallback">
           <p><b>这一格没能加载。</b><br />
             它引的是 <code>/parallel-topology/demo.html</code>，那份目录由 pattern 分支的 workflow 叠加发布；<br />
-            main 或别的分支刚发布过的话会暂时 404，重跑一次对应分支的 Deploy 即可找回。</p>
+            别的分支刚发布过的话会暂时 404，重跑一次对应分支的 Deploy 即可找回。</p>
         </div>
-        <div class="grip" data-act="resize" role="separator" aria-label="拖动调整并行拓扑卡片高度" aria-orientation="horizontal"></div>
       </div>
     </section>
-
-    <!-- ② 微批次生命周期泳道 ─────────────────────────────────────── -->
-    <section class="card" id="card-swimlane" style="--accent: var(--violet)">
-      <header class="chead">
-        <span class="cdot" aria-hidden="true"></span>
-        <h2 class="cname">微批次生命周期泳道<small>MB07 · step 18420</small></h2>
-        <div class="seg" role="tablist" aria-label="泳道时间范围" data-seg="swimlane"></div>
-        <span class="cgap"></span>
-        <span class="cmeta" data-meta="swimlane">32 Rank · MB07 → DP1</span>
-        <button class="ghost" type="button" data-act="theme" aria-pressed="false" title="泳道在深色下对比度更高；卡片壳保持浅色">深色</button>
-        <a class="ghost" data-link="swimlane" href="./swimlane.html" target="_blank" rel="noopener" title="在新窗口独立打开这一页">独立打开 ↗</a>
-        <button class="ghost" type="button" data-act="fold" title="折叠卡片">折叠</button>
-        <button class="ghost ghost--x" type="button" data-act="close" title="关闭卡片（可从下方托盘放回来）">✕ 关闭</button>
-      </header>
-      <div class="cbody" style="--h: 440px">
-        <iframe data-card="swimlane" title="MB07 微批次生命周期泳道"></iframe>
-        <div class="cfallback">
-          <p><b>这一格没能加载。</b><br />
-            它引的是同目录的 <code>./swimlane.html</code> 与 <code>/vendor/pto-design-system/</code>。</p>
-        </div>
-        <div class="grip" data-act="resize" role="separator" aria-label="拖动调整泳道卡片高度" aria-orientation="horizontal"></div>
-      </div>
-    </section>
-
   </main>
 
-  <div class="wrap tray" id="tray" hidden>
-    <span>已关闭：</span>
-  </div>
+  <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="拖动调整下方抽屉高度"></div>
 
-  <footer class="wrap foot">
-    <p style="margin:0">
-      两张卡都由卡片头驱动：<code>postMessage {type:'pto:state', …}</code>，不重载 iframe——
-      切视图不会丢掉你在里面选中的那张卡 / 那条事件。泳道那份是
-      <a href="https://github.com/Cinnnnnnndy/compute-graph-viewer/blob/main/pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html" target="_blank" rel="noopener">compute-graph-viewer 的上游拷贝</a>，
-      本仓只加了 <code>embed.css</code> / <code>embed-bridge.js</code> 两个内嵌壳，正文一行没动。
-    </p>
+  <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
+  <section class="slot" id="dock">
+    <header class="slot-head">
+      <span class="slot-title"><i aria-hidden="true"></i>微批次生命周期泳道<span>MB07 · step 18420</span></span>
+      <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
+      <span class="spacer"></span>
+      <span class="slot-meta" data-meta="swimlane"></span>
+      <a class="btn" data-link="swimlane" href="./swimlane.html" target="_blank" rel="noopener"
+         style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">独立打开 ↗</a>
+      <button data-act="fold" title="折叠这一格">折叠</button>
+      <button data-act="close" title="关闭这一格（从「视图控制」里放回来）">✕ 关闭</button>
+    </header>
+    <div class="slot-body">
+      <iframe data-slot="swimlane" title="MB07 微批次生命周期泳道"></iframe>
+      <div class="slot-fallback">
+        <p><b>这一格没能加载。</b><br />
+          它引的是同目录的 <code>./swimlane.html</code> 与 <code>/vendor/pto-design-system/</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 底部状态条 ═══ -->
+  <footer id="statusbar">
+    <span id="statusText">两格都由格头驱动（<code>postMessage {type:'pto:state'}</code>），不重载 iframe——切视图不丢你在里面选中的东西</span>
+    <span class="spacer"></span>
+    <span>泳道为 compute-graph-viewer 上游拷贝 · 时间与性能指标为模拟数据</span>
   </footer>
 
 </div>
@@ -294,9 +299,8 @@ body.is-resizing iframe { pointer-events: none; }
 'use strict';
 
 /* ══════════════════════════════════════════════════════════════════════
-   台面逻辑。刻意按 **N 张卡** 写：加第三张只需要往 CARDS 里加一条 + 在
-   HTML 里照抄一节 <section class="card">，下面这些（段控、折叠、关闭、
-   拖高、URL 状态）都不用改。
+   台面逻辑。按 **N 格** 写：加第三格只需要往 SLOTS 里加一条 + 照抄一节
+   <section class="slot">，下面这些（段控、折叠、关闭、URL 状态）都不用改。
    ══════════════════════════════════════════════════════════════════════ */
 
 /* 发布时由 deploy.yml 的「Overlay 组合工作台」一步 sed 成本分支短 SHA。
@@ -305,29 +309,28 @@ body.is-resizing iframe { pointer-events: none; }
    逐字不变，重新发布后浏览器照旧吃缓存里那一份。本地开发时是空串，不加参数。 */
 var BUILD = '';
 
-var CARDS = [
+var SLOTS = [
   {
     id: 'topology',
-    key: 'a',                  // URL 里代表「这张卡当前看哪一个视图」的参数名
-    hkey: 'ha',                // URL 里代表卡片高度的参数名
+    el: 'slot-topology',
+    key: 'a',                  // URL 里代表「这一格当前看哪个视图」的参数名
     def: 'chain',
-    defH: 680,
     /* demo.html 认 ?view=；embed=1 收起它自带的顶栏与页脚，只留画布 */
-    src: function (state) {
+    src: function (s) {
       var q = new URLSearchParams();
-      q.set('theme', 'light');
-      q.set('view', state.value);
-      if (!state.chrome) q.set('embed', '1');
+      q.set('theme', shellDark ? 'dark' : 'light');
+      q.set('view', s.value);
+      if (!s.chrome) q.set('embed', '1');
       if (BUILD) q.set('v', BUILD);
       return '../parallel-topology/demo.html?' + q.toString();
     },
     /* 「独立打开」给的是同一个视图、但**不带内嵌壳**的那条链接 */
-    open: function (state) { return '../parallel-topology/demo.html?theme=light&view=' + state.value; },
+    open: function (s) { return '../parallel-topology/demo.html?theme=' + theme() + '&view=' + s.value; },
     /* embed 模式下 demo 会在画布左上角自己写一遍名字——它假设自己是「一条链接
-       就是一张图」、周围没人替它报名。摞进卡片以后卡片头已经写过了，这是第三遍。 */
+       就是一张图」、周围没人替它报名。摞进格子以后格头已经写过了，这是第二遍。 */
     dedupe: '.pt-root.embed .pt-stagetitle{display:none}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
-    msg: function (value) { return { type: 'pto:state', view: value }; },
+    msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
       { v: 'chain',   t: '整网切分',   d: '五把刀按嵌套序串成一条链' },
       { v: 'story',   t: '一个 step',  d: '五幕：前向 / 反向 / 通信 / 更新' },
@@ -340,107 +343,108 @@ var CARDS = [
   },
   {
     id: 'swimlane',
+    el: 'dock',
     key: 'b',
-    hkey: 'hb',
     def: 'global',
-    defH: 440,
-    src: function (state) {
+    src: function (s) {
       var q = new URLSearchParams();
-      q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归卡片头
-      q.set('theme', state.dark ? 'dark' : 'light');
-      q.set('range', state.value);
+      q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
+      q.set('theme', theme());
+      q.set('range', s.value);
       if (BUILD) q.set('v', BUILD);
       return './swimlane.html?' + q.toString();
     },
-    open: function (state) { return './swimlane.html?theme=' + (state.dark ? 'dark' : 'light') + '&range=' + state.value; },
-    msg: function (value) { return { type: 'pto:state', range: value }; },
+    open: function (s) { return './swimlane.html?theme=' + theme() + '&range=' + s.value; },
+    msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
-      { v: 'global', t: '训练步全貌',  d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
+      { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
       { v: 'pp2',    t: 'PP2 生命周期', d: 'PP2 的等待 / 计算 / 通信 / 激活驻留' },
-      { v: 'l34',    t: 'L34 对象链',  d: 'L34 模块与保存激活的生产—消费关系' }
+      { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' }
     ]
   }
 ];
 
 var BY_ID = {};
-CARDS.forEach(function (c) { BY_ID[c.id] = c; });
+SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
 
-var state = {};   // id → { value, h, folded, closed, loaded, chrome, dark }
+var DEFAULT_DOCK_H = 340;
+var state = {};      // id → { value, closed, folded, chrome, loaded }
+var dockH = DEFAULT_DOCK_H;
+var shellDark = false;
+
 var $ = function (sel, root) { return (root || document).querySelector(sel); };
+var theme = function () { return shellDark ? 'dark' : 'light'; };
+var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
 
 /* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
-   URL 即这一屏：?a=solid&b=pp2&ha=760&hb=520&off=swimlane&fold=topology
+   URL 即这一屏：?a=solid&b=pp2&h=520&off=swimlane&fold=topology&dark=swimlane
+   off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
+var FLAGS = { closed: 'off', folded: 'fold', chrome: 'bar' };
+
 function readURL() {
   var q = new URLSearchParams(location.search);
-  /* off/fold/bar/dark 都是「卡片 id 的逗号表」，不是每张卡各占一个参数名——
-     加第四第五张卡时 URL 不会跟着膨胀。 */
-  var FLAGS = { closed: 'off', folded: 'fold', chrome: 'bar', dark: 'dark' };
   var has = {};
   Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
-  CARDS.forEach(function (c) {
+  SLOTS.forEach(function (c) {
     var v = q.get(c.key);
-    var ok = c.tabs.some(function (t) { return t.v === v; });
-    var h = parseInt(q.get(c.hkey), 10);
-    var s = {
-      value: ok ? v : c.def,
-      h: (isFinite(h) && h >= 220 && h <= 1600) ? h : c.defH,
-      loaded: false
-    };
+    var s = { value: c.tabs.some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
     Object.keys(FLAGS).forEach(function (f) { s[f] = has[f].indexOf(c.id) >= 0; });
     state[c.id] = s;
   });
-  state._flags = FLAGS;
+  var h = parseInt(q.get('h'), 10);
+  dockH = (isFinite(h) && h >= 120 && h <= 1600) ? h : DEFAULT_DOCK_H;
+  shellDark = q.get('ui') === 'dark';
 }
 
 function writeURL() {
   var q = new URLSearchParams();
-  var FLAGS = state._flags;
   var bags = {};
   Object.keys(FLAGS).forEach(function (f) { bags[f] = []; });
-  CARDS.forEach(function (c) {
+  SLOTS.forEach(function (c) {
     var s = state[c.id];
     if (s.value !== c.def) q.set(c.key, s.value);
-    if (s.h !== c.defH) q.set(c.hkey, String(s.h));
     Object.keys(FLAGS).forEach(function (f) { if (s[f]) bags[f].push(c.id); });
   });
   Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
+  if (dockH !== DEFAULT_DOCK_H) q.set('h', String(dockH));
+  if (shellDark) q.set('ui', 'dark');
   var qs = q.toString();
   history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
 }
 
 /* ── 段控 ─────────────────────────────────────────────────────────── */
-function buildTabs(card) {
-  var host = $('[data-seg="' + card.id + '"]');
-  host.innerHTML = card.tabs.map(function (t) {
+function buildTabs(slot) {
+  var host = $('[data-tabs="' + slot.id + '"]');
+  host.innerHTML = slot.tabs.map(function (t) {
     return '<button type="button" role="tab" data-v="' + t.v + '" title="' + t.d + '" aria-selected="false">' + t.t + '</button>';
   }).join('');
   host.addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-v]');
-    if (btn) select(card.id, btn.dataset.v, true);
+    if (btn) select(slot.id, btn.dataset.v, true);
   });
 }
 
 function syncTabs(id) {
-  var host = $('[data-seg="' + id + '"]');
-  var v = state[id].value;
+  var slot = BY_ID[id], v = state[id].value;
+  var host = $('[data-tabs="' + id + '"]');
   Array.prototype.forEach.call(host.querySelectorAll('button[data-v]'), function (b) {
     b.setAttribute('aria-selected', String(b.dataset.v === v));
   });
-  var tab = BY_ID[id].tabs.filter(function (t) { return t.v === v; })[0];
+  var tab = slot.tabs.filter(function (t) { return t.v === v; })[0];
   var meta = $('[data-meta="' + id + '"]');
   if (tab && meta) meta.textContent = tab.d;
-  $('[data-link="' + id + '"]').href = BY_ID[id].open(state[id]);
+  $('[data-link="' + id + '"]').href = slot.open(state[id]);
 }
 
-/* 驱动优先走 postMessage（不重载 = 不丢 iframe 里的选中态）；
-   iframe 还没 load 完就先记下，等 load 时用 src 参数带进去。 */
+/* 驱动优先走 postMessage（不重载 = 不丢格子里的选中态）；
+   iframe 还没 load 完就退回重载，让 src 参数把状态带进去。 */
 function select(id, value, push) {
-  var card = BY_ID[id], s = state[id];
-  if (!card.tabs.some(function (t) { return t.v === value; })) return;
+  var slot = BY_ID[id], s = state[id];
+  if (!slot.tabs.some(function (t) { return t.v === value; })) return;
   s.value = value;
-  var frame = $('iframe[data-card="' + id + '"]');
-  if (s.loaded && frame.contentWindow) frame.contentWindow.postMessage(card.msg(value), '*');
+  var frame = $('iframe[data-slot="' + id + '"]');
+  if (s.loaded && frame.contentWindow) frame.contentWindow.postMessage(slot.msg(value), '*');
   else load(id);
   syncTabs(id);
   if (push) writeURL();
@@ -448,90 +452,155 @@ function select(id, value, push) {
 
 /* ── iframe ───────────────────────────────────────────────────────── */
 function load(id) {
-  var frame = $('iframe[data-card="' + id + '"]');
+  var frame = $('iframe[data-slot="' + id + '"]');
   var next = BY_ID[id].src(state[id]);
   if (frame.getAttribute('src') === next) return;
   state[id].loaded = false;
   frame.setAttribute('src', next);
 }
 
-function wireFrame(card) {
-  var frame = $('iframe[data-card="' + card.id + '"]');
-  var section = $('#card-' + card.id);
+function wireFrame(slot) {
+  var frame = $('iframe[data-slot="' + slot.id + '"]');
+  var host = slotEl(slot.id);
   var timer = setTimeout(function () {
     /* 没 load 事件 = 大概率 404 / 被挡。别把一片空白留给用户，说清是哪一条链接。 */
-    if (!state[card.id].loaded) section.dataset.broken = '1';
+    if (!state[slot.id].loaded) host.dataset.broken = '1';
   }, 12000);
   frame.addEventListener('load', function () {
     clearTimeout(timer);
-    state[card.id].loaded = true;
-    delete section.dataset.broken;
-    dedupe(card, frame);
+    state[slot.id].loaded = true;
+    delete host.dataset.broken;
+    dedupe(slot, frame);
   });
 }
 
-/* 同源时往格子里塞一条样式，按掉它自己重复报的名字（见 CARDS[].dedupe）。
+/* 同源时往格子里塞一条样式，按掉它重复报的名字（见 SLOTS[].dedupe）。
    跨源就够不着——静默跳过：多印一个标题不值得让整格出错。 */
-function dedupe(card, frame) {
-  if (!card.dedupe) return;
+function dedupe(slot, frame) {
+  if (!slot.dedupe) return;
   try {
     var doc = frame.contentDocument;
     if (!doc || !doc.head || doc.getElementById('wb-dedupe')) return;
     var style = doc.createElement('style');
     style.id = 'wb-dedupe';
-    style.textContent = card.dedupe;
+    style.textContent = slot.dedupe;
     doc.head.appendChild(style);
   } catch (err) { /* 跨源，放弃 */ }
 }
 
-/* ── 折叠 / 关闭 / 托盘 ───────────────────────────────────────────── */
-function renderTray() {
-  var tray = $('#tray');
-  Array.prototype.forEach.call(tray.querySelectorAll('button'), function (b) { b.remove(); });
-  var closed = CARDS.filter(function (c) { return state[c.id].closed; });
-  tray.hidden = closed.length === 0;
-  closed.forEach(function (c) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'ghost';
-    b.textContent = '+ ' + $('#card-' + c.id + ' .cname').firstChild.nodeValue.trim();
-    b.addEventListener('click', function () { setClosed(c.id, false); });
-    tray.appendChild(b);
+/* ── 显隐 / 折叠 / 抽屉高度 ───────────────────────────────────────── */
+function applySlotVisibility() {
+  SLOTS.forEach(function (c) {
+    var host = slotEl(c.id);
+    var s = state[c.id];
+    host.hidden = s.closed;
+    if (s.folded) host.dataset.folded = '1'; else delete host.dataset.folded;
+    var fold = host.querySelector('[data-act="fold"]');
+    if (fold) fold.textContent = s.folded ? '展开' : '折叠';
+  });
+  /* 抽屉不在场（关了或折了）时分隔条也没意义 */
+  var dock = state.swimlane;
+  $('#splitter').hidden = dock.closed || dock.folded || state.topology.closed;
+  syncMenu();
+}
+
+function applyDockH() {
+  document.getElementById('dock').style.setProperty('--dock-h', dockH + 'px');
+}
+
+/* 主题桥：一颗月亮同时管外壳和两格里的页面（与驾驶舱嵌进宿主时那套约定一样）。
+   格子已经装载好就 postMessage 过去——重载一次要几百毫秒，还会把用户在里面
+   选中的卡 / 事件清掉；没装载好的下一次 load 会从 src 的 ?theme= 带进去。 */
+function applyShellTheme() {
+  document.documentElement.setAttribute('data-theme', theme());
+  $('#themeBtn').textContent = shellDark ? '☀' : '☾';
+  SLOTS.forEach(function (slot) {
+    var frame = $('iframe[data-slot="' + slot.id + '"]');
+    if (state[slot.id] && state[slot.id].loaded && frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
+    }
+    if (state[slot.id]) syncTabs(slot.id);   // 「独立打开」那条链接也带上当前主题
   });
 }
 
-function setClosed(id, closed) {
-  state[id].closed = closed;
-  $('#card-' + id).hidden = closed;
-  if (!closed) load(id);            // 关的时候没卸载 src，这里只是兜底
-  renderTray();
-  writeURL();
+/* ── 视图控制菜单 ─────────────────────────────────────────────────── */
+function syncMenu() {
+  Array.prototype.forEach.call(document.querySelectorAll('.menu-item[data-slot]'), function (item) {
+    var s = state[item.dataset.slot];
+    var on = item.dataset.menu === 'slot' ? !s.closed : !!s[item.dataset.menu];
+    item.setAttribute('aria-checked', String(on));
+  });
 }
 
-function setFolded(id, folded) {
-  state[id].folded = folded;
-  var section = $('#card-' + id);
-  if (folded) section.dataset.folded = '1'; else delete section.dataset.folded;
-  $('#card-' + id + ' [data-act="fold"]').textContent = folded ? '展开' : '折叠';
-  writeURL();
+function wireMenu() {
+  var menu = $('#viewMenu'), btn = $('#viewMenuBtn');
+  btn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', function (ev) {
+    if (!menu.contains(ev.target)) { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+  });
+  menu.addEventListener('click', function (ev) {
+    var item = ev.target.closest('.menu-item');
+    if (!item) return;
+    var kind = item.dataset.menu;
+    if (kind === 'reset') { location.href = location.pathname; return; }
+    var id = item.dataset.slot;
+    if (kind === 'slot') {
+      state[id].closed = !state[id].closed;
+      if (!state[id].closed) load(id);
+      applySlotVisibility();
+    } else {
+      setOption(id, kind, !state[id][kind]);
+    }
+    writeURL();
+  });
 }
 
-/* ── 拖高 ─────────────────────────────────────────────────────────── */
-function wireGrip(card) {
-  var body = $('#card-' + card.id + ' .cbody');
-  var grip = $('#card-' + card.id + ' .grip');
-  /* 监听挂在 window 上而不是 grip 上：指针一旦滑进 iframe，事件就归 iframe 的
-     文档了，挂在 grip 上的 pointermove 会断（setPointerCapture 也救不回来，
-     跨文档不成立）。所以拖动期间给 body 打 .is-resizing，把 iframe 的
-     pointer-events 关掉，事件老老实实回到本文档。 */
+/* chrome（demo 自带的顶栏）是 CSS class，只能靠重载 ?embed= 切——如实标注：
+   这一下会重载那一格，格子里的选中态会回到默认。 */
+function setOption(id, kind, on) {
+  state[id][kind] = on;
+  var btn = slotEl(id).querySelector('[data-act="' + kind + '"]');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.classList.toggle('on', on);
+  }
+  load(id);
+  syncMenu();
+}
+
+/* ── 格头动作 ─────────────────────────────────────────────────────── */
+function wireHead(slot) {
+  slotEl(slot.id).querySelector('.slot-head').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var act = btn.dataset.act;
+    if (act === 'fold') { state[slot.id].folded = !state[slot.id].folded; applySlotVisibility(); }
+    else if (act === 'close') { state[slot.id].closed = true; applySlotVisibility(); }
+    else { setOption(slot.id, act, !state[slot.id][act]); }
+    writeURL();
+  });
+}
+
+/* ── 分隔条 ───────────────────────────────────────────────────────── */
+/* 监听挂在 window 上而不是分隔条上：指针一旦滑进 iframe，事件就归 iframe 的
+   文档了，挂在元素上的 pointermove 会断（setPointerCapture 跨文档也不成立）。
+   拖动期间给 body 打 .is-resizing，把 iframe 的 pointer-events 关掉。 */
+function wireSplitter() {
+  var grip = $('#splitter');
   grip.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
-    var startY = ev.clientY, startH = body.getBoundingClientRect().height;
+    var startY = ev.clientY, startH = dockH;
     document.body.classList.add('is-resizing');
     function move(e) {
-      var h = Math.max(220, Math.min(1600, Math.round(startH + (e.clientY - startY))));
-      state[card.id].h = h;
-      body.style.setProperty('--h', h + 'px');
+      /* 往下拖 = 抽屉变矮，所以是 startY - clientY；上限留 180px 给舞台 */
+      var max = Math.max(160, window.innerHeight - 180);
+      dockH = Math.max(120, Math.min(max, Math.round(startH - (e.clientY - startY))));
+      applyDockH();
     }
     function up() {
       window.removeEventListener('pointermove', move);
@@ -546,42 +615,12 @@ function wireGrip(card) {
   });
 }
 
-/* ── 卡片头动作 ───────────────────────────────────────────────────── */
-function wireHead(card) {
-  var section = $('#card-' + card.id);
-  section.querySelector('.chead').addEventListener('click', function (ev) {
-    var btn = ev.target.closest('button[data-act]');
-    if (!btn) return;
-    var act = btn.dataset.act;
-    if (act === 'fold') setFolded(card.id, !state[card.id].folded);
-    else if (act === 'close') setClosed(card.id, true);
-    else if (act === 'chrome') {
-      /* demo 的顶栏是 CSS class，只能靠重载 ?embed= 切——如实标注：这一下会重载 */
-      state[card.id].chrome = !state[card.id].chrome;
-      btn.setAttribute('aria-pressed', String(state[card.id].chrome));
-      load(card.id);
-      writeURL();
-    } else if (act === 'theme') {
-      state[card.id].dark = !state[card.id].dark;
-      btn.setAttribute('aria-pressed', String(state[card.id].dark));
-      btn.textContent = state[card.id].dark ? '浅色' : '深色';
-      var frame = $('iframe[data-card="' + card.id + '"]');
-      if (state[card.id].loaded && frame.contentWindow) {
-        frame.contentWindow.postMessage({ type: 'pto:state', theme: state[card.id].dark ? 'dark' : 'light' }, '*');
-      } else {
-        load(card.id);
-      }
-      writeURL();
-    }
-  });
-}
-
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
   if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select')) return;
-  CARDS.forEach(function (c) {
-    var frame = $('iframe[data-card="' + c.id + '"]');
+  SLOTS.forEach(function (c) {
+    var frame = $('iframe[data-slot="' + c.id + '"]');
     if (!frame || frame.contentWindow !== ev.source) return;
     var v = d.view || d.range;
     if (v && v !== state[c.id].value && c.tabs.some(function (t) { return t.v === v; })) {
@@ -594,31 +633,29 @@ window.addEventListener('message', function (ev) {
 
 /* ── 起步 ─────────────────────────────────────────────────────────── */
 readURL();
-CARDS.forEach(function (card) {
-  var s = state[card.id];
-  buildTabs(card);
-  syncTabs(card.id);
-  wireFrame(card);
-  wireGrip(card);
-  wireHead(card);
-  $('#card-' + card.id + ' .cbody').style.setProperty('--h', s.h + 'px');
-  $('#card-' + card.id).hidden = s.closed;
-  if (s.folded) setFoldedSilent(card.id);
-  var chromeBtn = $('#card-' + card.id + ' [data-act="chrome"]');
-  if (chromeBtn) chromeBtn.setAttribute('aria-pressed', String(s.chrome));
-  var themeBtn = $('#card-' + card.id + ' [data-act="theme"]');
-  if (themeBtn) { themeBtn.setAttribute('aria-pressed', String(s.dark)); themeBtn.textContent = s.dark ? '浅色' : '深色'; }
-  load(card.id);
+document.documentElement.setAttribute('data-theme', theme());  /* 首帧就落主题，别闪 */
+applyDockH();
+SLOTS.forEach(function (slot) {
+  buildTabs(slot);
+  syncTabs(slot.id);
+  wireFrame(slot);
+  wireHead(slot);
+  var btn = slotEl(slot.id).querySelector('[data-act="chrome"]');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(!!state[slot.id].chrome));
+    btn.classList.toggle('on', !!state[slot.id].chrome);
+  }
+  load(slot.id);
 });
-renderTray();
+applySlotVisibility();
+applyShellTheme();
+wireMenu();
+wireSplitter();
 
-function setFoldedSilent(id) {
-  $('#card-' + id).dataset.folded = '1';
-  $('#card-' + id + ' [data-act="fold"]').textContent = '展开';
-}
-
-$('[data-page-act="reset"]').addEventListener('click', function () {
-  location.href = location.pathname;
+$('#themeBtn').addEventListener('click', function () {
+  shellDark = !shellDark;
+  applyShellTheme();
+  writeURL();
 });
 })();
 </script>

@@ -73,17 +73,26 @@ md 跟着发出去就等于同一份内容有两条链接。
 
 ## 组合工作台（`/combo-workbench/` · 独立迭代）
 
-一块**纵向摞卡片**的台面，后续的工作台组合往它上面继续摞。现在两张：
+一块**上下摞格子**的应用台面，后续的工作台组合往它上面继续摞。形制与视觉语言同
+`public/cube-cockpit.html`：顶栏 + 舞台 + 底部抽屉，铺满视口、自己不滚动（滚动都发生在
+格子里面），同一套 PTO token（浅色优先、`[data-theme=dark]` 单块覆盖）、同一种面板圆角与
+段控，抽屉就是驾驶舱那张「Profiling 视图」卡的形制。token 是内联的，不引 vendor。
 
-| 卡片 | 内容 | 卡片头收编了什么 |
+现在两格：
+
+| 格子 | 内容 | 格头收编了什么 |
 |---|---|---|
-| 上 · 并行拓扑 | iframe → `/parallel-topology/demo.html?embed=1`（收起它自带的顶栏，只剩画布） | 七个视图的段控、「工具条」（把 demo 自己的顶栏放回来） |
-| 下 · 微批次生命周期泳道 | iframe → `./swimlane.html?chrome=0`，MB07 · step 18420 | 三档时间范围的段控、深/浅色 |
+| 舞台 · 并行拓扑 | iframe → `/parallel-topology/demo.html?embed=1`（收起它自带的顶栏，只剩画布） | 七个视图的段控、「工具条」（把 demo 自己的顶栏放回来）、折叠、关闭、独立打开 |
+| 抽屉 · 微批次生命周期泳道 | iframe → `./swimlane.html?chrome=0`，MB07 · step 18420 | 三档时间范围的段控、折叠、关闭、独立打开 |
 
-两张卡都用 `postMessage {type:'pto:state', …}` 驱动，**不重载 iframe**——切视图不会丢掉
-格子里选中的那张卡 / 那条事件。卡片头另有折叠、关闭（收进托盘可放回）、独立打开；
-卡片下沿可拖着改高度。台面状态（看哪个视图、多高、折了谁）写进 URL，
-`?a=solid&b=l34&hb=520` 这样一条链接就是你当时那一屏。
+两格都用 `postMessage {type:'pto:state', …}` 驱动，**不重载 iframe**——切视图不会丢掉
+格子里选中的那张卡 / 那条事件。两格之间是可拖的分隔条；关掉的格子从顶栏「视图控制 ▾」
+放回来；顶栏那颗月亮是**主题桥**，外壳与两格里的页面一起换明暗（同驾驶舱嵌进宿主时那套
+约定）。台面状态（看哪个视图、抽屉多高、折了谁、明暗）写进 URL，
+`?a=solid&b=l34&h=520&ui=dark` 这样一条链接就是你当时那一屏。
+
+台面在启动页上另有一张卡（「工作台 · 主线」组的头一张），那张卡用的是启动页的样式；
+片段本体在 `public/combo-workbench/launch-card.html`，由 `deploy.yml` 叠加插入。
 
 `public/combo-workbench/swimlane.html` 是 **compute-graph-viewer 的上游拷贝**
 （`pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html`），连同
@@ -94,8 +103,8 @@ md 跟着发出去就等于同一份内容有两条链接。
 `.legend`（色板面板用，`flex-direction: column`）会把泳道底部那排图例竖着摞成
 138px 高、压穿 38px 的页脚——独立打开也一样坏，所以那条修复不分内嵌与否都生效。
 
-台面本体自包含（色板照抄启动页，不引外部样式），依赖只有 `/parallel-topology/demo.html`
-与 `/vendor/pto-design-system/`；哪条暂时 404 也只坏那一格，卡片壳还在。
+台面本体自包含（token 内联，不引外部样式），依赖只有 `/parallel-topology/demo.html`
+与 `/vendor/pto-design-system/`；哪条暂时 404 也只坏那一格，外壳还在。
 
 ## Develop
 
