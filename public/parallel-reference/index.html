@@ -246,10 +246,11 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <a href="#s5">10 编号</a>
   <a href="#s-order">11 先后顺序</a>
   <a href="#s6">12 运行时</a>
-  <a href="#s7">13 勘误</a>
-  <a href="#s8">14 治理</a>
-  <a href="#s-onto">15 对象总表</a>
-  <a href="#s-gaps">16 边界</a>
+  <a href="#s-obs">13 可观测性</a>
+  <a href="#s7">14 勘误</a>
+  <a href="#s8">15 治理</a>
+  <a href="#s-onto">16 对象总表</a>
+  <a href="#s-gaps">17 边界</a>
 </nav>
 
 <div class="wrap">
@@ -259,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>17 节</span><span>19 张 3D 图</span><span>42 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-07</span>
+    <span>18 节</span><span>21 张图</span><span>46 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -2224,8 +2225,212 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
   </div>
 </section>
 
+<!-- ===== 训练可观测性 ===== -->
+<section id="s-obs">
+  <div class="sec-head"><span class="sec-num">13</span><h2>训练可观测性：整网上能读到哪些数</h2></div>
+
+  <p class="lede">前面 12 节说的是<strong>静态结构</strong>——整网怎么切、切完落在哪、通信插在哪里。但训练跑起来以后，整网上的每个组件都会产出一系列实时数据。这些数据分五类，各有不同的诊断用途。本节说清<strong>每个指标代表什么、标注在整网的什么位置、指标之间有什么联动关系、以及什么场景下需要看哪些指标</strong>。</p>
+
+  <h3>五类数据筛选器</h3>
+
+  <p>训练可视化工具通常提供五个类别筛选器，对应整网上五种不同性质的数据：</p>
+
+  <table class="tbl">
+    <thead><tr><th>类别</th><th>本质</th><th>标注在哪里</th><th>一句话</th></tr></thead>
+    <tbody>
+      <tr><td><b>数值</b></td><td>激活统计</td><td>hidden state 节点（层与层之间的残差流）</td><td>信号的音量——太大要溢出，太小是消失</td></tr>
+      <tr><td><b>梯度</b></td><td>权重/更新统计</td><td>Linear 层、Norm 层（有可学习参数的组件）</td><td>学习是不是在发生——步子太大会炸，太小没进展</td></tr>
+      <tr><td><b>性能</b></td><td>通信与计算延迟</td><td>通信算子（AllGather / ReduceScatter / A2A）和 Attention Core</td><td>时间花在哪——通信还是计算</td></tr>
+      <tr><td><b>MoE</b></td><td>路由与专家负载</td><td>Router、Expert Pool、Shared Expert</td><td>专家有没有在均匀工作</td></tr>
+      <tr><td><b>训练</b></td><td>目标函数</td><td>整网末尾 Training Objective 区域</td><td>模型学到了什么</td></tr>
+    </tbody>
+  </table>
+
+  <h3>数值：激活统计 —— σ / Amax / V</h3>
+
+  <p>标注在 hidden state 节点上（如 <code>H18 · mHC state ×4</code>），反映<b>残差流的健康程度</b>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>指标</th><th>全称</th><th>含义</th><th>健康范围（参考）</th></tr></thead>
+    <tbody>
+      <tr><td><b>σ</b></td><td>标准差</td><td>激活值的离散程度——信号的"音量"。随层深度单调增长说明残差累积在膨胀；骤降说明信号在消失</td><td>0.82–1.08</td></tr>
+      <tr><td><b>Amax</b></td><td>绝对值最大值</td><td>离数值溢出还有多远。混合精度训练下 BF16 最大可表示 ~3.39×10³⁸，但实践中 Amax > 数百就要警惕</td><td>6.8–9.7</td></tr>
+      <tr><td><b>V</b></td><td>归一化指标</td><td>值方差或信号-噪声比的变体。偏离 1.0 说明信号强度在偏移</td><td>0.81–1.07</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>RMSNorm 节点</b>的数据标注方式不同。它有三个指标：</p>
+
+  <ul>
+    <li><b><code>in</code></b> — 归一化前的标准差（上游信号的量级）</li>
+    <li><b><code>out</code></b> — 归一化后的标准差（应该接近 1.0，这是归一化的本职工作）</li>
+    <li><b><code>γΔ</code></b> — 可学习缩放参数 γ 的变化量。<strong>γΔ 是上游失控的早期信号</strong>：如果上游 σ 剧烈变化，Norm 的 γ 会被迫大幅调整来补偿，γΔ 就会变大</li>
+  </ul>
+
+  <h3>梯度：权重与更新统计 —— W / Δ/W / γΔ</h3>
+
+  <p>标注在所有含可学习参数的组件上（Linear 层、Norm 层的 γ）：</p>
+
+  <table class="tbl">
+    <thead><tr><th>指标</th><th>含义</th><th>怎么读</th><th>参考值</th></tr></thead>
+    <tbody>
+      <tr><td><b>W</b></td><td>权重矩阵的范数</td><td>权重本身有多大。各层应该在同一量级，差距过大说明初始化或学习率不匹配</td><td>31.3（各层一致）</td></tr>
+      <tr><td><b>Δ/W</b></td><td>梯度/权重比</td><td><strong>最核心的训练健康指标。</strong>"这一步相对于整个权重改了百分之多少"。太大（>1e-2）→ 步子太猛、有爆炸风险；太小（&lt;1e-6）→ 几乎没在学</td><td>3.4e-4</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="lbl">Δ/W 为什么比 loss 曲线更早预警</span>
+    <p>loss 是全局指标，看到它飙升时已经来不及了。而 <b>Δ/W 是逐层指标</b>——某一层的 Δ/W 比其他层大一个数量级时，那一层就是即将爆炸的源头，此时 loss 曲线上可能还看不到任何异常。</p>
+  </div>
+
+  <h3>性能：通信与计算延迟 —— MB / GB/s / ms</h3>
+
+  <p>标注在通信算子和计算密集算子上：</p>
+
+  <table class="tbl">
+    <thead><tr><th>算子</th><th>数据量</th><th>带宽</th><th>延迟</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>TP/SP AllGather</td><td>29 MB</td><td>68 GB/s</td><td>0.42 ms</td><td>进入 TP 区前收集完整张量——§04 SP 的入口操作</td></tr>
+      <tr><td>TP/SP ReduceScatter</td><td>27 MB</td><td>95 GB/s</td><td>0.27 ms</td><td>离开 TP 区后规约并分散——§04 SP 的出口操作</td></tr>
+      <tr><td>EP Dispatch (A2A)</td><td>36 MB</td><td>151 GB/s</td><td>0.23 ms</td><td>Router 决定分配后，把 token 送到各 Expert——§09 All-to-All</td></tr>
+      <tr><td>EP Combine (A2A)</td><td>24 MB</td><td>108 GB/s</td><td>0.22 ms</td><td>Expert 算完后，把结果收回来——§09 All-to-All 的反向</td></tr>
+      <tr><td>Attention Core</td><td>—</td><td>—</td><td>0.28 ms</td><td>DSA/SWA 计算本身——纯计算、不涉及通信</td></tr>
+    </tbody>
+  </table>
+
+  <p>注意 EP 的 All-to-All 带宽（151 GB/s）高于 TP/SP 的 AllGather（68 GB/s）——这通常意味着 <b>EP 组的物理拓扑更紧</b>（同节点内）或者硬件路径不同。</p>
+
+  <p>顶部折线图按层展示延迟，可以看到各 PP stage 的延迟分布。<strong>stage 间延迟是否均衡直接决定流水线气泡大小</strong>——§12 说过，气泡率 ≈ (PP−1)/GA，但那个公式假设 stage 等耗时。如果某个 stage 比其他慢 20%，实际气泡率会更大。</p>
+
+  <h3>MoE：路由与专家负载 —— Pmax / H / tok / balance / z-loss</h3>
+
+  <p>标注在 Router 和 Expert 节点上，监控 MoE 最核心的健康问题——<b>专家有没有坍缩</b>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>指标</th><th>含义</th><th>怎么读</th><th>参考值</th></tr></thead>
+    <tbody>
+      <tr><td><b>Pmax</b></td><td>路由概率的最大值</td><td>最热门的专家有多热。→ 1.0 说明所有 token 涌向同一个专家（坍缩的前兆）</td><td>0.61</td></tr>
+      <tr><td><b>H</b></td><td>路由分布的熵</td><td>熵越高 → 分布越均匀。Top-8 理想均匀 H = log₂8 ≈ 2.08。远低于理想值说明不均衡</td><td>1.97（接近理想）</td></tr>
+      <tr><td><b>tok</b></td><td>实际分到的 token 数</td><td>Expert Pool 62 tok，Shared Expert 53 tok。差距过大说明某些专家过载</td><td>53–62</td></tr>
+      <tr><td><b>balance</b></td><td>辅助均衡 loss</td><td>越小越均衡。过大说明 Router 还在挣扎着学习均衡</td><td>0.014</td></tr>
+      <tr><td><b>z-loss</b></td><td>logit 正则化 loss</td><td>防止 Router 的 logit 值过大导致溢出</td><td>0.003</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="lbl">Pmax 和 H 是一对互补指标</span>
+    <p>Pmax → 1 + H → 0 = <b>专家坍缩</b>：所有 token 涌向同一个专家，其他专家空转。这是 MoE 训练中最致命的问题——一旦发生，loss 不降、算力浪费、无法恢复。<b>balance loss 就是用来对抗坍缩的</b>：它在总 loss 里加一项惩罚不均衡的代价，但权重太大又会挤占 CE 的梯度信号。</p>
+  </div>
+
+  <h3>训练：目标函数 —— CE / Aux / MTP / Total</h3>
+
+  <p>标注在整网末尾的 Training Objective 区域：</p>
+
+  <table class="tbl">
+    <thead><tr><th>组分</th><th>含义</th></tr></thead>
+    <tbody>
+      <tr><td><b>CE</b></td><td>交叉熵——主语言模型 loss，衡量"预测下一个 token 有多准"</td></tr>
+      <tr><td><b>Aux</b></td><td>辅助 loss 的总和（Router balance + z-loss + 其他正则化项）</td></tr>
+      <tr><td><b>MTP ×3</b></td><td>Multi-Token Prediction loss——同时预测未来 3 个 token（DeepSeek-V3 特色），推理时用于 speculative decoding 加速</td></tr>
+      <tr><td><b>Total</b></td><td>总 loss = CE + Aux + MTP×3。优化器看的就是这个</td></tr>
+    </tbody>
+  </table>
+
+  <p>训练目标区域还展示了<b>后向传播的结构</b>：<code>activation gradient ∂L/∂H_t ×4</code>（mHC 4 个头各自的梯度）、<code>Accumulation → DP Gradient Sync → Unscale / Clip → Optimizer Step → W(t+1)</code>——这条链是 §12 时间维的逆向路径。以及 <b>Checkpoint: every 1000 steps</b>，指检查点保存频率。</p>
+
+  <h3>mHC Merge：残差流的门控统计</h3>
+
+  <p>在 Attention 和 MoE FFN 的输出端各有一个 <code>mHC Merge</code> 节点：</p>
+
+  <table class="tbl">
+    <thead><tr><th>位置</th><th>in</th><th>Δ%</th><th>mix</th></tr></thead>
+    <tbody>
+      <tr><td>mHC Attention Merge</td><td>85</td><td>2.4%</td><td>0.07</td></tr>
+      <tr><td>mHC FFN Merge</td><td>83</td><td>5.9%</td><td>0.19</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>Δ%</b> 反映该子模块的输出相对于残差流的贡献比例。MoE FFN 的 Δ% 是 Attention 的 2.5 倍（5.9% vs 2.4%），说明<strong>FFN 对残差流的改变比 Attention 更大</strong>——这是 MoE 层的典型特征：每个 token 被路由到 8 个专家中最擅长它的那些，产生较大的特征更新。<b>mix</b> 是门控混合系数——Attention 的 mix 很低（0.07），说明残差流以"几乎直通"的方式经过 Attention；FFN 的 mix 稍高（0.19），允许更多新信息混入。</p>
+
+  <h3>DSA 注意力核心：logit / Pmax / 延迟</h3>
+
+  <p>Attention Core 节点标注 <code>DSA · Sparse Global · top-k · logit ±14.3 · Pmax 0.62 · 0.28ms</code>：</p>
+
+  <ul>
+    <li><b>logit ±14.3</b> — 注意力分数的绝对值范围。如果 logit 值过大，softmax 会饱和（注意力全集中在极少数 token 上），导致梯度消失</li>
+    <li><b>Pmax 0.62</b> — softmax 之后最大的注意力概率。过高（→ 1.0）说明注意力在"盯死"某个 token，多样性不足</li>
+    <li><b>0.28ms</b> — Attention 计算本身的延迟（使用 Flash Attention / DSA 实现）</li>
+  </ul>
+
+  <p>这里的 Pmax 和 MoE Router 的 Pmax 含义类似但对象不同——一个是 "token 关注哪个位置"，一个是 "token 被送到哪个专家"。</p>
+
+  <h3>指标间的联动关系</h3>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 13A</span><span class="ftitle">五类数据在一层中的标注位置与联动链</span>
+      <span class="fnote">上半部分展示五类数据各自标注在 Transformer 层的什么位置，下半部分画出指标之间的因果联动链：激活 σ 飙升 → 梯度 Δ/W 跟涨 → γΔ 补偿 → 如果补不住 → loss spike。</span></figcaption>
+    <div class="stage" id="fig-obs-layer"></div>
+  </figure>
+
+  <p>五组指标不是独立的，它们之间有明确的因果链条：</p>
+
+  <table class="tbl">
+    <thead><tr><th>联动</th><th>链条</th><th>机制</th></tr></thead>
+    <tbody>
+      <tr><td><b>σ/Amax → Δ/W</b></td><td>激活 → 梯度</td><td>激活越大，反向传播出来的梯度越大，Δ/W 就越高。所以 σ/Amax 在某层飙升时，那层的 Δ/W 也会跟涨——这是 loss spike 的典型前兆链</td></tr>
+      <tr><td><b>σ 失控 → γΔ 补偿</b></td><td>激活 → Norm</td><td>RMSNorm 的 γ 在学习"该放大/缩小多少"。上游 σ 剧变时 γΔ 会增大来补偿——γΔ 突增 = 上游出事了，虽然 loss 曲线上可能还看不出来</td></tr>
+      <tr><td><b>Pmax/H → balance → Aux → Total</b></td><td>路由 → loss</td><td>Router 不均衡 → balance loss 增大 → Aux 占比升高 → 挤占 CE 的梯度信号 → 主任务学习变慢</td></tr>
+      <tr><td><b>逐层延迟 → PP 气泡</b></td><td>性能 → 效率</td><td>各 stage 的最慢层决定了那个 stage 的耗时，stage 间耗时差决定了流水线气泡大小</td></tr>
+      <tr><td><b>Δ% (Attn) vs Δ% (FFN)</b></td><td>残差流构成</td><td>两者的比值反映"这一层主要在做什么"——Attn 主导 = 在学位置关系，FFN 主导 = 在更新知识</td></tr>
+    </tbody>
+  </table>
+
+  <h3>诊断场景：出了问题先看什么</h3>
+
+  <figure>
+    <figcaption><span class="fnum">FIG 13B</span><span class="ftitle">诊断流程：从症状到指标的排查路径</span>
+      <span class="fnote">五种常见训练问题的排查起点和深入路径。左列是症状（你看到的），右列是指标链（你该查的）。</span></figcaption>
+    <div class="stage" id="fig-obs-diag"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th>症状</th><th>先看</th><th>再看</th><th>确认</th></tr></thead>
+    <tbody>
+      <tr><td><b>loss spike</b></td><td>逐层 σ/Amax 折线——哪层先飙的</td><td>那层的 Δ/W 和 γΔ——是梯度爆炸还是激活爆炸</td><td>排查该层的输入数据是否异常（NaN/Inf）</td></tr>
+      <tr><td><b>loss 不降</b></td><td>Δ/W 是不是太小（学习率不够）</td><td>Router H 和 Pmax（MoE 是否坍缩了）</td><td>检查 Aux 在 Total 中占比是否过大（挤占 CE 梯度）</td></tr>
+      <tr><td><b>训练变慢</b></td><td>逐层延迟折线——最慢的层是哪个</td><td>通信带宽利用率（是计算慢还是通信慢）</td><td>EP A2A 是否成为瓶颈（MoE 层特有）</td></tr>
+      <tr><td><b>PP 气泡大</b></td><td>各 stage 延迟是否均衡</td><td>最慢 stage 里最慢的层是哪个</td><td>是否该调整 PP 切分点让 stage 耗时更均衡</td></tr>
+      <tr><td><b>专家坍缩</b></td><td>Pmax → 1、H → 0</td><td>balance loss 权重够不够、z-loss 在不在控制范围</td><td>各 Expert 的 tok 分布——是部分专家空转还是全面不均</td></tr>
+    </tbody>
+  </table>
+
+  <h3>从 §04–§12 的知识到这些数的对应关系</h3>
+
+  <p>整网上每个数据标注都可以回溯到前面章节讲过的某个结构性概念：</p>
+
+  <table class="tbl">
+    <thead><tr><th>数据标注</th><th>对应章节</th><th>联系</th></tr></thead>
+    <tbody>
+      <tr><td>TP/SP AllGather / ReduceScatter 的 MB 和 GB/s</td><td>§04 SP、§09 通信</td><td>SP 把 AllReduce 拆成 RS+AG 分放两端——这里的数据量和延迟就是 §04 FIG 04F "通信量相同"的实测印证</td></tr>
+      <tr><td>EP Dispatch/Combine 的 A2A 延迟</td><td>§09 All-to-All</td><td>§09 说 All-to-All 是 N:N 通信——这里的带宽数说明 EP 组的物理拓扑比 TP 组更紧</td></tr>
+      <tr><td>逐层延迟折线上的 PP stage 分界</td><td>§06 映射、§12 运行时</td><td>§06 说 PP 把连续的层分给不同 stage——这里的折线直接展示各 stage 的耗时是否均衡</td></tr>
+      <tr><td>σ / Amax 的逐层变化</td><td>§02 静态结构、§12 运行时</td><td>§02 说层是整网的重复单元——σ 和 Amax 的逐层变化就是"同一个重复单元在不同位置的行为差异"</td></tr>
+      <tr><td>Δ/W 的各层一致性</td><td>§11 先后顺序</td><td>§11 说切分配置决定了 rank 排布——同一 TP 组内各卡的 Δ/W 应该完全一致（它们做的是同一个矩阵的不同列切片）</td></tr>
+      <tr><td>DP ×4 · gradient replica</td><td>§01 基数、§09 DP Gradient Sync</td><td>§01 说 DP 是最外层的复制——这里标注的 "×4" 就是 DP 基数，gradient replica 表示反向传播后所有 DP 副本做一次梯度同步</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note gov">
+    <span class="lbl">对 viewer：这些数据暗示什么交互</span>
+    <p><b>逐层折线 + 点击下钻</b>：顶部折线图展示的是所有层的汇总（σ / Amax / 延迟），点击某一层应该展开到那层内部的全部指标——就像截图里展开的那个详情面板。这个交互在 §12 的"三组坐标"框架里恰好是：<strong>z 轴（粒度/深度）上的一次放大</strong>。</p>
+    <p><b>五类筛选器是降噪工具</b>：同时显示全部五类数据会淹没视线。筛选器让用户按当前诊断场景只看一类——排查 loss spike 时只开"数值"，调性能时只开"性能"。</p>
+  </div>
+
+</section>
+
 <section id="s7">
-  <div class="sec-head"><span class="sec-num">13</span><h2>勘误与冲突核对</h2></div>
+  <div class="sec-head"><span class="sec-num">14</span><h2>勘误与冲突核对</h2></div>
 
   <p class="lede">对整轮讨论做前后核对后确认的修正项。按字母顺序排列。A–E 与 K、L、M 是实质性错误，其余为表述不严谨或存在歧义。K、L 由「为什么每种切分都绑定了一种通信原语」这一质疑引出；M 由核对 rank 排布机制时引出。</p>
 
@@ -2311,7 +2516,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 </section>
 
 <section id="s8">
-  <div class="sec-head"><span class="sec-num">14</span><h2>对体验治理的推论</h2></div>
+  <div class="sec-head"><span class="sec-num">15</span><h2>对体验治理的推论</h2></div>
 
   <p class="lede">上面这套参照系的实用价值在于：它能把用户口中同一句抱怨，拆成责任方、周期、定位路径都不同的几类。</p>
 
@@ -2396,7 +2601,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
 <!-- ===== 对象总表 ===== -->
 <section id="s-onto">
-  <div class="sec-head"><span class="sec-num">15</span><h2>对象总表：全文一共研究了五类东西</h2></div>
+  <div class="sec-head"><span class="sec-num">16</span><h2>对象总表：全文一共研究了五类东西</h2></div>
 
   <p class="lede">前面十六节各自谈了一堆对象——整网、层、算子、kernel、权重体、激活体、卡、流、rank、通信域、通信原语。它们看着零散，其实<strong>只分五类</strong>。分清类别，每个对象该画成什么样、能不能画，就都定了。</p>
 
@@ -2491,7 +2696,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
 <!-- ===== 边界与未展开 ===== -->
 <section id="s-gaps">
-  <div class="sec-head"><span class="sec-num">16</span><h2>本文的简化、留白与边界</h2></div>
+  <div class="sec-head"><span class="sec-num">17</span><h2>本文的简化、留白与边界</h2></div>
 
   <p class="lede">一份自称「参照系」的东西，最该说清的是它<strong>没覆盖什么</strong>。下面分三类：本文做过的简化（可能误导，必须说明）、提到但没展开的机制、以及有意划在范围外的。</p>
 
@@ -4769,6 +4974,203 @@ function figTime(){
   sc.render();
 }
 
+/* ===================== FIG 13A · 五类数据在一层中的标注位置与联动链 ===================== */
+function figObsLayer(){
+  var m=document.getElementById('fig-obs-layer'); if(!m) return;
+  var W=920, H=520;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var INK='#0E1418', DIM='#6B7B86', RULE='#D2DADF';
+  var C={act:'#2E6E8E', grad:'#B3603A', perf:'#3E7D5E', moe:'#6A5A9B', train:'#A8404A'};
+  var CBG={act:'#EDF4F8', grad:'#FDF5F0', perf:'#EEF6F1', moe:'#F3F0F8', train:'#FCF0F1'};
+
+  /* ===== 上半：Transformer 层组件流 ===== */
+  s+='<text x="460" y="18" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">一个 Transformer 层内的数据标注位置</text>';
+
+  var LX=30, LY=38, BW=104, BH=44, GAP=8;
+  var comps=[
+    {n:'Hidden State',   sub:'H_in · 残差流',     cat:'act',  metrics:'σ Amax V'},
+    {n:'RMSNorm',        sub:'归一化',             cat:'grad', metrics:'in out γΔ'},
+    {n:'QKV Linear',     sub:'注意力投影',          cat:'grad', metrics:'W Δ/W'},
+    {n:'DSA Core',       sub:'稀疏注意力',          cat:'perf', metrics:'logit Pmax 0.28ms'},
+    {n:'Output Linear',  sub:'注意力输出',          cat:'grad', metrics:'W Δ/W'},
+    {n:'mHC Merge',      sub:'Attention 残差门控', cat:'act',  metrics:'Δ% 2.4 mix 0.07'},
+    {n:'RMSNorm',        sub:'归一化',             cat:'grad', metrics:'in out γΔ'},
+    {n:'Router',         sub:'专家选择',            cat:'moe',  metrics:'Pmax H z-loss'},
+  ];
+
+  var comps2=[
+    {n:'EP Dispatch',    sub:'A2A 发送',           cat:'perf', metrics:'36MB 151GB/s'},
+    {n:'Expert Pool',    sub:'×8 专家',            cat:'moe',  metrics:'tok balance'},
+    {n:'EP Combine',     sub:'A2A 收回',           cat:'perf', metrics:'24MB 108GB/s'},
+    {n:'mHC Merge',      sub:'FFN 残差门控',       cat:'act',  metrics:'Δ% 5.9 mix 0.19'},
+    {n:'Hidden State',   sub:'H_out · 残差流',     cat:'act',  metrics:'σ Amax V'},
+  ];
+
+  var allComps=[comps, comps2];
+  var rowY=[LY, LY+100];
+
+  allComps.forEach(function(row, ri){
+    var x=LX, y=rowY[ri];
+    row.forEach(function(c, ci){
+      var col=C[c.cat], bg=CBG[c.cat];
+      s+='<rect x="'+x+'" y="'+y+'" width="'+BW+'" height="'+BH+'" rx="5" fill="'+bg+'" stroke="'+col+'" stroke-width="1.4"/>';
+      s+='<text x="'+(x+BW/2)+'" y="'+(y+17)+'" font-size="9.5" font-weight="700" fill="'+col+'" text-anchor="middle">'+c.n+'</text>';
+      s+='<text x="'+(x+BW/2)+'" y="'+(y+30)+'" font-size="7.5" fill="'+DIM+'" text-anchor="middle">'+c.sub+'</text>';
+      s+='<text x="'+(x+BW/2)+'" y="'+(y+BH+12)+'" font-size="7" fill="'+col+'" text-anchor="middle" font-weight="600">'+c.metrics+'</text>';
+      if(ci<row.length-1){
+        s+='<path d="M'+(x+BW+1)+' '+(y+BH/2)+' L'+(x+BW+GAP-1)+' '+(y+BH/2)+'" stroke="'+RULE+'" stroke-width="1.5" marker-end="url(#obs-arrow)"/>';
+      }
+      x+=BW+GAP;
+    });
+  });
+
+  s+='<defs><marker id="obs-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+RULE+'"/></marker>';
+  s+='<marker id="obs-arr-r" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+C.train+'"/></marker></defs>';
+
+  /* 连接线：第一行最后 → 折回第二行第一个 */
+  var linkX1=LX+comps.length*(BW+GAP)-GAP, linkY1=LY+BH, linkX2=LX, linkY2=rowY[1];
+  s+='<path d="M'+linkX1+' '+linkY1+' C'+linkX1+' '+(linkY1+30)+' '+linkX2+' '+(linkY2-30)+' '+linkX2+' '+linkY2+'" stroke="'+RULE+'" stroke-width="1.5" fill="none" marker-end="url(#obs-arrow)"/>';
+
+  /* ===== 图例 ===== */
+  var legY=rowY[1]+BH+30;
+  s+='<text x="'+LX+'" y="'+legY+'" font-size="10" font-weight="700" fill="'+INK+'">五类数据的颜色编码</text>';
+  var legs=[
+    {n:'数值 · 激活统计', c:'act'},
+    {n:'梯度 · 权重/更新', c:'grad'},
+    {n:'性能 · 通信延迟', c:'perf'},
+    {n:'MoE · 路由负载', c:'moe'},
+    {n:'训练 · 目标函数', c:'train'}
+  ];
+  var legX=LX;
+  legs.forEach(function(l){
+    s+='<rect x="'+legX+'" y="'+(legY+8)+'" width="12" height="12" rx="2" fill="'+CBG[l.c]+'" stroke="'+C[l.c]+'" stroke-width="1.2"/>';
+    s+='<text x="'+(legX+18)+'" y="'+(legY+18)+'" font-size="9" fill="'+C[l.c]+'" font-weight="600">'+l.n+'</text>';
+    legX+=150;
+  });
+
+  /* ===== 下半：因果联动链 ===== */
+  var chainY=legY+48;
+  s+='<text x="460" y="'+chainY+'" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">指标间的因果联动链</text>';
+
+  var chains=[
+    {from:'σ / Amax 飙升', mid:'Δ/W 跟涨', to:'γΔ 补偿', end:'loss spike', c1:'act', c2:'grad', c3:'grad', c4:'train',
+     note:'激活值膨胀 → 梯度放大 → Norm 被迫调整 → 补不住就炸'},
+    {from:'Pmax → 1', mid:'H → 0', to:'balance ↑', end:'CE 梯度被挤占', c1:'moe', c2:'moe', c3:'moe', c4:'train',
+     note:'专家坍缩 → 辅助 loss 升高 → 主任务学不动'},
+    {from:'某层延迟偏高', mid:'stage 耗时不均', to:'PP 气泡增大', end:'整体吞吐下降', c1:'perf', c2:'perf', c3:'perf', c4:'perf',
+     note:'最慢的层决定 stage 耗时，stage 差异决定气泡'}
+  ];
+
+  chainY+=16;
+  var CW2=155, CH2=38, CG=16;
+  chains.forEach(function(ch, ci){
+    var y=chainY+ci*(CH2+24);
+    var steps=[
+      {t:ch.from, c:ch.c1}, {t:ch.mid, c:ch.c2}, {t:ch.to, c:ch.c3}, {t:ch.end, c:ch.c4}
+    ];
+    var sx=80;
+    steps.forEach(function(st, si){
+      s+='<rect x="'+sx+'" y="'+y+'" width="'+CW2+'" height="'+CH2+'" rx="6" fill="'+CBG[st.c]+'" stroke="'+C[st.c]+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx+CW2/2)+'" y="'+(y+CH2/2+4)+'" font-size="9.5" font-weight="600" fill="'+C[st.c]+'" text-anchor="middle">'+st.t+'</text>';
+      if(si<3){
+        s+='<path d="M'+(sx+CW2+2)+' '+(y+CH2/2)+' L'+(sx+CW2+CG-2)+' '+(y+CH2/2)+'" stroke="'+C[steps[si+1].c]+'" stroke-width="1.5" marker-end="url(#obs-arr-'+st.c+')"/>';
+        s+='<defs><marker id="obs-arr-'+st.c+'" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+C[steps[si+1].c]+'"/></marker></defs>';
+      }
+      sx+=CW2+CG;
+    });
+    s+='<text x="80" y="'+(y+CH2+13)+'" font-size="8" fill="'+DIM+'">'+ch.note+'</text>';
+  });
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
+/* ===================== FIG 13B · 诊断流程：从症状到指标 ===================== */
+function figObsDiag(){
+  var m=document.getElementById('fig-obs-diag'); if(!m) return;
+  var W=920, H=400;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+
+  var INK='#0E1418', DIM='#6B7B86', RULE='#D2DADF';
+  var C={act:'#2E6E8E', grad:'#B3603A', perf:'#3E7D5E', moe:'#6A5A9B', train:'#A8404A'};
+  var CBG={act:'#EDF4F8', grad:'#FDF5F0', perf:'#EEF6F1', moe:'#F3F0F8', train:'#FCF0F1'};
+  var WARN='#C0392B', WARNBG='#FDF0EE';
+
+  s+='<text x="460" y="20" font-size="12" font-weight="700" fill="'+INK+'" text-anchor="middle">诊断流程：从症状到指标的排查路径</text>';
+
+  var scenarios=[
+    {symptom:'loss spike',
+     steps:[
+       {t:'逐层 σ/Amax',sub:'哪层先飙', c:'act'},
+       {t:'那层 Δ/W · γΔ',sub:'梯度还是激活', c:'grad'},
+       {t:'排查输入数据',sub:'NaN / Inf', c:'train'}
+     ]},
+    {symptom:'loss 不降',
+     steps:[
+       {t:'Δ/W 是否太小',sub:'学习率够吗', c:'grad'},
+       {t:'Router H · Pmax',sub:'MoE 坍缩了吗', c:'moe'},
+       {t:'Aux / Total 占比',sub:'挤占 CE 梯度', c:'train'}
+     ]},
+    {symptom:'训练变慢',
+     steps:[
+       {t:'逐层延迟折线',sub:'最慢的层', c:'perf'},
+       {t:'通信带宽利用率',sub:'计算慢还是通信慢', c:'perf'},
+       {t:'EP A2A 延迟',sub:'MoE 层瓶颈', c:'moe'}
+     ]},
+    {symptom:'PP 气泡大',
+     steps:[
+       {t:'stage 延迟均衡',sub:'各 stage 耗时', c:'perf'},
+       {t:'最慢 stage 内',sub:'定位最慢层', c:'perf'},
+       {t:'调整 PP 切分',sub:'重新均衡', c:'grad'}
+     ]},
+    {symptom:'专家坍缩',
+     steps:[
+       {t:'Pmax → 1 · H → 0',sub:'坍缩确认', c:'moe'},
+       {t:'balance · z-loss',sub:'辅助 loss 权重', c:'moe'},
+       {t:'各 Expert tok',sub:'部分还是全面', c:'moe'}
+     ]}
+  ];
+
+  s+='<defs><marker id="diag-arr" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="'+DIM+'"/></marker></defs>';
+
+  var SX=20, SY=40, RH=60, RG=10;
+  var SW=110, STEPW=155, STEPG=14;
+
+  /* 列标题 */
+  s+='<text x="'+(SX+SW/2)+'" y="'+(SY+4)+'" font-size="9" font-weight="700" fill="'+WARN+'" text-anchor="middle">症状</text>';
+  s+='<text x="'+(SX+SW+STEPG+STEPW/2)+'" y="'+(SY+4)+'" font-size="9" font-weight="700" fill="'+INK+'" text-anchor="middle">① 先看</text>';
+  s+='<text x="'+(SX+SW+STEPG+STEPW+STEPG+STEPW/2)+'" y="'+(SY+4)+'" font-size="9" font-weight="700" fill="'+INK+'" text-anchor="middle">② 再看</text>';
+  s+='<text x="'+(SX+SW+STEPG+2*(STEPW+STEPG)+STEPW/2)+'" y="'+(SY+4)+'" font-size="9" font-weight="700" fill="'+INK+'" text-anchor="middle">③ 确认</text>';
+
+  SY+=14;
+
+  scenarios.forEach(function(sc, si){
+    var y=SY+si*(RH+RG);
+
+    /* 症状框 */
+    s+='<rect x="'+SX+'" y="'+y+'" width="'+SW+'" height="'+RH+'" rx="6" fill="'+WARNBG+'" stroke="'+WARN+'" stroke-width="1.4"/>';
+    s+='<text x="'+(SX+SW/2)+'" y="'+(y+RH/2+4)+'" font-size="11" font-weight="700" fill="'+WARN+'" text-anchor="middle">'+sc.symptom+'</text>';
+
+    /* 三步 */
+    var sx=SX+SW;
+    sc.steps.forEach(function(st, sti){
+      /* 箭头 */
+      s+='<path d="M'+(sx+2)+' '+(y+RH/2)+' L'+(sx+STEPG-2)+' '+(y+RH/2)+'" stroke="'+DIM+'" stroke-width="1.3" marker-end="url(#diag-arr)"/>';
+
+      sx+=STEPG;
+      var col=C[st.c], bg=CBG[st.c];
+      s+='<rect x="'+sx+'" y="'+y+'" width="'+STEPW+'" height="'+RH+'" rx="6" fill="'+bg+'" stroke="'+col+'" stroke-width="1.2"/>';
+      s+='<text x="'+(sx+STEPW/2)+'" y="'+(y+RH/2-4)+'" font-size="9.5" font-weight="700" fill="'+col+'" text-anchor="middle">'+st.t+'</text>';
+      s+='<text x="'+(sx+STEPW/2)+'" y="'+(y+RH/2+12)+'" font-size="8" fill="'+DIM+'" text-anchor="middle">'+st.sub+'</text>';
+      sx+=STEPW;
+    });
+  });
+
+  s+='</svg>';
+  m.innerHTML=s;
+}
+
 /* ===================== 宽表：容器压窄时可跳出容器 ===================== */
 var wideCount = 0;
 
@@ -4887,7 +5289,8 @@ function boot(){
    ['fig-sp-tp',figSPTP], ['fig-sp-cost',figSPCost],
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
-   ['fig-trace',figTrace], ['fig-container',figContainer]
+   ['fig-trace',figTrace], ['fig-container',figContainer],
+   ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */

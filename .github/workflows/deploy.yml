@@ -9,16 +9,18 @@ name: Deploy to GitHub Pages
 #   · claude/rank-view-network-analysis-htowfc
 #       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
 #       → /patterns/rank-card-expansion/ 与 /rank-card/（rank 卡 = 整网的并行化展开）
-#   · 并行拓扑（源码已进 main 的 public/parallel-topology/，checkout 跟触发分支走：
-#     main push 发 main 的版本；claude/parallel-topology-pattern-display-yhghq8 等
-#     pattern 分支 push 发它自己的版本。组合工作台分支是唯一的例外，见那一步的注释）
-#       → /parallel-topology/（参照系 + PRD + Demo + atlas + cockpit）
+#   · claude/parallel-topology-html-demo-ff10w3
+#       → /parallel-topology/（参照系 + PRD + Demo + 组合总图 + 驾驶舱）
 #       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
-#       → /patterns/net-slicing/（「整网切分」单视图 pattern，全屏画布、自包含）
-#       → dist/launch.html 里插三张卡 + 顶栏两枚 pill（片段本体在
+#       → /patterns/net-slicing/（只交付「整网切分」那一屏，全屏画布、自包含）
+#       → dist/launch.html 里插三张卡 + 顶栏两枚 pill（片段本体在该分支的
 #         public/parallel-topology/launch-card*.html，见下面那一步）
+#       这三个目录与三张卡，main 这份工作流已经全部自己产出——2026-08 之前
+#       main 只做了其中一部分（缺 /patterns/net-slicing/ 与它那张卡），于是每次
+#       推 main 都会把它打掉、必须手动补跑那个分支。现在推 main 一次即完整。
 #   · claude/topology-swimlane-card-layout-fdrgiq
-#       → /combo-workbench/（组合工作台：纵向摞卡片的台面 + 泳道图的上游拷贝）
+#       → /combo-workbench/（组合工作台：三格台面——训练语义 sidecar ｜ 并行拓扑
+#         pattern ｜ 微批次生命周期泳道；泳道那份是 compute-graph-viewer 的上游拷贝）
 #       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
 #         public/combo-workbench/launch-card.html，见下面那一步）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
@@ -49,8 +51,16 @@ on:
       - claude/logic-cube-pattern-spec-3oycmv
       - claude/rank-view-network-analysis-htowfc
       - claude/parallel-topology-html-demo-ff10w3
-      - claude/parallel-topology-pattern-display-yhghq8
       - claude/topology-swimlane-card-layout-fdrgiq
+  # 自愈：任何一条分支发布完成后，main 这份（全集）自动再补发一次。
+  # 为什么需要它：Pages 每次部署**整体替换**站点，而各 pattern 分支跑的是它们
+  # 自己那份工作流、只叠加自己那一份目录——于是「谁最后发谁赢」，别人的目录会
+  # 一直消失又找回（2026-08-11 一上午 /combo-workbench/ 就这样 404 了六次）。
+  # 注意：workflow_run 只认**默认分支上的这份文件**，所以它并进 main 之后才生效；
+  # 在 pattern 分支上它是惰性的，不会互相触发。
+  workflow_run:
+    workflows: ["Deploy to GitHub Pages"]
+    types: [completed]
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -66,6 +76,13 @@ concurrency:
 
 jobs:
   build:
+    # 自愈触发的守卫：只有「触发它的那次运行来自 main 以外的分支、而且成功了」
+    # 才补发。少了这一条就会自己触发自己——补发本身跑在 main 上，它一完成又发一次
+    # workflow_run，无限循环。带上这条，链路是：别的分支发布 → main 补发 → 停。
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_branch != 'main' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main (site framework)
@@ -246,22 +263,10 @@ jobs:
           echo "published: /patterns/rank-card-expansion/pattern.html?v=$SHA"
           echo "published: /rank-card/?v=$SHA"
 
-      - name: Checkout parallel-topology source（跟着触发分支走）
-        # 并行拓扑的源码已经进了 main（public/parallel-topology/ + 两个 vendor），
-        # 所以这里不再钉死在 ff10w3 分支上：谁触发本工作流，就发布谁的那份源码——
-        #   · main 推送 → 发布 main 的 public/parallel-topology/（合并后的最新版）；
-        #   · pattern 分支（如 claude/parallel-topology-pattern-display-yhghq8）推送 →
-        #     发布该分支的版本，分支上的改动不用先并进 main 就能上线预览。
-        # 注意：别的 pattern 分支跑的是它们自己那份 workflow 文件，不受这行影响。
-        #
-        # 例外一条：本分支（组合工作台）只是**引用**并行拓扑，不迭代它——它带的
-        # public/parallel-topology/ 是从 main 分叉时那一份，已经落后于
-        # parallel-topology-pattern-display 分支（少了 /patterns/net-slicing/ 等）。
-        # 「跟着触发分支走」放到本分支身上就成了「发布一份旧的」，所以本分支显式
-        # 借用那条活跃分支的版本；并进 main 之后这个三元式自然失效，回到默认语义。
+      - name: Checkout parallel-topology branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name == 'claude/topology-swimlane-card-layout-fdrgiq' && 'claude/parallel-topology-pattern-display-yhghq8' || github.ref_name }}
+          ref: claude/parallel-topology-html-demo-ff10w3
           path: ptopo-src
 
       - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/
@@ -276,6 +281,16 @@ jobs:
           set -euo pipefail
           SHA=$(git -C ptopo-src rev-parse --short HEAD)
           SRC=ptopo-src/public/parallel-topology
+
+          # ⓪ 本分支新引入的 vendor 依赖补进 dist/vendor/。
+          # demo 里写的是 ../vendor/…，落在 main 构建产物已有的 /vendor/ 上——
+          # 但 main 那份只有老几样，本分支新加的目录它没有，不补就是三个 404，
+          # sidecar 挂不上，正视/侧视会**静默**退回旧 SVG（页面不报错，最难查）。
+          for v in model-architecture-3d-deck model-architecture-training-sidecar; do
+            rm -rf dist/vendor/$v
+            mkdir -p dist/vendor/$v
+            cp -r ptopo-src/public/vendor/$v/. dist/vendor/$v/
+          done
 
           # ① 目录入口 /parallel-topology/
           DIR=dist/parallel-topology
@@ -295,21 +310,20 @@ jobs:
           "
 
           # ② 规范入口 /patterns/parallel-topology-demo/（自包含）
-          # ../vendor/ 一律拍平成 ./vendor/：规范入口在 dist/patterns/<id>/ 下，
-          # ../vendor 指向的 dist/patterns/vendor/ 根本不存在——这份要自包含。
           PAT=dist/patterns/parallel-topology-demo
           mkdir -p $PAT/vendor
+          # ../vendor/ 一律拍平成 ./vendor/：规范入口在 dist/patterns/<id>/ 下，
+          # ../vendor 指向的 dist/patterns/vendor/ 根本不存在——这份要自包含。
           sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               $SRC/demo.html > $PAT/pattern.html
           # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这两行，否则线上 404。
-          # 正视/侧视改为本页 SVG 原生重画之后，3d-deck 与 training-sidecar 不再是
-          # 依赖（这正是「嵌入导致加载问题」修掉的那三份脚本）；rubik-cube 与 three
-          # 是「关闭整网」时才 loadOnce 进来的，静态扫 <script> 看不见——漏了只在
-          # 用户按下那颗开关时才 404，所以更要显式列上。
-          for v in pto-design-system pto-tokens model-graphviz net-sharding rubik-cube; do
+          # rubik-cube 与 three 是「关闭整网」时才 loadOnce 进来的，静态扫 <script> 看不见它们
+          # ——漏了不会在首屏报错，只在用户按下那颗开关时才 404，所以更要显式列上。
+          for v in pto-design-system pto-tokens model-graphviz net-sharding \
+                   model-architecture-3d-deck model-architecture-training-sidecar rubik-cube; do
             cp -r ptopo-src/public/vendor/$v $PAT/vendor/$v
           done
           cp ptopo-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
@@ -318,8 +332,8 @@ jobs:
 
           # ③ 单视图 pattern /patterns/net-slicing/（全屏画布，自包含）
           # 只交付「整网切分」这一屏：同一份实现，但默认落在 chain 视图、embed 形态
-          # （顶栏页脚全收），一条链接就是一张可转的图。vendor 依赖与 ② 完全相同，
-          # 直接把 ② 那份拷过来。
+          # （顶栏页脚全收），一条链接就是一张可转的图。三个 vendor 依赖比 ② 多不了，
+          # 直接把 ② 那份 vendor 硬链过来，省一次拷贝。
           NS=dist/patterns/net-slicing
           mkdir -p $NS
           sed -e 's#\.\./vendor/#./vendor/#g' \
@@ -339,7 +353,7 @@ jobs:
               + \"var t=location.pathname+'?'+q.toString()+location.hash;\"
               + \"if(t!==location.pathname+location.search+location.hash)history.replaceState(null,'',t);\"
               + \"})();</script>\";
-            h=h.replace('</head>', inject+'\n</head>');
+            h=h.replace('</head>', inject+'\\n</head>');
             fs.writeFileSync(f,h);
           "
           cp -r $PAT/vendor $NS/vendor
@@ -356,13 +370,14 @@ jobs:
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
       - name: Overlay 并行拓扑卡片 into /launch.html
-        # 工作台总页面（main 的 public/launch.html）里加三张卡 + 顶栏两枚 pill：
-        #   · Demo 本体（应用形态）              → 「工作台 · 主线」
-        #   · net-slicing（自包含 pattern，可嵌）→ 「独立迭代 Pattern」
-        #   · atlas（整族组件的地图）           → 「参照系 · 文档」组的头
-        # 片段本体在 public/parallel-topology/launch-card*.html（可评审、可本地渲染），
-        # 这里只做定位插入。锚点找不到就抛异常让整步失败——绝不静默发布一张没打上
-        # 补丁的总页面。
+        # 启动页（main 的 public/launch.html）里补三张卡 + 顶栏两枚 pill。
+        # 片段本体在 ptopo 分支的 public/parallel-topology/launch-card*.html
+        #（可评审、可本地渲染），这里只做定位插入。
+        # 三张卡各归各组，因为它们是三种不同的东西：
+        #   · demo（原型形态，看的是它长成什么样）→ 「原型 · 版本脉络」
+        #   · net-slicing（自包含 pattern，可嵌）  → 「独立迭代 Pattern」
+        #   · atlas（整族组件的地图）             → 「参照系 · 文档」组的头
+        # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
         run: |
           set -euo pipefail
           SHA=$(git -C ptopo-src rev-parse --short HEAD)
@@ -382,13 +397,9 @@ jobs:
               close = html.rindex('      </div>\n    </section>\n', 0, nxt)
               return html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
 
-          # ① Demo 本体进「原型 · 版本脉络」。它原来在「工作台 · 主线」——2026-08-11
-          #    挪的：那一组现在由「组合工作台」（/combo-workbench/）领头，而 Demo 正是
-          #    被那块台面当成一张卡摞进去的内容，它自己这条独立链接退成版本脉络里的
-          #    一站。原型组是最后一组，后面没有下一组注释可当锚点，所以按 id 直接定位。
-          gproto = html.index('<h2 class="group-title" id="g-proto">')
-          gclose = html.index('      </div>\n    </section>\n', gproto)
-          html = html[:gclose] + frag('launch-card.html').rstrip('\n') + '\n\n' + html[gclose:]
+          # ① Demo 本体进「原型 · 版本脉络」——它是原型形态，不是拿去嵌的零件。
+          #    原型是最后一组，往后没有下一组注释了，用页脚当界标。
+          html = append_to_group(html, '<footer class="foot">', frag('launch-card.html'))
           # ② 抽出来的 /patterns/net-slicing/ 进「独立迭代 Pattern」组末尾
           html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-net-slicing.html'))
           # ③ 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
@@ -409,9 +420,65 @@ jobs:
           PY
           grep -c 'parallel-topology/atlas.html' dist/launch.html
           grep -c 'patterns/net-slicing/pattern.html' dist/launch.html
+          # 三张卡必须各落各组，且落的是**指定的**那一组。
+          # 判定方式：按文档顺序切出所有 <!-- ═══ 组名 ═══ --> 的区间，看卡片落在哪个区间里。
+          # 不能只比先后（主线那张卡的链接里也含 net-slicing 的地址，「第一次出现」会误判），
+          # 也不能只判「在不在某两个界标之间」——启动页新增一个分组就会把卡挤进那个新组，
+          # 而区间判定照样通过。要的是「实际落在哪一组」和「应该落在哪一组」逐一对上。
+          python3 - <<'PY'
+          import pathlib, re, sys
+          html = pathlib.Path('dist/launch.html').read_text(encoding='utf-8')
+          marks = [(m.start(), m.group(1)) for m in re.finditer(r'<!-- ═══ (.+?) ═══ -->', html)]
+          marks.append((len(html), None))
+          def group_of(pos):
+              for i, (off, name) in enumerate(marks):
+                  if off <= pos < marks[i + 1][0]:
+                      return name
+              return None
+          EXPECT = [
+              ('Demo',        './parallel-topology/demo.html',       '原型 · 版本脉络'),
+              ('net-slicing', './patterns/net-slicing/pattern.html', '独立迭代 Pattern'),
+              ('组合总图',     './parallel-topology/atlas.html',      '参照系 · 文档与研究报告'),
+          ]
+          bad = 0
+          for name, href, want in EXPECT:
+              at = html.find('<h3 class="card-title"><a href="' + href)
+              if at < 0:
+                  print(f'  {name} 卡：没找到！'); bad += 1; continue
+              got = group_of(at)
+              ok = (got == want)
+              print(f'  {name} 卡 in「{got}」' + ('' if ok else f'   ← 应该在「{want}」'))
+              bad += 0 if ok else 1
+          sys.exit(1 if bad else 0)
+          PY
           test -s dist/parallel-topology/atlas.html
           test -s dist/parallel-topology/cockpit.html
-          test -s dist/patterns/net-slicing/pattern.html
+          # 三个入口引到的每个 vendor 文件都得真的在 dist 里躺着。少一个不会让页面报错，
+          # 只会让正视/侧视静默退回旧 SVG、或者按下「关闭整网」时才 404——那种坏法从线上
+          # 看不出来，必须在这里拦住。注意扫的是全文而不是 <script> 标签：rubik 与 three
+          # 是运行时 loadOnce 进来的，只在 JS 字符串里出现。
+          python3 - <<'PY'
+          import re, pathlib, sys
+          # (页面, vendor 前缀正则, 解析根) —— 目录入口共用 dist/vendor/，两个 pattern 各自自包含
+          targets = [
+              ('dist/parallel-topology/demo.html',                 r'\.\./(vendor/', 'dist'),
+              ('dist/patterns/parallel-topology-demo/pattern.html', r'\./(vendor/',  'dist/patterns/parallel-topology-demo'),
+              ('dist/patterns/net-slicing/pattern.html',            r'\./(vendor/',  'dist/patterns/net-slicing'),
+          ]
+          bad = 0
+          for page, prefix, root in targets:
+              html = pathlib.Path(page).read_text(encoding='utf-8')
+              refs = sorted(set(re.findall(prefix + r"[A-Za-z0-9./_-]+\.(?:css|js))(?:\?[^\"']*)?", html)))
+              missing = [r for r in refs if not pathlib.Path(root, r).is_file()]
+              print(f'{page} 引用 {len(refs)} 个 vendor 文件，缺 {len(missing)} 个')
+              for m in missing:
+                  print('  MISSING ' + root + '/' + m)
+              bad += len(missing)
+              if len(refs) < 15:
+                  print(f'  ← 只扫到 {len(refs)} 个引用，少于预期 15：正则或产物不对')
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
 
       - name: Checkout combo-workbench branch
         uses: actions/checkout@v4
