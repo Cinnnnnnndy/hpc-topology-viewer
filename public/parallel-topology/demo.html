@@ -2647,11 +2647,7 @@ function netScene(D, g, box, step){
         /* 关掉整网后壳变实心，必须四面收窄留缝：不然 128 个块边贴边糊成一整片
            橙色，「有 128 个」这件事一个都数不出来——魔方之所以是魔方，靠的正是
            块与块之间那条缝。 */
-        if(ui.netOff){
-          var padU = 0.16, padV = AR*0.10, padW = (csx[1]-csx[0])*0.14;
-          cu0 = padU; cu1 = 1 - padU; cv0 = padV; cv1 = AR - padV;
-          cw0 = csx[0] + padW; cw1 = csx[1] - padW;
-        }
+
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         var gc = rankOf(tc, co.c, dc, pc2, D);
@@ -2665,15 +2661,7 @@ function netScene(D, g, box, step){
            算子盖过去，128 只卡看着像一片散块，「一张卡是一个整体」这件事就没了。
            关掉整网之后卡是空的，壳就该变成实心块——按 PP 段给色阶，纵深上一段
            一个颜色，这正是魔方的读法：颜色是段，行是锯片，列是副本。 */
-        if(ui.netOff){
-          /* 色阶按 PP 段拉开：纵深上一段一个明度，这是魔方的读法——
-             颜色是段，行是锯片，列是副本。选中那只再跳一档。 */
-          var lit = meC ? 82 : (24 + pc2*17);
-          body.push(quad([C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.pp, Math.max(8, lit-16))+';stroke:none'));
-          body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.pp, Math.max(8, lit-8))+';stroke:none'));
-          body.push(quad([C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.pp, Math.max(8, lit-4))+';stroke:none'));
-          body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.pp, lit)+';stroke:none'));
-        } else {
+        {
           /* 磨砂：前脸 + 顶面各罩一层底色。里面 8 层的密纹隔着这层雾只剩个影子，
              128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
@@ -2689,11 +2677,11 @@ function netScene(D, g, box, step){
         /* Rank 打开之后是 128 只壳 × 12 条棱，投影上大量重叠——整网那档的浓度
            （近处 0.92 宽 / 0.98 浓）叠起来就成了一团黑。卡阵这档整体轻一级，
            前后的落差保持不变，该分得开的还是分得开。 */
-        var eW = meC ? 1.1 : (ui.netOff ? .55 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
-        var eO = meC ? 1 : (ui.netOff ? .5 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
+        var eW = meC ? 1.1 : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42));
+        var eO = meC ? 1 : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46));
         if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':(ui.netOff?VC.pp:'var(--pt-fg3)'))
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
@@ -2701,7 +2689,7 @@ function netScene(D, g, box, step){
            只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍。 */
         /* 顶视不写：那个机位把 v 轴压进了深度，挂在卡下沿的字会全叠到卡身上。
            好在顶视里 EP 的框最清楚（正正方方四大块），桶号让位给框。 */
-        if(cutEP && pc2 === 0 && !lowDetail && !ui.netOff && ui.viewTab !== 'top'){
+        if(cutEP && pc2 === 0 && !lowDetail && ui.viewTab !== 'top'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
           axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
@@ -5336,7 +5324,7 @@ function syncZoomHud(){
    点选复用 chainpick（document 上那只委托监听认 data-act，无须另接线）。 */
 function renderGroupHud(D){
   var el = $('groupHud'); if(!el) return;
-  if(ui.view !== 'chain' || (ui.cardMode && ui.netOff) || !D.ok){ el.hidden = true; return; }
+  if(ui.view !== 'chain' || !D.ok){ el.hidden = true; return; }
   var g = (sel !== null && sel < D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var lps = D.layersPerStage, L = D.layers;
@@ -5381,7 +5369,7 @@ window.addEventListener('resize', function(){
 function renderOpCard(D){
   var el = $('opCard'); if(!el) return;
   var s9 = ui.opSel;
-  if(!s9 || ui.view !== 'chain' || (ui.cardMode && ui.netOff) || !D || !D.ok){ el.hidden = true; return; }
+  if(!s9 || ui.view !== 'chain' || !D || !D.ok){ el.hidden = true; return; }
   var IX9 = graphIndex();
   var n9 = null;
   if(IX9) IX9.G.nodes.forEach(function(n){ if(n.id === s9.nid) n9 = n; });
@@ -5422,15 +5410,15 @@ function nudgeZoom(f){
 function renderChain(D){
   clearTimeout(crispT); crispT = 0;          /* 正在真渲染：挂起的「补一帧干净的」作废 */
   var zh = $('zoomHud');
-  /* 关掉整网就整屏交给魔方 pattern——它自己就是一张完整的图，不再叠我们的场景 */
-  if(ui.cardMode && ui.netOff){
-    renderRubik(D); renderChainBar(D);
-    $('stageNote').hidden = true; $('detach').hidden = true;
-    if(zh) zh.hidden = true;
-    renderGroupHud(D);
-    var oc0 = $('opCard'); if(oc0) oc0.hidden = true;
-    return;
+  /* 关掉整网 = **就是这一屏，只是卡里不画算子**：卡壳、门牌（DP/PP/TP/ep/EP 组）、
+     入口出口、轴上的刻度、工具条、缩放 HUD 全部照旧，去掉的只有壳里那些算子。
+     原来这里整屏交给 vendor 的逻辑魔方，代价是本页这一整套东西全被换掉了。
+     vendor 那份 pattern 与它自己那张页面保持原样，这里只是不再挂它。 */
+  if(rubikCtl && rubikCtl.destroy){
+    try{ rubikCtl.destroy(); }catch(e){}
+    rubikCtl = null; rubikCfgKey = '';
   }
+  $('rubik').hidden = true;
   $('rubik').hidden = true;
   $('stage').hidden = false;
   if(zh) zh.hidden = false;
@@ -5634,7 +5622,7 @@ document.addEventListener('click', function(ev){
 }, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
-  if(!ui.chips.length || (ui.cardMode && ui.netOff)){ el.hidden = true; el.innerHTML = ''; return; }
+  if(!ui.chips.length){ el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   function row(dim, what){
     return '<div class="rl"><span class="dk" style="--c:'+(dim==='sp'?VC.tp:VC[dim])+'">'+dim.toUpperCase()+'</span>'
@@ -5709,7 +5697,7 @@ function layoutQBar(){
 }
 function renderLegend(D){
   var el = $('legend'); if(!el) return;
-  el.hidden = !ui.legendOn || (ui.cardMode && ui.netOff);
+  el.hidden = !ui.legendOn;
   if(el.hidden){ el.innerHTML = ''; return; }
   var cutTP = ui.kTP && D.tp > 1, cutCP = ui.kCP && D.cp > 1,
       cutEP = ui.kEP && D.moe && D.ep > 1, cutDP = ui.kDP && D.dp > 1;
@@ -5923,10 +5911,10 @@ function renderChainBar(D){
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  $('stagebar').innerHTML = (ui.cardMode && ui.netOff) ? cBtn : (kBtns + legBtn + commBtn + mvBtn + cBtn + vBtns);
+  $('stagebar').innerHTML = kBtns + legBtn + commBtn + mvBtn + cBtn + vBtns;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
-  if(qb){ qb.innerHTML = (ui.cardMode && ui.netOff) ? '' : revBtn; qb.hidden = (ui.cardMode && ui.netOff); }
+  if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
   renderLegend(D);
   renderRevBar(D);
   requestAnimationFrame(layoutQBar);
