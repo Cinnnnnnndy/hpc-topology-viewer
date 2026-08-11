@@ -161,6 +161,33 @@ a.btn{text-decoration:none}
   white-space:nowrap;display:inline-flex;align-items:center}
 #topbar .spacer{flex:1 1 auto}
 .icon-btn{min-height:26px;min-width:28px;padding:0 7px;font-size:12.5px}
+#topbar .sep{width:1px;height:16px;background:var(--border-default);flex:0 0 auto}
+
+/* 框架层控件：刀键与数据标注。样式照 pattern 里那两组的形，好让人认出是同一个东西 */
+.knives{display:flex;gap:4px}
+.knives button{min-height:24px;padding:0 11px;border-radius:var(--radius-pill);font-size:11.5px;font-weight:650;
+  border:1px solid var(--sys-border);background:var(--sys-raised);color:var(--foreground-muted)}
+.knives button[aria-pressed="true"]{color:#fff;border-color:transparent;background:var(--k)}
+.knives button:hover{border-color:var(--sys-border-strong)}
+.knives button[aria-pressed="true"]:hover{filter:brightness(1.06)}
+
+.dmenu{position:relative}
+.dmenu > button{min-height:24px;padding:0 9px;font-size:11.5px;border-radius:var(--radius-pill)}
+.dmenu > button b{font-weight:700;color:var(--primary)}
+.dmenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:40;display:none;min-width:220px;padding:6px;
+  background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.dmenu.open .dmenu-pop{display:block}
+.dmenu-acts{display:flex;gap:4px;padding:2px 2px 6px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px}
+.dmenu-acts button{flex:1 1 0;min-height:24px;font-size:11.5px}
+.dmenu-pop .opt{display:flex;align-items:center;gap:8px;width:100%;min-height:28px;padding:4px 8px;border:0;
+  border-radius:var(--radius-md);background:transparent;color:var(--txt);font:500 12px/1.3 var(--font-sans);
+  text-align:left;justify-content:flex-start}
+.dmenu-pop .opt:hover{background:var(--state-hover);border-color:transparent}
+.dmenu-pop .opt i{width:8px;height:8px;border-radius:2px;background:var(--c);flex:0 0 auto}
+.dmenu-pop .opt .tick{margin-left:auto;color:var(--primary);font-size:11px}
+.dmenu-pop .opt[aria-checked="false"]{color:var(--foreground-muted)}
+.dmenu-pop .opt[aria-checked="false"] .tick{color:transparent}
+.dmenu-pop .opt[aria-checked="false"] i{opacity:.3}
 
 /* ═══ 舞台：左 sidecar ｜ 右 并行拓扑 ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
@@ -237,7 +264,22 @@ body.is-resizing iframe{pointer-events:none}
 
     <span class="spacer"></span>
 
-    <button class="icon-btn" id="themeBtn" title="切换明暗：外壳与两格里的页面一起换（与驾驶舱的主题桥同一套约定）" aria-label="切换明暗">☾</button>
+    <!-- 框架层：管整块台面的开关。本来长在各个 pattern 自己身上，提上来统一出，
+         格子里那份藏掉——同一排控件出现两次、两格各调各的，是最容易看错的一种界面。 -->
+    <div class="knives" role="group" aria-label="落哪几把刀" id="knives"></div>
+    <span class="sep" aria-hidden="true"></span>
+    <div class="dmenu" id="dmenu">
+      <button id="dmenuBtn" aria-haspopup="true" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）">数据 <b id="dmenuCount">5</b> <span aria-hidden="true">⌄</span></button>
+      <div class="dmenu-pop" role="menu">
+        <div class="dmenu-acts">
+          <button type="button" data-dact="all">全选</button>
+          <button type="button" data-dact="none">全部隐藏</button>
+        </div>
+        <div id="dmenuOpts"></div>
+      </div>
+    </div>
+
+    <button class="icon-btn" id="themeBtn" title="切换明暗：外壳与三格里的页面一起换" aria-label="切换明暗">☾</button>
   </header>
 
   <!-- ═══ 舞台：并行拓扑 ═══ -->
@@ -320,6 +362,14 @@ var SLOTS = [
     id: 'sidecar',
     el: 'slot-sidecar',
     themeByDom: true,
+    /* 自带控件里被框架层接管的那几个：数据（提到顶栏）、浅色/深色（跟外壳走）、
+       适配（缩放是这一格自己的事，但它和上面两颗挤在一排，留着就是半排废按钮）。
+       数据那组有专属 class，CSS 藏得掉；浅色/适配只有通用 class，只能按文字找，
+       所以走 hideByText——它们的节点在换主题时不重建（setTheme 只改文字和状态），
+       内联 display:none 会一直留着。 */
+    hideCss: '.pto-training-sidecar__data-control{display:none!important}',
+    hideByText: ['浅色', '深色', '适配'],
+    hideGroup: '.pto-model-deck__control',
     src: function () {
       return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html' + (BUILD ? '?v=' + BUILD : '');
     }
@@ -344,6 +394,11 @@ var SLOTS = [
       if (BUILD) q.set('v', BUILD);
       return '../patterns/net-slicing/pattern.html?' + q.toString();
     },
+    /* 刀键与数据标注提到顶栏，格子里那两组藏掉。用 :has() 定位刀键那一组——
+       它和视角那组同为 .pt-seg，只有「里面装着 knifetoggle」能把它们分开。
+       用 CSS 而不是内联样式：这个 pattern 每次改状态都重画工具条，内联的会被冲掉。 */
+    hideCss: '.pt-seg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-mv{display:none!important}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
@@ -382,6 +437,28 @@ var SLOTS = [
 var BY_ID = {};
 SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
 
+/* 框架层：这两组开关管的是整块台面（落哪几把刀、看哪几类数据标注），
+   不是某一格的私事，所以提到顶栏统一出，格子里那份藏掉。
+   驱动一律「点它自己的控件」：同源翻进去按按钮，不碰任何内部状态——
+   pattern 换了实现只要按钮还在就不散架，也不用它们为我们加 API。 */
+var KNIVES = [
+  { k: 'dp', t: 'DP',    c: '#4369ef' },
+  { k: 'pp', t: 'PP',    c: '#ffaa3b' },
+  { k: 'tp', t: 'TP·SP', c: '#22d3ee' },
+  { k: 'ep', t: 'EP',    c: '#9b3cf6' }
+];
+/* 五类数据标注两个 pattern 都有，分类相同、键名不同：
+   net-slicing 用 num/grad/perf/moe/train，sidecar 用 numerics/gradient/… */
+var DATAK = [
+  { k: 'num',   sc: 'numerics',    t: '数值', c: '#38bdf8' },
+  { k: 'grad',  sc: 'gradient',    t: '梯度', c: '#8b5cf6' },
+  { k: 'perf',  sc: 'performance', t: '性能', c: '#ea580c' },
+  { k: 'moe',   sc: 'moe',         t: 'MoE',  c: '#04d793' },
+  { k: 'train', sc: 'training',    t: '训练', c: '#ff4b7b' }
+];
+var knives = KNIVES.map(function (x) { return x.k; });
+var dataOn = DATAK.map(function (x) { return x.k; });
+
 var DEFAULT_DOCK_H = 340;
 var DEFAULT_SIDE_W = 460;
 var state = {};      // id → { value, folded, loaded }
@@ -395,7 +472,7 @@ var tabsOf = function (c) { return c.tabs || []; };   // 有的格子没有段�
 var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
 
 /* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
-   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&fold=swimlane&ui=dark
+   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&k=dp,pp&m=perf&fold=swimlane&ui=dark
    off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
 /* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
@@ -421,6 +498,11 @@ function readURL() {
   dockH = (isFinite(h) && h >= 120 && h <= 1600) ? h : DEFAULT_DOCK_H;
   var w = parseInt(q.get('w'), 10);
   sideW = (isFinite(w) && w >= 240 && w <= 2000) ? w : DEFAULT_SIDE_W;
+  /* 默认是全开，所以只有**关掉过**的链接才带 k= / m=；空串表示一个都不开 */
+  knives = q.has('k') ? q.get('k').split(',').filter(function (x) { return KNIVES.some(function (y) { return y.k === x; }); })
+                      : KNIVES.map(function (x) { return x.k; });
+  dataOn = q.has('m') ? q.get('m').split(',').filter(function (x) { return DATAK.some(function (y) { return y.k === x; }); })
+                      : DATAK.map(function (x) { return x.k; });
   shellDark = q.get('ui') === 'dark';
 }
 
@@ -436,6 +518,8 @@ function writeURL() {
   Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
   if (dockH !== DEFAULT_DOCK_H) q.set('h', String(dockH));
   if (sideW !== DEFAULT_SIDE_W) q.set('w', String(sideW));
+  if (knives.length !== KNIVES.length) q.set('k', knives.join(','));
+  if (dataOn.length !== DATAK.length) q.set('m', dataOn.join(','));
   if (shellDark) q.set('ui', 'dark');
   var qs = q.toString();
   history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
@@ -496,7 +580,10 @@ function wireFrame(slot) {
     clearTimeout(timer);
     state[slot.id].loaded = true;
     delete host.dataset.broken;
+    hideTakenOver(slot, frame);
     if (slot.themeByDom) syncFrameTheme(frame);
+    applyKnives();
+    applyData();
   });
 }
 
@@ -534,6 +621,98 @@ function applyShellTheme() {
   });
 }
 
+/* ── 框架层：刀键 / 数据标注 ─────────────────────────────────────────
+   一律「点它自己的控件」。同源翻进去，比对当前状态、只在不一致时点一下；
+   点完由 pattern 自己的处理器去改自己的状态（它换实现也不怕，只要按钮还在）。
+   跨源就够不着——静默跳过，不让一格的隔离把整页拖垮。 */
+function eachFrameDoc(fn) {
+  SLOTS.forEach(function (slot) {
+    var frame = $('iframe[data-slot="' + slot.id + '"]');
+    if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
+    try { var doc = frame.contentDocument; if (doc) fn(doc, slot); } catch (err) { /* 跨源 */ }
+  });
+}
+
+function applyKnives() {
+  eachFrameDoc(function (doc) {
+    KNIVES.forEach(function (x) {
+      var el = doc.querySelector('[data-act="knifetoggle"][data-k="' + x.k + '"]');
+      if (!el) return;
+      if (el.classList.contains('is-on') !== (knives.indexOf(x.k) >= 0)) el.click();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#knives button'), function (b) {
+    b.setAttribute('aria-pressed', String(knives.indexOf(b.dataset.k) >= 0));
+  });
+}
+
+function applyData() {
+  eachFrameDoc(function (doc) {
+    /* net-slicing：选项只在菜单展开时才进 DOM，所以开→改→关。
+       每次都重新查一次节点：它每改一次状态就重画一遍工具条，缓存下来的会失效。 */
+    if (doc.querySelector('[data-act="mvmenu"]')) {
+      var opened = !!doc.querySelector('[data-act="mvpick"]');
+      if (!opened) doc.querySelector('[data-act="mvmenu"]').click();
+      DATAK.forEach(function (x) {
+        var el = doc.querySelector('[data-act="mvpick"][data-k="' + x.k + '"]');
+        if (!el) return;
+        if (el.classList.contains('is-on') !== (dataOn.indexOf(x.k) >= 0)) el.click();
+      });
+      if (!opened) { var m = doc.querySelector('[data-act="mvmenu"]'); if (m) m.click(); }
+    }
+    /* sidecar：选项常驻 DOM，但**弹层不展开时点了不算**，所以同样开→改→关。
+       开关状态看 aria-checked——按钮里那个 ✓ 是静态装饰，五个选项一直都带着它，
+       拿它判断会一直以为「全开」（这一条踩过）。
+       另注意它的出厂默认是五类全关，而 net-slicing 是全开；提到框架层之后由
+       台面统一定，默认取全开（与顶栏按钮上的计数一致）。 */
+    var tg = doc.querySelector('[data-metric-menu-toggle]');
+    if (tg) {
+      var scOpen = tg.getAttribute('aria-expanded') === 'true';
+      if (!scOpen) tg.click();
+      DATAK.forEach(function (x) {
+        var el = doc.querySelector('[data-metric-view="' + x.sc + '"]');
+        if (!el) return;
+        if ((el.getAttribute('aria-checked') === 'true') !== (dataOn.indexOf(x.k) >= 0)) el.click();
+      });
+      if (!scOpen) {
+        var t2 = doc.querySelector('[data-metric-menu-toggle]');
+        if (t2 && t2.getAttribute('aria-expanded') === 'true') t2.click();
+      }
+    }
+  });
+  var opts = document.querySelectorAll('#dmenuOpts .opt');
+  Array.prototype.forEach.call(opts, function (b) {
+    b.setAttribute('aria-checked', String(dataOn.indexOf(b.dataset.k) >= 0));
+  });
+  $('#dmenuCount').textContent = String(dataOn.length);
+}
+
+/* 把被框架层接管的那几个控件从格子里藏掉。CSS 优先（pattern 重画工具条时
+   内联样式会被冲掉）；只有按文字才认得出的（sidecar 的浅色/适配）才走内联。 */
+function hideTakenOver(slot, frame) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || !doc.head) return;
+    if (slot.hideCss && !doc.getElementById('wb-hide')) {
+      var st = doc.createElement('style');
+      st.id = 'wb-hide';
+      st.textContent = slot.hideCss;
+      doc.head.appendChild(st);
+    }
+    if (slot.hideByText) {
+      var bs = doc.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) {
+        var t = (bs[i].textContent || '').trim();
+        if (slot.hideByText.indexOf(t) < 0) continue;
+        /* 藏的是整组而不是单颗按钮：「适配」旁边还挂着一个百分比读数，
+           只按掉按钮会留下一枚孤零零的「22%」。 */
+        var grp = bs[i].closest(slot.hideGroup || '') || bs[i];
+        grp.style.display = 'none';
+      }
+    }
+  } catch (err) { /* 跨源 */ }
+}
+
 /* 给没有 ?theme= / 没有 postMessage 的格子用：同源翻进去，按它自己那颗
    浅色/深色按钮。为什么不直接改它的 data-theme —— 那个 pattern 换主题时
    还要重算语义调色板并重绘，只改属性会留下半旧的画面；按按钮走的是它自己
@@ -562,6 +741,49 @@ function wireHead(slot) {
     if (btn.dataset.act !== 'fold') return;
     state[slot.id].folded = !state[slot.id].folded;
     applySlotVisibility();
+    writeURL();
+  });
+}
+
+/* ── 框架层控件的 UI ──────────────────────────────────────────────── */
+function buildFrameControls() {
+  $('#knives').innerHTML = KNIVES.map(function (x) {
+    return '<button type="button" data-k="' + x.k + '" style="--k:' + x.c + '" aria-pressed="true" title="' + x.t + '：这一维切不切（同时作用于两格）">' + x.t + '</button>';
+  }).join('');
+  $('#knives').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-k]');
+    if (!b) return;
+    var k = b.dataset.k, i = knives.indexOf(k);
+    if (i >= 0) knives.splice(i, 1); else knives.push(k);
+    applyKnives();
+    writeURL();
+  });
+
+  $('#dmenuOpts').innerHTML = DATAK.map(function (x) {
+    return '<button type="button" class="opt" role="menuitemcheckbox" data-k="' + x.k + '" style="--c:' + x.c + '" aria-checked="true">'
+      + '<i aria-hidden="true"></i>' + x.t + '<span class="tick">✓</span></button>';
+  }).join('');
+  var menu = $('#dmenu'), btn = $('#dmenuBtn');
+  btn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', function (ev) {
+    if (!menu.contains(ev.target)) { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+  });
+  menu.addEventListener('click', function (ev) {
+    var act = ev.target.closest('[data-dact]');
+    if (act) {
+      dataOn = act.dataset.dact === 'all' ? DATAK.map(function (x) { return x.k; }) : [];
+      applyData(); writeURL(); return;
+    }
+    var opt = ev.target.closest('.opt[data-k]');
+    if (!opt) return;
+    var k = opt.dataset.k, i = dataOn.indexOf(k);
+    if (i >= 0) dataOn.splice(i, 1); else dataOn.push(k);
+    applyData();
     writeURL();
   });
 }
@@ -635,6 +857,9 @@ SLOTS.forEach(function (slot) {
   load(slot.id);
 });
 applySlotVisibility();
+buildFrameControls();
+applyKnives();
+applyData();
 applyShellTheme();
 wireSplitters();
 
