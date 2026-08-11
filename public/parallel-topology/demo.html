@@ -139,15 +139,18 @@
    每个并行维一张独立的小圆角卡（tab），容器本身透明只管排版：宽度不够时整卡
    换行、卡内格子太多也自己换行，所以永远不出横向滚动条。容器不吃点击
    （pointer-events:none），tab 之间的空隙照样能拖画布。
-   居中用对称 left/right 撑出整条可用带宽：left:50%+translateX 的居中会把
-   绝对定位元素的 shrink-to-fit 宽度卡在容器一半（之前的横向滚动条就是这么来的）；
-   右侧 250px 给缩放 HUD 让位，左侧对称保持视觉居中。
+   居中用对称 left/right 撑出可用带宽（left:50%+translateX 的居中会把绝对
+   定位元素的 shrink-to-fit 宽度卡在容器一半，横向滚动条当初就是这么来的）。
+   能一行排就一行：fitGroupHud 量过不换行的自然宽度，贴底那条带（两侧各给
+   缩放 HUD 留 264px）装得下就贴底一行；装不下加 .is-lift 整条抬到缩放 HUD
+   上面用全宽，全宽仍装不下才换行。
    点选走 data-act=chainpick，与图内轨/门牌同一套坐标算术。 */
 .pt-grouphud{
-  position:absolute; left:250px; right:250px; bottom:12px; z-index:7;
+  position:absolute; left:264px; right:264px; bottom:12px; z-index:7;
   display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 10px;
   pointer-events:none;
 }
+.pt-grouphud.is-lift{left:14px; right:14px; bottom:52px}
 .pt-grouphud[hidden]{display:none}
 .pt-ghgrp{
   display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
@@ -157,13 +160,12 @@
 }
 .pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
 .pt-ghc{
-  min-width:20px; height:18px; padding:0 5px; border-radius:5px; border:1px solid var(--c);
-  background:repeating-linear-gradient(45deg, color-mix(in srgb, var(--c) 16%, transparent) 0 2px, transparent 2px 5px);
+  min-width:20px; height:18px; padding:0 6px; border-radius:8px; border:1px solid var(--c);
+  background:transparent;
   color:var(--c); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:16px; white-space:nowrap;
 }
 .pt-ghc.is-on{background:var(--c); border-color:var(--c); color:#fff}
-.pt-ghc:hover{box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent)}
-@media (max-width:1250px){ .pt-grouphud{left:20px; right:20px; bottom:52px} }
+.pt-ghc:hover{background:color-mix(in srgb, var(--c) 12%, transparent); box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent)}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
@@ -4674,7 +4676,24 @@ function renderGroupHud(D){
     }
     return '<span class="pt-ghgrp" style="--c:'+gr.col+'"><b>'+gr.name+'</b>'+cells+'</span>';
   }).join('');
+  fitGroupHud();
 }
+/* 能一行排就一行：临时按不换行量出自然宽度，贴底那条带（两侧各给缩放 HUD
+   留 264px，与 CSS 里的 left/right 同数）装得下就贴底；装不下加 .is-lift
+   整条抬到缩放 HUD 上面用全宽，全宽仍装不下才由 flex-wrap 换行。
+   量 offsetWidth 会强制回流，但只在 crisp 渲染和改窗口尺寸时走，不在手势热路径上。 */
+function fitGroupHud(){
+  var el = $('groupHud'); if(!el || el.hidden) return;
+  el.classList.remove('is-lift');
+  el.style.cssText = 'left:0; right:auto; width:max-content; flex-wrap:nowrap';
+  var need = el.offsetWidth;
+  el.style.cssText = '';
+  if(need > el.parentElement.clientWidth - 528) el.classList.add('is-lift');
+}
+var ghFitT = 0;
+window.addEventListener('resize', function(){
+  clearTimeout(ghFitT); ghFitT = setTimeout(fitGroupHud, 120);
+});
 function nudgeZoom(f){
   ui.zoom3 = clamp(ui.zoom3 * f, 0.2, 20);
   applyViewTransform();
