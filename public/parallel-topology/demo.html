@@ -2709,11 +2709,15 @@ function netScene(D, g, box, step){
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
            盒子在屏幕上小到装不下号时不写（按投影后的实际宽度判，不按缩放判）。 */
         if(ui.netOff && !lowDetail && !meC && !(spot && !spotCol)){
+          /* 号写在盒子**顶面正上方**（参考页那枚门牌就在这个位置）。写在前脸中心的话
+             它落在盒子肚子里，和穿过去的那些棱叠在一起，读者分不清这个号算哪一只；
+             顶上那一圈是空的，一只盒子一个号，正上正下对得死死的。 */
           var bw9 = Math.abs(C8[1][0] - C8[0][0]);
+          var tp9 = P(0.5, cv0 - 0.05, (cw0+cw1)/2, kc);
           if(bw9 >= 15)
-            body.push(txt((C8[0][0]+C8[2][0])/2, (C8[0][1]+C8[2][1])/2 + 2.6, 'R'+gc,
+            body.push(txt(tp9[0], tp9[1], 'R'+gc,
               Math.min(9, Math.max(5.6, bw9*0.26)), 'var(--pt-fg2)', 'middle',
-              'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+              'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="3" pointer-events="none"'));
         }
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
