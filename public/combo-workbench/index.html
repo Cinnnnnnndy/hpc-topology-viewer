@@ -31,9 +31,10 @@
   现在台面上两格（后续往 SLOTS 里加即可，格头、段控、折叠/关闭、URL 状态
   都是按 N 格写的，不是硬编两格）：
     ① 舞台 · 并行拓扑     iframe → ../parallel-topology/demo.html?embed=1
-       embed=1 把它自带的顶栏和页脚收起来，只剩画布；视图由格头的段控代管，
-       用 postMessage {type:'pto:state', view} 驱动，不重载 iframe。
-       需要预置/图层那些开关时点格头的「工具条」，把它自己的顶栏放回来。
+       embed=1 把它自带的顶栏和页脚收起来，只剩画布。七个视图的段控**先不放在
+       格头上**（要慢慢加），但 ?a=<视图> 一直认——启动页那几条深链就靠它；
+       想把段控放回来，取消格头里那行注释即可（JS 是按「有容器就建」写的）。
+       需要预置/图层那些开关时，从顶栏「视图控制 ▾」打开它自带的工具条。
     ② 抽屉 · 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
        上游拷贝（见 swimlane.html 顶部说明），同一套 pto:state 约定。
   舞台与抽屉之间是可拖的分隔条；抽屉高度、各格看哪个视图都写进 URL。
@@ -115,12 +116,11 @@ a.btn{text-decoration:none}
 #app{display:flex;flex-direction:column;height:100vh}
 
 /* ═══ 顶栏 ═══ */
-#topbar{height:var(--comp-toolbar-h);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px;
-  background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-bottom:1px solid var(--sys-border)}
+/* 顶栏坐在页面底色上：不铺自己的底色、不画下边框（照 HPC 拓扑查看器那条）。
+   面板是浮在这层底色之上的圆角块，顶栏再来一条横线会把它切成上下两片。 */
+#topbar{height:var(--comp-toolbar-h);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px}
 #topbar .title{font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--txt);margin-right:6px;
-  white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
-#topbar .title::before{content:"";width:9px;height:9px;border-radius:3px;background:var(--primary);flex-shrink:0}
-#topbar .title small{font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
+  white-space:nowrap;display:inline-flex;align-items:center}
 #topbar .spacer{flex:1 1 auto}
 .icon-btn{min-width:30px;padding:0 8px;font-size:13px}
 
@@ -155,8 +155,6 @@ a.btn{text-decoration:none}
   border-bottom:1px solid var(--border-subtle);background:var(--panel)}
 .slot-title{font-size:12px;font-weight:600;color:var(--txt);margin-right:2px;white-space:nowrap;
   display:flex;align-items:center;gap:6px}
-.slot-title i{width:8px;height:8px;border-radius:2px;background:var(--accent-dot,var(--primary));flex:0 0 auto}
-.slot-title span{font-family:var(--font-mono);font-size:10px;font-weight:400;color:var(--foreground-muted)}
 .slot-head .spacer{flex:1 1 auto}
 
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
@@ -182,7 +180,6 @@ a.btn{text-decoration:none}
 #dock[hidden]{display:none}
 #dock[data-folded="1"]{height:auto;min-height:0}
 #dock .slot-title{color:var(--dock-title)}
-#dock .slot-title i{background:var(--dock-title)}
 
 /* 舞台与抽屉之间的分隔条 */
 #splitter{flex:0 0 auto;height:10px;margin:0 8px;cursor:ns-resize;display:grid;place-items:center;touch-action:none}
@@ -202,9 +199,7 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 顶栏 ═══ -->
   <header id="topbar">
-    <span class="title">组合工作台<small>并行拓扑 × 微批次生命周期</small></span>
-    <a class="btn" href="../launch.html" style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">项目启动页</a>
-    <a class="btn" href="../parallel-topology/cockpit.html" style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">并行拓扑驾驶舱</a>
+    <span class="title">工作台</span>
 
     <span class="spacer"></span>
     <div class="menu" id="viewMenu">
@@ -227,10 +222,14 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 舞台：并行拓扑 ═══ -->
   <main id="stage">
-    <section class="slot" id="slot-topology" style="--accent-dot:var(--dv-dp)">
+    <section class="slot" id="slot-topology">
       <header class="slot-head">
-        <span class="slot-title"><i aria-hidden="true"></i>并行拓扑<span>parallel-topology · demo</span></span>
+        <span class="slot-title">并行拓扑</span>
+        <!-- 视图切换先不放在格头上（要慢慢加）。段控是照着 SLOTS[].tabs 建的，
+             想放回来只需要把下面这行取消注释——JS 那边按「有这个容器就建、没有就跳过」
+             写的，不用改代码：
         <div class="tabs" role="tablist" aria-label="并行拓扑视图" data-tabs="topology"></div>
+        -->
       </header>
       <div class="slot-body">
         <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
@@ -248,7 +247,7 @@ body.is-resizing iframe{pointer-events:none}
   <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
   <section class="slot" id="dock">
     <header class="slot-head">
-      <span class="slot-title"><i aria-hidden="true"></i>微批次生命周期泳道<span>MB07 · step 18420</span></span>
+      <span class="slot-title">微批次生命周期泳道</span>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <span class="spacer"></span>
       <button data-act="fold" title="收起这一格，只留格头">收起</button>
@@ -387,6 +386,7 @@ function writeURL() {
 /* ── 段控 ─────────────────────────────────────────────────────────── */
 function buildTabs(slot) {
   var host = $('[data-tabs="' + slot.id + '"]');
+  if (!host) return;          // 格头上没放段控 —— tabs 仍用于校验 URL 的 ?a=/?b= 与回灌
   host.innerHTML = slot.tabs.map(function (t) {
     return '<button type="button" role="tab" data-v="' + t.v + '" title="' + t.d + '" aria-selected="false">' + t.t + '</button>';
   }).join('');
@@ -397,8 +397,9 @@ function buildTabs(slot) {
 }
 
 function syncTabs(id) {
-  var slot = BY_ID[id], v = state[id].value;
+  var v = state[id].value;
   var host = $('[data-tabs="' + id + '"]');
+  if (!host) return;
   Array.prototype.forEach.call(host.querySelectorAll('button[data-v]'), function (b) {
     b.setAttribute('aria-selected', String(b.dataset.v === v));
   });

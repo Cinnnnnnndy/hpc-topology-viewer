@@ -31,14 +31,15 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 html[data-chrome='0'] body {
-  /* 原本是 toolbar / 主区 / statusbar 三行，藏掉顶栏就只剩两行 */
-  grid-template-rows: minmax(0, 1fr) 24px;
-  /* 原值 720px：卡片高度由宿主决定，留着它会在矮卡片上顶出一条外层滚动条。
+  /* 原本是 toolbar / 主区 / statusbar 三行，藏掉那两条就只剩主区一行 */
+  grid-template-rows: minmax(0, 1fr);
+  /* 原值 720px：格子高度由宿主决定，留着它会在矮格子上顶出一条外层滚动条。
      泳道自己有 .timeline-scroll 负责纵向滚动，不需要 body 撑高。 */
   min-height: 0;
 }
 
-html[data-chrome='0'] .toolbar { display: none; }
-
-/* 卡片是圆角的，泳道贴着卡片下沿；statusbar 的背景色要让出圆角，否则会露出直角 */
-html[data-chrome='0'] .statusbar { background: transparent; }
+/* 顶栏：段控归宿主的格头，同一排控件出现两次没人知道该点哪个。
+   状态栏：那两句是「点了会怎样」和数据出处的说明，格子里再占一行不划算——
+   出处该写在文档和文件头，不该长期占着界面。 */
+html[data-chrome='0'] .toolbar,
+html[data-chrome='0'] .statusbar { display: none; }
