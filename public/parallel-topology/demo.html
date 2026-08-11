@@ -2666,11 +2666,22 @@ function netScene(D, g, box, step){
              128 只卡于是先读成 128 只「块」，而不是一片密密麻麻的算子。
              **选中那一列整列不罩**——不只是选中那一张：同一列纵深上还串着另外
              pp-1 张卡，靠前那几张的雾会照样把主角糊掉。要掀开就整列掀开。 */
+          /* 关掉整网之后卡里是空的，这层雾就没有要遮的东西了——它只会把 128 只
+             盒子糊成一片米色。参考页那套 rank deck 正是几乎不填色：顶面留一层
+             极淡的底给体积感，其余交给棱。选中那只照旧要能一眼认出来。 */
+          if(ui.netOff){
+            if(!spot) body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-fg)',(3 + dT*2).toFixed(1))+';stroke:none'));
+            if(meC){
+              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,38)+';stroke:none'));
+              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
+            }
+          } else {
           if(!isFcol && !spot){
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
           if(meC) body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+          }
         }
         /* 棱：近的粗而浓、远的细而淡。这一条比雾更管用——雾说的是「里面看不清」，
            棱说的是「这只盒子离你多远」，前后关系全靠它。 */
@@ -2693,6 +2704,16 @@ function netScene(D, g, box, step){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
           axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
+        }
+        /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
+           不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
+           盒子在屏幕上小到装不下号时不写（按投影后的实际宽度判，不按缩放判）。 */
+        if(ui.netOff && !lowDetail && !meC && !(spot && !spotCol)){
+          var bw9 = Math.abs(C8[1][0] - C8[0][0]);
+          if(bw9 >= 15)
+            body.push(txt((C8[0][0]+C8[2][0])/2, (C8[0][1]+C8[2][1])/2 + 2.6, 'R'+gc,
+              Math.min(9, Math.max(5.6, bw9*0.26)), 'var(--pt-fg2)', 'middle',
+              'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
         }
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
         if(meC){
