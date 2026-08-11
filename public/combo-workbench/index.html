@@ -162,8 +162,16 @@ a.btn{text-decoration:none}
 #topbar .spacer{flex:1 1 auto}
 .icon-btn{min-height:26px;min-width:28px;padding:0 7px;font-size:12.5px}
 
-/* ═══ 舞台（上面那格） ═══ */
-#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0}
+/* ═══ 舞台：左 sidecar ｜ 右 并行拓扑 ═══ */
+#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
+#slot-sidecar{flex:0 0 var(--side-w,460px);min-width:240px}
+#slot-topology{flex:1 1 auto;min-width:0}
+/* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
+#vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
+#vsplit::after{content:"";width:3px;height:52px;border-radius:2px;background:var(--border-strong);opacity:.5}
+#vsplit:hover::after{background:var(--primary);opacity:1}
+body.is-resizing-x{user-select:none;cursor:ew-resize}
+body.is-resizing-x iframe{pointer-events:none}
 
 /* 面板 = 一格。舞台格铺满剩余高度，抽屉格定高可拖。 */
 .slot{position:relative;display:flex;flex-direction:column;min-height:0;overflow:hidden;
@@ -234,6 +242,22 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 舞台：并行拓扑 ═══ -->
   <main id="stage">
+    <!-- 左：模型架构 · 训练语义 sidecar（跨仓 pattern，与右边同一套「自己报名字、
+         自己带控件」的用法，所以这一格也不放我们的格头） -->
+    <section class="slot" id="slot-sidecar">
+      <div class="slot-body">
+        <iframe data-slot="sidecar" title="Model Architecture Training Sidecar"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>/pto-ds/patterns/model-architecture-training-sidecar/pattern.html</code>——
+            跨仓 <code>pto-design-system</code> 的 pattern，由发布流水线叠加，<br />
+            仓库里没有这份文件，本地开 <code>public/</code> 时这一格必然是空的。</p>
+        </div>
+      </div>
+    </section>
+
+    <div id="vsplit" role="separator" aria-orientation="vertical" aria-label="拖动调整左右两格宽度"></div>
+
     <section class="slot" id="slot-topology">
       <div class="slot-body">
         <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
@@ -285,6 +309,21 @@ body.is-resizing iframe{pointer-events:none}
 var BUILD = '';
 
 var SLOTS = [
+  {
+    /* 跨仓 pattern（Cinnnnnnndy/pto-design-system · patterns/model-architecture-
+       training-sidecar）。发布件在 /pto-ds/ 下，由本仓 workflow 从那个仓库叠加，
+       本目录不复制第二份。
+       它没有 ?theme= 也没有 postMessage —— 明暗只认 iframe 内部
+       document.documentElement 的 data-theme。同源，所以主题桥改走「点它自己
+       那颗浅色/深色按钮」（与泳道那座桥同一条纪律：不碰内部状态，只按它自己
+       的控件，它的 setTheme 会顺带重算调色板和重绘）。 */
+    id: 'sidecar',
+    el: 'slot-sidecar',
+    themeByDom: true,
+    src: function () {
+      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html' + (BUILD ? '?v=' + BUILD : '');
+    }
+  },
   {
     id: 'topology',
     el: 'slot-topology',
@@ -344,16 +383,19 @@ var BY_ID = {};
 SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
 
 var DEFAULT_DOCK_H = 340;
+var DEFAULT_SIDE_W = 460;
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
+var sideW = DEFAULT_SIDE_W;
 var shellDark = false;
 
 var $ = function (sel, root) { return (root || document).querySelector(sel); };
 var theme = function () { return shellDark ? 'dark' : 'light'; };
+var tabsOf = function (c) { return c.tabs || []; };   // 有的格子没有段控，也没有 ?key=
 var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
 
 /* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
-   URL 即这一屏：?a=solid&b=pp2&h=520&fold=swimlane&bar=topology&ui=dark
+   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&fold=swimlane&ui=dark
    off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
 /* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
@@ -367,8 +409,8 @@ function readURL() {
   var has = {};
   Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
   SLOTS.forEach(function (c) {
-    var v = q.get(c.key);
-    var s = { value: c.tabs.some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
+    var v = c.key ? q.get(c.key) : null;
+    var s = { value: tabsOf(c).some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
     Object.keys(FLAGS).forEach(function (f) { s[f] = has[f].indexOf(c.id) >= 0; });
     /* 格头上没有「收起」的格子不认 fold=：否则 ?fold=topology 这种链接会把舞台
        折起来、而页面上没有任何一颗按钮能再把它展开——一条打不开的死链。 */
@@ -377,6 +419,8 @@ function readURL() {
   });
   var h = parseInt(q.get('h'), 10);
   dockH = (isFinite(h) && h >= 120 && h <= 1600) ? h : DEFAULT_DOCK_H;
+  var w = parseInt(q.get('w'), 10);
+  sideW = (isFinite(w) && w >= 240 && w <= 2000) ? w : DEFAULT_SIDE_W;
   shellDark = q.get('ui') === 'dark';
 }
 
@@ -386,11 +430,12 @@ function writeURL() {
   Object.keys(FLAGS).forEach(function (f) { bags[f] = []; });
   SLOTS.forEach(function (c) {
     var s = state[c.id];
-    if (s.value !== c.def) q.set(c.key, s.value);
+    if (c.key && s.value !== c.def) q.set(c.key, s.value);
     Object.keys(FLAGS).forEach(function (f) { if (s[f]) bags[f].push(c.id); });
   });
   Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
   if (dockH !== DEFAULT_DOCK_H) q.set('h', String(dockH));
+  if (sideW !== DEFAULT_SIDE_W) q.set('w', String(sideW));
   if (shellDark) q.set('ui', 'dark');
   var qs = q.toString();
   history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
@@ -400,7 +445,7 @@ function writeURL() {
 function buildTabs(slot) {
   var host = $('[data-tabs="' + slot.id + '"]');
   if (!host) return;          // 格头上没放段控 —— tabs 仍用于校验 URL 的 ?a=/?b= 与回灌
-  host.innerHTML = slot.tabs.map(function (t) {
+  host.innerHTML = tabsOf(slot).map(function (t) {
     return '<button type="button" role="tab" data-v="' + t.v + '" title="' + t.d + '" aria-selected="false">' + t.t + '</button>';
   }).join('');
   host.addEventListener('click', function (ev) {
@@ -422,7 +467,7 @@ function syncTabs(id) {
    iframe 还没 load 完就退回重载，让 src 参数把状态带进去。 */
 function select(id, value, push) {
   var slot = BY_ID[id], s = state[id];
-  if (!slot.tabs.some(function (t) { return t.v === value; })) return;
+  if (!tabsOf(slot).some(function (t) { return t.v === value; })) return;
   s.value = value;
   var frame = $('iframe[data-slot="' + id + '"]');
   if (s.loaded && frame.contentWindow) frame.contentWindow.postMessage(slot.msg(value), '*');
@@ -451,6 +496,7 @@ function wireFrame(slot) {
     clearTimeout(timer);
     state[slot.id].loaded = true;
     delete host.dataset.broken;
+    if (slot.themeByDom) syncFrameTheme(frame);
   });
 }
 
@@ -470,6 +516,10 @@ function applyDockH() {
   document.getElementById('dock').style.setProperty('--dock-h', dockH + 'px');
 }
 
+function applySideW() {
+  document.getElementById('slot-sidecar').style.setProperty('--side-w', sideW + 'px');
+}
+
 /* 主题桥：一颗月亮同时管外壳和两格里的页面（与驾驶舱嵌进宿主时那套约定一样）。
    格子已经装载好就 postMessage 过去——重载一次要几百毫秒，还会把用户在里面
    选中的卡 / 事件清掉；没装载好的下一次 load 会从 src 的 ?theme= 带进去。 */
@@ -478,10 +528,28 @@ function applyShellTheme() {
   $('#themeBtn').textContent = shellDark ? '☀' : '☾';
   SLOTS.forEach(function (slot) {
     var frame = $('iframe[data-slot="' + slot.id + '"]');
-    if (state[slot.id] && state[slot.id].loaded && frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
-    }
+    if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
+    if (slot.themeByDom) { syncFrameTheme(frame); return; }
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
   });
+}
+
+/* 给没有 ?theme= / 没有 postMessage 的格子用：同源翻进去，按它自己那颗
+   浅色/深色按钮。为什么不直接改它的 data-theme —— 那个 pattern 换主题时
+   还要重算语义调色板并重绘，只改属性会留下半旧的画面；按按钮走的是它自己
+   的 setTheme。跨源就够不着，静默跳过：主题不同步不值得让整格出错。 */
+function syncFrameTheme(frame) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || !doc.documentElement) return;
+    if ((doc.documentElement.dataset.theme || 'dark') === theme()) return;
+    var btns = doc.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      var t = (btns[i].textContent || '').trim();
+      if (t === '浅色' || t === '深色') { btns[i].click(); return; }
+    }
+    doc.documentElement.dataset.theme = theme();   // 找不到按钮，退而求其次
+  } catch (err) { /* 跨源，放弃 */ }
 }
 
 /* ── 格头动作 ─────────────────────────────────────────────────────── */
@@ -498,32 +566,43 @@ function wireHead(slot) {
   });
 }
 
-/* ── 分隔条 ───────────────────────────────────────────────────────── */
+/* ── 分隔条（横竖共用一套） ───────────────────────────────────────── */
 /* 监听挂在 window 上而不是分隔条上：指针一旦滑进 iframe，事件就归 iframe 的
    文档了，挂在元素上的 pointermove 会断（setPointerCapture 跨文档也不成立）。
-   拖动期间给 body 打 .is-resizing，把 iframe 的 pointer-events 关掉。 */
-function wireSplitter() {
-  var grip = $('#splitter');
+   拖动期间给 body 打 .is-resizing*，把 iframe 的 pointer-events 关掉。 */
+function wireSplit(sel, cls, onMove) {
+  var grip = $(sel);
+  if (!grip) return;
   grip.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
-    var startY = ev.clientY, startH = dockH;
-    document.body.classList.add('is-resizing');
-    function move(e) {
-      /* 往下拖 = 抽屉变矮，所以是 startY - clientY；上限留 180px 给舞台 */
-      var max = Math.max(160, window.innerHeight - 180);
-      dockH = Math.max(120, Math.min(max, Math.round(startH - (e.clientY - startY))));
-      applyDockH();
-    }
+    var start = { x: ev.clientX, y: ev.clientY, h0: dockH, w0: sideW };
+    document.body.classList.add(cls);
+    function move(e) { onMove(start, e); }
     function up() {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      document.body.classList.remove('is-resizing');
+      document.body.classList.remove(cls);
       writeURL();
     }
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
+  });
+}
+
+function wireSplitters() {
+  /* 横条：往下拖 = 抽屉变矮，所以是 h0 - clientY；上限留 180px 给舞台 */
+  wireSplit('#splitter', 'is-resizing', function (start, e) {
+    var max = Math.max(160, window.innerHeight - 180);
+    dockH = Math.max(120, Math.min(max, Math.round(start.h0 - (e.clientY - start.y))));
+    applyDockH();
+  });
+  /* 竖条：往右拖 = 左格变宽；右边至少留 320px 给并行拓扑 */
+  wireSplit('#vsplit', 'is-resizing-x', function (start, e) {
+    var max = Math.max(240, window.innerWidth - 320);
+    sideW = Math.max(240, Math.min(max, Math.round(start.w0 + (e.clientX - start.x))));
+    applySideW();
   });
 }
 
@@ -535,7 +614,7 @@ window.addEventListener('message', function (ev) {
     var frame = $('iframe[data-slot="' + c.id + '"]');
     if (!frame || frame.contentWindow !== ev.source) return;
     var v = d.view || d.range;
-    if (v && v !== state[c.id].value && c.tabs.some(function (t) { return t.v === v; })) {
+    if (v && v !== state[c.id].value && tabsOf(c).some(function (t) { return t.v === v; })) {
       state[c.id].value = v;
       syncTabs(c.id);
       writeURL();
@@ -547,6 +626,7 @@ window.addEventListener('message', function (ev) {
 readURL();
 document.documentElement.setAttribute('data-theme', theme());  /* 首帧就落主题，别闪 */
 applyDockH();
+applySideW();
 SLOTS.forEach(function (slot) {
   buildTabs(slot);
   syncTabs(slot.id);
@@ -556,7 +636,7 @@ SLOTS.forEach(function (slot) {
 });
 applySlotVisibility();
 applyShellTheme();
-wireSplitter();
+wireSplitters();
 
 $('#themeBtn').addEventListener('click', function () {
   shellDark = !shellDark;
