@@ -71,6 +71,32 @@ md 跟着发出去就等于同一份内容有两条链接。
 两条链接各自独立，但视觉语言同源（同一套 token、版心、章节标尺）——是一对文档，
 不该长成两种东西。
 
+## 组合工作台（`/combo-workbench/` · 独立迭代）
+
+一块**纵向摞卡片**的台面，后续的工作台组合往它上面继续摞。现在两张：
+
+| 卡片 | 内容 | 卡片头收编了什么 |
+|---|---|---|
+| 上 · 并行拓扑 | iframe → `/parallel-topology/demo.html?embed=1`（收起它自带的顶栏，只剩画布） | 七个视图的段控、「工具条」（把 demo 自己的顶栏放回来） |
+| 下 · 微批次生命周期泳道 | iframe → `./swimlane.html?chrome=0`，MB07 · step 18420 | 三档时间范围的段控、深/浅色 |
+
+两张卡都用 `postMessage {type:'pto:state', …}` 驱动，**不重载 iframe**——切视图不会丢掉
+格子里选中的那张卡 / 那条事件。卡片头另有折叠、关闭（收进托盘可放回）、独立打开；
+卡片下沿可拖着改高度。台面状态（看哪个视图、多高、折了谁）写进 URL，
+`?a=solid&b=l34&hb=520` 这样一条链接就是你当时那一屏。
+
+`public/combo-workbench/swimlane.html` 是 **compute-graph-viewer 的上游拷贝**
+（`pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html`），连同
+`vendor/swimlane-task/` 一起搬过来。相对上游只加了三处：文件头出处说明、
+`embed.css`、`embed-bridge.js`（后两个是内嵌壳，一律靠 `.click()` 现有控件，
+不碰它自己那个 IIFE）。正文一行没动，上游更新时重拷一遍再补这三处即可。
+`embed.css` 里还修了一处跨仓类名撞车：本仓 pto-design-system 快照的
+`.legend`（色板面板用，`flex-direction: column`）会把泳道底部那排图例竖着摞成
+138px 高、压穿 38px 的页脚——独立打开也一样坏，所以那条修复不分内嵌与否都生效。
+
+台面本体自包含（色板照抄启动页，不引外部样式），依赖只有 `/parallel-topology/demo.html`
+与 `/vendor/pto-design-system/`；哪条暂时 404 也只坏那一格，卡片壳还在。
+
 ## Develop
 
 ```bash
