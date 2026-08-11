@@ -136,17 +136,25 @@
 /* ── 选组 HUD：TP·SP / CP / EP / DP / PP 的「看哪一组」切换，样式与缩放 HUD 同族。
    这些切换在四个视角里是**同一个东西**，所以做成一条统一的悬浮配置栏钉在画布
    下沿居中，不随图缩放平移；3D 场景里贴着图的那几条轨照旧（图内语境读数）。
+   每个并行维一张独立的小圆角卡（tab），容器本身透明只管排版：宽度不够时整卡
+   换行、卡内格子太多也自己换行，所以永远不出横向滚动条。容器不吃点击
+   （pointer-events:none），tab 之间的空隙照样能拖画布。
+   居中用对称 left/right 撑出整条可用带宽：left:50%+translateX 的居中会把
+   绝对定位元素的 shrink-to-fit 宽度卡在容器一半（之前的横向滚动条就是这么来的）；
+   右侧 250px 给缩放 HUD 让位，左侧对称保持视觉居中。
    点选走 data-act=chainpick，与图内轨/门牌同一套坐标算术。 */
 .pt-grouphud{
-  position:absolute; left:50%; transform:translateX(-50%); bottom:12px; z-index:7;
-  display:flex; align-items:center; gap:14px;
-  padding:5px 12px; border-radius:999px; border:1px solid var(--pt-bd);
-  background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
-  backdrop-filter:blur(6px);
-  max-width:calc(100% - 500px); overflow-x:auto; scrollbar-width:thin;
+  position:absolute; left:250px; right:250px; bottom:12px; z-index:7;
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 10px;
+  pointer-events:none;
 }
 .pt-grouphud[hidden]{display:none}
-.pt-ghgrp{display:inline-flex; align-items:center; gap:3px; flex:none}
+.pt-ghgrp{
+  display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:3px;
+  max-width:100%; padding:4px 10px; border-radius:11px; border:1px solid var(--pt-bd);
+  background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
+  backdrop-filter:blur(6px); pointer-events:auto;
+}
 .pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
 .pt-ghc{
   min-width:20px; height:18px; padding:0 5px; border-radius:5px; border:1px solid var(--c);
@@ -155,7 +163,7 @@
 }
 .pt-ghc.is-on{background:var(--c); border-color:var(--c); color:#fff}
 .pt-ghc:hover{box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent)}
-@media (max-width:1250px){ .pt-grouphud{max-width:calc(100% - 40px); bottom:52px} }
+@media (max-width:1250px){ .pt-grouphud{left:20px; right:20px; bottom:52px} }
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(72%, 780px);
