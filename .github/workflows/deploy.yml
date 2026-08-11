@@ -52,15 +52,6 @@ on:
       - claude/rank-view-network-analysis-htowfc
       - claude/parallel-topology-html-demo-ff10w3
       - claude/topology-swimlane-card-layout-fdrgiq
-  # 自愈：任何一条分支发布完成后，main 这份（全集）自动再补发一次。
-  # 为什么需要它：Pages 每次部署**整体替换**站点，而各 pattern 分支跑的是它们
-  # 自己那份工作流、只叠加自己那一份目录——于是「谁最后发谁赢」，别人的目录会
-  # 一直消失又找回（2026-08-11 一上午 /combo-workbench/ 就这样 404 了六次）。
-  # 注意：workflow_run 只认**默认分支上的这份文件**，所以它并进 main 之后才生效；
-  # 在 pattern 分支上它是惰性的，不会互相触发。
-  workflow_run:
-    workflows: ["Deploy to GitHub Pages"]
-    types: [completed]
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -76,13 +67,6 @@ concurrency:
 
 jobs:
   build:
-    # 自愈触发的守卫：只有「触发它的那次运行来自 main 以外的分支、而且成功了」
-    # 才补发。少了这一条就会自己触发自己——补发本身跑在 main 上，它一完成又发一次
-    # workflow_run，无限循环。带上这条，链路是：别的分支发布 → main 补发 → 停。
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.head_branch != 'main' &&
-       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main (site framework)
