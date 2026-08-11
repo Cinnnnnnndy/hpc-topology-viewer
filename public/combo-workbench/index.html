@@ -30,17 +30,20 @@
 
   现在台面上两格（后续往 SLOTS 里加即可，格头、段控、折叠/关闭、URL 状态
   都是按 N 格写的，不是硬编两格）：
-    ① 舞台 · 并行拓扑     iframe → ../parallel-topology/demo.html（**整页**）
-       不加 embed=1：它自带的顶栏里有搜索、预置、图层那些控件，收起来等于把
-       功能删了一半。这一格因此也不放我们自己的格头——名字由它顶栏自己出。
+    ① 舞台 · 并行拓扑     iframe → ../patterns/net-slicing/pattern.html
+       放的是 pattern（为「被嵌」抽出来的那一屏），不是并行拓扑的工作台整页：
+       产品名/面包屑/配置那条应用顶栏收起，只剩画布与画布上的控件。名字与
+       「＋ 搜索」由 pattern 自己在画布左上角出，所以这一格没有我们的格头。
        七个视图的段控先不放（要慢慢加），但 ?a=<视图> 一直认，启动页那几条
        深链就靠它。
+       注意：/patterns/net-slicing/ 是构建期产物，仓库里没有——本地开 public/
+       时这一格是空的（有兜底文案说明），要看真样子得看发布后的站点。
     ② 抽屉 · 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
        上游拷贝（见 swimlane.html 顶部说明），同一套 pto:state 约定。
   舞台与抽屉之间是可拖的分隔条；抽屉高度、各格看哪个视图都写进 URL。
 
-  依赖（都在 main 的构建产物里，本目录不复制第二份）：
-    · /parallel-topology/demo.html   —— 发布时由该 pattern 分支的版本覆盖同路径
+  依赖（都由发布流水线叠加，本目录不复制第二份）：
+    · /patterns/net-slicing/         —— pattern 分支的 workflow 产出，自带 vendor
     · /vendor/pto-design-system/     —— swimlane.html 的 ../vendor/ 落在这上面
   本页自身是自包含单文件，上面两条哪条 404 都只坏那一格，外壳还在。
   ══════════════════════════════════════════════════════════════════════
@@ -236,8 +239,10 @@ body.is-resizing iframe{pointer-events:none}
         <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
         <div class="slot-fallback">
           <p><b>这一格没能加载。</b><br />
-            它引的是 <code>/parallel-topology/demo.html</code>，那份目录由 pattern 分支的 workflow 叠加发布；<br />
-            别的分支刚发布过的话会暂时 404，重跑一次对应分支的 Deploy 即可找回。</p>
+            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是**构建期产物**，
+            由 pattern 分支的 workflow 叠加发布，仓库里没有这份文件，<br />
+            所以本地直接开 <code>public/</code> 时这一格必然是空的，看发布后的站点才对。<br />
+            线上仍为空的话，多半是别的分支刚发布过把它冲掉了，重跑一次对应分支的 Deploy 即可找回。</p>
         </div>
       </div>
     </section>
@@ -285,16 +290,20 @@ var SLOTS = [
     el: 'slot-topology',
     key: 'a',                  // URL 里代表「这一格当前看哪个视图」的参数名
     def: 'chain',
-    /* **整页**嵌入，不加 embed=1：它自带的顶栏里有搜索、预置、图层那些控件，
-       收起来就等于把功能删了一半（新版 demo 把搜索从画布右上挪进了那条顶栏，
-       所以 embed=1 一开，搜索就没了）。这一格不放我们自己的格头——顶栏上它
-       已经写了自己的名字，再来一遍就是印两遍。 */
+    /* 放的是**并行拓扑 pattern**（/patterns/net-slicing/），不是它的工作台整页。
+       两者同源，但 pattern 这一份自带 view=chain&embed=1 的默认值、自带 vendor
+       依赖，就是为「被嵌」抽出来的那一屏——收起了产品名/面包屑/配置那条应用
+       顶栏（.pt-bar），只剩画布与画布上的控件。
+       这一格不放我们自己的格头：pattern 在画布左上角自己写「并行拓扑」，
+       而且**「＋ 搜索」就长在那一行里**——先前我为了去重把 .pt-stagetitle
+       整条 display:none，连搜索一起按没了，那是个错。名字让它自己报，
+       搜索就跟着回来了，pattern 一个字不用改。 */
     src: function (s) {
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
-      q.set('view', s.value);
+      q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
       if (BUILD) q.set('v', BUILD);
-      return '../parallel-topology/demo.html?' + q.toString();
+      return '../patterns/net-slicing/pattern.html?' + q.toString();
     },
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
