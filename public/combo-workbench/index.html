@@ -30,11 +30,11 @@
 
   现在台面上两格（后续往 SLOTS 里加即可，格头、段控、折叠/关闭、URL 状态
   都是按 N 格写的，不是硬编两格）：
-    ① 舞台 · 并行拓扑     iframe → ../parallel-topology/demo.html?embed=1
-       embed=1 把它自带的顶栏和页脚收起来，只剩画布。七个视图的段控**先不放在
-       格头上**（要慢慢加），但 ?a=<视图> 一直认——启动页那几条深链就靠它；
-       想把段控放回来，取消格头里那行注释即可（JS 是按「有容器就建」写的）。
-       需要预置/图层那些开关时，用 ?bar=topology 把它自带的工具条放回来。
+    ① 舞台 · 并行拓扑     iframe → ../parallel-topology/demo.html（**整页**）
+       不加 embed=1：它自带的顶栏里有搜索、预置、图层那些控件，收起来等于把
+       功能删了一半。这一格因此也不放我们自己的格头——名字由它顶栏自己出。
+       七个视图的段控先不放（要慢慢加），但 ?a=<视图> 一直认，启动页那几条
+       深链就靠它。
     ② 抽屉 · 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
        上游拷贝（见 swimlane.html 顶部说明），同一套 pto:state 约定。
   舞台与抽屉之间是可拖的分隔条；抽屉高度、各格看哪个视图都写进 URL。
@@ -151,11 +151,13 @@ a.btn{text-decoration:none}
 /* ═══ 顶栏 ═══ */
 /* 顶栏坐在页面底色上：不铺自己的底色、不画下边框（照 HPC 拓扑查看器那条）。
    面板是浮在这层底色之上的圆角块，顶栏再来一条横线会把它切成上下两片。 */
-#topbar{min-height:48px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px}
+/* 顶栏压到 34px：上面只有一个名字和一颗明暗，48px 是给「产品名 + 面包屑 +
+   一排窗口按钮」那种顶栏留的，这里撑那么高等于白扔一条 14px 的空带。 */
+#topbar{min-height:34px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 12px}
 #topbar .title{font:var(--ide-frame-title-font);font-weight:700;color:var(--foreground-secondary);
   white-space:nowrap;display:inline-flex;align-items:center}
 #topbar .spacer{flex:1 1 auto}
-.icon-btn{min-width:30px;padding:0 8px;font-size:13px}
+.icon-btn{min-height:26px;min-width:28px;padding:0 7px;font-size:12.5px}
 
 /* ═══ 舞台（上面那格） ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 8px 0}
@@ -189,19 +191,6 @@ a.btn{text-decoration:none}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
 .slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--ide-frame-pane-fill)}
-
-/* 舞台格头压在画布上，与 demo 自己那排控件同一条基线。
-   demo 的控件浮在画布右上角，格头再单独占一行的话，就是「一个标题一行、
-   一排按钮一行」，白吃 30px 还把卡切成两截。坐标取自 demo 的 .pt-stagetitle
-   （top:10px / left:16px / min-height:30px —— 它那行注释写的就是「与右上工具条
-   同一条基线」），所以对齐是按它的规矩来的，不是我目测的。
-   （.slot 上那句 position:relative 是给这条绝对定位当锚的。不写也“碰巧”能用——
-   backdrop-filter 会让元素成为绝对定位后代的包含块——但那是副作用，哪天把磨砂
-   去掉，格头就会飞到视口左上角。显式写出来。）
-   pointer-events:none：这一格的格头只有一个标题，不该挡住底下画布的拖拽。
-   抽屉那格不这样——它的格头有段控和收起，必须能点，也没有浮在内容上的控件。 */
-#slot-topology .slot-head{position:absolute;top:10px;left:16px;z-index:5;
-  min-height:30px;padding:0;pointer-events:none}
 .slot-body > iframe{display:block;width:100%;height:100%;border:0}
 .slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
   font-size:12px;line-height:1.8;color:var(--dim)}
@@ -233,7 +222,7 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 顶栏 ═══ -->
   <header id="topbar">
-    <span class="title">工作台</span>
+    <span class="title">Workbench</span>
 
     <span class="spacer"></span>
 
@@ -243,14 +232,6 @@ body.is-resizing iframe{pointer-events:none}
   <!-- ═══ 舞台：并行拓扑 ═══ -->
   <main id="stage">
     <section class="slot" id="slot-topology">
-      <header class="slot-head">
-        <span class="slot-title">并行拓扑</span>
-        <!-- 视图切换先不放在格头上（要慢慢加）。段控是照着 SLOTS[].tabs 建的，
-             想放回来只需要把下面这行取消注释——JS 那边按「有这个容器就建、没有就跳过」
-             写的，不用改代码：
-        <div class="tabs" role="tablist" aria-label="并行拓扑视图" data-tabs="topology"></div>
-        -->
-      </header>
       <div class="slot-body">
         <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
         <div class="slot-fallback">
@@ -304,18 +285,17 @@ var SLOTS = [
     el: 'slot-topology',
     key: 'a',                  // URL 里代表「这一格当前看哪个视图」的参数名
     def: 'chain',
-    /* demo.html 认 ?view=；embed=1 收起它自带的顶栏与页脚，只留画布 */
+    /* **整页**嵌入，不加 embed=1：它自带的顶栏里有搜索、预置、图层那些控件，
+       收起来就等于把功能删了一半（新版 demo 把搜索从画布右上挪进了那条顶栏，
+       所以 embed=1 一开，搜索就没了）。这一格不放我们自己的格头——顶栏上它
+       已经写了自己的名字，再来一遍就是印两遍。 */
     src: function (s) {
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
       q.set('view', s.value);
-      if (!s.chrome) q.set('embed', '1');
       if (BUILD) q.set('v', BUILD);
       return '../parallel-topology/demo.html?' + q.toString();
     },
-    /* embed 模式下 demo 会在画布左上角自己写一遍名字——它假设自己是「一条链接
-       就是一张图」、周围没人替它报名。摞进格子以后格头已经写过了，这是第二遍。 */
-    dedupe: '.pt-root.embed .pt-stagetitle{display:none}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
@@ -355,7 +335,7 @@ var BY_ID = {};
 SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
 
 var DEFAULT_DOCK_H = 340;
-var state = {};      // id → { value, folded, chrome, loaded }
+var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
 var shellDark = false;
 
@@ -367,10 +347,11 @@ var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
    URL 即这一屏：?a=solid&b=pp2&h=520&fold=swimlane&bar=topology&ui=dark
    off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
-/* fold=/bar= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
+/* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
    没有 closed/off：界面上已经没有关闭入口，留着它只会让 ?off=topology
-   关掉一格却没有任何一颗按钮能放回来——一条打不开的死链。 */
-var FLAGS = { folded: 'fold', chrome: 'bar' };
+   关掉一格却没有任何一颗按钮能放回来——一条打不开的死链。
+   也没有 bar=：舞台现在整页嵌入，那条顶栏一直在，没有可切的东西。 */
+var FLAGS = { folded: 'fold' };
 
 function readURL() {
   var q = new URLSearchParams(location.search);
@@ -461,22 +442,7 @@ function wireFrame(slot) {
     clearTimeout(timer);
     state[slot.id].loaded = true;
     delete host.dataset.broken;
-    dedupe(slot, frame);
   });
-}
-
-/* 同源时往格子里塞一条样式，按掉它重复报的名字（见 SLOTS[].dedupe）。
-   跨源就够不着——静默跳过：多印一个标题不值得让整格出错。 */
-function dedupe(slot, frame) {
-  if (!slot.dedupe) return;
-  try {
-    var doc = frame.contentDocument;
-    if (!doc || !doc.head || doc.getElementById('wb-dedupe')) return;
-    var style = doc.createElement('style');
-    style.id = 'wb-dedupe';
-    style.textContent = slot.dedupe;
-    doc.head.appendChild(style);
-  } catch (err) { /* 跨源，放弃 */ }
 }
 
 /* ── 显隐 / 折叠 / 抽屉高度 ───────────────────────────────────────── */
@@ -511,11 +477,12 @@ function applyShellTheme() {
 
 /* ── 格头动作 ─────────────────────────────────────────────────────── */
 function wireHead(slot) {
-  slotEl(slot.id).querySelector('.slot-head').addEventListener('click', function (ev) {
+  var head = slotEl(slot.id).querySelector('.slot-head');
+  if (!head) return;          // 这一格整页嵌入，名字与控件都由它自己那条顶栏出
+  head.addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-act]');
     if (!btn) return;
-    var act = btn.dataset.act;
-    if (act !== 'fold') return;
+    if (btn.dataset.act !== 'fold') return;
     state[slot.id].folded = !state[slot.id].folded;
     applySlotVisibility();
     writeURL();
