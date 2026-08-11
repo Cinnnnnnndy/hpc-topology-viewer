@@ -158,8 +158,6 @@ a.btn{text-decoration:none}
 .slot-title i{width:8px;height:8px;border-radius:2px;background:var(--accent-dot,var(--primary));flex:0 0 auto}
 .slot-title span{font-family:var(--font-mono);font-size:10px;font-weight:400;color:var(--foreground-muted)}
 .slot-head .spacer{flex:1 1 auto}
-.slot-meta{font-family:var(--font-mono);font-size:10.5px;color:var(--foreground-muted);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34ch}
 
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
 .tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:3px}
@@ -179,7 +177,7 @@ a.btn{text-decoration:none}
 
 /* ═══ 抽屉（下面那格）—— 驾驶舱 #drawer 的形制 ═══ */
 #dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;display:flex;flex-direction:column;
-  margin:8px;margin-top:0;background:var(--panel);border:1px solid var(--sys-border);
+  margin:0 8px 8px;background:var(--panel);border:1px solid var(--sys-border);
   border-radius:var(--panel-shell-radius);overflow:hidden;box-shadow:var(--shadow-sm)}
 #dock[hidden]{display:none}
 #dock[data-folded="1"]{height:auto;min-height:0}
@@ -194,18 +192,8 @@ a.btn{text-decoration:none}
 body.is-resizing{user-select:none;cursor:ns-resize}
 body.is-resizing iframe{pointer-events:none}
 
-/* ═══ 底部状态条 ═══ */
-#statusbar{flex:0 0 auto;height:26px;display:flex;align-items:center;gap:10px;padding:0 12px;
-  background:color-mix(in srgb,var(--panel) 94%,var(--bg));border-top:1px solid var(--sys-border);
-  color:var(--foreground-muted);font-size:11px}
-#statusbar b{color:var(--dim);font-weight:500}
-#statusbar .spacer{flex:1 1 auto}
-#statusbar a{color:var(--foreground-muted)}
-#statusbar code{font-family:var(--font-mono);font-size:10.5px}
-
 @media (max-width:1080px){
   .slot-head{flex-wrap:wrap}
-  .slot-meta{display:none}
 }
 </style>
 </head>
@@ -243,13 +231,6 @@ body.is-resizing iframe{pointer-events:none}
       <header class="slot-head">
         <span class="slot-title"><i aria-hidden="true"></i>并行拓扑<span>parallel-topology · demo</span></span>
         <div class="tabs" role="tablist" aria-label="并行拓扑视图" data-tabs="topology"></div>
-        <span class="spacer"></span>
-        <span class="slot-meta" data-meta="topology"></span>
-        <button data-act="chrome" aria-pressed="false" title="把 demo 自带的顶栏放回来：预置、图层、维度那些开关都在上面">工具条</button>
-        <a class="btn" data-link="topology" href="../parallel-topology/demo.html" target="_blank" rel="noopener"
-           style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">独立打开 ↗</a>
-        <button data-act="fold" title="折叠这一格">折叠</button>
-        <button data-act="close" title="关闭这一格（从「视图控制」里放回来）">✕ 关闭</button>
       </header>
       <div class="slot-body">
         <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
@@ -270,11 +251,7 @@ body.is-resizing iframe{pointer-events:none}
       <span class="slot-title"><i aria-hidden="true"></i>微批次生命周期泳道<span>MB07 · step 18420</span></span>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <span class="spacer"></span>
-      <span class="slot-meta" data-meta="swimlane"></span>
-      <a class="btn" data-link="swimlane" href="./swimlane.html" target="_blank" rel="noopener"
-         style="min-height:28px;display:inline-flex;align-items:center;padding:0 11px;border:1px solid var(--sys-border);border-radius:var(--radius-lg);background:var(--sys-raised);color:var(--txt);font:500 12px/1 var(--font-sans)">独立打开 ↗</a>
-      <button data-act="fold" title="折叠这一格">折叠</button>
-      <button data-act="close" title="关闭这一格（从「视图控制」里放回来）">✕ 关闭</button>
+      <button data-act="fold" title="收起这一格，只留格头">收起</button>
     </header>
     <div class="slot-body">
       <iframe data-slot="swimlane" title="MB07 微批次生命周期泳道"></iframe>
@@ -284,13 +261,6 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </div>
   </section>
-
-  <!-- ═══ 底部状态条 ═══ -->
-  <footer id="statusbar">
-    <span id="statusText">两格都由格头驱动（<code>postMessage {type:'pto:state'}</code>），不重载 iframe——切视图不丢你在里面选中的东西</span>
-    <span class="spacer"></span>
-    <span>泳道为 compute-graph-viewer 上游拷贝 · 时间与性能指标为模拟数据</span>
-  </footer>
 
 </div>
 
@@ -324,8 +294,6 @@ var SLOTS = [
       if (BUILD) q.set('v', BUILD);
       return '../parallel-topology/demo.html?' + q.toString();
     },
-    /* 「独立打开」给的是同一个视图、但**不带内嵌壳**的那条链接 */
-    open: function (s) { return '../parallel-topology/demo.html?theme=' + theme() + '&view=' + s.value; },
     /* embed 模式下 demo 会在画布左上角自己写一遍名字——它假设自己是「一条链接
        就是一张图」、周围没人替它报名。摞进格子以后格头已经写过了，这是第二遍。 */
     dedupe: '.pt-root.embed .pt-stagetitle{display:none}',
@@ -346,6 +314,7 @@ var SLOTS = [
     el: 'dock',
     key: 'b',
     def: 'global',
+    foldable: true,        // 只有它的格头上有「收起」，见下面 readURL 里的守卫
     src: function (s) {
       var q = new URLSearchParams();
       q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
@@ -354,7 +323,6 @@ var SLOTS = [
       if (BUILD) q.set('v', BUILD);
       return './swimlane.html?' + q.toString();
     },
-    open: function (s) { return './swimlane.html?theme=' + theme() + '&range=' + s.value; },
     msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
       { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
@@ -390,6 +358,9 @@ function readURL() {
     var v = q.get(c.key);
     var s = { value: c.tabs.some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
     Object.keys(FLAGS).forEach(function (f) { s[f] = has[f].indexOf(c.id) >= 0; });
+    /* 格头上没有「收起」的格子不认 fold=：否则 ?fold=topology 这种链接会把舞台
+       折起来、而页面上没有任何一颗按钮能再把它展开——一条打不开的死链。 */
+    if (!c.foldable) s.folded = false;
     state[c.id] = s;
   });
   var h = parseInt(q.get('h'), 10);
@@ -431,10 +402,6 @@ function syncTabs(id) {
   Array.prototype.forEach.call(host.querySelectorAll('button[data-v]'), function (b) {
     b.setAttribute('aria-selected', String(b.dataset.v === v));
   });
-  var tab = slot.tabs.filter(function (t) { return t.v === v; })[0];
-  var meta = $('[data-meta="' + id + '"]');
-  if (tab && meta) meta.textContent = tab.d;
-  $('[data-link="' + id + '"]').href = slot.open(state[id]);
 }
 
 /* 驱动优先走 postMessage（不重载 = 不丢格子里的选中态）；
@@ -496,7 +463,7 @@ function applySlotVisibility() {
     host.hidden = s.closed;
     if (s.folded) host.dataset.folded = '1'; else delete host.dataset.folded;
     var fold = host.querySelector('[data-act="fold"]');
-    if (fold) fold.textContent = s.folded ? '展开' : '折叠';
+    if (fold) fold.textContent = s.folded ? '展开' : '收起';
   });
   /* 抽屉不在场（关了或折了）时分隔条也没意义 */
   var dock = state.swimlane;
@@ -519,7 +486,6 @@ function applyShellTheme() {
     if (state[slot.id] && state[slot.id].loaded && frame && frame.contentWindow) {
       frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
     }
-    if (state[slot.id]) syncTabs(slot.id);   // 「独立打开」那条链接也带上当前主题
   });
 }
 
