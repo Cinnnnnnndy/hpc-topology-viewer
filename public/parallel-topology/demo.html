@@ -316,7 +316,7 @@
    钉在左下（底沿让开 groupHud 那排选组 pill）；场景转台/缩放都不影响它——
    它读的是选中卡的账，不是机位。 */
 .pt-rankmem{
-  position:absolute; left:14px; bottom:60px; z-index:8; width:320px;
+  position:absolute; left:14px; bottom:60px; z-index:8; width:260px;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px;
   box-shadow:0 10px 34px rgba(0,0,0,.16); padding:10px 13px 8px;
 }
@@ -2898,12 +2898,11 @@ function netScene(D, g, box, step){
                颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
                同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
                而不是靠加黑去凑遮挡。 */
-            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
-            /* 载荷：从底往上（v 朝下，底是 cv1）。壳的浅灰留着当「空的那截」，
-               载荷盖在上面——空出的一截就是余量，不用另画水位线。
-               拖动时（lowDetail）只留壳：每卡多画十几个面装不进帧预算。 */
+            /* 玻璃盒：画全部 6 个面。先画背面 3 个（远壁），再画正面 3 个（近壁）。
+               透过近壁能看到远壁——这才是玻璃的样子。 */
+            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             if(!lowDetail && ui.memFill){
               var MS9 = memStack(pc2), vSp9 = cv1 - cv0;
               for(var m8 = 0; m8 < MS9.length; m8++){
@@ -2913,29 +2912,37 @@ function netScene(D, g, box, step){
                     mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
                 body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
                 body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
                 if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
-                /* ②腔那段的上沿描一条虚线：常驻与流动的分界，颜色之外再给一道 */
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
               }
             }
-            /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
-               压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
-               三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
-               顶面最重、正脸次之——亮起来的是一个**体**，不是一张贴纸。
-               选中的那张卡另有自己的一套（下面 meC 分支），不跟这层叠。 */
+            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             if(spot && spotCard && !meC){
+              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
+              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
+              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
               body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
               body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
               body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
             }
           } else {
           if(!isFcol && !spot){
+            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
             body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
             body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
-          if(meC) body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+          if(meC){
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+          }
           }
         }
         /* 棱：近的粗而浓、远的细而淡。这一条比雾更管用——雾说的是「里面看不清」，
