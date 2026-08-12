@@ -2741,9 +2741,14 @@ function netScene(D, g, box, step){
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色、不透光，
                后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
                差得不够就只是三张半透明的纸片叠在一起。 */
+            /* 上一版把侧/正脸从 21%/10% 提到 48%/32%——半透明的盒子叠半透明的盒子，
+               结果是重叠两三层的地方比单层重得多（乘法叠加），单层的地方还是能看穿。
+               既然设计意图本来就是「近处盒子实打实挡住远处」，就该让它真的接近不透光，
+               而不是停在「淡了一半」——这样画家序（远→近）里后画的盒子才真正盖住
+               先画的，深浅差异只由 dT 给一点点，不再靠透叠。 */
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(48 + dT*10).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(32 + dT*7).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(80 + dT*14).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(60 + dT*12).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
                压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
                三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
@@ -5957,9 +5962,11 @@ function renderChainBar(D){
      同一件事——收进一颗图标按钮里，点开才是一列勾选（仿「数据」那颗下拉的
      交互），默认收着不占地方。⚙ 只是个通用「显示设置」符号，不代表切分。 */
   var dispN = (ui.legendOn?1:0) + (ui.commOn?1:0);
+  /* 计数徽标只在真有开着的图层时才画：dispN=0 时 <b></b> 是个空字符串，
+     但它照样吃圆底+边框样式，糊成一颗没有数字的空心圆点——看着像哪里坏了。 */
   var dispBtn = '<span class="pt-mv pt-disp">'
     + '<button class="pb'+(dispN?' is-on':'')+'" data-act="dispmenu" title="显示设置：图例 / 通信">'
-    + '⚙<b>'+(dispN||'')+'</b><i>⌄</i></button>'
+    + '⚙' + (dispN ? '<b>'+dispN+'</b>' : '') + '<i>⌄</i></button>'
     + (ui.dispOpen ? '<div class="pt-mvmenu">'
         + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么">'
           + '<s>✓</s>图例</button>'
