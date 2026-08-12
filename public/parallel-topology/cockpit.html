@@ -174,8 +174,8 @@
 'use strict';
 /* ── 预置：一处定义，各组件按自己的字段名取用（三套 API 的参数名并不一致） ── */
 var PRESETS = {
-  default128:{label:'默认 128 卡', world:128, tp:2, cp:2, pp:4, dp:8, ep:8, etp:1,
-    layers:32, hidden:4096, heads:32, experts:64, seq:8192, note:'tp2·cp2·pp4·dp8·ep8（六刀齐全，EP 折入 DP）'},
+  default128:{label:'默认 128 卡', world:128, tp:2, cp:1, pp:4, dp:16, ep:8, etp:1,
+    layers:32, hidden:4096, heads:32, experts:64, seq:8192, note:'tp2·cp1·pp4·dp16·ep8（EP 折入 DP）'},
   moe64:{label:'MoE 折叠 64 卡', world:64, tp:2, cp:1, pp:4, dp:8, ep:8, etp:1,
     layers:32, hidden:4096, heads:32, experts:64, seq:8192, note:'tp2·cp1·pp4·dp8·ep8'},
   pangu:{label:'盘古 Pro MoE 4000 卡', world:4000, tp:8, cp:1, pp:5, dp:100, ep:2, etp:1,

@@ -38,14 +38,14 @@ name: Deploy to GitHub Pages
 # 那不是构建有问题，是分支没在允许列表里。到
 # Settings → Environments → github-pages → Deployment branches and tags
 # 把分支名加进去，再重跑本次 run 即可。
+# 发布口子只留 main 一处。以前每条 pattern 分支都能触发这份工作流，而它每次都是
+# **整站替换**——三条分支交替推送时，谁最后跑谁赢，已经发出去的链接内容会在几版
+# 之间来回跳（实机一小时内发生三次）。各分支的内容仍然照常进站：下面每一步都按
+# ref 去对应分支取源，推 main 一次即可把所有人的最新版一起发出去。
 on:
   push:
     branches:
       - main
-      - claude/rubik-view-pattern-extraction-7pk0qt
-      - claude/logic-cube-pattern-spec-3oycmv
-      - claude/rank-view-network-analysis-htowfc
-      - claude/parallel-topology-html-demo-ff10w3
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
@@ -244,7 +244,11 @@ jobs:
       - name: Checkout parallel-topology branch
         uses: actions/checkout@v4
         with:
-          ref: claude/parallel-topology-html-demo-ff10w3
+          # 源码已经进 main（/public/parallel-topology/ 与它的 vendor），所以从 main
+          # 自己取——原来指向 ff10w3 分支，于是「推 main」与「推 ff10w3」谁最后跑谁赢，
+          # 同一条 /patterns/net-slicing/ 链接的内容会随机在两版之间跳（实机反复发生）。
+          # 现在这套内容只有一个来源：main。
+          ref: main
           path: ptopo-src
 
       - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/

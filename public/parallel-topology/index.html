@@ -84,7 +84,7 @@ a.card.pat{border-left:3px solid #7A55D6}
   <a class="card demo" href="./demo.html">
     <div class="tag">Demo · v0.2 · 应用形态</div>
     <h2>并行拓扑可视化工具 · Demo</h2>
-    <p><b>一个 step · 五幕</b>：跟住一张卡从「128 个一模一样的进程」走到步末那一次梯度 AllReduce，把<b>只做一次</b>（开机/报到/备料）与<b>每个 micro-batch 重来</b>（进料/开算/接力）分开；第 2 幕放大的那一层是 <b>openPangu 真图</b>（真节点·真层级·真连边·真切分标注）。其余：一个切分一个视图（模板=参照系总图）：粒度做竖轴、rank 柱贯穿全高，归属边界线随维移动，索引五元组常驻；另有合成·卡阵、卡内解剖（容器+流）、<b>映射</b>（两个视角：<b>双链映射</b>——两条包含链级与级不对齐，四条并行映射的源头在四个不同逻辑层级、落点全是「卡」，把卡画成整个平面于是 TP 必须机内 / PP 可跨机当场可验；<b>交集腔</b>——那四条梁交出来的小长方体就是这张卡装的东西）、时间·流。默认 128 卡（tp2·cp2·pp4·dp8·ep8），URL 即状态，明暗主题，A1–A8 页内自检。</p>
+    <p><b>一个 step · 五幕</b>：跟住一张卡从「128 个一模一样的进程」走到步末那一次梯度 AllReduce，把<b>只做一次</b>（开机/报到/备料）与<b>每个 micro-batch 重来</b>（进料/开算/接力）分开；第 2 幕放大的那一层是 <b>openPangu 真图</b>（真节点·真层级·真连边·真切分标注）。其余：一个切分一个视图（模板=参照系总图）：粒度做竖轴、rank 柱贯穿全高，归属边界线随维移动，索引五元组常驻；另有合成·卡阵、卡内解剖（容器+流）、<b>映射</b>（两个视角：<b>双链映射</b>——两条包含链级与级不对齐，四条并行映射的源头在四个不同逻辑层级、落点全是「卡」，把卡画成整个平面于是 TP 必须机内 / PP 可跨机当场可验；<b>交集腔</b>——那四条梁交出来的小长方体就是这张卡装的东西）、时间·流。默认 128 卡（tp2·cp1·pp4·dp16·ep8），URL 即状态，明暗主题，A1–A8 页内自检。</p>
     <div class="path">./demo.html</div>
   </a>
 
@@ -93,7 +93,7 @@ a.card.pat{border-left:3px solid #7A55D6}
   <a class="card pat" href="../patterns/net-slicing/pattern.html">
     <div class="tag">Pattern · 自包含 · 全屏画布</div>
     <h2>并行拓扑 Pattern —— 从一张网到 world 张卡</h2>
-    <p>把 Demo 的「切分链」那一屏单独抽出来发布：<b>全屏画布</b>，一条链接就是一屏状态。五把刀（DP 复印 / PP 切段 / CP 切序列 / TP 锯片 / EP 分桶）各自独立开关、<b>叠加而非切换</b>；<b>刀痕方向即轴</b>——竖切=特征维 h、横切=序列维 s（CP 的 ctx 与 SP 的 token 切的是同一根轴，开着 CP 时那根轴上有两个除号：S/(CP×TP)）；<b>打开 Rank</b> 把五刀的交集收进 128 只卡壳，每只装它自己那份；<b>关闭整网</b> 清空卡内载荷——剩下的排列本身就是逻辑魔方，此刻直接把控制权交给 <code>rubik-cube</code> pattern 自己的工具条。正视 / 侧视不是仿制，是直接挂 <code>model-architecture-training-sidecar</code> 画的真图。契约在同级 <a href="../patterns/net-slicing/pattern.json">pattern.json</a>。</p>
+    <p>把 Demo 的「切分链」那一屏单独抽出来发布：<b>全屏画布</b>，一条链接就是一屏状态。五把刀（DP 复印 / PP 切段 / CP 切序列 / TP 锯片 / EP 分桶）各自独立开关、<b>叠加而非切换</b>；<b>刀痕方向即轴</b>——竖切=特征维 h、横切=序列维 s（CP 的 ctx 与 SP 的 token 切的是同一根轴，开着 CP 时那根轴上有两个除号：S/(CP×TP)）；<b>打开 Rank</b> 把五刀的交集收进 128 只卡壳，每只装它自己那份；<b>关闭整网</b> 清空卡内载荷——剩下的排列本身就是逻辑魔方，此刻直接把控制权交给 <code>rubik-cube</code> pattern 自己的工具条。正视 / 侧视由本页 SVG 渲染器原生重画（同一份真图 + 真切分表，不再嵌 sidecar）：正视标清 TP/SP/CP/DP/EP，侧视标清 PP；打开 Rank 显示卡的层级。契约在同级 <a href="../patterns/net-slicing/pattern.json">pattern.json</a>。</p>
     <div class="path">../patterns/net-slicing/pattern.html?cuts=dpte&amp;card=1&amp;net=0</div>
   </a>
 
