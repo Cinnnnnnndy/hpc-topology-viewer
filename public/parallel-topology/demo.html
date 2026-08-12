@@ -2821,6 +2821,8 @@ function netScene(D, g, box, step){
   /* 壳跟着自己那列的内容走（一列画完内容马上画它的壳）：原来内容一遍、壳一遍
      分开画，前脸只敢用 3% 的近乎全透——一旦加磨砂，后列的壳会盖到前列已画好的
      内容上，列与列的遮挡就乱了。copyOrder 排好的深度序只有内容与壳同走时才成立。 */
+  var _nt = turn3(0,-1,0,yaw,pitch), _nf = turn3(0,0,-1,yaw,pitch), _nr = turn3(1,0,0,yaw,pitch);
+  var fTop = _nt[0]+_nt[1]+_nt[2] > 0, fFront = _nf[0]+_nf[1]+_nf[2] > 0, fRight = _nr[0]+_nr[1]+_nr[2] > 0;
   function shellOf(kc){
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
     var nSeg = cutPP ? D.pp : 1;
@@ -2891,9 +2893,9 @@ function netScene(D, g, box, step){
                颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
                同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
                而不是靠加黑去凑遮挡。 */
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 载荷：从底往上（v 朝下，底是 cv1）。壳的浅灰留着当「空的那截」，
                载荷盖在上面——空出的一截就是余量，不用另画水位线。
                拖动时（lowDetail）只留壳：每卡多画十几个面装不进帧预算。 */
@@ -2904,10 +2906,11 @@ function netScene(D, g, box, step){
                 var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
                 var mq0 = P(cu0,vB9,cw0,kc), mq1 = P(cu1,vB9,cw0,kc),
                     mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
-                    mq5 = P(cu1,vB9,cw1,kc), mq6 = P(cu1,vA9,cw1,kc);
-                body.push(quad([mq0,mq1,mq2,mq3], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
-                body.push(quad([mq1,mq5,mq6,mq2], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
-                if(sg8.top) body.push(quad([mq0,mq1,mq5,P(cu0,vB9,cw1,kc)], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
+                    mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
+                    mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
                 /* ②腔那段的上沿描一条虚线：常驻与流动的分界，颜色之外再给一道 */
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
               }
@@ -2918,16 +2921,16 @@ function netScene(D, g, box, step){
                顶面最重、正脸次之——亮起来的是一个**体**，不是一张贴纸。
                选中的那张卡另有自己的一套（下面 meC 分支），不跟这层叠。 */
             if(spot && spotCard && !meC){
-              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
-              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
-              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
+              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
+              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
+              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
             }
           } else {
           if(!isFcol && !spot){
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
+            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
-          if(meC) body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+          if(meC) body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
           }
         }
         /* 棱：近的粗而浓、远的细而淡。这一条比雾更管用——雾说的是「里面看不清」，
@@ -7128,72 +7131,31 @@ function renderRankMem(D){
   if(!on){ el.hidden = true; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  function ln9(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   var segs = memParts(D, p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
-  var cap = D.hbm*Math.pow(2,30), sc = 1/Math.max(cap, tot);
-  var CW = 80, CH = 104, CD = 48, GX = 102, GY = 174;
+  var cap = D.hbm*Math.pow(2,30);
   var TONE = {w:MEMC.w, g:MEMC.g, opt:MEMC.opt, act:MEMC.act, rsv:MEMC.rsv};
-  var acc = 0, bandY = {}, labs = [], body = '';
-  segs.forEach(function(sg){
-    var f0 = acc*sc; acc += sg.bytes;
-    var f1 = acc*sc;
-    if(f1-f0 < 0.004) return;
-    bandY[sg.k] = {y0:CH*f0, y1:CH*f1};
-    body += boxSVG(0, CH*f0, 0, CW, CH*(f1-f0), CD, 1,
-                   {fill:TONE[sg.k], stroke: sg.k==='act' ? 'var(--pt-dp)' : 'var(--pt-bg)',
-                    sw: sg.k==='act' ? .8 : .4, attrs: sg.k==='act' ? ' opacity=".88"' : ''});
-    var a = proj(CW, CH*(f0+f1)/2, CD/2, 1);
-    labs.push({k:sg.k, label:sg.label, gb:fmtGB(sg.bytes), ax:GX+a[0], ay:GY+a[1]});
-  });
-  /* 权重带内部 = 那排算子片：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色）。
-     梯度/优化器态同一分法 ×1/×6，在这张小图上只在下方一句话里说。 */
   var ops = opBytes(D).filter(function(o){ return o.b > 0; })
               .map(function(o){ return {id:o.id, cut:o.cut, b:o.b*lps}; });
   if(p===0) ops.push({id:'embed', cut:'tp', b:2*Math.ceil(D.vocab/D.tp)*D.hidden});
   if(p===D.pp-1) ops.push({id:'lm_head', cut:'tp', b:2*D.hidden*Math.ceil(D.vocab/D.tp)});
-  var wSum = ops.reduce(function(a,x){ return a+x.b; },0), ax9 = 0;
-  if(bandY.w) ops.forEach(function(o){
-    var w9 = CW*o.b/wSum, x9 = ax9; ax9 += w9;
-    if(w9 < .5) return;
-    var col = o.cut==='tp' ? VC.tp : o.cut==='ep' ? VC.ep : null;
-    if(col) body += boxSVG(x9, bandY.w.y0, 0, w9, bandY.w.y1-bandY.w.y0, CD, 1,
-                           {fill:col, stroke:'var(--pt-bg)', sw:.3, attrs:' opacity=".5"'});
+  var rows = segs.map(function(sg){
+    var col = sg.k==='act' ? VC.dp : (sg.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
+    return '<tr><td style="width:12px"><span style="display:inline-block;width:8px;height:8px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
+      + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)+'</td>'
+      + '<td style="text-align:right;color:'+col+';font-weight:700">'+fmtGB(sg.bytes)+' GB</td></tr>';
   });
-  if(bandY.act){
-    var nIf = Math.max(1, Math.min(D.pp, D.ga) - p);
-    for(var mi = 1; mi < nIf; mi++)
-      body += ln9(proj(CW*mi/nIf, bandY.act.y0, CD, 1), proj(CW*mi/nIf, bandY.act.y1, CD, 1),
-                  'stroke:var(--pt-bg);stroke-width:.6;stroke-dasharray:2 2');
-  }
-  var fT = tot*sc;
-  if(fT < .985){
-    body += ln9(proj(0, CH*fT, 0, 1), proj(CW, CH*fT, 0, 1), 'stroke:var(--pt-fg3);stroke-width:.7;stroke-dasharray:4 3');
-    var fr = proj(CW/2, CH*(fT+1)/2, 0, 1);
-    body += txt(fr[0], fr[1], '余量 '+fmtGB(cap-tot)+' GB', 7.6, 'var(--pt-fg3)', 'middle', 'font-weight="700"');
-  }
-  body += boxSVG(0, 0, 0, CW, CH, CD, 1, {wire:true, stroke:'var(--pt-fg2)', sw:1});
-  var parts = ['<g transform="translate('+GX+','+GY+')">'+body+'</g>'];
-  labs.sort(function(a,b){ return b.ay - a.ay; });
-  var LX = 206, LY0 = 190, ST = 28;
-  labs.forEach(function(L, i){
-    var y = LY0 - i*ST;
-    var col = L.k==='act' ? VC.dp : (L.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
-    parts.push(ln9([L.ax+5, L.ay], [LX-9, y-3], 'stroke:var(--pt-bds);stroke-width:.7'));
-    parts.push('<rect x="'+(LX-3)+'" y="'+(y-14)+'" width="8" height="8" style="fill:'+TONE[L.k]+';stroke:var(--pt-bds);stroke-width:.5"/>');
-    parts.push(txt(LX+9, y-7, esc(L.label), 9.4, col, 'start', 'font-weight="800"'));
-    parts.push(txt(LX+196, y-7, L.gb+' GB', 9.4, col, 'end', 'font-weight="800"'));
-  });
-  parts.push(ln9([LX-3, LY0+12], [LX+196, LY0+12], 'stroke:var(--pt-bds);stroke-width:.8'));
-  parts.push(txt(LX+9, LY0+26, '合计 '+fmtGB(tot)+' / '+D.hbm+' GB', 10, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
   var big = ops.slice().sort(function(a,b){ return b.b-a.b; }).slice(0,3)
     .map(function(o){ return o.id+' '+fmtGB(o.b); }).join(' · ');
-  parts.push(txt(6, 248, '权重带内部（切法看颜色）：'+esc(big)+' GB —— 梯度/优化器态同一分法 ×1/×6 · 交集腔视图有放大版', 7.2, 'var(--pt-fg3)', 'start'));
   el.innerHTML =
     '<div class="rm-h"><b>rank '+g+' 装了什么</b>'
     + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
     + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
-    + '<svg viewBox="0 0 410 254">'+parts.join('')+'</svg>'
-    + '<div style="margin:4px 0 0;font-size:11.5px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0 4px;font-family:var(--pt-mono)">'
+    + rows.join('')
+    + '<tr><td colspan="2" style="border-top:1px solid var(--pt-bd);padding-top:4px;font-weight:800;font-size:12px;color:'+(tot>cap?'var(--pt-danger)':'var(--pt-fg)')+'">合计 '+fmtGB(tot)+' / '+D.hbm+' GB</td>'
+    + '<td style="border-top:1px solid var(--pt-bd);padding-top:4px;text-align:right;font-size:10px;color:var(--pt-fg3)">余量 '+fmtGB(cap-tot)+'</td></tr></table>'
+    + '<div style="font-size:9.5px;color:var(--pt-fg3);margin:0 0 4px">权重带内部：'+esc(big)+' GB</div>'
+    + '<div style="font-size:11.5px">'
     + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span>'
     + ' · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span></div>';
   el.hidden = false;
