@@ -32,27 +32,14 @@ name: Deploy to GitHub Pages
 # 那不是构建有问题，是分支没在允许列表里。到
 # Settings → Environments → github-pages → Deployment branches and tags
 # 把分支名加进去，再重跑本次 run 即可。
+# ── 发布口子已收敛到 main 一处（2026-08）──────────────────────────────────
+# 这份工作流每次都是**整站替换**。以前 main 之外还有几条 pattern 分支能触发它，
+# 于是谁最后跑谁赢：同一条已经发出去的链接，内容会在几版之间来回跳（实机一小时
+# 内发生三次）。现在这条分支不再自动发布——它的内容照样进站，由 main 那份工作流
+# 按 ref 来这里取源，推 main 一次就把所有人的最新版一起发出去。
+# 仍保留 workflow_dispatch：确有需要时还能手动跑一次。
 on:
-  push:
-    branches:
-      - main
-      - claude/rubik-view-pattern-extraction-7pk0qt
-      - claude/logic-cube-pattern-spec-3oycmv
-      - claude/rank-view-network-analysis-htowfc
-      - claude/parallel-topology-html-demo-ff10w3
-    # 只改这几处的推送不必整站重发一次。方向是**保守的**：用 paths-ignore 而不是
-    # paths——漏发一次（线上停在旧版、还查不出原因）比多发一次难受得多，所以这里
-    # 只排除「确定不进 dist」的目录，其余一律照发。
-    #   · data/ 不能进这个名单：src/scene/* 直接引它，它进构建；
-    #   · **/*.md 也不能一刀切：public/parallel-topology/prd.md 是要发布的。
-    paths-ignore:
-      - 'research/**'
-      - 'docs/**'
-      - '.claude/**'
-      - 'README.md'
-      - 'CLAUDE.md'
   workflow_dispatch:
-
 # Allow the workflow to publish to Pages.
 permissions:
   contents: read
