@@ -429,9 +429,12 @@ var SLOTS = [
                 （cuts=pcte + rank=0）——实测它在这一格只画得出 28 个有面积的图元，
                 主视图同机位是 344 个，基本是一张空图。留着是一颗点了没反应的按钮。 */
              '[data-act="viewtab"][data-tab="top"]{display:none!important}' +
-             /* 选组 HUD（TP·SP / EP / PP 看哪一组）：跟主视图那一份讲的是同一件事，
-                两份摆在同一屏各调各的，图上就会出现两个「当前组」。归主视图统一出。 */
-             '#groupHud{display:none!important}' +
+             /* 选组 HUD（TP·SP / EP / PP 看哪一组）一度也藏了，理由是「两份摆在同一屏
+                各调各的，图上会出现两个当前组」。现在两格的 rank 是**双向**互转的
+                （见下面 relaySel），两份 HUD 读的是同一个选择，不会各走各的——而
+                「这张整网被切成这么多份，我要看哪一份」正是这一格自己的问题，
+                连问都不让问就不成其为一格独立的整网了。所以放出来。
+                默认态它一格都不点亮（pattern 那边 cur=-1）：切分在，但没替读者选。 */
              /* 缩放 HUD（− 100% ＋ 居中 复位）：这一格只留**机位**一组控件，别的一律
                 由主视图那边操纵。藏的是那排按钮，不是能力——滚轮缩放、拖动平移
                 照旧（都是画布上的手势，不经过这排按钮）。 */
@@ -989,6 +992,15 @@ function wireSplitters() {
   });
 }
 
+/* 最近一次推给某一格的 rank。两格互转 sel 时用它认回声（见下面那段守卫）。 */
+var pushedSel = { topology: null, netgraph: null };
+function relaySel(id, v) {
+  var f = $('iframe[data-slot="' + id + '"]');
+  if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+  pushedSel[id] = v;
+  f.contentWindow.postMessage({ type: 'pto:state', sel: v }, '*');
+}
+
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
@@ -1002,20 +1014,23 @@ window.addEventListener('message', function (ev) {
       syncTabs(c.id);
       writeURL();
     }
-    /* 主视图选中了一张卡 → 把同一个 rank 转给整网图那格。
-       它那边不进卡维度（rank=0），`sel` 的作用是「本卡」：netScene 只把**这张卡
-       那一段 PP 的层**画成实的、其余当背景（`mine = cutPP ? li 属于 co.p 段 : true`）。
-       于是右边亮起来的正好是「这张卡装的那十几层」——用户点一张卡想知道的就是这个。
+    /* rank 在两格之间**双向**走。
+       主视图 → 整网图：点中一张卡，把同一个 rank 转过去。整网图那边不进卡维度
+       （rank=0），`sel` 在那儿的作用是「本卡」：只把这张卡那一段 PP 的层画成实的、
+       其余当背景。于是右边亮起来的正好是「这张卡装的那十几层」。
+       整网图 → 主视图：在整网里挑中一份切分（图内那些 TP/EP/PP 轨与门牌走的都是
+       chainpick，落点同样是一个 rank），把它转回来，主视图就高亮持有那一份的卡。
 
        为什么不自己算层区间再落标签：层标签一次只表达一层，而一张卡装的是一整段；
        `sel` 是 pattern 自己就懂的话，段的边界由它按 layersPerStage 自己算，
-       台面不必复制一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。
-       只从主视图往整网图单向转：那一格没有卡维度，选不出卡，不会回灌。 */
-    if (c.id === 'topology' && typeof d.sel === 'number' && d.sel >= 0) {
-      var ng = $('iframe[data-slot="netgraph"]');
-      if (ng && state.netgraph && state.netgraph.loaded && ng.contentWindow) {
-        ng.contentWindow.postMessage({ type: 'pto:state', sel: d.sel }, '*');
-      }
+       台面不必复制一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。 */
+    if (typeof d.sel === 'number' && d.sel >= 0) {
+      var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
+      /* 回声守卫：收到的正好是我们上一拍推给这一格的值——它只是在复述，不是用户
+         的新动作。直接互转的话 A→B→A 会一直弹下去（层联动那边踩过同一个坑）。
+         认掉一次就清空：等会儿用户真在这一格挑中同一个 rank 时还得转得出去。 */
+      if (peer && pushedSel[c.id] === d.sel) pushedSel[c.id] = null;
+      else if (peer) relaySel(peer, d.sel);
     }
   });
 });

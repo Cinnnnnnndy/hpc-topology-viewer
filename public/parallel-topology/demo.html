@@ -80,6 +80,11 @@
 }
 .pt-seg button:hover{color:var(--pt-fg)}
 .pt-seg button.is-on{background:var(--c, var(--pt-fg)); color:var(--pt-bg)}
+/* 正视的换层步进（‹ Ln ›）：与机位段控同一族，但两头是**动作**不是并列选项，
+   所以收窄、读数用等宽居中；到头的那一颗按下去没有下一层，灰掉而不是留着骗点。 */
+.pt-lstep button{padding:0 8px; font-family:var(--pt-mono)}
+.pt-lstep button:nth-child(2){min-width:44px; color:var(--pt-fg); font-weight:700}
+.pt-lstep button[disabled]{opacity:.32; pointer-events:none}
 .pt-chips{display:inline-flex; gap:5px; flex-wrap:wrap; align-items:center}
 .pt-chip{
   font-family:var(--pt-mono); font-size:11px; padding:3px 10px; border-radius:999px;
@@ -4145,9 +4150,14 @@ function graphSVG(o){
          total=0 的退化情形（如 experts=0 的专家桶）不硬标一个假区间。
          显隐按「字装不装得下」判：节点屏宽 ≥ 字长×2.2 才写——字号是恒定的（地图式），
          早写会和邻居的字叠成一团，晚一点出现反而清楚（放大自然会露出来）。 */
-      var tag = (part && part.total > 0)
-        ? ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '')
-        : '';
+      /* 没挑中任何一份时（cuts.mine < 0，见 frontScene 里 pick9 那段）不写
+         「TP0/4096」：那个 0 是「第几份」，而这时并没有选中谁——它是 rank 0 的坐标
+         退化出来的假读数。改写刀的份数：切成几份是事实，拿第几份才是选择。 */
+      var cut9 = (part && o.cuts && o.cuts[part.dim]) || null;
+      var tag = !(part && part.total > 0) ? ''
+        : (cut9 && cut9.count > 1 && cut9.mine < 0)
+          ? ' · '+(part.dimName || String(dim).toUpperCase())+'×'+cut9.count
+          : ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '');
       var labOn9 = o.fitLabel || w*zs > Math.max(26, (String(n.label).length + tag.length)*3.2);
       /* 数据标注（sidecar 解剖图里节点旁那枚白胶囊的那行字）：比名字再晚一档出现。
          **优先写进节点框内、名字正下方**——归属要靠「在框里」说话。写在框外时
@@ -4943,6 +4953,20 @@ function fsPill(body, hit, x, y, label, col, on, act, fs){
   return w;
 }
 
+/* 正视画的是**哪一层**（所有格画的是同一层）：反查了某层就画那一层；Rank 下画
+   选中卡那段的中点层；否则画模型中段（MoE 配置跳过开头那两层 Dense）。
+   抽成一支是因为工具条上那组换层步进要显示同一个数——两处各算各的迟早对不上。 */
+function fsLayerOf(D){
+  var L = D.layers, lps = D.layersPerStage;
+  if(revLiOn(D)) return clamp(Math.floor(+ui.revLayer), 0, L-1);
+  if(ui.cardMode){
+    var co9 = coordsOf((sel !== null && sel < D.world) ? sel : 0, D);
+    var pS9 = (ui.kPP && D.pp > 1) ? co9.p : 0;
+    return Math.min(L-1, pS9*lps + (lps>>1));
+  }
+  return D.moe ? Math.min(L-1, Math.max(Math.min(2, L), Math.floor(L/2))) : Math.floor(L/2);
+}
+
 /* ═════════ 正视图（原生）：一层的完整主线 × DP·CP 方阵 × TP 行 ═════════
    格阵语法与旧 sidecar 方阵一致：列 = DP 外层 × CP 内层（col = d·CP + c），
    行 = Rank 打开时的 TP 片；EP 组按连续列成块、组间掰缝。每格是**完整一条主线**
@@ -4957,13 +4981,10 @@ function frontScene(D, g, box){
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
-  /* 代表层：反查了某层就画那一层；Rank 下画选中卡那段的中点层；否则画模型中段 */
+  /* 代表层：算法见 fsLayerOf（工具条上那组换层步进要显示同一个数，所以抽了出去） */
   var revOn = revLiOn(D), revLi = revOn ? clamp(Math.floor(+ui.revLayer), 0, L-1) : -1;
   var pSel = cutPP ? co.p : 0;
-  var li = revOn ? revLi
-         : ui.cardMode ? Math.min(L-1, pSel*lps + (lps>>1))
-         : D.moe ? Math.min(L-1, Math.max(denseTop, Math.floor(L/2)))
-         : Math.floor(L/2);
+  var li = fsLayerOf(D);
   if(revOn) pSel = Math.min(D.pp-1, Math.floor(li/lps));
   var liDense = li < denseTop;
   var liStage = Math.min(D.pp-1, Math.floor(li/lps));
@@ -5064,11 +5085,17 @@ function frontScene(D, g, box){
       if(ui.cardMode && cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
       var op9 = (hasSel && !isF) ? .38 : 1;
       if(op9 < 1) body.push('<g opacity="'+op9+'">');
+      /* 「本卡拿哪一份」只在真的有卡的时候才成立：Rank 打开时每一格就是一张具体的
+         卡，实心那份是它持有的；Rank 关着又没选中任何卡时，co 会退化成 rank 0 的
+         坐标——于是一进画面就有一份 TP0 被点实，看着像「已经选了 TP0」，其实什么
+         都没选。这时 mine 给 -1：切痕照画（切成几份是事实），只是不指认哪一份是谁
+         的（拿第几份才是选择）。 */
+      var pick9 = ui.cardMode || hasSel;
       var cuts9 = {
-        tp: cutTP ? {count:D.tp, mine:t9} : null,
-        ep: cutEP ? {count:D.ep, mine:me9 ? me9.ep : 0} : null,
-        sp: cutTP ? {count:spN, mine:(cutCP ? c9 : 0)*D.tp + t9} : null,
-        cp: cutCP ? {count:D.cp, mine:c9} : null
+        tp: cutTP ? {count:D.tp, mine:pick9 ? t9 : -1} : null,
+        ep: cutEP ? {count:D.ep, mine:pick9 ? (me9 ? me9.ep : 0) : -1} : null,
+        sp: cutTP ? {count:spN, mine:pick9 ? (cutCP ? c9 : 0)*D.tp + t9 : -1} : null,
+        cp: cutCP ? {count:D.cp, mine:pick9 ? c9 : -1} : null
       };
       body.push(graphSVG({
         x:x+3, y:y+3, w:cellW-6, h:cellH-6, g:rk, D:D, zscale:FS_Z, metricLi:li,
@@ -5777,15 +5804,21 @@ function syncZoomHud(){
 function renderGroupHud(D){
   var el = $('groupHud'); if(!el) return;
   if(ui.view !== 'chain' || !D.ok){ el.hidden = true; ui.ghOpen = false; return; }
-  var g = (sel !== null && sel < D.world) ? sel : 0;
+  /* 没选中任何卡时**一格都不点亮**：cur 给 -1。原来这里无条件拿 rank 0 的坐标当
+     「当前组」，于是一进画面 TP0/EP0/PP0 就是亮的——读者看到的是「已经选了第 0 组」，
+     而其实什么都没选（图上那份 mine 也是同一个退化坐标来的，见 frontScene 的 pick9）。
+     选组是**选择**，没做过的选择不该替读者摆在那儿。 */
+  var hasSel9 = sel !== null && sel < D.world;
+  var g = hasSel9 ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var lps = D.layersPerStage, L = D.layers;
+  var cur9 = function(v){ return hasSel9 ? v : -1; };
   var groups = [];
-  if(ui.kDP && D.dp > 1) groups.push({k:'d', name:'DP', n:D.dp, cur:co.d, col:VC.dp});
-  if(ui.kCP && D.cp > 1) groups.push({k:'c', name:'CP', n:D.cp, cur:co.c, col:VC.cp});
-  if(ui.kTP && D.tp > 1) groups.push({k:'t', name:'TP·SP', n:D.tp, cur:co.t, col:VC.tp});
-  if(ui.kEP && D.moe && D.ep > 1) groups.push({k:'e', name:'EP', n:D.ep, cur:me ? me.ep : 0, col:VC.ep});
-  if(ui.kPP && D.pp > 1) groups.push({k:'p', name:'PP', n:D.pp, cur:co.p, col:VC.pp,
+  if(ui.kDP && D.dp > 1) groups.push({k:'d', name:'DP', n:D.dp, cur:cur9(co.d), col:VC.dp});
+  if(ui.kCP && D.cp > 1) groups.push({k:'c', name:'CP', n:D.cp, cur:cur9(co.c), col:VC.cp});
+  if(ui.kTP && D.tp > 1) groups.push({k:'t', name:'TP·SP', n:D.tp, cur:cur9(co.t), col:VC.tp});
+  if(ui.kEP && D.moe && D.ep > 1) groups.push({k:'e', name:'EP', n:D.ep, cur:cur9(me ? me.ep : 0), col:VC.ep});
+  if(ui.kPP && D.pp > 1) groups.push({k:'p', name:'PP', n:D.pp, cur:cur9(co.p), col:VC.pp,
     lab:function(i){ return 'PP'+i+'·L'+(i*lps)+'–'+Math.min(L-1,(i+1)*lps-1); }});
   if(!groups.length){ el.hidden = true; ui.ghOpen = false; return; }
   el.hidden = false;
@@ -6307,6 +6340,22 @@ function renderChainBar(D){
     + '<button'+(ui.viewTab==='side'?' class="is-on"':'')+' data-act="viewtab" data-tab="side" data-yaw="1.5708" data-pitch="0" title="侧视图">侧视</button>'
     + '<button'+(ui.viewTab==='top'?' class="is-on"':'')+' data-act="viewtab" data-tab="top" data-yaw="0" data-pitch="1.5708" title="顶视图">顶视</button>'
     + '</span>';
+  /* 换层：只给正视。正视是「每格画的是同一层」的取景，所以「哪一层」是这个机位的
+     第一参数——可原来改它只有一条路：从搜索里落一枚「层 · Ln」标签。整网图那一格
+     把搜索藏了（选中由主视图发起），于是正视里根本没有换层的入口，读者只能看着那
+     枚默认代表层。
+     这组步进落的就是**同一枚层标签**（addChip('layer')），跟搜索、跟台面两格之间的
+     层联动共用一条路，不另开一套状态——所以在这儿换层，标签栏和另一格都会跟着走。
+     侧视不需要：它本来就把 48 层全排开了，点哪一列就是哪一层。 */
+  var lBtns = '';
+  if(ui.viewTab === 'front' && D.ok && D.layers > 1){
+    var liNow9 = fsLayerOf(D);
+    lBtns = '<span class="pt-seg pt-lstep">'
+      + '<button data-act="fslayer" data-d="-1"'+(liNow9<=0?' disabled':'')+' title="上一层">‹</button>'
+      + '<button data-act="fslayer" data-d="0" title="正视每一格画的都是这一层。点一下回到默认代表层">L'+liNow9+'</button>'
+      + '<button data-act="fslayer" data-d="1"'+(liNow9>=D.layers-1?' disabled':'')+' title="下一层">›</button>'
+      + '</span>';
+  }
   /* 这两颗是**模式开关**，不是筛选器——按钮上直接写「按下去会发生什么」，
      打开 Rank ⇄ 关闭 Rank、关闭整网 ⇄ 打开整网。写成静态名字（「卡维度」）的话
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
@@ -6420,7 +6469,7 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + vBtns + dispBtn + mvBtn;
+  $('stagebar').innerHTML = cBtn + kBtns + vBtns + lBtns + dispBtn + mvBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -7568,6 +7617,15 @@ document.addEventListener('click', function(ev){
       sel = rankOf(c0.t, ownerC2, c0.d, c0.p, Dq);
     }
     render(); ptoNotifyHost();
+  }
+  /* 正视换层：落的是同一枚「层 · Ln」标签（与搜索、与宿主两格之间的层联动同一条路）。
+     data-d=0 是那颗读数按钮：摘掉标签，回到默认代表层。 */
+  else if(act==='fslayer'){
+    var Df9 = derive(cfg); if(!Df9.ok) return;
+    var dd9 = +b.getAttribute('data-d');
+    if(dd9 === 0) ui.chips = ui.chips.filter(function(c){ return c.k !== 'layer'; });
+    else addChip('layer', clamp(fsLayerOf(Df9) + dd9, 0, Df9.layers-1));
+    applyQuery(Df9); render(); ptoNotifyHost();
   }
   else if(act==='revclear'){ ui.chips = []; ui.revLayer = ''; ui.qOpen=''; applyQuery(derive(cfg)); render(); }
   else if(act==='qopen'){ ui.qOpen = ui.qOpen ? '' : 'menu'; render(); focusQVal(); }
