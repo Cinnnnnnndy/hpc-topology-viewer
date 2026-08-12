@@ -418,17 +418,20 @@ var SLOTS = [
        写着「浅色」说明它当前是深色。这是它内部状态唯一可靠的外部读数。 */
     themeByDom: true,
     src: function () {
-      var q = new URLSearchParams();
-      /* 默认看**正视**，不是 pattern 出厂的侧视。理由是这一格装不下侧视：
-         那个视图里的算子名/指标名是**固定字号**的 HTML 标注，不随缩放变小，
-         左右两侧还各挂一条 input/output 标注带——量下来要 ~950px 视口才收得住，
-         再怎么点「适配」都会被切掉两头（实测 460 宽时左溢 407px、右溢 285px）。
-         正视这一屏本来就是模型计算图（层 → 算子 → MTP 头），跟这一格叫「整网图」
-         对得上，且 460 宽就完整装得下（左右各余 ~100px）。
-         3D / 侧视 没拿掉，pattern 自己那三颗段控一点就换。 */
-      q.set('view', 'front');
+      /* 视图**不传**，跟着 pattern 出厂的侧视走。
+         曾经为了「装得下」把默认改成 view=front —— 那是拿掉了这一格唯一能用的
+         交互去换一个更好看的初始画面，换错了：侧视是它**唯一能选中**的视图。
+         正视里 46 条 .pto-training-sidecar__layer-hit 和 40 条算子标注**一条都不在
+         视口内**（实测 46总/0在视口内），层点不着；算子方块虽然点得到，但它们不在
+         .pto-model-deck__layer 里，selectNode 拿到的 layer 是 null——没有层号，
+         右边就无从高亮。所以联动的主场在侧视，默认就落在侧视。
+         代价是侧视比这一格宽：它的算子名/指标名是固定字号的 HTML 标注，不随缩放
+         变小，左右还各挂一条 input/output 标注带，要 ~950px 视口才完整收得住。
+         折中是把这一格的默认宽度提到 620（见 DEFAULT_SIDE_W）——模型主干那一列
+         （层栅格 + 居中的算子行）完整装得下，两侧那两条标注带会被切到，
+         那是 pattern 在窄栏下本来的样子，拖分隔条就能看全。 */
       /* 不打 BUILD 戳：这是 pto-design-system 发布的成品，版本归它自己管（见 BUILD 那段） */
-      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html?' + q.toString();
+      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html';
     }
   },
   {
@@ -513,7 +516,12 @@ var dataOn = DATAK.map(function (x) { return x.k; });
 /* 抽屉默认高度：默认那一屏（训练步全貌）只有 5 条泳道，340px 有一大截是空的。
    压到 288——正好装下表头 + 时间轴 + 5 条，既不留白也不夹掉行；要看展开后的 32 个 rank，拖分隔条即可。 */
 var DEFAULT_DOCK_H = 288;
-var DEFAULT_SIDE_W = 460;
+/* 整网图那格的默认宽度。侧视是它唯一能选中的视图（联动的主场），而侧视比 460 宽：
+   算子名/指标名是固定字号的 HTML 标注，不随缩放变小。620 是模型主干那一列
+   （层栅格 + 居中的算子行，实测 587px）刚好装下的宽度；再窄，层栅格本身就被切，
+   点层都点不准。两侧的 input/output 标注带仍会被切到——那要 ~950px，
+   给一格 sidecar 太多了，拖分隔条随时能看全。 */
+var DEFAULT_SIDE_W = 620;
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
 var sideW = DEFAULT_SIDE_W;
