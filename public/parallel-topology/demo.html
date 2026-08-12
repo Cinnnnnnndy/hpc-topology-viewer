@@ -2695,7 +2695,15 @@ function netScene(D, g, box, step){
         var gc = rankOf(tc, co.c, dc, pc2, D);
         var meC = hasSel && gc === g;
         var dT = depthT(kc, (csx[0]+csx[1])/2);
-        var spotShellDim = spot && !spotCol;
+        /* 聚光灯到**这只盒子自己的 rank**，不沿用列的判断。
+           为什么列的判断在这里不成立：列是 (tp,cp,dp) 三元组，纵深上串着 pp 段
+           那么多张卡，而「第 ℓ 层住在哪」命中的恰恰是**每一列各一段**——于是
+           每一列都算命中，一只都压不暗。开着整网时还看不出来（层板那一层
+           spotLayerMiss 会把非命中的层压下去），一关掉整网层板就不画了
+           （LQN=0），画面上只剩右上角那枚读数在说「32 张卡」，卡本身一只没亮。
+           关掉整网时盒子就是 rank，粒度必须到盒子。 */
+        var spotCard = !spot || !!spot.ranks[gc];
+        var spotShellDim = spot && !spotCard;
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -2718,13 +2726,23 @@ function netScene(D, g, box, step){
                画面上剩下的线立刻少一大半，而且前后关系比线更好读。
                三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
                卡不是某一个维度，它是四个维度的交点。 */
-            var lz = spot && !spotCol ? 0.35 : 1;
+            var lz = spotShellDim ? 0.35 : 1;
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色、不透光，
                后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
                差得不够就只是三张半透明的纸片叠在一起。 */
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
+            /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
+               压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
+               三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
+               顶面最重、正脸次之——亮起来的是一个**体**，不是一张贴纸。
+               选中的那张卡另有自己的一套（下面 meC 分支），不跟这层叠。 */
+            if(spot && spotCard && !meC){
+              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
+              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
+              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
+            }
             if(meC){
               body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,46)+';stroke:none'));
               body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,60)+';stroke:none'));
@@ -2747,9 +2765,15 @@ function netScene(D, g, box, step){
            盒子边缘化在背景里，实体感就散了。前后落差保持不变。 */
         var eW = meC ? 1.15 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
-        if(spot && !meC){ eW *= 0.22; eO *= 0.15; }
+        /* 落选的压到几乎看不见；**命中的反而要加粗**——聚光灯是「亮起一批」，
+           不是「把所有人一起压暗」。原来这里不分命中与否一律压，于是搜索一落下，
+           连该亮的那 32 只也跟着淡了。 */
+        if(spot && !meC){
+          if(spotCard){ eW *= 1.35; eO = Math.min(1, eO * 1.6); }
+          else { eW *= 0.22; eO *= 0.15; }
+        }
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC?'var(--pt-fg)':'var(--pt-fg3)')
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC ? 'var(--pt-fg)' : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
@@ -2765,7 +2789,7 @@ function netScene(D, g, box, step){
         /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
            盒子在屏幕上小到装不下号时不写（按投影后的实际宽度判，不按缩放判）。 */
-        if(ui.netOff && !lowDetail && !meC && !(spot && !spotCol)){
+        if(ui.netOff && !lowDetail && !meC && !spotShellDim){
           /* 号写在盒子**顶面正上方**（参考页那枚门牌就在这个位置）。写在前脸中心的话
              它落在盒子肚子里，和穿过去的那些棱叠在一起，读者分不清这个号算哪一只；
              顶上那一圈是空的，一只盒子一个号，正上正下对得死死的。 */
