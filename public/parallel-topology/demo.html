@@ -2179,51 +2179,6 @@ function netScene(D, g, box, step){
     for(var st8 in qBatch) body.push('<path d="'+qBatch[st8]+'" style="'+st8+'"/>');
     qBatch = {}; qBatchN = 0;
   }
-  /* ── 卡 = 容器：显存分段（把「容器模型」与「单卡两视角」合进 rank 壳）────
-     关掉整网后卡壳是空的，可「这张卡装了什么」恰恰是两个腔各自的读数：
-       ①权重体腔 ⇒ 权重 + 梯度 + 优化器态 —— 常驻，画成实心灰阶（三档明度）
-       ②激活体腔 ⇒ 激活·在途 μbatch     —— 流动，画成蓝段 + 虚线棱
-     从底往上按字节比例堆进壳里，顶上空的一截就是余量。装不下（OOM）时按总量
-     归一填满整壳，数字上的红字交给图例。成分只随 pp 段变（A3：没有一项含 dp），
-     同段的卡条纹一模一样、在途 μb 沿纵深逐段递减——条纹本身就是读法。
-     刀开关拨掉哪把，算量就按那把刀没落下算（tp/cp/ep 回 1、pp 回整网）。
-     ⚠ 必须放在列循环之前：shellOf 在循环里被调，var 赋值得先跑完。 */
-  var memD = (cutTP && cutPP && cutCP && (cutEP || !D.moe)) ? D : (function(){
-    var D2 = {}, k2; for(k2 in D) D2[k2] = D[k2];
-    if(!cutTP) D2.tp = 1;
-    if(!cutCP) D2.cp = 1;
-    if(!cutEP) D2.ep = 1;
-    if(!cutPP){ D2.pp = 1; D2.layersPerStage = D2.layers; }
-    return D2;
-  })();
-  /* 面色兑底色（solid）：alpha 恒 1，画家序靠它遮住后排的卡——半透的话 128 只
-     叠起来又是一团网。激活那段用 dp 蓝兑底色，同样不透明，「流动感」由虚线棱给。 */
-  var MEM_TONE = {
-    w:  {F:solid('var(--pt-fg)',58), R:solid('var(--pt-fg)',70), T:solid('var(--pt-fg)',48)},
-    g:  {F:solid('var(--pt-fg)',38), R:solid('var(--pt-fg)',48), T:solid('var(--pt-fg)',30)},
-    opt:{F:solid('var(--pt-fg)',22), R:solid('var(--pt-fg)',30), T:solid('var(--pt-fg)',17)},
-    act:{F:'color-mix(in srgb, var(--pt-dp) 46%, var(--pt-bg))',
-         R:'color-mix(in srgb, var(--pt-dp) 58%, var(--pt-bg))',
-         T:'color-mix(in srgb, var(--pt-dp) 38%, var(--pt-bg))', act:1},
-    rsv:{F:solid('var(--pt-fg)',9),  R:solid('var(--pt-fg)',13), T:solid('var(--pt-fg)',7)}
-  };
-  var memStackCache = {};
-  function memStack(p9){
-    if(memStackCache[p9]) return memStackCache[p9];
-    var segs9 = memParts(memD, cutPP ? p9 : 0), cap9 = D.hbm*Math.pow(2,30);
-    var tot9 = segs9.reduce(function(a,x){ return a+x.bytes; }, 0);
-    var sc9 = 1/Math.max(cap9, tot9), acc9 = 0, out9 = [];
-    segs9.forEach(function(sg9){
-      var f0 = acc9*sc9; acc9 += sg9.bytes;
-      var f1 = acc9*sc9;
-      if(f1 - f0 < 0.004) return;                    /* 薄成一条线的段不画 */
-      var t9 = MEM_TONE[sg9.k];
-      out9.push({f0:f0, f1:f1, F:t9.F, R:t9.R, T:t9.T, act:!!t9.act});
-    });
-    if(out9.length) out9[out9.length-1].top = true;  /* 只有最上面那段露顶面 */
-    memStackCache[p9] = out9;
-    return out9;
-  }
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
     var kOff = k;
@@ -2835,31 +2790,9 @@ function netScene(D, g, box, step){
                颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
                同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
                而不是靠加黑去凑遮挡。 */
-            if(lowDetail){
-              /* 拖动中照旧三面实心：帧预算装不下每卡十几个分层面 */
-              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+solid('var(--pt-fg)',(2 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+solid('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+solid('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
-            } else {
-              /* 容器本体三面照旧实心浅灰（要挡住后排），载荷再堆上去：
-                 空着露出浅灰的那截就是余量——容器没装满这件事直接看得见。 */
-              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+solid('var(--pt-fg)',(2 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+solid('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+solid('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
-              /* 载荷从底往上堆（v 朝下，底是 cv1）：①腔三段灰 → ②腔一段蓝 → 预留 */
-              var MS9 = memStack(pc2), vSp9 = cv1 - cv0;
-              for(var m8 = 0; m8 < MS9.length; m8++){
-                var sg8 = MS9[m8];
-                var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
-                var mq0 = P(cu0,vB9,cw0,kc), mq1 = P(cu1,vB9,cw0,kc),
-                    mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
-                    mq5 = P(cu1,vB9,cw1,kc), mq6 = P(cu1,vA9,cw1,kc);
-                body.push(quad([mq0,mq1,mq2,mq3], 'fill:'+sg8.F+';stroke:var(--pt-bg);stroke-width:.3;opacity:'+lz));
-                body.push(quad([mq1,mq5,mq6,mq2], 'fill:'+sg8.R+';stroke:none;opacity:'+lz));
-                if(sg8.top) body.push(quad([mq0,mq1,mq5,P(cu0,vB9,cw1,kc)], 'fill:'+sg8.T+';stroke:none;opacity:'+lz));
-                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
-              }
-            }
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+solid('var(--pt-fg)',(2 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+solid('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+solid('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
                压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
                三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
@@ -3132,25 +3065,6 @@ function netScene(D, g, box, step){
      也正是 depthTest:false）。放在这儿才是真的最后——轴上的门牌、EP 框、
      入口出口都是在列循环之后画的，插在中间照样会被它们压住。 */
   if(rankTags.length) body.push(rankTags.join(''));
-  /* 卡内成分图例：只在「Rank + 关整网」的容器视角给。读数取选中卡所在段——
-     成分随段变（在途 μb 逐段递减），图例得说清这枚数字是哪一段的。 */
-  if(ui.cardMode && ui.netOff && !lowDetail){
-    var mlP = cutPP ? co.p : 0;
-    var mlSeg = memParts(memD, mlP), mlCap = D.hbm*Math.pow(2,30);
-    var mlTot = mlSeg.reduce(function(a,x){ return a+x.bytes; }, 0);
-    /* 底部要让开页面自己的底栏（HTML 浮层盖着舞台下沿）：抬高到底边上方 60 */
-    var mlX = box.x + 16, mlY = box.y + box.h - 60;
-    body.push(txt(mlX, mlY, '卡 = 容器（显存 '+D.hbm+' GB）：①权重体腔 ⇒ 权重+梯度+优化器态（实心灰阶，常驻） · ②激活体腔 ⇒ 激活·在途（蓝，虚线棱，流动） · 顶上空的一截 = 余量', 7.6, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
-    var mlx = mlX;
-    mlSeg.forEach(function(sg){
-      var t8 = MEM_TONE[sg.k];
-      body.push('<rect x="'+mlx.toFixed(1)+'" y="'+(mlY+7)+'" width="8" height="8" style="fill:'+t8.F+';stroke:var(--pt-bds);stroke-width:.5"/>');
-      var lb = sg.label+' '+fmtGB(sg.bytes)+' GB';
-      body.push(txt(mlx+11, mlY+14, esc(lb), 7, 'var(--pt-fg2)', 'start'));
-      mlx += 11 + lb.length*6.2 + 14;
-    });
-    body.push(txt(mlx+4, mlY+14, '合计 '+fmtGB(mlTot)+' / '+D.hbm+' GB'+(cutPP?'（stage '+mlP+' 的读数；在途 μb 逐段不同）':'（PP 刀未落：整网都得装进一张卡）'), 7.2, mlTot>mlCap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
-  }
   var wrapped = '<defs>'+HX+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + lab.join('') + '</g>';
   return {body: wrapped, hit: '<g clip-path="url(#'+CID+')">'+hit.join('')+hitOps.join('')+'</g>', nodes: nodes, sawn: sawn, whole: whole,
