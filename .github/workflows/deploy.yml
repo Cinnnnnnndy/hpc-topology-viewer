@@ -322,12 +322,31 @@ jobs:
           # 直接把 ② 那份 vendor 硬链过来，省一次拷贝。
           NS=dist/patterns/net-slicing
           mkdir -p $NS
+          # 换页面标题那条不能写成通配的 <title>[^<]*</title>：demo.html 里这串
+          # 五个字不是唯一出现的地方——画布上几十处悬浮提示（PP 边界 Send/Recv、
+          # rank 门牌、层反查……）都是拿 JS 拼出一枚 <title>算子读数</title> 塞进
+          # SVG 元素，源码里逐条独立成行。sed 没有 g 标记时默认每行只替换第一处，
+          # 而这些行里除了那一对 <title>…</title> 再没有别的 < 字符，[^<]* 于是
+          # 从每一行自己的 <title> 一路吃到 </title>——把「点开看完整读数」那些
+          # 动态文本全部换成了这句写死的页面标题，成片提示语失效（2026-08 发现，
+          # 起因是这条 sed 本意只想改 <head> 里那一条）。
+          # 改成精确匹配 demo.html 源码里那一条的**原文**：那对 SVG 提示永远不会
+          # 拼出这五个字，天然不会误中；<head> 里的原文变了这条也会静默失手，
+          # 所以下面另加一道断言兜底。
           sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
-              -e 's#<title>[^<]*</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
+              -e 's#<title>并行拓扑 · PRD Demo（应用形态）</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
               $SRC/demo.html > $NS/pattern.html
+          # 断言只中了一处：中 0 处说明源码那句标题原文变了、这条 sed 没打中
+          # （<head> 里还留着旧标题）；中 ≥2 处说明又变回了会误伤悬浮提示的
+          # 通配写法。两种情况都不该让这一步悄悄过去。
+          TCOUNT=$(grep -c '并行拓扑 Pattern —— 从一张网到 world 张卡' $NS/pattern.html)
+          if [ "$TCOUNT" -ne 1 ]; then
+            echo "❌ 页面标题替换异常：命中 $TCOUNT 处（应为 1，只改 <head> 里那一条，画布上的悬浮提示不该被碰到）"
+            exit 1
+          fi
           # 没带参数打开时也要落在这一屏：把默认值直接写进页面，而不是靠使用者补 query
           node -e "
             const fs=require('fs');
