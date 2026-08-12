@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>21 张图</span><span>46 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>21 张图</span><span>50 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -923,6 +923,69 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
     <p><b>梯度与优化器状态严格说属于权重体。</b>它们与参数同 shape、被同一组并行维度以同样方式切分，所以本文说「权重体」时默认含这三样；只在讨论字节数时才拆开算。</p>
     <p><b>KV cache 是个混血，本文不展开。</b>它的形状像激活体（随 <code>b</code>、<code>s</code> 增长），生命周期却像权重体（跨多步持续）——本质是被冻结成状态的激活体。这只在推理场景出现，本文是训练视角。</p>
   </div>
+
+  <h3>拆开算：梯度与优化器状态各是什么</h3>
+
+  <p>上面的对照表写了「权重体在显存里出现 3–4 份，合计 16 B/参数」。下面把每一份拆开，说清楚它是什么、为什么必须存在、为什么用这个精度。</p>
+
+  <h4>梯度：每个参数该往哪个方向调</h4>
+
+  <p>前向跑完后，算出一个标量 loss（"模型预测得有多差"）。<strong>梯度就是 loss 对每一个参数的偏导数</strong> <code>∂L/∂W</code>——"如果把这个参数往某个方向动一点点，loss 会变多少"。</p>
+
+  <p>反向传播从 loss 出发，沿计算图<strong>逆向走一遍</strong>，用链式法则逐算子往回推，最终给每个参数算出一个梯度值。梯度和参数<strong>同 shape</strong>——参数矩阵是 <code>[H, 4H]</code>，梯度矩阵也是 <code>[H, 4H]</code>，每个位置告诉优化器"这个位置该怎么调"。</p>
+
+  <p>梯度算出来后<strong>不能立刻用</strong>，因为 DP 下每张卡只看了自己那份数据，算出来的梯度是局部的。必须先做一次 AllReduce（梯度同步），把所有 DP 副本的梯度平均之后，才能交给优化器去更新权重。<strong>所以梯度必须在显存里存着——从反向传播算出来，到梯度同步做完</strong>，这段时间它不能丢。</p>
+
+  <table class="tbl">
+    <thead><tr><th>项</th><th>精度</th><th>每参数</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>梯度</b></td><td>bf16</td><td>2 B</td><td>与参数同精度即可——反向传播本身就在 bf16 下做</td></tr>
+    </tbody>
+  </table>
+
+  <h4>优化器状态：记住"最近几步走过的路"</h4>
+
+  <p>最简单的优化器（SGD）拿到梯度直接乘学习率更新参数就行了，只要 2 B。但实际训练几乎都用 <b>Adam</b>，因为 SGD 在大模型上不够稳、不够快。Adam 的代价是需要<strong>为每个参数额外维护三个状态</strong>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>状态</th><th>符号</th><th>精度</th><th>每参数</th><th>记的是什么</th></tr></thead>
+    <tbody>
+      <tr><td><b>一阶动量</b></td><td>m</td><td>fp32</td><td>4 B</td><td>梯度的<b>指数移动平均</b>——"最近几步的平均方向"。有了它，即使单步梯度有噪声，更新方向也是平滑的</td></tr>
+      <tr><td><b>二阶动量</b></td><td>v</td><td>fp32</td><td>4 B</td><td>梯度<b>平方</b>的指数移动平均——"最近几步的波动幅度"。波动大的参数自动减小学习率，波动小的自动放大</td></tr>
+      <tr><td><b>fp32 权重副本</b></td><td>master W</td><td>fp32</td><td>4 B</td><td>参数的<b>全精度副本</b>。训练用 bf16 做前向/反向（快），但累加更新必须在 fp32 下做——bf16 精度太低，很小的梯度会被截断为零，参数实际上没在动</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="lbl">为什么 m 和 v 必须是 fp32</span>
+    <p>动量是<b>跨 step 累加</b>的——每一步做 <code>m = β₁·m + (1-β₁)·g</code>。如果 m 用 bf16（有效精度约 7 位十进制），跑几千步后累加的舍入误差会严重偏离真实均值。fp32（约 7 位有效数字，指数范围更大）才能撑住十万步量级的训练。master weight 同理：每步更新量可能只有参数本身的万分之一，bf16 会把这个更新直接截断为零。</p>
+  </div>
+
+  <h4>合起来：每个参数 16 字节</h4>
+
+  <table class="tbl">
+    <thead><tr><th>谁</th><th>精度</th><th>每参数字节</th><th>7B 模型实际大小</th></tr></thead>
+    <tbody>
+      <tr><td>权重（bf16，前向/反向用这份）</td><td>bf16</td><td>2 B</td><td>14 GB</td></tr>
+      <tr><td>梯度</td><td>bf16</td><td>2 B</td><td>14 GB</td></tr>
+      <tr><td>一阶动量 m</td><td>fp32</td><td>4 B</td><td>28 GB</td></tr>
+      <tr><td>二阶动量 v</td><td>fp32</td><td>4 B</td><td>28 GB</td></tr>
+      <tr><td>fp32 权重副本 (master weight)</td><td>fp32</td><td>4 B</td><td>28 GB</td></tr>
+      <tr><td><b>合计</b></td><td></td><td><b>16 B</b></td><td><b>112 GB</b></td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>参数本身只占 16 分之 2。</strong>说"这个模型 7B 参数、bf16 就是 14 GB"没有错，但和训练时真正占的 112 GB 差了 8 倍。差的那 6 倍（98 GB）就是优化器状态——这就是为什么图里那格叫「优化器状态」，而且是显存里最大的一块。</p>
+
+  <p>这也解释了 ZeRO / FSDP 为什么按三个级别渐进地切：</p>
+
+  <ul>
+    <li><b>ZeRO-1</b>：只切优化器状态（最大那块，12 B/参数）→ 单卡省最多，通信最少</li>
+    <li><b>ZeRO-2</b>：再切梯度（2 B/参数）→ 多省一点</li>
+    <li><b>ZeRO-3 / FSDP</b>：连参数也切（2 B/参数）→ 全切了，但计算时要 AllGather 拼回来</li>
+  </ul>
+
+  <p>先切最大、通信代价最小的那块，最后才碰需要计算时临时聚合的那块——<strong>这个优先级恰好就是字节数从大到小的排序</strong>。</p>
 
   <h3>推论一：为什么恰好是四个乘数</h3>
   <p>ℓ、h、b、s 四根轴全网每一层都存在，各自能贡献一个独立乘数：</p>
