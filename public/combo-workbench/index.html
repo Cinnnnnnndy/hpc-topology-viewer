@@ -896,16 +896,58 @@ function settleFrame(slot, frame) {
    自己的控件**走——点「＋ 搜索」→ 点「层」→ 填数字 → 回车，全程是它自己的
    事件处理器在改它自己的状态。与泳道那座桥同一条纪律，一个字没改它。 */
 
-/* 整网图此刻选中的层号；没选是 null，还没装配好是 undefined（别当成「取消选中」） */
-function sidecarLayer(frame) {
+/* 算子 → 这个算子是被**哪一刀**切开的。
+   为什么台面要有这张表：两边各说各的话——整网图讲算子（`a2a_dispatch`、`o_proj`），
+   并行拓扑讲刀（TP/SP/EP/PP/DP）。层号是天然主键，刀不是，总得有人把它们对上。
+   放在台面而不是塞进任何一个 pattern：这是**编排**知识，不是哪一格自己的事。
+   依据都写在两边自己的画面上（不是我编的）：
+     · norm 类 —— 并行拓扑自己的说法是「SP 在整张图上只在这类 norm 上露头」；
+     · TP/SP AllGather / Reduce-Scatter 与它们夹住的那些 linear/conv/attention core
+       —— 算子名里就写着 TP/SP，是被 TP 锯开的那一段；
+     · router / a2a / expert —— MoE 分支，EP 那一刀；
+     · mHC state 进出 —— 层与层的交接，那是 PP 的接力棒。
+   查不到的算子不落刀（只落层号），不猜。 */
+var OP_CUT = {
+  /* SP：norm 沿 seq 切 */
+  attn_norm: 'sp', q_a_norm: 'sp', kv_a_norm: 'sp', post_attention_norm: 'sp',
+  pre_mlp_norm: 'sp', post_mlp_norm: 'sp', block_post_norm: 'sp', final_norm: 'sp',
+  mtp_input_norms: 'sp',
+  /* TP：注意力与稠密 FFN 的权重被锯开，两端各挂一次 TP/SP 集合通信 */
+  attn_all_gather: 'tp', attn_reduce_scatter: 'tp', moe_all_gather: 'tp', moe_reduce_scatter: 'tp',
+  q_a_proj: 'tp', kv_a_proj: 'tp', q_b_proj: 'tp', kv_b_proj: 'tp',
+  q_causal_conv: 'tp', kv_causal_conv: 'tp', o_causal_conv: 'tp',
+  query_tensor: 'tp', key_tensor: 'tp', attention_core: 'tp', o_proj: 'tp',
+  dense_gate_up: 'tp', dense_silu: 'tp', dense_down: 'tp',
+  lm_head: 'tp', lm_head_weight: 'tp', logits_allgather: 'tp',
+  mtp_head_weight: 'tp', mtp_shared_head: 'tp',
+  /* EP：专家分桶 + 按 token 路由 */
+  gate: 'ep', a2a_dispatch: 'ep', expert_pool: 'ep', a2a_combine: 'ep',
+  shared_expert: 'ep', moe_branch_add: 'ep',
+  /* PP：层间交接的那根状态棒 */
+  mhc_state_in: 'pp', mhc_state_out: 'pp'
+};
+
+/* 整网图此刻的选中：{ layer, op, cut }。
+   · 没选中 → null
+   · 还没装配好 → undefined（别当成「取消选中」，否则会把标签摘掉）
+   三个读数按「谁更具体」排序：
+     ① selectedDetail.key = `layer-17-operator-expert_pool` —— 点算子时它同时给出
+        层号和算子 id，是最完整的一条；
+     ② base.state.selected = {nodeId, layer} —— 展开层之后点画布上的算子方块；
+     ③ selectedLayer —— 只点了那条层带，还没到算子。 */
+function sidecarPick(frame) {
   try {
     var ctl = frame.contentWindow && frame.contentWindow.trainingSidecarController;
     if (!ctl) return undefined;
-    /* 展开某一层之后点里面的算子，层号在 state.selected 里，比 selectedLayer 更准
-       （那才是「这个算子属于第几层」）；只点层本身时用 selectedLayer。 */
+    var det = ctl.selectedDetail;
+    var m = det && det.key && String(det.key).match(/^layer-(\d+)-operator-(.+)$/);
+    if (m) return { layer: +m[1], op: m[2], cut: OP_CUT[m[2]] || null };
     var sel = ctl.base && ctl.base.state && ctl.base.state.selected;
-    if (sel && typeof sel.layer === 'number') return sel.layer;
-    return typeof ctl.selectedLayer === 'number' ? ctl.selectedLayer : null;
+    if (sel && sel.nodeId && typeof sel.layer === 'number') {
+      return { layer: sel.layer, op: sel.nodeId, cut: OP_CUT[sel.nodeId] || null };
+    }
+    if (typeof ctl.selectedLayer === 'number') return { layer: ctl.selectedLayer, op: null, cut: null };
+    return null;
   } catch (err) { return undefined; }   // 跨源
 }
 
@@ -964,19 +1006,43 @@ function setTopoLayer(n) {
   }, 40);
 }
 
-/* 轮询而不是监听点击：整网图改选中的路子不止一条（点层、点层里的算子、
-   收起某一层、它自己的详情面板），盯住**结果**比盯住每一条入口可靠。
-   读的是两个 getter，一次几微秒，300ms 一轮不值得心疼。 */
-var lastLayer = undefined;
+/* 刀：走 pto:state 的白名单字段 cut——不重载，也不占一枚搜索标签。
+   为什么刀不做成 dim 标签：并行拓扑把多枚标签的命中集合取**并集**
+   （见它的 spotlightHit），`层 L17` ∪ `刀 TP 组` 会比「L17 住在哪」更宽，
+   反而糊掉了刚点亮的那批卡。刀用 cut 表达，管的是「这一屏正在讲哪一刀」，
+   与层高亮各司其职，叠在一起才是「这个算子在这一层、被这一刀切开」。 */
+function setTopoCut(cut) {
+  if (!cut) return;
+  /* SP 不是它的一把独立的刀：它的 COMM_DIMS 是 tp/cp/pp/dp/ep，SP 一直是跟着 TP 走的
+     （画面上写作「TP·SP」）。norm 那几个算子归到 TP 这一刀上，才是它认得的说法。 */
+  if (cut === 'sp') cut = 'tp';
+  var frame = $('iframe[data-slot="topology"]');
+  if (!frame || !state.topology || !state.topology.loaded || !frame.contentWindow) return;
+  frame.contentWindow.postMessage({ type: 'pto:state', cut: cut }, '*');
+}
+
+/* 轮询而不是监听点击：整网图改选中的路子不止一条（点层带、点算子行、点展开层里的
+   算子方块、收起、它自己的详情面板），盯住**结果**比盯住每一条入口可靠——
+   之前按入口写测试就吃过亏：合成点击打在正视里根本不在视口内的那批命中层上，
+   测过了，真用鼠标点却什么也不发生。读的是三个 getter，一次几微秒。 */
+var lastPick = undefined, lastTopoView = undefined;
 function wireLinkage() {
   setInterval(function () {
     var frame = $('iframe[data-slot="sidecar"]');
     if (!frame || !state.sidecar || !state.sidecar.loaded) return;
-    var n = sidecarLayer(frame);
-    if (n === undefined) return;                     // 还没装配好
-    if (n === lastLayer) return;
-    lastLayer = n;
-    setTopoLayer(n);
+    var pick = sidecarPick(frame);
+    if (pick === undefined) return;                  // 还没装配好
+    var key = pick ? pick.layer + '/' + (pick.op || '') : '';
+    /* 也盯着并行拓扑当前是哪个视图：那套属性搜索**只在「整网切分」里出现**
+       （别的视图 #qbar 是空的）。所以在别的视图里选中换了，标签落不下去；
+       等切回整网切分再补一次，否则挂着的是上一次那枚，对不上左边。
+       只在「选中变了」或「视图变了」时动手——用户自己把标签叉掉之后，
+       我们不该每 300ms 又给他塞回去。 */
+    var view = state.topology && state.topology.value;
+    if (key === lastPick && view === lastTopoView) return;
+    lastPick = key; lastTopoView = view;
+    setTopoLayer(pick ? pick.layer : null);
+    if (pick) setTopoCut(pick.cut);
   }, 300);
 }
 
