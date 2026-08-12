@@ -2742,8 +2742,8 @@ function netScene(D, g, box, step){
                后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
                差得不够就只是三张半透明的纸片叠在一起。 */
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(48 + dT*10).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(32 + dT*7).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
                压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
                三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
