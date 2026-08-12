@@ -963,6 +963,21 @@ window.addEventListener('message', function (ev) {
       syncTabs(c.id);
       writeURL();
     }
+    /* 主视图选中了一张卡 → 把同一个 rank 转给整网图那格。
+       它那边不进卡维度（rank=0），`sel` 的作用是「本卡」：netScene 只把**这张卡
+       那一段 PP 的层**画成实的、其余当背景（`mine = cutPP ? li 属于 co.p 段 : true`）。
+       于是右边亮起来的正好是「这张卡装的那十几层」——用户点一张卡想知道的就是这个。
+
+       为什么不自己算层区间再落标签：层标签一次只表达一层，而一张卡装的是一整段；
+       `sel` 是 pattern 自己就懂的话，段的边界由它按 layersPerStage 自己算，
+       台面不必复制一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。
+       只从主视图往整网图单向转：那一格没有卡维度，选不出卡，不会回灌。 */
+    if (c.id === 'topology' && typeof d.sel === 'number' && d.sel >= 0) {
+      var ng = $('iframe[data-slot="netgraph"]');
+      if (ng && state.netgraph && state.netgraph.loaded && ng.contentWindow) {
+        ng.contentWindow.postMessage({ type: 'pto:state', sel: d.sel }, '*');
+      }
+    }
   });
 });
 
