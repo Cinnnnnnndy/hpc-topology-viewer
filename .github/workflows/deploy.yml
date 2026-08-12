@@ -456,8 +456,11 @@ jobs:
               for m in missing:
                   print('  MISSING ' + root + '/' + m)
               bad += len(missing)
-              if len(refs) < 15:
-                  print(f'  ← 只扫到 {len(refs)} 个引用，少于预期 15：正则或产物不对')
+              # 下限原本是 15。正视/侧视改成原生重绘之后，3d-deck 与 training-sidecar
+              # 的 css+js、以及 model-graphviz/pattern.js 一共 5 个引用被正当地删掉了，
+              # 剩下的 10 个才是当前真实闭包。低于 10 说明正则没匹配上或产物不对。
+              if len(refs) < 10:
+                  print(f'  ← 只扫到 {len(refs)} 个引用，少于预期 10：正则或产物不对')
                   bad += 1
           sys.exit(1 if bad else 0)
           PY
