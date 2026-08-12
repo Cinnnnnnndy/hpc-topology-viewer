@@ -391,17 +391,36 @@ var SLOTS = [
        用同一套字号字重、同一个左上间距。工具条推到右边、给它让出上边距。 */
     hideCss: '.pto-training-sidecar__data-control{display:none!important}' +
              '.pto-model-deck__title{display:none!important}' +
-             '.pto-model-deck__toolbar{margin-left:auto;justify-content:flex-end;flex-wrap:wrap;padding-right:62px}',  /* 右边留出 62px 给格头那颗「收起」——它压在同一行的右端，不让位就会叠上 */
+             /* top: pattern 那条工具条本来是 top:8（画布又内缩 12），中心落在格身
+                第 38px；格头标题与「收起」的中心在第 25px——差 13px，肉眼一看就是
+                两行。把工具条提上来 13px，三者才真的在一行上。 */
+             '.pto-model-deck__toolbar{top:-5px;margin-left:auto;justify-content:flex-end;flex-wrap:wrap;padding-right:62px}',  /* 右边留出 62px 给格头那颗「收起」——它压在同一行的右端，不让位就会叠上 */
     hideByText: ['浅色', '深色', '适配'],
     hideGroup: '.pto-model-deck__control',
     /* 默认按「适配」显示：这一格宽度由台面决定，pattern 出厂那个缩放不认得它。
        装配完点一次，之后每次拖分隔条/改窗口再点一次（见 refit）。 */
     fitByText: '适配',
+    /* 「适配」只改缩放，居中要另算——原因见 centerFrame 的注释。
+       centerBy 是 pattern 自己挂在 window 上的公开控制器（pattern.html 最后一行
+       就是 window.trainingSidecarController = …render(…)），走的还是「只用它对外
+       给的入口」那条纪律。 */
+    centerBy: 'trainingSidecarController',
+    viewportSel: '.pto-model-deck__viewport',
     /* 主题：不比 data-theme（我们可能已经先把属性设过了），比它自己按钮上的字——
        写着「浅色」说明它当前是深色。这是它内部状态唯一可靠的外部读数。 */
     themeByDom: true,
     src: function () {
-      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html' + (BUILD ? '?v=' + BUILD : '');
+      var q = new URLSearchParams();
+      /* 默认看**正视**，不是 pattern 出厂的侧视。理由是这一格装不下侧视：
+         那个视图里的算子名/指标名是**固定字号**的 HTML 标注，不随缩放变小，
+         左右两侧还各挂一条 input/output 标注带——量下来要 ~950px 视口才收得住，
+         再怎么点「适配」都会被切掉两头（实测 460 宽时左溢 407px、右溢 285px）。
+         正视这一屏本来就是模型计算图（层 → 算子 → MTP 头），跟这一格叫「整网图」
+         对得上，且 460 宽就完整装得下（左右各余 ~100px）。
+         3D / 侧视 没拿掉，pattern 自己那三颗段控一点就换。 */
+      q.set('view', 'front');
+      if (BUILD) q.set('v', BUILD);
+      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html?' + q.toString();
     }
   },
   {
@@ -755,6 +774,65 @@ function fitFrame(slot, frame) {
   return false;
 }
 
+/* 「适配」之后再居一次中。
+   为什么点完还得补：pattern 的 fit 只管**缩放**，可画面里的算子名、指标名、
+   采样读数是固定字号的 HTML 标注，不跟着缩——几何缩小了它们没缩，内容的
+   重心就不在视口正中，于是一侧贴边、另一侧空一大片。
+   量一遍视口里所有**叶子**节点的并集（容器多半是撑满视口的空壳，量了没意义），
+   把重心平移到正中。**只动 pan、不动 zoom**：改缩放会把那些固定字号的标注挤成
+   一团，那比偏一点更糟。
+   **装得下的那条轴才平移**——本来就装不下的轴一平移，只会把溢出的一侧推得更远。 */
+function centerFrame(slot, frame) {
+  if (!slot.centerBy) return;
+  try {
+    var win = frame.contentWindow, doc = frame.contentDocument;
+    if (!win || !doc) return;
+    var ctl = win[slot.centerBy], vp = doc.querySelector(slot.viewportSel);
+    if (!ctl || !ctl.setPose || !ctl.base || !ctl.base.state || !vp) return;
+    var vr = vp.getBoundingClientRect();
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    var all = vp.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.children.length) continue;
+      var r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      if (r.left < x0) x0 = r.left;
+      if (r.right > x1) x1 = r.right;
+      if (r.top < y0) y0 = r.top;
+      if (r.bottom > y1) y1 = r.bottom;
+    }
+    if (x0 === Infinity) return;
+    var st = ctl.base.state, pose = {}, any = false;
+    if (x1 - x0 <= vr.width)  { pose.panX = Math.round(st.panX + (vr.left + vr.width / 2)  - (x0 + x1) / 2); any = true; }
+    if (y1 - y0 <= vr.height) { pose.panY = Math.round(st.panY + (vr.top + vr.height / 2)  - (y0 + y1) / 2); any = true; }
+    if (any) ctl.setPose(pose);
+  } catch (err) { /* 跨源，或它换了对外接口：不居中而已，不该让整格出错 */ }
+}
+
+/* 用户点 pattern 自己那三颗视图段控（3D / 正视 / 侧视）时它会重新 fit 一次，
+   我们的居中也得跟一次。只旁听、不拦截（捕获期只读，点击照样交给它自己的
+   处理器）——换视图是它的事，摆正是台面的事。 */
+function wireViewRecenter(slot, frame) {
+  if (!slot.centerBy) return;
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || doc.__wbRecenter) return;
+    doc.__wbRecenter = 1;
+    doc.addEventListener('click', function (ev) {
+      if (!ev.target || !ev.target.closest || !ev.target.closest('[data-deck-view]')) return;
+      setTimeout(function () { centerFrame(slot, frame); }, 320);
+    }, true);
+  } catch (err) { /* 跨源 */ }
+}
+
+/* fit 是 requestAnimationFrame 排的，点完那一刻还没落地——等一帧多再量。 */
+function fitAndCenter(slot, frame, then) {
+  fitFrame(slot, frame);
+  if (!slot.centerBy) { if (then) then(); return; }
+  setTimeout(function () { centerFrame(slot, frame); if (then) then(); }, 180);
+}
+
 /* 装配：pattern 的工具条是 JS 后建的，load 事件那一刻多半还不在，
    所以轮询等它出来，再一次性把「藏控件 / 对主题 / 落框架层状态 / 适配」做完，
    最后才让这一格淡入。等不到就到点放行——宁可样式没接管，也不能白屏。 */
@@ -772,8 +850,9 @@ function settleFrame(slot, frame) {
     hideTakenOver(slot, frame);
     if (slot.themeByDom) syncFrameTheme(frame);
     applyData();
-    fitFrame(slot, frame);
-    host.dataset.ready = '1';
+    wireViewRecenter(slot, frame);
+    /* 居中排在淡入之前：先摆好再露面，否则用户会看见它先偏一下再跳回来 */
+    fitAndCenter(slot, frame, function () { host.dataset.ready = '1'; });
   }
   (function poll() {
     if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
@@ -859,7 +938,7 @@ function refitAll() {
   refitTimer = setTimeout(function () {
     SLOTS.forEach(function (slot) {
       if (!slot.fitByText || !state[slot.id] || !state[slot.id].loaded) return;
-      fitFrame(slot, $('iframe[data-slot="' + slot.id + '"]'));
+      fitAndCenter(slot, $('iframe[data-slot="' + slot.id + '"]'));
     });
   }, 220);
 }
