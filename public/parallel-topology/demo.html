@@ -677,27 +677,38 @@ var VIEWS = [
 var VTAB_POSE = {'3d':[0.42,0.30], front:[0,0], side:[Math.PI/2,0], top:[0,Math.PI/2]};
 var LAYERS = ['L1','L2','L3','L4','L5'];
 var LAYER_NAME = {L1:'L1 结构', L2:'L2 内容', L3:'L3 容器', L4:'L4 地址', L5:'L5 通信'};
+/* 这张表曾经写的是「这一类对象与本视图相关」，但相关不等于渲染函数真的读了它——
+   实测发现 dim/anatomy 的渲染只认 L5，L1-L4 摆着好看；story 五个全没人读；
+   solid 的 L1-L4 只有切到「交集腔」子视角才被 renderSolidCav 读，默认的「双链
+   映射」子视角（renderSolidMap）从不看它们。改成只留真的会改画布的那几个，
+   其余不再出现在底栏——按钮不能承诺一个渲染函数不会兑现的效果。 */
 var AVAIL = {
-  dim:{L1:true, L2:true, L3:true,L4:true,L5:true},
+  dim:{L1:false,L2:false,L3:false,L4:false,L5:true},
   chain:{L1:false,L2:true, L3:true,L4:true,L5:false},
   compose:{L1:false,L2:true,L3:true,L4:true,L5:true},
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
-  anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true},
-  solid:{L1:true, L2:true, L3:true,L4:true,L5:false},
-  story:{L1:true, L2:true, L3:true,L4:true,L5:true}
+  anatomy:{L1:false,L2:false,L3:false,L4:false,L5:true},
+  solid:{L1:true, L2:true, L3:true,L4:true,L5:false},   /* 仅交集腔子视角生效，见 layerAvail() */
+  story:{L1:false,L2:false,L3:false,L4:false,L5:false}  /* 全不生效，底栏整个隐藏（render()） */
 };
 var DEFAULTS = {
-  dim:{L1:true,L2:true,L3:true,L4:true,L5:true},
+  dim:{L5:true},
   chain:{L2:true,L3:true,L4:true},
   compose:{L2:false,L3:true,L4:true,L5:false},
   time:{L3:true,L4:true,L5:true},
-  anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true},
-  solid:{L1:true,L2:true,L3:true,L4:true},
-  story:{L1:true,L2:true,L3:true,L4:true,L5:true}
+  anatomy:{L5:true},
+  solid:{L1:true,L2:true,L3:true,L4:true}
 };
+/* AVAIL 之外再叠一层子视角判断：目前只有 solid 需要——同一个视图的两个
+   perspective（map/cav）读的图层不是同一组。别的视图没有这种分裂，直接照 AVAIL。 */
+function layerAvail(L){
+  if(!AVAIL[ui.view][L]) return false;
+  if(ui.view==='solid' && ui.persp!=='cav' && L!=='L5') return false;
+  return true;
+}
 function layerOn(L){
   var v = ui.view;
-  if(!AVAIL[v][L]) return false;
+  if(!layerAvail(L)) return false;
   var u = ui.layersUser[v];
   if(u && (L in u)) return u[L];
   return !!(DEFAULTS[v] && DEFAULTS[v][L]);
@@ -4011,7 +4022,6 @@ function renderSolid(D){
 function renderSolidMap(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var H = 700, parts = [], hits = [];
-  var L4 = layerOn('L4');
   var PER = 8, MACH = Math.ceil(D.world/PER);      /* 机 = 8 卡：FIG09 的拓扑假设，不由并行配置推出 */
   function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   function poly(pts, st, extra){ return '<polygon points="'+ptsStr(pts)+'" style="'+st+'" '+(extra||'')+'/>'; }
@@ -6663,7 +6673,7 @@ function renderBar(D){
 }
 function renderFoot(D){
   var out = '<span class="pt-cap">图层</span>' + LAYERS.map(function(L){
-    var av = AVAIL[ui.view][L];
+    var av = layerAvail(L);
     return '<button class="pb'+(av&&layerOn(L)?' is-on':'')+'" data-act="layer" data-l="'+L+'"'+(av?'':' disabled')+'>'+LAYER_NAME[L]+'</button>';
   }).join('');
   /* AXIS 高亮（ui.axis）与 L5 维度/原语/抽离（commDim/commPrim/detach）只有「合成·卡阵」
@@ -6719,7 +6729,7 @@ function render(){
     var oc9 = $('opCard'); if(oc9) oc9.hidden = true;
   }
   var foot = document.querySelector('.pt-foot');
-  if(ui.view==='chain'){ foot.style.display = 'none'; }
+  if(ui.view==='chain' || ui.view==='story'){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
   if(!D.ok){
     $('stage').innerHTML = '';
@@ -6967,7 +6977,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='layer'){
     var L = b.getAttribute('data-l');
-    if(!AVAIL[ui.view][L]) return;
+    if(!layerAvail(L)) return;
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
