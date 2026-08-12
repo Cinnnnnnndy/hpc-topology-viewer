@@ -491,12 +491,6 @@
 .pt-foot{flex:none; border-top:1px solid var(--pt-bd); background:var(--pt-s1); padding:6px 14px 8px; z-index:10; display:flex; flex-direction:column; gap:5px}
 .pt-lrow{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .pt-sep{width:1px; height:16px; background:var(--pt-bd); margin:0 4px}
-.pt-krow{display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--pt-fg2)}
-.pt-key{display:inline-flex; align-items:center; gap:5px; font-family:var(--pt-mono); font-size:10px; color:var(--pt-fg2); white-space:nowrap}
-.pt-key svg{display:block}
-.pt-say{flex:1 1 260px; min-width:200px; line-height:1.55; max-height:110px; overflow-y:auto}
-.pt-say b{color:var(--pt-fg)}
-.pt-say .a5{color:var(--pt-danger); font-weight:700}
 
 /* tooltip */
 #tip{position:fixed; z-index:50; pointer-events:none; display:none; background:var(--pt-fg); color:var(--pt-bg);
@@ -567,7 +561,6 @@
   </div>
   <footer class="pt-foot">
     <div class="pt-lrow" id="footCtl"></div>
-    <div class="pt-krow"><div class="pt-say" id="say"></div><div id="keys" style="display:inline-flex;gap:12px;flex-wrap:wrap"></div></div>
   </footer>
   <!-- #tip 必须待在 .pt-root **里面**：--pt-* 那套变量是声明在 .pt-root 上的，
        放在外面 var(--pt-fg) / var(--pt-bg) 一个都解析不出来——背景成了透明、
@@ -630,7 +623,7 @@ var PRESETS = [
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
      写成 experts:0 会让 EP 按钮凭空不见，像是被 CP 挤掉了，实则是配置把模型换掉了。
-     ep·etp=8 ≤ tp·cp=16：EP 组不咬 DP，但会跨到 CP 轴——epSpanText 实算给出 cp×2。 */
+     ep·etp=8 ≤ tp·cp=16：EP 组不咬 DP，但会跨到 CP 轴，一组会跨到 cp×2。 */
   {id:'longcp', name:'长序列CP·64卡 tp4·cp4·pp2·ep8', cfg:{world:64, tp:4, cp:4, pp:2, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:131072, experts:64, topk:8, mbs:1, ga:16, hbm:64}},
   {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64}},
   {id:'story128', name:'故事·128卡 tp2·pp4·dp16（48层·H8192）', cfg:{world:128, tp:2, cp:1, pp:4, ep:1, etp:1, layers:48, hidden:8192, heads:64, kv:8, ffn:32768, vocab:128256, seq:8192, experts:0, topk:0, mbs:4, ga:8, hbm:64}},
@@ -889,23 +882,6 @@ function epMembers(g,D){
     out.push(rankOf(q % D.tp, Math.floor(q/D.tp) % D.cp, Math.floor(q/(D.tp*D.cp)) % D.dp, co.p, D));
   }
   return out;
-}
-/* EP 组跨了哪几根轴——实算，不靠印象。
-   折叠是 q=(d·CP+c)·TP+t，低位是 t、再 c、再 d；EP 组是 q 上一段步长 ETP 的连续位置
-   （共 EP·ETP 个），所以它先填满 TP、再填 CP、最后才咬到 DP。判据就是大小比较：
-   EP·ETP ≤ TP·CP → 整组落在同一份 DP 副本里；> 才跨 DP。p 恒等于 co.p ⇒ 永不跨 PP。 */
-function epSpanText(D){
-  if(!D.moe) return '';
-  var g0 = (sel!==null && sel<D.world) ? sel : 0;
-  var co = epMembers(g0, D).map(function(r){ return coordsOf(r, D); });
-  function nUniq(k){ var s = {}; co.forEach(function(x){ s[x[k]] = 1; }); return Object.keys(s).length; }
-  var tot = D.ep*D.etp, plane2 = D.tp*D.cp, wide = tot > plane2;
-  return ' <b>这一组跨哪几根轴</b>：EP 组是折叠序 q 上连续 EP·ETP='+tot+' 个位置（步长 ETP），'
-    + 'q 的低位依次是 tp→cp→dp，所以先填满 TP、再 CP、最后才咬到 DP——判据只有一个大小比较：'
-    + '<b>'+tot+(wide?' &gt; ':' ≤ ')+'TP·CP='+plane2+'</b> ⇒ 本配置一组 '+co.length+' 张卡跨 '
-    + 'tp×'+nUniq('t')+(D.cp>1?' · cp×'+nUniq('c'):'')+' · <b>dp×'+nUniq('d')+'</b> · pp×'+nUniq('p')
-    + '。EP·ETP ≤ TP·CP 时整组落在<b>同一份 DP 副本</b>里（例：tp8·ep4 → 4 张卡全在 dp0）；'
-    + '<b>不跨 PP 恒成立</b>，与配置无关。';
 }
 function groupMembers(dim,g,D){
   var co = coordsOf(g,D), out=[], i;
@@ -5578,7 +5554,7 @@ function renderChain(D){
   renderOpCard(D);
   renderChainBar(D);
   /* .pt-note 是压在舞台左下角的浮层——画布整张都归场景之后，它会盖住基座带和汇合条。
-     纯文字统一走视图下方的正文区（sayText），画布只留图形和读数。 */
+     画布只留图形和读数。 */
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 /* ── 工具条：切分开关（叠加） + 视角 tab（互斥）。四个视角共用（全是本页 SVG） ── */
@@ -6662,7 +6638,7 @@ function accHTML(D){
     }).join('')+'</table>';
 }
 
-/* ═════════ 顶栏 / 底栏 / 一句话 ═════════ */
+/* ═════════ 顶栏 / 底栏 ═════════ */
 function renderBar(D){
   $('viewSeg').innerHTML = VIEWS.map(function(v){
     return '<button data-act="view" data-v="'+v.id+'" class="'+(ui.view===v.id?'is-on':'')+'">'+v.name+'</button>';
@@ -6703,104 +6679,6 @@ function renderFoot(D){
       + '<button class="pb'+(ui.detach?' is-on':'')+'" data-act="detach">抽离</button>';
   }
   $('footCtl').innerHTML = out;
-  $('keys').innerHTML =
-    key('<line x1="2" y1="6" x2="30" y2="6" style="stroke:var(--pt-fg2);stroke-width:2" marker-end="url(#arrx)"/>','P2P 有向链', 34)
-    + key('<polygon points="5,10 16,2 27,10" style="fill:none;stroke:var(--pt-fg2);stroke-width:2.2"/>','AllReduce 闭合', 32)
-    + key('<line x1="3" y1="2" x2="29" y2="11" style="stroke:var(--pt-fg2);stroke-width:.8"/><line x1="3" y1="6.5" x2="29" y2="2" style="stroke:var(--pt-fg2);stroke-width:1.9"/><line x1="3" y1="11" x2="29" y2="6.5" style="stroke:var(--pt-fg2);stroke-width:1.2"/>','A2A 载荷不等', 32)
-    + '<span class="pt-key">颜色=维度 · 线型=原语（正交 FR-4/5）</span>'
-    + '<span class="pt-key" title="P2P=send/recv 一对一；ring AllReduce/AllGather 都是一串 P2P 接成的。两类都在计算图里以算子节点出现，但在参照系里是动作（线）：不持有字节、不被切，只占链路与时间（§08）">P2P=点对点（集合原语的底座）· 其余四种=集合通信</span>';
-}
-function key(inner, label, w){
-  return '<span class="pt-key"><svg width="'+w+'" height="13">'+inner+'</svg>'+label+'</span>';
-}
-function sayText(D){
-  if(!D.ok) return '<b>配置不合法，舞台已封锁</b>——宁可不画，不可画错（DP-5）。点顶栏红色 chip 修正，每个错误都带最近合法值。';
-  var s = '';
-  if(ui.view==='chain'){
-    return '<b>刀序</b>：全体卡共同的切分过程。尺寸纪律：<b>复印=等大</b> · <b>真切=面积守恒</b> · <b>放大=不守恒</b>（标 ⊕）。'
-      + ' <b style="color:'+VC.dp+'">DP</b> 一刀两动作：复印权重 + 真切激活。'
-      + ' <b style="color:'+VC.pp+'">PP</b> 沿 ℓ 掰成 '+D.pp+' 段。'
-      + ' <b style="color:'+VC.tp+'">TP</b> 锯进算子内部（斜纹=刀痕）。'
-      + (D.moe?' <b style="color:'+VC.ep+'">EP</b> 重组专家桶。':'')
-      + (D.cp>1?' <b style="color:'+VC.cp+'">CP</b> 切序列 s 轴。':'')
-      /* 刀痕的**方向**本身就是读数，写在这里省得每次都要试：
-         竖着切的是特征维 h，横着切的是序列维 s。 */
-      + ' 刀痕方向即轴：<b>竖切=h</b>（<b style="color:'+VC.tp+'">TP</b> 的 head/hidden/ffn/vocab、'
-      + '<b style="color:'+VC.ep+'">EP</b> 的 expert，斜纹）· <b>横切=s</b>（'
-      + '<b style="color:'+VC.cp+'">CP</b> 的 ctx、<b style="color:'+VC.tp+'">SP</b> 的 token，横纹）。'
-      + '<b style="color:'+VC.tp+'">SP</b> 不是第 5 根轴：它复用 TP 组、同域同大小、不占乘数，'
-      + '只是把 TP 区之外（norm / 逐元素）的激活沿 s 也切一刀'
-      + (D.cp>1?'——于是层边界那根 s 轴上有<b>两个除号</b>：S/(CP×TP)。除号能相乘，正是「它们切的是同一根轴」的证据。'
-              :'，所以 norm 那几块是横着裂开的，和旁边竖着裂开的 matmul 一眼可分。')
-      + ' attention 是唯一<b>两把刀都过</b>的地方（head 归 TP、ctx 归 CP），所以画成网格，本卡拿其中一格。';
-  }
-  if(ui.view==='dim'){
-    var verdict = {
-      tp:'<b style="color:'+VC.tp+'">TP</b> 在<b>算子内部</b>切 h/e 轴：结构跨柱共有，片各归各柱——归属边界落在算子片。每层两下 AllReduce 是切口的代价。',
-      pp:'<b style="color:'+VC.pp+'">PP</b> 在<b>层级</b>切 ℓ 轴（唯一有序维）：pp_rank 本质是被空间化的时间下标（§12）——所以它同时出现在这里和时间视图里。',
-      cp:'<b style="color:'+VC.cp+'">CP</b> 切的是<b>输入的 s 轴</b>，不切模型——归属边界在输入级。原语可选 Ring/Ulysses/朴素（N:M 不绑定，勘误 L）。',
-      dp:'<b style="color:'+VC.dp+'">DP</b> <b>一刀两动作</b>：对模型<b>复印</b>（不切）＋对输入<b>真切</b> b 轴（切样本）。柱与柱内容<b>逐字节相同</b>，但那是「这张卡的那一片」，不是整网；合上 TP·PP 才是一套副本。复制≠共有，所以容器纹丝不动、加 DP 不买余量（§08 / A3）。',
-      ep:'<b style="color:'+VC.ep+'">EP</b> 不是新轴，是对 stage 平面的<b>重解释</b>（勘误 K）：MoE 层把同一批卡按 e 轴重分组成专家桶，All-to-All 是路由不是同步。<b>两层切法</b>：EP 切<b>专家之间</b>（e 轴，'+D.experts+' 个专家→每卡 '+(D.moe?D.experts/D.ep:'—')+' 个），<b>ETP='+D.etp+'</b> 切<b>专家之内</b>（每个专家的 ffn 维 → ffn/ETP，本质是限定在专家权重上的 TP）。'+(D.etp>1?'ETP&gt;1 时专家内部还要各自 AllReduce，叠在两次 A2A 之外。':'')+' <b>只在层内</b>：每个 MoE 层 2 次（dispatch 送去 + combine 送回），反向同样 2 次，<b>不跨层</b>；router 逐层独立，同一 token 换层就可能换专家。跨层的是 PP 的 P2P，跨 step 的是 DP 的 AllReduce（§06 通则）。'+epSpanText(D)
-    }[ui.cutDim];
-    s = verdict + ' 竖轴是<b>粒度坐标</b>：整网⊃层⊃算子⊃kernel 是同一份内容的逐级放大（不是四样东西）；输入是另一个对象，单独一格。<b>切分的最小单位是片/段/桶，不是卡</b>——卡是落位容器。点柱读五元组区间。';
-  }else if(ui.view==='compose'){
-    s = '<b>合成·卡阵</b>：五维相乘后的全局（TP×PP×DP 三轴，CP 分面）。单维讲关系，这里讲落位。'
-      + (layerOn('L5') ? ' 通信组=<b>'+DIMN[ui.commDim]+'</b>×<b>'+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+'</b>——维度管分组、原语管画法，互不绑定。' : ' 底栏开 L5 看通信；▶ 播放一个训练步。');
-  }else if(ui.view==='story'){
-    var A2 = clamp(ui.act|0, 0, ACTS.length-1), ac2 = ACTS[A2];
-    var g2 = (sel!==null && sel<D.world) ? sel : 0, c2 = coordsOf(g2, D);
-    s = '<b>一个 step 的五幕</b>：前面几张图讲的是<b>静态关系</b>，这张图补上<b>时间上的先后</b>，'
-      + '以及一条最容易被跳过的分界——<b style="color:'+VC.pp+'">只做一次</b>（0 开机 / 1 报到 / 2 备料）'
-      + ' vs <b style="color:'+VC.dp+'">每个 micro-batch 重来</b>（3 进料 / 4 开算 / 5 接力）。'
-      + '当前是<b>第 '+A2+' 幕 · '+ac2.t+'</b>（'+(ac2.once?'只做一次':'每 μbatch 重来')+'）。'
-      + '跟住 <b>g='+g2+'</b>：它开机时和另外 '+(D.world-1)+' 个进程<b>一模一样</b>，只有一个数字不同；'
-      + '报到时自己算出门牌 (pp'+c2.p+' dp'+c2.d+' cp'+c2.c+' tp'+c2.t+') 与各组成员——<b>组是算出来的，不是配出来的</b>；'
-      + '备料时只实例化 <b>L'+(c2.p*D.layersPerStage)+'–L'+((c2.p+1)*D.layersPerStage-1)+'</b> 这 '+D.layersPerStage+' 层、每个权重矩阵只建 '
-      + '<b>[' + fmt(D.hidden) + ', ' + fmt(Math.floor(D.ffn/D.tp)) + ']</b>——'
-      + '<b>整网从头到尾只存在于代码里，物理上从来没有在任何一处被完整实例化过</b>。'
-      + '第 2 幕放大的那一层是 <b>openPangu 真图</b>（真节点 · 真层级 · 真连边 · 真切分标注），不是示意。'
-      + '第 4 幕是<b>两条链唯一的交点</b>：算子（逻辑侧末级）与 kernel 队列（物理侧末级）在 kernel 处碰头（§02 · FIG 03）。'
-      + '第 5 幕收束：'+D.ga+' 批前后向走完，才有这个 step <b>唯一的一次</b>梯度 AllReduce。点卡阵里的一格换一张卡跟。';
-  }else if(ui.view==='solid' && ui.persp!=='cav'){
-    var tp9 = groupMembers('tp', (sel!==null&&sel<D.world)?sel:0, D), m9 = {};
-    tp9.forEach(function(x){ m9[Math.floor(x/8)] = 1; });
-    var in9 = Object.keys(m9).length === 1;
-    s = '<b>双链映射</b>：逻辑侧（整网 ⊃ 层 ⊃ expert ⊃ 算子 ⊃ 张量）与物理侧（集群 ⊃ 机 ⊃ 卡 ⊃ 计算单元 ⊃ 片上 buffer）'
-      + '<b>都是包含链、都是 5 级，但级与级并不对齐</b>——所以连线是斜的，<b>斜不是画风，是事实</b>。'
-      + '全图真正的主张只有一句：<b>四个并行维度（PP · EP · TP · DP/CP）全部收在「卡」这一级</b>，'
-      + '而它们的源头在逻辑侧<b>四个不同层级</b>（层 ℓ / expert e / 算子 / 张量）。'
-      + '往上两级只决定<b>拓扑与带宽</b>——不持有内容，所以画成空线框；往下两级<b>与并行完全无关</b>——'
-      + '算子融合与 tiling 不跨卡、不通信。第五条 <b>world_size = TP×CP×PP×DP</b> 是<b>计数恒等式，不是一把刀</b>，'
-      + '所以它落在集群而不是卡。机制框画成<b>扁的</b>：机制是动作，不是容器——参照系里只有<b>卡与流</b>两个容器有体积。'
-      + ' 「卡」这一级不是一只盒子，是一整个<b>卡阵平面</b>（机内 '+8+' 卡 × '+fmt(Math.ceil(D.world/8))+' 台机，全量画出），'
-      + '于是两条常被念错的约束当场可验：<b style="color:'+(in9?VC.tp:'var(--pt-danger)')+'">TP 分片必须机内</b>（本配置 TP 组 '
-      + tp9.length+' 张 → '+(in9?'同 1 台机 ✓':'跨 '+Object.keys(m9).length+' 台机 ✗')+'）· <b style="color:'+VC.pp+'">PP 划分可跨机</b>。'
-      + '注意「机 = 8 卡」是<b>拓扑假设</b>（FIG 09 口径），不由并行配置推出——换机器规格这两条结论会变。'
-      + '这一段的另一个问题「这张卡到底装了哪一块」，切到第二视角<b>交集腔</b>看。';
-  }else if(ui.view==='solid'){
-    var vol2 = D.pp*D.tp*(D.moe?D.ep:1);
-    s = '<b>交集腔</b>：两个对象各有自己的索引空间，<b>轴数不同</b>——①<b>权重体</b> ℓ×h'+(D.moe?'×e':'')+'（'+(D.moe?3:2)+' 轴），②<b>激活体</b> ℓ×h×b×s（4 轴）。'
-      + '每把刀是<b>一整片板</b>（切穿整只盒子，不是切一小块），三片板相交剁出一个小长方体 = 这张卡持有的全部：'
-      + '<b>体积 ∶ 全盒 = 持有占比 1/'+fmt(vol2)+'</b>。这就是「卡不是缩小的整网、是<b>区间的交集</b>」的几何形。'
-      + ' <b style="color:'+VC.dp+'">DP 在①上没有轴</b>——它只能把整只盒子复印一叠，格子数与格子大小一个不变，'
-      + '所以腔的<b>三条边长</b>（ℓ '+D.layersPerStage+' 层 · h '+fmt(Math.floor(D.hidden/D.tp))+(D.moe?' · e '+(D.experts/D.ep)+' 专家':'')+'）里<b>没有 d</b>：'
-      + '换任意 DP 副本逐字不变 ⇒ 体积不变 ⇒ 显存一点不省。这是 A3「加 DP 不买余量」的<b>几何证明</b>'
-      + '（数值证明在单维切分的反事实里，两处互相印证）。'
-      + (D.moe && (D.tp*D.cp) % (D.ep*D.etp) !== 0
-          ? '注意别把它说过头：<b>位置</b>未必不动——EP 折叠 q=(d·CP+c)·TP+t 把 d 卷了进去，本配置 TP·CP='+(D.tp*D.cp)
-            +' 不整除 EP·ETP='+(D.ep*D.etp)+'，所以换副本会换专家桶。换的是<b>哪一桶</b>，不是<b>几个专家</b>——边长不变，A3 照旧。'
-          : '本配置 TP·CP='+(D.tp*D.cp)+' 是 EP·ETP='+(D.moe?D.ep*D.etp:1)+' 的整数倍，所以连位置都不动。')
-      + '反过来 <b style="color:'+VC.ep+'">EP 在②上没有轴</b>：路由是<b>动作</b>（把 token 送去别的卡），不是静态切分。'
-      + ' 五根轴恰好被五把刀一一认领（§03）；<b>ETP 是第六把刀却不认领新轴</b>——它在 e 腔内部沿专家自己的 ffn 维再切一次，'
-      + '这就是「6 把刀 ≠ 6 根轴」的来源。点轴尺的一格换卡。';
-  }else if(ui.view==='time'){
-    s = '<b>时间·流</b>：流=时间容器。空间折叠到只剩 PP；▲=P2P recv 进入时刻。气泡率≈(PP−1)/GA='+(D.bubble*100).toFixed(1)+'%。';
-    if(ui.zoomAR && ui.skew) s += ' <span class="a5">归因（A5）：段最短=最后进入的副本是嫌疑人；等最久的是受害者，不是根因（§12 诊断陷阱）。</span>';
-    else s += ' 点 AllReduce 块放大「谁在等谁」。';
-  }else{
-    s = '<b>卡内解剖</b>：钻进一张卡——外壳=显存容器，层→算子（体积∝字节，切法着色），底部<b>流=时间容器</b>装 kernel（<b>算子↔kernel 同号对应</b>，N:M：多算子可融合成一个 kernel、一个算子也可分段成多个）。<b>L 是整网的全局层号</b>（ℓ 轴，L0–L'+(D.layers-1)+'）——不是卡内序号，这张卡只装 PP 切出的那一段。通信是从切口伸出去的动作线。';
-  }
-  return s;
 }
 
 /* 画布左上角那个名字。整屏只认这一个标题——就四个字，不带副标题：此刻在看哪一幕、
@@ -6849,7 +6727,6 @@ function render(){
   var dr = $('drawer');
   if(ui.drawer){ dr.hidden = false; dr.innerHTML = drawerHTML(D); }
   else dr.hidden = true;
-  $('say').innerHTML = sayText(D);
   urlWrite();
 }
 
