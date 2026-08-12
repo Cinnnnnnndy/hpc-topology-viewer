@@ -3006,7 +3006,7 @@ function netScene(D, g, box, step){
   var lab = [];
   /* 顶视把 v 轴压扁：正面板的算子标签全塌到同一条基线上，只剩一行乱字——
      这套标注是给带竖直面的机位看的，顶视一律不画（组的门牌照旧）。 */
-  if(IXg && sh && (s >= 72 || zoomIn) && ui.viewTab !== 'top'){
+  if(IXg && sh && (s >= 72 || zoomIn) && ui.viewTab !== 'top' && (ui.kDP || ui.kPP || ui.kCP || ui.kTP || ui.kEP)){
     /* 只挑几条：一层里 35 个算子全标出来就是糊墙，几条足够认出「这是真图那一层」。
        但**挑哪几条要跟着这一段真正含的层走**——原来写死了 dense_gate_up，于是
        每一段都写着「Gate Up Projection」，可 L2 之后根本没有 Dense FFN 了。
