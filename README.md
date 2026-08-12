@@ -128,6 +128,13 @@ pattern 自己那三颗段控一点就换。「适配」只管缩放不管重心
 `.legend`（色板面板用，`flex-direction: column`）会把泳道底部那排图例竖着摞成
 138px 高、压穿 38px 的页脚——独立打开也一样坏，所以那条修复不分内嵌与否都生效。
 
+**与被嵌 pattern 的同步**：舞台那两格嵌的是**规范路径上的本体**，不是拷贝——
+`/patterns/net-slicing/pattern.html` 与 `/pto-ds/patterns/model-architecture-training-sidecar/pattern.html`
+各由自己的发布步骤从各自分支的 HEAD 叠加，所以「工作台里的那一份」和「直接打开那条链接」
+永远是同一个文件、同一个版本。`?v=<短SHA>` 版本戳**只打本目录自己的文件**（`swimlane.html`）：
+拿本分支的 SHA 去戳别人的成品是反效果——它们更新而我们没动时戳不变（该刷的没刷），
+我们改台面而它们没动时戳变了（不该刷的刷了）。
+
 台面本体自包含（token 内联，不引外部样式）。三格的内容都是**构建期产物**——
 `/patterns/net-slicing/`、`/pto-ds/patterns/model-architecture-training-sidecar/`
 由发布流水线叠加，仓库里没有这两份文件，所以本地直接开 `public/` 时那两格是空的
