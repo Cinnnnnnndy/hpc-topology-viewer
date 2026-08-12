@@ -284,7 +284,9 @@ jobs:
           cp $SRC/index.html $SRC/concept-map.html $SRC/prd.html $SRC/prd.md $DIR/
           # 逐页列举（不是 cp -r）——新增页面必须加到这一行，否则线上 404。
           # demo 与 atlas 都引 ../vendor/… ，统一打 ?v= 版本戳。
-          for page in demo atlas cockpit; do
+          # card-container 是「卡=容器」合并图的独立原型页（自包含，无 vendor 引用，
+          # sed 对它是空转）——确认满意后并入 demo 的 Rank 视图，页留作出处。
+          for page in demo atlas cockpit card-container; do
             sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
                 $SRC/$page.html > $DIR/$page.html
           done
