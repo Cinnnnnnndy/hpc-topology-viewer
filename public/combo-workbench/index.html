@@ -380,16 +380,25 @@ var BUILD = '';
 
 var SLOTS = [
   {
-    /* 整网图 = **同一个 /patterns/net-slicing/ 的第二份**，只是配置不同：
-       不落 DP 这一刀、PP/TP·SP/EP 都落下，Rank 关掉。于是它画的是
-       「一张整网怎么被切开」，右边那格画的是「切完之后落成 world 张卡」——
-       同一套实现的两个断面，两边讲的是同一套话，不会各说各的。
+    /* 整网图。**当成一格独立的「整网」来看**，不是「并行拓扑的某个状态」——
+       它回答的是「一张整网怎么被切开」，主视图回答的是「切完之后落成 world 张卡」，
+       两个问题、两格各管一个。
 
-       为什么不再挂 pto-design-system 那个 training-sidecar：它**一次只能选中一层**
-       （公开接口只有 selectLayer(单个层号)），而这一屏要回答的是「这张卡装的那
-       十几层」；而且它与右边是两套不同的模型口径（46 层 vs 48 层），层号对不齐。
-       换成同源的第二份之后这两件事同时消失：层号天然一致，选中走两边同一套
-       `层 · Ln` 搜索标签。 */
+       实现上目前是从 /patterns/net-slicing/ 抽出来的一份配置（不落 DP、Rank 关掉），
+       **这是权宜**：后续可以像并行拓扑当初那样，把这一屏单独抽成自己的 pattern
+       （仓库里 vendor/model-graphviz 就是它的渲染器本体）。抽走那天，这一格只要
+       换掉 src 与下面 hideCss 那几条，台面别的地方不用动——因为两格之间**只走语义
+       消息**，不共享配置：
+         · 主视图选中一张卡 → 转 `sel`（见 message 监听）→ 这边亮起那张卡装的那段层，
+           算子旁的切分读数也跟着那张卡变（TP0/32 ↔ TP16/32，实测）
+         · 这边点一个算子 → 把它所在的层号转给主视图（见 wireOpToRank）→ 主视图
+           高亮持有这一层的那些卡
+         · 层选中两边互相同步（见 wireLinkage）
+       换成别的 pattern 时要保住的就是这三条语义，而不是某一套 query 参数。
+
+       先前这一格挂的是 pto-design-system 的 training-sidecar，换掉是因为它**一次
+       只能选中一层**（公开接口只有 selectLayer(单个层号)），接不住「一张卡装的那
+       十几层」；而且它是 46 层、主视图是 48 层，层号对不齐。 */
     id: 'netgraph',
     el: 'slot-netgraph',
     foldable: true,        // 格头上有「收起」，与抽屉那格同一套
@@ -758,6 +767,7 @@ function settleFrame(slot, frame) {
   function done() {
     hideTakenOver(slot, frame);
     applyData();
+    if (slot.id === 'netgraph') wireOpToRank(frame);
     host.dataset.ready = '1';
   }
   (function poll() {
@@ -839,8 +849,34 @@ function setPaneLayer(id, n) {
   }, 40);
 }
 
+/* 整网图那格点了一个**算子** → 主视图高亮持有它的那些卡。
+   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键：把它落成
+   主视图的 `层 · Ln` 标签，pattern 自己会算出「共几张卡与这一层有关」并点亮。
+   为什么不另造一套「算子 → rank」的算法：那等于在台面上重写一遍它的坐标算术，
+   而层号这条路它本来就懂。算子的**切法**（TP/SP/EP 各切哪根轴）也不必我们转——
+   两格同源，右边点开的明细卡里本来就写着。
+
+   只旁听、不拦截（捕获期只读，点击照样交给它自己的处理器去开明细卡）。
+   挂在 document 上而不是每个命中区上：它每改一次状态就重画一遍画布，
+   挂在节点上的监听会跟着节点一起没。 */
+function wireOpToRank(frame) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || doc.__wbOpLink) return;
+    doc.__wbOpLink = 1;
+    doc.addEventListener('click', function (ev) {
+      var t = ev.target;
+      var hit = t && t.closest && t.closest('[data-act="opdetail"]');
+      if (!hit) return;
+      var li = parseInt(hit.getAttribute('data-li'), 10);
+      if (!isFinite(li)) return;
+      setPaneLayer('topology', li);
+    }, true);
+  } catch (err) { /* 跨源 */ }
+}
+
 /* 轮询而不是监听点击：两边改选中的路子都不止一条（点画布上的逐层命中区、
-   手填搜索框、点「×」摘标签），盯住**结果**比盯住每一条入口可靠——之前按
+   手填搜索框、点「×」摘标签、点算子），盯住**结果**比盯住每一条入口可靠——之前按
    入口写测试就吃过亏：合成点击打在根本不在视口内的那批命中区上，测过了，
    真用鼠标点却什么也不发生。
 
