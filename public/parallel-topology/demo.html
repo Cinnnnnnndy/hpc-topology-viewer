@@ -615,6 +615,11 @@ function ptsStr(p){ return p.map(function(q){ return q[0].toFixed(1)+','+q[1].to
 var VC = {tp:'var(--pt-tp)', cp:'var(--pt-cp)', pp:'var(--pt-pp)', dp:'var(--pt-dp)', ep:'var(--pt-ep)'};
 var DIMN = {tp:'TP', cp:'CP', pp:'PP', dp:'DP', ep:'EP'};
 function mix(colVar, pct){ return 'color-mix(in srgb, '+colVar+' '+pct+'%, transparent)'; }
+/* mix() 兑的是**透明**，所以那个百分比其实是一个 alpha 旋钮——想让一个面「更不透明」
+   只能往上加 --pt-fg（近黑），结果是又黑又还透得过去，两件事被绑死在同一个数上。
+   solid() 兑的是**底色**：alpha 恒为 1（真的遮住后面的东西，画家序才成立），
+   百分比只管明暗。要「不透明的浅灰」就只有这一条路。 */
+function solid(colVar, pct){ return 'color-mix(in srgb, '+colVar+' '+pct+'%, var(--pt-bg))'; }
 
 /* A4 锚点：卡网格 axis 取值域（常量，不含 cp） */
 var AXIS_DOMAIN = ['tp','pp','dp','ep'];
@@ -2767,17 +2772,21 @@ function netScene(D, g, box, step){
                三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
                卡不是某一个维度，它是四个维度的交点。 */
             var lz = spotShellDim ? 0.35 : 1;
-            /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色、不透光，
-               后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
-               差得不够就只是三张半透明的纸片叠在一起。 */
-            /* 上一版把侧/正脸从 21%/10% 提到 48%/32%——半透明的盒子叠半透明的盒子，
-               结果是重叠两三层的地方比单层重得多（乘法叠加），单层的地方还是能看穿。
-               既然设计意图本来就是「近处盒子实打实挡住远处」，就该让它真的接近不透光，
-               而不是停在「淡了一半」——这样画家序（远→近）里后画的盒子才真正盖住
-               先画的，深浅差异只由 dT 给一点点，不再靠透叠。 */
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(80 + dT*14).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(60 + dT*12).toFixed(1))+';stroke:none;opacity:'+lz));
+            /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
+               正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
+               ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
+               之前两版都拿 mix('var(--pt-fg)', N) 往上调 N 想让盒子「更不透明」——
+               但那个 N 是 alpha，--pt-fg 又是近黑，于是唯一能做到「更挡得住」的方式
+               就是「更黑」，而且再黑也仍然是半透的：单层灰蒙蒙、叠三层黑成一团，
+               两个毛病是同一个根。兑底色之后 alpha 恒等于 1——遮挡由画家序真正接管，
+               明暗回到一个纯粹的审美参数，于是可以既完全不透光、又是很浅的灰。 */
+            /* 百分比就用**最早那一版浅灰的原值**（侧 21+dT*4 / 正 10+dT*3）：那时候的
+               颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
+               同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
+               而不是靠加黑去凑遮挡。 */
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+solid('var(--pt-fg)',(2 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+solid('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+solid('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
                压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
                三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
