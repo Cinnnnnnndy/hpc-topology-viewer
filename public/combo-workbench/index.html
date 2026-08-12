@@ -293,9 +293,28 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 舞台：并行拓扑 ═══ -->
   <main id="stage">
-    <!-- 左：整网图——**同一个并行拓扑 pattern 的第二份**，配置成「不落 DP 这一刀、
+    <!-- 左：并行拓扑——**主视图**，占满舞台剩下的宽度，控件一个不藏。
+         这一格不放我们的格头：pattern 在画布左上角自己写「并行拓扑」，
+         「＋ 搜索」也长在那一行里。 -->
+    <section class="slot" id="slot-topology">
+      <div class="slot-body">
+        <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是**构建期产物**，
+            由 pattern 分支的 workflow 叠加发布，仓库里没有这份文件，<br />
+            所以本地直接开 <code>public/</code> 时这一格必然是空的，看发布后的站点才对。<br />
+            线上仍为空的话，多半是别的分支刚发布过把它冲掉了，重跑一次对应分支的 Deploy 即可找回。</p>
+        </div>
+      </div>
+    </section>
+    <div id="vsplit" role="separator" aria-orientation="vertical" aria-label="拖动调整左右两格宽度"></div>
+
+    <!-- 右：整网图——**同一个并行拓扑 pattern 的第二份**，配置成「不落 DP 这一刀、
          PP/TP·SP/EP 都落下」，于是画的是一张整网怎么被切开，而不是切完之后的
-         world 张卡。两格同源同一份实现，所以两边讲的是同一套话，不会各说各的。 -->
+         world 张卡。两格同源同一份实现，所以两边讲的是同一套话，不会各说各的。
+         它是**跟随视图**：搜索/Rank/刀 三组控件都藏掉（见 hideCss），选中跟着
+         左边那格走，自己不另开一套入口。 -->
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
         <span class="slot-title">整网图</span>
@@ -312,20 +331,6 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </section>
 
-    <div id="vsplit" role="separator" aria-orientation="vertical" aria-label="拖动调整左右两格宽度"></div>
-
-    <section class="slot" id="slot-topology">
-      <div class="slot-body">
-        <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
-        <div class="slot-fallback">
-          <p><b>这一格没能加载。</b><br />
-            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是**构建期产物**，
-            由 pattern 分支的 workflow 叠加发布，仓库里没有这份文件，<br />
-            所以本地直接开 <code>public/</code> 时这一格必然是空的，看发布后的站点才对。<br />
-            线上仍为空的话，多半是别的分支刚发布过把它冲掉了，重跑一次对应分支的 Deploy 即可找回。</p>
-        </div>
-      </div>
-    </section>
   </main>
 
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="拖动调整下方抽屉高度"></div>
@@ -392,8 +397,24 @@ var SLOTS = [
        ② .pt-stagetitle 里 pattern 自己那条名字——名字由格头出（见 HTML），
           两个名字挤同一个左上角谁也读不清。注意只藏**标题那一枚**，不是整条：
           「＋ 搜索」就长在同一行里，先前整条 display:none 连搜索一起按没了。 */
+    /* 这一格是**跟随视图**，不是第二个操作台。除了数据标注（归框架层）和它自己
+       那个名字（名字由格头出），再藏三组：
+         · #qbar（＋ 搜索与标签）—— 选中由主视图发起，这一格跟着走；两个搜索框
+           摆在同一屏，用户不知道该点哪一个。台面驱动它落标签仍走同一条路
+           （dispatch 到 [data-act=qopen]），藏起来的节点照样收事件。
+         · Rank —— 这一格的立身之本就是「不进卡维度」（rank=0），给个开关等于
+           邀请人把它变成第二个并行拓扑。
+         · 四把刀 —— 同理，cuts=pcte 是这一格的定义（独独不落 DP），不是可调项。
+       用 :has() 精确圈住刀那一组：.pt-seg 机位段控（3D/正视/侧视/顶视）也用它，
+       整类藏掉会把机位一起按没——机位是要留给用户换的。 */
     hideCss: '.pt-mv{display:none!important}' +
-             '#stageTitle > b{display:none!important}',
+             '#stageTitle > b{display:none!important}' +
+             '#qbar{display:none!important}' +
+             '.pt-sw[data-act="cardmode"]{display:none!important}' +
+             '.pt-seg:has([data-act="knifetoggle"]){display:none!important}' +
+             /* 搜索结果那块浮层也藏掉：标签由主视图落，这块面板逐字复读主视图
+                那一块，同一屏出现两遍，还压住半张画布。 */
+             '#revbox{display:none!important}',
     src: function () {
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
@@ -404,11 +425,20 @@ var SLOTS = [
       q.set('cuts', 'pcte');
       /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。 */
       q.set('rank', '0');
-      /* 默认落在侧视：三个机位里只有它给出**逐层**的点击入口
-         （48 个 [data-act=qval][data-k=layer] 命中区，实测 3D/正视都是 0 个），
-         联动要从这一格发起就得靠它。3D / 正视 / 顶视 一个没拿掉，
-         pattern 自己那排段控点一下就换。 */
-      q.set('vtab', 'side');
+      /* 默认落 3D，不是侧视。
+         侧视那一屏的算子名/切法标注是**固定屏幕字号**的，而这一格是窄栏：
+         pattern 按舞台长宽比反解 viewBox（VW = clamp(692·AR, 1080, 2600)），
+         AR 低于 1.56 时 VW 被钳在下限 1080，于是 620px 宽的格子要装 1080 单位的
+         内容，缩放只有 0.57——文字不跟着缩，就全撞在一起。实测重叠的文字对数：
+           侧视 620px → 48 对；900px → 42 对；1080px → 35 对
+           正视 620px →  1 对；3D 620px → 0 对
+         也就是说侧视要接近独立打开那种两千像素的宽度才读得下来，不是拖一拖
+         就能解决的，拿它当一格跟随视图的默认值是错的。3D 这一屏讲的同样是
+         「整网被这几刀切成什么」，在窄栏里 0 重叠。
+         四个机位一个没拿掉，pattern 自己那排段控点一下就换（侧视随时可回）。
+         先前选侧视是因为只有它有逐层点击入口——这一格改成跟随视图之后，
+         选中由主视图发起，那条理由不成立了。 */
+      q.set('vtab', '3d');
       /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
       return '../patterns/net-slicing/pattern.html?' + q.toString();
     }
@@ -904,10 +934,11 @@ function wireSplitters() {
     dockH = Math.max(120, Math.min(max, Math.round(start.h0 - (e.clientY - start.y))));
     applyDockH();
   });
-  /* 竖条：往右拖 = 左格变宽；右边至少留 320px 给并行拓扑 */
+  /* 竖条：定宽的那一格在**右边**（整网图），所以往右拖 = 它变窄，是 w0 - dx；
+     左边至少留 320px 给主视图。 */
   wireSplit('#vsplit', 'is-resizing-x', function (start, e) {
     var max = Math.max(240, window.innerWidth - 320);
-    sideW = Math.max(240, Math.min(max, Math.round(start.w0 + (e.clientX - start.x))));
+    sideW = Math.max(240, Math.min(max, Math.round(start.w0 - (e.clientX - start.x))));
     applySideW();
   });
 }
