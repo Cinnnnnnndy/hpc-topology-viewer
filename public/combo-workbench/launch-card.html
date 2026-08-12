@@ -67,7 +67,7 @@
               </g>
             </svg>
           </div>
-          <p class="card-desc">一块<strong>摞格子</strong>的应用台面（顶栏 + 舞台 + 底部抽屉，铺满视口自己不滚，视觉语言取自 pto-design-system 的 ide-frame：渐变光晕底、磨砂半透明面板、subtle 细描边），现在三格：舞台左是<strong>训练语义 sidecar</strong>（跨仓 <span class="mono">pto-design-system</span> 的 pattern），舞台右是<strong>并行拓扑</strong>（<span class="mono">/patterns/net-slicing/</span>——为「被嵌」抽出来的那一屏，不是它的工作台整页），一起回答<strong>空间</strong>；抽屉是<strong>微批次生命周期泳道</strong>（compute-graph-viewer 的上游拷贝，MB07 · step 18420），回答<strong>时间</strong>。每个 pattern 都<strong>原样嵌入、一个字没改</strong>——名字和控件由它们自己出，台面只负责编排：两条可拖的分隔条、抽屉的段控与收起、顶栏那颗月亮把外壳和三格的明暗一起换。台面状态（看哪个视图、左格多宽、抽屉多高、明暗）写进 URL，发出去的链接就是你现在那一屏。后续的工作台组合往这块台面上继续摞。</p>
+          <p class="card-desc">一块<strong>摞格子</strong>的应用台面（顶栏 + 舞台 + 底部抽屉，铺满视口自己不滚，视觉语言取自 pto-design-system 的 ide-frame：渐变光晕底、磨砂半透明面板、subtle 细描边），现在三格：舞台左是<strong>整网图</strong>、右是<strong>并行拓扑</strong>——**同一个 <span class="mono">/patterns/net-slicing/</span> 的两份配置**，左边不落 DP 那一刀（问「一张整网被切成什么」），右边五刀全落并进卡维度（问「切完之后落成 world 张卡」），一起回答<strong>空间</strong>；抽屉是<strong>微批次生命周期泳道</strong>（compute-graph-viewer 的上游拷贝，MB07 · step 18420），回答<strong>时间</strong>。每个 pattern 都<strong>原样嵌入、一个字没改</strong>——名字和控件由它们自己出，台面只负责编排：两条可拖的分隔条、抽屉的段控与收起、顶栏那颗月亮把外壳和三格的明暗一起换。两格的层选中<strong>双向联动</strong>：在任一格选中第 n 层，另一格就落一枚同样的搜索标签，把这一层涉及的卡点亮。台面状态（看哪个视图、左格多宽、抽屉多高、明暗）写进 URL，发出去的链接就是你现在那一屏。后续的工作台组合往这块台面上继续摞。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./combo-workbench/?v=__SHA__">打开组合工作台<sup>°</sup></a>
             <a class="lnk" href="./combo-workbench/?a=time&amp;b=pp2&amp;v=__SHA__">时间·流 × PP2 生命周期<sup>°</sup></a>

@@ -184,20 +184,20 @@ a.btn{text-decoration:none}
 .dmenu-pop .opt[aria-checked="false"] .tick{color:transparent}
 .dmenu-pop .opt[aria-checked="false"] i{opacity:.3}
 
-/* ═══ 舞台：左 sidecar ｜ 右 并行拓扑 ═══ */
+/* ═══ 舞台：左 整网图 ｜ 右 并行拓扑（同一个 pattern 的两份配置） ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
-#slot-sidecar{flex:0 0 var(--side-w,460px);min-width:240px}
-/* 收起之后：格头是绝对定位的，整格会塌成 2px 宽——「展开」就再也点不到了。
-   所以收起时把格头放回文档流，这一格缩成「标题 + 展开」那么一条。 */
-#slot-sidecar[data-folded="1"]{flex:0 0 auto;min-width:0}
-#slot-sidecar[data-folded="1"] .slot-head{position:static;padding:7px 10px 7px 12px;pointer-events:auto}
-/* 这一格的标题与并行拓扑那格对齐：它的 .pt-stagetitle 是 top:10 / left:16、
-   15px / 800 / -.01em。格头压在画布上（pattern 的工具条本来就浮在右上），
-   只有「收起」需要能点。 */
-#slot-sidecar .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
-  min-height:30px;padding:0;background:transparent;pointer-events:none}
-#slot-sidecar .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
-#slot-sidecar .slot-head button{pointer-events:auto}
+#slot-netgraph{flex:0 0 var(--side-w,460px);min-width:240px}
+#slot-netgraph[data-folded="1"]{flex:0 0 auto;min-width:0}
+/* 这一格的格头**走文档流**，不压在画布上——与抽屉那格同一套。
+   先前挂 sidecar 时它是绝对定位浮在画布左上的：那时候画布左上是空的，压上去
+   正好省一行。换成并行拓扑之后那块地方是它自己的地盘（名字 +「＋ 搜索」在左，
+   Rank/刀/机位/⚙/数据 那一整条在右），再压上去就是两层控件叠在一起——620px
+   宽时实测标题、搜索、收起、工具条全糊成一团。让出一行 30px 换回互不打架。
+   pattern 自己那个名字（#stageTitle > b 的「并行拓扑」）在这一格藏掉，名字由
+   格头出：两格同源，都叫「并行拓扑」就分不出谁是谁了。**只藏那枚 <b>**——
+   「＋ 搜索」就在同一个 #stageTitle 容器里（embed 形态下 qbar 被 append 进去），
+   整条藏掉会连搜索一起按没（这一条踩过）。 */
+#slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
 #slot-topology{flex:1 1 auto;min-width:0}
 /* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
 #vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
@@ -293,21 +293,21 @@ body.is-resizing iframe{pointer-events:none}
 
   <!-- ═══ 舞台：并行拓扑 ═══ -->
   <main id="stage">
-    <!-- 左：模型架构 · 训练语义 sidecar（跨仓 pattern，与右边同一套「自己报名字、
-         自己带控件」的用法，所以这一格也不放我们的格头） -->
-    <section class="slot" id="slot-sidecar">
+    <!-- 左：整网图——**同一个并行拓扑 pattern 的第二份**，配置成「不落 DP 这一刀、
+         PP/TP·SP/EP 都落下」，于是画的是一张整网怎么被切开，而不是切完之后的
+         world 张卡。两格同源同一份实现，所以两边讲的是同一套话，不会各说各的。 -->
+    <section class="slot" id="slot-netgraph">
       <header class="slot-head">
         <span class="slot-title">整网图</span>
         <span class="spacer"></span>
         <button data-act="fold" title="收起这一格，只留格头">收起</button>
       </header>
       <div class="slot-body">
-        <iframe data-slot="sidecar" title="Model Architecture Training Sidecar"></iframe>
+        <iframe data-slot="netgraph" title="并行拓扑 · 整网图（不落 DP）"></iframe>
         <div class="slot-fallback">
           <p><b>这一格没能加载。</b><br />
-            它引的是 <code>/pto-ds/patterns/model-architecture-training-sidecar/pattern.html</code>——
-            跨仓 <code>pto-design-system</code> 的 pattern，由发布流水线叠加，<br />
-            仓库里没有这份文件，本地开 <code>public/</code> 时这一格必然是空的。</p>
+            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是<b>构建期产物</b>，
+            由发布流水线叠加，<br />仓库里没有这份文件，本地开 <code>public/</code> 时这一格必然是空的。</p>
         </div>
       </div>
     </section>
@@ -374,64 +374,43 @@ var BUILD = '';
 
 var SLOTS = [
   {
-    /* 跨仓 pattern（Cinnnnnnndy/pto-design-system · patterns/model-architecture-
-       training-sidecar）。发布件在 /pto-ds/ 下，由本仓 workflow 从那个仓库叠加，
-       本目录不复制第二份。
-       它没有 ?theme= 也没有 postMessage —— 明暗只认 iframe 内部
-       document.documentElement 的 data-theme。同源，所以主题桥改走「点它自己
-       那颗浅色/深色按钮」（与泳道那座桥同一条纪律：不碰内部状态，只按它自己
-       的控件，它的 setTheme 会顺带重算调色板和重绘）。 */
-    id: 'sidecar',
-    el: 'slot-sidecar',
+    /* 整网图 = **同一个 /patterns/net-slicing/ 的第二份**，只是配置不同：
+       不落 DP 这一刀、PP/TP·SP/EP 都落下，Rank 关掉。于是它画的是
+       「一张整网怎么被切开」，右边那格画的是「切完之后落成 world 张卡」——
+       同一套实现的两个断面，两边讲的是同一套话，不会各说各的。
+
+       为什么不再挂 pto-design-system 那个 training-sidecar：它**一次只能选中一层**
+       （公开接口只有 selectLayer(单个层号)），而这一屏要回答的是「这张卡装的那
+       十几层」；而且它与右边是两套不同的模型口径（46 层 vs 48 层），层号对不齐。
+       换成同源的第二份之后这两件事同时消失：层号天然一致，选中走两边同一套
+       `层 · Ln` 搜索标签。 */
+    id: 'netgraph',
+    el: 'slot-netgraph',
     foldable: true,        // 格头上有「收起」，与抽屉那格同一套
-    /* 自带控件里被框架层接管的那几个：数据（提到顶栏）、浅色/深色（跟外壳走）、
-       适配（缩放是这一格自己的事，但它和上面两颗挤在一排，留着就是半排废按钮）。
-       数据那组有专属 class，CSS 藏得掉；浅色/适配只有通用 class，只能按文字找，
-       所以走 hideByText——它们的节点在换主题时不重建（setTheme 只改文字和状态），
-       内联 display:none 会一直留着。 */
-    /* 三件事一起注入：
-       ① 数据那组归框架层了，藏掉；
-       ② 这一格是窄栏，pattern 在窄宽度下会把自己的标题藏掉、控件贴左——
-          把标题放回来、控件推到右边，恢复它宽屏时的那个排布；
-       ③ 段控换行时别把行撑歪。 */
-    /* pattern 自己那行标题整条藏掉（含「CSS 3D · 46 layers」那枚标签）——
-       名字改由台面出（见 HTML 里这一格的格头），这样它才能和并行拓扑那格
-       用同一套字号字重、同一个左上间距。工具条推到右边、给它让出上边距。 */
-    hideCss: '.pto-training-sidecar__data-control{display:none!important}' +
-             '.pto-model-deck__title{display:none!important}' +
-             /* top: pattern 那条工具条本来是 top:8（画布又内缩 12），中心落在格身
-                第 38px；格头标题与「收起」的中心在第 25px——差 13px，肉眼一看就是
-                两行。把工具条提上来 13px，三者才真的在一行上。 */
-             '.pto-model-deck__toolbar{top:-5px;margin-left:auto;justify-content:flex-end;flex-wrap:wrap;padding-right:62px}',  /* 右边留出 62px 给格头那颗「收起」——它压在同一行的右端，不让位就会叠上 */
-    hideByText: ['浅色', '深色', '适配'],
-    hideGroup: '.pto-model-deck__control',
-    /* 默认按「适配」显示：这一格宽度由台面决定，pattern 出厂那个缩放不认得它。
-       装配完点一次，之后每次拖分隔条/改窗口再点一次（见 refit）。 */
-    fitByText: '适配',
-    /* 「适配」只改缩放，居中要另算——原因见 centerFrame 的注释。
-       centerBy 是 pattern 自己挂在 window 上的公开控制器（pattern.html 最后一行
-       就是 window.trainingSidecarController = …render(…)），走的还是「只用它对外
-       给的入口」那条纪律。 */
-    centerBy: 'trainingSidecarController',
-    viewportSel: '.pto-model-deck__viewport',
-    /* 主题：不比 data-theme（我们可能已经先把属性设过了），比它自己按钮上的字——
-       写着「浅色」说明它当前是深色。这是它内部状态唯一可靠的外部读数。 */
-    themeByDom: true,
+    /* 只藏两样：
+       ① .pt-mv（数据标注）——归框架层了，与右边那格共用顶栏那颗，藏掉格子里这份；
+       ② .pt-stagetitle 里 pattern 自己那条名字——名字由格头出（见 HTML），
+          两个名字挤同一个左上角谁也读不清。注意只藏**标题那一枚**，不是整条：
+          「＋ 搜索」就长在同一行里，先前整条 display:none 连搜索一起按没了。 */
+    hideCss: '.pt-mv{display:none!important}' +
+             '#stageTitle > b{display:none!important}',
     src: function () {
-      /* 视图**不传**，跟着 pattern 出厂的侧视走。
-         曾经为了「装得下」把默认改成 view=front —— 那是拿掉了这一格唯一能用的
-         交互去换一个更好看的初始画面，换错了：侧视是它**唯一能选中**的视图。
-         正视里 46 条 .pto-training-sidecar__layer-hit 和 40 条算子标注**一条都不在
-         视口内**（实测 46总/0在视口内），层点不着；算子方块虽然点得到，但它们不在
-         .pto-model-deck__layer 里，selectNode 拿到的 layer 是 null——没有层号，
-         右边就无从高亮。所以联动的主场在侧视，默认就落在侧视。
-         代价是侧视比这一格宽：它的算子名/指标名是固定字号的 HTML 标注，不随缩放
-         变小，左右还各挂一条 input/output 标注带，要 ~950px 视口才完整收得住。
-         折中是把这一格的默认宽度提到 620（见 DEFAULT_SIDE_W）——模型主干那一列
-         （层栅格 + 居中的算子行）完整装得下，两侧那两条标注带会被切到，
-         那是 pattern 在窄栏下本来的样子，拖分隔条就能看全。 */
-      /* 不打 BUILD 戳：这是 pto-design-system 发布的成品，版本归它自己管（见 BUILD 那段） */
-      return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html';
+      var q = new URLSearchParams();
+      q.set('theme', shellDark ? 'dark' : 'light');
+      q.set('view', 'chain');
+      /* cuts=pcte：p(pp) c(cp) t(tp·sp) e(ep) 都落下，**独独没有 d(dp)**——
+         这一格问的是「一张整网被切成什么」，DP 是「整套安排复印几份」，
+         复印件对这一问没有信息量，落下来只会把同一张图重复 16 遍。 */
+      q.set('cuts', 'pcte');
+      /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。 */
+      q.set('rank', '0');
+      /* 默认落在侧视：三个机位里只有它给出**逐层**的点击入口
+         （48 个 [data-act=qval][data-k=layer] 命中区，实测 3D/正视都是 0 个），
+         联动要从这一格发起就得靠它。3D / 正视 / 顶视 一个没拿掉，
+         pattern 自己那排段控点一下就换。 */
+      q.set('vtab', 'side');
+      /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
+      return '../patterns/net-slicing/pattern.html?' + q.toString();
     }
   },
   {
@@ -502,25 +481,23 @@ SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
    不是某一格的私事，所以提到顶栏统一出，格子里那份藏掉。
    驱动一律「点它自己的控件」：同源翻进去按按钮，不碰任何内部状态——
    pattern 换了实现只要按钮还在就不散架，也不用它们为我们加 API。 */
-/* 五类数据标注两个 pattern 都有，分类相同、键名不同：
-   net-slicing 用 num/grad/perf/moe/train，sidecar 用 numerics/gradient/… */
+/* 五类数据标注。两格是同一个 pattern 的两份配置，所以键名同一套，
+   顶栏那颗一次管两格。 */
 var DATAK = [
-  { k: 'num',   sc: 'numerics',    t: '数值', c: '#38bdf8' },
-  { k: 'grad',  sc: 'gradient',    t: '梯度', c: '#8b5cf6' },
-  { k: 'perf',  sc: 'performance', t: '性能', c: '#ea580c' },
-  { k: 'moe',   sc: 'moe',         t: 'MoE',  c: '#04d793' },
-  { k: 'train', sc: 'training',    t: '训练', c: '#ff4b7b' }
+  { k: 'num',   t: '数值', c: '#38bdf8' },
+  { k: 'grad',  t: '梯度', c: '#8b5cf6' },
+  { k: 'perf',  t: '性能', c: '#ea580c' },
+  { k: 'moe',   t: 'MoE',  c: '#04d793' },
+  { k: 'train', t: '训练', c: '#ff4b7b' }
 ];
 var dataOn = DATAK.map(function (x) { return x.k; });
 
 /* 抽屉默认高度：默认那一屏（训练步全貌）只有 5 条泳道，340px 有一大截是空的。
    压到 288——正好装下表头 + 时间轴 + 5 条，既不留白也不夹掉行；要看展开后的 32 个 rank，拖分隔条即可。 */
 var DEFAULT_DOCK_H = 288;
-/* 整网图那格的默认宽度。侧视是它唯一能选中的视图（联动的主场），而侧视比 460 宽：
-   算子名/指标名是固定字号的 HTML 标注，不随缩放变小。620 是模型主干那一列
-   （层栅格 + 居中的算子行，实测 587px）刚好装下的宽度；再窄，层栅格本身就被切，
-   点层都点不准。两侧的 input/output 标注带仍会被切到——那要 ~950px，
-   给一格 sidecar 太多了，拖分隔条随时能看全。 */
+/* 整网图那格的默认宽度。侧视（这一格的默认机位，也是唯一有逐层点击入口的机位）
+   在窄栏下会把工具条挤成两行、算子标注两头切掉，620 是读得下来的下限；
+   要看全整张图拖分隔条即可。 */
 var DEFAULT_SIDE_W = 620;
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
@@ -533,7 +510,7 @@ var tabsOf = function (c) { return c.tabs || []; };   // 有的格子没有段�
 var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
 
 /* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
-   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&m=perf&fold=sidecar&ui=dark
+   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&m=perf&fold=netgraph&ui=dark
    off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
    只写非默认值，链接才不会一眼全是噪声。 */
 /* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
@@ -653,7 +630,7 @@ function applySlotVisibility() {
   });
   /* 收起来的格子，旁边那条分隔条也没意义了 */
   $('#splitter').hidden = state.swimlane.folded;
-  $('#vsplit').hidden = state.sidecar.folded;
+  $('#vsplit').hidden = state.netgraph.folded;
 }
 
 function applyDockH() {
@@ -661,7 +638,7 @@ function applyDockH() {
 }
 
 function applySideW() {
-  document.getElementById('slot-sidecar').style.setProperty('--side-w', sideW + 'px');
+  document.getElementById('slot-netgraph').style.setProperty('--side-w', sideW + 'px');
 }
 
 /* 主题桥：一颗月亮同时管外壳和两格里的页面（与驾驶舱嵌进宿主时那套约定一样）。
@@ -673,7 +650,6 @@ function applyShellTheme() {
   SLOTS.forEach(function (slot) {
     var frame = $('iframe[data-slot="' + slot.id + '"]');
     if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
-    if (slot.themeByDom) { syncFrameTheme(frame); return; }
     if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
   });
 }
@@ -704,25 +680,6 @@ function applyData() {
       });
       if (!opened) { var m = doc.querySelector('[data-act="mvmenu"]'); if (m) m.click(); }
     }
-    /* sidecar：选项常驻 DOM，但**弹层不展开时点了不算**，所以同样开→改→关。
-       开关状态看 aria-checked——按钮里那个 ✓ 是静态装饰，五个选项一直都带着它，
-       拿它判断会一直以为「全开」（这一条踩过）。
-       另注意它的出厂默认是五类全关，而 net-slicing 是全开；提到框架层之后由
-       台面统一定，默认取全开（与顶栏按钮上的计数一致）。 */
-    var tg = doc.querySelector('[data-metric-menu-toggle]');
-    if (tg) {
-      var scOpen = tg.getAttribute('aria-expanded') === 'true';
-      if (!scOpen) tg.click();
-      DATAK.forEach(function (x) {
-        var el = doc.querySelector('[data-metric-view="' + x.sc + '"]');
-        if (!el) return;
-        if ((el.getAttribute('aria-checked') === 'true') !== (dataOn.indexOf(x.k) >= 0)) el.click();
-      });
-      if (!scOpen) {
-        var t2 = doc.querySelector('[data-metric-menu-toggle]');
-        if (t2 && t2.getAttribute('aria-expanded') === 'true') t2.click();
-      }
-    }
   });
   var opts = document.querySelectorAll('#dmenuOpts .opt');
   Array.prototype.forEach.call(opts, function (b) {
@@ -731,8 +688,8 @@ function applyData() {
   $('#dmenuCount').textContent = String(dataOn.length);
 }
 
-/* 把被框架层接管的那几个控件从格子里藏掉。CSS 优先（pattern 重画工具条时
-   内联样式会被冲掉）；只有按文字才认得出的（sidecar 的浅色/适配）才走内联。 */
+/* 把被框架层接管的那几个控件从格子里藏掉。走 CSS 而不是内联样式：
+   pattern 每次改状态都重画工具条，内联的会被冲掉。 */
 function hideTakenOver(slot, frame) {
   try {
     var doc = frame.contentDocument;
@@ -743,134 +700,28 @@ function hideTakenOver(slot, frame) {
       st.textContent = slot.hideCss;
       doc.head.appendChild(st);
     }
-    if (slot.hideByText) {
-      var bs = doc.querySelectorAll('button');
-      for (var i = 0; i < bs.length; i++) {
-        var t = (bs[i].textContent || '').trim();
-        if (slot.hideByText.indexOf(t) < 0) continue;
-        /* 藏的是整组而不是单颗按钮：「适配」旁边还挂着一个百分比读数，
-           只按掉按钮会留下一枚孤零零的「22%」。 */
-        var grp = bs[i].closest(slot.hideGroup || '') || bs[i];
-        grp.style.display = 'none';
-      }
-    }
   } catch (err) { /* 跨源 */ }
-}
-
-/* 给没有 ?theme= / 没有 postMessage 的格子用：同源翻进去，按它自己那颗
-   浅色/深色按钮。为什么不直接改它的 data-theme —— 那个 pattern 换主题时
-   还要重算语义调色板并重绘，只改属性会留下半旧的画面；按按钮走的是它自己
-   的 setTheme。跨源就够不着，静默跳过：主题不同步不值得让整格出错。 */
-function syncFrameTheme(frame) {
-  try {
-    var doc = frame.contentDocument;
-    if (!doc || !doc.documentElement) return;
-    /* 判据是**它按钮上的字**，不是 data-theme：属性我们自己可能先设过，
-       而它内部还记着旧的 state.theme——按属性判会「看起来对了」却不重算调色板。
-       按钮写「浅色」＝它当前是深色（那是它给你的下一步），反之亦然。 */
-    var btns = doc.querySelectorAll('button'), want = theme(), hit = null;
-    for (var i = 0; i < btns.length; i++) {
-      var t = (btns[i].textContent || '').trim();
-      if (t === '浅色' || t === '深色') { hit = { el: btns[i], now: t === '浅色' ? 'dark' : 'light' }; break; }
-    }
-    if (hit) { if (hit.now !== want) hit.el.click(); return; }
-    doc.documentElement.dataset.theme = want;   // 连按钮都没有，退而求其次
-  } catch (err) { /* 跨源，放弃 */ }
-}
-
-/* 点它自己的「适配」：这一格的宽度由台面决定，pattern 出厂的缩放不认得它。 */
-function fitFrame(slot, frame) {
-  if (!slot.fitByText) return;
-  try {
-    var doc = frame.contentDocument;
-    if (!doc) return;
-    var btns = doc.querySelectorAll('button');
-    for (var i = 0; i < btns.length; i++) {
-      if ((btns[i].textContent || '').trim() === slot.fitByText) { btns[i].click(); return true; }
-    }
-  } catch (err) { /* 跨源 */ }
-  return false;
-}
-
-/* 「适配」之后再居一次中。
-   为什么点完还得补：pattern 的 fit 只管**缩放**，可画面里的算子名、指标名、
-   采样读数是固定字号的 HTML 标注，不跟着缩——几何缩小了它们没缩，内容的
-   重心就不在视口正中，于是一侧贴边、另一侧空一大片。
-   量一遍视口里所有**叶子**节点的并集（容器多半是撑满视口的空壳，量了没意义），
-   把重心平移到正中。**只动 pan、不动 zoom**：改缩放会把那些固定字号的标注挤成
-   一团，那比偏一点更糟。
-   **装得下的那条轴才平移**——本来就装不下的轴一平移，只会把溢出的一侧推得更远。 */
-function centerFrame(slot, frame) {
-  if (!slot.centerBy) return;
-  try {
-    var win = frame.contentWindow, doc = frame.contentDocument;
-    if (!win || !doc) return;
-    var ctl = win[slot.centerBy], vp = doc.querySelector(slot.viewportSel);
-    if (!ctl || !ctl.setPose || !ctl.base || !ctl.base.state || !vp) return;
-    var vr = vp.getBoundingClientRect();
-    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    var all = vp.querySelectorAll('*');
-    for (var i = 0; i < all.length; i++) {
-      var el = all[i];
-      if (el.children.length) continue;
-      var r = el.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      if (r.left < x0) x0 = r.left;
-      if (r.right > x1) x1 = r.right;
-      if (r.top < y0) y0 = r.top;
-      if (r.bottom > y1) y1 = r.bottom;
-    }
-    if (x0 === Infinity) return;
-    var st = ctl.base.state, pose = {}, any = false;
-    if (x1 - x0 <= vr.width)  { pose.panX = Math.round(st.panX + (vr.left + vr.width / 2)  - (x0 + x1) / 2); any = true; }
-    if (y1 - y0 <= vr.height) { pose.panY = Math.round(st.panY + (vr.top + vr.height / 2)  - (y0 + y1) / 2); any = true; }
-    if (any) ctl.setPose(pose);
-  } catch (err) { /* 跨源，或它换了对外接口：不居中而已，不该让整格出错 */ }
-}
-
-/* 用户点 pattern 自己那三颗视图段控（3D / 正视 / 侧视）时它会重新 fit 一次，
-   我们的居中也得跟一次。只旁听、不拦截（捕获期只读，点击照样交给它自己的
-   处理器）——换视图是它的事，摆正是台面的事。 */
-function wireViewRecenter(slot, frame) {
-  if (!slot.centerBy) return;
-  try {
-    var doc = frame.contentDocument;
-    if (!doc || doc.__wbRecenter) return;
-    doc.__wbRecenter = 1;
-    doc.addEventListener('click', function (ev) {
-      if (!ev.target || !ev.target.closest || !ev.target.closest('[data-deck-view]')) return;
-      setTimeout(function () { centerFrame(slot, frame); }, 320);
-    }, true);
-  } catch (err) { /* 跨源 */ }
-}
-
-/* fit 是 requestAnimationFrame 排的，点完那一刻还没落地——等一帧多再量。 */
-function fitAndCenter(slot, frame, then) {
-  fitFrame(slot, frame);
-  if (!slot.centerBy) { if (then) then(); return; }
-  setTimeout(function () { centerFrame(slot, frame); if (then) then(); }, 180);
 }
 
 /* 装配：pattern 的工具条是 JS 后建的，load 事件那一刻多半还不在，
-   所以轮询等它出来，再一次性把「藏控件 / 对主题 / 落框架层状态 / 适配」做完，
-   最后才让这一格淡入。等不到就到点放行——宁可样式没接管，也不能白屏。 */
+   所以轮询等它出来，再一次性把「藏控件 / 落框架层状态」做完，最后才让这一格
+   淡入。等不到就到点放行——宁可样式没接管，也不能白屏。 */
 function settleFrame(slot, frame) {
   var host = slotEl(slot.id), tries = 0;
   function ready() {
     try {
       var doc = frame.contentDocument;
       if (!doc || doc.readyState === 'loading') return false;
-      if (slot.hideByText || slot.fitByText) return !!doc.querySelector('button');
+      /* 工具条建出来了才算装配好：hideCss 藏的就是它里面的控件，
+         数据标注那组也要等它在了才点得着。 */
+      if (slot.hideCss) return !!doc.querySelector('[data-act]');
       return true;
     } catch (err) { return true; }   // 跨源：没什么可等的
   }
   function done() {
     hideTakenOver(slot, frame);
-    if (slot.themeByDom) syncFrameTheme(frame);
     applyData();
-    wireViewRecenter(slot, frame);
-    /* 居中排在淡入之前：先摆好再露面，否则用户会看见它先偏一下再跳回来 */
-    fitAndCenter(slot, frame, function () { host.dataset.ready = '1'; });
+    host.dataset.ready = '1';
   }
   (function poll() {
     if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
@@ -878,84 +729,27 @@ function settleFrame(slot, frame) {
   })();
 }
 
-/* ══ 联动：整网图选中的层 → 并行拓扑高亮那一层涉及的所有卡 ══════════════
-   左边点中第 29 层，右边就该告诉你「L29 住在哪些卡上」。这是两格之间唯一
-   真正对得上的语义：整网图讲的是**模型的第几层**，并行拓扑讲的是**这一层被
-   五把刀切完之后落在哪些 rank 上**——层号是它们共同的主键。
+/* ══ 联动：两格是同一个 pattern 的两份配置，所以用它自己那套搜索标签对齐 ══
+   左格（整网图）问「第 ℓ 层长什么样、被哪几刀切开」，右格（并行拓扑）问
+   「第 ℓ 层落在哪些 rank 上」。层号是两边共同的主键——而且现在两边同源，
+   层号天然一致（先前挂 training-sidecar 时是 46 层 vs 48 层，对不齐）。
 
-   走的是并行拓扑**自己那套属性搜索**（就是画布左上角那颗「＋ 搜索」）：
-   落一枚 `层 · L29` 的标签，它自己会算出 stage/TP/EP/DP 各切几份、共几张卡
-   与这层有关，并把那些卡点亮。所以：
-     · 语义由它自己出，我们没有在台面上重算一遍「哪些 rank」——那种重算迟早
+   两边都用**它自己那套属性搜索**（画布左上角那颗「＋ 搜索」）落一枚
+   `层 · Ln` 标签：
+     · 语义由 pattern 自己出，台面没有重算一遍「哪些 rank」——那种重算迟早
        和它对不上；
-     · 「关闭整网」进魔方那个模式时一样有效，因为高亮的是**卡**不是算子；
-     · 不重载 iframe——iframe 一重载，选中的卡、视角、缩放全没了。
+     · 「关闭整网」进卡阵那个模式一样有效，因为高亮的是**卡**不是算子；
+     · 不重载 iframe——一重载，选中的卡、视角、缩放全没了。
 
    为什么不走 postMessage：它 `pto:state` 的白名单里只有 view/cut/sel/preset/
    l5/theme，没有搜索标签，chips 关在它那个 IIFE 里够不着。同源，所以按**它
    自己的控件**走——点「＋ 搜索」→ 点「层」→ 填数字 → 回车，全程是它自己的
    事件处理器在改它自己的状态。与泳道那座桥同一条纪律，一个字没改它。 */
 
-/* 算子 → 这个算子是被**哪一刀**切开的。
-   为什么台面要有这张表：两边各说各的话——整网图讲算子（`a2a_dispatch`、`o_proj`），
-   并行拓扑讲刀（TP/SP/EP/PP/DP）。层号是天然主键，刀不是，总得有人把它们对上。
-   放在台面而不是塞进任何一个 pattern：这是**编排**知识，不是哪一格自己的事。
-   依据都写在两边自己的画面上（不是我编的）：
-     · norm 类 —— 并行拓扑自己的说法是「SP 在整张图上只在这类 norm 上露头」；
-     · TP/SP AllGather / Reduce-Scatter 与它们夹住的那些 linear/conv/attention core
-       —— 算子名里就写着 TP/SP，是被 TP 锯开的那一段；
-     · router / a2a / expert —— MoE 分支，EP 那一刀；
-     · mHC state 进出 —— 层与层的交接，那是 PP 的接力棒。
-   查不到的算子不落刀（只落层号），不猜。 */
-var OP_CUT = {
-  /* SP：norm 沿 seq 切 */
-  attn_norm: 'sp', q_a_norm: 'sp', kv_a_norm: 'sp', post_attention_norm: 'sp',
-  pre_mlp_norm: 'sp', post_mlp_norm: 'sp', block_post_norm: 'sp', final_norm: 'sp',
-  mtp_input_norms: 'sp',
-  /* TP：注意力与稠密 FFN 的权重被锯开，两端各挂一次 TP/SP 集合通信 */
-  attn_all_gather: 'tp', attn_reduce_scatter: 'tp', moe_all_gather: 'tp', moe_reduce_scatter: 'tp',
-  q_a_proj: 'tp', kv_a_proj: 'tp', q_b_proj: 'tp', kv_b_proj: 'tp',
-  q_causal_conv: 'tp', kv_causal_conv: 'tp', o_causal_conv: 'tp',
-  query_tensor: 'tp', key_tensor: 'tp', attention_core: 'tp', o_proj: 'tp',
-  dense_gate_up: 'tp', dense_silu: 'tp', dense_down: 'tp',
-  lm_head: 'tp', lm_head_weight: 'tp', logits_allgather: 'tp',
-  mtp_head_weight: 'tp', mtp_shared_head: 'tp',
-  /* EP：专家分桶 + 按 token 路由 */
-  gate: 'ep', a2a_dispatch: 'ep', expert_pool: 'ep', a2a_combine: 'ep',
-  shared_expert: 'ep', moe_branch_add: 'ep',
-  /* PP：层间交接的那根状态棒 */
-  mhc_state_in: 'pp', mhc_state_out: 'pp'
-};
-
-/* 整网图此刻的选中：{ layer, op, cut }。
-   · 没选中 → null
-   · 还没装配好 → undefined（别当成「取消选中」，否则会把标签摘掉）
-   三个读数按「谁更具体」排序：
-     ① selectedDetail.key = `layer-17-operator-expert_pool` —— 点算子时它同时给出
-        层号和算子 id，是最完整的一条；
-     ② base.state.selected = {nodeId, layer} —— 展开层之后点画布上的算子方块；
-     ③ selectedLayer —— 只点了那条层带，还没到算子。 */
-function sidecarPick(frame) {
-  try {
-    var ctl = frame.contentWindow && frame.contentWindow.trainingSidecarController;
-    if (!ctl) return undefined;
-    var det = ctl.selectedDetail;
-    var m = det && det.key && String(det.key).match(/^layer-(\d+)-operator-(.+)$/);
-    if (m) return { layer: +m[1], op: m[2], cut: OP_CUT[m[2]] || null };
-    var sel = ctl.base && ctl.base.state && ctl.base.state.selected;
-    if (sel && sel.nodeId && typeof sel.layer === 'number') {
-      return { layer: sel.layer, op: sel.nodeId, cut: OP_CUT[sel.nodeId] || null };
-    }
-    if (typeof ctl.selectedLayer === 'number') return { layer: ctl.selectedLayer, op: null, cut: null };
-    return null;
-  } catch (err) { return undefined; }   // 跨源
-}
-
-/* 并行拓扑那格当前挂着的「层」标签的值（没有则 null）。
-   读的是它渲染出来的标签本身——它的内部状态我们够不着，这是唯一的外部读数。
+/* 某一格当前挂着的「层」标签的值（没有则 null）。
    入口选的是每枚标签自带的那颗「×」（data-act=chipdel）而不是标签的 class：
    那颗按钮本来就是我们摘标签要点的东西，拿它当锚点，class 改了也不受影响。 */
-function topoLayerChip(doc) {
+function paneLayerChip(doc) {
   var dels = doc.querySelectorAll('[data-act="chipdel"]');
   for (var i = 0; i < dels.length; i++) {
     var chip = dels[i].parentElement;
@@ -974,19 +768,21 @@ function click(el) {
   return true;
 }
 
-/* 落一枚 `层 · Ln` 标签（n 为 null 则摘掉我们这一枚，不动用户手填的别的标签）。
-   分几步是因为面板是点开一层才渲染下一层的，每一步都要重新查节点。 */
-function setTopoLayer(n) {
-  var frame = $('iframe[data-slot="topology"]');
-  if (!frame || !state.topology || !state.topology.loaded) return;
-  var doc;
-  try { doc = frame.contentDocument; } catch (err) { return; }
-  if (!doc) return;
+function paneDoc(id) {
+  var frame = $('iframe[data-slot="' + id + '"]');
+  if (!frame || !state[id] || !state[id].loaded) return null;
+  try { return frame.contentDocument || null; } catch (err) { return null; }   // 跨源
+}
 
-  var now = topoLayerChip(doc);
+/* 在某一格上落一枚 `层 · Ln` 标签（n 为 null 则摘掉那一枚，不动用户手填的别的标签）。
+   分几步是因为面板是点开一层才渲染下一层的，每一步都要重新查节点。 */
+function setPaneLayer(id, n) {
+  var doc = paneDoc(id);
+  if (!doc) return;
+  var now = paneLayerChip(doc);
   if (n === null || n === undefined) {
-    /* 只摘我们这一枚。「×· 清空全部条件」会把用户自己手填的标签一起扫掉，
-       那是他的东西，不该被左边一次取消选中连累。 */
+    /* 只摘「层」那一枚。「×· 清空全部条件」会把用户自己手填的别的标签一起扫掉，
+       那是他的东西，不该被另一格一次取消选中连累。 */
     if (now) click(now.del);
     return;
   }
@@ -1006,136 +802,28 @@ function setTopoLayer(n) {
   }, 40);
 }
 
-/* 反过来：并行拓扑那边先落了 `层 · Ln`（手填搜索框，或点画布上「L{n}：点一下
-   反查这一层」那些反查入口），整网图也该跟着选中并展开第 n 层——不然两边
-   各看各的，右边讲的是哪一层，左边画的还是上一次。
-   走 sidecar 自己公开的 selectLayer(n)，就是点层带触发的那同一个函数，会
-   顺带展开；n 传 null 收起。调用前照一遍它当前选的是哪层：selectLayer 对着
-   **已经选中的同一层**再调一次是「再点一下 = 收起」的 toggle 语义（它自己的
-   设计），不照一遍就可能把用户刚选好的层关掉。 */
-function setSidecarLayer(frame, n) {
-  try {
-    var ctl = frame.contentWindow && frame.contentWindow.trainingSidecarController;
-    if (!ctl || !ctl.selectLayer) return;
-    var cur = (typeof ctl.selectedLayer === 'number') ? ctl.selectedLayer : null;
-    if (cur === n) return;
-    ctl.selectLayer(n === undefined ? null : n);
-  } catch (err) { /* 跨源，或它换了对外接口：不联动而已 */ }
-}
+/* 轮询而不是监听点击：两边改选中的路子都不止一条（点画布上的逐层命中区、
+   手填搜索框、点「×」摘标签），盯住**结果**比盯住每一条入口可靠——之前按
+   入口写测试就吃过亏：合成点击打在根本不在视口内的那批命中区上，测过了，
+   真用鼠标点却什么也不发生。
 
-/* 并行拓扑此刻选中的那张卡落在哪个 PP 段、那一段是哪几层。
-   读的是它**自己那枚点亮的 PP 胶囊**（`PP2·L24–35`）——那行字就是它对
-   「这张卡装了哪一段」的原话，比我们照着 rank 反算一遍靠谱：反算要复制它
-   tp‑cp‑dp‑pp 那套坐标算术，它一改我们就悄悄错了。
-   胶囊在选组 HUD 收起时只是 display:none，DOM 还在，照样读得到。 */
-function topoStageRange(doc) {
-  var on = doc.querySelector('[data-act="chainpick"][data-k="p"].is-on');
-  if (!on) return null;
-  /* `PP2·L24–35`：中间那个是 en dash，源码里写的就是它，别只认 ASCII 连字符 */
-  var m = (on.textContent || '').match(/L(\d+)\s*[–\-—]\s*(\d+)/);
-  if (!m) return null;
-  return { lo: +m[1], hi: +m[2] };
-}
-
-/* 把那一段层在整网图上整体点亮。
-   为什么是注一段 CSS 而不是调它的 API：sidecar **只能一次选中一层**
-   （公开接口里只有 selectLayer(单个)，没有 highlightLayers / layerRange 之类），
-   而一张卡装的是一整段（这套配置下 12 层）。所以选中那件事仍旧交给它自己
-   （setSidecarLayer 展开其中一层看细节），"这一段都归这张卡" 由台面**只用外观**
-   表达——`.pto-training-sidecar__layer-column` 是它每层一条、贯穿整个 deck 的
-   band，正好是这句话该落的地方。不碰它任何内部状态，取消时把 style 撤掉即可。 */
-function setSidecarBand(frame, range) {
-  try {
-    var doc = frame.contentDocument;
-    if (!doc || !doc.head) return;
-    var st = doc.getElementById('wb-cardband');
-    if (!range) { if (st) st.remove(); return; }
-    if (!st) { st = doc.createElement('style'); st.id = 'wb-cardband'; doc.head.appendChild(st); }
-    var sel = [];
-    for (var i = range.lo; i <= range.hi; i++) {
-      sel.push('.pto-training-sidecar__layer-column[data-layer="' + i + '"]');
-    }
-    if (!sel.length) { st.textContent = ''; return; }
-    /* 用并行拓扑那枚 PP 胶囊的橙（VC.pp），一眼对得上是谁点亮的它。
-       只上底色不描边：46 条 band 挨着排，描边会连成一堵墙，看不出段界。 */
-    st.textContent = sel.join(',') + '{fill:#ffaa3b !important;fill-opacity:.16 !important}';
-  } catch (err) { /* 跨源 */ }
-}
-
-/* 刀：走 pto:state 的白名单字段 cut——不重载，也不占一枚搜索标签。
-   为什么刀不做成 dim 标签：并行拓扑把多枚标签的命中集合取**并集**
-   （见它的 spotlightHit），`层 L17` ∪ `刀 TP 组` 会比「L17 住在哪」更宽，
-   反而糊掉了刚点亮的那批卡。刀用 cut 表达，管的是「这一屏正在讲哪一刀」，
-   与层高亮各司其职，叠在一起才是「这个算子在这一层、被这一刀切开」。 */
-function setTopoCut(cut) {
-  if (!cut) return;
-  /* SP 不是它的一把独立的刀：它的 COMM_DIMS 是 tp/cp/pp/dp/ep，SP 一直是跟着 TP 走的
-     （画面上写作「TP·SP」）。norm 那几个算子归到 TP 这一刀上，才是它认得的说法。 */
-  if (cut === 'sp') cut = 'tp';
-  var frame = $('iframe[data-slot="topology"]');
-  if (!frame || !state.topology || !state.topology.loaded || !frame.contentWindow) return;
-  frame.contentWindow.postMessage({ type: 'pto:state', cut: cut }, '*');
-}
-
-/* 轮询而不是监听点击：两边改选中的路子都不止一条（左边：点层带、点算子行、
-   点展开层里的算子方块、收起、它自己的详情面板；右边：手填搜索框、点画布上
-   的反查入口、点「×」摘掉标签），盯住**结果**比盯住每一条入口可靠——之前
-   按入口写测试就吃过亏：合成点击打在正视里根本不在视口内的那批命中层上，
-   测过了，真用鼠标点却什么也不发生。
-
-   双向意味着两边都可能是「发起者」，得能分清「对面自己动了」和「对面只是在
-   回应我刚推过去的那一下」。**只记录每一轮真正读到的值**（seenLeft/seenRight），
-   不记「我推了什么」——推过去的那一下要等对面异步落地（落标签是 ~80ms 的分步
-   模拟点击、展开层带 540ms 的镜头补间），中途读到的是「还没追上」的旧值，
-   拿它跟「我推了什么」比就会把时间差误判成「对面主动改了」，于是推回来，
-   把用户刚选好的层关掉（selectLayer 对着同一层再调一次是收起的 toggle 语义，
-   来回踩两下正好抵消）。
-   按「读到的值变了没有」判就不会：回声落地时读到的值等于这边已经有的值，
-   推回去撞上两个 setter 各自的**幂等短路**（setSidecarLayer 比 selectedLayer、
-   setTopoLayer 比标签上的数字，相同就直接返回），一次空操作，声音就止住了。 */
-var seenLeft = undefined, seenRight = undefined, seenStage = undefined, lastTopoView = undefined;
+   双向意味着两边都可能是发起者。判「谁变了」一律拿**这一轮读到的值**跟上一轮
+   读到的比（seenLeft/seenRight 记的是读数，不是我们推了什么）——先前记「我推了
+   什么」的写法有个回声竞态：推过去之后对面要过几十毫秒才真的更新，下一轮读到
+   的还是旧值，会被当成「对面主动变了」再推回来，一来一回把刚选好的层关掉
+   （实测 3 次里 2 次）。推完两边的读数都会收敛到同一个值，边沿自然消失。
+   同一轮只处理一侧，理由同上：这一轮刚推出去，对面还没追上，不该马上回读。 */
+var seenLeft = undefined, seenRight = undefined;
 function wireLinkage() {
   setInterval(function () {
-    var scFrame = $('iframe[data-slot="sidecar"]');
-    var ntFrame = $('iframe[data-slot="topology"]');
-    if (!scFrame || !state.sidecar || !state.sidecar.loaded) return;
-    if (!ntFrame || !state.topology || !state.topology.loaded) return;
+    var lDoc = paneDoc('netgraph'), rDoc = paneDoc('topology');
+    if (!lDoc || !rDoc) return;                        // 有一边还没装配好
 
-    var pick = sidecarPick(scFrame);
-    if (pick === undefined) return;                   // 左边还没装配好
-    var leftLayer = pick ? pick.layer : null;
+    var lc = paneLayerChip(lDoc), rc = paneLayerChip(rDoc);
+    var left = lc ? lc.v : null, right = rc ? rc.v : null;
 
-    /* 也盯着并行拓扑当前是哪个视图：那套属性搜索**只在「整网切分」里出现**
-       （别的视图 #qbar 是空的）。所以在别的视图里选中换了，标签落不下去；
-       等切回整网切分再补一次，否则挂着的是上一次那枚，对不上左边。 */
-    var view = state.topology && state.topology.value;
-    var viewJustReturned = view !== lastTopoView;
-    lastTopoView = view;
-
-    var rightLayer = null, canReadRight = false, ntDoc = null;
-    try { ntDoc = ntFrame.contentDocument; } catch (err) { /* 跨源 */ }
-    if (ntDoc && view === 'chain') {
-      var chip = topoLayerChip(ntDoc); rightLayer = chip ? chip.v : null; canReadRight = true;
-    }
-
-    /* 选中的卡落在哪一段——与层标签各走各的，互不干扰：段是「这张卡装了哪几层」
-       （整段点亮），层是「现在在看哪一层」（展开那一层看细节），叠在一起才完整。 */
-    if (ntDoc) {
-      var range = topoStageRange(ntDoc);
-      var stageKey = range ? range.lo + '-' + range.hi : '';
-      if (stageKey !== seenStage) { seenStage = stageKey; setSidecarBand(scFrame, range); }
-    }
-
-    if (leftLayer !== seenLeft || viewJustReturned) {
-      seenLeft = leftLayer;
-      setTopoLayer(leftLayer);
-      if (pick) setTopoCut(pick.cut);
-      return;                                          // 这一轮只处理一侧
-    }
-    if (canReadRight && rightLayer !== seenRight) {
-      seenRight = rightLayer;
-      setSidecarLayer(scFrame, rightLayer);
-    }
+    if (left !== seenLeft) { seenLeft = left; seenRight = left; setPaneLayer('topology', left); return; }
+    if (right !== seenRight) { seenRight = right; seenLeft = right; setPaneLayer('netgraph', right); }
   }, 300);
 }
 
@@ -1209,34 +897,18 @@ function wireSplit(sel, cls, onMove) {
   });
 }
 
-/* 格子宽高一变，「适配」算出来的缩放就过期了——重点一次。
-   防抖：拖动过程中每帧点一次既没必要也会卡。 */
-var refitTimer = 0;
-function refitAll() {
-  clearTimeout(refitTimer);
-  refitTimer = setTimeout(function () {
-    SLOTS.forEach(function (slot) {
-      if (!slot.fitByText || !state[slot.id] || !state[slot.id].loaded) return;
-      fitAndCenter(slot, $('iframe[data-slot="' + slot.id + '"]'));
-    });
-  }, 220);
-}
-window.addEventListener('resize', refitAll);
-
 function wireSplitters() {
   /* 横条：往下拖 = 抽屉变矮，所以是 h0 - clientY；上限留 180px 给舞台 */
   wireSplit('#splitter', 'is-resizing', function (start, e) {
     var max = Math.max(160, window.innerHeight - 180);
     dockH = Math.max(120, Math.min(max, Math.round(start.h0 - (e.clientY - start.y))));
     applyDockH();
-    refitAll();
   });
   /* 竖条：往右拖 = 左格变宽；右边至少留 320px 给并行拓扑 */
   wireSplit('#vsplit', 'is-resizing-x', function (start, e) {
     var max = Math.max(240, window.innerWidth - 320);
     sideW = Math.max(240, Math.min(max, Math.round(start.w0 + (e.clientX - start.x))));
     applySideW();
-    refitAll();
   });
 }
 
