@@ -1143,6 +1143,27 @@ function paramsPerCard(D, ppRank, L){
   return p;
 }
 var ACT_COEF = 4;
+/* ── 一个训练步走到此刻，这一段手上压着几份微批的激活 ──────────────────────
+   1F1B 的形状：热身期一路攒（越靠前的 stage 攒得越多，因为它得等后面所有 stage
+   都回传才放得掉第一份），稳态持平，排空期一份份还回去。这正是泳道那张图上
+   「等待上游激活 → 前向 → 等待下游激活梯度 → 反向」四段的显存侧读法。
+   t = 这一步走到了百分之几（0–1，宿主给，与泳道那条游标同一个量）。
+   不给 t 就返回稳态峰值——**这是默认**，读数与从前一字不差：不放游标的时候，
+   「一张卡要多少显存」问的本来就是峰值，那才是买卡的依据。 */
+var ACT_T = null;      /* 宿主给的训练步进度；null = 不看时间，按峰值 */
+function inflightAt(D, ppRank, t){
+  var peak = Math.max(1, Math.min(D.pp, D.ga) - ppRank);
+  if(t === null || t === undefined || !isFinite(t)) return peak;
+  t = clamp(t, 0, 1);
+  var warm  = 0.46 * (ppRank + 1) / D.pp;              /* 越靠后的 stage 越晚攒满 */
+  var drain = 1 - 0.46 * (D.pp - ppRank) / D.pp;       /* 越靠前的 stage 越早开始排空 */
+  var k;
+  if(t < warm)       k = warm > 0 ? t / warm : 1;
+  else if(t < drain) k = 1;
+  else               k = (1 - t) / Math.max(1e-6, 1 - drain);
+  /* 最低留一份：这一段只要还在这一步里，手上总有正在算的那一份 */
+  return Math.max(peak * clamp(k, 0, 1), (t > 0 && t < 1) ? 1 : 0);
+}
 /* ── 显存成分的签名色（三个落点共用：rank 壳 / 交集腔 L3 容器 / 选中卡）──────
    三把账（w/g/opt）走**三条不同 ramp**，最大化色相差：
      · 权重走深靛（l0b-deep-violet-600）—— 最暗、最重要，坐在底部
@@ -1162,13 +1183,16 @@ var MEMC = {
 function memParts(D, ppRank, g){
   var L = rankLoad(D, g);
   var P = paramsPerCard(D, ppRank, L);
-  var inflight = Math.max(1, Math.min(D.pp, D.ga) - ppRank);
+  /* 训练步进度只作用在**逐卡**这一路（给了 g 的那一路）：那问的是「第 41 张卡此刻
+     多少」。不给 g 的聚合口径（每卡容量、四刀贡献、A3 自检）照旧按峰值——它们问的是
+     「这套切法给一张卡留下多少」，跟着游标晃就不是同一个问题了。 */
+  var inflight = inflightAt(D, ppRank, L ? ACT_T : null);
   var act = D.mbs*(D.seq/D.cp)*D.hidden*D.layersPerStage*ACT_COEF*inflight * (L ? L.actK : 1);
   return [
     {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w},
     {k:'g', label:'梯度 (bf16)', bytes:2*P, color:MEMC.g},
     {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, color:MEMC.opt},
-    {k:'act', label:'激活·在途'+inflight+'μb', bytes:act, color:MEMC.act},
+    {k:'act', label:'激活·在途'+(inflight >= 1 ? (Math.abs(inflight-Math.round(inflight))<0.05 ? Math.round(inflight) : inflight.toFixed(1)) : inflight.toFixed(1))+'μb', bytes:act, color:MEMC.act},
     {k:'rsv', label:'碎片/预留', bytes:(L ? L.rsv : 1.5*Math.pow(2,30)), color:MEMC.rsv}
   ];
 }
@@ -7776,6 +7800,11 @@ window.addEventListener('message', function(ev){
        台面两格之间走的一律是 hl —— 一格里的点击不该在另一格留下一句没人下过的条件。 */
     if(typeof d.sel === 'number' && d.sel >= 0){ sel = d.sel; ui.hlSel = false; }
     if(d.sel === null){ sel = null; ui.hlSel = false; }
+    /* 训练步进度（0–1）：泳道那条游标走到哪儿，逐卡的激活体就按 1F1B 的形状算到哪儿。
+       null 收回游标，回到峰值（默认态）。只改逐卡读数，聚合口径不动。 */
+    if(d.step !== undefined){
+      ACT_T = (typeof d.step === 'number' && isFinite(d.step)) ? clamp(d.step, 0, 1) : null;
+    }
     if(d.hl !== undefined){
       if(d.hl === null) clearHL();
       else{

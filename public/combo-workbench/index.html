@@ -228,6 +228,25 @@ body.is-resizing-x iframe{pointer-events:none}
   display:flex;align-items:center;gap:6px}
 .slot-head .spacer{flex:1 1 auto}
 
+/* ── 走带 + 游标 ─────────────────────────────────────────────────────────
+   走带长在泳道的格头里（它量的是泳道那根时间轴），游标叠在泳道画布上。
+   两者都归台面所有：上游那份 swimlane.html 是逐字节拷贝，不碰。 */
+.xport{display:flex;align-items:center;gap:6px}
+.xport button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
+.xport input[type=range]{width:132px;height:22px;accent-color:var(--primary);cursor:pointer}
+.xport b{min-width:42px;font-family:var(--font-family-mono, monospace);font-size:11px;
+  font-weight:700;color:var(--foreground-secondary);text-align:right}
+/* 游标：容器铺满 iframe 但不吃点击（改时间的入口是走带，不是画布——画布上的点击
+   在泳道里另有含义）；真正画出来的是里面那根 <i>。 */
+.xcursor{position:absolute;inset:0;pointer-events:none;z-index:4}
+.xcursor[hidden]{display:none}
+/* 从泳道自己那条 42px 表头**下面**起画：表头上没有时间轴，线压上去只是挡字 */
+.xcursor > i{position:absolute;top:42px;bottom:0;width:0;border-left:1.5px solid var(--primary);
+  opacity:.85;transform:translateX(-.75px)}
+.xcursor > i::before{content:'';position:absolute;top:-3px;left:-3.5px;width:8px;height:8px;border-radius:50%;
+  background:var(--primary)}
+#dock .slot-body{position:relative}
+
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
 .tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
 .tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
@@ -342,10 +361,23 @@ body.is-resizing iframe{pointer-events:none}
       <span class="slot-title">微批次生命周期泳道</span>
       <button data-act="fold" title="收起这一格，只留格头">收起</button>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
+      <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
+           而「这一步走到此刻，每张卡手上压着多少激活」正是它与拓扑那两格之间
+           唯一还没接上的那条线。走带因此长在台面上：游标是叠在泳道上的一层
+           （overlay，不碰上游那个文件），进度同时推给两格 pattern（pto:state 的
+           step），它们按 1F1B 的形状把逐卡的激活体算到那一刻。 -->
+      <div class="xport" id="xport">
+        <button data-act="play" aria-label="播放一个训练步" title="播放一个训练步：游标走一遍，两格里每张卡的激活体跟着这一刻的 1F1B 在途份数变化">▶</button>
+        <input id="xpT" type="range" min="0" max="1000" value="0" aria-label="训练步进度" title="拖动到这一步的任意时刻" />
+        <b id="xpPct">峰值</b>
+      </div>
       <span class="spacer"></span>
     </header>
     <div class="slot-body">
       <iframe data-slot="swimlane" title="MB07 微批次生命周期泳道"></iframe>
+      <!-- 游标：贴在泳道上的一条竖线。不吃点击（拖动走带才是改时间的入口），
+           位置按泳道自己那套画布几何算（见 applyXport 的注释）。 -->
+      <div class="xcursor" id="xcursor" hidden><i></i></div>
       <div class="slot-fallback">
         <p><b>这一格没能加载。</b><br />
           它引的是同目录的 <code>./swimlane.html</code> 与 <code>/vendor/pto-design-system/</code>。</p>
@@ -889,6 +921,104 @@ function wireLinkage() {
     });
   }, 300);
 }
+
+/* ══ 走带：一个训练步的进度 ═════════════════════════════════════════════
+   泳道是一张**静态**的甘特图——上游那份没有游标、没有播放。而「这一步走到此刻，
+   每张卡手上压着多少激活」正是它和拓扑那两格之间还没接上的那条线：泳道画的是
+   什么时候在算什么，拓扑画的是那一刻显存里装着什么，本来就是同一件事的两面。
+
+   所以走带长在台面上：
+     · 进度 t（0–1）推给两格 pattern（pto:state 的 step），它们按 1F1B 的形状
+       把**逐卡**的激活体算到那一刻（聚合口径不动，见那边 memParts 的注释）；
+     · 游标是叠在泳道 iframe 上的一层 div，不改上游那个逐字节拷贝来的文件。
+   收回走带（t=null）就回到峰值——那才是「一张卡要多少显存」的默认答案。 */
+
+/* 泳道画布的取景常数，抄自 swimlane.html 的 draw()：左边 236px 是泳道名那一栏
+   （时间轴从它右边起算），右边留 16px。这两个数是那份上游拷贝里的字面量，改不了
+   也读不到，只能在这儿复述一遍——所以下面拿轴上的 0ms 刻度做过校验（见测试）。 */
+var XP_GUTTER = 236, XP_PAD_R = 16;
+var xpT = null;          /* null = 不看时间，按峰值 */
+var xpPlaying = false, xpRAF = 0, xpLast = 0, xpPushed = -1;
+var XP_DUR_MS = 7000;    /* 一个训练步播一遍要多久（真实是 315.61ms，放慢到看得清） */
+
+function xpPushStep() {
+  /* 两格 pattern 都要跟着走：它们各自画的是同一批卡的不同侧面。
+     节流到 ~12fps —— 每帧都推的话，128 只卡的场景来不及重画，反而更卡。 */
+  ['topology', 'netgraph'].forEach(function (id) {
+    var f = $('iframe[data-slot="' + id + '"]');
+    if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+    f.contentWindow.postMessage({ type: 'pto:state', step: xpT }, '*');
+  });
+}
+
+/* 游标贴到泳道那根时间轴上：轴的左端 = 画布左边 + 236，右端 = 画布右边 − 16。
+   画布宽度按 iframe 的实际宽度算（泳道自己也是这么定 viewportW 的）。 */
+function xpPlaceCursor() {
+  var cur = document.getElementById('xcursor');
+  var frame = $('iframe[data-slot="swimlane"]');
+  if (!cur || !frame) return;
+  if (xpT === null) { cur.hidden = true; return; }
+  var w = frame.getBoundingClientRect().width;
+  var x0 = XP_GUTTER, x1 = Math.max(x0 + 1, w - XP_PAD_R);
+  cur.hidden = false;
+  cur.firstElementChild.style.left = (x0 + (x1 - x0) * xpT) + 'px';
+}
+
+function applyXport(push) {
+  var pct = document.getElementById('xpPct');
+  var rng = document.getElementById('xpT');
+  var btn = document.querySelector('#xport [data-act="play"]');
+  if (pct) pct.textContent = xpT === null ? '峰值' : Math.round(xpT * 100) + '%';
+  if (rng && document.activeElement !== rng) rng.value = String(Math.round((xpT || 0) * 1000));
+  if (btn) btn.textContent = xpPlaying ? '❚❚' : '▶';
+  xpPlaceCursor();
+  if (push !== false) {
+    var q = xpT === null ? -1 : Math.round(xpT * 200);   /* 推送量化到 0.5%，省掉无意义的重画 */
+    if (q !== xpPushed) { xpPushed = q; xpPushStep(); }
+  }
+}
+
+function xpTick(ts) {
+  if (!xpPlaying) return;
+  if (!xpLast) xpLast = ts;
+  var dt = ts - xpLast; xpLast = ts;
+  xpT = (xpT === null ? 0 : xpT) + dt / XP_DUR_MS;
+  if (xpT >= 1) { xpT = 1; xpPlaying = false; }    /* 走到头就停在末尾，不自动循环 */
+  applyXport();
+  if (xpPlaying) xpRAF = requestAnimationFrame(xpTick);
+  else applyXport(false);
+}
+
+function xpPlay(on) {
+  xpPlaying = on;
+  cancelAnimationFrame(xpRAF); xpLast = 0;
+  if (on) {
+    if (xpT === null || xpT >= 1) xpT = 0;         /* 从头播；停在末尾时再按就重来 */
+    xpRAF = requestAnimationFrame(xpTick);
+  }
+  applyXport();
+}
+
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest && ev.target.closest('#xport [data-act="play"]');
+  if (!b) return;
+  xpPlay(!xpPlaying);
+});
+document.addEventListener('input', function (ev) {
+  if (!ev.target || ev.target.id !== 'xpT') return;
+  xpPlaying = false; cancelAnimationFrame(xpRAF); xpLast = 0;
+  xpT = (+ev.target.value) / 1000;
+  applyXport();
+});
+/* 双击走带 = 收回游标，回到峰值（默认那个问法） */
+document.addEventListener('dblclick', function (ev) {
+  if (!ev.target.closest || !ev.target.closest('#xport')) return;
+  /* 别在这儿重置 xpPushed：它的「没有时间」哨兵值也是 -1，先清成 -1 会让下面那次
+     推送被当成「和上次一样」跳掉，两格就停在最后那一帧的读数上，回不到峰值。 */
+  xpPlaying = false; cancelAnimationFrame(xpRAF); xpT = null;
+  applyXport();
+});
+window.addEventListener('resize', xpPlaceCursor);
 
 /* ── 格头动作 ─────────────────────────────────────────────────────── */
 function wireHead(slot) {
