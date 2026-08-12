@@ -91,6 +91,25 @@ function paramsPerCard(D, p){
   if(p===D.pp-1) P += D.hidden*Math.ceil(D.vocab/D.tp);
   return P;
 }
+/* 权重带的内部：这一段（stage p）里每个算子的 bf16 字节与切法（demo 的 opBytes 同一口径） */
+function opList(D, p){
+  var hd = D.headDim, lps = D.layersPerStage, o = [];
+  function add(id, cut, how, perLayerB){ o.push({id:id, cut:cut, how:how, b:perLayerB*lps}); }
+  add('attn.q',  'tp', '列切 ×'+D.tp, 2*D.hidden*(D.heads/D.tp)*hd);
+  add('attn.kv', 'tp', '头切 ×'+D.tp, 2*D.hidden*2*kvPerTp(D)*hd);
+  add('attn.out','tp', '行切 ×'+D.tp, 2*(D.heads/D.tp)*hd*D.hidden);
+  if(D.moe){
+    add('router', 'none', '复制', 2*D.hidden*D.experts);
+    add('experts','ep', '桶切 ×'+D.ep+'·ETP'+D.etp, 2*(D.experts/D.ep)*3*D.hidden*(D.ffn/D.etp));
+  }else{
+    add('mlp.gate/up', 'tp', '列切 ×'+D.tp, 2*2*D.hidden*(D.ffn/D.tp));
+    add('mlp.down',    'tp', '行切 ×'+D.tp, 2*(D.ffn/D.tp)*D.hidden);
+  }
+  add('norm×2', 'none', '复制', 2*2*D.hidden);
+  if(p===0)        o.push({id:'embed',   cut:'tp', how:'词表列切 ×'+D.tp, b:2*Math.ceil(D.vocab/D.tp)*D.hidden});
+  if(p===D.pp-1)   o.push({id:'lm_head', cut:'tp', how:'词表列切 ×'+D.tp, b:2*D.hidden*Math.ceil(D.vocab/D.tp)});
+  return o;
+}
 var ACT_COEF = 4;
 function memParts(D, p){
   var P = paramsPerCard(D, p);
@@ -106,19 +125,22 @@ function memParts(D, p){
   ];
 }
 
-/* ═══ 投影：等轴测 + 可拖拽 yaw/pitch（每个对象绕自身中心转）═══ */
+/* ═══ 投影：等轴测 + 可拖拽 yaw/pitch（每个对象绕自身中心转）═══
+   机位方向是 +(1,1,1)（对本投影：沿它移动屏上不动）——可见性与深度都从它来。 */
 var C0 = Math.cos(Math.PI/6), S0 = Math.sin(Math.PI/6);
 var yaw = 0, pitch = 0;
-function proj(x, y, z, ctr){
-  var cx = ctr[0], cy = ctr[1], cz = ctr[2];
-  var dx = x-cx, dy = y-cy, dz = z-cz;
+function rotV(dx, dy, dz){
   if(yaw || pitch){
     var cyw = Math.cos(yaw), syw = Math.sin(yaw), cpt = Math.cos(pitch), spt = Math.sin(pitch);
     var rx = dx*cyw + dz*syw, rz = dz*cyw - dx*syw;
     var ry = dy*cpt - rz*spt; rz = dy*spt + rz*cpt;
-    dx = rx; dy = ry; dz = rz;
+    return [rx, ry, rz];
   }
-  return [(dx-dz)*C0, ((dx+dz)*S0 - dy)];
+  return [dx, dy, dz];
+}
+function proj(x, y, z, ctr){
+  var r = rotV(x-ctr[0], y-ctr[1], z-ctr[2]);
+  return [(r[0]-r[2])*C0, ((r[0]+r[2])*S0 - r[1])];
 }
 function pts(a){ return a.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' '); }
 function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
@@ -135,19 +157,30 @@ function boxWire(x,y,z,w,h,d,ctr,st,stHidden){
   E.forEach(function(e,i){ out += ln(P8[e[0]], P8[e[1]], (stHidden && (i===3||i===11||i===2)) ? stHidden : st); });
   return out;
 }
-/* 内容 = 实心体积（三个可见面三档明度） */
+/* 内容 = 实心体积。六个面全建、按旋转后的法线做背面剔除——凸盒剔除后可见面
+   在投影上互不遮挡，无需排序。之前只画固定三面，转过 90° 就露出没画的那半边
+   （「为什么半边没有显示」的根源就是它）。明度由旋转后的法线定档：
+   朝上最亮、朝 +z 中、朝 +x 暗——默认机位下与旧三档逐位一致。 */
 function boxFill(x,y,z,w,h,d,ctr,fill,o){
   o = o || {};
-  var f = {
-    top:[proj(x,y+h,z,ctr),proj(x+w,y+h,z,ctr),proj(x+w,y+h,z+d,ctr),proj(x,y+h,z+d,ctr)],
-    left:[proj(x,y,z+d,ctr),proj(x,y+h,z+d,ctr),proj(x+w,y+h,z+d,ctr),proj(x+w,y,z+d,ctr)],
-    right:[proj(x+w,y,z,ctr),proj(x+w,y+h,z,ctr),proj(x+w,y+h,z+d,ctr),proj(x+w,y,z+d,ctr)]
-  };
+  var V = [[x,y,z],[x+w,y,z],[x+w,y,z+d],[x,y,z+d],[x,y+h,z],[x+w,y+h,z],[x+w,y+h,z+d],[x,y+h,z+d]];
+  var P8 = V.map(function(v){ return proj(v[0],v[1],v[2],ctr); });
+  var F = [ {i:[4,5,6,7], n:[0,1,0]},  {i:[0,3,2,1], n:[0,-1,0]},
+            {i:[0,1,5,4], n:[0,0,-1]}, {i:[3,7,6,2], n:[0,0,1]},
+            {i:[0,4,7,3], n:[-1,0,0]}, {i:[1,2,6,5], n:[1,0,0]} ];
   var st = 'stroke:'+(o.stroke||'var(--pt-bg)')+';stroke-width:'+(o.sw!==undefined?o.sw:.5)+(o.dash?';stroke-dasharray:'+o.dash:'');
   var op = o.opacity!==undefined ? ';fill-opacity:'+o.opacity : '';
-  return '<polygon points="'+pts(f.top)+'" style="fill:color-mix(in srgb,'+fill+' 88%, #fff 12%)'+op+';'+st+'"/>'
-       + '<polygon points="'+pts(f.left)+'" style="fill:color-mix(in srgb,'+fill+' 82%, #000 18%)'+op+';'+st+'"/>'
-       + '<polygon points="'+pts(f.right)+'" style="fill:color-mix(in srgb,'+fill+' 68%, #000 32%)'+op+';'+st+'"/>';
+  var out = '';
+  F.forEach(function(f){
+    var n = rotV(f.n[0], f.n[1], f.n[2]);
+    if(n[0]+n[1]+n[2] <= 0.02) return;             /* 背面：机位在 +(1,1,1) */
+    var shade = n[0]*0.26 + n[1]*0.83 + n[2]*0.47;
+    var c = shade > .66 ? 'color-mix(in srgb,'+fill+' 88%, #fff 12%)'
+          : shade > .36 ? 'color-mix(in srgb,'+fill+' 82%, #000 18%)'
+          :               'color-mix(in srgb,'+fill+' 68%, #000 32%)';
+    out += '<polygon points="'+pts([P8[f.i[0]],P8[f.i[1]],P8[f.i[2]],P8[f.i[3]]])+'" style="fill:'+c+op+';'+st+'"/>';
+  });
+  return out;
 }
 
 /* ═══ 状态 ═══ */
@@ -187,7 +220,7 @@ function render(){
   var sc = 1/Math.max(cap, tot);
   var lps = D.layersPerStage, hK = Math.floor(D.hidden/D.tp), kE = D.experts/D.ep;
 
-  var W = 1240, H = 780, parts = [];
+  var W = 1240, H = 820, parts = [];
 
   /* ── 主角：容器（线框）与它肚子里的层 ─────────────────────────────── */
   var BW = 210, BH = 320, BD = 150;                     /* 容器的三边（画布尺寸，非语义） */
@@ -196,7 +229,7 @@ function render(){
   function G(inner){ return '<g transform="translate('+OX+','+OY+')">'+inner+'</g>'; }
 
   /* 层：从底往上（y 朝上），每层一只实心体积 + 右侧引线标注 */
-  var acc = 0, labels = [];
+  var acc = 0, labels = [], bandY = {};
   var inner = '';
   segs.forEach(function(sg){
     var f0 = acc*sc; acc += sg.bytes;
@@ -204,6 +237,7 @@ function render(){
     if(f1-f0 < 0.002) return;
     var t = TONE[sg.k];
     var y0 = BH*f0, y1 = BH*f1;
+    bandY[sg.k] = {y0:y0, y1:y1};
     inner += boxFill(0, y0, 0, BW, y1-y0, BD, ctr, t.fill,
                      {opacity:t.opacity, stroke:t.stroke, sw:t.stroke? .9 : .5, dash:t.dash});
     /* 引线锚在这一层右棱的中点 */
@@ -211,6 +245,60 @@ function render(){
     labels.push({k:sg.k, name:sg.name, unit:sg.unit, from:sg.from, why:sg.why,
                  gb:fmtGB(sg.bytes), ax:OX+a[0], ay:OY+a[1], big:(y1-y0)*sc>0});
   });
+
+  /* ── 层的内部：哪块是哪个算子、被哪把刀切（与「抽出的 L0」同一套语汇）────
+     ①家的三层（权重/梯度/优化器态）共用同一个横向分法——同一份参数的三本账，
+     竖缝上下对齐；每一小块按**切它的那把刀**上色：TP 青 / EP 紫 / 复制不上色。
+     attn.core 无参不占显存，所以它不在带里——列在旁注里说明。
+     ②那层按在途 μb 分格（虚线缝）：每格一只还没算完的 micro-batch。 */
+  var ops = opList(D, p), wSum = ops.reduce(function(a,x){ return a+x.b; },0);
+  var KC = {tp:'var(--pt-tp)', ep:'var(--pt-ep)', none:null};
+  var opSegs = [], axx = 0;
+  ops.forEach(function(op0){
+    var w0 = BW*op0.b/wSum;
+    opSegs.push({id:op0.id, cut:op0.cut, how:op0.how, b:op0.b, x0:axx, x1:axx+w0});
+    axx += w0;
+  });
+  /* 算子块只在**权重带**上着色——它就是「抽出的 L0」那排算子片折进容器的样子；
+     梯度 / 优化器态保持灰（①家的常驻灰不能被刀色洗掉），只画**对齐的竖缝**：
+     缝对上了，「同一分法 ×1 / ×6」不用一个字。 */
+  if(bandY.w) opSegs.forEach(function(sgm){
+    if(sgm.x1-sgm.x0 < .6) return;
+    var col = KC[sgm.cut];
+    if(col) inner += boxFill(sgm.x0, bandY.w.y0, 0, sgm.x1-sgm.x0, bandY.w.y1-bandY.w.y0, BD, ctr, col,
+                             {opacity:.52, stroke:'var(--pt-bg)', sw:.4});
+    else if(sgm.x0 > .5)
+      inner += ln(proj(sgm.x0, bandY.w.y0, BD, ctr), proj(sgm.x0, bandY.w.y1, BD, ctr), 'stroke:var(--pt-bg);stroke-width:.6');
+  });
+  ['g','opt'].forEach(function(bk){
+    var B = bandY[bk]; if(!B) return;
+    opSegs.forEach(function(sgm){
+      if(sgm.x0 < .5 || sgm.x1-sgm.x0 < 2) return;
+      inner += ln(proj(sgm.x0, B.y0, BD, ctr), proj(sgm.x0, B.y1, BD, ctr),
+                  'stroke:var(--pt-bg);stroke-width:.55;stroke-opacity:.8');
+      inner += ln(proj(sgm.x0, B.y0, 0, ctr), proj(sgm.x0, B.y1, 0, ctr),
+                  'stroke:var(--pt-bg);stroke-width:.55;stroke-opacity:.8');
+    });
+  });
+  /* 权重带上给大块直接写名（其余交给右下角的算子清单） */
+  if(bandY.w){
+    opSegs.forEach(function(sgm){
+      if(sgm.x1-sgm.x0 < 40) return;
+      var cpt = proj((sgm.x0+sgm.x1)/2, (bandY.w.y0+bandY.w.y1)/2, BD, ctr);
+      inner += txt(cpt[0], cpt[1]+3, sgm.id+' · '+sgm.how, 9, '#fff', 'middle',
+                   'font-weight="700" paint-order="stroke" stroke="rgba(10,14,20,.55)" stroke-width="2.4"');
+    });
+  }
+  if(bandY.act){
+    var nIf = Math.max(1, Math.min(D.pp, D.ga) - p);
+    for(var mi=1; mi<nIf; mi++){
+      var mx = BW*mi/nIf;
+      inner += ln(proj(mx, bandY.act.y0, BD, ctr), proj(mx, bandY.act.y1, BD, ctr),
+                  'stroke:var(--pt-bg);stroke-width:.7;stroke-dasharray:2.5 2');
+      inner += ln(proj(mx, bandY.act.y1, BD, ctr), proj(mx, bandY.act.y1, 0, ctr),
+                  'stroke:var(--pt-bg);stroke-width:.7;stroke-dasharray:2.5 2');
+    }
+  }
   /* 水位线 + 余量：容器空着的那截也是信息 */
   var fTop = tot*sc;
   if(fTop < 0.985){
@@ -247,6 +335,29 @@ function render(){
   parts.push(ln([LX-4, sumY-34], [LX+252, sumY-34], 'stroke:var(--pt-bds);stroke-width:1'));
   parts.push(txt(LX+12, sumY-18, '合计 '+fmtGB(tot)+' / '+D.hbm+' GB', 14, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
   parts.push(txt(LX+12, sumY-4, tot>cap ? '装不下：OOM（空间问题，与利用率无关）' : '装满不会崩的是流；装满会崩的是这只', 9.5, 'var(--pt-fg3)', 'start'));
+
+  /* ── 算子清单：权重带的内部逐块列出（编号与切法 = 「抽出的 L0」那排片的语汇）──
+     梯度 / 优化器态与它同一分法（同缝对齐），只是每块 ×1 / ×6——不重复列。 */
+  var opY = sumY + 24;
+  parts.push(txt(LX-4, opY, '权重带的内部（本 stage · bf16）', 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(LX-4, opY+13, '梯度/优化器态同一分法：每块 ×1 / ×6', 8.5, 'var(--pt-fg3)', 'start'));
+  var rows = opSegs.slice().sort(function(a,b){ return b.b-a.b; });
+  var small = rows.filter(function(r){ return r.b/wSum < .01; });
+  rows = rows.filter(function(r){ return r.b/wSum >= .01; });
+  if(small.length) rows.push({id:small.map(function(r){ return r.id; }).join('+'), cut:'none', how:'复制',
+                              b:small.reduce(function(a,r){ return a+r.b; },0)});
+  var rowY = opY + 28;
+  rows.forEach(function(r){
+    var col = KC[r.cut];
+    parts.push('<rect x="'+(LX-4)+'" y="'+(rowY-8)+'" width="9" height="9" style="fill:'
+      +(col ? 'color-mix(in srgb, '+col+' 45%, var(--pt-bg))' : 'color-mix(in srgb, var(--pt-fg) 18%, var(--pt-bg))')
+      +';stroke:var(--pt-bds);stroke-width:.5"/>');
+    parts.push(txt(LX+10, rowY, r.id, 9.5, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    parts.push(txt(LX+96, rowY, r.how, 9, col||'var(--pt-fg3)', 'start', 'font-weight="700"'));
+    parts.push(txt(LX+252, rowY, fmtGB(r.b)+' GB', 9.5, 'var(--pt-fg2)', 'end', 'font-weight="700"'));
+    rowY += 15;
+  });
+  parts.push(txt(LX-4, rowY+4, 'attn.core 无参：在算子序列里、不在显存带里', 8.5, 'var(--pt-fg3)', 'start'));
 
   /* ── 来路①：权重体腔（索引空间小盒 + 黑腔）→ 三段灰 ────────────────── */
   var sW = 120, sH = 100, sD = 78;

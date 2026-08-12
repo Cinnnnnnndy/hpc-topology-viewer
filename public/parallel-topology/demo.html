@@ -4250,7 +4250,7 @@ function renderSolidMap(D){
 function renderSolidCav(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  var H = 700, parts = [], hits = [];
+  var H = 880, parts = [], hits = [];
   var L1 = layerOn('L1'), L2 = layerOn('L2'), L3 = layerOn('L3'), L4 = layerOn('L4');
   var hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0, lps = D.layersPerStage;
   var SEC = !!ui.act2;
@@ -4528,21 +4528,126 @@ function renderSolidCav(D){
   });
   parts.push(txt(TBX, TBY+112, 'ETP 是第六把刀，却不认领新轴 —— 它在 e 腔内部沿专家自己的 ffn 维再切一次（本配置 ETP='+D.etp+'）。这就是「6 把刀 ≠ 6 根轴」的来源。', 7.6, 'var(--pt-fg2)', 'start'));
 
-  /* ═══ 容器（L3）：两个腔加起来才是这张卡装的东西 ═══ */
+  /* ═══ 容器（L3）：两个腔加起来才是这张卡装的东西 ═══
+     扁平条升级成 3D 容器（独立原型页 card-container.html 打磨定稿的紧凑版）：
+     容器=线框、内容=实心体积（字节即体积）。①腔的三份成分实心灰阶，权重带
+     内部按算子细分、块色=切它那把刀（与「抽出的 L0」那排片同一语汇）；
+     ②腔那段 dp 蓝+虚线棱、按在途 μb 分格；顶上空的一截画水位线标余量。
+     六个面全建+按旋转后的法线剔背面：只画固定三面的话，跟着 cavYaw 一转
+     就会露出「没画的那半边」。 */
   if(L3){
-    var CBX = 246, CBW = 470, CBY = 630;
-    parts.push(txt(CBX, CBY-8, '容器只有两个（卡=显存 / 流=时间）—— 上面两个腔加起来，才是这张卡显存里装的东西：', 8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-    parts.push(txt(CBX, CBY+2, '①腔 ⇒ 权重 + 梯度 + 优化器态　②腔 ⇒ 激活·在途 μbatch', 7.4, 'var(--pt-fg3)', 'start'));
+    var GXc = 436, GYc = 758, CW9 = 100, CH9 = 120, CD9 = 64;
+    rcx = CW9/2; rcy = CH9/2; rcz = CD9/2;         /* 容器绕自身中心跟着一起转 */
+    var rotDir = function(n){
+      if(!hasRot) return n;
+      var rx = n[0]*cryw + n[2]*sryw, rz2 = n[2]*cryw - n[0]*sryw;
+      var ry = n[1]*crpch - rz2*srpch; rz2 = n[1]*srpch + rz2*crpch;
+      return [rx, ry, rz2];
+    };
+    var fill6 = function(x,y,z,w,h,d,fill,o){
+      o = o || {};
+      var V9 = [[x,y,z],[x+w,y,z],[x+w,y,z+d],[x,y,z+d],[x,y+h,z],[x+w,y+h,z],[x+w,y+h,z+d],[x,y+h,z+d]];
+      var P8 = V9.map(function(v){ return proj(v[0],v[1],v[2],1); });
+      var FF = [{i:[4,5,6,7],n:[0,1,0]},{i:[0,3,2,1],n:[0,-1,0]},{i:[0,1,5,4],n:[0,0,-1]},
+                {i:[3,7,6,2],n:[0,0,1]},{i:[0,4,7,3],n:[-1,0,0]},{i:[1,2,6,5],n:[1,0,0]}];
+      var st9 = 'stroke:'+(o.stroke||'var(--pt-bg)')+';stroke-width:'+(o.sw!==undefined?o.sw:.4)+(o.dash?';stroke-dasharray:'+o.dash:'');
+      var op9 = o.opacity!==undefined ? ';fill-opacity:'+o.opacity : '';
+      var out9 = '';
+      FF.forEach(function(f){
+        var n = rotDir(f.n);
+        if(n[0]+n[1]+n[2] <= 0.02) return;         /* 背面：机位在 +(1,1,1) */
+        var sh = n[0]*.26 + n[1]*.83 + n[2]*.47;
+        var c9 = sh > .66 ? 'color-mix(in srgb,'+fill+' 88%, #fff 12%)'
+               : sh > .36 ? 'color-mix(in srgb,'+fill+' 82%, #000 18%)'
+               :            'color-mix(in srgb,'+fill+' 68%, #000 32%)';
+        out9 += '<polygon points="'+ptsStr([P8[f.i[0]],P8[f.i[1]],P8[f.i[2]],P8[f.i[3]]])+'" style="fill:'+c9+op9+';'+st9+'"/>';
+      });
+      return out9;
+    };
     var segs = memParts(D, co.p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
-    var cap = D.hbm*Math.pow(2,30), sc = CBW/Math.max(cap, tot), ax2 = CBX;
-    parts.push('<rect x="'+CBX+'" y="'+(CBY+8)+'" width="'+(cap*sc).toFixed(1)+'" height="22" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.2;stroke-dasharray:3 3"/>');
+    var cap = D.hbm*Math.pow(2,30), sc9 = 1/Math.max(cap, tot);
+    var TONE9 = {
+      w:  {f:'color-mix(in srgb, var(--pt-fg) 60%, var(--pt-bg))', why:'①腔 · 参数 × 2 B'},
+      g:  {f:'color-mix(in srgb, var(--pt-fg) 40%, var(--pt-bg))', why:'①腔 · 同参数 × 2 B'},
+      opt:{f:'color-mix(in srgb, var(--pt-fg) 23%, var(--pt-bg))', why:'①腔 · 同参数 × 12 B'},
+      act:{f:'var(--pt-dp)', o:.5, dash:'4 3', stroke:'var(--pt-dp)', why:'②腔 · 每步换一批'},
+      rsv:{f:'color-mix(in srgb, var(--pt-fg) 10%, var(--pt-bg))', why:'allocator/workspace'}
+    };
+    var acc9 = 0, bandY9 = {}, labs9 = [], gc9 = '';
     segs.forEach(function(sg){
-      var w4 = sg.bytes*sc;
-      parts.push('<rect x="'+ax2.toFixed(1)+'" y="'+(CBY+8)+'" width="'+Math.max(.5,w4).toFixed(1)+'" height="22" style="fill:'+sg.color+';fill-opacity:.55;stroke:var(--pt-bg);stroke-width:.6"/>');
-      if(w4 > 56) parts.push(txt(ax2+w4/2, CBY+22, esc(sg.label), 6.8, 'var(--pt-fg)', 'middle'));
-      ax2 += w4;
+      var f0 = acc9*sc9; acc9 += sg.bytes;
+      var f1 = acc9*sc9;
+      if(f1-f0 < 0.003) return;
+      var t9 = TONE9[sg.k];
+      bandY9[sg.k] = {y0:CH9*f0, y1:CH9*f1};
+      gc9 += fill6(0, CH9*f0, 0, CW9, CH9*(f1-f0), CD9, t9.f, {opacity:t9.o, stroke:t9.stroke, sw:t9.stroke?.8:.4, dash:t9.dash});
+      var a9 = proj(CW9, CH9*(f0+f1)/2, CD9/2, 1);
+      labs9.push({k:sg.k, label:sg.label, gb:fmtGB(sg.bytes), why:t9.why, t:t9,
+                  ax:GXc+a9[0], ay:GYc+a9[1]});
     });
-    parts.push(txt(CBX+CBW+10, CBY+24, fmtGB(tot)+' / '+D.hbm+' GB', 9.5, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
+    /* 权重带内部 = 那排算子片折进容器：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色）。
+       梯度 / 优化器态同一分法，只画对齐的竖缝——缝对上了，「×1 / ×6」不用一个字。 */
+    var ops9 = opBytes(D).filter(function(o9){ return o9.b > 0; })
+                 .map(function(o9){ return {id:o9.id, cut:o9.cut, b:o9.b*lps}; });
+    if(co.p===0) ops9.push({id:'embed', cut:'tp', b:2*Math.ceil(D.vocab/D.tp)*D.hidden});
+    if(co.p===D.pp-1) ops9.push({id:'lm_head', cut:'tp', b:2*D.hidden*Math.ceil(D.vocab/D.tp)});
+    var wSum9 = ops9.reduce(function(a,x){ return a+x.b; },0), axc = 0, opSegs9 = [];
+    ops9.forEach(function(o9){ var w9 = CW9*o9.b/wSum9; opSegs9.push({id:o9.id, cut:o9.cut, b:o9.b, x0:axc, x1:axc+w9}); axc += w9; });
+    if(bandY9.w) opSegs9.forEach(function(sg9){
+      if(sg9.x1-sg9.x0 < .5) return;
+      var col9 = sg9.cut==='tp' ? VC.tp : sg9.cut==='ep' ? VC.ep : null;
+      if(col9) gc9 += fill6(sg9.x0, bandY9.w.y0, 0, sg9.x1-sg9.x0, bandY9.w.y1-bandY9.w.y0, CD9, col9,
+                            {opacity:.52, stroke:'var(--pt-bg)', sw:.35});
+    });
+    ['g','opt'].forEach(function(bk){
+      var B9 = bandY9[bk]; if(!B9) return;
+      opSegs9.forEach(function(sg9){
+        if(sg9.x0 < .5 || sg9.x1-sg9.x0 < 2) return;
+        gc9 += ln(proj(sg9.x0, B9.y0, CD9, 1), proj(sg9.x0, B9.y1, CD9, 1), 'stroke:var(--pt-bg);stroke-width:.5;stroke-opacity:.8');
+      });
+    });
+    if(bandY9.act){
+      var nIf9 = Math.max(1, Math.min(D.pp, D.ga) - co.p);
+      for(var mi9=1; mi9<nIf9; mi9++){
+        var mx9 = CW9*mi9/nIf9;
+        gc9 += ln(proj(mx9, bandY9.act.y0, CD9, 1), proj(mx9, bandY9.act.y1, CD9, 1), 'stroke:var(--pt-bg);stroke-width:.6;stroke-dasharray:2 2');
+      }
+    }
+    /* 水位线 + 余量，再压容器线框（容器装着内容，棱不能被层剖断） */
+    var fT9 = tot*sc9;
+    if(fT9 < 0.985){
+      gc9 += ln(proj(0, CH9*fT9, 0, 1), proj(CW9, CH9*fT9, 0, 1), 'stroke:var(--pt-fg3);stroke-width:.7;stroke-dasharray:4 3');
+      var fr9 = proj(CW9/2, CH9*(fT9+1)/2, 0, 1);
+      gc9 += txt(fr9[0], fr9[1], '余量 '+fmtGB(cap-tot)+' GB', 8, 'var(--pt-fg3)', 'middle', 'font-weight="700"');
+    }
+    gc9 += boxSVG(0, 0, 0, CW9, CH9, CD9, 1, {wire:true, stroke:'var(--pt-fg2)', sw:1.1});
+    parts.push('<g transform="translate('+GXc+','+GYc+')">'+gc9+'</g>');
+    /* 抬头（左列 A3 框下面的空当）与右侧分层标注 */
+    parts.push(txt(RX, 636, '容器（L3）· 卡 = 显存 '+D.hbm+' GB', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(RX, 648, '两个腔加起来，才是这张卡装的东西', 7.2, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(RX, 659, '另一只容器是流（容量=时间）：装满只变慢', 6.8, 'var(--pt-fg3)', 'start'));
+    labs9.sort(function(a,b){ return b.ay - a.ay; });
+    var LX9 = 584, LY9 = 792, LST9 = 27;
+    labs9.forEach(function(L9, i9){
+      var y9 = LY9 - i9*LST9;
+      var col9 = L9.k==='act' ? VC.dp : (L9.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
+      parts.push(ln([L9.ax+5, L9.ay], [LX9-8, y9-3], 'stroke:var(--pt-bds);stroke-width:.7'));
+      parts.push('<rect x="'+(LX9-2)+'" y="'+(y9-14)+'" width="8" height="8" style="fill:'+L9.t.f
+        +(L9.t.o?';fill-opacity:'+L9.t.o:'')+';stroke:var(--pt-bds);stroke-width:.5"/>');
+      parts.push(txt(LX9+10, y9-7, esc(L9.label), 8.6, col9, 'start', 'font-weight="800"'));
+      parts.push(txt(LX9+156, y9-7, L9.gb+' GB', 8.6, col9, 'end', 'font-weight="800"'));
+      parts.push(txt(LX9+164, y9-7, esc(L9.why), 6.8, 'var(--pt-fg3)', 'start'));
+    });
+    parts.push(ln([LX9-2, LY9+10], [LX9+300, LY9+10], 'stroke:var(--pt-bds);stroke-width:.8'));
+    parts.push(txt(LX9+10, LY9+22, '合计 '+fmtGB(tot)+' / '+D.hbm+' GB', 9.2, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
+    var big9 = opSegs9.slice().sort(function(a,b){ return b.b-a.b; }).slice(0,3)
+      .map(function(o9){ return o9.id+' '+fmtGB(o9.b); }).join(' · ');
+    parts.push(txt(LX9+118, LY9+22, '　权重带内部（切法看颜色）：'+esc(big9)+' GB…（放大版另有一页）', 6.8, 'var(--pt-fg3)', 'start'));
+    /* 引线：两只腔 → 容器（①→灰段 · ②→蓝段），成分的来路可视 */
+    var wMid9 = labs9.filter(function(L9){ return L9.k==='g'; })[0];
+    var aMid9 = labs9.filter(function(L9){ return L9.k==='act'; })[0];
+    if(wMid9) parts.push(ln([TX1+b1.cc[0], TY+b1.cc[1]+8], [wMid9.ax-CW9, wMid9.ay], 'stroke:var(--pt-fg3);stroke-width:.7;stroke-dasharray:4 3;stroke-opacity:.5'));
+    if(aMid9 && SEC) parts.push(ln([TX2+b2.cc[0], TY+b2.cc[1]+8], [aMid9.ax-10, aMid9.ay-14], 'stroke:'+VC.dp+';stroke-width:.7;stroke-dasharray:4 3;stroke-opacity:.45'));
   }
   parts.push(txt(RX, H-28, '尺寸纪律：真切=面积守恒（份合起来=父块） · 复印=等大成叠（②真切 / ①复印，同一把 DP 刀两种作用） · 放大=尺寸不守恒（⊕，本图不放大）', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
   parts.push(txt(RX, H-14, '点任意轴尺的一格换卡：换 ℓ / h / e 三根轴，①的腔会移动；换 b（DP）只在②里移动，①纹丝不动 —— 这就是六把刀落到两个对象上的全部差别。', 8, 'var(--pt-fg2)', 'start'));
