@@ -652,7 +652,7 @@ var ui = {
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
-  commOn:false, legendOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
+  commOn:false, legendOn:false, dispOpen:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
@@ -5743,6 +5743,13 @@ document.addEventListener('click', function(ev){
   if(ev.target.closest && ev.target.closest('.pt-mv')) return;
   ui.mvOpen = false; render();
 }, true);
+/* 图例/通信下拉：同一套「点外面收起」，用自己的 class 隔开，别被上面那个
+   数据下拉的外点判定误关（两颗下拉可能同时开着）。 */
+document.addEventListener('click', function(ev){
+  if(!ui.dispOpen) return;
+  if(ev.target.closest && ev.target.closest('.pt-disp')) return;
+  ui.dispOpen = false; render();
+}, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
   if(!ui.chips.length){ el.hidden = true; el.innerHTML = ''; return; }
@@ -5946,13 +5953,20 @@ function renderChainBar(D){
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
   /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
      不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
-  /* 图例：这一屏上每种形状都在说一件具体的事（斜纹≠装饰、横切≠竖切、
-     胶囊≠几何体），不给一张对照表就只能靠猜。默认收着，点开才占地方。 */
-  var legBtn = '<button class="pb'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle"'
-    + ' title="图例：画面上每种形状代表什么">图例</button>';
-  var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
-    + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
-    + '通信</button>';
+  /* 图例 + 通信：两颗独立胶囊并排常年占位，而且都是「画面上叠不叠这层注解」的
+     同一件事——收进一颗图标按钮里，点开才是一列勾选（仿「数据」那颗下拉的
+     交互），默认收着不占地方。⚙ 只是个通用「显示设置」符号，不代表切分。 */
+  var dispN = (ui.legendOn?1:0) + (ui.commOn?1:0);
+  var dispBtn = '<span class="pt-mv pt-disp">'
+    + '<button class="pb'+(dispN?' is-on':'')+'" data-act="dispmenu" title="显示设置：图例 / 通信">'
+    + '⚙<b>'+(dispN||'')+'</b><i>⌄</i></button>'
+    + (ui.dispOpen ? '<div class="pt-mvmenu">'
+        + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么">'
+          + '<s>✓</s>图例</button>'
+        + '<button class="mvi'+(ui.commOn?' is-on':'')+'" data-act="commtoggle" title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
+          + '<s>✓</s>通信</button>'
+        + '</div>' : '')
+    + '</span>';
   /* 数据标注多选：图上那些读数（σ/Amax、∇、ms、tok、W→W'）分五类，逐类开关。
      它们是**同一份快照的不同侧面**，所以是一颗按钮里的多选，不是五颗独立开关。 */
   var mvN = MVIEWS.filter(function(m){ return ui.mv[m[0]]; }).length;
@@ -6040,7 +6054,7 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + vBtns + legBtn + commBtn + mvBtn;
+  $('stagebar').innerHTML = cBtn + kBtns + vBtns + dispBtn + mvBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -7030,15 +7044,19 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
-  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; render(); }
+  /* 挑完就收起小菜单：挑的结果本身就是「大图层开/关了」这个显而易见的反馈
+     （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
+     大面板抢同一片屏幕，留着没有意义。 */
+  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; ui.dispOpen = false; render(); }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
-  else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; render(); }
+  else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='opdetail'){
     ui.opSel = {nid:b.getAttribute('data-nid'), li:+b.getAttribute('data-li'), key:b.getAttribute('data-key')||''};
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
+  else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
   else if(act==='mvpick'){ var mk9 = b.getAttribute('data-k'); ui.mv[mk9] = !ui.mv[mk9]; render(); }
   else if(act==='mvall'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = true; }); render(); }
   else if(act==='mvnone'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = false; }); render(); }
