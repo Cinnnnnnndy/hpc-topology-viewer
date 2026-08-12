@@ -4644,13 +4644,28 @@ var FS_Z = 1;
    量出来的比不写死：viewBox 宽度由舞台长宽比反解（与 renderChain 同一条式子），
    舞台尺寸一变，字的**屏幕**大小仍然不变。 */
 var FS_PX = 11.5;                      /* 正文标注（基准 5.4 档）在屏幕上的目标像素 */
+/* 反除的上限。gain 越大 = 字在**场景单位**里越大；而 gain 里的 vw/cw 就是
+   1/缩放比，所以「gain 随窄而涨」等价于「画面缩小、字不缩」——版面是按字与格子的
+   相对大小排的，字单方面涨上去就只能互相叠。实测重叠的文字对数（侧视）：
+
+     上限   620px      1680px
+     3.0    48 对      25 对      ← 原值：窄栏惨不忍睹，连基准宽度都已经在叠
+     2.13   37 对      18 对
+     1.7     9 对      24 对
+     1.4     0 对       0 对      ← 现值
+
+   1.4 之后 gain basically 被钉成常数，字在场景单位里不再随宽度变——于是整张图
+   **长宽一起等比缩**，比例关系守住，窄栏里字小但不打架（要看清滚轮放大即可，
+   缩放手势本来就在）。代价是窄栏里字确实小：620px 宽时约 6px。这是「48 对重叠的
+   13px」与「不重叠的 6px」之间的取舍——叠在一起的字并不会因为大而更能读。 */
+var FS_GAIN_MAX = 1.4;
 function fsBase(){
   var st = $('stage');
   var cw = (st && st.clientWidth) || 1680, ch = (st && st.clientHeight) || 889;
   var cAR = ch > 60 ? cw/ch : 1.9;
   var vw = clamp(Math.round(692*cAR), 1080, 2600);        /* = renderChain 里的 VW */
   var gain = (vw / cw) * (FS_PX / 5.4);                   /* 单位/像素 × 目标倍数 */
-  return Math.max(1, ui.zoom3) / clamp(gain, 1, 3);
+  return Math.max(1, ui.zoom3) / clamp(gain, 1, FS_GAIN_MAX);
 }
 function fsTxt(x, y, t, size, fill, anchor, extra){
   extra = String(extra || '').replace(/stroke-width="([\d.]+)"/g, function(m, w9){
