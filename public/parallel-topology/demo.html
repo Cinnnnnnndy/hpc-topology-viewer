@@ -733,8 +733,24 @@ var ui = {
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
   netOff:true,      /* 关掉整网：卡里不再画算子，只剩 world 只方块 */
   memFill:true,     /* 载荷：卡壳里按字节比例装显存成分（关掉就退回素壳，只看阵列本身） */
-  layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0
+  layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0,
+  /* ── 联动高亮 ≠ 主动筛选 ──────────────────────────────────────────────
+     筛选是读者**在这一屏自己下的条件**：搜索落的那枚「层 L24 ×」标签。它带 ×、
+     进 URL、跨视图一直在——因为它是一句还没撤销的问话。
+     高亮是**别处点了什么、这一屏跟着照亮的那一片**：宿主把另一格的选择转过来，
+     或者这一屏自己点开了一个算子。它是过路的，读者并没有在这儿下条件——所以
+     它不落标签、不浮「这张卡装了什么」的读出卡，点一下画布空白就散。
+     两者最后都落到同一套渲染状态（revLayer / sel）上，来路记在这两个开关里。 */
+  hlLayer:false,    /* 当前 revLayer 是过路的高亮，不是标签 */
+  hlSel:false       /* 当前 sel 是过路的高亮，不是这一屏选中的那张卡 */
 };
+/* 散掉过路的高亮（点画布空白、或换了别的问法时调用）。返回是否真的散掉了东西。 */
+function clearHL(){
+  var had = false;
+  if(ui.hlLayer){ ui.revLayer = ''; ui.hlLayer = false; had = true; }
+  if(ui.hlSel){ sel = null; ui.hlSel = false; had = true; }
+  return had;
+}
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
@@ -5984,20 +6000,28 @@ function lgGlyph(inner, w, h){
 }
 function lgRow(g, t){ return '<div class="lg-row">'+g+'<div>'+t+'</div></div>'; }
 /* 这一屏此刻是不是正在反查某一层 */
+/* 这一屏此刻有没有一层在被反查。认的是 revLayer 本身而不是标签——因为它还可能
+   是宿主转过来的过路高亮（ui.hlLayer），那种没有标签但一样要照亮。 */
 function revLiOn(D){
-  var c = ui.chips.filter(function(x){ return x.k==='layer'; })[0];
-  if(!c) return false;
-  return chipState(c, D).kind === 'layer';
+  var li = parseInt(ui.revLayer, 10);
+  return isFinite(li) && li >= 0 && li < D.layers;
 }
 /* 标签生效：把每一枚落进真正的状态（层反查 / 选中卡 / 高亮维）。
    标签可以并存，所以这里是逐枚施加，不是二选一。 */
 function applyQuery(D){
+  /* 标签是这一屏自己下的条件，它压过过路的高亮：哪一路给了值，另一路就让开。
+     标签没管的那一路，过路的高亮照旧留着（两者可以各管各的一条）。 */
+  var keepHL = ui.hlLayer ? ui.revLayer : '';
   ui.revLayer = '';
+  var gotLayer = false, gotRank = false;
   ui.chips.forEach(function(c){
     var st = chipState(c, D);
-    if(st.kind === 'layer') ui.revLayer = String(st.li);
-    else if(st.kind === 'rank') sel = st.g;
+    if(st.kind === 'layer'){ ui.revLayer = String(st.li); gotLayer = true; }
+    else if(st.kind === 'rank'){ sel = st.g; gotRank = true; }
   });
+  if(gotLayer) ui.hlLayer = false;
+  else if(keepHL !== '') ui.revLayer = keepHL;
+  if(gotRank) ui.hlSel = false;
 }
 /* ══ 属性搜索 ══════════════════════════════════════════════════════════ */
 /* ══ 属性搜索：先选属性 → 再填值 → 落成一枚标签 ══════════════════════════ */
@@ -6943,6 +6967,8 @@ function renderV3(D){
 function renderDetail(D){
   var el = $('detail');
   if(!D.ok){ el.hidden = true; return; }
+  /* 同 renderRankMem：高亮是过路的，不配一张写死某一个 rank 的读出卡 */
+  if(ui.hlSel){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
     if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'||ui.view==='story'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
@@ -7165,7 +7191,10 @@ function renderStageTitle(){
 function renderRankMem(D){
   var el = $('rankMem');
   if(!el) return;
-  var on = ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && D.ok && sel < D.world;
+  /* 过路的高亮不浮读出卡：那时亮着的常常是一整片卡（比如「这一层住在哪 32 张卡上」），
+     再浮一张「rank 0 装了什么」，读者会把那一张的读数当成整片的读数。
+     读出卡只跟**这一屏自己选中的那张卡**走。 */
+  var on = ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel < D.world;
   if(!on){ el.hidden = true; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
@@ -7335,7 +7364,12 @@ function endDrag3(ev){
   }
 }
 $('stage').addEventListener('click', function(ev){
-  if(swallowClick){ swallowClick = false; ev.stopPropagation(); ev.preventDefault(); }
+  if(swallowClick){ swallowClick = false; ev.stopPropagation(); ev.preventDefault(); return; }
+  /* 点画布空白 = 散掉过路的高亮。空白是「我不看这个了」最自然的说法，而高亮本来
+     就没有 × 可摘（有 × 的是标签，那是读者自己下的条件，点空白不该动它）。
+     点在任何控件/卡壳/算子上都不算空白——那些是「换一个看」，不是「不看了」。 */
+  if(ev.target.closest && (ev.target.closest('[data-act]') || ev.target.closest('.cardg') || ev.target.closest('.opblk'))) return;
+  if(clearHL()) render();
 }, true);
 $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
@@ -7690,8 +7724,21 @@ window.addEventListener('message', function(ev){
       var p2 = PRESETS.filter(function(x){ return x.id===d.preset; })[0];
       if(p2){ cfg = JSON.parse(JSON.stringify(p2.cfg)); activePreset = p2.id; }
     }
-    if(typeof d.sel === 'number' && d.sel >= 0) sel = d.sel;
-    if(d.sel === null) sel = null;
+    /* sel = 「宿主替这一屏选了一张卡」，是**选中**，读出卡照浮。
+       hl  = 「另一格点了什么，这一屏跟着照亮」，是**过路的高亮**：不落标签、
+             不浮读出卡、点画布空白就散（见 ui.hlLayer / ui.hlSel 那段说明）。
+       台面两格之间走的一律是 hl —— 一格里的点击不该在另一格留下一句没人下过的条件。 */
+    if(typeof d.sel === 'number' && d.sel >= 0){ sel = d.sel; ui.hlSel = false; }
+    if(d.sel === null){ sel = null; ui.hlSel = false; }
+    if(d.hl !== undefined){
+      if(d.hl === null) clearHL();
+      else{
+        if(typeof d.hl.layer === 'number'){ ui.revLayer = String(d.hl.layer); ui.hlLayer = true; }
+        else if(d.hl.layer === null && ui.hlLayer){ ui.revLayer = ''; ui.hlLayer = false; }
+        if(typeof d.hl.rank === 'number'){ sel = d.hl.rank; ui.hlSel = true; }
+        else if(d.hl.rank === null && ui.hlSel){ sel = null; ui.hlSel = false; }
+      }
+    }
     if(d.l5 === true || d.l5 === false) (ui.layersUser[ui.view] = ui.layersUser[ui.view]||{}).L5 = d.l5;
     if(d.theme==='dark'||d.theme==='light') document.documentElement.setAttribute('data-theme', d.theme);
     render();

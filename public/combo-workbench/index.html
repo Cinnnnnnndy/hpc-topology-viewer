@@ -431,7 +431,7 @@ var SLOTS = [
              '[data-act="viewtab"][data-tab="top"]{display:none!important}' +
              /* 选组 HUD（TP·SP / EP / PP 看哪一组）一度也藏了，理由是「两份摆在同一屏
                 各调各的，图上会出现两个当前组」。现在两格的 rank 是**双向**互转的
-                （见下面 relaySel），两份 HUD 读的是同一个选择，不会各走各的——而
+                （见下面 pushHL），两份 HUD 读的是同一个选择，不会各走各的——而
                 「这张整网被切成这么多份，我要看哪一份」正是这一格自己的问题，
                 连问都不让问就不成其为一格独立的整网了。所以放出来。
                 默认态它一格都不点亮（pattern 那边 cur=-1）：切分在，但没替读者选。 */
@@ -827,40 +827,28 @@ function paneDoc(id) {
   try { return frame.contentDocument || null; } catch (err) { return null; }   // 跨源
 }
 
-/* 在某一格上落一枚 `层 · Ln` 标签（n 为 null 则摘掉那一枚，不动用户手填的别的标签）。
-   分几步是因为面板是点开一层才渲染下一层的，每一步都要重新查节点。 */
-function setPaneLayer(id, n) {
-  var doc = paneDoc(id);
-  if (!doc) return;
-  var now = paneLayerChip(doc);
-  if (n === null || n === undefined) {
-    /* 只摘「层」那一枚。「×· 清空全部条件」会把用户自己手填的别的标签一起扫掉，
-       那是他的东西，不该被另一格一次取消选中连累。 */
-    if (now) click(now.del);
-    return;
-  }
-  if (now && now.v === n) return;                    // 已经是这一层，别白重画一遍
+/* 往某一格推一份**过路的高亮**（层 / 卡）。n 为 null 就把它散掉。
+   走 pattern 的 `pto:state` 里那条 `hl` —— 它不落标签、不浮读出卡、读者点一下
+   那格的画布空白就散。
 
-  if (!click(doc.querySelector('[data-act="qopen"]'))) return;
-  setTimeout(function () {
-    if (!click(doc.querySelector('[data-act="qprop"][data-k="layer"]'))) return;
-    setTimeout(function () {
-      var inp = doc.getElementById('qVal');
-      if (!inp || inp.dataset.k !== 'layer') return;
-      inp.value = String(n);
-      /* 它的 Enter 处理器挂在 document 上，读的是 target.value —— 直接填值再
-         派发一个冒泡的 keydown 就够，不必去模拟逐个按键。 */
-      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    }, 40);
-  }, 40);
+   先前这里是「替对面落一枚 `层 · Ln` 标签」（模拟点它自己的搜索控件）。那条路
+   语义是错的：**标签是读者在那一屏自己下的条件**（带 ×、进 URL、一直在），
+   而这只是「另一格点了什么」的回声——读者从没在那一屏下过这句话，凭什么留一枚
+   带 × 的标签在那儿等他去摘。两件事混成一件之后，画面上就分不出「我筛的」和
+   「它照过来的」，也没有一个自然的收手动作。现在分开：筛选归标签，高亮归 hl。 */
+function pushHL(id, kind, n) {
+  var f = $('iframe[data-slot="' + id + '"]');
+  if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+  var hl = {};
+  hl[kind] = (n === null || n === undefined) ? null : n;
+  f.contentWindow.postMessage({ type: 'pto:state', hl: hl }, '*');
 }
 
-/* 整网图那格点了一个**算子** → 主视图高亮持有它的那些卡。
-   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键：把它落成
-   主视图的 `层 · Ln` 标签，pattern 自己会算出「共几张卡与这一层有关」并点亮。
+/* 整网图那格点了一个**算子** → 主视图照亮持有它的那些卡。
+   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键：把它当成
+   一份层高亮推给主视图，pattern 自己会算出「共几张卡与这一层有关」并点亮。
    为什么不另造一套「算子 → rank」的算法：那等于在台面上重写一遍它的坐标算术，
-   而层号这条路它本来就懂。算子的**切法**（TP/SP/EP 各切哪根轴）也不必我们转——
-   两格同源，右边点开的明细卡里本来就写着。
+   而层号这条路它本来就懂。
 
    只旁听、不拦截（捕获期只读，点击照样交给它自己的处理器去开明细卡）。
    挂在 document 上而不是每个命中区上：它每改一次状态就重画一遍画布，
@@ -876,33 +864,29 @@ function wireOpToRank(frame) {
       if (!hit) return;
       var li = parseInt(hit.getAttribute('data-li'), 10);
       if (!isFinite(li)) return;
-      setPaneLayer('topology', li);
+      pushHL('topology', 'layer', li);
     }, true);
   } catch (err) { /* 跨源 */ }
 }
 
-/* 轮询而不是监听点击：两边改选中的路子都不止一条（点画布上的逐层命中区、
-   手填搜索框、点「×」摘标签、点算子），盯住**结果**比盯住每一条入口可靠——之前按
-   入口写测试就吃过亏：合成点击打在根本不在视口内的那批命中区上，测过了，
-   真用鼠标点却什么也不发生。
+/* 轮询而不是监听点击：一格里改「看哪一层」的路子不止一条（点侧视的逐层命中区、
+   手填搜索框、点「×」摘标签、正视那组换层步进），盯住**结果**比盯住每一条入口
+   可靠——之前按入口写测试就吃过亏：合成点击打在根本不在视口内的那批命中区上，
+   测过了，真用鼠标点却什么也不发生。
 
-   双向意味着两边都可能是发起者。判「谁变了」一律拿**这一轮读到的值**跟上一轮
-   读到的比（seenLeft/seenRight 记的是读数，不是我们推了什么）——先前记「我推了
-   什么」的写法有个回声竞态：推过去之后对面要过几十毫秒才真的更新，下一轮读到
-   的还是旧值，会被当成「对面主动变了」再推回来，一来一回把刚选好的层关掉
-   （实测 3 次里 2 次）。推完两边的读数都会收敛到同一个值，边沿自然消失。
-   同一轮只处理一侧，理由同上：这一轮刚推出去，对面还没追上，不该马上回读。 */
-var seenLeft = undefined, seenRight = undefined;
+   读的是那一格**自己的标签**（paneLayerChip），推出去的是**高亮**（pushHL）。
+   两者不同源，所以不会回声：高亮不产生标签，下一轮读到的还是读者自己那枚，
+   边沿不会被自己的推送重新触发。先前两边都落标签才需要那套「谁先变」的仲裁。 */
+var seenLayer = { netgraph: undefined, topology: undefined };
 function wireLinkage() {
   setInterval(function () {
-    var lDoc = paneDoc('netgraph'), rDoc = paneDoc('topology');
-    if (!lDoc || !rDoc) return;                        // 有一边还没装配好
-
-    var lc = paneLayerChip(lDoc), rc = paneLayerChip(rDoc);
-    var left = lc ? lc.v : null, right = rc ? rc.v : null;
-
-    if (left !== seenLeft) { seenLeft = left; seenRight = left; setPaneLayer('topology', left); return; }
-    if (right !== seenRight) { seenRight = right; seenLeft = right; setPaneLayer('netgraph', right); }
+    ['netgraph', 'topology'].forEach(function (id) {
+      var doc = paneDoc(id); if (!doc) return;
+      var c = paneLayerChip(doc), v = c ? c.v : null;
+      if (v === seenLayer[id]) return;
+      seenLayer[id] = v;
+      pushHL(id === 'netgraph' ? 'topology' : 'netgraph', 'layer', v);
+    });
   }, 300);
 }
 
@@ -992,15 +976,6 @@ function wireSplitters() {
   });
 }
 
-/* 最近一次推给某一格的 rank。两格互转 sel 时用它认回声（见下面那段守卫）。 */
-var pushedSel = { topology: null, netgraph: null };
-function relaySel(id, v) {
-  var f = $('iframe[data-slot="' + id + '"]');
-  if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
-  pushedSel[id] = v;
-  f.contentWindow.postMessage({ type: 'pto:state', sel: v }, '*');
-}
-
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
@@ -1014,23 +989,25 @@ window.addEventListener('message', function (ev) {
       syncTabs(c.id);
       writeURL();
     }
-    /* rank 在两格之间**双向**走。
-       主视图 → 整网图：点中一张卡，把同一个 rank 转过去。整网图那边不进卡维度
-       （rank=0），`sel` 在那儿的作用是「本卡」：只把这张卡那一段 PP 的层画成实的、
-       其余当背景。于是右边亮起来的正好是「这张卡装的那十几层」。
-       整网图 → 主视图：在整网里挑中一份切分（图内那些 TP/EP/PP 轨与门牌走的都是
-       chainpick，落点同样是一个 rank），把它转回来，主视图就高亮持有那一份的卡。
+    /* 一格里选中了一张卡 / 挑中了一份切分 → 另一格**照亮**对应的那一片。
+       主视图 → 整网图：那边不进卡维度（rank=0），一个 rank 的意思是「本卡」，
+       于是照亮的正好是「这张卡装的那十几层」。
+       整网图 → 主视图：图内那些 TP/EP/PP 轨、门牌、选组 HUD 走的都是 chainpick，
+       落点同样是一个 rank，转回来主视图就照亮持有那一份的卡。
 
-       为什么不自己算层区间再落标签：层标签一次只表达一层，而一张卡装的是一整段；
-       `sel` 是 pattern 自己就懂的话，段的边界由它按 layersPerStage 自己算，
-       台面不必复制一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。 */
-    if (typeof d.sel === 'number' && d.sel >= 0) {
+       推的是 hl 不是 sel：另一格的点击在这一格是**过路的高亮**，不该在这儿变成
+       一次「选中」——选中会浮出「rank N 装了什么」那张读出卡，而此刻亮着的常常是
+       一整片卡，一张写死某个 rank 的读数摆在那儿只会误导。高亮点画布空白就散。
+       hl 不会让对面回报 pto:select，所以两格之间不存在回声，不需要仲裁。
+
+       为什么不自己算层区间：层一次只表达一层，而一张卡装的是一整段；rank 是
+       pattern 自己就懂的话，段的边界由它按 layersPerStage 自己算，台面不必复制
+       一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。
+       只认 pto:select（读者在那一格真的点了什么），不认 pto:state-ack —— 后者是
+       我们自己推过去之后的回执，拿它当输入就是自己跟自己转。 */
+    if (d.type === 'pto:select' && typeof d.sel === 'number' && d.sel >= 0) {
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
-      /* 回声守卫：收到的正好是我们上一拍推给这一格的值——它只是在复述，不是用户
-         的新动作。直接互转的话 A→B→A 会一直弹下去（层联动那边踩过同一个坑）。
-         认掉一次就清空：等会儿用户真在这一格挑中同一个 rank 时还得转得出去。 */
-      if (peer && pushedSel[c.id] === d.sel) pushedSel[c.id] = null;
-      else if (peer) relaySel(peer, d.sel);
+      if (peer) pushHL(peer, 'rank', d.sel);
     }
   });
 });
