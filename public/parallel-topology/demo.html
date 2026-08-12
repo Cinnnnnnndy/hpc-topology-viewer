@@ -681,7 +681,7 @@ var sel = null;
 var ui = {
   view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
-  act:0, act2:false, persp:'map',
+  act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
@@ -780,7 +780,8 @@ function urlLoad(){
   var fc = parseInt(q.get('facet'),10); if(isFinite(fc)&&fc>=0) ui.cpFacet = fc;
   if(q.get('skew')==='0') ui.skew = false;
   var ac = parseInt(q.get('act'),10); if(isFinite(ac) && ac>=0) ui.act = ac;
-  if(q.get('act2')==='1') ui.act2 = true;
+  if(q.get('act2')==='0') ui.act2 = false;
+  else if(q.get('act2')==='1') ui.act2 = true;
   if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
@@ -828,6 +829,8 @@ function urlLoad(){
   var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
   var px3 = parseFloat(q.get('px')); if(isFinite(px3)) ui.panX3 = px3;
   var py3 = parseFloat(q.get('py')); if(isFinite(py3)) ui.panY3 = py3;
+  var cy2 = parseFloat(q.get('cyaw')); if(isFinite(cy2)) ui.cavYaw = cy2;
+  var cp2 = parseFloat(q.get('cpitch')); if(isFinite(cp2)) ui.cavPitch = clamp(cp2, -1.2, 1.2);
 }
 function urlWrite(){
   var q = new URLSearchParams();
@@ -861,8 +864,11 @@ function urlWrite(){
   if(ui.view==='chain' && (Math.abs(ui.panX3)>0.5 || Math.abs(ui.panY3)>0.5)){
     q.set('px', ui.panX3.toFixed(1)); q.set('py', ui.panY3.toFixed(1));
   }
-  if(ui.view==='solid' && ui.act2) q.set('act2','1');
+  if(ui.view==='solid' && !ui.act2) q.set('act2','0');
   if(ui.view==='solid' && ui.persp!=='map') q.set('p', ui.persp);
+  if(ui.view==='solid' && ui.persp==='cav' && (Math.abs(ui.cavYaw)>1e-3 || Math.abs(ui.cavPitch)>1e-3)){
+    q.set('cyaw', ui.cavYaw.toFixed(3)); q.set('cpitch', ui.cavPitch.toFixed(3));
+  }
   if(layerOn('L5') && (ui.view==='compose'||ui.view==='time')) q.set('l5','1');
   if(ui.commDim!=='tp') q.set('dim', ui.commDim);
   if(ui.commPrim!=='allreduce') q.set('prim', ui.commPrim);
@@ -4247,9 +4253,25 @@ function renderSolidCav(D){
   var H = 700, parts = [], hits = [];
   var L1 = layerOn('L1'), L2 = layerOn('L2'), L3 = layerOn('L3'), L4 = layerOn('L4');
   var hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0, lps = D.layersPerStage;
-  /* 激活体是**第二视角**：主角是权重体（六把刀里有四把落在它上面，A3 也在它上面）。
-     默认只画①，②收起来——顶栏一键展开。展开时①仍在左、②小一号在右，主次分明。 */
   var SEC = !!ui.act2;
+
+  /* ── 可转动投影：拖动时覆盖全局 proj，让 boxSVG / solidBox 自动拿到旋转后的坐标 ── */
+  var origProj = proj;
+  var cavYaw = ui.cavYaw||0, cavPitch = ui.cavPitch||0;
+  var hasRot = Math.abs(cavYaw) > 1e-6 || Math.abs(cavPitch) > 1e-6;
+  var rcx = 0, rcy = 0, rcz = 0;
+  if(hasRot){
+    var cryw = Math.cos(cavYaw), sryw = Math.sin(cavYaw);
+    var crpch = Math.cos(cavPitch), srpch = Math.sin(cavPitch);
+    proj = function(x,y,z,s){
+      var dx = x-rcx, dy = y-rcy, dz = z-rcz;
+      var rx = dx*cryw + dz*sryw;
+      var rz = dz*cryw - dx*sryw;
+      var ry = dy*crpch - rz*srpch;
+      var rz2 = dy*srpch + rz*crpch;
+      return origProj(rx+rcx, ry+rcy, rz2+rcz, s);
+    };
+  }
   var TY = 322, TX1 = SEC ? 372 : 500, TX2 = 700, BW = 142, BH = 132;
   var BD1 = D.moe ? 104 : 40, BD2 = 104;
   /* 读数放**左栏**：右上角是常驻的读出卡（.pt-detail，304px），右栏会被它盖住——
@@ -4347,6 +4369,7 @@ function renderSolidCav(D){
   parts.push(txt(600, 44, '每把刀是一整片板，切穿整只盒子；三片板相交剁出一个小长方体 —— 体积 ∶ 全盒 = 这张卡的持有占比', 9, 'var(--pt-fg2)'));
 
   /* ═══ 盒① 权重体：ℓ × h × e ═══ */
+  rcx = BW/2; rcy = BH/2; rcz = BD1/2;
   var b1 = solidBox({w:BW, h:BH, d:BD1, etp:D.etp, cavId:'w',
     ax:{n:D.tp, dim:'tp', i:co.t, name:'h 隐藏维', k:'t', lab:function(i){ return '片'+i; }},
     ay:{n:D.pp, dim:'pp', i:co.p, name:'ℓ 层号',  k:'p', lab:function(i){ return 'L'+(i*lps)+'–L'+((i+1)*lps-1); }},
@@ -4395,7 +4418,8 @@ function renderSolidCav(D){
     parts.push(txt(TX1+ec[0]+6, TY+ec[1]+11, '专家腔：h 由 ETP='+D.etp+' 切，比 TP 那一格宽', 7, VC.ep, 'start', 'font-weight="700"'));
   }
 
-  /* ═══ 盒② 激活体（第二视角，默认收起）：ℓ × s × b（h 是第 4 根轴，三维画不下，写在旁边） ═══ */
+  /* ═══ 盒② 激活体：ℓ × s × b（h 是第 4 根轴，三维画不下，写在旁边） ═══ */
+  rcx = BW*.86/2; rcy = BH*.86/2; rcz = BD2*.86/2;
   var b2 = SEC && solidBox({w:BW*.86, h:BH*.86, d:BD2*.86, cav:VC.dp, noY:true, cavId:'a',
     ax:{n:D.cp, dim:'cp', i:co.c, name:'s 序列位', k:D.cp>1?'c':'',
         lab:function(i){ return D.cp>1 ? '段'+i+'∪'+(2*D.cp-1-i) : '全部 s'; }},
@@ -4408,8 +4432,8 @@ function renderSolidCav(D){
     parts.push(txt(TX2-4, 105, '同一把 DP 刀在这里是轴：整盒被真切成 '+D.dp+' 份（面积守恒），不是复印', 8.2, VC.dp));
     parts.push(txt(TX2-4, 117, 'h 是它的第 4 根轴（TP 也切它）· ℓ 与①同一把 PP 刀，尺不重复画', 7.4, 'var(--pt-fg3)'));
   }else{
-    parts.push(txt(TX2+10, 300, '② 激活体是第二视角，默认收起', 9.6, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
-    parts.push(txt(TX2+10, 314, '顶栏「展开激活体」可以打开：它多出 b（DP 切）与 s（CP 切）两根轴', 7.6, 'var(--pt-fg3)'));
+    parts.push(txt(TX2+10, 300, '② 激活体（已收起）', 9.6, 'var(--pt-fg3)', 'middle', 'font-weight="700"'));
+    parts.push(txt(TX2+10, 314, '点顶栏按钮重新展开：它多出 b（DP 切）与 s（CP 切）两根轴', 7.6, 'var(--pt-fg3)'));
   }
 
   /* ═══ 两只盒子共用的刀：ℓ 的刀面是同一片，横穿两只盒子（连线取两盒同一层高的前棱） ═══ */
@@ -4523,7 +4547,9 @@ function renderSolidCav(D){
   parts.push(txt(RX, H-28, '尺寸纪律：真切=面积守恒（份合起来=父块） · 复印=等大成叠（②真切 / ①复印，同一把 DP 刀两种作用） · 放大=尺寸不守恒（⊕，本图不放大）', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
   parts.push(txt(RX, H-14, '点任意轴尺的一格换卡：换 ℓ / h / e 三根轴，①的腔会移动；换 b（DP）只在②里移动，①纹丝不动 —— 这就是六把刀落到两个对象上的全部差别。', 8, 'var(--pt-fg2)', 'start'));
 
-  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+  if(hasRot) proj = origProj;
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
@@ -4532,6 +4558,7 @@ function renderSolidCav(D){
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
     + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
     + (ui.act2?'收起激活体':'展开激活体（第二视角）')+'</button>'
+    + (hasRot ? '<button class="pb" data-act="cavReset">复位视角</button>' : '')
     + '<button class="pb" data-act="view" data-v="anatomy">腔里装了什么 ↗</button>';
   /* 一轴一刀的表已经画进 SVG 了（见 TBX/TBY）——.pt-note 浮层压在舞台左下角会盖住容器条，
      同一句话不放两遍，浮层这里就空着。 */
@@ -6888,19 +6915,14 @@ document.addEventListener('input', function(ev){
     urlWrite();
   }
 });
-/* ── 拖动转场景（只在刀序视图）──
+/* ── 拖动转场景（刀序视图 + 交集腔视图）──
    全量重绘挂在指针移动上会卡，所以用 rAF 合并：一帧最多重绘一次。
    拖动中不写 URL（不然 history 会被刷爆），松手才写一次。 */
 var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
-  if(ui.view !== 'chain') return;
-  /* 2D tab 下拖拽只平移：转台一动就离开了正交机位，正视立刻又变成斜的 3D。
-     要转就先回 3D tab。 */
-  /* 平移：中键、Ctrl（Mac 上 ⌘ 同样认）、Shift 都行；2D tab 下拖拽本来就只平移。
-     Ctrl 是这类画布的通用手势，不该只有 Shift 一条路。 */
-  var pan = ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d';
-  /* 中键不挡会触发浏览器的自动滚动模式（那个四向箭头图标），Mac 上 Ctrl+按下
-     等同右键、会弹出上下文菜单——两个都会把拖拽打断。 */
+  var isCav = ui.view === 'solid' && ui.persp === 'cav';
+  if(ui.view !== 'chain' && !isCav) return;
+  var pan = isCav ? false : (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d');
   if(ev.button === 1 || ev.ctrlKey) ev.preventDefault();
   var cs = 1;
   var svg = $('stage').querySelector('svg');
@@ -6908,9 +6930,11 @@ $('stage').addEventListener('pointerdown', function(ev){
     var ctm = svg.getScreenCTM();
     if(ctm) cs = 1/ctm.a;
   }
-  drag3 = {x:ev.clientX, y:ev.clientY, yaw:ui.yaw3, pitch:ui.pitch3,
+  drag3 = {x:ev.clientX, y:ev.clientY,
+            yaw: isCav ? (ui.cavYaw||0) : ui.yaw3,
+            pitch: isCav ? (ui.cavPitch||0) : ui.pitch3,
             panX:ui.panX3, panY:ui.panY3, pan:pan, cs:cs,
-            moved:false, raf:0, cap:false, id:ev.pointerId};
+            moved:false, raf:0, cap:false, id:ev.pointerId, cav:isCav};
 });
 $('stage').addEventListener('pointermove', function(ev){
   if(!drag3) return;
@@ -6919,22 +6943,24 @@ $('stage').addEventListener('pointermove', function(ev){
   if(drag3.moved && !drag3.cap){
     drag3.cap = true;
     try{ $('stage').setPointerCapture(drag3.id); }catch(e){}
-    $('stage').style.cursor = drag3.pan ? 'move' : 'grabbing';
+    $('stage').style.cursor = 'grabbing';
   }
   if(!drag3.moved) return;
+  if(drag3.cav){
+    ui.cavYaw = drag3.yaw - dx*0.008;
+    ui.cavPitch = clamp(drag3.pitch + dy*0.006, -1.2, 1.2);
+    if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
+      if(drag3) drag3.raf = 0;
+      var D9 = derive(cfg); if(D9.ok) renderSolidCav(D9);
+    });
+    return;
+  }
   if(drag3.pan){
-    /* 平移是纯仿射：只改 #vroot 的 transform，一个图元都不重建（这就是拖平移
-       从「拖不动」变跟手的全部原因）。松手/停手后 scheduleCrisp 再补一帧干净的。 */
     ui.panX3 = drag3.panX + dx*drag3.cs;
     ui.panY3 = drag3.panY + dy*drag3.cs;
     applyViewTransform();
     return;
   }
-  /* 转台跟手：**离你最近的那一面跟着手指走**。yaw 这里必须取负——turn3 里
-     yaw 转的是坐标架（+u 轴朝观者摆过来），从画面上看就是「抓住背面在推」，
-     与 pitch 那一轴（下拖 → 远侧抬高 → 更俯视，正是抓着前沿往下扳）相反。
-     一横一纵两套相反的直觉装在同一次拖拽里，就是那种「有时正有时反」的感觉。
-     转台没有仿射捷径（投影非线性），仍走 lowDetail + rAF 全量重建。 */
   ui.yaw3 = drag3.yaw - dx*0.008;
   ui.pitch3 = clamp(drag3.pitch + dy*0.006, -0.9, 1.57);
   lowDetail = true;
@@ -7169,6 +7195,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='storyact'){ ui.act = +b.getAttribute('data-i'); render(); }
   else if(act==='act2'){ ui.act2 = !ui.act2; render(); }
+  else if(act==='cavReset'){ ui.cavYaw = 0; ui.cavPitch = 0; render(); }
   else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
   else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
