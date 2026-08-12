@@ -137,21 +137,31 @@
   color:var(--pt-fg); text-align:center;
 }
 .pt-zoomhud .zsep{width:1px; height:16px; background:var(--pt-bd); margin:0 2px}
-.pt-zoomhud .zword{font-size:11px; min-width:auto; padding:0 9px}
+/* 居中/复位两枚改画图标。PTO 那套设计系统只给了图标**槽位**的约定（.btn-icon /
+   .cp-btn-icon：正方、padding 0、内容居中、图形吃 currentColor），没随包发图形资产，
+   所以图按同一套笔法自己画：16 视框、1.6 描边、圆头圆角，和启动页 .src 那些一个手感。
+   svg 不吃点击，省得 data-act 的事件委托要从 <path> 往上爬。 */
+.pt-zoomhud .zicon{
+  width:26px; min-width:26px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.pt-zoomhud .zicon svg{width:16px; height:16px; display:block; pointer-events:none}
 /* ── 选组 HUD：TP·SP / CP / EP / DP / PP 的「看哪一组」切换，样式与缩放 HUD 同族。
    这些切换在四个视角里是**同一个东西**，所以做成一条统一的悬浮配置栏钉在画布
    下沿居中，不随图缩放平移；3D 场景里贴着图的那几条轨照旧（图内语境读数）。
    每个并行维一张独立的小圆角卡（tab），容器本身透明只管排版；容器不吃点击
    （pointer-events:none），tab 之间的空隙照样能拖画布。
    从画布左下角贴边居左排。能一行排就一行：fitGroupHud 量过不换行的自然宽度，
-   贴底那条带（右侧给缩放 HUD 留 264px）装得下就贴底一行；装不下加 .is-lift
+   贴底那条带（右侧给缩放 HUD 留 224px＝HUD 自身 194 + 贴边 14 + 留白 16；居中/复位
+   两枚从两字文字按钮改成图标之后 HUD 从 222 缩到 194，这个数跟着一起收）装得下
+   就贴底一行；装不下加 .is-lift
    整条抬到缩放 HUD 上面用全宽。全宽仍装不下四组并排时，不再硬挤成 flex-wrap
    换行——组挨组各占一截、断在哪全看窗口宽度，读者得自己拼——改成收成一颗按钮
    （.is-collapsed），点开是竖排小卡：一组一行，组内该怎么换行还怎么换，但组与
    组之间不再抢同一行的位置（见 .pt-ghsummary、renderGroupHud、fitGroupHud）。
    点选走 data-act=chainpick，与图内轨/门牌同一套坐标算术。 */
 .pt-grouphud{
-  position:absolute; left:14px; right:264px; bottom:12px; z-index:7;
+  position:absolute; left:14px; right:224px; bottom:12px; z-index:7;
   display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:6px 10px;
   pointer-events:none;
 }
@@ -591,8 +601,12 @@
       <button class="zpct" id="zoomPct" data-act="zoom100" title="回到 100%（该视角的标准大小）">100%</button>
       <button data-act="zoomin" title="放大">＋</button>
       <span class="zsep"></span>
-      <button class="zword" data-act="viewcenter" title="平移归零，把场景拉回画面中央（缩放不变）">居中</button>
-      <button class="zword" data-act="turnreset" title="复位机位：视角、缩放、平移全部回到本视图的标准机位">复位</button>
+      <!-- 居中＝十字准星：四条边线收向正中一枚圆环，说的是「把场景挪回画面正中」，
+           只动平移不动缩放，所以图里没有任何放大缩小的暗示。 -->
+      <button class="zicon" data-act="viewcenter" aria-label="居中" title="平移归零，把场景拉回画面中央（缩放不变）"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.5v2.3M8 12.2v2.3M1.5 8h2.3M12.2 8h2.3"/></svg></button>
+      <!-- 复位＝回旋箭头：绕一整圈退回起点，比十字准星多管两件事（视角、缩放），
+           所以画成「转回去」而不是「对准」。逆时针，跟撤销同向。 -->
+      <button class="zicon" data-act="turnreset" aria-label="复位" title="复位机位：视角、缩放、平移全部回到本视图的标准机位"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.52 3.29v3.53h3.53"/><path d="M3.2 10.24A5.3 5.3 0 1 0 5.76 3.2L1.52 6.82"/></svg></button>
     </div>
     <!-- 算子明细卡：点一个算子浮出来，跟着那个算子的位置走 -->
     <aside class="pt-opcard" id="opCard" hidden></aside>
@@ -5794,7 +5808,7 @@ function renderGroupHud(D){
   fitGroupHud();
 }
 /* 能一行排就一行：临时按不换行量出自然宽度，贴底那条带（左边贴边 14px、
-   右侧给缩放 HUD 留 264px，与 CSS 里的 left/right 同数）装得下就贴底；
+   右侧给缩放 HUD 留 224px，与 CSS 里的 left/right 同数）装得下就贴底；
    装不下加 .is-lift 整条抬到缩放 HUD 上面用全宽；全宽仍装不下四组并排，就不再
    硬挤成 flex-wrap 换行——改收成 .is-collapsed，那颗按钮站台，点开的竖排小卡
    宽度上限（--gh-panel-max）按这次量到的容器宽度写，容器越窄它跟着越窄。
@@ -5806,7 +5820,7 @@ function fitGroupHud(){
   var need = el.offsetWidth;
   el.style.cssText = '';
   var avail = el.parentElement.clientWidth;
-  if(need <= avail - 278) return;
+  if(need <= avail - 238) return;
   el.classList.add('is-lift');
   if(need <= avail - 28) return;
   el.classList.remove('is-lift');

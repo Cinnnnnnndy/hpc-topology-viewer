@@ -46,3 +46,12 @@ html[data-chrome='0'] body {
 html[data-chrome='0'] .toolbar,
 html[data-chrome='0'] .statusbar,
 html[data-chrome='0'] .timeline-footer { display: none; }
+
+/* display:none 只是不画，**轨还占着**：.timeline-pane 是 `42px / 1fr / 38px`
+   三条固定轨，第三条是留给图例页脚的。上面藏掉页脚之后那 38px 没人认领，
+   于是泳道最后一条（PP3）底下平白多出一条空白带——横贯整格，下沿还压着卡片
+   自己的圆角与投影，看上去像一条浮在泳道上的挡板。轨一起收掉才算真藏干净。
+   （body 那三行同理，第 33 行已经收过一次。） */
+html[data-chrome='0'] .timeline-pane {
+  grid-template-rows: 42px minmax(0, 1fr);
+}
