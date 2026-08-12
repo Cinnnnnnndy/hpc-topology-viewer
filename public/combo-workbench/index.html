@@ -188,16 +188,17 @@ a.btn{text-decoration:none}
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
 #slot-netgraph{flex:0 0 var(--side-w,460px);min-width:240px}
 #slot-netgraph[data-folded="1"]{flex:0 0 auto;min-width:0}
-/* 这一格的格头**走文档流**，不压在画布上——与抽屉那格同一套。
-   先前挂 sidecar 时它是绝对定位浮在画布左上的：那时候画布左上是空的，压上去
-   正好省一行。换成并行拓扑之后那块地方是它自己的地盘（名字 +「＋ 搜索」在左，
-   Rank/刀/机位/⚙/数据 那一整条在右），再压上去就是两层控件叠在一起——620px
-   宽时实测标题、搜索、收起、工具条全糊成一团。让出一行 30px 换回互不打架。
-   pattern 自己那个名字（#stageTitle > b 的「并行拓扑」）在这一格藏掉，名字由
-   格头出：两格同源，都叫「并行拓扑」就分不出谁是谁了。**只藏那枚 <b>**——
-   「＋ 搜索」就在同一个 #stageTitle 容器里（embed 形态下 qbar 被 append 进去），
-   整条藏掉会连搜索一起按没（这一条踩过）。 */
+/* 收起之后格头是绝对定位的，整格会塌成 2px 宽——「展开」就再也点不到了。
+   所以收起时把格头放回文档流，这一格缩成「标题 + 展开」那么一条。 */
+#slot-netgraph[data-folded="1"] .slot-head{position:static;padding:7px 10px 7px 12px;pointer-events:auto}
+/* 格头压在画布上，与 pattern 那排机位段控**同一行**：这一格是跟随视图，
+   它自己那条工具条已经只剩右端的机位段控了（名字/搜索/Rank/刀全藏掉，见
+   hideCss），左半边空着，正好放「整网图 + 收起」。省下的那一行 30px 全给画布。
+   只有按钮需要能点，其余不吃事件，免得挡住画布上的拖拽。 */
+#slot-netgraph .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
+  min-height:30px;padding:0;background:transparent;pointer-events:none}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
+#slot-netgraph .slot-head button{pointer-events:auto}
 #slot-topology{flex:1 1 auto;min-width:0}
 /* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
 #vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
@@ -318,8 +319,8 @@ body.is-resizing iframe{pointer-events:none}
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
         <span class="slot-title">整网图</span>
-        <span class="spacer"></span>
         <button data-act="fold" title="收起这一格，只留格头">收起</button>
+        <span class="spacer"></span>
       </header>
       <div class="slot-body">
         <iframe data-slot="netgraph" title="并行拓扑 · 整网图（不落 DP）"></iframe>
@@ -339,9 +340,9 @@ body.is-resizing iframe{pointer-events:none}
   <section class="slot" id="dock">
     <header class="slot-head">
       <span class="slot-title">微批次生命周期泳道</span>
+      <button data-act="fold" title="收起这一格，只留格头">收起</button>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <span class="spacer"></span>
-      <button data-act="fold" title="收起这一格，只留格头">收起</button>
     </header>
     <div class="slot-body">
       <iframe data-slot="swimlane" title="MB07 微批次生命周期泳道"></iframe>
@@ -414,7 +415,18 @@ var SLOTS = [
              '.pt-seg:has([data-act="knifetoggle"]){display:none!important}' +
              /* 搜索结果那块浮层也藏掉：标签由主视图落，这块面板逐字复读主视图
                 那一块，同一屏出现两遍，还压住半张画布。 */
-             '#revbox{display:none!important}',
+             '#revbox{display:none!important}' +
+             /* 顶视：那个机位是拿来看 DP×PP 的卡阵的，而这一格既不落 DP 也没有卡
+                （cuts=pcte + rank=0）——实测它在这一格只画得出 28 个有面积的图元，
+                主视图同机位是 344 个，基本是一张空图。留着是一颗点了没反应的按钮。 */
+             '[data-act="viewtab"][data-tab="top"]{display:none!important}' +
+             /* 选组 HUD（TP·SP / EP / PP 看哪一组）：跟主视图那一份讲的是同一件事，
+                两份摆在同一屏各调各的，图上就会出现两个「当前组」。归主视图统一出。 */
+             '#groupHud{display:none!important}' +
+             /* 缩放 HUD（− 100% ＋ 居中 复位）：这一格只留**机位**一组控件，别的一律
+                由主视图那边操纵。藏的是那排按钮，不是能力——滚轮缩放、拖动平移
+                照旧（都是画布上的手势，不经过这排按钮）。 */
+             '#zoomHud{display:none!important}',
     src: function () {
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
