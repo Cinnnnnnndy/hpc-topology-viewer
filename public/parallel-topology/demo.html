@@ -141,12 +141,14 @@
 /* ── 选组 HUD：TP·SP / CP / EP / DP / PP 的「看哪一组」切换，样式与缩放 HUD 同族。
    这些切换在四个视角里是**同一个东西**，所以做成一条统一的悬浮配置栏钉在画布
    下沿居中，不随图缩放平移；3D 场景里贴着图的那几条轨照旧（图内语境读数）。
-   每个并行维一张独立的小圆角卡（tab），容器本身透明只管排版：宽度不够时整卡
-   换行、卡内格子太多也自己换行，所以永远不出横向滚动条。容器不吃点击
+   每个并行维一张独立的小圆角卡（tab），容器本身透明只管排版；容器不吃点击
    （pointer-events:none），tab 之间的空隙照样能拖画布。
    从画布左下角贴边居左排。能一行排就一行：fitGroupHud 量过不换行的自然宽度，
    贴底那条带（右侧给缩放 HUD 留 264px）装得下就贴底一行；装不下加 .is-lift
-   整条抬到缩放 HUD 上面用全宽，全宽仍装不下才换行。
+   整条抬到缩放 HUD 上面用全宽。全宽仍装不下四组并排时，不再硬挤成 flex-wrap
+   换行——组挨组各占一截、断在哪全看窗口宽度，读者得自己拼——改成收成一颗按钮
+   （.is-collapsed），点开是竖排小卡：一组一行，组内该怎么换行还怎么换，但组与
+   组之间不再抢同一行的位置（见 .pt-ghsummary、renderGroupHud、fitGroupHud）。
    点选走 data-act=chainpick，与图内轨/门牌同一套坐标算术。 */
 .pt-grouphud{
   position:absolute; left:14px; right:264px; bottom:12px; z-index:7;
@@ -175,6 +177,33 @@
 .pt-ghc.is-on{background:var(--c); color:#fff}
 .pt-ghc:hover{background:color-mix(in srgb, var(--pt-fg) 20%, transparent); color:var(--pt-fg)}
 .pt-ghc.is-on:hover{background:var(--c); color:#fff}
+/* 收起态：.pt-gh-groups 平时是 display:contents（对 flex 布局透明，四张组卡
+   直接当 .pt-grouphud 自己的 flex item，量宽度、换行都跟没包过一层一样）。
+   连全宽都装不下时才切成收起——这时把它整个藏起来，换一颗按钮站台。 */
+.pt-gh-groups{display:contents}
+.pt-grouphud.is-collapsed .pt-gh-groups{display:none}
+.pt-ghsummary{
+  display:none; align-items:center; gap:5px; height:26px; padding:0 10px 0 12px; border-radius:12px;
+  border:1px solid var(--pt-bd); background:color-mix(in srgb, var(--pt-s1) 92%, transparent);
+  box-shadow:0 1px 3px rgba(0,0,0,.05); backdrop-filter:blur(6px); pointer-events:auto;
+  font-family:var(--pt-mono); font-size:10.5px; font-weight:700; color:var(--pt-fg2);
+}
+.pt-ghsummary:hover{color:var(--pt-fg); border-color:var(--pt-bds)}
+.pt-ghsummary b{
+  min-width:15px; height:15px; padding:0 4px; border-radius:999px; font-size:9.5px; line-height:15px;
+  background:var(--pt-s2); color:var(--pt-fg2); font-family:var(--pt-mono);
+}
+.pt-ghsummary i{font-style:normal; font-size:9px; opacity:.7}
+.pt-grouphud.is-collapsed .pt-ghsummary{display:inline-flex}
+/* 展开：竖排一张浮卡，钉在按钮正上方——不再挤那一整条底边，所以不用再证明
+   「四组能不能排成一行」，一组一行，组内该怎么换行还怎么换（.pt-ghgrp 自带
+   flex-wrap）。宽度上限由 fitGroupHud 按容器实测写成 --gh-panel-max。 */
+.pt-grouphud.is-collapsed.is-open .pt-gh-groups{
+  display:flex; flex-direction:column; align-items:flex-start; gap:6px;
+  position:absolute; left:0; bottom:32px; z-index:8; max-width:var(--gh-panel-max, 380px);
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:9px;
+  box-shadow:0 10px 30px rgba(0,0,0,.16); pointer-events:auto;
+}
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(82%, 940px);
@@ -656,7 +685,7 @@ var ui = {
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
-  mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false,
+  mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false, ghOpen:false,
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
   netOff:true,      /* 关掉整网：卡里不再画算子，只剩 world 只方块 */
   layersUser:{}, revLayer:'', chips:[], qOpen:'', drawer:'', selLayerOff:0
@@ -5452,7 +5481,7 @@ function syncZoomHud(){
    点选复用 chainpick（document 上那只委托监听认 data-act，无须另接线）。 */
 function renderGroupHud(D){
   var el = $('groupHud'); if(!el) return;
-  if(ui.view !== 'chain' || !D.ok){ el.hidden = true; return; }
+  if(ui.view !== 'chain' || !D.ok){ el.hidden = true; ui.ghOpen = false; return; }
   var g = (sel !== null && sel < D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var lps = D.layersPerStage, L = D.layers;
@@ -5463,9 +5492,10 @@ function renderGroupHud(D){
   if(ui.kEP && D.moe && D.ep > 1) groups.push({k:'e', name:'EP', n:D.ep, cur:me ? me.ep : 0, col:VC.ep});
   if(ui.kPP && D.pp > 1) groups.push({k:'p', name:'PP', n:D.pp, cur:co.p, col:VC.pp,
     lab:function(i){ return 'PP'+i+'·L'+(i*lps)+'–'+Math.min(L-1,(i+1)*lps-1); }});
-  if(!groups.length){ el.hidden = true; return; }
+  if(!groups.length){ el.hidden = true; ui.ghOpen = false; return; }
   el.hidden = false;
-  el.innerHTML = groups.map(function(gr){
+  el.classList.toggle('is-open', ui.ghOpen);
+  var groupsHTML = groups.map(function(gr){
     var cells = '', i;
     for(i = 0; i < gr.n; i++){
       cells += '<button class="pt-ghc'+(i === gr.cur ? ' is-on' : '')+'" data-act="chainpick" data-k="'+gr.k+'" data-i="'+i
@@ -5474,19 +5504,34 @@ function renderGroupHud(D){
     }
     return '<span class="pt-ghgrp" style="--c:'+gr.col+'"><b>'+gr.name+'</b>'+cells+'</span>';
   }).join('');
+  /* 收起态才露面的那颗按钮：不重复写「现在选的是哪组」（那正是展开才看得到的
+     内容），只报「有几组切分在管」，点开才是完整那一叠——与 sidecar「数据 5 ⌄」
+     同一套语言，先见过一次的用户不用重新学。 */
+  el.innerHTML = '<div class="pt-gh-groups">'+groupsHTML+'</div>'
+    + '<button class="pt-ghsummary" data-act="ghtoggle" title="'+groups.length+' 组并行切分排不下一行，点开逐组切换">'
+    + '选组<b>'+groups.length+'</b><i>'+(ui.ghOpen ? '︿' : '⌄')+'</i></button>';
   fitGroupHud();
 }
 /* 能一行排就一行：临时按不换行量出自然宽度，贴底那条带（左边贴边 14px、
    右侧给缩放 HUD 留 264px，与 CSS 里的 left/right 同数）装得下就贴底；
-   装不下加 .is-lift 整条抬到缩放 HUD 上面用全宽，全宽仍装不下才由 flex-wrap 换行。
+   装不下加 .is-lift 整条抬到缩放 HUD 上面用全宽；全宽仍装不下四组并排，就不再
+   硬挤成 flex-wrap 换行——改收成 .is-collapsed，那颗按钮站台，点开的竖排小卡
+   宽度上限（--gh-panel-max）按这次量到的容器宽度写，容器越窄它跟着越窄。
    量 offsetWidth 会强制回流，但只在 crisp 渲染和改窗口尺寸时走，不在手势热路径上。 */
 function fitGroupHud(){
   var el = $('groupHud'); if(!el || el.hidden) return;
-  el.classList.remove('is-lift');
+  el.classList.remove('is-lift', 'is-collapsed');
   el.style.cssText = 'left:0; right:auto; width:max-content; flex-wrap:nowrap';
   var need = el.offsetWidth;
   el.style.cssText = '';
-  if(need > el.parentElement.clientWidth - 278) el.classList.add('is-lift');
+  var avail = el.parentElement.clientWidth;
+  if(need <= avail - 278) return;
+  el.classList.add('is-lift');
+  if(need <= avail - 28) return;
+  el.classList.remove('is-lift');
+  el.classList.add('is-collapsed');
+  var wrap = el.querySelector('.pt-gh-groups');
+  if(wrap) wrap.style.setProperty('--gh-panel-max', Math.max(200, Math.min(420, avail - 28)) + 'px');
 }
 var ghFitT = 0;
 window.addEventListener('resize', function(){
@@ -5747,6 +5792,12 @@ document.addEventListener('click', function(ev){
   if(!ui.mvOpen) return;
   if(ev.target.closest && ev.target.closest('.pt-mv')) return;
   ui.mvOpen = false; render();
+}, true);
+/* 选组 HUD 的展开面板同理：点外面收起，点里面（连着切好几组）不收。 */
+document.addEventListener('click', function(ev){
+  if(!ui.ghOpen) return;
+  if(ev.target.closest && ev.target.closest('#groupHud')) return;
+  ui.ghOpen = false; render();
 }, true);
 /* 图例/通信下拉：同一套「点外面收起」，用自己的 class 隔开，别被上面那个
    数据下拉的外点判定误关（两颗下拉可能同时开着）。 */
@@ -7063,6 +7114,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
+  else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
   else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
   else if(act==='mvpick'){ var mk9 = b.getAttribute('data-k'); ui.mv[mk9] = !ui.mv[mk9]; render(); }
   else if(act==='mvall'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = true; }); render(); }
