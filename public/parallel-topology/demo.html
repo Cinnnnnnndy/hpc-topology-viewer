@@ -2826,7 +2826,7 @@ function netScene(D, g, box, step){
   /* 壳跟着自己那列的内容走（一列画完内容马上画它的壳）：原来内容一遍、壳一遍
      分开画，前脸只敢用 3% 的近乎全透——一旦加磨砂，后列的壳会盖到前列已画好的
      内容上，列与列的遮挡就乱了。copyOrder 排好的深度序只有内容与壳同走时才成立。 */
-  var _nt = turn3(0,-1,0,yaw,pitch), _nf = turn3(0,0,-1,yaw,pitch), _nr = turn3(1,0,0,yaw,pitch);
+  var _nt = turn3(0,1,0,yaw,pitch), _nf = turn3(0,0,-1,yaw,pitch), _nr = turn3(1,0,0,yaw,pitch);
   var fTop = _nt[0]+_nt[1]+_nt[2] > 0, fFront = _nf[0]+_nf[1]+_nf[2] > 0, fRight = _nr[0]+_nr[1]+_nr[2] > 0;
   function shellOf(kc){
     var CE = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
