@@ -681,7 +681,7 @@ var ui = {
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
-  commOn:false, legendOn:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
+  commOn:false, legendOn:false, dispOpen:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
@@ -706,27 +706,38 @@ var VIEWS = [
 var VTAB_POSE = {'3d':[0.42,0.30], front:[0,0], side:[Math.PI/2,0], top:[0,Math.PI/2]};
 var LAYERS = ['L1','L2','L3','L4','L5'];
 var LAYER_NAME = {L1:'L1 结构', L2:'L2 内容', L3:'L3 容器', L4:'L4 地址', L5:'L5 通信'};
+/* 这张表曾经写的是「这一类对象与本视图相关」，但相关不等于渲染函数真的读了它——
+   实测发现 dim/anatomy 的渲染只认 L5，L1-L4 摆着好看；story 五个全没人读；
+   solid 的 L1-L4 只有切到「交集腔」子视角才被 renderSolidCav 读，默认的「双链
+   映射」子视角（renderSolidMap）从不看它们。改成只留真的会改画布的那几个，
+   其余不再出现在底栏——按钮不能承诺一个渲染函数不会兑现的效果。 */
 var AVAIL = {
-  dim:{L1:true, L2:true, L3:true,L4:true,L5:true},
+  dim:{L1:false,L2:false,L3:false,L4:false,L5:true},
   chain:{L1:false,L2:true, L3:true,L4:true,L5:false},
   compose:{L1:false,L2:true,L3:true,L4:true,L5:true},
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
-  anatomy:{L1:true, L2:true, L3:true,L4:true,L5:true},
-  solid:{L1:true, L2:true, L3:true,L4:true,L5:false},
-  story:{L1:true, L2:true, L3:true,L4:true,L5:true}
+  anatomy:{L1:false,L2:false,L3:false,L4:false,L5:true},
+  solid:{L1:true, L2:true, L3:true,L4:true,L5:false},   /* 仅交集腔子视角生效，见 layerAvail() */
+  story:{L1:false,L2:false,L3:false,L4:false,L5:false}  /* 全不生效，底栏整个隐藏（render()） */
 };
 var DEFAULTS = {
-  dim:{L1:true,L2:true,L3:true,L4:true,L5:true},
+  dim:{L5:true},
   chain:{L2:true,L3:true,L4:true},
   compose:{L2:false,L3:true,L4:true,L5:false},
   time:{L3:true,L4:true,L5:true},
-  anatomy:{L1:true,L2:true,L3:true,L4:true,L5:true},
-  solid:{L1:true,L2:true,L3:true,L4:true},
-  story:{L1:true,L2:true,L3:true,L4:true,L5:true}
+  anatomy:{L5:true},
+  solid:{L1:true,L2:true,L3:true,L4:true}
 };
+/* AVAIL 之外再叠一层子视角判断：目前只有 solid 需要——同一个视图的两个
+   perspective（map/cav）读的图层不是同一组。别的视图没有这种分裂，直接照 AVAIL。 */
+function layerAvail(L){
+  if(!AVAIL[ui.view][L]) return false;
+  if(ui.view==='solid' && ui.persp!=='cav' && L!=='L5') return false;
+  return true;
+}
 function layerOn(L){
   var v = ui.view;
-  if(!AVAIL[v][L]) return false;
+  if(!layerAvail(L)) return false;
   var u = ui.layersUser[v];
   if(u && (L in u)) return u[L];
   return !!(DEFAULTS[v] && DEFAULTS[v][L]);
@@ -2759,9 +2770,14 @@ function netScene(D, g, box, step){
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色、不透光，
                后面的东西被它实实在在挡住）、侧面最暗、正脸居中。差得越开越像实物，
                差得不够就只是三张半透明的纸片叠在一起。 */
+            /* 上一版把侧/正脸从 21%/10% 提到 48%/32%——半透明的盒子叠半透明的盒子，
+               结果是重叠两三层的地方比单层重得多（乘法叠加），单层的地方还是能看穿。
+               既然设计意图本来就是「近处盒子实打实挡住远处」，就该让它真的接近不透光，
+               而不是停在「淡了一半」——这样画家序（远→近）里后画的盒子才真正盖住
+               先画的，深浅差异只由 dT 给一点点，不再靠透叠。 */
             body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(100 - dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(10 + dT*3).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-fg)',(80 + dT*14).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-fg)',(60 + dT*12).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 命中的那些盒子要**主动亮**，不能只靠别人暗下去：空盒子本来就是中性灰，
                压暗 65% 之后剩下的仍是一片灰，读者数不出「哪 32 只」。所以给命中的
                三个面各罩一层搜索色（与右上角那枚读数、与标签同一个色），
@@ -4064,7 +4080,6 @@ function renderSolid(D){
 function renderSolidMap(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var H = 700, parts = [], hits = [];
-  var L4 = layerOn('L4');
   var PER = 8, MACH = Math.ceil(D.world/PER);      /* 机 = 8 卡：FIG09 的拓扑假设，不由并行配置推出 */
   function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   function poly(pts, st, extra){ return '<polygon points="'+ptsStr(pts)+'" style="'+st+'" '+(extra||'')+'/>'; }
@@ -5784,6 +5799,13 @@ document.addEventListener('click', function(ev){
   if(ev.target.closest && ev.target.closest('#groupHud')) return;
   ui.ghOpen = false; render();
 }, true);
+/* 图例/通信下拉：同一套「点外面收起」，用自己的 class 隔开，别被上面那个
+   数据下拉的外点判定误关（两颗下拉可能同时开着）。 */
+document.addEventListener('click', function(ev){
+  if(!ui.dispOpen) return;
+  if(ev.target.closest && ev.target.closest('.pt-disp')) return;
+  ui.dispOpen = false; render();
+}, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
   if(!ui.chips.length){ el.hidden = true; el.innerHTML = ''; return; }
@@ -5987,13 +6009,22 @@ function renderChainBar(D){
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
   /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
      不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
-  /* 图例：这一屏上每种形状都在说一件具体的事（斜纹≠装饰、横切≠竖切、
-     胶囊≠几何体），不给一张对照表就只能靠猜。默认收着，点开才占地方。 */
-  var legBtn = '<button class="pb'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle"'
-    + ' title="图例：画面上每种形状代表什么">图例</button>';
-  var commBtn = '<button class="pb'+(ui.commOn?' is-on':'')+'" data-act="commtoggle"'
-    + ' title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
-    + '通信</button>';
+  /* 图例 + 通信：两颗独立胶囊并排常年占位，而且都是「画面上叠不叠这层注解」的
+     同一件事——收进一颗图标按钮里，点开才是一列勾选（仿「数据」那颗下拉的
+     交互），默认收着不占地方。⚙ 只是个通用「显示设置」符号，不代表切分。 */
+  var dispN = (ui.legendOn?1:0) + (ui.commOn?1:0);
+  /* 计数徽标只在真有开着的图层时才画：dispN=0 时 <b></b> 是个空字符串，
+     但它照样吃圆底+边框样式，糊成一颗没有数字的空心圆点——看着像哪里坏了。 */
+  var dispBtn = '<span class="pt-mv pt-disp">'
+    + '<button class="pb'+(dispN?' is-on':'')+'" data-act="dispmenu" title="显示设置：图例 / 通信">'
+    + '⚙' + (dispN ? '<b>'+dispN+'</b>' : '') + '<i>⌄</i></button>'
+    + (ui.dispOpen ? '<div class="pt-mvmenu">'
+        + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么">'
+          + '<s>✓</s>图例</button>'
+        + '<button class="mvi'+(ui.commOn?' is-on':'')+'" data-act="commtoggle" title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
+          + '<s>✓</s>通信</button>'
+        + '</div>' : '')
+    + '</span>';
   /* 数据标注多选：图上那些读数（σ/Amax、∇、ms、tok、W→W'）分五类，逐类开关。
      它们是**同一份快照的不同侧面**，所以是一颗按钮里的多选，不是五颗独立开关。 */
   var mvN = MVIEWS.filter(function(m){ return ui.mv[m[0]]; }).length;
@@ -6081,7 +6112,7 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + vBtns + legBtn + commBtn + mvBtn;
+  $('stagebar').innerHTML = cBtn + kBtns + vBtns + dispBtn + mvBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -6738,7 +6769,7 @@ function renderBar(D){
 }
 function renderFoot(D){
   var out = '<span class="pt-cap">图层</span>' + LAYERS.map(function(L){
-    var av = AVAIL[ui.view][L];
+    var av = layerAvail(L);
     return '<button class="pb'+(av&&layerOn(L)?' is-on':'')+'" data-act="layer" data-l="'+L+'"'+(av?'':' disabled')+'>'+LAYER_NAME[L]+'</button>';
   }).join('');
   /* AXIS 高亮（ui.axis）与 L5 维度/原语/抽离（commDim/commPrim/detach）只有「合成·卡阵」
@@ -6794,7 +6825,7 @@ function render(){
     var oc9 = $('opCard'); if(oc9) oc9.hidden = true;
   }
   var foot = document.querySelector('.pt-foot');
-  if(ui.view==='chain'){ foot.style.display = 'none'; }
+  if(ui.view==='chain' || ui.view==='story'){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
   if(!D.ok){
     $('stage').innerHTML = '';
@@ -7042,7 +7073,7 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='layer'){
     var L = b.getAttribute('data-l');
-    if(!AVAIL[ui.view][L]) return;
+    if(!layerAvail(L)) return;
     setLayer(L, !layerOn(L)); render();
   }
   else if(act==='cutdim'){ ui.cutDim = b.getAttribute('data-d'); render(); }
@@ -7071,9 +7102,12 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
   else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
-  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; render(); }
+  /* 挑完就收起小菜单：挑的结果本身就是「大图层开/关了」这个显而易见的反馈
+     （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
+     大面板抢同一片屏幕，留着没有意义。 */
+  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; ui.dispOpen = false; render(); }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
-  else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; render(); }
+  else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='opdetail'){
     ui.opSel = {nid:b.getAttribute('data-nid'), li:+b.getAttribute('data-li'), key:b.getAttribute('data-key')||''};
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
@@ -7081,6 +7115,7 @@ document.addEventListener('click', function(ev){
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
+  else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
   else if(act==='mvpick'){ var mk9 = b.getAttribute('data-k'); ui.mv[mk9] = !ui.mv[mk9]; render(); }
   else if(act==='mvall'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = true; }); render(); }
   else if(act==='mvnone'){ MVIEWS.forEach(function(m){ ui.mv[m[0]] = false; }); render(); }
