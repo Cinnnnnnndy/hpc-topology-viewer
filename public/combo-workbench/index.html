@@ -1006,6 +1006,23 @@ function setTopoLayer(n) {
   }, 40);
 }
 
+/* 反过来：并行拓扑那边先落了 `层 · Ln`（手填搜索框，或点画布上「L{n}：点一下
+   反查这一层」那些反查入口），整网图也该跟着选中并展开第 n 层——不然两边
+   各看各的，右边讲的是哪一层，左边画的还是上一次。
+   走 sidecar 自己公开的 selectLayer(n)，就是点层带触发的那同一个函数，会
+   顺带展开；n 传 null 收起。调用前照一遍它当前选的是哪层：selectLayer 对着
+   **已经选中的同一层**再调一次是「再点一下 = 收起」的 toggle 语义（它自己的
+   设计），不照一遍就可能把用户刚选好的层关掉。 */
+function setSidecarLayer(frame, n) {
+  try {
+    var ctl = frame.contentWindow && frame.contentWindow.trainingSidecarController;
+    if (!ctl || !ctl.selectLayer) return;
+    var cur = (typeof ctl.selectedLayer === 'number') ? ctl.selectedLayer : null;
+    if (cur === n) return;
+    ctl.selectLayer(n === undefined ? null : n);
+  } catch (err) { /* 跨源，或它换了对外接口：不联动而已 */ }
+}
+
 /* 刀：走 pto:state 的白名单字段 cut——不重载，也不占一枚搜索标签。
    为什么刀不做成 dim 标签：并行拓扑把多枚标签的命中集合取**并集**
    （见它的 spotlightHit），`层 L17` ∪ `刀 TP 组` 会比「L17 住在哪」更宽，
@@ -1021,28 +1038,59 @@ function setTopoCut(cut) {
   frame.contentWindow.postMessage({ type: 'pto:state', cut: cut }, '*');
 }
 
-/* 轮询而不是监听点击：整网图改选中的路子不止一条（点层带、点算子行、点展开层里的
-   算子方块、收起、它自己的详情面板），盯住**结果**比盯住每一条入口可靠——
-   之前按入口写测试就吃过亏：合成点击打在正视里根本不在视口内的那批命中层上，
-   测过了，真用鼠标点却什么也不发生。读的是三个 getter，一次几微秒。 */
-var lastPick = undefined, lastTopoView = undefined;
+/* 轮询而不是监听点击：两边改选中的路子都不止一条（左边：点层带、点算子行、
+   点展开层里的算子方块、收起、它自己的详情面板；右边：手填搜索框、点画布上
+   的反查入口、点「×」摘掉标签），盯住**结果**比盯住每一条入口可靠——之前
+   按入口写测试就吃过亏：合成点击打在正视里根本不在视口内的那批命中层上，
+   测过了，真用鼠标点却什么也不发生。
+
+   双向意味着两边都可能是「发起者」，得能分清「对面自己动了」和「对面只是在
+   回应我刚推过去的那一下」。**只记录每一轮真正读到的值**（seenLeft/seenRight），
+   不记「我推了什么」——推过去的那一下要等对面异步落地（落标签是 ~80ms 的分步
+   模拟点击、展开层带 540ms 的镜头补间），中途读到的是「还没追上」的旧值，
+   拿它跟「我推了什么」比就会把时间差误判成「对面主动改了」，于是推回来，
+   把用户刚选好的层关掉（selectLayer 对着同一层再调一次是收起的 toggle 语义，
+   来回踩两下正好抵消）。
+   按「读到的值变了没有」判就不会：回声落地时读到的值等于这边已经有的值，
+   推回去撞上两个 setter 各自的**幂等短路**（setSidecarLayer 比 selectedLayer、
+   setTopoLayer 比标签上的数字，相同就直接返回），一次空操作，声音就止住了。 */
+var seenLeft = undefined, seenRight = undefined, lastTopoView = undefined;
 function wireLinkage() {
   setInterval(function () {
-    var frame = $('iframe[data-slot="sidecar"]');
-    if (!frame || !state.sidecar || !state.sidecar.loaded) return;
-    var pick = sidecarPick(frame);
-    if (pick === undefined) return;                  // 还没装配好
-    var key = pick ? pick.layer + '/' + (pick.op || '') : '';
+    var scFrame = $('iframe[data-slot="sidecar"]');
+    var ntFrame = $('iframe[data-slot="topology"]');
+    if (!scFrame || !state.sidecar || !state.sidecar.loaded) return;
+    if (!ntFrame || !state.topology || !state.topology.loaded) return;
+
+    var pick = sidecarPick(scFrame);
+    if (pick === undefined) return;                   // 左边还没装配好
+    var leftLayer = pick ? pick.layer : null;
+
     /* 也盯着并行拓扑当前是哪个视图：那套属性搜索**只在「整网切分」里出现**
        （别的视图 #qbar 是空的）。所以在别的视图里选中换了，标签落不下去；
-       等切回整网切分再补一次，否则挂着的是上一次那枚，对不上左边。
-       只在「选中变了」或「视图变了」时动手——用户自己把标签叉掉之后，
-       我们不该每 300ms 又给他塞回去。 */
+       等切回整网切分再补一次，否则挂着的是上一次那枚，对不上左边。 */
     var view = state.topology && state.topology.value;
-    if (key === lastPick && view === lastTopoView) return;
-    lastPick = key; lastTopoView = view;
-    setTopoLayer(pick ? pick.layer : null);
-    if (pick) setTopoCut(pick.cut);
+    var viewJustReturned = view !== lastTopoView;
+    lastTopoView = view;
+
+    var rightLayer = null, canReadRight = false;
+    if (view === 'chain') {
+      try {
+        var ntDoc = ntFrame.contentDocument;
+        if (ntDoc) { var chip = topoLayerChip(ntDoc); rightLayer = chip ? chip.v : null; canReadRight = true; }
+      } catch (err) { /* 跨源 */ }
+    }
+
+    if (leftLayer !== seenLeft || viewJustReturned) {
+      seenLeft = leftLayer;
+      setTopoLayer(leftLayer);
+      if (pick) setTopoCut(pick.cut);
+      return;                                          // 这一轮只处理一侧
+    }
+    if (canReadRight && rightLayer !== seenRight) {
+      seenRight = rightLayer;
+      setSidecarLayer(scFrame, rightLayer);
+    }
   }, 300);
 }
 
