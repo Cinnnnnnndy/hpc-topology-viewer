@@ -2986,7 +2986,7 @@ function netScene(D, g, box, step){
           var cTop = P(0.5, cv1 + 0.13, cw0, kc);
           var cTxt = 'rank ' + gc;
           var meCd = D.moe ? epOf(tc, co.c, dc, D) : null;
-          var cSub = 'dp'+dc+' · pp'+pc2+' · tp'+tc + (meCd ? ' · ep'+meCd.ep : '') + (D.cp>1 ? ' · cp'+co.c : '');
+          var cSub = 'tp'+tc+(D.cp>1?' cp'+co.c:'')+' dp'+dc+' pp'+pc2+(meCd?' ep'+meCd.ep:'')+' · stage'+pc2+' · L'+(pc2*D.layersPerStage)+'–L'+((pc2+1)*D.layersPerStage-1);
           var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
           body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
             +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1"/>');
@@ -6915,6 +6915,10 @@ function renderDetail(D){
       + '<tr><td>卡</td><td>'+fmt(D.world)+' 张 = '+D.tp+'·'+D.cp+'·'+D.pp+'·'+D.dp+'</td></tr></table>'
       + revHTML(D);
   }else{
+    if(ui.view==='chain' && ui.cardMode && ui.netOff){
+      el.hidden = true;
+      return;
+    }
     var g = sel, co = coordsOf(g,D), me = D.moe?epOf(co.t,co.c,co.d,D):null;
     var chips = ['tp','cp','dp','pp'].map(function(dm){
       var v = {tp:co.t,cp:co.c,dp:co.d,pp:co.p}[dm];
@@ -6923,9 +6927,6 @@ function renderDetail(D){
     }).join('');
     if(me) chips += '<span class="c'+(ui.axis==='ep'?' hot':'')+'" style="--c:'+VC.ep+'">ep_rank '+me.ep+'</span><span class="c">etp '+me.etp+'</span>';
     el.hidden = false;
-    /* 面板一屏读完：先给「这张卡是谁、拿了哪几层哪几个专家、多大」，
-       推导过程、逐算子形状、反查这些都收进折叠——它们是要坐下来查的，
-       不是扫一眼就要的。原来一口气铺 20 行，从工具条一直盖到画布底。 */
     var l0d = co.p*D.layersPerStage, l1d = l0d + D.layersPerStage - 1;
     var expRow = '';
     if(D.moe && me){
@@ -7191,7 +7192,10 @@ function renderRankMem(D){
     '<div class="rm-h"><b>rank '+g+' 装了什么</b>'
     + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
     + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
-    + '<svg viewBox="0 0 410 254">'+parts.join('')+'</svg>';
+    + '<svg viewBox="0 0 410 254">'+parts.join('')+'</svg>'
+    + '<div style="margin:4px 0 0;font-size:11.5px">'
+    + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span>'
+    + ' · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span></div>';
   el.hidden = false;
 }
 
