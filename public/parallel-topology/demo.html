@@ -1096,11 +1096,50 @@ function opBytes(D){ /* 单层各算子的每卡权重字节（bf16），供 V3 
   o.push({id:'norm×2', cut:'none', how:'复制', b:2*2*D.hidden, shape:'['+fmt(D.hidden)+']×2'});
   return o;
 }
-function paramsPerCard(D, ppRank){
+/* ── 每张卡的载荷本来就不一样 ────────────────────────────────────────────
+   原来 memParts 只按 PP 段算一遍给整段的卡复用，于是同一段里几十张卡的读数
+   一模一样——那正好抹掉了这一屏要讲的事（「这些卡各装各的」）。
+   哪些**真的**不一样，按机制分三档，不是随机涂抹：
+     ① 不整除的余数（结构性，可精确算）：vocab 按 TP 切、experts 按 EP 切，
+        除不尽时最后一片 / 最后一桶少拿一截，权重体跟着少。整除的配置（默认
+        那套 128 卡就是）这一项**确实**为零——权重体一样是事实，不该假装不一样。
+     ② 路由不均（MoE 实况）：token 不会均匀落到每个专家桶，收得多的桶激活体就大。
+        口径与算子读数里那枚 imb（1.02–1.18×）同源。
+     ③ 分配器碎片：每张卡的分配历史不同，预留那一截本来就不是同一个数。
+   ①是算出来的；②③是**确定性合成**（sin-hash，同一张卡永远读到同一个数），
+   与这一屏别处的数据标注同一套口径：示意但自洽。
+   键取的是**坐标**（t/c/d/p/ep）而不是全局 rank 号——换 DP 度数时同一张卡的坐标
+   不变，读数也就不变，A3「加 DP 不买余量」那条自检照旧成立。 */
+function loadSeed(k, salt){
+  var r = Math.sin((k+1)*45.233 + (salt+1)*97.117) * 28657.13;
+  return r - Math.floor(r);
+}
+function rankLoad(D, g){
+  if(g === null || g === undefined || !D.ok || g >= D.world) return null;
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  var key = (((co.t*7 + co.c)*13 + co.d)*17 + co.p) + (me ? me.ep*211 : 0);
+  var vPer = Math.ceil(D.vocab / D.tp);
+  var ePer = D.moe ? Math.ceil(D.experts / D.ep) : 0;
+  return {
+    vocabOwn: Math.max(0, Math.min(vPer, D.vocab - co.t*vPer)),
+    expOwn:   D.moe ? Math.max(0, Math.min(ePer, D.experts - me.ep*ePer)) : 0,
+    expEven:  D.moe ? D.experts / D.ep : 0,
+    /* 桶与桶之间的路由不均（均值 1），再叠一点同桶不同 DP 副本吃的微批差异 */
+    actK: (D.moe ? 0.84 + loadSeed(me.ep, 3)*0.40 : 1) * (0.97 + loadSeed(key, 11)*0.06),
+    rsv:  (1.15 + loadSeed(key, 29)*0.80) * Math.pow(2, 30)
+  };
+}
+function paramsPerCard(D, ppRank, L){
   var perLayer = opBytes(D).reduce(function(a,x){ return a+x.b; },0)/2;
+  /* 专家权重按**这一桶真拿到几个专家**折算：除得尽时 expOwn === expEven，这里是恒等式 */
+  if(L && D.moe && L.expEven > 0 && L.expOwn !== L.expEven){
+    var eb = opBytes(D).filter(function(x){ return x.id === 'experts'; })[0];
+    if(eb) perLayer += (eb.b/2) * (L.expOwn/L.expEven - 1);
+  }
   var p = perLayer * D.layersPerStage;
-  if(ppRank===0) p += Math.ceil(D.vocab/D.tp)*D.hidden;
-  if(ppRank===D.pp-1) p += D.hidden*Math.ceil(D.vocab/D.tp);
+  var vOwn = L ? L.vocabOwn : Math.ceil(D.vocab/D.tp);
+  if(ppRank===0) p += vOwn*D.hidden;
+  if(ppRank===D.pp-1) p += D.hidden*vOwn;
   return p;
 }
 var ACT_COEF = 4;
@@ -1117,16 +1156,20 @@ var MEMC = {
   act:'var(--pt-dp)',
   rsv:'color-mix(in srgb, var(--pt-fg) 12%, var(--pt-bg))'
 };
-function memParts(D, ppRank){
-  var P = paramsPerCard(D, ppRank);
+/* g 给了就按**那一张卡**算（见 rankLoad）；不给就是这一段的标准卡，读数与从前一字不差
+   —— 聚合口径（每卡容量、A3 自检、四刀贡献对比）都走不给 g 这一路，免得被单卡的
+   路由不均带偏：那些问的是「这套切法给一张卡留下多少」，不是「第 41 张卡此刻多少」。 */
+function memParts(D, ppRank, g){
+  var L = rankLoad(D, g);
+  var P = paramsPerCard(D, ppRank, L);
   var inflight = Math.max(1, Math.min(D.pp, D.ga) - ppRank);
-  var act = D.mbs*(D.seq/D.cp)*D.hidden*D.layersPerStage*ACT_COEF*inflight;
+  var act = D.mbs*(D.seq/D.cp)*D.hidden*D.layersPerStage*ACT_COEF*inflight * (L ? L.actK : 1);
   return [
     {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w},
     {k:'g', label:'梯度 (bf16)', bytes:2*P, color:MEMC.g},
     {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, color:MEMC.opt},
     {k:'act', label:'激活·在途'+inflight+'μb', bytes:act, color:MEMC.act},
-    {k:'rsv', label:'碎片/预留', bytes:1.5*Math.pow(2,30), color:MEMC.rsv}
+    {k:'rsv', label:'碎片/预留', bytes:(L ? L.rsv : 1.5*Math.pow(2,30)), color:MEMC.rsv}
   ];
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
@@ -2286,9 +2329,12 @@ function netScene(D, g, box, step){
      128 只叠起来又是一团网。深浅两档给正脸/侧面，顶面最亮。 */
   function memSolid(c, pct){ return 'color-mix(in srgb, '+c+' '+pct+'%, var(--pt-bg))'; }
   var memStackCache = {};
-  function memStack(p9){
-    if(memStackCache[p9]) return memStackCache[p9];
-    var segs9 = memParts(memD, cutPP ? p9 : 0), cap9 = D.hbm*Math.pow(2,30);
+  /* 缓存键从「第几段」换成「哪一张卡」：载荷现在逐卡不同（rankLoad），
+     再按段缓存就是把整段涂成同一张。一屏最多 128 只，缓存照旧划算。 */
+  function memStack(p9, g9){
+    var ck9 = p9 + '/' + g9;
+    if(memStackCache[ck9]) return memStackCache[ck9];
+    var segs9 = memParts(memD, cutPP ? p9 : 0, g9), cap9 = D.hbm*Math.pow(2,30);
     var tot9 = segs9.reduce(function(a,x){ return a+x.bytes; }, 0);
     var sc9 = 1/Math.max(cap9, tot9), acc9 = 0, out9 = [];
     segs9.forEach(function(sg9){
@@ -2298,7 +2344,7 @@ function netScene(D, g, box, step){
       out9.push({f0:f0, f1:f1, c:sg9.color, act:sg9.k==='act'});
     });
     if(out9.length) out9[out9.length-1].top = true;   /* 只有最上面那段露顶面 */
-    memStackCache[p9] = out9;
+    memStackCache[ck9] = out9;
     return out9;
   }
   for(var ci = 0; ci < copyOrder.length; ci++){
@@ -2920,7 +2966,7 @@ function netScene(D, g, box, step){
             body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             if(!lowDetail && ui.memFill){
-              var MS9 = memStack(pc2), vSp9 = cv1 - cv0;
+              var MS9 = memStack(pc2, rankOf(tIdx, cIdx, dIdx, pc2, D)), vSp9 = cv1 - cv0;
               for(var m8 = 0; m8 < MS9.length; m8++){
                 var sg8 = MS9[m8];
                 var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
@@ -4721,7 +4767,7 @@ function renderSolidCav(D){
       });
       return out9;
     };
-    var segs = memParts(D, co.p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
+    var segs = memParts(D, co.p, sel), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
     var cap = D.hbm*Math.pow(2,30), sc9 = 1/Math.max(cap, tot);
     var TONE9 = {
       w:  {f:MEMC.w,   why:'①腔 · 参数 × 2 B'},
@@ -7198,7 +7244,7 @@ function renderRankMem(D){
   if(!on){ el.hidden = true; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  var segs = memParts(D, p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
+  var segs = memParts(D, p, g), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
   var cap = D.hbm*Math.pow(2,30);
   var TONE = {w:MEMC.w, g:MEMC.g, opt:MEMC.opt, act:MEMC.act, rsv:MEMC.rsv};
   var rows = segs.map(function(sg){
