@@ -6657,20 +6657,23 @@ function renderFoot(D){
     var av = AVAIL[ui.view][L];
     return '<button class="pb'+(av&&layerOn(L)?' is-on':'')+'" data-act="layer" data-l="'+L+'"'+(av?'':' disabled')+'>'+LAYER_NAME[L]+'</button>';
   }).join('');
-  out += '<span class="pt-sep"></span><span class="pt-cap" id="axisChips">axis 高亮 tp|pp|dp|ep</span>'
-    + AXIS_DOMAIN.map(function(a){
-        var dis = a==='ep' && !D.moe;
-        return '<button class="pb mono'+(ui.axis===a?' is-on':'')+'" data-act="axis" data-a="'+a+'" style="--c:'+VC[a]+'"'+(dis?' disabled':'')+'>'+DIMN[a]+'</button>';
-      }).join('')
-    + '<button class="pb mono" disabled title="CP 不是卡网格的轴——输入分布见 V5，CP 通信组走抽离图（P2 修正 / A4）">CP⊘</button>';
-  if(AVAIL[ui.view]['L5']){
+  /* AXIS 高亮（ui.axis）与 L5 维度/原语/抽离（commDim/commPrim/detach）只有「合成·卡阵」
+     一个视图会读它们去改画布（renderV1）。别的视图从不看这几个状态，按钮摆在那儿点了
+     没反应——曾经跟着 AVAIL['L5'] 一起在 dim/time/anatomy/story 里现身，全是死点击。
+     dim 视图自己在 stagebar 里已经有一份货真价实、只在 CP 轴出现的原语选择器
+     （Ring/Ulysses/朴素，见 renderDimBar），不需要这里再摆一份摆设。 */
+  if(ui.view==='compose'){
+    out += '<span class="pt-sep"></span><span class="pt-cap" id="axisChips">axis 高亮 tp|pp|dp|ep</span>'
+      + AXIS_DOMAIN.map(function(a){
+          var dis = a==='ep' && !D.moe;
+          return '<button class="pb mono'+(ui.axis===a?' is-on':'')+'" data-act="axis" data-a="'+a+'" style="--c:'+VC[a]+'"'+(dis?' disabled':'')+'>'+DIMN[a]+'</button>';
+        }).join('')
+      + '<button class="pb mono" disabled title="CP 不是卡网格的轴——输入分布见 V5，CP 通信组走抽离图（P2 修正 / A4）">CP⊘</button>';
     out += '<span class="pt-sep"></span><span class="pt-cap">L5 维度</span>'
-      + (ui.view==='dim'
-          ? '<span class="pt-chip" title="单维视图里通信组就是当前切分维；到合成视图可自由组合维度×原语">跟随视图 = '+DIMN[ui.cutDim]+'</span>'
-          : COMM_DIMS.map(function(dm){
-              var dis = dm==='ep' && !D.moe;
-              return '<button class="pb mono'+(ui.commDim===dm&&layerOn('L5')?' is-on':'')+'" data-act="commdim" data-d="'+dm+'" style="--c:'+VC[dm]+'"'+(dis?' disabled':'')+'>'+DIMN[dm]+'</button>';
-            }).join(''))
+      + COMM_DIMS.map(function(dm){
+          var dis = dm==='ep' && !D.moe;
+          return '<button class="pb mono'+(ui.commDim===dm&&layerOn('L5')?' is-on':'')+'" data-act="commdim" data-d="'+dm+'" style="--c:'+VC[dm]+'"'+(dis?' disabled':'')+'>'+DIMN[dm]+'</button>';
+        }).join('')
       + '<span class="pt-cap" title="原语两类：P2P 是点对点，集合原语由一串 P2P 接成。两类都在计算图里以算子节点出现（send/recv、hcom_*），但在参照系里都是动作——不持有字节、不被切">⊗ 原语</span>'
       + PRIMS.map(function(pr){
           var cmn = (COMMON[ui.commDim]||[]).indexOf(pr.id)>=0;
