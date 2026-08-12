@@ -608,8 +608,17 @@ var PRESETS = [
      曾经为了「让 CP 按钮出现」把它改成 cp2·dp8——那是拿默认配置去迁就工具条，
      本末倒置：CP=1 就是这个模型的事实，按钮不出现正是如实反映「这一刀没落下」。
      SP 要看得见，靠的是把 SP 画出来（TP·SP 轨、norm 区横纹、TP/SP AllGather），
-     不是把 TP 的份数撑大。 */
-  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+     不是把 TP 的份数撑大。
+
+     层数 32 → 48（2026-08）：整网图那格挂的是 openpangu-flash 的真图，它有 46 个
+     Decoder 层（L0–L45），组合工作台里「左边选中第 ℓ 层 → 右边高亮那一层住在哪些卡」
+     的联动就按这个层号走。32 层接不住 L32 以上，一半的层点过去只能回一句
+     「只有 32 层」。46 落不下来：本页把 `layers % PP ≠ 0` 判成**错误**而不是警告
+     （层须均分成 stage，§11），46 与 PP=4 除不尽，整屏会进错误态。48 是能覆盖
+     L0–L45 的最近的合法值，且并行度一个没动（tp2·cp1·pp4·dp16·ep8 照旧），
+     每段 12 层。真实模型的 46 层在 4 个 stage 上本来就是不均分的
+     （12/11/12/11，见泳道图那一屏），这里按本页的均分口径取 12/12/12/12。 */
+  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   /* 同为 128 卡的另外两档，用来在「四维各自出不出得来形状」上做对照——评审提的
      「dp 是 16 合理么 / 要不要放大 EP」问的就是这件事，与其在默认里定死，不如三档
      并排放进配置抽屉当场切。EP 组数 = (dp·cp·tp)/(ep·etp)：
@@ -617,8 +626,8 @@ var PRESETS = [
        ep4-128     tp2·pp4·dp16·ep4 → 32/4  =  8 组，每组 2 列（组更多、组框更密）
        tp4-128     tp4·pp4·dp8 ·ep2 →  8/2… TP 加倍、DP 减半，换一条轴看形状
      三条的模型规格逐位相同，只动并行度——否则比的就不是切法而是模型。 */
-  {id:'ep4d128', name:'128卡 tp2·pp4·dp16·ep4', cfg:{world:128, tp:2, cp:1, pp:4, ep:4, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
-  {id:'tp4d128', name:'128卡 tp4·pp4·dp8·ep2', cfg:{world:128, tp:4, cp:1, pp:4, ep:2, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  {id:'ep4d128', name:'128卡 tp2·pp4·dp16·ep4', cfg:{world:128, tp:2, cp:1, pp:4, ep:4, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  {id:'tp4d128', name:'128卡 tp4·pp4·dp8·ep2', cfg:{world:128, tp:4, cp:1, pp:4, ep:2, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
