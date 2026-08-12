@@ -1181,6 +1181,10 @@ function defsSVG(){
   }).join('')+'<marker id="arrx" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--pt-fg2)"/></marker></defs>';
 }
 /* 一只 3D 盒（三可见面）；cls 面用 token 类，动态描边走 style */
+/* projRot：当 proj 被视图临时换成「带旋转的投影」时（目前只有交集腔），这里
+   同步放一个「旋转方向向量」的函数——实心盒要靠它判断六个面哪些朝向机位。
+   不旋转时为 null，实心分支退化成老的固定三面（逐像素同款）。 */
+var projRot = null;
 function boxSVG(x,y,z,w,h,d,s, o){
   o = o || {};
   var f = {
@@ -1189,11 +1193,25 @@ function boxSVG(x,y,z,w,h,d,s, o){
     right:[proj(x+w,y,z,s),proj(x+w,y+h,z,s),proj(x+w,y+h,z+d,s),proj(x+w,y,z+d,s)]
   };
   var st = o.stroke ? 'stroke:'+o.stroke+';stroke-width:'+(o.sw||1) : 'stroke:var(--pt-bds);stroke-width:'+(o.sw||1);
-  if(o.fill){ /* 实心内容块：一个颜色三个明度 */
-    return '<g'+(o.attrs||'')+'>'
-      + '<polygon points="'+ptsStr(f.top)+'" style="fill:color-mix(in srgb,'+o.fill+' 86%, #fff 14%);'+st+'"/>'
-      + '<polygon points="'+ptsStr(f.left)+'" style="fill:color-mix(in srgb,'+o.fill+' 82%, #000 18%);'+st+'"/>'
-      + '<polygon points="'+ptsStr(f.right)+'" style="fill:color-mix(in srgb,'+o.fill+' 68%, #000 32%);'+st+'"/></g>';
+  if(o.fill){ /* 实心内容块：六面全建 + 按旋转后的法线剔背面（凸盒剔除后可见面
+       互不遮挡，无需排序）。只画固定三面的话，跟着转台一转就露出「没画的那半边」。
+       明度三档沿用旧值：默认机位下可见的恰是 top/left/right，输出逐像素不变。 */
+    var V9 = [[x,y,z],[x+w,y,z],[x+w,y,z+d],[x,y,z+d],[x,y+h,z],[x+w,y+h,z],[x+w,y+h,z+d],[x,y+h,z+d]];
+    var P9 = V9.map(function(v){ return proj(v[0],v[1],v[2],s); });
+    var FF = [ {i:[4,5,6,7], n:[0,1,0]},  {i:[0,3,2,1], n:[0,-1,0]},
+               {i:[0,1,5,4], n:[0,0,-1]}, {i:[3,7,6,2], n:[0,0,1]},
+               {i:[0,4,7,3], n:[-1,0,0]}, {i:[1,2,6,5], n:[1,0,0]} ];
+    var out9 = '';
+    FF.forEach(function(fc){
+      var n = projRot ? projRot(fc.n) : fc.n;
+      if(n[0]+n[1]+n[2] <= 0.02) return;             /* 背面：机位在 +(1,1,1) */
+      var sh = n[0]*.26 + n[1]*.83 + n[2]*.47;
+      var c9 = sh > .66 ? 'color-mix(in srgb,'+o.fill+' 86%, #fff 14%)'
+             : sh > .36 ? 'color-mix(in srgb,'+o.fill+' 82%, #000 18%)'
+             :            'color-mix(in srgb,'+o.fill+' 68%, #000 32%)';
+      out9 += '<polygon points="'+ptsStr([P9[fc.i[0]],P9[fc.i[1]],P9[fc.i[2]],P9[fc.i[3]]])+'" style="fill:'+c9+';'+st+'"/>';
+    });
+    return '<g'+(o.attrs||'')+'>' + out9 + '</g>';
   }
   if(o.wire){ /* 容器线框：只画棱 */
     var p8 = [proj(x,y,z,s),proj(x+w,y,z,s),proj(x+w,y,z+d,s),proj(x,y,z+d,s),proj(x,y+h,z,s),proj(x+w,y+h,z,s),proj(x+w,y+h,z+d,s),proj(x,y+h,z+d,s)];
@@ -4291,6 +4309,12 @@ function renderSolidCav(D){
       var rz2 = dy*srpch + rz*crpch;
       return origProj(rx+rcx, ry+rcy, rz2+rcz, s);
     };
+    /* 实心盒（boxSVG fill）要按同一套旋转判面朝向——见 boxSVG 顶上的说明 */
+    projRot = function(n){
+      var rx = n[0]*cryw + n[2]*sryw, rz3 = n[2]*cryw - n[0]*sryw;
+      var ry = n[1]*crpch - rz3*srpch; rz3 = n[1]*srpch + rz3*crpch;
+      return [rx, ry, rz3];
+    };
   }
   var TY = 322, TX1 = SEC ? 372 : 500, TX2 = 700, BW = 142, BH = 132;
   var BD1 = D.moe ? 104 : 40, BD2 = 104;
@@ -4672,7 +4696,7 @@ function renderSolidCav(D){
   parts.push(txt(RX, H-28, '尺寸纪律：真切=面积守恒（份合起来=父块） · 复印=等大成叠（②真切 / ①复印，同一把 DP 刀两种作用） · 放大=尺寸不守恒（⊕，本图不放大）', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
   parts.push(txt(RX, H-14, '点任意轴尺的一格换卡：换 ℓ / h / e 三根轴，①的腔会移动；换 b（DP）只在②里移动，①纹丝不动 —— 这就是六把刀落到两个对象上的全部差别。', 8, 'var(--pt-fg2)', 'start'));
 
-  if(hasRot) proj = origProj;
+  if(hasRot){ proj = origProj; projRot = null; }
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
