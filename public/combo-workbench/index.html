@@ -976,6 +976,15 @@ function wireSplitters() {
   });
 }
 
+/* 最近一次推给某一格的 rank。两格互转 sel 时用它认回声（见下面那段守卫）。 */
+var pushedSel = { topology: null, netgraph: null };
+function relaySel(id, v) {
+  var f = $('iframe[data-slot="' + id + '"]');
+  if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+  pushedSel[id] = v;
+  f.contentWindow.postMessage({ type: 'pto:state', sel: v }, '*');
+}
+
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
