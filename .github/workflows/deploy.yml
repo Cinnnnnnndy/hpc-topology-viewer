@@ -7,9 +7,13 @@ name: Deploy to GitHub Pages
 # 注意：Pages 每次部署整体替换——main 上的工作流没有这段叠加逻辑，
 # main 一发布 /rubik/ 会暂时消失，重跑本分支的 workflow（push 或
 # workflow_dispatch 选本分支）即可找回。
+# ── 发布口子已收敛到 main 一处（2026-08）──────────────────────────────────
+# 这份工作流每次都是**整站替换**。以前 main 之外还有几条 pattern 分支能触发它，
+# 于是谁最后跑谁赢：同一条已经发出去的链接，内容会在几版之间来回跳（实机一小时
+# 内发生三次）。现在这条分支不再自动发布——它的内容照样进站，由 main 那份工作流
+# 按 ref 来这里取源，推 main 一次就把所有人的最新版一起发出去。
+# 仍保留 workflow_dispatch：确有需要时还能手动跑一次。
 on:
-  push:
-    branches: [main, claude/rubik-view-pattern-extraction-7pk0qt]
   workflow_dispatch:
 
 # Allow the workflow to publish to Pages.
