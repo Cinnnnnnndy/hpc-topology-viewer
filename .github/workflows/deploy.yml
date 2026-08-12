@@ -18,6 +18,11 @@ name: Deploy to GitHub Pages
 #       这三个目录与三张卡，main 这份工作流已经全部自己产出——2026-08 之前
 #       main 只做了其中一部分（缺 /patterns/net-slicing/ 与它那张卡），于是每次
 #       推 main 都会把它打掉、必须手动补跑那个分支。现在推 main 一次即完整。
+#   · claude/topology-swimlane-card-layout-fdrgiq
+#       → /combo-workbench/（组合工作台：三格台面——训练语义 sidecar ｜ 并行拓扑
+#         pattern ｜ 微批次生命周期泳道；泳道那份是 compute-graph-viewer 的上游拷贝）
+#       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
+#         public/combo-workbench/launch-card.html，见下面那一步）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -47,7 +52,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-
 # Allow the workflow to publish to Pages.
 permissions:
   contents: read
@@ -464,6 +468,73 @@ jobs:
                   bad += 1
           sys.exit(1 if bad else 0)
           PY
+
+      - name: Checkout combo-workbench branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/topology-swimlane-card-layout-fdrgiq
+          path: combo-src
+
+      - name: Overlay 组合工作台 at /combo-workbench/
+        # 台面本体（index.html）是自包含单文件，色板照抄 launch.html，不引外部样式；
+        # 它靠 iframe 摞两张卡：
+        #   · ../parallel-topology/demo.html —— 上一步刚叠好的那份，不复制第二份；
+        #   · ./swimlane.html               —— compute-graph-viewer 的上游拷贝，
+        #     连同 ./vendor/swimlane-task/ 一起搬过来；它的 ../vendor/pto-design-system/
+        #     恰好落在 main 构建产物已有的 /vendor/ 上，路径原样保留。
+        # iframe 的 src 是 JS 拼的，没法像别处那样给 href/src 打版本戳，所以把 SHA
+        # 塞进 index.html 里的 var BUILD——拼 URL 时自己带上 ?v=，不吃旧缓存。
+        # 逐页列举（不是 cp -r）：新增页面必须补到这一步，否则线上 404。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C combo-src rev-parse --short HEAD)
+          SRC=combo-src/public/combo-workbench
+          DST=dist/combo-workbench
+          mkdir -p $DST/vendor/swimlane-task
+
+          sed -e "s#^var BUILD = '';#var BUILD = '$SHA';#" $SRC/index.html > $DST/index.html
+          grep -q "var BUILD = '$SHA';" $DST/index.html   # 锚点没打中就让这一步失败，别静默发一份没戳的
+
+          sed -e 's#\(\(href\|src\)="\)\(\.\{1,2\}/[A-Za-z0-9./_-]*\.\(css\|js\)\)"#\1\3?v='"$SHA"'"#g' \
+              $SRC/swimlane.html > $DST/swimlane.html
+          cp $SRC/embed.css $SRC/embed-bridge.js $DST/
+          cp $SRC/vendor/swimlane-task/pattern.css $SRC/vendor/swimlane-task/pattern.js $DST/vendor/swimlane-task/
+
+          echo "published: /combo-workbench/?v=$SHA"
+
+      - name: Overlay 组合工作台卡片 into /launch.html
+        # 与并行拓扑那张卡同一套做法：站点框架永远从 main 构建，本分支不进 main，
+        # 所以卡片走叠加。片段本体在 public/combo-workbench/launch-card.html（可评审、
+        # 可本地渲染），这里只做定位插入。锚点找不到就抛异常让整步失败——
+        # 绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C combo-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('combo-src/public/combo-workbench/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'combo-workbench' in html:
+              raise SystemExit('launch.html 已含组合工作台链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+          # ① 卡片插进「工作台 · 主线」组的**最前面**：它是台面，不是可嵌的 pattern，
+          #    而且后续的工作台组合都往它上面摞——该领这一组的头。
+          gapp = html.index('<h2 class="group-title" id="g-app">')
+          grid = html.index('      <div class="card-grid">\n', gapp) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + card.rstrip('\n') + '\n' + html[grid:]
+          # ② 顶栏 pill：跟在驾驶舱那枚后面（都是「进来是用的」那一类入口）
+          pill = '<a class="pill" href="./cube-cockpit.html">AI Infra 驾驶舱 v22</a>'
+          at = html.index(pill) + len(pill)
+          html = html[:at] + '\n      <a class="pill" href="./combo-workbench/?v=' + sha + '">组合工作台</a>' + html[at:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          PY
+          grep -c 'combo-workbench' dist/launch.html
+          test -s dist/combo-workbench/index.html
+          test -s dist/combo-workbench/swimlane.html
+          test -s dist/combo-workbench/vendor/swimlane-task/pattern.js
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4

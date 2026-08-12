@@ -71,6 +71,68 @@ md 跟着发出去就等于同一份内容有两条链接。
 两条链接各自独立，但视觉语言同源（同一套 token、版心、章节标尺）——是一对文档，
 不该长成两种东西。
 
+## 组合工作台（`/combo-workbench/` · 独立迭代）
+
+一块**摞格子**的应用台面，后续的工作台组合往它上面继续摞。形制与视觉语言同
+`public/cube-cockpit.html`：顶栏 + 舞台 + 底部抽屉，铺满视口、自己不滚动（滚动都发生在
+格子里面），同一套 PTO token（浅色优先、`[data-theme=dark]` 单块覆盖）、同一种面板圆角与
+段控，抽屉就是驾驶舱那张「Profiling 视图」卡的形制。token 是内联的，不引 vendor。
+
+现在三格：
+
+| 格子 | 内容 | 我们给了什么 |
+|---|---|---|
+| 舞台左 · 整网图 | iframe → `/pto-ds/patterns/model-architecture-training-sidecar/pattern.html?view=front`（跨仓 `pto-design-system`） | 格头：名字 + 收起（名字由台面出，好和并行拓扑同一套字号）；默认看**正视** |
+| 舞台右 · 并行拓扑 | iframe → `/patterns/net-slicing/pattern.html`（为「被嵌」抽出来的那一屏，应用顶栏天然收起） | 什么都不加；名字与「＋ 搜索」由它自己在画布左上角出 |
+| 抽屉 · 微批次生命周期泳道 | iframe → `./swimlane.html?chrome=0`，MB07 · step 18420 | 格头：三档时间范围的段控 + 收起 |
+
+三格之间两条可拖的分隔条（左右一条、上下一条）。
+
+整网图默认看**正视**而不是 pattern 出厂的侧视，是因为这一格装不下侧视：那个视图里的
+算子名/指标名是**固定字号**的 HTML 标注，不随缩放变小，左右还各挂一条 input/output
+标注带，量下来要 ~950px 视口才收得住（460 宽时左溢 407px、右溢 285px），点多少次
+「适配」都没用。正视这一屏本来就是模型计算图，460 宽完整装得下。3D / 侧视 没拿掉，
+pattern 自己那三颗段控一点就换。「适配」只管缩放不管重心（固定字号的标注不跟着缩），
+所以点完它我们再量一遍包围盒补一次居中——**只动 pan 不动 zoom**，且只居中**装得下的
+那条轴**，本来就溢出的轴一平移只会把一侧推得更远。
+
+认 `pto:state` 的格子用 `postMessage` 驱动，**不重载 iframe**——切视图不会丢掉格子里
+选中的那张卡 / 那条事件。顶栏那颗月亮是**主题桥**，外壳与三格里的页面一起换明暗：认
+`?theme=`/`pto:state` 的走消息，sidecar 那份两样都没有（明暗只认它自己 `data-theme`），
+所以同源翻进去按它自己那颗浅色/深色按钮——不碰内部状态，只按它自己的控件。
+台面状态（看哪个视图、左格多宽、抽屉多高、折了谁、明暗）写进 URL，
+`?a=solid&b=l34&w=600&h=460&ui=dark` 这样一条链接就是你当时那一屏。
+
+**整网图 → 并行拓扑的联动**：左格选中第 *n* 层（点层本身，或展开某层后点里面的算子），
+右格就落一枚它**自己那套属性搜索**的 `层 · Ln` 标签——由它自己算出这一层落在哪个 stage、
+被 TP/EP/DP 各切几份、共几张卡与之有关，并把那些卡点亮；取消选中就摘掉这一枚
+（不碰用户手填的别的标签）。因为高亮的是**卡**不是算子，「打开 Rank → 关闭整网」
+进魔方那个模式一样有效。走的是它自己的控件（点「＋ 搜索」→ 点「层」→ 填值 → 回车，
+全程它自己的事件处理器），**不重载 iframe**，视角/缩放/选中卡都不丢；它的 `pto:state`
+白名单里没有搜索标签，chips 关在它的 IIFE 里，所以只能这么走。
+台面这边靠轮询 `window.trainingSidecarController` 的 `selectedLayer` /
+`base.state.selected.layer` 拿层号——整网图改选中的入口不止一条，盯结果比盯入口可靠。
+注意两个 pattern 现在描述的**不是同一个模型**：整网图是 openPangu-flash（46 层 + MTP），
+并行拓扑默认预置是 32 层，所以 L32 以上会被它如实回一句「只有 32 层（L0–L31）」——
+层号原样转发，台面不替它编一个对应关系。
+
+台面在启动页上另有一张卡（「工作台 · 主线」组的头一张），那张卡用的是启动页的样式；
+片段本体在 `public/combo-workbench/launch-card.html`，由 `deploy.yml` 叠加插入。
+
+`public/combo-workbench/swimlane.html` 是 **compute-graph-viewer 的上游拷贝**
+（`pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html`），连同
+`vendor/swimlane-task/` 一起搬过来。相对上游只加了三处：文件头出处说明、
+`embed.css`、`embed-bridge.js`（后两个是内嵌壳，一律靠 `.click()` 现有控件，
+不碰它自己那个 IIFE）。正文一行没动，上游更新时重拷一遍再补这三处即可。
+`embed.css` 里还修了一处跨仓类名撞车：本仓 pto-design-system 快照的
+`.legend`（色板面板用，`flex-direction: column`）会把泳道底部那排图例竖着摞成
+138px 高、压穿 38px 的页脚——独立打开也一样坏，所以那条修复不分内嵌与否都生效。
+
+台面本体自包含（token 内联，不引外部样式）。三格的内容都是**构建期产物**——
+`/patterns/net-slicing/`、`/pto-ds/patterns/model-architecture-training-sidecar/`
+由发布流水线叠加，仓库里没有这两份文件，所以本地直接开 `public/` 时那两格是空的
+（有兜底文案说明），要看真样子得看发布后的站点。哪条 404 也只坏那一格，外壳还在。
+
 ## Develop
 
 ```bash
