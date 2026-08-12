@@ -346,8 +346,8 @@
 /* 右侧读出卡（FR-3） */
 /* 从工具条下面起头：top:10px 时它会顶到胶囊那一排底下，把「EP」和「卡维度」
    这两颗按钮压住——读出卡是次要信息，不该挡住控件。 */
-.pt-detail{top:52px; right:14px; width:290px; max-height:calc(100% - 64px); overflow:auto; font-size:12px}
-.pt-detail h4{margin:0 0 6px; font-family:var(--pt-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--pt-fg3); display:flex; justify-content:space-between; align-items:center; gap:8px}
+.pt-detail{top:52px; right:14px; width:230px; max-height:calc(100% - 64px); overflow:auto; font-size:12px}
+.pt-detail h4{margin:0 0 6px; font-family:var(--pt-mono); font-size:13px; font-weight:800; color:var(--pt-fg); display:flex; justify-content:space-between; align-items:center; gap:8px}
 .pt-detail .grank{font-family:var(--pt-mono); font-size:21px; font-weight:800}
 .pt-detail .grank small{font-size:10px; font-weight:400; color:var(--pt-fg3); margin-left:6px}
 .pt-x{border:none; background:none; color:var(--pt-fg3); font-size:14px; padding:0 3px}
@@ -561,7 +561,7 @@
    断点取 1560：工具条本身最宽能到 780px（max-width:min(72%,780px)），
    居中的搜索要在两侧各留出这么多才不会撞上——比直觉的「窄屏才管」高不少。 */
 @media (max-width:900px){
-  .pt-detail{width:min(86%, 304px)}
+  .pt-detail{width:min(86%, 240px)}
   .pt-stagebar{max-width:96%}
 }
 </style>
@@ -1070,19 +1070,15 @@ function paramsPerCard(D, ppRank){
 }
 var ACT_COEF = 4;
 /* ── 显存成分的签名色（三个落点共用：rank 壳 / 交集腔 L3 容器 / 选中卡）──────
-   四档灰分不开（实测：兑了底色之后全是一片浅灰），改成**冷暖分离**：
-     · ①腔三兄弟走同一条暖 ramp —— 同族在说「同一份参数的三本账」，
-       深→浅正好是 2 B / 2 B / 12 B 的重要性次序（600/400/200 三档拉满）
-     · ②腔走冷蓝（--pt-dp）—— 它本来就是 DP 那一刀切的对象，冷暖对立
-       同时把「常驻 vs 流动」这条分界画了出来
-     · 碎片/预留走中性灰：它不是内容，是余头
-   取自 pto 设计系统的 highlight-accum-orange 族（accum = 累积，梯度正是累积
-   出来的），**避开所有状态色**（danger/warning/success 不参与内容表达）。
-   pp 的琥珀 #ffaa3b 只出现在卡外的门牌与轴标上，与带内填色不同域。 */
+   三把账（w/g/opt）走**三条不同 ramp**，最大化色相差：
+     · 权重走深靛（l0b-deep-violet-600）—— 最暗、最重要，坐在底部
+     · 梯度走金棕（mte-amber-600）—— 暖黄，与靛完全对立
+     · 优化器态走浅玫红（l0a-violet-200）—— 最亮、体积最大（12B），淡紫不碰绿/蓝
+   ②腔走冷蓝（--pt-dp），碎片走中性灰，不变。 */
 var MEMC = {
-  w:  'var(--highlight-accum-orange-600, #D15905)',
-  g:  'var(--highlight-accum-orange-400, #FA8838)',
-  opt:'var(--highlight-accum-orange-200, #FDCFAF)',
+  w:  'var(--highlight-l0b-deep-violet-600, #4338CA)',
+  g:  'var(--highlight-mte-amber-600, #CA8A04)',
+  opt:'var(--highlight-l0a-violet-200, #D7B1FB)',
   act:'var(--pt-dp)',
   rsv:'color-mix(in srgb, var(--pt-fg) 12%, var(--pt-bg))'
 };
@@ -2868,7 +2864,7 @@ function netScene(D, g, box, step){
                画面上剩下的线立刻少一大半，而且前后关系比线更好读。
                三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
                卡不是某一个维度，它是四个维度的交点。 */
-            var lz = spotShellDim ? 0.35 : 1;
+            var lz = spotShellDim ? 0.35 : (hasSel && !meC ? 0.42 : 1);
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -2895,9 +2891,9 @@ function netScene(D, g, box, step){
                 var mq0 = P(cu0,vB9,cw0,kc), mq1 = P(cu1,vB9,cw0,kc),
                     mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
                     mq5 = P(cu1,vB9,cw1,kc), mq6 = P(cu1,vA9,cw1,kc);
-                body.push(quad([mq0,mq1,mq2,mq3], 'fill:'+memSolid(sg8.c, 74 - dT*16)+';stroke:none;opacity:'+lz));
-                body.push(quad([mq1,mq5,mq6,mq2], 'fill:'+memSolid(sg8.c, 90 - dT*18)+';stroke:none;opacity:'+lz));
-                if(sg8.top) body.push(quad([mq0,mq1,mq5,P(cu0,vB9,cw1,kc)], 'fill:'+memSolid(sg8.c, 58 - dT*12)+';stroke:none;opacity:'+lz));
+                body.push(quad([mq0,mq1,mq2,mq3], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
+                body.push(quad([mq1,mq5,mq6,mq2], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
+                if(sg8.top) body.push(quad([mq0,mq1,mq5,P(cu0,vB9,cw1,kc)], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
                 /* ②腔那段的上沿描一条虚线：常驻与流动的分界，颜色之外再给一道 */
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
               }
@@ -2911,11 +2907,6 @@ function netScene(D, g, box, step){
               body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
               body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
               body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
-            }
-            if(meC){
-              body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix(VC.dp,46)+';stroke:none'));
-              body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix(VC.dp,60)+';stroke:none'));
-              body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix(VC.dp,30)+';stroke:none'));
             }
           } else {
           if(!isFcol && !spot){
@@ -2932,8 +2923,9 @@ function netScene(D, g, box, step){
            前后的落差保持不变，该分得开的还是分得开。 */
         /* 棱加回一档：面填实之后线不再是噪声的来源，反倒是盒子的轮廓——太细的话
            盒子边缘化在背景里，实体感就散了。前后落差保持不变。 */
-        var eW = meC ? 1.15 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
+        var eW = meC ? 1.8 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
+        if(hasSel && !meC && !spot) { eO *= 0.4; }
         /* 落选的压到几乎看不见；**命中的反而要加粗**——聚光灯是「亮起一批」，
            不是「把所有人一起压暗」。原来这里不分命中与否一律压，于是搜索一落下，
            连该亮的那 32 只也跟着淡了。 */
@@ -2958,7 +2950,7 @@ function netScene(D, g, box, step){
         /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
            盒子在屏幕上小到装不下号时不写（按投影后的实际宽度判，不按缩放判）。 */
-        if(ui.netOff && !lowDetail && !meC && !spotShellDim){
+        if(ui.netOff && !lowDetail && !meC && !spotShellDim && !hasSel){
           /* 号写在盒子**顶面正上方**（参考页那枚门牌就在这个位置）。写在前脸中心的话
              它落在盒子肚子里，和穿过去的那些棱叠在一起，读者分不清这个号算哪一只；
              顶上那一圈是空的，一只盒子一个号，正上正下对得死死的。 */
@@ -6097,6 +6089,7 @@ document.addEventListener('click', function(ev){
 }, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
+  el.hidden = true; el.innerHTML = ''; return;
   if(!ui.chips.length){ el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   function row(dim, what){
@@ -6925,13 +6918,11 @@ function renderDetail(D){
       var kEd = D.experts/D.ep, e0d = me.ep*kEd;
       expRow = '<tr><td>专家桶</td><td>E'+e0d+'–E'+(e0d+kEd-1)+'（ep_rank '+me.ep+'）</td></tr>';
     }
-    el.innerHTML = '<h4>坐标读出 · FR-3 <button class="pt-x" data-act="clearsel" title="清除选中">✕</button></h4>'
-      + '<div class="grank">'+g+'<small>global_rank</small></div>'
-      + '<div class="coords">'+chips+'</div>'
+    el.innerHTML = '<h4>rank '+g+' <button class="pt-x" data-act="clearsel" title="清除选中">✕</button></h4>'
       + '<table><tr><td>层段</td><td>L'+l0d+'–L'+l1d+'（'+D.layersPerStage+' 层 / stage '+co.p+'）</td></tr>'
       + expRow
       + '<tr><td>权重</td><td>'+fmtP(paramsPerCard(D,co.p))+' 参数 · '+fmtGB(2*paramsPerCard(D,co.p))+' GB</td></tr></table>'
-      + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 钻进这张卡（解剖）</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
+      + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 解剖</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
       + '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--pt-fg3)">推导 · 逐算子形状 · 反查</summary>'
       + '<div class="formula">g = ((pp·DP+dp)·CP+cp)·TP+tp<br>&nbsp;= (('+co.p+'·'+D.dp+'+'+co.d+')·'+D.cp+'+'+co.c+')·'+D.tp+'+'+co.t+' = <b>'+g+'</b><br>'
       + '<span style="opacity:.65">逆向: tp=g%TP · cp=⌊g/TP⌋%CP · dp=⌊g/TP·CP⌋%DP · pp=⌊g/TP·CP·DP⌋（可逆 §07/§10）</span></div>'
