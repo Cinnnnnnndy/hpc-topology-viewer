@@ -297,6 +297,24 @@
   box-shadow:0 10px 34px rgba(0,0,0,.18); padding:13px 15px 12px;
 }
 .pt-opcard[hidden]{display:none}
+/* ── 选中 rank 的容器卡：128 只壳里塞不下的「卡里装了什么」，点亮哪只给哪只浮出来。
+   钉在左下（底沿让开 groupHud 那排选组 pill）；场景转台/缩放都不影响它——
+   它读的是选中卡的账，不是机位。 */
+.pt-rankmem{
+  position:absolute; left:14px; bottom:60px; z-index:8; width:434px;
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px;
+  box-shadow:0 10px 34px rgba(0,0,0,.16); padding:10px 13px 8px;
+}
+.pt-rankmem[hidden]{display:none}
+.pt-rankmem .rm-h{display:flex; align-items:baseline; gap:9px}
+.pt-rankmem .rm-h b{font-size:13.5px; font-weight:800; color:var(--pt-fg)}
+.pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:9.5px; color:var(--pt-fg3)}
+.pt-rankmem .rm-x{
+  margin-left:auto; border:1px solid var(--pt-bd); background:none; border-radius:8px;
+  width:22px; height:22px; line-height:1; cursor:pointer; color:var(--pt-fg3); font-size:12px;
+}
+.pt-rankmem .rm-x:hover{color:var(--pt-fg); border-color:var(--pt-bds)}
+.pt-rankmem svg{display:block; width:100%; height:auto; margin-top:2px}
 .pt-opcard .oc-h{display:flex; align-items:flex-start; gap:10px}
 .pt-opcard .oc-k{
   font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
@@ -578,6 +596,8 @@
     </div>
     <!-- 算子明细卡：点一个算子浮出来，跟着那个算子的位置走 -->
     <aside class="pt-opcard" id="opCard" hidden></aside>
+    <!-- 选中 rank 的容器卡（Rank+关整网）：点亮哪只卡，那只卡「装了什么」浮出来 -->
+    <aside class="pt-rankmem" id="rankMem" hidden></aside>
     <!-- 选组 HUD：四个视角共用的一行切分组切换（TP·SP/CP/EP/DP/PP），钉在画布下沿 -->
     <div class="pt-grouphud" id="groupHud" hidden></div>
     <div class="pt-animcap" id="animCap"></div>
@@ -6966,6 +6986,91 @@ function renderStageTitle(){
   }
 }
 
+/* ══ 选中 rank 的容器卡（Rank + 关整网）═════════════════════════════════
+   128 只壳里画不下「卡里装了什么」（试过一版塞进去，只剩噪声）——改成
+   **点亮哪只卡，就给哪只卡浮出这张容器图**：与交集腔 L3 / card-container
+   独立页同一张图的静置版。固定机位、不跟转台——它读的是这张卡的账，不是机位。 */
+function renderRankMem(D){
+  var el = $('rankMem');
+  if(!el) return;
+  var on = ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && D.ok && sel < D.world;
+  if(!on){ el.hidden = true; return; }
+  var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
+  var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  function ln9(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  var segs = memParts(D, p), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
+  var cap = D.hbm*Math.pow(2,30), sc = 1/Math.max(cap, tot);
+  var CW = 80, CH = 104, CD = 48, GX = 102, GY = 174;
+  var TONE = {
+    w:  'color-mix(in srgb, var(--pt-fg) 60%, var(--pt-bg))',
+    g:  'color-mix(in srgb, var(--pt-fg) 40%, var(--pt-bg))',
+    opt:'color-mix(in srgb, var(--pt-fg) 23%, var(--pt-bg))',
+    act:'color-mix(in srgb, var(--pt-dp) 55%, var(--pt-bg))',
+    rsv:'color-mix(in srgb, var(--pt-fg) 10%, var(--pt-bg))'
+  };
+  var acc = 0, bandY = {}, labs = [], body = '';
+  segs.forEach(function(sg){
+    var f0 = acc*sc; acc += sg.bytes;
+    var f1 = acc*sc;
+    if(f1-f0 < 0.004) return;
+    bandY[sg.k] = {y0:CH*f0, y1:CH*f1};
+    body += boxSVG(0, CH*f0, 0, CW, CH*(f1-f0), CD, 1,
+                   {fill:TONE[sg.k], stroke: sg.k==='act' ? 'var(--pt-dp)' : 'var(--pt-bg)',
+                    sw: sg.k==='act' ? .8 : .4, attrs: sg.k==='act' ? ' opacity=".88"' : ''});
+    var a = proj(CW, CH*(f0+f1)/2, CD/2, 1);
+    labs.push({k:sg.k, label:sg.label, gb:fmtGB(sg.bytes), ax:GX+a[0], ay:GY+a[1]});
+  });
+  /* 权重带内部 = 那排算子片：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色）。
+     梯度/优化器态同一分法 ×1/×6，在这张小图上只在下方一句话里说。 */
+  var ops = opBytes(D).filter(function(o){ return o.b > 0; })
+              .map(function(o){ return {id:o.id, cut:o.cut, b:o.b*lps}; });
+  if(p===0) ops.push({id:'embed', cut:'tp', b:2*Math.ceil(D.vocab/D.tp)*D.hidden});
+  if(p===D.pp-1) ops.push({id:'lm_head', cut:'tp', b:2*D.hidden*Math.ceil(D.vocab/D.tp)});
+  var wSum = ops.reduce(function(a,x){ return a+x.b; },0), ax9 = 0;
+  if(bandY.w) ops.forEach(function(o){
+    var w9 = CW*o.b/wSum, x9 = ax9; ax9 += w9;
+    if(w9 < .5) return;
+    var col = o.cut==='tp' ? VC.tp : o.cut==='ep' ? VC.ep : null;
+    if(col) body += boxSVG(x9, bandY.w.y0, 0, w9, bandY.w.y1-bandY.w.y0, CD, 1,
+                           {fill:col, stroke:'var(--pt-bg)', sw:.3, attrs:' opacity=".5"'});
+  });
+  if(bandY.act){
+    var nIf = Math.max(1, Math.min(D.pp, D.ga) - p);
+    for(var mi = 1; mi < nIf; mi++)
+      body += ln9(proj(CW*mi/nIf, bandY.act.y0, CD, 1), proj(CW*mi/nIf, bandY.act.y1, CD, 1),
+                  'stroke:var(--pt-bg);stroke-width:.6;stroke-dasharray:2 2');
+  }
+  var fT = tot*sc;
+  if(fT < .985){
+    body += ln9(proj(0, CH*fT, 0, 1), proj(CW, CH*fT, 0, 1), 'stroke:var(--pt-fg3);stroke-width:.7;stroke-dasharray:4 3');
+    var fr = proj(CW/2, CH*(fT+1)/2, 0, 1);
+    body += txt(fr[0], fr[1], '余量 '+fmtGB(cap-tot)+' GB', 7.6, 'var(--pt-fg3)', 'middle', 'font-weight="700"');
+  }
+  body += boxSVG(0, 0, 0, CW, CH, CD, 1, {wire:true, stroke:'var(--pt-fg2)', sw:1});
+  var parts = ['<g transform="translate('+GX+','+GY+')">'+body+'</g>'];
+  labs.sort(function(a,b){ return b.ay - a.ay; });
+  var LX = 206, LY0 = 190, ST = 28;
+  labs.forEach(function(L, i){
+    var y = LY0 - i*ST;
+    var col = L.k==='act' ? VC.dp : (L.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
+    parts.push(ln9([L.ax+5, L.ay], [LX-9, y-3], 'stroke:var(--pt-bds);stroke-width:.7'));
+    parts.push('<rect x="'+(LX-3)+'" y="'+(y-14)+'" width="8" height="8" style="fill:'+TONE[L.k]+';stroke:var(--pt-bds);stroke-width:.5"/>');
+    parts.push(txt(LX+9, y-7, esc(L.label), 9.4, col, 'start', 'font-weight="800"'));
+    parts.push(txt(LX+196, y-7, L.gb+' GB', 9.4, col, 'end', 'font-weight="800"'));
+  });
+  parts.push(ln9([LX-3, LY0+12], [LX+196, LY0+12], 'stroke:var(--pt-bds);stroke-width:.8'));
+  parts.push(txt(LX+9, LY0+26, '合计 '+fmtGB(tot)+' / '+D.hbm+' GB', 10, tot>cap?'var(--pt-danger)':'var(--pt-fg)', 'start', 'font-weight="800"'));
+  var big = ops.slice().sort(function(a,b){ return b.b-a.b; }).slice(0,3)
+    .map(function(o){ return o.id+' '+fmtGB(o.b); }).join(' · ');
+  parts.push(txt(6, 248, '权重带内部（切法看颜色）：'+esc(big)+' GB —— 梯度/优化器态同一分法 ×1/×6 · 交集腔视图有放大版', 7.2, 'var(--pt-fg3)', 'start'));
+  el.innerHTML =
+    '<div class="rm-h"><b>rank '+g+' 装了什么</b>'
+    + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
+    + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
+    + '<svg viewBox="0 0 410 254">'+parts.join('')+'</svg>';
+  el.hidden = false;
+}
+
 /* ═════════ 总渲染 ═════════ */
 function render(){
   var D = derive(cfg);
@@ -6997,6 +7102,7 @@ function render(){
     else if(ui.view==='story') renderStory(D);
     else renderV2(D);
   }
+  renderRankMem(D);
   renderDetail(D);
   var dr = $('drawer');
   if(ui.drawer){ dr.hidden = false; dr.innerHTML = drawerHTML(D); }
@@ -7316,6 +7422,7 @@ document.addEventListener('click', function(ev){
   else if(act==='storyact'){ ui.act = +b.getAttribute('data-i'); render(); }
   else if(act==='act2'){ ui.act2 = !ui.act2; render(); }
   else if(act==='cavReset'){ ui.cavYaw = 0; ui.cavPitch = 0; render(); }
+  else if(act==='rankmemclose'){ sel = null; render(); }
   else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
   else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
