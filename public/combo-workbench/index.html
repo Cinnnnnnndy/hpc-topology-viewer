@@ -1023,6 +1023,45 @@ function setSidecarLayer(frame, n) {
   } catch (err) { /* 跨源，或它换了对外接口：不联动而已 */ }
 }
 
+/* 并行拓扑此刻选中的那张卡落在哪个 PP 段、那一段是哪几层。
+   读的是它**自己那枚点亮的 PP 胶囊**（`PP2·L24–35`）——那行字就是它对
+   「这张卡装了哪一段」的原话，比我们照着 rank 反算一遍靠谱：反算要复制它
+   tp‑cp‑dp‑pp 那套坐标算术，它一改我们就悄悄错了。
+   胶囊在选组 HUD 收起时只是 display:none，DOM 还在，照样读得到。 */
+function topoStageRange(doc) {
+  var on = doc.querySelector('[data-act="chainpick"][data-k="p"].is-on');
+  if (!on) return null;
+  /* `PP2·L24–35`：中间那个是 en dash，源码里写的就是它，别只认 ASCII 连字符 */
+  var m = (on.textContent || '').match(/L(\d+)\s*[–\-—]\s*(\d+)/);
+  if (!m) return null;
+  return { lo: +m[1], hi: +m[2] };
+}
+
+/* 把那一段层在整网图上整体点亮。
+   为什么是注一段 CSS 而不是调它的 API：sidecar **只能一次选中一层**
+   （公开接口里只有 selectLayer(单个)，没有 highlightLayers / layerRange 之类），
+   而一张卡装的是一整段（这套配置下 12 层）。所以选中那件事仍旧交给它自己
+   （setSidecarLayer 展开其中一层看细节），"这一段都归这张卡" 由台面**只用外观**
+   表达——`.pto-training-sidecar__layer-column` 是它每层一条、贯穿整个 deck 的
+   band，正好是这句话该落的地方。不碰它任何内部状态，取消时把 style 撤掉即可。 */
+function setSidecarBand(frame, range) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || !doc.head) return;
+    var st = doc.getElementById('wb-cardband');
+    if (!range) { if (st) st.remove(); return; }
+    if (!st) { st = doc.createElement('style'); st.id = 'wb-cardband'; doc.head.appendChild(st); }
+    var sel = [];
+    for (var i = range.lo; i <= range.hi; i++) {
+      sel.push('.pto-training-sidecar__layer-column[data-layer="' + i + '"]');
+    }
+    if (!sel.length) { st.textContent = ''; return; }
+    /* 用并行拓扑那枚 PP 胶囊的橙（VC.pp），一眼对得上是谁点亮的它。
+       只上底色不描边：46 条 band 挨着排，描边会连成一堵墙，看不出段界。 */
+    st.textContent = sel.join(',') + '{fill:#ffaa3b !important;fill-opacity:.16 !important}';
+  } catch (err) { /* 跨源 */ }
+}
+
 /* 刀：走 pto:state 的白名单字段 cut——不重载，也不占一枚搜索标签。
    为什么刀不做成 dim 标签：并行拓扑把多枚标签的命中集合取**并集**
    （见它的 spotlightHit），`层 L17` ∪ `刀 TP 组` 会比「L17 住在哪」更宽，
@@ -1054,7 +1093,7 @@ function setTopoCut(cut) {
    按「读到的值变了没有」判就不会：回声落地时读到的值等于这边已经有的值，
    推回去撞上两个 setter 各自的**幂等短路**（setSidecarLayer 比 selectedLayer、
    setTopoLayer 比标签上的数字，相同就直接返回），一次空操作，声音就止住了。 */
-var seenLeft = undefined, seenRight = undefined, lastTopoView = undefined;
+var seenLeft = undefined, seenRight = undefined, seenStage = undefined, lastTopoView = undefined;
 function wireLinkage() {
   setInterval(function () {
     var scFrame = $('iframe[data-slot="sidecar"]');
@@ -1073,12 +1112,18 @@ function wireLinkage() {
     var viewJustReturned = view !== lastTopoView;
     lastTopoView = view;
 
-    var rightLayer = null, canReadRight = false;
-    if (view === 'chain') {
-      try {
-        var ntDoc = ntFrame.contentDocument;
-        if (ntDoc) { var chip = topoLayerChip(ntDoc); rightLayer = chip ? chip.v : null; canReadRight = true; }
-      } catch (err) { /* 跨源 */ }
+    var rightLayer = null, canReadRight = false, ntDoc = null;
+    try { ntDoc = ntFrame.contentDocument; } catch (err) { /* 跨源 */ }
+    if (ntDoc && view === 'chain') {
+      var chip = topoLayerChip(ntDoc); rightLayer = chip ? chip.v : null; canReadRight = true;
+    }
+
+    /* 选中的卡落在哪一段——与层标签各走各的，互不干扰：段是「这张卡装了哪几层」
+       （整段点亮），层是「现在在看哪一层」（展开那一层看细节），叠在一起才完整。 */
+    if (ntDoc) {
+      var range = topoStageRange(ntDoc);
+      var stageKey = range ? range.lo + '-' + range.hi : '';
+      if (stageKey !== seenStage) { seenStage = stageKey; setSidecarBand(scFrame, range); }
     }
 
     if (leftLayer !== seenLeft || viewJustReturned) {
