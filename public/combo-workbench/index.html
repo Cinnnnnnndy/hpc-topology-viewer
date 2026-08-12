@@ -860,6 +860,108 @@ function settleFrame(slot, frame) {
   })();
 }
 
+/* ══ 联动：整网图选中的层 → 并行拓扑高亮那一层涉及的所有卡 ══════════════
+   左边点中第 29 层，右边就该告诉你「L29 住在哪些卡上」。这是两格之间唯一
+   真正对得上的语义：整网图讲的是**模型的第几层**，并行拓扑讲的是**这一层被
+   五把刀切完之后落在哪些 rank 上**——层号是它们共同的主键。
+
+   走的是并行拓扑**自己那套属性搜索**（就是画布左上角那颗「＋ 搜索」）：
+   落一枚 `层 · L29` 的标签，它自己会算出 stage/TP/EP/DP 各切几份、共几张卡
+   与这层有关，并把那些卡点亮。所以：
+     · 语义由它自己出，我们没有在台面上重算一遍「哪些 rank」——那种重算迟早
+       和它对不上；
+     · 「关闭整网」进魔方那个模式时一样有效，因为高亮的是**卡**不是算子；
+     · 不重载 iframe——iframe 一重载，选中的卡、视角、缩放全没了。
+
+   为什么不走 postMessage：它 `pto:state` 的白名单里只有 view/cut/sel/preset/
+   l5/theme，没有搜索标签，chips 关在它那个 IIFE 里够不着。同源，所以按**它
+   自己的控件**走——点「＋ 搜索」→ 点「层」→ 填数字 → 回车，全程是它自己的
+   事件处理器在改它自己的状态。与泳道那座桥同一条纪律，一个字没改它。 */
+
+/* 整网图此刻选中的层号；没选是 null，还没装配好是 undefined（别当成「取消选中」） */
+function sidecarLayer(frame) {
+  try {
+    var ctl = frame.contentWindow && frame.contentWindow.trainingSidecarController;
+    if (!ctl) return undefined;
+    /* 展开某一层之后点里面的算子，层号在 state.selected 里，比 selectedLayer 更准
+       （那才是「这个算子属于第几层」）；只点层本身时用 selectedLayer。 */
+    var sel = ctl.base && ctl.base.state && ctl.base.state.selected;
+    if (sel && typeof sel.layer === 'number') return sel.layer;
+    return typeof ctl.selectedLayer === 'number' ? ctl.selectedLayer : null;
+  } catch (err) { return undefined; }   // 跨源
+}
+
+/* 并行拓扑那格当前挂着的「层」标签的值（没有则 null）。
+   读的是它渲染出来的标签本身——它的内部状态我们够不着，这是唯一的外部读数。
+   入口选的是每枚标签自带的那颗「×」（data-act=chipdel）而不是标签的 class：
+   那颗按钮本来就是我们摘标签要点的东西，拿它当锚点，class 改了也不受影响。 */
+function topoLayerChip(doc) {
+  var dels = doc.querySelectorAll('[data-act="chipdel"]');
+  for (var i = 0; i < dels.length; i++) {
+    var chip = dels[i].parentElement;
+    var tag = chip && chip.querySelector('i');
+    if (!tag || (tag.textContent || '').trim() !== '层') continue;
+    var m = (chip.textContent || '').match(/(\d+)/);
+    return { del: dels[i], v: m ? +m[1] : null };
+  }
+  return null;
+}
+
+function click(el) {
+  if (!el) return false;
+  /* SVG 元素没有 .click()，统一派发——反正都是交给它自己的处理器 */
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: el.ownerDocument.defaultView }));
+  return true;
+}
+
+/* 落一枚 `层 · Ln` 标签（n 为 null 则摘掉我们这一枚，不动用户手填的别的标签）。
+   分几步是因为面板是点开一层才渲染下一层的，每一步都要重新查节点。 */
+function setTopoLayer(n) {
+  var frame = $('iframe[data-slot="topology"]');
+  if (!frame || !state.topology || !state.topology.loaded) return;
+  var doc;
+  try { doc = frame.contentDocument; } catch (err) { return; }
+  if (!doc) return;
+
+  var now = topoLayerChip(doc);
+  if (n === null || n === undefined) {
+    /* 只摘我们这一枚。「×· 清空全部条件」会把用户自己手填的标签一起扫掉，
+       那是他的东西，不该被左边一次取消选中连累。 */
+    if (now) click(now.del);
+    return;
+  }
+  if (now && now.v === n) return;                    // 已经是这一层，别白重画一遍
+
+  if (!click(doc.querySelector('[data-act="qopen"]'))) return;
+  setTimeout(function () {
+    if (!click(doc.querySelector('[data-act="qprop"][data-k="layer"]'))) return;
+    setTimeout(function () {
+      var inp = doc.getElementById('qVal');
+      if (!inp || inp.dataset.k !== 'layer') return;
+      inp.value = String(n);
+      /* 它的 Enter 处理器挂在 document 上，读的是 target.value —— 直接填值再
+         派发一个冒泡的 keydown 就够，不必去模拟逐个按键。 */
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }, 40);
+  }, 40);
+}
+
+/* 轮询而不是监听点击：整网图改选中的路子不止一条（点层、点层里的算子、
+   收起某一层、它自己的详情面板），盯住**结果**比盯住每一条入口可靠。
+   读的是两个 getter，一次几微秒，300ms 一轮不值得心疼。 */
+var lastLayer = undefined;
+function wireLinkage() {
+  setInterval(function () {
+    var frame = $('iframe[data-slot="sidecar"]');
+    if (!frame || !state.sidecar || !state.sidecar.loaded) return;
+    var n = sidecarLayer(frame);
+    if (n === undefined) return;                     // 还没装配好
+    if (n === lastLayer) return;
+    lastLayer = n;
+    setTopoLayer(n);
+  }, 300);
+}
+
 /* ── 格头动作 ─────────────────────────────────────────────────────── */
 function wireHead(slot) {
   var head = slotEl(slot.id).querySelector('.slot-head');
@@ -994,6 +1096,7 @@ buildFrameControls();
 applyData();
 applyShellTheme();
 wireSplitters();
+wireLinkage();
 
 $('#themeBtn').addEventListener('click', function () {
   shellDark = !shellDark;
