@@ -361,7 +361,15 @@ body.is-resizing iframe{pointer-events:none}
 /* 发布时由 deploy.yml 的「Overlay 组合工作台」一步 sed 成本分支短 SHA。
    iframe 的 src 是 JS 拼的，没法像别处那样在构建时给 href/src 打版本戳——
    不带它的话 ./swimlane.html?chrome=0&theme=light&range=global 这条 URL
-   逐字不变，重新发布后浏览器照旧吃缓存里那一份。本地开发时是空串，不加参数。 */
+   逐字不变，重新发布后浏览器照旧吃缓存里那一份。本地开发时是空串，不加参数。
+
+   **只给本目录自己的文件打**（swimlane.html）。另外两格嵌的是别人发布的成品
+   （/patterns/net-slicing/、/pto-ds/…），拿我们的 SHA 去戳它们是反效果：
+     · 它们更新、我们没动 → 戳不变，URL 逐字不变，照样吃缓存 —— 该刷的没刷；
+     · 我们改了台面、它们没动 → 戳变了，白白重下一遍 —— 不该刷的刷了。
+   所以那两格用规范路径本身，版本由它们各自的发布流水线负责（它们的 pattern.html
+   里对 vendor 的引用就带着自己那一版的 ?v=）。这样「工作台里的并行拓扑」和
+   「直接打开 /patterns/net-slicing/」永远是同一份文件、同一个版本。 */
 var BUILD = '';
 
 var SLOTS = [
@@ -419,7 +427,7 @@ var SLOTS = [
          对得上，且 460 宽就完整装得下（左右各余 ~100px）。
          3D / 侧视 没拿掉，pattern 自己那三颗段控一点就换。 */
       q.set('view', 'front');
-      if (BUILD) q.set('v', BUILD);
+      /* 不打 BUILD 戳：这是 pto-design-system 发布的成品，版本归它自己管（见 BUILD 那段） */
       return '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html?' + q.toString();
     }
   },
@@ -440,7 +448,9 @@ var SLOTS = [
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
       q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
-      if (BUILD) q.set('v', BUILD);
+      /* 不打 BUILD 戳：并行拓扑由它自己那条分支发布，版本归它自己管（见 BUILD 那段）。
+         这一格嵌的就是 /patterns/net-slicing/pattern.html 本体，没有第二份拷贝——
+         那边一更新，这里跟着就是新的。 */
       return '../patterns/net-slicing/pattern.html?' + q.toString();
     },
     /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
