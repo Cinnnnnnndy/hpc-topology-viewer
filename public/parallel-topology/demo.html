@@ -6162,11 +6162,18 @@ function renderRevBar(D){
 }
 
 function layoutQBar(){
-  var lg = $('legend');
-  if(!lg || lg.hidden) return;
   var q = $('qbar'), sb = document.querySelector('.pt-stagebar');
   if(!sb) return;
   var host = sb.parentElement.getBoundingClientRect();
+  if(q && q.innerHTML && ui.chips && ui.chips.length > 0){
+    var qr = q.getBoundingClientRect();
+    var sr = sb.getBoundingClientRect();
+    if(qr.right > sr.left + 4){
+      sb.style.top = Math.round(qr.bottom - host.top + 4) + 'px';
+    } else { sb.style.top = ''; }
+  } else { sb.style.top = ''; }
+  var lg = $('legend');
+  if(!lg || lg.hidden) return;
   var bot = Math.max(sb.getBoundingClientRect().bottom, q && q.innerHTML ? q.getBoundingClientRect().bottom : 0);
   lg.style.top = Math.round(bot - host.top + 10) + 'px';
 }
