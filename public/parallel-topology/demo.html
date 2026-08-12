@@ -2877,8 +2877,8 @@ function netScene(D, g, box, step){
                颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
                同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
                而不是靠加黑去凑遮挡。 */
-            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+solid('var(--pt-fg)',(2 + dT*2).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+solid('var(--pt-fg)',(21 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[0],C8[1],C8[5],C8[4]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+            body.push(quad([C8[1],C8[5],C8[6],C8[2]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad([C8[0],C8[1],C8[2],C8[3]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             /* 载荷：从底往上（v 朝下，底是 cv1）。壳的浅灰留着当「空的那截」，
                载荷盖在上面——空出的一截就是余量，不用另画水位线。
