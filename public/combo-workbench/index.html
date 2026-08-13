@@ -1133,9 +1133,9 @@ window.addEventListener('message', function (ev) {
        一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。
        只认 pto:select（读者在那一格真的点了什么），不认 pto:state-ack —— 后者是
        我们自己推过去之后的回执，拿它当输入就是自己跟自己转。 */
-    if (d.type === 'pto:select' && typeof d.sel === 'number' && d.sel >= 0) {
+    if (d.type === 'pto:select') {
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
-      if (peer) pushHL(peer, 'rank', d.sel);
+      if (peer) pushHL(peer, 'rank', (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null);
     }
   });
 });
