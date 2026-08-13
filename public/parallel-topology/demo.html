@@ -1177,14 +1177,48 @@ function inflightAt(D, ppRank, t){
      · 梯度走金棕（mte-amber-600）—— 暖黄，与靛完全对立
      · 优化器态走浅玫红（l0a-violet-200）—— 最亮、体积最大（12B），淡紫不碰绿/蓝
    ②腔走冷蓝（--pt-dp），碎片走中性灰，不变。 */
+/* 权重带整条走**刀色**（见 wCutBlocks）：这一屏的刀色就四个——DP 靛 / PP 橙 /
+   TP·SP 青 / EP 紫——它们是「这块是被哪把刀切出来的」的唯一语汇。所以剩下四档
+   必须**让开这四个色**，否则同一个颜色在同一只卡上说两件事。
+   让开之后的分工：
+     · 梯度   —— 绿。四个刀色里没有绿，最省事的一个空位，饱和度够，认得出。
+     · 优化器态 —— 极淡的中性紫灰。它是面积最大的一档（12B/参数，占一半以上），
+       上任何一个饱和色都会把整只卡染成那个色；面积大的东西该弱，让位给要读的。
+     · 激活   —— 蓝。它是唯一随时间轴动的一档，要跳得出来；蓝与 DP 靛同族但更亮，
+       而激活本来就是「这一份微批的数据」，同族反而对。
+     · 优化器步·临时区 —— 琥珀。它只在一步的最后冒出来，是那一刻把卡顶出去的元凶，
+       色上要有「注意」的意思，但不能是告警红（红留给越界本身）。
+     · 碎片   —— 中性灰，不参与语义。 */
 var MEMC = {
-  w:  'var(--highlight-l0b-deep-violet-600, #4338CA)',
-  g:  'var(--highlight-mte-amber-600, #CA8A04)',
-  opt:'var(--highlight-l0a-violet-200, #D7B1FB)',
-  act:'var(--pt-dp)',
+  w:  'var(--pt-tp)',                                        /* 兜底：细到分不出块时整条按 TP 青 */
+  g:  'var(--highlight-l0b-green-500, #4E9A63)',
+  opt:'color-mix(in srgb, var(--highlight-l0a-violet-200, #D7B1FB) 42%, var(--pt-bg))',
+  act:'var(--highlight-l0b-blue-500, #5B7BDE)',
   otmp:'var(--highlight-mte-amber-600, #CA8A04)',
   rsv:'color-mix(in srgb, var(--pt-fg) 12%, var(--pt-bg))'
 };
+/* 权重带的内部：这一段里每块权重是被哪把刀切出来的。字节口径与 opBytes 同一份
+   （card-container 那一屏的「权重带的内部」也是它），这里只补上两头的 embed/lm_head
+   —— 它们只属于首末段，正是 PP 那一刀留下的痕迹。
+   PP 不出现在这张表里，因为**它不切任何一个张量**：它切的是「哪几层住在这张卡上」，
+   是整条带的前提而不是带里的一块。这句话写在带头上（见读出卡的层段行）。 */
+function wCutBlocks(D, ppRank, L){
+  var lps = D.layersPerStage, o = [];
+  opBytes(D).forEach(function(x){
+    if(!x.b) return;
+    var by = x.b * lps;
+    if(x.id === 'experts' && L && L.expEven > 0) by *= L.expOwn / L.expEven;
+    o.push({id:x.id, cut:x.cut, how:x.how, bytes:by});
+  });
+  var vOwn = L ? L.vocabOwn : Math.ceil(D.vocab/D.tp);
+  if(ppRank === 0)        o.push({id:'embed',  cut:'tp', how:'词表列切 ×'+D.tp, bytes:2*vOwn*D.hidden});
+  if(ppRank === D.pp-1)   o.push({id:'lm_head',cut:'tp', how:'词表列切 ×'+D.tp, bytes:2*D.hidden*vOwn});
+  /* 同一把刀的块并排在一起，带上才读得出「青的这一截是 TP 切的」；复制的排最后 */
+  var ord = {ep:0, tp:1, cp:2, sp:3, none:9};
+  o.sort(function(a,b){ return (ord[a.cut]===undefined?8:ord[a.cut]) - (ord[b.cut]===undefined?8:ord[b.cut]); });
+  return o;
+}
+function cutColor(c){ return (c && c !== 'none' && VC[c]) ? VC[c] : 'color-mix(in srgb, var(--pt-fg) 22%, var(--pt-bg))'; }
 /* g 给了就按**那一张卡**算（见 rankLoad）；不给就是这一段的标准卡，读数与从前一字不差
    —— 聚合口径（每卡容量、A3 自检、四刀贡献对比）都走不给 g 这一路，免得被单卡的
    路由不均带偏：那些问的是「这套切法给一张卡留下多少」，不是「第 41 张卡此刻多少」。 */
@@ -1206,9 +1240,12 @@ function memParts(D, ppRank, g){
     var u = (stepT - 0.88) / 0.12;                 /* 末段 12% 里升起再落下 */
     optK = Math.sin(Math.PI * clamp(u, 0, 1));
   }
-  var optTmp = 4 * P * optK;
+  /* 4 B/参数是**整份** fp32 梯度副本；实机是分桶归约的——一桶归约完就还回去，
+     同一时刻驻留的只是其中一截。按 0.8 折算（≈3.2 B/参数）：这样峰值只把
+     本来就吃紧的那几张顶过 88%，而不是整片一起翻红。告警要稀有才有信息量。 */
+  var optTmp = 3.2 * P * optK;
   return [
-    {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w},
+    {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w, sub:wCutBlocks(D, ppRank, L)},
     {k:'g', label:'梯度 (bf16)', bytes:2*P, color:MEMC.g},
     {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, color:MEMC.opt},
     {k:'otmp', label:'优化器步·临时区 (fp32 梯度归约)', bytes:optTmp, color:MEMC.otmp},
@@ -2419,11 +2456,20 @@ function netScene(D, g, box, step){
        就把整叠压回壳内，越界反而看不出来——满了就该顶出去，那正是要报的事。 */
     var sc9 = 1/cap9, acc9 = 0, out9 = [];
     V9.segs.forEach(function(sg9){
-      var f0 = acc9*sc9; acc9 += sg9.bytes;
-      var f1 = acc9*sc9;
-      if(f1 - f0 < 0.006) return;                  /* 薄成一条线的段不画 */
-      /* 超出壳顶的那一截截断在 1.0：壳装不下的部分不画进壳里 */
-      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act'});
+      /* 权重带整条按**刀色**分块画：一块 experts 紫、一截 attn 青、复制的灰。
+         块薄到画不出（一屏 128 只卡时常见）就退回整条一个色，不画成一堆看不清的
+         细缝——分不出来的分块只是噪声。 */
+      var subs = (sg9.k === 'w' && sg9.sub && sg9.sub.length && (sg9.bytes*sc9) > 0.05)
+        ? sg9.sub : null;
+      var list = subs ? subs.map(function(x){ return {bytes:x.bytes, color:cutColor(x.cut)}; })
+                      : [{bytes:sg9.bytes, color:sg9.color}];
+      list.forEach(function(it){
+        var f0 = acc9*sc9; acc9 += it.bytes;
+        var f1 = acc9*sc9;
+        if(f1 - f0 < 0.006) return;                /* 薄成一条线的段不画 */
+        /* 超出壳顶的那一截截断在 1.0：壳装不下的部分不画进壳里 */
+        out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:it.color, act:sg9.k==='act'});
+      });
     });
     out9 = out9.filter(function(x){ return x.f1 - x.f0 > 0.0005; });
     if(out9.length) out9[out9.length-1].top = true;   /* 只有最上面那段露顶面 */
@@ -3120,8 +3166,17 @@ function netScene(D, g, box, step){
            粗细」这一档能在缩得很小的时候还认得出是哪几只。红＝已经顶出去（这一刻
            真的放不下），琥珀＝吃紧（≥92%，再抖一下就出界）。
            时间轴走到峰值时冒出来的正是它，也正是这一屏要报的事。 */
-        var capLv = (ui.netOff && ui.memFill && !lowDetail) ? (memStack(pc2, gc).level || 'ok') : 'ok';
-        var capCol = (capLv === 'oom' || capLv === 'red') ? CAP_C.red : (capLv === 'amber' ? CAP_C.amber : null);
+        /* 只有**走带在跑**的时候才报警（ACT_T 非空）。不放游标问的是「这套切法给一张卡
+             留下多少」——那是一个稳态预算，没有「此刻出事了」这回事，默认那一屏就该
+             和从前一样干净。告警是时间的产物，跟着时间出现才对。 */
+        var capLv = (ui.netOff && ui.memFill && !lowDetail && ACT_T !== null) ? (memStack(pc2, gc).level || 'ok') : 'ok';
+        /* 棱只给**红档以上**换色。橙那条线（70%）在这套配置里必然全中——静态地板
+           （优化器态 12B/参数 + 权重 + 梯度）本身就吃掉 69%，激活还没算——于是 128 只
+           卡全描成橙的，一个永远亮着的告警不是告警，只是把画面染了一遍。
+           橙仍然有用，但它的位置是**选中那只卡上的那条线**：那里它回答的是「这一只
+           离满还有多远」，是一个刻度；而棱上的颜色回答的是「哪几只出事了」，
+           那必须稀有才有信息量。 */
+        var capCol = (capLv === 'oom' || capLv === 'red') ? CAP_C.red : null;
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (spot && spotCard ? VC.dp : 'var(--pt-fg3)')))
