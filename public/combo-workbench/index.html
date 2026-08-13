@@ -579,10 +579,8 @@ var dataOn = DATAK.map(function (x) { return x.k; });
    那截空白带没了。这 38px 是被挡板占着的，不是泳道要的——所以从格子总高里一起
    扣掉，可见的泳道面积跟之前一模一样，只是矮了一条挡板。 */
 var DEFAULT_DOCK_H = 250;
-/* 整网图那格的默认宽度。侧视（这一格的默认机位，也是唯一有逐层点击入口的机位）
-   在窄栏下会把工具条挤成两行、算子标注两头切掉，620 是读得下来的下限；
-   要看全整张图拖分隔条即可。 */
-var DEFAULT_SIDE_W = 620;
+/* 整网图那格的默认宽度：视口的 42%（460–900 夹紧），左右大约 58:42。 */
+var DEFAULT_SIDE_W = Math.max(460, Math.min(900, Math.round(window.innerWidth * 0.42)));
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
 var sideW = DEFAULT_SIDE_W;

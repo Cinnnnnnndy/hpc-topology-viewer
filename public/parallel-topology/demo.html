@@ -2806,7 +2806,7 @@ function netScene(D, g, box, step){
         else { b8.d0 = Math.min(b8.d0,d8); b8.d1 = Math.max(b8.d1,d8);
                b8.t0 = Math.min(b8.t0,t8i); b8.t1 = Math.max(b8.t1,t8i); }
       }
-      var selG = hasSel && !spot ? grpOf(co.d, co.t) : -1;
+      var selG = -1;
       Object.keys(box9).forEach(function(mk){
         var m = +mk, b = box9[m], dd, tt, clean = true;
         for(dd = b.d0; dd <= b.d1 && clean; dd++)
@@ -2840,7 +2840,7 @@ function netScene(D, g, box, step){
                     P(fu0,fv0,fw1,oTL), P(fu1,fv0,fw1,oTR), P(fu1,fv1,fw1,oBR), P(fu0,fv1,fw1,oBL) ];
           /* 只描边不填色：填了就把框住的卡盖掉，而框的意义恰恰是「看里面有哪几张」。
              也不打虚线——ep×pp 一共十几只框，虚线在这个密度下会糊成一片麻点。 */
-          var epOp = (spot && spot.epRelevant) ? (spotEP ? .95 : .08) : (strong?.95:(hasSel?.16:.3));
+          var epOp = (spot && spot.epRelevant) ? (spotEP ? .95 : .08) : (strong?.95:.3);
           [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e){
             body.push(seg(F[e[0]], F[e[1]], 'stroke:'+VC.ep+';stroke-width:'+(strong?1.7:.6)
               +';opacity:'+epOp));
@@ -5464,7 +5464,6 @@ function frontScene(D, g, box){
         if(!span[m8]) span[m8] = {c0:cq3, c1:cq3};
         else { span[m8].c0 = Math.min(span[m8].c0, cq3); span[m8].c1 = Math.max(span[m8].c1, cq3); }
       });
-    var selG = hasSel ? Math.floor(((co.d*D.cp + co.c)*D.tp + co.t) / GSZ) : -1;
     Object.keys(span).forEach(function(mk){
       var m8 = +mk, sp8 = span[mk], ok = true, ci, rr;
       for(ci = sp8.c0; ci <= sp8.c1 && ok; ci++) for(rr = 0; rr < rows && ok; rr++){
@@ -5474,7 +5473,7 @@ function frontScene(D, g, box){
       if(!ok) return;                       /* 半列组宁可不画，不画错 */
       var bx = cellX(sp8.c0) - 5, bw = cellX(sp8.c1) + cellW + 5 - bx;
       var by9 = gy0 - 5, bh9 = gridH + 10;
-      var on8 = m8 === selG;
+      var on8 = false;
       body.push('<rect x="'+bx.toFixed(1)+'" y="'+by9.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh9.toFixed(1)
         +'" rx="'+(7/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.ep+';stroke-width:'+((on8?2:.9)/FS_Z).toFixed(2)+';opacity:'+(on8?1:.5)+'"/>');
       /* 组名挪到框**下面**、桶号那一排再下一行：EP 的东西整片沉在底下，
