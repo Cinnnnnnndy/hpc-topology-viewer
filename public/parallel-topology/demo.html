@@ -2461,14 +2461,20 @@ function netScene(D, g, box, step){
          细缝——分不出来的分块只是噪声。 */
       var subs = (sg9.k === 'w' && sg9.sub && sg9.sub.length && (sg9.bytes*sc9) > 0.05)
         ? sg9.sub : null;
-      var list = subs ? subs.map(function(x){ return {bytes:x.bytes, color:cutColor(x.cut)}; })
+      var list = subs ? subs.map(function(x){ return {bytes:x.bytes, color:cutColor(x.cut), seam:true}; })
                       : [{bytes:sg9.bytes, color:sg9.color}];
       list.forEach(function(it){
         var f0 = acc9*sc9; acc9 += it.bytes;
         var f1 = acc9*sc9;
-        if(f1 - f0 < 0.006) return;                /* 薄成一条线的段不画 */
+        /* 权重带的子块**不按厚度丢**。原来一律 0.6% 起画，而 attn.q/kv/out 每块只占
+           整卡的 0.2%–0.8%，于是全被丢掉，权重带看着就只剩一块紫 experts + 一根青丝
+           ——「被三把刀切成七块」这件事一点也看不出来。
+           薄到亚像素也照画（0.12% 起），块与块之间再兑一道底色的缝：哪怕每块只有一
+           两个像素高，一排缝在那儿，「这条带是切开的」就成立了。这正是参考图里那些
+           贯穿虚线盒的竖线在做的事——它画的是**刀缝**，不是块。 */
+        if(f1 - f0 < (it.seam ? 0.0012 : 0.006)) return;
         /* 超出壳顶的那一截截断在 1.0：壳装不下的部分不画进壳里 */
-        out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:it.color, act:sg9.k==='act'});
+        out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:it.color, act:sg9.k==='act', seam:!!it.seam});
       });
     });
     out9 = out9.filter(function(x){ return x.f1 - x.f0 > 0.0005; });
@@ -3077,7 +3083,12 @@ function netScene(D, g, box, step){
                画面上剩下的线立刻少一大半，而且前后关系比线更好读。
                三个面给三档明度（顶亮、正脸中、侧面深），中性灰不上维度色——
                卡不是某一个维度，它是四个维度的交点。 */
-            var lz = spotShellDim ? 0.35 : (hasSel && !meC ? 0.42 : 1);
+            /* 选中/命中与其余的对比再拉开一档：0.35/0.42 那两档在 128 只卡叠起来之后
+               仍然糊成一片（远处的盒子一层层透过来，等效亮度被抬回去了）。压到
+               0.18/0.24，主角才真的跳出来——这一屏本来就是「先认出那几只，再读它们」。
+               再往下压过（试过 0.14/0.20）整片阵列就淡没了，连「有 128 只」都读不出来，
+               主角失去了要衬托的背景，反而不显。 */
+            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? 0.24 : 1);
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -3112,8 +3123,12 @@ function netScene(D, g, box, step){
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
                 var lzM = meC ? 1 : lz;
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+';stroke:none;opacity:'+lzM));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+';stroke:none;opacity:'+lzM));
+                /* 刀缝：子块之间兑一道底色的细线，块薄到只剩一两个像素时它就是唯一
+                   还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
+                   把五档之间也画成七零八落。 */
+                var kerf = sg8.seam ? ';stroke:var(--pt-bg);stroke-width:'+(meC?0.5:0.3) : ';stroke:none';
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+kerf+';opacity:'+lzM));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+kerf+';opacity:'+lzM));
                 if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
                 body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
                 body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
@@ -7433,8 +7448,10 @@ function renderRankMem(D){
   var segs = memParts(D, p, g), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
   var cap = D.hbm*Math.pow(2,30);
   var TONE = {w:MEMC.w, g:MEMC.g, opt:MEMC.opt, act:MEMC.act, rsv:MEMC.rsv};
-  var rows = [];
+  var groups = [];
   segs.forEach(function(sg){
+    var rows = [];   /* 这一档自己的行：档头 + 明细 + 腔，组内顺序不动 */
+    groups.push(rows);
     if(!sg.bytes) return;                       /* 这一刻是 0 的档（比如没跑走带时的优化器临时区）不占一行 */
     var col = sg.k==='act' ? VC.dp : (sg.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
     rows.push('<tr><td style="width:12px"><span style="display:inline-block;width:8px;height:8px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
@@ -7503,6 +7520,13 @@ function renderRankMem(D){
         + '</svg></td></tr>');
     }
   });
+  /* 图例按**卡上从上往下**的顺序排。卡是从底往上垒的（权重在最下、余量在最上），
+     而读者是照着卡从上往下看的——图例若按垒的顺序列，读者得在脑子里把两张表倒过来
+     对，每一行都要数一次。倒过来之后，图例第 n 档就是卡上从上数第 n 层。
+     倒的是**档与档**：档内的明细（逐块切法、腔）仍然跟在自己那个档头下面，
+     整组倒过来会让明细跑到档头上方、而且自己也颠倒，那是另一种乱。 */
+  var rows = [];
+  groups.reverse().forEach(function(gr){ rows = rows.concat(gr); });
   el.innerHTML =
     '<div class="rm-h"><b>rank '+g+'</b>'
     /* 层段这一行就是 **PP 的切**：PP 不切任何一个张量（所以它不在权重带的分块里），
