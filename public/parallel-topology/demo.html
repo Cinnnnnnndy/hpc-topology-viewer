@@ -7456,12 +7456,11 @@ function renderRankMem(D){
     }
   });
   el.innerHTML =
-    '<div class="rm-h"><b>rank '+g+' 装了什么</b>'
+    '<div class="rm-h"><b>rank '+g+'</b>'
     /* 层段这一行就是 **PP 的切**：PP 不切任何一个张量（所以它不在权重带的分块里），
-       它切的是「哪几层住在这张卡上」——写出「12/48 层 · PP 刀切 4 段」，
-       整条权重带才有前提可言。 */
-    + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)
-      + (D.pp>1 ? '（'+lps+'/'+D.layers+' 层 · PP 刀切 '+D.pp+' 段）' : '')+'</span>'
+       它切的是「哪几层住在这张卡上」。`stage0 · L0–L11` 已经把这件事说完了——
+       后面再补一句「12/48 层 · PP 刀切 4 段」是同一句话换个说法，删掉。 */
+    + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
     + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0 4px;font-family:var(--pt-mono)">'
     + rows.join('')
