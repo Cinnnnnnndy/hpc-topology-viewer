@@ -7475,8 +7475,32 @@ function renderRankMem(D){
         eg.push('b ' + D.mbs);
         eg.push('s ' + fmt(Math.floor(D.seq/(D.cp>1?D.cp:1))) + (D.cp>1 ? '（CP 切 '+D.cp+'）' : '（SP/CP 未切）'));
       }
-      rows.push('<tr><td></td><td colspan="2" style="color:var(--pt-fg3);font-size:10px;padding-bottom:3px">'
-        + (sg.k==='w' ? '权重体腔' : '激活体腔') + '　' + esc(eg.join(' × ')) + '</td></tr>');
+      /* 腔的小图：虚线外框 = 整网在这两根轴上的**全长**，实心那一格 = 这张卡拿到的
+         那一截。切成几格由刀决定，落在第几格由这张卡的坐标决定——「为什么是这么大
+         一块」于是不用读数字也看得见：格子越多，实心那块越小。
+         挑哪两根轴：权重看 h×e（TP 与 EP 切的就是它们），激活看 s×ℓ（CP/SP 切 s、
+         PP 切 ℓ）。h 对激活不切，所以不画进去，免得画一个满格的假分法。 */
+      var ax = sg.k==='w'
+        ? {nx:(D.tp>1?D.tp:1), ix:co.t, lx:'h', ny:(D.moe&&D.ep>1?D.ep:1), iy:(me?me.ep:0), ly:'e', c:VC.tp, c2:VC.ep}
+        : {nx:(D.cp>1?D.cp:1), ix:co.c, lx:'s', ny:(D.pp>1?D.pp:1), iy:p, ly:'ℓ', c:VC.cp, c2:VC.pp};
+      var BW=104, BH=34, cw=BW/ax.nx, ch=BH/ax.ny, cells='';
+      for(var yy=0; yy<ax.ny; yy++) for(var xx=0; xx<ax.nx; xx++){
+        var on = (xx===ax.ix && yy===ax.iy);
+        cells += '<rect x="'+(xx*cw+0.5).toFixed(1)+'" y="'+(yy*ch+0.5).toFixed(1)+'" width="'+(cw-1).toFixed(1)+'" height="'+(ch-1).toFixed(1)
+          + '" style="fill:'+(on ? (sg.k==='w' ? cutColor('ep') : MEMC.act) : 'transparent')
+          + ';stroke:'+(on ? 'none' : 'var(--pt-bd)')+';stroke-width:.5;stroke-dasharray:'+(on?'':'2 2')+'"/>';
+      }
+      rows.push('<tr><td></td><td colspan="2" style="padding-bottom:4px">'
+        + '<div style="color:var(--pt-fg3);font-size:10px">'+(sg.k==='w' ? '权重体腔' : '激活体腔')+'　'+esc(eg.join(' × '))+'</div>'
+        + '<svg width="'+(BW+26)+'" height="'+(BH+13)+'" style="margin-top:3px;overflow:visible">'
+        + '<g transform="translate(1,1)">'+cells
+        + '<rect x="0" y="0" width="'+BW+'" height="'+BH+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:.9;stroke-dasharray:3 2"/></g>'
+        + '<text x="'+(BW+5)+'" y="'+(BH/2+4)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+ax.ly+'×'+ax.ny+'</text>'
+        /* 轴名左对齐贴着框起笔：居中的话长串会甩到卡片外面去（实测 ×2 那截跑到了左边界外）。
+           「虚线＝全长、实心＝本卡」不再逐张重复——两张图并排放着，看一眼就懂，
+           一张图配一句同样的说明只是把卡撑高。 */
+        + '<text x="0" y="'+(BH+11)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+ax.lx+'×'+ax.nx+'</text>'
+        + '</svg></td></tr>');
     }
   });
   el.innerHTML =
