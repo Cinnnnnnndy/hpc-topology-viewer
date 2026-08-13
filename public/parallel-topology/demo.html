@@ -7633,6 +7633,88 @@ function cavityGrid(ax){
     + '</svg>';
 }
 
+/* ── 整条带的构成：按字节分宽度，每段上它自己那把刀的色 ────────────────────
+   权重（以及跟着它的梯度/优化器态）**不能用一张网格说**：网格说的是「一根轴切
+   成几份、我拿第几份」，可这条带里 experts 走 EP、attn.* 走 TP、router/norm 不切
+   ——一张图填一格，等于替读者选了一块去代表全体，那正是最容易读错的一步。
+   所以这一档画的是**它自己的横截面**：谁占多宽、各是什么色。与卡上那条带、
+   以及交集腔 L3 的权重带是同一张图，三处对得上。 */
+function compStrip(blocks, wide){
+  var BW = wide || 150, BH = 16, tot = 0;
+  blocks.forEach(function(b9){ tot += b9.bytes; });
+  if(!(tot > 0)) return '';
+  var x9 = 0, segs9 = '', labs9 = [];
+  blocks.forEach(function(b9){
+    var w9 = BW*b9.bytes/tot;
+    if(w9 > 0.4){
+      segs9 += '<rect x="'+x9.toFixed(1)+'" y="0" width="'+w9.toFixed(1)+'" height="'+BH
+        + '" style="fill:'+cutColor(b9.cut)+';fill-opacity:'+(b9.cut==='none'?.28:.62)
+        + ';stroke:var(--pt-bg);stroke-width:.6"/>';
+      /* 只给放得下的那几段挂名字：挤不下就交给下面那张表，图上不叠字 */
+      if(w9 >= 26) labs9.push('<text x="'+(x9+w9/2).toFixed(1)+'" y="'+(BH/2+3)
+        + '" style="font-size:7px;fill:var(--pt-fg);font-weight:700" text-anchor="middle">'+esc(b9.id)+'</text>');
+    }
+    x9 += w9;
+  });
+  return '<svg width="'+BW+'" height="'+(BH+2)+'" style="margin:2px 0 0;overflow:visible">'
+    + segs9 + labs9.join('')
+    + '<rect x="0" y="0" width="'+BW+'" height="'+BH+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:.8"/>'
+    + '</svg>';
+}
+
+/* ── 体腔（缩到读出卡里的那只）─────────────────────────────────────────────
+   与「映射·双链/交集腔」那一幕的①权重体 / ②激活体是同一只盒子、同一套语汇：
+   三根轴各被自己那把刀切出格子（线用刀色），本卡持有的那一格填实。
+   为什么不直接调那边的 solidBox：它是 renderSolidCav 的闭包，挂着 L1–L4 分层
+   开关、轴尺、刀面板、门牌那一整套，是给 880px 画布写的；塞进 260px 的读出卡
+   只会剩一团糊。这里复用的是它**自己也在用**的两个模块级原语（proj / boxSVG），
+   所以形状、明暗、剔背面的规矩逐条一致，只是把注解留给旁边那行字。
+   ax/ay/az = {n, dim, i}：份数、哪把刀（决定颜色）、本卡在这根轴上的下标。 */
+function cavityBox3D(ax, ay, az, o){
+  o = o || {};
+  var W = o.w || 74, HH = o.h || 46, DD = o.d || 40;
+  var dx = W/Math.max(1,ax.n), dy = HH/Math.max(1,ay.n), dz = DD/Math.max(1,az.n);
+  var body = '';
+  /* ln 在这份文件里是各渲染函数各自的局部小工具（同一段代码写了三遍），
+     模块级没有——这里自带一只，别去够别人作用域里的那个。 */
+  function ln(a9, b9, st9){
+    return '<line x1="'+a9[0].toFixed(1)+'" y1="'+a9[1].toFixed(1)
+      + '" x2="'+b9[0].toFixed(1)+'" y2="'+b9[1].toFixed(1)+'" style="'+st9+'"/>';
+  }
+  /* 外壳：虚线细框——腔是「索引空间」，不是实心物件 */
+  body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:.9, dash:'3 3'});
+  /* 每把刀在它自己那根轴上留下的格线。格距小到 2px 以下就不画：
+     那时线比格子还密，画出来是一片灰，把「本卡是哪一格」盖掉。 */
+  function gl(step, dim){
+    return 'stroke:'+(VC[dim]||'var(--pt-bd)')+';stroke-width:'+(step>5?.7:.5)
+      + ';stroke-opacity:'+(step>5?.5:.32);
+  }
+  var i9;
+  if(dy >= 2) for(i9=1;i9<ay.n;i9++)
+    body += ln(proj(0,i9*dy,DD,1), proj(W,i9*dy,DD,1), gl(dy, ay.dim))
+          + ln(proj(W,i9*dy,0,1), proj(W,i9*dy,DD,1), gl(dy, ay.dim));
+  if(dx*C >= 2) for(i9=1;i9<ax.n;i9++)
+    body += ln(proj(i9*dx,HH,0,1), proj(i9*dx,HH,DD,1), gl(dx*C, ax.dim))
+          + ln(proj(i9*dx,0,DD,1), proj(i9*dx,HH,DD,1), gl(dx*C, ax.dim));
+  if(dz*C >= 2) for(i9=1;i9<az.n;i9++)
+    body += ln(proj(0,HH,i9*dz,1), proj(W,HH,i9*dz,1), gl(dz*C, az.dim))
+          + ln(proj(W,0,i9*dz,1), proj(W,HH,i9*dz,1), gl(dz*C, az.dim));
+  /* 本卡持有的那一格：实心 + 描边。三根轴上各取自己的下标，交出来就是这张卡。 */
+  var cx = ax.i*dx, cy = ay.i*dy, cz = az.i*dz;
+  body += boxSVG(cx, cy, cz, dx, dy, dz, 1, {fill:o.cell || 'var(--pt-fg)'});
+  body += boxSVG(cx, cy, cz, dx, dy, dz, 1, {wire:true, stroke:o.cell || 'var(--pt-fg)', sw:.8});
+  /* 视野按投影后八个角算，别写死——三根轴的份数一变，盒子在屏幕上的包围盒就变 */
+  var xs = [], ys = [];
+  [[0,0,0],[W,0,0],[W,HH,0],[0,HH,0],[0,0,DD],[W,0,DD],[W,HH,DD],[0,HH,DD]].forEach(function(v){
+    var q = proj(v[0],v[1],v[2],1); xs.push(q[0]); ys.push(q[1]);
+  });
+  var x0 = Math.min.apply(null,xs)-3, x1 = Math.max.apply(null,xs)+3;
+  var y0 = Math.min.apply(null,ys)-3, y1 = Math.max.apply(null,ys)+3;
+  return '<svg viewBox="'+x0.toFixed(1)+' '+y0.toFixed(1)+' '+(x1-x0).toFixed(1)+' '+(y1-y0).toFixed(1)
+    + '" width="'+(x1-x0).toFixed(0)+'" height="'+(y1-y0).toFixed(0)+'" style="margin:2px 0 0;overflow:visible">'
+    + body + '</svg>';
+}
+
 function memBlockDetail(D, g, key){
   if(!key) return '';
   var co = coordsOf(g, D), lps = D.layersPerStage, p = co.p;
@@ -7669,16 +7751,21 @@ function memBlockDetail(D, g, key){
     kv('这一块', fmtGB(blk.bytes)+' GB'+(shp ? ' · 每层 '+esc(shp) : ''));
     /* 切法画出来，不写出来：「桶切 ×8、本卡第 5 桶」= 八格里第五格填实。
        图里已经说的事不再用文字抄一遍，两边还容易对不上。 */
-    if(sub === 'experts' && me){
+    /* 单块也画①腔，但**只把切它那把刀的那根轴分开**：experts 只被 EP 分桶，
+       attn.* 只被 TP 切 h，router/norm 一刀没挨。同一只盒子、不同的切法——
+       并排点过去就看得出「这条带里每块的刀各不相同」，那正是上一级说不清的事。 */
+    var cavW9 = {n:1, dim:'tp', i:0}, cavE9 = {n:1, dim:'ep', i:0}, cap9 = blk.how;
+    if(blk.cut === 'tp'){ cavW9 = {n:D.tp, dim:'tp', i:co.t}; cap9 = blk.how+' · 本卡第 '+co.t+' 片'; }
+    else if(blk.cut === 'ep' && me){
       var kE = D.experts/D.ep, e0 = me.ep*kE;
-      fig({nx:1, ix:0, lx:'ETP×'+D.etp, ny:D.ep, iy:me.ep, ly:'e←EP', c:tint},
-          'E'+e0+'–E'+(e0+kE-1));
+      cavE9 = {n:D.ep, dim:'ep', i:me.ep}; cap9 = blk.how+' · 本卡 E'+e0+'–E'+(e0+kE-1);
+    } else if(blk.cut === 'none') cap9 = '不切——每张卡逐字节相同';
+    figs.push('<div class="rm-fig">'
+      + cavityBox3D(cavW9, {n:D.pp, dim:'pp', i:p}, cavE9, {cell:tint})
+      + '<span class="rm-cap">'+esc(cap9)+'</span></div>');
+    if(sub === 'experts'){
       note = D.etp > 1 ? 'ETP='+D.etp+'：桶内每个专家的 ffn 维还被再切 '+D.etp+' 份。'
-                       : 'ETP=1：桶内每个专家是整份的，h 方向没再切。';
-    } else if(blk.cut === 'tp'){
-      fig({nx:D.tp, ix:co.t, lx:'h←TP', ny:1, iy:0, ly:'ℓ 段内', c:tint}, blk.how);
-    } else if(blk.cut === 'none'){
-      fig({nx:1, ix:0, lx:'不切', ny:1, iy:0, ly:'整份', c:tint}, '每张卡逐字节相同');
+                       : 'ETP=1：桶内每个专家是整份的，h 方向没再切——盒子上 h 那根轴因此没有格线。';
     }
     if(sub === 'embed')   note = '只有 stage 0 有：PP 那一刀把词嵌入留在了第一段。';
     if(sub === 'lm_head') note = '只有末 stage 有：出口那一层不重复，PP 的另一头。';
@@ -7695,10 +7782,20 @@ function memBlockDetail(D, g, key){
     /* ①腔三档共用同一张图（同一份参数、同一分法，只是每份几个字节不同）——
        画同一张正是「×1 / ×6」那句话本身，用不着再写一遍。 */
     if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp'){
-      figW(MEMC[key]);
+      /* 整条带一起说：谁占多宽、各被哪把刀切。一格一格地填「本卡拿第几份」是
+         **单块**才答得上来的问题（带里每块的刀都不一样），留给点开某一块时再答。 */
+      figs.push('<div class="rm-fig">'+compStrip(wCutBlocks(D, p, L))
+        + '<span class="rm-cap">'+esc('宽度=字节占比 · 颜色=切它那把刀')+'</span></div>');
+      /* ①腔本体：ℓ←PP × h←TP × e←EP，本卡持有交出来那一格 */
+      figs.push('<div class="rm-fig">'
+        + cavityBox3D({n:D.tp, dim:'tp', i:co.t},
+                      {n:D.pp, dim:'pp', i:p},
+                      {n:(D.moe?D.ep:1), dim:'ep', i:(me?me.ep:0)},
+                      {cell:MEMC[key]})
+        + '<span class="rm-cap">'+esc('①权重体 ℓ×h×e · 本卡 = 三根轴的交集那一格')+'</span></div>');
       kv('层段', 'ℓ '+lps+'/'+D.layers+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'（PP 定段，不切张量）');
     }
-    if(key === 'w')   note = '带上每一块的颜色就是切它那把刀——点开下面任意一块看它自己的图。';
+    if(key === 'w')   note = '每块的刀各不相同——点下面任意一块，才谈得上「本卡拿的是哪一份」。';
     if(key === 'g')   note = '反向才产生，优化器步用完才放得掉——和权重是同时压在卡上的两份。';
     if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，'
       + '也是「换 optimizer 能省多少」的全部战场。';
@@ -7711,11 +7808,17 @@ function memBlockDetail(D, g, key){
          SP 把 s 切开省下的那份，进 TP 区之前要 AllGather 回全长，算子之间压着的
          就是全长那一份（memParts 里 act 用的正是整条 D.hidden，不除 tp）。
          所以这张图上没有 TP 那根轴，不是漏了。 */
-      fig({nx:(D.cp>1?D.cp:1), ix:co.c, lx:'s←CP', ny:D.pp, iy:p, ly:'ℓ←PP', c:MEMC.act},
-          'h 全长 '+fmt(D.hidden)+'（TP 不切）');
+      /* ②腔本体：ℓ←PP × s←CP × b←DP。同一把 DP 刀在这只盒子上**是轴**
+         （整盒真被切成 dp 份），而在①上只能整只复印——两只盒子并排看正是这件事。 */
+      figs.push('<div class="rm-fig">'
+        + cavityBox3D({n:(D.cp>1?D.cp:1), dim:'cp', i:co.c},
+                      {n:D.pp, dim:'pp', i:p},
+                      {n:D.dp, dim:'dp', i:co.d},
+                      {cell:MEMC.act})
+        + '<span class="rm-cap">'+esc('②激活体 ℓ×s×b · h 全长 '+fmt(D.hidden)+'（TP 不切，算子间 AllGather 回全长）')+'</span></div>');
       /* 在途几份微批 = 卡上激活带被竖着分成几格，两处画同一件事 */
-      fig({nx:mub, ix:0, lx:'在途 μb', ny:1, iy:0, ly:'b←DP 复印'+D.dp, c:MEMC.act},
-          '1F1B：stage '+p+' 压着 '+mub+' 份');
+      fig({nx:mub, ix:0, lx:'在途 μb', ny:1, iy:0, ly:'', c:MEMC.act},
+          '1F1B：stage '+p+' 此刻压着 '+mub+' 份');
       note = '唯一随时间轴动的一档。它不是切出来的常驻账，是流——装满不会崩的是流，'
         + '装满会崩的是常驻那三档。';
     }
@@ -7783,25 +7886,9 @@ function renderRankMem(D){
         if(onX) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, mk)+'</td></tr>');
       });
     }
-    if(sg.k === 'w' || sg.k === 'act'){
-      var ax = sg.k==='w'
-        ? {nx:(D.tp>1?D.tp:1), ix:co.t, lx:'h', ny:(D.moe&&D.ep>1?D.ep:1), iy:(me?me.ep:0), ly:'e', c:VC.tp, c2:VC.ep}
-        : {nx:(D.cp>1?D.cp:1), ix:co.c, lx:'s', ny:(D.pp>1?D.pp:1), iy:p, ly:'ℓ', c:VC.cp, c2:VC.pp};
-      var BW=104, BH=34, cw=BW/ax.nx, ch=BH/ax.ny, cells='';
-      for(var yy=0; yy<ax.ny; yy++) for(var xx=0; xx<ax.nx; xx++){
-        var on = (xx===ax.ix && yy===ax.iy);
-        cells += '<rect x="'+(xx*cw+0.5).toFixed(1)+'" y="'+(yy*ch+0.5).toFixed(1)+'" width="'+(cw-1).toFixed(1)+'" height="'+(ch-1).toFixed(1)
-          + '" style="fill:'+(on ? (sg.k==='w' ? cutColor('ep') : MEMC.act) : 'transparent')
-          + ';stroke:'+(on ? 'none' : 'var(--pt-bd)')+';stroke-width:.5;stroke-dasharray:'+(on?'':'2 2')+'"/>';
-      }
-      rows.push('<tr><td></td><td colspan="2" style="padding-bottom:2px">'
-        + '<svg width="'+(BW+26)+'" height="'+(BH+13)+'" style="margin-top:1px;overflow:visible">'
-        + '<g transform="translate(1,1)">'+cells
-        + '<rect x="0" y="0" width="'+BW+'" height="'+BH+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:.9;stroke-dasharray:3 2"/></g>'
-        + '<text x="'+(BW+5)+'" y="'+(BH/2+4)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+ax.ly+'×'+ax.ny+'</text>'
-        + '<text x="0" y="'+(BH+11)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+ax.lx+'×'+ax.nx+'</text>'
-        + '</svg></td></tr>');
-    }
+    /* 缩略图**不再常驻**：点开那一档时明细里已经有一张更完整的（见 memBlockDetail），
+       两张挨在一起说同一件事，读者会先花一秒确认它们是不是同一张。图只在
+       点开的时候出现——没点开时这张表就该是一张干净的账。 */
   });
   /* 图例按**卡上从上往下**的顺序排。卡是从底往上垒的（权重在最下、余量在最上），
      而读者是照着卡从上往下看的——图例若按垒的顺序列，读者得在脑子里把两张表倒过来
