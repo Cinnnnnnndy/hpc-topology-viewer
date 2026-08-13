@@ -2493,50 +2493,45 @@ function netScene(D, g, box, step){
     var compressed = tot9 > cap9;
     var sc9 = compressed ? 1/tot9 : 1/cap9;
     var capFrac = compressed ? cap9/tot9 : 1;
+    /* 五档一档一条整带，**不再把权重竖着劈成六片**。
+       权重内部那六块是「同一条带在宽度上被哪把刀切开」，与「各档各占多少字节」
+       是两件事，必须走两个方向——竖着摞进同一列的话，读者看到的是「权重有六层」，
+       而那六块本来是并排的。交集腔 L3（renderSolidCav）一直是横着切的，这一屏
+       照它来：同一份内容在两个视角里长同一个样，读者不用学第二套。 */
     var acc9 = 0, out9 = [];
     V9.segs.forEach(function(sg9){
-      var subs = (sg9.k === 'w' && sg9.sub && sg9.sub.length && (sg9.bytes*sc9) > 0.05)
-        ? sg9.sub : null;
-      var list = subs ? subs.map(function(x){ return {bytes:x.bytes, color:cutColor(x.cut), seam:true}; })
-                      : [{bytes:sg9.bytes, color:sg9.color}];
-      list.forEach(function(it){
-        var f0 = acc9*sc9; acc9 += it.bytes;
-        var f1 = acc9*sc9;
-        if(f1 - f0 < (it.seam ? 0.0012 : 0.006)) return;
-        out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:it.color, act:sg9.k==='act', seam:!!it.seam, k:sg9.k});
-      });
+      var f0 = acc9*sc9; acc9 += sg9.bytes;
+      var f1 = acc9*sc9;
+      if(f1 - f0 < 0.006) return;
+      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act', k:sg9.k});
     });
-    /* ── 横向的切分线：这一档在**宽度**上被切成几块 ──────────────────────
-       竖着摞的是「各档各占多少字节」，横着分的才是「这一档自己被哪把刀切开」。
-       两件事必须用两个方向说，摞在同一个方向上就混成一句话了。
-       · 权重/梯度/优化器态 —— 同一份参数的 ×2 / ×2 / ×12 B，所以三档的竖缝
-         **落在同一批 u 上**：缝对得上，「同一分法」不用写一个字（card-container
-         那只单卡正是靠这个说清 ×1 / ×6 的）。
-       · 激活 —— 不按参数分，按**在途几份微批**分，所以它自己一套虚缝。 */
-    var wSeg9 = null, actSeg9 = null;
-    V9.segs.forEach(function(s9){ if(s9.k === 'w') wSeg9 = s9; if(s9.k === 'act') actSeg9 = s9; });
-    var seamU9 = [];
-    if(wSeg9 && wSeg9.sub && wSeg9.sub.length){
-      var wTot9 = 0;
-      wSeg9.sub.forEach(function(x){ wTot9 += x.bytes; });
-      if(wTot9 > 0){
-        var au9 = 0;
-        wSeg9.sub.forEach(function(x){
-          au9 += x.bytes;
-          var u9 = au9/wTot9;
-          if(u9 > 0.012 && u9 < 0.988) seamU9.push({u:u9, cut:x.cut});
-        });
-      }
-    }
-    /* 这两项挂在**过滤之后**那只数组上：下面的 filter 会换一只新数组，
+    /* ── 权重带在**宽度**上的分块：那排算子片折进容器的样子 ────────────────
+       口径逐字照抄交集腔 L3（renderSolidCav 里的 ops9/opSegs9）：按每块的字节
+       占权重总字节的比例分宽度，块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色）。
+       梯度与优化器态是同一份参数的 ×1 / ×6，所以它们只画**对齐的竖缝**、不上色：
+       缝对得上就说清了「同一分法」，不必把同一句话再写两遍。 */
+    var ops9 = opBytes(memD).filter(function(o9){ return o9.b > 0; })
+                 .map(function(o9){ return {id:o9.id, cut:o9.cut, b:o9.b*memD.layersPerStage}; });
+    var pR9 = cutPP ? p9 : 0;
+    if(pR9 === 0) ops9.push({id:'embed', cut:'tp', b:2*Math.ceil(memD.vocab/memD.tp)*memD.hidden});
+    if(pR9 === memD.pp-1) ops9.push({id:'lm_head', cut:'tp', b:2*memD.hidden*Math.ceil(memD.vocab/memD.tp)});
+    var wSum9 = ops9.reduce(function(a,x){ return a+x.b; }, 0), ax9 = 0, opSegs9 = [];
+    if(wSum9 > 0) ops9.forEach(function(o9){
+      var u0 = ax9/wSum9; ax9 += o9.b;
+      opSegs9.push({id:o9.id, cut:o9.cut, u0:u0, u1:ax9/wSum9});
+    });
+    /* 激活按**在途几份微批**分格。份数取这一段的峰值（与 L3 同一口径 min(pp,ga)-p），
+       不跟着走带的小数变——格子数一会儿三个一会儿两个半，读的是抖动不是结构。 */
+    var mub9 = Math.max(1, Math.min(memD.pp, memD.ga) - pR9);
+    /* 这几项挂在**过滤之后**那只数组上：下面的 filter 会换一只新数组，
        挂早了就跟着旧的一起丢掉（挂在 length 之外的属性不会被 filter 带过去）。 */
     out9 = out9.filter(function(x){ return x.f1 - x.f0 > 0.0005; });
     if(out9.length) out9[out9.length-1].top = true;
     out9.level = V9.level; out9.over = V9.over;
     out9.capFrac = capFrac;
     out9.ratio = V9.ratio;
-    out9.seamU = seamU9;
-    out9.mub = actSeg9 ? (actSeg9.mub || 0) : 0;
+    out9.opSegs = opSegs9;
+    out9.mub = mub9;
     memStackCache[ck9] = out9;
     return out9;
   }
@@ -3189,7 +3184,7 @@ function netScene(D, g, box, step){
                 /* 刀缝：子块之间兑一道底色的细线，块薄到只剩一两个像素时它就是唯一
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
-                var kerf = sg8.seam ? ';stroke:var(--pt-bg);stroke-width:'+(meC?0.5:0.3) : ';stroke:none';
+                var kerf = ';stroke:none';
                 body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+kerf+';opacity:'+lzM));
                 body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+kerf+';opacity:'+lzM));
                 if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
@@ -3200,37 +3195,48 @@ function netScene(D, g, box, step){
                 /* ── 这一档自己的切分线（横向）──────────────────────────
                    只给选中那只卡画：128 只盒子每只再多十几条竖线就是一片麻。
                    带薄到几个像素时也不画——线比它要分的东西还高，读不出分格。 */
-                if(meC && (vA9 - vB9) > 0.012){
-                  /* 缝走**兑底色的前景**，不是纯底色。参考页那只单卡的 g/opt 是灰的，
-                     白缝压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须
-                     最弱），白线画在它上面等于没画——实测整条带一道缝都看不见。
-                     兑 34% 的前景在五档上都读得出：淡紫上是浅灰线，权重那几块深色上
-                     是暗线，两头都不至于抢戏。 */
-                  var seamCol9 = 'color-mix(in srgb, var(--pt-fg) 34%, transparent)';
-                  /* 卡在屏幕上到底有多宽——缝密到分不开时画了等于没画，只会在带上
-                     糊出一道更粗的边。experts 独占权重的九成，几条缝本来就挤在右侧
-                     那一小截里，默认机位下正好落进两三个像素。同一个道理这一屏别处
-                     早就用过（刀痕的 px9 >= 2.2、SP 横纹的 bandPx >= 2.2）：
-                     放得下就逐条画，放不下就一条都不画，不画出一团分不清的东西。 */
+                /* ── 带内部的切分线：权重按算子块、激活按在途份数 ────────────
+                   与交集腔 L3 逐条同一画法（renderSolidCav 里 opSegs9 / nIf9 那两段）。
+                   只给选中那只卡画：128 只盒子每只再多十几条线就是一片麻。 */
+                /* 权重带的**分块**每张卡都画（那是「这一截被哪把刀切的」，128 张
+                   卡各自的刀色本来就是这一屏的信息，选中与否都该看得见）；
+                   g/opt 的细缝与激活的虚缝只给选中那只——它们是发丝级的线，
+                   128 只一起画就是一片麻。 */
+                if((vA9 - vB9) > 0.010 && (meC || sg8.k === 'w')){
                   var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
-                  if(sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt'){
-                    /* 三档共用同一批 u：缝对得上就是「同一份参数、同一分法」。
-                       权重那一档本身已经按刀色分块（竖着摞），这里补的是横向那一刀。 */
-                    var lastPx9 = -1e9;
-                    (MS9.seamU || []).forEach(function(sm9){
-                      var px9 = sm9.u * cardPxW9;
-                      if(px9 - lastPx9 < 2.2 || (cardPxW9 - px9) < 2.2) return;
-                      lastPx9 = px9;
-                      var su9 = cu0 + (cu1 - cu0)*sm9.u;
-                      body.push(seg(P(su9, vB9, cw0, kc), P(su9, vA9, cw0, kc),
+                  /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
+                     压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
+                     白线画在它上面实测一道都看不见。 */
+                  var seamCol9 = 'color-mix(in srgb, var(--pt-fg) 34%, transparent)';
+                  var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
+                  if(sg8.k === 'w' && (MS9.opSegs || []).length){
+                    /* 权重带内部：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色），
+                       就是「抽出的 L0」那排算子片折进卡里的样子。 */
+                    MS9.opSegs.forEach(function(o8){
+                      if((o8.u1 - o8.u0)*cardPxW9 < 0.7) return;
+                      var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
+                      if(!oc8) return;
+                      var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
+                      body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
+                                             :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
+                        'fill:'+memSolid(oc8, 62)+';stroke:var(--pt-bg);stroke-width:.35;opacity:'+lzM));
+                    });
+                  } else if(meC && (sg8.k === 'g' || sg8.k === 'opt') && (MS9.opSegs || []).length){
+                    /* 梯度 / 优化器态：同一份参数的 ×1 / ×6，所以只画**对齐的竖缝**、
+                       不上色——缝对得上就说清了「同一分法」，不必把同一句话写两遍。
+                       缝密到分不开时整条都不画（同 L3 的 x1-x0 < 2 那道门槛）。 */
+                    var lastPx8 = -1e9;
+                    MS9.opSegs.forEach(function(o8){
+                      var px8 = o8.u0 * cardPxW9;
+                      if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
+                      lastPx8 = px8;
+                      body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.55;opacity:'+(lzM*0.85)));
                     });
-                  } else if(sg8.k === 'act' && MS9.mub > 1 && cardPxW9 / Math.round(MS9.mub) >= 2.2){
+                  } else if(meC && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
-                    var nM9 = Math.min(12, Math.round(MS9.mub));
-                    for(var mm9 = 1; mm9 < nM9; mm9++){
-                      var mu9 = cu0 + (cu1 - cu0)*mm9/nM9;
-                      body.push(seg(P(mu9, vB9, cw0, kc), P(mu9, vA9, cw0, kc),
+                    for(var mm9 = 1; mm9 < MS9.mub; mm9++){
+                      body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.6;stroke-dasharray:2.2 1.8;opacity:'+(lzM*0.9)));
                     }
                   }
