@@ -7433,15 +7433,35 @@ function renderRankMem(D){
   var segs = memParts(D, p, g), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
   var cap = D.hbm*Math.pow(2,30);
   var TONE = {w:MEMC.w, g:MEMC.g, opt:MEMC.opt, act:MEMC.act, rsv:MEMC.rsv};
-  var rows = segs.map(function(sg){
+  var rows = [];
+  segs.forEach(function(sg){
+    if(!sg.bytes) return;                       /* 这一刻是 0 的档（比如没跑走带时的优化器临时区）不占一行 */
     var col = sg.k==='act' ? VC.dp : (sg.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
-    return '<tr><td style="width:12px"><span style="display:inline-block;width:8px;height:8px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
+    rows.push('<tr><td style="width:12px"><span style="display:inline-block;width:8px;height:8px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
       + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)+'</td>'
-      + '<td style="text-align:right;color:'+col+';font-weight:700">'+fmtGB(sg.bytes)+' GB</td></tr>';
+      + '<td style="text-align:right;color:'+col+';font-weight:700">'+fmtGB(sg.bytes)+' GB</td></tr>');
+    /* 权重带的内部：图上那一条已经按刀色分块画出来了，但「哪一块是被哪把刀切的」
+       只有颜色说不全——把块名与切法逐条列在它下面，颜色与图上一一对上。
+       梯度与优化器态是同一份参数的 ×1 / ×6，同一套分法，不再抄两遍。 */
+    if(sg.k === 'w' && sg.sub){
+      sg.sub.forEach(function(x){
+        if(!x.bytes) return;
+        rows.push('<tr><td></td><td style="padding-left:2px;color:var(--pt-fg2)">'
+          + '<span style="display:inline-block;width:6px;height:6px;background:'+cutColor(x.cut)+';border-radius:1px;margin-right:5px"></span>'
+          + esc(x.id) + ' <span style="color:var(--pt-fg3)">' + esc(x.how) + '</span></td>'
+          + '<td style="text-align:right;color:var(--pt-fg2)">'+fmtGB(x.bytes)+' GB</td></tr>');
+      });
+      rows.push('<tr><td></td><td colspan="2" style="color:var(--pt-fg3);font-size:10px;padding-bottom:3px">'
+        + '梯度 / 优化器态同一分法：每块 ×1 / ×6</td></tr>');
+    }
   });
   el.innerHTML =
     '<div class="rm-h"><b>rank '+g+' 装了什么</b>'
-    + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
+    /* 层段这一行就是 **PP 的切**：PP 不切任何一个张量（所以它不在权重带的分块里），
+       它切的是「哪几层住在这张卡上」——写出「12/48 层 · PP 刀切 4 段」，
+       整条权重带才有前提可言。 */
+    + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)
+      + (D.pp>1 ? '（'+lps+'/'+D.layers+' 层 · PP 刀切 '+D.pp+' 段）' : '')+'</span>'
     + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0 4px;font-family:var(--pt-mono)">'
     + rows.join('')
