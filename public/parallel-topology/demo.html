@@ -3124,14 +3124,13 @@ function netScene(D, g, box, step){
             body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
-            if(spot && spotCard && !meC){
-              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
-              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
-              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
-              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix(VC.dp,34)+';stroke:none'));
-              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix(VC.dp,26)+';stroke:none'));
-              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix(VC.dp,20)+';stroke:none'));
-            }
+            /* 命中的卡**不再刷一层蓝**。原来给六个面各兑一层 DP 蓝，结果是：
+               ① 卡里那几档载荷（权重的刀色、激活的蓝、优化器态的淡紫）全被同一层蓝
+                  盖住，高亮反而把要读的东西糊掉了——而高亮的用处恰恰是「看清这几只」；
+               ② 蓝是 DP 的刀色，刷在壳上等于说「这几只是同一个 DP 组」，那是另一件事。
+               改成与**选中态同一套**的强调：命中的照常亮（不压暗），未命中的压到 .35，
+               再把命中那几只的棱加粗提浓（见下面 eW/eO 那段）。亮度差 + 棱，
+               和点开一只卡时认出它的是同一套语言，读者不用学第二种。 */
           } else {
           if(!isFcol && !spot){
             body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
