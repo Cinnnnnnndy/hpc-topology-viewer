@@ -7462,12 +7462,18 @@ function renderRankMem(D){
     if(sg.k === 'w' || sg.k === 'act'){
       var eg = [];
       eg.push('ℓ ' + lps + '（PP 切 ' + D.pp + ' 段）');
-      eg.push('h ' + fmt(Math.floor(D.hidden / (D.tp>1?D.tp:1))) + (D.tp>1 ? '（TP 切 '+D.tp+'）' : ''));
       if(sg.k === 'w'){
+        /* 权重的 h 是**被 TP 切短的**：这张卡只持有 hidden 的 1/tp 那一片 */
+        eg.push('h ' + fmt(Math.floor(D.hidden/(D.tp>1?D.tp:1))) + (D.tp>1 ? '（TP 切 '+D.tp+'）' : ''));
         if(D.moe) eg.push('e ' + Math.floor(D.experts/D.ep) + '（EP 切 '+D.ep+'）');
       } else {
+        /* 激活的 h **没有被切短**：TP 那一刀切的是权重，算子之间的激活会 AllGather
+           回整条 hidden，所以驻留的是全长——这与上面那行字节的算法（用的正是 D.hidden，
+           不是 D.hidden/tp）是同一件事。要切激活得靠 SP/CP，它们切的是 s 那条边。
+           两条腔在同一个 h 上一长一短，正是「TP 省权重不省激活」的现场。 */
+        eg.push('h ' + fmt(D.hidden) + '（TP 不切：算子间 AllGather 回全长）');
         eg.push('b ' + D.mbs);
-        eg.push('s ' + fmt(Math.floor(D.seq/(D.cp>1?D.cp:1))) + (D.cp>1 ? '（CP 切 '+D.cp+'）' : ''));
+        eg.push('s ' + fmt(Math.floor(D.seq/(D.cp>1?D.cp:1))) + (D.cp>1 ? '（CP 切 '+D.cp+'）' : '（SP/CP 未切）'));
       }
       rows.push('<tr><td></td><td colspan="2" style="color:var(--pt-fg3);font-size:10px;padding-bottom:3px">'
         + (sg.k==='w' ? '权重体腔' : '激活体腔') + '　' + esc(eg.join(' × ')) + '</td></tr>');
