@@ -359,6 +359,11 @@
 .pt-rankmem .rm-d dt{color:var(--pt-fg3); white-space:nowrap}
 .pt-rankmem .rm-d dd{margin:0; color:var(--pt-fg2)}
 .pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:9.5px; line-height:1.4}
+/* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
+   图上已经画着的（几份、第几份）不再抄一遍。 */
+.pt-rankmem .rm-d .rm-fig{margin:3px 0 1px}
+.pt-rankmem .rm-d .rm-fig svg{width:auto; max-width:100%; margin:0}
+.pt-rankmem .rm-d .rm-cap{display:block; color:var(--pt-fg3); font-size:9px; line-height:1.35; margin-top:1px}
 .pt-opcard .oc-h{display:flex; align-items:flex-start; gap:10px}
 .pt-opcard .oc-k{
   font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
@@ -2503,7 +2508,7 @@ function netScene(D, g, box, step){
       var f0 = acc9*sc9; acc9 += sg9.bytes;
       var f1 = acc9*sc9;
       if(f1 - f0 < 0.006) return;
-      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act', k:sg9.k});
+      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act', k:sg9.k, label:sg9.label});
     });
     /* ── 权重带在**宽度**上的分块：那排算子片折进容器的样子 ────────────────
        口径逐字照抄交集腔 L3（renderSolidCav 里的 ops9/opSegs9）：按每块的字节
@@ -3181,17 +3186,33 @@ function netScene(D, g, box, step){
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
                 var lzM = meC ? 1 : lz;
+                /* ── (a) 读出卡点开某一块 → 卡上那条带跳出来 ────────────────
+                   压暗**别的**档而不是给选中那档描边：这只卡本来就密（五档 + 算子块
+                   + 缝），再加一圈亮边只是多一样东西；把其余压下去，剩下的那条自然
+                   就是唯一还亮着的。选中权重里的某一块（w:xx）时整条权重带照常亮，
+                   块自己的强调交给下面 opSegs 那一段。 */
+                var msK9 = ui.memSel ? (ui.memSel.indexOf('w:') === 0 ? 'w' : ui.memSel) : null;
+                var memDim9 = (meC && msK9 && sg8.k !== msK9) ? 0.30 : 1;
+                var lzB9 = lzM * memDim9;
                 /* 刀缝：子块之间兑一道底色的细线，块薄到只剩一两个像素时它就是唯一
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
                 var kerf = ';stroke:none';
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+kerf+';opacity:'+lzM));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+kerf+';opacity:'+lzM));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
-                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+kerf+';opacity:'+lzB9));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+kerf+';opacity:'+lzB9));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+(lz*memDim9)));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+(lz*memDim9)));
+                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+(lz*memDim9)));
+                /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
+                   命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
+                   那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
+                if(meC){
+                  hitOps.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:transparent;cursor:pointer',
+                    'data-act="memblockpick" data-mk="'+esc(sg8.k)+'"',
+                    esc(sg8.label || sg8.k)+'：点开看这一块的切分'));
+                }
                 /* ── 这一档自己的切分线（横向）──────────────────────────
                    只给选中那只卡画：128 只盒子每只再多十几条竖线就是一片麻。
                    带薄到几个像素时也不画——线比它要分的东西还高，读不出分格。 */
@@ -3212,14 +3233,27 @@ function netScene(D, g, box, step){
                   if(sg8.k === 'w' && (MS9.opSegs || []).length){
                     /* 权重带内部：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色），
                        就是「抽出的 L0」那排算子片折进卡里的样子。 */
+                    /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
+                       和五档之间那套压暗是同一种语言，读者不用学第二种。 */
+                    var pickId9 = (meC && ui.memSel && ui.memSel.indexOf('w:') === 0) ? ui.memSel.slice(2) : null;
                     MS9.opSegs.forEach(function(o8){
                       if((o8.u1 - o8.u0)*cardPxW9 < 0.7) return;
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
                       if(!oc8) return;
                       var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
+                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1);
+                      /* 每一块都挂命中面：卡上直接点 experts 那一截就能展开它，
+                         不必先点开权重、再去表里找那一行。 */
+                      if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
+                                                      :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
+                        'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(o8.id)+'"',
+                        esc(o8.id)+'：点开看这一块的切分'));
                       body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                              :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
-                        'fill:'+memSolid(oc8, 62)+';stroke:var(--pt-bg);stroke-width:.35;opacity:'+lzM));
+                        /* 与 L3 那只卡逐字同一套：刀色**本体** + .52 的填充透明度压在
+                           带上，不是先把刀色兑进底色再画。兑色会把下面那条带吃掉一层，
+                           叠出来就不是同一个颜色了（青块压在青带上会比 L3 那份浅一档）。 */
+                        'fill:'+oc8+';fill-opacity:.52;stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
                     });
                   } else if(meC && (sg8.k === 'g' || sg8.k === 'opt') && (MS9.opSegs || []).length){
                     /* 梯度 / 优化器态：同一份参数的 ×1 / ×6，所以只画**对齐的竖缝**、
@@ -7561,14 +7595,59 @@ function renderStageTitle(){
    读者就只能盯着一个 GB 数干瞪眼。
    三把常驻的账（权重/梯度/优化器态）**共用同一份分法**：它们是同一份参数的
    ×2 / ×2 / ×12 B，所以逐块切法只在权重那一档展开一次，另两档指回去、不抄第二遍。 */
+/* ── 体腔小图：一格 = 一份，填实的那格就是本卡持有的 ─────────────────────
+   与交集腔 L3 的①②两只体腔、以及读出卡里那两只缩略图同一个语汇（网格 + 实心
+   一格），只是缩到读出卡的宽度里。**画出来的东西不用再用文字说一遍**：
+   「×8 里的第 5 桶」画成八格里第五格填实，比写一行字快得多，也不会和图打架。
+   ax = {nx, ix, lx, ny, iy, ly, c}：两根轴各自的份数、本卡的下标、轴名，c 是刀色。 */
+function cavityGrid(ax){
+  var BW = 150, BH = 40, PAD = 15;
+  var nx = Math.max(1, ax.nx), ny = Math.max(1, ax.ny);
+  /* 份数多到一格不足 3px 时不逐格画——画出来是一团糊，反而把「本卡是哪一格」盖掉。
+     这时退回「整条 + 一段实心」：位置照旧准确，只是不再数得出格数（格数写在轴标上）。 */
+  var cw = BW/nx, ch = BH/ny, fine = cw >= 3 && ch >= 3;
+  var cells = '';
+  if(fine){
+    for(var y = 0; y < ny; y++) for(var x = 0; x < nx; x++){
+      var on = (x === ax.ix && y === ax.iy);
+      cells += '<rect x="'+(x*cw+0.5).toFixed(1)+'" y="'+(y*ch+0.5).toFixed(1)
+        + '" width="'+(cw-1).toFixed(1)+'" height="'+(ch-1).toFixed(1)
+        + '" style="fill:'+(on ? ax.c : 'transparent')
+        + ';stroke:'+(on ? 'none' : 'var(--pt-bd)')+';stroke-width:.5'
+        + (on ? '' : ';stroke-dasharray:2 2')+'"/>';
+    }
+  } else {
+    cells += '<rect x="0.5" y="0.5" width="'+(BW-1)+'" height="'+(BH-1)
+      + '" style="fill:none;stroke:var(--pt-bd);stroke-width:.5;stroke-dasharray:2 2"/>'
+      + '<rect x="'+(ax.ix*cw).toFixed(1)+'" y="'+(ax.iy*ch).toFixed(1)
+      + '" width="'+Math.max(1.5, cw).toFixed(1)+'" height="'+Math.max(1.5, ch).toFixed(1)
+      + '" style="fill:'+ax.c+';stroke:none"/>';
+  }
+  return '<svg width="'+(BW+PAD+30)+'" height="'+(BH+15)+'" style="margin:2px 0 1px;overflow:visible">'
+    + '<g transform="translate(1,1)">'+cells
+    + '<rect x="0" y="0" width="'+BW+'" height="'+BH+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:.9;stroke-dasharray:3 2"/></g>'
+    /* 份数只在**真被分开**时才写：一根没切的轴写「×1」是在说一件没发生的事，
+       而且和轴名连起来读成「复印16×1」这种自相矛盾的串。 */
+    + '<text x="'+(BW+6)+'" y="'+(BH/2+4)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+esc(ax.ly)+(ny>1?'×'+ny:'')+'</text>'
+    + '<text x="0" y="'+(BH+12)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+esc(ax.lx)+(nx>1?'×'+nx:'')+'</text>'
+    + '</svg>';
+}
+
 function memBlockDetail(D, g, key){
   if(!key) return '';
   var co = coordsOf(g, D), lps = D.layersPerStage, p = co.p;
   var L = rankLoad(D, g), Pn = paramsPerCard(D, p, L);
   var segs = memParts(D, p, g);
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
-  var rows = [], title = '', tint = 'var(--pt-fg)', note = '';
+  var rows = [], title = '', tint = 'var(--pt-fg)', note = '', figs = [];
   function kv(k9, v9){ rows.push('<dt>'+esc(k9)+'</dt><dd>'+v9+'</dd>'); }
+  function fig(ax, cap){ figs.push('<div class="rm-fig">'+cavityGrid(ax)
+    + (cap ? '<span class="rm-cap">'+esc(cap)+'</span>' : '')+'</div>'); }
+  /* ①腔（权重/梯度/优化器态共用）：h←TP 横着分，e←EP 竖着分，本卡持有交叉那一格 */
+  function figW(c9){
+    fig({nx:(D.tp>1?D.tp:1), ix:co.t, lx:'h←TP',
+         ny:(D.moe&&D.ep>1?D.ep:1), iy:(me?me.ep:0), ly:'e←EP', c:c9 || cutColor('ep')});
+  }
   /* 三把常驻账共用的那一句：ℓ 由 PP 定段，h 由 TP 切，e 由 EP 分桶。 */
   function holdLine(){
     return 'ℓ '+lps+'/'+D.layers
@@ -7587,21 +7666,19 @@ function memBlockDetail(D, g, key){
     if(sub === 'embed')   shp = '['+fmt(vOwn)+', '+fmt(D.hidden)+']';
     if(sub === 'lm_head') shp = '['+fmt(D.hidden)+', '+fmt(vOwn)+']';
     title = sub; tint = cutColor(blk.cut);
-    kv('这一块', fmtGB(blk.bytes)+' GB（bf16，本 stage '+lps+' 层合计）');
-    if(shp) kv('每层形状', '<code>'+esc(shp)+'</code>');
-    kv('被谁切', blk.cut === 'none'
-      ? '不切——每张卡各留一整份'
-      : '<b style="color:'+tint+'">'+esc(DIMN[blk.cut] || blk.cut)+'</b> · '+esc(blk.how));
-    /* 本卡拿到的是哪一段：说清区间才叫「切」，只说倍数说的是别人有几份。 */
+    kv('这一块', fmtGB(blk.bytes)+' GB'+(shp ? ' · 每层 '+esc(shp) : ''));
+    /* 切法画出来，不写出来：「桶切 ×8、本卡第 5 桶」= 八格里第五格填实。
+       图里已经说的事不再用文字抄一遍，两边还容易对不上。 */
     if(sub === 'experts' && me){
       var kE = D.experts/D.ep, e0 = me.ep*kE;
-      kv('本卡持有', 'E'+e0+'–E'+(e0+kE-1)+'（ep 桶 '+me.ep+' / 共 '+D.ep+' 桶）');
-      if(D.etp > 1) note = 'ETP='+D.etp+'：桶内每个专家的 ffn 维还被再切 '+D.etp+' 份。';
-      else note = 'ETP=1：桶内每个专家是整份的，h 方向没再切——这正是权重体上那块虚线框的来历。';
+      fig({nx:1, ix:0, lx:'ETP×'+D.etp, ny:D.ep, iy:me.ep, ly:'e←EP', c:tint},
+          'E'+e0+'–E'+(e0+kE-1));
+      note = D.etp > 1 ? 'ETP='+D.etp+'：桶内每个专家的 ffn 维还被再切 '+D.etp+' 份。'
+                       : 'ETP=1：桶内每个专家是整份的，h 方向没再切。';
     } else if(blk.cut === 'tp'){
-      kv('本卡持有', '第 '+co.t+' 片 / 共 '+D.tp+' 片（tp_rank '+co.t+'）');
+      fig({nx:D.tp, ix:co.t, lx:'h←TP', ny:1, iy:0, ly:'ℓ 段内', c:tint}, blk.how);
     } else if(blk.cut === 'none'){
-      kv('本卡持有', '整份（每张卡逐字节相同）');
+      fig({nx:1, ix:0, lx:'不切', ny:1, iy:0, ly:'整份', c:tint}, '每张卡逐字节相同');
     }
     if(sub === 'embed')   note = '只有 stage 0 有：PP 那一刀把词嵌入留在了第一段。';
     if(sub === 'lm_head') note = '只有末 stage 有：出口那一层不重复，PP 的另一头。';
@@ -7611,54 +7688,48 @@ function memBlockDetail(D, g, key){
     for(s9 = 0; s9 < segs.length; s9++) if(segs[s9].k === key){ sg = segs[s9]; break; }
     if(!sg) return '';
     title = sg.label; tint = sg.k === 'act' ? VC.dp : (sg.k === 'rsv' ? 'var(--pt-fg3)' : MEMC[sg.k] || 'var(--pt-fg)');
-    kv('这一档', fmtGB(sg.bytes)+' GB');
+    var per = key === 'w' ? 2 : (key === 'g' ? 2 : (key === 'opt' ? 12 : 3.2));
+    kv('这一档', fmtGB(sg.bytes)+' GB'
+      + ((key==='w'||key==='g'||key==='opt'||key==='otmp')
+          ? ' · '+fmt(Math.round(Pn/1e6))+' M 参数 × '+per+' B' : ''));
+    /* ①腔三档共用同一张图（同一份参数、同一分法，只是每份几个字节不同）——
+       画同一张正是「×1 / ×6」那句话本身，用不着再写一遍。 */
     if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp'){
-      var per = key === 'w' ? 2 : (key === 'g' ? 2 : (key === 'opt' ? 12 : 3.2));
-      kv('字节口径', fmt(Math.round(Pn/1e6))+' M 参数 × '+per+' B/参数');
-      kv('本卡持有', holdLine());
+      figW(MEMC[key]);
+      kv('层段', 'ℓ '+lps+'/'+D.layers+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'（PP 定段，不切张量）');
     }
-    if(key === 'w'){
-      kv('分法', '逐块各不相同——展开表里那几行，颜色即刀色');
-      note = 'PP 不在这张分块表里：它不切任何一个张量，它切的是「哪几层住在这张卡上」（本卡 L'
-        + (p*lps) + '–L' + ((p+1)*lps-1) + '）。';
-    }
-    if(key === 'g'){
-      kv('分法', '与权重逐字节同一分法（×1）');
-      note = '反向才产生，优化器步用完才放得掉——所以它和权重是同时压在卡上的两份。';
-    }
-    if(key === 'opt'){
-      kv('分法', '与权重逐字节同一分法（×6）');
-      note = '主参数 fp32（4 B）+ 动量 m（4 B）+ 二阶矩 v（4 B）。面积最大的一档，'
-        + '也是「换 optimizer 能省多少」这个问题的全部战场。';
-    }
-    if(key === 'otmp'){
-      kv('何时出现', '一步的最后 12%（走带走到那儿才有）');
-      note = '梯度归约成 fp32 + 主参数更新的临时量。整步都好好的、最后一下 OOM，'
-        + '说的就是这一档。分桶归约按 0.8 折算，不是整份 4 B/参数。';
-    }
+    if(key === 'w')   note = '带上每一块的颜色就是切它那把刀——点开下面任意一块看它自己的图。';
+    if(key === 'g')   note = '反向才产生，优化器步用完才放得掉——和权重是同时压在卡上的两份。';
+    if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，'
+      + '也是「换 optimizer 能省多少」的全部战场。';
+    if(key === 'otmp') note = '只在一步的最后 12% 冒出来：梯度归约成 fp32 + 主参数更新的临时量。'
+      + '整步都好好的、最后一下 OOM，说的就是这一档。';
     if(key === 'act'){
-      var infl = sg.label.replace(/^激活·在途/, '').replace(/μb$/, '');
-      kv('体腔', 'ℓ '+lps+' × h '+fmt(D.hidden)+' × b '+D.mbs+' × s '+fmt(D.seq/D.cp));
-      /* h 这一轴上激活与权重**分道**：权重被 TP 切成 h/tp，激活却按整条 h 记——
-         SP 把 s 切开省下的那一份，进 TP 区之前要 AllGather 回全长，算子之间压着的
-         就是全长那一份。memParts 里 act 用的正是整条 D.hidden，不除 tp；这里若写
-         「TP 切 tp」就和它自己算的字节对不上了。 */
-      kv('四根轴', 'ℓ←PP 切 '+D.pp+' 段 · h←TP 不切（算子间 AllGather 回全长）'
-        + ' · b←DP 复印 '+D.dp+' 份 · s←CP '+(D.cp>1?'切 '+D.cp:'未切'));
-      kv('在途份数', infl+' 个微批（1F1B：stage '+p+' 此刻压着这么多份）');
-      note = '唯一随时间轴动的一档。它不是「切」出来的常驻账，是流——'
-        + '装满不会崩的是流，装满会崩的是常驻那三档。';
+      var mub = Math.max(1, Math.min(D.pp, D.ga) - p);
+      /* ②腔：ℓ←PP 竖着分段、s←CP 横着分段，本卡持有交叉那一格。
+         h 这一轴上激活与权重**分道**——权重被 TP 切成 h/tp，激活却按整条 h 记：
+         SP 把 s 切开省下的那份，进 TP 区之前要 AllGather 回全长，算子之间压着的
+         就是全长那一份（memParts 里 act 用的正是整条 D.hidden，不除 tp）。
+         所以这张图上没有 TP 那根轴，不是漏了。 */
+      fig({nx:(D.cp>1?D.cp:1), ix:co.c, lx:'s←CP', ny:D.pp, iy:p, ly:'ℓ←PP', c:MEMC.act},
+          'h 全长 '+fmt(D.hidden)+'（TP 不切）');
+      /* 在途几份微批 = 卡上激活带被竖着分成几格，两处画同一件事 */
+      fig({nx:mub, ix:0, lx:'在途 μb', ny:1, iy:0, ly:'b←DP 复印'+D.dp, c:MEMC.act},
+          '1F1B：stage '+p+' 压着 '+mub+' 份');
+      note = '唯一随时间轴动的一档。它不是切出来的常驻账，是流——装满不会崩的是流，'
+        + '装满会崩的是常驻那三档。';
     }
     if(key === 'rsv'){
-      kv('成分', 'allocator 碎片与 workspace');
-      kv('切法', '没有轴——不参与任何一把刀');
-      note = '每张卡的分配历史不同，这一截本来就不是同一个数（本屏按确定性合成给，同一张卡永远读到同一个值）。';
+      fig({nx:1, ix:0, lx:'没有轴', ny:1, iy:0, ly:'不参与任何一把刀', c:MEMC.rsv},
+          'allocator 碎片与 workspace');
+      note = '每张卡的分配历史不同，这一截本来就不是同一个数。';
     }
   }
   return '<div class="rm-d" style="--rmc:'+tint+'">'
     + '<div class="rm-dh"><b style="color:'+tint+'">'+esc(title)+'</b>'
     + '<button class="rm-dx" data-act="memblockpick" data-mk="" title="收起这一块">✕</button></div>'
     + '<dl>'+rows.join('')+'</dl>'
+    + figs.join('')
     + (note ? '<div class="rm-note">'+esc(note)+'</div>' : '')
     + '</div>';
 }
