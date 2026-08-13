@@ -6138,18 +6138,27 @@ function chipsWith(k){ return ui.chips.filter(function(c){ return c.k===k; })[0]
    把所有生效的搜索标签汇成一个 rank 集合（并集）和一个 layer 集合。
    返回 null 表示没有搜索标签生效（不压暗任何东西）。 */
 function spotlightHit(D){
-  if(!ui.chips.length) return null;
+  /* 照亮这件事上，**过路的高亮和这一屏自己下的标签是同一件事**：另一格点了一个算子
+     转过来一层，卡阵上就该亮起持有那一层的那几十张卡。先前这里只认标签，于是
+     高亮与筛选分家之后跨格点算子只换了代表层、卡阵一片都不亮——看着就像联动没了。
+     两者的差别在别处，不在这儿：落不落标签、浮不浮读出卡、点空白散不散。 */
+  var hlLi = ui.hlLayer ? parseInt(ui.revLayer, 10) : NaN;
+  var hlRank = (ui.hlSel && sel !== null && sel < D.world) ? sel : -1;
+  if(!ui.chips.length && !(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) && hlRank < 0) return null;
   var ranks = {}, layers = {}, any = false, epRelevant = false;
+  function addLayer(li){
+    any = true;
+    layers[li] = true;
+    var h = layerHome(D, li);
+    for(var d=0;d<D.dp;d++) for(var cc=0;cc<D.cp;cc++) for(var t=0;t<D.tp;t++)
+      ranks[rankOf(t, cc, d, h.stage, D)] = true;
+  }
+  if(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) addLayer(hlLi);
+  if(hlRank >= 0){ any = true; ranks[hlRank] = true; }
   ui.chips.forEach(function(c){
     var st = chipState(c, D);
     if(st.kind === 'bad') return;
-    if(st.kind === 'layer'){
-      any = true;
-      layers[st.li] = true;
-      var h = layerHome(D, st.li);
-      for(var d=0;d<D.dp;d++) for(var cc=0;cc<D.cp;cc++) for(var t=0;t<D.tp;t++)
-        ranks[rankOf(t, cc, d, h.stage, D)] = true;
-    }
+    if(st.kind === 'layer') addLayer(st.li);
     if(st.kind === 'rank'){
       any = true;
       ranks[st.g] = true;
