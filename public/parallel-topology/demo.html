@@ -6699,17 +6699,18 @@ function renderChainBar(D){
   }
   var cBtn = swBtn('cardmode', 'Rank', ui.cardMode,
         ui.cardMode ? '关掉：退回整网切分场景' : '打开：把四刀交集收进一张卡，只看这张卡真正持有的那份')
-    /* 整网开关只在 Rank 打开时给：没有卡壳的话，关掉内容就什么都不剩了 */
-    + (ui.cardMode ? swBtn('netoff', '整网', !ui.netOff,
-        ui.netOff ? '打开：把算子装回 '+D.world+' 只卡里' : '关掉：卡里不再画算子，只剩 '+D.world+' 只方块') : '')
-    /* 容量 = 壳（HBM）与装进去的五档（权重/梯度/优化器态/激活/碎片）的关系。
-       只在关掉整网时给：开着整网时壳里装的是算子，那是另一套内容，两个填充不叠。
-       叫「容量」不叫「载荷」：这一屏要回答的是**装不装得下**，不是「装了多少」——
-       两条警戒线、顶出壳顶的那一截、悬停里的越界原因，讲的都是前者。 */
-    + (ui.cardMode && ui.netOff ? swBtn('memfill', '容量', ui.memFill,
-        ui.memFill ? '关掉：卡壳空出来，只看 '+D.world+' 只卡怎么排'
-                   : '打开：壳＝HBM 容量，按字节装上显存成分；到 '+Math.round(CAP_AMBER*100)+'% 转橙、'
-                     +Math.round(CAP_RED*100)+'% 转红、装不下就顶出壳顶（悬停看是哪一档超的）') : '');
+    /* 「整网 / 容量」是**同一只卡壳的两种看法**，本来就互斥：壳里要么装算子（这张卡
+       持有模型的哪一块），要么装字节（这张卡的显存装到什么程度）。两个填充不可能叠。
+       原来做成两个独立开关，于是存在「两个都关」这种谁也答不上来的状态（空壳），
+       而且读者得先想清楚它们的先后依赖。改成二选一的段控，状态就只剩两个，
+       名字直接说这一屏在回答哪一问。 */
+    + (ui.cardMode ? '<span class="pt-seg">'
+        + '<button'+(!ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="net"'
+        + ' title="壳里装算子：这张卡持有模型的哪一块（四刀交集）">整网</button>'
+        + '<button'+(ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="cap"'
+        + ' title="壳＝HBM 容量，按字节装上五档显存成分；走带跑起来后到 '
+        + Math.round(CAP_RED*100)+'% 转红、装不下就顶出壳顶（悬停看是哪一档超的）">容量</button>'
+        + '</span>' : '');
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
@@ -7753,6 +7754,13 @@ document.addEventListener('click', function(ev){
      大面板抢同一片屏幕，留着没有意义。 */
   else if(act==='commtoggle'){ ui.commOn = !ui.commOn; ui.dispOpen = false; render(); }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
+  /* 整网 ⇄ 容量：二选一。切到容量时顺手把填充打开——「容量」这两个字就是在说
+     壳里要按字节装满，再要求读者多点一下才看得见就是把一件事拆成两步。 */
+  else if(act==='cardview'){
+    ui.netOff = b.getAttribute('data-v') === 'cap';
+    if(ui.netOff) ui.memFill = true;
+    render();
+  }
   else if(act==='memfill'){ ui.memFill = !ui.memFill; render(); }
   else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='opdetail'){
