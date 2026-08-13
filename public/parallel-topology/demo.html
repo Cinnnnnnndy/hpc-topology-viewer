@@ -1124,9 +1124,16 @@ function rankLoad(D, g){
     vocabOwn: Math.max(0, Math.min(vPer, D.vocab - co.t*vPer)),
     expOwn:   D.moe ? Math.max(0, Math.min(ePer, D.experts - me.ep*ePer)) : 0,
     expEven:  D.moe ? D.experts / D.ep : 0,
-    /* 桶与桶之间的路由不均（均值 1），再叠一点同桶不同 DP 副本吃的微批差异 */
-    actK: (D.moe ? 0.84 + loadSeed(me.ep, 3)*0.40 : 1) * (0.97 + loadSeed(key, 11)*0.06),
-    rsv:  (1.15 + loadSeed(key, 29)*0.80) * Math.pow(2, 30)
+    /* 桶与桶之间的路由不均。幅度按实测口径给（MoE 里 1.0–1.4× 是常见区间，不是小抖动）
+       ——原来只给 ±20%，摊到 64GB 的壳上不到 5% 的高度差，一屏看过去就是「都一样高」。
+       再叠一点同桶不同 DP 副本吃的微批差异。 */
+    actK: (D.moe ? 0.74 + loadSeed(me.ep, 3)*0.62 : 0.92 + loadSeed(key, 5)*0.17)
+          * (0.95 + loadSeed(key, 11)*0.10),
+    /* 碎片/预留：allocator 的历史各卡各样，1.1–2.7 GB 是实机常见跨度 */
+    rsv:  (1.1 + loadSeed(key, 29)*1.6) * Math.pow(2, 30),
+    /* 相位差：各 rank 本来就不同步（掉队、通信抖动），差个几个百分点的步进度。
+       没有它的话时间轴一走，整段卡齐刷刷同起同落，看着像一个整体在呼吸。 */
+    phase: (loadSeed(key, 47) - 0.5) * 0.12
   };
 }
 function paramsPerCard(D, ppRank, L){
@@ -1175,6 +1182,7 @@ var MEMC = {
   g:  'var(--highlight-mte-amber-600, #CA8A04)',
   opt:'var(--highlight-l0a-violet-200, #D7B1FB)',
   act:'var(--pt-dp)',
+  otmp:'var(--highlight-mte-amber-600, #CA8A04)',
   rsv:'color-mix(in srgb, var(--pt-fg) 12%, var(--pt-bg))'
 };
 /* g 给了就按**那一张卡**算（见 rankLoad）；不给就是这一段的标准卡，读数与从前一字不差
@@ -1186,15 +1194,62 @@ function memParts(D, ppRank, g){
   /* 训练步进度只作用在**逐卡**这一路（给了 g 的那一路）：那问的是「第 41 张卡此刻
      多少」。不给 g 的聚合口径（每卡容量、四刀贡献、A3 自检）照旧按峰值——它们问的是
      「这套切法给一张卡留下多少」，跟着游标晃就不是同一个问题了。 */
-  var inflight = inflightAt(D, ppRank, L ? ACT_T : null);
+  var inflight = inflightAt(D, ppRank, (L && ACT_T !== null) ? (ACT_T + L.phase) : (L ? null : null));
   var act = D.mbs*(D.seq/D.cp)*D.hidden*D.layersPerStage*ACT_COEF*inflight * (L ? L.actK : 1);
+  /* 优化器步的临时区：一步的最后，梯度要归约成 fp32、主参数按 m/v 更新，这中间会
+     短暂多出一份 fp32 的梯度副本与更新临时量（4 B/参数）。这是实机上最经典的 OOM
+     时刻——整步都好好的，最后一下没了；也正是「容量」这一屏要报的事。
+     只在 t 的末段出现，不给时间轴就不算（默认那张读数还是稳态峰值）。 */
+  var stepT = (L && ACT_T !== null) ? clamp(ACT_T + L.phase, 0, 1) : null;
+  var optK = 0;
+  if(stepT !== null && stepT > 0.88){
+    var u = (stepT - 0.88) / 0.12;                 /* 末段 12% 里升起再落下 */
+    optK = Math.sin(Math.PI * clamp(u, 0, 1));
+  }
+  var optTmp = 4 * P * optK;
   return [
     {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w},
     {k:'g', label:'梯度 (bf16)', bytes:2*P, color:MEMC.g},
     {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, color:MEMC.opt},
+    {k:'otmp', label:'优化器步·临时区 (fp32 梯度归约)', bytes:optTmp, color:MEMC.otmp},
     {k:'act', label:'激活·在途'+(inflight >= 1 ? (Math.abs(inflight-Math.round(inflight))<0.05 ? Math.round(inflight) : inflight.toFixed(1)) : inflight.toFixed(1))+'μb', bytes:act, color:MEMC.act},
     {k:'rsv', label:'碎片/预留', bytes:(L ? L.rsv : 1.5*Math.pow(2,30)), color:MEMC.rsv}
   ];
+}
+/* ── 容量判定：这张卡此刻装不装得下 ─────────────────────────────────────
+   壳是 HBM 容量（固定），装进去的是这一刻的五档。时间轴走到峰值时，路由不均那几张
+   卡是真的会顶出去的——这一屏的价值恰恰在这儿：不是「平均每卡 51GB，够用」，
+   而是「第 37 张卡在这一刻超了 3.2GB，因为它那个专家桶收到的 token 多 34%」。
+   越界原因只报**可变的那几档**（激活、碎片）超出各自基准多少：权重/梯度/优化器态
+   是常驻的，它们不会「突然」把卡撑爆，说它们没有信息量。 */
+var CAP_AMBER = 0.70, CAP_RED = 0.88;   /* 两条警戒线：卡上画出来的就是这两条 */
+var CAP_C = {amber:'var(--highlight-mte-amber-600, #CA8A04)', red:'var(--pt-danger)'};
+function capVerdict(D, ppRank, g){
+  var segs = memParts(D, ppRank, g);
+  var tot = segs.reduce(function(a,x){ return a+x.bytes; }, 0);
+  var cap = D.hbm*Math.pow(2,30);
+  var base = memParts(D, ppRank);                     /* 同一段的标准卡：拿来说「多出多少」 */
+  var bm = {}; base.forEach(function(x){ bm[x.k] = x.bytes; });
+  var over = tot - cap;
+  var why = [];
+  if(over > 0){
+    segs.forEach(function(x){
+      if(x.k !== 'act' && x.k !== 'rsv' && x.k !== 'otmp') return;
+      var d = x.bytes - (bm[x.k] || 0);
+      if(d > 0.05*Math.pow(2,30)) why.push({k:x.k, label:x.label, d:d});
+    });
+    why.sort(function(a,b){ return b.d - a.d; });
+  }
+  var r = tot/cap;
+  return {
+    tot:tot, cap:cap, over:over, ratio:r,
+    /* 四档，两条警戒线就是卡上画的那两条：
+       70% 橙 —— 还能跑，但已经没有余量吃一次路由抖动；
+       88% 红 —— 再有一点波动就 OOM，实机上这条线之后基本要动切法了；
+       >100% 顶出去 —— 这一刻真的放不下。 */
+    level: over > 0 ? 'oom' : (r >= CAP_RED ? 'red' : (r >= CAP_AMBER ? 'amber' : 'ok')),
+    why: why, segs: segs
+  };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
@@ -2358,16 +2413,21 @@ function netScene(D, g, box, step){
   function memStack(p9, g9){
     var ck9 = p9 + '/' + g9;
     if(memStackCache[ck9]) return memStackCache[ck9];
-    var segs9 = memParts(memD, cutPP ? p9 : 0, g9), cap9 = D.hbm*Math.pow(2,30);
-    var tot9 = segs9.reduce(function(a,x){ return a+x.bytes; }, 0);
-    var sc9 = 1/Math.max(cap9, tot9), acc9 = 0, out9 = [];
-    segs9.forEach(function(sg9){
+    var V9 = capVerdict(memD, cutPP ? p9 : 0, g9);
+    var cap9 = V9.cap;
+    /* 刻度永远是**壳**（HBM 容量），不再按 max(cap, tot) 归一化。原来那样一旦超出
+       就把整叠压回壳内，越界反而看不出来——满了就该顶出去，那正是要报的事。 */
+    var sc9 = 1/cap9, acc9 = 0, out9 = [];
+    V9.segs.forEach(function(sg9){
       var f0 = acc9*sc9; acc9 += sg9.bytes;
       var f1 = acc9*sc9;
       if(f1 - f0 < 0.006) return;                  /* 薄成一条线的段不画 */
-      out9.push({f0:f0, f1:f1, c:sg9.color, act:sg9.k==='act'});
+      /* 超出壳顶的那一截截断在 1.0：壳装不下的部分不画进壳里 */
+      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act'});
     });
+    out9 = out9.filter(function(x){ return x.f1 - x.f0 > 0.0005; });
     if(out9.length) out9[out9.length-1].top = true;   /* 只有最上面那段露顶面 */
+    out9.level = V9.level; out9.over = V9.over;       /* 壳的警戒色按它上 */
     memStackCache[ck9] = out9;
     return out9;
   }
@@ -2990,6 +3050,13 @@ function netScene(D, g, box, step){
             body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
             body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
             if(!lowDetail && ui.memFill){
+              /* 选中那一只画得更实：兑底色的百分比整体拉高一档，透明度回到 1。
+                 128 只半透的盒子叠在一起，选中的那只如果和邻居同一个浓度，就得靠
+                 「哪只描边粗」去找它——而这一屏点开一只卡是要**读它的层次**的
+                 （哪一档占了多少、离两条警戒线还有多远），层次读不读得清全看浓度。
+                 参考页（card-container）那只单卡正是这个做法：一只卡的时候不必让光，
+                 色块该有多实就多实。 */
+              var solidK = meC ? 1 : 0;
               var MS9 = memStack(pc2, rankOf(tIdx, cIdx, dIdx, pc2, D)), vSp9 = cv1 - cv0;
               for(var m8 = 0; m8 < MS9.length; m8++){
                 var sg8 = MS9[m8];
@@ -2998,8 +3065,9 @@ function netScene(D, g, box, step){
                     mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
+                var lzM = meC ? 1 : lz;
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+';stroke:none;opacity:'+lzM));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+';stroke:none;opacity:'+lzM));
                 if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+lz));
                 body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+lz));
                 body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+lz));
@@ -3048,10 +3116,37 @@ function netScene(D, g, box, step){
           if(spotCard){ eW *= 1.35; eO = Math.min(1, eO * 1.6); }
           else { eW *= 0.22; eO *= 0.15; }
         }
+        /* 容量告警：装不下的那只卡，棱换成告警色并加粗——一屏 128 只，只有「颜色 +
+           粗细」这一档能在缩得很小的时候还认得出是哪几只。红＝已经顶出去（这一刻
+           真的放不下），琥珀＝吃紧（≥92%，再抖一下就出界）。
+           时间轴走到峰值时冒出来的正是它，也正是这一屏要报的事。 */
+        var capLv = (ui.netOff && ui.memFill && !lowDetail) ? (memStack(pc2, gc).level || 'ok') : 'ok';
+        var capCol = (capLv === 'oom' || capLv === 'red') ? CAP_C.red : (capLv === 'amber' ? CAP_C.amber : null);
+        if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(meC ? 'var(--pt-fg)' : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (spot && spotCard ? VC.dp : 'var(--pt-fg3)')))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
+        /* 选中那一只画两条警戒线（70% 橙 / 88% 红）。只给选中的画：128 只卡each两条
+           线就是 256 条横线糊满画面，而「这一只离满还有多远」本来就是点开一只才问的。
+           线画在壳的**前脸**上，跟着填充同一套 v 坐标，所以读者可以直接比高低。 */
+        if(meC && ui.netOff && ui.memFill && !lowDetail){
+          [[CAP_AMBER, CAP_C.amber], [CAP_RED, CAP_C.red]].forEach(function(mk){
+            var vy = cv1 - (cv1 - cv0) * mk[0];
+            var qa = P(-0.04, vy, cw0, kc), qb = P(1.04, vy, cw0, kc);
+            body.push(seg(qa, qb, 'stroke:'+mk[1]+';stroke-width:1.1;stroke-dasharray:4 3;opacity:.95'));
+            body.push(txt(qb[0] + 4, qb[1] + 3, Math.round(mk[0]*100)+'%', 7.4, mk[1], 'start',
+              'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
+          });
+        }
+        /* 顶出去的那一截：画在**壳顶之上**，一眼看得出「多出来这么多」。
+           不画进壳里——壳是硬边界，装不下就是装不下。 */
+        if(capLv === 'oom'){
+          var ovR = Math.min(0.5, (memStack(pc2, gc).over || 0) / (D.hbm*Math.pow(2,30)));
+          var ovA = P(0, cv0, cw0, kc), ovB = P(1, cv0, cw0, kc);
+          var ovC = P(1, cv0 - ovR, cw0, kc), ovD = P(0, cv0 - ovR, cw0, kc);
+          body.push(quad([ovA, ovB, ovC, ovD], 'fill:'+mix('var(--pt-danger)',52)+';stroke:var(--pt-danger);stroke-width:.5'));
+        }
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
            卡里那条专家带在 128 只卡的尺度下只有几个像素，分不出谁是谁。
            只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍。 */
@@ -6552,11 +6647,14 @@ function renderChainBar(D){
     /* 整网开关只在 Rank 打开时给：没有卡壳的话，关掉内容就什么都不剩了 */
     + (ui.cardMode ? swBtn('netoff', '整网', !ui.netOff,
         ui.netOff ? '打开：把算子装回 '+D.world+' 只卡里' : '关掉：卡里不再画算子，只剩 '+D.world+' 只方块') : '')
-    /* 载荷 = 卡壳里装的显存成分（权重/梯度/优化器态/激活/碎片）。只在关掉整网
-       时给：开着整网时壳里装的是算子，那是另一套内容，两个填充不叠。 */
-    + (ui.cardMode && ui.netOff ? swBtn('memfill', '载荷', ui.memFill,
+    /* 容量 = 壳（HBM）与装进去的五档（权重/梯度/优化器态/激活/碎片）的关系。
+       只在关掉整网时给：开着整网时壳里装的是算子，那是另一套内容，两个填充不叠。
+       叫「容量」不叫「载荷」：这一屏要回答的是**装不装得下**，不是「装了多少」——
+       两条警戒线、顶出壳顶的那一截、悬停里的越界原因，讲的都是前者。 */
+    + (ui.cardMode && ui.netOff ? swBtn('memfill', '容量', ui.memFill,
         ui.memFill ? '关掉：卡壳空出来，只看 '+D.world+' 只卡怎么排'
-                   : '打开：每只卡按字节比例装上显存成分（权重/梯度/优化器态/激活），空出的一截就是余量') : '');
+                   : '打开：壳＝HBM 容量，按字节装上显存成分；到 '+Math.round(CAP_AMBER*100)+'% 转橙、'
+                     +Math.round(CAP_RED*100)+'% 转红、装不下就顶出壳顶（悬停看是哪一档超的）') : '');
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
@@ -7768,7 +7866,26 @@ document.addEventListener('mousemove', function(ev){
     var D = derive(cfg), r = +g.getAttribute('data-g');
     if(D.ok && r<D.world){
       var co = coordsOf(r,D), me = D.moe?epOf(co.t,co.c,co.d,D):null;
-      tip.innerHTML = '<b>global_rank '+r+'</b><br>tp '+co.t+' · cp '+co.c+' · dp '+co.d+' · pp '+co.p+(me?'<br>ep '+me.ep+' · etp '+me.etp:'')+'<br><span style="opacity:.6">点击选中（跨视图保持）</span>';
+      var capTip = '';
+      /* 容量那一屏才报容量：悬停要答的是「它为什么装不下」，而越界只可能来自**可变的
+         那几档**（激活、碎片）——权重/梯度/优化器态是常驻的，说它们没有信息量。 */
+      if(ui.view==='chain' && ui.cardMode && ui.netOff && ui.memFill){
+        var V = capVerdict(D, co.p, r);
+        var pctS = Math.round(V.ratio*100) + '%';
+        if(V.level === 'oom'){
+          capTip = '<br><b style="color:var(--pt-danger)">✕ 装不下 · 超出 '+fmtGB(V.over)+' GB</b>'
+            + '<br><span style="opacity:.75">'+fmtGB(V.tot)+' / '+D.hbm+' GB（'+pctS+'）</span>';
+          if(V.why.length) capTip += '<br><span style="opacity:.75">越界来自：'
+            + V.why.map(function(w){ return esc(w.label)+' 比标准卡多 '+fmtGB(w.d)+' GB'; }).join('；') + '</span>';
+          if(ACT_T !== null) capTip += '<br><span style="opacity:.6">此刻训练步走到 '+Math.round(ACT_T*100)+'%</span>';
+        } else {
+          var lc = V.level==='red' ? 'var(--pt-danger)' : (V.level==='amber' ? CAP_C.amber : 'var(--pt-fg2)');
+          capTip = '<br><span style="color:'+lc+';font-weight:700">'+fmtGB(V.tot)+' / '+D.hbm+' GB（'+pctS+'）</span>'
+            + (V.level==='red' ? '<br><span style="opacity:.75">过 88% 警戒线，再抖一下就 OOM</span>'
+             : V.level==='amber' ? '<br><span style="opacity:.75">过 70% 警戒线，没余量吃一次路由抖动</span>' : '');
+        }
+      }
+      tip.innerHTML = '<b>global_rank '+r+'</b><br>tp '+co.t+' · cp '+co.c+' · dp '+co.d+' · pp '+co.p+(me?'<br>ep '+me.ep+' · etp '+me.etp:'')+capTip+'<br><span style="opacity:.6">点击选中（跨视图保持）</span>';
       tip.style.display='block';
       tip.style.left = Math.min(window.innerWidth-280, ev.clientX+13)+'px';
       tip.style.top = (ev.clientY+13)+'px';
