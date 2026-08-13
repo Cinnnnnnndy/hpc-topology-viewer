@@ -7454,6 +7454,24 @@ function renderRankMem(D){
       rows.push('<tr><td></td><td colspan="2" style="color:var(--pt-fg3);font-size:10px;padding-bottom:3px">'
         + '梯度 / 优化器态同一分法：每块 ×1 / ×6</td></tr>');
     }
+    /* 「腔」：这一档不是一堆字节，是一个**体**——由几条边长围出来，每条边长又是被
+       哪把刀切短的。把边长写出来，读者才看得出「为什么是这么大一块」，以及调哪把刀
+       会让它变小。权重腔 ℓ×h×e：层数由 PP 切、hidden 由 TP 切、专家数由 EP 切；
+       激活腔 ℓ×h×b×s 多两条——b 是微批、s 是序列（由 CP 切），它们只在流动的那一档
+       里出现，这正是激活会随时间涨落而权重不会的原因。 */
+    if(sg.k === 'w' || sg.k === 'act'){
+      var eg = [];
+      eg.push('ℓ ' + lps + '（PP 切 ' + D.pp + ' 段）');
+      eg.push('h ' + fmt(Math.floor(D.hidden / (D.tp>1?D.tp:1))) + (D.tp>1 ? '（TP 切 '+D.tp+'）' : ''));
+      if(sg.k === 'w'){
+        if(D.moe) eg.push('e ' + Math.floor(D.experts/D.ep) + '（EP 切 '+D.ep+'）');
+      } else {
+        eg.push('b ' + D.mbs);
+        eg.push('s ' + fmt(Math.floor(D.seq/(D.cp>1?D.cp:1))) + (D.cp>1 ? '（CP 切 '+D.cp+'）' : ''));
+      }
+      rows.push('<tr><td></td><td colspan="2" style="color:var(--pt-fg3);font-size:10px;padding-bottom:3px">'
+        + (sg.k==='w' ? '权重体腔' : '激活体腔') + '　' + esc(eg.join(' × ')) + '</td></tr>');
+    }
   });
   el.innerHTML =
     '<div class="rm-h"><b>rank '+g+'</b>'
