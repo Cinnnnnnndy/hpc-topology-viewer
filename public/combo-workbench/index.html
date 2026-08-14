@@ -544,6 +544,15 @@ var SLOTS = [
     foldable: true,        // 只有它的格头上有「收起」，见下面 readURL 里的守卫
     src: function (s) {
       var q = new URLSearchParams();
+      /* 通信观测：另一份文档（3D Rank Deck + 地面 Ribbon + 时间轴，上游拷贝自
+         compute-graph-viewer/distributed-communication-observatory-3d-traffic，
+         vendor 钉在它子模块指的 pto-design-system@d58dd4eb）。它和泳道共用这一格：
+         都是「时间/通信」侧的证据视图，一格多页比再开第四个格子省一条分隔条。 */
+      if (s.value === 'obs') {
+        q.set('theme', theme());
+        if (BUILD) q.set('v', BUILD);
+        return './observatory/index.html?' + q.toString();
+      }
       q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
       q.set('theme', theme());
       q.set('range', s.value);
@@ -561,17 +570,24 @@ var SLOTS = [
        为什么不干脆藏掉整条：缩放钮长在里面，藏了就没法缩放了；真要并进格头那一行，
        得给 embed-bridge 的 pto:state 加一个 zoom 字段、把钮搬到宿主去代理——
        那是另一件事（现在的契约只走 range / theme）。 */
+    /* 两份文档的选择器互不命中（泳道那几条在观测台文档里查无此类，反之亦然），
+       所以拼在同一份 hideCss 里是安全的——settleFrame 不区分当前是哪一页。
+       观测台藏的是它 standalone 形态的三件套（顶栏/活动轨/状态条）：
+       进了格子，身份与开关归格头，双份 chrome 摞着只会挤掉画布。 */
     hideCss: '.timeline-pane .pane__title{display:none!important}' +
              '.timeline-pane .pane__meta{display:none!important}' +
              '.timeline-pane .pane__header{height:32px!important;min-height:32px!important;' +
                'padding:0 6px 0 0!important;border-bottom:0!important}' +
-             '.timeline-pane .timeline-toolbar{display:none!important}',
-    readySel: '.timeline-pane .pane__header',   /* 这一格没有 [data-act]，等它自己的格头 */
+             '.timeline-pane .timeline-toolbar{display:none!important}' +
+             '.pto-ide-frame__standalone-chrome{display:none!important}',
+    /* 逗号选择器：两份文档各等各的锚点，谁在场等谁 */
+    readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header',
     msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
       { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
       { v: 'pp2',    t: 'PP2 生命周期', d: 'PP2 的等待 / 计算 / 通信 / 激活驻留' },
-      { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' }
+      { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' },
+      { v: 'obs',    t: '通信观测',     d: '3D Rank Deck + 地面 Rank→Rank 流量带 + 通信时间轴（Mock Scenario）' }
     ]
   }
 ];
@@ -692,7 +708,13 @@ function select(id, value, push) {
   if (!tabsOf(slot).some(function (t) { return t.v === value; })) return;
   s.value = value;
   var frame = $('iframe[data-slot="' + id + '"]');
-  if (s.loaded && frame.contentWindow) frame.contentWindow.postMessage(slot.msg(value), '*');
+  /* 同一份文档内换 tab 走 postMessage（不重载 = 不丢格子里的状态）；
+     tab 换到**另一份文档**（泳道 ↔ 通信观测：src 的路径都变了）只能重载——
+     postMessage 发给旧文档，它认不得也换不成。按路径比，query 变不算换文档。 */
+  var next = slot.src(s);
+  var cur = frame.getAttribute('src') || '';
+  if (s.loaded && frame.contentWindow && cur.split('?')[0] === next.split('?')[0])
+    frame.contentWindow.postMessage(slot.msg(value), '*');
   else load(id);
   syncTabs(id);
   if (push) writeURL();
