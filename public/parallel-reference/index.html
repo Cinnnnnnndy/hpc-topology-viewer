@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>23 张图</span><span>55 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>24 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1922,31 +1922,15 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
   <h4>FIG 12B → FIG 12C：一条连线怎样落到物理路径上</h4>
 
-  <p>FIG 12B 画的是<b>逻辑层</b>——哪些卡是兄弟、用什么原语通信；FIG 12C 画的是<b>实现层</b>——这次 API 调用走了哪条物理路。两张图是<b>同一条通信的上下两层</b>，用下面这张表串起来：</p>
+  <p>FIG 12B 画的是<b>逻辑层</b>——哪些卡是兄弟、用什么原语通信；FIG 12C 画的是<b>实现层</b>——这次 API 调用走了哪条物理路。两张图是<b>同一条通信的上下两层</b>：</p>
 
-  <table class="tbl">
-    <thead><tr><th>FIG 12B 中的连线</th><th>框架发出的 API 调用</th><th>集合通信库内部（FIG 12C）</th><th>实际走的物理路</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><b style="color:#A8404A">TP 红色实线</b><br>机内 4 卡 AllReduce</td>
-        <td><code>all_reduce(grad, tp_group)</code><br>每层两次</td>
-        <td>HCCL 判断 tp_group <b>全在同一节点</b><br>→ 直接走机内路径</td>
-        <td><b>HCCS</b>（华为）<br>NVLink/NVSwitch（NVIDIA）<br>xGMI（AMD）</td>
-      </tr>
-      <tr>
-        <td><b style="color:#2E6E8E">DP 蓝色虚线</b><br>跨机 2 卡 AllReduce</td>
-        <td><code>all_reduce(grad, dp_group)</code><br>每 step 一次</td>
-        <td>HCCL 判断 dp_group <b>跨节点</b><br>→ 走 UB 聚合 + RDMA 通道<br>（NCCL 走 Ring/Tree + IB QP）</td>
-        <td><b>UB + RDMA</b>（华为）<br>IB / RoCE（NVIDIA）</td>
-      </tr>
-      <tr>
-        <td><b style="color:#B3603A">PP 橙色箭头</b><br>相邻 stage P2P</td>
-        <td><code>send(act, next_rank)</code><br><code>recv(act, prev_rank)</code></td>
-        <td>HCCL 判断 next_rank 在不在同一节点<br>→ 机内直连 or 跨机 RDMA</td>
-        <td>取决于 PP stage 的物理落位<br>（order 字符串决定）</td>
-      </tr>
-    </tbody>
-  </table>
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12D</span><span class="ftitle">一条通信连线的完整下沉路径</span><span class="cd b">逻辑→物理 1:1</span>
+      <span class="fnote">三列分别是 TP / DP / PP 的通信，从上到下经过四层：并行维度 → 通信原语 → 集合通信库判断 → 物理链路。每列的颜色与 FIG 12B 的连线一致。</span>
+    </figcaption>
+    <div class="stage" id="fig-waterfall"></div>
+  </figure>
 
   <div class="note new">
     <span class="lbl">关键：框架层完全不知道自己走了哪条路</span>
@@ -5531,6 +5515,165 @@ function hcclOut(){
   }
 }
 
+/* ===================== FIG 12D · 通信下沉瀑布图 ===================== */
+function figWaterfall(){
+  var m = document.getElementById('fig-waterfall');
+  if(!m) return;
+  var W = 900, H = 620;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* 三列颜色 */
+  var cols = [
+    {key:'TP', color:'#A8404A', bg:'#FFF5F5'},
+    {key:'DP', color:'#2E6E8E', bg:'#F0F7FB'},
+    {key:'PP', color:'#B3603A', bg:'#FFF8F2'}
+  ];
+
+  /* 五层行定义 */
+  var rows = [
+    {label:'并行维度', y:50, h:52, ref:'FIG 12B 连线颜色'},
+    {label:'兄弟拓扑', y:122, h:52, ref:'FIG 12B 卡片高亮'},
+    {label:'框架 API 调用', y:194, h:56, ref:'代码层'},
+    {label:'集合通信库判断', y:272, h:64, ref:'FIG 12C 左侧'},
+    {label:'物理链路', y:358, h:60, ref:'FIG 12C 右侧'}
+  ];
+
+  var colW = 230, colGap = 24;
+  var totalW = cols.length * colW + (cols.length - 1) * colGap;
+  var startX = (W - totalW) / 2 + 40;
+  var labelX = startX - 16;
+
+  /* 左侧行标签 + 水平分隔线 */
+  rows.forEach(function(r, i){
+    var ly = r.y + r.h/2;
+    s+='<text x="'+(labelX)+'" y="'+(ly-4)+'" font-size="9" fill="#6B7B86" text-anchor="end" font-weight="600">'+r.label+'</text>';
+    s+='<text x="'+(labelX)+'" y="'+(ly+10)+'" font-size="7" fill="#B0BEC6" text-anchor="end">'+r.ref+'</text>';
+    if(i > 0){
+      s+='<line x1="'+(startX-8)+'" y1="'+(r.y-6)+'" x2="'+(startX+totalW+8)+'" y2="'+(r.y-6)+'" stroke="#E8EDEF" stroke-width="0.5"/>';
+    }
+  });
+
+  /* 每列的内容 */
+  var content = [
+    /* TP */
+    [
+      {t1:'TP 维度', t2:'同层权重的不同分片'},
+      {t1:'4 卡同节点', t2:'AllReduce 环（机内）', icon:'ring'},
+      {t1:'all_reduce(grad, tp_group)', t2:'每层两次', mono:true},
+      {t1:'group 全在同一节点', t2:'→ 直接走机内路径', t3:'不经过 UB'},
+      {t1:'HCCS / NVLink', t2:'300-900 GB/s · μs 级'}
+    ],
+    /* DP */
+    [
+      {t1:'DP 维度', t2:'同层权重的完全相同副本'},
+      {t1:'2 卡跨节点', t2:'AllReduce 梯度同步', icon:'dash'},
+      {t1:'all_reduce(grad, dp_group)', t2:'每 step 一次', mono:true},
+      {t1:'group 跨节点', t2:'→ 走 UB 聚合 + RDMA', t3:'先本地聚合再跨机'},
+      {t1:'UB + RDMA / IB', t2:'100-400 Gbps · 低 ms'}
+    ],
+    /* PP */
+    [
+      {t1:'PP 维度', t2:'不同层 · 非兄弟关系'},
+      {t1:'相邻 stage 1:1', t2:'P2P 激活传递（有向）', icon:'arrow'},
+      {t1:'send(act, next_rank)', t2:'每个 micro-batch', mono:true},
+      {t1:'判断 next_rank 位置', t2:'→ 机内 or 跨机', t3:'取决于 order 字符串'},
+      {t1:'HCCS or RDMA', t2:'由物理落位决定'}
+    ]
+  ];
+
+  cols.forEach(function(col, ci){
+    var cx = startX + ci * (colW + colGap);
+
+    /* 列标题 */
+    s+='<text x="'+(cx+colW/2)+'" y="32" font-size="13" fill="'+col.color+'" text-anchor="middle" font-weight="800">'+col.key+'</text>';
+
+    /* 每行的卡片 */
+    rows.forEach(function(row, ri){
+      var bx = cx, by = row.y, bw = colW, bh = row.h;
+      var c = content[ci][ri];
+
+      /* 卡片背景 */
+      s+='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" rx="6" fill="'+col.bg+'" stroke="'+col.color+'" stroke-width="'+(ri===0?'1.5':'1')+'" opacity="'+(ri===0?'1':'0.7')+'"/>';
+
+      /* 图标小装饰（第二行 - 兄弟拓扑） */
+      if(c.icon){
+        var ix = bx + bw - 28, iy = by + bh/2;
+        if(c.icon === 'ring'){
+          s+='<circle cx="'+ix+'" cy="'+iy+'" r="10" fill="none" stroke="'+col.color+'" stroke-width="1.5" opacity="0.4"/>';
+          s+='<circle cx="'+(ix-7)+'" cy="'+(iy-7)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix+7)+'" cy="'+(iy-7)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix)+'" cy="'+(iy+9)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+        } else if(c.icon === 'dash'){
+          s+='<line x1="'+(ix-10)+'" y1="'+iy+'" x2="'+(ix+10)+'" y2="'+iy+'" stroke="'+col.color+'" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>';
+          s+='<circle cx="'+(ix-10)+'" cy="'+iy+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix+10)+'" cy="'+iy+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+        } else if(c.icon === 'arrow'){
+          s+='<line x1="'+(ix-10)+'" y1="'+iy+'" x2="'+(ix+8)+'" y2="'+iy+'" stroke="'+col.color+'" stroke-width="1.5" opacity="0.5"/>';
+          s+='<polygon points="'+(ix+4)+','+(iy-3)+' '+(ix+4)+','+(iy+3)+' '+(ix+10)+','+iy+'" fill="'+col.color+'" opacity="0.5"/>';
+        }
+      }
+
+      /* 文字 */
+      var tx = bx + 12;
+      if(c.mono){
+        s+='<text x="'+tx+'" y="'+(by+bh/2-4)+'" font-size="8" fill="'+col.color+'" font-weight="600">'+c.t1+'</text>';
+      } else {
+        s+='<text x="'+tx+'" y="'+(by+bh/2-6)+'" font-size="10" fill="'+col.color+'" font-weight="700">'+c.t1+'</text>';
+      }
+      s+='<text x="'+tx+'" y="'+(by+bh/2+10)+'" font-size="8" fill="#6B7B86">'+c.t2+'</text>';
+      if(c.t3){
+        s+='<text x="'+tx+'" y="'+(by+bh/2+22)+'" font-size="7.5" fill="#8A98A2" font-style="italic">'+c.t3+'</text>';
+      }
+    });
+
+    /* 行间流向箭头 */
+    for(var ai=0; ai<rows.length-1; ai++){
+      var ay1 = rows[ai].y + rows[ai].h;
+      var ay2 = rows[ai+1].y;
+      var ax = cx + colW/2;
+      var amid = (ay1 + ay2) / 2;
+      s+='<line x1="'+ax+'" y1="'+(ay1+2)+'" x2="'+ax+'" y2="'+(ay2-2)+'" stroke="'+col.color+'" stroke-width="1.2" opacity="0.3"/>';
+      s+='<polygon points="'+(ax-3)+','+(ay2-6)+' '+(ax+3)+','+(ay2-6)+' '+ax+','+(ay2-2)+'" fill="'+col.color+'" opacity="0.35"/>';
+    }
+  });
+
+  /* 底部总结 */
+  var sumY = rows[4].y + rows[4].h + 28;
+
+  /* 三个总结框 */
+  var sumItems = [
+    {c:'#A8404A', t:'TP：逻辑层 group 全在同一节点 → 物理层走机内高带宽'},
+    {c:'#2E6E8E', t:'DP：逻辑层 group 跨节点 → 物理层走 UB 聚合 + RDMA'},
+    {c:'#B3603A', t:'PP：逻辑层 1:1 P2P → 物理层由 order 字符串决定'}
+  ];
+
+  sumItems.forEach(function(si, i){
+    var sx = startX + i * (colW + colGap);
+    s+='<rect x="'+sx+'" y="'+sumY+'" width="'+colW+'" height="30" rx="4" fill="'+si.c+'" opacity="0.08"/>';
+    s+='<text x="'+(sx+colW/2)+'" y="'+(sumY+19)+'" font-size="8" fill="'+si.c+'" text-anchor="middle" font-weight="600">'+si.t+'</text>';
+  });
+
+  /* 最底部金句 */
+  var goldY = sumY + 50;
+  s+='<rect x="'+(startX-8)+'" y="'+goldY+'" width="'+(totalW+16)+'" height="32" rx="6" fill="#0E1418" opacity="0.04"/>';
+  s+='<text x="'+(W/2)+'" y="'+(goldY+20)+'" font-size="10.5" fill="#0E1418" text-anchor="middle" font-weight="700">逻辑层决定 group（谁和谁通信） · 物理层决定 route（走哪条线） · 交汇点 = 一次 API 调用</text>';
+
+  /* 左侧大括号标注「FIG 12B 管」「FIG 12C 管」 */
+  var braceX = startX - 55;
+  /* FIG 12B: 行 0-2 */
+  var b12bTop = rows[0].y, b12bBot = rows[2].y + rows[2].h;
+  s+='<path d="M '+braceX+' '+b12bTop+' Q '+(braceX-12)+' '+((b12bTop+b12bBot)/2)+' '+braceX+' '+b12bBot+'" fill="none" stroke="#8A98A2" stroke-width="1"/>';
+  s+='<text x="'+(braceX-15)+'" y="'+((b12bTop+b12bBot)/2)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-weight="600" transform="rotate(-90 '+(braceX-15)+' '+((b12bTop+b12bBot)/2)+')">FIG 12B</text>';
+
+  /* FIG 12C: 行 3-4 */
+  var b12cTop = rows[3].y, b12cBot = rows[4].y + rows[4].h;
+  s+='<path d="M '+braceX+' '+b12cTop+' Q '+(braceX-12)+' '+((b12cTop+b12cBot)/2)+' '+braceX+' '+b12cBot+'" fill="none" stroke="#8A98A2" stroke-width="1"/>';
+  s+='<text x="'+(braceX-15)+'" y="'+((b12cTop+b12cBot)/2)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-weight="600" transform="rotate(-90 '+(braceX-15)+' '+((b12cTop+b12cBot)/2)+')">FIG 12C</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
 /* ===================== FIG 06 · 单卡空间 × 时间 ===================== */
 function figCard(){
   var sc = new Scene('fig-card', [0,0,900,400], 17);
@@ -5943,7 +6086,8 @@ function boot(){
    ['fig-trace',figTrace], ['fig-container',figContainer],
    ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
    ['fig-sibling',figSibling],
-   ['fig-hccl',figHCCL]
+   ['fig-hccl',figHCCL],
+   ['fig-waterfall',figWaterfall]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */
