@@ -2481,6 +2481,30 @@ function netScene(D, g, box, step){
     if(!cutPP){ D2.pp = 1; D2.layersPerStage = D2.layers; }
     return D2;
   })();
+  /* ── 兄弟卡（parallel-reference §s4 的读法搬进来）────────────────────────
+     选中一个切分块 → 沿着**切它的那几根轴**，把「和本卡凑齐一整份」的卡点亮。
+     轴就是体腔图上那几根：①腔的块看它被哪几把刀切（experts→PP+EP、attn.*→PP+TP、
+     router/norm→只有 PP——ℓ 轴照样把它分进各 stage）；档级 w/g/opt 三根轴全算；
+     激活走 ②腔的 PP+CP。刀拨掉的轴不算——那把没落下，那根轴上就没有兄弟。
+     每张兄弟卡记下它沿哪根轴与本卡结对（groups 过 sel 两两只交于 sel，一卡一轴），
+     棱就描那把刀的色——和组框/门牌同一套语汇，读者不用学新的。
+     注意这是「凑齐一整份」的兄弟（shard 关系），不是「梯度 AllReduce 找谁」的
+     同步关系——后者是 DP 组，语义不同，混在一起会把复制读成切分。 */
+  var memSibs = null;
+  if(hasSel && ui.memSel && ui.cardMode && ui.netOff){
+    var sibDims = memSibDims(ui.memSel);
+    memSibs = {};
+    sibDims.forEach(function(dm9){
+      if(dm9 === 'pp' && !cutPP) return;
+      if(dm9 === 'tp' && !cutTP) return;
+      if(dm9 === 'ep' && (!cutEP || !D.moe)) return;
+      if(dm9 === 'cp' && !cutCP) return;
+      groupMembers(dm9, sel, D).forEach(function(r9){
+        if(r9 !== sel && memSibs[r9] === undefined) memSibs[r9] = dm9;
+      });
+    });
+    if(!Object.keys(memSibs).length) memSibs = null;
+  }
   /* 面色兑底色（solid）：alpha 恒 1，画家序靠它遮住后排的卡——半透的话
      128 只叠起来又是一团网。深浅两档给正脸/侧面，顶面最亮。 */
   function memSolid(c, pct){ return 'color-mix(in srgb, '+c+' '+pct+'%, var(--pt-bg))'; }
@@ -3172,7 +3196,9 @@ function netScene(D, g, box, step){
                  就是答案的一部分**（它在第几列、挨着哪个 EP 组），压得太狠等于把
                  参照系抹掉了，只剩一只孤零零的卡。所以只压到 0.32：够让它跳出来，
                  又还看得见它站在哪儿。 */
-            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? 0.32 : 1);
+            var sib9 = (!meC && memSibs) ? memSibs[gc] : null;
+            /* 兄弟卡从压暗里豁出来：0.32 那档是「别的卡」，兄弟是这次点选的答案 */
+            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.9 : 0.32) : 1);
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -3342,9 +3368,11 @@ function netScene(D, g, box, step){
            前后的落差保持不变，该分得开的还是分得开。 */
         /* 棱加回一档：面填实之后线不再是噪声的来源，反倒是盒子的轮廓——太细的话
            盒子边缘化在背景里，实体感就散了。前后落差保持不变。 */
+        var sibE9 = (!meC && memSibs) ? memSibs[gc] : null;
         var eW = meC ? 1.8 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
         if(hasSel && !meC && !spot) { eO *= 0.4; }
+        if(sibE9){ eW = Math.max(eW, 1.3); eO = Math.max(eO, 0.92); }
         /* 落选的压到几乎看不见；**命中的反而要加粗**——聚光灯是「亮起一批」，
            不是「把所有人一起压暗」。原来这里不分命中与否一律压，于是搜索一落下，
            连该亮的那 32 只也跟着淡了。 */
@@ -3369,7 +3397,7 @@ function netScene(D, g, box, step){
         var capCol = (capLv === 'oom' || capLv === 'red') ? CAP_C.red : null;
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (spot && spotCard ? VC.dp : 'var(--pt-fg3)')))
+          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
         if(meC && ui.netOff && ui.memFill && !lowDetail){
@@ -7738,6 +7766,22 @@ function cavityBox3D(ax, ay, az, o){
     + body + '</svg>';
 }
 
+/* 选中的块被哪几根轴切——渲染（点亮兄弟卡）与读出卡（写哪几组）共用同一份，
+   免得两处各写一遍、往后改一处漏一处。 */
+function memSibDims(key){
+  if(!key) return [];
+  if(key.indexOf('w:') === 0){
+    var id9 = key.slice(2);
+    if(id9 === 'experts') return ['pp','ep'];
+    if(id9 === 'embed' || id9 === 'lm_head') return ['tp'];   /* 只住一个 stage，ℓ 轴不适用 */
+    if(id9 === 'router' || id9 === 'norm×2') return ['pp'];   /* 复制块：只有 PP 把它分进各段 */
+    return ['pp','tp'];                                        /* attn.* / mlp.* 走 TP */
+  }
+  if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp') return ['pp','tp','ep'];
+  if(key === 'act') return ['pp','cp'];
+  return [];                                                   /* rsv：不参与任何一把刀 */
+}
+
 function memBlockDetail(D, g, key){
   if(!key) return '';
   var co = coordsOf(g, D), lps = D.layersPerStage, p = co.p;
@@ -7851,12 +7895,28 @@ function memBlockDetail(D, g, key){
       note = '每张卡的分配历史不同，这一截本来就不是同一个数。';
     }
   }
+  /* 兄弟卡：写清点亮的是哪几组、各几张，颜色与阵列里的棱同色。
+     组员名单不列——EP 组 8 张全写出来是一串没人读的数字，阵列上亮着的就是名单。 */
+  var sibLine = '';
+  var sibDs = memSibDims(key).filter(function(dm9){
+    if(dm9 === 'ep') return D.moe && D.ep > 1;
+    return D[dm9] > 1;
+  });
+  if(sibDs.length){
+    sibLine = '<div class="rm-note">兄弟卡已点亮：'
+      + sibDs.map(function(dm9){
+          var n9 = dm9 === 'ep' ? D.ep : D[dm9];
+          return '<b style="color:'+VC[dm9]+'">'+DIMN[dm9]+' 组</b> '+(n9-1)+' 张';
+        }).join(' · ')
+      + '——沿这几根轴与本卡凑齐一整份（棱色=刀色）</div>';
+  }
   return '<div class="rm-d" style="--rmc:'+tint+'">'
     + '<div class="rm-dh"><b style="color:'+tint+'">'+esc(title)+'</b>'
     + '<button class="rm-dx" data-act="memblockpick" data-mk="" title="收起这一块">✕</button></div>'
     + '<dl>'+rows.join('')+'</dl>'
     + figs.join('')
     + (note ? '<div class="rm-note">'+esc(note)+'</div>' : '')
+    + sibLine
     + '</div>';
 }
 
