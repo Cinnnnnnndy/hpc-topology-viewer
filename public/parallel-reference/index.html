@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>23 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>23 张图</span><span>55 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1920,27 +1920,68 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="readout" id="hccl-out"></div>
   </figure>
 
+  <h4>FIG 12B → FIG 12C：一条连线怎样落到物理路径上</h4>
+
+  <p>FIG 12B 画的是<b>逻辑层</b>——哪些卡是兄弟、用什么原语通信；FIG 12C 画的是<b>实现层</b>——这次 API 调用走了哪条物理路。两张图是<b>同一条通信的上下两层</b>，用下面这张表串起来：</p>
+
+  <table class="tbl">
+    <thead><tr><th>FIG 12B 中的连线</th><th>框架发出的 API 调用</th><th>集合通信库内部（FIG 12C）</th><th>实际走的物理路</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b style="color:#A8404A">TP 红色实线</b><br>机内 4 卡 AllReduce</td>
+        <td><code>all_reduce(grad, tp_group)</code><br>每层两次</td>
+        <td>HCCL 判断 tp_group <b>全在同一节点</b><br>→ 直接走机内路径</td>
+        <td><b>HCCS</b>（华为）<br>NVLink/NVSwitch（NVIDIA）<br>xGMI（AMD）</td>
+      </tr>
+      <tr>
+        <td><b style="color:#2E6E8E">DP 蓝色虚线</b><br>跨机 2 卡 AllReduce</td>
+        <td><code>all_reduce(grad, dp_group)</code><br>每 step 一次</td>
+        <td>HCCL 判断 dp_group <b>跨节点</b><br>→ 走 UB 聚合 + RDMA 通道<br>（NCCL 走 Ring/Tree + IB QP）</td>
+        <td><b>UB + RDMA</b>（华为）<br>IB / RoCE（NVIDIA）</td>
+      </tr>
+      <tr>
+        <td><b style="color:#B3603A">PP 橙色箭头</b><br>相邻 stage P2P</td>
+        <td><code>send(act, next_rank)</code><br><code>recv(act, prev_rank)</code></td>
+        <td>HCCL 判断 next_rank 在不在同一节点<br>→ 机内直连 or 跨机 RDMA</td>
+        <td>取决于 PP stage 的物理落位<br>（order 字符串决定）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">关键：框架层完全不知道自己走了哪条路</span>
+    <p>训练框架（Megatron / MindSpore / DeepSpeed）只调 <code>all_reduce(tensor, group)</code>，<b>不指定用 HCCS 还是 RDMA、走不走 UB</b>。集合通信库（HCCL / NCCL）拿到 group 之后自己查成员的物理位置，自动选路径——这就是 FIG 12C 左侧三层栈的含义。所以：</p>
+    <ul>
+      <li><b>FIG 12B 的连线颜色</b>（红 / 蓝 / 橙）由<b>并行维度</b>决定——TP / DP / PP，与硬件无关</li>
+      <li><b>FIG 12C 的路径选择</b>由<b>group 成员的物理位置</b>决定——同节点走机内，跨节点走 UB/IB</li>
+      <li>两者的交汇点就是那一次 <code>all_reduce(tensor, group)</code> 调用——<b>逻辑层决定 group，物理层决定 route</b></li>
+    </ul>
+  </div>
+
   <h4>兄弟块 + 通信连线 + 物理链路 = 三层叠加</h4>
 
   <p>把三层叠起来，选中一张卡上的一个切分块之后，完整的联动显示应该是：</p>
 
   <table class="tbl">
-    <thead><tr><th>图层</th><th>内容</th><th>视觉编码</th></tr></thead>
+    <thead><tr><th>图层</th><th>内容</th><th>视觉编码</th><th>对应哪张图</th></tr></thead>
     <tbody>
       <tr>
         <td><b>① 兄弟块</b></td>
         <td>其他卡上持有同一张量其他碎片的块</td>
         <td>同色高亮</td>
+        <td>FIG 12B 卡片颜色</td>
       </tr>
       <tr>
         <td><b>② 通信连线</b></td>
         <td>兄弟块之间的通信原语</td>
         <td>AllReduce = 环形实线<br>P2P = 有向箭头<br>All-to-All = 多对多网</td>
+        <td>FIG 12B 连线</td>
       </tr>
       <tr>
         <td><b>③ 物理链路</b></td>
         <td>这条连线走的是机内互联还是跨机 RDMA</td>
         <td>粗线 = 机内（高带宽）<br>细线 = 跨机（低带宽）</td>
+        <td>FIG 12C 右侧路径</td>
       </tr>
     </tbody>
   </table>
