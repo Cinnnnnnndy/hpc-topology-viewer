@@ -550,6 +550,14 @@ var SLOTS = [
       if (BUILD) q.set('v', BUILD);
       return './swimlane.html?' + q.toString();
     },
+    /* 上游那份自己还带一行标题（「生命周期泳道」+ 灰色的「32 Rank · MB07 → DP1」），
+       和格头那枚「微批次生命周期泳道」摞成两行标题，说的是同一件事。
+       藏掉里面那一行，名字统一由格头出——与并行拓扑那格 `#stageTitle > b` 同一处置。
+       只藏标题与灰注，**不动整条 .timeline-toolbar**：缩放那组控件长在同一行里，
+       整条藏掉会把它一起按没（并行拓扑那格先前正是这么踩过一次）。 */
+    hideCss: '.timeline-pane .pane__title{display:none!important}' +
+             '.timeline-pane .pane__meta{display:none!important}',
+    readySel: '.timeline-pane .pane__header',   /* 这一格没有 [data-act]，等它自己的格头 */
     msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
       { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
@@ -799,8 +807,11 @@ function settleFrame(slot, frame) {
       var doc = frame.contentDocument;
       if (!doc || doc.readyState === 'loading') return false;
       /* 工具条建出来了才算装配好：hideCss 藏的就是它里面的控件，
-         数据标注那组也要等它在了才点得着。 */
-      if (slot.hideCss) return !!doc.querySelector('[data-act]');
+         数据标注那组也要等它在了才点得着。
+         等谁**按格子来**：并行拓扑那两格的控件都带 [data-act]，泳道那份是上游
+         拷贝、一个 data-act 都没有——写死 [data-act] 的话它永远等不到，只能一路
+         耗到超时才放行（白等一次，还不报错，最难查的那种）。 */
+      if (slot.hideCss) return !!doc.querySelector(slot.readySel || '[data-act]');
       return true;
     } catch (err) { return true; }   // 跨源：没什么可等的
   }

@@ -2492,12 +2492,18 @@ function netScene(D, g, box, step){
     if(memStackCache[ck9]) return memStackCache[ck9];
     var V9 = capVerdict(memD, cutPP ? p9 : 0, g9);
     var cap9 = V9.cap, tot9 = V9.tot;
-    /* 严重超出时改画「压缩比例尺」：壳高归一到 tot 而不是 cap，这样所有子块
-       按比例摞进壳里而不是第一块就填满。壳顶那条线画在 cap/tot 的位置，
-       上面部分就是「装不下的」。倍数 ≤1.0 仍按壳归一（正常模式）。 */
-    var compressed = tot9 > cap9;
-    var sc9 = compressed ? 1/tot9 : 1/cap9;
-    var capFrac = compressed ? cap9/tot9 : 1;
+    /* ── 装不下的**顶出壳外**，不压进壳里 ────────────────────────────────
+       曾经的做法是「压缩比例尺」：超了就把壳重新归一到 tot，于是五档都塞得回
+       壳里，再画一条线标 cap 的位置。那一版是错的——**壳的含义被偷偷换掉了**：
+       它本来是这一屏最硬的参照物（一张卡就这么大，64GB 是物理量），压缩之后
+       壳顶变成了 300GB，而读者手上没有任何线索知道尺子换过。实机验证过：
+       只标一条「64GB」的线，没人推得出「壳顶已经不是 64GB」这个前提。
+       现在：尺子**永远**是 1/cap，壳顶恒等于 HBM 容量。装不下的那几档自然
+       落在 f>1，也就是画在壳外——卡不会因为要装的多就变大，图上也不该变。 */
+    var sc9 = 1/cap9;
+    /* 顶出去的部分画多高就打住：×4.7 那种要顶出 3.7 只壳，128 只卡的阵列里
+       会一路捅进上面几排卡。截断处画锯齿边表示「还在往上」，倍数交给 ×N 那枚牌。 */
+    var OVER_MAX = 0.62;
     /* 五档一档一条整带，**不再把权重竖着劈成六片**。
        权重内部那六块是「同一条带在宽度上被哪把刀切开」，与「各档各占多少字节」
        是两件事，必须走两个方向——竖着摞进同一列的话，读者看到的是「权重有六层」，
@@ -2508,7 +2514,11 @@ function netScene(D, g, box, step){
       var f0 = acc9*sc9; acc9 += sg9.bytes;
       var f1 = acc9*sc9;
       if(f1 - f0 < 0.006) return;
-      out9.push({f0:Math.min(f0,1), f1:Math.min(f1,1), c:sg9.color, act:sg9.k==='act', k:sg9.k, label:sg9.label});
+      /* 只夹**上界**（画到 1+OVER_MAX 为止），不再把 f0 也夹进壳里：夹了就等于
+         把溢出的那几档全压扁贴在壳顶，看着像「正好装满」，恰好是要避免的误读。 */
+      if(f0 >= 1 + OVER_MAX) return;
+      out9.push({f0:f0, f1:Math.min(f1, 1 + OVER_MAX), c:sg9.color, act:sg9.k==='act',
+                 k:sg9.k, label:sg9.label, cut:(f1 > 1 + OVER_MAX)});
     });
     /* ── 权重带在**宽度**上的分块：那排算子片折进容器的样子 ────────────────
        口径逐字照抄交集腔 L3（renderSolidCav 里的 ops9/opSegs9）：按每块的字节
@@ -2533,8 +2543,9 @@ function netScene(D, g, box, step){
     out9 = out9.filter(function(x){ return x.f1 - x.f0 > 0.0005; });
     if(out9.length) out9[out9.length-1].top = true;
     out9.level = V9.level; out9.over = V9.over;
-    out9.capFrac = capFrac;
     out9.ratio = V9.ratio;
+    out9.overflow = tot9 > cap9;        /* 顶出壳外没有？决定要不要画 ×N 与锯齿边 */
+    out9.overTop = Math.min(tot9/cap9, 1 + OVER_MAX);
     out9.opSegs = opSegs9;
     out9.mub = mub9;
     memStackCache[ck9] = out9;
@@ -3276,10 +3287,24 @@ function netScene(D, g, box, step){
                   }
                 }
               }
-              if(MS9.capFrac != null && MS9.capFrac < 1){
-                var capVy9 = cv1 - vSp9 * MS9.capFrac;
-                var clA = P(cu0, capVy9, cw0, kc), clB = P(cu1, capVy9, cw0, kc);
-                body.push(seg(clA, clB, 'stroke:var(--pt-danger);stroke-width:'+(meC?1.5:0.8)+';opacity:'+(meC?1:lz)));
+              /* 顶出壳外那一截的收尾：壳顶画一条实线（那才是 64GB 的位置），
+                 被截断的地方画锯齿边表示「还在往上」。壳的线框照旧在外面画，
+                 所以这里只补这两样，不重画壳。 */
+              if(MS9.overflow){
+                var topA9 = P(cu0, cv0, cw0, kc), topB9 = P(cu1, cv0, cw0, kc);
+                body.push(seg(topA9, topB9, 'stroke:var(--pt-danger);stroke-width:'+(meC?1.6:0.9)+';opacity:'+(meC?1:lz)));
+                if(MS9.overTop >= 1 + 0.62 - 1e-6){
+                  /* 锯齿：沿截断那条边来回折几下。虚线表达不了「被切掉了」——
+                     虚线是「这条线是虚的」，锯齿才是「这里断了、后面还有」。 */
+                  var cutV9 = cv0 - (cv1 - cv0)*0.62, zig9 = [], nz9 = 9;
+                  for(var z9 = 0; z9 <= nz9; z9++){
+                    var zu9 = cu0 + (cu1 - cu0)*z9/nz9;
+                    zig9.push(P(zu9, cutV9 + ((z9 % 2) ? 0.018 : -0.018), cw0, kc));
+                  }
+                  for(var z8 = 0; z8 + 1 < zig9.length; z8++)
+                    body.push(seg(zig9[z8], zig9[z8+1],
+                      'stroke:var(--pt-danger);stroke-width:'+(meC?1.1:0.6)+';opacity:'+(meC?.95:lz*.8)));
+                }
               }
             }
             body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
@@ -3344,19 +3369,18 @@ function netScene(D, g, box, step){
         });
         if(meC && ui.netOff && ui.memFill && !lowDetail){
           var cMS9 = memStack(pc2, gc);
-          var cFrac9 = cMS9.capFrac != null ? cMS9.capFrac : 1;
-          if(cFrac9 < 1){
-            /* 压缩比例尺：壳顶不再是 100%，而是 tot。在 capFrac 处画一条实线
-               标出壳的真实容量，上面的部分就是「装不下的」。 */
-            var capVy = cv1 - (cv1 - cv0) * cFrac9;
-            var cqA = P(-0.04, capVy, cw0, kc), cqB = P(1.04, capVy, cw0, kc);
-            body.push(seg(cqA, cqB, 'stroke:var(--pt-danger);stroke-width:1.6;opacity:.95'));
+          if(cMS9.overflow){
+            /* 壳顶就是 64GB——不必再标一条线说它在哪，壳自己在那儿。要标的是
+               **顶出去了多少**：牌挂在溢出那一截的上沿，写清「超了几倍 / 实际要多少」。
+               光一个 ×4.7 读者得猜是倍数还是别的（实机上确实没读懂）。 */
+            var ovTopV9 = cv0 - (cv1 - cv0)*(cMS9.overTop - 1);
+            var ovP9 = P(0.5, ovTopV9, cw0, kc);
+            var needGB9 = Math.round(cMS9.ratio * D.hbm);
             var mulTxt = '×' + (cMS9.ratio >= 10 ? Math.round(cMS9.ratio) : cMS9.ratio.toFixed(1));
-            body.push(txt(cqB[0] + 4, cqB[1] - 1, D.hbm + 'GB', 6.8, 'var(--pt-danger)', 'start',
-              'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
-            var topP = P(0.5, cv0, cw0, kc);
-            body.push(txt(topP[0], topP[1] - 5, mulTxt, 8.5, 'var(--pt-danger)', 'middle',
-              'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="3" pointer-events="none"'));
+            body.push(txt(ovP9[0], ovP9[1] - 12, '装不下 '+mulTxt, 8.5, 'var(--pt-danger)', 'middle',
+              'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
+            body.push(txt(ovP9[0], ovP9[1] - 3.5, '要 '+needGB9+'GB · 只有 '+D.hbm+'GB', 6.4, 'var(--pt-danger)', 'middle',
+              'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
           } else {
             [[CAP_AMBER, CAP_C.amber], [CAP_RED, CAP_C.red]].forEach(function(mk){
               var vy = cv1 - (cv1 - cv0) * mk[0];
@@ -3367,15 +3391,9 @@ function netScene(D, g, box, step){
             });
           }
         }
-        if(capLv === 'oom'){
-          var cMS9b = memStack(pc2, gc);
-          if(!cMS9b.capFrac || cMS9b.capFrac >= 1){
-            var ovR = Math.min(0.5, (cMS9b.over || 0) / (D.hbm*Math.pow(2,30)));
-            var ovA = P(0, cv0, cw0, kc), ovB = P(1, cv0, cw0, kc);
-            var ovC = P(1, cv0 - ovR, cw0, kc), ovD = P(0, cv0 - ovR, cw0, kc);
-            body.push(quad([ovA, ovB, ovC, ovD], 'fill:'+mix('var(--pt-danger)',52)+';stroke:var(--pt-danger);stroke-width:.5'));
-          }
-        }
+        /* 越界那块红色补丁删了：溢出现在由**载荷自己顶出壳外**表达（见 memStack），
+           顶出来的是那几档真实的颜色，比另糊一块红色说得准——红块只说「超了」，
+           顶出来的色带还同时说清「是哪几档把它顶出去的」。 */
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
            卡里那条专家带在 128 只卡的尺度下只有几个像素，分不出谁是谁。
            只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍。 */
