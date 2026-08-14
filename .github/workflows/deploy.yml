@@ -521,6 +521,12 @@ jobs:
           cp $SRC/embed.css $SRC/embed-bridge.js $DST/
           cp $SRC/vendor/swimlane-task/pattern.css $SRC/vendor/swimlane-task/pattern.js $DST/vendor/swimlane-task/
 
+          # 通信观测台（dock 第四个 tab）：自包含子目录（自带 vendor/pto-design-system
+          # 的钉版拷贝，钉在上游子模块指的 d58dd4eb），整目录搬——它内部三十几个文件
+          # 全是相对引用，逐页列举反而容易漏；子目录整搬不会打到别人的路径。
+          cp -r $SRC/observatory $DST/observatory
+          test -f $DST/observatory/index.html   # 空目录/搬歪了就地失败，别静默发一个 404 的 tab
+
           echo "published: /combo-workbench/?v=$SHA"
 
       - name: Overlay 组合工作台卡片 into /launch.html
