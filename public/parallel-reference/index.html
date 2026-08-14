@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>21 张图</span><span>50 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>22 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1818,6 +1818,126 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
   <h4>那最初为什么会这么讲</h4>
 
   <p>因为用<strong>典型实现</strong>建立直觉最省力，而 Megatron-LM 的默认配置事实上就是那一套对应。作为入门脚手架没问题，但把脚手架讲成结构就越界了。这个越界在治理场景里有实际代价：<strong>一旦用户的性能问题来自非标准实现，按并行的名字反查原语会直接把定位方向带偏。</strong></p>
+
+  <h3>选中一张卡之后应该看到什么：兄弟块与通信连线</h3>
+
+  <p>前面的图都是「选一个维度，高亮整组卡」。但真实的诊断场景往往是反过来的：<strong>你选中的是一张卡、或一张卡上的某个切分块</strong>——然后问：这个块的「兄弟」在哪？它们之间怎么通信？走的什么物理链路？</p>
+
+  <p>这里有三层递进的联动关系：</p>
+
+  <h4>第一层 · 选中一张卡 → 亮出它所在的全部通信域</h4>
+
+  <p>一张卡同时挂在多个通信域上（§10），选中它就等于选中了多条坐标轴。以 FIG 06 的 24 卡示例（TP=4, PP=3, DP=2）为例，选中 <code>global_rank = 5</code>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>通信域</th><th>域内 rank</th><th>兄弟卡（global rank）</th><th>通信原语</th><th>连线含义</th></tr></thead>
+    <tbody>
+      <tr><td><span class="k tp">TP 组</span></td><td>1</td><td>4, <b>5</b>, 6, 7</td><td>AllReduce / AG+RS</td><td>同一层的权重分片之间的部分和聚合</td></tr>
+      <tr><td><span class="k pp">PP 链</span></td><td>0</td><td><b>5</b>, 13, 21</td><td>P2P Send/Recv</td><td>stage 间传递边界激活</td></tr>
+      <tr><td><span class="k dp">DP 组</span></td><td>1</td><td>1, <b>5</b></td><td>AllReduce</td><td>step 末梯度同步</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>「兄弟卡」就是同一通信域里的其他成员。</strong>选中一张卡后，viewer 应当同时标出它在三个（或更多）通信域里的全部兄弟，并按域着色、按原语画不同的连线样式。这比「选一个维度」信息密度更高——用户看到的不是抽象的「TP 组长这样」，而是「<em>这张卡</em>和谁做 AllReduce、和谁做 P2P、和谁做梯度同步」。</p>
+
+  <h4>第二层 · 选中一个切分块 → 亮出它的「同源兄弟」</h4>
+
+  <p>进到卡内部，能看到这张卡持有的具体分片（§08 容器）。选中其中一个——比如「第 3 层的 W_Q 权重分片 [H, H/TP]」——问题变成：<strong>这个分片的其他碎片在谁手里？</strong></p>
+
+  <ul>
+    <li><strong>TP 分片的兄弟</strong>：同一 TP 组的其他卡上各有一片，合起来才是完整的 <code>[H, H]</code>。它们之间每层两次通信（AllReduce 或 AG+RS）。</li>
+    <li><strong>DP 副本的兄弟</strong>：同一 DP 组的其他卡持有<em>完全相同</em>的分片（副本），step 末做一次梯度 AllReduce。</li>
+    <li><strong>PP 没有兄弟</strong>：PP 切的是层号，不同 stage 持有的是<em>不同的层</em>，不存在「同一层的碎片分散在不同 stage 上」的情况。PP 方向的连线是激活值的传递，不是同一张量的聚合。</li>
+    <li><strong>CP 的兄弟在激活体上</strong>：CP 只切激活（seq 维），权重不受影响——所以选中权重分片时 CP 没有兄弟；选中激活分片时，CP 组内的其他卡持有同一 token 序列的不同段。</li>
+  </ul>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12B</span><span class="ftitle">选中一张卡的分片 → 兄弟块 + 通信连线</span><span class="cd b">分片→兄弟 1:N</span>
+      <span class="fnote">TP=4, PP=2, DP=2，共 16 张卡。点击任意卡；再点卡内的切分块，看它在 TP 组和 DP 组中的兄弟块以及连线。TP 兄弟用实线连接（AllReduce / AG+RS，每层两次），DP 兄弟用虚线连接（梯度 AllReduce，每 step 一次），PP 方向用箭头连接（P2P 激活传递，不是同源兄弟）。</span>
+    </figcaption>
+    <div class="stage" id="fig-sibling"></div>
+    <div class="ctrl" id="sibling-ctrl">
+      <button data-sib="tp" aria-pressed="true">TP 兄弟</button>
+      <button data-sib="dp" aria-pressed="false">DP 兄弟</button>
+      <button data-sib="pp" aria-pressed="false">PP 链路</button>
+      <button data-sib="all" aria-pressed="false">全部连线</button>
+    </div>
+    <div class="readout" id="sibling-out"></div>
+  </figure>
+
+  <h4>第三层 · 连线落到物理链路上：集合通信库与互联硬件</h4>
+
+  <p>前两层都是逻辑层面——「谁和谁通信、用什么原语」。但一旦真正诊断通信延迟，就必须知道<strong>这条逻辑连线走的是哪条物理路</strong>。这是前文刻意没展开的一层，因为它与硬件平台绑定：</p>
+
+  <table class="tbl">
+    <thead><tr><th>通信范围</th><th>物理互联</th><th>集合通信库</th><th>典型带宽</th><th>延迟量级</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>机内</b><br>同一节点的卡之间</td>
+        <td>NVLink / NVSwitch<br>HCCS（华为）<br>xGMI（AMD）</td>
+        <td>NCCL<br>HCCL<br>RCCL</td>
+        <td>300–900 GB/s<br>（双向汇总）</td>
+        <td>μs 级</td>
+      </tr>
+      <tr>
+        <td><b>跨机</b><br>不同节点之间</td>
+        <td>InfiniBand（IB）<br>RoCE v2</td>
+        <td>NCCL over IB<br>HCCL over UB<br>（Unified Buffer）</td>
+        <td>100–400 Gbps<br>per port</td>
+        <td>数 μs – 低 ms</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">NCCL / HCCL / RCCL 是同一层</span>
+    <p>三者的角色完全一样——都是<strong>集合通信库</strong>，封装 AllReduce / AllGather / ReduceScatter / All-to-All 等原语，只是分别对接不同厂商的硬件互联：</p>
+    <ul>
+      <li><b>NCCL</b>（NVIDIA Collective Communications Library）—— 对接 NVLink / NVSwitch / IB / RoCE</li>
+      <li><b>HCCL</b>（Huawei Collective Communication Library）—— 对接 HCCS（机内）+ UB / RoCE（跨机）</li>
+      <li><b>RCCL</b>（ROCm Communication Collectives Library）—— 对接 xGMI / IB</li>
+    </ul>
+    <p><strong>训练框架（Megatron / DeepSpeed / FSDP）从来不直接调用硬件互联</strong>，它们只调用集合通信库的 API（<code>all_reduce(tensor, group)</code>）。集合通信库负责决定这次 AllReduce 走哪条物理路、用什么算法（Ring / Tree / Mesh）。所以<strong>本文前面所有关于通信原语的讨论都不受硬件影响</strong>——AllReduce 在 NCCL 和 HCCL 上语义完全一样，只是底层走的线不同。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">华为昇腾的 UB（Unified Buffer）</span>
+    <p>UB 不是一个独立的通信原语，而是 HCCL 在<b>跨机场景</b>下使用的一种通信加速机制。它的核心思路是<strong>在主机侧开辟一段共享 buffer</strong>，让多张卡的跨机通信可以汇聚到这段 buffer 再经 RDMA 网络发出去——而不是每张卡各自发各自的。</p>
+    <p>从应用层看不到 UB 的存在：你还是调 <code>hccl.all_reduce(tensor, group)</code>，HCCL 内部判断这个 group 跨不跨机，跨了就自动走 UB + RDMA 通道。所以 <b>UB 影响的是性能和带宽利用率，不影响通信语义</b>。诊断跨机通信延迟时需要关注 UB 的配置（buffer 大小、RDMA 连接数、拓扑感知），但对理解并行切分和通信模式没有影响。</p>
+  </div>
+
+  <h4>兄弟块 + 通信连线 + 物理链路 = 三层叠加</h4>
+
+  <p>把三层叠起来，选中一张卡上的一个切分块之后，完整的联动显示应该是：</p>
+
+  <table class="tbl">
+    <thead><tr><th>图层</th><th>内容</th><th>视觉编码</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>① 兄弟块</b></td>
+        <td>其他卡上持有同一张量其他碎片的块</td>
+        <td>同色高亮</td>
+      </tr>
+      <tr>
+        <td><b>② 通信连线</b></td>
+        <td>兄弟块之间的通信原语</td>
+        <td>AllReduce = 环形实线<br>P2P = 有向箭头<br>All-to-All = 多对多网</td>
+      </tr>
+      <tr>
+        <td><b>③ 物理链路</b></td>
+        <td>这条连线走的是机内互联还是跨机 RDMA</td>
+        <td>粗线 = 机内（高带宽）<br>细线 = 跨机（低带宽）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>注意第三层是唯一与硬件平台绑定的层。前两层在任何平台上都一样——这是 §00 开头「平台差异只体现在互联名、集合通信库与算子栈的称呼上，不影响本文任何结论」的具体展开。</p>
+
+  <div class="note">
+    <span class="lbl">PP 链路不是兄弟关系</span>
+    <p>在联动显示中，TP 和 DP 的连线连接的是<b>同一张量的不同碎片</b>（TP）或<b>同一张量的完全相同副本</b>（DP），通信的目的是<b>聚合或同步</b>。PP 方向的连线则完全不同——它传的是「上一个 stage 的输出激活」交给「下一个 stage 的输入」，两端拿的根本不是同一层的东西。<strong>PP 的连线该画但不该和兄弟块混在一起</strong>——它是数据流方向上的依赖，不是切分产生的聚合需求。</p>
+  </div>
 </section>
 
 <section id="s5">
@@ -4943,6 +5063,193 @@ function figComm(){
   sc.render();
 }
 
+/* ===================== FIG 12B · 兄弟块 + 通信连线 ===================== */
+var SIB = {TP:4, PP:2, DP:2};
+var sibMode = 'tp', sibSel = null;
+
+function sibGid(tp,pp,dp){ return pp*(SIB.DP*SIB.TP) + dp*SIB.TP + tp; }
+function sibCoord(g){ return {tp:g%SIB.TP, dp:Math.floor(g/SIB.TP)%SIB.DP, pp:Math.floor(g/(SIB.TP*SIB.DP))}; }
+
+function figSibling(){
+  var m = document.getElementById('fig-sibling');
+  if(!m) return;
+  var W = 900, H = 520;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  var TOTAL = SIB.TP * SIB.PP * SIB.DP;
+  var GAP = 8, CW = 90, CH2 = 46, PAD = 30;
+  var COLS = SIB.TP * SIB.DP;
+  var gridW = COLS * CW + (COLS-1)*GAP;
+  var OX = (W - gridW) / 2;
+  var machW = SIB.TP * CW + (SIB.TP-1)*GAP;
+
+  var sel = sibSel !== null ? sibCoord(sibSel) : null;
+
+  function cx(tp,dp){ return OX + (dp * SIB.TP + tp) * (CW + GAP) + CW/2; }
+  function cy(pp){ return 100 + pp * (CH2 + 90); }
+
+  /* 机器分隔 */
+  for(var d=0;d<SIB.DP;d++){
+    var mx = OX + d * SIB.TP * (CW + GAP) - GAP/2;
+    s+='<rect x="'+mx+'" y="60" width="'+(machW+GAP)+'" height="'+(SIB.PP*(CH2+90)+10)+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+    s+='<text x="'+(mx+machW/2+GAP/2)+'" y="52" font-size="11" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 '+d+'　（'+SIB.TP+' 卡 · 机内高带宽互联）</text>';
+  }
+
+  /* stage 标签 */
+  for(var p=0;p<SIB.PP;p++){
+    s+='<text x="'+(OX-24)+'" y="'+(cy(p)+CH2/2+4)+'" font-size="10" fill="#B3603A" font-weight="700" text-anchor="end">stage '+p+'</text>';
+  }
+
+  /* 画卡 */
+  for(var tp=0;tp<SIB.TP;tp++) for(var pp=0;pp<SIB.PP;pp++) for(var dp=0;dp<SIB.DP;dp++){
+    var g = sibGid(tp,pp,dp);
+    var x = cx(tp,dp) - CW/2, y = cy(pp);
+    var isSel = (sibSel === g);
+
+    /* 内部分片块 */
+    var bh = 16, bw = CW - 8, bx = x + 4;
+
+    /* 判断是否为兄弟 */
+    var isTPSib = sel && pp===sel.pp && dp===sel.dp && tp!==sel.tp;
+    var isDPSib = sel && pp===sel.pp && tp===sel.tp && dp!==sel.dp;
+    var isPPLink = sel && tp===sel.tp && dp===sel.dp && pp!==sel.pp;
+
+    var showTP = (sibMode==='tp' || sibMode==='all') && isTPSib;
+    var showDP = (sibMode==='dp' || sibMode==='all') && isDPSib;
+    var showPP = (sibMode==='pp' || sibMode==='all') && isPPLink;
+
+    var cardFill = '#FFFFFF';
+    var cardStroke = '#D2DADF';
+    var cardSW = 1;
+    if(isSel){ cardStroke = '#0E1418'; cardSW = 2.5; }
+    else if(showTP){ cardStroke = '#A8404A'; cardSW = 2; cardFill = '#FFF5F5'; }
+    else if(showDP){ cardStroke = '#2E6E8E'; cardSW = 2; cardFill = '#F0F7FB'; }
+    else if(showPP){ cardStroke = '#B3603A'; cardSW = 1.5; cardFill = '#FFF8F2'; }
+    else if(sel){ cardFill = '#F4F6F7'; }
+
+    s+='<rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+CH2+'" rx="5" fill="'+cardFill+'" stroke="'+cardStroke+'" stroke-width="'+cardSW+'" style="cursor:pointer" data-sib-g="'+g+'"/>';
+
+    /* 分片标签 */
+    var sliceFill = isSel ? '#0E1418' : (showTP||showDP ? '#3D4B55' : '#8A98A2');
+    s+='<text x="'+(x+CW/2)+'" y="'+(y+14)+'" font-size="8.5" fill="'+sliceFill+'" text-anchor="middle" font-weight="'+(isSel?'800':'600')+'" pointer-events="none">rank '+g+'</text>';
+    s+='<text x="'+(x+CW/2)+'" y="'+(y+27)+'" font-size="7" fill="'+(isSel?'#3D4B55':'#8A98A2')+'" text-anchor="middle" pointer-events="none">W[H,H/'+SIB.TP+'] · L'+pp+'</text>';
+
+    /* TP 分片色块 */
+    var bCol = showTP ? '#A8404A' : (isSel ? '#A8404A' : (showDP ? '#2E6E8E' : '#D2DADF'));
+    var bOp = (isSel || showTP || showDP) ? '0.35' : '0.15';
+    s+='<rect x="'+bx+'" y="'+(y+32)+'" width="'+bw+'" height="8" rx="2" fill="'+bCol+'" opacity="'+bOp+'" pointer-events="none"/>';
+    /* 分片标记 */
+    var fracW = (bw - 2) / SIB.TP;
+    var myFrac = bx + 1 + tp * fracW;
+    s+='<rect x="'+myFrac+'" y="'+(y+33)+'" width="'+fracW+'" height="6" rx="1" fill="'+bCol+'" opacity="'+(isSel||showTP?'0.7':'0.2')+'" pointer-events="none"/>';
+  }
+
+  /* 通信连线 */
+  if(sel){
+    /* TP 兄弟连线 */
+    if(sibMode === 'tp' || sibMode === 'all'){
+      var tpY = cy(sel.pp) + CH2 + 12;
+      var tpNodes = [];
+      for(var t=0;t<SIB.TP;t++) tpNodes.push(cx(t,sel.dp));
+      /* Ring 环 */
+      for(var t=0;t<SIB.TP-1;t++){
+        s+='<line x1="'+tpNodes[t]+'" y1="'+tpY+'" x2="'+tpNodes[t+1]+'" y2="'+tpY+'" stroke="#A8404A" stroke-width="2.5" opacity="0.8"/>';
+      }
+      /* 闭合虚线 */
+      s+='<line x1="'+tpNodes[0]+'" y1="'+(tpY+4)+'" x2="'+tpNodes[SIB.TP-1]+'" y2="'+(tpY+4)+'" stroke="#A8404A" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.5"/>';
+      /* 圆点 */
+      for(var t=0;t<SIB.TP;t++){
+        var dotFill = (t===sel.tp) ? '#0E1418' : '#A8404A';
+        s+='<circle cx="'+tpNodes[t]+'" cy="'+tpY+'" r="4" fill="'+dotFill+'"/>';
+      }
+      s+='<text x="'+((tpNodes[0]+tpNodes[SIB.TP-1])/2)+'" y="'+(tpY+20)+'" font-size="9" fill="#A8404A" text-anchor="middle" font-weight="600">AllReduce / AG+RS · 每层两次 · 机内</text>';
+    }
+
+    /* DP 兄弟连线 */
+    if(sibMode === 'dp' || sibMode === 'all'){
+      var dpY = cy(sel.pp) - 16;
+      var dpNodes = [];
+      for(var d=0;d<SIB.DP;d++) dpNodes.push(cx(sel.tp,d));
+      for(var d=0;d<SIB.DP-1;d++){
+        s+='<line x1="'+dpNodes[d]+'" y1="'+dpY+'" x2="'+dpNodes[d+1]+'" y2="'+dpY+'" stroke="#2E6E8E" stroke-width="2" stroke-dasharray="6 4" opacity="0.7"/>';
+      }
+      for(var d=0;d<SIB.DP;d++){
+        var dotFill = (d===sel.dp) ? '#0E1418' : '#2E6E8E';
+        s+='<circle cx="'+dpNodes[d]+'" cy="'+dpY+'" r="3.5" fill="'+dotFill+'"/>';
+      }
+      s+='<text x="'+((dpNodes[0]+dpNodes[SIB.DP-1])/2)+'" y="'+(dpY-8)+'" font-size="9" fill="#2E6E8E" text-anchor="middle" font-weight="600">梯度 AllReduce · 每 step 一次 · 跨机</text>';
+    }
+
+    /* PP 链路 */
+    if(sibMode === 'pp' || sibMode === 'all'){
+      var ppX = cx(sel.tp, sel.dp) + CW/2 + 8;
+      for(var p=0;p<SIB.PP-1;p++){
+        var y1 = cy(p) + CH2, y2 = cy(p+1);
+        var arrowX = ppX;
+        s+='<line x1="'+arrowX+'" y1="'+y1+'" x2="'+arrowX+'" y2="'+y2+'" stroke="#B3603A" stroke-width="2" opacity="0.7"/>';
+        /* 箭头 */
+        s+='<polygon points="'+(arrowX-4)+','+(y2-6)+' '+(arrowX+4)+','+(y2-6)+' '+arrowX+','+y2+'" fill="#B3603A" opacity="0.7"/>';
+      }
+      var ppMidY = (cy(0) + cy(SIB.PP-1) + CH2) / 2;
+      s+='<text x="'+(ppX+14)+'" y="'+ppMidY+'" font-size="9" fill="#B3603A" font-weight="600" transform="rotate(90 '+(ppX+14)+' '+ppMidY+')">P2P · 激活传递 · 非兄弟</text>';
+    }
+  }
+
+  /* 图例 */
+  var LY = H - 36;
+  var legs = [
+    {c:'#A8404A', t:'TP 兄弟 · AllReduce（实线 = 同源分片聚合）', dash:''},
+    {c:'#2E6E8E', t:'DP 兄弟 · 梯度 AllReduce（虚线 = 同源副本同步）', dash:'6 4'},
+    {c:'#B3603A', t:'PP 链路 · P2P（箭头 = 激活传递，非兄弟）', dash:''}
+  ];
+  legs.forEach(function(l,i){
+    var lx = 90 + i * 280;
+    s+='<line x1="'+lx+'" y1="'+LY+'" x2="'+(lx+24)+'" y2="'+LY+'" stroke="'+l.c+'" stroke-width="2" '+(l.dash?'stroke-dasharray="'+l.dash+'"':'')+'/>';
+    s+='<text x="'+(lx+30)+'" y="'+(LY+4)+'" font-size="9" fill="#3D4B55">'+l.t+'</text>';
+  });
+
+  /* 标题注释 */
+  s+='<text x="'+W/2+'" y="28" font-size="12" fill="#0E1418" text-anchor="middle" font-weight="700">选中一张卡 → 高亮全部兄弟块 + 通信连线</text>';
+  if(!sel) s+='<text x="'+W/2+'" y="'+(H/2)+'" font-size="13" fill="#8A98A2" text-anchor="middle">点击任意卡查看其兄弟块与通信连线</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+
+  /* 绑定点击事件 */
+  var rects = m.querySelectorAll('[data-sib-g]');
+  Array.prototype.forEach.call(rects, function(r){
+    r.addEventListener('click', function(){
+      var g = parseInt(r.getAttribute('data-sib-g'));
+      sibSel = (sibSel === g) ? null : g;
+      figSibling();
+      sibOut();
+    });
+  });
+}
+
+function sibOut(){
+  var out = document.getElementById('sibling-out');
+  if(!out) return;
+  if(sibSel === null){
+    out.innerHTML = '<span class="hint">点击任意卡查看它的兄弟块与通信连线。TP=4, PP=2, DP=2，共 16 张卡，分属 2 个节点（每节点 4 卡）。</span>';
+    return;
+  }
+  var c = sibCoord(sibSel);
+  var tpSibs = [], dpSibs = [];
+  for(var t=0;t<SIB.TP;t++) if(t!==c.tp) tpSibs.push(sibGid(t,c.pp,c.dp));
+  for(var d=0;d<SIB.DP;d++) if(d!==c.dp) dpSibs.push(sibGid(c.tp,c.pp,d));
+
+  var ppPeers = [];
+  for(var p=0;p<SIB.PP;p++) if(p!==c.pp) ppPeers.push(sibGid(c.tp,p,c.dp));
+
+  var html = '<b>rank '+sibSel+'</b>　(tp='+c.tp+', pp='+c.pp+', dp='+c.dp+')　节点 '+c.dp+'<br>';
+  html += '<b style="color:#A8404A">TP 兄弟</b>：rank '+tpSibs.join(', ')+' — 持有同一层权重的<em>不同分片</em>，每层两次 AllReduce / AG+RS，<b>机内互联</b>（NCCL / HCCL）<br>';
+  html += '<b style="color:#2E6E8E">DP 兄弟</b>：rank '+dpSibs.join(', ')+' — 持有同一层权重的<em>完全相同副本</em>，step 末梯度 AllReduce，<b>跨机 RDMA</b>（IB / UB）<br>';
+  html += '<b style="color:#B3603A">PP 链路</b>：rank '+ppPeers.join(', ')+' — <em>不同的层</em>，P2P 传激活值，不是兄弟关系<br>';
+  html += '<span class="hint">TP 兄弟在同一节点内（stride=1 → rank 连续 → 走机内高带宽互联）；DP 兄弟跨节点（stride=TP → 走 RDMA 网络）。再点一次取消选中。</span>';
+  out.innerHTML = html;
+}
+
 /* ===================== FIG 06 · 单卡空间 × 时间 ===================== */
 function figCard(){
   var sc = new Scene('fig-card', [0,0,900,400], 17);
@@ -5353,7 +5660,8 @@ function boot(){
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer],
-   ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag]
+   ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
+   ['fig-sibling',figSibling]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */
@@ -5407,6 +5715,20 @@ function boot(){
     });
     figMesh(); meshOut();
   });
+
+  var sibCtrl = document.getElementById('sibling-ctrl');
+  if(sibCtrl){
+    sibCtrl.addEventListener('click', function(ev){
+      var btn = ev.target.closest('button');
+      if(!btn) return;
+      sibMode = btn.getAttribute('data-sib');
+      Array.prototype.forEach.call(sibCtrl.querySelectorAll('button'), function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      figSibling(); sibOut();
+    });
+    sibOut();
+  }
 }
 
 if(document.readyState === 'loading'){
