@@ -555,8 +555,17 @@ var SLOTS = [
        藏掉里面那一行，名字统一由格头出——与并行拓扑那格 `#stageTitle > b` 同一处置。
        只藏标题与灰注，**不动整条 .timeline-toolbar**：缩放那组控件长在同一行里，
        整条藏掉会把它一起按没（并行拓扑那格先前正是这么踩过一次）。 */
+    /* 名字归格头之后，上游那条格头行里就只剩右端的缩放组了——42px 高、还带一条
+       分隔线，读起来是「第二条空标题栏」。把它压到贴着缩放钮的高度（28px 的钮 +
+       上下各 2px），去掉分隔线与左padding，一条细带收着走。
+       为什么不干脆藏掉整条：缩放钮长在里面，藏了就没法缩放了；真要并进格头那一行，
+       得给 embed-bridge 的 pto:state 加一个 zoom 字段、把钮搬到宿主去代理——
+       那是另一件事（现在的契约只走 range / theme）。 */
     hideCss: '.timeline-pane .pane__title{display:none!important}' +
-             '.timeline-pane .pane__meta{display:none!important}',
+             '.timeline-pane .pane__meta{display:none!important}' +
+             '.timeline-pane .pane__header{height:32px!important;min-height:32px!important;' +
+               'padding:0 6px 0 0!important;border-bottom:0!important}' +
+             '.timeline-pane .timeline-toolbar{display:none!important}',
     readySel: '.timeline-pane .pane__header',   /* 这一格没有 [data-act]，等它自己的格头 */
     msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
