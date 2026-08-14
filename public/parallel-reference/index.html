@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>22 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>23 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1906,6 +1906,19 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <p>UB 不是一个独立的通信原语，而是 HCCL 在<b>跨机场景</b>下使用的一种通信加速机制。它的核心思路是<strong>在主机侧开辟一段共享 buffer</strong>，让多张卡的跨机通信可以汇聚到这段 buffer 再经 RDMA 网络发出去——而不是每张卡各自发各自的。</p>
     <p>从应用层看不到 UB 的存在：你还是调 <code>hccl.all_reduce(tensor, group)</code>，HCCL 内部判断这个 group 跨不跨机，跨了就自动走 UB + RDMA 通道。所以 <b>UB 影响的是性能和带宽利用率，不影响通信语义</b>。诊断跨机通信延迟时需要关注 UB 的配置（buffer 大小、RDMA 连接数、拓扑感知），但对理解并行切分和通信模式没有影响。</p>
   </div>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12C</span><span class="ftitle">HCCL 架构与 UB 跨机加速</span><span class="cd b">集合通信库 1:N 硬件</span>
+      <span class="fnote">左侧：框架 → 集合通信库 → 硬件互联的三层调用栈，NCCL / HCCL / RCCL 是同一层的三个实现。右侧：HCCL 内部的两条路径——机内走 HCCS 直连，跨机走 UB 共享 buffer + RDMA 聚合。点击切换查看 NCCL 对应路径。</span>
+    </figcaption>
+    <div class="stage" id="fig-hccl"></div>
+    <div class="ctrl" id="hccl-ctrl">
+      <button data-hccl="hccl" aria-pressed="true">HCCL + UB</button>
+      <button data-hccl="nccl" aria-pressed="false">NCCL 对照</button>
+    </div>
+    <div class="readout" id="hccl-out"></div>
+  </figure>
 
   <h4>兄弟块 + 通信连线 + 物理链路 = 三层叠加</h4>
 
@@ -5250,6 +5263,233 @@ function sibOut(){
   out.innerHTML = html;
 }
 
+/* ===================== FIG 12C · HCCL 架构与 UB ===================== */
+var hcclMode = 'hccl';
+
+function figHCCL(){
+  var m = document.getElementById('fig-hccl');
+  if(!m) return;
+  var W = 900, H = 560;
+  var isH = (hcclMode === 'hccl');
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* ---- 左侧：三层调用栈 ---- */
+  var LX = 40, LW = 260, layH = 68, gap = 32;
+  var layers = isH ? [
+    {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / MindSpore / DeepSpeed', api:'all_reduce(tensor, group)'},
+    {y:50+layH+gap, c:'#B3603A', t:'HCCL', sub:'Huawei Collective Communication Library', api:'封装 AllReduce / AG / RS / A2A'},
+    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'HCCS（机内）+ RDMA（跨机）', api:'物理链路层'}
+  ] : [
+    {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / DeepSpeed / FSDP', api:'all_reduce(tensor, group)'},
+    {y:50+layH+gap, c:'#A8404A', t:'NCCL', sub:'NVIDIA Collective Communications Library', api:'封装 AllReduce / AG / RS / A2A'},
+    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'NVLink / NVSwitch（机内）+ IB（跨机）', api:'物理链路层'}
+  ];
+
+  layers.forEach(function(l){
+    s+='<rect x="'+LX+'" y="'+l.y+'" width="'+LW+'" height="'+layH+'" rx="6" fill="'+l.c+'" opacity="0.12" stroke="'+l.c+'" stroke-width="1.5"/>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+22)+'" font-size="13" fill="'+l.c+'" text-anchor="middle" font-weight="700">'+l.t+'</text>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+40)+'" font-size="8.5" fill="#6B7B86" text-anchor="middle">'+l.sub+'</text>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+56)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-style="italic">'+l.api+'</text>';
+  });
+
+  /* 箭头连接三层 */
+  for(var a=0;a<2;a++){
+    var ay1 = layers[a].y + layH, ay2 = layers[a+1].y;
+    var ax = LX + LW/2;
+    s+='<line x1="'+ax+'" y1="'+ay1+'" x2="'+ax+'" y2="'+ay2+'" stroke="#8A98A2" stroke-width="1.5" stroke-dasharray="4 3"/>';
+    s+='<polygon points="'+(ax-4)+','+(ay2-6)+' '+(ax+4)+','+(ay2-6)+' '+ax+','+ay2+'" fill="#8A98A2"/>';
+    var mid = (ay1+ay2)/2;
+    s+='<text x="'+(ax+8)+'" y="'+mid+'" font-size="7.5" fill="#8A98A2" text-anchor="start">调用</text>';
+  }
+
+  /* 左侧标题 */
+  s+='<text x="'+(LX+LW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">三层调用栈（'+(isH?'华为昇腾':'NVIDIA')+' 路径）</text>';
+
+  /* API 一致性标注 */
+  s+='<text x="'+(LX+LW+12)+'" y="'+(layers[0].y+layH/2)+'" font-size="8" fill="#5C7A8C" text-anchor="start" font-weight="600">← API 完全一样</text>';
+
+  /* ---- 右侧：内部路径详解 ---- */
+  var RX = 370, RW = 500;
+
+  s+='<text x="'+(RX+RW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">'+(isH?'HCCL 内部：机内 vs 跨机两条路径':'NCCL 内部：机内 vs 跨机两条路径')+'</text>';
+
+  /* 节点 0 */
+  var n0x = RX+20, n0y = 58, nW = 200, nH = 220;
+  s+='<rect x="'+n0x+'" y="'+n0y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(n0y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 0</text>';
+
+  /* 节点 1 */
+  var n1x = RX+280, n1y = 58;
+  s+='<rect x="'+n1x+'" y="'+n1y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(n1y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 1</text>';
+
+  /* 卡片 */
+  var cW = 72, cH = 36, cGap = 14;
+  function drawCard(cx, cy, label, accent){
+    s+='<rect x="'+cx+'" y="'+cy+'" width="'+cW+'" height="'+cH+'" rx="4" fill="'+accent+'" opacity="0.08" stroke="'+accent+'" stroke-width="1.2"/>';
+    s+='<text x="'+(cx+cW/2)+'" y="'+(cy+14)+'" font-size="9" fill="'+accent+'" text-anchor="middle" font-weight="700">'+label+'</text>';
+    s+='<text x="'+(cx+cW/2)+'" y="'+(cy+28)+'" font-size="7" fill="#8A98A2" text-anchor="middle">HBM</text>';
+  }
+
+  var accent1 = isH ? '#B3603A' : '#A8404A';
+  var cardY0 = n0y + 32;
+  drawCard(n0x+20, cardY0, isH?'NPU 0':'GPU 0', accent1);
+  drawCard(n0x+20+cW+cGap, cardY0, isH?'NPU 1':'GPU 1', accent1);
+  drawCard(n0x+20, cardY0+cH+cGap, isH?'NPU 2':'GPU 2', accent1);
+  drawCard(n0x+20+cW+cGap, cardY0+cH+cGap, isH?'NPU 3':'GPU 3', accent1);
+
+  drawCard(n1x+20, cardY0, isH?'NPU 4':'GPU 4', accent1);
+  drawCard(n1x+20+cW+cGap, cardY0, isH?'NPU 5':'GPU 5', accent1);
+  drawCard(n1x+20, cardY0+cH+cGap, isH?'NPU 6':'GPU 6', accent1);
+  drawCard(n1x+20+cW+cGap, cardY0+cH+cGap, isH?'NPU 7':'GPU 7', accent1);
+
+  /* 机内互联 — 卡之间的连线 */
+  var icY = cardY0 + cH + 5;
+  var linkColor = isH ? '#2E6E8E' : '#A8404A';
+  var linkLabel = isH ? 'HCCS' : 'NVLink / NVSwitch';
+
+  /* 节点 0 机内互联（水平连线） */
+  var c0Lx = n0x+20+cW, c0Rx = n0x+20+cW+cGap;
+  s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  /* 垂直 */
+  var vx1 = n0x+20+cW/2;
+  var vx2 = n0x+20+cW+cGap+cW/2;
+  s+='<line x1="'+vx1+'" y1="'+(cardY0+cH)+'" x2="'+vx1+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+vx2+'" y1="'+(cardY0+cH)+'" x2="'+vx2+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+
+  /* 节点 1 机内互联 */
+  var c1Lx = n1x+20+cW, c1Rx = n1x+20+cW+cGap;
+  s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  var v1x1 = n1x+20+cW/2;
+  var v1x2 = n1x+20+cW+cGap+cW/2;
+  s+='<line x1="'+v1x1+'" y1="'+(cardY0+cH)+'" x2="'+v1x1+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+v1x2+'" y1="'+(cardY0+cH)+'" x2="'+v1x2+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+
+  /* 机内互联标签 */
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(cardY0+2*cH+cGap+18)+'" font-size="8.5" fill="'+linkColor+'" text-anchor="middle" font-weight="600">'+linkLabel+'</text>';
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(cardY0+2*cH+cGap+30)+'" font-size="7.5" fill="#8A98A2" text-anchor="middle">'+(isH?'全互联 · 机内高带宽':'全互联 · 600-900 GB/s')+'</text>';
+
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(cardY0+2*cH+cGap+18)+'" font-size="8.5" fill="'+linkColor+'" text-anchor="middle" font-weight="600">'+linkLabel+'</text>';
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(cardY0+2*cH+cGap+30)+'" font-size="7.5" fill="#8A98A2" text-anchor="middle">'+(isH?'全互联 · 机内高带宽':'全互联 · 600-900 GB/s')+'</text>';
+
+  /* ---- 跨机路径 ---- */
+  var crossY = n0y + nH + 30;
+
+  if(isH){
+    /* ==== HCCL + UB 路径 ==== */
+
+    /* UB 共享 buffer（主机侧） */
+    var ubW = 140, ubH = 50;
+    var ub0x = n0x + (nW - ubW)/2, ub0y = crossY + 10;
+    var ub1x = n1x + (nW - ubW)/2, ub1y = crossY + 10;
+
+    s+='<rect x="'+ub0x+'" y="'+ub0y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
+    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
+    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
+
+    s+='<rect x="'+ub1x+'" y="'+ub1y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
+    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
+    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
+
+    /* 卡 → UB 的收集箭头 */
+    var cardBot = cardY0 + 2*cH + cGap;
+    var arrC = '#B3603A';
+    /* 节点 0：4 卡 → UB */
+    s+='<line x1="'+(n0x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    s+='<line x1="'+(n0x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW*3/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    /* 节点 1：4 卡 → UB */
+    s+='<line x1="'+(n1x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    s+='<line x1="'+(n1x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW*3/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+
+    /* UB ↔ UB 的 RDMA 通道 */
+    var rdmaY = ub0y + ubH/2;
+    s+='<line x1="'+(ub0x+ubW)+'" y1="'+rdmaY+'" x2="'+(ub1x)+'" y2="'+rdmaY+'" stroke="#C44D23" stroke-width="3" opacity="0.7"/>';
+    /* 双向箭头 */
+    s+='<polygon points="'+(ub1x-8)+','+(rdmaY-4)+' '+(ub1x-8)+','+(rdmaY+4)+' '+ub1x+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
+    s+='<polygon points="'+(ub0x+ubW+8)+','+(rdmaY-4)+' '+(ub0x+ubW+8)+','+(rdmaY+4)+' '+(ub0x+ubW)+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
+    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY-10)+'" font-size="10" fill="#C44D23" text-anchor="middle" font-weight="700">RDMA</text>';
+    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY+16)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">聚合后发一次 · 减少跨机次数</text>';
+
+    /* 流程解释 */
+    var expY = ub0y + ubH + 26;
+    var steps = [
+      '① 各卡把要发送的 tensor 切片写入本机 UB',
+      '② HCCL 在 UB 中做本地聚合（ReduceScatter 的本地部分）',
+      '③ 聚合结果通过 RDMA 一次发到对端 UB',
+      '④ 对端 UB 分发到各卡 · 完成跨机 AllReduce'
+    ];
+    steps.forEach(function(st, i){
+      s+='<text x="'+(RX+RW/2)+'" y="'+(expY+i*16)+'" font-size="8.5" fill="#3D4B55" text-anchor="middle">'+st+'</text>';
+    });
+
+    /* 关键对比 */
+    var kY = expY + steps.length*16 + 16;
+    s+='<rect x="'+(RX+40)+'" y="'+kY+'" width="'+(RW-80)+'" height="64" rx="6" fill="#B3603A" opacity="0.06" stroke="#B3603A" stroke-width="1" stroke-dasharray="4 3"/>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#B3603A" text-anchor="middle" font-weight="700">UB 的核心价值</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">不走 UB：每张卡各自发 RDMA → 跨机消息数 = 卡数 × 对端卡数</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">走 UB：先本地聚合再跨机 → 跨机消息数大幅减少 · 带宽利用率更高</text>';
+
+  } else {
+    /* ==== NCCL 路径 ==== */
+
+    /* NCCL 跨机：每张卡各自走 IB / RoCE */
+    var ibY = crossY + 20;
+
+    /* 跨机连线：每卡直连 */
+    var pairs = [[0,0],[0,1],[1,0],[1,1]];
+    pairs.forEach(function(p){
+      var fromX = n0x+20 + p[0]*(cW+cGap) + cW/2;
+      var toX = n1x+20 + p[1]*(cW+cGap) + cW/2;
+      var fromY = cardY0 + 2*cH + cGap;
+      s+='<line x1="'+fromX+'" y1="'+fromY+'" x2="'+toX+'" y2="'+(ibY+40)+'" stroke="#A8404A" stroke-width="1.2" opacity="0.35"/>';
+    });
+
+    /* IB 交换机 */
+    var swX = (n0x+nW+n1x)/2, swW = 100, swH = 36;
+    s+='<rect x="'+(swX-swW/2)+'" y="'+ibY+'" width="'+swW+'" height="'+swH+'" rx="4" fill="#A8404A" opacity="0.10" stroke="#A8404A" stroke-width="1.5"/>';
+    s+='<text x="'+swX+'" y="'+(ibY+15)+'" font-size="10" fill="#A8404A" text-anchor="middle" font-weight="700">IB Switch</text>';
+    s+='<text x="'+swX+'" y="'+(ibY+29)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">InfiniBand / RoCE v2</text>';
+
+    /* 解释 */
+    var expY = ibY + swH + 30;
+    var steps = [
+      '① NCCL 选择算法（Ring / Tree）并分配 channel',
+      '② 每个 channel 对应一条 IB QP（Queue Pair）连接',
+      '③ 各卡独立发 RDMA Send/Recv · 没有主机侧聚合',
+      '④ 依靠 Ring/Tree 拓扑自身的分段流水来摊平带宽'
+    ];
+    steps.forEach(function(st, i){
+      s+='<text x="'+(RX+RW/2)+'" y="'+(expY+i*16)+'" font-size="8.5" fill="#3D4B55" text-anchor="middle">'+st+'</text>';
+    });
+
+    /* 对比框 */
+    var kY = expY + steps.length*16 + 16;
+    s+='<rect x="'+(RX+40)+'" y="'+kY+'" width="'+(RW-80)+'" height="64" rx="6" fill="#A8404A" opacity="0.06" stroke="#A8404A" stroke-width="1" stroke-dasharray="4 3"/>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#A8404A" text-anchor="middle" font-weight="700">NCCL 的跨机策略</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">不做主机侧聚合 · 依靠 Ring/Tree 拓扑的分段流水线摊薄延迟</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">多 channel 并行 · 每 channel 一条 IB QP · 带宽随 channel 数线性增长</text>';
+  }
+
+  /* ---- 分隔线 ---- */
+  s+='<line x1="340" y1="44" x2="340" y2="'+(H-10)+'" stroke="#D2DADF" stroke-width="1" stroke-dasharray="4 3"/>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
+function hcclOut(){
+  var out = document.getElementById('hccl-out');
+  if(!out) return;
+  var isH = (hcclMode === 'hccl');
+  if(isH){
+    out.innerHTML = '<b style="color:#B3603A">HCCL + UB 路径</b>：机内走 HCCS 直连（全互联），跨机走 UB 共享 buffer + RDMA。<b>UB 的核心</b>是在主机侧做一次本地聚合再跨机发送，把「N 张卡各发各的」变成「聚合后发一次」，减少跨机 RDMA 消息数。应用层完全无感——API 还是 <code>hccl.all_reduce(tensor, group)</code>，HCCL 自动判断走哪条路。';
+  } else {
+    out.innerHTML = '<b style="color:#A8404A">NCCL 路径</b>：机内走 NVLink / NVSwitch 直连（600-900 GB/s），跨机每张卡各自走 IB / RoCE。<b>NCCL 不做主机侧聚合</b>，而是依靠 Ring / Tree 拓扑的分段流水线来充分利用带宽——多个 channel 并行，每个 channel 对应一条 IB QP 连接。两种方案的集合通信语义完全一样（AllReduce 结果一致），区别只在跨机的传输策略。';
+  }
+}
+
 /* ===================== FIG 06 · 单卡空间 × 时间 ===================== */
 function figCard(){
   var sc = new Scene('fig-card', [0,0,900,400], 17);
@@ -5661,7 +5901,8 @@ function boot(){
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer],
    ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
-   ['fig-sibling',figSibling]
+   ['fig-sibling',figSibling],
+   ['fig-hccl',figHCCL]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */
@@ -5728,6 +5969,20 @@ function boot(){
       figSibling(); sibOut();
     });
     sibOut();
+  }
+
+  var hcclCtrl = document.getElementById('hccl-ctrl');
+  if(hcclCtrl){
+    hcclCtrl.addEventListener('click', function(ev){
+      var btn = ev.target.closest('button');
+      if(!btn) return;
+      hcclMode = btn.getAttribute('data-hccl');
+      Array.prototype.forEach.call(hcclCtrl.querySelectorAll('button'), function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      figHCCL(); hcclOut();
+    });
+    hcclOut();
   }
 }
 
