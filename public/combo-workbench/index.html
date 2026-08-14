@@ -449,7 +449,7 @@ var SLOTS = [
          · 四把刀 —— 同理，cuts=pcte 是这一格的定义（独独不落 DP），不是可调项。
        用 :has() 精确圈住刀那一组：.pt-seg 机位段控（3D/正视/侧视/顶视）也用它，
        整类藏掉会把机位一起按没——机位是要留给用户换的。 */
-    hideCss: '.pt-mv{display:none!important}' +
+    hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
              '#stageTitle > b{display:none!important}' +
              '#qbar{display:none!important}' +
              '.pt-sw[data-act="cardmode"]{display:none!important}' +
@@ -518,8 +518,12 @@ var SLOTS = [
     },
     /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
        怎么切，是并行拓扑自己的事，提到台面反而离它要影响的画面更远。
-       用 CSS 而不是内联样式：这个 pattern 每次改状态都重画工具条，内联的会被冲掉。 */
-    hideCss: '.pt-mv{display:none!important}',
+       用 CSS 而不是内联样式：这个 pattern 每次改状态都重画工具条，内联的会被冲掉。
+       :not(.pt-disp) 是必须的——⚙（显示设置：图例 / 通信）在 demo 里是
+       `<span class="pt-mv pt-disp">`，跟数据标注**共用 .pt-mv 那层排版壳**。
+       光写 .pt-mv 会把 ⚙ 一起按掉，而它管的图例/通信并没有提到框架层，
+       藏了就再也开不出来（2026-08 实机丢失，右上角只剩机位段控）。 */
+    hideCss: '.pt-mv:not(.pt-disp){display:none!important}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
