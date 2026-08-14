@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>24 张图</span><span>54 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>25 张图</span><span>56 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1975,6 +1975,98 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
   <div class="note">
     <span class="lbl">PP 链路不是兄弟关系</span>
     <p>在联动显示中，TP 和 DP 的连线连接的是<b>同一张量的不同碎片</b>（TP）或<b>同一张量的完全相同副本</b>（DP），通信的目的是<b>聚合或同步</b>。PP 方向的连线则完全不同——它传的是「上一个 stage 的输出激活」交给「下一个 stage 的输入」，两端拿的根本不是同一层的东西。<strong>PP 的连线该画但不该和兄弟块混在一起</strong>——它是数据流方向上的依赖，不是切分产生的聚合需求。</p>
+  </div>
+
+  <h4>Rank 通信 ⊃ HCCL ⊃ UB：三层嵌套，不是三个场景</h4>
+
+  <p>一个常见困惑：Rank 间通信、HCCL、UB 是三个独立的场景吗？不是。它们是<b>同一条通信路径上的三个嵌套层级</b>——外层定义语义，中层选择实现，内层执行优化：</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12E</span><span class="ftitle">通信三层嵌套：逻辑 → 实现 → 优化</span><span class="cd a">包含关系 1:1</span>
+      <span class="fnote">三个同心框分别对应 Rank 间通信关系（逻辑层）、HCCL/NCCL（软件实现层）、UB（跨机传输优化）。每一层都是上一层的实现细节，对上层完全透明。</span>
+    </figcaption>
+    <div class="stage" id="fig-nesting"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th>层级</th><th>回答的问题</th><th>谁决定</th><th>对应图</th><th>类比</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Rank 间通信关系</b></td>
+        <td>WHO + WHAT：<b>谁和谁通信</b>，用什么原语，传什么 tensor</td>
+        <td>并行维度（TP/DP/PP/EP）的 group 定义</td>
+        <td>FIG 12B</td>
+        <td>公司 A 要给公司 B 寄一箱文件</td>
+      </tr>
+      <tr>
+        <td><b>HCCL / NCCL</b></td>
+        <td>HOW（第一层）：<b>用什么算法、走哪条路</b>、分几步完成</td>
+        <td>集合通信库拿到 group 后自动判断</td>
+        <td>FIG 12C 左侧</td>
+        <td>邮局接单、分拣、选路线</td>
+      </tr>
+      <tr>
+        <td><b>UB</b></td>
+        <td>HOW（第二层）：<b>跨机时怎么聚合</b>，用共享 buffer 还是各卡直发</td>
+        <td>HCCL 内部在跨机场景下自动启用</td>
+        <td>FIG 12C 右侧</td>
+        <td>邮局在边境口岸的合并仓库</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>关键推论：<strong>如果你只想理解"谁和谁通信"，不需要知道 HCCL 和 UB</strong>。如果你要<b>诊断跨机通信延迟</b>，才需要深入到 HCCL 的路径选择和 UB 的 buffer 配置。三层是逐步深入同一条路径，不是三个平行视角看三件不同的事。</p>
+
+  <h4>通信不一定跨机——物理放置决定路径</h4>
+
+  <p>并不是所有通信都会跨越机器和节点。<b>逻辑层定义谁和谁通信，物理放置决定这次通信走不走网线</b>。同一种通信原语，group 成员全在一台机器上就走机内互联（HCCS / NVLink），跨了机器才走 RDMA / IB。</p>
+
+  <table class="tbl">
+    <thead><tr><th>并行维度</th><th>典型 group 大小</th><th>典型放置策略</th><th>通常走的路</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="k tp">TP</span></td>
+        <td>2 / 4 / 8</td>
+        <td>同一台机器内</td>
+        <td><b>机内</b>（HCCS / NVLink）</td>
+        <td>AllReduce 通信量大且频率高（每一层两次），必须用机内高带宽</td>
+      </tr>
+      <tr>
+        <td><span class="k ep">EP</span></td>
+        <td>8 / 16 / 64</td>
+        <td>取决于 expert 数量和卡数</td>
+        <td><b>可能机内也可能跨机</b></td>
+        <td>EP=8 且部署在一台 8 卡机器上 → 全机内；EP=64 → 必然跨机</td>
+      </tr>
+      <tr>
+        <td><span class="k dp">DP</span></td>
+        <td>整网副本数</td>
+        <td>跨越多台机器</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>数据并行的副本分布在不同节点上</td>
+      </tr>
+      <tr>
+        <td><span class="k pp">PP</span></td>
+        <td>stage 数</td>
+        <td>通常跨机</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>不同 stage 的层数多、跨机放置更灵活</td>
+      </tr>
+      <tr>
+        <td><span class="k cp">CP</span></td>
+        <td>序列切分数</td>
+        <td>通常跨机</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>长序列切分跨节点分布</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">部署原则：把通信量最大的维度放在带宽最高的路径上</span>
+    <p>这就是为什么 <b>TP 永远优先放在机内</b>——它每一层都要做两次 AllReduce，通信频率和数据量都是最高的。如果把 TP group 拆到两台机器上，跨机 RDMA 的带宽会成为瓶颈，整个训练的吞吐量会骤降。</p>
+    <p>反过来，DP 的 AllReduce 只在一个完整的前向 + 反向传播结束后做一次梯度同步，频率低很多，放在跨机路径上可以接受。<b>这就是 FIG 12D 最底行"物理链路"那一层真正决定的事——不是"走不走网线"而是"带宽够不够用"。</b></p>
   </div>
 </section>
 
@@ -5674,6 +5766,101 @@ function figWaterfall(){
   m.innerHTML = s;
 }
 
+/* ===================== FIG 12E · 通信三层嵌套 ===================== */
+function figNesting(){
+  var m = document.getElementById('fig-nesting');
+  if(!m) return;
+  var W = 900, H = 480;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* 背景 */
+  s+='<rect width="'+W+'" height="'+H+'" rx="8" fill="#F4F7F9"/>';
+
+  /* 标题 */
+  s+='<text x="'+W/2+'" y="30" text-anchor="middle" font-size="13" font-weight="700" fill="#3D4B55">通信三层嵌套关系 —— 同一条路径的三个深度</text>';
+
+  /* ===== 左侧：嵌套同心框 ===== */
+  var lx = 40, ly = 50, lw = 480, lh = 390;
+
+  /* 最外层 · Rank 间通信关系 */
+  s+='<rect x="'+lx+'" y="'+ly+'" width="'+lw+'" height="'+lh+'" rx="10" fill="#E8F0F5" stroke="#2E6E8E" stroke-width="2.5"/>';
+  s+='<text x="'+(lx+14)+'" y="'+(ly+22)+'" font-size="12" font-weight="800" fill="#2E6E8E">Rank 间通信关系</text>';
+  s+='<text x="'+(lx+14)+'" y="'+(ly+38)+'" font-size="9.5" fill="#3D4B55">WHO + WHAT：并行维度定义 group，通信原语定义操作</text>';
+
+  /* 外层底部标签 */
+  s+='<text x="'+(lx+14)+'" y="'+(ly+lh-14)+'" font-size="9" fill="#6B7B86">FIG 12B · 逻辑连线 · 对应用层可见</text>';
+
+  /* 中间层 · HCCL / NCCL */
+  var mx = lx+28, my = ly+56, mw = lw-56, mh = lh-100;
+  s+='<rect x="'+mx+'" y="'+my+'" width="'+mw+'" height="'+mh+'" rx="8" fill="#EDF5F0" stroke="#3E7D5E" stroke-width="2"/>';
+  s+='<text x="'+(mx+12)+'" y="'+(my+20)+'" font-size="12" font-weight="800" fill="#3E7D5E">HCCL / NCCL（集合通信库）</text>';
+  s+='<text x="'+(mx+12)+'" y="'+(my+36)+'" font-size="9.5" fill="#3D4B55">HOW：选择算法（Ring / Tree / Mesh）、管理 stream、协调各 rank</text>';
+
+  /* 中间层底部标签 */
+  s+='<text x="'+(mx+12)+'" y="'+(my+mh-12)+'" font-size="9" fill="#6B7B86">FIG 12C 左侧 · 三层调用栈 · 对框架层透明</text>';
+
+  /* 最内层 · UB */
+  var ix = mx+28, iy = my+54, iw = mw-56, ih = mh-96;
+  s+='<rect x="'+ix+'" y="'+iy+'" width="'+iw+'" height="'+ih+'" rx="6" fill="#FFF7ED" stroke="#B3603A" stroke-width="1.5" stroke-dasharray="6 3"/>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+20)+'" font-size="12" font-weight="800" fill="#B3603A">UB（Unified Buffer）</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+36)+'" font-size="9.5" fill="#3D4B55">HOW-detail：跨机时在主机侧聚合 buffer，减少 RDMA 发送次数</text>';
+
+  /* UB 内部细节 */
+  s+='<text x="'+(ix+12)+'" y="'+(iy+56)+'" font-size="9" fill="#6B7B86">仅在跨机路径上生效</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+70)+'" font-size="9" fill="#6B7B86">机内通信（HCCS / NVLink）不经过 UB</text>';
+
+  /* UB 条件标记 */
+  var condX = ix+iw-130, condY = iy+14;
+  s+='<rect x="'+condX+'" y="'+condY+'" width="118" height="22" rx="3" fill="#B3603A" opacity="0.12"/>';
+  s+='<text x="'+(condX+59)+'" y="'+(condY+15)+'" font-size="9" font-weight="700" fill="#B3603A" text-anchor="middle">条件启用 · 跨机才有</text>';
+
+  /* 虚线标注内层底部 */
+  s+='<text x="'+(ix+12)+'" y="'+(iy+ih-10)+'" font-size="9" fill="#6B7B86">FIG 12C 右侧 · UB + RDMA 路径 · 对 HCCL 上层也透明</text>';
+
+  /* ===== 右侧：实例化时序 ===== */
+  var rx = 560, ry = 50, rw = 310, rh = 390;
+  s+='<rect x="'+rx+'" y="'+ry+'" width="'+rw+'" height="'+rh+'" rx="8" fill="#FAFBFC" stroke="#D2DADF" stroke-width="1"/>';
+  s+='<text x="'+(rx+rw/2)+'" y="'+(ry+22)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#3D4B55">一次 AllReduce 的完整调用路径</text>';
+
+  /* 五个步骤 */
+  var steps = [
+    {y:ry+44, color:'#2E6E8E', label:'① 框架层', desc:'all_reduce(tensor, tp_group)', detail:'只知道 group 是谁，不知道走哪条路'},
+    {y:ry+112, color:'#3E7D5E', label:'② HCCL 接管', desc:'查 group 成员物理位置', detail:'同节点 → HCCS 直连\n跨节点 → 选 UB 或直发'},
+    {y:ry+192, color:'#B3603A', label:'③ UB 聚合（跨机时）', desc:'多卡数据 → 共享 buffer → RDMA', detail:'机内通信跳过此步'},
+    {y:ry+264, color:'#6B7B86', label:'④ 硬件传输', desc:'HCCS / NVLink / RDMA / IB', detail:'数据到达目标 rank 的 HBM'},
+    {y:ry+330, color:'#2E6E8E', label:'⑤ 返回框架层', desc:'tensor 已同步，继续前向/反向', detail:'框架完全不知道走了哪条路'}
+  ];
+
+  steps.forEach(function(st, i){
+    s+='<rect x="'+(rx+14)+'" y="'+st.y+'" width="'+(rw-28)+'" height="56" rx="5" fill="white" stroke="'+st.color+'" stroke-width="1.5"/>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+18)+'" font-size="10" font-weight="700" fill="'+st.color+'">'+st.label+'</text>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+33)+'" font-size="9.5" fill="#0E1418">'+st.desc+'</text>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+47)+'" font-size="8.5" fill="#6B7B86">'+st.detail.split('\n')[0]+'</text>';
+    if(i < steps.length - 1){
+      var arrowY = st.y + 56;
+      var nextY = steps[i+1].y;
+      var midX = rx + rw/2;
+      s+='<line x1="'+midX+'" y1="'+arrowY+'" x2="'+midX+'" y2="'+(nextY-2)+'" stroke="#D2DADF" stroke-width="1.5" marker-end="url(#nestArrow)"/>';
+    }
+  });
+
+  /* 箭头标记 */
+  s+='<defs><marker id="nestArrow" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1 L4 4 L1 7" fill="none" stroke="#D2DADF" stroke-width="1.2"/></marker></defs>';
+
+  /* ===== 左右连接线 ===== */
+  /* 从左侧三个框到右侧对应步骤 */
+  s+='<line x1="'+(lx+lw)+'" y1="'+(ly+20)+'" x2="'+(rx)+'" y2="'+(steps[0].y+28)+'" stroke="#2E6E8E" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+  s+='<line x1="'+(mx+mw)+'" y1="'+(my+20)+'" x2="'+(rx)+'" y2="'+(steps[1].y+28)+'" stroke="#3E7D5E" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+  s+='<line x1="'+(ix+iw)+'" y1="'+(iy+20)+'" x2="'+(rx)+'" y2="'+(steps[2].y+28)+'" stroke="#B3603A" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+
+  /* 底部金句 */
+  s+='<rect x="40" y="'+(H-36)+'" width="'+(W-80)+'" height="28" rx="4" fill="#2E6E8E" opacity="0.08"/>';
+  s+='<text x="'+W/2+'" y="'+(H-17)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="#2E6E8E">理解"谁和谁通信"只需要最外层 · 诊断"跨机为什么慢"才需要深入内层</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
 /* ===================== FIG 06 · 单卡空间 × 时间 ===================== */
 function figCard(){
   var sc = new Scene('fig-card', [0,0,900,400], 17);
@@ -6087,7 +6274,8 @@ function boot(){
    ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
    ['fig-sibling',figSibling],
    ['fig-hccl',figHCCL],
-   ['fig-waterfall',figWaterfall]
+   ['fig-waterfall',figWaterfall],
+   ['fig-nesting',figNesting]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */
