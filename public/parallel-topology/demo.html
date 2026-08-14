@@ -2517,8 +2517,18 @@ function netScene(D, g, box, step){
       /* 只夹**上界**（画到 1+OVER_MAX 为止），不再把 f0 也夹进壳里：夹了就等于
          把溢出的那几档全压扁贴在壳顶，看着像「正好装满」，恰好是要避免的误读。 */
       if(f0 >= 1 + OVER_MAX) return;
-      out9.push({f0:f0, f1:Math.min(f1, 1 + OVER_MAX), c:sg9.color, act:sg9.k==='act',
-                 k:sg9.k, label:sg9.label, cut:(f1 > 1 + OVER_MAX)});
+      f1 = Math.min(f1, 1 + OVER_MAX);
+      var base9 = {act:sg9.k==='act', k:sg9.k, label:sg9.label};
+      /* 跨过壳顶的那一档**劈成两截**：壳内那半留自己的签名色（它是真装进去了的），
+         壳外那半走告警色。同一档两个颜色说的正是「这一档有一部分没装下」——
+         整档一起变红会把已经装进去的那部分也说成越界。 */
+      function push9(a9, b9, over9){
+        if(b9 - a9 < 0.0005) return;
+        out9.push({f0:a9, f1:b9, c:(over9 ? CAP_C.red : sg9.color), over:!!over9,
+                   act:base9.act, k:base9.k, label:base9.label});
+      }
+      if(f0 < 1 && f1 > 1){ push9(f0, 1, false); push9(1, f1, true); }
+      else push9(f0, f1, f0 >= 1);
     });
     /* ── 权重带在**宽度**上的分块：那排算子片折进容器的样子 ────────────────
        口径逐字照抄交集腔 L3（renderSolidCav 里的 ops9/opSegs9）：按每块的字节
@@ -3234,7 +3244,10 @@ function netScene(D, g, box, step){
                    卡各自的刀色本来就是这一屏的信息，选中与否都该看得见）；
                    g/opt 的细缝与激活的虚缝只给选中那只——它们是发丝级的线，
                    128 只一起画就是一片麻。 */
-                if((vA9 - vB9) > 0.010 && (meC || sg8.k === 'w')){
+                /* 顶出壳外那半不画内部切分线：它已经整片换成告警色了，再在上面
+                   划分块等于同时说两件事（「这是越界的」和「它内部这么切」），
+                   而越界那半要说的只有第一件。 */
+                if((vA9 - vB9) > 0.010 && !sg8.over && (meC || sg8.k === 'w')){
                   var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
@@ -3291,20 +3304,12 @@ function netScene(D, g, box, step){
                  被截断的地方画锯齿边表示「还在往上」。壳的线框照旧在外面画，
                  所以这里只补这两样，不重画壳。 */
               if(MS9.overflow){
-                var topA9 = P(cu0, cv0, cw0, kc), topB9 = P(cu1, cv0, cw0, kc);
-                body.push(seg(topA9, topB9, 'stroke:var(--pt-danger);stroke-width:'+(meC?1.6:0.9)+';opacity:'+(meC?1:lz)));
-                if(MS9.overTop >= 1 + 0.62 - 1e-6){
-                  /* 锯齿：沿截断那条边来回折几下。虚线表达不了「被切掉了」——
-                     虚线是「这条线是虚的」，锯齿才是「这里断了、后面还有」。 */
-                  var cutV9 = cv0 - (cv1 - cv0)*0.62, zig9 = [], nz9 = 9;
-                  for(var z9 = 0; z9 <= nz9; z9++){
-                    var zu9 = cu0 + (cu1 - cu0)*z9/nz9;
-                    zig9.push(P(zu9, cutV9 + ((z9 % 2) ? 0.018 : -0.018), cw0, kc));
-                  }
-                  for(var z8 = 0; z8 + 1 < zig9.length; z8++)
-                    body.push(seg(zig9[z8], zig9[z8+1],
-                      'stroke:var(--pt-danger);stroke-width:'+(meC?1.1:0.6)+';opacity:'+(meC?.95:lz*.8)));
-                }
+                /* 壳顶不再单画红线：颜色的**分界**本身就是那条线（线下是各档自己的
+                   签名色、线上是告警色），而且壳的线框照旧在外面画。再补一道红边，
+                   128 只卡连起来又是一条横贯整屏的红带——正是刚去掉的那个毛病。 */
+                /* 截断处不画锯齿了：128 只卡各画一道，在阵列尺度上连成一条横贯
+                   整屏的红色波浪，读起来像某种全局警戒线，而它其实只是「这里没画完」。
+                   顶出去那一截本身已经是告警色，够说明问题；画到哪儿算哪儿。 */
               }
             }
             body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
