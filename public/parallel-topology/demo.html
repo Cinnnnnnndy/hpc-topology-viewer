@@ -3241,6 +3241,11 @@ function netScene(D, g, box, step){
                 var msK9 = ui.memSel ? (ui.memSel.indexOf('w:') === 0 ? 'w' : ui.memSel) : null;
                 var memDim9 = (meC && msK9 && sg8.k !== msK9) ? 0.30 : 1;
                 var lzB9 = lzM * memDim9;
+                /* 顶出壳外那截只画在**选中那只**上。全网结构性溢出时（比如 EP 拨掉，
+                   128 只全超 ×4.7）每只都顶 0.62 只壳，阵列上半就是一大片告警色，
+                   密得读不出别的了。其余卡改用棱标红说「超了」（capLv 那条路），
+                   顶出去的形留给正被追问的那一只。 */
+                if(sg8.over && !meC) continue;
                 /* 刀缝：子块之间兑一道底色的细线，块薄到只剩一两个像素时它就是唯一
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
@@ -3387,7 +3392,11 @@ function netScene(D, g, box, step){
         /* 只有**走带在跑**的时候才报警（ACT_T 非空）。不放游标问的是「这套切法给一张卡
              留下多少」——那是一个稳态预算，没有「此刻出事了」这回事，默认那一屏就该
              和从前一样干净。告警是时间的产物，跟着时间出现才对。 */
-        var capLv = (ui.netOff && ui.memFill && !lowDetail && ACT_T !== null) ? (memStack(pc2, gc).level || 'ok') : 'ok';
+        /* 告警是时间的产物——但**结构性**溢出不是：EP 拨掉后 300GB 对 64GB，
+           无论走带在哪儿它都装不下，这不是「此刻出事了」，是「这套切法根本放不进」。
+           所以 oom 一档不看 ACT_T 直通（棱标红）；70%/88% 那两档照旧只随时间出现。 */
+        var cMSlv9 = (ui.netOff && ui.memFill && !lowDetail) ? memStack(pc2, gc) : null;
+        var capLv = cMSlv9 ? (cMSlv9.overflow ? 'oom' : (ACT_T !== null ? (cMSlv9.level || 'ok') : 'ok')) : 'ok';
         /* 棱只给**红档以上**换色。橙那条线（70%）在这套配置里必然全中——静态地板
            （优化器态 12B/参数 + 权重 + 梯度）本身就吃掉 69%，激活还没算——于是 128 只
            卡全描成橙的，一个永远亮着的告警不是告警，只是把画面染了一遍。
