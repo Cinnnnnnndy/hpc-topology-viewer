@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#10131a"/>
+  <!-- 上半：左右两格（主视图 + 整网图）-->
+  <rect x="8" y="8" width="28" height="26" rx="4" fill="none" stroke="#2dd4bf" stroke-width="2.4"/>
+  <rect x="40" y="8" width="16" height="26" rx="4" fill="none" stroke="#8b5cf6" stroke-width="2.4"/>
+  <!-- 分隔条 -->
+  <line x1="38" y1="12" x2="38" y2="30" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="2 2"/>
+  <!-- 左格内：简化的拓扑卡阵列 -->
+  <rect x="12" y="13" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".7"/>
+  <rect x="20" y="13" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".7"/>
+  <rect x="28" y="13" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".5"/>
+  <rect x="12" y="21" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".5"/>
+  <rect x="20" y="21" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".4"/>
+  <rect x="28" y="21" width="6" height="5" rx="1.2" fill="#2dd4bf" opacity=".4"/>
+  <!-- 右格内：简化的网图 -->
+  <circle cx="48" cy="15" r="2.2" fill="#8b5cf6" opacity=".7"/>
+  <circle cx="48" cy="22" r="2.2" fill="#8b5cf6" opacity=".7"/>
+  <circle cx="48" cy="29" r="2.2" fill="#8b5cf6" opacity=".5"/>
+  <line x1="48" y1="17.2" x2="48" y2="19.8" stroke="#8b5cf6" stroke-width="1" opacity=".5"/>
+  <line x1="48" y1="24.2" x2="48" y2="26.8" stroke="#8b5cf6" stroke-width="1" opacity=".5"/>
+  <!-- 下半：底部抽屉（泳道 + 观测台）-->
+  <rect x="8" y="38" width="48" height="18" rx="4" fill="none" stroke="#f59e0b" stroke-width="2.4"/>
+  <!-- 抽屉内：泳道条纹 -->
+  <rect x="12" y="42" width="40" height="3" rx="1" fill="#f59e0b" opacity=".5"/>
+  <rect x="12" y="47" width="32" height="3" rx="1" fill="#f59e0b" opacity=".35"/>
+  <rect x="12" y="52" width="36" height="2" rx="1" fill="#f59e0b" opacity=".25"/>
+  <!-- 连接线：上下联动 -->
+  <line x1="22" y1="34" x2="22" y2="38" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="42" y1="34" x2="42" y2="38" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round"/>
+</svg>
