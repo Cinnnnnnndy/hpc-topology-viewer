@@ -518,7 +518,7 @@ jobs:
 
           sed -e 's#\(\(href\|src\)="\)\(\.\{1,2\}/[A-Za-z0-9./_-]*\.\(css\|js\)\)"#\1\3?v='"$SHA"'"#g' \
               $SRC/swimlane.html > $DST/swimlane.html
-          cp $SRC/embed.css $SRC/embed-bridge.js $DST/
+          cp $SRC/favicon.svg $SRC/embed.css $SRC/embed-bridge.js $DST/
           cp $SRC/vendor/swimlane-task/pattern.css $SRC/vendor/swimlane-task/pattern.js $DST/vendor/swimlane-task/
 
           # 通信观测台（dock 第四个 tab）：自包含子目录（自带 vendor/pto-design-system
