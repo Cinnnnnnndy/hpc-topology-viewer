@@ -567,8 +567,9 @@ var SLOTS = [
          都是「时间/通信」侧的证据视图，一格多页比再开第四个格子省一条分隔条。 */
       if (s.value === 'obs') {
         q.set('theme', theme());
+        q.set('sankey', '1');
         if (BUILD) q.set('v', BUILD);
-        return './observatory/index.html?' + q.toString();
+        return './observatory/?' + q.toString();
       }
       q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
       q.set('theme', theme());

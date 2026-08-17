@@ -221,7 +221,7 @@
 }
 .pt-stagebar{
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
-  justify-content:flex-end; max-width:min(60%, 620px);
+  justify-content:flex-end; max-width:min(82%, 940px);
 }
 /* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
@@ -759,7 +759,7 @@ var ui = {
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
-  commOn:false, legendOn:false, dispOpen:false,     /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
+  commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
@@ -899,6 +899,7 @@ function urlLoad(){
   if(q.get('mem')==='0') ui.memFill = false;
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
+  else if(q.get('comm')==='0') ui.commOn = false;
   if(q.get('legend')==='1') ui.legendOn = true;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
      mv= 空串 = 全部隐藏，这也是一个有意义的状态（只看结构），不能当成「没写就默认全开」。 */
@@ -949,7 +950,7 @@ function urlWrite(){
     else if(!ui.netOff) q.set('net','1');
   }
   if(ui.view==='chain' && ui.netOff && !ui.memFill) q.set('mem','0');
-  if(ui.view==='chain' && ui.commOn) q.set('comm','1');
+  if(ui.view==='chain' && !ui.commOn) q.set('comm','0');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
   if(ui.view==='chain'){
     var mv2 = (ui.mv.num?'n':'')+(ui.mv.grad?'g':'')+(ui.mv.perf?'p':'')+(ui.mv.moe?'m':'')+(ui.mv.train?'t':'');
