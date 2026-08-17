@@ -3520,6 +3520,40 @@ function netScene(D, g, box, step){
     }
   } else if(cutEP && KD > 1) drawEpFrames(false);
   if(ui.commOn && !lowDetail && !ui.netOff) drawCommArcs();
+  /* ── 容量视图的地面流量带（观测台 Floor Sankey 的读法，长在本图自己的投影里）──
+     整网视图的通信画在**算子**上（drawCommArcs——通信锚在产生它的那个算子）；
+     容量视图里卡是空的，通信只剩「卡与卡」这一级，于是画在**地面**：
+     选中卡与它 EP 组兄弟之间的 AllToAll dispatch，一根带一个对端。
+     曼哈顿走线（出线→并行车道→入线）照观测台：斜穿会横切过中间不相干的卡。
+     宽度=示意 token 量（loadSeed 确定性合成，同一对永远同一个数——与 rankLoad
+     的路由不均同一口径）；颜色=对端在 EP 域内的序号（观测台的分类色）。 */
+  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && cutEP && D.moe){
+    var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
+    var vFloor = AR + 0.22;                       /* 卡底 cv1=AR+0.12，带贴在再下一档的地面 */
+    var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
+    var wRib = (cutPP ? (segW(co.p)[0]+segW(co.p)[1])/2 : TOTW/2);
+    var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
+    var kSrc9 = kOfR(co), lane9 = 0;
+    mem9.forEach(function(r9, i9){
+      var c9 = coordsOf(r9, D);
+      if(KC === 1 && c9.c !== co.c) return;        /* 那一分面没画出来，线没处落 */
+      var kDst9 = kOfR(c9);
+      var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;          /* 示意 token 份额 */
+      var wd9 = (1.6 + tok9*2.8).toFixed(1);
+      var colR9 = RIBC[i9 % RIBC.length];
+      /* 车道：每根带占一条自己的 w 车道，出线→沿车道横穿→入线，三段折线 */
+      var wLane9 = wRib + (lane9 - (mem9.length-1)/2) * DEP*0.09;
+      lane9++;
+      var a9 = P(0.5, vFloor, wRib, kSrc9), b9 = P(0.5, vFloor, wLane9, kSrc9);
+      var c8 = P(0.5, vFloor, wLane9, kDst9), d9 = P(0.5, vFloor, wRib, kDst9);
+      var st9 = 'stroke:'+colR9+';stroke-width:'+wd9+';stroke-linecap:round;opacity:.82';
+      body.push(seg(a9, b9, st9)); body.push(seg(b9, c8, st9)); body.push(seg(c8, d9, st9));
+      body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+colR9+';stroke:var(--pt-bg);stroke-width:.8"/>');
+    });
+    /* 标签让开门牌：rank 门牌挂在卡底正下方，这行再往下两档，别叠字 */
+    var lbP9 = P(0.5, vFloor + 0.34, wRib, kSrc9);
+    axLab([lbP9[0], lbP9[1] + 14], 'AllToAll · EP 组 dispatch（示意量）', null, VC.ep, true, 6.4);
+  }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
   var axOff = 0;
@@ -8308,7 +8342,13 @@ document.addEventListener('click', function(ev){
   /* 挑完就收起小菜单：挑的结果本身就是「大图层开/关了」这个显而易见的反馈
      （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
      大面板抢同一片屏幕，留着没有意义。 */
-  else if(act==='commtoggle'){ ui.commOn = !ui.commOn; ui.dispOpen = false; render(); }
+  else if(act==='commtoggle'){
+    ui.commOn = !ui.commOn; ui.dispOpen = false; render();
+    /* 告诉宿主：通信层开了/关了。工作台拿它联动下方抽屉切到「通信观测」——
+       上面看现象（流量带），下面看量化与归因（Sankey / Routing / 时间轴）。 */
+    if(window.parent && window.parent !== window)
+      window.parent.postMessage({type:'pto:comm', on:ui.commOn}, '*');
+  }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   /* 整网 ⇄ 容量：二选一。切到容量时顺手把填充打开——「容量」这两个字就是在说
      壳里要按字节装满，再要求读者多点一下才看得见就是把一件事拆成两步。 */
