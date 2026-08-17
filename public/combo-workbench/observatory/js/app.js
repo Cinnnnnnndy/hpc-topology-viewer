@@ -1270,6 +1270,12 @@
     try { initialTheme = window.localStorage.getItem('pto-communication-observatory-theme') || 'dark'; } catch (error) { /* no-op */ }
   }
   setTheme(initialTheme);
+  const sankeyOnly = new URLSearchParams(window.location.search).get('sankey') === '1';
+  if (sankeyOnly) {
+    elements.modelDeckHost.classList.add('is-sankey-only');
+    setSankeyOpen(true);
+    elements.sankeyClose.hidden = true;
+  }
   if (state.primaryView === 'communication') {
     updatePrimaryView();
     selectDemoCommunicationGroup();
