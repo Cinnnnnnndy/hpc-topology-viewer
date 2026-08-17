@@ -3529,29 +3529,38 @@ function netScene(D, g, box, step){
      的路由不均同一口径）；颜色=对端在 EP 域内的序号（观测台的分类色）。 */
   if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && cutEP && D.moe){
     var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
-    var vFloor = AR + 0.22;                       /* 卡底 cv1=AR+0.12，带贴在再下一档的地面 */
     var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
-    var wRib = (cutPP ? (segW(co.p)[0]+segW(co.p)[1])/2 : TOTW/2);
+    var wFront9 = cutPP ? segW(co.p)[0] : 0;
     var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
     var kSrc9 = kOfR(co), lane9 = 0;
     mem9.forEach(function(r9, i9){
       var c9 = coordsOf(r9, D);
-      if(KC === 1 && c9.c !== co.c) return;        /* 那一分面没画出来，线没处落 */
+      if(KC === 1 && c9.c !== co.c) return;
       var kDst9 = kOfR(c9);
-      var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;          /* 示意 token 份额 */
+      var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
       var wd9 = (1.6 + tok9*2.8).toFixed(1);
       var colR9 = RIBC[i9 % RIBC.length];
-      /* 车道：每根带占一条自己的 w 车道，出线→沿车道横穿→入线，三段折线 */
-      var wLane9 = wRib + (lane9 - (mem9.length-1)/2) * DEP*0.09;
+      /* 前面（front face）平面上的曼哈顿走线：
+         出发点在源卡底部中心、终点在目标卡底部中心，
+         中间走直角折线——先竖直下行到公共车道 v 高度，
+         再水平走到目标 u 列，最后竖直上行到目标卡底。
+         每根线分配一条独立的 v 车道，避免重叠。 */
+      var vBot = AR + 0.12;
+      var vLane = vBot + 0.08 + (lane9 + 1) * 0.06;
       lane9++;
-      var a9 = P(0.5, vFloor, wRib, kSrc9), b9 = P(0.5, vFloor, wLane9, kSrc9);
-      var c8 = P(0.5, vFloor, wLane9, kDst9), d9 = P(0.5, vFloor, wRib, kDst9);
-      var st9 = 'stroke:'+colR9+';stroke-width:'+wd9+';stroke-linecap:round;opacity:.82';
-      body.push(seg(a9, b9, st9)); body.push(seg(b9, c8, st9)); body.push(seg(c8, d9, st9));
+      var a9 = P(0.5, vBot, wFront9, kSrc9);
+      var b9 = P(0.5, vLane, wFront9, kSrc9);
+      var c8 = P(0.5, vLane, wFront9, kDst9);
+      var d9 = P(0.5, vBot, wFront9, kDst9);
+      var st9 = 'stroke:'+colR9+';stroke-width:'+wd9+';stroke-linecap:round;stroke-linejoin:round;opacity:.78;fill:none';
+      body.push('<path d="M'+a9[0].toFixed(1)+','+a9[1].toFixed(1)
+        +'L'+b9[0].toFixed(1)+','+b9[1].toFixed(1)
+        +'L'+c8[0].toFixed(1)+','+c8[1].toFixed(1)
+        +'L'+d9[0].toFixed(1)+','+d9[1].toFixed(1)
+        +'" style="'+st9+'"/>');
       body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+colR9+';stroke:var(--pt-bg);stroke-width:.8"/>');
     });
-    /* 标签让开门牌：rank 门牌挂在卡底正下方，这行再往下两档，别叠字 */
-    var lbP9 = P(0.5, vFloor + 0.34, wRib, kSrc9);
+    var lbP9 = P(0.5, AR + 0.12 + 0.08 + (mem9.length+1)*0.06 + 0.10, wFront9, kSrc9);
     axLab([lbP9[0], lbP9[1] + 14], 'AllToAll · EP 组 dispatch（示意量）', null, VC.ep, true, 6.4);
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
