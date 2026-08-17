@@ -1215,7 +1215,7 @@ function wireSplitters() {
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
-  if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select')) return;
+  if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select' && d.type !== 'pto:comm')) return;
   SLOTS.forEach(function (c) {
     var frame = $('iframe[data-slot="' + c.id + '"]');
     if (!frame || frame.contentWindow !== ev.source) return;
@@ -1244,6 +1244,13 @@ window.addEventListener('message', function (ev) {
     if (d.type === 'pto:select') {
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
       if (peer) pushHL(peer, 'rank', (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null);
+    }
+    /* 上方拓扑开了通信层 → 下方抽屉联动切到「通信观测」：上面看现象（地面流量带），
+       下面看量化与归因（Sankey / Model & Routing / 时间轴）。只在**开**的时候联动，
+       关掉不切回——读者可能正在下面看时间轴，替他关掉是抢操作。折叠着就先展开。 */
+    if (d.type === 'pto:comm' && d.on && c.id === 'topology') {
+      if (state.swimlane.folded) { state.swimlane.folded = false; applySlotVisibility(); }
+      if (state.swimlane.value !== 'obs') select('swimlane', 'obs', true);
     }
   });
 });
