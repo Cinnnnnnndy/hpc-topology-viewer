@@ -234,6 +234,12 @@ body.is-resizing-x iframe{pointer-events:none}
 .xport{display:flex;align-items:center;gap:6px}
 .xport button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
 .xport input[type=range]{width:132px;height:22px;accent-color:var(--primary);cursor:pointer}
+/* 缩放代理组：钮长在台面、事件打进泳道 iframe（同源，直接够得到它的控件）。
+   形制照走带那排——同一条格头上的两组小件，不该各长各的。 */
+.zctl{display:flex;align-items:center;gap:5px}
+.zctl button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
+.zctl input[type=range]{width:96px;height:22px;accent-color:var(--primary);cursor:pointer}
+.zctl b{min-width:30px;font-family:var(--font-family-mono, monospace);font-size:11px;color:var(--foreground-muted);font-weight:600}
 .xport b{min-width:42px;font-family:var(--font-family-mono, monospace);font-size:11px;
   font-weight:700;color:var(--foreground-secondary);text-align:right}
 /* 游标：容器铺满 iframe 但不吃点击（改时间的入口是走带，不是画布——画布上的点击
@@ -370,6 +376,16 @@ body.is-resizing iframe{pointer-events:none}
         <button data-act="play" aria-label="播放一个训练步" title="播放一个训练步：游标走一遍，两格里每张卡的激活体跟着这一刻的 1F1B 在途份数变化">▶</button>
         <input id="xpT" type="range" min="0" max="1000" value="0" aria-label="训练步进度" title="拖动到这一步的任意时刻" />
         <b id="xpPct">峰值</b>
+      </div>
+      <!-- 缩放（代理）：泳道自己的那条格头整条藏掉了（见 hideCss——名字归格头后
+           它只剩右端一组缩放钮，单独占一行 32px），钮搬到这儿，点击打回 iframe 里
+           原来的控件。i（对象层级）也一并代理：它的弹层锚点藏了会退到框内角落，可用。 -->
+      <div class="zctl" id="zctl">
+        <button data-zc="out" title="缩小时间轴">−</button>
+        <input id="zcs" type="range" min="0" max="6" step="1" value="0" aria-label="时间轴缩放" title="离散缩放：1× – 64×">
+        <button data-zc="in" title="放大时间轴">＋</button>
+        <b id="zcv">1×</b>
+        <button data-zc="info" title="对象层级" aria-label="查看对象层级">i</button>
       </div>
       <span class="spacer"></span>
     </header>
@@ -574,11 +590,9 @@ var SLOTS = [
        所以拼在同一份 hideCss 里是安全的——settleFrame 不区分当前是哪一页。
        观测台藏的是它 standalone 形态的三件套（顶栏/活动轨/状态条）：
        进了格子，身份与开关归格头，双份 chrome 摞着只会挤掉画布。 */
-    hideCss: '.timeline-pane .pane__title{display:none!important}' +
-             '.timeline-pane .pane__meta{display:none!important}' +
-             '.timeline-pane .pane__header{height:32px!important;min-height:32px!important;' +
-               'padding:0 6px 0 0!important;border-bottom:0!important}' +
-             '.timeline-pane .timeline-toolbar{display:none!important}' +
+    /* 泳道自己的格头**整条**藏掉：名字归格头、缩放钮已代理到台面（#zctl），
+       这条里没有剩下要看的东西了。之前收窄到 32px 是因为缩放钮还长在里面。 */
+    hideCss: '.timeline-pane .pane__header{display:none!important}' +
              '.pto-ide-frame__standalone-chrome{display:none!important}',
     /* 逗号选择器：两份文档各等各的锚点，谁在场等谁 */
     readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header',
@@ -717,6 +731,7 @@ function select(id, value, push) {
     frame.contentWindow.postMessage(slot.msg(value), '*');
   else load(id);
   syncTabs(id);
+  if (id === 'swimlane') applyDockAux();
   if (push) writeURL();
 }
 
@@ -850,6 +865,7 @@ function settleFrame(slot, frame) {
     hideTakenOver(slot, frame);
     applyData();
     if (slot.id === 'netgraph') wireOpToRank(frame);
+    if (slot.id === 'swimlane') { applyDockAux(); zctlSync(); }
     host.dataset.ready = '1';
   }
   (function poll() {
@@ -1048,6 +1064,52 @@ document.addEventListener('click', function (ev) {
   if (!b) return;
   xpPlay(!xpPlaying);
 });
+
+/* ── 缩放代理：台面上的钮，事件打进泳道 iframe ─────────────────────────
+   同源，直接 click 它原来的控件、改它原来的 slider——不加消息契约，
+   泳道文件一个字不动（它是上游拷贝，改了下次同步就冲掉）。
+   打完立刻读回 #zoomValue/#zoomSlider 对齐台面显示：真值在里面，台面只是遥控器。 */
+function zctlDoc() {
+  if (state.swimlane.value === 'obs') return null;
+  var f = $('iframe[data-slot="swimlane"]');
+  try { return f && f.contentDocument; } catch (e) { return null; }
+}
+function zctlSync() {
+  var doc = zctlDoc(), v = $('#zcv'), sl = $('#zcs');
+  if (!doc || !v) return;
+  var iv = doc.getElementById('zoomValue'), isl = doc.getElementById('zoomSlider');
+  if (iv) v.textContent = iv.textContent;
+  if (isl && sl) sl.value = isl.value;
+}
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest && ev.target.closest('#zctl [data-zc]');
+  if (!b) return;
+  var doc = zctlDoc(); if (!doc) return;
+  var id = { out: 'zoomOut', 'in': 'zoomIn', info: 'objectInfoBtn' }[b.dataset.zc];
+  var t = id && doc.getElementById(id);
+  if (t) t.click();
+  zctlSync();
+});
+document.addEventListener('input', function (ev) {
+  if (ev.target.id !== 'zcs') return;
+  var doc = zctlDoc(); if (!doc) return;
+  var isl = doc.getElementById('zoomSlider');
+  if (!isl) return;
+  isl.value = ev.target.value;
+  isl.dispatchEvent(new Event('input', { bubbles: true }));
+  zctlSync();
+});
+
+/* 走带/游标/缩放都是**泳道的**器官：dock 换到通信观测那页时一起收起来——
+   游标那条竖线叠在观测台画布上是一条来历不明的线，走带推的 step 它也不认。 */
+function applyDockAux() {
+  var obs = state.swimlane.value === 'obs';
+  var z = $('#zctl'), x = $('#xport');
+  if (z) z.hidden = obs;
+  if (x) x.hidden = obs;
+  if (obs) { var c = $('#xcursor'); if (c) c.hidden = true; }
+  else xpPlaceCursor();
+}
 document.addEventListener('input', function (ev) {
   if (!ev.target || ev.target.id !== 'xpT') return;
   xpPlaying = false; cancelAnimationFrame(xpRAF); xpLast = 0;
