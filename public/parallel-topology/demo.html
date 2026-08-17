@@ -2491,14 +2491,18 @@ function netScene(D, g, box, step){
      注意这是「凑齐一整份」的兄弟（shard 关系），不是「梯度 AllReduce 找谁」的
      同步关系——后者是 DP 组，语义不同，混在一起会把复制读成切分。 */
   var memSibs = null;
-  if(hasSel && ui.memSel && ui.cardMode && ui.netOff){
-    var sibDims = memSibDims(ui.memSel);
+  if(hasSel && ui.cardMode && ui.netOff){
+    /* 没点块时给**全集**：这张卡沿每根轴的全部兄弟（DP 副本也算——卡这一级问的是
+       「这张卡和谁有关系」，复印关系是真关系）。点开某一块再收窄到切那一块的轴：
+       全集 → 子集，两步各答各的问题。 */
+    var sibDims = ui.memSel ? memSibDims(ui.memSel) : ['pp','tp','ep','cp','dp'];
     memSibs = {};
     sibDims.forEach(function(dm9){
       if(dm9 === 'pp' && !cutPP) return;
       if(dm9 === 'tp' && !cutTP) return;
       if(dm9 === 'ep' && (!cutEP || !D.moe)) return;
       if(dm9 === 'cp' && !cutCP) return;
+      if(dm9 === 'dp' && !cutDP) return;
       groupMembers(dm9, sel, D).forEach(function(r9){
         if(r9 !== sel && memSibs[r9] === undefined) memSibs[r9] = dm9;
       });
