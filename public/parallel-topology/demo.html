@@ -4466,7 +4466,7 @@ function graphSVG(o){
     out.push('<line x1="'+(right9 ? x9+w9 : x9).toFixed(1)+'" y1="'+(y9+h9/2).toFixed(1)
       +'" x2="'+(right9 ? ax-2/zs : ax+2/zs).toFixed(1)+'" y2="'+(y9+h9/2).toFixed(1)
       +'" style="stroke:var(--pt-bds);stroke-width:'+(0.5/zs).toFixed(2)+'"/>');
-    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', HALO+'pointer-events="none"'));
+    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', 'font-weight="700" '+HALO+'pointer-events="none"'));
     return t9;
   }
   G.clusters.forEach(function(c){
@@ -4540,7 +4540,9 @@ function graphSVG(o){
            归属由「夹在中间的那条线」表达。 */
         var mc9 = (o.metricLi != null && !gh) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
         if(mc9 && w*zs > Math.max(60, mc9.length*3.0))
-          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, 'var(--pt-fg3)', 'middle', HALO+'pointer-events="none"'));
+          /* 读数才是这行字真正被看的理由（名字只是找到它），色权顶格给到 fg——
+             同样的字号预算，只把它从「附注」的浅灰调回「正文」的深色 + 粗体。 */
+          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4572,15 +4574,16 @@ function graphSVG(o){
         /* 张量的数据标注（mHC state / Q / K / V…）：名字与读数上下两行、同一条中轴，
            两行都收在框里（张量框本来就矮，写到框外就分不清是谁的了）。 */
         var mt9 = '', tside9 = false;
-        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg3)');
+        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
         if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
         if(mt9 && !tside9 && w*zs < mt9.length*3.0) mt9 = '';
         if(tside9) mt9 = '';
         var tfk = 1;
         if(o.fitLabel && String(n.label).length*3.1 > w*zs) tfk = Math.max(0.6, (w*zs)/(String(n.label).length*3.1));
         txts.push(txt(x+w/2, y+h/2+(mt9?-1.4:2)/zs, esc(n.label), 5.2*tfk/zs, 'var(--pt-fg3)', 'middle', HALO));
+        /* 读数比张量名更值得看清：同一条中轴上，字号预算不变，色权与粗细提到顶格 */
         if(mt9)
-          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg3)', 'middle', HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4695,7 +4698,7 @@ function graphSVG(o){
          这在方阵里行不通（两列卡并排时右侧就是隔壁那张卡，归属会含糊），
          但铺满时右边只有空白，一行一个读数，读起来就是一张表。 */
       if(o.metricSide && o.metricLi != null && !gh && labOn9)
-        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg2)');
+        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
       if(!side9 && labOn9 && o.metricLi != null && !gh){
         mtx9 = sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
@@ -4710,14 +4713,19 @@ function graphSVG(o){
         }
       }
       if(labOn9)
+        /* 名字后面挤成一行的读数（one9）：字号预算不能占（本来就是硬挤进去的），
+           但色权可以——从「附注」的浅灰、常规粗细，提到跟名字同一档深色 + 粗体。 */
         txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg3)" font-weight="400">  '+esc(mtx9)+'</tspan>' : ''),
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg)" font-weight="700">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
+        /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
+           顶格给到 fg、加粗——不动字号预算（3.4–4.6，装得下几个字是算好的），
+           只把视觉重量从「名字的附注」搬回「正文」。 */
         txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
                     Math.max(3.4, Math.min(4.6, o.fitLabel ? (w*zs)/(mtx9.length*0.62) : 4.6))/zs,
-                    'var(--pt-fg2)', 'middle', HALO+'pointer-events="none"'));
+                    'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
        body 层整体 pointer-events:none，提示与点击都只能挂在 hit 上。 */
