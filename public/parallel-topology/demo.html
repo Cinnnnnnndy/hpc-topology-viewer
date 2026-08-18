@@ -3775,6 +3775,12 @@ function netScene(D, g, box, step){
        Block Post RMSNorm 在投影上几乎同点，两条标签会叠字——色块本体照画。 */
     if(lf >= denseTop) pick.push(['shared_expert_mlp', lf]);
     if(ll === L-1) pick.push(['final_norm', L-1], ['lm_head', L-1], ['logits', L-1]);
+    /* 这几条标签共用一列（同一个 off0），挑的又是模型里紧挨着的算子（token_embedding
+       紧跟 input_tokens、attention_all_gather 紧跟 input_layernorm）——它们在场景
+       坐标里离得够近，字号却是钉死的 6.4px，缩放拉近之后常常两行糊成一团（实机
+       反馈：AllGather 和它上面那条算子名叠在一起）。挨个记上一条已放的 y，
+       新的一条离得太近就顺势往下推，保持这条列表最基本的读序不乱。 */
+    var labMinGap = 12, lastLabY = -Infinity;
     pick.forEach(function(it){
       var id = it[0];
       var n = IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
@@ -3785,8 +3791,11 @@ function netScene(D, g, box, step){
       var s1 = sh[id], pl = (s1 && s1.parts) || [];
       var part = pl.filter(function(x){ return x && x.total > 0; })[0] || pl[0] || null;
       var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
+      var ly = pc[1] + 2;
+      if(ly - lastLabY < labMinGap) ly = lastLabY + labMinGap;
+      lastLabY = ly;
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
-      lab.push(txt(pc[0], pc[1]+2, esc(it[2] || n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
+      lab.push(txt(pc[0], ly, esc(it[2] || n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
@@ -4437,6 +4446,23 @@ function sdOpMetric(li, n, D, maxCh){
   return out.join(' ');
 }
 function mvAny(){ return ui.mv.num || ui.mv.grad || ui.mv.perf || ui.mv.moe || ui.mv.train; }
+/* 读数是不是该「亮红灯」——跟 sdOpDetail 那份完整明细同一套阈值、同一个随机种子
+   （salt 33/37 与它逐位对齐），只是不重新拼一遍那些格式化字符串：图上摘要与点开
+   看到的明细必须是同一个判断，不能点开一看状态跟图上标的不一样。 */
+function sdOpWarn(li, n, D){
+  var idx = 0, id9 = String(n.id || ''), i9;
+  for(i9 = 0; i9 < id9.length; i9++) idx = (idx + id9.charCodeAt(i9)) % 97;
+  function sm(salt, mn, mx){ return mn + sdSeed(li, idx * 7 + salt) * (mx - mn); }
+  var des = (n.label || '') + ' ' + id9;
+  if(n.colorKey === 'opv:comm') return false;
+  if(/router|route_topk/i.test(des)) return sm(37, 1.02, 1.18) > 1.15;
+  if(/attention_core|dsa|swa|flashattention/i.test(des)) return false;
+  if(/expert/i.test(des)) return sm(33, 5.4, 9.65) > 9.35;
+  if(/mhc|residual|merge|branch_add|moe_combine/i.test(des)) return false;
+  if(/norm/i.test(des)) return false;
+  if(/linear|proj|weight|embedding|head|logits/i.test(des)) return false;
+  return sm(33, 5.4, 9.65) > 9.35;
+}
 /* 点开一个算子要给的**完整**明细（图上那行只是摘要）：对象类型 → 定义 → 逐项数值
    → 一句阈值判定 → 执行上下文。与 sidecar 的 inspector 同一套字段口径。
    这里不按「数据」多选过滤：多选管的是图面密度，点开就是要看全的。 */
@@ -4513,6 +4539,9 @@ var MVIEWS = [
 function graphSVG(o){
   var IX = graphIndex(); if(!IX) return '';
   var G = IX.G, clu = IX.clu, D = o.D;
+  /* 读数的色权已经顶到 fg 了（Phase 2）；再往上加的不是更深的颜色，是「正常/该看
+     一眼」这个额外的维度——数据本身该带的状态判断，跟点开的完整明细同一套阈值。 */
+  function metricColor(li9, n9){ return sdOpWarn(li9, n9, D) ? 'var(--pt-warn, #d97706)' : 'var(--pt-fg)'; }
   /* zs = 当前缩放。字号、描边、虚线、纹样阈值全按 1/zs 反除：场景被 wrapper 放大后
      线在屏幕上仍是细线、字仍是那么大（地图式）；标签的显隐阈值乘 zs——放大到
      屏幕上装得下，字才出现，越放大出现得越多。 */
@@ -4662,7 +4691,7 @@ function graphSVG(o){
         if(mc9 && w*zs > Math.max(60, mc9.length*3.0))
           /* 读数才是这行字真正被看的理由（名字只是找到它），色权顶格给到 fg——
              同样的字号预算，只把它从「附注」的浅灰调回「正文」的深色 + 粗体。 */
-          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4694,7 +4723,7 @@ function graphSVG(o){
         /* 张量的数据标注（mHC state / Q / K / V…）：名字与读数上下两行、同一条中轴，
            两行都收在框里（张量框本来就矮，写到框外就分不清是谁的了）。 */
         var mt9 = '', tside9 = false;
-        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
+        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, metricColor(o.metricLi, n));
         if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
         if(mt9 && !tside9 && w*zs < mt9.length*3.0) mt9 = '';
         if(tside9) mt9 = '';
@@ -4703,7 +4732,7 @@ function graphSVG(o){
         txts.push(txt(x+w/2, y+h/2+(mt9?-1.4:2)/zs, esc(n.label), 5.2*tfk/zs, 'var(--pt-fg3)', 'middle', HALO));
         /* 读数比张量名更值得看清：同一条中轴上，字号预算不变，色权与粗细提到顶格 */
         if(mt9)
-          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4818,7 +4847,7 @@ function graphSVG(o){
          这在方阵里行不通（两列卡并排时右侧就是隔壁那张卡，归属会含糊），
          但铺满时右边只有空白，一行一个读数，读起来就是一张表。 */
       if(o.metricSide && o.metricLi != null && !gh && labOn9)
-        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
+        side9 = !!sideMetric(n, x, y, w, h, metricColor(o.metricLi, n));
       if(!side9 && labOn9 && o.metricLi != null && !gh){
         mtx9 = sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
@@ -4836,16 +4865,17 @@ function graphSVG(o){
         /* 名字后面挤成一行的读数（one9）：字号预算不能占（本来就是硬挤进去的），
            但色权可以——从「附注」的浅灰、常规粗细，提到跟名字同一档深色 + 粗体。 */
         txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg)" font-weight="700">  '+esc(mtx9)+'</tspan>' : ''),
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
         /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
            顶格给到 fg、加粗——不动字号预算（3.4–4.6，装得下几个字是算好的），
-           只把视觉重量从「名字的附注」搬回「正文」。 */
+           只把视觉重量从「名字的附注」搬回「正文」，异常/接近阈值再往上加一档
+           警示色（跟点开看到的完整明细同一个判断，不是另起一套）。 */
         txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
                     Math.max(3.4, Math.min(4.6, o.fitLabel ? (w*zs)/(mtx9.length*0.62) : 4.6))/zs,
-                    'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
+                    metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
        body 层整体 pointer-events:none，提示与点击都只能挂在 hit 上。 */
