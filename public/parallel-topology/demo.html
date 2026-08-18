@@ -6468,11 +6468,20 @@ function renderChain(D){
   }
   /* ── 场景分派 ──
      3D/顶视：可转动的 3D 场景（netScene，zoom/pan 已折在投影里）。
-     正视/侧视：本页自己的 2D 渲染器（frontScene / sideScene），按 zoom=1 的基准坐标
-     画，再包一层满足 screen = C + pan + zoom·(base − C) 约定的 <g>——于是三条路径
-     共用同一套 gesture 变换（applyViewTransform），真图脚本缺失时退回 netScene。 */
+     正视/侧视：整网（!netOff）时用本页自己的 2D 渲染器（frontScene / sideScene），
+     按 zoom=1 的基准坐标画算子级切分，再包一层满足 screen = C + pan + zoom·(base − C)
+     约定的 <g>——于是三条路径共用同一套 gesture 变换（applyViewTransform），真图
+     脚本缺失时退回 netScene。
+     容量（netOff）时这两个 tab 不该走 frontScene/sideScene——那两支画的是「一层
+     算子怎么切」，容量视图里卡是空的、没有算子几何，硬套只会啥都不画或画错内容。
+     退回 netScene 本身：VTAB_POSE 给 front/side 配的 yaw/pitch（[0,0] / [π/2,0]）
+     本来就是给它当**方块阵列的正交视角**用的——转到那两个角度，PP（深度 w）或
+     TP·CP·DP（阵列 u/k）二选一被看的方向本身"压扁"，效果就是「正视看 TP/CP/SP/DP、
+     侧视看 PP」，不需要另开一条渲染路径。 */
   var scene = null, flat = false;
-  if(ui.viewTab === 'front'){ scene = frontScene(D, g, SCB); flat = !!scene; }
+  if(ui.netOff){
+    /* 容量视图：front/side 都交给 netScene 走对应的 yaw/pitch 机位 */
+  } else if(ui.viewTab === 'front'){ scene = frontScene(D, g, SCB); flat = !!scene; }
   else if(ui.viewTab === 'side'){ scene = sideScene(D, g, SCB); flat = !!scene; }
   if(!scene) scene = netScene(D, g, SCB);
   if(flat){
@@ -6885,7 +6894,7 @@ function renderChainBar(D){
      层联动共用一条路，不另开一套状态——所以在这儿换层，标签栏和另一格都会跟着走。
      侧视不需要：它本来就把 48 层全排开了，点哪一列就是哪一层。 */
   var lBtns = '';
-  if(ui.viewTab === 'front' && D.ok && D.layers > 1){
+  if(ui.viewTab === 'front' && !ui.netOff && D.ok && D.layers > 1){
     var liNow9 = fsLayerOf(D);
     lBtns = '<span class="pt-seg pt-lstep">'
       + '<button data-act="fslayer" data-d="-1"'+(liNow9<=0?' disabled':'')+' title="上一层">‹</button>'
