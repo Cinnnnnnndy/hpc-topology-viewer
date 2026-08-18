@@ -766,6 +766,7 @@ var ui = {
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
   mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false, ghOpen:false,
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
+  openLayer:null,   /* 侧视点开「展开这一层」浮层的层号；null = 关着（见 layerDetailOverlay） */
   /* 读出卡里点开的那一**块**显存（'w'/'g'/'opt'/'otmp'/'act'/'rsv'，权重内部再细到
      'w:experts' 这种）。选中卡答的是「这张卡装了什么」，再点一块答的是「这一块
      自己被哪把刀切成这样」——同一条链再下一级，不是另开一屏。null = 没点开。 */
@@ -4563,7 +4564,7 @@ function graphSVG(o){
     out.push('<line x1="'+(right9 ? x9+w9 : x9).toFixed(1)+'" y1="'+(y9+h9/2).toFixed(1)
       +'" x2="'+(right9 ? ax-2/zs : ax+2/zs).toFixed(1)+'" y2="'+(y9+h9/2).toFixed(1)
       +'" style="stroke:var(--pt-bds);stroke-width:'+(0.5/zs).toFixed(2)+'"/>');
-    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', HALO+'pointer-events="none"'));
+    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', 'font-weight="700" '+HALO+'pointer-events="none"'));
     return t9;
   }
   G.clusters.forEach(function(c){
@@ -4637,7 +4638,9 @@ function graphSVG(o){
            归属由「夹在中间的那条线」表达。 */
         var mc9 = (o.metricLi != null && !gh) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
         if(mc9 && w*zs > Math.max(60, mc9.length*3.0))
-          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, 'var(--pt-fg3)', 'middle', HALO+'pointer-events="none"'));
+          /* 读数才是这行字真正被看的理由（名字只是找到它），色权顶格给到 fg——
+             同样的字号预算，只把它从「附注」的浅灰调回「正文」的深色 + 粗体。 */
+          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4669,15 +4672,16 @@ function graphSVG(o){
         /* 张量的数据标注（mHC state / Q / K / V…）：名字与读数上下两行、同一条中轴，
            两行都收在框里（张量框本来就矮，写到框外就分不清是谁的了）。 */
         var mt9 = '', tside9 = false;
-        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg3)');
+        if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
         if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
         if(mt9 && !tside9 && w*zs < mt9.length*3.0) mt9 = '';
         if(tside9) mt9 = '';
         var tfk = 1;
         if(o.fitLabel && String(n.label).length*3.1 > w*zs) tfk = Math.max(0.6, (w*zs)/(String(n.label).length*3.1));
         txts.push(txt(x+w/2, y+h/2+(mt9?-1.4:2)/zs, esc(n.label), 5.2*tfk/zs, 'var(--pt-fg3)', 'middle', HALO));
+        /* 读数比张量名更值得看清：同一条中轴上，字号预算不变，色权与粗细提到顶格 */
         if(mt9)
-          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg3)', 'middle', HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, 'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4792,7 +4796,7 @@ function graphSVG(o){
          这在方阵里行不通（两列卡并排时右侧就是隔壁那张卡，归属会含糊），
          但铺满时右边只有空白，一行一个读数，读起来就是一张表。 */
       if(o.metricSide && o.metricLi != null && !gh && labOn9)
-        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg2)');
+        side9 = !!sideMetric(n, x, y, w, h, 'var(--pt-fg)');
       if(!side9 && labOn9 && o.metricLi != null && !gh){
         mtx9 = sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
@@ -4807,14 +4811,19 @@ function graphSVG(o){
         }
       }
       if(labOn9)
+        /* 名字后面挤成一行的读数（one9）：字号预算不能占（本来就是硬挤进去的），
+           但色权可以——从「附注」的浅灰、常规粗细，提到跟名字同一档深色 + 粗体。 */
         txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg3)" font-weight="400">  '+esc(mtx9)+'</tspan>' : ''),
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="var(--pt-fg)" font-weight="700">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
+        /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
+           顶格给到 fg、加粗——不动字号预算（3.4–4.6，装得下几个字是算好的），
+           只把视觉重量从「名字的附注」搬回「正文」。 */
         txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
                     Math.max(3.4, Math.min(4.6, o.fitLabel ? (w*zs)/(mtx9.length*0.62) : 4.6))/zs,
-                    'var(--pt-fg2)', 'middle', HALO+'pointer-events="none"'));
+                    'var(--pt-fg)', 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
        body 层整体 pointer-events:none，提示与点击都只能挂在 hit 上。 */
@@ -6045,11 +6054,22 @@ function sideScene(D, g, box){
     var bx0 = lx + (colW - barW)/2;
     var inSel = stOf(li9) === selStage;
     var liVis = lx + colW >= vis0 && lx <= vis1;
-    if(li9 % lstep === 0 || li9 === L - 1)
-      body.push(fsTxt(lx + colW/2, yMet - 5, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
-        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
+    if(li9 % lstep === 0 || li9 === L - 1){
+      body.push(fsTxt(lx + colW/2, yMet - 5, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
+        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
+      /* 展开这一层：真图的真节点 · 真连边（与「story」第2幕、正视卡片同一个 graphSVG）。
+         只在刻度本身画出来的档位给这枚小圆——没那么多像素时点不准，上面那只整列的
+         hit（反查住在哪几张卡）仍然管用；这枚圆的 hit 后push，盖在那只大 hit 上面，
+         点得中圆才展开，点列的其余地方还是反查。 */
+      var eox = lx + colW/2, eoy = yMet - 15/FS_Z;
+      body.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(5/FS_Z).toFixed(2)
+        +'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
+      body.push(fsTxt(eox, eoy + 2/FS_Z, '+', 7, 'var(--pt-fg2)', 'middle', 'font-weight="800" pointer-events="none"'));
+      hit.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(7/FS_Z).toFixed(2)
+        +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></circle>');
+    }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
     for(var ri = 0; ri < rows.length; ri++){
@@ -6300,9 +6320,126 @@ function sideScene(D, g, box){
   var CID = 'ssClip';
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
-  return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
+  var hitWrapped = '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>';
+  /* 展开某一层：不是浮一张卡盖在原图上（那样背景只是被蒙暗，没有真的让位）。
+     把 wrapped/hitWrapped 原样再画两份，各裁一半（以这一层原来的位置为界，
+     左半/右半分别向左右边缘挤扁），中间腾出来的缝就是这一层的真图——效果接近
+     pto-training-sidecar 那套「点一层、镜头推近、两边让位」的弹簧相机，但这里
+     没有相机可推，改用等比挤压 + 裁剪，代价是被挤扁那半区的字会跟着缩小、
+     命中面索性整片关掉（挤扁之后不该再让人在那儿点算子），只留「点哪儿都能收起」。 */
+  if(ui.openLayer !== null && ui.openLayer !== undefined){
+    var openLiSq = clamp(Math.floor(+ui.openLayer), 0, L-1);
+    var centerXSq = xOf(openLiSq) + colW/2;
+    var lyo = layerDetailOverlay(D, box, centerXSq);
+    var gx0 = lyo.CX, gx1 = lyo.CX + lyo.CW;
+    var clipY0 = box.y - 40, clipH = box.h + 80;
+    var origLx0 = box.x, origLx1 = xOf(openLiSq);
+    var origRx0 = xOf(openLiSq) + colW, origRx1 = box.x + box.w;
+    var lSc = (gx0 - box.x) / Math.max(1, origLx1 - origLx0);
+    var lTx = box.x - lSc*box.x;
+    var rSc = ((box.x+box.w) - gx1) / Math.max(1, origRx1 - origRx0);
+    var rTx = (box.x+box.w) - rSc*(box.x+box.w);
+    var sqParts = [];
+    sqParts.push('<defs><clipPath id="ssSqL"><rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origLx1-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath>'
+      +'<clipPath id="ssSqR"><rect x="'+origRx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origRx1-origRx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath></defs>');
+    sqParts.push('<g clip-path="url(#ssSqL)" transform="translate('+lTx.toFixed(2)+',0) scale('+lSc.toFixed(4)+',1)">'+wrapped+'</g>');
+    sqParts.push('<g clip-path="url(#ssSqR)" transform="translate('+rTx.toFixed(2)+',0) scale('+rSc.toFixed(4)+',1)">'+wrapped+'</g>');
+    /* 字号不跟着横向挤压缩小（只挤了 x，没挤 y），窄下去之后同一批字挤在一起
+       糊成一片——横向挤压表达的是「这些层还在、往边上让位」，不是拿来读的，
+       补一层半透明蒙版把这团糊字压暗，读成「让开的背景」而不是「画错了」。 */
+    sqParts.push('<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:var(--pt-bg);opacity:.62;pointer-events:none"/>');
+    sqParts.push('<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:var(--pt-bg);opacity:.62;pointer-events:none"/>');
+    /* 挤扁那两半不留命中面（缩过的算子点不准，也不该点）——只留「点这两片
+       随便哪儿都收起这一层」，跟卡片自己的关闭钮、Esc 三条路殊途同归。 */
+    var sqHit = '<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>'
+      + '<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>';
+    return {body:sqParts.join(''), hit:sqHit,
+            fixed:lyo.fixed, fixedHit:lyo.fixedHit,
+            nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
+            cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
+  }
+  return {body:wrapped, hit:hitWrapped,
+          fixed:'', fixedHit:'',
           nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
           cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
+}
+/* 侧视点开某一层的「展开」：真图的真节点 · 真层级 · 真连边（与「story」第2幕
+   放大一层、正视卡片同一个 graphSVG，读数按点开的那一层算，不是代表层）。
+   钉在 fixedLayer（render() 里那个不吃手势 transform 的 <g>）——这样它自己的
+   缩放/字号不跟着 zoom3 走，读数字号不用重新对一遍 FS_Z 那一套。
+   centerX 是这一层原来在链上的中点（sideScene 传 xOf(openLi)+colW/2 进来）：
+   卡片以它为中心摆，不再取整个舞台的正中——挤压之后左右让出的缝就在这层原来
+   的位置附近，卡片摆在舞台正中反而会跟挤扁的内容错位。 */
+function layerDetailOverlay(D, box, centerX){
+  if(ui.openLayer === null || ui.openLayer === undefined) return {fixed:'', fixedHit:'', CX:0, CW:0};
+  var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
+  var li = clamp(Math.floor(+ui.openLayer), 0, L-1);
+  var liDense = li < denseTop;
+  var pSel = Math.min(D.pp-1, Math.floor(li/lps));
+  var hasSel = sel !== null && sel < D.world;
+  var co = hasSel ? coordsOf(sel, D) : null;
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
+      cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
+  var me9 = (co && D.moe) ? epOf(co.t, co.c, co.d, D) : null;
+  /* 卡维度的切痕：有选中卡就画「这张卡拿哪一份」，没选中就只画切成几份（不冒领）——
+     与 frontScene 单卡铺满同一条规矩（见那边 pick9 的注释）。 */
+  var cuts9 = {
+    tp: cutTP ? {count:D.tp, mine:co ? co.t : -1} : null,
+    ep: cutEP ? {count:D.ep, mine:co ? (me9 ? me9.ep : 0) : -1} : null,
+    sp: cutTP ? {count:(cutCP?D.cp:1)*D.tp, mine:co ? (cutCP ? co.c : 0)*D.tp + co.t : -1} : null,
+    cp: cutCP ? {count:D.cp, mine:co ? co.c : -1} : null
+  };
+  var ghostIds = {};
+  Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
+  if(cutPP && pSel !== 0) Object.keys(FS_HEAD).forEach(function(k9){ ghostIds[k9] = 1; });
+  if(cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
+  /* 卡片宽度不是拍舞台宽度撑满——那一版在宽屏上把 Q/KV 两列越撑越开、中间一片
+     空白，读数是跟着整体等比放大顺带出来的，不是宽度本身该那么宽。正视卡片
+     从来不是「宽度吃满」，是「吃满一屏高，宽度照这份层模板自己的高宽比反推」
+     （frontScene 里 cellW = cellH0/aspect，aspect = GB.h/GB.w，GB 见 frontBounds）
+     ——这里照抄同一条公式：高度先吃满舞台可用高度，宽度跟着模板本身的比例走，
+     不够撑满舞台就留白，不用舞台宽度去反过来撑大版面。 */
+  var GB = frontBounds(), aspect = (GB && GB.w > 0) ? GB.h / GB.w : 2;
+  var CH = clamp(box.h - 56, 360, 1100);
+  var CW = clamp(CH / aspect, 360, box.w - 64);
+  /* 卡片以这一层原来在链上的位置为中心摆，不是舞台正中——挤压之后左右让出的
+     缝就在这附近，摆在舞台正中反而会和挤扁的内容错位、两边宽窄还不对称。
+     贴边时收进来，别探出舞台。 */
+  var cx0 = (centerX == null) ? box.x + box.w/2 : centerX;
+  var CX = clamp(cx0 - CW/2, box.x + 24, box.x + box.w - CW - 24);
+  var CY = box.y + Math.max(40, (box.h-CH)/2);
+  var fixed = [], fixedHit = [];
+  fixed.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
+    +'" rx="8" style="fill:var(--pt-s1);stroke:var(--pt-bd);stroke-width:1.2;filter:drop-shadow(0 6px 18px rgba(0,0,0,.22))"/>');
+  /* 标题字号按卡片宽度收——卡片现在跟着这份层模板自己的高宽比走，窄的时候
+     这一整句在 12.5 档会撞上右上角的关闭钮（实机撞过一次）。 */
+  var ttl9 = 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）';
+  var ttlRoom9 = CW - 16 - 40;
+  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 8, 12.5);
+  fixed.push(txt(CX+16, CY+23, esc(ttl9), ttlFs9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  fixed.push(txt(CX+16, CY+38, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
+    10, 'var(--pt-fg3)', 'start', 'font-weight="700"'));
+  /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
+     厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
+     的样式」）——正视卡片自己的 graphSVG 调用就没传 tag3d，这里照抄。 */
+  var gsvg = graphSVG({x:CX+14, y:CY+50, w:CW-28, h:CH-66, g:(hasSel?sel:0), D:D, metricLi:li,
+                       clip:'decoder-stack', label:true, tag3d:false, ghostIds:ghostIds, cuts:cuts9,
+                       ghostClu: D.moe ? [] : ['moe-block']});
+  fixed.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
+                  : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
+  /* 卡片自己的区域垫一层不带 data-act 的挡板：左右已经挤扁让位，没有背板需要
+     点空白关闭了，但卡片内部（比如手滑点到算子上）不该透到 sideScene 那两只
+     「点这片就收起」的 hit 上——那两只只铺在挤扁那两条带，天然就不会盖住卡片，
+     这层挡板是防卡片自己往外露一两像素时的误触。 */
+  fixedHit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop"/>');
+  var bxs = CX+CW-26, bys = CY+20;
+  fixedHit.push('<circle cx="'+bxs.toFixed(1)+'" cy="'+bys.toFixed(1)+'" r="12" style="fill:var(--pt-s2);stroke:var(--pt-bd);stroke-width:1;cursor:pointer" data-act="layerclose"/>'
+    + txt(bxs, bys+4, '×', 15, 'var(--pt-fg)', 'middle', 'font-weight="800" pointer-events="none"'));
+  return {fixed:fixed.join(''), fixedHit:fixedHit.join(''), CX:CX, CW:CW};
 }
 
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
@@ -8383,6 +8520,7 @@ $('stage').addEventListener('touchend', function(ev){
 /* ── 键盘：＋/－ 缩放、0 回标准机位（打字时不抢） ── */
 document.addEventListener('keydown', function(ev){
   if(ui.view !== 'chain' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if(ev.key === 'Escape' && ui.openLayer !== null){ ui.openLayer = null; render(); ev.preventDefault(); return; }
   var t9 = ev.target;
   if(t9 && (t9.tagName === 'INPUT' || t9.tagName === 'TEXTAREA' || t9.isContentEditable)) return;
   if(ev.key === '+' || ev.key === '='){ nudgeZoom(1.25); ev.preventDefault(); }
@@ -8480,6 +8618,11 @@ document.addEventListener('click', function(ev){
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
+  /* 侧视「展开这一层」浮层：点开/关掉都走一次 render()——浮层内容本身也是
+     graphSVG 现画的，不留状态，关了再点当场是新的一份（读数、切痕都跟最新配置）。 */
+  else if(act==='layeropen'){ ui.openLayer = +b.getAttribute('data-li'); render(); }
+  else if(act==='layerclose'){ ui.openLayer = null; render(); }
+  else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
   else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
@@ -8498,6 +8641,7 @@ document.addEventListener('click', function(ev){
   else if(act==='viewtab'){
     ui.viewTab = b.getAttribute('data-tab');
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
+    ui.openLayer = null;             /* 「展开这一层」是侧视自己的浮层，换到别的机位就该关掉 */
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
