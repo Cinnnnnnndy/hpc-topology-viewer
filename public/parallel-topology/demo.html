@@ -6257,19 +6257,26 @@ function layerDetailOverlay(D, box){
   Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
   if(cutPP && pSel !== 0) Object.keys(FS_HEAD).forEach(function(k9){ ghostIds[k9] = 1; });
   if(cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
-  /* 卡片大小跟着舞台的宽高走，不是拍一个断章的定值——graphSVG 里是等比适配
-     （sc = min(scx, scy)），宽、高哪个先顶到就按哪个走，先前 760/860 那两个
-     定值太保守，随便一个就先顶到，算子框跟着矮下去，矮到不够 13.5 个屏幕像素
-     读数那一行就被判定装不下、整行不画——这是「读数被挤没」的根子，不是读数
-     本身画错了。改成吃满舞台的宽高（各留一圈边距）之后两边都不那么容易顶到，
-     实测（1400×1300 视口）读数基本都出来了。 */
-  var CW = clamp(box.w - 64, 420, 1400), CH = clamp(box.h - 56, 360, 1100);
+  /* 卡片宽度不是拍舞台宽度撑满——那一版在宽屏上把 Q/KV 两列越撑越开、中间一片
+     空白，读数是跟着整体等比放大顺带出来的，不是宽度本身该那么宽。正视卡片
+     从来不是「宽度吃满」，是「吃满一屏高，宽度照这份层模板自己的高宽比反推」
+     （frontScene 里 cellW = cellH0/aspect，aspect = GB.h/GB.w，GB 见 frontBounds）
+     ——这里照抄同一条公式：高度先吃满舞台可用高度，宽度跟着模板本身的比例走，
+     不够撑满舞台就留白，不用舞台宽度去反过来撑大版面。 */
+  var GB = frontBounds(), aspect = (GB && GB.w > 0) ? GB.h / GB.w : 2;
+  var CH = clamp(box.h - 56, 360, 1100);
+  var CW = clamp(CH / aspect, 360, box.w - 64);
   var CX = box.x + (box.w-CW)/2, CY = box.y + Math.max(40, (box.h-CH)/2);
   var fixed = [], fixedHit = [];
   fixed.push('<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+box.w.toFixed(1)+'" height="'+box.h.toFixed(1)+'" style="fill:var(--pt-bg);opacity:.7"/>');
   fixed.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
     +'" rx="8" style="fill:var(--pt-s1);stroke:var(--pt-bd);stroke-width:1.2;filter:drop-shadow(0 6px 18px rgba(0,0,0,.22))"/>');
-  fixed.push(txt(CX+16, CY+23, 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）', 12.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  /* 标题字号按卡片宽度收——卡片现在跟着这份层模板自己的高宽比走，窄的时候
+     这一整句在 12.5 档会撞上右上角的关闭钮（实机撞过一次）。 */
+  var ttl9 = 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）';
+  var ttlRoom9 = CW - 16 - 40;
+  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 8, 12.5);
+  fixed.push(txt(CX+16, CY+23, esc(ttl9), ttlFs9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   fixed.push(txt(CX+16, CY+38, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
     10, 'var(--pt-fg3)', 'start', 'font-weight="700"'));
   var gsvg = graphSVG({x:CX+14, y:CY+50, w:CW-28, h:CH-66, g:(hasSel?sel:0), D:D, metricLi:li,
