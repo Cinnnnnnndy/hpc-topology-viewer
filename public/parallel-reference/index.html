@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>21 张图</span><span>50 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>25 张图</span><span>56 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1818,6 +1818,256 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
   <h4>那最初为什么会这么讲</h4>
 
   <p>因为用<strong>典型实现</strong>建立直觉最省力，而 Megatron-LM 的默认配置事实上就是那一套对应。作为入门脚手架没问题，但把脚手架讲成结构就越界了。这个越界在治理场景里有实际代价：<strong>一旦用户的性能问题来自非标准实现，按并行的名字反查原语会直接把定位方向带偏。</strong></p>
+
+  <h3>选中一张卡之后应该看到什么：兄弟块与通信连线</h3>
+
+  <p>前面的图都是「选一个维度，高亮整组卡」。但真实的诊断场景往往是反过来的：<strong>你选中的是一张卡、或一张卡上的某个切分块</strong>——然后问：这个块的「兄弟」在哪？它们之间怎么通信？走的什么物理链路？</p>
+
+  <p>这里有三层递进的联动关系：</p>
+
+  <h4>第一层 · 选中一张卡 → 亮出它所在的全部通信域</h4>
+
+  <p>一张卡同时挂在多个通信域上（§10），选中它就等于选中了多条坐标轴。以 FIG 06 的 24 卡示例（TP=4, PP=3, DP=2）为例，选中 <code>global_rank = 5</code>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>通信域</th><th>域内 rank</th><th>兄弟卡（global rank）</th><th>通信原语</th><th>连线含义</th></tr></thead>
+    <tbody>
+      <tr><td><span class="k tp">TP 组</span></td><td>1</td><td>4, <b>5</b>, 6, 7</td><td>AllReduce / AG+RS</td><td>同一层的权重分片之间的部分和聚合</td></tr>
+      <tr><td><span class="k pp">PP 链</span></td><td>0</td><td><b>5</b>, 13, 21</td><td>P2P Send/Recv</td><td>stage 间传递边界激活</td></tr>
+      <tr><td><span class="k dp">DP 组</span></td><td>1</td><td>1, <b>5</b></td><td>AllReduce</td><td>step 末梯度同步</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>「兄弟卡」就是同一通信域里的其他成员。</strong>选中一张卡后，viewer 应当同时标出它在三个（或更多）通信域里的全部兄弟，并按域着色、按原语画不同的连线样式。这比「选一个维度」信息密度更高——用户看到的不是抽象的「TP 组长这样」，而是「<em>这张卡</em>和谁做 AllReduce、和谁做 P2P、和谁做梯度同步」。</p>
+
+  <h4>第二层 · 选中一个切分块 → 亮出它的「同源兄弟」</h4>
+
+  <p>进到卡内部，能看到这张卡持有的具体分片（§08 容器）。选中其中一个——比如「第 3 层的 W_Q 权重分片 [H, H/TP]」——问题变成：<strong>这个分片的其他碎片在谁手里？</strong></p>
+
+  <ul>
+    <li><strong>TP 分片的兄弟</strong>：同一 TP 组的其他卡上各有一片，合起来才是完整的 <code>[H, H]</code>。它们之间每层两次通信（AllReduce 或 AG+RS）。</li>
+    <li><strong>DP 副本的兄弟</strong>：同一 DP 组的其他卡持有<em>完全相同</em>的分片（副本），step 末做一次梯度 AllReduce。</li>
+    <li><strong>PP 没有兄弟</strong>：PP 切的是层号，不同 stage 持有的是<em>不同的层</em>，不存在「同一层的碎片分散在不同 stage 上」的情况。PP 方向的连线是激活值的传递，不是同一张量的聚合。</li>
+    <li><strong>CP 的兄弟在激活体上</strong>：CP 只切激活（seq 维），权重不受影响——所以选中权重分片时 CP 没有兄弟；选中激活分片时，CP 组内的其他卡持有同一 token 序列的不同段。</li>
+  </ul>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12B</span><span class="ftitle">选中一张卡的分片 → 兄弟块 + 通信连线</span><span class="cd b">分片→兄弟 1:N</span>
+      <span class="fnote">TP=4, PP=2, DP=2，共 16 张卡。点击任意卡；再点卡内的切分块，看它在 TP 组和 DP 组中的兄弟块以及连线。TP 兄弟用实线连接（AllReduce / AG+RS，每层两次），DP 兄弟用虚线连接（梯度 AllReduce，每 step 一次），PP 方向用箭头连接（P2P 激活传递，不是同源兄弟）。</span>
+    </figcaption>
+    <div class="stage" id="fig-sibling"></div>
+    <div class="ctrl" id="sibling-ctrl">
+      <button data-sib="tp" aria-pressed="true">TP 兄弟</button>
+      <button data-sib="dp" aria-pressed="false">DP 兄弟</button>
+      <button data-sib="pp" aria-pressed="false">PP 链路</button>
+      <button data-sib="all" aria-pressed="false">全部连线</button>
+    </div>
+    <div class="readout" id="sibling-out"></div>
+  </figure>
+
+  <h4>第三层 · 连线落到物理链路上：集合通信库与互联硬件</h4>
+
+  <p>前两层都是逻辑层面——「谁和谁通信、用什么原语」。但一旦真正诊断通信延迟，就必须知道<strong>这条逻辑连线走的是哪条物理路</strong>。这是前文刻意没展开的一层，因为它与硬件平台绑定：</p>
+
+  <table class="tbl">
+    <thead><tr><th>通信范围</th><th>物理互联</th><th>集合通信库</th><th>典型带宽</th><th>延迟量级</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>机内</b><br>同一节点的卡之间</td>
+        <td>NVLink / NVSwitch<br>HCCS（华为）<br>xGMI（AMD）</td>
+        <td>NCCL<br>HCCL<br>RCCL</td>
+        <td>300–900 GB/s<br>（双向汇总）</td>
+        <td>μs 级</td>
+      </tr>
+      <tr>
+        <td><b>跨机</b><br>不同节点之间</td>
+        <td>InfiniBand（IB）<br>RoCE v2</td>
+        <td>NCCL over IB<br>HCCL over UB<br>（Unified Buffer）</td>
+        <td>100–400 Gbps<br>per port</td>
+        <td>数 μs – 低 ms</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">NCCL / HCCL / RCCL 是同一层</span>
+    <p>三者的角色完全一样——都是<strong>集合通信库</strong>，封装 AllReduce / AllGather / ReduceScatter / All-to-All 等原语，只是分别对接不同厂商的硬件互联：</p>
+    <ul>
+      <li><b>NCCL</b>（NVIDIA Collective Communications Library）—— 对接 NVLink / NVSwitch / IB / RoCE</li>
+      <li><b>HCCL</b>（Huawei Collective Communication Library）—— 对接 HCCS（机内）+ UB / RoCE（跨机）</li>
+      <li><b>RCCL</b>（ROCm Communication Collectives Library）—— 对接 xGMI / IB</li>
+    </ul>
+    <p><strong>训练框架（Megatron / DeepSpeed / FSDP）从来不直接调用硬件互联</strong>，它们只调用集合通信库的 API（<code>all_reduce(tensor, group)</code>）。集合通信库负责决定这次 AllReduce 走哪条物理路、用什么算法（Ring / Tree / Mesh）。所以<strong>本文前面所有关于通信原语的讨论都不受硬件影响</strong>——AllReduce 在 NCCL 和 HCCL 上语义完全一样，只是底层走的线不同。</p>
+  </div>
+
+  <div class="note new">
+    <span class="lbl">华为昇腾的 UB（Unified Buffer）</span>
+    <p>UB 不是一个独立的通信原语，而是 HCCL 在<b>跨机场景</b>下使用的一种通信加速机制。它的核心思路是<strong>在主机侧开辟一段共享 buffer</strong>，让多张卡的跨机通信可以汇聚到这段 buffer 再经 RDMA 网络发出去——而不是每张卡各自发各自的。</p>
+    <p>从应用层看不到 UB 的存在：你还是调 <code>hccl.all_reduce(tensor, group)</code>，HCCL 内部判断这个 group 跨不跨机，跨了就自动走 UB + RDMA 通道。所以 <b>UB 影响的是性能和带宽利用率，不影响通信语义</b>。诊断跨机通信延迟时需要关注 UB 的配置（buffer 大小、RDMA 连接数、拓扑感知），但对理解并行切分和通信模式没有影响。</p>
+  </div>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12C</span><span class="ftitle">HCCL 架构与 UB 跨机加速</span><span class="cd b">集合通信库 1:N 硬件</span>
+      <span class="fnote">左侧：框架 → 集合通信库 → 硬件互联的三层调用栈，NCCL / HCCL / RCCL 是同一层的三个实现。右侧：HCCL 内部的两条路径——机内走 HCCS 直连，跨机走 UB 共享 buffer + RDMA 聚合。点击切换查看 NCCL 对应路径。</span>
+    </figcaption>
+    <div class="stage" id="fig-hccl"></div>
+    <div class="ctrl" id="hccl-ctrl">
+      <button data-hccl="hccl" aria-pressed="true">HCCL + UB</button>
+      <button data-hccl="nccl" aria-pressed="false">NCCL 对照</button>
+    </div>
+    <div class="readout" id="hccl-out"></div>
+  </figure>
+
+  <h4>FIG 12B → FIG 12C：一条连线怎样落到物理路径上</h4>
+
+  <p>FIG 12B 画的是<b>逻辑层</b>——哪些卡是兄弟、用什么原语通信；FIG 12C 画的是<b>实现层</b>——这次 API 调用走了哪条物理路。两张图是<b>同一条通信的上下两层</b>：</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12D</span><span class="ftitle">一条通信连线的完整下沉路径</span><span class="cd b">逻辑→物理 1:1</span>
+      <span class="fnote">三列分别是 TP / DP / PP 的通信，从上到下经过四层：并行维度 → 通信原语 → 集合通信库判断 → 物理链路。每列的颜色与 FIG 12B 的连线一致。</span>
+    </figcaption>
+    <div class="stage" id="fig-waterfall"></div>
+  </figure>
+
+  <div class="note new">
+    <span class="lbl">关键：框架层完全不知道自己走了哪条路</span>
+    <p>训练框架（Megatron / MindSpore / DeepSpeed）只调 <code>all_reduce(tensor, group)</code>，<b>不指定用 HCCS 还是 RDMA、走不走 UB</b>。集合通信库（HCCL / NCCL）拿到 group 之后自己查成员的物理位置，自动选路径——这就是 FIG 12C 左侧三层栈的含义。所以：</p>
+    <ul>
+      <li><b>FIG 12B 的连线颜色</b>（红 / 蓝 / 橙）由<b>并行维度</b>决定——TP / DP / PP，与硬件无关</li>
+      <li><b>FIG 12C 的路径选择</b>由<b>group 成员的物理位置</b>决定——同节点走机内，跨节点走 UB/IB</li>
+      <li>两者的交汇点就是那一次 <code>all_reduce(tensor, group)</code> 调用——<b>逻辑层决定 group，物理层决定 route</b></li>
+    </ul>
+  </div>
+
+  <h4>兄弟块 + 通信连线 + 物理链路 = 三层叠加</h4>
+
+  <p>把三层叠起来，选中一张卡上的一个切分块之后，完整的联动显示应该是：</p>
+
+  <table class="tbl">
+    <thead><tr><th>图层</th><th>内容</th><th>视觉编码</th><th>对应哪张图</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>① 兄弟块</b></td>
+        <td>其他卡上持有同一张量其他碎片的块</td>
+        <td>同色高亮</td>
+        <td>FIG 12B 卡片颜色</td>
+      </tr>
+      <tr>
+        <td><b>② 通信连线</b></td>
+        <td>兄弟块之间的通信原语</td>
+        <td>AllReduce = 环形实线<br>P2P = 有向箭头<br>All-to-All = 多对多网</td>
+        <td>FIG 12B 连线</td>
+      </tr>
+      <tr>
+        <td><b>③ 物理链路</b></td>
+        <td>这条连线走的是机内互联还是跨机 RDMA</td>
+        <td>粗线 = 机内（高带宽）<br>细线 = 跨机（低带宽）</td>
+        <td>FIG 12C 右侧路径</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>注意第三层是唯一与硬件平台绑定的层。前两层在任何平台上都一样——这是 §00 开头「平台差异只体现在互联名、集合通信库与算子栈的称呼上，不影响本文任何结论」的具体展开。</p>
+
+  <div class="note">
+    <span class="lbl">PP 链路不是兄弟关系</span>
+    <p>在联动显示中，TP 和 DP 的连线连接的是<b>同一张量的不同碎片</b>（TP）或<b>同一张量的完全相同副本</b>（DP），通信的目的是<b>聚合或同步</b>。PP 方向的连线则完全不同——它传的是「上一个 stage 的输出激活」交给「下一个 stage 的输入」，两端拿的根本不是同一层的东西。<strong>PP 的连线该画但不该和兄弟块混在一起</strong>——它是数据流方向上的依赖，不是切分产生的聚合需求。</p>
+  </div>
+
+  <h4>Rank 通信 ⊃ HCCL ⊃ UB：三层嵌套，不是三个场景</h4>
+
+  <p>一个常见困惑：Rank 间通信、HCCL、UB 是三个独立的场景吗？不是。它们是<b>同一条通信路径上的三个嵌套层级</b>——外层定义语义，中层选择实现，内层执行优化：</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 12E</span><span class="ftitle">通信三层嵌套：逻辑 → 实现 → 优化</span><span class="cd a">包含关系 1:1</span>
+      <span class="fnote">三个同心框分别对应 Rank 间通信关系（逻辑层）、HCCL/NCCL（软件实现层）、UB（跨机传输优化）。每一层都是上一层的实现细节，对上层完全透明。</span>
+    </figcaption>
+    <div class="stage" id="fig-nesting"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th>层级</th><th>回答的问题</th><th>谁决定</th><th>对应图</th><th>类比</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Rank 间通信关系</b></td>
+        <td>WHO + WHAT：<b>谁和谁通信</b>，用什么原语，传什么 tensor</td>
+        <td>并行维度（TP/DP/PP/EP）的 group 定义</td>
+        <td>FIG 12B</td>
+        <td>公司 A 要给公司 B 寄一箱文件</td>
+      </tr>
+      <tr>
+        <td><b>HCCL / NCCL</b></td>
+        <td>HOW（第一层）：<b>用什么算法、走哪条路</b>、分几步完成</td>
+        <td>集合通信库拿到 group 后自动判断</td>
+        <td>FIG 12C 左侧</td>
+        <td>邮局接单、分拣、选路线</td>
+      </tr>
+      <tr>
+        <td><b>UB</b></td>
+        <td>HOW（第二层）：<b>跨机时怎么聚合</b>，用共享 buffer 还是各卡直发</td>
+        <td>HCCL 内部在跨机场景下自动启用</td>
+        <td>FIG 12C 右侧</td>
+        <td>邮局在边境口岸的合并仓库</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>关键推论：<strong>如果你只想理解"谁和谁通信"，不需要知道 HCCL 和 UB</strong>。如果你要<b>诊断跨机通信延迟</b>，才需要深入到 HCCL 的路径选择和 UB 的 buffer 配置。三层是逐步深入同一条路径，不是三个平行视角看三件不同的事。</p>
+
+  <h4>通信不一定跨机——物理放置决定路径</h4>
+
+  <p>并不是所有通信都会跨越机器和节点。<b>逻辑层定义谁和谁通信，物理放置决定这次通信走不走网线</b>。同一种通信原语，group 成员全在一台机器上就走机内互联（HCCS / NVLink），跨了机器才走 RDMA / IB。</p>
+
+  <table class="tbl">
+    <thead><tr><th>并行维度</th><th>典型 group 大小</th><th>典型放置策略</th><th>通常走的路</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="k tp">TP</span></td>
+        <td>2 / 4 / 8</td>
+        <td>同一台机器内</td>
+        <td><b>机内</b>（HCCS / NVLink）</td>
+        <td>AllReduce 通信量大且频率高（每一层两次），必须用机内高带宽</td>
+      </tr>
+      <tr>
+        <td><span class="k ep">EP</span></td>
+        <td>8 / 16 / 64</td>
+        <td>取决于 expert 数量和卡数</td>
+        <td><b>可能机内也可能跨机</b></td>
+        <td>EP=8 且部署在一台 8 卡机器上 → 全机内；EP=64 → 必然跨机</td>
+      </tr>
+      <tr>
+        <td><span class="k dp">DP</span></td>
+        <td>整网副本数</td>
+        <td>跨越多台机器</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>数据并行的副本分布在不同节点上</td>
+      </tr>
+      <tr>
+        <td><span class="k pp">PP</span></td>
+        <td>stage 数</td>
+        <td>通常跨机</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>不同 stage 的层数多、跨机放置更灵活</td>
+      </tr>
+      <tr>
+        <td><span class="k cp">CP</span></td>
+        <td>序列切分数</td>
+        <td>通常跨机</td>
+        <td><b>跨机</b>（RDMA / IB）</td>
+        <td>长序列切分跨节点分布</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">部署原则：把通信量最大的维度放在带宽最高的路径上</span>
+    <p>这就是为什么 <b>TP 永远优先放在机内</b>——它每一层都要做两次 AllReduce，通信频率和数据量都是最高的。如果把 TP group 拆到两台机器上，跨机 RDMA 的带宽会成为瓶颈，整个训练的吞吐量会骤降。</p>
+    <p>反过来，DP 的 AllReduce 只在一个完整的前向 + 反向传播结束后做一次梯度同步，频率低很多，放在跨机路径上可以接受。<b>这就是 FIG 12D 最底行"物理链路"那一层真正决定的事——不是"走不走网线"而是"带宽够不够用"。</b></p>
+  </div>
 </section>
 
 <section id="s5">
@@ -4943,6 +5193,674 @@ function figComm(){
   sc.render();
 }
 
+/* ===================== FIG 12B · 兄弟块 + 通信连线 ===================== */
+var SIB = {TP:4, PP:2, DP:2};
+var sibMode = 'tp', sibSel = null;
+
+function sibGid(tp,pp,dp){ return pp*(SIB.DP*SIB.TP) + dp*SIB.TP + tp; }
+function sibCoord(g){ return {tp:g%SIB.TP, dp:Math.floor(g/SIB.TP)%SIB.DP, pp:Math.floor(g/(SIB.TP*SIB.DP))}; }
+
+function figSibling(){
+  var m = document.getElementById('fig-sibling');
+  if(!m) return;
+  var W = 900, H = 520;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  var TOTAL = SIB.TP * SIB.PP * SIB.DP;
+  var GAP = 8, CW = 90, CH2 = 46, PAD = 30;
+  var COLS = SIB.TP * SIB.DP;
+  var gridW = COLS * CW + (COLS-1)*GAP;
+  var OX = (W - gridW) / 2;
+  var machW = SIB.TP * CW + (SIB.TP-1)*GAP;
+
+  var sel = sibSel !== null ? sibCoord(sibSel) : null;
+
+  function cx(tp,dp){ return OX + (dp * SIB.TP + tp) * (CW + GAP) + CW/2; }
+  function cy(pp){ return 100 + pp * (CH2 + 90); }
+
+  /* 机器分隔 */
+  for(var d=0;d<SIB.DP;d++){
+    var mx = OX + d * SIB.TP * (CW + GAP) - GAP/2;
+    s+='<rect x="'+mx+'" y="60" width="'+(machW+GAP)+'" height="'+(SIB.PP*(CH2+90)+10)+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+    s+='<text x="'+(mx+machW/2+GAP/2)+'" y="52" font-size="11" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 '+d+'　（'+SIB.TP+' 卡 · 机内高带宽互联）</text>';
+  }
+
+  /* stage 标签 */
+  for(var p=0;p<SIB.PP;p++){
+    s+='<text x="'+(OX-24)+'" y="'+(cy(p)+CH2/2+4)+'" font-size="10" fill="#B3603A" font-weight="700" text-anchor="end">stage '+p+'</text>';
+  }
+
+  /* 画卡 */
+  for(var tp=0;tp<SIB.TP;tp++) for(var pp=0;pp<SIB.PP;pp++) for(var dp=0;dp<SIB.DP;dp++){
+    var g = sibGid(tp,pp,dp);
+    var x = cx(tp,dp) - CW/2, y = cy(pp);
+    var isSel = (sibSel === g);
+
+    /* 内部分片块 */
+    var bh = 16, bw = CW - 8, bx = x + 4;
+
+    /* 判断是否为兄弟 */
+    var isTPSib = sel && pp===sel.pp && dp===sel.dp && tp!==sel.tp;
+    var isDPSib = sel && pp===sel.pp && tp===sel.tp && dp!==sel.dp;
+    var isPPLink = sel && tp===sel.tp && dp===sel.dp && pp!==sel.pp;
+
+    var showTP = (sibMode==='tp' || sibMode==='all') && isTPSib;
+    var showDP = (sibMode==='dp' || sibMode==='all') && isDPSib;
+    var showPP = (sibMode==='pp' || sibMode==='all') && isPPLink;
+
+    var cardFill = '#FFFFFF';
+    var cardStroke = '#D2DADF';
+    var cardSW = 1;
+    if(isSel){ cardStroke = '#0E1418'; cardSW = 2.5; }
+    else if(showTP){ cardStroke = '#A8404A'; cardSW = 2; cardFill = '#FFF5F5'; }
+    else if(showDP){ cardStroke = '#2E6E8E'; cardSW = 2; cardFill = '#F0F7FB'; }
+    else if(showPP){ cardStroke = '#B3603A'; cardSW = 1.5; cardFill = '#FFF8F2'; }
+    else if(sel){ cardFill = '#F4F6F7'; }
+
+    s+='<rect x="'+x+'" y="'+y+'" width="'+CW+'" height="'+CH2+'" rx="5" fill="'+cardFill+'" stroke="'+cardStroke+'" stroke-width="'+cardSW+'" style="cursor:pointer" data-sib-g="'+g+'"/>';
+
+    /* 分片标签 */
+    var sliceFill = isSel ? '#0E1418' : (showTP||showDP ? '#3D4B55' : '#8A98A2');
+    s+='<text x="'+(x+CW/2)+'" y="'+(y+14)+'" font-size="8.5" fill="'+sliceFill+'" text-anchor="middle" font-weight="'+(isSel?'800':'600')+'" pointer-events="none">rank '+g+'</text>';
+    s+='<text x="'+(x+CW/2)+'" y="'+(y+27)+'" font-size="7" fill="'+(isSel?'#3D4B55':'#8A98A2')+'" text-anchor="middle" pointer-events="none">W[H,H/'+SIB.TP+'] · L'+pp+'</text>';
+
+    /* TP 分片色块 */
+    var bCol = showTP ? '#A8404A' : (isSel ? '#A8404A' : (showDP ? '#2E6E8E' : '#D2DADF'));
+    var bOp = (isSel || showTP || showDP) ? '0.35' : '0.15';
+    s+='<rect x="'+bx+'" y="'+(y+32)+'" width="'+bw+'" height="8" rx="2" fill="'+bCol+'" opacity="'+bOp+'" pointer-events="none"/>';
+    /* 分片标记 */
+    var fracW = (bw - 2) / SIB.TP;
+    var myFrac = bx + 1 + tp * fracW;
+    s+='<rect x="'+myFrac+'" y="'+(y+33)+'" width="'+fracW+'" height="6" rx="1" fill="'+bCol+'" opacity="'+(isSel||showTP?'0.7':'0.2')+'" pointer-events="none"/>';
+  }
+
+  /* 通信连线 */
+  if(sel){
+    /* TP 兄弟连线 */
+    if(sibMode === 'tp' || sibMode === 'all'){
+      var tpY = cy(sel.pp) + CH2 + 12;
+      var tpNodes = [];
+      for(var t=0;t<SIB.TP;t++) tpNodes.push(cx(t,sel.dp));
+      /* Ring 环 */
+      for(var t=0;t<SIB.TP-1;t++){
+        s+='<line x1="'+tpNodes[t]+'" y1="'+tpY+'" x2="'+tpNodes[t+1]+'" y2="'+tpY+'" stroke="#A8404A" stroke-width="2.5" opacity="0.8"/>';
+      }
+      /* 闭合虚线 */
+      s+='<line x1="'+tpNodes[0]+'" y1="'+(tpY+4)+'" x2="'+tpNodes[SIB.TP-1]+'" y2="'+(tpY+4)+'" stroke="#A8404A" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.5"/>';
+      /* 圆点 */
+      for(var t=0;t<SIB.TP;t++){
+        var dotFill = (t===sel.tp) ? '#0E1418' : '#A8404A';
+        s+='<circle cx="'+tpNodes[t]+'" cy="'+tpY+'" r="4" fill="'+dotFill+'"/>';
+      }
+      s+='<text x="'+((tpNodes[0]+tpNodes[SIB.TP-1])/2)+'" y="'+(tpY+20)+'" font-size="9" fill="#A8404A" text-anchor="middle" font-weight="600">AllReduce / AG+RS · 每层两次 · 机内</text>';
+    }
+
+    /* DP 兄弟连线 */
+    if(sibMode === 'dp' || sibMode === 'all'){
+      var dpY = cy(sel.pp) - 16;
+      var dpNodes = [];
+      for(var d=0;d<SIB.DP;d++) dpNodes.push(cx(sel.tp,d));
+      for(var d=0;d<SIB.DP-1;d++){
+        s+='<line x1="'+dpNodes[d]+'" y1="'+dpY+'" x2="'+dpNodes[d+1]+'" y2="'+dpY+'" stroke="#2E6E8E" stroke-width="2" stroke-dasharray="6 4" opacity="0.7"/>';
+      }
+      for(var d=0;d<SIB.DP;d++){
+        var dotFill = (d===sel.dp) ? '#0E1418' : '#2E6E8E';
+        s+='<circle cx="'+dpNodes[d]+'" cy="'+dpY+'" r="3.5" fill="'+dotFill+'"/>';
+      }
+      s+='<text x="'+((dpNodes[0]+dpNodes[SIB.DP-1])/2)+'" y="'+(dpY-8)+'" font-size="9" fill="#2E6E8E" text-anchor="middle" font-weight="600">梯度 AllReduce · 每 step 一次 · 跨机</text>';
+    }
+
+    /* PP 链路 */
+    if(sibMode === 'pp' || sibMode === 'all'){
+      var ppX = cx(sel.tp, sel.dp) + CW/2 + 8;
+      for(var p=0;p<SIB.PP-1;p++){
+        var y1 = cy(p) + CH2, y2 = cy(p+1);
+        var arrowX = ppX;
+        s+='<line x1="'+arrowX+'" y1="'+y1+'" x2="'+arrowX+'" y2="'+y2+'" stroke="#B3603A" stroke-width="2" opacity="0.7"/>';
+        /* 箭头 */
+        s+='<polygon points="'+(arrowX-4)+','+(y2-6)+' '+(arrowX+4)+','+(y2-6)+' '+arrowX+','+y2+'" fill="#B3603A" opacity="0.7"/>';
+      }
+      var ppMidY = (cy(0) + cy(SIB.PP-1) + CH2) / 2;
+      s+='<text x="'+(ppX+14)+'" y="'+ppMidY+'" font-size="9" fill="#B3603A" font-weight="600" transform="rotate(90 '+(ppX+14)+' '+ppMidY+')">P2P · 激活传递 · 非兄弟</text>';
+    }
+  }
+
+  /* 图例 */
+  var LY = H - 36;
+  var legs = [
+    {c:'#A8404A', t:'TP 兄弟 · AllReduce（实线 = 同源分片聚合）', dash:''},
+    {c:'#2E6E8E', t:'DP 兄弟 · 梯度 AllReduce（虚线 = 同源副本同步）', dash:'6 4'},
+    {c:'#B3603A', t:'PP 链路 · P2P（箭头 = 激活传递，非兄弟）', dash:''}
+  ];
+  legs.forEach(function(l,i){
+    var lx = 90 + i * 280;
+    s+='<line x1="'+lx+'" y1="'+LY+'" x2="'+(lx+24)+'" y2="'+LY+'" stroke="'+l.c+'" stroke-width="2" '+(l.dash?'stroke-dasharray="'+l.dash+'"':'')+'/>';
+    s+='<text x="'+(lx+30)+'" y="'+(LY+4)+'" font-size="9" fill="#3D4B55">'+l.t+'</text>';
+  });
+
+  /* 标题注释 */
+  s+='<text x="'+W/2+'" y="28" font-size="12" fill="#0E1418" text-anchor="middle" font-weight="700">选中一张卡 → 高亮全部兄弟块 + 通信连线</text>';
+  if(!sel) s+='<text x="'+W/2+'" y="'+(H/2)+'" font-size="13" fill="#8A98A2" text-anchor="middle">点击任意卡查看其兄弟块与通信连线</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+
+  /* 绑定点击事件 */
+  var rects = m.querySelectorAll('[data-sib-g]');
+  Array.prototype.forEach.call(rects, function(r){
+    r.addEventListener('click', function(){
+      var g = parseInt(r.getAttribute('data-sib-g'));
+      sibSel = (sibSel === g) ? null : g;
+      figSibling();
+      sibOut();
+    });
+  });
+}
+
+function sibOut(){
+  var out = document.getElementById('sibling-out');
+  if(!out) return;
+  if(sibSel === null){
+    out.innerHTML = '<span class="hint">点击任意卡查看它的兄弟块与通信连线。TP=4, PP=2, DP=2，共 16 张卡，分属 2 个节点（每节点 4 卡）。</span>';
+    return;
+  }
+  var c = sibCoord(sibSel);
+  var tpSibs = [], dpSibs = [];
+  for(var t=0;t<SIB.TP;t++) if(t!==c.tp) tpSibs.push(sibGid(t,c.pp,c.dp));
+  for(var d=0;d<SIB.DP;d++) if(d!==c.dp) dpSibs.push(sibGid(c.tp,c.pp,d));
+
+  var ppPeers = [];
+  for(var p=0;p<SIB.PP;p++) if(p!==c.pp) ppPeers.push(sibGid(c.tp,p,c.dp));
+
+  var html = '<b>rank '+sibSel+'</b>　(tp='+c.tp+', pp='+c.pp+', dp='+c.dp+')　节点 '+c.dp+'<br>';
+  html += '<b style="color:#A8404A">TP 兄弟</b>：rank '+tpSibs.join(', ')+' — 持有同一层权重的<em>不同分片</em>，每层两次 AllReduce / AG+RS，<b>机内互联</b>（NCCL / HCCL）<br>';
+  html += '<b style="color:#2E6E8E">DP 兄弟</b>：rank '+dpSibs.join(', ')+' — 持有同一层权重的<em>完全相同副本</em>，step 末梯度 AllReduce，<b>跨机 RDMA</b>（IB / UB）<br>';
+  html += '<b style="color:#B3603A">PP 链路</b>：rank '+ppPeers.join(', ')+' — <em>不同的层</em>，P2P 传激活值，不是兄弟关系<br>';
+  html += '<span class="hint">TP 兄弟在同一节点内（stride=1 → rank 连续 → 走机内高带宽互联）；DP 兄弟跨节点（stride=TP → 走 RDMA 网络）。再点一次取消选中。</span>';
+  out.innerHTML = html;
+}
+
+/* ===================== FIG 12C · HCCL 架构与 UB ===================== */
+var hcclMode = 'hccl';
+
+function figHCCL(){
+  var m = document.getElementById('fig-hccl');
+  if(!m) return;
+  var W = 900, H = 560;
+  var isH = (hcclMode === 'hccl');
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* ---- 左侧：三层调用栈 ---- */
+  var LX = 40, LW = 260, layH = 68, gap = 32;
+  var layers = isH ? [
+    {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / MindSpore / DeepSpeed', api:'all_reduce(tensor, group)'},
+    {y:50+layH+gap, c:'#B3603A', t:'HCCL', sub:'Huawei Collective Communication Library', api:'封装 AllReduce / AG / RS / A2A'},
+    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'HCCS（机内）+ RDMA（跨机）', api:'物理链路层'}
+  ] : [
+    {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / DeepSpeed / FSDP', api:'all_reduce(tensor, group)'},
+    {y:50+layH+gap, c:'#A8404A', t:'NCCL', sub:'NVIDIA Collective Communications Library', api:'封装 AllReduce / AG / RS / A2A'},
+    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'NVLink / NVSwitch（机内）+ IB（跨机）', api:'物理链路层'}
+  ];
+
+  layers.forEach(function(l){
+    s+='<rect x="'+LX+'" y="'+l.y+'" width="'+LW+'" height="'+layH+'" rx="6" fill="'+l.c+'" opacity="0.12" stroke="'+l.c+'" stroke-width="1.5"/>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+22)+'" font-size="13" fill="'+l.c+'" text-anchor="middle" font-weight="700">'+l.t+'</text>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+40)+'" font-size="8.5" fill="#6B7B86" text-anchor="middle">'+l.sub+'</text>';
+    s+='<text x="'+(LX+LW/2)+'" y="'+(l.y+56)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-style="italic">'+l.api+'</text>';
+  });
+
+  /* 箭头连接三层 */
+  for(var a=0;a<2;a++){
+    var ay1 = layers[a].y + layH, ay2 = layers[a+1].y;
+    var ax = LX + LW/2;
+    s+='<line x1="'+ax+'" y1="'+ay1+'" x2="'+ax+'" y2="'+ay2+'" stroke="#8A98A2" stroke-width="1.5" stroke-dasharray="4 3"/>';
+    s+='<polygon points="'+(ax-4)+','+(ay2-6)+' '+(ax+4)+','+(ay2-6)+' '+ax+','+ay2+'" fill="#8A98A2"/>';
+    var mid = (ay1+ay2)/2;
+    s+='<text x="'+(ax+8)+'" y="'+mid+'" font-size="7.5" fill="#8A98A2" text-anchor="start">调用</text>';
+  }
+
+  /* 左侧标题 */
+  s+='<text x="'+(LX+LW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">三层调用栈（'+(isH?'华为昇腾':'NVIDIA')+' 路径）</text>';
+
+  /* API 一致性标注 */
+  s+='<text x="'+(LX+LW+12)+'" y="'+(layers[0].y+layH/2)+'" font-size="8" fill="#5C7A8C" text-anchor="start" font-weight="600">← API 完全一样</text>';
+
+  /* ---- 右侧：内部路径详解 ---- */
+  var RX = 370, RW = 500;
+
+  s+='<text x="'+(RX+RW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">'+(isH?'HCCL 内部：机内 vs 跨机两条路径':'NCCL 内部：机内 vs 跨机两条路径')+'</text>';
+
+  /* 节点 0 */
+  var n0x = RX+20, n0y = 58, nW = 200, nH = 220;
+  s+='<rect x="'+n0x+'" y="'+n0y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(n0y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 0</text>';
+
+  /* 节点 1 */
+  var n1x = RX+280, n1y = 58;
+  s+='<rect x="'+n1x+'" y="'+n1y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(n1y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 1</text>';
+
+  /* 卡片 */
+  var cW = 72, cH = 36, cGap = 14;
+  function drawCard(cx, cy, label, accent){
+    s+='<rect x="'+cx+'" y="'+cy+'" width="'+cW+'" height="'+cH+'" rx="4" fill="'+accent+'" opacity="0.08" stroke="'+accent+'" stroke-width="1.2"/>';
+    s+='<text x="'+(cx+cW/2)+'" y="'+(cy+14)+'" font-size="9" fill="'+accent+'" text-anchor="middle" font-weight="700">'+label+'</text>';
+    s+='<text x="'+(cx+cW/2)+'" y="'+(cy+28)+'" font-size="7" fill="#8A98A2" text-anchor="middle">HBM</text>';
+  }
+
+  var accent1 = isH ? '#B3603A' : '#A8404A';
+  var cardY0 = n0y + 32;
+  drawCard(n0x+20, cardY0, isH?'NPU 0':'GPU 0', accent1);
+  drawCard(n0x+20+cW+cGap, cardY0, isH?'NPU 1':'GPU 1', accent1);
+  drawCard(n0x+20, cardY0+cH+cGap, isH?'NPU 2':'GPU 2', accent1);
+  drawCard(n0x+20+cW+cGap, cardY0+cH+cGap, isH?'NPU 3':'GPU 3', accent1);
+
+  drawCard(n1x+20, cardY0, isH?'NPU 4':'GPU 4', accent1);
+  drawCard(n1x+20+cW+cGap, cardY0, isH?'NPU 5':'GPU 5', accent1);
+  drawCard(n1x+20, cardY0+cH+cGap, isH?'NPU 6':'GPU 6', accent1);
+  drawCard(n1x+20+cW+cGap, cardY0+cH+cGap, isH?'NPU 7':'GPU 7', accent1);
+
+  /* 机内互联 — 卡之间的连线 */
+  var icY = cardY0 + cH + 5;
+  var linkColor = isH ? '#2E6E8E' : '#A8404A';
+  var linkLabel = isH ? 'HCCS' : 'NVLink / NVSwitch';
+
+  /* 节点 0 机内互联（水平连线） */
+  var c0Lx = n0x+20+cW, c0Rx = n0x+20+cW+cGap;
+  s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  /* 垂直 */
+  var vx1 = n0x+20+cW/2;
+  var vx2 = n0x+20+cW+cGap+cW/2;
+  s+='<line x1="'+vx1+'" y1="'+(cardY0+cH)+'" x2="'+vx1+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+vx2+'" y1="'+(cardY0+cH)+'" x2="'+vx2+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+
+  /* 节点 1 机内互联 */
+  var c1Lx = n1x+20+cW, c1Rx = n1x+20+cW+cGap;
+  s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  var v1x1 = n1x+20+cW/2;
+  var v1x2 = n1x+20+cW+cGap+cW/2;
+  s+='<line x1="'+v1x1+'" y1="'+(cardY0+cH)+'" x2="'+v1x1+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+  s+='<line x1="'+v1x2+'" y1="'+(cardY0+cH)+'" x2="'+v1x2+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
+
+  /* 机内互联标签 */
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(cardY0+2*cH+cGap+18)+'" font-size="8.5" fill="'+linkColor+'" text-anchor="middle" font-weight="600">'+linkLabel+'</text>';
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(cardY0+2*cH+cGap+30)+'" font-size="7.5" fill="#8A98A2" text-anchor="middle">'+(isH?'全互联 · 机内高带宽':'全互联 · 600-900 GB/s')+'</text>';
+
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(cardY0+2*cH+cGap+18)+'" font-size="8.5" fill="'+linkColor+'" text-anchor="middle" font-weight="600">'+linkLabel+'</text>';
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(cardY0+2*cH+cGap+30)+'" font-size="7.5" fill="#8A98A2" text-anchor="middle">'+(isH?'全互联 · 机内高带宽':'全互联 · 600-900 GB/s')+'</text>';
+
+  /* ---- 跨机路径 ---- */
+  var crossY = n0y + nH + 30;
+
+  if(isH){
+    /* ==== HCCL + UB 路径 ==== */
+
+    /* UB 共享 buffer（主机侧） */
+    var ubW = 140, ubH = 50;
+    var ub0x = n0x + (nW - ubW)/2, ub0y = crossY + 10;
+    var ub1x = n1x + (nW - ubW)/2, ub1y = crossY + 10;
+
+    s+='<rect x="'+ub0x+'" y="'+ub0y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
+    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
+    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
+
+    s+='<rect x="'+ub1x+'" y="'+ub1y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
+    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
+    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
+
+    /* 卡 → UB 的收集箭头 */
+    var cardBot = cardY0 + 2*cH + cGap;
+    var arrC = '#B3603A';
+    /* 节点 0：4 卡 → UB */
+    s+='<line x1="'+(n0x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    s+='<line x1="'+(n0x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW*3/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    /* 节点 1：4 卡 → UB */
+    s+='<line x1="'+(n1x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+    s+='<line x1="'+(n1x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW*3/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
+
+    /* UB ↔ UB 的 RDMA 通道 */
+    var rdmaY = ub0y + ubH/2;
+    s+='<line x1="'+(ub0x+ubW)+'" y1="'+rdmaY+'" x2="'+(ub1x)+'" y2="'+rdmaY+'" stroke="#C44D23" stroke-width="3" opacity="0.7"/>';
+    /* 双向箭头 */
+    s+='<polygon points="'+(ub1x-8)+','+(rdmaY-4)+' '+(ub1x-8)+','+(rdmaY+4)+' '+ub1x+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
+    s+='<polygon points="'+(ub0x+ubW+8)+','+(rdmaY-4)+' '+(ub0x+ubW+8)+','+(rdmaY+4)+' '+(ub0x+ubW)+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
+    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY-10)+'" font-size="10" fill="#C44D23" text-anchor="middle" font-weight="700">RDMA</text>';
+    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY+16)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">聚合后发一次 · 减少跨机次数</text>';
+
+    /* 流程解释 */
+    var expY = ub0y + ubH + 26;
+    var steps = [
+      '① 各卡把要发送的 tensor 切片写入本机 UB',
+      '② HCCL 在 UB 中做本地聚合（ReduceScatter 的本地部分）',
+      '③ 聚合结果通过 RDMA 一次发到对端 UB',
+      '④ 对端 UB 分发到各卡 · 完成跨机 AllReduce'
+    ];
+    steps.forEach(function(st, i){
+      s+='<text x="'+(RX+RW/2)+'" y="'+(expY+i*16)+'" font-size="8.5" fill="#3D4B55" text-anchor="middle">'+st+'</text>';
+    });
+
+    /* 关键对比 */
+    var kY = expY + steps.length*16 + 16;
+    s+='<rect x="'+(RX+40)+'" y="'+kY+'" width="'+(RW-80)+'" height="64" rx="6" fill="#B3603A" opacity="0.06" stroke="#B3603A" stroke-width="1" stroke-dasharray="4 3"/>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#B3603A" text-anchor="middle" font-weight="700">UB 的核心价值</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">不走 UB：每张卡各自发 RDMA → 跨机消息数 = 卡数 × 对端卡数</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">走 UB：先本地聚合再跨机 → 跨机消息数大幅减少 · 带宽利用率更高</text>';
+
+  } else {
+    /* ==== NCCL 路径 ==== */
+
+    /* NCCL 跨机：每张卡各自走 IB / RoCE */
+    var ibY = crossY + 20;
+
+    /* 跨机连线：每卡直连 */
+    var pairs = [[0,0],[0,1],[1,0],[1,1]];
+    pairs.forEach(function(p){
+      var fromX = n0x+20 + p[0]*(cW+cGap) + cW/2;
+      var toX = n1x+20 + p[1]*(cW+cGap) + cW/2;
+      var fromY = cardY0 + 2*cH + cGap;
+      s+='<line x1="'+fromX+'" y1="'+fromY+'" x2="'+toX+'" y2="'+(ibY+40)+'" stroke="#A8404A" stroke-width="1.2" opacity="0.35"/>';
+    });
+
+    /* IB 交换机 */
+    var swX = (n0x+nW+n1x)/2, swW = 100, swH = 36;
+    s+='<rect x="'+(swX-swW/2)+'" y="'+ibY+'" width="'+swW+'" height="'+swH+'" rx="4" fill="#A8404A" opacity="0.10" stroke="#A8404A" stroke-width="1.5"/>';
+    s+='<text x="'+swX+'" y="'+(ibY+15)+'" font-size="10" fill="#A8404A" text-anchor="middle" font-weight="700">IB Switch</text>';
+    s+='<text x="'+swX+'" y="'+(ibY+29)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">InfiniBand / RoCE v2</text>';
+
+    /* 解释 */
+    var expY = ibY + swH + 30;
+    var steps = [
+      '① NCCL 选择算法（Ring / Tree）并分配 channel',
+      '② 每个 channel 对应一条 IB QP（Queue Pair）连接',
+      '③ 各卡独立发 RDMA Send/Recv · 没有主机侧聚合',
+      '④ 依靠 Ring/Tree 拓扑自身的分段流水来摊平带宽'
+    ];
+    steps.forEach(function(st, i){
+      s+='<text x="'+(RX+RW/2)+'" y="'+(expY+i*16)+'" font-size="8.5" fill="#3D4B55" text-anchor="middle">'+st+'</text>';
+    });
+
+    /* 对比框 */
+    var kY = expY + steps.length*16 + 16;
+    s+='<rect x="'+(RX+40)+'" y="'+kY+'" width="'+(RW-80)+'" height="64" rx="6" fill="#A8404A" opacity="0.06" stroke="#A8404A" stroke-width="1" stroke-dasharray="4 3"/>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#A8404A" text-anchor="middle" font-weight="700">NCCL 的跨机策略</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">不做主机侧聚合 · 依靠 Ring/Tree 拓扑的分段流水线摊薄延迟</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">多 channel 并行 · 每 channel 一条 IB QP · 带宽随 channel 数线性增长</text>';
+  }
+
+  /* ---- 分隔线 ---- */
+  s+='<line x1="340" y1="44" x2="340" y2="'+(H-10)+'" stroke="#D2DADF" stroke-width="1" stroke-dasharray="4 3"/>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
+function hcclOut(){
+  var out = document.getElementById('hccl-out');
+  if(!out) return;
+  var isH = (hcclMode === 'hccl');
+  if(isH){
+    out.innerHTML = '<b style="color:#B3603A">HCCL + UB 路径</b>：机内走 HCCS 直连（全互联），跨机走 UB 共享 buffer + RDMA。<b>UB 的核心</b>是在主机侧做一次本地聚合再跨机发送，把「N 张卡各发各的」变成「聚合后发一次」，减少跨机 RDMA 消息数。应用层完全无感——API 还是 <code>hccl.all_reduce(tensor, group)</code>，HCCL 自动判断走哪条路。';
+  } else {
+    out.innerHTML = '<b style="color:#A8404A">NCCL 路径</b>：机内走 NVLink / NVSwitch 直连（600-900 GB/s），跨机每张卡各自走 IB / RoCE。<b>NCCL 不做主机侧聚合</b>，而是依靠 Ring / Tree 拓扑的分段流水线来充分利用带宽——多个 channel 并行，每个 channel 对应一条 IB QP 连接。两种方案的集合通信语义完全一样（AllReduce 结果一致），区别只在跨机的传输策略。';
+  }
+}
+
+/* ===================== FIG 12D · 通信下沉瀑布图 ===================== */
+function figWaterfall(){
+  var m = document.getElementById('fig-waterfall');
+  if(!m) return;
+  var W = 900, H = 620;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* 三列颜色 */
+  var cols = [
+    {key:'TP', color:'#A8404A', bg:'#FFF5F5'},
+    {key:'DP', color:'#2E6E8E', bg:'#F0F7FB'},
+    {key:'PP', color:'#B3603A', bg:'#FFF8F2'}
+  ];
+
+  /* 五层行定义 */
+  var rows = [
+    {label:'并行维度', y:50, h:52, ref:'FIG 12B 连线颜色'},
+    {label:'兄弟拓扑', y:122, h:52, ref:'FIG 12B 卡片高亮'},
+    {label:'框架 API 调用', y:194, h:56, ref:'代码层'},
+    {label:'集合通信库判断', y:272, h:64, ref:'FIG 12C 左侧'},
+    {label:'物理链路', y:358, h:60, ref:'FIG 12C 右侧'}
+  ];
+
+  var colW = 230, colGap = 24;
+  var totalW = cols.length * colW + (cols.length - 1) * colGap;
+  var startX = (W - totalW) / 2 + 40;
+  var labelX = startX - 16;
+
+  /* 左侧行标签 + 水平分隔线 */
+  rows.forEach(function(r, i){
+    var ly = r.y + r.h/2;
+    s+='<text x="'+(labelX)+'" y="'+(ly-4)+'" font-size="9" fill="#6B7B86" text-anchor="end" font-weight="600">'+r.label+'</text>';
+    s+='<text x="'+(labelX)+'" y="'+(ly+10)+'" font-size="7" fill="#B0BEC6" text-anchor="end">'+r.ref+'</text>';
+    if(i > 0){
+      s+='<line x1="'+(startX-8)+'" y1="'+(r.y-6)+'" x2="'+(startX+totalW+8)+'" y2="'+(r.y-6)+'" stroke="#E8EDEF" stroke-width="0.5"/>';
+    }
+  });
+
+  /* 每列的内容 */
+  var content = [
+    /* TP */
+    [
+      {t1:'TP 维度', t2:'同层权重的不同分片'},
+      {t1:'4 卡同节点', t2:'AllReduce 环（机内）', icon:'ring'},
+      {t1:'all_reduce(grad, tp_group)', t2:'每层两次', mono:true},
+      {t1:'group 全在同一节点', t2:'→ 直接走机内路径', t3:'不经过 UB'},
+      {t1:'HCCS / NVLink', t2:'300-900 GB/s · μs 级'}
+    ],
+    /* DP */
+    [
+      {t1:'DP 维度', t2:'同层权重的完全相同副本'},
+      {t1:'2 卡跨节点', t2:'AllReduce 梯度同步', icon:'dash'},
+      {t1:'all_reduce(grad, dp_group)', t2:'每 step 一次', mono:true},
+      {t1:'group 跨节点', t2:'→ 走 UB 聚合 + RDMA', t3:'先本地聚合再跨机'},
+      {t1:'UB + RDMA / IB', t2:'100-400 Gbps · 低 ms'}
+    ],
+    /* PP */
+    [
+      {t1:'PP 维度', t2:'不同层 · 非兄弟关系'},
+      {t1:'相邻 stage 1:1', t2:'P2P 激活传递（有向）', icon:'arrow'},
+      {t1:'send(act, next_rank)', t2:'每个 micro-batch', mono:true},
+      {t1:'判断 next_rank 位置', t2:'→ 机内 or 跨机', t3:'取决于 order 字符串'},
+      {t1:'HCCS or RDMA', t2:'由物理落位决定'}
+    ]
+  ];
+
+  cols.forEach(function(col, ci){
+    var cx = startX + ci * (colW + colGap);
+
+    /* 列标题 */
+    s+='<text x="'+(cx+colW/2)+'" y="32" font-size="13" fill="'+col.color+'" text-anchor="middle" font-weight="800">'+col.key+'</text>';
+
+    /* 每行的卡片 */
+    rows.forEach(function(row, ri){
+      var bx = cx, by = row.y, bw = colW, bh = row.h;
+      var c = content[ci][ri];
+
+      /* 卡片背景 */
+      s+='<rect x="'+bx+'" y="'+by+'" width="'+bw+'" height="'+bh+'" rx="6" fill="'+col.bg+'" stroke="'+col.color+'" stroke-width="'+(ri===0?'1.5':'1')+'" opacity="'+(ri===0?'1':'0.7')+'"/>';
+
+      /* 图标小装饰（第二行 - 兄弟拓扑） */
+      if(c.icon){
+        var ix = bx + bw - 28, iy = by + bh/2;
+        if(c.icon === 'ring'){
+          s+='<circle cx="'+ix+'" cy="'+iy+'" r="10" fill="none" stroke="'+col.color+'" stroke-width="1.5" opacity="0.4"/>';
+          s+='<circle cx="'+(ix-7)+'" cy="'+(iy-7)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix+7)+'" cy="'+(iy-7)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix)+'" cy="'+(iy+9)+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+        } else if(c.icon === 'dash'){
+          s+='<line x1="'+(ix-10)+'" y1="'+iy+'" x2="'+(ix+10)+'" y2="'+iy+'" stroke="'+col.color+'" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>';
+          s+='<circle cx="'+(ix-10)+'" cy="'+iy+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+          s+='<circle cx="'+(ix+10)+'" cy="'+iy+'" r="2" fill="'+col.color+'" opacity="0.6"/>';
+        } else if(c.icon === 'arrow'){
+          s+='<line x1="'+(ix-10)+'" y1="'+iy+'" x2="'+(ix+8)+'" y2="'+iy+'" stroke="'+col.color+'" stroke-width="1.5" opacity="0.5"/>';
+          s+='<polygon points="'+(ix+4)+','+(iy-3)+' '+(ix+4)+','+(iy+3)+' '+(ix+10)+','+iy+'" fill="'+col.color+'" opacity="0.5"/>';
+        }
+      }
+
+      /* 文字 */
+      var tx = bx + 12;
+      if(c.mono){
+        s+='<text x="'+tx+'" y="'+(by+bh/2-4)+'" font-size="8" fill="'+col.color+'" font-weight="600">'+c.t1+'</text>';
+      } else {
+        s+='<text x="'+tx+'" y="'+(by+bh/2-6)+'" font-size="10" fill="'+col.color+'" font-weight="700">'+c.t1+'</text>';
+      }
+      s+='<text x="'+tx+'" y="'+(by+bh/2+10)+'" font-size="8" fill="#6B7B86">'+c.t2+'</text>';
+      if(c.t3){
+        s+='<text x="'+tx+'" y="'+(by+bh/2+22)+'" font-size="7.5" fill="#8A98A2" font-style="italic">'+c.t3+'</text>';
+      }
+    });
+
+    /* 行间流向箭头 */
+    for(var ai=0; ai<rows.length-1; ai++){
+      var ay1 = rows[ai].y + rows[ai].h;
+      var ay2 = rows[ai+1].y;
+      var ax = cx + colW/2;
+      var amid = (ay1 + ay2) / 2;
+      s+='<line x1="'+ax+'" y1="'+(ay1+2)+'" x2="'+ax+'" y2="'+(ay2-2)+'" stroke="'+col.color+'" stroke-width="1.2" opacity="0.3"/>';
+      s+='<polygon points="'+(ax-3)+','+(ay2-6)+' '+(ax+3)+','+(ay2-6)+' '+ax+','+(ay2-2)+'" fill="'+col.color+'" opacity="0.35"/>';
+    }
+  });
+
+  /* 底部总结 */
+  var sumY = rows[4].y + rows[4].h + 28;
+
+  /* 三个总结框 */
+  var sumItems = [
+    {c:'#A8404A', t:'TP：逻辑层 group 全在同一节点 → 物理层走机内高带宽'},
+    {c:'#2E6E8E', t:'DP：逻辑层 group 跨节点 → 物理层走 UB 聚合 + RDMA'},
+    {c:'#B3603A', t:'PP：逻辑层 1:1 P2P → 物理层由 order 字符串决定'}
+  ];
+
+  sumItems.forEach(function(si, i){
+    var sx = startX + i * (colW + colGap);
+    s+='<rect x="'+sx+'" y="'+sumY+'" width="'+colW+'" height="30" rx="4" fill="'+si.c+'" opacity="0.08"/>';
+    s+='<text x="'+(sx+colW/2)+'" y="'+(sumY+19)+'" font-size="8" fill="'+si.c+'" text-anchor="middle" font-weight="600">'+si.t+'</text>';
+  });
+
+  /* 最底部金句 */
+  var goldY = sumY + 50;
+  s+='<rect x="'+(startX-8)+'" y="'+goldY+'" width="'+(totalW+16)+'" height="32" rx="6" fill="#0E1418" opacity="0.04"/>';
+  s+='<text x="'+(W/2)+'" y="'+(goldY+20)+'" font-size="10.5" fill="#0E1418" text-anchor="middle" font-weight="700">逻辑层决定 group（谁和谁通信） · 物理层决定 route（走哪条线） · 交汇点 = 一次 API 调用</text>';
+
+  /* 左侧大括号标注「FIG 12B 管」「FIG 12C 管」 */
+  var braceX = startX - 55;
+  /* FIG 12B: 行 0-2 */
+  var b12bTop = rows[0].y, b12bBot = rows[2].y + rows[2].h;
+  s+='<path d="M '+braceX+' '+b12bTop+' Q '+(braceX-12)+' '+((b12bTop+b12bBot)/2)+' '+braceX+' '+b12bBot+'" fill="none" stroke="#8A98A2" stroke-width="1"/>';
+  s+='<text x="'+(braceX-15)+'" y="'+((b12bTop+b12bBot)/2)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-weight="600" transform="rotate(-90 '+(braceX-15)+' '+((b12bTop+b12bBot)/2)+')">FIG 12B</text>';
+
+  /* FIG 12C: 行 3-4 */
+  var b12cTop = rows[3].y, b12cBot = rows[4].y + rows[4].h;
+  s+='<path d="M '+braceX+' '+b12cTop+' Q '+(braceX-12)+' '+((b12cTop+b12cBot)/2)+' '+braceX+' '+b12cBot+'" fill="none" stroke="#8A98A2" stroke-width="1"/>';
+  s+='<text x="'+(braceX-15)+'" y="'+((b12cTop+b12cBot)/2)+'" font-size="8" fill="#8A98A2" text-anchor="middle" font-weight="600" transform="rotate(-90 '+(braceX-15)+' '+((b12cTop+b12cBot)/2)+')">FIG 12C</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
+/* ===================== FIG 12E · 通信三层嵌套 ===================== */
+function figNesting(){
+  var m = document.getElementById('fig-nesting');
+  if(!m) return;
+  var W = 900, H = 480;
+  var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+W+' '+H+'" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">';
+
+  /* 背景 */
+  s+='<rect width="'+W+'" height="'+H+'" rx="8" fill="#F4F7F9"/>';
+
+  /* 标题 */
+  s+='<text x="'+W/2+'" y="30" text-anchor="middle" font-size="13" font-weight="700" fill="#3D4B55">通信三层嵌套关系 —— 同一条路径的三个深度</text>';
+
+  /* ===== 左侧：嵌套同心框 ===== */
+  var lx = 40, ly = 50, lw = 480, lh = 390;
+
+  /* 最外层 · Rank 间通信关系 */
+  s+='<rect x="'+lx+'" y="'+ly+'" width="'+lw+'" height="'+lh+'" rx="10" fill="#E8F0F5" stroke="#2E6E8E" stroke-width="2.5"/>';
+  s+='<text x="'+(lx+14)+'" y="'+(ly+22)+'" font-size="12" font-weight="800" fill="#2E6E8E">Rank 间通信关系</text>';
+  s+='<text x="'+(lx+14)+'" y="'+(ly+38)+'" font-size="9.5" fill="#3D4B55">WHO + WHAT：并行维度定义 group，通信原语定义操作</text>';
+
+  /* 外层底部标签 */
+  s+='<text x="'+(lx+14)+'" y="'+(ly+lh-14)+'" font-size="9" fill="#6B7B86">FIG 12B · 逻辑连线 · 对应用层可见</text>';
+
+  /* 中间层 · HCCL / NCCL */
+  var mx = lx+28, my = ly+56, mw = lw-56, mh = lh-100;
+  s+='<rect x="'+mx+'" y="'+my+'" width="'+mw+'" height="'+mh+'" rx="8" fill="#EDF5F0" stroke="#3E7D5E" stroke-width="2"/>';
+  s+='<text x="'+(mx+12)+'" y="'+(my+20)+'" font-size="12" font-weight="800" fill="#3E7D5E">HCCL / NCCL（集合通信库）</text>';
+  s+='<text x="'+(mx+12)+'" y="'+(my+36)+'" font-size="9.5" fill="#3D4B55">HOW：选择算法（Ring / Tree / Mesh）、管理 stream、协调各 rank</text>';
+
+  /* 中间层底部标签 */
+  s+='<text x="'+(mx+12)+'" y="'+(my+mh-12)+'" font-size="9" fill="#6B7B86">FIG 12C 左侧 · 三层调用栈 · 对框架层透明</text>';
+
+  /* 最内层 · UB */
+  var ix = mx+28, iy = my+54, iw = mw-56, ih = mh-96;
+  s+='<rect x="'+ix+'" y="'+iy+'" width="'+iw+'" height="'+ih+'" rx="6" fill="#FFF7ED" stroke="#B3603A" stroke-width="1.5" stroke-dasharray="6 3"/>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+20)+'" font-size="12" font-weight="800" fill="#B3603A">UB（Unified Buffer）</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+36)+'" font-size="9.5" fill="#3D4B55">HOW-detail：跨机时在主机侧聚合 buffer，减少 RDMA 发送次数</text>';
+
+  /* UB 内部细节 */
+  s+='<text x="'+(ix+12)+'" y="'+(iy+56)+'" font-size="9" fill="#6B7B86">仅在跨机路径上生效</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+70)+'" font-size="9" fill="#6B7B86">机内通信（HCCS / NVLink）不经过 UB</text>';
+
+  /* UB 条件标记 */
+  var condX = ix+iw-130, condY = iy+14;
+  s+='<rect x="'+condX+'" y="'+condY+'" width="118" height="22" rx="3" fill="#B3603A" opacity="0.12"/>';
+  s+='<text x="'+(condX+59)+'" y="'+(condY+15)+'" font-size="9" font-weight="700" fill="#B3603A" text-anchor="middle">条件启用 · 跨机才有</text>';
+
+  /* 虚线标注内层底部 */
+  s+='<text x="'+(ix+12)+'" y="'+(iy+ih-10)+'" font-size="9" fill="#6B7B86">FIG 12C 右侧 · UB + RDMA 路径 · 对 HCCL 上层也透明</text>';
+
+  /* ===== 右侧：实例化时序 ===== */
+  var rx = 560, ry = 50, rw = 310, rh = 390;
+  s+='<rect x="'+rx+'" y="'+ry+'" width="'+rw+'" height="'+rh+'" rx="8" fill="#FAFBFC" stroke="#D2DADF" stroke-width="1"/>';
+  s+='<text x="'+(rx+rw/2)+'" y="'+(ry+22)+'" text-anchor="middle" font-size="11" font-weight="700" fill="#3D4B55">一次 AllReduce 的完整调用路径</text>';
+
+  /* 五个步骤 */
+  var steps = [
+    {y:ry+44, color:'#2E6E8E', label:'① 框架层', desc:'all_reduce(tensor, tp_group)', detail:'只知道 group 是谁，不知道走哪条路'},
+    {y:ry+112, color:'#3E7D5E', label:'② HCCL 接管', desc:'查 group 成员物理位置', detail:'同节点 → HCCS 直连\n跨节点 → 选 UB 或直发'},
+    {y:ry+192, color:'#B3603A', label:'③ UB 聚合（跨机时）', desc:'多卡数据 → 共享 buffer → RDMA', detail:'机内通信跳过此步'},
+    {y:ry+264, color:'#6B7B86', label:'④ 硬件传输', desc:'HCCS / NVLink / RDMA / IB', detail:'数据到达目标 rank 的 HBM'},
+    {y:ry+330, color:'#2E6E8E', label:'⑤ 返回框架层', desc:'tensor 已同步，继续前向/反向', detail:'框架完全不知道走了哪条路'}
+  ];
+
+  steps.forEach(function(st, i){
+    s+='<rect x="'+(rx+14)+'" y="'+st.y+'" width="'+(rw-28)+'" height="56" rx="5" fill="white" stroke="'+st.color+'" stroke-width="1.5"/>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+18)+'" font-size="10" font-weight="700" fill="'+st.color+'">'+st.label+'</text>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+33)+'" font-size="9.5" fill="#0E1418">'+st.desc+'</text>';
+    s+='<text x="'+(rx+24)+'" y="'+(st.y+47)+'" font-size="8.5" fill="#6B7B86">'+st.detail.split('\n')[0]+'</text>';
+    if(i < steps.length - 1){
+      var arrowY = st.y + 56;
+      var nextY = steps[i+1].y;
+      var midX = rx + rw/2;
+      s+='<line x1="'+midX+'" y1="'+arrowY+'" x2="'+midX+'" y2="'+(nextY-2)+'" stroke="#D2DADF" stroke-width="1.5" marker-end="url(#nestArrow)"/>';
+    }
+  });
+
+  /* 箭头标记 */
+  s+='<defs><marker id="nestArrow" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1 L4 4 L1 7" fill="none" stroke="#D2DADF" stroke-width="1.2"/></marker></defs>';
+
+  /* ===== 左右连接线 ===== */
+  /* 从左侧三个框到右侧对应步骤 */
+  s+='<line x1="'+(lx+lw)+'" y1="'+(ly+20)+'" x2="'+(rx)+'" y2="'+(steps[0].y+28)+'" stroke="#2E6E8E" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+  s+='<line x1="'+(mx+mw)+'" y1="'+(my+20)+'" x2="'+(rx)+'" y2="'+(steps[1].y+28)+'" stroke="#3E7D5E" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+  s+='<line x1="'+(ix+iw)+'" y1="'+(iy+20)+'" x2="'+(rx)+'" y2="'+(steps[2].y+28)+'" stroke="#B3603A" stroke-width="1" stroke-dasharray="4 3" opacity="0.5"/>';
+
+  /* 底部金句 */
+  s+='<rect x="40" y="'+(H-36)+'" width="'+(W-80)+'" height="28" rx="4" fill="#2E6E8E" opacity="0.08"/>';
+  s+='<text x="'+W/2+'" y="'+(H-17)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="#2E6E8E">理解"谁和谁通信"只需要最外层 · 诊断"跨机为什么慢"才需要深入内层</text>';
+
+  s+='</svg>';
+  m.innerHTML = s;
+}
+
 /* ===================== FIG 06 · 单卡空间 × 时间 ===================== */
 function figCard(){
   var sc = new Scene('fig-card', [0,0,900,400], 17);
@@ -5353,7 +6271,11 @@ function boot(){
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer],
-   ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag]
+   ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
+   ['fig-sibling',figSibling],
+   ['fig-hccl',figHCCL],
+   ['fig-waterfall',figWaterfall],
+   ['fig-nesting',figNesting]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */
@@ -5407,6 +6329,34 @@ function boot(){
     });
     figMesh(); meshOut();
   });
+
+  var sibCtrl = document.getElementById('sibling-ctrl');
+  if(sibCtrl){
+    sibCtrl.addEventListener('click', function(ev){
+      var btn = ev.target.closest('button');
+      if(!btn) return;
+      sibMode = btn.getAttribute('data-sib');
+      Array.prototype.forEach.call(sibCtrl.querySelectorAll('button'), function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      figSibling(); sibOut();
+    });
+    sibOut();
+  }
+
+  var hcclCtrl = document.getElementById('hccl-ctrl');
+  if(hcclCtrl){
+    hcclCtrl.addEventListener('click', function(ev){
+      var btn = ev.target.closest('button');
+      if(!btn) return;
+      hcclMode = btn.getAttribute('data-hccl');
+      Array.prototype.forEach.call(hcclCtrl.querySelectorAll('button'), function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      figHCCL(); hcclOut();
+    });
+    hcclOut();
+  }
 }
 
 if(document.readyState === 'loading'){
