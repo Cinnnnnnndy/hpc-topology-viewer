@@ -141,6 +141,15 @@
 
     .timeline-pane { display: grid; grid-template-rows: 42px minmax(0, 1fr) 38px; }
     .timeline-pane .pane__header { height: 42px; }
+    /* 三行各钉一条显式 grid-row：宿主页（如 combo-workbench）常年把 .pane__header
+       display:none 掉、把标题交给自己的格头出——CSS Grid 里 display:none 的项
+       不参与隐式排位，头一藏，后两个兄弟就顺位往前挤一格：时间轴滚动区顶替
+       进头部原来的 42px 那一行，图例条顶替进正文的 minmax(0,1fr) 那一行，两者
+       都被腰斩，泳道内容整片挤没（实机现象：只剩一条标尺，往下空白）。钉死
+       grid-row 之后隐藏哪个兄弟都不会带偏另外两个的位置。 */
+    .timeline-pane .pane__header { grid-row: 1; }
+    .timeline-pane .timeline-scroll { grid-row: 2; }
+    .timeline-pane .timeline-footer { grid-row: 3; }
     .timeline-toolbar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
     .timeline-toolbar .segmented button { min-height: 26px; }
     .timeline-actions { display: flex; align-items: center; gap: var(--space-2); }
