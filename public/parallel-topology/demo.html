@@ -3529,45 +3529,86 @@ function netScene(D, g, box, step){
   if(ui.commOn && !lowDetail && !ui.netOff) drawCommArcs();
   /* ── 容量视图的地面流量带（观测台 Floor Sankey 的读法，长在本图自己的投影里）──
      整网视图的通信画在**算子**上（drawCommArcs——通信锚在产生它的那个算子）；
-     容量视图里卡是空的，通信只剩「卡与卡」这一级，于是画在**地面**：
-     选中卡与它 EP 组兄弟之间的 AllToAll dispatch，一根带一个对端。
-     连线画法与整网视图的通信弧同一套（贴地直角折线先前会在斜穿中间不相干的
-     卡时糊成一堆折角，改抬离地面的二次贝塞尔弧——既贴住「AllToAll ×2」在
-     drawCommArcs 里的读法，也不再需要专门分车道防重叠）。
-     宽度=示意 token 量（loadSeed 确定性合成，同一对永远同一个数——与 rankLoad
-     的路由不均同一口径）；颜色=对端在 EP 域内的序号（观测台的分类色）。 */
-  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && cutEP && D.moe){
-    var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
-    var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
-    var wFront9 = cutPP ? segW(co.p)[0] : 0;
-    var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
-    var kSrc9 = kOfR(co);
-    mem9.forEach(function(r9, i9){
-      var c9 = coordsOf(r9, D);
-      if(KC === 1 && c9.c !== co.c) return;
-      var kDst9 = kOfR(c9);
-      var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
-      var wd9 = (1.6 + tok9*2.8).toFixed(1);
-      var colR9 = RIBC[i9 % RIBC.length];
-      /* 整网视图那条弧线（drawCommArcs → arc()）同一画法：源卡底部中心到目标卡
-         底部中心的二次贝塞尔，中点在屏幕坐标上抬起一截——不再贴地走直角折线。
-         抬离地面之后线本身就不会再糊成一团直角，也不需要曼哈顿走线原先那套
-         「每根分一条独立车道」来避重叠：车道让位给弧的抬升幅度，抬升幅度又
-         随两端的屏幕距离变，天然按目标错开。
-         白描边光晕垫底：弧线要压在卡阵与地面纹理上面。 */
-      var vBot = AR + 0.12;
-      var a9 = P(0.5, vBot, wFront9, kSrc9);
-      var d9 = P(0.5, vBot, wFront9, kDst9);
-      var lift9 = Math.min(46, 14 + (Math.abs(a9[0]-d9[0]) + Math.abs(a9[1]-d9[1]))*0.14);
-      var mx9 = ((a9[0]+d9[0])/2).toFixed(1), my9 = (((a9[1]+d9[1])/2)-lift9).toFixed(1);
-      var dPath9 = 'M'+a9[0].toFixed(1)+' '+a9[1].toFixed(1)+' Q '+mx9+' '+my9+' '+d9[0].toFixed(1)+' '+d9[1].toFixed(1);
-      body.push('<path d="'+dPath9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(Number(wd9)+2.4).toFixed(1)+';opacity:.85"/>');
-      body.push('<path d="'+dPath9+'" style="fill:none;stroke:'+colR9+';stroke-width:'+wd9+';stroke-linecap:round;opacity:.85"/>');
-      body.push('<circle cx="'+a9[0].toFixed(1)+'" cy="'+a9[1].toFixed(1)+'" r="2" style="fill:'+colR9+';stroke:var(--pt-bg);stroke-width:.8"/>');
-      body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+colR9+';stroke:var(--pt-bg);stroke-width:.8"/>');
-    });
-    var lbP9 = P(0.5, AR + 0.30, wFront9, kSrc9);
-    axLab([lbP9[0], lbP9[1] - 20], 'AllToAll · EP 组 dispatch（示意量）', null, VC.ep, true, 6.4);
+     容量视图里卡是空的，通信只剩「卡与卡」这一级，于是画在**地面**：选中卡与
+     它 TP/EP/DP 组兄弟之间的通信，一根带一个对端。
+     默认三种都画——口径同整网视图（drawCommArcs 也是 TP/CP/EP/PP/DP 一起画，
+     不等谁被点开）。右侧读出卡（FR-3，权重带展开的那张「图例」）点开某一档，
+     画面才收窄到那一档真正触发的通信：权重带点到 TP 切的块（attn.q/kv/out、
+     embed、mlp…）只留 TP，点到 EP 切的块（experts）只留 EP，点梯度档只留 DP
+     梯度 AllReduce；点到不切/无参那几档（attn.core、router、norm、优化器态、
+     激活、碎片）本来就不产生这一类通信，什么都不画——这是答案，不是漏画。
+     连线画法与整网视图的通信弧同一套：源卡底部中心到目标卡底部中心的二次
+     贝塞尔，弧顶在屏幕坐标上抬起一截，白描边光晕垫底、两端描小圆点——贴地
+     直角折线在斜穿中间不相干的卡时会糊成一堆折角，抬离地面就不会，也不需要
+     分车道防重叠：抬升幅度本就随两端屏幕距离变化，天然按目标错开。 */
+  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel){
+    var W_CUT_MAP = {'attn.q':'tp', 'attn.kv':'tp', 'attn.core':'none', 'attn.out':'tp',
+      'router':'none', 'experts':'ep', 'mlp.gate/up':'tp', 'mlp.down':'tp', 'norm×2':'none',
+      'embed':'tp', 'lm_head':'tp'};
+    /* memSel 挂的是「点开它时那张卡」（见 renderRankMem 的 memSelG 守卫）——换了卡
+       之后、renderRankMem 还没把它清空之前不能借用上一张卡的选中档，这里自己
+       比一次 g，不依赖两个渲染函数谁先跑。 */
+    var memSel9 = (ui.memSelG === g) ? ui.memSel : null;
+    var wantTP9 = true, wantEP9 = true, wantDP9 = true;
+    if(memSel9 === 'g'){ wantTP9 = false; wantEP9 = false; }
+    else if(memSel9 === 'w'){ wantDP9 = false; }
+    else if(memSel9 && memSel9.indexOf('w:') === 0){
+      var selCut9 = W_CUT_MAP[memSel9.slice(2)] || 'none';
+      wantTP9 = selCut9 === 'tp'; wantEP9 = selCut9 === 'ep'; wantDP9 = false;
+    } else if(memSel9){ wantTP9 = false; wantEP9 = false; wantDP9 = false; }  // opt/otmp/act/rsv：不通信
+    wantTP9 = wantTP9 && cutTP && D.tp > 1;
+    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1;
+    wantDP9 = wantDP9 && cutDP && D.dp > 1;
+    if(wantTP9 || wantEP9 || wantDP9){
+      var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
+      var wFront9 = cutPP ? segW(co.p)[0] : 0;
+      var kSrc9 = kOfR(co);
+      var vBot9 = AR + 0.12;
+      var a9 = P(0.5, vBot9, wFront9, kSrc9);
+      var labY9 = 0;
+      function floorBand(members9, col9, dash9, wd9){
+        members9.forEach(function(r9){
+          var c9 = coordsOf(r9, D);
+          if(KC === 1 && c9.c !== co.c) return;
+          var kDst9 = kOfR(c9);
+          if(kDst9 === kSrc9) return;
+          var d9 = P(0.5, vBot9, wFront9, kDst9);
+          var lift9 = Math.min(46, 14 + (Math.abs(a9[0]-d9[0]) + Math.abs(a9[1]-d9[1]))*0.14);
+          var mx9 = ((a9[0]+d9[0])/2).toFixed(1), my9 = (((a9[1]+d9[1])/2)-lift9).toFixed(1);
+          var dPath9 = 'M'+a9[0].toFixed(1)+' '+a9[1].toFixed(1)+' Q '+mx9+' '+my9+' '+d9[0].toFixed(1)+' '+d9[1].toFixed(1);
+          body.push('<path d="'+dPath9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(wd9+2.4).toFixed(1)+';opacity:.85"/>');
+          body.push('<path d="'+dPath9+'" style="fill:none;stroke:'+col9+';stroke-width:'+wd9.toFixed(1)+';stroke-linecap:round;opacity:.85'
+            +(dash9 ? ';stroke-dasharray:'+dash9 : '')+'"/>');
+          body.push('<circle cx="'+a9[0].toFixed(1)+'" cy="'+a9[1].toFixed(1)+'" r="2" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
+          body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
+        });
+      }
+      function floorLab(text9, col9){
+        var lp9 = P(0.5, AR + 0.30, wFront9, kSrc9);
+        axLab([lp9[0], lp9[1] - 20 - labY9*16], text9, null, col9, true, 6.4);
+        labY9++;
+      }
+      if(wantTP9){
+        floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6);
+        floorLab('AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp);
+      }
+      if(wantEP9){
+        var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
+        var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
+        mem9.forEach(function(r9, i9){
+          var c9 = coordsOf(r9, D);
+          if(KC === 1 && c9.c !== co.c) return;
+          var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
+          floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8);
+        });
+        floorLab('AllToAll · EP 组 dispatch（示意量）', VC.ep);
+      }
+      if(wantDP9){
+        /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法 */
+        floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
+        floorLab('梯度 AllReduce · DP 组（反向）', VC.dp);
+      }
+    }
   }
   /* batchSlab 暂时关掉——输入切分先不画，留出空间给整网 */
   /* ── 选择器轴：固定在最左侧（PP）和最前侧（TP/EP），不随选中副本移动 ── */
