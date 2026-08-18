@@ -316,14 +316,15 @@
    钉在左下（底沿让开 groupHud 那排选组 pill）；场景转台/缩放都不影响它——
    它读的是选中卡的账，不是机位。 */
 .pt-rankmem{
-  position:absolute; left:14px; bottom:60px; z-index:8; width:260px;
+  position:absolute; left:14px; bottom:60px; z-index:8; width:340px;
+  max-height:calc(100% - 92px); overflow:auto;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px;
   box-shadow:0 10px 34px rgba(0,0,0,.16); padding:10px 13px 8px;
 }
 .pt-rankmem[hidden]{display:none}
 .pt-rankmem .rm-h{display:flex; align-items:center; gap:6px}
-.pt-rankmem .rm-h b{font-size:13px; font-weight:800; color:var(--pt-fg); white-space:nowrap}
-.pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:9px; color:var(--pt-fg3); flex:1; line-height:1.1}
+.pt-rankmem .rm-h b{font-size:14px; font-weight:800; color:var(--pt-fg); white-space:nowrap}
+.pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:9.5px; color:var(--pt-fg3); flex:1; line-height:1.15}
 .pt-rankmem .rm-x{
   margin-left:auto; border:1px solid var(--pt-bd); background:none; border-radius:8px;
   width:22px; height:22px; line-height:1; cursor:pointer; color:var(--pt-fg3); font-size:12px;
@@ -344,12 +345,12 @@
 /* 二级读数：点开一块之后跟在表格下面的那一段。不另开浮层——它讲的是表里
    某一行的内部，浮层会把它和那一行的关系切断。 */
 .pt-rankmem .rm-d{
-  margin-top:5px; padding:6px 7px 5px; border-radius:9px;
+  margin-top:5px; padding:7px 8px 6px; border-radius:9px;
   background:var(--pt-s2); border:1px solid var(--pt-bd);
-  font-family:var(--pt-mono); font-size:10px; line-height:1.45; color:var(--pt-fg2);
+  font-family:var(--pt-mono); font-size:10.5px; line-height:1.5; color:var(--pt-fg2);
 }
 .pt-rankmem .rm-d .rm-dh{display:flex; align-items:center; gap:5px; margin-bottom:3px}
-.pt-rankmem .rm-d .rm-dh b{font-size:11px; color:var(--pt-fg); font-weight:800}
+.pt-rankmem .rm-d .rm-dh b{font-size:11.5px; color:var(--pt-fg); font-weight:800}
 .pt-rankmem .rm-d .rm-dh .rm-dx{
   margin-left:auto; border:0; background:none; cursor:pointer;
   color:var(--pt-fg3); font-size:11px; line-height:1; padding:1px 3px;
@@ -358,12 +359,12 @@
 .pt-rankmem .rm-d dl{display:grid; grid-template-columns:auto 1fr; gap:1px 8px; margin:0}
 .pt-rankmem .rm-d dt{color:var(--pt-fg3); white-space:nowrap}
 .pt-rankmem .rm-d dd{margin:0; color:var(--pt-fg2)}
-.pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:9.5px; line-height:1.4}
+.pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:10px; line-height:1.42}
 /* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
    图上已经画着的（几份、第几份）不再抄一遍。 */
-.pt-rankmem .rm-d .rm-fig{margin:3px 0 1px}
+.pt-rankmem .rm-d .rm-fig{margin:4px 0 2px}
 .pt-rankmem .rm-d .rm-fig svg{width:auto; max-width:100%; margin:0}
-.pt-rankmem .rm-d .rm-cap{display:block; color:var(--pt-fg3); font-size:9px; line-height:1.35; margin-top:1px}
+.pt-rankmem .rm-d .rm-cap{display:block; color:var(--pt-fg3); font-size:9.5px; line-height:1.4; margin-top:2px}
 .pt-opcard .oc-h{display:flex; align-items:flex-start; gap:10px}
 .pt-opcard .oc-k{
   font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
@@ -2982,6 +2983,27 @@ function netScene(D, g, box, step){
     }
 
 
+  /* ── 通信弧/地面流量带共用：把「payload / 带宽 / 延迟」接到关系线上 ──────
+     连线只说「谁跟谁」不够——真正要盯的是这根线此刻传多少、多快，这两处（3D
+     通信弧、容量地面流量带）原来都没有数字。数字来源就是正视图算子标注用的
+     那同一份确定性合成数据（sdOpBuckets/sdSnap，sin-hash，同一层同一节点
+     永远读到同一个数），不再另起一套。
+     优先用真图里标了 opv:comm 的那个锚点节点（比如 attention_reduce_scatter、
+     moe_all_to_all_dispatch）——sdOpBuckets 按节点类型分桶，这几个是真通信
+     节点，读出来的 MB/GB/s/ms 就是「这个动作」自己的账；锚点不是真通信节点时
+     （比如 CP 的 key_tensor、DP 代表用的 o_proj——真图里都没有单独的通信
+     节点）退回一个这个维度专属的假节点：id 各异 ⇒ sin-hash 种子各异 ⇒ 数会
+     不同但每次读到的还是同一个数，公式与真节点完全一致，只是没有 colorKey
+     这层「真是通信」的身份可借。 */
+  function commMetricTxt(realId, fakeId, fakeLabel, li9){
+    var n9 = null, i9;
+    if(realId) for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === realId){ n9 = IXg.G.nodes[i9]; break; }
+    if(!n9 || n9.colorKey !== 'opv:comm') n9 = {id:fakeId, label:fakeLabel, colorKey:'opv:comm'};
+    var bk9 = sdOpBuckets(li9, n9, D);
+    var parts9 = bk9.perf.slice();
+    if(bk9.moe && bk9.moe.length) parts9 = parts9.concat(bk9.moe);
+    return parts9.join(' · ');
+  }
   /* ── L5 · 算子级通信（开关「通信」，URL comm=1）──────────────────────────
      四种维的通信各锚在**它自己的算子**上——不同的算子、不同的切分，通信关系
      不同，这正是这层要画的事实（全部来自 net-sharding 的 flowOf/ADDED 真数据）：
@@ -3026,6 +3048,9 @@ function netScene(D, g, box, step){
       ? function(p9){ var s9 = segW(p9); return (s9[0]+s9[1])/2; }
       : function(p9){ return wOf(Math.min(L-1, p9*lps + (lps >> 1))); };
     var dF = cutDP ? Math.min(co.d, KD-1) : co.d, tF = co.t, pF = cutPP ? co.p : 0;
+    /* 代表层：sdOpBuckets 要一个具体 li 才读得出数——取 pF 段的中间那层，
+       与 wMid() 给非卡维度弧线取深度、fsLayerOf 给正视图选代表层同一口径。 */
+    var liRep9 = Math.min(D.layers - 1, pF*lps + (lps >> 1));
 
     /* TP：卡维度下对端是另一**行**的卡；非卡维度 TP 没有独立空间轴（KT=1），
        弧线画在算子自己的两片之间——被锯开的那条缝就是要通信的地方。 */
@@ -3058,7 +3083,9 @@ function netScene(D, g, box, step){
            发生在哪个 p」——副标题把 pF 与它管的层号范围直接写出来。 */
         if(mTP){
           var l0TP9 = pF*lps, l1TP9 = Math.min(D.layers, (pF+1)*lps) - 1;
-          axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', 'PP'+pF+' · L'+l0TP9+'–L'+l1TP9, VC.tp, true, 6);
+          var mtTP9 = commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9);
+          axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内',
+            'PP'+pF+' · L'+l0TP9+'–L'+l1TP9+(mtTP9 ? ' · '+mtTP9 : ''), VC.tp, true, 6);
         }
       }
     }
@@ -3086,7 +3113,10 @@ function netScene(D, g, box, step){
                       P(nKV.u1 + 0.02, vb4, wMid(pF), offC(dF, tF)), VC.cp, 1.1);
           }
         }
-        if(mCP) axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', null, VC.cp, true, 6);
+        if(mCP){
+          var mtCP9 = commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9);
+          axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', mtCP9 || null, VC.cp, true, 6);
+        }
       }
     }
     /* EP：AllToAll。屏上画着的那几个对端才连（TP 未展开时另一半没画，连不了）。 */
@@ -3102,7 +3132,11 @@ function netScene(D, g, box, step){
           mEP = arc(P(nA2A.uc, nA2A.v0 - 0.02, wMid(pF), offC(dF, tF)),
                     P(nA2A.uc, nA2A.v0 - 0.02, wMid(c9.p), offC(c9.d, c9.t)), VC.ep, 1.1);
         });
-        if(mEP) axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', null, VC.ep, true, 6);
+        if(mEP){
+          var liRepEP9 = Math.min(D.layers - 1, Math.max(liRep9, denseTop));
+          var mtEP9 = commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9);
+          axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', mtEP9 || null, VC.ep, true, 6);
+        }
       }
     }
     /* PP：段边界 P2P，只沿焦点那一列画——它讲的是「边界在哪、传的是什么」，
@@ -3117,7 +3151,10 @@ function netScene(D, g, box, step){
           mPP = arc(P(nPN.uc, nPN.vc, wA3, offC(dF, tF)),
                     P(nPN.uc, nPN.vc, wB3, offC(dF, tF)), VC.pp, 1.2);
         }
-        if(mPP) axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', null, VC.pp, true, 6);
+        if(mPP){
+          var mtPP9 = commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9);
+          axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', mtPP9 || null, VC.pp, true, 6);
+        }
       }
     }
     /* DP：梯度 AllReduce（反向，虚线）。副本挨个相连。 */
@@ -3129,7 +3166,10 @@ function netScene(D, g, box, step){
           mDP = arc(P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3, tF)),
                     P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3+1, tF)), VC.dp, .9, '4 3');
         }
-        if(mDP) axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', null, VC.dp, true, 6);
+        if(mDP){
+          var mtDP9 = commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9);
+          axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', mtDP9 || null, VC.dp, true, 6);
+        }
       }
     }
   }
@@ -3583,14 +3623,18 @@ function netScene(D, g, box, step){
           body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
         });
       }
-      function floorLab(text9, col9){
+      function floorLab(text9, col9, metric9){
         var lp9 = P(0.5, AR + 0.30, wFront9, kSrc9);
-        axLab([lp9[0], lp9[1] - 20 - labY9*16], text9, null, col9, true, 6.4);
+        axLab([lp9[0], lp9[1] - 20 - labY9*16], text9, metric9 || null, col9, true, 6.4);
         labY9++;
       }
+      /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
+         3D 通信弧与容量地面流量带两处才对得上号，不是各画各的巧合数字。 */
+      var liRepFloor9 = Math.min(D.layers - 1, co.p*lps + (lps >> 1));
       if(wantTP9){
         floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6);
-        floorLab('AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp);
+        floorLab('AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
+          commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9));
       }
       if(wantEP9){
         var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
@@ -3601,12 +3645,15 @@ function netScene(D, g, box, step){
           var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
           floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8);
         });
-        floorLab('AllToAll · EP 组 dispatch（示意量）', VC.ep);
+        var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
+        floorLab('AllToAll · EP 组 dispatch（示意量）', VC.ep,
+          commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9));
       }
       if(wantDP9){
         /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法 */
         floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
-        floorLab('梯度 AllReduce · DP 组（反向）', VC.dp);
+        floorLab('梯度 AllReduce · DP 组（反向）', VC.dp,
+          commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9));
       }
     }
   }
@@ -7768,7 +7815,7 @@ function renderStageTitle(){
    「×8 里的第 5 桶」画成八格里第五格填实，比写一行字快得多，也不会和图打架。
    ax = {nx, ix, lx, ny, iy, ly, c}：两根轴各自的份数、本卡的下标、轴名，c 是刀色。 */
 function cavityGrid(ax){
-  var BW = 150, BH = 40, PAD = 15;
+  var BW = 200, BH = 52, PAD = 18;
   var nx = Math.max(1, ax.nx), ny = Math.max(1, ax.ny);
   /* 份数多到一格不足 3px 时不逐格画——画出来是一团糊，反而把「本卡是哪一格」盖掉。
      这时退回「整条 + 一段实心」：位置照旧准确，只是不再数得出格数（格数写在轴标上）。 */
@@ -7795,8 +7842,8 @@ function cavityGrid(ax){
     + '<rect x="0" y="0" width="'+BW+'" height="'+BH+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:.9;stroke-dasharray:3 2"/></g>'
     /* 份数只在**真被分开**时才写：一根没切的轴写「×1」是在说一件没发生的事，
        而且和轴名连起来读成「复印16×1」这种自相矛盾的串。 */
-    + '<text x="'+(BW+6)+'" y="'+(BH/2+4)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+esc(ax.ly)+(ny>1?'×'+ny:'')+'</text>'
-    + '<text x="0" y="'+(BH+12)+'" style="font-size:8.5px;fill:var(--pt-fg3)">'+esc(ax.lx)+(nx>1?'×'+nx:'')+'</text>'
+    + '<text x="'+(BW+6)+'" y="'+(BH/2+4)+'" style="font-size:9.5px;fill:var(--pt-fg3)">'+esc(ax.ly)+(ny>1?'×'+ny:'')+'</text>'
+    + '<text x="0" y="'+(BH+13)+'" style="font-size:9.5px;fill:var(--pt-fg3)">'+esc(ax.lx)+(nx>1?'×'+nx:'')+'</text>'
     + '</svg>';
 }
 
@@ -7807,7 +7854,7 @@ function cavityGrid(ax){
    所以这一档画的是**它自己的横截面**：谁占多宽、各是什么色。与卡上那条带、
    以及交集腔 L3 的权重带是同一张图，三处对得上。 */
 function compStrip(blocks, wide){
-  var BW = wide || 150, BH = 16, tot = 0;
+  var BW = wide || 210, BH = 20, tot = 0;
   blocks.forEach(function(b9){ tot += b9.bytes; });
   if(!(tot > 0)) return '';
   var x9 = 0, segs9 = '', labs9 = [];
@@ -7818,8 +7865,8 @@ function compStrip(blocks, wide){
         + '" style="fill:'+cutColor(b9.cut)+';fill-opacity:'+(b9.cut==='none'?.28:.62)
         + ';stroke:var(--pt-bg);stroke-width:.6"/>';
       /* 只给放得下的那几段挂名字：挤不下就交给下面那张表，图上不叠字 */
-      if(w9 >= 26) labs9.push('<text x="'+(x9+w9/2).toFixed(1)+'" y="'+(BH/2+3)
-        + '" style="font-size:7px;fill:var(--pt-fg);font-weight:700" text-anchor="middle">'+esc(b9.id)+'</text>');
+      if(w9 >= 28) labs9.push('<text x="'+(x9+w9/2).toFixed(1)+'" y="'+(BH/2+3)
+        + '" style="font-size:7.6px;fill:var(--pt-fg);font-weight:700" text-anchor="middle">'+esc(b9.id)+'</text>');
     }
     x9 += w9;
   });
@@ -7839,7 +7886,7 @@ function compStrip(blocks, wide){
    ax/ay/az = {n, dim, i}：份数、哪把刀（决定颜色）、本卡在这根轴上的下标。 */
 function cavityBox3D(ax, ay, az, o){
   o = o || {};
-  var W = o.w || 74, HH = o.h || 46, DD = o.d || 40;
+  var W = o.w || 98, HH = o.h || 60, DD = o.d || 52;
   var dx = W/Math.max(1,ax.n), dy = HH/Math.max(1,ay.n), dz = DD/Math.max(1,az.n);
   var body = '';
   /* ln 在这份文件里是各渲染函数各自的局部小工具（同一段代码写了三遍），
@@ -8066,7 +8113,7 @@ function renderRankMem(D){
        签名色，与卡上那条带同一个颜色，不用回头对照图例。 */
     var onSg = ui.memSel === sg.k;
     rows.push('<tr class="rm-p'+(onSg?' on':'')+'" data-act="memblockpick" data-mk="'+esc(sg.k)+'" style="--rmc:'+TONE[sg.k]+'">'
-      + '<td style="width:12px"><span style="display:inline-block;width:8px;height:8px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
+      + '<td style="width:14px"><span style="display:inline-block;width:9px;height:9px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
       + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)+'</td>'
       + '<td style="text-align:right;color:'+col+';font-weight:700">'+fmtGB(sg.bytes)+' GB</td></tr>');
     if(onSg) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, sg.k)+'</td></tr>');
@@ -8079,7 +8126,7 @@ function renderRankMem(D){
         var mk = 'w:'+x.id, onX = ui.memSel === mk;
         rows.push('<tr class="rm-p'+(onX?' on':'')+'" data-act="memblockpick" data-mk="'+esc(mk)+'" style="--rmc:'+cutColor(x.cut)+'">'
           + '<td></td><td style="padding-left:2px;color:var(--pt-fg2)">'
-          + '<span style="display:inline-block;width:6px;height:6px;background:'+cutColor(x.cut)+';border-radius:1px;margin-right:5px"></span>'
+          + '<span style="display:inline-block;width:7px;height:7px;background:'+cutColor(x.cut)+';border-radius:1px;margin-right:5px"></span>'
           + esc(x.id) + ' <span style="color:var(--pt-fg3)">' + esc(x.how) + '</span></td>'
           + '<td style="text-align:right;color:var(--pt-fg2)">'+fmtGB(x.bytes)+' GB</td></tr>');
         if(onX) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, mk)+'</td></tr>');
@@ -8103,10 +8150,10 @@ function renderRankMem(D){
        后面再补一句「12/48 层 · PP 刀切 4 段」是同一句话换个说法，删掉。 */
     + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
     + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin:3px 0 2px;font-family:var(--pt-mono)">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin:4px 0 3px;font-family:var(--pt-mono)">'
     + rows.join('')
-    + '<tr><td colspan="2" style="border-top:1px solid var(--pt-bd);padding-top:4px;font-weight:800;font-size:12px;color:'+(tot>cap?'var(--pt-danger)':'var(--pt-fg)')+'">合计 '+fmtGB(tot)+' / '+D.hbm+' GB</td>'
-    + '<td style="border-top:1px solid var(--pt-bd);padding-top:4px;text-align:right;font-size:10px;color:var(--pt-fg3)">余量 '+fmtGB(cap-tot)+'</td></tr></table>'
+    + '<tr><td colspan="2" style="border-top:1px solid var(--pt-bd);padding-top:5px;font-weight:800;font-size:13px;color:'+(tot>cap?'var(--pt-danger)':'var(--pt-fg)')+'">合计 '+fmtGB(tot)+' / '+D.hbm+' GB</td>'
+    + '<td style="border-top:1px solid var(--pt-bd);padding-top:5px;text-align:right;font-size:10.5px;color:var(--pt-fg3)">余量 '+fmtGB(cap-tot)+'</td></tr></table>'
 ;
   el.hidden = false;
 }
