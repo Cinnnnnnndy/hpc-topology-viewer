@@ -5402,11 +5402,13 @@ function frontBounds(){
   FS_GB = {x:x0 - 24, y:y0 - 24, w:(x1 - x0) + 48, h:(y1 - y0) + 48};
   return FS_GB;
 }
-/* ── 地图式文字：正/侧视被 wrapper 按 zoom 整体放大，字却不该跟着变大——
-   crisp 重绘时把字号、光晕、胶囊尺寸预先除回 1/FS_Z，屏幕上永远一个大小；
+/* ── 地图式文字：正/侧视被 wrapper 按 zoom 整体放大，字按 FS_ZOOM_GROWTH 那个
+   damping 跟着长，不是原地钉死——crisp 重绘时把字号、光晕、胶囊尺寸预先除回
+   1/FS_Z，换到屏幕上就是「长，但比框慢」那条曲线；
    gesture 里的位图拉伸只是过渡，停手 0.4s 后就换成这份清晰的。
    FS_Z 由 frontScene / sideScene 每次渲染时设置（netScene 自己把 zoom 折进投影，
-   不走这条）。缩得比 0.75 还小就不再放大字：那时格子比字还小，字定住只会互相叠。 */
+   不走这条）。缩得比 0.75 还小就不再缩小字：那时格子比字还小，字跟着缩只会
+   小到读不清（这一段仍是纯地图式——缩得越小字越小没有意义，起这条底）。 */
 var FS_Z = 1;
 /* ── 字号增益：把「场景单位」换算成真的屏幕像素 ────────────────────────────
    这一页的 viewBox 比舞台的 CSS 尺寸大（VW≈1308 铺在 1680px 上，1 单位 ≈ 1.28px），
@@ -5434,13 +5436,20 @@ var FS_PX = 11.5;                      /* 正文标注（基准 5.4 档）在屏
    缩放手势本来就在）。代价是窄栏里字确实小：620px 宽时约 6px。这是「48 对重叠的
    13px」与「不重叠的 6px」之间的取舍——叠在一起的字并不会因为大而更能读。 */
 var FS_GAIN_MAX = 1.4;
+/* 放大手势那一路的字号增长率。1.0 = 老的「地图式」：字完全钉死屏幕尺寸，
+   滚轮从 1x 拉到 20x，框跟着长 20 倍，字一个像素都不多——实测（正视，1600×1000
+   视口）文字高度从 100% 到 2000% 全程稳在 12px 上下，数字上没有「缩小」，但
+   框涨了 20 倍字纹丝不动，观感就是「越放大字越小」（用户反馈，画布里普遍存在）。
+   降到 0.35 之后字跟着放大手势一起长，只是长得比框慢：20x 时字约放大 20^0.35≈2.9
+   倍，框还是放大 20 倍——字不再看着被落下，也没有跟框 1:1 长到处处打架。 */
+var FS_ZOOM_GROWTH = 0.35;
 function fsBase(){
   var st = $('stage');
   var cw = (st && st.clientWidth) || 1680, ch = (st && st.clientHeight) || 889;
   var cAR = ch > 60 ? cw/ch : 1.9;
   var vw = clamp(Math.round(692*cAR), 1080, 2600);        /* = renderChain 里的 VW */
   var gain = (vw / cw) * (FS_PX / 5.4);                   /* 单位/像素 × 目标倍数 */
-  return Math.max(1, ui.zoom3) / clamp(gain, 1, FS_GAIN_MAX);
+  return Math.pow(Math.max(1, ui.zoom3), FS_ZOOM_GROWTH) / clamp(gain, 1, FS_GAIN_MAX);
 }
 function fsTxt(x, y, t, size, fill, anchor, extra){
   extra = String(extra || '').replace(/stroke-width="([\d.]+)"/g, function(m, w9){
