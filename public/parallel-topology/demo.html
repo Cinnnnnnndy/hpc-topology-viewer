@@ -6257,7 +6257,13 @@ function layerDetailOverlay(D, box){
   Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
   if(cutPP && pSel !== 0) Object.keys(FS_HEAD).forEach(function(k9){ ghostIds[k9] = 1; });
   if(cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
-  var CW = Math.min(box.w*0.82, 760), CH = Math.min(box.h-72, 860);
+  /* 卡片大小跟着舞台的宽高走，不是拍一个断章的定值——graphSVG 里是等比适配
+     （sc = min(scx, scy)），宽、高哪个先顶到就按哪个走，先前 760/860 那两个
+     定值太保守，随便一个就先顶到，算子框跟着矮下去，矮到不够 13.5 个屏幕像素
+     读数那一行就被判定装不下、整行不画——这是「读数被挤没」的根子，不是读数
+     本身画错了。改成吃满舞台的宽高（各留一圈边距）之后两边都不那么容易顶到，
+     实测（1400×1300 视口）读数基本都出来了。 */
+  var CW = clamp(box.w - 64, 420, 1400), CH = clamp(box.h - 56, 360, 1100);
   var CX = box.x + (box.w-CW)/2, CY = box.y + Math.max(40, (box.h-CH)/2);
   var fixed = [], fixedHit = [];
   fixed.push('<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+box.w.toFixed(1)+'" height="'+box.h.toFixed(1)+'" style="fill:var(--pt-bg);opacity:.7"/>');
