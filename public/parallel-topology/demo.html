@@ -765,6 +765,7 @@ var ui = {
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
   mv:{num:true, grad:true, perf:true, moe:true, train:true}, mvOpen:false, ghOpen:false,
   opSel:null,       /* 点开的那个算子 {nid, li, key}：明细卡跟着它走（见 renderOpCard） */
+  openLayer:null,   /* 侧视点开「展开这一层」浮层的层号；null = 关着（见 layerDetailOverlay） */
   /* 读出卡里点开的那一**块**显存（'w'/'g'/'opt'/'otmp'/'act'/'rsv'，权重内部再细到
      'w:experts' 这种）。选中卡答的是「这张卡装了什么」，再点一块答的是「这一块
      自己被哪把刀切成这样」——同一条链再下一级，不是另开一屏。null = 没点开。 */
@@ -5956,11 +5957,22 @@ function sideScene(D, g, box){
     var bx0 = lx + (colW - barW)/2;
     var inSel = stOf(li9) === selStage;
     var liVis = lx + colW >= vis0 && lx <= vis1;
-    if(li9 % lstep === 0 || li9 === L - 1)
-      body.push(fsTxt(lx + colW/2, yMet - 5, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
-        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
+    if(li9 % lstep === 0 || li9 === L - 1){
+      body.push(fsTxt(lx + colW/2, yMet - 5, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
+        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
+      /* 展开这一层：真图的真节点 · 真连边（与「story」第2幕、正视卡片同一个 graphSVG）。
+         只在刻度本身画出来的档位给这枚小圆——没那么多像素时点不准，上面那只整列的
+         hit（反查住在哪几张卡）仍然管用；这枚圆的 hit 后push，盖在那只大 hit 上面，
+         点得中圆才展开，点列的其余地方还是反查。 */
+      var eox = lx + colW/2, eoy = yMet - 15/FS_Z;
+      body.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(5/FS_Z).toFixed(2)
+        +'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
+      body.push(fsTxt(eox, eoy + 2/FS_Z, '+', 7, 'var(--pt-fg2)', 'middle', 'font-weight="800" pointer-events="none"'));
+      hit.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(7/FS_Z).toFixed(2)
+        +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></circle>');
+    }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
     for(var ri = 0; ri < rows.length; ri++){
@@ -6211,9 +6223,63 @@ function sideScene(D, g, box){
   var CID = 'ssClip';
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
+  var lyo = layerDetailOverlay(D, box);
   return {body:wrapped, hit:'<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>',
+          fixed:lyo.fixed, fixedHit:lyo.fixedHit,
           nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
           cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
+}
+/* 侧视点开某一层的「展开」浮层：真图的真节点 · 真层级 · 真连边（与「story」第2幕
+   放大一层、正视卡片同一个 graphSVG，读数按点开的那一层算，不是代表层）。
+   钉在 fixedLayer（render() 里那个不吃手势 transform 的 <g>）——demo.html 没有
+   pto-training-sidecar 那套弹簧相机（点一层、镜头推近、周围让出空间），退而求其次
+   用浮层：好处是用户当前的缩放/平移原样保留，关掉精确回到点之前那一眼。 */
+function layerDetailOverlay(D, box){
+  if(ui.openLayer === null || ui.openLayer === undefined) return {fixed:'', fixedHit:''};
+  var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
+  var li = clamp(Math.floor(+ui.openLayer), 0, L-1);
+  var liDense = li < denseTop;
+  var pSel = Math.min(D.pp-1, Math.floor(li/lps));
+  var hasSel = sel !== null && sel < D.world;
+  var co = hasSel ? coordsOf(sel, D) : null;
+  var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
+      cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
+  var me9 = (co && D.moe) ? epOf(co.t, co.c, co.d, D) : null;
+  /* 卡维度的切痕：有选中卡就画「这张卡拿哪一份」，没选中就只画切成几份（不冒领）——
+     与 frontScene 单卡铺满同一条规矩（见那边 pick9 的注释）。 */
+  var cuts9 = {
+    tp: cutTP ? {count:D.tp, mine:co ? co.t : -1} : null,
+    ep: cutEP ? {count:D.ep, mine:co ? (me9 ? me9.ep : 0) : -1} : null,
+    sp: cutTP ? {count:(cutCP?D.cp:1)*D.tp, mine:co ? (cutCP ? co.c : 0)*D.tp + co.t : -1} : null,
+    cp: cutCP ? {count:D.cp, mine:co ? co.c : -1} : null
+  };
+  var ghostIds = {};
+  Object.keys(liDense ? FS_MOE : FS_DENSE).forEach(function(k9){ ghostIds[k9] = 1; });
+  if(cutPP && pSel !== 0) Object.keys(FS_HEAD).forEach(function(k9){ ghostIds[k9] = 1; });
+  if(cutPP && pSel !== D.pp-1) Object.keys(FS_TAIL).forEach(function(k9){ ghostIds[k9] = 1; });
+  var CW = Math.min(box.w*0.82, 760), CH = Math.min(box.h-72, 860);
+  var CX = box.x + (box.w-CW)/2, CY = box.y + Math.max(40, (box.h-CH)/2);
+  var fixed = [], fixedHit = [];
+  fixed.push('<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+box.w.toFixed(1)+'" height="'+box.h.toFixed(1)+'" style="fill:var(--pt-bg);opacity:.7"/>');
+  fixed.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
+    +'" rx="8" style="fill:var(--pt-s1);stroke:var(--pt-bd);stroke-width:1.2;filter:drop-shadow(0 6px 18px rgba(0,0,0,.22))"/>');
+  fixed.push(txt(CX+16, CY+23, 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）', 12.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  fixed.push(txt(CX+16, CY+38, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
+    10, 'var(--pt-fg3)', 'start', 'font-weight="700"'));
+  var gsvg = graphSVG({x:CX+14, y:CY+50, w:CW-28, h:CH-66, g:(hasSel?sel:0), D:D, metricLi:li,
+                       clip:'decoder-stack', label:true, tag3d:true, ghostIds:ghostIds, cuts:cuts9,
+                       ghostClu: D.moe ? [] : ['moe-block']});
+  fixed.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
+                  : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
+  /* 背板先铺（点空白关闭），卡片自己的区域再铺一层不带 data-act 的挡板盖上去——
+     不然点卡片内部（比如看图看得正认真时手滑点到算子上）会透到背板触发关闭。 */
+  fixedHit.push('<rect x="'+box.x.toFixed(1)+'" y="'+box.y.toFixed(1)+'" width="'+box.w.toFixed(1)+'" height="'+box.h.toFixed(1)
+    +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>');
+  fixedHit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop"/>');
+  var bxs = CX+CW-26, bys = CY+20;
+  fixedHit.push('<circle cx="'+bxs.toFixed(1)+'" cy="'+bys.toFixed(1)+'" r="12" style="fill:var(--pt-s2);stroke:var(--pt-bd);stroke-width:1;cursor:pointer" data-act="layerclose"/>'
+    + txt(bxs, bys+4, '×', 15, 'var(--pt-fg)', 'middle', 'font-weight="800" pointer-events="none"'));
+  return {fixed:fixed.join(''), fixedHit:fixedHit.join('')};
 }
 
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
@@ -8285,6 +8351,7 @@ $('stage').addEventListener('touchend', function(ev){
 /* ── 键盘：＋/－ 缩放、0 回标准机位（打字时不抢） ── */
 document.addEventListener('keydown', function(ev){
   if(ui.view !== 'chain' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if(ev.key === 'Escape' && ui.openLayer !== null){ ui.openLayer = null; render(); ev.preventDefault(); return; }
   var t9 = ev.target;
   if(t9 && (t9.tagName === 'INPUT' || t9.tagName === 'TEXTAREA' || t9.isContentEditable)) return;
   if(ev.key === '+' || ev.key === '='){ nudgeZoom(1.25); ev.preventDefault(); }
@@ -8382,6 +8449,11 @@ document.addEventListener('click', function(ev){
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
+  /* 侧视「展开这一层」浮层：点开/关掉都走一次 render()——浮层内容本身也是
+     graphSVG 现画的，不留状态，关了再点当场是新的一份（读数、切痕都跟最新配置）。 */
+  else if(act==='layeropen'){ ui.openLayer = +b.getAttribute('data-li'); render(); }
+  else if(act==='layerclose'){ ui.openLayer = null; render(); }
+  else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
   else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
@@ -8400,6 +8472,7 @@ document.addEventListener('click', function(ev){
   else if(act==='viewtab'){
     ui.viewTab = b.getAttribute('data-tab');
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
+    ui.openLayer = null;             /* 「展开这一层」是侧视自己的浮层，换到别的机位就该关掉 */
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
