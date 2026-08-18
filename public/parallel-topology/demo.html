@@ -3053,7 +3053,13 @@ function netScene(D, g, box, step){
            散开（h 切 → s 切）。总通信量与纯 TP 的一次 AllReduce 完全相同——
            SP 省下 TP 倍激活显存的代价就是把一次拆成两次，这是它「纯赚不赔」的
            全部内容。名字里带上轴，才对得上图上横切/竖切换来换去那件事。 */
-        if(mTP) axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', null, VC.tp, true, 6);
+        /* 这条弧锚在 pF 段自己的算子上（wMid(pF)/segW(pF)），但焦点卡换到别的
+           PP 段时弧跟着挪位置，光看图不一定看得出「这次 AllGather/Reduce-Scatter
+           发生在哪个 p」——副标题把 pF 与它管的层号范围直接写出来。 */
+        if(mTP){
+          var l0TP9 = pF*lps, l1TP9 = Math.min(D.layers, (pF+1)*lps) - 1;
+          axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', 'PP'+pF+' · L'+l0TP9+'–L'+l1TP9, VC.tp, true, 6);
+        }
       }
     }
     /* CP：整网全程沿 s 切，但逐 token 独立的算子（linear / norm）天然不用通信——
@@ -3646,8 +3652,12 @@ function netScene(D, g, box, step){
     if(lf === 0) pick.push(['input_tokens', 0], ['token_embedding', 0]);
     /* AllGather 显示名带上 TP/SP——3d-deck 层模板的写法。SP 的落点就在这对
        换轴器上（s→h 进 TP 区、h→s 回 SP 区），只写 AllGather 看不出 SP 参与。 */
+    /* Q 与 KV 是两条并排的独立支路（真图里 q_a_proj 在 x=685、kv_a_proj 在
+       x=1325，各自往下走过 conv/norm/升维才在 attention_core 汇合）——只标
+       q_a_proj 会让人以为 KV 落在 attention_core 那一个点上，两条都标才对得上
+       「Q 在哪、KV 在哪」这个问题各有各的答案。 */
     pick.push(['input_layernorm', lf], ['attention_all_gather', lf, 'TP/SP AllGather'],
-              ['q_a_proj', lf], ['attention_core', lf],
+              ['q_a_proj', lf], ['kv_a_proj', lf], ['attention_core', lf],
               [lf < denseTop ? 'dense_gate_up' : 'routed_expert_bank', lf],
               ['block_post_norm', lf]);
     /* MoE 段把 pattern 里的另一位主角也标出来。mHC FFN Merge 不进精选：它和
