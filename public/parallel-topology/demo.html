@@ -5960,18 +5960,22 @@ function sideScene(D, g, box){
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
     if(li9 % lstep === 0 || li9 === L - 1){
-      body.push(fsTxt(lx + colW/2, yMet - 5, 'L'+li9, 5.6, inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)', 'middle',
-        li9 % (lstep*2) === 0 || lstep > 1 ? '' : 'opacity=".65"'));
-      /* 展开这一层：真图的真节点 · 真连边（与「story」第2幕、正视卡片同一个 graphSVG）。
-         只在刻度本身画出来的档位给这枚小圆——没那么多像素时点不准，上面那只整列的
-         hit（反查住在哪几张卡）仍然管用；这枚圆的 hit 后push，盖在那只大 hit 上面，
-         点得中圆才展开，点列的其余地方还是反查。 */
-      var eox = lx + colW/2, eoy = yMet - 15/FS_Z;
-      body.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(5/FS_Z).toFixed(2)
-        +'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
-      body.push(fsTxt(eox, eoy + 2/FS_Z, '+', 7, 'var(--pt-fg2)', 'middle', 'font-weight="800" pointer-events="none"'));
-      hit.push('<circle cx="'+eox.toFixed(1)+'" cy="'+eoy.toFixed(1)+'" r="'+(7/FS_Z).toFixed(2)
-        +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></circle>');
+      /* 展开这一层：命中面盖住「L27」这行字本身，不是字旁边另摆一颗小圆——
+         先前那颗圆只有 7px 命中半径，用户看得见的是这行字，点在字上（圆外面）
+         全部落进下面那只整列的「反查」大 hit，字面意义上「点了没反应」
+         （实机反馈：点这行字，弹出来的是反查提示，不是展开）。改成给这行字
+         本身钉一块明显够大的按钮底（矩形+描边，读成「这是个按钮」），命中面
+         比可见文字再放宽一圈；点这块芯片展开，点列的其余地方还是反查。 */
+      var lbl9 = 'L'+li9;
+      var lblCol9 = inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)';
+      var eox = lx + colW/2, eoy = yMet - 5;
+      var chipW9 = fsW(lbl9, 5.6/FS_Z) + 12/FS_Z, chipH9 = 13/FS_Z;
+      body.push('<rect x="'+(eox-chipW9/2).toFixed(1)+'" y="'+(eoy-chipH9*0.78).toFixed(1)+'" width="'+chipW9.toFixed(1)+'" height="'+chipH9.toFixed(1)
+        +'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
+      body.push(fsTxt(eox, eoy, lbl9, 5.6, lblCol9, 'middle',
+        li9 % (lstep*2) === 0 || lstep > 1 ? 'font-weight="700"' : 'font-weight="700" opacity=".65"'));
+      hit.push('<rect x="'+(eox-chipW9/2-3/FS_Z).toFixed(1)+'" y="'+(eoy-chipH9*0.78-3/FS_Z).toFixed(1)+'" width="'+(chipW9+6/FS_Z).toFixed(1)+'" height="'+(chipH9+6/FS_Z).toFixed(1)
+        +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></rect>');
     }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
