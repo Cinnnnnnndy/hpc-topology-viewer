@@ -2996,6 +2996,13 @@ function netScene(D, g, box, step){
      节点）退回一个这个维度专属的假节点：id 各异 ⇒ sin-hash 种子各异 ⇒ 数会
      不同但每次读到的还是同一个数，公式与真节点完全一致，只是没有 colorKey
      这层「真是通信」的身份可借。 */
+  /* 通信标注的字号跟着 ui.zoom3 走，而不是钉死：这一层跟前面那几处「屏幕恒定
+     尺寸」的门牌（PP/TP/EP 选择器、门牌门牌）不是一回事——那几个是**导航用的
+     恒定坐标**，不该因为转/缩就变形；这几个是**贴在具体某根线上的读数**，
+     读数应当跟着它标注的那根线一起放大缩小，不然放大到线本身已经很粗、
+     字却还是那几个像素，看着像字被吞掉了。裁到 [0.7, 2.4] 只是防止极端缩放
+     把字撑成一大坨或缩没了，不是要它反向钉住。 */
+  var zoomF9 = clamp(ui.zoom3, 0.7, 2.4);
   function commMetricTxt(realId, fakeId, fakeLabel, li9){
     var n9 = null, i9;
     if(realId) for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === realId){ n9 = IXg.G.nodes[i9]; break; }
@@ -3086,7 +3093,7 @@ function netScene(D, g, box, step){
           var l0TP9 = pF*lps, l1TP9 = Math.min(D.layers, (pF+1)*lps) - 1;
           var mtTP9 = commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9);
           axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内',
-            'PP'+pF+' · L'+l0TP9+'–L'+l1TP9+(mtTP9 ? ' · '+mtTP9 : ''), VC.tp, true, 6);
+            'PP'+pF+' · L'+l0TP9+'–L'+l1TP9+(mtTP9 ? ' · '+mtTP9 : ''), VC.tp, true, 6*zoomF9);
         }
       }
     }
@@ -3116,7 +3123,7 @@ function netScene(D, g, box, step){
         }
         if(mCP){
           var mtCP9 = commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9);
-          axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', mtCP9 || null, VC.cp, true, 6);
+          axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', mtCP9 || null, VC.cp, true, 6*zoomF9);
         }
       }
     }
@@ -3136,7 +3143,7 @@ function netScene(D, g, box, step){
         if(mEP){
           var liRepEP9 = Math.min(D.layers - 1, Math.max(liRep9, denseTop));
           var mtEP9 = commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9);
-          axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', mtEP9 || null, VC.ep, true, 6);
+          axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', mtEP9 || null, VC.ep, true, 6*zoomF9);
         }
       }
     }
@@ -3154,7 +3161,7 @@ function netScene(D, g, box, step){
         }
         if(mPP){
           var mtPP9 = commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9);
-          axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', mtPP9 || null, VC.pp, true, 6);
+          axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', mtPP9 || null, VC.pp, true, 6*zoomF9);
         }
       }
     }
@@ -3169,7 +3176,7 @@ function netScene(D, g, box, step){
         }
         if(mDP){
           var mtDP9 = commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9);
-          axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', mtDP9 || null, VC.dp, true, 6);
+          axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', mtDP9 || null, VC.dp, true, 6*zoomF9);
         }
       }
     }
@@ -3461,7 +3468,12 @@ function netScene(D, g, box, step){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
-        if(meC && ui.netOff && ui.memFill && !lowDetail){
+        /* 侧视不画：装不下的牌与 70%/88% 警戒线都锚在这张卡自己的 u 范围
+           （u∈[-0.04,1.08]）上——那正是侧视机位折进深度分量、不影响屏幕位置
+           的那根轴。结果不是「线消失」而是「线在屏幕上瘫成同一条」：一整排卡
+           各画一遍、各自的两条虚线全叠在同一个 v 高度上，看着像凭空多出一条
+           贯穿全宽的灰线。侧视本来看的是 PP 分段，不是某张卡装了多少——让位。 */
+        if(meC && ui.netOff && ui.memFill && !lowDetail && ui.viewTab !== 'side'){
           var cMS9 = memStack(pc2, gc);
           if(cMS9.overflow){
             /* 壳顶就是 64GB——不必再标一条线说它在哪，壳自己在那儿。要标的是
@@ -3492,8 +3504,13 @@ function netScene(D, g, box, step){
            卡里那条专家带在 128 只卡的尺度下只有几个像素，分不出谁是谁。
            只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍。 */
         /* 顶视不写：那个机位把 v 轴压进了深度，挂在卡下沿的字会全叠到卡身上。
-           好在顶视里 EP 的框最清楚（正正方方四大块），桶号让位给框。 */
-        if(cutEP && pc2 === 0 && !lowDetail && ui.viewTab !== 'top'){
+           好在顶视里 EP 的框最清楚（正正方方四大块），桶号让位给框。
+           侧视也不写：那个机位把 u 轴（卡内横向、连同 TP/CP/DP 的格位偏移）
+           整个折进了看不见的深度分量，只留 v/w 决定屏幕位置——同一段里好几张
+           卡的桶号标签因此会挤到几乎同一点，糊成一堆读不出的字，还压在 PP
+           选择器的门牌上。侧视本来就是给 PP 看的（TP/CP/DP 的格位差异这个
+           机位天然分不开），这一层标注让位给 PP 门牌。 */
+        if(cutEP && pc2 === 0 && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
           axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
@@ -3606,8 +3623,11 @@ function netScene(D, g, box, step){
       var kSrc9 = kOfR(co);
       var vBot9 = AR + 0.12;
       var a9 = P(0.5, vBot9, wFront9, kSrc9);
-      var labY9 = 0;
+      /* floorBand 现在返回**最后一根线自己的中点**（贝塞尔弧顶那一点，抬升量
+         已经算在内）——标签落在这一点上就是落在一根真线的中间，不再是不管画了
+         几根线都钉死在源卡正上方那一个点、好几个维度的标签叠成一坨。 */
       function floorBand(members9, col9, dash9, wd9){
+        var last9 = null;
         members9.forEach(function(r9){
           var c9 = coordsOf(r9, D);
           if(KC === 1 && c9.c !== co.c) return;
@@ -3615,45 +3635,47 @@ function netScene(D, g, box, step){
           if(kDst9 === kSrc9) return;
           var d9 = P(0.5, vBot9, wFront9, kDst9);
           var lift9 = Math.min(46, 14 + (Math.abs(a9[0]-d9[0]) + Math.abs(a9[1]-d9[1]))*0.14);
-          var mx9 = ((a9[0]+d9[0])/2).toFixed(1), my9 = (((a9[1]+d9[1])/2)-lift9).toFixed(1);
-          var dPath9 = 'M'+a9[0].toFixed(1)+' '+a9[1].toFixed(1)+' Q '+mx9+' '+my9+' '+d9[0].toFixed(1)+' '+d9[1].toFixed(1);
+          var mx9 = (a9[0]+d9[0])/2, my9 = (a9[1]+d9[1])/2 - lift9;
+          var dPath9 = 'M'+a9[0].toFixed(1)+' '+a9[1].toFixed(1)+' Q '+mx9.toFixed(1)+' '+my9.toFixed(1)+' '+d9[0].toFixed(1)+' '+d9[1].toFixed(1);
           body.push('<path d="'+dPath9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(wd9+2.4).toFixed(1)+';opacity:.85"/>');
           body.push('<path d="'+dPath9+'" style="fill:none;stroke:'+col9+';stroke-width:'+wd9.toFixed(1)+';stroke-linecap:round;opacity:.85'
             +(dash9 ? ';stroke-dasharray:'+dash9 : '')+'"/>');
           body.push('<circle cx="'+a9[0].toFixed(1)+'" cy="'+a9[1].toFixed(1)+'" r="2" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
           body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
+          last9 = [mx9, my9];
         });
+        return last9;
       }
-      function floorLab(text9, col9, metric9){
-        var lp9 = P(0.5, AR + 0.30, wFront9, kSrc9);
-        axLab([lp9[0], lp9[1] - 20 - labY9*16], text9, metric9 || null, col9, true, 6.4);
-        labY9++;
+      function floorLab(at9, text9, col9, metric9){
+        if(!at9) return;
+        axLab([at9[0], at9[1] - 10], text9, metric9 || null, col9, true, 6.4*zoomF9);
       }
       /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
          3D 通信弧与容量地面流量带两处才对得上号，不是各画各的巧合数字。 */
       var liRepFloor9 = Math.min(D.layers - 1, co.p*lps + (lps >> 1));
       if(wantTP9){
-        floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6);
-        floorLab('AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
+        var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6);
+        floorLab(atTP9, 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
           commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9));
       }
       if(wantEP9){
         var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
         var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
+        var atEP9 = null;
         mem9.forEach(function(r9, i9){
           var c9 = coordsOf(r9, D);
           if(KC === 1 && c9.c !== co.c) return;
           var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
-          floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8);
+          atEP9 = floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8) || atEP9;
         });
         var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
-        floorLab('AllToAll · EP 组 dispatch（示意量）', VC.ep,
+        floorLab(atEP9, 'AllToAll · EP 组 dispatch（示意量）', VC.ep,
           commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9));
       }
       if(wantDP9){
         /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法 */
-        floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
-        floorLab('梯度 AllReduce · DP 组（反向）', VC.dp,
+        var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
+        floorLab(atDP9, '梯度 AllReduce · DP 组（反向）', VC.dp,
           commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9));
       }
     }
