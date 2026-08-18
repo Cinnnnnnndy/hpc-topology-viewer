@@ -6326,8 +6326,11 @@ function layerDetailOverlay(D, box, centerX){
   fixed.push(txt(CX+16, CY+23, esc(ttl9), ttlFs9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   fixed.push(txt(CX+16, CY+38, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
     10, 'var(--pt-fg3)', 'start', 'font-weight="700"'));
+  /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
+     厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
+     的样式」）——正视卡片自己的 graphSVG 调用就没传 tag3d，这里照抄。 */
   var gsvg = graphSVG({x:CX+14, y:CY+50, w:CW-28, h:CH-66, g:(hasSel?sel:0), D:D, metricLi:li,
-                       clip:'decoder-stack', label:true, tag3d:true, ghostIds:ghostIds, cuts:cuts9,
+                       clip:'decoder-stack', label:true, tag3d:false, ghostIds:ghostIds, cuts:cuts9,
                        ghostClu: D.moe ? [] : ['moe-block']});
   fixed.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
                   : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
