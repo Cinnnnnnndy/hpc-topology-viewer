@@ -6397,44 +6397,18 @@ function sideScene(D, g, box){
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
   var hitWrapped = '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>';
-  /* 展开某一层：不是浮一张卡盖在原图上（那样背景只是被蒙暗，没有真的让位）。
-     把 wrapped/hitWrapped 原样再画两份，各裁一半（以这一层原来的位置为界，
-     左半/右半分别向左右边缘挤扁），中间腾出来的缝就是这一层的真图——效果接近
-     pto-training-sidecar 那套「点一层、镜头推近、两边让位」的弹簧相机，但这里
-     没有相机可推，改用等比挤压 + 裁剪，代价是被挤扁那半区的字会跟着缩小、
-     命中面索性整片关掉（挤扁之后不该再让人在那儿点算子），只留「点哪儿都能收起」。 */
+  /* 展开某一层：不挤压两边、不蒙暗——旁边的层原样留在原位，详图直接嵌进它
+     自己原来那根柱子的位置，长在图里而不是浮在图上（参照 pto-training-sidecar
+     「点一层，详图在原地展开」的效果；早先做过一版挤压两边的，挤压幅度不够
+     明显、加上详图卡钉在不吃手势变换的固定层上，一旦有缩放/平移就跟原图错位，
+     视觉上就是一张贴在画布上的浮窗——不如照原图坐标直接画在同一层里）。
+     旁边的柱子既没挤也没暗，点哪根柱子都还能正常展开那一层（点开着的这根
+     就地收起，点别根直接切过去），背板挡住这一层原来的细柱，别的什么都不用管。 */
   if(ui.openLayer !== null && ui.openLayer !== undefined){
     var openLiSq = clamp(Math.floor(+ui.openLayer), 0, L-1);
     var centerXSq = xOf(openLiSq) + colW/2;
     var lyo = layerDetailOverlay(D, box, centerXSq);
-    var gx0 = lyo.CX, gx1 = lyo.CX + lyo.CW;
-    var clipY0 = box.y - 40, clipH = box.h + 80;
-    var origLx0 = box.x, origLx1 = xOf(openLiSq);
-    var origRx0 = xOf(openLiSq) + colW, origRx1 = box.x + box.w;
-    var lSc = (gx0 - box.x) / Math.max(1, origLx1 - origLx0);
-    var lTx = box.x - lSc*box.x;
-    var rSc = ((box.x+box.w) - gx1) / Math.max(1, origRx1 - origRx0);
-    var rTx = (box.x+box.w) - rSc*(box.x+box.w);
-    var sqParts = [];
-    sqParts.push('<defs><clipPath id="ssSqL"><rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origLx1-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath>'
-      +'<clipPath id="ssSqR"><rect x="'+origRx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origRx1-origRx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath></defs>');
-    sqParts.push('<g clip-path="url(#ssSqL)" transform="translate('+lTx.toFixed(2)+',0) scale('+lSc.toFixed(4)+',1)">'+wrapped+'</g>');
-    sqParts.push('<g clip-path="url(#ssSqR)" transform="translate('+rTx.toFixed(2)+',0) scale('+rSc.toFixed(4)+',1)">'+wrapped+'</g>');
-    /* 字号不跟着横向挤压缩小（只挤了 x，没挤 y），窄下去之后同一批字挤在一起
-       糊成一片——横向挤压表达的是「这些层还在、往边上让位」，不是拿来读的，
-       补一层半透明蒙版把这团糊字压暗，读成「让开的背景」而不是「画错了」。 */
-    sqParts.push('<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
-      +'" style="fill:var(--pt-bg);opacity:.62;pointer-events:none"/>');
-    sqParts.push('<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
-      +'" style="fill:var(--pt-bg);opacity:.62;pointer-events:none"/>');
-    /* 挤扁那两半不留命中面（缩过的算子点不准，也不该点）——只留「点这两片
-       随便哪儿都收起这一层」，跟卡片自己的关闭钮、Esc 三条路殊途同归。 */
-    var sqHit = '<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
-      +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>'
-      + '<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
-      +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>';
-    return {body:sqParts.join(''), hit:sqHit,
-            fixed:lyo.fixed, fixedHit:lyo.fixedHit,
+    return {body:wrapped + lyo.body, hit:hitWrapped + lyo.hit,
             nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
             cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
   }
@@ -6445,13 +6419,14 @@ function sideScene(D, g, box){
 }
 /* 侧视点开某一层的「展开」：真图的真节点 · 真层级 · 真连边（与「story」第2幕
    放大一层、正视卡片同一个 graphSVG，读数按点开的那一层算，不是代表层）。
-   钉在 fixedLayer（render() 里那个不吃手势 transform 的 <g>）——这样它自己的
-   缩放/字号不跟着 zoom3 走，读数字号不用重新对一遍 FS_Z 那一套。
+   画在 sideScene 自己的坐标里、跟 wrapped 一样进同一个手势变换（不再钉
+   在不吃变换的固定层上）——原来钉在固定层是为了字号不跟 zoom3 走，但那样
+   一旦有缩放/平移，详图就跟它原来所在的那根柱子脱节，看着像另开的一个浮窗；
+   跟着场景一起变换，字号确实会随 zoom3 变化，但位置永远跟对，这是更要紧的。
    centerX 是这一层原来在链上的中点（sideScene 传 xOf(openLi)+colW/2 进来）：
-   卡片以它为中心摆，不再取整个舞台的正中——挤压之后左右让出的缝就在这层原来
-   的位置附近，卡片摆在舞台正中反而会跟挤扁的内容错位。 */
+   卡片以它为中心摆，压在这一层原来的柱子上。 */
 function layerDetailOverlay(D, box, centerX){
-  if(ui.openLayer === null || ui.openLayer === undefined) return {fixed:'', fixedHit:'', CX:0, CW:0};
+  if(ui.openLayer === null || ui.openLayer === undefined) return {body:'', hit:'', CX:0, CW:0};
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
   var li = clamp(Math.floor(+ui.openLayer), 0, L-1);
   var liDense = li < denseTop;
@@ -6488,34 +6463,37 @@ function layerDetailOverlay(D, box, centerX){
   var cx0 = (centerX == null) ? box.x + box.w/2 : centerX;
   var CX = clamp(cx0 - CW/2, box.x + 24, box.x + box.w - CW - 24);
   var CY = box.y + Math.max(40, (box.h-CH)/2);
-  var fixed = [], fixedHit = [];
-  fixed.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
-    +'" rx="8" style="fill:var(--pt-s1);stroke:var(--pt-bd);stroke-width:1.2;filter:drop-shadow(0 6px 18px rgba(0,0,0,.22))"/>');
-  /* 标题字号按卡片宽度收——卡片现在跟着这份层模板自己的高宽比走，窄的时候
-     这一整句在 12.5 档会撞上右上角的关闭钮（实机撞过一次）。 */
+  var body = [], hit = [];
+  /* 不做成浮卡：底板跟画布同色、只留一条细边——跟这张图里簇框/层框同一套
+     视觉语言（图里到处都是这种细边浅底的框），不带投影，读成「这一层在
+     原地长出来的详图」，不是另开一层的对话框。 */
+  body.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
+    +'" rx="6" style="fill:var(--pt-bg);fill-opacity:.97;stroke:var(--pt-bd);stroke-width:1"/>');
+  /* 标题字号按卡片宽度收——卡片跟着这份层模板自己的高宽比走，窄的时候
+     这一整句在大字号会撞上右上角的关闭钮（实机撞过一次）。 */
   var ttl9 = 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）';
-  var ttlRoom9 = CW - 16 - 40;
-  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 8, 12.5);
-  fixed.push(txt(CX+16, CY+23, esc(ttl9), ttlFs9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-  fixed.push(txt(CX+16, CY+38, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
-    10, 'var(--pt-fg3)', 'start', 'font-weight="700"'));
+  var ttlRoom9 = CW - 14 - 26;
+  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 7.5, 11);
+  body.push(txt(CX+14, CY+19, esc(ttl9), ttlFs9, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+  body.push(txt(CX+14, CY+32, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
+    9, 'var(--pt-fg3)', 'start', 'font-weight="600"'));
   /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
      厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
      的样式」）——正视卡片自己的 graphSVG 调用就没传 tag3d，这里照抄。 */
-  var gsvg = graphSVG({x:CX+14, y:CY+50, w:CW-28, h:CH-66, g:(hasSel?sel:0), D:D, metricLi:li,
+  var gsvg = graphSVG({x:CX+14, y:CY+42, w:CW-28, h:CH-56, g:(hasSel?sel:0), D:D, metricLi:li,
                        clip:'decoder-stack', label:true, tag3d:false, ghostIds:ghostIds, cuts:cuts9,
                        ghostClu: D.moe ? [] : ['moe-block']});
-  fixed.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
+  body.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
                   : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
-  /* 卡片自己的区域垫一层不带 data-act 的挡板：左右已经挤扁让位，没有背板需要
-     点空白关闭了，但卡片内部（比如手滑点到算子上）不该透到 sideScene 那两只
-     「点这片就收起」的 hit 上——那两只只铺在挤扁那两条带，天然就不会盖住卡片，
-     这层挡板是防卡片自己往外露一两像素时的误触。 */
-  fixedHit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop"/>');
-  var bxs = CX+CW-26, bys = CY+20;
-  fixedHit.push('<circle cx="'+bxs.toFixed(1)+'" cy="'+bys.toFixed(1)+'" r="12" style="fill:var(--pt-s2);stroke:var(--pt-bd);stroke-width:1;cursor:pointer" data-act="layerclose"/>'
-    + txt(bxs, bys+4, '×', 15, 'var(--pt-fg)', 'middle', 'font-weight="800" pointer-events="none"'));
-  return {fixed:fixed.join(''), fixedHit:fixedHit.join(''), CX:CX, CW:CW};
+  /* 卡片自己的区域垫一层不带 data-act 的挡板：底下压着的是这一层原来那根柱子
+     的 layeropen 命中面（现在没被挤走，还在），手滑点到卡片内部空白处不该
+     透下去触发「再点一次」的抖动——垫板挡住，卡片内容自己的命中面另算。
+     关闭钮画在挡板之后：命中面按绘制顺序叠放，后画的在上，点得到。 */
+  hit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop"/>');
+  var bxs = CX+CW-15, bys = CY+13;
+  body.push(txt(bxs, bys+4, '×', 14, 'var(--pt-fg3)', 'middle', 'font-weight="700" pointer-events="none"'));
+  hit.push('<circle cx="'+bxs.toFixed(1)+'" cy="'+bys.toFixed(1)+'" r="10" style="fill:transparent;cursor:pointer" data-act="layerclose"/>');
+  return {body:body.join(''), hit:hit.join(''), CX:CX, CW:CW};
 }
 
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
@@ -8615,8 +8593,8 @@ document.addEventListener('click', function(ev){
   /* 点画布空白处取消选中。选中是一种「当前在看谁」的状态，得有办法退出来——
      不然一旦点中某张卡，读出面板就再也关不掉了（只剩面板上那颗 ✕）。
      只认舞台内的空白：点工具条、抽屉、面板都不算。 */
-  if(!b && ev.target.closest('#stage') && (sel !== null || ui.opSel)){
-    sel = null; ui.opSel = null; render(); ptoNotifyHost(); return;
+  if(!b && ev.target.closest('#stage') && (sel !== null || ui.opSel || ui.openLayer !== null)){
+    sel = null; ui.opSel = null; ui.openLayer = null; render(); ptoNotifyHost(); return;
   }
   if(!b) return;
   var act = b.getAttribute('data-act');
@@ -8696,7 +8674,7 @@ document.addEventListener('click', function(ev){
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
   /* 侧视「展开这一层」浮层：点开/关掉都走一次 render()——浮层内容本身也是
      graphSVG 现画的，不留状态，关了再点当场是新的一份（读数、切痕都跟最新配置）。 */
-  else if(act==='layeropen'){ ui.openLayer = +b.getAttribute('data-li'); render(); }
+  else if(act==='layeropen'){ var li9o = +b.getAttribute('data-li'); ui.openLayer = (ui.openLayer === li9o) ? null : li9o; render(); }
   else if(act==='layerclose'){ ui.openLayer = null; render(); }
   else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
