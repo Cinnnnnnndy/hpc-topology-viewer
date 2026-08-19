@@ -8149,7 +8149,11 @@ function compStrip(blocks, wide){
    ax/ay/az = {n, dim, i}：份数、哪把刀（决定颜色）、本卡在这根轴上的下标。 */
 function cavityBox3D(ax, ay, az, o){
   o = o || {};
-  var W = o.w || 98, HH = o.h || 60, DD = o.d || 52;
+  /* 这几张图是读出卡里的辅助插图，帮读者认「本卡是哪一格」，不是拿来抠尺寸的
+     精密图——原来 98×60×52 在小面板里跟外框虚线、格线挤在一起看着像一团蚊子。
+     放大到 1.4 倍、格线再压淡一档，先让「哪一格是实心的」一眼跳出来，其余
+     线退成背景里的坐标参照，不跟那一格抢。 */
+  var W = o.w || 138, HH = o.h || 84, DD = o.d || 73;
   var dx = W/Math.max(1,ax.n), dy = HH/Math.max(1,ay.n), dz = DD/Math.max(1,az.n);
   var body = '';
   /* ln 在这份文件里是各渲染函数各自的局部小工具（同一段代码写了三遍），
@@ -8158,13 +8162,14 @@ function cavityBox3D(ax, ay, az, o){
     return '<line x1="'+a9[0].toFixed(1)+'" y1="'+a9[1].toFixed(1)
       + '" x2="'+b9[0].toFixed(1)+'" y2="'+b9[1].toFixed(1)+'" style="'+st9+'"/>';
   }
-  /* 外壳：虚线细框——腔是「索引空间」，不是实心物件 */
-  body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:.9, dash:'3 3'});
+  /* 外壳：虚线细框——腔是「索引空间」，不是实心物件。缝拉宽一档（3 3→2 5），
+     线本身也淡一档，退成背景，不跟里面的格线、实心格抢视线。 */
+  body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:.8, dash:'2 5'});
   /* 每把刀在它自己那根轴上留下的格线。格距小到 2px 以下就不画：
      那时线比格子还密，画出来是一片灰，把「本卡是哪一格」盖掉。 */
   function gl(step, dim){
-    return 'stroke:'+(VC[dim]||'var(--pt-bd)')+';stroke-width:'+(step>5?.7:.5)
-      + ';stroke-opacity:'+(step>5?.5:.32);
+    return 'stroke:'+(VC[dim]||'var(--pt-bd)')+';stroke-width:'+(step>5?.6:.45)
+      + ';stroke-opacity:'+(step>5?.38:.24);
   }
   var i9;
   if(dy >= 2) for(i9=1;i9<ay.n;i9++)
