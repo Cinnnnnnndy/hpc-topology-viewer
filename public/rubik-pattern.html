@@ -129,7 +129,10 @@
   });
   window.addEventListener('message', function(e){
     var d = e.data || {};
-    if (d.type === 'rubik-theme' || d.type === 'cockpit-theme') applyTheme(d.theme);
+    // pto:state 是 net-slicing / swimlane 等组合工作台格子共用的主题约定（见 combo-workbench/
+    // index.html 的 applyShellTheme）；rubik-theme/cockpit-theme 是这页自己原有的两个别名，
+    // 三个都认，谁接进来都不用改宿主那一端。
+    if (d.type === 'rubik-theme' || d.type === 'cockpit-theme' || (d.type === 'pto:state' && d.theme)) applyTheme(d.theme);
     if (d.type === 'rubik-cmd'){                   // 宿主 → pattern 指令桥（与 cockpit-cmd 同思路）
       if (d.cmd === 'mode') handle.setMode(d.value|0);
       else if (d.cmd === 'layer') handle.selectLayer(d.value == null ? null : d.value|0);
