@@ -424,6 +424,19 @@
       // （压了这两个形态就没意义了）。
       tps: { gapT: stepOf('x', TPL, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
       ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TPL), rep: stepOf('z', REP), cy: CY },
+      /* 物理平铺：不看任何并行分组，只回答「这张卡插在机房哪个槽位」——X=host 内卡位(slot)
+         · Z=host 序号 · Y 恒 0（各形态里唯一不叠高度的一种，真摊平，不是「压扁的立方」）。
+         host 数一多会排成一条极长的线，超过 64 台折成 hgx×hgz 近方格（同 DP 平铺的折法）；
+         典型工况（≤64 host，如 16 机×8 卡=128 张）不折，摊成整间机房本来的样子——
+         这正是它要回答的问题本身，折了反而看不出「插在哪」。 */
+      phys: (() => {
+        const foldHost = HOSTS > 64;
+        const hgx = foldHost ? Math.max(1, Math.ceil(Math.sqrt(HOSTS))) : 1;
+        const hgz = foldHost ? Math.ceil(HOSTS / hgx) : HOSTS;
+        const slot = stepOf('x', CPH);
+        const hostBlockW = CPH * slot;
+        return { hgx, hgz, slot, gapX: hostBlockW + padOf(hostBlockW), gapZ: stepOf('z', hgz) };
+      })(),
     };
 
     // 5 种形态的 rank → 世界坐标（out 为 {x,y,z} 或 THREE.Vector3 均可）
@@ -458,6 +471,15 @@
         out.z = (rep - cR) * s.rep;
         return out;
       }
+      if (mode === 5) {          // 物理平铺：不看并行分组，只看插在机房哪个槽位——Y 恒 0，真摊平
+        const s = SP.phys, h = hostOf(r), sl = slotOf(r) % CPH;
+        const hx = s.hgx > 1 ? h % s.hgx : 0;
+        const hz = s.hgx > 1 ? (h / s.hgx) | 0 : h;
+        out.x = (hx - (s.hgx - 1) / 2) * s.gapX + (sl - (CPH - 1) / 2) * s.slot;
+        out.y = 0;
+        out.z = (hz - (s.hgz - 1) / 2) * s.gapZ;
+        return out;
+      }
       const s = SP.std;          // 标准：X=PP（左→右 Stage0→末） · Y=DP（上→下 DP0→末） · Z=TP
       out.x = (pp - cP) * s.sx;
       out.y = s.cy + (cR - rep) * s.sy;
@@ -472,12 +494,14 @@
       gx: { n: COLS, lab: '副本列' }, gz: { n: ROWS, lab: '副本行' },
       tpc: { n: TPC, lab: '板内TP列' }, tpd: { n: TPD, lab: '板内TP排' },
       cp: { n: CP, lab: 'CP段' },
+      host: { n: HOSTS, lab: 'Host' }, slot: { n: CPH, lab: '槽位' },
     };
     const depthIdxOf = (r, dim) => dim === 'tp' ? laneOf(r) : dim === 'pp' ? ppOf(r)
       : dim === 'rep' ? repOf(r) : dim === 'ep' ? epOf(r) : dim === 'dom' ? domOf(r)
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
           : dim === 'cp' ? cpOf(r)
-            : dim === 'tpc' ? laneOf(r) % TPC : dim === 'tpd' ? (laneOf(r) / TPC) | 0 : 0;
+            : dim === 'tpc' ? laneOf(r) % TPC : dim === 'tpd' ? (laneOf(r) / TPC) | 0
+              : dim === 'host' ? hostOf(r) : dim === 'slot' ? (slotOf(r) % CPH) : 0;
 
     /* 视角收编的判据是**逐屏**的，不是逐形态的：
        一个形态之所以不同于标准，全在它那根 emph 轴（TP切片的墙、PP流水的段，步距 4×）。于是——
@@ -551,6 +575,20 @@
         // 「哪一段慢」里段身份就是答案、DP 是噪声 → 前视把 100 副本折进每格，
         // 5 列一字排开，慢段=整列偏暗，是这一形态的主屏。
         views: [0, 1, 2], bestView: 2,
+      },
+      {
+        /* 物理平铺：前五个形态问的都是「归哪个并行组」，这一个故意不问——只回答
+           「这张卡插在机房哪个槽位」，是并行分组之外的第六个正交问题（rank-segmentation-observability）。
+           别的形态换个并行配置，卡就换一批邻居；这一个换任何并行配置，同一张卡永远插在
+           同一个槽位——它是最稳定的那个坐标系，切分再怎么变，物理位置不跟着变。 */
+        key: 'phys', name: '物理平铺', short: '物理',
+        sub: `物理平铺：${HOSTS} 台机 × ${CPH} 卡摊成一张机房俯视图（不看并行分组，只看插在哪）`,
+        why: `不问「归哪个并行组」，只问「这张卡插在机房哪个槽位」· 单层摊平（Y 恒 0，各形态里唯一不叠高度的一种）`,
+        viewLabels: { 1: '顶 机房俯视（Host×槽位）' },
+        depth: { 1: [] },
+        // Y 恒为 0（真摊平），3D 与顶视看到的是同一份东西 → 顶视本身就是「最该看的一屏」，
+        // 前/侧两屏会把仅有的两根轴之一直接压成一条线，没有信息量，不给。
+        views: [0, 1], bestView: 1,
       },
     ];
 
