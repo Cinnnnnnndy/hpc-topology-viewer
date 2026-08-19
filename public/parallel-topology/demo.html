@@ -5811,6 +5811,28 @@ function frontScene(D, g, box){
    PP 是主角：段头横幅（附因子与每段卡数）、段边界、段间掰缝；Rank 打开时每段
    下方铺卡架（段 → 卡的层级）。文字全部地图式：屏幕字号恒定（1/zoom 反除），
    放大到条宽装得下时，算子条里直接写名字（越放大出现得越多）。 */
+/* 「展开这一层」的挤压动画状态。不挂在 ui 上——它是每次点开/收起当场跑一遍
+   就完事的过渡效果，不是要记住、要写进链接的「当前在看什么」。
+   sqT：0（完全没挤）→1（挤到目标位置）的进度；sqAnim.li 记的是这轮动画服务
+   哪一层——收起时 ui.openLayer 已经改回 null 了，画面还要按这层的几何把
+   动画播完，不能立刻就没了这层是谁。 */
+var sqT = 0, sqAnim = null;
+function startSqAnim(fromT, toT, li){
+  if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
+  var t0 = (window.performance || Date).now(), dur = 240;
+  sqAnim = {t0:t0, dur:dur, from:fromT, to:toT, li:li, raf:null};
+  var self = sqAnim;
+  function step(){
+    var now = (window.performance || Date).now();
+    var p = Math.min(1, (now - self.t0) / self.dur);
+    var e = 1 - Math.pow(1 - p, 3);           /* ease-out cubic：快启动、慢停靠 */
+    sqT = self.from + (self.to - self.from) * e;
+    render();
+    if(p < 1){ self.raf = requestAnimationFrame(step); }
+    else { sqT = self.to; if(sqAnim === self) sqAnim = null; render(); }
+  }
+  self.raf = requestAnimationFrame(step);
+}
 function sideScene(D, g, box){
   var IXg = graphIndex(); if(!IXg) return null;
   var G = IXg.G, clu = IXg.clu, root = clu['decoder-stack'];
@@ -6278,18 +6300,60 @@ function sideScene(D, g, box){
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
   var hitWrapped = '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>';
-  /* 展开某一层：不挤压两边、不蒙暗——旁边的层原样留在原位，详图直接嵌进它
-     自己原来那根柱子的位置，长在图里而不是浮在图上（参照 pto-training-sidecar
-     「点一层，详图在原地展开」的效果；早先做过一版挤压两边的，挤压幅度不够
-     明显、加上详图卡钉在不吃手势变换的固定层上，一旦有缩放/平移就跟原图错位，
-     视觉上就是一张贴在画布上的浮窗——不如照原图坐标直接画在同一层里）。
-     旁边的柱子既没挤也没暗，点哪根柱子都还能正常展开那一层（点开着的这根
-     就地收起，点别根直接切过去），背板挡住这一层原来的细柱，别的什么都不用管。 */
-  if(ui.openLayer !== null && ui.openLayer !== undefined){
-    var openLiSq = clamp(Math.floor(+ui.openLayer), 0, L-1);
-    var centerXSq = xOf(openLiSq) + colW/2;
-    var lyo = layerDetailOverlay(D, box, centerXSq);
-    return {body:wrapped + lyo.body, hit:hitWrapped + lyo.hit,
+  /* 展开某一层：真的把两边的层推开，让位置动起来——之前有一版按等比例挤压，
+     系数太保守（0.68/0.77）又叠着卡片钉在固定层上跟原图错位的老毛病，两条
+     叠一起看着就是「贴了张浮卡」；再上一版干脆不挤了，结果是「没反应」。
+     这版把挤压系数放开到贴着 sqAnim 算出来的目标几何（见下方 startSqAnim），
+     并且真的用 requestAnimationFrame 从 1（不挤）过渡到目标挤压比例——
+     sqT 就是这个 0→1 的进度，0 = 完全没挤，1 = 挤到目标位置，动画期间
+     sqActiveLi 认的是动画自己的目标层，不是 ui.openLayer 本身（收起动画播放
+     期间 ui.openLayer 已经是 null 了，但画面还要按最后那层的几何过渡到 1）。 */
+  var sqActiveLi = (ui.openLayer !== null && ui.openLayer !== undefined) ? clamp(Math.floor(+ui.openLayer), 0, L-1)
+                  : (sqAnim && sqAnim.li !== null ? sqAnim.li : null);
+  if(sqActiveLi !== null){
+    var centerXSq = xOf(sqActiveLi) + colW/2;
+    var lyo = layerDetailOverlay(D, box, centerXSq, sqActiveLi);
+    var t9 = clamp(sqT, 0, 1);
+    var gx0f = lyo.CX, gx1f = lyo.CX + lyo.CW;
+    var clipY0 = box.y - 40, clipH = box.h + 80;
+    var origLx0 = box.x, origLx1 = xOf(sqActiveLi);
+    var origRx0 = xOf(sqActiveLi) + colW, origRx1 = box.x + box.w;
+    /* 挤压系数不是「刚好够卡片用的那点空间」——按那个算出来的比例常常只有
+       0.6～0.8，两边的层看着跟没挤一样，卡片就成了浮在正常大小背景上的贴纸。
+       封个顶：不管卡片多宽、这一层原来在链上多靠中间，两边都至少挤到 28%
+       大小——「被推得很小」这件事本身要一眼看出来，剩下没被内容占满的缝
+       就地留给蒙版，读成「让出来的空当」，不是排版失误。 */
+    var SQUEEZE_CAP = 0.28;
+    var lSc1 = Math.min(SQUEEZE_CAP, (gx0f - box.x) / Math.max(1, origLx1 - origLx0));
+    var rSc1 = Math.min(SQUEEZE_CAP, ((box.x+box.w) - gx1f) / Math.max(1, origRx1 - origRx0));
+    var lSc = 1 + (lSc1 - 1)*t9, rSc = 1 + (rSc1 - 1)*t9;
+    var lTx = box.x - lSc*box.x;
+    var rTx = (box.x+box.w) - rSc*(box.x+box.w);
+    var gx0 = box.x + (gx0f - box.x)*t9, gx1 = (box.x+box.w) - ((box.x+box.w) - gx1f)*t9;
+    var sqParts = [];
+    sqParts.push('<defs><clipPath id="ssSqL"><rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origLx1-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath>'
+      +'<clipPath id="ssSqR"><rect x="'+origRx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,origRx1-origRx0).toFixed(1)+'" height="'+clipH.toFixed(1)+'"/></clipPath></defs>');
+    sqParts.push('<g clip-path="url(#ssSqL)" transform="translate('+lTx.toFixed(2)+',0) scale('+lSc.toFixed(4)+',1)">'+wrapped+'</g>');
+    sqParts.push('<g clip-path="url(#ssSqR)" transform="translate('+rTx.toFixed(2)+',0) scale('+rSc.toFixed(4)+',1)">'+wrapped+'</g>');
+    /* 字号不跟着横向挤压缩小（只挤了 x，没挤 y），挤到位之后同一批字会挤在
+       一起糊成一片——补一层随挤压进度一起变浓的蒙版，读成「让开的背景」。 */
+    sqParts.push('<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:var(--pt-bg);opacity:'+(t9*0.62).toFixed(2)+';pointer-events:none"/>');
+    sqParts.push('<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
+      +'" style="fill:var(--pt-bg);opacity:'+(t9*0.62).toFixed(2)+';pointer-events:none"/>');
+    /* 详图卡跟着挤压进度一起淡入——卡片内容本身不用逐帧重算（那是 graphSVG
+       整棵重画，费不起），淡入淡出足够表达「跟这次展开/收起同一个节奏」。 */
+    if(t9 > 0.03) sqParts.push('<g opacity="'+t9.toFixed(2)+'" pointer-events="'+(t9>0.9?'auto':'none')+'">'+lyo.body+'</g>');
+    /* 挤扁那两半不留算子命中面（缩过的点不准，也不该点）——只留「点这两片
+       随便哪儿都收起这一层」，跟卡片自己的关闭钮、Esc、点同一层再收起三条
+       路殊途同归。挤压没播完（t9 还小）时先不接管这片命中，免得挡住原图。 */
+    var sqHit = t9 > 0.5
+      ? '<rect x="'+origLx0.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,gx0-origLx0).toFixed(1)+'" height="'+clipH.toFixed(1)
+        +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>'
+        + '<rect x="'+gx1.toFixed(1)+'" y="'+clipY0.toFixed(1)+'" width="'+Math.max(0,(box.x+box.w)-gx1).toFixed(1)+'" height="'+clipH.toFixed(1)
+        +'" style="fill:transparent;cursor:pointer" data-act="layerclose"/>'
+      : '';
+    return {body:sqParts.join(''), hit:sqHit + (t9>0.9 ? lyo.hit : ''),
             nodes:0, sawn:0, whole:0, step:0, steps:[], zoom:false,
             cut:{dp:cutDP, pp:cutPP, cp:cutCP, tp:cutTP, ep:cutEP}, note:''};
   }
@@ -6305,11 +6369,13 @@ function sideScene(D, g, box){
    一旦有缩放/平移，详图就跟它原来所在的那根柱子脱节，看着像另开的一个浮窗；
    跟着场景一起变换，字号确实会随 zoom3 变化，但位置永远跟对，这是更要紧的。
    centerX 是这一层原来在链上的中点（sideScene 传 xOf(openLi)+colW/2 进来）：
-   卡片以它为中心摆，压在这一层原来的柱子上。 */
-function layerDetailOverlay(D, box, centerX){
-  if(ui.openLayer === null || ui.openLayer === undefined) return {body:'', hit:'', CX:0, CW:0};
+   卡片以它为中心摆，压在这一层原来的柱子上。li 由调用方传入而不是自己读
+   ui.openLayer——收起动画播放期间 ui.openLayer 已经是 null 了，但卡片内容
+   还要按最后展开的那层接着画完这一帧的淡出。 */
+function layerDetailOverlay(D, box, centerX, li){
+  if(li === null || li === undefined) return {body:'', hit:'', CX:0, CW:0};
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
-  var li = clamp(Math.floor(+ui.openLayer), 0, L-1);
+  li = clamp(Math.floor(+li), 0, L-1);
   var liDense = li < denseTop;
   var pSel = Math.min(D.pp-1, Math.floor(li/lps));
   var hasSel = sel !== null && sel < D.world;
@@ -8446,7 +8512,7 @@ $('stage').addEventListener('touchend', function(ev){
 /* ── 键盘：＋/－ 缩放、0 回标准机位（打字时不抢） ── */
 document.addEventListener('keydown', function(ev){
   if(ui.view !== 'chain' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  if(ev.key === 'Escape' && ui.openLayer !== null){ ui.openLayer = null; render(); ev.preventDefault(); return; }
+  if(ev.key === 'Escape' && ui.openLayer !== null){ var liEsc = ui.openLayer; ui.openLayer = null; startSqAnim(sqT, 0, liEsc); ev.preventDefault(); return; }
   var t9 = ev.target;
   if(t9 && (t9.tagName === 'INPUT' || t9.tagName === 'TEXTAREA' || t9.isContentEditable)) return;
   if(ev.key === '+' || ev.key === '='){ nudgeZoom(1.25); ev.preventDefault(); }
@@ -8466,7 +8532,10 @@ document.addEventListener('click', function(ev){
      不然一旦点中某张卡，读出面板就再也关不掉了（只剩面板上那颗 ✕）。
      只认舞台内的空白：点工具条、抽屉、面板都不算。 */
   if(!b && ev.target.closest('#stage') && (sel !== null || ui.opSel || ui.openLayer !== null)){
-    sel = null; ui.opSel = null; ui.openLayer = null; render(); ptoNotifyHost(); return;
+    var liBlank = ui.openLayer;
+    sel = null; ui.opSel = null; ui.openLayer = null;
+    if(liBlank !== null) startSqAnim(sqT, 0, liBlank); else render();
+    ptoNotifyHost(); return;
   }
   if(!b) return;
   var act = b.getAttribute('data-act');
@@ -8544,10 +8613,18 @@ document.addEventListener('click', function(ev){
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
   }
   else if(act==='opclose'){ ui.opSel = null; var oc8 = $('opCard'); if(oc8) oc8.hidden = true; }
-  /* 侧视「展开这一层」浮层：点开/关掉都走一次 render()——浮层内容本身也是
-     graphSVG 现画的，不留状态，关了再点当场是新的一份（读数、切痕都跟最新配置）。 */
-  else if(act==='layeropen'){ var li9o = +b.getAttribute('data-li'); ui.openLayer = (ui.openLayer === li9o) ? null : li9o; render(); }
-  else if(act==='layerclose'){ ui.openLayer = null; render(); }
+  /* 侧视「展开这一层」浮层：内容本身是 graphSVG 现画的，不留状态，关了再点
+     当场是新的一份（读数、切痕都跟最新配置）。开/关都带一段挤压动画——
+     从当前的挤压进度 sqT 过渡到目标（开到 1、关到 0），不是直接切一帧过去，
+     两边的层跟着「动」这件事才立得住（见 startSqAnim）。同一层再点一次收起；
+     点别的层直接从当前进度切过去（不重新播放开合，只挪位置——两层都已经
+     挤开着，没必要先收回来再挤一遍）。 */
+  else if(act==='layeropen'){
+    var li9o = +b.getAttribute('data-li');
+    if(ui.openLayer === li9o){ ui.openLayer = null; startSqAnim(sqT, 0, li9o); }
+    else{ var wasOpen9 = ui.openLayer !== null; ui.openLayer = li9o; startSqAnim(wasOpen9 ? sqT : 0, 1, li9o); }
+  }
+  else if(act==='layerclose'){ var liClose9 = ui.openLayer; ui.openLayer = null; startSqAnim(sqT, 0, liClose9); }
   else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
@@ -8568,6 +8645,8 @@ document.addEventListener('click', function(ev){
     ui.viewTab = b.getAttribute('data-tab');
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
     ui.openLayer = null;             /* 「展开这一层」是侧视自己的浮层，换到别的机位就该关掉 */
+    if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
+    sqAnim = null; sqT = 0;          /* 挤压进度也归零：不带着上一次的开合状态串到别的机位 */
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
