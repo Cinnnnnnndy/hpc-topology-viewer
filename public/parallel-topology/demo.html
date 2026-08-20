@@ -881,7 +881,10 @@ function urlLoad(){
   if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
-  if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; ui.kPhys=cs.indexOf('x')>=0; }
+  if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
+  /* 物理平铺不是一把刀，不跟 cuts= 混在一起编码——它答的是「怎么摆」，cuts 答的是
+     「摊出几张」，两件事分属两个配置维度，URL 里也该是两个各自独立的参数。 */
+  if(q.get('phys')==='1') ui.kPhys = true;
   /* vtab 带着机位一起落。只写 tab 不改 yaw/pitch 的话，?vtab=top 会高亮「顶视」
      却仍停在 3D 那个等轴机位——tab 说的是一回事，画面是另一回事。正视/侧视走
      自己的 2D 渲染器（frontScene / sideScene）用不到机位，但切回 3D 时机位得是对的。
@@ -943,7 +946,7 @@ function urlWrite(){
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='chain' && !ui.spread) q.set('stack','1');
-  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kCP?'c':'')+(ui.kTP?'t':'')+(ui.kEP?'e':'')+(ui.kPhys?'x':''); if(cs2!=='dpcte') q.set('cuts',cs2); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
+  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kCP?'c':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpcte') q.set('cuts',cs2); if(ui.kPhys) q.set('phys','1'); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
@@ -7367,13 +7370,16 @@ function renderChainBar(D){
      与 sidecar 的写法对齐：那边画的就是 TP/SP AllGather、TP/SP Reduce-Scatter。 */
   if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片，同时带着 SP：同一组卡、同样大小——TP 区里切 h（竖），TP 区之外切 s（横）。SP 不占乘数，所以只有这一颗开关">TP·SP</button>';
   if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
-  /* 第六颗不是刀——它不决定摊出几张卡（那仍然由左边五刀说了算），只改这些卡
-     摆在哪儿：关掉时按并行坐标摆（DP 一排 · TP 一行 · PP 纵深），打开后改按
-     它插在机房哪个槽位摆（X=host 内卡位 slot · 纵深=host 序号，摊成一层不摞高）。
-     摆在同一条 pt-seg 里、跟五刀联动，而不是另开一块面板——用户要的正是这两件事
-     长在一起。不给维度色：它答的不是「哪根轴」，给维度色会被读成第六根轴。 */
-  kBtns += '<button'+(ui.kPhys?' class="is-on"':'')+' data-act="knifetoggle" data-k="phys" title="物理平铺：不改摊出几张卡（仍由左边五刀决定），只改它们摆在哪——按插在机房的槽位（host/slot）摆成一层平面，不再按并行坐标摆">物理</button>';
   kBtns += '</span>';
+  /* 物理平铺单独一个 pt-seg，不并进上面那条五刀的分段控件——它不是刀（不决定
+     摊出几张卡，那仍然由五刀说了算，只改这些卡摆在哪儿），混在同一条连成一体
+     的胶囊里会被误读成「第六根轴」，跟五刀平起平坐。分开摆、留出缝，视觉上先
+     承认它是另一类开关，但仍然紧跟在五刀右边、用同一套 knifetoggle 机制联动
+     （数据层面两者共用 ui.kPhys / render()，只是这里的胶囊分组变了）。
+     不给维度色：颜色在这条工具条里是「第几根轴」的记号，物理平铺没有轴色可给。 */
+  var physBtn = '<span class="pt-seg">'
+    + '<button'+(ui.kPhys?' class="is-on"':'')+' data-act="knifetoggle" data-k="phys" title="物理平铺：不改摊出几张卡（仍由左边五刀决定），只改它们摆在哪——按插在机房的槽位（host/slot）摆成一层平面，不再按并行坐标摆">物理</button>'
+    + '</span>';
   var vBtns = '<span class="pt-seg">'
     + '<button'+(ui.viewTab==='3d'?' class="is-on"':'')+' data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
     + '<button'+(ui.viewTab==='front'?' class="is-on"':'')+' data-act="viewtab" data-tab="front" data-yaw="0" data-pitch="0" title="正视图">正视</button>'
@@ -7510,7 +7516,7 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + vBtns + lBtns + mvBtn + dispBtn;
+  $('stagebar').innerHTML = cBtn + kBtns + physBtn + vBtns + lBtns + mvBtn + dispBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
