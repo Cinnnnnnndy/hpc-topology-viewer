@@ -344,6 +344,11 @@
           <span title="等待上游激活或下游梯度，属于 pipeline 依赖，不等同于数值异常"><i style="--legend-color:var(--viz-wait)"></i>依赖等待</span>
           <span title="PP stage 之间的 activation / gradient send-recv 事务"><i style="--legend-color:var(--viz-comm)"></i>通信事务</span>
           <span title="半透明紫色带表示保存激活的生命周期；紫色左端是前向保存，绿色右端是反向消费并释放"><i class="is-hold"></i>激活驻留</span>
+          <!-- ④ 本仓新增（kernel 级分段的图例，见上方「④ 本仓新增」区块）：颜色含义
+               之前只在悬浮 tooltip 里说明，条上那几段半透明色带脱离 tooltip 看不出
+               是什么——补一行常驻图例，不用悬浮也能读。三个小方块＝三种切法色，
+               不是三种独立类别，因此共用一个 <span>，用逗号顿开而不是拆三条。 -->
+          <span title="前向/反向计算条内部的半透明色带：这次计算内部按 attn.q+kv/attn.core/attn.out/router/experts 展开，颜色＝切法（与「卡内解剖/时间·流」同一份算子表），不是新的事件类别——悬浮到色带上可看具体是哪个 kernel"><i style="--legend-color:#06B6D4"></i><i style="--legend-color:#A855F7"></i><i style="--legend-color:var(--foreground-muted)"></i>Kernel 分段（青=TP·紫=EP·灰=不切）</span>
         </div>
         <span id="rangeMeta">0.00–315.61 ms · MB07 完整链路</span>
       </footer>
@@ -1364,6 +1369,24 @@
             }
           });
         }
+        /* 色带含义之前只在悬浮 tooltip 里说明——.timeline-footer 那行常驻图例在
+           combo-workbench 卡片内嵌形态下被 embed.css 整行 display:none（那 38px
+           留给泳道本身，不给图例），所以常驻图例这条路走不通，只能落回悬浮。
+           但悬浮要一格一格试才发现，段一多容易读成「一堆看不懂的花色」。
+           折中：段本身够宽（能放下 2 字符不糊）时，直接在段里刻它的切法缩写
+           （TP/EP，不切分的不写字——灰色本身就是"没有切法"，写"—"反而添乱），
+           不够宽的窄段仍然只能靠悬浮——两条腿走路，不必等布局改版。 */
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `600 7px ${css('--font-mono') || 'monospace'}`;
+        segX = barX;
+        segments.forEach(seg => {
+          const segW = barW * seg.w / total;
+          if (segW >= 16 && seg.cls !== 'none') {
+            ctx.fillStyle = 'rgba(255,255,255,.92)';
+            ctx.fillText(seg.cls.toUpperCase(), segX + segW / 2, barY + barH / 2);
+          }
+          segX += segW;
+        });
         ctx.restore();
       }
       // tooltip 里追加一行 kernel 分解——不重复 metrics 已经展示的原始字段，只把同一份
