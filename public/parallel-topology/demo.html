@@ -768,11 +768,15 @@ var ui = {
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
-  /* 模块视图：整网正视/侧视默认画到逐算子明细（~30 框/层）；打开后收成
-     attn.qkv / attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块，
-     给 rank 视角一个更粗的取景——细节仍在，「整网通」那边没有丢。默认关，
-     不开这个开关时两套渲染必须逐像素一致（见 frontScene/sideScene）。 */
-  moduleView:false,
+  /* 模块视图：整网正视/侧视把逐算子明细（~30 框/层）收成 attn.qkv /
+     attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块。
+     **默认开**：设计评审的结论就是 rank 视角第一眼该看到「已经分好的那几块
+     以及块之间的通信」，逐算子那一层是追问下去才要的东西，不是开场白——
+     默认关的话读者进来看到的仍旧是那面算子墙，等于这个取景没有生效。
+     真要逐算子明细：这颗开关关掉即可（或链接带 ?mods=0），「整网通」那个
+     更细的视角也一直在。关掉时的渲染与加这个功能之前逐像素一致
+     （见 frontScene/sideScene，回归对比按这一条守）。 */
+  moduleView:true,
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
@@ -918,7 +922,10 @@ function urlLoad(){
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
   if(q.get('legend')==='1') ui.legendOn = true;
+  /* 模块视图默认开，所以链接里出现的通常是**关掉**它的 mods=0；mods=1 仍然
+     认（默认改成开之前发出去的链接带的就是它），只是现在与默认值相同。 */
   if(q.get('mods')==='1') ui.moduleView = true;
+  else if(q.get('mods')==='0') ui.moduleView = false;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
      mv= 空串 = 全部隐藏，这也是一个有意义的状态（只看结构），不能当成「没写就默认全开」。 */
   if(q.has('mv')){
@@ -970,7 +977,7 @@ function urlWrite(){
   if(ui.view==='chain' && ui.netOff && !ui.memFill) q.set('mem','0');
   if(ui.view==='chain' && !ui.commOn) q.set('comm','0');
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
-  if(ui.view==='chain' && ui.moduleView) q.set('mods','1');
+  if(ui.view==='chain' && !ui.moduleView) q.set('mods','0');   /* 默认开，只把「关掉了」写进链接 */
   if(ui.view==='chain'){
     var mv2 = (ui.mv.num?'n':'')+(ui.mv.grad?'g':'')+(ui.mv.perf?'p':'')+(ui.mv.moe?'m':'')+(ui.mv.train?'t':'');
     if(mv2 !== 'ngpmt') q.set('mv', mv2);       /* 全开是默认，不写进链接 */
