@@ -8160,8 +8160,10 @@ function cavityBox3D(ax, ay, az, o){
   o = o || {};
   /* 这几张图是读出卡里的辅助插图，帮读者认「本卡是哪一格」，不是拿来抠尺寸的
      精密图——原来 98×60×52 在小面板里跟外框虚线、格线挤在一起看着像一团蚊子。
-     放大到 1.4 倍、格线再压淡一档，先让「哪一格是实心的」一眼跳出来，其余
-     线退成背景里的坐标参照，不跟那一格抢。 */
+     放大到 1.4 倍就已经把「挤在一起」这件事解决了——先前又把线压得太淡，
+     矫枉过正到「外框看不清」，缝也拉得太宽显得断续。缝收回接近原来的疏密，
+     线宽/透明度也基本收回，只把最密的那一档（16 等分那种）压淡，稀疏的
+     格线（≤8 等分）跟外框一样正常显示。 */
   var W = o.w || 138, HH = o.h || 84, DD = o.d || 73;
   var dx = W/Math.max(1,ax.n), dy = HH/Math.max(1,ay.n), dz = DD/Math.max(1,az.n);
   var body = '';
@@ -8171,14 +8173,13 @@ function cavityBox3D(ax, ay, az, o){
     return '<line x1="'+a9[0].toFixed(1)+'" y1="'+a9[1].toFixed(1)
       + '" x2="'+b9[0].toFixed(1)+'" y2="'+b9[1].toFixed(1)+'" style="'+st9+'"/>';
   }
-  /* 外壳：虚线细框——腔是「索引空间」，不是实心物件。缝拉宽一档（3 3→2 5），
-     线本身也淡一档，退成背景，不跟里面的格线、实心格抢视线。 */
-  body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:.8, dash:'2 5'});
+  /* 外壳：虚线细框——腔是「索引空间」，不是实心物件。 */
+  body += boxSVG(0,0,0,W,HH,DD,1,{wire:true, stroke:'var(--pt-bd)', sw:1, dash:'3 2.5'});
   /* 每把刀在它自己那根轴上留下的格线。格距小到 2px 以下就不画：
      那时线比格子还密，画出来是一片灰，把「本卡是哪一格」盖掉。 */
   function gl(step, dim){
-    return 'stroke:'+(VC[dim]||'var(--pt-bd)')+';stroke-width:'+(step>5?.6:.45)
-      + ';stroke-opacity:'+(step>5?.38:.24);
+    return 'stroke:'+(VC[dim]||'var(--pt-bd)')+';stroke-width:'+(step>5?.75:.5)
+      + ';stroke-opacity:'+(step>5?.55:.3);
   }
   var i9;
   if(dy >= 2) for(i9=1;i9<ay.n;i9++)
