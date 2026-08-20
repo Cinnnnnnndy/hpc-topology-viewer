@@ -2,11 +2,11 @@
 
 这是给要接手 `/combo-workbench/` 开发的人看的**索引文档**：每个部分的代码在哪、
 上游出处是什么、由哪个分支的哪一步发布上线。产品向的说明（三格是什么、为什么这样切）
-看 [README.md 的「组合工作台」一节](../README.md)，两份不重复。
+看 [README.md 的「组合工作台」一节](README.md)，两份不重复。
 
-核对时间：2026-08-20，`main@a7ffefe`、`claude/topology-swimlane-card-layout-fdrgiq@c23d673`。
-本文档记的是**引用关系**，这类关系不常变；但如果某个格子换了实现、或部署步骤挪了地方，
-下面的行号会先过期，发现对不上以文件里的实际内容为准。
+核对时间：2026-08-20，`main@9546011`。本文档记的是**引用关系**，这类关系不常变；
+但如果某个格子换了实现、或部署步骤挪了地方，下面的行号会先过期，发现对不上以文件里的
+实际内容为准。
 
 ---
 
@@ -15,18 +15,17 @@
 `public/combo-workbench/` 在 `main` 和 `claude/topology-swimlane-card-layout-fdrgiq`
 两个分支上**都有**，但**线上 `/combo-workbench/` 是 `deploy.yml` 从 `fdrgiq` 分支拉的**，
 不是从 `main` 拉的（见 `.github/workflows/deploy.yml:493` "Checkout combo-workbench branch"，
-`ref: claude/topology-swimlane-card-layout-fdrgiq`）。`main` 上那份是历史 PR 合并进来的镜像。
-
-实测两边当前不同步：`fdrgiq` 比 `main` 多一个已经做完但还没合并回 `main` 的功能
-（swimlane 的 kernel 级分段色带，`git diff main origin/fdrgiq -- public/combo-workbench/`
-可复现）。也就是说**现在线上跑的内容，main 上是看不全的**。
+`ref: claude/topology-swimlane-card-layout-fdrgiq`）。`main` 上那份是历史 PR 合并进来的镜像，
+两边内容此刻一致，但这只是因为最近一次 PR（#70）刚把 `fdrgiq` 领先的改动合回了 `main`——
+机制上随时可能再次跑偏：只要有人往 `fdrgiq` 提交但还没发起/合并 PR，`main` 上的
+`public/combo-workbench/` 就会立刻落后于线上实际发布的内容，且**不会有任何报错**提示这件事。
 
 这和 `/parallel-topology/` 曾经踩过的坑是同一种：那边最初也是从专属分支
 （`ff10w3`）checkout 发布，「推 main」与「推 ff10w3」谁最后跑谁赢，同一条链接的内容
 会在两版之间随机跳（`deploy.yml:248-251` 的注释原话记着这段历史）。后来的修法是把
 源码彻底合并进 `main`、checkout 改成 `ref: main`，只留 `main` 一个发布口子。
 **combo-workbench 还没有做这次搬迁**，`Checkout combo-workbench branch` 那一步仍然
-按分支名取。
+按分支名取，`main` 与 `fdrgiq` 靠人工记得「改完要合并」维持同步，没有机制保证。
 
 对开发者的直接影响：
 - 在 `main` 上改 `public/combo-workbench/` 下的文件、直接推 `main` —— **不会**反映到
@@ -177,6 +176,6 @@ PP0 · L0–L11    PP1 · L12–L23    PP2 · L24–L35    PP3 · L36–L47
 
 ## 6. 相关文档
 
-- [`README.md` 「组合工作台」一节](../README.md)——产品向说明，讲「为什么这样切」
-- [`CLAUDE.md`](../CLAUDE.md)——提交身份规范；「新增分支目录要同步 `deploy.yml`」的仓库级规则
+- [`README.md` 「组合工作台」一节](README.md)——产品向说明，讲「为什么这样切」
+- [`CLAUDE.md`](CLAUDE.md)——提交身份规范；「新增分支目录要同步 `deploy.yml`」的仓库级规则
 - `.github/workflows/deploy.yml` 顶部大段注释——全站发布策略，覆盖不止 combo-workbench 这一个分支
