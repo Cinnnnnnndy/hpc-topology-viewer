@@ -3583,15 +3583,24 @@ function netScene(D, g, box, step){
            顶出来的色带还同时说清「是哪几档把它顶出去的」。 */
         /* 每张卡自己的桶号。EP 是从 (tp,cp,dp) 导出的，卡上不写就真的无从看起——
            卡里那条专家带在 128 只卡的尺度下只有几个像素，分不出谁是谁。
-           只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍。 */
+           只写最前面那一段：桶号不随 pp 变，四段各写一遍是同一句话抄四遍——
+           这句话只在**非物理**摆位下成立：那时 4 个 pp 段共用同一条列位置，
+           只是纵深上叠着，写一遍等于替后面 3 段都写了，多写就是屏幕上同一
+           个点被同一行字盖三遍。物理平铺下 4 个段被 shellOf 借道摆成了 4 张
+           分处机房不同槽位的独立卡（gc 随 pc2 变，物理位置也随之变），"抄四遍"
+           的前提不在了——不写后 3 段，物理阵列里 3/4 的卡会真的一个桶号都没有，
+           读者看到的是一串只挂在最前一小撮卡上、跟其余卡对不上号的桶号，
+           像是凭空飘在阵列一角。物理开着时按 gc 逐卡写，不再靠 pc2===0 去重。 */
         /* 顶视不写：那个机位把 v 轴压进了深度，挂在卡下沿的字会全叠到卡身上。
            好在顶视里 EP 的框最清楚（正正方方四大块），桶号让位给框。
            侧视也不写：那个机位把 u 轴（卡内横向、连同 TP/CP/DP 的格位偏移）
            整个折进了看不见的深度分量，只留 v/w 决定屏幕位置——同一段里好几张
            卡的桶号标签因此会挤到几乎同一点，糊成一堆读不出的字，还压在 PP
            选择器的门牌上。侧视本来就是给 PP 看的（TP/CP/DP 的格位差异这个
-           机位天然分不开），这一层标注让位给 PP 门牌。 */
-        if(cutEP && pc2 === 0 && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
+           机位天然分不开），这一层标注让位给 PP 门牌。（物理平铺下顶视/侧视
+           摆位逻辑不同——物理平铺压根不改这两个机位的镜头，两条理由照旧成立，
+           所以这条排除不跟着 physOn 走。） */
+        if(cutEP && (physOn || pc2 === 0) && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
           axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
@@ -6321,7 +6330,21 @@ function sideScene(D, g, box){
       var b0 = by9[0] || null;
       var col9 = b0 ? dimColor(b0.dim) : 'var(--pt-fg2)';
       var ya = rowY(n9.y - n9.height/2), yb = rowY(n9.y + n9.height/2);
-      if(n9.colorKey === 'opv:comm'){
+      /* 「+」残差合并节点（graph.js 里 glyph:true/hideTypeLabel:true 标过的那几个：
+         q_residual_add/kv_residual_add/o_residual_add）——它是逐元素加法，没有
+         权重、没有可报的字节/耗时读数，之前跟其余算子走同一条画法（同一只斜纹
+         矩形，只是配不出文字），看着像"这块该有读数却空着/被裁掉了"，反馈成了
+         「数值还是没有了」。glyph 字段这里其实一直没人读（demo.html 全文 grep
+         不到 .glyph）。改成认出 label==='+' 就画一个小圆圈+十字，跟真算子的斜纹
+         矩形明显不同——一眼看出"这里不是漏数据，是加法节点，本来就没有数值"。 */
+      if(n9.label === '+'){
+        var gcx9 = bx0 + barW/2, gcy9 = (ya+yb)/2, gr9 = Math.max(2/FS_Z, Math.min(barW, yb-ya)/2*0.55);
+        body.push('<circle cx="'+gcx9.toFixed(1)+'" cy="'+gcy9.toFixed(1)+'" r="'+gr9.toFixed(1)
+          +'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
+        body.push('<path d="M'+(gcx9-gr9*0.5).toFixed(1)+' '+gcy9.toFixed(1)+'H'+(gcx9+gr9*0.5).toFixed(1)
+          +'M'+gcx9.toFixed(1)+' '+(gcy9-gr9*0.5).toFixed(1)+'V'+(gcy9+gr9*0.5).toFixed(1)
+          +'" style="stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';stroke-linecap:round"/>');
+      } else if(n9.colorKey === 'opv:comm'){
         body.push('<line x1="'+bx0.toFixed(1)+'" y1="'+((ya+yb)/2).toFixed(1)+'" x2="'+(bx0+barW).toFixed(1)+'" y2="'+((ya+yb)/2).toFixed(1)
           +'" style="stroke:'+col9+';stroke-width:'+(0.9/FS_Z).toFixed(2)+';stroke-dasharray:'+(2/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2)+';opacity:.8"/>');
       } else {
