@@ -2820,7 +2820,10 @@ function netScene(D, g, box, step){
        停在原来那点depth-fade上，并没有因为「被比下去」而更暗。选中态需要
        自己单独的一档：命中列不变（selDim=1），其余列在雾之外再压一半，
        两档叠起来才是「这一张跳出来、其余的明显让开」。 */
-    var selDim = (hasSel && !isF) ? 0.5 : 1;
+    /* 0.5 那一档实机反馈仍然「影响阅读」：128 只盒子叠起来，半透的东西一层层透过
+       来，等效浓度被抬回去，选中那一列并没有真的跳出来。压到 0.30——落差够大，
+       而阵列的形状（有多少列、缝开在哪）还完整看得见。 */
+    var selDim = (hasSel && !isF) ? 0.30 : 1;
     var colOp = Math.min(colFade, spotDim, selDim);
     if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
@@ -3088,13 +3091,18 @@ function netScene(D, g, box, step){
   /* 这一屏所有挂在图上的小字都走这一枚标签：底色 + 描边的胶囊。裸文字压在 128 只
      卡的骨架上根本读不出来（哪一笔是字、哪一笔是棱分不清）。定义提到循环之前，
      卡壳上的桶号和轴上的刻度共用同一个形状。 */
-  function axLab(pt, s1, s2, col, strong, sz){
+  /* op9：整枚牌一起淡出（底、边、字同一档）。选中一张卡之后，跟它无关的那些
+     桶号牌若还是满浓度，读者的眼睛仍然被一排等重的字拽着走——牌是**注解**，
+     该跟着它注解的那只盒子一起让开。 */
+  function axLab(pt, s1, s2, col, strong, sz, op9){
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
+    if(op9 != null && op9 < 0.999) body.push('<g opacity="'+op9.toFixed(2)+'">');
     body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(3.5,h1/2)+'" '
       +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:'+(strong?1.3:.7)+';opacity:.96"/>');
     body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : f1*0.36), String(s1), f1, col, 'middle', 'font-weight="800"'));
     if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
+    if(op9 != null && op9 < 0.999) body.push('</g>');
   }
     /* ── EP 的框：一框 = 一整套专家 ──────────────────────────────────────
        EP 不像 DP/PP/TP 有自己的一根轴——桶号是从 (tp, cp, dp) 导出来的，所以
@@ -3466,7 +3474,9 @@ function netScene(D, g, box, step){
                  又还看得见它站在哪儿。 */
             var sib9 = (!meC && memSibs) ? memSibs[gc] : null;
             /* 兄弟卡从压暗里豁出来：0.32 那档是「别的卡」，兄弟是这次点选的答案 */
-            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.9 : 0.32) : 1);
+            /* 0.32 → 0.20：同上，叠加透明之后 0.32 在阵列里等效并不淡。兄弟卡
+               （这次点选的答案的一部分）照旧留 0.9，不跟着往下走。 */
+            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.9 : 0.20) : 1);
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -3546,14 +3556,28 @@ function netScene(D, g, box, step){
                 /* 顶出壳外那半不画内部切分线：它已经整片换成告警色了，再在上面
                    划分块等于同时说两件事（「这是越界的」和「它内部这么切」），
                    而越界那半要说的只有第一件。 */
-                if((vA9 - vB9) > 0.010 && !sg8.over && (meC || sg8.k === 'w')){
-                  var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
+                /* 「除了权重之外的切分也要看得见」（读者反馈）：原来梯度/优化器态/
+                   激活这三档的内部划分只画给**选中那一只**——理由是它们是发丝级的
+                   线，128 只一起画就是一片麻。但那条理由只在「128 只挤在一屏」时成立：
+                   一放大，卡在屏幕上宽到六七十像素，同样几条线是读得清清楚楚的，
+                   而这时读者恰恰是凑近来看某几只卡的切法。于是改成按**卡在屏幕上
+                   的实宽**判，与本页到处那条「装得下才写」同一条规矩：够宽就每只都
+                   画，缩回全景自然又收回去。 */
+                var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
+                var fineOK9 = meC || cardPxW9 >= 34;
+                if((vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
                   var seamCol9 = 'color-mix(in srgb, var(--pt-fg) 34%, transparent)';
                   var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
-                  if(sg8.k === 'w' && (MS9.opSegs || []).length){
+                  /* 梯度与优化器态是同一份参数的 ×1 / ×6：分法与权重逐块相同，所以
+                     用**同一套块色**画，只把填充压到权重的一半多一点（.30 对 .52）。
+                     原来这两档只画中性细缝——缝说得出「这儿断开了」，说不出「是被
+                     哪把刀断开的」，而读者要的正是后者。压淡而不是不画：权重仍然是
+                     这条带里的主角，梯度/优化器态读成「跟着它同一刀」。 */
+                  var wLike9 = (sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp');
+                  if(wLike9 && (MS9.opSegs || []).length){
                     /* 权重带内部：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色），
                        就是「抽出的 L0」那排算子片折进卡里的样子。 */
                     /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
@@ -3564,7 +3588,7 @@ function netScene(D, g, box, step){
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
                       if(!oc8) return;
                       var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
-                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1);
+                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1) * (sg8.k === 'w' ? 1 : 0.86);
                       /* 每一块都挂命中面：卡上直接点 experts 那一截就能展开它，
                          不必先点开权重、再去表里找那一行。 */
                       if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
@@ -3576,11 +3600,11 @@ function netScene(D, g, box, step){
                         /* 与 L3 那只卡逐字同一套：刀色**本体** + .52 的填充透明度压在
                            带上，不是先把刀色兑进底色再画。兑色会把下面那条带吃掉一层，
                            叠出来就不是同一个颜色了（青块压在青带上会比 L3 那份浅一档）。 */
-                        'fill:'+oc8+';fill-opacity:.52;stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
+                        'fill:'+oc8+';fill-opacity:'+(sg8.k === 'w' ? '.52' : '.30')+';stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
                     });
-                  } else if(meC && (sg8.k === 'g' || sg8.k === 'opt') && (MS9.opSegs || []).length){
-                    /* 梯度 / 优化器态：同一份参数的 ×1 / ×6，所以只画**对齐的竖缝**、
-                       不上色——缝对得上就说清了「同一分法」，不必把同一句话写两遍。
+                  } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
+                    /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
+                       缝对得上就还说得出「同一分法」，比什么都不画强。
                        缝密到分不开时整条都不画（同 L3 的 x1-x0 < 2 那道门槛）。 */
                     var lastPx8 = -1e9;
                     MS9.opSegs.forEach(function(o8){
@@ -3590,7 +3614,7 @@ function netScene(D, g, box, step){
                       body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.55;opacity:'+(lzM*0.85)));
                     });
-                  } else if(meC && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
+                  } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
                     for(var mm9 = 1; mm9 < MS9.mub; mm9++){
                       body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
@@ -3644,7 +3668,9 @@ function netScene(D, g, box, step){
         var sibE9 = (!meC && memSibs) ? memSibs[gc] : null;
         var eW = meC ? 1.8 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
-        if(hasSel && !meC && !spot) { eO *= 0.4; }
+        /* 棱是这一屏最抢眼的东西（128 只 × 12 条全叠在一起）。选中一张卡之后
+           它们压到 0.22——比原来的 0.4 再让一档，主角的轮廓才真的浮出来。 */
+        if(hasSel && !meC && !spot) { eO *= 0.22; }
         if(sibE9){ eW = Math.max(eW, 1.3); eO = Math.max(eO, 0.92); }
         /* 落选的压到几乎看不见；**命中的反而要加粗**——聚光灯是「亮起一批」，
            不是「把所有人一起压暗」。原来这里不分命中与否一律压，于是搜索一落下，
@@ -3731,7 +3757,11 @@ function netScene(D, g, box, step){
         if(cutEP && (physOn || pc2 === 0) && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
-          axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
+          /* 选中一张卡时，别的桶的牌压到 .22：它们仍然在（读者还能数出「一共几个桶、
+             我这只挨着谁」），但不再和选中那只的牌抢注意力。同组的牌反而要留满——
+             那正是这次点选的答案的一部分。 */
+          axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6,
+            (hasSel && !epSame) ? 0.22 : 1);
         }
         /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
