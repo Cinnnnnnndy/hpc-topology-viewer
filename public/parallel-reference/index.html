@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>25 张图</span><span>56 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>25 张图</span><span>58 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1361,6 +1361,13 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <span class="lbl">ZeRO-3 / FSDP 为什么不在这张表里</span>
     <p>它们是 DP 维度内部的显存优化：把权重在 DP 组内再切一刀，用的时候临时 AllGather 拼回来。不产生新通信组、不改门牌号、不改并行拓扑——只改变了每张卡"平时常驻什么"。对拓扑视图来说，一条脚注足矣。</p>
   </div>
+
+  <div class="note new">
+    <span class="lbl">CP=1 是默认选择——决定它的是序列长度，不是卡数</span>
+    <p>128 卡、256 卡、1024 卡——<b>卡数不影响 CP 的取值</b>。CP 回答的唯一问题是：<strong>一条序列的中间激活在一张卡上放不放得下？</strong></p>
+    <p>激活显存 ∝ <code>mb × s × h</code>（§08）。序列长度 s ≤ 32K 且开了梯度重计算时，激活体在 64 GB 卡上通常不构成瓶颈，CP=1 足矣。只有当 s 进入 128K+ 区间、单卡激活显存即使重计算仍然放不下时，才需要 CP≥2 把序列切开——每多一路 CP，每张卡上的 attention 就要多做一轮 Ring 通信。</p>
+    <p><b>经验阈值（仅参考量级）</b>：H=8192 · bf16 · 开重计算 · 64 GB 卡：s ≤ 32K → CP=1；s ∈ [64K, 128K] → CP=2；s ≥ 128K → CP=4+。实际阈值取决于 H、MBS、重计算策略和框架开销。不要因为"卡多"就开 CP——那是 DP 的事。</p>
+  </div>
 </section>
 
 <section id="s3">
@@ -2254,6 +2261,40 @@ global_rank = tp_rank + dp_rank·tp_size + pp_rank·tp_size·dp_size</pre>
     <li><strong>MoE 加 EP / ETP</strong>——EP 尽量留机内；ETP 通常设 1，避免 MLP GEMM 的 TP 通信开销。</li>
     <li><strong>DP 最后自动定</strong>——它是剩余卡数，不是一个可选项。</li>
   </ol>
+
+  <h4>实际配置评估：TP=2 · CP=1 · PP=4 · DP=16 · EP=8 → 128 卡</h4>
+
+  <p>按上面五步倒推这份配置的设计逻辑，同时验证整除约束与物理落位。</p>
+
+  <table class="tbl">
+    <thead><tr><th>维度</th><th>值</th><th>整除约束</th><th>评估</th></tr></thead>
+    <tbody>
+      <tr><td><span class="k tp">TP</span></td><td>2</td><td><code>num_heads % 2 == 0</code> ✓　TP ≤ 8（机内） ✓</td><td>偏保守——单卡背一半权重，通信只走机内。适合中等规模模型（7B–13B）；70B+ 可能需要 TP=4 或 TP=8</td></tr>
+      <tr><td><span class="k cp">CP</span></td><td>1</td><td>—</td><td><b>正确</b>　CP 由序列长度决定（§05 注释），s ≤ 32K 时 CP=1 足矣，不因卡数而改变</td></tr>
+      <tr><td><span class="k pp">PP</span></td><td>4</td><td><code>num_layers % 4 == 0</code> ✓</td><td>每 stage 背 L/4 层。引入气泡（§12），MBS 足够多时可被 1F1B 调度 overlap</td></tr>
+      <tr><td><span class="k dp">DP</span></td><td>16</td><td>128 / (2×1×4) = 16 ✓</td><td>残差维，自动算出。16 路 DP → 大 batch 吞吐</td></tr>
+      <tr><td><span class="k ep">EP</span></td><td>8</td><td><code>num_experts % 8 == 0</code> ✓</td><td>EDP = DP / EP = 2（每个 expert 保留 2 路数据并行）</td></tr>
+    </tbody>
+  </table>
+
+  <p><b>物理落位</b>（8 卡/节点，order = <code>tp-cp-ep-dp-pp</code>）：</p>
+
+  <table class="tbl">
+    <thead><tr><th>维度</th><th>stride</th><th>一个组跨多少连续 rank</th><th>落在几个节点</th><th>可接受？</th></tr></thead>
+    <tbody>
+      <tr><td><span class="k tp">TP=2</span></td><td>1</td><td>2</td><td><b>1 个</b>（机内）</td><td>✓ 每层 2 次 AllReduce，走 NVLink / HCCS</td></tr>
+      <tr><td><span class="k ep">EP=8</span></td><td>2</td><td>16</td><td><b>2 个</b>（跨机）</td><td>△ All-to-All 必须走 RoCE / IB</td></tr>
+      <tr><td><span class="k dp">DP=16</span></td><td>16</td><td>—</td><td>跨多机</td><td>✓ 每 step 一次，频率最低</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note new">
+    <span class="lbl">关键张力：TP×EP = 2×8 = 16 > 8 卡/节点</span>
+    <p>一个 EP 组需要 8 个 TP 对，共 16 张卡，超过单节点 8 卡容量——<b>EP All-to-All 必然跨节点</b>。是否可接受取决于 MoE 层在整网中的密度：若 MoE 层每 N 层出现一次（如 1/4 dense 替换），EP 跨机通信只影响 1/N 的层；其余 dense 层只走 TP 的机内 AllReduce，不受影响。</p>
+    <p>这正是§09 部署原则的实例——<b>把频率最高的通信（TP，每层 2 次）放在带宽最高的路径上（机内），把频率较低的通信（EP，仅 MoE 层）推到跨机</b>。</p>
+  </div>
+
+  <p><b>总体判断：配置合理。</b>CP=1 在标准序列长度下正确；TP=2 保守但安全（单卡显存够则不必加大）；PP=4 在模型规模需要时是必要的权衡；EP=8 跨机是 EP 的已知代价，可通过通信 overlap 和 UB 优化缓解。唯一需要实测验证的是 PP 气泡率——MBS 偏小时 PP=4 的气泡可能成为吞吐瓶颈。</p>
 
   <h3>四 · 执行时序：只有 PP 有严格因果</h3>
 

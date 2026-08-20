@@ -44,6 +44,11 @@
     ffnHidden: 14336,      // FFN 中间维 → TP 沿 ffn 轴切
     sharedExperts: 4,      // 共享专家（每 rank 都有，不按 EP 切）
     seqLen: 4096,          // 序列长度 → SP 沿 token 轴切（norm 区）
+    // ── 内存构成透镜（着色 w/act/grad/opt）用的模型宽度 ──
+    // heads=64 已经定了「切多细」，hidden 定「每一刀切下来的那片有多大」——
+    // 二者缺一都算不出字节数。取 8192 与 heads 对齐给出 headDim=128（真实量级，
+    // 同 parallel-topology/demo.html「story128」预设），而不是随手一个数。
+    hidden: 8192,
   };
 
   /* ══ 整网对象目录（本次深化的事实源）════════════════════════════════════
@@ -424,6 +429,19 @@
       // （压了这两个形态就没意义了）。
       tps: { gapT: stepOf('x', TPL, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
       ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TPL), rep: stepOf('z', REP), cy: CY },
+      /* 物理平铺：不看任何并行分组，只回答「这张卡插在机房哪个槽位」——X=host 内卡位(slot)
+         · Z=host 序号 · Y 恒 0（各形态里唯一不叠高度的一种，真摊平，不是「压扁的立方」）。
+         host 数一多会排成一条极长的线，超过 64 台折成 hgx×hgz 近方格（同 DP 平铺的折法）；
+         典型工况（≤64 host，如 16 机×8 卡=128 张）不折，摊成整间机房本来的样子——
+         这正是它要回答的问题本身，折了反而看不出「插在哪」。 */
+      phys: (() => {
+        const foldHost = HOSTS > 64;
+        const hgx = foldHost ? Math.max(1, Math.ceil(Math.sqrt(HOSTS))) : 1;
+        const hgz = foldHost ? Math.ceil(HOSTS / hgx) : HOSTS;
+        const slot = stepOf('x', CPH);
+        const hostBlockW = CPH * slot;
+        return { hgx, hgz, slot, gapX: hostBlockW + padOf(hostBlockW), gapZ: stepOf('z', hgz) };
+      })(),
     };
 
     // 5 种形态的 rank → 世界坐标（out 为 {x,y,z} 或 THREE.Vector3 均可）
@@ -458,6 +476,15 @@
         out.z = (rep - cR) * s.rep;
         return out;
       }
+      if (mode === 5) {          // 物理平铺：不看并行分组，只看插在机房哪个槽位——Y 恒 0，真摊平
+        const s = SP.phys, h = hostOf(r), sl = slotOf(r) % CPH;
+        const hx = s.hgx > 1 ? h % s.hgx : 0;
+        const hz = s.hgx > 1 ? (h / s.hgx) | 0 : h;
+        out.x = (hx - (s.hgx - 1) / 2) * s.gapX + (sl - (CPH - 1) / 2) * s.slot;
+        out.y = 0;
+        out.z = (hz - (s.hgz - 1) / 2) * s.gapZ;
+        return out;
+      }
       const s = SP.std;          // 标准：X=PP（左→右 Stage0→末） · Y=DP（上→下 DP0→末） · Z=TP
       out.x = (pp - cP) * s.sx;
       out.y = s.cy + (cR - rep) * s.sy;
@@ -472,12 +499,14 @@
       gx: { n: COLS, lab: '副本列' }, gz: { n: ROWS, lab: '副本行' },
       tpc: { n: TPC, lab: '板内TP列' }, tpd: { n: TPD, lab: '板内TP排' },
       cp: { n: CP, lab: 'CP段' },
+      host: { n: HOSTS, lab: 'Host' }, slot: { n: CPH, lab: '槽位' },
     };
     const depthIdxOf = (r, dim) => dim === 'tp' ? laneOf(r) : dim === 'pp' ? ppOf(r)
       : dim === 'rep' ? repOf(r) : dim === 'ep' ? epOf(r) : dim === 'dom' ? domOf(r)
         : dim === 'gx' ? gxOf(r) : dim === 'gz' ? gzOf(r)
           : dim === 'cp' ? cpOf(r)
-            : dim === 'tpc' ? laneOf(r) % TPC : dim === 'tpd' ? (laneOf(r) / TPC) | 0 : 0;
+            : dim === 'tpc' ? laneOf(r) % TPC : dim === 'tpd' ? (laneOf(r) / TPC) | 0
+              : dim === 'host' ? hostOf(r) : dim === 'slot' ? (slotOf(r) % CPH) : 0;
 
     /* 视角收编的判据是**逐屏**的，不是逐形态的：
        一个形态之所以不同于标准，全在它那根 emph 轴（TP切片的墙、PP流水的段，步距 4×）。于是——
@@ -551,6 +580,20 @@
         // 「哪一段慢」里段身份就是答案、DP 是噪声 → 前视把 100 副本折进每格，
         // 5 列一字排开，慢段=整列偏暗，是这一形态的主屏。
         views: [0, 1, 2], bestView: 2,
+      },
+      {
+        /* 物理平铺：前五个形态问的都是「归哪个并行组」，这一个故意不问——只回答
+           「这张卡插在机房哪个槽位」，是并行分组之外的第六个正交问题（rank-segmentation-observability）。
+           别的形态换个并行配置，卡就换一批邻居；这一个换任何并行配置，同一张卡永远插在
+           同一个槽位——它是最稳定的那个坐标系，切分再怎么变，物理位置不跟着变。 */
+        key: 'phys', name: '物理平铺', short: '物理',
+        sub: `物理平铺：${HOSTS} 台机 × ${CPH} 卡摊成一张机房俯视图（不看并行分组，只看插在哪）`,
+        why: `不问「归哪个并行组」，只问「这张卡插在机房哪个槽位」· 单层摊平（Y 恒 0，各形态里唯一不叠高度的一种）`,
+        viewLabels: { 1: '顶 机房俯视（Host×槽位）' },
+        depth: { 1: [] },
+        // Y 恒为 0（真摊平），3D 与顶视看到的是同一份东西 → 顶视本身就是「最该看的一屏」，
+        // 前/侧两屏会把仅有的两根轴之一直接压成一条线，没有信息量，不给。
+        views: [0, 1], bestView: 1,
       },
     ];
 
@@ -646,6 +689,7 @@
          3D 下 curDepth() 为空，这个状态不起作用，也不显示控件。 */
       sliceOn: true, sliceVal: 0,
       colorBy: 'load',               // load | tp | pp | dp | ep | host | pod（后两个 = 物理落位透镜）
+                                      // | w | act | grad | opt（内存构成透镜，见 memShare）
       anom: 'none',                  // none | tp | pp | dp | ep（异常注入 → 「异常的形状」）
       playing: true,
       theme: opts.theme === 'light' ? 'light' : 'dark',
@@ -1882,6 +1926,102 @@
       REST_BG.set(tokHex('--background'));
       return cTmp.lerp(REST_BG, isDark() ? 0.55 : 0.48);
     }
+    /* ── 内存构成透镜（w 权重占比 / act 激活占比 / grad 梯度占比 / opt 优化器态占比）──
+       状态热力答「这张卡忙不忙」，这四个答「这张卡的 HBM 被什么占着」——同一套
+       0→1 灰度映射（loadColor 那条 --success→--warning→--danger 色带），换一个分子，
+       视觉语汇不新造一套。权重/激活是用户点名要看清楚的两档；梯度/优化器态与权重
+       同源（都正比于参数量 P，见 memBytesOfRank），归一后长得跟权重一模一样，
+       留着纯粹是**对照**——两张图对不上，说明字节口径算错了，不是花纹本身有问题。
+       用渐变（不是分组色环）是因为这四档本来就是连续量「占了多少」，不是「属于哪一类」
+       ——分组色换个色相只答得出「谁跟谁一样」，答不出「谁比谁多」，渐变才对得上这里
+       要读的问题。
+
+       喂给 loadColor 的**不是**「这一档字节数 / 这张卡内存总和」的绝对占比——算过
+       才发现那个数几乎不随位置变化：均衡并行本来就设计成不让某张卡背得比别的重，
+       而权重/梯度/优化器态又都是参数量 P 的固定倍数（2P/2P/12P），三者之比是个跟 P
+       无关的常数；唯一会变的激活项体量比 P 小两个数量级，根本撼不动这个比例——绝对
+       占比因此在满屏卡上几乎是同一个数，着色出来是一片死色，白白浪费了这条镜头。
+       真正逐卡不同的是**这一档字节数本身**（权重在 PP 首/末段多背 embedding/lm_head、
+       专家数除不尽 EP 时多摊一个专家的桶更重；激活在 1F1B 热身期越靠前的 PP 段越重）
+       ——所以改用「这张卡在全网同一档里，排在 min→max 之间的哪个位置」（线性归一
+       0..1）喂给 loadColor：把结构性差异（哪怕只有百分之一二）拉满整条色带，才看得出
+       「谁比谁多」。图例那行 GB 数字给的是归一前的两个真实端点（memByteRange），不是
+       归一之后的 0..1——读者由此知道「满屏一种颜色」与「另一种颜色」之间实际差了多少 GB。
+
+       字节口径抄 parallel-topology/demo.html 的 opBytes/memParts（demo.html 那一屏
+       正是这批数字唯一的事实源），但只留 pattern.js 本就建模的维度：
+         · GQA（demo.html 的 kv 头数）没有对应配置 → 按 MHA 处理，Q/K/V/O 四个
+           投影都按 TP 整分，不做「KV 头不整除 TP 时复制」的特例；
+         · 专家内 TP 切分（demo.html 的 etp）没有对应配置 → 专家权重只按 EP 切
+           （与 netObjects 里 `experts` 条目「专家按 EP 切」的说法一致），不再往下切；
+         · 微批数/梯度累积步数（demo.html 的 mbs·ga）没有对应配置 → 在途微批数的
+           峰值改用 1F1B 热身期的通用近似 `PP - ppOf(r)`（demo.html 在没给 ga 时
+           退化到的同一个公式：`Math.min(D.pp, D.ga) - ppRank`，这里视作 ga≥pp）；
+         · demo.html 额外叠了 allocator 抖动 / MoE 路由不均噪声（sin-hash，逐卡不同）
+           让「同一段里的卡也不一样」——那是为了配合它的容量告警叙事。这里不需要：
+           这个透镜要回答的是「TP/PP/EP 这把刀切完，权重/激活的份额落在哪」，是
+           **位置**决定的结构性读数，加一层随机噪声只会让「同一 TP 槽位到底是不是
+           真的更重」这件事变得读不准，所以碎片/预留项走一个扁平常量。 */
+    const ACT_COEF = 4;                              // 每 token·每隐藏维·每层的激活字节数经验系数，同 demo.html
+    const MEM_RESERVE = 1.5 * Math.pow(2, 30);        // 碎片/预留：扁平 1.5GiB（demo.html 同档位的量级中位数）
+    const MEM_LENS_KEY = { w: 'w', act: 'act', grad: 'g', opt: 'opt' };  // colorBy 名 → memBytesOfRank 的字段名
+    // 单层里，这张卡的参数元素数（未乘 bf16 的 2 字节）：Q/K/V/O 四投影 + 复制的
+    // router + 本桶路由专家（gate/up/down 三矩阵）+ 复制但按 TP 切的共享专家。
+    function layerElemsOfRank(r) {
+      const C = model.config, hid = C.hidden, tpShare = 1 / TP;
+      const attn = 4 * hid * hid * tpShare;
+      const router = hid * C.experts;                          // 复制；量级远小于专家权重，仅为口径完整
+      const routed = model.EXP_PER * 3 * hid * C.ffnHidden;     // 本 rank 的 EP 桶：EXP_PER 个专家，只按 EP 切
+      const shared = (C.sharedExperts || 0) * 3 * hid * C.ffnHidden * tpShare;
+      return attn + router + routed + shared;
+    }
+    // 这张卡的总参数元素数：本段层数份的逐层权重，PP 首/末段各自再加一头
+    // embedding/lm_head（词表按 TP 精确整分，除不尽时前面的槽位多拿一个——同
+    // netObjects 里 embedding/lm_head 用的 axSlice 口径，读数与那边的「持有区间」一致）。
+    function paramElemsOfRank(r) {
+      const C = model.config, hid = C.hidden;
+      let p = layerElemsOfRank(r) * LPS;
+      const vs = axSlice(C.vocab, TP, model.tpOf(r)), vOwn = vs.hi - vs.lo + 1;
+      if (model.ppOf(r) === 0) p += vOwn * hid;         // 词嵌入：仅 PP 首段持有
+      if (model.ppOf(r) === PP - 1) p += vOwn * hid;    // LM Head：仅 PP 末段持有（PP=1 时两者叠在同一 rank）
+      return p;
+    }
+    // 五档字节数（口径同 memParts 的 w/g/opt/act/rsv）：权重与梯度都是 bf16（×2），
+    // 优化器态是 fp32 的主参数+一阶矩+二阶矩（×4×3=×12）。
+    function memBytesOfRank(r) {
+      const C = model.config;
+      const P = paramElemsOfRank(r);
+      const w = 2 * P, g = 2 * P, opt = 12 * P;
+      const peakMb = Math.max(1, PP - model.ppOf(r));   // 在途微批数峰值（1F1B 热身期近似，见上方大注）
+      const act = (C.seqLen / CP) * C.hidden * LPS * ACT_COEF * peakMb;
+      const total = w + g + opt + act + MEM_RESERVE;
+      return { w, g, opt, act, rsv: MEM_RESERVE, total };
+    }
+    // 全网扫一遍，找这一档字节数的 min/max：既是着色前归一化用的分母，也是图例那两个
+    // GB 端点的来源——颜色与图例文字永远读同一份数，不会各说各话。O(N)，N 至多几千张卡，
+    // 每张卡几次乘法，可忽略不计；recolor() 每次着色前扫一遍存进 curMemRange 供全屏复用，
+    // 不会在 N 次单卡着色里各扫一遍全网（那才是真正的热路径）。
+    function memByteRange(colorByKey) {
+      const key = MEM_LENS_KEY[colorByKey];
+      let lo = Infinity, hi = -Infinity;
+      for (let r = 0; r < N; r++) {
+        const v = memBytesOfRank(r)[key];
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      return { lo, hi };
+    }
+    function memRangeGB(colorByKey) {
+      const b = memByteRange(colorByKey), GiB = Math.pow(2, 30);
+      return { lo: b.lo / GiB, hi: b.hi / GiB };
+    }
+    // colorBy ∈ {w, act, grad, opt} → 这张卡在全网 min→max 之间的相对位置，0..1 供 loadColor 上色
+    // （见上方大注：不用绝对占比，用相对位置，否则参数量的量级会把结构性差异整个摊平）。
+    function memPos(r, colorByKey, range) {
+      const v = memBytesOfRank(r)[MEM_LENS_KEY[colorByKey]];
+      const span = range.hi - range.lo;
+      return span > 0 ? (v - range.lo) / span : 0.5;
+    }
     /* ── 整网对象：承载集合 + 分片序号 ──
        通信算子按 md 笔记 §6 的规则特殊处理：它不属于单张卡而属于一个通信组，
        所以承载集合取**选中卡的那个组**；没选卡时无组可言，整网对象退化成「全网都参与」。 */
@@ -1903,6 +2043,9 @@
       const sh = model.objShard(S.obj, r);
       return sh ? sh.idx : -1;
     }
+    // recolor() 每次着色前重扫一遍存进来的 min/max（见 memByteRange 注释）；
+    // colorOfRank 在单卡调用（选中光晕，见 updateSelFx）时没有这份缓存，退回现扫一遍。
+    let curMemRange = null;
     function colorOfRank(r) {
       /* 对象透镜接管着色（同异常注入的约定）：承载者按「持有第几片」着色，
          于是「谁持有同一片」当场同色 —— 切到该对象的 best 形态，同色的会 snap 成一整块。 */
@@ -1916,15 +2059,17 @@
         if (inAnomGroup(r)) return cTmp.set(tokHex('--danger'));
         return restColor(r);
       }
-      if (S.colorBy !== 'load') {
-        // 逻辑分组（TP/PP/DP/EP）与物理分组（主机 / Pod）用同一套分组色环：
-        // 「按主机着色」正是看逻辑组与物理落位的亲和度——同色连成块 = 这一组正好装在一台机里。
-        const g = S.colorBy === 'tp' ? model.tpOf(r) : S.colorBy === 'pp' ? model.ppOf(r)
-          : S.colorBy === 'dp' ? model.repOf(r) : S.colorBy === 'host' ? model.hostOf(r)
-            : S.colorBy === 'pod' ? model.podOf(r) : model.epOf(r);
-        return cTmp.set(groupColor(g));
+      if (S.colorBy === 'load') return loadColor(load01(r));
+      // 内存构成透镜：全网相对位置 → 复用负载热力那条渐变（同一色带，换一个分子）。
+      if (MEM_LENS_KEY[S.colorBy]) {
+        return loadColor(memPos(r, S.colorBy, curMemRange || memByteRange(S.colorBy)));
       }
-      return loadColor(load01(r));
+      // 逻辑分组（TP/PP/DP/EP）与物理分组（主机 / Pod）用同一套分组色环：
+      // 「按主机着色」正是看逻辑组与物理落位的亲和度——同色连成块 = 这一组正好装在一台机里。
+      const g = S.colorBy === 'tp' ? model.tpOf(r) : S.colorBy === 'pp' ? model.ppOf(r)
+        : S.colorBy === 'dp' ? model.repOf(r) : S.colorBy === 'host' ? model.hostOf(r)
+          : S.colorBy === 'pod' ? model.podOf(r) : model.epOf(r);
+      return cTmp.set(groupColor(g));
     }
     // 正交剖面：非当前层 → 压暗（并在写矩阵时缩小），保持空间参照又不喧宾
     // 一个正交视角可能同时折叠多个维（例：EP 聚簇的侧视把「墙序 ep」与「墙内 tp」
@@ -1979,6 +2124,9 @@
     const _sw = new THREE.Color();
     const dimSwatch = (lv) => rgbCss(applyDim(_sw.set(tokHex('--foreground-secondary')), lv));
     function recolor() {
+      // 内存透镜生效时先扫一遍全网 min/max（一次），下面 N 次 colorOfRank 直接复用，
+      // 不会各自再扫一遍——真正的热路径只有这一次 O(N)。对象/异常接管着色时用不上，不扫。
+      curMemRange = (!objOn() && S.anom === 'none' && MEM_LENS_KEY[S.colorBy]) ? memByteRange(S.colorBy) : null;
       for (let r = 0; r < N; r++) {
         applyDim(colorOfRank(r), dimLv(r));
         chips.setColorAt(r, cTmp);
@@ -3030,6 +3178,23 @@
       } else if (S.colorBy === 'load') {
         parts.push(sec('着色 · 状态热力'),
           `<div class="prc-lgrow prc-ramp"><i></i><span>负载 低→高</span></div>`);
+      } else if (MEM_LENS_KEY[S.colorBy]) {
+        /* 颜色画的是「这张卡在全网 min→max 之间排第几」，不是「占这张卡总内存的百分之几」
+           ——后者被参数量的量级摊平成一条死色，前者才拉得出结构性差异（见 colorOfRank
+           上方大注）。数字给全网真实的两个端点（GB），让「满屏一种颜色」与「另一种颜色」
+           之间到底差多少 GB 有个量感——图例只保证颜色与文字读同一份数，不单独再编一遍。 */
+        const LAB = { w: '权重占比', act: '激活占比', grad: '梯度占比', opt: '优化器态占比' };
+        const WHY = {
+          w: '这条纹路 = 「谁背着 embedding/lm_head」（PP 首/末段）+「谁的专家桶因除不尽 EP 多摊一个专家」两件结构性事实的叠加；其余卡在均衡并行下权重完全相等，理应同色。',
+          act: '1F1B 热身期里，越靠前的 PP 段攒着越多在途微批，激活字节数随 PP 段号单调走低——一屏就看出流水线的"水位差"，是四档里全网差距最大的一个。',
+          grad: '梯度与权重同源（都正比于参数量 P），归一后与权重那张图长得一模一样——留着做对照：两张图对不上，说明某处字节口径算错了，不是花纹本身有问题。',
+          opt: '优化器态同样正比于参数量 P（fp32 主参数+一阶矩+二阶矩，是五档里字节数最大的一档），归一后与权重/梯度同一条纹路——真正值得看的是它的绝对体量（上面这行 GB 数），不是它的着色形状。',
+        };
+        const rg = memRangeGB(S.colorBy);
+        parts.push(sec(`着色 · ${LAB[S.colorBy]}`),
+          `<div class="prc-lgrow prc-ramp"><i></i><span>全网相对位置 低→高</span></div>`,
+          `<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">全网 ${rg.lo.toFixed(1)}GB → ${rg.hi.toFixed(1)}GB（该档字节数的两个真实端点；色带把这个区间线性铺成 0→1）</span></div>`,
+          `<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">${WHY[S.colorBy]}</span></div>`);
       } else {
         const key = S.colorBy, pl = model.placement;
         const n = key === 'tp' ? TP : key === 'pp' ? PP : key === 'dp' ? REP
@@ -3330,8 +3495,9 @@
           <dt>状态热力</dt><dd>当前通信阶段的负载，绿→黄→红，跟着时间轴走</dd>
           <dt>TP / PP / DP / EP</dt><dd>按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」</dd>
           <dt>主机 / Pod</dt><dd>按物理落位上色，看 rail 亲和：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里</dd>
+          <dt>权重占比 / 激活占比 / 梯度占比 / 优化器态占比</dt><dd>这张卡在全网同一档字节数里排 min→max 的第几位，绿→黄→红，与状态热力共用同一条色带（换分子不换调色板）。<b>结构性</b>读数——同一 TP/PP/EP 坐标永远算出同一个数，不随时间轴变化；切一下并行度或形态，花纹会跟着重新排布。图例那两个 GB 数字是真实端点，颜色是这两个端点之间的相对位置，不是占卡内总内存的百分比</dd>
         </dl>
-        <p class="prc-helpnote">右下角图例只列「颜色 + 名字」。组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；图例里那条灰色是「与选中卡无关」的压暗卡，不是另一个组。</p>`,
+        <p class="prc-helpnote">右下角图例只列「颜色 + 名字」。组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；图例里那条灰色是「与选中卡无关」的压暗卡，不是另一个组。内存构成四档给的是全网 min→max 的 GB 数，不是某张代表卡的读数。</p>`,
       anom: `<h4>注入 · 假装某一维出故障</h4>
         <p>看它在各形态下长什么形状。</p>
         <p><b>与着色的关系</b>：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。</p>
@@ -3534,7 +3700,7 @@
       if (vg) vg.style.display = vlist.length > 1 ? '' : 'none';
       const vhelp = vg && vg.nextElementSibling && vg.nextElementSibling.classList.contains('prc-help') ? vg.nextElementSibling : null;
       if (vhelp) vhelp.style.display = vlist.length > 1 ? '' : 'none';
-      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod'];
+      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod', 'w', 'act', 'grad', 'opt'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
       if (objSel) objSel.value = S.obj || '';
       if (objGo) {
@@ -3662,7 +3828,10 @@
 
       const lensSeg = rowLens.appendChild(Object.assign(document.createElement('span'), { className: 'segmented-control' }));
       lensBtns = [['状态热力', 'load'], ['TP', 'tp'], ['PP', 'pp'], ['DP', 'dp'], ['EP', 'ep'],
-        ['主机', 'host'], ['Pod', 'pod']]
+        ['主机', 'host'], ['Pod', 'pod'],
+        // 内存构成：权重/激活是用户明确点名「现在比较少、要看清楚」的两档，排在前面；
+        // 梯度/优化器态是同一套机制顺手加的对照档（见 memBytesOfRank 顶注），排在后面。
+        ['权重占比', 'w'], ['激活占比', 'act'], ['梯度占比', 'grad'], ['优化器态占比', 'opt']]
         .map(([t, k]) => lensSeg.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
       /* 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）。
          播放/暂停常驻顶栏（只有图标），阶段轨道悬停时才弹出——它不是常用控件，
