@@ -23,6 +23,12 @@ name: Deploy to GitHub Pages
 #         pattern ｜ 微批次生命周期泳道；泳道那份是 compute-graph-viewer 的上游拷贝）
 #       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
 #         public/combo-workbench/launch-card.html，见下面那一步）
+#       源码已经进 main（/public/combo-workbench/），下面的 "Checkout combo-workbench
+#       branch" 那一步现在从 main 自己取，不再指向这条分支——原来指向 fdrgiq 分支时，
+#       main 上那份 /public/combo-workbench/ 只是历史 PR 合并进来的镜像，谁改了 fdrgiq
+#       忘记合回 main，线上内容就悄悄落后于 main 且不报错（parallel-topology 当年也是
+#       同一类问题，「推 main」与「推分支」谁最后跑谁赢，链接内容随机跳）。分支本身还在，
+#       继续用于开发；只是发布这一步现在只认 main。
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -493,7 +499,11 @@ jobs:
       - name: Checkout combo-workbench branch
         uses: actions/checkout@v4
         with:
-          ref: claude/topology-swimlane-card-layout-fdrgiq
+          # 源码已经进 main（/public/combo-workbench/），所以从 main 自己取——原来
+          # 指向 fdrgiq 分支，main 上那份只是历史 PR 合并进来的镜像，改 fdrgiq 忘了
+          # 合回 main 时，发布内容悄悄落后于 main 且没有任何报错。跟 parallel-topology
+          # 当年从 ff10w3 迁到 main 是同一个修法、同一个理由（见本文件顶部注释）。
+          ref: main
           path: combo-src
 
       - name: Overlay 组合工作台 at /combo-workbench/
