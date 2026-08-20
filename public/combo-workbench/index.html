@@ -290,9 +290,36 @@ body.is-resizing iframe{pointer-events:none}
 @media (max-width:1080px){
   .slot-head{flex-wrap:wrap}
 }
+
+/* D3：390px 手机宽度下实测过——主视图被挤出视口，只剩右边那格读不了的整网图，
+   是个渲染出来但用不了的半成品。三格横排 + 底部抽屉这个形制本来就要那么宽的
+   台面，不是拖一拖分隔条就能救的，跟 D1/D2（pattern 自己的字号/工具条挤压）
+   不是同一类问题——这条不用等 patterns/net-slicing 那边，直接在这收口。
+   断点定在 720px：1080px 那条已有的 .slot-head 换行，能扛到平板宽度；
+   720px 以下換成一句明确的话，好过一个看起来能用、点不动的界面。 */
+#tooNarrow{display:none}
+@media (max-width:720px){
+  #app{display:none}
+  #tooNarrow{
+    display:flex; min-height:100vh; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; padding:32px; text-align:center;
+    background:var(--background); color:var(--foreground);
+    font:14px/1.6 var(--font-sans);
+  }
+  #tooNarrow b{font-size:15px}
+  #tooNarrow p{color:var(--foreground-secondary); max-width:38em; margin:0}
+  #tooNarrow a{color:var(--primary)}
+}
 </style>
 </head>
 <body>
+<div id="tooNarrow">
+  <b>组合工作台需要更宽的屏幕</b>
+  <p>三格横排 + 底部抽屉这个形制，在手机宽度下没法既保留三格又读得清——与其给一个
+     点不动的半成品，不如直说：请换成平板或桌面浏览器打开（建议宽度 ≥ 720px）。
+     只想看并行拓扑那一屏，也可以直接打开
+     <a href="../patterns/net-slicing/pattern.html">这条单屏链接</a>。</p>
+</div>
 <div id="app">
 
   <!-- ═══ 顶栏 ═══ -->
