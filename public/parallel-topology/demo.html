@@ -754,7 +754,7 @@ var activePreset = 'default128';
 var sel = null;
 var ui = {
   view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
-  cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false,   /* 全量优先；超大规模除外，见 v1Layout */
+  cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false, zoomFB:null,   /* 全量优先；超大规模除外，见 v1Layout。zoomFB={s,t,m}：时间·流里点开的那个 F/B 块 */
   act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
@@ -7643,6 +7643,39 @@ function stopAnim(){
   var l = document.getElementById('animLayer'); if(l) l.innerHTML = '';
 }
 
+/* kernel 定义：算子→kernel 的 N:M 语义（融合/分段），attn/router/expert 色块——
+   V3(卡内解剖)与 V2(时间·流)共用同一份：前者画结构(无量纲宽度)，后者按这份比例去分
+   真实的 F/B 时长。粒度链要在两处对得上，不能一边画一套算子表（rank-segmentation-observability）。 */
+function kernelDefs(D){
+  return D.moe
+    ? [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
+       {w:.8, src:['attn.out'], c:VC.tp}, {w:.7, src:['router'], c:VC.ep},
+       {w:.8, from:'组批 1/2', src:['experts'], c:VC.ep}, {w:.8, from:'组批 2/2', src:['experts'], c:VC.ep}]
+    : [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
+       {w:.8, src:['attn.out'], c:VC.tp}, {w:1.1, src:['mlp.gate/up'], c:VC.tp},
+       {w:.45, from:'分段 1/2', src:['mlp.down'], c:VC.tp}, {w:.45, from:'分段 2/2', src:['mlp.down'], c:VC.tp}];
+}
+
+/* 放大：时间·流里点开的某个 F/B 块，按 kernelDefs 展开成带标签的 kernel 序列——
+   与 V3「⑤流」轨道同一套色值/同一份比例，只是这里是单独拎出来放大看，不挤在算子带下面。 */
+function fbZoomSVG(D, blk){
+  var kdefs = kernelDefs(D), kSum = kdefs.reduce(function(a,k){ return a+k.w; }, 0);
+  var W = 920, LBL = 128, rowH = 60, px = (W-LBL-30)/kSum;
+  var y = 20;
+  var kindName = blk.t==='F' ? '前向 F' : '反向 B';
+  var out = txt(LBL, 12, '放大：stage '+blk.s+' 的 '+kindName+blk.m+' —— 这一次计算内部按 kernel 展开（与「卡内解剖」同一份算子表，同号同色）', 9.5, 'var(--pt-fg2)', 'start');
+  var kx = LBL;
+  kdefs.forEach(function(k){
+    var w = k.w*px;
+    out += '<rect x="'+kx.toFixed(1)+'" y="'+y+'" width="'+Math.max(1,w-2).toFixed(1)+'" height="'+(rowH-16)+'" style="fill:'+mix(k.c,30)+';stroke:'+k.c+';stroke-width:1"/>';
+    var label = k.src.join('+')+(k.from?' · '+k.from:'');
+    out += txt(kx+w/2, y+rowH-4, label, 8, k.c, 'middle', 'font-weight="600"');
+    kx += w;
+  });
+  out += txt(kx, y+rowH+12, '算子→kernel = N:M（融合/分段）· 颜色=切法（青=TP · 紫=EP · 灰=不切权重）', 8.6, 'var(--pt-fg3)', 'end');
+  return out;
+}
+
 /* ═════════ V2 时间·流（FR-7/8）：流=容器，容量是时间 ═════════ */
 function renderV2(D){
   var sch = schedule(D), T = sch.T, PP = D.pp;
@@ -7654,6 +7687,7 @@ function renderV2(D){
     if(layerOn('L3')) rows += '<rect x="'+LBL+'" y="'+(y-2)+'" width="'+(W-LBL-16)+'" height="'+(rowH-10)+'" class="lane" style="'+(hot?'stroke:var(--pt-dp);stroke-width:1.4;fill:'+mix(VC.dp,7):'')+'"/>';
     if(layerOn('L4')) rows += txt(LBL-8, y+rowH/2-4, 'stage '+s2+(hot?' ◀ r'+sel:''), 10.5, hot?VC.dp:'var(--pt-fg3)', 'end', hot?'font-weight="700"':'');
   }
+  var kdefs2 = kernelDefs(D), kSum2 = kdefs2.reduce(function(a,k){ return a+k.w; }, 0);
   sch.blocks.forEach(function(b){
     var y=22+b.s*rowH, x=LBL+b.t0*px, w2=(b.t1-b.t0)*px-1.2;
     if(b.type==='AR'){
@@ -7661,20 +7695,34 @@ function renderV2(D){
         + (w2>36?txt(x+w2/2, y+rowH/2-4, 'AllReduce', 8.5, VC.dp):'')+'</g>';
     }else{
       var fw = b.type==='F';
-      blocks += '<rect x="'+x+'" y="'+(y+1)+'" width="'+Math.max(1,w2)+'" height="'+(rowH-16)+'" style="fill:'+mix(VC.pp, fw?22:46)+';stroke:'+VC.pp+';stroke-width:.7"/>'
-        + (w2>15?txt(x+w2/2, y+rowH/2-4, (fw?'F':'B')+b.m, 8.2, 'var(--pt-fg2)'):'');
+      var bw = Math.max(1,w2), bh = rowH-16, kx2 = x, segs = '', isZoomed = ui.zoomFB && ui.zoomFB.s===b.s && ui.zoomFB.t===b.type && ui.zoomFB.m===b.m;
+      /* kernel 分段：块内部按 kernelDefs 比例分色，与「卡内解剖」同一份算子表、同一套色值——
+         这样「rank 里有啥」（V3）与「这是时间」（V2）画的是同一份数据，不是各自为政（rank-segmentation-observability）。
+         块通常只有几十 px 宽，分段只给色带，标签留给点开的放大视图（下面 fbZoomSVG）。 */
+      kdefs2.forEach(function(k){
+        var sw = bw*k.w/kSum2;
+        segs += '<rect x="'+kx2.toFixed(1)+'" y="'+(y+1)+'" width="'+Math.max(.6,sw).toFixed(1)+'" height="'+bh+'" style="fill:'+mix(k.c, fw?34:58)+'"/>';
+        kx2 += sw;
+      });
+      blocks += '<g data-act="zoomfb" data-s="'+b.s+'" data-t="'+b.type+'" data-m="'+b.m+'" style="cursor:pointer">'
+        + segs
+        + '<rect x="'+x+'" y="'+(y+1)+'" width="'+bw+'" height="'+bh+'" style="fill:none;stroke:'+(isZoomed?VC.pp:'var(--pt-bds)')+';stroke-width:'+(isZoomed?1.6:.7)+'"/>'
+        + (w2>15?txt(x+w2/2, y+rowH/2-4, (fw?'F':'B')+b.m, 8.2, 'var(--pt-fg2)'):'')
+        + '</g>';
       if(layerOn('L5') && b.recv) ticks += '<path d="M'+x+' '+(y-3)+' l4 -5 l-8 0 z" style="fill:'+VC.pp+'"/>';
     }
   });
   var axis = '<line x1="'+LBL+'" y1="'+(22+PP*rowH+2)+'" x2="'+(W-14)+'" y2="'+(22+PP*rowH+2)+'" style="stroke:var(--pt-fg);stroke-width:1"/>'
     + txt(W-14, 22+PP*rowH+15, '时间 →  F=1 B=2 · 1F1B 合成'+(sch.truncated?' · 只画前 '+sch.GA+' 个 μbatch':''), 9, 'var(--pt-fg3)', 'end');
-  var zoom = ui.zoomAR ? arZoomSVG(D) : '';
-  $('stage').innerHTML = '<svg viewBox="0 0 '+W+' '+(H+(ui.zoomAR?236:0))+'" preserveAspectRatio="xMidYMid meet">'
+  var zoomH = ui.zoomAR ? 236 : (ui.zoomFB ? 108 : 0);
+  var zoom = ui.zoomAR ? arZoomSVG(D) : (ui.zoomFB ? fbZoomSVG(D, ui.zoomFB) : '');
+  $('stage').innerHTML = '<svg viewBox="0 0 '+W+' '+(H+zoomH)+'" preserveAspectRatio="xMidYMid meet">'
     + rows+blocks+ticks+axis + (zoom?'<g transform="translate(0 '+(H+8)+')">'+zoom+'</g>':'') + '</svg>';
   $('stagebar').innerHTML =
     '<button class="pb'+(ui.skew?' is-on':'')+'" data-act="skew">注入偏斜（某副本慢）</button>'
     + '<button class="pb'+(ui.zoomAR?' is-on':'')+'" data-act="zoomar">放大末尾 AllReduce</button>'
-    + '<span class="pt-chip">流 = 时间容器：装 kernel，装满不会崩，只是变慢（§08）</span>';
+    + '<span class="pt-chip">流 = 时间容器：装 kernel，装满不会崩，只是变慢（§08）</span>'
+    + '<span class="pt-chip">点任一 F/B 块：放大看 attn/router/experts 怎么分段（与卡内解剖同号同色）</span>';
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 function arZoomSVG(D){
@@ -7804,13 +7852,7 @@ function renderV3(D){
   parts.push(boxSVG(fx, fy, 0, fw, fh, .8, s, {wire:true, stroke:'var(--pt-fg)', sw:1.1}));
   regBox(fx, fy, 0, fw, fh, .8);
   /* kernel 用 src 声明它由哪些算子来——标签打同号，并逐条画对应引线 */
-  var kdefs = D.moe
-    ? [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
-       {w:.8, src:['attn.out'], c:VC.tp}, {w:.7, src:['router'], c:VC.ep},
-       {w:.8, from:'组批 1/2', src:['experts'], c:VC.ep}, {w:.8, from:'组批 2/2', src:['experts'], c:VC.ep}]
-    : [{w:1.5, from:'融合', src:['attn.q','attn.kv'], c:VC.tp}, {w:.9, src:['attn.core'], c:'var(--pt-fg3)'},
-       {w:.8, src:['attn.out'], c:VC.tp}, {w:1.1, src:['mlp.gate/up'], c:VC.tp},
-       {w:.45, from:'分段 1/2', src:['mlp.down'], c:VC.tp}, {w:.45, from:'分段 2/2', src:['mlp.down'], c:VC.tp}];
+  var kdefs = kernelDefs(D);
   var kx = fx+.15, kLines = [];
   kdefs.forEach(function(k, ki){
     parts.push(boxSVG(kx, fy+.07, .12, k.w, fh-.18, .5, s, {fill:mix(k.c,52), stroke:k.c, sw:.8}));
@@ -7850,6 +7892,7 @@ function renderV3(D){
     + '<button class="pb mono" data-act="v3layer" data-d="-1">‹</button>'
     + '<span class="pt-chip">L'+(l0+picked)+'</span>'
     + '<button class="pb mono" data-act="v3layer" data-d="1">›</button>'
+    + '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>'
     + '<span class="pt-chip">整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）</span>';
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
@@ -8890,7 +8933,19 @@ document.addEventListener('click', function(ev){
     else{ var D2 = derive(cfg); if(D2.ok && ui.view==='compose'){ render(); startAnim(D2); } }
   }
   else if(act==='skew'){ ui.skew = !ui.skew; render(); }
-  else if(act==='zoomar'){ ui.zoomAR = !ui.zoomAR; render(); }
+  else if(act==='zoomar'){ ui.zoomAR = !ui.zoomAR; if(ui.zoomAR) ui.zoomFB = null; render(); }
+  else if(act==='zoomfb'){
+    var zs = +b.getAttribute('data-s'), zt = b.getAttribute('data-t'), zm = +b.getAttribute('data-m');
+    var zSame = ui.zoomFB && ui.zoomFB.s===zs && ui.zoomFB.t===zt && ui.zoomFB.m===zm;
+    ui.zoomFB = zSame ? null : {s:zs, t:zt, m:zm};
+    if(ui.zoomFB) ui.zoomAR = false;
+    render();
+  }
+  else if(act==='v3totime'){
+    var D3 = derive(cfg);
+    ui.zoomFB = (D3.ok && sel!==null && sel<D3.world) ? {s:coordsOf(sel,D3).p, t:'F', m:0} : {s:0, t:'F', m:0};
+    ui.view = 'time'; stopAnim(); render();
+  }
   else if(act==='v3layer'){ ui.selLayerOff = clamp(ui.selLayerOff + (+b.getAttribute('data-d')), 0, derive(cfg).layersPerStage-1); render(); }
   else if(act==='clearsel'){ sel = null; render(); }
   else if(act==='pick'){
