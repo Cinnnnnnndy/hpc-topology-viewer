@@ -6,12 +6,18 @@
         pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html @ 7ca2142
     连同 ./vendor/swimlane-task/{pattern.css,pattern.js} 一起照搬（那两个文件逐字节一致）。
 
-  相对本仓的三处、且仅有三处改动（保持与上游可 diff）：
+  相对本仓的四处、且仅有四处改动（保持与上游可 diff）：
     ① 本段说明；
     ② <head> 里加一条 ./embed.css   —— 卡片内嵌形态（藏掉它自带的顶栏、放开 min-height）；
     ③ <head> 里加一条 ./embed-bridge.js —— 读 ?theme=/?chrome=/?range= 与宿主 postMessage，
-       全部靠 .click() 现有控件实现，不碰页面自己那个 IIFE 里的任何变量。
-  正文（DOM、绘制逻辑、模拟数据）一行没动：上游更新时重新拷一遍再补这三处即可。
+       全部靠 .click() 现有控件实现，不碰页面自己那个 IIFE 里的任何变量；
+    ④ 正文 <script> 里加一块「kernel 级分段」——给「前向计算」「反向计算」条内部按
+       attn/router/experts 上色带，呼应 ../parallel-topology/demo.html 的 kernelDefs
+       同一套 TP=青/EP=紫/不切分=灰 语言；新增函数全部集中在 drawChevronTrack 之后
+       一个单独的注释区块里（搜「④ 本仓新增」），只在既有绘制循环和 tooltipHtml 里
+       各加了一行调用挂进去，其余正文没有再动。
+  除了④标注的这一小块新增/两处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
+  上游更新时重新拷一遍、再补这四处即可。
 
   上游依赖 ../vendor/pto-design-system/（tokens + css/style.css）。本仓在 public/vendor/
   下有同名快照，本文件放在 public/combo-workbench/ 恰好让 ../vendor/ 落到它上面，
@@ -1256,6 +1262,125 @@
         }
         ctx.restore();
       }
+
+      /* ════════════════════════════════════════════════════════════════════
+         ④ 本仓新增（第 4 处相对上游的局部改动，与文件头注释同步登记）——
+         「前向计算」「反向计算」条内的 kernel 级分段：attn.q+kv 融合 / attn.core /
+         attn.out / router / experts，颜色语言对齐 ../parallel-topology/demo.html
+         的 kernelDefs（同一份「TP=青 · EP=紫 · 不切分=灰」约定，青色额外复用了本文件
+         已有的 ARCH_NODE_COLORS.attention_all_gather 系列色值，紫色复用
+         ARCH_NODE_COLORS.shared_expert_mlp / 设计系统 --highlight-l0a-violet-400）。
+         只画色带，不在色带里塞文字标签——条通常只有几十 px 宽，标签放不下，
+         细节交给下面扩展的 tooltip（呼应 demo.html「色带在图里，标签在放大视图/
+         悬浮层」的取舍）。
+
+         分段宽度优先用事件自带的真实数据：pp2-life-bwd 这类事件的 metrics 里已经有
+         weightGradient/inputGradient/tpComm/recomputation 四个真实子阶段耗时（单位
+         ms，四项相加正好等于整条的 durationMs），比瞎编一个比例表更诚实，因此凡是
+         metrics 里能凑齐≥2 个可解析的子阶段字段，就直接拿这些真实 ms 值当分段宽度；
+         其余事件（包括这份 mock 数据里绝大多数的 forward 事件，以及没有 metrics 子
+         阶段字段的 backward 事件）退回一张示意性的 kernel 构成比例表——比例值直接
+         沿用 demo.html kernelDefs 里 MoE 分支的那一组（1.5/.9/.8/.7/.8/.8），保持
+         两处「什么在跑」的直觉一致，但这里是独立重写的一份，不是抄过去的代码。
+
+         已经是单个 kernel 级算子事件的条（metrics.operatorId 存在，即 Rank 展开视图
+         里 attn.core / router-top-8 / routed-expert-bank 这些本来就只代表一个 kernel
+         的事件，本身已经用 ARCH_NODE_COLORS 上色）不再二次拆分，否则等于把一个已经
+         是「叶子」的算子再拆成好几段，语义上说不通。 */
+      const KERNEL_SEG_COLORS = Object.freeze({
+        tp: '#06B6D4',  // 与 ARCH_NODE_COLORS.attention_all_gather / attention_reduce_scatter / ffn_all_gather 同色：本文件已有的 TP 切分语义色
+        ep: '#A855F7'   // 与 ARCH_NODE_COLORS.shared_expert_mlp 同色，对应设计系统 --highlight-l0a-violet-400：本文件已有的 EP 切分语义色
+      });
+      function kernelSegColor(cls) {
+        if (cls === 'tp') return KERNEL_SEG_COLORS.tp;
+        if (cls === 'ep') return KERNEL_SEG_COLORS.ep;
+        return css('--foreground-muted') || '#8a93a6'; // 不切分/无参数算子：复用页面已有的 muted 文本色 token，不新引入灰色
+      }
+      // 示意性 kernel 构成比例表——沿用 openPangu 这类 MoE 结构，attn 三段 + router + 两批专家；
+      // 权重比例照抄 demo.html kernelDefs 的 MoE 分支（1.5/.9/.8/.7/.8/.8），两处口径保持一致。
+      const KERNEL_SCHEMATIC_TABLE = Object.freeze([
+        { key: 'attn-qkv', label: 'Attn Q+KV（融合）', w: 1.5, cls: 'tp' },
+        { key: 'attn-core', label: 'Attn Core', w: .9, cls: 'none' },
+        { key: 'attn-out', label: 'Attn Out', w: .8, cls: 'tp' },
+        { key: 'router', label: 'Router Top-K', w: .7, cls: 'ep' },
+        { key: 'experts-1', label: 'Experts（组批 1/2）', w: .8, cls: 'ep' },
+        { key: 'experts-2', label: 'Experts（组批 2/2）', w: .8, cls: 'ep' }
+      ]);
+      // pp2-life-bwd 这类事件里，哪几个 metrics 字段是「真实子阶段耗时」、该按什么色系画——
+      // weightGradient/tpComm 落在 TP 分片矩阵乘 / TP 通信上，归青色；inputGradient/recomputation
+      // 不挂具体的并行切法，归灰色。字段展示顺序沿用 humanKey 里已经登记的顺序。
+      const BACKWARD_METRIC_SEGMENT_SPECS = Object.freeze([
+        { key: 'weightGradient', label: '权重梯度（TP 分片矩阵乘）', cls: 'tp' },
+        { key: 'inputGradient', label: '输入梯度', cls: 'none' },
+        { key: 'tpComm', label: 'TP 通信', cls: 'tp' },
+        { key: 'recomputation', label: '激活重计算', cls: 'none' }
+      ]);
+      function parseMsMetric(value) {
+        const n = Number.parseFloat(value);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+      // 至少要凑齐两个可解析的真实子阶段字段才当「真实分段」用——只有一个字段不足以证明
+      // 这是一次可信的分解，退回示意表更稳妥。
+      function metricsDerivedSegments(item) {
+        const metrics = item.metrics || {};
+        const specs = BACKWARD_METRIC_SEGMENT_SPECS
+          .map(spec => ({ ...spec, w: parseMsMetric(metrics[spec.key]) }))
+          .filter(spec => spec.w !== null);
+        return specs.length >= 2 ? specs : null;
+      }
+      function kernelSegmentsFor(item) {
+        const derived = metricsDerivedSegments(item);
+        return derived ? { segments: derived, source: 'metrics' } : { segments: KERNEL_SCHEMATIC_TABLE, source: 'schematic' };
+      }
+      function isKernelSegmentable(item) {
+        return (item.kind === 'forward' || item.kind === 'backward') && !item.metrics?.operatorId;
+      }
+      function drawKernelSegments(ctx, item, barX, barY, barW, barH) {
+        if (!isKernelSegmentable(item) || barW <= 0 || barH <= 0) return;
+        const { segments } = kernelSegmentsFor(item);
+        const total = segments.reduce((sum, seg) => sum + seg.w, 0);
+        if (!(total > 0)) return;
+        ctx.save();
+        roundedRect(ctx, barX, barY, barW, barH, 3);
+        ctx.clip();
+        ctx.globalAlpha = .5; // 半透明叠加在已经画好的 forward/backward 底色上：保留原有蓝/红主色，色带只做「构成」提示
+        let segX = barX;
+        segments.forEach(seg => {
+          const segW = barW * seg.w / total;
+          ctx.fillStyle = kernelSegColor(seg.cls);
+          ctx.fillRect(segX, barY, Math.max(.6, segW), barH);
+          segX += segW;
+        });
+        ctx.globalAlpha = 1;
+        if (barW >= 24) { // 条够宽时加一道浅分隔线，比纯拼色更容易看出这是几段
+          ctx.strokeStyle = 'rgba(255,255,255,.22)';
+          ctx.lineWidth = .5;
+          segX = barX;
+          segments.forEach(seg => {
+            const segW = barW * seg.w / total;
+            segX += segW;
+            if (segX < barX + barW - .5) {
+              ctx.beginPath(); ctx.moveTo(segX + .5, barY + 1); ctx.lineTo(segX + .5, barY + barH - 1); ctx.stroke();
+            }
+          });
+        }
+        ctx.restore();
+      }
+      // tooltip 里追加一行 kernel 分解——不重复 metrics 已经展示的原始字段，只把同一份
+      // segments 换算成人话（真实分段给 ms 数值，示意分段给百分比），并说明数据来源。
+      function kernelSegmentTooltipRow(item) {
+        if (!isKernelSegmentable(item)) return null;
+        const { segments, source } = kernelSegmentsFor(item);
+        const total = segments.reduce((sum, seg) => sum + seg.w, 0);
+        if (!(total > 0)) return null;
+        const parts = segments.map(seg => source === 'metrics'
+          ? `${seg.label} ${seg.w.toFixed(1)} ms`
+          : `${seg.label} ${Math.round(seg.w / total * 100)}%`);
+        const note = source === 'metrics' ? '真实子阶段耗时（来自本事件 metrics）' : '示意比例（无逐 kernel 真实计时，占位分解）';
+        return ['Kernel 分解', `${parts.join(' · ')} —— ${note}`];
+      }
+      /* ════════════════════════════════════════════════════════════════════ */
+
       function drawLaneGlyphTrack(ctx, x, y, width, height, direction, color) {
         if (width <= 0 || height <= 0 || (direction !== 'forward' && direction !== 'backward')) return;
         const glyph = direction === 'forward' ? '›' : '‹';
@@ -1576,6 +1701,7 @@
               fontFamily: css('--font-mono') || 'monospace'
             });
             if (item.kind === 'forward' || item.kind === 'backward') {
+              drawKernelSegments(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight); // ← ④ 本仓新增，见上方「kernel 级分段」区块
               drawChevronTrack(ctx, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, item.kind, {
                 step: 6, inset: .65, lineWidth: .55, radius: 3, color: 'rgba(255,255,255,.30)'
               });
@@ -1623,6 +1749,8 @@
           ['关键证据', primaryEvidence(item)],
           ['视觉编码', visualEncoding(item)]
         ];
+        const kernelRow = kernelSegmentTooltipRow(item); // ← ④ 本仓新增，见上方「kernel 级分段」区块
+        if (kernelRow) rows.push(kernelRow);
         return `<div class="pto-swimlane-task-tooltip__title">${escapeHtml(item.label)}</div>` +
           rows.map(([key, value]) => `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">${escapeHtml(key)}</span><span class="pto-swimlane-task-tooltip__value">${escapeHtml(value)}</span></div>`).join('');
       }

@@ -756,7 +756,7 @@ var ui = {
   view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false, zoomFB:null,   /* 全量优先；超大规模除外，见 v1Layout。zoomFB={s,t,m}：时间·流里点开的那个 F/B 块 */
   act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
-  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, viewTab:'3d',
+  yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, kPhys:false, viewTab:'3d',
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
@@ -882,6 +882,9 @@ function urlLoad(){
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
+  /* 物理平铺不是一把刀，不跟 cuts= 混在一起编码——它答的是「怎么摆」，cuts 答的是
+     「摊出几张」，两件事分属两个配置维度，URL 里也该是两个各自独立的参数。 */
+  if(q.get('phys')==='1') ui.kPhys = true;
   /* vtab 带着机位一起落。只写 tab 不改 yaw/pitch 的话，?vtab=top 会高亮「顶视」
      却仍停在 3D 那个等轴机位——tab 说的是一回事，画面是另一回事。正视/侧视走
      自己的 2D 渲染器（frontScene / sideScene）用不到机位，但切回 3D 时机位得是对的。
@@ -943,7 +946,7 @@ function urlWrite(){
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='chain' && !ui.spread) q.set('stack','1');
-  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kCP?'c':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpcte') q.set('cuts',cs2); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
+  if(ui.view==='chain'){ var cs2=(ui.kDP?'d':'')+(ui.kPP?'p':'')+(ui.kCP?'c':'')+(ui.kTP?'t':'')+(ui.kEP?'e':''); if(cs2!=='dpcte') q.set('cuts',cs2); if(ui.kPhys) q.set('phys','1'); if(ui.viewTab!=='3d') q.set('vtab',ui.viewTab); }
   if(ui.view==='chain' && (Math.abs(ui.yaw3-0.42)>1e-3 || Math.abs(ui.pitch3-0.30)>1e-3)){
     q.set('yaw', ui.yaw3.toFixed(3)); q.set('pitch', ui.pitch3.toFixed(3));
   }
@@ -2211,6 +2214,51 @@ function netScene(D, g, box, step){
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
   function segW(st){ var a0 = DEP*(st*lps)/L + GAPW*st;
     return [a0, Math.min(DEP, DEP*((st+1)*lps)/L) + GAPW*st]; }
+  /* ── 物理平铺（第六颗开关，ui.kPhys）───────────────────────────────────
+     前面五刀答的都是「归哪个并行组」，这一颗故意不问那件事——只答「插在机房
+     哪个槽位」。只在卡维度下才有意义（不打开 Rank 时压根没有「一张卡」可摆）。
+     口径抄 src/scene/deployment.ts 的 physOf：host=⌊rank/CPH⌋、slot=rank%CPH，
+     CPH=8（NPUS_PER_NODE）。 */
+  var physOn = ui.cardMode && ui.kPhys;
+  var CPH = 8;
+  function hostOf(r9){ return Math.floor(r9 / CPH); }
+  function slotOf(r9){ return r9 % CPH; }
+  /* 槽位间距沿用列距的节奏（PHY_CU=CU），机位间距沿用「卡维度下段间缝」的量级
+     （GAPW 在卡维度、PP 落下时就是 DEP*2.60——物理平铺不问 PP，借同一个数字，
+     不必另起一套缝的尺寸标准）。 */
+  var PHY_CU = CU, PHY_HOSTW = DEP*2.60;
+  function physSpan(r9){
+    var h0 = hostOf(r9)*PHY_HOSTW, pad = PHY_HOSTW*0.14;
+    return [h0+pad, h0+PHY_HOSTW-pad];
+  }
+  /* 哨兵基址：只有 shellOf 内部显式借道传入的物理列号（PHY_OFF_BASE+rank）才会
+     落进 cx/cy 下面那条 physOn 分支——K 最多几千（world 上限），离 1e7 很远，
+     两套列号编码永远撞不上，函数体其余几十处 P(...,kc) 原样不用改。 */
+  var PHY_OFF_BASE = 1e7;
+  /* 物理平铺的取景框：host 数不是常数——default128 只有 16 台机，pangu 有 500 台，
+     深度轴（host）跨度差出一个量级。取景（measure/fit，下面几十行）算包围盒时
+     用的是 TOTW/colX(COLS-1) 这两个「非物理」量，它们跟 host/slot 的真实跨度
+     对不上号：pangu 那种大规模预设下相机会按小得多的旧包围盒去贴边，实际卡群
+     摆得远比它以为的大，结果整屏缩得看不见。这里先把这一屏**真会摆出来**的
+     host/slot 跨度量一遍（口径与 shellOf 的 dc/tc 解码完全一致），下面 zw0/zw1
+     与 measure() 里各留一处 physOn 分支去用它，其余非物理分支一个字不改。 */
+  var physHostLo = 0, physHostHi = 0, physSlotHi = CPH - 1;
+  if(physOn){
+    var _nSegAll9 = cutPP ? D.pp : 1;
+    physHostLo = Infinity; physHostHi = -Infinity; physSlotHi = 0;
+    for(var _kc9 = 0; _kc9 < K; _kc9++){
+      var _dc9 = _kc9 % KD, _tc9 = KT > 1 ? Math.floor(_kc9/KD) : co.t;
+      for(var _p9 = 0; _p9 < _nSegAll9; _p9++){
+        var _r9 = rankOf(_tc9, co.c, _dc9, _p9, D);
+        var _h9 = hostOf(_r9), _s9 = slotOf(_r9);
+        if(_h9 < physHostLo) physHostLo = _h9;
+        if(_h9 > physHostHi) physHostHi = _h9;
+        if(_s9 > physSlotHi) physSlotHi = _s9;
+      }
+    }
+    if(!isFinite(physHostLo)){ physHostLo = 0; physHostHi = 0; }
+  }
+  var physMaxX = physOn ? physSlotHi*PHY_CU : 0;   /* measure()/ctr3 各用一次，避免两处各算一遍 */
   var zoomIn = false;
   /* 先算投影包围盒，再统一缩放平移——转到任何角度都不会跑出框。
      刀越深，框得越紧：前几刀框住全部复印件（要看清「有几份」），
@@ -2221,6 +2269,9 @@ function netScene(D, g, box, step){
   var focus1 = zoomIn;
   var zw0 = focus1 ? segW(co.p)[0] - GAPW*0.4 : -selectorDepth;
   var zw1 = focus1 ? segW(co.p)[1] + GAPW*0.4 : TOTW;
+  /* 物理平铺：深度轴改问 host，取景框也得跟着换——不换的话大规模预设（host 数
+     远超 PP 段数）会按旧的 TOTW 贴边，实际卡群摆得比相机以为的大得多。 */
+  if(physOn){ zw0 = physHostLo*PHY_HOSTW; zw1 = (physHostHi+1)*PHY_HOSTW; }
   var vHi = AR + (cutPP?0.20:0) + (cutTP?0.19:0) + (cutEP?0.19:0) + (K>1?0.10:0);
   var vLo = -0.30;      /* 入口/出口两枚门牌挂在层板上方 0.10 与 0.225，包围盒得留出这一截 */
   /* 复印件固定摊成**一排**。以前这里会把 1..K 每种列数都量一遍取放得最大的那个，
@@ -2230,9 +2281,11 @@ function netScene(D, g, box, step){
   function measure(cols, mYaw, mPitch){
     if(mYaw === undefined){ mYaw = yaw; mPitch = pitch; }
     var rows = Math.ceil(K/cols), pr;
+    var maxX9 = physOn ? physMaxX : colX(cols-1);       /* 物理平铺：X 改按槽位跨度取景 */
+    var maxY9 = physOn ? 0 : (rows-1)*ROWV;              /* 物理平铺摊成一层，Y 跨度归零 */
     if(focus1) pr = [[ui.spread ? (sel0%cols)*CU : sel0*CU, ui.spread ? Math.floor(sel0/cols)*ROWV : sel0*CV]];
     else if(!ui.spread) pr = [[0,0], [(K-1)*CU, (K-1)*CV]];
-    else pr = [[0,0], [colX(cols-1),0], [0,(rows-1)*ROWV], [colX(cols-1),(rows-1)*ROWV]];
+    else pr = [[0,0], [maxX9,0], [0,maxY9], [maxX9,maxY9]];
     var X = [], Y = [], Z = [], a, i2, j2, k2;
     for(a=0;a<pr.length;a++) for(i2=0;i2<2;i2++) for(j2=0;j2<2;j2++) for(k2=0;k2<2;k2++){
       var p = turn3(i2 + pr[a][0], (j2?vHi:vLo) + pr[a][1], k2?zw1:zw0, mYaw, mPitch);
@@ -2254,8 +2307,11 @@ function netScene(D, g, box, step){
      公式两处读——同一份 CP 之内的那几列 DP 副本挨在一起，一眼看得出「这一小块
      是一段序列上的整排副本」。并到行那边的话 longcp 会摊成 16 行 × 2 列的细长条。 */
   var COLS = KC * KD, ROWS = KT;
-  function cx(o){ return ui.spread ? colX(o % COLS) : o*CU; }
-  function cy(o){ return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
+  /* 物理平铺借道：off ≥ PHY_OFF_BASE 时它装的不是列号，是 PHY_OFF_BASE+rank——
+     只有 shellOf 内部临时改写 kc 才会喂出这种值（见 shellOf 里的 kcOrig）。
+     X 改问 slotOf(rank)，Y 恒 0（摊成一层，不摞高）——真摊平，不是压扁的立方。 */
+  function cx(o){ if(physOn && o >= PHY_OFF_BASE) return slotOf(o - PHY_OFF_BASE) * PHY_CU; return ui.spread ? colX(o % COLS) : o*CU; }
+  function cy(o){ if(physOn && o >= PHY_OFF_BASE) return 0; return ui.spread ? Math.floor(o/COLS)*ROWV : o*CV; }
   /* ── 缩放不跟着转台走 ────────────────────────────────────────────────────
      转台转的是一只**刚体**：大小不该变，变的只是轮廓。原来每帧拿当前角度的投影
      包围盒去贴边（92% 满屏），于是转一圈就一直在缩放，看着像在呼吸——尤其是这种
@@ -2269,7 +2325,7 @@ function netScene(D, g, box, step){
      用包围盒的话中心会随轮廓一起挪，转台就成了边转边平移。 */
   var live = measure(COLS);
   var s = fit.s * ui.zoom3, i, j, k;
-  var ctr3 = turn3((1 + colX(COLS-1))/2, (vLo + vHi + (ROWS-1)*ROWV)/2, (zw0+zw1)/2, yaw, pitch);
+  var ctr3 = turn3((1 + (physOn ? physMaxX : colX(COLS-1)))/2, (vLo + vHi + (physOn ? 0 : (ROWS-1)*ROWV))/2, (zw0+zw1)/2, yaw, pitch);
   var ox = box.x + box.w/2 - ctr3[0]*s + ui.panX3;
   /* 整体上抬一截：画布下沿钉着那条选组 HUD（DP/TP·SP/EP/PP 一排门牌），
      场景按几何中心居中的话，挂在阵列左下的 PP 段名会正好钻到 HUD 底下。
@@ -2368,6 +2424,11 @@ function netScene(D, g, box, step){
   /* 算子命中面单独攒一叠、最后再叠上去：卡壳那只「选这张卡」的命中面在 DOM 里
      排在后面，会整片盖住它们（实测点算子只会换选中卡，明细卡打不开）。 */
   var body = [], hit = [], hitOps = [], rankTags = [], nodes = 0, sawn = 0, whole = 0;
+  /* rank → 卡壳前脸中心的屏幕坐标（供下面「卡对卡通信线」使用）。声明必须在
+     shellOf() 被调用的那个 k 循环之前（下面几百行）——var 的初始化是按代码
+     顺序执行的，写在 shellOf 定义旁边、却晚于调用它的循环，会在头几次调用时
+     还是 undefined（函数声明整体提升，但 `= {}` 这次赋值不会跟着提前）。 */
+  var chainCardAnchor = {};
   var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
   var spot = spotlightHit(D);
   var sh = IXg ? shardMap(D, g) : null;
@@ -2383,7 +2444,9 @@ function netScene(D, g, box, step){
     return true;
   }
   /* ── 地板网格（参考魔方视图 pattern）── */
-  if(ui.spread && K > 1 && !zoomIn){
+  /* 物理平铺下不画：这层网格按列号 k 画的是并行坐标那套排法，物理摆位下
+     卡已经挪去别处了，留着只是一圈跟谁都对不上的虚线框。 */
+  if(ui.spread && K > 1 && !zoomIn && !physOn){
     var grd = '';
     for(k = 0; k < K; k++){
       var fl = [P(0,0,0,k), P(1,0,0,k), P(1,0,TOTW,k), P(0,0,TOTW,k)];
@@ -2635,7 +2698,13 @@ function netScene(D, g, box, step){
        画不出东西的循环不该跑：卡维度下非焦点列只剩卡壳（层板本来就不画），
        全景下只留首尾两层的层板（那是「有一叠在那儿」的轮廓）。 */
     var lqSkip = lowDetail && !isF;
-    var LQN = (ui.netOff || (lqSkip && ui.cardMode)) ? 0 : L;
+    /* 物理平铺时也不画：这段按层画的算子内容用的是**本列**这一个 (X,Y) 铺满全部
+       PP 段深度（wOf(li) 一次扫过整条 TOTW），跟 shellOf 里逐段借道到各自 host
+       的壳对不上——PP 没落下时二者本就重合（只有一段），PP 落下时会变成内容摆
+       在旧列位置、壳摆在新物理位置的两处分离。宁可这一档退回「摆对位置的空壳」
+       （shellOf 的磨砂面还在，容量视图的显存带也还在——那条路走的是 cw0/cw1，
+       本来就已经改问物理位置），也不画一份对不上号的内容。 */
+    var LQN = (ui.netOff || physOn || (lqSkip && ui.cardMode)) ? 0 : L;
     var spotHasLayers = spot && Object.keys(spot.layers).length > 0;
     for(var lq = 0; lq < LQN; lq++){
       var li = wDesc ? (L-1-lq) : lq;
@@ -3197,10 +3266,18 @@ function netScene(D, g, box, step){
         /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
            转起来够看清阵列的骨架，松手再补全。 */
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
+        var gc = rankOf(tc, co.c, dc, pc2, D);
+        /* 物理平铺：这张卡接下来的世界坐标改问 slotOf/hostOf(gc)，不再问它在哪一列、
+           第几段——把这一段之内所有 P(...,kc) 调用临时借道到那个物理锚点上（kc 是
+           shellOf 的形参，函数体几十处调用都是靠闭包读同一个变量，改它这一份不用
+           跟着把那几十处调用一处处替换），段一画完就还原，不影响下一段/下一列。 */
+        var kcOrig = kc;
+        if(physOn) kc = PHY_OFF_BASE + gc;
         /* PP 没落下时只有一只壳：它装的是**全部**层，深度必须包住整只 deck——
-           按单段深度算的话，壳只罩住 1/pp，其余层全洒在壳外（看着像内容漏了）。 */
-        var csx = cutPP ? segW(pc2) : [0, TOTW];
-        var cw0 = csx[0] - GAPW*0.16, cw1 = csx[1] + GAPW*0.16;
+           按单段深度算的话，壳只罩住 1/pp，其余层全洒在壳外（看着像内容漏了）。
+           物理平铺下深度轴改问 hostOf(gc)：一台机器一段，摊成一层不摞高。 */
+        var csx = physOn ? physSpan(gc) : (cutPP ? segW(pc2) : [0, TOTW]);
+        var cw0 = physOn ? csx[0] : csx[0] - GAPW*0.16, cw1 = physOn ? csx[1] : csx[1] + GAPW*0.16;
         /* v 方向的留白要装得下两头：词嵌入在 v≈-0.035、LM Head 在 v≈AR+0.09。
            它们是真图自己的坐标，不做重映射——正好落在卡壳上下唇内侧。 */
         var cu0 = -0.05, cu1 = 1.05, cv0 = -0.07, cv1 = AR + 0.12;
@@ -3210,7 +3287,7 @@ function netScene(D, g, box, step){
 
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
-        var gc = rankOf(tc, co.c, dc, pc2, D);
+        chainCardAnchor[gc] = [(C8[0][0]+C8[1][0]+C8[2][0]+C8[3][0])/4, (C8[0][1]+C8[1][1]+C8[2][1]+C8[3][1])/4];
         var meC = hasSel && gc === g;
         var dT = depthT(kc, (csx[0]+csx[1])/2);
         /* 聚光灯到**这只盒子自己的 rank**，不沿用列的判断。
@@ -3549,12 +3626,16 @@ function netScene(D, g, box, step){
         }
         hit.push('<g class="cgrow"><polygon points="'+ptsStr([C8[0],C8[1],C8[2],C8[3]])
           +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="card" data-i="'+gc+'"/></g>');
+        kc = kcOrig;     /* 借道用完即还原：下一段（或下一次调用 dc/tc 的判断）不受影响 */
       }
   }
-  if(ui.cardMode){
+  if(ui.cardMode && !physOn){
     /* ── 轴标签（照魔方那套）：三根轴各自沿线标刻度 ──────────────────
        128 只壳摆在那儿，不标轴就只是一堆盒子——读者认不出「横着是副本、
-       竖着是锯片、纵深是段」。每根轴用它自己的维度签名色。 */
+       竖着是锯片、纵深是段」。每根轴用它自己的维度签名色。
+       物理平铺不画这一段：这几个标签、EP 组框都是按并行坐标（列号/段号）
+       钉住的，物理摆位下卡已经挪到别处，钉在原地只会变成一圈跟谁都对不上
+       的框和字——宁可先不画，也不画错。（已知简化，见交付说明。） */
     var nSeg = cutPP ? D.pp : 1;      /* 壳循环挪进 shellOf 之后，这里要有自己的一份 */
     var wFront = segW(0)[0], wBack = segW(nSeg-1)[1];
     if(cutEP) drawEpFrames(true);
@@ -3583,8 +3664,63 @@ function netScene(D, g, box, step){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
       axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
-  } else if(cutEP && KD > 1) drawEpFrames(false);
-  if(ui.commOn && !lowDetail && !ui.netOff) drawCommArcs();
+  } else if(cutEP && KD > 1 && !physOn) drawEpFrames(false);
+  /* 同一个道理：drawCommArcs 的弧线锚在「列」上（offC/wMid 都是列号/段号算出来的
+     位置），物理平铺下卡已经挪走，弧线会连到空气里——物理平铺时不画。下面那段
+     用 chainCardAnchor（真实屏幕锚点，不是重新算的列位置）画的卡对卡连线不受
+     影响，物理平铺下也照常画。 */
+  if(ui.commOn && !lowDetail && !ui.netOff && !physOn) drawCommArcs();
+  /* ── 卡对卡通信线（补 netScene 一直缺的那一层）──────────────────────────
+     drawCommArcs() 回答的是「这次通信落在哪个算子上」——弧线锚在产生它的
+     那个节点，只在焦点卡自己的算子网格里活动，看不出「一共连了几张卡、
+     连成什么形状」。dimScene（单维切分视图）和 story 视图都有这后一层：
+     整组的端点摆成一排，走 edgeSVG 按 TP=AllReduce（一圈）/PP=P2P（一条
+     有向链）/DP=AllReduce（一圈）/EP=AllToAll（网状全连）把「组」画出来。
+     netScene 里一直没有这一层，这里按同一套原语补上，端点换成本视图自己
+     的卡壳——即 shellOf() 给每张画出来的卡记下的前脸中心（chainCardAnchor），
+     不是另起一套投影去猜坐标。只有卡维度（ui.cardMode）下每张卡才有唯一
+     确定的屏幕位置，所以这里同时要求 ui.cardMode。缺 chainCardAnchor 的
+     对端（缩放剔除 / 拖动降级时没画出壳）整条轴直接跳过，不用近似坐标去
+     补——宁可这一刀这次不画，不画错。
+     ui.netOff（关掉整网）是这个视图的**默认**子状态——下面已经有一段
+     「地面流量带」（floorBand，ui.netOff 分支）在那个状态下画 TP/DP/EP 三维，
+     只是画法是自定义的抬升贝塞尔，不是 edgeSVG，而且**没有 PP**（PP 那一刀
+     在两种子状态下都没人画过）。这里只在 netOff 下补 PP、不重画 TP/DP/EP，
+     避免同一件事画两遍；整网内容打开（!ui.netOff）时那三维完全没有对应的
+     「组」概览（drawCommArcs 画的是算子级弧线，不是组拓扑），四维都在这里补齐。 */
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel){
+    var pF9c = cutPP ? co.p : 0;
+    var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
+    var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
+    var CARD_COMM = [
+      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1, prim:'allreduce',
+       label:'TP AllReduce · 组内同步', metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
+      {dim:'pp', on: cutPP && D.pp > 1, prim:'p2p',
+       label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
+      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1, prim:'allreduce',
+       label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
+      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1, prim:'alltoall',
+       label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
+    ];
+    var ccLblN = 0;
+    CARD_COMM.forEach(function(cs9){
+      if(!cs9.on) return;
+      var mem9 = groupMembers(cs9.dim, g, D);
+      if(mem9.length < 2) return;
+      var pts9 = [], allOk9 = true;
+      for(var mi9 = 0; mi9 < mem9.length; mi9++){
+        var an9 = chainCardAnchor[mem9[mi9]];
+        if(!an9){ allOk9 = false; break; }
+        pts9.push(an9);
+      }
+      if(!allOk9) return;
+      body.push('<g opacity=".92" pointer-events="none">'
+        + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false}) + '</g>');
+      var lp9 = chainCardAnchor[g];
+      if(lp9) axLab([lp9[0], lp9[1] - 30 - ccLblN*16], cs9.label, cs9.metric || null, VC[cs9.dim], true, 6.2*zoomF9);
+      ccLblN++;
+    });
+  }
   /* ── 容量视图的地面流量带（观测台 Floor Sankey 的读法，长在本图自己的投影里）──
      整网视图的通信画在**算子**上（drawCommArcs——通信锚在产生它的那个算子）；
      容量视图里卡是空的，通信只剩「卡与卡」这一级，于是画在**地面**：选中卡与
@@ -3598,8 +3734,12 @@ function netScene(D, g, box, step){
      连线画法与整网视图的通信弧同一套：源卡底部中心到目标卡底部中心的二次
      贝塞尔，弧顶在屏幕坐标上抬起一截，白描边光晕垫底、两端描小圆点——贴地
      直角折线在斜穿中间不相干的卡时会糊成一堆折角，抬离地面就不会，也不需要
-     分车道防重叠：抬升幅度本就随两端屏幕距离变化，天然按目标错开。 */
-  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel){
+     分车道防重叠：抬升幅度本就随两端屏幕距离变化，天然按目标错开。
+     物理平铺时不画：这一段的源/端点是 kOfR() 现算的**列**位置，物理平铺下
+     卡已经挪到 shellOf 借道出的那个物理位置，两边对不上——上面那段用
+     chainCardAnchor 画的卡对卡连线覆盖的是同一件事（TP/PP/DP/EP 组内连线），
+     且用的是真实锚点，物理平铺下继续画。 */
+  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn){
     var W_CUT_MAP = {'attn.q':'tp', 'attn.kv':'tp', 'attn.core':'none', 'attn.out':'tp',
       'router':'none', 'experts':'ep', 'mlp.gate/up':'tp', 'mlp.down':'tp', 'norm×2':'none',
       'embed':'tp', 'lm_head':'tp'};
@@ -7240,6 +7380,15 @@ function renderChainBar(D){
   if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片，同时带着 SP：同一组卡、同样大小——TP 区里切 h（竖），TP 区之外切 s（横）。SP 不占乘数，所以只有这一颗开关">TP·SP</button>';
   if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
   kBtns += '</span>';
+  /* 物理平铺单独一个 pt-seg，不并进上面那条五刀的分段控件——它不是刀（不决定
+     摊出几张卡，那仍然由五刀说了算，只改这些卡摆在哪儿），混在同一条连成一体
+     的胶囊里会被误读成「第六根轴」，跟五刀平起平坐。分开摆、留出缝，视觉上先
+     承认它是另一类开关，但仍然紧跟在五刀右边、用同一套 knifetoggle 机制联动
+     （数据层面两者共用 ui.kPhys / render()，只是这里的胶囊分组变了）。
+     不给维度色：颜色在这条工具条里是「第几根轴」的记号，物理平铺没有轴色可给。 */
+  var physBtn = '<span class="pt-seg">'
+    + '<button'+(ui.kPhys?' class="is-on"':'')+' data-act="knifetoggle" data-k="phys" title="物理平铺：不改摊出几张卡（仍由左边五刀决定），只改它们摆在哪——按插在机房的槽位（host/slot）摆成一层平面，不再按并行坐标摆">物理</button>'
+    + '</span>';
   var vBtns = '<span class="pt-seg">'
     + '<button'+(ui.viewTab==='3d'?' class="is-on"':'')+' data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
     + '<button'+(ui.viewTab==='front'?' class="is-on"':'')+' data-act="viewtab" data-tab="front" data-yaw="0" data-pitch="0" title="正视图">正视</button>'
@@ -7376,7 +7525,7 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + vBtns + lBtns + mvBtn + dispBtn;
+  $('stagebar').innerHTML = cBtn + kBtns + physBtn + vBtns + lBtns + mvBtn + dispBtn;
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -8831,6 +8980,7 @@ document.addEventListener('click', function(ev){
     else if(kk2==='cp') ui.kCP = !ui.kCP;
     else if(kk2==='tp') ui.kTP = !ui.kTP;
     else if(kk2==='ep') ui.kEP = !ui.kEP;
+    else if(kk2==='phys') ui.kPhys = !ui.kPhys;
     render();
   }
   else if(act==='viewtab'){
