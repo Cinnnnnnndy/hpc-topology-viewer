@@ -6156,7 +6156,6 @@ function sideScene(D, g, box){
      TG = 缩放/反除基准，正好就是那个增益倍数，直接乘在阈值上，两者永远同步。 */
   var TG = Zv / FS_Z;
   var opLab = colW * Zv >= 110 * TG;      /* 条在屏幕上宽到装得下横排字，才往条里写 */
-  console.log('DEBUGSS opLab='+opLab+' colW='+colW+' Zv='+Zv+' TG='+TG+' FS_Z='+FS_Z+' zoom3='+ui.zoom3+' vis0='+vis0+' vis1='+vis1+' x0='+x0+' x1='+x1+' colGap='+colGap+' L='+L);
   /* ── 段头横幅 + 段边界 ── */
   if(cutPP){
     var yH = box.y + 44;
@@ -6315,7 +6314,6 @@ function sideScene(D, g, box){
     }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
-    if(li9===0) console.log('DEBUGSS li0 lx='+lx+' liVis='+liVis+' bx0='+bx0+' barW='+barW);
     for(var ri = 0; ri < rows.length; ri++){
       var n9 = rows[ri];
       if(!nodeInLayer9(n9, li9)) continue;
@@ -6333,7 +6331,6 @@ function sideScene(D, g, box){
       }
       /* 放大到条里装得下字之后，每个算子段也给一枚命中面：点开完整读数（跟随卡）。
          没放大时整列就几十个像素高，逐段命中点不准，那时点整列反查层才是对的。 */
-      if(li9===0 && ri===0) console.log('DEBUGSS row0 ya='+ya+' yb='+yb+' diff='+(yb-ya)+' threshHit='+(4/FS_Z)+' threshTxt='+(10.5/FS_Z));
       if(opLab && liVis && (yb - ya) >= 4/FS_Z)
         hit.push('<rect x="'+bx0.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
           +'" style="fill:transparent;cursor:pointer" data-act="opdetail" data-nid="'+esc(n9.id)+'" data-li="'+li9+'" data-key="s'+li9+'"'
@@ -6409,7 +6406,15 @@ function sideScene(D, g, box){
       'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
   /* ── 行标签总览：没放大时在模型中列标一次（放大后换成条内逐个写，这排就收起） ── */
   if(!opLab && colW * Zv >= 1.1){
-    var xm = (x0 + x1) / 2;
+    /* xm 是这排总览字的落点：跟着当前手势走，钉在**视口中心对应的场景坐标**上
+       （与上面 vis0/vis1 同一套 screen=C+pan+zoom·(base−C) 反解），而不是钉死在
+       画布固定的几何中点。原来写 (x0+x1)/2 时，鼠标滚轮朝光标缩放（8770 行那段）
+       一旦光标不在正中央就会带出一段 panX3——这一整条总览字不像其余内容是
+       按层重复画的，独一份，被带出视口边界之后没有第二份可看，也没法直觉地
+       拖回来（往哪拖、拖多少全靠蒙猜），实机表现就是「放大后这块内容失踪/被
+       裁到看不全，怎么拖都找不回来」。钉到视口中心对应的场景坐标后，缩放/
+      拖拽落定重画一次它就重新居中，不再跟着 panX3 独自飘走。 */
+    var xm = clamp(cxC - ui.panX3 / Zv, x0, x1);
     var lastY = -1e9;
     rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
       if(FS_DENSE[n9.id]) return;
