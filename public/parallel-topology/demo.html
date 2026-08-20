@@ -230,6 +230,79 @@
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(82%, 940px);
 }
+/* ── 舞台右上只留一颗配置钮 ────────────────────────────────────────────
+   原来这条工具条上并排摆着七八组控件（模式 / 五刀 / 物理 / 四个机位 / 换层 /
+   数据 / 显示），窄一点的容器里它自己换行、糊成三四行压在画布上（工作台那两格
+   400–620px 宽时最明显）。全部收进一颗按钮里的面板，画布上只剩这颗钮和「搜索」
+   ——搜索是**提问**（我想找哪张卡），其余是**配置**（这一屏怎么画），两件事。
+   形制照 vendor/rubik-cube 那颗：圆钮 + 一枚推杆图标，点开是一列分组。 */
+.pt-cfg{position:relative; display:inline-flex}
+.pt-cfgbtn{
+  width:38px; height:38px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2); box-shadow:0 2px 8px rgba(0,0,0,.08);
+}
+.pt-cfgbtn:hover{background:var(--pt-s2); border-color:var(--pt-bds); color:var(--pt-fg)}
+.pt-cfgbtn.is-on{background:var(--pt-fg); border-color:var(--pt-fg); color:var(--pt-bg)}
+/* 面板**常驻 DOM**、只用 display 收起：工作台（combo-workbench）靠翻进 iframe 点
+   [data-act=mvpick] 来同步「数据标注」那几类，节点如果随开合进出 DOM，它就同步
+   不到了。收起时不占位、不吃事件，行为与「不在」一样。 */
+.pt-cfgpanel{display:none}
+.pt-cfgpanel.is-open{
+  display:block; position:absolute; top:44px; right:0; z-index:22; width:302px;
+  max-height:min(74vh, 640px); overflow:auto;
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:10px 12px 12px;
+  box-shadow:0 14px 40px rgba(0,0,0,.18);
+}
+.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd)}
+.pt-cfgpanel .cg:first-child{border-top:0; padding-top:2px}
+.pt-cfgpanel h6{
+  margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--pt-fg3); font-weight:700;
+}
+.pt-cfgpanel .cgrow{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.pt-cfgpanel .pb, .pt-cfgpanel .pt-sw, .pt-cfgpanel .pt-seg button{height:28px; font-size:12px}
+.pt-cfgpanel .pt-sw{padding:0 12px 0 9px}
+/* 并行度：五个数字格 + 一颗「应用」。**不即时生效**——一位一位敲的中间值
+   （tp 从 16 敲成 2 时会先经过 1）每一下都重推一次整张图，画面乱闪、还会
+   顺带弹出一堆约束报错。攒在草稿里，按「应用」或回车才落。 */
+.pt-cfgpanel .pnum{display:flex; gap:5px; flex-wrap:wrap; align-items:flex-end}
+.pt-cfgpanel .pnum label{display:flex; flex-direction:column; gap:2px; font-size:9.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel .pnum label b{font-weight:700; letter-spacing:.06em}
+.pt-cfgpanel .pnum input{
+  width:46px; height:28px; padding:0 6px; border-radius:8px; border:1px solid var(--pt-bd);
+  background:var(--pt-bg); color:var(--pt-fg); font-family:var(--pt-mono); font-size:12px; text-align:center;
+}
+.pt-cfgpanel .pnum input:focus{outline:none; border-color:var(--pt-fg2)}
+.pt-cfgpanel .pnum .derv{
+  height:28px; min-width:46px; padding:0 6px; border-radius:8px; border:1px dashed var(--pt-bd);
+  display:flex; align-items:center; justify-content:center; color:var(--pt-fg2);
+  font-family:var(--pt-mono); font-size:12px;
+}
+.pt-cfgpanel .capply{
+  height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--pt-fg);
+  background:var(--pt-fg); color:var(--pt-bg); font-size:12px; font-weight:700;
+}
+.pt-cfgpanel .capply:disabled{background:var(--pt-s2); border-color:var(--pt-bd); color:var(--pt-fg3)}
+.pt-cfgpanel .cnote{margin-top:5px; font-size:10.5px; color:var(--pt-fg3); line-height:1.45}
+/* 逐类勾选（通信 / 图层 / 数据标注）复用数据下拉那套勾的长相 */
+.pt-cfgpanel button.mvi{
+  display:flex; width:100%; align-items:center; gap:8px; text-align:left; margin-top:1px;
+  border:0; background:none; padding:5px 6px; border-radius:8px; color:var(--pt-fg); font-size:12px; font-weight:600;
+}
+.pt-cfgpanel button.mvi:hover{background:var(--pt-s2)}
+.pt-cfgpanel button.mvi s{
+  flex:none; width:16px; height:16px; border-radius:5px; border:1.5px solid var(--pt-bds);
+  text-decoration:none; color:transparent; font-size:10px; line-height:14px; text-align:center;
+}
+.pt-cfgpanel button.mvi.is-on s{background:var(--pt-fg2); border-color:var(--pt-fg2); color:var(--pt-s1)}
+.pt-cfgpanel button.mvi em{margin-left:auto; font-style:normal; font-size:9px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel button.mvi[disabled]{opacity:.34}
+.pt-cfgpanel .acts{display:flex; gap:6px; margin:4px 0 2px}
+.pt-cfgpanel .acts button{
+  flex:1; height:24px; border-radius:7px; border:1px solid var(--pt-bd);
+  background:var(--pt-s2); color:var(--pt-fg2); font-size:11px; font-weight:600;
+}
+.pt-cfgpanel .acts button:hover{border-color:var(--pt-bds); color:var(--pt-fg)}
 /* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
 .pt-stagetitle{
@@ -764,15 +837,27 @@ var ui = {
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false, zoomFB:null,   /* 全量优先；超大规模除外，见 v1Layout。zoomFB={s,t,m}：时间·流里点开的那个 F/B 块 */
   act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, kPhys:false, viewTab:'3d',
+  /* 通信图层原来只有 ui.commOn 一个总开关：五种通信一起亮、一起灭，想单看
+     「EP 的 AllToAll 到底连了谁」就只能连着 TP 的换轴弧、DP 的梯度环一起看，
+     一屏弧线互相压。改成按**维**逐类（每一维的通信本来就是一种原语：TP =
+     AllGather/Reduce-Scatter、CP = Ring/Ulysses、EP = AllToAll、PP = P2P、
+     DP = 梯度 AllReduce），commOn 退回作总闸。 */
+  comm:{tp:true, cp:true, ep:true, pp:true, dp:true},
+  cfgOpen:false,      /* 舞台上那颗配置钮的面板开合（顶栏只留搜索，其余全收进它） */
+  cfgDraft:null,      /* 并行度那五格的草稿：敲到一半的值不落地，按「应用」/回车才落 */
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
-  /* 模块视图：整网正视/侧视默认画到逐算子明细（~30 框/层）；打开后收成
-     attn.qkv / attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块，
-     给 rank 视角一个更粗的取景——细节仍在，「整网通」那边没有丢。默认关，
-     不开这个开关时两套渲染必须逐像素一致（见 frontScene/sideScene）。 */
-  moduleView:false,
+  /* 模块视图：整网正视/侧视把逐算子明细（~30 框/层）收成 attn.qkv /
+     attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块。
+     **默认开**：设计评审的结论就是 rank 视角第一眼该看到「已经分好的那几块
+     以及块之间的通信」，逐算子那一层是追问下去才要的东西，不是开场白——
+     默认关的话读者进来看到的仍旧是那面算子墙，等于这个取景没有生效。
+     真要逐算子明细：这颗开关关掉即可（或链接带 ?mods=0），「整网通」那个
+     更细的视角也一直在。关掉时的渲染与加这个功能之前逐像素一致
+     （见 frontScene/sideScene，回归对比按这一条守）。 */
+  moduleView:true,
   /* 数据标注的五类开关（与 training-sidecar 的「数据」多选同一套分类）：
      数值=激活统计 / 梯度=反向与参数梯度 / 性能=耗时与通信 / MoE=路由与专家 / 训练=优化器一步。
      默认全开——这一屏本来就是拿来读数的；关掉是为了「只看这一类」。 */
@@ -890,7 +975,7 @@ function urlLoad(){
   var ac = parseInt(q.get('act'),10); if(isFinite(ac) && ac>=0) ui.act = ac;
   if(q.get('act2')==='0') ui.act2 = false;
   else if(q.get('act2')==='1') ui.act2 = true;
-  if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
+  if(q.get('p')==='cav'||q.get('p')==='map'||q.get('p')==='grid') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
@@ -917,8 +1002,16 @@ function urlLoad(){
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
+  /* commk=tp,ep：只画这几类通信。缺省全开，所以只有**关掉过**的链接才带它。 */
+  if(q.has('commk')){
+    var ck0 = String(q.get('commk')).split(',');
+    ['tp','cp','ep','pp','dp'].forEach(function(k0){ ui.comm[k0] = ck0.indexOf(k0) >= 0; });
+  }
   if(q.get('legend')==='1') ui.legendOn = true;
+  /* 模块视图默认开，所以链接里出现的通常是**关掉**它的 mods=0；mods=1 仍然
+     认（默认改成开之前发出去的链接带的就是它），只是现在与默认值相同。 */
   if(q.get('mods')==='1') ui.moduleView = true;
+  else if(q.get('mods')==='0') ui.moduleView = false;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
      mv= 空串 = 全部隐藏，这也是一个有意义的状态（只看结构），不能当成「没写就默认全开」。 */
   if(q.has('mv')){
@@ -969,8 +1062,12 @@ function urlWrite(){
   }
   if(ui.view==='chain' && ui.netOff && !ui.memFill) q.set('mem','0');
   if(ui.view==='chain' && !ui.commOn) q.set('comm','0');
+  if(ui.view==='chain'){
+    var ck1 = ['tp','cp','ep','pp','dp'].filter(function(k1){ return ui.comm[k1] !== false; });
+    if(ck1.length !== 5) q.set('commk', ck1.join(','));
+  }
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
-  if(ui.view==='chain' && ui.moduleView) q.set('mods','1');
+  if(ui.view==='chain' && !ui.moduleView) q.set('mods','0');   /* 默认开，只把「关掉了」写进链接 */
   if(ui.view==='chain'){
     var mv2 = (ui.mv.num?'n':'')+(ui.mv.grad?'g':'')+(ui.mv.perf?'p':'')+(ui.mv.moe?'m':'')+(ui.mv.train?'t':'');
     if(mv2 !== 'ngpmt') q.set('mv', mv2);       /* 全开是默认，不写进链接 */
@@ -992,6 +1089,25 @@ function urlWrite(){
   var s = q.toString();
   history.replaceState(null, '', s ? '?'+s : location.pathname);
 }
+
+/* 告诉宿主：画面上现在还叠着通信没有。工作台拿它联动下方抽屉切到「通信观测」——
+   上面看现象（流量带），下面看量化与归因（Sankey / Routing / 时间轴）。逐类开关
+   也走这一口：五类全关等价于这一层关掉了，宿主不该还以为在看通信。 */
+function ptoNotifyComm(){
+  if(window.parent && window.parent !== window)
+    window.parent.postMessage({type:'pto:comm', on: ui.commOn && commLitN() > 0}, '*');
+}
+/* 这一维的通信这次画不画：总闸 + 它自己那一档。五处画通信的地方（整网的算子级
+   弧线 drawCommArcs、卡对卡的组拓扑 CARD_COMM、容量视图的地面流量带）共用它，
+   免得三处各写各的判断、开关只对其中一处生效。 */
+function commLit(d9){ return ui.commOn && ui.comm[d9] !== false; }
+function commLitN(){ return COMMK.reduce(function(a9, k9){ return a9 + (commLit(k9[0]) ? 1 : 0); }, 0); }
+/* 逐类开关的名录：维 · 按钮上的名字 · 这一维走的原语（提示语用） */
+var COMMK = [['tp','TP','AllGather(s→h) / Reduce-Scatter(h→s)：进出 TP 区的换轴器'],
+             ['cp','CP','Ring / Ulysses(All-to-All) / 朴素 AllGather：attention 要看到全序列'],
+             ['ep','EP','All-to-All dispatch / combine：token 去专家那儿走一趟再回来'],
+             ['pp','PP','P2P Send/Recv：段边界上只传激活（正向 H×4、反向 ∂H×4）'],
+             ['dp','DP','梯度 AllReduce：一个 step 只有一次，反向（画成虚线）']];
 
 /* ═════════ 校验与推导（FR-1） ═════════ */
 function divisorsOf(n){ var d=[],i; for(i=1;i<=n;i++) if(n%i===0) d.push(i); return d; }
@@ -2711,7 +2827,10 @@ function netScene(D, g, box, step){
        停在原来那点depth-fade上，并没有因为「被比下去」而更暗。选中态需要
        自己单独的一档：命中列不变（selDim=1），其余列在雾之外再压一半，
        两档叠起来才是「这一张跳出来、其余的明显让开」。 */
-    var selDim = (hasSel && !isF) ? 0.5 : 1;
+    /* 0.5 那一档实机反馈仍然「影响阅读」：128 只盒子叠起来，半透的东西一层层透过
+       来，等效浓度被抬回去，选中那一列并没有真的跳出来。压到 0.30——落差够大，
+       而阵列的形状（有多少列、缝开在哪）还完整看得见。 */
+    var selDim = (hasSel && !isF) ? 0.30 : 1;
     var colOp = Math.min(colFade, spotDim, selDim);
     if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
@@ -2979,13 +3098,18 @@ function netScene(D, g, box, step){
   /* 这一屏所有挂在图上的小字都走这一枚标签：底色 + 描边的胶囊。裸文字压在 128 只
      卡的骨架上根本读不出来（哪一笔是字、哪一笔是棱分不清）。定义提到循环之前，
      卡壳上的桶号和轴上的刻度共用同一个形状。 */
-  function axLab(pt, s1, s2, col, strong, sz){
+  /* op9：整枚牌一起淡出（底、边、字同一档）。选中一张卡之后，跟它无关的那些
+     桶号牌若还是满浓度，读者的眼睛仍然被一排等重的字拽着走——牌是**注解**，
+     该跟着它注解的那只盒子一起让开。 */
+  function axLab(pt, s1, s2, col, strong, sz, op9){
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
+    if(op9 != null && op9 < 0.999) body.push('<g opacity="'+op9.toFixed(2)+'">');
     body.push('<rect x="'+(pt[0]-w1/2)+'" y="'+(pt[1]-h1/2)+'" width="'+w1+'" height="'+h1+'" rx="'+Math.min(3.5,h1/2)+'" '
       +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:'+(strong?1.3:.7)+';opacity:.96"/>');
     body.push(txt(pt[0], pt[1] + (s2 ? -1.5 : f1*0.36), String(s1), f1, col, 'middle', 'font-weight="800"'));
     if(s2) body.push(txt(pt[0], pt[1]+7.5, String(s2), 5.6, 'var(--pt-fg3)', 'middle'));
+    if(op9 != null && op9 < 0.999) body.push('</g>');
   }
     /* ── EP 的框：一框 = 一整套专家 ──────────────────────────────────────
        EP 不像 DP/PP/TP 有自己的一根轴——桶号是从 (tp, cp, dp) 导出来的，所以
@@ -3154,7 +3278,7 @@ function netScene(D, g, box, step){
 
     /* TP：卡维度下对端是另一**行**的卡；非卡维度 TP 没有独立空间轴（KT=1），
        弧线画在算子自己的两片之间——被锯开的那条缝就是要通信的地方。 */
-    if(cutTP){
+    if(cutTP && commLit('tp')){
       var nRS = nUV('attention_reduce_scatter') || nUV('o_proj');
       var nOP = nUV('o_proj') || nRS;
       if(nRS){
@@ -3193,7 +3317,7 @@ function netScene(D, g, box, step){
        只有 attention 要看到全序列，所以这一维的通信**只有一处**，锚在 KV 上。
        原语随实现而变（Ring 逐跳传 KV / Ulysses All-to-All 换轴 / 朴素 AllGather），
        这里标朴素那一种：它是三者里唯一能在这张图上原样画出来的。 */
-    if(cutCP && D.cp > 1){
+    if(cutCP && D.cp > 1 && commLit('cp')){
       var nKV = nUV('key_tensor') || nUV('attention_core');
       if(nKV){
         var mCP = null, c4;
@@ -3220,7 +3344,7 @@ function netScene(D, g, box, step){
       }
     }
     /* EP：AllToAll。屏上画着的那几个对端才连（TP 未展开时另一半没画，连不了）。 */
-    if(cutEP){
+    if(cutEP && commLit('ep')){
       var nA2A = nUV('moe_all_to_all_dispatch');
       if(nA2A){
         var gF2 = rankOf(tF, co.c, dF, pF, D), mEP = null;
@@ -3241,7 +3365,7 @@ function netScene(D, g, box, step){
     }
     /* PP：段边界 P2P，只沿焦点那一列画——它讲的是「边界在哪、传的是什么」，
        每列都画一遍就成了栅栏。 */
-    if(cutPP && D.pp > 1){
+    if(cutPP && D.pp > 1 && commLit('pp')){
       var nPN = nUV('block_post_norm');
       if(nPN){
         var mPP = null, p3;
@@ -3258,7 +3382,7 @@ function netScene(D, g, box, step){
       }
     }
     /* DP：梯度 AllReduce（反向，虚线）。副本挨个相连。 */
-    if(cutDP && KD > 1){
+    if(cutDP && KD > 1 && commLit('dp')){
       var nDP = nUV('o_proj');
       if(nDP){
         var mDP = null, d3;
@@ -3357,7 +3481,9 @@ function netScene(D, g, box, step){
                  又还看得见它站在哪儿。 */
             var sib9 = (!meC && memSibs) ? memSibs[gc] : null;
             /* 兄弟卡从压暗里豁出来：0.32 那档是「别的卡」，兄弟是这次点选的答案 */
-            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.9 : 0.32) : 1);
+            /* 0.32 → 0.20：同上，叠加透明之后 0.32 在阵列里等效并不淡。兄弟卡
+               （这次点选的答案的一部分）照旧留 0.9，不跟着往下走。 */
+            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.9 : 0.20) : 1);
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -3437,14 +3563,28 @@ function netScene(D, g, box, step){
                 /* 顶出壳外那半不画内部切分线：它已经整片换成告警色了，再在上面
                    划分块等于同时说两件事（「这是越界的」和「它内部这么切」），
                    而越界那半要说的只有第一件。 */
-                if((vA9 - vB9) > 0.010 && !sg8.over && (meC || sg8.k === 'w')){
-                  var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
+                /* 「除了权重之外的切分也要看得见」（读者反馈）：原来梯度/优化器态/
+                   激活这三档的内部划分只画给**选中那一只**——理由是它们是发丝级的
+                   线，128 只一起画就是一片麻。但那条理由只在「128 只挤在一屏」时成立：
+                   一放大，卡在屏幕上宽到六七十像素，同样几条线是读得清清楚楚的，
+                   而这时读者恰恰是凑近来看某几只卡的切法。于是改成按**卡在屏幕上
+                   的实宽**判，与本页到处那条「装得下才写」同一条规矩：够宽就每只都
+                   画，缩回全景自然又收回去。 */
+                var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
+                var fineOK9 = meC || cardPxW9 >= 34;
+                if((vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
                   var seamCol9 = 'color-mix(in srgb, var(--pt-fg) 34%, transparent)';
                   var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
-                  if(sg8.k === 'w' && (MS9.opSegs || []).length){
+                  /* 梯度与优化器态是同一份参数的 ×1 / ×6：分法与权重逐块相同，所以
+                     用**同一套块色**画，只把填充压到权重的一半多一点（.30 对 .52）。
+                     原来这两档只画中性细缝——缝说得出「这儿断开了」，说不出「是被
+                     哪把刀断开的」，而读者要的正是后者。压淡而不是不画：权重仍然是
+                     这条带里的主角，梯度/优化器态读成「跟着它同一刀」。 */
+                  var wLike9 = (sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp');
+                  if(wLike9 && (MS9.opSegs || []).length){
                     /* 权重带内部：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色），
                        就是「抽出的 L0」那排算子片折进卡里的样子。 */
                     /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
@@ -3455,7 +3595,7 @@ function netScene(D, g, box, step){
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
                       if(!oc8) return;
                       var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
-                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1);
+                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1) * (sg8.k === 'w' ? 1 : 0.86);
                       /* 每一块都挂命中面：卡上直接点 experts 那一截就能展开它，
                          不必先点开权重、再去表里找那一行。 */
                       if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
@@ -3467,11 +3607,11 @@ function netScene(D, g, box, step){
                         /* 与 L3 那只卡逐字同一套：刀色**本体** + .52 的填充透明度压在
                            带上，不是先把刀色兑进底色再画。兑色会把下面那条带吃掉一层，
                            叠出来就不是同一个颜色了（青块压在青带上会比 L3 那份浅一档）。 */
-                        'fill:'+oc8+';fill-opacity:.52;stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
+                        'fill:'+oc8+';fill-opacity:'+(sg8.k === 'w' ? '.52' : '.30')+';stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
                     });
-                  } else if(meC && (sg8.k === 'g' || sg8.k === 'opt') && (MS9.opSegs || []).length){
-                    /* 梯度 / 优化器态：同一份参数的 ×1 / ×6，所以只画**对齐的竖缝**、
-                       不上色——缝对得上就说清了「同一分法」，不必把同一句话写两遍。
+                  } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
+                    /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
+                       缝对得上就还说得出「同一分法」，比什么都不画强。
                        缝密到分不开时整条都不画（同 L3 的 x1-x0 < 2 那道门槛）。 */
                     var lastPx8 = -1e9;
                     MS9.opSegs.forEach(function(o8){
@@ -3481,7 +3621,7 @@ function netScene(D, g, box, step){
                       body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.55;opacity:'+(lzM*0.85)));
                     });
-                  } else if(meC && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
+                  } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
                     for(var mm9 = 1; mm9 < MS9.mub; mm9++){
                       body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
@@ -3535,7 +3675,9 @@ function netScene(D, g, box, step){
         var sibE9 = (!meC && memSibs) ? memSibs[gc] : null;
         var eW = meC ? 1.8 : (ui.netOff ? (0.62 - dT*0.30) : (ui.cardMode ? (0.78 - dT*0.34) : (0.92 - dT*0.42)));
         var eO = meC ? 1 : (ui.netOff ? (0.70 - dT*0.36) : (ui.cardMode ? (0.80 - dT*0.38) : (0.98 - dT*0.46)));
-        if(hasSel && !meC && !spot) { eO *= 0.4; }
+        /* 棱是这一屏最抢眼的东西（128 只 × 12 条全叠在一起）。选中一张卡之后
+           它们压到 0.22——比原来的 0.4 再让一档，主角的轮廓才真的浮出来。 */
+        if(hasSel && !meC && !spot) { eO *= 0.22; }
         if(sibE9){ eW = Math.max(eW, 1.3); eO = Math.max(eO, 0.92); }
         /* 落选的压到几乎看不见；**命中的反而要加粗**——聚光灯是「亮起一批」，
            不是「把所有人一起压暗」。原来这里不分命中与否一律压，于是搜索一落下，
@@ -3622,7 +3764,11 @@ function netScene(D, g, box, step){
         if(cutEP && (physOn || pc2 === 0) && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
-          axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6);
+          /* 选中一张卡时，别的桶的牌压到 .22：它们仍然在（读者还能数出「一共几个桶、
+             我这只挨着谁」），但不再和选中那只的牌抢注意力。同组的牌反而要留满——
+             那正是这次点选的答案的一部分。 */
+          axLab(P(0.5, cv1 + 0.075, cw0, kc), 'ep'+epTag.ep, null, VC.ep, epSame, epSame ? 7 : 6,
+            (hasSel && !epSame) ? 0.22 : 1);
         }
         /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
@@ -3725,13 +3871,13 @@ function netScene(D, g, box, step){
     var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
     var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
     var CARD_COMM = [
-      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1, prim:'allreduce',
+      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1 && commLit('tp'), prim:'allreduce',
        label:'TP AllReduce · 组内同步', metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
-      {dim:'pp', on: cutPP && D.pp > 1, prim:'p2p',
+      {dim:'pp', on: cutPP && D.pp > 1 && commLit('pp'), prim:'p2p',
        label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
-      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1, prim:'allreduce',
+      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1 && commLit('dp'), prim:'allreduce',
        label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
-      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1, prim:'alltoall',
+      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1 && commLit('ep'), prim:'alltoall',
        label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
     ];
     var ccLblN = 0;
@@ -3786,9 +3932,9 @@ function netScene(D, g, box, step){
       var selCut9 = W_CUT_MAP[memSel9.slice(2)] || 'none';
       wantTP9 = selCut9 === 'tp'; wantEP9 = selCut9 === 'ep'; wantDP9 = false;
     } else if(memSel9){ wantTP9 = false; wantEP9 = false; wantDP9 = false; }  // opt/otmp/act/rsv：不通信
-    wantTP9 = wantTP9 && cutTP && D.tp > 1;
-    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1;
-    wantDP9 = wantDP9 && cutDP && D.dp > 1;
+    wantTP9 = wantTP9 && cutTP && D.tp > 1 && commLit('tp');
+    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1 && commLit('ep');
+    wantDP9 = wantDP9 && cutDP && D.dp > 1 && commLit('dp');
     if(wantTP9 || wantEP9 || wantDP9){
       var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
       var wFront9 = cutPP ? segW(co.p)[0] : 0;
@@ -4727,6 +4873,11 @@ function graphSVG(o){
      线在屏幕上仍是细线、字仍是那么大（地图式）；标签的显隐阈值乘 zs——放大到
      屏幕上装得下，字才出现，越放大出现得越多。 */
   var zs = o.zscale || 1;
+  /* 字号系数：只放大**这一次调用**里节点名与读数的字号，连同「装不装得下」的宽高
+     预算一起按同一个倍数抬——预算不跟着抬的话，字大了照样按老尺寸判定，判出来的
+     「装得下」就是假的（字会探出框、串到隔壁）。默认 1，不传的调用方（正视卡阵、
+     叙事第 2 幕、卡内解剖）一个字节都不变。 */
+  var fk = o.fontK || 1;
   var root = o.clip ? clu[o.clip] : null;
   var bx = root ? root.x : 0, by = root ? root.y : 0;
   var bw = root ? root.width : G.width, bh = root ? root.height : G.height;
@@ -5037,7 +5188,7 @@ function graphSVG(o){
         : (cut9 && cut9.count > 1 && cut9.mine < 0)
           ? ' · '+(part.dimName || String(dim).toUpperCase())+'×'+cut9.count
           : ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '');
-      var labOn9 = o.fitLabel || w*zs > Math.max(26, (String(n.label).length + tag.length)*3.2);
+      var labOn9 = o.fitLabel || w*zs > Math.max(26*fk, (String(n.label).length + tag.length)*3.2*fk);
       /* 数据标注（sidecar 解剖图里节点旁那枚白胶囊的那行字）：比名字再晚一档出现。
          **优先写进节点框内、名字正下方**——归属要靠「在框里」说话。写在框外时
          它落在两行节点中间的空当里，上下都不挨着谁，读者一样判断不出算哪一个的。
@@ -5046,16 +5197,16 @@ function graphSVG(o){
       /* 装不下「名字 · 切分区间」就先丢区间，别丢名字——区间在悬停与明细卡里都有，
          而没有名字这个框就什么也不是了（分栏铺满之后框宽只有原来的六成，
          「Q Latent Linear · TP2048/4096」这种长串一律落到门槛外，整片没名字）。 */
-      if(tag && w*zs <= (String(n.label).length + tag.length)*3.2 && w*zs > String(n.label).length*3.2) tag = '';
+      if(tag && w*zs <= (String(n.label).length + tag.length)*3.2*fk && w*zs > String(n.label).length*3.2*fk) tag = '';
       /* 分栏铺满是「照着屏幕把整张图排好」的取景，不是地图——那里字号该**缩到装得下**，
          而不是装不下就不写。地图式的恒定字号在可缩放的方阵里才成立：那里字小了可以
          放大，而这里已经没有放大这一步了，不写就是永远看不到。 */
       var fitK = 1;
       if(o.fitLabel){
-        var need9 = (String(n.label).length + tag.length)*3.2;
+        var need9 = (String(n.label).length + tag.length)*3.2*fk;
         if(need9 > w*zs) fitK = Math.max(0.62, (w*zs) / need9);
       }
-      var nmW9 = (String(n.label).length + tag.length)*3.2*fitK;
+      var nmW9 = (String(n.label).length + tag.length)*3.2*fk*fitK;
       var mtx9 = '', two9 = false, one9 = false, side9 = false;
       /* 铺满取景里链两侧是大片空白（层模板本来就是一条竖链），读数就走**节点正右侧**、
          与节点同一条基线，再拉一根短引线——和 sidecar 解剖图里那枚白胶囊同一个位置。
@@ -5064,15 +5215,15 @@ function graphSVG(o){
       if(o.metricSide && o.metricLi != null && !gh && labOn9)
         side9 = !!sideMetric(n, x, y, w, h, metricColor(o.metricLi, n));
       if(!side9 && labOn9 && o.metricLi != null && !gh){
-        mtx9 = opMetric9(o.metricLi, n, Math.floor(w*zs/3.0));
+        mtx9 = opMetric9(o.metricLi, n, Math.floor(w*zs/(3.0*fk)));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
            这两种都是「在框内」，归属没有歧义；写到框外一律不做——框外那条空当
            上下都不挨着谁，读者只能靠距离猜（实机就是这样把读数认到下一个算子头上的）。 */
-        two9 = h*zs >= 13.5 && (o.fitLabel || w*zs >= mtx9.length*3.0);
-        one9 = !two9 && w*zs >= (String(n.label).length + tag.length)*3.2 + mtx9.length*3.0 + 8;
+        two9 = h*zs >= 13.5*fk && (o.fitLabel || w*zs >= mtx9.length*3.0*fk);
+        one9 = !two9 && w*zs >= (String(n.label).length + tag.length)*3.2*fk + mtx9.length*3.0*fk + 8*fk;
         if(!two9 && !one9){
-          mtx9 = opMetric9(o.metricLi, n, Math.max(4, Math.floor((w*zs - nmW9 - 8)/3.0)));
-          one9 = !!mtx9 && w*zs >= nmW9 + mtx9.length*3.0 + 8;
+          mtx9 = opMetric9(o.metricLi, n, Math.max(4, Math.floor((w*zs - nmW9 - 8*fk)/(3.0*fk))));
+          one9 = !!mtx9 && w*zs >= nmW9 + mtx9.length*3.0*fk + 8*fk;
           if(!one9) mtx9 = '';
         }
       }
@@ -5081,9 +5232,9 @@ function graphSVG(o){
            判定用的还是名字那档 3.2/3.0 宽度预算），但字号可以比名字略大一档——
            显式给 tspan 一个比父 text（5.4*fitK/zs）大约 1.15x 的 font-size，
            读数比名字醒目一点，又不至于把这行已经很满的宽度预算撑爆。 */
-        txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
-                    5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
+        txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2*fk : 2*fk)/zs,
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK*fk/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
+                    5.4*fitK*fk/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
         /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
@@ -5093,8 +5244,8 @@ function graphSVG(o){
         /* 读数字号地板/天花板从 3.4–4.6 提到 4.4–6.2，明显大过名字（5.4*fitK）；
            fitLabel 自缩路径里的每字符宽度常数 0.62 按新天花板同比例放大到 0.84，
            使「装不装得下」的估算继续跟着新字号走。 */
-        txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
-                    Math.max(4.4, Math.min(6.2, o.fitLabel ? (w*zs)/(mtx9.length*0.84) : 6.2))/zs,
+        txts.push(txt(x+w/2, y+h/2+5.8*fk/zs, esc(mtx9),
+                    Math.max(4.4, Math.min(6.2, o.fitLabel ? (w*zs)/(mtx9.length*0.84*fk) : 6.2))*fk/zs,
                     metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
@@ -5115,6 +5266,7 @@ function graphSVG(o){
    默认给①：先知道刀落在哪一级，再看那一级交出来的腔是什么。 */
 function renderSolid(D){
   if(ui.persp === 'cav') return renderSolidCav(D);
+  if(ui.persp === 'grid') return renderSolidGrid(D);
   return renderSolidMap(D);
 }
 /* ═════════ 视角① 双链映射（FIG 09 的三维化）═════════
@@ -5261,6 +5413,7 @@ function renderSolidMap(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb is-on" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
     + '<span class="pt-chip">四个并行维度全部收在「卡」这一级</span>'
     + '<span class="pt-chip" style="border-color:'+(tpIn?VC.tp:'var(--pt-danger)')+';color:'+(tpIn?VC.tp:'var(--pt-danger)')+'">TP '+(tpIn?'机内 ✓':'跨机 ✗')+'</span>';
   $('stageNote').hidden = true;
@@ -5698,6 +5851,7 @@ function renderSolidCav(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb is-on" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
     + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
     + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
@@ -5706,6 +5860,289 @@ function renderSolidCav(D){
     + '<button class="pb" data-act="view" data-v="anatomy">腔里装了什么 ↗</button>';
   /* 一轴一刀的表已经画进 SVG 了（见 TBX/TBY）——.pt-note 浮层压在舞台左下角会盖住容器条，
      同一句话不放两遍，浮层这里就空着。 */
+  $('stageNote').hidden = true;
+  $('detach').hidden = true;
+}
+
+/* ═════════ 视角③ 全局切分：全部的腔一次摆开，各归谁 ═════════
+   视角②「交集腔」答「为什么恰好是这一块」——一张卡、一只腔，几何证明。
+   这一张答下一问：**整套账摊开**——不再只给选中那张卡看它的腔，而是把全部的腔
+   一次画全：谁持有哪一格，点哪一格就定位到持有它的那张卡（组合工作台靠这一下
+   联动并行拓扑与泳道）。
+   四个形态一起画（②只有权重体/激活体两只盒子）：
+     · 权重 W / 梯度 G / 优化器态 O —— **同一套切分**（ℓ×h×e，PP/TP/EP 三刀），
+       区别只在字节（2+2+12 = 16 B/参数）与生命周期，所以画成**同一只托盘的三层
+       厚度**，不画三只重复的盒子——厚度比就是字节比，优化器态那层最厚一眼可见；
+     · 激活 A —— 自己一套（ℓ×h×b×s）：b 被 DP 真切、s 被 CP 真切，与①并排对照。
+   ℓ 沿 PP 拆成一叠托盘（自上而下 = PP0→PP(n-1)，与整网图/泳道同序；②里 ℓ 轴
+   朝上是「一只盒子」的画法，这里拆开了，读序优先）。每只托盘的**顶面就是那一段
+   的全部腔**，逐格都是命中区：
+     · 参数系格 (t,e)：持有它的卡在 (c,d) 里搜（epOf==e，优先贴着当前卡的 c/d）。
+       EP 折叠 q=(d·CP+c)·TP+t 会把 e 桶错开在 TP 列上，于是有的格**没有持有者**
+       ——那不是漏画，是折叠的真实结构：画成斜线空格，悬浮里说明白。
+     · 激活格 (c,d)：持有者是同 (c,d,p) 的整个 TP 组，保持当前 t 定位其中一张。
+   点格走 pickg（data-g 在渲染时就解析成 rank）：选中跨视图保持、ptoNotifyHost
+   上报宿主——这正是这一视角进组合工作台「整网图」tab 的用途。 */
+function renderSolidGrid(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
+  var parts = [], hits = [];
+  var lps = D.layersPerStage, hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0;
+  function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  function p3(x,y,z){ return proj(x,y,z,1); }
+  function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
+
+  /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长 ── */
+  var sc = Math.min(1, Math.sqrt(4/D.pp));
+  var nE = D.moe ? D.ep : 1;
+  var BW1 = 120*sc, BD1 = (D.moe ? 88 : 46)*sc;
+  var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;   /* 厚度比 = 字节比 2:2:12 */
+  var BW2 = 104*sc, BD2 = clamp(D.dp*7, 46, 124)*sc;
+  var THA0 = 26*sc;                                   /* 激活托盘的峰值厚度（PP0 满载那一档） */
+  var TOP = 158;
+  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) + 16;
+  var TXG = 430, TXA = 842;
+  var trayBot = TOP + (D.pp-1)*PITCH + Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
+  var TBY = trayBot + 52;
+  var H = TBY + 122;
+  var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
+
+  /* 本卡四份账（逐卡口径：含路由不均/碎片，走带时激活跟着 ACT_T） */
+  var segs = memParts(D, co.p, g), segBy = {};
+  segs.forEach(function(x){ segBy[x.k] = x; });
+  var wB = segBy.w.bytes, gB = segBy.g.bytes, oB = segBy.opt.bytes;
+  var aB = segBy.act.bytes, aMub = segBy.act.mub, rsvB = segBy.rsv.bytes;
+  var otmpB = segBy.otmp ? segBy.otmp.bytes : 0;
+  var tot = segs.reduce(function(a,x){ return a+x.bytes; },0), cap = D.hbm*Math.pow(2,30);
+  var CW = solid('var(--pt-fg)', 34);                 /* W 带的中性色：刀色都让给网格线 */
+
+  /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
+  function holdersW(t,e){
+    var out = [], c, d;
+    for(d=0; d<D.dp; d++) for(c=0; c<D.cp; c++)
+      if(!D.moe || epOf(t,c,d,D).ep===e) out.push([c,d]);
+    return out;
+  }
+  /* 优先贴着当前卡定位：同 (c,d) > 同 d > 第一个——点格换的是 (p,t,e)，b/s 尽量不动 */
+  function pickHolder(hs){
+    var best = hs[0], i;
+    for(i=0;i<hs.length;i++){
+      if(hs[i][0]===co.c && hs[i][1]===co.d) return hs[i];
+      if(hs[i][1]===co.d && best[1]!==co.d) best = hs[i];
+    }
+    return best;
+  }
+
+  var revLi = parseInt(ui.revLayer, 10);
+  var hlStage = (isFinite(revLi) && revLi>=0 && revLi<D.layers) ? Math.floor(revLi/lps) : -1;
+  var ptopW = function(a,b){ return p3(a, TH1, b); };
+  var mineW = null, mineA = null;
+  var pIdx, t, e, cI, dI;
+
+  /* ═══ 抬头（压低到浮层按钮下面：stagebar 是 HTML 浮层，viewBox 头两行会被它盖住） ═══ */
+  parts.push(txt(560, 66, '全局切分总账：四个形态 × 全部的腔 —— 点一格，定位持有它的那张卡', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(560, 81, 'W·G·O 共用一套切分（画成一只托盘的三层厚度）；A 自己一套 · 选中跨视图保持', 8.8, 'var(--pt-fg2)'));
+  parts.push(txt(TXG-36, 106, '① 参数系三形态 · 同一套切分', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXG-36, 119, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B = 16 B/参数 · 厚度比 = 字节比', 7.6, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TXA-46, 106, '② 激活体 · 自己一套', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXA-46, 119, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb（h 是第 4 根轴，TP 也切它）', 7.6, 'var(--pt-fg2)', 'middle'));
+
+  for(pIdx=0; pIdx<D.pp; pIdx++){
+    var Y0 = TOP + pIdx*PITCH + TH1;
+    var P9 = paramsPerCard(D, pIdx);
+    var gp = [], gh = [];
+
+    /* DP 复印的剪影叠只画在最上一只托盘后面：×dp 是整套参数系的事，不逐盘重复 */
+    if(pIdx===0 && D.dp>1){
+      var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
+      for(var k1=KD; k1>=1; k1--)
+        parts.push('<g transform="translate('+(TXG+k1*oX).toFixed(1)+','+(Y0-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+    }
+
+    /* 三层厚度：底 O、中 G、顶 W——顶面网格讲的是这套切分本身，W 贴着自己的格 */
+    gp.push(boxSVG(0,0,0,BW1,THO,BD1,1,{fill:MEMC.opt, stroke:'var(--pt-bg)', sw:.4}));
+    gp.push(boxSVG(0,THO,0,BW1,THG,BD1,1,{fill:MEMC.g, stroke:'var(--pt-bg)', sw:.4}));
+    gp.push(boxSVG(0,THO+THG,0,BW1,THW,BD1,1,{fill:CW, stroke:'var(--pt-bg)', sw:.4}));
+
+    /* 顶面逐格：每格 = 一个腔 */
+    var dx1 = BW1/D.tp, dz1 = BD1/nE;
+    for(t=0;t<D.tp;t++) for(e=0;e<nE;e++){
+      var q4 = [ptopW(t*dx1,e*dz1), ptopW((t+1)*dx1,e*dz1), ptopW((t+1)*dx1,(e+1)*dz1), ptopW(t*dx1,(e+1)*dz1)];
+      var hs = holdersW(t,e);
+      var eLab = D.moe ? ' · e桶 E'+(e*kE)+'–E'+((e+1)*kE-1) : '';
+      if(!hs.length){
+        /* 无持有者：EP 折叠把 e 桶错开在 h 片上——斜线空格，是结构不是漏画。
+           不上底色（露出 W 带的素面）+ 一道斜线，与实格（有底色）拉开对比 */
+        gp.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
+        hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon></g>');
+        continue;
+      }
+      var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
+      var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
+      gp.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
+      if(mine1) mineW = [TXG + (q4[0][0]+q4[2][0])/2, Y0 + (q4[0][1]+q4[2][1])/2];
+      gh.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
+        + esc('腔（PP'+pIdx+' · h片'+t+eLab+'）· 持有者 ×'+hs.length+'（跨 b/s）\n点击定位 r'+rk)+'</title></polygon></g>');
+    }
+    /* 网格线颜色 = 切它那把刀：x 缝 TP 青、z 缝 EP 紫（份数大就细，纹理即事实） */
+    var swT = dx1*C>4?.9:.5, swE = dz1>4?.8:.4;
+    for(t=1;t<D.tp;t++) gp.push(ln(ptopW(t*dx1,0), ptopW(t*dx1,BD1), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
+    for(e=1;e<nE;e++) gp.push(ln(ptopW(0,e*dz1), ptopW(BW1,e*dz1), 'stroke:'+VC.ep+';stroke-width:'+swE+';stroke-opacity:.7'));
+    /* 本卡那一腔：三层账里都是同一格——线框直插到底，一格贯穿 W/G/O */
+    if(pIdx===co.p) gp.push(boxSVG(co.t*dx1, 0, (D.moe?me.ep:0)*dz1, dx1, TH1, dz1, 1,
+      {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
+    /* 托盘外框（层反查命中的那一段描 PP 橙） */
+    gp.push(boxSVG(0,0,0,BW1,TH1,BD1,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8}));
+
+    /* 左：PP 段标（可点换段）；右：这一段每卡的三份账 */
+    var lx = -BD1*C - 12, ly = BD1*S*0.5 - TH1*0.35;
+    gp.push(txt(lx, ly, 'PP'+pIdx, 9.4, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+11, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 7, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+21, 'L'+revLi+' 在这一段', 6.6, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-56).toFixed(1)+'" y="'+(ly-10).toFixed(1)+'" width="60" height="24" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var rx1 = BW1*C + 10, ry1 = BW1*S - TH1*0.2;
+    if(pIdx===0){
+      /* 顶盘右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
+      var rx0 = rx1 + (D.dp>1 ? 44 : 0);
+      gp.push(txt(rx0, ry1-22, '×'+D.dp+' 复印（DP）', 7.6, VC.dp, 'start', 'font-weight="800"'));
+      gp.push(txt(rx0, ry1-12, 'W·O 逐字相同 · G 归约前各不相同', 6.4, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 7, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+10, 'G 梯度 '+fmtGB(2*P9)+' GB', 7, MEMC.g, 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+20, 'O 优化器态 '+fmtGB(12*P9)+' GB', 7, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+    }else{
+      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 6.6, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1+10, 'O '+fmtGB(12*P9)+' GB', 6.6, 'var(--pt-fg3)', 'start'));
+    }
+    /* 顶盘的轴名：认领关系写在轴上（别的盘不重复——同一把刀） */
+    if(pIdx===0){
+      var fm2 = ptopW(BW1*0.55, 0);
+      gp.push(txt(fm2[0]+26, fm2[1]-8, 'h ← '+DIMN.tp+'×'+D.tp, 8, VC.tp, 'start', 'font-weight="800"'));
+      var zm2 = ptopW(0, BD1*0.5);
+      gp.push(txt(zm2[0]-30, zm2[1]-16, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 8, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+      gp.push(txt(lx, ly-16, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 8, VC.pp, 'end', 'font-weight="800"'));
+    }
+    parts.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gp.join('')+'</g>');
+    hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gh.join('')+'</g>');
+
+    /* ═══ 同一段的激活托盘（右列，与左列同一行 = 同一段层） ═══ */
+    var nIf = inflightAt(D, pIdx, ACT_T);
+    var THA = Math.max(2.5*sc, THA0 * nIf/actPeak);
+    var actB = D.mbs*(D.seq/D.cp)*D.hidden*lps*ACT_COEF*nIf;
+    var ap = [], ah = [];
+    var ptopA = (function(th){ return function(a,b){ return p3(a, th, b); }; })(THA);
+    /* 体色兑淡（solid 保持不透明，画家序不破）：格线与选中格才读得出来 */
+    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{fill:solid('var(--highlight-l0b-blue-500, #5B7BDE)', 42), stroke:'var(--pt-dp)', sw:.5}));
+    var dx2 = BW2/D.cp, dz2 = BD2/D.dp;
+    for(cI=0;cI<D.cp;cI++) for(dI=0;dI<D.dp;dI++){
+      var q5 = [ptopA(cI*dx2,dI*dz2), ptopA((cI+1)*dx2,dI*dz2), ptopA((cI+1)*dx2,(dI+1)*dz2), ptopA(cI*dx2,(dI+1)*dz2)];
+      var mine2 = (pIdx===co.p && cI===co.c && dI===co.d);
+      var rk2 = rankOf(co.t, cI, dI, pIdx, D);
+      ap.push('<polygon points="'+ptsStr(q5)+'" style="fill:'+(mine2 ? VC.dp : mix(VC.dp,9))+'"/>');
+      if(mine2) mineA = [TXA + (q5[0][0]+q5[2][0])/2, Y0 + (q5[0][1]+q5[2][1])/2];
+      if(dz2 > 2.4)
+        ah.push('<g class="cgrow"><polygon points="'+ptsStr(q5)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk2+'"><title>'
+          + esc('腔（PP'+pIdx+' · 副本'+dI+(D.cp>1?' · 段'+cI+'∪'+(2*D.cp-1-cI):'')+'）· 持有者 = 同坐标 TP 组 ×'+D.tp+'\n点击定位 r'+rk2+'（保持当前 h 片）')+'</title></polygon></g>');
+    }
+    for(cI=1;cI<D.cp;cI++) ap.push(ln(ptopA(cI*dx2,0), ptopA(cI*dx2,BD2), 'stroke:'+VC.cp+';stroke-width:.8;stroke-opacity:.75'));
+    var swD = dz2>4?.7:.35;
+    for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.65'));
+    if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
+    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
+    var rx2 = BW2*C + 10, ry2 = BW2*S - THA*0.2;
+    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 7, VC.dp, 'start', 'font-weight="700"'));
+    ap.push(txt(rx2, ry2+10, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 6.6, 'var(--pt-fg3)', 'start'));
+    if(pIdx===0){
+      var fm3 = ptopA(BW2*0.55, 0);
+      ap.push(txt(fm3[0]+26, fm3[1]-8, 's ← '+DIMN.cp+'×'+D.cp, 8, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
+      var zm3 = ptopA(0, BD2*0.5);
+      ap.push(txt(zm3[0]-30, zm3[1]-16, 'b ← '+DIMN.dp+'×'+D.dp, 8, VC.dp, 'end', 'font-weight="800"'));
+    }
+    parts.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ap.join('')+'</g>');
+    hits.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ah.join('')+'</g>');
+  }
+
+  /* ═══ 左栏读数：本卡在四个形态里各是哪一腔、各多少字节 ═══ */
+  var RX = 24, RW = 190, RY = 96;
+  function row(y, k, v, col){
+    parts.push(txt(RX, y, esc(k), 7.8, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(RX+RW, y, v, 8.4, col||'var(--pt-fg)', 'end', 'font-weight="700"'));
+  }
+  function hr(y){ parts.push(ln([RX, y], [RX+RW, y], 'stroke:var(--pt-bds);stroke-width:.7')); }
+  function head(y, t2, col){ parts.push(txt(RX, y, esc(t2), 9.2, col||'var(--pt-fg)', 'start', 'font-weight="800"')); }
+  parts.push(txt(RX, RY, '读数 · 这张卡 g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(RX, RY+12, '(tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+')　点右边任意格换卡', 7.2, 'var(--pt-fg3)', 'start'));
+  head(RY+32, '① 参数系 W·G·O —— 同一腔'); hr(RY+36);
+  row(RY+49, 'ℓ ← PP', 'L'+(co.p*lps)+'–L'+((co.p+1)*lps-1), VC.pp);
+  row(RY+62, 'h ← TP', '['+fmt(co.t*hK)+', '+fmt((co.t+1)*hK)+')', VC.tp);
+  row(RY+75, 'e ← EP', D.moe ? 'E'+(me.ep*kE)+'–E'+((me.ep+1)*kE-1) : '—（无 MoE）', D.moe?VC.ep:'var(--pt-fg3)');
+  row(RY+90, 'W 权重', fmtGB(wB)+' GB · 2B/参');
+  row(RY+103, 'G 梯度', fmtGB(gB)+' GB · 2B/参', MEMC.g);
+  row(RY+116, 'O 优化器态', fmtGB(oB)+' GB · 12B/参', 'var(--pt-fg2)');
+  parts.push(txt(RX, RY+128, 'G 在 AllReduce 前各算各的；O 常驻、只在更新一步读写', 6.4, 'var(--pt-fg3)', 'start'));
+  head(RY+148, '② 激活体腔 A', VC.dp); hr(RY+152);
+  row(RY+165, 'b ← DP', '副本'+co.d, VC.dp);
+  row(RY+178, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
+  row(RY+191, 'A 激活', fmtGB(aB)+' GB · 在途'+(Math.abs(aMub-Math.round(aMub))<0.05?Math.round(aMub):aMub.toFixed(1))+'μb', VC.dp);
+  parts.push(txt(RX, RY+203, ACT_T===null ? '按峰值（不看时间）——买卡的依据' : '走带 t='+Math.round(ACT_T*100)+'% 此刻的读数', 6.4, 'var(--pt-fg3)', 'start'));
+  hr(RY+216);
+  row(RY+229, '合计', fmtGB(tot)+' / '+D.hbm+' GB', tot>cap?'var(--pt-danger)':'var(--pt-fg)');
+  parts.push(txt(RX, RY+241, '含碎片/预留 '+fmtGB(rsvB)+' GB'+(otmpB>0?' · 更新临时 '+fmtGB(otmpB)+' GB':''), 6.4, 'var(--pt-fg3)', 'start'));
+  /* 引线：读数 → 图上那两格（左右联动看得见，不靠读者自己找） */
+  if(mineW) parts.push(ln([RX+RW+8, RY+90], mineW, 'stroke:var(--pt-fg3);stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.65'));
+  if(mineA) parts.push(ln([RX+RW+8, RY+165], mineA, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
+
+  /* ═══ 四形态 × 生命周期表：切分之外的全部差异都在这张表里 ═══ */
+  var TBX = 36;
+  parts.push(txt(TBX, TBY-8, '四个形态的全部差异：切分同（W·G·O）/ 不同（A），剩下的只是字节、DP 语义、一步之内的生死', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  var CX = {name:TBX+4, space:TBX+196, bytes:TBX+392, dp:TBX+540, life:TBX+736, bar:TBX+920};
+  var BARW = 110;
+  parts.push(txt(CX.bar, TBY+3, '一步之内', 6.6, 'var(--pt-fg3)', 'start'));
+  var FORMS = [
+    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参 · '+fmtGB(wB)+' GB',  dp:'复印 ×'+D.dp+' · 逐字节相同',        life:'常驻整步',                    bar:'w'},
+    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参 · '+fmtGB(gB)+' GB',  dp:'各算各的 → AllReduce 后相同',        life:'反向逐层长出 · 更新后清零',    bar:'g'},
+    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参 · '+fmtGB(oB)+' GB', dp:'复印（本口径无 ZeRO 分片）',          life:'常驻 · 仅更新一步读写',        bar:'o'},
+    {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途μb涨落 · '+fmtGB(aB)+' GB', dp:'b 被真切（不是复印）',           life:'前向攒 · 反向放（1F1B）',      bar:'a'}
+  ];
+  FORMS.forEach(function(r, ri){
+    var y5 = TBY + 18 + ri*17;
+    parts.push('<rect x="'+TBX+'" y="'+(y5-11)+'" width="1010" height="16" style="fill:'+(ri%2?mix('var(--pt-fg)',3):'transparent')+'"/>');
+    parts.push('<rect x="'+CX.name+'" y="'+(y5-8)+'" width="8" height="8" style="fill:'+r.sw+';stroke:var(--pt-bds);stroke-width:.5"/>');
+    parts.push(txt(CX.name+13, y5, esc(r.name), 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    parts.push(txt(CX.space, y5, esc(r.space), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.bytes, y5, esc(r.bytes), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.dp, y5, esc(r.dp), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.life, y5, esc(r.life), 7.6, 'var(--pt-fg2)', 'start'));
+    /* 存在感小条：这一档在一步之内什么时候在场 */
+    var bx = CX.bar, by = y5-8, base = y5-1;
+    parts.push(ln([bx,base],[bx+BARW,base],'stroke:var(--pt-bds);stroke-width:.6'));
+    if(r.bar==='w') parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+solid('var(--pt-fg)',58)+';stroke-width:2'));
+    if(r.bar==='o'){
+      parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+MEMC.opt+';stroke-width:2.4'));
+      parts.push(ln([bx+BARW*.88,by],[bx+BARW,by],'stroke:'+MEMC.otmp+';stroke-width:3'));
+    }
+    if(r.bar==='g') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.45).toFixed(1)+','+base+' '+(bx+BARW*.9).toFixed(1)+','+by+' '+(bx+BARW*.93).toFixed(1)+','+base+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.g+';stroke-width:1.6"/>');
+    if(r.bar==='a') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.28).toFixed(1)+','+by+' '+(bx+BARW*.62).toFixed(1)+','+by+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.act+';stroke-width:1.6"/>');
+  });
+  if(ACT_T!==null){
+    var cxT = CX.bar + BARW*clamp(ACT_T,0,1);
+    parts.push(ln([cxT, TBY+6],[cxT, TBY+18+3*17+2], 'stroke:'+MEMC.otmp+';stroke-width:1;stroke-dasharray:3 2'));
+    parts.push(txt(cxT, TBY+18+3*17+12, '此刻', 6.4, MEMC.otmp, 'middle', 'font-weight="700"'));
+  }
+
+  parts.push(txt(RX, H-28, '点任意格 = 定位持有那一腔的卡（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）· 点 PP 标签换段', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  parts.push(txt(RX, H-14, D.moe
+    ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构 · 参数系格的持有者跨 b/s 复用（DP/CP 不切权重）'
+    : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡 · 激活格逐 (b,s) 各归各', 8, 'var(--pt-fg2)', 'start'));
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
+    + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
+    + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
+    + '<span class="pt-chip">每格 = 一个腔 · 点格定位持有卡</span>'
+    + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'" title="W 2B + G 2B + O 12B 同一套切分（托盘三层厚度）；A 另一套（b·s 真切）">W·G·O 同切分 · A 另一套</span>'
+    + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>';
   $('stageNote').hidden = true;
   $('detach').hidden = true;
 }
@@ -5895,21 +6332,28 @@ var FS_Z = 1;
    量出来的比不写死：viewBox 宽度由舞台长宽比反解（与 renderChain 同一条式子），
    舞台尺寸一变，字的**屏幕**大小仍然不变。 */
 var FS_PX = 11.5;                      /* 正文标注（基准 5.4 档）在屏幕上的目标像素 */
-/* 反除的上限。gain 越大 = 字在**场景单位**里越大；而 gain 里的 vw/cw 就是
-   1/缩放比，所以「gain 随窄而涨」等价于「画面缩小、字不缩」——版面是按字与格子的
-   相对大小排的，字单方面涨上去就只能互相叠。实测重叠的文字对数（侧视）：
+/* 反除的上限。gain 越大 = 字在**场景单位**里越大；而 gain 里的 vw/cw 就是 1/缩放比，
+   所以「gain 随窄而涨」等价于「画面缩小、字不缩」。上限压到 1.4 是因为字单方面涨
+   上去就会互相叠——但**叠在哪儿是可以查的**：把上限抬到 2.6 逐对量一遍，一屏 42 对
+   重叠里几乎全部出自四处版面缺陷，而不是「普遍性地挤」：
 
-     上限   620px      1680px
-     3.0    48 对      25 对      ← 原值：窄栏惨不忍睹，连基准宽度都已经在叠
-     2.13   37 对      18 对
-     1.7     9 对      24 对
-     1.4     0 对       0 对      ← 现值
+     · 段头横幅（PP Stage n · Lx–Ly ＋ 因子行）只管居中、从不管段宽装不装得下
+     · 顶边距 TM 钉死 74，横幅整块却按 1/FS_Z 长，抬高后直接长进层刻度那一行
+     · 层刻度芯片 78% 悬在基线之上，抬高后剩下的 22% 压进数据带第一条的标题
+     · 右上角「数据标注」三行的行距是常数 12/10，字长上去就摞成一团
 
-   1.4 之后 gain basically 被钉成常数，字在场景单位里不再随宽度变——于是整张图
-   **长宽一起等比缩**，比例关系守住，窄栏里字小但不打架（要看清滚轮放大即可，
-   缩放手势本来就在）。代价是窄栏里字确实小：620px 宽时约 6px。这是「48 对重叠的
-   13px」与「不重叠的 6px」之间的取舍——叠在一起的字并不会因为大而更能读。 */
-var FS_GAIN_MAX = 1.4;
+   这四处各自按「装不下就缩 / 装不下就不写 / 让位按同一个倍数长」修掉之后，同样
+   逐对量：400px 与 1680px 宽的侧视都是 **0 对**，620px 4 对（现值 1.4 下分别是
+   2 / 0 / 3 对）——也就是说抬高之后并不比原来更挤。换来的是：
+
+     侧视正文中位字号   400px      620px      1180px
+     上限 1.4            4px        6px        11px      ← 原值，窄栏读不了
+     上限 2.6            7px       11px        15px      ← 现值
+
+   窄栏（工作台里「整网图」那一格常常只有 400–620px）从「看得见有字」变成「读得出
+   写的是什么」，这正是这个上限存在的理由。再往上（3.2/3.8）重叠就重新长回来，
+   而中位字号只多 1–3px，不划算。 */
+var FS_GAIN_MAX = 2.6;
 /* 放大手势那一路的字号增长率。1.0 = 老的「地图式」：字完全钉死屏幕尺寸，
    滚轮从 1x 拉到 20x，框跟着长 20 倍，字一个像素都不多——实测（正视，1600×1000
    视口）文字高度从 100% 到 2000% 全程稳在 12px 上下，数字上没有「缩小」，但
@@ -6267,8 +6711,13 @@ function frontScene(D, g, box){
    哪一层——收起时 ui.openLayer 已经改回 null 了，画面还要按这层的几何把
    动画播完，不能立刻就没了这层是谁。 */
 var sqT = 0, sqAnim = null;
+/* 「展开这一层」时相机替你摆位那一次的记号：记的是「已经替哪一层、挤到哪一档
+   进度摆过」。摆位只在展开/收起动画进行中和刚定格的那一帧做，定格之后平移就
+   完全归手势——见 sideScene 尾部那段。 */
+var sqPanKey = null;
 function startSqAnim(fromT, toT, li){
   if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
+  sqPanKey = null;                          /* 新一轮开合：该摆的位重新摆一次 */
   var t0 = (window.performance || Date).now(), dur = 240;
   sqAnim = {t0:t0, dur:dur, from:fromT, to:toT, li:li, raf:null};
   var self = sqAnim;
@@ -6325,7 +6774,22 @@ function sideScene(D, g, box){
   var MET = laneN ? (12 + laneN*25 + (smpOn ? 16 : 2)) : (smpOn ? 26 : 0);
   var ANN = railOn ? 72 : (ui.mv.train ? 24 : 0);   /* 底部训练轨块（只剩 Checkpoint 时收窄） */
   /* 两侧边距要装得下屏幕恒定尺寸的头尾标签（字号增益之后它们比以前宽约 1.7 倍） */
-  var TM = 74, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
+  /* 顶边距原来钉死 74：段头横幅整块（胶囊 20、因子行 +15、字 7.4）是按 1/FS_Z
+     长的，而 yRail/yMet 这两条带钉的是常数——字号增益一抬高，横幅就长进了层刻度
+     和「Std σ」那一行里（实测把 FS_GAIN_MAX 抬到 2.6 时，一屏 42 对重叠里大半
+     出自这一处）。改成按「横幅下沿 ↔ 层刻度芯片上沿」这段真实的净空反算——两头
+     都是按 1/FS_Z 长的（横幅的因子行 +15，芯片的 13×0.78 高度往 yMet 上方顶），
+     所以顶边距也得按 1/FS_Z 走：32 + 30/FS_Z。现值（FS_Z = 1/1.4）算出来正好是
+     74，取 max 之后一个像素都不动；增益抬到 2.6 时它自己长到 110，把横幅那一块
+     完整地让出来。 */
+  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ mHC 主干 yRail → 层刻度芯片
+     → 数据带。横幅与刻度芯片都是按 1/FS_Z 长的，中间那两条钉的却是常数偏移——
+     字号增益一抬高，横幅就直接长进刻度和「Std σ」那一行里（实测把 FS_GAIN_MAX
+     抬到 2.6，一屏 42 对重叠里大半出自这一处）。顶边距按这一叠真实需要的高度反
+     算：只把**超出现值（1/FS_Z = 1.4）的那一截**加上去，于是现值下算出来就是原来
+     的 74，一个像素都不动；增益抬到 2.6 时它自己长到 114，把横幅整块让出来。 */
+  var FSK = 1/FS_Z, FSX = Math.max(0, FSK - 1.4);      /* 比现值多出来的反除倍数 */
+  var TM = 74 + 33*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
   var x0 = box.x + LM, x1 = box.x + box.w - RM;
   var yRail = box.y + TM - 12;
   var yMet = box.y + TM + 10;
@@ -6362,16 +6826,38 @@ function sideScene(D, g, box){
       var on9 = hasSel && st9 === selStage;
       body.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 10/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(20/FS_Z).toFixed(1)
         +'" rx="'+(10/FS_Z).toFixed(1)+'" style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+((on9?1.6:.7)/FS_Z).toFixed(2)+'"/>');
-      body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
+      /* 横幅这两行原来只管居中、不管装不装得下。字号增益一抬高，同一句话在屏幕上
+         宽出一大截：先撞上段边界那枚「H×4 S/R」，再探进隔壁段的横幅里（实测把
+         FS_GAIN_MAX 抬到 2.6，侧视一屏 54 对重叠里有四成出自这两行）。改成按段宽
+         缩到装得下——和层展开卡标题（ttlFs9）同一条办法：位置不动、字号让步，
+         实在还是宽就换成短写法（PP0 · L0–11），而不是探出去压别人。
+         增益不动时这两行本来就装得下（fit=1），一个像素都不会动。 */
+      var segRoom9 = Math.max(20, (xb - xa) - 12/FS_Z);
+      function fitFs9(str9, base9){
+        return Math.min(1, segRoom9 / Math.max(1, fsW(str9, base9/FS_Z)));
+      }
+      var ttlS9 = 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, fitT9 = fitFs9(ttlS9, 7.4);
+      if(fitT9 < 0.78){ ttlS9 = 'PP'+st9+' · L'+lo9+'–'+hi9; fitT9 = Math.max(0.5, fitFs9(ttlS9, 7.4)); }
+      body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, ttlS9, 7.4*fitT9,
         on9 ? VC.pp : 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-      var chips = [];
-      if(cutTP) chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>');
-      if(cutCP) chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>');
-      if(cutEP) chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>');
-      if(cutDP) chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>');
+      var chips = [], chipsP9 = [];
+      if(cutTP){ chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>'); chipsP9.push('TP ×'+D.tp); }
+      if(cutCP){ chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>'); chipsP9.push('CP ×'+D.cp); }
+      if(cutEP){ chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>'); chipsP9.push('EP ×'+D.ep); }
+      if(cutDP){ chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>'); chipsP9.push('DP ×'+D.dp); }
       chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
-      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4/FS_Z).toFixed(2)+'" '
+      chipsP9.push('×'+fmt(D.world / D.pp)+' 卡');
+      /* 因子行缩到半档还装不下就整行不写：那时它在屏幕上只有两三个像素，留着
+         也读不出来，却正好宽到压进隔壁段的同一行（本页一贯的「装不下就不写」）。 */
+      var chipsS9 = chipsP9.join(' · '), fitC9 = fitFs9(chipsS9, 6.4);
+      if(fitC9 >= 0.5)
+      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4*fitC9/FS_Z).toFixed(2)+'" '
         +'font-family="var(--pt-mono)" font-weight="700">'+chips.join('<tspan fill="var(--pt-bds)"> · </tspan>')+'</text>');
+      /* 横幅这两行居中之后左右各还剩多少空当——段边界上那枚「H×4 S/R」正落在
+         这段空当里，装不下就只留刻度线不写字（本页到处都是这条「装不下就不写」
+         的规矩）。缩到装得下时空当充裕，判定自然为真，现值下一律照写。 */
+      var bnW9 = Math.max(fsW(ttlS9, 7.4*fitT9/FS_Z), fitC9 >= 0.5 ? fsW(chipsS9, 6.4*fitC9/FS_Z) : 0);
+      var bnRoom9 = ((xb - xa) - bnW9) / 2;
       hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 12/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(30/FS_Z).toFixed(1)
         +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
       if(st9 > 0){
@@ -6383,6 +6869,7 @@ function sideScene(D, g, box){
         if(ui.mv.perf){
           body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(yRail-7/FS_Z).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(yRail+7/FS_Z).toFixed(1)
             +'" style="stroke:'+VC.pp+';stroke-width:'+(1.5/FS_Z).toFixed(2)+'"/>');
+          if(bnRoom9 >= fsW('H×4 S/R', 4.8/FS_Z)/2 + 3/FS_Z)
           body.push(fsTxt(xd, yRail - 10/FS_Z, 'H×4 S/R', 4.8, VC.pp, 'middle',
             'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
           hit.push('<rect x="'+(xd-8).toFixed(1)+'" y="'+(yRail-14/FS_Z).toFixed(1)+'" width="16" height="'+(20/FS_Z).toFixed(1)
@@ -6393,6 +6880,7 @@ function sideScene(D, g, box){
             +'" style="stroke:'+GCOL+';stroke-width:'+(1.4/FS_Z).toFixed(2)+'"/>');
           /* 写在回传轨**上方**那条空带里：轨下面 13 个单位正好是 Optimizer 那行长
              标题的高度，两串字会横着穿在一起（中间两个边界尤其明显）。 */
+          if(bnRoom9 >= fsW('∂H×4 S/R', 4.8/FS_Z)/2 + 3/FS_Z)
           body.push(fsTxt(xd, yBk - 10/FS_Z, '∂H×4 S/R', 4.8, GCOL, 'middle',
             'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
           hit.push('<rect x="'+(xd-8).toFixed(1)+'" y="'+(yBk-8/FS_Z).toFixed(1)+'" width="16" height="'+(24/FS_Z).toFixed(1)
@@ -6401,7 +6889,11 @@ function sideScene(D, g, box){
       }
     }
   }
-  body.push(fsTxt(box.x + 14, box.y + 47, 'MODEL DEPTH / TOPOLOGY', 6.4, 'var(--pt-fg3)', 'start',
+  /* 这条竖排小标题写在左边距里，右边紧挨着的就是第一段的段头横幅——字号增益
+     一抬高它就伸进横幅底下。装不进左边距（x0 之前那段）就不写。 */
+  var mdT9 = 'MODEL DEPTH / TOPOLOGY';
+  if(box.x + 14 + fsW(mdT9, 6.4/FS_Z) + mdT9.length*1.4/FS_Z <= x0 - 6/FS_Z)
+  body.push(fsTxt(box.x + 14, box.y + 47, mdT9, 6.4, 'var(--pt-fg3)', 'start',
     'font-weight="700" letter-spacing="1.4"'));
   /* ── mHC residual ×4 主干：贯穿全部层，接进两头 ── */
   var railX0 = x0 - 26, railX1 = x1 + 26;
@@ -6462,12 +6954,16 @@ function sideScene(D, g, box){
       if(ui.mv.num) sp2.push('σ'+s8.std.toFixed(2), 'Amax '+s8.amax.toFixed(1));
       if(ui.mv.perf) sp2.push(s8.lat.toFixed(2)+'ms');
       var st2 = 'L'+lm2+' · '+sp2.join(' · '), tw2 = fsW(st2, 5.6/FS_Z);
+      /* 右端同样别探进右边距：现值下最右这条本来就探出去一截（那片边距是空的，
+         不碍事），字号增益一抬高它会一路探到「主输出 + MTP · 只在 L47 之后」那行
+         字上。只在增益高于现值时（FSX > 0）收进条带内，现值下一个像素不动。 */
       var cx2 = xOf(lm2) + colW/2, lft2 = cx2 - tw2/2 < mx0;
-      var l2 = lft2 ? mx0 : cx2 - tw2/2;
+      var rgt2 = !lft2 && FSX > 0 && (cx2 + tw2/2 > mx1);
+      var l2 = lft2 ? mx0 : (rgt2 ? mx1 - tw2 : cx2 - tw2/2);
       if(l2 < prevR + 8/FS_Z) return;
       prevR = l2 + tw2;
-      body.push(fsTxt(lft2 ? mx0 : cx2, ySmp, st2,
-        5.6, 'var(--pt-fg2)', lft2 ? 'start' : 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+      body.push(fsTxt(lft2 ? mx0 : (rgt2 ? mx1 : cx2), ySmp, st2,
+        5.6, 'var(--pt-fg2)', lft2 ? 'start' : (rgt2 ? 'end' : 'middle'), 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
     });
   }
   /* 右上角标明这块图在展示哪几类数据（工具条上「数据」多选的当前状态） */
@@ -6475,9 +6971,12 @@ function sideScene(D, g, box){
     var mvOn9 = [];
     if(ui.mv.num) mvOn9.push('数值'); if(ui.mv.grad) mvOn9.push('梯度'); if(ui.mv.perf) mvOn9.push('性能');
     if(ui.mv.moe) mvOn9.push('MoE'); if(ui.mv.train) mvOn9.push('训练');
+    /* 三行的行距原来是常数 12/10，字却按 1/FS_Z 长——增益一抬高三行就摞成一团。
+       行距跟着同一个倍数走（现值 FSK=1.4 时正好还原成 12 与 22）。 */
+    var lnK9 = FSK/1.4;
     body.push(fsTxt(x1 + 30, box.y + 92, '数据标注', 6.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-    body.push(fsTxt(x1 + 30, box.y + 104, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
-    body.push(fsTxt(x1 + 30, box.y + 114, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
+    body.push(fsTxt(x1 + 30, box.y + 92 + 12*lnK9, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
+    body.push(fsTxt(x1 + 30, box.y + 92 + 22*lnK9, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
   }
   /* ── 每层一列：L 刻度 + 算子条（条状：条宽约半个列距，居中） ── */
   var lstep = Math.max(1, Math.ceil((14/FS_Z) / (colW + colGap)));
@@ -6514,7 +7013,9 @@ function sideScene(D, g, box){
     if(li9 % lstep === 0 || li9 === L - 1){
       var lbl9 = 'L'+li9;
       var lblCol9 = inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)';
-      var eox = lx + colW/2, eoy = yMet - 5;
+      /* 芯片高 13/FS_Z、78% 在基线之上——增益一抬高，剩下那 22% 就压进 yMet 下方
+         数据带第一条的标题里。让它**往上**长、下沿钉住：现值（FSK=1.4）下位移为 0。 */
+      var eox = lx + colW/2, eoy = yMet - 5 - 2.86*FSX;
       var chipW9 = fsW(lbl9, 5.6/FS_Z) + 12/FS_Z, chipH9 = 13/FS_Z;
       body.push('<rect x="'+(eox-chipW9/2).toFixed(1)+'" y="'+(eoy-chipH9*0.78).toFixed(1)+'" width="'+chipW9.toFixed(1)+'" height="'+chipH9.toFixed(1)
         +'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
@@ -6817,7 +7318,9 @@ function sideScene(D, g, box){
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
           +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR+'</title></rect>');
       }
-      if(rowsR > 1 && stR === 0){
+      /* 两枚行标之间只隔 (rowsR-1)×(dh+1.4) 这么点——字号增益一抬高，它们先跟
+         彼此叠，再一起叠到左边「卡架」那两个字上。装不下就不写。 */
+      if(rowsR > 1 && stR === 0 && (rowsR-1)*(dh+1.4) >= 5.64/FS_Z){
         body.push(fsTxt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
         body.push(fsTxt(rgx - 4, rackTop + (rowsR-1)*(dh+1.4) + dh/2 + 2, 'TP·SP'+(rowsR-1), 4.9, VC.tp, 'end'));
       }
@@ -6867,8 +7370,25 @@ function sideScene(D, g, box){
        接管——层没开着（sqActiveLi 为 null）时完全不碰 panX3，这条路只在
        层展开的这段时间生效。 */
     var animCW = colW + pushX;
-    var overflow9 = Math.max(0, (leftX + animCW) - (box.x + box.w) + 24);
-    ui.panX3 = -overflow9;
+    /* 溢出量要按**屏幕**坐标算：场景约定 screen = C + pan + zoom·(base − C)，
+       C 就是 cxC（box 是整块画布，见 renderChain 传的 SCB）。原来这行直接拿
+       base 坐标减舞台右沿、一项 zoom3 都没有——zoom=1 时恰好等价，一放大就
+       按缩放前的尺寸摆位，卡片右边一大截留在舞台外（实机 195% 时右沿探出
+       190 单位，读者只看得到大半张卡）。 */
+    var scrL9 = cxC + Zv * (leftX - cxC);
+    var scrR9 = cxC + Zv * (leftX + animCW - cxC);
+    /* 先让右沿收进舞台；卡片在当前缩放下比舞台还宽时两头顾不过来，优先保左沿
+       （这张图是从左往右读的），右边那截交给手势拖出来。 */
+    var wantX9 = Math.min(0, (box.x + box.w - 24) - scrR9);
+    wantX9 = Math.max(wantX9, (box.x + 16) - scrL9);
+    /* 摆位只做一次：动画进行中每帧跟着 t9 摆（推开到哪儿相机跟到哪儿），定格
+       之后就把相机交还给手势。原来这行是每帧无条件写，而 scheduleCrisp 在停手
+       420ms 之后必然重画一次——于是不管往哪儿拖，松手半秒都弹回原位，「点开
+       之后只能停在右边、拖不动」就是这么来的。sqPanKey 记住「哪一层、挤到哪一
+       档进度」已经摆过，同一格状态不再抢第二次；startSqAnim 每开一轮新动画就
+       清空它，下一次该摆的还是会摆。 */
+    var panKey9 = sqActiveLi + '@' + t9.toFixed(3);
+    if(sqPanKey !== panKey9){ ui.panX3 = wantX9; sqPanKey = panKey9; }
     /* 不给推开的内容压半透明蒙版——用户明确要「其他部分不要透明处理」：
        颜色跟原图一样，只是位置挪了。详图卡跟着展开进度一起淡入，内容本身
        不用逐帧重算（graphSVG 整棵重画费不起），淡入淡出足够表达跟这次
@@ -6969,9 +7489,16 @@ function layerDetailOverlay(D, box, leftX, li, chartTop, chartBottom){
   /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
      厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
      的样式」）——正视卡片自己的 graphSVG 调用就没传 tag3d，这里照抄。 */
+  /* 这张卡里的字比图上其余地方还小一档：它走的是 graphSVG，而 graphSVG 的字号是
+     场景单位里的常数，完全不吃侧视自己那套屏幕像素增益（FS_Z）。整张接过来会把
+     「两行读数装不装得下」的门槛（h*zs ≥ 13.5）一并抬到算子条根本达不到的高度，
+     读数会整片消失；所以这里只按算子条**竖向真实的余量**放大一档——名字基线
+     −2.2、读数基线 +5.8、字号 5.4/6.2，条高约 18 个单位，量下来还剩约 1.25 倍的
+     空当，取满即可。宽度预算跟着同一个倍数抬，读数按重要性递减截断，占的宽度
+     和原来一样，只是字更大、字数更少。 */
   var gsvg = graphSVG({x:CX+14, y:CY+42, w:CW-28, h:CH-56, g:(hasSel?sel:0), D:D, metricLi:li,
                        clip:'decoder-stack', label:true, tag3d:false, ghostIds:ghostIds, cuts:cuts9,
-                       ghostClu: D.moe ? [] : ['moe-block']});
+                       fontK:1.25, ghostClu: D.moe ? [] : ['moe-block']});
   body.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
                   : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
   /* 卡片自己的区域垫一层不带 data-act 的挡板：底下压着的是这一层原来那根柱子
@@ -7423,6 +7950,20 @@ document.addEventListener('keydown', function(ev){
     }
   } else if(ev.key === 'Escape'){ ui.qOpen = ''; render(); }
 });
+/* 并行度那几格按回车 = 点「应用」（填完数字顺手一敲，不用再去够按钮） */
+document.addEventListener('keydown', function(ev){
+  if(ev.key !== 'Enter') return;
+  if(!ev.target.matches || !ev.target.matches('[data-cfgd]')) return;
+  var ap9 = document.querySelector('[data-act="cfgapply"]');
+  if(ap9 && !ap9.disabled){ ap9.click(); ev.preventDefault(); }
+});
+/* 配置面板：点外面收起（点里面要能连着改好几项，不能一点就关）。
+   面板是常驻 DOM 的，所以判定用 .pt-cfg 这层壳，不能用「有没有这个节点」。 */
+document.addEventListener('click', function(ev){
+  if(!ui.cfgOpen) return;
+  if(ev.target.closest && ev.target.closest('.pt-cfg')) return;
+  ui.cfgOpen = false; ui.cfgDraft = null; render();
+}, true);
 /* 点面板外面收起。用捕获阶段，免得被画布那几个 stopPropagation 吃掉。 */
 document.addEventListener('click', function(ev){
   if(!ui.qOpen) return;
@@ -7684,39 +8225,9 @@ function renderChainBar(D){
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
   /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
      不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
-  /* 图例 + 通信：两颗独立胶囊并排常年占位，而且都是「画面上叠不叠这层注解」的
-     同一件事——收进一颗图标按钮里，点开才是一列勾选（仿「数据」那颗下拉的
-     交互），默认收着不占地方。⚙ 只是个通用「显示设置」符号，不代表切分。 */
-  var dispN = (ui.legendOn?1:0) + (ui.commOn?1:0) + (ui.moduleView?1:0);
-  /* 计数徽标只在真有开着的图层时才画：dispN=0 时 <b></b> 是个空字符串，
-     但它照样吃圆底+边框样式，糊成一颗没有数字的空心圆点——看着像哪里坏了。 */
-  var dispBtn = '<span class="pt-mv pt-disp">'
-    + '<button class="pb'+(dispN?' is-on':'')+'" data-act="dispmenu" title="显示设置：图例 / 通信 / 模块视图" style="font-size:16px;padding:3px 7px">'
-    + '⚙</button>'
-    + (ui.dispOpen ? '<div class="pt-mvmenu">'
-        + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么">'
-          + '<s>✓</s>图例</button>'
-        + '<button class="mvi'+(ui.commOn?' is-on':'')+'" data-act="commtoggle" title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
-          + '<s>✓</s>通信</button>'
-        + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网正视/侧视图不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——只影响这两张整网图，rank 方阵/3D 卡不受影响">'
-          + '<s>✓</s>模块视图</button>'
-        + '</div>' : '')
-    + '</span>';
-  /* 数据标注多选：图上那些读数（σ/Amax、∇、ms、tok、W→W'）分五类，逐类开关。
-     它们是**同一份快照的不同侧面**，所以是一颗按钮里的多选，不是五颗独立开关。 */
-  var mvN = MVIEWS.filter(function(m){ return ui.mv[m[0]]; }).length;
-  var mvBtn = '<span class="pt-mv">'
-    + '<button class="pb'+(mvN?' is-on':'')+'" data-act="mvmenu" style="--c:'+VC.pp+'"'
-    + ' title="数据标注：图上读数分五类（数值 / 梯度 / 性能 / MoE / 训练），可逐类显示或隐藏">'
-    + '数据<b>'+(mvN||'')+'</b><i>⌄</i></button>'
-    + (ui.mvOpen ? '<div class="pt-mvmenu">'
-        + '<div class="acts"><button data-act="mvall">全选</button><button data-act="mvnone">全部隐藏</button></div>'
-        + MVIEWS.map(function(m){
-            return '<button class="mvi'+(ui.mv[m[0]]?' is-on':'')+'" data-act="mvpick" data-k="'+m[0]+'"'
-              + ' style="--c:'+m[2]+'" title="'+esc(m[3])+'"><s>✓</s>'+esc(m[1])+'<em>'+esc(m[4])+'</em></button>';
-          }).join('')
-        + '</div>' : '')
-    + '</span>';
+  /* 图例 / 通信 / 模块视图 / 数据标注这四组原来是舞台上两颗独立下拉（⚙ 与「数据」）。
+     现在它们和其余控件一起收进那颗配置钮的面板里——见下面 cfgPanel 那段，
+     数据标注那一组仍然裹在 .pt-mv 里，工作台靠这层壳把它藏掉并翻进来同步。 */
   /* 全局搜索：属性搜索——层 / rank / 刀（维度+组号）。 */
   /* 属性搜索控件：标签在前，右边是「＋ 搜索」。三个状态由 ui.qOpen 决定：
      ''=收起 · 'menu'=在选属性 · '<属性名>'=在填这个属性的值。 */
@@ -7795,9 +8306,64 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = '<span class="pt-zone">' + cBtn + kBtns + physBtn + '</span>'
-    + '<span class="pt-zone">' + vBtns + lBtns + '</span>'
-    + '<span class="pt-zone">' + mvBtn + dispBtn + '</span>';
+  /* ── 舞台上只剩一颗配置钮 ────────────────────────────────────────────
+     上面那些控件一个没删，只是全部搬进这颗钮的面板里按「这一屏在讲什么」分组：
+     模式 → 切分 → 并行度 → 机位 → 通信 → 图层 → 数据标注，由粗到细，与原来
+     那条工具条的排序一致。搜索仍然留在画布上（#qbar）：它是**提问**，
+     其余是**配置**。 */
+  var draft9 = ui.cfgDraft || {};
+  function pnum9(k9, nm9, dis9){
+    var v9 = (draft9[k9] !== undefined) ? draft9[k9] : cfg[k9];
+    return '<label><b style="color:'+(VC[k9]||'var(--pt-fg3)')+'">'+nm9+'</b>'
+      + '<input type="number" min="1" data-cfgd="'+k9+'" value="'+v9+'"'+(dis9?' disabled':'')+'></label>';
+  }
+  var dirty9 = !!ui.cfgDraft && Object.keys(ui.cfgDraft).some(function(k9){ return +ui.cfgDraft[k9] !== +cfg[k9]; });
+  var moe9 = +cfg.experts > 0;
+  var cfgPanel = '<div class="pt-cfgpanel'+(ui.cfgOpen?' is-open':'')+'" id="cfgPanel">'
+    + '<div class="cg"><h6>模式</h6><div class="cgrow">' + cBtn + '</div></div>'
+    + '<div class="cg"><h6>落哪几把刀</h6><div class="cgrow">' + kBtns + physBtn + '</div></div>'
+    + '<div class="cg"><h6>并行度</h6><div class="pnum">'
+      + pnum9('tp','TP') + pnum9('cp','CP') + pnum9('pp','PP') + pnum9('ep','EP', !moe9)
+      + '<label><b style="color:'+VC.dp+'">DP</b><span class="derv" title="= world/(TP·CP·PP)，自动">'+(D.dpOk?D.dp:'—')+'</span></label>'
+      + '<button class="capply" data-act="cfgapply"'+(dirty9?'':' disabled')+'>应用</button>'
+    + '</div><div class="cnote">DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。</div></div>'
+    + '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
+    + '<div class="cg"><h6>通信连线</h6>'
+      + '<div class="cgrow">' + swBtn('commtoggle', '通信图层', ui.commOn,
+          ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
+      + '<div class="acts"><button data-act="commall">全选</button><button data-act="commnone">全部隐藏</button></div>'
+      + COMMK.map(function(c9){
+          var can9 = {tp:D.tp>1, cp:D.cp>1, ep:D.moe&&D.ep>1, pp:D.pp>1, dp:D.dp>1}[c9[0]];
+          return '<button class="mvi'+(ui.comm[c9[0]]!==false?' is-on':'')+'" data-act="commpick" data-k="'+c9[0]+'"'
+            + (ui.commOn && can9 ? '' : ' disabled')
+            + ' title="'+esc(c9[2])+'"><s>✓</s><span style="color:'+VC[c9[0]]+'">'+c9[1]+'</span>'
+            + '<em>'+(can9 ? '×'+({tp:D.tp,cp:D.cp,ep:D.ep,pp:D.pp,dp:D.dp}[c9[0]]) : '未切')+'</em></button>';
+        }).join('')
+    + '</div>'
+    + '<div class="cg"><h6>图层</h6>'
+      + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么"><s>✓</s>图例</button>'
+      + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网正视/侧视不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts 这几个功能块"><s>✓</s>模块视图</button>'
+    + '</div>'
+    /* 数据标注这一组仍然裹在 .pt-mv 里：工作台把它提到台面统一出，靠
+       `.pt-mv:not(.pt-disp){display:none}` 把格子里这一份藏掉，并翻进来点
+       [data-act=mvpick] 同步状态。壳换了名字它就两头落空。 */
+    + '<span class="pt-mv"><div class="cg"><h6>数据标注</h6>'
+      + '<div class="acts"><button data-act="mvall">全选</button><button data-act="mvnone">全部隐藏</button></div>'
+      + MVIEWS.map(function(m){
+          return '<button class="mvi'+(ui.mv[m[0]]?' is-on':'')+'" data-act="mvpick" data-k="'+m[0]+'"'
+            + ' title="'+esc(m[3])+'"><s>✓</s>'+esc(m[1])+'<em>'+esc(m[4])+'</em></button>';
+        }).join('')
+    + '</div></span>'
+    + '</div>';
+  /* 钮上那枚计数 = 现在叠着几层注解（图例 / 模块视图 / 通信里开着的类），
+     面板收起时也看得出「画面上还压着东西」。 */
+  var cfgN9 = (ui.legendOn?1:0) + (ui.moduleView?1:0) + commLitN();
+  $('stagebar').innerHTML = '<span class="pt-cfg">'
+    + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="配置"'
+    + ' title="配置：模式 / 落哪几把刀 / 并行度 / 机位 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
+    + '<svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'
+    + '<path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg>'
+    + '</button>' + cfgPanel + '</span>';
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -8324,6 +8890,9 @@ function renderDetail(D){
   if(!D.ok){ el.hidden = true; return; }
   /* 同 renderRankMem：高亮是过路的，不配一张写死某一个 rank 的读出卡 */
   if(ui.hlSel){ el.hidden = true; return; }
+  /* 全局切分视角：读数已经画进左栏 SVG（四形态逐份账），这张浮卡在右上角
+     会压住激活体那列托盘——同一屏两份读数还盖图，收起来。 */
+  if(ui.view==='solid' && ui.persp==='grid'){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
     if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'||ui.view==='story'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
@@ -8942,6 +9511,17 @@ function render(){
 /* ═════════ 事件 ═════════ */
 document.addEventListener('input', function(ev){
   var t = ev.target;
+  /* 并行度那五格：敲进草稿就好，不重画——重画会把输入框换掉、第二位就打不进去，
+     而且一位一位地推图（tp 从 16 敲成 2 的路上会先经过 1）画面会乱闪。
+     只手动把「应用」那颗按钮的可用态切一下。 */
+  if(t.matches('[data-cfgd]')){
+    var kd9 = t.getAttribute('data-cfgd'), vd9 = parseInt(t.value, 10);
+    if(!ui.cfgDraft) ui.cfgDraft = {};
+    ui.cfgDraft[kd9] = isNaN(vd9) ? cfg[kd9] : Math.max(1, vd9);
+    var ap9 = document.querySelector('[data-act="cfgapply"]');
+    if(ap9) ap9.disabled = !Object.keys(ui.cfgDraft).some(function(k9){ return +ui.cfgDraft[k9] !== +cfg[k9]; });
+    return;
+  }
   if(t.matches('[data-cfg]')){
     var k = t.getAttribute('data-cfg'), v = parseInt(t.value,10);
     if(isNaN(v)) return;
@@ -9205,11 +9785,7 @@ document.addEventListener('click', function(ev){
      （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
      大面板抢同一片屏幕，留着没有意义。 */
   else if(act==='commtoggle'){
-    ui.commOn = !ui.commOn; ui.dispOpen = false; render();
-    /* 告诉宿主：通信层开了/关了。工作台拿它联动下方抽屉切到「通信观测」——
-       上面看现象（流量带），下面看量化与归因（Sankey / Routing / 时间轴）。 */
-    if(window.parent && window.parent !== window)
-      window.parent.postMessage({type:'pto:comm', on:ui.commOn}, '*');
+    ui.commOn = !ui.commOn; ui.dispOpen = false; render(); ptoNotifyComm();
   }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   /* 整网 ⇄ 容量：二选一。切到容量时顺手把填充打开——「容量」这两个字就是在说
@@ -9240,6 +9816,29 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='layerclose'){ var liClose9 = ui.openLayer; ui.openLayer = null; startSqAnim(sqT, 0, liClose9); }
   else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
+  else if(act==='cfgpanel'){ ui.cfgOpen = !ui.cfgOpen; if(!ui.cfgOpen) ui.cfgDraft = null; render(); }
+  /* 逐类通信：总闸关着时点某一类顺手把总闸也打开——读者点「EP」要的就是
+     「让我看 EP 这一路」，还要他先去开一次总闸是多一道弯。 */
+  else if(act==='commpick'){
+    var ck9 = b.getAttribute('data-k');
+    ui.comm[ck9] = ui.comm[ck9] === false;
+    if(ui.comm[ck9] && !ui.commOn) ui.commOn = true;
+    render(); ptoNotifyComm();
+  }
+  else if(act==='commall'){ COMMK.forEach(function(c9){ ui.comm[c9[0]] = true; }); ui.commOn = true; render(); ptoNotifyComm(); }
+  else if(act==='commnone'){ COMMK.forEach(function(c9){ ui.comm[c9[0]] = false; }); render(); ptoNotifyComm(); }
+  /* 并行度：草稿一次性落地。DP 不手填（world/(TP·CP·PP) 推出来），world 也不动
+     ——这里改的是「怎么切」，不是「有多少张卡」。 */
+  else if(act==='cfgapply'){
+    if(ui.cfgDraft){
+      Object.keys(ui.cfgDraft).forEach(function(k9){
+        var v9 = parseInt(ui.cfgDraft[k9], 10);
+        if(isFinite(v9) && v9 >= 1) cfg[k9] = v9;
+      });
+      ui.cfgDraft = null; activePreset = null; stopAnim();
+    }
+    render();
+  }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
   else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
@@ -9261,7 +9860,7 @@ document.addEventListener('click', function(ev){
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
     ui.openLayer = null;             /* 「展开这一层」是侧视自己的浮层，换到别的机位就该关掉 */
     if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
-    sqAnim = null; sqT = 0;          /* 挤压进度也归零：不带着上一次的开合状态串到别的机位 */
+    sqAnim = null; sqT = 0; sqPanKey = null;   /* 挤压进度与摆位记号一起归零：不带着上一次的开合状态串到别的机位 */
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
@@ -9301,7 +9900,7 @@ document.addEventListener('click', function(ev){
     render();
   }
   else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
-  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
+  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); ui.hlSel = false; render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
@@ -9473,6 +10072,9 @@ window.addEventListener('message', function(ev){
      只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
   if(d.type==='pto:state'){
     if(VIEWS.some(function(x){ return x.id===d.view; })) ui.view = d.view;
+    /* solid 视图的子视角（双链映射/交集腔/全局切分）也开给宿主：组合工作台的
+       「全局切分」tab 要在不重载 iframe 的前提下切到 view=solid&p=grid。 */
+    if(d.persp==='map'||d.persp==='cav'||d.persp==='grid') ui.persp = d.persp;
     if(COMM_DIMS.indexOf(d.cut)>=0) ui.cutDim = d.cut;
     if(d.preset){
       var p2 = PRESETS.filter(function(x){ return x.id===d.preset; })[0];
