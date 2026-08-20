@@ -768,8 +768,11 @@ var ui = {
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
-  /* 模块视图：整网正视/侧视把逐算子明细（~30 框/层）收成 attn.qkv /
+  /* 模块视图：整网内容把逐算子明细（~30 框/层）收成 attn.qkv /
      attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块。
+     四个机位一起变——正视/侧视走 graphSVG 与 sideScene，3D/顶视走 netScene
+     卡内那段逐层循环（三处用的是同一份 MODULE_BLOCKS / moduleBlockNode，
+     同一张图的几个看法不该一个收着一个摊着）。
      **默认开**：设计评审的结论就是 rank 视角第一眼该看到「已经分好的那几块
      以及块之间的通信」，逐算子那一层是追问下去才要的东西，不是开场白——
      默认关的话读者进来看到的仍旧是那面算子墙，等于这个取景没有生效。
@@ -2464,9 +2467,40 @@ function netScene(D, g, box, step){
     if(HEAD_OPS[n.id]) return li === 0;
     if(TAIL_OPS[n.id]) return li === L - 1;
     if(!inClu(n.parent, 'decoder-stack', clu)) return false;
-    if(DENSE_OPS[n.id]) return li < denseTop;
-    if(MOE_OPS[n.id])   return li >= denseTop;
+    /* 块的 dense/MoE 归属与真叶子同一个开关，只是键换成合成 id（MOD_FS_DENSE /
+       MOD_FS_MOE，与 sideScene 的 nodeInLayer9 同一条）——不加这两支的话
+       blk.mlp 会画进 MoE 层、blk.router/blk.experts 会画进 dense 层。
+       非模块视图下这两张表里的键（blk.*）不可能命中真节点，行为不变。 */
+    if(DENSE_OPS[n.id] || MOD_FS_DENSE[n.id]) return li < denseTop;
+    if(MOE_OPS[n.id]   || MOD_FS_MOE[n.id])   return li >= denseTop;
     return true;
+  }
+  /* ── 模块视图：3D 卡内容也换成「块 + 不折叠的真叶子」这份节点表 ────────────
+     与 frontScene/sideScene 同一套做法（那两支见 graphSVG 的 drawNodes 与
+     sideScene 的 modExSS），三个机位这才是同一张图的三个看法：卡里画的
+     是 6 个功能块，不是 30 个逐算子框。
+     只算一次，不进 per-layer / per-copy 循环——那里一屏要跑上万次。
+     ui.moduleView 关着时 netNodes 就是 IXg.G.nodes 本身、sh 不派生，
+     不新建任何数组/对象，保证「开关关着时逐像素不变」。 */
+  var mvOn3 = !!(ui.moduleView && IXg), netNodes = IXg ? IXg.G.nodes : null;
+  var byId3 = null, blkOf3 = null;
+  if(mvOn3){
+    byId3 = {}; IXg.G.nodes.forEach(function(n9){ byId3[n9.id] = n9; });
+    var modEx3 = moduleExcludeIds();
+    netNodes = IXg.G.nodes.filter(function(n9){ return !modEx3[n9.id]; });
+    blkOf3 = {};
+    MODULE_BLOCKS.forEach(function(b9){
+      var bn9 = moduleBlockNode(b9, byId3); if(!bn9) return;
+      netNodes.push(bn9);
+      b9.src.forEach(function(sid9){ blkOf3[sid9] = bn9; });   /* 叶子 → 它落进的块（精选标签用） */
+    });
+    /* 块的切痕借它代表叶子的真切分：不改 shardMap 的缓存本体（那份跨调用共享），
+       只在这一次渲染里派生一份带块 id 的浅拷贝。 */
+    if(sh){
+      var sh3 = {}; for(var shk3 in sh) sh3[shk3] = sh[shk3];
+      MODULE_BLOCKS.forEach(function(b9){ sh3['blk.'+b9.id] = sh[b9.rep] || null; });
+      sh = sh3;
+    }
   }
   /* ── 地板网格（参考魔方视图 pattern）── */
   /* 物理平铺下不画：这层网格按列号 k 画的是并行坐标那套排法，物理摆位下
@@ -2774,7 +2808,7 @@ function netScene(D, g, box, step){
          代表的话，「这张卡装了 8 层」这件事图上就没有了——层数只剩 PP 轴上一行
          小字。壳里叠 8 层看得出厚度，也才对得上 L0–L7 那个区间。 */
       if(IXg){
-        IXg.G.nodes.forEach(function(n, ni){
+        netNodes.forEach(function(n, ni){
           /* 两头那几个 tensor/module 放行（见 HEAD_OPS/TAIL_OPS 的注释）；
              层内的权重张量仍然不画——那是「这一层有哪些参数」，不是这一屏的问题。 */
           if(!(n.kind === 'op' || HEAD_OPS[n.id] || TAIL_OPS[n.id] || MOD_OPS[n.id])) return;
@@ -2797,6 +2831,12 @@ function netScene(D, g, box, step){
           var by0 = byL[0] || null;
           var dm = by0 ? by0.dim : null;
           var col = dm ? dimColor(dm) : 'var(--pt-fg2)';
+          /* 模块视图的合成块：绝大多数块借代表叶子的真分片就有维度色（qkv/core/out/
+             mlp 是 TP、experts 是 EP），只有 router 的代表叶子是复制计算（无 by）会
+             退回中性灰——和 frontScene/sideScene 一样显式钦定成 EP 色（MODULE_BLOCKS
+             的 forceColor）。这里连 dm 一起带上：3D 这一支的填充浓度与描边都问 dm
+             「有没有维度色」，只改 col 的话块仍旧描着 bds 的灰边，与正视对不上。 */
+          if(n.blkDef && n.blkDef.forceColor){ col = VC[n.blkDef.forceColor]; if(!dm) dm = n.blkDef.forceColor; }
           var comm = n.colorKey === 'opv:comm';
           /* 别的 stage、别的副本也画满——四段都有内容，整个模型才是完整的。
              但只画一层淡实体：不切 TP/EP 的片、不进 sawn/whole 计数，
@@ -2813,7 +2853,10 @@ function netScene(D, g, box, step){
                三分之二就真的空了。抽稀是给全景那 46 层堆叠准备的。 */
             /* 抽稀只在**有主角**的时候做：那时这些是背景，抽掉三分之二不影响读。
                没选中的时候整网就是主体，一抽稀「哪几层不一样」就先被抽没了。 */
-            if(!ui.cardMode && hasSel && ni % 3 !== 0) return;
+            /* 模块视图的块不抽稀：一层就 6 块，抽掉三分之二剩下的两三块既读不出
+               「这一层长什么样」，也会让每份复印件缺的块各不相同。抽稀是给
+               逐算子那 30 个小框准备的（这一档下块的图元本来就比它们少）。 */
+            if(!ui.cardMode && hasSel && ni % 3 !== 0 && !n.blkDef) return;
             /* 卡维度下**每张卡都要看得见自己装了什么**——128 只空壳说明不了任何事。
                没选中不等于没内容，只是不如选中的那张跳。所以这里给一档明显更实的
                弱化：填充加重、描边加粗、透明度提到 .8。
@@ -2822,7 +2865,10 @@ function netScene(D, g, box, step){
             /* 入口 / 出口 / Dense FFN 这几个是**只有某几层才有**的算子，也就是
                「层与层不一样」的全部证据。它们跟重复段一个亮度的话，混在 30 层
                一模一样的算子里根本挑不出来——加重一档，默认这一屏就看得见。 */
-            var uniq = HEAD_OPS[n.id] || TAIL_OPS[n.id] || DENSE_OPS[n.id];
+            /* blk.mlp 是模块视图里 Dense 层**唯一**的那件不一样的东西（逐算子档
+               下这件事由 DENSE_OPS 那几个框承担）——它得跟着进加重档，不然一开
+               模块视图「前几层是 Dense」在整网上就只剩层板描边一条线索了。 */
+            var uniq = HEAD_OPS[n.id] || TAIL_OPS[n.id] || DENSE_OPS[n.id] || MOD_FS_DENSE[n.id];
             if(ui.cardMode || !hasSel){
               /* Rank 打开后一只卡里叠着 8 层、每层二十几个算子，描边在纵深上一条压
                  一条，.3 宽 / .8 浓叠八遍就成了一道道黑梳子。卡阵这档把描边压到近乎
@@ -2878,7 +2924,7 @@ function netScene(D, g, box, step){
              全局选中的那片；128 张卡各拿各的，才谈得上「全量」。
              另外非选中的卡抽稀一半——32 列 × 46 层 × 19 算子照单全画是 2.8 万个
              图元，比全景还重，而这些卡本来就是给人看「有这么多张、各拿一份」的。 */
-          if(ui.cardMode && !isF && ni % 2 !== 0) return;
+          if(ui.cardMode && !isF && ni % 2 !== 0 && !n.blkDef) return;
           /* ── 一个算子被切成什么样：两根轴，两个方向 ──────────────────────
              竖着切的是 **h**——特征维（TP 的 head / hidden / ffn / vocab、
              EP 的 expert）；横着切的是 **s**——序列维（CP 的 ctx、SP 的 token）。
@@ -2958,7 +3004,9 @@ function netScene(D, g, box, step){
           hitOps.push(quad([P(u0,v0,ww,kOff), P(u1,v0,ww,kOff), P(u1,v1,ww,kOff), P(u0,v1,ww,kOff)],
             'fill:transparent;cursor:pointer',
             'data-act="opdetail" data-nid="'+esc(n.id)+'" data-li="'+li+'" data-key="n'+kOff+'"',
-            esc(n.label)+' · L'+li+' · '+esc(sdOpMetric(li, n, D))+'（点开看完整读数）'));
+            /* 块的读数是块内叶子的聚合（Σms / ΣW / Σtok），与正视/侧视图上写的那行
+               同一个口径——不能拿合成 id 去 sdOpBuckets 现编一份假读数出来。 */
+            esc(n.label)+' · L'+li+' · '+esc(n.blkDef ? sdBlockMetric(li, n.blkDef, byId3, D) : sdOpMetric(li, n, D))+'（点开看完整读数）'));
           nodes++;
         });
       }
@@ -3959,22 +4007,30 @@ function netScene(D, g, box, step){
        坐标里离得够近，字号却是钉死的 6.4px，缩放拉近之后常常两行糊成一团（实机
        反馈：AllGather 和它上面那条算子名叠在一起）。挨个记上一条已放的 y，
        新的一条离得太近就顺势往下推，保持这条列表最基本的读序不乱。 */
-    var labMinGap = 12, lastLabY = -Infinity;
+    var labMinGap = 12, lastLabY = -Infinity, labSeen3 = {};
     pick.forEach(function(it){
       var id = it[0];
-      var n = IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
+      /* 模块视图：这份精选里被块吞掉的那几条（input_layernorm / q_a_proj /
+         kv_a_proj / attention_core / dense_gate_up / routed_expert_bank）在图上
+         已经没有自己的框了，还照原样标出来就是「名字指着一个画面上不存在的东西」。
+         改标它所属的块——位置换成块的中心、名字换成块名；Q 与 KV 同属 Attn·QKV，
+         一块只标一次（这一支之外的 AllGather / Block Post Norm / 两头那几条
+         本来就不进块，一个字不变）。 */
+      var bn3 = blkOf3 ? blkOf3[id] : null;
+      if(bn3){ if(labSeen3[bn3.id]) return; labSeen3[bn3.id] = 1; }
+      var n = bn3 || IXg.G.nodes.filter(function(x){ return x.id===id; })[0];
       if(!n) return;
       /* 挑**第一条量得出区间的**切法，不能死取 parts[0]：Token IDs 的第一条是
          DP 切 batch，而 batch 在这一屏没有基数（range/total 都是 null），
          死取就什么都标不出来——它真正量得出的那条是 CP 切 seq。 */
-      var s1 = sh[id], pl = (s1 && s1.parts) || [];
+      var s1 = sh[n.id], pl = (s1 && s1.parts) || [];
       var part = pl.filter(function(x){ return x && x.total > 0; })[0] || pl[0] || null;
       var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
       var ly = pc[1] + 2;
       if(ly - lastLabY < labMinGap) ly = lastLabY + labMinGap;
       lastLabY = ly;
       var tag = (part && part.total>0) ? ' · '+(part.dimName||'')+part.range[0]+'/'+part.total : '';
-      lab.push(txt(pc[0], ly, esc(it[2] || n.label)+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
+      lab.push(txt(pc[0], ly, esc(bn3 ? n.label : (it[2] || n.label))+esc(tag), 6.4, 'var(--pt-fg)', 'middle',
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
@@ -7696,7 +7752,7 @@ function renderChainBar(D){
           + '<s>✓</s>图例</button>'
         + '<button class="mvi'+(ui.commOn?' is-on':'')+'" data-act="commtoggle" title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
           + '<s>✓</s>通信</button>'
-        + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网正视/侧视图不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——只影响这两张整网图，rank 方阵/3D 卡不受影响">'
+        + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网内容不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——3D/顶视的卡内容与正视/侧视三个机位一起变，卡壳、门牌与容量视图不受影响">'
           + '<s>✓</s>模块视图</button>'
         + '</div>' : '')
     + '</span>';
