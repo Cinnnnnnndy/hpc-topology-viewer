@@ -1021,8 +1021,11 @@ function wireLinkage() {
    收回走带（t=null）就回到峰值——那才是「一张卡要多少显存」的默认答案。 */
 
 /* 泳道画布的取景常数，抄自 swimlane.html 的 draw()：左边 236px 是泳道名那一栏
-   （时间轴从它右边起算），右边留 16px。这两个数是那份上游拷贝里的字面量，改不了
-   也读不到，只能在这儿复述一遍——所以下面拿轴上的 0ms 刻度做过校验（见测试）。 */
+   （时间轴从它右边起算，画布重置 transform 单独重画这一块，滚动/缩放都不挪它），
+   右边留 16px。这两个数是那份上游拷贝里的字面量，改不了也读不到，只能在这儿
+   复述一遍——所以下面拿轴上的 0ms 刻度做过校验（见测试）。
+   **缩放和滚动这两样不是字面量，是实时状态，能读、也必须读**：见 xpPlaceCursor
+   里对 #timelineSurface / #timelineScroll 的跨帧读取。 */
 var XP_GUTTER = 236, XP_PAD_R = 16;
 var xpT = null;          /* null = 不看时间，按峰值 */
 var xpPlaying = false, xpRAF = 0, xpLast = 0, xpPushed = -1;
@@ -1030,7 +1033,11 @@ var XP_DUR_MS = 7000;    /* 一个训练步播一遍要多久（真实是 315.61
 
 function xpPushStep() {
   /* 两格 pattern 都要跟着走：它们各自画的是同一批卡的不同侧面。
-     节流到 ~12fps —— 每帧都推的话，128 只卡的场景来不及重画，反而更卡。 */
+     真正的节流在 applyXport 里按挂钟时间做（见 XP_PUSH_INTERVAL_MS）——这里
+     原来只写了「节流到 ~12fps」，但下面 applyXport 那句量化只挡到 0.5%
+     一格，dt≈16.7ms 的 rAF 帧率下大约每 2 帧就跨一格，实测推送频率接近
+     28fps，不是 12fps；每次推送两格各触发一次全量 SVG 重画（实测 158ms/次），
+     28fps × 158ms 远超 1000ms 预算，播放时宿主掉到 4–5fps。 */
   ['topology', 'netgraph'].forEach(function (id) {
     var f = $('iframe[data-slot="' + id + '"]');
     if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
@@ -1038,18 +1045,54 @@ function xpPushStep() {
   });
 }
 
-/* 游标贴到泳道那根时间轴上：轴的左端 = 画布左边 + 236，右端 = 画布右边 − 16。
-   画布宽度按 iframe 的实际宽度算（泳道自己也是这么定 viewportW 的）。 */
+/* 游标贴到泳道那根时间轴上。之前这里假定缩放恒为 1×、横向滚动恒为 0——1× 且
+   没滚动时凑巧对，一旦用户点了 #zctl 的缩放钮或拖了泳道自己的横向滚动条，游标
+   就停在旧位置不动，读数（xpPct 那个百分比）和线的实际位置对不上（实测 4× 缩放
+   下差出一整屏三分之一还多）。
+
+   泳道的 draw() 把「内容坐标 → 屏幕坐标」这一步拆成两条（swimlane.html 的
+   x(ms) 与外层的 ctx.translate(-scroll.scrollLeft,0)）：
+     内容坐标 = gutter + t · (width − 16 − gutter)      —— width 已经吃了 zoom
+     屏幕坐标 = 内容坐标 − scrollLeft                     —— 缩放不影响这一步
+   width 不用去解 zoom 数值（那是泳道 IIFE 里的私有变量，够不着也不该碰）——
+   它已经写进 #timelineSurface 的内联样式宽度里，跟 #timelineScroll 的 scrollLeft
+   一样，都是**同源、可读的渲染结果**，不是要「猜」的内部状态，读它们和读
+   #zoomValue/#zoomSlider（见 zctlSync）是同一类操作。 */
 function xpPlaceCursor() {
   var cur = document.getElementById('xcursor');
   var frame = $('iframe[data-slot="swimlane"]');
   if (!cur || !frame) return;
   if (xpT === null) { cur.hidden = true; return; }
-  var w = frame.getBoundingClientRect().width;
-  var x0 = XP_GUTTER, x1 = Math.max(x0 + 1, w - XP_PAD_R);
+  var doc;
+  try { doc = frame.contentDocument; } catch (e) { doc = null; }
+  var scrollEl = doc && doc.getElementById('timelineScroll');
+  var surfaceEl = doc && doc.getElementById('timelineSurface');
+  if (!scrollEl || !surfaceEl) { cur.hidden = true; return; }   // 还没加载完，或者不同源
+  /* 用户直接拖泳道自己的横向滚动条（不经过 #zctl）时也要跟着挪，这里只挂一次：
+     iframe 重新加载会换一个新的 scrollEl，标记也跟着没了，不会重复绑。 */
+  if (!scrollEl.__xpBound) { scrollEl.__xpBound = true; scrollEl.addEventListener('scroll', xpPlaceCursor); }
+  var width = surfaceEl.getBoundingClientRect().width;   // 含 gutter，已经按当前 zoom 算好
+  var plotLeft = XP_GUTTER, plotRight = Math.max(plotLeft + 1, width - XP_PAD_R);
+  var screenX = plotLeft + (plotRight - plotLeft) * xpT - scrollEl.scrollLeft;
   cur.hidden = false;
-  cur.firstElementChild.style.left = (x0 + (x1 - x0) * xpT) + 'px';
+  cur.firstElementChild.style.left = screenX + 'px';
 }
+
+/* 按挂钟时间节流推送，量化（0.5% 一格）单独挡不住：rAF 在 dt≈16.7ms 时几乎
+   每帧都跨一格，实测推送逼近 28fps，两格各 110–124ms 的全量重画根本追不上，
+   宿主播放时掉到 4–5fps（见 xpPushStep 的注释）。
+
+   间隔数值是照实测数据定的，不是拍脑袋：两格各自的单次重画都在 110–124ms，
+   两格合计约 230ms——间隔定得比这个数小（试过 100ms）等于让浏览器永远欠账，
+   实测反而只有 6fps，比不节流好一点但好得有限。把间隔提到贴近 230ms 这个
+   实测成本（250ms）之后，浏览器基本能在下一次推送前把上一次画完，实测回升到
+   16fps。仍然不是 60fps——真正补齐这个差距要动 pattern 自己的重画逻辑（不重画
+   整页、只 diff 变化的节点），是另一件工作量大得多的事（见开发计划里的
+   「C1 长期」）。这里只做「浏览器追得上节流节奏」这一件事。
+   游标/百分比/滑杆这几个便宜的 DOM 更新不受这条线节流——只挡 xpPushStep
+   这一件贵的事，界面本身该多跟手还是多跟手。 */
+var XP_PUSH_INTERVAL_MS = 250;
+var xpLastPushTs = 0;
 
 function applyXport(push) {
   var pct = document.getElementById('xpPct');
@@ -1061,7 +1104,9 @@ function applyXport(push) {
   xpPlaceCursor();
   if (push !== false) {
     var q = xpT === null ? -1 : Math.round(xpT * 200);   /* 推送量化到 0.5%，省掉无意义的重画 */
-    if (q !== xpPushed) { xpPushed = q; xpPushStep(); }
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    var due = now - xpLastPushTs >= XP_PUSH_INTERVAL_MS;
+    if (q !== xpPushed && due) { xpPushed = q; xpLastPushTs = now; xpPushStep(); }
   }
 }
 
@@ -1116,6 +1161,7 @@ document.addEventListener('click', function (ev) {
   var t = id && doc.getElementById(id);
   if (t) t.click();
   zctlSync();
+  xpPlaceCursor();   // 缩放会改 #timelineSurface 的宽度，游标跟着重算一次
 });
 document.addEventListener('input', function (ev) {
   if (ev.target.id !== 'zcs') return;
@@ -1125,6 +1171,7 @@ document.addEventListener('input', function (ev) {
   isl.value = ev.target.value;
   isl.dispatchEvent(new Event('input', { bubbles: true }));
   zctlSync();
+  xpPlaceCursor();   // 同上：拖滑杆也是缩放
 });
 
 /* 走带/游标/缩放都是**泳道的**器官：dock 换到通信观测那页时一起收起来——
