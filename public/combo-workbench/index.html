@@ -199,6 +199,9 @@ a.btn{text-decoration:none}
   min-height:30px;padding:0;background:transparent;pointer-events:none}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
 #slot-netgraph .slot-head button{pointer-events:auto}
+/* 段控是这一格的名字（整网图 / 全局切分）：整条格头 pointer-events:none 的约定下，
+   钮所在的那只药丸得自己把事件接回来 */
+#slot-netgraph .slot-head .tabs{pointer-events:auto}
 #slot-topology{flex:1 1 auto;min-width:0}
 /* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
 #vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
@@ -371,7 +374,9 @@ body.is-resizing iframe{pointer-events:none}
          左边那格走，自己不另开一套入口。 -->
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
-        <span class="slot-title">整网图</span>
+        <!-- 名字让位给段控：这一格现在有两个答法（整网图 / 全局切分），
+             tab 本身就是名字，再挂一枚静态标题会跟当前 tab 打架。 -->
+        <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
         <button data-act="fold" title="收起这一格，只留格头">收起</button>
         <span class="spacer"></span>
       </header>
@@ -501,6 +506,8 @@ var SLOTS = [
        十几层」；而且它是 46 层、主视图是 48 层，层号对不齐。 */
     id: 'netgraph',
     el: 'slot-netgraph',
+    key: 'n',              // URL：?n=cav 打开「全局切分」，默认 net（整网图）不写
+    def: 'net',
     foldable: true,        // 格头上有「收起」，与抽屉那格同一套
     /* 只藏两样：
        ① .pt-mv（数据标注）——归框架层了，与右边那格共用顶栏那颗，藏掉格子里这份；
@@ -538,16 +545,24 @@ var SLOTS = [
              /* 缩放 HUD（− 100% ＋ 居中 复位）：这一格只留**机位**一组控件，别的一律
                 由主视图那边操纵。藏的是那排按钮，不是能力——滚轮缩放、拖动平移
                 照旧（都是画布上的手势，不经过这排按钮）。 */
-             '#zoomHud{display:none!important}',
-    src: function () {
+             '#zoomHud{display:none!important}' +
+             /* 「全局切分」tab 打开的是 view=solid 的 grid 子视角。它的 stagebar 上
+                有整排子视角按钮（双链映射/交集腔/全局切分）——在这一格里，看哪个
+                答法由格头的 tab 说了算，格子里再放一排会出现两套互相打架的切换器；
+                双链映射/交集腔是「单卡」的问法，归左边主视图的「交集腔」tab 管。 */
+             '[data-act="persp"]{display:none!important}',
+    src: function (s) {
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
-      q.set('view', 'chain');
       /* cuts=pcte：p(pp) c(cp) t(tp·sp) e(ep) 都落下，**独独没有 d(dp)**——
          这一格问的是「一张整网被切成什么」，DP 是「整套安排复印几份」，
-         复印件对这一问没有信息量，落下来只会把同一张图重复 16 遍。 */
+         复印件对这一问没有信息量，落下来只会把同一张图重复 16 遍。
+         「全局切分」tab 用不到这几个参数，但**两个 tab 共一份文档**：从 cav 起步、
+         再 postMessage 切回 chain 时（不重载），chain 读的还是首载 URL 里的这套值，
+         所以两个分支都带上，谁先谁后都落到同一张整网图。 */
       q.set('cuts', 'pcte');
-      /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。 */
+      /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。
+         （全局切分那页是个例外：它的每一格本来就是「点了定位到卡」，那是它的题面。） */
       q.set('rank', '0');
       /* 默认落侧视：这一屏把每个算子被哪把刀沿哪根轴切标在旁边
          （SP 切 seq、TP 切 hidden、EP 切 expert），正是这一格要回答的
@@ -558,9 +573,21 @@ var SLOTS = [
          620/900/1080/1680 四档实测都是 0 对重叠，这条理由就不成立了，改回侧视。
          四个机位一个没拿掉，pattern 自己那排段控点一下就换。 */
       q.set('vtab', 'side');
+      if (s.value === 'cav') { q.set('view', 'solid'); q.set('p', 'grid'); }
+      else q.set('view', 'chain');
       /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
       return '../patterns/net-slicing/pattern.html?' + q.toString();
-    }
+    },
+    /* 换 tab 不重载（同一份文档）：pto:state 带 view（既有白名单）+ persp
+       （demo 那边为这一格新开的白名单字段），选中卡/主题都留在原地。 */
+    msg: function (v) {
+      return v === 'cav' ? { type: 'pto:state', view: 'solid', persp: 'grid' }
+                         : { type: 'pto:state', view: 'chain' };
+    },
+    tabs: [
+      { v: 'net', t: '整网图',   d: '一张整网怎么被切开：PP/TP·SP/EP 都落下、不落 DP、不进卡维度' },
+      { v: 'cav', t: '全局切分', d: '交集腔的总账：权重/梯度/优化器/激活四形态 × 全部的腔，点一格定位持有它的卡' }
+    ]
   },
   {
     id: 'topology',

@@ -64,6 +64,13 @@ checkout 发布」这种结构时，先假设它迟早会出这个问题，尽�
 
 - 两格都指向同一个构建产物 `../patterns/net-slicing/pattern.html`，只是 query 参数不同
   （`netgraph` 加 `cuts=pcte&rank=0`，见 `index.html:515-537` 的 `src()` 函数与其上方注释）。
+- `netgraph` 这一格有**两个 tab**（`key:'n'`，URL 参数 `?n=`，默认 `net` 不写）：
+  「整网图」= 原来的 chain 侧视配置；「全局切分」（`?n=cav`）= 同一份 pattern 的
+  `view=solid&p=grid`——权重/梯度/优化器态/激活四形态的交集腔总账，逐腔可点定位 rank。
+  换 tab 走 postMessage 不重载（`pto:state{view, persp}`——`persp` 是为这一格在
+  demo.html 的 `pto:state` 白名单里**新加的字段**，只认 map/cav/grid）。点腔格后的
+  联动走既有的 `pto:select` → `pushHL` 那条路，台面没有新协议。这一格的 hideCss
+  多了一条 `[data-act="persp"]`：子视角切换器由格头 tab 代言，格子里那排藏掉。
 - 上游来源：`main` 分支的 `public/parallel-topology/demo.html`，经 `deploy.yml` 的
   "Overlay 并行拓扑" 步骤抽取发布。这条链早先已经完成过和 E1 同类的迁移
   （checkout 从专属分支改成 `ref: main`），不受本文档第 0 节说的那类风险影响。

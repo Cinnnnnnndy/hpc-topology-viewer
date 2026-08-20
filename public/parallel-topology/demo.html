@@ -894,7 +894,7 @@ function urlLoad(){
   var ac = parseInt(q.get('act'),10); if(isFinite(ac) && ac>=0) ui.act = ac;
   if(q.get('act2')==='0') ui.act2 = false;
   else if(q.get('act2')==='1') ui.act2 = true;
-  if(q.get('p')==='cav'||q.get('p')==='map') ui.persp = q.get('p');
+  if(q.get('p')==='cav'||q.get('p')==='map'||q.get('p')==='grid') ui.persp = q.get('p');
   if(q.get('stack')==='1') ui.spread = false;
   var kf = parseInt(q.get('knife'),10); if(isFinite(kf) && kf>=0) ui.knife = kf;
   if(q.has('cuts')){ var cs=q.get('cuts'); ui.kDP=cs.indexOf('d')>=0; ui.kPP=cs.indexOf('p')>=0; ui.kCP=cs.indexOf('c')>=0; ui.kTP=cs.indexOf('t')>=0; ui.kEP=cs.indexOf('e')>=0; }
@@ -5122,6 +5122,7 @@ function graphSVG(o){
    默认给①：先知道刀落在哪一级，再看那一级交出来的腔是什么。 */
 function renderSolid(D){
   if(ui.persp === 'cav') return renderSolidCav(D);
+  if(ui.persp === 'grid') return renderSolidGrid(D);
   return renderSolidMap(D);
 }
 /* ═════════ 视角① 双链映射（FIG 09 的三维化）═════════
@@ -5268,6 +5269,7 @@ function renderSolidMap(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb is-on" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
     + '<span class="pt-chip">四个并行维度全部收在「卡」这一级</span>'
     + '<span class="pt-chip" style="border-color:'+(tpIn?VC.tp:'var(--pt-danger)')+';color:'+(tpIn?VC.tp:'var(--pt-danger)')+'">TP '+(tpIn?'机内 ✓':'跨机 ✗')+'</span>';
   $('stageNote').hidden = true;
@@ -5705,6 +5707,7 @@ function renderSolidCav(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb is-on" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
     + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
     + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
@@ -5713,6 +5716,289 @@ function renderSolidCav(D){
     + '<button class="pb" data-act="view" data-v="anatomy">腔里装了什么 ↗</button>';
   /* 一轴一刀的表已经画进 SVG 了（见 TBX/TBY）——.pt-note 浮层压在舞台左下角会盖住容器条，
      同一句话不放两遍，浮层这里就空着。 */
+  $('stageNote').hidden = true;
+  $('detach').hidden = true;
+}
+
+/* ═════════ 视角③ 全局切分：全部的腔一次摆开，各归谁 ═════════
+   视角②「交集腔」答「为什么恰好是这一块」——一张卡、一只腔，几何证明。
+   这一张答下一问：**整套账摊开**——不再只给选中那张卡看它的腔，而是把全部的腔
+   一次画全：谁持有哪一格，点哪一格就定位到持有它的那张卡（组合工作台靠这一下
+   联动并行拓扑与泳道）。
+   四个形态一起画（②只有权重体/激活体两只盒子）：
+     · 权重 W / 梯度 G / 优化器态 O —— **同一套切分**（ℓ×h×e，PP/TP/EP 三刀），
+       区别只在字节（2+2+12 = 16 B/参数）与生命周期，所以画成**同一只托盘的三层
+       厚度**，不画三只重复的盒子——厚度比就是字节比，优化器态那层最厚一眼可见；
+     · 激活 A —— 自己一套（ℓ×h×b×s）：b 被 DP 真切、s 被 CP 真切，与①并排对照。
+   ℓ 沿 PP 拆成一叠托盘（自上而下 = PP0→PP(n-1)，与整网图/泳道同序；②里 ℓ 轴
+   朝上是「一只盒子」的画法，这里拆开了，读序优先）。每只托盘的**顶面就是那一段
+   的全部腔**，逐格都是命中区：
+     · 参数系格 (t,e)：持有它的卡在 (c,d) 里搜（epOf==e，优先贴着当前卡的 c/d）。
+       EP 折叠 q=(d·CP+c)·TP+t 会把 e 桶错开在 TP 列上，于是有的格**没有持有者**
+       ——那不是漏画，是折叠的真实结构：画成斜线空格，悬浮里说明白。
+     · 激活格 (c,d)：持有者是同 (c,d,p) 的整个 TP 组，保持当前 t 定位其中一张。
+   点格走 pickg（data-g 在渲染时就解析成 rank）：选中跨视图保持、ptoNotifyHost
+   上报宿主——这正是这一视角进组合工作台「整网图」tab 的用途。 */
+function renderSolidGrid(D){
+  var g = (sel!==null && sel<D.world) ? sel : 0;
+  var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
+  var parts = [], hits = [];
+  var lps = D.layersPerStage, hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0;
+  function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
+  function p3(x,y,z){ return proj(x,y,z,1); }
+  function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
+
+  /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长 ── */
+  var sc = Math.min(1, Math.sqrt(4/D.pp));
+  var nE = D.moe ? D.ep : 1;
+  var BW1 = 120*sc, BD1 = (D.moe ? 88 : 46)*sc;
+  var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;   /* 厚度比 = 字节比 2:2:12 */
+  var BW2 = 104*sc, BD2 = clamp(D.dp*7, 46, 124)*sc;
+  var THA0 = 26*sc;                                   /* 激活托盘的峰值厚度（PP0 满载那一档） */
+  var TOP = 158;
+  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) + 16;
+  var TXG = 430, TXA = 842;
+  var trayBot = TOP + (D.pp-1)*PITCH + Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
+  var TBY = trayBot + 52;
+  var H = TBY + 122;
+  var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
+
+  /* 本卡四份账（逐卡口径：含路由不均/碎片，走带时激活跟着 ACT_T） */
+  var segs = memParts(D, co.p, g), segBy = {};
+  segs.forEach(function(x){ segBy[x.k] = x; });
+  var wB = segBy.w.bytes, gB = segBy.g.bytes, oB = segBy.opt.bytes;
+  var aB = segBy.act.bytes, aMub = segBy.act.mub, rsvB = segBy.rsv.bytes;
+  var otmpB = segBy.otmp ? segBy.otmp.bytes : 0;
+  var tot = segs.reduce(function(a,x){ return a+x.bytes; },0), cap = D.hbm*Math.pow(2,30);
+  var CW = solid('var(--pt-fg)', 34);                 /* W 带的中性色：刀色都让给网格线 */
+
+  /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
+  function holdersW(t,e){
+    var out = [], c, d;
+    for(d=0; d<D.dp; d++) for(c=0; c<D.cp; c++)
+      if(!D.moe || epOf(t,c,d,D).ep===e) out.push([c,d]);
+    return out;
+  }
+  /* 优先贴着当前卡定位：同 (c,d) > 同 d > 第一个——点格换的是 (p,t,e)，b/s 尽量不动 */
+  function pickHolder(hs){
+    var best = hs[0], i;
+    for(i=0;i<hs.length;i++){
+      if(hs[i][0]===co.c && hs[i][1]===co.d) return hs[i];
+      if(hs[i][1]===co.d && best[1]!==co.d) best = hs[i];
+    }
+    return best;
+  }
+
+  var revLi = parseInt(ui.revLayer, 10);
+  var hlStage = (isFinite(revLi) && revLi>=0 && revLi<D.layers) ? Math.floor(revLi/lps) : -1;
+  var ptopW = function(a,b){ return p3(a, TH1, b); };
+  var mineW = null, mineA = null;
+  var pIdx, t, e, cI, dI;
+
+  /* ═══ 抬头（压低到浮层按钮下面：stagebar 是 HTML 浮层，viewBox 头两行会被它盖住） ═══ */
+  parts.push(txt(560, 66, '全局切分总账：四个形态 × 全部的腔 —— 点一格，定位持有它的那张卡', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(560, 81, 'W·G·O 共用一套切分（画成一只托盘的三层厚度）；A 自己一套 · 选中跨视图保持', 8.8, 'var(--pt-fg2)'));
+  parts.push(txt(TXG-36, 106, '① 参数系三形态 · 同一套切分', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXG-36, 119, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B = 16 B/参数 · 厚度比 = 字节比', 7.6, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TXA-46, 106, '② 激活体 · 自己一套', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXA-46, 119, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb（h 是第 4 根轴，TP 也切它）', 7.6, 'var(--pt-fg2)', 'middle'));
+
+  for(pIdx=0; pIdx<D.pp; pIdx++){
+    var Y0 = TOP + pIdx*PITCH + TH1;
+    var P9 = paramsPerCard(D, pIdx);
+    var gp = [], gh = [];
+
+    /* DP 复印的剪影叠只画在最上一只托盘后面：×dp 是整套参数系的事，不逐盘重复 */
+    if(pIdx===0 && D.dp>1){
+      var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
+      for(var k1=KD; k1>=1; k1--)
+        parts.push('<g transform="translate('+(TXG+k1*oX).toFixed(1)+','+(Y0-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+    }
+
+    /* 三层厚度：底 O、中 G、顶 W——顶面网格讲的是这套切分本身，W 贴着自己的格 */
+    gp.push(boxSVG(0,0,0,BW1,THO,BD1,1,{fill:MEMC.opt, stroke:'var(--pt-bg)', sw:.4}));
+    gp.push(boxSVG(0,THO,0,BW1,THG,BD1,1,{fill:MEMC.g, stroke:'var(--pt-bg)', sw:.4}));
+    gp.push(boxSVG(0,THO+THG,0,BW1,THW,BD1,1,{fill:CW, stroke:'var(--pt-bg)', sw:.4}));
+
+    /* 顶面逐格：每格 = 一个腔 */
+    var dx1 = BW1/D.tp, dz1 = BD1/nE;
+    for(t=0;t<D.tp;t++) for(e=0;e<nE;e++){
+      var q4 = [ptopW(t*dx1,e*dz1), ptopW((t+1)*dx1,e*dz1), ptopW((t+1)*dx1,(e+1)*dz1), ptopW(t*dx1,(e+1)*dz1)];
+      var hs = holdersW(t,e);
+      var eLab = D.moe ? ' · e桶 E'+(e*kE)+'–E'+((e+1)*kE-1) : '';
+      if(!hs.length){
+        /* 无持有者：EP 折叠把 e 桶错开在 h 片上——斜线空格，是结构不是漏画。
+           不上底色（露出 W 带的素面）+ 一道斜线，与实格（有底色）拉开对比 */
+        gp.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
+        hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon></g>');
+        continue;
+      }
+      var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
+      var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
+      gp.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
+      if(mine1) mineW = [TXG + (q4[0][0]+q4[2][0])/2, Y0 + (q4[0][1]+q4[2][1])/2];
+      gh.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
+        + esc('腔（PP'+pIdx+' · h片'+t+eLab+'）· 持有者 ×'+hs.length+'（跨 b/s）\n点击定位 r'+rk)+'</title></polygon></g>');
+    }
+    /* 网格线颜色 = 切它那把刀：x 缝 TP 青、z 缝 EP 紫（份数大就细，纹理即事实） */
+    var swT = dx1*C>4?.9:.5, swE = dz1>4?.8:.4;
+    for(t=1;t<D.tp;t++) gp.push(ln(ptopW(t*dx1,0), ptopW(t*dx1,BD1), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
+    for(e=1;e<nE;e++) gp.push(ln(ptopW(0,e*dz1), ptopW(BW1,e*dz1), 'stroke:'+VC.ep+';stroke-width:'+swE+';stroke-opacity:.7'));
+    /* 本卡那一腔：三层账里都是同一格——线框直插到底，一格贯穿 W/G/O */
+    if(pIdx===co.p) gp.push(boxSVG(co.t*dx1, 0, (D.moe?me.ep:0)*dz1, dx1, TH1, dz1, 1,
+      {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
+    /* 托盘外框（层反查命中的那一段描 PP 橙） */
+    gp.push(boxSVG(0,0,0,BW1,TH1,BD1,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8}));
+
+    /* 左：PP 段标（可点换段）；右：这一段每卡的三份账 */
+    var lx = -BD1*C - 12, ly = BD1*S*0.5 - TH1*0.35;
+    gp.push(txt(lx, ly, 'PP'+pIdx, 9.4, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+11, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 7, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+21, 'L'+revLi+' 在这一段', 6.6, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-56).toFixed(1)+'" y="'+(ly-10).toFixed(1)+'" width="60" height="24" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var rx1 = BW1*C + 10, ry1 = BW1*S - TH1*0.2;
+    if(pIdx===0){
+      /* 顶盘右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
+      var rx0 = rx1 + (D.dp>1 ? 44 : 0);
+      gp.push(txt(rx0, ry1-22, '×'+D.dp+' 复印（DP）', 7.6, VC.dp, 'start', 'font-weight="800"'));
+      gp.push(txt(rx0, ry1-12, 'W·O 逐字相同 · G 归约前各不相同', 6.4, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 7, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+10, 'G 梯度 '+fmtGB(2*P9)+' GB', 7, MEMC.g, 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+20, 'O 优化器态 '+fmtGB(12*P9)+' GB', 7, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+    }else{
+      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 6.6, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1+10, 'O '+fmtGB(12*P9)+' GB', 6.6, 'var(--pt-fg3)', 'start'));
+    }
+    /* 顶盘的轴名：认领关系写在轴上（别的盘不重复——同一把刀） */
+    if(pIdx===0){
+      var fm2 = ptopW(BW1*0.55, 0);
+      gp.push(txt(fm2[0]+26, fm2[1]-8, 'h ← '+DIMN.tp+'×'+D.tp, 8, VC.tp, 'start', 'font-weight="800"'));
+      var zm2 = ptopW(0, BD1*0.5);
+      gp.push(txt(zm2[0]-30, zm2[1]-16, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 8, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+      gp.push(txt(lx, ly-16, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 8, VC.pp, 'end', 'font-weight="800"'));
+    }
+    parts.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gp.join('')+'</g>');
+    hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gh.join('')+'</g>');
+
+    /* ═══ 同一段的激活托盘（右列，与左列同一行 = 同一段层） ═══ */
+    var nIf = inflightAt(D, pIdx, ACT_T);
+    var THA = Math.max(2.5*sc, THA0 * nIf/actPeak);
+    var actB = D.mbs*(D.seq/D.cp)*D.hidden*lps*ACT_COEF*nIf;
+    var ap = [], ah = [];
+    var ptopA = (function(th){ return function(a,b){ return p3(a, th, b); }; })(THA);
+    /* 体色兑淡（solid 保持不透明，画家序不破）：格线与选中格才读得出来 */
+    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{fill:solid('var(--highlight-l0b-blue-500, #5B7BDE)', 42), stroke:'var(--pt-dp)', sw:.5}));
+    var dx2 = BW2/D.cp, dz2 = BD2/D.dp;
+    for(cI=0;cI<D.cp;cI++) for(dI=0;dI<D.dp;dI++){
+      var q5 = [ptopA(cI*dx2,dI*dz2), ptopA((cI+1)*dx2,dI*dz2), ptopA((cI+1)*dx2,(dI+1)*dz2), ptopA(cI*dx2,(dI+1)*dz2)];
+      var mine2 = (pIdx===co.p && cI===co.c && dI===co.d);
+      var rk2 = rankOf(co.t, cI, dI, pIdx, D);
+      ap.push('<polygon points="'+ptsStr(q5)+'" style="fill:'+(mine2 ? VC.dp : mix(VC.dp,9))+'"/>');
+      if(mine2) mineA = [TXA + (q5[0][0]+q5[2][0])/2, Y0 + (q5[0][1]+q5[2][1])/2];
+      if(dz2 > 2.4)
+        ah.push('<g class="cgrow"><polygon points="'+ptsStr(q5)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk2+'"><title>'
+          + esc('腔（PP'+pIdx+' · 副本'+dI+(D.cp>1?' · 段'+cI+'∪'+(2*D.cp-1-cI):'')+'）· 持有者 = 同坐标 TP 组 ×'+D.tp+'\n点击定位 r'+rk2+'（保持当前 h 片）')+'</title></polygon></g>');
+    }
+    for(cI=1;cI<D.cp;cI++) ap.push(ln(ptopA(cI*dx2,0), ptopA(cI*dx2,BD2), 'stroke:'+VC.cp+';stroke-width:.8;stroke-opacity:.75'));
+    var swD = dz2>4?.7:.35;
+    for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.65'));
+    if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
+    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
+    var rx2 = BW2*C + 10, ry2 = BW2*S - THA*0.2;
+    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 7, VC.dp, 'start', 'font-weight="700"'));
+    ap.push(txt(rx2, ry2+10, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 6.6, 'var(--pt-fg3)', 'start'));
+    if(pIdx===0){
+      var fm3 = ptopA(BW2*0.55, 0);
+      ap.push(txt(fm3[0]+26, fm3[1]-8, 's ← '+DIMN.cp+'×'+D.cp, 8, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
+      var zm3 = ptopA(0, BD2*0.5);
+      ap.push(txt(zm3[0]-30, zm3[1]-16, 'b ← '+DIMN.dp+'×'+D.dp, 8, VC.dp, 'end', 'font-weight="800"'));
+    }
+    parts.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ap.join('')+'</g>');
+    hits.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ah.join('')+'</g>');
+  }
+
+  /* ═══ 左栏读数：本卡在四个形态里各是哪一腔、各多少字节 ═══ */
+  var RX = 24, RW = 190, RY = 96;
+  function row(y, k, v, col){
+    parts.push(txt(RX, y, esc(k), 7.8, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(RX+RW, y, v, 8.4, col||'var(--pt-fg)', 'end', 'font-weight="700"'));
+  }
+  function hr(y){ parts.push(ln([RX, y], [RX+RW, y], 'stroke:var(--pt-bds);stroke-width:.7')); }
+  function head(y, t2, col){ parts.push(txt(RX, y, esc(t2), 9.2, col||'var(--pt-fg)', 'start', 'font-weight="800"')); }
+  parts.push(txt(RX, RY, '读数 · 这张卡 g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(RX, RY+12, '(tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+')　点右边任意格换卡', 7.2, 'var(--pt-fg3)', 'start'));
+  head(RY+32, '① 参数系 W·G·O —— 同一腔'); hr(RY+36);
+  row(RY+49, 'ℓ ← PP', 'L'+(co.p*lps)+'–L'+((co.p+1)*lps-1), VC.pp);
+  row(RY+62, 'h ← TP', '['+fmt(co.t*hK)+', '+fmt((co.t+1)*hK)+')', VC.tp);
+  row(RY+75, 'e ← EP', D.moe ? 'E'+(me.ep*kE)+'–E'+((me.ep+1)*kE-1) : '—（无 MoE）', D.moe?VC.ep:'var(--pt-fg3)');
+  row(RY+90, 'W 权重', fmtGB(wB)+' GB · 2B/参');
+  row(RY+103, 'G 梯度', fmtGB(gB)+' GB · 2B/参', MEMC.g);
+  row(RY+116, 'O 优化器态', fmtGB(oB)+' GB · 12B/参', 'var(--pt-fg2)');
+  parts.push(txt(RX, RY+128, 'G 在 AllReduce 前各算各的；O 常驻、只在更新一步读写', 6.4, 'var(--pt-fg3)', 'start'));
+  head(RY+148, '② 激活体腔 A', VC.dp); hr(RY+152);
+  row(RY+165, 'b ← DP', '副本'+co.d, VC.dp);
+  row(RY+178, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
+  row(RY+191, 'A 激活', fmtGB(aB)+' GB · 在途'+(Math.abs(aMub-Math.round(aMub))<0.05?Math.round(aMub):aMub.toFixed(1))+'μb', VC.dp);
+  parts.push(txt(RX, RY+203, ACT_T===null ? '按峰值（不看时间）——买卡的依据' : '走带 t='+Math.round(ACT_T*100)+'% 此刻的读数', 6.4, 'var(--pt-fg3)', 'start'));
+  hr(RY+216);
+  row(RY+229, '合计', fmtGB(tot)+' / '+D.hbm+' GB', tot>cap?'var(--pt-danger)':'var(--pt-fg)');
+  parts.push(txt(RX, RY+241, '含碎片/预留 '+fmtGB(rsvB)+' GB'+(otmpB>0?' · 更新临时 '+fmtGB(otmpB)+' GB':''), 6.4, 'var(--pt-fg3)', 'start'));
+  /* 引线：读数 → 图上那两格（左右联动看得见，不靠读者自己找） */
+  if(mineW) parts.push(ln([RX+RW+8, RY+90], mineW, 'stroke:var(--pt-fg3);stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.65'));
+  if(mineA) parts.push(ln([RX+RW+8, RY+165], mineA, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
+
+  /* ═══ 四形态 × 生命周期表：切分之外的全部差异都在这张表里 ═══ */
+  var TBX = 36;
+  parts.push(txt(TBX, TBY-8, '四个形态的全部差异：切分同（W·G·O）/ 不同（A），剩下的只是字节、DP 语义、一步之内的生死', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  var CX = {name:TBX+4, space:TBX+196, bytes:TBX+392, dp:TBX+540, life:TBX+736, bar:TBX+920};
+  var BARW = 110;
+  parts.push(txt(CX.bar, TBY+3, '一步之内', 6.6, 'var(--pt-fg3)', 'start'));
+  var FORMS = [
+    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参 · '+fmtGB(wB)+' GB',  dp:'复印 ×'+D.dp+' · 逐字节相同',        life:'常驻整步',                    bar:'w'},
+    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参 · '+fmtGB(gB)+' GB',  dp:'各算各的 → AllReduce 后相同',        life:'反向逐层长出 · 更新后清零',    bar:'g'},
+    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参 · '+fmtGB(oB)+' GB', dp:'复印（本口径无 ZeRO 分片）',          life:'常驻 · 仅更新一步读写',        bar:'o'},
+    {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途μb涨落 · '+fmtGB(aB)+' GB', dp:'b 被真切（不是复印）',           life:'前向攒 · 反向放（1F1B）',      bar:'a'}
+  ];
+  FORMS.forEach(function(r, ri){
+    var y5 = TBY + 18 + ri*17;
+    parts.push('<rect x="'+TBX+'" y="'+(y5-11)+'" width="1010" height="16" style="fill:'+(ri%2?mix('var(--pt-fg)',3):'transparent')+'"/>');
+    parts.push('<rect x="'+CX.name+'" y="'+(y5-8)+'" width="8" height="8" style="fill:'+r.sw+';stroke:var(--pt-bds);stroke-width:.5"/>');
+    parts.push(txt(CX.name+13, y5, esc(r.name), 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    parts.push(txt(CX.space, y5, esc(r.space), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.bytes, y5, esc(r.bytes), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.dp, y5, esc(r.dp), 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(CX.life, y5, esc(r.life), 7.6, 'var(--pt-fg2)', 'start'));
+    /* 存在感小条：这一档在一步之内什么时候在场 */
+    var bx = CX.bar, by = y5-8, base = y5-1;
+    parts.push(ln([bx,base],[bx+BARW,base],'stroke:var(--pt-bds);stroke-width:.6'));
+    if(r.bar==='w') parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+solid('var(--pt-fg)',58)+';stroke-width:2'));
+    if(r.bar==='o'){
+      parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+MEMC.opt+';stroke-width:2.4'));
+      parts.push(ln([bx+BARW*.88,by],[bx+BARW,by],'stroke:'+MEMC.otmp+';stroke-width:3'));
+    }
+    if(r.bar==='g') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.45).toFixed(1)+','+base+' '+(bx+BARW*.9).toFixed(1)+','+by+' '+(bx+BARW*.93).toFixed(1)+','+base+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.g+';stroke-width:1.6"/>');
+    if(r.bar==='a') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.28).toFixed(1)+','+by+' '+(bx+BARW*.62).toFixed(1)+','+by+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.act+';stroke-width:1.6"/>');
+  });
+  if(ACT_T!==null){
+    var cxT = CX.bar + BARW*clamp(ACT_T,0,1);
+    parts.push(ln([cxT, TBY+6],[cxT, TBY+18+3*17+2], 'stroke:'+MEMC.otmp+';stroke-width:1;stroke-dasharray:3 2'));
+    parts.push(txt(cxT, TBY+18+3*17+12, '此刻', 6.4, MEMC.otmp, 'middle', 'font-weight="700"'));
+  }
+
+  parts.push(txt(RX, H-28, '点任意格 = 定位持有那一腔的卡（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）· 点 PP 标签换段', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  parts.push(txt(RX, H-14, D.moe
+    ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构 · 参数系格的持有者跨 b/s 复用（DP/CP 不切权重）'
+    : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡 · 激活格逐 (b,s) 各归各', 8, 'var(--pt-fg2)', 'start'));
+
+  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
+  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
+    + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
+    + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
+    + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
+    + '<span class="pt-chip">每格 = 一个腔 · 点格定位持有卡</span>'
+    + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'" title="W 2B + G 2B + O 12B 同一套切分（托盘三层厚度）；A 另一套（b·s 真切）">W·G·O 同切分 · A 另一套</span>'
+    + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>';
   $('stageNote').hidden = true;
   $('detach').hidden = true;
 }
@@ -8331,6 +8617,9 @@ function renderDetail(D){
   if(!D.ok){ el.hidden = true; return; }
   /* 同 renderRankMem：高亮是过路的，不配一张写死某一个 rank 的读出卡 */
   if(ui.hlSel){ el.hidden = true; return; }
+  /* 全局切分视角：读数已经画进左栏 SVG（四形态逐份账），这张浮卡在右上角
+     会压住激活体那列托盘——同一屏两份读数还盖图，收起来。 */
+  if(ui.view==='solid' && ui.persp==='grid'){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
     if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'||ui.view==='story'){ el.hidden = (sel===null); if(sel===null) return; }
     el.hidden = false;
@@ -9308,7 +9597,7 @@ document.addEventListener('click', function(ev){
     render();
   }
   else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
-  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
+  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); ui.hlSel = false; render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
@@ -9480,6 +9769,9 @@ window.addEventListener('message', function(ev){
      只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
   if(d.type==='pto:state'){
     if(VIEWS.some(function(x){ return x.id===d.view; })) ui.view = d.view;
+    /* solid 视图的子视角（双链映射/交集腔/全局切分）也开给宿主：组合工作台的
+       「全局切分」tab 要在不重载 iframe 的前提下切到 view=solid&p=grid。 */
+    if(d.persp==='map'||d.persp==='cav'||d.persp==='grid') ui.persp = d.persp;
     if(COMM_DIMS.indexOf(d.cut)>=0) ui.cutDim = d.cut;
     if(d.preset){
       var p2 = PRESETS.filter(function(x){ return x.id===d.preset; })[0];
