@@ -1396,6 +1396,114 @@ function wCutBlocks(D, ppRank, L){
   return o;
 }
 function cutColor(c){ return (c && c !== 'none' && VC[c]) ? VC[c] : 'color-mix(in srgb, var(--pt-fg) 22%, var(--pt-bg))'; }
+
+/* ══ 四类对象模型：谁被哪把刀切 → 因此发生哪一次通信 ═══════════════════════
+   这张图原先只把「切分 → 通信」这条链给**权重**接通了：点权重带里某一块留 TP/EP，
+   点梯度留 DP，剩下的档一律什么都不画。可「什么都不画」在三种完全不同的情形下
+   长得一模一样——
+     ① 压根没挨刀，所以真的不通信（碎片/预留）；
+     ② 挨了刀、这套配置下确实不通信（优化器态，非 ZeRO）；
+     ③ 挨了刀也通信，只是这张图没人接线（激活、优化器步临时区）。
+   ③ 是漏，①② 是答案；三者画面相同，读者就分不出「这里没有」和「这里没画」。
+   所以把每一类对象自己的**刀**与**因此发生的通信**写成一张显式的表，让地面流量带、
+   卡对卡通信线、读出卡三处都来问它。memSibDims 的注释早就立过这个规矩——
+   「渲染与读出卡共用同一份，免得两处各写一遍、往后改一处漏一处」——这里照办，
+   顺手把散在渲染函数里那份 W_CUT_MAP（opBytes 的 cut 字段的第二份手抄本）也收进来。
+
+   下面这段物理语义才是这张表真正的内容，代码只是把它抄下来：
+
+     权重 W —— TP 切 h、EP 分 e、PP 定段；DP 方向上它是**复印**不是切。切开的那几片
+       要在算子进出口拼回全长，于是有 TP 的 AllGather / Reduce-Scatter（TP 区的
+       换轴器）与 EP 的 AllToAll（token 去专家所在的卡、算完回来）。复印件之间
+       不为「凑齐一份权重」说话，所以 W 没有 DP 通信。
+
+     梯度 ∇W —— 与权重是**同一份参数的同一份切分**，刀完全跟随 W，一根不多一根不少。
+       它多出来的那一次通信在 DP 方向：dp 个副本各自吃不同的微批、各算出一份偏导，
+       步末要 AllReduce 成同一份，否则下一步各副本的权重会漂开。
+       反过来 TP/EP 方向不再单独记一次：那两刀在前向已经把张量拼回去过，反向是
+       同一条路反着走，不是新的一次通信。
+
+     优化器态 —— 刀同样跟随权重（fp32 主参数 + m + v，逐参数一一对应）。常规 DP 下
+       它**步内不通信**：每个副本各存一整份，m/v/主参数都是本地读写，AllReduce 完的
+       梯度到手就地更新。只有 ZeRO 把它按 DP 再分片，才会多出 param AllGather /
+       grad Reduce-Scatter；而本页画的是非 ZeRO 口径——memParts 里那 12 B/参数
+       说的正是「整份都压在本卡上」。所以这一档「不画通信」是**答案**：理由是
+       「这套配置下没有」，与碎片那种「压根没有」不是一回事，读出卡要把这句写出来。
+
+     优化器步·临时区 —— 它跟随的是**梯度**，不是权重。memParts 里这一档的定义就是
+       「梯度归约成 fp32 的缓冲」——它就是 DP 那一次 AllReduce 落在显存上的那一块，
+       同一件事的两面。所以它的通信照抄梯度那一条，只是标签上要说清「它就是这一次」。
+
+     激活 A —— DP 切 b、CP 切 s、SP 切 s、PP 定段；**TP 不切它**：SP 只在算子之间把 s
+       切开省显存，进 TP 区之前要 AllGather 回全长（memParts 里 act 用的正是整条
+       D.hidden，没有除 tp）。它是这张图上唯一沿 PP 走的东西——段与段之间 P2P 传的
+       就是激活；CP 组之间 AllGather 的是 KV（s 被切开了，算全局注意力得把别人那几段
+       的 KV 取回来）；SP↔TP 之间换轴换的还是它。
+
+     碎片/预留 —— 不参与任何一把刀，真的不通信。
+
+   sib（点亮兄弟卡的轴）与 comm（画出来的通信）是**两件事**，不能合成一列：
+   sib 问「谁和本卡凑齐一整份」，comm 问「本卡为这一份要跟谁说话」。激活最能说明
+   区别——它沿 TP 有通信（换轴）却不沿 TP 分片，沿 DP 分片（各吃各的微批）却不为
+   分片本身通信。合成一列的那一刻，这张图就开始把复制读成切分。 */
+var MEM_OBJ = {
+  w:   {sib:['pp','tp','ep'],
+        comm:[{d:'tp', t:'AllGather / Reduce-Scatter · TP 换轴器'},
+              {d:'ep', t:'AllToAll · EP 分桶'}]},
+  g:   {sib:['pp','tp','ep'], follow:'跟随权重的切法——同一份参数的同一份切分',
+        comm:[{d:'dp', t:'梯度 AllReduce · DP 组（反向末尾一次）'}]},
+  opt: {sib:['pp','tp','ep'], follow:'跟随权重的切法',
+        comm:[],
+        silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。ZeRO 按 DP 再分片才有 param AllGather——这张图不画 ZeRO。'},
+  otmp:{sib:['pp','tp','ep'], follow:'跟随梯度——它就是那一次归约的落脚处',
+        comm:[{d:'dp', t:'梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'}]},
+  act: {sib:['pp','cp'],
+        comm:[{d:'pp', t:'P2P · 段→段传的就是它'},
+              {d:'cp', t:'AllGather(KV) · CP 组（s 被切开，注意力要全局）'},
+              {d:'tp', t:'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'}]},
+  rsv: {sib:[], comm:[], silent:'不参与任何一把刀，真的不通信。'}
+};
+/* 权重带里每一块被哪把刀切。这本是 opBytes(D) 的 cut 字段，但那份要 D 才拿得到，
+   而问「点开的这一块该画哪条通信」的地方（渲染循环里、读出卡里）手边常常只有一个
+   key 串；embed / lm_head 又是 wCutBlocks 在 opBytes 之外补上的两块。所以这里留一份
+   按 id 的静态查表——**只此一份**，原先渲染函数里那个同名的 W_CUT_MAP 已经删掉。 */
+var MEM_WCUT = {'attn.q':'tp', 'attn.kv':'tp', 'attn.core':'none', 'attn.out':'tp',
+  'router':'none', 'experts':'ep', 'mlp.gate/up':'tp', 'mlp.down':'tp', 'norm×2':'none',
+  'embed':'tp', 'lm_head':'tp'};
+/* key → 这一档（或权重带里这一块）的对象条目。'w:xxx' 是权重档的子块：它继承权重的
+   语义，但**只保留切它那一把刀**——experts 只挨 EP，attn.* 只挨 TP，router/norm 一刀
+   没挨。整档 w 是「这条带里各块的刀合起来」，单块是「我这一块的刀」，两级各答各的。 */
+function memObj(key){
+  if(!key) return {sib:[], comm:[]};
+  if(key.indexOf('w:') === 0){
+    var id9 = key.slice(2), ct9 = MEM_WCUT[id9] || 'none';
+    /* embed / lm_head 只住一个 stage（PP 那一刀把它们留在首末段），ℓ 轴上没有兄弟——
+       沿 PP 找过去只会找到没有这一块的卡，点亮它们是在说一件假的事。 */
+    var sb9 = (id9 === 'embed' || id9 === 'lm_head') ? ['tp']
+            : ct9 === 'ep' ? ['pp','ep'] : (ct9 === 'tp' ? ['pp','tp'] : ['pp']);
+    var cm9 = ct9 === 'tp' ? [MEM_OBJ.w.comm[0]] : (ct9 === 'ep' ? [MEM_OBJ.w.comm[1]] : []);
+    return {sib:sb9, comm:cm9, cut:ct9,
+            silent: cm9.length ? '' : '这一块一刀没挨（复制或无参），本来就没有「拼回全长」这件事要跟人商量。'};
+  }
+  return MEM_OBJ[key] || {sib:[], comm:[]};
+}
+/* 选中的块被哪几根轴切——渲染（点亮兄弟卡）与读出卡（写哪几组）共用同一份。
+   现在这份从 MEM_OBJ 里取，不再自己抄一遍。 */
+function memSibDims(key){ return memObj(key).sib; }
+/* 三处画通信的地方（容量视图的地面流量带、卡对卡通信线、读出卡的「对应通信」行）
+   问的是同一个问题：这一维的通信现在该不该画。
+   没点开任何一档时给的是**概览口径**——TP/EP/DP/PP 四条组级通信照旧全画，与改动前
+   逐像素一致；CP 不在概览里（它从来没被画过，塞进默认会改掉所有人熟悉的那一屏）。
+   点开某一档之后换成**这一档自己的**那几条：这时问的已经不是「这套切法一共有哪些
+   通信」，而是「我盯着的这份东西为什么要过网络」——两个问题，答案本就不该一样，
+   所以选中后出现概览里没有的 PP/CP 不是自相矛盾，是换了个问题。 */
+function memCommWant(key){
+  var w9 = {tp:false, cp:false, pp:false, dp:false, ep:false};
+  if(!key){ w9.tp = true; w9.ep = true; w9.dp = true; w9.pp = true; return w9; }
+  memObj(key).comm.forEach(function(c9){ w9[c9.d] = true; });
+  return w9;
+}
+
 /* g 给了就按**那一张卡**算（见 rankLoad）；不给就是这一段的标准卡，读数与从前一字不差
    —— 聚合口径（每卡容量、A3 自检、四刀贡献对比）都走不给 g 这一路，免得被单卡的
    路由不均带偏：那些问的是「这套切法给一张卡留下多少」，不是「第 41 张卡此刻多少」。 */
@@ -3913,19 +4021,51 @@ function netScene(D, g, box, step){
      只是画法是自定义的抬升贝塞尔，不是 edgeSVG，而且**没有 PP**（PP 那一刀
      在两种子状态下都没人画过）。这里只在 netOff 下补 PP、不重画 TP/DP/EP，
      避免同一件事画两遍；整网内容打开（!ui.netOff）时那三维完全没有对应的
-     「组」概览（drawCommArcs 画的是算子级弧线，不是组拓扑），四维都在这里补齐。 */
+     「组」概览（drawCommArcs 画的是算子级弧线，不是组拓扑），四维都在这里补齐。
+
+     ── 这一层现在也听读出卡的 ──
+     原先这张表**完全不看 memSel**：右边读出卡点开「梯度」，地面流量带已经收窄到
+     只剩 DP 了，这里的 PP 线却还在，读者会以为「梯度也沿 PP 走」。于是这四条
+     （加新补的 CP 一条）一律过一遍 memCommWant：没点开时是概览口径、四条照旧，
+     点开某一档就只留那一档真正触发的那几条。CP 是这次新补的一条——它只在
+     **点开激活档**时出现，因为概览口径里从来没有它（见 memCommWant 的注释）。 */
   if(ui.commOn && !lowDetail && ui.cardMode && hasSel){
     var pF9c = cutPP ? co.p : 0;
     var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
     var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
+    /* memSel 挂的是「点开它时那张卡」（见 renderRankMem 的 memSelG 守卫）——换了卡
+       之后、renderRankMem 还没把它清空之前不能借用上一张卡的选中档，这里自己
+       比一次 g，不依赖两个渲染函数谁先跑。下面地面流量带那一段用的是同一个值。 */
+    var memSel9 = (ui.memSelG === g) ? ui.memSel : null;
+    var cw9 = memCommWant(memSel9);
+    /* physSel9 =「物理平铺 + 容量视图 + 已点开某一档」。下面那段地面流量带在物理平铺下
+       整段不画（它的端点是 kOfR 按列算的，物理平铺把卡挪走了，两边对不上），于是这一格
+       原本一条通信线都没有。没点开档时**照旧空着**——那是这一格一直以来的样子，不动它；
+       可一旦点开某一档，读出卡已经白纸黑字写着「对应通信：DP 梯度 AllReduce」，画面上却
+       一根线都没有，那就成了自相矛盾。所以只在点开档时，用这一层的真实锚点
+       （chainCardAnchor）把那几条补上——真实锚点在物理平铺下照样准。 */
+    var physSel9 = physOn && !!memSel9;
     var CARD_COMM = [
-      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1 && commLit('tp'), prim:'allreduce',
-       label:'TP AllReduce · 组内同步', metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
-      {dim:'pp', on: cutPP && D.pp > 1 && commLit('pp'), prim:'p2p',
+      /* 点开激活档时 TP 这条换个说法：那时它传的不是 partial sum 而是激活本身，
+         SP 把 s 切开、进 TP 区前 AllGather 回全长——同一根线，两件事，标签得跟着换，
+         不然读者会把「激活的换轴」读成「权重的归约」。
+         两道门是两个问题，要一起过：commLit(dim) 是读者在配置面板里把这一维的连线
+         关掉了（「我现在不想看 TP」），cw9[dim] 是读出卡点开的那一档本来就不走这一维
+         （「梯度不经 TP」）——前者是取景，后者是事实，谁都不能替谁。 */
+      {dim:'tp', on: cw9.tp && commLit('tp') && (!ui.netOff || physSel9) && cutTP && D.tp > 1, prim:'allreduce',
+       label: memSel9 === 'act' ? 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'
+                                : 'TP AllReduce · 组内同步',
+       metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
+      /* CP：s 被切成 cp 段，算全局注意力得把别人那几段的 KV 取回来。
+         netOff 下这一条交给下面的地面流量带画（那一屏的语汇是贴地的抬升弧），
+         这里只补它够不着的两种情形：整网内容打开、以及物理平铺（见 physSel9）。 */
+      {dim:'cp', on: cw9.cp && commLit('cp') && cutCP && D.cp > 1 && (!ui.netOff || physSel9), prim:'allgather',
+       label:'AllGather(KV) · CP 组（激活）', metric: commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9c)},
+      {dim:'pp', on: cw9.pp && commLit('pp') && cutPP && D.pp > 1, prim:'p2p',
        label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
-      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1 && commLit('dp'), prim:'allreduce',
+      {dim:'dp', on: cw9.dp && commLit('dp') && (!ui.netOff || physSel9) && cutDP && D.dp > 1, prim:'allreduce',
        label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
-      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1 && commLit('ep'), prim:'alltoall',
+      {dim:'ep', on: cw9.ep && commLit('ep') && (!ui.netOff || physSel9) && cutEP && D.moe && D.ep > 1, prim:'alltoall',
        label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
     ];
     var ccLblN = 0;
@@ -3953,10 +4093,16 @@ function netScene(D, g, box, step){
      它 TP/EP/DP 组兄弟之间的通信，一根带一个对端。
      默认三种都画——口径同整网视图（drawCommArcs 也是 TP/CP/EP/PP/DP 一起画，
      不等谁被点开）。右侧读出卡（FR-3，权重带展开的那张「图例」）点开某一档，
-     画面才收窄到那一档真正触发的通信：权重带点到 TP 切的块（attn.q/kv/out、
-     embed、mlp…）只留 TP，点到 EP 切的块（experts）只留 EP，点梯度档只留 DP
-     梯度 AllReduce；点到不切/无参那几档（attn.core、router、norm、优化器态、
-     激活、碎片）本来就不产生这一类通信，什么都不画——这是答案，不是漏画。
+     画面才收窄到**那一档真正触发的**通信——该画哪几条现在一律去问 memCommWant，
+     它背后那张 MEM_OBJ 才是「谁被哪把刀切 → 因此发生哪一次通信」的唯一出处。
+     原先这一段自己列了三个 flag（wantTP/wantEP/wantDP）外加一份手抄的 W_CUT_MAP，
+     于是四类对象里只有权重和半条梯度接上了线：点激活什么都不画（错——激活正是
+     PP P2P / CP AllGather(KV) / SP↔TP 换轴传的东西），点优化器步临时区也什么都不画
+     （错——那一档的定义就是 DP 梯度 AllReduce 的 fp32 缓冲，它就是那一次通信本身）。
+     现在：点权重带里 TP 切的块只留 TP，EP 切的块只留 EP，点梯度 / 优化器步临时区
+     留 DP AllReduce，点激活留 CP（PP 与 SP↔TP 那两条在上面那层「卡对卡通信线」里，
+     那一层有真实锚点、还能覆盖物理平铺）；点优化器态与碎片什么都不画——
+     这是答案不是漏画，而**两者不是同一个答案**，读出卡的「对应通信」那一行分别写清。
      连线画法与整网视图的通信弧同一套：源卡底部中心到目标卡底部中心的二次
      贝塞尔，弧顶在屏幕坐标上抬起一截，白描边光晕垫底、两端描小圆点——贴地
      直角折线在斜穿中间不相干的卡时会糊成一堆折角，抬离地面就不会，也不需要
@@ -3966,24 +4112,21 @@ function netScene(D, g, box, step){
      chainCardAnchor 画的卡对卡连线覆盖的是同一件事（TP/PP/DP/EP 组内连线），
      且用的是真实锚点，物理平铺下继续画。 */
   if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn){
-    var W_CUT_MAP = {'attn.q':'tp', 'attn.kv':'tp', 'attn.core':'none', 'attn.out':'tp',
-      'router':'none', 'experts':'ep', 'mlp.gate/up':'tp', 'mlp.down':'tp', 'norm×2':'none',
-      'embed':'tp', 'lm_head':'tp'};
-    /* memSel 挂的是「点开它时那张卡」（见 renderRankMem 的 memSelG 守卫）——换了卡
-       之后、renderRankMem 还没把它清空之前不能借用上一张卡的选中档，这里自己
-       比一次 g，不依赖两个渲染函数谁先跑。 */
-    var memSel9 = (ui.memSelG === g) ? ui.memSel : null;
-    var wantTP9 = true, wantEP9 = true, wantDP9 = true;
-    if(memSel9 === 'g'){ wantTP9 = false; wantEP9 = false; }
-    else if(memSel9 === 'w'){ wantDP9 = false; }
-    else if(memSel9 && memSel9.indexOf('w:') === 0){
-      var selCut9 = W_CUT_MAP[memSel9.slice(2)] || 'none';
-      wantTP9 = selCut9 === 'tp'; wantEP9 = selCut9 === 'ep'; wantDP9 = false;
-    } else if(memSel9){ wantTP9 = false; wantEP9 = false; wantDP9 = false; }  // opt/otmp/act/rsv：不通信
-    wantTP9 = wantTP9 && cutTP && D.tp > 1 && commLit('tp');
-    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1 && commLit('ep');
-    wantDP9 = wantDP9 && cutDP && D.dp > 1 && commLit('dp');
-    if(wantTP9 || wantEP9 || wantDP9){
+    /* memSel9 / cw9 在上面那段（卡对卡通信线）已经按同一张卡算过一次，两段共用
+       同一个答案——同一屏上两层线各问各的，迟早会出现「一层收窄了另一层没收」。
+       commLit(dim) 那道门仍旧要单独过一次：它是读者在配置面板里把这一维的连线
+       关掉了（取景），跟 cw9「这一档本来就不走这一维」（事实）是两个问题。 */
+    var wantTP9 = cw9.tp && commLit('tp') && cutTP && D.tp > 1;
+    var wantEP9 = cw9.ep && commLit('ep') && cutEP && D.moe && D.ep > 1;
+    var wantDP9 = cw9.dp && commLit('dp') && cutDP && D.dp > 1;
+    /* CP 这一条是这次新补的：s 被切成 cp 段，注意力要算全局，得把别的段的 KV
+       AllGather 回来——传的是**激活**，所以它只跟着激活档出现，概览口径里没有它。
+       PP 那一条不放在这里：这一段的端点是 kOfR() 按列算的，而 PP 组的成员只差
+       一个段号 p、kOfR 根本不看 p，所有对端都会落回源卡自己那一列（kDst===kSrc
+       被直接跳过）。它属于上面那层「卡对卡通信线」——那一层用 chainCardAnchor
+       真实锚点、按 p2p 原语只连相邻段，本来就已经在 netOff 下画着了。 */
+    var wantCP9 = cw9.cp && commLit('cp') && cutCP && D.cp > 1;
+    if(wantTP9 || wantEP9 || wantDP9 || wantCP9){
       var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
       var wFront9 = cutPP ? segW(co.p)[0] : 0;
       var kSrc9 = kOfR(co);
@@ -4039,10 +4182,21 @@ function netScene(D, g, box, step){
           commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9));
       }
       if(wantDP9){
-        /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法 */
+        /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法。
+           点开的若是**优化器步·临时区**，走的还是这一条——那一档不是另一次通信，
+           它就是这一次归约在显存上占的那块 fp32 缓冲，所以标签跟着换个说法，
+           线还是同一根，不另画一层假装有两次。 */
         var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
-        floorLab(atDP9, '梯度 AllReduce · DP 组（反向）', VC.dp,
+        floorLab(atDP9, memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
+                                           : '梯度 AllReduce · DP 组（反向）', VC.dp,
           commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9));
+      }
+      if(wantCP9){
+        /* CP 组内 AllGather(KV)：实线不打虚——它发生在**前向**（注意力要读全序列的
+           KV），与 DP 那条只在反向末尾发生的虚线正好是一对照。 */
+        var atCP9 = floorBand(groupMembers('cp', g, D).filter(function(r9){ return r9 !== g; }), VC.cp, null, 1.5);
+        floorLab(atCP9, 'AllGather(KV) · CP 组（前向，激活）', VC.cp,
+          commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRepFloor9));
       }
     }
   }
@@ -9296,20 +9450,81 @@ function cavityBox3D(ax, ay, az, o){
     + body + '</svg>';
 }
 
-/* 选中的块被哪几根轴切——渲染（点亮兄弟卡）与读出卡（写哪几组）共用同一份，
-   免得两处各写一遍、往后改一处漏一处。 */
-function memSibDims(key){
-  if(!key) return [];
-  if(key.indexOf('w:') === 0){
-    var id9 = key.slice(2);
-    if(id9 === 'experts') return ['pp','ep'];
-    if(id9 === 'embed' || id9 === 'lm_head') return ['tp'];   /* 只住一个 stage，ℓ 轴不适用 */
-    if(id9 === 'router' || id9 === 'norm×2') return ['pp'];   /* 复制块：只有 PP 把它分进各段 */
-    return ['pp','tp'];                                        /* attn.* / mlp.* 走 TP */
+/* ── 关系链小图：这四档不是四笔并列的账，是一条环 ──────────────────────────
+   前面那几张图（成分条、体腔）答的都是「这一档自己是怎么被切出来的」——每一档
+   自问自答，四档之间看不出任何关系。可读者真正要问的下一句是「它们互相什么关系」：
+     前向   A × W          → out      （所以 W 要在，A 是算出来的）
+     反向   ∂L/∂out × A    → ∇W       （所以 A **必须留着**——这正是它占显存的理由）
+     更新   Opt + ∇W       → W(t+1)   （所以 ∇W 要等优化器步用完才放得掉）
+   这三行原先散在几条 note 里（「反向才产生，优化器步用完才放得掉」「和权重是同时
+   压在卡上的两份」）。文字讲得清顺序，讲不清**环**：W 是链尾又是链头，A 跨前向反向
+   两行——一句一句读过去，读者得自己在脑子里把它接起来，接错了也没人告诉他。画出来
+   就不用接。
+   语汇不另起：格子＝一份东西，色＝MEMC 里那一档自己的签名色，与卡上那条带、成分条
+   逐格同色；当前这一档描一圈实边、别的档淡着——「我在链上的哪个位置」一眼可见。
+   淡着的那几格**可点**（data-act="memblockpick"，与图例那几行同一个手势）：链是拿来
+   走的，看见上游却跳不过去，等于画了一半。 */
+function memChainFig(key){
+  /* 权重带里的某一块也算在权重那一格上：它是 W 的一部分，在这条链上没有独立位置。
+     优化器步临时区落在 ∇W 那一格——它就是那一次归约的缓冲，不是链上第五种东西。 */
+  var K9 = key.indexOf('w:') === 0 ? 'w' : key;
+  if(K9 === 'rsv') return '';      /* 碎片不在这条链上：硬画一格反而是编造关系 */
+  var HERE = {w:'w', g:'g', opt:'opt', otmp:'g', act:'act'}[K9];
+  /* 描边用**真正点开的那一档**的签名色，填色仍是那一格自己的：优化器步临时区挂在
+     ∇W 那一格上，于是画出来是「绿格子外面一圈琥珀」——这一圈正是「我这一档就住在
+     这个位置」的意思，比再多写一行字直接。另外四档两个色本来就相同，看不出差别。 */
+  var HCOL = MEMC[K9] || MEMC[HERE];
+  var CH = 15, ROW = 22, TOP = 20, X0 = 26, out = '';   /* TOP 留出的那一条是给回勾与它那行小字走的 */
+  /* 一格：k 非空就是四档之一（有色、可点），否则是链上的中间量（out / ∂L/∂out），
+     它们不占显存、不在图例里，画成虚框——「这两样不是你卡上的账」也得说清。 */
+  function cell(x, y, w, k, txt9){
+    var on9 = k && k === HERE;
+    var col9 = k ? MEMC[k] : 'var(--pt-fg3)';
+    var g9 = '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + CH
+      + '" rx="3" style="fill:' + (k ? col9 : 'none') + ';fill-opacity:' + (k ? (on9 ? .95 : .3) : 0)
+      + ';stroke:' + (on9 ? HCOL : 'var(--pt-bd)') + ';stroke-width:' + (on9 ? 1.5 : .7)
+      + (k ? '' : ';stroke-dasharray:2 2') + '"/>'
+      + '<text x="' + (x + w / 2).toFixed(1) + '" y="' + (y + CH / 2 + 3)
+      + '" style="font-size:8px;font-weight:' + (on9 ? 800 : 600) + ';fill:'
+      + (on9 ? 'var(--pt-fg)' : 'var(--pt-fg2)') + '" text-anchor="middle">' + esc(txt9) + '</text>';
+    return k ? ('<g data-act="memblockpick" data-mk="' + esc(k) + '" style="cursor:pointer">' + g9 + '</g>') : g9;
   }
-  if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp') return ['pp','tp','ep'];
-  if(key === 'act') return ['pp','cp'];
-  return [];                                                   /* rsv：不参与任何一把刀 */
+  function op(x, y, s9){
+    return '<text x="' + x.toFixed(1) + '" y="' + (y + CH / 2 + 3.5)
+      + '" style="font-size:9px;fill:var(--pt-fg3)" text-anchor="middle">' + esc(s9) + '</text>';
+  }
+  function rowLab(y, s9){
+    return '<text x="0" y="' + (y + CH / 2 + 3) + '" style="font-size:8px;fill:var(--pt-fg3)">' + esc(s9) + '</text>';
+  }
+  /* 三行同一套列位：两个操作数 + 一个产物，箭头永远在同一个 x 上——三行的
+     「→ 右边」于是排成一竖列，读者一眼看得出「这一步产出的是什么」。 */
+  var A9 = X0, W9 = 46, B9 = X0 + W9 + 14, C9 = B9 + W9 + 20;
+  var rows = [
+    {lab:'前向', a:['act','激活 A'], o:'×', b:['w','权重 W'],  c:[null,'out']},
+    {lab:'反向', a:[null,'∂L/∂out'], o:'×', b:['act','激活 A'], c:['g','梯度 ∇W']},
+    {lab:'更新', a:['opt','优化器态'], o:'+', b:['g','梯度 ∇W'], c:['w','W(t+1)']}
+  ];
+  rows.forEach(function(r9, i9){
+    var y9 = TOP + i9 * ROW;
+    out += rowLab(y9, r9.lab)
+      + cell(A9, y9, W9, r9.a[0], r9.a[1]) + op(A9 + W9 + 7, y9, r9.o)
+      + cell(B9, y9, W9, r9.b[0], r9.b[1]) + op(B9 + W9 + 10, y9, '→')
+      + cell(C9, y9, W9 + 8, r9.c[0], r9.c[1]);
+  });
+  /* 收尾那根回勾：更新产出的 W(t+1) 就是下一步前向读的那个 W——链首链尾是同一格。
+     不画这一笔，三行读起来像三件互不相干的事，「环」这个最要紧的性质就丢了。
+     绕到整幅图**上面**走，不横穿第一行——从中间抄近路会压在 out 那一格上，
+     读者要先分辨「这根线是不是穿过了它」才能往下读。 */
+  var yB = TOP + 2 * ROW + CH / 2, xR = C9 + W9 + 8 + 5, xW = B9 + W9 / 2, yU = 9;
+  out += '<path d="M' + xR.toFixed(1) + ' ' + yB + ' H' + (xR + 8).toFixed(1) + ' V' + yU
+    + ' H' + xW.toFixed(1) + ' V' + (TOP - 4)
+    + '" style="fill:none;stroke:var(--pt-fg3);stroke-width:.7;stroke-dasharray:3 2"/>'
+    + '<path d="M' + (xW - 2.6).toFixed(1) + ' ' + (TOP - 4.5) + ' L' + xW.toFixed(1) + ' ' + (TOP - 0.5)
+    + ' L' + (xW + 2.6).toFixed(1) + ' ' + (TOP - 4.5) + ' z" style="fill:var(--pt-fg3)"/>'
+    + '<text x="' + (xW + 6).toFixed(1) + '" y="' + (yU - 1.5)
+    + '" style="font-size:7.5px;fill:var(--pt-fg3)">下一步的 W</text>';
+  return '<svg width="' + (xR + 12).toFixed(0) + '" height="' + (TOP + 2 * ROW + CH + 4)
+    + '" style="margin:2px 0 0;overflow:visible">' + out + '</svg>';
 }
 
 function memBlockDetail(D, g, key){
@@ -9391,9 +9606,13 @@ function memBlockDetail(D, g, key){
                       {cell:MEMC[key]})
         + '<span class="rm-cap">'+esc('①权重体 ℓ×h×e · 本卡 = 三根轴的交集那一格')+'</span></div>');
       kv('层段', 'ℓ '+lps+'/'+D.layers+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'（PP 定段，不切张量）');
+      /* 为什么这三档画的是**同一张**①腔：它们的刀不是各自定的，是跟着权重走的。
+         这句话不写出来，读者只会以为「三张图长得一样」是偷懒。 */
+      if(MEM_OBJ[key] && MEM_OBJ[key].follow) kv('切法', esc(MEM_OBJ[key].follow));
     }
     if(key === 'w')   note = '每块的刀各不相同——点下面任意一块，才谈得上「本卡拿的是哪一份」。';
-    if(key === 'g')   note = '反向才产生，优化器步用完才放得掉——和权重是同时压在卡上的两份。';
+    if(key === 'g')   note = '每个 DP 副本各吃各的微批、各算出一份偏导，步末归约成同一份——'
+      + '不归约，下一步各副本的权重就漂开了。';
     if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，'
       + '也是「换 optimizer 能省多少」的全部战场。';
     if(key === 'otmp') note = '只在一步的最后 12% 冒出来：梯度归约成 fp32 + 主参数更新的临时量。'
@@ -9425,13 +9644,60 @@ function memBlockDetail(D, g, key){
       note = '每张卡的分配历史不同，这一截本来就不是同一个数。';
     }
   }
+  /* ── 这一档在关系链上的位置 ──────────────────────────────────────────────
+     摆在所有「它自己怎么被切」的图后面：先答完「我是什么」，才轮到「我和另外三个
+     什么关系」。碎片那一档没有位置（memChainFig 返回空串），不硬塞。
+     说明只写图上读不出来的那一句——链上的箭头已经把顺序画完了，这里补的是
+     「所以显存上会怎样」，那才是这一屏在意的后果。 */
+  var chain9 = memChainFig(key);
+  if(chain9){
+    var CHCAP = {
+      w:   '前向要读它、更新要写它——链首链尾同一格，所以它整步都在卡上。',
+      g:   '反向由 A 与 ∂L/∂out 生出来，要等更新那一步用完才放得掉；这段时间它和权重同时压着卡。',
+      opt: '只在更新那一步露面，前向反向都用不到它——但它整步都得留着，因为 m/v 是跨步累积的。',
+      otmp:'它是更新那一步里 ∇W 的 fp32 中转，只在这一步的末段存在，与上下两档挤在同一个时刻。',
+      act: '前向留下、反向消费——∂L/∂out × A 这一步要用到它，这就是它非占着显存不可的理由。'
+    };
+    var ck9 = key.indexOf('w:') === 0 ? 'w' : key;
+    figs.push('<div class="rm-fig">' + chain9
+      + '<span class="rm-cap">' + esc(CHCAP[ck9] || '') + '淡的那几格可点，跳过去。</span></div>');
+  }
+  /* ── 对应通信：这一档被切开之后，本卡为它跟谁说话 ────────────────────────
+     这是「切分 → 通信」那条链的收尾。三种「没有」要分开说，不能都写成一句空白：
+     刀落下了但这套配置下用不着（优化器态）、压根没挨刀（碎片、复制块）、
+     以及刀本身就没落下（比如 CP=1 时激活的 AllGather(KV)）。第三种照旧列出来但
+     标灰——「这套配置里没有」和「这类对象没有」是两句不同的话，混着说就白列了。 */
+  var mo9 = memObj(key), commLine = '';
+  /* 一维「在不在」要同时看两件事：配置里它有几份，以及工具条上那把刀有没有被拨掉。
+     读出卡原先只看份数——于是把 EP 刀关掉之后，它照旧写着「EP 组 7 张已点亮」，
+     可阵列上一张也没亮（渲染那边是看 cutEP 的）。两处必须看同一组条件。 */
+  var KNIFE9 = {tp:ui.kTP, cp:ui.kCP, pp:ui.kPP, dp:ui.kDP, ep:ui.kEP};
+  function dimLive9(d9){
+    if(!KNIFE9[d9]) return false;
+    return d9 === 'ep' ? (D.moe && D.ep > 1) : (D[d9] > 1);
+  }
+  /* 「这一条为什么没有」有三种理由，得分开说，否则读者只能猜：刀被人拨掉了（还能拨回来）、
+     模型压根不是 MoE（得先换模型，不是把份数调大）、这一维就只有一份（这套并行度如此）。 */
+  function dimWhy9(d9){
+    if(!KNIFE9[d9]) return '（'+DIMN[d9]+' 这把刀在工具条上被拨掉了）';
+    return (d9 === 'ep' && !D.moe) ? '（本模型不是 MoE，没有专家要分桶）'
+                                   : '（本配置 '+DIMN[d9]+'=1，这一刀没落下）';
+  }
+  if(mo9.comm && mo9.comm.length){
+    commLine = '<div class="rm-note">对应通信：'
+      + mo9.comm.map(function(c9){
+          var live9 = dimLive9(c9.d);
+          return '<b style="color:'+(live9 ? VC[c9.d] : 'var(--pt-fg3)')+'">'+DIMN[c9.d]+'</b> '
+            + esc(c9.t) + (live9 ? '' : '<span style="opacity:.7">'+dimWhy9(c9.d)+'</span>');
+        }).join('<br>')
+      + '</div>';
+  } else if(mo9.silent){
+    commLine = '<div class="rm-note">对应通信：<b>无</b>——'+esc(mo9.silent)+'</div>';
+  }
   /* 兄弟卡：写清点亮的是哪几组、各几张，颜色与阵列里的棱同色。
      组员名单不列——EP 组 8 张全写出来是一串没人读的数字，阵列上亮着的就是名单。 */
   var sibLine = '';
-  var sibDs = memSibDims(key).filter(function(dm9){
-    if(dm9 === 'ep') return D.moe && D.ep > 1;
-    return D[dm9] > 1;
-  });
+  var sibDs = memSibDims(key).filter(dimLive9);
   if(sibDs.length){
     sibLine = '<div class="rm-note">兄弟卡已点亮：'
       + sibDs.map(function(dm9){
@@ -9446,6 +9712,7 @@ function memBlockDetail(D, g, key){
     + '<dl>'+rows.join('')+'</dl>'
     + figs.join('')
     + (note ? '<div class="rm-note">'+esc(note)+'</div>' : '')
+    + commLine
     + sibLine
     + '</div>';
 }
