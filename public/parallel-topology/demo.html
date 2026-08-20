@@ -230,6 +230,79 @@
   position:absolute; top:10px; right:14px; z-index:6; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
   justify-content:flex-end; max-width:min(82%, 940px);
 }
+/* ── 舞台右上只留一颗配置钮 ────────────────────────────────────────────
+   原来这条工具条上并排摆着七八组控件（模式 / 五刀 / 物理 / 四个机位 / 换层 /
+   数据 / 显示），窄一点的容器里它自己换行、糊成三四行压在画布上（工作台那两格
+   400–620px 宽时最明显）。全部收进一颗按钮里的面板，画布上只剩这颗钮和「搜索」
+   ——搜索是**提问**（我想找哪张卡），其余是**配置**（这一屏怎么画），两件事。
+   形制照 vendor/rubik-cube 那颗：圆钮 + 一枚推杆图标，点开是一列分组。 */
+.pt-cfg{position:relative; display:inline-flex}
+.pt-cfgbtn{
+  width:38px; height:38px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2); box-shadow:0 2px 8px rgba(0,0,0,.08);
+}
+.pt-cfgbtn:hover{background:var(--pt-s2); border-color:var(--pt-bds); color:var(--pt-fg)}
+.pt-cfgbtn.is-on{background:var(--pt-fg); border-color:var(--pt-fg); color:var(--pt-bg)}
+/* 面板**常驻 DOM**、只用 display 收起：工作台（combo-workbench）靠翻进 iframe 点
+   [data-act=mvpick] 来同步「数据标注」那几类，节点如果随开合进出 DOM，它就同步
+   不到了。收起时不占位、不吃事件，行为与「不在」一样。 */
+.pt-cfgpanel{display:none}
+.pt-cfgpanel.is-open{
+  display:block; position:absolute; top:44px; right:0; z-index:22; width:302px;
+  max-height:min(74vh, 640px); overflow:auto;
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:10px 12px 12px;
+  box-shadow:0 14px 40px rgba(0,0,0,.18);
+}
+.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd)}
+.pt-cfgpanel .cg:first-child{border-top:0; padding-top:2px}
+.pt-cfgpanel h6{
+  margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--pt-fg3); font-weight:700;
+}
+.pt-cfgpanel .cgrow{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.pt-cfgpanel .pb, .pt-cfgpanel .pt-sw, .pt-cfgpanel .pt-seg button{height:28px; font-size:12px}
+.pt-cfgpanel .pt-sw{padding:0 12px 0 9px}
+/* 并行度：五个数字格 + 一颗「应用」。**不即时生效**——一位一位敲的中间值
+   （tp 从 16 敲成 2 时会先经过 1）每一下都重推一次整张图，画面乱闪、还会
+   顺带弹出一堆约束报错。攒在草稿里，按「应用」或回车才落。 */
+.pt-cfgpanel .pnum{display:flex; gap:5px; flex-wrap:wrap; align-items:flex-end}
+.pt-cfgpanel .pnum label{display:flex; flex-direction:column; gap:2px; font-size:9.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel .pnum label b{font-weight:700; letter-spacing:.06em}
+.pt-cfgpanel .pnum input{
+  width:46px; height:28px; padding:0 6px; border-radius:8px; border:1px solid var(--pt-bd);
+  background:var(--pt-bg); color:var(--pt-fg); font-family:var(--pt-mono); font-size:12px; text-align:center;
+}
+.pt-cfgpanel .pnum input:focus{outline:none; border-color:var(--pt-fg2)}
+.pt-cfgpanel .pnum .derv{
+  height:28px; min-width:46px; padding:0 6px; border-radius:8px; border:1px dashed var(--pt-bd);
+  display:flex; align-items:center; justify-content:center; color:var(--pt-fg2);
+  font-family:var(--pt-mono); font-size:12px;
+}
+.pt-cfgpanel .capply{
+  height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--pt-fg);
+  background:var(--pt-fg); color:var(--pt-bg); font-size:12px; font-weight:700;
+}
+.pt-cfgpanel .capply:disabled{background:var(--pt-s2); border-color:var(--pt-bd); color:var(--pt-fg3)}
+.pt-cfgpanel .cnote{margin-top:5px; font-size:10.5px; color:var(--pt-fg3); line-height:1.45}
+/* 逐类勾选（通信 / 图层 / 数据标注）复用数据下拉那套勾的长相 */
+.pt-cfgpanel button.mvi{
+  display:flex; width:100%; align-items:center; gap:8px; text-align:left; margin-top:1px;
+  border:0; background:none; padding:5px 6px; border-radius:8px; color:var(--pt-fg); font-size:12px; font-weight:600;
+}
+.pt-cfgpanel button.mvi:hover{background:var(--pt-s2)}
+.pt-cfgpanel button.mvi s{
+  flex:none; width:16px; height:16px; border-radius:5px; border:1.5px solid var(--pt-bds);
+  text-decoration:none; color:transparent; font-size:10px; line-height:14px; text-align:center;
+}
+.pt-cfgpanel button.mvi.is-on s{background:var(--pt-fg2); border-color:var(--pt-fg2); color:var(--pt-s1)}
+.pt-cfgpanel button.mvi em{margin-left:auto; font-style:normal; font-size:9px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel button.mvi[disabled]{opacity:.34}
+.pt-cfgpanel .acts{display:flex; gap:6px; margin:4px 0 2px}
+.pt-cfgpanel .acts button{
+  flex:1; height:24px; border-radius:7px; border:1px solid var(--pt-bd);
+  background:var(--pt-s2); color:var(--pt-fg2); font-size:11px; font-weight:600;
+}
+.pt-cfgpanel .acts button:hover{border-color:var(--pt-bds); color:var(--pt-fg)}
 /* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
 .pt-stagetitle{
@@ -764,6 +837,14 @@ var ui = {
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false, zoomFB:null,   /* 全量优先；超大规模除外，见 v1Layout。zoomFB={s,t,m}：时间·流里点开的那个 F/B 块 */
   act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, kPhys:false, viewTab:'3d',
+  /* 通信图层原来只有 ui.commOn 一个总开关：五种通信一起亮、一起灭，想单看
+     「EP 的 AllToAll 到底连了谁」就只能连着 TP 的换轴弧、DP 的梯度环一起看，
+     一屏弧线互相压。改成按**维**逐类（每一维的通信本来就是一种原语：TP =
+     AllGather/Reduce-Scatter、CP = Ring/Ulysses、EP = AllToAll、PP = P2P、
+     DP = 梯度 AllReduce），commOn 退回作总闸。 */
+  comm:{tp:true, cp:true, ep:true, pp:true, dp:true},
+  cfgOpen:false,      /* 舞台上那颗配置钮的面板开合（顶栏只留搜索，其余全收进它） */
+  cfgDraft:null,      /* 并行度那五格的草稿：敲到一半的值不落地，按「应用」/回车才落 */
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
@@ -917,6 +998,11 @@ function urlLoad(){
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
+  /* commk=tp,ep：只画这几类通信。缺省全开，所以只有**关掉过**的链接才带它。 */
+  if(q.has('commk')){
+    var ck0 = String(q.get('commk')).split(',');
+    ['tp','cp','ep','pp','dp'].forEach(function(k0){ ui.comm[k0] = ck0.indexOf(k0) >= 0; });
+  }
   if(q.get('legend')==='1') ui.legendOn = true;
   if(q.get('mods')==='1') ui.moduleView = true;
   /* mv=ngpmt：数据标注开着哪几类（默认全开，所以只有**关掉过**的链接才带这个参数）。
@@ -969,6 +1055,10 @@ function urlWrite(){
   }
   if(ui.view==='chain' && ui.netOff && !ui.memFill) q.set('mem','0');
   if(ui.view==='chain' && !ui.commOn) q.set('comm','0');
+  if(ui.view==='chain'){
+    var ck1 = ['tp','cp','ep','pp','dp'].filter(function(k1){ return ui.comm[k1] !== false; });
+    if(ck1.length !== 5) q.set('commk', ck1.join(','));
+  }
   if(ui.view==='chain' && ui.legendOn) q.set('legend','1');
   if(ui.view==='chain' && ui.moduleView) q.set('mods','1');
   if(ui.view==='chain'){
@@ -992,6 +1082,25 @@ function urlWrite(){
   var s = q.toString();
   history.replaceState(null, '', s ? '?'+s : location.pathname);
 }
+
+/* 告诉宿主：画面上现在还叠着通信没有。工作台拿它联动下方抽屉切到「通信观测」——
+   上面看现象（流量带），下面看量化与归因（Sankey / Routing / 时间轴）。逐类开关
+   也走这一口：五类全关等价于这一层关掉了，宿主不该还以为在看通信。 */
+function ptoNotifyComm(){
+  if(window.parent && window.parent !== window)
+    window.parent.postMessage({type:'pto:comm', on: ui.commOn && commLitN() > 0}, '*');
+}
+/* 这一维的通信这次画不画：总闸 + 它自己那一档。五处画通信的地方（整网的算子级
+   弧线 drawCommArcs、卡对卡的组拓扑 CARD_COMM、容量视图的地面流量带）共用它，
+   免得三处各写各的判断、开关只对其中一处生效。 */
+function commLit(d9){ return ui.commOn && ui.comm[d9] !== false; }
+function commLitN(){ return COMMK.reduce(function(a9, k9){ return a9 + (commLit(k9[0]) ? 1 : 0); }, 0); }
+/* 逐类开关的名录：维 · 按钮上的名字 · 这一维走的原语（提示语用） */
+var COMMK = [['tp','TP','AllGather(s→h) / Reduce-Scatter(h→s)：进出 TP 区的换轴器'],
+             ['cp','CP','Ring / Ulysses(All-to-All) / 朴素 AllGather：attention 要看到全序列'],
+             ['ep','EP','All-to-All dispatch / combine：token 去专家那儿走一趟再回来'],
+             ['pp','PP','P2P Send/Recv：段边界上只传激活（正向 H×4、反向 ∂H×4）'],
+             ['dp','DP','梯度 AllReduce：一个 step 只有一次，反向（画成虚线）']];
 
 /* ═════════ 校验与推导（FR-1） ═════════ */
 function divisorsOf(n){ var d=[],i; for(i=1;i<=n;i++) if(n%i===0) d.push(i); return d; }
@@ -3154,7 +3263,7 @@ function netScene(D, g, box, step){
 
     /* TP：卡维度下对端是另一**行**的卡；非卡维度 TP 没有独立空间轴（KT=1），
        弧线画在算子自己的两片之间——被锯开的那条缝就是要通信的地方。 */
-    if(cutTP){
+    if(cutTP && commLit('tp')){
       var nRS = nUV('attention_reduce_scatter') || nUV('o_proj');
       var nOP = nUV('o_proj') || nRS;
       if(nRS){
@@ -3193,7 +3302,7 @@ function netScene(D, g, box, step){
        只有 attention 要看到全序列，所以这一维的通信**只有一处**，锚在 KV 上。
        原语随实现而变（Ring 逐跳传 KV / Ulysses All-to-All 换轴 / 朴素 AllGather），
        这里标朴素那一种：它是三者里唯一能在这张图上原样画出来的。 */
-    if(cutCP && D.cp > 1){
+    if(cutCP && D.cp > 1 && commLit('cp')){
       var nKV = nUV('key_tensor') || nUV('attention_core');
       if(nKV){
         var mCP = null, c4;
@@ -3220,7 +3329,7 @@ function netScene(D, g, box, step){
       }
     }
     /* EP：AllToAll。屏上画着的那几个对端才连（TP 未展开时另一半没画，连不了）。 */
-    if(cutEP){
+    if(cutEP && commLit('ep')){
       var nA2A = nUV('moe_all_to_all_dispatch');
       if(nA2A){
         var gF2 = rankOf(tF, co.c, dF, pF, D), mEP = null;
@@ -3241,7 +3350,7 @@ function netScene(D, g, box, step){
     }
     /* PP：段边界 P2P，只沿焦点那一列画——它讲的是「边界在哪、传的是什么」，
        每列都画一遍就成了栅栏。 */
-    if(cutPP && D.pp > 1){
+    if(cutPP && D.pp > 1 && commLit('pp')){
       var nPN = nUV('block_post_norm');
       if(nPN){
         var mPP = null, p3;
@@ -3258,7 +3367,7 @@ function netScene(D, g, box, step){
       }
     }
     /* DP：梯度 AllReduce（反向，虚线）。副本挨个相连。 */
-    if(cutDP && KD > 1){
+    if(cutDP && KD > 1 && commLit('dp')){
       var nDP = nUV('o_proj');
       if(nDP){
         var mDP = null, d3;
@@ -3725,13 +3834,13 @@ function netScene(D, g, box, step){
     var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
     var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
     var CARD_COMM = [
-      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1, prim:'allreduce',
+      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1 && commLit('tp'), prim:'allreduce',
        label:'TP AllReduce · 组内同步', metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
-      {dim:'pp', on: cutPP && D.pp > 1, prim:'p2p',
+      {dim:'pp', on: cutPP && D.pp > 1 && commLit('pp'), prim:'p2p',
        label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
-      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1, prim:'allreduce',
+      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1 && commLit('dp'), prim:'allreduce',
        label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
-      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1, prim:'alltoall',
+      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1 && commLit('ep'), prim:'alltoall',
        label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
     ];
     var ccLblN = 0;
@@ -3786,9 +3895,9 @@ function netScene(D, g, box, step){
       var selCut9 = W_CUT_MAP[memSel9.slice(2)] || 'none';
       wantTP9 = selCut9 === 'tp'; wantEP9 = selCut9 === 'ep'; wantDP9 = false;
     } else if(memSel9){ wantTP9 = false; wantEP9 = false; wantDP9 = false; }  // opt/otmp/act/rsv：不通信
-    wantTP9 = wantTP9 && cutTP && D.tp > 1;
-    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1;
-    wantDP9 = wantDP9 && cutDP && D.dp > 1;
+    wantTP9 = wantTP9 && cutTP && D.tp > 1 && commLit('tp');
+    wantEP9 = wantEP9 && cutEP && D.moe && D.ep > 1 && commLit('ep');
+    wantDP9 = wantDP9 && cutDP && D.dp > 1 && commLit('dp');
     if(wantTP9 || wantEP9 || wantDP9){
       var kOfR = function(c9){ return ((KT > 1 ? c9.t : 0)*KC + (KC > 1 ? c9.c : 0))*KD + c9.d; };
       var wFront9 = cutPP ? segW(co.p)[0] : 0;
@@ -7518,6 +7627,20 @@ document.addEventListener('keydown', function(ev){
     }
   } else if(ev.key === 'Escape'){ ui.qOpen = ''; render(); }
 });
+/* 并行度那几格按回车 = 点「应用」（填完数字顺手一敲，不用再去够按钮） */
+document.addEventListener('keydown', function(ev){
+  if(ev.key !== 'Enter') return;
+  if(!ev.target.matches || !ev.target.matches('[data-cfgd]')) return;
+  var ap9 = document.querySelector('[data-act="cfgapply"]');
+  if(ap9 && !ap9.disabled){ ap9.click(); ev.preventDefault(); }
+});
+/* 配置面板：点外面收起（点里面要能连着改好几项，不能一点就关）。
+   面板是常驻 DOM 的，所以判定用 .pt-cfg 这层壳，不能用「有没有这个节点」。 */
+document.addEventListener('click', function(ev){
+  if(!ui.cfgOpen) return;
+  if(ev.target.closest && ev.target.closest('.pt-cfg')) return;
+  ui.cfgOpen = false; ui.cfgDraft = null; render();
+}, true);
 /* 点面板外面收起。用捕获阶段，免得被画布那几个 stopPropagation 吃掉。 */
 document.addEventListener('click', function(ev){
   if(!ui.qOpen) return;
@@ -7779,39 +7902,9 @@ function renderChainBar(D){
      得先看它有没有点亮才知道现在是什么状态，多一道弯。 */
   /* 通信开关：不是刀（不改变切分），是一个图层——所以长得像图层胶囊（.pb），
      不混进刀那组 segmented。刀关着就没有那一维的通信，弧线自然跟着刀走。 */
-  /* 图例 + 通信：两颗独立胶囊并排常年占位，而且都是「画面上叠不叠这层注解」的
-     同一件事——收进一颗图标按钮里，点开才是一列勾选（仿「数据」那颗下拉的
-     交互），默认收着不占地方。⚙ 只是个通用「显示设置」符号，不代表切分。 */
-  var dispN = (ui.legendOn?1:0) + (ui.commOn?1:0) + (ui.moduleView?1:0);
-  /* 计数徽标只在真有开着的图层时才画：dispN=0 时 <b></b> 是个空字符串，
-     但它照样吃圆底+边框样式，糊成一颗没有数字的空心圆点——看着像哪里坏了。 */
-  var dispBtn = '<span class="pt-mv pt-disp">'
-    + '<button class="pb'+(dispN?' is-on':'')+'" data-act="dispmenu" title="显示设置：图例 / 通信 / 模块视图" style="font-size:16px;padding:3px 7px">'
-    + '⚙</button>'
-    + (ui.dispOpen ? '<div class="pt-mvmenu">'
-        + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么">'
-          + '<s>✓</s>图例</button>'
-        + '<button class="mvi'+(ui.commOn?' is-on':'')+'" data-act="commtoggle" title="算子级通信：TP 的 AllGather/Reduce-Scatter、EP 的 AllToAll、PP 的 P2P、DP 的梯度 AllReduce——各锚在产生它的那个算子上">'
-          + '<s>✓</s>通信</button>'
-        + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网正视/侧视图不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——只影响这两张整网图，rank 方阵/3D 卡不受影响">'
-          + '<s>✓</s>模块视图</button>'
-        + '</div>' : '')
-    + '</span>';
-  /* 数据标注多选：图上那些读数（σ/Amax、∇、ms、tok、W→W'）分五类，逐类开关。
-     它们是**同一份快照的不同侧面**，所以是一颗按钮里的多选，不是五颗独立开关。 */
-  var mvN = MVIEWS.filter(function(m){ return ui.mv[m[0]]; }).length;
-  var mvBtn = '<span class="pt-mv">'
-    + '<button class="pb'+(mvN?' is-on':'')+'" data-act="mvmenu" style="--c:'+VC.pp+'"'
-    + ' title="数据标注：图上读数分五类（数值 / 梯度 / 性能 / MoE / 训练），可逐类显示或隐藏">'
-    + '数据<b>'+(mvN||'')+'</b><i>⌄</i></button>'
-    + (ui.mvOpen ? '<div class="pt-mvmenu">'
-        + '<div class="acts"><button data-act="mvall">全选</button><button data-act="mvnone">全部隐藏</button></div>'
-        + MVIEWS.map(function(m){
-            return '<button class="mvi'+(ui.mv[m[0]]?' is-on':'')+'" data-act="mvpick" data-k="'+m[0]+'"'
-              + ' style="--c:'+m[2]+'" title="'+esc(m[3])+'"><s>✓</s>'+esc(m[1])+'<em>'+esc(m[4])+'</em></button>';
-          }).join('')
-        + '</div>' : '')
-    + '</span>';
+  /* 图例 / 通信 / 模块视图 / 数据标注这四组原来是舞台上两颗独立下拉（⚙ 与「数据」）。
+     现在它们和其余控件一起收进那颗配置钮的面板里——见下面 cfgPanel 那段，
+     数据标注那一组仍然裹在 .pt-mv 里，工作台靠这层壳把它藏掉并翻进来同步。 */
   /* 全局搜索：属性搜索——层 / rank / 刀（维度+组号）。 */
   /* 属性搜索控件：标签在前，右边是「＋ 搜索」。三个状态由 ui.qOpen 决定：
      ''=收起 · 'menu'=在选属性 · '<属性名>'=在填这个属性的值。 */
@@ -7890,9 +7983,64 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = '<span class="pt-zone">' + cBtn + kBtns + physBtn + '</span>'
-    + '<span class="pt-zone">' + vBtns + lBtns + '</span>'
-    + '<span class="pt-zone">' + mvBtn + dispBtn + '</span>';
+  /* ── 舞台上只剩一颗配置钮 ────────────────────────────────────────────
+     上面那些控件一个没删，只是全部搬进这颗钮的面板里按「这一屏在讲什么」分组：
+     模式 → 切分 → 并行度 → 机位 → 通信 → 图层 → 数据标注，由粗到细，与原来
+     那条工具条的排序一致。搜索仍然留在画布上（#qbar）：它是**提问**，
+     其余是**配置**。 */
+  var draft9 = ui.cfgDraft || {};
+  function pnum9(k9, nm9, dis9){
+    var v9 = (draft9[k9] !== undefined) ? draft9[k9] : cfg[k9];
+    return '<label><b style="color:'+(VC[k9]||'var(--pt-fg3)')+'">'+nm9+'</b>'
+      + '<input type="number" min="1" data-cfgd="'+k9+'" value="'+v9+'"'+(dis9?' disabled':'')+'></label>';
+  }
+  var dirty9 = !!ui.cfgDraft && Object.keys(ui.cfgDraft).some(function(k9){ return +ui.cfgDraft[k9] !== +cfg[k9]; });
+  var moe9 = +cfg.experts > 0;
+  var cfgPanel = '<div class="pt-cfgpanel'+(ui.cfgOpen?' is-open':'')+'" id="cfgPanel">'
+    + '<div class="cg"><h6>模式</h6><div class="cgrow">' + cBtn + '</div></div>'
+    + '<div class="cg"><h6>落哪几把刀</h6><div class="cgrow">' + kBtns + physBtn + '</div></div>'
+    + '<div class="cg"><h6>并行度</h6><div class="pnum">'
+      + pnum9('tp','TP') + pnum9('cp','CP') + pnum9('pp','PP') + pnum9('ep','EP', !moe9)
+      + '<label><b style="color:'+VC.dp+'">DP</b><span class="derv" title="= world/(TP·CP·PP)，自动">'+(D.dpOk?D.dp:'—')+'</span></label>'
+      + '<button class="capply" data-act="cfgapply"'+(dirty9?'':' disabled')+'>应用</button>'
+    + '</div><div class="cnote">DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。</div></div>'
+    + '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
+    + '<div class="cg"><h6>通信连线</h6>'
+      + '<div class="cgrow">' + swBtn('commtoggle', '通信图层', ui.commOn,
+          ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
+      + '<div class="acts"><button data-act="commall">全选</button><button data-act="commnone">全部隐藏</button></div>'
+      + COMMK.map(function(c9){
+          var can9 = {tp:D.tp>1, cp:D.cp>1, ep:D.moe&&D.ep>1, pp:D.pp>1, dp:D.dp>1}[c9[0]];
+          return '<button class="mvi'+(ui.comm[c9[0]]!==false?' is-on':'')+'" data-act="commpick" data-k="'+c9[0]+'"'
+            + (ui.commOn && can9 ? '' : ' disabled')
+            + ' title="'+esc(c9[2])+'"><s>✓</s><span style="color:'+VC[c9[0]]+'">'+c9[1]+'</span>'
+            + '<em>'+(can9 ? '×'+({tp:D.tp,cp:D.cp,ep:D.ep,pp:D.pp,dp:D.dp}[c9[0]]) : '未切')+'</em></button>';
+        }).join('')
+    + '</div>'
+    + '<div class="cg"><h6>图层</h6>'
+      + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么"><s>✓</s>图例</button>'
+      + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网正视/侧视不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts 这几个功能块"><s>✓</s>模块视图</button>'
+    + '</div>'
+    /* 数据标注这一组仍然裹在 .pt-mv 里：工作台把它提到台面统一出，靠
+       `.pt-mv:not(.pt-disp){display:none}` 把格子里这一份藏掉，并翻进来点
+       [data-act=mvpick] 同步状态。壳换了名字它就两头落空。 */
+    + '<span class="pt-mv"><div class="cg"><h6>数据标注</h6>'
+      + '<div class="acts"><button data-act="mvall">全选</button><button data-act="mvnone">全部隐藏</button></div>'
+      + MVIEWS.map(function(m){
+          return '<button class="mvi'+(ui.mv[m[0]]?' is-on':'')+'" data-act="mvpick" data-k="'+m[0]+'"'
+            + ' title="'+esc(m[3])+'"><s>✓</s>'+esc(m[1])+'<em>'+esc(m[4])+'</em></button>';
+        }).join('')
+    + '</div></span>'
+    + '</div>';
+  /* 钮上那枚计数 = 现在叠着几层注解（图例 / 模块视图 / 通信里开着的类），
+     面板收起时也看得出「画面上还压着东西」。 */
+  var cfgN9 = (ui.legendOn?1:0) + (ui.moduleView?1:0) + commLitN();
+  $('stagebar').innerHTML = '<span class="pt-cfg">'
+    + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="配置"'
+    + ' title="配置：模式 / 落哪几把刀 / 并行度 / 机位 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
+    + '<svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'
+    + '<path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg>'
+    + '</button>' + cfgPanel + '</span>';
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
@@ -9037,6 +9185,17 @@ function render(){
 /* ═════════ 事件 ═════════ */
 document.addEventListener('input', function(ev){
   var t = ev.target;
+  /* 并行度那五格：敲进草稿就好，不重画——重画会把输入框换掉、第二位就打不进去，
+     而且一位一位地推图（tp 从 16 敲成 2 的路上会先经过 1）画面会乱闪。
+     只手动把「应用」那颗按钮的可用态切一下。 */
+  if(t.matches('[data-cfgd]')){
+    var kd9 = t.getAttribute('data-cfgd'), vd9 = parseInt(t.value, 10);
+    if(!ui.cfgDraft) ui.cfgDraft = {};
+    ui.cfgDraft[kd9] = isNaN(vd9) ? cfg[kd9] : Math.max(1, vd9);
+    var ap9 = document.querySelector('[data-act="cfgapply"]');
+    if(ap9) ap9.disabled = !Object.keys(ui.cfgDraft).some(function(k9){ return +ui.cfgDraft[k9] !== +cfg[k9]; });
+    return;
+  }
   if(t.matches('[data-cfg]')){
     var k = t.getAttribute('data-cfg'), v = parseInt(t.value,10);
     if(isNaN(v)) return;
@@ -9300,11 +9459,7 @@ document.addEventListener('click', function(ev){
      （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
      大面板抢同一片屏幕，留着没有意义。 */
   else if(act==='commtoggle'){
-    ui.commOn = !ui.commOn; ui.dispOpen = false; render();
-    /* 告诉宿主：通信层开了/关了。工作台拿它联动下方抽屉切到「通信观测」——
-       上面看现象（流量带），下面看量化与归因（Sankey / Routing / 时间轴）。 */
-    if(window.parent && window.parent !== window)
-      window.parent.postMessage({type:'pto:comm', on:ui.commOn}, '*');
+    ui.commOn = !ui.commOn; ui.dispOpen = false; render(); ptoNotifyComm();
   }
   else if(act==='netoff'){ ui.netOff = !ui.netOff; render(); }
   /* 整网 ⇄ 容量：二选一。切到容量时顺手把填充打开——「容量」这两个字就是在说
@@ -9335,6 +9490,29 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='layerclose'){ var liClose9 = ui.openLayer; ui.openLayer = null; startSqAnim(sqT, 0, liClose9); }
   else if(act==='noop'){ /* 浮层卡片自己的挡板：只为了别让点击透到背板关闭，什么都不做 */ }
+  else if(act==='cfgpanel'){ ui.cfgOpen = !ui.cfgOpen; if(!ui.cfgOpen) ui.cfgDraft = null; render(); }
+  /* 逐类通信：总闸关着时点某一类顺手把总闸也打开——读者点「EP」要的就是
+     「让我看 EP 这一路」，还要他先去开一次总闸是多一道弯。 */
+  else if(act==='commpick'){
+    var ck9 = b.getAttribute('data-k');
+    ui.comm[ck9] = ui.comm[ck9] === false;
+    if(ui.comm[ck9] && !ui.commOn) ui.commOn = true;
+    render(); ptoNotifyComm();
+  }
+  else if(act==='commall'){ COMMK.forEach(function(c9){ ui.comm[c9[0]] = true; }); ui.commOn = true; render(); ptoNotifyComm(); }
+  else if(act==='commnone'){ COMMK.forEach(function(c9){ ui.comm[c9[0]] = false; }); render(); ptoNotifyComm(); }
+  /* 并行度：草稿一次性落地。DP 不手填（world/(TP·CP·PP) 推出来），world 也不动
+     ——这里改的是「怎么切」，不是「有多少张卡」。 */
+  else if(act==='cfgapply'){
+    if(ui.cfgDraft){
+      Object.keys(ui.cfgDraft).forEach(function(k9){
+        var v9 = parseInt(ui.cfgDraft[k9], 10);
+        if(isFinite(v9) && v9 >= 1) cfg[k9] = v9;
+      });
+      ui.cfgDraft = null; activePreset = null; stopAnim();
+    }
+    render();
+  }
   else if(act==='mvmenu'){ ui.mvOpen = !ui.mvOpen; render(); }
   else if(act==='ghtoggle'){ ui.ghOpen = !ui.ghOpen; render(); }
   else if(act==='dispmenu'){ ui.dispOpen = !ui.dispOpen; render(); }
