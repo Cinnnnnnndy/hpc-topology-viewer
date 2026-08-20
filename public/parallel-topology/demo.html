@@ -197,8 +197,14 @@
   color:var(--pt-fg2); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:19px; white-space:nowrap;
 }
 .pt-ghc.is-on{background:var(--c); color:#fff}
+/* 选组 HUD 是四个机位唯一都在的那条控件——它读的也是 sel，所以来路也得说清楚：
+   过路高亮时不填实底，改成"虚线描边 + 本色文字"。跟画布上那圈虚线外框是同一句话，
+   只是换成了 HTML 的说法（SVG 里那圈用不上，按钮本来就有边框位可用）。 */
+.pt-ghc.is-on.is-hl{background:none; color:var(--c); box-shadow:inset 0 0 0 1.4px var(--c);
+  border:1px dashed var(--c); line-height:17px; padding:0 5px}
 .pt-ghc:hover{background:color-mix(in srgb, var(--pt-fg) 20%, transparent); color:var(--pt-fg)}
 .pt-ghc.is-on:hover{background:var(--c); color:#fff}
+.pt-ghc.is-on.is-hl:hover{background:none; color:var(--c)}
 /* 收起态：.pt-gh-groups 平时是 display:contents（对 flex 布局透明，四张组卡
    直接当 .pt-grouphud 自己的 flex item，量宽度、换行都跟没包过一层一样）。
    连全宽都装不下时才切成收起——这时把它整个藏起来，换一颗按钮站台。 */
@@ -612,6 +618,37 @@
 @keyframes mgrow{from{transform:scaleY(.04);opacity:0}to{transform:scaleY(1);opacity:1}}
 .cgrow{animation:cfade .55s ease-out both;animation-delay:.22s}
 @keyframes cfade{from{opacity:0}to{opacity:1}}
+/* ── 过路高亮的视觉语言（三个机位共用一套）─────────────────────────────
+   为什么不复用「选中」那套实线加粗：这一屏此刻亮着的那张卡有两种来路，读者
+   必须一眼分得出——
+     · 实线加粗 = **我在这儿点的**：浮读出卡、写进 URL、广播给宿主，退出要靠
+       再点一次或点空白；
+     · 虚线外框 = **别的视图点过来的**（宿主转来的 hl）：不落标签、不浮读出卡、
+       点画布空白就散。
+   两者若长得一样，读者就无从判断「这张卡是我选的还是它照过来的」，也就不知道
+   该去哪一格收手——这正是联动做出来却读不懂的根源。
+   外框而不是换填色：填色是这一屏自己的信息（载荷/切痕/维度色），被高亮借走
+   就等于抹掉一层真内容；外框长在图元**之外**，不占用任何已有的编码位。
+   脉冲慢而浅（1.7s、.45→1，无限循环）：只够说明「这是活的、来自别处」，
+   比 .pulse2 那种短促强闪弱得多——后者是「刚刚发生了一次变化」的一次性提示，
+   而过路高亮是一个会持续一段时间的状态，强闪会一直抢注意力。 */
+@keyframes hlpulse{0%,100%{opacity:.45} 50%{opacity:1}}
+.hlring{animation:hlpulse 1.7s ease-in-out infinite}
+/* 过路高亮的说明徽标：贴在舞台左下角，替代那张被刻意藏起来的读出卡回答
+   「这一片为什么亮着」。它不带任何逐卡读数（那正是读出卡被藏起来的理由），
+   只说来路与散掉的手势。 */
+.pt-hlbadge{
+  position:absolute; left:14px; bottom:14px; z-index:9;
+  display:flex; align-items:center; gap:7px;
+  background:var(--pt-bg); border:1px dashed var(--pt-fg3); border-radius:8px;
+  padding:5px 9px; font-family:var(--pt-mono); font-size:10.5px; color:var(--pt-fg2);
+  pointer-events:none; max-width:min(60%, 340px); line-height:1.5;
+}
+.pt-hlbadge b{color:var(--pt-fg); font-weight:800}
+.pt-hlbadge .hlk{
+  width:12px; height:12px; flex:none; border-radius:3px;
+  border:1.4px dashed var(--c, var(--pt-fg2)); background:none;
+}
 
 /* 窄窗：右侧工具条会折行往左长，居中的搜索会被它压住。这时搜索不再居中，
    退到左侧标题那一列；图例相应往下让，避开折成两行的工具条。
@@ -667,6 +704,10 @@
     <div class="pt-card pt-detach" id="detach" hidden></div>
     <div class="pt-legend" id="legend" hidden></div>
     <div class="pt-revbox" id="revbox" hidden></div>
+    <!-- 过路高亮的说明徽标：读出卡在这种状态下是**故意**藏起来的（见 renderDetail），
+         但一片虚线框亮在那儿却没有一句话解释来路，读者只会当成这一屏自己的选中。
+         这枚徽标补的就是那句话，不补读数。 -->
+    <div class="pt-hlbadge" id="hlBadge" hidden></div>
     <div class="pt-note" id="stageNote" hidden></div>
   </div>
   <footer class="pt-foot">
@@ -807,6 +848,20 @@ function clearHL(){
   if(ui.hlSel){ sel = null; ui.hlSel = false; had = true; }
   return had;
 }
+/* 这一屏此刻亮着的那张卡是不是「别处点过来的」。三个机位（3D/顶视 · 正视 ·
+   侧视）都要照这一条画虚线外框，判定必须只有一处——各写各的迟早会出现「正视
+   认为是过路的、侧视认为是选中的」这种自相矛盾的画面。
+   D 可以不传：只有在场景里判「哪张卡」时才需要 world 上界夹一次。 */
+function hlSelOn(D){
+  return !!ui.hlSel && sel !== null && (!D || sel < D.world);
+}
+/* 读者在这一屏**自己**点了一张卡：过路高亮到此为止，从这一刻起亮着的是选中。
+   为什么必须显式落这一句：hlSel 只是"当前 sel 的来路"，不清掉的话读出卡
+   （renderDetail / renderRankMem 都拿 !ui.hlSel 当闸）会一直藏着——实机表现
+   就是"从别的格点过来之后，在这一格点卡再也读不出东西了"。
+   hlLayer 不在这里动：层高亮和卡高亮是两条各管各的线（见 applyQuery 里
+   keepHL 那段），点一张卡不该顺手把另一格转过来的层照亮也抹掉。 */
+function takeSel(){ ui.hlSel = false; }
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
@@ -2150,6 +2205,7 @@ function netScene(D, g, box, step){
   /* g 在没选中时会回落到 0，那是给坐标算术用的默认值——但**高亮**不能跟着回落，
      否则 rank 0 永远亮着，「取消选中」就成了看不出效果的空操作。 */
   var hasSel = sel !== null && sel < D.world;
+  var hlS9 = hlSelOn(D);                     /* 亮着的这只卡是别处点过来的：给它加一圈虚线，见 hlSelOn */
   var root = IXg ? IXg.clu['decoder-stack'] : null;
   var GW = root ? root.width : 1000, GH = root ? root.height : 1700;
   /* 层板的高度得装得下这一层**真会画的东西**。decoder-stack 那个盒子只框住重复的
@@ -3575,6 +3631,21 @@ function netScene(D, g, box, step){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
             +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
         });
+        /* 过路高亮：在这只卡的 12 条棱**之外**再叠一遍虚线脉冲。
+           为什么不像正视/侧视那样套一个外框：3D 里这只卡是个透视投影的六面体，
+           它的"外框"在屏幕上是一个随机位变形的凸包，要正确算出来得先做一次凸包
+           求解——而棱本身已经是这只盒子的轮廓，沿着棱再走一遍虚线得到的是同一句
+           话，且任何机位（含正视/侧视/顶视用同一支 netScene 画的容量态）都自动
+           成立。DP 色而不是选中那档的 var(--pt-fg)：虚实之外再拉开一档色相，
+           缩得很小、看不出虚实时仍分得出来。 */
+        /* 不走 seg()：那支只吐 style，没有挂 class 的位置，而脉冲是 CSS 动画
+           （.hlring）——给 seg 加一个可选形参会让它在 99% 的调用点上多一次
+           无用的字符串拼接，这几条线自己写完整反而更干净。 */
+        if(meC && hlS9) CE.forEach(function(e){
+          body.push('<line class="hlring" x1="'+C8[e[0]][0].toFixed(1)+'" y1="'+C8[e[0]][1].toFixed(1)
+            +'" x2="'+C8[e[1]][0].toFixed(1)+'" y2="'+C8[e[1]][1].toFixed(1)
+            +'" style="stroke:'+VC.dp+';stroke-width:1.8;stroke-dasharray:4.5 3.2"/>');
+        });
         /* 侧视不画：装不下的牌与 70%/88% 警戒线都锚在这张卡自己的 u 范围
            （u∈[-0.04,1.08]）上——那正是侧视机位折进深度分量、不影响屏幕位置
            的那根轴。结果不是「线消失」而是「线在屏幕上瘫成同一条」：一整排卡
@@ -3654,15 +3725,29 @@ function netScene(D, g, box, step){
           /* 门牌挂卡**底下**。挂顶上时它会整块盖住斜后方那张卡（转台是俯视，
              卡的上方正好压着后一排），底边外侧那一圈是空的。 */
           var cTop = P(0.5, cv1 + 0.13, cw0, kc);
-          var cTxt = 'rank ' + gc;
+          /* 过路高亮时门牌上直接写明来路。虚线外框答的是"不是你点的"，这一句答的
+             是"那它是什么"——两句都短，但缺了后一句，读者仍要靠猜。 */
+          var cTxt = 'rank ' + gc + (hlS9 ? ' · 联动高亮' : '');
           var meCd = D.moe ? epOf(tc, co.c, dc, D) : null;
           var cSub = 'tp'+tc+(D.cp>1?' cp'+co.c:'')+' dp'+dc+' pp'+pc2+(meCd?' ep'+meCd.ep:'')+' · stage'+pc2+' · L'+(pc2*D.layersPerStage)+'–L'+((pc2+1)*D.layersPerStage-1);
           var cPw = Math.max(cTxt.length, cSub.length)*4.3 + 14;
           body.push('<rect x="'+(cTop[0]-cPw/2)+'" y="'+(cTop[1]-15)+'" width="'+cPw+'" height="25" rx="6" '
-            +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1"/>');
+            +'style="fill:var(--pt-bg);stroke:'+(hlS9 ? VC.dp : 'var(--pt-fg2)')+';stroke-width:1'
+            +(hlS9 ? ';stroke-dasharray:4 3' : '')+'"/>');
           body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
           body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
         }
+        /* ⚠ 命中面写死"前脸"这四个角，只在 3D/正视两个机位上有面积：顶视（俯视，
+           pitch=π/2）把 v 轴压成零、侧视（yaw=π/2）把 u 轴压成零，前脸都退化成一条
+           线——那两个机位的**容量**图里，卡壳是点不中的（整网图走的是 frontScene /
+           sideScene 自己的命中面，不受影响；选组 HUD 在四个机位都在，选中这条路
+           本身没断）。
+           改法试过并且是对的：把命中面换成这只盒子 8 个角的屏幕凸包（任意 yaw/pitch
+           都成立）。但实测下来，只要往这一层加进覆盖面更大的几何，Chromium 就会在
+           moe64·侧视·容量那一屏上把某一列像素挪动 1/255（11 个像素，肉眼不可见）——
+           画出来的内容一模一样（SVG 里除命中面外逐行相同），是显示列表分块的舍入
+           差异，fill:none / opacity:0 / crispEdges 三种写法都躲不掉。本次改动守的是
+           "默认态逐像素零回归"，所以这一条留着不动，等这条纪律松口再换。 */
         hit.push('<g class="cgrow"><polygon points="'+ptsStr([C8[0],C8[1],C8[2],C8[3]])
           +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="card" data-i="'+gc+'"/></g>');
         kc = kcOrig;     /* 借道用完即还原：下一段（或下一次调用 dc/tc 的判断）不受影响 */
@@ -5998,6 +6083,7 @@ function frontScene(D, g, box){
   var GB = frontBounds(); if(!GB) return null;
   FS_Z = fsBase();                          /* 地图式反除基准（含屏幕像素增益）；<1 不反向放大，缩小时随场景缩 */
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
+  var hlS9 = hlSelOn(D);                    /* 这一格亮着是「别处点过来的」还是「我点的」——只改外框，不改内容 */
   var meF = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
@@ -6097,6 +6183,19 @@ function frontScene(D, g, box){
       /* 格框：容器画法（线框），选中的那格用 DP 色加粗 */
       body.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
         +'" rx="'+(5/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:'+(isF?VC.dp:'var(--pt-bd)')+';stroke-width:'+((isF?1.8:.7)/FS_Z).toFixed(2)+'"/>');
+      /* 过路高亮：在**格框之外**再套一圈虚线脉冲，不动格框本身那条实线。
+         套在外面而不是把格框改成虚线——格框那条 DP 色实线还兼着"这一格是方阵
+         焦点"的职责（左上角 r 号、下面的 op9 淡化都跟着它读），改掉它等于同时
+         改了两件事；外圈是纯粹新增的一层，来路说完就走。
+         偏移 3、圆角 +3（都按 1/FS_Z 反除，与这张图里其它屏幕恒定量同一套）：
+         贴着框走但不压线，任何倍率下缝宽都一样。 */
+      if(isF && hlS9){
+        var ho9 = 3/FS_Z;
+        body.push('<rect class="hlring" x="'+(x-ho9).toFixed(1)+'" y="'+(y-ho9).toFixed(1)
+          +'" width="'+(cellW+ho9*2).toFixed(1)+'" height="'+(cellH+ho9*2).toFixed(1)
+          +'" rx="'+(8/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.6/FS_Z).toFixed(2)
+          +';stroke-dasharray:'+(5/FS_Z).toFixed(2)+' '+(3.4/FS_Z).toFixed(2)+'"/>');
+      }
       if(ui.cardMode && Math.max(cellW, effW) >= 56)
         body.push(fsTxt(x + 4/FS_Z, y + 9/FS_Z, 'r'+rk, 6.6, isF ? VC.dp : 'var(--pt-fg3)', 'start',
           'font-weight="800" paint-order="stroke" stroke="var(--pt-s1)" stroke-width="2.2"'));
@@ -6145,9 +6244,16 @@ function frontScene(D, g, box){
           'ep'+eb + (cellW >= 120 ? ' · E'+e09+'–E'+(e09+kE9-1) : ''), VC.ep,
           hasSel && me9 && epOf(co.t, co.c, co.d, D).ep === eb, ['e', eb], 6.6);
       }
-      /* 点格子 = 选中这张卡（正交方阵里格子就是卡/复制体本身） */
+      /* 点格子 = 选中这张卡（正交方阵里格子就是卡/复制体本身）。走的是 chainpick
+         的 card 键，与 3D 卡壳、侧视卡架同一条路——「选中一张卡」在这一屏只该有
+         一套算术，三个机位各写一份迟早会各选各的。
+         命中面铺满整格、后 push：算子那叠（hitOps）最后再叠上去，所以放大到看得
+         清算子时点算子仍是点算子，没放大时整格都是"选这张卡"。
+         悬停给一行坐标：方阵上一格只有几十像素，格里那枚 r 号在没放大时根本不画，
+         不给 title 的话读者点之前不知道自己要选的是谁。 */
       hit.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
-        +'" style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="card" data-i="'+rk+'"/>');
+        +'" style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="card" data-i="'+rk+'"'
+        +'><title>r'+rk+' · TP·SP'+t9+'·CP'+c9+'·DP'+d9+'·PP'+pSel+(isF&&!hlS9?'（已选中，再点一次取消）':'')+'</title></rect>');
     }
   }
   /* ── 轴门牌：DP 跨组居中一排、CP 每列一枚、TP·SP 行头一列——它们就是卡的层级坐标 ── */
@@ -6297,6 +6403,7 @@ function sideScene(D, g, box){
   FS_Z = fsBase();                          /* <1 不反向放大：反向放大会把两头的标签挤进条带（遮挡的根源） */
   var Zv = Math.max(0.2, ui.zoom3);
   var co = coordsOf(g, D), hasSel = sel !== null && sel < D.world;
+  var hlS9 = hlSelOn(D);                    /* 与正视/3D 同一句判定、同一套虚线外框，见 hlSelOn */
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
@@ -6369,6 +6476,14 @@ function sideScene(D, g, box){
       var on9 = hasSel && st9 === selStage;
       body.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 10/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(20/FS_Z).toFixed(1)
         +'" rx="'+(10/FS_Z).toFixed(1)+'" style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+((on9?1.6:.7)/FS_Z).toFixed(2)+'"/>');
+      /* 过路高亮：段头也套一圈虚线（与正视格框、3D 卡壳同一套语言）。
+         段头本来就是"选中那张卡落在哪一段"的显示器（on9），亮的理由和格框
+         完全一样，来路也就该用完全一样的记号说出来。 */
+      if(on9 && hlS9)
+        body.push('<rect class="hlring" x="'+(xa - 3/FS_Z).toFixed(1)+'" y="'+(yH - 13.5/FS_Z).toFixed(1)
+          +'" width="'+((xb-xa) + 6/FS_Z).toFixed(1)+'" height="'+(27/FS_Z).toFixed(1)
+          +'" rx="'+(13/FS_Z).toFixed(1)+'" style="fill:none;stroke:'+VC.pp+';stroke-width:'+(1.5/FS_Z).toFixed(2)
+          +';stroke-dasharray:'+(5/FS_Z).toFixed(2)+' '+(3.4/FS_Z).toFixed(2)+'"/>');
       body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
         on9 ? VC.pp : 'var(--pt-fg)', 'middle', 'font-weight="800"'));
       var chips = [];
@@ -6379,8 +6494,19 @@ function sideScene(D, g, box){
       chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
       body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4/FS_Z).toFixed(2)+'" '
         +'font-family="var(--pt-mono)" font-weight="700">'+chips.join('<tspan fill="var(--pt-bds)"> · </tspan>')+'</text>');
+      /* 点段头 = **换到这一段的同坐标卡**（chainpick 的 p 键：tp/cp/dp 不动，只换 pp），
+         不是"高亮这一段的层区间"。为什么选前者：
+           · 侧视这张图的主语是**卡**——段框、卡架、逐层淡化（dim9）读的全是
+             selStage，而 selStage 又是从 sel 反解出来的（co.p）。要让这张图动起来，
+             能改的只有 sel；改一个只属于侧视的"当前段"状态，会立刻和 3D/正视对不上，
+             也没法通过 pto:select 广播给宿主（那条协议传的是 rank，不是段）。
+           · 段的层区间本来就写在段头上（L{lo}–L{hi}），再高亮一遍是重复；而"这一段
+             由哪些卡承担"恰恰是这张图目前唯一说不清的事，选中一张代表卡才补上它。
+         代表卡取的是"当前卡在这一段的同位体"而不是段内第 0 张：读者从别的段点过来时，
+         关心的是"我这张卡在那一段对应谁"，换段不该顺手把 tp/cp/dp 也重置了。 */
       hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 12/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(30/FS_Z).toFixed(1)
-        +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
+        +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"'
+        +'><title>PP Stage '+st9+' · L'+lo9+'–L'+hi9+'：选中本卡在这一段的同位体（tp/cp/dp 不变）</title></rect>');
       if(st9 > 0){
         var xd = xa - stGap/2 - colGap/2;
         body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(yMet-16).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(yOp+8).toFixed(1)
@@ -6798,7 +6924,16 @@ function sideScene(D, g, box){
       var sxa = xOf(selStage*lps) - 4, sxb = xOf(Math.min(L-1, (selStage+1)*lps - 1)) + colW + 4;
       body.push('<rect x="'+sxa.toFixed(1)+'" y="'+(y0-10).toFixed(1)+'" width="'+(sxb-sxa).toFixed(1)+'" height="'+(y1-y0+18).toFixed(1)
         +'" rx="'+(6/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+((hasSel?2:1)/FS_Z).toFixed(2)+';opacity:'+(hasSel?1:.55)+'"/>');
-      if(hasSel) body.push(fsTxt((sxa+sxb)/2, y0 - 2, 'rank '+g+' 在这一段', 6.4, VC.dp, 'middle',
+      /* 段框的外圈虚线：这个框答的也是"选中那张卡落在哪一段"，来路记号跟着走。
+         另外把那句话换成"rank N 在这一段 · 联动高亮"——图元上的记号说得出"这是
+         别处点的"，但说不出"别处"是哪一格；这一屏没有那份上下文（宿主也没有传
+         过来），能负责任地说的就是"不是你在这儿点的"，多一个字都是编的。 */
+      if(hasSel && hlS9)
+        body.push('<rect class="hlring" x="'+(sxa - 3.5).toFixed(1)+'" y="'+(y0-13.5).toFixed(1)
+          +'" width="'+((sxb-sxa) + 7).toFixed(1)+'" height="'+(y1-y0+25).toFixed(1)
+          +'" rx="'+(9/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.6/FS_Z).toFixed(2)
+          +';stroke-dasharray:'+(6/FS_Z).toFixed(2)+' '+(4/FS_Z).toFixed(2)+'"/>');
+      if(hasSel) body.push(fsTxt((sxa+sxb)/2, y0 - 2, 'rank '+g+' 在这一段'+(hlS9 ? ' · 联动高亮' : ''), 6.4, VC.dp, 'middle',
         'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
     }
     var rackTop = y1 + ANN + 22;               /* 训练轨块占掉了条带正下方，卡架顺移到它下面 */
@@ -6820,9 +6955,19 @@ function sideScene(D, g, box){
         body.push('<rect x="'+(rgx + cc9*(dw+1.4)).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4)).toFixed(1)
           +'" width="'+dw.toFixed(1)+'" height="'+dh.toFixed(1)+'" rx="1.4" style="fill:'
           +(onR ? VC.dp : mix(VC.dp, stR === selStage ? 20 : 8))+';stroke:'+VC.dp+';stroke-width:'+((onR?1.2:.35)/FS_Z).toFixed(2)+'"/>');
+        /* 卡架上那一格同样要区分来路。这里的格子只有几个像素见方，虚线画在格
+           里根本看不出是虚的——所以外圈往外撑 2.2（比正视的 3 略窄，免得吃掉
+           相邻格 1.4 的缝），线宽也不按 1/FS_Z 反除：卡架整块本来就是场景固定
+           尺寸的缩略图（dw/dh 都是场景量），外圈跟着它走才不会在某档倍率下
+           粗到把格子糊住。 */
+        if(onR && hlS9)
+          body.push('<rect class="hlring" x="'+(rgx + cc9*(dw+1.4) - 2.2).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - 2.2).toFixed(1)
+            +'" width="'+(dw+4.4).toFixed(1)+'" height="'+(dh+4.4).toFixed(1)+'" rx="2.6"'
+            +' style="fill:none;stroke:'+VC.dp+';stroke-width:1.1;stroke-dasharray:2.6 1.9"/>');
         hit.push('<rect x="'+(rgx + cc9*(dw+1.4) - .7).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - .7).toFixed(1)
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
-          +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR+'</title></rect>');
+          +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR
+          +(onR && !hlS9 ? '（已选中，再点一次取消）' : '')+'</title></rect>');
       }
       if(rowsR > 1 && stR === 0){
         body.push(fsTxt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
@@ -7104,6 +7249,7 @@ function renderGroupHud(D){
      而其实什么都没选（图上那份 mine 也是同一个退化坐标来的，见 frontScene 的 pick9）。
      选组是**选择**，没做过的选择不该替读者摆在那儿。 */
   var hasSel9 = sel !== null && sel < D.world;
+  var hlS9 = hlSelOn(D);                     /* 亮着的这一组是别处点过来的：见 .pt-ghc.is-hl */
   var g = hasSel9 ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var lps = D.layersPerStage, L = D.layers;
@@ -7121,8 +7267,9 @@ function renderGroupHud(D){
   var groupsHTML = groups.map(function(gr){
     var cells = '', i;
     for(i = 0; i < gr.n; i++){
-      cells += '<button class="pt-ghc'+(i === gr.cur ? ' is-on' : '')+'" data-act="chainpick" data-k="'+gr.k+'" data-i="'+i
-        +'" title="'+gr.name+' 第 '+i+' 组：点了把「本卡」换到这一组，图上的实心/斜纹、门牌全部跟着换">'
+      cells += '<button class="pt-ghc'+(i === gr.cur ? (hlS9 ? ' is-on is-hl' : ' is-on') : '')+'" data-act="chainpick" data-k="'+gr.k+'" data-i="'+i
+        +'" title="'+gr.name+' 第 '+i+' 组：点了把「本卡」换到这一组，图上的实心/斜纹、门牌全部跟着换'
+        +(i === gr.cur && hlS9 ? '（此刻这一组是别的视图点过来的联动高亮）' : '')+'">'
         +(gr.lab ? esc(gr.lab(i)) : i)+'</button>';
     }
     return '<span class="pt-ghgrp" style="--c:'+gr.col+'"><b>'+gr.name+'</b>'+cells+'</span>';
@@ -8325,6 +8472,33 @@ function renderV3(D){
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 
+/* ═════════ 过路高亮的说明徽标 ═════════════════════════════════════════
+   读出卡在这种状态下是**故意**藏起来的（renderDetail / renderRankMem 都拿
+   !ui.hlSel 当闸，理由见那两处注释：亮着的常常是一整片卡，一张写死某个 rank
+   的读数摆在那儿会被当成整片的读数）。但"藏起来"解决的是别念错数，没解决
+   另一半——画面上一圈虚线亮着，读者不知道它为什么亮、也不知道怎么收手。
+   这枚徽标只补那一半：说来路、说手势，**一个读数都不带**，所以不会重新踩进
+   读出卡被藏起来的那个坑。
+   位置贴左下角：右边那一列（读出卡/容器卡/算子卡）是"这一屏自己选的东西"的
+   地盘，过路的高亮不该去占它——占了就等于在暗示两者是同一类信息。 */
+function renderHLBadge(D){
+  var el = $('hlBadge'); if(!el) return;
+  var onS = D.ok && hlSelOn(D);
+  /* 层高亮和卡高亮是两条各管各的线（见 applyQuery 的 keepHL），徽标一并认：
+     只转过来一层、没转卡的时候，画面上亮的是"住着这一层的那几十张卡"，
+     同样需要一句来路说明。 */
+  var hlLi = ui.hlLayer ? parseInt(ui.revLayer, 10) : NaN;
+  var onL = D.ok && isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers;
+  if(!onS && !onL){ el.hidden = true; el.innerHTML = ''; return; }
+  var what = [];
+  if(onS) what.push('<b>rank '+sel+'</b>');
+  if(onL) what.push('<b>L'+hlLi+'</b>' + (onS ? '' : ' 住着的那几张卡'));
+  el.hidden = false;
+  el.innerHTML = '<span class="hlk" style="--c:'+VC.dp+'"></span>'
+    + '<span>联动高亮 · ' + what.join(' · ')
+    + '<br><span style="opacity:.7">来自另一个视图，不是这一屏的选中；点画布空白就散</span></span>';
+}
+
 /* ═════════ 读出卡（FR-3） ═════════ */
 function renderDetail(D){
   var el = $('detail');
@@ -8497,7 +8671,14 @@ function renderBar(D){
   /* 配置摘要与预设名不再占顶栏——同样的数字「配置」抽屉里就有，顶栏只留必须当场看见的 */
   var chips = '';
   if(D.errors.length) chips += '<span class="pt-chip err is-btn" data-act="drawer" data-d="cfg" style="cursor:pointer">✕ '+D.errors.length+' 个约束violated——点开修</span>';
-  if(sel!==null && D.ok && sel<D.world) chips += '<span class="pt-chip">选中 <b>r'+sel+'</b> <span data-act="clearsel" style="cursor:pointer;opacity:.6">✕</span></span>';
+  /* 过路高亮不写这枚 chip。chip 是「这一屏此刻选中了谁」的常驻读数，带 ✕、可以
+     一直摆在那儿——而过路高亮按约定就是**不落标签、不写 chip、点空白就散**的
+     （见 ui.hlSel 那段说明）。先前这一行只看 sel、不问来路，于是宿主一转过来
+     一个 rank，顶栏就多出一枚「选中 r94 ✕」——读者据此以为是自己在这一屏选的，
+     可读出卡又偏偏不出来（那道闸认的是 !ui.hlSel），两个说法互相打架。
+     这种状态下说话的是左下角那枚「联动高亮」徽标（renderHLBadge），它把来路和
+     收手的手势一起讲清楚，不需要顶栏再重复一遍身份不明的读数。 */
+  if(sel!==null && D.ok && sel<D.world && !ui.hlSel) chips += '<span class="pt-chip">选中 <b>r'+sel+'</b> <span data-act="clearsel" style="cursor:pointer;opacity:.6">✕</span></span>';
   $('barChips').innerHTML = chips;
   $('barActs').innerHTML =
     '<button data-act="drawer" data-d="cfg" class="'+(ui.drawer==='cfg'?'is-on':'')+'">配置</button>'
@@ -8910,7 +9091,13 @@ function renderRankMem(D){
 /* ═════════ 总渲染 ═════════ */
 function render(){
   var D = derive(cfg);
-  if(sel!==null && (!D.ok || sel>=D.world)) sel = null;
+  /* 选中卡越界就夹回 null——**来路标记必须跟着一起清**。宿主转过来的 rank 未必在
+     这一格的配置里存在（另一格可能是 128 卡、这一格切到 64 卡的预置；换预置也一样），
+     那时 sel 被夹成 null 而 ui.hlSel 还留着 true，这一格就卡在"没有选中、却认为
+     自己正被别处照亮"的半截状态里：hlSelOn 是假（画不出虚线），可读出卡那道闸
+     （!ui.hlSel）永远开不了——表现为"某次联动之后这一格再也读不出卡"，而且没有任何
+     手势能退出来（点空白只在真有东西可散时才 render）。夹一次就把两样一起收干净。 */
+  if(sel!==null && (!D.ok || sel>=D.world)){ sel = null; ui.hlSel = false; }
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
   renderStageTitle();
@@ -8940,6 +9127,7 @@ function render(){
   }
   renderRankMem(D);
   renderDetail(D);
+  renderHLBadge(D);
   var dr = $('drawer');
   if(ui.drawer){ dr.hidden = false; dr.innerHTML = drawerHTML(D); }
   else dr.hidden = true;
@@ -9140,10 +9328,19 @@ document.addEventListener('keydown', function(ev){
   else if(ev.key === '0'){ ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; applyViewTransform(); ev.preventDefault(); }
 });
 document.addEventListener('click', function(ev){
+  /* 这三条（.cardg / .dimcol / 下面的 chainpick·pickg）都是"读者在这一屏亲手点了
+     一张卡"。每一条都要先 takeSel()：不落这一句，从别的格转过来的高亮标记会一直
+     挂着，读出卡的闸（!ui.hlSel）就再也开不了——实机表现是"联动过来之后，在这一格
+     点卡再也读不出东西"。判"是不是同一张卡"必须在 takeSel() **之前**取值：过路高亮
+     亮着的那张卡再点一次是"我确认选它"，不是"取消选中"（它本来就不是我选的）。 */
   var card = ev.target.closest('.cardg');
-  if(card){ sel = +card.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
+  if(card){ takeSel(); sel = +card.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
   var dc = ev.target.closest('.dimcol');
-  if(dc){ sel = (sel === +dc.getAttribute('data-g')) ? null : +dc.getAttribute('data-g'); render(); ptoNotifyHost(); return; }
+  if(dc){
+    var dcOff9 = (sel === +dc.getAttribute('data-g')) && !ui.hlSel;
+    takeSel();
+    sel = dcOff9 ? null : +dc.getAttribute('data-g'); render(); ptoNotifyHost(); return;
+  }
   if(ev.target.closest('[data-act="leafopen"]')){ ui.view = 'anatomy'; ui.selLayerOff = 0; render(); return; }
   var lp = ev.target.closest('.l3pick');
   if(lp){ ui.selLayerOff = +lp.getAttribute('data-li'); render(); return; }
@@ -9299,7 +9496,9 @@ document.addEventListener('click', function(ev){
   else if(act==='storyact'){ ui.act = +b.getAttribute('data-i'); render(); }
   else if(act==='act2'){ ui.act2 = !ui.act2; render(); }
   else if(act==='cavReset'){ ui.cavYaw = 0; ui.cavPitch = 0; render(); }
-  else if(act==='rankmemclose'){ sel = null; ui.memSel = null; render(); }
+  /* 读出卡上那颗 ✕ 是"不看这张卡了"，与点画布空白同一件事——所以也得广播出去，
+     不然台面上另外两格还照着一张这里已经关掉的卡亮着。 */
+  else if(act==='rankmemclose'){ takeSel(); sel = null; ui.memSel = null; render(); ptoNotifyHost(); }
   /* 读出卡里点开某一块显存。再点同一块＝收起（和这一屏别处「点开/点掉」同一手势）；
      data-mk 给空串的是二级读数自己那枚 ✕。 */
   else if(act==='memblockpick'){
@@ -9308,12 +9507,22 @@ document.addEventListener('click', function(ev){
     render();
   }
   else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
-  else if(act==='pickg'){ sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
+  else if(act==='pickg'){ takeSel(); sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;
     var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
     var kk = b.getAttribute('data-k'), iv = +b.getAttribute('data-i');
-    if(kk==='card') sel = iv;            /* 卡维度：整只卡壳就是一个可点的 rank */
+    /* 「点中已经选中的那一张 → 取消选中」只给 card 这一键。
+       跟随的是这一屏已有的那条 toggle：.dimcol 的
+       `sel = (sel === g) ? null : g`（上面几十行），它同样是"一个图元 = 一个 rank"。
+       为什么不推广到 d/p/t/c/e：那几键是**坐标选择器**（在某一根轴上换一组），
+       点当前那一格的意思是"就停在这一组"，把它读成"取消选中"会让整张图连同门牌、
+       卡架、读出卡一起塌掉——一次误点的代价大得离谱，而且轴上根本没有"没有第几组"
+       这个状态可落。card 不一样：它就是那张卡本身，"不看这张了"是一个真实的意思。
+       hlSel 亮着的那张再点一次不算 toggle：那不是我选的，第一次点是"我确认选它"。 */
+    var offSame9 = (kk === 'card') && sel === iv && !ui.hlSel;
+    takeSel();                           /* 从这一刻起亮着的是选中，不是过路高亮 */
+    if(kk==='card') sel = offSame9 ? null : iv;   /* 卡维度：整只卡壳就是一个可点的 rank */
     else if(kk==='d') sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
     else if(kk==='p') sel = rankOf(c0.t,c0.c,c0.d,iv,Dq);
     else if(kk==='t') sel = rankOf(iv,c0.c,c0.d,c0.p,Dq);
@@ -9377,12 +9586,16 @@ document.addEventListener('click', function(ev){
     ui.view = 'time'; stopAnim(); render();
   }
   else if(act==='v3layer'){ ui.selLayerOff = clamp(ui.selLayerOff + (+b.getAttribute('data-d')), 0, derive(cfg).layersPerStage-1); render(); }
-  else if(act==='clearsel'){ sel = null; render(); }
+  else if(act==='clearsel'){ takeSel(); sel = null; render(); ptoNotifyHost(); }
   else if(act==='pick'){
+    /* 搜索结果里那排 rank 芯片也是"读者亲手点的一张卡"：同样要落 takeSel、
+       同样要广播出去。原来这一条只改本页的 sel——于是从搜索结果点一张卡，
+       台面上另外两格纹丝不动，看着像联动只对图上的点选生效。 */
+    takeSel();
     sel = +b.getAttribute('data-g');
     var Dp = derive(cfg);
     if(Dp.ok && sel<Dp.world) ui.cpFacet = coordsOf(sel,Dp).c;
-    render();
+    render(); ptoNotifyHost();
   }
   else if(act==='drawer'){ var d = b.getAttribute('data-d'); ui.drawer = (ui.drawer===d)?'':d; render(); }
   else if(act==='theme'){
