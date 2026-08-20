@@ -2223,10 +2223,14 @@ function netScene(D, g, box, step){
   var CPH = 8;
   function hostOf(r9){ return Math.floor(r9 / CPH); }
   function slotOf(r9){ return r9 % CPH; }
-  /* 槽位间距沿用列距的节奏（PHY_CU=CU），机位间距沿用「卡维度下段间缝」的量级
-     （GAPW 在卡维度、PP 落下时就是 DEP*2.60——物理平铺不问 PP，借同一个数字，
-     不必另起一套缝的尺寸标准）。 */
-  var PHY_CU = CU, PHY_HOSTW = DEP*2.60;
+  /* 槽位间距沿用列距的节奏（PHY_CU=CU）。机位间距/卡深原先借的是「卡维度下 PP
+     段间缝」的量级（DEP*2.60≈4.4）——那个数字是给两张卡之间**留白**用的，不是
+     给单张卡的**厚度**用的，物理平铺这里两件事共用了同一个常数，卡因此被拉成
+     一片薄而长的板（厚度≈3.2，宽度只有 1.1，跟其余视图的卡比例对不上）。
+     卡的宽度是 cu1-cu0=1.1（见下面 shellOf 里的 cu0/cu1），厚度也该落在这个
+     量级才像"同一批卡"，于是直接借 DEP（=1.7，画一整叠层原本的进深）当厚度——
+     减掉两侧留白后净厚度≈1.22，跟宽度同一个数量级，不再是拉长的薄板。 */
+  var PHY_CU = CU, PHY_HOSTW = DEP;
   function physSpan(r9){
     var h0 = hostOf(r9)*PHY_HOSTW, pad = PHY_HOSTW*0.14;
     return [h0+pad, h0+PHY_HOSTW-pad];
@@ -6152,6 +6156,7 @@ function sideScene(D, g, box){
      TG = 缩放/反除基准，正好就是那个增益倍数，直接乘在阈值上，两者永远同步。 */
   var TG = Zv / FS_Z;
   var opLab = colW * Zv >= 110 * TG;      /* 条在屏幕上宽到装得下横排字，才往条里写 */
+  console.log('DEBUGSS opLab='+opLab+' colW='+colW+' Zv='+Zv+' TG='+TG+' FS_Z='+FS_Z+' zoom3='+ui.zoom3+' vis0='+vis0+' vis1='+vis1+' x0='+x0+' x1='+x1+' colGap='+colGap+' L='+L);
   /* ── 段头横幅 + 段边界 ── */
   if(cutPP){
     var yH = box.y + 44;
@@ -6310,6 +6315,7 @@ function sideScene(D, g, box){
     }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
+    if(li9===0) console.log('DEBUGSS li0 lx='+lx+' liVis='+liVis+' bx0='+bx0+' barW='+barW);
     for(var ri = 0; ri < rows.length; ri++){
       var n9 = rows[ri];
       if(!nodeInLayer9(n9, li9)) continue;
@@ -6327,6 +6333,7 @@ function sideScene(D, g, box){
       }
       /* 放大到条里装得下字之后，每个算子段也给一枚命中面：点开完整读数（跟随卡）。
          没放大时整列就几十个像素高，逐段命中点不准，那时点整列反查层才是对的。 */
+      if(li9===0 && ri===0) console.log('DEBUGSS row0 ya='+ya+' yb='+yb+' diff='+(yb-ya)+' threshHit='+(4/FS_Z)+' threshTxt='+(10.5/FS_Z));
       if(opLab && liVis && (yb - ya) >= 4/FS_Z)
         hit.push('<rect x="'+bx0.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
           +'" style="fill:transparent;cursor:pointer" data-act="opdetail" data-nid="'+esc(n9.id)+'" data-li="'+li9+'" data-key="s'+li9+'"'
