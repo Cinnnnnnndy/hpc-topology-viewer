@@ -2223,10 +2223,14 @@ function netScene(D, g, box, step){
   var CPH = 8;
   function hostOf(r9){ return Math.floor(r9 / CPH); }
   function slotOf(r9){ return r9 % CPH; }
-  /* 槽位间距沿用列距的节奏（PHY_CU=CU），机位间距沿用「卡维度下段间缝」的量级
-     （GAPW 在卡维度、PP 落下时就是 DEP*2.60——物理平铺不问 PP，借同一个数字，
-     不必另起一套缝的尺寸标准）。 */
-  var PHY_CU = CU, PHY_HOSTW = DEP*2.60;
+  /* 槽位间距沿用列距的节奏（PHY_CU=CU）。机位间距/卡深原先借的是「卡维度下 PP
+     段间缝」的量级（DEP*2.60≈4.4）——那个数字是给两张卡之间**留白**用的，不是
+     给单张卡的**厚度**用的，物理平铺这里两件事共用了同一个常数，卡因此被拉成
+     一片薄而长的板（厚度≈3.2，宽度只有 1.1，跟其余视图的卡比例对不上）。
+     卡的宽度是 cu1-cu0=1.1（见下面 shellOf 里的 cu0/cu1），厚度也该落在这个
+     量级才像"同一批卡"，于是直接借 DEP（=1.7，画一整叠层原本的进深）当厚度——
+     减掉两侧留白后净厚度≈1.22，跟宽度同一个数量级，不再是拉长的薄板。 */
+  var PHY_CU = CU, PHY_HOSTW = DEP;
   function physSpan(r9){
     var h0 = hostOf(r9)*PHY_HOSTW, pad = PHY_HOSTW*0.14;
     return [h0+pad, h0+PHY_HOSTW-pad];
@@ -6402,7 +6406,15 @@ function sideScene(D, g, box){
       'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
   /* ── 行标签总览：没放大时在模型中列标一次（放大后换成条内逐个写，这排就收起） ── */
   if(!opLab && colW * Zv >= 1.1){
-    var xm = (x0 + x1) / 2;
+    /* xm 是这排总览字的落点：跟着当前手势走，钉在**视口中心对应的场景坐标**上
+       （与上面 vis0/vis1 同一套 screen=C+pan+zoom·(base−C) 反解），而不是钉死在
+       画布固定的几何中点。原来写 (x0+x1)/2 时，鼠标滚轮朝光标缩放（8770 行那段）
+       一旦光标不在正中央就会带出一段 panX3——这一整条总览字不像其余内容是
+       按层重复画的，独一份，被带出视口边界之后没有第二份可看，也没法直觉地
+       拖回来（往哪拖、拖多少全靠蒙猜），实机表现就是「放大后这块内容失踪/被
+       裁到看不全，怎么拖都找不回来」。钉到视口中心对应的场景坐标后，缩放/
+      拖拽落定重画一次它就重新居中，不再跟着 panX3 独自飘走。 */
+    var xm = clamp(cxC - ui.panX3 / Zv, x0, x1);
     var lastY = -1e9;
     rows.slice().sort(function(a,b){ return a.y - b.y; }).forEach(function(n9){
       if(FS_DENSE[n9.id]) return;
