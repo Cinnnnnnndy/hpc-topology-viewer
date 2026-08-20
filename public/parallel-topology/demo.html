@@ -2368,6 +2368,11 @@ function netScene(D, g, box, step){
   /* 算子命中面单独攒一叠、最后再叠上去：卡壳那只「选这张卡」的命中面在 DOM 里
      排在后面，会整片盖住它们（实测点算子只会换选中卡，明细卡打不开）。 */
   var body = [], hit = [], hitOps = [], rankTags = [], nodes = 0, sawn = 0, whole = 0;
+  /* rank → 卡壳前脸中心的屏幕坐标（供下面「卡对卡通信线」使用）。声明必须在
+     shellOf() 被调用的那个 k 循环之前（下面几百行）——var 的初始化是按代码
+     顺序执行的，写在 shellOf 定义旁边、却晚于调用它的循环，会在头几次调用时
+     还是 undefined（函数声明整体提升，但 `= {}` 这次赋值不会跟着提前）。 */
+  var chainCardAnchor = {};
   var revLi = revLiOn(D) ? Math.floor(+ui.revLayer) : -1;
   var spot = spotlightHit(D);
   var sh = IXg ? shardMap(D, g) : null;
@@ -3211,6 +3216,7 @@ function netScene(D, g, box, step){
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         var gc = rankOf(tc, co.c, dc, pc2, D);
+        chainCardAnchor[gc] = [(C8[0][0]+C8[1][0]+C8[2][0]+C8[3][0])/4, (C8[0][1]+C8[1][1]+C8[2][1]+C8[3][1])/4];
         var meC = hasSel && gc === g;
         var dT = depthT(kc, (csx[0]+csx[1])/2);
         /* 聚光灯到**这只盒子自己的 rank**，不沿用列的判断。
@@ -3585,6 +3591,57 @@ function netScene(D, g, box, step){
     }
   } else if(cutEP && KD > 1) drawEpFrames(false);
   if(ui.commOn && !lowDetail && !ui.netOff) drawCommArcs();
+  /* ── 卡对卡通信线（补 netScene 一直缺的那一层）──────────────────────────
+     drawCommArcs() 回答的是「这次通信落在哪个算子上」——弧线锚在产生它的
+     那个节点，只在焦点卡自己的算子网格里活动，看不出「一共连了几张卡、
+     连成什么形状」。dimScene（单维切分视图）和 story 视图都有这后一层：
+     整组的端点摆成一排，走 edgeSVG 按 TP=AllReduce（一圈）/PP=P2P（一条
+     有向链）/DP=AllReduce（一圈）/EP=AllToAll（网状全连）把「组」画出来。
+     netScene 里一直没有这一层，这里按同一套原语补上，端点换成本视图自己
+     的卡壳——即 shellOf() 给每张画出来的卡记下的前脸中心（chainCardAnchor），
+     不是另起一套投影去猜坐标。只有卡维度（ui.cardMode）下每张卡才有唯一
+     确定的屏幕位置，所以这里同时要求 ui.cardMode。缺 chainCardAnchor 的
+     对端（缩放剔除 / 拖动降级时没画出壳）整条轴直接跳过，不用近似坐标去
+     补——宁可这一刀这次不画，不画错。
+     ui.netOff（关掉整网）是这个视图的**默认**子状态——下面已经有一段
+     「地面流量带」（floorBand，ui.netOff 分支）在那个状态下画 TP/DP/EP 三维，
+     只是画法是自定义的抬升贝塞尔，不是 edgeSVG，而且**没有 PP**（PP 那一刀
+     在两种子状态下都没人画过）。这里只在 netOff 下补 PP、不重画 TP/DP/EP，
+     避免同一件事画两遍；整网内容打开（!ui.netOff）时那三维完全没有对应的
+     「组」概览（drawCommArcs 画的是算子级弧线，不是组拓扑），四维都在这里补齐。 */
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel){
+    var pF9c = cutPP ? co.p : 0;
+    var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
+    var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
+    var CARD_COMM = [
+      {dim:'tp', on: !ui.netOff && cutTP && D.tp > 1, prim:'allreduce',
+       label:'TP AllReduce · 组内同步', metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
+      {dim:'pp', on: cutPP && D.pp > 1, prim:'p2p',
+       label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
+      {dim:'dp', on: !ui.netOff && cutDP && D.dp > 1, prim:'allreduce',
+       label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
+      {dim:'ep', on: !ui.netOff && cutEP && D.moe && D.ep > 1, prim:'alltoall',
+       label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
+    ];
+    var ccLblN = 0;
+    CARD_COMM.forEach(function(cs9){
+      if(!cs9.on) return;
+      var mem9 = groupMembers(cs9.dim, g, D);
+      if(mem9.length < 2) return;
+      var pts9 = [], allOk9 = true;
+      for(var mi9 = 0; mi9 < mem9.length; mi9++){
+        var an9 = chainCardAnchor[mem9[mi9]];
+        if(!an9){ allOk9 = false; break; }
+        pts9.push(an9);
+      }
+      if(!allOk9) return;
+      body.push('<g opacity=".92" pointer-events="none">'
+        + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false}) + '</g>');
+      var lp9 = chainCardAnchor[g];
+      if(lp9) axLab([lp9[0], lp9[1] - 30 - ccLblN*16], cs9.label, cs9.metric || null, VC[cs9.dim], true, 6.2*zoomF9);
+      ccLblN++;
+    });
+  }
   /* ── 容量视图的地面流量带（观测台 Floor Sankey 的读法，长在本图自己的投影里）──
      整网视图的通信画在**算子**上（drawCommArcs——通信锚在产生它的那个算子）；
      容量视图里卡是空的，通信只剩「卡与卡」这一级，于是画在**地面**：选中卡与
