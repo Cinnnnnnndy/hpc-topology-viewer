@@ -365,10 +365,7 @@ body.is-resizing iframe{pointer-events:none}
   <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
   <section class="slot" id="dock">
     <header class="slot-head">
-      <!-- id 供 syncTabs 按当前 tab 换标题：这一格现在装的不只是「微批次生命周期」
-           一件事（通信观测/逻辑魔方都是另起一摊的证据视图），标题跟着 tab 走，
-           不然切到「逻辑魔方」还顶着「微批次生命周期泳道」的头，文不对题。 -->
-      <span class="slot-title" id="dockTitle">微批次生命周期泳道</span>
+      <span class="slot-title">微批次生命周期泳道</span>
       <button data-act="fold" title="收起这一格，只留格头">收起</button>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
@@ -574,15 +571,6 @@ var SLOTS = [
         if (BUILD) q.set('v', BUILD);
         return './observatory/?' + q.toString();
       }
-      /* 逻辑魔方：不打版本戳（同 net-slicing 那两格——它是并行拓扑那条线自己发布的
-         成品，归它自己管，见 BUILD 那段的理由）。默认落 mode=phys（物理平铺），
-         这一格存在的理由就是「同一批卡还能摊平看，不只是按并行轴堆」——数据标注/
-         连线/其余五种堆法都还在，切进去自己换，深链只负责把人带到那扇新开的门。 */
-      if (s.value === 'cube') {
-        q.set('theme', theme());
-        q.set('mode', 'phys');
-        return '../rubik-pattern.html?' + q.toString();
-      }
       q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
       q.set('theme', theme());
       q.set('range', s.value);
@@ -607,25 +595,15 @@ var SLOTS = [
     /* 泳道自己的格头**整条**藏掉：名字归格头、缩放钮已代理到台面（#zctl），
        这条里没有剩下要看的东西了。之前收窄到 32px 是因为缩放钮还长在里面。 */
     hideCss: '.timeline-pane .pane__header{display:none!important}' +
-             '.pto-ide-frame__standalone-chrome{display:none!important}' +
-             /* 逻辑魔方：名字归格头出（同净slicing 那两格的做法），自己那颗主题按钮
-                藏掉——host 已经用 pto:state 统一驱动三格主题，两个开关会各调各的。 */
-             '.prc-brandname{display:none!important}' +
-             '#themeBtn{display:none!important}',
-    /* 逗号选择器：三份文档各等各的锚点，谁在场等谁；互不命中，拼一起安全 */
-    readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header, .prc-row-modes',
-    msg: function (v) {
-      // 逻辑魔方走它自己的指令桥（rubik-cmd），不是 pto:state 的 range 字段；
-      // 但换到它这份文档时上面 select() 已经判定「路径变了」会整帧重载，走不到
-      // postMessage 这条分支——这里留空对象只是让调用方（select）别报错，无实际作用。
-      return v === 'cube' ? {} : { type: 'pto:state', range: v };
-    },
+             '.pto-ide-frame__standalone-chrome{display:none!important}',
+    /* 逗号选择器：两份文档各等各的锚点，谁在场等谁 */
+    readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header',
+    msg: function (v) { return { type: 'pto:state', range: v }; },
     tabs: [
       { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
       { v: 'pp2',    t: 'PP2 生命周期', d: 'PP2 的等待 / 计算 / 通信 / 激活驻留' },
       { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' },
-      { v: 'obs',    t: '通信观测',     d: '3D Rank Deck + 地面 Rank→Rank 流量带 + 通信时间轴（Mock Scenario）', dockTitle: '通信观测' },
-      { v: 'cube',   t: '逻辑魔方',     d: '六种堆法（含新加的物理平铺）+ 内存构成/状态热力着色 + 四维通信连线，同一批卡换着看', dockTitle: '逻辑魔方' }
+      { v: 'obs',    t: '通信观测',     d: '3D Rank Deck + 地面 Rank→Rank 流量带 + 通信时间轴（Mock Scenario）' }
     ]
   }
 ];
@@ -737,14 +715,6 @@ function syncTabs(id) {
   Array.prototype.forEach.call(host.querySelectorAll('button[data-v]'), function (b) {
     b.setAttribute('aria-selected', String(b.dataset.v === v));
   });
-  // 抽屉标题跟着 tab 走：只有明确给了 dockTitle 的 tab（通信观测/逻辑魔方——两个
-  // 另起一摊的证据视图）才换字，其余（训练步全貌/PP2/L34）仍是「微批次生命周期
-  // 泳道」这把伞下的三个切面，标题不用跟着抖。
-  if (id === 'swimlane') {
-    var tab = tabsOf(BY_ID[id]).filter(function (t) { return t.v === v; })[0];
-    var ttl = document.getElementById('dockTitle');
-    if (ttl) ttl.textContent = (tab && tab.dockTitle) || '微批次生命周期泳道';
-  }
 }
 
 /* 驱动优先走 postMessage（不重载 = 不丢格子里的选中态）；
@@ -1102,7 +1072,7 @@ document.addEventListener('click', function (ev) {
    泳道文件一个字不动（它是上游拷贝，改了下次同步就冲掉）。
    打完立刻读回 #zoomValue/#zoomSlider 对齐台面显示：真值在里面，台面只是遥控器。 */
 function zctlDoc() {
-  if (state.swimlane.value === 'obs' || state.swimlane.value === 'cube') return null;
+  if (state.swimlane.value === 'obs') return null;
   var f = $('iframe[data-slot="swimlane"]');
   try { return f && f.contentDocument; } catch (e) { return null; }
 }
@@ -1132,15 +1102,14 @@ document.addEventListener('input', function (ev) {
   zctlSync();
 });
 
-/* 走带/游标/缩放都是**泳道的**器官：dock 换到通信观测/逻辑魔方这两页时一起
-   收起来——游标那条竖线叠在别的画布上是一条来历不明的线，走带推的 step 它
-   也不认；逻辑魔方自己有整套形态/着色/连线控件，台面这排缩放代理对不上它。 */
+/* 走带/游标/缩放都是**泳道的**器官：dock 换到通信观测那页时一起收起来——
+   游标那条竖线叠在观测台画布上是一条来历不明的线，走带推的 step 它也不认。 */
 function applyDockAux() {
-  var other = state.swimlane.value === 'obs' || state.swimlane.value === 'cube';
+  var obs = state.swimlane.value === 'obs';
   var z = $('#zctl'), x = $('#xport');
-  if (z) z.hidden = other;
-  if (x) x.hidden = other;
-  if (other) { var c = $('#xcursor'); if (c) c.hidden = true; }
+  if (z) z.hidden = obs;
+  if (x) x.hidden = obs;
+  if (obs) { var c = $('#xcursor'); if (c) c.hidden = true; }
   else xpPlaceCursor();
 }
 document.addEventListener('input', function (ev) {
