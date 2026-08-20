@@ -80,6 +80,13 @@
 }
 .pt-seg button:hover{color:var(--pt-fg)}
 .pt-seg button.is-on{background:var(--c, var(--pt-fg)); color:var(--pt-bg)}
+/* 顶栏配置分区：cBtn/kBtns/physBtn（切分）· vBtns/lBtns（机位）· mvBtn/dispBtn（标注）
+   本来是 7 颗独立的 .pt-seg/.pb 胶囊各按各的贴在一起，越加越多之后读不出谁跟谁是
+   一伙的。加一层分区只改视觉分组（一条竖线隔开三段），不碰任何一颗按钮自己的
+   交互——物理平铺仍然是它自己的 .pt-seg（不与五刀合并，见 physBtn 处的注释），
+   只是现在这三个字面上也都站在「切分」这一段里，不再孤零零飘在右边。 */
+.pt-zone{display:inline-flex; align-items:center; gap:6px; padding-right:8px; margin-right:2px; border-right:1px solid var(--pt-bd)}
+.pt-zone:last-child{border-right:none; padding-right:0; margin-right:0}
 /* 正视的换层步进（‹ Ln ›）：与机位段控同一族，但两头是**动作**不是并列选项，
    所以收窄、读数用等宽居中；到头的那一颗按下去没有下一层，灰掉而不是留着骗点。 */
 .pt-lstep button{padding:0 8px; font-family:var(--pt-mono)}
@@ -380,7 +387,7 @@
 .pt-opcard .oc-v{margin-top:10px; background:var(--pt-s2); border-radius:10px; padding:8px 10px}
 .pt-opcard .oc-v div{display:flex; gap:10px; align-items:baseline; padding:3px 0}
 .pt-opcard .oc-v span{font-family:var(--pt-mono); font-size:10.5px; color:var(--pt-fg3); flex:1}
-.pt-opcard .oc-v b{font-family:var(--pt-mono); font-size:12px; font-weight:700; color:var(--pt-fg)}
+.pt-opcard .oc-v b{font-family:var(--pt-mono); font-size:16px; font-weight:700; color:var(--pt-fg)}
 .pt-opcard .oc-s{
   margin-top:9px; padding:7px 10px; border-radius:9px; font-size:11px; font-weight:700;
   border:1px solid color-mix(in srgb, var(--sc) 45%, transparent);
@@ -2693,7 +2700,12 @@ function netScene(D, g, box, step){
        没有内容可看，全靠这层前后关系撑起画面，衰减要比开着整网时更狠一档。 */
     var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*(ui.netOff ? 0.66 : 0.40)) : 1;
     var spotDim = spot && !spotCol ? 0.10 : 1;
-    var colOp = Math.min(colFade, spotDim);
+    /* colFade 是纵深雾，跟选没选中无关——没有它，选中一张卡时其余列只是
+       停在原来那点depth-fade上，并没有因为「被比下去」而更暗。选中态需要
+       自己单独的一档：命中列不变（selDim=1），其余列在雾之外再压一半，
+       两档叠起来才是「这一张跳出来、其余的明显让开」。 */
+    var selDim = (hasSel && !isF) ? 0.5 : 1;
+    var colOp = Math.min(colFade, spotDim, selDim);
     if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
@@ -4762,13 +4774,15 @@ function graphSVG(o){
     var rL = (x9 - 7/zs) - roomLeft(x9, y9, h9);
     var right9 = rR >= rL, room9 = right9 ? rR : rL;
     if(room9*zs < 30) return '';                       /* 连十个字符都放不下就别往旁边挤 */
-    var t9 = sdOpMetric(o.metricLi, n9, D, Math.floor(room9*zs/2.95));
-    if(!t9 || room9*zs < t9.length*2.95) return '';
+    /* 数值字号从 4.9 提到 6.0（约 1.2x，字号变大），每字符宽度按同比例从 2.95 放大到 3.61，
+       保持“放不放得下”的宽度预算与实际渲染宽度一致。 */
+    var t9 = sdOpMetric(o.metricLi, n9, D, Math.floor(room9*zs/3.61));
+    if(!t9 || room9*zs < t9.length*3.61) return '';
     var ax = right9 ? (x9 + w9 + 7/zs) : (x9 - 7/zs);
     out.push('<line x1="'+(right9 ? x9+w9 : x9).toFixed(1)+'" y1="'+(y9+h9/2).toFixed(1)
       +'" x2="'+(right9 ? ax-2/zs : ax+2/zs).toFixed(1)+'" y2="'+(y9+h9/2).toFixed(1)
       +'" style="stroke:var(--pt-bds);stroke-width:'+(0.5/zs).toFixed(2)+'"/>');
-    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 4.9/zs, col9, right9 ? 'start' : 'end', 'font-weight="700" '+HALO+'pointer-events="none"'));
+    txts.push(txt(ax, y9+h9/2+1.8/zs, esc(t9), 6.0/zs, col9, right9 ? 'start' : 'end', 'font-weight="700" '+HALO+'pointer-events="none"'));
     return t9;
   }
   G.clusters.forEach(function(c){
@@ -4840,11 +4854,13 @@ function graphSVG(o){
         /* 数据标注：payload / 带宽 / 延迟，紧贴通信线正下方、与线同一条中轴——
            通信是一条横线不是一个框，名字在线上、读数在线下，两行夹着那条线，
            归属由「夹在中间的那条线」表达。 */
-        var mc9 = (o.metricLi != null && !gh) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
-        if(mc9 && w*zs > Math.max(60, mc9.length*3.0))
+        /* 数值字号 4.9→6.0（与 sideMetric 同比例），每字符宽度预算同步从 3.0 放大到 3.67，
+           保持宽度预算与实际渲染宽度一致。 */
+        var mc9 = (o.metricLi != null && !gh) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.67)) : '';
+        if(mc9 && w*zs > Math.max(60, mc9.length*3.67))
           /* 读数才是这行字真正被看的理由（名字只是找到它），色权顶格给到 fg——
              同样的字号预算，只把它从「附注」的浅灰调回「正文」的深色 + 粗体。 */
-          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 4.9/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 6.0/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -4877,15 +4893,16 @@ function graphSVG(o){
            两行都收在框里（张量框本来就矮，写到框外就分不清是谁的了）。 */
         var mt9 = '', tside9 = false;
         if(o.metricSide && o.metricLi != null && !gh) tside9 = !!sideMetric(n, x, y, w, h, metricColor(o.metricLi, n));
-        if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.0)) : '';
-        if(mt9 && !tside9 && w*zs < mt9.length*3.0) mt9 = '';
+        /* 数值字号 4.9→6.0（同 sideMetric/comm 比例），每字符宽度预算同步从 3.0 放大到 3.67。 */
+        if(!tside9) mt9 = (o.metricLi != null && !gh && h*zs >= 15) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.67)) : '';
+        if(mt9 && !tside9 && w*zs < mt9.length*3.67) mt9 = '';
         if(tside9) mt9 = '';
         var tfk = 1;
         if(o.fitLabel && String(n.label).length*3.1 > w*zs) tfk = Math.max(0.6, (w*zs)/(String(n.label).length*3.1));
         txts.push(txt(x+w/2, y+h/2+(mt9?-1.4:2)/zs, esc(n.label), 5.2*tfk/zs, 'var(--pt-fg3)', 'middle', HALO));
         /* 读数比张量名更值得看清：同一条中轴上，字号预算不变，色权与粗细提到顶格 */
         if(mt9)
-          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 4.9/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
+          txts.push(txt(x+w/2, y+h/2+6.2/zs, esc(mt9), 6.0/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
       }
       return;
     }
@@ -5015,10 +5032,12 @@ function graphSVG(o){
         }
       }
       if(labOn9)
-        /* 名字后面挤成一行的读数（one9）：字号预算不能占（本来就是硬挤进去的），
-           但色权可以——从「附注」的浅灰、常规粗细，提到跟名字同一档深色 + 粗体。 */
+        /* 名字后面挤成一行的读数（one9）：挤在同一行、空间本来就紧（见上面 one9 的
+           判定用的还是名字那档 3.2/3.0 宽度预算），但字号可以比名字略大一档——
+           显式给 tspan 一个比父 text（5.4*fitK/zs）大约 1.15x 的 font-size，
+           读数比名字醒目一点，又不至于把这行已经很满的宽度预算撑爆。 */
         txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700">  '+esc(mtx9)+'</tspan>' : ''),
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
@@ -5026,8 +5045,11 @@ function graphSVG(o){
            顶格给到 fg、加粗——不动字号预算（3.4–4.6，装得下几个字是算好的），
            只把视觉重量从「名字的附注」搬回「正文」，异常/接近阈值再往上加一档
            警示色（跟点开看到的完整明细同一个判断，不是另起一套）。 */
+        /* 读数字号地板/天花板从 3.4–4.6 提到 4.4–6.2，明显大过名字（5.4*fitK）；
+           fitLabel 自缩路径里的每字符宽度常数 0.62 按新天花板同比例放大到 0.84，
+           使「装不装得下」的估算继续跟着新字号走。 */
         txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
-                    Math.max(3.4, Math.min(4.6, o.fitLabel ? (w*zs)/(mtx9.length*0.62) : 4.6))/zs,
+                    Math.max(4.4, Math.min(6.2, o.fitLabel ? (w*zs)/(mtx9.length*0.84) : 6.2))/zs,
                     metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
@@ -6363,11 +6385,25 @@ function sideScene(D, g, box){
         if(n9.id === 'attention_all_gather' || n9.id === 'ffn_all_gather') lbl9 = 'TP/SP AllGather';
         if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl9 = 'TP/SP Reduce-Scatter';
         var tag9 = (colW * Zv >= 220 * TG && b0) ? ' · '+(b0.dim === 'sp' ? 'SP' : b0.dim.toUpperCase())+'切'+(b0.axis||'') : '';
-        /* 再放大一档：把这一层这算子的数据标注（与正视胶囊同一份）直接跟在名字后面 */
-        if(colW * Zv >= 330 * TG){ var om9 = sdOpMetric(li9, n9, D); if(om9) tag9 += ' · ' + om9; }
-        body.push(fsTxt(lx + colW/2, (ya+yb)/2 + 2.1/FS_Z, esc(lbl9 + tag9), 5.8,
+        /* 再放大一档：把这一层这算子的数据标注（与正视胶囊同一份）单独画出来，
+           不再拼进名字那串——拼在一起字号只能跟名字（5.8）一样大，数值要明显
+           比名字醒目。行高够（比现有 10.5 门槛再高出一整行）就单独另起一行，
+           字号提到 7.2；行高不够两行时退回同一行，用 tspan 把数值单独调到
+           6.6（比名字大但不到独占一行时的 7.2，给单行挤字留点余量），
+           跟正视图 one9 分支同一个「挤一行就打个折」的思路。 */
+        var om9 = '';
+        if(colW * Zv >= 330 * TG) om9 = sdOpMetric(li9, n9, D) || '';
+        var omCol9 = sdOpWarn(li9, n9, D) ? 'var(--pt-warn, #d97706)' : 'var(--pt-fg)';
+        var vLine9 = !!om9 && (yb - ya) >= 20/FS_Z;
+        var content9 = esc(lbl9 + tag9);
+        if(om9 && !vLine9)
+          content9 += '<tspan font-size="'+(6.6/FS_Z).toFixed(2)+'" font-weight="800" fill="'+omCol9+'">  '+esc(om9)+'</tspan>';
+        body.push(fsTxt(lx + colW/2, (ya+yb)/2 + (vLine9 ? -3.4 : 2.1)/FS_Z, content9, 5.8,
           b0 ? dimColor(b0.dim) : 'var(--pt-fg2)',
           'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+        if(vLine9)
+          body.push(fsTxt(lx + colW/2, (ya+yb)/2 + 8.6/FS_Z, esc(om9), 7.2, omCol9,
+            'middle', 'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
       }
     }
     if(dim9) body.push('</g>');
@@ -7551,7 +7587,9 @@ function renderChainBar(D){
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
-  $('stagebar').innerHTML = cBtn + kBtns + physBtn + vBtns + lBtns + mvBtn + dispBtn;
+  $('stagebar').innerHTML = '<span class="pt-zone">' + cBtn + kBtns + physBtn + '</span>'
+    + '<span class="pt-zone">' + vBtns + lBtns + '</span>'
+    + '<span class="pt-zone">' + mvBtn + dispBtn + '</span>';
   /* 搜索走中间那个容器，不进右侧工具条 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
