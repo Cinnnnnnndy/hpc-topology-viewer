@@ -6,7 +6,7 @@
         pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html @ 7ca2142
     连同 ./vendor/swimlane-task/{pattern.css,pattern.js} 一起照搬（那两个文件逐字节一致）。
 
-  相对本仓的四处、且仅有四处改动（保持与上游可 diff）：
+  相对本仓的五处、且仅有五处改动（保持与上游可 diff）：
     ① 本段说明；
     ② <head> 里加一条 ./embed.css   —— 卡片内嵌形态（藏掉它自带的顶栏、放开 min-height）；
     ③ <head> 里加一条 ./embed-bridge.js —— 读 ?theme=/?chrome=/?range= 与宿主 postMessage，
@@ -15,9 +15,16 @@
        attn/router/experts 上色带，呼应 ../parallel-topology/demo.html 的 kernelDefs
        同一套 TP=青/EP=紫/不切分=灰 语言；新增函数全部集中在 drawChevronTrack 之后
        一个单独的注释区块里（搜「④ 本仓新增」），只在既有绘制循环和 tooltipHtml 里
-       各加了一行调用挂进去，其余正文没有再动。
-  除了④标注的这一小块新增/两处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
-  上游更新时重新拷一遍、再补这四处即可。
+       各加了一行调用挂进去，其余正文没有再动；
+    ⑤ 正文 <script> 里再加一小块「选中 → 回报宿主的 Rank」——`select()` 每次真的选中
+       一个事件时，从它的 metrics.rankId 里抠出物理 Rank 号（抠不出来的事件，比如
+       Rank 组行、Stage 概览行、跨 Stage 通信，一律报 null），`postMessage` 一条
+       `{type:'pto:swimlane-select', rank}` 给宿主，供它去照亮整网图/主视图里同一个
+       Rank（宿主那边的接线在 index.html，见其 `pto:swimlane-select` 消息处理）。
+       新增函数集中在 kernelSegmentTooltipRow 之后一个单独的注释区块里（搜「⑤ 本仓
+       新增」），只在 `select()` 里加了一行调用挂进去，其余正文没有再动。
+  除了④⑤标注的这两小块新增/三处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
+  上游更新时重新拷一遍、再补这五处即可。
 
   上游依赖 ../vendor/pto-design-system/（tokens + css/style.css）。本仓在 public/vendor/
   下有同名快照，本文件放在 public/combo-workbench/ 恰好让 ../vendor/ 落到它上面，
@@ -1375,13 +1382,32 @@
            但悬浮要一格一格试才发现，段一多容易读成「一堆看不懂的花色」。
            折中：段本身够宽（能放下 2 字符不糊）时，直接在段里刻它的切法缩写
            （TP/EP，不切分的不写字——灰色本身就是"没有切法"，写"—"反而添乱），
-           不够宽的窄段仍然只能靠悬浮——两条腿走路，不必等布局改版。 */
+           不够宽的窄段仍然只能靠悬浮——两条腿走路，不必等布局改版。
+
+           兼容性修复（沿用 kernel 分段这一处局部改动，不算新增第五处）：条右边
+           紧跟着还会画 redrawTaskLabel 那行主标签（"F · L0–L11 · TP0 / EP0" 这类），
+           它左对齐从 barX+5 起笔——条不够宽时（未展开的「Rank N 前向/反向」条，
+           全貌 range 下常见）主标签会占掉条的大半甚至全部，这里的 TP/EP 缩写字
+           这时候还照画不误，就会跟主标签的字压在一起糊成一片、读不出是哪个
+           （2026-08 走查发现，即"这些东西有时候会错乱"那条反馈的根子）。
+           主标签没有开放测量接口，但这里拿的是同一个 ctx，直接照抄它"截到
+           maxChars 个字再补……"那句判断、用同一款字体量出真实像素宽度——
+           不按"每字 6px"死算：中文字形按等宽字体实际渲染比 6px 宽得多，
+           死算会漏留出地界，窄条上量出来"没超"其实已经贴着标签最后一个字了。
+           量完把字号立刻切回本函数自己那款 7px，不留在主标签的字号上。 */
+        const taskLabelFont = css('--font-mono') || 'monospace';
+        ctx.font = `${barW >= 72 ? '600 9px' : '600 8px'} ${taskLabelFont}`;
+        const taskLabelMaxChars = Math.max(4, Math.floor((barW - 8) / 6));
+        const taskLabelShown = item.label.length > taskLabelMaxChars
+          ? `${item.label.slice(0, Math.max(0, taskLabelMaxChars - 1))}…`
+          : item.label;
+        const taskLabelReservedW = barW < 28 ? 0 : 5 + ctx.measureText(taskLabelShown).width + 6;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.font = `600 7px ${css('--font-mono') || 'monospace'}`;
         segX = barX;
         segments.forEach(seg => {
           const segW = barW * seg.w / total;
-          if (segW >= 16 && seg.cls !== 'none') {
+          if (segW >= 16 && seg.cls !== 'none' && segX >= barX + taskLabelReservedW) {
             ctx.fillStyle = 'rgba(255,255,255,.92)';
             ctx.fillText(seg.cls.toUpperCase(), segX + segW / 2, barY + barH / 2);
           }
@@ -1401,6 +1427,35 @@
           : `${seg.label} ${Math.round(seg.w / total * 100)}%`);
         const note = source === 'metrics' ? '真实子阶段耗时（来自本事件 metrics）' : '示意比例（无逐 kernel 真实计时，占位分解）';
         return ['Kernel 分解', `${parts.join(' · ')} —— ${note}`];
+      }
+      /* ════════════════════════════════════════════════════════════════════ */
+
+      /* ════════════════════════════════════════════════════════════════════
+         ⑤ 本仓新增（第 5 处相对上游的局部改动，与文件头注释同步登记）——
+         点了泳道上的一个事件，回报宿主「这是哪个物理 Rank」，供整网图/主视图
+         照亮同一张卡（组合工作台已有 pushHL 那条"过路高亮"通道，反方向——从
+         整网图/主视图点某张卡回来——宿主直接复用 pushHL 推给这一格，接的是
+         ./embed-bridge.js 里新增的一小段，不算在这五处里，那是另一份文件）。
+
+         Rank 号从哪儿来：只有"叶子"事件（Rank 展开视图里的算子链、Rank 前向/
+         反向条本身、同步等待条）的 metrics 上挂着 `rankId: 'Rank N'`——见
+         eventsForOperatorWindow/gradientAllReduceEvent/buildRankHierarchyRows
+         那几处赋值。Rank 组行（rank-group-pp*-forward/backward）、Stage 概览行
+         （mbTotalEvent、stageEvents 里那些 PPn 前向/反向/通信）、张量驻留对象
+         都没有单一 Rank 可报——代表一整组或者跟 Rank 无关，报 null 让宿主把
+         另外两格的高亮散掉，好过硬点一个不代表这次点击的 Rank 误导读者。
+
+         不在这里猜"没有 rankId 就退而求其次报 focusedRankRowId"之类的近似值：
+         那等于用"上一次展开过的 Rank"冒充"这一次点的是什么"，两件事对不上。 */
+      function rankFromEventMetrics(metrics) {
+        const raw = metrics && metrics.rankId;
+        if (typeof raw !== 'string') return null;
+        const m = raw.match(/(\d+)\s*$/);
+        return m ? Number(m[1]) : null;
+      }
+      function notifyHostOfSwimlaneSelect(item) {
+        if (!window.parent || window.parent === window) return;
+        window.parent.postMessage({ type: 'pto:swimlane-select', rank: rankFromEventMetrics(item.metrics) }, '*');
       }
       /* ════════════════════════════════════════════════════════════════════ */
 
@@ -1825,6 +1880,7 @@
         draw();
         const item = selectedEvent();
         document.getElementById('statusText').textContent = `${item.label} · ${kindLabel(item.kind)} · ${fmt(item.startMs)} → ${fmt(item.endMs)}`;
+        notifyHostOfSwimlaneSelect(item); // ← ⑤ 本仓新增，见上方「⑤ 本仓新增」区块
       }
       function setActiveRange(nextRange, options = {}) {
         if (!ranges[nextRange]) return;
