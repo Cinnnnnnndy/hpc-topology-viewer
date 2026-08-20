@@ -4727,6 +4727,11 @@ function graphSVG(o){
      线在屏幕上仍是细线、字仍是那么大（地图式）；标签的显隐阈值乘 zs——放大到
      屏幕上装得下，字才出现，越放大出现得越多。 */
   var zs = o.zscale || 1;
+  /* 字号系数：只放大**这一次调用**里节点名与读数的字号，连同「装不装得下」的宽高
+     预算一起按同一个倍数抬——预算不跟着抬的话，字大了照样按老尺寸判定，判出来的
+     「装得下」就是假的（字会探出框、串到隔壁）。默认 1，不传的调用方（正视卡阵、
+     叙事第 2 幕、卡内解剖）一个字节都不变。 */
+  var fk = o.fontK || 1;
   var root = o.clip ? clu[o.clip] : null;
   var bx = root ? root.x : 0, by = root ? root.y : 0;
   var bw = root ? root.width : G.width, bh = root ? root.height : G.height;
@@ -5037,7 +5042,7 @@ function graphSVG(o){
         : (cut9 && cut9.count > 1 && cut9.mine < 0)
           ? ' · '+(part.dimName || String(dim).toUpperCase())+'×'+cut9.count
           : ' · '+(part.dimName || String(dim).toUpperCase())+part.range[0]+'/'+part.total+(s1 && s1.partial ? '↯' : '');
-      var labOn9 = o.fitLabel || w*zs > Math.max(26, (String(n.label).length + tag.length)*3.2);
+      var labOn9 = o.fitLabel || w*zs > Math.max(26*fk, (String(n.label).length + tag.length)*3.2*fk);
       /* 数据标注（sidecar 解剖图里节点旁那枚白胶囊的那行字）：比名字再晚一档出现。
          **优先写进节点框内、名字正下方**——归属要靠「在框里」说话。写在框外时
          它落在两行节点中间的空当里，上下都不挨着谁，读者一样判断不出算哪一个的。
@@ -5046,16 +5051,16 @@ function graphSVG(o){
       /* 装不下「名字 · 切分区间」就先丢区间，别丢名字——区间在悬停与明细卡里都有，
          而没有名字这个框就什么也不是了（分栏铺满之后框宽只有原来的六成，
          「Q Latent Linear · TP2048/4096」这种长串一律落到门槛外，整片没名字）。 */
-      if(tag && w*zs <= (String(n.label).length + tag.length)*3.2 && w*zs > String(n.label).length*3.2) tag = '';
+      if(tag && w*zs <= (String(n.label).length + tag.length)*3.2*fk && w*zs > String(n.label).length*3.2*fk) tag = '';
       /* 分栏铺满是「照着屏幕把整张图排好」的取景，不是地图——那里字号该**缩到装得下**，
          而不是装不下就不写。地图式的恒定字号在可缩放的方阵里才成立：那里字小了可以
          放大，而这里已经没有放大这一步了，不写就是永远看不到。 */
       var fitK = 1;
       if(o.fitLabel){
-        var need9 = (String(n.label).length + tag.length)*3.2;
+        var need9 = (String(n.label).length + tag.length)*3.2*fk;
         if(need9 > w*zs) fitK = Math.max(0.62, (w*zs) / need9);
       }
-      var nmW9 = (String(n.label).length + tag.length)*3.2*fitK;
+      var nmW9 = (String(n.label).length + tag.length)*3.2*fk*fitK;
       var mtx9 = '', two9 = false, one9 = false, side9 = false;
       /* 铺满取景里链两侧是大片空白（层模板本来就是一条竖链），读数就走**节点正右侧**、
          与节点同一条基线，再拉一根短引线——和 sidecar 解剖图里那枚白胶囊同一个位置。
@@ -5064,15 +5069,15 @@ function graphSVG(o){
       if(o.metricSide && o.metricLi != null && !gh && labOn9)
         side9 = !!sideMetric(n, x, y, w, h, metricColor(o.metricLi, n));
       if(!side9 && labOn9 && o.metricLi != null && !gh){
-        mtx9 = opMetric9(o.metricLi, n, Math.floor(w*zs/3.0));
+        mtx9 = opMetric9(o.metricLi, n, Math.floor(w*zs/(3.0*fk)));
         /* 够高就上下两行都收在框里；不够高就**接在名字后面同一行**（同样在框里）。
            这两种都是「在框内」，归属没有歧义；写到框外一律不做——框外那条空当
            上下都不挨着谁，读者只能靠距离猜（实机就是这样把读数认到下一个算子头上的）。 */
-        two9 = h*zs >= 13.5 && (o.fitLabel || w*zs >= mtx9.length*3.0);
-        one9 = !two9 && w*zs >= (String(n.label).length + tag.length)*3.2 + mtx9.length*3.0 + 8;
+        two9 = h*zs >= 13.5*fk && (o.fitLabel || w*zs >= mtx9.length*3.0*fk);
+        one9 = !two9 && w*zs >= (String(n.label).length + tag.length)*3.2*fk + mtx9.length*3.0*fk + 8*fk;
         if(!two9 && !one9){
-          mtx9 = opMetric9(o.metricLi, n, Math.max(4, Math.floor((w*zs - nmW9 - 8)/3.0)));
-          one9 = !!mtx9 && w*zs >= nmW9 + mtx9.length*3.0 + 8;
+          mtx9 = opMetric9(o.metricLi, n, Math.max(4, Math.floor((w*zs - nmW9 - 8*fk)/(3.0*fk))));
+          one9 = !!mtx9 && w*zs >= nmW9 + mtx9.length*3.0*fk + 8*fk;
           if(!one9) mtx9 = '';
         }
       }
@@ -5081,9 +5086,9 @@ function graphSVG(o){
            判定用的还是名字那档 3.2/3.0 宽度预算），但字号可以比名字略大一档——
            显式给 tspan 一个比父 text（5.4*fitK/zs）大约 1.15x 的 font-size，
            读数比名字醒目一点，又不至于把这行已经很满的宽度预算撑爆。 */
-        txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2 : 2)/zs,
-                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
-                    5.4*fitK/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
+        txts.push(txt(x+w/2, y+h/2+(two9 ? -2.2*fk : 2*fk)/zs,
+                    esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK*fk/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
+                    5.4*fitK*fk/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
       if(two9 && !side9)
         /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
@@ -5093,8 +5098,8 @@ function graphSVG(o){
         /* 读数字号地板/天花板从 3.4–4.6 提到 4.4–6.2，明显大过名字（5.4*fitK）；
            fitLabel 自缩路径里的每字符宽度常数 0.62 按新天花板同比例放大到 0.84，
            使「装不装得下」的估算继续跟着新字号走。 */
-        txts.push(txt(x+w/2, y+h/2+5.8/zs, esc(mtx9),
-                    Math.max(4.4, Math.min(6.2, o.fitLabel ? (w*zs)/(mtx9.length*0.84) : 6.2))/zs,
+        txts.push(txt(x+w/2, y+h/2+5.8*fk/zs, esc(mtx9),
+                    Math.max(4.4, Math.min(6.2, o.fitLabel ? (w*zs)/(mtx9.length*0.84*fk) : 6.2))*fk/zs,
                     metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
     }
     /* 点开这个算子看完整明细（图上写的只是摘要）。命中面走调用方给的 hit 层：
@@ -5895,21 +5900,28 @@ var FS_Z = 1;
    量出来的比不写死：viewBox 宽度由舞台长宽比反解（与 renderChain 同一条式子），
    舞台尺寸一变，字的**屏幕**大小仍然不变。 */
 var FS_PX = 11.5;                      /* 正文标注（基准 5.4 档）在屏幕上的目标像素 */
-/* 反除的上限。gain 越大 = 字在**场景单位**里越大；而 gain 里的 vw/cw 就是
-   1/缩放比，所以「gain 随窄而涨」等价于「画面缩小、字不缩」——版面是按字与格子的
-   相对大小排的，字单方面涨上去就只能互相叠。实测重叠的文字对数（侧视）：
+/* 反除的上限。gain 越大 = 字在**场景单位**里越大；而 gain 里的 vw/cw 就是 1/缩放比，
+   所以「gain 随窄而涨」等价于「画面缩小、字不缩」。上限压到 1.4 是因为字单方面涨
+   上去就会互相叠——但**叠在哪儿是可以查的**：把上限抬到 2.6 逐对量一遍，一屏 42 对
+   重叠里几乎全部出自四处版面缺陷，而不是「普遍性地挤」：
 
-     上限   620px      1680px
-     3.0    48 对      25 对      ← 原值：窄栏惨不忍睹，连基准宽度都已经在叠
-     2.13   37 对      18 对
-     1.7     9 对      24 对
-     1.4     0 对       0 对      ← 现值
+     · 段头横幅（PP Stage n · Lx–Ly ＋ 因子行）只管居中、从不管段宽装不装得下
+     · 顶边距 TM 钉死 74，横幅整块却按 1/FS_Z 长，抬高后直接长进层刻度那一行
+     · 层刻度芯片 78% 悬在基线之上，抬高后剩下的 22% 压进数据带第一条的标题
+     · 右上角「数据标注」三行的行距是常数 12/10，字长上去就摞成一团
 
-   1.4 之后 gain basically 被钉成常数，字在场景单位里不再随宽度变——于是整张图
-   **长宽一起等比缩**，比例关系守住，窄栏里字小但不打架（要看清滚轮放大即可，
-   缩放手势本来就在）。代价是窄栏里字确实小：620px 宽时约 6px。这是「48 对重叠的
-   13px」与「不重叠的 6px」之间的取舍——叠在一起的字并不会因为大而更能读。 */
-var FS_GAIN_MAX = 1.4;
+   这四处各自按「装不下就缩 / 装不下就不写 / 让位按同一个倍数长」修掉之后，同样
+   逐对量：400px 与 1680px 宽的侧视都是 **0 对**，620px 4 对（现值 1.4 下分别是
+   2 / 0 / 3 对）——也就是说抬高之后并不比原来更挤。换来的是：
+
+     侧视正文中位字号   400px      620px      1180px
+     上限 1.4            4px        6px        11px      ← 原值，窄栏读不了
+     上限 2.6            7px       11px        15px      ← 现值
+
+   窄栏（工作台里「整网图」那一格常常只有 400–620px）从「看得见有字」变成「读得出
+   写的是什么」，这正是这个上限存在的理由。再往上（3.2/3.8）重叠就重新长回来，
+   而中位字号只多 1–3px，不划算。 */
+var FS_GAIN_MAX = 2.6;
 /* 放大手势那一路的字号增长率。1.0 = 老的「地图式」：字完全钉死屏幕尺寸，
    滚轮从 1x 拉到 20x，框跟着长 20 倍，字一个像素都不多——实测（正视，1600×1000
    视口）文字高度从 100% 到 2000% 全程稳在 12px 上下，数字上没有「缩小」，但
@@ -6267,8 +6279,13 @@ function frontScene(D, g, box){
    哪一层——收起时 ui.openLayer 已经改回 null 了，画面还要按这层的几何把
    动画播完，不能立刻就没了这层是谁。 */
 var sqT = 0, sqAnim = null;
+/* 「展开这一层」时相机替你摆位那一次的记号：记的是「已经替哪一层、挤到哪一档
+   进度摆过」。摆位只在展开/收起动画进行中和刚定格的那一帧做，定格之后平移就
+   完全归手势——见 sideScene 尾部那段。 */
+var sqPanKey = null;
 function startSqAnim(fromT, toT, li){
   if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
+  sqPanKey = null;                          /* 新一轮开合：该摆的位重新摆一次 */
   var t0 = (window.performance || Date).now(), dur = 240;
   sqAnim = {t0:t0, dur:dur, from:fromT, to:toT, li:li, raf:null};
   var self = sqAnim;
@@ -6325,7 +6342,22 @@ function sideScene(D, g, box){
   var MET = laneN ? (12 + laneN*25 + (smpOn ? 16 : 2)) : (smpOn ? 26 : 0);
   var ANN = railOn ? 72 : (ui.mv.train ? 24 : 0);   /* 底部训练轨块（只剩 Checkpoint 时收窄） */
   /* 两侧边距要装得下屏幕恒定尺寸的头尾标签（字号增益之后它们比以前宽约 1.7 倍） */
-  var TM = 74, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
+  /* 顶边距原来钉死 74：段头横幅整块（胶囊 20、因子行 +15、字 7.4）是按 1/FS_Z
+     长的，而 yRail/yMet 这两条带钉的是常数——字号增益一抬高，横幅就长进了层刻度
+     和「Std σ」那一行里（实测把 FS_GAIN_MAX 抬到 2.6 时，一屏 42 对重叠里大半
+     出自这一处）。改成按「横幅下沿 ↔ 层刻度芯片上沿」这段真实的净空反算——两头
+     都是按 1/FS_Z 长的（横幅的因子行 +15，芯片的 13×0.78 高度往 yMet 上方顶），
+     所以顶边距也得按 1/FS_Z 走：32 + 30/FS_Z。现值（FS_Z = 1/1.4）算出来正好是
+     74，取 max 之后一个像素都不动；增益抬到 2.6 时它自己长到 110，把横幅那一块
+     完整地让出来。 */
+  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ mHC 主干 yRail → 层刻度芯片
+     → 数据带。横幅与刻度芯片都是按 1/FS_Z 长的，中间那两条钉的却是常数偏移——
+     字号增益一抬高，横幅就直接长进刻度和「Std σ」那一行里（实测把 FS_GAIN_MAX
+     抬到 2.6，一屏 42 对重叠里大半出自这一处）。顶边距按这一叠真实需要的高度反
+     算：只把**超出现值（1/FS_Z = 1.4）的那一截**加上去，于是现值下算出来就是原来
+     的 74，一个像素都不动；增益抬到 2.6 时它自己长到 114，把横幅整块让出来。 */
+  var FSK = 1/FS_Z, FSX = Math.max(0, FSK - 1.4);      /* 比现值多出来的反除倍数 */
+  var TM = 74 + 33*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
   var x0 = box.x + LM, x1 = box.x + box.w - RM;
   var yRail = box.y + TM - 12;
   var yMet = box.y + TM + 10;
@@ -6362,16 +6394,38 @@ function sideScene(D, g, box){
       var on9 = hasSel && st9 === selStage;
       body.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 10/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(20/FS_Z).toFixed(1)
         +'" rx="'+(10/FS_Z).toFixed(1)+'" style="fill:'+mix(VC.pp, on9?26:10)+';stroke:'+VC.pp+';stroke-width:'+((on9?1.6:.7)/FS_Z).toFixed(2)+'"/>');
-      body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, 7.4,
+      /* 横幅这两行原来只管居中、不管装不装得下。字号增益一抬高，同一句话在屏幕上
+         宽出一大截：先撞上段边界那枚「H×4 S/R」，再探进隔壁段的横幅里（实测把
+         FS_GAIN_MAX 抬到 2.6，侧视一屏 54 对重叠里有四成出自这两行）。改成按段宽
+         缩到装得下——和层展开卡标题（ttlFs9）同一条办法：位置不动、字号让步，
+         实在还是宽就换成短写法（PP0 · L0–11），而不是探出去压别人。
+         增益不动时这两行本来就装得下（fit=1），一个像素都不会动。 */
+      var segRoom9 = Math.max(20, (xb - xa) - 12/FS_Z);
+      function fitFs9(str9, base9){
+        return Math.min(1, segRoom9 / Math.max(1, fsW(str9, base9/FS_Z)));
+      }
+      var ttlS9 = 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, fitT9 = fitFs9(ttlS9, 7.4);
+      if(fitT9 < 0.78){ ttlS9 = 'PP'+st9+' · L'+lo9+'–'+hi9; fitT9 = Math.max(0.5, fitFs9(ttlS9, 7.4)); }
+      body.push(fsTxt((xa+xb)/2, yH + 2.6/FS_Z, ttlS9, 7.4*fitT9,
         on9 ? VC.pp : 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-      var chips = [];
-      if(cutTP) chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>');
-      if(cutCP) chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>');
-      if(cutEP) chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>');
-      if(cutDP) chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>');
+      var chips = [], chipsP9 = [];
+      if(cutTP){ chips.push('<tspan fill="'+VC.tp+'">TP ×'+D.tp+'</tspan>'); chipsP9.push('TP ×'+D.tp); }
+      if(cutCP){ chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>'); chipsP9.push('CP ×'+D.cp); }
+      if(cutEP){ chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>'); chipsP9.push('EP ×'+D.ep); }
+      if(cutDP){ chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>'); chipsP9.push('DP ×'+D.dp); }
       chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
-      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4/FS_Z).toFixed(2)+'" '
+      chipsP9.push('×'+fmt(D.world / D.pp)+' 卡');
+      /* 因子行缩到半档还装不下就整行不写：那时它在屏幕上只有两三个像素，留着
+         也读不出来，却正好宽到压进隔壁段的同一行（本页一贯的「装不下就不写」）。 */
+      var chipsS9 = chipsP9.join(' · '), fitC9 = fitFs9(chipsS9, 6.4);
+      if(fitC9 >= 0.5)
+      body.push('<text x="'+((xa+xb)/2).toFixed(1)+'" y="'+(yH + 15/FS_Z).toFixed(1)+'" text-anchor="middle" font-size="'+(6.4*fitC9/FS_Z).toFixed(2)+'" '
         +'font-family="var(--pt-mono)" font-weight="700">'+chips.join('<tspan fill="var(--pt-bds)"> · </tspan>')+'</text>');
+      /* 横幅这两行居中之后左右各还剩多少空当——段边界上那枚「H×4 S/R」正落在
+         这段空当里，装不下就只留刻度线不写字（本页到处都是这条「装不下就不写」
+         的规矩）。缩到装得下时空当充裕，判定自然为真，现值下一律照写。 */
+      var bnW9 = Math.max(fsW(ttlS9, 7.4*fitT9/FS_Z), fitC9 >= 0.5 ? fsW(chipsS9, 6.4*fitC9/FS_Z) : 0);
+      var bnRoom9 = ((xb - xa) - bnW9) / 2;
       hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 12/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(30/FS_Z).toFixed(1)
         +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"/>');
       if(st9 > 0){
@@ -6383,6 +6437,7 @@ function sideScene(D, g, box){
         if(ui.mv.perf){
           body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(yRail-7/FS_Z).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(yRail+7/FS_Z).toFixed(1)
             +'" style="stroke:'+VC.pp+';stroke-width:'+(1.5/FS_Z).toFixed(2)+'"/>');
+          if(bnRoom9 >= fsW('H×4 S/R', 4.8/FS_Z)/2 + 3/FS_Z)
           body.push(fsTxt(xd, yRail - 10/FS_Z, 'H×4 S/R', 4.8, VC.pp, 'middle',
             'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
           hit.push('<rect x="'+(xd-8).toFixed(1)+'" y="'+(yRail-14/FS_Z).toFixed(1)+'" width="16" height="'+(20/FS_Z).toFixed(1)
@@ -6393,6 +6448,7 @@ function sideScene(D, g, box){
             +'" style="stroke:'+GCOL+';stroke-width:'+(1.4/FS_Z).toFixed(2)+'"/>');
           /* 写在回传轨**上方**那条空带里：轨下面 13 个单位正好是 Optimizer 那行长
              标题的高度，两串字会横着穿在一起（中间两个边界尤其明显）。 */
+          if(bnRoom9 >= fsW('∂H×4 S/R', 4.8/FS_Z)/2 + 3/FS_Z)
           body.push(fsTxt(xd, yBk - 10/FS_Z, '∂H×4 S/R', 4.8, GCOL, 'middle',
             'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
           hit.push('<rect x="'+(xd-8).toFixed(1)+'" y="'+(yBk-8/FS_Z).toFixed(1)+'" width="16" height="'+(24/FS_Z).toFixed(1)
@@ -6401,7 +6457,11 @@ function sideScene(D, g, box){
       }
     }
   }
-  body.push(fsTxt(box.x + 14, box.y + 47, 'MODEL DEPTH / TOPOLOGY', 6.4, 'var(--pt-fg3)', 'start',
+  /* 这条竖排小标题写在左边距里，右边紧挨着的就是第一段的段头横幅——字号增益
+     一抬高它就伸进横幅底下。装不进左边距（x0 之前那段）就不写。 */
+  var mdT9 = 'MODEL DEPTH / TOPOLOGY';
+  if(box.x + 14 + fsW(mdT9, 6.4/FS_Z) + mdT9.length*1.4/FS_Z <= x0 - 6/FS_Z)
+  body.push(fsTxt(box.x + 14, box.y + 47, mdT9, 6.4, 'var(--pt-fg3)', 'start',
     'font-weight="700" letter-spacing="1.4"'));
   /* ── mHC residual ×4 主干：贯穿全部层，接进两头 ── */
   var railX0 = x0 - 26, railX1 = x1 + 26;
@@ -6462,12 +6522,16 @@ function sideScene(D, g, box){
       if(ui.mv.num) sp2.push('σ'+s8.std.toFixed(2), 'Amax '+s8.amax.toFixed(1));
       if(ui.mv.perf) sp2.push(s8.lat.toFixed(2)+'ms');
       var st2 = 'L'+lm2+' · '+sp2.join(' · '), tw2 = fsW(st2, 5.6/FS_Z);
+      /* 右端同样别探进右边距：现值下最右这条本来就探出去一截（那片边距是空的，
+         不碍事），字号增益一抬高它会一路探到「主输出 + MTP · 只在 L47 之后」那行
+         字上。只在增益高于现值时（FSX > 0）收进条带内，现值下一个像素不动。 */
       var cx2 = xOf(lm2) + colW/2, lft2 = cx2 - tw2/2 < mx0;
-      var l2 = lft2 ? mx0 : cx2 - tw2/2;
+      var rgt2 = !lft2 && FSX > 0 && (cx2 + tw2/2 > mx1);
+      var l2 = lft2 ? mx0 : (rgt2 ? mx1 - tw2 : cx2 - tw2/2);
       if(l2 < prevR + 8/FS_Z) return;
       prevR = l2 + tw2;
-      body.push(fsTxt(lft2 ? mx0 : cx2, ySmp, st2,
-        5.6, 'var(--pt-fg2)', lft2 ? 'start' : 'middle', 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
+      body.push(fsTxt(lft2 ? mx0 : (rgt2 ? mx1 : cx2), ySmp, st2,
+        5.6, 'var(--pt-fg2)', lft2 ? 'start' : (rgt2 ? 'end' : 'middle'), 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
     });
   }
   /* 右上角标明这块图在展示哪几类数据（工具条上「数据」多选的当前状态） */
@@ -6475,9 +6539,12 @@ function sideScene(D, g, box){
     var mvOn9 = [];
     if(ui.mv.num) mvOn9.push('数值'); if(ui.mv.grad) mvOn9.push('梯度'); if(ui.mv.perf) mvOn9.push('性能');
     if(ui.mv.moe) mvOn9.push('MoE'); if(ui.mv.train) mvOn9.push('训练');
+    /* 三行的行距原来是常数 12/10，字却按 1/FS_Z 长——增益一抬高三行就摞成一团。
+       行距跟着同一个倍数走（现值 FSK=1.4 时正好还原成 12 与 22）。 */
+    var lnK9 = FSK/1.4;
     body.push(fsTxt(x1 + 30, box.y + 92, '数据标注', 6.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-    body.push(fsTxt(x1 + 30, box.y + 104, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
-    body.push(fsTxt(x1 + 30, box.y + 114, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
+    body.push(fsTxt(x1 + 30, box.y + 92 + 12*lnK9, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
+    body.push(fsTxt(x1 + 30, box.y + 92 + 22*lnK9, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
   }
   /* ── 每层一列：L 刻度 + 算子条（条状：条宽约半个列距，居中） ── */
   var lstep = Math.max(1, Math.ceil((14/FS_Z) / (colW + colGap)));
@@ -6514,7 +6581,9 @@ function sideScene(D, g, box){
     if(li9 % lstep === 0 || li9 === L - 1){
       var lbl9 = 'L'+li9;
       var lblCol9 = inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)';
-      var eox = lx + colW/2, eoy = yMet - 5;
+      /* 芯片高 13/FS_Z、78% 在基线之上——增益一抬高，剩下那 22% 就压进 yMet 下方
+         数据带第一条的标题里。让它**往上**长、下沿钉住：现值（FSK=1.4）下位移为 0。 */
+      var eox = lx + colW/2, eoy = yMet - 5 - 2.86*FSX;
       var chipW9 = fsW(lbl9, 5.6/FS_Z) + 12/FS_Z, chipH9 = 13/FS_Z;
       body.push('<rect x="'+(eox-chipW9/2).toFixed(1)+'" y="'+(eoy-chipH9*0.78).toFixed(1)+'" width="'+chipW9.toFixed(1)+'" height="'+chipH9.toFixed(1)
         +'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
@@ -6817,7 +6886,9 @@ function sideScene(D, g, box){
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
           +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR+'</title></rect>');
       }
-      if(rowsR > 1 && stR === 0){
+      /* 两枚行标之间只隔 (rowsR-1)×(dh+1.4) 这么点——字号增益一抬高，它们先跟
+         彼此叠，再一起叠到左边「卡架」那两个字上。装不下就不写。 */
+      if(rowsR > 1 && stR === 0 && (rowsR-1)*(dh+1.4) >= 5.64/FS_Z){
         body.push(fsTxt(rgx - 4, rackTop + dh/2 + 2, 'TP·SP0', 4.9, VC.tp, 'end'));
         body.push(fsTxt(rgx - 4, rackTop + (rowsR-1)*(dh+1.4) + dh/2 + 2, 'TP·SP'+(rowsR-1), 4.9, VC.tp, 'end'));
       }
@@ -6867,8 +6938,25 @@ function sideScene(D, g, box){
        接管——层没开着（sqActiveLi 为 null）时完全不碰 panX3，这条路只在
        层展开的这段时间生效。 */
     var animCW = colW + pushX;
-    var overflow9 = Math.max(0, (leftX + animCW) - (box.x + box.w) + 24);
-    ui.panX3 = -overflow9;
+    /* 溢出量要按**屏幕**坐标算：场景约定 screen = C + pan + zoom·(base − C)，
+       C 就是 cxC（box 是整块画布，见 renderChain 传的 SCB）。原来这行直接拿
+       base 坐标减舞台右沿、一项 zoom3 都没有——zoom=1 时恰好等价，一放大就
+       按缩放前的尺寸摆位，卡片右边一大截留在舞台外（实机 195% 时右沿探出
+       190 单位，读者只看得到大半张卡）。 */
+    var scrL9 = cxC + Zv * (leftX - cxC);
+    var scrR9 = cxC + Zv * (leftX + animCW - cxC);
+    /* 先让右沿收进舞台；卡片在当前缩放下比舞台还宽时两头顾不过来，优先保左沿
+       （这张图是从左往右读的），右边那截交给手势拖出来。 */
+    var wantX9 = Math.min(0, (box.x + box.w - 24) - scrR9);
+    wantX9 = Math.max(wantX9, (box.x + 16) - scrL9);
+    /* 摆位只做一次：动画进行中每帧跟着 t9 摆（推开到哪儿相机跟到哪儿），定格
+       之后就把相机交还给手势。原来这行是每帧无条件写，而 scheduleCrisp 在停手
+       420ms 之后必然重画一次——于是不管往哪儿拖，松手半秒都弹回原位，「点开
+       之后只能停在右边、拖不动」就是这么来的。sqPanKey 记住「哪一层、挤到哪一
+       档进度」已经摆过，同一格状态不再抢第二次；startSqAnim 每开一轮新动画就
+       清空它，下一次该摆的还是会摆。 */
+    var panKey9 = sqActiveLi + '@' + t9.toFixed(3);
+    if(sqPanKey !== panKey9){ ui.panX3 = wantX9; sqPanKey = panKey9; }
     /* 不给推开的内容压半透明蒙版——用户明确要「其他部分不要透明处理」：
        颜色跟原图一样，只是位置挪了。详图卡跟着展开进度一起淡入，内容本身
        不用逐帧重算（graphSVG 整棵重画费不起），淡入淡出足够表达跟这次
@@ -6969,9 +7057,16 @@ function layerDetailOverlay(D, box, leftX, li, chartTop, chartBottom){
   /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
      厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
      的样式」）——正视卡片自己的 graphSVG 调用就没传 tag3d，这里照抄。 */
+  /* 这张卡里的字比图上其余地方还小一档：它走的是 graphSVG，而 graphSVG 的字号是
+     场景单位里的常数，完全不吃侧视自己那套屏幕像素增益（FS_Z）。整张接过来会把
+     「两行读数装不装得下」的门槛（h*zs ≥ 13.5）一并抬到算子条根本达不到的高度，
+     读数会整片消失；所以这里只按算子条**竖向真实的余量**放大一档——名字基线
+     −2.2、读数基线 +5.8、字号 5.4/6.2，条高约 18 个单位，量下来还剩约 1.25 倍的
+     空当，取满即可。宽度预算跟着同一个倍数抬，读数按重要性递减截断，占的宽度
+     和原来一样，只是字更大、字数更少。 */
   var gsvg = graphSVG({x:CX+14, y:CY+42, w:CW-28, h:CH-56, g:(hasSel?sel:0), D:D, metricLi:li,
                        clip:'decoder-stack', label:true, tag3d:false, ghostIds:ghostIds, cuts:cuts9,
-                       ghostClu: D.moe ? [] : ['moe-block']});
+                       fontK:1.25, ghostClu: D.moe ? [] : ['moe-block']});
   body.push(gsvg ? '<g pointer-events="none">'+gsvg+'</g>'
                   : txt(CX+CW/2, CY+CH/2, '（真图脚本未加载：单文件打开时退回示意）', 10, 'var(--pt-fg3)', 'middle'));
   /* 卡片自己的区域垫一层不带 data-act 的挡板：底下压着的是这一层原来那根柱子
@@ -9261,7 +9356,7 @@ document.addEventListener('click', function(ev){
     ui.opSel = null;                 /* 换视角 = 换一张图：上一张图里点开的那个算子不再有位置可跟 */
     ui.openLayer = null;             /* 「展开这一层」是侧视自己的浮层，换到别的机位就该关掉 */
     if(sqAnim && sqAnim.raf != null) cancelAnimationFrame(sqAnim.raf);
-    sqAnim = null; sqT = 0;          /* 挤压进度也归零：不带着上一次的开合状态串到别的机位 */
+    sqAnim = null; sqT = 0; sqPanKey = null;   /* 挤压进度与摆位记号一起归零：不带着上一次的开合状态串到别的机位 */
     var ty = parseFloat(b.getAttribute('data-yaw')), tp = parseFloat(b.getAttribute('data-pitch'));
     /* 直接落到目标机位——中间帧是既非此视图也非彼视图的斜角，补间等于每次切换都强插一段 3D */
     if(isFinite(ty) && isFinite(tp)){ ui.yaw3 = ty; ui.pitch3 = tp; }
