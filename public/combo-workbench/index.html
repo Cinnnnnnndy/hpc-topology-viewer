@@ -633,7 +633,8 @@ var dataOn = DATAK.map(function (x) { return x.k; });
    扣掉，可见的泳道面积跟之前一模一样，只是矮了一条挡板。 */
 var DEFAULT_DOCK_H = 250;
 /* 整网图那格的默认宽度：视口的 42%（460–900 夹紧），左右大约 58:42。 */
-var DEFAULT_SIDE_W = Math.max(460, Math.min(900, Math.round(window.innerWidth * 0.42)));
+/* 左 60 : 右 40（原为 58:42）——用户直接指定的目标比例。 */
+var DEFAULT_SIDE_W = Math.max(460, Math.min(900, Math.round(window.innerWidth * 0.40)));
 var state = {};      // id → { value, folded, loaded }
 var dockH = DEFAULT_DOCK_H;
 var sideW = DEFAULT_SIDE_W;
