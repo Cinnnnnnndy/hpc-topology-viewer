@@ -1253,7 +1253,7 @@ function wireSplitters() {
 /* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
 window.addEventListener('message', function (ev) {
   var d = ev && ev.data;
-  if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select' && d.type !== 'pto:comm')) return;
+  if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select' && d.type !== 'pto:comm' && d.type !== 'pto:swimlane-select')) return;
   SLOTS.forEach(function (c) {
     var frame = $('iframe[data-slot="' + c.id + '"]');
     if (!frame || frame.contentWindow !== ev.source) return;
@@ -1280,8 +1280,24 @@ window.addEventListener('message', function (ev) {
        只认 pto:select（读者在那一格真的点了什么），不认 pto:state-ack —— 后者是
        我们自己推过去之后的回执，拿它当输入就是自己跟自己转。 */
     if (d.type === 'pto:select') {
+      var rankSel = (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null;
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
-      if (peer) pushHL(peer, 'rank', (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null);
+      if (peer) pushHL(peer, 'rank', rankSel);
+      /* 同一条 rank 高亮再顺手递给泳道那格——它没有「卡」的概念，接的是
+         embed-bridge.js 里新增的一小段（不碰 swimlane.html 正文），只在页面角落
+         浮一枚会自己淡出的小徽标，不去挪读者在泳道里的当前范围/展开状态，见那边
+         注释。null 就是把徽标收回去，跟两格互相照亮时「点空白就散」一个道理。 */
+      if (c.id === 'topology' || c.id === 'netgraph') pushHL('swimlane', 'rank', rankSel);
+    }
+    /* 反方向：泳道点了一个带 rank 归属的事件 → 两格拓扑照亮同一个 rank。
+       swimlane.html「⑤ 本仓新增」区块负责从 metrics.rankId 里抠出这个数（抠不出来
+       就报 null），这里只管转发，不重复它的判定逻辑。走的还是 pushHL 那条"过路高亮"
+       通道，跟 wireOpToRank/wireLinkage 用的是同一件事，只是触发源换成了泳道的
+       postMessage 而不是轮询。 */
+    if (d.type === 'pto:swimlane-select' && c.id === 'swimlane') {
+      var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
+      pushHL('topology', 'rank', swRank);
+      pushHL('netgraph', 'rank', swRank);
     }
     /* 上方拓扑开了通信层 → 下方抽屉联动切到「通信观测」：上面看现象（地面流量带），
        下面看量化与归因（Sankey / Model & Routing / 时间轴）。只在**开**的时候联动，
