@@ -388,6 +388,30 @@ body.is-resizing iframe{pointer-events:none}
         <b id="zcv">1×</b>
         <button data-zc="info" title="对象层级" aria-label="查看对象层级">i</button>
       </div>
+      <!-- kernel 分段图例：泳道自己那条常驻图例（.timeline-footer）在卡片内嵌形态下
+           被 embed.css 整行 display:none（那 38px 留给泳道本身），色带含义因此只剩
+           悬浮 tooltip 能看到——一格一格试才发现，反馈是"看不懂"。这颗按钮长在台面
+           自己（不是 iframe 里），不占泳道一像素，点开是常驻可查的图例，弹层复用
+           顶栏"数据"下拉那一套 .dmenu/.dmenu-pop 样式，不用另起一套面板视觉语言。 -->
+      <div class="dmenu" id="klegend">
+        <button id="klegendBtn" aria-haspopup="true" aria-expanded="false" title="前向/反向条内色带 = kernel 分段，含义见此">
+          <span>图例</span><span class="cv" aria-hidden="true">⌄</span>
+        </button>
+        <div class="dmenu-pop" role="menu" style="min-width:190px">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#06B6D4;flex:0 0 auto"></i>TP 切分（列切/头切）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#A855F7;flex:0 0 auto"></i>EP 切分（桶切）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:var(--foreground-muted);flex:0 0 auto"></i>不切分（无参数，如 attn.core）
+          </div>
+          <div style="padding:6px 8px 2px;font-size:10.5px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+            段够宽会刻 TP/EP 字样；窄段悬浮看具体是哪个 kernel。"等待"类条本来就不参与分段，不是漏画。
+          </div>
+        </div>
+      </div>
       <span class="spacer"></span>
     </header>
     <div class="slot-body">
@@ -1158,6 +1182,17 @@ function buildFrameControls() {
   });
   document.addEventListener('click', function (ev) {
     if (!menu.contains(ev.target)) { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+  });
+  // kernel 分段图例：纯展示，没有可勾选的项，开合逻辑照抄上面这颗但不用挂状态。
+  var klegend = $('#klegend'), klegendBtn = $('#klegendBtn');
+  klegendBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = !klegend.classList.contains('open');
+    klegend.classList.toggle('open', open);
+    klegendBtn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', function (ev) {
+    if (!klegend.contains(ev.target)) { klegend.classList.remove('open'); klegendBtn.setAttribute('aria-expanded', 'false'); }
   });
   menu.addEventListener('click', function (ev) {
     var act = ev.target.closest('[data-dact]');
