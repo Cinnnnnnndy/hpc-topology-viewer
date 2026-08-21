@@ -1461,6 +1461,15 @@ window.addEventListener('message', function (ev) {
       var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
       pushHL('topology', 'rank', swRank);
       pushHL('netgraph', 'rank', swRank);
+      /* kernel 分段逐节可点之后，泳道还报得出「点的是哪一节」（d.block，形如
+         'attn.qkv'——与 parallel-topology 模块视图 MODULE_BLOCKS 的 id 同一张表，
+         swimlane.html 的 KERNEL_SEG_BLOCK 就是照那张表配的）。没选中某一节、或
+         选中的是反向那组不挂功能块的真实子阶段时报 null，跟 rank 报 null 同一条
+         规矩——转发照旧不重复判定逻辑，走的还是 pushHL 这条"过路高亮"通道，只是
+         kind 换成 'block'。 */
+      var swBlock = (typeof d.block === 'string' && d.block) ? d.block : null;
+      pushHL('topology', 'block', swBlock);
+      pushHL('netgraph', 'block', swBlock);
     }
     /* 上方拓扑开了通信层 → 下方抽屉联动切到「通信观测」：上面看现象（地面流量带），
        下面看量化与归因（Sankey / Model & Routing / 时间轴）。只在**开**的时候联动，
