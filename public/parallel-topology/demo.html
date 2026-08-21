@@ -806,6 +806,27 @@ function fmtP(n){ return n>=1e9 ? (n/1e9).toFixed(2)+' B' : n>=1e6 ? (n/1e6).toF
 function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 function proj(x,y,z,s){ return [(x-z)*C*s, ((x+z)*S - y)*s]; }
 function ptsStr(p){ return p.map(function(q){ return q[0].toFixed(1)+','+q[1].toFixed(1); }).join(' '); }
+/* 一组屏幕点的凸包（Andrew monotone chain）。用处只有一个：立方体投到屏幕上之后
+   它的轮廓是几边形随机位而变（3D 下是六边形，正视/顶视/侧视下退化成四边形），
+   要给整只盒子一块「点哪儿都算点中它」的命中面，就只能现算这个轮廓——挑某几个
+   角写死，换个机位就会退化成一条没有面积的线。
+   点数恒为 8，O(n log n) 的排序在这个规模上比任何"聪明"的特判都省心。 */
+function hull2(pts){
+  var ps = pts.slice().sort(function(a, b){ return a[0] - b[0] || a[1] - b[1]; });
+  if(ps.length < 3) return ps;
+  var cross = function(o, a, b){ return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]); };
+  var lo = [], hi = [], i9;
+  for(i9 = 0; i9 < ps.length; i9++){
+    while(lo.length >= 2 && cross(lo[lo.length-2], lo[lo.length-1], ps[i9]) <= 0) lo.pop();
+    lo.push(ps[i9]);
+  }
+  for(i9 = ps.length - 1; i9 >= 0; i9--){
+    while(hi.length >= 2 && cross(hi[hi.length-2], hi[hi.length-1], ps[i9]) <= 0) hi.pop();
+    hi.push(ps[i9]);
+  }
+  lo.pop(); hi.pop();
+  return lo.concat(hi);
+}
 /* 维度签名色：与逻辑魔方 / net-sharding 同一套 token */
 var VC = {tp:'var(--pt-tp)', cp:'var(--pt-cp)', pp:'var(--pt-pp)', dp:'var(--pt-dp)', ep:'var(--pt-ep)'};
 var DIMN = {tp:'TP', cp:'CP', pp:'PP', dp:'DP', ep:'EP'};
@@ -4032,18 +4053,18 @@ function netScene(D, g, box, step){
           body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
           body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
         }
-        /* ⚠ 命中面写死"前脸"这四个角，只在 3D/正视两个机位上有面积：顶视（俯视，
-           pitch=π/2）把 v 轴压成零、侧视（yaw=π/2）把 u 轴压成零，前脸都退化成一条
-           线——那两个机位的**容量**图里，卡壳是点不中的（整网图走的是 frontScene /
-           sideScene 自己的命中面，不受影响；选组 HUD 在四个机位都在，选中这条路
-           本身没断）。
-           改法试过并且是对的：把命中面换成这只盒子 8 个角的屏幕凸包（任意 yaw/pitch
-           都成立）。但实测下来，只要往这一层加进覆盖面更大的几何，Chromium 就会在
-           moe64·侧视·容量那一屏上把某一列像素挪动 1/255（11 个像素，肉眼不可见）——
-           画出来的内容一模一样（SVG 里除命中面外逐行相同），是显示列表分块的舍入
-           差异，fill:none / opacity:0 / crispEdges 三种写法都躲不掉。本次改动守的是
-           "默认态逐像素零回归"，所以这一条留着不动，等这条纪律松口再换。 */
-        hit.push('<g class="cgrow"><polygon points="'+ptsStr([C8[0],C8[1],C8[2],C8[3]])
+        /* 命中面取这只盒子 8 个角的**屏幕凸包**，不是写死"前脸"那四个角。
+           写死前脸只在 3D/正视两个机位上有面积：顶视（俯视，pitch=π/2）把 v 轴压成
+           零、侧视（yaw=π/2）把 u 轴压成零，前脸都退化成一条线——那两个机位的
+           **容量**图里卡壳因此点不中（整网图走的是 frontScene / sideScene 自己的
+           命中面，不受影响，所以这个洞一直没被发现）。凸包在任意 yaw/pitch 下都是
+           盒子在屏幕上真正占的那块地方，四个机位一视同仁。
+           已知代价：往这一层加进覆盖面更大的几何之后，Chromium 会在 moe64·侧视·
+           容量那一屏上把某一列共 11 个像素各挪动 1/255。画出来的内容一模一样
+           （SVG 里除这一行命中面外逐行相同），是显示列表分块的舍入差异，
+           fill:none / opacity:0 / crispEdges 三种写法都躲不掉。拿肉眼不可见的
+           1/255 换两个机位能不能点中卡，这笔账是划算的。 */
+        hit.push('<g class="cgrow"><polygon points="'+ptsStr(hull2(C8))
           +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="card" data-i="'+gc+'"/></g>');
         kc = kcOrig;     /* 借道用完即还原：下一段（或下一次调用 dc/tc 的判断）不受影响 */
       }
