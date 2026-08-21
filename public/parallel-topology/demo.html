@@ -248,12 +248,24 @@
    不到了。收起时不占位、不吃事件，行为与「不在」一样。 */
 .pt-cfgpanel{display:none}
 .pt-cfgpanel.is-open{
-  display:block; position:absolute; top:44px; right:0; z-index:22; width:302px;
-  max-height:min(74vh, 640px); overflow:auto;
+  display:block; position:absolute; top:44px; right:0; z-index:22;
+  /* 302px 太窄：并行度那五格＋应用被挤到换行，通信连线/数据标注那两组
+     逐条竖排的勾选（各 5 条）又把面板拉得比视口还高，纵向必出滚动条。
+     宽度放宽到能装下五格并行度那一整行；勾选列表改两栏（见下），
+     两者一起把纵向长度压下来，先天不必滚动才是目标，不是滚得动就行。 */
+  width:min(440px, calc(100vw - 32px));
+  /* 640px 那道硬顶是老版本按 302px 窄面板估的余量，宽度/两栏都改完之后内容还是
+     比它高（七组东西摞起来，实测 784px）——顶得太低，宽度那些改动等于白做，
+     滚动条照样出现。改成只用视口高度兜底（88vh），不再叠一个更小的硬顶。 */
+  max-height:88vh; overflow:auto;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:10px 12px 12px;
   box-shadow:0 14px 40px rgba(0,0,0,.18);
 }
-.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd)}
+.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd); display:flex; flex-wrap:wrap; gap:3px 8px}
+.pt-cfgpanel .cg > h6, .pt-cfgpanel .cg > .cgrow, .pt-cfgpanel .cg > .pnum, .pt-cfgpanel .cg > .cnote, .pt-cfgpanel .cg > .acts{flex:1 1 100%}
+/* 通信连线 / 数据标注：逐条竖排在窄面板里没办法，面板宽了就该收成两栏——
+   同样五条，高度砍掉近一半。 */
+.pt-cfgpanel .cg > button.mvi{flex:1 1 calc(50% - 4px)}
 .pt-cfgpanel .cg:first-child{border-top:0; padding-top:2px}
 .pt-cfgpanel h6{
   margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.12em;
@@ -5895,9 +5907,12 @@ function renderSolidGrid(D){
 
   /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长。
      宽度不再留一整栏给文字读数（那张读数并到 #rankMem 标准卡了，见函数尾）——
-     腾出来的横向空间直接分给托盘本身：sc 的基准从 1 提到 1.15，字号跟着涨一档，
-     两栏也往左收，viewBox 总宽从 1080 收到 940，同样的字在这块画布里占的比例更大。 */
-  var sc = Math.min(1, Math.sqrt(4/D.pp)) * 1.15;
+     腾出来的横向空间直接分给托盘本身：sc 的基准从 1 提到 1.3（上一版 1.15 量出来
+     字还是偏小），两栏往左右收紧到刚好不撞（见下 TXG/TXA 的取值注释），
+     viewBox 总宽 1000——托盘变大吃掉了「腾出来的空」，但每单位 SVG 长度在同样
+     宽的容器里占的比例仍然比 1080 的老版本大，字号（正文调到 ~10–11、标题
+     ~14）跟着一起涨，两条一起才是「default 比例下读得出」，不是单压一头。 */
+  var sc = Math.min(1, Math.sqrt(4/D.pp)) * 1.3;
   var nE = D.moe ? D.ep : 1;
   var BW1 = 120*sc, BD1 = (D.moe ? 88 : 46)*sc;
   var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;   /* 厚度比 = 字节比 2:2:12 */
@@ -5907,9 +5922,13 @@ function renderSolidGrid(D){
      等轴测投影按**高度**撑满画布、两侧配平居中，栏标这行的屏幕纵坐标只随
      svg-y×scale 走，不会因为挪了 TXG/TXA 就躲开它。90 撞过（实测两栏标题露在
      胶囊底下），140 是量出来最小够用的安全值，不同预置（pp 从 2 到 5）都验过。 */
-  var VW = 940, TOP = 140;
+  var VW = 1000, TOP = 140;
   var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) + 18;
-  var TXG = 290, TXA = 702;
+  /* TXG/TXA：两栏中心的间距要盖住「①栏左伸出 + ①栏右伸出 + ②栏左伸出」的总和，
+     否则字大了会在中间撞上——量的是 sc=1.3、MoE、dp=100（盘古预置）这个最坏
+     组合下①栏右侧读数条 + ②栏左侧标签能伸多远，270/730（差 460）留了余量，
+     实测 pp 2–5、dense/MoE、dp 16–100 都不撞。 */
+  var TXG = 270, TXA = 730;
   var trayBot = TOP + (D.pp-1)*PITCH + Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
   var H = trayBot + 22;
   var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
@@ -5940,10 +5959,10 @@ function renderSolidGrid(D){
   /* ═══ 两栏各自的抬头：整段的说明文字（总账题面、四形态生死表、点法）挪进
      stagebar 那颗「？」说明按钮的弹层了（见函数尾）——这两行**留下**，它们不是
      泛泛的说明，是「往下看的这一栏是什么」的栏标，离栏太远读者会脱节。 */
-  parts.push(txt(TXG-32, 92, '① 参数系三形态 · 同一套切分', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXG-32, 106, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 8.6, 'var(--pt-fg2)', 'middle'));
-  parts.push(txt(TXA-40, 92, '② 激活体 · 自己一套', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXA-40, 106, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 8.6, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TXG-32, 92, '① 参数系三形态 · 同一套切分', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXG-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 10, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TXA-40, 92, '② 激活体 · 自己一套', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXA-40, 108, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
 
   for(pIdx=0; pIdx<D.pp; pIdx++){
     var Y0 = TOP + pIdx*PITCH + TH1;
@@ -5992,31 +6011,31 @@ function renderSolidGrid(D){
     gp.push(boxSVG(0,0,0,BW1,TH1,BD1,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8}));
 
     /* 左：PP 段标（可点换段）；右：这一段每卡的三份账 */
-    var lx = -BD1*C - 14, ly = BD1*S*0.5 - TH1*0.35;
-    gp.push(txt(lx, ly, 'PP'+pIdx, 11.5, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    gp.push(txt(lx, ly+13, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 8.6, 'var(--pt-fg3)', 'end'));
-    if(hlStage===pIdx) gp.push(txt(lx, ly+25, 'L'+revLi+' 在这一段', 8, VC.pp, 'end', 'font-weight="700"'));
-    gh.push('<g class="cgrow"><rect x="'+(lx-62).toFixed(1)+'" y="'+(ly-12).toFixed(1)+'" width="66" height="28" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
-    var rx1 = BW1*C + 12, ry1 = BW1*S - TH1*0.2;
+    var lx = -BD1*C - 16, ly = BD1*S*0.5 - TH1*0.35;
+    gp.push(txt(lx, ly, 'PP'+pIdx, 13.5, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+15, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 10.2, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+29, 'L'+revLi+' 在这一段', 9.5, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-68).toFixed(1)+'" y="'+(ly-14).toFixed(1)+'" width="72" height="32" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var rx1 = BW1*C + 14, ry1 = BW1*S - TH1*0.2;
     if(pIdx===0){
       /* 顶盘右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
-      var rx0 = rx1 + (D.dp>1 ? 48 : 0);
-      gp.push(txt(rx0, ry1-26, '×'+D.dp+' 复印（DP）', 9, VC.dp, 'start', 'font-weight="800"'));
-      gp.push(txt(rx0, ry1-14, 'W·O 逐字相同 · G 归约前各不相同', 7.6, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+12, 'G 梯度 '+fmtGB(2*P9)+' GB', 8.4, MEMC.g, 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+24, 'O 优化器态 '+fmtGB(12*P9)+' GB', 8.4, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+      var rx0 = rx1 + (D.dp>1 ? 50 : 0);
+      gp.push(txt(rx0, ry1-30, '×'+D.dp+' 复印（DP）', 10.5, VC.dp, 'start', 'font-weight="800"'));
+      gp.push(txt(rx0, ry1-16, 'W·O 逐字相同 · G 归约前各不相同', 9, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 10, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+14, 'G 梯度 '+fmtGB(2*P9)+' GB', 10, MEMC.g, 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+28, 'O 优化器态 '+fmtGB(12*P9)+' GB', 10, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
     }else{
-      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 7.8, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx1, ry1+12, 'O '+fmtGB(12*P9)+' GB', 7.8, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 9.4, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1+14, 'O '+fmtGB(12*P9)+' GB', 9.4, 'var(--pt-fg3)', 'start'));
     }
     /* 顶盘的轴名：认领关系写在轴上（别的盘不重复——同一把刀） */
     if(pIdx===0){
       var fm2 = ptopW(BW1*0.55, 0);
-      gp.push(txt(fm2[0]+28, fm2[1]-9, 'h ← '+DIMN.tp+'×'+D.tp, 9.4, VC.tp, 'start', 'font-weight="800"'));
+      gp.push(txt(fm2[0]+30, fm2[1]-10, 'h ← '+DIMN.tp+'×'+D.tp, 11, VC.tp, 'start', 'font-weight="800"'));
       var zm2 = ptopW(0, BD1*0.5);
-      gp.push(txt(zm2[0]-32, zm2[1]-18, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 9.4, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
-      gp.push(txt(lx, ly-18, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 9.4, VC.pp, 'end', 'font-weight="800"'));
+      gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+      gp.push(txt(lx, ly-20, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 11, VC.pp, 'end', 'font-weight="800"'));
     }
     parts.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gp.join('')+'</g>');
     hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gh.join('')+'</g>');
@@ -6044,14 +6063,14 @@ function renderSolidGrid(D){
     for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.65'));
     if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
     ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
-    var rx2 = BW2*C + 12, ry2 = BW2*S - THA*0.2;
-    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 8.4, VC.dp, 'start', 'font-weight="700"'));
-    ap.push(txt(rx2, ry2+12, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 7.6, 'var(--pt-fg3)', 'start'));
+    var rx2 = BW2*C + 14, ry2 = BW2*S - THA*0.2;
+    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 10, VC.dp, 'start', 'font-weight="700"'));
+    ap.push(txt(rx2, ry2+14, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 9, 'var(--pt-fg3)', 'start'));
     if(pIdx===0){
       var fm3 = ptopA(BW2*0.55, 0);
-      ap.push(txt(fm3[0]+28, fm3[1]-9, 's ← '+DIMN.cp+'×'+D.cp, 9.4, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
+      ap.push(txt(fm3[0]+30, fm3[1]-10, 's ← '+DIMN.cp+'×'+D.cp, 11, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
       var zm3 = ptopA(0, BD2*0.5);
-      ap.push(txt(zm3[0]-32, zm3[1]-18, 'b ← '+DIMN.dp+'×'+D.dp, 9.4, VC.dp, 'end', 'font-weight="800"'));
+      ap.push(txt(zm3[0]-34, zm3[1]-20, 'b ← '+DIMN.dp+'×'+D.dp, 11, VC.dp, 'end', 'font-weight="800"'));
     }
     parts.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ap.join('')+'</g>');
     hits.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ah.join('')+'</g>');
@@ -6094,14 +6113,22 @@ function renderSolidGrid(D){
 
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
-  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
-    + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
+  $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
     + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
-    + '<span class="pt-mv pt-gridhelp">'
-    + '<button class="pb'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
-    + (ui.gridHelp ? '<div class="pt-mvmenu" style="width:min(640px, calc(100vw - 32px));max-height:min(560px, 72vh);overflow:auto;text-align:left">'+gridHelpHTML+'</div>' : '')
+    /* 说明按钮改用配置钮同一副圆形壳（.pt-cfg/.pt-cfgbtn/.pt-cfgpanel）：舞台上
+       已经有一颗黑底圆钮立着规矩，「？」另起一套白底胶囊只是多一种长相要认。
+       连带带走 .pt-mv 那层壳——原来借它只是为了有个现成的下拉容器，副作用是
+       被 combo-workbench「.pt-mv:not(.pt-disp) 藏掉数据标注」那条规则连坐
+       （见 combo-workbench/index.html 的 hideCss）；换壳之后那条规则天然
+       不再命中这颗钮，两处 hideCss 里补的 :not(.pt-gridhelp) 例外也一并撤掉。
+       「映射」那枚分类签去掉：这一排本来就只有映射类这几个按钮，签是在替
+       没有名字的一组东西找名字，这里东西已经有名字了（双链映射/交集腔/…），
+       签反而是多余的第一眼噪声。 */
+    + '<span class="pt-cfg pt-gridhelp">'
+    + '<button class="pt-cfgbtn'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
+    + '<div class="pt-cfgpanel'+(ui.gridHelp?' is-open':'')+'" style="width:min(640px, calc(100vw - 32px));text-align:left">'+gridHelpHTML+'</div>'
     + '</span>';
   $('stageNote').hidden = true;
   $('detach').hidden = true;
@@ -9403,10 +9430,9 @@ function renderRankMem(D){
     /* 权重带的内部：图上那一条已经按刀色分块画出来了，但「哪一块是被哪把刀切的」
        只有颜色说不全——把块名与切法逐条列在它下面，颜色与图上一一对上。
        梯度与优化器态是同一份参数的 ×1 / ×6，同一套分法，不再抄两遍。
-       全局切分里不展开这一层：那一屏本来就在回答「哪一格」，逐算子的切法明细
-       是另一个粒度的问题（点开单张卡的「交集腔」子视角才回答），摆在这儿只会
-       把这张卡片拉得比它旁边的托盘还长。 */
-    if(sg.k === 'w' && sg.sub && !inGrid){
+       全局切分也展开这一层：这张卡是台面上**唯一**一处报「这张卡装了什么」的
+       读出卡，两处（chain / grid）读法不一致，读者会先怀疑是不是看错了卡。 */
+    if(sg.k === 'w' && sg.sub){
       sg.sub.forEach(function(x){
         if(!x.bytes) return;
         var mk = 'w:'+x.id, onX = ui.memSel === mk;
