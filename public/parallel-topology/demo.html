@@ -254,12 +254,24 @@
    不到了。收起时不占位、不吃事件，行为与「不在」一样。 */
 .pt-cfgpanel{display:none}
 .pt-cfgpanel.is-open{
-  display:block; position:absolute; top:44px; right:0; z-index:22; width:302px;
-  max-height:min(74vh, 640px); overflow:auto;
+  display:block; position:absolute; top:44px; right:0; z-index:22;
+  /* 302px 太窄：并行度那五格＋应用被挤到换行，通信连线/数据标注那两组
+     逐条竖排的勾选（各 5 条）又把面板拉得比视口还高，纵向必出滚动条。
+     宽度放宽到能装下五格并行度那一整行；勾选列表改两栏（见下），
+     两者一起把纵向长度压下来，先天不必滚动才是目标，不是滚得动就行。 */
+  width:min(440px, calc(100vw - 32px));
+  /* 640px 那道硬顶是老版本按 302px 窄面板估的余量，宽度/两栏都改完之后内容还是
+     比它高（七组东西摞起来，实测 784px）——顶得太低，宽度那些改动等于白做，
+     滚动条照样出现。改成只用视口高度兜底（88vh），不再叠一个更小的硬顶。 */
+  max-height:88vh; overflow:auto;
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:10px 12px 12px;
   box-shadow:0 14px 40px rgba(0,0,0,.18);
 }
-.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd)}
+.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd); display:flex; flex-wrap:wrap; gap:3px 8px}
+.pt-cfgpanel .cg > h6, .pt-cfgpanel .cg > .cgrow, .pt-cfgpanel .cg > .pnum, .pt-cfgpanel .cg > .cnote, .pt-cfgpanel .cg > .acts{flex:1 1 100%}
+/* 通信连线 / 数据标注：逐条竖排在窄面板里没办法，面板宽了就该收成两栏——
+   同样五条，高度砍掉近一半。 */
+.pt-cfgpanel .cg > button.mvi{flex:1 1 calc(50% - 4px)}
 .pt-cfgpanel .cg:first-child{border-top:0; padding-top:2px}
 .pt-cfgpanel h6{
   margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.12em;
@@ -939,6 +951,7 @@ var ui = {
   view:'chain', cutDim:'dp', axis:'tp', commDim:'tp', commPrim:'allreduce', detach:false,   /* 默认落在「整网切分」——先看整张网怎么被切开，再拆单维 */
   cpFacet:0, yaw:0, unfold:true, unfoldSet:false, skew:true, zoomAR:false, zoomFB:null,   /* 全量优先；超大规模除外，见 v1Layout。zoomFB={s,t,m}：时间·流里点开的那个 F/B 块 */
   act:0, act2:true, persp:'map', cavYaw:0, cavPitch:0,
+  gridHelp:false,   /* 全局切分那颗「？」说明弹层：开／关，不进 URL（与 dispOpen/mvOpen 同类瞬态） */
   yaw3:0.42, pitch3:0.30, zoom3:1, panX3:0, panY3:0, spread:true, knife:99, kDP:true, kPP:true, kCP:true, kTP:true, kEP:true, kPhys:false, viewTab:'3d',
   /* 通信图层原来只有 ui.commOn 一个总开关：五种通信一起亮、一起灭，想单看
      「EP 的 AllToAll 到底连了谁」就只能连着 TP 的换轴弧、DP 的梯度环一起看，
@@ -6485,33 +6498,38 @@ function renderSolidGrid(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
   var parts = [], hits = [];
-  var lps = D.layersPerStage, hK = Math.floor(D.hidden/D.tp), kE = D.moe ? D.experts/D.ep : 0;
+  var lps = D.layersPerStage, kE = D.moe ? D.experts/D.ep : 0;
   function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   function p3(x,y,z){ return proj(x,y,z,1); }
   function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
 
-  /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长 ── */
-  var sc = Math.min(1, Math.sqrt(4/D.pp));
+  /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长。
+     宽度不再留一整栏给文字读数（那张读数并到 #rankMem 标准卡了，见函数尾）——
+     腾出来的横向空间直接分给托盘本身：sc 的基准从 1 提到 1.3（上一版 1.15 量出来
+     字还是偏小），两栏往左右收紧到刚好不撞（见下 TXG/TXA 的取值注释），
+     viewBox 总宽 1000——托盘变大吃掉了「腾出来的空」，但每单位 SVG 长度在同样
+     宽的容器里占的比例仍然比 1080 的老版本大，字号（正文调到 ~10–11、标题
+     ~14）跟着一起涨，两条一起才是「default 比例下读得出」，不是单压一头。 */
+  var sc = Math.min(1, Math.sqrt(4/D.pp)) * 1.3;
   var nE = D.moe ? D.ep : 1;
   var BW1 = 120*sc, BD1 = (D.moe ? 88 : 46)*sc;
   var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;   /* 厚度比 = 字节比 2:2:12 */
   var BW2 = 104*sc, BD2 = clamp(D.dp*7, 46, 124)*sc;
   var THA0 = 26*sc;                                   /* 激活托盘的峰值厚度（PP0 满载那一档） */
-  var TOP = 158;
-  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) + 16;
-  var TXG = 430, TXA = 842;
+  /* TOP 留给 stagebar：那排胶囊是 HTML 浮层，不在 SVG 坐标系里——viewBox 矮下去时
+     等轴测投影按**高度**撑满画布、两侧配平居中，栏标这行的屏幕纵坐标只随
+     svg-y×scale 走，不会因为挪了 TXG/TXA 就躲开它。90 撞过（实测两栏标题露在
+     胶囊底下），140 是量出来最小够用的安全值，不同预置（pp 从 2 到 5）都验过。 */
+  var VW = 1000, TOP = 140;
+  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) + 18;
+  /* TXG/TXA：两栏中心的间距要盖住「①栏左伸出 + ①栏右伸出 + ②栏左伸出」的总和，
+     否则字大了会在中间撞上——量的是 sc=1.3、MoE、dp=100（盘古预置）这个最坏
+     组合下①栏右侧读数条 + ②栏左侧标签能伸多远，270/730（差 460）留了余量，
+     实测 pp 2–5、dense/MoE、dp 16–100 都不撞。 */
+  var TXG = 270, TXA = 730;
   var trayBot = TOP + (D.pp-1)*PITCH + Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
-  var TBY = trayBot + 52;
-  var H = TBY + 122;
+  var H = trayBot + 22;
   var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
-
-  /* 本卡四份账（逐卡口径：含路由不均/碎片，走带时激活跟着 ACT_T） */
-  var segs = memParts(D, co.p, g), segBy = {};
-  segs.forEach(function(x){ segBy[x.k] = x; });
-  var wB = segBy.w.bytes, gB = segBy.g.bytes, oB = segBy.opt.bytes;
-  var aB = segBy.act.bytes, aMub = segBy.act.mub, rsvB = segBy.rsv.bytes;
-  var otmpB = segBy.otmp ? segBy.otmp.bytes : 0;
-  var tot = segs.reduce(function(a,x){ return a+x.bytes; },0), cap = D.hbm*Math.pow(2,30);
   var CW = solid('var(--pt-fg)', 34);                 /* W 带的中性色：刀色都让给网格线 */
 
   /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
@@ -6534,16 +6552,15 @@ function renderSolidGrid(D){
   var revLi = parseInt(ui.revLayer, 10);
   var hlStage = (isFinite(revLi) && revLi>=0 && revLi<D.layers) ? Math.floor(revLi/lps) : -1;
   var ptopW = function(a,b){ return p3(a, TH1, b); };
-  var mineW = null, mineA = null;
   var pIdx, t, e, cI, dI;
 
-  /* ═══ 抬头（压低到浮层按钮下面：stagebar 是 HTML 浮层，viewBox 头两行会被它盖住） ═══ */
-  parts.push(txt(560, 66, '全局切分总账：四个形态 × 全部的腔 —— 点一格，定位持有它的那张卡', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(560, 81, 'W·G·O 共用一套切分（画成一只托盘的三层厚度）；A 自己一套 · 选中跨视图保持', 8.8, 'var(--pt-fg2)'));
-  parts.push(txt(TXG-36, 106, '① 参数系三形态 · 同一套切分', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXG-36, 119, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B = 16 B/参数 · 厚度比 = 字节比', 7.6, 'var(--pt-fg2)', 'middle'));
-  parts.push(txt(TXA-46, 106, '② 激活体 · 自己一套', 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXA-46, 119, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb（h 是第 4 根轴，TP 也切它）', 7.6, 'var(--pt-fg2)', 'middle'));
+  /* ═══ 两栏各自的抬头：整段的说明文字（总账题面、四形态生死表、点法）挪进
+     stagebar 那颗「？」说明按钮的弹层了（见函数尾）——这两行**留下**，它们不是
+     泛泛的说明，是「往下看的这一栏是什么」的栏标，离栏太远读者会脱节。 */
+  parts.push(txt(TXG-32, 92, '① 参数系三形态 · 同一套切分', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXG-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 10, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TXA-40, 92, '② 激活体 · 自己一套', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TXA-40, 108, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
 
   for(pIdx=0; pIdx<D.pp; pIdx++){
     var Y0 = TOP + pIdx*PITCH + TH1;
@@ -6578,7 +6595,6 @@ function renderSolidGrid(D){
       var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
       var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
       gp.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
-      if(mine1) mineW = [TXG + (q4[0][0]+q4[2][0])/2, Y0 + (q4[0][1]+q4[2][1])/2];
       gh.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
         + esc('腔（PP'+pIdx+' · h片'+t+eLab+'）· 持有者 ×'+hs.length+'（跨 b/s）\n点击定位 r'+rk)+'</title></polygon></g>');
     }
@@ -6593,31 +6609,31 @@ function renderSolidGrid(D){
     gp.push(boxSVG(0,0,0,BW1,TH1,BD1,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8}));
 
     /* 左：PP 段标（可点换段）；右：这一段每卡的三份账 */
-    var lx = -BD1*C - 12, ly = BD1*S*0.5 - TH1*0.35;
-    gp.push(txt(lx, ly, 'PP'+pIdx, 9.4, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    gp.push(txt(lx, ly+11, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 7, 'var(--pt-fg3)', 'end'));
-    if(hlStage===pIdx) gp.push(txt(lx, ly+21, 'L'+revLi+' 在这一段', 6.6, VC.pp, 'end', 'font-weight="700"'));
-    gh.push('<g class="cgrow"><rect x="'+(lx-56).toFixed(1)+'" y="'+(ly-10).toFixed(1)+'" width="60" height="24" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
-    var rx1 = BW1*C + 10, ry1 = BW1*S - TH1*0.2;
+    var lx = -BD1*C - 16, ly = BD1*S*0.5 - TH1*0.35;
+    gp.push(txt(lx, ly, 'PP'+pIdx, 13.5, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+15, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 10.2, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+29, 'L'+revLi+' 在这一段', 9.5, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-68).toFixed(1)+'" y="'+(ly-14).toFixed(1)+'" width="72" height="32" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var rx1 = BW1*C + 14, ry1 = BW1*S - TH1*0.2;
     if(pIdx===0){
       /* 顶盘右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
-      var rx0 = rx1 + (D.dp>1 ? 44 : 0);
-      gp.push(txt(rx0, ry1-22, '×'+D.dp+' 复印（DP）', 7.6, VC.dp, 'start', 'font-weight="800"'));
-      gp.push(txt(rx0, ry1-12, 'W·O 逐字相同 · G 归约前各不相同', 6.4, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 7, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+10, 'G 梯度 '+fmtGB(2*P9)+' GB', 7, MEMC.g, 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+20, 'O 优化器态 '+fmtGB(12*P9)+' GB', 7, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+      var rx0 = rx1 + (D.dp>1 ? 50 : 0);
+      gp.push(txt(rx0, ry1-30, '×'+D.dp+' 复印（DP）', 10.5, VC.dp, 'start', 'font-weight="800"'));
+      gp.push(txt(rx0, ry1-16, 'W·O 逐字相同 · G 归约前各不相同', 9, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 10, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+14, 'G 梯度 '+fmtGB(2*P9)+' GB', 10, MEMC.g, 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+28, 'O 优化器态 '+fmtGB(12*P9)+' GB', 10, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
     }else{
-      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 6.6, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx1, ry1+10, 'O '+fmtGB(12*P9)+' GB', 6.6, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 9.4, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1+14, 'O '+fmtGB(12*P9)+' GB', 9.4, 'var(--pt-fg3)', 'start'));
     }
     /* 顶盘的轴名：认领关系写在轴上（别的盘不重复——同一把刀） */
     if(pIdx===0){
       var fm2 = ptopW(BW1*0.55, 0);
-      gp.push(txt(fm2[0]+26, fm2[1]-8, 'h ← '+DIMN.tp+'×'+D.tp, 8, VC.tp, 'start', 'font-weight="800"'));
+      gp.push(txt(fm2[0]+30, fm2[1]-10, 'h ← '+DIMN.tp+'×'+D.tp, 11, VC.tp, 'start', 'font-weight="800"'));
       var zm2 = ptopW(0, BD1*0.5);
-      gp.push(txt(zm2[0]-30, zm2[1]-16, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 8, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
-      gp.push(txt(lx, ly-16, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 8, VC.pp, 'end', 'font-weight="800"'));
+      gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+      gp.push(txt(lx, ly-20, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 11, VC.pp, 'end', 'font-weight="800"'));
     }
     parts.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gp.join('')+'</g>');
     hits.push('<g transform="translate('+TXG+','+Y0.toFixed(1)+')">'+gh.join('')+'</g>');
@@ -6636,7 +6652,6 @@ function renderSolidGrid(D){
       var mine2 = (pIdx===co.p && cI===co.c && dI===co.d);
       var rk2 = rankOf(co.t, cI, dI, pIdx, D);
       ap.push('<polygon points="'+ptsStr(q5)+'" style="fill:'+(mine2 ? VC.dp : mix(VC.dp,9))+'"/>');
-      if(mine2) mineA = [TXA + (q5[0][0]+q5[2][0])/2, Y0 + (q5[0][1]+q5[2][1])/2];
       if(dz2 > 2.4)
         ah.push('<g class="cgrow"><polygon points="'+ptsStr(q5)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk2+'"><title>'
           + esc('腔（PP'+pIdx+' · 副本'+dI+(D.cp>1?' · 段'+cI+'∪'+(2*D.cp-1-cI):'')+'）· 持有者 = 同坐标 TP 组 ×'+D.tp+'\n点击定位 r'+rk2+'（保持当前 h 片）')+'</title></polygon></g>');
@@ -6646,101 +6661,73 @@ function renderSolidGrid(D){
     for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.65'));
     if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
     ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
-    var rx2 = BW2*C + 10, ry2 = BW2*S - THA*0.2;
-    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 7, VC.dp, 'start', 'font-weight="700"'));
-    ap.push(txt(rx2, ry2+10, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 6.6, 'var(--pt-fg3)', 'start'));
+    var rx2 = BW2*C + 14, ry2 = BW2*S - THA*0.2;
+    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 10, VC.dp, 'start', 'font-weight="700"'));
+    ap.push(txt(rx2, ry2+14, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 9, 'var(--pt-fg3)', 'start'));
     if(pIdx===0){
       var fm3 = ptopA(BW2*0.55, 0);
-      ap.push(txt(fm3[0]+26, fm3[1]-8, 's ← '+DIMN.cp+'×'+D.cp, 8, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
+      ap.push(txt(fm3[0]+30, fm3[1]-10, 's ← '+DIMN.cp+'×'+D.cp, 11, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
       var zm3 = ptopA(0, BD2*0.5);
-      ap.push(txt(zm3[0]-30, zm3[1]-16, 'b ← '+DIMN.dp+'×'+D.dp, 8, VC.dp, 'end', 'font-weight="800"'));
+      ap.push(txt(zm3[0]-34, zm3[1]-20, 'b ← '+DIMN.dp+'×'+D.dp, 11, VC.dp, 'end', 'font-weight="800"'));
     }
     parts.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ap.join('')+'</g>');
     hits.push('<g transform="translate('+TXA+','+Y0.toFixed(1)+')">'+ah.join('')+'</g>');
   }
 
-  /* ═══ 左栏读数：本卡在四个形态里各是哪一腔、各多少字节 ═══ */
-  var RX = 24, RW = 190, RY = 96;
-  function row(y, k, v, col){
-    parts.push(txt(RX, y, esc(k), 7.8, 'var(--pt-fg3)', 'start'));
-    parts.push(txt(RX+RW, y, v, 8.4, col||'var(--pt-fg)', 'end', 'font-weight="700"'));
-  }
-  function hr(y){ parts.push(ln([RX, y], [RX+RW, y], 'stroke:var(--pt-bds);stroke-width:.7')); }
-  function head(y, t2, col){ parts.push(txt(RX, y, esc(t2), 9.2, col||'var(--pt-fg)', 'start', 'font-weight="800"')); }
-  parts.push(txt(RX, RY, '读数 · 这张卡 g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-  parts.push(txt(RX, RY+12, '(tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+')　点右边任意格换卡', 7.2, 'var(--pt-fg3)', 'start'));
-  head(RY+32, '① 参数系 W·G·O —— 同一腔'); hr(RY+36);
-  row(RY+49, 'ℓ ← PP', 'L'+(co.p*lps)+'–L'+((co.p+1)*lps-1), VC.pp);
-  row(RY+62, 'h ← TP', '['+fmt(co.t*hK)+', '+fmt((co.t+1)*hK)+')', VC.tp);
-  row(RY+75, 'e ← EP', D.moe ? 'E'+(me.ep*kE)+'–E'+((me.ep+1)*kE-1) : '—（无 MoE）', D.moe?VC.ep:'var(--pt-fg3)');
-  row(RY+90, 'W 权重', fmtGB(wB)+' GB · 2B/参');
-  row(RY+103, 'G 梯度', fmtGB(gB)+' GB · 2B/参', MEMC.g);
-  row(RY+116, 'O 优化器态', fmtGB(oB)+' GB · 12B/参', 'var(--pt-fg2)');
-  parts.push(txt(RX, RY+128, 'G 在 AllReduce 前各算各的；O 常驻、只在更新一步读写', 6.4, 'var(--pt-fg3)', 'start'));
-  head(RY+148, '② 激活体腔 A', VC.dp); hr(RY+152);
-  row(RY+165, 'b ← DP', '副本'+co.d, VC.dp);
-  row(RY+178, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
-  row(RY+191, 'A 激活', fmtGB(aB)+' GB · 在途'+(Math.abs(aMub-Math.round(aMub))<0.05?Math.round(aMub):aMub.toFixed(1))+'μb', VC.dp);
-  parts.push(txt(RX, RY+203, ACT_T===null ? '按峰值（不看时间）——买卡的依据' : '走带 t='+Math.round(ACT_T*100)+'% 此刻的读数', 6.4, 'var(--pt-fg3)', 'start'));
-  hr(RY+216);
-  row(RY+229, '合计', fmtGB(tot)+' / '+D.hbm+' GB', tot>cap?'var(--pt-danger)':'var(--pt-fg)');
-  parts.push(txt(RX, RY+241, '含碎片/预留 '+fmtGB(rsvB)+' GB'+(otmpB>0?' · 更新临时 '+fmtGB(otmpB)+' GB':''), 6.4, 'var(--pt-fg3)', 'start'));
-  /* 引线：读数 → 图上那两格（左右联动看得见，不靠读者自己找） */
-  if(mineW) parts.push(ln([RX+RW+8, RY+90], mineW, 'stroke:var(--pt-fg3);stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.65'));
-  if(mineA) parts.push(ln([RX+RW+8, RY+165], mineA, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:3 3;stroke-opacity:.5'));
-
-  /* ═══ 四形态 × 生命周期表：切分之外的全部差异都在这张表里 ═══ */
-  var TBX = 36;
-  parts.push(txt(TBX, TBY-8, '四个形态的全部差异：切分同（W·G·O）/ 不同（A），剩下的只是字节、DP 语义、一步之内的生死', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-  var CX = {name:TBX+4, space:TBX+196, bytes:TBX+392, dp:TBX+540, life:TBX+736, bar:TBX+920};
-  var BARW = 110;
-  parts.push(txt(CX.bar, TBY+3, '一步之内', 6.6, 'var(--pt-fg3)', 'start'));
+  /* ═══ 说明弹层：总账题面、点法、四形态×生命周期表 —— 都挪进这颗「？」按钮里 ═══
+     原来占着画布左栏（本卡逐条读数）与底部（差异表 + 两行页脚）的三处文字，
+     现在只剩「持有哪一腔」这一份**答案**由 #rankMem 那张标准读出卡给（见下方
+     render() 里放开的 grid 分支）——这里只留「怎么读这张总账」这一份**说明**，
+     点开才看，不占腾出来给托盘的画布。 */
   var FORMS = [
-    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参 · '+fmtGB(wB)+' GB',  dp:'复印 ×'+D.dp+' · 逐字节相同',        life:'常驻整步',                    bar:'w'},
-    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参 · '+fmtGB(gB)+' GB',  dp:'各算各的 → AllReduce 后相同',        life:'反向逐层长出 · 更新后清零',    bar:'g'},
-    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参 · '+fmtGB(oB)+' GB', dp:'复印（本口径无 ZeRO 分片）',          life:'常驻 · 仅更新一步读写',        bar:'o'},
-    {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途μb涨落 · '+fmtGB(aB)+' GB', dp:'b 被真切（不是复印）',           life:'前向攒 · 反向放（1F1B）',      bar:'a'}
+    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参数',       dp:'复印 ×'+D.dp+' · 逐字节相同',       life:'常驻整步'},
+    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参数',       dp:'各算各的 → AllReduce 后相同',       life:'反向逐层长出 · 更新后清零'},
+    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参数',      dp:'复印（本口径无 ZeRO 分片）',         life:'常驻 · 仅更新一步读写'},
+    {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途 μb 涨落', dp:'b 被真切（不是复印）',              life:'前向攒 · 反向放（1F1B）'}
   ];
-  FORMS.forEach(function(r, ri){
-    var y5 = TBY + 18 + ri*17;
-    parts.push('<rect x="'+TBX+'" y="'+(y5-11)+'" width="1010" height="16" style="fill:'+(ri%2?mix('var(--pt-fg)',3):'transparent')+'"/>');
-    parts.push('<rect x="'+CX.name+'" y="'+(y5-8)+'" width="8" height="8" style="fill:'+r.sw+';stroke:var(--pt-bds);stroke-width:.5"/>');
-    parts.push(txt(CX.name+13, y5, esc(r.name), 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-    parts.push(txt(CX.space, y5, esc(r.space), 7.6, 'var(--pt-fg2)', 'start'));
-    parts.push(txt(CX.bytes, y5, esc(r.bytes), 7.6, 'var(--pt-fg2)', 'start'));
-    parts.push(txt(CX.dp, y5, esc(r.dp), 7.6, 'var(--pt-fg2)', 'start'));
-    parts.push(txt(CX.life, y5, esc(r.life), 7.6, 'var(--pt-fg2)', 'start'));
-    /* 存在感小条：这一档在一步之内什么时候在场 */
-    var bx = CX.bar, by = y5-8, base = y5-1;
-    parts.push(ln([bx,base],[bx+BARW,base],'stroke:var(--pt-bds);stroke-width:.6'));
-    if(r.bar==='w') parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+solid('var(--pt-fg)',58)+';stroke-width:2'));
-    if(r.bar==='o'){
-      parts.push(ln([bx,by],[bx+BARW,by],'stroke:'+MEMC.opt+';stroke-width:2.4'));
-      parts.push(ln([bx+BARW*.88,by],[bx+BARW,by],'stroke:'+MEMC.otmp+';stroke-width:3'));
-    }
-    if(r.bar==='g') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.45).toFixed(1)+','+base+' '+(bx+BARW*.9).toFixed(1)+','+by+' '+(bx+BARW*.93).toFixed(1)+','+base+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.g+';stroke-width:1.6"/>');
-    if(r.bar==='a') parts.push('<polyline points="'+bx+','+base+' '+(bx+BARW*.28).toFixed(1)+','+by+' '+(bx+BARW*.62).toFixed(1)+','+by+' '+(bx+BARW)+','+base+'" style="fill:none;stroke:'+MEMC.act+';stroke-width:1.6"/>');
-  });
-  if(ACT_T!==null){
-    var cxT = CX.bar + BARW*clamp(ACT_T,0,1);
-    parts.push(ln([cxT, TBY+6],[cxT, TBY+18+3*17+2], 'stroke:'+MEMC.otmp+';stroke-width:1;stroke-dasharray:3 2'));
-    parts.push(txt(cxT, TBY+18+3*17+12, '此刻', 6.4, MEMC.otmp, 'middle', 'font-weight="700"'));
-  }
+  var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
+    + '<b style="color:var(--pt-fg)">全局切分总账</b>：四个形态 × 全部的腔 —— 点一格，定位持有它的那张卡'
+    + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）。点 PP 标签换段。<br>'
+    + 'W·G·O 共用一套切分（画成同一只托盘的三层厚度，厚度比 = 字节比 2:2:12）；'
+    + 'A 激活体自己一套——b 被 DP 真切、s 被 CP 真切，厚度随此刻在途 μb 涨落。<br>'
+    + (D.moe
+        ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构；参数系格的持有者跨 b/s 复用（DP/CP 不切权重）。'
+        : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡；激活格逐 (b,s) 各归各。')
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:10px">'
+    + '<tr style="color:var(--pt-fg3);font-family:var(--pt-mono);font-size:9.5px">'
+    + '<td style="padding:3px 8px 4px 0">形态</td><td style="padding:3px 8px 4px">切分</td>'
+    + '<td style="padding:3px 8px 4px">字节</td><td style="padding:3px 8px 4px">DP 语义</td>'
+    + '<td style="padding:3px 0 4px">一步之内的生死</td></tr>'
+    + FORMS.map(function(r, ri){
+        return '<tr style="background:'+(ri%2?'var(--pt-s2)':'transparent')+'">'
+          + '<td style="padding:5px 8px 5px 0;white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+r.sw+';margin-right:5px;vertical-align:middle"></span><b style="color:var(--pt-fg)">'+esc(r.name)+'</b></td>'
+          + '<td style="padding:5px 8px;color:var(--pt-fg2)">'+esc(r.space)+'</td>'
+          + '<td style="padding:5px 8px;color:var(--pt-fg2)">'+esc(r.bytes)+'</td>'
+          + '<td style="padding:5px 8px;color:var(--pt-fg2)">'+esc(r.dp)+'</td>'
+          + '<td style="padding:5px 0;color:var(--pt-fg2)">'+esc(r.life)+'</td></tr>';
+      }).join('')
+    + '</table>';
 
-  parts.push(txt(RX, H-28, '点任意格 = 定位持有那一腔的卡（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）· 点 PP 标签换段', 8.2, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-  parts.push(txt(RX, H-14, D.moe
-    ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构 · 参数系格的持有者跨 b/s 复用（DP/CP 不切权重）'
-    : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡 · 激活格逐 (b,s) 各归各', 8, 'var(--pt-fg2)', 'start'));
-
-  $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
-  $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
-    + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
+  $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
-    + '<span class="pt-chip">每格 = 一个腔 · 点格定位持有卡</span>'
-    + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'" title="W 2B + G 2B + O 12B 同一套切分（托盘三层厚度）；A 另一套（b·s 真切）">W·G·O 同切分 · A 另一套</span>'
-    + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>';
+    + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
+    /* 说明按钮改用配置钮同一副圆形壳（.pt-cfg/.pt-cfgbtn/.pt-cfgpanel）：舞台上
+       已经有一颗黑底圆钮立着规矩，「？」另起一套白底胶囊只是多一种长相要认。
+       连带带走 .pt-mv 那层壳——原来借它只是为了有个现成的下拉容器，副作用是
+       被 combo-workbench「.pt-mv:not(.pt-disp) 藏掉数据标注」那条规则连坐
+       （见 combo-workbench/index.html 的 hideCss）；换壳之后那条规则天然
+       不再命中这颗钮，两处 hideCss 里补的 :not(.pt-gridhelp) 例外也一并撤掉。
+       「映射」那枚分类签去掉：这一排本来就只有映射类这几个按钮，签是在替
+       没有名字的一组东西找名字，这里东西已经有名字了（双链映射/交集腔/…），
+       签反而是多余的第一眼噪声。 */
+    + '<span class="pt-cfg pt-gridhelp">'
+    + '<button class="pt-cfgbtn'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
+    + '<div class="pt-cfgpanel'+(ui.gridHelp?' is-open':'')+'" style="width:min(640px, calc(100vw - 32px));text-align:left">'+gridHelpHTML+'</div>'
+    + '</span>';
   $('stageNote').hidden = true;
   $('detach').hidden = true;
 }
@@ -8769,6 +8756,12 @@ document.addEventListener('click', function(ev){
   if(ev.target.closest && ev.target.closest('.pt-disp')) return;
   ui.dispOpen = false; render();
 }, true);
+/* 全局切分的「？」说明弹层：同一套「点外面收起」，用自己的 class 隔开 */
+document.addEventListener('click', function(ev){
+  if(!ui.gridHelp) return;
+  if(ev.target.closest && ev.target.closest('.pt-gridhelp')) return;
+  ui.gridHelp = false; render();
+}, true);
 function renderRevBar(D){
   var el = $('revbox'); if(!el) return;
   el.hidden = true; el.innerHTML = ''; return;
@@ -9697,8 +9690,9 @@ function renderDetail(D){
   if(!D.ok){ el.hidden = true; return; }
   /* 同 renderRankMem：高亮是过路的，不配一张写死某一个 rank 的读出卡 */
   if(ui.hlSel){ el.hidden = true; return; }
-  /* 全局切分视角：读数已经画进左栏 SVG（四形态逐份账），这张浮卡在右上角
-     会压住激活体那列托盘——同一屏两份读数还盖图，收起来。 */
+  /* 全局切分视角：本卡的四档字节已经由 #rankMem 那张标准读出卡给了（见
+     renderRankMem 的 inGrid 分支），这张卡讲的是层段/专家桶/坐标公式/反查——
+     另一个问题，右上角还有位置，但两张卡同时开没有必要，先按 view 关掉。 */
   if(ui.view==='solid' && ui.persp==='grid'){ el.hidden = true; return; }
   if(sel===null || sel>=D.world){
     if(ui.view==='anatomy'||ui.view==='dim'||ui.view==='chain'||ui.view==='solid'||ui.view==='story'){ el.hidden = (sel===null); if(sel===null) return; }
@@ -10330,8 +10324,13 @@ function renderRankMem(D){
   if(!el) return;
   /* 过路的高亮不浮读出卡：那时亮着的常常是一整片卡（比如「这一层住在哪 32 张卡上」），
      再浮一张「rank 0 装了什么」，读者会把那一张的读数当成整片的读数。
-     读出卡只跟**这一屏自己选中的那张卡**走。 */
-  var on = ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel < D.world;
+     读出卡只跟**这一屏自己选中的那张卡**走。
+     全局切分（solid+grid）也接这张卡：那一屏原来自己画一份「读数·这张卡」的
+     文字栏，跟这张标准读出卡说的是同一件事（本卡在 W/G/O/A 四档各占多少字节）
+     ——两份读数摆在同一屏，读者会先花一秒确认它们是不是同一份。改成**只留这张
+     标准卡**，那栏文字删掉（见 renderSolidGrid），腾出来的画布宽度分给托盘本身。 */
+  var inGrid = ui.view==='solid' && ui.persp==='grid';
+  var on = (ui.view==='chain' && ui.cardMode && ui.netOff || inGrid) && sel!==null && !ui.hlSel && D.ok && sel < D.world;
   if(!on){ el.hidden = true; ui.memSel = null; ui.memSelG = null; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
   /* 点开的那一块只属于**点开它时那张卡**：换了卡还留着上一张的展开，读者会把
@@ -10357,7 +10356,9 @@ function renderRankMem(D){
     if(onSg) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, sg.k)+'</td></tr>');
     /* 权重带的内部：图上那一条已经按刀色分块画出来了，但「哪一块是被哪把刀切的」
        只有颜色说不全——把块名与切法逐条列在它下面，颜色与图上一一对上。
-       梯度与优化器态是同一份参数的 ×1 / ×6，同一套分法，不再抄两遍。 */
+       梯度与优化器态是同一份参数的 ×1 / ×6，同一套分法，不再抄两遍。
+       全局切分也展开这一层：这张卡是台面上**唯一**一处报「这张卡装了什么」的
+       读出卡，两处（chain / grid）读法不一致，读者会先怀疑是不是看错了卡。 */
     if(sg.k === 'w' && sg.sub){
       sg.sub.forEach(function(x){
         if(!x.bytes) return;
@@ -10845,7 +10846,8 @@ document.addEventListener('click', function(ev){
     ui.memSel = (!mk9 || ui.memSel === mk9) ? null : mk9;
     render();
   }
-  else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); render(); }
+  else if(act==='persp'){ ui.persp = b.getAttribute('data-p'); ui.gridHelp = false; render(); }
+  else if(act==='gridhelp'){ ui.gridHelp = !ui.gridHelp; render(); }
   else if(act==='pickg'){ takeSel(); sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
     var Dq = derive(cfg); if(!Dq.ok) return;

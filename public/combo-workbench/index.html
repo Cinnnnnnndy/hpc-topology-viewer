@@ -547,7 +547,10 @@ var SLOTS = [
            邀请人把它变成第二个并行拓扑。
          · 四把刀 —— 同理，cuts=pcte 是这一格的定义（独独不落 DP），不是可调项。
        用 :has() 精确圈住刀那一组：.pt-seg 机位段控（3D/正视/侧视/顶视）也用它，
-       整类藏掉会把机位一起按没——机位是要留给用户换的。 */
+       整类藏掉会把机位一起按没——机位是要留给用户换的。
+       「全局切分」自己那颗「？」说明按钮不在这条规则的射程里：它现在借的是
+       .pt-cfg/.pt-cfgbtn 那副壳（与舞台上「配置」黑圆钮同款），不是 .pt-mv，
+       天然不会被这条 :not(.pt-disp) 连坐，不用单独放过。 */
     hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
              '#stageTitle > b{display:none!important}' +
              '#qbar{display:none!important}' +
@@ -646,7 +649,10 @@ var SLOTS = [
        :not(.pt-disp) 是必须的——⚙（显示设置：图例 / 通信）在 demo 里是
        `<span class="pt-mv pt-disp">`，跟数据标注**共用 .pt-mv 那层排版壳**。
        光写 .pt-mv 会把 ⚙ 一起按掉，而它管的图例/通信并没有提到框架层，
-       藏了就再也开不出来（2026-08 实机丢失，右上角只剩机位段控）。 */
+       藏了就再也开不出来（2026-08 实机丢失，右上角只剩机位段控）。
+       「交集腔」tab 里能点到「全局切分」子视角，它自己的「？」说明按钮借的是
+       .pt-cfg/.pt-cfgbtn（与舞台「配置」黑圆钮同款），不是 .pt-mv，同样不受
+       这条规则影响，不用放过。 */
     hideCss: '.pt-mv:not(.pt-disp){display:none!important}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
