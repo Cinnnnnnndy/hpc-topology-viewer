@@ -573,8 +573,13 @@ var SLOTS = [
          「一张整网被切成什么」。
          中间一度改过 3D：那时侧视在 620px 宽的格子里有 48 对文字互相重叠，
          糊得没法读。根子是字号反除（fsBase）把字钉在恒定屏幕尺寸上——画面
-         等比缩了字不缩。反除上限收到 1.4 之后字跟着画面一起缩，侧视在
-         620/900/1080/1680 四档实测都是 0 对重叠，这条理由就不成立了，改回侧视。
+         等比缩了字不缩。反除上限收到 1.4 之后字跟着画面一起缩，重叠没了，
+         这条理由就不成立，于是改回侧视。（2026-08 又往回抬了一步：1.4 换来
+         的「不重叠」是拿「读不出来」买的——400px 宽的格子里正文只有 4px。
+         上限抬到 2.6、同时把段头横幅/顶边距/层刻度/右上角三行那四处版面缺陷
+         各自修掉之后，侧视在 400/1180/1680 三档实测 0 对重叠、620px 4 对，
+         而正文中位字号 400px 4→7、620px 6→11 像素。见 demo.html 里
+         FS_GAIN_MAX 那段注释。）
          四个机位一个没拿掉，pattern 自己那排段控点一下就换。 */
       q.set('vtab', 'side');
       if (s.value === 'cav') { q.set('view', 'solid'); q.set('p', 'grid'); }
@@ -768,7 +773,12 @@ function writeURL() {
   Object.keys(FLAGS).forEach(function (f) { bags[f] = []; });
   SLOTS.forEach(function (c) {
     var s = state[c.id];
-    if (c.key && s.value !== c.def) q.set(c.key, s.value);
+    /* s.auto = 这一格现在停在哪个 tab 不是读者选的，是台面替他切的（上方拓扑一
+       开通信层就把抽屉切到「通信观测」，见下面 pto:comm 那段）。这种「替他切的」
+       不写进链接：链接是「你发出去的那一屏」，而不是台面顺手做过的动作——否则
+       它会一路粘住，下次打开落在通信观测上，再也回不到第一个 tab（读者反馈：
+       「默认打开第一个 tab」）。读者自己点过段控就清掉这个记号，那才是选择。 */
+    if (c.key && s.value !== c.def && !s.auto) q.set(c.key, s.value);
     Object.keys(FLAGS).forEach(function (f) { if (s[f]) bags[f].push(c.id); });
   });
   Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
@@ -789,7 +799,7 @@ function buildTabs(slot) {
   }).join('');
   host.addEventListener('click', function (ev) {
     var btn = ev.target.closest('button[data-v]');
-    if (btn) select(slot.id, btn.dataset.v, true);
+    if (btn) { state[slot.id].auto = false; select(slot.id, btn.dataset.v, true); }
   });
 }
 
@@ -1411,7 +1421,7 @@ window.addEventListener('message', function (ev) {
        关掉不切回——读者可能正在下面看时间轴，替他关掉是抢操作。折叠着就先展开。 */
     if (d.type === 'pto:comm' && d.on && c.id === 'topology') {
       if (state.swimlane.folded) { state.swimlane.folded = false; applySlotVisibility(); }
-      if (state.swimlane.value !== 'obs') select('swimlane', 'obs', true);
+      if (state.swimlane.value !== 'obs') { state.swimlane.auto = true; select('swimlane', 'obs', true); }
     }
   });
 });
