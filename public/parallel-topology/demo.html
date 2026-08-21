@@ -723,6 +723,47 @@
   border:1.4px dashed var(--c, var(--pt-fg2)); background:none;
 }
 
+/* ── 通信线上的「流动」：这根线此刻正在往哪边搬东西 ─────────────────────
+   通信线原来只画「谁跟谁」——一根静止的弧，既读不出方向，也读不出它是活的。
+   这里让线自己跑起来（虚线沿着路径位移）。四条纪律，每条都有它的理由：
+
+   · 走 CSS 不走 JS。这一屏满配是一万多个 SVG 图元，JS 定时器逐帧改
+     stroke-dashoffset 等于每帧都去碰一遍 DOM——这张图连转台重建都得靠 420ms
+     防抖才压得住，再挂一个每帧跑的定时器就是直接卡死。CSS 动画交给渲染线程
+     自己跑：场景重建时它不会被打断，场景不重建时也没有一个空转的定时器在吃电。
+
+   · 位移量不写死，由元素用 --cfd 报上来。画通信线的地方有三处，各自的尺度基准
+     完全不同（3D 弧与地面流量带用场景单位、卡内算子线除 zs、侧视条除 FS_Z）；
+     位移必须正好等于虚线周期的整数倍，循环才接得上，否则每轮末尾会跳一下。
+     所以周期由调用方按自己的尺度算好写进 --cfd，这里统一走「位移 = 周期×2」。
+
+   · 反向那一路额外错开半个周期（animation-delay 取负值）。双向通信要画两股
+     反着跑的流，同相位的话两条虚线严丝合缝地叠在一起，看着还是一条单向线；
+     错开半周期，两股流才是交错着穿过对方的样子。
+
+   · 时间函数是 steps(20)，不是 linear——这不是审美选择。stroke-dashoffset 不能
+     由合成器代劳，值一变就得重画那条路径；这张图里一条 3D 通信弧的包围盒盖着
+     上万个算子图元，于是「每帧都变一点」等于每帧重新光栅化半屏。实测 3D + 选中
+     卡那一档：linear 中位帧间隔 33.3ms，换成 steps(20) 回到 16.7ms（同一台机、
+     同一批 34 条线）。一秒 17 跳，虚线走的是「行军蚁」那种一格一格的步子，
+     方向和速度照样读得出来，重绘却少了三分之二。 */
+@keyframes ptcf{from{stroke-dashoffset:0} to{stroke-dashoffset:calc(var(--cfd, 12px) * -2)}}
+@keyframes ptcfr{from{stroke-dashoffset:0} to{stroke-dashoffset:calc(var(--cfd, 12px) * 2)}}
+.cfl{animation:ptcf 1.15s steps(20, end) infinite}
+.cfl.rv{animation-name:ptcfr; animation-delay:-.575s}
+.cfl.sl{animation-duration:2.1s}
+.cfl.sl.rv{animation-delay:-1.05s}
+/* 系统里关掉了动效就停在**静止的虚线**上：虚线本身是「这是一次通信，不是一根
+   实体链路」的线型语义，跟着动画一起撤掉的话这一层就什么都不剩了。只停动，
+   不撤线——方向三角和贴线读数都是静态的，那两件事一个字都不少。
+   四个选择器要逐个写出来，不能只写 .cfl：媒体查询**不加特异度**，而上面的
+   .cfl.rv 自己就带着 animation-name，(0,2,0) 压得过 (0,1,0) 的 .cfl{animation:none}
+   ——只写一条的话反向那几股流会在「已关动效」的机器上继续跑（实测：侧视里
+   30 条 combine 线照动）。列全之后每一档都由同特异度且更靠后的规则收掉。 */
+@media (prefers-reduced-motion: reduce){
+  .cfl, .cfl.rv, .cfl.sl, .cfl.sl.rv{animation:none}
+}
+
 /* 窄窗：右侧工具条会折行往左长，居中的搜索会被它压住。这时搜索不再居中，
    退到左侧标题那一列；图例相应往下让，避开折成两行的工具条。
    断点取 1560：工具条本身最宽能到 780px（max-width:min(72%,780px)），
@@ -1746,6 +1787,13 @@ function edgeSVG(pts, prim, color, opts){
       out += line(pts[i],pts[j],'stroke:'+color+';stroke-width:'+lw.toFixed(2)+';stroke-opacity:.72');
     }
   }
+  /* 这一层（卡对卡的**组拓扑**）刻意不加流动虚线，和别处的通信线不一样：
+     它的每一根都横跨整屏（allreduce 是一只 16 边形、alltoall 是几十条对角长线），
+     一条线的重绘区域就等于整张图，实测在物理平铺 + 选中卡那一档，35 条这样的
+     线把帧间隔从 16.7ms 顶到 83ms（12fps）——而同样条数的短线（侧视 192 条、
+     正视 80 条）一点代价都没有。「它是活的」这层修饰不值一次可感的掉帧；
+     这一层要回答的本来也是「一共连了几张卡、连成什么形状」，形状是静态的。
+     真正需要「往哪边搬」的是锚在算子上的那几条线，那一层已经有了。 */
   return '<g>'+out+'</g>';
 }
 function defsSVG(){
@@ -3452,6 +3500,103 @@ function netScene(D, g, box, step){
      字却还是那几个像素，看着像字被吞掉了。裁到 [0.7, 2.4] 只是防止极端缩放
      把字撑成一大坨或缩没了，不是要它反向钉住。 */
   var zoomF9 = clamp(ui.zoom3, 0.7, 2.4);
+
+  /* ── 通信线自己要带的三件东西：方向、流动、读数 ──────────────────────
+     这三件以前都不在线上——方向压根没画，读数浮在旁边一枚 axLab 的副标题里，
+     「它是活的」更是无从谈起。下面这一组函数是本文件里两处画通信弧的地方
+     （整网的五维弧、容量视图的地面流量带）共用的行头：两处的几何本来就是同一
+     条二次贝塞尔，方向语义也只有三种，抽成一份省得两边各写一遍、迟早跑偏成
+     两套读法。 */
+
+  /* 曲线上 t 处的点：B(t) = (1-t)²a + 2(1-t)t·c + t²b。
+     不能拿两端中点凑合——弧是抬起来画的（lift），两端中点浮在弧**下方**一截，
+     抬得越高偏得越多，三角和读数就都贴不到线上。 */
+  function bez9(a9, b9, c9, t9){
+    var u9 = 1 - t9;
+    return [u9*u9*a9[0] + 2*u9*t9*c9[0] + t9*t9*b9[0],
+            u9*u9*a9[1] + 2*u9*t9*c9[1] + t9*t9*b9[1]];
+  }
+  /* 切线方向：B'(t) ∝ (1-t)(c-a) + t(b-c)。t=.5 处它正好化简成 b-a（弧顶的
+     切线与弦平行），但双向那两枚三角落在 t=.26/.74，那里弦与切线已经差出可见的
+     角度——EP 的对端散在四面八方、弧被拉得很长时尤其明显，所以老实按 t 算。 */
+  function bezU9(a9, b9, c9, t9){
+    var u9 = 1 - t9;
+    var vx9 = u9*(c9[0]-a9[0]) + t9*(b9[0]-c9[0]);
+    var vy9 = u9*(c9[1]-a9[1]) + t9*(b9[1]-c9[1]);
+    var l9 = Math.sqrt(vx9*vx9 + vy9*vy9) || 1;
+    return [vx9/l9, vy9/l9];
+  }
+  /* 一枚顺着切线摆的实心三角。不用 SVG <marker>：marker 只落在路径的**顶点**上，
+     而这里要标的是二次贝塞尔的中段——那不是顶点，orient="auto" 无从谈起；何况
+     这张图的 defs 是 renderChain 那一层统一注入的，在这儿新挂一份等于给别人的
+     defs 加一条依赖。直接 push 一段 <path>，几何自己算得准，也不跨层。
+     三角描一圈 --pt-bg：它要压在两万多个算子图元上面，不描边就融进底下的色块。 */
+  function tri9(p9, u9, sz9, col9, back9){
+    var sx9 = back9 ? -u9[0] : u9[0], sy9 = back9 ? -u9[1] : u9[1];
+    var tx9 = p9[0] + sx9*sz9,        ty9 = p9[1] + sy9*sz9;
+    var bx9 = p9[0] - sx9*sz9*0.62,   by9 = p9[1] - sy9*sz9*0.62;
+    var nx9 = -sy9*sz9*0.66,          ny9 = sx9*sz9*0.66;
+    body.push('<path d="M'+tx9.toFixed(1)+' '+ty9.toFixed(1)
+      +'L'+(bx9+nx9).toFixed(1)+' '+(by9+ny9).toFixed(1)
+      +'L'+(bx9-nx9).toFixed(1)+' '+(by9-ny9).toFixed(1)
+      +'Z" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.6;stroke-linejoin:round"/>');
+  }
+  /* 给一条已经画好的通信弧配上方向三角 + 流动虚线。dir9 三种，对应的是**真实
+     语义**而不是「统一画双箭头」：
+       'fwd'  单向、顺着 a→b —— PP 的 P2P：段边界只把激活往下一段送，前向单程。
+       'back' 单向、逆着 b→a —— DP 的梯度 AllReduce：它发生在**反向传播**里。
+              箭头必须朝回，再配上虚线，两个信号一起说「这不是前向那条路上的事」；
+              画成朝前就会被读成「权重又沿着前向传了一次」，是错的。
+       'bi'   双向 —— TP 的 AllGather/Reduce-Scatter 换轴（进 TP 区收齐、出 TP 区
+              归约散开）、CP 组内收齐 KV、EP 的 token 去而复返。这三种都是同一份
+              数据来回搬，所以画一对**朝外**的三角（←——→），一眼是「来回」；
+              两枚同向的三角读出来会变成接力或环形，那是另一件事。
+     三角落在 t=.26/.74，中间那段特意空着——贴线读数要落在 t=.5。 */
+  function commFlow9(d9, a9, b9, c9, col9, wd9, dir9){
+    var mid9 = bez9(a9, b9, c9, .5);
+    if(!dir9) return mid9;
+    /* 流动那一层叠在实线**之上**：实线管「这里有一条通信」，流动层管「它正在
+       搬、往哪边搬」。虚线周期跟着线宽走——线越粗，虚线段也得越长，否则粗线上
+       那几点细碎的虚点看着像噪点而不是流。 */
+    if(!lowDetail && cflowN > 0){
+      var per9 = Math.max(7, wd9*9);
+      var st9 = 'fill:none;stroke:'+col9+';stroke-width:'+(wd9*0.95).toFixed(2)
+        +';stroke-linecap:round;stroke-dasharray:'+(per9*0.28).toFixed(1)+' '+(per9*0.72).toFixed(1)
+        +';--cfd:'+per9.toFixed(1)+'px';
+      body.push('<path class="cfl'+(dir9 === 'back' ? ' rv' : '')+'" d="'+d9+'" style="'+st9+'"/>');
+      cflowN--;
+      /* 双向再叠一股反着跑的：一去一回本来就是两股流，只画一股的话动画方向反而
+         把「双向」说成了单向，比不画更糟。 */
+      if(dir9 === 'bi' && cflowN > 0){ body.push('<path class="cfl rv" d="'+d9+'" style="'+st9+';opacity:.72"/>'); cflowN--; }
+    }
+    var sz9 = clamp(wd9*3.4, 2.6, 5.2);
+    if(dir9 === 'bi'){
+      tri9(bez9(a9,b9,c9,.26), bezU9(a9,b9,c9,.26), sz9, col9, true);
+      tri9(bez9(a9,b9,c9,.74), bezU9(a9,b9,c9,.74), sz9, col9, false);
+    }else{
+      tri9(mid9, bezU9(a9,b9,c9,.5), sz9, col9, dir9 === 'back');
+    }
+    return mid9;
+  }
+  /* 贴线读数。这串 MB/GB·s/ms/tok 原来只写在浮标签的副标题里——浮标签讲的是
+     「这是哪一类通信」，读数被塞在它下面，看图的人得先找到标签、再把标签认回
+     那根线，读数和线之间隔着一次视线跳转。改成写在线自己身上：落在曲线中点、
+     沿法线抬开小半个字高（压在线上会被线从中间劈开），--pt-bg 的粗描边保证它
+     压得住底下那面算子墙——和整屏所有挂在骨架上的小字同一条规矩。
+     只写在这一维的**代表弧**上，不是每一根：TP 展开之后同一维有 tp-1 根弧，
+     它们的读数完全一样（同一层、同一节点、同一个 sin-hash 种子），逐根写就是
+     把同一个数字叠七遍，反而把线本身盖住了。 */
+  function lineNum9(at9, u9, s9, col9){
+    if(!at9 || !s9) return;
+    /* 法线取朝屏幕上方的那一支：五个维度的读数统一浮在弧的上侧，才排得开；
+       让它随切线方向自由翻面的话，同一屏里一半在弧上一半在弧下，认不出归属。 */
+    var nx9 = -u9[1], ny9 = u9[0];
+    if(ny9 > 0){ nx9 = -nx9; ny9 = -ny9; }
+    var fs9 = 5.4*zoomF9;
+    body.push(txt(at9[0] + nx9*fs9*0.95, at9[1] + ny9*fs9*0.95 + fs9*0.34, esc(s9), fs9, col9, 'middle',
+      'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="'+(fs9*0.62).toFixed(1)+'"'));
+  }
+
   function commMetricTxt(realId, fakeId, fakeLabel, li9){
     var n9 = null, i9;
     if(realId) for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === realId){ n9 = IXg.G.nodes[i9]; break; }
@@ -3485,10 +3630,11 @@ function netScene(D, g, box, step){
                          u0:(n.x - n.width/2 - root.x)/GW, u1:(n.x + n.width/2 - root.x)/GW,
                          v0:vOf(n.y - n.height/2), v1:vOf(n.y + n.height/2) });
     }
-    function arc(a, b, col, wd, dash){
+    function arc(a, b, col, wd, dash, dir9){
       var lift = Math.min(34, 9 + (Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]))*0.10);
+      var cq9 = [(a[0]+b[0])/2, ((a[1]+b[1])/2) - lift];
       var d9 = 'M'+a[0].toFixed(1)+' '+a[1].toFixed(1)
-        +' Q '+((a[0]+b[0])/2).toFixed(1)+' '+(((a[1]+b[1])/2)-lift).toFixed(1)
+        +' Q '+cq9[0].toFixed(1)+' '+cq9[1].toFixed(1)
         +' '+b[0].toFixed(1)+' '+b[1].toFixed(1);
       /* 白描边光晕垫底：弧线要压在两万多个算子图元上面，不垫这一层就融进背景里 */
       body.push('<path d="'+d9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(wd+2.4)+';opacity:.85"/>');
@@ -3496,7 +3642,15 @@ function netScene(D, g, box, step){
         +(dash ? ';stroke-dasharray:'+dash : '')+'"/>');
       body.push('<circle cx="'+a[0].toFixed(1)+'" cy="'+a[1].toFixed(1)+'" r="1.6" style="fill:'+col+';stroke:var(--pt-bg);stroke-width:.8"/>');
       body.push('<circle cx="'+b[0].toFixed(1)+'" cy="'+b[1].toFixed(1)+'" r="1.6" style="fill:'+col+';stroke:var(--pt-bg);stroke-width:.8"/>');
-      return [(a[0]+b[0])/2, ((a[1]+b[1])/2) - lift];
+      var on9 = commFlow9(d9, a, b, cq9, col, wd, dir9);
+      /* 返回值仍然是**控制点**（不是曲线中点）：浮标签一直挂在这个点上方，
+         换成曲线中点会让五个维度的标签整体下沉半个 lift，是一次没必要的视觉
+         回归。曲线真正的中点与那里的切线另挂在 .on / .u 上——贴线读数得落在
+         线**上**，用的是它们。数组挂属性是为了不动任何一个调用处的解构写法。 */
+      var r9 = [cq9[0], cq9[1]];
+      r9.on = on9;
+      r9.u = bezU9(a, b, cq9, .5);
+      return r9;
     }
     var card = ui.cardMode;
     var offC = function(d9, t9, c9){
@@ -3520,14 +3674,14 @@ function netScene(D, g, box, step){
           for(t2 = 0; t2 < D.tp; t2++){
             if(t2 === tF) continue;
             mTP = arc(P(nRS.uc, nRS.v0 - 0.02, wMid(pF), offC(dF, tF)),
-                      P(nRS.uc, nRS.v0 - 0.02, wMid(pF), offC(dF, t2)), VC.tp, 1.2);
+                      P(nRS.uc, nRS.v0 - 0.02, wMid(pF), offC(dF, t2)), VC.tp, 1.2, null, 'bi');
           }
         }else{
           for(q2 = 0; q2 + 1 < D.tp; q2++){
             var ua2 = nOP.u0 + (nOP.u1 - nOP.u0)*(q2 + .5)/D.tp;
             var ub2 = nOP.u0 + (nOP.u1 - nOP.u0)*(q2 + 1.5)/D.tp;
             mTP = arc(P(ua2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)),
-                      P(ub2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)), VC.tp, 1.1);
+                      P(ub2, nOP.v0 - 0.01, wMid(pF), offC(dF, tF)), VC.tp, 1.1, null, 'bi');
           }
         }
         /* 这两条不是「TP 的两次通信」，是**换轴器**：进 TP 区 AllGather 把沿 s
@@ -3541,8 +3695,11 @@ function netScene(D, g, box, step){
         if(mTP){
           var l0TP9 = pF*lps, l1TP9 = Math.min(D.layers, (pF+1)*lps) - 1;
           var mtTP9 = commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9);
+          /* 浮标签只留「这是什么通信、发生在哪一组」，读数从副标题里搬到线上——
+             同一份数字写两处，看图的人得先判断这两处是不是同一个数才能往下读。 */
           axLab([mTP[0], mTP[1] - 12], 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内',
-            'PP'+pF+' · L'+l0TP9+'–L'+l1TP9+(mtTP9 ? ' · '+mtTP9 : ''), VC.tp, true, 6*zoomF9);
+            'PP'+pF+' · L'+l0TP9+'–L'+l1TP9+' · TP 组 ×'+D.tp, VC.tp, true, 6*zoomF9);
+          lineNum9(mTP.on, mTP.u, mtTP9, VC.tp);
         }
       }
     }
@@ -3558,7 +3715,7 @@ function netScene(D, g, box, step){
           for(c4 = 0; c4 < D.cp; c4++){
             if(c4 === co.c) continue;
             mCP = arc(P(nKV.uc, nKV.v0 - 0.02, wMid(pF), offC(dF, tF, co.c)),
-                      P(nKV.uc, nKV.v0 - 0.02, wMid(pF), offC(dF, tF, c4)), VC.cp, 1.15);
+                      P(nKV.uc, nKV.v0 - 0.02, wMid(pF), offC(dF, tF, c4)), VC.cp, 1.15, null, 'bi');
           }
         }else{
           /* CP 没展开成独立列时，弧线画在算子自己被横切开的那几段之间——那条缝
@@ -3567,12 +3724,18 @@ function netScene(D, g, box, step){
             var va4 = nKV.v0 + (nKV.v1 - nKV.v0)*(c4 + .5)/D.cp;
             var vb4 = nKV.v0 + (nKV.v1 - nKV.v0)*(c4 + 1.5)/D.cp;
             mCP = arc(P(nKV.u1 + 0.02, va4, wMid(pF), offC(dF, tF)),
-                      P(nKV.u1 + 0.02, vb4, wMid(pF), offC(dF, tF)), VC.cp, 1.1);
+                      P(nKV.u1 + 0.02, vb4, wMid(pF), offC(dF, tF)), VC.cp, 1.1, null, 'bi');
           }
         }
         if(mCP){
+          /* CP 这一处没有真通信节点可锚（真图里 KV 的收齐不是一个独立算子），
+             读数走 commMetricTxt 的假节点退化：id 'cp-ag-kv' 是这一维专属的，
+             sin-hash 种子因此与别的维不同，但公式一模一样、每次读到同一个数。
+             ——「线画出来了读数就得在」这条纪律在这里正是靠它兑现的。 */
           var mtCP9 = commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9);
-          axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）', mtCP9 || null, VC.cp, true, 6*zoomF9);
+          axLab([mCP[0], mCP[1] - 12], 'AllGather(KV) · CP 组内（只在 attention 处）',
+            'CP 组 ×'+D.cp, VC.cp, true, 6*zoomF9);
+          lineNum9(mCP.on, mCP.u, mtCP9, VC.cp);
         }
       }
     }
@@ -3580,19 +3743,24 @@ function netScene(D, g, box, step){
     if(cutEP && commLit('ep')){
       var nA2A = nUV('moe_all_to_all_dispatch');
       if(nA2A){
-        var gF2 = rankOf(tF, co.c, dF, pF, D), mEP = null;
+        var gF2 = rankOf(tF, co.c, dF, pF, D), mEP = null, epN9 = 0;
         epMembers(gF2, D).forEach(function(p9){
           if(p9 === gF2) return;
           var c9 = coordsOf(p9, D);
           if(c9.c !== co.c) return;
           if((!card || KT <= 1) && c9.t !== tF) return;
+          /* 「×2」不是画两条线，是同一条链路上 dispatch 去、combine 回——所以
+             方向标成双向而不是两条单向弧：卡与卡之间只有一条链路，去回共用。 */
           mEP = arc(P(nA2A.uc, nA2A.v0 - 0.02, wMid(pF), offC(dF, tF)),
-                    P(nA2A.uc, nA2A.v0 - 0.02, wMid(c9.p), offC(c9.d, c9.t)), VC.ep, 1.1);
+                    P(nA2A.uc, nA2A.v0 - 0.02, wMid(c9.p), offC(c9.d, c9.t)), VC.ep, 1.1, null, 'bi');
+          epN9++;
         });
         if(mEP){
           var liRepEP9 = Math.min(D.layers - 1, Math.max(liRep9, denseTop));
           var mtEP9 = commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9);
-          axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）', mtEP9 || null, VC.ep, true, 6*zoomF9);
+          axLab([mEP[0], mEP[1] + 20], 'AllToAll ×2 · EP 组（token 去而复返）',
+            '对端 '+epN9+' 张卡 · L'+liRepEP9, VC.ep, true, 6*zoomF9);
+          lineNum9(mEP.on, mEP.u, mtEP9, VC.ep);
         }
       }
     }
@@ -3605,12 +3773,16 @@ function netScene(D, g, box, step){
         for(p3 = 0; p3 + 1 < D.pp; p3++){
           var wA3 = card ? segW(p3)[1] : wOf(Math.min(L-1, (p3+1)*lps - 1));
           var wB3 = card ? segW(p3+1)[0] : wOf((p3+1)*lps);
+          /* 单向、朝前：P2P 只把激活往下一段送，没有回程（回程是反向那条路上
+             的梯度，那是 DP 那条虚线在说的事）。所以只在中段摆一枚顺切线的三角。 */
           mPP = arc(P(nPN.uc, nPN.vc, wA3, offC(dF, tF)),
-                    P(nPN.uc, nPN.vc, wB3, offC(dF, tF)), VC.pp, 1.2);
+                    P(nPN.uc, nPN.vc, wB3, offC(dF, tF)), VC.pp, 1.2, null, 'fwd');
         }
         if(mPP){
           var mtPP9 = commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9);
-          axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活', mtPP9 || null, VC.pp, true, 6*zoomF9);
+          axLab([mPP[0], mPP[1] - 30], 'P2P · 段→段只传激活',
+            '共 '+(D.pp - 1)+' 处段边界', VC.pp, true, 6*zoomF9);
+          lineNum9(mPP.on, mPP.u, mtPP9, VC.pp);
         }
       }
     }
@@ -3620,12 +3792,18 @@ function netScene(D, g, box, step){
       if(nDP){
         var mDP = null, d3;
         for(d3 = 0; d3 + 1 < KD; d3++){
+          /* 虚线 + **朝回**的箭头：这两个信号说的是同一件事——梯度同步只发生在
+             反向传播里。弧是按副本序 d→d+1 画的，箭头却逆着画序指回去，正是要
+             压住「顺着画的方向读成又一次前向传递」这个误读；只留虚线不给方向，
+             它和别的维一样看不出走向，「反向」就只剩标签里那两个字在说。 */
           mDP = arc(P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3, tF)),
-                    P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3+1, tF)), VC.dp, .9, '4 3');
+                    P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3+1, tF)), VC.dp, .9, '4 3', 'back');
         }
         if(mDP){
           var mtDP9 = commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9);
-          axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）', mtDP9 || null, VC.dp, true, 6*zoomF9);
+          axLab([mDP[0], mDP[1] - 12], '梯度 AllReduce · DP 组（反向）',
+            'DP 组 ×'+KD+' 个副本', VC.dp, true, 6*zoomF9);
+          lineNum9(mDP.on, mDP.u, mtDP9, VC.dp);
         }
       }
     }
@@ -4241,7 +4419,10 @@ function netScene(D, g, box, step){
       /* floorBand 现在返回**最后一根线自己的中点**（贝塞尔弧顶那一点，抬升量
          已经算在内）——标签落在这一点上就是落在一根真线的中间，不再是不管画了
          几根线都钉死在源卡正上方那一个点、好几个维度的标签叠成一坨。 */
-      function floorBand(members9, col9, dash9, wd9){
+      /* dir9 与整网那层弧同一套口径（'bi' 来回 / 'back' 反向单程），地面这一层
+         才不会跟 3D 那一层各说各的方向——两处画的本来就是同一次通信，只是一个
+         锚在算子上、一个锚在卡底。 */
+      function floorBand(members9, col9, dash9, wd9, dir9){
         var last9 = null;
         members9.forEach(function(r9){
           var c9 = coordsOf(r9, D);
@@ -4251,25 +4432,31 @@ function netScene(D, g, box, step){
           var d9 = P(0.5, vBot9, wFront9, kDst9);
           var lift9 = Math.min(46, 14 + (Math.abs(a9[0]-d9[0]) + Math.abs(a9[1]-d9[1]))*0.14);
           var mx9 = (a9[0]+d9[0])/2, my9 = (a9[1]+d9[1])/2 - lift9;
+          var cq9 = [mx9, my9];
           var dPath9 = 'M'+a9[0].toFixed(1)+' '+a9[1].toFixed(1)+' Q '+mx9.toFixed(1)+' '+my9.toFixed(1)+' '+d9[0].toFixed(1)+' '+d9[1].toFixed(1);
           body.push('<path d="'+dPath9+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(wd9+2.4).toFixed(1)+';opacity:.85"/>');
           body.push('<path d="'+dPath9+'" style="fill:none;stroke:'+col9+';stroke-width:'+wd9.toFixed(1)+';stroke-linecap:round;opacity:.85'
             +(dash9 ? ';stroke-dasharray:'+dash9 : '')+'"/>');
           body.push('<circle cx="'+a9[0].toFixed(1)+'" cy="'+a9[1].toFixed(1)+'" r="2" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
           body.push('<circle cx="'+d9[0].toFixed(1)+'" cy="'+d9[1].toFixed(1)+'" r="2.4" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:.8"/>');
+          var on9 = commFlow9(dPath9, a9, d9, cq9, col9, wd9, dir9);
           last9 = [mx9, my9];
+          last9.on = on9;
+          last9.u = bezU9(a9, d9, cq9, .5);
         });
         return last9;
       }
+      /* 浮标签同样只留名字与组信息，读数落到线上（口径同 drawCommArcs 那五处）。 */
       function floorLab(at9, text9, col9, metric9){
         if(!at9) return;
-        axLab([at9[0], at9[1] - 10], text9, metric9 || null, col9, true, 6.4*zoomF9);
+        axLab([at9[0], at9[1] - 10], text9, null, col9, true, 6.4*zoomF9);
+        lineNum9(at9.on, at9.u, metric9, col9);
       }
       /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
          3D 通信弧与容量地面流量带两处才对得上号，不是各画各的巧合数字。 */
       var liRepFloor9 = Math.min(D.layers - 1, co.p*lps + (lps >> 1));
       if(wantTP9){
-        var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6);
+        var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6, 'bi');
         floorLab(atTP9, 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
           commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9));
       }
@@ -4281,18 +4468,20 @@ function netScene(D, g, box, step){
           var c9 = coordsOf(r9, D);
           if(KC === 1 && c9.c !== co.c) return;
           var tok9 = 0.28 + loadSeed(g*131 + r9, 7)*0.72;
-          atEP9 = floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8) || atEP9;
+          /* dispatch 去、combine 回共用这一条链路，所以是双向而不是「只往外发」 */
+          atEP9 = floorBand([r9], RIBC[i9 % RIBC.length], null, 1.6 + tok9*2.8, 'bi') || atEP9;
         });
         var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
         floorLab(atEP9, 'AllToAll · EP 组 dispatch（示意量）', VC.ep,
           commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9));
       }
       if(wantDP9){
-        /* 梯度 AllReduce 只在反向发生，虚线呼应 drawCommArcs 里同一条的画法。
+        /* 梯度 AllReduce 只在反向发生：虚线 + 朝回的箭头，两个信号都呼应
+           drawCommArcs 里同一条的画法，两张图上的 DP 线读法完全一致。
            点开的若是**优化器步·临时区**，走的还是这一条——那一档不是另一次通信，
            它就是这一次归约在显存上占的那块 fp32 缓冲，所以标签跟着换个说法，
            线还是同一根，不另画一层假装有两次。 */
-        var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4);
+        var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4, 'back');
         floorLab(atDP9, memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
                                            : '梯度 AllReduce · DP 组（反向）', VC.dp,
           commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9));
@@ -5351,9 +5540,48 @@ function graphSVG(o){
       /* 通信 = 动作：一条横线，不是体（§08：不持有字节、不被切，只占链路与时间）。
          颜色跟通信属于哪把刀：EP 的 A2A 紫、其余（TP/SP 换轴、logits 收拢）青。 */
       var cCol = (n.id === 'moe_all_to_all_dispatch' || n.id === 'moe_all_to_all_combine') ? VC.ep : VC.tp;
-      acts.push('<line x1="'+x.toFixed(1)+'" y1="'+(y+h/2).toFixed(1)+'" x2="'+(x+w).toFixed(1)+'" y2="'+(y+h/2).toFixed(1)
+      /* ── 这条横线到底在往哪边搬（只在「通信」开着时叠加，关掉逐像素回原样）──
+         方向不是一律双箭头，按这颗节点自己是哪种原语来——真图里的 6 个通信节点
+         恰好覆盖四种走向，读法与整网那层弧完全一致：
+           AllGather        各卡把自己那一片送进来凑齐 → 两枚三角朝**内**；
+           Reduce-Scatter   归约完再按片散回各卡      → 两枚三角朝**外**；
+           A2A Dispatch     token 送去专家所在的卡    → 单向，顺着图的走向朝右；
+           A2A Combine      算完再送回来              → 单向朝左，同一条路反着走。
+         鬼影（gh：不属于本卡那一份）不给方向也不给流动：它讲的是「这一份不在
+         你这儿」，加了方向反而像在说它也正忙着收发。 */
+      var cDir9 = !gh && ui.commOn
+        ? (n.id === 'moe_all_to_all_combine' ? 'back'
+          : n.id === 'moe_all_to_all_dispatch' ? 'fwd'
+          : /reduce_scatter/.test(n.id) ? 'out' : 'in')
+        : '';
+      var cy9 = y + h/2;
+      /* 流动那一层直接加在这条虚线**自己**身上，不另叠一条：卡内这张图一格里就有
+         6 条通信线，正视图一屏最多铺 128 格——每条再垫一条等于凭空多出七百多个
+         图元。虚线本来就是它的线型，让它自己跑起来最省。
+         w*zs 是这条线在屏幕上的真实长度：短到看不出虚线段的时候动画只是噪点，
+         那一档不如省下来（同一条判断也顺带管住了远景那一片密密麻麻的小格）。 */
+      var cAnim9 = (cDir9 && !lowDetail && w*zs > 26 && cflowN > 0) ? (cflowN--, ' class="cfl'+(cDir9 === 'back' ? ' rv' : '')+'"') : '';
+      acts.push('<line'+cAnim9+' x1="'+x.toFixed(1)+'" y1="'+cy9.toFixed(1)+'" x2="'+(x+w).toFixed(1)+'" y2="'+cy9.toFixed(1)
         +'" style="stroke:'+(gh?'var(--pt-fg3)':cCol)+';stroke-width:'+(1.3/zs).toFixed(2)
-        +';stroke-dasharray:'+(5/zs).toFixed(2)+' '+(3/zs).toFixed(2)+';stroke-opacity:'+(gh?.35:.95)+'"/>');
+        +';stroke-dasharray:'+(5/zs).toFixed(2)+' '+(3/zs).toFixed(2)+';stroke-opacity:'+(gh?.35:.95)
+        +(cAnim9 ? ';--cfd:'+(8/zs).toFixed(2)+'px' : '')+'"/>');
+      /* 方向三角：横线上不需要算切线（方向只有 ±x），直接按屏幕坐标摆。
+         三角比线本身略高一点点才认得出是箭头而不是一段变粗的虚线。 */
+      if(cDir9 && w*zs > 16){
+        /* 尺寸先跟着线长走（w*0.09），再用 /zs 那一对上下限夹住：短线上的三角
+           不至于长得比线还长，长线上的也不会缩成一个点——和这张图里所有「屏幕
+           恒定尺寸」的记号同一条路数。 */
+        var ts9 = clamp(w*0.09, 2.2/zs, 4.2/zs);
+        var triC9 = function(cx9, sgn9){
+          acts.push('<path d="M'+(cx9 + sgn9*ts9).toFixed(1)+' '+cy9.toFixed(1)
+            +'L'+(cx9 - sgn9*ts9*0.62).toFixed(1)+' '+(cy9 - ts9*0.66).toFixed(1)
+            +'L'+(cx9 - sgn9*ts9*0.62).toFixed(1)+' '+(cy9 + ts9*0.66).toFixed(1)
+            +'Z" style="fill:'+cCol+';stroke:var(--pt-s1);stroke-width:'+(0.4/zs).toFixed(2)+';stroke-linejoin:round"/>');
+        };
+        if(cDir9 === 'in'){ triC9(x + w*0.26, 1); triC9(x + w*0.74, -1); }
+        else if(cDir9 === 'out'){ triC9(x + w*0.26, -1); triC9(x + w*0.74, 1); }
+        else triC9(x + w*0.5, cDir9 === 'back' ? -1 : 1);
+      }
       /* 通信标签是**居中在一条横线上**的，而横线常常横穿别的节点（logits 收拢那条
          就压在 LM Head 上）——位置被节点占了就不写，和簇名同一条规矩。 */
       var commFree = nodeRects().every(function(r8){
@@ -5369,7 +5597,19 @@ function graphSVG(o){
         /* 数值字号 4.9→6.0（与 sideMetric 同比例），每字符宽度预算同步从 3.0 放大到 3.67，
            保持宽度预算与实际渲染宽度一致。 */
         var mc9 = (o.metricLi != null && !gh) ? sdOpMetric(o.metricLi, n, D, Math.floor(w*zs/3.67)) : '';
-        if(mc9 && w*zs > Math.max(60, mc9.length*3.67))
+        var fitM9 = !!(mc9 && w*zs > Math.max(60, mc9.length*3.67));
+        /* 「有线没数据」是这一层最不该出现的状态：通信线画出来了，它搬了多少字节
+           却是空的——那条线就退回成「谁跟谁」，正是这次要治的毛病。两种情况会把
+           上面那行读数挤没：一是「数据标注」里关掉了性能那一类（sdOpMetric 尊重
+           ui.mv.*），二是线太短，完整的一串装不下。两种都不是「这条线没有读数」，
+           所以降级成只留 payload 那一段（sdOpBuckets 的 perf[0] = MB 数）——
+           它是这条线上唯一不可省的那个量，删掉整行则是把事实一起删了。 */
+        if(ui.commOn && !fitM9 && o.metricLi != null && !gh){
+          var bkc9 = sdOpBuckets(o.metricLi, n, D);
+          var mcS9 = (bkc9.perf && bkc9.perf[0]) || '';
+          if(mcS9 && w*zs > mcS9.length*4.2 + 8){ mc9 = mcS9; fitM9 = true; }
+        }
+        if(fitM9)
           /* 读数才是这行字真正被看的理由（名字只是找到它），色权顶格给到 fg——
              同样的字号预算，只把它从「附注」的浅灰调回「正文」的深色 + 粗体。 */
           txts.push(txt(x+w/2, y+h/2+5.6/zs, esc(mc9), 6.0/zs, metricColor(o.metricLi, n), 'middle', 'font-weight="700" '+HALO+'pointer-events="none"'));
@@ -7412,8 +7652,49 @@ function sideScene(D, g, box){
           +'M'+gcx9.toFixed(1)+' '+(gcy9-gr9*0.5).toFixed(1)+'V'+(gcy9+gr9*0.5).toFixed(1)
           +'" style="stroke:var(--pt-fg3);stroke-width:'+(1/FS_Z).toFixed(2)+';stroke-linecap:round"/>');
       } else if(n9.colorKey === 'opv:comm'){
-        body.push('<line x1="'+bx0.toFixed(1)+'" y1="'+((ya+yb)/2).toFixed(1)+'" x2="'+(bx0+barW).toFixed(1)+'" y2="'+((ya+yb)/2).toFixed(1)
-          +'" style="stroke:'+col9+';stroke-width:'+(0.9/FS_Z).toFixed(2)+';stroke-dasharray:'+(2/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2)+';opacity:.8"/>');
+        /* 方向与流动的读法与 graphSVG 那条横线逐字一致（AllGather 朝内收齐 /
+           Reduce-Scatter 朝外散开 / dispatch 去 / combine 回）——侧视是同一张
+           真图换了个机位，同一颗节点在两张图上不能是两种走向。
+           全部收在 ui.commOn 之内：通信关掉时这条线一个字节都不变。 */
+        var scy9 = (ya+yb)/2;
+        var sDir9 = ui.commOn
+          ? (n9.id === 'moe_all_to_all_combine' ? 'back'
+            : n9.id === 'moe_all_to_all_dispatch' ? 'fwd'
+            : /reduce_scatter/.test(n9.id) ? 'out' : 'in')
+          : '';
+        /* 侧视的条只有半个列距宽（默认机位下约 10 个场景单位），虚线周期因此
+           **跟着条自己的长度算**，而不是沿用一个固定的 X/FS_Z：固定周期在这么
+           短的一条线上只放得下一两段，动起来就是「一个点在闪」而不是「一股流在
+           跑」。按 barW/3 取周期，任何缩放下这条线都稳定地装着三段虚线。
+           门槛 5.5 是按**最密的那一档**定的，不是拍脑袋：default128 是 48 层，
+           条只有 7 个多场景单位宽（moe64 的 32 层是 10.7），门槛取 8 的话默认
+           预设的侧视整屏一根方向标都没有——而它恰恰是打开页面看到的第一套配置。
+           三角与流动共用这一条门槛：两件事一起出现，不会有「有方向没流动」
+           或者反过来的中间态。liVis 已经先筛掉画面外的列。
+           速度取慢档（.sl）：这一屏同时有两三百条通信线，都按整网那层弧的速度
+           跑起来会闪成一片，反而认不出哪条是哪条。 */
+        var sPer9 = Math.max(2.4/FS_Z, barW/3);
+        var sAnim9 = (sDir9 && !lowDetail && liVis && barW*Zv > 5.5 && cflowN > 0)
+          ? (cflowN--, ' class="cfl sl'+(sDir9 === 'back' ? ' rv' : '')+'"') : '';
+        body.push('<line'+sAnim9+' x1="'+bx0.toFixed(1)+'" y1="'+scy9.toFixed(1)+'" x2="'+(bx0+barW).toFixed(1)+'" y2="'+scy9.toFixed(1)
+          +'" style="stroke:'+col9+';stroke-width:'+(0.9/FS_Z).toFixed(2)
+          +';stroke-dasharray:'+(sAnim9 ? (sPer9*0.42).toFixed(2)+' '+(sPer9*0.58).toFixed(2) : (2/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2))
+          +';opacity:.8'+(sAnim9 ? ';--cfd:'+sPer9.toFixed(2)+'px' : '')+'"/>');
+        if(sDir9 && liVis && barW*Zv > 5.5){
+          /* 三角最长只到条宽的 24%（0.24 那个落点 + 0.62 的尾巴），两枚朝内的
+             三角在最窄那一档也刚好碰不到一起——上限 3.0/FS_Z 是给放大之后封顶用
+             的，下限 1.1/FS_Z 保证缩到最小时它还是个能认出来的三角而不是一个点。 */
+          var sts9 = clamp(barW*0.15, 1.1/FS_Z, 3.0/FS_Z);
+          var striC9 = function(cx9, sgn9){
+            body.push('<path d="M'+(cx9 + sgn9*sts9).toFixed(1)+' '+scy9.toFixed(1)
+              +'L'+(cx9 - sgn9*sts9*0.62).toFixed(1)+' '+(scy9 - sts9*0.66).toFixed(1)
+              +'L'+(cx9 - sgn9*sts9*0.62).toFixed(1)+' '+(scy9 + sts9*0.66).toFixed(1)
+              +'Z" style="fill:'+col9+';stroke:var(--pt-bg);stroke-width:'+(0.3/FS_Z).toFixed(2)+';stroke-linejoin:round"/>');
+          };
+          if(sDir9 === 'in'){ striC9(bx0 + barW*0.24, 1); striC9(bx0 + barW*0.76, -1); }
+          else if(sDir9 === 'out'){ striC9(bx0 + barW*0.24, -1); striC9(bx0 + barW*0.76, 1); }
+          else striC9(bx0 + barW*0.5, sDir9 === 'back' ? -1 : 1);
+        }
       } else {
         var dense9 = (FS_DENSE[n9.id] || MOD_FS_DENSE[n9.id]) ? 1 : 0;
         body.push('<rect x="'+bx0.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
@@ -7445,6 +7726,13 @@ function sideScene(D, g, box){
            跟正视图 one9 分支同一个「挤一行就打个折」的思路。 */
         var om9 = '';
         if(colW * Zv >= 330 * TG) om9 = ssMetric9(li9, n9) || '';
+        /* 通信行的读数不跟这条 330 的门槛走。那一档收掉的是「每个算子都写读数」
+           那种密度，可通信线一旦没了字节数，它就退回成一条「谁跟谁」的线——正是
+           这次要治的毛病。门槛没到（或者「数据标注」里关掉了性能那一类）时给它
+           一份短格式：只留 payload 那一段，塞得进这一行，也不至于让线空着。
+           块（blkDef）不走这里——块是几个算子的聚合，没有单独的 payload 可言。 */
+        if(ui.commOn && !om9 && !n9.blkDef && n9.colorKey === 'opv:comm')
+          om9 = (sdOpBuckets(li9, n9, D).perf || [''])[0] || '';
         var omCol9 = ssWarn9(li9, n9) ? 'var(--pt-warn, #d97706)' : 'var(--pt-fg)';
         var vLine9 = !!om9 && (yb - ya) >= 20/FS_Z;
         var content9 = esc(lbl9 + tag9);
@@ -7544,6 +7832,20 @@ function sideScene(D, g, box){
       if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl = 'TP/SP Reduce-Scatter';
       if(n9.id === 'attention_core') lbl = lbl + ' · DSA/SWA 按层';
       var tag = b8 ? ' · '+(b8.dim === 'sp' ? 'SP' : b8.dim.toUpperCase())+'切'+(b8.axis||'') : '';
+      /* 通信行在这儿补一段读数。侧视的**每列**读数是有的（下面那个 opLab 分支），
+         可通信行只有几个场景单位高，那条 (yb-ya) >= 10.5/FS_Z 的行高门槛在任何
+         缩放下都够不着——于是整张侧视图里，通信线是唯一一类「画出来了却从来
+         没有数字」的线。这行行名是它在这张图上唯一一定会被写出来的字，读数就
+         挂在这里：短格式（只留 payload，sdOpBuckets 的 perf[0]），行名后面接一段，
+         不另起一行——行与行之间只有 7.4/FS_Z 的间距，多一行必然压到隔壁。
+         代表层与 netScene 的 liRep9 同一口径（选中段的中间层），MoE 段才有的
+         A2A 再往后挪到 denseTop 之后，免得读到还没进 MoE 的那两层。 */
+      if(ui.commOn && n9.colorKey === 'opv:comm' && !n9.blkDef){
+        var liRow9 = Math.min(L - 1, (cutPP ? co.p : 0)*lps + (lps >> 1));
+        if(/moe_all_to_all/.test(n9.id)) liRow9 = Math.min(L - 1, Math.max(liRow9, denseTop));
+        var pay9 = (sdOpBuckets(liRow9, n9, D).perf || [''])[0] || '';
+        if(pay9) tag += ' · ' + pay9;
+      }
       body.push(fsTxt(xm, yc + 2/FS_Z, esc(lbl + tag), 6.2, b8 ? dimColor(b8.dim) : 'var(--pt-fg2)', 'middle',
         'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
     });
@@ -7555,6 +7857,13 @@ function sideScene(D, g, box){
       lastY2 = yc;
       var lbl = n9.id === 'ffn_all_gather' ? 'Dense TP/SP AllGather'
               : n9.id === 'ffn_reduce_scatter' ? 'Dense TP/SP Reduce-Scatter' : 'Dense '+n9.label.replace(/^Dense /,'');
+      /* Dense 段那几行同理：它们贴在图的左外侧，是这几行唯一的字。读数用 L0
+         那一档——Dense FFN 按定义只存在于开头那几层，拿选中段的中间层去读会
+         读到一层根本没有 Dense FFN 的账。 */
+      if(ui.commOn && n9.colorKey === 'opv:comm' && !n9.blkDef){
+        var payD9 = (sdOpBuckets(0, n9, D).perf || [''])[0] || '';
+        if(payD9) lbl += ' · ' + payD9;
+      }
       body.push(fsTxt(xOf(0) - 8, yc + 2/FS_Z, esc(lbl), 6, VC.tp, 'end',
         'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
     });
@@ -7893,6 +8202,15 @@ function layerDetailOverlay(D, box, leftX, li, chartTop, chartBottom){
 /* 转台拖动期间的降级开关。全量画之后 3D 场景是 1.4 万个 SVG 元素，每帧全量
    重排就是拖不动的直接原因；拖的时候只留选中那一份和层板骨架，松手再补回全量。 */
 var lowDetail = false;
+/* 「流动虚线」这一层的图元预算，每次 render() 重置一次。CSS 动画不占主线程，
+   但 stroke-dashoffset 每帧都要重画那条路径——一条线的代价可以忽略，上千条
+   叠起来就不行了（正视图一屏最多铺 128 格，每格 6 条通信线 = 768 条）。
+   420 这个数是按「一整屏侧视」定的：default128 是 48 层 × 6 个通信节点 = 288
+   条，一屏全画得下才不会出现「同一张图里前半截在动、后半截不动」这种比不动
+   更难读的中间态；再往上就只剩正视图那种远景密铺，那一档本来也看不清。
+   预算用完之后线**照画**（通信关系一根都不能少），只是不再多叠那一层动画：
+   丢的是「它是活的」这层修饰，不是事实本身。 */
+var CFLOW_MAX = 420, cflowN = 0;
 /* ══ 关闭整网 → 直接挂真的魔方 pattern ═════════════════════════════════
    卡里清空之后剩下的就是「卡本身怎么排」，那正是逻辑魔方在讲的事——与其自己
    拿 SVG 描一堆方块去像它，不如把那个 pattern 原样接进来（和正视/侧视复用
@@ -9999,6 +10317,7 @@ function renderRankMem(D){
 /* ═════════ 总渲染 ═════════ */
 function render(){
   var D = derive(cfg);
+  cflowN = CFLOW_MAX;                       /* 流动虚线的预算按「每次重绘」发，不跨帧累积 */
   /* 选中卡越界就夹回 null——**来路标记必须跟着一起清**。宿主转过来的 rank 未必在
      这一格的配置里存在（另一格可能是 128 卡、这一格切到 64 卡的预置；换预置也一样），
      那时 sel 被夹成 null 而 ui.hlSel 还留着 true，这一格就卡在"没有选中、却认为
