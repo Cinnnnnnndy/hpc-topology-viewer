@@ -15,14 +15,20 @@
        attn/router/experts 上色带，呼应 ../parallel-topology/demo.html 的 kernelDefs
        同一套 TP=青/EP=紫/不切分=灰 语言；新增函数全部集中在 drawChevronTrack 之后
        一个单独的注释区块里（搜「④ 本仓新增」），只在既有绘制循环和 tooltipHtml 里
-       各加了一行调用挂进去，其余正文没有再动；
+       各加了一行调用挂进去，其余正文没有再动。
+       这一处后来长出两件仍属于它、不另立门户的事：一是条不够宽时段内 TP/EP 缩写
+       会跟主标签压在一起，按主标签同一款字体量真实像素宽再决定画不画；二是**逐节
+       可点**——段的命中区、`selectedSegKey` 这个状态、选中那一节的高亮，以及段
+       对应到 demo.html MODULE_BLOCKS 哪个功能块的那张 KERNEL_SEG_BLOCK 表。
     ⑤ 正文 <script> 里再加一小块「选中 → 回报宿主的 Rank」——`select()` 每次真的选中
        一个事件时，从它的 metrics.rankId 里抠出物理 Rank 号（抠不出来的事件，比如
        Rank 组行、Stage 概览行、跨 Stage 通信，一律报 null），`postMessage` 一条
-       `{type:'pto:swimlane-select', rank}` 给宿主，供它去照亮整网图/主视图里同一个
-       Rank（宿主那边的接线在 index.html，见其 `pto:swimlane-select` 消息处理）。
-       新增函数集中在 kernelSegmentTooltipRow 之后一个单独的注释区块里（搜「⑤ 本仓
-       新增」），只在 `select()` 里加了一行调用挂进去，其余正文没有再动。
+       `{type:'pto:swimlane-select', rank, block}` 给宿主，供它去照亮整网图/主视图里
+       同一个 Rank、以及模块视图里同一个功能块（block 由④的 KERNEL_SEG_BLOCK 算出，
+       没选中某一节时同样报 null；宿主那边的接线在 index.html，见其
+       `pto:swimlane-select` 消息处理）。新增函数集中在 kernelSegmentTooltipRow 之后
+       一个单独的注释区块里（搜「⑤ 本仓新增」），只在 `select()` 里加了一行调用挂
+       进去，其余正文没有再动。
   除了④⑤标注的这两小块新增/三处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
   上游更新时重新拷一遍、再补这五处即可。
 
@@ -934,6 +940,11 @@
       };
 
       let selectedId = 'mb07-total';
+      /* 选中的那一**节** kernel（④ 本仓新增那块色带里的一段）。跟 selectedId 分开存：
+         一条前向/反向条既可以整条被选中（segKey=null，读的是"这一条什么时候跑完"），
+         也可以只选中里面某一节（读的是"这一节是 attn.core 还是 router"）——两件事，
+         不能用同一个变量表示，否则"整条"就没法表达了。 */
+      let selectedSegKey = null;
       let activeRange = 'global';
       let activeLevel = 'object';
       let zoom = 1;
@@ -1347,23 +1358,79 @@
       function isKernelSegmentable(item) {
         return (item.kind === 'forward' || item.kind === 'backward') && !item.metrics?.operatorId;
       }
-      function drawKernelSegments(ctx, item, barX, barY, barW, barH) {
+      /* 段 → ../parallel-topology/demo.html 里模块视图那 6 个功能块（MODULE_BLOCKS 的 id）。
+         这两份表是同一档粒度的两个说法：这边按时间轴排「这一节什么时候在跑」，那边按
+         结构排「这一节在整网上是哪一块」，所以能一一对上。experts 分成组批 1/2 是**同
+         一块**被分了两批算，不是两块——两个键都指向 experts。
+
+         真实子阶段那一组（weightGradient / inputGradient / tpComm / recomputation）**不
+         进这张表**：它们切的是"反向的四个阶段"，跟结构上的功能块是两个正交的分法，硬
+         配一个块过去等于告诉读者"输入梯度就是 Attn·QKV"，那是错的。报 null，宿主照
+         规矩把另外两格的块高亮散掉。 */
+      const KERNEL_SEG_BLOCK = Object.freeze({
+        'attn-qkv': 'attn.qkv', 'attn-core': 'attn.core', 'attn-out': 'attn.out',
+        'router': 'router', 'experts-1': 'experts', 'experts-2': 'experts'
+      });
+      function blockFromSegKey(segKey) {
+        return (segKey && KERNEL_SEG_BLOCK[segKey]) || null;
+      }
+      function segmentLabelOf(item, segKey) {
+        if (!segKey || !isKernelSegmentable(item)) return null;
+        const seg = kernelSegmentsFor(item).segments.find(s => s.key === segKey);
+        return seg ? seg.label : null;
+      }
+      /* out 传进来时，顺手把每一节的几何量出来交回去——命中区不在这里 push：
+         调用点画完这条还要 push 整条自己的命中矩形，而 hitAt 是"后压入的先命中"，
+         段先压就会被整条盖掉。交回去让调用点在整条之后再压，段才咬得住。 */
+      function drawKernelSegments(ctx, item, barX, barY, barW, barH, out) {
         if (!isKernelSegmentable(item) || barW <= 0 || barH <= 0) return;
         const { segments } = kernelSegmentsFor(item);
         const total = segments.reduce((sum, seg) => sum + seg.w, 0);
         if (!(total > 0)) return;
+        if (out) {
+          let ax = barX;
+          segments.forEach(seg => {
+            const sw = barW * seg.w / total;
+            /* 窄到 3px 以下的段不给命中区：点不准，还会把整条自己的命中区戳出一排洞，
+               读者想选整条却随机选中某一节。这种窄条上"逐节"本来就读不出来，靠悬浮。 */
+            if (sw >= 3) out.push({ x: ax, y: barY, w: sw, h: barH, item, action: 'select', segKey: seg.key });
+            ax += sw;
+          });
+        }
         ctx.save();
         roundedRect(ctx, barX, barY, barW, barH, 3);
         ctx.clip();
         ctx.globalAlpha = .5; // 半透明叠加在已经画好的 forward/backward 底色上：保留原有蓝/红主色，色带只做「构成」提示
+        /* 选中的那一节按不透明画：色带整体是 .5 的"构成提示"，选中的那一节要从
+           这层提示里跳出来，靠加边框不行——条只有十几 px 高，一圈边就把段本身
+           吃掉了。抬浓度是这里唯一还剩的余地。 */
+        const litSeg = item.id === selectedId ? selectedSegKey : null;
         let segX = barX;
         segments.forEach(seg => {
           const segW = barW * seg.w / total;
+          ctx.globalAlpha = seg.key === litSeg ? 1 : .5;
           ctx.fillStyle = kernelSegColor(seg.cls);
           ctx.fillRect(segX, barY, Math.max(.6, segW), barH);
           segX += segW;
         });
         ctx.globalAlpha = 1;
+        /* 再给选中那一节压一条上下贴边的白线：不透明度那一档在灰色段（不切分）
+           上几乎看不出差别——灰本来就低对比，.5 → 1 只是从"更灰"到"灰"。 */
+        if (litSeg) {
+          let lx = barX;
+          segments.forEach(seg => {
+            const segW = barW * seg.w / total;
+            if (seg.key === litSeg) {
+              ctx.strokeStyle = 'rgba(255,255,255,.85)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(lx + .5, barY + .5); ctx.lineTo(lx + segW - .5, barY + .5);
+              ctx.moveTo(lx + .5, barY + barH - .5); ctx.lineTo(lx + segW - .5, barY + barH - .5);
+              ctx.stroke();
+            }
+            lx += segW;
+          });
+        }
         if (barW >= 24) { // 条够宽时加一道浅分隔线，比纯拼色更容易看出这是几段
           ctx.strokeStyle = 'rgba(255,255,255,.22)';
           ctx.lineWidth = .5;
@@ -1455,7 +1522,15 @@
       }
       function notifyHostOfSwimlaneSelect(item) {
         if (!window.parent || window.parent === window) return;
-        window.parent.postMessage({ type: 'pto:swimlane-select', rank: rankFromEventMetrics(item.metrics) }, '*');
+        /* block：选中的那一节对应整网图模块视图里的哪个功能块（④ 本仓新增的
+           KERNEL_SEG_BLOCK）。没选中某一节、或者选中的是反向那四个真实子阶段
+           （跟结构块正交，配不上），一律报 null——跟 rank 报 null 同一条规矩：
+           让宿主把另外两格的块高亮散掉，好过硬指一个不代表这次点击的块。 */
+        window.parent.postMessage({
+          type: 'pto:swimlane-select',
+          rank: rankFromEventMetrics(item.metrics),
+          block: blockFromSegKey(selectedSegKey)
+        }, '*');
       }
       /* ════════════════════════════════════════════════════════════════════ */
 
@@ -1778,14 +1853,20 @@
               isRelated: hoverHit?.item?.metrics?.transactionId && hoverHit.item.metrics.transactionId === item.metrics.transactionId,
               fontFamily: css('--font-mono') || 'monospace'
             });
+            const segRects = []; // ← ④ 本仓新增：逐节命中区，见下面为什么等整条压完再压
             if (item.kind === 'forward' || item.kind === 'backward') {
-              drawKernelSegments(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight); // ← ④ 本仓新增，见上方「kernel 级分段」区块
+              drawKernelSegments(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, segRects); // ← ④ 本仓新增，见上方「kernel 级分段」区块
               drawChevronTrack(ctx, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, item.kind, {
                 step: 6, inset: .65, lineWidth: .55, radius: 3, color: 'rgba(255,255,255,.30)'
               });
               redrawTaskLabel(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight);
             }
             hitRects.push({ x: barX, y: barY - 1, w: barW, h: TIMELINE_LAYOUT.eventHeight + 4, item, action: 'select' });
+            /* 逐节命中区压在整条**之后**：hitAt 是 [...hitRects].reverse().find(...)，
+               后压入的先命中。段要咬得住就得排在整条后面；段之间没有重叠，所以段内部
+               谁先谁后无所谓。整条那块矩形还比段高 5px（上下各多出一截），点条的上下
+               边缘仍旧选中整条——「读这一条」和「读这一条里的某一节」两种意图都留了地方。 */
+            segRects.forEach(r => hitRects.push(r));
           });
         });
 
@@ -1871,15 +1952,29 @@
           toggleRowExpand(hit.row.id);
           return;
         }
-        if (hit.item) select(hit.item.id);
+        /* hit.segKey 有值 = 点在某一节色带上（④ 本仓新增的逐节命中区）。
+           再点同一节一次就退回"整条选中"——不这样的话，选进某一节之后就没有
+           路可以回到"我读的是整条"那个状态了，只能去点别的条再点回来。 */
+        if (hit.item) {
+          const wasSameSeg = hit.item.id === selectedId && hit.segKey && hit.segKey === selectedSegKey;
+          select(hit.item.id, wasSameSeg ? null : (hit.segKey || null));
+        }
       });
 
-      function select(id) {
+      function select(id, segKey) {
         selectedId = id;
+        /* 节只认这次调用传进来的那个：没传就是 null。换条、左侧树里点条目、点条的
+           上下边缘选中整条——这几条路都不带 segKey，于是自动归零。一条前向条里的
+           "Attn Core"跟另一条里的"Attn Core"是两次不同的执行，段键同名不代表选中的
+           是同一件事，靠"沿用上一次的段键"续上去只会把上一条的读数挂到这一条头上。 */
+        selectedSegKey = segKey || null; // ← ④ 本仓新增
         renderTree(treeSearch?.value || '');
         draw();
         const item = selectedEvent();
-        document.getElementById('statusText').textContent = `${item.label} · ${kindLabel(item.kind)} · ${fmt(item.startMs)} → ${fmt(item.endMs)}`;
+        const segLabel = segmentLabelOf(item, selectedSegKey); // ← ④ 本仓新增
+        document.getElementById('statusText').textContent =
+          `${item.label} · ${kindLabel(item.kind)} · ${fmt(item.startMs)} → ${fmt(item.endMs)}`
+          + (segLabel ? ` · 节：${segLabel}` : '');
         notifyHostOfSwimlaneSelect(item); // ← ⑤ 本仓新增，见上方「⑤ 本仓新增」区块
       }
       function setActiveRange(nextRange, options = {}) {
