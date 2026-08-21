@@ -3985,11 +3985,25 @@ function netScene(D, g, box, step){
                颜色本来就是对的，缺的只是不透明。换到 solid() 之后同样的数字得到的是
                同样的浅灰，只是这一次它真的挡光——「在之前浅灰的基础上加不透明度」，
                而不是靠加黑去凑遮挡。 */
-            /* 玻璃盒：画全部 6 个面。先画背面 3 个（远壁），再画正面 3 个（近壁）。
-               透过近壁能看到远壁——这才是玻璃的样子。 */
-            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+            /* 玻璃盒：这三个面（连同下面 memFill 收尾处那三个）曾经是「画全部 6 个
+               面——先画背面 3 个（远壁），再画正面 3 个（近壁），透过近壁能看到
+               远壁，这才是玻璃的样子」的六面壳，兑的是 mix()（走透明，不是走
+               不透明的 solid()）——那三个字段名之前那句 ⚠ 注释早就写明白了这条
+               弯路（同一屏的教训写过一次却没搬到这儿）：卡里装满 memFill 的色带
+               之后，这层「玻璃」的近壁三面画在色带**之上**，把已经不透明的容量
+               色带又蒙上一层灰雾——反馈原话「同一个 rank 的前后关系还是有透明度」
+               指的正是这层雾，不是别的卡漏过来的。
+               玻璃盒只在**没有内容可看**的时候才有存在的意义（memFill 关掉，或者
+               转台/缩放中的 lowDetail 降级档）：那两种情形下卡里是空的，六面壳
+               是唯一能证明「这里立着一张卡」的东西，留着透明是对的——它本来就是
+               在演示「玻璃」。memFill 真的画出东西来了，色带自己就是这张卡的内容，
+               不需要再罩一层壳装饰它，壳（连同它的透明）整个让路。 */
+            var wantShell9 = lowDetail || !ui.memFill;
+            if(wantShell9){
+              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+            }
             if(!lowDetail && ui.memFill){
               /* 选中那一只画得更实：兑底色的百分比整体拉高一档，透明度回到 1。
                  128 只半透的盒子叠在一起，选中的那只如果和邻居同一个浓度，就得靠
@@ -4138,9 +4152,16 @@ function netScene(D, g, box, step){
                    顶出去那一截本身已经是告警色，够说明问题；画到哪儿算哪儿。 */
               }
             }
-            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+            /* 玻璃盒的近壁三面（远壁那三个在上面 wantShell9 那段，同一个理由）：
+               memFill 画出内容之后，这三面已经被 memFill 自己的近壁拷贝（同样
+               fTop/fRight/fFront 的取法，只是走 solid() 不透明）盖过一遍——
+               这里再摆一层透明灰雾上去，是刚才那句反馈的真正来源。wantShell9
+               为假时（memFill 有内容）这三面整个跳过，让 memFill 的颜色做底。 */
+            if(wantShell9){
+              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+            }
             /* 命中的卡**不再刷一层蓝**。原来给六个面各兑一层 DP 蓝，结果是：
                ① 卡里那几档载荷（权重的刀色、激活的蓝、优化器态的淡紫）全被同一层蓝
                   盖住，高亮反而把要读的东西糊掉了——而高亮的用处恰恰是「看清这几只」；
