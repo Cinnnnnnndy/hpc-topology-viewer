@@ -1497,6 +1497,11 @@ function inflightAt(D, ppRank, t){
      · 梯度   —— 绿。四个刀色里没有绿，最省事的一个空位，饱和度够，认得出。
      · 优化器态 —— 极淡的中性紫灰。它是面积最大的一档（12B/参数，占一半以上），
        上任何一个饱和色都会把整只卡染成那个色；面积大的东西该弱，让位给要读的。
+       42% → 62%（见下面 MEMC.opt）：这条"该弱"的判断本身没错，但 42% 淡到跟
+       "透明"混为一谈了——它是这一屏视觉面积占比最大的一档，读者对"这张卡实不实"
+       的第一印象几乎全靠它，比 lz 那层选中/背景的 alpha 分层更直接。62% 仍然是
+       五档里最浅的一档（w/g/act/otmp 都是未稀释的原色），弱化的意图没丢，只是
+       不弱到读者以为卡是空的。
      · 激活   —— 蓝。它是唯一随时间轴动的一档，要跳得出来；蓝与 DP 靛同族但更亮，
        而激活本来就是「这一份微批的数据」，同族反而对。
      · 优化器步·临时区 —— 琥珀。它只在一步的最后冒出来，是那一刻把卡顶出去的元凶，
@@ -1505,7 +1510,7 @@ function inflightAt(D, ppRank, t){
 var MEMC = {
   w:  'var(--pt-tp)',                                        /* 兜底：细到分不出块时整条按 TP 青 */
   g:  'var(--highlight-l0b-green-500, #4E9A63)',
-  opt:'color-mix(in srgb, var(--highlight-l0a-violet-200, #D7B1FB) 42%, var(--pt-bg))',
+  opt:'color-mix(in srgb, var(--highlight-l0a-violet-200, #D7B1FB) 62%, var(--pt-bg))',
   act:'var(--highlight-l0b-blue-500, #5B7BDE)',
   otmp:'var(--highlight-mte-amber-600, #CA8A04)',
   rsv:'color-mix(in srgb, var(--pt-fg) 12%, var(--pt-bg))'
@@ -3106,8 +3111,16 @@ function netScene(D, g, box, step){
     var colT = ui.cardMode ? depthT(k, TOTW/2) : 0;
     /* 纵深衰减：远的要真的退下去。128 只盒子远近一个亮度时，画面上到处都是同样
        重的边和同样重的号，眼睛找不到落点——「晕」正是这么来的。关掉整网之后卡里
-       没有内容可看，全靠这层前后关系撑起画面，衰减要比开着整网时更狠一档。 */
-    var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*(ui.netOff ? 0.66 : 0.40)) : 1;
+       没有内容可看，全靠这层前后关系撑起画面，衰减要比开着整网时更狠一档。
+       0.66/0.40 → 0.22/0.12：这两个系数**不挂在有没有选中上**，是这一屏所有
+       「透明/看得穿」反馈的真正源头——memFill 那一路（lz/MEMC.opt/depthT 的
+       面着色三处）调了三轮都收效甚微，根子在这里：那一路只管一张卡壳里的
+       颜色，这一路是包在**整列**外面的 `<g opacity>`，画出来的东西不管内层多浓，
+       乘上这一层还是那么淡——反馈截图里"隔着一张卡还能看见后面一张卡的斜面"，
+       两张卡都在同一列或相邻列时，压根不是内层颜色的问题，是这层雾把整列都
+       罩淡了。系数砍到三分之一左右：纵深带来的近实远虚还在（前后关系没丢），
+       但最远那一列现在也还留着 78%/88% 的底子，不再淡到看穿。 */
+    var colFade = (ui.cardMode && !(hasSel && isF)) ? (1 - colT*(ui.netOff ? 0.22 : 0.12)) : 1;
     var spotDim = spot && !spotCol ? 0.10 : 1;
     /* colFade 是纵深雾，跟选没选中无关——没有它，选中一张卡时其余列只是
        停在原来那点depth-fade上，并没有因为「被比下去」而更暗。选中态需要
@@ -3115,8 +3128,13 @@ function netScene(D, g, box, step){
        两档叠起来才是「这一张跳出来、其余的明显让开」。 */
     /* 0.5 那一档实机反馈仍然「影响阅读」：128 只盒子叠起来，半透的东西一层层透过
        来，等效浓度被抬回去，选中那一列并没有真的跳出来。压到 0.30——落差够大，
-       而阵列的形状（有多少列、缝开在哪）还完整看得见。 */
-    var selDim = (hasSel && !isF) ? 0.30 : 1;
+       而阵列的形状（有多少列、缝开在哪）还完整看得见。
+       0.30 → 0.78：跟 colFade 同一次反馈——选中一张卡之后，其余列被这一档压得
+       比 colFade 自己那点纵深雾还狠得多，"背景卡看不清"主要就是从这儿来的。
+       这一屏"哪一列被选中"已经有读出卡、门牌高亮、通信连线在说，不再需要
+       靠透明度把其余列压成几乎看不见——0.78 仍能感到"这一列在退"，但不再
+       是"这些列消失了"。 */
+    var selDim = (hasSel && !isF) ? 0.78 : 1;
     var colOp = Math.min(colFade, spotDim, selDim);
     if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
@@ -3933,7 +3951,6 @@ function netScene(D, g, box, step){
                  就是答案的一部分**（它在第几列、挨着哪个 EP 组），压得太狠等于把
                  参照系抹掉了，只剩一只孤零零的卡。所以只压到 0.32：够让它跳出来，
                  又还看得见它站在哪儿。 */
-            var sib9 = (!meC && memSibs) ? memSibs[gc] : null;
             /* 兄弟卡从压暗里豁出来：0.32 那档是「别的卡」，兄弟是这次点选的答案 */
             /* 0.32 → 0.20：同上，叠加透明之后 0.32 在阵列里等效并不淡。兄弟卡
                （这次点选的答案的一部分）照旧留 0.9，不跟着往下走。
@@ -3941,8 +3958,25 @@ function netScene(D, g, box, step){
                128 只背景卡淡到看不清容量填色，读者要的是「更实」不是「更透」。
                背景卡还是要比兄弟卡淡、比选中那只（meC，恒为 1）更淡，这层区分
                不能丢，所以三档一起往上提、间距压缩但顺序不变；没有选中任何卡时
-               走的是最后那个 1（本来就是这一档里最浓的），不受这次调整影响。 */
-            var lz = spotShellDim ? 0.18 : (hasSel && !meC ? (sib9 ? 0.97 : 0.55) : 1);
+               走的是最后那个 1（本来就是这一档里最浓的），不受这次调整影响。
+               0.55 → 0.85 / 0.97 → 1：上一轮还不够——兄弟卡干脆跟选中卡一样按
+               画家序真实遮挡（同为 1），反正兄弟卡与选中卡的区分交给读出卡/
+               高亮描边去说，不必再靠透明度分层；背景卡留 0.85 而不是也顶到 1，
+               只是不想在「阵列里还有 128 只」和「这一张是谁」之间完全抹掉前后
+               关系——0.85 已经足够不透，画出来的容量色带跟没选中时几乎认不出
+               差别，但仍留一丝层次给最密的全景视角。
+               0.85 → 1（背景卡也顶满）：截图摆在眼前，0.85 在贴近视角下仍然能
+               清清楚楚看见后面一张卡的斜切面透过来——15% 的背景在对比强的地方
+               (棱线、另一张卡的色带边界) 依然醒目，不是"几乎认不出差别"，是
+               "还是能一眼看穿"。选中卡靠什么和背景卡拉开：不再是这个透明度，
+               是 solidK 抬的那一档饱和度（+12%/+6%，见下面 memSolid 调用）和
+               画布上已经有的高亮描边/读出卡——把"是不是被选中"这件事完全交给
+               透明度以外的记号去说，透明度只剩一个职责：这张卡挡不挡得住后面。
+               spotShellDim（搜索聚光）不在这次反馈范围内，留 0.18 不动。
+               深浅两套主题共用同一个 alpha 数字（这里调的是 opacity，不是颜色
+               本身），色差是 --pt-bg/--pt-fg 这些令牌在两套主题里本就不同，
+               不用为主题分叉。 */
+            var lz = spotShellDim ? 0.18 : 1;
             /* 三个面拉开明度差，盒子才有「体」：顶面吃光（近乎纯底色）、侧面最暗、
                正脸居中。差得越开越像实物，差得不够就只是三张纸片叠在一起。
                ⚠ 这三个面必须走 solid()（兑底色）而不是 mix()（兑透明）。
@@ -3994,12 +4028,19 @@ function netScene(D, g, box, step){
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
                 var kerf = ';stroke:none';
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*14) + solidK*12)+kerf+';opacity:'+lzB9));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*12) + solidK*6))+kerf+';opacity:'+lzB9));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*14)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*12)+';stroke:none;opacity:'+(lz*memDim9)));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*10)+';stroke:none;opacity:'+(lz*memDim9)));
+                /* 三个面的底数（86/94/68）各自再减去 dT×系数：dT 是这张卡在阵列里
+                   摆得多深（0 最近、1 最远，见 depthT），系数原本是 14/12/10——
+                   阵列深处的卡因此比前排淡了近一整成，跟 lz/MEMC.opt 那两处一样，
+                   摞在一起就成了「越靠后的卡越像没填」。系数减半（14→7/12→6/10→5）：
+                   深度带来的层次感留一半，不再是主要的淡化来源——真正决定一张卡
+                   浓不浓的应该是 lz（谁被选中）和 MEMC 本身的颜色，不该被它摆在
+                   哪一列这种无关的事实上再打一次折。 */
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*7) + solidK*12)+kerf+';opacity:'+lzB9));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*6) + solidK*6))+kerf+';opacity:'+lzB9));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*7)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*6)+';stroke:none;opacity:'+(lz*memDim9)));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+(lz*memDim9)));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
