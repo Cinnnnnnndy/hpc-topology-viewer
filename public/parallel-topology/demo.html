@@ -985,13 +985,19 @@ var ui = {
      它不落标签、不浮「这张卡装了什么」的读出卡，点一下画布空白就散。
      两者最后都落到同一套渲染状态（revLayer / sel）上，来路记在这两个开关里。 */
   hlLayer:false,    /* 当前 revLayer 是过路的高亮，不是标签 */
-  hlSel:false       /* 当前 sel 是过路的高亮，不是这一屏选中的那张卡 */
+  hlSel:false,      /* 当前 sel 是过路的高亮，不是这一屏选中的那张卡 */
+  /* 泳道图逐节点点开某一段 kernel（attn.qkv/attn.core/attn.out/router/experts…），
+     host 转发过来的就是这个块的 id（MODULE_BLOCKS 里那张表的 id，同名字符串）。
+     用空串表示"没有"而不是 null——跟 revLayer 同一个先例：这也是一句"输入框值"
+     式的字符串状态，不是布尔开关，''就是它的零值，不用另外判 null/undefined。 */
+  hlBlock:''
 };
 /* 散掉过路的高亮（点画布空白、或换了别的问法时调用）。返回是否真的散掉了东西。 */
 function clearHL(){
   var had = false;
   if(ui.hlLayer){ ui.revLayer = ''; ui.hlLayer = false; had = true; }
   if(ui.hlSel){ sel = null; ui.hlSel = false; had = true; }
+  if(ui.hlBlock){ ui.hlBlock = ''; had = true; }
   return had;
 }
 /* 这一屏此刻亮着的那张卡是不是「别处点过来的」。三个机位（3D/顶视 · 正视 ·
@@ -3160,6 +3166,30 @@ function netScene(D, g, box, step){
           if(!nodeInLayer(n, li)) return;
           var u0 = (n.x - n.width/2 - root.x)/GW, u1 = (n.x + n.width/2 - root.x)/GW;
           var v0 = vOf(n.y - n.height/2), v1 = vOf(n.y + n.height/2);
+          /* 过路的块高亮：判断放在 u0/v0/u1/v1 刚算出来、下面一串早退分支（弱化档
+             direct return、comm 横线 return）之前——跟 hlLayer 一样，这是"此刻扫到
+             的这个东西该不该照亮"，不该被"这张卡是不是 focusCell / 是不是弱化档"
+             这些跟它无关的开关挡住：没选中任何卡时，读者仍然要能在默认落脚的那张
+             卡上看见这个功能块。
+             但只给 isF 那一列画：这一维（哪一列）与 focusCell 不同，isF 标的是
+             "前排代表列"，不管选没选中卡都恰好只有一列为真（未选中时回落到
+             rank 0 那一列）——跟 SP 的真缝"只给前排这一份画"同一个理由。块高亮
+             要害在**每一层**都出现（不像层高亮只扎一层），列这一维再不收就是
+             「列数 × 48 层 × 块内叶子数」——128 卡、模块视图关掉时单是 attn.qkv
+             一块就有 11 个叶子，实测直接内容膨胀到画不动（截屏 30s 起不来）。
+             收到一列之后同一块最多 48 层 × 11 叶子，量级回到这份判定原来假设的
+             「跟其它注解一个数量级」。
+             外扩量按这颗节点自己的 u/v 尺寸取比例，不是定值——块大（模块视图开）
+             还是叶子小（模块视图关）线框都贴得住，不会显得忽宽忽窄。
+             fill:none 且外扩在节点自身范围之外，不管这颗节点接下来走三条画法里
+             的哪一条（弱化淡出 / 网格切片 / 整块实心）都不会被它的实心盖住——
+             不必在每条分支各补一次，单一入口才是这份判定一路遵循的写法。 */
+          if(ui.hlBlock && isF && blockHLOn(n)){
+            var hbu9 = (u1-u0)*0.09, hbv9 = (v1-v0)*0.09;
+            body.push(quad([P(u0-hbu9,v0-hbv9,ww,kOff), P(u1+hbu9,v0-hbv9,ww,kOff),
+              P(u1+hbu9,v1+hbv9,ww,kOff), P(u0-hbu9,v1+hbv9,ww,kOff)],
+              'fill:none;stroke:'+VC.dp+';stroke-width:1;stroke-dasharray:2.4 1.6', 'class="hlring"'));
+          }
           var s1 = sh ? sh[n.id] : null;
           var byL = (s1 && s1.spec && s1.spec.by) || EXTRA_BY[n.id] || [];
           /* 切分表里一个算子可以被**两把刀从两个方向**切：attention 那几个是
@@ -5730,6 +5760,18 @@ function graphSVG(o){
     out.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)
       +'" rx="'+(1.5/zs).toFixed(2)+'" style="fill:'+mix(col, dim?46:16)+';fill-opacity:'+op+';stroke:'+(dim?col:'var(--pt-bds)')
       +';stroke-width:'+((dim?.9:.5)/zs).toFixed(2)+';stroke-opacity:'+op+'"/>');
+    /* 过路的块高亮：与正视/3D 同一句判定（blockHLOn），画在节点体（含切痕那几条
+       分支）画完之后——router 那块会被 forceColor 强改成 EP 色（见上面 col 那段），
+       色只管填充，不该把这圈虚线记号也吃掉，单独一层叠上去才不会被它盖过。
+       推进 acts（不是 out）：out/acts/txts 最后按这个顺序拼接（见函数末尾 return），
+       acts 排在节点体之后、文字标签之前——线框压得住节点填充，又不会挡住读数字。 */
+    if(ui.hlBlock && blockHLOn(n)){
+      var hb9 = 2.4/zs;
+      acts.push('<rect class="hlring" x="'+(x-hb9).toFixed(1)+'" y="'+(y-hb9).toFixed(1)
+        +'" width="'+(w+hb9*2).toFixed(1)+'" height="'+(h+hb9*2).toFixed(1)
+        +'" rx="'+(3/zs).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.4/zs).toFixed(2)
+        +';stroke-dasharray:'+(4/zs).toFixed(2)+' '+(2.8/zs).toFixed(2)+'"/>');
+    }
     if(o.label && h*zs > 5){
       /* 真标签 + 真区间：和 3d-deck 上写的那一行是同一份数据。
          维名用切分表自己的 dimName（它会给出 SP 这种本页 DIMN 里没有的），
@@ -6821,6 +6863,33 @@ function moduleBlockNode(b, byId){
     colorKey:(rep ? rep.colorKey : 'opv:linear'),
     x:(x0+x1)/2, y:(y0+y1)/2, width:x1-x0, height:y1-y0, parent:b.parentClu};
 }
+/* 泳道逐节点点开的 kernel 分段 → 这里对应哪一块（反查表，叶子 id → 块 id）。
+   只算一次缓存起来：MODULE_BLOCKS 是静态表，反查表不会随渲染变化，每帧重建
+   是白费——这张表本来也就六块几十个叶子，缓存收益不在"省了多少次循环"，
+   是保持"只建一次"这条本页到处都在用的习惯（旁边 MODULE_EXCLUDE 就是同一个
+   写法）。变量名大写下划线：函数级缓存，跟 MODULE_EXCLUDE 同一套记号。 */
+var MODULE_LEAF_BLOCK = null;
+function moduleLeafBlock(){
+  if(MODULE_LEAF_BLOCK) return MODULE_LEAF_BLOCK;
+  var out = {};
+  MODULE_BLOCKS.forEach(function(b){ b.src.forEach(function(id){ out[id] = b.id; }); });
+  MODULE_LEAF_BLOCK = out;
+  return out;
+}
+/* 这一颗节点是不是「泳道点过来的那个块」——三个机位（3D/顶视 · 正视 · 侧视）
+   共用这一句判定，理由跟 hlSelOn 一样：各写各的迟早会有一个机位漏判、或者
+   判法悄悄长歪，「正视亮着侧视不亮」比不加这个功能还难查。
+   两条分支对应模块视图的开/关两种状态——这条分歧不能省：
+     · 模块视图开着时，块是一个合成节点（n.blkDef 存在），直接比它自己的 id；
+     · 模块视图关着时，画面上根本没有 'blk.xxx' 这种合成节点，块吞并的那几个
+       真叶子各自逐算子画出来（互相之间没有 blkDef），只能靠 id 反查它们各自
+       落进了哪一块。用户点开泳道某一节时，看整网那边不一定开着模块视图——
+       两种情况都要能高亮，否则功能在「模块视图关」这个很常见的状态下就是哑的。 */
+function blockHLOn(n){
+  if(!ui.hlBlock || !n) return false;
+  if(n.blkDef) return n.blkDef.id === ui.hlBlock;
+  return moduleLeafBlock()[n.id] === ui.hlBlock;
+}
 /* 聚合读数：不是另起一套假数据，是把块里每个真叶子各自的 sdOpBuckets——
    sdOpMetric 本身也是从这份桶里按「数据」多选拼出一行——按同一套多选原样
    求和/拼接：耗时求和、带参算子的 W 求和、MoE 专家的 token 数求和；
@@ -7699,6 +7768,19 @@ function sideScene(D, g, box){
         var dense9 = (FS_DENSE[n9.id] || MOD_FS_DENSE[n9.id]) ? 1 : 0;
         body.push('<rect x="'+bx0.toFixed(1)+'" y="'+ya.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(1.1,(yb-ya)).toFixed(1)
           +'" rx="'+(0.8/FS_Z).toFixed(2)+'" style="fill:'+mix(col9, b0 ? (dense9?52:42) : 20)+';stroke:'+(b0?col9:'var(--pt-bds)')+';stroke-width:'+(0.25/FS_Z).toFixed(2)+'"/>');
+      }
+      /* 过路的块高亮：与正视/3D 同一句判定（blockHLOn）。三条分支（'+' 残差合并的
+         圆点 / 通信横线 / 普通条）画的都是同一个 (bx0,ya,yb,barW) 框，三路判断
+         之后统一补一圈就够，不用在每一支里各写一遍——q_residual_add 这类残差
+         合并节点被 attn.qkv 收编、却是用圆点画法画的（见上面 label==='+' 那支），
+         正是"统一补一圈"而不是"跟着 else 那条 rect 分支写"的理由：写进 else 里
+         这几个圆点节点会漏一圈框。 */
+      if(ui.hlBlock && blockHLOn(n9)){
+        var hbx9 = barW*0.12, hby9 = Math.max(1/FS_Z, (yb-ya)*0.12);
+        body.push('<rect class="hlring" x="'+(bx0-hbx9).toFixed(1)+'" y="'+(ya-hby9).toFixed(1)
+          +'" width="'+(barW+hbx9*2).toFixed(1)+'" height="'+((yb-ya)+hby9*2).toFixed(1)
+          +'" rx="'+(1.6/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.1/FS_Z).toFixed(2)
+          +';stroke-dasharray:'+(3/FS_Z).toFixed(2)+' '+(2/FS_Z).toFixed(2)+'"/>');
       }
       /* 放大到条里装得下字之后，每个算子段也给一枚命中面：点开完整读数（跟随卡）。
          没放大时整列就几十个像素高，逐段命中点不准，那时点整列反查层才是对的。 */
@@ -10976,6 +11058,11 @@ window.addEventListener('message', function(ev){
         else if(d.hl.layer === null && ui.hlLayer){ ui.revLayer = ''; ui.hlLayer = false; }
         if(typeof d.hl.rank === 'number'){ sel = d.hl.rank; ui.hlSel = true; }
         else if(d.hl.rank === null && ui.hlSel){ sel = null; ui.hlSel = false; }
+        /* 泳道那边逐节点点选 kernel 分段转过来的块 id——host 没选中某一节、
+           或选中的是不挂功能块的反向子阶段时传的是 null，跟 layer/rank 同一套
+           「有值就置位、null 就清位」写法，不必另起一条判定。 */
+        if(typeof d.hl.block === 'string' && d.hl.block){ ui.hlBlock = d.hl.block; }
+        else if(d.hl.block === null && ui.hlBlock){ ui.hlBlock = ''; }
       }
     }
     if(d.l5 === true || d.l5 === false) (ui.layersUser[ui.view] = ui.layersUser[ui.view]||{}).L5 = d.l5;
