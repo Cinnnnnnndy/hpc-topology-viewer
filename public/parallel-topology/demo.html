@@ -4140,7 +4140,11 @@ function netScene(D, g, box, step){
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
                       if(!oc8) return;
                       var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
-                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1) * (sg8.k === 'w' ? 1 : 0.86);
+                      /* 原来非 'w' 档还要再乘 0.86：那是给 fill-opacity 版配的额外弱化，
+                         现在刀色已经预混成不透明复合色（见下面 fill 那行），这层 0.86
+                         只剩"整块跟着调淡"一个效果，把刚刚烧掉的实心又打回半透明——
+                         删掉，色块的浓淡完全交给 color-mix 的混合比例（.52/.30）决定。 */
+                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1);
                       /* 每一块都挂命中面：卡上直接点 experts 那一截就能展开它，
                          不必先点开权重、再去表里找那一行。 */
                       if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
@@ -4149,10 +4153,15 @@ function netScene(D, g, box, step){
                         esc(o8.id)+'：点开看这一块的切分'));
                       body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                              :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
-                        /* 与 L3 那只卡逐字同一套：刀色**本体** + .52 的填充透明度压在
-                           带上，不是先把刀色兑进底色再画。兑色会把下面那条带吃掉一层，
-                           叠出来就不是同一个颜色了（青块压在青带上会比 L3 那份浅一档）。 */
-                        'fill:'+oc8+';fill-opacity:'+(sg8.k === 'w' ? '.52' : '.30')+';stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
+                        /* 原来跟 L3 那只卡逐字同一套：刀色**本体** + fill-opacity 压在带上，
+                           不先把刀色兑进底色。那是特意避开"兑色吃掉下面一层"的问题，但
+                           fill-opacity 是真的 alpha——这一块局部半透明，会把它下面那条带
+                           自己的颜色露出来，一整片看起来像"没填实"（反馈："希望面的色块
+                           是完整的，不要透出后面的内容"）。改成 color-mix 直接把刀色与
+                           这条带的本色（sg8.c）预先混合成一个不透明的复合色：混合比例
+                           还是 .52/.30，视觉权重不变，只是从"叠透明层"换成"就是这一个
+                           颜色"，不再有能看穿的缝。 */
+                        'fill:color-mix(in srgb, '+oc8+' '+(sg8.k === 'w' ? '52' : '30')+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
                     /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
