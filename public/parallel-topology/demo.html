@@ -4173,15 +4173,17 @@ function netScene(D, g, box, step){
                         'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35'));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
-                    /* g/opt/otmp 跟权重同一套 TP/EP 切分，但只画白色切分线、不填色块。
-                       暗色带上白线对比度最好；缝密到分不开时整条都不画。 */
+                    /* g/opt/otmp 跟权重同一套 TP/EP 切分，但只画切分线、不填色块。
+                       暗色带（g #6F9BA6）上白线对比度好；亮色带（opt #9F93D1、
+                       otmp #F5E6A8）上白线看不见，改用带色本身压暗 50% 的深色线。 */
+                    var cutCol8 = (sg8.k === 'g') ? '#fff' : memShade(sg8.c, 50);
                     var lastPx8 = -1e9;
                     MS9.opSegs.forEach(function(o8){
                       var px8 = o8.u0 * cardPxW9;
                       if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
                       lastPx8 = px8;
                       body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
-                        'stroke:#fff;stroke-width:.55'));
+                        'stroke:'+cutCol8+';stroke-width:.55'));
                     });
                   } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
