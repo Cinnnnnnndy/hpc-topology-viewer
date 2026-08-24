@@ -260,7 +260,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>25 张图</span><span>59 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>18 节</span><span>27 张图</span><span>59 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
   </div>
 </header>
 
@@ -1006,6 +1006,14 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
     <li><strong>权重永远是"旧的算出新的"，不能反过来。</strong>拿 <code>W(t+1)</code> 去算这一步的梯度在因果上不成立。优化器状态同样在环上——这一步更新完的 <code>m</code>、<code>v</code> 是下一步的输入，不是本地终点。</li>
   </ol>
 
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 05F</span><span class="ftitle">四步环：不在卡里看，只看谁产出谁</span><span class="cd b">循环 1:1</span>
+      <span class="fnote">跟上面 <code>&lt;pre&gt;</code> 是同一件事的图解版，不落在任何一张卡的显存布局上——这里只画「谁读谁、谁产出谁」的纯因果关系。四步首尾相接，④的产物 <code>W(t+1)</code> 顺着上方那条回勾线，变回①下一轮的输入——这条线是整张图唯一的重点：没有它，四步读起来会像四件互不相干的事。方块下方的色点标的是本文自己的显存签名色（<span style="color:#B3603A">●</span>权重　<span style="color:#C98A63">●</span>梯度　<span style="color:#2E6E8E">●</span>优化器态　<span style="color:#3E7D5E">●</span>激活），与下面 FIG 05E、§08 FIG 11 用的是同一套颜色。</span>
+    </figcaption>
+    <div class="stage" id="fig-loop"></div>
+  </figure>
+
   <div class="note">
     <span class="lbl">和"状态 vs 流量"框架的关系</span>
     <p>这条环不是新结论，是把前面"状态 vs 流量"的区分落到时间轴上：权重、梯度、优化器状态都属于状态一侧，常驻显存、被逐步更新；激活属于流量一侧，一个 step 内生灭。区别在于——状态一侧这三样虽然都算"常驻"，<b>常驻的时间窗口并不对齐</b>：权重和优化器状态全程都在，梯度只在"算出"到"被优化器吃掉"这一小段窗口内才和它们叠在一起。</p>
@@ -1059,6 +1067,14 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 更新  优化器态 33GB + 梯度 5.5GB         →  权重(t+1) 5.5GB，梯度释放
               └───────────────────────────────┘
                      回到前向，循环</pre>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 05E</span><span class="ftitle">同一条环，落到这张真实的卡上</span><span class="cd a">环 1:1</span>
+      <span class="fnote">同一根立方体＝rank 31 的显存，高度按上表的字节数堆叠。<b>堆叠顺序按因果邻接排，不是"对 viewer 的推论"那节的列表顺序</b>——权重→优化器态→梯度→激活，让②④两条环上的箭头都落在相邻层之间，不用绕过体积最大的优化器态（两节图目的不同：那节排的是面板列表顺序，优化"常驻分组好找 OOM 地板"；这里排的是立方体堆叠，优化"箭头别绕远路"，各自的顺序各自负责，不必一致）。②反向把激活变成梯度，④更新把优化器态与梯度变成下一步的权重——环在权重这一格闭合。①前向、③DP AllReduce 不跨档，因此图上没画箭头，抽象版见上面 FIG 05F。两条虚线（70%／88%）是 §08 的警戒线，rank 31 的 53/64≈82.8% 正落在两者之间。</span>
+    </figcaption>
+    <div class="stage" id="fig-lifecycle"></div>
+  </figure>
 
   <p><strong>常驻组 5.5 ＋ 5.5 ＋ 33 = 44 GB</strong>，是这张卡的恒定地板——不管此刻走到环上哪一步都不会变；<strong>激活 7.6 GB 是唯一随时间脉动的一档</strong>，"在途 4 μb"直接对应前面 §03 表里"MBS 单卡任一时刻手里的"那一行——1F1B 调度下这张卡此刻同时压着 4 个 micro-batch；碎片 1.4 GB 不在这条链上。<code>44 ＋ 7.6 ＋ 1.4 = 53 GB</code>，与面板"合计 53/64 GB"完全吻合——账能闭合，说明这五档确实互不重叠，没有漏记也没有重复计入。</p>
 
@@ -3719,6 +3735,115 @@ function figContainer(){
     ' ＝ <b>'+m.tot.toFixed(1)+' GB</b> / '+CFG.cap+' GB'+
     (m.tot>CFG.cap?'　<span class="over">溢出 '+(m.tot-CFG.cap).toFixed(1)+' GB，OOM</span>'
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
+}
+
+/* ===================== FIG 05E · 环形因果链落在一张立方体上（rank 31 实拍）===================== */
+function figLifecycle(){
+  var sc=new Scene('fig-lifecycle',13);
+  var BW=6.2, BD=5.4, CAPH=15.5, CAP=64, u=CAPH/CAP;
+  /* 堆叠顺序按「因果邻接」排，不是「对 viewer 的推论」那节的常驻分组顺序——
+     两节图目的不同：那节排列表顺序，优化「常驻三档分组，方便看 OOM 地板」；
+     这里排立方体堆叠，优化「箭头别绕远路」。权重→优化器态→梯度→激活
+     让②③两条环上的箭头都落在相邻层之间，不用绕过体积最大的优化器态。
+     碎片/预留高度太薄，用 Math.max 给它一个最小可读高度——真实比例已经
+     写在数字里，这里只保证标签放得下。 */
+  var stack=[
+    {n:'权重',          v:5.5, c:K.pp},
+    {n:'优化器态',      v:33,  c:K.dp},
+    {n:'梯度',          v:5.5, c:'#C98A63'},
+    {n:'激活·在途4μb',  v:7.6, c:K.cp},
+    {n:'碎片',          v:1.4, c:K.pale}
+  ];
+  var MINH=1.35;
+  sc.wire({x:0,y:0,z:0,w2:BW,h:CAPH,d:BD,stroke:'#8A98A2',sw:1.3,dash:'4 3'});
+  var y=0, pos={};
+  stack.forEach(function(s){
+    var hh=Math.max(s.v*u, MINH);
+    pos[s.n]={y0:y,y1:y+hh,mid:y+hh/2};
+    sc.box({x:.16,y:y,z:.16,w:BW-.32,h:hh-.06,d:BD-.32,color:s.c});
+    sc.label({x:BW+.35,y:y+hh/2-.16,z:BD/2,text:s.n+'　'+s.v+' GB',size:9.5,weight:700,fill:'#2A343B',anchor:'start',mono:true});
+    y+=hh;
+  });
+  var topY=y;
+  /* 两条警戒线（§08 的 70% 橙 / 88% 红）画在真实累计高度上（不受 MINH 拉伸影响），
+     对应 rank 31 的 53/64≈82.8% 落在两者之间——用 stack 实际字节比例重新算一次 y。 */
+  var realTop=0; stack.forEach(function(s){ realTop+=s.v; });   /* =53 */
+  var realU=topY/realTop;                                       /* 用拉伸后的总高度反推刻度，保证 82.8% 那条线仍对得上视觉堆叠顶部 */
+  /* 标签放左边（右边已经被 GB 读数占了），避免两组文字叠在一起 */
+  [[0.70*64,'#CA8A04','70%'],[0.88*64,'#C0392B','88%']].forEach(function(w2){
+    var yy=w2[0]*realU;
+    sc.line3({a:[0,yy,BD],b:[BW,yy,BD],stroke:w2[1],w:1.3,dash:'4 3'});
+    sc.label({x:-.15,y:yy+.25,z:BD,text:w2[2],size:8.5,weight:700,fill:w2[1],anchor:'end'});
+  });
+  /* ② 反向：激活 → 梯度。新顺序下两档紧挨着，箭头只需跨一层，不用绕远路。
+     标注放在警戒线标签的更左侧（x1 比 -.15 更远），避免与 70%/88% 文字叠字。 */
+  var aY=pos['激活·在途4μb'].mid, gY=pos['梯度'].mid, x1=-2.2;
+  sc.line3({a:[-.3,aY,BD/2],b:[x1,aY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
+  sc.line3({a:[x1,aY,BD/2],b:[x1,gY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
+  sc.line3({a:[x1,gY,BD/2],b:[-.3,gY,BD/2],stroke:K.ink,w:1.3,dash:'3 2',arrow:'ink'});
+  sc.label({x:x1-.3,y:(aY+gY)/2+.3,z:BD/2,text:'②反向：激活→梯度',size:8.5,weight:700,fill:'#3D4B55',anchor:'end'});
+  /* ④ 更新：优化器态（连同紧邻的梯度）→ 权重(t+1)，回到链首，环在这里闭合。
+     锚点用优化器态靠近权重的那条边（y0），不用整块的几何中点——它体积大，
+     用几何中点会让箭头显得比实际因果距离长得多。标签整体挪到权重这一格
+     的下沿以下（wY 再减一段），躲开权重自己的 GB 标签，不与它同一高度抢位置。 */
+  var oEdgeY=pos['优化器态'].y0+0.5, wY=pos['权重'].y0+.18, x2=BW+2.6, labY=pos['权重'].y0-.55;
+  sc.line3({a:[BW+.3,oEdgeY,BD/2],b:[x2,oEdgeY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
+  sc.line3({a:[x2,oEdgeY,BD/2],b:[x2,wY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
+  sc.line3({a:[x2,wY,BD/2],b:[BW+.3,wY,BD/2],stroke:K.ink,w:1.3,dash:'3 2',arrow:'ink'});
+  sc.label({x:x2+.3,y:labY+.55,z:BD/2,text:'④更新：优化器态+梯度→W(t+1)',size:8.5,weight:700,fill:'#3D4B55',anchor:'start'});
+  sc.label({x:x2+.3,y:labY-.3,z:BD/2,text:'回到①前向，环闭合',size:8.5,fill:'#8A98A2',anchor:'start'});
+  sc.label({x:BW/2,y:topY+3.6,z:BD/2,text:'rank 31 · 环形因果链落在一张卡上',size:13,weight:750,fill:K.ink});
+  sc.label({x:BW/2,y:topY+2.55,z:BD/2,text:'合计 53 / 64 GB（实际比例，柱高已拉伸以容纳标签）· 余量 11 GB',size:9,fill:'#8A98A2'});
+  sc.render();
+}
+
+/* ===================== FIG 05F · 四步环（不落在任何一张卡上，纯因果关系）===================== */
+function figLoop(){
+  var m=document.getElementById('fig-loop'); if(!m) return;
+  var W=1080, H=380;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+  s+='<defs><marker id="loop-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    +'<path d="M0 0 L10 5 L0 10 z" fill="#3D4B55"/></marker>'
+    +'<marker id="loop-ar-hook" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    +'<path d="M0 0 L10 5 L0 10 z" fill="#8A98A2"/></marker></defs>';
+
+  var COL={w:K.pp, g:'#C98A63', opt:K.dp, act:K.cp};
+  var steps=[
+    {n:'①前向',   f:'W(t) × A  →  out',        note:'A 暂存',        dots:[['权重',COL.w],['激活',COL.act]]},
+    {n:'②反向',   f:'∂L/∂out × A  →  ∇W',      note:'A 释放',        dots:[['激活',COL.act],['梯度',COL.g]]},
+    {n:'③同步',   f:'DP AllReduce(∇W)',        note:'→ 全局梯度',    dots:[['梯度',COL.g]]},
+    {n:'④更新',   f:'opt(m,v,master) + ∇W',    note:'→ W(t+1)，∇W 释放', dots:[['优化器态',COL.opt],['梯度',COL.g],['权重',COL.w]]}
+  ];
+  var BX=[40,320,600,880], BW2=200, BY=130, BH=150, CY=BY+BH/2;
+
+  /* 相邻步骤之间的正向箭头 */
+  for(var i=0;i<3;i++){
+    var xA=BX[i]+BW2, xB=BX[i+1];
+    s+='<line x1="'+xA+'" y1="'+CY+'" x2="'+(xB-2)+'" y2="'+CY+'" stroke="#3D4B55" stroke-width="1.8" marker-end="url(#loop-ar)"/>';
+  }
+  /* 回勾：④ → ①，绕到方块上方，不与任何正向箭头交叉——环的收尾在这里 */
+  var hookY=BY-46;
+  s+='<path d="M'+(BX[3]+BW2/2)+' '+BY+' V'+hookY+' H'+(BX[0]+BW2/2)+' V'+(BY-2)+'" '
+    +'fill="none" stroke="#8A98A2" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-ar-hook)"/>';
+  s+='<text x="'+(W/2)+'" y="'+(hookY-8)+'" font-size="10" fill="#8A98A2" text-anchor="middle">④ 的产物 W(t+1)，就是①下一轮读的 W——环在这里闭合，不是另起一份</text>';
+
+  steps.forEach(function(st,i){
+    var x=BX[i];
+    s+='<rect x="'+x+'" y="'+BY+'" width="'+BW2+'" height="'+BH+'" rx="9" fill="#fff" stroke="#0E1418" stroke-width="1.4"/>';
+    s+='<text x="'+(x+16)+'" y="'+(BY+26)+'" font-size="13.5" font-weight="800" fill="#0E1418">'+st.n+'</text>';
+    s+='<text x="'+(x+16)+'" y="'+(BY+50)+'" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="#3D4B55">'+st.f+'</text>';
+    s+='<text x="'+(x+16)+'" y="'+(BY+68)+'" font-size="9.5" fill="#8A98A2">'+st.note+'</text>';
+    /* 底部色点：这一步涉及哪几档显存（颜色与 FIG 05E / §08 FIG 11 一致） */
+    var dy=BY+BH-18;
+    st.dots.forEach(function(d,j){
+      var dx=x+16+j*70;
+      s+='<circle cx="'+dx+'" cy="'+dy+'" r="4" fill="'+d[1]+'"/>';
+      s+='<text x="'+(dx+8)+'" y="'+(dy+3.5)+'" font-size="9" fill="#5C6B74">'+d[0]+'</text>';
+    });
+  });
+
+  s+='</svg>';
+  m.innerHTML=s;
 }
 
 /* ===================== FIG 04D · SP 布局切换 ===================== */
@@ -6389,6 +6514,7 @@ function boot(){
    ['fig-cp-stages',figCPStages], ['fig-cp-sp',figCPxSP],
    ['fig-slice',figSlice], ['fig-cut',figCut], ['fig-build',figBuild],
    ['fig-trace',figTrace], ['fig-container',figContainer],
+   ['fig-lifecycle',figLifecycle], ['fig-loop',figLoop],
    ['fig-obs-layer',figObsLayer], ['fig-obs-diag',figObsDiag],
    ['fig-sibling',figSibling],
    ['fig-hccl',figHCCL],
