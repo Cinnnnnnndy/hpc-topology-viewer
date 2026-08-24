@@ -4070,19 +4070,22 @@ function netScene(D, g, box, step){
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
                 var kerf = ';stroke:none';
-                /* 三个面的底数（86/94/68）各自再减去 dT×系数：dT 是这张卡在阵列里
-                   摆得多深（0 最近、1 最远，见 depthT），系数原本是 14/12/10——
-                   阵列深处的卡因此比前排淡了近一整成，跟 lz/MEMC.opt 那两处一样，
-                   摞在一起就成了「越靠后的卡越像没填」。系数减半（14→7/12→6/10→5）：
-                   深度带来的层次感留一半，不再是主要的淡化来源——真正决定一张卡
-                   浓不浓的应该是 lz（谁被选中）和 MEMC 本身的颜色，不该被它摆在
-                   哪一列这种无关的事实上再打一次折。 */
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*7) + solidK*12)+kerf+';opacity:'+lzB9));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*6) + solidK*6))+kerf+';opacity:'+lzB9));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*7)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*6)+';stroke:none;opacity:'+(lz*memDim9)));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
+                /* 三个面的底数（86/94/68）原来各自再减去 dT×系数（越往阵列深处摆
+                   越淡），这套折扣是在旧的饱和色板上量的——旧色板本身浓，扣掉一成
+                   还认得出是什么颜色。换成这版淡色调色板之后同一套折扣直接把远处
+                   的卡冲得快看不见了（反馈"拉远之后颜色一下子变淡了"）：淡色本来
+                   跟底色就没多少反差，再按比例扣一次，剩下的反差不够眼睛分辨。
+                   跟三轮前 eO（棱的透明度）那次教训同一个道理：前后关系不该靠"让
+                   内容本身变淡"去表达，会和"这张卡是不是真的空/远得看不清"混为
+                   一谈。删掉 dT 这一项，面的浓度全阵列统一；前后落差改由 eW（棱的
+                   线宽，见 shellOf 里 eW 那段）单独承担——近粗远细，粗细不会把
+                   内容本身的颜色也带没了。 */
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 + solidK*12)+kerf+';opacity:'+lzB9));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, 94 + solidK*6))+kerf+';opacity:'+lzB9));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94)+';stroke:none;opacity:'+(lz*memDim9)));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+(lz*memDim9)));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
