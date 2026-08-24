@@ -4056,8 +4056,8 @@ function netScene(D, g, box, step){
                  底板（前、右、顶），色带画在它们上面覆盖已用部分，空隙处露出的是
                  这层底板而不是透明。颜色取极浅的 fg3 兑底色（6%），几乎就是背景，
                  但 alpha 恒 1 ——看不穿。 */
-              var capBg9 = memSolid('var(--pt-fg3)', 6);
-              var capBgS9 = memShade(capBg9, 12);
+              var capBg9 = 'var(--pt-bg)';
+              var capBgS9 = memShade('var(--pt-bg)', 8);
               body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
               body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+capBgS9+';stroke:none'));
               body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
@@ -4104,7 +4104,7 @@ function netScene(D, g, box, step){
                    线宽，见 shellOf 里 eW 那段）单独承担——近粗远细，粗细不会把
                    内容本身的颜色也带没了。 */
                 var fPct9 = Math.round(100 * dimPct9);
-                var sideDark9 = Math.round(5 * (2 - dimPct9));
+                var sideDark9 = Math.round(2 * (2 - dimPct9));
                 body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+kerf));
                 body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+kerf));
                 if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
@@ -4146,7 +4146,7 @@ function netScene(D, g, box, step){
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
-                  var seamCol9 = 'color-mix(in srgb, var(--pt-fg) 34%, transparent)';
+                  var seamCol9 = memShade('var(--pt-bg)', 34);
                   var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
                   /* 梯度与优化器态是同一份参数的 ×1 / ×6：分法与权重逐块相同，所以
                      用**同一套块色**画，只把填充压到权重的一半多一点（.30 对 .52）。
