@@ -1522,7 +1522,7 @@ var MEMC = {
   opt:'#9F93D1',
   act:'#8FBB7A',
   otmp:'#F5E6A8',
-  rsv:mix('var(--pt-fg3)', 40)
+  rsv:'color-mix(in srgb, var(--pt-fg3) 40%, var(--pt-bg))'
 };
 /* 权重带的内部：这一段里每块权重是被哪把刀切出来的。字节口径与 opBytes 同一份
    （card-container 那一屏的「权重带的内部」也是它），这里只补上两头的 embed/lm_head
@@ -4051,6 +4051,19 @@ function netScene(D, g, box, step){
                  色块该有多实就多实。 */
               var solidK = meC ? 1 : 0;
               var MS9 = memStack(pc2, rankOf(tIdx, cIdx, dIdx, pc2, D)), vSp9 = cv1 - cv0;
+              /* 满卡不透明底板：色带只覆盖卡面的已用区域，带顶以上没有任何面几何
+                 ——这段空隙一路透穿到后面的卡和棱线。先铺三块跟卡一样大的不透明
+                 底板（前、右、顶），色带画在它们上面覆盖已用部分，空隙处露出的是
+                 这层底板而不是透明。颜色取极浅的 fg3 兑底色（6%），几乎就是背景，
+                 但 alpha 恒 1 ——看不穿。 */
+              var capBg9 = memSolid('var(--pt-fg3)', 6);
+              var capBgS9 = memShade(capBg9, 12);
+              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
+              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+capBgS9+';stroke:none'));
+              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
+              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
+              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+capBgS9+';stroke:none'));
+              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
               for(var m8 = 0; m8 < MS9.length; m8++){
                 var sg8 = MS9[m8];
                 var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
@@ -4065,8 +4078,11 @@ function netScene(D, g, box, step){
                    就是唯一还亮着的。选中权重里的某一块（w:xx）时整条权重带照常亮，
                    块自己的强调交给下面 opSegs 那一段。 */
                 var msK9 = ui.memSel ? (ui.memSel.indexOf('w:') === 0 ? 'w' : ui.memSel) : null;
-                var memDim9 = (meC && msK9 && sg8.k !== msK9) ? 0.30 : 1;
-                var lzB9 = lzM * memDim9;
+                /* 非选中档的弱化从「降 opacity」改成「把颜色往底色方向兑淡」：
+                   降 opacity 会让面变透明、透出后面的卡和棱线，正是一直没修干净的根源。
+                   兑淡颜色视觉上一样是"压暗非选中档"，但 alpha 恒 1，不透光。 */
+                var dimPct9 = (meC && msK9 && sg8.k !== msK9) ? 0.30 : 1;
+                var lzB9 = lzM;
                 /* 顶出壳外那截只画在**选中那只**上。全网结构性溢出时（比如 EP 拨掉，
                    128 只全超 ×4.7）每只都顶 0.62 只壳，阵列上半就是一大片告警色，
                    密得读不出别的了。其余卡改用棱标红说「超了」（capLv 那条路），
@@ -4086,13 +4102,13 @@ function netScene(D, g, box, step){
                    一谈。删掉 dT 这一项，面的浓度全阵列统一；前后落差改由 eW（棱的
                    线宽，见 shellOf 里 eW 那段）单独承担——近粗远细，粗细不会把
                    内容本身的颜色也带没了。 */
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 + solidK*12)+kerf+';opacity:'+lzB9));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(memSolid(sg8.c, 86 + solidK*12), 12)+kerf+';opacity:'+lzB9));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(memSolid(sg8.c, 86), 12)+';stroke:none;opacity:'+(lz*memDim9)));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
-                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+(lz*memDim9)));
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 + solidK*12)*dimPct9)+kerf+';opacity:'+lzB9));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(memSolid(sg8.c, (86 + solidK*12)*dimPct9), 12)+kerf+';opacity:'+lzB9));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68*dimPct9)+';stroke:none;opacity:'+lz));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86*dimPct9)+';stroke:none;opacity:'+lz));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(memSolid(sg8.c, 86*dimPct9), 12)+';stroke:none;opacity:'+lz));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68*dimPct9)+';stroke:none;opacity:'+lz));
+                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
                    那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
@@ -4150,24 +4166,16 @@ function netScene(D, g, box, step){
                          现在刀色已经预混成不透明复合色（见下面 fill 那行），这层 0.86
                          只剩"整块跟着调淡"一个效果，把刚刚烧掉的实心又打回半透明——
                          删掉，色块的浓淡完全交给 color-mix 的混合比例（.52/.30）决定。 */
-                      var oOp9 = lzM * (pickId9 ? (o8.id === pickId9 ? 1 : 0.28) : 1);
-                      /* 每一块都挂命中面：卡上直接点 experts 那一截就能展开它，
-                         不必先点开权重、再去表里找那一行。 */
+                      /* 非选中块的弱化同样从降 opacity 改成兑淡刀色混合比例 */
+                      var oPickDim9 = (pickId9 && o8.id !== pickId9) ? 0.28 : 1;
+                      var oMix9 = Math.round((sg8.k === 'w' ? 52 : 30) * oPickDim9);
                       if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                                       :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
                         'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(o8.id)+'"',
                         esc(o8.id)+'：点开看这一块的切分'));
                       body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                              :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
-                        /* 原来跟 L3 那只卡逐字同一套：刀色**本体** + fill-opacity 压在带上，
-                           不先把刀色兑进底色。那是特意避开"兑色吃掉下面一层"的问题，但
-                           fill-opacity 是真的 alpha——这一块局部半透明，会把它下面那条带
-                           自己的颜色露出来，一整片看起来像"没填实"（反馈："希望面的色块
-                           是完整的，不要透出后面的内容"）。改成 color-mix 直接把刀色与
-                           这条带的本色（sg8.c）预先混合成一个不透明的复合色：混合比例
-                           还是 .52/.30，视觉权重不变，只是从"叠透明层"换成"就是这一个
-                           颜色"，不再有能看穿的缝。 */
-                        'fill:color-mix(in srgb, '+oc8+' '+(sg8.k === 'w' ? '52' : '30')+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35;opacity:'+oOp9));
+                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35;opacity:'+lzM));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
                     /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
