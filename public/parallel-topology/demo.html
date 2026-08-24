@@ -6634,10 +6634,27 @@ function renderSolidGrid(D){
   function p3(x,y,z){ return proj(x,y,z,1); }
   function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
 
+  /* ── 容器实测宽度：右侧面板（组合工作台默认 ~460px）与独立整屏（~1440px）能差出
+     三倍，之前只按 D.pp 缩放托盘、字号是写死的 SVG 数字——同一份数字在窄容器里
+     渲出的像素只有宽容器的三分之一（14px→~4.6px，读不出字）。这里量 #stage 的
+     实际 clientWidth：外层包一层 <g transform="scale(k)">，declared viewBox 也按
+     同一个 k 收窄，两个一起变，「每 SVG 单位落地几像素」＝ 1440/VW，恒定，跟
+     容器多宽无关——多窄的面板量出来都还是那个像素数，不是只把 SVG 里的数字调大
+     自我安慰。cw0 取不到（尚未挂载）时退化到 1440（=k 1，不放大不缩小）。 */
+  var stEl = $('stage');
+  var cw0 = (stEl && stEl.clientWidth) || 1440;
+  var k = clamp(cw0/1440, 0.2, 3);
+  /* 窄到并排两栏挤不下（右侧面板默认 460px）就摞起来：①②各自占满整条宽度，
+     不必再在同一行里让出一半给隔壁栏——并排版的 TX1/TX2 卡在 270/730 正是为了
+     两栏同一行不相撞；摞起来之后每一栏都是这一屏当下唯一的内容，天然有更宽的
+     余地把托盘、字都画大，读法也更顺手（先看完①整段权重再往下看②整段激活，
+     不必来回扫视）。 */
+  var stacked = cw0 < 760;
+
   /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长。
      宽度不再留一整栏给文字读数（那张读数并到 #rankMem 标准卡了，见函数尾）——
      腾出来的横向空间直接分给托盘本身：sc 的基准从 1 提到 1.3（上一版 1.15 量出来
-     字还是偏小），两栏往左右收紧到刚好不撞（见下 TXG/TXA 的取值注释），
+     字还是偏小），两栏往左右收紧到刚好不撞（见下 TX1/TX2 的取值注释），
      viewBox 总宽 1000——托盘变大吃掉了「腾出来的空」，但每单位 SVG 长度在同样
      宽的容器里占的比例仍然比 1080 的老版本大，字号（正文调到 ~10–11、标题
      ~14）跟着一起涨，两条一起才是「default 比例下读得出」，不是单压一头。 */
@@ -6649,33 +6666,43 @@ function renderSolidGrid(D){
   var THA0 = 26*sc;                                   /* 激活托盘的峰值厚度（PP0 满载那一档） */
   /* TOP 留给 stagebar：那排胶囊是 HTML 浮层，不在 SVG 坐标系里——viewBox 矮下去时
      等轴测投影按**高度**撑满画布、两侧配平居中，栏标这行的屏幕纵坐标只随
-     svg-y×scale 走，不会因为挪了 TXG/TXA 就躲开它。90 撞过（实测两栏标题露在
+     svg-y×scale 走，不会因为挪了 TX1/TX2 就躲开它。90 撞过（实测两栏标题露在
      胶囊底下），140 是量出来最小够用的安全值，不同预置（pp 从 2 到 5）都验过。 */
   var TOP = 140;
-  /* 贴着摞、真压进去一截：只让两只盒子的外壳刚好挨到（touching，差量算下来
-     只有一个顶点碰一下）看着还是「四颗分开摆的钻石，只在一个角相遇」——
-     没有共享的一条边，读不出「接在一起」。要读成台阶，得让上一级压进下一级
-     一截（像瓦片、像台阶的踏面盖住踢面），压进的量按自身高度的比例给
-     （0.62），不是留白的量。 */
-  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) * 0.62;
+  /* 贴着摞、真压进去一大截——上一版 0.62 在浅色主题、宽容器下看着够连续，换到
+     深色主题（背景近黑）一测，缝里露出的那一线背景色是一整条刺眼的黑边，
+     「不要有空隙」这条没真正达到；窄容器叠加缩放之后缝更显眼。压进的比例
+     再收紧到 0.46：两只盒子的外壳不再只在一个角挨到，是实打实压出一整段
+     共享边界，深色/浅色主题、宽/窄容器下都验过不留缝。 */
+  var OVERLAP_K = 0.46;
+  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) * OVERLAP_K;
   /* STEPX：每往下一段 PP，托盘连带跟着往右挪一截——真实台阶那样一路斜下去，
      不是竖直落体地摞在同一条竖线上（那样两只盒子的顶面会被压进去的下一级
      整个盖住，格子点不到）。挪的量要跟上面的压进量配合：太小，上一级的
      整个顶面还是会被下一级从正上方盖住；这里取自身宽度的一截，够把顶面
      让到下一级的轮廓外面，同时两只盒子仍有实打实的一段边挨在一起。 */
-  var STEPX = BW1*0.62;
-  /* TXG/TXA：两栏中心的间距要盖住「①栏左伸出 + ①栏右伸出 + ②栏左伸出」的总和，
-     否则字大了会在中间撞上——量的是 sc=1.3、MoE、dp=100（盘古预置）这个最坏
-     组合下①栏右侧读数条 + ②栏左侧标签能伸多远，270/730（差 460）留了余量，
-     实测 pp 2–5、dense/MoE、dp 16–100 都不撞。台阶往右斜，两栏一起斜、间距
-     不变，不会撞；只是整条台阶的最右端比 PP0 那一级更靠右，VW 要多留
-     (D.pp-1)·STEPX 这一截，否则最后一级 A 读数会被裁在画布外。 */
-  var TXG = 270, TXA = 730;
-  var VW = 1000 + Math.max(0, D.pp-1)*STEPX;
-  var trayBot = TOP + (D.pp-1)*PITCH + Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
-  var H = trayBot + 22;
+  var STEPX = BW1*OVERLAP_K;
+  /* TX1/TX2：并排版两栏中心的间距要盖住「①栏左伸出 + ①栏右伸出 + ②栏左伸出」的
+     总和，否则字大了会在中间撞上——量的是 sc=1.3、MoE、dp=100（盘古预置）这个
+     最坏组合下①栏右侧读数条 + ②栏左侧标签能伸多远，270/730（差 460）留了余量，
+     实测 pp 2–5、dense/MoE、dp 16–100 都不撞。摞起来版两栏各自独占一整条宽度，
+     没有隔壁栏要让，都退回 TX1 这同一个锚点——比并排版更宽松，不会撞。 */
+  var TX1 = 270, TX2 = stacked ? TX1 : 730;
+  var VW = (stacked ? 780 : 1000) + Math.max(0, D.pp-1)*STEPX;
+  var trayFullH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
+  /* 摞起来时②整条台阶落在①的正下方：TOP_A = ①台阶的底 + 一段给②抬头留的间距。
+     并排版里两栏共用同一行 Y，TOP_A 退化回 TOP_W，跟旧行为完全一致。 */
+  var TOP_W = TOP;
+  var TOP_A = stacked ? (TOP_W + (D.pp-1)*PITCH + trayFullH + 64) : TOP_W;
+  var trayBotW = TOP_W + (D.pp-1)*PITCH + trayFullH;
+  var trayBotA = TOP_A + (D.pp-1)*PITCH + trayFullH;
+  var H = Math.max(trayBotW, trayBotA) + 22;
   var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
-  var CW = solid('var(--pt-fg)', 34);                 /* W 带的中性色：刀色都让给网格线 */
+  /* W 带改用 MEMC.w——与「合成·卡阵」那只单卡容量盒同一枚 token：那边权重/梯度/
+     优化器态/激活四档各有自己的签名色，这里原先图省事让 W 走中性灰（把颜色都
+     让给 TP/EP 刀色网格线），两处放一起颜色对不上号。TP 青、EP 紫两条网格线
+     对这个蓝色底的对比度仍然够——青比蓝亮得多，紫偏红、蓝偏冷，色相拉得开。 */
+  var CW = MEMC.w;
 
   /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
   function holdersW(t,e){
@@ -6702,16 +6729,19 @@ function renderSolidGrid(D){
   /* ═══ 两栏各自的抬头：整段的说明文字（总账题面、四形态生死表、点法）挪进
      stagebar 那颗「？」说明按钮的弹层了（见函数尾）——这两行**留下**，它们不是
      泛泛的说明，是「往下看的这一栏是什么」的栏标，离栏太远读者会脱节。 */
-  parts.push(txt(TXG-32, 92, '① 参数系三形态 · 同一套切分', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXG-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 10, 'var(--pt-fg2)', 'middle'));
-  parts.push(txt(TXA-40, 92, '② 激活体 · 自己一套', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TXA-40, 108, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(TX1-32, 92, '① 参数系三形态 · 同一套切分', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TX1-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 10, 'var(--pt-fg2)', 'middle'));
+  /* ②栏抬头：摞起来时挪到②台阶正上方（TOP_A 之上），不再跟①共用顶部那一行。 */
+  var hdrYA1 = stacked ? (TOP_A - 48) : 92, hdrYA2 = stacked ? (TOP_A - 32) : 108;
+  var hdrXA = stacked ? (TX2-32) : (TX2-40);
+  parts.push(txt(hdrXA, hdrYA1, '② 激活体 · 自己一套', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(hdrXA, hdrYA2, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
 
   for(pIdx=0; pIdx<D.pp; pIdx++){
-    var Y0 = TOP + pIdx*PITCH + TH1;
-    /* 台阶横向位移：PP0 落在 TXG/TXA 这条基线上，往下每一段多挪一个 STEPX，
-       两栏同步挪、间距不变（见上面 TXG/TXA 的注释）。 */
-    var TXGi = TXG + pIdx*STEPX, TXAi = TXA + pIdx*STEPX;
+    var Y0w = TOP_W + pIdx*PITCH + TH1, Y0a = TOP_A + pIdx*PITCH + TH1;
+    /* 台阶横向位移：PP0 落在 TX1/TX2 这条基线上，往下每一段多挪一个 STEPX，
+       两栏同步挪、间距不变（见上面 TX1/TX2 的注释）。 */
+    var TXGi = TX1 + pIdx*STEPX, TXAi = TX2 + pIdx*STEPX;
     var P9 = paramsPerCard(D, pIdx);
     var gp = [], gh = [];
 
@@ -6719,7 +6749,7 @@ function renderSolidGrid(D){
     if(pIdx===0 && D.dp>1){
       var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
       for(var k1=KD; k1>=1; k1--)
-        parts.push('<g transform="translate('+(TXGi+k1*oX).toFixed(1)+','+(Y0-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+        parts.push('<g transform="translate('+(TXGi+k1*oX).toFixed(1)+','+(Y0w-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
     }
 
     /* 三层厚度：底 O、中 G、顶 W——顶面网格讲的是这套切分本身，W 贴着自己的格 */
@@ -6737,7 +6767,7 @@ function renderSolidGrid(D){
         /* 无持有者：EP 折叠把 e 桶错开在 h 片上——斜线空格，是结构不是漏画。
            不上底色（露出 W 带的素面）+ 一道斜线，与实格（有底色）拉开对比 */
         gp.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
-        hits.push('<g transform="translate('+TXGi+','+Y0.toFixed(1)+')"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon></g>');
+        hits.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon></g>');
         continue;
       }
       var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
@@ -6783,8 +6813,8 @@ function renderSolidGrid(D){
       gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
       gp.push(txt(lx, ly-20, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 11, VC.pp, 'end', 'font-weight="800"'));
     }
-    parts.push('<g transform="translate('+TXGi+','+Y0.toFixed(1)+')">'+gp.join('')+'</g>');
-    hits.push('<g transform="translate('+TXGi+','+Y0.toFixed(1)+')">'+gh.join('')+'</g>');
+    parts.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')">'+gp.join('')+'</g>');
+    hits.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')">'+gh.join('')+'</g>');
 
     /* ═══ 同一段的激活托盘（右列，与左列同一行 = 同一段层） ═══ */
     var nIf = inflightAt(D, pIdx, ACT_T);
@@ -6826,8 +6856,8 @@ function renderSolidGrid(D){
       var zm3 = ptopA(0, BD2*0.5);
       ap.push(txt(zm3[0]-34, zm3[1]-20, 'b ← '+DIMN.dp+'×'+D.dp, 11, VC.dp, 'end', 'font-weight="800"'));
     }
-    parts.push('<g transform="translate('+TXAi+','+Y0.toFixed(1)+')">'+ap.join('')+'</g>');
-    hits.push('<g transform="translate('+TXAi+','+Y0.toFixed(1)+')">'+ah.join('')+'</g>');
+    parts.push('<g transform="translate('+TXAi+','+Y0a.toFixed(1)+')">'+ap.join('')+'</g>');
+    hits.push('<g transform="translate('+TXAi+','+Y0a.toFixed(1)+')">'+ah.join('')+'</g>');
   }
 
   /* ═══ 说明弹层：总账题面、点法、四形态×生命周期表 —— 都挪进这颗「？」按钮里 ═══
@@ -6865,8 +6895,15 @@ function renderSolidGrid(D){
       }).join('')
     + '</table>';
 
-  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H.toFixed(0)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
-    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
+  /* declared viewBox 按 k 一起收放（内容坐标本身不用改）：scale(k) 把 0..VW 的内容
+     铺到 0..VW*k 的 declared 空间，容器每像素对应的 declared 单位数因此恒等于
+     VW/1440，与 cw0 无关——这就是「多窄的面板都还是那个像素数」的落地方式，
+     见函数开头 k 的注释。click 命中区跟着同一层 transform 走，浏览器按最终渲染
+     几何算命中，不需要另外换算。 */
+  $('stage').innerHTML = '<svg viewBox="0 0 '+(VW*k).toFixed(1)+' '+(H*k).toFixed(1)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
+    + '<g transform="scale('+k.toFixed(4)+')">'
+    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('')
+    + '</g></svg>';
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
@@ -11239,14 +11276,22 @@ window.ptoNotifyHost = function(){
 
 /* 刀序视图的 viewBox 宽度是**按舞台实测长宽比**反解的（见 renderChain）。
    首帧量到的是布局还没落定的高度，之后底部图例一排下来舞台会缩——不重画就永远按错的比例
-   letterbox。盯着舞台的尺寸变化重画一次；重画只换 SVG 内容、不改舞台本身，不会自激。 */
+   letterbox。盯着舞台的尺寸变化重画一次；重画只换 SVG 内容、不改舞台本身，不会自激。
+   全局切分（renderSolidGrid）同理，但它盯的是**宽度**本身，不是长宽比——k（像素目标
+   缩放）与 stacked（并排/摞叠切换的 760px 门槛）都直接读 clientWidth：组合工作台里
+   拖动分栏宽度、或首帧量到 iframe 还没被父页面定宽时的临时值，都要能补一次重画。 */
 if(window.ResizeObserver){
-  var roLast = 0, roTimer = 0;
+  var roLast = 0, roLastW = 0, roTimer = 0;
   new ResizeObserver(function(){
-    var el = $('stage'); if(!el || ui.view!=='chain' || el.clientHeight<60) return;
-    var ar = (el.clientWidth-20)/(el.clientHeight-12);
-    if(Math.abs(ar - roLast) < 0.02) return;
-    roLast = ar;
+    var el = $('stage'); if(!el || el.clientHeight<60) return;
+    if(ui.view==='chain'){
+      var ar = (el.clientWidth-20)/(el.clientHeight-12);
+      if(Math.abs(ar - roLast) < 0.02) return;
+      roLast = ar;
+    }else if(ui.view==='solid' && ui.persp==='grid'){
+      if(Math.abs(el.clientWidth - roLastW) < 8) return;
+      roLastW = el.clientWidth;
+    }else return;
     clearTimeout(roTimer); roTimer = setTimeout(render, 60);
   }).observe($('stage'));
 }
