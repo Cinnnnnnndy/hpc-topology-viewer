@@ -6660,34 +6660,31 @@ function renderSolidGrid(D){
      svg-y×scale 走，不会因为挪了 TX1/TX2 就躲开它。90 撞过（实测两栏标题露在
      胶囊底下），140 是量出来最小够用的安全值，不同预置（pp 从 2 到 5）都验过。 */
   var TOP = 140;
-  /* 贴着摞、真压进去一大截——上一版 0.62 在浅色主题、宽容器下看着够连续，换到
-     深色主题（背景近黑）一测，缝里露出的那一线背景色是一整条刺眼的黑边，
-     「不要有空隙」这条没真正达到；窄容器叠加缩放之后缝更显眼。压进的比例
-     再收紧到 0.46：两只盒子的外壳不再只在一个角挨到，是实打实压出一整段
-     共享边界，深色/浅色主题、宽/窄容器下都验过不留缝。 */
-  var OVERLAP_K = 0.46;
-  var PITCH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0) * OVERLAP_K;
-  /* STEPX：每往下一段 PP，托盘连带跟着往右挪一截——真实台阶那样一路斜下去，
-     不是竖直落体地摞在同一条竖线上（那样两只盒子的顶面会被压进去的下一级
-     整个盖住，格子点不到）。挪的量要跟上面的压进量配合：太小，上一级的
-     整个顶面还是会被下一级从正上方盖住；这里取自身宽度的一截，够把顶面
-     让到下一级的轮廓外面，同时两只盒子仍有实打实的一段边挨在一起。 */
-  var STEPX = BW1*OVERLAP_K;
-  /* TX1/TX2：并排版两栏中心的间距要盖住「①栏左伸出 + ①栏右伸出 + ②栏左伸出」的
-     总和，否则字大了会在中间撞上——量的是 sc=1.3、MoE、dp=100（盘古预置）这个
-     最坏组合下①栏右侧读数条 + ②栏左侧标签能伸多远，270/730（差 460）留了余量，
-     实测 pp 2–5、dense/MoE、dp 16–100 都不撞。摞起来版两栏各自独占一整条宽度，
-     没有隔壁栏要让，都退回 TX1 这同一个锚点——比并排版更宽松，不会撞。 */
-  var TX1 = 270, TX2 = stacked ? TX1 : 730;
-  var VW = (stacked ? 780 : 1000) + Math.max(0, D.pp-1)*STEPX;
-  var trayFullH = Math.max((BW1+BD1)*S + TH1, (BW2+BD2)*S + THA0);
-  /* 摞起来时②整条台阶落在①的正下方：TOP_A = ①台阶的底 + 一段给②抬头留的间距。
-     并排版里两栏共用同一行 Y，TOP_A 退化回 TOP_W，跟旧行为完全一致。 */
+  /* PP 折进景深轴：不再"切几段就摆几只盒子、靠经验挪位凑连续"——BD1/BD2 本来就是
+     EP/DP 桶宽，D.pp 段首尾相接直接给成一段总景深 BD1_total/BD2_total，PP 由此变成
+     跟 TP/EP、CP/DP 同级的**真实第三根轴**，不是另起一套摆位语法。①栏三层厚度
+     处处相同，直接并成一整只盒子（一次 boxSVG，不再逐段画）；②栏厚度随在途
+     微批数逐段不同，仍要逐段画，但段与段之间用 p3(0,0,zOff) 算出的**真实 3D
+     位移**去摆（不是经验拼出来的 STEPX/PITCH）——同一条投影公式保证相邻两段
+     严丝合缝，缝隙为零是几何算出来的，不是试出来的。 */
+  var BD1_total = D.pp*BD1, BD2_total = D.pp*BD2;
+  var wBlockW = (BW1+BD1_total)*C, wBlockH = (BW1+BD1_total)*S + TH1;
+  var aBlockW = (BW2+BD2_total)*C, aBlockH = (BW2+BD2_total)*S + THA0;
+  /* TX1 也不能再是定值：PP 折成一条深度轴之后，越往深处的 PP 段标越往左下方
+     退（真实 3D 位移），最深那一段（(D.pp-1)*BD1 + 半只段深）的标签会伸出到
+     viewBox 左沿以外被裁掉——量的是最深那一段的左伸量（含文字宽度的余量），
+     不是拍一个够大的常数。pp 越多、EP 桶越宽，这里跟着往右让。 */
+  var TX1 = Math.max(270, (D.pp-0.5)*BD1*C + 130);
+  /* TX2：并排版里②栏的起点要让开①栏整块的实际宽度（wBlockW 现在含全部 PP 段的
+     景深，不再是给单只小托盘留的定值 730）——量的是内容本身，PP 越多、EP/DP 越
+     宽，这里跟着变宽，不会在盘古这类极端预置下撞在一起。 */
+  var TX2 = stacked ? TX1 : (TX1 + wBlockW + 220);
   var TOP_W = TOP;
-  var TOP_A = stacked ? (TOP_W + (D.pp-1)*PITCH + trayFullH + 64) : TOP_W;
-  var trayBotW = TOP_W + (D.pp-1)*PITCH + trayFullH;
-  var trayBotA = TOP_A + (D.pp-1)*PITCH + trayFullH;
-  var H = Math.max(trayBotW, trayBotA) + 22;
+  /* 摞起来时②整块落在①整块正下方：TOP_A = ①块的实际高度 + 一段给②抬头留的间距。
+     并排版里两栏共用同一行 Y，TOP_A 退化回 TOP_W。 */
+  var TOP_A = stacked ? (TOP_W + wBlockH + 64) : TOP_W;
+  var VW = (stacked ? TX1 + Math.max(wBlockW, aBlockW) : TX2 + aBlockW) + 260;
+  var H = (stacked ? TOP_A + aBlockH : TOP_W + Math.max(wBlockH, aBlockH)) + 40;
   var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
   /* W 带改用 MEMC.w——与「合成·卡阵」那只单卡容量盒同一枚 token：那边权重/梯度/
      优化器态/激活四档各有自己的签名色，这里原先图省事让 W 走中性灰（把颜色都
@@ -6720,45 +6717,43 @@ function renderSolidGrid(D){
   /* ═══ 两栏各自的抬头：整段的说明文字（总账题面、四形态生死表、点法）挪进
      stagebar 那颗「？」说明按钮的弹层了（见函数尾）——这两行**留下**，它们不是
      泛泛的说明，是「往下看的这一栏是什么」的栏标，离栏太远读者会脱节。 */
-  parts.push(txt(TX1-32, 92, '① 参数系三形态 · 同一套切分', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TX1-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比', 10, 'var(--pt-fg2)', 'middle'));
-  /* ②栏抬头：摞起来时挪到②台阶正上方（TOP_A 之上），不再跟①共用顶部那一行。 */
+  parts.push(txt(TX1-32, 92, '① 参数系三形态 · 一整块（PP/DP 都在里面）', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(TX1-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比 · 深度轴 = PP·EP', 10, 'var(--pt-fg2)', 'middle'));
+  /* ②栏抬头：摞起来时挪到②块正上方（TOP_A 之上），不再跟①共用顶部那一行。 */
   var hdrYA1 = stacked ? (TOP_A - 48) : 92, hdrYA2 = stacked ? (TOP_A - 32) : 108;
   var hdrXA = stacked ? (TX2-32) : (TX2-40);
-  parts.push(txt(hdrXA, hdrYA1, '② 激活体 · 自己一套', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(hdrXA, hdrYA2, 'b ← DP 真切 · s ← CP 真切 · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
+  parts.push(txt(hdrXA, hdrYA1, '② 激活体 · 一整块（PP/DP 都在里面）', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(hdrXA, hdrYA2, 'b ← DP 真切 · s ← CP 真切 · 深度轴 = PP·DP · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
 
+  /* ═══ ①参数系：一整只盒子，景深轴 = D.pp 段 EP 桶首尾相接（BD1_total）══════
+     三层厚度处处相同（THO/THG/THW 不随 pIdx 变），不必逐段画——一次 boxSVG 就是
+     完整的一整块，PP 不再是"摆几只盒子"，是这只盒子本身的一条轴，和 TP/EP 同级。 */
+  var Y0w = TOP_W + TH1;
+  var gp = [], gh = [];
+  gp.push(boxSVG(0,0,0,BW1,THO,BD1_total,1,{fill:MEMC.opt, stroke:'var(--pt-bg)', sw:.4}));
+  gp.push(boxSVG(0,THO,0,BW1,THG,BD1_total,1,{fill:MEMC.g, stroke:'var(--pt-bg)', sw:.4}));
+  gp.push(boxSVG(0,THO+THG,0,BW1,THW,BD1_total,1,{fill:CW, stroke:'var(--pt-bg)', sw:.4}));
+  /* DP 复印的剪影叠贴在这一整块的后面画一次：×dp 是整套参数系的事，不逐段重复 */
+  if(D.dp>1){
+    var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
+    for(var k1=KD; k1>=1; k1--)
+      parts.push('<g transform="translate('+(TX1+k1*oX).toFixed(1)+','+(Y0w-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1_total))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+  }
+  var dx1 = BW1/D.tp, dz1 = BD1/nE;
   for(pIdx=0; pIdx<D.pp; pIdx++){
-    var Y0w = TOP_W + pIdx*PITCH + TH1, Y0a = TOP_A + pIdx*PITCH + TH1;
-    /* 台阶横向位移：PP0 落在 TX1/TX2 这条基线上，往下每一段多挪一个 STEPX，
-       两栏同步挪、间距不变（见上面 TX1/TX2 的注释）。 */
-    var TXGi = TX1 + pIdx*STEPX, TXAi = TX2 + pIdx*STEPX;
+    var zOffW = pIdx*BD1;
     var P9 = paramsPerCard(D, pIdx);
-    var gp = [], gh = [];
-
-    /* DP 复印的剪影叠只画在最上一只托盘后面：×dp 是整套参数系的事，不逐盘重复 */
-    if(pIdx===0 && D.dp>1){
-      var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
-      for(var k1=KD; k1>=1; k1--)
-        parts.push('<g transform="translate('+(TXGi+k1*oX).toFixed(1)+','+(Y0w-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
-    }
-
-    /* 三层厚度：底 O、中 G、顶 W——顶面网格讲的是这套切分本身，W 贴着自己的格 */
-    gp.push(boxSVG(0,0,0,BW1,THO,BD1,1,{fill:MEMC.opt, stroke:'var(--pt-bg)', sw:.4}));
-    gp.push(boxSVG(0,THO,0,BW1,THG,BD1,1,{fill:MEMC.g, stroke:'var(--pt-bg)', sw:.4}));
-    gp.push(boxSVG(0,THO+THG,0,BW1,THW,BD1,1,{fill:CW, stroke:'var(--pt-bg)', sw:.4}));
-
-    /* 顶面逐格：每格 = 一个腔 */
-    var dx1 = BW1/D.tp, dz1 = BD1/nE;
+    /* 顶面逐格：每格 = 一个腔——e 的全局深度 = 这一段的起点 + 段内偏移 */
     for(t=0;t<D.tp;t++) for(e=0;e<nE;e++){
-      var q4 = [ptopW(t*dx1,e*dz1), ptopW((t+1)*dx1,e*dz1), ptopW((t+1)*dx1,(e+1)*dz1), ptopW(t*dx1,(e+1)*dz1)];
+      var zA = zOffW+e*dz1, zB = zOffW+(e+1)*dz1;
+      var q4 = [ptopW(t*dx1,zA), ptopW((t+1)*dx1,zA), ptopW((t+1)*dx1,zB), ptopW(t*dx1,zB)];
       var hs = holdersW(t,e);
       var eLab = D.moe ? ' · e桶 E'+(e*kE)+'–E'+((e+1)*kE-1) : '';
       if(!hs.length){
         /* 无持有者：EP 折叠把 e 桶错开在 h 片上——斜线空格，是结构不是漏画。
            不上底色（露出 W 带的素面）+ 一道斜线，与实格（有底色）拉开对比 */
         gp.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
-        hits.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon></g>');
+        gh.push('<polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('这一格没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——持有'+eLab.replace(' · ','')+' 的卡都在别的 h 片')+'</title></polygon>');
         continue;
       }
       var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
@@ -6767,25 +6762,26 @@ function renderSolidGrid(D){
       gh.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
         + esc('腔（PP'+pIdx+' · h片'+t+eLab+'）· 持有者 ×'+hs.length+'（跨 b/s）\n点击定位 r'+rk)+'</title></polygon></g>');
     }
-    /* 网格线颜色 = 切它那把刀：x 缝 TP 青、z 缝 EP 紫（份数大就细，纹理即事实） */
-    var swT = dx1*C>4?.9:.5, swE = dz1>4?.8:.4;
-    for(t=1;t<D.tp;t++) gp.push(ln(ptopW(t*dx1,0), ptopW(t*dx1,BD1), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
-    for(e=1;e<nE;e++) gp.push(ln(ptopW(0,e*dz1), ptopW(BW1,e*dz1), 'stroke:'+VC.ep+';stroke-width:'+swE+';stroke-opacity:.7'));
+    /* EP 缝只在段内重复；PP 段界另画一道粗橙线，跟 EP 的细紫缝拉开——PP0 自己
+       那条边就是整块盒子的前沿，外框已经描了，不必再叠一道 */
+    var swE = dz1>4?.8:.4;
+    for(e=1;e<nE;e++) gp.push(ln(ptopW(0,zOffW+e*dz1), ptopW(BW1,zOffW+e*dz1), 'stroke:'+VC.ep+';stroke-width:'+swE+';stroke-opacity:.7'));
+    if(pIdx>=1) gp.push(ln(ptopW(0,zOffW), ptopW(BW1,zOffW), 'stroke:'+VC.pp+';stroke-width:1.5;stroke-opacity:.8'));
     /* 本卡那一腔：三层账里都是同一格——线框直插到底，一格贯穿 W/G/O */
-    if(pIdx===co.p) gp.push(boxSVG(co.t*dx1, 0, (D.moe?me.ep:0)*dz1, dx1, TH1, dz1, 1,
+    if(pIdx===co.p) gp.push(boxSVG(co.t*dx1, 0, zOffW+(D.moe?me.ep:0)*dz1, dx1, TH1, dz1, 1,
       {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
-    /* 托盘外框（层反查命中的那一段描 PP 橙） */
-    gp.push(boxSVG(0,0,0,BW1,TH1,BD1,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8}));
-
-    /* 左：PP 段标（可点换段）；右：这一段每卡的三份账 */
-    var lx = -BD1*C - 16, ly = BD1*S*0.5 - TH1*0.35;
-    gp.push(txt(lx, ly, 'PP'+pIdx, 13.5, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    gp.push(txt(lx, ly+15, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 10.2, 'var(--pt-fg3)', 'end'));
-    if(hlStage===pIdx) gp.push(txt(lx, ly+29, 'L'+revLi+' 在这一段', 9.5, VC.pp, 'end', 'font-weight="700"'));
-    gh.push('<g class="cgrow"><rect x="'+(lx-68).toFixed(1)+'" y="'+(ly-14).toFixed(1)+'" width="72" height="32" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
-    var rx1 = BW1*C + 14, ry1 = BW1*S - TH1*0.2;
+    /* 段标（可点换段）＋这一段每卡的三份账——都锚在这一段自己的深度范围上，
+       不再靠经验挪位的 lx/ly，是这一段真实几何位置反查出来的屏幕点 */
+    var lAnchor = ptopW(0, zOffW+BD1*0.5);
+    var lx = lAnchor[0]-30, ly = lAnchor[1];
+    gp.push(txt(lx, ly, 'PP'+pIdx, 12, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+13, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 9, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+25, 'L'+revLi+' 在这一段', 8.5, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-64).toFixed(1)+'" y="'+(ly-12).toFixed(1)+'" width="68" height="28" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var rCorner = ptopW(BW1, zOffW+BD1);
+    var rx1 = rCorner[0]+14, ry1 = rCorner[1]+TH1*0.8;
     if(pIdx===0){
-      /* 顶盘右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
+      /* 顶段右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
       var rx0 = rx1 + (D.dp>1 ? 50 : 0);
       gp.push(txt(rx0, ry1-30, '×'+D.dp+' 复印（DP）', 10.5, VC.dp, 'start', 'font-weight="800"'));
       gp.push(txt(rx0, ry1-16, 'W·O 逐字相同 · G 归约前各不相同', 9, 'var(--pt-fg3)', 'start'));
@@ -6796,34 +6792,43 @@ function renderSolidGrid(D){
       gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 9.4, 'var(--pt-fg3)', 'start'));
       gp.push(txt(rx1, ry1+14, 'O '+fmtGB(12*P9)+' GB', 9.4, 'var(--pt-fg3)', 'start'));
     }
-    /* 顶盘的轴名：认领关系写在轴上（别的盘不重复——同一把刀） */
-    if(pIdx===0){
-      var fm2 = ptopW(BW1*0.55, 0);
-      gp.push(txt(fm2[0]+30, fm2[1]-10, 'h ← '+DIMN.tp+'×'+D.tp, 11, VC.tp, 'start', 'font-weight="800"'));
-      var zm2 = ptopW(0, BD1*0.5);
-      gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
-      gp.push(txt(lx, ly-20, 'ℓ ← '+DIMN.pp+'×'+D.pp+' ↓', 11, VC.pp, 'end', 'font-weight="800"'));
-    }
-    parts.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')">'+gp.join('')+'</g>');
-    hits.push('<g transform="translate('+TXGi+','+Y0w.toFixed(1)+')">'+gh.join('')+'</g>');
+  }
+  /* TP 缝贯穿整块（h 这把刀跟 PP 无关，横着走满全深度）；外框描一整圈，
+     层反查命中的那一段单独在它自己的深度范围内叠一圈 PP 橙描边 */
+  var swT = dx1*C>4?.9:.5;
+  for(t=1;t<D.tp;t++) gp.push(ln(ptopW(t*dx1,0), ptopW(t*dx1,BD1_total), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
+  gp.push(boxSVG(0,0,0,BW1,TH1,BD1_total,1,{wire:true, stroke:'var(--pt-bds)', sw:.8}));
+  if(hlStage>=0) gp.push(boxSVG(0,0,hlStage*BD1,BW1,TH1,BD1,1,{wire:true, stroke:VC.pp, sw:1.7}));
+  /* 轴名：认领关系写在轴上，整块只需一次 */
+  var fm2 = ptopW(BW1*0.55, 0);
+  gp.push(txt(fm2[0]+30, fm2[1]-10, 'h ← '+DIMN.tp+'×'+D.tp, 11, VC.tp, 'start', 'font-weight="800"'));
+  var zm2 = ptopW(0, BD1_total*0.5);
+  gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep+'（每段内重复）' : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+  var lTop = ptopW(0, 0);
+  gp.push(txt(lTop[0]-30, lTop[1]-24, 'ℓ ← '+DIMN.pp+'×'+D.pp+'（这条深度轴，不再分开摆）', 11, VC.pp, 'end', 'font-weight="800"'));
+  parts.push('<g transform="translate('+TX1+','+Y0w.toFixed(1)+')">'+gp.join('')+'</g>');
+  hits.push('<g transform="translate('+TX1+','+Y0w.toFixed(1)+')">'+gh.join('')+'</g>');
 
-    /* ═══ 同一段的激活托盘（右列，与左列同一行 = 同一段层） ═══ */
+  /* ═══ ②激活体：厚度逐段不同（在途微批数随 PP 段递减），不能并成一次 boxSVG，
+     但段与段之间的摆位改用 p3(0,0,zOff) 算出的真实 3D 位移——同一条投影公式，
+     跟①栏"同一块盒子延伸出来的下一截"是一回事，只是这里必须分开画厚度。
+     真实位移保证相邻两段严丝合缝，画出来仍然是一整条连续的体，不是分开的几段。 */
+  var dx2 = BW2/D.cp, dz2 = BD2/D.dp;
+  for(pIdx=0; pIdx<D.pp; pIdx++){
+    var zOffA = pIdx*BD2;
+    var shiftA = p3(0,0,zOffA);
+    var TXAi = TX2 + shiftA[0], Y0ai = TOP_A + TH1 + shiftA[1];
     var nIf = inflightAt(D, pIdx, ACT_T);
     var THA = Math.max(2.5*sc, THA0 * nIf/actPeak);
     var actB = D.mbs*(D.seq/D.cp)*D.hidden*lps*ACT_COEF*nIf;
     var ap = [], ah = [];
     var ptopA = (function(th){ return function(a,b){ return p3(a, th, b); }; })(THA);
-    /* 体色兑淡（solid 保持不透明，画家序不破）：格线与选中格才读得出来。
-       颜色用 MEMC.act——页面别处（读出卡、说明弹层的形态表）标激活体用的
-       都是这同一枚 token，这里另起一个硬编码字面量，配色系统一改这块就漏改
-       （main 上的并行改动已把这行的取色改成 token，这里保留）。
-       缝改成 var(--pt-bg)：左边①栏三层账缝对缝都是背景色（薄薄一条留白，
-       颜色只靠面色变化分层），这里先前缝描的是 --pt-dp（纹样色），六个面都描
-       一圈显色边框，跟左边「无描边、素面切换」的语汇对不上，才会看着像另一套
-       画法。外层那圈粗描边（下面 wire 的那次 boxSVG 调用）留着，那是「这一段
-       是不是层反查命中的」的信号，跟这里的缝不是一回事。 */
-    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{fill:solid(MEMC.act, 42), stroke:'var(--pt-bg)', sw:.4}));
-    var dx2 = BW2/D.cp, dz2 = BD2/D.dp;
+    /* 颜色、缝、面层次都跟①栏同一套语汇：raw MEMC.act（不再兑淡）+ 背景色缝——
+       上一版拿 solid(MEMC.act,42) 兑淡显色是为了让格线更显眼，代价是整块看着
+       发灰、跟①栏满饱和度的蓝/绿/紫脱节。这里改回原色，让两栏读成同一个色彩
+       体系；格线改用更粗的描边（下面 stroke-width 从 .8 提到 1）保证兑淡去掉后
+       仍然看得清缝在哪。 */
+    ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{fill:MEMC.act, stroke:'var(--pt-bg)', sw:.4}));
     for(cI=0;cI<D.cp;cI++) for(dI=0;dI<D.dp;dI++){
       var q5 = [ptopA(cI*dx2,dI*dz2), ptopA((cI+1)*dx2,dI*dz2), ptopA((cI+1)*dx2,(dI+1)*dz2), ptopA(cI*dx2,(dI+1)*dz2)];
       var mine2 = (pIdx===co.p && cI===co.c && dI===co.d);
@@ -6833,11 +6838,15 @@ function renderSolidGrid(D){
         ah.push('<g class="cgrow"><polygon points="'+ptsStr(q5)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk2+'"><title>'
           + esc('腔（PP'+pIdx+' · 副本'+dI+(D.cp>1?' · 段'+cI+'∪'+(2*D.cp-1-cI):'')+'）· 持有者 = 同坐标 TP 组 ×'+D.tp+'\n点击定位 r'+rk2+'（保持当前 h 片）')+'</title></polygon></g>');
     }
-    for(cI=1;cI<D.cp;cI++) ap.push(ln(ptopA(cI*dx2,0), ptopA(cI*dx2,BD2), 'stroke:'+VC.cp+';stroke-width:.8;stroke-opacity:.75'));
-    var swD = dz2>4?.7:.35;
-    for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.65'));
+    for(cI=1;cI<D.cp;cI++) ap.push(ln(ptopA(cI*dx2,0), ptopA(cI*dx2,BD2), 'stroke:'+VC.cp+';stroke-width:.9;stroke-opacity:.8'));
+    var swD = dz2>4?.9:.5;
+    for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.75'));
     if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
     ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
+    /* PP 段标：跟①栏同一处理——两栏现在都是"一整块沿深度轴延伸"，标签给一样的
+       样式才读得出「这是同一条轴」，不是①有标签②没有的两套语汇。 */
+    var lAnchorA = ptopA(0, BD2*0.5);
+    ap.push(txt(lAnchorA[0]-30, lAnchorA[1], 'PP'+pIdx, 11.5, pIdx===co.p?VC.pp:'var(--pt-fg2)', 'end', 'font-weight="800"'));
     var rx2 = BW2*C + 14, ry2 = BW2*S - THA*0.2;
     ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 10, VC.dp, 'start', 'font-weight="700"'));
     ap.push(txt(rx2, ry2+14, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 9, 'var(--pt-fg3)', 'start'));
@@ -6847,8 +6856,8 @@ function renderSolidGrid(D){
       var zm3 = ptopA(0, BD2*0.5);
       ap.push(txt(zm3[0]-34, zm3[1]-20, 'b ← '+DIMN.dp+'×'+D.dp, 11, VC.dp, 'end', 'font-weight="800"'));
     }
-    parts.push('<g transform="translate('+TXAi+','+Y0a.toFixed(1)+')">'+ap.join('')+'</g>');
-    hits.push('<g transform="translate('+TXAi+','+Y0a.toFixed(1)+')">'+ah.join('')+'</g>');
+    parts.push('<g transform="translate('+TXAi.toFixed(1)+','+Y0ai.toFixed(1)+')">'+ap.join('')+'</g>');
+    hits.push('<g transform="translate('+TXAi.toFixed(1)+','+Y0ai.toFixed(1)+')">'+ah.join('')+'</g>');
   }
 
   /* ═══ 说明弹层：总账题面、点法、四形态×生命周期表 —— 都挪进这颗「？」按钮里 ═══
@@ -6865,8 +6874,10 @@ function renderSolidGrid(D){
   var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
     + '<b style="color:var(--pt-fg)">全局切分总账</b>：四个形态 × 全部的腔 —— 点一格，定位持有它的那张卡'
     + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）。点 PP 标签换段。<br>'
-    + 'W·G·O 共用一套切分（画成同一只托盘的三层厚度，厚度比 = 字节比 2:2:12）；'
-    + 'A 激活体自己一套——b 被 DP 真切、s 被 CP 真切，厚度随此刻在途 μb 涨落。<br>'
+    + 'W·G·O 共用一套切分（画成同一只盒子的三层厚度，厚度比 = 字节比 2:2:12）；'
+    + 'A 激活体自己一套——b 被 DP 真切、s 被 CP 真切，厚度随此刻在途 μb 涨落。'
+    + 'PP 不再另摆一排——它是这两只盒子共同的第三根轴（深度），跟 TP/EP、CP/DP 同级；'
+    + '沿这条轴一路数过去就是 ℓ0…ℓ(PP-1) 段，物理上首尾相接，不是分开摆着看。<br>'
     + (D.moe
         ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构；参数系格的持有者跨 b/s 复用（DP/CP 不切权重）。'
         : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡；激活格逐 (b,s) 各归各。')
