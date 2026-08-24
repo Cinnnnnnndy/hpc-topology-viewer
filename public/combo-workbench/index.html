@@ -430,6 +430,30 @@ body.is-resizing iframe{pointer-events:none}
           <span>图例</span><span class="cv" aria-hidden="true">⌄</span>
         </button>
         <div class="dmenu-pop" role="menu" style="min-width:190px">
+          <!-- 泳道自带的那行常驻图例（.timeline-footer）在内嵌形态下被 embed.css
+               藏掉了（纵向每一像素都给泳道本身），于是**条本身**那几种颜色——前向/
+               反向/等待/通信/驻留——在台面上一处说明都没有，只剩 kernel 分段那三条，
+               读者看到的是「解释了条里面的色带，却没解释条本身」。把主图例一并搬进
+               这颗浮层：颜色取的是泳道那份同名 CSS 变量（--viz-*），不另抄一套色值，
+               上游改色这里跟着变。 -->
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#38bdf8;flex:0 0 auto" data-viz="--viz-forward"></i>前向计算
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#a855f7;flex:0 0 auto" data-viz="--viz-backward"></i>反向计算
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#94a3b8;flex:0 0 auto" data-viz="--viz-wait"></i>依赖等待（不是异常）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#22c55e;flex:0 0 auto" data-viz="--viz-comm"></i>通信事务（PP send/recv）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#c4b5fd;flex:0 0 auto" data-viz="--viz-hold"></i>激活驻留
+          </div>
+          <div style="padding:6px 8px 2px;font-size:10.5px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+            以下是<b>条内部</b>的半透明色带（kernel 分段），不是新的事件类别：
+          </div>
           <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#06B6D4;flex:0 0 auto"></i>TP 切分（列切/头切）
           </div>
@@ -683,7 +707,20 @@ var SLOTS = [
        进了格子，身份与开关归格头，双份 chrome 摞着只会挤掉画布。 */
     /* 泳道自己的格头**整条**藏掉：名字归格头、缩放钮已代理到台面（#zctl），
        这条里没有剩下要看的东西了。之前收窄到 32px 是因为缩放钮还长在里面。 */
+    /* ⚠ display:none 只是不画，**网格轨还占着**——.timeline-pane 是
+       `42px / 1fr`（内嵌形态下 embed.css 已经把第三条页脚轨收掉了），第一条
+       42px 就是这里藏掉的这条格头。光藏内容不收轨，那 42px 没人认领，于是
+       卡片头与「泳道/对象 + 时间刻度」之间平白空出一条横贯整格的白带——
+       实机反馈「标题到泳道间的空白」正是它。embed.css 里给页脚收轨那段注释
+       写的是同一个坑，这里补上同一处理：谁藏了轨里的东西，谁负责收轨。
+       用 !important 是因为要盖过 embed.css 那条同名规则（同选择器同特异性，
+       只靠注入顺序赢不稳）。
+       ⚠ 是把第一条轨**压成 0**，不是把它整条删掉：泳道那边给三个子元素写死了
+       `grid-row: 1/2/3`（swimlane.html 163–165 行），删成单轨的话 .timeline-scroll
+       仍然被 grid-row:2 摁在第二行，浏览器给它现开一条隐式轨，空白照旧在——
+       实测过一次，computed 是 `46px 170px`。留着轨、把它压到 0 才真的收干净。 */
     hideCss: '.timeline-pane .pane__header{display:none!important}' +
+             '.timeline-pane{grid-template-rows:0 minmax(0,1fr)!important}' +
              '.pto-ide-frame__standalone-chrome{display:none!important}',
     /* 逗号选择器：两份文档各等各的锚点，谁在场等谁 */
     readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header',
@@ -1302,11 +1339,26 @@ function buildFrameControls() {
   });
   // kernel 分段图例：纯展示，没有可勾选的项，开合逻辑照抄上面这颗但不用挂状态。
   var klegend = $('#klegend'), klegendBtn = $('#klegendBtn');
+  /* 主图例那几块色（前向/反向/等待/通信/驻留）的真值是泳道文档里的 --viz-*，
+     而这颗浮层长在**宿主文档**上——跨文档 CSS 变量不继承，直接写 var(--viz-…)
+     在这边解析不到，只会掉回 fallback，主题一切换就跟里面对不上。
+     所以打开时去 iframe 里把这几个变量的**计算值**读回来刷上：与泳道画布用的
+     是同一个来源，不另抄一套色，明暗主题也自动跟随。iframe 没就绪/跨源就保持
+     标签里那份 fallback，不至于空着。 */
+  function syncLegendSwatches() {
+    var doc = paneDoc('swimlane'); if (!doc) return;
+    var cs = doc.defaultView.getComputedStyle(doc.documentElement);
+    klegend.querySelectorAll('[data-viz]').forEach(function (el) {
+      var v = cs.getPropertyValue(el.dataset.viz).trim();
+      if (v) el.style.background = v;
+    });
+  }
   klegendBtn.addEventListener('click', function (ev) {
     ev.stopPropagation();
     var open = !klegend.classList.contains('open');
     klegend.classList.toggle('open', open);
     klegendBtn.setAttribute('aria-expanded', String(open));
+    if (open) syncLegendSwatches();
   });
   document.addEventListener('click', function (ev) {
     if (!klegend.contains(ev.target)) { klegend.classList.remove('open'); klegendBtn.setAttribute('aria-expanded', 'false'); }
@@ -1415,6 +1467,15 @@ window.addEventListener('message', function (ev) {
       var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
       pushHL('topology', 'rank', swRank);
       pushHL('netgraph', 'rank', swRank);
+      /* kernel 分段逐节可点之后，泳道还报得出「点的是哪一节」（d.block，形如
+         'attn.qkv'——与 parallel-topology 模块视图 MODULE_BLOCKS 的 id 同一张表，
+         swimlane.html 的 KERNEL_SEG_BLOCK 就是照那张表配的）。没选中某一节、或
+         选中的是反向那组不挂功能块的真实子阶段时报 null，跟 rank 报 null 同一条
+         规矩——转发照旧不重复判定逻辑，走的还是 pushHL 这条"过路高亮"通道，只是
+         kind 换成 'block'。 */
+      var swBlock = (typeof d.block === 'string' && d.block) ? d.block : null;
+      pushHL('topology', 'block', swBlock);
+      pushHL('netgraph', 'block', swBlock);
     }
     /* 上方拓扑开了通信层 → 下方抽屉联动切到「通信观测」：上面看现象（地面流量带），
        下面看量化与归因（Sankey / Model & Routing / 时间轴）。只在**开**的时候联动，
