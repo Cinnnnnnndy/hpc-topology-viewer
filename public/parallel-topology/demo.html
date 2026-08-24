@@ -1494,13 +1494,14 @@ function inflightAt(D, ppRank, t){
    TP·SP 青 / EP 紫——它们是「这块是被哪把刀切出来的」的唯一语汇。所以剩下几档
    必须**让开这四个色**，否则同一个颜色在同一只卡上说两件事。
    这版整套改成同一支低饱和度色板（用户直接给的 6 个色块，逐个认领）：
-     · 梯度   —— 淡青绿（#C7E6E4）。延续上一版"comm 青绿"的家族，只是从饱和色
-       收进同一档淡色调里。
+     · 梯度   —— 淡黄（#F7EFA3）。原来的淡青绿换成暖色调，跟优化器步临时区的
+       淡黄（#F5E6A8）同一个色系但更浅更绿一点，两档挨着出现时仍分得开。
      · 优化器态 —— 淡薰衣草紫（#DAD6F2）。上一版的淡粉紫偏暖，这版换成更纯粹
        的紫，跟激活的淡蓝紫、EP 的饱和紫各自留出间距，面积最大（12B/参数）
        仍然是这版整体淡色调里最不抢的那一档。
-     · 激活   —— 淡蓝紫（#C7CEFA）。仍然是蓝系，跟 DP 那道饱和靛拉出了亮度差，
-       同族但不混淆的道理没变。
+     · 激活   —— 淡黄绿（#E6EFC2）。原来的淡蓝紫换成黄绿，不再落在"蓝系"里——
+       这一档色相挑得比其余几档都靠近中性，读者要认的主要是它随时间轴在动
+       （在途 μb 数变化），颜色本身只要跟旁边几档不撞就够。
      · 优化器步·临时区 —— 淡黄（#F5E6A8）。暖色调的"注意"意味保留，只是不再
        是饱和橙红，避免跟 PP 的橙或 CAP_C 的告警色对不上号。
      · 碎片   —— 半透明灰（mix('var(--pt-fg3)', 40)）。这一档本身就是「不算
@@ -1518,9 +1519,9 @@ function inflightAt(D, ppRank, t){
        暗示还在，且深浅主题都自动跟着 --pt-tp/--pt-bg 走，不会走样。 */
 var MEMC = {
   w:  'color-mix(in srgb, var(--pt-tp) 55%, var(--pt-bg))', /* 兜底：细到分不出块时整条按淡化的 TP 青 */
-  g:  '#C7E6E4',
+  g:  '#F7EFA3',
   opt:'#DAD6F2',
-  act:'#C7CEFA',
+  act:'#E6EFC2',
   otmp:'#F5E6A8',
   rsv:mix('var(--pt-fg3)', 40)
 };
@@ -4070,19 +4071,22 @@ function netScene(D, g, box, step){
                    还认得出「这里断开了」的东西。非子块（整条的那几档）不描，免得
                    把五档之间也画成七零八落。 */
                 var kerf = ';stroke:none';
-                /* 三个面的底数（86/94/68）各自再减去 dT×系数：dT 是这张卡在阵列里
-                   摆得多深（0 最近、1 最远，见 depthT），系数原本是 14/12/10——
-                   阵列深处的卡因此比前排淡了近一整成，跟 lz/MEMC.opt 那两处一样，
-                   摞在一起就成了「越靠后的卡越像没填」。系数减半（14→7/12→6/10→5）：
-                   深度带来的层次感留一半，不再是主要的淡化来源——真正决定一张卡
-                   浓不浓的应该是 lz（谁被选中）和 MEMC 本身的颜色，不该被它摆在
-                   哪一列这种无关的事实上再打一次折。 */
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, (86 - dT*7) + solidK*12)+kerf+';opacity:'+lzB9));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, (94 - dT*6) + solidK*6))+kerf+';opacity:'+lzB9));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 - dT*7)+';stroke:none;opacity:'+(lz*memDim9)));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94 - dT*6)+';stroke:none;opacity:'+(lz*memDim9)));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68 - dT*5)+';stroke:none;opacity:'+(lz*memDim9)));
+                /* 三个面的底数（86/94/68）原来各自再减去 dT×系数（越往阵列深处摆
+                   越淡），这套折扣是在旧的饱和色板上量的——旧色板本身浓，扣掉一成
+                   还认得出是什么颜色。换成这版淡色调色板之后同一套折扣直接把远处
+                   的卡冲得快看不见了（反馈"拉远之后颜色一下子变淡了"）：淡色本来
+                   跟底色就没多少反差，再按比例扣一次，剩下的反差不够眼睛分辨。
+                   跟三轮前 eO（棱的透明度）那次教训同一个道理：前后关系不该靠"让
+                   内容本身变淡"去表达，会和"这张卡是不是真的空/远得看不清"混为
+                   一谈。删掉 dT 这一项，面的浓度全阵列统一；前后落差改由 eW（棱的
+                   线宽，见 shellOf 里 eW 那段）单独承担——近粗远细，粗细不会把
+                   内容本身的颜色也带没了。 */
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86 + solidK*12)+kerf+';opacity:'+lzB9));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, Math.min(100, 94 + solidK*6))+kerf+';opacity:'+lzB9));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, 86)+';stroke:none;opacity:'+(lz*memDim9)));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memSolid(sg8.c, 94)+';stroke:none;opacity:'+(lz*memDim9)));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, 68)+';stroke:none;opacity:'+(lz*memDim9)));
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+(lz*memDim9)));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
