@@ -1522,7 +1522,7 @@ var MEMC = {
   opt:'#9F93D1',
   act:'#8FBB7A',
   otmp:'#F5E6A8',
-  rsv:'color-mix(in srgb, var(--pt-fg3) 40%, var(--pt-bg))'
+  rsv:'#C8CACB'
 };
 /* 权重带的内部：这一段里每块权重是被哪把刀切出来的。字节口径与 opBytes 同一份
    （card-container 那一屏的「权重带的内部」也是它），这里只补上两头的 embed/lm_head
@@ -4104,14 +4104,13 @@ function netScene(D, g, box, step){
                    线宽，见 shellOf 里 eW 那段）单独承担——近粗远细，粗细不会把
                    内容本身的颜色也带没了。 */
                 var fPct9 = Math.round(100 * dimPct9);
-                var sPct9 = Math.round(92 * dimPct9);
-                var tPct9 = Math.round(90 * dimPct9);
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+kerf));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+kerf));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none'));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+';stroke:none'));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+';stroke:none'));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none'));
+                var sideDark9 = Math.round(5 * (2 - dimPct9));
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+kerf));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+kerf));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+';stroke:none'));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
                 if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
