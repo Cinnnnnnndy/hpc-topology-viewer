@@ -1009,7 +1009,7 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
   <figure>
     <figcaption>
       <span class="fnum">FIG 05F</span><span class="ftitle">四步环：不在卡里看，只看谁产出谁</span><span class="cd b">循环 1:1</span>
-      <span class="fnote">跟上面 <code>&lt;pre&gt;</code> 是同一件事的图解版，不落在任何一张卡的显存布局上——这里只画「谁读谁、谁产出谁」的纯因果关系。四步首尾相接，④的产物 <code>W(t+1)</code> 顺着上方那条回勾线，变回①下一轮的输入——这条线是整张图唯一的重点：没有它，四步读起来会像四件互不相干的事。方块下方的色点标的是本文自己的显存签名色（<span style="color:#B3603A">●</span>权重　<span style="color:#C98A63">●</span>梯度　<span style="color:#2E6E8E">●</span>优化器态　<span style="color:#3E7D5E">●</span>激活），与下面 FIG 05E、§08 FIG 11 用的是同一套颜色。</span>
+      <span class="fnote">跟上面 <code>&lt;pre&gt;</code> 是同一件事的图解版，不落在任何一张卡的显存布局上——这里只画「谁读谁、谁产出谁」的纯因果关系。四步首尾相接，④的产物 <code>W(t+1)</code> 顺着上方那条回勾线，变回①下一轮的输入——这条线是整张图唯一的重点：没有它，四步读起来会像四件互不相干的事。<b>每个方块底部分两栏</b>：左栏"读·耗尽"是这一步吃进去的档，右栏"产出"是这一步吐出来的档，中间一个小箭头直接画出"这个变成了那个"——②反向就是"激活 → 梯度"，④更新就是"优化器态＋梯度 → 权重"；①③只读不产出，只有左栏。色点用的是本文自己的显存签名色（<span style="color:#B3603A">●</span>权重　<span style="color:#C98A63">●</span>梯度　<span style="color:#2E6E8E">●</span>优化器态　<span style="color:#3E7D5E">●</span>激活），与下面 FIG 05E、§08 FIG 11 一致。</span>
     </figcaption>
     <div class="stage" id="fig-loop"></div>
   </figure>
@@ -1070,8 +1070,8 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 
   <figure>
     <figcaption>
-      <span class="fnum">FIG 05E</span><span class="ftitle">同一条环，落到这张真实的卡上</span><span class="cd a">环 1:1</span>
-      <span class="fnote">同一根立方体＝rank 31 的显存，高度按上表的字节数堆叠。<b>堆叠顺序按因果邻接排，不是"对 viewer 的推论"那节的列表顺序</b>——权重→优化器态→梯度→激活，让②④两条环上的箭头都落在相邻层之间，不用绕过体积最大的优化器态（两节图目的不同：那节排的是面板列表顺序，优化"常驻分组好找 OOM 地板"；这里排的是立方体堆叠，优化"箭头别绕远路"，各自的顺序各自负责，不必一致）。②反向把激活变成梯度，④更新把优化器态与梯度变成下一步的权重——环在权重这一格闭合。①前向、③DP AllReduce 不跨档，因此图上没画箭头，抽象版见上面 FIG 05F。两条虚线（70%／88%）是 §08 的警戒线，rank 31 的 53/64≈82.8% 正落在两者之间。</span>
+      <span class="fnum">FIG 05E</span><span class="ftitle">同一条环，落到这张真实的卡上</span><span class="cd a">1:1</span>
+      <span class="fnote">同一根立方体＝rank 31 的显存，高度按上表的字节数堆叠，堆叠顺序沿用下文"对 viewer 的推论"给出的那条：权重→梯度→优化器态→激活→碎片。<b>这张图只回答"装了多少、离警戒线多近"，不重复画因果箭头</b>——谁产出谁、环在哪里闭合，上面 FIG 05F 已经讲清楚，两件事的视觉语言放在同一张图上会互相打架，拆开各自才干净。两条虚线（70%／88%）是 §08 的警戒线，rank 31 的 53/64≈82.8% 正落在两者之间。</span>
     </figcaption>
     <div class="stage" id="fig-lifecycle"></div>
   </figure>
@@ -3737,84 +3737,76 @@ function figContainer(){
                   :'　<span class="hint">余量 '+(CFG.cap-m.tot).toFixed(1)+' GB</span>');
 }
 
-/* ===================== FIG 05E · 环形因果链落在一张立方体上（rank 31 实拍）===================== */
+/* ===================== FIG 05E · rank 31 的显存容量堆叠（实拍读数）===================== */
 function figLifecycle(){
   var sc=new Scene('fig-lifecycle',13);
-  var BW=6.2, BD=5.4, CAPH=15.5, CAP=64, u=CAPH/CAP;
-  /* 堆叠顺序按「因果邻接」排，不是「对 viewer 的推论」那节的常驻分组顺序——
-     两节图目的不同：那节排列表顺序，优化「常驻三档分组，方便看 OOM 地板」；
-     这里排立方体堆叠，优化「箭头别绕远路」。权重→优化器态→梯度→激活
-     让②③两条环上的箭头都落在相邻层之间，不用绕过体积最大的优化器态。
-     碎片/预留高度太薄，用 Math.max 给它一个最小可读高度——真实比例已经
-     写在数字里，这里只保证标签放得下。 */
+  var BW=6.2, BD=5.4, CAPH=13.5, CAP=64, u=CAPH/CAP;
+  /* 这张图只回答一个问题：rank 31 此刻的 53 GB 分别是哪几档、离警戒线多近——
+     跟 FIG 11 容器模型同一种画法。因果箭头（谁产出谁）已经在上面 FIG 05F
+     讲清楚了，这里不重复画——同一张图里既要看"装了多少"又要看"谁流向谁"，
+     两件事的视觉语言互相打架，拆成两张各自干净。
+     堆叠顺序沿用「对 viewer 的推论」给出的那条：权重→梯度→优化器态→激活→碎片。
+     碎片/预留高度太薄，用 Math.max 给一个最小可读高度，真实比例已写在数字里。 */
   var stack=[
     {n:'权重',          v:5.5, c:K.pp},
-    {n:'优化器态',      v:33,  c:K.dp},
     {n:'梯度',          v:5.5, c:'#C98A63'},
+    {n:'优化器态',      v:33,  c:K.dp},
     {n:'激活·在途4μb',  v:7.6, c:K.cp},
     {n:'碎片',          v:1.4, c:K.pale}
   ];
-  var MINH=1.35;
+  var MINH=1.1;
   sc.wire({x:0,y:0,z:0,w2:BW,h:CAPH,d:BD,stroke:'#8A98A2',sw:1.3,dash:'4 3'});
-  var y=0, pos={};
+  var y=0;
   stack.forEach(function(s){
     var hh=Math.max(s.v*u, MINH);
-    pos[s.n]={y0:y,y1:y+hh,mid:y+hh/2};
     sc.box({x:.16,y:y,z:.16,w:BW-.32,h:hh-.06,d:BD-.32,color:s.c});
     sc.label({x:BW+.35,y:y+hh/2-.16,z:BD/2,text:s.n+'　'+s.v+' GB',size:9.5,weight:700,fill:'#2A343B',anchor:'start',mono:true});
     y+=hh;
   });
   var topY=y;
-  /* 两条警戒线（§08 的 70% 橙 / 88% 红）画在真实累计高度上（不受 MINH 拉伸影响），
-     对应 rank 31 的 53/64≈82.8% 落在两者之间——用 stack 实际字节比例重新算一次 y。 */
-  var realTop=0; stack.forEach(function(s){ realTop+=s.v; });   /* =53 */
-  var realU=topY/realTop;                                       /* 用拉伸后的总高度反推刻度，保证 82.8% 那条线仍对得上视觉堆叠顶部 */
-  /* 标签放左边（右边已经被 GB 读数占了），避免两组文字叠在一起 */
+  /* 两条警戒线（§08 的 70% 橙 / 88% 红），画在按真实字节比例换算的高度上
+     （不受 MINH 拉伸影响）——rank 31 的 53/64≈82.8% 落在两者之间。
+     标签放盒身左侧，跟右侧的 GB 读数错开，互不相扰。 */
+  var realTop=0; stack.forEach(function(s){ realTop+=s.v; });
+  var realU=topY/realTop;
   [[0.70*64,'#CA8A04','70%'],[0.88*64,'#C0392B','88%']].forEach(function(w2){
     var yy=w2[0]*realU;
     sc.line3({a:[0,yy,BD],b:[BW,yy,BD],stroke:w2[1],w:1.3,dash:'4 3'});
-    sc.label({x:-.15,y:yy+.25,z:BD,text:w2[2],size:8.5,weight:700,fill:w2[1],anchor:'end'});
+    sc.label({x:-.2,y:yy+.28,z:BD,text:w2[2],size:9,weight:700,fill:w2[1],anchor:'end'});
   });
-  /* ② 反向：激活 → 梯度。新顺序下两档紧挨着，箭头只需跨一层，不用绕远路。
-     标注放在警戒线标签的更左侧（x1 比 -.15 更远），避免与 70%/88% 文字叠字。 */
-  var aY=pos['激活·在途4μb'].mid, gY=pos['梯度'].mid, x1=-2.2;
-  sc.line3({a:[-.3,aY,BD/2],b:[x1,aY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
-  sc.line3({a:[x1,aY,BD/2],b:[x1,gY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
-  sc.line3({a:[x1,gY,BD/2],b:[-.3,gY,BD/2],stroke:K.ink,w:1.3,dash:'3 2',arrow:'ink'});
-  sc.label({x:x1-.3,y:(aY+gY)/2+.3,z:BD/2,text:'②反向：激活→梯度',size:8.5,weight:700,fill:'#3D4B55',anchor:'end'});
-  /* ④ 更新：优化器态（连同紧邻的梯度）→ 权重(t+1)，回到链首，环在这里闭合。
-     锚点用优化器态靠近权重的那条边（y0），不用整块的几何中点——它体积大，
-     用几何中点会让箭头显得比实际因果距离长得多。标签整体挪到权重这一格
-     的下沿以下（wY 再减一段），躲开权重自己的 GB 标签，不与它同一高度抢位置。 */
-  var oEdgeY=pos['优化器态'].y0+0.5, wY=pos['权重'].y0+.18, x2=BW+2.6, labY=pos['权重'].y0-.55;
-  sc.line3({a:[BW+.3,oEdgeY,BD/2],b:[x2,oEdgeY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
-  sc.line3({a:[x2,oEdgeY,BD/2],b:[x2,wY,BD/2],stroke:K.ink,w:1.3,dash:'3 2'});
-  sc.line3({a:[x2,wY,BD/2],b:[BW+.3,wY,BD/2],stroke:K.ink,w:1.3,dash:'3 2',arrow:'ink'});
-  sc.label({x:x2+.3,y:labY+.55,z:BD/2,text:'④更新：优化器态+梯度→W(t+1)',size:8.5,weight:700,fill:'#3D4B55',anchor:'start'});
-  sc.label({x:x2+.3,y:labY-.3,z:BD/2,text:'回到①前向，环闭合',size:8.5,fill:'#8A98A2',anchor:'start'});
-  sc.label({x:BW/2,y:topY+3.6,z:BD/2,text:'rank 31 · 环形因果链落在一张卡上',size:13,weight:750,fill:K.ink});
-  sc.label({x:BW/2,y:topY+2.55,z:BD/2,text:'合计 53 / 64 GB（实际比例，柱高已拉伸以容纳标签）· 余量 11 GB',size:9,fill:'#8A98A2'});
+  sc.label({x:BW/2,y:topY+4.2,z:BD/2,text:'rank 31 · 此刻的显存',size:13,weight:750,fill:K.ink});
+  sc.label({x:BW/2,y:topY+3.25,z:BD/2,text:'合计 53 / 64 GB · 余量 11 GB（柱高按 GB 等比，碎片档最小高度做了拉伸）',size:8.5,fill:'#8A98A2'});
   sc.render();
 }
 
 /* ===================== FIG 05F · 四步环（不落在任何一张卡上，纯因果关系）===================== */
 function figLoop(){
   var m=document.getElementById('fig-loop'); if(!m) return;
-  var W=1080, H=380;
+  var W=1080, H=430;
   var s='<svg viewBox="0 0 '+W+' '+H+'" font-family="-apple-system,\'PingFang SC\',sans-serif">';
   s+='<defs><marker id="loop-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
     +'<path d="M0 0 L10 5 L0 10 z" fill="#3D4B55"/></marker>'
     +'<marker id="loop-ar-hook" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">'
+    +'<path d="M0 0 L10 5 L0 10 z" fill="#8A98A2"/></marker>'
+    +'<marker id="loop-ar-io" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
     +'<path d="M0 0 L10 5 L0 10 z" fill="#8A98A2"/></marker></defs>';
 
   var COL={w:K.pp, g:'#C98A63', opt:K.dp, act:K.cp};
+  /* 每一步拆成「读/耗尽」与「产出」两栏——不再用一排平铺的色点，
+     那样看不出谁变成了谁。有产出的步骤（②④）中间画一个小箭头，
+     直接把"读的这个"变成"产出的那个"的因果关系画出来；只读不产出
+     的步骤（①③）只画左栏，右栏留空——它们本来就不产生新的显存档。 */
   var steps=[
-    {n:'①前向',   f:'W(t) × A  →  out',        note:'A 暂存',        dots:[['权重',COL.w],['激活',COL.act]]},
-    {n:'②反向',   f:'∂L/∂out × A  →  ∇W',      note:'A 释放',        dots:[['激活',COL.act],['梯度',COL.g]]},
-    {n:'③同步',   f:'DP AllReduce(∇W)',        note:'→ 全局梯度',    dots:[['梯度',COL.g]]},
-    {n:'④更新',   f:'opt(m,v,master) + ∇W',    note:'→ W(t+1)，∇W 释放', dots:[['优化器态',COL.opt],['梯度',COL.g],['权重',COL.w]]}
+    {n:'①前向', f:'W(t) × A  →  out', note:'A 暂存（out 不进账，下一步就被①消耗)',
+     read:[['权重',COL.w],['激活',COL.act]], produce:null},
+    {n:'②反向', f:'∂L/∂out × A  →  ∇W', note:'A 释放',
+     read:[['激活',COL.act]], produce:[['梯度',COL.g]]},
+    {n:'③同步', f:'DP AllReduce(∇W)', note:'身份不变，只是把各副本的梯度加到一起',
+     read:[['梯度',COL.g]], produce:null},
+    {n:'④更新', f:'opt(m,v,master) + ∇W  →  W(t+1)', note:'∇W 释放',
+     read:[['优化器态',COL.opt],['梯度',COL.g]], produce:[['权重',COL.w]]}
   ];
-  var BX=[40,320,600,880], BW2=200, BY=130, BH=150, CY=BY+BH/2;
+  var BX=[40,320,600,880], BW2=200, BY=130, BH=200, CY=BY+70;
 
   /* 相邻步骤之间的正向箭头 */
   for(var i=0;i<3;i++){
@@ -3827,19 +3819,37 @@ function figLoop(){
     +'fill="none" stroke="#8A98A2" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#loop-ar-hook)"/>';
   s+='<text x="'+(W/2)+'" y="'+(hookY-8)+'" font-size="10" fill="#8A98A2" text-anchor="middle">④ 的产物 W(t+1)，就是①下一轮读的 W——环在这里闭合，不是另起一份</text>';
 
+  function dotList(items, x0, y0){
+    var out2='', dy2=0;
+    items.forEach(function(d){
+      out2+='<circle cx="'+x0+'" cy="'+(y0+dy2)+'" r="4" fill="'+d[1]+'"/>'
+        +'<text x="'+(x0+10)+'" y="'+(y0+dy2+3.5)+'" font-size="9.5" fill="#3D4B55">'+d[0]+'</text>';
+      dy2+=18;
+    });
+    return out2;
+  }
+
   steps.forEach(function(st,i){
     var x=BX[i];
     s+='<rect x="'+x+'" y="'+BY+'" width="'+BW2+'" height="'+BH+'" rx="9" fill="#fff" stroke="#0E1418" stroke-width="1.4"/>';
     s+='<text x="'+(x+16)+'" y="'+(BY+26)+'" font-size="13.5" font-weight="800" fill="#0E1418">'+st.n+'</text>';
     s+='<text x="'+(x+16)+'" y="'+(BY+50)+'" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="#3D4B55">'+st.f+'</text>';
-    s+='<text x="'+(x+16)+'" y="'+(BY+68)+'" font-size="9.5" fill="#8A98A2">'+st.note+'</text>';
-    /* 底部色点：这一步涉及哪几档显存（颜色与 FIG 05E / §08 FIG 11 一致） */
-    var dy=BY+BH-18;
-    st.dots.forEach(function(d,j){
-      var dx=x+16+j*70;
-      s+='<circle cx="'+dx+'" cy="'+dy+'" r="4" fill="'+d[1]+'"/>';
-      s+='<text x="'+(dx+8)+'" y="'+(dy+3.5)+'" font-size="9" fill="#5C6B74">'+d[0]+'</text>';
-    });
+    s+='<text x="'+(x+16)+'" y="'+(BY+66)+'" font-size="9" fill="#8A98A2">'+st.note+'</text>';
+    s+='<line x1="'+x+'" y1="'+(BY+82)+'" x2="'+(x+BW2)+'" y2="'+(BY+82)+'" stroke="#EEF1F3" stroke-width="1"/>';
+
+    var rowY=BY+100;
+    if(st.produce){
+      /* 读 / 产出 分两栏，中间一个小箭头——这才是「谁变成了谁」的图解 */
+      s+='<text x="'+(x+16)+'" y="'+(rowY-14)+'" font-size="8.5" fill="#B0BEC6">读 · 耗尽</text>';
+      s+=dotList(st.read, x+20, rowY);
+      var midX=x+BW2*0.62;
+      s+='<line x1="'+(midX-14)+'" y1="'+(rowY+8)+'" x2="'+(midX+10)+'" y2="'+(rowY+8)+'" stroke="#8A98A2" stroke-width="1.6" marker-end="url(#loop-ar-io)"/>';
+      s+='<text x="'+(midX+18)+'" y="'+(rowY-14)+'" font-size="8.5" fill="#B0BEC6">产出</text>';
+      s+=dotList(st.produce, midX+18, rowY);
+    } else {
+      s+='<text x="'+(x+16)+'" y="'+(rowY-14)+'" font-size="8.5" fill="#B0BEC6">读（原地操作，不产出新档）</text>';
+      s+=dotList(st.read, x+20, rowY);
+    }
   });
 
   s+='</svg>';
