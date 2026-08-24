@@ -4038,9 +4038,9 @@ function netScene(D, g, box, step){
                不需要再罩一层壳装饰它，壳（连同它的透明）整个让路。 */
             var wantShell9 = lowDetail || !ui.memFill;
             if(wantShell9){
-              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
+              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
+              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
             }
             if(!lowDetail && ui.memFill){
               /* 选中那一只画得更实：兑底色的百分比整体拉高一档，透明度回到 1。
@@ -4071,7 +4071,7 @@ function netScene(D, g, box, step){
                     mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
-                var lzM = meC ? 1 : lz;
+                var lzM = 1;
                 /* ── (a) 读出卡点开某一块 → 卡上那条带跳出来 ────────────────
                    压暗**别的**档而不是给选中那档描边：这只卡本来就密（五档 + 算子块
                    + 缝），再加一圈亮边只是多一样东西；把其余压下去，剩下的那条自然
@@ -4081,8 +4081,9 @@ function netScene(D, g, box, step){
                 /* 非选中档的弱化从「降 opacity」改成「把颜色往底色方向兑淡」：
                    降 opacity 会让面变透明、透出后面的卡和棱线，正是一直没修干净的根源。
                    兑淡颜色视觉上一样是"压暗非选中档"，但 alpha 恒 1，不透光。 */
-                var dimPct9 = (meC && msK9 && sg8.k !== msK9) ? 0.30 : 1;
-                var lzB9 = lzM;
+                var spotDim9 = (spotShellDim && !meC) ? 0.35 : 1;
+                var dimPct9 = ((meC && msK9 && sg8.k !== msK9) ? 0.30 : 1) * spotDim9;
+                var lzB9 = 1;
                 /* 顶出壳外那截只画在**选中那只**上。全网结构性溢出时（比如 EP 拨掉，
                    128 只全超 ×4.7）每只都顶 0.62 只壳，阵列上半就是一大片告警色，
                    密得读不出别的了。其余卡改用棱标红说「超了」（capLv 那条路），
@@ -4105,13 +4106,13 @@ function netScene(D, g, box, step){
                 var fPct9 = Math.round(100 * dimPct9);
                 var sPct9 = Math.round(92 * dimPct9);
                 var tPct9 = Math.round(90 * dimPct9);
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+kerf+';opacity:'+lzB9));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+kerf+';opacity:'+lzB9));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none;opacity:'+lz));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+';stroke:none;opacity:'+lz));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+';stroke:none;opacity:'+lz));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none;opacity:'+lz));
-                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2;opacity:'+lz));
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+kerf));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+kerf));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none'));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+memSolid(sg8.c, fPct9)+';stroke:none'));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, 100-sPct9)+';stroke:none'));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+memSolid(sg8.c, tPct9)+';stroke:none'));
+                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
                    那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
@@ -4178,7 +4179,7 @@ function netScene(D, g, box, step){
                         esc(o8.id)+'：点开看这一块的切分'));
                       body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                              :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
-                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35;opacity:'+lzM));
+                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35'));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
                     /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
@@ -4190,13 +4191,13 @@ function netScene(D, g, box, step){
                       if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
                       lastPx8 = px8;
                       body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
-                        'stroke:'+seamCol9+';stroke-width:.55;opacity:'+(lzM*0.85)));
+                        'stroke:'+seamCol9+';stroke-width:.55'));
                     });
                   } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
                     for(var mm9 = 1; mm9 < MS9.mub; mm9++){
                       body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
-                        'stroke:'+seamCol9+';stroke-width:.6;stroke-dasharray:2.2 1.8;opacity:'+(lzM*0.9)));
+                        'stroke:'+seamCol9+';stroke-width:.6;stroke-dasharray:2.2 1.8'));
                     }
                   }
                 }
@@ -4219,9 +4220,9 @@ function netScene(D, g, box, step){
                这里再摆一层透明灰雾上去，是刚才那句反馈的真正来源。wantShell9
                为假时（memFill 有内容）这三面整个跳过，让 memFill 的颜色做底。 */
             if(wantShell9){
-              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(8 + dT*4).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+mix('var(--pt-bg)',(18 + dT*5).toFixed(1))+';stroke:none;opacity:'+lz));
-              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(14 + dT*6).toFixed(1))+';stroke:none;opacity:'+lz));
+              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
+              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
+              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
             }
             /* 命中的卡**不再刷一层蓝**。原来给六个面各兑一层 DP 蓝，结果是：
                ① 卡里那几档载荷（权重的刀色、激活的蓝、优化器态的淡紫）全被同一层蓝
@@ -4232,14 +4233,14 @@ function netScene(D, g, box, step){
                和点开一只卡时认出它的是同一套语言，读者不用学第二种。 */
           } else {
           if(!isFcol && !spot){
-            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
-            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
-            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
+            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(26 + dT*17))+';stroke:none'));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(38 + dT*20))+';stroke:none'));
+            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(26 + dT*17))+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(38 + dT*20))+';stroke:none'));
           }
           if(meC){
-            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-fg)',7)+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-fg)',7)+';stroke:none'));
           }
           }
         }
