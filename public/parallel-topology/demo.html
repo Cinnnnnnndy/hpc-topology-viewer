@@ -2891,7 +2891,22 @@ function netScene(D, g, box, step){
   /* ── 全量复印件：每份都画层板 + 算子，后面的先画（SVG z-order） ── */
   var copyOrder = [];
   for(k = 0; k < K; k++){
-    var cz = turn3(cx(k)+0.5, cy(k)+AR/2, TOTW/2, yaw, pitch);
+    var cz;
+    /* 物理平铺下 cx(k)/cy(k) answers的是「并行坐标那套排法摆在哪」，跟 shellOf
+       内部真正画卡时用的物理锚点（PHY_OFF_BASE+gc，见下面 physSpan）完全是两套
+       坐标——画家序（这里）按的是前者，几何（shellOf）按的是后者，两套坐标一旦
+       对不上，近的卡可能因为在这套假坐标里"该早画"而被后画的远卡盖住，看起来
+       就是"卡与卡之间还是透"（反馈里 R31 的棱压在 DP15 实心面上那张截图）——
+       其实没有一处真的半透明，是画家序本身就错了。用列里第 0 段的 gc 当这一列
+       的代表位置，借道 PHY_OFF_BASE 让 cx/cy 走它们已经写好的物理分支。 */
+    if(physOn){
+      var _dcK9 = k % KD, _tcK9 = KT > 1 ? Math.floor(k/KD) : co.t;
+      var _gcK9 = rankOf(_tcK9, co.c, _dcK9, 0, D);
+      var _psK9 = physSpan(_gcK9);
+      cz = turn3(cx(PHY_OFF_BASE+_gcK9)+0.5, cy(PHY_OFF_BASE+_gcK9)+AR/2, (_psK9[0]+_psK9[1])/2, yaw, pitch);
+    } else {
+      cz = turn3(cx(k)+0.5, cy(k)+AR/2, TOTW/2, yaw, pitch);
+    }
     copyOrder.push({i:k, z:cz[2]});
   }
   /* 画家算法：远的先画、近的后画。turn3 的 z 越大越远（透视除数就是按它算的），
@@ -3878,8 +3893,23 @@ function netScene(D, g, box, step){
     var nSeg = cutPP ? D.pp : 1;
       var dc = kc % KD, tc = KT > 1 ? Math.floor(kc/KD) : co.t;
       var isFcol = hasSel && kc === sel0;      /* 选中那一列（副本 × tp 片）：整列不上雾 */
+      /* segOrder 是按并行坐标那套排法（segW）算的一支全场共用的段序——物理平铺下
+         同一列里的 nSeg 段各自散到完全不同的机位（每段一个独立 gc），公用一支序
+         没有意义，跟上面 copyOrder 的道理一样：得按这一列每段自己的物理锚点重新
+         量一遍 z 再排，否则列内段与段之间照样会画反。非物理模式原样用 segOrder，
+         这里不多算一次。 */
+      var segOrderK = physOn ? (function(){
+        var a9 = [], i9;
+        for(i9 = 0; i9 < nSeg; i9++){
+          var gc9 = rankOf(tc, co.c, dc, i9, D);
+          var ps9 = physSpan(gc9);
+          a9.push({i:i9, z:turn3(cx(PHY_OFF_BASE+gc9)+0.5, cy(PHY_OFF_BASE+gc9)+AR/2, (ps9[0]+ps9[1])/2, yaw, pitch)[2]});
+        }
+        a9.sort(function(x,y){ return y.z - x.z; });
+        return a9.map(function(o){ return o.i; });
+      })() : segOrder;
       for(var si = 0; si < nSeg; si++){
-        var pc2 = segOrder[si];
+        var pc2 = segOrderK[si];
         /* 拖动时 128 只壳 × 12 条棱也是实打实的负担：只留选中那只和每列的首尾段，
            转起来够看清阵列的骨架，松手再补全。 */
         if(lowDetail && pc2 !== 0 && pc2 !== nSeg-1 && rankOf(KT>1?Math.floor(kc/KD):co.t, co.c, kc%KD, pc2, D) !== g) continue;
