@@ -4148,13 +4148,9 @@ function netScene(D, g, box, step){
                      白线画在它上面实测一道都看不见。 */
                   var seamCol9 = memShade('var(--pt-bg)', 34);
                   var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
-                  /* 梯度与优化器态是同一份参数的 ×1 / ×6：分法与权重逐块相同，所以
-                     用**同一套块色**画，只把填充压到权重的一半多一点（.30 对 .52）。
-                     原来这两档只画中性细缝——缝说得出「这儿断开了」，说不出「是被
-                     哪把刀断开的」，而读者要的正是后者。压淡而不是不画：权重仍然是
-                     这条带里的主角，梯度/优化器态读成「跟着它同一刀」。 */
-                  var wLike9 = (sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp');
-                  if(wLike9 && (MS9.opSegs || []).length){
+                  /* 权重带画 TP/EP 色块（52% 混合），g/opt/otmp 跟同一刀但只画
+                     白色切分线、不铺色块——线够说清「这儿断开了」，色块留给权重。 */
+                  if(sg8.k === 'w' && (MS9.opSegs || []).length){
                     /* 权重带内部：块色 = 切它那把刀（TP 青 / EP 紫 / 复制不上色），
                        就是「抽出的 L0」那排算子片折进卡里的样子。 */
                     /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
@@ -4165,13 +4161,9 @@ function netScene(D, g, box, step){
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
                       if(!oc8) return;
                       var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
-                      /* 原来非 'w' 档还要再乘 0.86：那是给 fill-opacity 版配的额外弱化，
-                         现在刀色已经预混成不透明复合色（见下面 fill 那行），这层 0.86
-                         只剩"整块跟着调淡"一个效果，把刚刚烧掉的实心又打回半透明——
-                         删掉，色块的浓淡完全交给 color-mix 的混合比例（.52/.30）决定。 */
-                      /* 非选中块的弱化同样从降 opacity 改成兑淡刀色混合比例 */
+                      /* 非选中块的弱化：兑淡刀色混合比例 */
                       var oPickDim9 = (pickId9 && o8.id !== pickId9) ? 0.28 : 1;
-                      var oMix9 = Math.round((sg8.k === 'w' ? 52 : 30) * oPickDim9);
+                      var oMix9 = Math.round(52 * oPickDim9);
                       if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
                                                       :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
                         'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(o8.id)+'"',
@@ -4181,16 +4173,15 @@ function netScene(D, g, box, step){
                         'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35'));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
-                    /* 上面那支画不成（块窄到一两个像素）时退回**对齐的竖缝**：
-                       缝对得上就还说得出「同一分法」，比什么都不画强。
-                       缝密到分不开时整条都不画（同 L3 的 x1-x0 < 2 那道门槛）。 */
+                    /* g/opt/otmp 跟权重同一套 TP/EP 切分，但只画白色切分线、不填色块。
+                       暗色带上白线对比度最好；缝密到分不开时整条都不画。 */
                     var lastPx8 = -1e9;
                     MS9.opSegs.forEach(function(o8){
                       var px8 = o8.u0 * cardPxW9;
                       if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
                       lastPx8 = px8;
                       body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
-                        'stroke:'+seamCol9+';stroke-width:.55'));
+                        'stroke:#fff;stroke-width:.55'));
                     });
                   } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
