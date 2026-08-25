@@ -6629,72 +6629,54 @@ function renderSolidGrid(D){
   function p3(x,y,z){ return proj(x,y,z,1); }
   function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
 
-  /* ── 容器实测宽度：右侧面板（组合工作台默认 ~460px）与独立整屏（~1440px）能差出
-     三倍，之前只按 D.pp 缩放托盘、字号是写死的 SVG 数字——同一份数字在窄容器里
-     渲出的像素只有宽容器的三分之一（14px→~4.6px，读不出字）。这里量 #stage 的
-     实际 clientWidth：外层包一层 <g transform="scale(k)">，declared viewBox 也按
-     同一个 k 收窄，两个一起变，「每 SVG 单位落地几像素」＝ 1440/VW，恒定，跟
-     容器多宽无关——多窄的面板量出来都还是那个像素数，不是只把 SVG 里的数字调大
-     自我安慰。cw0 取不到（尚未挂载）时退化到 1440（=k 1，不放大不缩小）。 */
-  var stEl = $('stage');
-  var cw0 = (stEl && stEl.clientWidth) || 1440;
-  var k = clamp(cw0/1440, 0.2, 3);
-  /* 窄到并排两栏挤不下（右侧面板默认 460px）就摞起来：①②各自占满整条宽度，
-     不必再在同一行里让出一半给隔壁栏——并排版的 TX1/TX2 卡在 270/730 正是为了
-     两栏同一行不相撞；摞起来之后每一栏都是这一屏当下唯一的内容，天然有更宽的
-     余地把托盘、字都画大，读法也更顺手（先看完①整段权重再往下看②整段激活，
-     不必来回扫视）。 */
-  var stacked = cw0 < 760;
-
-  /* ── 布局：PP 多时整体缩，托盘数不减——切了几段就画几段，viewBox 高度跟着长。
-     宽度不再留一整栏给文字读数（那张读数并到 #rankMem 标准卡了，见函数尾）——
-     腾出来的横向空间直接分给托盘本身：sc 的基准从 1 提到 1.3（上一版 1.15 量出来
-     字还是偏小），两栏往左右收紧到刚好不撞（见下 TX1/TX2 的取值注释），
-     viewBox 总宽 1000——托盘变大吃掉了「腾出来的空」，但每单位 SVG 长度在同样
-     宽的容器里占的比例仍然比 1080 的老版本大，字号（正文调到 ~10–11、标题
-     ~14）跟着一起涨，两条一起才是「default 比例下读得出」，不是单压一头。 */
   var sc = Math.min(1, Math.sqrt(4/D.pp)) * 1.3;
   var nE = D.moe ? D.ep : 1;
   var BW1 = 120*sc, BD1 = (D.moe ? 88 : 46)*sc;
-  var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;   /* 厚度比 = 字节比 2:2:12 */
+  var THW = 3.6*sc, THG = 3.6*sc, THO = 21.6*sc, TH1 = THW+THG+THO;
   var BW2 = 104*sc, BD2 = clamp(D.dp*7, 46, 124)*sc;
-  var THA0 = 26*sc;                                   /* 激活托盘的峰值厚度（PP0 满载那一档） */
-  /* TOP 留给 stagebar：那排胶囊是 HTML 浮层，不在 SVG 坐标系里——viewBox 矮下去时
-     等轴测投影按**高度**撑满画布、两侧配平居中，栏标这行的屏幕纵坐标只随
-     svg-y×scale 走，不会因为挪了 TX1/TX2 就躲开它。90 撞过（实测两栏标题露在
-     胶囊底下），140 是量出来最小够用的安全值，不同预置（pp 从 2 到 5）都验过。 */
-  var TOP = 140;
-  /* PP 折进景深轴：不再"切几段就摆几只盒子、靠经验挪位凑连续"——BD1/BD2 本来就是
-     EP/DP 桶宽，D.pp 段首尾相接直接给成一段总景深 BD1_total/BD2_total，PP 由此变成
-     跟 TP/EP、CP/DP 同级的**真实第三根轴**，不是另起一套摆位语法。①栏三层厚度
-     处处相同，直接并成一整只盒子（一次 boxSVG，不再逐段画）；②栏厚度随在途
-     微批数逐段不同，仍要逐段画，但段与段之间用 p3(0,0,zOff) 算出的**真实 3D
-     位移**去摆（不是经验拼出来的 STEPX/PITCH）——同一条投影公式保证相邻两段
-     严丝合缝，缝隙为零是几何算出来的，不是试出来的。 */
+  var THA0 = 26*sc;
   var BD1_total = D.pp*BD1, BD2_total = D.pp*BD2;
-  var wBlockW = (BW1+BD1_total)*C, wBlockH = (BW1+BD1_total)*S + TH1;
-  var aBlockW = (BW2+BD2_total)*C, aBlockH = (BW2+BD2_total)*S + THA0;
-  /* TX1 也不能再是定值：PP 折成一条深度轴之后，越往深处的 PP 段标越往左下方
-     退（真实 3D 位移），最深那一段（(D.pp-1)*BD1 + 半只段深）的标签会伸出到
-     viewBox 左沿以外被裁掉——量的是最深那一段的左伸量（含文字宽度的余量），
-     不是拍一个够大的常数。pp 越多、EP 桶越宽，这里跟着往右让。 */
-  var TX1 = Math.max(270, (D.pp-0.5)*BD1*C + 130);
-  /* TX2：并排版里②栏的起点要让开①栏整块的实际宽度（wBlockW 现在含全部 PP 段的
-     景深，不再是给单只小托盘留的定值 730）——量的是内容本身，PP 越多、EP/DP 越
-     宽，这里跟着变宽，不会在盘古这类极端预置下撞在一起。 */
-  var TX2 = stacked ? TX1 : (TX1 + wBlockW + 220);
-  var TOP_W = TOP;
-  /* 摞起来时②整块落在①整块正下方：TOP_A = ①块的实际高度 + 一段给②抬头留的间距。
-     并排版里两栏共用同一行 Y，TOP_A 退化回 TOP_W。 */
-  var TOP_A = stacked ? (TOP_W + wBlockH + 64) : TOP_W;
-  var VW = (stacked ? TX1 + Math.max(wBlockW, aBlockW) : TX2 + aBlockW) + 260;
-  var H = (stacked ? TOP_A + aBlockH : TOP_W + Math.max(wBlockH, aBlockH)) + 40;
-  var actPeak = Math.max(1, Math.min(D.pp, D.ga));    /* PP0 峰值在途份数：厚度的分母 */
-  /* W 带改用 MEMC.w——与「合成·卡阵」那只单卡容量盒同一枚 token：那边权重/梯度/
-     优化器态/激活四档各有自己的签名色，这里原先图省事让 W 走中性灰（把颜色都
-     让给 TP/EP 刀色网格线），两处放一起颜色对不上号。TP 青、EP 紫两条网格线
-     对这个蓝色底的对比度仍然够——青比蓝亮得多，紫偏红、蓝偏冷，色相拉得开。 */
+  var actPeak = Math.max(1, Math.min(D.pp, D.ga));
   var CW = MEMC.w;
+
+  /* ── 统一 3D 场景：①②两栏沿 x 轴并排，共用投影，可旋转/缩放/平移 ── */
+  var XSEP = BW1 + 100*sc;
+  var sceneW = XSEP + BW2;
+  var sceneH = Math.max(TH1, THA0) + 8;
+  var sceneD = Math.max(BD1_total, BD2_total);
+  var cX = sceneW / 2, cY = sceneH / 2, cZ = sceneD / 2;
+
+  var stEl9 = $('stage');
+  var cw9 = (stEl9 && stEl9.clientWidth) || 1440;
+  var cAR9 = (stEl9 && stEl9.clientHeight > 60) ? stEl9.clientWidth / stEl9.clientHeight : 1.6;
+  var VW = clamp(Math.round(700 * cAR9), 700, 2400);
+  var VH = 700;
+
+  var origProj = proj;
+  var sceneMax = Math.max(sceneW + sceneD * 0.65, sceneH * 2);
+  var baseScale9 = clamp(VH * 0.45 / (sceneMax || 1), 1.5, 40);
+  var mxScale = baseScale9 * ui.zoom3;
+  var mxOX = VW / 2 + ui.panX3, mxOY = VH / 2 + ui.panY3;
+  var yaw9 = ui.yaw3 || 0, pitch9 = ui.pitch3 || 0;
+  var hasRot9 = Math.abs(yaw9) > 1e-6 || Math.abs(pitch9) > 1e-6;
+  var cy9g, sy9g, cp9g, sp9g;
+  if(hasRot9){ cy9g = Math.cos(yaw9); sy9g = Math.sin(yaw9); cp9g = Math.cos(pitch9); sp9g = Math.sin(pitch9); }
+
+  var gridOX = 0, gridOY = 0, gridOZ = 0;
+  proj = function(x, y, z, s){
+    var dx = (x + gridOX) - cX, dy = (y + gridOY) - cY, dz = (z + gridOZ) - cZ;
+    if(hasRot9){
+      var rx = dx*cy9g + dz*sy9g, rz = dz*cy9g - dx*sy9g;
+      var ry = dy*cp9g - rz*sp9g; rz = dy*sp9g + rz*cp9g;
+      dx = rx; dy = ry; dz = rz;
+    }
+    return [mxOX + (dx - dz)*C*mxScale*(s||1), mxOY + ((dx + dz)*S - dy)*mxScale*(s||1)];
+  };
+  projRot = hasRot9 ? function(n){
+    var rx = n[0]*cy9g + n[2]*sy9g, rz = n[2]*cy9g - n[0]*sy9g;
+    var ry = n[1]*cp9g - rz*sp9g; rz = n[1]*sp9g + rz*cp9g;
+    return [rx, ry, rz];
+  } : null;
 
   /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
   function holdersW(t,e){
@@ -6718,30 +6700,30 @@ function renderSolidGrid(D){
   var ptopW = function(a,b){ return p3(a, TH1, b); };
   var pIdx, t, e, cI, dI;
 
-  /* ═══ 两栏各自的抬头：整段的说明文字（总账题面、四形态生死表、点法）挪进
-     stagebar 那颗「？」说明按钮的弹层了（见函数尾）——这两行**留下**，它们不是
-     泛泛的说明，是「往下看的这一栏是什么」的栏标，离栏太远读者会脱节。 */
-  parts.push(txt(TX1-32, 92, '① 参数系三形态 · 一整块（PP/DP 都在里面）', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TX1-32, 108, 'W 权重 2B ＋ G 梯度 2B ＋ O 优化器态 12B · 厚度比 = 字节比 · 深度轴 = PP·EP', 10, 'var(--pt-fg2)', 'middle'));
-  /* ②栏抬头：摞起来时挪到②块正上方（TOP_A 之上），不再跟①共用顶部那一行。 */
-  var hdrYA1 = stacked ? (TOP_A - 48) : 92, hdrYA2 = stacked ? (TOP_A - 32) : 108;
-  var hdrXA = stacked ? (TX2-32) : (TX2-40);
-  parts.push(txt(hdrXA, hdrYA1, '② 激活体 · 一整块（PP/DP 都在里面）', 14, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(hdrXA, hdrYA2, 'b ← DP 真切 · s ← CP 真切 · 深度轴 = PP·DP · 厚度 = 此刻在途 μb', 10, 'var(--pt-fg2)', 'middle'));
+  var hdr1 = p3(BW1*0.4, TH1+18, 0);
+  parts.push(txt(hdr1[0], hdr1[1]-12, '① 参数系三形态 · 一整块', 12, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(hdr1[0], hdr1[1]+2, 'W 2B ＋ G 2B ＋ O 12B · 深度 = PP·EP', 9, 'var(--pt-fg2)', 'middle'));
+  gridOX = XSEP;
+  var hdr2 = p3(BW2*0.4, TH1+18, 0);
+  parts.push(txt(hdr2[0], hdr2[1]-12, '② 激活体 · 一整块', 12, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(hdr2[0], hdr2[1]+2, 'b ← DP · s ← CP · 深度 = PP·DP', 9, 'var(--pt-fg2)', 'middle'));
+  gridOX = 0;
 
   /* ═══ ①参数系：一整只盒子，景深轴 = D.pp 段 EP 桶首尾相接（BD1_total）══════
      三层厚度处处相同（THO/THG/THW 不随 pIdx 变），不必逐段画——一次 boxSVG 就是
      完整的一整块，PP 不再是"摆几只盒子"，是这只盒子本身的一条轴，和 TP/EP 同级。 */
-  var Y0w = TOP_W + TH1;
+  gridOX = 0; gridOY = 0; gridOZ = 0;
   var gp = [], gh = [];
   gp.push(boxSVG(0,0,0,BW1,THO,BD1_total,1,{fill:MEMC.opt, stroke:'var(--pt-bg)', sw:.4}));
   gp.push(boxSVG(0,THO,0,BW1,THG,BD1_total,1,{fill:MEMC.g, stroke:'var(--pt-bg)', sw:.4}));
   gp.push(boxSVG(0,THO+THG,0,BW1,THW,BD1_total,1,{fill:CW, stroke:'var(--pt-bg)', sw:.4}));
-  /* DP 复印的剪影叠贴在这一整块的后面画一次：×dp 是整套参数系的事，不逐段重复 */
   if(D.dp>1){
-    var KD = Math.min(D.dp-1, 14), oX = Math.min(7, 40/Math.max(1,D.dp-1)), oY = Math.min(4.6, 26/Math.max(1,D.dp-1));
-    for(var k1=KD; k1>=1; k1--)
-      parts.push('<g transform="translate('+(TX1+k1*oX).toFixed(1)+','+(Y0w-k1*oY).toFixed(1)+')" opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1_total))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+    var KD = Math.min(D.dp-1, 14), oX3d = Math.min(5, 28/Math.max(1,D.dp-1)), oY3d = Math.min(3, 18/Math.max(1,D.dp-1));
+    for(var k1=KD; k1>=1; k1--){
+      gridOX = k1*oX3d; gridOY = k1*oY3d;
+      parts.push('<g opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW1,TH1,BD1_total))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
+    }
+    gridOX = 0; gridOY = 0;
   }
   var dx1 = BW1/D.tp, dz1 = BD1/nE;
   for(pIdx=0; pIdx<D.pp; pIdx++){
@@ -6777,61 +6759,48 @@ function renderSolidGrid(D){
     /* 段标（可点换段）＋这一段每卡的三份账——都锚在这一段自己的深度范围上，
        不再靠经验挪位的 lx/ly，是这一段真实几何位置反查出来的屏幕点 */
     var lAnchor = ptopW(0, zOffW+BD1*0.5);
-    var lx = lAnchor[0]-30, ly = lAnchor[1];
-    gp.push(txt(lx, ly, 'PP'+pIdx, 12, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    gp.push(txt(lx, ly+13, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 9, 'var(--pt-fg3)', 'end'));
-    if(hlStage===pIdx) gp.push(txt(lx, ly+25, 'L'+revLi+' 在这一段', 8.5, VC.pp, 'end', 'font-weight="700"'));
-    gh.push('<g class="cgrow"><rect x="'+(lx-64).toFixed(1)+'" y="'+(ly-12).toFixed(1)+'" width="68" height="28" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
+    var lx = lAnchor[0]-24/mxScale, ly = lAnchor[1];
+    gp.push(txt(lx, ly, 'PP'+pIdx, 11, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    gp.push(txt(lx, ly+12, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 8.5, 'var(--pt-fg3)', 'end'));
+    if(hlStage===pIdx) gp.push(txt(lx, ly+23, 'L'+revLi+' 在这一段', 8, VC.pp, 'end', 'font-weight="700"'));
+    gh.push('<g class="cgrow"><rect x="'+(lx-54).toFixed(1)+'" y="'+(ly-10).toFixed(1)+'" width="58" height="26" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'（其余坐标不动）</title></rect></g>');
     var rCorner = ptopW(BW1, zOffW+BD1);
-    var rx1 = rCorner[0]+14, ry1 = rCorner[1]+TH1*0.8;
+    var rx1 = rCorner[0]+10/mxScale, ry1 = rCorner[1]+TH1*0.8;
     if(pIdx===0){
-      /* 顶段右侧压着 DP 剪影叠（横向最多探出 ~40px），标注让到剪影右边 */
-      var rx0 = rx1 + (D.dp>1 ? 50 : 0);
-      gp.push(txt(rx0, ry1-30, '×'+D.dp+' 复印（DP）', 10.5, VC.dp, 'start', 'font-weight="800"'));
-      gp.push(txt(rx0, ry1-16, 'W·O 逐字相同 · G 归约前各不相同', 9, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 10, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+14, 'G 梯度 '+fmtGB(2*P9)+' GB', 10, MEMC.g, 'start', 'font-weight="700"'));
-      gp.push(txt(rx0, ry1+28, 'O 优化器态 '+fmtGB(12*P9)+' GB', 10, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
+      var rx0 = rx1 + (D.dp>1 ? 40/mxScale : 0);
+      gp.push(txt(rx0, ry1-26/mxScale, '×'+D.dp+' 复印（DP）', 10, VC.dp, 'start', 'font-weight="800"'));
+      gp.push(txt(rx0, ry1-14/mxScale, 'W·O 逐字相同 · G 归约前各不相同', 8.5, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx0, ry1, 'W 权重 '+fmtGB(2*P9)+' GB', 9.5, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+12/mxScale, 'G 梯度 '+fmtGB(2*P9)+' GB', 9.5, MEMC.g, 'start', 'font-weight="700"'));
+      gp.push(txt(rx0, ry1+24/mxScale, 'O 优化器态 '+fmtGB(12*P9)+' GB', 9.5, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
     }else{
-      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 9.4, 'var(--pt-fg3)', 'start'));
-      gp.push(txt(rx1, ry1+14, 'O '+fmtGB(12*P9)+' GB', 9.4, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1, 'W '+fmtGB(2*P9)+' · G '+fmtGB(2*P9), 9, 'var(--pt-fg3)', 'start'));
+      gp.push(txt(rx1, ry1+12/mxScale, 'O '+fmtGB(12*P9)+' GB', 9, 'var(--pt-fg3)', 'start'));
     }
   }
-  /* TP 缝贯穿整块（h 这把刀跟 PP 无关，横着走满全深度）；外框描一整圈，
-     层反查命中的那一段单独在它自己的深度范围内叠一圈 PP 橙描边 */
   var swT = dx1*C>4?.9:.5;
   for(t=1;t<D.tp;t++) gp.push(ln(ptopW(t*dx1,0), ptopW(t*dx1,BD1_total), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
   gp.push(boxSVG(0,0,0,BW1,TH1,BD1_total,1,{wire:true, stroke:'var(--pt-bds)', sw:.8}));
   if(hlStage>=0) gp.push(boxSVG(0,0,hlStage*BD1,BW1,TH1,BD1,1,{wire:true, stroke:VC.pp, sw:1.7}));
-  /* 轴名：认领关系写在轴上，整块只需一次 */
   var fm2 = ptopW(BW1*0.55, 0);
-  gp.push(txt(fm2[0]+30, fm2[1]-10, 'h ← '+DIMN.tp+'×'+D.tp, 11, VC.tp, 'start', 'font-weight="800"'));
+  gp.push(txt(fm2[0]+24/mxScale, fm2[1]-8/mxScale, 'h ← '+DIMN.tp+'×'+D.tp, 10, VC.tp, 'start', 'font-weight="800"'));
   var zm2 = ptopW(0, BD1_total*0.5);
-  gp.push(txt(zm2[0]-34, zm2[1]-20, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep+'（每段内重复）' : 'e 轴不存在（无 MoE）', 11, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
+  gp.push(txt(zm2[0]-28/mxScale, zm2[1]-16/mxScale, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在', 10, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
   var lTop = ptopW(0, 0);
-  gp.push(txt(lTop[0]-30, lTop[1]-24, 'ℓ ← '+DIMN.pp+'×'+D.pp+'（这条深度轴，不再分开摆）', 11, VC.pp, 'end', 'font-weight="800"'));
-  parts.push('<g transform="translate('+TX1+','+Y0w.toFixed(1)+')">'+gp.join('')+'</g>');
-  hits.push('<g transform="translate('+TX1+','+Y0w.toFixed(1)+')">'+gh.join('')+'</g>');
+  gp.push(txt(lTop[0]-24/mxScale, lTop[1]-20/mxScale, 'ℓ ← '+DIMN.pp+'×'+D.pp, 10, VC.pp, 'end', 'font-weight="800"'));
+  parts.push(gp.join(''));
+  hits.push(gh.join(''));
 
-  /* ═══ ②激活体：厚度逐段不同（在途微批数随 PP 段递减），不能并成一次 boxSVG，
-     但段与段之间的摆位改用 p3(0,0,zOff) 算出的真实 3D 位移——同一条投影公式，
-     跟①栏"同一块盒子延伸出来的下一截"是一回事，只是这里必须分开画厚度。
-     真实位移保证相邻两段严丝合缝，画出来仍然是一整条连续的体，不是分开的几段。 */
+  /* ═══ ②激活体 ═══ */
   var dx2 = BW2/D.cp, dz2 = BD2/D.dp;
   for(pIdx=0; pIdx<D.pp; pIdx++){
     var zOffA = pIdx*BD2;
-    var shiftA = p3(0,0,zOffA);
-    var TXAi = TX2 + shiftA[0], Y0ai = TOP_A + TH1 + shiftA[1];
+    gridOX = XSEP; gridOY = 0; gridOZ = zOffA;
     var nIf = inflightAt(D, pIdx, ACT_T);
     var THA = Math.max(2.5*sc, THA0 * nIf/actPeak);
     var actB = D.mbs*(D.seq/D.cp)*D.hidden*lps*ACT_COEF*nIf;
     var ap = [], ah = [];
     var ptopA = (function(th){ return function(a,b){ return p3(a, th, b); }; })(THA);
-    /* 颜色、缝、面层次都跟①栏同一套语汇：raw MEMC.act（不再兑淡）+ 背景色缝——
-       上一版拿 solid(MEMC.act,42) 兑淡显色是为了让格线更显眼，代价是整块看着
-       发灰、跟①栏满饱和度的蓝/绿/紫脱节。这里改回原色，让两栏读成同一个色彩
-       体系；格线改用更粗的描边（下面 stroke-width 从 .8 提到 1）保证兑淡去掉后
-       仍然看得清缝在哪。 */
     ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{fill:MEMC.act, stroke:'var(--pt-bg)', sw:.4}));
     for(cI=0;cI<D.cp;cI++) for(dI=0;dI<D.dp;dI++){
       var q5 = [ptopA(cI*dx2,dI*dz2), ptopA((cI+1)*dx2,dI*dz2), ptopA((cI+1)*dx2,(dI+1)*dz2), ptopA(cI*dx2,(dI+1)*dz2)];
@@ -6847,21 +6816,30 @@ function renderSolidGrid(D){
     for(dI=1;dI<D.dp;dI++) ap.push(ln(ptopA(0,dI*dz2), ptopA(BW2,dI*dz2), 'stroke:'+VC.dp+';stroke-width:'+swD+';stroke-opacity:.75'));
     if(pIdx===co.p) ap.push(boxSVG(co.c*dx2, 0, co.d*dz2, dx2, THA, dz2, 1, {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
     ap.push(boxSVG(0,0,0,BW2,THA,BD2,1,{wire:true, stroke: hlStage===pIdx?VC.pp:'var(--pt-bds)', sw: hlStage===pIdx?1.7:.8, dash:'4 3'}));
-    /* PP 段标：跟①栏同一处理——两栏现在都是"一整块沿深度轴延伸"，标签给一样的
-       样式才读得出「这是同一条轴」，不是①有标签②没有的两套语汇。 */
     var lAnchorA = ptopA(0, BD2*0.5);
-    ap.push(txt(lAnchorA[0]-30, lAnchorA[1], 'PP'+pIdx, 11.5, pIdx===co.p?VC.pp:'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    var rx2 = BW2*C + 14, ry2 = BW2*S - THA*0.2;
-    ap.push(txt(rx2, ry2, 'A '+fmtGB(actB)+' GB', 10, VC.dp, 'start', 'font-weight="700"'));
-    ap.push(txt(rx2, ry2+14, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 9, 'var(--pt-fg3)', 'start'));
+    ap.push(txt(lAnchorA[0]-24/mxScale, lAnchorA[1], 'PP'+pIdx, 10.5, pIdx===co.p?VC.pp:'var(--pt-fg2)', 'end', 'font-weight="800"'));
+    var rCorA = ptopA(BW2, 0);
+    ap.push(txt(rCorA[0]+10/mxScale, rCorA[1], 'A '+fmtGB(actB)+' GB', 9.5, VC.dp, 'start', 'font-weight="700"'));
+    ap.push(txt(rCorA[0]+10/mxScale, rCorA[1]+12/mxScale, '在途 '+(Math.abs(nIf-Math.round(nIf))<0.05?Math.round(nIf):nIf.toFixed(1))+' μb', 8.5, 'var(--pt-fg3)', 'start'));
     if(pIdx===0){
       var fm3 = ptopA(BW2*0.55, 0);
-      ap.push(txt(fm3[0]+30, fm3[1]-10, 's ← '+DIMN.cp+'×'+D.cp, 11, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
+      ap.push(txt(fm3[0]+24/mxScale, fm3[1]-8/mxScale, 's ← '+DIMN.cp+'×'+D.cp, 10, D.cp>1?VC.cp:'var(--pt-fg3)', 'start', 'font-weight="800"'));
       var zm3 = ptopA(0, BD2*0.5);
-      ap.push(txt(zm3[0]-34, zm3[1]-20, 'b ← '+DIMN.dp+'×'+D.dp, 11, VC.dp, 'end', 'font-weight="800"'));
+      ap.push(txt(zm3[0]-28/mxScale, zm3[1]-16/mxScale, 'b ← '+DIMN.dp+'×'+D.dp, 10, VC.dp, 'end', 'font-weight="800"'));
     }
-    parts.push('<g transform="translate('+TXAi.toFixed(1)+','+Y0ai.toFixed(1)+')">'+ap.join('')+'</g>');
-    hits.push('<g transform="translate('+TXAi.toFixed(1)+','+Y0ai.toFixed(1)+')">'+ah.join('')+'</g>');
+    parts.push(ap.join(''));
+    hits.push(ah.join(''));
+  }
+
+  /* ═══ ①②之间的连线：每个 PP 段画一条虚线 ═══ */
+  for(pIdx=0; pIdx<D.pp; pIdx++){
+    var zM1 = pIdx*BD1 + BD1*0.5, zM2 = pIdx*BD2 + BD2*0.5;
+    gridOX = 0; gridOY = 0; gridOZ = 0;
+    var fromPt = p3(BW1, TH1*0.5, zM1);
+    gridOX = XSEP; gridOZ = 0;
+    var toPt = p3(0, TH1*0.5, zM2);
+    gridOX = 0; gridOZ = 0;
+    parts.push(ln(fromPt, toPt, 'stroke:var(--pt-fg3);stroke-width:1;stroke-dasharray:6 4;stroke-opacity:.45'));
   }
 
   /* ═══ 说明弹层：总账题面、点法、四形态×生命周期表 —— 都挪进这颗「？」按钮里 ═══
@@ -6901,15 +6879,14 @@ function renderSolidGrid(D){
       }).join('')
     + '</table>';
 
-  /* declared viewBox 按 k 一起收放（内容坐标本身不用改）：scale(k) 把 0..VW 的内容
-     铺到 0..VW*k 的 declared 空间，容器每像素对应的 declared 单位数因此恒等于
-     VW/1440，与 cw0 无关——这就是「多窄的面板都还是那个像素数」的落地方式，
-     见函数开头 k 的注释。click 命中区跟着同一层 transform 走，浏览器按最终渲染
-     几何算命中，不需要另外换算。 */
-  $('stage').innerHTML = '<svg viewBox="0 0 '+(VW*k).toFixed(1)+' '+(H*k).toFixed(1)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
-    + '<g transform="scale('+k.toFixed(4)+')">'
+  proj = origProj;
+  projRot = null;
+  gridOX = 0; gridOY = 0; gridOZ = 0;
+
+  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+VH+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('')
-    + '</g></svg>';
+    + '</svg>';
+  viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3, vw: VW, vh: VH};
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
@@ -8571,7 +8548,7 @@ function scheduleCrisp(){
     if(vr9 && Math.abs(vr9.zoom - ui.zoom3) < 1e-4
        && Math.abs(vr9.panX - ui.panX3) < .05 && Math.abs(vr9.panY - ui.panY3) < .05) return;
     var D9 = derive(cfg);
-    if(D9.ok){ if(ui.view === 'chain'){ renderChain(D9); urlWrite(); } else if(ui.view === 'memex'){ renderMemExplode(D9); urlWrite(); } }
+    if(D9.ok){ if(ui.view === 'chain'){ renderChain(D9); urlWrite(); } else if(ui.view === 'memex'){ renderMemExplode(D9); urlWrite(); } else if(ui.view==='solid'&&ui.persp==='grid'){ renderSolidGrid(D9); urlWrite(); } }
   }, 420);
 }
 function syncZoomHud(){
@@ -10908,8 +10885,9 @@ var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
   var isCav = ui.view === 'solid' && ui.persp === 'cav';
   var isMex = ui.view === 'memex';
-  if(ui.view !== 'chain' && !isCav && !isMex) return;
-  var pan = isCav ? false : (isMex ? (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1) : (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d'));
+  var isGrid = ui.view === 'solid' && ui.persp === 'grid';
+  if(ui.view !== 'chain' && !isCav && !isMex && !isGrid) return;
+  var pan = isCav ? false : ((isMex || isGrid) ? (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1) : (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d'));
   if(ev.button === 1 || ev.ctrlKey) ev.preventDefault();
   var cs = 1;
   var svg = $('stage').querySelector('svg');
@@ -10953,7 +10931,7 @@ $('stage').addEventListener('pointermove', function(ev){
   lowDetail = true;
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
-    var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='memex') renderMemExplode(D9); }
+    var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='memex') renderMemExplode(D9); else if(ui.view==='solid'&&ui.persp==='grid') renderSolidGrid(D9); }
   });
 });
 var swallowClick = false;
@@ -10988,7 +10966,7 @@ $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
 /* ── 滚轮缩放（向光标位置缩放）：只改 transform，不重建场景 ── */
 $('stage').addEventListener('wheel', function(ev){
-  if(ui.view !== 'chain' && ui.view !== 'memex') return;
+  if(ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) return;
   ev.preventDefault();
   var svg = $('stage').querySelector('svg');
   if(!svg) return;
@@ -11021,7 +10999,7 @@ $('stage').addEventListener('wheel', function(ev){
 }, {passive:false});
 /* ── 双击复位到**当前视角 tab**的标准机位 ── */
 $('stage').addEventListener('dblclick', function(ev){
-  if(ui.view !== 'chain' && ui.view !== 'memex') return;
+  if(ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) return;
   if(ev.target.closest('[data-act]') || ev.target.closest('.cardg')) return;
   var tp0 = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d'];
   ui.yaw3 = tp0[0]; ui.pitch3 = tp0[1]; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
@@ -11030,7 +11008,7 @@ $('stage').addEventListener('dblclick', function(ev){
 /* ── 触屏双指缩放+平移 ── */
 var touch3 = null;
 $('stage').addEventListener('touchstart', function(ev){
-  if((ui.view !== 'chain' && ui.view !== 'memex') || ev.touches.length < 2) return;
+  if((ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) || ev.touches.length < 2) return;
   ev.preventDefault();
   var t = ev.touches;
   var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
