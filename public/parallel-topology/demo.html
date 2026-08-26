@@ -1037,7 +1037,6 @@ var VIEWS = [
   {id:'anatomy', name:'卡内解剖'},
   {id:'solid', name:'映射 · 双链/交集腔'},
   {id:'time', name:'时间·流'},
-  {id:'memex', name:'内存分层'}
 ];
 /* 四个视角 tab 各自的机位。工具条那几颗按钮的 data-yaw/data-pitch 是同一套数，
    URL 里的 vtab 也认它——链接和点击必须落到同一个画面上。 */
@@ -1056,8 +1055,7 @@ var AVAIL = {
   time:{L1:false,L2:false,L3:true,L4:true,L5:true},
   anatomy:{L1:false,L2:false,L3:false,L4:false,L5:true},
   solid:{L1:true, L2:true, L3:true,L4:true,L5:false},   /* 仅交集腔子视角生效，见 layerAvail() */
-  story:{L1:false,L2:false,L3:false,L4:false,L5:false},  /* 全不生效，底栏整个隐藏（render()） */
-  memex:{L1:false,L2:false,L3:false,L4:false,L5:false}
+  story:{L1:false,L2:false,L3:false,L4:false,L5:false}   /* 全不生效，底栏整个隐藏（render()） */
 };
 var DEFAULTS = {
   dim:{L5:true},
@@ -1099,8 +1097,8 @@ function urlLoad(){
   });
   /* 旧链接别名：v1..v5 仍可用（发出去的链接不能失效） */
   var vw = q.get('view');
-  var LEGACY = {v1:'compose', v2:'time', v3:'anatomy', v4:['dim','dp'], v5:['dim','cp']};
-  if(LEGACY[vw]){ var lg = LEGACY[vw]; if(Array.isArray(lg)){ ui.view = lg[0]; ui.cutDim = lg[1]; } else ui.view = lg; }
+  var LEGACY = {v1:'compose', v2:'time', v3:'anatomy', v4:['dim','dp'], v5:['dim','cp'], memex:'solid'};
+  if(LEGACY[vw]){ var lg = LEGACY[vw]; if(Array.isArray(lg)){ ui.view = lg[0]; ui.cutDim = lg[1]; } else { ui.view = lg; if(vw==='memex') ui.persp = 'grid'; } }
   else if(VIEWS.some(function(x){return x.id===vw;})) ui.view = vw;
   if(COMM_DIMS.indexOf(q.get('cut'))>=0) ui.cutDim = q.get('cut');
   var sl = parseInt(q.get('sel'),10); if(isFinite(sl) && sl>=0) sel = sl;
@@ -6601,86 +6599,69 @@ function renderSolidCav(D){
   $('detach').hidden = true;
 }
 
-/* ═════════ 视角③ 全局切分：全部的腔一次摆开，各归谁 ═════════
-   视角②「交集腔」答「为什么恰好是这一块」——一张卡、一只腔，几何证明。
-   这一张答下一问：**整套账摊开**——不再只给选中那张卡看它的腔，而是把全部的腔
-   一次画全：谁持有哪一格，点哪一格就定位到持有它的那张卡（组合工作台靠这一下
-   联动并行拓扑与泳道）。
-   四个形态一起画（②只有权重体/激活体两只盒子）：
-     · 权重 W / 梯度 G / 优化器态 O —— **同一套切分**（ℓ×h×e，PP/TP/EP 三刀），
-       区别只在字节（2+2+12 = 16 B/参数）与生命周期，所以画成**同一只托盘的三层
-       厚度**，不画三只重复的盒子——厚度比就是字节比，优化器态那层最厚一眼可见；
-     · 激活 A —— 自己一套（ℓ×h×b×s）：b 被 DP 真切、s 被 CP 真切，与①并排对照。
-   ℓ 沿 PP 拆成一叠托盘（自上而下 = PP0→PP(n-1)，与整网图/泳道同序；②里 ℓ 轴
-   朝上是「一只盒子」的画法，这里拆开了，读序优先）。每只托盘的**顶面就是那一段
-   的全部腔**，逐格都是命中区：
-     · 参数系格 (t,e)：持有它的卡在 (c,d) 里搜（epOf==e，优先贴着当前卡的 c/d）。
-       EP 折叠 q=(d·CP+c)·TP+t 会把 e 桶错开在 TP 列上，于是有的格**没有持有者**
-       ——那不是漏画，是折叠的真实结构：画成斜线空格，悬浮里说明白。
-     · 激活格 (c,d)：持有者是同 (c,d,p) 的整个 TP 组，保持当前 t 定位其中一张。
-   点格走 pickg（data-g 在渲染时就解析成 rank）：选中跨视图保持、ptoNotifyHost
-   上报宿主——这正是这一视角进组合工作台「整网图」tab 的用途。 */
+/* ═════════ 视角③ 全局切分（合并原「内存分层」）═════════
+   六个档位（W/G/O/临时/A/碎片）分层展开——层间留间距，每层内部按 PP 段排列，
+   权重层按算子×切法分色，激活层按微批次细分，梯度/优化器态与权重同刀线。
+   MoE 时 EP 桶沿深度轴完整展开，不省略。
+   W 层顶面画 TP×EP 格点命中区（pickg → 定位持有者），每层右侧面 memblockpick
+   → 高亮左侧面板。旋转/缩放/平移/双击复位沿用 chain 的 3D 操控。 */
 function renderSolidGrid(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
-  var parts = [], hits = [];
   var lps = D.layersPerStage, kE = D.moe ? D.experts/D.ep : 0;
+  var nE = D.moe ? D.ep : 1;
   function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
   function p3(x,y,z){ return proj(x,y,z,1); }
-  function sil(w,h,d){ return [p3(0,h,0),p3(w,h,0),p3(w,0,0),p3(w,0,d),p3(0,0,d),p3(0,h,d)]; }
 
-  var sc = Math.min(1, Math.sqrt(4/D.pp)) * 1.3;
-  var nE = D.moe ? D.ep : 1;
-  var BW = 130*sc, BD = (D.moe ? 88 : 46)*sc;
-  var BD_total = D.pp * BD;
-  var CW = MEMC.w;
+  /* ── 收集每一段的内存数据 ── */
+  var PP = D.pp, cap = D.hbm * Math.pow(2,30);
+  var LAYER_ORDER = ['w','g','opt','otmp','act','rsv'];
+  var LAYER_LABEL = {w:'权重 W', g:'梯度 ∇W', opt:'优化器态 O', otmp:'临时区', act:'激活 A', rsv:'碎片/预留'};
+  var stageData = [], globalByK = {};
+  LAYER_ORDER.forEach(function(k){ globalByK[k] = 0; });
+  for(var p9 = 0; p9 < PP; p9++){
+    var segs = memParts(D, p9);
+    var byK = {};
+    segs.forEach(function(sg){ byK[sg.k] = sg; globalByK[sg.k] += sg.bytes; });
+    stageData.push({p: p9, segs: segs, byK: byK, wBlocks: wCutBlocks(D, p9)});
+  }
+  var totalGlobal = 0;
+  LAYER_ORDER.forEach(function(k){ totalGlobal += globalByK[k]; });
 
-  /* 内存各层字节数（按选中的 PP 段）——五层从底到顶：O → G → W → A → 碎片 */
-  var mp9 = memParts(D, co.p);
-  var STACK = [
-    {k:'opt', label:'优化器态 O', bytes:mp9[2].bytes, color:MEMC.opt},
-    {k:'g',   label:'梯度 ∇W',   bytes:mp9[1].bytes, color:MEMC.g},
-    {k:'w',   label:'权重 W',    bytes:mp9[0].bytes, color:MEMC.w},
-    {k:'act', label:'激活 A',    bytes:mp9[4].bytes, color:MEMC.act},
-    {k:'rsv', label:'碎片/预留',  bytes:mp9[5].bytes, color:MEMC.rsv}
-  ];
-  var totalBytes9 = 0;
-  STACK.forEach(function(l){ totalBytes9 += Math.max(l.bytes, 0); });
-  var TOTAL_H9 = 88*sc, MIN_LH = 8*sc;
-  var usableH9 = Math.max(0, TOTAL_H9 - STACK.length * MIN_LH);
-  var totalSqrt9 = 0;
-  STACK.forEach(function(l){ l._sq = Math.sqrt(Math.max(l.bytes, 1)); totalSqrt9 += l._sq; });
-  STACK.forEach(function(l){
-    l.h = MIN_LH + (totalSqrt9 > 0 ? usableH9 * l._sq / totalSqrt9 : usableH9 / STACK.length);
+  /* ── 场景布局：分层展开 + EP 全量展开 ── */
+  var BW = 8, BD_ep = D.moe ? 1.6 : 2.2;
+  var EP_GAP = D.moe ? 0.35 : 0, PP_GAP = 1.0, LAYER_GAP = 1.0;
+  var BD_pp = nE * BD_ep + Math.max(0, nE - 1) * EP_GAP;
+  var totalZ = PP * BD_pp + Math.max(0, PP - 1) * PP_GAP;
+  var maxAvgBytes = Math.max.apply(null, LAYER_ORDER.map(function(k){ return globalByK[k] / PP; }));
+  if(maxAvgBytes < 1) maxAvgBytes = 1;
+  var layers = [], accY = 0;
+  LAYER_ORDER.forEach(function(k){
+    var avgBytes = globalByK[k] / PP;
+    if(avgBytes < cap * 0.002) return;
+    var th = Math.max(0.28, 3.0 * avgBytes / maxAvgBytes);
+    layers.push({k: k, y0: accY, th: th});
+    accY += th + LAYER_GAP;
   });
-  var TH = 0;
-  STACK.forEach(function(l){ TH += l.h; });
+  var totalH = accY > 0 ? accY - LAYER_GAP : 1;
+  var cX = BW / 2, cY = totalH / 2, cZ = totalZ / 2;
 
-  /* ── 统一 3D 场景：五层堆叠的单柱 ── */
-  var sceneW = BW;
-  var sceneH = TH + 50;
-  var sceneD = BD_total;
-  var cX = sceneW / 2, cY = sceneH / 2, cZ = sceneD / 2;
-
+  /* ── 视口 & 投影覆盖 ── */
   var stEl9 = $('stage');
-  var cw9 = (stEl9 && stEl9.clientWidth) || 1440;
   var cAR9 = (stEl9 && stEl9.clientHeight > 60) ? stEl9.clientWidth / stEl9.clientHeight : 1.6;
   var VW = clamp(Math.round(700 * cAR9), 700, 2400);
-  var VH = 700;
-
+  var VH = Math.max(500, Math.round(VW / Math.max(0.5, cAR9)));
   var origProj = proj;
-  var sceneMax = Math.max(sceneW + sceneD * 0.65, sceneH * 2);
-  var baseScale9 = clamp(VH * 0.45 / (sceneMax || 1), 0.5, 40);
+  var sceneMax = Math.max(BW + totalZ * 0.65, totalH + 2);
+  var baseScale9 = clamp(380 / (sceneMax || 1), 0.5, 40);
   var mxScale = baseScale9 * ui.zoom3;
   var mxOX = VW / 2 + ui.panX3, mxOY = VH / 2 + ui.panY3;
   var yaw9 = ui.yaw3 || 0, pitch9 = ui.pitch3 || 0;
   var hasRot9 = Math.abs(yaw9) > 1e-6 || Math.abs(pitch9) > 1e-6;
   var cy9g, sy9g, cp9g, sp9g;
   if(hasRot9){ cy9g = Math.cos(yaw9); sy9g = Math.sin(yaw9); cp9g = Math.cos(pitch9); sp9g = Math.sin(pitch9); }
-
-  var gridOX = 0, gridOY = 0, gridOZ = 0;
   proj = function(x, y, z, s){
-    var dx = (x + gridOX) - cX, dy = (y + gridOY) - cY, dz = (z + gridOZ) - cZ;
+    var dx = x - cX, dy = y - cY, dz = z - cZ;
     if(hasRot9){
       var rx = dx*cy9g + dz*sy9g, rz = dz*cy9g - dx*sy9g;
       var ry = dy*cp9g - rz*sp9g; rz = dy*sp9g + rz*cp9g;
@@ -6694,14 +6675,13 @@ function renderSolidGrid(D){
     return [rx, ry, rz];
   } : null;
 
-  /* 参数系格 (t,e) 的持有者：在 (c,d) 里搜 EP 折叠命中的那些坐标 */
+  /* ── 参数系格持有者（pickg 用） ── */
   function holdersW(t,e){
     var out = [], c, d;
     for(d=0; d<D.dp; d++) for(c=0; c<D.cp; c++)
       if(!D.moe || epOf(t,c,d,D).ep===e) out.push([c,d]);
     return out;
   }
-  /* 优先贴着当前卡定位：同 (c,d) > 同 d > 第一个——点格换的是 (p,t,e)，b/s 尽量不动 */
   function pickHolder(hs){
     var best = hs[0], i;
     for(i=0;i<hs.length;i++){
@@ -6713,97 +6693,201 @@ function renderSolidGrid(D){
 
   var revLi = parseInt(ui.revLayer, 10);
   var hlStage = (isFinite(revLi) && revLi>=0 && revLi<D.layers) ? Math.floor(revLi/lps) : -1;
-  var pIdx, t, e;
 
-  /* ── DP 影子 ── */
-  if(D.dp>1){
-    var KD = Math.min(D.dp-1, 14), oX3d = Math.min(5, 28/Math.max(1,D.dp-1)), oY3d = Math.min(3, 18/Math.max(1,D.dp-1));
-    for(var k1=KD; k1>=1; k1--){
-      gridOX = k1*oX3d; gridOY = k1*oY3d;
-      parts.push('<g opacity="'+(0.16+0.4*(1-k1/(KD+1))).toFixed(2)+'"><polygon points="'+ptsStr(sil(BW,TH,BD_total))+'" style="fill:var(--pt-bg);stroke:'+VC.dp+';stroke-width:.6"/></g>');
-    }
-    gridOX = 0; gridOY = 0;
+  /* ═══ 生成盒子：每层×每PP段×每EP桶 ═══ */
+  var boxes = [];
+  var labels9 = [];
+  var ghits = [];
+
+  for(var pi = 0; pi < PP; pi++){
+    var sd = stageData[pi];
+    layers.forEach(function(ly){
+      var sg = sd.byK[ly.k];
+      if(!sg || sg.bytes < 1) return;
+      var isSel = (ui.memSel === ly.k);
+      for(var ei = 0; ei < nE; ei++){
+        var zB = pi * (BD_pp + PP_GAP) + ei * (BD_ep + EP_GAP);
+        if(ly.k === 'w' && sd.wBlocks.length > 0){
+          var wTot = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
+          if(wTot > 0){
+            var ax = 0;
+            sd.wBlocks.forEach(function(wb){
+              var x0 = (ax / wTot) * BW, xw = (wb.bytes / wTot) * BW;
+              ax += wb.bytes;
+              var cc = cutColor(wb.cut);
+              var blend = 'color-mix(in srgb, ' + cc + ' 35%, ' + sg.color + ')';
+              var dep = (x0 + xw/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+              boxes.push({svg: boxSVG(x0, ly.y0, zB, xw, ly.th, BD_ep, 1, {
+                fill: blend, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
+              }), depth: dep});
+              if(pi === PP - 1 && ei === nE - 1 && xw > 0.35){
+                var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD_ep + 0.2, 1);
+                var fs9 = Math.min(9, Math.max(5, xw * mxScale * 0.018));
+                labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:'+fs9.toFixed(1)+'px;fill:var(--pt-fg);text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
+              }
+            });
+          }
+        } else if(ly.k === 'act' && sg.mub > 1){
+          var mub9 = Math.max(1, Math.round(sg.mub));
+          var mbW = BW / mub9;
+          for(var mi = 0; mi < mub9; mi++){
+            var x0a = mi * mbW;
+            var dep2 = (x0a + mbW/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+            boxes.push({svg: boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD_ep, 1, {
+              fill: sg.color, sw: isSel ? 1.2 : 0.25, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
+            }), depth: dep2});
+          }
+        } else {
+          var dep3 = BW/2 + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+          boxes.push({svg: boxSVG(0, ly.y0, zB, BW, ly.th, BD_ep, 1, {
+            fill: sg.color, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
+          }), depth: dep3});
+          if((ly.k === 'g' || ly.k === 'opt' || ly.k === 'otmp') && sd.wBlocks.length > 0){
+            var wTot2 = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
+            if(wTot2 > 0){
+              var axOp = 0, lns = '';
+              sd.wBlocks.forEach(function(wb){
+                axOp += wb.bytes;
+                if(axOp < wTot2){
+                  var ux = (axOp / wTot2) * BW;
+                  var la9 = proj(ux, ly.y0, zB, 1), lb9 = proj(ux, ly.y0 + ly.th, zB, 1);
+                  lns += '<line x1="'+la9[0].toFixed(1)+'" y1="'+la9[1].toFixed(1)+'" x2="'+lb9[0].toFixed(1)+'" y2="'+lb9[1].toFixed(1)+'" style="stroke:color-mix(in srgb, '+sg.color+' 50%, #000);stroke-width:.3;opacity:.45"/>';
+                }
+              });
+              if(lns) boxes.push({svg: lns, depth: dep3 + 0.01});
+            }
+          }
+        }
+      }
+    });
+  }
+  boxes.sort(function(a, b){ return a.depth - b.depth; });
+
+  /* ── 层间连接虚线 ── */
+  var conn = '';
+  for(var ci9 = 0; ci9 < layers.length - 1; ci9++){
+    var lyT = layers[ci9], lyB = layers[ci9 + 1];
+    var yGap0 = lyT.y0 + lyT.th, yGap1 = lyB.y0;
+    [0, BW].forEach(function(cx){
+      [0, totalZ].forEach(function(cz){
+        var a9 = proj(cx, yGap0, cz, 1), b9 = proj(cx, yGap1, cz, 1);
+        conn += '<line x1="'+a9[0].toFixed(1)+'" y1="'+a9[1].toFixed(1)+'" x2="'+b9[0].toFixed(1)+'" y2="'+b9[1].toFixed(1)+'" style="stroke:var(--pt-fg3);stroke-width:.35;stroke-dasharray:2.5 2"/>';
+      });
+    });
   }
 
-  /* ═══ 五层堆叠：O → G → W → A → 碎片（底→顶）═══ */
-  var gp = [], gh = [];
-  var y0 = 0;
-  STACK.forEach(function(layer, li){
-    var isSel = (ui.memSel === layer.k);
-    gp.push(boxSVG(0, y0, 0, BW, layer.h, BD_total, 1, {
-      fill: layer.color,
-      stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)',
-      sw: isSel ? 1.4 : .4
-    }));
-    /* 右侧面（x=BW）点击 → memblockpick，关联左侧面板高亮 */
-    var rc9 = [p3(BW,y0,0), p3(BW,y0+layer.h,0), p3(BW,y0+layer.h,BD_total), p3(BW,y0,BD_total)];
-    gh.push('<g class="cgrow"><polygon points="'+ptsStr(rc9)+'" style="fill:transparent;cursor:pointer" data-act="memblockpick" data-mk="'+layer.k+'"><title>'+esc(layer.label+' · '+fmtGB(layer.bytes)+' GB/卡\n点击高亮左侧面板')+'</title></polygon></g>');
-    /* 右侧标签：名称 + GB/卡 · 全局 GB */
-    var lp9 = p3(BW, y0 + layer.h*0.5, 0);
-    gp.push(txt(lp9[0]+14/mxScale, lp9[1]-5/mxScale, layer.label, 9.5, isSel?'var(--pt-fg)':layer.color, 'start', 'font-weight="700"'));
-    gp.push(txt(lp9[0]+14/mxScale, lp9[1]+7/mxScale, fmtGB(layer.bytes)+' GB/卡 · 全局 '+fmtGB(layer.bytes*D.world)+' GB', 8, 'var(--pt-fg3)', 'start'));
-    y0 += layer.h;
+  /* ── W 层顶面：TP×EP 格点定位（pickg） ── */
+  var wLayer = null;
+  layers.forEach(function(l){ if(l.k === 'w') wLayer = l; });
+  var dx1 = BW / D.tp;
+  if(wLayer){
+    for(var pIdx = 0; pIdx < PP; pIdx++){
+      for(var ei2 = 0; ei2 < nE; ei2++){
+        var zOff = pIdx * (BD_pp + PP_GAP) + ei2 * (BD_ep + EP_GAP);
+        for(var t = 0; t < D.tp; t++){
+          var q4 = [p3(t*dx1, wLayer.y0+wLayer.th, zOff), p3((t+1)*dx1, wLayer.y0+wLayer.th, zOff),
+                    p3((t+1)*dx1, wLayer.y0+wLayer.th, zOff+BD_ep), p3(t*dx1, wLayer.y0+wLayer.th, zOff+BD_ep)];
+          var hs = holdersW(t, ei2);
+          var eLab = D.moe ? ' · e桶 E'+(ei2*kE)+'–E'+((ei2+1)*kE-1) : '';
+          if(!hs.length){
+            labels9.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
+            ghits.push('<polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('EP 折叠空格'+eLab)+'</title></polygon>');
+            continue;
+          }
+          var mine1 = (pIdx===co.p && t===co.t && (!D.moe || ei2===me.ep));
+          var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
+          labels9.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
+          ghits.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
+            + esc('PP'+pIdx+' · h片'+t+eLab+' → r'+rk)+'</title></polygon></g>');
+        }
+        var swT = dx1*C*mxScale > 4 ? .9 : .5;
+        for(var tt = 1; tt < D.tp; tt++)
+          labels9.push(ln(p3(tt*dx1, wLayer.y0+wLayer.th, zOff), p3(tt*dx1, wLayer.y0+wLayer.th, zOff+BD_ep), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
+      }
+      if(pIdx >= 1){
+        var ppZ2 = pIdx * (BD_pp + PP_GAP);
+        labels9.push(ln(p3(0, wLayer.y0+wLayer.th, ppZ2), p3(BW, wLayer.y0+wLayer.th, ppZ2), 'stroke:'+VC.pp+';stroke-width:1.5;stroke-opacity:.8'));
+      }
+      if(D.moe) for(var ee = 1; ee < nE; ee++){
+        var epZ2 = pIdx * (BD_pp + PP_GAP) + ee * (BD_ep + EP_GAP);
+        labels9.push(ln(p3(0, wLayer.y0+wLayer.th, epZ2), p3(BW, wLayer.y0+wLayer.th, epZ2), 'stroke:'+VC.ep+';stroke-width:.8;stroke-opacity:.7'));
+      }
+    }
+    if(co.p < PP){
+      var selZ = co.p * (BD_pp + PP_GAP) + (D.moe ? me.ep : 0) * (BD_ep + EP_GAP);
+      labels9.push(boxSVG(co.t*dx1, wLayer.y0, selZ, dx1, wLayer.th, BD_ep, 1,
+        {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
+    }
+    if(hlStage >= 0){
+      var hlZ = hlStage * (BD_pp + PP_GAP);
+      labels9.push(boxSVG(0, wLayer.y0, hlZ, BW, wLayer.th, BD_pp, 1, {wire:true, stroke:VC.pp, sw:1.7}));
+    }
+  }
+
+  /* ── memblockpick 命中区：每一层的右侧面 ── */
+  layers.forEach(function(ly){
+    var isSel = (ui.memSel === ly.k);
+    var sg0 = stageData[0].byK[ly.k];
+    if(!sg0) return;
+    var rc = [p3(BW, ly.y0, 0), p3(BW, ly.y0+ly.th, 0), p3(BW, ly.y0+ly.th, totalZ), p3(BW, ly.y0, totalZ)];
+    ghits.push('<g class="cgrow"><polygon points="'+ptsStr(rc)+'" style="fill:transparent;cursor:pointer" data-act="memblockpick" data-mk="'+ly.k+'"><title>'+esc(LAYER_LABEL[ly.k]+' · '+fmtGB(globalByK[ly.k])+' GB/卡\n点击高亮左侧面板')+'</title></polygon></g>');
   });
 
-  /* ── 顶面：TP×EP 格点定位 ── */
-  var ptopS = function(a,b){ return p3(a, TH, b); };
-  var dx1 = BW/D.tp, dz1 = BD/nE;
-  for(pIdx=0; pIdx<D.pp; pIdx++){
-    var zOff9 = pIdx*BD;
-    for(t=0;t<D.tp;t++) for(e=0;e<nE;e++){
-      var zA = zOff9+e*dz1, zB = zOff9+(e+1)*dz1;
-      var q4 = [ptopS(t*dx1,zA), ptopS((t+1)*dx1,zA), ptopS((t+1)*dx1,zB), ptopS(t*dx1,zB)];
-      var hs = holdersW(t,e);
-      var eLab = D.moe ? ' · e桶 E'+(e*kE)+'–E'+((e+1)*kE-1) : '';
-      if(!hs.length){
-        gp.push(ln(q4[0], q4[2], 'stroke:var(--pt-fg3);stroke-width:.6;stroke-opacity:.6'));
-        gh.push('<polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:help"><title>'+esc('EP 折叠空格'+eLab)+'</title></polygon>');
-        continue;
+  /* ── 层标签（左侧） ── */
+  layers.forEach(function(ly){
+    var sg0 = stageData[0].byK[ly.k];
+    if(!sg0) return;
+    var isSel = (ui.memSel === ly.k);
+    var lp = proj(-0.3, ly.y0 + ly.th / 2, totalZ + 0.8, 1);
+    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:8.5px;fill:'+(isSel?'var(--pt-fg)':sg0.color)+';text-anchor:end;dominant-baseline:central;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
+    var sp2 = proj(BW + 0.5, ly.y0 + ly.th / 2, 0, 1);
+    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:6.5px;fill:var(--pt-fg2);text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(fmtGB(globalByK[ly.k])+' GB/卡 · 全局 '+fmtGB(globalByK[ly.k]*D.world)+' GB') + '</text>');
+  });
+
+  /* ── PP 段标签 ── */
+  for(var pi2 = 0; pi2 < PP; pi2++){
+    var zPP = pi2 * (BD_pp + PP_GAP) + BD_pp / 2;
+    var lp2 = proj(-0.3, -0.4, zPP, 1);
+    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+lp2[1].toFixed(1)+'" style="font-size:7.5px;fill:'+(pi2===co.p ? VC.pp : 'var(--pt-fg2)')+';text-anchor:end;font-weight:'+(pi2===co.p?'800':'600')+';pointer-events:none">PP'+pi2+'</text>');
+    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+10).toFixed(1)+'" style="font-size:6px;fill:var(--pt-fg3);text-anchor:end;pointer-events:none">L'+(pi2*lps)+'–L'+((pi2+1)*lps-1)+'</text>');
+    if(hlStage === pi2)
+      labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+20).toFixed(1)+'" style="font-size:6px;fill:'+VC.pp+';text-anchor:end;font-weight:700;pointer-events:none">L'+revLi+' 在这一段</text>');
+    ghits.push('<g class="cgrow"><rect x="'+(lp2[0]-40).toFixed(1)+'" y="'+(lp2[1]-10).toFixed(1)+'" width="44" height="20" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pi2+'"><title>切到 PP'+pi2+'</title></rect></g>');
+  }
+
+  /* ── EP 标签（MoE 时，前两段标注） ── */
+  if(D.moe && nE > 1){
+    for(var pj = 0; pj < Math.min(PP, 2); pj++){
+      for(var ej = 0; ej < nE; ej++){
+        var zEP = pj * (BD_pp + PP_GAP) + ej * (BD_ep + EP_GAP) + BD_ep / 2;
+        var epLp = proj(BW + 0.3, -0.3, zEP, 1);
+        labels9.push('<text x="'+epLp[0].toFixed(1)+'" y="'+epLp[1].toFixed(1)+'" style="font-size:5.5px;fill:'+VC.ep+';text-anchor:start;dominant-baseline:central;pointer-events:none">E'+(ej*kE)+'–'+((ej+1)*kE-1)+'</text>');
       }
-      var mine1 = (pIdx===co.p && t===co.t && (!D.moe || e===me.ep));
-      var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
-      gp.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
-      gh.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
-        + esc('PP'+pIdx+' · h片'+t+eLab+' → r'+rk)+'</title></polygon></g>');
     }
-    var swE = dz1>4?.8:.4;
-    for(e=1;e<nE;e++) gp.push(ln(ptopS(0,zOff9+e*dz1), ptopS(BW,zOff9+e*dz1), 'stroke:'+VC.ep+';stroke-width:'+swE+';stroke-opacity:.7'));
-    if(pIdx>=1) gp.push(ln(ptopS(0,zOff9), ptopS(BW,zOff9), 'stroke:'+VC.pp+';stroke-width:1.5;stroke-opacity:.8'));
-    if(pIdx===co.p) gp.push(boxSVG(co.t*dx1, 0, zOff9+(D.moe?me.ep:0)*dz1, dx1, TH, dz1, 1,
-      {wire:true, stroke:'var(--pt-fg)', sw:1.6}));
-    var lAnchor = ptopS(0, zOff9+BD*0.5);
-    var lx = lAnchor[0]-24/mxScale, ly = lAnchor[1];
-    gp.push(txt(lx, ly, 'PP'+pIdx, 11, pIdx===co.p ? VC.pp : 'var(--pt-fg2)', 'end', 'font-weight="800"'));
-    gp.push(txt(lx, ly+12, 'L'+(pIdx*lps)+'–L'+((pIdx+1)*lps-1), 8.5, 'var(--pt-fg3)', 'end'));
-    if(hlStage===pIdx) gp.push(txt(lx, ly+23, 'L'+revLi+' 在这一段', 8, VC.pp, 'end', 'font-weight="700"'));
-    gh.push('<g class="cgrow"><rect x="'+(lx-54).toFixed(1)+'" y="'+(ly-10).toFixed(1)+'" width="58" height="26" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pIdx+'"><title>切到 PP'+pIdx+'</title></rect></g>');
   }
-  var swT = dx1*C>4?.9:.5;
-  for(t=1;t<D.tp;t++) gp.push(ln(ptopS(t*dx1,0), ptopS(t*dx1,BD_total), 'stroke:'+VC.tp+';stroke-width:'+swT+';stroke-opacity:.75'));
-  gp.push(boxSVG(0,0,0,BW,TH,BD_total,1,{wire:true, stroke:'var(--pt-bds)', sw:.8}));
-  if(hlStage>=0) gp.push(boxSVG(0,0,hlStage*BD,BW,TH,BD,1,{wire:true, stroke:VC.pp, sw:1.7}));
-  /* 轴标签 */
-  var fm2 = ptopS(BW*0.55, 0);
-  gp.push(txt(fm2[0]+24/mxScale, fm2[1]-8/mxScale, 'h ← '+DIMN.tp+'×'+D.tp, 10, VC.tp, 'start', 'font-weight="800"'));
-  var zm2 = ptopS(0, BD_total*0.5);
-  gp.push(txt(zm2[0]-28/mxScale, zm2[1]-16/mxScale, D.moe ? 'e ← '+DIMN.ep+'×'+D.ep : 'e 轴不存在', 10, D.moe?VC.ep:'var(--pt-fg3)', 'end', 'font-weight="800"'));
-  var lTop = ptopS(0, 0);
-  gp.push(txt(lTop[0]-24/mxScale, lTop[1]-20/mxScale, 'ℓ ← '+DIMN.pp+'×'+D.pp, 10, VC.pp, 'end', 'font-weight="800"'));
+
+  /* ── 轴标签 ── */
+  if(wLayer){
+    var fm2 = p3(BW*0.55, wLayer.y0+wLayer.th, 0);
+    labels9.push(txt(fm2[0]+20/mxScale, fm2[1]-6/mxScale, 'h ← '+DIMN.tp+'×'+D.tp, 8, VC.tp, 'start', 'font-weight="800"'));
+  }
+  var zm2 = p3(0, 0, totalZ*0.5);
+  labels9.push(txt(zm2[0]-24/mxScale, zm2[1]-12/mxScale, 'ℓ ← '+DIMN.pp+'×'+D.pp, 8, VC.pp, 'end', 'font-weight="800"'));
+  if(D.moe){
+    var em2 = p3(BW, 0, totalZ*0.2);
+    labels9.push(txt(em2[0]+20/mxScale, em2[1]+4/mxScale, 'e ← '+DIMN.ep+'×'+D.ep, 8, VC.ep, 'start', 'font-weight="800"'));
+  }
   /* DP 注解 */
-  if(D.dp>1){
-    var dpPt9 = p3(BW, 0, BD_total);
-    gp.push(txt(dpPt9[0]+10/mxScale, dpPt9[1]+14/mxScale, '×'+D.dp+' DP 副本', 10, VC.dp, 'start', 'font-weight="800"'));
+  if(D.dp > 1){
+    var dpP = proj(BW + 1.2, totalH * 0.7, -0.5, 1);
+    labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:9px;fill:'+VC.dp+';text-anchor:start;dominant-baseline:central;font-weight:800;pointer-events:none">×' + D.dp + ' DP 副本</text>');
   }
-  /* 合计 */
-  var sumPt = p3(BW*0.5, TH+14, BD_total*0.5);
-  gp.push(txt(sumPt[0], sumPt[1], '合计 '+fmtGB(totalBytes9)+' GB/卡 · 全局 '+fmtGB(totalBytes9*D.world)+' GB', 10, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(gp.join(''));
-  hits.push(gh.join(''));
-  /* ═══ 说明弹层：总账题面、点法、四形态×生命周期表 —— 都挪进这颗「？」按钮里 ═══
-     原来占着画布左栏（本卡逐条读数）与底部（差异表 + 两行页脚）的三处文字，
-     现在只剩「持有哪一腔」这一份**答案**由 #rankMem 那张标准读出卡给（见下方
-     render() 里放开的 grid 分支）——这里只留「怎么读这张总账」这一份**说明**，
-     点开才看，不占腾出来给托盘的画布。 */
+  /* 标题 */
+  labels9.push('<text x="24" y="28" style="font-size:13px;fill:var(--pt-fg);text-anchor:start;font-weight:800;pointer-events:none">' + esc('全局切分 · ' + D.world + ' 卡') + '</text>');
+  labels9.push('<text x="24" y="46" style="font-size:9px;fill:var(--pt-fg2);text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
+
+  /* ═══ 说明弹层 ═══ */
+  var CW = MEMC.w;
   var FORMS = [
     {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参数',       dp:'复印 ×'+D.dp+' · 逐字节相同',       life:'常驻整步'},
     {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参数',       dp:'各算各的 → AllReduce 后相同',       life:'反向逐层长出 · 更新后清零'},
@@ -6811,12 +6895,11 @@ function renderSolidGrid(D){
     {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途 μb 涨落', dp:'b 被真切（不是复印）',              life:'前向攒 · 反向放（1F1B）'}
   ];
   var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
-    + '<b style="color:var(--pt-fg)">全局切分总账</b>：五个档位（O·G·W·A·碎片）堆叠在一只盒子里，厚度 ∝ 字节数。'
-    + '点击某一层 → 高亮左侧面板对应档位；顶面 TP×EP 格点 → 定位持有它的那张卡'
+    + '<b style="color:var(--pt-fg)">全局切分总账</b>：六个档位分层展开，厚度 ∝ 字节数，权重层按算子×切法分色。'
+    + '点击层侧面 → 高亮左侧面板对应档位；W 层顶面 TP×EP 格点 → 定位持有它的那张卡'
     + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）。点 PP 标签换段。<br>'
-    + 'PP 是深度轴，沿轴数过去就是 ℓ0…ℓ(PP-1) 段；DP 副本画成半透明影子排在后方。<br>'
     + (D.moe
-        ? '斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上——不是漏画，是折叠的真实结构。'
+        ? 'EP 桶沿深度轴完整展开（每桶一片，间隔标色）。斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上。'
         : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡。')
     + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:10px">'
@@ -6836,25 +6919,16 @@ function renderSolidGrid(D){
 
   proj = origProj;
   projRot = null;
-  gridOX = 0; gridOY = 0; gridOZ = 0;
 
+  var bodyStr = conn + boxes.map(function(b){ return b.svg; }).join('');
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+VH+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab">'+defsSVG()
-    + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('')
+    + '<g pointer-events="none">' + bodyStr + '</g>' + labels9.join('') + ghits.join('')
     + '</svg>';
   viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3, vw: VW, vh: VH};
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
     + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
-    /* 说明按钮改用配置钮同一副圆形壳（.pt-cfg/.pt-cfgbtn/.pt-cfgpanel）：舞台上
-       已经有一颗黑底圆钮立着规矩，「？」另起一套白底胶囊只是多一种长相要认。
-       连带带走 .pt-mv 那层壳——原来借它只是为了有个现成的下拉容器，副作用是
-       被 combo-workbench「.pt-mv:not(.pt-disp) 藏掉数据标注」那条规则连坐
-       （见 combo-workbench/index.html 的 hideCss）；换壳之后那条规则天然
-       不再命中这颗钮，两处 hideCss 里补的 :not(.pt-gridhelp) 例外也一并撤掉。
-       「映射」那枚分类签去掉：这一排本来就只有映射类这几个按钮，签是在替
-       没有名字的一组东西找名字，这里东西已经有名字了（双链映射/交集腔/…），
-       签反而是多余的第一眼噪声。 */
     + '<span class="pt-cfg pt-gridhelp">'
     + '<button class="pt-cfgbtn'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
     + '<div class="pt-cfgpanel'+(ui.gridHelp?' is-open':'')+'" style="width:min(640px, calc(100vw - 32px));text-align:left">'+gridHelpHTML+'</div>'
@@ -8495,7 +8569,7 @@ function scheduleCrisp(){
     if(vr9 && Math.abs(vr9.zoom - ui.zoom3) < 1e-4
        && Math.abs(vr9.panX - ui.panX3) < .05 && Math.abs(vr9.panY - ui.panY3) < .05) return;
     var D9 = derive(cfg);
-    if(D9.ok){ if(ui.view === 'chain'){ renderChain(D9); urlWrite(); } else if(ui.view === 'memex'){ renderMemExplode(D9); urlWrite(); } else if(ui.view==='solid'&&ui.persp==='grid'){ renderSolidGrid(D9); urlWrite(); } }
+    if(D9.ok){ if(ui.view === 'chain'){ renderChain(D9); urlWrite(); } else if(ui.view==='solid'&&ui.persp==='grid'){ renderSolidGrid(D9); urlWrite(); } }
   }, 420);
 }
 function syncZoomHud(){
@@ -9630,221 +9704,6 @@ function arZoomSVG(D){
   return out;
 }
 
-/* ═════════ 内存分层：3D 全局切分视图 ═════════
-   所有 PP 段的内存合在一起——每一层（权重/梯度/优化器态/激活/碎片）横跨全部 PP 段，
-   权重层内部按算子×切法分色，层间虚线连接，可转动/缩放/平移/点选。
-   使用 boxSVG fill 模式画六面实心盒 + 背面剔除，不再手动拼三个面。 */
-function renderMemExplode(D){
-  clearTimeout(crispT); crispT = 0;
-  var zh = $('zoomHud'); if(zh) zh.hidden = false;
-  syncZoomHud();
-  $('stage').hidden = false;
-  if(typeof rubikCtl !== 'undefined' && rubikCtl && rubikCtl.destroy){ try{rubikCtl.destroy();}catch(e){} rubikCtl=null; rubikCfgKey=''; }
-  var rub = $('rubik'); if(rub) rub.hidden = true;
-
-  var stEl = $('stage');
-  var cAR = (stEl && stEl.clientHeight > 60) ? stEl.clientWidth / stEl.clientHeight : 1.9;
-  var VW = clamp(Math.round(692 * cAR), 1080, 2600);
-  var VH = Math.max(500, Math.round(VW / Math.max(0.5, cAR)));
-
-  var PP = D.pp, cap = D.hbm * Math.pow(2, 30);
-  var LAYER_ORDER = ['w','g','opt','otmp','act','rsv'];
-  var LAYER_LABEL = {w:'权重 W', g:'梯度 ∇W', opt:'优化器态 O', otmp:'临时区', act:'激活 A', rsv:'碎片/预留'};
-
-  /* ── 收集每一段的内存数据 ── */
-  var stageData = [], globalByK = {};
-  LAYER_ORDER.forEach(function(k){ globalByK[k] = 0; });
-  for(var p9 = 0; p9 < PP; p9++){
-    var segs = memParts(D, p9);
-    var byK = {};
-    segs.forEach(function(sg){ byK[sg.k] = sg; globalByK[sg.k] += sg.bytes; });
-    stageData.push({p: p9, segs: segs, byK: byK, wBlocks: wCutBlocks(D, p9)});
-  }
-  var totalGlobal = 0;
-  LAYER_ORDER.forEach(function(k){ totalGlobal += globalByK[k]; });
-
-  /* ── 场景布局 ── */
-  var BW = 8, BD = 2.2, PP_GAP = 1.0, LAYER_GAP = 1.0;
-  var maxAvgBytes = Math.max.apply(null, LAYER_ORDER.map(function(k){ return globalByK[k] / PP; }));
-  if(maxAvgBytes < 1) maxAvgBytes = 1;
-
-  var layers = [], accY = 0;
-  LAYER_ORDER.forEach(function(k){
-    var avgBytes = globalByK[k] / PP;
-    if(avgBytes < cap * 0.002) return;
-    var th = Math.max(0.28, 3.0 * avgBytes / maxAvgBytes);
-    layers.push({k: k, y0: accY, th: th});
-    accY += th + LAYER_GAP;
-  });
-  var totalH = accY > 0 ? accY - LAYER_GAP : 1;
-  var totalZ = PP * BD + Math.max(0, PP - 1) * PP_GAP;
-  var cX = BW / 2, cY = totalH / 2, cZ = totalZ / 2;
-
-  /* ── 覆盖 proj / projRot：旋转 + 缩放 + 平移 ── */
-  var origProj = proj;
-  var sceneMax = Math.max(BW + totalZ * 0.65, totalH + 2);
-  var baseScale = clamp(380 / (sceneMax || 1), 10, 40);
-  var mxScale = baseScale * ui.zoom3;
-  var mxOX = VW / 2 + ui.panX3, mxOY = VH / 2 + ui.panY3;
-  var yaw9 = ui.yaw3 || 0, pitch9 = ui.pitch3 || 0;
-  var hasRot9 = Math.abs(yaw9) > 1e-6 || Math.abs(pitch9) > 1e-6;
-  var cy9, sy9, cp9, sp9;
-  if(hasRot9){ cy9 = Math.cos(yaw9); sy9 = Math.sin(yaw9); cp9 = Math.cos(pitch9); sp9 = Math.sin(pitch9); }
-
-  proj = function(x, y, z, s){
-    var dx = x - cX, dy = y - cY, dz = z - cZ;
-    if(hasRot9){
-      var rx = dx*cy9 + dz*sy9, rz = dz*cy9 - dx*sy9;
-      var ry = dy*cp9 - rz*sp9; rz = dy*sp9 + rz*cp9;
-      dx = rx; dy = ry; dz = rz;
-    }
-    return [mxOX + (dx - dz)*C*mxScale*(s||1), mxOY + ((dx + dz)*S - dy)*mxScale*(s||1)];
-  };
-  projRot = hasRot9 ? function(n){
-    var rx = n[0]*cy9 + n[2]*sy9, rz = n[2]*cy9 - n[0]*sy9;
-    var ry = n[1]*cp9 - rz*sp9; rz = n[1]*sp9 + rz*cp9;
-    return [rx, ry, rz];
-  } : null;
-
-  /* ── 生成所有 3D 盒子 ── */
-  var boxes = [];
-  var labels9 = [];
-
-  for(var pi = 0; pi < PP; pi++){
-    var sd = stageData[pi];
-    var zB = pi * (BD + PP_GAP);
-
-    layers.forEach(function(ly){
-      var sg = sd.byK[ly.k];
-      if(!sg || sg.bytes < 1) return;
-
-      if(ly.k === 'w' && sd.wBlocks.length > 0){
-        var wTot = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
-        if(wTot > 0){
-          var ax = 0;
-          sd.wBlocks.forEach(function(wb){
-            var x0 = (ax / wTot) * BW, xw = (wb.bytes / wTot) * BW;
-            ax += wb.bytes;
-            var cc = cutColor(wb.cut);
-            var blend = 'color-mix(in srgb, ' + cc + ' 35%, ' + sg.color + ')';
-            var dep = (x0 + xw/2) + (ly.y0 + ly.th/2) + (zB + BD/2);
-            boxes.push({svg: boxSVG(x0, ly.y0, zB, xw, ly.th, BD, 1, {fill: blend, sw: 0.3, stroke: 'var(--pt-bg)'}), depth: dep});
-            if(pi === PP - 1 && xw > 0.35){
-              var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD + 0.2, 1);
-              var fs9 = Math.min(9, Math.max(5, xw * mxScale * 0.018));
-              labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:'+fs9.toFixed(1)+'px;fill:var(--pt-fg);text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
-            }
-          });
-        }
-      } else if(ly.k === 'act' && sg.mub > 1){
-        var mub9 = Math.max(1, Math.round(sg.mub));
-        var mbW = BW / mub9;
-        for(var mi = 0; mi < mub9; mi++){
-          var x0a = mi * mbW;
-          var dep2 = (x0a + mbW/2) + (ly.y0 + ly.th/2) + (zB + BD/2);
-          boxes.push({svg: boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD, 1, {fill: sg.color, sw: 0.25, stroke: 'var(--pt-bg)'}), depth: dep2});
-        }
-      } else {
-        var dep3 = BW/2 + (ly.y0 + ly.th/2) + (zB + BD/2);
-        boxes.push({svg: boxSVG(0, ly.y0, zB, BW, ly.th, BD, 1, {fill: sg.color, sw: 0.3, stroke: 'var(--pt-bg)'}), depth: dep3});
-        if((ly.k === 'g' || ly.k === 'opt' || ly.k === 'otmp') && sd.wBlocks.length > 0){
-          var wTot2 = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
-          if(wTot2 > 0){
-            var axOp = 0, lns = '';
-            sd.wBlocks.forEach(function(wb){
-              axOp += wb.bytes;
-              if(axOp < wTot2){
-                var ux = (axOp / wTot2) * BW;
-                var la9 = proj(ux, ly.y0, zB, 1), lb9 = proj(ux, ly.y0 + ly.th, zB, 1);
-                lns += '<line x1="'+la9[0].toFixed(1)+'" y1="'+la9[1].toFixed(1)+'" x2="'+lb9[0].toFixed(1)+'" y2="'+lb9[1].toFixed(1)+'" style="stroke:color-mix(in srgb, '+sg.color+' 50%, #000);stroke-width:.3;opacity:.45"/>';
-              }
-            });
-            if(lns) boxes.push({svg: lns, depth: dep3 + 0.01});
-          }
-        }
-      }
-    });
-  }
-
-  boxes.sort(function(a, b){ return a.depth - b.depth; });
-
-  /* ── 层间连接虚线 ── */
-  var conn = '';
-  for(var ci9 = 0; ci9 < layers.length - 1; ci9++){
-    var lyT = layers[ci9], lyB = layers[ci9 + 1];
-    var yGap0 = lyT.y0 + lyT.th, yGap1 = lyB.y0;
-    [0, BW].forEach(function(cx){
-      [0, totalZ].forEach(function(cz){
-        var a9 = proj(cx, yGap0, cz, 1), b9 = proj(cx, yGap1, cz, 1);
-        conn += '<line x1="'+a9[0].toFixed(1)+'" y1="'+a9[1].toFixed(1)+'" x2="'+b9[0].toFixed(1)+'" y2="'+b9[1].toFixed(1)+'" style="stroke:var(--pt-fg3);stroke-width:.35;stroke-dasharray:2.5 2"/>';
-      });
-    });
-  }
-
-  /* ── 层标签（左侧，靠近最后一段的后面） ── */
-  var lblZ = totalZ + 0.8;
-  layers.forEach(function(ly){
-    var sg0 = stageData[0].byK[ly.k];
-    if(!sg0) return;
-    var lp = proj(-0.3, ly.y0 + ly.th / 2, lblZ, 1);
-    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:8.5px;fill:'+sg0.color+';text-anchor:end;dominant-baseline:central;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
-    var totalBytes = globalByK[ly.k] * D.dp;
-    var sizeStr = totalBytes >= Math.pow(2, 30) ? (totalBytes / Math.pow(2, 30)).toFixed(1) + ' GB' : (totalBytes / Math.pow(2, 20)).toFixed(0) + ' MB';
-    var perCard = globalByK[ly.k] / PP;
-    var perStr = perCard >= Math.pow(2, 30) ? (perCard / Math.pow(2, 30)).toFixed(1) + ' GB' : (perCard / Math.pow(2, 20)).toFixed(0) + ' MB';
-    var sp2 = proj(BW + 0.5, ly.y0 + ly.th / 2, 0, 1);
-    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:6.5px;fill:var(--pt-fg2);text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(perStr + '/卡 · 全局 ' + sizeStr) + '</text>');
-  });
-
-  /* ── PP 段标签（每段前脸底部） ── */
-  for(var pi2 = 0; pi2 < PP; pi2++){
-    var zM = pi2 * (BD + PP_GAP) + BD + 0.15;
-    var lp2 = proj(BW / 2, -0.6, zM, 1);
-    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+lp2[1].toFixed(1)+'" style="font-size:7.5px;fill:var(--pt-fg2);text-anchor:middle;font-weight:600;pointer-events:none">PP ' + pi2 + '</text>');
-  }
-
-  /* ── DP 标注（右上角） ── */
-  if(D.dp > 1){
-    var dpP = proj(BW + 1.2, totalH * 0.7, -0.5, 1);
-    labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:9px;fill:var(--pt-fg3);text-anchor:start;dominant-baseline:central;pointer-events:none">×' + D.dp + ' DP 副本</text>');
-  }
-
-  /* ── 标题（固定在 SVG 左上角，不随旋转移动） ── */
-  var totGB9 = (totalGlobal * D.dp / Math.pow(2, 30)).toFixed(1);
-  var capGB9 = (cap / Math.pow(2, 30)).toFixed(0);
-  labels9.push('<text x="24" y="28" style="font-size:13px;fill:var(--pt-fg);text-anchor:start;font-weight:800;pointer-events:none">' + esc('全局内存分层 · ' + D.world + ' 卡') + '</text>');
-  labels9.push('<text x="24" y="46" style="font-size:9px;fill:var(--pt-fg2);text-anchor:start;pointer-events:none">' + esc('合计 ' + totGB9 + ' GB · PP×' + PP + ' · TP×' + D.tp + ' · DP×' + D.dp + ' · 每卡 ' + capGB9 + ' GB') + '</text>');
-
-  /* ── 命中区（层选择） ── */
-  layers.forEach(function(ly){
-    var sg0b = stageData[0].byK[ly.k];
-    if(!sg0b) return;
-    var fl9 = proj(0, ly.y0, 0, 1), fr9 = proj(BW, ly.y0, 0, 1);
-    var tl9 = proj(0, ly.y0 + ly.th, 0, 1), tr9 = proj(BW, ly.y0 + ly.th, 0, 1);
-    labels9.push('<polygon points="'+ptsStr([tl9, tr9, fr9, fl9])+'" style="fill:transparent;cursor:pointer" data-act="memsel" data-k="'+ly.k+'"><title>' + esc(LAYER_LABEL[ly.k]) + '</title></polygon>');
-  });
-
-  /* ── 恢复 proj / projRot ── */
-  proj = origProj;
-  projRot = null;
-
-  /* ── 输出 ── */
-  var bodyStr = conn + boxes.map(function(b){ return b.svg; }).join('');
-  $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+VH+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="1">'
-    + defsSVG() + '<g pointer-events="none">' + bodyStr + '</g>' + labels9.join('') + '</svg>';
-  viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3, vw: VW, vh: VH};
-
-  $('stagebar').innerHTML = '<div class="pt-stagebar">'
-    + '<span style="font-size:12px;font-weight:700">内存分层 · 全局</span>'
-    + '<span class="pt-chip" style="margin-left:12px">拖动旋转 · 滚轮缩放 · Shift+拖动平移 · 双击复位</span>'
-    + '<button class="pb" data-act="view" data-v="chain">← 整网切分</button>'
-    + '</div>';
-  $('stageNote').hidden = true;
-  $('detach').hidden = true;
-  renderRankMem(D);
-  renderDetail(D);
-}
-
 /* ═════════ V3 卡内解剖：容器打开 —— 层 → 算子 → kernel → 流 ═════════ */
 function renderV3(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
@@ -10757,7 +10616,7 @@ function render(){
     var oc9 = $('opCard'); if(oc9) oc9.hidden = true;
   }
   var foot = document.querySelector('.pt-foot');
-  if(ui.view==='chain' || ui.view==='story' || ui.view==='memex'){ foot.style.display = 'none'; }
+  if(ui.view==='chain' || ui.view==='story' || (ui.view==='solid'&&ui.persp==='grid')){ foot.style.display = 'none'; }
   else { foot.style.display = ''; renderFoot(D); }
   if(!D.ok){
     $('stage').innerHTML = '';
@@ -10771,7 +10630,6 @@ function render(){
     else if(ui.view==='anatomy') renderV3(D);
     else if(ui.view==='solid') renderSolid(D);
     else if(ui.view==='story') renderStory(D);
-    else if(ui.view==='memex') renderMemExplode(D);
     else renderV2(D);
   }
   renderRankMem(D);
@@ -10831,10 +10689,9 @@ document.addEventListener('input', function(ev){
 var drag3 = null;
 $('stage').addEventListener('pointerdown', function(ev){
   var isCav = ui.view === 'solid' && ui.persp === 'cav';
-  var isMex = ui.view === 'memex';
   var isGrid = ui.view === 'solid' && ui.persp === 'grid';
-  if(ui.view !== 'chain' && !isCav && !isMex && !isGrid) return;
-  var pan = isCav ? false : ((isMex || isGrid) ? (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1) : (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d'));
+  if(ui.view !== 'chain' && !isCav && !isGrid) return;
+  var pan = isCav ? false : (isGrid ? (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1) : (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.button === 1 || ui.viewTab !== '3d'));
   if(ev.button === 1 || ev.ctrlKey) ev.preventDefault();
   var cs = 1;
   var svg = $('stage').querySelector('svg');
@@ -10878,7 +10735,7 @@ $('stage').addEventListener('pointermove', function(ev){
   lowDetail = true;
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
-    var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='memex') renderMemExplode(D9); else if(ui.view==='solid'&&ui.persp==='grid') renderSolidGrid(D9); }
+    var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='solid'&&ui.persp==='grid') renderSolidGrid(D9); }
   });
 });
 var swallowClick = false;
@@ -10913,7 +10770,7 @@ $('stage').addEventListener('pointerup', endDrag3);
 $('stage').addEventListener('pointercancel', endDrag3);
 /* ── 滚轮缩放（向光标位置缩放）：只改 transform，不重建场景 ── */
 $('stage').addEventListener('wheel', function(ev){
-  if(ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) return;
+  if(ui.view !== 'chain' && !(ui.view==='solid'&&ui.persp==='grid')) return;
   ev.preventDefault();
   var svg = $('stage').querySelector('svg');
   if(!svg) return;
@@ -10946,7 +10803,7 @@ $('stage').addEventListener('wheel', function(ev){
 }, {passive:false});
 /* ── 双击复位到**当前视角 tab**的标准机位 ── */
 $('stage').addEventListener('dblclick', function(ev){
-  if(ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) return;
+  if(ui.view !== 'chain' && !(ui.view==='solid'&&ui.persp==='grid')) return;
   if(ev.target.closest('[data-act]') || ev.target.closest('.cardg')) return;
   var tp0 = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d'];
   ui.yaw3 = tp0[0]; ui.pitch3 = tp0[1]; ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0;
@@ -10955,7 +10812,7 @@ $('stage').addEventListener('dblclick', function(ev){
 /* ── 触屏双指缩放+平移 ── */
 var touch3 = null;
 $('stage').addEventListener('touchstart', function(ev){
-  if((ui.view !== 'chain' && ui.view !== 'memex' && !(ui.view==='solid'&&ui.persp==='grid')) || ev.touches.length < 2) return;
+  if((ui.view !== 'chain' && !(ui.view==='solid'&&ui.persp==='grid')) || ev.touches.length < 2) return;
   ev.preventDefault();
   var t = ev.touches;
   var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
