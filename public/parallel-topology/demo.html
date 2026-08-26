@@ -6722,8 +6722,7 @@ function renderSolidGrid(D){
               }), depth: dep});
               if(pi === PP - 1 && ei === nE - 1 && xw > 0.35){
                 var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD_ep + 0.2, 1);
-                var fs9 = Math.min(9, Math.max(5, xw * mxScale * 0.018));
-                labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:'+fs9.toFixed(1)+'px;fill:var(--pt-fg);text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
+                labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
               }
             });
           }
@@ -6839,19 +6838,19 @@ function renderSolidGrid(D){
     if(!sg0) return;
     var isSel = (ui.memSel === ly.k);
     var lp = proj(-0.3, ly.y0 + ly.th / 2, totalZ + 0.8, 1);
-    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:8.5px;fill:'+(isSel?'var(--pt-fg)':sg0.color)+';text-anchor:end;dominant-baseline:central;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
+    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:14px;fill:'+(isSel?'var(--pt-fg)':sg0.color)+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;dominant-baseline:central;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
     var sp2 = proj(BW + 0.5, ly.y0 + ly.th / 2, 0, 1);
-    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:6.5px;fill:var(--pt-fg2);text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(fmtGB(globalByK[ly.k])+' GB/卡 · 全局 '+fmtGB(globalByK[ly.k]*D.world)+' GB') + '</text>');
+    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(fmtGB(globalByK[ly.k])+' GB/卡 · 全局 '+fmtGB(globalByK[ly.k]*D.world)+' GB') + '</text>');
   });
 
   /* ── PP 段标签 ── */
   for(var pi2 = 0; pi2 < PP; pi2++){
     var zPP = pi2 * (BD_pp + PP_GAP) + BD_pp / 2;
     var lp2 = proj(-0.3, -0.4, zPP, 1);
-    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+lp2[1].toFixed(1)+'" style="font-size:7.5px;fill:'+(pi2===co.p ? VC.pp : 'var(--pt-fg2)')+';text-anchor:end;font-weight:'+(pi2===co.p?'800':'600')+';pointer-events:none">PP'+pi2+'</text>');
-    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+10).toFixed(1)+'" style="font-size:6px;fill:var(--pt-fg3);text-anchor:end;pointer-events:none">L'+(pi2*lps)+'–L'+((pi2+1)*lps-1)+'</text>');
+    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+lp2[1].toFixed(1)+'" style="font-size:14px;fill:'+(pi2===co.p ? VC.pp : 'var(--pt-fg2)')+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;font-weight:'+(pi2===co.p?'800':'600')+';pointer-events:none">PP'+pi2+'</text>');
+    labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+16).toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg3);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;pointer-events:none">L'+(pi2*lps)+'–L'+((pi2+1)*lps-1)+'</text>');
     if(hlStage === pi2)
-      labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+20).toFixed(1)+'" style="font-size:6px;fill:'+VC.pp+';text-anchor:end;font-weight:700;pointer-events:none">L'+revLi+' 在这一段</text>');
+      labels9.push('<text x="'+lp2[0].toFixed(1)+'" y="'+(lp2[1]+32).toFixed(1)+'" style="font-size:14px;fill:'+VC.pp+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;font-weight:700;pointer-events:none">L'+revLi+' 在这一段</text>');
     ghits.push('<g class="cgrow"><rect x="'+(lp2[0]-40).toFixed(1)+'" y="'+(lp2[1]-10).toFixed(1)+'" width="44" height="20" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+pi2+'"><title>切到 PP'+pi2+'</title></rect></g>');
   }
 
@@ -6861,30 +6860,31 @@ function renderSolidGrid(D){
       for(var ej = 0; ej < nE; ej++){
         var zEP = pj * (BD_pp + PP_GAP) + ej * (BD_ep + EP_GAP) + BD_ep / 2;
         var epLp = proj(BW + 0.3, -0.3, zEP, 1);
-        labels9.push('<text x="'+epLp[0].toFixed(1)+'" y="'+epLp[1].toFixed(1)+'" style="font-size:5.5px;fill:'+VC.ep+';text-anchor:start;dominant-baseline:central;pointer-events:none">E'+(ej*kE)+'–'+((ej+1)*kE-1)+'</text>');
+        labels9.push('<text x="'+epLp[0].toFixed(1)+'" y="'+epLp[1].toFixed(1)+'" style="font-size:14px;fill:'+VC.ep+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;pointer-events:none">E'+(ej*kE)+'–'+((ej+1)*kE-1)+'</text>');
       }
     }
   }
 
   /* ── 轴标签 ── */
+  var gStk = ';stroke:#fff;stroke-width:3px;paint-order:stroke';
   if(wLayer){
     var fm2 = p3(BW*0.55, wLayer.y0+wLayer.th, 0);
-    labels9.push(txt(fm2[0]+20/mxScale, fm2[1]-6/mxScale, 'h ← '+DIMN.tp+'×'+D.tp, 8, VC.tp, 'start', 'font-weight="800"'));
+    labels9.push('<text x="'+(fm2[0]+20/mxScale).toFixed(1)+'" y="'+(fm2[1]-6/mxScale).toFixed(1)+'" style="font-size:14px;fill:'+VC.tp+';text-anchor:start;font-weight:800;pointer-events:none'+gStk+'">'+esc('h ← '+DIMN.tp+'×'+D.tp)+'</text>');
   }
   var zm2 = p3(0, 0, totalZ*0.5);
-  labels9.push(txt(zm2[0]-24/mxScale, zm2[1]-12/mxScale, 'ℓ ← '+DIMN.pp+'×'+D.pp, 8, VC.pp, 'end', 'font-weight="800"'));
+  labels9.push('<text x="'+(zm2[0]-24/mxScale).toFixed(1)+'" y="'+(zm2[1]-12/mxScale).toFixed(1)+'" style="font-size:14px;fill:'+VC.pp+';text-anchor:end;font-weight:800;pointer-events:none'+gStk+'">'+esc('ℓ ← '+DIMN.pp+'×'+D.pp)+'</text>');
   if(D.moe){
     var em2 = p3(BW, 0, totalZ*0.2);
-    labels9.push(txt(em2[0]+20/mxScale, em2[1]+4/mxScale, 'e ← '+DIMN.ep+'×'+D.ep, 8, VC.ep, 'start', 'font-weight="800"'));
+    labels9.push('<text x="'+(em2[0]+20/mxScale).toFixed(1)+'" y="'+(em2[1]+4/mxScale).toFixed(1)+'" style="font-size:14px;fill:'+VC.ep+';text-anchor:start;font-weight:800;pointer-events:none'+gStk+'">'+esc('e ← '+DIMN.ep+'×'+D.ep)+'</text>');
   }
   /* DP 注解 */
   if(D.dp > 1){
     var dpP = proj(BW + 1.2, totalH * 0.7, -0.5, 1);
-    labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:9px;fill:'+VC.dp+';text-anchor:start;dominant-baseline:central;font-weight:800;pointer-events:none">×' + D.dp + ' DP 副本</text>');
+    labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:14px;fill:'+VC.dp+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;font-weight:800;pointer-events:none">×' + D.dp + ' DP 副本</text>');
   }
   /* 标题 */
-  labels9.push('<text x="24" y="28" style="font-size:13px;fill:var(--pt-fg);text-anchor:start;font-weight:800;pointer-events:none">' + esc('全局切分 · ' + D.world + ' 卡') + '</text>');
-  labels9.push('<text x="24" y="46" style="font-size:9px;fill:var(--pt-fg2);text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
+  labels9.push('<text x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc('全局切分 · ' + D.world + ' 卡') + '</text>');
+  labels9.push('<text x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
 
   /* ═══ 说明弹层 ═══ */
   var CW = MEMC.w;
