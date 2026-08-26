@@ -7507,7 +7507,6 @@ function sideScene(D, g, box){
   var cutDP = ui.kDP && D.dp > 1, cutPP = ui.kPP && D.pp > 1, cutCP = ui.kCP && D.cp > 1,
       cutTP = ui.kTP && D.tp > 1, cutEP = ui.kEP && D.moe && D.ep > 1;
   var L = D.layers, lps = D.layersPerStage, denseTop = D.moe ? Math.min(2, L) : L;
-  var revOn = revLiOn(D), revLi = revOn ? clamp(Math.floor(+ui.revLayer), 0, L-1) : -1;
   var body = [], hit = [];
   /* ── 层内的行：decoder-stack 里的算子（含逐层补的 mHC FFN Merge），按真图 y 排 ── */
   var rows = [];
@@ -7539,22 +7538,17 @@ function sideScene(D, g, box){
   var MET = laneN ? (12 + laneN*25 + (smpOn ? 16 : 2)) : (smpOn ? 26 : 0);
   var ANN = railOn ? 72 : (ui.mv.train ? 24 : 0);   /* 底部训练轨块（只剩 Checkpoint 时收窄） */
   /* 两侧边距要装得下屏幕恒定尺寸的头尾标签（字号增益之后它们比以前宽约 1.7 倍） */
-  /* 顶边距原来钉死 74：段头横幅整块（胶囊 20、因子行 +15、字 7.4）是按 1/FS_Z
-     长的，而 yRail/yMet 这两条带钉的是常数——字号增益一抬高，横幅就长进了层刻度
-     和「Std σ」那一行里（实测把 FS_GAIN_MAX 抬到 2.6 时，一屏 42 对重叠里大半
-     出自这一处）。改成按「横幅下沿 ↔ 层刻度芯片上沿」这段真实的净空反算——两头
-     都是按 1/FS_Z 长的（横幅的因子行 +15，芯片的 13×0.78 高度往 yMet 上方顶），
-     所以顶边距也得按 1/FS_Z 走：32 + 30/FS_Z。现值（FS_Z = 1/1.4）算出来正好是
-     74，取 max 之后一个像素都不动；增益抬到 2.6 时它自己长到 110，把横幅那一块
-     完整地让出来。 */
-  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ mHC 主干 yRail → 层刻度芯片
-     → 数据带。横幅与刻度芯片都是按 1/FS_Z 长的，中间那两条钉的却是常数偏移——
-     字号增益一抬高，横幅就直接长进刻度和「Std σ」那一行里（实测把 FS_GAIN_MAX
-     抬到 2.6，一屏 42 对重叠里大半出自这一处）。顶边距按这一叠真实需要的高度反
-     算：只把**超出现值（1/FS_Z = 1.4）的那一截**加上去，于是现值下算出来就是原来
-     的 74，一个像素都不动；增益抬到 2.6 时它自己长到 114，把横幅整块让出来。 */
+  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ mHC 主干 yRail → 数据带。
+     层刻度芯片那一档已经删掉（层号改由展开卡的标题报）——它原先紧贴横幅正
+     下方，是「横幅盖住/挤住」那种视觉冲突的直接来源，删掉之后顶边距只要够
+     装下横幅（胶囊 20、因子行 +15、字 7.4）自己就行，不必再留一段芯片的净空，
+     于是从 32 + 30/FS_Z 收到 32 + 16/FS_Z——两头都按 1/FS_Z 长，字号增益一抬高
+     横幅还是会长（实测 FS_GAIN_MAX 抬到 2.6 时会长进「Std σ」那一行），所以
+     仍然按反除项走，只是常数从 30 降到 16。现值（FS_Z = 1/1.4）算出来是
+     32+22.4≈54，比原来的 74 收窄了整段芯片的净空；增益抬到 2.6 时长到约 90，
+     依旧把横幅整块让出来。 */
   var FSK = 1/FS_Z, FSX = Math.max(0, FSK - 1.4);      /* 比现值多出来的反除倍数 */
-  var TM = 74 + 33*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
+  var TM = 54 + 18*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
   var x0 = box.x + LM, x1 = box.x + box.w - RM;
   var yRail = box.y + TM - 12;
   var yMet = box.y + TM + 10;
@@ -7692,8 +7686,6 @@ function sideScene(D, g, box){
     var xc9 = xOf(ld) + colW/2;
     body.push('<circle cx="'+xc9.toFixed(1)+'" cy="'+yRail.toFixed(1)+'" r="'+(1.3/FS_Z).toFixed(2)+'" style="fill:var(--pt-fg3);opacity:.6"/>');
   }
-  body.push(fsTxt(railX0 - 6, yRail + 2.4, 'mHC residual state ×4', 6.2, 'var(--pt-fg2)', 'end',
-    'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
   /* ── 数据标注（sidecar 右视打开「数据」后的那三条逐层折线 + 采样读数）────
      Std σ / Amax / Latency 各占一条带：淡色带 = 参考范围，虚线 = 中值，折线 =
      逐层快照（与正视胶囊、3D 悬停同一份 sin-hash 合成）。点可悬停看单层读数；
@@ -7764,8 +7756,7 @@ function sideScene(D, g, box){
     body.push(fsTxt(x1 + 30, box.y + 92 + 12*lnK9, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
     body.push(fsTxt(x1 + 30, box.y + 92 + 22*lnK9, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
   }
-  /* ── 每层一列：L 刻度 + 算子条（条状：条宽约半个列距，居中） ── */
-  var lstep = Math.max(1, Math.ceil((14/FS_Z) / (colW + colGap)));
+  /* ── 每层一列：算子条（条状：条宽约半个列距，居中）── */
   var sh0 = shardMap(D, g);
   /* 块的切痕借它代表叶子的真切分——同 frontScene/graphSVG 那份 sh2，派生一份
      带块 id 的浅拷贝，不动 shardMap 自己的缓存。 */
@@ -7789,29 +7780,15 @@ function sideScene(D, g, box){
     var bx0 = lx + (colW - barW)/2;
     var inSel = stOf(li9) === selStage;
     var liVis = lx + colW >= vis0 && lx <= vis1;
-    /* 展开是这一列的主动作：点列里任何地方（不只是刻度那几个字）都展开这一层的
-       真图——之前只有刻度旁一小块能展开、其余地方点了没反应（实机反馈：点在
-       没打刻度的层上，弹出来的是反查提示，不是展开），现在整列都能点。
-       反查退到「L27」那颗小芯片自己：命中面比可见字略放宽，够精细去点某一个
-       具体的刻度，不跟整列这个大动作抢。 */
+    /* 展开是这一列的主动作：点列里任何地方都展开这一层的真图（之前只有刻度旁
+       一小块能展开、其余地方点了没反应——实机反馈：点在没打刻度的层上，弹出来的
+       是反查提示，不是展开），现在整列都能点。
+       层号芯片（原来每隔几层浮一颗「L27」小标签）已删：它紧贴在段头横幅正下方，
+       两者间距只有几像素，读起来像糊在一起／盖住了横幅的因子行；层号本身在
+       展开卡的标题里已经报得清清楚楚（见 layerDetailOverlay 的 ttl9），这颗
+       常驻芯片就是纯冗余，删掉之后横幅下方那道缝也松出来了（见下面 TM 收窄）。 */
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></rect>');
-    if(li9 % lstep === 0 || li9 === L - 1){
-      var lbl9 = 'L'+li9;
-      var lblCol9 = inSel && ui.cardMode ? 'var(--pt-fg)' : 'var(--pt-fg3)';
-      /* 芯片高 13/FS_Z、78% 在基线之上——增益一抬高，剩下那 22% 就压进 yMet 下方
-         数据带第一条的标题里。让它**往上**长、下沿钉住：现值（FSK=1.4）下位移为 0。 */
-      var eox = lx + colW/2, eoy = yMet - 5 - 2.86*FSX;
-      var chipW9 = fsW(lbl9, 5.6/FS_Z) + 12/FS_Z, chipH9 = 13/FS_Z;
-      body.push('<rect x="'+(eox-chipW9/2).toFixed(1)+'" y="'+(eoy-chipH9*0.78).toFixed(1)+'" width="'+chipW9.toFixed(1)+'" height="'+chipH9.toFixed(1)
-        +'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:var(--pt-fg3);stroke-width:'+(0.7/FS_Z).toFixed(2)+'"/>');
-      body.push(fsTxt(eox, eoy, lbl9, 5.6, lblCol9, 'middle',
-        li9 % (lstep*2) === 0 || lstep > 1 ? 'font-weight="700"' : 'font-weight="700" opacity=".65"'));
-      /* 芯片的命中面后 push，盖在整列那只大 hit 上面——点得中这颗芯片才是反查，
-         列的其余地方（包括芯片周围）还是展开。 */
-      hit.push('<rect x="'+(eox-chipW9/2-3/FS_Z).toFixed(1)+'" y="'+(eoy-chipH9*0.78-3/FS_Z).toFixed(1)+'" width="'+(chipW9+6/FS_Z).toFixed(1)+'" height="'+(chipH9+6/FS_Z).toFixed(1)
-        +'" style="fill:transparent;cursor:pointer" data-act="qval" data-k="layer" data-v="'+li9+'"><title>L'+li9+'：点一下反查这一层住在哪几张卡</title></rect>');
-    }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
     for(var ri = 0; ri < rows.length; ri++){
@@ -8097,7 +8074,6 @@ function sideScene(D, g, box){
   var hTrackX = x0 - 22;
   var hy0 = yRail + 26/FS_Z;
   var hyB = hy0 + (headTags.length - 1)*pitch;
-  body.push(fsTxt(hTrackX - 8/FS_Z, hy0 - 16/FS_Z, '模型输入 · 只在 L0 之前', 6, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
   body.push('<path d="M'+hTrackX.toFixed(1)+' '+(hy0 - 8/FS_Z).toFixed(1)
     +' L'+hTrackX.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
     +' Q'+hTrackX.toFixed(1)+' '+yRail.toFixed(1)+' '+(hTrackX + 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
@@ -8145,15 +8121,13 @@ function sideScene(D, g, box){
   });
   hit.push('<rect x="'+tTrackX.toFixed(1)+'" y="'+(ty0 - 24/FS_Z).toFixed(1)+'" width="'+(box.x + box.w - tTrackX - 4).toFixed(1)
     +'" height="'+(tailTags.length*pitch + mtpGap + 30/FS_Z).toFixed(1)+'" style="fill:transparent;cursor:help" data-tipk="tail"/>');
-  /* ── 反查某一层：给那一列描个框 + 写清牵动多少张卡 ── */
-  if(revOn){
-    var rx = xOf(revLi);
-    var hv = layerHome(D, revLi);
-    body.push('<rect x="'+(rx-2).toFixed(1)+'" y="'+(y0-8).toFixed(1)+'" width="'+(colW+4).toFixed(1)+'" height="'+(y1-y0+14).toFixed(1)
-      +'" rx="'+(3/FS_Z).toFixed(2)+'" style="fill:none;stroke:'+VC.dp+';stroke-width:'+(1.8/FS_Z).toFixed(2)+'"/>');
-    fsPill(body, hit, rx + colW/2, y1 + 12, 'L'+revLi+' · '+fmt(hv.tot)+' 张卡'
-      + (hv.frag > 1 ? '，各持 1/'+hv.frag : ''), VC.dp, true, null, 6.6);
-  }
+  /* 反查某一层的描框 + 「Lx · N 张卡」浮牌已删：它认的是 ui.hlLayer（宿主转
+     过来的过路高亮），组合工作台里这一格是「跟随视图」——只要主视图那边有
+     任何默认选中（哪怕只是 sel 落在 rank0、层号顺带算出个 L1），这一屏就会
+     跟着描出一圈「选中」框，看着像没点任何东西就自带了一份默认选中，跟
+     「反查」这个动作本该由用户主动触发（点芯片/填层号）的语义对不上。
+     真正主动展开一层时，展开卡自己的标题（ttl9）已经把层号说清楚了，不需要
+     侧视自己再描一遍框。 */
   /* ── Rank：选中卡的段框 + 每段的卡架（段 → 卡的层级）── */
   if(rackOn){
     if(cutPP){
@@ -8365,13 +8339,19 @@ function layerDetailOverlay(D, box, leftX, li, chartTop, chartBottom){
      原地长出来的详图」，不是另开一层的对话框。 */
   body.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)
     +'" rx="6" style="fill:var(--pt-bg);fill-opacity:.97;stroke:var(--pt-bd);stroke-width:1"/>');
-  /* 标题字号按卡片宽度收——卡片跟着这份层模板自己的高宽比走，窄的时候
-     这一整句在大字号会撞上右上角的关闭钮（实机撞过一次）。 */
-  var ttl9 = 'L'+li+' 展开 · openPangu 真图（真节点 · 真层级 · 真连边）';
+  /* 标题只留真正逐次不同的那两件事——层号、这一层落在哪个 PP Stage——
+     「展开 · openPangu 真图（真节点 · 真层级 · 真连边）」那截说明文字每次
+     打开都是同一句话，字数比 L 号还长，反而把 ttlFs9 的字号预算全耗在一句
+     不变的话上（实机反馈：标题读出来就是层号+stage，其余是噪声）。那句
+     说明没有扔掉，挪进卡片背板的悬浮提示（见下面 hit 的 noop 矩形）——
+     想确认「这是真图不是示意」，鼠标停一下就有，不用每次都印在标题上。
+     标题字号仍按卡片宽度收——卡片跟着层模板自己的高宽比走，窄的时候
+     大字号会撞上右上角的关闭钮（实机撞过一次）。 */
+  var ttl9 = 'L'+li + (cutPP ? ' · PP Stage '+pSel : '');
   var ttlRoom9 = CW - 14 - 26;
-  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 7.5, 11);
-  body.push(txt(CX+14, CY+19, esc(ttl9), ttlFs9, 'var(--pt-fg2)', 'start', 'font-weight="700"'));
-  body.push(txt(CX+14, CY+32, (liDense ? 'Dense FFN' : 'MoE FFN') + (cutPP ? ' · PP Stage '+pSel : '') + (co ? ' · 读数跟随 r'+sel : ''),
+  var ttlFs9 = clamp(ttlRoom9 / Math.max(1, fsW(ttl9, 1)), 9, 13);
+  body.push(txt(CX+14, CY+19, esc(ttl9), ttlFs9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  body.push(txt(CX+14, CY+32, (liDense ? 'Dense FFN' : 'MoE FFN') + (co ? ' · 读数跟随 r'+sel : ''),
     9, 'var(--pt-fg3)', 'start', 'font-weight="600"'));
   /* tag3d 关掉：那是给「story」第2幕那种真的摆在 3D 场景里的小图用的斜切
      厚度效果，摆在这儿反而不像正视卡片（用户直接点名要「扁平、直接复用正视图
@@ -8392,7 +8372,8 @@ function layerDetailOverlay(D, box, leftX, li, chartTop, chartBottom){
      的 layeropen 命中面（现在没被挤走，还在），手滑点到卡片内部空白处不该
      透下去触发「再点一次」的抖动——垫板挡住，卡片内容自己的命中面另算。
      关闭钮画在挡板之后：命中面按绘制顺序叠放，后画的在上，点得到。 */
-  hit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop"/>');
+  hit.push('<rect x="'+CX.toFixed(1)+'" y="'+CY.toFixed(1)+'" width="'+CW.toFixed(1)+'" height="'+CH.toFixed(1)+'" style="fill:transparent" data-act="noop">'
+    +'<title>openPangu 真图（真节点 · 真层级 · 真连边）：这是真实渲染，不是示意图</title></rect>');
   var bxs = CX+CW-15, bys = CY+13;
   body.push(txt(bxs, bys+4, '×', 14, 'var(--pt-fg3)', 'middle', 'font-weight="700" pointer-events="none"'));
   hit.push('<circle cx="'+bxs.toFixed(1)+'" cy="'+bys.toFixed(1)+'" r="10" style="fill:transparent;cursor:pointer" data-act="layerclose"/>');
