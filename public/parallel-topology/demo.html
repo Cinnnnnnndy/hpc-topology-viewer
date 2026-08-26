@@ -7675,17 +7675,11 @@ function sideScene(D, g, box){
   if(box.x + 14 + fsW(mdT9, 6.4/FS_Z) + mdT9.length*1.4/FS_Z <= x0 - 6/FS_Z)
   body.push(fsTxt(box.x + 14, box.y + 47, mdT9, 6.4, 'var(--pt-fg3)', 'start',
     'font-weight="700" letter-spacing="1.4"'));
-  /* ── mHC residual ×4 主干：贯穿全部层，接进两头 ── */
-  var railX0 = x0 - 26, railX1 = x1 + 26;
-  [-4.5, -1.5, 1.5, 4.5].forEach(function(dy){
-    body.push('<line x1="'+railX0.toFixed(1)+'" y1="'+(yRail+dy).toFixed(1)+'" x2="'+railX1.toFixed(1)+'" y2="'+(yRail+dy).toFixed(1)
-      +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.6/FS_Z).toFixed(2)+';opacity:.55"/>');
-  });
-  var dotStep = Math.max(1, Math.ceil((3.2/FS_Z) / (colW + colGap)));
-  for(var ld = 0; ld < L; ld += dotStep){
-    var xc9 = xOf(ld) + colW/2;
-    body.push('<circle cx="'+xc9.toFixed(1)+'" cy="'+yRail.toFixed(1)+'" r="'+(1.3/FS_Z).toFixed(2)+'" style="fill:var(--pt-fg3);opacity:.6"/>');
-  }
+  /* mHC residual ×4 主干（贯穿全部层的 4 条横线 + 逐层一颗小圆点）已删：这条
+     线正好钉在 yRail 上，与段头横幅同一高度——横幅之间的缝隙里线和点就露出来，
+     看着像穿过/糊在横幅上的杂线。trunk 本身没有可交互内容，纯装饰，删掉之后
+     yRail 只作为头尾标签轨（headTags/tailTags）的连接高度继续使用，不再画
+     这条通长的线。 */
   /* ── 数据标注（sidecar 右视打开「数据」后的那三条逐层折线 + 采样读数）────
      Std σ / Amax / Latency 各占一条带：淡色带 = 参考范围，虚线 = 中值，折线 =
      逐层快照（与正视胶囊、3D 悬停同一份 sin-hash 合成）。点可悬停看单层读数；
@@ -7775,6 +7769,11 @@ function sideScene(D, g, box){
     return n9x.blkDef ? sdBlockWarn(li9x, n9x.blkDef, byIdSS, D) : sdOpWarn(li9x, n9x, D);
   }
   var barW = colW * 0.52;
+  /* 层号纯文字的跳档：门槛比原来带底色的芯片（14/FS_Z）小——纯文字没有芯片
+     那圈内边距，同样的列距能挤下更多颗，装得下时（比如层数不算多、列距够宽）
+     lstepTxt9=1，跟参考图里"每层都标"一致；层多列窄时才按这个间隔跳着标，
+     不会互相压字。 */
+  var lstepTxt9 = Math.max(1, Math.ceil((9/FS_Z) / (colW + colGap)));
   for(var li9 = 0; li9 < L; li9++){
     var lx = xOf(li9);
     var bx0 = lx + (colW - barW)/2;
@@ -7783,12 +7782,20 @@ function sideScene(D, g, box){
     /* 展开是这一列的主动作：点列里任何地方都展开这一层的真图（之前只有刻度旁
        一小块能展开、其余地方点了没反应——实机反馈：点在没打刻度的层上，弹出来的
        是反查提示，不是展开），现在整列都能点。
-       层号芯片（原来每隔几层浮一颗「L27」小标签）已删：它紧贴在段头横幅正下方，
-       两者间距只有几像素，读起来像糊在一起／盖住了横幅的因子行；层号本身在
-       展开卡的标题里已经报得清清楚楚（见 layerDetailOverlay 的 ttl9），这颗
-       常驻芯片就是纯冗余，删掉之后横幅下方那道缝也松出来了（见下面 TM 收窄）。 */
+       层号原来是每隔几层浮一颗带底色的「L27」芯片，紧贴段头横幅正下方，糊住了
+       横幅的因子行，删掉过一次；现在按同样的间隔把层号加回来，但只用**纯文字**，
+       不带芯片底色/描边——没有那圈实心底板，跟横幅之间就不再是"两块面糊在一起"，
+       只是文字和线，读起来轻得多。文字下面配一小截竖向虚线（同一系统里"这一列
+       在这儿"的记号），装不下的层照旧跳过不写，不跟相邻层的文字挤在一起。 */
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
       +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></rect>');
+    if(li9 % lstepTxt9 === 0 || li9 === L - 1){
+      var lcx9 = lx + colW/2;
+      body.push(fsTxt(lcx9, yMet - 6, 'L'+li9, 5.6, 'var(--pt-fg3)', 'middle', 'font-weight="600"'));
+      body.push('<line x1="'+lcx9.toFixed(1)+'" y1="'+(yMet - 2).toFixed(1)+'" x2="'+lcx9.toFixed(1)+'" y2="'+(yMet + 9/FS_Z).toFixed(1)
+        +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.6/FS_Z).toFixed(2)
+        +';stroke-dasharray:'+(1.6/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2)+';opacity:.45"/>');
+    }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
     for(var ri = 0; ri < rows.length; ri++){
