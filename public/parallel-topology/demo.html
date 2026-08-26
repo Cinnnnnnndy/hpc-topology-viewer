@@ -7583,17 +7583,18 @@ function sideScene(D, g, box){
   var MET = laneN ? (12 + laneN*25 + (smpOn ? 16 : 2)) : (smpOn ? 26 : 0);
   var ANN = railOn ? 72 : (ui.mv.train ? 24 : 0);   /* 底部训练轨块（只剩 Checkpoint 时收窄） */
   /* 两侧边距要装得下屏幕恒定尺寸的头尾标签（字号增益之后它们比以前宽约 1.7 倍） */
-  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ mHC 主干 yRail → 数据带。
-     层刻度芯片那一档已经删掉（层号改由展开卡的标题报）——它原先紧贴横幅正
-     下方，是「横幅盖住/挤住」那种视觉冲突的直接来源，删掉之后顶边距只要够
-     装下横幅（胶囊 20、因子行 +15、字 7.4）自己就行，不必再留一段芯片的净空，
-     于是从 32 + 30/FS_Z 收到 32 + 16/FS_Z——两头都按 1/FS_Z 长，字号增益一抬高
-     横幅还是会长（实测 FS_GAIN_MAX 抬到 2.6 时会长进「Std σ」那一行），所以
-     仍然按反除项走，只是常数从 30 降到 16。现值（FS_Z = 1/1.4）算出来是
-     32+22.4≈54，比原来的 74 收窄了整段芯片的净空；增益抬到 2.6 时长到约 90，
-     依旧把横幅整块让出来。 */
+  /* 顶栏这一叠自上而下：段头横幅（胶囊 + 因子行）→ 数据带（数据带上沿就是 yMet，
+     层号纯文字 + 虚线刻度贴着它画）。层号原来是带底色的芯片，删过一次；现在
+     换成纯文字 + 虚线刻度重新贴回 yMet 上方——这份净空因此还是要留：横幅的
+     因子行落在 yH+15/FS_Z（现值≈65），层号文字落在 yMet 上方几像素，两者只
+     差不到 10 像素时就会挤在一起（实机反馈：因子行「TP×2·EP×8」和层号文字
+     糊住了）。顶边距按「横幅下沿 ↔ 层号文字上沿」这段真实净空反算：两头都
+     按 1/FS_Z 长（横幅因子行 +15、层号文字再留 19 让出一行字的高度），
+     32 + 34/FS_Z。现值（FS_Z = 1/1.4）算出来是 32+47.6≈80，比横幅因子行
+     （65）多出十几像素的干净间隔；增益抬到 2.6 时长到约 121，同样把两者
+     隔开。 */
   var FSK = 1/FS_Z, FSX = Math.max(0, FSK - 1.4);      /* 比现值多出来的反除倍数 */
-  var TM = 54 + 18*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
+  var TM = 80 + 34*FSX, BM = (rackOn ? 108 : 48) + ANN, LM = 200, RM = 205;
   var x0 = box.x + LM, x1 = box.x + box.w - RM;
   var yRail = box.y + TM - 12;
   var yMet = box.y + TM + 10;
@@ -7772,8 +7773,8 @@ function sideScene(D, g, box){
       if(ui.mv.perf) sp2.push(s8.lat.toFixed(2)+'ms');
       var st2 = 'L'+lm2+' · '+sp2.join(' · '), tw2 = fsW(st2, 5.6/FS_Z);
       /* 右端同样别探进右边距：现值下最右这条本来就探出去一截（那片边距是空的，
-         不碍事），字号增益一抬高它会一路探到「主输出 + MTP · 只在 L47 之后」那行
-         字上。只在增益高于现值时（FSX > 0）收进条带内，现值下一个像素不动。 */
+         不碍事），字号增益一抬高它会一路探进右边距里的尾标签轨。只在增益高于
+         现值时（FSX > 0）收进条带内，现值下一个像素不动。 */
       var cx2 = xOf(lm2) + colW/2, lft2 = cx2 - tw2/2 < mx0;
       var rgt2 = !lft2 && FSX > 0 && (cx2 + tw2/2 > mx1);
       var l2 = lft2 ? mx0 : (rgt2 ? mx1 - tw2 : cx2 - tw2/2);
@@ -7783,18 +7784,14 @@ function sideScene(D, g, box){
         5.6, 'var(--pt-fg2)', lft2 ? 'start' : (rgt2 ? 'end' : 'middle'), 'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
     });
   }
-  /* 右上角标明这块图在展示哪几类数据（工具条上「数据」多选的当前状态） */
-  if(mvAny()){
-    var mvOn9 = [];
-    if(ui.mv.num) mvOn9.push('数值'); if(ui.mv.grad) mvOn9.push('梯度'); if(ui.mv.perf) mvOn9.push('性能');
-    if(ui.mv.moe) mvOn9.push('MoE'); if(ui.mv.train) mvOn9.push('训练');
-    /* 三行的行距原来是常数 12/10，字却按 1/FS_Z 长——增益一抬高三行就摞成一团。
-       行距跟着同一个倍数走（现值 FSK=1.4 时正好还原成 12 与 22）。 */
-    var lnK9 = FSK/1.4;
-    body.push(fsTxt(x1 + 30, box.y + 92, '数据标注', 6.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-    body.push(fsTxt(x1 + 30, box.y + 92 + 12*lnK9, mvOn9.join(' / '), 5.2, 'var(--pt-fg3)', 'start'));
-    body.push(fsTxt(x1 + 30, box.y + 92 + 22*lnK9, 'step 18420 · MB 3/8', 5.2, 'var(--pt-fg3)', 'start'));
-  }
+  /* 右上角「数据标注 / 数值·梯度·性能·MoE·训练 / step 18420 · MB 3/8」那三行
+     已删——纯静态展示，不随交互变化，是这一屏的信息噪声。
+     顺带修掉一处潜伏 bug：这个块原来用 `var mvOn9 = []` 声明一个同名局部数组，
+     JS 里 var 是函数作用域，跟本函数开头 `var mvOn9 = ui.moduleView`（模块视图
+     开关，7558 行）是同一个变量——只要 mvAny() 为真，这个数组（永远是 truthy，
+     哪怕是空数组）就会把模块视图那个布尔值**覆盖掉**，导致后面 bandDense/
+     bandMoe 等好几处对 mvOn9 的判断都失真，与 ui.moduleView 实际是否勾选无关。
+     删掉这个块，7558 行那个 mvOn9 就不会再被中途顶替。 */
   /* ── 每层一列：算子条（条状：条宽约半个列距，居中）── */
   var sh0 = shardMap(D, g);
   /* 块的切痕借它代表叶子的真切分——同 frontScene/graphSVG 那份 sh2，派生一份
@@ -7833,13 +7830,19 @@ function sideScene(D, g, box){
        只是文字和线，读起来轻得多。文字下面配一小截竖向虚线（同一系统里"这一列
        在这儿"的记号），装不下的层照旧跳过不写，不跟相邻层的文字挤在一起。 */
     hit.push('<rect x="'+(lx-colGap/2).toFixed(1)+'" y="'+(yMet-13).toFixed(1)+'" width="'+(colW+colGap).toFixed(1)+'" height="'+(y1-yMet+17).toFixed(1)
-      +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>L'+li9+'：展开这一层的真图（真节点 · 真连边）</title></rect>');
+      +'" style="fill:transparent;cursor:pointer" data-act="layeropen" data-li="'+li9+'"><title>Layer L'+li9+' · 点击展开内部算子与指标</title></rect>');
     if(li9 % lstepTxt9 === 0 || li9 === L - 1){
       var lcx9 = lx + colW/2;
       body.push(fsTxt(lcx9, yMet - 6, 'L'+li9, 5.6, 'var(--pt-fg3)', 'middle', 'font-weight="600"'));
-      body.push('<line x1="'+lcx9.toFixed(1)+'" y1="'+(yMet - 2).toFixed(1)+'" x2="'+lcx9.toFixed(1)+'" y2="'+(yMet + 9/FS_Z).toFixed(1)
-        +'" style="stroke:var(--pt-fg3);stroke-width:'+(0.6/FS_Z).toFixed(2)
-        +';stroke-dasharray:'+(1.6/FS_Z).toFixed(2)+' '+(1.6/FS_Z).toFixed(2)+';opacity:.45"/>');
+      /* 刻度是「文字下面挂一小截」的记号，不是量出图表高度的轴线——长度因此
+         用**固定像素**，不跟着 1/FS_Z 反除走。这一屏别处的反除是为了在不同
+         视口宽度下保持屏幕常量大小，但那前提是长度本身就该是个小常数；这颗
+         刻度原来写的是 9/FS_Z，在 combo-workbench 里那种窄格子（cw 很小）里
+         FS_Z 会被 fsBase() 压得很小，9/FS_Z 就从预想的十来像素膨胀成几十甚至
+         上百像素，实机看到的是"一条虚线贯穿了整根算子条"。改成 6 像素封顶，
+         任何视口宽度/缩放下都只是文字下面一小撇。 */
+      body.push('<line x1="'+lcx9.toFixed(1)+'" y1="'+(yMet - 2).toFixed(1)+'" x2="'+lcx9.toFixed(1)+'" y2="'+(yMet + 6).toFixed(1)
+        +'" style="stroke:var(--pt-fg3);stroke-width:0.8;stroke-dasharray:1.5 1.5;opacity:.45"/>');
     }
     var dim9 = ui.cardMode && cutPP && !inSel;
     if(dim9) body.push('<g opacity="0.45">');
@@ -8157,8 +8160,9 @@ function sideScene(D, g, box){
   var tyEnd = y1 + (rackOn ? -6 : 2);
   var ty0 = tyEnd - (tailTags.length - 1)*pitch - mtpGap;
   function tagY(i){ return ty0 + i*pitch + (tailTags[i][3] ? mtpGap : 0); }
-  /* 右对齐贴住画布右沿：左对齐的话这行比标签轨还长，尾巴会被 clip 切掉 */
-  body.push(fsTxt(box.x + box.w - 8, ty0 - 16/FS_Z, '主输出 + MTP · 只在 L'+(L-1)+' 之后', 6, 'var(--pt-fg2)', 'end', 'font-weight="800"'));
+  /* 「主输出 + MTP · 只在 L47 之后」这行常驻说明已删，跟头部「模型输入 · 只在
+     L0 之前」那条一起收掉——同一类纯静态解释文字，`data-tipk="tail"` 那颗
+     悬浮提示（见 TIPK.tail）已经说得到同一件事，不用在画布上再印一遍。 */
   body.push('<path d="M'+(x1 + 4).toFixed(1)+' '+yRail.toFixed(1)
     +' L'+(tTrackX - 10/FS_Z).toFixed(1)+' '+yRail.toFixed(1)
     +' Q'+tTrackX.toFixed(1)+' '+yRail.toFixed(1)+' '+tTrackX.toFixed(1)+' '+(yRail + 10/FS_Z).toFixed(1)
@@ -11331,25 +11335,17 @@ document.addEventListener('click', function(ev){
 var tip = document.getElementById('tip');
 /* 图上那几枚路标的详情：写在这儿而不是写在图上——图上只留两个字，
    具体哪几个算子、各被哪把刀切，鼠标停上去再说。 */
+/* head/tail 提示原来是四五行的算子清单（RMSNorm/LM Head/Logits All-Gather/
+   MTP 逐段展开……），跟层号那颗悬浮提示（Layer Lx · 点击展开内部算子与指标）
+   站在一起明显是两种语域——一个一行说完，一个铺一整块。改成同款：只留
+   「这是什么 · 一句话范围」一行，逐算子的清单这一屏别处（层展开卡）已经
+   看得到，这里不用再抄一遍。 */
 var TIPK = {
   head: function(D){
-    return '<b>入口 · 模型输入</b>'
-      + '<br>Token IDs · Position IDs · Attention Context —— DP 切 batch'
-      + (D.cp > 1 ? ' · CP 切 seq ×'+D.cp : '（CP=1，序列未切）')
-      + '<br>Embedding Weight → Parallel Embedding —— TP 切 vocab ×'+D.tp
-      + '<br><span style="opacity:.65">只落在第 0 层之前。前 '+Math.min(2, D.layers)+' 层的 FFN 还是 Dense，那几层根本没有 EP 那一刀。'
-      + (ui.cardMode ? '<br>Rank 里这一份归 <b>PP0 那一段的 '+(D.world/D.pp)+' 张卡</b>，别的段没有。' : '')
-      + '</span>';
+    return '入口 · 模型输入（Token/Position/Embedding）· 只在第 0 层之前';
   },
   tail: function(D){
-    return '<b>出口 · 模型输出 + MTP 尾巴</b>'
-      + '<br>Final RMSNorm —— <b>SP</b> 切 seq（SP 在整张图上只在这类 norm 上露头）'
-      + '<br>LM Head / LM Head Weight —— TP 切 vocab ×'+D.tp
-      + '<br>Logits All-Gather → Logits'
-      + '<br>MTP L46–L48 ×3：Input Norms → EH Projection → Decoder ×3 → Shared Head → Logits'
-      + '<br><span style="opacity:.65">只落在最后一层之后。'
-      + (ui.cardMode ? '<br>Rank 里这一份归 <b>PP'+(D.pp-1)+' 那一段的 '+(D.world/D.pp)+' 张卡</b>，别的段没有。' : '')
-      + '</span>';
+    return '出口 · 模型输出 + MTP 尾巴 · 只在最后一层之后';
   }
 };
 document.addEventListener('mousemove', function(ev){
