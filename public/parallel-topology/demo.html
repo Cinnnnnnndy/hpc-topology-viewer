@@ -4225,14 +4225,14 @@ function netScene(D, g, box, step){
                和点开一只卡时认出它的是同一套语言，读者不用学第二种。 */
           } else {
           if(!isFcol && !spot){
-            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(26 + dT*17))+';stroke:none'));
-            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(38 + dT*20))+';stroke:none'));
-            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(26 + dT*17))+';stroke:none'));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(38 + dT*20))+';stroke:none'));
+            body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
+            body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(26 + dT*17).toFixed(1))+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-bg)',(38 + dT*20).toFixed(1))+';stroke:none'));
           }
           if(meC){
-            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-fg)',7)+';stroke:none'));
-            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-fg)',7)+';stroke:none'));
+            body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
+            body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+mix('var(--pt-fg)',7)+';stroke:none'));
           }
           }
         }
