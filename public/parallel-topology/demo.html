@@ -1865,7 +1865,7 @@ function boxSVG(x,y,z,w,h,d,s, o){
              :            'color-mix(in srgb,'+o.fill+' 68%, #000 32%)';
       out9 += '<polygon points="'+ptsStr([P9[fc.i[0]],P9[fc.i[1]],P9[fc.i[2]],P9[fc.i[3]]])+'" style="fill:'+c9+';'+st+'"/>';
     });
-    return '<g'+(o.attrs||'')+'>' + out9 + '</g>';
+    return '<g'+(o.attrs||'')+(o.opacity != null && o.opacity < 1 ? ' opacity="'+o.opacity+'"' : '')+'>' + out9 + '</g>';
   }
   if(o.wire){ /* 容器线框：只画棱 */
     var p8 = [proj(x,y,z,s),proj(x+w,y,z,s),proj(x+w,y,z+d,s),proj(x,y,z+d,s),proj(x,y+h,z,s),proj(x+w,y+h,z,s),proj(x+w,y+h,z+d,s),proj(x,y+h,z+d,s)];
@@ -6148,7 +6148,7 @@ function renderSolidMap(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb is-on" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
-    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">内存分层</button>'
     + '<span class="pt-chip">四个并行维度全部收在「卡」这一级</span>'
     + '<span class="pt-chip" style="border-color:'+(tpIn?VC.tp:'var(--pt-danger)')+';color:'+(tpIn?VC.tp:'var(--pt-danger)')+'">TP '+(tpIn?'机内 ✓':'跨机 ✗')+'</span>';
   $('stageNote').hidden = true;
@@ -6586,7 +6586,7 @@ function renderSolidCav(D){
   $('stagebar').innerHTML = '<span class="pt-cap">映射</span>'
     + '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb is-on" data-act="persp" data-p="cav">交集腔</button>'
-    + '<button class="pb" data-act="persp" data-p="grid">全局切分</button>'
+    + '<button class="pb" data-act="persp" data-p="grid">内存分层</button>'
     + '<span class="pt-chip" title="①权重体 '+(D.moe?'3':'2')+' 轴（ℓ·h'+(D.moe?'·e':'')+'）· ②激活体 4 轴（ℓ·h·b·s）">点轴尺换卡</span>'
     + '<span class="pt-chip" style="border-color:'+VC.dp+';color:'+VC.dp+'">DP 在①上没有轴 → A3</span>'
     + '<button class="pb'+(ui.act2?' is-on':'')+'" data-act="act2" title="激活体是第二视角：它多出 b（DP 切）与 s（CP 切）两根轴；主图讲的是权重体。">'
@@ -6628,11 +6628,13 @@ function renderSolidGrid(D){
   var totalGlobal = 0;
   LAYER_ORDER.forEach(function(k){ totalGlobal += globalByK[k]; });
 
-  /* ── 场景布局：分层展开 + EP 全量展开 ── */
+  /* ── 场景布局：分层展开 + EP 全量展开 + DP 空间展开 ── */
   var BW = 8, BD_ep = D.moe ? 1.6 : 2.2;
-  var EP_GAP = D.moe ? 0.35 : 0, PP_GAP = 1.0, LAYER_GAP = 1.0;
+  var EP_GAP = D.moe ? 0.35 : 0, PP_GAP = 1.0, LAYER_GAP = 2.5;
+  var nDP = D.dp || 1, DP_GAP9 = 1.2;
   var BD_pp = nE * BD_ep + Math.max(0, nE - 1) * EP_GAP;
   var totalZ = PP * BD_pp + Math.max(0, PP - 1) * PP_GAP;
+  var totalX9 = nDP * BW + Math.max(0, nDP - 1) * DP_GAP9;
   var maxAvgBytes = Math.max.apply(null, LAYER_ORDER.map(function(k){ return globalByK[k] / PP; }));
   if(maxAvgBytes < 1) maxAvgBytes = 1;
   var layers = [], accY = 0;
@@ -6644,7 +6646,7 @@ function renderSolidGrid(D){
     accY += th + LAYER_GAP;
   });
   var totalH = accY > 0 ? accY - LAYER_GAP : 1;
-  var cX = BW / 2, cY = totalH / 2, cZ = totalZ / 2;
+  var cX = totalX9 / 2, cY = totalH / 2, cZ = totalZ / 2;
 
   /* ── 视口 & 投影覆盖 ── */
   var stEl9 = $('stage');
@@ -6652,7 +6654,7 @@ function renderSolidGrid(D){
   var VW = clamp(Math.round(700 * cAR9), 700, 2400);
   var VH = Math.max(500, Math.round(VW / Math.max(0.5, cAR9)));
   var origProj = proj;
-  var sceneMax = Math.max(BW + totalZ * 0.65, totalH + 2);
+  var sceneMax = Math.max(totalX9 + totalZ * 0.65, totalH + 2);
   var baseScale9 = clamp(380 / (sceneMax || 1), 0.5, 40);
   var mxScale = baseScale9 * ui.zoom3;
   var mxOX = VW / 2 + ui.panX3, mxOY = VH / 2 + ui.panY3;
@@ -6694,75 +6696,102 @@ function renderSolidGrid(D){
   var revLi = parseInt(ui.revLayer, 10);
   var hlStage = (isFinite(revLi) && revLi>=0 && revLi<D.layers) ? Math.floor(revLi/lps) : -1;
 
-  /* ═══ 生成盒子：每层×每PP段×每EP桶 ═══ */
+  /* ═══ 生成盒子：DP×PP×层×EP ═══ */
   var boxes = [];
   var labels9 = [];
   var ghits = [];
+  var selDP = co.d || 0;
+  var projDP = proj;
 
-  for(var pi = 0; pi < PP; pi++){
-    var sd = stageData[pi];
-    layers.forEach(function(ly){
-      var sg = sd.byK[ly.k];
-      if(!sg || sg.bytes < 1) return;
-      var isSel = (ui.memSel === ly.k);
-      for(var ei = 0; ei < nE; ei++){
-        var zB = pi * (BD_pp + PP_GAP) + ei * (BD_ep + EP_GAP);
-        if(ly.k === 'w' && sd.wBlocks.length > 0){
-          var wTot = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
-          if(wTot > 0){
-            var ax = 0;
-            sd.wBlocks.forEach(function(wb){
-              var x0 = (ax / wTot) * BW, xw = (wb.bytes / wTot) * BW;
-              ax += wb.bytes;
-              var cc = cutColor(wb.cut);
-              var blend = 'color-mix(in srgb, ' + cc + ' 35%, ' + sg.color + ')';
-              var dep = (x0 + xw/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-              boxes.push({svg: boxSVG(x0, ly.y0, zB, xw, ly.th, BD_ep, 1, {
-                fill: blend, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-              }), depth: dep});
-              if(pi === PP - 1 && ei === nE - 1 && xw > 0.35){
-                var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD_ep + 0.2, 1);
-                labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
+  for(var di9 = 0; di9 < nDP; di9++){
+    var dpX9 = di9 * (BW + DP_GAP9);
+    var isSelDP = (di9 === selDP);
+    var dpOpa = isSelDP ? 1 : 0.45;
+    (function(dpOff, isSel9, opa9, dpIdx){
+      var savedProj = proj;
+      proj = function(x, y, z, s){
+        return savedProj(x + dpOff, y, z, s);
+      };
+
+      for(var pi = 0; pi < PP; pi++){
+        var sd = stageData[pi];
+        layers.forEach(function(ly){
+          var sg = sd.byK[ly.k];
+          if(!sg || sg.bytes < 1) return;
+          var isSel = (ui.memSel === ly.k) && isSel9;
+          for(var ei = 0; ei < nE; ei++){
+            var zB = pi * (BD_pp + PP_GAP) + ei * (BD_ep + EP_GAP);
+            if(isSel9 && ly.k === 'w' && sd.wBlocks.length > 0){
+              var wTot = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
+              if(wTot > 0){
+                var ax = 0;
+                sd.wBlocks.forEach(function(wb){
+                  var x0 = (ax / wTot) * BW, xw = (wb.bytes / wTot) * BW;
+                  ax += wb.bytes;
+                  var cc = cutColor(wb.cut);
+                  var blend = 'color-mix(in srgb, ' + cc + ' 35%, ' + sg.color + ')';
+                  var dep = dpOff + (x0 + xw/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+                  boxes.push({svg: boxSVG(x0, ly.y0, zB, xw, ly.th, BD_ep, 1, {
+                    fill: blend, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)',
+                    opacity: opa9
+                  }), depth: dep});
+                  if(pi === PP - 1 && ei === nE - 1 && xw > 0.35){
+                    var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD_ep + 0.2, 1);
+                    labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:'+(.85*opa9).toFixed(2)+'" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
+                  }
+                });
               }
-            });
-          }
-        } else if(ly.k === 'act' && sg.mub > 1){
-          var mub9 = Math.max(1, Math.round(sg.mub));
-          var mbW = BW / mub9;
-          for(var mi = 0; mi < mub9; mi++){
-            var x0a = mi * mbW;
-            var dep2 = (x0a + mbW/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-            boxes.push({svg: boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD_ep, 1, {
-              fill: sg.color, sw: isSel ? 1.2 : 0.25, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-            }), depth: dep2});
-          }
-        } else {
-          var dep3 = BW/2 + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-          boxes.push({svg: boxSVG(0, ly.y0, zB, BW, ly.th, BD_ep, 1, {
-            fill: sg.color, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-          }), depth: dep3});
-          if((ly.k === 'g' || ly.k === 'opt' || ly.k === 'otmp') && sd.wBlocks.length > 0){
-            var wTot2 = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
-            if(wTot2 > 0){
-              var axOp = 0, lns = '';
-              sd.wBlocks.forEach(function(wb){
-                axOp += wb.bytes;
-                if(axOp < wTot2){
-                  var ux = (axOp / wTot2) * BW;
-                  var la9 = proj(ux, ly.y0, zB, 1), lb9 = proj(ux, ly.y0 + ly.th, zB, 1);
-                  lns += '<line x1="'+la9[0].toFixed(1)+'" y1="'+la9[1].toFixed(1)+'" x2="'+lb9[0].toFixed(1)+'" y2="'+lb9[1].toFixed(1)+'" style="stroke:color-mix(in srgb, '+sg.color+' 50%, #000);stroke-width:.3;opacity:.45"/>';
+            } else if(isSel9 && ly.k === 'act' && sg.mub > 1){
+              var mub9 = Math.max(1, Math.round(sg.mub));
+              var mbW = BW / mub9;
+              for(var mi = 0; mi < mub9; mi++){
+                var x0a = mi * mbW;
+                var dep2 = dpOff + (x0a + mbW/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+                boxes.push({svg: boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD_ep, 1, {
+                  fill: sg.color, sw: isSel ? 1.2 : 0.25, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)',
+                  opacity: opa9
+                }), depth: dep2});
+              }
+            } else {
+              var dep3 = dpOff + BW/2 + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
+              boxes.push({svg: boxSVG(0, ly.y0, zB, BW, ly.th, BD_ep, 1, {
+                fill: sg.color, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)',
+                opacity: opa9
+              }), depth: dep3});
+              if(isSel9 && (ly.k === 'g' || ly.k === 'opt' || ly.k === 'otmp') && sd.wBlocks.length > 0){
+                var wTot2 = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
+                if(wTot2 > 0){
+                  var axOp = 0, lns = '';
+                  sd.wBlocks.forEach(function(wb){
+                    axOp += wb.bytes;
+                    if(axOp < wTot2){
+                      var ux = (axOp / wTot2) * BW;
+                      var la9 = proj(ux, ly.y0, zB, 1), lb9 = proj(ux, ly.y0 + ly.th, zB, 1);
+                      lns += '<line x1="'+la9[0].toFixed(1)+'" y1="'+la9[1].toFixed(1)+'" x2="'+lb9[0].toFixed(1)+'" y2="'+lb9[1].toFixed(1)+'" style="stroke:color-mix(in srgb, '+sg.color+' 50%, #000);stroke-width:.3;opacity:.45"/>';
+                    }
+                  });
+                  if(lns) boxes.push({svg: lns, depth: dep3 + 0.01});
                 }
-              });
-              if(lns) boxes.push({svg: lns, depth: dep3 + 0.01});
+              }
             }
           }
-        }
+        });
       }
-    });
+
+      proj = savedProj;
+    })(dpX9, isSelDP, dpOpa, di9);
+
+    /* DP 副本编号 */
+    var dpLblP = projDP(dpX9 + BW/2, totalH + 0.6, totalZ/2, 1);
+    labels9.push('<text x="'+dpLblP[0].toFixed(1)+'" y="'+dpLblP[1].toFixed(1)+'" style="font-size:'+(isSelDP?'14':'11')+'px;fill:'+(isSelDP?VC.dp:'var(--pt-fg3)')+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:middle;dominant-baseline:hanging;font-weight:'+(isSelDP?'800':'500')+';pointer-events:none">DP'+di9+'</text>');
   }
   boxes.sort(function(a, b){ return a.depth - b.depth; });
 
-  /* ── 层间连接虚线 ── */
+  /* ── 层间连接虚线（仅选中 DP 副本） ── */
+  var selDPoff = selDP * (BW + DP_GAP9);
+  var savedProjSel = proj;
+  proj = function(x, y, z, s){ return savedProjSel(x + selDPoff, y, z, s); };
+  var p3sel = function(x,y,z){ return proj(x,y,z,1); };
   var conn = '';
   for(var ci9 = 0; ci9 < layers.length - 1; ci9++){
     var lyT = layers[ci9], lyB = layers[ci9 + 1];
@@ -6832,15 +6861,15 @@ function renderSolidGrid(D){
     ghits.push('<g class="cgrow"><polygon points="'+ptsStr(rc)+'" style="fill:transparent;cursor:pointer" data-act="memblockpick" data-mk="'+ly.k+'"><title>'+esc(LAYER_LABEL[ly.k]+' · '+fmtGB(globalByK[ly.k])+' GB/卡\n点击高亮左侧面板')+'</title></polygon></g>');
   });
 
-  /* ── 层标签（左侧） ── */
+  /* ── 层标签（左侧下方 + 右侧 GB 读数） ── */
   layers.forEach(function(ly){
     var sg0 = stageData[0].byK[ly.k];
     if(!sg0) return;
     var isSel = (ui.memSel === ly.k);
-    var lp = proj(-0.3, ly.y0 + ly.th / 2, totalZ + 0.8, 1);
-    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:14px;fill:'+(isSel?'var(--pt-fg)':sg0.color)+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;dominant-baseline:central;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
+    var lp = proj(-0.3, ly.y0 + ly.th + 0.15, totalZ + 0.8, 1);
+    labels9.push('<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" style="font-size:13px;fill:'+(isSel?'var(--pt-fg)':sg0.color)+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:end;dominant-baseline:hanging;font-weight:700;pointer-events:none">' + esc(LAYER_LABEL[ly.k]) + '</text>');
     var sp2 = proj(BW + 0.5, ly.y0 + ly.th / 2, 0, 1);
-    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(fmtGB(globalByK[ly.k])+' GB/卡 · 全局 '+fmtGB(globalByK[ly.k]*D.world)+' GB') + '</text>');
+    labels9.push('<text x="'+sp2[0].toFixed(1)+'" y="'+sp2[1].toFixed(1)+'" style="font-size:13px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;pointer-events:none">' + esc(fmtGB(globalByK[ly.k])+' GB/卡') + '</text>');
   });
 
   /* ── PP 段标签 ── */
@@ -6877,11 +6906,8 @@ function renderSolidGrid(D){
     var em2 = p3(BW, 0, totalZ*0.2);
     labels9.push('<text x="'+(em2[0]+20/mxScale).toFixed(1)+'" y="'+(em2[1]+4/mxScale).toFixed(1)+'" style="font-size:14px;fill:'+VC.ep+';text-anchor:start;font-weight:800;pointer-events:none'+gStk+'">'+esc('e ← '+DIMN.ep+'×'+D.ep)+'</text>');
   }
-  /* DP 注解 */
-  if(D.dp > 1){
-    var dpP = proj(BW + 1.2, totalH * 0.7, -0.5, 1);
-    labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:14px;fill:'+VC.dp+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;font-weight:800;pointer-events:none">×' + D.dp + ' DP 副本</text>');
-  }
+  /* 恢复选中 DP 的 proj 偏移 */
+  proj = savedProjSel;
   /* 标题 */
   labels9.push('<text x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' 卡') + '</text>');
   labels9.push('<text x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
@@ -6895,7 +6921,7 @@ function renderSolidGrid(D){
     {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途 μb 涨落', dp:'b 被真切（不是复印）',              life:'前向攒 · 反向放（1F1B）'}
   ];
   var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
-    + '<b style="color:var(--pt-fg)">全局切分总账</b>：六个档位分层展开，厚度 ∝ 字节数，权重层按算子×切法分色。'
+    + '<b style="color:var(--pt-fg)">内存分层总账</b>：六个档位分层展开，厚度 ∝ 字节数，权重层按算子×切法分色。'
     + '点击层侧面 → 高亮左侧面板对应档位；W 层顶面 TP×EP 格点 → 定位持有它的那张卡'
     + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）。点 PP 标签换段。<br>'
     + (D.moe
@@ -6927,7 +6953,7 @@ function renderSolidGrid(D){
   viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3, vw: VW, vh: VH};
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
-    + '<button class="pb is-on" data-act="persp" data-p="grid">全局切分</button>'
+    + '<button class="pb is-on" data-act="persp" data-p="grid">内存分层</button>'
     + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
     + '<span class="pt-cfg pt-gridhelp">'
     + '<button class="pt-cfgbtn'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
