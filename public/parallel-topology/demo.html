@@ -6883,7 +6883,7 @@ function renderSolidGrid(D){
     labels9.push('<text x="'+dpP[0].toFixed(1)+'" y="'+dpP[1].toFixed(1)+'" style="font-size:14px;fill:'+VC.dp+';stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;dominant-baseline:central;font-weight:800;pointer-events:none">×' + D.dp + ' DP 副本</text>');
   }
   /* 标题 */
-  labels9.push('<text x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc('全局切分 · ' + D.world + ' 卡') + '</text>');
+  labels9.push('<text x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' 卡') + '</text>');
   labels9.push('<text x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
 
   /* ═══ 说明弹层 ═══ */
