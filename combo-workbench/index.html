@@ -607,8 +607,13 @@ var SLOTS = [
       q.set('vtab', 'side');
       if (s.value === 'cav') { q.set('view', 'solid'); q.set('p', 'grid'); }
       else q.set('view', 'chain');
-      /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
-      return '../patterns/net-slicing/pattern.html?' + q.toString();
+      /* combo-workbench-standalone 分支：直接引 ../parallel-topology/demo.html 本体，
+         不经过 main 那份 deploy.yml 的 "Overlay 并行拓扑" 步骤生成 /patterns/net-slicing/
+         pattern.html——两者内容一致（那一步只做 vendor 路径拍平 + 版本戳 + 默认
+         view/embed 注入，不改这份文档的任何语义），embed=1 在这里显式补上即可。
+         不打 ?v= 版本戳：这份分支没有构建流水线，demo.html 改了就是新的。 */
+      q.set('embed', '1');
+      return '../parallel-topology/demo.html?' + q.toString();
     },
     /* 换 tab 不重载（同一份文档）：pto:state 带 view（既有白名单）+ persp
        （demo 那边为这一格新开的白名单字段），选中卡/主题都留在原地。 */
@@ -638,10 +643,11 @@ var SLOTS = [
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
       q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
-      /* 不打 BUILD 戳：并行拓扑由它自己那条分支发布，版本归它自己管（见 BUILD 那段）。
-         这一格嵌的就是 /patterns/net-slicing/pattern.html 本体，没有第二份拷贝——
-         那边一更新，这里跟着就是新的。 */
-      return '../patterns/net-slicing/pattern.html?' + q.toString();
+      /* combo-workbench-standalone 分支：直接引 ../parallel-topology/demo.html 本体
+         （见上面 netgraph 那格同一条注释），embed=1 在这里显式补上，效果与规范路径
+         /patterns/net-slicing/pattern.html 完全一致，没有第二份拷贝。 */
+      q.set('embed', '1');
+      return '../parallel-topology/demo.html?' + q.toString();
     },
     /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
        怎么切，是并行拓扑自己的事，提到台面反而离它要影响的画面更远。

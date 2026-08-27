@@ -1,3 +1,0 @@
-# Anti-scrape: disallow all crawlers from indexing this deployment.
-User-agent: *
-Disallow: /
