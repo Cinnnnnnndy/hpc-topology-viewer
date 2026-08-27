@@ -8,6 +8,9 @@
 <meta name="referrer" content="no-referrer" />
 <title>组合工作台 · 并行拓扑 × 微批次生命周期</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="../vendor/pto-design-system/styles.css" />
+<link rel="stylesheet" href="./observatory/vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
+<link rel="stylesheet" href="./observatory/vendor/pto-design-system/patterns/ide-frame/pattern.css" />
 <!--
   ══════════════════════════════════════════════════════════════════════
   组合工作台 —— 一块可以往上摞卡片的台面。
@@ -16,8 +19,8 @@
   自己不滚动（滚动都发生在格子里面）。视觉语言照抄 cube-cockpit.html：
   同一套 PTO token（浅色优先、[data-theme=dark] 单块覆盖）、同一种面板圆角与
   段控、底部抽屉就是它那张「Profiling 视图」卡（标题的琥珀色 #8a5f00 也照搬）。
-  token 是**内联**的（值抄自驾驶舱的 ①②③④ 四段），不引 vendor：这一页少一条
-  外部依赖，主题就少一次闪白。
+  外壳仍保留驾驶舱的语义 token 别名；Button / Menu 组件则直接引用共享
+  vendor/pto-design-system，避免继续在页面里复制控件样式。
 
   和已有那两个工作台/驾驶舱的分工：
     · /            统一工作台   —— React 应用，一个主视图
@@ -49,7 +52,7 @@
   ══════════════════════════════════════════════════════════════════════
 -->
 <style>
-/* ① Foundation —— 抄自 cube-cockpit.html（浅色优先 + 主题无关的比例尺） */
+/* ① Foundation —— 外壳兼容别名；控件尺寸与状态由 vendor design system 提供 */
 :root{
   --ark-neutral-1:#F5F5F5; --ark-neutral-2:#FFFFFF;
   --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6;
@@ -139,69 +142,148 @@ body{background:var(--ide-frame-page-bg);color:var(--txt);font-family:var(--font
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(127,127,127,.28);border-radius:var(--radius-pill)}
 
-button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:28px;
-  background:var(--sys-raised);color:var(--txt);border:1px solid var(--sys-border);border-radius:var(--radius-lg);
-  padding:0 11px;font:500 12px/1 var(--font-sans);white-space:nowrap;
-  transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast)}
-button:hover{background:var(--sys-raised-hover);border-color:var(--sys-border-strong)}
-button:active{background:var(--state-press)}
+button{font:inherit}
 button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--focus-ring)}
 button.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--primary) 45%,var(--sys-border-strong));color:var(--primary)}
 a.btn{text-decoration:none}
 
-#app{display:flex;flex-direction:column;height:100vh}
+#app{display:flex;flex-direction:column;width:100%;height:100vh;aspect-ratio:auto;border-radius:0}
 
 /* ═══ 顶栏 ═══ */
 /* 顶栏坐在页面底色上：不铺自己的底色、不画下边框（照 HPC 拓扑查看器那条）。
    面板是浮在这层底色之上的圆角块，顶栏再来一条横线会把它切成上下两片。 */
 /* 顶栏压到 34px：上面只有一个名字和一颗明暗，48px 是给「产品名 + 面包屑 +
    一排窗口按钮」那种顶栏留的，这里撑那么高等于白扔一条 14px 的空带。 */
-#topbar{min-height:34px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 12px}
+#topbar{min-height:48px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;z-index:100}
 #topbar .title{font:var(--ide-frame-title-font);font-weight:700;color:var(--foreground-secondary);
   white-space:nowrap;display:inline-flex;align-items:center}
 #topbar .spacer{flex:1 1 auto}
-.icon-btn{min-height:26px;min-width:28px;padding:0 7px;font-size:12.5px}
 #topbar .sep{width:1px;height:16px;background:var(--border-default);flex:0 0 auto}
 
 /* 框架层控件：数据标注（两个 pattern 都有、分类相同，所以由台面统一出） */
 .dmenu{position:relative}
-.dmenu > button{min-height:24px;padding:0 9px;font-size:11.5px;border-radius:var(--radius-pill);gap:4px}
-.dmenu > button > *{line-height:1;display:inline-flex;align-items:center}
-.dmenu > button b{font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums}
-.dmenu > button .cv{font-size:9px;opacity:.55;margin-top:1px}
-.dmenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:40;display:none;min-width:220px;padding:6px;
-  background:var(--panel);border:1px solid var(--sys-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md)}
+.topbar-action-btn{min-height:36px;padding:0 12px;font-size:12px;gap:6px}
+.topbar-action-btn > *{line-height:1;display:inline-flex;align-items:center}
+.topbar-action-btn b{font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums}
+.topbar-action-btn .cv{width:12px;height:12px;opacity:.55;stroke-width:2;pointer-events:none;transition:transform 140ms ease}
+.topbar-action-btn[aria-expanded="true"] .cv{transform:rotate(180deg)}
+.topbar-action-btn[aria-expanded="true"],.topbar-action-btn[aria-expanded="true"]:hover,.dmenu.open > .topbar-action-btn,.dmenu.open > .topbar-action-btn:hover{border-color:var(--foreground);background:var(--foreground);color:var(--background)}
+.topbar-action-btn[aria-expanded="true"] b{color:inherit}
+/* 浅色下这两颗控制钮铺白底实心：三格视窗在浅色里都是白的，顶栏这两颗也填白，
+   跟右侧白色视窗连成一片。展开态（aria-expanded）仍走上面那套深色高对比，
+   不被这条盖掉。 */
+:root[data-theme="light"] .topbar-action-btn:not([aria-expanded="true"]){background:#ffffff}
+:root[data-theme="light"] .topbar-action-btn:not([aria-expanded="true"]):hover{background:var(--state-hover)}
+.dmenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:120;display:none;min-width:220px}
 .dmenu.open .dmenu-pop{display:block}
 .dmenu-acts{display:flex;gap:4px;padding:2px 2px 6px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px}
-.dmenu-acts button{flex:1 1 0;min-height:24px;font-size:11.5px}
-.dmenu-pop .opt{display:flex;align-items:center;gap:8px;width:100%;min-height:28px;padding:4px 8px;border:0;
-  border-radius:var(--radius-md);background:transparent;color:var(--txt);font:500 12px/1.3 var(--font-sans);
-  text-align:left;justify-content:flex-start}
-.dmenu-pop .opt:hover{background:var(--state-hover);border-color:transparent}
+.dmenu-acts button{flex:1 1 0;font-size:12px}
+.dmenu-pop .opt{justify-content:flex-start}
 .dmenu-pop .opt i{width:8px;height:8px;border-radius:2px;background:var(--c);flex:0 0 auto}
-.dmenu-pop .opt .tick{margin-left:auto;color:var(--primary);font-size:11px}
+.dmenu-pop .opt .tick{display:inline-flex;margin-left:auto;color:var(--primary)}
+.dmenu-pop .opt .tick svg{width:14px;height:14px;stroke-width:2.5;pointer-events:none}
 .dmenu-pop .opt[aria-checked="false"]{color:var(--foreground-muted)}
 .dmenu-pop .opt[aria-checked="false"] .tick{color:transparent}
 .dmenu-pop .opt[aria-checked="false"] i{opacity:.3}
+#klegend .dmenu-pop{top:auto;bottom:calc(100% + 6px);max-height:min(480px,calc(100vh - 96px));overflow:auto}
+
+/* ═══ 全局配置：IDE Frame 的一级右侧 pane，不归任何一个业务视图 ═══ */
+.global-config{
+  --config-description:var(--foreground-secondary);
+  position:absolute;right:8px;top:48px;bottom:8px;z-index:70;width:min(420px,calc(100vw - 32px));
+  background:var(--ide-frame-pane-fill);border-color:var(--ide-frame-pane-border);
+  transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none;
+  transition:transform 180ms ease,opacity 140ms ease;
+}
+.global-config[aria-hidden="false"]{transform:translateX(0);opacity:1;pointer-events:auto}
+.global-config__head{flex:0 0 auto;min-height:52px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-subtle)}
+.global-config__head h2{margin:0;font:var(--ide-frame-title-font);font-size:14px;color:var(--foreground)}
+.global-config__head .btn{margin-left:auto}
+.global-config__body{min-height:0;overflow:auto;padding:0 14px}
+.global-config__section{padding:14px 0;border-top:1px solid var(--border-subtle)}
+.global-config__section:first-child{border-top:0}
+.global-config__section h3{margin:0;color:var(--foreground);font-size:13px;line-height:1.4;font-weight:700}
+.global-config__section-intro{margin:3px 0 11px;color:var(--config-description);font-size:12px;line-height:1.45}
+.parallel-list{display:flex;flex-direction:column;gap:6px}
+.parallel-field{display:grid;grid-template-columns:minmax(0,1fr) 116px;align-items:center;gap:12px;min-height:52px;padding:7px 9px;border:0;border-radius:var(--radius-md);background:var(--state-muted)}
+.parallel-field__meta{min-width:0}
+.parallel-field__meta strong{display:flex;align-items:baseline;gap:7px;color:var(--foreground);font-size:12px;line-height:1.3}
+.parallel-field__meta strong b{color:var(--parallel-color,var(--foreground));font:700 12px/1 var(--font-mono)}
+.parallel-field__meta span{display:block;margin-top:3px;color:var(--config-description);font-size:12px;line-height:1.35}
+.number-stepper{width:116px;height:34px;display:grid;grid-template-columns:32px minmax(0,1fr) 32px;align-items:stretch;overflow:hidden;border:1px solid var(--input-border);border-radius:var(--input-radius);background:var(--input-bg);transition:border-color 120ms ease,box-shadow 120ms ease}
+.number-stepper:focus-within{border-color:var(--foreground);box-shadow:0 0 0 3px color-mix(in srgb,var(--foreground) 16%,transparent)}
+.number-stepper button{min-width:0;min-height:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--foreground-secondary);font:500 16px/1 var(--font-sans)}
+.number-stepper button:first-child{border-right:1px solid var(--border-subtle)}
+.number-stepper button:last-child{border-left:1px solid var(--border-subtle)}
+.number-stepper button:hover{background:var(--state-hover);color:var(--foreground)}
+.number-stepper button:disabled{background:transparent;color:var(--foreground-muted);opacity:.35;cursor:not-allowed}
+.number-stepper input{min-width:0;width:100%;height:32px;padding:0 4px;border:0;border-radius:0;background:transparent;color:var(--input-fg);font:600 13px/1 var(--font-mono);text-align:center;appearance:textfield;-moz-appearance:textfield}
+.number-stepper input::-webkit-inner-spin-button,.number-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.number-stepper input:focus-visible{outline:none;box-shadow:none}
+.global-config__world{margin-top:8px;padding:10px 11px;border:0;border-radius:var(--radius-md);background:var(--state-muted)}
+.global-config__world-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.global-config__world-head span{color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__world-head strong{color:var(--foreground);font:700 18px/1 var(--font-mono)}
+.global-config__world-head strong small{margin-left:4px;color:var(--config-description);font:500 12px/1 var(--font-sans)}
+.global-config__formula{margin-top:6px;color:var(--foreground-secondary);font:500 12px/1.45 var(--font-mono)}
+.global-config__note{margin:7px 0 0;color:var(--config-description);font-size:12px;line-height:1.5}
+.global-config__choice-label{display:block;margin:11px 0 6px;color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__choice-label:first-of-type{margin-top:0}
+.global-config__choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.global-config__choice{min-height:50px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:7px 9px;border:0;border-radius:var(--radius-md);background:var(--state-muted);color:var(--foreground-secondary);text-align:left}
+.global-config__choice:hover{background:var(--state-hover);color:var(--foreground)}
+.global-config__choice[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
+.global-config__choice:disabled{opacity:.45;cursor:not-allowed}
+.global-config__choice strong{font-size:12px;line-height:1.25}
+.global-config__choice small{color:var(--config-description);font-size:12px;line-height:1.3;font-weight:400}
+.global-config__choice[aria-pressed="true"] small{color:inherit;opacity:.72}
+.global-config__advanced{border-top:1px solid var(--border-subtle)}
+.global-config__advanced summary{display:flex;align-items:center;gap:7px;padding:13px 0;color:var(--foreground-secondary);font-size:12px;font-weight:700;cursor:pointer;list-style:none}
+.global-config__advanced summary::-webkit-details-marker{display:none}
+.global-config__advanced summary::before{content:"›";font-size:17px;line-height:1;transition:transform 120ms ease}
+.global-config__advanced[open] summary::before{transform:rotate(90deg)}
+.global-config__advanced-body{padding:0 0 14px}
+.global-config__cuts{display:flex;gap:6px;flex-wrap:wrap}
+.global-config__cuts button{min-height:28px;padding:0 10px;border:0;border-radius:var(--radius-sm);background:var(--state-muted);color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__cuts button:hover{background:var(--state-hover);color:var(--foreground)}
+.global-config__cuts button[aria-pressed="true"]{background:color-mix(in srgb,var(--cut-color,var(--primary)) 14%,var(--state-muted));color:var(--cut-color,var(--primary))}
+.global-config__cuts button:disabled{opacity:.4;cursor:not-allowed}
+.global-config__footer{flex:0 0 auto;padding:10px 12px 12px;border-top:1px solid var(--border-subtle);background:var(--ide-frame-pane-fill)}
+.global-config__status{min-height:17px;margin-bottom:7px;color:var(--danger);font-size:12px;line-height:1.4}
+.global-config__actions{display:flex;justify-content:flex-end;gap:8px}
+#globalConfigBtn.is-selected,#globalConfigBtn.is-selected:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
+#dmenu.open #dmenuBtn,#dmenu.open #dmenuBtn:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
+#dmenu.open #dmenuBtn b{color:inherit}
+
+/* ═══ 全局筛选 Hover Bar：属于上方双视图共同父容器 ═══ */
+.global-filter{position:absolute;left:50%;bottom:12px;z-index:45;max-width:calc(100% - 56px);transform:translateX(-50%);pointer-events:auto}
+.global-filter__surface{display:flex;align-items:center;gap:8px;min-height:36px;max-width:100%;padding:4px;border:1px solid var(--border-strong);border-radius:var(--radius-pill);background:color-mix(in srgb,var(--surface-1) 92%,transparent);box-shadow:var(--shadow-lg);backdrop-filter:blur(16px) saturate(1.15)}
+.global-filter__label{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 7px 0 9px;color:var(--foreground-muted);font-size:12px;font-weight:500;white-space:nowrap}
+.global-filter__label svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.global-filter__groups{display:flex;align-items:center;gap:8px;max-width:min(1050px,calc(100vw - 280px));overflow-x:auto;opacity:1}
+.global-filter__group{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;padding:3px;border-radius:var(--radius-pill);background:var(--state-muted)}
+.global-filter__group b{padding:0 6px;color:var(--filter-color);font:700 12px/1 var(--font-mono);white-space:nowrap}
+.global-filter__group button{min-width:28px;height:28px;padding:0 8px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-secondary);font-size:12px;font-weight:600;white-space:nowrap}
+.global-filter__group button:hover{background:var(--state-hover);color:var(--foreground)}
+.global-filter__group button[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
+.global-filter__clear{flex:0 0 auto;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--foreground-muted);font-size:16px}
+.global-filter__clear:hover{background:var(--state-hover);color:var(--foreground)}
 
 /* ═══ 舞台：左 整网图 ｜ 右 并行拓扑（同一个 pattern 的两份配置） ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
 #slot-netgraph{flex:0 0 var(--side-w,460px);min-width:240px}
-#slot-netgraph[data-folded="1"]{flex:0 0 auto;min-width:0}
-/* 收起之后格头是绝对定位的，整格会塌成 2px 宽——「展开」就再也点不到了。
-   所以收起时把格头放回文档流，这一格缩成「标题 + 展开」那么一条。 */
-#slot-netgraph[data-folded="1"] .slot-head{position:static;padding:7px 10px 7px 12px;pointer-events:auto}
-/* 格头压在画布上，与 pattern 那排机位段控**同一行**：这一格是跟随视图，
-   它自己那条工具条已经只剩右端的机位段控了（名字/搜索/Rank/刀全藏掉，见
-   hideCss），左半边空着，正好放「整网图 + 收起」。省下的那一行 30px 全给画布。
-   只有按钮需要能点，其余不吃事件，免得挡住画布上的拖拽。 */
+/* 收起 = 整格关闭（开关在顶栏，随时能开回来），不是塌成格头一条 */
+#slot-netgraph[data-folded="1"]{display:none}
+/* 右侧格头覆盖在画布上：第一行是正式标题与说明，第二行的视角 Tab 在格子内
+   水平居中。只有 Tab 接事件，其余不吃事件，免得挡住画布拖拽。 */
 #slot-netgraph .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
-  min-height:30px;padding:0;background:transparent;pointer-events:none}
+  display:block;min-height:82px;padding:0;background:transparent;pointer-events:none}
+#slot-netgraph .slot-heading{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 54px)}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
+#slot-netgraph .slot-subtitle{color:var(--foreground-muted);font-size:11.5px;line-height:1.35;font-weight:500}
 #slot-netgraph .slot-head button{pointer-events:auto}
-/* 段控是这一格的名字（整网图 / 全局切分）：整条格头 pointer-events:none 的约定下，
-   钮所在的那只药丸得自己把事件接回来 */
-#slot-netgraph .slot-head .tabs{pointer-events:auto}
+/* Tab 独立占第二行并按整个右侧视图居中，不跟标题宽度一起参与 flex 分配。 */
+#slot-netgraph .slot-head .tabs{position:absolute;top:48px;left:50%;transform:translateX(-50%);width:max-content;pointer-events:auto}
 #slot-topology{flex:1 1 auto;min-width:0}
 /* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
 #vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
@@ -219,31 +301,34 @@ body.is-resizing-x iframe{pointer-events:none}
   -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter)}
 .slot[hidden]{display:none}
 #slot-topology{flex:1 1 auto}
-.slot[data-folded="1"]{flex:0 0 auto}
-.slot[data-folded="1"] .slot-body{display:none}
+.slot[data-folded="1"]{display:none}
 
 /* 格头：标题 + 段控 + 动作，就是驾驶舱抽屉那一排 */
 .slot-head{flex:0 0 auto;min-height:var(--ide-frame-header-height);display:flex;align-items:center;gap:8px;
   padding:3px 10px;border-bottom:0;background:transparent}
 /* 格头里的控件按 32px 那条基线收一号，否则一排 28px 的按钮把头撑成 40px */
-.slot-head button{min-height:24px;padding:0 9px;font-size:11.5px}
+.slot-head button{min-height:28px;padding:0 9px;font-size:12px}
 .slot-title{margin-right:2px;color:var(--foreground);font:var(--ide-frame-title-font);white-space:nowrap;
   display:flex;align-items:center;gap:6px}
 .slot-head .spacer{flex:1 1 auto}
+/* 顶栏面板开关按 ide-frame window-action 形制：纯 icon、面板可见=高亮。
+   pattern 只给了常规态与 hover，is-selected 这一态在这里补齐。 */
+.pto-ide-frame__window-action.is-selected{background:var(--state-hover);color:var(--foreground)}
+.pto-ide-frame__window-action.is-selected .pto-ide-frame__window-icon{opacity:1}
 
 /* ── 走带 + 游标 ─────────────────────────────────────────────────────────
    走带长在泳道的格头里（它量的是泳道那根时间轴），游标叠在泳道画布上。
    两者都归台面所有：上游那份 swimlane.html 是逐字节拷贝，不碰。 */
 .xport{display:flex;align-items:center;gap:6px}
 .xport button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
-.xport input[type=range]{width:132px;height:22px;accent-color:var(--primary);cursor:pointer}
+.xport .slider{width:132px}
 /* 缩放代理组：钮长在台面、事件打进泳道 iframe（同源，直接够得到它的控件）。
    形制照走带那排——同一条格头上的两组小件，不该各长各的。 */
 .zctl{display:flex;align-items:center;gap:5px}
 .zctl button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
-.zctl input[type=range]{width:96px;height:22px;accent-color:var(--primary);cursor:pointer}
-.zctl b{min-width:30px;font-family:var(--font-family-mono, monospace);font-size:11px;color:var(--foreground-muted);font-weight:600}
-.xport b{min-width:42px;font-family:var(--font-family-mono, monospace);font-size:11px;
+.zctl .slider{width:96px}
+.zctl b{min-width:30px;font-family:var(--font-family-mono, monospace);font-size:12px;color:var(--foreground-muted);font-weight:600}
+.xport b{min-width:42px;font-family:var(--font-family-mono, monospace);font-size:12px;
   font-weight:700;color:var(--foreground-secondary);text-align:right}
 /* 游标：容器铺满 iframe 但不吃点击（改时间的入口是走带，不是画布——画布上的点击
    在泳道里另有含义）；真正画出来的是里面那根 <i>。 */
@@ -259,7 +344,7 @@ body.is-resizing-x iframe{pointer-events:none}
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
 .tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
 .tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
-  padding:3px 9px;color:var(--dim);font-weight:500;min-height:22px;font-size:11.5px}
+  padding:3px 9px;color:var(--dim);font-weight:500;min-height:28px;font-size:12px}
 .tabs button:hover{background:var(--state-hover);border-color:transparent;color:var(--txt)}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
 
@@ -275,12 +360,11 @@ body.is-resizing-x iframe{pointer-events:none}
 .slot[data-broken="1"] .slot-fallback{display:grid}
 .slot[data-broken="1"] .slot-body > iframe{visibility:hidden}
 .slot-fallback b{color:var(--txt)}
-.slot-fallback code{font-family:var(--font-mono);font-size:11.5px;background:var(--state-muted);padding:1px 5px;border-radius:4px}
+.slot-fallback code{font-family:var(--font-mono);font-size:12px;background:var(--state-muted);padding:1px 5px;border-radius:4px}
 
 /* ═══ 抽屉（下面那格）—— 驾驶舱 #drawer 的形制 ═══ */
 #dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;margin:0 8px 8px}
 #dock[hidden]{display:none}
-#dock[data-folded="1"]{height:auto;min-height:0}
 
 /* 舞台与抽屉之间的分隔条 */
 #splitter{flex:0 0 auto;height:10px;margin:0 8px;cursor:ns-resize;display:grid;place-items:center;touch-action:none}
@@ -323,33 +407,142 @@ body.is-resizing iframe{pointer-events:none}
      只想看并行拓扑那一屏，也可以直接打开
      <a href="../patterns/net-slicing/pattern.html">这条单屏链接</a>。</p>
 </div>
-<div id="app">
+<div id="app" class="pto-ide-frame" data-ide-frame data-host="standalone" data-surface="solid" data-hide-activity-rail="true">
 
   <!-- ═══ 顶栏 ═══ -->
-  <header id="topbar">
+  <header id="topbar" class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
     <img src="./favicon.svg" alt="" width="22" height="22" style="border-radius:5px;vertical-align:middle;margin-right:6px"/>
-    <span class="title">Workbench</span>
+    <span class="title">分布式训练拓扑分析工作台</span>
 
     <span class="spacer"></span>
+
+    <button class="btn btn-outline btn-compact topbar-action-btn" id="globalConfigBtn" type="button" data-ide-toggle="global-config" aria-label="打开并行配置" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
+      <span>并行配置</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
 
     <!-- 框架层：管整块台面的开关。本来长在各个 pattern 自己身上，提上来统一出，
          格子里那份藏掉——同一排控件出现两次、两格各调各的，是最容易看错的一种界面。 -->
     <div class="dmenu" id="dmenu">
-      <button id="dmenuBtn" aria-haspopup="true" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）"><span>数据</span><b id="dmenuCount">5</b><span class="cv" aria-hidden="true">⌄</span></button>
-      <div class="dmenu-pop" role="menu">
+      <button class="btn btn-outline btn-compact topbar-action-btn" id="dmenuBtn" aria-haspopup="menu" aria-controls="dmenuContent" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）"><span>数据标注</span><b id="dmenuCount">5</b><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="dmenu-pop menu-content" id="dmenuContent" role="menu">
         <div class="dmenu-acts">
-          <button type="button" data-dact="all">全选</button>
-          <button type="button" data-dact="none">全部隐藏</button>
+          <button class="btn btn-ghost btn-compact" type="button" data-dact="all">全选</button>
+          <button class="btn btn-ghost btn-compact" type="button" data-dact="none">全部隐藏</button>
         </div>
         <div id="dmenuOpts"></div>
       </div>
     </div>
 
-    <button class="icon-btn" id="themeBtn" title="切换明暗：外壳与三格里的页面一起换" aria-label="切换明暗">☾</button>
+    <!-- 面板开关：整网图 / 底部泳道 的显示与关闭。IDE 那套 window-actions 形制，
+         放页面右上角（顶栏），不在各自格头里——收起后整格关闭，开关得留在屏上。 -->
+    <div class="pto-ide-frame__window-actions" aria-label="面板开关">
+      <button class="pto-ide-frame__window-action is-selected" type="button" data-fold-toggle="netgraph" aria-controls="slot-netgraph" aria-expanded="true" aria-pressed="true" title="显示/关闭整网图" aria-label="显示/关闭整网图">
+        <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+      </button>
+      <button class="pto-ide-frame__window-action is-selected" type="button" data-fold-toggle="swimlane" aria-controls="dock" aria-expanded="true" aria-pressed="true" title="显示/关闭底部泳道" aria-label="显示/关闭底部泳道">
+        <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/></svg>
+      </button>
+    </div>
+
+    <button class="btn btn-ghost btn-icon btn-compact" id="themeBtn" type="button" data-state="inactive" title="切换到深色主题：外壳与三格里的页面一起换" aria-label="切换到深色主题">
+      <svg class="btn-state-icon--default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      <svg class="btn-state-icon--alternate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
   </header>
 
+  <aside class="pto-ide-frame__pane global-config" id="globalConfig" aria-hidden="true" aria-label="并行配置">
+    <header class="global-config__head">
+      <h2>并行配置</h2>
+      <button class="btn btn-ghost btn-icon btn-compact" id="globalConfigClose" type="button" aria-label="关闭全局配置" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="global-config__body">
+      <section class="global-config__section">
+        <h3>并行策略</h3>
+        <p class="global-config__section-intro">设置各并行维度。数值 1 表示该维度不进行切分或复制。</p>
+        <div class="parallel-list">
+          <div class="parallel-field" style="--parallel-color:#21c4db">
+            <span class="parallel-field__meta"><strong><b>TP</b>张量并行</strong><span>划分注意力头与隐藏维度</span></span>
+            <div class="number-stepper" role="group" aria-label="TP 张量并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 TP 张量并行度">−</button><input type="number" min="1" step="1" value="2" data-global-cfg="tp" aria-label="TP 张量并行度"><button type="button" data-number-step="1" aria-label="增加 TP 张量并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#7cc510">
+            <span class="parallel-field__meta"><strong><b>CP</b>上下文并行</strong><span>划分输入序列长度</span></span>
+            <div class="number-stepper" role="group" aria-label="CP 上下文并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 CP 上下文并行度">−</button><input type="number" min="1" step="1" value="1" data-global-cfg="cp" aria-label="CP 上下文并行度"><button type="button" data-number-step="1" aria-label="增加 CP 上下文并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#ff9f2d">
+            <span class="parallel-field__meta"><strong><b>PP</b>流水线并行</strong><span>将模型层划分为多个阶段</span></span>
+            <div class="number-stepper" role="group" aria-label="PP 流水线并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 PP 流水线并行度">−</button><input type="number" min="1" step="1" value="4" data-global-cfg="pp" aria-label="PP 流水线并行度"><button type="button" data-number-step="1" aria-label="增加 PP 流水线并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#4369ef">
+            <span class="parallel-field__meta"><strong><b>DP</b>数据并行</strong><span>复制模型分片并处理不同数据批次</span></span>
+            <div class="number-stepper" role="group" aria-label="DP 数据并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 DP 数据并行度">−</button><input type="number" min="1" step="1" value="16" data-global-cfg="dp" aria-label="DP 数据并行度"><button type="button" data-number-step="1" aria-label="增加 DP 数据并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#9236ed">
+            <span class="parallel-field__meta"><strong><b>EP</b>专家并行</strong><span>划分 MoE 专家集合</span></span>
+            <div class="number-stepper" role="group" aria-label="EP 专家并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 EP 专家并行度">−</button><input type="number" min="1" step="1" value="8" data-global-cfg="ep" aria-label="EP 专家并行度"><button type="button" data-number-step="1" aria-label="增加 EP 专家并行度">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="global-config__world" aria-live="polite">
+          <div class="global-config__world-head"><span>总设备数（WORLD）</span><strong id="globalWorld">128<small>张卡</small></strong></div>
+          <div class="global-config__formula" id="globalFormula">TP 2 × CP 1 × PP 4 × DP 16</div>
+          <p class="global-config__note">EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。</p>
+        </div>
+      </section>
+      <section class="global-config__section">
+        <h3>观察方式</h3>
+        <p class="global-config__section-intro">设置并行拓扑视图的观察层级、卡片内容与设备排列。</p>
+        <span class="global-config__choice-label">观察层级</span>
+        <div class="global-config__choice-grid" role="group" aria-label="观察层级">
+          <button class="global-config__choice" type="button" data-global-rank-view="logical" aria-pressed="false"><strong>逻辑切分</strong><small>查看模型如何被划分</small></button>
+          <button class="global-config__choice" type="button" data-global-rank-view="device" aria-pressed="true"><strong>设备视图（Rank）</strong><small>查看分片如何映射到卡</small></button>
+        </div>
+        <span class="global-config__choice-label">卡片内容</span>
+        <div class="global-config__choice-grid" role="group" aria-label="设备卡片内容" data-rank-only>
+          <button class="global-config__choice" type="button" data-global-card-view="net" aria-pressed="false"><strong>模型分片</strong><small>展示层与算子归属</small></button>
+          <button class="global-config__choice" type="button" data-global-card-view="cap" aria-pressed="true"><strong>显存占用</strong><small>展示 HBM 负载构成</small></button>
+        </div>
+        <span class="global-config__choice-label">设备排列</span>
+        <div class="global-config__choice-grid" role="group" aria-label="设备排列方式" data-rank-only>
+          <button class="global-config__choice" type="button" data-global-layout="parallel" aria-pressed="true"><strong>按并行组</strong><small>依据 TP、CP、PP、DP 排列</small></button>
+          <button class="global-config__choice" type="button" data-global-layout="physical" aria-pressed="false"><strong>按服务器槽位</strong><small>每台服务器显示 8 张卡</small></button>
+        </div>
+      </section>
+      <details class="global-config__advanced" open>
+        <summary>高级显示选项</summary>
+        <div class="global-config__advanced-body">
+          <p class="global-config__section-intro">选择需要显示的切分标记；该设置不会修改并行度。</p>
+          <div class="global-config__cuts" id="globalCuts">
+            <button type="button" data-global-cut="dp" aria-pressed="true" style="--cut-color:#4369ef">DP</button>
+            <button type="button" data-global-cut="pp" aria-pressed="true" style="--cut-color:#ff9f2d">PP</button>
+            <button type="button" data-global-cut="cp" aria-pressed="true" style="--cut-color:#7cc510">CP</button>
+            <button type="button" data-global-cut="tp" aria-pressed="true" style="--cut-color:#21c4db">TP·SP</button>
+            <button type="button" data-global-cut="ep" aria-pressed="true" style="--cut-color:#9236ed">EP</button>
+          </div>
+        </div>
+      </details>
+    </div>
+    <footer class="global-config__footer">
+      <div class="global-config__status" id="globalConfigStatus" role="status"></div>
+      <div class="global-config__actions">
+        <button class="btn btn-outline" id="globalConfigReset" type="button">恢复默认</button>
+        <button class="btn btn-solid" id="globalConfigApply" type="button">应用并更新视图</button>
+      </div>
+    </footer>
+  </aside>
+
   <!-- ═══ 舞台：并行拓扑 ═══ -->
-  <main id="stage">
+  <main id="stage" class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="topology-workspace">
     <!-- 左：并行拓扑——**主视图**，占满舞台剩下的宽度，控件一个不藏。
          这一格不放我们的格头：pattern 在画布左上角自己写「并行拓扑」，
          「＋ 搜索」也长在那一行里。 -->
@@ -374,11 +567,11 @@ body.is-resizing iframe{pointer-events:none}
          左边那格走，自己不另开一套入口。 -->
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
-        <!-- 名字让位给段控：这一格现在有两个答法（整网图 / 全局切分），
-             tab 本身就是名字，再挂一枚静态标题会跟当前 tab 打架。 -->
+        <div class="slot-heading">
+          <span class="slot-title">模型全局切分视图</span>
+          <span class="slot-subtitle">从整网结构与分片总览两个视角查看模型切分。</span>
+        </div>
         <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
-        <button data-act="fold" title="收起这一格，只留格头">收起</button>
-        <span class="spacer"></span>
       </header>
       <div class="slot-body">
         <iframe data-slot="netgraph" title="并行拓扑 · 整网图（不落 DP）"></iframe>
@@ -390,6 +583,17 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </section>
 
+    <div class="global-filter" id="globalFilter">
+      <div class="global-filter__surface" role="toolbar" aria-label="选择并查看并行对象">
+        <div class="global-filter__label">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span>选择并查看并行对象</span>
+        </div>
+        <div class="global-filter__groups" id="globalFilterGroups"></div>
+        <button class="global-filter__clear" id="globalFilterClear" type="button" aria-label="清除全局筛选" title="清除筛选">×</button>
+      </div>
+    </div>
+
   </main>
 
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="拖动调整下方抽屉高度"></div>
@@ -398,7 +602,6 @@ body.is-resizing iframe{pointer-events:none}
   <section class="slot" id="dock">
     <header class="slot-head">
       <span class="slot-title">微批次生命周期泳道</span>
-      <button data-act="fold" title="收起这一格，只留格头">收起</button>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
            而「这一步走到此刻，每张卡手上压着多少激活」正是它与拓扑那两格之间
@@ -406,19 +609,22 @@ body.is-resizing iframe{pointer-events:none}
            （overlay，不碰上游那个文件），进度同时推给两格 pattern（pto:state 的
            step），它们按 1F1B 的形状把逐卡的激活体算到那一刻。 -->
       <div class="xport" id="xport">
-        <button data-act="play" aria-label="播放一个训练步" title="播放一个训练步：游标走一遍，两格里每张卡的激活体跟着这一刻的 1F1B 在途份数变化">▶</button>
-        <input id="xpT" type="range" min="0" max="1000" value="0" aria-label="训练步进度" title="拖动到这一步的任意时刻" />
+        <button class="btn btn-ghost btn-icon btn-compact" data-act="play" type="button" data-state="inactive" aria-label="播放一个训练步" title="播放一个训练步：游标走一遍，两格里每张卡的激活体跟着这一刻的 1F1B 在途份数变化">
+          <svg class="btn-state-icon--default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg>
+          <svg class="btn-state-icon--alternate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+        </button>
+        <input class="slider" id="xpT" type="range" min="0" max="1000" value="0" aria-label="训练步进度" aria-valuetext="峰值" title="拖动到这一步的任意时刻" />
         <b id="xpPct">峰值</b>
       </div>
       <!-- 缩放（代理）：泳道自己的那条格头整条藏掉了（见 hideCss——名字归格头后
            它只剩右端一组缩放钮，单独占一行 32px），钮搬到这儿，点击打回 iframe 里
            原来的控件。i（对象层级）也一并代理：它的弹层锚点藏了会退到框内角落，可用。 -->
       <div class="zctl" id="zctl">
-        <button data-zc="out" title="缩小时间轴">−</button>
-        <input id="zcs" type="range" min="0" max="6" step="1" value="0" aria-label="时间轴缩放" title="离散缩放：1× – 64×">
-        <button data-zc="in" title="放大时间轴">＋</button>
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="out" type="button" title="缩小时间轴" aria-label="缩小时间轴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+        <input class="slider" id="zcs" type="range" min="0" max="6" step="1" value="0" aria-label="时间轴缩放" aria-valuetext="1 倍" title="离散缩放：1× – 64×">
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="in" type="button" title="放大时间轴" aria-label="放大时间轴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <b id="zcv">1×</b>
-        <button data-zc="info" title="对象层级" aria-label="查看对象层级">i</button>
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="info" type="button" title="对象层级" aria-label="查看对象层级"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button>
       </div>
       <!-- kernel 分段图例：泳道自己那条常驻图例（.timeline-footer）在卡片内嵌形态下
            被 embed.css 整行 display:none（那 38px 留给泳道本身），色带含义因此只剩
@@ -426,44 +632,44 @@ body.is-resizing iframe{pointer-events:none}
            自己（不是 iframe 里），不占泳道一像素，点开是常驻可查的图例，弹层复用
            顶栏"数据"下拉那一套 .dmenu/.dmenu-pop 样式，不用另起一套面板视觉语言。 -->
       <div class="dmenu" id="klegend">
-        <button id="klegendBtn" aria-haspopup="true" aria-expanded="false" title="前向/反向条内色带 = kernel 分段，含义见此">
-          <span>图例</span><span class="cv" aria-hidden="true">⌄</span>
+        <button class="btn btn-outline btn-compact" id="klegendBtn" aria-haspopup="menu" aria-controls="klegendContent" aria-expanded="false" title="前向/反向条内色带 = kernel 分段，含义见此">
+          <span>图例</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
-        <div class="dmenu-pop" role="menu" style="min-width:190px">
+        <div class="dmenu-pop menu-content" id="klegendContent" role="menu" style="min-width:190px">
           <!-- 泳道自带的那行常驻图例（.timeline-footer）在内嵌形态下被 embed.css
                藏掉了（纵向每一像素都给泳道本身），于是**条本身**那几种颜色——前向/
                反向/等待/通信/驻留——在台面上一处说明都没有，只剩 kernel 分段那三条，
                读者看到的是「解释了条里面的色带，却没解释条本身」。把主图例一并搬进
                这颗浮层：颜色取的是泳道那份同名 CSS 变量（--viz-*），不另抄一套色值，
                上游改色这里跟着变。 -->
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#38bdf8;flex:0 0 auto" data-viz="--viz-forward"></i>前向计算
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#a855f7;flex:0 0 auto" data-viz="--viz-backward"></i>反向计算
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#94a3b8;flex:0 0 auto" data-viz="--viz-wait"></i>依赖等待（不是异常）
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#22c55e;flex:0 0 auto" data-viz="--viz-comm"></i>通信事务（PP send/recv）
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#c4b5fd;flex:0 0 auto" data-viz="--viz-hold"></i>激活驻留
           </div>
-          <div style="padding:6px 8px 2px;font-size:10.5px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+          <div style="padding:6px 8px 2px;font-size:12px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
             以下是<b>条内部</b>的半透明色带（kernel 分段），不是新的事件类别：
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#06B6D4;flex:0 0 auto"></i>TP 切分（列切/头切）
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:#A855F7;flex:0 0 auto"></i>EP 切分（桶切）
           </div>
-          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:11.5px;color:var(--txt)">
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
             <i style="width:8px;height:8px;border-radius:2px;background:var(--foreground-muted);flex:0 0 auto"></i>不切分（无参数，如 attn.core）
           </div>
-          <div style="padding:6px 8px 2px;font-size:10.5px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+          <div style="padding:6px 8px 2px;font-size:12px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
             段够宽会刻 TP/EP 字样；窄段悬浮看具体是哪个 kernel。"等待"类条本来就不参与分段，不是漏画。
           </div>
         </div>
@@ -484,6 +690,8 @@ body.is-resizing iframe{pointer-events:none}
 
 </div>
 
+<script src="./observatory/vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="./observatory/vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
 <script>
 (function () {
 'use strict';
@@ -506,6 +714,25 @@ body.is-resizing iframe{pointer-events:none}
    里对 vendor 的引用就带着自己那一版的 ?v=）。这样「工作台里的并行拓扑」和
    「直接打开 /patterns/net-slicing/」永远是同一份文件、同一个版本。 */
 var BUILD = '';
+
+/* 一份全局拓扑状态，两个空间视图只负责用不同问法投影它。 */
+var GLOBAL_MODEL_LAYERS = 48;
+var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8 };
+var globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
+var globalMode = { rank:true, cardView:'cap' };
+var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true, phys:false };
+var globalFilter = { t:null, e:null, p:null };
+function globalCutsString(includeDp) {
+  return (includeDp && globalCuts.dp ? 'd' : '') + (globalCuts.pp ? 'p' : '') +
+    (globalCuts.cp ? 'c' : '') + (globalCuts.tp ? 't' : '') + (globalCuts.ep ? 'e' : '');
+}
+function appendGlobalQuery(q, options) {
+  ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
+  q.set('cuts', globalCutsString(options && options.includeDp));
+  if (globalCuts.phys && options && options.rank) q.set('phys', '1');
+  q.set('rank', options && options.rank && globalMode.rank ? '1' : '0');
+  if (options && options.rank && globalMode.rank) q.set('net', globalMode.cardView === 'net' ? '1' : '0');
+}
 
 var SLOTS = [
   {
@@ -552,10 +779,13 @@ var SLOTS = [
        .pt-cfg/.pt-cfgbtn 那副壳（与舞台上「配置」黑圆钮同款），不是 .pt-mv，
        天然不会被这条 :not(.pt-disp) 连坐，不用单独放过。 */
     hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
-             '#stageTitle > b{display:none!important}' +
+             '#stageTitle .pt-stagecopy{display:none!important}' +
              '#qbar{display:none!important}' +
-             '.pt-sw[data-act="cardmode"]{display:none!important}' +
-             '.pt-seg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-cfgpanel .pt-cfgsearch{display:none!important}' +
+             '.pt-cfgpanel .cg:has(.pt-sw[data-act="cardmode"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+             '#groupHud{display:none!important}' +
              /* 搜索结果那块浮层也藏掉：标签由主视图落，这块面板逐字复读主视图
                 那一块，同一屏出现两遍，还压住半张画布。 */
              '#revbox{display:none!important}' +
@@ -573,6 +803,10 @@ var SLOTS = [
                 由主视图那边操纵。藏的是那排按钮，不是能力——滚轮缩放、拖动平移
                 照旧（都是画布上的手势，不经过这排按钮）。 */
              '#zoomHud{display:none!important}' +
+             /* 格头已经用段控明确写出「整网图 / 全局切分」。全局切分 SVG 内原有的
+                两行标题在嵌入态会与这枚段控占同一个左上角，保留只会叠字；独立打开
+                demo 时不注入本规则，所以原有标题仍正常显示。 */
+             '.pt-grid-title{display:none!important}' +
              /* 「全局切分」tab 打开的是 view=solid 的 grid 子视角。它的 stagebar 上
                 有整排子视角按钮（双链映射/交集腔/全局切分）——在这一格里，看哪个
                 答法由格头的 tab 说了算，格子里再放一排会出现两套互相打架的切换器；
@@ -591,6 +825,7 @@ var SLOTS = [
       /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。
          （全局切分那页是个例外：它的每一格本来就是「点了定位到卡」，那是它的题面。） */
       q.set('rank', '0');
+      appendGlobalQuery(q, { includeDp:false, rank:false });
       /* 默认落侧视：这一屏把每个算子被哪把刀沿哪根轴切标在旁边
          （SP 切 seq、TP 切 hidden、EP 切 expert），正是这一格要回答的
          「一张整网被切成什么」。
@@ -643,6 +878,7 @@ var SLOTS = [
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
       q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
+      appendGlobalQuery(q, { includeDp:true, rank:true });
       /* combo-workbench-standalone 分支：直接引 ../parallel-topology/demo.html 本体
          （见上面 netgraph 那格同一条注释），embed=1 在这里显式补上，效果与规范路径
          /patterns/net-slicing/pattern.html 完全一致，没有第二份拷贝。 */
@@ -659,7 +895,11 @@ var SLOTS = [
        「交集腔」tab 里能点到「全局切分」子视角，它自己的「？」说明按钮借的是
        .pt-cfg/.pt-cfgbtn（与舞台「配置」黑圆钮同款），不是 .pt-mv，同样不受
        这条规则影响，不用放过。 */
-    hideCss: '.pt-mv:not(.pt-disp){display:none!important}',
+    hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
+             '.pt-cfgpanel .cg:has(.pt-sw[data-act="cardmode"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+             '#groupHud{display:none!important}',
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
@@ -789,6 +1029,19 @@ var FLAGS = { folded: 'fold' };
 
 function readURL() {
   var q = new URLSearchParams(location.search);
+  var gc = (q.get('gc') || '').split(',').map(function (v) { return parseInt(v, 10); });
+  if (gc.length === 5 && gc.every(function (v) { return isFinite(v) && v >= 1; })) {
+    ['world','tp','cp','pp','ep'].forEach(function (k, i) { globalCfg[k] = gc[i]; });
+    var gcBase = globalCfg.tp * globalCfg.cp * globalCfg.pp;
+    globalCfg.dp = gcBase > 0 && globalCfg.world % gcBase === 0 ? globalCfg.world / gcBase : GLOBAL_CFG_DEFAULT.dp;
+  }
+  if (q.has('cuts')) {
+    var cuts = q.get('cuts') || '';
+    ['dp','pp','cp','tp','ep'].forEach(function (k) { globalCuts[k] = cuts.indexOf(k.charAt(0)) >= 0; });
+  }
+  globalCuts.phys = q.get('phys') === '1';
+  globalMode.rank = q.get('rank') !== '0';
+  globalMode.cardView = q.get('cardview') === 'net' ? 'net' : 'cap';
   var has = {};
   Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
   SLOTS.forEach(function (c) {
@@ -829,6 +1082,13 @@ function writeURL() {
   if (sideW !== DEFAULT_SIDE_W) q.set('w', String(sideW));
   if (dataOn.length !== DATAK.length) q.set('m', dataOn.join(','));
   if (shellDark) q.set('ui', 'dark');
+  var cfgChanged = ['world','tp','cp','pp','dp','ep'].some(function (k) { return globalCfg[k] !== GLOBAL_CFG_DEFAULT[k]; });
+  if (cfgChanged) q.set('gc', ['world','tp','cp','pp','ep'].map(function (k) { return globalCfg[k]; }).join(','));
+  var cutsNow = globalCutsString(true);
+  if (cutsNow !== 'dpcte') q.set('cuts', cutsNow);
+  if (globalCuts.phys) q.set('phys', '1');
+  if (!globalMode.rank) q.set('rank', '0');
+  if (globalMode.cardView === 'net') q.set('cardview', 'net');
   var qs = q.toString();
   history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
 }
@@ -905,8 +1165,12 @@ function applySlotVisibility() {
   SLOTS.forEach(function (c) {
     var host = slotEl(c.id);
     if (state[c.id].folded) host.dataset.folded = '1'; else delete host.dataset.folded;
-    var fold = host.querySelector('[data-act="fold"]');
-    if (fold) fold.textContent = state[c.id].folded ? '展开' : '收起';
+    var toggle = document.querySelector('[data-fold-toggle="' + c.id + '"]');
+    if (toggle) {
+      toggle.classList.toggle('is-selected', !state[c.id].folded);
+      toggle.setAttribute('aria-expanded', String(!state[c.id].folded));
+      toggle.setAttribute('aria-pressed', String(!state[c.id].folded));
+    }
   });
   /* 收起来的格子，旁边那条分隔条也没意义了 */
   $('#splitter').hidden = state.swimlane.folded;
@@ -926,12 +1190,199 @@ function applySideW() {
    选中的卡 / 事件清掉；没装载好的下一次 load 会从 src 的 ?theme= 带进去。 */
 function applyShellTheme() {
   document.documentElement.setAttribute('data-theme', theme());
-  $('#themeBtn').textContent = shellDark ? '☀' : '☾';
+  var themeBtn = $('#themeBtn');
+  themeBtn.dataset.state = shellDark ? 'active' : 'inactive';
+  themeBtn.setAttribute('aria-label', shellDark ? '切换到浅色主题' : '切换到深色主题');
+  themeBtn.title = (shellDark ? '切换到浅色主题' : '切换到深色主题') + '：外壳与三格里的页面一起换';
   SLOTS.forEach(function (slot) {
     var frame = $('iframe[data-slot="' + slot.id + '"]');
     if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
     if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
   });
+}
+
+/* ── 全局配置与双视图 Hover Bar ─────────────────────────────────── */
+function setGlobalConfigOpen(open) {
+  var panel = $('#globalConfig'), btn = $('#globalConfigBtn');
+  if (open) {
+    var dataMenu = $('#dmenu'), dataBtn = $('#dmenuBtn');
+    dataMenu.classList.remove('open');
+    dataBtn.setAttribute('aria-expanded', 'false');
+  }
+  panel.setAttribute('aria-hidden', String(!open));
+  btn.classList.toggle('is-selected', open);
+  btn.setAttribute('aria-expanded', String(open));
+  btn.setAttribute('aria-pressed', String(open));
+  btn.setAttribute('aria-label', open ? '关闭并行配置' : '打开并行配置');
+  if (open) setTimeout(function () { var f = panel.querySelector('input'); if (f) f.focus(); }, 190);
+}
+
+function syncGlobalConfigUI() {
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.value = String(globalCfg[input.dataset.globalCfg]); });
+  document.querySelectorAll('[data-global-rank-view]').forEach(function (b) {
+    b.setAttribute('aria-pressed', String((b.dataset.globalRankView === 'device') === globalMode.rank));
+  });
+  document.querySelectorAll('[data-global-card-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.globalCardView === globalMode.cardView)); });
+  document.querySelectorAll('[data-global-layout]').forEach(function (b) { b.setAttribute('aria-pressed', String((b.dataset.globalLayout === 'physical') === globalCuts.phys)); });
+  document.querySelectorAll('[data-rank-only] button').forEach(function (b) { b.disabled = !globalMode.rank; });
+  document.querySelectorAll('[data-global-cut]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!globalCuts[b.dataset.globalCut])); });
+  updateGlobalWorld();
+}
+
+function globalDraft() {
+  var out = {};
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { out[input.dataset.globalCfg] = parseInt(input.value, 10); });
+  out.world = out.tp * out.cp * out.pp * out.dp;
+  return out;
+}
+
+function validateGlobalConfig(c) {
+  if (['tp','cp','pp','dp','ep'].some(function (k) { return !isFinite(c[k]) || c[k] < 1; })) return '所有并行度必须是大于 0 的整数。';
+  if (32 % c.tp !== 0 || 4096 % c.tp !== 0) return '当前模型的 heads=32、hidden=4096，必须能被 TP 整除。';
+  if (48 % c.pp !== 0) return '当前模型共 48 层，必须能被 PP 均分。';
+  if (64 % c.ep !== 0) return '当前模型共 64 个专家，必须能被 EP 整除。';
+  if ((c.tp * c.cp * c.dp) % c.ep !== 0) return 'TP × CP × DP 必须能被 EP 整除，以形成完整的专家并行组。';
+  return '';
+}
+
+function updateGlobalWorld() {
+  var c = globalDraft();
+  var valid = ['tp','cp','pp','dp'].every(function (k) { return isFinite(c[k]) && c[k] >= 1; });
+  $('#globalWorld').innerHTML = (valid ? String(c.world) : '—') + '<small>张卡</small>';
+  $('#globalFormula').textContent = valid
+    ? 'TP ' + c.tp + ' × CP ' + c.cp + ' × PP ' + c.pp + ' × DP ' + c.dp
+    : '完成 TP、CP、PP 与 DP 设置后自动计算';
+  document.querySelectorAll('[data-global-cut]').forEach(function (b) {
+    var degree = c[b.dataset.globalCut];
+    b.disabled = !isFinite(degree) || degree <= 1;
+  });
+  document.querySelectorAll('.number-stepper').forEach(function (group) {
+    var input = group.querySelector('input'), value = parseInt(input.value, 10);
+    var min = input.min === '' ? -Infinity : parseInt(input.min, 10);
+    var max = input.max === '' ? Infinity : parseInt(input.max, 10);
+    group.querySelector('[data-number-step="-1"]').disabled = !isFinite(value) || value <= min;
+    group.querySelector('[data-number-step="1"]').disabled = !isFinite(value) || value >= max;
+  });
+  var status = $('#globalConfigStatus');
+  if (status && status.style.color && status.textContent) status.textContent = '';
+}
+
+function spatialPayload(id) {
+  return {
+    type:'pto:state',
+    config:Object.assign({}, globalCfg),
+    mode:id === 'topology' ? Object.assign({}, globalMode) : {rank:false,cardView:'net'},
+    knives:{
+      dp:id === 'topology' ? globalCuts.dp : false,
+      pp:globalCuts.pp, cp:globalCuts.cp, tp:globalCuts.tp, ep:globalCuts.ep,
+      phys:id === 'topology' ? globalCuts.phys : false
+    },
+    theme:theme()
+  };
+}
+
+function applyGlobalStateToFrame(id) {
+  if (id !== 'topology' && id !== 'netgraph') return;
+  var frame = $('iframe[data-slot="' + id + '"]');
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage(spatialPayload(id), '*');
+}
+
+function broadcastGlobalState() {
+  applyGlobalStateToFrame('topology');
+  applyGlobalStateToFrame('netgraph');
+}
+
+function renderGlobalFilter() {
+  var groups = [];
+  if (globalCuts.tp && globalCfg.tp > 1) groups.push({k:'t',name:'TP·SP',n:globalCfg.tp,color:'#21c4db'});
+  if (globalCuts.ep && globalCfg.ep > 1) groups.push({k:'e',name:'EP',n:globalCfg.ep,color:'#9236ed'});
+  if (globalCuts.pp && globalCfg.pp > 1) groups.push({k:'p',name:'PP',n:globalCfg.pp,color:'#ff9f2d'});
+  $('#globalFilterGroups').innerHTML = groups.map(function (g) {
+    var cells = '';
+    for (var i = 0; i < g.n; i++) {
+      var layerStart = Math.floor(i * GLOBAL_MODEL_LAYERS / g.n);
+      var layerEnd = Math.floor((i + 1) * GLOBAL_MODEL_LAYERS / g.n) - 1;
+      var label = g.k === 'p' ? 'PP' + i + '·L' + layerStart + '–' + layerEnd : String(i);
+      cells += '<button type="button" data-global-filter="' + g.k + '" data-index="' + i + '" aria-pressed="' + String(globalFilter[g.k] === i) + '">' + label + '</button>';
+    }
+    return '<span class="global-filter__group" style="--filter-color:' + g.color + '"><b>' + g.name + '</b>' + cells + '</span>';
+  }).join('');
+  var hasSelection = groups.some(function (g) { return globalFilter[g.k] !== null; });
+  $('#globalFilterClear').disabled = !hasSelection;
+}
+
+function sendGlobalFilters() {
+  ['topology','netgraph'].forEach(function (id) {
+    var frame = $('iframe[data-slot="' + id + '"]');
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
+  });
+}
+
+function clearGlobalFilter() {
+  globalFilter = {t:null,e:null,p:null};
+  renderGlobalFilter();
+  sendGlobalFilters();
+  pushHL('swimlane', 'rank', null);
+}
+
+function wireGlobalControls() {
+  $('#globalConfigBtn').addEventListener('click', function () { setGlobalConfigOpen($('#globalConfig').getAttribute('aria-hidden') === 'true'); });
+  $('#globalConfigClose').addEventListener('click', function () { setGlobalConfigOpen(false); });
+  document.querySelectorAll('[data-global-rank-view]').forEach(function (b) {
+    b.addEventListener('click', function () { globalMode.rank = b.dataset.globalRankView === 'device'; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
+  });
+  document.querySelectorAll('[data-global-card-view]').forEach(function (b) {
+    b.addEventListener('click', function () { globalMode.cardView = b.dataset.globalCardView; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
+  });
+  document.querySelectorAll('[data-global-layout]').forEach(function (b) {
+    b.addEventListener('click', function () { globalCuts.phys = b.dataset.globalLayout === 'physical'; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
+  });
+  $('#globalCuts').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-global-cut]'); if (!b) return;
+    globalCuts[b.dataset.globalCut] = !globalCuts[b.dataset.globalCut];
+    syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); writeURL();
+  });
+  document.querySelectorAll('.number-stepper').forEach(function (group) {
+    group.addEventListener('click', function (ev) {
+      var button = ev.target.closest('[data-number-step]'); if (!button || button.disabled) return;
+      var input = group.querySelector('input'), value = parseInt(input.value, 10);
+      var min = input.min === '' ? -Infinity : parseInt(input.min, 10);
+      var max = input.max === '' ? Infinity : parseInt(input.max, 10);
+      var step = input.step === '' ? 1 : parseInt(input.step, 10);
+      if (!isFinite(value)) value = isFinite(min) ? min : 0;
+      input.value = String(Math.min(max, Math.max(min, value + (+button.dataset.numberStep * step))));
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+      input.focus();
+    });
+  });
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.addEventListener('input', updateGlobalWorld); });
+  $('#globalConfigApply').addEventListener('click', function () {
+    var next = globalDraft(), error = validateGlobalConfig(next), status = $('#globalConfigStatus');
+    if (error) { status.style.color = 'var(--danger)'; status.textContent = error; return; }
+    globalCfg = next; globalFilter = {t:null,e:null,p:null};
+    status.style.color = 'var(--success)'; status.textContent = '配置已应用，三个视图已同步更新。';
+    renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
+  });
+  $('#globalConfigReset').addEventListener('click', function () {
+    globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
+    globalMode = {rank:true,cardView:'cap'};
+    globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true,phys:false};
+    globalFilter = {t:null,e:null,p:null};
+    $('#globalConfigStatus').textContent = '';
+    syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
+  });
+  $('#globalFilterGroups').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-global-filter]'); if (!b) return;
+    var dim = b.dataset.globalFilter, index = +b.dataset.index;
+    globalFilter[dim] = globalFilter[dim] === index ? null : index;
+    renderGlobalFilter(); sendGlobalFilters();
+  });
+  $('#globalFilterClear').addEventListener('click', clearGlobalFilter);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if ($('#globalConfig').getAttribute('aria-hidden') === 'false') setGlobalConfigOpen(false);
+  });
+  syncGlobalConfigUI(); renderGlobalFilter();
 }
 
 /* ── 框架层：刀键 / 数据标注 ─────────────────────────────────────────
@@ -1004,6 +1455,7 @@ function settleFrame(slot, frame) {
   function done() {
     hideTakenOver(slot, frame);
     applyData();
+    applyGlobalStateToFrame(slot.id);
     if (slot.id === 'netgraph') wireOpToRank(frame);
     if (slot.id === 'swimlane') { applyDockAux(); zctlSync(); }
     host.dataset.ready = '1';
@@ -1212,8 +1664,16 @@ function applyXport(push) {
   var rng = document.getElementById('xpT');
   var btn = document.querySelector('#xport [data-act="play"]');
   if (pct) pct.textContent = xpT === null ? '峰值' : Math.round(xpT * 100) + '%';
-  if (rng && document.activeElement !== rng) rng.value = String(Math.round((xpT || 0) * 1000));
-  if (btn) btn.textContent = xpPlaying ? '❚❚' : '▶';
+  if (rng) {
+    var sliderValue = Math.round((xpT || 0) * 1000);
+    if (document.activeElement !== rng) rng.value = String(sliderValue);
+    rng.style.setProperty('--slider-progress', (sliderValue / 10) + '%');
+    rng.setAttribute('aria-valuetext', xpT === null ? '峰值' : Math.round(xpT * 100) + '%');
+  }
+  if (btn) {
+    btn.dataset.state = xpPlaying ? 'active' : 'inactive';
+    btn.setAttribute('aria-label', xpPlaying ? '暂停训练步播放' : '播放一个训练步');
+  }
   xpPlaceCursor();
   if (push !== false) {
     var q = xpT === null ? -1 : Math.round(xpT * 200);   /* 推送量化到 0.5%，省掉无意义的重画 */
@@ -1264,7 +1724,11 @@ function zctlSync() {
   if (!doc || !v) return;
   var iv = doc.getElementById('zoomValue'), isl = doc.getElementById('zoomSlider');
   if (iv) v.textContent = iv.textContent;
-  if (isl && sl) sl.value = isl.value;
+  if (isl && sl) {
+    sl.value = isl.value;
+    sl.style.setProperty('--slider-progress', (+isl.value / 6 * 100) + '%');
+    sl.setAttribute('aria-valuetext', iv ? iv.textContent.replace('×', ' 倍') : isl.value);
+  }
 }
 document.addEventListener('click', function (ev) {
   var b = ev.target.closest && ev.target.closest('#zctl [data-zc]');
@@ -1327,16 +1791,30 @@ function wireHead(slot) {
   });
 }
 
+/* 顶栏两个面板开关：整网图 / 底部泳道。与格头折叠同一套 state、URL 与 CSS 开关，
+   入口在页面右上角（收起后整格关闭，开关得留在屏上）。 */
+function wirePanelToggles() {
+  document.querySelectorAll('[data-fold-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.dataset.foldToggle;
+      state[target].folded = !state[target].folded;
+      applySlotVisibility();
+      writeURL();
+    });
+  });
+}
+
 /* ── 框架层控件的 UI ──────────────────────────────────────────────── */
 function buildFrameControls() {
   $('#dmenuOpts').innerHTML = DATAK.map(function (x) {
-    return '<button type="button" class="opt" role="menuitemcheckbox" data-k="' + x.k + '" style="--c:' + x.c + '" aria-checked="true">'
-      + '<i aria-hidden="true"></i>' + x.t + '<span class="tick">✓</span></button>';
+    return '<button type="button" class="menu-checkbox-item opt" role="menuitemcheckbox" data-k="' + x.k + '" style="--c:' + x.c + '" aria-checked="true">'
+      + '<i aria-hidden="true"></i>' + x.t + '<span class="tick" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span></button>';
   }).join('');
   var menu = $('#dmenu'), btn = $('#dmenuBtn');
   btn.addEventListener('click', function (ev) {
     ev.stopPropagation();
     var open = !menu.classList.contains('open');
+    if (open) setGlobalConfigOpen(false);
     menu.classList.toggle('open', open);
     btn.setAttribute('aria-expanded', String(open));
   });
@@ -1456,6 +1934,10 @@ window.addEventListener('message', function (ev) {
        我们自己推过去之后的回执，拿它当输入就是自己跟自己转。 */
     if (d.type === 'pto:select') {
       var rankSel = (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null;
+      if (c.id === 'topology' || c.id === 'netgraph') {
+        globalFilter = d.groups ? {t:d.groups.t,e:d.groups.e,p:d.groups.p} : {t:null,e:null,p:null};
+        renderGlobalFilter();
+      }
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
       if (peer) pushHL(peer, 'rank', rankSel);
       /* 同一条 rank 高亮再顺手递给泳道那格——它没有「卡」的概念，接的是
@@ -1496,6 +1978,8 @@ window.addEventListener('message', function (ev) {
 /* ── 起步 ─────────────────────────────────────────────────────────── */
 readURL();
 document.documentElement.setAttribute('data-theme', theme());  /* 首帧就落主题，别闪 */
+wireGlobalControls();
+wirePanelToggles();
 applyDockH();
 applySideW();
 SLOTS.forEach(function (slot) {
