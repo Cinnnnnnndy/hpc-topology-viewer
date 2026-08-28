@@ -55,6 +55,10 @@
   position:fixed; inset:0; display:flex; flex-direction:column; overflow:hidden;
   background:var(--pt-bg); color:var(--pt-fg); font-family:var(--pt-sans); font-size:13px;
 }
+/* light 模式画布纯白：--background token 默认是浅灰 #f6f7f9，这里只盖 light、dark 不动。
+   根变量盖底色，视窗本体（.pt-stage）再钉一层白，保证视窗背景是真白、不露灰。 */
+:root[data-theme="light"] .pt-root{--pt-bg:#ffffff}
+:root[data-theme="light"] .pt-stage{background:#ffffff}
 .pt-root *{box-sizing:border-box}
 .pt-root button{font-family:inherit; cursor:pointer}
 .pt-root .mono{font-family:var(--pt-mono)}
@@ -66,7 +70,7 @@
 }
 .pt-title{line-height:1.25; margin-right:2px}
 .pt-title b{font-size:14px}
-.pt-title .sub{display:block; font-size:10.5px; color:var(--pt-fg2)}
+.pt-title .sub{display:block; font-size:12px; color:var(--pt-fg2)}
 .pt-title .sub a{color:inherit}
 /* 工具条上的控件统一成 32px 高、999 圆角：分段器（刀 / 视角）连壳算 32，
    单颗胶囊（图例 / 通信 / 数据）与开关（Rank / 整网）也是 32，一条线上齐平。 */
@@ -94,7 +98,7 @@
 .pt-lstep button[disabled]{opacity:.32; pointer-events:none}
 .pt-chips{display:inline-flex; gap:5px; flex-wrap:wrap; align-items:center}
 .pt-chip{
-  font-family:var(--pt-mono); font-size:11px; padding:3px 10px; border-radius:999px;
+  font-family:var(--pt-mono); font-size:12px; padding:3px 10px; border-radius:999px;
   border:1px solid var(--pt-bd); color:var(--pt-fg2); background:var(--pt-s1);
 }
 .pt-chip b{color:var(--pt-fg)}
@@ -129,10 +133,10 @@
 .pt-rubik .prc-brandname{display:none}
 .pt-rubik .prc-topbar{justify-content:flex-end}
 /* ── 缩放 HUD：比例读数 + 步进 + 居中/复位（3D 与正/侧/顶视共用）───────────
-   浮在舞台右下角。比例是**当前视图的 zoom3**（1 = 该视角 tab 的标准机位刚好装下
+   浮在舞台左下角。比例是**当前视图的 zoom3**（1 = 该视角 tab 的标准机位刚好装下
    整个场景），gesture 中由 applyViewTransform 直接改数字，不等重绘。 */
 .pt-zoomhud{
-  position:absolute; right:14px; bottom:12px; z-index:7;
+  position:absolute; left:14px; bottom:12px; z-index:7;
   display:flex; align-items:center; gap:4px;
   padding:4px; border-radius:999px; border:1px solid var(--pt-bd);
   background:color-mix(in srgb, var(--pt-s1) 88%, transparent);
@@ -145,7 +149,7 @@
 }
 .pt-zoomhud button:hover{background:var(--pt-s2); color:var(--pt-fg)}
 .pt-zoomhud .zpct{
-  font-family:var(--pt-mono); font-size:11px; font-weight:700; min-width:52px;
+  font-family:var(--pt-mono); font-size:12px; font-weight:700; min-width:52px;
   color:var(--pt-fg); text-align:center;
 }
 .pt-zoomhud .zsep{width:1px; height:16px; background:var(--pt-bd); margin:0 2px}
@@ -190,11 +194,11 @@
   box-shadow:0 1px 3px rgba(0,0,0,.05);
   backdrop-filter:blur(6px); pointer-events:auto;
 }
-.pt-ghgrp > b{font-family:var(--pt-mono); font-size:10.5px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
+.pt-ghgrp > b{font-family:var(--pt-mono); font-size:12px; font-weight:800; margin-right:2px; color:var(--c); white-space:nowrap}
 .pt-ghc{
   min-width:20px; height:19px; padding:0 6px; border-radius:8px; border:0;
   background:color-mix(in srgb, var(--pt-fg) 10%, transparent);
-  color:var(--pt-fg2); font-family:var(--pt-mono); font-size:10px; font-weight:700; line-height:19px; white-space:nowrap;
+  color:var(--pt-fg2); font-family:var(--pt-mono); font-size:12px; font-weight:700; line-height:19px; white-space:nowrap;
 }
 .pt-ghc.is-on{background:var(--c); color:#fff}
 /* 选组 HUD 是四个机位唯一都在的那条控件——它读的也是 sel，所以来路也得说清楚：
@@ -214,14 +218,14 @@
   display:none; align-items:center; gap:5px; height:26px; padding:0 10px 0 12px; border-radius:12px;
   border:1px solid var(--pt-bd); background:color-mix(in srgb, var(--pt-s1) 92%, transparent);
   box-shadow:0 1px 3px rgba(0,0,0,.05); backdrop-filter:blur(6px); pointer-events:auto;
-  font-family:var(--pt-mono); font-size:10.5px; font-weight:700; color:var(--pt-fg2);
+  font-family:var(--pt-mono); font-size:12px; font-weight:700; color:var(--pt-fg2);
 }
 .pt-ghsummary:hover{color:var(--pt-fg); border-color:var(--pt-bds)}
 .pt-ghsummary b{
-  min-width:15px; height:15px; padding:0 4px; border-radius:999px; font-size:9.5px; line-height:15px;
+  min-width:18px; height:18px; padding:0 4px; border-radius:999px; font-size:12px; line-height:18px;
   background:var(--pt-s2); color:var(--pt-fg2); font-family:var(--pt-mono);
 }
-.pt-ghsummary i{font-style:normal; font-size:9px; opacity:.7}
+.pt-ghsummary i{font-style:normal; font-size:12px; opacity:.7}
 .pt-grouphud.is-collapsed .pt-ghsummary{display:inline-flex}
 /* 展开：竖排一张浮卡，钉在按钮正上方——不再挤那一整条底边，所以不用再证明
    「四组能不能排成一行」，一组一行，组内该怎么换行还怎么换（.pt-ghgrp 自带
@@ -259,76 +263,90 @@
      逐条竖排的勾选（各 5 条）又把面板拉得比视口还高，纵向必出滚动条。
      宽度放宽到能装下五格并行度那一整行；勾选列表改两栏（见下），
      两者一起把纵向长度压下来，先天不必滚动才是目标，不是滚得动就行。 */
-  width:min(440px, calc(100vw - 32px));
+  width:min(var(--settings-panel-width), calc(100vw - 32px));
   /* 640px 那道硬顶是老版本按 302px 窄面板估的余量，宽度/两栏都改完之后内容还是
      比它高（七组东西摞起来，实测 784px）——顶得太低，宽度那些改动等于白做，
      滚动条照样出现。改成只用视口高度兜底（88vh），不再叠一个更小的硬顶。 */
-  max-height:88vh; overflow:auto;
-  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:14px; padding:10px 12px 12px;
-  box-shadow:0 14px 40px rgba(0,0,0,.18);
+  max-height:calc(100vh - 116px); overflow:auto; scrollbar-gutter:stable;
+  background:var(--settings-panel-bg); border:1px solid var(--settings-panel-border);
+  border-radius:var(--settings-panel-radius); padding:var(--settings-panel-padding);
+  box-shadow:var(--settings-panel-shadow);
 }
-.pt-cfgpanel .cg{padding:8px 0; border-top:1px solid var(--pt-bd); display:flex; flex-wrap:wrap; gap:3px 8px}
+.pt-root.embed .pt-cfgpanel.is-open{max-height:calc(100vh - 68px)}
+.pt-cfgpanel .cg{padding:var(--settings-section-padding-y) 0; border-top:1px solid var(--border-subtle); display:flex; flex-wrap:wrap; gap:var(--settings-section-gap)}
 .pt-cfgpanel .cg > h6, .pt-cfgpanel .cg > .cgrow, .pt-cfgpanel .cg > .pnum, .pt-cfgpanel .cg > .cnote, .pt-cfgpanel .cg > .acts{flex:1 1 100%}
 /* 通信连线 / 数据标注：逐条竖排在窄面板里没办法，面板宽了就该收成两栏——
    同样五条，高度砍掉近一半。 */
 .pt-cfgpanel .cg > button.mvi{flex:1 1 calc(50% - 4px)}
-.pt-cfgpanel .cg:first-child{border-top:0; padding-top:2px}
+.pt-cfgpanel .cg:first-child{border-top:0; padding-top:0}
 .pt-cfgpanel h6{
-  margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--pt-fg3); font-weight:700;
+  margin:0; font:var(--type-label); letter-spacing:.04em;
+  color:var(--settings-section-label-fg); font-weight:600;
 }
-.pt-cfgpanel .cgrow{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
-.pt-cfgpanel .pb, .pt-cfgpanel .pt-sw, .pt-cfgpanel .pt-seg button{height:28px; font-size:12px}
-.pt-cfgpanel .pt-sw{padding:0 12px 0 9px}
+.pt-cfgpanel .cgrow{display:flex; gap:8px; flex-wrap:wrap; align-items:center; animation:none}
+.pt-cfgpanel .pb, .pt-cfgpanel .pt-sw, .pt-cfgpanel .pt-seg button{height:var(--settings-control-height); font-size:var(--settings-content-font-size)}
+.pt-cfgpanel .pt-seg{padding:3px; border-radius:var(--settings-control-radius); background:var(--segmented-control-bg); border-color:var(--segmented-control-border)}
+.pt-cfgpanel .pt-seg button{border-radius:var(--radius-sm)}
+.pt-cfgpanel .pt-sw{padding:0 6px; border:0; border-radius:var(--settings-control-radius); background:transparent}
+.pt-cfgpanel .pt-sw:hover{background:var(--state-hover); border-color:transparent}
+.pt-cfgpanel .pt-sw i{width:var(--switch-width); height:var(--switch-height); background:var(--switch-bg)}
+.pt-cfgpanel .pt-sw i::after{width:var(--switch-thumb-size); height:var(--switch-thumb-size)}
+.pt-cfgpanel .pt-sw.is-on{border-color:transparent}
+.pt-cfgpanel .pt-sw.is-on i{background:var(--switch-bg-checked)}
 /* 并行度：五个数字格 + 一颗「应用」。**不即时生效**——一位一位敲的中间值
    （tp 从 16 敲成 2 时会先经过 1）每一下都重推一次整张图，画面乱闪、还会
    顺带弹出一堆约束报错。攒在草稿里，按「应用」或回车才落。 */
-.pt-cfgpanel .pnum{display:flex; gap:5px; flex-wrap:wrap; align-items:flex-end}
-.pt-cfgpanel .pnum label{display:flex; flex-direction:column; gap:2px; font-size:9.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel .pnum{display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end}
+.pt-cfgpanel .pnum label{display:flex; flex-direction:column; gap:4px; font-size:var(--settings-content-font-size); color:var(--pt-fg3); font-family:var(--pt-mono)}
 .pt-cfgpanel .pnum label b{font-weight:700; letter-spacing:.06em}
 .pt-cfgpanel .pnum input{
-  width:46px; height:28px; padding:0 6px; border-radius:8px; border:1px solid var(--pt-bd);
-  background:var(--pt-bg); color:var(--pt-fg); font-family:var(--pt-mono); font-size:12px; text-align:center;
+  width:48px; height:var(--settings-control-height); padding:0 8px; border-radius:var(--input-radius); border:1px solid var(--input-border);
+  background:var(--input-bg); color:var(--pt-fg); font-family:var(--pt-mono); font-size:var(--settings-content-font-size); text-align:center;
 }
-.pt-cfgpanel .pnum input:focus{outline:none; border-color:var(--pt-fg2)}
+.pt-cfgpanel .pnum input:focus-visible{outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--focus-ring)}
 .pt-cfgpanel .pnum .derv{
-  height:28px; min-width:46px; padding:0 6px; border-radius:8px; border:1px dashed var(--pt-bd);
+  height:var(--settings-control-height); min-width:48px; padding:0 8px; border-radius:var(--input-radius); border:1px dashed var(--input-border);
   display:flex; align-items:center; justify-content:center; color:var(--pt-fg2);
-  font-family:var(--pt-mono); font-size:12px;
+  font-family:var(--pt-mono); font-size:var(--settings-content-font-size);
 }
 .pt-cfgpanel .capply{
-  height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--pt-fg);
-  background:var(--pt-fg); color:var(--pt-bg); font-size:12px; font-weight:700;
+  height:var(--settings-control-height); padding:0 12px; border-radius:var(--button-radius); border:1px solid transparent;
+  background:var(--button-solid-bg); color:var(--button-solid-fg); font-size:var(--settings-content-font-size); font-weight:600;
 }
-.pt-cfgpanel .capply:disabled{background:var(--pt-s2); border-color:var(--pt-bd); color:var(--pt-fg3)}
-.pt-cfgpanel .cnote{margin-top:5px; font-size:10.5px; color:var(--pt-fg3); line-height:1.45}
+.pt-cfgpanel .capply:hover:not(:disabled){background:var(--button-solid-bg-hover)}
+.pt-cfgpanel .capply:focus-visible{outline:none; box-shadow:0 0 0 3px var(--focus-ring)}
+.pt-cfgpanel .capply:disabled{opacity:var(--button-disabled-opacity); cursor:not-allowed}
+.pt-cfgpanel .cnote{margin-top:0; font-size:var(--settings-content-font-size); color:var(--pt-fg3); line-height:var(--settings-content-line-height)}
 /* 逐类勾选（通信 / 图层 / 数据标注）复用数据下拉那套勾的长相 */
 .pt-cfgpanel button.mvi{
-  display:flex; width:100%; align-items:center; gap:8px; text-align:left; margin-top:1px;
-  border:0; background:none; padding:5px 6px; border-radius:8px; color:var(--pt-fg); font-size:12px; font-weight:600;
+  display:flex; width:100%; min-height:var(--settings-control-height); align-items:center; gap:8px; text-align:left; margin:0;
+  border:0; background:none; padding:0 8px; border-radius:var(--radius-sm); color:var(--pt-fg); font-size:var(--settings-content-font-size); font-weight:500;
 }
 .pt-cfgpanel button.mvi:hover{background:var(--pt-s2)}
 .pt-cfgpanel button.mvi s{
-  flex:none; width:16px; height:16px; border-radius:5px; border:1.5px solid var(--pt-bds);
-  text-decoration:none; color:transparent; font-size:10px; line-height:14px; text-align:center;
+  flex:none; width:var(--checkbox-size); height:var(--checkbox-size); border-radius:var(--checkbox-radius); border:1px solid var(--checkbox-border);
+  text-decoration:none; color:transparent; font-size:12px; line-height:14px; text-align:center;
 }
-.pt-cfgpanel button.mvi.is-on s{background:var(--pt-fg2); border-color:var(--pt-fg2); color:var(--pt-s1)}
-.pt-cfgpanel button.mvi em{margin-left:auto; font-style:normal; font-size:9px; color:var(--pt-fg3); font-family:var(--pt-mono)}
-.pt-cfgpanel button.mvi[disabled]{opacity:.34}
-.pt-cfgpanel .acts{display:flex; gap:6px; margin:4px 0 2px}
+.pt-cfgpanel button.mvi.is-on s{background:var(--checkbox-bg-checked); border-color:var(--checkbox-bg-checked); color:var(--checkbox-fg-checked)}
+.pt-cfgpanel button.mvi em{margin-left:auto; font-style:normal; font-size:var(--settings-content-font-size); color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-cfgpanel button.mvi[disabled]{opacity:var(--button-disabled-opacity); cursor:not-allowed}
+.pt-cfgpanel .acts{display:flex; gap:8px; margin:0}
 .pt-cfgpanel .acts button{
-  flex:1; height:24px; border-radius:7px; border:1px solid var(--pt-bd);
-  background:var(--pt-s2); color:var(--pt-fg2); font-size:11px; font-weight:600;
+  flex:1; height:var(--settings-control-height); border-radius:var(--button-radius); border:1px solid var(--button-outline-border);
+  background:var(--button-outline-bg); color:var(--button-outline-fg); font-size:var(--settings-content-font-size); font-weight:500;
 }
-.pt-cfgpanel .acts button:hover{border-color:var(--pt-bds); color:var(--pt-fg)}
+.pt-cfgpanel .acts button:hover{background:var(--button-outline-bg-hover); border-color:var(--button-outline-border); color:var(--pt-fg)}
+.pt-cfgpanel .acts button:focus-visible{outline:none; box-shadow:0 0 0 3px var(--focus-ring)}
 /* 画布的名字：与右上工具条同一条基线，裸文字不放卡片上（沿用魔方 pattern 的做法）。
    默认不显示——顶栏在的时候那儿已经写着「并行拓扑」了，这里再来一遍就是印两遍。 */
 .pt-stagetitle{
   position:absolute; top:10px; left:16px; z-index:6; display:none;
-  align-items:center; min-height:30px; pointer-events:none;
+  align-items:flex-start; min-height:44px; pointer-events:none;
 }
 .pt-root.embed .pt-stagetitle{display:flex; gap:10px; pointer-events:auto; z-index:8}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
+.pt-stagecopy{display:flex; flex-direction:column; gap:3px; max-width:min(540px, calc(100vw - 110px)); pointer-events:none}
+.pt-stagecopy small{color:var(--pt-fg3); font-size:11.5px; line-height:1.35; font-weight:500}
 .pb{
   height:32px; padding:0 14px; font-size:12.5px; font-weight:700; border-radius:999px;
   border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
@@ -358,8 +376,8 @@
 .pb.is-on{background:var(--pt-fg); color:var(--pt-bg)}
 .pb:disabled{opacity:.38; cursor:not-allowed; text-decoration:line-through}
 .pb.mono{font-family:var(--pt-mono); font-weight:600}
-.pb .cmn{font-size:9px; opacity:.75; margin-left:4px; font-weight:400}
-.pt-cap{font-family:var(--pt-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--pt-fg3); align-self:center; margin:0 2px}
+.pb .cmn{font-size:12px; opacity:.75; margin-left:4px; font-weight:400}
+.pt-cap{font-family:var(--pt-mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--pt-fg3); align-self:center; margin:0 2px}
 /* ── 数据标注多选（数值 / 梯度 / 性能 / MoE / 训练）：与 training-sidecar 的
    「数据」按钮同一套交互——按钮上带计数，展开是一列勾选 + 全选/全部隐藏。
    它不是刀（不改变切分），也不是单一图层（一次管五类），所以给它一个自己的
@@ -367,7 +385,7 @@
 .pt-mv{position:relative; display:inline-flex}
 .pt-mv > .pb{display:inline-flex; align-items:center; gap:5px}
 .pt-mv > .pb b{
-  min-width:16px; height:16px; padding:0 4px; border-radius:999px; font-size:10px; line-height:16px;
+  min-width:18px; height:18px; padding:0 4px; border-radius:999px; font-size:12px; line-height:18px;
   background:var(--pt-s2); color:var(--pt-fg2); font-family:var(--pt-mono);
 }
 /* 这颗按钮不该用实心色块喊话：它是个筛选器，不是状态开关，实心橙一压
@@ -377,30 +395,30 @@
   background:color-mix(in srgb, var(--pt-fg) 9%, transparent); color:var(--pt-fg);
 }
 .pt-mv > .pb.is-on b{background:var(--pt-s2); color:var(--pt-fg2)}
-.pt-mv > .pb i{font-style:normal; font-size:9px; opacity:.7}
+.pt-mv > .pb i{font-style:normal; font-size:12px; opacity:.7}
 .pt-mvmenu{
   position:absolute; top:32px; right:0; z-index:20; width:190px;
-  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:12px; padding:8px;
-  box-shadow:0 10px 30px rgba(0,0,0,.16);
+  background:var(--menu-bg); border:1px solid var(--menu-border); border-radius:var(--menu-radius); padding:var(--menu-padding);
+  box-shadow:var(--menu-shadow);
 }
 .pt-mvmenu .acts{display:flex; gap:6px; margin-bottom:7px}
 .pt-mvmenu .acts button{
-  flex:1; height:26px; border-radius:7px; border:1px solid var(--pt-bd);
-  background:var(--pt-s2); color:var(--pt-fg2); font-size:11.5px; font-weight:600;
+  flex:1; height:var(--settings-control-height); border-radius:var(--button-radius); border:1px solid var(--button-outline-border);
+  background:var(--button-outline-bg); color:var(--button-outline-fg); font-size:12px; font-weight:500;
 }
-.pt-mvmenu .acts button:hover{border-color:var(--pt-bds); color:var(--pt-fg)}
+.pt-mvmenu .acts button:hover{background:var(--button-outline-bg-hover); border-color:var(--button-outline-border); color:var(--pt-fg)}
 .pt-mvmenu > button.mvi{
-  display:flex; width:100%; align-items:center; gap:8px; text-align:left; margin-top:2px;
-  border:0; background:none; padding:6px 7px; border-radius:8px; color:var(--pt-fg); font-size:12.5px; font-weight:600;
+  display:flex; width:100%; min-height:var(--menu-item-height); align-items:center; gap:8px; text-align:left; margin:0;
+  border:0; background:none; padding:0 var(--menu-item-padding-x); border-radius:var(--menu-item-radius); color:var(--pt-fg); font-size:12px; font-weight:500;
 }
 .pt-mvmenu > button.mvi:hover{background:var(--pt-s2)}
 .pt-mvmenu > button.mvi.is-on{background:transparent}
 .pt-mvmenu > button.mvi s{
-  flex:none; width:17px; height:17px; border-radius:5px; border:1.5px solid var(--pt-bds);
-  text-decoration:none; color:transparent; font-size:11px; line-height:15px; text-align:center;
+  flex:none; width:var(--checkbox-size); height:var(--checkbox-size); border-radius:var(--checkbox-radius); border:1px solid var(--checkbox-border);
+  text-decoration:none; color:transparent; font-size:12px; line-height:14px; text-align:center;
 }
-.pt-mvmenu > button.mvi.is-on s{background:var(--pt-fg2); border-color:var(--pt-fg2); color:var(--pt-s1)}
-.pt-mvmenu > button.mvi em{margin-left:auto; font-style:normal; font-size:9.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-mvmenu > button.mvi.is-on s{background:var(--checkbox-bg-checked); border-color:var(--checkbox-bg-checked); color:var(--checkbox-fg-checked)}
+.pt-mvmenu > button.mvi em{margin-left:auto; font-style:normal; font-size:12px; color:var(--pt-fg3); font-family:var(--pt-mono)}
 /* ── 算子明细卡：点一个算子，完整读数**跟着那个算子**浮出来（图上写的只是摘要）。
    跟随而不是固定在角落：读数与它说的那个东西之间要有视线上的连线，
    卡飘在角落的话，读者得自己记住刚才点的是哪一个。缩放/平移时重新贴位。 */
@@ -422,7 +440,7 @@
 .pt-rankmem[hidden]{display:none}
 .pt-rankmem .rm-h{display:flex; align-items:center; gap:6px}
 .pt-rankmem .rm-h b{font-size:14px; font-weight:800; color:var(--pt-fg); white-space:nowrap}
-.pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:9.5px; color:var(--pt-fg3); flex:1; line-height:1.15}
+.pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg3); flex:1; line-height:1.35}
 .pt-rankmem .rm-x{
   margin-left:auto; border:1px solid var(--pt-bd); background:none; border-radius:8px;
   width:22px; height:22px; line-height:1; cursor:pointer; color:var(--pt-fg3); font-size:12px;
@@ -445,27 +463,27 @@
 .pt-rankmem .rm-d{
   margin-top:5px; padding:7px 8px 6px; border-radius:9px;
   background:var(--pt-s2); border:1px solid var(--pt-bd);
-  font-family:var(--pt-mono); font-size:10.5px; line-height:1.5; color:var(--pt-fg2);
+  font-family:var(--pt-mono); font-size:12px; line-height:1.5; color:var(--pt-fg2);
 }
 .pt-rankmem .rm-d .rm-dh{display:flex; align-items:center; gap:5px; margin-bottom:3px}
-.pt-rankmem .rm-d .rm-dh b{font-size:11.5px; color:var(--pt-fg); font-weight:800}
+.pt-rankmem .rm-d .rm-dh b{font-size:12px; color:var(--pt-fg); font-weight:800}
 .pt-rankmem .rm-d .rm-dh .rm-dx{
   margin-left:auto; border:0; background:none; cursor:pointer;
-  color:var(--pt-fg3); font-size:11px; line-height:1; padding:1px 3px;
+  color:var(--pt-fg3); font-size:12px; line-height:1; padding:1px 3px;
 }
 .pt-rankmem .rm-d .rm-dh .rm-dx:hover{color:var(--pt-fg)}
 .pt-rankmem .rm-d dl{display:grid; grid-template-columns:auto 1fr; gap:1px 8px; margin:0}
 .pt-rankmem .rm-d dt{color:var(--pt-fg3); white-space:nowrap}
 .pt-rankmem .rm-d dd{margin:0; color:var(--pt-fg2)}
-.pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:10px; line-height:1.42}
+.pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:12px; line-height:1.5}
 /* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
    图上已经画着的（几份、第几份）不再抄一遍。 */
 .pt-rankmem .rm-d .rm-fig{margin:4px 0 2px}
 .pt-rankmem .rm-d .rm-fig svg{width:auto; max-width:100%; margin:0}
-.pt-rankmem .rm-d .rm-cap{display:block; color:var(--pt-fg3); font-size:9.5px; line-height:1.4; margin-top:2px}
+.pt-rankmem .rm-d .rm-cap{display:block; color:var(--pt-fg3); font-size:12px; line-height:1.5; margin-top:2px}
 .pt-opcard .oc-h{display:flex; align-items:flex-start; gap:10px}
 .pt-opcard .oc-k{
-  font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+  font-family:var(--pt-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
   color:var(--c, var(--pt-accent, #4f6bed)); font-weight:700;
 }
 .pt-opcard h4{margin:3px 0 0; font-size:15px; font-weight:800; color:var(--pt-fg); line-height:1.3}
@@ -474,17 +492,17 @@
   background:var(--pt-s2); color:var(--pt-fg2); font-size:14px; line-height:1;
 }
 .pt-opcard .oc-x:hover{color:var(--pt-fg); border-color:var(--pt-bds)}
-.pt-opcard .oc-d{margin:8px 0 0; font-size:11.5px; line-height:1.6; color:var(--pt-fg2)}
+.pt-opcard .oc-d{margin:8px 0 0; font-size:12px; line-height:1.6; color:var(--pt-fg2)}
 .pt-opcard .oc-v{margin-top:10px; background:var(--pt-s2); border-radius:10px; padding:8px 10px}
 .pt-opcard .oc-v div{display:flex; gap:10px; align-items:baseline; padding:3px 0}
-.pt-opcard .oc-v span{font-family:var(--pt-mono); font-size:10.5px; color:var(--pt-fg3); flex:1}
+.pt-opcard .oc-v span{font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg3); flex:1}
 .pt-opcard .oc-v b{font-family:var(--pt-mono); font-size:16px; font-weight:700; color:var(--pt-fg)}
 .pt-opcard .oc-s{
-  margin-top:9px; padding:7px 10px; border-radius:9px; font-size:11px; font-weight:700;
+  margin-top:9px; padding:7px 10px; border-radius:9px; font-size:12px; font-weight:700;
   border:1px solid color-mix(in srgb, var(--sc) 45%, transparent);
   background:color-mix(in srgb, var(--sc) 12%, transparent); color:var(--sc);
 }
-.pt-opcard .oc-f{margin-top:9px; font-family:var(--pt-mono); font-size:9.5px; line-height:1.6; color:var(--pt-fg3)}
+.pt-opcard .oc-f{margin-top:9px; font-family:var(--pt-mono); font-size:12px; line-height:1.6; color:var(--pt-fg3)}
 
 /* 浮动卡通用 */
 .pt-card{
@@ -494,54 +512,54 @@
 /* 右侧读出卡（FR-3） */
 /* 从工具条下面起头：top:10px 时它会顶到胶囊那一排底下，把「EP」和「卡维度」
    这两颗按钮压住——读出卡是次要信息，不该挡住控件。 */
-.pt-detail{top:52px; right:14px; width:230px; max-height:calc(100% - 64px); overflow:auto; font-size:12px}
+.pt-detail{left:14px; right:auto; top:auto; bottom:60px; width:230px; max-height:calc(100% - 72px); overflow:auto; font-size:12px}
 .pt-detail h4{margin:0 0 6px; font-family:var(--pt-mono); font-size:13px; font-weight:800; color:var(--pt-fg); display:flex; justify-content:space-between; align-items:center; gap:8px}
 .pt-detail .grank{font-family:var(--pt-mono); font-size:21px; font-weight:800}
-.pt-detail .grank small{font-size:10px; font-weight:400; color:var(--pt-fg3); margin-left:6px}
+.pt-detail .grank small{font-size:12px; font-weight:400; color:var(--pt-fg3); margin-left:6px}
 .pt-x{border:none; background:none; color:var(--pt-fg3); font-size:14px; padding:0 3px}
 .pt-x:hover{color:var(--pt-danger)}
 .coords{display:flex; flex-wrap:wrap; gap:4px; margin:7px 0}
-.coords .c{font-family:var(--pt-mono); font-size:10.5px; border:1px solid var(--pt-bd); border-radius:5px; padding:1.5px 7px; color:var(--pt-fg2)}
+.coords .c{font-family:var(--pt-mono); font-size:12px; border:1px solid var(--pt-bd); border-radius:5px; padding:1.5px 7px; color:var(--pt-fg2)}
 .coords .c.hot{color:#fff; border-color:transparent; background:var(--c)}
-.pt-detail .formula{font-family:var(--pt-mono); font-size:10px; color:var(--pt-fg2); background:var(--pt-s2); border-radius:6px; padding:6px 8px; margin:7px 0; line-height:1.7; overflow-x:auto}
-.pt-detail table{width:100%; border-collapse:collapse; font-size:11.5px; margin:4px 0}
+.pt-detail .formula{font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg2); background:var(--pt-s2); border-radius:6px; padding:6px 8px; margin:7px 0; line-height:1.7; overflow-x:auto}
+.pt-detail table{width:100%; border-collapse:collapse; font-size:12px; margin:4px 0}
 .pt-detail td{padding:2.5px 3px; border-bottom:1px solid color-mix(in srgb, var(--pt-bd) 55%, transparent); vertical-align:top}
-.pt-detail td:first-child{color:var(--pt-fg3); font-family:var(--pt-mono); font-size:10.5px; white-space:nowrap}
-.pt-detail code{font-family:var(--pt-mono); font-size:10.5px; background:var(--pt-s2); padding:.5px 4px; border-radius:4px}
+.pt-detail td:first-child{color:var(--pt-fg3); font-family:var(--pt-mono); font-size:12px; white-space:nowrap}
+.pt-detail code{font-family:var(--pt-mono); font-size:12px; background:var(--pt-s2); padding:.5px 4px; border-radius:4px}
 .pt-detail .rev{margin-top:9px; border-top:1px solid var(--pt-bd); padding-top:8px}
-.pt-detail .rev input{width:56px; font-family:var(--pt-mono); font-size:11px; padding:2px 6px; border:1px solid var(--pt-bd); border-radius:6px; background:var(--pt-s2); color:var(--pt-fg)}
+.pt-detail .rev input{width:56px; font-family:var(--pt-mono); font-size:12px; padding:2px 6px; border:1px solid var(--pt-bd); border-radius:6px; background:var(--pt-s2); color:var(--pt-fg)}
 .rankchips{display:flex; flex-wrap:wrap; gap:3px; margin-top:5px}
-.rankchips button{font-family:var(--pt-mono); font-size:10px; padding:1px 6px; border-radius:5px; border:1px solid var(--pt-bd); background:var(--pt-s2); color:var(--pt-fg2)}
+.rankchips button{font-family:var(--pt-mono); font-size:12px; padding:1px 6px; border-radius:5px; border:1px solid var(--pt-bd); background:var(--pt-s2); color:var(--pt-fg2)}
 .rankchips button:hover{border-color:var(--pt-bds); color:var(--pt-fg)}
-.pt-go{display:inline-block; margin-top:7px; font-size:11px; font-weight:600; color:var(--pt-dp); cursor:pointer}
+.pt-go{display:inline-block; margin-top:7px; font-size:12px; font-weight:600; color:var(--pt-dp); cursor:pointer}
 
 /* 抽屉（配置 / 验收）：从顶栏落下，右侧 */
 .pt-drawer{top:10px; right:14px; width:min(680px, calc(100% - 28px)); max-height:calc(100% - 20px); overflow:auto; z-index:11}
-.pt-drawer h4{margin:0 0 8px; font-family:var(--pt-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--pt-fg3)}
+.pt-drawer h4{margin:0 0 8px; font-family:var(--pt-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--pt-fg3)}
 .cfg-cols{display:grid; grid-template-columns:repeat(auto-fit, minmax(196px, 1fr)); gap:10px 16px}
 .frow{display:flex; align-items:center; gap:7px; margin-bottom:6px; font-size:12px}
 .frow label{flex:0 0 108px; color:var(--pt-fg2); display:flex; align-items:center; gap:5px}
 .frow input{width:84px; font-family:var(--pt-mono); font-size:12px; padding:3px 7px; border:1px solid var(--pt-bd); border-radius:6px; background:var(--pt-s2); color:var(--pt-fg)}
 .frow input:disabled{opacity:.5}
-.frow .hint{font-family:var(--pt-mono); font-size:10px; color:var(--pt-fg3)}
+.frow .hint{font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg3)}
 .frow.derived{background:color-mix(in srgb, var(--pt-dp) 10%, transparent); border-radius:7px; padding:4px 6px; margin-left:-6px}
 .frow.derived .val{font-family:var(--pt-mono); font-weight:800; font-size:13px; color:var(--pt-dp)}
-.stepn{display:inline-block; font-family:var(--pt-mono); font-size:9px; color:var(--pt-bg); background:var(--pt-fg3); border-radius:50%; width:14px; height:14px; line-height:14px; text-align:center; flex:none}
-.dk{font-family:var(--pt-mono); font-weight:700; font-size:10px; padding:0 5px; border-radius:4px; color:#fff; background:var(--c)}
+.stepn{display:inline-block; font-family:var(--pt-mono); font-size:12px; color:var(--pt-bg); background:var(--pt-fg3); border-radius:50%; width:18px; height:18px; line-height:18px; text-align:center; flex:none}
+.dk{font-family:var(--pt-mono); font-weight:700; font-size:12px; padding:0 5px; border-radius:4px; color:#fff; background:var(--c)}
 .verr,.vwarn,.vok{border-radius:8px; padding:7px 11px; margin-top:7px; font-size:12px; border:1px solid}
 .verr{background:color-mix(in srgb, var(--pt-danger) 9%, transparent); border-color:color-mix(in srgb, var(--pt-danger) 40%, transparent); color:var(--pt-danger)}
 .vwarn{background:color-mix(in srgb, var(--pt-pp) 10%, transparent); border-color:color-mix(in srgb, var(--pt-pp) 40%, transparent); color:color-mix(in srgb, var(--pt-pp) 70%, var(--pt-fg) 30%)}
 .vok{background:color-mix(in srgb, var(--pt-cp) 10%, transparent); border-color:color-mix(in srgb, var(--pt-cp) 40%, transparent); color:color-mix(in srgb, var(--pt-cp) 60%, var(--pt-fg) 40%)}
 .fixes{margin-top:5px; display:flex; flex-wrap:wrap; gap:5px}
-.fixes button{font-family:var(--pt-mono); font-size:10.5px; padding:2px 9px; border-radius:999px; border:1px solid currentColor; background:transparent; color:inherit}
+.fixes button{font-family:var(--pt-mono); font-size:12px; padding:2px 9px; border-radius:var(--button-radius); border:1px solid currentColor; background:transparent; color:inherit}
 .fixes button:hover{background:var(--pt-danger); border-color:var(--pt-danger); color:#fff}
 .diagrow{display:flex; flex-wrap:wrap; gap:6px; margin-top:9px}
-.dstat{font-family:var(--pt-mono); font-size:10.5px; padding:3px 9px; border-radius:7px; border:1px solid var(--pt-bd); color:var(--pt-fg2); background:var(--pt-s2)}
+.dstat{font-family:var(--pt-mono); font-size:12px; padding:3px 9px; border-radius:7px; border:1px solid var(--pt-bd); color:var(--pt-fg2); background:var(--pt-s2)}
 .dstat.warn{border-color:color-mix(in srgb, var(--pt-pp) 55%, transparent); color:color-mix(in srgb, var(--pt-pp) 75%, var(--pt-fg) 25%)}
-.acc-t{width:100%; border-collapse:collapse; font-size:11.5px}
+.acc-t{width:100%; border-collapse:collapse; font-size:12px}
 .acc-t td{padding:5px 7px; border-bottom:1px solid color-mix(in srgb, var(--pt-bd) 55%, transparent); vertical-align:top}
 .acc-t td:first-child{font-family:var(--pt-mono); font-weight:700; white-space:nowrap}
-.badge{font-family:var(--pt-mono); font-size:9.5px; padding:1.5px 7px; border-radius:999px; white-space:nowrap; border:1px solid}
+.badge{font-family:var(--pt-mono); font-size:12px; padding:1.5px 7px; border-radius:999px; white-space:nowrap; border:1px solid}
 .badge.pass{color:color-mix(in srgb, var(--pt-cp) 65%, var(--pt-fg) 35%); border-color:color-mix(in srgb, var(--pt-cp) 50%, transparent); background:color-mix(in srgb, var(--pt-cp) 10%, transparent)}
 .badge.manual{color:var(--pt-fg2); border-color:var(--pt-bd); background:var(--pt-s2)}
 .badge.fail{color:var(--pt-danger); border-color:var(--pt-danger)}
@@ -558,10 +576,12 @@
 }
 .pt-root.embed .pt-qbar{position:static; max-width:none}
 .pt-psearch{position:relative; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:center}
+.pt-cfgsearch .pt-psearch{width:100%; justify-content:flex-start}
+.pt-cfgsearch .pt-pmenu{position:static; flex:1 0 100%; min-width:100%; margin-top:4px; box-shadow:none; background:var(--state-muted)}
 .pt-qchip{
   display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 4px 0 7px;
   border:1px solid var(--c); border-radius:999px; background:var(--pt-bg); color:var(--c);
-  font-family:var(--pt-mono); font-size:11px; font-weight:700; white-space:nowrap;
+  font-family:var(--pt-mono); font-size:12px; font-weight:700; white-space:nowrap;
 }
 .pt-qchip i{font-style:normal; font-weight:500; opacity:.7; font-family:var(--pt-sans,inherit)}
 .pt-qchip.is-bad{border-style:dashed; opacity:.65}
@@ -571,7 +591,7 @@
 .pt-padd{
   min-height:26px; padding:0 11px; border:1px solid var(--pt-bd); border-radius:999px;
   background:var(--pt-s1); color:var(--pt-fg2); cursor:pointer;
-  font-size:11.5px; font-weight:600; white-space:nowrap; transition:background .15s, color .15s;
+  font-size:12px; font-weight:600; white-space:nowrap; transition:background .15s, color .15s;
 }
 .pt-padd:hover{background:var(--pt-s2); color:var(--pt-fg)}
 .pt-psearch.is-open .pt-padd{background:var(--pt-fg); border-color:var(--pt-fg); color:var(--pt-bg)}
@@ -581,32 +601,32 @@
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:10px; padding:7px;
   box-shadow:0 10px 30px rgba(0,0,0,.16);
 }
-.pt-pmenu .hd{font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--pt-fg3); margin:1px 3px 6px}
+.pt-pmenu .hd{font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--pt-fg3); margin:1px 3px 6px}
 .pt-pmenu > button{
   display:flex; width:100%; align-items:baseline; gap:7px; text-align:left;
   border:0; background:none; cursor:pointer; padding:5px 6px; border-radius:6px; color:var(--pt-fg);
 }
 .pt-pmenu > button:hover{background:var(--pt-s2)}
 .pt-pmenu > button b{font-size:12px}
-.pt-pmenu > button span{font-size:10.5px; color:var(--pt-fg3); font-family:var(--pt-mono)}
+.pt-pmenu > button span{font-size:12px; color:var(--pt-fg3); font-family:var(--pt-mono)}
 .pt-pmenu .opts{display:flex; flex-wrap:wrap; gap:4px}
 .pt-pmenu .opts button{
   border:1px solid var(--c); color:var(--c); background:var(--pt-bg); cursor:pointer;
-  border-radius:999px; padding:3px 9px; font-family:var(--pt-mono); font-size:11px; font-weight:700;
+  border-radius:999px; padding:3px 9px; font-family:var(--pt-mono); font-size:12px; font-weight:700;
 }
 .pt-pmenu input{
   width:100%; height:26px; padding:0 7px; font-family:var(--pt-mono); font-size:12px;
   border:1px solid var(--pt-bd); border-radius:6px; background:var(--pt-bg); color:var(--pt-fg);
 }
-.pt-pmenu .tip{font-size:10px; color:var(--pt-fg3); margin:5px 3px 1px}
+.pt-pmenu .tip{font-size:12px; color:var(--pt-fg3); margin:5px 3px 1px}
 .pt-revbox{
   position:absolute; left:14px; top:42px; z-index:7;
   width:min(330px, 48%); background:var(--pt-s1); border:1px solid var(--c, var(--pt-bd));
-  border-radius:12px; padding:9px 11px 10px; font-size:11.5px; color:var(--pt-fg2); line-height:1.55;
+  border-radius:var(--settings-panel-radius); padding:var(--settings-panel-padding); font-size:12px; color:var(--pt-fg2); line-height:1.55;
   box-shadow:0 8px 28px rgba(0,0,0,.14);
 }
 .pt-revbox h5{
-  margin:0 0 6px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em;
+  margin:0 0 6px; font-family:var(--pt-mono); font-size:12px; letter-spacing:.08em;
   text-transform:uppercase; color:var(--pt-fg3);
   display:flex; justify-content:space-between; align-items:center; gap:8px;
 }
@@ -615,11 +635,11 @@
 .pt-revbox .rl .dk{flex:none; margin-top:1px}
 .pt-revbox .sum{
   margin-top:6px; padding-top:5px; border-top:1px solid var(--pt-bd);
-  font-size:11.5px; color:var(--pt-fg);
+  font-size:12px; color:var(--pt-fg);
 }
 .pt-revbox .qsec{border-top:1px solid var(--pt-bd); padding-top:6px; margin-top:7px}
 .pt-revbox .qsec:first-of-type{border-top:0; padding-top:0; margin-top:0}
-.pt-revbox .qsec h6{margin:0 0 4px; font-size:11px; font-weight:800; color:var(--c); font-family:var(--pt-mono)}
+.pt-revbox .qsec h6{margin:0 0 4px; font-size:12px; font-weight:800; color:var(--c); font-family:var(--pt-mono)}
 .pt-revbox{max-height:calc(100% - 60px); overflow:auto}
 /* 图例：压在左下角的浮层。它是**对照表**不是正文——每行一个真形状 + 一句话，
    形状用内联 SVG 画，和画布上那一笔走同一套颜色与描边，不能是「差不多的示意」。 */
@@ -628,12 +648,12 @@
 .pt-legend{
   position:absolute; left:14px; right:14px; top:46px; z-index:7;
   max-height:42%; overflow:auto;
-  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:12px;
-  padding:9px 11px 10px; font-size:11px; color:var(--pt-fg2); line-height:1.5;
-  box-shadow:0 8px 28px rgba(0,0,0,.14);
+  background:var(--settings-panel-bg); border:1px solid var(--settings-panel-border); border-radius:var(--settings-panel-radius);
+  padding:var(--settings-panel-padding); font-size:12px; color:var(--pt-fg2); line-height:1.5;
+  box-shadow:var(--settings-panel-shadow);
 }
 .pt-legend h5{
-  margin:0 0 7px; font-family:var(--pt-mono); font-size:9.5px; letter-spacing:.13em;
+  margin:0 0 7px; font-family:var(--pt-mono); font-size:12px; letter-spacing:.08em;
   text-transform:uppercase; color:var(--pt-fg3);
   display:flex; justify-content:space-between; align-items:center; gap:8px;
 }
@@ -643,7 +663,7 @@
 }
 .pt-legend h5 button:hover{color:var(--pt-fg)}
 .pt-legend .lg-sec{
-  margin:8px 0 4px; font-weight:700; color:var(--pt-fg); font-size:10.5px;
+  margin:8px 0 4px; font-weight:700; color:var(--pt-fg); font-size:12px;
   border-top:1px solid var(--pt-bd); padding-top:7px;
 }
 .pt-legend .lg-sec:first-of-type{border-top:0; margin-top:0; padding-top:0}
@@ -654,18 +674,18 @@
 .pt-legend .lg-row svg{flex:0 0 auto; margin-top:1px}
 .pt-legend .lg-row b{color:var(--pt-fg); font-weight:700}
 .pt-legend .lg-row i{font-style:normal; color:var(--pt-fg3)}
-.pt-legend code{font-family:var(--pt-mono); font-size:10px; background:var(--pt-s2); padding:.5px 4px; border-radius:4px}
+.pt-legend code{font-family:var(--pt-mono); font-size:12px; background:var(--pt-s2); padding:.5px 4px; border-radius:4px}
 .pt-note{
   position:absolute; left:14px; bottom:12px; z-index:5; max-width:min(520px, 60%);
   background:var(--pt-s1); border:1px solid var(--pt-bd); border-left:3px solid var(--pt-fg);
-  border-radius:8px; padding:7px 11px; font-size:11.5px; color:var(--pt-fg2);
+  border-radius:8px; padding:7px 11px; font-size:12px; color:var(--pt-fg2);
 }
-.pt-note .pb{margin-left:6px; min-height:22px; padding:0 9px; font-size:10.5px}
+.pt-note .pb{margin-left:6px; min-height:28px; padding:0 9px; font-size:12px}
 .pt-detach:not([hidden]) ~ .pt-note{bottom:auto; top:10px; left:50%; transform:translateX(-50%)}
 /* 动画字幕 */
 .pt-animcap{
   position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:9; display:none;
-  font-family:var(--pt-mono); font-size:11px; background:color-mix(in srgb, var(--pt-fg) 92%, transparent);
+  font-family:var(--pt-mono); font-size:12px; background:color-mix(in srgb, var(--pt-fg) 92%, transparent);
   color:var(--pt-bg); border-radius:999px; padding:6px 16px; max-width:80%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .pt-animcap b{color:var(--pt-bg)}
@@ -689,7 +709,7 @@
 
 /* tooltip */
 #tip{position:fixed; z-index:50; pointer-events:none; display:none; background:var(--pt-fg); color:var(--pt-bg);
-  font-family:var(--pt-mono); font-size:10.5px; padding:5px 9px; border-radius:7px; line-height:1.6; max-width:270px}
+  font-family:var(--pt-mono); font-size:12px; padding:5px 9px; border-radius:7px; line-height:1.6; max-width:270px}
 
 /* SVG 通用类：容器面 / 文字（颜色全走 token，明暗随主题翻转） */
 .f1{fill:var(--pt-face1)} .f2{fill:var(--pt-face2)} .f3{fill:var(--pt-face3)}
@@ -726,7 +746,7 @@
   position:absolute; left:14px; bottom:14px; z-index:9;
   display:flex; align-items:center; gap:7px;
   background:var(--pt-bg); border:1px dashed var(--pt-fg3); border-radius:8px;
-  padding:5px 9px; font-family:var(--pt-mono); font-size:10.5px; color:var(--pt-fg2);
+  padding:5px 9px; font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg2);
   pointer-events:none; max-width:min(60%, 340px); line-height:1.5;
 }
 .pt-hlbadge b{color:var(--pt-fg); font-weight:800}
@@ -808,7 +828,7 @@
          transform，不重建场景——重建防抖到手停之后（scheduleCrisp）。 -->
     <div class="pt-zoomhud" id="zoomHud" hidden>
       <button data-act="zoomout" title="缩小（滚轮/触控板同样可用）">−</button>
-      <button class="zpct" id="zoomPct" data-act="zoom100" title="回到 100%（该视角的标准大小）">100%</button>
+      <button class="zpct" id="zoomPct" data-act="zoom100" title="适应画布，完整显示当前视图">Fit</button>
       <button data-act="zoomin" title="放大">＋</button>
       <span class="zsep"></span>
       <!-- 居中＝十字准星：四条边线收向正中一枚圆环，说的是「把场景挪回画面正中」，
@@ -880,8 +900,71 @@ function hull2(pts){
   lo.pop(); hi.pop();
   return lo.concat(hi);
 }
-/* 维度签名色：与逻辑魔方 / net-sharding 同一套 token */
-var VC = {tp:'var(--pt-tp)', cp:'var(--pt-cp)', pp:'var(--pt-pp)', dp:'var(--pt-dp)', ep:'var(--pt-ep)'};
+/* 维度签名色：色相仍取逻辑魔方 / net-sharding 的同一套 token，只复用
+   model-graphviz colormap 的主题切换机制。浅色是已确认的基准配色，必须原样保留；
+   只在深色背景下收暗明度、提高饱和度。这里不引入 colormap 的 CORE / semantic 色值，TP/PP/DP/EP/CP
+   以及显存成分仍保留 topology 自己的色相语义。 */
+var TOPOLOGY_COLOR_PROFILE = {
+  dark:  {s:.82, l:.40, neutralL:.48},
+  light: {preserve:true}
+};
+var VC_SOURCE = {
+  tp:['var(--pt-tp)', '#22D3EE'], cp:['var(--pt-cp)', '#86C70F'],
+  pp:['var(--pt-pp)', '#FFAA3B'], dp:['var(--pt-dp)', '#4369EF'],
+  ep:['var(--pt-ep)', '#9B3CF6']
+};
+var VC = {};
+var MEMC = {};
+var topologyPaletteTheme = '';
+
+function topologyColorRgb(value, fallback){
+  var probe = document.createElement('i');
+  probe.style.cssText = 'position:absolute;visibility:hidden;color:' + value;
+  /* --pt-* 定义在 .pt-root，probe 必须放进 app 才能解析到真正的 token 值。 */
+  ($('app') || document.body).appendChild(probe);
+  var parsed = getComputedStyle(probe).color.match(/[\d.]+/g);
+  probe.remove();
+  if(parsed && parsed.length >= 3) return {r:+parsed[0], g:+parsed[1], b:+parsed[2]};
+  var n = parseInt(String(fallback).replace('#',''), 16);
+  return {r:(n >> 16) & 255, g:(n >> 8) & 255, b:n & 255};
+}
+function topologyRgbToHsl(rgb){
+  var r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+  var h = 0, l = (max+min)/2, s = d ? d/(1-Math.abs(2*l-1)) : 0;
+  if(d){
+    if(max===r) h = ((g-b)/d)%6;
+    else if(max===g) h = (b-r)/d+2;
+    else h = (r-g)/d+4;
+    h = ((h*60)%360+360)%360;
+  }
+  return {h:h, s:s, l:l};
+}
+function topologyHslToHex(h, s, l){
+  var c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2;
+  var q = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return '#' + q.map(function(v){ return Math.round((v+m)*255).toString(16).padStart(2,'0'); }).join('').toUpperCase();
+}
+function topologyThemeColor(value, fallback, profile){
+  var rgb = topologyColorRgb(value, fallback);
+  if(profile.preserve){
+    return '#' + [rgb.r,rgb.g,rgb.b].map(function(v){ return Math.round(v).toString(16).padStart(2,'0'); }).join('').toUpperCase();
+  }
+  var hsl = topologyRgbToHsl(rgb);
+  return topologyHslToHex(hsl.h, hsl.s < .08 ? 0 : profile.s, hsl.s < .08 ? profile.neutralL : profile.l);
+}
+function syncTopologyPalette(){
+  var theme9 = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  if(topologyPaletteTheme === theme9) return;
+  topologyPaletteTheme = theme9;
+  var profile9 = TOPOLOGY_COLOR_PROFILE[theme9];
+  Object.keys(VC_SOURCE).forEach(function(k){
+    VC[k] = topologyThemeColor(VC_SOURCE[k][0], VC_SOURCE[k][1], profile9);
+  });
+  Object.keys(MEM_BASE).forEach(function(k){
+    MEMC[k] = topologyThemeColor(MEM_BASE[k], MEM_BASE[k], profile9);
+  });
+}
 var DIMN = {tp:'TP', cp:'CP', pp:'PP', dp:'DP', ep:'EP'};
 function mix(colVar, pct){ return 'color-mix(in srgb, '+colVar+' '+pct+'%, transparent)'; }
 /* mix() 兑的是**透明**，所以那个百分比其实是一个 alpha 旋钮——想让一个面「更不透明」
@@ -1003,7 +1086,10 @@ var ui = {
      host 转发过来的就是这个块的 id（MODULE_BLOCKS 里那张表的 id，同名字符串）。
      用空串表示"没有"而不是 null——跟 revLayer 同一个先例：这也是一句"输入框值"
      式的字符串状态，不是布尔开关，''就是它的零值，不用另外判 null/undefined。 */
-  hlBlock:''
+  hlBlock:'',
+  /* Hover Bar 下的对象选择是宿主明确下达的筛选，不是另一个 iframe 的过路高亮。
+     单独记住它，既让读出面板保持“选中”，也能为 PP 补出整段 layer 的聚光灯。 */
+  groupFilters:{t:null,e:null,p:null}
 };
 /* 散掉过路的高亮（点画布空白、或换了别的问法时调用）。返回是否真的散掉了东西。 */
 function clearHL(){
@@ -1026,7 +1112,7 @@ function hlSelOn(D){
    就是"从别的格点过来之后，在这一格点卡再也读不出东西了"。
    hlLayer 不在这里动：层高亮和卡高亮是两条各管各的线（见 applyQuery 里
    keepHL 那段），点一张卡不该顺手把另一格转过来的层照亮也抹掉。 */
-function takeSel(){ ui.hlSel = false; }
+function takeSel(){ ui.hlSel = false; ui.groupFilters = {t:null,e:null,p:null}; }
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
@@ -1516,7 +1602,8 @@ function inflightAt(D, ppRank, t){
        只有它改用 mix()（兑透明，不是兑底色）单独带一层透明度——半透明正好
        是它自己的语义：显存账上确实留了这块地方，但读者一眼要看出「这里没
        装真东西」。 */
-var MEMC = {
+/* 以下是显存语义的基准色相；最终填色由 syncTopologyPalette() 按主题调整 S/L。 */
+var MEM_BASE = {
   w:  '#5C86C7',
   g:  '#6F9BA6',
   opt:'#9F93D1',
@@ -2426,8 +2513,8 @@ function renderDim(D){
         var hot = AXQ[dim]===sl[0];
         return '<span class="pt-chip" style="'+(hot?'background:'+VC[sl[2]]+';border-color:'+VC[sl[2]]+';color:var(--pt-bg);font-weight:800':'')+'">'+sl[0]+'·'+sl[1]+'→'+DIMN[sl[2]]+'</span>';
       }).join('')+'</div>'
-    + '<div class="mono" style="font-size:10.5px;margin-top:5px;color:var(--pt-fg2)">本维认领 <b style="color:'+col+'">'+AXQ[dim]+'</b> 轴：'+ivl+'（rank元组 ⇄ 区间，双链可逆 §07）</div>'
-    + '<div style="font-size:10.5px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
+    + '<div class="mono" style="font-size:12px;margin-top:5px;color:var(--pt-fg2)">本维认领 <b style="color:'+col+'">'+AXQ[dim]+'</b> 轴：'+ivl+'（rank元组 ⇄ 区间，双链可逆 §07）</div>'
+    + '<div style="font-size:12px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
   $('detach').hidden = true;
 }
 /* ═════════ 可转动的整网 3D 场景 ═════════
@@ -3153,9 +3240,11 @@ function netScene(D, g, box, step){
        透明度——透明度这条路已经走到头了。 */
     var colFade = 1;
     var spotDim = spot && !spotCol ? 0.10 : 1;
-    var selDim = 1;
+    /* 直接选中一张 rank 时，其余列重新退到背景；全局对象筛选已有 spotlight
+       自己管理命中集合，不能再按代表 rank 二次压暗同一对象里的其它成员。 */
+    var selDim = hasSel && !spot && !isF ? 0.12 : 1;
     var colOp = Math.min(colFade, spotDim, selDim);
-    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+(spot && !spotCol?' style="filter:saturate(.25)"':'') +'>');
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+((spot && !spotCol)||(hasSel&&!spot&&!isF)?' style="filter:saturate(.25)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -3952,6 +4041,10 @@ function netScene(D, g, box, step){
            关掉整网时盒子就是 rank，粒度必须到盒子。 */
         var spotCard = !spot || !!spot.ranks[gc];
         var spotShellDim = spot && !spotCard;
+        /* 一旦有明确 rank / 并行对象，未命中的卡整体退后。包住的是这只卡的壳、
+           容量带和门牌，而命中面留在独立 hit 层，淡下去的卡仍然可以点击切换。 */
+        var rankFade9 = spotShellDim || (hasSel && !spot && !meC);
+        if(rankFade9) body.push('<g opacity="0.10" style="filter:saturate(.25)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -4398,6 +4491,7 @@ function netScene(D, g, box, step){
           body.push(txt(cTop[0], cTop[1]-4, cTxt, 8.4, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
           body.push(txt(cTop[0], cTop[1]+5.5, cSub, 6.4, 'var(--pt-fg2)', 'middle'));
         }
+        if(rankFade9) body.push('</g>');
         /* 命中面取这只盒子 8 个角的**屏幕凸包**，不是写死"前脸"那四个角。
            写死前脸只在 3D/正视两个机位上有面积：顶视（俯视，pitch=π/2）把 v 轴压成
            零、侧视（yaw=π/2）把 u 轴压成零，前脸都退化成一条线——那两个机位的
@@ -6605,6 +6699,27 @@ function renderSolidCav(D){
    MoE 时 EP 桶沿深度轴完整展开，不省略。
    W 层顶面画 TP×EP 格点命中区（pickg → 定位持有者），每层右侧面 memblockpick
    → 高亮左侧面板。旋转/缩放/平移/双击复位沿用 chain 的 3D 操控。 */
+/* 100% 在这类拓扑画布里表示 Fit，而不是某个固定像素倍率。渲染器先按自己的稳定
+   坐标系作图，再从真实内容包围盒反推出基准 viewBox；这样窄 iframe、拖动分栏和
+   不同长宽比下都能完整显示。包围盒先反解掉当前 zoom/pan，因此手动缩放后 crisp
+   重绘仍沿用同一份 Fit 基准，不会因再次测量而把缩放效果抵消。 */
+function fitSceneViewBox(svg, sceneRoot, fallbackW, fallbackH){
+  var base = {x:0, y:0, width:fallbackW, height:fallbackH};
+  if(!svg || !sceneRoot) return base;
+  try{
+    var bb = sceneRoot.getBBox();
+    if(!bb || !(bb.width > 1) || !(bb.height > 1)) return base;
+    var z9 = Math.max(0.001, ui.zoom3 || 1);
+    var cx9 = fallbackW/2, cy9 = fallbackH/2;
+    var bx9 = cx9 + (bb.x - cx9 - ui.panX3) / z9;
+    var by9 = cy9 + (bb.y - cy9 - ui.panY3) / z9;
+    var bw9 = bb.width / z9, bh9 = bb.height / z9;
+    var px9 = Math.max(34, bw9 * 0.035), py9 = Math.max(34, bh9 * 0.055);
+    base = {x:bx9-px9, y:by9-py9, width:bw9+px9*2, height:bh9+py9*2};
+    svg.setAttribute('viewBox', [base.x, base.y, base.width, base.height].map(function(v){ return v.toFixed(2); }).join(' '));
+  }catch(e){}
+  return base;
+}
 function renderSolidGrid(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
@@ -6909,8 +7024,8 @@ function renderSolidGrid(D){
   /* 恢复选中 DP 的 proj 偏移 */
   proj = savedProjSel;
   /* 标题 */
-  labels9.push('<text x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' 卡') + '</text>');
-  labels9.push('<text x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
+  labels9.push('<text class="pt-grid-title" x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' 卡') + '</text>');
+  labels9.push('<text class="pt-grid-title" x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
 
   /* ═══ 说明弹层 ═══ */
   var CW = MEMC.w;
@@ -6928,8 +7043,8 @@ function renderSolidGrid(D){
         ? 'EP 桶沿深度轴完整展开（每桶一片，间隔标色）。斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上。'
         : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡。')
     + '</div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:10px">'
-    + '<tr style="color:var(--pt-fg3);font-family:var(--pt-mono);font-size:9.5px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:10px">'
+    + '<tr style="color:var(--pt-fg3);font-family:var(--pt-mono);font-size:12px">'
     + '<td style="padding:3px 8px 4px 0">形态</td><td style="padding:3px 8px 4px">切分</td>'
     + '<td style="padding:3px 8px 4px">字节</td><td style="padding:3px 8px 4px">DP 语义</td>'
     + '<td style="padding:3px 0 4px">一步之内的生死</td></tr>'
@@ -6948,9 +7063,12 @@ function renderSolidGrid(D){
 
   var bodyStr = conn + boxes.map(function(b){ return b.svg; }).join('');
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+VH+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab">'+defsSVG()
-    + '<g pointer-events="none">' + bodyStr + '</g>' + labels9.join('') + ghits.join('')
-    + '</svg>';
-  viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3, vw: VW, vh: VH};
+    + '<g id="vroot"><g pointer-events="none">' + bodyStr + '</g>' + labels9.join('') + ghits.join('')
+    + '</g></svg>';
+  var gridSvg9 = $('stage').querySelector('svg');
+  var gridFit9 = fitSceneViewBox(gridSvg9, $('stage').querySelector('#vroot'), VW, VH);
+  viewRendered = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3,
+    vx:gridFit9.x, vy:gridFit9.y, vw:gridFit9.width, vh:gridFit9.height, cx:VW/2, cy:VH/2};
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">内存分层</button>'
@@ -8571,15 +8689,17 @@ function applyViewTransform(){
      的增量是 translate(t)·scale(k)（viewBox 系），换到 CSS 系就是
      translate(O(1−k) + m·t)·scale(k)，origin 取元素左上角。 */
   var k = ui.zoom3 / vr.zoom;
-  var cx = vr.vw/2, cy = vr.vh/2;
+  var cx = isFinite(vr.cx) ? vr.cx : (vr.vx||0) + vr.vw/2;
+  var cy = isFinite(vr.cy) ? vr.cy : (vr.vy||0) + vr.vh/2;
   var tx = (cx + ui.panX3) - k*(cx + vr.panX);
   var ty = (cy + ui.panY3) - k*(cy + vr.panY);
   var cw = svg.clientWidth || 1, ch = svg.clientHeight || 1;
   var m = Math.min(cw/vr.vw, ch/vr.vh);
   var Ox = (cw - m*vr.vw)/2, Oy = (ch - m*vr.vh)/2;
+  var Ax = Ox - m*(vr.vx||0), Ay = Oy - m*(vr.vy||0);
   svg.style.transformOrigin = '0 0';
   svg.style.transform = (Math.abs(k-1) < 1e-4 && Math.abs(tx) < .01 && Math.abs(ty) < .01)
-    ? '' : 'translate('+(Ox*(1-k) + m*tx).toFixed(2)+'px,'+(Oy*(1-k) + m*ty).toFixed(2)+'px) scale('+k.toFixed(4)+')';
+    ? '' : 'translate('+(Ax*(1-k) + m*tx).toFixed(2)+'px,'+(Ay*(1-k) + m*ty).toFixed(2)+'px) scale('+k.toFixed(4)+')';
   syncZoomHud();
   placeOpCard();            /* 手势里卡跟着它那个算子走：只重新贴位，不重排内容 */
   scheduleCrisp();
@@ -8600,7 +8720,7 @@ function scheduleCrisp(){
 }
 function syncZoomHud(){
   var el = $('zoomPct');
-  if(el) el.textContent = Math.round(ui.zoom3 * 100) + '%';
+  if(el) el.textContent = Math.abs(ui.zoom3 - 1) < 0.001 ? 'Fit' : Math.round(ui.zoom3 * 100) + '%';
 }
 /* 选组 HUD：落下的每把刀一组格子，点第几格「本卡」就换到那一组——四个视角同一条。
    点选复用 chainpick（document 上那只委托监听认 data-act，无须另接线）。 */
@@ -8784,7 +8904,10 @@ function renderChain(D){
   var fixedLayer = (scene.fixed || scene.fixedHit)
     ? '<g pointer-events="none">'+(scene.fixed||'')+'</g>'+(scene.fixedHit||'') : '';
   $('stage').innerHTML = '<svg viewBox="0 0 '+VW+' '+H+'" preserveAspectRatio="xMidYMid meet" id="chainSvg" data-zoom="'+(scene.zoom?1:0)+'"><g id="vroot">'+defsSVG()+parts.join('')+sceneHit+'</g>'+fixedLayer+'</svg>';
-  viewRendered = {zoom:ui.zoom3, panX:ui.panX3, panY:ui.panY3, vw:VW, vh:H};
+  var chainSvg9 = $('stage').querySelector('svg');
+  var chainFit9 = fitSceneViewBox(chainSvg9, $('stage').querySelector('#vroot'), VW, H);
+  viewRendered = {zoom:ui.zoom3, panX:ui.panX3, panY:ui.panY3,
+    vx:chainFit9.x, vy:chainFit9.y, vw:chainFit9.width, vh:chainFit9.height, cx:VW/2, cy:H/2};
   renderGroupHud(D);
   renderOpCard(D);
   renderChainBar(D);
@@ -8880,7 +9003,9 @@ function spotlightHit(D){
      两者的差别在别处，不在这儿：落不落标签、浮不浮读出卡、点空白散不散。 */
   var hlLi = ui.hlLayer ? parseInt(ui.revLayer, 10) : NaN;
   var hlRank = (ui.hlSel && sel !== null && sel < D.world) ? sel : -1;
-  if(!ui.chips.length && !(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) && hlRank < 0) return null;
+  var groupFilters = ui.groupFilters || {t:null,e:null,p:null};
+  var hasGroupFilter = groupFilters.t !== null || groupFilters.e !== null || groupFilters.p !== null;
+  if(!ui.chips.length && !(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) && hlRank < 0 && !hasGroupFilter) return null;
   var ranks = {}, layers = {}, any = false, epRelevant = false;
   function addLayer(li){
     any = true;
@@ -8891,6 +9016,15 @@ function spotlightHit(D){
   }
   if(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) addLayer(hlLi);
   if(hlRank >= 0){ any = true; ranks[hlRank] = true; }
+  /* PP 选择表达的是一整个流水段，不应退化成“拿该组里某一个代表 rank”。
+     把该段全部 layer 放进 spotlight：命中层保留颜色，其余层统一去色。 */
+  if(groupFilters.p !== null && groupFilters.p >= 0 && groupFilters.p < D.pp){
+    var ppStart9 = Math.floor(groupFilters.p * D.layers / D.pp);
+    var ppEnd9 = Math.floor((groupFilters.p + 1) * D.layers / D.pp);
+    for(var ppLi9 = ppStart9; ppLi9 < ppEnd9; ppLi9++) addLayer(ppLi9);
+  }
+  if(groupFilters.t !== null) dimSlice('tp', groupFilters.t, D).forEach(function(r){ any = true; ranks[r] = true; });
+  if(groupFilters.e !== null) dimSlice('ep', groupFilters.e, D).forEach(function(r){ any = true; ranks[r] = true; });
   ui.chips.forEach(function(c){
     var st = chipState(c, D);
     if(st.kind === 'bad') return;
@@ -9044,7 +9178,7 @@ function renderRevBar(D){
       + '<div class="sum">'+grpLabel+'，'+dm.toUpperCase()+' 组：'
       + '<div class="rankchips" style="margin-top:4px">'
       + mem.slice(0,16).map(function(r){ return '<button data-act="pick" data-g="'+r+'">'+r+'</button>'; }).join('')
-      + (mem.length>16 ? '<span style="font-size:10px;color:var(--pt-fg3)">…共 '+mem.length+'</span>' : '')
+      + (mem.length>16 ? '<span style="font-size:12px;color:var(--pt-fg3)">…共 '+mem.length+'</span>' : '')
       + '</div></div></div>';
   }).join('');
   el.style.setProperty('--c', 'var(--pt-bd)');
@@ -9303,10 +9437,8 @@ function renderChainBar(D){
   /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
      再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
   /* ── 舞台上只剩一颗配置钮 ────────────────────────────────────────────
-     上面那些控件一个没删，只是全部搬进这颗钮的面板里按「这一屏在讲什么」分组：
-     模式 → 切分 → 并行度 → 机位 → 通信 → 图层 → 数据标注，由粗到细，与原来
-     那条工具条的排序一致。搜索仍然留在画布上（#qbar）：它是**提问**，
-     其余是**配置**。 */
+     搜索也收进同一块面板，读者不必先判断“这是提问还是配置”再去两个入口里找。
+     搜索与定位放在最前，然后才是模式、切分、并行度、机位和图层。 */
   var draft9 = ui.cfgDraft || {};
   function pnum9(k9, nm9, dis9){
     var v9 = (draft9[k9] !== undefined) ? draft9[k9] : cfg[k9];
@@ -9316,6 +9448,7 @@ function renderChainBar(D){
   var dirty9 = !!ui.cfgDraft && Object.keys(ui.cfgDraft).some(function(k9){ return +ui.cfgDraft[k9] !== +cfg[k9]; });
   var moe9 = +cfg.experts > 0;
   var cfgPanel = '<div class="pt-cfgpanel'+(ui.cfgOpen?' is-open':'')+'" id="cfgPanel">'
+    + '<div class="cg pt-cfgsearch"><h6>搜索与定位</h6><div class="cgrow">' + revBtn + '</div></div>'
     + '<div class="cg"><h6>模式</h6><div class="cgrow">' + cBtn + '</div></div>'
     + '<div class="cg"><h6>落哪几把刀</h6><div class="cgrow">' + kBtns + physBtn + '</div></div>'
     + '<div class="cg"><h6>并行度</h6><div class="pnum">'
@@ -9355,17 +9488,16 @@ function renderChainBar(D){
      面板收起时也看得出「画面上还压着东西」。 */
   var cfgN9 = (ui.legendOn?1:0) + (ui.moduleView?1:0) + commLitN();
   $('stagebar').innerHTML = '<span class="pt-cfg">'
-    + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="配置"'
-    + ' title="配置：模式 / 落哪几把刀 / 并行度 / 机位 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
+    + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="搜索与配置"'
+    + ' title="搜索与配置：对象定位 / 模式 / 落哪几把刀 / 并行度 / 机位 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
     + '<svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'
     + '<path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg>'
     + '</button>' + cfgPanel + '</span>';
-  /* 搜索走中间那个容器，不进右侧工具条 */
+  /* 旧的画布搜索挂点保留给结构兼容，但入口已经迁入配置面板。 */
   var qb = $('qbar');
-  if(qb){ qb.innerHTML = revBtn; qb.hidden = false; }
+  if(qb){ qb.innerHTML = ''; qb.hidden = true; }
   renderLegend(D);
   renderRevBar(D);
-  requestAnimationFrame(layoutQBar);
 }
 
 function renderDimBar(D, dim){
@@ -9397,7 +9529,7 @@ function renderDimBar(D, dim){
     else st = '待切 ×'+n2;
     var hot = i===cur;
     return '<span class="pt-chip" style="'+(hot?'border-color:'+VC[dm]+';color:'+VC[dm]+';font-weight:800':'')+'">'+DIMN[dm]+' '+st+'</span>';
-  }).join('<span style="color:var(--pt-fg3);font-size:10px">▸</span>');
+  }).join('<span style="color:var(--pt-fg3);font-size:12px">▸</span>');
   sb += '<span class="pt-sep"></span><span class="pt-cap">'+(dim==='cp'?'输入链':'模型链')+'</span>' + strip
      + (size>1 ? '<span class="pt-chip">本刀组：全网 '+fmt(D.world)+' 卡 = '+fmt(Math.round(D.world/size))+' 组 × '+size+'</span>' : '');
   if(dim==='cp' && D.cp>1){
@@ -9479,8 +9611,9 @@ function renderV1(D){
       inner = boxSVG(b.x+(GEO.w-iw)/2, y0+GEO.h, b.z+(GEO.d-idp)/2, iw, ih, idp, s, {fill:'var(--pt-fg2)', stroke:'transparent', attrs:' pointer-events="none"'});
     }
     var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
-    var cardOp = spotMiss ? 0.10 : (L3 ? 1 : .16);
-    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+(spotMiss?';filter:saturate(.25)':'')+'">'
+    var rankMiss = !spot && sel !== null && !isSel;
+    var cardOp = (spotMiss || rankMiss) ? 0.10 : (isSel ? 1 : (L3 ? 1 : .16));
+    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+((spotMiss||rankMiss)?';filter:saturate(.25)':'')+'">'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
   });
@@ -9552,7 +9685,7 @@ function fixFacetButtons(facet){ /* 简化 is-on 写法（字符串拼接里难�
 function detachHTML(D, refG){
   var dim = ui.commDim, col = VC[dim], mem = groupMembers(dim, refG, D);
   var n = mem.length;
-  if(n===1) return '<b style="font-size:12px">抽离 · '+DIMN[dim]+' 组</b><div style="font-size:11.5px;color:var(--pt-fg2);margin-top:4px">'+DIMN[dim]+'=1：组内只有一张卡（rank '+mem[0]+'），无通信发生。</div>';
+  if(n===1) return '<b style="font-size:12px">抽离 · '+DIMN[dim]+' 组</b><div style="font-size:12px;color:var(--pt-fg2);margin-top:4px">'+DIMN[dim]+'=1：组内只有一张卡（rank '+mem[0]+'），无通信发生。</div>';
   var w = Math.max(340, Math.min(560, n*64)), h = 170, pts=[], i;
   if(ui.commPrim!=='p2p'){
     var cx=w/2, cy=h/2-8, R=Math.min(h/2-30, 56);
@@ -9567,7 +9700,7 @@ function detachHTML(D, refG){
   }).join('');
   var edges = edgeSVG(pts.map(function(p2){ return [p2[0], p2[1]-13]; }), ui.commPrim, col, {mid:dim, ring:true});
   return '<b style="font-size:12px">抽离模式 · 只看连线（R2）</b> '
-    + '<span class="mono" style="font-size:10.5px;color:var(--pt-fg2)">'+DIMN[dim]+' 组 × '+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+' · '+n+' 张卡'+(sel===null?'（示意 0 号组）':'')+(dim==='cp'?' · CP 组跨分面，只在此呈现':'')+'</span>'
+    + '<span class="mono" style="font-size:12px;color:var(--pt-fg2)">'+DIMN[dim]+' 组 × '+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+' · '+n+' 张卡'+(sel===null?'（示意 0 号组）':'')+(dim==='cp'?' · CP 组跨分面，只在此呈现':'')+'</span>'
     + '<svg viewBox="0 0 '+w+' '+h+'">'+defsSVG()+edges+nodes+'</svg>';
 }
 
@@ -9953,7 +10086,7 @@ function renderDetail(D){
       + expRow
       + '<tr><td>权重</td><td>'+fmtP(paramsPerCard(D,co.p))+' 参数 · '+fmtGB(2*paramsPerCard(D,co.p))+' GB</td></tr></table>'
       + '<span class="pt-go" data-act="gov" data-v="anatomy">⤷ 解剖</span> · <span class="pt-go" data-act="gov" data-v="dim">⤷ 单维切分</span>'
-      + '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--pt-fg3)">推导 · 逐算子形状 · 反查</summary>'
+      + '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--pt-fg3)">推导 · 逐算子形状 · 反查</summary>'
       + '<div class="formula">g = ((pp·DP+dp)·CP+cp)·TP+tp<br>&nbsp;= (('+co.p+'·'+D.dp+'+'+co.d+')·'+D.cp+'+'+co.c+')·'+D.tp+'+'+co.t+' = <b>'+g+'</b><br>'
       + '<span style="opacity:.65">逆向: tp=g%TP · cp=⌊g/TP⌋%CP · dp=⌊g/TP·CP⌋%DP · pp=⌊g/TP·CP·DP⌋（可逆 §07/§10）</span></div>'
       + '<table>'+holdRows(g,D).map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>'
@@ -9963,8 +10096,8 @@ function renderDetail(D){
   renderRevOut(D);
 }
 function revHTML(D){
-  return '<div class="rev"><b style="font-size:11px">反查（点区间得卡，可逆）</b><br>'
-    + '<label style="font-size:11px">第 <input type="number" min="0" max="'+(D.layers-1)+'" id="revLayer" value="'+esc(ui.revLayer)+'" placeholder="L?"> 层在哪些卡上？</label><div id="revOut"></div></div>';
+  return '<div class="rev"><b style="font-size:12px">反查（点区间得卡，可逆）</b><br>'
+    + '<label style="font-size:12px">第 <input type="number" min="0" max="'+(D.layers-1)+'" id="revLayer" value="'+esc(ui.revLayer)+'" placeholder="L?"> 层在哪些卡上？</label><div id="revOut"></div></div>';
 }
 /* 反查一层落在哪几张卡上——**正向那一问的逆命题**。
    这一屏别处答的都是「这张卡装了什么」，而这里问的是「这一层住在哪」：
@@ -9992,7 +10125,7 @@ function renderRevOut(D){
   for(d=0;d<D.dp&&mem.length<20;d++) for(c=0;c<D.cp&&mem.length<20;c++) for(t=0;t<D.tp&&mem.length<20;t++) mem.push(rankOf(t,c,d,stage,D));
   function step(dim, txt2){
     return '<div style="margin:1px 0 1px 0"><span class="dk" style="--c:'+VC[dim]+'">'+dim.toUpperCase()
-      + '</span> <span style="font-size:10.5px">'+txt2+'</span></div>';
+      + '</span> <span style="font-size:12px">'+txt2+'</span></div>';
   }
   out.innerHTML = '<div class="formula" style="margin:5px 0 4px">'
     + '<b>L'+L+'</b> 住在哪'
@@ -10009,7 +10142,7 @@ function renderRevOut(D){
     + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
     + '</div></div>'
     + '<div class="rankchips">'+mem.map(function(r){return '<button data-act="pick" data-g="'+r+'">'+r+'</button>';}).join('')
-    + (h.tot>mem.length?'<span style="font-size:10px;color:var(--pt-fg3)">…共 '+fmt(h.tot)+'</span>':'')+'</div>';
+    + (h.tot>mem.length?'<span style="font-size:12px;color:var(--pt-fg3)">…共 '+fmt(h.tot)+'</span>':'')+'</div>';
 }
 
 /* ═════════ 抽屉：配置 / 验收 ═════════ */
@@ -10027,7 +10160,7 @@ function drawerHTML(D){
     return '<button class="pb'+(activePreset===p.id?' is-on':'')+(p.bad?' mono':'')+'" data-act="preset" data-id="'+p.id+'"'+(p.bad?' style="border-style:dashed"':'')+'>'+esc(p.name)+'</button>';
   }).join('');
   var errs = D.errors.map(function(e){
-    return '<div class="verr">✕ <b class="mono" style="font-size:11px">'+esc(e.msg)+'</b>'
+    return '<div class="verr">✕ <b class="mono" style="font-size:12px">'+esc(e.msg)+'</b>'
       + (e.fixes.length?'<div class="fixes">最近合法值：'+e.fixes.map(function(f,i){return '<button data-act="fix" data-err="'+e.id+'" data-i="'+i+'">'+esc(f.label)+'</button>';}).join('')+'</div>':'')+'</div>';
   }).join('');
   var ok = D.errors.length ? '' : '<div class="vok">✓ 合法：world '+fmt(D.world)+' = TP '+D.tp+' × CP '+D.cp+' × PP '+D.pp+' × DP '+D.dp+(D.moe?'（EP 折叠在 stage 平面上——是视图不是新轴）':'')+'</div>';
@@ -10128,15 +10261,12 @@ function renderFoot(D){
   $('footCtl').innerHTML = out;
 }
 
-/* 画布左上角那个名字。整屏只认这一个标题——就四个字，不带副标题：此刻在看哪一幕、
-   Rank 开着没有，右上角那排开关自己写着，标题再抄一遍只是把同一件事说两遍。 */
+/* 画布左上角用用户问题命名，并补一句最关键的阅读说明：方框是 Rank，不是模型层。 */
 function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
   if(el.firstChild) return;
-  el.innerHTML = '<b>并行拓扑</b>';
-  if(document.querySelector('.pt-root.embed')){
-    var qb = $('qbar'); if(qb) el.appendChild(qb);
-  }
+  el.innerHTML = '<span class="pt-stagecopy"><b>模型分片与训练设备映射</b>'
+    + '<small>每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。</small></span>';
 }
 
 /* ══ 二级读数：读出卡里点开的那一**块**显存 ═══════════════════════════════
@@ -10615,13 +10745,14 @@ function renderRankMem(D){
     + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin:4px 0 3px;font-family:var(--pt-mono)">'
     + rows.join('')
     + '<tr><td colspan="2" style="border-top:1px solid var(--pt-bd);padding-top:5px;font-weight:800;font-size:13px;color:'+(tot>cap?'var(--pt-danger)':'var(--pt-fg)')+'">合计 '+fmtGB(tot)+' / '+D.hbm+' GB</td>'
-    + '<td style="border-top:1px solid var(--pt-bd);padding-top:5px;text-align:right;font-size:10.5px;color:var(--pt-fg3)">余量 '+fmtGB(cap-tot)+'</td></tr></table>'
+    + '<td style="border-top:1px solid var(--pt-bd);padding-top:5px;text-align:right;font-size:12px;color:var(--pt-fg3)">余量 '+fmtGB(cap-tot)+'</td></tr></table>'
 ;
   el.hidden = false;
 }
 
 /* ═════════ 总渲染 ═════════ */
 function render(){
+  syncTopologyPalette();
   var D = derive(cfg);
   cflowN = CFLOW_MAX;                       /* 流动虚线的预算按「每次重绘」发，不跨帧累积 */
   /* 选中卡越界就夹回 null——**来路标记必须跟着一起清**。宿主转过来的 rank 未必在
@@ -10809,11 +10940,12 @@ $('stage').addEventListener('wheel', function(ev){
     var sx = inv.a*ev.clientX + inv.c*ev.clientY + inv.e;
     var sy = inv.b*ev.clientX + inv.d*ev.clientY + inv.f;
     var vb = svg.getAttribute('viewBox').split(/\s+/).map(Number);
-    var cx9 = vb[2]/2, cy9 = vb[3]/2;
+    var vr9 = viewRendered;
+    var cx9 = vr9 && isFinite(vr9.cx) ? vr9.cx : vb[0] + vb[2]/2;
+    var cy9 = vr9 && isFinite(vr9.cy) ? vr9.cy : vb[1] + vb[3]/2;
     /* getScreenCTM 给的是**渲染基线**的用户坐标——连续滚动时上面还压着一层
        gesture 的 CSS transform，先把光标换算到「当前 ui 状态」的约定坐标系里，
        缩放锚点才不会一格一格漂。 */
-    var vr9 = viewRendered;
     if(vr9){
       var kk = ui.zoom3 / vr9.zoom;
       sx = kk*(sx - cx9 - vr9.panX) + cx9 + ui.panX3;
@@ -11074,8 +11206,6 @@ document.addEventListener('click', function(ev){
   else if(act==='gridhelp'){ ui.gridHelp = !ui.gridHelp; render(); }
   else if(act==='pickg'){ takeSel(); sel = +b.getAttribute('data-g'); render(); ptoNotifyHost(); }
   else if(act==='chainpick'){
-    var Dq = derive(cfg); if(!Dq.ok) return;
-    var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
     var kk = b.getAttribute('data-k'), iv = +b.getAttribute('data-i');
     /* 「点中已经选中的那一张 → 取消选中」只给 card 这一键。
        跟随的是这一屏已有的那条 toggle：.dimcol 的
@@ -11085,22 +11215,7 @@ document.addEventListener('click', function(ev){
        卡架、读出卡一起塌掉——一次误点的代价大得离谱，而且轴上根本没有"没有第几组"
        这个状态可落。card 不一样：它就是那张卡本身，"不看这张了"是一个真实的意思。
        hlSel 亮着的那张再点一次不算 toggle：那不是我选的，第一次点是"我确认选它"。 */
-    var offSame9 = (kk === 'card') && sel === iv && !ui.hlSel;
-    takeSel();                           /* 从这一刻起亮着的是选中，不是过路高亮 */
-    if(kk==='card') sel = offSame9 ? null : iv;   /* 卡维度：整只卡壳就是一个可点的 rank */
-    else if(kk==='d') sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
-    else if(kk==='p') sel = rankOf(c0.t,c0.c,c0.d,iv,Dq);
-    else if(kk==='t') sel = rankOf(iv,c0.c,c0.d,c0.p,Dq);
-    else if(kk==='e' && Dq.moe){
-      var m0 = epOf(c0.t,c0.c,c0.d,Dq);
-      var q0 = (m0.mdp*Dq.ep+iv)*Dq.etp+m0.etp;
-      sel = rankOf(q0%Dq.tp, Math.floor(q0/Dq.tp)%Dq.cp, Math.floor(q0/(Dq.tp*Dq.cp))%Dq.dp, c0.p, Dq);
-    }
-    else if(kk==='c' && Dq.cp>1){
-      var ownerC2 = iv<Dq.cp ? iv : 2*Dq.cp-1-iv;
-      sel = rankOf(c0.t, ownerC2, c0.d, c0.p, Dq);
-    }
-    render(); ptoNotifyHost();
+    if(applyParallelGroupPick(kk, iv)) { render(); ptoNotifyHost(); }
   }
   /* 正视换层：落的是同一枚「层 · Ln」标签（与搜索、与宿主两格之间的层联动同一条路）。
      data-d=0 是那颗读数按钮：摘掉标签，回到默认代表层。 */
@@ -11239,6 +11354,36 @@ document.addEventListener('mousemove', function(ev){
   }
   tip.style.display='none';
 });
+/* 宿主与页内选组共用同一份坐标换算。宿主传的是语义维度与组号，不接触 SVG 节点。 */
+function applyParallelGroupPick(kk, iv){
+  var Dq = derive(cfg); if(!Dq.ok || !isFinite(iv)) return false;
+  var g0 = (sel!==null&&sel<Dq.world)?sel:0, c0 = coordsOf(g0,Dq);
+  var offSame9 = (kk === 'card') && sel === iv && !ui.hlSel;
+  takeSel();
+  if(kk==='card') sel = offSame9 ? null : iv;
+  else if(kk==='d' && iv>=0 && iv<Dq.dp) sel = rankOf(c0.t,c0.c,iv,c0.p,Dq);
+  else if(kk==='p' && iv>=0 && iv<Dq.pp) sel = rankOf(c0.t,c0.c,c0.d,iv,Dq);
+  else if(kk==='t' && iv>=0 && iv<Dq.tp) sel = rankOf(iv,c0.c,c0.d,c0.p,Dq);
+  else if(kk==='e' && Dq.moe && iv>=0 && iv<Dq.ep){
+    var m0 = epOf(c0.t,c0.c,c0.d,Dq);
+    var q0 = (m0.mdp*Dq.ep+iv)*Dq.etp+m0.etp;
+    sel = rankOf(q0%Dq.tp, Math.floor(q0/Dq.tp)%Dq.cp, Math.floor(q0/(Dq.tp*Dq.cp))%Dq.dp, c0.p, Dq);
+  }
+  else if(kk==='c' && Dq.cp>1 && iv>=0 && iv<2*Dq.cp){
+    var ownerC2 = iv<Dq.cp ? iv : 2*Dq.cp-1-iv;
+    sel = rankOf(c0.t, ownerC2, c0.d, c0.p, Dq);
+  } else return false;
+  return true;
+}
+function ptoStateSnapshot(){
+  var D9 = derive(cfg), groups = null;
+  if(D9.ok && sel!==null && sel<D9.world){
+    var c9 = coordsOf(sel,D9), e9 = D9.moe ? epOf(c9.t,c9.c,c9.d,D9) : null;
+    groups = {t:c9.t,c:c9.c,d:c9.d,p:c9.p,e:e9?e9.ep:null};
+  }
+  return {sel:sel,groups:groups,config:{world:cfg.world,tp:cfg.tp,cp:cfg.cp,pp:cfg.pp,ep:cfg.ep,dp:D9.dp,ok:D9.ok}};
+}
+
 /* 宿主 postMessage 主题联动（与逻辑魔方同约定） */
 window.addEventListener('message', function(ev){
   var d = ev && ev.data;
@@ -11249,6 +11394,48 @@ window.addEventListener('message', function(ev){
   /* 宿主（驾驶舱）驱动：不重载 iframe 也能换视图 / 选中卡 / 换预置。
      只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
   if(d.type==='pto:state'){
+    if(d.config && typeof d.config==='object'){
+      ['world','tp','cp','pp','ep'].forEach(function(k9){
+        var v9 = parseInt(d.config[k9],10);
+        if(isFinite(v9) && v9>=1) cfg[k9]=v9;
+      });
+      activePreset = null; sel = null; ui.groupFilters = {t:null,e:null,p:null}; ui.cfgDraft = null; stopAnim();
+    }
+    if(d.mode && typeof d.mode==='object'){
+      if(typeof d.mode.rank==='boolean') ui.cardMode=d.mode.rank;
+      if(d.mode.cardView==='cap'||d.mode.cardView==='net') ui.netOff=d.mode.cardView==='cap';
+      if(!ui.cardMode) ui.netOff=false;
+    }
+    if(d.knives && typeof d.knives==='object'){
+      if(typeof d.knives.dp==='boolean') ui.kDP=d.knives.dp;
+      if(typeof d.knives.pp==='boolean') ui.kPP=d.knives.pp;
+      if(typeof d.knives.cp==='boolean') ui.kCP=d.knives.cp;
+      if(typeof d.knives.tp==='boolean') ui.kTP=d.knives.tp;
+      if(typeof d.knives.ep==='boolean') ui.kEP=d.knives.ep;
+      if(typeof d.knives.phys==='boolean') ui.kPhys=d.knives.phys;
+    }
+    var filterChanged9 = false;
+    if(d.filters && typeof d.filters==='object'){
+      var nextFilters9 = {t:null,e:null,p:null};
+      ['t','e','p'].forEach(function(k9){
+        var v9 = d.filters[k9];
+        nextFilters9[k9] = typeof v9 === 'number' && isFinite(v9) && v9 >= 0 ? v9 : null;
+      });
+      takeSel(); sel = null;
+      ['t','e','p'].forEach(function(k9){
+        if(nextFilters9[k9] !== null && applyParallelGroupPick(k9, nextFilters9[k9])) filterChanged9 = true;
+      });
+      ui.groupFilters = nextFilters9;
+      if(!filterChanged9) sel = null;
+    } else if(d.filter && typeof d.filter==='object'){
+      var filterDim9 = String(d.filter.dim||''), filterIndex9 = +d.filter.index;
+      filterChanged9 = applyParallelGroupPick(filterDim9, filterIndex9);
+      if(filterChanged9){
+        ui.groupFilters = {t:null,e:null,p:null};
+        if(Object.prototype.hasOwnProperty.call(ui.groupFilters, filterDim9)) ui.groupFilters[filterDim9] = filterIndex9;
+      }
+    }
+    if(d.clearFilter===true){ takeSel(); sel=null; filterChanged9=true; }
     if(VIEWS.some(function(x){ return x.id===d.view; })) ui.view = d.view;
     /* solid 视图的子视角（双链映射/交集腔/全局切分）也开给宿主：组合工作台的
        「全局切分」tab 要在不重载 iframe 的前提下切到 view=solid&p=grid。 */
@@ -11287,14 +11474,18 @@ window.addEventListener('message', function(ev){
     if(d.theme==='dark'||d.theme==='light') document.documentElement.setAttribute('data-theme', d.theme);
     render();
     /* 回报当前状态，宿主据此对齐别的格（选中卡可能被本页夹紧过） */
-    if(ev.source) ev.source.postMessage({type:'pto:state-ack', view:ui.view, cut:ui.cutDim, sel:sel, preset:activePreset}, '*');
+    if(ev.source){ var snap9=ptoStateSnapshot(); ev.source.postMessage({type:'pto:state-ack', view:ui.view, cut:ui.cutDim, sel:snap9.sel, groups:snap9.groups, config:snap9.config, preset:activePreset}, '*'); }
+    /* filter 来自 Hover Bar，宿主已经把同一选择发给了两格。这里不能再回报
+       pto:select；否则两格会互相把对方降级成 hl，刚出现的读出面板随即被收回。 */
   }
 });
 /* 页内换选中卡时主动上报，宿主用它联动别的组件（A8 的跨组件版）。
    独立打开时 parent===window，函数存在但什么也不做。 */
 window.ptoNotifyHost = function(){
-  if(window.parent && window.parent !== window)
-    window.parent.postMessage({type:'pto:select', sel:sel, view:ui.view, cut:ui.cutDim}, '*');
+  if(window.parent && window.parent !== window){
+    var snap9=ptoStateSnapshot();
+    window.parent.postMessage({type:'pto:select', sel:snap9.sel, groups:snap9.groups, config:snap9.config, view:ui.view, cut:ui.cutDim}, '*');
+  }
 };
 
 /* 刀序视图的 viewBox 宽度是**按舞台实测长宽比**反解的（见 renderChain）。
