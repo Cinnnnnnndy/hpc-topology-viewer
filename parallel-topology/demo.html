@@ -1919,7 +1919,8 @@ function edgeSVG(pts, prim, color, opts){
 function defsSVG(){
   return '<defs>'+Object.keys(VC).map(function(k){
     return '<marker id="arr'+k+'" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:'+VC[k]+'"/></marker>';
-  }).join('')+'<marker id="arrx" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--pt-fg2)"/></marker></defs>';
+  }).join('')+'<marker id="arrx" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0,0 L8,4 L0,8 z" style="fill:var(--pt-fg2)"/></marker>'
+    +'<filter id="ptGray" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/></filter></defs>';
 }
 /* 一只 3D 盒（三可见面）；cls 面用 token 类，动态描边走 style */
 /* projRot：当 proj 被视图临时换成「带旋转的投影」时（目前只有交集腔），这里
@@ -3244,7 +3245,7 @@ function netScene(D, g, box, step){
        自己管理命中集合，不能再按代表 rank 二次压暗同一对象里的其它成员。 */
     var selDim = hasSel && !spot && !isF ? 0.12 : 1;
     var colOp = Math.min(colFade, spotDim, selDim);
-    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+((spot && !spotCol)||(hasSel&&!spot&&!isF)?' style="filter:saturate(.25)"':'') +'>');
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+((spot && !spotCol)||(hasSel&&!spot&&!isF)?' filter="url(#ptGray)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -3265,7 +3266,7 @@ function netScene(D, g, box, step){
       if(lqSkip && li !== 0 && li !== L-1) continue;
       var spotLayerHit = spotHasLayers && spot.layers[li];
       var spotLayerMiss = spotHasLayers && spotCol && !spotLayerHit;
-      if(spotLayerMiss) body.push('<g opacity="0.28" style="filter:saturate(.3)">');
+      if(spotLayerMiss) body.push('<g opacity="0.28" filter="url(#ptGray)">');
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
       var ww = wOf(li), mine = ui.cardMode ? true : (cutPP ? (li>=co.p*lps && li<(co.p+1)*lps) : true);
@@ -4044,7 +4045,7 @@ function netScene(D, g, box, step){
         /* 一旦有明确 rank / 并行对象，未命中的卡整体退后。包住的是这只卡的壳、
            容量带和门牌，而命中面留在独立 hit 层，淡下去的卡仍然可以点击切换。 */
         var rankFade9 = spotShellDim || (hasSel && !spot && !meC);
-        if(rankFade9) body.push('<g opacity="0.10" style="filter:saturate(.25)">');
+        if(rankFade9) body.push('<g opacity="0.10" filter="url(#ptGray)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -6723,6 +6724,12 @@ function fitSceneViewBox(svg, sceneRoot, fallbackW, fallbackH){
 function renderSolidGrid(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g,D), me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
+  var gridFilters9 = ui.groupFilters || {t:null,e:null,p:null};
+  /* 泳道点击走的是过路 Rank 高亮（hlSel），不是顶部对象筛选。两条入口最终都
+     归一成同一份有效筛选，保证从任意视图发起联动时都能看到相同的去色反馈。 */
+  if(hlSelOn(D) && gridFilters9.t === null && gridFilters9.e === null && gridFilters9.p === null)
+    gridFilters9 = {t:co.t, e:D.moe ? me.ep : null, p:co.p};
+  var gridFocusOn9 = gridFilters9.t !== null || gridFilters9.e !== null || gridFilters9.p !== null;
   var lps = D.layersPerStage, kE = D.moe ? D.experts/D.ep : 0;
   var nE = D.moe ? D.ep : 1;
   function ln(a,b,st){ return '<line x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'" style="'+st+'"/>'; }
@@ -6814,6 +6821,20 @@ function renderSolidGrid(D){
   var labels9 = [];
   var ghits = [];
 
+  /* 全局切分里的体块按 PP×EP 展开，TP 则摊在顶面的横向格点。选了 TP 时，
+     体块本体是多个 TP 片的聚合，不能冒充某一片继续带色：先把聚合体退灰，
+     再由下面 TP×EP 顶面格点把真正命中的交集恢复成维度色。 */
+  function gridBodyFocused9(pi, ei){
+    return (gridFilters9.p === null || gridFilters9.p === pi)
+      && (gridFilters9.e === null || gridFilters9.e === ei)
+      && gridFilters9.t === null;
+  }
+  function gridBodySvg9(svg, pi, ei){
+    return gridFocusOn9 && !gridBodyFocused9(pi, ei)
+      ? '<g opacity="0.18" filter="url(#ptGray)">' + svg + '</g>'
+      : svg;
+  }
+
   for(var pi = 0; pi < PP; pi++){
     var sd = stageData[pi];
     layers.forEach(function(ly){
@@ -6832,9 +6853,9 @@ function renderSolidGrid(D){
               var cc = cutColor(wb.cut);
               var blend = 'color-mix(in srgb, ' + cc + ' 35%, ' + sg.color + ')';
               var dep = (x0 + xw/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-              boxes.push({svg: boxSVG(x0, ly.y0, zB, xw, ly.th, BD_ep, 1, {
+              boxes.push({svg: gridBodySvg9(boxSVG(x0, ly.y0, zB, xw, ly.th, BD_ep, 1, {
                 fill: blend, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-              }), depth: dep});
+              }), pi, ei), depth: dep});
               if(pi === PP - 1 && ei === nE - 1 && xw > 0.35){
                 var mid = proj(x0 + xw/2, ly.y0 - 0.25, zB + BD_ep + 0.2, 1);
                 labels9.push('<text x="'+mid[0].toFixed(1)+'" y="'+mid[1].toFixed(1)+'" style="font-size:14px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:middle;dominant-baseline:auto;pointer-events:none;opacity:.85" transform="rotate(-30,'+mid[0].toFixed(1)+','+mid[1].toFixed(1)+')">'+esc(wb.id)+'</text>');
@@ -6847,15 +6868,15 @@ function renderSolidGrid(D){
           for(var mi = 0; mi < mub9; mi++){
             var x0a = mi * mbW;
             var dep2 = (x0a + mbW/2) + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-            boxes.push({svg: boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD_ep, 1, {
+            boxes.push({svg: gridBodySvg9(boxSVG(x0a, ly.y0, zB, mbW, ly.th, BD_ep, 1, {
               fill: sg.color, sw: isSel ? 1.2 : 0.25, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-            }), depth: dep2});
+            }), pi, ei), depth: dep2});
           }
         } else {
           var dep3 = BW/2 + (ly.y0 + ly.th/2) + (zB + BD_ep/2);
-          boxes.push({svg: boxSVG(0, ly.y0, zB, BW, ly.th, BD_ep, 1, {
+          boxes.push({svg: gridBodySvg9(boxSVG(0, ly.y0, zB, BW, ly.th, BD_ep, 1, {
             fill: sg.color, sw: isSel ? 1.2 : 0.3, stroke: isSel ? 'var(--pt-fg)' : 'var(--pt-bg)'
-          }), depth: dep3});
+          }), pi, ei), depth: dep3});
           if((ly.k === 'g' || ly.k === 'opt' || ly.k === 'otmp') && sd.wBlocks.length > 0){
             var wTot2 = sd.wBlocks.reduce(function(a, x){ return a + x.bytes; }, 0);
             if(wTot2 > 0){
@@ -6868,7 +6889,7 @@ function renderSolidGrid(D){
                   lns += '<line x1="'+la9[0].toFixed(1)+'" y1="'+la9[1].toFixed(1)+'" x2="'+lb9[0].toFixed(1)+'" y2="'+lb9[1].toFixed(1)+'" style="stroke:color-mix(in srgb, '+sg.color+' 50%, #000);stroke-width:.3;opacity:.45"/>';
                 }
               });
-              if(lns) boxes.push({svg: lns, depth: dep3 + 0.01});
+              if(lns) boxes.push({svg: gridBodySvg9(lns, pi, ei), depth: dep3 + 0.01});
             }
           }
         }
@@ -6910,7 +6931,13 @@ function renderSolidGrid(D){
           }
           var mine1 = (pIdx===co.p && t===co.t && (!D.moe || ei2===me.ep));
           var hd = pickHolder(hs), rk = rankOf(t, hd[0], hd[1], pIdx, D);
-          labels9.push('<polygon points="'+ptsStr(q4)+'" style="fill:'+(mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11))+'"/>');
+          var gridCellHit9 = (gridFilters9.p === null || gridFilters9.p === pIdx)
+            && (gridFilters9.e === null || gridFilters9.e === ei2)
+            && (gridFilters9.t === null || gridFilters9.t === t);
+          var gridCellColor9 = gridFilters9.e !== null ? VC.ep : (gridFilters9.p !== null ? VC.pp : VC.tp);
+          labels9.push('<polygon points="'+ptsStr(q4)+'" style="fill:'
+            +(gridFocusOn9 && gridCellHit9 ? mix(gridCellColor9,58) : (mine1 ? 'var(--pt-fg)' : mix('var(--pt-fg)',11)))
+            +(gridFocusOn9 && !gridCellHit9 ? ';opacity:.18;filter:url(#ptGray)' : '')+'"/>');
           ghits.push('<g class="cgrow"><polygon points="'+ptsStr(q4)+'" style="fill:transparent;cursor:pointer" data-act="pickg" data-g="'+rk+'"><title>'
             + esc('PP'+pIdx+' · h片'+t+eLab+' → r'+rk)+'</title></polygon></g>');
         }
@@ -7958,6 +7985,8 @@ function sideScene(D, g, box){
     return n9x.blkDef ? sdBlockWarn(li9x, n9x.blkDef, byIdSS, D) : sdOpWarn(li9x, n9x, D);
   }
   var barW = colW * 0.52;
+  var sideFilters9 = ui.groupFilters || {t:null,e:null,p:null};
+  var sideRankFocus9 = hlSelOn(D);
   /* 层号纯文字的跳档：门槛比原来带底色的芯片（14/FS_Z）小——纯文字没有芯片
      那圈内边距，同样的列距能挤下更多颗，装得下时（比如层数不算多、列距够宽）
      lstepTxt9=1，跟参考图里"每层都标"一致；层多列窄时才按这个间隔跳着标，
@@ -7991,13 +8020,19 @@ function sideScene(D, g, box){
       body.push('<line x1="'+lcx9.toFixed(1)+'" y1="'+(yMet - 2).toFixed(1)+'" x2="'+lcx9.toFixed(1)+'" y2="'+(yMet + 6).toFixed(1)
         +'" style="stroke:var(--pt-fg3);stroke-width:0.8;stroke-dasharray:1.5 1.5;opacity:.45"/>');
     }
-    var dim9 = ui.cardMode && cutPP && !inSel;
-    if(dim9) body.push('<g opacity="0.45">');
+    var sideStageMiss9 = (sideFilters9.p !== null && stOf(li9) !== sideFilters9.p)
+      || (sideRankFocus9 && !inSel);
+    var dim9 = (ui.cardMode && cutPP && !inSel) || sideStageMiss9;
+    if(dim9) body.push('<g opacity="'+(sideStageMiss9?'0.18':'0.45')+'"'+(sideStageMiss9?' filter="url(#ptGray)"':'')+'>');
     for(var ri = 0; ri < rows.length; ri++){
       var n9 = rows[ri];
       if(!nodeInLayer9(n9, li9)) continue;
       var by9 = (sh0 && sh0[n9.id] && sh0[n9.id].spec && sh0[n9.id].spec.by) || EXTRA_BY[n9.id] || [];
       var b0 = by9[0] || null;
+      var sideTpHit9 = by9.some(function(x9){ return x9.dim === 'tp' || x9.dim === 'sp'; });
+      var sideEpHit9 = by9.some(function(x9){ return x9.dim === 'ep'; }) || (n9.blkDef && n9.blkDef.forceColor === 'ep');
+      var sideNodeMiss9 = (sideFilters9.t !== null && !sideTpHit9) || (sideFilters9.e !== null && !sideEpHit9);
+      if(sideNodeMiss9) body.push('<g opacity="0.18" filter="url(#ptGray)">');
       var col9 = b0 ? dimColor(b0.dim) : 'var(--pt-fg2)';
       /* router 块的代表叶子是复制计算（无 by），会退回默认灰——显式钦定 EP 色，
          与 frontScene/graphSVG 里那处 forceColor 覆盖同一个理由。 */
@@ -8124,6 +8159,7 @@ function sideScene(D, g, box){
           body.push(fsTxt(lx + colW/2, (ya+yb)/2 + 8.6/FS_Z, esc(om9), 7.2, omCol9,
             'middle', 'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
       }
+      if(sideNodeMiss9) body.push('</g>');
     }
     if(dim9) body.push('</g>');
   }
@@ -9587,7 +9623,7 @@ function renderV1(D){
     var lbl = showLabel ? txt.apply(null, (function(){ var c2 = proj(b.x+GEO.w/2, y0+GEO.h, b.z+GEO.d/2, s); return [c2[0], c2[1]+3.2, b.g, clamp(s*.34,7.5,11), spotHit||inAxis||isSel?'var(--pt-fg)':'var(--pt-fg2)', 'middle', 'pointer-events="none" font-weight="600"']; })()) : '';
     var rankMiss = !spot && sel !== null && !isSel;
     var cardOp = (spotMiss || rankMiss) ? 0.10 : (isSel ? 1 : (L3 ? 1 : .16));
-    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+((spotMiss||rankMiss)?';filter:saturate(.25)':'')+'">'
+    cells += '<g class="cardg" data-g="'+b.g+'" style="cursor:pointer;opacity:'+cardOp+'"'+((spotMiss||rankMiss)?' filter="url(#ptGray)"':'')+'>'
       + boxSVG(b.x, y0, b.z, GEO.w, GEO.h, GEO.d, s, {stroke:st, sw:sw, topFill:topFill, inner:inner})
       + lbl + '</g>';
   });
