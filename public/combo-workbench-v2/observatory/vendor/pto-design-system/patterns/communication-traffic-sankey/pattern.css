@@ -1,0 +1,359 @@
+.pto-traffic-sankey {
+  --rank-0: #52e7c2;
+  --rank-1: #347cff;
+  --rank-2: #f68fc4;
+  --rank-3: #f0cf7a;
+  --unattributed-signal: #3f484b;
+  --signal-focus: #bffcf2;
+  --traffic-ribbon-opacity: 0.6;
+  --traffic-ribbon-glow: 4px;
+  --traffic-ribbon-saturation: 1.45;
+  --traffic-spectrum-shift: 3deg;
+  --traffic-trace-opacity: 0.9;
+  --traffic-structure-opacity: 0.5;
+  --traffic-gate-intensity: 0;
+  --traffic-field-intensity: 0.55;
+  --traffic-sankey-background: #030405;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 980px;
+  min-height: 560px;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--traffic-sankey-background);
+  isolation: isolate;
+}
+
+:root[data-theme='light'] .pto-traffic-sankey {
+  --traffic-sankey-background: var(--surface-1);
+  --signal-focus: var(--foreground);
+  --unattributed-signal: var(--foreground-muted);
+}
+
+.pto-traffic-sankey__canvas,
+.pto-traffic-sankey__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+}
+
+.pto-traffic-sankey__canvas {
+  position: relative;
+  overflow: hidden;
+}
+
+.pto-traffic-sankey__canvas::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse at 50% 52%, rgb(48 71 255 / calc(var(--traffic-field-intensity) * 0.1)), transparent 34%),
+    radial-gradient(ellipse at 54% 52%, rgb(255 84 148 / calc(var(--traffic-field-intensity) * 0.07)), transparent 50%);
+  content: '';
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__svg {
+  position: relative;
+  z-index: 1;
+}
+
+.pto-traffic-sankey__column-label {
+  fill: color-mix(in srgb, var(--foreground-secondary) calc(var(--traffic-structure-opacity) * 100%), transparent);
+  font: var(--text-label);
+  letter-spacing: 0.12em;
+}
+
+.pto-traffic-sankey__compound {
+  cursor: pointer;
+  outline: none;
+}
+
+.pto-traffic-sankey__compound-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20;
+}
+
+.pto-traffic-sankey__compound-label-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.pto-traffic-sankey__compound-rail {
+  fill: none;
+  stroke: color-mix(in srgb, var(--foreground-secondary) calc(var(--traffic-structure-opacity) * 78%), transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.pto-traffic-sankey__compound:hover .pto-traffic-sankey__compound-rail,
+.pto-traffic-sankey__compound:focus-visible .pto-traffic-sankey__compound-rail {
+  stroke: var(--foreground);
+}
+
+.pto-traffic-sankey__rank-title,
+.pto-traffic-sankey__rank-detail {
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__compound:hover .pto-traffic-sankey__rank-title,
+.pto-traffic-sankey__compound:focus-visible .pto-traffic-sankey__rank-title {
+  fill: var(--foreground);
+}
+
+.pto-traffic-sankey__fabric {
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__fabric-halo {
+  fill: url('#pto-traffic-gate-spectrum');
+  opacity: calc(var(--traffic-gate-intensity) * 0.34);
+  filter: blur(11px) saturate(1.4);
+}
+
+.pto-traffic-sankey__fabric-core {
+  fill: url('#pto-traffic-gate-spectrum');
+  opacity: calc(var(--traffic-gate-intensity) * 0.66);
+}
+
+.pto-traffic-sankey__fabric-line {
+  stroke: rgb(255 255 255 / calc(var(--traffic-gate-intensity) * 0.62));
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.pto-traffic-sankey__link {
+  cursor: pointer;
+  outline: none;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+
+.pto-traffic-sankey__link-band {
+  fill: var(--link-gradient, var(--link-start));
+  fill-opacity: var(--traffic-ribbon-opacity);
+  stroke: none;
+  filter:
+    saturate(var(--traffic-ribbon-saturation))
+    hue-rotate(var(--traffic-spectrum-shift))
+    drop-shadow(0 0 var(--traffic-ribbon-glow) color-mix(in srgb, var(--link-start) 30%, transparent));
+  transition:
+    fill-opacity var(--duration-fast) var(--easing-default);
+}
+
+.pto-traffic-sankey.is-flat-spectrum .pto-traffic-sankey__link-band {
+  fill: var(--link-start);
+}
+
+.pto-traffic-sankey__link[data-fabric='roce'] .pto-traffic-sankey__link-band {
+  filter:
+    saturate(var(--traffic-ribbon-saturation))
+    hue-rotate(var(--traffic-spectrum-shift))
+    drop-shadow(0 0 var(--traffic-ribbon-glow) color-mix(in srgb, var(--link-end) 30%, transparent));
+}
+
+.pto-traffic-sankey__link-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+}
+
+.pto-traffic-sankey__link:hover .pto-traffic-sankey__link-band,
+.pto-traffic-sankey__link:focus-visible .pto-traffic-sankey__link-band,
+.pto-traffic-sankey__link.is-active .pto-traffic-sankey__link-band {
+  fill-opacity: min(1, calc(var(--traffic-ribbon-opacity) + 0.28));
+  filter:
+    saturate(calc(var(--traffic-ribbon-saturation) + 0.2))
+    hue-rotate(var(--traffic-spectrum-shift))
+    drop-shadow(0 0 calc(var(--traffic-ribbon-glow) + 4px) color-mix(in srgb, var(--link-end) 46%, transparent));
+}
+
+.pto-traffic-sankey.has-selection .pto-traffic-sankey__link:not(.is-active) {
+  opacity: 0.045;
+}
+
+.pto-traffic-sankey__link-trace {
+  fill: none;
+  stroke: var(--signal-focus);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px rgb(255 255 255 / 0.7));
+  vector-effect: non-scaling-stroke;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+
+.pto-traffic-sankey__link:hover .pto-traffic-sankey__link-trace,
+.pto-traffic-sankey__link:focus-visible .pto-traffic-sankey__link-trace,
+.pto-traffic-sankey__link.is-active .pto-traffic-sankey__link-trace {
+  opacity: var(--traffic-trace-opacity);
+}
+
+.pto-traffic-sankey.is-flow-trace-hidden .pto-traffic-sankey__link-trace {
+  display: none;
+}
+
+.pto-traffic-sankey__node {
+  --node-color: var(--rank-0);
+  cursor: pointer;
+  outline: none;
+}
+
+.pto-traffic-sankey__node-bar {
+  fill: var(--node-color, var(--rank-0));
+  fill-opacity: var(--traffic-ribbon-opacity);
+  stroke: none;
+  filter:
+    saturate(var(--traffic-ribbon-saturation))
+    hue-rotate(var(--traffic-spectrum-shift))
+    drop-shadow(0 0 var(--traffic-ribbon-glow) color-mix(in srgb, var(--node-color, var(--rank-0)) 30%, transparent));
+  transition: fill-opacity var(--duration-fast) var(--easing-default);
+}
+
+.pto-traffic-sankey__node[data-engine='unattributed'] .pto-traffic-sankey__node-bar {
+  fill: var(--unattributed-signal);
+  fill-opacity: calc(var(--traffic-ribbon-opacity) * 0.5);
+}
+
+.pto-traffic-sankey__node:hover .pto-traffic-sankey__node-bar,
+.pto-traffic-sankey__node:focus-visible .pto-traffic-sankey__node-bar,
+.pto-traffic-sankey__node.is-active .pto-traffic-sankey__node-bar {
+  fill-opacity: min(1, calc(var(--traffic-ribbon-opacity) + 0.28));
+}
+
+.pto-traffic-sankey__engine-glyph {
+  fill: none;
+  stroke: color-mix(in srgb, var(--foreground) 82%, var(--node-color, var(--rank-0)));
+  stroke-width: 1.05;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: calc(0.5 + var(--traffic-structure-opacity) * 0.5);
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.pto-traffic-sankey__node[data-engine='unattributed'] .pto-traffic-sankey__engine-glyph {
+  stroke-dasharray: 2 3;
+}
+
+.pto-traffic-sankey.is-signal-glyphs-hidden .pto-traffic-sankey__engine-glyph {
+  display: none;
+}
+
+.pto-traffic-sankey__node-title {
+  fill: color-mix(in srgb, var(--foreground) 92%, var(--node-color, var(--rank-0)));
+  font: var(--text-body-sm);
+  font-weight: 650;
+}
+
+.pto-traffic-sankey__node-detail {
+  fill: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.pto-traffic-sankey__capacity-track {
+  fill: color-mix(in srgb, var(--foreground) 14%, transparent);
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__capacity-fill {
+  fill: var(--node-color, var(--rank-0));
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__node[data-status='capacity-warning'] .pto-traffic-sankey__capacity-fill {
+  fill: var(--warning);
+}
+
+.pto-traffic-sankey__node[data-status='overflow'] .pto-traffic-sankey__capacity-fill {
+  fill: var(--danger);
+}
+
+.pto-traffic-sankey__empty {
+  fill: var(--foreground-muted);
+  font: var(--text-title-1);
+}
+
+.pto-traffic-sankey__tooltip {
+  position: absolute;
+  z-index: 20;
+  width: min(336px, calc(100% - 24px));
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--background-elevated) 96%, transparent);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+
+.pto-traffic-sankey__tooltip[hidden] {
+  display: none;
+}
+
+.pto-traffic-sankey__tooltip-heading,
+.pto-traffic-sankey__tooltip-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pto-traffic-sankey__tooltip-heading strong {
+  font: var(--text-title-2);
+}
+
+.pto-traffic-sankey__tooltip-value {
+  margin-top: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pto-traffic-sankey__tooltip-value strong {
+  font: var(--text-title-1);
+}
+
+.pto-traffic-sankey__tooltip-value span {
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+}
+
+.pto-traffic-sankey__tooltip-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px var(--space-3);
+  margin: var(--space-3) 0 0;
+  font: var(--text-body-sm);
+}
+
+.pto-traffic-sankey__tooltip-facts dt {
+  color: var(--foreground-muted);
+}
+
+.pto-traffic-sankey__tooltip-facts dd {
+  margin: 0;
+  color: var(--foreground);
+  text-align: right;
+}
+
+.pto-traffic-sankey__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pto-traffic-sankey__link,
+  .pto-traffic-sankey__link-band {
+    transition: none;
+  }
+}

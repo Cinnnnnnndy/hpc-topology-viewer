@@ -1,0 +1,294 @@
+.pto-moe-routing {
+  --moe-pattern-bg: #000;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--moe-pattern-bg);
+}
+
+:root[data-theme='light'] .pto-moe-routing,
+.pto-moe-routing[data-theme='light'] {
+  --moe-pattern-bg: #fff;
+}
+
+.pto-moe-routing:not(:has(.pto-moe-routing__toolbar)) {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pto-moe-routing__toolbar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+}
+
+.pto-moe-routing__stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pto-moe-routing__stepper .toolbar-readout {
+  min-width: 64px;
+  color: var(--foreground);
+  text-align: center;
+  font: var(--type-mono);
+}
+
+.pto-moe-routing__stepper svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pto-moe-routing__stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--moe-pattern-bg);
+}
+
+.pto-moe-routing .moe-view,
+.pto-moe-routing .moe-svg-scroll {
+  width: 100%;
+  height: 100%;
+}
+
+.pto-moe-routing .moe-view[hidden] {
+  display: none;
+}
+
+.pto-moe-routing .moe-svg-scroll {
+  overflow: auto;
+  scrollbar-color: var(--border-strong) transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pto-moe-routing .moe-svg-scroll.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.pto-moe-routing .moe-diagram {
+  display: block;
+  font-family: var(--font-mono);
+  shape-rendering: geometricPrecision;
+}
+
+.pto-moe-routing .moe-layer-diagram {
+  width: 2120px;
+  min-width: 2120px;
+  height: 100%;
+  min-height: 900px;
+}
+
+.pto-moe-routing .moe-journey-diagram {
+  width: 3720px;
+  height: 1300px;
+}
+
+.pto-moe-routing .moe-rank-card,
+.pto-moe-routing .moe-router-box,
+.pto-moe-routing .moe-token-bank,
+.pto-moe-routing .moe-dense-node {
+  fill: var(--surface-2);
+  stroke: none;
+}
+
+.pto-moe-routing .moe-rank-card.is-hot {
+  fill: var(--tone-warning-bg);
+}
+
+.pto-moe-routing .moe-rank-card.is-idle {
+  fill: var(--surface-1);
+  opacity: 0.72;
+}
+
+.pto-moe-routing .moe-rank-card.is-target {
+  fill: var(--tone-info-bg);
+}
+
+.pto-moe-routing .moe-rank-card.is-context {
+  fill: color-mix(in srgb, var(--primary) 18%, var(--surface-2));
+}
+
+.pto-moe-routing .moe-rank-card.is-hot.is-context {
+  fill: color-mix(in srgb, var(--warning) 22%, var(--surface-2));
+}
+
+.pto-moe-routing .moe-rank-card.is-anomaly {
+  fill: color-mix(in srgb, var(--danger) 18%, var(--surface-2));
+}
+
+.pto-moe-routing .moe-rank-label,
+.pto-moe-routing .moe-axis-label,
+.pto-moe-routing .moe-layer-label {
+  fill: var(--foreground-secondary);
+  font-size: 12px;
+}
+
+.pto-moe-routing .moe-expert-label,
+.pto-moe-routing .moe-queue-count,
+.pto-moe-routing .moe-node-label {
+  fill: var(--foreground-muted);
+  font-size: 11px;
+}
+
+.pto-moe-routing .moe-router-title,
+.pto-moe-routing .moe-token-title {
+  fill: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pto-moe-routing .moe-queue-slot {
+  fill: var(--foreground-disabled);
+  stroke: none;
+}
+
+.pto-moe-routing .moe-queue-slot.is-filled {
+  fill: var(--foreground);
+}
+
+.pto-moe-routing .moe-queue-slot.is-overflow {
+  fill: var(--warning);
+}
+
+.pto-moe-routing .moe-queue-slot.is-anomaly.is-filled,
+.pto-moe-routing .moe-queue-slot.is-anomaly.is-overflow,
+.pto-moe-routing .moe-expert-label.is-anomaly {
+  fill: var(--danger);
+}
+
+.pto-moe-routing .moe-expert-label.is-anomaly {
+  font-weight: 700;
+}
+
+.pto-moe-routing .moe-flow-bus {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pto-moe-routing .moe-dispatch-path {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.58;
+}
+
+.pto-moe-routing .moe-dispatch-token,
+.pto-moe-routing .moe-expert-node {
+  pointer-events: all;
+}
+
+.pto-moe-routing .moe-dispatch-token {
+  fill: var(--foreground);
+}
+
+.pto-moe-routing .moe-expert-node.is-inactive {
+  fill: var(--foreground-disabled);
+  stroke: none;
+  pointer-events: none;
+}
+
+.pto-moe-routing .moe-expert-node.is-routed {
+  fill: var(--foreground);
+  stroke: var(--foreground);
+  stroke-width: 0.75;
+}
+
+.pto-moe-routing .moe-layer-band {
+  fill: var(--surface-2);
+}
+
+.pto-moe-routing .moe-layer-band.is-alternate {
+  fill: var(--surface-3);
+}
+
+:root[data-theme='light'] .pto-moe-routing .moe-layer-band,
+.pto-moe-routing[data-theme='light'] .moe-layer-band {
+  fill: #fff;
+}
+
+:root[data-theme='light'] .pto-moe-routing .moe-layer-band.is-alternate,
+.pto-moe-routing[data-theme='light'] .moe-layer-band.is-alternate {
+  fill: #f8f8f8;
+}
+
+.pto-moe-routing .moe-layer-band.is-anomaly,
+:root[data-theme='light'] .pto-moe-routing .moe-layer-band.is-anomaly,
+.pto-moe-routing[data-theme='light'] .moe-layer-band.is-anomaly {
+  fill: color-mix(in srgb, var(--danger) 14%, var(--moe-pattern-bg));
+}
+
+.pto-moe-routing .moe-layer-label.is-anomaly {
+  fill: var(--danger);
+  font-weight: 700;
+}
+
+.pto-moe-routing .moe-aggregate-path {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pto-moe-routing .moe-expert-spoke {
+  stroke: var(--primary);
+  stroke-width: 1;
+  opacity: 0.38;
+}
+
+.pto-moe-routing .moe-aggregate-node {
+  fill: var(--primary);
+  stroke: var(--primary);
+  stroke-width: 1;
+}
+
+.pto-moe-routing .moe-shared-track {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  opacity: 0.74;
+}
+
+.pto-moe-routing .moe-shared-node {
+  fill: var(--accent);
+}
+
+.pto-moe-routing .moe-tooltip {
+  position: absolute;
+  z-index: 4;
+  max-width: 360px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-md);
+  font: var(--type-mono);
+  pointer-events: none;
+  white-space: normal;
+}
+
+.pto-moe-routing [data-tooltip] {
+  cursor: crosshair;
+}
