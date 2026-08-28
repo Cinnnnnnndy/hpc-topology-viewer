@@ -1101,7 +1101,7 @@ var ui = {
   hlBlock:'',
   /* Hover Bar 下的对象选择是宿主明确下达的筛选，不是另一个 iframe 的过路高亮。
      单独记住它，既让读出面板保持“选中”，也能为 PP 补出整段 layer 的聚光灯。 */
-  groupFilters:{t:null,e:null,p:null}
+  groupFilters:{t:null,e:null,p:null,d:null}
 };
 /* 散掉过路的高亮（点画布空白、或换了别的问法时调用）。返回是否真的散掉了东西。 */
 function clearHL(){
@@ -1124,7 +1124,7 @@ function hlSelOn(D){
    就是"从别的格点过来之后，在这一格点卡再也读不出东西了"。
    hlLayer 不在这里动：层高亮和卡高亮是两条各管各的线（见 applyQuery 里
    keepHL 那段），点一张卡不该顺手把另一格转过来的层照亮也抹掉。 */
-function takeSel(){ ui.hlSel = false; ui.groupFilters = {t:null,e:null,p:null}; }
+function takeSel(){ ui.hlSel = false; ui.groupFilters = {t:null,e:null,p:null,d:null}; }
 var anim = {on:false, timer:null, phases:[], i:0};
 
 var VIEWS = [
@@ -9032,8 +9032,8 @@ function spotlightHit(D){
      两者的差别在别处，不在这儿：落不落标签、浮不浮读出卡、点空白散不散。 */
   var hlLi = ui.hlLayer ? parseInt(ui.revLayer, 10) : NaN;
   var hlRank = (ui.hlSel && sel !== null && sel < D.world) ? sel : -1;
-  var groupFilters = ui.groupFilters || {t:null,e:null,p:null};
-  var hasGroupFilter = groupFilters.t !== null || groupFilters.e !== null || groupFilters.p !== null;
+  var groupFilters = ui.groupFilters || {t:null,e:null,p:null,d:null};
+  var hasGroupFilter = groupFilters.t !== null || groupFilters.e !== null || groupFilters.p !== null || groupFilters.d !== null;
   if(!ui.chips.length && !(isFinite(hlLi) && hlLi >= 0 && hlLi < D.layers) && hlRank < 0 && !hasGroupFilter) return null;
   var ranks = {}, layers = {}, any = false, epRelevant = false;
   function addLayer(li){
@@ -9054,6 +9054,7 @@ function spotlightHit(D){
   }
   if(groupFilters.t !== null) dimSlice('tp', groupFilters.t, D).forEach(function(r){ any = true; ranks[r] = true; });
   if(groupFilters.e !== null) dimSlice('ep', groupFilters.e, D).forEach(function(r){ any = true; ranks[r] = true; });
+  if(groupFilters.d !== null) dimSlice('dp', groupFilters.d, D).forEach(function(r){ any = true; ranks[r] = true; });
   ui.chips.forEach(function(c){
     var st = chipState(c, D);
     if(st.kind === 'bad') return;
@@ -11449,7 +11450,7 @@ window.addEventListener('message', function(ev){
         var v9 = parseInt(d.config[k9],10);
         if(isFinite(v9) && v9>=1) cfg[k9]=v9;
       });
-      activePreset = null; sel = null; ui.groupFilters = {t:null,e:null,p:null}; ui.cfgDraft = null; stopAnim();
+      activePreset = null; sel = null; ui.groupFilters = {t:null,e:null,p:null,d:null}; ui.cfgDraft = null; stopAnim();
     }
     if(d.mode && typeof d.mode==='object'){
       if(typeof d.mode.rank==='boolean') ui.cardMode=d.mode.rank;
@@ -11466,13 +11467,13 @@ window.addEventListener('message', function(ev){
     }
     var filterChanged9 = false;
     if(d.filters && typeof d.filters==='object'){
-      var nextFilters9 = {t:null,e:null,p:null};
-      ['t','e','p'].forEach(function(k9){
+      var nextFilters9 = {t:null,e:null,p:null,d:null};
+      ['t','e','p','d'].forEach(function(k9){
         var v9 = d.filters[k9];
         nextFilters9[k9] = typeof v9 === 'number' && isFinite(v9) && v9 >= 0 ? v9 : null;
       });
       takeSel(); sel = null;
-      ['t','e','p'].forEach(function(k9){
+      ['t','e','p','d'].forEach(function(k9){
         if(nextFilters9[k9] !== null && applyParallelGroupPick(k9, nextFilters9[k9])) filterChanged9 = true;
       });
       ui.groupFilters = nextFilters9;
@@ -11481,7 +11482,7 @@ window.addEventListener('message', function(ev){
       var filterDim9 = String(d.filter.dim||''), filterIndex9 = +d.filter.index;
       filterChanged9 = applyParallelGroupPick(filterDim9, filterIndex9);
       if(filterChanged9){
-        ui.groupFilters = {t:null,e:null,p:null};
+        ui.groupFilters = {t:null,e:null,p:null,d:null};
         if(Object.prototype.hasOwnProperty.call(ui.groupFilters, filterDim9)) ui.groupFilters[filterDim9] = filterIndex9;
       }
     }
