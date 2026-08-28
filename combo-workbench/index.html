@@ -568,7 +568,7 @@ body.is-resizing iframe{pointer-events:none}
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
         <div class="slot-heading">
-          <span class="slot-title">模型全局切分视图</span>
+          <span class="slot-title">模型整网视图</span>
           <span class="slot-subtitle">从整网结构与分片总览两个视角查看模型切分。</span>
         </div>
         <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
@@ -601,7 +601,7 @@ body.is-resizing iframe{pointer-events:none}
   <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
   <section class="slot" id="dock">
     <header class="slot-head">
-      <span class="slot-title">微批次生命周期泳道</span>
+      <span class="slot-title">训练运行时视图</span>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
            而「这一步走到此刻，每张卡手上压着多少激活」正是它与拓扑那两格之间
@@ -713,7 +713,7 @@ body.is-resizing iframe{pointer-events:none}
    所以那两格用规范路径本身，版本由它们各自的发布流水线负责（它们的 pattern.html
    里对 vendor 的引用就带着自己那一版的 ?v=）。这样「工作台里的并行拓扑」和
    「直接打开 /patterns/net-slicing/」永远是同一份文件、同一个版本。 */
-var BUILD = '';
+var BUILD = '20260828-focus-gray-5';
 
 /* 一份全局拓扑状态，两个空间视图只负责用不同问法投影它。 */
 var GLOBAL_MODEL_LAYERS = 48;
@@ -848,6 +848,7 @@ var SLOTS = [
          view/embed 注入，不改这份文档的任何语义），embed=1 在这里显式补上即可。
          不打 ?v= 版本戳：这份分支没有构建流水线，demo.html 改了就是新的。 */
       q.set('embed', '1');
+      q.set('v', BUILD);
       return '../parallel-topology/demo.html?' + q.toString();
     },
     /* 换 tab 不重载（同一份文档）：pto:state 带 view（既有白名单）+ persp
@@ -883,6 +884,7 @@ var SLOTS = [
          （见上面 netgraph 那格同一条注释），embed=1 在这里显式补上，效果与规范路径
          /patterns/net-slicing/pattern.html 完全一致，没有第二份拷贝。 */
       q.set('embed', '1');
+      q.set('v', BUILD);
       return '../parallel-topology/demo.html?' + q.toString();
     },
     /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
@@ -1312,7 +1314,7 @@ function renderGlobalFilter() {
 }
 
 function sendGlobalFilters() {
-  ['topology','netgraph'].forEach(function (id) {
+  ['topology','netgraph','swimlane'].forEach(function (id) {
     var frame = $('iframe[data-slot="' + id + '"]');
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
   });
@@ -1456,6 +1458,8 @@ function settleFrame(slot, frame) {
     hideTakenOver(slot, frame);
     applyData();
     applyGlobalStateToFrame(slot.id);
+    if (frame.contentWindow && (slot.id === 'topology' || slot.id === 'netgraph' || slot.id === 'swimlane'))
+      frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
     if (slot.id === 'netgraph') wireOpToRank(frame);
     if (slot.id === 'swimlane') { applyDockAux(); zctlSync(); }
     host.dataset.ready = '1';
@@ -1953,6 +1957,17 @@ window.addEventListener('message', function (ev) {
        postMessage 而不是轮询。 */
     if (d.type === 'pto:swimlane-select' && c.id === 'swimlane') {
       var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
+      var swGroups = d.groups && typeof d.groups === 'object'
+        ? {t:Number.isInteger(d.groups.t)?d.groups.t:null,
+           e:Number.isInteger(d.groups.e)?d.groups.e:null,
+           p:Number.isInteger(d.groups.p)?d.groups.p:null}
+        : {t:null,e:null,p:null};
+      var hasSwGroup = swGroups.t !== null || swGroups.e !== null || swGroups.p !== null;
+      /* 有唯一 Rank 就按 Rank 联动；没有唯一 Rank 的 Stage/组事件改用它自己的
+         PP/TP/EP 归属。此前一律转 null，等于明确通知上面两格“取消高亮”。 */
+      globalFilter = swRank === null && hasSwGroup ? swGroups : {t:null,e:null,p:null};
+      renderGlobalFilter();
+      sendGlobalFilters();
       pushHL('topology', 'rank', swRank);
       pushHL('netgraph', 'rank', swRank);
       /* kernel 分段逐节可点之后，泳道还报得出「点的是哪一节」（d.block，形如

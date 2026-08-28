@@ -133,7 +133,11 @@
       if (!msg || msg.type !== 'pto:state') return;
       if (msg.range) applyRange(msg.range);
       if (msg.theme) applyTheme(msg.theme);
-      if (msg.hl && Object.prototype.hasOwnProperty.call(msg.hl, 'rank')) showRankBadge(msg.hl.rank);
+      if (msg.filters) window.dispatchEvent(new CustomEvent('pto:filters', { detail: msg.filters }));
+      if (msg.hl && Object.prototype.hasOwnProperty.call(msg.hl, 'rank')) {
+        showRankBadge(msg.hl.rank);
+        window.dispatchEvent(new CustomEvent('pto:rank-focus', { detail: { rank: msg.hl.rank } }));
+      }
       reportTo(ev.source);
     });
 
