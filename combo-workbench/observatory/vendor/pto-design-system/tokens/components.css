@@ -13,38 +13,98 @@
   --comp-toolbar-border: var(--border-subtle);
 
   /* Button */
-  --button-height-sm: 30px;
+  --button-height-xs: 28px;
+  --button-height-sm: 32px;
   --button-height-md: 36px;
-  --button-height-lg: 42px;
-  --button-radius: var(--radius-lg);
+  --button-height-lg: 40px;
+  --button-radius: var(--radius-md);
   --button-padding-x-sm: var(--space-2);
   --button-padding-x-md: var(--space-3);
   --button-padding-x-lg: var(--space-4);
   --button-gap: 6px;
   --button-font: 500 var(--font-size-body-sm) / 1 var(--font-sans);
-  --button-solid-bg:       var(--foreground);
-  --button-solid-bg-hover: color-mix(in srgb, var(--foreground) 88%, transparent);
-  --button-solid-bg-press: color-mix(in srgb, var(--foreground) 80%, transparent);
-  --button-solid-fg:       var(--background);
-  --button-solid-shadow:   none;
-  --button-secondary-bg: color-mix(in srgb, var(--surface-2) 92%, white 3%);
+  --button-solid-bg:       var(--primary);
+  --button-solid-bg-hover: var(--primary-hover);
+  --button-solid-bg-press: color-mix(in srgb, var(--primary) 84%, black);
+  --button-solid-fg:       var(--primary-foreground);
+  --button-solid-shadow:   0 1px 2px rgba(0, 0, 0, 0.08);
+  --button-secondary-bg: var(--surface-2);
   --button-secondary-bg-hover: var(--surface-3);
-  --button-secondary-bg-press: color-mix(in srgb, var(--surface-3) 84%, black);
-  --button-secondary-border: var(--border-subtle);
+  --button-secondary-bg-press: color-mix(in srgb, var(--surface-3) 88%, var(--foreground));
+  --button-secondary-border: transparent;
   --button-secondary-fg: var(--foreground);
-  --button-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 2px 8px rgba(0, 0, 0, 0.16);
+  --button-secondary-shadow: none;
+  --button-outline-bg: transparent;
+  --button-outline-bg-hover: var(--state-hover);
+  --button-outline-bg-press: var(--state-press);
+  --button-outline-border: var(--border-default);
+  --button-outline-fg: var(--foreground);
   --button-ghost-bg-hover: var(--state-hover);
   --button-ghost-bg-press: var(--state-press);
   --button-ghost-fg: var(--foreground-secondary);
   --button-ghost-fg-hover: var(--foreground);
   --button-focus-ring: var(--focus-ring);
-  --button-disabled-opacity: 0.42;
+  --button-disabled-opacity: 0.5;
+
+  /* Menu / Popover */
+  --menu-min-width: 192px;
+  --menu-padding: 4px;
+  --menu-radius: var(--radius-md);
+  --menu-bg: var(--background-elevated);
+  --menu-border: var(--border-default);
+  --menu-shadow: var(--shadow-md);
+  --menu-item-height: 32px;
+  --menu-item-padding-x: 8px;
+  --menu-item-radius: var(--radius-sm);
+  --menu-item-fg: var(--foreground);
+  --menu-item-bg-hover: var(--state-hover);
+  --menu-item-bg-press: var(--state-press);
+  --menu-label-fg: var(--foreground-muted);
+  --menu-separator: var(--border-subtle);
+
+  /* Settings panel / sheet */
+  --settings-panel-width: 440px;
+  --settings-panel-padding: 12px;
+  --settings-panel-radius: var(--radius-lg);
+  --settings-panel-bg: var(--background-elevated);
+  --settings-panel-border: var(--border-default);
+  --settings-panel-shadow: var(--shadow-lg);
+  --settings-section-padding-y: 12px;
+  --settings-section-gap: 8px;
+  --settings-section-label-fg: var(--foreground-muted);
+  --settings-control-height: 32px;
+  --settings-control-radius: var(--radius-md);
+  --settings-content-font-size: var(--font-size-body-sm);
+  --settings-content-line-height: var(--line-height-body);
+
+  /* Checkbox / switch */
+  --checkbox-size: 16px;
+  --checkbox-radius: 4px;
+  --checkbox-border: var(--border-strong);
+  --checkbox-bg-checked: var(--primary);
+  --checkbox-fg-checked: var(--primary-foreground);
+  --switch-width: 28px;
+  --switch-height: 16px;
+  --switch-thumb-size: 12px;
+  --switch-bg: var(--border-strong);
+  --switch-bg-checked: var(--primary);
 
   /* Input */
   --input-height-md: 34px;
   --input-radius: var(--radius-md);
   --input-border: var(--border-default);
   --input-bg: var(--surface-1);
+
+  /* Slider */
+  --slider-track-height: 4px;
+  --slider-track-bg: color-mix(in srgb, var(--primary) 20%, var(--surface-3));
+  --slider-range-bg: var(--primary);
+  --slider-thumb-size: 16px;
+  --slider-thumb-bg: var(--background);
+  --slider-thumb-border: var(--primary);
+  --slider-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --slider-focus-ring: var(--focus-ring);
+  --slider-disabled-opacity: 0.5;
 
   /* Panel */
   --panel-radius: var(--radius-lg);
@@ -111,8 +171,8 @@
   --zoom-control-readout-fg: color-mix(in srgb, var(--foreground) 84%, var(--background));
 
   /* Compact Button */
-  --button-height-compact: 34px;
-  --button-padding-x-compact: 12px;
+  --button-height-compact: 28px;
+  --button-padding-x-compact: 8px;
 
   /* Segmented Control */
   --segmented-control-gap: 3px;
@@ -207,11 +267,11 @@
 }
 
 :root[data-theme='light'] {
-  --button-secondary-bg: color-mix(in srgb, var(--surface-1) 92%, var(--surface-2));
-  --button-secondary-bg-hover: color-mix(in srgb, var(--surface-1) 28%, var(--surface-2));
-  --button-secondary-bg-press: color-mix(in srgb, var(--surface-2) 84%, var(--surface-3));
-  --button-secondary-border: var(--border-default);
-  --button-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --button-secondary-bg: var(--surface-2);
+  --button-secondary-bg-hover: var(--surface-3);
+  --button-secondary-bg-press: color-mix(in srgb, var(--surface-3) 88%, black);
+  --button-secondary-border: transparent;
+  --button-secondary-shadow: none;
   --ide-frame-page-bg: var(--background-elevated);
   --ide-frame-bg: var(--background);
   --ide-frame-pane-bg: var(--surface-2);
