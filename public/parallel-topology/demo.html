@@ -8429,7 +8429,24 @@ function sideScene(D, g, box){
     }
   }
   var CID = 'ssClip';
-  var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+box.x+'" y="'+box.y+'" width="'+box.w+'" height="'+box.h+'"/></clipPath></defs>'
+  /* 这条 clip 原来直接卡 box 的原始边界（0..VW），跟头尾标签（headTags/
+     tailTags）的实际宽度毫无关系——那两组字号走的是反除（FS_Z 越小，字越大，
+     见 sideTag 的 w9 计算），窄容器/长标签时越过 LM/RM 那点预留边距是常态，
+     视图整体的 viewBox 早就由 fitSceneViewBox 按内容包围盒纠正过、留得下
+     它们，但 clip-path 在那之前就已经生效，纠正不了已经被裁掉的这一截。
+     直接按头尾两组里最长的那条、用跟 sideTag 相同的公式算出实际要多宽，
+     clip 就按这个实宽放开，不再猜一个可能不够的常数。 */
+  var maxHeadW = Math.max.apply(null, headTags.map(function(t9){ return t9[0].length; })) * (6.2/FS_Z*0.6) + 12/FS_Z;
+  var maxTailW = Math.max.apply(null, tailTags.map(function(t9){ return t9[0].length; })) * (6.2/FS_Z*0.6) + 12/FS_Z;
+  var clipX0 = Math.min(box.x, hTrackX - 9/FS_Z - maxHeadW - 4);
+  var clipX1 = Math.max(box.x+box.w, tTrackX + 9/FS_Z + maxTailW + 4);
+  /* Dense 段那几行贴在 xOf(0) 左外侧的纯文字（上面那段 rows.forEach），没有
+     像头尾标签那样的胶囊背景可以算宽度，标签本身还带一截动态字节读数
+     （' · 29MB' 这种，长度不固定）——按最长的基础文案 + 一截宽裕的读数余量
+     估一个够用的宽度，同样纳入 clip 的左边界，不然它跟头尾标签是同一个坑。 */
+  var maxDenseW = 'Dense TP/SP Reduce-Scatter · 999.9MB'.length * (6/FS_Z*0.6) + 8;
+  clipX0 = Math.min(clipX0, xOf(0) - 8 - maxDenseW);
+  var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+clipX0.toFixed(1)+'" y="'+box.y+'" width="'+(clipX1-clipX0).toFixed(1)+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
   var hitWrapped = '<g clip-path="url(#'+CID+')">'+hit.join('')+'</g>';
   /* 展开某一层：精确复用 pto-training-sidecar「Layer Expansion Wireframe」
