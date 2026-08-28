@@ -261,8 +261,16 @@ a.btn{text-decoration:none}
 /* ═══ 全局筛选 Hover Bar：属于上方双视图共同父容器 ═══ */
 .global-filter{position:absolute;left:50%;bottom:12px;z-index:45;max-width:calc(100% - 56px);transform:translateX(-50%);pointer-events:auto}
 .global-filter__surface{display:flex;align-items:center;gap:8px;min-height:36px;max-width:100%;padding:4px;border:1px solid var(--border-strong);border-radius:var(--radius-pill);background:color-mix(in srgb,var(--surface-1) 92%,transparent);box-shadow:var(--shadow-lg);backdrop-filter:blur(16px) saturate(1.15)}
-.global-filter__label{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 7px 0 9px;color:var(--foreground-muted);font-size:12px;font-weight:500;white-space:nowrap}
-.global-filter__label svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* 原来图标旁跟一句「选择并查看并行对象」常驻说明字——挤占这条 Hover Bar
+   本该用来放筛选胶囊的宽度。改成一颗纯图标的收起/展开钮：说明挪进
+   title/aria-label（悬停/读屏仍然有），点它把 __groups 和清除钮一起收起，
+   胶囊那部分是唯一会变宽变窄的部分，条本身收起来只剩一颗圆钮那么大。 */
+.global-filter__toggle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--foreground-muted)}
+.global-filter__toggle:hover{background:var(--state-hover);color:var(--foreground)}
+.global-filter__toggle[aria-expanded="false"]{color:var(--foreground)}
+.global-filter__toggle svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.global-filter[data-collapsed="true"] .global-filter__groups,
+.global-filter[data-collapsed="true"] .global-filter__clear{display:none}
 .global-filter__groups{display:flex;align-items:center;gap:8px;max-width:min(1050px,calc(100vw - 280px));overflow-x:auto;opacity:1}
 .global-filter__group{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;padding:3px;border-radius:var(--radius-pill);background:var(--state-muted)}
 .global-filter__group b{padding:0 6px;color:var(--filter-color);font:700 12px/1 var(--font-mono);white-space:nowrap}
@@ -565,7 +573,7 @@ body.is-resizing iframe{pointer-events:none}
     <section class="slot" id="slot-netgraph">
       <header class="slot-head">
         <div class="slot-heading">
-          <span class="slot-title">模型全局切分视图</span>
+          <span class="slot-title">模型整网视图</span>
           <button type="button" class="slot-help" aria-label="说明" title="从整网结构与分片总览两个视角查看模型切分。">?</button>
         </div>
         <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
@@ -582,10 +590,9 @@ body.is-resizing iframe{pointer-events:none}
 
     <div class="global-filter" id="globalFilter">
       <div class="global-filter__surface" role="toolbar" aria-label="选择并查看并行对象">
-        <div class="global-filter__label">
+        <button class="global-filter__toggle" id="globalFilterToggle" type="button" aria-label="选择并查看并行对象" aria-expanded="true" title="选择并查看并行对象：点击收起/展开">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-          <span>选择并查看并行对象</span>
-        </div>
+        </button>
         <div class="global-filter__groups" id="globalFilterGroups"></div>
         <button class="global-filter__clear" id="globalFilterClear" type="button" aria-label="清除全局筛选" title="清除筛选">×</button>
       </div>
@@ -598,7 +605,7 @@ body.is-resizing iframe{pointer-events:none}
   <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
   <section class="slot" id="dock">
     <header class="slot-head">
-      <span class="slot-title">微批次生命周期泳道</span>
+      <span class="slot-title">训练运行时视图</span>
       <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
       <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
            而「这一步走到此刻，每张卡手上压着多少激活」正是它与拓扑那两格之间
@@ -721,7 +728,7 @@ var GLOBAL_MODEL_LAYERS = 48;
 var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8 };
 var globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
 var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true };
-var globalFilter = { t:null, e:null, p:null };
+var globalFilter = { t:null, e:null, p:null, d:null };
 function globalCutsString(includeDp) {
   return (includeDp && globalCuts.dp ? 'd' : '') + (globalCuts.pp ? 'p' : '') +
     (globalCuts.cp ? 'c' : '') + (globalCuts.tp ? 't' : '') + (globalCuts.ep ? 'e' : '');
@@ -1287,6 +1294,7 @@ function renderGlobalFilter() {
   if (globalCuts.tp && globalCfg.tp > 1) groups.push({k:'t',name:'TP·SP',n:globalCfg.tp,color:'#21c4db'});
   if (globalCuts.ep && globalCfg.ep > 1) groups.push({k:'e',name:'EP',n:globalCfg.ep,color:'#9236ed'});
   if (globalCuts.pp && globalCfg.pp > 1) groups.push({k:'p',name:'PP',n:globalCfg.pp,color:'#ff9f2d'});
+  if (globalCuts.dp && globalCfg.dp > 1) groups.push({k:'d',name:'DP',n:globalCfg.dp,color:'#4369ef'});
   $('#globalFilterGroups').innerHTML = groups.map(function (g) {
     var cells = '';
     for (var i = 0; i < g.n; i++) {
@@ -1302,14 +1310,14 @@ function renderGlobalFilter() {
 }
 
 function sendGlobalFilters() {
-  ['topology','netgraph'].forEach(function (id) {
+  ['topology','netgraph','swimlane'].forEach(function (id) {
     var frame = $('iframe[data-slot="' + id + '"]');
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
   });
 }
 
 function clearGlobalFilter() {
-  globalFilter = {t:null,e:null,p:null};
+  globalFilter = {t:null,e:null,p:null,d:null};
   renderGlobalFilter();
   sendGlobalFilters();
   pushHL('swimlane', 'rank', null);
@@ -1340,14 +1348,14 @@ function wireGlobalControls() {
   $('#globalConfigApply').addEventListener('click', function () {
     var next = globalDraft(), error = validateGlobalConfig(next), status = $('#globalConfigStatus');
     if (error) { status.style.color = 'var(--danger)'; status.textContent = error; return; }
-    globalCfg = next; globalFilter = {t:null,e:null,p:null};
+    globalCfg = next; globalFilter = {t:null,e:null,p:null,d:null};
     status.style.color = 'var(--success)'; status.textContent = '配置已应用，三个视图已同步更新。';
     renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
   });
   $('#globalConfigReset').addEventListener('click', function () {
     globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
     globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true};
-    globalFilter = {t:null,e:null,p:null};
+    globalFilter = {t:null,e:null,p:null,d:null};
     $('#globalConfigStatus').textContent = '';
     syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
   });
@@ -1358,6 +1366,11 @@ function wireGlobalControls() {
     renderGlobalFilter(); sendGlobalFilters();
   });
   $('#globalFilterClear').addEventListener('click', clearGlobalFilter);
+  $('#globalFilterToggle').addEventListener('click', function () {
+    var wasCollapsed = $('#globalFilter').getAttribute('data-collapsed') === 'true';
+    $('#globalFilter').setAttribute('data-collapsed', String(!wasCollapsed));
+    this.setAttribute('aria-expanded', String(wasCollapsed));
+  });
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
     if ($('#globalConfig').getAttribute('aria-hidden') === 'false') setGlobalConfigOpen(false);
@@ -1436,6 +1449,8 @@ function settleFrame(slot, frame) {
     hideTakenOver(slot, frame);
     applyData();
     applyGlobalStateToFrame(slot.id);
+    if (frame.contentWindow && (slot.id === 'topology' || slot.id === 'netgraph' || slot.id === 'swimlane'))
+      frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
     if (slot.id === 'netgraph') wireOpToRank(frame);
     if (slot.id === 'swimlane') { applyDockAux(); zctlSync(); }
     host.dataset.ready = '1';
@@ -1915,7 +1930,7 @@ window.addEventListener('message', function (ev) {
     if (d.type === 'pto:select') {
       var rankSel = (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null;
       if (c.id === 'topology' || c.id === 'netgraph') {
-        globalFilter = d.groups ? {t:d.groups.t,e:d.groups.e,p:d.groups.p} : {t:null,e:null,p:null};
+        globalFilter = d.groups ? {t:d.groups.t,e:d.groups.e,p:d.groups.p,d:d.groups.d} : {t:null,e:null,p:null,d:null};
         renderGlobalFilter();
       }
       var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
@@ -1933,6 +1948,19 @@ window.addEventListener('message', function (ev) {
        postMessage 而不是轮询。 */
     if (d.type === 'pto:swimlane-select' && c.id === 'swimlane') {
       var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
+      var swGroups = d.groups && typeof d.groups === 'object'
+        ? {t:Number.isInteger(d.groups.t)?d.groups.t:null,
+           e:Number.isInteger(d.groups.e)?d.groups.e:null,
+           p:Number.isInteger(d.groups.p)?d.groups.p:null,
+           d:null}
+        : {t:null,e:null,p:null,d:null};
+      var hasSwGroup = swGroups.t !== null || swGroups.e !== null || swGroups.p !== null;
+      /* 有唯一 Rank 就按 Rank 联动；没有唯一 Rank 的 Stage/组事件改用它自己的
+         PP/TP/EP 归属。此前一律转 null，等于明确通知上面两格“取消高亮”。
+         泳道事件报不出 DP 归属（它按 Rank/PP 组事件走，不区分 DP 副本），d 恒 null。 */
+      globalFilter = swRank === null && hasSwGroup ? swGroups : {t:null,e:null,p:null,d:null};
+      renderGlobalFilter();
+      sendGlobalFilters();
       pushHL('topology', 'rank', swRank);
       pushHL('netgraph', 'rank', swRank);
       /* kernel 分段逐节可点之后，泳道还报得出「点的是哪一节」（d.block，形如

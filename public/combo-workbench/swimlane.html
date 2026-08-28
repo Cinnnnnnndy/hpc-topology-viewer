@@ -20,23 +20,24 @@
        会跟主标签压在一起，按主标签同一款字体量真实像素宽再决定画不画；二是**逐节
        可点**——段的命中区、`selectedSegKey` 这个状态、选中那一节的高亮，以及段
        对应到 demo.html MODULE_BLOCKS 哪个功能块的那张 KERNEL_SEG_BLOCK 表。
-    ⑤ 正文 <script> 里再加一小块「选中 → 回报宿主的 Rank」——`select()` 每次真的选中
-       一个事件时，从它的 metrics.rankId 里抠出物理 Rank 号（抠不出来的事件，比如
+    ⑤ 正文 <script> 里再加一小块「选中聚焦 + 回报宿主的 Rank」——选中事件保留
+       原色、其余事件统一退成灰阶；`select()` 每次真的选中一个事件时，再从它的
+       metrics.rankId 里抠出物理 Rank 号（抠不出来的事件，比如
        Rank 组行、Stage 概览行、跨 Stage 通信，一律报 null），`postMessage` 一条
        `{type:'pto:swimlane-select', rank, block}` 给宿主，供它去照亮整网图/主视图里
        同一个 Rank、以及模块视图里同一个功能块（block 由④的 KERNEL_SEG_BLOCK 算出，
        没选中某一节时同样报 null；宿主那边的接线在 index.html，见其
        `pto:swimlane-select` 消息处理）。新增函数集中在 kernelSegmentTooltipRow 之后
-       一个单独的注释区块里（搜「⑤ 本仓新增」），只在 `select()` 里加了一行调用挂
-       进去，其余正文没有再动。
-  除了④⑤标注的这两小块新增/三处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
+       一个单独的注释区块里（搜「⑤ 本仓新增」）；绘制循环只增加选中/非选中的
+       Canvas 灰阶包裹，`select()` 里仍只加一行回报调用。
+  除了④⑤标注的这两小块新增及其局部挂钩，正文（DOM、模拟数据）没有结构性改动：
   上游更新时重新拷一遍、再补这五处即可。
 
   上游依赖 ../vendor/pto-design-system/（tokens + css/style.css）。本仓在 public/vendor/
   下有同名快照，本文件放在 public/combo-workbench/ 恰好让 ../vendor/ 落到它上面，
   所以那四条链接原样保留、没有改写。
 -->
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -70,7 +71,7 @@
       min-height: 720px;
       overflow: hidden;
       place-items: stretch;
-      background: var(--background);
+      background: #ffffff;
       color: var(--foreground);
       font: var(--text-body-sm);
     }
@@ -172,26 +173,11 @@
     .timeline-toolbar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
     .timeline-toolbar .segmented button { min-height: 26px; }
     .timeline-actions { display: flex; align-items: center; gap: var(--space-2); }
-    .timeline-actions.zoom-control-group .btn.btn-sm.btn-icon {
-      width: 28px;
-      min-width: 28px;
-      max-width: 28px;
-      height: 28px;
-      min-height: 28px;
-      padding: 0;
-      flex: 0 0 28px;
-      aspect-ratio: 1;
-      border-radius: 8px;
-    }
     .zoom-control-readout { min-width: 48px; text-align: center; }
     .zoom-slider {
       width: 132px;
-      height: 28px;
       margin: 0 2px;
-      accent-color: var(--primary);
-      cursor: pointer;
     }
-    .zoom-slider:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .info-icon { font-weight: var(--font-weight-bold); }
     .timeline-scroll {
       position: relative;
@@ -275,7 +261,6 @@
       background: var(--surface-2);
     }
     .hierarchy-popover__title { color: var(--foreground); font: var(--ide-frame-title-font); }
-    .hierarchy-popover__close { min-width: 28px; }
     .hierarchy-popover .tree { min-height: 0; overflow: auto; }
     .statusbar {
       display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
@@ -336,13 +321,13 @@
           <span class="pane__meta" title="32 个物理 Rank；MB07 mock 归属 DP1，因此默认只展示它经过的 16 个 Rank">32 Rank · MB07 → DP1</span>
         </div>
         <div class="timeline-actions zoom-control-group">
-          <button class="btn btn-sm btn-icon" id="zoomOut" type="button" aria-label="缩小">−</button>
-          <input class="zoom-slider" id="zoomSlider" type="range" min="0" max="6" step="1" value="0"
-            aria-label="时间轴缩放倍率" aria-valuemin="1" aria-valuemax="64" aria-valuenow="1"
+          <button class="btn btn-compact btn-icon" id="zoomOut" type="button" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+          <input class="slider zoom-slider" id="zoomSlider" type="range" min="0" max="6" step="1" value="0"
+            aria-label="时间轴缩放倍率" aria-valuetext="1 倍"
             title="离散缩放：1× / 2× / 4× / 8× / 16× / 32× / 64×">
-          <button class="btn btn-sm btn-icon" id="zoomIn" type="button" aria-label="放大">+</button>
+          <button class="btn btn-compact btn-icon" id="zoomIn" type="button" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
           <output class="zoom-control-readout" id="zoomValue">1×</output>
-          <button class="btn btn-sm btn-icon info-icon" id="objectInfoBtn" type="button" aria-label="查看对象层级" aria-expanded="false">i</button>
+          <button class="btn btn-compact btn-icon info-icon" id="objectInfoBtn" type="button" aria-label="查看对象层级" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button>
         </div>
       </header>
       <div class="timeline-scroll" id="timelineScroll">
@@ -371,7 +356,7 @@
   <section class="hierarchy-popover" id="hierarchyPopover" hidden aria-label="对象层级面板">
     <header class="hierarchy-popover__header">
       <span class="hierarchy-popover__title">对象层级</span>
-      <button class="btn btn-sm btn-icon hierarchy-popover__close" id="hierarchyClose" type="button" aria-label="关闭对象层级">×</button>
+      <button class="btn btn-compact btn-icon hierarchy-popover__close" id="hierarchyClose" type="button" aria-label="关闭对象层级"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </header>
     <div class="tree-tools"><input class="tree-search" id="treeSearch" type="search" placeholder="搜索 PP、Rank、算子、对象"></div>
     <nav class="tree" id="objectTree" aria-label="微批次对象层级"></nav>
@@ -940,6 +925,46 @@
       };
 
       let selectedId = 'mb07-total';
+      /* 初始详情有一个默认对象，但它不是读者主动做出的聚焦选择；只有实际点击
+         时间条或左侧对象树之后才把其它事件退灰，保证初始全貌仍保留完整编码。 */
+      let selectionFocusActive = false;
+      let globalFocusFilters = { t: null, e: null, p: null };
+      let linkedRankFocus = null;
+
+      function metricIndex(item, key, prefix) {
+        const raw = item?.metrics?.[key];
+        if (typeof raw !== 'string') return null;
+        const match = raw.match(new RegExp(`^${prefix}\\s*(\\d+)\\s*$`, 'i'));
+        return match ? Number(match[1]) : null;
+      }
+      function eventMatchesLinkedFocus(item) {
+        if (linkedRankFocus !== null && metricIndex(item, 'rankId', 'Rank') !== linkedRankFocus) return false;
+        const groups = parallelGroupsFromEvent(item);
+        if (globalFocusFilters.p !== null && groups.p !== globalFocusFilters.p) return false;
+        if (globalFocusFilters.t !== null && groups.t !== globalFocusFilters.t) return false;
+        if (globalFocusFilters.e !== null && groups.e !== globalFocusFilters.e) return false;
+        return true;
+      }
+      function linkedFocusActive() {
+        return linkedRankFocus !== null || globalFocusFilters.t !== null
+          || globalFocusFilters.e !== null || globalFocusFilters.p !== null;
+      }
+      window.addEventListener('pto:filters', event => {
+        const filters = event.detail || {};
+        globalFocusFilters = {
+          t: Number.isInteger(filters.t) ? filters.t : null,
+          e: Number.isInteger(filters.e) ? filters.e : null,
+          p: Number.isInteger(filters.p) ? filters.p : null
+        };
+        if (linkedFocusActive()) selectionFocusActive = false;
+        draw();
+      });
+      window.addEventListener('pto:rank-focus', event => {
+        const rank = event.detail?.rank;
+        linkedRankFocus = Number.isInteger(rank) && rank >= 0 ? rank : null;
+        if (linkedRankFocus !== null) selectionFocusActive = false;
+        draw();
+      });
       /* 选中的那一**节** kernel（④ 本仓新增那块色带里的一段）。跟 selectedId 分开存：
          一条前向/反向条既可以整条被选中（segKey=null，读的是"这一条什么时候跑完"），
          也可以只选中里面某一节（读的是"这一节是 attn.core 还是 router"）——两件事，
@@ -1382,7 +1407,7 @@
       /* out 传进来时，顺手把每一节的几何量出来交回去——命中区不在这里 push：
          调用点画完这条还要 push 整条自己的命中矩形，而 hitAt 是"后压入的先命中"，
          段先压就会被整条盖掉。交回去让调用点在整条之后再压，段才咬得住。 */
-      function drawKernelSegments(ctx, item, barX, barY, barW, barH, out) {
+      function drawKernelSegments(ctx, item, barX, barY, barW, barH, out, muted = false) {
         if (!isKernelSegmentable(item) || barW <= 0 || barH <= 0) return;
         const { segments } = kernelSegmentsFor(item);
         const total = segments.reduce((sum, seg) => sum + seg.w, 0);
@@ -1409,7 +1434,7 @@
         segments.forEach(seg => {
           const segW = barW * seg.w / total;
           ctx.globalAlpha = seg.key === litSeg ? 1 : .5;
-          ctx.fillStyle = kernelSegColor(seg.cls);
+          ctx.fillStyle = muted ? (css('--foreground-muted') || '#8a93a6') : kernelSegColor(seg.cls);
           ctx.fillRect(segX, barY, Math.max(.6, segW), barH);
           segX += segW;
         });
@@ -1520,6 +1545,34 @@
         const m = raw.match(/(\d+)\s*$/);
         return m ? Number(m[1]) : null;
       }
+      function parallelGroupsFromEvent(item) {
+        const metrics = item && item.metrics;
+        function exactIndex(key, prefix) {
+          const raw = metrics && metrics[key];
+          if (typeof raw !== 'string') return null;
+          const match = raw.match(new RegExp(`^${prefix}\\s*(\\d+)\\s*$`, 'i'));
+          return match ? Number(match[1]) : null;
+        }
+        let stage = exactIndex('stage', 'PP');
+        if (stage === null) {
+          const text = [item?.lane, item?.label, item?.id].filter(Boolean).join(' ');
+          const ppMatches = [...text.matchAll(/PP\s*(\d+)/gi)].map(match => Number(match[1]));
+          const uniquePp = [...new Set(ppMatches)];
+          if (uniquePp.length === 1) stage = uniquePp[0];
+          if (stage === null) {
+            const layerMatch = text.match(/L\s*(\d+)/i);
+            if (layerMatch) {
+              const layer = Number(layerMatch[1]);
+              stage = layer <= 11 ? 0 : layer <= 22 ? 1 : layer <= 34 ? 2 : layer <= 45 ? 3 : null;
+            }
+          }
+        }
+        return {
+          t: exactIndex('tpShard', 'TP'),
+          e: exactIndex('epShard', 'EP'),
+          p: stage
+        };
+      }
       function notifyHostOfSwimlaneSelect(item) {
         if (!window.parent || window.parent === window) return;
         /* block：选中的那一节对应整网图模块视图里的哪个功能块（④ 本仓新增的
@@ -1529,6 +1582,7 @@
         window.parent.postMessage({
           type: 'pto:swimlane-select',
           rank: rankFromEventMetrics(item.metrics),
+          groups: parallelGroupsFromEvent(item),
           block: blockFromSegKey(selectedSegKey)
         }, '*');
       }
@@ -1807,9 +1861,16 @@
               ? y + TIMELINE_LAYOUT.rankTrackTop + track * TIMELINE_LAYOUT.rankTrackPitch
               : y + Math.round((rowH - TIMELINE_LAYOUT.eventHeight) / 2);
             const selected = item.id === selectedId;
+            const focusMuted = (selectionFocusActive && !selected)
+              || (linkedFocusActive() && !eventMatchesLinkedFocus(item));
+            const mutedColor = css('--foreground-muted') || '#8a93a6';
+            /* Canvas pattern 内部会自行 save/restore 绘制状态，因此不依赖外层 filter；
+               直接把非选中事件的底色、分段与箭头都换成同一个中性灰。 */
+            ctx.save();
+            if (focusMuted) ctx.globalAlpha = .38;
             if (item.kind === 'hold') {
               const bandH = 16;
-              const holdColor = colorFor(item);
+              const holdColor = focusMuted ? mutedColor : colorFor(item);
               ctx.save();
               roundedRect(ctx, barX, barY, barW, bandH, 4);
               ctx.fillStyle = rgbaFromHex(holdColor, selected ? .32 : .20);
@@ -1827,7 +1888,7 @@
               ctx.fill();
               ctx.beginPath();
               const endX = barX + barW;
-              ctx.fillStyle = COLORS.release;
+              ctx.fillStyle = focusMuted ? mutedColor : COLORS.release;
               ctx.moveTo(endX, barY + bandH / 2);
               ctx.lineTo(endX - 4, barY + bandH / 2 - 4);
               ctx.lineTo(endX - 8, barY + bandH / 2);
@@ -1844,23 +1905,26 @@
               ctx.fillText(item.label, barX + 10, barY + bandH / 2);
               ctx.restore();
               ctx.restore();
+              ctx.restore();
               hitRects.push({ x: barX, y: barY - 2, w: barW, h: bandH + 12, item, action: 'select' });
               return;
             }
             window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
-              x: barX, y: barY, width: barW, height: TIMELINE_LAYOUT.eventHeight, baseColor: colorFor(item),
+              x: barX, y: barY, width: barW, height: TIMELINE_LAYOUT.eventHeight, baseColor: focusMuted ? mutedColor : colorFor(item),
               task: { label: item.label, opName: item.label }, isSelected: selected,
               isRelated: hoverHit?.item?.metrics?.transactionId && hoverHit.item.metrics.transactionId === item.metrics.transactionId,
               fontFamily: css('--font-mono') || 'monospace'
             });
             const segRects = []; // ← ④ 本仓新增：逐节命中区，见下面为什么等整条压完再压
             if (item.kind === 'forward' || item.kind === 'backward') {
-              drawKernelSegments(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, segRects); // ← ④ 本仓新增，见上方「kernel 级分段」区块
+              drawKernelSegments(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, segRects, focusMuted); // ← ④ 本仓新增，见上方「kernel 级分段」区块
               drawChevronTrack(ctx, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, item.kind, {
-                step: 6, inset: .65, lineWidth: .55, radius: 3, color: 'rgba(255,255,255,.30)'
+                step: 6, inset: .65, lineWidth: .55, radius: 3,
+                color: focusMuted ? 'rgba(138,147,166,.38)' : 'rgba(255,255,255,.30)'
               });
               redrawTaskLabel(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight);
             }
+            ctx.restore();
             hitRects.push({ x: barX, y: barY - 1, w: barW, h: TIMELINE_LAYOUT.eventHeight + 4, item, action: 'select' });
             /* 逐节命中区压在整条**之后**：hitAt 是 [...hitRects].reverse().find(...)，
                后压入的先命中。段要咬得住就得排在整条后面；段之间没有重叠，所以段内部
@@ -1963,6 +2027,7 @@
 
       function select(id, segKey) {
         selectedId = id;
+        selectionFocusActive = true;
         /* 节只认这次调用传进来的那个：没传就是 null。换条、左侧树里点条目、点条的
            上下边缘选中整条——这几条路都不带 segKey，于是自动归零。一条前向条里的
            "Attn Core"跟另一条里的"Attn Core"是两次不同的执行，段键同名不代表选中的
@@ -2102,7 +2167,8 @@
         const index = nearestZoomIndex(next);
         zoom = ZOOM_STEPS[index];
         zoomSlider.value = String(index);
-        zoomSlider.setAttribute('aria-valuenow', String(zoom));
+        zoomSlider.style.setProperty('--slider-progress', `${index / (ZOOM_STEPS.length - 1) * 100}%`);
+        zoomSlider.setAttribute('aria-valuetext', `${zoom} 倍`);
         zoomValue.textContent = `${zoom}×`;
         zoomOut.disabled = index === 0;
         zoomIn.disabled = index === ZOOM_STEPS.length - 1;
