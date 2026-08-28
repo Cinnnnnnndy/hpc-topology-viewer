@@ -190,7 +190,10 @@ a.btn{text-decoration:none}
 /* ═══ 全局配置：IDE Frame 的一级右侧 pane，不归任何一个业务视图 ═══ */
 .global-config{
   --config-description:var(--foreground-secondary);
-  position:absolute;right:8px;top:48px;bottom:8px;z-index:70;width:min(420px,calc(100vw - 32px));
+  /* 原来 top+bottom 两头卡死，面板永远撑满整个工作台高度——「观察方式」那节
+     搬走之后内容变短，底下就空出一大截。改成只卡 top，靠内容撑高度，
+     max-height 兜住 8px 底边距，内容真的长到装不下时 __body 自己滚动。 */
+  position:absolute;right:8px;top:48px;max-height:calc(100% - 56px);z-index:70;width:min(420px,calc(100vw - 32px));
   background:var(--ide-frame-pane-fill);border-color:var(--ide-frame-pane-border);
   transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none;
   transition:transform 180ms ease,opacity 140ms ease;
@@ -282,7 +285,10 @@ a.btn{text-decoration:none}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
 /* 原来常驻一行小字复述这句话，占着标题下方一整行；收进标题后面这颗「？」徽标，
    悬停/聚焦才看到，原生 title 属性做提示。 */
-#slot-netgraph .slot-help{flex:none;width:15px;height:15px;border-radius:50%;padding:0;
+/* .slot-head button 有条通用规则给 min-height:28px（配 Tab/收起那些正常尺寸的按钮），
+   这颗徽标要更小，得把 min-height 也一起覆盖掉，只设 height 拉不动它——那条规则
+   赢的正是 min-height，不然椭圆而不是圆就是这么来的。 */
+#slot-netgraph .slot-help{flex:none;width:15px;height:15px;min-height:15px;min-width:15px;border-radius:50%;padding:0;
   border:1px solid var(--border-subtle);background:var(--surface-2);color:var(--foreground-muted);
   font-size:10px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:help}
 #slot-netgraph .slot-help:hover{color:var(--foreground);border-color:var(--foreground-muted)}
