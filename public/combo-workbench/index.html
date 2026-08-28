@@ -278,9 +278,14 @@ a.btn{text-decoration:none}
    水平居中。只有 Tab 接事件，其余不吃事件，免得挡住画布拖拽。 */
 #slot-netgraph .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
   display:block;min-height:82px;padding:0;background:transparent;pointer-events:none}
-#slot-netgraph .slot-heading{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 54px)}
+#slot-netgraph .slot-heading{display:flex;align-items:center;gap:6px;max-width:calc(100% - 54px)}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
-#slot-netgraph .slot-subtitle{color:var(--foreground-muted);font-size:11.5px;line-height:1.35;font-weight:500}
+/* 原来常驻一行小字复述这句话，占着标题下方一整行；收进标题后面这颗「？」徽标，
+   悬停/聚焦才看到，原生 title 属性做提示。 */
+#slot-netgraph .slot-help{flex:none;width:15px;height:15px;border-radius:50%;padding:0;
+  border:1px solid var(--border-subtle);background:var(--surface-2);color:var(--foreground-muted);
+  font-size:10px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:help}
+#slot-netgraph .slot-help:hover{color:var(--foreground);border-color:var(--foreground-muted)}
 #slot-netgraph .slot-head button{pointer-events:auto}
 /* Tab 独立占第二行并按整个右侧视图居中，不跟标题宽度一起参与 flex 分配。 */
 #slot-netgraph .slot-head .tabs{position:absolute;top:48px;left:50%;transform:translateX(-50%);width:max-content;pointer-events:auto}
@@ -569,7 +574,7 @@ body.is-resizing iframe{pointer-events:none}
       <header class="slot-head">
         <div class="slot-heading">
           <span class="slot-title">模型全局切分视图</span>
-          <span class="slot-subtitle">从整网结构与分片总览两个视角查看模型切分。</span>
+          <button type="button" class="slot-help" aria-label="说明" title="从整网结构与分片总览两个视角查看模型切分。">?</button>
         </div>
         <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
       </header>

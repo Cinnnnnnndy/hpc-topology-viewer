@@ -345,8 +345,17 @@
 }
 .pt-root.embed .pt-stagetitle{display:flex; gap:10px; pointer-events:auto; z-index:8}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
-.pt-stagecopy{display:flex; flex-direction:column; gap:3px; max-width:min(540px, calc(100vw - 110px)); pointer-events:none}
-.pt-stagecopy small{color:var(--pt-fg3); font-size:11.5px; line-height:1.35; font-weight:500}
+.pt-stagecopy{display:flex; align-items:center; gap:6px; max-width:min(540px, calc(100vw - 110px)); pointer-events:none}
+/* 名字后面那颗「？」：原来常驻一行小字复述这句话，占着画布一行空间；
+   收进这颗徽标里，需要的人悬停/聚焦才看到，原生 title 属性做提示，
+   不用另起一套 tooltip 组件。它自己要接得住悬停，所以单独把 pointer-events 开回来。 */
+.pt-stagehelp{
+  pointer-events:auto; flex:none; width:15px; height:15px; border-radius:50%; padding:0;
+  border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg3);
+  font-size:10px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center;
+  cursor:help;
+}
+.pt-stagehelp:hover{color:var(--pt-fg2); border-color:var(--pt-fg3)}
 .pb{
   height:32px; padding:0 14px; font-size:12.5px; font-weight:700; border-radius:999px;
   border:1px solid var(--pt-bd); background:var(--pt-s1); color:var(--pt-fg2);
@@ -10266,7 +10275,7 @@ function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
   if(el.firstChild) return;
   el.innerHTML = '<span class="pt-stagecopy"><b>模型分片与训练设备映射</b>'
-    + '<small>每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。</small></span>';
+    + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';
 }
 
 /* ══ 二级读数：读出卡里点开的那一**块**显存 ═══════════════════════════════
