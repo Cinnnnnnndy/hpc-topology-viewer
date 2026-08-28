@@ -287,6 +287,9 @@
 .pt-cfgpanel .pb, .pt-cfgpanel .pt-sw, .pt-cfgpanel .pt-seg button{height:var(--settings-control-height); font-size:var(--settings-content-font-size)}
 .pt-cfgpanel .pt-seg{padding:3px; border-radius:var(--settings-control-radius); background:var(--segmented-control-bg); border-color:var(--segmented-control-border)}
 .pt-cfgpanel .pt-seg button{border-radius:var(--radius-sm)}
+/* 「观察方式」里逻辑切分下答不上的两组（卡片内容/设备排列）：置灰但不消失，
+   位置留住，读者知道「切到设备视图就能点」，不用东找西找。 */
+.pt-cfgpanel .pt-seg button:disabled{opacity:var(--button-disabled-opacity); cursor:not-allowed}
 .pt-cfgpanel .pt-sw{padding:0 6px; border:0; border-radius:var(--settings-control-radius); background:transparent}
 .pt-cfgpanel .pt-sw:hover{background:var(--state-hover); border-color:transparent}
 .pt-cfgpanel .pt-sw i{width:var(--switch-width); height:var(--switch-height); background:var(--switch-bg)}
@@ -9328,15 +9331,10 @@ function renderChainBar(D){
   if(D.tp>1) kBtns += '<button'+(ui.kTP?' class="is-on"':'')+' data-act="knifetoggle" data-k="tp" style="--c:'+VC.tp+'" title="TP 锯片，同时带着 SP：同一组卡、同样大小——TP 区里切 h（竖），TP 区之外切 s（横）。SP 不占乘数，所以只有这一颗开关">TP·SP</button>';
   if(D.moe&&D.ep>1) kBtns += '<button'+(ui.kEP?' class="is-on"':'')+' data-act="knifetoggle" data-k="ep" style="--c:'+VC.ep+'" title="EP 分桶">EP</button>';
   kBtns += '</span>';
-  /* 物理平铺单独一个 pt-seg，不并进上面那条五刀的分段控件——它不是刀（不决定
-     摊出几张卡，那仍然由五刀说了算，只改这些卡摆在哪儿），混在同一条连成一体
-     的胶囊里会被误读成「第六根轴」，跟五刀平起平坐。分开摆、留出缝，视觉上先
-     承认它是另一类开关，但仍然紧跟在五刀右边、用同一套 knifetoggle 机制联动
-     （数据层面两者共用 ui.kPhys / render()，只是这里的胶囊分组变了）。
-     不给维度色：颜色在这条工具条里是「第几根轴」的记号，物理平铺没有轴色可给。 */
-  var physBtn = '<span class="pt-seg">'
-    + '<button'+(ui.kPhys?' class="is-on"':'')+' data-act="knifetoggle" data-k="phys" title="物理平铺：不改摊出几张卡（仍由左边五刀决定），只改它们摆在哪——按插在机房的槽位（host/slot）摆成一层平面，不再按并行坐标摆">物理</button>'
-    + '</span>';
+  /* 物理平铺（ui.kPhys）原来单独一个 pt-seg 跟在五刀右边，现在并进「观察方式」
+     的「设备排列」——它和 Rank / 卡片内容答的是同一类问题（这张图现在怎么摆），
+     归到一处比散在「落哪几把刀」旁边更好找；数据层面仍是同一个 ui.kPhys / render()，
+     只是入口挪了，见 cfgPanel 里「观察方式」那一段。 */
   var vBtns = '<span class="pt-seg">'
     + '<button'+(ui.viewTab==='3d'?' class="is-on"':'')+' data-act="viewtab" data-tab="3d" data-yaw="0.42" data-pitch="0.30" title="透视 3D">3D</button>'
     + '<button'+(ui.viewTab==='front'?' class="is-on"':'')+' data-act="viewtab" data-tab="front" data-yaw="0" data-pitch="0" title="正视图">正视</button>'
@@ -9427,27 +9425,44 @@ function renderChainBar(D){
     return '<button class="pt-sw'+(on?' is-on':'')+'" data-act="'+act+'" title="'+esc(tip)+'">'
       + '<i></i>'+esc(name)+'</button>';
   }
-  var cBtn = swBtn('cardmode', 'Rank', ui.cardMode,
-        ui.cardMode ? '关掉：退回整网切分场景' : '打开：把四刀交集收进一张卡，只看这张卡真正持有的那份')
-    /* 「整网 / 容量」是**同一只卡壳的两种看法**，本来就互斥：壳里要么装算子（这张卡
-       持有模型的哪一块），要么装字节（这张卡的显存装到什么程度）。两个填充不可能叠。
-       原来做成两个独立开关，于是存在「两个都关」这种谁也答不上来的状态（空壳），
-       而且读者得先想清楚它们的先后依赖。改成二选一的段控，状态就只剩两个，
-       名字直接说这一屏在回答哪一问。 */
-    + (ui.cardMode ? '<span class="pt-seg">'
-        + '<button'+(ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="cap">容量</button>'
-        + '<button'+(!ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="net">整网</button>'
-        + '</span>' : '');
   /* 「当前路径」那条读数去掉了——同一组坐标场景里已经用高亮标出来了（实心的
      那一份就是它），再抄一遍文字只是占着画布右上角。 */
   /* 关掉整网之后画面整屏交给魔方，它自带一整套控制（着色维度 PP/TP/EP/DP/标准、
      视角 3D/前 PP-TP 面/顶 DP-PP 面）。我们这排刀开关和视角 tab 跟它讲的是同一
      件事、按钮却各按各的，留着就是两套打架的控件——只留进出这个模式的开关。 */
-  /* 排序按「这一屏在讲什么」由粗到细：先定模式（Rank / 整网），再定切法（四把刀），
-     再定机位（3D / 正视 / 侧视 / 顶视），最后才是叠在图上的注解层（图例 / 通信 / 数据）。 */
+  /* 排序按「这一屏在讲什么」由粗到细：先定切法（四把刀），再定并行度，
+     再定机位、观察方式（3D / 正视 / 侧视 / 顶视 · Rank / 卡片内容 / 排列），
+     最后才是叠在图上的注解层（通信 / 图层 / 数据）。 */
   /* ── 舞台上只剩一颗配置钮 ────────────────────────────────────────────
      搜索也收进同一块面板，读者不必先判断“这是提问还是配置”再去两个入口里找。
-     搜索与定位放在最前，然后才是模式、切分、并行度、机位和图层。 */
+     搜索与定位放在最前，然后才是切分、并行度、机位、观察方式和图层。 */
+  /* ── 观察方式：原来是「Rank」开关 + 关掉整网后才冒出来的容量/整网段控，混在
+     「模式」一节里，容量视角特有的「设备排列」（物理平铺）又分家挂在「落哪几把
+     刀」旁边——三件事其实答的是同一问题（这张图现在怎么摆），现在收成一节，
+     排进「机位」和「通信连线」之间：先定这一屏摆成什么形（机位 = 从哪个角度看，
+     观察方式 = 看到的是什么），再叠注解（通信 / 图层）。
+     「逻辑切分 / 设备视图」二选一驱动 ui.cardMode；只有设备视图下「卡片内容」
+     （ui.netOff：整网≈算子 / 容量≈字节，同一只卡壳的两种看法，天然互斥，见旧
+     「模式」一节的注释）与「设备排列」（ui.kPhys：按并行坐标 / 按机房槽位）才有
+     意义，逻辑切分下两组按钮保留可见但置灰——不是消失，只是眼下答不上。 */
+  var rankSeg = '<span class="pt-seg">'
+    + '<button'+(!ui.cardMode?' class="is-on"':'')+' data-act="rankmode" data-v="logical" title="查看模型如何被划分">逻辑切分</button>'
+    + '<button'+(ui.cardMode?' class="is-on"':'')+' data-act="rankmode" data-v="device" title="查看分片如何映射到卡">设备视图（Rank）</button>'
+    + '</span>';
+  var cardViewSeg = '<span class="pt-seg">'
+    + '<button'+(!ui.cardMode?' disabled':'')+(!ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="net" title="展示层与算子归属">模型分片</button>'
+    + '<button'+(!ui.cardMode?' disabled':'')+(ui.netOff?' class="is-on"':'')+' data-act="cardview" data-v="cap" title="展示 HBM 负载构成">显存占用</button>'
+    + '</span>';
+  var deviceLayoutSeg = '<span class="pt-seg">'
+    + '<button'+(!ui.cardMode?' disabled':'')+(!ui.kPhys?' class="is-on"':'')+' data-act="devlayout" data-v="parallel" title="依据 TP、CP、PP、DP 排列">按并行组</button>'
+    + '<button'+(!ui.cardMode?' disabled':'')+(ui.kPhys?' class="is-on"':'')+' data-act="devlayout" data-v="physical" title="每台服务器显示 8 张卡">按服务器槽位</button>'
+    + '</span>';
+  var obsBlock = '<div class="cgrow"><span class="pt-cap">观察层级</span></div>'
+    + '<div class="cgrow">' + rankSeg + '</div>'
+    + '<div class="cgrow"><span class="pt-cap">卡片内容</span></div>'
+    + '<div class="cgrow">' + cardViewSeg + '</div>'
+    + '<div class="cgrow"><span class="pt-cap">设备排列</span></div>'
+    + '<div class="cgrow">' + deviceLayoutSeg + '</div>';
   var draft9 = ui.cfgDraft || {};
   function pnum9(k9, nm9, dis9){
     var v9 = (draft9[k9] !== undefined) ? draft9[k9] : cfg[k9];
@@ -9458,14 +9473,14 @@ function renderChainBar(D){
   var moe9 = +cfg.experts > 0;
   var cfgPanel = '<div class="pt-cfgpanel'+(ui.cfgOpen?' is-open':'')+'" id="cfgPanel">'
     + '<div class="cg pt-cfgsearch"><h6>搜索与定位</h6><div class="cgrow">' + revBtn + '</div></div>'
-    + '<div class="cg"><h6>模式</h6><div class="cgrow">' + cBtn + '</div></div>'
-    + '<div class="cg"><h6>落哪几把刀</h6><div class="cgrow">' + kBtns + physBtn + '</div></div>'
+    + '<div class="cg"><h6>落哪几把刀</h6><div class="cgrow">' + kBtns + '</div></div>'
     + '<div class="cg"><h6>并行度</h6><div class="pnum">'
       + pnum9('tp','TP') + pnum9('cp','CP') + pnum9('pp','PP') + pnum9('ep','EP', !moe9)
       + '<label><b style="color:'+VC.dp+'">DP</b><span class="derv" title="= world/(TP·CP·PP)，自动">'+(D.dpOk?D.dp:'—')+'</span></label>'
       + '<button class="capply" data-act="cfgapply"'+(dirty9?'':' disabled')+'>应用</button>'
     + '</div><div class="cnote">DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。</div></div>'
     + '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
+    + '<div class="cg"><h6>观察方式</h6>' + obsBlock + '</div>'
     + '<div class="cg"><h6>通信连线</h6>'
       + '<div class="cgrow">' + swBtn('commtoggle', '通信图层', ui.commOn,
           ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
@@ -9498,7 +9513,7 @@ function renderChainBar(D){
   var cfgN9 = (ui.legendOn?1:0) + (ui.moduleView?1:0) + commLitN();
   $('stagebar').innerHTML = '<span class="pt-cfg">'
     + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="搜索与配置"'
-    + ' title="搜索与配置：对象定位 / 模式 / 落哪几把刀 / 并行度 / 机位 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
+    + ' title="搜索与配置：对象定位 / 落哪几把刀 / 并行度 / 机位 / 观察方式 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
     + '<svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'
     + '<path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg>'
     + '</button>' + cfgPanel + '</span>';
@@ -11090,7 +11105,17 @@ document.addEventListener('click', function(ev){
     })(t0);
   }
   else if(act==='spread'){ ui.spread = !ui.spread; render(); }
-  else if(act==='cardmode'){ ui.cardMode = !ui.cardMode; if(!ui.cardMode) ui.netOff = false; render(); }
+  /* 观察层级：逻辑切分 ⇄ 设备视图，二选一（原来是「Rank」开关，见「观察方式」
+     一节的注释）。切回逻辑切分顺手关掉容量填充，跟原来的开关行为一致；kPhys
+     不清零——它只在设备视图下才生效（physOn = cardMode && kPhys），切回设备
+     视图时读者不必重新选一遍设备排列。 */
+  else if(act==='rankmode'){
+    ui.cardMode = b.getAttribute('data-v') === 'device';
+    if(!ui.cardMode) ui.netOff = false;
+    render();
+  }
+  /* 设备排列：按并行坐标 ⇄ 按机房槽位（原 physBtn 的物理平铺开关，改成显式二选一）。 */
+  else if(act==='devlayout'){ ui.kPhys = b.getAttribute('data-v') === 'physical'; render(); }
   /* 挑完就收起小菜单：挑的结果本身就是「大图层开/关了」这个显而易见的反馈
      （通信弧线直接长在画布上、图例弹出一整块说明面板），开着的小菜单和图例那块
      大面板抢同一片屏幕，留着没有意义。 */
@@ -11162,7 +11187,6 @@ document.addEventListener('click', function(ev){
     else if(kk2==='cp') ui.kCP = !ui.kCP;
     else if(kk2==='tp') ui.kTP = !ui.kTP;
     else if(kk2==='ep') ui.kEP = !ui.kEP;
-    else if(kk2==='phys') ui.kPhys = !ui.kPhys;
     render();
   }
   else if(act==='viewtab'){

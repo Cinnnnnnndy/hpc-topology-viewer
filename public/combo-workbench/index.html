@@ -190,7 +190,10 @@ a.btn{text-decoration:none}
 /* ═══ 全局配置：IDE Frame 的一级右侧 pane，不归任何一个业务视图 ═══ */
 .global-config{
   --config-description:var(--foreground-secondary);
-  position:absolute;right:8px;top:48px;bottom:8px;z-index:70;width:min(420px,calc(100vw - 32px));
+  /* 原来 top+bottom 两头卡死，面板永远撑满整个工作台高度——「观察方式」那节
+     搬走之后内容变短，底下就空出一大截。改成只卡 top，靠内容撑高度，
+     max-height 兜住 8px 底边距，内容真的长到装不下时 __body 自己滚动。 */
+  position:absolute;right:8px;top:48px;max-height:calc(100% - 56px);z-index:70;width:min(420px,calc(100vw - 32px));
   background:var(--ide-frame-pane-fill);border-color:var(--ide-frame-pane-border);
   transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none;
   transition:transform 180ms ease,opacity 140ms ease;
@@ -282,7 +285,10 @@ a.btn{text-decoration:none}
 #slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
 /* 原来常驻一行小字复述这句话，占着标题下方一整行；收进标题后面这颗「？」徽标，
    悬停/聚焦才看到，原生 title 属性做提示。 */
-#slot-netgraph .slot-help{flex:none;width:15px;height:15px;border-radius:50%;padding:0;
+/* .slot-head button 有条通用规则给 min-height:28px（配 Tab/收起那些正常尺寸的按钮），
+   这颗徽标要更小，得把 min-height 也一起覆盖掉，只设 height 拉不动它——那条规则
+   赢的正是 min-height，不然椭圆而不是圆就是这么来的。 */
+#slot-netgraph .slot-help{flex:none;width:15px;height:15px;min-height:15px;min-width:15px;border-radius:50%;padding:0;
   border:1px solid var(--border-subtle);background:var(--surface-2);color:var(--foreground-muted);
   font-size:10px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:help}
 #slot-netgraph .slot-help:hover{color:var(--foreground);border-color:var(--foreground-muted)}
@@ -504,25 +510,11 @@ body.is-resizing iframe{pointer-events:none}
           <p class="global-config__note">EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。</p>
         </div>
       </section>
-      <section class="global-config__section">
-        <h3>观察方式</h3>
-        <p class="global-config__section-intro">设置并行拓扑视图的观察层级、卡片内容与设备排列。</p>
-        <span class="global-config__choice-label">观察层级</span>
-        <div class="global-config__choice-grid" role="group" aria-label="观察层级">
-          <button class="global-config__choice" type="button" data-global-rank-view="logical" aria-pressed="false"><strong>逻辑切分</strong><small>查看模型如何被划分</small></button>
-          <button class="global-config__choice" type="button" data-global-rank-view="device" aria-pressed="true"><strong>设备视图（Rank）</strong><small>查看分片如何映射到卡</small></button>
-        </div>
-        <span class="global-config__choice-label">卡片内容</span>
-        <div class="global-config__choice-grid" role="group" aria-label="设备卡片内容" data-rank-only>
-          <button class="global-config__choice" type="button" data-global-card-view="net" aria-pressed="false"><strong>模型分片</strong><small>展示层与算子归属</small></button>
-          <button class="global-config__choice" type="button" data-global-card-view="cap" aria-pressed="true"><strong>显存占用</strong><small>展示 HBM 负载构成</small></button>
-        </div>
-        <span class="global-config__choice-label">设备排列</span>
-        <div class="global-config__choice-grid" role="group" aria-label="设备排列方式" data-rank-only>
-          <button class="global-config__choice" type="button" data-global-layout="parallel" aria-pressed="true"><strong>按并行组</strong><small>依据 TP、CP、PP、DP 排列</small></button>
-          <button class="global-config__choice" type="button" data-global-layout="physical" aria-pressed="false"><strong>按服务器槽位</strong><small>每台服务器显示 8 张卡</small></button>
-        </div>
-      </section>
+      <!-- 「观察方式」（观察层级 / 卡片内容 / 设备排列）原来在这里，现已移到
+           并行拓扑那一格自己的配置面板（机位与通信连线之间）——它答的是「主视图
+           这张图现在怎么摆」，是那一格自己的事，不是跨格的全局并行策略；挪过去
+           后台面这边不用再转发 rank/net/phys 这三个状态，见下面 spatialPayload
+           与 appendGlobalQuery 的注释。 -->
       <details class="global-config__advanced" open>
         <summary>高级显示选项</summary>
         <div class="global-config__advanced-body">
@@ -720,12 +712,15 @@ body.is-resizing iframe{pointer-events:none}
    「直接打开 /patterns/net-slicing/」永远是同一份文件、同一个版本。 */
 var BUILD = '';
 
-/* 一份全局拓扑状态，两个空间视图只负责用不同问法投影它。 */
+/* 一份全局拓扑状态，两个空间视图只负责用不同问法投影它。
+   观察层级/卡片内容/设备排列（原来的 globalMode.rank/cardView 与
+   globalCuts.phys）不在这份状态里了——那三件事挪进了主视图自己的
+   「观察方式」面板，由用户直接在格子里点，台面不再代管、也不再转发，
+   见 appendGlobalQuery 与 spatialPayload 里对应去掉的那几行。 */
 var GLOBAL_MODEL_LAYERS = 48;
 var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8 };
 var globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
-var globalMode = { rank:true, cardView:'cap' };
-var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true, phys:false };
+var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true };
 var globalFilter = { t:null, e:null, p:null };
 function globalCutsString(includeDp) {
   return (includeDp && globalCuts.dp ? 'd' : '') + (globalCuts.pp ? 'p' : '') +
@@ -734,9 +729,6 @@ function globalCutsString(includeDp) {
 function appendGlobalQuery(q, options) {
   ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
   q.set('cuts', globalCutsString(options && options.includeDp));
-  if (globalCuts.phys && options && options.rank) q.set('phys', '1');
-  q.set('rank', options && options.rank && globalMode.rank ? '1' : '0');
-  if (options && options.rank && globalMode.rank) q.set('net', globalMode.cardView === 'net' ? '1' : '0');
 }
 
 var SLOTS = [
@@ -787,9 +779,12 @@ var SLOTS = [
              '#stageTitle .pt-stagecopy{display:none!important}' +
              '#qbar{display:none!important}' +
              '.pt-cfgpanel .pt-cfgsearch{display:none!important}' +
-             '.pt-cfgpanel .cg:has(.pt-sw[data-act="cardmode"]){display:none!important}' +
              '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
              '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+             /* 「观察方式」（逻辑切分/设备视图·卡片内容·设备排列）也要藏：这一格的
+                立身之本就是「不进卡维度」（rank=0），给个入口等于邀请人把它变成
+                第二个并行拓扑，跟上面「Rank」曾经被藏掉是同一个理由。 */
+             '.pt-cfgpanel .cg:has([data-act="rankmode"]){display:none!important}' +
              '#groupHud{display:none!important}' +
              /* 搜索结果那块浮层也藏掉：标签由主视图落，这块面板逐字复读主视图
                 那一块，同一屏出现两遍，还压住半张画布。 */
@@ -830,7 +825,7 @@ var SLOTS = [
       /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。
          （全局切分那页是个例外：它的每一格本来就是「点了定位到卡」，那是它的题面。） */
       q.set('rank', '0');
-      appendGlobalQuery(q, { includeDp:false, rank:false });
+      appendGlobalQuery(q, { includeDp:false });
       /* 默认落侧视：这一屏把每个算子被哪把刀沿哪根轴切标在旁边
          （SP 切 seq、TP 切 hidden、EP 切 expert），正是这一格要回答的
          「一张整网被切成什么」。
@@ -878,7 +873,7 @@ var SLOTS = [
       var q = new URLSearchParams();
       q.set('theme', shellDark ? 'dark' : 'light');
       q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
-      appendGlobalQuery(q, { includeDp:true, rank:true });
+      appendGlobalQuery(q, { includeDp:true });
       /* 不打 BUILD 戳：并行拓扑由它自己那条分支发布，版本归它自己管（见 BUILD 那段）。
          这一格嵌的就是 /patterns/net-slicing/pattern.html 本体，没有第二份拷贝——
          那边一更新，这里跟着就是新的。 */
@@ -895,10 +890,13 @@ var SLOTS = [
        .pt-cfg/.pt-cfgbtn（与舞台「配置」黑圆钮同款），不是 .pt-mv，同样不受
        这条规则影响，不用放过。 */
     hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
-             '.pt-cfgpanel .cg:has(.pt-sw[data-act="cardmode"]){display:none!important}' +
              '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
              '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
              '#groupHud{display:none!important}',
+    /* 「观察方式」（逻辑切分/设备视图、卡片内容、设备排列）不在藏的名单里：
+       它答的是「这张图现在怎么摆」，是主视图自己的事，不像并行度/切分刀那样
+       在台面顶栏「并行配置」里还有一份——台面那份已经删掉了，见 globalMode
+       那段注释，这里留着让用户点。 */
     /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
     msg: function (v) { return { type: 'pto:state', view: v }; },
     tabs: [
@@ -1038,9 +1036,6 @@ function readURL() {
     var cuts = q.get('cuts') || '';
     ['dp','pp','cp','tp','ep'].forEach(function (k) { globalCuts[k] = cuts.indexOf(k.charAt(0)) >= 0; });
   }
-  globalCuts.phys = q.get('phys') === '1';
-  globalMode.rank = q.get('rank') !== '0';
-  globalMode.cardView = q.get('cardview') === 'net' ? 'net' : 'cap';
   var has = {};
   Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
   SLOTS.forEach(function (c) {
@@ -1085,9 +1080,6 @@ function writeURL() {
   if (cfgChanged) q.set('gc', ['world','tp','cp','pp','ep'].map(function (k) { return globalCfg[k]; }).join(','));
   var cutsNow = globalCutsString(true);
   if (cutsNow !== 'dpcte') q.set('cuts', cutsNow);
-  if (globalCuts.phys) q.set('phys', '1');
-  if (!globalMode.rank) q.set('rank', '0');
-  if (globalMode.cardView === 'net') q.set('cardview', 'net');
   var qs = q.toString();
   history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
 }
@@ -1218,12 +1210,6 @@ function setGlobalConfigOpen(open) {
 
 function syncGlobalConfigUI() {
   document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.value = String(globalCfg[input.dataset.globalCfg]); });
-  document.querySelectorAll('[data-global-rank-view]').forEach(function (b) {
-    b.setAttribute('aria-pressed', String((b.dataset.globalRankView === 'device') === globalMode.rank));
-  });
-  document.querySelectorAll('[data-global-card-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.globalCardView === globalMode.cardView)); });
-  document.querySelectorAll('[data-global-layout]').forEach(function (b) { b.setAttribute('aria-pressed', String((b.dataset.globalLayout === 'physical') === globalCuts.phys)); });
-  document.querySelectorAll('[data-rank-only] button').forEach(function (b) { b.disabled = !globalMode.rank; });
   document.querySelectorAll('[data-global-cut]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!globalCuts[b.dataset.globalCut])); });
   updateGlobalWorld();
 }
@@ -1270,11 +1256,16 @@ function spatialPayload(id) {
   return {
     type:'pto:state',
     config:Object.assign({}, globalCfg),
-    mode:id === 'topology' ? Object.assign({}, globalMode) : {rank:false,cardView:'net'},
+    /* topology 的观察层级/卡片内容/设备排列现在归它自己的「观察方式」面板管——
+       台面不再持有 globalMode，也就不再有值可推，mode 干脆不写（pattern 那边
+       的白名单遇到没有 mode 字段会跳过，不动 ui.cardMode/netOff，见 demo.html
+       message 监听）。netgraph 仍然强制 rank:false/cardView:'net'：它是跟随
+       视图，不该有进设备视图的路，这条不受这次改动影响。 */
+    mode:id === 'netgraph' ? {rank:false,cardView:'net'} : null,
     knives:{
       dp:id === 'topology' ? globalCuts.dp : false,
       pp:globalCuts.pp, cp:globalCuts.cp, tp:globalCuts.tp, ep:globalCuts.ep,
-      phys:id === 'topology' ? globalCuts.phys : false
+      phys:false
     },
     theme:theme()
   };
@@ -1327,15 +1318,6 @@ function clearGlobalFilter() {
 function wireGlobalControls() {
   $('#globalConfigBtn').addEventListener('click', function () { setGlobalConfigOpen($('#globalConfig').getAttribute('aria-hidden') === 'true'); });
   $('#globalConfigClose').addEventListener('click', function () { setGlobalConfigOpen(false); });
-  document.querySelectorAll('[data-global-rank-view]').forEach(function (b) {
-    b.addEventListener('click', function () { globalMode.rank = b.dataset.globalRankView === 'device'; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
-  });
-  document.querySelectorAll('[data-global-card-view]').forEach(function (b) {
-    b.addEventListener('click', function () { globalMode.cardView = b.dataset.globalCardView; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
-  });
-  document.querySelectorAll('[data-global-layout]').forEach(function (b) {
-    b.addEventListener('click', function () { globalCuts.phys = b.dataset.globalLayout === 'physical'; syncGlobalConfigUI(); broadcastGlobalState(); writeURL(); });
-  });
   $('#globalCuts').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-global-cut]'); if (!b) return;
     globalCuts[b.dataset.globalCut] = !globalCuts[b.dataset.globalCut];
@@ -1364,8 +1346,7 @@ function wireGlobalControls() {
   });
   $('#globalConfigReset').addEventListener('click', function () {
     globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
-    globalMode = {rank:true,cardView:'cap'};
-    globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true,phys:false};
+    globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true};
     globalFilter = {t:null,e:null,p:null};
     $('#globalConfigStatus').textContent = '';
     syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
