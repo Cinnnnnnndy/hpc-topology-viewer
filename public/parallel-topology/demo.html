@@ -3253,11 +3253,16 @@ function netScene(D, g, box, step){
        透明度——透明度这条路已经走到头了。 */
     var colFade = 1;
     var spotDim = spot && !spotCol ? 0.10 : 1;
-    /* 直接选中一张 rank 时，其余列重新退到背景；全局对象筛选已有 spotlight
-       自己管理命中集合，不能再按代表 rank 二次压暗同一对象里的其它成员。 */
-    var selDim = hasSel && !spot && !isF ? 0.12 : 1;
+    /* 曾经的做法：直接选中一张 rank 时，其余列压到 0.12 退到背景。跟上面
+       colFade/selDim 那段结论矛盾——那段早就说清楚了「不透明度这条路走到头
+       了」，这一条选中态的分支却没跟着改，是漏网的旧代码。而且它会连累
+       通信连线：点开一张卡看它的入口/出口连线时，连线连到的兄弟 rank
+       全部被压到 0.12 + 去色，连线看着是指向一个几乎消失的目标。全局对象
+       筛选已经有 spotlight 自己管理命中集合，选中一张卡这件事本身不该再
+       二次压暗其它列。 */
+    var selDim = 1;
     var colOp = Math.min(colFade, spotDim, selDim);
-    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+((spot && !spotCol)||(hasSel&&!spot&&!isF)?' filter="url(#ptGray)"':'') +'>');
+    if(colOp < 0.999) body.push('<g opacity="'+colOp.toFixed(3)+'"'+((spot && !spotCol)?' filter="url(#ptGray)"':'') +'>');
     /* ── 拖动时非焦点列直接跳过整个层/算子循环 ─────────────────────────
        降级档里非焦点列一个算子都画不出来（下面 !focusCell 分支开头就
        `if(comm || lowDetail) return`），可外层三重循环照旧空转 32 列 ×
@@ -4055,8 +4060,15 @@ function netScene(D, g, box, step){
         var spotCard = !spot || !!spot.ranks[gc];
         var spotShellDim = spot && !spotCard;
         /* 一旦有明确 rank / 并行对象，未命中的卡整体退后。包住的是这只卡的壳、
-           容量带和门牌，而命中面留在独立 hit 层，淡下去的卡仍然可以点击切换。 */
-        var rankFade9 = spotShellDim || (hasSel && !spot && !meC);
+           容量带和门牌，而命中面留在独立 hit 层，淡下去的卡仍然可以点击切换。
+           只认 spotShellDim（有搜索/筛选命中）——不再叠加「单纯选中一张卡
+           （hasSel）就把其余全部压到 0.10」那一条：选中态要不要压暗别的卡，
+           colFade/selDim 那段早就给过结论（=1，不透明度这条路走到头了，
+           前后关系交给间距/描边/读出卡/通信连线去说），这里的旧分支没跟上，
+           于是点开一张卡、看它的入口/出口通信连线时，连线连到的兄弟 rank
+           全部跟着淡到只剩壳线——连线在指一个几乎看不见的目标。兄弟卡不该
+           因为「有卡被点开」这件事本身就消失。 */
+        var rankFade9 = spotShellDim;
         if(rankFade9) body.push('<g opacity="0.10" filter="url(#ptGray)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
