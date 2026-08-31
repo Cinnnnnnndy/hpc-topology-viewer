@@ -255,6 +255,40 @@ a.btn{text-decoration:none}
 .global-config__status{min-height:17px;margin-bottom:7px;color:var(--danger);font-size:12px;line-height:1.4}
 .global-config__actions{display:flex;justify-content:flex-end;gap:8px}
 #globalConfigBtn.is-selected,#globalConfigBtn.is-selected:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
+
+/* ═══ 宽屏：并行配置从「点开的右侧抽屉」变成「舞台上方常驻的一条横栏」 ═══
+   1180px 以下维持原样不动——按钮点开、从右边滑入的抽屉，以上所有规则都是它的。
+   这条线以上，同一份 DOM、同一套状态，只是换个摆法：不用点开，五把并行度
+   ＋总卡数＋高级切分标记＋应用/重置，横向摆成一条，常驻在舞台正上方、居中；
+   缩回 1180px 以下时这条横栏自动收回成顶栏那颗按钮，内容原样待命。 */
+@media (min-width:1440px){
+  #globalConfigBtn{display:none}
+  .global-config{
+    position:static;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:10px;
+    margin:8px auto 0;width:fit-content;max-width:calc(100% - 32px);max-height:none;
+    padding:4px 10px;overflow:visible;
+    transform:none;opacity:1;pointer-events:auto;
+  }
+  .global-config__head{display:none}
+  .global-config__body{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:12px;padding:0;overflow:visible}
+  .global-config__section{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:0;border-top:0}
+  .global-config__section h3{display:none}
+  .global-config__section-intro{display:none}
+  .parallel-list{flex-direction:row;flex-wrap:nowrap;gap:5px}
+  .parallel-field{grid-template-columns:auto 88px;min-height:auto;padding:3px 6px;gap:6px}
+  .parallel-field__meta strong{font-size:11px;white-space:nowrap}
+  .parallel-field__meta span,.pf-name{display:none}
+  .global-config__world{margin:0;padding:4px 9px;display:flex;align-items:baseline;gap:5px;white-space:nowrap}
+  .global-config__world-head{gap:5px}
+  .global-config__formula,.global-config__note{display:none}
+  .global-config__advanced{display:flex;flex-wrap:nowrap;align-items:center;padding:0;border-top:0}
+  .global-config__advanced summary{display:none}
+  .global-config__advanced-body{display:flex;flex-wrap:nowrap;align-items:center;padding:0}
+  .global-config__cuts{gap:4px;flex-wrap:nowrap}
+  .global-config__footer{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;padding:0;border-top:0;background:transparent}
+  .global-config__status{min-height:0;margin:0;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .global-config__status:empty{display:none}
+}
 #dmenu.open #dmenuBtn,#dmenu.open #dmenuBtn:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
 #dmenu.open #dmenuBtn b{color:inherit}
 
@@ -271,10 +305,10 @@ a.btn{text-decoration:none}
 .global-filter__toggle svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .global-filter[data-collapsed="true"] .global-filter__groups,
 .global-filter[data-collapsed="true"] .global-filter__clear{display:none}
-.global-filter__groups{display:flex;align-items:center;gap:8px;max-width:min(1050px,calc(100vw - 280px));overflow-x:auto;opacity:1}
-.global-filter__group{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;padding:3px;border-radius:var(--radius-pill);background:var(--state-muted)}
-.global-filter__group b{padding:0 6px;color:var(--filter-color);font:700 12px/1 var(--font-mono);white-space:nowrap}
-.global-filter__group button{min-width:28px;height:28px;padding:0 8px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-secondary);font-size:12px;font-weight:600;white-space:nowrap}
+.global-filter__groups{display:flex;align-items:center;gap:5px;max-width:min(1050px,calc(100vw - 280px));overflow-x:auto;opacity:1}
+.global-filter__group{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto;padding:2px;border-radius:var(--radius-pill);background:var(--state-muted)}
+.global-filter__group b{padding:0 4px;color:var(--filter-color);font:700 11px/1 var(--font-mono);white-space:nowrap}
+.global-filter__group button{min-width:22px;height:24px;padding:0 5px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-secondary);font-size:11px;font-weight:600;white-space:nowrap}
 .global-filter__group button:hover{background:var(--state-hover);color:var(--foreground)}
 .global-filter__group button[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
 .global-filter__clear{flex:0 0 auto;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--foreground-muted);font-size:16px}
@@ -362,6 +396,7 @@ body.is-resizing-x iframe{pointer-events:none}
 
 /* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
 .tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
+.tabs[hidden]{display:none}
 .tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
   padding:3px 9px;color:var(--dim);font-weight:500;min-height:28px;font-size:12px}
 .tabs button:hover{background:var(--state-hover);border-color:transparent;color:var(--txt)}
@@ -481,32 +516,32 @@ body.is-resizing iframe{pointer-events:none}
         <h3>并行策略</h3>
         <p class="global-config__section-intro">设置各并行维度。数值 1 表示该维度不进行切分或复制。</p>
         <div class="parallel-list">
-          <div class="parallel-field" style="--parallel-color:#21c4db">
-            <span class="parallel-field__meta"><strong><b>TP</b>张量并行</strong><span>划分注意力头与隐藏维度</span></span>
+          <div class="parallel-field" style="--parallel-color:#21c4db" title="张量并行：划分注意力头与隐藏维度">
+            <span class="parallel-field__meta"><strong><b>TP</b><span class="pf-name">张量并行</span></strong><span>划分注意力头与隐藏维度</span></span>
             <div class="number-stepper" role="group" aria-label="TP 张量并行度">
               <button type="button" data-number-step="-1" aria-label="减少 TP 张量并行度">−</button><input type="number" min="1" step="1" value="2" data-global-cfg="tp" aria-label="TP 张量并行度"><button type="button" data-number-step="1" aria-label="增加 TP 张量并行度">+</button>
             </div>
           </div>
-          <div class="parallel-field" style="--parallel-color:#7cc510">
-            <span class="parallel-field__meta"><strong><b>CP</b>上下文并行</strong><span>划分输入序列长度</span></span>
+          <div class="parallel-field" style="--parallel-color:#7cc510" title="上下文并行：划分输入序列长度">
+            <span class="parallel-field__meta"><strong><b>CP</b><span class="pf-name">上下文并行</span></strong><span>划分输入序列长度</span></span>
             <div class="number-stepper" role="group" aria-label="CP 上下文并行度">
               <button type="button" data-number-step="-1" aria-label="减少 CP 上下文并行度">−</button><input type="number" min="1" step="1" value="1" data-global-cfg="cp" aria-label="CP 上下文并行度"><button type="button" data-number-step="1" aria-label="增加 CP 上下文并行度">+</button>
             </div>
           </div>
-          <div class="parallel-field" style="--parallel-color:#ff9f2d">
-            <span class="parallel-field__meta"><strong><b>PP</b>流水线并行</strong><span>将模型层划分为多个阶段</span></span>
+          <div class="parallel-field" style="--parallel-color:#ff9f2d" title="流水线并行：将模型层划分为多个阶段">
+            <span class="parallel-field__meta"><strong><b>PP</b><span class="pf-name">流水线并行</span></strong><span>将模型层划分为多个阶段</span></span>
             <div class="number-stepper" role="group" aria-label="PP 流水线并行度">
               <button type="button" data-number-step="-1" aria-label="减少 PP 流水线并行度">−</button><input type="number" min="1" step="1" value="4" data-global-cfg="pp" aria-label="PP 流水线并行度"><button type="button" data-number-step="1" aria-label="增加 PP 流水线并行度">+</button>
             </div>
           </div>
-          <div class="parallel-field" style="--parallel-color:#4369ef">
-            <span class="parallel-field__meta"><strong><b>DP</b>数据并行</strong><span>复制模型分片并处理不同数据批次</span></span>
+          <div class="parallel-field" style="--parallel-color:#4369ef" title="数据并行：复制模型分片并处理不同数据批次">
+            <span class="parallel-field__meta"><strong><b>DP</b><span class="pf-name">数据并行</span></strong><span>复制模型分片并处理不同数据批次</span></span>
             <div class="number-stepper" role="group" aria-label="DP 数据并行度">
               <button type="button" data-number-step="-1" aria-label="减少 DP 数据并行度">−</button><input type="number" min="1" step="1" value="16" data-global-cfg="dp" aria-label="DP 数据并行度"><button type="button" data-number-step="1" aria-label="增加 DP 数据并行度">+</button>
             </div>
           </div>
-          <div class="parallel-field" style="--parallel-color:#9236ed">
-            <span class="parallel-field__meta"><strong><b>EP</b>专家并行</strong><span>划分 MoE 专家集合</span></span>
+          <div class="parallel-field" style="--parallel-color:#9236ed" title="专家并行：划分 MoE 专家集合">
+            <span class="parallel-field__meta"><strong><b>EP</b><span class="pf-name">专家并行</span></strong><span>划分 MoE 专家集合</span></span>
             <div class="number-stepper" role="group" aria-label="EP 专家并行度">
               <button type="button" data-number-step="-1" aria-label="减少 EP 专家并行度">−</button><input type="number" min="1" step="1" value="8" data-global-cfg="ep" aria-label="EP 专家并行度"><button type="button" data-number-step="1" aria-label="增加 EP 专家并行度">+</button>
             </div>
@@ -858,9 +893,12 @@ var SLOTS = [
       return v === 'cav' ? { type: 'pto:state', view: 'solid', persp: 'grid' }
                          : { type: 'pto:state', view: 'chain' };
     },
+    /* 「全局切分」（v:'cav'）先不放出来：段控只留「整网图」一个选项时不必要地
+       长得像个可切的控件，容易让人以为还有别的看法。src/msg 里 cav 分支的代码
+       原样留着（没删），是有意的——哪天要放回来，加回这一条 tabs 项即可，
+       不用重新接线。 */
     tabs: [
-      { v: 'net', t: '整网图',   d: '一张整网怎么被切开：PP/TP·SP/EP 都落下、不落 DP、不进卡维度' },
-      { v: 'cav', t: '全局切分', d: '交集腔的总账：权重/梯度/优化器/激活四形态 × 全部的腔，点一格定位持有它的卡' }
+      { v: 'net', t: '整网图',   d: '一张整网怎么被切开：PP/TP·SP/EP 都落下、不落 DP、不进卡维度' }
     ]
   },
   {
@@ -1095,7 +1133,9 @@ function writeURL() {
 function buildTabs(slot) {
   var host = $('[data-tabs="' + slot.id + '"]');
   if (!host) return;          // 格头上没放段控 —— tabs 仍用于校验 URL 的 ?a=/?b= 与回灌
-  host.innerHTML = tabsOf(slot).map(function (t) {
+  var tabs = tabsOf(slot);
+  host.hidden = tabs.length < 2;   // 只剩一个选项时不必要地长得像可切的控件，藏掉
+  host.innerHTML = tabs.map(function (t) {
     return '<button type="button" role="tab" data-v="' + t.v + '" title="' + t.d + '" aria-selected="false">' + t.t + '</button>';
   }).join('');
   host.addEventListener('click', function (ev) {
@@ -1244,6 +1284,9 @@ function updateGlobalWorld() {
   $('#globalFormula').textContent = valid
     ? 'TP ' + c.tp + ' × CP ' + c.cp + ' × PP ' + c.pp + ' × DP ' + c.dp
     : '完成 TP、CP、PP 与 DP 设置后自动计算';
+  /* 宽屏横栏里公式/备注两行都藏了（见 1180px 断点），用 title 兜住：
+     鼠标悬停总卡数那颗胶囊还能看到完整算式，不是彻底丢掉。 */
+  $('.global-config__world').title = $('#globalFormula').textContent + '。EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。';
   document.querySelectorAll('[data-global-cut]').forEach(function (b) {
     var degree = c[b.dataset.globalCut];
     b.disabled = !isFinite(degree) || degree <= 1;
@@ -1300,7 +1343,7 @@ function renderGlobalFilter() {
     for (var i = 0; i < g.n; i++) {
       var layerStart = Math.floor(i * GLOBAL_MODEL_LAYERS / g.n);
       var layerEnd = Math.floor((i + 1) * GLOBAL_MODEL_LAYERS / g.n) - 1;
-      var label = g.k === 'p' ? 'PP' + i + '·L' + layerStart + '–' + layerEnd : String(i);
+      var label = g.k === 'p' ? i + '·L' + layerStart + '–' + layerEnd : String(i);
       cells += '<button type="button" data-global-filter="' + g.k + '" data-index="' + i + '" aria-pressed="' + String(globalFilter[g.k] === i) + '">' + label + '</button>';
     }
     return '<span class="global-filter__group" style="--filter-color:' + g.color + '"><b>' + g.name + '</b>' + cells + '</span>';
