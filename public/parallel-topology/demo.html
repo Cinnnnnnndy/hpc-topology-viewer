@@ -3014,6 +3014,33 @@ function netScene(D, g, box, step){
     if(li === L-1) return o8.concat([compTail]);
     return o8;
   }
+  /* 方块要读成「体」不是「面」：给每块补一段进深（沿 w 轴，层间距 DEP/L 的一个
+     分数），画三个可见面（顶/前/侧，明度按 boxSVG 同一套三档），不再是紧贴层板
+     叠在一起的半透明薄片——上一版逐张卡钉在同一 w 上画平面，转个角度看全是
+     并排的纸片，体积感全靠悬停读数补，这版直接在图上长出体积。 */
+  function compBox(u0,v0,w0,du,dv,dw,off,fillCol,strokeCol,strokeW,op8,attrs8){
+    var top9 = [P(u0,v0+dv,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
+    var frt9 = [P(u0,v0,w0+dw,off), P(u0+du,v0,w0+dw,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
+    var sid9 = [P(u0+du,v0,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0+du,v0,w0+dw,off)];
+    var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW;
+    var opA = op8 == null ? 1 : op8;
+    var topC = 'color-mix(in srgb,'+fillCol+' 88%, #fff 12%)';
+    var sidC = 'color-mix(in srgb,'+fillCol+' 70%, #000 30%)';
+    return '<g'+(opA<1?' opacity="'+opA+'"':'')+(attrs8||'')+'>'
+      + quad(top9, 'fill:'+topC+';'+stB)
+      + quad(frt9, 'fill:'+fillCol+';'+stB)
+      + quad(sid9, 'fill:'+sidC+';'+stB)
+      + '</g>';
+  }
+  function compBoxWQ(u0,v0,w0,du,dv,dw,off,fillCol,strokeCol,strokeW,op8){
+    var top9 = [P(u0,v0+dv,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
+    var frt9 = [P(u0,v0,w0+dw,off), P(u0+du,v0,w0+dw,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
+    var sid9 = [P(u0+du,v0,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0+du,v0,w0+dw,off)];
+    var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW+';opacity:'+(op8==null?1:op8);
+    wq(top9, 'fill:color-mix(in srgb,'+fillCol+' 88%, #fff 12%);'+stB);
+    wq(frt9, 'fill:'+fillCol+';'+stB);
+    wq(sid9, 'fill:color-mix(in srgb,'+fillCol+' 70%, #000 30%);'+stB);
+  }
   function compLayerStack(li, ww, kOff, focusCell){
     var ops8 = compOpsOf(li), n8 = ops8.length;
     var uA = 0.03, uB = 0.97;
@@ -3023,27 +3050,33 @@ function netScene(D, g, box, step){
        全压成贴地的一条缝，「这一层由哪几块组成」反而读不出来。√ 保序不保比，
        精确字节在悬停读数里。 */
     var vB8 = AR*0.985, hMin8 = AR*0.06, hMax8 = AR*0.72;
+    /* 进深按块宽的比例给（不是按层间距）：u/v/w 是同一套 3D 坐标，层间距
+       （DEP/L）比块宽小一个量级，照它给的话侧面只有 1px、读不出体积。
+       这里让块读成接近正方的「体」，层与层之间允许挨得紧甚至微重叠——
+       近的层画在后面（painter's algorithm），天然盖住远层的侧面，叠出来
+       是一列台阶状的实心块，不是紧贴层板的薄片。 */
+    var compD8 = bw8 * 1.3;
     for(var oi8 = 0; oi8 < n8; oi8++){
       var o8 = ops8[oi8];
       var x0 = uA + oi8*(bw8+gap8), x1 = x0 + bw8;
       var col8 = o8.cut==='tp' ? VC.tp : o8.cut==='ep' ? VC.ep : 'var(--pt-fg3)';
       var h8 = o8.b > 0 ? hMin8 + hMax8*Math.sqrt(o8.b/compMaxB) : hMin8;
-      var pts8 = [P(x0,vB8-h8,ww,kOff), P(x1,vB8-h8,ww,kOff), P(x1,vB8,ww,kOff), P(x0,vB8,ww,kOff)];
+      var frontPts8 = [P(x0,vB8-h8,ww+compD8,kOff), P(x1,vB8-h8,ww+compD8,kOff), P(x1,vB8,ww+compD8,kOff), P(x0,vB8,ww+compD8,kOff)];
       if(o8.b <= 0){
-        /* attn.core：无参（激活算子），照解剖图画成虚线空框——「这一格有算子、
-           没有权重体积」本身就是信息，抹掉它层的形状就缺一块。 */
-        body.push(quad(pts8, 'fill:none;stroke:'+col8+';stroke-width:'+(focusCell?.7:.28)
+        /* attn.core：无参（激活算子），照解剖图画成虚线空框（贴着层板的薄片，
+           不给体积）——「这一格有算子、没有权重体积」本身就是信息。 */
+        body.push(quad(frontPts8, 'fill:none;stroke:'+col8+';stroke-width:'+(focusCell?.7:.28)
           +';stroke-dasharray:2 2;opacity:'+(focusCell?1:.62)));
       }else if(focusCell){
-        body.push(quad(pts8, 'fill:'+mix(col8,66)+';stroke:'+col8+';stroke-width:.8',
-          'data-op="'+esc(o8.id)+'"'));
+        body.push(compBox(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, mix(col8,88), col8, .8, 1,
+          ' data-op="'+esc(o8.id)+'"'));
       }else{
-        /* 非焦点卡走弱化档合并（wq）：量级 = 卡数 × 层数 × ~7 块，与模块视图同档。 */
-        wq(pts8, 'fill:'+mix(col8,30)+';stroke:'+col8+';stroke-width:.26;opacity:.62');
+        /* 非焦点卡走弱化档合并（wq）：量级 = 卡数 × 层数 × ~7 块 × 3 面，与模块视图同档。 */
+        compBoxWQ(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, mix(col8,44), col8, .22, .62);
       }
       if(focusCell){
         var szT8 = o8.b > 0 ? (o8.b >= Math.pow(2,30) ? fmtGB(o8.b)+' GB' : Math.round(o8.b/Math.pow(2,20))+' MB') : '无参';
-        hitOps.push(quad(pts8, 'fill:transparent;cursor:pointer', 'data-li="'+li+'"',
+        hitOps.push(quad(frontPts8, 'fill:transparent;cursor:pointer', 'data-li="'+li+'"',
           esc(o8.id)+' · L'+li+' · '+esc(o8.how)+' · '+szT8));
       }
     }
