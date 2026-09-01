@@ -32,7 +32,8 @@
     "theme": "light|dark —— 主题；也接受宿主 postMessage {type:'theme', value}",
     "world|tp|cp|pp|ep|etp|layers|hidden|heads|kv|ffn|vocab|seq|experts|topk|mbs|ga|hbm": "整数 —— 逐项覆盖配置（DP 恒为 world/(TP·CP·PP) 推导，不可传入）",
     "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略",
-    "cut": "tp|pp|cp|dp|ep —— 单维切分视图当前看哪一维"
+    "cut": "tp|pp|cp|dp|ep —— 单维切分视图当前看哪一维",
+    "fill": "comp —— 整网切分视图「卡片内容」的第三态「层构成」：卡里逐层画一排算子方块（体积∝字节 · 切法看颜色 · 随层内容变化，解剖图的算子带按层折回卡壳），需与 net=1 同用（模型分片/显存占用仍走 net=1/net=0）"
   },
   "notes": [
     "不认识的参数一律忽略，非法值退回默认，不报错。",
