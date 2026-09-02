@@ -450,7 +450,7 @@
   box-shadow:0 10px 34px rgba(0,0,0,.16); padding:10px 13px 8px;
 }
 .pt-rankmem[hidden]{display:none}
-.pt-rankmem .rm-h{display:flex; align-items:center; gap:6px}
+.pt-rankmem .rm-h{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .pt-rankmem .rm-h b{font-size:14px; font-weight:800; color:var(--pt-fg); white-space:nowrap}
 .pt-rankmem .rm-h span{font-family:var(--pt-mono); font-size:12px; color:var(--pt-fg3); flex:1; line-height:1.35}
 .pt-rankmem .rm-x{
@@ -1205,6 +1205,9 @@ function urlLoad(){
   if(LEGACY[vw]){ var lg = LEGACY[vw]; if(Array.isArray(lg)){ ui.view = lg[0]; ui.cutDim = lg[1]; } else { ui.view = lg; if(vw==='memex') ui.persp = 'grid'; } }
   else if(VIEWS.some(function(x){return x.id===vw;})) ui.view = vw;
   if(COMM_DIMS.indexOf(q.get('cut'))>=0) ui.cutDim = q.get('cut');
+  /* zero 单独认，不混进上面那串并行度：它不属于预置（换预置不该把它清掉），
+     也不该让 activePreset 失效——它和 TP/PP/DP 是两件事。 */
+  var z0 = parseInt(q.get('zero'),10); if(isFinite(z0) && z0>=0 && z0<=3) cfg.zero = z0;
   var sl = parseInt(q.get('sel'),10); if(isFinite(sl) && sl>=0) sel = sl;
   /* embed=1：整页只剩画布——顶栏、页脚全收起来，给「一条链接就是一张图」的
      嵌入形态用（host=cockpit 是早先驾驶舱用的写法，一并认）。 */
@@ -1295,6 +1298,7 @@ function urlWrite(){
   if(!activePreset){
     ['world','tp','cp','pp','ep','etp','layers','seq','experts'].forEach(function(k){ q.set(k, cfg[k]); });
   }
+  if(zeroLv()) q.set('zero', zeroLv());
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
   if(ui.view==='chain' && !ui.spread) q.set('stack','1');
@@ -1394,6 +1398,10 @@ function derive(c){
   if(D.hidden % D.heads !== 0) D.warns.push('hidden % heads ≠ 0：headDim 非整数，按取整显示。');
   if(D.kv % D.tp !== 0) D.warns.push('kvHeads='+D.kv+' 不被 TP='+D.tp+' 整除：KV 头复制（GQA 常见）。');
   if(D.ga < D.pp) D.warns.push('GA='+D.ga+' < PP='+D.pp+'：流水线灌不满，气泡率恶化（FR-11）。');
+  /* ZeRO 档位不是并行维度，不参与任何整除约束——它只改「同一批卡上，模型态各存几份」。
+     所以它放在错误检查之后，不进 D.errors。 */
+  D.zero = zeroLv();
+  if(D.zero > 0 && D.dp <= 1) D.warns.push('ZeRO-'+D.zero+' 在 DP=1 时不省任何东西：它切的是 DP 域内的冗余副本，只有一份副本就没得切。');
   D.ok = D.errors.length === 0;
   D.layersPerStage = D.ok ? D.layers/D.pp : Math.ceil(D.layers/D.pp);
   D.headDim = Math.floor(D.hidden/D.heads) || 1;
@@ -1626,6 +1634,9 @@ function inflightAt(D, ppRank, t){
 /* 以下是显存语义的基准色相；最终填色由 syncTopologyPalette() 按主题调整 S/L。 */
 var MEM_BASE = {
   w:  '#5C86C7',
+  /* ZeRO-3 才有的那一档：它装的还是权重，只是**临时**的——所以取权重那支蓝的浅版，
+     一眼看得出「同一样东西」，又不会被当成常驻的那条。 */
+  agw:'#9DBBE8',
   g:  '#6F9BA6',
   opt:'#9F93D1',
   act:'#8FBB7A',
@@ -1654,6 +1665,39 @@ function wCutBlocks(D, ppRank, L){
   return o;
 }
 function cutColor(c){ return (c && c !== 'none' && VC[c]) ? VC[c] : 'color-mix(in srgb, var(--pt-fg) 22%, var(--pt-bg))'; }
+
+/* ══ ZeRO / 分布式优化器档位 ═══════════════════════════════════════════════
+   本页原来把「非 ZeRO」写死进了口径（见下面 MEM_OBJ 里优化器态那条 silent，
+   以及验收 A3「调 DP 容器纹丝不动」）。那句话本身没错，但它把一件很重要的事
+   挡在了门外：**DP 不减显存，只在不开 ZeRO 时成立。**
+   一旦沿 DP 域把三档模型态切开，DP 就从「只买吞吐」变成「也买余量」——A3 那条
+   断言于是有了两面，两面都值得当场看见，所以它变成一个档位而不是一句注释。
+
+   四档的语义按 DeepSpeed ZeRO 与 PyTorch FSDP 的官方定义（/parallel-reference/ §14 二）：
+   注：本文件里更早的注释写的「§15」等是 concept-map.html 那一版的编号，与
+   /parallel-reference/ 差一位；本轮新加的引用一律写全路径，不再只写 §号。
+     0 ── 关：W/G/O 每张 DP 卡各一份完整的（DDP / 经典 Megatron 语义）
+     1 ── 只切优化器态。这就是 Megatron 的分布式优化器：官方显存表
+          「bf16 参数 + fp32 梯度 18 B → 6 + 12/d」拆开正好是 W2+G4 留本地、O12 除以 d
+     2 ── 再切梯度（≈ FSDP SHARD_GRAD_OP）
+     3 ── 连参数也切（= FSDP FULL_SHARD）。它与前两档不是程度差别而是**形态差别**：
+          权重不再常驻，计算那一刻要 AllGather 拼回来，用毕丢弃——于是多出一格
+          「AllGather 窗口」，那格才是这一档真正的代价，也是最常被漏算的一格。 */
+function zeroLv(){
+  var z = parseInt(cfg.zero, 10);
+  return (isFinite(z) && z >= 0 && z <= 3) ? z : 0;
+}
+var ZERO_NAME = ['关（各卡一份完整）', 'ZeRO-1 · 切优化器态', 'ZeRO-2 · 再切梯度', 'ZeRO-3 / FSDP · 连参数也切'];
+var ZERO_SHORT = ['ZeRO 关', 'ZeRO-1', 'ZeRO-2', 'ZeRO-3'];
+/* 这一档被沿 DP 域切成几份：1 = 没切（整份压在本卡上）。三处口径共用这一个函数，
+   免得 memParts、读出卡、说明表各写一遍除法，往后改一处漏两处。 */
+function zeroDiv(D, k){
+  var z = D.zero === undefined ? zeroLv() : D.zero;
+  if(k === 'opt' || k === 'otmp') return z >= 1 ? D.dp : 1;
+  if(k === 'g')                   return z >= 2 ? D.dp : 1;
+  if(k === 'w')                   return z >= 3 ? D.dp : 1;
+  return 1;
+}
 
 /* ══ 四类对象模型：谁被哪把刀切 → 因此发生哪一次通信 ═══════════════════════
    这张图原先只把「切分 → 通信」这条链给**权重**接通了：点权重带里某一块留 TP/EP，
@@ -1712,7 +1756,11 @@ var MEM_OBJ = {
         comm:[{d:'dp', t:'梯度 AllReduce · DP 组（反向末尾一次）'}]},
   opt: {sib:['pp','tp','ep'], follow:'跟随权重的切法',
         comm:[],
-        silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。ZeRO 按 DP 再分片才有 param AllGather——这张图不画 ZeRO。'},
+        silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。'},
+  /* ZeRO-3 独有：权重的临时完整副本。它的兄弟轴与权重一样，通信却是 DP 方向的
+     ——这正是「同一样东西，分片归属换了一根轴」最直白的一例。 */
+  agw: {sib:['pp','tp','ep','dp'],
+        comm:[{d:'dp', t:'参数 AllGather · DP 组（进算子前拼回全长，用毕丢弃）'}]},
   otmp:{sib:['pp','tp','ep'], follow:'跟随梯度——它就是那一次归约的落脚处',
         comm:[{d:'dp', t:'梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'}]},
   act: {sib:['pp','cp'],
@@ -1731,6 +1779,20 @@ var MEM_WCUT = {'attn.q':'tp', 'attn.kv':'tp', 'attn.core':'none', 'attn.out':'t
 /* key → 这一档（或权重带里这一块）的对象条目。'w:xxx' 是权重档的子块：它继承权重的
    语义，但**只保留切它那一把刀**——experts 只挨 EP，attn.* 只挨 TP，router/norm 一刀
    没挨。整档 w 是「这条带里各块的刀合起来」，单块是「我这一块的刀」，两级各答各的。 */
+/* 开了 ZeRO 之后，三档模型态的「谁和本卡凑齐一份」「本卡为它跟谁说话」全变了：
+   分片沿的是 DP 域，于是 DP 既进 sib（沿这根轴才凑得齐一整份），也进 comm
+   （步末要把各自那一片规约/收齐）。静态表答不了这件事——它得看当前档位。 */
+function zeroPatch(o, key){
+  var z = zeroLv();
+  if(z === 0 || (key !== 'w' && key !== 'g' && key !== 'opt')) return o;
+  var sharded = (key === 'opt') || (key === 'g' && z >= 2) || (key === 'w' && z >= 3);
+  if(!sharded) return o;
+  var r = {sib:(o.sib||[]).concat(['dp']), comm:(o.comm||[]).slice(), follow:o.follow};
+  if(key === 'opt') r.comm.push({d:'dp', t:'（分片持有）步末只更新本卡那一段，不再整份复印'});
+  if(key === 'g')   r.comm = [{d:'dp', t:'梯度 ReduceScatter · DP 组（不再 AllReduce：只收本卡那一段）'}];
+  if(key === 'w')   r.comm = r.comm.concat([{d:'dp', t:'参数 AllGather · DP 组（前向一次、反向一次，用毕丢弃）'}]);
+  return r;
+}
 function memObj(key){
   if(!key) return {sib:[], comm:[]};
   if(key.indexOf('w:') === 0){
@@ -1743,7 +1805,7 @@ function memObj(key){
     return {sib:sb9, comm:cm9, cut:ct9,
             silent: cm9.length ? '' : '这一块一刀没挨（复制或无参），本来就没有「拼回全长」这件事要跟人商量。'};
   }
-  return MEM_OBJ[key] || {sib:[], comm:[]};
+  return zeroPatch(MEM_OBJ[key] || {sib:[], comm:[]}, key);
 }
 /* 选中的块被哪几根轴切——渲染（点亮兄弟卡）与读出卡（写哪几组）共用同一份。
    现在这份从 MEM_OBJ 里取，不再自己抄一遍。 */
@@ -1787,17 +1849,83 @@ function memParts(D, ppRank, g){
      同一时刻驻留的只是其中一截。按 0.8 折算（≈3.2 B/参数）：这样峰值只把
      本来就吃紧的那几张顶过 88%，而不是整片一起翻红。告警要稀有才有信息量。 */
   var optTmp = 3.2 * P * optK;
+  /* ZeRO / 分布式优化器：三档模型态沿 DP 域各切成 dp 份，本卡只留自己那一份。
+     临时区跟着优化器态走——分布式优化器只对本卡那一段做 fp32 归约与更新。 */
+  var zW = zeroDiv(D,'w'), zG = zeroDiv(D,'g'), zO = zeroDiv(D,'opt');
+  /* ZeRO-3 独有的一格：常驻的是 1/dp，但计算那一刻必须拼回**一个 wrap 单元**的
+     完整参数。本页把 wrap 单元取成一层（FSDP 最常见的包法就是一个 transformer
+     block），再算上为了和计算重叠而预取的下一层，合计两层的完整参数。
+     这一格不是省下来的，是这一档真正的代价——单看「16/dp」会把它漏掉。 */
+  var agWin = (D.zero >= 3 && D.layersPerStage > 0) ? 2 * (2*P/D.layersPerStage) : 0;
   return [
-    {k:'w', label:'权重 (bf16)', bytes:2*P, color:MEMC.w, sub:wCutBlocks(D, ppRank, L)},
-    {k:'g', label:'梯度 (bf16)', bytes:2*P, color:MEMC.g},
-    {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, color:MEMC.opt},
-    {k:'otmp', label:'优化器步·临时区 (fp32 梯度归约)', bytes:optTmp, color:MEMC.otmp},
+    {k:'w', label:'权重 (bf16)'+(zW>1?' · 1/'+D.dp+' 分片':''), bytes:2*P/zW, color:MEMC.w, sub:wCutBlocks(D, ppRank, L), zdiv:zW},
+    {k:'agw', label:'AllGather 窗口 · 一层+预取', bytes:agWin, color:MEMC.agw},
+    {k:'g', label:'梯度 (bf16)'+(zG>1?' · 1/'+D.dp+' 分片':''), bytes:2*P/zG, color:MEMC.g, zdiv:zG},
+    {k:'opt', label:'优化器态 (fp32×3)'+(zO>1?' · 1/'+D.dp+' 分片':''), bytes:12*P/zO, color:MEMC.opt, zdiv:zO},
+    {k:'otmp', label:'优化器步·临时区 (fp32 梯度归约)', bytes:optTmp/zO, color:MEMC.otmp},
     /* mub 带出去给卡上那几道虚缝用：激活带按「在途几份微批」竖着分格，
        与 card-container 那只单卡同一画法——它是唯一按份数分的一档。 */
     {k:'act', label:'激活·在途'+(inflight >= 1 ? (Math.abs(inflight-Math.round(inflight))<0.05 ? Math.round(inflight) : inflight.toFixed(1)) : inflight.toFixed(1))+'μb', bytes:act, color:MEMC.act, mub:inflight},
     {k:'rsv', label:'碎片/预留', bytes:(L ? L.rsv : 1.5*Math.pow(2,30)), color:MEMC.rsv}
   ];
 }
+/* ── 生命周期：这一档此刻处在哪一相 ────────────────────────────────────────
+   显存账回答「有多少」，这个函数回答「为什么现在有、什么时候走」。两句合起来
+   才解释得了一张卡的读数——同一档、同样的 GB 数，在前向和在步末是两件事。
+
+   t 是**这张卡自己的**步内进度（ACT_T 加上它的相位差，见 rankLoad.phase）：
+   1F1B 稳态里各 stage 本来就不同步，「此刻」对整网无定义，只对「某张卡」有定义。
+   没走带（t === null）时不编相位，直说这是峰值口径——瞎给一个相位比不给更糟。
+
+   相序按 /parallel-reference/ §14 四那张状态机表：只有梯度与激活会消失，另两档在非 ZeRO-3 下
+   全程常驻；ZeRO-3 把权重也变成会消失的东西，这正是它与前两档的形态差别。 */
+function stateLife(D, k, t){
+  var z = D.zero || 0, sharded = zeroDiv(D, k) > 1;
+  if(t === null || t === undefined){
+    if(k === 'act')  return '峰值口径（未走带）';
+    if(k === 'otmp') return '只在步末露面';
+    if(k === 'g')    return sharded ? '步末规约后的一片' : '步末规约后的一份';
+    if(k === 'agw')  return '用毕丢弃';
+    if(k === 'rsv')  return '与时间无关';
+    return '常驻整步';
+  }
+  if(k === 'w'){
+    if(z < 3) return t > 0.86 ? '就地更新中' : '常驻整步';
+    if(t < 0.06) return '分片 · 还没拼';
+    if(t < 0.40) return 'AllGather 完 · 前向在用';
+    if(t < 0.86) return '再 AllGather · 反向在用';
+    return '用毕丢弃 → 更新后的分片';
+  }
+  if(k === 'agw') return t < 0.86 ? '窗口开着（拼一层 + 预取）' : '窗口已关';
+  if(k === 'g'){
+    if(t < 0.40) return '尚未产生';
+    if(t < 0.80) return '反向逐层生成 · 累积';
+    if(t < 0.86) return sharded ? 'ReduceScatter 中' : 'AllReduce 中';
+    if(t < 0.97) return sharded ? '本卡那一片（已规约）' : '完整（已规约）';
+    return '清零';
+  }
+  if(k === 'opt')  return t > 0.86 ? '被读写更新' : '常驻整步 · 不动';
+  if(k === 'otmp') return t > 0.88 ? '步末冒出来' : '此刻不存在';
+  if(k === 'act'){
+    if(t < 0.40) return '前向逐层堆积';
+    if(t < 0.86) return '反向逐层释放';
+    /* 不写「已清空」：memParts 的在途份数在步末仍有 1 份（inflightAt 只要 0<t<1
+       就至少留一份——手上总有正在算的那一批）。写清空而右边还挂着 1.8 GB，
+       读者第一反应是这张卡的数错了。 */
+    return '收尾排空 · 还压着最后一份';
+  }
+  return '与时间无关';
+}
+/* 归属：这一档此刻归谁。模型态问这个，执行态问上面那个——两类状态要两套读法
+   （/parallel-reference/ §14 一）。写成一句短语，跟在字节数后面。 */
+function stateOwn(D, k, g){
+  var co = coordsOf(g, D);
+  if(k === 'act' || k === 'rsv' || k === 'otmp') return '';
+  if(k === 'agw') return '临时拼回全长';
+  if(zeroDiv(D, k) > 1) return 'DP 第 '+co.d+'/'+D.dp+' 段';
+  return 'DP 复印';
+}
+
 /* ── 容量判定：这张卡此刻装不装得下 ─────────────────────────────────────
    壳是 HBM 容量（固定），装进去的是这一刻的五档。时间轴走到峰值时，路由不均那几张
    卡是真的会顶出去的——这一屏的价值恰恰在这儿：不是「平均每卡 51GB，够用」，
@@ -6726,6 +6854,8 @@ function renderSolidCav(D){
       w:  {f:MEMC.w,   why:'①腔 · 参数 × 2 B'},
       g:  {f:MEMC.g,   why:'①腔 · 同参数 × 2 B'},
       opt:{f:MEMC.opt, why:'①腔 · 同参数 × 12 B'},
+      agw:{f:MEMC.agw, o:.72, dash:'5 3', stroke:MEMC.w, why:'①腔 · 临时拼回的全长（ZeRO-3）'},
+      otmp:{f:MEMC.otmp, o:.8, why:'∇W 的 fp32 中转 · 只在步末'},
       act:{f:MEMC.act, o:.62, dash:'4 3', stroke:'var(--pt-dp)', why:'②腔 · 每步换一批'},
       rsv:{f:MEMC.rsv, why:'allocator/workspace'}
     };
@@ -6871,8 +7001,10 @@ function renderSolidGrid(D){
 
   /* ── 收集每一段的内存数据 ── */
   var PP = D.pp, cap = D.hbm * Math.pow(2,30);
-  var LAYER_ORDER = ['w','g','opt','otmp','act','rsv'];
-  var LAYER_LABEL = {w:'权重 W', g:'梯度 ∇W', opt:'优化器态 O', otmp:'临时区', act:'激活 A', rsv:'碎片/预留'};
+  /* agw 必须在这张表里：漏掉它不会报错，只会让 ZeRO-3 下的合计悄悄少一格
+     （memParts 返回七档，这里只累加列出来的那几档）。 */
+  var LAYER_ORDER = ['w','agw','g','opt','otmp','act','rsv'];
+  var LAYER_LABEL = {w:'权重 W', agw:'AllGather 窗口', g:'梯度 ∇W', opt:'优化器态 O', otmp:'临时区', act:'激活 A', rsv:'碎片/预留'};
   var stageData = [], globalByK = {};
   LAYER_ORDER.forEach(function(k){ globalByK[k] = 0; });
   for(var p9 = 0; p9 < PP; p9++){
@@ -7192,12 +7324,24 @@ function renderSolidGrid(D){
 
   /* ═══ 说明弹层 ═══ */
   var CW = MEMC.w;
+  /* DP 语义与「一步之内的生死」这两列随档位变——写死成「复印」「常驻整步」只在
+     档位=关时是对的。/parallel-reference/ §14 三说的形态差别就落在这两列上。 */
+  var zW9 = zeroDiv(D,'w'), zG9 = zeroDiv(D,'g'), zO9 = zeroDiv(D,'opt');
   var FORMS = [
-    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参数',       dp:'复印 ×'+D.dp+' · 逐字节相同',       life:'常驻整步'},
-    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参数',       dp:'各算各的 → AllReduce 后相同',       life:'反向逐层长出 · 更新后清零'},
-    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参数',      dp:'复印（本口径无 ZeRO 分片）',         life:'常驻 · 仅更新一步读写'},
+    {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参数'+(zW9>1?' ÷'+D.dp:''),
+     dp: zW9>1 ? '沿 DP 切 ×'+D.dp+' · 各卡一片' : '复印 ×'+D.dp+' · 逐字节相同',
+     life: zW9>1 ? '前向 AllGather 拼回 · 用毕丢弃 · 反向再拼一次' : '常驻整步'},
+    {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参数'+(zG9>1?' ÷'+D.dp:''),
+     dp: zG9>1 ? '各算各的 → ReduceScatter · 只留本卡那一段' : '各算各的 → AllReduce 后相同',
+     life:'反向逐层长出 · 更新后清零'},
+    {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参数'+(zO9>1?' ÷'+D.dp:''),
+     dp: zO9>1 ? '沿 DP 切 ×'+D.dp+' · 只更新本卡那一段' : '复印（档位=关，整份压在本卡）',
+     life:'常驻 · 仅更新一步读写'},
     {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途 μb 涨落', dp:'b 被真切（不是复印）',              life:'前向攒 · 反向放（1F1B）'}
   ];
+  /* ZeRO-3 才有的那一格：不列出来，「16/dp」会被读成「权重显存变成 1/dp」 */
+  if(D.zero >= 3) FORMS.splice(1, 0, {sw:MEMC.agw, name:'AllGather 窗口', space:'一个 wrap 单元（本页取一层）+ 预取',
+     bytes:'2 B/参数 × 2 层', dp:'临时拼回全长，不属于任何一张卡', life:'只在这一层的计算窗口里存在'});
   var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
     + '<b style="color:var(--pt-fg)">内存分层总账</b>：六个档位分层展开，厚度 ∝ 字节数，权重层按算子×切法分色。'
     + '点击层侧面 → 高亮左侧面板对应档位；W 层顶面 TP×EP 格点 → 定位持有它的那张卡'
@@ -10375,9 +10519,31 @@ function drawerHTML(D){
   if(D.dpOk){
     var s0 = memParts(D,0).reduce(function(a,x){return a+x.bytes;},0);
     diag += '<span class="dstat'+(s0>D.hbm*Math.pow(2,30)?' warn':'')+'">stage0 显存 '+fmtGB(s0)+' GB（偏高提示）</span>';
+    /* 「加 DP 买的是吞吐还是余量」这条断言原来只活在验收面板 A3 里，而那块面板
+       现在没有入口（ui.drawer==='acc' 无人触发）。它偏偏是这个档位最该被当场
+       看见的一件事——同一套配置，把 DP 从 2 拨到 8，容器动不动。所以搬到这里，
+       两个探针实时算，档位一拨读数就翻面。 */
+    var pr2 = derive(Object.assign({},cfg,{world:D.tp*D.cp*D.pp*2}));
+    var pr8 = derive(Object.assign({},cfg,{world:D.tp*D.cp*D.pp*8}));
+    var t2 = memParts(pr2,0).reduce(function(a,x){return a+x.bytes;},0);
+    var t8 = memParts(pr8,0).reduce(function(a,x){return a+x.bytes;},0);
+    diag += '<span class="dstat">加 DP 买什么：DP=2 → '+fmtGB(t2)+' GB · DP=8 → '+fmtGB(t8)+' GB —— '
+      + (D.zero===0 ? '<b>逐字节相同，只买吞吐不买余量</b>（复制 ≠ 共有）'
+                    : '<b>也买余量了</b>：'+ZERO_SHORT[D.zero]+' 把'+(D.zero>=3?'权重/梯度/优化器态':(D.zero>=2?'梯度与优化器态':'优化器态'))+'沿 DP 切开')
+      + '</span>';
   }
   return '<h4>配置 · FR-1（§11 五步决策顺序 · DP 不可手填）<button class="pt-x" data-act="drawer" data-d="" style="float:right">✕</button></h4>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+presets+'</div>'
+    /* 档位单独一行、不进上面那三列：它不是并行度，不参与任何整除约束，
+       混在 TP/PP/CP 中间会被当成第六根轴。 */
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:8px 0;border-top:1px solid var(--pt-bd);border-bottom:1px solid var(--pt-bd)">'
+    + '<span style="font-size:12px;font-weight:700;color:var(--pt-fg)">模型态沿 DP 存几份</span>'
+    + [0,1,2,3].map(function(z){
+        return '<button class="pb'+(D.zero===z?' is-on':'')+'" data-act="zero" data-z="'+z+'">'+esc(ZERO_NAME[z])+'</button>';
+      }).join('')
+    + '<span class="hint" style="flex-basis:100%;margin:2px 0 0">不是第六根轴，不参与整除约束——它只改「同一批卡上，权重/梯度/优化器态各存几份」。'
+    + '拨一下再看下面那枚「加 DP 买什么」：DP 从「只买吞吐」变成「也买余量」，那正是本页原来那条结论的限定条件。</span>'
+    + '</div>'
     + '<div class="cfg-cols">'
     + '<div>'+numIn('world','world',{hint:'=TP·CP·PP·DP'})+numIn('tp','张量并行',{k:'tp',step:1})+numIn('pp','流水线',{k:'pp',step:2})+numIn('cp','上下文',{k:'cp',step:3})+numIn('ep','专家并行',{k:'ep',step:4,dis:!moe})+numIn('etp','专家张量 ETP',{dis:!moe,hint:'切专家内部的 ffn 维（EP 切专家之间，ETP 切专家之内）'})
     + '<div class="frow derived"><label><span class="stepn">5</span>数据并行 <span class="dk" style="--c:'+VC.dp+'">DP</span></label><span class="val">'+(D.dpOk?D.dp:'—')+'</span><span class="hint">= world/(TP·CP·PP)，自动</span></div></div>'
@@ -10392,8 +10558,26 @@ function accHTML(D){
   rows.push(['A2','无 rank 几何体', 'pass', '几何体只表示卡/内容/动作；rank 一律 <text> 门牌（§15：地址无体积无容量）']);
   var probe2 = derive(Object.assign({},cfg,{world:D.tp*D.cp*D.pp*2}));
   var probe8 = derive(Object.assign({},cfg,{world:D.tp*D.cp*D.pp*8}));
-  var a3 = D.ok ? JSON.stringify(memParts(probe2,0))===JSON.stringify(memParts(probe8,0)) : null;
-  rows.push(['A3','调 DP 容器纹丝不动', a3===null?'manual':(a3?'pass':'fail'), a3===null?'先修正配置':'实时断言：DP=2 与 DP=8 显存构成逐字节相等（'+(a3?'相等':'不等!')+'）；单维·DP 视图讲了为什么——复制≠共有']);
+  /* 这条断言原来只有一面：「调 DP 容器纹丝不动」。加上 ZeRO 档位之后它有了两面，
+     而且两面都必须当场成立，否则这个档位就只是个装饰：
+       档位 = 0 → DP=2 与 DP=8 的显存构成必须**逐字节相等**（复制 ≠ 共有）
+       档位 > 0 → 必须**不等**，且被切的那几档要正好差 4 倍（8/2）
+     只留一面的话，读者拨了档位看见 A3 变红，会以为是自己把配置调坏了。 */
+  var mp2 = D.ok ? memParts(probe2,0) : null, mp8 = D.ok ? memParts(probe8,0) : null;
+  var same3 = mp2 && JSON.stringify(mp2) === JSON.stringify(mp8);
+  var z3 = D.zero, a3 = D.ok ? (z3 === 0 ? same3 : !same3) : null;
+  var a3d;
+  if(a3 === null) a3d = '先修正配置';
+  else if(z3 === 0) a3d = '实时断言（档位=关）：DP=2 与 DP=8 显存构成逐字节相等（'+(same3?'相等':'不等!')+'）；单维·DP 视图讲了为什么——复制≠共有';
+  else{
+    var pick3 = function(mp, k){ var r=0; mp.forEach(function(x){ if(x.k===k) r=x.bytes; }); return r; };
+    var kk3 = z3>=3 ? 'w' : (z3>=2 ? 'g' : 'opt');
+    var r3 = pick3(mp8,kk3) > 0 ? pick3(mp2,kk3)/pick3(mp8,kk3) : 0;
+    a3d = '实时断言（档位=ZeRO-'+z3+'）：这时 DP **要**改变容器——'+kk3.toUpperCase()+' 在 DP=2 时是 DP=8 时的 '
+      + r3.toFixed(2)+' 倍（应为 4.00）。DP 从「只买吞吐」变成「也买余量」，这正是那条结论的限定条件';
+  }
+  rows.push(['A3', z3===0 ? '调 DP 容器纹丝不动' : '拨了 ZeRO：调 DP 容器**应该**动',
+             a3===null?'manual':(a3?'pass':'fail'), a3d]);
   var a4 = AXIS_DOMAIN.join(',')==='tp,pp,dp,ep';
   rows.push(['A4','axis 取值域不含 CP', a4?'pass':'fail', '实时断言：{'+AXIS_DOMAIN.join(',')+'}；CP 走分面/V5/抽离图三条独立入口']);
   rows.push(['A5','归因指向耗时短的 rank', 'manual', '时间·流 → 注入偏斜 → 放大 AllReduce：段最短（最后进入）者被标为嫌疑人']);
@@ -10623,7 +10807,7 @@ function memChainFig(key){
      优化器步临时区落在 ∇W 那一格——它就是那一次归约的缓冲，不是链上第五种东西。 */
   var K9 = key.indexOf('w:') === 0 ? 'w' : key;
   if(K9 === 'rsv') return '';      /* 碎片不在这条链上：硬画一格反而是编造关系 */
-  var HERE = {w:'w', g:'g', opt:'opt', otmp:'g', act:'act'}[K9];
+  var HERE = {w:'w', agw:'w', g:'g', opt:'opt', otmp:'g', act:'act'}[K9];
   /* 描边用**真正点开的那一档**的签名色，填色仍是那一格自己的：优化器步临时区挂在
      ∇W 那一格上，于是画出来是「绿格子外面一圈琥珀」——这一圈正是「我这一档就住在
      这个位置」的意思，比再多写一行字直接。另外四档两个色本来就相同，看不出差别。 */
@@ -10742,9 +10926,14 @@ function memBlockDetail(D, g, key){
     if(!sg) return '';
     title = sg.label; tint = sg.k === 'act' ? VC.dp : (sg.k === 'rsv' ? 'var(--pt-fg3)' : MEMC[sg.k] || 'var(--pt-fg)');
     var per = key === 'w' ? 2 : (key === 'g' ? 2 : (key === 'opt' ? 12 : 3.2));
+    /* 沿 DP 切过之后，「P 个参数 × n B」说的是**整份**的量，不是这张卡手里的量——
+       后面得跟上那个除号，否则读者拿这个乘积去对左边的 GB 数会对不上。 */
+    var zd9 = zeroDiv(D, key);
     kv('这一档', fmtGB(sg.bytes)+' GB'
       + ((key==='w'||key==='g'||key==='opt'||key==='otmp')
-          ? ' · '+fmt(Math.round(Pn/1e6))+' M 参数 × '+per+' B' : ''));
+          ? ' · '+fmt(Math.round(Pn/1e6))+' M 参数 × '+per+' B'+(zd9>1 ? ' ÷ DP '+D.dp+'（沿 DP 分片）' : '') : ''));
+    if(key === 'agw') kv('它是什么', '常驻的是 1/'+D.dp+'，但算这一层的那一刻参数必须完整——'
+      + '这一格就是拼回来的那一份（本页按一层 + 预取下一层计）。它不是省下来的，是 ZeRO-3 的代价');
     /* ①腔三档共用同一张图（同一份参数、同一分法，只是每份几个字节不同）——
        画同一张正是「×1 / ×6」那句话本身，用不着再写一遍。 */
     if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp'){
@@ -10769,6 +10958,8 @@ function memBlockDetail(D, g, key){
       + '不归约，下一步各副本的权重就漂开了。';
     if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，'
       + '也是「换 optimizer 能省多少」的全部战场。';
+    if(key === 'agw') note = 'FSDP 的 wrap 粒度就是这一格的宽度——包得太粗（整个模型一个单元）'
+      + '窗口等于整份参数、等于没切；包得太细窗口很小，但 AllGather 次数暴涨、每次都打不满带宽。';
     if(key === 'otmp') note = '只在一步的最后 12% 冒出来：梯度归约成 fp32 + 主参数更新的临时量。'
       + '整步都好好的、最后一下 OOM，说的就是这一档。';
     if(key === 'act'){
@@ -10807,6 +10998,7 @@ function memBlockDetail(D, g, key){
   if(chain9){
     var CHCAP = {
       w:   '前向要读它、更新要写它——链首链尾同一格，所以它整步都在卡上。',
+      agw: '它装的还是权重，住在同一格——区别只在「临时」：拼回来算完这一层就丢，下一层再拼一次。',
       g:   '反向由 A 与 ∂L/∂out 生出来，要等更新那一步用完才放得掉；这段时间它和权重同时压着卡。',
       opt: '只在更新那一步露面，前向反向都用不到它——但它整步都得留着，因为 m/v 是跨步累积的。',
       otmp:'它是更新那一步里 ∇W 的 fp32 中转，只在这一步的末段存在，与上下两档挤在同一个时刻。',
@@ -10895,20 +11087,35 @@ function renderRankMem(D){
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var segs = memParts(D, p, g), tot = segs.reduce(function(a,x){ return a+x.bytes; },0);
   var cap = D.hbm*Math.pow(2,30);
-  var TONE = {w:MEMC.w, g:MEMC.g, opt:MEMC.opt, act:MEMC.act, rsv:MEMC.rsv};
+  /* otmp / agw 原来不在这张表里——otmp 有字节时（步末）色块背景会解析成 undefined，
+     只是极少有人正好在那一刻截图才没被发现。补齐，顺手把新加的 agw 一起放进来。 */
+  var TONE = {w:MEMC.w, agw:MEMC.agw, g:MEMC.g, opt:MEMC.opt, otmp:MEMC.otmp, act:MEMC.act, rsv:MEMC.rsv};
+  /* 这一档属于模型态还是执行态。两类的读法不同（/parallel-reference/ §14 一）：模型态问「哪一段
+     归我」，执行态问「什么时候生、什么时候死」。混在一张表里逐行读，读者会对激活
+     去问区间、对权重去问生死，两边都问空。 */
+  var KIND = {w:'model', agw:'model', g:'model', opt:'model', otmp:'exec', act:'exec', rsv:'exec'};
+  /* 这张卡自己的步内进度：ACT_T 是整网走带的位置，加上本卡的相位差才是它自己的。 */
+  var L9 = rankLoad(D, g);
+  var stepT9 = (ACT_T !== null && L9) ? clamp(ACT_T + L9.phase, 0, 1) : null;
   var groups = [];
   segs.forEach(function(sg){
     var rows = [];   /* 这一档自己的行：档头 + 明细 + 腔，组内顺序不动 */
+    rows.kind = KIND[sg.k] || 'exec';
     groups.push(rows);
     if(!sg.bytes) return;                       /* 这一刻是 0 的档（比如没跑走带时的优化器临时区）不占一行 */
     var col = sg.k==='act' ? VC.dp : (sg.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
     /* 整行可点 → 展开这一档自己的读数（见 memBlockDetail）。选中态反白它自己的
        签名色，与卡上那条带同一个颜色，不用回头对照图例。 */
     var onSg = ui.memSel === sg.k;
+    /* 字节数下面那一行：模型态写归属，执行态写相位——各答各的那一问。
+       没走带时相位一律直说是峰值口径，不编一个看着像真的相。 */
+    var life9 = stateLife(D, sg.k, stepT9), own9 = stateOwn(D, sg.k, g);
+    var sub9 = (KIND[sg.k] === 'model' && own9) ? (own9 + ' · ' + life9) : life9;
     rows.push('<tr class="rm-p'+(onSg?' on':'')+'" data-act="memblockpick" data-mk="'+esc(sg.k)+'" style="--rmc:'+TONE[sg.k]+'">'
       + '<td style="width:14px"><span style="display:inline-block;width:9px;height:9px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
-      + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)+'</td>'
-      + '<td style="text-align:right;color:'+col+';font-weight:700">'+fmtGB(sg.bytes)+' GB</td></tr>');
+      + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)
+      + '<br><span style="font-weight:400;font-size:11px;color:var(--pt-fg3)">'+esc(sub9)+'</span></td>'
+      + '<td style="text-align:right;color:'+col+';font-weight:700;vertical-align:top;white-space:nowrap">'+fmtGB(sg.bytes)+' GB</td></tr>');
     if(onSg) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, sg.k)+'</td></tr>');
     /* 权重带的内部：图上那一条已经按刀色分块画出来了，但「哪一块是被哪把刀切的」
        只有颜色说不全——把块名与切法逐条列在它下面，颜色与图上一一对上。
@@ -10916,6 +11123,14 @@ function renderRankMem(D){
        全局切分也展开这一层：这张卡是台面上**唯一**一处报「这张卡装了什么」的
        读出卡，两处（chain / grid）读法不一致，读者会先怀疑是不是看错了卡。 */
     if(sg.k === 'w' && sg.sub){
+      /* 沿 DP 切之后，这条带说的还是**整份**的构成——不能把每块也除以 dp。
+         ZeRO/FSDP 切的是参数拉平之后的连续字节区间，不是「每块各拿 1/dp」：
+         同一块参数在某张卡上可能整块都在、也可能一个字节都没有（FSDP 原话是
+         all, some, or none，见 /parallel-reference/ §14 五）。把每块除一遍会把这件事抹掉，
+         还会让人以为「本卡持有每一块的十六分之一」——那是假的。 */
+      if(sg.zdiv > 1) rows.push('<tr><td></td><td colspan="2" style="padding:2px 0 5px;font-size:11px;line-height:1.5;color:var(--pt-fg3)">'
+        + '下面是<b>整份</b>的构成。沿 DP 切的是参数拉平后的连续区间，不是每块各切 1/'+D.dp
+        + '——某一块可能整块在本卡，也可能一个字节都没有。</td></tr>');
       sg.sub.forEach(function(x){
         if(!x.bytes) return;
         var mk = 'w:'+x.id, onX = ui.memSel === mk;
@@ -10923,7 +11138,7 @@ function renderRankMem(D){
           + '<td></td><td style="padding-left:2px;color:var(--pt-fg2)">'
           + '<span style="display:inline-block;width:7px;height:7px;background:'+cutColor(x.cut)+';border-radius:1px;margin-right:5px"></span>'
           + esc(x.id) + ' <span style="color:var(--pt-fg3)">' + esc(x.how) + '</span></td>'
-          + '<td style="text-align:right;color:var(--pt-fg2)">'+fmtGB(x.bytes)+' GB</td></tr>');
+          + '<td style="text-align:right;color:var(--pt-fg2);white-space:nowrap">'+fmtGB(x.bytes)+' GB</td></tr>');
         if(onX) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, mk)+'</td></tr>');
       });
     }
@@ -10936,15 +11151,29 @@ function renderRankMem(D){
      对，每一行都要数一次。倒过来之后，图例第 n 档就是卡上从上数第 n 层。
      倒的是**档与档**：档内的明细（逐块切法、腔）仍然跟在自己那个档头下面，
      整组倒过来会让明细跑到档头上方、而且自己也颠倒，那是另一种乱。 */
-  var rows = [];
-  groups.reverse().forEach(function(gr){ rows = rows.concat(gr); });
+  var rows = [], lastKind9 = null;
+  groups.reverse().forEach(function(gr){
+    if(gr.length && gr.kind !== lastKind9){
+      lastKind9 = gr.kind;
+      rows.push('<tr><td colspan="3" style="padding:7px 0 3px;font-size:11px;letter-spacing:.08em;color:var(--pt-fg3);border-top:1px solid var(--pt-bd)">'
+        + (gr.kind === 'model' ? '模型态 · 问的是「哪一段归我」' : '执行态 · 问的是「什么时候生、什么时候死」')
+        + '</td></tr>');
+    }
+    rows = rows.concat(gr);
+  });
   el.innerHTML =
     '<div class="rm-h"><b>rank '+g+'</b>'
     /* 层段这一行就是 **PP 的切**：PP 不切任何一个张量（所以它不在权重带的分块里），
        它切的是「哪几层住在这张卡上」。`stage0 · L0–L11` 已经把这件事说完了——
        后面再补一句「12/48 层 · PP 刀切 4 段」是同一句话换个说法，删掉。 */
     + '<span>tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · stage'+p+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'</span>'
-    + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button></div>'
+    + '<button class="rm-x" data-act="rankmemclose" title="收起（同时取消选中）">✕</button>'
+    /* 「此刻」对整网无定义，只对某张卡有定义——所以进度写在这张卡的抬头上，
+       而且写的是**这张卡自己的**进度（含相位差），不是走带游标的原值。
+       放在 ✕ 之后：它整行独占（flex 基准 100%），排在按钮之前会把按钮挤到第三行去。 */
+    + '<span style="flex:0 0 100%;color:var(--pt-fg3)">'+esc(ZERO_SHORT[D.zero])
+    + (stepT9 === null ? ' · 峰值口径' : ' · 步内 '+Math.round(stepT9*100)+'%')+'</span>'
+    + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin:4px 0 3px;font-family:var(--pt-mono)">'
     + rows.join('')
     + '<tr><td colspan="2" style="border-top:1px solid var(--pt-bd);padding-top:5px;font-weight:800;font-size:13px;color:'+(tot>cap?'var(--pt-danger)':'var(--pt-fg)')+'">合计 '+fmtGB(tot)+' / '+D.hbm+' GB</td>'
@@ -11238,7 +11467,9 @@ document.addEventListener('click', function(ev){
   var act = b.getAttribute('data-act');
   if(act==='preset'){
     var p = PRESETS.filter(function(x){return x.id===b.getAttribute('data-id');})[0];
-    cfg = JSON.parse(JSON.stringify(p.cfg)); activePreset = p.id; sel = null;
+    var keepZero = cfg.zero;                     /* 预置管的是并行度，不管存几份副本 */
+    cfg = JSON.parse(JSON.stringify(p.cfg)); cfg.zero = keepZero;
+    activePreset = p.id; sel = null;
     ui.cpFacet = 0; ui.unfold = true; ui.unfoldSet = false; stopAnim(); render();
   }
   else if(act==='fix'){
@@ -11247,6 +11478,7 @@ document.addEventListener('click', function(ev){
     var f = e && e.fixes[+b.getAttribute('data-i')];
     if(f){ Object.keys(f.patch).forEach(function(k){ cfg[k]=f.patch[k]; }); activePreset=null; render(); }
   }
+  else if(act==='zero'){ cfg.zero = parseInt(b.getAttribute('data-z'),10)||0; render(); }
   else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
