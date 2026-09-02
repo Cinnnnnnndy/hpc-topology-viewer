@@ -184,6 +184,18 @@ body.rail-off nav.rail{opacity:0; pointer-events:none; transition:opacity .15s}
 }
 
 /* ---------- callouts ---------- */
+/* 证据强度徽章：§14/§15 引入。本文前面的章节靠正文叙述交代出处，新加的两节
+   引了大量框架官方文档原文，需要一眼可辨的强度记号——「读到了原文」与「多个
+   二手来源说法一致」在后续拿去做设计时分量完全不同，不该被抹平成同一个"已核实"。*/
+.ev{font-family:var(--mono); font-size:10px; font-weight:700; padding:1px 6px;
+    border-radius:3px; border:1px solid; white-space:nowrap; margin:0 2px}
+.ev-v{color:#2F6B4F; border-color:#9CC3AE; background:#EFF6F2}
+.ev-t{color:#2E6E8E; border-color:#A8C6D6; background:#EDF4F8}
+.ev-3{color:#6A5A9B; border-color:#BDB2D6; background:#F3F0F8}
+.ev-1{color:#B3603A; border-color:#DFB9A4; background:#FDF5F0}
+.ev-i{color:#6B7B86; border-color:var(--rule); background:#F4F7F9}
+.src{font-family:var(--mono); font-size:10.5px; color:var(--ink-3)}
+
 .note{border-left:3px solid var(--ink-3); background:var(--paper); padding:14px 18px; margin:22px 0; border-radius:0 4px 4px 0}
 .note .lbl{font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); display:block; margin-bottom:5px}
 .note p:last-child{margin-bottom:0}
@@ -247,10 +259,12 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <a href="#s-order">11 先后顺序</a>
   <a href="#s6">12 运行时</a>
   <a href="#s-obs">13 可观测性</a>
-  <a href="#s7">14 勘误</a>
-  <a href="#s8">15 治理</a>
-  <a href="#s-onto">16 对象总表</a>
-  <a href="#s-gaps">17 边界</a>
+  <a href="#s-state">14 Rank 状态</a>
+  <a href="#s-comm2">15 通信状态</a>
+  <a href="#s7">16 勘误</a>
+  <a href="#s8">17 治理</a>
+  <a href="#s-onto">18 对象总表</a>
+  <a href="#s-gaps">19 边界</a>
 </nav>
 
 <div class="wrap">
@@ -260,7 +274,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>18 节</span><span>27 张图</span><span>59 张表</span><span>规范术语表</span><span>13 条勘误</span><span>2026-08</span>
+    <span>20 节</span><span>41 张图</span><span>88 张表</span><span>规范术语表</span><span>15 条勘误</span><span>2026-09</span>
   </div>
 </header>
 
@@ -549,7 +563,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
     <thead><tr><th>关系（A → B）</th><th>基数</th><th>说明</th></tr></thead>
     <tbody>
       <tr><td>用户症状 → 根因</td><td><span class="cd d">N:M</span></td><td>同一症状多种根因，同一根因多种症状。这正是需要在上报入口做结构化拆分的原因</td></tr>
-      <tr><td>「算子不支持」→ 根因类别</td><td><span class="cd b">1:3</span></td><td>IR 缺失 / kernel 分支缺失 / 实现质量。三者责任方与周期完全不同（§14）</td></tr>
+      <tr><td>「算子不支持」→ 根因类别</td><td><span class="cd b">1:3</span></td><td>IR 缺失 / kernel 分支缺失 / 实现质量。三者责任方与周期完全不同（§17 推论 1）</td></tr>
       <tr><td>「跑得慢」→ 诊断维度</td><td><span class="cd b">1:2</span></td><td>空间维度（OOM 类）与时间维度（利用率类）是两条独立线索</td></tr>
     </tbody>
   </table>
@@ -810,7 +824,7 @@ token 总数 = B × S      （[B, S, H] 里：B 数序列 · S 数 token · H �
 
   <h4>micro-batch 与整网 / 算子 / 卡是什么关系</h4>
 
-  <p>这三者容易被摆成同一排来比，但按 §15 的五类对象一归类就会发现<strong>它们不是同一种东西</strong>：整网是<b>结构＋内容</b>（图 ＋ 权重体），算子是<b>结构</b>（图上一个节点），卡是<b>容器</b>，而 <strong>micro-batch 是<b>地址</b>——<code>b</code> 轴上的一段区间</strong>。它既不占体积也没有容量，只用来指认「哪一批样本」。所以它与另外三者的关系一律是「<em>一次执行</em>」，而不是「<em>一部分</em>」。</p>
+  <p>这三者容易被摆成同一排来比，但按 §18 的五类对象一归类就会发现<strong>它们不是同一种东西</strong>：整网是<b>结构＋内容</b>（图 ＋ 权重体），算子是<b>结构</b>（图上一个节点），卡是<b>容器</b>，而 <strong>micro-batch 是<b>地址</b>——<code>b</code> 轴上的一段区间</strong>。它既不占体积也没有容量，只用来指认「哪一批样本」。所以它与另外三者的关系一律是「<em>一次执行</em>」，而不是「<em>一部分</em>」。</p>
 
   <table class="tbl">
     <thead><tr><th>关系</th><th>micro-batch 在其中是什么</th><th>它改变什么 / 不改变什么</th></tr></thead>
@@ -1668,7 +1682,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     </tbody>
   </table>
 
-  <p>这个故事与 §14 推论 7 那份「五句话讲解脚本」是<strong>互补</strong>的：那份讲<em>结构</em>（切分怎么对应到卡），这份讲<em>过程</em>（这件事怎么发生）。讲给工程师听用这份，讲给不懂业务的人听用那份。</p>
+  <p>这个故事与 §17 推论 7 那份「五句话讲解脚本」是<strong>互补</strong>的：那份讲<em>结构</em>（切分怎么对应到卡），这份讲<em>过程</em>（这件事怎么发生）。讲给工程师听用这份，讲给不懂业务的人听用那份。</p>
 
   <figure>
     <figcaption><span class="fnum">FIG 09B</span><span class="ftitle">从整网到卡：两条路，在卡上汇合</span>
@@ -2596,7 +2610,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
   <figure>
     <figcaption>
       <span class="fnum">FIG 17</span><span class="ftitle">总图 —— 粒度 × rank × 通信</span>
-      <span class="fnote">配置 TP=2 · PP=2，共 4 张卡。竖轴是粒度（整网 / 层 / 算子 / kernel），横轴是 rank，虚线柱子是<b>卡</b>（容器），rank 只是贴在它上面的门牌——按 §15 的判据，地址不画成形状。<b>从上往下看，块的宽度从「跨 4 根柱」缩到「不跨柱」</b>——这就是归属边界（FIG 04）的立体版。所有通信线都是横向的，因为它们连接的永远是<b>同一粒度层上不同 rank</b> 的块。</span>
+      <span class="fnote">配置 TP=2 · PP=2，共 4 张卡。竖轴是粒度（整网 / 层 / 算子 / kernel），横轴是 rank，虚线柱子是<b>卡</b>（容器），rank 只是贴在它上面的门牌——按 §17 的判据，地址不画成形状。<b>从上往下看，块的宽度从「跨 4 根柱」缩到「不跨柱」</b>——这就是归属边界（FIG 04）的立体版。所有通信线都是横向的，因为它们连接的永远是<b>同一粒度层上不同 rank</b> 的块。</span>
     </figcaption>
     <div class="stage" id="fig-all"></div>
     <div class="legend">
@@ -2876,10 +2890,466 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
 </section>
 
-<section id="s7">
-  <div class="sec-head"><span class="sec-num">14</span><h2>勘误与冲突核对</h2></div>
+<section id="s-state">
+  <div class="sec-head"><span class="sec-num">14</span><h2>Rank 状态图：一张卡此刻持有什么</h2></div>
 
-  <p class="lede">对整轮讨论做前后核对后确认的修正项。按字母顺序排列。A–E 与 K、L、M 是实质性错误，其余为表述不严谨或存在歧义。K、L 由「为什么每种切分都绑定了一种通信原语」这一质疑引出；M 由核对 rank 排布机制时引出。</p>
+  <p class="lede">§12 把一张卡拆成两个正交视角：<strong>空间</strong>（HBM 里堆了什么）与<strong>时间</strong>（流上排了什么）。这一节补上第三个：<strong>状态</strong>——同样那五档东西，此刻各自<em>归谁所有</em>、<em>是完整的还是一片</em>、<em>什么时候来、什么时候走</em>。「rank 7 用了 72 GB」在诊断上几乎没有信息量；「这 72 GB 里优化器态占 19 GB、比这套配置应有的多 11 GB」才有。差别就在这一层。</p>
+
+  <div class="note">
+    <span class="lbl">这一节要回答的问题，和它<b>不</b>要回答的问题</span>
+    <p><b>要：</b>这张卡此刻持有哪些权重 / 梯度 / 优化器状态 / 激活，它们分别对应模型的哪一段、区间是多少、处在生命周期的哪一相、占多少字节、正在被哪个通信原语搬。</p>
+    <p><b>不要：</b>把这些张量的<em>数值</em>实时画出来。理由与 §17 推论 8 判 MoE token 连线不可建是同一条——基数错了：一层的参数是 <code>10⁸</code> 量级，个体数值不是被诊断的对象，被诊断的是「谁持有、多大、什么相位」。数值只在抽样、统计（§13 的 σ / Amax）与异常 dump 时才出现。</p>
+  </div>
+
+  <h3>一 · 先分两类：模型态与执行态 <span class="cd a">状态 → 类 2:1</span></h3>
+
+  <p>训练状态不是一个匀质的集合。把它按「<strong>关键属性是什么</strong>」分成两类，后面所有讨论才不会打架：</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 19</span><span class="ftitle">两类训练状态：一类论归属，一类论生死</span>
+      <span class="fnote">左半边的关键属性是<b>归属</b>（这一份的哪一段归我），右半边的关键属性是<b>生命周期</b>（什么时候生、什么时候死）。ZeRO / FSDP 只切左半边——这不是措辞讲究，是它们的官方定义里就只列了那三样。</span>
+    </figcaption>
+    <div class="stage" id="fig-state-kind"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th></th><th>模型态 model states</th><th>执行态 execution states</th></tr></thead>
+    <tbody>
+      <tr><td>包含</td><td>权重 · 梯度 · 优化器状态</td><td>激活 · 通信 buffer · 算子 workspace · 碎片</td></tr>
+      <tr><td>关键属性</td><td><b>归属</b>：整份张量的哪一段归这张卡</td><td><b>生命周期</b>：谁产生、谁消费、什么时候能释放</td></tr>
+      <tr><td>随什么增长</td><td>模型结构（<code>ℓ h e</code> 三根轴）</td><td>batch × seq（<code>b s</code> 两根轴）</td></tr>
+      <tr><td>在 §03 里属于</td><td><b>权重体</b></td><td><b>激活体</b></td></tr>
+      <tr><td>谁能减它</td><td>TP / PP / ZeRO·FSDP</td><td>CP / SP / MBS / 重计算 / offload</td></tr>
+      <tr><td>一步之内的形态</td><td>常驻（ZeRO-3 下例外，见下）</td><td>前向堆起、反向消掉，步末归零</td></tr>
+    </tbody>
+  </table>
+
+  <p>这条分界线和 §03「两个对象」是同一条线，只是换了个问法：§03 问「它被哪根轴切」，这里问「它此刻归谁、还在不在」。<strong>两类状态需要两套完全不同的读法</strong>——对模型态问「区间是多少」，对执行态问「什么时候释放」。把激活也按「分片区间」去读，或者把权重也按「生命周期」去读（ZeRO-3 以外），都会得到一屏没有信息量的东西。</p>
+
+  <div class="note fix">
+    <span class="lbl">常见误解：「ZeRO 把激活也切了」</span>
+    <p><b>✗ 错误直觉：</b>ZeRO / FSDP 是省显存的机制，激活是显存大头，所以它应该也切激活。</p>
+    <p><b>✓ 正确机制：</b>ZeRO 的三级与 FSDP 的分片策略，定义里都<strong>只有三样东西</strong>——参数、梯度、优化器状态。DeepSpeed 官方对三级的表述分别是「optimizer states … are partitioned across the processes」（stage 1）、「The reduced 16-bit gradients … are also partitioned」（stage 2）、「The 16-bit model parameters are partitioned across the processes」（stage 3）<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">deepspeed.ai/tutorials/zero</span>；PyTorch FSDP 的 <code>FULL_SHARD</code> 一句话是「Parameters, gradients, and optimizer states are sharded.」<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">docs.pytorch.org/docs/stable/fsdp.html</span>。激活不在其中。</p>
+    <p>DeepSpeed 确实另有一个切激活的开关，但它<b>不属于 ZeRO 三级</b>，而是挂在 activation checkpointing 配置下、默认关闭的 <code>partition_activations</code>：「Enables partition activation when used with model parallelism」<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">deepspeed.ai/docs/config-json §Activation Checkpointing</span>。注意它的前提是<em>已有模型并行</em>——它切的是 TP 造成的那份<b>重复</b>激活，不是沿 DP 域切。所以正确说法是：<strong>激活的减少来自 TP+SP、CP、重计算、offload，不来自 ZeRO 的 DP 分片。</strong></p>
+  </div>
+
+  <h3>二 · ZeRO / FSDP 三级：DP 从「不减显存」变成「减显存」 <span class="cd b">级 → 被切的态 1:N</span></h3>
+
+  <p>§08 那张容器表里 DP 那一行写的是「全不变」，并附了一句「例外是 ZeRO / FSDP」。<strong>这一节把那个例外展开</strong>——它是本文原来最大的一块留白（§19 二 · 第一行，本次据此填上），因为三级之间的差别不是程度差别，是<em>状态形态</em>的差别。</p>
+
+  <p>先把基线摆出来。§12 的口径是每参数 16 字节：</p>
+
+  <pre>权重 W   bf16                    2 B
+梯度 G   bf16                    2 B
+优化器 O fp32 master 4 + m 4 + v 4  12 B
+                              ──────
+                                16 B / 参数     ← 每张 DP 卡各存一份完整的（DDP 语义）</pre>
+
+  <p>DP=<code>d</code> 张卡，就是同一份东西存了 <code>d</code> 遍。ZeRO 做的事只有一句话：<strong>把这三样里的某几样，沿 DP 域切成 <code>d</code> 份，每卡只留自己那一份</strong>。</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 20</span><span class="ftitle">三级怎么逐级把 16 B/参数交给 DP 切走</span>
+      <span class="fnote">条的长度按字节等比。斜纹段 = 被沿 DP 域切掉、每卡只留 <code>1/d</code> 的部分。注意 ZeRO-3 多出来的那一格<b>不是省下的</b>——它是计算窗口内必须临时拼回来的完整参数，是这一级真正的代价。</span>
+    </figcaption>
+    <div class="stage" id="fig-zero"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th>级别</th><th>沿 DP 切谁</th><th>单卡常驻（B/参数）</th><th>新增通信</th><th>权重在一步里的形态</th></tr></thead>
+    <tbody>
+      <tr><td>基线（DDP / 无分布式优化器）</td><td>都不切</td><td><code>2 + 2 + 12 = 16</code></td><td>梯度 AllReduce ×1</td><td>全程完整</td></tr>
+      <tr><td><b>ZeRO-1</b>（≈ Megatron 分布式优化器）</td><td>优化器状态</td><td><code>2 + 2 + 12/d</code></td><td>梯度 ReduceScatter + 参数 AllGather</td><td>全程完整</td></tr>
+      <tr><td><b>ZeRO-2</b>（≈ FSDP <code>SHARD_GRAD_OP</code>）</td><td>＋梯度</td><td><code>2 + 2/d + 12/d</code></td><td>同上</td><td>全程完整</td></tr>
+      <tr><td><b>ZeRO-3</b>（＝ FSDP <code>FULL_SHARD</code>）</td><td>＋参数</td><td><code>16/d</code> ＋ <b>AllGather 窗口</b></td><td>前向 AllGather、反向再 AllGather、梯度 ReduceScatter</td><td><b>只在用它的那一小段时间里完整</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="lbl">数字闭环：拿 Megatron 的官方表反推，正好落在 ZeRO-1 上</span>
+    <p>Megatron-Core 分布式优化器文档给了一张理论显存表（<code>d</code> = DP 数）<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">docs.nvidia.com/megatron-core … features/dist_optimizer.html</span>。把它按上面的口径拆开，三行各自都能配平：</p>
+    <pre>fp16 参数 · fp16 梯度   20 B → 4 + 16/d
+   20 = W 2 + G 2 + O 16      （O = master 4 + m 4 + v 4 + fp32 梯度副本 4）
+    4 = W 2 + G 2              ← 留在本地的
+ 16/d = O/d                    ← 被切走的
+
+bf16 参数 · fp32 梯度   18 B → 6 + 12/d
+   18 = W 2 + G 4 + O 12
+    6 = W 2 + G 4
+ 12/d = O/d
+
+fp32 参数 · fp32 梯度   16 B → 8 + 8/d
+   16 = W 4 + G 4 + O 8       （fp32 训练不需要 master 副本，只剩 m、v）
+    8 = W 4 + G 4
+  8/d = O/d</pre>
+    <p>三行的「留在本地的部分」<b>恰好都等于 W＋G</b>，「被除以 <code>d</code> 的部分」<b>恰好都等于 O</b>。这就从官方数字这一侧独立验证了：Megatron 的分布式优化器切的正是、且仅是优化器状态——即 ZeRO-1 的语义。<strong>这也顺带验证了本文 §12 那套「16 B = 2＋2＋12」的拆法</strong>：换成 fp32 梯度就是 18、换成 fp16 全量就是 20，三种口径互相能推出来，不是凑的。</p>
+  </div>
+
+  <h3>三 · 三级里真正的分水岭在 ZeRO-3：权重不再是常驻物 <span class="cd c">权重 → 完整态 1:N 次/步</span></h3>
+
+  <p>前两级只改「存多少」，不改「什么时候在」——权重全程完整躺在 HBM 里，计算随时可以读。<strong>ZeRO-3 改的是后者</strong>，这是它和前两级的本质区别，也是把它画进 viewer 时唯一必须新增的一条时间线。PyTorch 官方对四种分片策略的措辞把这件事说得极准：</p>
+
+  <table class="tbl">
+    <thead><tr><th>策略</th><th>官方原文（节选）</th><th>读法</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>FULL_SHARD</code></td>
+        <td>「this strategy unshards (via all-gather) before the forward, reshards after the forward, unshards before the backward computation, and reshards after the backward computation」</td>
+        <td>一步之内<b>拼回来两次、丢掉两次</b></td>
+      </tr>
+      <tr>
+        <td><code>SHARD_GRAD_OP</code></td>
+        <td>「unshards before the forward, does not reshard them after the forward, and only reshards them after the backward computation」</td>
+        <td>拼一次、留到反向做完——<b>拿驻留换掉一次 AllGather</b></td>
+      </tr>
+      <tr>
+        <td><code>NO_SHARD</code></td>
+        <td>「Parameters, gradients, and optimizer states are not sharded but instead replicated across ranks … For gradients, this strategy synchronizes them (via all-reduce)」</td>
+        <td>就是 DDP</td>
+      </tr>
+      <tr>
+        <td><code>HYBRID_SHARD</code></td>
+        <td>「Apply FULL_SHARD within a node, and replicate parameters across nodes」</td>
+        <td>机内切、机间复制——把昂贵的集合通信关在机内</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top:-6px"><span class="ev ev-v">✅ 已核实-原文</span> <span class="src">docs.pytorch.org/docs/stable/fsdp.html · ShardingStrategy</span></p>
+
+  <p><code>SHARD_GRAD_OP</code> 的那句「does not reshard after the forward」是这张表最有信息量的一格：<strong>ZeRO-2 与 ZeRO-3 的差别，在实现上就是「前向做完要不要立刻丢掉」这一个布尔量。</strong>丢，省显存但反向要再拼一次；不丢，反向直接用但整个反向期间都占着完整参数。</p>
+
+  <div class="note">
+    <span class="lbl">推论：ZeRO-3 的显存账里必须有「AllGather 窗口」这一格，它常被漏掉</span>
+    <p>「参数被切成 <code>1/d</code>」很容易被读成「参数显存变成 <code>1/d</code>」。不对——计算的那一刻参数必须是完整的，所以卡上除了 <code>2P/d</code> 的常驻分片，还得随时腾得出<b>一个分片单元的完整参数</b>（FSDP 里就是一个 wrap 单元，通常一个 transformer block）。于是：</p>
+    <pre>ZeRO-3 单卡权重显存 ≈ 2·P/d          （常驻分片）
+                    + 2·P_unit        （AllGather 窗口，P_unit = 一个 wrap 单元的参数量）
+                    + 预取深度 × 2·P_unit  （为了 overlap 通信与计算，通常预取下一单元）</pre>
+    <p>这解释了一件实践上很反直觉的事：<strong>FSDP 的 wrap 粒度是一个显存 ↔ 通信的旋钮</strong>。包得太粗（整个模型一个单元）→ 窗口等于整份参数，等于没切；包得太细 → 窗口很小但 AllGather 次数暴涨、每次都太小打不满带宽。<span class="ev ev-i">🔸 推断</span> 窗口与预取的<em>具体</em>字节数取决于实现与 <code>backward_prefetch</code> 设置，本文只给结构，不给系数。</p>
+  </div>
+
+  <h3>四 · 四类状态各自的生命周期 <span class="cd d">状态 → 相 1:N</span></h3>
+
+  <p>§12 的「环形因果链」讲的是四档之间<em>谁先谁后</em>（权重 → 激活 → 梯度 → 优化器状态 → 新权重）。这里讲的是另一件事：<strong>每一档自己在一步之内经过哪几个相</strong>。两张图叠起来才是完整的一步。</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 21</span><span class="ftitle">一个 step 之内，四类状态各自的状态机</span>
+      <span class="fnote">横轴是一步的进度，四条泳道各是一类状态。竖直标记是<b>相变点</b>，也正是通信原语插进来的地方（§09、§15）。上下对照能看出：同一时刻不同状态处在完全不同的相，所以「这张卡此刻多少 GB」只有配上「走到哪一相」才可解释。</span>
+    </figcaption>
+    <div class="stage" id="fig-life"></div>
+  </figure>
+
+  <table class="tbl">
+    <thead><tr><th>状态</th><th>相序列</th><th>由什么驱动相变</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>权重</b>（ZeRO-3）</td>
+        <td><code>分片</code> → <code>AllGather</code> → <code>完整</code> → <code>前向用毕丢弃</code> → <code>AllGather</code> → <code>完整</code> → <code>反向用毕丢弃</code> → <code>更新后的分片</code></td>
+        <td>进入 / 离开一个 wrap 单元的计算</td>
+      </tr>
+      <tr><td><b>权重</b>（ZeRO-0/1/2）</td><td><code>完整常驻</code> → <code>步末被就地更新</code></td><td>只有优化器步一个相变</td></tr>
+      <tr>
+        <td><b>梯度</b></td>
+        <td><code>不存在</code> → <code>逐层生成</code> → <code>累积</code>（GA 未走完时反复叠加） → <code>ReduceScatter / AllReduce</code> → <code>本卡那一片（已规约）</code> → <code>清零</code></td>
+        <td>反向逐层推进；GA 走满；优化器步</td>
+      </tr>
+      <tr><td><b>优化器状态</b></td><td><code>本地分片常驻</code> → <code>被读写更新</code> → <code>更新完</code></td><td>只在步末那一下</td></tr>
+      <tr>
+        <td><b>激活</b></td>
+        <td><code>生成</code> → <code>保留待反向</code> →（开重计算时：<code>只留入口、中间丢弃</code> → <code>反向时重算</code>） → <code>被反向消费</code> → <code>释放</code></td>
+        <td>前向逐层推进；是否 checkpoint；反向逐层推进</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>只有梯度和激活是「会消失」的</strong>，另两档在非 ZeRO-3 下全程常驻。这一条直接决定了 viewer 上该给谁配时间轴：给常驻物配一条随时间起伏的曲线，画面在动、信息是零。</p>
+
+  <div class="note">
+    <span class="lbl">相位差：同一时刻，不同 stage 的卡不在同一相</span>
+    <p>§12 已经说过 N 条时间线之间没有全局时钟。叠上 PP 之后还要再进一层：1F1B 稳态里，<code>stage 0</code> 已经在做第 <code>k+3</code> 个微批的前向，<code>stage 3</code> 还在做第 <code>k</code> 个的反向。所以「此刻」这个词对整网无定义，<strong>只对「某张卡 + 某个微批」有定义</strong>。读一屏 Rank 状态图时，标题必须是「rank 37 · 微批 #7 · 反向中」，只写「rank 37」是读不出来的。</p>
+  </div>
+
+  <h3>五 · 归属：shard 区间是框架里的一等数据结构，不是 UX 造出来的概念 <span class="cd a">参数 → rank N:M</span></h3>
+
+  <p>「这张卡持有第 37 层 QKV 的哪一段」听起来像是为了做可视化才需要的说法。它不是——<strong>框架内部就是按这个结构组织的</strong>，而且给了它明确的名字。Megatron-Core 分布式优化器的原文：</p>
+
+  <pre>Each grad buffer (padded to be an even multiple of DP-world-size) is conceptually
+divided into DP-world-size contiguous regions, where each DP rank "owns" a
+contiguous region. Ownership in this sense means DP rank is responsible for
+reducing the relevant subset of grads, and updating the relevant subset of params.</pre>
+  <p style="margin-top:-8px"><span class="ev ev-v">✅ 已核实-原文</span> <span class="src">Megatron-LM <code>megatron/core/optimizer/distrib_optimizer.py</code> · <code>_build_model_gbuf_param_range_map</code> 文档串</span></p>
+
+  <p>同一处还定义了四种区间，它们是同一段数据在四个坐标系里的表示：</p>
+
+  <table class="tbl">
+    <thead><tr><th>区间</th><th>官方定义</th><th>它回答的问题</th></tr></thead>
+    <tbody>
+      <tr><td><code>gbuf_world</code></td><td>「The param's range within the entire grad buffer (world index).」</td><td>在整个梯度缓冲里的绝对位置</td></tr>
+      <tr><td><code>gbuf_world_in_bucket</code></td><td>「The param's range within the relevant grad bucket's buffer.」</td><td>在它所属那个通信桶里的位置</td></tr>
+      <tr><td><code>gbuf_local</code></td><td>「The param's range within the DP rank's local view of the grad buffer.」</td><td><b>在这张卡自己那一段里的位置</b></td></tr>
+      <tr><td><code>param</code></td><td>「The param's range within itself (i.e., its shard).」</td><td>相对参数自身的偏移，即「这是它的第几段」</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>「归属」在这里有一个精确定义：负责规约这一段梯度、并负责更新这一段参数。</strong>注意它不是「存着这一段的值」——ZeRO-1 下每张卡都还存着完整的权重副本，但只有一张卡<em>负责更新</em>其中某一段。存储与责任在这一层分开了。</p>
+
+  <p>FSDP 那一侧给出了同一件事的另一半，而且说得更狠：</p>
+  <pre>An original parameter may have all, some, or none of its data present for a
+given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
+  <p style="margin-top:-8px"><span class="ev ev-v">✅ 已核实-原文</span> <span class="src">docs.pytorch.org/docs/stable/fsdp.html · <code>use_orig_params</code></span></p>
+
+  <div class="note gov">
+    <span class="lbl">对 viewer 的推论：rank ↔ 参数不是布尔关系，是区间关系</span>
+    <p>「rank 37 有没有第 36 层的 <code>QKV.weight</code>」这个问题，正确答案可以是「有其中的 <code>[4096:6144]</code>」，也可以是「一个字节都没有」。所以这条关系<strong>不能画成有 / 无两态的着色</strong>（那正是 §17 推论 5 说的编码类别错误），只能画成<b>区间条</b>：整条代表张量，高亮段代表本卡那一段。这也和 §07「归属边界」是同一个东西——ZeRO 只是把那条边界从「层」推到了「张量内部的字节区间」。</p>
+  </div>
+
+  <h3>六 · 应有 vs 实有：让这一屏能诊断，而不只是能看 <span class="cd e">配置 → 应有量 1:1</span></h3>
+
+  <p>前面五小节合起来给出一件很有用的东西：<strong>「这张卡应该持有多少」是可以先验算出来的</strong>——它只由配置决定（§11 的五步 ＋ 本节的 ZeRO 级别 ＋ §12 的字节口径），不需要跑起来。既然应有值可算，那么<em>任何与实测的偏差都是信号</em>。</p>
+
+  <table class="tbl">
+    <thead><tr><th>档</th><th>应有（由配置算）</th><th>实有（由 runtime 报）</th><th>差值意味着什么</th></tr></thead>
+    <tbody>
+      <tr><td>权重</td><td><code>2·P/(zero≥3 ? d : 1)</code></td><td>allocator 分类统计</td><td>偏大 → wrap 粒度过粗 / 预取过深；偏小 → 某些模块没被纳入分片</td></tr>
+      <tr><td>梯度</td><td><code>2·P/(zero≥2 ? d : 1)</code></td><td>同上</td><td>偏大 → 梯度累积 buffer 没复用，或规约桶没释放</td></tr>
+      <tr><td>优化器状态</td><td><code>12·P/(zero≥1 ? d : 1)</code></td><td>同上</td><td><b>最常见的异常源</b>：断点续训时按完整 state dict 而不是按分片加载，会整份多出来</td></tr>
+      <tr><td>激活</td><td><code>34·mbs·(s/CP)·h·L_stage·在途微批数</code></td><td>同上</td><td>偏大 → 在途微批比预期多（PP 排布），或重计算没生效</td></tr>
+      <tr><td>通信 buffer / workspace / 碎片</td><td>只能给经验余量</td><td>同上</td><td>持续增长 → 泄漏或碎片化</td></tr>
+    </tbody>
+  </table>
+
+  <p>这张表把一个原本无从下手的问题（「为什么这张卡 OOM」）变成了一个逐行对账的问题。<span class="ev ev-3">🔍 第三方分析</span> 「续训时优化器状态按完整而非分片加载」这一类具体故障来自公开的 issue 讨论与实践报告，不是官方文档条目；此处只作为<em>差值该怎么解释</em>的例子列出，不作为机制断言。</p>
+
+  <div class="note">
+    <span class="lbl">为什么「总量曲线」诊断不了，而这张对账表可以</span>
+    <p>总量是五档之和。五档里有两档是常驻的（不该变）、两档是周期性的（该在一步之内起伏）、一档是噪声。<strong>把它们加起来，等于把「不该变的变了」和「该变的变多了」这两种完全不同的故障压成同一条曲线。</strong>拆开之后，前者是一条水平线上的台阶，后者是波形幅度变化——形态就不一样，不需要阈值也能一眼看出。这与 §12「OOM 属空间问题、利用率低属时间问题」是同一种拆法的延伸：<b>只有拆到「每一档各自应该是什么形态」，读数才带诊断力。</b></p>
+  </div>
+
+  <h3>七 · 合成：Rank 状态图在这套参照系里的位置</h3>
+
+  <p>把这一节接回全文：它不是新的一根轴，而是给 §07 的双链<strong>插了一级</strong>。原来的双链是「逻辑侧：整网 → 层 → 算子 → kernel」对「物理侧：集群 → 机 → 卡 → 计算单元」，两条链靠「卡」这一级咬合。现在中间多出一层：</p>
+
+  <pre>逻辑侧      整网 → 层 → 算子 → 张量（参数 / 激活）
+                                    │
+              §14 这一节讲的        │  状态 × 归属区间 × 生命周期相
+                                    ↓
+物理侧      集群 → 机 → 卡（rank）→ HBM 里的那几个字节区间</pre>
+
+  <p>换句话说，<strong>「状态」是逻辑张量与物理字节之间那个一直被省略掉的中间层</strong>。§03 给了「能切的只有五样」，§07 给了「切到哪张卡」，§12 给了「卡上一共多少字节」——这一节回答的是剩下那半句：<em>那些字节此刻分别是什么、归谁、处在哪一相。</em></p>
+
+  <div class="note gov">
+    <span class="lbl">分三级落地，别一次做完</span>
+    <p><b>一 · 库存（必须有）。</b>rank → 四类状态 → 层 / 参数 → 区间 → shape / dtype / 字节。回答「有什么」。本项目的读出卡已经做到这一级。</p>
+    <p><b>二 · 生命周期（很重要）。</b>给每一档配上当前相，并让它随训练步游标变化。回答「为什么现在有、什么时候走」。需要的新数据只有一个：步内进度。</p>
+    <p><b>三 · 跨 rank 对比（真正形成诊断）。</b>同一档在 rank 之间的差值 → 归因到哪一维（PP 相位差 / EP 路由不均 / ZeRO 分片不均）。回答「为什么这张卡和别的不一样」。这一级依赖 §15 的通信状态图，单看一张卡是答不出来的。</p>
+  </div>
+</section>
+
+<section id="s-comm2">
+  <div class="sec-head"><span class="sec-num">15</span><h2>通信状态图：通信是张量状态的转换</h2></div>
+
+  <p class="lede">§09 说清了通信<em>为什么</em>出现——它是切口处被插进去的算子。这一节说清一次通信<em>该被记成什么</em>。答案不是「rank 3 向 rank 7 发了 3.2 GB、耗时 1.4 ms」：那只能回答「多久」，回答不了「为什么」。一次通信真正做的事，是<strong>把一个张量从一种分片状态搬到另一种分片状态</strong>——它有前态、有后态，而且几乎总是成对出现。</p>
+
+  <h3>一 · 一条通信边的五元组 <span class="cd b">边 → 属性 1:5</span></h3>
+
+  <p>把一次通信记全，需要五样东西，缺一样这条记录就不可诊断：</p>
+
+  <table class="tbl">
+    <thead><tr><th>元</th><th>内容</th><th>缺了它就答不出</th></tr></thead>
+    <tbody>
+      <tr><td><b>源</b></td><td>rank、设备、流</td><td>谁发的</td></tr>
+      <tr><td><b>张量</b></td><td>属于哪个层 / 算子的哪个输入输出，shape、dtype、<b>当前 layout</b></td><td><b>搬的是什么</b>——这一元最常被丢掉</td></tr>
+      <tr><td><b>并行域</b></td><td>TP / PP / DP / CP / EP 组，或它们的组合域</td><td>为什么需要这次通信</td></tr>
+      <tr><td><b>原语</b></td><td>AllGather / ReduceScatter / AllReduce / All-to-All / P2P</td><td>怎么搬</td></tr>
+      <tr><td><b>宿</b></td><td>目的 rank 集合、落到哪个后继算子</td><td>搬完谁用</td></tr>
+    </tbody>
+  </table>
+
+  <p>再加一条<strong>效果</strong>，它是前五元的函数、也是这一节的中心论断：</p>
+
+  <pre>通信的效果 = layout 变换 + 归属再分配
+
+  前态：这张卡持有 X 的哪一段、形状是什么
+  后态：这张卡持有 X 的哪一段、形状是什么</pre>
+
+  <h3>二 · 官方 API 就是按「变换」定义的，而且成对 <span class="cd a">原语 → 反向原语 1:1</span></h3>
+
+  <p>这不是本文的抽象。Megatron-Core 把 TP 的每一个通信点都实现成一个 autograd 函数，而它们的官方文档串<strong>每一条都写成「前向做什么、反向做什么」的一对</strong>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>映射函数</th><th>官方描述</th><th>读作</th></tr></thead>
+    <tbody>
+      <tr><td><code>copy_to_tensor_model_parallel_region</code></td><td>「forward: copy, backward allreduce」</td><td>前向不动，反向把各卡的输入梯度求和</td></tr>
+      <tr><td><code>reduce_from_tensor_model_parallel_region</code></td><td>「forward: all reduce, backward copy」</td><td>上一条的对偶</td></tr>
+      <tr><td><code>scatter_to_tensor_model_parallel_region</code></td><td>「forward: RS, backward: AG」</td><td>完整 → 分片</td></tr>
+      <tr><td><code>gather_from_tensor_model_parallel_region</code></td><td>「forward: AG, backward: split」</td><td>分片 → 完整</td></tr>
+      <tr><td><code>gather_from_sequence_parallel_region</code></td><td>「forward: AG, backward: RS」</td><td><b>SP 段 → TP 段</b>（序列维拼回、进入 TP 计算）</td></tr>
+      <tr><td><code>reduce_scatter_to_sequence_parallel_region</code></td><td>「forward: RS, backward AG」</td><td>上一条的对偶：<b>TP 段 → SP 段</b></td></tr>
+      <tr><td><code>all_to_all_sp2hp</code></td><td>「transform the input tensor from shape <code>[num_tokens/TP, H]</code> to <code>[num_tokens, H/TP]</code>」</td><td><b>换轴</b>：序列维切换成隐藏维</td></tr>
+      <tr><td><code>all_to_all_hp2sp</code></td><td>「from shape <code>[num_tokens, H/TP]</code> to <code>[num_tokens/TP, H]</code>」</td><td>上一条的对偶</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:-6px"><span class="ev ev-v">✅ 已核实-原文</span> <span class="src">Megatron-Core API 文档 <code>core.tensor_parallel.mappings</code></span>（RS = reduce-scatter，AG = all-gather）</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 22</span><span class="ftitle">同一条边的两个方向：通信原语总是成对的</span>
+      <span class="fnote">上半是前向的 layout 变换，下半是同一条边在反向的变换。四对里没有一对是「同一个原语来回用」——<b>反向永远是另一个原语</b>。这解释了 §09 那条「维度不决定原语」的勘误从何而来：决定原语的是<em>要把张量从哪个 layout 变到哪个 layout</em>，以及此刻在前向还是反向。</span>
+    </figcaption>
+    <div class="stage" id="fig-xform"></div>
+  </figure>
+
+  <p>只有 <code>all_to_all_sp2hp</code> 那两条把 shape 写了出来，但其实<strong>八条全都在改 layout</strong>——前四条改的是「完整 / 分片」这个维度上的状态，后两条改的是「切在哪根轴上」。把它们排在一起看，「通信 = 变换」就不是一个比喻了。</p>
+
+  <div class="note fix">
+    <span class="lbl">勘误 N：「列切要 AllGather 输入、行切要 ReduceScatter 输出」——只在开 SP 时成立</span>
+    <p>这条说法很常见，也很容易被当成 TP 的固有行为。按上表逐条对：</p>
+    <ul>
+      <li><b>不开 SP：</b>列切线性层入口是 <code>copy_to_tensor_model_parallel_region</code>——<strong>前向不通信</strong>（输入本来就是各卡完整的一份），反向才 AllReduce；行切线性层出口是 <code>reduce_from_tensor_model_parallel_region</code>——<strong>前向 AllReduce</strong>，反向不通信。一层 TP 的前向只有一次 AllReduce。</li>
+      <li><b>开 SP：</b>入口换成 <code>gather_from_sequence_parallel_region</code>（前向 AG / 反向 RS），出口换成 <code>reduce_scatter_to_sequence_parallel_region</code>（前向 RS / 反向 AG）。这时才是「AllGather 进、ReduceScatter 出」。</li>
+    </ul>
+    <p>所以准确的说法是：<strong>TP 的通信方向由「算子是列切还是行切」×「在前向还是反向」×「SP 开没开」三者共同决定</strong>，不是一个固定模式。这与 §04「SP 的原理：AllReduce 换成 ReduceScatter」是同一件事的两种说法——那里从通信量的角度讲，这里从 layout 的角度讲：<code>AllReduce = ReduceScatter + AllGather</code>，SP 做的是把这对拆开、让中间那段停在分片态上，顺带把激活也切了。<span class="ev ev-3">🔍 第三方分析</span> 「入口 <code>f</code> / 出口 <code>g</code> 分别对应列切与行切」这一对应关系出自 Megatron-LM 论文（Shoeybi et al., 2019）的经典结构，函数级证据见上表。</p>
+  </div>
+
+  <h3>三 · 通信不是时间线上孤立的一根彩条：它和计算是绑定的 <span class="cd c">通信 ↔ 算子 1:1</span></h3>
+
+  <p>两条独立证据说明「把通信单独摆在一条 timeline 上」这种呈现方式本身就丢了信息：</p>
+
+  <p><strong>其一，通信被实现在 autograd 图里。</strong>上一小节那八个函数不是独立调用的库函数，是<em>算子输入输出上的包装</em>——它们在计算图里有位置。所以「这次 AllGather 属于哪个算子的哪个输入」在框架里是确定的，不是需要事后猜的。</p>
+
+  <p><strong>其二，通信被设计成与计算重叠。</strong>Megatron-Core 的 <code>tp_comm_overlap</code> 让 Linear 层的执行与 TP 的 AllGather / ReduceScatter 重叠，命令行开关是 <code>--tp-comm-overlap</code><span class="ev ev-3">🔍 第三方分析</span> <span class="src">Megatron-Core <code>model_parallel_config</code> 与 NeMo/Megatron-Bridge 通信重叠文档</span>。一旦重叠，「通信耗时 1.4 ms」这个数就不再等于「拖慢了 1.4 ms」——<strong>重叠之后真正该读的是「有没有被藏住」，而这只有把通信和它并行的那段计算画在一起才看得出来。</strong></p>
+
+  <p>CP 那一侧给了同一件事最干净的例子。官方对 context parallel 的三句描述：</p>
+  <ul>
+    <li>「CP requires additional all-gather across GPUs to collect the full sequence of KV. Correspondingly, reduce-scatter should be applied to the activation gradients of KV in backward propagation.」——<b>又是一对</b>：前向 AG、反向 RS。</li>
+    <li>「All modules except attention (e.g., Linear, LayerNorm, etc.) can work as usual without any changes, because they do not have inter-token operations.」——<b>通信绑在哪个算子上是确定的</b>：只有 attention。</li>
+    <li>「The all-gather and reduce-scatter are transformed to point-to-point communications in ring topology under the hood.」——<b>语义与实现是两层</b>：语义上是 AG/RS，实现上跑成环形 P2P。</li>
+  </ul>
+  <p style="margin-top:-6px"><span class="ev ev-v">✅ 已核实-原文</span> <span class="src">Megatron-Core 用户指南 · Context Parallelism</span></p>
+
+  <p>第三句尤其值得记住：它印证了 §09 那条「训练框架不直接调用硬件互联」的分层——<strong>同一个语义原语在不同实现下可以是完全不同的物理通信模式</strong>。所以观测面上必须同时留出「语义原语」和「实际链路」两栏，把 Ring 实现的 AllGather 记成一堆 P2P，读者就再也拼不回「这是 CP 在取 KV」。</p>
+
+  <h3>四 · rank 内的搬运不是通信 <span class="cd d">判据：跨不跨通信域</span></h3>
+
+  <p>一张卡内部同样有大量数据移动：算子的输出写回 HBM、被下一个算子读进片上缓冲、DMA 搬运、流与流之间用 event 同步。这些<strong>不该和集合通信画在同一张图上</strong>，判据很简单：</p>
+
+  <table class="tbl">
+    <thead><tr><th></th><th>rank 间</th><th>rank 内</th></tr></thead>
+    <tbody>
+      <tr><td>是什么</td><td>集合通信 / 点对点</td><td>搬运（memory movement）</td></tr>
+      <tr><td>作用域</td><td>一个通信域（process group）</td><td>一张卡的存储层次</td></tr>
+      <tr><td>参与者</td><td>多个 rank</td><td>同一个 rank 的不同单元</td></tr>
+      <tr><td>同步方式</td><td>集合原语自带的同步语义</td><td>流、event、barrier</td></tr>
+      <tr><td>改变归属吗</td><td><b>改</b>——这正是它的目的</td><td><b>不改</b>——只改驻留位置</td></tr>
+      <tr><td>在本文里属于</td><td>§09 / 本节</td><td>§12「时间：流上排了什么」</td></tr>
+    </tbody>
+  </table>
+
+  <p>把两者混起来的代价是具体的：读者会以为可以用同一套原语去描述片上搬运（「这里做了一次 AllGather」），或者反过来以为跨卡通信也能靠调度隐藏掉。<strong>归属变不变，是这条界线的本质。</strong>片上存储层次的具体分级（各级缓冲的命名与容量）是厂商相关的实现细节，按 §19 的边界划在本文范围外。</p>
+
+  <h3>五 · EP 是唯一一条按 token 路由的边 <span class="cd e">token → 专家 T:E</span></h3>
+
+  <p>前面四维的通信边有一个共同点：<strong>它们连接的都是「同一个张量的不同分片」</strong>。TP 的两片是同一个矩阵的两半，PP 的两端是同一条激活流的前后段，CP 的各段是同一条序列的不同片，DP 的各份是同一份梯度的副本。EP 不是——</p>
+
+  <figure>
+    <figcaption>
+      <span class="fnum">FIG 23</span><span class="ftitle">EP 的边：token 按 router 的结果被送到专家所在的那张卡</span>
+      <span class="fnote">左边是 token 与它们的 top-k 选择，中间是专家到 rank 的固定映射，右边是由此决定的 rank → rank 流量。<b>关键在于这张流量图每一步都不同</b>——它由数据内容（router 的输出）决定，而不像另外四维那样由配置决定。下方的负载条展示了不均衡如何沿链条传导。</span>
+    </figcaption>
+    <div class="stage" id="fig-ep"></div>
+  </figure>
+
+  <p>把这条链拆开，它需要<strong>四张互相关联的表</strong>才能记全，而另外四维只需要一张配置表：</p>
+
+  <table class="tbl">
+    <thead><tr><th>#</th><th>表</th><th>由谁决定</th><th>变不变</th></tr></thead>
+    <tbody>
+      <tr><td>①</td><td>token → 专家（top-k）</td><td>router 的输出，即<b>数据内容</b></td><td><b>每个微批都在变</b></td></tr>
+      <tr><td>②</td><td>专家 → rank</td><td>EP 配置</td><td>整个训练固定</td></tr>
+      <tr><td>③</td><td>rank → rank 的 token 计数</td><td>① ∘ ②</td><td>每个微批都在变</td></tr>
+      <tr><td>④</td><td>token → 它在原序列里的位置</td><td>permute / unpermute 的置换表</td><td>每个微批都在变，且<b>必须可逆</b></td></tr>
+    </tbody>
+  </table>
+
+  <p>第四张表最容易被忽略，但没有它整条链是断的：token 要先按目的专家<b>重排</b>成连续段才能发（否则 All-to-All 的 split 无法表达），算完还要按同一张表<b>逆排</b>回原位置，才能接上残差。Megatron-Core 的 dispatcher 层就是干这个的，并且给了三种实现<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">Megatron-Core 用户指南 · Mixture of Experts</span>：</p>
+
+  <table class="tbl">
+    <thead><tr><th>dispatcher</th><th>官方描述</th><th>什么时候用</th></tr></thead>
+    <tbody>
+      <tr><td><code>allgather</code></td><td>「Gathers all tokens to each GPU, no inter-GPU token movement」</td><td>专家数少、以 TP 为主的场景</td></tr>
+      <tr><td><code>alltoall</code></td><td>「NCCL-based All-to-All communication for token exchange」</td><td>标准 EP</td></tr>
+      <tr><td><code>flex</code>（DeepEP / HybridEP）</td><td>「Removes redundant tokens during cross-node communication, fuses intra/inter-node communication into single kernel」</td><td>大规模、跨机为主</td></tr>
+    </tbody>
+  </table>
+
+  <p>注意第一种<em>根本不搬 token</em>——它把 token 全量收齐到每张卡上。<strong>所以「EP 就等于 All-to-All」是不成立的</strong>：EP 说的是专家怎么分布，dispatcher 才决定 token 怎么流动。这也是 §09 那条「切分维度不决定通信原语」的又一个实例，而且是最有说服力的一个。</p>
+
+  <h4>不均衡的传导链：一条能一路走到 step 时长的因果链</h4>
+
+  <pre>router 输出偏斜（数据内容决定）
+   → 某几个专家收到的 token 多
+   → 那几个专家所在的 rank 收到的 token 多
+   → 这些 rank 的 All-to-All 入流量大、且要等最慢的一方
+   → 这些 rank 的专家 GEMM 计算量大
+   → 该 rank 到达下一个同步点更晚
+   → 全域被最慢的 rank 拖住，step 时长 ↑</pre>
+
+  <p>链条上每一环都是可观测的，而且<strong>越靠前的环越早暴露问题</strong>：等到看见 step 时长变长，中间五环已经全部发生过。这正是 §13「五类数据筛选器」里 MoE 那一类（<code>Pmax</code> / <code>H</code> / <code>tok</code> / balance）存在的理由——它们读的就是这条链的头两环。控制这条链的旋钮是容量因子（capacity factor，决定每个专家最多处理多少 token，超出部分丢弃或 padding）与均衡辅助损失，Megatron-Core 提供了微批级、序列级与全局级几种均衡策略<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">同上</span>。这填上了§19 留白表里「MoE 的负载均衡：没展开 token drop」的一半——<em>另一半（drop-less 实现的具体机制）仍然留白。</em></p>
+
+  <div class="note gov">
+    <span class="lbl">和 §17 推论 8 的关系：这一节没有推翻它，是给它补了正确的画法</span>
+    <p>§17 推论 8 判定「用动画精细呈现 token 选专家的过程」不可建，理由是基数错了——<code>token → expert</code> 一层就有上万条边，画出来信息量为零。<strong>那条结论仍然成立</strong>。本节新增的不是「把个体边画出来」，而是<b>把这条链的四张表分别用适合各自基数的编码呈现</b>：①④ 是万级，只能出统计（分布、熵、Top-k 集中度）；② 是配置级，几十条，画映射图；③ 是 <code>EP × EP</code> 的矩阵，几十到几千格，画热力图。<em>同一条链上不同环节的基数差三个数量级，所以必须用三种不同的编码——这正是推论 8 想说的事，只是当时只说了它的否定面。</em></p>
+  </div>
+
+  <h3>六 · 通信可观测性矩阵：一次通信要能被从九个层面读出来</h3>
+
+  <table class="tbl">
+    <thead><tr><th>层</th><th>观测对象</th><th>它回答</th><th>本文哪一节</th></tr></thead>
+    <tbody>
+      <tr><td>模型</td><td>层 / 算子</td><td>谁产生了这次通信</td><td>§02、§09</td></tr>
+      <tr><td>张量</td><td>输入 / 输出 · layout</td><td>搬的是什么、前态后态</td><td>本节一、二</td></tr>
+      <tr><td>并行</td><td>TP / PP / DP / CP / EP 域</td><td>为什么需要它</td><td>§04、§05</td></tr>
+      <tr><td>rank</td><td>源 / 宿</td><td>谁和谁</td><td>§10</td></tr>
+      <tr><td>原语</td><td>AG / RS / AR / A2A / P2P</td><td>怎么搬</td><td>§09</td></tr>
+      <tr><td>载荷</td><td>shape / 字节 / split</td><td>搬多少</td><td>§13</td></tr>
+      <tr><td>路由</td><td>token → 专家（仅 EP）</td><td>token 去哪了</td><td>本节五</td></tr>
+      <tr><td>时序</td><td>起止 / 与谁重叠</td><td>什么时候搬、藏住没有</td><td>§12、本节三</td></tr>
+      <tr><td>影响</td><td>等待 / 空转 / 气泡</td><td>造成了什么后果</td><td>§12、§13</td></tr>
+    </tbody>
+  </table>
+
+  <p>九行里，<strong>传统 profiling 通常只给第 4、5、6、8 行</strong>——谁和谁、什么原语、多少字节、什么时候。缺的正是首尾两端：这次通信属于模型的哪一部分（前三行），以及它到底有没有造成损失（最后一行）。<em>没有前三行，一条通信记录就无法被归因；没有最后一行，它就无法被排优先级。</em></p>
+
+  <h3>七 · 合成：一条从计算图走到硬件的可追链</h3>
+
+  <p>把 §14 与本节接起来，全文的对象终于连成一条能双向走的链：</p>
+
+  <pre>模型图（层 / 算子）
+   ↕  §02 §03    —— 张量：这个算子的输入输出是什么
+并行映射（TP·PP·DP·CP·SP·EP）
+   ↕  §04 §05 §11 —— 归属：这一段归哪个 rank
+Rank 状态（W / G / O / A · 区间 · 相位）
+   ↕  §14         —— 此刻持有什么
+通信（原语 · 前态 → 后态）
+   ↕  §09 §15     —— 状态怎么变的
+时间线（N 条流 · 重叠 · 等待）
+   ↕  §12         —— 什么时候发生
+物理拓扑（卡 · 链路 · 机内机间）
+   ↕  §07         —— 走的哪条线</pre>
+
+  <p>这条链的价值在于<strong>它可以从任意一级向两端追</strong>：从「rank 37 的显存里优化器态偏大 11 GB」往上追到「ZeRO 级别与 wrap 粒度」，或者从「这条 All-to-All 特别慢」往上追到「第 24 层的 router 把 34% 的 token 送给了同一个专家」。<em>单独看任何一级，这两个问题都无解。</em></p>
+
+  <div class="note">
+    <span class="lbl">这两节相对全文的定位</span>
+    <p>§01–§13 建立的是<b>静态参照系</b>：什么被切、切成几份、落在哪张卡、通信插在哪。§14–§15 加的是<b>动态状态层</b>：那些落到卡上的东西，此刻各自是什么形态、归谁、正在被搬去哪。<strong>前者回答「这套配置意味着什么」，后者回答「这一刻正在发生什么」</strong>——诊断需要两者同时在场：只有静态，看不出异常；只有动态，看不出异常相对于什么才算异常。</p>
+  </div>
+</section>
+
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">16</span><h2>勘误与冲突核对</h2></div>
+
+  <p class="lede">对整轮讨论做前后核对后确认的修正项。按字母顺序排列。A–E 与 K、L、M、N 是实质性错误，其余为表述不严谨或存在歧义。K、L 由「为什么每种切分都绑定了一种通信原语」这一质疑引出；M 由核对 rank 排布机制时引出；N、O 由 §14 / §15 这两节核对 PyTorch FSDP、DeepSpeed ZeRO 与 Megatron-Core 官方文档时引出。</p>
 
   <table class="tbl">
     <thead><tr><th>#</th><th>原表述</th><th>修正</th></tr></thead>
@@ -2949,6 +3419,16 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
         <td>EP 是「对 DP×TP 平面的<b>重新解释</b>」（§04 勘误 A 的说法）</td>
         <td>在<b>经典 EP</b>（较早版本）下成立；采用 <b>MoE Parallel Folding</b> 的新版应更新为：attention 与 expert 各有一套独立的 RankGenerator 与并行 mesh，二者在同一 PP stage 上共享卡，靠 token 重排衔接。结论方向不变（EP 仍不是 <code>world_size</code> 的第五个乘数），但机制描述从「重新分组」变成「两套独立分解 + 中间重排」。该约束随版本变动极大（经典 EP 要求 <code>EP = DP·TP</code>，ETP 模式要求 <code>EP = DP</code>，Folding 后完全解耦），<b>引用时必须核对版本号</b>。详见 §11。</td>
       </tr>
+      <tr>
+        <td>N</td>
+        <td>「TP 的<b>列切要 AllGather 输入、行切要 ReduceScatter 输出</b>」——一种很常见、也很容易被当成 TP 固有行为的写法</td>
+        <td>只在<b>开 SP 时</b>成立。不开 SP：列切层入口是 <code>copy</code>（前向不通信，反向才 AllReduce），行切层出口是 <code>AllReduce</code>（前向规约，反向不通信）——一层 TP 的前向只有一次 AllReduce。开 SP 后两处才分别换成 AllGather 与 ReduceScatter。<b>方向由「列切/行切 × 前向/反向 × SP 开没开」三者共同决定</b>，不是固定模式。函数级证据与完整对照见 §15 二、三。</td>
+      </tr>
+      <tr>
+        <td>O</td>
+        <td>「ZeRO / FSDP 是 DP 的变体，把存储也切了」（§04、§08、§09 的零散提法）</td>
+        <td>方向对，但把三级压成了一句话，掩盖了它们之间<b>不是程度差别而是形态差别</b>：ZeRO-1/2 只改「存多少」，权重全程完整常驻；ZeRO-3 / FSDP <code>FULL_SHARD</code> 改的是「什么时候在」——权重只在用它的那一小段时间里完整，一步之内拼回两次、丢弃两次，并因此多出一格常被漏算的 <b>AllGather 窗口</b>显存。另外「ZeRO 把激活也切了」是错的：三级的定义里只有参数、梯度、优化器状态。展开见 §14 二、三。</td>
+      </tr>
     </tbody>
   </table>
 
@@ -2963,7 +3443,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 </section>
 
 <section id="s8">
-  <div class="sec-head"><span class="sec-num">15</span><h2>对体验治理的推论</h2></div>
+  <div class="sec-head"><span class="sec-num">17</span><h2>对体验治理的推论</h2></div>
 
   <p class="lede">上面这套参照系的实用价值在于：它能把用户口中同一句抱怨，拆成责任方、周期、定位路径都不同的几类。</p>
 
@@ -3013,7 +3493,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
   <div class="note gov">
     <span class="lbl">推论 8 · 元素数必须由配置界定，不能由数据量界定</span>
-    <p>以 MoE 路由为例。想「用动画精细呈现选专家的过程」是自然的念头，但它不可建——<strong>不是因为点太多，而是编码类别错了</strong>。§15 说关系画成连线；可 <code>token → expert</code> 的基数是 <code>T:E</code> 且 <code>T ≫ E</code>（§01：一层 <code>T·K</code> 条边，典型 16384 条），<strong>在这个基数下连线必须降级成密度／流量</strong>。画出一万多条边，观者能读到的信息量是零——真正的信号全是聚合量（哪个 expert 热、丢了多少 token、多少跨机），个体边只是统计现象的样本，不是被诊断的对象。</p>
+    <p>以 MoE 路由为例。想「用动画精细呈现选专家的过程」是自然的念头，但它不可建——<strong>不是因为点太多，而是编码类别错了</strong>。§17 说关系画成连线；可 <code>token → expert</code> 的基数是 <code>T:E</code> 且 <code>T ≫ E</code>（§01：一层 <code>T·K</code> 条边，典型 16384 条），<strong>在这个基数下连线必须降级成密度／流量</strong>。画出一万多条边，观者能读到的信息量是零——真正的信号全是聚合量（哪个 expert 热、丢了多少 token、多少跨机），个体边只是统计现象的样本，不是被诊断的对象。</p>
     <p>由此得到一条可以直接当准则用的判据：</p>
     <p><strong>图上元素的数量必须由<em>配置</em>界定，不能由<em>数据量</em>界定。</strong>路由边数随 <code>MBS × S</code> 增长——那是运行时旋钮，与模型结构无关，所以任何元素数随 token 数增长的画法在<em>构造上</em>就不成立。而 <code>ep × ep</code> 的 token 流量矩阵是 <code>O(ep²)</code>（例如 8×8 = 64 格），由配置定死——这个能画。<b>拿不准一个画法能不能做，先问它的元素数由谁决定。</b></p>
     <table class="tbl">
@@ -3048,7 +3528,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
 <!-- ===== 对象总表 ===== -->
 <section id="s-onto">
-  <div class="sec-head"><span class="sec-num">16</span><h2>对象总表：全文一共研究了五类东西</h2></div>
+  <div class="sec-head"><span class="sec-num">18</span><h2>对象总表：全文一共研究了五类东西</h2></div>
 
   <p class="lede">前面十六节各自谈了一堆对象——整网、层、算子、kernel、权重体、激活体、卡、流、rank、通信域、通信原语。它们看着零散，其实<strong>只分五类</strong>。分清类别，每个对象该画成什么样、能不能画，就都定了。</p>
 
@@ -3109,7 +3589,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
         <tr><td>流</td><td>kernel</td><td>时间</td><td><b>软退化</b> —— 排不下不会崩，只是变慢</td></tr>
       </tbody>
     </table>
-    <p>这解释了 §14 推论 2 里那条判据的由来：<strong>OOM 与「利用率低」之所以是两条独立线索，正因为它们是两个不同容器满了。</strong>一个硬失败、一个软退化，连症状形态都不一样。</p>
+    <p>这解释了 §17 推论 2 里那条判据的由来：<strong>OOM 与「利用率低」之所以是两条独立线索，正因为它们是两个不同容器满了。</strong>一个硬失败、一个软退化，连症状形态都不一样。</p>
   </div>
 
   <div class="note fix">
@@ -3143,7 +3623,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
 <!-- ===== 边界与未展开 ===== -->
 <section id="s-gaps">
-  <div class="sec-head"><span class="sec-num">17</span><h2>本文的简化、留白与边界</h2></div>
+  <div class="sec-head"><span class="sec-num">19</span><h2>本文的简化、留白与边界</h2></div>
 
   <p class="lede">一份自称「参照系」的东西，最该说清的是它<strong>没覆盖什么</strong>。下面分三类：本文做过的简化（可能误导，必须说明）、提到但没展开的机制、以及有意划在范围外的。</p>
 
@@ -3168,10 +3648,10 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
   <table class="tbl">
     <thead><tr><th>话题</th><th>文中出现在</th><th>缺什么</th></tr></thead>
     <tbody>
-      <tr><td><b>ZeRO / FSDP 的三级</b></td><td>§04、§08、§09 零散提及</td><td>只说了「是 DP 的变体，把存储也切了」，没分清三级：ZeRO-1 切优化器状态、ZeRO-2 再切梯度、ZeRO-3 / FSDP 连参数也切。三级对通信量与显存的影响差别很大</td></tr>
+      <tr><td><b>ZeRO / FSDP 的三级</b><br><span style="color:var(--cp);font-weight:700">✓ 已填（§14）</span></td><td>原来只在 §04、§08、§09 零散提及</td><td><s>只说了「是 DP 的变体，把存储也切了」，没分清三级</s>——§14 二、三已补上三级的字节账、官方分片策略原文对照、以及 ZeRO-3 独有的权重生命周期与 AllGather 窗口。<b>仍缺：</b>三级各自的通信量公式（与下面「通信量公式」那条同源）</td></tr>
       <tr><td><b>流水线调度</b></td><td>§09、§12 提到 1F1B、interleaved</td><td>§12 已补上三阶段（warmup / steady / cooldown）与气泡率 <code>(PP−1)/GA</code>；<b>仍缺的是</b>：1F1B 与朴素 GPipe 的调度差异、interleaved（virtual pipeline）如何用「一卡多段」进一步压气泡、以及反向传播在调度中的穿插方式</td></tr>
       <tr><td><b>词表并行</b></td><td>§06 提到首尾 stage 背 embedding / lm_head</td><td>没说这两块本身通常也被 TP 沿<b>词表维</b>切开（vocab parallel），且 lm_head 的切分还牵连 loss 的计算方式</td></tr>
-      <tr><td><b>MoE 的负载均衡</b></td><td>§12 提到 capacity factor 与均衡 loss</td><td>没展开 token drop、drop-less 实现、以及负载不均如何反映到时间线上</td></tr>
+      <tr><td><b>MoE 的负载均衡</b><br><span style="color:var(--cp);font-weight:700">✓ 部分已填（§15）</span></td><td>§13 提到 capacity factor 与均衡 loss；§15 五补上了传导链</td><td><s>没展开负载不均如何反映到时间线上</s>——§15 五已给出从 router 偏斜一路走到 step 时长的七环因果链，以及 token 路由需要的四张关联表。<b>仍缺：</b>token drop 与 drop-less 实现的具体机制、各级均衡策略（微批级 / 序列级 / 全局级）之间怎么选</td></tr>
       <tr><td><b>通信量公式</b></td><td>§09 只给了 AllReduce 的 <code>2(N−1)/N·S</code></td><td>AllGather、ReduceScatter、All-to-All 的量级没给，因此无法据本文做通信量的定量比较</td></tr>
       <tr><td><b>重计算的粒度</b></td><td>§03、§12 提到 activation checkpointing</td><td>没区分全量重计算与选择性重计算（只重算访存密集的那几段），后者是实践中的主流</td></tr>
       <tr><td><b>混合精度的细节</b></td><td>§12 给了 12 B/参数的构成</td><td>没解释为什么需要 fp32 master weight、loss scaling 做什么、以及 bf16 与 fp16 在这件事上的差别</td></tr>
@@ -6516,6 +6996,346 @@ function setupRail(){
   return items.length;
 }
 
+/* ===================== §14 · §15 的五张图 =====================
+   §13 的两张（figObsLayer / figObsDiag）已经确立了这一段的画法：平面 SVG、
+   字符串拼、颜色走本文那五个刀色 + 三档墨色。下面五张沿用同一套，不再用等轴测
+   Scene——它们讲的是分类、比例、状态机、变换对偶与路由，都不是空间关系，
+   套上 3D 只会多一层要读者解码的东西。 */
+var SINK='#0E1418', SDIM='#6B7B86', SRULE='#D2DADF', SPAPER='#FFFFFF';
+var SC={dp:'#2E6E8E', pp:'#B3603A', cp:'#3E7D5E', tp:'#A8404A', ep:'#6A5A9B'};
+var SMEM={w:'#5C86C7', g:'#6F9BA6', o:'#B08CC4', a:'#2E6E8E', r:'#9AA7B0'};
+
+function sSvg(w,h){ return '<svg viewBox="0 0 '+w+' '+h+'" font-family="-apple-system,\'PingFang SC\',sans-serif">'; }
+function sRect(x,y,w,h,fill,stroke,sw,rx){
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+(fill||'none')+'"'
+    + (stroke?' stroke="'+stroke+'" stroke-width="'+(sw||1)+'"':'') + ' rx="'+(rx===undefined?3:rx)+'"/>';
+}
+function sTxt(x,y,t,sz,fill,anchor,weight,mono){
+  return '<text x="'+x+'" y="'+y+'" font-size="'+(sz||10)+'" fill="'+(fill||SINK)+'"'
+    + ' text-anchor="'+(anchor||'start')+'" font-weight="'+(weight||400)+'"'
+    + (mono?' font-family="ui-monospace,Menlo,Consolas,monospace"':'') + '>'+t+'</text>';
+}
+function sLine(x1,y1,x2,y2,col,sw,dash){
+  return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+(col||SRULE)+'" stroke-width="'+(sw||1)+'"'
+    + (dash?' stroke-dasharray="'+dash+'"':'') + '/>';
+}
+function sArr(x1,y1,x2,y2,col,sw){
+  return sLine(x1,y1,x2,y2,col,sw||1.4) + '<path d="M'+x2+' '+y2+' l-5 -2.6 l0 5.2 z" fill="'+(col||SINK)+'" transform="rotate('
+    + (Math.atan2(y2-y1,x2-x1)*180/Math.PI) + ' '+x2+' '+y2+')"/>';
+}
+/* 斜纹：本文里「这一段被沿 DP 域切走了」的唯一记号，四张图共用一个 pattern */
+function sHatchDef(id, col){
+  return '<defs><pattern id="'+id+'" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+    + '<rect width="6" height="6" fill="'+SPAPER+'"/><line x1="0" y1="0" x2="0" y2="6" stroke="'+col+'" stroke-width="2.6"/></pattern></defs>';
+}
+
+/* ===================== FIG 19 · 两类训练状态 ===================== */
+function figStateKind(){
+  var m=document.getElementById('fig-state-kind'); if(!m) return;
+  var W=920, H=352, s=sSvg(W,H);
+
+  s+=sRect(370,14,180,30,'#F4F7F9',SINK,1.4,4);
+  s+=sTxt(460,34,'训练状态',13,SINK,'middle',700);
+
+  var col=[{x:60,w:360,name:'模型态 model states',en:'关键属性 = 归属',
+            items:[['权重','W · bf16 2 B/参数',SMEM.w],['梯度','G · bf16 2 B/参数',SMEM.g],['优化器状态','O · fp32×3 12 B/参数',SMEM.o]],
+            attr:'这一份张量的<b>哪一段</b>归这张卡',knife:'ZeRO / FSDP 只切这半边',ko:'TP · PP · ZeRO/FSDP'},
+           {x:500,w:360,name:'执行态 execution states',en:'关键属性 = 生命周期',
+            items:[['激活','A · 34·mbs·s·h·层数',SMEM.a],['通信 buffer','规约桶 / A2A 收发区',SMEM.r],['算子 workspace · 碎片','随实现变化',SMEM.r]],
+            attr:'什么时候<b>生</b>、什么时候<b>死</b>',knife:'ZeRO 不碰这半边',ko:'CP · SP · MBS · 重计算 · offload'}];
+
+  col.forEach(function(c){
+    var cx=c.x+c.w/2;
+    s+=sLine(460,44,cx,62,SRULE,1.4);
+    s+=sLine(cx,62,cx,74,SRULE,1.4);
+    s+=sRect(c.x,74,c.w,30,'#FFFFFF',SINK,1.2,4);
+    s+=sTxt(cx,88,c.name,12,SINK,'middle',700);
+    s+=sTxt(cx,100,c.en,9.5,SDIM,'middle',600);
+    c.items.forEach(function(it,i){
+      var y=118+i*40;
+      s+=sRect(c.x+14,y,c.w-28,32,'#FFFFFF',it[2],1.2,3);
+      s+=sRect(c.x+14,y,5,32,it[2],null,0,0);
+      s+=sTxt(c.x+28,y+14,it[0],11,SINK,'start',700);
+      s+=sTxt(c.x+28,y+26,it[1],9,SDIM,'start',400,true);
+    });
+    var ay=118+c.items.length*40+6;
+    s+=sRect(c.x+14,ay,c.w-28,30,'#F4F7F9',null,0,3);
+    s+=sTxt(c.x+24,ay+13,'读它要问：',9.5,SDIM,'start',600);
+    s+=sTxt(c.x+92,ay+13,c.attr.replace(/<b>/g,'').replace(/<\/b>/g,''),10.5,SINK,'start',700);
+    s+=sTxt(c.x+24,ay+25,'谁能减它：'+c.ko,9.5,SDIM,'start',400);
+  });
+
+  /* 分片记号只落在左半边 —— 这张图唯一想让人一眼记住的事 */
+  s+=sHatchDef('hx19', SC.dp);
+  s+=sRect(74,300,332,26,'url(#hx19)',SC.dp,1.2,3);
+  s+=sRect(96,304,288,18,SPAPER,null,0,2);          /* 斜纹上直接写字读不清，垫一层白底 */
+  s+=sTxt(240,317,'ZeRO / FSDP 的定义里只有这三样',11,SC.dp,'middle',700);
+  s+=sRect(514,300,332,26,'#FFFFFF',SRULE,1.2,3);
+  s+=sTxt(680,317,'ZeRO 不切激活；减它靠 TP+SP / CP / 重计算 / offload',10.5,SDIM,'middle',600);
+  s+=sTxt(460,344,'§03 的「权重体 ↔ 激活体」就是这条线；这里换了个问法：不问它被哪根轴切，问它此刻归谁、还在不在',9.5,SDIM,'middle',400);
+
+  m.innerHTML = s+'</svg>';
+}
+
+/* ===================== FIG 20 · ZeRO 三级怎么逐级切走 16 B/参数 ===================== */
+function figZero(){
+  var m=document.getElementById('fig-zero'); if(!m) return;
+  var W=920, H=330, s=sSvg(W,H);
+  var d=8;                       /* 图里取 DP=8：不给具体数就没法画等比条，读者也没法自己验算 */
+  var X0=136, U=34;              /* 1 B/参数 = 34 px：42 px 时 16 B 的条加上右侧读数会顶出 viewBox 被裁掉 */
+
+  s+=sHatchDef('hx20', SC.dp);
+  s+=sTxt(20,22,'条长按字节等比 · 图中取 DP = 8',10.5,SDIM,'start',600);
+  s+=sTxt(900,22,'斜纹 = 沿 DP 域切走，每卡只留 1/8',10.5,SC.dp,'end',600);
+
+  var rows=[
+    {n:'基线 DDP',      sub:'都不切',            w:2,   g:2,   o:12,  sw:0,sg:0,so:0, comm:'梯度 AllReduce ×1'},
+    {n:'ZeRO-1',        sub:'切 O',              w:2,   g:2,   o:12,  sw:0,sg:0,so:1, comm:'梯度 RS + 参数 AG'},
+    {n:'ZeRO-2',        sub:'切 O·G',            w:2,   g:2,   o:12,  sw:0,sg:1,so:1, comm:'梯度 RS + 参数 AG'},
+    {n:'ZeRO-3 / FSDP', sub:'切 O·G·W',          w:2,   g:2,   o:12,  sw:1,sg:1,so:1, comm:'前向 AG · 反向 AG · 梯度 RS', win:true}
+  ];
+
+  rows.forEach(function(r,i){
+    var y=54+i*58, bh=30;
+    s+=sTxt(126,y+15,r.n,11.5,SINK,'end',700);
+    s+=sTxt(126,y+27,r.sub,9,SDIM,'end',400);
+    /* 幽灵框：没切之前这一档有多长，留在原地，缩掉多少一眼可见 */
+    s+=sRect(X0,y,16*U,bh,'none','#E4EAEE',1,2);
+    var x=X0, tot=0;
+    [['w',r.w,r.sw,SMEM.w],['g',r.g,r.sg,SMEM.g],['o',r.o,r.so,SMEM.o]].forEach(function(seg){
+      var bytes = seg[2] ? seg[1]/d : seg[1];
+      tot += bytes;
+      var w = bytes*U;
+      s+=sRect(x,y,w,bh, seg[2]?'url(#hx20)':seg[3], seg[3],1.2,2);
+      var lab = seg[2] ? (seg[1]+'/'+d) : String(seg[1]);
+      if(w>30){
+        if(seg[2]) s+=sRect(x+w/2-15,y+8,30,14,SPAPER,null,0,2);   /* 同 FIG 19：斜纹上垫白底 */
+        s+=sTxt(x+w/2,y+19,lab,10,seg[2]?SC.dp:'#FFFFFF','middle',700,true);
+      }
+      x+=w+2;
+    });
+    if(r.win){   /* ZeRO-3 独有的那一格：不是省下的，是必须临时腾出来的 */
+      s+=sRect(x+6,y,86,bh,'#FDF5F0',SC.pp,1.4,2);
+      s+=sTxt(x+49,y+13,'AllGather',9,SC.pp,'middle',700);
+      s+=sTxt(x+49,y+24,'窗口',9,SC.pp,'middle',700);
+      x+=92;
+    }
+    s+=sTxt(X0+16*U+14,y+13,'单卡常驻 '+(Math.round(tot*100)/100)+' B/参数',10.5,SINK,'start',700,true);
+    s+=sTxt(X0+16*U+14,y+26,r.comm,9,SDIM,'start',400);
+  });
+
+  s+=sLine(X0,282,X0+16*U,282,SRULE,1);
+  s+=sTxt(X0,296,'0',9,SDIM,'middle',400,true);
+  s+=sTxt(X0+4*U,296,'4',9,SDIM,'middle',400,true);
+  s+=sTxt(X0+8*U,296,'8',9,SDIM,'middle',400,true);
+  s+=sTxt(X0+12*U,296,'12',9,SDIM,'middle',400,true);
+  s+=sTxt(X0+16*U,296,'16 B/参数',9,SDIM,'middle',400,true);
+  s+=sTxt(460,320,'注意最后一行：16/8 = 2 B 常驻，但计算那一刻必须拼回一个 wrap 单元的完整参数——那一格才是 ZeRO-3 真正的代价',9.5,SC.pp,'middle',600);
+
+  m.innerHTML = s+'</svg>';
+}
+
+/* ===================== FIG 21 · 一步之内四类状态各自的状态机 ===================== */
+function figStateLife(){
+  var m=document.getElementById('fig-life'); if(!m) return;
+  var W=920, H=360, s=sSvg(W,H);
+  var X0=112, X1=856, LW=X1-X0;
+  function px(t){ return X0+LW*t; }
+
+  /* 三个阶段的底色：读者先知道横轴是一步、一步分三段，再看四条泳道 */
+  var phases=[[0,0.40,'前向','#F2F6F8'],[0.40,0.86,'反向','#F7F4F0'],[0.86,1,'优化器步','#F3F0F8']];
+  phases.forEach(function(p){
+    s+=sRect(px(p[0]),36,px(p[1])-px(p[0]),268,p[3],null,0,0);
+    s+=sTxt((px(p[0])+px(p[1]))/2,30,p[2],10.5,SDIM,'middle',700);
+  });
+  s+=sLine(X0,36,X0,304,SRULE,1); s+=sLine(px(0.40),36,px(0.40),304,SRULE,1);
+  s+=sLine(px(0.86),36,px(0.86),304,SRULE,1); s+=sLine(X1,36,X1,304,SRULE,1);
+  s+=sTxt(X0,320,'step 开始',9.5,SDIM,'middle',400);
+  s+=sTxt(X1,320,'step 结束',9.5,SDIM,'middle',400);
+
+  /* 每条泳道：[起,止,标签,颜色,是否虚线（= 此刻不存在/已释放）] */
+  var lanes=[
+    {n:'权重 W',sub:'ZeRO-3 / FSDP',c:SMEM.w,segs:[
+      [0,0.06,'分片 1/d',0],[0.06,0.10,'AG',2],[0.10,0.40,'完整（前向在用）',0],
+      [0.40,0.44,'AG',2],[0.44,0.86,'完整（反向在用）',0],[0.86,1,'更新后的分片',0]],
+     drop:[[0.40,'用毕丢弃'],[0.86,'用毕丢弃']]},
+    {n:'权重 W',sub:'ZeRO-0/1/2',c:SMEM.w,segs:[[0,0.86,'完整常驻（一步之内不变）',0],[0.86,1,'就地更新',0]]},
+    {n:'梯度 G',c:SMEM.g,segs:[
+      [0,0.40,'不存在',1],[0.40,0.80,'逐层生成 · 累积（GA 未满时反复叠加）',0],
+      [0.80,0.86,'RS',2],[0.86,0.97,'已规约的一片',0],[0.97,1,'清零',1]]},
+    {n:'优化器态 O',c:SMEM.o,segs:[[0,0.86,'本地分片常驻（整步不动）',0],[0.86,1,'被读写更新',0]]},
+    {n:'激活 A',c:SMEM.a,segs:[
+      [0,0.40,'逐层生成 · 保留待反向（堆到峰值）',0],[0.40,0.86,'被反向逐层消费 · 释放',0],[0.86,1,'已清空',1]]}
+  ];
+
+  lanes.forEach(function(L,i){
+    var y=44+i*52, h=26;
+    s+=sTxt(104,y+13,L.n,11,SINK,'end',700);
+    if(L.sub) s+=sTxt(104,y+25,L.sub,8.5,SDIM,'end',400,true);
+    L.segs.forEach(function(g){
+      var x=px(g[0]), w=px(g[1])-px(g[0]);
+      if(g[3]===1){       /* 不存在：只留一条虚线，不给它体积 */
+        s+=sLine(x,y+h/2,x+w,y+h/2,SDIM,1,'4 4');
+        if(w>60) s+=sTxt(x+w/2,y+h/2-5,g[2],9,SDIM,'middle',400);
+      }else if(g[3]===2){ /* 相变：通信原语插进来的那一格。格子只有三十几像素宽，
+                             全名写进去必然压到左右两段上——用缩写，全名在图注里定义 */
+        var bw=Math.max(w,30);
+        s+=sRect(x,y,bw,h,'#FFFFFF',SC.dp,1.6,2);
+        s+=sTxt(x+bw/2,y+17,g[2],10,SC.dp,'middle',700,true);
+      }else{
+        s+=sRect(x,y,w,h,L.c,L.c,1,2);
+        if(w>76) s+=sTxt(x+w/2,y+17,g[2],9.5,'#FFFFFF','middle',600);   /* 窄段不写字：字比格宽就会压到隔壁那一相上 */
+      }
+    });
+    (L.drop||[]).forEach(function(dp){
+      var x=px(dp[0]);
+      s+=sLine(x,y-4,x,y+h+4,SC.tp,1.6);
+      /* 标在泳道**下方**：写在上方会压住阶段标题（前向 / 反向 / 优化器步）那一行 */
+      s+=sTxt(x+5,y+h+14,dp[1],8.5,SC.tp,'start',700);
+    });
+  });
+
+  s+=sTxt(X0,344,'AG = AllGather · RS = ReduceScatter。竖线 = 相变点，也正是通信原语插进来的地方（§09、§15）。只有梯度与激活「会消失」——给常驻物配一条随时间起伏的曲线，画面在动、信息是零。',9.5,SDIM,'start',400);
+  m.innerHTML = s+'</svg>';
+}
+
+/* ===================== FIG 22 · 通信原语总是成对 ===================== */
+function figXform(){
+  var m=document.getElementById('fig-xform'); if(!m) return;
+  var W=920, H=330, s=sSvg(W,H);
+
+  var pairs=[
+    {t:'列切线性层的入口 f（不开 SP）',api:'copy_to_tensor_model_parallel_region',
+     f:['各卡完整的一份','copy','各卡完整的一份','前向不通信'],
+     b:['各卡的输入梯度','AllReduce','求和后的输入梯度','反向才通信']},
+    {t:'行切线性层的出口 g（不开 SP）',api:'reduce_from_tensor_model_parallel_region',
+     f:['各卡的部分和','AllReduce','完整输出','归属变了'],
+     b:['输出梯度','copy','输出梯度','反向不通信']},
+    {t:'开 SP 后的入口 f',api:'gather_from_sequence_parallel_region',
+     f:['序列维分片 s/TP','AllGather','完整序列 s','分片 → 完整'],
+     b:['完整梯度','ReduceScatter','序列维分片','完整 → 分片']},
+    {t:'开 SP 后的出口 g',api:'reduce_scatter_to_sequence_parallel_region',
+     f:['各卡的部分和','ReduceScatter','序列维分片 s/TP','规约+切分'],
+     b:['分片梯度','AllGather','完整梯度','分片 → 完整']}
+  ];
+
+  pairs.forEach(function(p,i){
+    var cx=(i%2)*460+18, cy=Math.floor(i/2)*156+30, w=424;
+    s+=sRect(cx,cy,w,138,'#FFFFFF',SRULE,1,4);
+    s+=sTxt(cx+12,cy+18,p.t,11,SINK,'start',700);
+    s+=sTxt(cx+w-12,cy+18,p.api,8.5,SDIM,'end',400,true);
+    [['前向',p.f,cy+34,SC.dp],['反向',p.b,cy+86,SC.tp]].forEach(function(row){
+      var y=row[2];
+      s+=sTxt(cx+12,y+22,row[0],10,row[3],'start',700);
+      s+=sRect(cx+48,y,112,34,'#F4F7F9',row[3],1,3);
+      s+=sTxt(cx+104,y+21,row[1][0],9.5,SINK,'middle',600);
+      s+=sArr(cx+164,y+17,cx+218,y+17,row[3],1.4);
+      /* 原语名长短差一倍（copy vs ReduceScatter），字号按长度收，否则长的会压到右边那格 */
+      s+=sTxt(cx+191,y+11,row[1][1],row[1][1].length>10?7.5:9,row[3],'middle',700,true);
+      s+=sRect(cx+222,y,112,34,'#F4F7F9',row[3],1,3);
+      s+=sTxt(cx+278,y+21,row[1][2],9.5,SINK,'middle',600);
+      /* 旁注只有约 80px 宽：超过八个汉字会被 viewBox 裁掉，写数据时就得压住 */
+      s+=sTxt(cx+344,y+21,row[1][3],8.5,SDIM,'start',400);
+    });
+  });
+
+  s+=sTxt(460,320,'四对里没有一对是「同一个原语来回用」。决定原语的不是维度，而是「要把张量从哪个 layout 变到哪个 layout」+「此刻在前向还是反向」',9.5,SDIM,'middle',400);
+  m.innerHTML = s+'</svg>';
+}
+
+/* ===================== FIG 23 · EP：按 token 路由的那条边 ===================== */
+function figEP(){
+  var m=document.getElementById('fig-ep'); if(!m) return;
+  var W=920, H=430, s=sSvg(W,H);
+
+  /* 6 个 token · top-1 演示（真实是 top-k，这里取 k=1 才画得下个体边；
+     基数一上去就只能出统计——见 §17 推论 8 与本节那段对齐说明） */
+  /* 每个 token 带上它<b>来自</b>哪张卡：③ 那张流量矩阵必须由 ①②
+     现算出来，写死一组数就会和左边的连线对不上（第一版正是这样，
+     矩阵说 R3→R1 有 3 个，可左边六条线里根本凑不出来）。 */
+  var toks=[{i:0,src:'R1',e:3},{i:1,src:'R1',e:7},{i:2,src:'R3',e:3},
+            {i:3,src:'R3',e:12},{i:4,src:'R6',e:7},{i:5,src:'R6',e:3}];
+  var EXP=[3,7,12], E2R={3:'R1',7:'R3',12:'R6'};
+  var RANKS=['R1','R3','R6'];
+
+  s+=sTxt(20,20,'① token → 专家（router 输出 · 每个微批都在变）',10.5,SINK,'start',700);
+  s+=sTxt(360,20,'② 专家 → rank（EP 配置 · 全程固定）',10.5,SINK,'start',700);
+  s+=sTxt(680,20,'③ rank → rank 的 token 计数',10.5,SINK,'start',700);
+
+  toks.forEach(function(t,i){
+    var y=44+i*34;
+    s+=sRect(24,y,74,26,'#FFFFFF',SDIM,1,3);
+    s+=sTxt(61,y+12,'token '+t.i,9.5,SINK,'middle',600);
+    s+=sTxt(61,y+22,'来自 '+t.src,8,SDIM,'middle',400,true);
+  });
+  s+=sRect(124,44,54,196,'#F3F0F8',SC.ep,1.4,4);
+  s+=sTxt(151,136,'router',10,SC.ep,'middle',700);
+  s+=sTxt(151,150,'top-k',9,SC.ep,'middle',400);
+
+  EXP.forEach(function(e,i){
+    var y=64+i*58;
+    s+=sRect(232,y,84,34,'#FFFFFF',SC.ep,1.4,3);
+    s+=sTxt(274,y+15,'expert '+e,10,SINK,'middle',700);
+    s+=sTxt(274,y+27,'住在 '+E2R[e],8.5,SDIM,'middle',400,true);
+  });
+  toks.forEach(function(t,i){
+    var y=44+i*34+13, ei=EXP.indexOf(t.e), ey=64+ei*58+17;
+    s+=sLine(98,y,124,y,SDIM,1);
+    s+=sArr(178,y,232,ey,SC.ep,1.2);
+  });
+
+  RANKS.forEach(function(r,i){
+    var y=64+i*58;
+    s+=sRect(372,y,74,34,'#F4F7F9',SINK,1.2,3);
+    s+=sTxt(409,y+21,r,11,SINK,'middle',700,true);
+    s+=sArr(316,y+17,372,y+17,SC.ep,1.2);
+  });
+  s+=sTxt(409,246,'All-to-All',10,SC.ep,'middle',700);
+  s+=sTxt(409,258,'（dispatcher 决定怎么搬）',8.5,SDIM,'middle',400);
+
+  /* ③ 矩阵：EP×EP 的流量，几十到几千格 —— 该用热力图而不是连线 */
+  var MX=RANKS.map(function(){ return RANKS.map(function(){ return 0; }); });
+  toks.forEach(function(t){ MX[RANKS.indexOf(t.src)][RANKS.indexOf(E2R[t.e])] += 1; });
+  var RECV=RANKS.map(function(r,j){ return MX.reduce(function(a,row){ return a+row[j]; },0); });
+  var mx0=560, my0=54, cs=34;
+  s+=sTxt(mx0-6,my0-8,'源＼宿',9,SDIM,'end',600);
+  RANKS.forEach(function(r,j){ s+=sTxt(mx0+j*cs+cs/2,my0-8,r,9,SDIM,'middle',600,true); });
+  MX.forEach(function(row,i){
+    s+=sTxt(mx0-6,my0+i*cs+cs/2+4,RANKS[i],9,SDIM,'end',600,true);
+    row.forEach(function(v,j){
+      var a = v===0?0.06:0.18+0.26*v;
+      s+=sRect(mx0+j*cs,my0+i*cs,cs-2,cs-2,'rgba(106,90,155,'+a.toFixed(2)+')',SRULE,.8,2);
+      s+=sTxt(mx0+j*cs+cs/2-1,my0+i*cs+cs/2+4,String(v),10,v>2?'#FFFFFF':SINK,'middle',700,true);
+    });
+  });
+  /* 列和 = 这张卡收到多少 token：它就是下面那条传导链的第三环，标出来才接得上 */
+  s+=sTxt(mx0-6,my0+3*cs+14,'收到',9,SC.tp,'end',700);
+  RECV.forEach(function(v,j){ s+=sTxt(mx0+j*cs+cs/2-1,my0+3*cs+14,String(v),10,SC.tp,'middle',700,true); });
+  s+=sTxt(mx0,my0+3*cs+34,'④ 还有一张表没画：token → 它在原序列里的位置。',9.5,SINK,'start',700);
+  s+=sTxt(mx0,my0+3*cs+48,'发之前要按目的专家重排成连续段，算完要',9,SDIM,'start',400);
+  s+=sTxt(mx0,my0+3*cs+61,'按同一张表逆排回去，否则接不上残差。',9,SDIM,'start',400);
+
+  /* 不均衡的传导链 */
+  var by=286;
+  s+=sLine(20,by-14,900,by-14,SRULE,1);
+  s+=sTxt(20,by,'不均衡怎么一路传导到 step 时长',11,SC.tp,'start',700);
+  var chain=[['router 偏斜','数据内容决定'],['专家负载不均','E3:E7:E12 = 3:2:1'],['rank 收到的 token 不均','R1 收 3 · R6 收 1'],
+             ['A2A 流量不均','等最慢的一方'],['专家 GEMM 计算不均',''],['到同步点更晚',''],['step 时长 ↑','全域被拖住']];
+  var cw=118, cgap=8;
+  chain.forEach(function(c,i){
+    var x=20+i*(cw+cgap), y=by+12;
+    var hot = i>=1 && i<=4;
+    s+=sRect(x,y,cw,42,hot?'#FCF0F1':'#FFFFFF',hot?SC.tp:SDIM,hot?1.4:1,3);
+    s+=sTxt(x+cw/2,y+18,c[0],9.5,SINK,'middle',600);
+    if(c[1]) s+=sTxt(x+cw/2,y+32,c[1],8.5,SDIM,'middle',400,true);
+    if(i<chain.length-1) s+=sArr(x+cw,y+21,x+cw+cgap-1,y+21,SDIM,1.2);
+  });
+  s+=sTxt(20,by+72,'越靠前的环越早暴露问题：等到看见 step 时长变长，前面五环已经全部发生过。§13 的 MoE 那一类指标（Pmax / H / tok / balance）读的就是头两环。',9.5,SDIM,'start',400);
+  s+=sTxt(20,by+88,'控制这条链的旋钮是容量因子与均衡辅助损失——它们作用在第一环上，而不是在下游补救。',9.5,SDIM,'start',400);
+
+  m.innerHTML = s+'</svg>';
+}
+
 /* ===================== 绑定与启动 ===================== */
 function boot(){
   [['fig-index',figIndex], ['fig-ring',figRing], ['fig-chains',figChains],
@@ -6529,7 +7349,9 @@ function boot(){
    ['fig-sibling',figSibling],
    ['fig-hccl',figHCCL],
    ['fig-waterfall',figWaterfall],
-   ['fig-nesting',figNesting]
+   ['fig-nesting',figNesting],
+   ['fig-state-kind',figStateKind], ['fig-zero',figZero], ['fig-life',figStateLife],
+   ['fig-xform',figXform], ['fig-ep',figEP]
   ].forEach(function(pr){ try{ pr[1](); }catch(e){ console.error(pr[0], e); } });
 
   /* 容器模型的四个旋钮 */

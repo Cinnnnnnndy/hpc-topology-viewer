@@ -7,7 +7,7 @@
   "selfContained": true,
   "upstream": {
     "prd": "../../parallel-topology/prd.html",
-    "conceptMap": "../../parallel-topology/concept-map.html",
+    "conceptMap": "../../parallel-reference/",
     "source": "public/parallel-topology/demo.html"
   },
   "urlParams": {
@@ -33,11 +33,13 @@
     "world|tp|cp|pp|ep|etp|layers|hidden|heads|kv|ffn|vocab|seq|experts|topk|mbs|ga|hbm": "整数 —— 逐项覆盖配置（DP 恒为 world/(TP·CP·PP) 推导，不可传入）",
     "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略",
     "cut": "tp|pp|cp|dp|ep —— 单维切分视图当前看哪一维",
+    "zero": "0|1|2|3 —— 模型态沿 DP 存几份（0 关：各卡一份完整；1 只切优化器态，即 Megatron 分布式优化器；2 再切梯度；3 连参数也切，即 FSDP FULL_SHARD）。不是并行维度、不参与整除约束，只改显存构成与生命周期：拨到 1 以上后 DP 从「只买吞吐」变成「也买余量」；拨到 3 还会多出一格「AllGather 窗口」——计算那一刻必须拼回的一个 wrap 单元的完整参数，它不是省下来的、是这一档的代价。默认 0，语义见 /parallel-reference/ §14。",
     "fill": "comp —— 整网切分视图「卡片内容」的第三态「层构成」：卡里逐层画一排算子方块（体积∝字节 · 切法看颜色 · 随层内容变化，解剖图的算子带按层折回卡壳），需与 net=1 同用（模型分片/显存占用仍走 net=1/net=0）"
   },
   "notes": [
     "不认识的参数一律忽略，非法值退回默认，不报错。",
     "rank 是地址不是容器：容器只有两个——卡（容量=显存）与流（容量=时间），据参照系 §08/§10/§15。",
-    "配置不合法时舞台封锁（DP-5 宁缺毋误），错误各带最近合法值。"
+    "配置不合法时舞台封锁（DP-5 宁缺毋误），错误各带最近合法值。",
+    "显存四档现在分两类读：模型态（权重/梯度/优化器态）问「哪一段归我」，执行态（激活/优化器步临时区/碎片）问「什么时候生、什么时候死」。宿主用 postMessage {type:'pto:state', step} 推进训练步时，每一档跟着报出当前相位（含本卡相位差——「此刻」对整网无定义，只对某张卡有定义）。据 /parallel-reference/ §14。"
   ]
 }
