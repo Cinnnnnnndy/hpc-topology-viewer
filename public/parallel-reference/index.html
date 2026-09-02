@@ -274,7 +274,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>20 节</span><span>41 张图</span><span>88 张表</span><span>规范术语表</span><span>15 条勘误</span><span>2026-09</span>
+    <span>20 节</span><span>41 张图</span><span>89 张表</span><span>规范术语表</span><span>15 条勘误</span><span>2026-09</span>
   </div>
 </header>
 
@@ -3247,6 +3247,46 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
   </table>
 
   <p>把两者混起来的代价是具体的：读者会以为可以用同一套原语去描述片上搬运（「这里做了一次 AllGather」），或者反过来以为跨卡通信也能靠调度隐藏掉。<strong>归属变不变，是这条界线的本质。</strong>片上存储层次的具体分级（各级缓冲的命名与容量）是厂商相关的实现细节，按 §19 的边界划在本文范围外。</p>
+
+  <h4>再往下分一层：跨 rank 那一侧其实有三种粒度</h4>
+
+  <p>「rank 间 / rank 内」只是第一刀。跨 rank 这一侧再按<strong>被搬的两端是什么关系</strong>分开，四条边就各归其位——而且这三种粒度的诊断问法完全不同：</p>
+
+  <table class="tbl">
+    <thead><tr><th>粒度</th><th>两端是什么关系</th><th>典型边</th><th>形状变不变</th><th>这一级异常时该问</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>副本之间</b></td>
+        <td>同一个张量的<b>多份复制</b>，值各不相同</td>
+        <td>DP 的梯度 AllReduce</td>
+        <td><b>不变</b>（值变：求和）</td>
+        <td>为什么各副本的值该被求和 —— 不求和权重就漂开</td>
+      </tr>
+      <tr>
+        <td><b>分块之间</b></td>
+        <td>同一个张量的<b>不同分片</b>，合起来才是一份</td>
+        <td>TP/SP 的 AG·RS、CP 的 KV AllGather、ZeRO-3 的参数 AllGather、EP 的 All-to-All</td>
+        <td><b>变</b>（分片 ↔ 完整，或换轴）</td>
+        <td>本卡那一片是哪一段、拼回来给谁用</td>
+      </tr>
+      <tr>
+        <td><b>段与段之间</b></td>
+        <td>不是同一个张量：上一段的<b>输出</b>就是下一段的<b>输入</b></td>
+        <td>PP 的 P2P Send/Recv</td>
+        <td><b>不变</b>（只是换了张卡）</td>
+        <td>谁在等谁 —— 这是唯一有严格因果的一条（§11 四）</td>
+      </tr>
+      <tr>
+        <td><b>rank 内</b></td>
+        <td>同一份数据在<b>同一张卡</b>的不同驻留位置</td>
+        <td>HBM ↔ 片上缓冲 ↔ 计算单元的搬运</td>
+        <td>不变</td>
+        <td>带宽够不够、有没有和计算重叠 —— <b>不是通信问题</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>「形状变不变」这一列是这张表最有用的一列。</strong>它把四种边分成两类：改形状的（分块之间）问的是「这一片是哪一段」，不改形状的（副本之间 / 段与段之间 / rank 内）问的是「值对不对」「谁在等谁」「够不够快」。<em>拿错问法，一条边的读数就全是噪声</em>——比如盯着 PP 那条边问「本卡持有哪一片」，它压根没被切过。</p>
 
   <h3>五 · EP 是唯一一条按 token 路由的边 <span class="cd e">token → 专家 T:E</span></h3>
 
