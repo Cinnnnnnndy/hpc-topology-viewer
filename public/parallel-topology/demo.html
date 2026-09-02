@@ -497,6 +497,10 @@
 .pt-rankmem .rm-d .c5 .c5h .c5d{color:var(--c); font-weight:800; margin-right:4px}
 .pt-rankmem .rm-d .c5 dd b{color:var(--pt-fg); font-weight:700}
 .pt-rankmem .rm-d .c5why{color:var(--pt-fg3); font-size:11.5px; line-height:1.45}
+/* 粒度标签：三级粒度（副本之间 / 分块之间 / 段与段之间 / rank 内）要一眼能比，
+   所以每块都带一枚，位置固定在原语那一行下面。 */
+.pt-rankmem .rm-d .c5gr{color:var(--c, var(--pt-fg3)); font-size:10.5px; letter-spacing:.04em; opacity:.85; margin-bottom:2px}
+.pt-rankmem .rm-d .c5g{margin:3px 0 4px}
 /* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
    图上已经画着的（几份、第几份）不再抄一遍。 */
 .pt-rankmem .rm-d .rm-fig{margin:4px 0 2px}
@@ -11048,7 +11052,16 @@ function memBlockDetail(D, g, key){
       + mo9.comm.map(function(c9){
           var live9 = dimLive9(c9.d);
           return comm5HTML(D, g, key, c9, live9, dimWhy9(c9.d));
-        }).join('');
+        }).join('')
+      /* 三级粒度里的第三级。上面两级（副本之间 / 分块之间 / 段与段之间）都跨 rank，
+         这一级不跨——把它画在同一栏里，是为了让「归属变不变」这条判据当场可比：
+         上面每一块都在改归属，这一块只改驻留位置。不画它，读者很容易把片上搬运
+         也当成一种原语（§15 四）。 */
+      + '<div class="c5" style="--c:var(--pt-fg3)">'
+      + '<div class="c5h"><span class="c5d" style="color:var(--pt-fg3)">rank 内</span>搬运——<b>不是通信</b></div>'
+      + '<div class="c5gr">rank 内 · 只换驻留位置</div>'
+      + '<div class="c5g">' + intraRankSVG() + '</div>'
+      + '</div>';
   } else if(mo9.silent){
     commLine = '<div class="rm-note">对应通信：<b>无</b>——'+esc(mo9.silent)+'</div>';
   }
@@ -11073,6 +11086,118 @@ function memBlockDetail(D, g, key){
     + commLine
     + sibLine
     + '</div>';
+}
+
+/* ══ 把「前态 → 后态」画出来，而不是写出来 ═══════════════════════════════
+   五元组里另外四样（张量是什么、谁和谁、什么效果、反向是谁）是**论断**，只能写；
+   但前态后态是**形状**——一句「[1, 4096, 4096] → [1, 8192, 4096]」要读者在脑子里
+   把两串数字对齐、找出哪一位变了、再想明白那一位代表什么。画出来就是一眼：
+   四格里亮着一格 → 整条亮着。这一屏别处早就守着同一条规矩（切法画出来不写出来，
+   见 memBlockDetail 里那几张腔图的注释），通信这一栏是最后一处还在用文字说形状的。
+
+   五种画法对应五类效果，不是五种原语——原语和效果不是一一对应的（§09 那条勘误）：
+     ag   分片 → 完整      本卡那一格亮着，收拢成整条
+     rs   完整 → 分片      反过来
+     ar   值变、形不变      两条一样长，左边各卡颜色不同、右边一律相同
+     a2a  重排             左右等长但格子顺序被打乱，连线交叉
+     p2p  换卡、形不变      同一条带从一只卡壳跳到另一只卡壳里 */
+function xformSVG(D, o){
+  var W = 300, H = 74, BW = 96, BH = 24, BY = 26;
+  var X0 = 4, X1 = W - 4 - BW, col = o.col, dim = 'var(--pt-fg3)';
+  var n = Math.max(1, Math.min(o.n || 1, 8)), mine = Math.min(o.mine || 0, n - 1);
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" '
+        + 'font-family="var(--pt-mono, ui-monospace, Menlo, monospace)">';
+  function seg(x, y, w, h, fill, stroke, dash){
+    return '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + Math.max(w,1).toFixed(1) + '" height="' + h + '" rx="2" '
+      + 'fill="' + (fill||'none') + '" stroke="' + (stroke||dim) + '" stroke-width="1"'
+      + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  }
+  function cap(x, y, t, c, anchor){
+    return '<text x="' + x + '" y="' + y + '" font-size="8.5" fill="' + (c||dim) + '" text-anchor="' + (anchor||'middle') + '">' + esc(t) + '</text>';
+  }
+  /* 一条按 n 等分的带；filled 里的那几格填实 */
+  function bar(x, filled, tone){
+    var out = '', w = BW / n, i;
+    for(i = 0; i < n; i++){
+      var on = filled.indexOf(i) >= 0;
+      out += seg(x + i*w, BY, w - (n>1?1:0), BH, on ? (tone||col) : 'transparent', on ? (tone||col) : dim);
+    }
+    return out;
+  }
+  var all = []; for(var i = 0; i < n; i++) all.push(i);
+
+  if(o.kind === 'ag' || o.kind === 'rs'){
+    var lf = o.kind === 'ag' ? [mine] : all, rf = o.kind === 'ag' ? all : [mine];
+    s += bar(X0, lf) + bar(X1, rf);
+    s += cap(X0 + BW/2, BY - 6, o.kind === 'ag' ? '每卡一片（亮的是本卡）' : '完整一份');
+    s += cap(X1 + BW/2, BY - 6, o.kind === 'ag' ? '拼成完整一份' : '切开（亮的是本卡）');
+  }else if(o.kind === 'ar'){
+    /* 值不同 → 值相同：形状一模一样，靠深浅表示「各卡的数不一样」 */
+    var t, out = '';
+    for(t = 0; t < n; t++) out += seg(X0 + t*(BW/n), BY, BW/n - 1, BH, mix(col, 26 + t*22), col);
+    s += out + bar(X1, all);
+    s += cap(X0 + BW/2, BY - 6, '各卡各一份 · 值不同');
+    s += cap(X1 + BW/2, BY - 6, '各卡同一份 · 已求和');
+  }else if(o.kind === 'a2a'){
+    /* 每一格给一个自己的色阶，两边同源同色——不然「重排」只是几根装饰性的交叉线，
+       读者看不出哪一格去了哪儿。有了色阶，连线是可追的：同色的两格就是同一批 token。 */
+    var ord = [2, 0, 3, 1].slice(0, n), k, w2 = BW / n, tint = function(i){ return mix(col, 30 + i*22); };
+    for(k = 0; k < n; k++){
+      s += seg(X0 + k*w2, BY, w2 - 1, BH, tint(k), col);
+      var dstI = ord.indexOf(k) >= 0 ? ord.indexOf(k) : k;
+      s += seg(X1 + dstI*w2, BY, w2 - 1, BH, tint(k), col);
+    }
+    for(k = 0; k < n; k++){
+      var y0 = BY + BH/2, x0 = X0 + (k + .5)*w2, x1 = X1 + ((ord.indexOf(k) >= 0 ? ord.indexOf(k) : k) + .5)*w2;
+      s += '<path d="M' + x0.toFixed(1) + ' ' + (BY+BH+2) + ' C ' + x0.toFixed(1) + ' ' + (H-4) + ', '
+         + x1.toFixed(1) + ' ' + (H-4) + ', ' + x1.toFixed(1) + ' ' + (BY+BH+2)
+         + '" fill="none" stroke="' + col + '" stroke-width=".9" opacity=".55"/>';
+    }
+    s += cap(X0 + BW/2, BY - 6, '按序列排布');
+    s += cap(X1 + BW/2, BY - 6, '按目的专家排布');
+  }else if(o.kind === 'p2p'){
+    /* 同一条带换了张卡：两只虚线卡壳，带只在其中一只里 */
+    s += seg(X0 - 2, BY - 8, BW + 4, BH + 16, 'transparent', dim, '4 3');
+    s += seg(X1 - 2, BY - 8, BW + 4, BH + 16, 'transparent', dim, '4 3');
+    s += seg(X0 + 4, BY, BW - 8, BH, col, col);
+    s += seg(X1 + 4, BY, BW - 8, BH, 'transparent', col, '3 3');
+    s += cap(X0 + BW/2, H - 4, o.srcLab || '本卡');
+    s += cap(X1 + BW/2, H - 4, o.dstLab || '下一段');
+    s += cap(X0 + BW/2, BY - 12, '形状不变');
+    s += cap(X1 + BW/2, BY - 12, '只是换了张卡');
+  }else{
+    return '';
+  }
+  /* 中间那支箭头 + 原语名：原语写在这里，因为它是**动作的名字**，不是形状 */
+  var ax0 = X0 + BW + 4, ax1 = X1 - 4, ay = BY + BH/2;
+  s += '<line x1="' + ax0 + '" y1="' + ay + '" x2="' + (ax1-5) + '" y2="' + ay + '" stroke="' + col + '" stroke-width="1.4"/>'
+     + '<path d="M' + ax1 + ' ' + ay + ' l-6 -3 l0 6 z" fill="' + col + '"/>'
+     + '<text x="' + ((ax0+ax1)/2) + '" y="' + (ay - 5) + '" font-size="8.5" font-weight="700" fill="' + col
+     + '" text-anchor="middle">' + esc(o.prim || '') + '</text>';
+  if(o.sub) s += cap((ax0+ax1)/2, ay + 12, o.sub, col);
+  return s + '</svg>';
+}
+
+/* rank 内的搬运：它**不是通信**，判据是归属变不变（§15 四）。
+   画出来的理由和上面一样——三级存储之间的往返是一条路径，写成一句话读者只会
+   把它当成又一种原语，画成一条从 HBM 走到计算单元的线，才看得出它根本没跨出这张卡。 */
+function intraRankSVG(){
+  var W = 300, H = 62, col = 'var(--pt-fg3)';
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" '
+        + 'font-family="var(--pt-mono, ui-monospace, Menlo, monospace)">';
+  s += '<rect x="2" y="2" width="' + (W-4) + '" height="' + (H-16) + '" rx="4" fill="none" stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"/>';
+  var boxes = [['HBM', 6], ['片上缓冲', 106], ['计算单元', 206]];
+  boxes.forEach(function(b, i){
+    s += '<rect x="' + (b[1]+4) + '" y="14" width="84" height="22" rx="3" fill="var(--pt-s2)" stroke="' + col + '" stroke-width="1"/>'
+       + '<text x="' + (b[1]+46) + '" y="29" font-size="9" fill="var(--pt-fg2)" text-anchor="middle">' + b[0] + '</text>';
+    if(i < 2){
+      s += '<line x1="' + (b[1]+90) + '" y1="25" x2="' + (b[1]+100) + '" y2="25" stroke="' + col + '" stroke-width="1.2"/>'
+         + '<path d="M' + (b[1]+104) + ' 25 l-5 -2.5 l0 5 z" fill="' + col + '"/>';
+    }
+  });
+  s += '<text x="' + (W/2) + '" y="' + (H-3) + '" font-size="8.5" fill="' + col + '" text-anchor="middle">'
+     + '不跨通信域 · 归属不变，只换驻留位置 · 靠流与 event 同步</text>';
+  return s + '</svg>';
 }
 
 /* ══ 通信五元组 ═══════════════════════════════════════════════════════════
@@ -11111,6 +11236,7 @@ function comm5Spec(D, key, dim){
   var shp = function(){ return '[' + Array.prototype.slice.call(arguments).join(', ') + ']'; };
   var T = {
     'w|tp': {
+      gfx:'ag', code:'AG / RS', grain:'分块之间 · 同一张量的分片',
       prim:'开 SP：入口 AllGather、出口 ReduceScatter',
       tensor:'层间激活（进出 TP 区的那一份）',
       before: shp(mb, fmt(Math.floor(sCp/D.tp)), fmt(h)) + ' · SP 段',
@@ -11119,6 +11245,7 @@ function comm5Spec(D, key, dim){
       dual:'<b>不开 SP 时不是这一对</b>：入口是 copy（前向不通信）、出口是 AllReduce。方向由「列切/行切 × 前向/反向 × SP 开没开」共同决定，不是固定模式'
     },
     'w|ep': {
+      gfx:'a2a', code:'All-to-All', grain:'分块之间 · 按 token 重排',
       prim:'All-to-All（dispatch），算完 combine 再一次',
       tensor:'本层 router 判定后的 token',
       before:'按序列排布 · 本卡 ' + fmt(mb*sCp) + ' token × top' + D.topk,
@@ -11127,6 +11254,7 @@ function comm5Spec(D, key, dim){
       dual:'combine 时按同一张置换表逆排回原位置，否则接不上残差'
     },
     'w|dp': {   /* ZeRO-3 才出现（见 zeroPatch） */
+      gfx:'ag', code:'AllGather', grain:'分块之间 · 同一张量的分片',
       prim:'AllGather（前向一次、反向一次）',
       tensor:'本层参数 W',
       before:'各卡 1/' + D.dp + ' 片',
@@ -11135,6 +11263,7 @@ function comm5Spec(D, key, dim){
       dual:'反向还要再拼一次；ZeRO-2 的差别就在「前向做完要不要立刻丢」这一个布尔量'
     },
     'agw|dp': {
+      gfx:'ag', code:'AllGather', grain:'分块之间 · 同一张量的分片',
       prim:'AllGather',
       tensor:'本层参数 W（拼回来的那一份）',
       before:'各卡 1/' + D.dp + ' 片',
@@ -11143,6 +11272,7 @@ function comm5Spec(D, key, dim){
       dual:'反向再来一次；窗口宽度 = FSDP 的 wrap 粒度'
     },
     'g|dp': {
+      gfx: D.zero >= 2 ? 'rs' : 'ar', code: D.zero >= 2 ? 'ReduceScatter' : 'AllReduce', grain:'副本之间 · 同一张量的多份',
       prim: D.zero >= 2 ? 'ReduceScatter' : 'AllReduce',
       tensor:'本段参数的梯度 ∇W',
       before:'dp 个副本各一份完整的偏导（各吃各的微批，值互不相同）',
@@ -11151,6 +11281,7 @@ function comm5Spec(D, key, dim){
       dual: D.zero >= 2 ? '与参数 AllGather 成对：AllReduce = ReduceScatter + AllGather，ZeRO 做的就是把这一对拆开' : '反向本身就是它——它是反向的收尾'
     },
     'act|pp': {
+      gfx:'p2p', code:'P2P', grain:'段与段之间 · 换一张卡',
       prim:'P2P Send/Recv（<b>点对点，不是集合通信</b>）',
       tensor:'段边界的激活',
       before:'stage ' + '{p}' + ' 的输出 ' + shp(mb, fmt(sCp), fmt(h)),
@@ -11159,6 +11290,7 @@ function comm5Spec(D, key, dim){
       dual:'反向沿相反方向传 ∂L/∂act'
     },
     'act|cp': {
+      gfx:'ag', code:'AllGather', grain:'分块之间 · 序列被切开的那几段',
       prim:'AllGather(KV)',
       tensor:'K / V',
       before:'本卡那一段序列的 KV ' + shp(mb, fmt(sCp), kvPerTp(D) + '·' + hd),
@@ -11167,6 +11299,7 @@ function comm5Spec(D, key, dim){
       dual:'反向对 KV 的激活梯度做 ReduceScatter；Ring 实现下这一对底层跑成环形 P2P——语义与实现是两层'
     },
     'act|tp': {
+      gfx:'ag', code:'AG / RS', grain:'分块之间 · 换轴（s ↔ h）',
       prim:'AllGather(s→h) / ReduceScatter(h→s)',
       tensor:'层间激活',
       before:'SP 段 ' + shp(mb, fmt(Math.floor(sCp/D.tp)), fmt(h)),
@@ -11175,6 +11308,7 @@ function comm5Spec(D, key, dim){
       dual:'成对：前向 AG 的反向就是 RS'
     },
     'opt|dp': {
+      gfx:'none', grain:'不出这张卡',
       prim:'不过网络',
       tensor:'主参数 fp32 + m + v',
       before:'本卡那一段',
@@ -11202,15 +11336,26 @@ function comm5HTML(D, g, key, c, live, why){
     before = before.replace('{p}', String(co.p));
     after  = after.replace('{p1}', co.p + 1 < D.pp ? String(co.p + 1) : '（末段 → loss）');
   }
+  var nxt = co.p + 1 < D.pp ? rankOf(co.t, co.c, co.d, co.p + 1, D) : null;
   var dst = c.d === 'pp'
-    ? (co.p + 1 < D.pp ? '下一段 r' + rankOf(co.t, co.c, co.d, co.p + 1, D) : '（末段，没有下一跳）')
+    ? (nxt !== null ? '下一段 r' + nxt : '（末段，没有下一跳）')
     : (DIMN[c.d] + ' 组 ' + pe.n + ' 张' + (pe.list.length ? '（' + pe.list.join(' ') + '）' : ''));
+  /* 形状交给图：前态/后态两行文字撤掉，改挂在图的 title 上——图上读不出精确 shape 时
+     悬停仍能拿到，但不再占两行正文。论断（张量是什么、谁和谁、什么效果、反向是谁）
+     画不出来，留字。 */
+  var gsvg = '';
+  if(sp.gfx && sp.gfx !== 'none'){
+    gsvg = '<div class="c5g" title="' + esc(before + '  →  ' + after) + '">'
+      + xformSVG(D, {kind:sp.gfx, col:col, n:Math.max(2, Math.min(pe.n, 4)), mine:pe.i % Math.max(2, Math.min(pe.n, 4)),
+                     prim:sp.code || '',
+                     srcLab:'r' + g, dstLab:(nxt !== null ? 'r' + nxt : 'loss')})
+      + '</div>';
+  }
   return '<div class="c5" style="--c:' + col + '">' + head
+    + (sp.grain ? '<div class="c5gr">' + esc(sp.grain) + '</div>' : '')
+    + gsvg
     + '<dl>'
     + '<dt>张量</dt><dd>' + esc(sp.tensor) + '</dd>'
-    + '<dt>前态</dt><dd>' + before + '</dd>'
-    + '<dt>后态</dt><dd>' + after + '</dd>'
-    + '<dt>原语</dt><dd>' + sp.prim + '</dd>'
     + '<dt>源→宿</dt><dd>本卡 r' + g + ' → ' + dst + '</dd>'
     + '<dt>效果</dt><dd>' + sp.effect + '</dd>'
     + '<dt>反向</dt><dd>' + sp.dual + '</dd>'
