@@ -3186,18 +3186,24 @@ function netScene(D, g, box, step){
   function compLayerStack(li, ww, kOff, focusCell){
     var ops8 = compOpsOf(li), n8 = ops8.length;
     var uA = 0.03, uB = 0.97;
-    var gap8 = (uB-uA)*0.10/Math.max(1, n8-1), bw8 = ((uB-uA) - gap8*(n8-1))/n8;
+    /* 层**内**的块要挨在一起（它们本来就是同一层的组成部分），层**间**才留缝——
+       原来两处都留同一个量级的缝，读者分不出哪条缝是「算子之间」、哪条是「层之间」。
+       块间缝收到几乎为零：一层读成一条连续的带，那才是一层。 */
+    var gap8 = (uB-uA)*0.012/Math.max(1, n8-1), bw8 = ((uB-uA) - gap8*(n8-1))/n8;
     /* 方块从层板底沿往上长：底沿 = 内容区下缘（AR），高度随字节走 √ 比例——
        线性的话 experts 一块独大（MoE 桶的字节比 attn 大两个量级），attn/norm
        全压成贴地的一条缝，「这一层由哪几块组成」反而读不出来。√ 保序不保比，
        精确字节在悬停读数里。 */
     var vB8 = AR*0.985, hMin8 = AR*0.06, hMax8 = AR*0.72;
-    /* 进深按块宽的比例给（不是按层间距）：u/v/w 是同一套 3D 坐标，层间距
-       （DEP/L）比块宽小一个量级，照它给的话侧面只有 1px、读不出体积。
-       这里让块读成接近正方的「体」，层与层之间允许挨得紧甚至微重叠——
-       近的层画在后面（painter's algorithm），天然盖住远层的侧面，叠出来
-       是一列台阶状的实心块，不是紧贴层板的薄片。 */
-    var compD8 = bw8 * 1.3;
+    /* 进深：上一版取 bw8*1.3（按块宽给），**不看层间距**——于是相邻两层在 w 轴上
+       必然重叠（bw8*1.3 比 DEP/L 大一截），一列层叠出来是连续的一坨，「哪儿是一层
+       的边界」在图上根本不存在。当时的理由是「照层间距给的话侧面只有 1px、读不出
+       体积」，那个顾虑是真的，但解法不是让层互相吃掉——是**按层间距留一条明确的缝**，
+       并且把缝本身画出来（见下面 compSep）。
+       取层距的 62%：块仍有肉眼可辨的侧面（体积感在），剩下 38% 是缝（分隔看得见）。
+       层距很大时（层数少）仍回落到 bw8*1.3，不让单层被拉成一根柱子。 */
+    var pitch8 = (DEP / Math.max(1, L)) || bw8;
+    var compD8 = Math.min(bw8 * 1.3, pitch8 * 0.70);
     for(var oi8 = 0; oi8 < n8; oi8++){
       var o8 = ops8[oi8];
       var x0 = uA + oi8*(bw8+gap8), x1 = x0 + bw8;
@@ -3220,6 +3226,29 @@ function netScene(D, g, box, step){
         var szT8 = o8.b > 0 ? (o8.b >= Math.pow(2,30) ? fmtGB(o8.b)+' GB' : Math.round(o8.b/Math.pow(2,20))+' MB') : '无参';
         hitOps.push(quad(frontPts8, 'fill:transparent;cursor:pointer', 'data-li="'+li+'"',
           esc(o8.id)+' · L'+li+' · '+esc(o8.how)+' · '+szT8));
+      }
+    }
+    /* 层分隔本身要画出来，不能只靠那条缝「暗示」——缝在斜投影下会被前一层的
+       侧面吃掉一部分，看上去仍像连着的。这里在缝的中间放一片薄板：一层的
+       地界到此为止，下一层从板那边重新开始。只给焦点卡画（量级 = lps 片），
+       别的卡上画满会变成一层网。 */
+    if(focusCell){
+      /* 一层 = 一个独立的块。层内那几个算子块是挨着的（它们本来就是这一层的
+         组成部分），靠这圈轮廓说清「合起来是一层」；层与层之间靠上面留出的缝
+         和下面那片分隔板分开。没有这圈轮廓，48 片薄板叠过去还是读成一条连续的带。 */
+      var hTop8 = vB8 - (hMin8 + hMax8);
+      body.push(quad([P(uA,hTop8,ww+compD8,kOff), P(uB,hTop8,ww+compD8,kOff),
+                      P(uB,vB8,ww+compD8,kOff),   P(uA,vB8,ww+compD8,kOff)],
+        'fill:none;stroke:var(--pt-fg3);stroke-width:.55;opacity:.55'));
+      /* 层号钉在这一块自己身上：哪一片是第几层，不用回头数 */
+      if(li % Math.max(1, Math.round(lps/6)) === 0){
+        var lnp8 = P(uA, hTop8, ww+compD8, kOff);
+        body.push(txt(lnp8[0]-3, lnp8[1]+2, 'L'+li, 3.6, 'var(--pt-fg3)', 'end'));
+      }
+      if(compD8 < pitch8*0.95){
+        var sepW8 = ww + compD8 + (pitch8 - compD8)*0.5;
+        body.push(quad([P(uA,0,sepW8,kOff), P(uB,0,sepW8,kOff), P(uB,AR*0.80,sepW8,kOff), P(uA,AR*0.80,sepW8,kOff)],
+          'fill:none;stroke:var(--pt-bd);stroke-width:.45;stroke-dasharray:2 2.5;opacity:.7'));
       }
     }
   }
@@ -3819,6 +3848,71 @@ function netScene(D, g, box, step){
   /* op9：整枚牌一起淡出（底、边、字同一档）。选中一张卡之后，跟它无关的那些
      桶号牌若还是满浓度，读者的眼睛仍然被一排等重的字拽着走——牌是**注解**，
      该跟着它注解的那只盒子一起让开。 */
+  /* ── 通信的「变换徽章」：画在 3D 场景里那条边上，不是写在右边读出卡里 ──────
+     画布上原本只有两样：一根连线（谁跟谁）＋ 一行标签（什么原语）。这两样都
+     答不出这一屏最该答的那句——**搬完之后，这份东西变成什么样了**。那句话原来
+     只在读出卡（右边那张「注释」）里，可读者的眼睛在画布上，两处隔着半屏。
+
+     徽章钉在这一组的**几何中心**，上面画的就是形状本身：
+       ag  两格里亮一格 → 整条亮      分片 → 完整
+       rs  反过来                      完整 → 分片
+       ar  左深浅不一 → 右一律相同      值变、形不变
+       a2a 左右等长、格子顺序换了       重排
+       p2p 一条实带 → 一条虚带          换卡、形不变
+     下面一行是粒度（副本之间 / 分块之间 / 段与段之间）——四条边同屏时，
+     这一行才说得清它们根本不是同一类关系。 */
+  function xfBadge(pt, kind, col, grain, sc){
+    var W = 92, H = 30, BW = 30, BH = 11, BY = 5, X0 = 6, X1 = W - 6 - BW;
+    var o = '<g transform="translate(' + pt[0].toFixed(1) + ',' + pt[1].toFixed(1) + ') scale(' + sc.toFixed(3) + ')">';
+    o += '<rect x="' + (-W/2) + '" y="' + (-H/2) + '" width="' + W + '" height="' + H + '" rx="4" '
+       + 'style="fill:var(--pt-bg);stroke:' + col + ';stroke-width:1.1;opacity:.97"/>';
+    o += '<g transform="translate(' + (-W/2) + ',' + (-H/2) + ')">';
+    function cell(x, w, fill, dash){
+      return '<rect x="' + x.toFixed(1) + '" y="' + BY + '" width="' + Math.max(w,1).toFixed(1) + '" height="' + BH + '" rx="1.5" '
+        + 'style="fill:' + (fill || 'none') + ';stroke:' + col + ';stroke-width:.9'
+        + (dash ? ';stroke-dasharray:2 2' : '') + '"/>';
+    }
+    var n = kind === 'a2a' ? 3 : 2, w1 = BW / n, i;
+    if(kind === 'ag' || kind === 'rs'){
+      for(i = 0; i < n; i++){
+        o += cell(X0 + i*w1, w1 - .8, (kind === 'ag' ? (i === n-1) : true) ? col : 'none');
+        o += cell(X1 + i*w1, w1 - .8, (kind === 'ag' ? true : (i === n-1)) ? col : 'none');
+      }
+    }else if(kind === 'ar'){
+      for(i = 0; i < n; i++){
+        o += cell(X0 + i*w1, w1 - .8, mix(col, 34 + i*40));
+        o += cell(X1 + i*w1, w1 - .8, col);
+      }
+    }else if(kind === 'a2a'){
+      var ord = [1, 2, 0];
+      for(i = 0; i < n; i++){
+        o += cell(X0 + i*w1, w1 - .8, mix(col, 30 + i*30));
+        o += cell(X1 + ord[i]*w1, w1 - .8, mix(col, 30 + i*30));
+      }
+    }else if(kind === 'intra'){
+      /* rank 内：三级存储串成一串，整串圈在一只虚线壳里——「没出这张卡」这件事
+         由那只壳说，不用文字补。三格之间是搬运不是通信，所以用细箭头不用原语名。 */
+      var st9 = [[X0, 'HBM'], [X0 + 26, '片上'], [X0 + 52, '计算']];
+      st9.forEach(function(b9, i9){
+        o += '<rect x="' + b9[0] + '" y="' + BY + '" width="22" height="' + BH + '" rx="1.5" '
+           + 'style="fill:var(--pt-s2);stroke:' + col + ';stroke-width:.8"/>'
+           + txt(b9[0] + 11, BY + BH - 3, b9[1], 5, col, 'middle');
+        if(i9 < 2) o += '<line x1="' + (b9[0]+22) + '" y1="' + (BY+BH/2) + '" x2="' + (b9[0]+25) + '" y2="' + (BY+BH/2)
+           + '" style="stroke:' + col + ';stroke-width:.9"/>';
+      });
+      o += '<rect x="' + (X0-3) + '" y="' + (BY-3) + '" width="' + (80) + '" height="' + (BH+6) + '" rx="2.5" '
+         + 'style="fill:none;stroke:' + col + ';stroke-width:.8;stroke-dasharray:3 2"/>';
+      o += txt(W/2, H - 5, grain, 6, col, 'middle', 'font-weight="700"');
+      return o + '</g></g>';
+    }else{                                  /* p2p：同一条带，从一只卡跳到另一只 */
+      o += cell(X0, BW, col) + cell(X1, BW, 'none', true);
+    }
+    var ax = X0 + BW + 2, bx = X1 - 2, ay = BY + BH/2;
+    o += '<line x1="' + ax + '" y1="' + ay + '" x2="' + (bx-3.5) + '" y2="' + ay + '" style="stroke:' + col + ';stroke-width:1"/>'
+       + '<path d="M' + bx + ' ' + ay + ' l-4 -2 l0 4 z" style="fill:' + col + '"/>';
+    o += txt(W/2, H - 5, grain, 6, col, 'middle', 'font-weight="700"');
+    return o + '</g></g>';
+  }
   function axLab(pt, s1, s2, col, strong, sz, op9){
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
@@ -4873,6 +4967,10 @@ function netScene(D, g, box, step){
          关掉了（「我现在不想看 TP」），cw9[dim] 是读出卡点开的那一档本来就不走这一维
          （「梯度不经 TP」）——前者是取景，后者是事实，谁都不能替谁。 */
       {dim:'tp', on: cw9.tp && commLit('tp') && (!ui.netOff || physSel9) && cutTP && D.tp > 1, prim:'allreduce',
+       /* 徽章画的是**效果**，跟着这根线此刻说的是哪件事走：点开激活档时它传的是
+          激活本身（SP 切开的 s 要 AllGather 回全长 → 分块之间），否则是部分和的
+          归约（值变、形不变 → 副本之间）。同一根线两件事，形状也不是同一个形状。 */
+       xf: memSel9 === 'act' ? 'ag' : 'ar', grain: memSel9 === 'act' ? '分块之间' : '副本之间',
        label: memSel9 === 'act' ? 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'
                                 : 'TP AllReduce · 组内同步',
        metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
@@ -4880,12 +4978,18 @@ function netScene(D, g, box, step){
          netOff 下这一条交给下面的地面流量带画（那一屏的语汇是贴地的抬升弧），
          这里只补它够不着的两种情形：整网内容打开、以及物理平铺（见 physSel9）。 */
       {dim:'cp', on: cw9.cp && commLit('cp') && cutCP && D.cp > 1 && (!ui.netOff || physSel9), prim:'allgather',
+       xf:'ag', grain:'分块之间',
        label:'AllGather(KV) · CP 组（激活）', metric: commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9c)},
       {dim:'pp', on: cw9.pp && commLit('pp') && cutPP && D.pp > 1, prim:'p2p',
+       xf:'p2p', grain:'段与段之间',
        label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
       {dim:'dp', on: cw9.dp && commLit('dp') && (!ui.netOff || physSel9) && cutDP && D.dp > 1, prim:'allreduce',
-       label:'梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
+       /* 拨了 ZeRO 之后 DP 这条边换了原语也换了效果：不再 AllReduce 成同一份，
+          而是 ReduceScatter 成各留一段。画布上必须跟着变，否则它和读出卡打架。 */
+       xf: D.zero >= 2 ? 'rs' : 'ar', grain: D.zero >= 2 ? '副本 → 分块' : '副本之间',
+       label: D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）' : '梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
       {dim:'ep', on: cw9.ep && commLit('ep') && (!ui.netOff || physSel9) && cutEP && D.moe && D.ep > 1, prim:'alltoall',
+       xf:'a2a', grain:'分块之间 · 重排',
        label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
     ];
     var ccLblN = 0;
@@ -4902,10 +5006,36 @@ function netScene(D, g, box, step){
       if(!allOk9) return;
       body.push('<g opacity=".92" pointer-events="none">'
         + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false}) + '</g>');
+      /* 徽章钉在这一组的几何中心——那正是这条关系「在画面上的位置」。
+         P2P 是一条链不是一个环，中心取本卡与下一段的中点，落在那一跳上。 */
+      if(cs9.xf){
+        var cx9 = 0, cy9 = 0, mN9 = pts9.length;
+        if(cs9.prim === 'p2p'){
+          var meI9 = mem9.indexOf(g), nxI9 = (meI9 >= 0 && meI9 + 1 < pts9.length) ? meI9 + 1 : 0;
+          if(meI9 < 0) meI9 = 0;
+          cx9 = (pts9[meI9][0] + pts9[nxI9][0]) / 2; cy9 = (pts9[meI9][1] + pts9[nxI9][1]) / 2;
+        }else{
+          for(var ci9 = 0; ci9 < mN9; ci9++){ cx9 += pts9[ci9][0]; cy9 += pts9[ci9][1]; }
+          cx9 /= mN9; cy9 /= mN9;
+        }
+        /* 同屏可能有四五条边，中心会撞在一起——按出现顺序错开一档，
+           错的是竖直方向：横向错位会让徽章离开它自己那条边。 */
+        body.push(xfBadge([cx9, cy9 - ccLblN * 20 * zoomF9], cs9.xf, VC[cs9.dim], cs9.grain, 0.62 * zoomF9));
+      }
       var lp9 = chainCardAnchor[g];
       if(lp9) axLab([lp9[0], lp9[1] - 30 - ccLblN*16], cs9.label, cs9.metric || null, VC[cs9.dim], true, 6.2*zoomF9);
       ccLblN++;
     });
+  }
+  /* ── rank 内那一级：三级粒度里唯一不跨卡的一级 ─────────────────────────
+     上面两段画的都是跨 rank 的边（副本之间 / 分块之间 / 段与段之间）。第三级
+     ——同一张卡里 HBM ↔ 片上缓冲 ↔ 计算单元的搬运——原来只在右边读出卡里写着，
+     画布上一个记号都没有。于是「归属变不变」这条判据在画面上是缺一半的：
+     读者看见四条边都在改归属，却看不见还有一类移动**不改**归属。
+     徽章钉在选中卡自己身上，不落在任何一条跨卡的边上——位置本身就是那句话。 */
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel && chainCardAnchor[g]){
+    var ia9 = chainCardAnchor[g];
+    body.push(xfBadge([ia9[0] + 66*zoomF9, ia9[1] + 34*zoomF9], 'intra', 'var(--pt-fg3)', 'rank 内 · 不跨通信域', 0.6*zoomF9));
   }
   /* ── 容量视图的地面流量带（观测台 Floor Sankey 的读法，长在本图自己的投影里）──
      整网视图的通信画在**算子**上（drawCommArcs——通信锚在产生它的那个算子）；
@@ -4983,10 +5113,13 @@ function netScene(D, g, box, step){
         return last9;
       }
       /* 浮标签同样只留名字与组信息，读数落到线上（口径同 drawCommArcs 那五处）。 */
-      function floorLab(at9, text9, col9, metric9){
+      function floorLab(at9, text9, col9, metric9, xf9, grain9){
         if(!at9) return;
         axLab([at9[0], at9[1] - 10], text9, null, col9, true, 6.4*zoomF9);
         lineNum9(at9.on, at9.u, metric9, col9);
+        /* 徽章落在弧顶下方：名字在上、形状在下，两样各占一行不互相压。
+           这条弧的中点本来就是「这次通信在画面上的位置」，形状钉在这里最省眼睛。 */
+        if(xf9) body.push(xfBadge([at9[0], at9[1] + 15*zoomF9], xf9, col9, grain9, 0.6*zoomF9));
       }
       /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
          3D 通信弧与容量地面流量带两处才对得上号，不是各画各的巧合数字。 */
@@ -4994,7 +5127,8 @@ function netScene(D, g, box, step){
       if(wantTP9){
         var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6, 'bi');
         floorLab(atTP9, 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
-          commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9));
+          commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9),
+          'ag', '分块之间');
       }
       if(wantEP9){
         var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
@@ -5009,7 +5143,8 @@ function netScene(D, g, box, step){
         });
         var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
         floorLab(atEP9, 'AllToAll · EP 组 dispatch（示意量）', VC.ep,
-          commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9));
+          commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9),
+          'a2a', '分块之间 · 重排');
       }
       if(wantDP9){
         /* 梯度 AllReduce 只在反向发生：虚线 + 朝回的箭头，两个信号都呼应
@@ -5018,16 +5153,19 @@ function netScene(D, g, box, step){
            它就是这一次归约在显存上占的那块 fp32 缓冲，所以标签跟着换个说法，
            线还是同一根，不另画一层假装有两次。 */
         var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4, 'back');
-        floorLab(atDP9, memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
-                                           : '梯度 AllReduce · DP 组（反向）', VC.dp,
-          commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9));
+        floorLab(atDP9, (D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）'
+                        : (memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
+                                              : '梯度 AllReduce · DP 组（反向）')), VC.dp,
+          commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9),
+          D.zero >= 2 ? 'rs' : 'ar', D.zero >= 2 ? '副本 → 分块' : '副本之间');
       }
       if(wantCP9){
         /* CP 组内 AllGather(KV)：实线不打虚——它发生在**前向**（注意力要读全序列的
            KV），与 DP 那条只在反向末尾发生的虚线正好是一对照。 */
         var atCP9 = floorBand(groupMembers('cp', g, D).filter(function(r9){ return r9 !== g; }), VC.cp, null, 1.5);
         floorLab(atCP9, 'AllGather(KV) · CP 组（前向，激活）', VC.cp,
-          commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRepFloor9));
+          commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRepFloor9),
+          'ag', '分块之间');
       }
     }
   }
