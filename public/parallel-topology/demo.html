@@ -488,6 +488,15 @@
 .pt-rankmem .rm-d dt{color:var(--pt-fg3); white-space:nowrap}
 .pt-rankmem .rm-d dd{margin:0; color:var(--pt-fg2)}
 .pt-rankmem .rm-d .rm-note{margin-top:3px; color:var(--pt-fg3); font-size:12px; line-height:1.5}
+/* 通信五元组：一次搬运记全需要五样（源 / 张量含前后 layout / 并行域 / 原语 / 宿）。
+   每一条独占一块、左边一道刀色竖条——同一档下常常有两三条（激活就有 PP/CP/TP 三条），
+   连成一段文字会分不清哪一行属于哪一条。 */
+.pt-rankmem .rm-d .c5{margin-top:5px; padding:4px 0 4px 8px; border-left:2px solid var(--c, var(--pt-bd))}
+.pt-rankmem .rm-d .c5.off{opacity:.55; border-left-style:dashed}
+.pt-rankmem .rm-d .c5 .c5h{color:var(--pt-fg); font-weight:700; margin-bottom:2px}
+.pt-rankmem .rm-d .c5 .c5h .c5d{color:var(--c); font-weight:800; margin-right:4px}
+.pt-rankmem .rm-d .c5 dd b{color:var(--pt-fg); font-weight:700}
+.pt-rankmem .rm-d .c5why{color:var(--pt-fg3); font-size:11.5px; line-height:1.45}
 /* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
    图上已经画着的（几份、第几份）不再抄一遍。 */
 .pt-rankmem .rm-d .rm-fig{margin:4px 0 2px}
@@ -821,7 +830,7 @@
 <body>
 <div class="pt-root" id="app">
   <header class="pt-bar">
-    <div class="pt-title"><b>并行拓扑</b><span class="sub">PRD Demo · <a href="./prd.html" target="_blank">PRD</a> / <a href="./concept-map.html" target="_blank">参照系</a></span></div>
+    <div class="pt-title"><b>并行拓扑</b><span class="sub">PRD Demo · <a href="./prd.html" target="_blank">PRD</a> / <a href="../parallel-reference/" target="_blank">参照系</a></span></div>
     <nav class="pt-seg" id="viewSeg"></nav>
     <div class="pt-chips" id="barChips"></div>
     <div class="pt-actions" id="barActs"></div>
@@ -1674,8 +1683,9 @@ function cutColor(c){ return (c && c !== 'none' && VC[c]) ? VC[c] : 'color-mix(i
    断言于是有了两面，两面都值得当场看见，所以它变成一个档位而不是一句注释。
 
    四档的语义按 DeepSpeed ZeRO 与 PyTorch FSDP 的官方定义（/parallel-reference/ §14 二）：
-   注：本文件里更早的注释写的「§15」等是 concept-map.html 那一版的编号，与
-   /parallel-reference/ 差一位；本轮新加的引用一律写全路径，不再只写 §号。
+   注：本文件里更早的注释写的「§15」等，引的是 concept-map.html 那一版的编号——
+   那份已在 2026-09 合并进 /parallel-reference/（原路径改成跳转桩），两份编号差一位。
+   老注释保持原样不逐条追改（改错比不改更糟），新加的引用一律写全路径 + 新编号。
      0 ── 关：W/G/O 每张 DP 卡各一份完整的（DDP / 经典 Megatron 语义）
      1 ── 只切优化器态。这就是 Megatron 的分布式优化器：官方显存表
           「bf16 参数 + fp32 梯度 18 B → 6 + 12/d」拆开正好是 W2+G4 留本地、O12 除以 d
@@ -11030,13 +11040,15 @@ function memBlockDetail(D, g, key){
                                    : '（本配置 '+DIMN[d9]+'=1，这一刀没落下）';
   }
   if(mo9.comm && mo9.comm.length){
-    commLine = '<div class="rm-note">对应通信：'
+    /* 原来这里是一行「维 + 一句话」。换成五元组：一次搬运记全需要源 / 张量（含前后
+       layout）/ 并行域 / 原语 / 宿，外加效果与反向对偶。只有维和原语的那一行，
+       答得了「多久」，答不了「为什么」——而这一屏被问到的从来是后者。 */
+    commLine = '<div class="rm-note" style="margin-top:5px">对应通信 · <b style="color:var(--pt-fg)">一次搬运记全是五样</b>'
+      + '<span style="opacity:.75">（源 / 张量含前后 layout / 并行域 / 原语 / 宿）</span></div>'
       + mo9.comm.map(function(c9){
           var live9 = dimLive9(c9.d);
-          return '<b style="color:'+(live9 ? VC[c9.d] : 'var(--pt-fg3)')+'">'+DIMN[c9.d]+'</b> '
-            + esc(c9.t) + (live9 ? '' : '<span style="opacity:.7">'+dimWhy9(c9.d)+'</span>');
-        }).join('<br>')
-      + '</div>';
+          return comm5HTML(D, g, key, c9, live9, dimWhy9(c9.d));
+        }).join('');
   } else if(mo9.silent){
     commLine = '<div class="rm-note">对应通信：<b>无</b>——'+esc(mo9.silent)+'</div>';
   }
@@ -11061,6 +11073,148 @@ function memBlockDetail(D, g, key){
     + commLine
     + sibLine
     + '</div>';
+}
+
+/* ══ 通信五元组 ═══════════════════════════════════════════════════════════
+   读出卡原来只报一行「对应通信：TP AllGather / Reduce-Scatter · TP 换轴器」。
+   那一行答得了「哪一维、什么原语」，答不了这一屏真正被问到的那两句：
+   **搬的是什么**、**搬完之后它变成了什么样**。而后者恰恰是通信的定义本身——
+   一次通信 = layout 变换 + 归属再分配，前态后态不写出来，「通信是状态转换」
+   就只是一句比喻（/parallel-reference/ §15 一、二）。
+
+   所以每一条通信补齐成五样 + 一个效果：
+     源 / 张量（含前态→后态）/ 并行域 / 原语 / 宿 ，外加 效果 与 反向对偶。
+   反向那一栏不是凑数：官方 mappings 里每个原语都写成「前向做什么、反向做什么」
+   的一对，而且**反向永远是另一个原语**（AG↔RS、copy↔AllReduce）——这条一写出来，
+   「决定原语的不是维度」那句话就有了现场证据。 */
+
+/* 这一维的组：几张卡、本卡第几个、组员是谁（列举前几个，多了省略）。 */
+function commPeers(D, g, dim){
+  var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
+  var n, i, mk;
+  if(dim === 'tp'){ n = D.tp; i = co.t; mk = function(k){ return rankOf(k, co.c, co.d, co.p, D); }; }
+  else if(dim === 'cp'){ n = D.cp; i = co.c; mk = function(k){ return rankOf(co.t, k, co.d, co.p, D); }; }
+  else if(dim === 'dp'){ n = D.dp; i = co.d; mk = function(k){ return rankOf(co.t, co.c, k, co.p, D); }; }
+  else if(dim === 'pp'){ n = D.pp; i = co.p; mk = function(k){ return rankOf(co.t, co.c, co.d, k, D); }; }
+  else if(dim === 'ep'){ n = D.ep; i = me ? me.ep : 0; mk = null; }   /* EP 是折叠出来的视图，没有可逆的门牌算术，只报组大小 */
+  else return null;
+  var list = [];
+  if(mk){ for(var k = 0; k < Math.min(n, 4); k++) list.push('r' + mk(k)); if(n > 4) list.push('…'); }
+  return {n:n, i:i, list:list};
+}
+
+/* 五元组的内容表。写成函数是因为前后 layout 必须**按当前配置算出来**——
+   写死一句「分片→完整」等于什么都没说，读者要的是 [1, 1024, 4096] → [1, 8192, 4096]。 */
+function comm5Spec(D, key, dim){
+  var K = key.indexOf('w:') === 0 ? 'w' : key;
+  var mb = D.mbs, sCp = Math.floor(D.seq / D.cp), h = D.hidden, hd = D.headDim;
+  var shp = function(){ return '[' + Array.prototype.slice.call(arguments).join(', ') + ']'; };
+  var T = {
+    'w|tp': {
+      prim:'开 SP：入口 AllGather、出口 ReduceScatter',
+      tensor:'层间激活（进出 TP 区的那一份）',
+      before: shp(mb, fmt(Math.floor(sCp/D.tp)), fmt(h)) + ' · SP 段',
+      after:  shp(mb, fmt(sCp), fmt(h)) + ' · TP 段',
+      effect:'分片 → 完整：<b>layout 变，归属不变</b>',
+      dual:'<b>不开 SP 时不是这一对</b>：入口是 copy（前向不通信）、出口是 AllReduce。方向由「列切/行切 × 前向/反向 × SP 开没开」共同决定，不是固定模式'
+    },
+    'w|ep': {
+      prim:'All-to-All（dispatch），算完 combine 再一次',
+      tensor:'本层 router 判定后的 token',
+      before:'按序列排布 · 本卡 ' + fmt(mb*sCp) + ' token × top' + D.topk,
+      after:'按目的专家排布（permute 成连续段才发得出去）',
+      effect:'<b>归属再分配 + 重排</b>——整张图上唯一一条按数据内容决定去向的边',
+      dual:'combine 时按同一张置换表逆排回原位置，否则接不上残差'
+    },
+    'w|dp': {   /* ZeRO-3 才出现（见 zeroPatch） */
+      prim:'AllGather（前向一次、反向一次）',
+      tensor:'本层参数 W',
+      before:'各卡 1/' + D.dp + ' 片',
+      after:'完整一层',
+      effect:'分片 → 完整，<b>用毕丢弃</b>——这一档的常驻量没变，变的是它什么时候在',
+      dual:'反向还要再拼一次；ZeRO-2 的差别就在「前向做完要不要立刻丢」这一个布尔量'
+    },
+    'agw|dp': {
+      prim:'AllGather',
+      tensor:'本层参数 W（拼回来的那一份）',
+      before:'各卡 1/' + D.dp + ' 片',
+      after:'完整一层 + 预取的下一层',
+      effect:'分片 → 完整（归属临时失效）',
+      dual:'反向再来一次；窗口宽度 = FSDP 的 wrap 粒度'
+    },
+    'g|dp': {
+      prim: D.zero >= 2 ? 'ReduceScatter' : 'AllReduce',
+      tensor:'本段参数的梯度 ∇W',
+      before:'dp 个副本各一份完整的偏导（各吃各的微批，值互不相同）',
+      after: D.zero >= 2 ? '只留本卡那一段（1/' + D.dp + '），已求和' : '各卡同一份，已求和',
+      effect: D.zero >= 2 ? '<b>值变（求和）＋ 归属再分配</b>（完整 → 分片）' : '<b>值变（求和），layout 与归属都不变</b>',
+      dual: D.zero >= 2 ? '与参数 AllGather 成对：AllReduce = ReduceScatter + AllGather，ZeRO 做的就是把这一对拆开' : '反向本身就是它——它是反向的收尾'
+    },
+    'act|pp': {
+      prim:'P2P Send/Recv（<b>点对点，不是集合通信</b>）',
+      tensor:'段边界的激活',
+      before:'stage ' + '{p}' + ' 的输出 ' + shp(mb, fmt(sCp), fmt(h)),
+      after:'stage ' + '{p1}' + ' 的输入（同一个张量，换了张卡）',
+      effect:'<b>归属换卡，layout 不变</b>——五条边里唯一不改形状的一条',
+      dual:'反向沿相反方向传 ∂L/∂act'
+    },
+    'act|cp': {
+      prim:'AllGather(KV)',
+      tensor:'K / V',
+      before:'本卡那一段序列的 KV ' + shp(mb, fmt(sCp), kvPerTp(D) + '·' + hd),
+      after:'全序列 KV ' + shp(mb, fmt(D.seq), kvPerTp(D) + '·' + hd),
+      effect:'分片 → 完整；<b>只发生在 attention</b>，其余算子照常（没有跨 token 运算）',
+      dual:'反向对 KV 的激活梯度做 ReduceScatter；Ring 实现下这一对底层跑成环形 P2P——语义与实现是两层'
+    },
+    'act|tp': {
+      prim:'AllGather(s→h) / ReduceScatter(h→s)',
+      tensor:'层间激活',
+      before:'SP 段 ' + shp(mb, fmt(Math.floor(sCp/D.tp)), fmt(h)),
+      after:'TP 段 ' + shp(mb, fmt(sCp), fmt(h)),
+      effect:'<b>换轴</b>：序列维 ↔ 隐藏维（切在哪根轴上变了）',
+      dual:'成对：前向 AG 的反向就是 RS'
+    },
+    'opt|dp': {
+      prim:'不过网络',
+      tensor:'主参数 fp32 + m + v',
+      before:'本卡那一段',
+      after:'本卡那一段（就地更新）',
+      effect:'<b>不通信</b>：归属早在梯度 ReduceScatter 那一步就分好了，这一档自己不用再说话',
+      dual:'—'
+    }
+  };
+  T['otmp|dp'] = T['g|dp'];   /* 临时区就是那一次归约的落脚处，同一件事的两面 */
+  return T[K + '|' + dim] || null;
+}
+
+/* 一条通信渲染成一块。dim 没落下时照旧列出来但标灰——「这套配置里没有」与
+   「这类对象没有」是两句不同的话（原来那条注释立的规矩，这里继续守）。 */
+function comm5HTML(D, g, key, c, live, why){
+  var col = live ? VC[c.d] : 'var(--pt-fg3)';
+  var head = '<div class="c5h"><span class="c5d">' + DIMN[c.d] + '</span>' + esc(c.t) + '</div>';
+  if(!live) return '<div class="c5 off" style="--c:' + col + '">' + head
+    + '<div class="c5why">' + esc(why) + '</div></div>';
+  var sp = comm5Spec(D, key, c.d);
+  if(!sp) return '<div class="c5" style="--c:' + col + '">' + head + '</div>';
+  var co = coordsOf(g, D), pe = commPeers(D, g, c.d);
+  var before = sp.before, after = sp.after;
+  if(c.d === 'pp'){                       /* PP 那两句要落到真实的段号上 */
+    before = before.replace('{p}', String(co.p));
+    after  = after.replace('{p1}', co.p + 1 < D.pp ? String(co.p + 1) : '（末段 → loss）');
+  }
+  var dst = c.d === 'pp'
+    ? (co.p + 1 < D.pp ? '下一段 r' + rankOf(co.t, co.c, co.d, co.p + 1, D) : '（末段，没有下一跳）')
+    : (DIMN[c.d] + ' 组 ' + pe.n + ' 张' + (pe.list.length ? '（' + pe.list.join(' ') + '）' : ''));
+  return '<div class="c5" style="--c:' + col + '">' + head
+    + '<dl>'
+    + '<dt>张量</dt><dd>' + esc(sp.tensor) + '</dd>'
+    + '<dt>前态</dt><dd>' + before + '</dd>'
+    + '<dt>后态</dt><dd>' + after + '</dd>'
+    + '<dt>原语</dt><dd>' + sp.prim + '</dd>'
+    + '<dt>源→宿</dt><dd>本卡 r' + g + ' → ' + dst + '</dd>'
+    + '<dt>效果</dt><dd>' + sp.effect + '</dd>'
+    + '<dt>反向</dt><dd>' + sp.dual + '</dd>'
+    + '</dl></div>';
 }
 
 /* ══ 选中 rank 的容器卡（Rank + 关整网）═════════════════════════════════

@@ -10,7 +10,7 @@
     "source": "public/parallel-topology/demo.html",
     "fullTool": "../../parallel-topology/demo.html",
     "prd": "../../parallel-topology/prd.html",
-    "conceptMap": "../../parallel-topology/concept-map.html"
+    "conceptMap": "../../parallel-reference/"
   },
   "reuses": [
     "model-graphviz —— openPangu 真图（55 个节点，算子布局与层级）；两头那两段按 model-architecture-3d-deck 的 staticHtml 补齐（Position IDs / Attention Context / Logits All-Gather / 展开的 MTP 尾巴——真图里没有，位置与次序照抄它，切法按同类算子的规则推）",

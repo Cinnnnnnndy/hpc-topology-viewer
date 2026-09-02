@@ -262,7 +262,10 @@ jobs:
           path: ptopo-src
 
       - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/
-        # 三页一套：concept-map（参照系）、prd、demo（应用形态，单文件、CSS/JS 内联）。
+        # 三页一套：concept-map、prd、demo（应用形态，单文件、CSS/JS 内联）。
+        # concept-map.html 自 2026-09 起只是一个**跳转桩**——参照系正本合并进了
+        # /parallel-reference/（原来两份副本并存、章节号还差一位）。桩必须继续发布：
+        # 这条路径已经发出去过（PRD、组合总图、demo 顶栏历史版本都链过它），删掉就是 404。
         # 两个入口：
         #  · /parallel-topology/            —— README 与站内一直写的目录路径，整套照搬；
         #    demo 的设计系统链接是 ../vendor/pto-design-system/…，恰好落在 main 构建
@@ -311,6 +314,7 @@ jobs:
           sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               $SRC/demo.html > $PAT/pattern.html
           # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这两行，否则线上 404。
@@ -344,6 +348,7 @@ jobs:
           sed -e 's#\.\./vendor/#./vendor/#g' \
               -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
               -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
               -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
               -e 's#<title>并行拓扑 · PRD Demo（应用形态）</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
               $SRC/demo.html > $NS/pattern.html

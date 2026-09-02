@@ -7,7 +7,7 @@
   "selfContained": true,
   "upstream": {
     "prd": "../../parallel-topology/prd.html",
-    "conceptMap": "../../parallel-topology/concept-map.html",
+    "conceptMap": "../../parallel-reference/",
     "source": "public/parallel-topology/demo.html"
   },
   "urlParams": {

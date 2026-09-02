@@ -59,7 +59,7 @@ sources & docs：[`public/vendor/net-sharding/`](public/vendor/net-sharding/READ
 
 | 链接 | 源 | 是什么 |
 |---|---|---|
-| `/parallel-reference/` | `public/parallel-reference/index.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误 |
+| `/parallel-reference/` | `public/parallel-reference/index.html` | **《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》**：术语、基数、切分、映射、通信、编号、运行时、**Rank 状态图 / 通信状态图**的完整参照系，配可交互示意图与勘误。**这是参照系的唯一正本** |
 | `/parallel-prd/` | `docs/parallel-topology-prd.md` | **《并行拓扑可视化工具 PRD》v0.1**：把参照系直接落成信息架构——四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准 |
 
 PRD 那张页是**构建产物**，不要手改：改 `docs/parallel-topology-prd.md` 之后跑
@@ -70,6 +70,12 @@ md 跟着发出去就等于同一份内容有两条链接。
 
 两条链接各自独立，但视觉语言同源（同一套 token、版心、章节标尺）——是一对文档，
 不该长成两种东西。
+
+> **参照系只有一份正本。** `public/parallel-topology/concept-map.html` 曾经是同一篇文档的
+> 第二份副本（`<title>` 一模一样），停在 16 节，而正本已经走到 20 节——两份的章节号差一位，
+> 于是「§15」到底指哪一节谁也说不清（2026-09 核对时发现三处交叉引用已经错位一格很久）。
+> 现在那份已合并进正本，原路径改成**跳转桩**（带锚点跳到 `/parallel-reference/`）——
+> 路径发出去过，不能直接删成 404。**要改参照系，只改 `public/parallel-reference/index.html`。**
 
 ## 组合工作台（`/combo-workbench/` · 独立迭代）
 
