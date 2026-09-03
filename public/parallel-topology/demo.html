@@ -3912,6 +3912,13 @@ function netScene(D, g, box, step){
       if(ui.cardMode && ui.compFill){
         /* 层构成：这一层画成一排合成算子方块，整网真图那条循环整个不走。 */
         compLayerStack(li, ww, kOff, focusCell);
+        /* 层构成 = 索引，卡内解剖 = 详情：同一件事的两个深度。层与层现在分得开
+           （减薄 + 拉开间距 + 分隔板），那条缝正好可以当导航用——点选中卡的
+           任意一层，就跳到卡内解剖里抽出那一层。只给选中那张卡：别的卡上的
+           「第 ℓ 层」不是读者此刻在问的那一层。 */
+        if(focusCell) hit.push('<g class="cgrow">' + pane(ww, kOff,
+          'fill:transparent;cursor:pointer', 'data-act="gotoanat" data-li="'+li+'"')
+          + '<title>L'+li+'：点开「卡内解剖」，把这一层抽出来看它由哪些算子组成、各自被哪把刀切</title></g>');
         /* ── 每画完一层就落一次批 ────────────────────────────────────────
            「方块看着不闭合、能透过去看见后面那一层」的真正原因在这儿：wq 把
            同样式的面攒成一条 <path>，一条 path 只能占**一个**绘制次序，于是
@@ -10503,6 +10510,11 @@ function renderDimBar(D, dim){
           return '<button class="pb mono'+(on?' is-on':'')+'" data-act="commprim" data-p="'+pr[0]+'" style="--c:'+VC.cp+'">'+pr[1]+'</button>';
         }).join('');
   }
+  /* 反向那一跳：这一屏答的是九层里的「并行 · 为什么需要它」，答完总要回到
+     「那这条边在阵列上长什么样」。带上 cgrain=rank 并把通信只留这一维——
+     否则跳回去是五条边一起亮，读者还得自己去关掉四条。 */
+  sb += '<span class="pt-sep"></span><button class="pb" data-act="dim2chain" data-d="'+dim+'" '
+      + 'title="回到整网切分那一屏，只亮这一维的边（rank 粒度）">在阵列里看这一维的边 ↷</button>';
   sb += '<span class="pt-chip">柱=卡（容器）· 块的横跨=共有 · 门牌=rank（1:N，同一张卡在别的维还有别的号 §10）</span>';
   $('stagebar').innerHTML = sb;
 }
@@ -12515,7 +12527,22 @@ document.addEventListener('click', function(ev){
   else if(act==='commgrain'){ ui.commGrain = b.getAttribute('data-v') || 'rank'; ui.commOn = true; render(); }
   /* 九格目录的两条跳转（见 commL9Go）：跳过去还要把那一屏问的对象对上——
      卡内解剖回到本卡这一段的第一层，单维切分切到点的那把刀。 */
-  else if(act==='gotoanat'){ ui.view = 'anatomy'; ui.selLayerOff = 0; stopAnim(); render(); }
+  else if(act==='gotoanat'){
+    /* 带了层号就抽那一层（层构成里点某一层过来的），没带就回本段第一层。
+       anatomy 那一屏问的是「段内第几层」，所以要把全局层号减掉本段的起点。 */
+    var Da9 = derive(cfg), la9 = b.getAttribute('data-li');
+    var off9 = 0;
+    if(la9 !== null && Da9.ok){
+      var pA9 = (sel !== null && sel < Da9.world) ? coordsOf(sel, Da9).p : 0;
+      off9 = clamp(+la9 - pA9*Da9.layersPerStage, 0, Math.max(0, Da9.layersPerStage - 1));
+    }
+    ui.view = 'anatomy'; ui.selLayerOff = off9; stopAnim(); render();
+  }
+  else if(act==='dim2chain'){
+    var dc9 = b.getAttribute('data-d');
+    COMMK.forEach(function(c9){ ui.comm[c9[0]] = (c9[0] === dc9); });
+    ui.commOn = true; ui.commGrain = 'rank'; ui.view = 'chain'; stopAnim(); render();
+  }
   else if(act==='gotodim'){
     var gd9 = b.getAttribute('data-d');
     if(gd9) ui.cutDim = gd9;
