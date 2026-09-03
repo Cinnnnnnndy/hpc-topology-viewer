@@ -3169,28 +3169,53 @@ function netScene(D, g, box, step){
      分数），画三个可见面（顶/前/侧，明度按 boxSVG 同一套三档），不再是紧贴层板
      叠在一起的半透明薄片——上一版逐张卡钉在同一 w 上画平面，转个角度看全是
      并排的纸片，体积感全靠悬停读数补，这版直接在图上长出体积。 */
+  /* ── 一块 = 一个**闭合的体**，不是三张拼在一起的面 ──────────────────────
+     上一版只画 top / front / side 三个面。那是等轴投影下「默认机位恰好看得见这三面」
+     的老写法：机位一转、或者放大到能看清单块时，缺掉的三个面就露馅——盒子是开口的，
+     从缺口能看进内部，也能透见后面那一块，读起来是几张斜着摆的纸片而不是一个体。
+     （这一屏的转台是可以转的，boxSVG 早就改成了六面 + 剔背面，这两个函数是漏网的。）
+
+     改法：六个面全建，靠**屏幕空间的有向面积**剔背面——每个面按「从外面看逆时针」
+     的顺序给顶点，投影之后算叉积和（鞋带公式），符号一致的那三个面朝向机位，另外
+     三个背对。这个判据不依赖具体投影，转台怎么转都成立。
+     明暗按面的身份给（顶亮、侧暗、前中），不按可见性给——这样转过去之后新露出来的
+     面也有正确的明暗，不会突然变成一片死板同色。 */
+  function compFaces(u0,v0,w0,du,dv,dw,off){
+    var u1=u0+du, v1=v0+dv, w1=w0+dw;
+    var A=[u0,v0,w0],B=[u1,v0,w0],C=[u1,v1,w0],Dd=[u0,v1,w0];
+    var E=[u0,v0,w1],F=[u1,v0,w1],G=[u1,v1,w1],H=[u0,v1,w1];
+    var pj=function(q){ return P(q[0],q[1],q[2],off); };
+    /* [四个顶点, 明暗档]：0=顶（亮）1=前/后（中）2=侧（暗）3=底（最暗） */
+    return [[[E,F,G,H],1],[[B,A,Dd,C],1],[[Dd,C,G,H],0],[[A,B,F,E],3],[[B,C,G,F],2],[[A,E,H,Dd],2]]
+      .map(function(f){ return {pts:f[0].map(pj), tone:f[1]}; });
+  }
+  function compShade(fillCol, tone){
+    return tone===0 ? 'color-mix(in srgb,'+fillCol+' 88%, #fff 12%)'
+         : tone===2 ? 'color-mix(in srgb,'+fillCol+' 70%, #000 30%)'
+         : tone===3 ? 'color-mix(in srgb,'+fillCol+' 58%, #000 42%)'
+         : fillCol;
+  }
+  /* 鞋带公式：投影后这个面的有向面积。凸盒的六个面里恰好三个同号——那三个朝向机位。 */
+  function faceArea(pts){
+    var a=0, n=pts.length, i;
+    for(i=0;i<n;i++){ var p1=pts[i], p2=pts[(i+1)%n]; a += p1[0]*p2[1] - p2[0]*p1[1]; }
+    return a/2;
+  }
   function compBox(u0,v0,w0,du,dv,dw,off,fillCol,strokeCol,strokeW,op8,attrs8){
-    var top9 = [P(u0,v0+dv,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
-    var frt9 = [P(u0,v0,w0+dw,off), P(u0+du,v0,w0+dw,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
-    var sid9 = [P(u0+du,v0,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0+du,v0,w0+dw,off)];
     var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW;
-    var opA = op8 == null ? 1 : op8;
-    var topC = 'color-mix(in srgb,'+fillCol+' 88%, #fff 12%)';
-    var sidC = 'color-mix(in srgb,'+fillCol+' 70%, #000 30%)';
-    return '<g'+(opA<1?' opacity="'+opA+'"':'')+(attrs8||'')+'>'
-      + quad(top9, 'fill:'+topC+';'+stB)
-      + quad(frt9, 'fill:'+fillCol+';'+stB)
-      + quad(sid9, 'fill:'+sidC+';'+stB)
-      + '</g>';
+    var opA = op8 == null ? 1 : op8, out = '';
+    compFaces(u0,v0,w0,du,dv,dw,off).forEach(function(f){
+      if(faceArea(f.pts) <= 0) return;                 /* 背面：不画 */
+      out += quad(f.pts, 'fill:'+compShade(fillCol,f.tone)+';'+stB);
+    });
+    return '<g'+(opA<1?' opacity="'+opA+'"':'')+(attrs8||'')+'>'+out+'</g>';
   }
   function compBoxWQ(u0,v0,w0,du,dv,dw,off,fillCol,strokeCol,strokeW,op8){
-    var top9 = [P(u0,v0+dv,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
-    var frt9 = [P(u0,v0,w0+dw,off), P(u0+du,v0,w0+dw,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
-    var sid9 = [P(u0+du,v0,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0+du,v0,w0+dw,off)];
     var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW;
-    wq(top9, 'fill:color-mix(in srgb,'+fillCol+' 88%, #fff 12%);'+stB);
-    wq(frt9, 'fill:'+fillCol+';'+stB);
-    wq(sid9, 'fill:color-mix(in srgb,'+fillCol+' 70%, #000 30%);'+stB);
+    compFaces(u0,v0,w0,du,dv,dw,off).forEach(function(f){
+      if(faceArea(f.pts) <= 0) return;
+      wq(f.pts, 'fill:'+compShade(fillCol,f.tone)+';'+stB);
+    });
   }
   function compLayerStack(li, ww, kOff, focusCell){
     var ops8 = compOpsOf(li), n8 = ops8.length;
@@ -4937,7 +4962,13 @@ function netScene(D, g, box, step){
      位置），物理平铺下卡已经挪走，弧线会连到空气里——物理平铺时不画。下面那段
      用 chainCardAnchor（真实屏幕锚点，不是重新算的列位置）画的卡对卡连线不受
      影响，物理平铺下也照常画。 */
-  if(ui.commOn && !lowDetail && !ui.netOff && !physOn) drawCommArcs();
+  /* 层构成（compFill）下**不选中就不画通信**：这一屏问的是「一张卡里逐层装了什么」，
+     没选中任何一张卡时，算子级的通信弧铺满整屏、每根都不属于读者正在看的那张卡，
+     只是噪声（实机上一屏能压出十几条弧＋标签，把层本身盖住）。选中一张卡之后再画，
+     那时每一根都答得出「这张卡为这一层跟谁说话」。
+     模型分片（net，非 compFill）照旧默认画——那一屏的题面本来就是「整网怎么连」，
+     不选卡也有意义，改掉会动到所有人熟悉的那一屏。 */
+  if(ui.commOn && !lowDetail && !ui.netOff && !physOn && !(ui.cardMode && ui.compFill && !hasSel)) drawCommArcs();
   /* ── 卡对卡通信线（补 netScene 一直缺的那一层）──────────────────────────
      drawCommArcs() 回答的是「这次通信落在哪个算子上」——弧线锚在产生它的
      那个节点，只在焦点卡自己的算子网格里活动，看不出「一共连了几张卡、
