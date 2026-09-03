@@ -925,6 +925,19 @@ function $(id){ return document.getElementById(id); }
 function tipChip(short9, long9){
   return '<span class="pt-chip" style="cursor:help" title="'+esc(long9)+'">'+esc(short9)+' <span style="opacity:.55">ⓘ</span></span>';
 }
+/* 从一串读数（'34MB · 143GB/s · 0.23ms · 3807 tok'）里抽出**关键值**：
+   搬多少 + 多久。反馈原话「这后面的关键值范围是要显示在标签上的，而不是名称」
+   ——名称（梯度 AllReduce · DP 组）读者从颜色和位置就认得出，标签这么小的地方
+   应该留给只有数字才说得清的那两样；带宽与 token 数留在悬停里。 */
+function metricBrief(m9){
+  var t9 = String(m9 || '');
+  var by9 = (t9.match(/[\d.]+\s?(?:KB|MB|GB|TB)/) || [''])[0];
+  var ms9 = (t9.match(/[\d.]+\s?ms/) || [''])[0];
+  var out9 = [];
+  if(by9) out9.push(by9.replace(/\s/g, ''));
+  if(ms9) out9.push(ms9.replace(/\s/g, ''));
+  return out9.join(' · ');
+}
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmt(n){ return Number(n).toLocaleString('en-US'); }
 function fmtGB(b){ return (b/Math.pow(2,30)).toFixed(b >= Math.pow(2,30)*10 ? 0 : 1); }
@@ -3184,6 +3197,8 @@ function netScene(D, g, box, step){
      这里记下每张卡**本段代表层**那一排块的位置，下面卡对卡的边就改连块与块。
      只记代表层（每段中间那一层）：全记是 128 卡 × 48 层 × 7 块，没必要。 */
   var compAnchor = {};
+  /* 同一块在这一段里另外几层的位置：用来画「沿层重复」那几条淡线（见 sampleLis8）。 */
+  var compAnchorRep = {};
   function compAnchorKey(rank9, id9){ return rank9 + '|' + id9; }
   /* 选中那张卡自己的图元锚点：显存视图下是五档色带，整网视图下没有块可锚，
      退回卡壳的投影框——「rank 内」那一层的三条关系要画在这些图元之间，
@@ -3320,6 +3335,20 @@ function netScene(D, g, box, step){
   /* 每一段的代表层：段中间那一层。段与段之间连线时两头各取自己那一段的代表层，
      于是 PP 的边天然是「这一段的块 → 下一段的块」。 */
   function anchorLi8(p8){ return Math.min(L - 1, p8*lps + (lps >> 1)); }
+  /* ── 「这个关系是不是每层都应该有？」——分两种 ────────────────────────────
+     是：TP 的换轴/归约每层两次、CP 的 KV AllGather 每层一轮、EP 的 All-to-All
+         每个 MoE 层两次（dense 层没有 experts 那一块，自然也就没有这条边）；
+     不是：PP 只在**段边界**发生一次、DP 的梯度归约只在**步末**发生一次。
+     所以每层都画一遍才是实话——但一段 12 层 × 7 个 EP 对端 = 84 条线，画满就
+     什么都读不出来了。折中：在这一段里等距取 4 层，代表层那一条照旧实画并挂
+     芯片，其余三条画成细淡的「重复痕」——一眼看得出「这条边是沿层重复的」，
+     而 PP / DP 那两条**没有**重复痕，两者的区别正好落在图上。 */
+  function sampleLis8(p8){
+    var out8 = [], f8 = [0.16, 0.40, 0.62, 0.86], i8;
+    for(i8 = 0; i8 < f8.length; i8++) out8.push(Math.min(L - 1, p8*lps + Math.floor(lps*f8[i8])));
+    out8[1] = anchorLi8(p8);                       /* 第二个槽固定是代表层：实画的那条 */
+    return out8;
+  }
   function compLayerStack(li, ww, kOff, focusCell){
     var ops8 = compOpsOf(li), n8 = ops8.length;
     var uA = 0.03, uB = 0.97;
@@ -3365,9 +3394,12 @@ function netScene(D, g, box, step){
          tIdx/cIdx/dIdx 是外层列循环里的 var——函数作用域，这里读到的就是
          「正在画的这一列」。 */
       var cAn8 = [(frontPts8[0][0]+frontPts8[2][0])/2, (frontPts8[0][1]+frontPts8[2][1])/2];
-      if(li === anchorLi8(cutPP ? stOf(li) : co.p)){
-        var aRank8 = rankOf(tIdx, cIdx, dIdx, cutPP ? stOf(li) : co.p, D);
-        compAnchor[compAnchorKey(aRank8, o8.id)] = cAn8;
+      var pOf8 = cutPP ? stOf(li) : co.p;
+      var sl8 = sampleLis8(pOf8).indexOf(li);
+      if(sl8 >= 0){
+        var aRank8 = rankOf(tIdx, cIdx, dIdx, pOf8, D), aKey8 = compAnchorKey(aRank8, o8.id);
+        if(li === anchorLi8(pOf8)) compAnchor[aKey8] = cAn8;
+        (compAnchorRep[aKey8] || (compAnchorRep[aKey8] = []))[sl8] = cAn8;
       }
       /* 选中卡：每一层记一个中点，供 rank 内那条沿层的链用 */
       if(focusCell && oi8 === (n8 >> 1)) focusLayerPts9.push(cAn8);
@@ -4150,12 +4182,18 @@ function netScene(D, g, box, step){
     chipRects.push({x:x9, y:y9, w:w9, h:h9});
     return [x9, y9];
   }
+  /* 芯片＝**字 + 一层描边底色**，不再是一枚带边框的大标签。
+     反馈原话：「优先显示值，值可以不要大标签就用字+描边底色来节省空间」——
+     胶囊的圆角、描边、左右各 9 的内边距合起来比字本身还占地方，而它要挡的
+     只是「字压在密密麻麻的棱线上读不出来」这一件事，一层底色халo 就够了。
+     底板留一块极淡的圆角衬底（不描边），让数字在深色棱线上仍然立得住。 */
   function commChip(pt, code, col, tip, sc){
-    var f9 = 6.6*sc, w9 = String(code).length*f9*0.62 + 9*sc, h9 = f9*1.9;
+    var f9 = 7.2*sc, w9 = String(code).length*f9*0.6 + 4*sc, h9 = f9*1.45;
     var pl9 = placeAt(pt[0], pt[1], w9, h9), x9 = pl9[0], y9 = pl9[1];
-    body.push('<rect x="'+(x9-w9/2).toFixed(1)+'" y="'+(y9-h9/2).toFixed(1)+'" width="'+w9.toFixed(1)+'" height="'+h9.toFixed(1)+'" rx="'+(h9/2).toFixed(1)+'" '
-      +'style="fill:var(--pt-bg);stroke:'+col+';stroke-width:1;opacity:.97"/>');
-    body.push(txt(x9, y9 + f9*0.36, code, f9, col, 'middle', 'font-weight="800"'));
+    body.push('<rect x="'+(x9-w9/2).toFixed(1)+'" y="'+(y9-h9/2).toFixed(1)+'" width="'+w9.toFixed(1)+'" height="'+h9.toFixed(1)+'" rx="'+(2.5*sc).toFixed(1)+'" '
+      +'style="fill:var(--pt-bg);stroke:none;opacity:.82"/>');
+    body.push(txt(x9, y9 + f9*0.34, code, f9, col, 'middle',
+      'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="'+(2.6*sc).toFixed(1)+'"'));
     hit.push('<rect x="'+(x9-w9/2).toFixed(1)+'" y="'+(y9-h9/2).toFixed(1)+'" width="'+w9.toFixed(1)+'" height="'+h9.toFixed(1)+'" '
       +'style="fill:transparent;cursor:help"><title>'+esc(tip)+'</title></rect>');
   }
@@ -4408,7 +4446,8 @@ function netScene(D, g, box, step){
     var arcLblOn9 = !(ui.cardMode && hasSel);
     function arcLab9(m9, code9, tip9, col9){
       if(!arcLblOn9 || !m9) return;
-      commChip([m9[0], m9[1] - 12], code9, col9, tip9, zoomF9);
+      /* 同 CARD_COMM：芯片上写关键值，名称进悬停 */
+      commChip([m9[0], m9[1] - 12], metricBrief(tip9) || code9, col9, tip9, zoomF9);
     }
     var NU = {};
     function nUV(id){
@@ -5327,6 +5366,24 @@ function netScene(D, g, box, step){
         ccLblN++;
         return;
       }
+      /* 沿层重复的那几条淡线：只有每层都发生的维才画（TP / CP / EP），
+         PP（段边界一次）与 DP（步末一次）不画——「有没有重复痕」本身就是
+         这两类通信的区别，不是装饰。 */
+      if(ui.compFill && !cgBlock9 && ['tp','cp','ep'].indexOf(cs9.dim) >= 0 && BLK9){
+        for(var sk9 = 0; sk9 < 4; sk9++){
+          if(sk9 === 1) continue;                       /* 代表层那一条下面实画 */
+          var rp9 = [], ok9 = true;
+          for(var rm9 = 0; rm9 < mem9.length; rm9++){
+            var idr9 = (cs9.dim === 'pp') ? BLK9 : BLK9;
+            var arr9 = compAnchorRep[compAnchorKey(mem9[rm9], idr9)];
+            if(!arr9 || !arr9[sk9]){ ok9 = false; break; }
+            rp9.push(arr9[sk9]);
+          }
+          if(!ok9) continue;
+          body.push('<g opacity=".26" pointer-events="none">'
+            + edgeSVG(rp9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: 0.7}) + '</g>');
+        }
+      }
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
         + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9}) + '</g>');
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
@@ -5346,7 +5403,9 @@ function netScene(D, g, box, step){
          九格里那两格点得过去）。 */
       var msTxt9 = (String(cs9.metric || '').match(/[\d.]+ms/) || [''])[0];
       var WHENC9 = {tp:'每层×2', cp:'每层×1', pp:'每 μb', dp:'步末一次', ep:'每层×2'}[cs9.dim];
-      var code9 = cs9.code;
+      /* rank 档的芯片写**关键值**（搬多少 · 多久），不写名称；名称进悬停。
+         没有读数可抽时（比如这一维还没给指标）才退回名称，不给一枚空芯片。 */
+      var code9 = metricBrief(cs9.metric) || cs9.code;
       if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
       else if(cgCost9) code9 = cs9.dim === 'pp' ? ('气泡 ' + Math.round(D.bubble*100) + '%') : (msTxt9 || cs9.code);
       /* 影响档：边的粗细按耗时给（1.2–4.2），最贵的那条一眼就粗出来。 */
@@ -5365,8 +5424,11 @@ function netScene(D, g, box, step){
       if((cgRank9 || cgTime9 || cgCost9) && code9){
         var lp9 = chainCardAnchor[g];
         var bx9 = lp9 ? lp9[0] + (cx9 - lp9[0])*0.58 : cx9, by9 = lp9 ? lp9[1] + (cy9 - lp9[1])*0.58 : cy9;
+        var rep9 = ['tp','cp','ep'].indexOf(cs9.dim) >= 0
+          ? '这条边**每层都有**（' + WHENC9 + '）——图上那几条淡线就是它沿层的重复；'
+          : '这条边**不是每层都有**：' + WHENC9 + '，所以图上没有沿层的重复痕；';
         commChip([bx9, by9], code9, VC[cs9.dim],
-          tip9 + (cgTime9 ? ' · 何时：' + WHENC9 : '') + (cgCost9 ? ' · 代价：' + (msTxt9 || '—') : ''), zoomF9);
+          rep9 + tip9 + (cgTime9 ? ' · 何时：' + WHENC9 : '') + (cgCost9 ? ' · 代价：' + (msTxt9 || '—') : ''), zoomF9);
       }
       ccLblN++;
     });
@@ -5535,7 +5597,8 @@ function netScene(D, g, box, step){
           if(xf9) body.push(xfBadge([at9[0], at9[1] - 10*zoomF9], xf9, col9, grain9, 0.6*zoomF9));
           return;
         }
-        commChip([at9[0], at9[1] - 10], code9, col9, text9 + (metric9 ? ' · ' + metric9 : ''), zoomF9);
+        commChip([at9[0], at9[1] - 10], metricBrief(metric9) || code9, col9,
+          text9 + (metric9 ? ' · ' + metric9 : ''), zoomF9);
       }
       /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
          3D 通信弧与容量地面流量带两处才对得上号，不是各画各的巧合数字。 */
@@ -6896,6 +6959,20 @@ function graphSVG(o){
                     esc(n.label)+esc(tag)+((one9 && !side9) ? '<tspan fill="'+metricColor(o.metricLi, n)+'" font-weight="700" font-size="'+(5.4*fitK*fk/zs*1.15).toFixed(2)+'">  '+esc(mtx9)+'</tspan>' : ''),
                     5.4*fitK*fk/zs, gh?'var(--pt-fg3)':'var(--pt-fg)', 'middle',
                     (dim?'font-weight="700" ':'')+HALO+'pointer-events="none"'));
+      /* ── 名字装不下时**优先写值** ────────────────────────────────────────
+         反馈两条合在一处：「优先显示值」「整网图的展开之前讨论过应该是每个都有
+         值的，为什么现在不显示数值了」。原来的判定是「名字装不下 → 这个框什么
+         都不写」，于是框一窄，整片算子连一个数都没有；而名字在悬停与明细卡里
+         都拿得到，数值不画在图上就真的看不到。
+         所以补一条兜底：名字装不下、但按框宽截断后的读数装得下，就只写读数。
+         连三四个字符都塞不进才真的空着。 */
+      if(!labOn9 && o.metricLi != null && !gh && h*zs >= 5.5){
+        var mo9 = opMetric9(o.metricLi, n, Math.max(3, Math.floor(w*zs/(3.0*fk))));
+        if(mo9 && w*zs >= mo9.length*2.7*fk)
+          txts.push(txt(x+w/2, y+h/2+2*fk/zs, esc(mo9),
+            Math.max(4.2, Math.min(5.8, (w*zs)/(mo9.length*0.86*fk)))*fk/zs,
+            metricColor(o.metricLi, n), 'middle', 'font-weight="800" '+HALO+'pointer-events="none"'));
+      }
       if(two9 && !side9)
         /* 读数才是这张卡真正被读的理由（名字只是找到它是谁）：单独成行时色权
            顶格给到 fg、加粗——不动字号预算（3.4–4.6，装得下几个字是算好的），
@@ -8196,7 +8273,13 @@ var FS_GAIN_MAX = 2.6;
    框涨了 20 倍字纹丝不动，观感就是「越放大字越小」（用户反馈，画布里普遍存在）。
    降到 0.35 之后字跟着放大手势一起长，只是长得比框慢：20x 时字约放大 20^0.35≈2.9
    倍，框还是放大 20 倍——字不再看着被落下，也没有跟框 1:1 长到处处打架。 */
-var FS_ZOOM_GROWTH = 0.35;
+/* 0.35 → 0.48：反馈「左侧正视图整网图的字一放大了还是会突然变小」。
+   0.35 的增长率意味着放大到 6 倍时字只长到 1.8 倍——图元长了 6 倍、字才长 1.8 倍，
+   眼睛读到的就是「越放大字越小」。这一档是**相对**大小的问题，不是绝对像素的
+   问题：地图式反除保证的是「字在屏幕上不会小到看不清」，可它同时也保证了
+   「字永远追不上它要标注的那个框」。抬到 0.48 之后 6 倍缩放对应字长到 2.3 倍，
+   与框的比例差距明显收窄。 */
+var FS_ZOOM_GROWTH = 0.48;
 /* 字号增长封顶：只降增长率（0.35）还不够——damping 之后字仍然没有上限，一路
    放大到 20x，字跟着长到远超相邻的读数行、悬浮提示预留的间距，照样在高倍缩放
    时撞在一起（实机反馈：AllGather/AllToAll 两行标注挤成一团，算子名和它自己
@@ -8204,7 +8287,11 @@ var FS_ZOOM_GROWTH = 0.35;
    缩放涨了——「Math.max(zoom3^k, zoom3/CAP)」这个写法在 zoom3 较小时走前一项
    （跟着长），涨到前一项追上 zoom3/CAP 那条线（此时字已经到封顶）之后自动切到
    后一项，效果是「先长后平」，不是在某一帧生硬截断。 */
-var FS_ZOOM_GROWTH_CAP = 1.6;
+/* 1.6 → 2.4：同上。封顶本来是防「高倍缩放时两行标注挤成一团」，但那是**固定
+   位置**的几条注解（AllGather/AllToAll 那两行）挤在一起，而它们的间距也随缩放
+   一起长——真正会撞的是字长得比间距快的那一段，1.6 定得过早，代价是整张图在
+   常用的 3–8 倍区间里字都偏小。抬到 2.4，撞车风险留给更高的倍率。 */
+var FS_ZOOM_GROWTH_CAP = 2.4;
 function fsBase(){
   var st = $('stage');
   var cw = (st && st.clientWidth) || 1680, ch = (st && st.clientHeight) || 889;
