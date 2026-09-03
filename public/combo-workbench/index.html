@@ -256,39 +256,16 @@ a.btn{text-decoration:none}
 .global-config__actions{display:flex;justify-content:flex-end;gap:8px}
 #globalConfigBtn.is-selected,#globalConfigBtn.is-selected:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
 
-/* ═══ 宽屏：并行配置从「点开的右侧抽屉」变成「舞台上方常驻的一条横栏」 ═══
-   1180px 以下维持原样不动——按钮点开、从右边滑入的抽屉，以上所有规则都是它的。
-   这条线以上，同一份 DOM、同一套状态，只是换个摆法：不用点开，五把并行度
-   ＋总卡数＋高级切分标记＋应用/重置，横向摆成一条，常驻在舞台正上方、居中；
-   缩回 1180px 以下时这条横栏自动收回成顶栏那颗按钮，内容原样待命。 */
-@media (min-width:1440px){
-  #globalConfigBtn{display:none}
-  .global-config{
-    position:static;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:10px;
-    margin:8px auto 0;width:fit-content;max-width:calc(100% - 32px);max-height:none;
-    padding:4px 10px;overflow:visible;
-    transform:none;opacity:1;pointer-events:auto;
-  }
-  .global-config__head{display:none}
-  .global-config__body{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:12px;padding:0;overflow:visible}
-  .global-config__section{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;padding:0;border-top:0}
-  .global-config__section h3{display:none}
-  .global-config__section-intro{display:none}
-  .parallel-list{flex-direction:row;flex-wrap:nowrap;gap:5px}
-  .parallel-field{grid-template-columns:auto 88px;min-height:auto;padding:3px 6px;gap:6px}
-  .parallel-field__meta strong{font-size:11px;white-space:nowrap}
-  .parallel-field__meta span,.pf-name{display:none}
-  .global-config__world{margin:0;padding:4px 9px;display:flex;align-items:baseline;gap:5px;white-space:nowrap}
-  .global-config__world-head{gap:5px}
-  .global-config__formula,.global-config__note{display:none}
-  .global-config__advanced{display:flex;flex-wrap:nowrap;align-items:center;padding:0;border-top:0}
-  .global-config__advanced summary{display:none}
-  .global-config__advanced-body{display:flex;flex-wrap:nowrap;align-items:center;padding:0}
-  .global-config__cuts{gap:4px;flex-wrap:nowrap}
-  .global-config__footer{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;padding:0;border-top:0;background:transparent}
-  .global-config__status{min-height:0;margin:0;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .global-config__status:empty{display:none}
-}
+/* ═══ 并行配置：所有宽度下都是「顶栏按钮 + 右侧抽屉」，不再有常驻横栏 ═══
+   曾经有过一版：≥1440px 时把这块面板摊平成舞台正上方一条常驻横栏（五把并行度
+   ＋总卡数＋切分标记＋应用/重置横着排一行）。它占掉舞台顶部一整条，而这一屏
+   真正要看的是下面那两格；配置又不是每分钟都在改的东西，常驻的收益抵不上那条高度。
+   所以整块 @media 规则删掉——宽屏与窄屏走同一套：顶栏那颗「并行配置」按钮点开，
+   抽屉从右边滑进来。
+
+   注意不能写成「宽屏下 .global-config{display:none}」：那会把抽屉本体也一起隐藏，
+   按钮还在、点了却什么都不出来，宽屏上并行度就彻底改不了了。删规则、让它回落到
+   默认的抽屉形态，才是「去掉横栏」而不是「去掉配置」。 */
 #dmenu.open #dmenuBtn,#dmenu.open #dmenuBtn:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
 #dmenu.open #dmenuBtn b{color:inherit}
 
