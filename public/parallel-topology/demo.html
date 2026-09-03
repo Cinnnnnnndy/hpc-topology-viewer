@@ -2338,9 +2338,11 @@ function renderDim(D){
   var wide = slot > 30;                                       /* 够宽才逐格标注 */
   var cardTier = slot > 68 ? 2 : slot > 34 ? 1 : 0;           /* 卡格标注档位：全 / 序号+容量 / 只序号 */
   /* 右侧判词 */
+  /* 这一屏每一档右边都是「一行主 + 一行解释」。解释一律收进悬停（主行后面缀
+     一枚 ⓘ）——反馈：「外面的解释性文字还是有点多，只留标题加正文」。 */
   function say(y, main, sub){
-    parts.push(txt(RL, y, main, 9, col, 'start', 'font-weight="700"'));
-    if(sub) parts.push(txt(RL, y+11, sub, 7.8, 'var(--pt-fg3)', 'start'));
+    if(sub) parts.push(txtI(RL, y, main, sub, 9, col, 'start', 'font-weight="700"'));
+    else parts.push(txt(RL, y, main, 9, col, 'start', 'font-weight="700"'));
   }
   /* 共有：一整块横跨全宽 —— 谁都没切它 */
   function spanLane(y, h, label, sub, tint){
@@ -2783,9 +2785,13 @@ function renderDim(D){
   parts.push('<g transform="rotate(-90 '+(X0-156)+' '+((R.net+R.ker)/2)+')">'+txt(X0-156, (R.net+R.ker)/2, '粒度（坐标轴 §15）', 8.4, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
 
   /* ── 全量对账 + 尺寸纪律（页脚一行，与切分链同一句纪律） ── */
-  parts.push(txt(X0+MW, H-32, '全量 '+fmt(D.world)+' 卡 = '+size+' 份（'+DIMN[dim]+'）× 每份 '+fmt(groupsPer)+' 张同构卡'
-    + (tail>0 ? ' · 逐柱画了前 '+N+' 份，余 '+tail+' 份在压缩带里（宽度按比例，未省面积）' : ' · '+size+' 份全部逐柱画出'), 8.8, 'var(--pt-fg2)', 'end', 'font-weight="600"'));
-  parts.push(txt(X0+MW, H-18, '尺寸纪律：真切=面积守恒（份合起来=父块） · 复印=等大成叠（各自成框 + ≡） · 竖直对齐=映射（一份 → 它所在那根柱）', 8.4, 'var(--pt-fg)', 'end', 'font-weight="700"'));
+  parts.push(txtI(X0+MW, H-30, '全量 '+fmt(D.world)+' 卡 = '+size+' 份 × '+fmt(groupsPer)+' 张',
+    '全量 '+fmt(D.world)+' 卡 = '+size+' 份（'+DIMN[dim]+'）× 每份 '+fmt(groupsPer)+' 张同构卡'
+    + (tail>0 ? ' · 逐柱画了前 '+N+' 份，余 '+tail+' 份在压缩带里（宽度按比例，未省面积）' : ' · '+size+' 份全部逐柱画出'),
+    8.8, 'var(--pt-fg2)', 'end', 'font-weight="600"'));
+  parts.push(txtI(X0+MW, H-16, '尺寸纪律',
+    '真切=面积守恒（份合起来=父块） · 复印=等大成叠（各自成框 + ≡） · 竖直对齐=映射（一份 → 它所在那根柱）',
+    8.4, 'var(--pt-fg)', 'end', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+colBack.join('')+'</g>'
@@ -2808,8 +2814,10 @@ function renderDim(D){
         var hot = AXQ[dim]===sl[0];
         return '<span class="pt-chip" style="'+(hot?'background:'+VC[sl[2]]+';border-color:'+VC[sl[2]]+';color:var(--pt-bg);font-weight:800':'')+'">'+sl[0]+'·'+sl[1]+'→'+DIMN[sl[2]]+'</span>';
       }).join('')+'</div>'
-    + '<div class="mono" style="font-size:12px;margin-top:5px;color:var(--pt-fg2)">本维认领 <b style="color:'+col+'">'+AXQ[dim]+'</b> 轴：'+ivl+'（rank元组 ⇄ 区间，双链可逆 §07）</div>'
-    + '<div style="font-size:12px;margin-top:3px;color:var(--pt-fg3)">切分的最小单位是<b>片 / 段 / 桶（'+AXQ[dim]+' 轴区间）</b>，不是卡——卡只是各维区间交集的落位容器（§15）。</div>';
+    + '<div class="mono" style="font-size:12px;margin-top:5px;color:var(--pt-fg2);cursor:help" title="'
+      + esc('本维认领 '+AXQ[dim]+' 轴：'+String(ivl).replace(/<[^>]*>/g,'')+'（rank 元组 ⇄ 区间，双链可逆 §07）。'
+          + '切分的最小单位是片 / 段 / 桶（'+AXQ[dim]+' 轴区间），不是卡——卡只是各维区间交集的落位容器（§15）。')
+      + '">本维认领 <b style="color:'+col+'">'+AXQ[dim]+'</b> 轴 <span style="opacity:.55">ⓘ</span></div>';
   $('detach').hidden = true;
 }
 /* ═════════ 可转动的整网 3D 场景 ═════════
@@ -5981,14 +5989,15 @@ function renderStory(D){
   if(A===0){
     /* ── 第 0 幕 · 开机：唯一的差别是一个数字 ── */
     var L0 = lattice(110, 196, 750, 152, {plain:true, tint:function(gg,hot){ return hot ? 'var(--pt-fg)' : mix('var(--pt-fg)', 16); }});
-    parts.push(txt(485, 96, '启动器拉起 '+fmt(D.world)+' 个进程，各绑一张卡 —— 代码完全相同', 11, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
-    parts.push(txt(485, 112, '此刻它们一模一样：同一份代码、同一份权重定义、同一份配置。全图同色不是偷懒，是这一幕的事实。', 8.4, 'var(--pt-fg2)'));
+    parts.push(txtI(485, 96, '启动器拉起 '+fmt(D.world)+' 个进程，各绑一张卡',
+      '代码完全相同。此刻它们一模一样：同一份代码、同一份权重定义、同一份配置——全图同色不是偷懒，是这一幕的事实。',
+      11, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
     parts.push('<g pointer-events="none">'+L0.body+'</g>');
     hits.push(L0.hit);
     parts.push(ring(L0.at(g), VC.dp, Math.max(6, L0.cw*.7)));
     parts.push(txt(L0.at(g)[0], L0.at(g)[1]-Math.max(20,L0.ch*.72), 'global_rank '+g, 8.6, VC.dp, 'middle', 'font-weight="800"'));
     parts.push(txt(485, 400, '唯一的差别 = 一个数字 global_rank（0…'+(D.world-1)+'）', 10.5, VC.dp, 'middle', 'font-weight="800"'));
-    parts.push(txt(485, 416, '谁也还不知道自己该干什么 —— 门牌号要到下一幕才算出来', 8.4, 'var(--pt-fg3)'));
+    parts.push(txtI(485, 416, '门牌号要到下一幕才算出来', '此刻谁也还不知道自己该干什么：全局 rank 只是一个数字，还没有映射成「我负责哪一段」。', 8.4, 'var(--pt-fg3)'));
     narr = ['行只按编号分段（0–'+(plane-1)+' / '+plane+'–…），不是 stage —— 此刻还没有 stage 这回事，门牌号要到第 1 幕才算出来；这个排法眼下只是「为了摆得下」。',
             '这一幕是整个训练里唯一「所有卡完全对称」的时刻：同一份代码、同一份权重定义、同一份配置，差别只有一个数字。'];
   }
@@ -6275,9 +6284,14 @@ function renderStory(D){
             '一个 step = 1 次第 3–5 幕的循环 × '+D.ga+' 个 μbatch + 1 次 AllReduce + 1 次参数更新。'];
   }
 
-  narr.forEach(function(t2, i2){
-    parts.push(txt(28, H-34+i2*15, t2, 8.6, i2===0?'var(--pt-fg)':'var(--pt-fg2)', 'start', i2===0?'font-weight="700"':''));
-  });
+  /* 旁白只把**第一行**留在画面上（那是这一幕在讲什么），后面几行是展开解释，
+     收进那一行的悬停——反馈：「外面的解释性文字还是有点多」。第一行本身偏长时
+     也截一截，整段同样在悬停里。 */
+  if(narr.length){
+    var nHead9 = String(narr[0]);
+    var nShow9 = nHead9.length > 32 ? nHead9.slice(0, 31) + '…' : nHead9;
+    parts.push(txtI(28, H-24, nShow9, narr.join('\n'), 8.8, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+  }
 
   /* 状态条（幕轨）是绝对定位的浮层，压在舞台左上角——整幅下移一行，别让幕头钻到它底下 */
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+(H+30)+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
@@ -7126,8 +7140,9 @@ function renderSolidMap(D){
     {from:'op',  to:'unit', dim:null, t:'算子选择 + 算子融合 → 落成 kernel', s:'与并行无关'},
     {from:'ten', to:'buf',  dim:null, t:'tiling', s:'不跨卡、不通信'}
   ];
-  parts.push(txt(452, 58, '两条包含链，级与级并不对齐 —— 所以连线是斜的，斜不是画风', 12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(452, 74, '四条并行映射的源头在逻辑侧的四个不同层级，落点全是「卡」', 9.2, 'var(--pt-fg2)'));
+  parts.push(txtI(452, 58, '两条包含链，级与级并不对齐',
+    '所以连线是斜的，斜不是画风。四条并行映射的源头在逻辑侧的四个不同层级，落点全是「卡」。',
+    12.5, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
   parts.push(txt(LX+LW/2+LDX/2, 100, '逻辑侧', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
   parts.push(txt(MX0+MW0/2, 100, '映射机制（是动作，不画成体）', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
   parts.push(txt(PX0+PW0/2+PDX/2, 88, '物理侧', 10.5, 'var(--pt-fg2)', 'middle', 'font-weight="800"'));
@@ -7203,9 +7218,12 @@ function renderSolidMap(D){
   parts.push(ln([36, VY+28], [48, VY+28], 'stroke:'+VC.pp+';stroke-width:3.4'));
   parts.push(txt(54, VY+31, 'PP 划分可跨机：本卡 PP 链 '+ppM.length+' 张 → 跨 '+Object.keys(ppMach).length+' 台机'
     + (Object.keys(ppMach).length>1 ? '（本来就该跨）' : '（恰好同机）'), 8.4, VC.pp, 'start', 'font-weight="700"'));
-  parts.push(txt(54, VY+43, '机 = '+PER+' 卡是拓扑假设（FIG 09 口径），不由并行配置推出 —— 换机器规格，这两条结论会变。', 7.2, 'var(--pt-fg3)', 'start'));
-  parts.push(txt(36, H-30, '读法：连线的斜度就是「逻辑侧第 N 级 ≠ 物理侧第 N 级」。容器（板）有体积，机制（框）是扁的——参照系里只有卡与流两个容器。', 8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-  parts.push(txt(36, H-16, '这一段的另一个问题「这张卡到底装了哪一块」，由第二视角『交集腔』回答：四条梁交出来的那个小长方体就是它。', 8, 'var(--pt-fg2)', 'start'));
+  parts.push(txtI(54, VY+43, '机 = '+PER+' 卡是拓扑假设',
+    'FIG 09 口径，不由并行配置推出 —— 换机器规格，上面那两条结论会变。', 7.2, 'var(--pt-fg3)', 'start'));
+  parts.push(txtI(36, H-24, '怎么读这一屏',
+    '连线的斜度就是「逻辑侧第 N 级 ≠ 物理侧第 N 级」。容器（板）有体积，机制（框）是扁的——参照系里只有卡与流两个容器。'
+    + '另一个问题「这张卡到底装了哪一块」由第二视角『交集腔』回答：四条梁交出来的那个小长方体就是它。',
+    8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+parts.join('')+'</g>' + hits.join('') + '</svg>';
