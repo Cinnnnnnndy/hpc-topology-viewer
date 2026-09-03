@@ -612,6 +612,56 @@ function renderExport() {
     '要么按下面这段用快捷指令去控制真正的闹钟。'));
 
   renderShortcutRecipe();
+  renderWebcal();
+}
+
+/**
+ * webcal:// 订阅。
+ *
+ * 这是 iOS 上最短的一条导入路径：点一下直接弹出日历的「订阅日历」表单——
+ * 不经过文件 App、不经过分享面板、不产生下载，也不受「瞬时用户激活」的时间限制，
+ * 因此加到主屏之后（iOS 26 起默认就是 Web App 模式）照样能用，
+ * 而 <a download> 在那个模式下普遍是失效的。
+ *
+ * 代价是它需要一个能公开访问的 https 地址——我们这边全部在本机算，没有服务器，
+ * 所以只能由用户自己把导出的 .ics 放上去（塞进自己的仓库 / Pages / 任意网盘直链）。
+ * 换来的是：以后班规变了只改那个文件，手机自动同步；不想要了删掉一个订阅即可，
+ * 而不是回头去删几百条事件。
+ */
+function renderWebcal() {
+  const why = $('#webcal-why');
+  why.textContent = '';
+  why.append(strongLine('如果你愿意把 .ics 放到一个公开地址上，还有一条更省事的路。'));
+  why.append(document.createTextNode(
+    'webcal:// 链接点一下就直接弹出日历的「订阅日历」，不用经过文件 App，' +
+    '加到主屏当 app 用时也照样能点得动。订阅之后班表是自动同步的：' +
+    '以后班规变了只要覆盖那个文件；不想要了删掉这一个订阅就全没了，' +
+    '不用回头一条条删事件。'));
+
+  const note = $('#webcal-note');
+  note.textContent = '';
+  note.append(strongLine('订阅日历有两个开关会悄悄把提醒吞掉，务必检查：'));
+  const ul = document.createElement('ul');
+  ul.style.cssText = 'margin:6px 0 0;padding-left:18px';
+  for (const t of [
+    '订阅时那张表单里如果有「移除提醒 / Remove Alarms」，要保持关闭——打开的话整份日历的提醒会被全部剥掉，日历照常显示，但一声都不会响。',
+    '订阅完成后在日历 App 里点这个订阅日历的 ⓘ，确认「事件提醒」是开着的。',
+    '刷新频率是订阅时选的（建议「每天」）；iOS 电量低时会推迟，所以当天早上才改的班表未必来得及同步到手机。',
+  ]) {
+    const li = document.createElement('li');
+    li.textContent = t;
+    ul.append(li);
+  }
+  note.append(ul);
+}
+
+/** https://… → webcal://…（其它协议一律拒绝，别拼出一条打不开的链接） */
+function toWebcal(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^webcal:\/\//i.test(s)) return s;
+  if (!/^https:\/\//i.test(s)) return null;
+  return 'webcal://' + s.slice('https://'.length);
 }
 
 function strongLine(text) {
@@ -844,6 +894,20 @@ function bind() {
   $('#btn-copy-payload').addEventListener('click', () =>
     copyText(payloadForCopy(), '班表数据已复制，粘到快捷指令的「文本」里'));
   $('#btn-open-shortcuts').addEventListener('click', () => { location.href = 'shortcuts://'; });
+
+  const webcalOf = () => {
+    const u = toWebcal($('#webcal-url').value);
+    if (!u) toast('请填一条 https:// 开头的公开地址');
+    return u;
+  };
+  $('#btn-webcal').addEventListener('click', () => {
+    const u = webcalOf();
+    if (u) location.href = u;
+  });
+  $('#btn-copy-webcal').addEventListener('click', () => {
+    const u = webcalOf();
+    if (u) copyText(u, 'webcal 链接已复制');
+  });
 
   $('#btn-add-rem').addEventListener('click', () => {
     state.rules.reminders.push({
