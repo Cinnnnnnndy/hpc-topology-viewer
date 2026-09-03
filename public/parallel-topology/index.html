@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <title>并行拓扑 · 参照系与 PRD</title>

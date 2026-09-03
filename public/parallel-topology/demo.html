@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <title>并行拓扑 · PRD Demo（应用形态）</title>
@@ -3203,10 +3212,17 @@ function netScene(D, g, box, step){
            收完只剩薄片，于是给 compFill 单独把 DEP 放大到 8.5（见上面 DEP 那一行，
            GAPW 仍按 1.7 基准算，PP 段间距不跟着膨胀）。
        两条缺一不可：只放大 DEP 不收进深，层还是会互相吃掉；只收进深不放大 DEP，
-       层薄得读不出体积。这里合起来——层距的 60% 给块、40% 留缝。
+       层薄得读不出体积。
+
+       给块的比例这一版从 0.60 收到 0.30——60% 时缝只有层距的四成，而等轴投影把
+       深度轴压斜、块又是竖着的高片，一片的侧面在屏幕上横着铺开的宽度就把那四成
+       吃掉大半，一列看过去仍然是「一条带上划了几道细线」，不是「一片一片分开的层」。
+       收到三成之后块更薄、缝有七成，屏幕上才真的读成分离的层。厚度本来也不是这一屏
+       要表达的量（每块的字节由**高度**表达，进深只是让它成为一个「体」），所以拿
+       厚度换间距是划算的。
        min(bw8*1.3, …) 那道封顶留着：层数很少时层距会很大，不封顶单层会被拉成柱子。 */
     var pitch8 = (DEP / Math.max(1, L)) || bw8;
-    var compD8 = Math.min(bw8 * 1.3, pitch8 * 0.60);
+    var compD8 = Math.min(bw8 * 1.3, pitch8 * 0.30);
     /* 相邻两层一明一暗：缝与轮廓是「边界在哪」，明暗是「这两片不是同一片」——
        斜投影下前后两层的可见面挨着时，同色会读成一个面的两半。 */
     var layerDark = li % 2 === 1;
