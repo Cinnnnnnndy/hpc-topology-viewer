@@ -919,6 +919,12 @@
 /* ═════════ 基础 ═════════ */
 var C = Math.cos(Math.PI/6), S = Math.sin(Math.PI/6);
 function $(id){ return document.getElementById(id); }
+/* 底栏（stagebar）那几条长说明：只留一个短名 + 一枚 ⓘ，整句进悬停。
+   反馈是「只留标题加正文，解释收进 hover」——底栏本来是控件条，
+   挂着两行读法就把控件挤到第二行去了。 */
+function tipChip(short9, long9){
+  return '<span class="pt-chip" style="cursor:help" title="'+esc(long9)+'">'+esc(short9)+' <span style="opacity:.55">ⓘ</span></span>';
+}
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmt(n){ return Number(n).toLocaleString('en-US'); }
 function fmtGB(b){ return (b/Math.pow(2,30)).toFixed(b >= Math.pow(2,30)*10 ? 0 : 1); }
@@ -2169,7 +2175,7 @@ function panelRouteFlow(sc, D9, g9, li9){
     }
     /* 负载条：直接数上面那几条线，列和与条长恒等 */
     var by9 = H9 - 16;
-    o9 += txt(tx9, by9 - 3, '收到的 token（数的是上面那几条线）', 5, 'var(--pt-fg3)', 'start');
+    o9 += txt(tx9, by9 - 3, '收到', 5, 'var(--pt-fg3)', 'start');
     for(i9 = 0; i9 < nE9; i9++){
       var bw9 = 46 * (load9[i9] / mx9);
       o9 += '<rect x="'+(tx9 + i9*56)+'" y="'+by9+'" width="'+Math.max(1.5, bw9).toFixed(1)+'" height="7" rx="1.5" '
@@ -2241,7 +2247,7 @@ function panelStepStrip(sc, mode9, D9, pSel9){
     });
     o9 += txt(x0, y0 - 5, mode9 === 'cost' ? '一步 · 代价' : '一步 · 时序', 5.6, 'var(--pt-fg3)', 'start', 'font-weight="700"');
     if(cold9) o9 += txt(W9 - x0, y0 - 5, '空转 ' + Math.round(idle9*100) + '%', 6.2, 'var(--pt-danger)', 'end', 'font-weight="800"');
-    o9 += txt(W9/2, H9 - 4, cold9 ? '斜纹=气泡 · 末块=步末 AllReduce' : 'F 浅 · B 深 · ▲=收到激活/梯度', 5.4, 'var(--pt-fg3)', 'middle');
+    /* 图例那一句撤掉：整块面板挂着悬停，读法在那儿说一次就够，画面上不再占一行。 */
     o9 += '</g></g>';
     var tip9 = (mode9 === 'cost'
       ? '这一步里本卡空转约 ' + Math.round(idle9*100) + '%：斜纹段是它在等上一段的激活或下一段的梯度（气泡），末尾那块是步末梯度 AllReduce。'
@@ -10406,7 +10412,7 @@ function renderChainBar(D){
       + pnum9('tp','TP') + pnum9('cp','CP') + pnum9('pp','PP') + pnum9('ep','EP', !moe9)
       + '<label><b style="color:'+VC.dp+'">DP</b><span class="derv" title="= world/(TP·CP·PP)，自动">'+(D.dpOk?D.dp:'—')+'</span></label>'
       + '<button class="capply" data-act="cfgapply"'+(dirty9?'':' disabled')+'>应用</button>'
-    + '</div><div class="cnote">DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。</div></div>'
+    + '</div><div class="cnote" style="cursor:help" title="'+esc('DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。')+'">ⓘ 并行度怎么填</div></div>'
     + '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
     + '<div class="cg"><h6>观察方式</h6>' + obsBlock + '</div>'
     + '<div class="cg"><h6>通信连线</h6>'
@@ -10515,7 +10521,7 @@ function renderDimBar(D, dim){
      否则跳回去是五条边一起亮，读者还得自己去关掉四条。 */
   sb += '<span class="pt-sep"></span><button class="pb" data-act="dim2chain" data-d="'+dim+'" '
       + 'title="回到整网切分那一屏，只亮这一维的边（rank 粒度）">在阵列里看这一维的边 ↷</button>';
-  sb += '<span class="pt-chip">柱=卡（容器）· 块的横跨=共有 · 门牌=rank（1:N，同一张卡在别的维还有别的号 §10）</span>';
+  sb += tipChip('怎么读这一屏', '柱=卡（容器）· 块的横跨=共有 · 门牌=rank（1:N，同一张卡在别的维还有别的号 §10）');
   $('stagebar').innerHTML = sb;
 }
 
@@ -10813,8 +10819,7 @@ function renderV2(D){
   $('stagebar').innerHTML =
     '<button class="pb'+(ui.skew?' is-on':'')+'" data-act="skew">注入偏斜（某副本慢）</button>'
     + '<button class="pb'+(ui.zoomAR?' is-on':'')+'" data-act="zoomar">放大末尾 AllReduce</button>'
-    + '<span class="pt-chip">流 = 时间容器：装 kernel，装满不会崩，只是变慢（§08）</span>'
-    + '<span class="pt-chip">点任一 F/B 块：放大看 attn/router/experts 怎么分段（与卡内解剖同号同色）</span>';
+    + tipChip('怎么读这一屏', '流 = 时间容器：装 kernel，装满不会崩，只是变慢（§08）。点任一 F/B 块：放大看 attn/router/experts 怎么分段（与卡内解剖同号同色）。');
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 function arZoomSVG(D){
@@ -10917,31 +10922,68 @@ function renderV3(D){
   parts.push(txt(bandTop[0], bandTop[1], '抽出的 L'+(l0+picked)+' = 一排算子的「片」（结构无厚度 · 内容有体积 · 切法看颜色）', 9.5, 'var(--pt-fg2)', 'middle', 'font-weight="600"'));
   reg([bandTop[0], bandTop[1]], 230, 230, 10, 0);
 
-  /* ④ 通信钩子（动作：发生在切口上） */
+  /* ④ 通信钩子（动作：发生在切口上）
+     ── 这一屏也听「看哪一层」（ui.commGrain）──────────────────────────────
+     卡内解剖是「层构成」的详情页：同一件事的两个深度，切换到哪一层就该一起变，
+     否则读者在阵列那屏切到「时序」，点进这一屏又是四条跨卡箭头照旧亮着。
+       rank / 张量 → 跨卡那四条钩子（它们锚在真算子上，正是「谁产生了这次通信」）
+       路由        → 只留 router 与 EP 那两条（其余的去向与数据内容无关）
+       时序 / 影响 → 跨卡的钩子全收起来，把下面那条 kernel 轨圈出来：这一屏的
+                     时间容器本来就在那儿，不必另画一条带
+       rank 内     → 同样收起跨卡的边，留下卡→层→算子→kernel 这条不出卡的链
+     每条钩子还要各自过一遍 commLit(dim)：读者在配置面板里关掉的那一维，
+     这一屏不该自作主张画回来（以前就是这样，两屏对不上）。 */
+  var cgA9 = ui.commGrain;
+  var xCardA9 = (cgA9 === 'rank' || cgA9 === 'tensor');
+  var routeA9 = (cgA9 === 'rank' || cgA9 === 'tensor' || cgA9 === 'route');
+  var flowA9  = (cgA9 === 'time' || cgA9 === 'cost');
+  if(layerOn('L5') && cgA9 === 'route'){ xCardA9 = false; }
   if(layerOn('L5')){
     var hook = function(opId, dim, label, dx){
       if(!hookPts[opId]) return;
+      if(!commLit(dim)) return;
       var hp = hookPts[opId], gx = hp[0]+dx, gy = hp[1]-46;
       parts.push('<line x1="'+hp[0]+'" y1="'+(hp[1]-8)+'" x2="'+gx+'" y2="'+gy+'" style="stroke:'+VC[dim]+';stroke-width:1.6;marker-end:url(#arr'+dim+')"/>');
       parts.push(txt(gx+3, gy-4, label, 8.6, VC[dim], 'start', 'font-weight="700"'));
       reg([gx+3, gy-4], 0, 120, 12, 0);
     };
-    hook('attn.out', 'tp', 'TP AllReduce ①', 14);
-    hook(D.moe?'experts':'mlp.down', D.moe?'ep':'tp', D.moe?'EP All-to-All':'TP AllReduce ②', 20);
-    if(D.moe) hook('router', 'ep', '路由', 6);
-    var edge = proj(CW, CH*.86, 0, s);
-    parts.push('<line x1="'+edge[0]+'" y1="'+edge[1]+'" x2="'+(edge[0]+58)+'" y2="'+(edge[1]-20)+'" style="stroke:'+VC.pp+';stroke-width:1.8;marker-end:url(#arrpp)"/>');
-    parts.push(txt(edge[0]+62, edge[1]-24, 'PP P2P → '+(co.p+1<D.pp?'stage '+(co.p+1):'（末段→loss）'), 8.8, VC.pp, 'start', 'font-weight="700"'));
-    reg([edge[0]+62, edge[1]-24], 0, 130, 12, 0);
-    var edge2 = proj(0, .25, 0, s);   /* 左前棱下部，远离门牌 */
-    parts.push('<line x1="'+edge2[0]+'" y1="'+edge2[1]+'" x2="'+(edge2[0]-58)+'" y2="'+(edge2[1]+14)+'" style="stroke:'+VC.dp+';stroke-width:1.5;stroke-dasharray:6 3;marker-end:url(#arrdp)"/>');
-    parts.push(txt(edge2[0]-62, edge2[1]+18, 'DP AllReduce（整步静默，步末一次）', 8.6, VC.dp, 'end'));
-    reg([edge2[0]-62, edge2[1]+18], 210, 0, 6, 10);
+    if(xCardA9) hook('attn.out', 'tp', 'TP AllReduce ①', 14);
+    if(xCardA9 || cgA9 === 'route') hook(D.moe?'experts':'mlp.down', D.moe?'ep':'tp', D.moe?'EP All-to-All':'TP AllReduce ②', 20);
+    if(D.moe && routeA9) hook('router', 'ep', '路由', 6);
+    /* 段边界那条 P2P 与步末那条 DP AllReduce 画在卡的棱上（不锚算子），
+       同样各过各的那道门：维被关掉、或者当前不是「跨卡」这两层，就不画。 */
+    if(xCardA9 && commLit('pp')){
+      var edge = proj(CW, CH*.86, 0, s);
+      parts.push('<line x1="'+edge[0]+'" y1="'+edge[1]+'" x2="'+(edge[0]+58)+'" y2="'+(edge[1]-20)+'" style="stroke:'+VC.pp+';stroke-width:1.8;marker-end:url(#arrpp)"/>');
+      parts.push(txt(edge[0]+62, edge[1]-24, 'PP P2P → '+(co.p+1<D.pp?'stage '+(co.p+1):'（末段→loss）'), 8.8, VC.pp, 'start', 'font-weight="700"'));
+      reg([edge[0]+62, edge[1]-24], 0, 130, 12, 0);
+    }
+    if(xCardA9 && commLit('dp')){
+      var edge2 = proj(0, .25, 0, s);   /* 左前棱下部，远离门牌 */
+      parts.push('<line x1="'+edge2[0]+'" y1="'+edge2[1]+'" x2="'+(edge2[0]-58)+'" y2="'+(edge2[1]+14)+'" style="stroke:'+VC.dp+';stroke-width:1.5;stroke-dasharray:6 3;marker-end:url(#arrdp)"/>');
+      parts.push(txt(edge2[0]-62, edge2[1]+18, 'DP AllReduce（整步静默，步末一次）', 8.6, VC.dp, 'end'));
+      reg([edge2[0]-62, edge2[1]+18], 210, 0, 6, 10);
+    }
   }
 
   /* ⑤ 流 = 时间容器：kernel 排队（算子→kernel N:M）——压到算子带正下方更深处 */
   var fw = Math.max(bandW+.6, 5.4), fh = .6, fx = ox - .2, fy = -3.9;
-  parts.push(boxSVG(fx, fy, 0, fw, fh, .8, s, {wire:true, stroke:'var(--pt-fg)', sw:1.1}));
+  /* 切到「时序 / 影响」时把这条轨圈出来：这一屏的时间容器本来就在这儿，
+     不该再另画一条带——同一件事在同一屏上只该有一个位置。 */
+  parts.push(boxSVG(fx, fy, 0, fw, fh, .8, s, {wire:true,
+    stroke: flowA9 ? (cgA9 === 'cost' ? 'var(--pt-danger)' : VC.pp) : 'var(--pt-fg)',
+    sw: flowA9 ? 2.2 : 1.1}));
+  if(flowA9){
+    /* 贴在轨道**右端**、轨道上方：等距投影下这条轨是斜的，取中点会正好压在
+       kernel 块上（实测就是这样）。 */
+    var fLab9 = proj(fx + fw, fy + fh, .8, s);
+    parts.push(txt(fLab9[0] + 14, fLab9[1] - 6,
+      cgA9 === 'cost'
+        ? '影响 · 气泡率 ≈ ' + (D.bubble*100).toFixed(1) + '%'
+        : '时序 · kernel 在此排队',
+      8.8, cgA9 === 'cost' ? 'var(--pt-danger)' : VC.pp, 'start', 'font-weight="700"'));
+    reg([fLab9[0] + 14, fLab9[1] - 6], 0, 180, 12, 0);
+  }
   regBox(fx, fy, 0, fw, fh, .8);
   /* kernel 用 src 声明它由哪些算子来——标签打同号，并逐条画对应引线 */
   var kdefs = kernelDefs(D);
@@ -10985,7 +11027,16 @@ function renderV3(D){
     + '<span class="pt-chip">L'+(l0+picked)+'</span>'
     + '<button class="pb mono" data-act="v3layer" data-d="1">›</button>'
     + '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>'
-    + '<span class="pt-chip">整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）</span>';
+    /* 「看哪一层」在这一屏也生效（见上面 ④ 那段），所以这一排也要能切——
+       不然读者只能回阵列那屏切完再点进来，而这两屏本来是同一件事的两个深度。 */
+    + '<span class="pt-sep"></span><span class="pt-cap">通信看哪一层</span><span class="pt-seg">'
+    + ['rank','tensor','route','time','cost','intra'].map(function(gk9){
+        var NM9 = {rank:'rank', tensor:'张量', route:'路由', time:'时序', cost:'影响', intra:'rank 内'}[gk9];
+        var dis9 = gk9 === 'route' && !(ui.kEP && D.moe && D.ep > 1);
+        return '<button'+(ui.commGrain===gk9?' class="is-on"':'')+(dis9?' disabled':'')
+          + ' data-act="commgrain" data-v="'+gk9+'">'+NM9+'</button>';
+      }).join('') + '</span>'
+    + tipChip('粒度链', '整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）');
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 
@@ -11502,8 +11553,10 @@ function memBlockDetail(D, g, key){
   var me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var rows = [], title = '', tint = 'var(--pt-fg)', note = '', figs = [];
   function kv(k9, v9){ rows.push('<dt>'+esc(k9)+'</dt><dd>'+v9+'</dd>'); }
-  function fig(ax, cap){ figs.push('<div class="rm-fig">'+cavityGrid(ax)
-    + (cap ? '<span class="rm-cap">'+esc(cap)+'</span>' : '')+'</div>'); }
+  /* 图注一律改挂悬停：反馈是「页面上很多解释文字，只留标题加正文，解释收进 hover」。
+     图本来就是拿来看的，它下面那行字是读法不是内容——留在画面上只是把版面挤满。 */
+  function fig(ax, cap){ figs.push('<div class="rm-fig"'+(cap?' title="'+esc(cap)+'"':'')+'>'+cavityGrid(ax)
+    + '</div>'); }
   /* ①腔（权重/梯度/优化器态共用）：h←TP 横着分，e←EP 竖着分，本卡持有交叉那一格 */
   function figW(c9){
     fig({nx:(D.tp>1?D.tp:1), ix:co.t, lx:'h←TP',
@@ -11539,9 +11592,9 @@ function memBlockDetail(D, g, key){
       var kE = D.experts/D.ep, e0 = me.ep*kE;
       cavE9 = {n:D.ep, dim:'ep', i:me.ep}; cap9 = blk.how+' · 本卡 E'+e0+'–E'+(e0+kE-1);
     } else if(blk.cut === 'none') cap9 = '不切——每张卡逐字节相同';
-    figs.push('<div class="rm-fig">'
+    figs.push('<div class="rm-fig"'+(cap9?' title="'+esc(cap9)+'"':'')+'>'
       + cavityBox3D(cavW9, {n:D.pp, dim:'pp', i:p}, cavE9, {cell:tint})
-      + '<span class="rm-cap">'+esc(cap9)+'</span></div>');
+      + '</div>');
     if(sub === 'experts'){
       note = D.etp > 1 ? 'ETP='+D.etp+'：桶内每个专家的 ffn 维还被再切 '+D.etp+' 份。'
                        : 'ETP=1：桶内每个专家是整份的，h 方向没再切——盒子上 h 那根轴因此没有格线。';
@@ -11568,15 +11621,14 @@ function memBlockDetail(D, g, key){
     if(key === 'w' || key === 'g' || key === 'opt' || key === 'otmp'){
       /* 整条带一起说：谁占多宽、各被哪把刀切。一格一格地填「本卡拿第几份」是
          **单块**才答得上来的问题（带里每块的刀都不一样），留给点开某一块时再答。 */
-      figs.push('<div class="rm-fig">'+compStrip(wCutBlocks(D, p, L))
-        + '<span class="rm-cap">'+esc('宽度=字节占比 · 颜色=切它那把刀')+'</span></div>');
+      figs.push('<div class="rm-fig" title="'+esc('宽度=字节占比 · 颜色=切它那把刀')+'">'+compStrip(wCutBlocks(D, p, L))+'</div>');
       /* ①腔本体：ℓ←PP × h←TP × e←EP，本卡持有交出来那一格 */
-      figs.push('<div class="rm-fig">'
+      figs.push('<div class="rm-fig" title="'+esc('①权重体 ℓ×h×e · 本卡 = 三根轴的交集那一格')+'">'
         + cavityBox3D({n:D.tp, dim:'tp', i:co.t},
                       {n:D.pp, dim:'pp', i:p},
                       {n:(D.moe?D.ep:1), dim:'ep', i:(me?me.ep:0)},
                       {cell:MEMC[key]})
-        + '<span class="rm-cap">'+esc('①权重体 ℓ×h×e · 本卡 = 三根轴的交集那一格')+'</span></div>');
+        + '</div>');
       kv('层段', 'ℓ '+lps+'/'+D.layers+' · L'+(p*lps)+'–L'+((p+1)*lps-1)+'（PP 定段，不切张量）');
       /* 为什么这三档画的是**同一张**①腔：它们的刀不是各自定的，是跟着权重走的。
          这句话不写出来，读者只会以为「三张图长得一样」是偷懒。 */
@@ -11600,12 +11652,12 @@ function memBlockDetail(D, g, key){
          所以这张图上没有 TP 那根轴，不是漏了。 */
       /* ②腔本体：ℓ←PP × s←CP × b←DP。同一把 DP 刀在这只盒子上**是轴**
          （整盒真被切成 dp 份），而在①上只能整只复印——两只盒子并排看正是这件事。 */
-      figs.push('<div class="rm-fig">'
+      figs.push('<div class="rm-fig" title="'+esc('②激活体 ℓ×s×b · h 全长 '+fmt(D.hidden)+'（TP 不切，算子间 AllGather 回全长）')+'">'
         + cavityBox3D({n:(D.cp>1?D.cp:1), dim:'cp', i:co.c},
                       {n:D.pp, dim:'pp', i:p},
                       {n:D.dp, dim:'dp', i:co.d},
                       {cell:MEMC.act})
-        + '<span class="rm-cap">'+esc('②激活体 ℓ×s×b · h 全长 '+fmt(D.hidden)+'（TP 不切，算子间 AllGather 回全长）')+'</span></div>');
+        + '</div>');
       /* 在途几份微批 = 卡上激活带被竖着分成几格，两处画同一件事 */
       fig({nx:mub, ix:0, lx:'在途 μb', ny:1, iy:0, ly:'', c:MEMC.act},
           '1F1B：stage '+p+' 此刻压着 '+mub+' 份');
@@ -11634,8 +11686,7 @@ function memBlockDetail(D, g, key){
       act: '前向留下、反向消费——∂L/∂out × A 这一步要用到它，这就是它非占着显存不可的理由。'
     };
     var ck9 = key.indexOf('w:') === 0 ? 'w' : key;
-    figs.push('<div class="rm-fig">' + chain9
-      + '<span class="rm-cap">' + esc(CHCAP[ck9] || '') + '淡的那几格可点，跳过去。</span></div>');
+    figs.push('<div class="rm-fig" title="' + esc((CHCAP[ck9] || '') + '淡的那几格可点，跳过去。') + '">' + chain9 + '</div>');
   }
   /* ── 对应通信：这一档被切开之后，本卡为它跟谁说话 ────────────────────────
      这是「切分 → 通信」那条链的收尾。三种「没有」要分开说，不能都写成一句空白：
@@ -11662,13 +11713,14 @@ function memBlockDetail(D, g, key){
     /* 原来这里是一行「维 + 一句话」。换成五元组：一次搬运记全需要源 / 张量（含前后
        layout）/ 并行域 / 原语 / 宿，外加效果与反向对偶。只有维和原语的那一行，
        答得了「多久」，答不了「为什么」——而这一屏被问到的从来是后者。 */
-    commLine = '<div class="rm-note" style="margin-top:5px">对应通信 · <b style="color:var(--pt-fg)">一次搬运记全是五样</b>'
-      + '<span style="opacity:.75">（源 / 张量含前后 layout / 并行域 / 原语 / 宿）</span></div>'
-      /* 九格带子的读法只说一次，挂在这一栏的抬头上——每条边下面重复一遍图例
-         就又变成「字太多」。 */
-      + '<div class="rm-note" style="margin-top:2px;opacity:.8">每条边下面那排九格 = <b style="color:var(--pt-fg2)">九层可观测性</b>'
-      + '（模·张·并·r·原·载·路·时·影）：实心答得出、描边答了一半、虚线是缺、极淡是不适用。'
-      + '每一格都可点，去到答得出它的那一屏（卡内解剖 / 单维切分 / 画布对应那一层 / 时间·流）。</div>'
+    /* 抬头只留「对应通信」四个字：一次搬运记全是哪五样、九格怎么读，
+       都收进这一行的悬停——这两句是读法，不是这一栏的内容。 */
+    commLine = '<div class="rm-note" style="margin-top:5px;cursor:help" title="'
+      + esc('一次搬运记全是五样：源 / 张量（含前后 layout）/ 并行域 / 原语 / 宿。\n'
+          + '每条边下面那排九格 = 九层可观测性（模·张·并·r·原·载·路·时·影）：'
+          + '实心=答得出、描边=只答了一半、虚线=缺、极淡=不适用；每一格都可点，'
+          + '去到答得出它的那一屏（卡内解剖 / 单维切分 / 画布对应那一层 / 时间·流）。')
+      + '"><b style="color:var(--pt-fg)">对应通信</b> <span style="opacity:.6">ⓘ</span></div>'
       + mo9.comm.map(function(c9){
           var live9 = dimLive9(c9.d);
           return comm5HTML(D, g, key, c9, live9, dimWhy9(c9.d));
@@ -11699,10 +11751,12 @@ function memBlockDetail(D, g, key){
   }
   return '<div class="rm-d" style="--rmc:'+tint+'">'
     + '<div class="rm-dh"><b style="color:'+tint+'">'+esc(title)+'</b>'
+    /* 那句 note 是这一档的「为什么」——收进抬头旁边一枚 ⓘ 的悬停里，
+       正文只留名字、数字与图。 */
+    + (note ? '<span style="margin-left:5px;color:var(--pt-fg3);cursor:help" title="'+esc(note)+'">ⓘ</span>' : '')
     + '<button class="rm-dx" data-act="memblockpick" data-mk="" title="收起这一块">✕</button></div>'
     + '<dl>'+rows.join('')+'</dl>'
     + figs.join('')
-    + (note ? '<div class="rm-note">'+esc(note)+'</div>' : '')
     + commLine
     + sibLine
     + '</div>';
@@ -12041,14 +12095,15 @@ function comm5HTML(D, g, key, c, live, why){
                      srcLab:'r' + g, dstLab:(nxt !== null ? 'r' + nxt : 'loss')})
       + '</div>';
   }
-  return '<div class="c5" style="--c:' + col + '">' + head
+  /* 「反向」那一行是对偶的补注，不是这条边本身的答案——收进这一块的悬停。
+     「效果」留在正文：读者点开一档就是要这一句。 */
+  return '<div class="c5" style="--c:' + col + '" title="' + esc('反向：' + String(sp.dual).replace(/<[^>]*>/g, '')) + '">' + head
     + (sp.grain ? '<div class="c5gr">' + esc(sp.grain) + '</div>' : '')
     + gsvg
     + '<dl>'
     + '<dt>张量</dt><dd>' + esc(sp.tensor) + '</dd>'
     + '<dt>源→宿</dt><dd>本卡 r' + g + ' → ' + dst + '</dd>'
     + '<dt>效果</dt><dd>' + sp.effect + '</dd>'
-    + '<dt>反向</dt><dd>' + sp.dual + '</dd>'
     + '</dl>'
     + commL9HTML(D, c.d)
     + '</div>';
@@ -12102,10 +12157,11 @@ function renderRankMem(D){
        没走带时相位一律直说是峰值口径，不编一个看着像真的相。 */
     var life9 = stateLife(D, sg.k, stepT9), own9 = stateOwn(D, sg.k, g);
     var sub9 = (KIND[sg.k] === 'model' && own9) ? (own9 + ' · ' + life9) : life9;
-    rows.push('<tr class="rm-p'+(onSg?' on':'')+'" data-act="memblockpick" data-mk="'+esc(sg.k)+'" style="--rmc:'+TONE[sg.k]+'">'
+    rows.push('<tr class="rm-p'+(onSg?' on':'')+'" data-act="memblockpick" data-mk="'+esc(sg.k)+'" title="'+esc(sg.label+' · '+sub9)+'" style="--rmc:'+TONE[sg.k]+'">'
       + '<td style="width:14px"><span style="display:inline-block;width:9px;height:9px;background:'+TONE[sg.k]+';border:1px solid var(--pt-bds);border-radius:2px;vertical-align:middle"></span></td>'
-      + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)
-      + '<br><span style="font-weight:400;font-size:11px;color:var(--pt-fg3)">'+esc(sub9)+'</span></td>'
+      /* 第二行那句（「DP 复印 · 常驻整步」「峰值口径（未走带）」…）是解释，
+         收进这一行的悬停——表上只留名字与数字，一列名字一列数，扫得下去。 */
+      + '<td style="color:'+col+';font-weight:700">'+esc(sg.label)+'</td>'
       + '<td style="text-align:right;color:'+col+';font-weight:700;vertical-align:top;white-space:nowrap">'+fmtGB(sg.bytes)+' GB</td></tr>');
     if(onSg) rows.push('<tr><td colspan="3">'+memBlockDetail(D, g, sg.k)+'</td></tr>');
     /* 权重带的内部：图上那一条已经按刀色分块画出来了，但「哪一块是被哪把刀切的」
@@ -12119,9 +12175,10 @@ function renderRankMem(D){
          同一块参数在某张卡上可能整块都在、也可能一个字节都没有（FSDP 原话是
          all, some, or none，见 /parallel-reference/ §14 五）。把每块除一遍会把这件事抹掉，
          还会让人以为「本卡持有每一块的十六分之一」——那是假的。 */
-      if(sg.zdiv > 1) rows.push('<tr><td></td><td colspan="2" style="padding:2px 0 5px;font-size:11px;line-height:1.5;color:var(--pt-fg3)">'
-        + '下面是<b>整份</b>的构成。沿 DP 切的是参数拉平后的连续区间，不是每块各切 1/'+D.dp
-        + '——某一块可能整块在本卡，也可能一个字节都没有。</td></tr>');
+      if(sg.zdiv > 1) rows.push('<tr><td></td><td colspan="2" style="padding:2px 0 4px" title="'
+        + esc('沿 DP 切的是参数拉平后的连续区间，不是每块各切 1/'+D.dp
+              +'——某一块可能整块在本卡，也可能一个字节都没有（FSDP：all, some, or none）。')
+        + '"><span style="font-size:10.5px;letter-spacing:.06em;color:var(--pt-fg3);border:1px dashed var(--pt-bd);border-radius:3px;padding:0 4px;cursor:help">整份的构成</span></td></tr>');
       sg.sub.forEach(function(x){
         if(!x.bytes) return;
         var mk = 'w:'+x.id, onX = ui.memSel === mk;
@@ -12146,8 +12203,13 @@ function renderRankMem(D){
   groups.reverse().forEach(function(gr){
     if(gr.length && gr.kind !== lastKind9){
       lastKind9 = gr.kind;
-      rows.push('<tr><td colspan="3" style="padding:7px 0 3px;font-size:11px;letter-spacing:.08em;color:var(--pt-fg3);border-top:1px solid var(--pt-bd)">'
-        + (gr.kind === 'model' ? '模型态 · 问的是「哪一段归我」' : '执行态 · 问的是「什么时候生、什么时候死」')
+      /* 抬头只留名字，那句「问的是…」收进悬停：标题该短到一眼扫过，
+         它要解释的东西读者悬停时才需要。 */
+      rows.push('<tr><td colspan="3" title="'
+        + esc(gr.kind === 'model' ? '模型态：问的是「哪一段归我」——这几档的份额由切法决定，与时间无关'
+                                  : '执行态：问的是「什么时候生、什么时候死」——这几档随训练一步的相位生灭')
+        + '" style="padding:7px 0 3px;font-size:11px;letter-spacing:.08em;color:var(--pt-fg3);border-top:1px solid var(--pt-bd);cursor:help">'
+        + (gr.kind === 'model' ? '模型态' : '执行态')
         + '</td></tr>');
     }
     rows = rows.concat(gr);
