@@ -2801,7 +2801,7 @@ function netScene(D, g, box, step){
        展开 —— 每份并排放好，看得清「有 N 份、每份一模一样」（尺寸纪律：复印=等大）；
        叠   —— 挤在一起，省地方，但份数一多就糊成一团。
      deck 自己的深度也放开一点：48 层压在 1.15 个单位里，层与层根本分不开。 */
-  var DEP = 1.7, L = D.layers;
+  var DEP = (ui.cardMode && ui.compFill) ? 8.5 : 1.7, L = D.layers;
   /* 列距（DP/CP 那根轴）：1.16 时相邻两列几乎贴着，128 只卡糊成一整片，
      「一刀切出了几份」得数着边才数得清。刀与刀之间的缝就是这张图的读法本身，
      宁可整体大一圈也要让每一刀都掰得开。 */
@@ -2836,7 +2836,7 @@ function netScene(D, g, box, step){
   /* 段间缝对齐 EP 组间那条缝的量级（EPGAP = 1.5 个列距）：两者是同一类东西——
      「这儿断开了」。深度轴在等轴投影里是斜着走的，同样的场景距离看上去比横轴短
      一截，所以数值上还要再压过去一些才在**画面上**一样宽。 */
-  var GAPW = cutPP ? DEP*(ui.cardMode ? 2.60 : 1.20) : 0;
+  var GAPW = cutPP ? 1.7*(ui.cardMode ? 2.60 : 1.20) : 0;
   var TOTW = DEP + GAPW*Math.max(0, D.pp-1);
   /* EP 那一刀落下时，组与组之间也掰开一条缝——和 PP 段之间掰缝同一个道理：
      「这儿断开了」得看得见，不然一组八张和隔壁八张连成一片，得数着列才分得清。
@@ -3178,7 +3178,7 @@ function netScene(D, g, box, step){
     var top9 = [P(u0,v0+dv,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
     var frt9 = [P(u0,v0,w0+dw,off), P(u0+du,v0,w0+dw,off), P(u0+du,v0+dv,w0+dw,off), P(u0,v0+dv,w0+dw,off)];
     var sid9 = [P(u0+du,v0,w0,off), P(u0+du,v0+dv,w0,off), P(u0+du,v0+dv,w0+dw,off), P(u0+du,v0,w0+dw,off)];
-    var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW+';opacity:'+(op8==null?1:op8);
+    var stB = 'stroke:'+strokeCol+';stroke-width:'+strokeW;
     wq(top9, 'fill:color-mix(in srgb,'+fillCol+' 88%, #fff 12%);'+stB);
     wq(frt9, 'fill:'+fillCol+';'+stB);
     wq(sid9, 'fill:color-mix(in srgb,'+fillCol+' 70%, #000 30%);'+stB);
@@ -3195,32 +3195,36 @@ function netScene(D, g, box, step){
        全压成贴地的一条缝，「这一层由哪几块组成」反而读不出来。√ 保序不保比，
        精确字节在悬停读数里。 */
     var vB8 = AR*0.985, hMin8 = AR*0.06, hMax8 = AR*0.72;
-    /* 进深：上一版取 bw8*1.3（按块宽给），**不看层间距**——于是相邻两层在 w 轴上
-       必然重叠（bw8*1.3 比 DEP/L 大一截），一列层叠出来是连续的一坨，「哪儿是一层
-       的边界」在图上根本不存在。当时的理由是「照层间距给的话侧面只有 1px、读不出
-       体积」，那个顾虑是真的，但解法不是让层互相吃掉——是**按层间距留一条明确的缝**，
-       并且把缝本身画出来（见下面 compSep）。
-       取层距的 62%：块仍有肉眼可辨的侧面（体积感在），剩下 38% 是缝（分隔看得见）。
-       层距很大时（层数少）仍回落到 bw8*1.3，不让单层被拉成一根柱子。 */
+    /* 进深：两条线索在这里汇合，都是冲着同一个毛病去的——上一版取 bw8*1.3
+       （按块宽给）**不看层间距**，于是相邻两层在 w 轴上必然重叠，一列层叠出来是
+       连续的一坨，「哪儿是一层的边界」在图上根本不存在。
+         · 一条把进深收到层间距以内（留缝、把缝画出来、每层补一圈轮廓）；
+         · 另一条发现光收进深还不够——层间距本身太小（48 层压在 1.7 个单位里），
+           收完只剩薄片，于是给 compFill 单独把 DEP 放大到 8.5（见上面 DEP 那一行，
+           GAPW 仍按 1.7 基准算，PP 段间距不跟着膨胀）。
+       两条缺一不可：只放大 DEP 不收进深，层还是会互相吃掉；只收进深不放大 DEP，
+       层薄得读不出体积。这里合起来——层距的 60% 给块、40% 留缝。
+       min(bw8*1.3, …) 那道封顶留着：层数很少时层距会很大，不封顶单层会被拉成柱子。 */
     var pitch8 = (DEP / Math.max(1, L)) || bw8;
-    var compD8 = Math.min(bw8 * 1.3, pitch8 * 0.70);
+    var compD8 = Math.min(bw8 * 1.3, pitch8 * 0.60);
+    /* 相邻两层一明一暗：缝与轮廓是「边界在哪」，明暗是「这两片不是同一片」——
+       斜投影下前后两层的可见面挨着时，同色会读成一个面的两半。 */
+    var layerDark = li % 2 === 1;
     for(var oi8 = 0; oi8 < n8; oi8++){
       var o8 = ops8[oi8];
       var x0 = uA + oi8*(bw8+gap8), x1 = x0 + bw8;
       var col8 = o8.cut==='tp' ? VC.tp : o8.cut==='ep' ? VC.ep : 'var(--pt-fg3)';
+      if(layerDark) col8 = 'color-mix(in srgb,'+col8+' 72%,#000)';
       var h8 = o8.b > 0 ? hMin8 + hMax8*Math.sqrt(o8.b/compMaxB) : hMin8;
       var frontPts8 = [P(x0,vB8-h8,ww+compD8,kOff), P(x1,vB8-h8,ww+compD8,kOff), P(x1,vB8,ww+compD8,kOff), P(x0,vB8,ww+compD8,kOff)];
       if(o8.b <= 0){
-        /* attn.core：无参（激活算子），照解剖图画成虚线空框（贴着层板的薄片，
-           不给体积）——「这一格有算子、没有权重体积」本身就是信息。 */
         body.push(quad(frontPts8, 'fill:none;stroke:'+col8+';stroke-width:'+(focusCell?.7:.28)
-          +';stroke-dasharray:2 2;opacity:'+(focusCell?1:.62)));
+          +';stroke-dasharray:2 2'));
       }else if(focusCell){
-        body.push(compBox(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, mix(col8,88), col8, .8, 1,
+        body.push(compBox(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, col8, col8, .8, 1,
           ' data-op="'+esc(o8.id)+'"'));
       }else{
-        /* 非焦点卡走弱化档合并（wq）：量级 = 卡数 × 层数 × ~7 块 × 3 面，与模块视图同档。 */
-        compBoxWQ(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, mix(col8,44), col8, .22, .62);
+        compBoxWQ(x0,vB8-h8,ww,x1-x0,h8,compD8,kOff, solid(col8,50), col8, .22, 1);
       }
       if(focusCell){
         var szT8 = o8.b > 0 ? (o8.b >= Math.pow(2,30) ? fmtGB(o8.b)+' GB' : Math.round(o8.b/Math.pow(2,20))+' MB') : '无参';
