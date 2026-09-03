@@ -510,6 +510,19 @@
    所以每块都带一枚，位置固定在原语那一行下面。 */
 .pt-rankmem .rm-d .c5gr{color:var(--c, var(--pt-fg3)); font-size:10.5px; letter-spacing:.04em; opacity:.85; margin-bottom:2px}
 .pt-rankmem .rm-d .c5g{margin:3px 0 4px}
+/* 九层可观测性（§15 六）落在这一条边上：九格 = 九层，实心答得出、描边只答了一半、
+   虚线是缺、极淡是不适用。做成格子而不是一句话，是因为这九层的**缺口位置**本身
+   就是结论（缺首尾两端 vs 缺中间完全不是一回事），位置只有排成一排才读得出来。 */
+.pt-seg.pt-seg-wrap{flex-wrap:wrap}
+.pt-rankmem .rm-d .c5m{display:flex; gap:2px; margin-top:5px; flex-wrap:wrap}
+.pt-rankmem .rm-d .c5m i{font-style:normal; font-size:9.5px; line-height:15px; min-width:17px; padding:0 1px;
+  text-align:center; border-radius:3px; border:1px solid var(--pt-bd); color:var(--pt-fg3); background:var(--pt-bg)}
+.pt-rankmem .rm-d .c5m i.y{background:var(--c, var(--pt-fg2)); border-color:var(--c, var(--pt-fg2)); color:var(--pt-bg); font-weight:700}
+.pt-rankmem .rm-d .c5m i.h{border-color:var(--c, var(--pt-fg2)); color:var(--c, var(--pt-fg2)); font-weight:700}
+.pt-rankmem .rm-d .c5m i.n{border-style:dashed}
+.pt-rankmem .rm-d .c5m i.na{opacity:.32}
+.pt-rankmem .rm-d .c5m i.go{cursor:pointer}
+.pt-rankmem .rm-d .c5m i.go:hover{border-color:var(--pt-fg2); color:var(--pt-fg)}
 /* 体腔小图：图在上、一行标注在下。标注只写图上读不出来的那点（区间、口径），
    图上已经画着的（几份、第几份）不再抄一遍。 */
 .pt-rankmem .rm-d .rm-fig{margin:4px 0 2px}
@@ -1282,7 +1295,9 @@ function urlLoad(){
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
   /* cgrain=rank|block|intra：通信连线画在哪一级粒度上（见 ui.commGrain）。 */
-  if(['rank','block','intra'].indexOf(q.get('cgrain')) >= 0) ui.commGrain = q.get('cgrain');
+  var cg9 = q.get('cgrain');
+  if(cg9 === 'block') cg9 = 'tensor';           /* 老链接：block 是 tensor 这一层的旧名 */
+  if(['rank','tensor','route','time','cost','intra'].indexOf(cg9) >= 0) ui.commGrain = cg9;
   /* commk=tp,ep：只画这几类通信。缺省全开，所以只有**关掉过**的链接才带它。 */
   if(q.has('commk')){
     var ck0 = String(q.get('commk')).split(',');
@@ -2814,7 +2829,12 @@ function netScene(D, g, box, step){
      不写字）；intra 是不跨卡的那一级，跨卡的边整个不画，画面留给卡内那三行。
      一次只画一级，是「五条边的说明牌 + 五枚徽章 + 一枚 rank 内徽章全挤在同一
      张卡周围」那一团的解法。 */
-  var cgRank9 = ui.commGrain === 'rank', cgBlock9 = ui.commGrain === 'block', cgIntra9 = ui.commGrain === 'intra';
+  var cgRank9 = ui.commGrain === 'rank', cgBlock9 = ui.commGrain === 'tensor', cgIntra9 = ui.commGrain === 'intra';
+  var cgTime9 = ui.commGrain === 'time', cgCost9 = ui.commGrain === 'cost', cgRoute9 = ui.commGrain === 'route';
+  /* 时序/影响这两层问的是「这一步里什么时候搬、空转了多久」——答案是一条时间轴，
+     跟跨卡的那几条边不在同一个几何里，同屏画就是两套坐标打架。所以这两层跟
+     rank 内一样：跨卡的边整个不画，画面让给钉在选中卡上的那条一步带。 */
+  var cgLocal9 = cgIntra9 || cgTime9 || cgCost9 || cgRoute9;
   var hlS9 = hlSelOn(D);                     /* 亮着的这只卡是别处点过来的：给它加一圈虚线，见 hlSelOn */
   var root = IXg ? IXg.clu['decoder-stack'] : null;
   var GW = root ? root.width : 1000, GH = root ? root.height : 1700;
@@ -4107,6 +4127,133 @@ function netScene(D, g, box, step){
     hit.push('<rect x="'+(pt[0] - W9*sc/2).toFixed(1)+'" y="'+(pt[1] - H9*sc/2).toFixed(1)+'" width="'+(W9*sc).toFixed(1)+'" height="'+(H9*sc).toFixed(1)+'" '
       +'style="fill:transparent;cursor:help"><title>'+esc(tip)+'</title></rect>');
   }
+  /* ── 路由：九层里唯一由**数据内容**决定的那一层（只有 EP 有）─────────────
+     参照系 §15 FIG 23 那张图的画布版：token 按 router 的结果被送到专家所在的
+     那张卡，于是同一套配置下，这张流量图**每个微批都不一样**——另外四维的边
+     由配置决定，画一次就固定了，这一条不是。
+     画三段：左边 token、中间它选中的专家（专家上标着它住在哪张卡）、下面每个
+     专家收到多少（负载条）。不均衡怎么一路传导到 step 时长，那条链留给悬停。
+     ⚠ token 的选择是**示意**（router 的输出要有真数据才知道），但示意也必须
+     自洽：负载条是从上面那几条连线数出来的，不是另外编的一组数——FIG 23 早期
+     那版就是矩阵与连线各写各的，改过一次。 */
+  function routeFlow(pt, sc, D9, g9, li9){
+    var mem9 = epMembers(g9, D9), nE9 = Math.min(3, Math.max(2, mem9.length));
+    var peers9 = [];
+    var meI9 = mem9.indexOf(g9);
+    for(var q9 = 0; q9 < nE9; q9++) peers9.push(mem9[(Math.max(0, meI9) + q9) % mem9.length]);
+    var nT9 = 5, toks9 = [], load9 = [];
+    for(var e9 = 0; e9 < nE9; e9++) load9.push(0);
+    for(var t9 = 0; t9 < nT9; t9++){
+      var pick9 = Math.floor(sdSeed(li9 + 1, 300 + t9 + g9 % 17) * nE9) % nE9;
+      toks9.push(pick9); load9[pick9]++;
+    }
+    var mx9 = Math.max.apply(null, load9) || 1, mn9 = Math.min.apply(null, load9);
+    var W9 = 184, H9 = 74, tx9 = 10, ex9 = 96, ty9 = 16, rowH9 = 9, eH9 = 13;
+    var col9 = VC.ep;
+    var o9 = '<g transform="translate('+pt[0].toFixed(1)+','+pt[1].toFixed(1)+') scale('+sc.toFixed(3)+')">';
+    o9 += '<rect x="'+(-W9/2)+'" y="'+(-H9/2)+'" width="'+W9+'" height="'+H9+'" rx="5" style="fill:var(--pt-bg);stroke:'+col9+';stroke-width:1.1;opacity:.97"/>';
+    o9 += '<g transform="translate('+(-W9/2)+','+(-H9/2)+')">';
+    o9 += txt(tx9, ty9 - 5, 'token', 5.2, 'var(--pt-fg3)', 'start')
+       +  txt(ex9, ty9 - 5, '专家 · 住在哪张卡', 5.2, 'var(--pt-fg3)', 'start');
+    var eY9 = function(i9){ return ty9 + i9*(eH9 + 5); };
+    for(var i9 = 0; i9 < nE9; i9++){
+      o9 += '<rect x="'+ex9+'" y="'+eY9(i9)+'" width="52" height="'+eH9+'" rx="2" '
+         +  'style="fill:'+solid(col9, 18 + i9*10)+';stroke:'+col9+';stroke-width:.9"/>'
+         +  txt(ex9 + 26, eY9(i9) + eH9 - 4, 'E' + i9 + ' · r' + peers9[i9], 5.4, 'var(--pt-fg)', 'middle');
+    }
+    for(var j9 = 0; j9 < nT9; j9++){
+      var y9 = ty9 + j9*rowH9;
+      o9 += '<rect x="'+tx9+'" y="'+y9+'" width="7" height="6" rx="1" style="fill:'+solid(col9, 30)+';stroke:'+col9+';stroke-width:.6"/>';
+      var dy9 = eY9(toks9[j9]) + eH9/2;
+      o9 += '<path d="M'+(tx9+8)+' '+(y9+3)+' C'+(tx9+40)+' '+(y9+3)+' '+(ex9-30)+' '+dy9+' '+(ex9-1)+' '+dy9+'" '
+         +  'style="fill:none;stroke:'+col9+';stroke-width:.7;opacity:.8"/>';
+    }
+    /* 负载条：直接数上面那几条线，列和与条长恒等 */
+    var by9 = H9 - 16;
+    o9 += txt(tx9, by9 - 3, '收到的 token（数的是上面那几条线）', 5, 'var(--pt-fg3)', 'start');
+    for(i9 = 0; i9 < nE9; i9++){
+      var bw9 = 46 * (load9[i9] / mx9);
+      o9 += '<rect x="'+(tx9 + i9*56)+'" y="'+by9+'" width="'+Math.max(1.5, bw9).toFixed(1)+'" height="7" rx="1.5" '
+         +  'style="fill:'+col9+';opacity:'+(load9[i9] === mx9 ? .95 : .5)+'"/>'
+         +  txt(tx9 + i9*56 + 50, by9 + 6, 'E' + i9 + ':' + load9[i9], 5, 'var(--pt-fg3)', 'end');
+    }
+    o9 += '</g></g>';
+    body.push(o9);
+    var tip9 = '路由 · token 去哪了：router 按数据内容给每个 token 选专家，专家住在哪张卡是 EP 配置定死的，'
+      + '两者一叠就决定了这一次 All-to-All 的 rank → rank 流量——所以这张图每个微批都不一样，另外四维的边不是。'
+      + '本图 token 的选择是示意口径（要真 router 输出才知道），但负载条是从图上那几条连线数出来的，与图自洽。'
+      + '不均衡怎么传导：router 偏斜 → 专家负载不均（这里 ' + load9.join(':') + '）→ rank 收到的 token 不均 → A2A 流量不均 → '
+      + '专家 GEMM 不均 → 到同步点更晚 → step 时长↑。越靠前的环越早暴露问题，容量因子与均衡辅助损失作用在第一环。';
+    hit.push('<rect x="'+(pt[0] - W9*sc/2).toFixed(1)+'" y="'+(pt[1] - H9*sc/2).toFixed(1)+'" width="'+(W9*sc).toFixed(1)+'" height="'+(H9*sc).toFixed(1)+'" '
+      +'style="fill:transparent;cursor:help"><title>'+esc(tip9)+'</title></rect>');
+  }
+  /* ── 一步带：时序 / 影响这两层的画法 ──────────────────────────────────
+     九层矩阵里最后两行——「什么时候搬、藏住没有」和「造成了什么后果」——原来
+     整个不在这一屏上（只在「时间·流」那个 tab 里）。它们的答案是一条时间轴，
+     跟跨卡的边不在同一个几何里，所以不叠在阵列上，而是钉在选中卡身上画成一条
+     短带：这一条带讲的就是**这张卡的一步**。
+     数据用的是同一份 schedule(D)（1F1B 合成，F=1 B=2 的示意时长，与时间·流
+     逐块同源），取本卡所在 stage 那一条泳道：
+       · 实块  = 这张卡在算（F 浅、B 深）
+       · 斜纹  = 空转——它在等上一段的激活或下一段的梯度，这就是气泡
+       · 末尾  = 步末的梯度 AllReduce
+     time 档强调「什么时候」：块与块的先后、通信落在哪个缝里；
+     cost 档强调「代价」：空转与末尾那次 AllReduce 抬到警示色、其余压灰，
+     并把空转占比这一个数直接写在带上——这一层的结论就是这个数。 */
+  function stepStrip(pt, sc, mode9, D9, pSel9){
+    var sch9 = schedule(D9), T9 = sch9.T || 1;
+    var lane9 = sch9.blocks.filter(function(b9){ return b9.s === pSel9; })
+                          .sort(function(a9, b9){ return a9.t0 - b9.t0; });
+    if(!lane9.length) return;
+    var W9 = 176, H9 = 44, x0 = 6, y0 = 14, bh9 = 15, iw9 = W9 - x0*2;
+    var xOf = function(t9){ return x0 + iw9 * (t9 / T9); };
+    var busy9 = 0;
+    lane9.forEach(function(b9){ busy9 += (b9.t1 - b9.t0); });
+    var idle9 = Math.max(0, 1 - busy9 / T9);
+    var cold9 = mode9 === 'cost';
+    var o9 = '<g transform="translate('+pt[0].toFixed(1)+','+pt[1].toFixed(1)+') scale('+sc.toFixed(3)+')">';
+    o9 += '<rect x="'+(-W9/2)+'" y="'+(-H9/2)+'" width="'+W9+'" height="'+H9+'" rx="5" '
+       +  'style="fill:var(--pt-bg);stroke:'+(cold9 ? 'var(--pt-danger)' : 'var(--pt-fg3)')+';stroke-width:1.1;opacity:.97"/>';
+    o9 += '<g transform="translate('+(-W9/2)+','+(-H9/2)+')">';
+    /* 空转先画（它是底），斜纹用两三根短斜线表示，够读出「这里没在算」即可 */
+    var prev9 = 0, gaps9 = [];
+    lane9.forEach(function(b9){ if(b9.t0 - prev9 > 1e-6) gaps9.push([prev9, b9.t0]); prev9 = Math.max(prev9, b9.t1); });
+    if(T9 - prev9 > 1e-6) gaps9.push([prev9, T9]);
+    gaps9.forEach(function(gp9){
+      var gx9 = xOf(gp9[0]), gw9 = Math.max(1, xOf(gp9[1]) - gx9), k9;
+      var gc9 = cold9 ? 'var(--pt-danger)' : 'var(--pt-fg3)';
+      o9 += '<rect x="'+gx9.toFixed(1)+'" y="'+y0+'" width="'+gw9.toFixed(1)+'" height="'+bh9+'" '
+         +  'style="fill:none;stroke:'+gc9+';stroke-width:.6;stroke-dasharray:2 2;opacity:'+(cold9 ? .95 : .55)+'"/>';
+      for(k9 = 0; k9 < gw9; k9 += 3.2)
+        o9 += '<line x1="'+(gx9+k9).toFixed(1)+'" y1="'+(y0+bh9)+'" x2="'+(gx9+k9+bh9*0.6).toFixed(1)+'" y2="'+y0+'" '
+           +  'style="stroke:'+gc9+';stroke-width:.5;opacity:'+(cold9 ? .8 : .35)+'"/>';
+    });
+    lane9.forEach(function(b9){
+      var bx9 = xOf(b9.t0), bw9 = Math.max(1.2, xOf(b9.t1) - bx9);
+      var isAR9 = b9.type === 'AR';
+      var col9 = isAR9 ? VC.dp : (cold9 ? 'var(--pt-fg3)' : VC.pp);
+      var fill9 = isAR9 ? solid(VC.dp, cold9 ? 62 : 34)
+                        : solid(col9, (b9.type === 'B' ? 46 : 24) * (cold9 ? 0.5 : 1));
+      o9 += '<rect x="'+bx9.toFixed(1)+'" y="'+y0+'" width="'+bw9.toFixed(1)+'" height="'+bh9+'" rx="1.5" '
+         +  'style="fill:'+fill9+';stroke:'+(cold9 && !isAR9 ? 'var(--pt-bd)' : col9)+';stroke-width:'+(isAR9 && cold9 ? 1.4 : .7)+'"/>';
+      /* 通信落在哪个缝里：PP 的 recv 是一枚小三角，钉在这一块的起点上——
+         「搬完才轮到算」这件事在图上就是这个先后。 */
+      if(!cold9 && b9.recv)
+        o9 += '<path d="M'+bx9.toFixed(1)+' '+(y0-2)+' l3 -4 l-6 0 z" style="fill:'+VC.pp+'"/>';
+    });
+    o9 += txt(x0, y0 - 5, mode9 === 'cost' ? '一步 · 代价' : '一步 · 时序', 5.6, 'var(--pt-fg3)', 'start', 'font-weight="700"');
+    if(cold9) o9 += txt(W9 - x0, y0 - 5, '空转 ' + Math.round(idle9*100) + '%', 6.2, 'var(--pt-danger)', 'end', 'font-weight="800"');
+    o9 += txt(W9/2, H9 - 4, cold9 ? '斜纹=气泡 · 末块=步末 AllReduce' : 'F 浅 · B 深 · ▲=收到激活/梯度', 5.4, 'var(--pt-fg3)', 'middle');
+    o9 += '</g></g>';
+    body.push(o9);
+    var tip9 = (mode9 === 'cost'
+      ? '这一步里本卡空转约 ' + Math.round(idle9*100) + '%：斜纹段是它在等上一段的激活或下一段的梯度（气泡），末尾那块是步末梯度 AllReduce。'
+        + '整网口径的气泡率 = (PP−1)/GA ≈ ' + (D9.bubble*100).toFixed(1) + '%。'
+      : '本卡（stage ' + pSel9 + '）在一步里的排布：F=前向、B=反向，▲ 标的是这一块开算前先收到的激活/梯度。')
+      + ' 时长是 1F1B 合成的示意口径（F=1、B=2），与「时间·流」同一份 schedule；点开那个 tab 看逐块的 kernel。';
+    hit.push('<rect x="'+(pt[0] - W9*sc/2).toFixed(1)+'" y="'+(pt[1] - H9*sc/2).toFixed(1)+'" width="'+(W9*sc).toFixed(1)+'" height="'+(H9*sc).toFixed(1)+'" '
+      +'style="fill:transparent;cursor:pointer" data-act="v3totime"><title>'+esc(tip9)+'</title></rect>');
+  }
   function axLab(pt, s1, s2, col, strong, sz, op9){
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
@@ -5164,7 +5311,7 @@ function netScene(D, g, box, step){
      （加新补的 CP 一条）一律过一遍 memCommWant：没点开时是概览口径、四条照旧，
      点开某一档就只留那一档真正触发的那几条。CP 是这次新补的一条——它只在
      **点开激活档**时出现，因为概览口径里从来没有它（见 memCommWant 的注释）。 */
-  if(ui.commOn && !lowDetail && ui.cardMode && hasSel && !cgIntra9){
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel && !cgLocal9){
     var pF9c = cutPP ? co.p : 0;
     var liRep9c = Math.min(D.layers - 1, pF9c*lps + (lps >> 1));
     var liRepEP9c = Math.min(D.layers - 1, Math.max(liRep9c, denseTop));
@@ -5264,6 +5411,18 @@ function netScene(D, g, box, step){
      画布上一个记号都没有。于是「归属变不变」这条判据在画面上是缺一半的：
      读者看见四条边都在改归属，却看不见还有一类移动**不改**归属。
      徽章钉在选中卡自己身上，不落在任何一条跨卡的边上——位置本身就是那句话。 */
+  /* 路由：只有 EP 有这一层（见 routeFlow）。刀拨掉或不是 MoE 时这一档画不出东西，
+     按钮那边已经置灰，这里再挡一次——两处看同一组条件。 */
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel && chainCardAnchor[g] && cgRoute9 && cutEP && D.moe && D.ep > 1){
+    var ra9 = chainCardAnchor[g];
+    routeFlow([ra9[0] + 104*zoomF9, ra9[1] + 56*zoomF9], 0.86*zoomF9, D, g,
+      Math.min(D.layers - 1, Math.max((cutPP ? co.p : 0)*lps + (lps >> 1), denseTop)));
+  }
+  /* 时序 / 影响：同一条一步带，两种强调（见 stepStrip） */
+  if(ui.commOn && !lowDetail && ui.cardMode && hasSel && chainCardAnchor[g] && (cgTime9 || cgCost9)){
+    var sa9 = chainCardAnchor[g];
+    stepStrip([sa9[0] + 104*zoomF9, sa9[1] + 54*zoomF9], 0.86*zoomF9, cgTime9 ? 'time' : 'cost', D, cutPP ? co.p : 0);
+  }
   if(ui.commOn && !lowDetail && ui.cardMode && hasSel && chainCardAnchor[g] && cgIntra9){
     var ia9 = chainCardAnchor[g];
     intraFlow([ia9[0] + 104*zoomF9, ia9[1] + 54*zoomF9], 0.86*zoomF9,
@@ -5294,7 +5453,7 @@ function netScene(D, g, box, step){
      卡已经挪到 shellOf 借道出的那个物理位置，两边对不上——上面那段用
      chainCardAnchor 画的卡对卡连线覆盖的是同一件事（TP/PP/DP/EP 组内连线），
      且用的是真实锚点，物理平铺下继续画。 */
-  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn && !cgIntra9){
+  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn && !cgLocal9){
     /* memSel9 / cw9 在上面那段（卡对卡通信线）已经按同一张卡算过一次，两段共用
        同一个答案——同一屏上两层线各问各的，迟早会出现「一层收窄了另一层没收」。
        commLit(dim) 那道门仍旧要单独过一次：它是读者在配置面板里把这一维的连线
@@ -10194,12 +10353,21 @@ function renderChainBar(D){
           ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
       /* 粒度三选一：一次只画一级（见 ui.commGrain）。放在维度多选之前——
          先问「看哪一级」，再问「看哪几维」，由粗到细。 */
-      + '<div class="cgrow"><span class="pt-seg"'+(ui.commOn?'':' style="opacity:.45;pointer-events:none"')+'>'
-        + ['rank','block','intra'].map(function(gk9){
-            var GN9 = {rank:['rank 之间','卡与卡：谁跟谁通信，一条边一枚芯片，悬停看完整读数'],
-                       block:['分块之间','张量的哪几块换了位置：只画变换徽章，不写字'],
-                       intra:['rank 内','不跨卡的那一级：HBM ↔ 片上 ↔ 计算，画在选中卡身上']}[gk9];
-            return '<button'+(ui.commGrain===gk9?' class="is-on"':'')+' data-act="commgrain" data-v="'+gk9+'" title="'+esc(GN9[1])+'">'+GN9[0]+'</button>';
+      /* 九层可观测性（§15 六）里，这一屏画得出来的那几层：一次只画一层。
+         「看哪几维」是另一根轴（下面那排 TP/CP/PP/DP/EP），两根轴各问各的——
+         层问「读哪一面」，维问「读哪几条边」。 */
+      + '<div class="cgrow"><span class="pt-seg pt-seg-wrap"'+(ui.commOn?'':' style="opacity:.45;pointer-events:none"')+'>'
+        + ['rank','tensor','route','time','cost','intra'].map(function(gk9){
+            var GN9 = {rank:  ['rank','谁和谁 —— 卡与卡的边，一条边一枚芯片，字节/带宽/耗时走悬停'],
+                       tensor:['张量','搬的是什么 —— 前态→后态的变换徽章，同时把算子级的弧线放出来'],
+                       route: ['路由','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张卡，两者一叠决定这次 A2A 的流量'],
+                       time:  ['时序','什么时候搬、藏住没有 —— 本卡这一步的 F/B/AllReduce 排布'],
+                       cost:  ['影响','造成了什么后果 —— 空转（气泡）与步末 AllReduce 抬到警示色'],
+                       intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张卡里做完']}[gk9];
+            /* 路由那一档只有 MoE + EP 落刀时答得上，其余配置下置灰——「不适用」
+               不该假装成一个能点开却什么都没有的档（读出卡那排九格同一口径）。 */
+            var dis9 = gk9 === 'route' && !(ui.kEP && moe9 && D.ep > 1);
+            return '<button'+(ui.commGrain===gk9?' class="is-on"':'')+(dis9?' disabled':'')+' data-act="commgrain" data-v="'+gk9+'" title="'+esc(GN9[1]+(dis9?'（本配置不是 MoE 或 EP 没落刀，这一层不适用）':''))+'">'+GN9[0]+'</button>';
           }).join('')
       + '</span></div>'
       + '<div class="acts"><button data-act="commall">全选</button><button data-act="commnone">全部隐藏</button></div>'
@@ -11430,6 +11598,10 @@ function memBlockDetail(D, g, key){
        答得了「多久」，答不了「为什么」——而这一屏被问到的从来是后者。 */
     commLine = '<div class="rm-note" style="margin-top:5px">对应通信 · <b style="color:var(--pt-fg)">一次搬运记全是五样</b>'
       + '<span style="opacity:.75">（源 / 张量含前后 layout / 并行域 / 原语 / 宿）</span></div>'
+      /* 九格带子的读法只说一次，挂在这一栏的抬头上——每条边下面重复一遍图例
+         就又变成「字太多」。 */
+      + '<div class="rm-note" style="margin-top:2px;opacity:.8">每条边下面那排九格 = <b style="color:var(--pt-fg2)">九层可观测性</b>'
+      + '（模·张·并·r·原·载·路·时·影）：实心答得出、描边答了一半、虚线是缺、极淡是不适用；虚线那两格可点，去「时间·流」。</div>'
       + mo9.comm.map(function(c9){
           var live9 = dimLive9(c9.d);
           return comm5HTML(D, g, key, c9, live9, dimWhy9(c9.d));
@@ -11704,6 +11876,57 @@ function comm5Spec(D, key, dim){
 
 /* 一条通信渲染成一块。dim 没落下时照旧列出来但标灰——「这套配置里没有」与
    「这类对象没有」是两句不同的话（原来那条注释立的规矩，这里继续守）。 */
+/* ── 九层可观测性矩阵（§15 六）══════════════════════════════════════════
+   矩阵那一节的结论是「传统 profiling 通常只给第 4、5、6、8 行——谁和谁、什么
+   原语、多少字节、什么时候；缺的正是首尾两端：这次通信属于模型的哪一部分，
+   以及它到底有没有造成损失」。把九层挂在**每一条边**上，读出卡当场就能回答
+   「这一条现在答得出哪几层」——而且各维的答案不一样（EP 有路由、TP 没有；
+   PP 有气泡、别的维没有），一条一条挂才不会把「不适用」误读成「缺」。
+   四档状态：y 答得出 / h 只答了一半 / n 缺 / na 这条边上不存在这一层。 */
+var COMM_L9 = [
+  {k:'model',  ab:'模', n:'模型',  ask:'谁产生了这次通信'},
+  {k:'tensor', ab:'张', n:'张量',  ask:'搬的是什么、前态后态'},
+  {k:'par',    ab:'并', n:'并行',  ask:'为什么需要它'},
+  {k:'rank',   ab:'r',  n:'rank',  ask:'谁和谁'},
+  {k:'prim',   ab:'原', n:'原语',  ask:'怎么搬'},
+  {k:'load',   ab:'载', n:'载荷',  ask:'搬多少'},
+  {k:'route',  ab:'路', n:'路由',  ask:'token 去哪了'},
+  {k:'time',   ab:'时', n:'时序',  ask:'什么时候搬、藏住没有'},
+  {k:'cost',   ab:'影', n:'影响',  ask:'造成了什么后果'}
+];
+/* 每一层现在答到什么程度——按维给，不给一份通用答案：这九格要是每条边都长一样，
+   它就退化成一张装饰用的图例，读者也就不会再去看它。 */
+function commL9(D, dim){
+  var real9 = (dim === 'tp' || dim === 'ep');
+  return {
+    model: real9 ? ['y','锚在真算子上（TP=attention 的 reduce-scatter，EP=MoE 的 dispatch），层号写在读数里']
+                 : ['h','只到「代表算子 / 代表层」这一级：这一维的边挂在本段的代表算子上，不是逐算子给'],
+    tensor:['y','张量是什么、前态 → 后态的 layout，上面「张量」一行与那张变换图都在说它'],
+    par:   ['y','并行域与组大小（' + DIMN[dim] + ' 组，成员在「源→宿」一行里列全）'],
+    rank:  ['y','源与宿都落到具体的 r 号；画布上这一条边连的就是这几张卡'],
+    prim:  ['y','原语写明，画布上的芯片右半也是它（AR / AG·RS / A2A / P2P）'],
+    /* 这一格曾经写成「答得出」，是抬高了自己：那三个数走的是 sdOpBuckets 的
+       **示意口径**（按算子类别给量级，不是拿真 shape 算出来的），画布上 EP 那条
+       边旁边一直标着「示意量」。有量级、没真值，正是「只答了一半」。 */
+    load:  ['h','有量级、没真值：字节/带宽/耗时是按算子类别估的示意口径，不是从真 shape 算出来的'],
+    route: dim === 'ep'
+             ? ['y','router 判定之后 permute 成连续段：整张图上唯一一条按数据内容决定去向的边']
+             : ['na','这一维的去向由切法决定，与数据内容无关——不适用，不是缺'],
+    time:  ['h','只有「搬多久」，没有「什么时候搬、和哪一段计算重叠」。点这一格去「时间·流」'],
+    cost:  dim === 'pp'
+             ? ['h','这一维的后果有一个现成读数：气泡率 (PP−1)/GA，在「时间·流」与诊断条上。点这一格过去']
+             : ['n','等待 / 空转还没接进这一屏。点这一格去「时间·流」看这一步的时间轴']
+  };
+}
+function commL9HTML(D, dim){
+  var st = commL9(D, dim);
+  return '<div class="c5m">' + COMM_L9.map(function(L){
+    var v = st[L.k], cls = v[0], go = (L.k === 'time' || L.k === 'cost');
+    return '<i class="' + cls + (go ? ' go' : '') + '"' + (go ? ' data-act="v3totime"' : '')
+      + ' title="' + esc(L.n + ' · ' + L.ask + '\n' + ({y:'答得出', h:'只答了一半', n:'缺', na:'不适用'}[cls]) + '：' + v[1]) + '">'
+      + esc(L.ab) + '</i>';
+  }).join('') + '</div>';
+}
 function comm5HTML(D, g, key, c, live, why){
   var col = live ? VC[c.d] : 'var(--pt-fg3)';
   var head = '<div class="c5h"><span class="c5d">' + DIMN[c.d] + '</span>' + esc(c.t) + '</div>';
@@ -11740,7 +11963,9 @@ function comm5HTML(D, g, key, c, live, why){
     + '<dt>源→宿</dt><dd>本卡 r' + g + ' → ' + dst + '</dd>'
     + '<dt>效果</dt><dd>' + sp.effect + '</dd>'
     + '<dt>反向</dt><dd>' + sp.dual + '</dd>'
-    + '</dl></div>';
+    + '</dl>'
+    + commL9HTML(D, c.d)
+    + '</div>';
 }
 
 /* ══ 选中 rank 的容器卡（Rank + 关整网）═════════════════════════════════
