@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<!-- viewport-fit=cover 才能拿到 env(safe-area-inset-*)，底部主按钮不会被 Home 横条压住。
+     不写 user-scalable=no / maximum-scale=1：iOS 10 起就忽略它，而且伤可访问性；
+     防聚焦缩放靠的是所有表单控件字号 ≥16px（见 pattern.css）。 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<title>班表闹钟 · 复杂上班规则 → iPhone 日历与闹钟</title>
+<meta name="description" content="大小周、调休补班、轮班倒班——把 iPhone 自己设不出来的上班规则，算成一张确定的班表，导进 iOS 日历。" />
+
+<!-- 加到主屏后按 app 打开。iOS 26 起「添加到主屏幕」默认就是 Web App 模式，
+     不写这两个标签也躲不掉，所以按 standalone 一定会发生来设计（见 pattern.js
+     里的分享优先策略：standalone 下 <a download> 普遍失效，navigator.share 才可靠）。 -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="班表闹钟" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./favicon.svg" />
+<!-- scope 必须写：不写的话 standalone 下每一次站内跳转都会把用户踢回 Safari -->
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="stylesheet" href="./pattern.css" />
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="badge">iPhone 设不出来的那些班</span>
+    <h1>班表闹钟</h1>
+    <p>大小周、调休补班、轮班倒班——先算成一张你能逐天核对的班表，再一次性导进 iOS 日历。</p>
+  </header>
+
+  <!-- ① 说清班规 ------------------------------------------------ -->
+  <section>
+    <h2 class="sec-title"><span class="step">1</span>用一句话说清你的班规</h2>
+    <div class="card">
+      <div class="pad">
+        <textarea id="nl" placeholder="例：大小周，早九晚六，这周要上周六，提前一小时起床"></textarea>
+        <div class="chips" id="examples"></div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="primary" id="btn-parse">解析这句话</button>
+          <button id="btn-ai">交给模型解析…</button>
+        </div>
+      </div>
+      <div class="hint">
+        本地解析不联网、不需要任何 key，覆盖国内最常见的说法。班规特别绕（四班三倒、
+        跨部门轮值、弹性工时）时，用「交给模型解析」把提示词复制到任意对话框，再把 JSON 粘回来。
+      </div>
+    </div>
+
+    <div class="card" id="ai-panel" hidden>
+      <div class="pad">
+        <label class="field">
+          <span>把这段提示词复制到 Claude / 任意模型，然后把它回的 JSON 粘回下面</span>
+          <textarea id="ai-prompt" readonly rows="4"></textarea>
+        </label>
+        <div class="btn-row">
+          <button id="btn-copy-prompt">复制提示词</button>
+          <button id="btn-close-ai">收起</button>
+        </div>
+        <label class="field" style="margin-top:14px">
+          <span>把模型返回的 JSON 粘到这里</span>
+          <textarea id="ai-json" placeholder='{"pattern":{...},"shifts":[...]}'></textarea>
+        </label>
+        <button class="primary wide" id="btn-adopt">采用这份 JSON</button>
+      </div>
+    </div>
+
+    <div class="card" id="notes-card" hidden>
+      <div id="notes"></div>
+      <div id="asks"></div>
+    </div>
+  </section>
+
+  <!-- ② 核对班表 ------------------------------------------------ -->
+  <section id="sec-cal" hidden>
+    <h2 class="sec-title"><span class="step">2</span>逐天核对（点一天可以手动改）</h2>
+
+    <div class="card">
+      <div class="cal-head">
+        <button id="prev-m" aria-label="上个月">‹</button>
+        <div class="m" id="cal-month"></div>
+        <button id="today-m">今天</button>
+        <button id="next-m" aria-label="下个月">›</button>
+      </div>
+      <div class="cal-dow">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span>
+        <span class="we">六</span><span class="we">日</span>
+      </div>
+      <div class="cal-grid" id="cal"></div>
+      <div class="legend">
+        <span><i style="background:color-mix(in srgb,var(--blue) 40%,transparent)"></i>上班</span>
+        <span><i style="background:color-mix(in srgb,var(--green) 45%,transparent)"></i>法定放假</span>
+        <span><i style="background:color-mix(in srgb,var(--orange) 60%,transparent)"></i>调休补班</span>
+        <span><i style="box-shadow:inset 0 0 0 1.5px var(--purple)"></i>大周多上的</span>
+        <span><i style="background:var(--red);border-radius:50%;width:7px;height:7px"></i>你手动改过</span>
+      </div>
+      <div class="daydetail" id="daydetail" hidden></div>
+    </div>
+
+    <div class="card">
+      <div class="stats" id="stats"></div>
+    </div>
+
+    <div class="card" id="health-card" hidden><div id="health"></div></div>
+
+    <h2 class="sec-title" style="margin-top:22px">班型微调</h2>
+    <div class="card"><div class="pad" id="tuner"></div></div>
+  </section>
+
+  <!-- ③ 提醒 ---------------------------------------------------- -->
+  <section id="sec-rem" hidden>
+    <h2 class="sec-title"><span class="step">3</span>要提醒些什么</h2>
+    <div class="card" id="reminders"></div>
+    <div class="card">
+      <div class="pad">
+        <div class="btn-row"><button id="btn-add-rem">＋ 加一条提醒</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ④ 导入 iPhone --------------------------------------------- -->
+  <section id="sec-export" hidden>
+    <h2 class="sec-title"><span class="step">4</span>导进 iPhone</h2>
+
+    <div class="card">
+      <div class="row">
+        <div class="label">
+          <b>提醒日历</b>
+          <small id="ics-stat">—</small>
+        </div>
+      </div>
+      <div class="pad" style="padding-top:0">
+        <div class="btn-row">
+          <button class="primary" id="btn-share-ics">添加到日历</button>
+          <button id="btn-dl-ics">下载 .ics</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label"><b>写法</b><small>重复规则更省事件、好删；逐日展开最不挑解析器</small></div>
+        <div class="value">
+          <select id="ics-mode" style="width:auto">
+            <option value="recurring">重复规则</option>
+            <option value="expanded">逐日展开</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="label"><b>范围</b><small>往后算多少个月</small></div>
+        <div class="value">
+          <select id="months" style="width:auto">
+            <option value="3">3 个月</option>
+            <option value="6">6 个月</option>
+            <option value="12" selected>12 个月</option>
+            <option value="24">24 个月</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint" id="import-hint"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="label"><b>班表日历</b><small id="cal-stat">哪天上班、哪天补班，全天事件铺在日历上</small></div>
+      </div>
+      <div class="pad" style="padding-top:0">
+        <div class="btn-row">
+          <button id="btn-share-cal">添加班表</button>
+          <button id="btn-dl-cal">下载 .ics</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="warn" id="alarm-truth"></div>
+    </div>
+
+    <h2 class="sec-title" style="margin-top:22px">要真正能吵醒你的闹钟（快捷指令）</h2>
+    <div class="card">
+      <div class="hint" id="shortcut-why"></div>
+      <ol class="recipe" id="recipe"></ol>
+      <div class="hint" id="recipe-tail"></div>
+      <div class="row"><div class="label"><b>今天要粘的班表数据</b><small id="payload-stat">—</small></div></div>
+      <pre class="payload" id="payload"></pre>
+      <div class="pad" style="padding-top:12px">
+        <div class="btn-row">
+          <button id="btn-copy-payload">复制班表数据</button>
+          <button id="btn-open-shortcuts">打开快捷指令 App</button>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="sec-title" style="margin-top:22px">规则本身</h2>
+    <div class="card">
+      <div class="pad">
+        <div class="btn-row">
+          <button id="btn-export-json">导出规则 JSON</button>
+          <button id="btn-import-json">导入规则 JSON</button>
+        </div>
+      </div>
+      <div class="hint">规则存在这台设备的浏览器里，不上传任何服务器。导出的 JSON 可以换设备继续用。</div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      法定节假日与调休补班数据来自国务院办公厅历年通知（已收录 <span id="hol-years"></span>）。
+      新一年的安排通常在前一年 11 月前后公布，没收录的年份只按班型推算，界面会明确提示。
+    </p>
+    <p>
+      全部计算在本机浏览器完成，不上传任何数据。仓库：
+      <a href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/shift-alarm" target="_blank" rel="noopener">public/shift-alarm</a>
+    </p>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+<script type="module" src="./pattern.js"></script>
+</body>
+</html>

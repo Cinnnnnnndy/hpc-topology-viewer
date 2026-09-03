@@ -29,6 +29,12 @@ name: Deploy to GitHub Pages
 #       忘记合回 main，线上内容就悄悄落后于 main 且不报错（parallel-topology 当年也是
 #       同一类问题，「推 main」与「推分支」谁最后跑谁赢，链接内容随机跳）。分支本身还在，
 #       继续用于开发；只是发布这一步现在只认 main。
+#   · main（public/shift-alarm/，源码直接在 main）
+#       → /shift-alarm/（短链接，vite 把 public/ 整个拷进 dist/，不需要叠加步骤）
+#       → /patterns/apple-shift-alarm/（规范入口：pattern.* 同级 + 三个零依赖逻辑模块，
+#         别人可直接 import engine.js 复用规则引擎）
+#       → dist/launch.html 的「独立迭代 Pattern」组里插一张卡
+#       与本仓 HPC 拓扑主线无关的一个独立成品（把大小周/调休/轮班算成 iOS 日历）。
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -577,6 +583,70 @@ jobs:
           test -s dist/combo-workbench/index.html
           test -s dist/combo-workbench/swimlane.html
           test -s dist/combo-workbench/vendor/swimlane-task/pattern.js
+
+      - name: Overlay 班表闹钟 at /patterns/apple-shift-alarm/
+        # 源码在 main 的 public/shift-alarm/，vite 会把 public/ 整个拷进 dist/，
+        # 所以短链接 /shift-alarm/ 不用这一步就已经在了（index.html 跳 pattern.html）。
+        # 这一步只补**规范入口**：pattern.html 与 pattern.css / pattern.js / pattern.json
+        # 同级，别人可以直接 <script type="module" src=".../engine.js"> 复用规则引擎，
+        # 或者先读 pattern.json 里的契约与设计决策。
+        # 目录自包含，没有任何 vendor 依赖（三个逻辑模块都是零依赖 ES module）。
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          SRC=public/shift-alarm
+          PAT=dist/patterns/apple-shift-alarm
+          mkdir -p $PAT
+          # 逐个列举，不用 cp -r：tests/ 与 launch-card.html 不该进发布产物，
+          # 而新增模块必须显式补到这一行，否则线上是**静默** 404
+          #（ES module 导入失败只在控制台报错，页面看上去只是没反应）。
+          cp $SRC/pattern.html $SRC/pattern.css $SRC/pattern.js $SRC/pattern.json \
+             $SRC/engine.js $SRC/ics.js $SRC/parser.js $SRC/holidays-data.js \
+             $SRC/favicon.svg $SRC/manifest.webmanifest $PAT/
+          # 资源引用打上版本戳。ES module 的 import 是写在 .js 里的裸相对路径，
+          # sed 打不到也不该打（改了会破坏模块解析）——所以这里只给 <link>/<script src>
+          # 那几条打戳；engine/ics/parser 靠 pattern.js 自身换 URL 带出新版本。
+          sed -e "s#\(\./\(pattern\.\(css\|js\)\|favicon\.svg\|manifest\.webmanifest\)\)\"#\1?v=$SHA\"#g" \
+              $SRC/pattern.html > $PAT/pattern.html
+          node -e "
+            const fs=require('fs'), f='$PAT/pattern.json';
+            const o=JSON.parse(fs.readFileSync(f,'utf8'));
+            o.version='$SHA';
+            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
+          "
+          # 断言：戳打上了，而且三个逻辑模块都在（漏一个就是静默白屏）
+          grep -q "pattern.js?v=$SHA" $PAT/pattern.html
+          for m in engine.js ics.js parser.js holidays-data.js; do test -s $PAT/$m; done
+          test -s dist/shift-alarm/pattern.html    # vite 从 public/ 带进来的短链接目录
+          echo "published: /patterns/apple-shift-alarm/pattern.html?v=$SHA"
+          echo "published: /shift-alarm/?v=$SHA"
+
+      - name: Overlay 班表闹钟卡片 into /launch.html
+        # 与其它几张卡同一套做法：片段本体在 public/shift-alarm/launch-card.html
+        #（可评审、可本地渲染），这里只做定位插入。
+        # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('public/shift-alarm/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'shift-alarm' in html:
+              raise SystemExit('launch.html 已含班表闹钟链接——main 自己加过了，'
+                               '请改为直接维护 main 的卡片，别叠加出两张')
+          # 插进「独立迭代 Pattern」组：它自包含、自己一条链接，
+          # 与本仓 HPC 拓扑主线无关，是一个能单独发出去的成品。
+          gpat = html.index('<h2 class="group-title" id="g-pat">')
+          grid = html.index('      <div class="card-grid">\n', gpat) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + card.rstrip('\n') + '\n' + html[grid:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card @ ' + sha)
+          PY
+          grep -c 'shift-alarm' dist/launch.html
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4

@@ -1,0 +1,114 @@
+{
+  "id": "apple-shift-alarm",
+  "name": "班表闹钟",
+  "tagline": "把 iPhone 设不出来的上班规则，算成一张确定的班表，导进 iOS 日历",
+  "version": "dev",
+  "kind": "app",
+  "entry": "pattern.html",
+  "shortLink": "/shift-alarm/",
+  "lang": "zh-CN",
+  "problem": "iPhone 的时钟闹钟只会「每周固定星期几重复」。大小周（隔周多上一天）、调休补班（某些周六周日反而要上班）、做四休三 / 两班倒 / 四班三倒（滚动循环，压根不跟星期走）——这三类规则它一条都表达不了，Siri 与系统自带的智能同样设不出来。于是每年都有人在补班的周日睡过头，在放假的周一被闹钟叫醒。",
+  "approach": "先把口语班规解析成结构化规则，再逐天展开成确定的班表（班型 → 法定放假 → 调休补班 → 请假 → 手动覆盖，五层依次覆盖且每一层都留下可解释的 trace），最后编译成 iOS 日历直接认的 .ics。",
+  "modules": [
+    {
+      "file": "engine.js",
+      "role": "规则引擎（纯函数，无 DOM 无依赖，浏览器与 node 通用）",
+      "exports": [
+        "expandSchedule(rules, from, to, holidays) → { days, byDate, warnings }",
+        "expandReminders(rules, schedule) → 提醒实例列表",
+        "isBigWeek / streaksAtLeast / summarize / longestStreak",
+        "civil date 工具：toDays / toISO / isoDow / mondayOf / isoWeekNumber / addDays"
+      ]
+    },
+    {
+      "file": "ics.js",
+      "role": "iCalendar 导出（RFC 5545）",
+      "exports": ["buildICS(occurrences, opts)", "buildScheduleICS(schedule, opts)", "derivePlan(dates, until)"]
+    },
+    {
+      "file": "parser.js",
+      "role": "中文班规解析 + 模型提示词 + 模型输出收编",
+      "exports": ["parseWorkRules(text, opts)", "buildPrompt(text, opts)", "adoptRules(json, opts)", "RULES_JSON_SCHEMA"]
+    },
+    {
+      "file": "holidays-data.js",
+      "role": "国务院办公厅历年放假与调休补班安排",
+      "exports": ["CN_HOLIDAYS"]
+    }
+  ],
+  "reuse": "engine.js / ics.js / parser.js 都是零依赖 ES module，可以单独 import。例：import { expandSchedule } from '.../engine.js'",
+
+  "designDecisions": [
+    {
+      "topic": "日期全程不碰时区",
+      "decision": "日期一律是 'YYYY-MM-DD' 字符串与它对应的整数日序（Hinnant 的 civil↔days 算法）",
+      "why": "new Date('2026-03-07') 按 UTC 解析、按本地时区显示，换个时区打开整张表就整体错一天。在闹钟场景里这等于「白起来一次」。"
+    },
+    {
+      "topic": "不生成 .shortcut 文件",
+      "decision": "改为给出「在手机上建一次」的分步配方 + 可复制的班表数据",
+      "why": "iOS 15 起快捷指令文件必须经 Apple 签名（AEA）才能导入，网页生成的未签名 plist 在 iPhone 上一律打不开。签名只能在 Apple 设备上完成，静态页面做不到。用户自己建好后可以「分享 → 存储为文件 → 任何人」导出一份已签名的，之后换机可直接导入。"
+    },
+    {
+      "topic": "绝不生成 RDATE",
+      "decision": "调休补班日一律写成带独立 UID 的单条 VEVENT",
+      "why": "Apple 日历不支持 RDATE：事件能导入，但重复被静默丢弃、只在第一天出现。症状是补班那天一声不吭。"
+    },
+    {
+      "topic": "INTERVAL=2 只配单个 BYDAY",
+      "decision": "大周同时上周六周日时，拆成两条各自的双周规则",
+      "why": "FREQ=WEEKLY;INTERVAL=2;BYDAY=SA,SU 在 WKST=SU 下会把周六周日判进相邻的两个双周，而 Apple 的 EventKit 倾向于自己写 WKST=SU。"
+    },
+    {
+      "topic": "不写 WKST",
+      "decision": "省掉它，让 RRULE 行不触发折行",
+      "why": "我们只生成两种形态：INTERVAL=1（RFC 规定 WKST 无效）与 INTERVAL=2 + 单 BYDAY 且 DTSTART 就落在那天（等价 DTSTART+14n）。两种下 WKST 都可证明是空操作；带上它会把这行撑到 79 字节触发折行，而折行是各家解析器出错最多的地方。"
+    },
+    {
+      "topic": "滚动循环用 FREQ=DAILY;INTERVAL=L",
+      "decision": "L 天的循环按同余类拆成最多 L 条日间隔规则",
+      "why": "6 天一轮和 7 天一周要 42 天才对齐一次，周规则一条都压不出来，逐日展开是一年一千多条事件。改用日间隔后压到个位数。"
+    },
+    {
+      "topic": "重复规则由日期集合反推，且构造后再自检",
+      "decision": "展开(RRULE) − EXDATE + 例外单条 ≡ 引擎算出的集合；不等就整组退回逐日展开并写进 warnings",
+      "why": "不依赖 Apple 怎么理解 RRULE 的边角语义。宁可多几条事件，也不发一份可能少响一天的日历。"
+    },
+    {
+      "topic": "递文件用 navigator.share，且只放 files",
+      "decision": "在 click 处理器里同步构造 File；兜底用 blob:，延后 revoke",
+      "why": "share 载荷里一旦同时带 title/text/url，iOS 会丢掉文件改成分享文字；中间任何一次 await 都会让瞬时用户激活过期。data: URL 在 Safari 14+ 被屏蔽。iOS 26 起「添加到主屏幕」默认按 Web App 打开，而 standalone 下 <a download> 普遍失效，所以分享必须是主路径。"
+    },
+    {
+      "topic": "提醒文案里不放逐天变化的占位符",
+      "decision": "起床提醒的备注留空，{原因} 只留给补班提醒",
+      "why": "导出时按「时刻＋文案」分组成重复事件，文案一天一个样会把一条规则碎成十几条。tests/ics.test.mjs 里有一条端到端的压缩体检盯着这件事。"
+    },
+    {
+      "topic": "解析器不许偷偷猜",
+      "decision": "靠默认值补上的一律标 guess 并抛出 question",
+      "why": "大小周起算周说错一周，之后每一个周六都是反的，而界面上看不出来。"
+    }
+  ],
+
+  "limits": [
+    "日历提醒不是闹钟：它是普通通知，会被静音开关、专注模式、定时推送摘要压掉，不像时钟 App 的闹钟能盖过铃声开关。要真正叫醒人，得配合页面里那段快捷指令去控制真正的闹钟。",
+    "法定节假日只收录到数据文件里已有的年份；新一年的安排通常在前一年 11 月前后公布。没收录的年份只按班型推算，界面会明确警告。",
+    "快捷指令那一段无法自动化：个人自动化（每天定时运行）不能被分享或导入，只能自己建。"
+  ],
+
+  "verification": {
+    "command": "public/shift-alarm/tests/run.sh",
+    "unit": "63 条（引擎 22 / 导出 20 / 解析 21）",
+    "crossImplementation": "135 项——用 python icalendar + dateutil.rrule 重新展开生成的 .ics，逐条比对是否与引擎算出的提醒实例集合完全相等；同时检查 CRLF、75 八位组折行、UTF-8 不被劈开、UID 唯一与稳定",
+    "browser": "Playwright + Chromium，iPhone 视口跑通整条流程，控制台零错误"
+  },
+
+  "dataSources": [
+    {
+      "what": "国家法定节假日与调休补班安排",
+      "from": "国务院办公厅历年通知，经 github.com/NateScarlet/holiday-cn 整理",
+      "note": "2026 年那份已对着 gov.cn/zhengce/zhengceku/202511/content_7047091.htm 核过：6 个补班日、33 个放假日"
+    }
+  ]
+}

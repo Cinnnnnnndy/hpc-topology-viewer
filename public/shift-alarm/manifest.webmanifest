@@ -1,0 +1,12 @@
+{
+  "id": "shift-alarm",
+  "name": "班表闹钟",
+  "short_name": "班表",
+  "start_url": "./pattern.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#f2f2f7",
+  "icons": [
+    { "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

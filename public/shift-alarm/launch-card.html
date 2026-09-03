@@ -1,0 +1,80 @@
+<!-- 启动页（main 的 public/launch.html）里代表班表闹钟的那张卡。
+     本文件不是独立页面，是一个 HTML 片段：deploy.yml 的「Overlay 班表闹钟卡片」
+     一步在构建产物 dist/launch.html 的「独立迭代 Pattern」组里插入它。
+     __SHA__ 由该步替换成短 SHA（链接带版本戳，分享出去不吃旧缓存）。
+     放在「独立迭代 Pattern」而不是「工作台 · 主线」：它自包含、自己一条链接、
+     与本仓的 HPC 拓扑主线无关，是一个能单独发出去的成品。
+     预览图画的是它的本体——一张月历，上班/放假/补班三种底色，
+     外加一个圈出来的「隔周才上的那个周六」。 -->
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./shift-alarm/?v=__SHA__">班表闹钟 · 复杂上班规则 → iPhone 日历</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-app">App</span>
+              <span class="tag">大小周 · 调休 · 轮班</span>
+              <span class="tag">RFC 5545</span>
+              <span class="tag">离线可用</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 月历外框 + 表头 -->
+              <rect class="pv-box" x="18" y="12" width="284" height="136" rx="8"/>
+              <line x1="18" y1="34" x2="302" y2="34" stroke="rgba(19,26,42,.14)" stroke-width="1"/>
+              <circle cx="30" cy="23" r="3" fill="#4369ef"/>
+              <rect x="42" y="19" width="52" height="8" rx="4" class="pv-soft"/>
+              <!-- 星期栏 -->
+              <g fill="rgba(19,26,42,.28)">
+                <rect x="30" y="42" width="16" height="5" rx="2.5"/><rect x="68" y="42" width="16" height="5" rx="2.5"/>
+                <rect x="106" y="42" width="16" height="5" rx="2.5"/><rect x="144" y="42" width="16" height="5" rx="2.5"/>
+                <rect x="182" y="42" width="16" height="5" rx="2.5"/><rect x="220" y="42" width="16" height="5" rx="2.5"/>
+                <rect x="258" y="42" width="16" height="5" rx="2.5"/>
+              </g>
+              <!-- 四周格子：蓝＝上班，绿＝法定放假，橙＝调休补班，白＝休 -->
+              <g>
+                <!-- 第 1 周：周一至周五上班，周六圈出（大周多上的那天） -->
+                <rect x="26" y="54" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="64" y="54" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="102" y="54" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="140" y="54" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="178" y="54" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="216" y="54" width="24" height="20" rx="5" fill="#dbe4fd" stroke="#9d7bff" stroke-width="1.8"/>
+                <rect x="254" y="54" width="24" height="20" rx="5" fill="#ffffff"/>
+                <!-- 第 2 周：小周，周六休 -->
+                <rect x="26" y="78" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="64" y="78" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="102" y="78" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="140" y="78" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="178" y="78" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="216" y="78" width="24" height="20" rx="5" fill="#ffffff"/>
+                <rect x="254" y="78" width="24" height="20" rx="5" fill="#ffffff"/>
+                <!-- 第 3 周：周日是调休补班（橙），周六大周上班 -->
+                <rect x="26" y="102" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="64" y="102" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="102" y="102" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="140" y="102" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="178" y="102" width="24" height="20" rx="5" fill="#dbe4fd"/>
+                <rect x="216" y="102" width="24" height="20" rx="5" fill="#dbe4fd" stroke="#9d7bff" stroke-width="1.8"/>
+                <rect x="254" y="102" width="24" height="20" rx="5" fill="#ffd9a8"/>
+                <!-- 第 4 周：法定放假整段（绿） -->
+                <rect x="26" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="64" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="102" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="140" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="178" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="216" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+                <rect x="254" y="126" width="24" height="16" rx="5" fill="#d9f7ec"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">iPhone 的闹钟只会「每周固定星期几重复」，大小周、调休补班、做四休三、三班倒它一条都设不出来，Siri 同样不行。这里把口语班规解析成规则，逐天展开成能核对的班表（班型 → 法定放假 → 调休补班 → 请假 → 手动覆盖，五层依次覆盖、每层留痕），再编译成 iOS 日历直接认的 .ics：一年 1100 多次提醒压成十几个日历事件，且用另一套解析器（python icalendar + dateutil）逐条复核过展开结果完全一致。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./shift-alarm/?v=__SHA__">打开 App<sup>°</sup></a>
+            <a class="lnk" href="./patterns/apple-shift-alarm/pattern.html?v=__SHA__">发布 pattern<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/shift-alarm" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/shift-alarm/
+            </a>
+          </div>
+        </article>
