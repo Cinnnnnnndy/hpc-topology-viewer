@@ -719,9 +719,11 @@ function renderShortcutRecipe() {
   why.textContent = '';
   why.append(strongLine('为什么这里不给你一个现成的快捷指令文件？'));
   why.append(document.createTextNode(
-    '因为从 iOS 15 起，快捷指令文件必须经 Apple 签名才能导入，' +
-    '网页生成的 .shortcut 在 iPhone 上一律打不开——这一步只能你在手机上建一次。' +
-    '好消息是只建一次：以后班规变了，只要把下面这段数据重新粘进去就行。'));
+    '因为从 iOS 15 起，快捷指令的正常导入路径要求文件经 Apple 签名，而签名只能在' +
+    'Apple 自己的设备上完成，静态网页做不到。未签名的文件即便在某些设置下还能进去，' +
+    '也不是一条能对所有人打包票的路——与其给你一个可能一点就报错的文件，' +
+    '不如让你在手机上建一次。好消息是只建一次：以后班规变了，' +
+    '只要把下面这段数据重新粘进去就行。'));
 
   const { groups } = state.wake;
   const multi = groups.length > 1;
