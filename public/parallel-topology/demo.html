@@ -2047,7 +2047,15 @@ function holdRows(g,D){
     +(D.moe?' · e '+(D.experts/D.ep)+'/'+D.experts:'')+' · b '+(D.mbs*D.ga)+'/'+fmt(D.gbs)
     +' · s '+(D.cp>1?fmt(D.seq/D.cp)+'/'+fmt(D.seq):'全部')+'</small>——卡=各维区间的<b>交集</b>，不是小整网']);
   rows.push(['层段','L'+l0+'–L'+l1+'（'+D.layersPerStage+' 层 / stage '+co.p+'）']);
-  opBytes(D).forEach(function(o){ if(o.b || o.id==='attn.core') rows.push([o.id, '<code>'+esc(o.shape)+'</code>']); });
+  /* 逐算子形状：左边补一枚**与显存读出卡同一套**的色块（按切它那把刀着色，
+     cutColor 就是那张卡里权重带内部用的同一个函数）。反馈：「显示形式和着色
+     要跟那张卡统一」——同一份东西在两张卡上是同一个颜色，读者才不用记两套。 */
+  opBytes(D).forEach(function(o){
+    if(!(o.b || o.id==='attn.core')) return;
+    rows.push(['<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle;background:'
+      + (o.b ? cutColor(o.cut) : 'transparent') + ';border:1px solid ' + cutColor(o.cut) + '"></span>' + esc(o.id),
+      '<code>'+esc(o.shape)+'</code>']);
+  });
   if(D.moe){
     var me = epOf(co.t,co.c,co.d,D), kE = D.experts/D.ep, e0 = me.ep*kE;
     rows.push(['专家桶','E'+e0+'–E'+(e0+kE-1)+'（ep_rank '+me.ep+'）']);
@@ -10323,8 +10331,10 @@ function renderLegend(D){
    打字期间挂起工具条的重建（内容此刻也不需要变：变的是层号，工具条上只有
    那圈 is-on 高亮跟着动，手动切一下即可）。 */
 var barFrozen = false;
-function renderChainBar(D){
-  if(barFrozen) return;
+/* 配置面板（那颗钮 + 抽屉）拆成一个只**返回 HTML** 的函数：卡内解剖与单维切分
+   也要用同一颗钮（反馈：「和主视图一样用配置按钮配置」），而它们的工具条前面
+   还挂着自己的导航按钮，所以不能由它直接写 stagebar。 */
+function buildCfgSurface(D){
   var g = (sel!==null && sel<D.world) ? sel : 0;
   var co = coordsOf(g, D), me = D.moe ? epOf(co.t, co.c, co.d, D) : null;
   var kBtns = '<span class="pt-seg">';
@@ -10487,8 +10497,39 @@ function renderChainBar(D){
       + '<label><b style="color:'+VC.dp+'">DP</b><span class="derv" title="= world/(TP·CP·PP)，自动">'+(D.dpOk?D.dp:'—')+'</span></label>'
       + '<button class="capply" data-act="cfgapply"'+(dirty9?'':' disabled')+'>应用</button>'
     + '</div><div class="cnote" style="cursor:help" title="'+esc('DP 不手填（= world '+fmt(cfg.world)+' ÷ TP·CP·PP）。层数、hidden、seq 这些模型/批次参数在顶栏「配置」里。')+'">ⓘ 并行度怎么填</div></div>'
-    + '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
-    + '<div class="cg"><h6>观察方式</h6>' + obsBlock + '</div>'
+    /* 机位与观察方式只属于整网切分那一屏（它们说的是 3D 场景怎么取景、卡里画
+       什么）——卡内解剖/单维切分共用这只面板，但这两组在那两屏没有对应物，
+       摆着就是承诺一个不会兑现的效果。 */
+    + (ui.view === 'chain' ? '<div class="cg"><h6>机位</h6><div class="cgrow">' + vBtns + lBtns + '</div></div>'
+       + '<div class="cg"><h6>观察方式</h6>' + obsBlock + '</div>' : '')
+    /* 卡内解剖自己的两项：抽哪一层、解剖对象。原来它们摆在画布上沿那条长工具条
+       里（反馈：「去掉这里，和主视图一样用配置按钮配置」），现在跟主视图同一颗
+       配置钮、同一只面板。 */
+    + (ui.view === 'anatomy' ? (function(){
+        var lps9 = D.layersPerStage || 1;
+        var p9 = (sel !== null && sel < D.world) ? coordsOf(sel, D).p : 0;
+        var off9 = clamp(ui.selLayerOff, 0, Math.max(0, lps9 - 1));
+        return '<div class="cg"><h6>卡内解剖</h6>'
+          + '<div class="cgrow"><span class="pt-cap">解剖对象</span>'
+          + '<span class="pt-chip">rank <b>' + ((sel !== null && sel < D.world) ? sel : 0) + '</b>'
+          + ((sel === null || sel >= D.world) ? '（未选卡，示例 0）' : '') + '</span></div>'
+          + '<div class="cgrow"><span class="pt-cap">抽哪一层</span>'
+          + '<button class="pb mono" data-act="v3layer" data-d="-1"'+(off9 <= 0 ? ' disabled' : '')+'>‹</button>'
+          + '<span class="pt-chip">L' + (p9*lps9 + off9) + '</span>'
+          + '<button class="pb mono" data-act="v3layer" data-d="1"'+(off9 >= lps9-1 ? ' disabled' : '')+'>›</button>'
+          + '</div></div>';
+      })() : '')
+    /* 单维切分自己那一项：看哪把刀。同上，从画布上沿那条长条搬进面板。 */
+    + (ui.view === 'dim' ? (function(){
+        var NEST9 = [['dp','⑤',1],['pp','②',2],['tp','①',3],['ep','④',4],['cp','③','—']];
+        return '<div class="cg"><h6>看哪把刀</h6><div class="cgrow">'
+          + NEST9.map(function(nk9){
+              return '<button class="pb mono'+(ui.cutDim===nk9[0]?' is-on':'')+'" data-act="cutdim" data-d="'+nk9[0]+'"'
+                + ' style="--c:'+VC[nk9[0]]+'" title="'+esc('嵌套第'+nk9[2]+'刀 · 决策顺位'+nk9[1])+'">'
+                + (nk9[0]==='cp' ? '输入侧·CP' : '刀'+nk9[2]+'·'+DIMN[nk9[0]]) + '</button>';
+            }).join('')
+          + '</div></div>';
+      })() : '')
     + '<div class="cg"><h6>通信连线</h6>'
       + '<div class="cgrow">' + swBtn('commtoggle', '通信图层', ui.commOn,
           ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
@@ -10538,17 +10579,28 @@ function renderChainBar(D){
   /* 钮上那枚计数 = 现在叠着几层注解（图例 / 模块视图 / 通信里开着的类），
      面板收起时也看得出「画面上还压着东西」。 */
   var cfgN9 = (ui.legendOn?1:0) + (ui.moduleView?1:0) + commLitN();
-  $('stagebar').innerHTML = '<span class="pt-cfg">'
+  return '<span class="pt-cfg">'
     + '<button class="pt-cfgbtn'+(ui.cfgOpen?' is-on':'')+'" data-act="cfgpanel" aria-label="搜索与配置"'
-    + ' title="搜索与配置：对象定位 / 落哪几把刀 / 并行度 / 机位 / 观察方式 / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
+    + ' title="搜索与配置：对象定位 / 落哪几把刀 / 并行度'+(ui.view==='chain'?' / 机位 / 观察方式':'')
+    + (ui.view==='anatomy'?' / 卡内解剖':'')+(ui.view==='dim'?' / 看哪把刀':'')
+    + ' / 通信连线 / 图层 / 数据标注'+(cfgN9?'（现在叠着 '+cfgN9+' 层注解）':'')+'">'
     + '<svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">'
     + '<path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg>'
     + '</button>' + cfgPanel + '</span>';
+}
+function renderChainBar(D){
+  if(barFrozen) return;
+  $('stagebar').innerHTML = buildCfgSurface(D);
   /* 旧的画布搜索挂点保留给结构兼容，但入口已经迁入配置面板。 */
   var qb = $('qbar');
   if(qb){ qb.innerHTML = ''; qb.hidden = true; }
   renderLegend(D);
   renderRevBar(D);
+}
+/* 别的视图：自己的导航按钮在前，配置钮接在后面 —— 同一颗钮、同一只面板。 */
+function cfgSurface(D){
+  if(barFrozen) return;
+  $('stagebar').innerHTML += '<span class="pt-sep"></span>' + buildCfgSurface(D);
 }
 
 function renderDimBar(D, dim){
@@ -10562,9 +10614,9 @@ function renderDimBar(D, dim){
     return '<button class="pb mono'+(dim===dm?' is-on':'')+'" data-act="cutdim" data-d="'+dm+'" style="--c:'+VC[dm]+'" title="嵌套第'+k+'刀 · 决策顺位'+ord+'">'
       + '刀'+k+'·'+DIMN[dm]+'<span class="cmn">'+ord+'</span></button>';
   }
-  var sb = '<span class="pt-cap">按嵌套序看刀（角标=决策顺位）</span>'
-    + NEST_M.map(function(nm,i){ return pill(nm[0], nm[1], i+1); }).join('')
-    + '<span class="pt-sep"></span><span class="pt-cap">输入侧</span>' + pill('cp','③','—')
+  /* 「按嵌套序看刀」那一排已经搬进配置面板（反馈：「和主视图一样用配置按钮
+     配置」）；工具条只留返回、本刀是什么、刀序带与一条跳转。 */
+  var sb = backBtnHTML()
     + '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>';
   /* 刀序带：前面的刀已切（把视野缩到本组），本刀在切，后面的刀待切——
      取代旧「折叠上下文」：固定坐标不是任意折叠，是前序刀的选择 */
@@ -10597,6 +10649,7 @@ function renderDimBar(D, dim){
       + 'title="回到整网切分那一屏，只亮这一维的边（rank 粒度）">在阵列里看这一维的边 ↷</button>';
   sb += tipChip('怎么读这一屏', '柱=卡（容器）· 块的横跨=共有 · 门牌=rank（1:N，同一张卡在别的维还有别的号 §10）');
   $('stagebar').innerHTML = sb;
+  cfgSurface(D);
 }
 
 /* ═════════ V1 卡阵 ═════════ */
@@ -11103,24 +11156,15 @@ function renderV3(D){
             (Math.max.apply(0,bx)-Math.min.apply(0,bx))+2*pad, (Math.max.apply(0,by)-Math.min.apply(0,by))+2*pad];
   $('stage').innerHTML = '<svg viewBox="'+vb.map(function(v){return v.toFixed(0);}).join(' ')+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()+parts.join('')+'</svg>';
 
-  $('stagebar').innerHTML =
-    '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
-    + '<span class="pt-cap">解剖对象</span><span class="pt-chip">rank <b>'+g+'</b>'+(sel===null?'（未选卡，示例 0）':'')+'</span>'
-    + '<span class="pt-cap">抽哪一层</span>'
-    + '<button class="pb mono" data-act="v3layer" data-d="-1">‹</button>'
-    + '<span class="pt-chip">L'+(l0+picked)+'</span>'
-    + '<button class="pb mono" data-act="v3layer" data-d="1">›</button>'
+  /* 这一排原来是「解剖对象 / 抽哪一层 / 通信看哪一层 / 粒度链」一长条挂在画布
+     上沿。反馈：「去掉这里，和主视图一样用配置按钮配置」——配置项全部搬进那只
+     共用的配置面板（见 cfgPanel 里「卡内解剖」与「通信连线」两组），这条工具条
+     只留**导航**：从哪儿来（返回）、到哪儿去（刀序链 / 时间轴）。 */
+  $('stagebar').innerHTML = backBtnHTML()
+    + '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
     + '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>'
-    /* 「看哪一层」在这一屏也生效（见上面 ④ 那段），所以这一排也要能切——
-       不然读者只能回阵列那屏切完再点进来，而这两屏本来是同一件事的两个深度。 */
-    + '<span class="pt-sep"></span><span class="pt-cap">通信看哪一层</span><span class="pt-seg">'
-    + ['rank','tensor','route','time','cost','intra'].map(function(gk9){
-        var NM9 = {rank:'rank', tensor:'张量', route:'路由', time:'时序', cost:'影响', intra:'rank 内'}[gk9];
-        var dis9 = gk9 === 'route' && !(ui.kEP && D.moe && D.ep > 1);
-        return '<button'+(ui.commGrain===gk9?' class="is-on"':'')+(dis9?' disabled':'')
-          + ' data-act="commgrain" data-v="'+gk9+'">'+NM9+'</button>';
-      }).join('') + '</span>'
     + tipChip('粒度链', '整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）');
+  cfgSurface(D);
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
 
@@ -11192,7 +11236,13 @@ function renderDetail(D){
       var kEd = D.experts/D.ep, e0d = me.ep*kEd;
       expRow = '<tr><td>专家桶</td><td>E'+e0d+'–E'+(e0d+kEd-1)+'（ep_rank '+me.ep+'）</td></tr>';
     }
-    el.innerHTML = '<h4>rank '+g+' <button class="pt-x" data-act="clearsel" title="清除选中">✕</button></h4>'
+    /* 抬头与显存读出卡（renderRankMem）统一：粗体 rank 号 + 一行等宽的坐标，
+       而不是原来那排彩色 chip——两张卡讲的是同一张卡，抬头长得不一样，读者
+       每次都要重新找「我在看谁」。 */
+    el.innerHTML = '<h4 style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">rank '+g
+      + '<span style="font-weight:400;font-size:11.5px;color:var(--pt-fg3);font-family:var(--pt-mono)">'
+      + 'tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+' · stage'+co.p+' · L'+l0d+'–L'+l1d+'</span>'
+      + '<button class="pt-x" style="margin-left:auto" data-act="clearsel" title="清除选中">✕</button></h4>'
       + '<table><tr><td>层段</td><td>L'+l0d+'–L'+l1d+'（'+D.layersPerStage+' 层 / stage '+co.p+'）</td></tr>'
       + expRow
       + '<tr><td>权重</td><td>'+fmtP(paramsPerCard(D,co.p))+' 参数 · '+fmtGB(2*paramsPerCard(D,co.p))+' GB</td></tr></table>'
@@ -12130,6 +12180,29 @@ function commL9(D, dim){
      张量 / rank / 原语 / 载荷 / 路由 → 画布切到对应那一层
      时序 / 影响 → 时间·流
    「不适用」那一格不给去处：没有那件事，跳过去只会让人以为自己没找到。 */
+/* ── 「进入这里之后要有一个明确的返回按钮」 ────────────────────────────────
+   九格目录、层构成点层、单维切分回阵列这几条跳转把读者从一屏送到另一屏，
+   到了之后却只有顶栏那排 tab 能回去——而 tab 是「切到哪一屏」，不是「回到我
+   刚才那一屏」：读者刚才是在层构成、选中 r23、通信看的是路由，点 tab 回去
+   全都丢了。所以记一格来路（只记一格，够用：这几条跳转都是一跳），到了目标屏
+   在工具条最前面摆一颗明确的「← 返回 X」。
+   手动切 tab 视为「不打算回去了」，把来路清掉，免得按钮指着一个早已过期的状态。 */
+function pushBack(){
+  var NM9 = {chain:'整网切分', story:'一个 step', dim:'单维切分', compose:'合成·卡阵',
+             anatomy:'卡内解剖', solid:'映射·双链', time:'时间·流'};
+  var sub9 = ui.view === 'chain'
+    ? (ui.cardMode ? (ui.netOff ? ' · 显存占用' : (ui.compFill ? ' · 层构成' : ' · 模型分片')) : ' · 逻辑切分')
+    : '';
+  ui.backTo = {label: (NM9[ui.view] || ui.view) + sub9,
+               view: ui.view, cardMode: ui.cardMode, netOff: ui.netOff, compFill: ui.compFill,
+               grain: ui.commGrain, vtab: ui.viewTab, layerOff: ui.selLayerOff,
+               cutDim: ui.cutDim, openLayer: ui.openLayer, sel: sel};
+}
+function backBtnHTML(){
+  if(!ui.backTo) return '';
+  return '<button class="pb" data-act="backto" title="'+esc('回到刚才那一屏（' + ui.backTo.label + '），选中的卡、卡片内容、通信看哪一层都照原样带回去')+'">← 返回 '
+    + esc(ui.backTo.label) + '</button><span class="pt-sep"></span>';
+}
 function commL9Go(k, dim){
   if(k === 'model') return ' data-act="gotoanat"';
   if(k === 'par')   return ' data-act="gotodim" data-d="' + dim + '"';
@@ -12616,7 +12689,17 @@ document.addEventListener('click', function(ev){
     if(f){ Object.keys(f.patch).forEach(function(k){ cfg[k]=f.patch[k]; }); activePreset=null; render(); }
   }
   else if(act==='zero'){ cfg.zero = parseInt(b.getAttribute('data-z'),10)||0; render(); }
-  else if(act==='view'){ ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
+  else if(act==='view'){ ui.backTo = null; ui.view = b.getAttribute('data-v'); stopAnim(); render(); }
+  else if(act==='backto'){
+    var bk9 = ui.backTo; if(!bk9) return;
+    ui.backTo = null;
+    ui.view = bk9.view; ui.cardMode = bk9.cardMode; ui.netOff = bk9.netOff; ui.compFill = bk9.compFill;
+    ui.commGrain = bk9.grain; ui.viewTab = bk9.vtab; ui.selLayerOff = bk9.layerOff;
+    ui.cutDim = bk9.cutDim; ui.openLayer = bk9.openLayer;
+    if(bk9.sel !== null && bk9.sel !== undefined) sel = bk9.sel;
+    if(VTAB_POSE[ui.viewTab]){ ui.yaw3 = VTAB_POSE[ui.viewTab][0]; ui.pitch3 = VTAB_POSE[ui.viewTab][1]; }
+    stopAnim(); render();
+  }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
     if(gv==='chainfront'){ ui.view='chain'; ui.viewTab='front'; ui.yaw3=0; ui.pitch3=0; ui.zoom3=1; ui.panX3=0; ui.panY3=0; }
@@ -12674,6 +12757,7 @@ document.addEventListener('click', function(ev){
   /* 九格目录的两条跳转（见 commL9Go）：跳过去还要把那一屏问的对象对上——
      卡内解剖回到本卡这一段的第一层，单维切分切到点的那把刀。 */
   else if(act==='gotoanat'){
+    pushBack();
     /* 带了层号就抽那一层（层构成里点某一层过来的），没带就回本段第一层。
        anatomy 那一屏问的是「段内第几层」，所以要把全局层号减掉本段的起点。 */
     var Da9 = derive(cfg), la9 = b.getAttribute('data-li');
@@ -12685,11 +12769,13 @@ document.addEventListener('click', function(ev){
     ui.view = 'anatomy'; ui.selLayerOff = off9; stopAnim(); render();
   }
   else if(act==='dim2chain'){
+    pushBack();
     var dc9 = b.getAttribute('data-d');
     COMMK.forEach(function(c9){ ui.comm[c9[0]] = (c9[0] === dc9); });
     ui.commOn = true; ui.commGrain = 'rank'; ui.view = 'chain'; stopAnim(); render();
   }
   else if(act==='gotodim'){
+    pushBack();
     var gd9 = b.getAttribute('data-d');
     if(gd9) ui.cutDim = gd9;
     ui.view = 'dim'; stopAnim(); render();
@@ -12868,6 +12954,7 @@ document.addEventListener('click', function(ev){
     render();
   }
   else if(act==='v3totime'){
+    pushBack();
     var D3 = derive(cfg);
     ui.zoomFB = (D3.ok && sel!==null && sel<D3.world) ? {s:coordsOf(sel,D3).p, t:'F', m:0} : {s:0, t:'F', m:0};
     ui.view = 'time'; stopAnim(); render();
