@@ -13,7 +13,11 @@ name: Deploy to GitHub Pages
 #       → /parallel-topology/（参照系 + PRD + Demo + 组合总图 + 驾驶舱）
 #       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
 #       → /patterns/net-slicing/（只交付「整网切分」那一屏，全屏画布、自包含）
-#       → dist/launch.html 里插三张卡 + 顶栏两枚 pill（片段本体在该分支的
+#       → /patterns/rank-topology-3d/（切完之后落到哪张卡：3D 卡阵那一屏）
+#       → /patterns/model-netgraph/（整网真图展开、按层深铺开的侧视那一屏）
+#         后两个与 net-slicing 同源同实现，区别只在默认落在哪一屏；各自带 pattern.json
+#         与 README.md（使用场景与细节约束）。
+#       → dist/launch.html 里插五张卡 + 顶栏两枚 pill（片段本体在该分支的
 #         public/parallel-topology/launch-card*.html，见下面那一步）
 #       这三个目录与三张卡，main 这份工作流已经全部自己产出——2026-08 之前
 #       main 只做了其中一部分（缺 /patterns/net-slicing/ 与它那张卡），于是每次
@@ -384,6 +388,48 @@ jobs:
           "
           echo "published: /patterns/net-slicing/pattern.html?v=$SHA"
 
+          # ④⑤ 另外两份单视图 pattern：/patterns/rank-topology-3d/ 与 /patterns/model-netgraph/
+          # 三份 pattern 同源同实现（都是这一份 demo.html），区别只在**默认落在哪一屏**：
+          #   net-slicing      —— 一张整网怎么被切开（工作台右栏与左格共用的那一份）
+          #   rank-topology-3d —— 切完之后落到哪张卡上（工作台左上那张卡）
+          #   model-netgraph   —— 整网真图展开、按层深铺开的侧视（工作台右侧那一栏）
+          # 默认值不写在 URL 里让使用者自己补，而是注进页面本身——「一条链接就是一屏」
+          # 这个承诺，只有页面自带默认值才成立。注入器抽成了文件（inject-pattern-defaults.cjs），
+          # 免得再在 YAML 里叠一层 shell 引号转义。
+          for SPEC in "rank-topology-3d|模型分片与训练设备映射（3D 拓扑）|view=chain&card=1&vtab=3d&stitle=模型分片与训练设备映射" \
+                      "model-netgraph|模型整网视图（真图展开）|view=chain&cuts=pcte&rank=0&vtab=side&stitle=模型整网视图 · 真图展开"; do
+            PID="${SPEC%%|*}"; PREST="${SPEC#*|}"; PTITLE="${PREST%%|*}"; PQ="${PREST#*|}"
+            PD=dist/patterns/$PID
+            mkdir -p $PD
+            # 标题那条与 ③ 同理：必须精确匹配 <head> 里那一条原文，不能写 <title>[^<]*</title>
+            # 的通配（画布上几十处 SVG 悬浮提示也是逐行独立的一对 <title>…</title>，
+            # 通配会把它们成片换掉）。下面同样加一道命中数断言兜底。
+            sed -e 's#\.\./vendor/#./vendor/#g' \
+                -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+                -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+                -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
+                -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+                -e "s#<title>并行拓扑 · PRD Demo（应用形态）</title>#<title>$PTITLE</title>#" \
+                $SRC/demo.html > $PD/pattern.html
+            PTCOUNT=$(grep -c "<title>$PTITLE</title>" $PD/pattern.html)
+            if [ "$PTCOUNT" -ne 1 ]; then
+              echo "❌ $PID 页面标题替换异常：命中 $PTCOUNT 处（应为 1）"
+              exit 1
+            fi
+            node ptopo-src/public/parallel-topology/inject-pattern-defaults.cjs "$PD/pattern.html" "$PQ"
+            cp -r $PAT/vendor $PD/vendor
+            cp ptopo-src/public/favicon.svg $PD/favicon.svg
+            # 契约与使用文档跟着产物一起发：卡片上「使用文档 / 契约」两条链接指的就是它们
+            node -e "
+              const fs=require('fs');
+              const o=JSON.parse(fs.readFileSync('$SRC/$PID.json','utf8'));
+              o.version='$SHA';
+              fs.writeFileSync('$PD/pattern.json', JSON.stringify(o,null,2)+'\n');
+            "
+            cp $SRC/$PID.md $PD/README.md
+            echo "published: /patterns/$PID/pattern.html?v=$SHA"
+          done
+
           echo "published: /parallel-topology/demo.html?v=$SHA"
           echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
 
@@ -420,6 +466,11 @@ jobs:
           html = append_to_group(html, '<footer class="foot">', frag('launch-card.html'))
           # ② 抽出来的 /patterns/net-slicing/ 进「独立迭代 Pattern」组末尾
           html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-net-slicing.html'))
+          # ②′ 从同一份实现里抽出来的另外两屏，也各领一张卡进同一组：
+          #     rank-topology-3d = 工作台左上那张卡（切完落到哪张卡）
+          #     model-netgraph   = 工作台右侧那一栏（整网真图展开）
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-rank-topology-3d.html'))
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-model-netgraph.html'))
           # ③ 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
           #    的地图，该领这一组的头
           atlas = frag('launch-card-atlas.html')
@@ -434,7 +485,7 @@ jobs:
                   + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">并行拓扑 Pattern</a>'
                   + html[at:])
           launch.write_text(html, encoding='utf-8')
-          print('patched dist/launch.html: +3 cards +2 pills @ ' + sha)
+          print('patched dist/launch.html: +5 cards +2 pills @ ' + sha)
           PY
           grep -c 'parallel-topology/atlas.html' dist/launch.html
           grep -c 'patterns/net-slicing/pattern.html' dist/launch.html
@@ -456,6 +507,8 @@ jobs:
           EXPECT = [
               ('Demo',        './parallel-topology/demo.html',       '原型 · 版本脉络'),
               ('net-slicing', './patterns/net-slicing/pattern.html', '独立迭代 Pattern'),
+              ('rank-topology-3d', './patterns/rank-topology-3d/pattern.html', '独立迭代 Pattern'),
+              ('model-netgraph',   './patterns/model-netgraph/pattern.html',   '独立迭代 Pattern'),
               ('组合总图',     './parallel-topology/atlas.html',      '参照系 · 文档与研究报告'),
           ]
           bad = 0
@@ -482,6 +535,8 @@ jobs:
               ('dist/parallel-topology/demo.html',                 r'\.\./(vendor/', 'dist'),
               ('dist/patterns/parallel-topology-demo/pattern.html', r'\./(vendor/',  'dist/patterns/parallel-topology-demo'),
               ('dist/patterns/net-slicing/pattern.html',            r'\./(vendor/',  'dist/patterns/net-slicing'),
+              ('dist/patterns/rank-topology-3d/pattern.html',        r'\./(vendor/',  'dist/patterns/rank-topology-3d'),
+              ('dist/patterns/model-netgraph/pattern.html',          r'\./(vendor/',  'dist/patterns/model-netgraph'),
           ]
           bad = 0
           for page, prefix, root in targets:

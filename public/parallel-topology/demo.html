@@ -729,6 +729,9 @@
 }
 .pt-note .pb{margin-left:6px; min-height:28px; padding:0 9px; font-size:12px}
 .pt-detach:not([hidden]) ~ .pt-note{bottom:auto; top:10px; left:50%; transform:translateX(-50%)}
+/* 读出卡也钉在左下（left:14 / bottom:60，宽 230）——它一露面就把这条索引条压在
+   底下，索引五元组那排芯片一个字都读不到。让开到卡的右侧，两者各占各的地方。 */
+.pt-detail:not([hidden]) ~ .pt-note{left:258px; max-width:min(520px, calc(100% - 288px))}
 /* 动画字幕 */
 .pt-animcap{
   position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:9; display:none;
@@ -1122,6 +1125,7 @@ var ui = {
      只留变换徽章，那是图形不是文字）、intra（rank 内：不跨卡的那一级，
      画在选中卡自己身上）。 */
   commGrain:'rank',
+  stageTitle:'模型分片与训练设备映射',   /* 画布左上角的题面，?stitle= 可覆盖 */
   /* 模块视图：整网内容把逐算子明细（~30 框/层）收成 attn.qkv /
      attn.core / attn.out / router / experts(/mlp) 这 5-6 个功能块。
      四个机位一起变——正视/侧视走 graphSVG 与 sideScene，3D/顶视走 netScene
@@ -1322,6 +1326,8 @@ function urlLoad(){
     var ck0 = String(q.get('commk')).split(',');
     ['tp','cp','ep','pp','dp'].forEach(function(k0){ ui.comm[k0] = ck0.indexOf(k0) >= 0; });
   }
+  /* stitle=：覆盖画布左上角那句题面（见 renderStageTitle）。空串按没给算。 */
+  if(q.get('stitle')) ui.stageTitle = String(q.get('stitle')).slice(0, 40);
   if(q.get('legend')==='1') ui.legendOn = true;
   /* 模块视图默认开，所以链接里出现的通常是**关掉**它的 mods=0；mods=1 仍然
      认（默认改成开之前发出去的链接带的就是它），只是现在与默认值相同。 */
@@ -2274,6 +2280,18 @@ function quintRow(g, D){ /* 索引五元组：这张卡的 rank 元组 ⇢ 五�
   return parts.join(' · ');
 }
 function S0(){ return (sel!==null && sel<9999999) ? sel : 0; }
+/* 算子名收短：真图里的名字是「Q Up Linear」「Sparse FlashAttention」「Down Projection」
+   这种带类别后缀的全称，横排 35 个时后缀占掉一半宽度却不带信息（这一行里**全是**
+   Linear/Projection）。去掉共有的后缀与前缀，剩下的才是把它跟邻居区分开的那部分；
+   全名在悬停里一个字不少。 */
+function shortOp9(s){
+  return String(s)
+    .replace(/\s*(Linear|Projection|Proj|Layer|Block|Module)$/i, '')
+    .replace(/^(Sparse|Dense)\s+/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim() || String(s);
+}
+
 function renderDim(D){
   var dim = ui.cutDim;
   var size = {tp:D.tp, pp:D.pp, cp:D.cp, dp:D.dp, ep:D.ep}[dim];
@@ -2306,7 +2324,10 @@ function renderDim(D){
   var groupsPer = Math.round(D.world/size);
   var kE = D.moe ? D.experts/D.ep : 0;
   var groups = Math.round(D.world/size);
-  var parts = [], inter = [], colBack = [];        /* colBack：容器柱（垫底）· inter：吃事件的透明命中层 */
+  var parts = [], inter = [], colBack = [], opHit = [];  /* colBack：容器柱（垫底）· inter：吃事件的透明命中层 */
+  /* opHit 单独一层、压在 inter 之上：算子行的悬停说明必须盖过贯穿全高的容器柱，
+     否则柱子（DOM 里在后）把事件全接走，写在 <title> 里的全名一个也弹不出来。
+     柱身其余高度照常可点，选卡不受影响。 */
   function rect(x,y,w,h,fill,stroke,sw,extra){
     return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+Math.max(.6,w).toFixed(1)+'" height="'+h.toFixed(1)
       + '" style="fill:'+fill+';stroke:'+(stroke||'var(--pt-bds)')+';stroke-width:'+(sw===undefined?.8:sw)+'" '+(extra||'')+'/>';
@@ -2535,6 +2556,7 @@ function renderDim(D){
       sh = ops.map(function(o){ return clamp(o.b, totB*.07, totB*.30); });
     }
     opLane.real = useReal; opLane.commOps = useReal ? rops.filter(function(o){ return o.comm; }) : [];
+    opLane.lastX = [-1e9, -1e9];   /* 两行标签各自的右边界，逐个排开、装不下就不写 */
     var shT = sh.reduce(function(a,x){ return a+x; }, 0);
     var og = 2, usable = MW - og*(ops.length-1), x = X0;
     ops.forEach(function(o, oi){
@@ -2562,9 +2584,44 @@ function renderDim(D){
       if(useReal && !opLane.attn && /attention|mla/i.test(o.id) && !o.comm)
         opLane.attn = {id:o.id, label:(o.label||o.id), hotX:x, hotW:w};
       var lbl = useReal ? (o.label||o.id) : o.id;
-      if(w>26) parts.push(txt(x+w/2, R.op+HR.op+9+(oi%2)*9, lbl.length>16?lbl.slice(0,15)+'…':lbl, 7, isCut?col:'var(--pt-fg3)', 'middle', (isCut?'font-weight="700" ':'')+'pointer-events="none"'));
-      if(w>26 && useReal && isCut && o.axisName)
-        parts.push(txt(x+w/2, R.op+HR.op+18+(oi%2)*9, '沿'+o.axisName+(o.partial?'·partial':''), 6.4, col, 'middle', 'pointer-events="none"'));
+      /* ── 标签：值优先、名字够短才写、写不下就只留悬停 ──────────────────
+         原来两行交错（+9/+18 与 +18/+27）把「名字」和「沿哪根轴」挤进同一个 y：
+         奇数格的名字与偶数格的轴名正好撞在 +18 上，35 个算子横排下来是一片糊。
+         改成两组各占两行、组间不重叠（+9/+17 与 +28/+36），再按**实测宽度**逐个
+         排：装不下就不写（名字在悬停里一个字不少），装得下也只写短名——
+         全长写在 <title> 里。这跟画布上芯片那套纪律是同一条：图上只留最必要的，
+         其余 hover。 */
+      /* 单行，不再上下交错：交错是为了给挤不下的名字腾地方，但它把第二行推到
+         kernel 那一带上，和放大锥的说明撞在一起——而现在名字**只在装得进自己
+         那一格时**才写，本来就不会压邻居，交错就没有理由再存在了。 */
+      var row9 = 0, fs9 = 7;
+      var short9 = shortOp9(lbl);
+      /* 轴名用**短号**（h / head / e / s，o.axis），不用中文长名（o.axisName）：
+         这一行写的是值——沿哪根轴、切成几片——名字那一行已经有悬停兜底了。 */
+      var axL9 = (useReal && isCut && o.axis) ? (o.axis+'×'+pieces) : '';
+      var budget9 = w + og*0.6;
+      /* 先按**本块自己的宽度**裁名字：装不进自己的格子就不写（写出去就是压邻居）。 */
+      var fit9 = Math.max(0, Math.floor(budget9 / (fs9*0.62)));
+      if(short9.length > fit9) short9 = fit9 >= 5 ? short9.slice(0, fit9-1)+'…' : '';
+      if(axL9.length * 6.4 * 0.62 > budget9) axL9 = '';
+      var need9 = Math.max(short9.length*fs9*0.62, axL9.length*6.4*0.62);
+      var nY9 = R.op+HR.op+9, aX9 = x+w/2;
+      if((short9 || axL9) && aX9 - need9/2 > opLane.lastX[row9] + 2){
+        if(short9) parts.push(txt(aX9, nY9, short9, fs9, isCut?col:'var(--pt-fg3)', 'middle',
+          (isCut?'font-weight="700" ':'')+'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
+        if(axL9) parts.push(txt(aX9, nY9+8, axL9, 6.4, col, 'middle',
+          'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2" pointer-events="none"'));
+        opLane.lastX[row9] = aX9 + need9/2;
+      }
+      /* 悬停给全量：全名 + 切法 + 轴 + 本卡拿到的区间 + 标注里的原因。
+         图上写不下的每一个字都在这儿，一个不少。 */
+      opHit.push('<rect x="'+x.toFixed(1)+'" y="'+R.op+'" width="'+Math.max(1,w).toFixed(1)+'" height="'+HR.op
+        + '" style="fill:transparent;cursor:help"><title>'+esc(lbl
+        + (isCut ? ' · 被 '+DIMN[dim]+' 沿 '+(o.axisName||o.axis||'—')+' 切 '+pieces+' 片'
+                   + (o.range ? '（本卡持 '+o.range[0]+'–'+o.range[1]+'）' : '')
+                   + (o.partial ? ' · 算出的是 partial，需归约' : '')
+                 : (o.cut==='none' ? ' · 本维不切（各格相同）' : ' · 由别的刀切'))
+        + (o.note ? ' —— '+o.note : ''))+'</title></rect>');
       x += w + og;
     });
   }
@@ -2755,7 +2812,12 @@ function renderDim(D){
     parts.push(txt(RL, cy-3, '原语 · '+PRIM9, 8.6, col, 'start', 'font-weight="700"'));
     /* 载荷与时序分两行：并成一行会顶出右边距（dp 那一条最长）。 */
     parts.push(txt(RL, cy+8, '载荷 '+LOAD9, 7.6, 'var(--pt-fg2)', 'start'));
-    parts.push(txt(RL, cy+18, '时序 '+WHEN9, 7.6, 'var(--pt-fg2)', 'start'));
+    /* 时序这一行最长（EP 那条整整 28 个字），写全会顶出右边距、压到 kernel 行上。
+       图上只留第一节（「层内 / 跨层 / 跨 step」才是这一格要答的），整句挂在 ⓘ 上——
+       跟画布上芯片、读出卡那排九格是同一条纪律。第二节也不另起一行：再多一行就
+       撞上下面 kernel 那条说明了，而它本来就是「点开才看」的那一档。 */
+    var wh0 = WHEN9.split('·')[0].trim();
+    parts.push(txtI(RL, cy+18, '时序 '+wh0, WHEN9, 7.6, 'var(--pt-fg2)', 'start'));
   }
 
   /* ── 左侧粒度标尺：整网⊃层⊃算子⊃kernel 是同一份内容逐级放大；输入是另一个对象 ── */
@@ -2796,6 +2858,7 @@ function renderDim(D){
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
     + '<g pointer-events="none">'+colBack.join('')+'</g>'
     + inter.join('')
+    + opHit.join('')
     + '<g pointer-events="none">'+parts.join('')+'</g></svg>';
 
   renderDimBar(D, dim);
@@ -11549,11 +11612,14 @@ function renderFoot(D){
   $('footCtl').innerHTML = out;
 }
 
-/* 画布左上角用用户问题命名，并补一句最关键的阅读说明：方框是 Rank，不是模型层。 */
+/* 画布左上角用用户问题命名，并补一句最关键的阅读说明：方框是 Rank，不是模型层。
+   题面可由 ?stitle= 覆盖：同一份实现发布成好几份 pattern（整网切分 / 3D 卡阵 /
+   整网真图展开），每一份默认落在不同的一屏，画布左上角该报的是**那一屏**的题面，
+   不是三份共用一句「模型分片与训练设备映射」。缺省仍是这句，老链接一个不动。 */
 function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
   if(el.firstChild) return;
-  el.innerHTML = '<span class="pt-stagecopy"><b>模型分片与训练设备映射</b>'
+  el.innerHTML = '<span class="pt-stagecopy"><b>'+esc(ui.stageTitle)+'</b>'
     + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';
 }
 

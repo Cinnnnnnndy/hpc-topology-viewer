@@ -881,6 +881,9 @@ var SLOTS = [
          FS_GAIN_MAX 那段注释。）
          四个机位一个没拿掉，pattern 自己那排段控点一下就换。 */
       q.set('vtab', 'side');
+      /* 画布左上角那句题面归这一格自己：pattern 缺省报的是「模型分片与训练设备映射」，
+         那是右边那格的题面；这一格问的是「一张整网被切成什么」。 */
+      q.set('stitle', '模型整网视图 · 真图展开');
       if (s.value === 'cav') { q.set('view', 'solid'); q.set('p', 'grid'); }
       else q.set('view', 'chain');
       /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
