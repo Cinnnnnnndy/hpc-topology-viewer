@@ -2855,18 +2855,25 @@ function renderDim(D){
     parts.push('<g opacity=".95" pointer-events="none">'+edgeSVG(pts, prim, col, {mid:dim, ring:dim==='cp'&&prim==='p2p'})+'</g>');
     var actB = D.mbs*(D.seq/D.cp)*D.hidden*2;
     function mb(b){ return b>=Math.pow(2,30) ? fmtGB(b)+' GB' : Math.round(b/Math.pow(2,20))+' MB'; }
-    var commTxt = {tp:'TP AllReduce · 每层两下 · 每次≈'+mb(actB),
-                   pp:'PP P2P · 有方向 · 每 μbatch ≈'+mb(actB),
-                   dp:'DP 梯度 AllReduce · 步末一次 · 每卡≈'+mb(2*paramsPerCard(D,0)),
-                   ep:'EP All-to-All · top-'+(D.topk||'—')+' 路由 · 各边载荷不等',
-                   cp:{p2p:'CP Ring（P2P 逐跳传 KV 块）', alltoall:'CP Ulysses（All-to-All 换轴）', allgather:'CP 朴素（AllGather 收全序列）'}[prim]}[dim];
-    var SCOPE = {tp:'作用域：层内（算子内部）· 每层 2 次，不跨层',
-                 ep:'作用域：层内（MoE 层）· 每层 2 次 dispatch+combine，不跨层；路由逐层重算',
-                 cp:'作用域：层内（attention 内部）· 每层一轮，不跨层',
-                 pp:'作用域：跨层（层的边界）· stage 之间，每 μbatch 一次',
-                 dp:'作用域：跨 step（整网之外）· 步末一次，层内不发生'}[dim];
-    parts.push(txt(RL, cy-3, commTxt, 8.6, col, 'start', 'font-weight="700"'));
-    parts.push(txt(RL, cy+8, SCOPE, 7.6, 'var(--pt-fg2)', 'start'));
+    /* 措辞按**九层可观测性**（§15 六）的词汇统一：第一行是原语，第二行左边写
+       「载荷」右边写「时序」——这一屏与读出卡那排九格、画布上的芯片说的是同一
+       套话，读者不用在三处各学一套名字。原来第一行把原语、时序、载荷挤成一句，
+       第二行叫「作用域」，跟别处对不上号。 */
+    var PRIM9 = {tp:'TP AllReduce', pp:'PP P2P（有方向）',
+                 dp:'DP 梯度 AllReduce', ep:'EP All-to-All（top-'+(D.topk||'—')+' 路由）',
+                 cp:{p2p:'CP Ring（P2P 逐跳传 KV 块）', alltoall:'CP Ulysses（All-to-All 换轴）', allgather:'CP 朴素（AllGather 收全序列）'}[prim]}[dim];
+    var LOAD9 = {tp:'每次≈'+mb(actB), pp:'每 μbatch≈'+mb(actB),
+                 dp:'每卡≈'+mb(2*paramsPerCard(D,0)), ep:'各边不等（由路由决定）',
+                 cp:'每跳一块 KV'}[dim];
+    var WHEN9 = {tp:'层内（算子内部）· 每层 2 次，不跨层',
+                 ep:'层内（MoE 层）· 每层 dispatch+combine 各一次；路由逐层重算',
+                 cp:'层内（attention 内部）· 每层一轮，不跨层',
+                 pp:'跨层（层的边界）· stage 之间，每 μbatch 一次',
+                 dp:'跨 step（整网之外）· 步末一次，层内不发生'}[dim];
+    parts.push(txt(RL, cy-3, '原语 · '+PRIM9, 8.6, col, 'start', 'font-weight="700"'));
+    /* 载荷与时序分两行：并成一行会顶出右边距（dp 那一条最长）。 */
+    parts.push(txt(RL, cy+8, '载荷 '+LOAD9, 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(RL, cy+18, '时序 '+WHEN9, 7.6, 'var(--pt-fg2)', 'start'));
   }
 
   /* ── 左侧粒度标尺：整网⊃层⊃算子⊃kernel 是同一份内容逐级放大；输入是另一个对象 ── */
