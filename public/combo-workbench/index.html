@@ -278,27 +278,32 @@ a.btn{text-decoration:none}
 #dmenu.open #dmenuBtn,#dmenu.open #dmenuBtn:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
 #dmenu.open #dmenuBtn b{color:inherit}
 
-/* ═══ 全局筛选 Hover Bar：属于上方双视图共同父容器 ═══ */
-.global-filter{position:absolute;left:50%;bottom:12px;z-index:45;max-width:calc(100% - 56px);transform:translateX(-50%);pointer-events:auto}
-.global-filter__surface{display:flex;align-items:center;gap:8px;min-height:36px;max-width:100%;padding:4px;border:1px solid var(--border-strong);border-radius:var(--radius-pill);background:color-mix(in srgb,var(--surface-1) 92%,transparent);box-shadow:var(--shadow-lg);backdrop-filter:blur(16px) saturate(1.15)}
-/* 原来图标旁跟一句「选择并查看并行对象」常驻说明字——挤占这条 Hover Bar
-   本该用来放筛选胶囊的宽度。改成一颗纯图标的收起/展开钮：说明挪进
-   title/aria-label（悬停/读屏仍然有），点它把 __groups 和清除钮一起收起，
-   胶囊那部分是唯一会变宽变窄的部分，条本身收起来只剩一颗圆钮那么大。 */
-.global-filter__toggle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--foreground-muted)}
-.global-filter__toggle:hover{background:var(--state-hover);color:var(--foreground)}
-.global-filter__toggle[aria-expanded="false"]{color:var(--foreground)}
-.global-filter__toggle svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.global-filter[data-collapsed="true"] .global-filter__groups,
-.global-filter[data-collapsed="true"] .global-filter__clear{display:none}
-.global-filter__groups{display:flex;align-items:center;gap:5px;max-width:min(1050px,calc(100vw - 280px));overflow-x:auto;opacity:1}
+/* ═══ 并行对象筛选：顶栏按钮 + 下拉浮层（原来是舞台底部的 Hover Bar）═══
+   收起时就是顶栏上一颗普通按钮，与「并行配置」「数据标注」同形制；展开落下一张
+   浮层，四组胶囊在里面换行排。选中数量写在按钮上那颗徽标里——收起状态下也得
+   看得出「现在筛着东西」，否则读者会对着一屏收窄过的画面找不到开关在哪。 */
+.global-filter{position:relative;flex:0 0 auto}
+.global-filter__toggle b{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--primary);color:#fff;font:700 10px/16px var(--font-mono);text-align:center}
+.global-filter__pop{
+  /* fixed 而不是 absolute：浮层锚在按钮右缘、向**左**长，而按钮在顶栏中段——
+     absolute + right:0 时只要内容比按钮左边的空地宽，左半截就顶出屏幕外拿不回来
+     （DP 一组 16 颗，最宽的时候必然超）。改成 fixed，打开时按按钮的实际位置算
+     top / right / max-width（见 setFilterOpen），怎么摆都在屏内。 */
+  position:fixed;z-index:80;
+  display:flex;flex-direction:column;gap:8px;width:max-content;
+  padding:10px;border:1px solid var(--border-strong);border-radius:12px;
+  background:var(--surface-1);box-shadow:var(--shadow-lg);
+}
+.global-filter[data-collapsed="true"] .global-filter__pop{display:none}
+.global-filter__groups{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%}
 .global-filter__group{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto;padding:2px;border-radius:var(--radius-pill);background:var(--state-muted)}
 .global-filter__group b{padding:0 4px;color:var(--filter-color);font:700 11px/1 var(--font-mono);white-space:nowrap}
 .global-filter__group button{min-width:22px;height:24px;padding:0 5px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-secondary);font-size:11px;font-weight:600;white-space:nowrap}
 .global-filter__group button:hover{background:var(--state-hover);color:var(--foreground)}
 .global-filter__group button[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
-.global-filter__clear{flex:0 0 auto;width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:var(--foreground-muted);font-size:16px}
-.global-filter__clear:hover{background:var(--state-hover);color:var(--foreground)}
+.global-filter__clear{align-self:flex-end;height:26px;padding:0 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-pill);background:transparent;color:var(--foreground-muted);font-size:12px}
+.global-filter__clear:hover:not(:disabled){background:var(--state-hover);color:var(--foreground)}
+.global-filter__clear:disabled{opacity:.45}
 
 /* ═══ 舞台：左 整网图 ｜ 右 并行拓扑（同一个 pattern 的两份配置） ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
@@ -456,6 +461,24 @@ body.is-resizing iframe{pointer-events:none}
 
     <span class="spacer"></span>
 
+    <!-- 并行对象筛选：原来是浮在舞台底部的一条 Hover Bar，横着摊开 TP·SP / EP / PP / DP
+         四组胶囊，最宽的时候几乎占满整屏底边、压着画布。它和「并行配置」问的是同一类
+         问题（这一屏看哪一套并行、看其中哪一个对象），却分居屏幕上下两端。
+         挪到顶栏「并行配置」旁边、默认收起：常态只是一颗按钮，点开才落下一张浮层。
+         浮层而不是就地展开——四组胶囊里 DP 一组就有 16 颗，就地展开会把顶栏撑爆。 -->
+    <div class="global-filter" id="globalFilter" data-collapsed="true">
+      <button class="btn btn-outline btn-compact topbar-action-btn global-filter__toggle" id="globalFilterToggle" type="button"
+              aria-expanded="false" aria-controls="globalFilterPop"
+              aria-label="并行对象筛选" title="并行对象筛选：选中某一维的某一个对象，两格一起收窄到它">
+        <span>并行对象</span><b id="globalFilterCount" hidden></b>
+        <svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="global-filter__pop" id="globalFilterPop" role="toolbar" aria-label="选择并查看并行对象">
+        <div class="global-filter__groups" id="globalFilterGroups"></div>
+        <button class="global-filter__clear" id="globalFilterClear" type="button" aria-label="清除全局筛选" title="清除筛选">清除</button>
+      </div>
+    </div>
+
     <button class="btn btn-outline btn-compact topbar-action-btn" id="globalConfigBtn" type="button" data-ide-toggle="global-config" aria-label="打开并行配置" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
       <span>并行配置</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -608,16 +631,6 @@ body.is-resizing iframe{pointer-events:none}
         </div>
       </div>
     </section>
-
-    <div class="global-filter" id="globalFilter">
-      <div class="global-filter__surface" role="toolbar" aria-label="选择并查看并行对象">
-        <button class="global-filter__toggle" id="globalFilterToggle" type="button" aria-label="选择并查看并行对象" aria-expanded="true" title="选择并查看并行对象：点击收起/展开">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-        </button>
-        <div class="global-filter__groups" id="globalFilterGroups"></div>
-        <button class="global-filter__clear" id="globalFilterClear" type="button" aria-label="清除全局筛选" title="清除筛选">×</button>
-      </div>
-    </div>
 
   </main>
 
@@ -1336,6 +1349,13 @@ function renderGlobalFilter() {
   }).join('');
   var hasSelection = groups.some(function (g) { return globalFilter[g.k] !== null; });
   $('#globalFilterClear').disabled = !hasSelection;
+  /* 收起之后按钮就是这个功能在屏上的全部痕迹——选中几维得写在它身上，
+     否则读者面对一屏被收窄过的画面，找不到是谁收窄的、也不知道去哪儿撤销。 */
+  var nSel = groups.filter(function (g) { return globalFilter[g.k] !== null; }).length;
+  var badge = $('#globalFilterCount');
+  if (badge) { badge.hidden = nSel === 0; badge.textContent = String(nSel); }
+  var tg = $('#globalFilterToggle');
+  if (tg) tg.classList.toggle('is-selected', nSel > 0);
 }
 
 function sendGlobalFilters() {
@@ -1395,13 +1415,35 @@ function wireGlobalControls() {
     renderGlobalFilter(); sendGlobalFilters();
   });
   $('#globalFilterClear').addEventListener('click', clearGlobalFilter);
-  $('#globalFilterToggle').addEventListener('click', function () {
-    var wasCollapsed = $('#globalFilter').getAttribute('data-collapsed') === 'true';
-    $('#globalFilter').setAttribute('data-collapsed', String(!wasCollapsed));
-    this.setAttribute('aria-expanded', String(wasCollapsed));
+  $('#globalFilterToggle').addEventListener('click', function (ev) {
+    ev.stopPropagation();                 /* 别让下面那条「点外面收起」立刻又把它关上 */
+    setFilterOpen($('#globalFilter').getAttribute('data-collapsed') === 'true');
+  });
+  /* 浮层落在画布上方，得有「不用瞄准就能关掉」的两条退路：点浮层外面、按 Esc。
+     少了它们，读者只能回头去点那颗按钮——而按钮此刻正被自己弹出的浮层挤在边上。 */
+  function setFilterOpen(open) {
+    $('#globalFilter').setAttribute('data-collapsed', String(!open));
+    $('#globalFilterToggle').setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    /* 按按钮的实际位置摆：右缘对齐按钮右缘、往下 6px；宽度上限取「按钮右缘到屏幕
+       左边距之间的空地」，所以再宽也长不出屏外。窗口尺寸变了要重算，见下面 resize。 */
+    var r = $('#globalFilterToggle').getBoundingClientRect();
+    var pop = $('#globalFilterPop');
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+    pop.style.maxWidth = Math.max(240, Math.min(880, r.right - 16)) + 'px';
+  }
+  window.addEventListener('resize', function () {
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'false') setFilterOpen(true);
+  });
+  document.addEventListener('click', function (ev) {
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'true') return;
+    if (ev.target.closest('#globalFilter')) return;
+    setFilterOpen(false);
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Escape') return;
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'false') setFilterOpen(false);
     if ($('#globalConfig').getAttribute('aria-hidden') === 'false') setGlobalConfigOpen(false);
   });
   syncGlobalConfigUI(); renderGlobalFilter();
