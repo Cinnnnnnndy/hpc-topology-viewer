@@ -2084,9 +2084,21 @@ function edgeSVG(pts, prim, color, opts){
         : '<rect x="'+(p[0]-3)+'" y="'+(p[1]-3)+'" width="6" height="6" transform="rotate(45 '+p[0]+' '+p[1]+')" style="fill:'+color+'"/>';
     });
   }else if(prim==='alltoall'){
-    for(i=0;i<n;i++) for(j=i+1;j<n;j++){
-      var lw = 0.7 + ((i*7+j*13)%3)*0.55;
-      out += line(pts[i],pts[j],'stroke:'+color+';stroke-width:'+lw.toFixed(2)+';stroke-opacity:.72');
+    /* opts.hub 给了就只画**本卡与组内每一张**的那几根（星形），不画全网格。
+       8 张卡的全网格是 28 条对角长线，横竖交叉铺满半屏——那是「这一组内部
+       一共有多少条边」的画法；而点开一张卡时问的是「这一张跟谁来往」，星形
+       正好是那个答案，还省下四分之三的线。两种画法说的是同一件事的两个问题，
+       没给 hub（组一级的概览）时仍旧是全网格。 */
+    if(opts.hub != null && opts.hub >= 0 && opts.hub < n){
+      for(i=0;i<n;i++){
+        if(i === opts.hub) continue;
+        out += line(pts[opts.hub],pts[i],'stroke:'+color+';stroke-width:1.05;stroke-opacity:.8');
+      }
+    }else{
+      for(i=0;i<n;i++) for(j=i+1;j<n;j++){
+        var lw = 0.7 + ((i*7+j*13)%3)*0.55;
+        out += line(pts[i],pts[j],'stroke:'+color+';stroke-width:'+lw.toFixed(2)+';stroke-opacity:.72');
+      }
     }
   }
   /* 这一层（卡对卡的**组拓扑**）刻意不加流动虚线，和别处的通信线不一样：
@@ -5121,7 +5133,12 @@ function netScene(D, g, box, step){
      层构成那条一样：没选中卡时这一屏问的是「模型被切成什么 / 一张卡里装了什么」，
      通信是「选中这一张之后它跟谁来往」的答案，没有主语就没有这个答案。
      逻辑切分（非卡维度）不受这条管：那一屏的题面本来就是「整网怎么连」。 */
-  if(ui.commOn && !lowDetail && !ui.netOff && !physOn && !(cgIntra9 && ui.cardMode) && !(ui.cardMode && !hasSel)) drawCommArcs();
+  /* 卡维度下这一层只在**分块粒度**出现：它画的是算子级的弧（锚在产生这次通信的
+     那个算子上），正是「张量的哪几块换了位置」那一级；rank 粒度那一档已经有
+     卡对卡的边在说同一组关系，两层一起画就是同一件事画两遍——反馈里那团交叉
+     的长线有一半是这么来的。 */
+  var arcsWanted9 = ui.cardMode ? (hasSel && cgBlock9) : true;
+  if(ui.commOn && !lowDetail && !ui.netOff && !physOn && arcsWanted9) drawCommArcs();
   /* ── 卡对卡通信线（补 netScene 一直缺的那一层）──────────────────────────
      drawCommArcs() 回答的是「这次通信落在哪个算子上」——弧线锚在产生它的
      那个节点，只在焦点卡自己的算子网格里活动，看不出「一共连了几张卡、
@@ -5211,7 +5228,7 @@ function netScene(D, g, box, step){
       }
       if(!allOk9) return;
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
-        + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false}) + '</g>');
+        + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false, hub: mem9.indexOf(g)}) + '</g>');
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
          中心取本卡与下一段的中点，落在那一跳上。 */
       var cx9 = 0, cy9 = 0, mN9 = pts9.length, ci9;
