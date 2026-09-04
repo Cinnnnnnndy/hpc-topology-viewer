@@ -12363,9 +12363,21 @@ function pushBack(){
 }
 /* 返回钮画在舞台左上角那个专属位置（#backBar），不再挂在右上那条导航工具条上。
    每次 render 都重写一遍：没有来路就整块收起来，免得留一颗点了没反应的钮。 */
+/* 没有来路时的兜底：卡内解剖与单维切分这两屏是**被跳进来的**——它们的右上角
+   只留了往前走的跳转，顶栏在嵌入形态里又是收起来的，所以一旦不是从读出卡点进来
+   （直接开一条 ?view=dim 的链接、或从顶栏切过来），左上角就一颗返回都没有，人
+   卡在那一屏出不去。这时给一颗回整网切分的：那是这一族视图的主屏，也是所有
+   pattern 的默认取景。有真来路时照旧优先带真来路回去。 */
+var BACK_HOME9 = {anatomy:1, dim:1};
 function renderBackBar(){
   var el = $('backBar'); if(!el) return;
-  if(!ui.backTo){ el.hidden = true; el.innerHTML = ''; return; }
+  if(!ui.backTo){
+    if(!BACK_HOME9[ui.view]){ el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = '<button class="pb" data-act="view" data-v="chain" '
+      + 'title="回到整网切分那一屏（这一族视图的主屏）">← 返回 整网切分</button>';
+    return;
+  }
   el.hidden = false;
   el.innerHTML = '<button class="pb" data-act="backto" title="'
     + esc('回到刚才那一屏（' + ui.backTo.label + '），选中的卡、卡片内容、通信看哪一层都照原样带回去')
