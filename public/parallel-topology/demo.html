@@ -11318,12 +11318,17 @@ function renderV3(D){
 
   /* 这一排原来是「解剖对象 / 抽哪一层 / 通信看哪一层 / 粒度链」一长条挂在画布
      上沿。反馈：「去掉这里，和主视图一样用配置按钮配置」——配置项全部搬进那只
-     共用的配置面板（见 cfgPanel 里「卡内解剖」与「通信连线」两组），这条工具条
-     只留**导航**：从哪儿来（返回）、到哪儿去（刀序链 / 时间轴）。 */
+     共用的配置面板（见 cfgPanel 里「卡内解剖」与「通信连线」两组）。
+     再一轮反馈又拿掉两颗：
+       ·「↖ 它的来历（刀序链）」——返回已经在左上角单独占位、而且写明回哪儿；
+         这颗跟它挨着，只会让人以为有两种返回，其中一种还回错地方（它回的是
+         刀序链本身，不是读者刚才那一屏）。
+       ·「粒度链 ⓘ」——纯提示，不是控件。整网⊃层⊃算子⊃kernel 这条链画布上
+         已经用三道「⊃ 放大 ⊕」逐级标出来了，工具条上再挂一枚只写字的胶囊是
+         把图上说过的话又说一遍。
+     只剩一条真正的跳转。 */
   $('stagebar').innerHTML =
-      '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
-    + '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>'
-    + tipChip('粒度链', '整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）');
+      '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>';
   cfgSurface(D);
   $('stageNote').hidden = true; $('detach').hidden = true;
 }
