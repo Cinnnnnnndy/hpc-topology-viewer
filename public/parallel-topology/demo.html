@@ -357,6 +357,12 @@
 }
 .pt-root.embed .pt-stagetitle{display:flex; gap:10px; pointer-events:auto; z-index:8}
 .pt-stagetitle b{font-size:15px; font-weight:800; letter-spacing:-.01em; color:var(--pt-fg); white-space:nowrap}
+/* 返回钮的位置：舞台左上角。顶栏在的时候画布左上是空的，直接顶到 10px；
+   嵌入形态那儿写着画布的名字，就让到名字下面一行（名字那行 min-height 44px）。 */
+.pt-backbar{position:absolute; top:10px; left:16px; z-index:9; display:flex; align-items:center; gap:8px}
+.pt-backbar[hidden]{display:none}
+.pt-root.embed .pt-backbar{top:56px}
+.pt-backbar .pb{font-weight:700}
 .pt-stagecopy{display:flex; align-items:center; gap:6px; max-width:min(540px, calc(100vw - 110px)); pointer-events:none}
 /* 名字后面那颗「？」：原来常驻一行小字复述这句话，占着画布一行空间；
    收进这颗徽标里，需要的人悬停/聚焦才看到，原生 title 属性做提示，
@@ -868,6 +874,11 @@
     <!-- 画布自己的名字，占舞台左上角那个位置。收起顶栏之后（嵌入形态）整屏只剩画布，
          没有它就没人说得清这是什么；顶栏在的时候它自己让位，免得同一个名字印两遍。 -->
     <div class="pt-stagetitle" id="stageTitle"></div>
+    <!-- 返回：跳进来的那几屏（卡内解剖 / 单维切分）在舞台左上角单独给它一个位置。
+         原来它混在右上那条导航里，跟「它的来历（刀序链）」「这段在时间轴上的样子」
+         排成一行——那两颗是**去哪儿**，返回是**回哪儿**，混在一起读者只会把最左边
+         那颗当返回。左上角是所有人找返回的第一个地方，就放在那儿，写全字。 -->
+    <div class="pt-backbar" id="backBar" hidden></div>
     <!-- 搜索单独占中间那一段（名字在左、控件在右，它居中），不再挤在右侧工具条里 -->
     <div class="pt-qbar" id="qbar"></div>
     <div class="pt-stage" id="stage"></div>
@@ -10766,8 +10777,7 @@ function renderDimBar(D, dim){
   }
   /* 「按嵌套序看刀」那一排已经搬进配置面板（反馈：「和主视图一样用配置按钮
      配置」）；工具条只留返回、本刀是什么、刀序带与一条跳转。 */
-  var sb = backBtnHTML()
-    + '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>';
+  var sb = '<span class="pt-chip" style="border-color:'+col2+';color:'+col2+';font-weight:800">'+DIMN[dim]+' = '+VERB[dim]+'</span>';
   /* 刀序带：前面的刀已切（把视野缩到本组），本刀在切，后面的刀待切——
      取代旧「折叠上下文」：固定坐标不是任意折叠，是前序刀的选择 */
   var CUTS = {dp:D.dp, pp:D.pp, tp:D.tp, ep:(D.moe?D.ep:1), cp:D.cp};
@@ -11310,8 +11320,8 @@ function renderV3(D){
      上沿。反馈：「去掉这里，和主视图一样用配置按钮配置」——配置项全部搬进那只
      共用的配置面板（见 cfgPanel 里「卡内解剖」与「通信连线」两组），这条工具条
      只留**导航**：从哪儿来（返回）、到哪儿去（刀序链 / 时间轴）。 */
-  $('stagebar').innerHTML = backBtnHTML()
-    + '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
+  $('stagebar').innerHTML =
+      '<button data-act="view" data-v="chain" class="pb" title="回到刀序链：看这张卡是被哪几刀切出来的">↖ 它的来历（刀序链）</button>'
     + '<button data-act="v3totime" class="pb" title="跳到「时间·流」，看这一段（attn/router/experts）在真实时间轴上具体落在哪几个 kernel">这段在时间轴上的样子 ↷</button>'
     + tipChip('粒度链', '整网 → 层 → 算子 → kernel：粒度链在容器里走完（FR-12）');
   cfgSurface(D);
@@ -12351,10 +12361,15 @@ function pushBack(){
                grain: ui.commGrain, vtab: ui.viewTab, layerOff: ui.selLayerOff,
                cutDim: ui.cutDim, openLayer: ui.openLayer, sel: sel};
 }
-function backBtnHTML(){
-  if(!ui.backTo) return '';
-  return '<button class="pb" data-act="backto" title="'+esc('回到刚才那一屏（' + ui.backTo.label + '），选中的卡、卡片内容、通信看哪一层都照原样带回去')+'">← 返回 '
-    + esc(ui.backTo.label) + '</button><span class="pt-sep"></span>';
+/* 返回钮画在舞台左上角那个专属位置（#backBar），不再挂在右上那条导航工具条上。
+   每次 render 都重写一遍：没有来路就整块收起来，免得留一颗点了没反应的钮。 */
+function renderBackBar(){
+  var el = $('backBar'); if(!el) return;
+  if(!ui.backTo){ el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = '<button class="pb" data-act="backto" title="'
+    + esc('回到刚才那一屏（' + ui.backTo.label + '），选中的卡、卡片内容、通信看哪一层都照原样带回去')
+    + '">← 返回 ' + esc(ui.backTo.label) + '</button>';
 }
 function commL9Go(k, dim){
   if(k === 'model') return ' data-act="gotoanat"';
@@ -12560,6 +12575,7 @@ function render(){
   if(!D.moe){ if(ui.axis==='ep') ui.axis='tp'; if(ui.commDim==='ep') ui.commDim='tp'; }
   renderBar(D);
   renderStageTitle();
+  renderBackBar();
   /* 魔方与缩放 HUD 只服务切分链视图，别的视图一律先收起来 */
   if(ui.view!=='chain'){
     $('rubik').hidden = true; $('stage').hidden = false;
@@ -12855,6 +12871,10 @@ document.addEventListener('click', function(ev){
   }
   else if(act==='gov'){
     var gv = b.getAttribute('data-v');
+    /* 读出卡上那三条「⤷ 解剖 / ⤷ 单维切分 / ⤷ 真实整网」也是跳屏，和 gotoanat /
+       gotodim 一样要留来路——不留的话跳过去那一屏左上角就没有返回钮，读者只能
+       靠右上「它的来历」猜着回，而那颗回的是刀序链本身，不是他刚才那一屏。 */
+    if(gv !== ui.view || gv === 'chainfront') pushBack();
     if(gv==='chainfront'){ ui.view='chain'; ui.viewTab='front'; ui.yaw3=0; ui.pitch3=0; ui.zoom3=1; ui.panX3=0; ui.panY3=0; }
     else{ ui.view=gv; }
     stopAnim(); render();
