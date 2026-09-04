@@ -12,7 +12,7 @@
      · postMessage {type:'pto:state', range, theme, hl:{rank}}
        与 /parallel-topology/demo.html 同一套约定（那边也认 pto:state / 回
        pto:state-ack），宿主一份代码就能同时驱动两张卡；hl.rank 是后加的一条，
-       宿主拿它来在这一格浮一枚"Rank N 在其他视图选中"的小徽标（见下方 ③b）。
+       宿主拿它来把对应的那条泳道翻出来并滚进视野（见下方 ③b）。
    宿主拿 {type:'pto:state-ack', range} 对齐卡片头的段控。
    ══════════════════════════════════════════════════════════════════════ */
 (function () {
@@ -91,38 +91,14 @@
     }, '*');
   }
 
-  /* ── ③b 反向联动确认：整网图/主视图选中了一张卡 → 这一格浮一枚会自己淡出的
-     小徽标「Rank N 在其他视图选中」。宿主用的是同一条 pto:state.hl 通道（跟
-     驱动 demo.html 那两格高亮的 pushHL 是同一个函数、同一个消息形状），这里
-     只多认一个 hl.rank 字段。
-
-     故意不去找 Rank N 对应哪一行、把它展开或滚到可见——那要伸手进上游那个
-     IIFE 的 expandedRowIds/focusedRankRowId 状态机（"纪律"里禁止碰的那些
-     变量），产品原话也只是「有点反应」，没要求真的把那一行拉出来；泳道自己
-     只模拟 32 个物理 Rank 里的一部分代表行，宿主也没法保证选中的 Rank 一定
-     在这份 mock 里有对应行。浮标只加在 DOM 上、只读 CSS 变量取色，不碰
-     上游状态，跟纪律不冲突。 */
-  var rankBadgeEl = null, rankBadgeTimer = 0;
-  function hideRankBadge() {
-    if (rankBadgeTimer) { clearTimeout(rankBadgeTimer); rankBadgeTimer = 0; }
-    if (rankBadgeEl) rankBadgeEl.style.opacity = '0';
-  }
-  function showRankBadge(n) {
-    if (rankBadgeTimer) { clearTimeout(rankBadgeTimer); rankBadgeTimer = 0; }
-    if (n === null || n === undefined) { hideRankBadge(); return; }
-    if (!rankBadgeEl) {
-      rankBadgeEl = document.createElement('div');
-      rankBadgeEl.style.cssText = 'position:fixed;top:10px;right:12px;z-index:9999;' +
-        'padding:4px 10px;border-radius:999px;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
-        'background:var(--background-elevated,#1a1f2b);color:var(--foreground,#fff);' +
-        'border:1px solid var(--border-strong,rgba(255,255,255,.2));' +
-        'box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;opacity:0;transition:opacity .15s ease;';
-      document.body.appendChild(rankBadgeEl);
-    }
-    rankBadgeEl.textContent = '◀ Rank ' + n + ' 在其他视图选中';
-    requestAnimationFrame(function () { if (rankBadgeEl) rankBadgeEl.style.opacity = '1'; });
-    rankBadgeTimer = setTimeout(hideRankBadge, 3200);
-  }
+  /* ── ③b 反向联动：整网图/主视图选中了一张卡 → 这一格**直接把那条泳道翻出来**。
+     原来这里浮一枚会自淡出的小徽标「◀ Rank N 在其他视图选中」，同时把 hl.rank
+     转成 pto:rank-focus 交给泳道去**压暗其余泳道**。两样都撤了：
+       · 徽标是「我知道了」，不是答案；读者要的是那条泳道本身。
+       · 压暗把整屏弄灰，而真正那一行常常还折在收起的父行里——看到的是「全灰、
+         没有主语」，「哪一行是它」还得靠排除法猜。
+     现在只发 pto:rank-focus，由泳道那边逐级展开父链并把那一行滚进视野
+     （见 swimlane.html 里的 revealRankRow）。宿主这边不碰它的状态机。 */
 
   whenReady(function () {
     syncThemeLabel();
@@ -135,7 +111,6 @@
       if (msg.theme) applyTheme(msg.theme);
       if (msg.filters) window.dispatchEvent(new CustomEvent('pto:filters', { detail: msg.filters }));
       if (msg.hl && Object.prototype.hasOwnProperty.call(msg.hl, 'rank')) {
-        showRankBadge(msg.hl.rank);
         window.dispatchEvent(new CustomEvent('pto:rank-focus', { detail: { rank: msg.hl.rank } }));
       }
       reportTo(ev.source);

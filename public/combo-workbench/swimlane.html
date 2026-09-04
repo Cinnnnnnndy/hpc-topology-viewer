@@ -959,10 +959,60 @@
         if (linkedFocusActive()) selectionFocusActive = false;
         draw();
       });
+      /* 别处选中一个 Rank（主视图/整网图点了一张卡）→ **直接把那条泳道翻出来**，
+         而不是把其余泳道压暗。压暗的问题有两个：一是这份 mock 只模拟 32 个物理
+         Rank 里的一部分代表行，压暗之后整屏发灰、真正那一行却还折在收起的父行
+         里，读者看到的是「全灰、没有主语」；二是「哪一行是它」这个问题，压暗只
+         能靠排除法回答，翻出来才是直接回答。
+         做法：自顶向下把父链逐级展开（每一级都走上游自己的 toggleRowExpand，
+         展开态机、范围、状态栏文案都归它管，这里不另写一套），最后展开这一行
+         本身，再把它滚进视野。这份 mock 里没有这个 Rank 时什么也不做——不假装
+         定位到一行不相干的泳道。 */
+      let laneLayoutCache = [];
+      function scrollRowIntoView(id) {
+        const hit = laneLayoutCache.find(item => item.lane.id === id);
+        if (!hit || !scroll) return;
+        const pad = 10;
+        const top = hit.y - pad, bottom = hit.y + hit.rowH + pad;
+        if (top < scroll.scrollTop) scroll.scrollTop = Math.max(0, top);
+        else if (bottom > scroll.scrollTop + scroll.clientHeight) {
+          scroll.scrollTop = Math.max(0, bottom - scroll.clientHeight);
+        }
+      }
+      function revealRankRow(n) {
+        const lane = rows.find(item => item.rowType === 'rank' && item.meta && item.meta.rank === n);
+        if (!lane) return false;
+        /* 层级闸：Rank 行的 level 是 'rank'，而 activeLevel==='overview' 时
+           visibleRows 只放行 'overview'——不先抬一档，展开了也还是看不见。 */
+        if (activeLevel === 'overview') setActiveLevel('layer');
+        const chain = [];
+        for (let cur = lane; cur; cur = cur.parentRow ? rows.find(item => item.id === cur.parentRow) : null) {
+          chain.unshift(cur);
+        }
+        chain.forEach(item => {
+          if (isExpandableRow(item) && !expandedRowIds.has(item.id)) toggleRowExpand(item.id);
+        });
+        draw();
+        requestAnimationFrame(() => scrollRowIntoView(lane.id));
+        return true;
+      }
       window.addEventListener('pto:rank-focus', event => {
         const rank = event.detail?.rank;
-        linkedRankFocus = Number.isInteger(rank) && rank >= 0 ? rank : null;
-        if (linkedRankFocus !== null) selectionFocusActive = false;
+        const n = Number.isInteger(rank) && rank >= 0 ? rank : null;
+        linkedRankFocus = null;              /* 不再靠压暗别人来指认 */
+        if (n === null) { draw(); return; }
+        selectionFocusActive = false;
+        if (revealRankRow(n)) return;
+        /* 这份 mock 只模拟 32 Rank 里的**一个 DP 副本**（activeDp=1 → Rank 16–31），
+           别处选中的 Rank 不一定在里面。这时不动泳道、也不假装定位到一行不相干的
+           泳道，只在它自己那条状态行里说明白——状态行是这一屏本来就有的「刚才
+           发生了什么」，不是浮在画布上的徽标。 */
+        const known = rows.filter(item => item.rowType === 'rank' && item.meta)
+          .map(item => item.meta.rank).sort((a, b) => a - b);
+        const st = document.getElementById('statusText');
+        if (st && known.length) {
+          st.textContent = `Rank ${n} 不在这份 32 Rank 模拟拓扑里（只模拟 DP${PARALLEL_WORLD.activeDp} 副本：Rank ${known[0]}–${known[known.length - 1]}），泳道未移动`;
+        }
         draw();
       });
       /* 选中的那一**节** kernel（④ 本仓新增那块色带里的一段）。跟 selectedId 分开存：
@@ -1788,6 +1838,9 @@
           layoutY += rowH;
           return layout;
         });
+        /* 每一行的纵向位置只有这儿算得出来（行高随展开态变）。留一份出来给
+           scrollRowIntoView 用——别处再算一遍就是把这套规则抄第二份。 */
+        laneLayoutCache = laneLayouts;
         const viewportW = Math.max(640, scroll.clientWidth);
         const width = Math.round(gutter + Math.max(520, viewportW - gutter) * zoom);
         const height = layoutY + 12;
