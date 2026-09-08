@@ -2813,8 +2813,6 @@ function renderDim(D){
     var cy = {tp:R.op+HR.op+26, ep:R.op+HR.op+26, pp:R.lay+HR.lay+16, cp:R.inp+HR.inp+16, dp:R.net+HR.net+16}[dim];
     var pts = []; for(var a=0;a<N;a++) pts.push([scx(a), cy]);
     parts.push('<g opacity=".95" pointer-events="none">'+edgeSVG(pts, prim, col, {mid:dim, ring:dim==='cp'&&prim==='p2p'})+'</g>');
-    var actB = D.mbs*(D.seq/D.cp)*D.hidden*2;
-    function mb(b){ return b>=Math.pow(2,30) ? fmtGB(b)+' GB' : Math.round(b/Math.pow(2,20))+' MB'; }
     /* 措辞按**九层可观测性**（§15 六）的词汇统一：第一行是原语，第二行左边写
        「载荷」右边写「时序」——这一屏与读出卡那排九格、画布上的芯片说的是同一
        套话，读者不用在三处各学一套名字。原来第一行把原语、时序、载荷挤成一句，
@@ -2822,9 +2820,11 @@ function renderDim(D){
     var PRIM9 = {tp:'TP AllReduce', pp:'PP P2P（有方向）',
                  dp:'DP 梯度 AllReduce', ep:'EP All-to-All（top-'+(D.topk||'—')+' 路由）',
                  cp:{p2p:'CP Ring（P2P 逐跳传 KV 块）', alltoall:'CP Ulysses（All-to-All 换轴）', allgather:'CP 朴素（AllGather 收全序列）'}[prim]}[dim];
-    var LOAD9 = {tp:'每次≈'+mb(actB), pp:'每 μbatch≈'+mb(actB),
-                 dp:'每卡≈'+mb(2*paramsPerCard(D,0)), ep:'各边不等（由路由决定）',
-                 cp:'每跳一块 KV'}[dim];
+    /* 载荷改成调 commLoad9——这一屏原来自己算一份（每次≈64MB / 每卡≈5.5GB），
+       「模型分片」那一屏另有一份（随机的 24–38MB），同一个量两屏两个数，DP 差到
+       160 倍。现在两屏读同一支，量词也统一（×2/层 · /μb · /步）。 */
+    var LD9 = commLoad9(D, dim, 0);
+    var LOAD9 = LD9 ? LD9.txt : '';
     var WHEN9 = {tp:'层内（算子内部）· 每层 2 次，不跨层',
                  ep:'层内（MoE 层）· 每层 dispatch+combine 各一次；路由逐层重算',
                  cp:'层内（attention 内部）· 每层一轮，不跨层',
@@ -4549,15 +4549,26 @@ function netScene(D, g, box, step){
       'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="'+(fs9*0.62).toFixed(1)+'"'));
   }
 
-  function commMetricTxt(realId, fakeId, fakeLabel, li9){
+  /* 只取**耗时**。字节不再从这儿出——sdOpBuckets 给通信节点的字节是
+     `sm(40, 24, 38)` 的种子随机数，跟维度、组规模、传的是什么全都无关（见
+     commLoad9 那段注释）。耗时这份仍是示意口径（按算子类别估的量级），所以凡是
+     用到它的地方都写 ≈ 并注明「非实测」；它只服务「影响」那一档的相对比较。 */
+  function commMsTxt(D9, realId, fakeId, li9){
     var n9 = null, i9;
-    if(realId) for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === realId){ n9 = IXg.G.nodes[i9]; break; }
-    if(!n9 || n9.colorKey !== 'opv:comm') n9 = {id:fakeId, label:fakeLabel, colorKey:'opv:comm'};
-    var bk9 = sdOpBuckets(li9, n9, D);
-    var parts9 = bk9.perf.slice();
-    if(bk9.moe && bk9.moe.length) parts9 = parts9.concat(bk9.moe);
-    return parts9.join(' · ');
+    if(realId && IXg) for(i9 = 0; i9 < IXg.G.nodes.length; i9++) if(IXg.G.nodes[i9].id === realId){ n9 = IXg.G.nodes[i9]; break; }
+    if(!n9 || n9.colorKey !== 'opv:comm') n9 = {id:fakeId, label:fakeId, colorKey:'opv:comm'};
+    var bk9 = sdOpBuckets(li9, n9, D9);
+    var ms9 = (bk9.perf || []).filter(function(x){ return /ms$/.test(x); })[0];
+    return ms9 || '';
   }
+  /* 弧线（算子级那一层）与卡对卡那一层写同一句话：载荷走 commLoad9，耗时走
+     commMsTxt 并标 ≈。两层线画的是同一组通信关系的两个粒度，读数不能是两套。 */
+  function loadTxt9(dim9, li9, realId, fakeId){
+    var L9 = commLoad9(D, dim9, Math.floor(li9 / D.layersPerStage));
+    var ms9 = commMsTxt(D, realId, fakeId, li9);
+    return (L9 ? '载荷 ' + L9.txt : '') + (ms9 ? ' · 耗时 ≈' + ms9 + '（示意口径，非实测）' : '');
+  }
+
   /* ── L5 · 算子级通信（开关「通信」，URL comm=1）──────────────────────────
      四种维的通信各锚在**它自己的算子**上——不同的算子、不同的切分，通信关系
      不同，这正是这层要画的事实（全部来自 net-sharding 的 flowOf/ADDED 真数据）：
@@ -4660,7 +4671,7 @@ function netScene(D, g, box, step){
            发生在哪个 p」——副标题把 pF 与它管的层号范围直接写出来。 */
         if(mTP){
           var l0TP9 = pF*lps, l1TP9 = Math.min(D.layers, (pF+1)*lps) - 1;
-          var mtTP9 = commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9);
+          var mtTP9 = loadTxt9('tp', liRep9, 'attention_reduce_scatter', 'tp-ag-rs');
           /* 浮标签只留「这是什么通信、发生在哪一组」，读数从副标题里搬到线上——
              同一份数字写两处，看图的人得先判断这两处是不是同一个数才能往下读。 */
           arcLab9(mTP, 'TP·AG/RS', 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内 · PP'+pF+' · L'+l0TP9+'–L'+l1TP9+' · TP 组 ×'+D.tp+' · '+mtTP9, VC.tp);
@@ -4696,7 +4707,7 @@ function netScene(D, g, box, step){
              读数走 commMetricTxt 的假节点退化：id 'cp-ag-kv' 是这一维专属的，
              sin-hash 种子因此与别的维不同，但公式一模一样、每次读到同一个数。
              ——「线画出来了读数就得在」这条纪律在这里正是靠它兑现的。 */
-          var mtCP9 = commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9);
+          var mtCP9 = loadTxt9('cp', liRep9, null, 'cp-ag-kv');
           arcLab9(mCP, 'CP·AG', 'AllGather(KV) · CP 组内（只在 attention 处） · CP 组 ×'+D.cp+' · '+mtCP9, VC.cp);
         }
       }
@@ -4719,7 +4730,7 @@ function netScene(D, g, box, step){
         });
         if(mEP){
           var liRepEP9 = Math.min(D.layers - 1, Math.max(liRep9, denseTop));
-          var mtEP9 = commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9);
+          var mtEP9 = loadTxt9('ep', liRepEP9, 'moe_all_to_all_dispatch', 'ep-a2a');
           arcLab9([mEP[0], mEP[1] + 32], 'EP·A2A', 'AllToAll ×2 · EP 组（token 去而复返） · 对端 '+epN9+' 张卡 · L'+liRepEP9+' · '+mtEP9, VC.ep);
         }
       }
@@ -4739,7 +4750,7 @@ function netScene(D, g, box, step){
                     P(nPN.uc, nPN.vc, wB3, offC(dF, tF)), VC.pp, 1.2, null, 'fwd');
         }
         if(mPP){
-          var mtPP9 = commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9);
+          var mtPP9 = loadTxt9('pp', liRep9, null, 'pp-p2p');
           arcLab9([mPP[0], mPP[1] - 18], 'PP·P2P', 'P2P · 段→段只传激活 · 共 '+(D.pp - 1)+' 处段边界 · '+mtPP9, VC.pp);
         }
       }
@@ -4758,7 +4769,7 @@ function netScene(D, g, box, step){
                     P(nDP.uc, nDP.v0 - 0.03, wMid(pF), offC(d3+1, tF)), VC.dp, .9, '4 3', 'back');
         }
         if(mDP){
-          var mtDP9 = commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9);
+          var mtDP9 = loadTxt9('dp', liRep9, null, 'dp-ar-grad');
           arcLab9(mDP, 'DP·AR', '梯度 AllReduce · DP 组（反向） · DP 组 ×'+KD+' 个副本 · '+mtDP9, VC.dp);
         }
       }
@@ -5437,25 +5448,25 @@ function netScene(D, g, box, step){
        code: memSel9 === 'act' ? 'TP·AG/RS' : 'TP·AR',
        label: memSel9 === 'act' ? 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'
                                 : 'TP AllReduce · 组内同步',
-       metric: commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRep9c)},
+       load: commLoad9(D, 'tp', pF9c), ms: commMsTxt(D, 'attention_reduce_scatter', 'tp-ag-rs', liRep9c)},
       /* CP：s 被切成 cp 段，算全局注意力得把别人那几段的 KV 取回来。
          netOff 下这一条交给下面的地面流量带画（那一屏的语汇是贴地的抬升弧），
          这里只补它够不着的两种情形：整网内容打开、以及物理平铺（见 physSel9）。 */
       {dim:'cp', on: cw9.cp && commLit('cp') && cutCP && D.cp > 1 && (!ui.netOff || physSel9), prim:'allgather',
        xf:'ag', grain:'分块之间', code:'CP·AG',
-       label:'AllGather(KV) · CP 组（激活）', metric: commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRep9c)},
+       label:'AllGather(KV) · CP 组（激活）', load: commLoad9(D, 'cp', pF9c), ms: commMsTxt(D, null, 'cp-ag-kv', liRep9c)},
       {dim:'pp', on: cw9.pp && commLit('pp') && cutPP && D.pp > 1, prim:'p2p',
        xf:'p2p', grain:'段与段之间', code:'PP·P2P',
-       label:'PP P2P · 段→段只传激活', metric: commMetricTxt(null, 'pp-p2p', 'PP P2P', liRep9c)},
+       label:'PP P2P · 段→段只传激活', load: commLoad9(D, 'pp', pF9c), ms: commMsTxt(D, null, 'pp-p2p', liRep9c)},
       {dim:'dp', on: cw9.dp && commLit('dp') && (!ui.netOff || physSel9) && cutDP && D.dp > 1, prim:'allreduce',
        /* 拨了 ZeRO 之后 DP 这条边换了原语也换了效果：不再 AllReduce 成同一份，
           而是 ReduceScatter 成各留一段。画布上必须跟着变，否则它和读出卡打架。 */
        xf: D.zero >= 2 ? 'rs' : 'ar', grain: D.zero >= 2 ? '副本 → 分块' : '副本之间',
        code: D.zero >= 2 ? 'DP·RS' : 'DP·AR',
-       label: D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）' : '梯度 AllReduce · DP 组（反向）', metric: commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRep9c)},
+       label: D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）' : '梯度 AllReduce · DP 组（反向）', load: commLoad9(D, 'dp', pF9c), ms: commMsTxt(D, null, 'dp-ar-grad', liRep9c)},
       {dim:'ep', on: cw9.ep && commLit('ep') && (!ui.netOff || physSel9) && cutEP && D.moe && D.ep > 1, prim:'alltoall',
        xf:'a2a', grain:'分块之间 · 重排', code:'EP·A2A',
-       label:'AllToAll · EP 组（token 去而复返）', metric: commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEP9c)}
+       label:'AllToAll · EP 组（token 去而复返）', load: commLoad9(D, 'ep', pF9c), ms: commMsTxt(D, 'moe_all_to_all_dispatch', 'ep-a2a', liRepEP9c)}
     ];
     var ccLblN = 0;
     CARD_COMM.forEach(function(cs9){
@@ -5537,15 +5548,25 @@ function netScene(D, g, box, step){
         for(ci9 = 0; ci9 < mN9; ci9++){ cx9 += pts9[ci9][0]; cy9 += pts9[ci9][1]; }
         cx9 /= mN9; cy9 /= mN9;
       }
-      var tip9 = cs9.label + (cs9.metric ? ' · ' + cs9.metric : '');
+      /* 悬停给全量：这一维搬的是什么 · 多大 · 多久重复一次 · 怎么算出来的 ·
+         本段合计。耗时**不**并进这一行——它属于「时序 / 影响」那两档。 */
+      var ld9 = cs9.load;
+      var tip9 = cs9.label
+        + (ld9 ? ' · 载荷 ' + ld9.txt + (ld9.sum ? '（' + ld9.sum + '）' : '') + ' —— ' + ld9.how : '')
+        + (ld9 && !ld9.exact ? '' : '')
+        + (cs9.ms ? ' · 耗时 ≈' + cs9.ms + '（示意口径，非实测）' : '');
       /* 时序 / 影响这两层不另起一张时间轴：它们问的是**这条边**什么时候发生、
          代价多大，答案就写在这条边自己的芯片上（一步里的排布去「时间·流」，
          九格里那两格点得过去）。 */
-      var msTxt9 = (String(cs9.metric || '').match(/[\d.]+ms/) || [''])[0];
+      var msTxt9 = cs9.ms || '';
       var WHENC9 = {tp:'每层×2', cp:'每层×1', pp:'每 μb', dp:'步末一次', ep:'每层×2'}[cs9.dim];
       /* rank 档的芯片写**关键值**（搬多少 · 多久），不写名称；名称进悬停。
          没有读数可抽时（比如这一维还没给指标）才退回名称，不给一枚空芯片。 */
-      var code9 = metricBrief(cs9.metric) || cs9.code;
+      /* 芯片写**载荷 + 量词**（64MB ×2/层），不写耗时也不写名称：
+         这一屏答的是「谁持有什么、跟谁来往、搬多少」，是静态归属，没有时间轴；
+         把 0.17ms 钉在这儿等于把一个时间**区间**压成一个点，还不说它落在前向、
+         反向还是步末。耗时留给「时序 / 影响」两档（cgrain=time / cost）。 */
+      var code9 = (ld9 && ld9.txt) || cs9.code;
       if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
       else if(cgCost9) code9 = cs9.dim === 'pp' ? ('气泡 ' + Math.round(D.bubble*100) + '%') : (msTxt9 || cs9.code);
       /* 影响档：边的粗细按耗时给（1.2–4.2），最贵的那条一眼就粗出来。 */
@@ -5737,7 +5758,9 @@ function netScene(D, g, box, step){
           if(xf9) body.push(xfBadge([at9[0], at9[1] - 10*zoomF9], xf9, col9, grain9, 0.6*zoomF9));
           return;
         }
-        commChip([at9[0], at9[1] - 10], metricBrief(metric9) || code9, col9,
+        /* 与卡对卡那一层同一条纪律：芯片写载荷（含量词），耗时只进悬停并标 ≈ */
+        var ldT9 = (String(metric9 || '').match(/载荷\s+([^·]+?)(?=\s+·|$)/) || [])[1];
+        commChip([at9[0], at9[1] - 10], (ldT9 && ldT9.trim()) || code9, col9,
           text9 + (metric9 ? ' · ' + metric9 : ''), zoomF9);
       }
       /* 代表层同 drawCommArcs 的 liRep9——同一层同一维度读到的是同一个数，
@@ -5746,7 +5769,7 @@ function netScene(D, g, box, step){
       if(wantTP9){
         var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6, 'bi');
         floorLab(atTP9, 'TP·AG/RS', 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
-          commMetricTxt('attention_reduce_scatter', 'tp-ag-rs', 'TP AllGather/Reduce-Scatter', liRepFloor9),
+          loadTxt9('tp', liRepFloor9, 'attention_reduce_scatter', 'tp-ag-rs'),
           'ag', '分块之间');
       }
       if(wantEP9){
@@ -5762,7 +5785,7 @@ function netScene(D, g, box, step){
         });
         var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
         floorLab(atEP9, 'EP·A2A', 'AllToAll · EP 组 dispatch（示意量：条宽随 token 数变，真值要 router 输出才知道）', VC.ep,
-          commMetricTxt('moe_all_to_all_dispatch', 'ep-a2a', 'EP AllToAll', liRepEPFloor9),
+          loadTxt9('ep', liRepEPFloor9, 'moe_all_to_all_dispatch', 'ep-a2a'),
           'a2a', '分块之间 · 重排');
       }
       if(wantDP9){
@@ -5775,7 +5798,7 @@ function netScene(D, g, box, step){
         floorLab(atDP9, (D.zero >= 2 ? 'DP·RS' : 'DP·AR'), (D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）'
                         : (memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
                                               : '梯度 AllReduce · DP 组（反向）')), VC.dp,
-          commMetricTxt(null, 'dp-ar-grad', 'DP AllReduce(grad)', liRepFloor9),
+          loadTxt9('dp', liRepFloor9, null, 'dp-ar-grad'),
           D.zero >= 2 ? 'rs' : 'ar', D.zero >= 2 ? '副本 → 分块' : '副本之间');
       }
       if(wantCP9){
@@ -5783,7 +5806,7 @@ function netScene(D, g, box, step){
            KV），与 DP 那条只在反向末尾发生的虚线正好是一对照。 */
         var atCP9 = floorBand(groupMembers('cp', g, D).filter(function(r9){ return r9 !== g; }), VC.cp, null, 1.5);
         floorLab(atCP9, 'CP·AG', 'AllGather(KV) · CP 组（前向，激活）', VC.cp,
-          commMetricTxt(null, 'cp-ag-kv', 'CP AllGather(KV)', liRepFloor9),
+          loadTxt9('cp', liRepFloor9, null, 'cp-ag-kv'),
           'ag', '分块之间');
       }
     }
@@ -6500,6 +6523,51 @@ function sdSnap(li, D){
    mHC / 汇合看范数增量；带参算子看 W / ∇ / Δ per W；其余落到激活统计 σ / Amax / ∇。
    分桶而不是拼死一条字符串，是因为工具条上的「数据」多选要能逐类关掉——
    关掉某一类，那几个词就该从这行里消失，而不是整行一起没。 */
+/* ══ 一条通信边的载荷：五维共用的唯一口径 ══════════════════════════════════
+   之前「模型分片」那一屏边上的字节走的是 sdOpBuckets 里那条 `sm(40, 24, 38)`——
+   一个 24–38MB 的**种子随机数**，跟是哪一维、传的是激活还是梯度、组有多大全都
+   无关。于是五条边的读数挤在同一个窄带里（31 / 26 / 34 / 33MB），而「单维切分」
+   那一屏是按配置真算的：DP 每卡 5.5GB、TP 每次 64MB。同一个量，两屏差到 160 倍，
+   读出卡上「梯度 5.5 GB」还和那根 34MB 的 DP 边摆在同一个画面里对撞。
+   现在两屏都调这一支，再也不会各算各的。
+
+   算得出的只有三维（都只用配置里的数，不引入新假设）：
+     TP —— 激活 mbs×(seq/CP)×hidden×2B，每层进出 TP 区各一次
+     PP —— 同一份激活，段边界每个 micro-batch 一次
+     DP —— 本卡梯度 bf16 全量 = 2×paramsPerCard，步末一次
+   CP 与 EP **不给数**：CP 是环上逐跳取一块 KV（块大小取决于 kv 头数与切法），
+   EP 各边不等、由 top-k 路由当场决定——硬凑一个数就是把示意值当成算出来的。
+   宁缺毋误，和这一屏别处一个纪律。
+
+   per 是**量词**：字节是「一次搬多少」，不写清楚一次是多久重复一遍，四条边就会被
+   当成同一口径读——实际 TP 每层 2 次、EP 每 MoE 层 2 次、PP 每 μb 一次、DP 每步
+   一次，重复次数差 2–3 个数量级。 */
+function commLoad9(D, dim, ppRank){
+  function mb9(b){ return b >= Math.pow(2,30) ? fmtGB(b)+'GB' : Math.round(b/Math.pow(2,20))+'MB'; }
+  var actB = D.mbs * (D.seq / Math.max(1, D.cp)) * D.hidden * 2;
+  var T = {
+    tp: {bytes: actB, per: '×2/层',
+         how: '激活 mbs×(seq/CP)×hidden×2B；每层进出 TP 区各一次，不跨层'},
+    pp: {bytes: actB, per: '/μb',
+         how: '段边界只传激活；每个 micro-batch 一次，共 ' + Math.max(0, D.pp-1) + ' 处边界'},
+    dp: {bytes: 2 * paramsPerCard(D, ppRank || 0), per: '/步',
+         how: '本卡梯度 bf16 全量 = 2×参数量；步末一次，层内不发生'},
+    cp: {bytes: null, per: '/跳', txt: '每跳一块 KV',
+         how: '环上逐跳取回一块 KV，块大小取决于 kv 头数与切法——不给数，宁缺毋误'},
+    ep: {bytes: null, per: '×2/MoE 层', txt: '各边不等',
+         how: '由 top-k 路由当场决定，各边不等；每个 MoE 层 dispatch + combine 各一次'}
+  }[dim];
+  if(!T) return null;
+  T.dim = dim;
+  T.exact = T.bytes !== null;
+  T.txt = (T.bytes !== null ? mb9(T.bytes) : T.txt) + ' ' + T.per;
+  /* 本段合计：一张卡持 layersPerStage 层，图上只画一条边，「每层都发生」这件事
+     现在只由重复痕暗示——把合计写进悬停，读者才知道这条边一趟前向要走多少。 */
+  if(T.bytes !== null && (dim === 'tp')){
+    T.sum = mb9(T.bytes * 2 * D.layersPerStage) + '／本段 ' + D.layersPerStage + ' 层一趟前向';
+  }
+  return T;
+}
 function sdOpBuckets(li, n, D){
   var s9 = sdSnap(li, D);
   var idx = 0, id9 = String(n.id || ''), i9;
@@ -12326,7 +12394,10 @@ function commL9(D, dim){
     /* 这一格曾经写成「答得出」，是抬高了自己：那三个数走的是 sdOpBuckets 的
        **示意口径**（按算子类别给量级，不是拿真 shape 算出来的），画布上 EP 那条
        边旁边一直标着「示意量」。有量级、没真值，正是「只答了一半」。 */
-    load:  ['h','有量级、没真值：字节/带宽/耗时是按算子类别估的示意口径，不是从真 shape 算出来的'],
+    /* 字节这一半现在是**按配置算的**（TP/PP：mbs×seq/CP×hidden×2B；DP：2×参数量，
+       见 commLoad9），CP/EP 仍然给不出——CP 逐跳一块 KV、EP 各边由路由当场决定。
+       耗时那一半照旧是示意口径。所以还是「只答了一半」，但半在哪儿变了，说法要跟着改。 */
+    load:  ['h','字节按配置真算（TP/PP/DP），CP 与 EP 由路由/切法决定给不出；耗时仍是示意口径，非实测'],
     route: dim === 'ep'
              ? ['y','router 判定之后 permute 成连续段：整张图上唯一一条按数据内容决定去向的边']
              : ['na','这一维的去向由切法决定，与数据内容无关——不适用，不是缺'],
