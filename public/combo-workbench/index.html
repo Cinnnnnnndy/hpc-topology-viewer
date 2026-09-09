@@ -590,13 +590,16 @@ body.is-resizing iframe{pointer-events:none}
             </div>
           </div>
         </div>
+        <!-- 开关下面原来跟着两段字：一段讲「会变成什么样」，一段是口径假设。
+             按下去两秒就看见的事不必先用三行字说一遍；口径假设也不该常驻在
+             配置面板里——它在 pattern 自己的齿轮面板、pattern.json 的约束条、
+             README 与代码注释里都写着，这儿收进悬停就够。 -->
         <div class="global-config__world">
-          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13px">
-            <input type="checkbox" id="globalFabric" style="margin-top:2px">
-            <span><strong>按载体着色（UB / RoCE）</strong><br>
-              <span style="opacity:.7">两格拓扑图的通信边改按「走哪张网」上色：超节点内 UB 青、跨超节点 RoCE 橙。物理平铺下还会画出机柜底带与超节点框。</span></span>
+          <label style="display:flex;gap:8px;align-items:center;cursor:help;font-size:13px"
+                 title="两格拓扑图的通信边改按「走哪张网」上色：超节点内 UB 青、跨超节点 RoCE 橙；物理平铺下还会画出机柜底带与超节点框。&#10;&#10;⚠ 口径假设：超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间。公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档；板间与机架间是否降速待灵衢团队确认。">
+            <input type="checkbox" id="globalFabric">
+            <span><strong>按载体着色（UB / RoCE）</strong> <span style="opacity:.55">ⓘ</span></span>
           </label>
-          <p class="global-config__note">⚠ 口径假设：<b>超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间</b>。公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档；板间与机架间是否降速待灵衢团队确认。</p>
         </div>
       </section>
       <!-- 「观察方式」（观察层级 / 卡片内容 / 设备排列）原来在这里，现已移到
