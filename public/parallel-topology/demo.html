@@ -1094,7 +1094,7 @@ var PRESETS = [
      L0–L45 的最近的合法值，且并行度一个没动（tp2·cp1·pp4·dp16·ep8 照旧），
      每段 12 层。真实模型的 46 层在 4 个 stage 上本来就是不均分的
      （12/11/12/11，见泳道图那一屏），这里按本页的均分口径取 12/12/12/12。 */
-  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  {id:'default128', name:'默认·128卡 tp2·cp1·pp4·dp16·ep8', cfg:{world:128, tp:2, cp:1, pp:4, ep:8, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
   /* 同为 128 卡的另外两档，用来在「四维各自出不出得来形状」上做对照——评审提的
      「dp 是 16 合理么 / 要不要放大 EP」问的就是这件事，与其在默认里定死，不如三档
      并排放进配置抽屉当场切。EP 组数 = (dp·cp·tp)/(ep·etp)：
@@ -1102,18 +1102,18 @@ var PRESETS = [
        ep4-128     tp2·pp4·dp16·ep4 → 32/4  =  8 组，每组 2 列（组更多、组框更密）
        tp4-128     tp4·pp4·dp8 ·ep2 →  8/2… TP 加倍、DP 减半，换一条轴看形状
      三条的模型规格逐位相同，只动并行度——否则比的就不是切法而是模型。 */
-  {id:'ep4d128', name:'128卡 tp2·pp4·dp16·ep4', cfg:{world:128, tp:2, cp:1, pp:4, ep:4, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
-  {id:'tp4d128', name:'128卡 tp4·pp4·dp8·ep2', cfg:{world:128, tp:4, cp:1, pp:4, ep:2, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
-  {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}},
+  {id:'ep4d128', name:'128卡 tp2·pp4·dp16·ep4', cfg:{world:128, tp:2, cp:1, pp:4, ep:4, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
+  {id:'tp4d128', name:'128卡 tp4·pp4·dp8·ep2', cfg:{world:128, tp:4, cp:1, pp:4, ep:2, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:8, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
+  {id:'dense64', name:'稠密·64卡', cfg:{world:64, tp:4, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
   /* 长序列预置照旧是 MoE：正视/侧视挂的真图（openpangu-flash）本来就有专家层，
      e 轴不因为开了 CP 就消失——CP 切的是输入的 s，EP 分的是权重的 e，两刀并存。
      写成 experts:0 会让 EP 按钮凭空不见，像是被 CP 挤掉了，实则是配置把模型换掉了。
      ep·etp=8 ≤ tp·cp=16：EP 组不咬 DP，但会跨到 CP 轴，一组会跨到 cp×2。 */
   {id:'longcp', name:'长序列CP·64卡 tp4·cp4·pp2·ep8', cfg:{world:64, tp:4, cp:4, pp:2, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:131072, experts:64, topk:8, mbs:1, ga:16, hbm:64}},
-  {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64}},
+  {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
   {id:'story128', name:'故事·128卡 tp2·pp4·dp16（48层·H8192）', cfg:{world:128, tp:2, cp:1, pp:4, ep:1, etp:1, layers:48, hidden:8192, heads:64, kv:8, ffn:32768, vocab:128256, seq:8192, experts:0, topk:0, mbs:4, ga:8, hbm:64}},
   {id:'pangu', name:'盘古ProMoE·4000卡', cfg:{world:4000, tp:8, cp:1, pp:5, ep:2, etp:1, layers:40, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:64, topk:8, mbs:1, ga:20, hbm:64}},
-  {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64}}
+  {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 
 /* ═════════ 状态（URL 即状态） ═════════ */
@@ -1282,7 +1282,10 @@ function urlLoad(){
   document.documentElement.setAttribute('data-theme', theme);
   var p = PRESETS.filter(function(x){ return x.id===q.get('preset'); })[0];
   if(p){ cfg = JSON.parse(JSON.stringify(p.cfg)); activePreset = p.id; }
-  ['world','tp','cp','pp','ep','etp','layers','hidden','heads','kv','ffn','vocab','seq','experts','topk','mbs','ga','hbm'].forEach(function(k){
+  ['world','tp','cp','pp','ep','etp','layers','hidden','heads','kv','ffn','vocab','seq','experts','topk','mbs','ga','hbm',
+   /* 物理链：一台 node 几张卡 / 一个机柜几台 node / 一个超节点几张卡。
+      换了它们，哪些边跨超节点就跟着变——这跟换并行度一样是「这一屏在讲什么」。 */
+   'perNode','nodeRack','podCards'].forEach(function(k){
     var v = parseInt(q.get(k),10);
     if(isFinite(v) && v>=0){ cfg[k]=v; if(p===undefined) activePreset=null; }
   });
@@ -1341,7 +1344,7 @@ function urlLoad(){
   /* cgrain=rank|block|intra：通信连线画在哪一级粒度上（见 ui.commGrain）。 */
   var cg9 = q.get('cgrain');
   if(cg9 === 'block') cg9 = 'tensor';           /* 老链接：block 是 tensor 这一层的旧名 */
-  if(['rank','tensor','route','time','cost','intra'].indexOf(cg9) >= 0) ui.commGrain = cg9;
+  if(['rank','tensor','route','time','cost','intra','fabric'].indexOf(cg9) >= 0) ui.commGrain = cg9;
   /* commk=tp,ep：只画这几类通信。缺省全开，所以只有**关掉过**的链接才带它。 */
   if(q.has('commk')){
     var ck0 = String(q.get('commk')).split(',');
@@ -1461,6 +1464,16 @@ function derive(c){
   var D = {tp:+c.tp, cp:+c.cp, pp:+c.pp, world:+c.world, layers:+c.layers, hidden:+c.hidden,
     heads:+c.heads, kv:+c.kv, ffn:+c.ffn, vocab:+c.vocab, seq:+c.seq, experts:+c.experts,
     topk:+c.topk, mbs:+c.mbs, ga:+c.ga, hbm:+c.hbm, errors:[], warns:[]};
+  /* 物理链的三个尺寸：卡（rank）除了挂在并行坐标 (tp,cp,pp,dp,ep) 上，还挂在
+     物理坐标 (超节点, 机柜, node, 槽位) 上——两套坐标的交叉就是「模型怎么切」与
+     「机器怎么摆」的接缝。缺省照 CloudMatrix384 的公开口径：
+       1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片
+       48 node = 1 超节点 = 384 卡，摊在 16 个机柜（12 计算 + 4 通信）
+     这三个数**不参与整除校验**：它们答的是「插在哪」，不是「切成几份」，
+     world 不被 perNode 整除只意味着最后一台机没插满，不是配置非法。 */
+  D.perNode = Math.max(1, +c.perNode || 8);
+  D.nodeRack = Math.max(1, +c.nodeRack || 4);
+  D.podCards = Math.max(1, +c.podCards || 384);
   D.moe = D.experts > 0;
   D.ep = D.moe ? +c.ep : 1; D.etp = D.moe ? +c.etp : 1;
   var denom = D.tp*D.cp*D.pp;
@@ -2998,6 +3011,9 @@ function netScene(D, g, box, step){
      张卡周围」那一团的解法。 */
   var cgRank9 = ui.commGrain === 'rank', cgBlock9 = ui.commGrain === 'tensor', cgIntra9 = ui.commGrain === 'intra';
   var cgTime9 = ui.commGrain === 'time', cgCost9 = ui.commGrain === 'cost', cgRoute9 = ui.commGrain === 'route';
+  /* 载体档：这条边走哪张网（UB / RoCE）。它和 rank 档画的是同一批边、同一批
+     锚点，只换着色与芯片——所以它归在「卡对卡」这一族里，不另起一层线。 */
+  var cgFab9 = ui.commGrain === 'fabric';
   /* 只有「rank 内」那一层不画跨卡的边——它讲的是这张卡自己的事。
      时序 / 影响 / 路由 现在都长在**同一批边**上（何时 / 代价 / token 分了多少），
      所以它们照旧要把边画出来；早先那一版把这三层也一起排除掉，是因为当时它们
@@ -3092,12 +3108,14 @@ function netScene(D, g, box, step){
   /* ── 物理平铺（第六颗开关，ui.kPhys）───────────────────────────────────
      前面五刀答的都是「归哪个并行组」，这一颗故意不问那件事——只答「插在机房
      哪个槽位」。只在卡维度下才有意义（不打开 Rank 时压根没有「一张卡」可摆）。
-     口径抄 src/scene/deployment.ts 的 physOf：host=⌊rank/CPH⌋、slot=rank%CPH，
-     CPH=8（NPUS_PER_NODE）。 */
+     口径归物理链那一支（physOf）——原来这儿写死 CPH=8「机 = 8 卡」，是个不由
+     并行配置推出的拓扑假设；现在 node 的大小是配置里的一项（D.perNode，缺省 8，
+     照 CloudMatrix384：1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片），
+     换预置、换机型都跟着走，且与「载体」那一层判 UB/RoCE 用的是同一支。 */
   var physOn = ui.cardMode && ui.kPhys;
-  var CPH = 8;
-  function hostOf(r9){ return Math.floor(r9 / CPH); }
-  function slotOf(r9){ return r9 % CPH; }
+  var CPH = D.perNode;
+  function hostOf(r9){ return physOf(r9, D).node; }
+  function slotOf(r9){ return physOf(r9, D).slot; }
   /* 槽位间距沿用列距的节奏（PHY_CU=CU）。机位间距/卡深原先借的是「卡维度下 PP
      段间缝」的量级（DEP*2.60≈4.4）——那个数字是给两张卡之间**留白**用的，不是
      给单张卡的**厚度**用的，物理平铺这里两件事共用了同一个常数，卡因此被拉成
@@ -5472,6 +5490,11 @@ function netScene(D, g, box, step){
     CARD_COMM.forEach(function(cs9){
       if(!cs9.on) return;
       var mem9 = groupMembers(cs9.dim, g, D);
+      /* 载体与着色必须在这儿就算出来：下面画边（edgeSVG）比读出卡那段注释里
+         那几行**更早**用到 eCol9，而 var 只提升声明不提升赋值——放到后面就是
+         一条 undefined 描边的线（本仓 chipRects 踩过同一个坑）。 */
+      var fb9 = fabricOfGroup(mem9, D), pods9 = podSpan9(mem9, D);
+      var eCol9 = cgFab9 ? fb9.col : VC[cs9.dim];
       if(mem9.length < 2) return;
       /* 层构成下连的是**块**不是卡：这一维的通信发生在哪一块上是有定论的——
          TP 的归约在 attn.out（行切算子算出的是部分和）、EP 的 All-to-All 在
@@ -5532,11 +5555,11 @@ function netScene(D, g, box, step){
           }
           if(!ok9) continue;
           body.push('<g opacity=".26" pointer-events="none">'
-            + edgeSVG(rp9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: 0.7}) + '</g>');
+            + edgeSVG(rp9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: 0.7}) + '</g>');
         }
       }
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
-        + edgeSVG(pts9, cs9.prim, VC[cs9.dim], {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9}) + '</g>');
+        + edgeSVG(pts9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9}) + '</g>');
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
          中心取本卡与下一段的中点，落在那一跳上。 */
       var cx9 = 0, cy9 = 0, mN9 = pts9.length, ci9;
@@ -5549,11 +5572,13 @@ function netScene(D, g, box, step){
         cx9 /= mN9; cy9 /= mN9;
       }
       /* 悬停给全量：这一维搬的是什么 · 多大 · 多久重复一次 · 怎么算出来的 ·
-         本段合计。耗时**不**并进这一行——它属于「时序 / 影响」那两档。 */
+         本段合计 · 走哪张网。耗时**不**并进载荷那一段——它属于「时序 / 影响」两档。 */
       var ld9 = cs9.load;
       var tip9 = cs9.label
         + (ld9 ? ' · 载荷 ' + ld9.txt + (ld9.sum ? '（' + ld9.sum + '）' : '') + ' —— ' + ld9.how : '')
-        + (ld9 && !ld9.exact ? '' : '')
+        + ' · 载体 ' + fb9.name + (fb9.bw ? '（' + fb9.bw + '）' : '')
+        + '：' + (pods9 > 1 ? '这一组横跨 ' + pods9 + ' 个超节点，' : '组内 ' + mem9.length + ' 张卡同在一个超节点，')
+        + fb9.how
         + (cs9.ms ? ' · 耗时 ≈' + cs9.ms + '（示意口径，非实测）' : '');
       /* 时序 / 影响这两层不另起一张时间轴：它们问的是**这条边**什么时候发生、
          代价多大，答案就写在这条边自己的芯片上（一步里的排布去「时间·流」，
@@ -5567,7 +5592,8 @@ function netScene(D, g, box, step){
          把 0.17ms 钉在这儿等于把一个时间**区间**压成一个点，还不说它落在前向、
          反向还是步末。耗时留给「时序 / 影响」两档（cgrain=time / cost）。 */
       var code9 = (ld9 && ld9.txt) || cs9.code;
-      if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
+      if(cgFab9) code9 = fb9.short + (pods9 > 1 ? ' 跨' + pods9 + '超节点' : '');
+      else if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
       else if(cgCost9) code9 = cs9.dim === 'pp' ? ('气泡 ' + Math.round(D.bubble*100) + '%') : (msTxt9 || cs9.code);
       /* 影响档：边的粗细按耗时给（1.2–4.2），最贵的那条一眼就粗出来。 */
       var msNum9 = parseFloat(msTxt9) || 0;
@@ -5582,14 +5608,15 @@ function netScene(D, g, box, step){
       }
       /* rank / 时序 / 影响：一条边一枚极简芯片，钉在「本卡 → 组心」的中途，
          详情走悬停；三档的区别只在芯片上写什么（谁和谁 / 何时 / 代价）。 */
-      if((cgRank9 || cgTime9 || cgCost9) && code9){
+      if((cgRank9 || cgTime9 || cgCost9 || cgFab9) && code9){
         var lp9 = chainCardAnchor[g];
         var bx9 = lp9 ? lp9[0] + (cx9 - lp9[0])*0.58 : cx9, by9 = lp9 ? lp9[1] + (cy9 - lp9[1])*0.58 : cy9;
         var rep9 = ['tp','cp','ep'].indexOf(cs9.dim) >= 0
           ? '这条边**每层都有**（' + WHENC9 + '）——图上那几条淡线就是它沿层的重复；'
           : '这条边**不是每层都有**：' + WHENC9 + '，所以图上没有沿层的重复痕；';
-        commChip([bx9, by9], code9, VC[cs9.dim],
-          rep9 + tip9 + (cgTime9 ? ' · 何时：' + WHENC9 : '') + (cgCost9 ? ' · 代价：' + (msTxt9 || '—') : ''), zoomF9);
+        commChip([bx9, by9], code9, eCol9,
+          rep9 + tip9 + (cgTime9 ? ' · 何时：' + WHENC9 : '') + (cgCost9 ? ' · 代价：' + (msTxt9 || '—') : '')
+          , zoomF9);   /* 载体已经写在 tip9 里了，这儿不再重复一遍 */
       }
       ccLblN++;
     });
@@ -6523,6 +6550,54 @@ function sdSnap(li, D){
    mHC / 汇合看范数增量；带参算子看 W / ∇ / Δ per W；其余落到激活统计 σ / Amax / ∇。
    分桶而不是拼死一条字符串，是因为工具条上的「数据」多选要能逐类关掉——
    关掉某一类，那几个词就该从这行里消失，而不是整行一起没。 */
+/* ══ 物理链：die ⊂ NPU(卡) ⊂ node ⊂ 机柜 ⊂ 超节点 ⊂ 集群 ═══════════════════
+   前五刀答的都是「归哪个并行组」，这一条答的是「插在机房哪个位置」。同一张卡
+   两套坐标各挂一次，通信这件事只有把两套对上才说得完整：一条 AllToAll 是快是
+   慢，不取决于它连了几张卡，取决于这几张卡**在不在同一个超节点里**。
+   （原来只有一个写死的 CPH=8「机 = 8 卡」的拓扑假设，没有链；现在是真的链。） */
+function physOf(r9, D){
+  var pn = D.perNode, nr = D.nodeRack, pc = D.podCards;
+  return {slot: r9 % pn, node: Math.floor(r9/pn),
+          rack: Math.floor(r9/(pn*nr)), pod: Math.floor(r9/pc)};
+}
+/* ══ 载体：这条边走哪张网 ═══════════════════════════════════════════════════
+   按 CloudMatrix384 的公开架构，一个超节点里是三张网：
+     · UB 平面   —— 384 NPU + 192 CPU **非阻塞全互联**，承载 TP/EP 这类细粒度
+                   并行、池化内存的点对点访问、MoE 的 token dispatch/combine
+     · RDMA 平面 —— RoCE，每 NPU 400Gbps，只有 NPU 参与；**跨超节点**才用它
+     · VPC 平面  —— 管理/存储/对外，不承载训练通信，这里不画
+
+   ⚠ 一条口径假设，图上也写着：**超节点内一律按 UB 同一档算，不区分板内 /
+   板间 / 机架间**。公开资料的说法是「单板内、单板间、机架间 NPU 全互联」，
+   读起来是同一档；但板间与机架间到底有没有降速，要灵衢团队确认。真有差异时
+   改的只是这一支的判定与下面那张带宽表，图与读数结构一个字不用动。 */
+var FABRIC9 = {
+  local: {id:'local', name:'片内',  short:'片内',  col:'var(--pt-fg3)', bw:null,
+          how:'同一张卡内部，不出卡'},
+  ub:    {id:'ub',    name:'UB 平面', short:'UB',   col:'#0ea5b7',       bw:'196 GB/s 单向/卡',
+          how:'超节点内非阻塞全互联（灵衢 UnifiedBus）；板内 / 板间 / 机架间按同一档算，待灵衢确认'},
+  roce:  {id:'roce',  name:'RDMA 平面', short:'RoCE', col:'#e0562b',     bw:'400 Gbps/卡',
+          how:'跨超节点 scale-out，走 RoCE；带宽比 UB 低一个数量级，是真正的换挡点'}
+};
+function fabricOf(a9, b9, D){
+  if(a9 === b9) return FABRIC9.local;
+  return physOf(a9, D).pod === physOf(b9, D).pod ? FABRIC9.ub : FABRIC9.roce;
+}
+/* 一整组（一维的通信域）走哪张网：全在同一个超节点里就是纯 UB，跨了就有 RoCE
+   段——混合时按**最慢的那一档**报，因为集合通信的完成时间由最慢的边决定。 */
+function fabricOfGroup(mem9, D){
+  if(!mem9 || mem9.length < 2) return FABRIC9.local;
+  var pod0 = physOf(mem9[0], D).pod, cross = false;
+  for(var i9 = 1; i9 < mem9.length; i9++) if(physOf(mem9[i9], D).pod !== pod0){ cross = true; break; }
+  return cross ? FABRIC9.roce : FABRIC9.ub;
+}
+/* 这一组横跨几个超节点——跨了才需要在图上说，没跨就一个字不写。 */
+function podSpan9(mem9, D){
+  var seen = {}, n = 0;
+  (mem9 || []).forEach(function(r9){ var k = physOf(r9, D).pod; if(!seen[k]){ seen[k] = 1; n++; } });
+  return n;
+}
+
 /* ══ 一条通信边的载荷：五维共用的唯一口径 ══════════════════════════════════
    之前「模型分片」那一屏边上的字节走的是 sdOpBuckets 里那条 `sm(40, 24, 38)`——
    一个 24–38MB 的**种子随机数**，跟是哪一维、传的是激活还是梯度、组有多大全都
@@ -10768,13 +10843,18 @@ function buildCfgSurface(D){
          「看哪几维」是另一根轴（下面那排 TP/CP/PP/DP/EP），两根轴各问各的——
          层问「读哪一面」，维问「读哪几条边」。 */
       + '<div class="cgrow"><span class="pt-seg pt-seg-wrap"'+(ui.commOn?'':' style="opacity:.45;pointer-events:none"')+'>'
-        + ['rank','tensor','route','time','cost','intra'].map(function(gk9){
+        + ['rank','tensor','route','time','cost','intra','fabric'].map(function(gk9){
             var GN9 = {rank:  ['rank','谁和谁 —— 卡与卡的边，一条边一枚芯片，字节/带宽/耗时走悬停'],
                        tensor:['张量','搬的是什么 —— 前态→后态的变换徽章，同时把算子级的弧线放出来'],
                        route: ['路由','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张卡，两者一叠决定这次 A2A 的流量'],
                        time:  ['时序','什么时候搬、藏住没有 —— 本卡这一步的 F/B/AllReduce 排布'],
                        cost:  ['影响','造成了什么后果 —— 空转（气泡）与步末 AllReduce 抬到警示色'],
-                       intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张卡里做完']}[gk9];
+                       intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张卡里做完'],
+                       /* 第十层：这条边**走哪张网**。前九层问的都是逻辑侧（谁、什么、
+                          怎么搬、何时、代价），这一层第一次把物理侧接进来——同一条
+                          AllToAll 是快是慢，不取决于它连了几张卡，取决于这几张卡
+                          在不在同一个超节点里。 */
+                       fabric:['载体','走哪张网 —— 超节点内 UB、跨超节点 RoCE；node 边界在超节点内不降速（公开资料口径）']}[gk9];
             /* 路由那一档只有 MoE + EP 落刀时答得上，其余配置下置灰——「不适用」
                不该假装成一个能点开却什么都没有的档（读出卡那排九格同一口径）。 */
             var dis9 = gk9 === 'route' && !(ui.kEP && moe9 && D.ep > 1);
@@ -11592,7 +11672,25 @@ function drawerHTML(D){
     + '<div>'+numIn('layers','层数')+numIn('hidden','hidden')+numIn('heads','heads')+numIn('kv','KV头(GQA)')+numIn('ffn','FFN'+(moe?'(每专家)':''))+numIn('vocab','vocab')+numIn('experts','专家数(0=稠密)',{min:0})+(moe?numIn('topk','top-k'):'')+'</div>'
     + '<div>'+numIn('seq','seq')+numIn('mbs','MBS')+numIn('ga','GA')+numIn('hbm','HBM(GB)',{min:8})
     + '<div class="frow derived"><label>GBS</label><span class="val">'+(D.dpOk?fmt(D.gbs):'—')+'</span><span class="hint">= MBS·GA·DP</span></div></div>'
-    + '</div>' + errs + ok + warns + '<div class="diagrow">'+diag+'</div>';
+    + '</div>'
+    /* ── 物理链：机器怎么摆 ────────────────────────────────────────────────
+       上面那几组答的是「模型怎么切」，这一组答的是「插在哪」。两套坐标的交叉
+       决定每条通信边走哪张网：同一个超节点内走 UB（非阻塞全互联），跨超节点
+       才换 RoCE——那才是真正的降速点。这三个数不参与整除校验：world 不被
+       perNode 整除只意味着最后一台机没插满，不是配置非法。 */
+    + '<div style="margin:12px 0 0;padding:10px 0 0;border-top:1px solid var(--pt-bd)">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--pt-fg);margin-bottom:6px">物理链 · 机器怎么摆'
+    + '<span class="hint" style="font-weight:400;margin-left:8px">缺省照 CloudMatrix384 的公开口径：1 node = 8 NPU，48 node = 1 超节点 = 384 卡</span></div>'
+    + '<div class="cfg-cols">'
+    + '<div>'+numIn('perNode','node 几张卡',{min:1,hint:'1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片'})+'</div>'
+    + '<div>'+numIn('nodeRack','机柜几台 node',{min:1,hint:'12 计算柜 + 4 通信柜 = 16 柜/超节点'})+'</div>'
+    + '<div>'+numIn('podCards','超节点几张卡',{min:1,hint:'UB 的边界：组内全在一个超节点里就走 UB，跨了才换 RoCE'})+'</div>'
+    + '</div>'
+    + '<div class="hint" style="margin-top:6px">⚠ 口径假设：<b>超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间</b>。'
+    + '公开资料的说法是「单板内、单板间、机架间 NPU 全互联」，读起来是同一档；板间与机架间到底有没有降速，待灵衢团队确认。'
+    + '真有差异时改的只是判定与带宽表，图与读数的结构一个字不用动。</div>'
+    + '</div>'
+    + errs + ok + warns + '<div class="diagrow">'+diag+'</div>';
 }
 function accHTML(D){
   var rows = [];
