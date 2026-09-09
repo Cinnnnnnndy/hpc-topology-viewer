@@ -5626,11 +5626,19 @@ function netScene(D, g, box, step){
         + ' · 载体 ' + fb9.name + (fb9.bw ? '（' + fb9.bw + '）' : '')
         + '：' + (pods9 > 1 ? '这一组横跨 ' + pods9 + ' 个超节点，' : '组内 ' + mem9.length + ' 张卡同在一个超节点，')
         + fb9.how
-        + (cs9.ms ? ' · 耗时 ≈' + cs9.ms + '（示意口径，非实测）' : '');
+        + (lbMs9 != null
+             ? ' · 传输下界 ≥' + msTxt9fmt(lbMs9) + '（' + ld9.txt.split(' ')[0] + ' ÷ ' + fb9.bw
+               + '）——只算「搬这么多字节至少要多久」：没算拓扑跳数、没算集合通信算法的系数'
+               + '（环形 AllReduce 要搬 2(N−1)/N 份）、没算争用与协议开销'
+             : (cs9.ms ? ' · 耗时 ≈' + cs9.ms + '（示意口径，非实测——这一维的字节算不出来，见上）' : ''));
       /* 时序 / 影响这两层不另起一张时间轴：它们问的是**这条边**什么时候发生、
          代价多大，答案就写在这条边自己的芯片上（一步里的排布去「时间·流」，
          九格里那两格点得过去）。 */
-      var msTxt9 = cs9.ms || '';
+      /* 「影响」这一档的读数换成**传输时间下界**（载荷 ÷ 本条边的带宽），只有算不出
+         字节的那两维（CP 逐跳一块 KV、EP 各边由路由决定）才退回示意 ms 并标 ≈。
+         下界是硬的：口径写在悬停里，读者知道它少算了什么。 */
+      var lbMs9 = commCostMs9(ld9, fb9);
+      var msTxt9 = lbMs9 != null ? ('≥' + msTxt9fmt(lbMs9)) : (cs9.ms ? '≈' + cs9.ms : '');
       var WHENC9 = {tp:'每层×2', cp:'每层×1', pp:'每 μb', dp:'步末一次', ep:'每层×2'}[cs9.dim];
       /* rank 档的芯片写**关键值**（搬多少 · 多久），不写名称；名称进悬停。
          没有读数可抽时（比如这一维还没给指标）才退回名称，不给一枚空芯片。 */
@@ -5642,9 +5650,13 @@ function netScene(D, g, box, step){
       if(cgFab9) code9 = fb9.short + (pods9 > 1 ? ' 跨' + pods9 + '超节点' : '');
       else if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
       else if(cgCost9) code9 = cs9.dim === 'pp' ? ('气泡 ' + Math.round(D.bubble*100) + '%') : (msTxt9 || cs9.code);
+      /* 载体档在跨超节点时把「慢多少」也写上：这一条是这一档存在的理由。 */
+      if(cgFab9 && fb9.id === 'roce') code9 += ' ·带宽 ÷4';
       /* 影响档：边的粗细按耗时给（1.2–4.2），最贵的那条一眼就粗出来。 */
-      var msNum9 = parseFloat(msTxt9) || 0;
-      var eW9 = cgCost9 ? Math.max(1.2, Math.min(4.2, 1.2 + msNum9*9)) : 2;
+      /* 边宽按代价给。下界把量级拉得很开（TP 一次 0.34ms、DP 一步 112ms），线性映射
+         会让最大那条顶满、其余全贴地，所以取对数：差一个数量级粗一档。 */
+      var msNum9 = lbMs9 != null ? lbMs9 : (parseFloat(cs9.ms) || 0);
+      var eW9 = cgCost9 ? Math.max(1.2, Math.min(4.6, 1.2 + Math.log10(1 + msNum9*10)*1.5)) : 2;
       /* 分块粒度：只留变换徽章（图形，不是文字），钉在组心；撞上别的标注就让一档。 */
       if(cgBlock9 && cs9.xf){
         var bsc9 = 0.62 * zoomF9, bw9 = 92*bsc9, bh9 = 30*bsc9;
@@ -6618,25 +6630,66 @@ function physOf(r9, D){
    板间 / 机架间**。公开资料的说法是「单板内、单板间、机架间 NPU 全互联」，
    读起来是同一档；但板间与机架间到底有没有降速，要灵衢团队确认。真有差异时
    改的只是这一支的判定与下面那张带宽表，图与读数结构一个字不用动。 */
+/* UB 内部还分三档：同一块板上（板载 UB 交换芯片直连）/ 同机柜内（板间）/ 跨机柜
+   同超节点（机架间，经通信柜）。**三档当前给同一个带宽**——公开资料的说法是
+   「单板内、单板间、机架间 NPU 全互联」，读起来是同一档；真降速与否待灵衢确认。
+   分档先建在这儿，是因为它一旦有差异，要改的就只是这张表里的 bps 三个数：
+   判定、着色、代价换算、图上那几处读数全都自动跟着走，一行渲染代码不用动。 */
+var UB_TIERS9 = [
+  {k:'node', name:'同 node',        bps:196e9, how:'同一块板上的卡，板载 UB 交换芯片直连'},
+  {k:'rack', name:'同机柜',          bps:196e9, how:'板间，经机柜内 UB 交换'},
+  {k:'pod',  name:'跨机柜 · 同超节点', bps:196e9, how:'机架间，经通信柜的 UB 交换'}
+];
 var FABRIC9 = {
-  local: {id:'local', name:'片内',  short:'片内',  col:'var(--pt-fg3)', bw:null,
+  local: {id:'local', name:'片内',  short:'片内',  col:'var(--pt-fg3)', bw:null, bps:null,
           how:'同一张卡内部，不出卡'},
-  ub:    {id:'ub',    name:'UB 平面', short:'UB',   col:'#0ea5b7',       bw:'196 GB/s 单向/卡',
-          how:'超节点内非阻塞全互联（灵衢 UnifiedBus）；板内 / 板间 / 机架间按同一档算，待灵衢确认'},
-  roce:  {id:'roce',  name:'RDMA 平面', short:'RoCE', col:'#e0562b',     bw:'400 Gbps/卡',
-          how:'跨超节点 scale-out，走 RoCE；带宽比 UB 低一个数量级，是真正的换挡点'}
+  ub:    {id:'ub',    name:'UB 平面', short:'UB',   col:'#0ea5b7',       bw:'196 GB/s 单向/卡', bps:196e9,
+          how:'超节点内非阻塞全互联（灵衢 UnifiedBus）'},
+  /* 400 Gbps = 50 GB/s：比 UB 低约四倍，是真正的换挡点。 */
+  roce:  {id:'roce',  name:'RDMA 平面', short:'RoCE', col:'#e0562b',     bw:'400 Gbps/卡', bps:50e9,
+          how:'跨超节点 scale-out，走 RoCE'}
 };
+/* 两张卡之间：先判平面（UB / RoCE），UB 再判它落在哪一档。返回的是一个**新对象**，
+   不要改 FABRIC9 上那三个原型——它们被多处共用。 */
 function fabricOf(a9, b9, D){
   if(a9 === b9) return FABRIC9.local;
-  return physOf(a9, D).pod === physOf(b9, D).pod ? FABRIC9.ub : FABRIC9.roce;
+  var pa = physOf(a9, D), pb = physOf(b9, D);
+  if(pa.pod !== pb.pod) return FABRIC9.roce;
+  var tk = pa.node === pb.node ? 'node' : (pa.rack === pb.rack ? 'rack' : 'pod');
+  var t9 = UB_TIERS9.filter(function(x){ return x.k === tk; })[0];
+  var o9 = {}; Object.keys(FABRIC9.ub).forEach(function(k9){ o9[k9] = FABRIC9.ub[k9]; });
+  o9.tier = tk; o9.tierName = t9.name; o9.bps = t9.bps;
+  o9.how = FABRIC9.ub.how + '；本档「' + t9.name + '」' + t9.how
+         + '（三档当前按同一带宽算，板间 / 机架间是否降速待灵衢确认）';
+  return o9;
 }
 /* 一整组（一维的通信域）走哪张网：全在同一个超节点里就是纯 UB，跨了就有 RoCE
    段——混合时按**最慢的那一档**报，因为集合通信的完成时间由最慢的边决定。 */
 function fabricOfGroup(mem9, D){
   if(!mem9 || mem9.length < 2) return FABRIC9.local;
-  var pod0 = physOf(mem9[0], D).pod, cross = false;
-  for(var i9 = 1; i9 < mem9.length; i9++) if(physOf(mem9[i9], D).pod !== pod0){ cross = true; break; }
-  return cross ? FABRIC9.roce : FABRIC9.ub;
+  /* 一组的载体按**最远的那一对**算：集合通信的完成时间由最慢的边决定，报最快的
+     那一档等于把这条边的代价说小了。UB 内部同理，取组里跨得最开的那一档。 */
+  var worst = null, RANK9 = {node:0, rack:1, pod:2};
+  for(var i9 = 1; i9 < mem9.length; i9++){
+    var f9 = fabricOf(mem9[0], mem9[i9], D);
+    if(f9.id === 'roce') return FABRIC9.roce;
+    if(!worst || RANK9[f9.tier] > RANK9[worst.tier]) worst = f9;
+  }
+  return worst || FABRIC9.ub;
+}
+/* ══ 载体 × 载荷 → 传输时间的**下界** ═════════════════════════════════════
+   有了按配置真算的字节（commLoad9）和这条边走哪张网的带宽，就能给一个口径明确
+   的下界：字节 ÷ 带宽。它不是实测耗时——没算拓扑跳数、没算集合通信的算法系数
+   （AllReduce 的环形实现要搬 2(N−1)/N 份）、没算争用与协议开销，所以只能说
+   「至少要这么久」。但它比原来那个种子随机的 ms 硬得多：跨超节点那条边会因为
+   带宽掉了四倍而自己粗出来，这正是「影响」那一档要答的事。 */
+function commCostMs9(load9, fab9){
+  if(!load9 || load9.bytes == null || !fab9 || !fab9.bps) return null;
+  return load9.bytes / fab9.bps * 1000;
+}
+function msTxt9fmt(ms9){
+  if(ms9 == null) return '';
+  return (ms9 >= 10 ? ms9.toFixed(0) : ms9 >= 1 ? ms9.toFixed(1) : ms9.toFixed(2)) + 'ms';
 }
 /* 这一组横跨几个超节点——跨了才需要在图上说，没跨就一个字不写。 */
 function podSpan9(mem9, D){
@@ -8811,8 +8864,22 @@ function frontScene(D, g, box){
       var x = cellX(cq), y = cellY(r);
       var lab9 = labAll || (isF && effW >= 130) || (!hasSel && r === 0 && cq === 0 && effW >= 130);
       /* 格框：容器画法（线框），选中的那格用 DP 色加粗 */
+      /* ── 物理链在正视里的画法：换格框的颜色，不写字 ────────────────────
+         这一屏的卡按**并行坐标**排（列=DP/CP、行=TP·SP），物理上相邻的卡在这张
+         方阵里未必挨着——照 3D 那样围一只「超节点框」，框住的会是一片不连续的
+         格子，读者只会以为它们物理相邻。所以不画框，改成逐格换色：跟选中那张卡
+         同超节点＝UB 那一档的青色，跨了＝RoCE 的橙色。哪几列变了色，就是这条
+         并行组跨超节点的地方。
+         为什么不写「超N」：128 卡摊开时一格只有二十来像素，连那枚 r 号在这个
+         尺寸下都不画（下面有 >=56 的闸），再塞一个号只会写不下。号进悬停。
+         只在「载体」那一档换色；别的档照旧——那时这张图讲的是并行，不是网。 */
+      var pfF9 = physOf(rk, D);
+      var fabF9 = ui.commGrain === 'fabric' && ui.cardMode;
+      var samePodF9 = hasSel && physOf(sel, D).pod === pfF9.pod;
+      var cellS9 = fabF9 ? (samePodF9 ? FABRIC9.ub.col : FABRIC9.roce.col) : (isF ? VC.dp : 'var(--pt-bd)');
       body.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
-        +'" rx="'+(5/FS_Z).toFixed(2)+'" style="fill:var(--pt-s1);stroke:'+(isF?VC.dp:'var(--pt-bd)')+';stroke-width:'+((isF?1.8:.7)/FS_Z).toFixed(2)+'"/>');
+        +'" rx="'+(5/FS_Z).toFixed(2)+'" style="fill:'+(fabF9 ? mix(cellS9, 8) : 'var(--pt-s1)')+';stroke:'+cellS9
+        +';stroke-width:'+((isF?1.8:(fabF9?1:.7))/FS_Z).toFixed(2)+'"/>');
       /* 过路高亮：在**格框之外**再套一圈虚线脉冲，不动格框本身那条实线。
          套在外面而不是把格框改成虚线——格框那条 DP 色实线还兼着"这一格是方阵
          焦点"的职责（左上角 r 号、下面的 op9 淡化都跟着它读），改掉它等于同时
@@ -8883,7 +8950,10 @@ function frontScene(D, g, box){
          不给 title 的话读者点之前不知道自己要选的是谁。 */
       hit.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
         +'" style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="card" data-i="'+rk+'"'
-        +'><title>r'+rk+' · TP·SP'+t9+'·CP'+c9+'·DP'+d9+'·PP'+pSel+(isF&&!hlS9?'（已选中，再点一次取消）':'')+'</title></rect>');
+        +'><title>r'+rk+' · TP·SP'+t9+'·CP'+c9+'·DP'+d9+'·PP'+pSel
+        +' · 超节点'+pfF9.pod+'·机柜'+pfF9.rack+'·node'+pfF9.node+'·槽'+pfF9.slot
+        +(hasSel ? (samePodF9 ? '（与 r'+sel+' 同超节点 → UB）' : '（与 r'+sel+' 跨超节点 → RoCE）') : '')
+        +(isF&&!hlS9?'（已选中，再点一次取消）':'')+'</title></rect>');
     }
   }
   /* ── 轴门牌：DP 跨组居中一排、CP 每列一枚、TP·SP 行头一列——它们就是卡的层级坐标 ── */
@@ -9744,9 +9814,19 @@ function sideScene(D, g, box){
         var dR = Math.floor(cc9 / CCr), cR = cc9 % CCr;
         var rk9 = rankOf(rr9, cR, dR, stR, D);
         var onR = hasSel && rk9 === g;
+        /* ── 物理链在侧视里的画法：给卡架上的格子换色，不写字 ────────────────
+           这一格只有几个像素见方，「超节点 3」写不进去；而它要答的那一问只有
+           两种答案（跟选中那张卡同不同超节点），换色就够。同超节点＝UB 那一档的
+           青色，跨了＝RoCE 的橙色——与 3D 那只盒子、载体那一档的连线同一套颜色。
+           只在「载体」那一档换；别的档照旧是 DP 色（那时这张图讲的是并行，不是网）。
+           超节点号与 node 号无论哪一档都进悬停：几个像素写不下，但问得出来。 */
+        var pf9 = physOf(rk9, D);
+        var fabOn9 = ui.commGrain === 'fabric' && ui.commOn;
+        var samePod9 = hasSel && physOf(g, D).pod === pf9.pod;
+        var dotC9 = fabOn9 ? (samePod9 ? FABRIC9.ub.col : FABRIC9.roce.col) : VC.dp;
         body.push('<rect x="'+(rgx + cc9*(dw+1.4)).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4)).toFixed(1)
           +'" width="'+dw.toFixed(1)+'" height="'+dh.toFixed(1)+'" rx="1.4" style="fill:'
-          +(onR ? VC.dp : mix(VC.dp, stR === selStage ? 20 : 8))+';stroke:'+VC.dp+';stroke-width:'+((onR?1.2:.35)/FS_Z).toFixed(2)+'"/>');
+          +(onR ? dotC9 : mix(dotC9, stR === selStage ? 20 : 8))+';stroke:'+dotC9+';stroke-width:'+((onR?1.2:.35)/FS_Z).toFixed(2)+'"/>');
         /* 卡架上那一格同样要区分来路。这里的格子只有几个像素见方，虚线画在格
            里根本看不出是虚的——所以外圈往外撑 2.2（比正视的 3 略窄，免得吃掉
            相邻格 1.4 的缝），线宽也不按 1/FS_Z 反除：卡架整块本来就是场景固定
@@ -9759,6 +9839,8 @@ function sideScene(D, g, box){
         hit.push('<rect x="'+(rgx + cc9*(dw+1.4) - .7).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - .7).toFixed(1)
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
           +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR
+          +' · 超节点'+pf9.pod+'·机柜'+pf9.rack+'·node'+pf9.node+'·槽'+pf9.slot
+          +(hasSel ? (samePod9 ? '（与 r'+g+' 同超节点 → UB）' : '（与 r'+g+' 跨超节点 → RoCE）') : '')
           +(onR && !hlS9 ? '（已选中，再点一次取消）' : '')+'</title></rect>');
       }
       /* 两枚行标之间只隔 (rowsR-1)×(dh+1.4) 这么点——字号增益一抬高，它们先跟
