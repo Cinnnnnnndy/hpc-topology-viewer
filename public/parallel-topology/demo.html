@@ -526,7 +526,8 @@
    所以每块都带一枚，位置固定在原语那一行下面。 */
 .pt-rankmem .rm-d .c5gr{color:var(--c, var(--pt-fg3)); font-size:10.5px; letter-spacing:.04em; opacity:.85; margin-bottom:2px}
 .pt-rankmem .rm-d .c5g{margin:3px 0 4px}
-/* 九层可观测性（§15 六）落在这一条边上：九格 = 九层，实心答得出、描边只答了一半、
+/* 九层可观测性（§15 六）落在这一条边上，再加一格物理侧的「载体」＝十格：
+   实心答得出、描边只答了一半、
    虚线是缺、极淡是不适用。做成格子而不是一句话，是因为这九层的**缺口位置**本身
    就是结论（缺首尾两端 vs 缺中间完全不是一回事），位置只有排成一排才读得出来。 */
 .pt-seg.pt-seg-wrap{flex-wrap:wrap}
@@ -5387,6 +5388,52 @@ function netScene(D, g, box, step){
       axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
   } else if(cutEP && KD > 1 && !physOn) drawEpFrames(false);
+  /* ── 物理平铺下的机柜 / 超节点框 ────────────────────────────────────────
+     物理平铺原来只摆得出「一台 node 八张卡、一台挨一台」，机柜与超节点这两级
+     只在配置面板里是数字，图上看不见。可它们恰恰是**载体那一层的分界**：同一个
+     超节点内走 UB（非阻塞全互联），跨了才换 RoCE。框一画出来，「这一组通信跨不
+     跨超节点」就从图上直接读得到，不必再去点开每条边的悬停。
+     两级两种画法（框套框会糊，尤其在等轴投影下）：
+       · 机柜 —— 只在**地面**画一条浅色底带 + 一枚小号门牌，不围整只盒子；
+       · 超节点 —— 围整只盒子（十二条棱），线更重、颜色是 UB 那一档的青色，
+                   门牌写「超节点 N · M 卡」。UB 的边界就是它。 */
+  if(physOn){
+    var nodesRack9 = Math.max(1, D.nodeRack);
+    var nodesPod9 = Math.max(1, Math.round(D.podCards / D.perNode));
+    /* 只画**真的摆出来了卡**的那几段：physHostLo/Hi 是这一屏实际用到的 node 区间。 */
+    var uL9 = -0.08, uR9 = 1.08, vT9 = -0.16, vB9 = AR + 0.16;
+    /* X 两端各借一次 slot：左边界取槽位 0，右边界取本 node 最后一个槽位。 */
+    function physOffAt9(node9, slot9){ return PHY_OFF_BASE + node9*D.perNode + slot9; }
+    function bandOf9(n0, n1){ return [n0*PHY_HOSTW, (n1+1)*PHY_HOSTW]; }
+    /* 机柜：地面一条浅底带。四角取 (左/右槽位) × (带首/带尾) 四个点，连成一圈。 */
+    if(nodesRack9 > 1) for(var rk9 = Math.floor(physHostLo/nodesRack9); rk9 <= Math.floor(physHostHi/nodesRack9); rk9++){
+      var rn0 = Math.max(physHostLo, rk9*nodesRack9), rn1 = Math.min(physHostHi, (rk9+1)*nodesRack9 - 1);
+      if(rn1 < rn0) continue;
+      var rb9 = bandOf9(rn0, rn1), oL9 = physOffAt9(rn0, 0), oR9 = physOffAt9(rn0, D.perNode - 1);
+      var RQ9 = [P(uL9, vB9, rb9[0], oL9), P(uR9, vB9, rb9[0], oR9),
+                 P(uR9, vB9, rb9[1], oR9), P(uL9, vB9, rb9[1], oL9)];
+      body.push('<polygon points="' + RQ9.map(function(q){ return q[0].toFixed(1)+','+q[1].toFixed(1); }).join(' ')
+        + '" style="fill:var(--pt-fg);opacity:.035;stroke:var(--pt-bds);stroke-width:.7" pointer-events="none"/>');
+      axLab([(RQ9[0][0]+RQ9[2][0])/2, (RQ9[0][1]+RQ9[2][1])/2 + 10], '机柜 '+rk9,
+            'node '+rn0+'–'+rn1, 'var(--pt-fg3)', false);
+    }
+    /* 超节点：围整只盒子。这一条是 UB 的边界，所以用 UB 那一档的青色、线更重。 */
+    for(var pd9 = Math.floor(physHostLo/nodesPod9); pd9 <= Math.floor(physHostHi/nodesPod9); pd9++){
+      var pn0 = Math.max(physHostLo, pd9*nodesPod9), pn1 = Math.min(physHostHi, (pd9+1)*nodesPod9 - 1);
+      if(pn1 < pn0) continue;
+      var pb9 = bandOf9(pn0, pn1), pL9 = physOffAt9(pn0, 0), pR9 = physOffAt9(pn0, D.perNode - 1);
+      var PF9 = [P(uL9,vT9,pb9[0],pL9), P(uR9,vT9,pb9[0],pR9), P(uR9,vB9,pb9[0],pR9), P(uL9,vB9,pb9[0],pL9),
+                 P(uL9,vT9,pb9[1],pL9), P(uR9,vT9,pb9[1],pR9), P(uR9,vB9,pb9[1],pR9), P(uL9,vB9,pb9[1],pL9)];
+      [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(function(e9){
+        body.push(seg(PF9[e9[0]], PF9[e9[1]], 'stroke:'+FABRIC9.ub.col+';stroke-width:1.4;opacity:.55'));
+      });
+      var px9 = 1e9, py9 = 1e9;
+      PF9.forEach(function(q9){ px9 = Math.min(px9, q9[0]); py9 = Math.min(py9, q9[1]); });
+      var pxM9 = 0; PF9.forEach(function(q9){ pxM9 = Math.max(pxM9, q9[0]); });
+      axLab([(px9+pxM9)/2, py9 - 14], '超节点 '+pd9,
+            (pn1-pn0+1)*D.perNode+' 卡 · UB 边界', FABRIC9.ub.col, true);
+    }
+  }
   /* 同一个道理：drawCommArcs 的弧线锚在「列」上（offC/wMid 都是列号/段号算出来的
      位置），物理平铺下卡已经挪走，弧线会连到空气里——物理平铺时不画。下面那段
      用 chainCardAnchor（真实屏幕锚点，不是重新算的列位置）画的卡对卡连线不受
@@ -12180,7 +12227,9 @@ function memBlockDetail(D, g, key){
        都收进这一行的悬停——这两句是读法，不是这一栏的内容。 */
     commLine = '<div class="rm-note" style="margin-top:5px;cursor:help" title="'
       + esc('一次搬运记全是五样：源 / 张量（含前后 layout）/ 并行域 / 原语 / 宿。\n'
-          + '每条边下面那排九格 = 九层可观测性（模·张·并·r·原·载·路·时·影）：'
+          + '每条边下面那排十格 = 九层可观测性 + 载体（模·张·并·r·原·载·路·时·影·网）：'
+          + '前九格问逻辑侧（谁 / 什么 / 怎么搬 / 何时 / 代价），最后一格问物理侧'
+          + '（这条边走 UB 还是 RoCE——同一条 AllToAll 是快是慢，取决于这几张卡在不在同一个超节点里）。'
           + '实心=答得出、描边=只答了一半、虚线=缺、极淡=不适用；每一格都可点，'
           + '去到答得出它的那一屏（卡内解剖 / 单维切分 / 画布对应那一层 / 时间·流）。')
       + '"><b style="color:var(--pt-fg)">对应通信</b> <span style="opacity:.6">ⓘ</span></div>'
@@ -12476,7 +12525,12 @@ var COMM_L9 = [
   {k:'load',   ab:'载', n:'载荷',  ask:'搬多少'},
   {k:'route',  ab:'路', n:'路由',  ask:'token 去哪了'},
   {k:'time',   ab:'时', n:'时序',  ask:'什么时候搬、藏住没有'},
-  {k:'cost',   ab:'影', n:'影响',  ask:'造成了什么后果'}
+  {k:'cost',   ab:'影', n:'影响',  ask:'造成了什么后果'},
+  /* 第十层：前九层问的都是逻辑侧（谁 / 什么 / 怎么搬 / 何时 / 代价），这一层第一次
+     把物理侧接进来。它不是九层的补充说明，是九层答不了的一问：同一条 AllToAll
+     是快是慢，不取决于它连了几张卡，取决于这几张卡在不在同一个超节点里。 */
+  /* 缩写用「网」不用「载」：载荷那一格已经占了「载」，两格同一个字读者分不开。 */
+  {k:'fabric', ab:'网', n:'载体',  ask:'走哪张网'}
 ];
 /* 每一层现在答到什么程度——按维给，不给一份通用答案：这九格要是每条边都长一样，
    它就退化成一张装饰用的图例，读者也就不会再去看它。 */
@@ -12502,7 +12556,22 @@ function commL9(D, dim){
     time:  ['h','只有「搬多久」，没有「什么时候搬、和哪一段计算重叠」。点这一格去「时间·流」'],
     cost:  dim === 'pp'
              ? ['h','这一维的后果有一个现成读数：气泡率 (PP−1)/GA，在「时间·流」与诊断条上。点这一格过去']
-             : ['n','等待 / 空转还没接进这一屏。点这一格去「时间·流」看这一步的时间轴']
+             : ['n','等待 / 空转还没接进这一屏。点这一格去「时间·流」看这一步的时间轴'],
+    /* 载体这一格必须**按选中的那张卡**算：同一维在不同卡上答案可能不同（一张卡的
+       DP 组全在本超节点内、另一张的跨了两个超节点）。没选中卡就没有主语，如实说。 */
+    fabric: (function(){
+      if(sel === null || sel === undefined || sel >= D.world)
+        return ['h','要先选一张卡：载体由「这一维的这一组卡在不在同一个超节点里」决定，没有主语就没有答案'];
+      var mem0 = groupMembers(dim, sel, D);
+      if(!mem0 || mem0.length < 2)
+        return ['na', DIMN[dim] + ' 组只有本卡一张，这一维不出卡——不适用，不是缺'];
+      var fb0 = fabricOfGroup(mem0, D), pd0 = podSpan9(mem0, D);
+      return pd0 > 1
+        ? ['y','这一组横跨 ' + pd0 + ' 个超节点 → 走 ' + fb0.name + '（' + fb0.bw + '），比 UB 低一个数量级：'
+             + DIMN[dim] + ' 是被 scale-out 卡住的那一条']
+        : ['y','组内 ' + mem0.length + ' 张卡同在一个超节点 → 走 ' + fb0.name + '（' + fb0.bw + '，非阻塞全互联）。'
+             + '板内 / 板间 / 机架间按同一档算，待灵衢确认'];
+    })()
   };
 }
 /* 每一格都通向**答得出它的那一屏**——这是三个场景（3D 阵列 / 卡内解剖 /
@@ -12556,6 +12625,7 @@ function commL9Go(k, dim){
   if(k === 'model') return ' data-act="gotoanat"';
   if(k === 'par')   return ' data-act="gotodim" data-d="' + dim + '"';
   if(k === 'time' || k === 'cost') return ' data-act="v3totime"';
+  if(k === 'fabric') return ' data-act="commgrain" data-v="fabric"';
   var V = {tensor:'tensor', rank:'rank', prim:'rank', load:'rank', route:'route'}[k];
   return V ? ' data-act="commgrain" data-v="' + V + '"' : '';
 }
@@ -12566,7 +12636,8 @@ function commL9HTML(D, dim){
     var WHERE = {model:'点开：卡内解剖', par:'点开：单维切分 · 这把刀', tensor:'点开：画布切到「张量」层',
                  rank:'点开：画布切到「rank」层', prim:'点开：画布切到「rank」层（原语写在芯片上）',
                  load:'点开：画布切到「rank」层（读数在芯片悬停里）', route:'点开：画布切到「路由」层',
-                 time:'点开：时间·流', cost:'点开：时间·流'}[L.k];
+                 time:'点开：时间·流', cost:'点开：时间·流',
+                 fabric:'点开：画布切到「载体」层（UB / RoCE 分色）'}[L.k];
     return '<i class="' + cls + (go ? ' go' : '') + '"' + go
       + ' title="' + esc(L.n + ' · ' + L.ask + '\n' + ({y:'答得出', h:'只答了一半', n:'缺', na:'不适用'}[cls]) + '：' + v[1]
         + (go ? '\n' + WHERE : '')) + '">'

@@ -25,7 +25,8 @@
     "tp / cp / pp / dp / ep": "整数 —— 直接指定并行度（覆盖 preset）",
     "embed": "1 —— 嵌入形态：收起顶栏与页脚，只剩画布与它自己的工具条",
     "theme": "light|dark",
-    "perNode / nodeRack / podCards": "物理链尺寸 —— 一台 node 几张卡 / 一个机柜几台 node / 一个超节点几张卡。缺省 8 / 4 / 384（CloudMatrix384 公开口径）。改 podCards 就能看出哪些通信边会跨超节点、从 UB 掉到 RoCE"
+    "perNode / nodeRack / podCards": "物理链尺寸 —— 一台 node 几张卡 / 一个机柜几台 node / 一个超节点几张卡。缺省 8 / 4 / 384（CloudMatrix384 公开口径）。改 podCards 就能看出哪些通信边会跨超节点、从 UB 掉到 RoCE",
+    "phys": "1 —— 物理平铺：卡按 (超节点, 机柜, node, 槽位) 摆，机柜画成地面底带、超节点围成青色的盒子（UB 的边界）。与 cgrain=fabric 合看就是「哪条边跨了这只盒子」"
   },
   "constraints": [
     "world = TP × CP × PP × DP 必须整除；不合法时舞台封锁并列出最近合法值（宁缺毋误），不静默取整。",
