@@ -562,6 +562,43 @@ body.is-resizing iframe{pointer-events:none}
           <p class="global-config__note">EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。</p>
         </div>
       </section>
+      <!-- 物理拓扑：上面那一节答「模型怎么切」，这一节答「机器怎么摆」。
+           两套坐标的交叉决定每条通信边走哪张网——同一个超节点内走 UB（灵衢
+           UnifiedBus，非阻塞全互联），跨超节点才换 RoCE，那才是真正的降速点。
+           这三个数不参与整除校验：world 不被「node 几张卡」整除，只意味着最后
+           一台机没插满，不是配置非法。 -->
+      <section class="global-config__section">
+        <h3>物理拓扑 · 灵衢 UnifiedBus</h3>
+        <p class="global-config__section-intro">卡插在哪。缺省照 CloudMatrix384 的公开口径：1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片，48 node = 1 超节点 = 384 卡（16 机柜）。</p>
+        <div class="parallel-list">
+          <div class="parallel-field" style="--parallel-color:#0ea5b7" title="一台 node 装几张卡：板载 UB 交换芯片把它们直连">
+            <span class="parallel-field__meta"><strong><b>node</b><span class="pf-name">每 node 卡数</span></strong><span>板内直连，板载 UB 交换芯片</span></span>
+            <div class="number-stepper" role="group" aria-label="每 node 卡数">
+              <button type="button" data-number-step="-1" aria-label="减少每 node 卡数">−</button><input type="number" min="1" step="1" value="8" data-global-cfg="perNode" aria-label="每 node 卡数"><button type="button" data-number-step="1" aria-label="增加每 node 卡数">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#0ea5b7" title="一个机柜装几台 node">
+            <span class="parallel-field__meta"><strong><b>机柜</b><span class="pf-name">每机柜 node 数</span></strong><span>板间，经机柜内 UB 交换</span></span>
+            <div class="number-stepper" role="group" aria-label="每机柜 node 数">
+              <button type="button" data-number-step="-1" aria-label="减少每机柜 node 数">−</button><input type="number" min="1" step="1" value="4" data-global-cfg="nodeRack" aria-label="每机柜 node 数"><button type="button" data-number-step="1" aria-label="增加每机柜 node 数">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#e0562b" title="一个超节点几张卡——这就是 UB 的边界：组内全在一个超节点里走 UB，跨了换 RoCE">
+            <span class="parallel-field__meta"><strong><b>超节点</b><span class="pf-name">每超节点卡数</span></strong><span>UB 的边界，跨了换 RoCE</span></span>
+            <div class="number-stepper" role="group" aria-label="每超节点卡数">
+              <button type="button" data-number-step="-1" aria-label="减少每超节点卡数">−</button><input type="number" min="1" step="1" value="384" data-global-cfg="podCards" aria-label="每超节点卡数"><button type="button" data-number-step="1" aria-label="增加每超节点卡数">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="global-config__world">
+          <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="globalFabric" style="margin-top:2px">
+            <span><strong>按载体着色（UB / RoCE）</strong><br>
+              <span style="opacity:.7">两格拓扑图的通信边改按「走哪张网」上色：超节点内 UB 青、跨超节点 RoCE 橙。物理平铺下还会画出机柜底带与超节点框。</span></span>
+          </label>
+          <p class="global-config__note">⚠ 口径假设：<b>超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间</b>。公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档；板间与机架间是否降速待灵衢团队确认。</p>
+        </div>
+      </section>
       <!-- 「观察方式」（观察层级 / 卡片内容 / 设备排列）原来在这里，现已移到
            并行拓扑那一格自己的配置面板（机位与通信连线之间）——它答的是「主视图
            这张图现在怎么摆」，是那一格自己的事，不是跨格的全局并行策略；挪过去
@@ -759,7 +796,11 @@ var BUILD = '';
    「观察方式」面板，由用户直接在格子里点，台面不再代管、也不再转发，
    见 appendGlobalQuery 与 spatialPayload 里对应去掉的那几行。 */
 var GLOBAL_MODEL_LAYERS = 48;
-var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8 };
+/* 物理三件（perNode / nodeRack / podCards）跟并行度放在同一份 globalCfg 里，
+   于是两格拓扑图永远读到同一套物理坐标——分开存迟早会一格 384、一格 64。
+   缺省照 CloudMatrix384 的公开口径。 */
+var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8, perNode:8, nodeRack:4, podCards:384 };
+var globalFabric = false;      /* 两格是否按「走哪张网」着色（cgrain=fabric） */
 var globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
 var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true };
 var globalFilter = { t:null, e:null, p:null, d:null };
@@ -769,6 +810,13 @@ function globalCutsString(includeDp) {
 }
 function appendGlobalQuery(q, options) {
   ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
+  /* 物理三件也一起推：不推的话两格各用各的缺省，「这条边跨不跨超节点」会在两格
+     给出不同答案——而它们讲的本来就是同一套机器。 */
+  ['perNode','nodeRack','podCards'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
+  /* 载体着色是台面级的一个取景选择，开着就推 cgrain=fabric；关着**不推**，
+     让格子里读者自己选的那一层留着（推一个 rank 回去等于每次改配置都把他的
+     选择清掉）。 */
+  if (globalFabric) q.set('cgrain', 'fabric');
   q.set('cuts', globalCutsString(options && options.includeDp));
 }
 
@@ -1083,6 +1131,13 @@ function readURL() {
     var cuts = q.get('cuts') || '';
     ['dp','pp','cp','tp','ep'].forEach(function (k) { globalCuts[k] = cuts.indexOf(k.charAt(0)) >= 0; });
   }
+  /* 物理三件与载体开关（见 writeURL）。三个数一起给或一起不给——只给一半会
+     摆出一套半新半旧的物理坐标，比缺省还难读。 */
+  var phy = (q.get('phy') || '').split(',').map(function (v) { return parseInt(v, 10); });
+  if (phy.length === 3 && phy.every(function (v) { return isFinite(v) && v >= 1; })) {
+    ['perNode','nodeRack','podCards'].forEach(function (k, i) { globalCfg[k] = phy[i]; });
+  }
+  if (q.get('fab') === '1') globalFabric = true;
   var has = {};
   Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
   SLOTS.forEach(function (c) {
@@ -1125,6 +1180,11 @@ function writeURL() {
   if (shellDark) q.set('ui', 'dark');
   var cfgChanged = ['world','tp','cp','pp','dp','ep'].some(function (k) { return globalCfg[k] !== GLOBAL_CFG_DEFAULT[k]; });
   if (cfgChanged) q.set('gc', ['world','tp','cp','pp','ep'].map(function (k) { return globalCfg[k]; }).join(','));
+  /* 物理三件与载体开关也进链接：换了它们，「这条边跨不跨超节点」就变了——
+     跟换并行度一样是「这一屏在讲什么」，必须能一条链接发出去。 */
+  var phyChanged = ['perNode','nodeRack','podCards'].some(function (k) { return globalCfg[k] !== GLOBAL_CFG_DEFAULT[k]; });
+  if (phyChanged) q.set('phy', ['perNode','nodeRack','podCards'].map(function (k) { return globalCfg[k]; }).join(','));
+  if (globalFabric) q.set('fab', '1');
   var cutsNow = globalCutsString(true);
   if (cutsNow !== 'dpcte') q.set('cuts', cutsNow);
   var qs = q.toString();
@@ -1260,6 +1320,7 @@ function setGlobalConfigOpen(open) {
 function syncGlobalConfigUI() {
   document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.value = String(globalCfg[input.dataset.globalCfg]); });
   document.querySelectorAll('[data-global-cut]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!globalCuts[b.dataset.globalCut])); });
+  var fb9 = $('#globalFabric'); if (fb9) fb9.checked = globalFabric;
   updateGlobalWorld();
 }
 
@@ -1319,6 +1380,10 @@ function spatialPayload(id) {
       pp:globalCuts.pp, cp:globalCuts.cp, tp:globalCuts.tp, ep:globalCuts.ep,
       phys:false
     },
+    /* 「按载体着色」是台面级的取景选择，两格一起切。关掉时推回 rank——这是一颗
+       明确的开关，读者按下它就是要两格都换回去；不推的话关掉之后画面不动，
+       开关看起来像坏的。 */
+    grain: globalFabric ? 'fabric' : 'rank',
     theme:theme()
   };
 }
@@ -1397,6 +1462,11 @@ function wireGlobalControls() {
     });
   });
   document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.addEventListener('input', updateGlobalWorld); });
+  var fabBox = $('#globalFabric');
+  if (fabBox) fabBox.addEventListener('change', function () {
+    globalFabric = fabBox.checked;
+    broadcastGlobalState(); writeURL();
+  });
   $('#globalConfigApply').addEventListener('click', function () {
     var next = globalDraft(), error = validateGlobalConfig(next), status = $('#globalConfigStatus');
     if (error) { status.style.color = 'var(--danger)'; status.textContent = error; return; }
@@ -1408,6 +1478,7 @@ function wireGlobalControls() {
     globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
     globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true};
     globalFilter = {t:null,e:null,p:null,d:null};
+    globalFabric = false; if (fabBox) fabBox.checked = false;
     $('#globalConfigStatus').textContent = '';
     syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
   });

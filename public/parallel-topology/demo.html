@@ -1395,6 +1395,13 @@ function urlWrite(){
   if(!activePreset){
     ['world','tp','cp','pp','ep','etp','layers','seq','experts'].forEach(function(k){ q.set(k, cfg[k]); });
   }
+  /* 物理三件只在**非缺省**时写：它们不属于「哪个预置」（换预置不该把机房也换掉），
+     所以不跟上面那串并行度一起走 activePreset 的分支。缺省不写，链接才不会
+     每条都拖着三个跟缺省一样的数。 */
+  ['perNode','nodeRack','podCards'].forEach(function(k9){
+    var dv9 = {perNode:8, nodeRack:4, podCards:384}[k9];
+    if(+cfg[k9] && +cfg[k9] !== dv9) q.set(k9, cfg[k9]);
+  });
   if(zeroLv()) q.set('zero', zeroLv());
   if(sel!==null) q.set('sel', sel);
   if(ui.view==='story' && ui.act) q.set('act', ui.act);
@@ -5838,10 +5845,23 @@ function netScene(D, g, box, step){
          整句与读数进悬停。反馈原话「这里的标签还是太多了有遮挡根本看不清」
          说的正是这几条——它们曾经是整句 + 一串贴线读数 + 一枚徽章三样叠在
          同一段弧上。徽章只在「张量」那一档出现（它画的就是形状变换）。 */
-      function floorLab(at9, code9, text9, col9, metric9, xf9, grain9){
+      function floorLab(at9, code9, text9, col9, metric9, xf9, grain9, dim9){
         if(!at9) return;
         if(cgBlock9){
           if(xf9) body.push(xfBadge([at9[0], at9[1] - 10*zoomF9], xf9, col9, grain9, 0.6*zoomF9));
+          return;
+        }
+        /* 载体档：地面这几条带也换成「走哪张网」，和卡对卡那一层说同一句话。
+           不换的话同一屏上两层线各说各的——上面写 UB / RoCE、地面写载荷。 */
+        var fbF9 = null, pdF9 = 1;
+        if(cgFab9 && dim9){
+          var mF9 = groupMembers(dim9, g, D);
+          if(mF9 && mF9.length > 1){ fbF9 = fabricOfGroup(mF9, D); pdF9 = podSpan9(mF9, D); }
+        }
+        if(fbF9){
+          commChip([at9[0], at9[1] - 10], fbF9.short + (pdF9 > 1 ? ' 跨' + pdF9 + '超节点' : ''), fbF9.col,
+            text9 + ' · 载体 ' + fbF9.name + '（' + fbF9.bw + '）：' + fbF9.how
+            + (metric9 ? ' · ' + metric9 : ''), zoomF9);
           return;
         }
         /* 与卡对卡那一层同一条纪律：芯片写载荷（含量词），耗时只进悬停并标 ≈ */
@@ -5856,7 +5876,7 @@ function netScene(D, g, box, step){
         var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6, 'bi');
         floorLab(atTP9, 'TP·AG/RS', 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
           loadTxt9('tp', liRepFloor9, 'attention_reduce_scatter', 'tp-ag-rs'),
-          'ag', '分块之间');
+          'ag', '分块之间', 'tp');
       }
       if(wantEP9){
         var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
@@ -5872,7 +5892,7 @@ function netScene(D, g, box, step){
         var liRepEPFloor9 = Math.min(D.layers - 1, Math.max(liRepFloor9, denseTop));
         floorLab(atEP9, 'EP·A2A', 'AllToAll · EP 组 dispatch（示意量：条宽随 token 数变，真值要 router 输出才知道）', VC.ep,
           loadTxt9('ep', liRepEPFloor9, 'moe_all_to_all_dispatch', 'ep-a2a'),
-          'a2a', '分块之间 · 重排');
+          'a2a', '分块之间 · 重排', 'ep');
       }
       if(wantDP9){
         /* 梯度 AllReduce 只在反向发生：虚线 + 朝回的箭头，两个信号都呼应
@@ -5885,7 +5905,7 @@ function netScene(D, g, box, step){
                         : (memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
                                               : '梯度 AllReduce · DP 组（反向）')), VC.dp,
           loadTxt9('dp', liRepFloor9, null, 'dp-ar-grad'),
-          D.zero >= 2 ? 'rs' : 'ar', D.zero >= 2 ? '副本 → 分块' : '副本之间');
+          D.zero >= 2 ? 'rs' : 'ar', D.zero >= 2 ? '副本 → 分块' : '副本之间', 'dp');
       }
       if(wantCP9){
         /* CP 组内 AllGather(KV)：实线不打虚——它发生在**前向**（注意力要读全序列的
@@ -5893,7 +5913,7 @@ function netScene(D, g, box, step){
         var atCP9 = floorBand(groupMembers('cp', g, D).filter(function(r9){ return r9 !== g; }), VC.cp, null, 1.5);
         floorLab(atCP9, 'CP·AG', 'AllGather(KV) · CP 组（前向，激活）', VC.cp,
           loadTxt9('cp', liRepFloor9, null, 'cp-ag-kv'),
-          'ag', '分块之间');
+          'ag', '分块之间', 'cp');
       }
     }
   }
@@ -13590,12 +13610,18 @@ window.addEventListener('message', function(ev){
      只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
   if(d.type==='pto:state'){
     if(d.config && typeof d.config==='object'){
-      ['world','tp','cp','pp','ep'].forEach(function(k9){
+      /* 物理三件也进白名单：宿主（工作台）把「机器怎么摆」也当成一份全局配置推
+         下来，两格才会对同一条边给出同一个载体答案。 */
+      ['world','tp','cp','pp','ep','perNode','nodeRack','podCards'].forEach(function(k9){
         var v9 = parseInt(d.config[k9],10);
         if(isFinite(v9) && v9>=1) cfg[k9]=v9;
       });
       activePreset = null; sel = null; ui.groupFilters = {t:null,e:null,p:null,d:null}; ui.cfgDraft = null; stopAnim();
     }
+    /* 通信看哪一层：宿主也能推。工作台上「按载体着色」那颗开关走的就是它——
+       不重载就能把两格一起切到载体那一层（与 view 同一条路子）。 */
+    if(typeof d.grain === 'string'
+       && ['rank','tensor','route','time','cost','intra','fabric'].indexOf(d.grain) >= 0) ui.commGrain = d.grain;
     if(d.mode && typeof d.mode==='object'){
       if(typeof d.mode.rank==='boolean') ui.cardMode=d.mode.rank;
       if(d.mode.cardView==='cap'||d.mode.cardView==='net'||d.mode.cardView==='comp'){
