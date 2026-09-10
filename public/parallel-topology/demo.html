@@ -3669,6 +3669,17 @@ function netScene(D, g, box, step){
     return Math.max(0, Math.min(1, (z9 - zLo) / (zHi - zLo)));
   }
   var off0 = sel0;
+  /* off0（sel0）是「这一列（t·c·d 组合，不含 pp 段）」的列号——物理平铺关掉时
+     cx() 认它；但物理平铺一开，cx() 只认 rank（PHY_OFF_BASE+rank），列号在这
+     套坐标里没有意义，会被当成极大的旧列号去查 colX，落到画面外老远——下面
+     几处「入口/出口门牌」「反查层门牌」「这一列的算子标签」都是拿 off0 当 X 坐标
+     喂给 P()，物理平铺下全部超出测算过的包围盒，被舞台的 clip-path 整块裁掉
+     （2026-09 加机柜/超节点框时顺带发现，其实是这几处一直没跟物理平铺打通）。
+     修法：给一个转换函数，物理平铺下把「列号」换算回「这一列在某个 pp 段的
+     那张真卡」，再借 PHY_OFF_BASE 那条已有的物理坐标路——不新开一条路子。 */
+  function offAt(pStage){
+    return physOn ? PHY_OFF_BASE + rankOf(co.t, co.c, co.d, pStage, D) : off0;
+  }
   /* ── 视口剔除：放大之后画面外的列一根线都不画 ──────────────────────────
      zoom>1 时真正看得见的往往只有几列，可全量场景里 90% 的图元都落在画布外——
      构建字符串、innerHTML 解析、重排重绘，全是白费（卡维度全量 2.9 万图元、
@@ -6037,7 +6048,7 @@ function netScene(D, g, box, step){
          死取就什么都标不出来——它真正量得出的那条是 CP 切 seq。 */
       var s1 = sh[n.id], pl = (s1 && s1.parts) || [];
       var part = pl.filter(function(x){ return x && x.total > 0; })[0] || pl[0] || null;
-      var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), off0);
+      var pc = P((n.x - root.x)/GW, vOf(n.y), wOf(it[1]), offAt(co.p));
       var ly = pc[1] + 2;
       if(ly - lastLabY < labMinGap) ly = lastLabY + labMinGap;
       lastLabY = ly;
@@ -6059,10 +6070,10 @@ function netScene(D, g, box, step){
     /* 门牌只写两个字。这一屏上它是个**路标**——「这一头不重复」——具体不重复在
        哪几个算子、各被哪把刀切，展开写就是一条横贯半屏的长句，把它说明的那几层
        全挡住了。细节挪到 hover：想知道再问，不问就不占地方。 */
-    [[0, '入口', 'head'], [L-1, '出口', 'tail']].forEach(function(it, ii){
+    [[0, '入口', 'head', 0], [L-1, '出口', 'tail', D.pp-1]].forEach(function(it, ii){
       /* 两枚门牌错开一行：正视是把层深压掉的正交投影，第 0 层与最后一层会投到
          同一个位置，同一高度的话两枚门牌正好叠在一起。 */
-      var pt9 = P(0.5, -0.10 - ii*0.125, wOf(it[0]), off0);
+      var pt9 = P(0.5, -0.10 - ii*0.125, wOf(it[0]), offAt(it[3]));
       var w9 = 34, h9 = 16;
       body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="4" '
         +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1;opacity:.97"/>');
@@ -6076,7 +6087,7 @@ function netScene(D, g, box, step){
      「第 ℓ 层在哪张卡上」是这一屏最容易被说成单数的地方——数字写出来就没得含糊。 */
   if(revLi >= 0 && IXg){
     var hv9 = layerHome(D, revLi);
-    axLab(P(0.5, AR + 0.17, wOf(revLi), off0), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
+    axLab(P(0.5, AR + 0.17, wOf(revLi), offAt(stOf(revLi))), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
           hv9.frag > 1 ? ('各持 1/'+hv9.frag+'，无一张完整') : '每张持有完整的它',
           VC.dp, true, 7.4);
   }
