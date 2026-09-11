@@ -273,7 +273,8 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <a href="#s7">16 勘误</a>
   <a href="#s8">17 治理</a>
   <a href="#s-onto">18 对象总表</a>
-  <a href="#s-gaps">19 边界</a>
+  <a href="#s-fabric">19 载体</a>
+  <a href="#s-gaps">20 边界</a>
 </nav>
 
 <div class="wrap">
@@ -283,7 +284,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <h1>分布式训练参照系<br><span class="thin">五根轴 · 两个对象 · 三组坐标</span></h1>
   <p class="sub">能被切的东西只有五根轴（<code>ℓ h e b s</code>），它们挂在两个对象上（权重体 / 激活体），落到三组坐标里（空间 4 维 · 时间 · 粒度）。本文用这套框架把 TP / PP / DP / CP / SP / EP 与整网、层、算子、kernel、卡、rank、通信全部对齐；每一对关系都标了基数，每一处修正都留了勘误。所有关系以等轴测 3D 图呈现。</p>
   <div class="meta">
-    <span>20 节</span><span>41 张图</span><span>89 张表</span><span>规范术语表</span><span>15 条勘误</span><span>2026-09</span>
+    <span>21 节</span><span>41 张图</span><span>92 张表</span><span>规范术语表</span><span>20 条勘误</span><span>2026-09</span>
   </div>
 </header>
 
@@ -291,6 +292,11 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
   <div class="sec-head"><span class="sec-num">00</span><h2>规范术语表</h2></div>
 
   <p class="lede">本文遵守两条硬约束：<strong>一个概念只有一个名字，一个名字只指一个概念。</strong>下面三张表是全文的唯一词表——正文、图注、图内标签、代码注释一律照此书写，右列的词在本文中不再出现。</p>
+
+  <div class="note new">
+    <span class="lbl">第三条纪律：假设要标成假设</span>
+    <p>本文引入灵衢物理链时带入了一条尚待确认的口径——<b>超节点内一律按 UB 平面同一带宽档算，不区分同 node / 同机柜 / 跨机柜同超节点</b>（公开资料只给出「单板内、单板间、机架间 NPU 全互联」<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708</span> 与整体 inter-node 退化率 &lt;3% 的笼统表述，没有按层级给出分层带宽数字，是否降速待灵衢团队确认）。凡属这一类，本文一律显式标注证据等级；<b>不标注的语句才是本文认定的事实</b>。细节见 §20 留白。</p>
+  </div>
 
   <h3>表 A · 一名多义 —— 必须带限定词的词</h3>
   <p>这些词天然承载多个概念，裸着出现必然产生歧义。本文一律加限定词区分。</p>
@@ -356,7 +362,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
         <td>节点</td>
         <td>整网上的一个算子</td>
         <td>集群里的一台物理机</td>
-        <td>① 写 <b>节点</b>；② 一律写 <b>机</b>（机内 / 跨机）</td>
+        <td>① 写 <b>节点</b>；② 一律写 <b>机</b>（机内 / 跨机）；§07 起出现「超节点 / 机柜 / node」时，viewer 代码里的 <code>node</code> 就是这里的「机」，行文按 <b>node（机）</b> 括注对齐——<b>超节点不是「机」的复数级，是新增的一级</b>，不要读成「多台机」</td>
       </tr>
     </tbody>
   </table>
@@ -385,8 +391,18 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <tr><td>world_size</td><td>参与训练的卡总数</td><td>总卡数 · 全局规模</td></tr>
       <tr><td>流水线</td><td>PP 形成的 stage 串</td><td>pipeline · 管线</td></tr>
       <tr><td>重计算</td><td>activation checkpointing</td><td>激活检查点 · 重算</td></tr>
+      <tr><td>node</td><td>物理链上「卡」之上的一级：一块计算板，默认 8 张 NPU + 4 CPU（viewer 配置项 <code>perNode</code>，缺省 8）<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2</span></td><td>机 · 主机 · 单机 · 一台机器 · 服务器 · host · 节点（作物理义时）· 机内 / 跨机</td></tr>
+      <tr><td>机柜</td><td>物理链上 node 之上的一级：默认 4 个 node（viewer 配置项 <code>nodeRack</code>，缺省 4），即 32 卡/柜</td><td>机架 · rack · 柜 · 机框 · 一列机器</td></tr>
+      <tr><td>超节点</td><td>机柜之上的一级，同时是高带宽域的边界：默认 384 卡 = 48 node（viewer 配置项 <code>podCards</code>）</td><td>SuperPod · pod · 超级节点 · 一体机 · 大节点 · CloudMatrix（作通名用时）</td></tr>
+      <tr><td>高带宽域</td><td>「超节点」的能力侧说法，用于约束句；旧稿写「机内」的地方一律换成它</td><td>机内 · 单机内 · 高速域 · 高带宽区</td></tr>
+      <tr><td>载体（网）</td><td>一条通信边走哪张网：片内 / UB 平面 / RDMA 平面。与「载荷」（单次通信量）一字之差、不是同一件事——载荷是搬多少字节，载体是走哪张网</td><td>链路类型 · 通道 · fabric · 网络类型 · 走哪条线 · 载（缩写，与「载荷」冲突）</td></tr>
+      <tr><td>网络平面</td><td>一整张承载特定类型流量的物理网；本文只承认三张，且永远带前缀出现</td><td>平面（裸用）· 网面 · fabric · 网络域</td></tr>
+      <tr><td>UB 平面</td><td>超节点内非阻塞全互联（灵衢 UnifiedBus），承载 TP/EP 一类细粒度并行与 MoE 的 dispatch/combine <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2/§3.3.3</span>。单向带宽常被引用为约 196 GB/s，但这个数字<b>不在</b>该论文正文，来自第三方对硬件收发器规格的换算 <span class="ev ev-3">🔍 第三方分析</span> <span class="src">第三方对华为发布会口径的复盘</span></td><td>UB（裸用，与片上 Unified Buffer 撞名）· UB 网 · 灵衢总线 · 内网 · HCCS（是上一代机内互联，不是它）</td></tr>
+      <tr><td>RDMA 平面</td><td>跨超节点 scale-out，走 RoCE；论文中明确点名的负载是<b>推理场景</b>下 prefill/decode 间的 KV cache 传输，训练场景只有一句「支持分布式训练框架」的泛述、无机制细节 <span class="ev ev-v">✅ 已核实-原文（推理段落）</span> <span class="src">arXiv:2506.12708 §3.2</span>。每卡带宽常引用为 400 Gbps≈50 GB/s，但论文里唯一出现的「400 Gbps」实际是 VPC 平面访问 EVS 存储的带宽（§4.4），不是 RDMA 平面本身；RDMA 平面的 Gbps 数字论文未给出，第三方口径也不统一 <span class="ev ev-3">🔍 第三方分析，且存在冲突数字</span></td><td>RoCE 网 · IB 网（IB 是另一种实现）· 外网 · scale-out 网 · 跨机网</td></tr>
     </tbody>
   </table>
+
+  <p style="margin-top:-8px"><b>VPC 平面</b>：管理面、持久化存储（OBS/EVS/SFS）访问、CPU 侧外部服务 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2</span>；训练数据面不走它，本文正文不再展开。</p>
 
   <h3>表 C · 三个近义但<em>不可互换</em>的词</h3>
   <p>这三个词描述的是不同的映射关系，是 §06 的核心区分。它们不是同义词，混用会直接导致结论出错。</p>
@@ -409,7 +425,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
 
   <h3>表 D · 卡 / device / 进程 / rank</h3>
 
-  <p>全文的「卡」是<strong>刻意选的中性词</strong>——指一块独立的加速设备。并行切分、rank 排布、通信原语这些机制与具体厂商无关；平台差异只体现在互联名、集合通信库与算子栈的称呼上，不影响本文任何结论。</p>
+  <p>全文的「卡」是<strong>刻意选的中性词</strong>——指一块独立的加速设备。并行切分、rank 排布、通信原语这些机制与具体厂商无关，<b>这一层结论不受平台影响</b>。平台差异分两类，只有第一类是称呼：<b>① 命名差异</b>——互联名、集合通信库、算子栈的叫法不同，不影响任何结论；<b>② 高带宽域大小的差异</b>——它同样不改变任何机制，但会改变所有以「机内」为界的<b>数值约束</b>（<code>TP ≤ 高带宽域内卡数</code>、EP 组是否必然换挡、order 字符串把哪几个组按进高带宽域）。灵衢超节点把高带宽域从 8 卡扩到 384 卡，正是第二类的一个实例：<b>机制一个字不变，约束的边界挪了 48 倍。</b>本文凡出现「高带宽域」处，读者应代入自己平台的实际尺寸；见 §01「七」。</p>
 
   <table class="tbl">
     <thead><tr><th>词</th><th>指什么</th><th>与 rank 的关系</th></tr></thead>
@@ -428,7 +444,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <li>device → <code>global_rank</code> 是 <span class="cd a">1:1</span>（默认一进程绑一卡时）——这一半对。</li>
       <li>device → <b>rank 编号总数</b>是 <span class="cd b">1:N</span>——一张卡同时持有 <code>global / tp / pp / dp / ep / cp / local</code> 一整组编号。所以「一张卡一个 rank」只在 <em>global 这一个域内</em>成立，见 §10。</li>
     </ul>
-    <p><strong>还有一层容易略过的精确性：rank 绑的是 device，不是物理卡。</strong>主流训练形态下二者重合——一块物理卡 = 一个 device = 一个 rank，日常混说没问题。但有的形态一块卡上带两个独立设备，那时「一张卡」就对应两个 rank。<b>拿不准时以设备查询工具的实际列举为准</b>——本文其余部分默认「一卡一 device 一 rank」的训练形态。</p>
+    <p><strong>还有一层容易略过的精确性：rank 绑的是 device，不是物理卡。</strong>主流训练形态下二者重合——一块物理卡 = 一个 device = 一个 rank，日常混说没问题。但有的形态一块卡上带两个独立设备，那时「一张卡」就对应两个 rank。灵衢的物理链就是一个具体例子——本文物理链最底一级写作「<b>卡（die / NPU）</b>」，一个 node 的 <code>perNode = 8</code> 指的是 <b>8 个 device</b>，不是 8 块板子（见 §01「七」与表 B「node」行）。<b>拿不准时以设备查询工具的实际列举为准</b>——本文其余部分默认「一卡一 device 一 rank」的训练形态。</p>
   </div>
 
   <div class="note">
@@ -440,7 +456,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
 <section id="s0b">
   <div class="sec-head"><span class="sec-num">01</span><h2>基数：每种关系是几对几</h2></div>
 
-  <p class="lede">后面所有关系里，最容易出错的不是「A 和 B 有关系」，而是「这个关系是几对几」。而且相当一部分关系的基数<strong>不是固定的</strong>——它随并行配置变化。本节先把记号钉死，再给出全景基数表；后文每处关系都会带上标记。</p>
+  <p class="lede">后面所有关系里，最容易出错的不是「A 和 B 有关系」，而是「这个关系是几对几」。而且相当一部分关系的基数<strong>不是固定的</strong>——它随配置变化，而配置有两类：<b>并行配置</b>（TP/CP/PP/DP/EP 各维大小，决定切分映射类的基数）与<b>拓扑配置</b>（每 node 几卡 / 每机柜几 node / 每超节点几卡，决定物理位置类的基数）。两类互相独立：换一套并行配置，物理位置类的基数一个不动；换一台机器，切分映射类的基数一个不动。唯一把两者绑起来的是<b>约束</b>（TP 组要不要留在同一个高带宽域内），不是基数。本节先把记号钉死，再给出全景基数表；后文每处关系都会带上标记。</p>
 
   <h3>记号约定</h3>
   <div class="cdkey">
@@ -514,7 +530,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <tr><td><b>MoE 层 → 路由边</b> <span class="cd e">※</span></td><td><span class="cd b">1:T·K</span></td><td><b>层级的合计基数，最容易被漏掉的一行。</b>一层里每个 token 各选 K 个，边数是 <code>T·K</code>（<code>T</code> = 本卡本 micro-batch 的 token 数 = <code>MBS×S</code>）。取 <code>T=8192、K=2、E=256</code>：<b>16384 条边、每 expert 均摊 64 条</b>——所以<strong>几乎每个 expert 都会被选到</strong>，差别只在被选多少次。均匀假设下某个 expert 一次都没中的概率是 <code>(1−1/E)<sup>T·K</sup> ≈ e<sup>−64</sup></code>，等于零</td></tr>
       <tr><td>序列 → CP 分片</td><td><span class="cd b">1:N</span></td><td>N = CP 组大小</td></tr>
       <tr><td><b>SP 组 → TP 组</b></td><td><span class="cd a">1:1</span></td><td><b>唯一严格 1:1 的并行维度关系。</b>SP 与 TP 同域同大小，SP 不占独立的乘数维</td></tr>
-      <tr><td>EP 组 → DP × TP 平面</td><td><span class="cd c">N:1</span></td><td>EP 是对同一平面的重新分组，不是新增的轴（§04 勘误 A）。<b>新版实现的机制已变</b>，见 §13 勘误 M</td></tr>
+      <tr><td>EP 组 → 并行平面（DP×TP）</td><td><span class="cd c">N:1</span></td><td>EP 是对同一平面的重新分组，不是新增的轴（§04 勘误 A）。<b>新版实现的机制已变</b>，见 §13 勘误 M</td></tr>
       <tr><td>micro-batch → stage</td><td><span class="cd d">N:M</span></td><td>每个 micro-batch 依次流经所有 stage；流水线调度就是排这张 N:M 表</td></tr>
       <tr><td>并行维度 → 卡</td><td><span class="cd d">N:M</span></td><td>一张卡同时坐落在所有维度上；一个维度覆盖多张卡</td></tr>
     </tbody>
@@ -532,8 +548,8 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <tr><td>卡 → 通信域</td><td><span class="cd b">1:N</span></td><td>同时属于 TP、PP、DP、EP、CP 等多个域</td></tr>
       <tr><td>通信域 → 域内 rank</td><td><span class="cd b">1:N</span></td><td>域内编号 0…N−1，各域独立从 0 起</td></tr>
       <tr><td>卡 → global_rank <span class="cd e">※</span></td><td><span class="cd a">1:1</span> <span class="cd b">1:N</span> <span class="cd c">N:1</span></td><td>默认一进程绑一卡为 1:1；一卡多进程（MPS、推理多实例）为 1:N；一进程多卡为 N:1</td></tr>
-      <tr><td>进程 → local_rank</td><td><span class="cd a">1:1</span></td><td>机内编号，用于 <code>set_device</code>，与通信域 rank 无关</td></tr>
-      <tr><td>global_rank → (tp, cp, pp, dp) 坐标</td><td><span class="cd a">1:1</span></td><td>双向可逆的整除／取模换算，是全表里唯一严格双射的编号关系</td></tr>
+      <tr><td>进程 → local_rank</td><td><span class="cd a">1:1</span></td><td>node 内编号（默认 0–7），用于 <code>set_device</code>，与通信域 rank 无关；即「七」的 <code>slot</code>。<b>注意它绑的是 node 不是超节点</b>——一个 384 卡的超节点里有 48 组各自从 0 数起的 local_rank。旧稿「机内编号」的「机内」指的就是这里的 node，与约束句「TP 必须机内」（现改写为「高带宽域内」）所指的边界不同——两处「机内」不能一次替换替掉</td></tr>
+      <tr><td>global_rank → (tp, cp, pp, dp) 坐标</td><td><span class="cd a">1:1</span></td><td>双向可逆的整除／取模换算，是全表里<b>两个严格双射的编号关系之一</b>——另一个是 <code>global_rank → (slot, node, 机柜, 超节点)</code> 物理坐标（见「七」）。两套坐标都从 global_rank 出发、都可逆，但彼此之间不可逆（N:M，由 §11 的 order 字符串决定）。一张卡因此有两套门牌号：一套说它归哪个并行组，一套说它插在机房哪个位置</td></tr>
     </tbody>
   </table>
 
@@ -548,7 +564,7 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
       <tr><td>All-to-All</td><td><span class="cd d">N:N</span>（各不相同）</td><td>N² 个<b>独立</b>分片，每对之间的载荷都不同。本质是分布式转置，这是它与 AllReduce 的根本区别</td></tr>
       <tr><td>并行策略 → 通信原语</td><td><span class="cd d">N:M</span></td><td>AllReduce 被 DP 和 TP 共用；CP 可用 P2P ring 也可用 AllGather。不存在一一对应</td></tr>
       <tr><td>Transformer 层 → AllReduce 次数（TP）</td><td><span class="cd b">1:2</span></td><td>forward 两次（attention 块 + MLP 块），backward 同样两次</td></tr>
-      <tr><td>MoE 层 → All-to-All 次数</td><td><span class="cd b">1:2</span></td><td>forward 两次（dispatch + combine），backward 同样两次</td></tr>
+      <tr><td>MoE 层 → dispatch/combine 次数</td><td><span class="cd b">1:2</span></td><td>forward 两次（dispatch + combine），backward 同样两次——这个次数与实现无关。但<b>原语随载体变</b>：跨超节点时是标准 All-to-All；在 UB 平面上，灵衢的实现（FusedDispatch / FusedCombine）用一组 send-recv 取代 all-to-all，AIV 核直接写对端 NPU 显存 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span>——语义等价、原语不同、次数不变。<b>这一机制在推理（PD 分离）场景下验证过，训练场景下 MoE 通信能否同样用 send-recv + AIV-Direct 替代 all-to-all，论文未给出训练侧实验</b> <span class="ev ev-i">🔸 推断</span>。「MoE ⇒ All-to-All」这个等式在超节点内不成立，见表 B「通信原语」与 §01「七」</td></tr>
     </tbody>
   </table>
 
@@ -577,12 +593,35 @@ footer{margin-top:80px; padding-top:24px; border-top:2px solid var(--ink); font-
     </tbody>
   </table>
 
+  <h4>七 · 物理位置（随拓扑配置变化，与并行配置无关）</h4>
+  <table class="tbl">
+    <thead><tr><th>关系（A → B）</th><th>基数</th><th>取决于 / 说明</th></tr></thead>
+    <tbody>
+      <tr><td>卡 → node</td><td><span class="cd c">N:1</span></td><td>默认 <b>8:1</b>，N = <code>perNode</code>；反向 node → 卡 是 <span class="cd b">1:N</span>。一个 node 默认 8 张 NPU + 4 CPU <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2</span>，见表 B「node」行</td></tr>
+      <tr><td>node → 机柜</td><td><span class="cd c">N:1</span></td><td>默认 <b>4:1</b>，N = <code>nodeRack</code>，即 32 卡/柜</td></tr>
+      <tr><td>机柜 → 超节点</td><td><span class="cd c">N:1</span></td><td>默认 <b>12:1</b>（承载 NPU 的计算柜，= <code>podCards/(perNode×nodeRack)</code>）。⚠ 物理上一个超节点占 <b>16</b> 个机柜 ＝ 12 计算柜 ＋ 4 通信柜 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.3</span>；通信柜不含 NPU，不进这条基数——12 与 16 问的不是同一件事，不是矛盾</td></tr>
+      <tr><td>卡 → 超节点</td><td><span class="cd c">N:1</span></td><td>默认 <b>384:1</b> = 48 node = 12 计算柜</td></tr>
+      <tr><td>通信边（一对卡）→ 载体</td><td><span class="cd a">1:1</span></td><td>由两端的 (node, 机柜, 超节点) 唯一判定：同卡＝片内；同超节点＝UB 平面；跨超节点＝RDMA 平面。<b>不需要任何并行配置就能判出来</b>，是本节少见的严格 1:1</td></tr>
+      <tr><td>通信域（一组卡）→ 载体</td><td><span class="cd b">1:N</span> 域内实况 → 报数取 <span class="cd c">N:1</span></td><td><b>最容易读反的一行。</b>一个通信域内部可能既有 UB 段又有 RDMA 段；但集合通信的完成时间由最慢的边决定，报出去的载体取组内跨得最开的那一档。「这个域走 UB」只在域内每一对卡都在同一个超节点里时才成立</td></tr>
+      <tr><td>global_rank → (slot, node, 机柜, 超节点) 物理坐标</td><td><span class="cd a">1:1</span></td><td>整除／取模的双向可逆换算，与「三」里 <code>global_rank → (tp,cp,pp,dp)</code> 的逻辑坐标换算互为对偶（两条互不替代，「三」已改口径，不再称任何一条为「唯一」）</td></tr>
+      <tr><td>逻辑坐标 (tp,cp,pp,dp) ↔ 物理坐标 (slot,node,机柜,超节点)</td><td><span class="cd d">N:M</span></td><td><b>本节最该记住的一行。</b>两套坐标各自都是 global_rank 的双射，但彼此之间不是——对应关系由 §11 的 order 字符串决定，改 order 就是在改这张 N:M 表。一张卡两套门牌号，通信这件事只有把两套对上才说得完整</td></tr>
+      <tr><td>并行维度 → 载体</td><td><span class="cd d">N:M</span></td><td>同一维在不同卡上答案可能不同（这张卡的 DP 组全在本超节点内、那张卡的跨了两个超节点）；一张网也同时承载多个维度</td></tr>
+      <tr><td>超节点 → 网络平面</td><td><span class="cd b">1:3</span></td><td>UB 平面 / RDMA 平面 / VPC 平面；训练数据面只用前两张，VPC 不承载训练通信</td></tr>
+      <tr><td>UB 平面内部档位 → 带宽档</td><td><span class="cd c">3:1</span>（当前口径假设）</td><td>同 node / 同机柜 / 跨机柜同超节点三档，<b>目前一律按同一带宽算</b>——公开资料只给出「单板内、单板间、机架间 NPU 全互联」<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2/§3.3.3</span>与整体 inter-node 退化率 &lt;3% 的笼统表述，<b>没有按板内/板间/机架间给出分层带宽数字</b> <span class="ev ev-i">🔸 推断</span>。⚠ 这是<b>假设，不是事实</b>：真有差异时这一行就变成 3:3，其余各行不用改</td></tr>
+    </tbody>
+  </table>
+  <div class="note fix">
+    <span class="lbl">总结论：换挡点在哪</span>
+    <p>超节点内部，node 边界不是降速点；换挡发生在超节点边界——UB 平面到 RDMA 平面。UB 平面单向带宽常被引用为约 196 GB/s <span class="ev ev-3">🔍 第三方分析</span>（不在 arXiv:2506.12708 正文，来自第三方对硬件收发器规格的换算），RDMA 平面每卡常引用为 400 Gbps ≈ 50 GB/s <span class="ev ev-3">🔍 第三方分析，且存在冲突数字</span>（论文里唯一出现的「400 Gbps」实际是 VPC 平面访问 EVS 存储的带宽，不是 RDMA 平面本身；RDMA 平面数字论文未给出，第三方口径也不统一）——两个数字都不是 arXiv 论文的结论，本文只把它们作为业界口径带入、不作为已核实事实引用；按它们比较的落差约四倍，仅供量级参考。这正是本文要求 node（机）与超节点分开算的量化理由：若把降速点标在 node（机）上，实际换挡点却在其上两级，读者据此做的部署判断就是错的。本节只给互联结构与带宽档，不给「耗一次通信多久」的估算——完整的载体刻画与传输下界的公式见 §19。</p>
+  </div>
+
   <div class="note">
-    <span class="lbl">三条最容易读反的基数</span>
+    <span class="lbl">四条最容易读反的基数</span>
     <ol>
       <li><strong>算子 → kernel 是 <span class="cd d">N:M</span>，不是 1:1。</strong>所以 profiling 里 kernel 数量对不上图节点数是正常现象，不是工具出错。</li>
       <li><strong>层 → 卡 的基数不是常量。</strong>四种配置下四种基数（FIG 00）。任何「一层就在一张卡上」的默认假设，只在单卡或纯 DP 下成立。</li>
       <li><strong>卡 → rank 编号是 <span class="cd b">1:N</span>，不是 1:1。</strong>「一张卡 = 一个 rank」只在<em>单个通信域内部</em>成立；跨域时一张卡有一整组坐标（§10）。</li>
+      <li><strong>「一个组走哪张网」不是这个组的属性，是这个组里最慢那条边的属性。</strong>一个通信域内部完全可能既有 UB 段又有 RDMA 段；集合通信的完成时间由最慢的边决定，所以报出去的载体一律取组内跨得最开的那一档。说「EP 组走 UB」，只有在<em>组内每一对卡都在同一个超节点里</em>时才成立——判据是这一组跨了几个超节点，不是它有几张卡（见「七」）。</li>
     </ol>
   </div>
 </section>
@@ -1218,7 +1257,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <span class="lbl">这解释了 TP 的三条约束</span>
     <ul>
       <li><strong><code>num_attention_heads % TP == 0</code></strong>（§11）——因为切的粒度是<b>整个 head</b>，不能把一个 head 劈开。GQA / MQA 下还要 <code>num_query_groups % TP == 0</code>。</li>
-      <li><strong><code>TP ≤ 单节点高带宽域卡数</code></strong>——每层两次集合通信，频率碾压其他所有维度。</li>
+      <li><strong><code>TP ≤ 高带宽域卡数</code></strong>——每层两次集合通信，频率碾压其他所有维度。高带宽域的半径由载体决定：传统平台上等于一台机（典型 8 卡），灵衢超节点上等于整个超节点（384 卡），见 §19 与 §16 勘误 Q。</li>
       <li><strong>TP 是「分片」不是「划分」</strong>（§01）——它把<b>单个权重矩阵拆开</b>，算子本身被改写成分片算子，各卡算的是<em>同一个 matmul 的不同部分</em>；PP / EP 则是把完整单元分开放。这正是 TP 的归属边界被推到 kernel 那么深的原因（§02）。</li>
     </ul>
   </div>
@@ -1539,7 +1578,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
 <section id="s-chain">
   <div class="sec-head"><span class="sec-num">07</span><h2>逻辑侧 ↔ 物理侧：两条链不是逐级对齐的</h2></div>
-<p class="lede">逻辑侧五级、物理侧五级，看起来对称，但它们的对应关系是斜的。最关键的一点：<strong>所有并行切分都收在物理侧的同一级上。</strong></p>
+<p class="lede">逻辑侧五级、物理侧七级——连级数都对不上，更不用说逐级对齐。<strong>级数变多，落点没变</strong>。最关键的一点：<strong>所有并行切分都收在物理侧的同一级上。</strong></p>
 
   <figure>
     <figcaption><span class="fnum">FIG 09</span><span class="ftitle">双链映射</span>
@@ -1547,11 +1586,17 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <div class="stage" id="fig-chains"></div>
   </figure>
 
-  <h3>上下两级都不参与切分</h3>
+  <h3>上四级、下两级都不参与切分</h3>
   <ul>
-    <li><strong>集群、机</strong>：不参与切分，只决定拓扑与带宽。机的存在只影响「TP 域必须放机内、PP 域可以跨机」这类约束，不改变切法。</li>
+    <li><strong>集群、超节点、机柜、node</strong>：不参与切分，只决定拓扑与带宽。上四级的存在只影响「TP 域必须在<strong>高带宽域</strong>内、PP 域可以跨高带宽域」这类约束，不改变切法——高带宽域的边界由硬件给定：传统单机上它等于机（8 卡），灵衢超节点上它等于超节点（384 卡 · 48 node · 16 机柜）。</li>
     <li><strong>计算单元、片上 buffer</strong>：与并行完全无关。tiling 也是切，但不跨卡、不通信、不改语义。</li>
   </ul>
+
+  <h3>物理侧不是五级：机以上还有三级</h3>
+
+  <p>以灵衢 UnifiedBus / CloudMatrix384 为例，机（node）往上还有三级：<code>集群 → 超节点 → 机柜 → node → 卡 → 计算单元 → 片上 buffer</code>，物理侧从五级变成七级。<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2–3.3.3</span> 给出的默认尺寸是：<code>perNode=8</code>（每 node 8 张 NPU）、<code>nodeRack=4</code>（每机柜 4 node）、<code>podCards=384</code>（每超节点 384 卡）——一个超节点 ＝ 48 node ＝ 384 卡 ＝ 16 机柜（12 计算柜 + 4 通信柜）。<strong>这三个数字在 viewer 里是 URL 可配参数（<code>?perNode=&nodeRack=&podCards=</code>），不是写死的硬件常量</strong>，本文按 CloudMatrix384 的公开规格举例作为默认值，不代表所有灵衢部署都是这个尺寸。</p>
+
+  <p>互联侧有三张平面，各管一件事：<strong>UB 平面</strong>——超节点内非阻塞全互联，承载 TP / EP 并行与显存池化 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2</span>；<strong>RDMA（RoCE）平面</strong>——跨超节点 scale-out，训练场景下论文只给了一句无数字的泛述（支持分布式训练框架间通信），推理场景下论文验证过用于 PD 分离间的 KV cache 传输；<strong>VPC 平面</strong>——管理面与持久化存储，训练数据面不走这张网。一句话结论：<strong>七级链里只有一处是换挡点，在超节点边界，不在 node（机）边界</strong>——下面的判据表要坐实这一点；寻址粒度、板内/板间/机架间是否同档、平面选择由哪一层决定这三个仍待灵衢团队确认的口径问题，见 §20 留白。</p>
 
   <h3>为什么偏偏是卡：一个判据，三个身份</h3>
 
@@ -1562,24 +1607,35 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <p>一刀算不算<strong>并行切分</strong>，看它是否改变<strong>状态的归属</strong>——切开之后，索引空间的不同子块分属不同的持有者，且按 §02 的通则，切口处必须插入通信算子来补齐。这句话预设了持有者必须具备三种能力：<strong>私有地址空间</strong>（归属才有边界）、<strong>通信端点</strong>（补齐才有收发方）、<strong>独立执行流</strong>（分片才能同时被算）。</p>
   </div>
 
-  <p>拿这三项把物理侧五级逐个过一遍：</p>
+  <p>拿这三项把物理侧七级逐个过一遍：</p>
 
   <table class="tbl">
     <thead><tr><th>物理级</th><th>私有地址空间</th><th>通信端点</th><th>独立执行流</th><th>所以它是</th></tr></thead>
     <tbody>
       <tr><td>集群</td><td>✗ 只是全部卡显存的并集</td><td>✗ 是端点的集合，不是端点</td><td>✗</td><td>拓扑</td></tr>
-      <tr><td>机</td><td>✗ 没有「机显存」——机内没有任何一个张量属于机而不属于某张卡</td><td>✗</td><td>✗</td><td>带宽边界</td></tr>
+      <tr><td><b>超节点</b></td><td>✗ ——UB 让超节点内 384 卡互相直接读写对端显存，扩大的是<b>可达性</b>，不是<b>归属</b>；每个字节仍记在某个 rank 名下（寻址粒度待确认，见 §20 留白；两种候选答案都不改这一格，见下文 note）</td><td>✗ 是端点的集合，不是端点</td><td>✗ 384 张 NPU 各有各的流</td><td><b>带宽边界（UB → RoCE 的换挡点）</b></td></tr>
+      <tr><td>机柜</td><td>✗ 没有「机柜显存」</td><td>✗</td><td>✗</td><td>位置标签（供电 / 散热 / 布线的封装单位：4 node/柜，12 计算柜 + 4 通信柜 = 16 柜/超节点；在 UB 平面上不换挡——口径假设，见 §20 留白）</td></tr>
+      <tr><td>node（机）</td><td>✗ 没有「机显存」——机内没有任何一个张量属于机而不属于某张卡；node 上的 4 颗 CPU 各有 DRAM，但那是 offload 的墙外仓库，不是持有者（见下文压力测试）</td><td>✗ HCCL 的成员表里只有 global rank，没有 node id</td><td>✗ 8 张 NPU 各有各的流</td><td>位置标签——在超节点内不再是降速点（8 卡 · 一个 node = 1/48 个超节点）</td></tr>
       <tr><td><b>卡</b></td><td><b>✓ 显存</b></td><td><b>✓ rank</b></td><td><b>✓ 流</b></td><td><b>唯一三项全齐 → 落点</b></td></tr>
       <tr><td>计算单元</td><td>✗ 所有单元读写同一块 HBM</td><td>✗</td><td>并发，但由同一调度器统一喂</td><td>执行</td></tr>
       <tr><td>片上 buffer</td><td>✗ 装的是 HBM 数据的临时副本，不拥有数据</td><td>✗</td><td>✗</td><td>执行</td></tr>
     </tbody>
   </table>
 
-  <p>只有卡三项全齐。<strong>上两级只有聚合、没有归属</strong>——所以它们出现在约束里（「TP 必须机内」是带宽约束），从不出现在切法里；<strong>下两级只有共享、没有边界</strong>——计算单元之间交换数据靠写回同一块 HBM 再读出，不需要也不存在通信算子，所以 tiling 分的是<em>工作在时间上的排布</em>，不是<em>状态在空间上的归属</em>。这正是上面那句「不跨卡、不通信、不改语义」的由来。</p>
+  <p class="note-inline">表下补一句总结：三行全是 ✗✗✗，判据的结论一个字没变；灵衢改的只是「带宽边界」这一格所在的层级——从 node 上移到超节点。</p>
 
-  <p>把这说到底就是一句话：<strong>地址空间的边界在哪里，并行的落点就在哪里。</strong>并行切分本质是「把索引空间的子块分派给不同的地址空间」（§10：rank 元组是地址）；物理五级里，地址空间的粒度恰好就是卡——往上没有更大的统一地址空间（peer 访问是搬运手段，框架的归属记账仍以卡为界），往下没有更小的独立地址空间。</p>
+  <p>只有卡三项全齐。<strong>上四级只有聚合、没有归属</strong>——所以它们出现在约束里（「TP 必须在高带宽域内」是带宽约束），从不出现在切法里；<strong>下两级只有共享、没有边界</strong>——计算单元之间交换数据靠写回同一块 HBM 再读出，不需要也不存在通信算子，所以 tiling 分的是<em>工作在时间上的排布</em>，不是<em>状态在空间上的归属</em>。这正是上面那句「不跨卡、不通信、不改语义」的由来。</p>
 
-  <p>还可以换一个函数视角：整个并行配置就是一个映射 <code>(ℓ, e, b, s, h) → (pp, ep, dp, cp, tp) → global_rank → 卡</code>，值域是卡的集合。<strong>集群与机从不出现在这个函数里</strong>，只影响「哪个函数是好主意」（§11 的 order 与整除约束）；<strong>计算单元与 buffer 只在函数求值之后出现</strong>——卡拿到自己那块之后怎么算，已经与「分给谁」无关。卡是「分派」与「执行」的交接面：以上决定<em>哪张卡算</em>，以下决定<em>这张卡怎么算</em>。</p>
+  <p>把这说到底就是一句话：<strong>地址空间的边界在哪里，并行的落点就在哪里。</strong>并行切分本质是「把索引空间的子块分派给不同的地址空间」（§10：rank 元组是地址）；物理七级里，<strong>归属</strong>的粒度恰好就是卡——往上即使有更大的统一寻址（灵衢 UB 让超节点内 384 卡互相直接读写对端显存），那也只是<strong>可达性</strong>扩大，不是归属合并：peer 访问与 UB 都是搬运手段，框架的归属记账仍以卡为界；往下没有更小的独立地址空间。</p>
+
+  <div class="note new">
+    <span class="lbl">UB 统一寻址会不会推翻这句话</span>
+    <p>不会。灵衢 UnifiedBus 在硬件层给出的是<strong>全局统一寻址与路由</strong>——UB 交换芯片能把一张 NPU 发起的访问请求直接路由到超节点内任意一台 MP Server 的显存 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.6.2</span>。但判据是<strong>三种能力的合取</strong>，不是一项：超节点即使有统一寻址，它仍然不是通信端点（是端点的集合），也没有独立执行流（384 张 NPU 各有各的流）——三缺二，进不了 <code>(pp,ep,dp,cp,tp)→global_rank</code> 的值域，因为没有一个执行流去算「分给超节点」的那个分片，也没有一个端点去收发它。</p>
+    <p>更根本的是：统一寻址扩大的是<strong>可达性</strong>（谁能读到谁的字节），判据要的是<strong>归属</strong>（这些字节记在谁名下）。这与 peer 访问、offload 是同一种形状——peer 访问早让 A 卡直读 B 卡显存，offload 早让 rank 把状态暂存到 host DRAM，量级和路径都不同，但都没有把落点挪走。UB 只是把这个「搬运手段」的半径从 8 卡的机扩到 384 卡的超节点。代码这一侧也自证：FusedDispatch/FusedCombine 里 AIV 核<b>直接写对端 NPU 显存</b>，「对端」这个词本身就预设归属边界还在 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span>；viewer 的 <code>fabricOf</code> / <code>commLoad9</code> 全部以 rank 为索引，没有一处以 pod（超节点）为持有者。</p>
+    <p>真正会推翻这句话的情形是：384 卡上只跑<strong>一个</strong>执行流、rank 数从 384 降到 1，框架的分片记账不再以卡为单位——那时超节点才被改造成「卡等价物」，落点才会上移，这与本节 MIG 那条压力测试互为镜像。CloudMatrix384 不是这样：每张 NPU 各绑一个 rank，HCCL 成员表仍是 global rank 列表。也不必等灵衢团队回答寻址粒度是统一虚拟地址空间还是 rank → 预注册 buffer 的静态映射（§20 留白）——两种候选答案都不改变这个结论，因为归属记账在框架侧，不在 MMU / 寻址层。</p>
+  </div>
+
+  <p>还可以换一个函数视角：整个并行配置就是一个映射 <code>(ℓ, e, b, s, h) → (pp, ep, dp, cp, tp) → global_rank → 卡</code>，值域是卡的集合。<strong>集群 / 超节点 / 机柜 / node 从不出现在这个函数里</strong>，只影响「哪个函数是好主意」（§11 的 order 与整除约束）；<strong>计算单元与 buffer 只在函数求值之后出现</strong>——卡拿到自己那块之后怎么算，已经与「分给谁」无关。卡是「分派」与「执行」的交接面：以上决定<em>哪张卡算</em>，以下决定<em>这张卡怎么算</em>。级数从五变七，这个函数的定义域与值域一个字没变。</p>
 
   <div class="note new">
     <span class="lbl">与 §02 的对偶</span>
@@ -1590,7 +1646,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <span class="lbl">压力测试：四个像反例的例子</span>
     <ul>
       <li><strong>MIG 把一张卡切成几份</strong>——但每个实例拿到的是独立的显存切片 ＋ 独立设备号，可各绑一个 rank：想在卡以下参与并行，必须先把那个单元<em>改造成卡等价物</em>。这是判据的正面印证，不是反例。</li>
-      <li><strong>超节点把高带宽域扩出单机</strong>——「TP 必须机内」松弛为「TP 必须在高带宽域内」。变的是上两级的形状（约束），不变的是落点（仍是卡）。</li>
+      <li><strong>超节点把高带宽域扩出单机</strong>——「TP 必须机内」松弛为「TP 必须在高带宽域内」。变的是上四级的形状（约束），不变的是落点（仍是卡）。以灵衢 CloudMatrix384 为例：卡 ⊂ node（8 张 NPU + 4 颗 CPU）⊂ 机柜（4 node）⊂ 超节点（48 node ＝ 384 卡 · 16 柜，12 计算柜 + 4 通信柜）⊂ 集群 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2–3.3.3</span>。<strong>关键论断：超节点内部，node 边界不再是降速点，换挡发生在超节点边界</strong>——论文给出的证据是超节点内 inter-node 带宽退化率 &lt;3%、延迟增加 &lt;1μs，UB 平面在 L1→L2 交换层保持无超订的非阻塞聚合带宽 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2/§3.3.3</span>；出了超节点边界要换到 RDMA/RoCE 平面，每卡带宽显著更低——viewer 当前按 UB 196 GB/s/卡、RoCE 400 Gbps/卡（≈50 GB/s，约四分之一）计，但这两个具体数字都<b>不是</b>论文原文，是第三方（含华为发布会）口径，且第三方来源本身互有出入，只能算 <span class="ev ev-3">🔍 第三方分析</span>（见 §20 留白）。MoE 的 dispatch/combine 用 send-recv + AIV-Direct 直写对端显存替代 all-to-all，全程留在 UB 上 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span>——但这是论文在<b>推理</b>（PD 分离）场景下验证的机制，训练场景下 MoE 通信能否同样用 UB 内的 send-recv 替代 all-to-all，论文没有给出训练侧实验，只能作 <span class="ev ev-i">🔸 推断</span> 处理，不能直接当训练结论引用。反过来问一句、就地答掉：UB 若是统一虚拟地址空间，落点是不是要上移到超节点？不会——见前一条 note「UB 统一寻址会不会推翻这句话」。<b>口径假设，待灵衢团队确认：</b>超节点内板内 / 板间 / 机架间一律按 UB 同一档带宽计，公开资料未见分层数字，不要读成实测（§20 留白）。</li>
       <li><strong>ZeRO / FSDP 切的不是那四根轴</strong>（切的是 DP 组内的冗余副本），但分片单位仍然是 rank，即仍然是卡。</li>
       <li><strong>offload 用了主机内存</strong>——机确实有自己的 DRAM，但它在切分语义里不是持有者：offload 只是某个 rank 把自己名下的状态暂存到墙外仓库，归属记账没有离开 rank。</li>
     </ul>
@@ -1598,7 +1654,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
   <div class="note">
     <span class="lbl">口径核对</span>
-    <p>与实现对得上：Megatron / torch.distributed 里 <code>world_size</code> ＝ 进程数（标准排布一进程绑一卡，§10），所有并行组（TP / CP / PP / DP / EP 组）的成员都是 global rank 的列表；<code>initialize_model_parallel</code> 的输入只有各维大小与 <code>order</code> 字符串——<strong>「机」这个概念在切分语义里根本没有入口</strong>，它只通过两条侧门进入：rank 排布约定（stride 1 的组落机内，§11）和配置约束（TP ≤ 机内卡数）。</p>
+    <p>与实现对得上：Megatron / torch.distributed 里 <code>world_size</code> ＝ 进程数（标准排布一进程绑一卡，§10），所有并行组（TP / CP / PP / DP / EP 组）的成员都是 global rank 的列表；<code>initialize_model_parallel</code> 的输入只有各维大小与 <code>order</code> 字符串——<strong>「机」「机柜」「超节点」这些概念在切分语义里都没有入口</strong>，它们只通过两条侧门进入：① rank 排布约定——stride 1 的组落在同一个 node 上（§11）；灵衢之后真正要看的不是它落不落在一个 node，而是<strong>整组在不在同一个超节点内</strong>（跨了才换挡）。② 配置约束——<code>TP ≤ 高带宽域卡数</code>：传统机上是机内卡数（典型 8），灵衢超节点上是 384。</p>
   </div>
 
   <p>所以「整网怎么在卡上切分」这个问题，答案的全部信息都在卡这一级。这也解释了为什么单卡视角（显存里放了什么 / 流上排了什么）能撑起那么多诊断——并行的一切后果都在那里落地。</p>
@@ -1994,24 +2050,38 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
   <p>前两层都是逻辑层面——「谁和谁通信、用什么原语」。但一旦真正诊断通信延迟，就必须知道<strong>这条逻辑连线走的是哪条物理路</strong>。这是前文刻意没展开的一层，因为它与硬件平台绑定：</p>
 
   <table class="tbl">
-    <thead><tr><th>通信范围</th><th>物理互联</th><th>集合通信库</th><th>典型带宽</th><th>延迟量级</th></tr></thead>
+    <thead><tr><th>通信范围（按高带宽域分档，不按机箱分）</th><th>物理互联</th><th>集合通信库</th><th>典型带宽</th><th>延迟量级</th></tr></thead>
     <tbody>
       <tr>
-        <td><b>机内</b><br>同一节点的卡之间</td>
-        <td>NVLink / NVSwitch<br>HCCS（华为）<br>xGMI（AMD）</td>
-        <td>NCCL<br>HCCL<br>RCCL</td>
-        <td>300–900 GB/s<br>（双向汇总）</td>
-        <td>μs 级</td>
+        <td><b>片内</b><br>同一张卡内部，不出卡</td>
+        <td>HBM / 片上互联</td>
+        <td>—（不涉及通信算子）</td>
+        <td>TB/s 级</td>
+        <td>ns 级</td>
       </tr>
       <tr>
-        <td><b>跨机</b><br>不同节点之间</td>
-        <td>InfiniBand（IB）<br>RoCE v2</td>
-        <td>NCCL over IB<br>HCCL over UB<br>（Unified Buffer）</td>
-        <td>100–400 Gbps<br>per port</td>
+        <td><b>超节点内</b><br>同一高带宽域，跨 node（机）、跨机柜都算</td>
+        <td>NVLink / NVSwitch<br>xGMI（AMD）<br>UB 灵衢 UnifiedBus（华为，超节点内非阻塞全互联）</td>
+        <td>NCCL<br>RCCL<br>HCCL</td>
+        <td>NVLink 侧 300–900 GB/s（双向汇总）<br>UB 侧 196 GB/s 单向每卡<span class="ev ev-3">🔍 第三方分析</span></td>
+        <td>NVLink 侧 μs 级<br>UB：超节点内跨机柜 NPU→NPU 端到端约 <b>2.1 μs</b><span class="ev ev-3">🔍 第三方分析</span>（口径是端到端，不是卡间单跳）</td>
+      </tr>
+      <tr>
+        <td><b>跨超节点</b><br>scale-out</td>
+        <td>InfiniBand（IB）<br>RoCE v2 / UBoE</td>
+        <td>NCCL over IB<br>HCCL over RoCE</td>
+        <td>400 Gbps/卡 ≈ 50 GB/s<span class="ev ev-3">🔍 第三方分析，数字存在冲突</span></td>
         <td>数 μs – 低 ms</td>
       </tr>
     </tbody>
   </table>
+
+  <div class="note gov">
+    <span class="lbl">三档表的口径说明——两条必须一起读</span>
+    <p><b>单位不统一就不能直接比。</b>196 GB/s 是单向每卡，300–900 GB/s 是双向汇总，50 GB/s 是 400 Gbps 换算而来，三者不能相减或相除来判断谁快谁慢；按同一口径折算，超节点内到跨超节点这一跳的带宽落差约<b>四倍</b>，这才是"换挡点"真正的量化含义，不是"跨没跨机箱"。196 GB/s 与 400 Gbps 这两个被广泛引用的数字<b>都不出自 arXiv:2506.12708</b>：196 GB/s 来自第三方对发布会口径的复盘，400 Gbps 与之并存的还有 200 Gbps/卡等不同说法，本文按"数字来源冲突"处理，不当结论用。这与本文其余部分对应 viewer 侧的三档载体 <code>FABRIC9 = {local, ub, roce}</code>。</p>
+    <p><b>"超节点内三档同带宽"是口径假设，不是实测。</b>本文与 viewer 侧（<code>UB_TIERS9</code>）一样，对超节点内部不区分板内 / 板间 / 机柜间，一律按同一带宽计算——公开资料只给了"跨机柜退化 &lt; 3%"这一句笼统描述，没有分层数字。这条假设待灵衢团队确认，留白见 §20。</p>
+    <p>在没有超节点的平台上，"超节点内"这一档会塌回原来的"机内"（NVLink / HCCS 单机 8 卡）；三档表退化成两档，本节其余讨论照旧成立——<b>分档轴始终是高带宽域的边界在哪，不是机箱的铁皮在哪</b>。</p>
+  </div>
 
   <div class="note new">
     <span class="lbl">NCCL / HCCL / RCCL 是同一层</span>
@@ -2024,16 +2094,20 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <p><strong>训练框架（Megatron / DeepSpeed / FSDP）从来不直接调用硬件互联</strong>，它们只调用集合通信库的 API（<code>all_reduce(tensor, group)</code>）。集合通信库负责决定这次 AllReduce 走哪条物理路、用什么算法（Ring / Tree / Mesh）。所以<strong>本文前面所有关于通信原语的讨论都不受硬件影响</strong>——AllReduce 在 NCCL 和 HCCL 上语义完全一样，只是底层走的线不同。</p>
   </div>
 
-  <div class="note new">
-    <span class="lbl">华为昇腾的 UB（Unified Buffer）</span>
-    <p>UB 不是一个独立的通信原语，而是 HCCL 在<b>跨机场景</b>下使用的一种通信加速机制。它的核心思路是<strong>在主机侧开辟一段共享 buffer</strong>，让多张卡的跨机通信可以汇聚到这段 buffer 再经 RDMA 网络发出去——而不是每张卡各自发各自的。</p>
-    <p>从应用层看不到 UB 的存在：你还是调 <code>hccl.all_reduce(tensor, group)</code>，HCCL 内部判断这个 group 跨不跨机，跨了就自动走 UB + RDMA 通道。所以 <b>UB 影响的是性能和带宽利用率，不影响通信语义</b>。诊断跨机通信延迟时需要关注 UB 的配置（buffer 大小、RDMA 连接数、拓扑感知），但对理解并行切分和通信模式没有影响。</p>
+  <div class="note fix">
+    <span class="lbl">勘误 P · UB 是 UnifiedBus（互联总线），不是 Unified Buffer（主机侧共享 buffer）</span>
+    <p>上一版这里把两个同名缩写混成了一个。昇腾 DaVinci AI Core 片内确实有一块叫 <b>Unified Buffer</b> 的统一缓冲（AIV / vector 单元直接读写的片内 SRAM，与 L0A/L0B/L0C/L1 同级）——但那是<b>卡内</b>的东西，与本节讨论的物理互联无关。这里真正该出现的是<b>灵衢 UnifiedBus（缩写也是 UB）</b>：一种卡级互联总线 / 协议，把超节点（SuperPoD）内的全部 NPU、CPU 接成一张非阻塞全互联平面<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2 / §3.3.3</span>，属于硬件互联层，是 NVLink / HCCS / xGMI 的同侪——<b>不在 HCCL 内部</b>。两个 UB 一个在卡内、一个在机房里，隔了三级，此前的整块论述建立在错的那一个上，需要逐句纠正：</p>
+    <p>① 「UB 是 HCCL 在跨机场景下使用的通信加速机制」——错。UB 位于 HCCL 之下的硬件互联层，是 HCCL 可选的载体之一，不是 HCCL 内部的机制；它服务的场景也不是"跨机"，而是<b>超节点内</b>（scale-up）。<br>
+    ② 「核心思路是在主机侧开辟共享 buffer，把跨机通信汇聚后再经 RDMA 发出」——这段机制是虚构的。灵衢 UnifiedBus 提供的是卡到卡的<b>内存语义直连</b>（Load/Store 与 URMA 单边读写）<span class="ev ev-3">🔍 第三方分析</span> <span class="src">公开二手手册对灵衢规范的整理，非官方原文逐字</span>，走的恰恰是<b>绕开主机内存中转</b>的路径。<br>
+    ③ 「跨机时 HCCL 自动走 UB + RDMA 通道」——方向反了。UB 与 RDMA / RoCE 是<b>互斥的两张平面</b>，不是串联的一条通道：超节点<b>内</b>走 UB，跨出超节点边界才换挡到 RoCE（或 UBoE）。<br>
+    ④ 「诊断时要关注 UB 的 buffer 大小、RDMA 连接数」——这个旋钮不存在。真正该查的是这组卡有没有跨出超节点边界、平面接线是否一致（接错平面时链路层可以全 Up，但集合通信带宽会塌陷）。</p>
+    <p>正面重述一句话：<b>UnifiedBus 把总线级的低时延内存语义从主板内延伸到了整个机房，扩大的是高带宽域的半径，不是给跨机通信加了一层缓存。</b>原块里说对的那句精神依然成立，只是要把主语换回来：从应用层看不到这层选择——调的还是 <code>hccl.all_reduce(tensor, group)</code>，HCCL 拿到 group 后自己判断这组卡落在哪张平面上；<b>UB 影响的是走哪条路、性能如何，不影响通信语义，也不改变可选原语集合</b>。超节点这一档具体如何接入本文的参照系（口径假设、带宽单位、与 §07 / §11 的接口），见 §19；一手细节见仓库内 <code>public/ub-reference/index.html</code>（灵衢 UnifiedBus 参考手册）。</p>
   </div>
 
   <figure>
     <figcaption>
-      <span class="fnum">FIG 12C</span><span class="ftitle">HCCL 架构与 UB 跨机加速</span><span class="cd b">集合通信库 1:N 硬件</span>
-      <span class="fnote">左侧：框架 → 集合通信库 → 硬件互联的三层调用栈，NCCL / HCCL / RCCL 是同一层的三个实现。右侧：HCCL 内部的两条路径——机内走 HCCS 直连，跨机走 UB 共享 buffer + RDMA 聚合。点击切换查看 NCCL 对应路径。</span>
+      <span class="fnum">FIG 12C</span><span class="ftitle">HCCL 的路径选择：超节点内 UB vs 跨超节点 RoCE</span><span class="cd b">集合通信库 1:N 硬件</span>
+      <span class="fnote">左侧：框架 → 集合通信库 → 硬件互联的三层调用栈，NCCL / HCCL / RCCL 是同一层的三个实现。右侧：HCCL 之下的三张平面——<b>UB 平面</b>（超节点内非阻塞全互联，训练里承载 TP / EP 等细粒度并行通信，196 GB/s 单向每卡）、<b>RDMA / RoCE 平面</b>（scale-out，400 Gbps/卡，跨超节点才启用）、<b>VPC 平面</b>（管理面，训练数据面不经过，图上不画）。换挡点在超节点边界，不在 node（机）边界。点击切换查看 NCCL 对应路径。</span>
     </figcaption>
     <div class="stage" id="fig-hccl"></div>
     <div class="ctrl" id="hccl-ctrl">
@@ -2060,7 +2134,7 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
     <p>训练框架（Megatron / MindSpore / DeepSpeed）只调 <code>all_reduce(tensor, group)</code>，<b>不指定用 HCCS 还是 RDMA、走不走 UB</b>。集合通信库（HCCL / NCCL）拿到 group 之后自己查成员的物理位置，自动选路径——这就是 FIG 12C 左侧三层栈的含义。所以：</p>
     <ul>
       <li><b>FIG 12B 的连线颜色</b>（红 / 蓝 / 橙）由<b>并行维度</b>决定——TP / DP / PP，与硬件无关</li>
-      <li><b>FIG 12C 的路径选择</b>由<b>group 成员的物理位置</b>决定——同节点走机内，跨节点走 UB/IB</li>
+      <li><b>FIG 12C 的路径选择</b>由<b>group 成员的物理位置</b>决定——同一超节点内走 UB 平面，跨出超节点边界才换 RDMA / RoCE（§19）。换挡点在超节点边界，不在 node（机）边界</li>
       <li>两者的交汇点就是那一次 <code>all_reduce(tensor, group)</code> 调用——<b>逻辑层决定 group，物理层决定 route</b></li>
     </ul>
   </div>
@@ -2095,19 +2169,24 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
 
   <p>注意第三层是唯一与硬件平台绑定的层。前两层在任何平台上都一样——这是 §00 开头「平台差异只体现在互联名、集合通信库与算子栈的称呼上，不影响本文任何结论」的具体展开。</p>
 
+  <div class="note gov">
+    <span class="lbl">加了第六元 / 第十层之后，这句要说准一点</span>
+    <p>§15 六把这一层升成第十层、§15 一把它升成第六元之后，这句仍然成立，但要分清<b>结构</b>与<b>取值</b>：<strong>平台无关的是这一元的结构，平台相关的只是档的名字和带宽数。</strong>任何平台上都有「这条边走哪张网」这一问——NVLink/NVSwitch + IB 是两档，灵衢 UnifiedBus + RoCE 也是两档（细分到超节点内则是三档），换的是档名与数值，换不掉「有这一元」这件事。§00 那句该被读成：平台差异体现在<b>档的名字与取值</b>上，不体现在<b>有没有这一元</b>上。</p>
+  </div>
+
   <div class="note">
     <span class="lbl">PP 链路不是兄弟关系</span>
     <p>在联动显示中，TP 和 DP 的连线连接的是<b>同一张量的不同碎片</b>（TP）或<b>同一张量的完全相同副本</b>（DP），通信的目的是<b>聚合或同步</b>。PP 方向的连线则完全不同——它传的是「上一个 stage 的输出激活」交给「下一个 stage 的输入」，两端拿的根本不是同一层的东西。<strong>PP 的连线该画但不该和兄弟块混在一起</strong>——它是数据流方向上的依赖，不是切分产生的聚合需求。</p>
   </div>
 
-  <h4>Rank 通信 ⊃ HCCL ⊃ UB：三层嵌套，不是三个场景</h4>
+  <h4>Rank 通信 → HCCL → 载体：三层逐层决定，不是三个场景</h4>
 
-  <p>一个常见困惑：Rank 间通信、HCCL、UB 是三个独立的场景吗？不是。它们是<b>同一条通信路径上的三个嵌套层级</b>——外层定义语义，中层选择实现，内层执行优化：</p>
+  <p>一个常见困惑：Rank 间通信、HCCL、载体是三个独立的场景吗？不是，但也不是「一层包一层」——它们是<b>同一条通信路径上逐层决定下一层</b>的三个环节：外层定义语义（谁和谁通信），中层选算法选路（HCCL/NCCL），内层是<b>被选中的那张物理网</b>（片内 / UB / RoCE）。物理链路不是集合通信库的子集，它是被库<b>选中</b>的对象——这是「选路 → 被选的路」，不是「包含」：</p>
 
   <figure>
     <figcaption>
-      <span class="fnum">FIG 12E</span><span class="ftitle">通信三层嵌套：逻辑 → 实现 → 优化</span><span class="cd a">包含关系 1:1</span>
-      <span class="fnote">三个同心框分别对应 Rank 间通信关系（逻辑层）、HCCL/NCCL（软件实现层）、UB（跨机传输优化）。每一层都是上一层的实现细节，对上层完全透明。</span>
+      <span class="fnum">FIG 12E</span><span class="ftitle">通信三层决定：逻辑 → 实现 → 载体</span><span class="cd a">决定关系 1:1</span>
+      <span class="fnote">三层分别对应 Rank 间通信关系（逻辑层，定义 group）、HCCL/NCCL（选算法选路）、载体（被选中的物理网：片内 / UB / RoCE）。关系是<b>逐层决定</b>，不是同心包含——下一层是上一层选出来的对象，不是上一层的子集。<span class="ev ev-i">🔸 示意</span> 本图仍按同心框绘制，读法已改为「决定」，图形本身尚待改画为三层漏斗（见正文）。</span>
     </figcaption>
     <div class="stage" id="fig-nesting"></div>
   </figure>
@@ -2130,66 +2209,77 @@ W_O                <b>按行切</b> → 部分和 → AllReduce</pre>
         <td>邮局接单、分拣、选路线</td>
       </tr>
       <tr>
-        <td><b>UB</b></td>
-        <td>HOW（第二层）：<b>跨机时怎么聚合</b>，用共享 buffer 还是各卡直发</td>
-        <td>HCCL 内部在跨机场景下自动启用</td>
-        <td>FIG 12C 右侧</td>
-        <td>邮局在边境口岸的合并仓库</td>
+        <td><b>载体</b>（物理平面）</td>
+        <td>WHERE：这条边落在哪张网上——<b>片内 / UB（超节点内）/ RoCE（跨超节点）</b></td>
+        <td>这组卡的物理坐标（node · 机柜 · 超节点跨度），<b>不由 HCCL 挑，由物理放置决定</b></td>
+        <td>FIG 12C 右侧、§15 六第十层</td>
+        <td>同城专线 vs 跨省干线——寄件人不选，邮局按收件地址自己判</td>
       </tr>
     </tbody>
   </table>
 
-  <p>关键推论：<strong>如果你只想理解"谁和谁通信"，不需要知道 HCCL 和 UB</strong>。如果你要<b>诊断跨机通信延迟</b>，才需要深入到 HCCL 的路径选择和 UB 的 buffer 配置。三层是逐步深入同一条路径，不是三个平行视角看三件不同的事。</p>
+  <p>关键推论：<strong>如果你只想理解「谁和谁通信」，不需要知道 HCCL 和载体走哪张网</strong>。如果你要<b>诊断为什么慢</b>，才需要问这一组卡跨没跨超节点、HCCL 选了哪条路。三层是逐层决定同一条路径，不是三个平行视角看三件不同的事。</p>
 
-  <h4>通信不一定跨机——物理放置决定路径</h4>
+  <h4>通信不一定跨出高带宽域——物理放置决定路径</h4>
 
-  <p>并不是所有通信都会跨越机器和节点。<b>逻辑层定义谁和谁通信，物理放置决定这次通信走不走网线</b>。同一种通信原语，group 成员全在一台机器上就走机内互联（HCCS / NVLink），跨了机器才走 RDMA / IB。</p>
+  <p>并不是所有通信都会跨越超节点边界。<b>逻辑层定义谁和谁通信，物理放置决定这次通信落在哪张平面上——判据是超节点边界，不是机箱边界。</b>同一种通信原语，group 成员全落在同一个超节点内就走 UB 平面；只有跨出超节点，才换挡到 RoCE / IB。（在没有超节点的平台上，这一档退化成单机 HCCS / NVLink，判据也退化回"是不是同一台机器"——原则没变，边界挪了位置。）</p>
 
   <table class="tbl">
-    <thead><tr><th>并行维度</th><th>典型 group 大小</th><th>典型放置策略</th><th>通常走的路</th><th>原因</th></tr></thead>
+    <thead><tr><th>并行维度</th><th>典型 group 大小</th><th>典型放置策略</th><th>落在哪张平面</th><th>换挡点</th><th>原因</th></tr></thead>
     <tbody>
       <tr>
         <td><span class="k tp">TP</span></td>
         <td>2 / 4 / 8</td>
-        <td>同一台机器内</td>
-        <td><b>机内</b>（HCCS / NVLink）</td>
-        <td>AllReduce 通信量大且频率高（每一层两次），必须用机内高带宽</td>
+        <td>同一超节点内即可，不必挤在一台机器上</td>
+        <td><b>UB</b></td>
+        <td>跨出超节点才换挡</td>
+        <td>AllReduce 通信量大且频率高（每层两次），必须落在带宽最高的那一档；超节点内跨 node（机）按本文口径假设不降速（见上表）</td>
       </tr>
       <tr>
         <td><span class="k ep">EP</span></td>
         <td>8 / 16 / 64</td>
-        <td>取决于 expert 数量和卡数</td>
-        <td><b>可能机内也可能跨机</b></td>
-        <td>EP=8 且部署在一台 8 卡机器上 → 全机内；EP=64 → 必然跨机</td>
+        <td>视 expert 数与卡数而定，只要落在同一超节点内（以已披露的 CloudMatrix384 为例即 384 卡）</td>
+        <td><b>UB</b></td>
+        <td>跨出超节点才换挡</td>
+        <td>dispatch / combine 全程留在 UB 平面上，不必"必然跨机"——公开资料里 FusedDispatch / FusedCombine 用 send-recv 取代 all-to-all、AIV 核直接写对端 NPU 显存的机制来自推理场景（CloudMatrix-Infer）的实测<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span>；训练场景的 MoE 通信能否同样用这条路径替代 all-to-all，论文未给出实验支持<span class="ev ev-i">🔸 推断</span></td>
       </tr>
       <tr>
         <td><span class="k dp">DP</span></td>
         <td>整网副本数</td>
-        <td>跨越多台机器</td>
-        <td><b>跨机</b>（RDMA / IB）</td>
-        <td>数据并行的副本分布在不同节点上</td>
+        <td>副本通常分布在不同 node（机），是否跨超节点取决于集群规模</td>
+        <td>超节点内 = UB；超出集群规模 = RoCE</td>
+        <td>跨出超节点才换挡</td>
+        <td>梯度 AllReduce 每 step 一次，频率低，可以接受更慢的路径；但"更慢的路径"指的是 RoCE，不是任何跨 node（机）通信</td>
       </tr>
       <tr>
         <td><span class="k pp">PP</span></td>
         <td>stage 数</td>
-        <td>通常跨机</td>
-        <td><b>跨机</b>（RDMA / IB）</td>
-        <td>不同 stage 的层数多、跨机放置更灵活</td>
+        <td>按层数切分，通常跨 node（机）放置</td>
+        <td>视 stage 边界是否跨超节点</td>
+        <td>跨出超节点才换挡</td>
+        <td>单次通信量小（勘误 E）且能与计算 overlap，能承受更慢的路径，但换挡点同样在超节点边界，不在机箱边界</td>
       </tr>
       <tr>
         <td><span class="k cp">CP</span></td>
         <td>序列切分数</td>
-        <td>通常跨机</td>
-        <td><b>跨机</b>（RDMA / IB）</td>
-        <td>长序列切分跨节点分布</td>
+        <td>通常跨 node（机）分布</td>
+        <td>视切分是否跨超节点</td>
+        <td>跨出超节点才换挡</td>
+        <td>长序列切分需要跨卡但单次通信量相对小，同上</td>
       </tr>
     </tbody>
   </table>
 
+  <div class="note gov">
+    <span class="lbl">跨超节点 RoCE 上到底跑什么——训练视角要单独交代</span>
+    <p>公开资料里把跨超节点 RDMA 平面的具体机制讲清楚的那部分，限定语境是<b>推理</b>：论文原文把"prefill / decode 间 KV cache 高速传输"明确写在"during inference"之下<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2</span>；对训练，同一处只有一句没有机制、没有数字的泛泛表述——"支持基于 RDMA 的分布式训练框架"。KV cache 本身是推理服务概念，训练场景下跨超节点 RoCE 的典型负载应是梯度 / 参数同步、跨 stage 的激活值与 checkpoint，公开资料没有给出这部分的机制或数字，本文不代填。</p>
+    <p>表里"落在哪张平面"这一列的读数来自 viewer 侧的真值源：<code>fabricOf(a,b,D)</code> 按 <code>physOf</code> 解出的 <code>{slot,node,rack,pod}</code> 判平面，跨 <code>pod</code>（超节点）才报 RoCE；一组的平面按<b>组内最远的那一对</b>取（<code>fabricOfGroup</code>），因为集合通信的完成时间由最慢的边决定。<code>commCostMs9 = bytes/bps×1000</code> 给的是传输<b>下界</b>——没算拓扑跳数、算法系数、争用与协议开销，本节出现的耗时数字一律理解为"至少要这么久"，不是实测耗时。</p>
+  </div>
+
   <div class="note new">
     <span class="lbl">部署原则：把通信量最大的维度放在带宽最高的路径上</span>
-    <p>这就是为什么 <b>TP 永远优先放在机内</b>——它每一层都要做两次 AllReduce，通信频率和数据量都是最高的。如果把 TP group 拆到两台机器上，跨机 RDMA 的带宽会成为瓶颈，整个训练的吞吐量会骤降。</p>
-    <p>反过来，DP 的 AllReduce 只在一个完整的前向 + 反向传播结束后做一次梯度同步，频率低很多，放在跨机路径上可以接受。<b>这就是 FIG 12D 最底行"物理链路"那一层真正决定的事——不是"走不走网线"而是"带宽够不够用"。</b></p>
+    <p>这就是为什么 <b>TP 永远优先放在带宽最高的那一档</b>——它每一层都要做两次 AllReduce，通信频率和数据量都是最高的。在没有超节点的平台上，这一档就是机内；在灵衢超节点上，这一档扩到了整个超节点的 UB 平面（§07 已经把这一点划归约束侧：<b>"TP 必须机内"松弛为"TP 必须在高带宽域内"，变的是约束的形状，不变的是落点仍是卡</b>）。真正会掉带宽的，是把 TP group 拆过超节点边界、落到 RoCE 上——那时带宽会成为瓶颈，整个训练的吞吐量会骤降。</p>
+    <p>反过来，DP 的 AllReduce 只在一个完整的前向 + 反向传播结束后做一次梯度同步，频率低很多，即使落在 RoCE 上也可以接受。<b>这就是 FIG 12D 最底行"物理链路"那一层真正决定的事——不是"走不走网线"而是"带宽够不够用"。</b></p>
   </div>
 </section>
 
@@ -2371,7 +2461,7 @@ global_rank = tp_rank + dp_rank·tp_size + pp_rank·tp_size·dp_size</pre>
 
   <h4>由此得到的五步决策顺序</h4>
   <ol>
-    <li><strong>先定 TP</strong>——受两个硬约束：head 数整除，且 TP ≤ 单节点高带宽域卡数（典型 8）。若此时单卡装得下，就停在 TP + DP，不引入 PP。</li>
+    <li><strong>先定 TP</strong>——受两个硬约束：head 数整除，且 TP ≤ 高带宽域卡数（传统平台典型 8；超节点平台上是 384，§19）。若此时单卡装得下，就停在 TP + DP，不引入 PP。</li>
     <li><strong>再定 PP</strong>——仅当 TP 已到机内上限仍 OOM 时引入。</li>
     <li><strong>长序列加 CP</strong>——经验法则：TP 随 KV head 数扩，CP 随序列长度扩。</li>
     <li><strong>MoE 加 EP / ETP</strong>——EP 尽量留机内；ETP 通常设 1，避免 MLP GEMM 的 TP 通信开销。</li>
@@ -2406,11 +2496,11 @@ global_rank = tp_rank + dp_rank·tp_size + pp_rank·tp_size·dp_size</pre>
 
   <div class="note new">
     <span class="lbl">关键张力：TP×EP = 2×8 = 16 > 8 卡/节点</span>
-    <p>一个 EP 组需要 8 个 TP 对，共 16 张卡，超过单节点 8 卡容量——<b>EP All-to-All 必然跨节点</b>。是否可接受取决于 MoE 层在整网中的密度：若 MoE 层每 N 层出现一次（如 1/4 dense 替换），EP 跨机通信只影响 1/N 的层；其余 dense 层只走 TP 的机内 AllReduce，不受影响。</p>
+    <p>一个 EP 组需要 8 个 TP 对，共 16 张卡，超过单机 8 卡容量——<b>EP All-to-All 必然跨机</b>（在超节点平台上仍留在 UB 平面内，§19）。是否可接受取决于 MoE 层在整网中的密度：若 MoE 层每 N 层出现一次（如 1/4 dense 替换），EP 跨机通信只影响 1/N 的层；其余 dense 层只走 TP 的机内 AllReduce，不受影响。</p>
     <p>这正是§09 部署原则的实例——<b>把频率最高的通信（TP，每层 2 次）放在带宽最高的路径上（机内），把频率较低的通信（EP，仅 MoE 层）推到跨机</b>。</p>
   </div>
 
-  <p><b>总体判断：配置合理。</b>CP=1 在标准序列长度下正确；TP=2 保守但安全（单卡显存够则不必加大）；PP=4 在模型规模需要时是必要的权衡；EP=8 跨机是 EP 的已知代价，可通过通信 overlap 和 UB 优化缓解。唯一需要实测验证的是 PP 气泡率——MBS 偏小时 PP=4 的气泡可能成为吞吐瓶颈。</p>
+  <p><b>总体判断：配置合理。</b>CP=1 在标准序列长度下正确；TP=2 保守但安全（单卡显存够则不必加大）；PP=4 在模型规模需要时是必要的权衡；EP=8 在传统 8 卡机上必然跨机、是 EP 的已知代价，可通过通信 overlap 缓解；在灵衢超节点这类高带宽域里，EP=8 根本不跨出 UB 平面，这项代价不成立（§19）。唯一需要实测验证的是 PP 气泡率——MBS 偏小时 PP=4 的气泡可能成为吞吐瓶颈。</p>
 
   <h3>四 · 执行时序：只有 PP 有严格因果</h3>
 
@@ -2769,9 +2859,15 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
     </tbody>
   </table>
 
-  <p>注意 EP 的 All-to-All 带宽（151 GB/s）高于 TP/SP 的 AllGather（68 GB/s）——这通常意味着 <b>EP 组的物理拓扑更紧</b>（同节点内）或者硬件路径不同。</p>
+  <p>注意 EP 的 All-to-All 带宽（151 GB/s）高于 TP/SP 的 AllGather（68 GB/s）——这通常意味着 <b>EP 组的物理拓扑更紧</b>（同 node（机）内）或者硬件路径不同。</p>
 
   <p>顶部折线图按层展示延迟，可以看到各 PP stage 的延迟分布。<strong>stage 间延迟是否均衡直接决定流水线气泡大小</strong>——§12 说过，气泡率 ≈ (PP−1)/GA，但那个公式假设 stage 等耗时。如果某个 stage 比其他慢 20%，实际气泡率会更大。</p>
+
+  <div class="note new">
+    <span class="lbl">载体不是第六类筛选器，是"性能"类里的分组维度</span>
+    <p>载体（片内 / 超节点内 UB / 跨超节点 RoCE，见 §19）不在五类筛选器之外另立一类——它挂在<b>性能</b>这一类下面，是同一条通信边的<em>分组维度</em>：把 AllGather / A2A 这类算子按两端卡的物理落位分组之后，才知道慢在哪张网上。同一个 EP Dispatch，落在同一超节点内的那些 rank 对和跨超节点的那些 rank 对不该混在一条曲线里看——混看会把"慢在哪"这件事直接抹平。</p>
+    <p>新指标：<b>传输下界 ≥x ms</b>（标注在同一张性能表里，紧跟"延迟"这一列旁边或作为其下角标，与实测 ms 并排）——它与实测 ms 之差就是没被藏住的开销；公式与除外项见 §19 五。</p>
+  </div>
 
   <h3>MoE：路由与专家负载 —— Pmax / H / tok / balance / z-loss</h3>
 
@@ -2945,7 +3041,7 @@ stage PP−1  压 1 份                          ← 最轻松</pre>
 
   <h3>二 · ZeRO / FSDP 三级：DP 从「不减显存」变成「减显存」 <span class="cd b">级 → 被切的态 1:N</span></h3>
 
-  <p>§08 那张容器表里 DP 那一行写的是「全不变」，并附了一句「例外是 ZeRO / FSDP」。<strong>这一节把那个例外展开</strong>——它是本文原来最大的一块留白（§19 二 · 第一行，本次据此填上），因为三级之间的差别不是程度差别，是<em>状态形态</em>的差别。</p>
+  <p>§08 那张容器表里 DP 那一行写的是「全不变」，并附了一句「例外是 ZeRO / FSDP」。<strong>这一节把那个例外展开</strong>——它是本文原来最大的一块留白（§20 二 · 第一行，本次据此填上），因为三级之间的差别不是程度差别，是<em>状态形态</em>的差别。</p>
 
   <p>先把基线摆出来。§12 的口径是每参数 16 字节：</p>
 
@@ -3137,13 +3233,13 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
 
   <h3>七 · 合成：Rank 状态图在这套参照系里的位置</h3>
 
-  <p>把这一节接回全文：它不是新的一根轴，而是给 §07 的双链<strong>插了一级</strong>。原来的双链是「逻辑侧：整网 → 层 → 算子 → kernel」对「物理侧：集群 → 机 → 卡 → 计算单元」，两条链靠「卡」这一级咬合。现在中间多出一层：</p>
+  <p>把这一节接回全文：它不是新的一根轴，而是给 §07 的双链<strong>插了一级</strong>。原来的双链是「逻辑侧：整网 → 层 → 算子 → kernel」对「物理侧：集群 → 超节点 → 机柜 → node → 卡 → 计算单元」，两条链靠「卡」这一级咬合。现在中间多出一层：</p>
 
   <pre>逻辑侧      整网 → 层 → 算子 → 张量（参数 / 激活）
                                     │
               §14 这一节讲的        │  状态 × 归属区间 × 生命周期相
                                     ↓
-物理侧      集群 → 机 → 卡（rank）→ HBM 里的那几个字节区间</pre>
+物理侧      集群 → 超节点 → 机柜 → node → 卡（rank）→ HBM 里的那几个字节区间</pre>
 
   <p>换句话说，<strong>「状态」是逻辑张量与物理字节之间那个一直被省略掉的中间层</strong>。§03 给了「能切的只有五样」，§07 给了「切到哪张卡」，§12 给了「卡上一共多少字节」——这一节回答的是剩下那半句：<em>那些字节此刻分别是什么、归谁、处在哪一相。</em></p>
 
@@ -3160,9 +3256,9 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
 
   <p class="lede">§09 说清了通信<em>为什么</em>出现——它是切口处被插进去的算子。这一节说清一次通信<em>该被记成什么</em>。答案不是「rank 3 向 rank 7 发了 3.2 GB、耗时 1.4 ms」：那只能回答「多久」，回答不了「为什么」。一次通信真正做的事，是<strong>把一个张量从一种分片状态搬到另一种分片状态</strong>——它有前态、有后态，而且几乎总是成对出现。</p>
 
-  <h3>一 · 一条通信边的五元组 <span class="cd b">边 → 属性 1:5</span></h3>
+  <h3>一 · 一条通信边的六元组 <span class="cd b">边 → 属性 1:6</span></h3>
 
-  <p>把一次通信记全，需要五样东西，缺一样这条记录就不可诊断：</p>
+  <p>把一次通信记全，需要六样东西——前五样答「搬了什么、怎么变的」，第六样答「走哪张网」，缺一样这条记录就不可诊断：</p>
 
   <table class="tbl">
     <thead><tr><th>元</th><th>内容</th><th>缺了它就答不出</th></tr></thead>
@@ -3172,10 +3268,13 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
       <tr><td><b>并行域</b></td><td>TP / PP / DP / CP / EP 组，或它们的组合域</td><td>为什么需要这次通信</td></tr>
       <tr><td><b>原语</b></td><td>AllGather / ReduceScatter / AllReduce / All-to-All / P2P</td><td>怎么搬</td></tr>
       <tr><td><b>宿</b></td><td>目的 rank 集合、落到哪个后继算子</td><td>搬完谁用</td></tr>
+      <tr><td><b>载体</b></td><td>这条边落在哪张网上：<b>片内</b>（不出卡）/ <b>UB 平面</b>（超节点内非阻塞全互联，196 GB/s 单向每卡；内部再分同 node（机） / 同机柜 / 跨机柜三档）/ <b>RDMA 平面</b>（跨超节点 scale-out，RoCE 400 Gbps 每卡）——由这一组卡的 {node · 机柜 · 超节点} 跨度决定</td><td><b>这次为什么慢</b>——同一条 AllToAll，卡数一样、字节一样，跨没跨超节点差约四倍</td></tr>
     </tbody>
   </table>
 
   <p>再加一条<strong>效果</strong>，它是前五元的函数、也是这一节的中心论断：</p>
+
+  <p>第六元<b>载体</b>不进这个函数——它进的是另一个：<b>代价</b>。完整推导见 §19 四。</p>
 
   <pre>通信的效果 = layout 变换 + 归属再分配
 
@@ -3249,13 +3348,25 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
       <tr><td>是什么</td><td>集合通信 / 点对点</td><td>搬运（memory movement）</td></tr>
       <tr><td>作用域</td><td>一个通信域（process group）</td><td>一张卡的存储层次</td></tr>
       <tr><td>参与者</td><td>多个 rank</td><td>同一个 rank 的不同单元</td></tr>
-      <tr><td>同步方式</td><td>集合原语自带的同步语义</td><td>流、event、barrier</td></tr>
+      <tr><td>同步方式</td><td>集合原语自带的同步语义（<b>常见情况，不是判据</b>：MoE 的 FusedDispatch / FusedCombine 用 send-recv 取代 all-to-all、由计算核直接发起、靠对端标志位完成同步，形状上更接近右栏——但它依然是跨 rank 通信，因为归属变了）</td><td>流、event、barrier</td></tr>
       <tr><td>改变归属吗</td><td><b>改</b>——这正是它的目的</td><td><b>不改</b>——只改驻留位置</td></tr>
       <tr><td>在本文里属于</td><td>§09 / 本节</td><td>§12「时间：流上排了什么」</td></tr>
     </tbody>
   </table>
 
-  <p>把两者混起来的代价是具体的：读者会以为可以用同一套原语去描述片上搬运（「这里做了一次 AllGather」），或者反过来以为跨卡通信也能靠调度隐藏掉。<strong>归属变不变，是这条界线的本质。</strong>片上存储层次的具体分级（各级缓冲的命名与容量）是厂商相关的实现细节，按 §19 的边界划在本文范围外。</p>
+  <p>这张表只有<b>「改变归属吗」</b>那一行是判据，其余四行（是什么 / 作用域 / 参与者 / 同步方式）是<b>伴随属性</b>——原表把六行并列陈列，从未写明这一点。伴随属性会被实现方式改写，判据不会：这与 §16 勘误 K「维度不决定原语」、§15 三「语义是 AG/RS、实现跑成环形 P2P」是同一条纪律再往下一层——<b>实现机制不决定这条边算不算通信</b>。</p>
+
+  <p>把两者混起来的代价是具体的：读者会以为可以用同一套原语去描述片上搬运（「这里做了一次 AllGather」），或者反过来以为跨卡通信也能靠调度隐藏掉。<strong>归属变不变，是这条界线的本质。</strong>片上存储层次的具体分级（各级缓冲的命名与容量）是厂商相关的实现细节，按 §20 的边界划在本文范围外。</p>
+
+  <div class="note new">
+    <span class="lbl">压力测试：一张卡直接写另一张卡的显存，还算通信吗？——算</span>
+    <ol>
+      <li>判据问的是<b>归属</b>，不是<b>搬运机制</b>。AIV 核把一批 token 写进对端 NPU 显存之后，那批 token 归对端的专家算、本卡不再是它的持有者——归属变了，所以是通信。判据一个字不用改。</li>
+      <li>§07 已经预先答过，而且答得更根本：「往上没有更大的统一地址空间（<b>peer 访问是搬运手段，框架的归属记账仍以卡为界</b>）」。UB 直写就是一次 peer 访问。<b>可寻址 ≠ 同一个持有者</b>：UB 给了 A 一条能写到 B 显存的路，没有把 A、B 的地址空间合并成一个记账单位；§07 落点判据的三项（私有地址空间 / 通信端点 / 独立执行流）在卡这一级仍然三项全齐。</li>
+      <li>与「rank 内」那一行的差别恰恰是可检验的：rank 内的搬运<b>只改驻留位置</b>，前后都是同一个持有者；UB 直写<b>改的是持有者</b>。两者在硬件上都可以是「一次写」，在记账上完全不同。</li>
+      <li><b>证伪条件</b>（这一条最要紧，别写成「肯定不会松」）：会动摇落点的不是「能不能直写」，而是<b>归属记账的单位变没变</b>。如果 UB 的统一寻址推到让一段张量的持有者是<b>超节点</b>而不是某张卡（池化内存里没有哪个 rank 是 holder），那么「私有地址空间」在卡这一级就不再成立，落点要上移，§07 整段论证需要重做。<b>目前没有证据说它到了那一步</b>——Megatron / HCCL 的组成员仍然是 global rank 的列表（§07 口径核对），归属记账仍以 rank 为界。所以正确的写法是：判据不动，但把「寻址粒度」列成这条判据的<b>证伪条件</b>，而不是一个无关的实现细节（见 §20）。</li>
+    </ol>
+  </div>
 
   <h4>再往下分一层：跨 rank 那一侧其实有三种粒度</h4>
 
@@ -3294,6 +3405,8 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
       </tr>
     </tbody>
   </table>
+
+  <p><strong>粒度与载体是两把刀，而且正交。</strong>粒度问的是「两端是什么关系」（副本 / 分块 / 段 / 同卡），载体问的是「两端隔多远」（片内 / UB / RoCE）。二者唯一的重合是：载体的「片内」那一档正好压在「rank 内」那一行上，另外两档全部落在跨 rank 那一侧。<b>粒度不决定载体</b>——同一条 DP 梯度 AllReduce，一组卡摆在一个超节点里就是 UB、摆开了就是 RoCE，粒度一个字没变。这是「N 不决定 M」在本文里的第三个实例（前两个：维度不决定原语 §16-K、维度不决定实现 §15 三）。这张表不加「载体」列——加了会逼着为每种粒度断言一个网，而载体由物理放置决定，不由粒度决定。</p>
 
   <p><strong>「形状变不变」这一列是这张表最有用的一列。</strong>它把四种边分成两类：改形状的（分块之间）问的是「这一片是哪一段」，不改形状的（副本之间 / 段与段之间 / rank 内）问的是「值对不对」「谁在等谁」「够不够快」。<em>拿错问法，一条边的读数就全是噪声</em>——比如盯着 PP 那条边问「本卡持有哪一片」，它压根没被切过。</p>
 
@@ -3344,14 +3457,16 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
    → 该 rank 到达下一个同步点更晚
    → 全域被最慢的 rank 拖住，step 时长 ↑</pre>
 
-  <p>链条上每一环都是可观测的，而且<strong>越靠前的环越早暴露问题</strong>：等到看见 step 时长变长，中间五环已经全部发生过。这正是 §13「五类数据筛选器」里 MoE 那一类（<code>Pmax</code> / <code>H</code> / <code>tok</code> / balance）存在的理由——它们读的就是这条链的头两环。控制这条链的旋钮是容量因子（capacity factor，决定每个专家最多处理多少 token，超出部分丢弃或 padding）与均衡辅助损失，Megatron-Core 提供了微批级、序列级与全局级几种均衡策略<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">同上</span>。这填上了§19 留白表里「MoE 的负载均衡：没展开 token drop」的一半——<em>另一半（drop-less 实现的具体机制）仍然留白。</em></p>
+  <p>链条上每一环都是可观测的，而且<strong>越靠前的环越早暴露问题</strong>：等到看见 step 时长变长，中间五环已经全部发生过。这正是 §13「五类数据筛选器」里 MoE 那一类（<code>Pmax</code> / <code>H</code> / <code>tok</code> / balance）存在的理由——它们读的就是这条链的头两环。控制这条链的旋钮是容量因子（capacity factor，决定每个专家最多处理多少 token，超出部分丢弃或 padding）与均衡辅助损失，Megatron-Core 提供了微批级、序列级与全局级几种均衡策略<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">同上</span>。这填上了§20 留白表里「MoE 的负载均衡：没展开 token drop」的一半——<em>另一半（drop-less 实现的具体机制）仍然留白。</em></p>
 
   <div class="note gov">
     <span class="lbl">和 §17 推论 8 的关系：这一节没有推翻它，是给它补了正确的画法</span>
     <p>§17 推论 8 判定「用动画精细呈现 token 选专家的过程」不可建，理由是基数错了——<code>token → expert</code> 一层就有上万条边，画出来信息量为零。<strong>那条结论仍然成立</strong>。本节新增的不是「把个体边画出来」，而是<b>把这条链的四张表分别用适合各自基数的编码呈现</b>：①④ 是万级，只能出统计（分布、熵、Top-k 集中度）；② 是配置级，几十条，画映射图；③ 是 <code>EP × EP</code> 的矩阵，几十到几千格，画热力图。<em>同一条链上不同环节的基数差三个数量级，所以必须用三种不同的编码——这正是推论 8 想说的事，只是当时只说了它的否定面。</em></p>
   </div>
 
-  <h3>六 · 通信可观测性矩阵：一次通信要能被从九个层面读出来</h3>
+  <h3>六 · 通信可观测性矩阵：一次通信要能被从十个层面读出来</h3>
+
+  <p>前九层问的都是<b>逻辑侧</b>——谁产生的 / 搬的什么 / 为什么 / 谁和谁 / 怎么搬 / 多少 / 去哪 / 何时 / 什么后果。<b>第十层第一次把物理侧接进来</b>——它是这张表里唯一一层，同一条边在不同机器上、甚至同一台机器的不同 rank 排布下，答案会不一样。</p>
 
   <table class="tbl">
     <thead><tr><th>层</th><th>观测对象</th><th>它回答</th><th>本文哪一节</th></tr></thead>
@@ -3365,10 +3480,13 @@ given rank. In the none case, its data will be like a size-0 empty tensor.</pre>
       <tr><td>路由</td><td>token → 专家（仅 EP）</td><td>token 去哪了</td><td>本节五</td></tr>
       <tr><td>时序</td><td>起止 / 与谁重叠</td><td>什么时候搬、藏住没有</td><td>§12、本节三</td></tr>
       <tr><td>影响</td><td>等待 / 空转 / 气泡</td><td>造成了什么后果</td><td>§12、§13</td></tr>
+      <tr><td>载体</td><td>物理平面与档位：片内 / UB（超节点内）/ RoCE（跨超节点）——即这一组卡的 {node（机） · 机柜 · 超节点} 跨度</td><td><b>走哪张网</b>——这条边在不在换挡点的同一侧</td><td>§07、§09</td></tr>
     </tbody>
   </table>
 
-  <p>九行里，<strong>传统 profiling 通常只给第 4、5、6、8 行</strong>——谁和谁、什么原语、多少字节、什么时候。缺的正是首尾两端：这次通信属于模型的哪一部分（前三行），以及它到底有没有造成损失（最后一行）。<em>没有前三行，一条通信记录就无法被归因；没有最后一行，它就无法被排优先级。</em></p>
+  <p>十行里，<strong>传统 profiling 通常只给第 4、5、6、8 行</strong>——谁和谁、什么原语、多少字节、什么时候。缺的正是逻辑侧的首尾两端：这次通信属于模型的哪一部分（前三行），以及它到底有没有造成损失（第九行）。<em>没有前三行，一条通信记录就无法被归因；没有第九行，它就无法被排优先级。</em></p>
+
+  <p>第十行的情况不一样——它不是没人测，而是<b>测在别处</b>：网卡计数器、集群拓扑图、互联健康度都有数，但那套数据与这条通信记录不同源、不共键，拼不回同一条边。所以载体这一行缺的不是数据，是<b>和逻辑侧那九行对得上的那把钥匙</b>（就是 rank → 物理坐标的映射）。</p>
 
   <h3>七 · 合成：一条从计算图走到硬件的可追链</h3>
 
@@ -3384,8 +3502,10 @@ Rank 状态（W / G / O / A · 区间 · 相位）
    ↕  §09 §15     —— 状态怎么变的
 时间线（N 条流 · 重叠 · 等待）
    ↕  §12         —— 什么时候发生
-物理拓扑（卡 · 链路 · 机内机间）
-   ↕  §07         —— 走的哪条线</pre>
+物理拓扑（卡 · node · 机柜 · 超节点 · 集群 ｜ 载体：片内 / UB / RoCE）
+   ↕  §07 §09     —— 走的哪条线：换挡在超节点边界，不在 node 边界</pre>
+
+  <p>§15 六新加的第十层「载体」，就是从「通信」那一级往「物理拓扑」这一级下追的那一跳——前九层在链条上半段来回走，第十层是唯一一层脚踩在最后一级上的。物理拓扑这一级<b>只提供约束与带宽，不提供归属</b>（§07），所以它在链条最底下，链条到它为止。</p>
 
   <p>这条链的价值在于<strong>它可以从任意一级向两端追</strong>：从「rank 37 的显存里优化器态偏大 11 GB」往上追到「ZeRO 级别与 wrap 粒度」，或者从「这条 All-to-All 特别慢」往上追到「第 24 层的 router 把 34% 的 token 送给了同一个专家」。<em>单独看任何一级，这两个问题都无解。</em></p>
 
@@ -3398,7 +3518,7 @@ Rank 状态（W / G / O / A · 区间 · 相位）
 <section id="s7">
   <div class="sec-head"><span class="sec-num">16</span><h2>勘误与冲突核对</h2></div>
 
-  <p class="lede">对整轮讨论做前后核对后确认的修正项。按字母顺序排列。A–E 与 K、L、M、N 是实质性错误，其余为表述不严谨或存在歧义。K、L 由「为什么每种切分都绑定了一种通信原语」这一质疑引出；M 由核对 rank 排布机制时引出；N、O 由 §14 / §15 这两节核对 PyTorch FSDP、DeepSpeed ZeRO 与 Megatron-Core 官方文档时引出。</p>
+  <p class="lede">对整轮讨论做前后核对后确认的修正项。按字母顺序排列。A–E 与 K、L、M、N、P、Q、S 是实质性错误，其余为表述不严谨或存在歧义。K、L 由「为什么每种切分都绑定了一种通信原语」这一质疑引出；M 由核对 rank 排布机制时引出；N、O 由 §14 / §15 这两节核对 PyTorch FSDP、DeepSpeed ZeRO 与 Megatron-Core 官方文档时引出；P、Q、R、S、T 由 §19 载体一节核对灵衢 UnifiedBus 公开资料时引出。</p>
 
   <table class="tbl">
     <thead><tr><th>#</th><th>原表述</th><th>修正</th></tr></thead>
@@ -3478,6 +3598,31 @@ Rank 状态（W / G / O / A · 区间 · 相位）
         <td>「ZeRO / FSDP 是 DP 的变体，把存储也切了」（§04、§08、§09 的零散提法）</td>
         <td>方向对，但把三级压成了一句话，掩盖了它们之间<b>不是程度差别而是形态差别</b>：ZeRO-1/2 只改「存多少」，权重全程完整常驻；ZeRO-3 / FSDP <code>FULL_SHARD</code> 改的是「什么时候在」——权重只在用它的那一小段时间里完整，一步之内拼回两次、丢弃两次，并因此多出一格常被漏算的 <b>AllGather 窗口</b>显存。另外「ZeRO 把激活也切了」是错的：三级的定义里只有参数、梯度、优化器状态。展开见 §14 二、三。</td>
       </tr>
+      <tr>
+        <td>P</td>
+        <td>"UB（Unified Buffer）不是独立通信原语，而是 HCCL 在<b>跨机</b>场景下使用的一种通信加速机制：在<b>主机侧</b>开辟一段共享 buffer，把多卡的跨机通信汇聚到这段 buffer 再经 RDMA 网络发出"（§09 两处 note、物理互联表"HCCL over UB（Unified Buffer）"一行、FIG 12C/12E 及其图注）</td>
+        <td>同名不同物，且位置放反。本文语境下的载体 UB 是<b>灵衢 UnifiedBus</b>——超节点<b>内部</b>的物理互联平面，与 NVLink / HCCS / xGMI 同属硬件互联层，不在 HCCL 内部；它是<b>超节点内才用</b>的平面，跨超节点时反而退场、换 RDMA / RoCE 平面接手，与原文"跨机才启用、经主机侧聚合"正好相反。"UB"这两个字母在昇腾语境里还指 AI Core 片上的统一缓冲区（Unified Buffer），属物理链最底的"片上 buffer"一级，与卡间互联无关——原文把这两者叠在了一起。唯一保留不变的结论：走哪张网不影响通信语义，训练框架仍只调用集合通信库的 API，不直接感知硬件互联。</td>
+      </tr>
+      <tr>
+        <td>Q</td>
+        <td>"TP 必须机内"（散见于把通信频率最高的维度绑在"机内高带宽互联"上的各处表述：TP/SP 通信最频繁必须绑机内、<code>TP ≤ 机内卡数</code>、TP×EP 超过单机卡数即视为"跨机"代价）</td>
+        <td>不是被推翻，是被<b>参数化</b>。超节点把这条约束里"机"这个变量的实例从 8 卡换成了 384 卡：准确表述是「TP 必须在高带宽域内」，8 卡单机只是高带宽域在传统平台上的一个特例，与本文已有的<code>TP ≤ 单节点高带宽域卡数</code>、"超节点把高带宽域扩出单机"两处表述归一。判据、部署原则（把通信频率最高的维度放在带宽最高的路径上）与落点（仍是卡）一个字未变，变的只是这条约束里域的半径。</td>
+      </tr>
+      <tr>
+        <td>R</td>
+        <td>（自检项）§00"平台差异只体现在互联名、集合通信库与算子栈的称呼上，不影响本文任何结论"——高带宽域从 8 卡扩到 384 卡，是否已经是这句话的反例？</td>
+        <td>不是反例，与 F 同型：看似打架，实为两件不同的事。这句断言的是<b>机制</b>与<b>语义</b>不受平台影响——并行切分的落点、通信原语的选择逻辑、rank 排布的规则都没有变化；变化的只是"高带宽域"这个约束变量的取值（8→384）与档位名字（UB / RoCE 取代 NVLink / IB 之类具体叫法），这本就是这句话留给平台自行填的部分。真正会证伪这句话的是切分落点上移，或某条判据因换平台而成立/不成立——目前没有出现。</td>
+      </tr>
+      <tr>
+        <td>S</td>
+        <td>"Rank 通信 ⊃ HCCL ⊃ UB：三层嵌套，不是三个场景"（§09 三层嵌套小节标题与配套表格）</td>
+        <td>包含关系写反了。UB 是硬件互联层的一种，HCCL 是架在硬件互联之上的软件集合通信库——二者是<b>上下层</b>，不是<b>外层套内层</b>；照此写法把 UB 换成 NVLink，"NCCL ⊃ NVLink" 立刻不成立。准确的三层是"Rank 通信 ⊃ HCCL ⊃ 载体（走哪张网）"，第三层取值是片内 / UB 平面 / RDMA 平面这一组分类，而不是某一个具体优化点；嵌套本身（逐层深入同一条路径）不变，变的只是最内层装的是什么。</td>
+      </tr>
+      <tr>
+        <td>T</td>
+        <td>（自检项）UB 支持超节点内全局统一寻址，是否意味着并行切分的落点该从卡上移到超节点？</td>
+        <td>不上移，但要分两层说，否则会把"可寻址"读成"同一个持有者"。硬件层：UnifiedBus 确实提供全局统一寻址与路由能力；软件层：具体实现出于时延考虑仍可能退回 rank 级别的静态预注册而不查全局地址表——两者是能力与实现的两个层次，不矛盾。判定切分落点的判据是<b>归属</b>（私有地址空间、通信端点、独立执行流三项全齐），不是<b>可达性</b>：不论走哪层实现，UB 扩大的都只是可达性，框架的归属记账仍以 rank 为界，落点不受影响。</td>
+      </tr>
     </tbody>
   </table>
 
@@ -3533,7 +3678,7 @@ Rank 状态（W / G / O / A · 区间 · 相位）
     <span class="lbl">推论 6 · 三个设计判断，来自三个连环问题</span>
     <p>「切分都落在哪」「切分有没有顺序、顺序保留吗」「诊断时能不能不分权重体激活体」——这三问连起来，其实是在替 viewer 做三个地基级的判断：</p>
     <ol>
-      <li><b>锚点唯一：界面的基本单元就是卡。</b>并行的一切后果都落在卡上（§07），机与集群只是卡的分组背景（用来画「谁和谁近」），计算单元与 buffer 只在下钻单个 kernel 时才需要出现。不必让五级物理层级平权地占据界面。</li>
+      <li><b>锚点唯一：界面的基本单元就是卡。</b>并行的一切后果都落在卡上（§07），node / 机柜 / 超节点 / 集群只是卡的分组背景（用来画「谁和谁近」）——这四级只用来回答「这条边走哪张网」（UB / RoCE），不参与界面的基本单元；计算单元与 buffer 只在下钻单个 kernel 时才需要出现。不必让七级物理层级平权地占据界面。</li>
       <li><b>切分是配置，不是事件。</b>谁拿哪块在 run 开始时一次定死、全程冻结（§07），所以切分属于<em>静态图层</em>——画一次、常驻；需要动画的只有执行（时间线、通信脉冲）和 MoE 路由这一处例外。「静态的归属 ＋ 动态的执行」是天然的图层划分。</li>
       <li><b>诊断流合进、分出。</b>入口用三个不分体的柄（卡坐标、容器总量、shape 除号），第二步才拆成权重体 / 激活体去开处方（§07 末）——且显存曲线的形状能自动完成这一步分拣，界面可以代替用户判断。</li>
     </ol>
@@ -3570,6 +3715,12 @@ Rank 状态（W / G / O / A · 区间 · 相位）
     <p>MoE 模型补一句：门牌多一位 <code>ep</code>，切口在层内部的路由处——token 被 All-to-All 送到 expert 所在的卡，算完送回。</p>
     <p>同样重要的是三条<b>禁忌</b>，各对应前文一个结论：<b>别按物理层级逐级下钻讲</b>（集群分给机、机分给卡——切分不经过机，两条链不逐级对齐，§07）；<b>别讲成四道工序</b>（先切谁再切谁——四刀是门牌的四个数位，同时成立，§07）；<b>别从五个并行名词开讲</b>（名词驱动会让人以为有五套机制——机制只有「分东西＋缝切口」一套，五个名词只是切的方向不同，§03）。</p>
     <p>压缩到一句话：<b>每张卡领一个门牌号，门牌决定它分到哪些碎片；shape 上的除号是切分的全部痕迹；切口在哪，通信就在哪；切得越深，缝得越勤。</b></p>
+  </div>
+
+  <div class="note gov">
+    <span class="lbl">推论 9 · 载体是第三个图层</span>
+    <p>推论 4 说维度和原语要解耦成两个图层：维度决定<em>哪些卡在一个组里</em>，原语决定<em>组内怎么连线</em>。这两层之外还有第三层——<b>载体</b>：决定这条线实际走哪张网、画多粗、什么颜色（片内 / 超节点内 UB / 跨超节点 RoCE，§19）。三层各自独立、可任意组合：同一条连线，维度层答它是 TP 还是 DP，原语层答它是环形还是树形，载体层答它落在 UB 还是 RoCE——三个问题互不蕴含，缺一层就会把三种不同性质的信息叠成一层，读错。</p>
+    <p>§09 末那张「兄弟块 + 通信连线 + 物理链路 = 三层叠加」的表其实已经在说这三层，只是把第三层叫「物理链路」、且只分粗细两档（粗线＝机内、细线＝跨机）。§19 做的事是把这个已有的第三层从两档扩成三档、从只能调粗细升级到可以着色：片内（通常不出卡，不必画）、超节点内 UB（一种颜色）、跨超节点 RoCE（另一种颜色，且更细）——分档轴不是机箱的铁皮在哪，是带宽域的边界在哪，换挡点在超节点而不在机（§07）。</p>
   </div>
 </section>
 
@@ -3670,9 +3821,126 @@ Rank 状态（W / G / O / A · 区间 · 相位）
   </div>
 </section>
 
+<section id="s-fabric">
+  <div class="sec-head"><span class="sec-num">19</span><h2>载体：把互联平面接进这套参照系</h2></div>
+
+  <p class="lede">前十八节的物理侧，通信只分「机内 / 跨机」两档——一条边要么留在同一台机器里，要么走出去。这一节把这个二值判断换成一个三值量：<strong>载体</strong>，取值 <code>片内 / UB / RoCE</code>。换的不是判据（§07 的落点判据、§15 的归属判据都不动），换的是这条分界线画在哪——它不在 node 边界，在超节点边界。</p>
+
+  <h3>一 · 物理链从五级变七级：卡以上多出三级</h3>
+
+  <p>灵衢 UnifiedBus（下称 UB；注意与昇腾 AI Core 内那块同名的片上统一缓冲是两个东西，前者是超节点内的物理互联平面，后者是卡内的一块 SRAM，与并行切分无关）把「机」这一级在物理上撑开成三级。物理链因此从 <code>集群 → 机 → 卡 → 计算单元 → 片上 buffer</code> 五级，变成：</p>
+
+  <pre>集群 → 超节点 → 机柜 → node（机）→ 卡 → 计算单元 → 片上 buffer</pre>
+
+  <table class="tbl">
+    <thead><tr><th>物理级</th><th>默认尺寸</th><th>切分语义里的角色</th></tr></thead>
+    <tbody>
+      <tr><td>集群</td><td>若干超节点（不定，视集群规模）</td><td>拓扑，不参与切分（§07）</td></tr>
+      <tr><td>超节点</td><td><code>podCards</code> = <b>384</b> 卡 = 48 node <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2–3.3.3</span></td><td>带宽域边界——本节的换挡点</td></tr>
+      <tr><td>机柜</td><td><code>nodeRack</code> = <b>4</b> node · 16 柜/超节点（12 计算柜 + 4 通信柜）<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.3（48 node ÷ 12 计算柜换算）</span></td><td>位置标签（供电 / 散热 / 布线封装单位），不换挡</td></tr>
+      <tr><td>node（机）</td><td><code>perNode</code> = <b>8</b> 卡 + 4 CPU <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.3.2</span></td><td>位置标签——在超节点内不再是降速点</td></tr>
+      <tr><td><b>卡</b></td><td>—</td><td><b>落点</b>：私有地址空间 · 通信端点 · 独立执行流三项全齐（§07 判据），本节新增的三级一项不占</td></tr>
+      <tr><td>计算单元 / 片上 buffer</td><td>—</td><td>执行，与切分无关（§07），本节不涉及</td></tr>
+    </tbody>
+  </table>
+
+  <p>8 / 4 / 384 都是 CloudMatrix384 这一具体型号的规格，同时是 viewer <code>physOf</code> 里的 URL 可配参数（<code>?perNode=&nodeRack=&podCards=</code>），不参与整除校验，也不是放之四海皆准的硬常量——换一款硬件，数字会变。<strong>级数变多，落点没变</strong>：七级里仍然只有卡三项判据全齐；本节要做的全部工作，是把新增的这三级接进「代价」而不是「效果」（见本节四）。</p>
+
+  <h3>二 · 三张平面：UB / RDMA(RoCE) / VPC</h3>
+
+  <p>灵衢超节点对外呈现三张互不相同的物理平面。一次通信落在哪张平面上，由这组 rank 的物理坐标（{node · 机柜 · 超节点}）决定，不由并行维度决定。</p>
+
+  <table class="tbl">
+    <thead><tr><th>平面</th><th>承载什么</th><th>带宽口径</th><th>训练数据面走不走</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>UB 平面</b></td>
+        <td>超节点内非阻塞全互联 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2 / §3.3.3</span>：TP / EP 这类细粒度并行、池化内存的点对点访问；MoE 的 FusedDispatch / FusedCombine 用 send-recv 取代 all-to-all，AIV 核直写对端显存 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span></td>
+        <td><b>196 GB/s 单向 / 卡</b> <span class="ev ev-3">🔍 第三方分析</span>——这个数字不在 arXiv 论文正文里，来自第三方对华为发布口径（7 个 224 Gbps 收发器）的推算，与 viewer <code>FABRIC9.ub.bps=196e9</code> 的默认口径一致</td>
+        <td><b>走</b>，是训练数据面的主平面</td>
+      </tr>
+      <tr>
+        <td><b>RDMA 平面（RoCE）</b></td>
+        <td>跨超节点 scale-out；论文原文对训练侧只有一句无机制无数字的泛泛表述（"support for distributed training … using RDMA-compliant frameworks"）<span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2</span>；推理场景下主要承载 PD 分离间的 KV cache 传输——<b>这条限定在推理，不能直接套训练</b>（见本节三）</td>
+        <td><b>400 Gbps/卡 ≈ 50 GB/s</b> <span class="ev ev-3">🔍 第三方分析，且存在冲突数字</span>——论文里唯一出现的「400 Gbps」在 §4.4，指的是 <b>VPC 平面</b>访问 EVS 存储的带宽上限，不是 RDMA 平面每卡带宽；第三方口径本身也不统一（200 Gbps/卡、400 Gbps/die 均有引用），此处采用与 viewer <code>FABRIC9.roce.bps=50e9</code> 一致的口径</td>
+        <td><b>走</b>——训练场景下应承载梯度 / 参数同步、跨超节点的流水线激活值等（论文未给出训练侧机制细节，此处是 <span class="ev ev-i">🔸 推断</span>）</td>
+      </tr>
+      <tr>
+        <td><b>VPC 平面</b></td>
+        <td>管理面：集群管理、持久化存储（OBS / EVS / SFS）访问、CPU 侧对外服务 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.2</span></td>
+        <td>不是训练通信口径；论文给出的「通常低于 400 Gbps」是<b>访问 EVS 存储</b>的带宽，与 RDMA 平面无关</td>
+        <td><b>不走</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>训练数据面只走前两张：UB 内、RoCE 出。VPC 从不出现在梯度 / 激活 / KV 的传输路径上——这与 §09 的口径核对是同一件事：训练框架从来不直接调用硬件互联，只调集合通信库的 API，HCCL 按 group 成员的物理位置在 UB 与 RoCE 之间选路，VPC 根本不在候选集里。</p>
+
+  <h3>三 · 换挡点在超节点边界，不在 node 边界</h3>
+
+  <div class="note new">
+    <span class="lbl">核心论断</span>
+    <p><strong>超节点内部，node 边界不是降速点；换挡发生在超节点边界。</strong>UB 平面把 384 卡、48 个 node、16 个机柜连成一张非阻塞全互联网络；出了超节点才换到 RoCE，按前面两个口径换算，落差约四倍（196 GB/s vs. 50 GB/s）。</p>
+  </div>
+
+  <p>这条论断推翻的是老经验「TP 必须机内」——它默认高带宽域的半径等于一台 8 卡机。在灵衢超节点上这个半径被撑到 384 卡：TP 域可以横跨 48 个 node 而不换挡，§07 已经把这条老经验松弛成「TP 必须在高带宽域内」，本节把「高带宽域」这个变量坐实成「超节点」。</p>
+
+  <p><b>证据等级：</b>「超节点内部不降速、换挡在超节点边界」这一定性判断是 <span class="ev ev-v">✅ 已核实-原文</span>——论文两句原话直接支持：「inter-node bandwidth degradation is under 3% …, allowing CloudMatrix384 to function as a tightly-coupled, large-scale logical node」与「node's aggregate uplink bandwidth to the L2 fabric precisely matches its internal UB capacity, maintaining the non-blocking characteristic across the supernode」<span class="src">arXiv:2506.12708 §3.2 / §3.3.3</span>。但论文<b>没有给出跨超节点之后带宽 / 延迟具体掉到多少</b>的量化对比数字——「落差约四倍」是拿 196 GB/s 与 50 GB/s 两个第三方口径相除得出的 <span class="ev ev-i">🔸 推断</span>，不是论文原文的对比实验。</p>
+
+  <p><b>适用边界：</b>arXiv:2506.12708 的标题是「Serving Large Language Models on Huawei CloudMatrix384」——一篇推理论文，全部实验数据基于 DeepSeek-R1 推理场景。论文第 3.2–3.3 节的拓扑 / 硬件规格描述是训练推理通用的静态介绍，可以放心引用；但 FusedDispatch/Combine 的吞吐提升、PD 分离、KV cache 池化这类具体机制与数字，都是在推理管线里验证的——训练场景下 MoE 通信能否同样用 send-recv + AIV-Direct 替代 all-to-all，论文没有直接实验支持，本文只把它当作「架构能力上可推广，但未被这篇论文验证」的 <span class="ev ev-i">🔸 推断</span>，不写成训练侧的既有结论。</p>
+
+  <h3>四 · 载体是通信五元组的第六元</h3>
+
+  <p>§15 把一条通信边记全需要五样东西：源、张量、并行域、原语、宿；效果是这五元的函数——<code>效果 = layout 变换 + 归属再分配</code>。载体是第六元，答的是「这条边走哪张网」——<span class="cd a">1:1</span>（一条边只落在唯一一张平面上），但这一元<b>不进「效果」那个函数</b>。</p>
+
+  <div class="note new">
+    <span class="lbl">载体进的是「代价」，不是「效果」</span>
+    <p>换网不改前后态，只改从前态走到后态要多久。把 UB 换成 RoCE，哪张卡持有哪一段、形状是什么，逐字不变——所以：</p>
+    <pre>效果 = f(源, 张量, 并行域, 原语, 宿)        ← 前五元的函数，不变
+代价 ≥ g(载荷, 载体)                        ← 载体只进这一个，新增</pre>
+    <p>把载体写进效果，等于说「走 RoCE 的 AllGather 拼出来的张量和走 UB 的不一样」——那是错的。这与 §09「UB 影响的是性能和带宽利用率，不影响通信语义」、§15「同一个语义原语在不同实现下可以是完全不同的物理通信模式」是同一件事：<b>载体决定这条边多快到，不决定它到了之后是什么。</b></p>
+  </div>
+
+  <h3>五 · 传输下界：字节 ÷ 平面带宽</h3>
+
+  <p>知道了载荷（§15 第六行）与载体（本节），可以给出一个数：<code>下界 = 载荷字节 ÷ 载体带宽</code>。这是<strong>下界</strong>，不是耗时——它不含：</p>
+  <ul>
+    <li>拓扑跳数（同一张平面内部，卡到卡还要经过几级交换）；</li>
+    <li>集合通信的算法系数（环形 AllReduce 要搬 <code>2(N−1)/N</code> 份数据，不是一份）；</li>
+    <li>争用（同一张平面上还有别的边在抢带宽）；</li>
+    <li>协议开销（RDMA / RoCE 的包头与握手）；</li>
+    <li>与计算的重叠（overlap 掉的部分不体现在这条边的独立传输时间上）。</li>
+  </ul>
+
+  <p>即便如此，这个下界仍有诊断价值：<strong>下界与实测之差，就是没被藏住的开销。</strong>一条边算出来「至少要 2 ms」，实测跑了 20 ms，差的 18 ms 不会凭空消失——它一定落在跳数、算法系数、争用、协议开销、串行等待里的某一项上，缩小范围本身就是诊断的一半。</p>
+
+  <div class="note">
+    <span class="lbl">宁缺毋误</span>
+    <p>下界公式对 TP / PP / DP 能给数，因为它们的载荷字节可以从并行配置直接算出（§15）。<strong>CP / EP 算不出就不给数</strong>：CP 的载荷取决于环上每一跳传的 KV 块大小，块大小又取决于 kv 头数与切法，不是一个能从配置直接读出的常量；EP 的载荷取决于 top-k 路由在运行时的实际去向，各条边不等。硬凑一个数就是把示意值当成算出来的——这条纪律与 viewer 的 <code>commLoad9</code> 一致：CP / EP 两项直接留空，不给示意字节。</p>
+  </div>
+
+  <h3>六 · 口径假设与待确认</h3>
+
+  <div class="note fix">
+    <span class="lbl">假设：超节点内不分板内 / 板间 / 机架间</span>
+    <p><b>假设：</b>本节与 viewer 对超节点内部一律按 UB 同一档带宽计算，不区分板内（同 node）/ 板间（同机柜跨 node）/ 机架间（跨机柜同超节点）——三档当前全部取 196 GB/s。公开资料只给了「非阻塞全互联」这类定性描述和「inter-node bandwidth degradation &lt; 3%」这一个笼统数字，<b>没有</b>按分层给出具体 GB/s 对比表；这是口径假设，不是事实。</p>
+    <p><b>三个待灵衢团队确认的问题：</b></p>
+    <ol>
+      <li><b>寻址粒度</b>——UB 是统一虚拟地址空间，还是 rank → 预注册 buffer 的静态映射？每条消息的数据路径上有没有一次地址翻译？这一问不是实现细节：只要归属记账仍以 rank 为单位，§07 落点判据与 §15 归属判据都不动；若答案是「持有者变成了超节点」，两条判据都要重做（见 §07 压力测试、§15 四）。</li>
+      <li><b>板内 / 板间 / 机架间的 UB 是否同一带宽档</b>——上面已写成假设，真实是否降速待确认。</li>
+      <li><b>平面选择是否严格「超节点内 = UB / 跨超节点 = RoCE」</b>，HCCL 在哪一层做这个选择？若不是严格按边界、而是按 group 大小或算法自适应，本节表二的「训练数据面走不走」这一列就不能只由物理坐标推出来。</li>
+    </ol>
+  </div>
+
+  <div class="note gov">
+    <span class="lbl">对 viewer 的推论：载体是图层，不是新的并行轴</span>
+    <p>载体（片内 / UB / RoCE）不应该成为界面上与 TP / PP / DP / CP / EP 并列的第六个可选维度——它不是切分维度，一条边落在哪张平面上，是这组 rank 的<em>物理坐标</em>决定的，不是哪根轴决定的（§07：node / 机柜 / 超节点从不出现在切分函数里）。它该做的是<strong>图层 / 着色维度</strong>：同一张连线图，切换到载体图层时按 UB / RoCE 分色，回答的是「这条边多快到」，不是「这条边为什么存在」。这与 §17 推论 4 是同一条纪律的另一个实例——推论 4 说维度与原语要解耦成两个图层，本节说载体要解耦成第三个图层：<strong>维度决定哪些卡在一个组里，原语决定组内怎么连线，载体决定这条线画多粗、多快。</strong>三者各自成层、可任意组合，任何一层都不该被硬绑定到另一层上。</p>
+  </div>
+</section>
+
 <!-- ===== 边界与未展开 ===== -->
 <section id="s-gaps">
-  <div class="sec-head"><span class="sec-num">19</span><h2>本文的简化、留白与边界</h2></div>
+  <div class="sec-head"><span class="sec-num">20</span><h2>本文的简化、留白与边界</h2></div>
 
   <p class="lede">一份自称「参照系」的东西，最该说清的是它<strong>没覆盖什么</strong>。下面分三类：本文做过的简化（可能误导，必须说明）、提到但没展开的机制、以及有意划在范围外的。</p>
 
@@ -3692,6 +3960,8 @@ Rank 状态（W / G / O / A · 区间 · 相位）
 
   <p><strong>其三，<code>34·B·S·H</code> 这个激活值系数有适用条件。</strong>它假设开启 SP、用 flash-attention 消掉了 <code>[B,heads,S,S]</code> 那两项、且不做重计算。三个条件任意一个变化，系数就不适用。文中所有显存估算都是<b>量级估算，用于看趋势</b>，不能拿去做容量规划。</p>
 
+  <p><strong>其四，超节点内部一律按 UB 同一档计算，不区分板内 / 板间 / 机架间。</strong>为了让「载体」在 §09 / §15 里落成一个可判定的三值量（片内 / UB / RoCE），本文把超节点内三种物理距离——同 node、同机柜、跨机柜同超节点——都按同一带宽档处理（对齐 viewer 的 UB_TIERS9：三档 bps 全部取 196 GB/s）。<strong>这是为求可判定而做的简化，不是实测结论</strong>：板内 / 板间 / 机架间是否确实同带宽，公开资料未给出分层数据，待灵衢团队确认（见下表「超节点内的寻址与分档（灵衢 UB）」一行）。</p>
+
   <h3>二 · 提到但没展开的机制</h3>
 
   <table class="tbl">
@@ -3704,6 +3974,7 @@ Rank 状态（W / G / O / A · 区间 · 相位）
       <tr><td><b>通信量公式</b></td><td>§09 只给了 AllReduce 的 <code>2(N−1)/N·S</code></td><td>AllGather、ReduceScatter、All-to-All 的量级没给，因此无法据本文做通信量的定量比较</td></tr>
       <tr><td><b>重计算的粒度</b></td><td>§03、§12 提到 activation checkpointing</td><td>没区分全量重计算与选择性重计算（只重算访存密集的那几段），后者是实践中的主流</td></tr>
       <tr><td><b>混合精度的细节</b></td><td>§12 给了 12 B/参数的构成</td><td>没解释为什么需要 fp32 master weight、loss scaling 做什么、以及 bf16 与 fp16 在这件事上的差别</td></tr>
+      <tr><td><b>超节点内的寻址与分档（灵衢 UB）</b></td><td>§07 判据表「超节点」行、§07 压力测试第二条</td><td>① <b>寻址粒度</b>：UB 硬件层支持全局统一寻址与路由 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.6.2</span>，但 FusedDispatch/FusedCombine 这类具体通信算子实现用的是 rank → 预注册 buffer 的静态映射 <span class="ev ev-v">✅ 已核实-原文</span> <span class="src">arXiv:2506.12708 §3.5.2</span>——每条消息的数据路径上有没有一次通用地址翻译，公开资料未说清；这一条只决定 §07 判据表「超节点」行那格 ✗ 的<em>理由怎么写</em>，两种候选答案都不改判据结论。② <b>板内 / 板间 / 机架间的 UB 是不是同一个带宽档？</b>viewer 现按同一档 196 GB/s 计（<span class="ev ev-3">🔍 第三方分析</span>，非论文数字），论文只给了超节点内 inter-node 带宽退化率 &lt;3% 的笼统数字，没有分层数字，这是口径假设不是事实。③ <b>平面选择是不是严格「超节点内 = UB / 跨超节点 = RoCE」，HCCL 在哪一层做这个选择？</b>论文未展开，且论文对 RDMA 平面的验证场景是推理侧的 PD 分离 / KV cache 传输，训练场景下的负载（梯度同步、流水线激活、checkpoint）没有实验支持。三条均待灵衢团队确认。</td></tr>
     </tbody>
   </table>
 
@@ -3711,6 +3982,7 @@ Rank 状态（W / G / O / A · 区间 · 相位）
 
   <ul>
     <li><strong>推理。</strong>全文是<em>训练</em>视角。推理的并行语义相当不同——KV cache 是被冻结成状态的激活体（§03 已点到），prefill 与 decode 两阶段的瓶颈相反，还有 PD 分离、连续批处理这些训练里不存在的概念。<b>本文的结论不要直接套到推理上。</b></li>
+    <li><strong>灵衢公开资料里的推理场景结论。</strong>UnifiedBus / CloudMatrix384 的公开资料（如 arXiv:2506.12708《Serving Large Language Models on Huawei CloudMatrix384》）本身是一篇推理服务论文，PD 分离、KV cache 跨超节点池化传输这些具体机制和吞吐数字，全部是在推理管线里跑出来的，该论文没有给出任何训练侧的实验数据；训练场景下的等价负载（梯度/参数同步、流水线激活值、checkpoint）它完全没有涉及。<b>本文只借用其中训练/推理通用的拓扑与硬件规格（超节点规模、UB 平面的非阻塞全互联），不把推理侧的具体机制结论套到训练场景。</b></li>
     <li><strong>故障恢复与弹性训练。</strong>checkpoint 的存取格式与并行配置强耦合，改并行度就要重切 checkpoint。这是工程上很重的一块，与本文的静态参照系正交。</li>
     <li><strong>定量性能模型。</strong>§12 只给了「计算密集 / 访存密集」两类定性判据，没有 roofline、算术强度这类可以算的模型。要做性能预测得另起一套。</li>
     <li><strong>具体框架的 API。</strong>除 §11 引用 Megatron 源码作为机制佐证外，全文不涉及任何框架的具体用法。</li>
@@ -3718,8 +3990,8 @@ Rank 状态（W / G / O / A · 区间 · 相位）
 
   <div class="note">
     <span class="lbl">这份文档能回答与不能回答的</span>
-    <p><b>能：</b>某个东西被谁切了、切完落在哪张卡、单卡手里剩多大、通信插在哪、为什么嵌套顺序是这样、某个术语在这套体系里的准确位置。</p>
-    <p><b>不能：</b>给定模型与集群该配多少 TP/PP/CP/DP（§11 只给了决策<em>顺序</em>，没给数值方法）、某个配置的吞吐是多少、某次 profiling 的具体瓶颈是什么。<strong>它是一张地图，不是一把尺子。</strong></p>
+    <p><b>能：</b>某个东西被谁切了、切完落在哪张卡、单卡手里剩多大、通信插在哪、为什么嵌套顺序是这样、某个术语在这套体系里的准确位置、这条通信走哪张网（片内 / UB / RoCE）、按这张网的带宽算出来的传输<b>下界</b>是多少（≥ 多少 ms）。</p>
+    <p><b>不能：</b>给定模型与集群该配多少 TP/PP/CP/DP（§11 只给了决策<em>顺序</em>，没给数值方法）、某个配置的吞吐是多少、某次 profiling 的具体瓶颈是什么、走这张网实际要花多久（下界不是实测——没算拓扑跳数、集合通信算法系数与争用）。<strong>它是一张地图，不是一把尺子。</strong></p>
   </div>
 </section>
 
@@ -5401,15 +5673,15 @@ function figBuild(){
 function figChains(){
   var m=document.getElementById('fig-chains');
   var L=[['整网','L 层的图'],['层 ℓ','层子图'],['expert e','仅 MoE 层存在'],['算子','MatMul · Softmax'],['张量','权重 · 激活值']];
-  var R=[['集群','world_size 张卡'],['机','8 卡 · 机内高带宽互联'],['卡','显存 + 计算单元 + 流'],['计算单元','矩阵 + 向量单元'],['片上 buffer','各级缓存']];
+  var R=[['集群','多个超节点'],['超节点','384 卡 · UB 非阻塞全互联'],['机柜','4 node · 16 柜/超节点'],['node（机）','8 NPU + 4 CPU · 板级 UB 交换'],['卡','显存 + 计算单元 + 流'],['计算单元','矩阵 + 向量单元'],['片上 buffer','各级缓存']];
   var M=[['world_size = TP × CP × PP × DP','#3D4B55','#D2DADF'],
          ['PP 划分　按层号 ℓ 分给不同 stage · 可跨机',K.pp,K.pp],
          ['EP 划分　按 expert 号 e 分开放 · 借用已有的卡',K.ep,K.ep],
-         ['TP 分片　沿 h 拆权重矩阵 · 必须机内',K.tp,K.tp],
+         ['TP 分片　沿 h 拆权重矩阵 · 必须同高带宽域',K.tp,K.tp],
          ['DP 切 b / CP 切 s　权重全份复制，只切输入',K.dp,K.dp],
          ['算子选择 ＋ 算子融合 → 落成 kernel','#3D4B55','#D2DADF'],
          ['tiling　不跨卡、不通信','#3D4B55','#D2DADF']];
-  var s='<svg viewBox="0 0 940 470" font-family="-apple-system,\'PingFang SC\',sans-serif">';
+  var s='<svg viewBox="0 0 940 560" font-family="-apple-system,\'PingFang SC\',sans-serif">';
   s+='<defs><marker id="c-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8A98A2"/></marker></defs>';
   s+='<text x="130" y="24" font-size="11.5" font-weight="700" fill="#3D4B55" text-anchor="middle">逻辑侧</text>';
   s+='<text x="470" y="24" font-size="11.5" font-weight="700" fill="#3D4B55" text-anchor="middle">映射机制</text>';
@@ -5418,7 +5690,7 @@ function figChains(){
     s+='<rect x="30" y="'+y+'" width="200" height="52" rx="4" fill="#fff" stroke="#D2DADF"/>';
     s+='<text x="46" y="'+(y+22)+'" font-size="12.5" font-weight="650" fill="#0E1418">'+o[0]+'</text>';
     s+='<text x="46" y="'+(y+41)+'" font-size="10" fill="#8A98A2">'+o[1]+'</text>';});
-  R.forEach(function(o,i){var y=38+i*64, hi=(i===2);
+  R.forEach(function(o,i){var y=38+i*64, hi=(o[0]==='卡');
     s+='<rect x="720" y="'+y+'" width="190" height="52" rx="4" fill="'+(hi?'#FFF8F4':'#fff')+'" stroke="'+(hi?'#0E1418':'#D2DADF')+'" stroke-width="'+(hi?2.4:1)+'"/>';
     s+='<text x="736" y="'+(y+22)+'" font-size="12.5" font-weight="'+(hi?800:650)+'" fill="#0E1418">'+o[0]+'</text>';
     s+='<text x="736" y="'+(y+41)+'" font-size="10" fill="'+(hi?'#6B7B86':'#8A98A2')+'">'+o[1]+'</text>';});
@@ -5428,13 +5700,13 @@ function figChains(){
   var LK=[[0,0],[1,1],[2,2],[3,3],[4,4],[3,5],[4,6]];
   LK.forEach(function(p){var ly=64+p[0]*64, my=55+p[1]*42;
     s+='<path d="M230 '+ly+' L296 '+my+'" stroke="#B0BEC6" stroke-width="1.3" fill="none" marker-end="url(#c-ar)"/>';});
-  var RK=[[0,0],[1,2],[2,2],[3,2],[4,2],[5,3],[6,4]];
+  var RK=[[0,0],[1,4],[2,4],[3,4],[4,4],[5,5],[6,6]];
   RK.forEach(function(p){var my=55+p[0]*42, ry=64+p[1]*64;
     s+='<path d="M640 '+my+' L716 '+ry+'" stroke="#B0BEC6" stroke-width="1.3" fill="none" marker-end="url(#c-ar)"/>';});
-  s+='<path d="M905 166 L925 166 L925 218 L905 218" fill="none" stroke="#0E1418" stroke-width="1.4"/>';
-  s+='<text x="736" y="378" font-size="11.5" font-weight="700" fill="#0E1418">四个并行维度全部收在「卡」这一级</text>';
-  s+='<text x="736" y="396" font-size="10.5" fill="#6B7B86">上面两级只决定拓扑与带宽</text>';
-  s+='<text x="736" y="412" font-size="10.5" fill="#6B7B86">下面两级与并行完全无关</text>';
+  s+='<path d="M905 294 L925 294 L925 346 L905 346" fill="none" stroke="#0E1418" stroke-width="1.4"/>';
+  s+='<text x="736" y="500" font-size="11.5" font-weight="700" fill="#0E1418">四个并行维度全部收在「卡」这一级</text>';
+  s+='<text x="736" y="518" font-size="10.5" fill="#6B7B86">上面四级只决定拓扑与带宽</text>';
+  s+='<text x="736" y="534" font-size="10.5" fill="#6B7B86">下面两级与并行完全无关</text>';
   s+='</svg>';
   m.innerHTML=s;
 }
@@ -6156,13 +6428,13 @@ function sibOut(){
 
   var html = '<b>rank '+sibSel+'</b>　(tp='+c.tp+', pp='+c.pp+', dp='+c.dp+')　节点 '+c.dp+'<br>';
   html += '<b style="color:#A8404A">TP 兄弟</b>：rank '+tpSibs.join(', ')+' — 持有同一层权重的<em>不同分片</em>，每层两次 AllReduce / AG+RS，<b>机内互联</b>（NCCL / HCCL）<br>';
-  html += '<b style="color:#2E6E8E">DP 兄弟</b>：rank '+dpSibs.join(', ')+' — 持有同一层权重的<em>完全相同副本</em>，step 末梯度 AllReduce，<b>跨机 RDMA</b>（IB / UB）<br>';
+  html += '<b style="color:#2E6E8E">DP 兄弟</b>：rank '+dpSibs.join(', ')+' — 持有同一层权重的<em>完全相同副本</em>，step 末梯度 AllReduce，<b>跨 node（机）</b>（同超节点走 UB 平面，跨超节点走 RDMA / RoCE）<br>';
   html += '<b style="color:#B3603A">PP 链路</b>：rank '+ppPeers.join(', ')+' — <em>不同的层</em>，P2P 传激活值，不是兄弟关系<br>';
-  html += '<span class="hint">TP 兄弟在同一节点内（stride=1 → rank 连续 → 走机内高带宽互联）；DP 兄弟跨节点（stride=TP → 走 RDMA 网络）。再点一次取消选中。</span>';
+  html += '<span class="hint">TP 兄弟在同一 node（机）内（stride=1 → rank 连续 → 走机内高带宽互联）；DP 兄弟跨 node（机）（stride=TP → 同超节点走 UB 平面，跨超节点才换挡到 RDMA / RoCE）。再点一次取消选中。</span>';
   out.innerHTML = html;
 }
 
-/* ===================== FIG 12C · HCCL 架构与 UB ===================== */
+/* ===================== FIG 12C · HCCL 架构与载体（片内 / UB 平面 / RoCE 平面） ===================== */
 var hcclMode = 'hccl';
 
 function figHCCL(){
@@ -6177,7 +6449,7 @@ function figHCCL(){
   var layers = isH ? [
     {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / MindSpore / DeepSpeed', api:'all_reduce(tensor, group)'},
     {y:50+layH+gap, c:'#B3603A', t:'HCCL', sub:'Huawei Collective Communication Library', api:'封装 AllReduce / AG / RS / A2A'},
-    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'HCCS（机内）+ RDMA（跨机）', api:'物理链路层'}
+    {y:50+2*(layH+gap), c:'#2E6E8E', t:'硬件互联', sub:'HCCS（机内）+ UB（超节点）+ RoCE（跨超节点）', api:'物理链路层'}
   ] : [
     {y:50,  c:'#5C7A8C', t:'训练框架', sub:'Megatron / DeepSpeed / FSDP', api:'all_reduce(tensor, group)'},
     {y:50+layH+gap, c:'#A8404A', t:'NCCL', sub:'NVIDIA Collective Communications Library', api:'封装 AllReduce / AG / RS / A2A'},
@@ -6210,17 +6482,17 @@ function figHCCL(){
   /* ---- 右侧：内部路径详解 ---- */
   var RX = 370, RW = 500;
 
-  s+='<text x="'+(RX+RW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">'+(isH?'HCCL 内部：机内 vs 跨机两条路径':'NCCL 内部：机内 vs 跨机两条路径')+'</text>';
+  s+='<text x="'+(RX+RW/2)+'" y="36" font-size="11" fill="#3D4B55" text-anchor="middle" font-weight="700">'+(isH?'HCCL 内部：超节点内 UB 平面 vs 跨超节点 RoCE 平面':'NCCL 内部：机内 vs 跨机两条路径')+'</text>';
 
-  /* 节点 0 */
+  /* node（机）0 */
   var n0x = RX+20, n0y = 58, nW = 200, nH = 220;
   s+='<rect x="'+n0x+'" y="'+n0y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
-  s+='<text x="'+(n0x+nW/2)+'" y="'+(n0y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 0</text>';
+  s+='<text x="'+(n0x+nW/2)+'" y="'+(n0y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">node（机）0</text>';
 
-  /* 节点 1 */
+  /* node（机）1 */
   var n1x = RX+280, n1y = 58;
   s+='<rect x="'+n1x+'" y="'+n1y+'" width="'+nW+'" height="'+nH+'" rx="8" fill="none" stroke="#D2DADF" stroke-width="1.5" stroke-dasharray="6 4"/>';
-  s+='<text x="'+(n1x+nW/2)+'" y="'+(n1y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">节点 1</text>';
+  s+='<text x="'+(n1x+nW/2)+'" y="'+(n1y+16)+'" font-size="10" fill="#6B7B86" text-anchor="middle" font-weight="600">node（机）1</text>';
 
   /* 卡片 */
   var cW = 72, cH = 36, cGap = 14;
@@ -6247,7 +6519,7 @@ function figHCCL(){
   var linkColor = isH ? '#2E6E8E' : '#A8404A';
   var linkLabel = isH ? 'HCCS' : 'NVLink / NVSwitch';
 
-  /* 节点 0 机内互联（水平连线） */
+  /* node（机）0 机内互联（水平连线） */
   var c0Lx = n0x+20+cW, c0Rx = n0x+20+cW+cGap;
   s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
   s+='<line x1="'+c0Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c0Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
@@ -6257,7 +6529,7 @@ function figHCCL(){
   s+='<line x1="'+vx1+'" y1="'+(cardY0+cH)+'" x2="'+vx1+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
   s+='<line x1="'+vx2+'" y1="'+(cardY0+cH)+'" x2="'+vx2+'" y2="'+(cardY0+cH+cGap)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
 
-  /* 节点 1 机内互联 */
+  /* node（机）1 机内互联 */
   var c1Lx = n1x+20+cW, c1Rx = n1x+20+cW+cGap;
   s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
   s+='<line x1="'+c1Lx+'" y1="'+(cardY0+cH+cGap+cH/2)+'" x2="'+c1Rx+'" y2="'+(cardY0+cH+cGap+cH/2)+'" stroke="'+linkColor+'" stroke-width="3" opacity="0.6"/>';
@@ -6279,45 +6551,35 @@ function figHCCL(){
   if(isH){
     /* ==== HCCL + UB 路径 ==== */
 
-    /* UB 共享 buffer（主机侧） */
+    /* 超节点边界 + UB 平面（替代旧版「主机侧共享 buffer」画法）*/
     var ubW = 140, ubH = 50;
     var ub0x = n0x + (nW - ubW)/2, ub0y = crossY + 10;
     var ub1x = n1x + (nW - ubW)/2, ub1y = crossY + 10;
+    var spX = ub0x - 10, spY = ub0y - 10, spW = (ub1x+ubW) - ub0x + 20, spH = ubH + 20;
 
-    s+='<rect x="'+ub0x+'" y="'+ub0y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
-    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
-    s+='<text x="'+(ub0x+ubW/2)+'" y="'+(ub0y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
+    /* 超节点边界（虚线大框——换挡点在这里，不在 node 之间） */
+    s+='<rect x="'+spX+'" y="'+spY+'" width="'+spW+'" height="'+spH+'" rx="8" fill="#B3603A" opacity="0.06" stroke="#B3603A" stroke-width="1.3" stroke-dasharray="2 3"/>';
+    s+='<text x="'+(spX+spW/2)+'" y="'+(ub0y+8)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">同一超节点内 · UB 平面</text>';
 
-    s+='<rect x="'+ub1x+'" y="'+ub1y+'" width="'+ubW+'" height="'+ubH+'" rx="6" fill="#B3603A" opacity="0.10" stroke="#B3603A" stroke-width="1.5"/>';
-    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+20)+'" font-size="10" fill="#B3603A" text-anchor="middle" font-weight="700">UB（共享 Buffer）</text>';
-    s+='<text x="'+(ub1x+ubW/2)+'" y="'+(ub1y+36)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">主机侧内存 · 汇聚多卡数据</text>';
-
-    /* 卡 → UB 的收集箭头 */
+    /* UB 直连：node0 ↔ node1 非阻塞全互联，卡对卡直连，不聚合、不经主机 */
+    var ubLineY = ub0y + 26;
     var cardBot = cardY0 + 2*cH + cGap;
-    var arrC = '#B3603A';
-    /* 节点 0：4 卡 → UB */
-    s+='<line x1="'+(n0x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
-    s+='<line x1="'+(n0x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub0x+ubW*3/4)+'" y2="'+ub0y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
-    /* 节点 1：4 卡 → UB */
-    s+='<line x1="'+(n1x+20+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
-    s+='<line x1="'+(n1x+20+cW+cGap+cW/2)+'" y1="'+cardBot+'" x2="'+(ub1x+ubW*3/4)+'" y2="'+ub1y+'" stroke="'+arrC+'" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>';
-
-    /* UB ↔ UB 的 RDMA 通道 */
-    var rdmaY = ub0y + ubH/2;
-    s+='<line x1="'+(ub0x+ubW)+'" y1="'+rdmaY+'" x2="'+(ub1x)+'" y2="'+rdmaY+'" stroke="#C44D23" stroke-width="3" opacity="0.7"/>';
-    /* 双向箭头 */
-    s+='<polygon points="'+(ub1x-8)+','+(rdmaY-4)+' '+(ub1x-8)+','+(rdmaY+4)+' '+ub1x+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
-    s+='<polygon points="'+(ub0x+ubW+8)+','+(rdmaY-4)+' '+(ub0x+ubW+8)+','+(rdmaY+4)+' '+(ub0x+ubW)+','+rdmaY+'" fill="#C44D23" opacity="0.7"/>';
-    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY-10)+'" font-size="10" fill="#C44D23" text-anchor="middle" font-weight="700">RDMA</text>';
-    s+='<text x="'+((ub0x+ubW+ub1x)/2)+'" y="'+(rdmaY+16)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">聚合后发一次 · 减少跨机次数</text>';
+    s+='<line x1="'+ub0x+'" y1="'+ubLineY+'" x2="'+(ub1x+ubW)+'" y2="'+ubLineY+'" stroke="#B3603A" stroke-width="3" opacity="0.65"/>';
+    [n0x+20+cW/2, n0x+20+cW+cGap+cW/2].forEach(function(cx){
+      s+='<line x1="'+cx+'" y1="'+cardBot+'" x2="'+cx+'" y2="'+ubLineY+'" stroke="#B3603A" stroke-width="1" opacity="0.4"/>';
+    });
+    [n1x+20+cW/2, n1x+20+cW+cGap+cW/2].forEach(function(cx){
+      s+='<line x1="'+cx+'" y1="'+cardBot+'" x2="'+cx+'" y2="'+ubLineY+'" stroke="#B3603A" stroke-width="1" opacity="0.4"/>';
+    });
+    s+='<text x="'+(spX+spW/2)+'" y="'+(ubLineY+16)+'" font-size="7.5" fill="#6B7B86" text-anchor="middle">非阻塞全互联 · 196 GB/s 单向每卡（第三方口径）· 卡对卡直连</text>';
 
     /* 流程解释 */
     var expY = ub0y + ubH + 26;
     var steps = [
-      '① 各卡把要发送的 tensor 切片写入本机 UB',
-      '② HCCL 在 UB 中做本地聚合（ReduceScatter 的本地部分）',
-      '③ 聚合结果通过 RDMA 一次发到对端 UB',
-      '④ 对端 UB 分发到各卡 · 完成跨机 AllReduce'
+      '① HCCL 查 group 成员的物理落位（node / 机柜 / 超节点）',
+      '② 同一超节点内 → 走 UB 平面，非阻塞全互联，卡对卡直连',
+      '③ 无需先聚合到主机侧，AIV 核可直接读写对端 NPU 显存',
+      '④ 跨出超节点边界才换挡到 RDMA / RoCE 平面（见下方对照）'
     ];
     steps.forEach(function(st, i){
       s+='<text x="'+(RX+RW/2)+'" y="'+(expY+i*16)+'" font-size="8.5" fill="#3D4B55" text-anchor="middle">'+st+'</text>';
@@ -6326,9 +6588,9 @@ function figHCCL(){
     /* 关键对比 */
     var kY = expY + steps.length*16 + 16;
     s+='<rect x="'+(RX+40)+'" y="'+kY+'" width="'+(RW-80)+'" height="64" rx="6" fill="#B3603A" opacity="0.06" stroke="#B3603A" stroke-width="1" stroke-dasharray="4 3"/>';
-    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#B3603A" text-anchor="middle" font-weight="700">UB 的核心价值</text>';
-    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">不走 UB：每张卡各自发 RDMA → 跨机消息数 = 卡数 × 对端卡数</text>';
-    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">走 UB：先本地聚合再跨机 → 跨机消息数大幅减少 · 带宽利用率更高</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+18)+'" font-size="9" fill="#B3603A" text-anchor="middle" font-weight="700">UB 与 RDMA/RoCE：两张互斥的平面</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+34)+'" font-size="8" fill="#3D4B55" text-anchor="middle">同一超节点内：UB 平面 · 196 GB/s 单向每卡（第三方口径）· 退化 &lt;3%</text>';
+    s+='<text x="'+(RX+RW/2)+'" y="'+(kY+50)+'" font-size="8" fill="#3D4B55" text-anchor="middle">跨超节点：RDMA / RoCE 平面 · 约 50 GB/s（第三方口径，数字有冲突）</text>';
 
   } else {
     /* ==== NCCL 路径 ==== */
@@ -6383,7 +6645,7 @@ function hcclOut(){
   if(!out) return;
   var isH = (hcclMode === 'hccl');
   if(isH){
-    out.innerHTML = '<b style="color:#B3603A">HCCL + UB 路径</b>：机内走 HCCS 直连（全互联），跨机走 UB 共享 buffer + RDMA。<b>UB 的核心</b>是在主机侧做一次本地聚合再跨机发送，把「N 张卡各发各的」变成「聚合后发一次」，减少跨机 RDMA 消息数。应用层完全无感——API 还是 <code>hccl.all_reduce(tensor, group)</code>，HCCL 自动判断走哪条路。';
+    out.innerHTML = '<b style="color:#B3603A">HCCL + UB 路径</b>：机内走 HCCS 直连（全互联），同一超节点内走 UB 平面（非阻塞全互联，196 GB/s 单向每卡，第三方口径）。<b>UB 不在 HCCL 内部</b>——它是超节点内的卡级物理互联平面，与 NVLink / HCCS 同层；跨出超节点边界才换挡到 RDMA / RoCE 平面，两张平面互斥，不是「先聚合再发」的串联关系。应用层完全无感——API 还是 <code>hccl.all_reduce(tensor, group)</code>，HCCL 自动判断走哪条路。';
   } else {
     out.innerHTML = '<b style="color:#A8404A">NCCL 路径</b>：机内走 NVLink / NVSwitch 直连（600-900 GB/s），跨机每张卡各自走 IB / RoCE。<b>NCCL 不做主机侧聚合</b>，而是依靠 Ring / Tree 拓扑的分段流水线来充分利用带宽——多个 channel 并行，每个 channel 对应一条 IB QP 连接。两种方案的集合通信语义完全一样（AllReduce 结果一致），区别只在跨机的传输策略。';
   }
@@ -6432,26 +6694,26 @@ function figWaterfall(){
     /* TP */
     [
       {t1:'TP 维度', t2:'同层权重的不同分片'},
-      {t1:'4 卡同节点', t2:'AllReduce 环（机内）', icon:'ring'},
+      {t1:'4 卡同 node（机）', t2:'AllReduce 环（机内）', icon:'ring'},
       {t1:'all_reduce(grad, tp_group)', t2:'每层两次', mono:true},
-      {t1:'group 全在同一节点', t2:'→ 直接走机内路径', t3:'不经过 UB'},
+      {t1:'group 全在同一节点', t2:'→ 直接走机内路径', t3:'不经过 UB 平面'},
       {t1:'HCCS / NVLink', t2:'300-900 GB/s · μs 级'}
     ],
     /* DP */
     [
       {t1:'DP 维度', t2:'同层权重的完全相同副本'},
-      {t1:'2 卡跨节点', t2:'AllReduce 梯度同步', icon:'dash'},
+      {t1:'2 卡跨 node（机）', t2:'AllReduce 梯度同步', icon:'dash'},
       {t1:'all_reduce(grad, dp_group)', t2:'每 step 一次', mono:true},
-      {t1:'group 跨节点', t2:'→ 走 UB 聚合 + RDMA', t3:'先本地聚合再跨机'},
-      {t1:'UB + RDMA / IB', t2:'100-400 Gbps · 低 ms'}
+      {t1:'group 跨不跨超节点', t2:'→ 决定走 UB 还是 RoCE', t3:'不是看跨不跨 node'},
+      {t1:'UB 或 RDMA/RoCE', t2:'196 或 ~50 GB/s · 第三方口径'}
     ],
     /* PP */
     [
       {t1:'PP 维度', t2:'不同层 · 非兄弟关系'},
       {t1:'相邻 stage 1:1', t2:'P2P 激活传递（有向）', icon:'arrow'},
       {t1:'send(act, next_rank)', t2:'每个 micro-batch', mono:true},
-      {t1:'判断 next_rank 位置', t2:'→ 机内 or 跨机', t3:'取决于 order 字符串'},
-      {t1:'HCCS or RDMA', t2:'由物理落位决定'}
+      {t1:'判断 next_rank 落位', t2:'→ 片内/UB/RoCE 平面', t3:'取决于 order 字符串'},
+      {t1:'HCCS / UB / RoCE', t2:'由物理落位决定'}
     ]
   ];
 
@@ -6517,7 +6779,7 @@ function figWaterfall(){
   /* 三个总结框 */
   var sumItems = [
     {c:'#A8404A', t:'TP：逻辑层 group 全在同一节点 → 物理层走机内高带宽'},
-    {c:'#2E6E8E', t:'DP：逻辑层 group 跨节点 → 物理层走 UB 聚合 + RDMA'},
+    {c:'#2E6E8E', t:'DP：逻辑层 group 跨 node（机）→ 物理层看是否跨超节点走 UB 或 RoCE'},
     {c:'#B3603A', t:'PP：逻辑层 1:1 P2P → 物理层由 order 字符串决定'}
   ];
 
@@ -6581,23 +6843,23 @@ function figNesting(){
   /* 中间层底部标签 */
   s+='<text x="'+(mx+12)+'" y="'+(my+mh-12)+'" font-size="9" fill="#6B7B86">FIG 12C 左侧 · 三层调用栈 · 对框架层透明</text>';
 
-  /* 最内层 · UB */
+  /* 最内层 · 载体（片内 / UB 平面 / RoCE 平面） */
   var ix = mx+28, iy = my+54, iw = mw-56, ih = mh-96;
   s+='<rect x="'+ix+'" y="'+iy+'" width="'+iw+'" height="'+ih+'" rx="6" fill="#FFF7ED" stroke="#B3603A" stroke-width="1.5" stroke-dasharray="6 3"/>';
-  s+='<text x="'+(ix+12)+'" y="'+(iy+20)+'" font-size="12" font-weight="800" fill="#B3603A">UB（Unified Buffer）</text>';
-  s+='<text x="'+(ix+12)+'" y="'+(iy+36)+'" font-size="9.5" fill="#3D4B55">HOW-detail：跨机时在主机侧聚合 buffer，减少 RDMA 发送次数</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+20)+'" font-size="12" font-weight="800" fill="#B3603A">载体：片内 / UB 平面 / RoCE 平面</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+36)+'" font-size="9.5" fill="#3D4B55">由 group 成员的物理落位决定，对 HCCL 上层透明</text>';
 
-  /* UB 内部细节 */
-  s+='<text x="'+(ix+12)+'" y="'+(iy+56)+'" font-size="9" fill="#6B7B86">仅在跨机路径上生效</text>';
-  s+='<text x="'+(ix+12)+'" y="'+(iy+70)+'" font-size="9" fill="#6B7B86">机内通信（HCCS / NVLink）不经过 UB</text>';
+  /* 载体内部细节 */
+  s+='<text x="'+(ix+12)+'" y="'+(iy+56)+'" font-size="9" fill="#6B7B86">同一超节点内跨 node → UB 平面（非阻塞全互联）</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+70)+'" font-size="9" fill="#6B7B86">跨出超节点边界 → RoCE 平面（第三方口径，数字有冲突）</text>';
 
-  /* UB 条件标记 */
+  /* 三选一标记 */
   var condX = ix+iw-130, condY = iy+14;
   s+='<rect x="'+condX+'" y="'+condY+'" width="118" height="22" rx="3" fill="#B3603A" opacity="0.12"/>';
-  s+='<text x="'+(condX+59)+'" y="'+(condY+15)+'" font-size="9" font-weight="700" fill="#B3603A" text-anchor="middle">条件启用 · 跨机才有</text>';
+  s+='<text x="'+(condX+59)+'" y="'+(condY+15)+'" font-size="9" font-weight="700" fill="#B3603A" text-anchor="middle">按物理落位三选一</text>';
 
   /* 虚线标注内层底部 */
-  s+='<text x="'+(ix+12)+'" y="'+(iy+ih-10)+'" font-size="9" fill="#6B7B86">FIG 12C 右侧 · UB + RDMA 路径 · 对 HCCL 上层也透明</text>';
+  s+='<text x="'+(ix+12)+'" y="'+(iy+ih-10)+'" font-size="9" fill="#6B7B86">FIG 12C 右侧 · UB 平面 + RoCE 平面 · 对 HCCL 上层透明</text>';
 
   /* ===== 右侧：实例化时序 ===== */
   var rx = 560, ry = 50, rw = 310, rh = 390;
@@ -6607,8 +6869,8 @@ function figNesting(){
   /* 五个步骤 */
   var steps = [
     {y:ry+44, color:'#2E6E8E', label:'① 框架层', desc:'all_reduce(tensor, tp_group)', detail:'只知道 group 是谁，不知道走哪条路'},
-    {y:ry+112, color:'#3E7D5E', label:'② HCCL 接管', desc:'查 group 成员物理位置', detail:'同节点 → HCCS 直连\n跨节点 → 选 UB 或直发'},
-    {y:ry+192, color:'#B3603A', label:'③ UB 聚合（跨机时）', desc:'多卡数据 → 共享 buffer → RDMA', detail:'机内通信跳过此步'},
+    {y:ry+112, color:'#3E7D5E', label:'② HCCL 接管', desc:'查 group 成员物理位置', detail:'同 node（机）→ HCCS 直连\n超节点内跨 node → UB · 跨超节点 → RoCE'},
+    {y:ry+192, color:'#B3603A', label:'③ 选载体：片内/UB/RoCE', desc:'按物理落位选平面，不做主机侧聚合', detail:'同卡 → 片内，同超节点 → UB，跨超节点 → RoCE'},
     {y:ry+264, color:'#6B7B86', label:'④ 硬件传输', desc:'HCCS / NVLink / RDMA / IB', detail:'数据到达目标 rank 的 HBM'},
     {y:ry+330, color:'#2E6E8E', label:'⑤ 返回框架层', desc:'tensor 已同步，继续前向/反向', detail:'框架完全不知道走了哪条路'}
   ];
