@@ -12,8 +12,9 @@
             <div class="card-tags">
               <span class="tag tag--k-app">工作台</span>
               <span class="tag">主视图 + 五块卫星</span>
-              <span class="tag">五级下钻</span>
+              <span class="tag">下钻 = 画布外再铺一站</span>
               <span class="tag">11 个事件 · 5 套机制</span>
+              <span class="tag">十条关键少数</span>
               <span class="tag">URL 即这一屏</span>
             </div>
           </div>
@@ -81,16 +82,24 @@
             5 套机制相位、11 张证据图，<strong>数值逐条照搬没改</strong>；token、外壳骨架、URL 约定与 <span class="mono">pto:state</span> 主题桥取自后者。
             新出的是<strong>编排</strong>：组合工作台是「摞格子」，这一页是<strong>一个主视图坐在无限画布正中、五块卫星围着它联动</strong>
             （故事线 / 作用面 / 读数 / 证据 / 泳道，各用一条贝塞尔接回中心，跟着变的那几块会亮起来）。
-            <strong>点主视图里的东西就下钻</strong>：整网 2048 卡 → 事件传播图 → 机制相位（四相可播）→ 单卡解剖 → 时间泳道，
-            每下钻一级主视图换一张图、四周五块同时改写。五种机制各有一套自绘图，不共用「通用示意图」——
-            比如依赖链回压那套把「2048 卡停摆」拆成可验算的乘法链 <span class="mono">1 →×EP64→ 64 →×EDP8→ 512 →×PP4→ 2048</span>。
-            面包屑即下钻栈，看到哪一屏链接就是哪一屏。滚轮缩放、拖空白平移、双击空白回总览。</p>
+            <strong>「无限画布」是字面意思</strong>：下钻**不把中心那块换掉**，而是把整个星系搬到一个新原点，原地留下一张虚线
+            <strong>轨迹卡</strong>，两站之间用长曲线连起来——画布真的随探索变大，缩小就看见自己走过的整条路径，点任一张轨迹卡原路退回。
+            一路走下去是：整网 2048 卡 → 事件传播图 → 机制相位（四相可播）→ 单卡解剖 → 时间泳道 → <strong>训推大盘</strong>。
+            五种机制各有一套自绘图，不共用「通用示意图」——比如依赖链回压那套把「2048 卡停摆」拆成可验算的乘法链
+            <span class="mono">1 →×EP64→ 64 →×EDP8→ 512 →×PP4→ 2048</span>。
+            最后那一档把同一时刻摆回训练框架真的在盯的那块表：<strong>十条关键少数</strong>（lm loss / grad_norm / loss_scale /
+            num_zeros_in_grad / TFLOP/s/GPU / MFU / tokens per day / elapsed time per iter / learning_rate / mem_reserved_bytes）
+            加五个早停钩子，口径来自 <span class="mono">pangu_sophon_pytorch</span>——<strong>只取口径不取值</strong>，
+            故事线没采到的格子写「—」，不替它编一个。
+            面包屑即下钻栈，看到哪一屏链接就是哪一屏。滚轮缩放、拖空白平移、双击空白看整条路径。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./incident-canvas/?v=__SHA__">打开无限画布<sup>°</sup></a>
             <a class="lnk" href="./incident-canvas/?g=problem-2&amp;e=p1-root&amp;ph=4&amp;v=__SHA__">Router FP8 溢出 · 路由塌缩机制<sup>°</sup></a>
             <a class="lnk" href="./incident-canvas/?g=problem-2&amp;e=p1-spread&amp;ph=4&amp;v=__SHA__">2048 卡停摆 · 依赖链乘法<sup>°</sup></a>
             <a class="lnk" href="./incident-canvas/?g=problem-1&amp;e=p2-oom&amp;ph=4&amp;v=__SHA__">碎片 OOM · 连最大的洞也放不下<sup>°</sup></a>
             <a class="lnk" href="./incident-canvas/?g=problem-2&amp;e=p1-a2a&amp;r=1559&amp;lane=1&amp;v=__SHA__">rank 1559 · 30 s 空等的泳道<sup>°</sup></a>
+            <a class="lnk" href="./incident-canvas/?g=problem-2&amp;e=p1-a2a&amp;b=1&amp;v=__SHA__">训推大盘 · 十条关键少数<sup>°</sup></a>
+            <a class="lnk" href="./incident-canvas/?g=problem-2&amp;e=p1-a2a&amp;ph=4&amp;r=1559&amp;lane=1&amp;b=1&amp;v=__SHA__">走满六站 · 看整条路径<sup>°</sup></a>
             <a class="lnk" href="./patterns/incident-canvas/pattern.html">规范入口 · pattern.json<sup>°</sup></a>
           </div>
           <div class="card-src">

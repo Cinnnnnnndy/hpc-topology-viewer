@@ -2,7 +2,7 @@
   "id": "incident-canvas",
   "name": "故障故事线 · 无限画布",
   "version": "dev",
-  "summary": "一个主视图坐在无限画布正中，五块卫星围着它联动；点主视图里的东西逐级下钻：整网 → 事件 → 机制相位 → 单卡 → 泳道。故事线与全部数值取自 compute-graph-viewer 的 config-relation-observer，形制与视觉语言取自本仓的 combo-workbench。",
+  "summary": "一个主视图坐在无限画布正中、五块卫星围着它联动；**下钻不是把中心换掉，而是往画布上再铺一站**——整个星系搬到新原点，原地留一张虚线轨迹卡，两站之间用长曲线连起来，画布因此随探索变大。故事线与全部数值取自 compute-graph-viewer 的 config-relation-observer，形制与视觉语言取自本仓的 combo-workbench，训推大盘那一档的指标口径取自 pangu_sophon_pytorch。",
   "entry": "pattern.html",
   "selfContained": true,
   "externalDependencies": [],
@@ -16,18 +16,60 @@
       "source": "Cinnnnnnndy/hpc-topology-viewer",
       "path": "public/combo-workbench/",
       "takes": "PTO token 与 ide-frame 的渐变光晕底/磨砂面板、顶栏 + 舞台骨架、URL 即这一屏、pto:state 主题桥"
+    },
+    {
+      "source": "pangu_sophon_pytorch-master",
+      "path": "megatron 侧的 training_log / PretrainMetricConfig / 各监控回调",
+      "takes": "「关键少数」十条指标的口径与出处（lm loss / grad_norm / loss_scale / num_zeros_in_grad / throughput TFLOP/s/GPU / MFU / throughput_per_day / elapsed time per iter / learning_rate / mem_reserved_bytes），以及五个异常检测钩子（check_for_nan_in_loss_and_grad、loss_spike_monitor_callback、init_heartbeat_monitor_pid、_warn_data_production_speed、mem_reserved_bytes 增长趋势）。只取口径，值仍旧只引用故事线原文，没采到的格子写「—」。"
     }
   ],
   "views": [
-    { "id": "cluster", "name": "整网全景", "answers": "2048 张卡里，谁离震中多远" },
-    { "id": "flow",    "name": "传播关系", "answers": "传播源 → 途经 → 受影响，链路是事件自己写的" },
-    { "id": "mech",    "name": "机制舞台", "answers": "凭什么传过去——按相位推进，5 种机制各一套图" },
-    { "id": "rank",    "name": "单卡解剖", "answers": "这张卡装了什么、此刻在干什么" },
-    { "id": "lane",    "name": "时间泳道", "answers": "同一件事落在一个 step 的哪一刻" }
+    {
+      "id": "cluster",
+      "name": "整网全景",
+      "answers": "2048 张卡里，谁离震中多远"
+    },
+    {
+      "id": "flow",
+      "name": "传播关系",
+      "answers": "传播源 → 途经 → 受影响，链路是事件自己写的"
+    },
+    {
+      "id": "mech",
+      "name": "机制舞台",
+      "answers": "凭什么传过去——按相位推进，5 种机制各一套图"
+    },
+    {
+      "id": "rank",
+      "name": "单卡解剖",
+      "answers": "这张卡装了什么、此刻在干什么"
+    },
+    {
+      "id": "lane",
+      "name": "时间泳道",
+      "answers": "同一件事落在一个 step 的哪一刻"
+    },
+    {
+      "id": "board",
+      "name": "训推大盘",
+      "answers": "把同一时刻摆回训练框架真的在盯的那块表：十条关键少数 + 五个早停钩子"
+    }
   ],
-  "mechanisms": ["router-collapse", "barrier-wait", "pp-cascade", "activation-lifetime", "fragmented-oom"],
+  "mechanisms": [
+    "router-collapse",
+    "barrier-wait",
+    "pp-cascade",
+    "activation-lifetime",
+    "fragmented-oom"
+  ],
   "topology": {
-    "world": 2048, "pp": 4, "edp": 8, "ep": 64, "layers": 46, "experts": 256, "topK": 2,
+    "world": 2048,
+    "pp": 4,
+    "edp": 8,
+    "ep": 64,
+    "layers": 46,
+    "experts": 256,
+    "topK": 2,
     "rankFormula": "global rank = stage×512 + edp×64 + ep"
   },
   "urlState": {
@@ -37,12 +79,36 @@
     "r": "下钻到的 global rank，0–2047",
     "lane": "1 = 把泳道推进中心",
     "theme": "light / dark",
-    "embed": "1 = 收起顶栏（被嵌形态）"
+    "embed": "1 = 收起顶栏（被嵌形态）",
+    "b": "1 = 把训推大盘推进中心"
   },
   "postMessage": {
     "accepts": "pto:state",
-    "fields": ["theme", "group", "event", "rank"],
+    "fields": [
+      "theme",
+      "group",
+      "event",
+      "rank"
+    ],
     "note": "与 combo-workbench 同一套约定，所以这一页可以直接当成那块台面上的一格嵌进去"
   },
-  "keyboard": { "←/→": "在事件间走", "Esc": "退一级", "0": "总览", "F": "回中心" }
+  "keyboard": {
+    "←/→": "在事件间走",
+    "Esc": "退一级",
+    "0": "总览 · 整条路径",
+    "F": "回当前这一站"
+  },
+  "canvas": {
+    "model": "每下钻一级 = 画布上的一站；整个星系搬到新原点，原地留一张轨迹卡",
+    "stationStep": {
+      "dx": 1500,
+      "dy": 820
+    },
+    "zoom": {
+      "min": 0.09,
+      "max": 2.6
+    },
+    "camera": "换站时带缓动飞过去；同一站内换事件 / 换相位不动镜头",
+    "overview": "「总览 · 整条路径」框住走过的全部站点，是一张地图不是阅读态"
+  }
 }

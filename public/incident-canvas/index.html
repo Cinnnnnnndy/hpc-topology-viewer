@@ -114,8 +114,10 @@ button{font:inherit; color:inherit; cursor:pointer}
 body[data-embed="1"] #topbar{display:none}
 body[data-embed="1"] #app{grid-template-rows:minmax(0,1fr)}
 
+@media (max-width:1440px){ #srcWorkbench, #srcUpstream{display:none} }
+@media (max-width:1180px){ #autoBtn span{display:none} }
 #topbar{
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:center;gap:10px;overflow:hidden;
   height:46px;padding:0 14px;
   border-bottom:1px solid var(--border-subtle);
   background:color-mix(in srgb, var(--surface-1) 72%, transparent);
@@ -193,13 +195,36 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
   background:color-mix(in srgb, var(--surface-2) 55%, transparent);
 }
 .panel__dot{width:6px;height:6px;border-radius:99px;background:var(--primary);flex:none}
-.panel__title{font:600 13px/1.2 var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.panel__sub{font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel__title{flex:1 1 auto;min-width:64px;font:600 13px/1.2 var(--font-sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel__sub{flex:0 1 auto;min-width:0;font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel__acts{margin-left:auto;display:flex;gap:4px;flex:none}
 .panel__body{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 14px}
 .panel__body--flush{padding:0}
 
 /* 卫星面板的方位徽标 */
+.ghost{
+  position:absolute;display:flex;flex-direction:column;gap:6px;
+  padding:14px 16px;border-radius:var(--radius-lg);text-align:left;
+  border:1px dashed var(--border-strong);
+  background:color-mix(in srgb, var(--surface-1) 62%, transparent);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:var(--shadow-sm);cursor:pointer;
+  transition:background var(--duration-fast),border-color var(--duration-fast),box-shadow var(--duration-fast);
+}
+.ghost:hover{background:color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border-color:var(--primary);box-shadow:var(--shadow-md)}
+.ghost__i{display:flex;align-items:baseline;gap:6px;color:var(--primary)}
+.ghost__i b{font:800 40px/1 var(--font-mono);letter-spacing:-.02em}
+.ghost__i span{font:600 12px/1 var(--font-mono);color:var(--foreground-muted)}
+.ghost__t{font:600 19px/1.35 var(--font-sans);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ghost__v{font:400 13px/1.4 var(--font-sans);color:var(--foreground-secondary)}
+.ghost__back{margin-top:auto;font:500 12px/1.4 var(--font-sans);color:var(--primary)}
+.trail{fill:none;stroke:var(--border-strong);stroke-width:2.4;opacity:.7;stroke-linecap:round;
+  vector-effect:non-scaling-stroke}
+.trail-dot{fill:var(--primary);opacity:.7}
 .sat-badge{
   flex:none;padding:1px 7px;border-radius:var(--radius-pill);
   border:1px solid var(--border-default);background:var(--surface-2);
@@ -373,8 +398,8 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 #tip[data-on="1"]{opacity:1}
 
 /* 连线 */
-.link{fill:none;stroke:var(--border-strong);stroke-width:1.4;opacity:.5}
-.link.is-on{stroke:var(--primary);stroke-width:2;opacity:.85;
+.link{fill:none;stroke:var(--border-strong);stroke-width:1.4;opacity:.5;vector-effect:non-scaling-stroke}
+.link.is-on{stroke:var(--primary);stroke-width:2;opacity:.85;vector-effect:non-scaling-stroke;
   stroke-dasharray:7 6;animation:flow 1.1s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-13}}
 
@@ -409,10 +434,10 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"></path></svg>
       <span id="autoLbl">自动播放</span>
     </button>
-    <button class="btn btn--sm" id="fitBtn" type="button" title="把整张星系（主视图 + 五块卫星）缩到一屏">总览</button>
-    <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到主视图">回中心</button>
+    <button class="btn btn--sm" id="fitBtn" type="button" title="缩到能看见走过的整张画布：每下钻一站，画布就往外长一站，前面几站留成虚线轨迹卡">总览 · 整条路径</button>
+    <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到当前这一站（主视图 + 五块卫星）">回这一站</button>
     <a class="btn btn--sm btn--ghost" id="srcWorkbench" href="../combo-workbench/" title="出处之一：本仓的组合工作台——这一页的 token、外壳骨架与 URL 约定都来自它">组合工作台<sup>°</sup></a>
-    <a class="btn btn--sm btn--ghost" href="https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" target="_blank" rel="noopener" title="出处之二：config-relation-observer——两条故事线、11 个事件与全部数值都来自它">原页 · 配置关系观测<sup>°</sup></a>
+    <a class="btn btn--sm btn--ghost" id="srcUpstream" href="https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" target="_blank" rel="noopener" title="出处之二：config-relation-observer——两条故事线、11 个事件与全部数值都来自它">原页 · 配置关系观测<sup>°</sup></a>
     <button class="btn btn--icon btn--ghost" id="themeBtn" type="button" title="切换明暗：与被嵌页面一起换" aria-label="切换明暗">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path></svg>
     </button>
@@ -835,6 +860,83 @@ var GROUPS = [
 ];
 
 /* ══════════════════════════════════════════════════════════════════════
+   ①′ 训推指标口径（pangu_sophon_pytorch 侧）
+   上面那份 GROUPS 是**观测台原页的故事线**，逐字照搬；这一份是另一头的
+   东西：真实训练框架里**每个 log_interval 真的会被打印、写进 TensorBoard /
+   Prometheus 的那些指标**，以及触发异常检测的那几个钩子。
+
+   两份为什么要分开放、而不是把值塞进事件里：
+     · GROUPS 的每一个数都是原页给的，不能动，动了两处结论就会各说各的；
+     · 这一份给的是**口径**（这个量叫什么、由哪段代码算出来、往哪个方向才算好），
+       值仍旧只引用 GROUPS 里已有的那几个。凡是故事线没采到的格子一律写「—」，
+       不替它编一个——大盘上最容易骗人的正是「看起来每格都有数」。
+   所以下面 BOARD 里出现的每一个 v，都能在上面那份 GROUPS 的同一个事件里找到原文。
+   ══════════════════════════════════════════════════════════════════════ */
+/* 「关键少数」：实际写在日志里、画成曲线的就这几条 */
+var TRAIN_METRICS = [
+  { k: 'loss',    name: 'lm loss',            want: '↓',    src: 'loss_func() → training_log()',            note: '主语言模型损失，最核心' },
+  { k: 'gnorm',   name: 'grad_norm',          want: '稳定',  src: 'training_log()',                          note: '梯度范数，监控爆炸 / 消失' },
+  { k: 'lscale',  name: 'loss_scale',         want: '不触发', src: 'logger_and_track_metrics_callback.py:74', note: 'fp16 / AMP 动态 scale，每减半一次就是一次溢出回退' },
+  { k: 'zeros',   name: 'num_zeros_in_grad',  want: '↓',    src: 'training_log()',                          note: '梯度中零值比例，检测死神经元 / 死专家' },
+  { k: 'tflops',  name: 'throughput',         unit: ' TFLOP/s/GPU', want: '↑', src: 'PretrainMetricConfig._compute_throughput', note: '每 GPU 每秒 TFLOPS' },
+  { k: 'mfu',     name: 'MFU',                unit: ' %',   want: '↑',    src: 'PretrainMetricConfig._compute_mfu',       note: '算力利用率：占 NPU 峰值算力的百分比' },
+  { k: 'tokday',  name: 'throughput_per_day', unit: ' B tokens/day', want: '↑', src: '_build_log_dict:1505',              note: '业务交付指标' },
+  { k: 'steptime',name: 'elapsed time / iter',unit: ' ms',  want: '↓',    src: '_build_log_dict:1491',                    note: '每迭代耗时；golden indicator 的 step_time_seconds 同源' },
+  { k: 'lr',      name: 'learning_rate',      want: '按计划', src: 'lr scheduler（cosine / WSD）',            note: '调度策略是否走在预定轨道上' },
+  { k: 'mem',     name: 'mem_reserved_bytes', unit: ' GB',  want: '平稳',  src: 'NPU 保留显存 / theoretical_memory',        note: '持续只涨不落就是 OOM 前兆' }
+];
+/* 异常检测与早停的钩子。dataspeed 在这两条故事线里一次都没触发——
+   大盘上把「没触发」也画出来，比只画触发的更有信息量。 */
+var TRAIN_HOOKS = [
+  { k: 'nan',       name: 'NaN / Inf 检测',   src: 'check_for_nan_in_loss_and_grad', act: '任一 rank 的 loss 出现 NaN 直接报错退出' },
+  { k: 'spike',     name: 'Loss Spike 监控',  src: 'loss_spike_monitor_callback',    act: '损失突然飙升时触发回调' },
+  { k: 'heartbeat', name: 'Heartbeat 监控',   src: 'init_heartbeat_monitor_pid',     act: '训练进程无响应则重启' },
+  { k: 'dataspeed', name: '数据生产速度告警', src: '_warn_data_production_speed',    act: '数据加载速度接近训练速度时告警' },
+  { k: 'oom',       name: 'OOM 前兆',         src: 'mem_reserved_bytes 增长趋势',    act: '保留显存持续增长，容量见底' }
+];
+/* 事件 → 这一刻大盘上哪几格会动。v 一律引用 GROUPS 里同一事件的原文，
+   没采到就整格不写（渲染成「—」），不替它编。 */
+var BOARD = {
+  'p1-warning': { hooks: ['spike'], m: {
+    lscale:{ v:'65536 → 4096', s:'warn', why:'连续四次减半，越过三级预警线 8192' },
+    loss:{ v:'仍在正常区间', s:'ok', why:'距崩溃尚有 53 step——这正是它作为预警的价值' } } },
+  'p1-nan': { hooks: ['nan','spike'], m: {
+    loss:{ v:'NaN', s:'bad', why:'本轮梯度整段作废' },
+    gnorm:{ v:'Inf', s:'bad', why:'末段每 step 涨约一个数量级，越界在同层反向' },
+    lscale:{ v:'已退到 4096', s:'warn', why:'再退也救不回来，溢出的是 logits 不是梯度尺度' } } },
+  'p1-log': { hooks: [], m: {
+    steptime:{ v:'+8 ms 起', s:'warn', why:'收发失配刚发生，还没变成等待' } } },
+  'p1-a2a': { hooks: ['heartbeat'], m: {
+    steptime:{ v:'+30 000', s:'bad', why:'等满 HCCL 超时阈值 30 s' },
+    tflops:{ v:'0（63 卡）', s:'bad', why:'空等期间算力零产出，而日志上什么都不报' },
+    mfu:{ v:'0', s:'bad', why:'同上——这正是「看起来通信很慢」最容易骗人的地方' },
+    tokday:{ v:'0', s:'bad', why:'累计空转 63 × 30 s ≈ 1890 卡·秒' } } },
+  'p1-root': { hooks: [], m: {
+    zeros:{ v:'247 / 256 专家无梯度', s:'bad', why:'路由塌缩后它们再没收到过 token' },
+    loss:{ v:'—', s:'na', why:'本事件采的是路由份额与 logits，不在这十格里' } } },
+  'p1-spread': { hooks: ['heartbeat'], m: {
+    steptime:{ v:'hang', s:'bad', why:'依赖环闭合，4 个 stage 全停在等待上' },
+    tflops:{ v:'0（2048 卡）', s:'bad', why:'99.95% 的卡只是被链条拖住的' },
+    mfu:{ v:'0', s:'bad' }, tokday:{ v:'0', s:'bad' } } },
+  'p2-rise': { hooks: ['oom'], m: {
+    mem:{ v:'55 → 63.7', s:'bad', why:'4000 step 未回落，被留住的是一直活着的激活' },
+    tokday:{ v:'3200 → 2800 tokens/s', s:'warn', why:'同期吞吐下降 12.5%' },
+    tflops:{ v:'同比 −12.5%', s:'warn', why:'原文给的是 tokens/s，这一格按同一口径读' } } },
+  'p2-cost': { hooks: [], m: {
+    steptime:{ v:'12 000', s:'warn', why:'其中 890 ms（7.4%）花在显存分配 / 释放上，正常水位约 2%' },
+    mem:{ v:'HBM 带宽 78%', s:'ok', why:'可排除纯带宽瓶颈——贵在碎片整理与换页，不在搬数据' } } },
+  'p2-peak': { hooks: ['oom'], m: {
+    mem:{ v:'64.0 / 64', s:'bad', why:'激活占 56.6%，安全余量 0 GB' } } },
+  'p2-layer': { hooks: [], m: {
+    mem:{ v:'L38 单层 1.2', s:'warn', why:'同段普通层 0.71 GB，多出来的 0.5 GB 来自 expert dispatch buffer' } } },
+  'p2-oom': { hooks: ['oom'], m: {
+    mem:{ v:'已分配 60.1 / 64', s:'bad', why:'碎片率 83%，最大连续块只有 0.32 GB' },
+    steptime:{ v:'中断', s:'bad', why:'它一崩 PP3 就断，全网跟着停在等待上' } } }
+};
+var STATEC = { ok:'var(--success)', warn:'var(--warning)', bad:'var(--danger)', na:'var(--cell-mid)' };
+var STATEN = { ok:'正常', warn:'预警', bad:'告警', na:'本事件未采' };
+
+/* ══════════════════════════════════════════════════════════════════════
    ② 拓扑模型
    2048 卡 = PP4 × EDP8 × EP64。global rank = stage×512 + edp×64 + ep，
    这条式子同时解释了故事线里那两个门牌：1559 = 3×512 + 0×64 + 23（PP3/EP23），
@@ -880,7 +982,7 @@ var world = document.getElementById('world');
 var links = document.getElementById('links');
 var tip = document.getElementById('tip');
 var view = { x: 0, y: 0, k: 1 };
-var MINK = 0.22, MAXK = 2.6;
+var MINK = 0.09, MAXK = 2.6;
 
 function applyView() {
   world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
@@ -891,6 +993,41 @@ function applyView() {
   if (z) z.textContent = Math.round(view.k * 100) + '%';
 }
 function clampK(k) { return Math.max(MINK, Math.min(MAXK, k)); }
+
+/* ── 无限画布的骨架 ────────────────────────────────────────────────
+   下钻不是把中心那块的内容换掉，而是**往画布上继续铺一站**：
+   每下钻一级，整个星系（主视图 + 五块卫星）搬到一个新原点，原地留下一张
+   虚线的轨迹卡，两站之间用一条长曲线连起来。于是画布真的随探索变大——
+   缩小就能看见自己走过的整条路径，点任一张轨迹卡原路退回。
+   「换内容」与「铺新地方」的差别就在这里：前者是一块屏幕，后者才是一张画布。 */
+var RING_DX = 1500, RING_DY = 820;
+function ORIG(d) { return { x: d * RING_DX, y: d * RING_DY }; }
+var RING_W = (LAY.east.x + LAY.east.w) - LAY.west.x;
+var RING_H = (LAY.south.y + LAY.south.h) - LAY.north.y;
+function ringBox(d) {
+  var o = ORIG(d);
+  return { x: o.x + LAY.west.x, y: o.y + LAY.north.y, w: RING_W, h: RING_H };
+}
+var GHOST_W = 500, GHOST_H = 260;
+function ghostBox(d) {
+  var o = ORIG(d);
+  return { x: o.x + LAY.stage.x + (LAY.stage.w - GHOST_W) / 2,
+           y: o.y + LAY.stage.y + (LAY.stage.h - GHOST_H) / 2, w: GHOST_W, h: GHOST_H };
+}
+function unionBox(list) {
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  list.forEach(function (b) {
+    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+  });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+/* 已经走过的整张画布：前面几站只剩轨迹卡，只有当前这一站是完整的星系 */
+function exploredBox() {
+  var d = curDepth(), list = [ringBox(d)];
+  for (var i = 0; i < d; i++) list.push(ghostBox(i));
+  return unionBox(list);
+}
 function zoomAt(cx, cy, nk) {
   nk = clampK(nk);
   var wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
@@ -906,12 +1043,30 @@ function fitBox(box, pad) {
   view.y = (r.height - box.h * k) / 2 - box.y * k;
   applyView();
 }
-function fitAll() {
-  fitBox({ x: LAY.west.x, y: LAY.north.y,
-           w: (LAY.east.x + LAY.east.w) - LAY.west.x,
-           h: (LAY.south.y + LAY.south.h) - LAY.north.y }, 34);
+/* 带缓动的镜头：下钻时画布是「走过去」的，瞬移看不出自己往哪儿走了一步 */
+var flyRAF = null;
+function flyTo(box, pad, ms) {
+  var r = vp.getBoundingClientRect();
+  pad = pad == null ? 40 : pad;
+  var k = clampK(Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h));
+  var tx = (r.width - box.w * k) / 2 - box.x * k;
+  var ty = (r.height - box.h * k) / 2 - box.y * k;
+  if (!ms) { view.k = k; view.x = tx; view.y = ty; applyView(); return; }
+  var f = { x: view.x, y: view.y, k: view.k }, t0 = performance.now();
+  cancelAnimationFrame(flyRAF);
+  var step = function (now) {
+    var q = Math.min(1, (now - t0) / ms);
+    var e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2;   // easeInOutQuad
+    view.x = f.x + (tx - f.x) * e; view.y = f.y + (ty - f.y) * e;
+    view.k = f.k + (k - f.k) * e;
+    applyView();
+    if (q < 1) flyRAF = requestAnimationFrame(step);
+  };
+  flyRAF = requestAnimationFrame(step);
 }
-function fitStage() { fitBox(LAY.stage, 56); }
+/* 总览 = 已经走过的**整张**画布（含前面每一站的轨迹卡），不是当前这一站 */
+function fitAll() { flyTo(exploredBox(), 72, 420); }
+function fitStage() { flyTo(ringBox(curDepth()), 40, 420); }
 
 /* 平移：在空白处（或面板头）按下拖动。面板正文里的滚动与点击不受影响。 */
 (function () {
@@ -998,6 +1153,7 @@ var S = {
   phase: 0,          // 机制相位
   rank: null,        // 下钻到单卡之后非空
   lane: false,       // 是否把泳道推进中心
+  board: false,      // 是否把训推大盘推进中心
   auto: false
 };
 function curGroup() { return GROUPS.filter(function (g) { return g.id === S.group; })[0] || GROUPS[0]; }
@@ -1006,14 +1162,35 @@ function curEvent() {
   if (!S.eventId) return null;
   return g.events.filter(function (e) { return e.id === S.eventId; })[0] || null;
 }
-/* 主视图是栈顶决定的，不另存一份——两处各存一份迟早对不上 */
-function curView() {
-  if (S.lane) return 'lane';
-  if (S.rank != null) return 'rank';
+/* 下钻链 —— 整页唯一的那份真源。
+   主视图看哪一档、面包屑有几级、画布上走到第几站，三件事全从这一条链读；
+   以前它们各写一份判断，加一档就得三处同时改，漏一处就错位。 */
+function levelChain() {
   var ev = curEvent();
-  if (ev && ev.mechanism && S.phase >= 0 && S.mech) return 'mech';
-  if (ev) return 'flow';
-  return 'cluster';
+  var out = [{ v: 'cluster', t: '整网 · 2048 卡' }];
+  if (ev) out.push({ v: 'flow', t: ev.title });
+  if (ev && ev.mechanism && S.mech) out.push({ v: 'mech', t: '机制 · ' + ev.mechanism.name });
+  if (S.rank != null) out.push({ v: 'rank', t: 'rank ' + S.rank });
+  if (S.lane) out.push({ v: 'lane', t: '泳道 · 一个 step' });
+  if (S.board) out.push({ v: 'board', t: '训推大盘' });
+  return out;
+}
+function curView() { var c = levelChain(); return c[c.length - 1].v; }
+function curDepth() { return levelChain().length - 1; }
+/* 退到第 i 级：把比它高的那几级各自的开关逐个关掉。
+   一处实现，面包屑与画布上的轨迹卡共用。 */
+function popTo(i) {
+  var chain = levelChain();
+  return function () {
+    for (var j = chain.length - 1; j > i; j--) {
+      var v = chain[j].v;
+      if (v === 'board') S.board = false;
+      else if (v === 'lane') S.lane = false;
+      else if (v === 'rank') S.rank = null;
+      else if (v === 'mech') S.mech = false;
+      else if (v === 'flow') { S.eventId = null; S.mech = false; }
+    }
+  };
 }
 
 var el = function (tag, cls, txt) {
@@ -1061,6 +1238,15 @@ SATS.forEach(function (s) {
 
 /* 连线：从中心舞台的边缘出发，落到每块卫星的边缘。
    与卫星内容当前是否跟着主视图变有关时点亮（is-on）并让虚线流动。 */
+/* 轨迹层：连各站的那几条长曲线。单独一层，因为它跨站、要跟着画布一起长，
+   而 #links 那层只画当前这一站的星系内部连线。 */
+var trailSvg = svgEl('svg', { id: 'trail', 'aria-hidden': 'true' });
+trailSvg.style.cssText = 'position:absolute;pointer-events:none;overflow:visible';
+world.insertBefore(trailSvg, links);
+var ghostHost = el('div');
+ghostHost.style.cssText = 'position:absolute;left:0;top:0';
+world.insertBefore(ghostHost, links);
+
 links.setAttribute('width', '2400'); links.setAttribute('height', '1700');
 links.style.left = (-OFF.x) + 'px'; links.style.top = (-OFF.y) + 'px';
 var LINKPATH = {};
@@ -1097,17 +1283,75 @@ function setLinked(ids) {
   });
 }
 
+/* 把整个星系（主视图 + 五块卫星 + 星系内连线）搬到第 d 站。
+   面板的 DOM 不重建——重建会把滚动位置、过渡和正在播的机制相位一起丢掉。 */
+function applyRing(d) {
+  var o = ORIG(d);
+  PANE.stage.root.style.left = (o.x + LAY.stage.x) + 'px';
+  PANE.stage.root.style.top = (o.y + LAY.stage.y) + 'px';
+  SATS.forEach(function (s) {
+    var b = LAY[s.box];
+    PANE[s.id].root.style.left = (o.x + b.x) + 'px';
+    PANE[s.id].root.style.top = (o.y + b.y) + 'px';
+  });
+  links.style.left = (o.x - OFF.x) + 'px';
+  links.style.top = (o.y - OFF.y) + 'px';
+}
+
+var VIEWLABEL = { cluster: '整网全景', flow: '传播关系', mech: '机制舞台',
+                  rank: '单卡解剖', lane: '时间泳道', board: '训推大盘' };
+/* 走过的每一站留一张虚线轨迹卡，站与站之间连一条长曲线。
+   卡上写「第几站 / 那一级看的是什么 / 哪一档主视图」，点它原路退回。 */
+function renderTrail() {
+  var chain = levelChain(), d = chain.length - 1;
+  ghostHost.innerHTML = '';
+  trailSvg.innerHTML = '';
+  var seg = [];
+  for (var i = 0; i < d; i++) {
+    var gb = ghostBox(i);
+    var card = el('button', 'ghost'); card.type = 'button';
+    card.style.left = gb.x + 'px'; card.style.top = gb.y + 'px';
+    card.style.width = gb.w + 'px'; card.style.height = gb.h + 'px';
+    var idx = el('div', 'ghost__i');
+    idx.innerHTML = '<b>' + (i + 1) + '</b><span>/ ' + (d + 1) + ' 站</span>';
+    card.appendChild(idx);
+    card.appendChild(el('div', 'ghost__t', chain[i].t));
+    card.appendChild(el('div', 'ghost__v', '主视图 · ' + (VIEWLABEL[chain[i].v] || chain[i].v)));
+    card.appendChild(el('div', 'ghost__back', '← 回到这一站'));
+    bindTip(card, '第 ' + (i + 1) + ' 站：' + chain[i].t + '\n点一下退回这一级，后面几站会收掉');
+    (function (idx) { card.addEventListener('click', function () { popTo(idx)(); render(); }); })(i);
+    ghostHost.appendChild(card);
+    seg.push(gb);
+  }
+  seg.push(ringBox(d));
+  if (seg.length < 2) return;
+  /* svg 不吃负坐标，整体推正；尺寸按已走过的范围现算，画布长它也跟着长 */
+  var ex = exploredBox(), pad = 200;
+  trailSvg.style.left = (ex.x - pad) + 'px';
+  trailSvg.style.top = (ex.y - pad) + 'px';
+  trailSvg.setAttribute('width', ex.w + pad * 2);
+  trailSvg.setAttribute('height', ex.h + pad * 2);
+  var lx = function (x) { return x - ex.x + pad; }, ly = function (y) { return y - ex.y + pad; };
+  for (var j = 0; j < seg.length - 1; j++) {
+    var a = seg[j], z = seg[j + 1];
+    var ax = lx(a.x + a.w), ay = ly(a.y + a.h / 2);
+    var zx = lx(z.x), zy = ly(z.y + z.h / 2);
+    var mx = (ax + zx) / 2;
+    trailSvg.appendChild(svgEl('path', { class: 'trail',
+      d: 'M' + ax + ' ' + ay + ' C' + mx + ' ' + ay + ' ' + mx + ' ' + zy + ' ' + zx + ' ' + zy }));
+    trailSvg.appendChild(svgEl('circle', { class: 'trail-dot', cx: ax, cy: ay, r: 6 }));
+    trailSvg.appendChild(svgEl('circle', { class: 'trail-dot', cx: zx, cy: zy, r: 6 }));
+  }
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    ⑦ 面包屑 —— 下钻栈的可视形态，点哪一级就退回哪一级
    ══════════════════════════════════════════════════════════════════════ */
 function crumbTrail() {
-  var g = curGroup(), ev = curEvent(), out = [];
-  out.push({ k: 'root', t: '整网 · 2048 卡', go: function () { S.eventId = null; S.mech = false; S.rank = null; S.lane = false; } });
-  out.push({ k: 'group', t: g.name.split(' · ')[0], go: function () { S.eventId = null; S.mech = false; S.rank = null; S.lane = false; } });
-  if (ev) out.push({ k: 'event', t: ev.title, go: function () { S.mech = false; S.rank = null; S.lane = false; } });
-  if (ev && S.mech) out.push({ k: 'mech', t: '机制 ' + ev.mechanism.phases[S.phase].tag.slice(0, 2), go: function () { S.rank = null; S.lane = false; } });
-  if (S.rank != null) out.push({ k: 'rank', t: 'rank ' + S.rank, go: function () { S.lane = false; } });
-  if (S.lane) out.push({ k: 'lane', t: '泳道 · 一个 step', go: function () {} });
+  var g = curGroup(), chain = levelChain(), out = [];
+  out.push({ t: '整网 · 2048 卡', go: popTo(0) });
+  out.push({ t: g.name.split(' · ')[0], go: popTo(0) });
+  for (var i = 1; i < chain.length; i++) out.push({ t: chain[i].t, go: popTo(i) });
   return out;
 }
 function renderCrumbs() {
@@ -1136,6 +1380,7 @@ function writeURL() {
   if (S.mech) q.set('ph', String(S.phase + 1)); else q.delete('ph');
   if (S.rank != null) q.set('r', String(S.rank)); else q.delete('r');
   if (S.lane) q.set('lane', '1'); else q.delete('lane');
+  if (S.board) q.set('b', '1'); else q.delete('b');
   q.set('theme', document.documentElement.dataset.theme);
   history.replaceState(null, '', location.pathname + '?' + q.toString());
 }
@@ -1154,6 +1399,7 @@ function readURL() {
   var r = parseInt(q.get('r'), 10);
   if (isFinite(r) && r >= 0 && r < TOPO.world) S.rank = r;
   if (q.get('lane') === '1') S.lane = true;
+  if (q.get('b') === '1') S.board = true;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1224,7 +1470,39 @@ document.head.insertAdjacentHTML('beforeend', '<style>' + [
 '.lane{display:flex;flex-direction:column;height:100%;gap:8px}',
 '.lane__grid{flex:1 1 auto;min-height:0;overflow:auto;display:flex;align-items:center}',
 '.lane__grid svg{display:block;width:100%;overflow:visible}',
-'.lane__lg{flex:none;display:flex;flex-wrap:wrap;gap:10px}'
+'.lane__lg{flex:none;display:flex;flex-wrap:wrap;gap:10px}',
+/* 训推大盘 */
+'.bd{display:flex;flex-direction:column;height:100%;gap:12px;min-height:0;justify-content:center}',
+'.bd__grid{flex:0 1 auto;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));',
+'  grid-auto-rows:minmax(0,150px);gap:8px}',
+'.tile{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:8px;text-align:left;',
+'  border:1px solid var(--border-subtle);background:var(--surface-2);overflow:hidden;',
+'  border-top:2.5px solid var(--tone,var(--cell-mid));cursor:pointer;',
+'  transition:background 120ms,border-color 120ms,transform 120ms}',
+'.tile:hover{background:var(--state-hover);transform:translateY(-1px)}',
+'.tile[data-na="1"]{cursor:default;opacity:.62}',
+'.tile[data-na="1"]:hover{transform:none;background:var(--surface-2)}',
+'.tile__n{display:flex;align-items:baseline;gap:5px}',
+'.tile__name{font:600 11.5px/1.3 var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.tile__want{font:600 9.5px/1.3 var(--font-sans);color:var(--foreground-muted);flex:none}',
+'.tile__v{font:700 15px/1.25 var(--font-mono);color:var(--tone,var(--foreground));',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.tile__why{font:400 10.5px/1.4 var(--font-sans);color:var(--foreground-secondary);',
+'  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}',
+'.tile__src{margin-top:auto;font:400 9px/1.3 var(--font-mono);color:var(--foreground-muted);',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.bd__hooks{flex:none;display:flex;gap:7px;flex-wrap:wrap;align-items:stretch}',
+'.hook{display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:8px;flex:1 1 0;min-width:0;',
+'  border:1px solid var(--border-subtle);background:var(--surface-2);opacity:.5}',
+'.hook[data-on="1"]{opacity:1;border-color:var(--danger);',
+'  background:color-mix(in srgb,var(--danger) 10%,transparent)}',
+'.hook__n{font:600 11px/1.3 var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.hook[data-on="1"] .hook__n{color:var(--danger)}',
+'.hook__s{font:400 9px/1.3 var(--font-mono);color:var(--foreground-muted);',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.hook__dots{display:flex;gap:3px;margin-top:2px}',
+'.hook__dots i{width:7px;height:7px;border-radius:99px;background:var(--cell-base);font-style:normal;flex:none}',
+'.hook__dots i[data-f="1"]{background:var(--danger)}'
 ].join('') + '</style>');
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1306,7 +1584,8 @@ var TIERN = ['其他 stage', '同 stage', '同 EP 组（barrier 空等）', '震
    ⑪ 主视图 —— 五档，每档一个函数，都往同一副骨架里填
    ══════════════════════════════════════════════════════════════════════ */
 var VIEWNAME = { cluster: '主视图 · 整网全景', flow: '主视图 · 传播关系',
-                 mech: '主视图 · 机制舞台', rank: '主视图 · 单卡解剖', lane: '主视图 · 时间泳道' };
+                 mech: '主视图 · 机制舞台', rank: '主视图 · 单卡解剖', lane: '主视图 · 时间泳道',
+                 board: '主视图 · 训推大盘' };
 function stageShell(title, sub, noteHTML) {
   PANE.stage.title.textContent = VIEWNAME[curView()] || '主视图';
   PANE.stage.sub.textContent = '点图里的东西继续下钻 · Esc 退一级';
@@ -2023,6 +2302,82 @@ function viewLane() {
   setLinked(['north', 'west', 'east']);
 }
 
+/* ── 档 6 · 训推大盘 ────────────────────────────────────────────────
+   前五档讲的是**这次故障**；这一档把同一时刻摆回**训练框架真的在盯的那块表**：
+   pangu_sophon_pytorch 每个 log_interval 打印、写进 TensorBoard / Prometheus
+   的那十条「关键少数」，加上触发早停的五个钩子。
+   十格里凡是故事线没采到的一律写「—」——大盘上最容易骗人的正是「看起来每格都有数」。
+   点任一格跳到本线里这个指标最差的那个事件。 */
+function viewBoard() {
+  var g = curGroup(), ev = curEvent();
+  var b = ev ? (BOARD[ev.id] || { hooks: [], m: {} }) : { hooks: [], m: {} };
+  var sh = stageShell('训推大盘 · 关键少数',
+    ev ? (ev.time + ' · ' + ev.title) : (g.name + ' · 先在故事线上选一个事件'),
+    '<b>口径来自 pangu_sophon_pytorch</b> · 这十条是真的会被打印、画成曲线的那几个；'
+    + '值一律引用左边那条故事线的原文，没采到就写「—」，不替它编一个。');
+  var box = el('div', 'bd');
+
+  var grid = el('div', 'bd__grid');
+  TRAIN_METRICS.forEach(function (mt) {
+    var cell = b.m[mt.k];
+    var st = cell ? cell.s : 'na';
+    var t = el('button', 'tile'); t.type = 'button';
+    t.style.setProperty('--tone', STATEC[st]);
+    if (!cell || st === 'na') t.dataset.na = '1';
+    var n = el('div', 'tile__n');
+    n.appendChild(el('span', 'tile__name', mt.name));
+    n.appendChild(el('span', 'tile__want', mt.want));
+    t.appendChild(n);
+    t.appendChild(el('div', 'tile__v', cell ? cell.v : '—'));
+    if (cell && cell.why) t.appendChild(el('div', 'tile__why', cell.why));
+    t.appendChild(el('div', 'tile__src', mt.src));
+    bindTip(t, mt.name + (mt.unit || '') + '　期望 ' + mt.want + '\n' + mt.note
+      + '\n出处：' + mt.src + '\n\n此刻：' + (cell ? cell.v + '（' + STATEN[st] + '）' : '本事件未采到这一格')
+      + '\n点一下跳到本线里这一格最差的那个事件');
+    /* 跳到本线里这个指标最差的事件：bad > warn > ok，同级取先出现的那个 */
+    var rank = { bad: 3, warn: 2, ok: 1, na: 0 }, best = null, bestS = 0;
+    g.events.forEach(function (e2) {
+      var c2 = (BOARD[e2.id] || { m: {} }).m[mt.k];
+      var s2 = c2 ? rank[c2.s] || 0 : 0;
+      if (s2 > bestS) { bestS = s2; best = e2; }
+    });
+    if (best) t.addEventListener('click', function () {
+      S.eventId = best.id; S.mech = false; S.rank = null; S.lane = false; render();
+    });
+    else t.dataset.na = '1';
+    grid.appendChild(t);
+  });
+  box.appendChild(grid);
+
+  var hooks = el('div', 'bd__hooks');
+  TRAIN_HOOKS.forEach(function (hk) {
+    var on = b.hooks.indexOf(hk.k) >= 0;
+    var d = el('div', 'hook');
+    if (on) d.dataset.on = '1';
+    d.appendChild(el('div', 'hook__n', hk.name));
+    d.appendChild(el('div', 'hook__s', hk.src));
+    /* 一排小点 = 本线的事件序列，在哪个事件上会触发就点亮哪一颗。
+       一颗都不亮也是信息：这两条线里「数据生产速度告警」一次都没响过。 */
+    var dots = el('div', 'hook__dots');
+    var fired = 0;
+    g.events.forEach(function (e2) {
+      var f = ((BOARD[e2.id] || { hooks: [] }).hooks || []).indexOf(hk.k) >= 0;
+      if (f) fired++;
+      var i = el('i'); if (f) i.dataset.f = '1';
+      dots.appendChild(i);
+    });
+    d.appendChild(dots);
+    bindTip(d, hk.name + '\n' + hk.src + '\n动作：' + hk.act
+      + '\n\n本条故事线里' + (fired ? ('有 ' + fired + ' 个事件会触发它') : '一次都不触发'));
+    hooks.appendChild(d);
+  });
+  box.appendChild(hooks);
+
+  sh.canvas.appendChild(box);
+  sh.canvas.style.overflow = 'hidden';
+  setLinked(['north', 'west', 'east', 'sedge']);
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    ⑫ 证据图 —— line / bars / stack / capacity 四种，取自事件自带的 chart
    量纲差几个数量级的两条读数不并到一根轴上（原页的规矩），所以这里
@@ -2255,6 +2610,13 @@ function satWest() {
 function satEast() {
   var ev = curEvent(), P = PANE.east, b = P.body;
   b.innerHTML = '';
+  P.acts.innerHTML = '';
+  var toBoard = el('button', 'btn btn--sm'); toBoard.type = 'button';
+  toBoard.textContent = S.board ? '已在中心' : '训推大盘 \u25b8';
+  toBoard.disabled = !!S.board;
+  bindTip(toBoard, '把读数换成训练框架真的在盯的那块表：pangu_sophon_pytorch 每个 log_interval\n打印的十条「关键少数」，加上触发早停的五个钩子。\n这一格放不下十格，所以它自己占一站。');
+  toBoard.addEventListener('click', function () { S.board = true; render(); });
+  P.acts.appendChild(toBoard);
   var rows, title, sub;
   if (S.mech && ev && ev.mechanism) {
     var p = ev.mechanism.phases[S.phase];
@@ -2328,7 +2690,7 @@ function satSouth() {
   var go = el('button', 'btn btn--sm'); go.type = 'button';
   go.textContent = S.lane ? '已在中心' : '推进中心 ▸';
   go.disabled = S.lane;
-  go.addEventListener('click', function () { S.lane = true; render(); });
+  go.addEventListener('click', function () { S.lane = true; S.board = false; render(); });
   bar.appendChild(go);
   box.appendChild(bar);
 
@@ -2370,13 +2732,20 @@ function satSouth() {
    主视图由 curView() 的栈顶决定；五块卫星各自读同一份 S，所以不会出现
    「中心换了、边上还停在上一屏」——这一条是整页唯一的一致性保证。
    ══════════════════════════════════════════════════════════════════════ */
-var VIEWS = { cluster: viewCluster, flow: viewFlow, mech: viewMech, rank: viewRank, lane: viewLane };
+var VIEWS = { cluster: viewCluster, flow: viewFlow, mech: viewMech, rank: viewRank, lane: viewLane, board: viewBoard };
+var lastDepth = -1;
 function render() {
-  var v = curView();
+  var v = curView(), d = curDepth();
+  applyRing(d);
   (VIEWS[v] || viewCluster)();
   satNorth(); satWest(); satEast(); satSedge(); satSouth();
+  renderTrail();
   renderCrumbs(); renderLegend(); syncTop();
   writeURL();
+  /* 换站才动镜头。同一站里改相位、换事件不动——镜头跟着每一次点击跑会晕。
+     首帧（lastDepth < 0）交给启动那一段，它要的是「先看见整张构图」。 */
+  if (lastDepth >= 0 && d !== lastDepth) flyTo(ringBox(d), 40, 520);
+  lastDepth = d;
 }
 function renderLegend() {
   var host = document.getElementById('legendhud');
@@ -2396,12 +2765,13 @@ function renderLegend() {
     var say = el('span', 'lg');
     say.textContent = v === 'mech' ? '相位轴上点任一相，或按 ▶ 连着播一遍'
       : v === 'flow' ? '左右两栏的对象卡可以点进去，中间那栏是事件自己写的链路'
+      : v === 'board' ? '十格里「—」表示这条故事线没采到这一格；点任一格跳到本线里它最差的那个事件'
       : '容量段、层段、端口条都带悬浮读数';
     host.appendChild(say);
   }
   var hint = el('span', 'lg');
   hint.style.color = 'var(--foreground-muted)';
-  hint.textContent = '滚轮缩放 · 拖空白平移 · 双击空白回总览';
+  hint.textContent = '下钻 = 往画布外再铺一站 · 滚轮缩放 · 拖空白平移 · 双击空白看整条路径';
   host.appendChild(hint);
 }
 function syncTop() {
@@ -2422,7 +2792,7 @@ function syncTop() {
     bindTip(b, g.lede);
     b.addEventListener('click', function () {
       if (S.group === g.id) return;
-      S.group = g.id; S.eventId = null; S.mech = false; S.phase = 0; S.rank = null; S.lane = false;
+      S.group = g.id; S.eventId = null; S.mech = false; S.phase = 0; S.rank = null; S.lane = false; S.board = false;
       render();
     });
     host.appendChild(b);
@@ -2516,12 +2886,13 @@ readURL();
 setTheme(document.documentElement.dataset.theme || 'light');
 booting = false;
 render();
-/* 第一屏给总览：主视图坐中间、五块卫星围一圈——这一页的主张就是这张构图，
-   进来先看见它，再自己推近。 */
-requestAnimationFrame(function () { fitAll(); });
+/* 第一屏落在**当前这一站**：带 ?e=&r=&lane= 的深链一进来就该是能读的那一屏。
+   整条路径是「总览」那颗键或双击空白，是刻意的动作——一进来就缩到地图那一档，
+   等于把人扔在一张看不清字的地图上。 */
+requestAnimationFrame(function () { flyTo(ringBox(curDepth()), 40, 0); });
 window.addEventListener('resize', function () {
   clearTimeout(window.__rz);
-  window.__rz = setTimeout(function () { if (view.k <= 0.95) fitAll(); }, 160);
+  window.__rz = setTimeout(function () { if (view.k <= 0.95) flyTo(ringBox(curDepth()), 40, 0); }, 160);
 });
 })();
 </script>
