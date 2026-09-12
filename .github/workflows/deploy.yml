@@ -33,6 +33,13 @@ name: Deploy to GitHub Pages
 #       忘记合回 main，线上内容就悄悄落后于 main 且不报错（parallel-topology 当年也是
 #       同一类问题，「推 main」与「推分支」谁最后跑谁赢，链接内容随机跳）。分支本身还在，
 #       继续用于开发；只是发布这一步现在只认 main。
+#   · claude/compassionate-volta-09jc46
+#       → /incident-canvas/ 与 /patterns/incident-canvas/（故障故事线 · 无限画布：
+#         一个主视图坐在无限画布正中、五块卫星围着它联动，点主视图里的东西逐级下钻。
+#         故事线与全部数值取自 compute-graph-viewer 的 config-relation-observer，
+#         形制与 token 取自本仓 /combo-workbench/。整页自包含单文件、零外部依赖。）
+#       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
+#         public/incident-canvas/launch-card.html）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -632,6 +639,119 @@ jobs:
           test -s dist/combo-workbench/index.html
           test -s dist/combo-workbench/swimlane.html
           test -s dist/combo-workbench/vendor/swimlane-task/pattern.js
+
+      - name: Checkout incident-canvas branch
+        uses: actions/checkout@v4
+        with:
+          # 这份源码还没进 main，所以按 ref 取本分支（与 rubik / spec / netobj 三条同一种
+          # 走法）。它**不进** on.push.branches：本文件顶部那段注释说过，发布口子只留
+          # main 一处——每条分支都能触发这份整站替换的工作流时，谁最后跑谁赢，已经发出去
+          # 的链接内容会在几版之间来回跳。合进 main 之后把这里的 ref 改成 main 即可，
+          # 与 parallel-topology / combo-workbench 当年的迁法一样。
+          ref: claude/compassionate-volta-09jc46
+          path: canvas-src
+
+      - name: Overlay 故障故事线 at /incident-canvas/ 与 /patterns/incident-canvas/
+        # 一个主视图 + 五块卫星的无限画布：故事线与数据来自 compute-graph-viewer 的
+        # config-relation-observer，形制与 token 来自本仓 /combo-workbench/。
+        # 整页**自包含单文件**（零外部依赖、不引 CDN），所以这一步只是拷贝 + 两处改写：
+        #  · favicon 打 ?v=<短SHA>（页面本身带 no-cache meta，不需要戳）；
+        #  · 规范入口在 dist/patterns/<id>/ 下，顶栏那条指向组合工作台的相对链接要多退一级。
+        # 两个入口同一份内容：
+        #  · /incident-canvas/                  —— 短链接，好念、好发；
+        #  · /patterns/incident-canvas/         —— 规范位置，pattern.html 与 pattern.json 同级。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C canvas-src rev-parse --short HEAD)
+          SRC=canvas-src/public/incident-canvas
+
+          # ① 短链接入口
+          DIR=dist/incident-canvas
+          mkdir -p $DIR
+          sed -e "s#href=\"./favicon.svg\"#href=\"./favicon.svg?v=$SHA\"#" \
+              $SRC/index.html > $DIR/index.html
+          cp $SRC/favicon.svg $SRC/README.md $DIR/
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/pattern.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$DIR/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 规范入口（pattern.* 同级）
+          PAT=dist/patterns/incident-canvas
+          mkdir -p $PAT
+          sed -e "s#href=\"./favicon.svg\"#href=\"./favicon.svg?v=$SHA\"#" \
+              -e 's#href="\.\./combo-workbench/"#href="../../combo-workbench/"#' \
+              $SRC/index.html > $PAT/pattern.html
+          cp $SRC/favicon.svg $PAT/favicon.svg
+          cp $SRC/README.md $PAT/README.md
+          cp $DIR/pattern.json $PAT/pattern.json
+
+          # 断言：顶栏那条「组合工作台」出处链接在规范入口下必须已经多退一级。
+          # 漏改不会让页面报错，只会让那条链接 404——从线上看不出来，必须在这里拦住。
+          test "$(grep -c 'href="../../combo-workbench/"' $PAT/pattern.html)" = "1"
+          test "$(grep -c 'href="../combo-workbench/"' $PAT/pattern.html)" = "0"
+          test "$(grep -c 'href="../combo-workbench/"' $DIR/index.html)" = "1"
+          # 自包含：整页不该引任何 vendor / CDN。多出一条就说明有人在页面里加了外部依赖，
+          # 而这一步并不拷贝任何 vendor 目录——那会是一条静默的 404。
+          test "$(grep -Ec 'src="https?://|href="https?://[^"]*\.(css|js)' $DIR/index.html || true)" = "0"
+          test -s $DIR/index.html
+          test -s $PAT/pattern.html
+
+          echo "published: /incident-canvas/?v=$SHA"
+          echo "published: /patterns/incident-canvas/pattern.html?v=$SHA"
+
+      - name: Overlay 故障故事线卡片 into /launch.html
+        # 与组合工作台那张卡同一套做法：站点框架永远从 main 构建，本分支不进 main，
+        # 所以卡片走叠加。片段本体在 public/incident-canvas/launch-card.html（可评审、
+        # 可本地渲染），这里只做定位插入。锚点找不到就抛异常让整步失败——
+        # 绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C canvas-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('canvas-src/public/incident-canvas/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'incident-canvas' in html:
+              raise SystemExit('launch.html 已含故障故事线链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+          # ① 插进「工作台 · 主线」组、**紧跟在组合工作台那张卡后面**：它是那块台面的
+          #    下一步形态（摞格子 → 主视图 + 四周卫星），排在它旁边读者才看得出这层关系。
+          #    定位方式是「该组第一张卡的 </article> 之后」，而不是数第几个 </article>——
+          #    别的组先插了卡也不会把这张挤到别人组里去。
+          gapp = html.index('<h2 class="group-title" id="g-app">')
+          grid = html.index('      <div class="card-grid">\n', gapp)
+          first_end = html.index('</article>', grid) + len('</article>')
+          html = html[:first_end] + '\n\n' + card.rstrip('\n') + html[first_end:]
+          # ② 顶栏 pill：跟在组合工作台那枚后面（都是「进来是用的」那一类入口）
+          pill = '<a class="pill" href="./combo-workbench/?v='
+          at = html.index(pill)
+          end = html.index('</a>', at) + len('</a>')
+          html = html[:end] + '\n      <a class="pill" href="./incident-canvas/?v=' + sha + '">故障故事线画布</a>' + html[end:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          PY
+          grep -c 'incident-canvas' dist/launch.html
+          # 卡必须真的落在「工作台 · 主线」那一组里，不能只是「在某两个界标之间」——
+          # 启动页新增一个分组就会把卡挤进那个新组，而区间判定照样通过。
+          python3 - <<'PY'
+          import pathlib, re, sys
+          html = pathlib.Path('dist/launch.html').read_text(encoding='utf-8')
+          marks = [(m.start(), m.group(1)) for m in re.finditer(r'<!-- ═══ (.+?) ═══ -->', html)]
+          marks.append((len(html), None))
+          at = html.find('<h3 class="card-title"><a href="./incident-canvas/')
+          if at < 0:
+              print('  故障故事线卡：没找到！'); sys.exit(1)
+          got = next((n for i, (o, n) in enumerate(marks) if o <= at < marks[i + 1][0]), None)
+          print(f'  故障故事线卡 in「{got}」')
+          sys.exit(0 if got == '工作台 · 主线' else 1)
+          PY
+          test -s dist/incident-canvas/index.html
+          test -s dist/patterns/incident-canvas/pattern.html
 
       - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
         uses: actions/checkout@v4
