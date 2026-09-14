@@ -427,25 +427,33 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 /* 自己写了 display 就得自己把 hidden 挡回来：inline-flex 比 UA 的
    [hidden]{display:none} 更具体，不写这一条，条子在抽屉摊开之后还会留在原地。 */
 #alertbar[hidden]{display:none!important}
-#alertopen{
-  display:inline-flex;align-items:center;gap:7px;flex:none;cursor:pointer;
-  height:28px;padding:0 12px 0 11px;border-radius:999px;
-  border:0;background:transparent;color:var(--foreground);font:inherit;font-size:12.5px}
-#alertopen:hover{background:var(--state-hover)}
-#alertopen .dot{
-  width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none;
-  animation:apulse 1.9s ease-in-out infinite}
-#alertopen .n{color:var(--foreground-muted);font-variant-numeric:tabular-nums}
+/* 问题即告警：每一条问题自己带严重度点和事件数，不再是「一枚计数按钮 + 一组页签」
+   拼在一起。拼的那版读起来是两样东西——那颗 ● 6 说的到底是哪条问题的 6，要想一下
+   才知道；现在每条自己说自己的，active 那条就是你正在看的这条告警。 */
+.seg--alert button{
+  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border-radius:999px}
+.seg--alert .dot{width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none}
+/* 只有 active 那条的点会呼吸：两颗一起跳是噪音，而「你在这条上、它还活着」
+   才是这颗点要说的话。没在看的那条留一颗静止的点——它有告警，但此刻不是主语。 */
+.seg--alert button[aria-pressed="true"] .dot{animation:apulse 1.9s ease-in-out infinite}
+.seg--alert .n{
+  color:var(--foreground-muted);font-variant-numeric:tabular-nums;
+  font-size:11px;padding:0 5px;border-radius:999px;background:var(--surface-2)}
+.seg--alert button[aria-pressed="true"] .n{background:var(--state-hover)}
+/* 只有 active 那条给一枚折叠角标：点它开合抽屉。没在看的那条点了是「切过去」，
+   没有开合可言，给了角标反而像在说它也能开。 */
+.seg--alert .caret{width:9px;height:9px;flex:none;opacity:.5}
 #alertbar .seg{border:0;background:transparent;padding:0}
-/* 居中的条宽约 428，右上角那排筹码宽约 446 且右贴边——视口窄到 1348 以下两者就会
-   碰上（(V+428)/2 > V-460 解出来的）。取 1360 作阈值，窄屏时条子整体下移一档，
-   让到筹码底下去，和摊开的抽屉走同一个避让规则。 */
-@media (max-width:1360px){ #alertbar{top:60px} }
+/* 居中的条宽约 466（每条问题多了点和计数），右上角那排筹码宽约 446 且右贴边——
+   视口窄到 1386 以下两者就会碰上（(V+466)/2 > V-460 解出来的）。取 1400 作阈值，
+   窄屏时条子整体下移一档，让到筹码底下去，和摊开的抽屉走同一个避让规则。 */
+@media (max-width:1400px){ #alertbar{top:60px} }
 @keyframes apulse{0%,100%{opacity:1}50%{opacity:.32}}
-@media (prefers-reduced-motion:reduce){#alertopen .dot{animation:none}}
+@media (prefers-reduced-motion:reduce){.seg--alert .dot{animation:none}}
 /* 摊开之后段控挪进抽屉的格头，格头那条本来就窄，给它压一档字号 */
 .panel__acts .seg{border:0;background:transparent;padding:0}
 .panel__acts .seg button{height:22px;padding:0 9px;font-size:11.5px}
+.panel__acts .seg--alert .n{font-size:10.5px}
 #floatlayer > *{pointer-events:auto}
 .panel--float{
   position:absolute;left:14px;right:486px;top:14px;height:238px;
@@ -534,8 +542,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 
     <div id="floatlayer" aria-label="悬浮告警">
       <div id="alertbar" hidden>
-        <button id="alertopen" type="button"></button>
-        <div class="seg" id="lineSeg" role="group" aria-label="选择故事线"></div>
+        <div class="seg seg--alert" id="lineSeg" role="group" aria-label="告警 · 选择问题线"></div>
       </div>
     </div>
 
@@ -1288,7 +1295,6 @@ document.getElementById('zIn').addEventListener('click', function () {
 document.getElementById('zOut').addEventListener('click', function () {
   var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k / 1.25);
 });
-document.getElementById('alertopen').addEventListener('click', function () { expand('story'); });
 document.getElementById('fitBtn').addEventListener('click', function () { fitAll(); });
 document.getElementById('focusBtn').addEventListener('click', function () { fitMain(); });
 
@@ -2255,16 +2261,10 @@ function setLinked() {}
 function renderAlertBar() {
   var bar = document.getElementById('alertbar');
   var seg = document.getElementById('lineSeg');
-  var g = curGroup(), open = isOpen('story');
+  var open = isOpen('story');
   if (open) { if (seg.parentNode !== P.story.acts) P.story.acts.insertBefore(seg, P.story.acts.firstChild); }
   else      { if (seg.parentNode !== bar) bar.appendChild(seg); }
   bar.hidden = open;
-  if (open) return;
-  var b = document.getElementById('alertopen');
-  b.innerHTML = '';
-  b.appendChild(el('span', 'dot'));
-  b.appendChild(el('span', 'n', g.events.length));
-  bindTip(b, '摊开这条告警的事件链——' + g.events.length + ' 个事件，点任一枚下钻');
 }
 
 function renderStory() {
@@ -2467,27 +2467,46 @@ function syncTop() {
   var g = curGroup(), ev = curEvent();
   document.getElementById('brandSub').textContent =
     ev ? (ev.time + ' · ' + ev.title) : (g.events.length + ' 个事件 · 展开下钻');
+  var drawer = isOpen('story');
   Array.prototype.forEach.call(document.querySelectorAll('#lineSeg button'), function (b) {
-    b.setAttribute('aria-pressed', String(b.dataset.g === S.group));
+    var on = b.dataset.g === S.group;
+    b.setAttribute('aria-pressed', String(on));
+    var car = b.querySelector('.caret');
+    /* 角标只长在正在看的那条上：另一条点了是「切过去」，没有开合可言。
+       朝向跟着抽屉走——摊开时朝上（点它收起），收起时朝下（点它摊开）。 */
+    car.style.display = on ? '' : 'none';
+    car.style.transform = on && drawer ? 'rotate(180deg)' : '';
+    var n = GROUPS.filter(function (x) { return x.id === b.dataset.g; })[0].events.length;
+    bindTip(b, on ? ((drawer ? '收起' : '摊开') + '这条告警的事件链——' + n + ' 个事件，点任一枚下钻')
+                  : ('换看这条告警：' + n + ' 个事件\n' + GROUPS.filter(function (x) { return x.id === b.dataset.g; })[0].lede));
   });
 }
 
-/* 顶栏故事线段控 */
-(function () {
+/* 告警段控：问题与告警是**同一件东西**，所以每一条问题自己带点和事件数。
+   点已经在看的那条 = 开合事件链；点另一条 = 换过去看。两种点击语义不同，
+   但都只落在「这条告警」这一个对象上——不需要旁边再摆一枚「打开」按钮。 */
+function buildAlertSeg() {
   var host = document.getElementById('lineSeg');
   GROUPS.forEach(function (g) {
-    var b = el('button', null, g.name);
+    var b = el('button', null);
     b.type = 'button'; b.dataset.g = g.id;
-    bindTip(b, g.lede);
+    b.appendChild(el('span', 'dot'));
+    b.appendChild(el('span', 'nm', g.name));
+    b.appendChild(el('span', 'n', g.events.length));
+    var car = svgEl('svg', { class: 'caret', viewBox: '0 0 24 24', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': '3', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', 'aria-hidden': 'true' });
+    car.appendChild(svgEl('path', { d: 'm6 9 6 6 6-6' }));
+    b.appendChild(car);
     b.addEventListener('click', function () {
-      if (S.group === g.id) return;
+      if (S.group === g.id) { toggle('story'); return; }
       S.group = g.id; S.eventId = null; S.phase = 0; S.rank = null;
       delete open.mech; P.mech.root.hidden = true;
       render();
     });
     host.appendChild(b);
   });
-})();
+}
 /* ── 档 2 · 传播图 ──────────────────────────────────────────────────
    「传播源 → 途经 → 受影响」。中间那栏是 event.path 拆出来的链路步骤，
    这条链是事件自己写的，不是我们按范围反推的——反推只答得出「打到了谁」，
@@ -3409,6 +3428,7 @@ Object.keys(open).forEach(function (id) {
   P[id].root.hidden = false;
   if (P[id].def.kind === 'frame') loadFrame(id);
 });
+buildAlertSeg();
 buildToolbars();
 wireLinkage();
 booting = false;
