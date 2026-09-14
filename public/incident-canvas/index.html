@@ -214,7 +214,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .panel__body--flush{padding:0}
 
 /* 卫星面板的方位徽标 */
-/* 格内工具条：主视图的七个视图挤不进格头（那儿还有标题、副标题和展开筹码），
+/* 格内工具条：主视图的七个视图挤不进格头（那儿还有标题和副标题），
    所以单独占一条，压在画布上方。 */
 .ptoolbar{
   display:flex;align-items:center;gap:8px;flex:none;
@@ -244,7 +244,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .xcursor i::before{content:'';position:absolute;top:0;left:-4px;border:5px solid transparent;
   border-top-color:var(--danger)}
 
-/* 展开格的头上那排「展开 ▸」筹码：下钻的入口长在主视图自己的格头上 */
+/* 画布右上角那排「展开 ▸」筹码（#panelshud）：管的是这张画布上摊开了哪几格 */
 .exp{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .expb{
   display:inline-flex;align-items:center;gap:5px;height:23px;padding:0 9px;
@@ -402,7 +402,11 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
   -webkit-backdrop-filter:blur(14px) saturate(1.15);
   box-shadow:var(--shadow-sm);
 }
-#crumbs{left:14px;top:14px;max-width:calc(100% - 220px);flex-wrap:wrap}
+/* 格子控制钉在画布右上角：它管的是「这张画布上摊开了哪几格」，是页面级的开关，
+   不该长在主视图的格头里——长在那儿它会跟着画布一起缩放平移，镜头一挪开主视图
+   就够不着了，而这恰恰是你想收起某一格时最需要它的时候。 */
+#panelshud{right:14px;top:14px;max-width:calc(100% - 320px);flex-wrap:wrap;gap:8px}
+#panelshud .k{flex:none}
 #zoomhud{right:14px;bottom:14px}
 #legendhud{left:14px;bottom:14px;gap:10px;padding:7px 11px;flex-wrap:wrap;max-width:calc(100% - 220px)}
 .crumb{
@@ -482,7 +486,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
       <svg id="conns" aria-hidden="true"></svg>
     </div>
 
-    <nav class="hud" id="crumbs" aria-label="下钻路径"></nav>
+    <div class="hud" id="panelshud" aria-label="画布上摊开了哪几格"></div>
 
     <div class="hud" id="legendhud" aria-label="图例"></div>
 
@@ -1011,7 +1015,7 @@ var TOPO = {
    改这张表就是改编排，别处不用动。box 是世界坐标（画布自己的坐标系，
    与缩放无关）。main.always=1：它是这一页的主语，不提供收起。
    ══════════════════════════════════════════════════════════════════════ */
-/* 一进来就摊开的那几格：与主视图格头上那排「展开」筹码一一对应。
+/* 一进来就摊开的那几格：与右上角那排「展开」筹码一一对应。
    它们是常备面——故事线给时间，整网 / 单维切分 / 卡内解剖给结构的三个粒度，
    泳道给时序，大盘给读数。
    事件相关的几格（传播 / 机制 / 证据 / 血缘 / 单卡）不在这里：
@@ -1277,7 +1281,7 @@ PANELS.forEach(function (d) {
   P[d.id].def = d;
 });
 
-/* 主视图格头上那排「展开」筹码 —— 下钻的入口长在主语自己身上 */
+/* 右上角那排格子开关 —— 页面级的常驻控制，不随画布缩放平移 */
 (function () {
   var bar = el('div', 'exp');
   PANELS.filter(function (d) { return d.exp; }).forEach(function (d) {
@@ -1289,12 +1293,14 @@ PANELS.forEach(function (d) {
     b.addEventListener('click', function () { toggle(d.id); });
     bar.appendChild(b);
   });
-  P.main.acts.appendChild(bar);
+  var hud = document.getElementById('panelshud');
+  hud.appendChild(el('span', 'k', '格子'));
+  hud.appendChild(bar);
 })();
 
 /* 主视图的视图段控：并行拓扑本来就有七个视图，钉死在「整网切分」一档
-   等于把它砍掉六分之五。放在格内工具条而不是格头——格头那条还得装标题、
-   副标题和展开筹码，七枚按钮挤不下。 */
+   等于把它砍掉六分之五。放在格内工具条而不是格头——格头那条还得装标题和
+   副标题，七枚按钮挤不下。 */
 function buildToolbars() {
   var bar = el('div', 'ptoolbar');
   bar.appendChild(el('span', 'k', '走带'));
@@ -1434,7 +1440,7 @@ function writeURL() {
   var on = PANELS.filter(function (d) { return !d.always && open[d.id]; })
                  .map(function (d) { return d.id; });
   /* 一格不剩时写 none，而不是把 open 删掉：删掉的话下次打开这条链接会被当成
-     「没指定」，四格默认又全回来——读者刚把它们一个个关掉，刷新一下全长回来，
+     「没指定」，六格默认又全回来——读者刚把它们一个个关掉，刷新一下全长回来，
      那是 bug 不是默认值。 */
   if (on.length) q.set('open', on.join(',')); else q.set('open', 'none');
   if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
@@ -1469,8 +1475,9 @@ function readURL() {
     S.phase = ph - 1; open.mech = 1;
   }
   if (open.mech && !(ev && ev.mechanism)) delete open.mech;
-  /* 默认那一屏：格头那排筹码代表的四格**一进来就是摊开的**——它们是这一页
-     的常备面（故事线给时间、整网给结构、泳道给时序、大盘给读数），不该让人
+  /* 默认那一屏：右上角那排筹码代表的六格**一进来就是摊开的**——它们是这一页
+     的常备面（故事线给时间，整网 / 单维切分 / 卡内解剖给结构的三个粒度，
+     泳道给时序，大盘给读数），不该让人
      先去点一遍才看得见。事件相关的那几格（传播 / 机制 / 证据 / 血缘 / 单卡）
      仍然按需展开：它们得先有一个选中的事件才有内容。 */
   if (!Object.keys(open).length) DEFAULT_OPEN.forEach(function (id) { open[id] = 1; });
@@ -2206,7 +2213,7 @@ function renderMech() {
   sh.canvas.style.overflow = 'hidden';
 }
 
-/* ── 主视图格头：把当前选中报出来，并同步那排展开筹码 ─────────────── */
+/* ── 主视图格头：把当前选中报出来，并同步右上角那排展开筹码 ─────────── */
 function renderMain() {
   var ev = curEvent();
   var dp = CFG.world / (CFG.tp * CFG.cp * CFG.pp);
@@ -2273,7 +2280,7 @@ function renderLegend() {
   var n = PANELS.filter(function (d) { return !d.always && open[d.id]; }).length;
   var say = el('span', 'lg');
   say.textContent = '主视图是并行拓扑 pattern 本体，永远在；'
-    + (n ? ('已摊开 ' + n + ' 格') : '格头那排筹码把别的格子展开到画布上');
+    + (n ? ('已摊开 ' + n + ' 格') : '右上角那排筹码把别的格子展开到画布上');
   host.appendChild(say);
   var hint = el('span', 'lg');
   hint.style.color = 'var(--foreground-muted)';
