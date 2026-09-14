@@ -405,6 +405,37 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 /* 格子控制钉在画布右上角：它管的是「这张画布上摊开了哪几格」，是页面级的开关，
    不该长在主视图的格头里——长在那儿它会跟着画布一起缩放平移，镜头一挪开主视图
    就够不着了，而这恰恰是你想收起某一格时最需要它的时候。 */
+/* 悬浮告警层：钉在视口上，不在 #world 里，所以不跟着画布缩放平移。
+   pointer-events 只给真正的那块牌子，层本身放行——否则它会盖住整张画布，
+   拖不动也点不着。
+   右边留出 486px 是给右上角那排格子筹码（458 + 间距）让位：两块都钉在顶上，
+   谁也不该压着谁。窄到 1100 以下时筹码那排自己会占满顶栏，告警就整体下移一档。 */
+#floatlayer{position:absolute;inset:0;pointer-events:none;z-index:6}
+/* 收起时留在画布上的那枚告警牌：它是这条故事线唯一的入口，所以要显眼——
+   带一颗会呼吸的红点、写明是哪一个问题、有几个事件。点开才铺成事件链。 */
+#alertpill{
+  position:absolute;left:14px;top:14px;display:inline-flex;align-items:center;gap:9px;
+  height:36px;padding:0 14px 0 12px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--danger);background:var(--background);
+  color:var(--foreground);font:inherit;font-size:12.5px;
+  box-shadow:0 8px 22px -8px rgba(220,38,38,.42),0 1px 3px rgba(15,23,42,.1)}
+/* 自己写了 display 就得自己把 hidden 挡回来：inline-flex 比 UA 的 [hidden]{display:none}
+   更具体，不写这一条，牌子在抽屉摊开之后还会留在原地。 */
+#alertpill[hidden]{display:none!important}
+#alertpill:hover{background:var(--background-hover, var(--background))}
+#alertpill .dot{
+  width:8px;height:8px;border-radius:50%;background:var(--danger);flex:none;
+  animation:apulse 1.9s ease-in-out infinite}
+#alertpill .n{color:var(--foreground-muted);font-variant-numeric:tabular-nums}
+@keyframes apulse{0%,100%{opacity:1}50%{opacity:.32}}
+@media (prefers-reduced-motion:reduce){#alertpill .dot{animation:none}}
+#floatlayer > *{pointer-events:auto}
+.panel--float{
+  position:absolute;left:14px;right:486px;top:14px;height:238px;
+  box-shadow:0 18px 44px -12px rgba(15,23,42,.28),0 2px 8px rgba(15,23,42,.08)}
+@media (max-width:1100px){
+  .panel--float{right:14px;top:60px}
+}
 #panelshud{right:14px;top:14px;max-width:calc(100% - 320px);flex-wrap:wrap;gap:8px}
 #panelshud .k{flex:none}
 #zoomhud{right:14px;bottom:14px}
@@ -484,6 +515,10 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
   <div id="viewport">
     <div id="world">
       <svg id="conns" aria-hidden="true"></svg>
+    </div>
+
+    <div id="floatlayer" aria-label="悬浮告警">
+      <button id="alertpill" type="button" hidden></button>
     </div>
 
     <div class="hud" id="panelshud" aria-label="画布上摊开了哪几格"></div>
@@ -1022,48 +1057,67 @@ var TOPO = {
    没有选中的事件它们就是空的，默认开出来是几块空板。
    实测五格 iframe 全部就位约 2.6 s——四份嵌的是同一个 pattern 文件，
    浏览器只下一次，所以多开两格几乎不额外花钱。 */
-var DEFAULT_OPEN = ['story', 'dim', 'anatomy', 'netgraph', 'swimlane', 'board'];
+/* 告警（story）**不在**这张表里：它是悬浮的一块，摊开时要占掉三分之一视口，
+   默认铺开会把主视图压到 54%——而主视图才是这一页的主语。所以默认是收起的
+   一枚告警牌，点它（或右上角那枚「告警」筹码）才铺成事件链。 */
+var DEFAULT_OPEN = ['netgraph', 'dim', 'anatomy', 'swimlane', 'board'];
 
 var PANELS = [
+  /* ── 原点 · 主语。always=1，不提供收起 ──────────────────────────── */
   { id:'main',     always:1, kind:'frame', box:{ x:0,     y:0,    w:1340, h:840 },
     title:'并行拓扑 · 模型分片与训练设备映射',
     sub:'/patterns/net-slicing/ 本体 · 五刀全落并进卡维度' },
 
-  { id:'story',    kind:'native', box:{ x:70,    y:-390, w:1200, h:200 },
-    exp:'故事线', title:'故事线 · 运行事件', sub:'点任一枚事件下钻' },
+  /* ── 悬浮 · 告警。float=1：它不占画布的地，钉在视口上，不跟着缩放平移。
+         理由是它压根不是一个「视图」——别的格子都在答「这件事落在结构的哪儿」，
+         它答的是「出了什么事、怎么一步步推过来的」。把这条链子绑进画布，等于
+         逼读者每次想回头看一眼时间线都得先把镜头挪回去；而且镜头一缩到 26%，
+         它就跟着糊成一条看不清的细带。所以它单独一块，从右上角那排筹码（告警）
+         或顶栏的问题页签开，随时压在画布上方，关掉画布也不少一块地。 */
+  { id:'story',    float:1, kind:'native',
+    exp:'告警', title:'告警 · 运行事件链', sub:'点任一枚事件下钻' },
 
-  { id:'dim',      kind:'frame',  box:{ x:-920,  y:-880, w:860,  h:820 },
-    exp:'单维切分', title:'单维切分 · 五级粒度轴',
-    sub:'一次只看一把刀：整网 → 层 → 算子 → kernel → 卡' },
-
-  { id:'anatomy',  kind:'frame',  box:{ x:-2320, y:20,   w:1340, h:800 },
-    exp:'卡内解剖', title:'卡内解剖',
-    sub:'一张卡里：层段 → 算子片 → kernel → 流' },
-
-  { id:'netgraph', kind:'frame',  box:{ x:-920,  y:20,   w:860,  h:800 },
+  /* ── 左 · 结构。三格一行，粒度由粗到细一路往外走：
+         整网（整张图）→ 单维切分（连接两端的那根粒度轴）→ 卡内解剖（一张卡里面）。
+         三格与主视图垂直居中对齐，看上去就是「把主视图这件事在结构上摊开三档」。 */
+  { id:'netgraph', kind:'frame',  box:{ x:-940,  y:20,   w:860,  h:800 },
     exp:'整网', title:'整网 · 真图展开',
     sub:'同一个 pattern 的另一份配置 · 不落 DP、不进卡维度' },
 
-  { id:'swimlane', kind:'frame',  box:{ x:100,   y:900,  w:1140, h:320 },
+  { id:'dim',      kind:'frame',  box:{ x:-1880, y:10,   w:860,  h:820 },
+    exp:'单维切分', title:'单维切分 · 五级粒度轴',
+    sub:'一次只看一把刀：整网 → 层 → 算子 → kernel → 卡' },
+
+  { id:'anatomy',  kind:'frame',  box:{ x:-3300, y:20,   w:1340, h:800 },
+    exp:'卡内解剖', title:'卡内解剖',
+    sub:'一张卡里：层段 → 算子片 → kernel → 流' },
+
+  /* ── 右 · 事件下钻。两行的分法就是「怎么来的」：
+         上行是点一枚事件时**一起**摊开的（传播关系 + 支撑它的那张图），
+         下行是再从传播那一格里点出来的分支（看机制 ▸ / 点一个 rank 对象）。 */
+  { id:'event',    kind:'native', box:{ x:1420,  y:20,   w:820,  h:620 },
+    title:'事件 · 传播关系', sub:'传播源 → 途经 → 受影响' },
+
+  { id:'evidence', kind:'native', box:{ x:2320,  y:20,   w:540,  h:620 },
+    title:'证据 · 图表', sub:'支撑这条结论的那张图' },
+
+  { id:'mech',     kind:'native', box:{ x:1420,  y:720,  w:860,  h:510 },
+    title:'机制舞台', sub:'范围图答「打到了谁」，这里答「凭什么传过去」' },
+
+  { id:'rank',     kind:'native', box:{ x:2320,  y:720,  w:540,  h:570 },
+    title:'单卡解剖', sub:'这张卡装了什么、此刻在干什么' },
+
+  /* ── 下 · 时序。两条横带，都是「展开成一条线」的形状，所以并排叠在主视图脚下：
+         泳道答「这一个 step 里先后发生了什么」，血缘答「同一个算子怎么一路降下去」。 */
+  { id:'swimlane', kind:'frame',  box:{ x:100,   y:920,  w:1140, h:320 },
     exp:'泳道', title:'泳道 · 微批次生命周期',
     sub:'/combo-workbench/swimlane.html 本体 · MB07 · step 18420' },
 
-  { id:'event',    kind:'native', box:{ x:1420,  y:-330, w:820,  h:620 },
-    title:'事件 · 传播关系', sub:'传播源 → 途经 → 受影响' },
-
-  { id:'mech',     kind:'native', box:{ x:1420,  y:330,  w:860,  h:510 },
-    title:'机制舞台', sub:'范围图答「打到了谁」，这里答「凭什么传过去」' },
-
-  { id:'evidence', kind:'native', box:{ x:2340,  y:-390, w:540,  h:620 },
-    title:'证据 · 图表', sub:'支撑这条结论的那张图' },
-
-  { id:'rank',     kind:'native', box:{ x:2340,  y:270,  w:540,  h:570 },
-    title:'单卡解剖', sub:'这张卡装了什么、此刻在干什么' },
-
-  { id:'lineage',  kind:'native', box:{ x:-1400, y:900,  w:1300, h:430 },
+  { id:'lineage',  kind:'native', box:{ x:20,    y:1320, w:1300, h:430 },
     title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' },
 
-  { id:'board',    kind:'native', box:{ x:1420,  y:890,  w:1180, h:440 },
+  /* ── 右下 · 读数。不属于任何一条下钻链，是这一跑的体检单 ──────────── */
+  { id:'board',    kind:'native', box:{ x:1420,  y:1320, w:1180, h:440 },
     exp:'大盘', title:'训推大盘 · 关键少数',
     sub:'口径取自 pangu_sophon_pytorch' }
 ];
@@ -1090,6 +1144,7 @@ function applyView() {
 }
 function clampK(k) { return Math.max(MINK, Math.min(MAXK, k)); }
 function zoomAt(cx, cy, nk) {
+  lastFit = 'free';
   nk = clampK(nk);
   var wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
   view.k = nk; view.x = cx - wx * nk; view.y = cy - wy * nk;
@@ -1105,18 +1160,35 @@ function unionBox(list) {
 }
 /* 此刻摊开的那一片画布。展开得越多它越大——「无限画布」在这一页就是这个意思。 */
 function openBox() {
-  return unionBox(PANELS.filter(function (d) { return isOpen(d.id); })
+  /* 悬浮格（告警）不算在内：它钉在视口上，不占画布的地，
+     把它算进来会让「适配全部」去框一块根本不存在的区域。 */
+  return unionBox(PANELS.filter(function (d) { return !d.float && isOpen(d.id); })
                         .map(function (d) { return d.box; }));
 }
 
+/* 镜头此刻停在哪一档：main / all / free。改窗口大小时按这一档重新落位，
+   free（读者自己滚过、拖过、或者下钻飞过去了）就不动它——那一屏是他自己摆的。 */
+var lastFit = 'main';
+
 /* 带缓动的镜头。展开一格时「走过去」而不是瞬移——瞬移看不出新格子落在哪儿。 */
 var flyRAF = null;
+/* 告警那块牌子是不透明的、又钉在视口顶上，所以它盖住的那一带不算可用画布。
+   镜头落位时把它让出来——不让的话默认那一屏正好被它啃掉主视图顶上一截。
+   按元素实测位置算，不写死：窄屏时它自己会下移一档。 */
+function topInset() {
+  var f = P.story && P.story.root;
+  if (!f || f.hidden) return 0;
+  var vr = vp.getBoundingClientRect(), fr = f.getBoundingClientRect();
+  return Math.max(0, fr.bottom - vr.top + 12);
+}
 function flyTo(box, pad, ms) {
+  lastFit = 'free';               // fitAll / fitMain 会在调用之后把档位盖回去
   var r = vp.getBoundingClientRect();
   pad = pad == null ? 44 : pad;
-  var k = clampK(Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h));
+  var top = topInset(), H = r.height - top;
+  var k = clampK(Math.min((r.width - pad * 2) / box.w, (H - pad * 2) / box.h));
   var tx = (r.width - box.w * k) / 2 - box.x * k;
-  var ty = (r.height - box.h * k) / 2 - box.y * k;
+  var ty = top + (H - box.h * k) / 2 - box.y * k;
   cancelAnimationFrame(flyRAF);
   if (!ms) { view.k = k; view.x = tx; view.y = ty; applyView(); return; }
   var f = { x: view.x, y: view.y, k: view.k }, t0 = performance.now();
@@ -1130,11 +1202,19 @@ function flyTo(box, pad, ms) {
   };
   flyRAF = requestAnimationFrame(step);
 }
-function fitAll(ms) { flyTo(openBox(), 44, ms == null ? 420 : ms); }
-function fitMain(ms) { flyTo(P.main.def.box, 48, ms == null ? 420 : ms); }
+function fitAll(ms) { flyTo(openBox(), 44, ms == null ? 420 : ms); lastFit = 'all'; }
+/* 主视图这一档故意留 90 的边：正好让四周那几格各露出一条边——
+   读者一进来就知道「外面还有」，而不用先缩小一次才发现。 */
+function fitMain(ms) { flyTo(P.main.def.box, 90, ms == null ? 420 : ms); lastFit = 'main'; }
+/* 按当前档位重新落位（让出的带子变了、窗口变了都走这儿）。free 就不动它。 */
+function refit(ms) {
+  if (lastFit === 'main') fitMain(ms == null ? 260 : ms);
+  else if (lastFit === 'all') fitAll(ms == null ? 260 : ms);
+}
 /* 展开一格之后镜头框住「主视图 + 这一格」：只框新格子会把主语挤出画面，
    框整张画布又会因为别的格子已经摊开而缩得太小。 */
 function fitPair(id, ms) {
+  if (P[id] && P[id].def.float) return;   // 悬浮格不在画布上，没有「飞过去」这回事
   if (id === 'main') return fitMain(ms);
   flyTo(unionBox([P.main.def.box, P[id].def.box]), 44, ms == null ? 480 : ms);
 }
@@ -1155,6 +1235,7 @@ function fitPair(id, ms) {
   });
   vp.addEventListener('pointermove', function (e) {
     if (!down) return;
+    lastFit = 'free';
     view.x = down.vx + (e.clientX - down.x); view.y = down.vy + (e.clientY - down.y);
     applyView();
   });
@@ -1186,6 +1267,7 @@ document.getElementById('zIn').addEventListener('click', function () {
 document.getElementById('zOut').addEventListener('click', function () {
   var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k / 1.25);
 });
+document.getElementById('alertpill').addEventListener('click', function () { expand('story'); });
 document.getElementById('fitBtn').addEventListener('click', function () { fitAll(); });
 document.getElementById('focusBtn').addEventListener('click', function () { fitMain(); });
 
@@ -1235,10 +1317,13 @@ function bindTip(e, t) { e.setAttribute('data-tip', t); }
 
 PANELS.forEach(function (d) {
   var box = d.box;
-  var root = el('div', 'panel ' + (d.id === 'main' ? 'panel--stage' : 'panel--sat'));
+  var root = el('div', 'panel ' + (d.id === 'main' ? 'panel--stage'
+                                 : d.float ? 'panel--float' : 'panel--sat'));
   root.id = 'pane-' + d.id;
-  root.style.left = box.x + 'px'; root.style.top = box.y + 'px';
-  root.style.width = box.w + 'px'; root.style.height = box.h + 'px';
+  if (!d.float) {
+    root.style.left = box.x + 'px'; root.style.top = box.y + 'px';
+    root.style.width = box.w + 'px'; root.style.height = box.h + 'px';
+  }
 
   var head = el('div', 'panel__head');
   head.appendChild(el('span', 'panel__dot'));
@@ -1264,7 +1349,7 @@ PANELS.forEach(function (d) {
   root.appendChild(body);
   P[d.id] = P[d.id] || {};
   P[d.id].mount = mount;
-  world.appendChild(root);
+  (d.float ? document.getElementById('floatlayer') : world).appendChild(root);
 
   /* 除主视图外都给一颗收起键：展开是可逆的，否则画布只会越摊越大 */
   if (!d.always) {
@@ -1357,7 +1442,7 @@ function drawConns() {
   var lx = function (x) { return x - b.x + pad; }, ly = function (y) { return y - b.y + pad; };
   var m = P.main.def.box, mcx = m.x + m.w / 2, mcy = m.y + m.h / 2;
   PANELS.forEach(function (d) {
-    if (d.id === 'main' || !isOpen(d.id)) return;
+    if (d.id === 'main' || d.float || !isOpen(d.id)) return;
     var t = d.box, tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
     var a = edge(m, tcx, tcy), z = edge(t, mcx, mcy);
     var mx = (a.x + z.x) / 2;
@@ -1377,6 +1462,8 @@ function expand(id, fly) {
   P[id].root.hidden = false;
   if (P[id].def.kind === 'frame') loadFrame(id);
   render();
+  /* 告警一开一关，视口让出来的那一带就变了——按当前档位重新落位一次。 */
+  if (P[id].def.float) { refit(); return; }
   if (fly !== false) fitPair(id);
 }
 function collapse(id) {
@@ -1384,6 +1471,7 @@ function collapse(id) {
   delete open[id];
   P[id].root.hidden = true;
   render();
+  if (P[id].def.float) refit();
 }
 function toggle(id) { if (open[id]) collapse(id); else expand(id, true); }
 
@@ -1707,12 +1795,55 @@ function pushHL(id, obj) {
    rank 只从 pattern 流回来（读者在整网那格点算子），不往它那儿推。 */
 function pushSelection() {
   var ev = curEvent();
-  var hl = { layer: ev ? eventLayer(ev) : null };
+  var L = ev ? eventLayer(ev) : null;
+  var hl = { layer: L };
   ['main', 'netgraph', 'dim', 'anatomy'].forEach(function (id) { pushHL(id, hl); });
+  pushHL('swimlane', { rank: laneRankForStage(eventStage(ev)) });
+}
+
+/* 泳道那一格接的是 hl.rank，不是 hl.layer——它那边的主键是「哪一行」。
+   同样对不上号：泳道只模拟 32 卡里的**一个 DP 副本**（dp2 × pp4 × tp2 × ep2，
+   activeDp=1 → Rank 16–31），故事线的 rank 1559 在它那儿不存在。直接推过去
+   不会出错——泳道自己会在状态行里写「Rank 1559 不在这份 32 Rank 模拟拓扑里，
+   泳道未移动」——诚实，但也就到此为止，点了等于没点。
+
+   所以这条桥和主视图那条**同一个主键：层号**。L38 在泳道的分段口径里落在
+   stage 3（它写的是 L35–L45），stage 3 在 activeDp=1 下是 Rank 28–31，
+   取这一段的头一张（tp0 / ep0）。推过去泳道会逐级展开父链、把那一行滚进视野，
+   于是「点一枚事件」这一下同时落到三个地方：主视图点亮承载这层的那些卡、
+   整网点亮这一层、泳道滚到这一段流水线。
+
+   要说清的是：落到「哪一段流水线」是真的，落到「具体哪一张卡」不是——
+   那一行只是这段的代表。所以格头副标题写 PP 段，不写 rank 号。 */
+var LANE_STAGE_LAYERS = [[0, 11], [12, 22], [23, 34], [35, 45]];  // 抄自 swimlane.html 的 rankStageScopes
+var LANE_DP = 1, LANE_PP = 4, LANE_TP = 2, LANE_EP = 2;           // 抄自它的 PARALLEL_WORLD（activeDp=1）
+function laneStageForLayer(L) {
+  if (L == null) return -1;
+  for (var i = 0; i < LANE_STAGE_LAYERS.length; i++) {
+    if (L >= LANE_STAGE_LAYERS[i][0] && L <= LANE_STAGE_LAYERS[i][1]) return i;
+  }
+  return -1;
+}
+/* 事件落在哪一段流水线。有的事件自己就写明了段（focus.kind==='stage'，
+   比如「PP3 断裂」），那就直接用它，不必再从层号反推——反推是退路，不是首选。 */
+function eventStage(ev) {
+  if (!ev) return -1;
+  if (ev.focus && ev.focus.kind === 'stage') return ev.focus.stage;
+  return laneStageForLayer(eventLayer(ev));
+}
+function laneRankForStage(st) {
+  if (st == null || st < 0 || st >= LANE_PP) return null;
+  /* rankAt(dp, stage, tp, ep) = ((dp * pp + stage) * tp + t) * ep + e，取 tp0 / ep0 */
+  return ((LANE_DP * LANE_PP + st) * LANE_TP) * LANE_EP;
 }
 /* 事件落在哪一层 / 哪张卡——只读事件自己写的 focus 与 origin，不另算一套 */
 function eventLayer(ev) {
   if (ev.focus && ev.focus.kind === 'layer') return ev.focus.layer;
+  /* lineage.layer 是这条事件的**震中层**，也是最常填全的一处：像「PP3 断裂，
+     2048 NPU hang」这种，focus 写的是 stage、scope 写的是 all，层号只在血缘里
+     （L38 Router）。漏掉这一路，点中它时主视图和整网都不会亮——而它恰恰是
+     故事线的最后一枚、最该看清震中在哪儿的那一枚。 */
+  if (ev.lineage && ev.lineage.layer != null) return ev.lineage.layer;
   if (ev.origin && ev.origin.layers && ev.origin.layers.length === 1) return ev.origin.layers[0];
   if (ev.scope && ev.scope.layers && ev.scope.layers.length === 1) return ev.scope.layers[0];
   return null;
@@ -2097,9 +2228,23 @@ function stageShell(title, sub, noteHTML) {
 function setLinked() {}
 
 /* ── 故事线 ───────────────────────────────────────────────────────── */
+/* 告警收起时画布上留下的那枚牌子。它和抽屉互斥：摊开了就不需要牌子。
+   选中了某一件事就把那一件写在牌上——收起之后还知道自己停在哪一步。 */
+function renderAlertPill() {
+  var pill = document.getElementById('alertpill');
+  if (isOpen('story')) { pill.hidden = true; return; }
+  var g = curGroup(), ev = curEvent();
+  pill.hidden = false;
+  pill.innerHTML = '';
+  pill.appendChild(el('span', 'dot'));
+  pill.appendChild(el('span', '', ev ? ev.title : ('告警 · ' + g.name)));
+  pill.appendChild(el('span', 'n', '· ' + (ev ? g.name : g.events.length + ' 个事件')));
+  bindTip(pill, '摊开这条告警的事件链——' + g.events.length + ' 个事件，点任一枚下钻');
+}
+
 function renderStory() {
   var g = curGroup(), pane = P.story;
-  pane.title.textContent = '故事线 · ' + g.name;
+  pane.title.textContent = '告警 · ' + g.name;
   pane.sub.textContent = g.events.length + ' 个事件 · 点任一枚下钻';
   var b = pane.body; b.innerHTML = '';
   var tl = el('div', 'tl');
@@ -2235,6 +2380,7 @@ function renderMain() {
    ══════════════════════════════════════════════════════════════════════ */
 function render() {
   renderMain();
+  renderAlertPill();
   if (isOpen('story')) renderStory();
   if (isOpen('event')) { RT = 'event'; if (curEvent()) viewFlow(); else emptyEvent(); }
   if (isOpen('evidence')) renderEvidence();
@@ -2265,7 +2411,12 @@ function emptyRank() {
 /* 泳道那一格换段不重载：range 走 pto:state，选中的那条事件、缩放都留在原地 */
 function syncSwimlane() {
   var cur = LANE_RANGES.filter(function (x) { return x.v === S.range; })[0];
-  P.swimlane.sub.textContent = cur ? cur.d : '';
+  /* 选中事件时把桥写在副标题上：泳道自己动了一下，得说清是凭什么动的、
+     落到了哪一段——不说的话读者只会看见它莫名其妙滚了一下。 */
+  var ev = curEvent(), L = ev ? eventLayer(ev) : null, st = eventStage(ev);
+  var why = L != null ? 'L' + L : (ev ? '这条事件' : '');
+  P.swimlane.sub.textContent = (cur ? cur.d : '')
+    + (st >= 0 ? '　· 已随 ' + why + ' 定位到 PP' + st + '（这一段的代表行）' : '');
   if (P.swimlane.syncTabs) P.swimlane.syncTabs();
   var f = frameOf('swimlane');
   if (f && f.contentWindow) {
@@ -2277,7 +2428,7 @@ function renderLegend() {
   var host = document.getElementById('legendhud');
   host.innerHTML = '';
   host.appendChild(el('span', 'k', '读法'));
-  var n = PANELS.filter(function (d) { return !d.always && open[d.id]; }).length;
+  var n = PANELS.filter(function (d) { return !d.always && !d.float && open[d.id]; }).length;
   var say = el('span', 'lg');
   say.textContent = '主视图是并行拓扑 pattern 本体，永远在；'
     + (n ? ('已摊开 ' + n + ' 格') : '右上角那排筹码把别的格子展开到画布上');
@@ -3206,8 +3357,14 @@ window.addEventListener('keydown', function (e) {
     if (n >= g.events.length) n = 0;
     S.rank = null; selectEvent(g.events[n].id);
   } else if (e.key === 'Escape') {
-    /* 从外往里收：先收最靠外的那一格。没有「栈」可退了，收起就是退。 */
-    var order = ['board', 'lineage', 'swimlane', 'netgraph', 'rank', 'mech', 'evidence', 'event'];
+    /* 没有「栈」可退了，收起就是退——所以先退下钻，再拆常备格：
+       ① 从传播里分出去的三格（单卡 / 机制 / 血缘）
+       ② 点事件时一起来的那两格（证据 + 传播）
+       ③ 常备格从最靠外的一圈往里收
+       原先这张表按纯几何排，最靠外的卡内解剖排在最前——结果刚点完一个事件
+       按 Esc，收掉的是画布最左边那一格，而不是刚刚点出来的下钻。 */
+    var order = ['rank', 'mech', 'lineage', 'evidence', 'event',
+                 'anatomy', 'dim', 'netgraph', 'board', 'swimlane', 'story'];
     for (var i = 0; i < order.length; i++) {
       if (open[order[i]]) { collapse(order[i]); return; }
     }
@@ -3231,11 +3388,16 @@ buildToolbars();
 wireLinkage();
 booting = false;
 render();
-/* 第一屏：摊开了几格就框几格。只有主视图时它等于「回主视图」。 */
-requestAnimationFrame(function () { fitAll(0); });
+/* 第一屏停在**主视图**，不是适配全部。
+   适配全部要把六格常备面全框进来，落在 26% 上——那一屏好看，但主视图小到读不出
+   一张卡，而并行拓扑恰恰是这一页的主语。所以开场就把镜头钉在它身上（约九成），
+   四周各格只露一条边当路标；要看全貌按「适配全部」或双击空白，一次点击的事。 */
+requestAnimationFrame(function () { fitMain(0); });
 window.addEventListener('resize', function () {
   clearTimeout(window.__rz);
-  window.__rz = setTimeout(function () { if (view.k <= 0.95) fitAll(0); }, 160);
+  window.__rz = setTimeout(function () {
+    refit(0);
+  }, 160);
 });
 })();
 </script>
