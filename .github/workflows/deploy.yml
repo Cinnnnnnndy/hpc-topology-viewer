@@ -658,9 +658,15 @@ jobs:
       - name: Overlay 故障故事线 at /incident-canvas/ 与 /patterns/incident-canvas/
         # 一个主视图 + 五块卫星的无限画布：故事线与数据来自 compute-graph-viewer 的
         # config-relation-observer，形制与 token 来自本仓 /combo-workbench/。
-        # 整页**自包含单文件**（零外部依赖、不引 CDN），所以这一步只是拷贝 + 两处改写：
+        # 页面自身是单文件（样式、数据、图元全在里面），但它**内嵌三份被复用的
+        # pattern 本体**：主视图与「整网」那格都是 /patterns/net-slicing/pattern.html
+        # 的两份配置，「泳道」那格是 /combo-workbench/swimlane.html。嵌的是规范路径上
+        # 的本体、不是拷贝，所以「画布里的那一份」与「直接打开那条链接」永远同版本。
+        # 这一步因此要改三处：
         #  · favicon 打 ?v=<短SHA>（页面本身带 no-cache meta，不需要戳）；
-        #  · 规范入口在 dist/patterns/<id>/ 下，顶栏那条指向组合工作台的相对链接要多退一级。
+        #  · var BASE —— 整页只有这一处知道自己离站点根有多深：
+        #    /incident-canvas/ 是 '..'，/patterns/incident-canvas/ 要多退一级；
+        #  · 顶栏那条指向组合工作台的出处链接，同理多退一级。
         # 两个入口同一份内容：
         #  · /incident-canvas/                  —— 短链接，好念、好发；
         #  · /patterns/incident-canvas/         —— 规范位置，pattern.html 与 pattern.json 同级。
@@ -686,19 +692,25 @@ jobs:
           PAT=dist/patterns/incident-canvas
           mkdir -p $PAT
           sed -e "s#href=\"./favicon.svg\"#href=\"./favicon.svg?v=$SHA\"#" \
+              -e "s#^var BASE = '\.\.';#var BASE = '../..';#" \
               -e 's#href="\.\./combo-workbench/"#href="../../combo-workbench/"#' \
               $SRC/index.html > $PAT/pattern.html
           cp $SRC/favicon.svg $PAT/favicon.svg
           cp $SRC/README.md $PAT/README.md
           cp $DIR/pattern.json $PAT/pattern.json
 
-          # 断言：顶栏那条「组合工作台」出处链接在规范入口下必须已经多退一级。
-          # 漏改不会让页面报错，只会让那条链接 404——从线上看不出来，必须在这里拦住。
+          # 断言：两条相对路径在规范入口下都必须已经多退一级。
+          # 漏改不会让页面报错——BASE 错了只是三格 iframe 静默 404、显示兜底文案，
+          # 出处链接错了只是那一条 404。都是从线上看不出来的坏法，必须在这里拦住。
+          test "$(grep -c \"^var BASE = '\.\./\.\.';\" $PAT/pattern.html)" = "1"
+          test "$(grep -c \"^var BASE = '\.\.';\" $PAT/pattern.html)" = "0"
+          test "$(grep -c \"^var BASE = '\.\.';\" $DIR/index.html)" = "1"
           test "$(grep -c 'href="../../combo-workbench/"' $PAT/pattern.html)" = "1"
           test "$(grep -c 'href="../combo-workbench/"' $PAT/pattern.html)" = "0"
           test "$(grep -c 'href="../combo-workbench/"' $DIR/index.html)" = "1"
-          # 自包含：整页不该引任何 vendor / CDN。多出一条就说明有人在页面里加了外部依赖，
-          # 而这一步并不拷贝任何 vendor 目录——那会是一条静默的 404。
+          # 不引任何外部主机：页面自己的样式/数据/图元都在文件里，三格内嵌走的是
+          # 站内相对路径。多出一条 http(s) 资源就说明有人加了 CDN 依赖，而这一步
+          # 并不拷贝任何 vendor 目录——那会是一条静默的 404。
           test "$(grep -Ec 'src="https?://|href="https?://[^"]*\.(css|js)' $DIR/index.html || true)" = "0"
           test -s $DIR/index.html
           test -s $PAT/pattern.html

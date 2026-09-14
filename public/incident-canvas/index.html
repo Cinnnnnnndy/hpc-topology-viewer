@@ -14,28 +14,34 @@
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <!--
   ══════════════════════════════════════════════════════════════════════
-  故障故事线 · 无限画布 —— 两个台面的整合形态
+  故障故事线 · 无限画布
 
-  合的是哪两份：
-    · config-relation-observer（compute-graph-viewer / training-run-twin-standalone）
-      —— 出**故事线与数据**：两条问题线、11 个运行事件、每个事件的传播源→受影响、
-      机制相位（mechanism.phases）、证据图表（evidence.chart）与读数（evidence.metrics）。
-      数值逐条照搬，没有再编第二套。
-    · combo-workbench（本仓 /combo-workbench/）
-      —— 出**形制与视觉语言**：PTO token（浅色优先 + [data-theme=dark] 单块覆盖）、
-      ide-frame 的渐变光晕底与磨砂面板、顶栏 + 舞台的骨架、URL 即这一屏、
-      `pto:state` 主题桥。
+  **主视图永远是并行拓扑 pattern 本体**（/patterns/net-slicing/pattern.html），
+  就是组合工作台舞台上那一格、你打开 /combo-workbench/ 看到的那张
+  「模型分片与训练设备映射」——不是另画一份像它的图。画布围着它长。
 
-  它自己新出的那一件事，是**编排**：
-    组合工作台是「摞格子」——格子的位置是台面定的，格与格之间靠消息对齐；
-    这一页是「一个主视图 + 四周卫星」——主视图坐在无限画布的正中，五块卫星
-    （故事线 / 作用面 / 读数 / 证据 / 泳道）围着它，用贝塞尔连线接回中心。
-    **点主视图里的东西就下钻**：集群 → 事件 → 机制相位 → 单卡 → 泳道，
-    每下钻一级，主视图换一张图，四周五块同时改写自己的内容。
-    退回走面包屑。看到哪一屏，URL 就是哪一屏。
+  合的是三份东西：
+    · /patterns/net-slicing/（本仓）—— **主视图**，以及左边那格「整网 · 真图展开」。
+      两格是同一个 pattern 的两份配置：主视图五刀全落并进卡维度（问「切完之后
+      落成 world 张卡」），整网那格独独不落 DP、不进卡维度（问「一张整网被切成什么」）。
+    · /combo-workbench/swimlane.html（本仓）—— 「泳道 · 微批次生命周期」那一格，
+      compute-graph-viewer 的上游拷贝，原样嵌入。
+    · config-relation-observer（compute-graph-viewer）—— 故事线与全部数值：
+      两条问题线、11 个运行事件、传播源→受影响、5 套机制相位、11 张证据图。
+      数值逐条照搬，一个没改。
+    · pangu_sophon_pytorch —— 训推大盘那一格的指标口径（只取口径，不取值）。
 
-  自包含单文件：token、样式、数据、全部图元都在这一份里，零外部依赖，
-  也不引 CDN。整页可直接拷走、可内嵌（认 ?embed=1 收顶栏、认 pto:state 换主题）。
+  「无限画布」在这里是字面意思：**下钻 = 在画布上把一格展开出来**。
+  主视图钉在原点、永远在；别的格子（整网 / 泳道 / 故事线 / 事件传播 / 机制舞台 /
+  证据 / 单卡解剖 / 训推大盘）按需展开，各自落在画布上自己那个位置，用一条贝塞尔
+  连回主视图。展开得越多，画布越大——缩小就看见自己摊开了哪几格。收起就是那格的 ×。
+
+  被嵌的三份都是**规范路径上的本体**，不是拷贝：
+    · BASE + /patterns/net-slicing/pattern.html
+    · BASE + /combo-workbench/swimlane.html
+  BASE 由发布步骤按入口改写（/incident-canvas/ 是 '..'，/patterns/incident-canvas/
+  是 '../..'）。所以「画布里的那一份」和「直接打开那条链接」永远是同一个文件、
+  同一个版本。本地直接开 public/ 时它们不存在（是构建期产物），那几格显示兜底文案。
   ══════════════════════════════════════════════════════════════════════
 -->
 <style>
@@ -172,9 +178,13 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 }
 #viewport.is-panning{cursor:grabbing}
 #world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
-#links{position:absolute;pointer-events:none;overflow:visible}
+#conns{position:absolute;pointer-events:none;overflow:visible}
 
 /* ═══ 面板（中心舞台与卫星同一套壳）══════════════════════════════════ */
+/* hidden 属性的 UA 样式是 display:none，但 .panel 自己写了 display:flex，
+   同特异性下后者赢——收起来的格子照样画在画布上（实机：一进来八格全摊开）。
+   这一条必须显式压过去。 */
+.panel[hidden]{display:none!important}
 .panel{
   position:absolute;display:flex;flex-direction:column;
   border-radius:var(--radius-lg);
@@ -204,27 +214,31 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .panel__body--flush{padding:0}
 
 /* 卫星面板的方位徽标 */
-.ghost{
-  position:absolute;display:flex;flex-direction:column;gap:6px;
-  padding:14px 16px;border-radius:var(--radius-lg);text-align:left;
-  border:1px dashed var(--border-strong);
-  background:color-mix(in srgb, var(--surface-1) 62%, transparent);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  box-shadow:var(--shadow-sm);cursor:pointer;
-  transition:background var(--duration-fast),border-color var(--duration-fast),box-shadow var(--duration-fast);
+/* 展开格的头上那排「展开 ▸」筹码：下钻的入口长在主视图自己的格头上 */
+.exp{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.expb{
+  display:inline-flex;align-items:center;gap:5px;height:23px;padding:0 9px;
+  border-radius:var(--radius-pill);border:1px solid var(--border-default);
+  background:var(--surface-2);font:500 11.5px/1 var(--font-sans);
+  color:var(--foreground-secondary);white-space:nowrap;
+  transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast);
 }
-.ghost:hover{background:color-mix(in srgb, var(--surface-1) 92%, transparent);
-  border-color:var(--primary);box-shadow:var(--shadow-md)}
-.ghost__i{display:flex;align-items:baseline;gap:6px;color:var(--primary)}
-.ghost__i b{font:800 40px/1 var(--font-mono);letter-spacing:-.02em}
-.ghost__i span{font:600 12px/1 var(--font-mono);color:var(--foreground-muted)}
-.ghost__t{font:600 19px/1.35 var(--font-sans);
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.ghost__v{font:400 13px/1.4 var(--font-sans);color:var(--foreground-secondary)}
-.ghost__back{margin-top:auto;font:500 12px/1.4 var(--font-sans);color:var(--primary)}
-.trail{fill:none;stroke:var(--border-strong);stroke-width:2.4;opacity:.7;stroke-linecap:round;
-  vector-effect:non-scaling-stroke}
-.trail-dot{fill:var(--primary);opacity:.7}
+.expb:hover{background:var(--state-hover);border-color:var(--border-strong);color:var(--foreground)}
+.expb[aria-pressed="true"]{background:var(--state-selected);color:var(--primary);
+  border-color:color-mix(in srgb,var(--primary) 42%,transparent)}
+.expb i{width:6px;height:6px;border-radius:99px;background:currentColor;flex:none;font-style:normal;opacity:.7}
+
+/* 内嵌 pattern 的那几格：iframe 铺满格身，装配好之前先不画，免得闪一下白 */
+.frame{display:block;width:100%;height:100%;border:0;background:transparent;
+  opacity:0;transition:opacity 220ms}
+.panel[data-ready="1"] .frame{opacity:1}
+.fallback{
+  position:absolute;inset:0;display:grid;place-items:center;padding:22px;text-align:center;
+  font:400 12.5px/1.7 var(--font-sans);color:var(--foreground-muted);pointer-events:none;
+}
+.fallback b{color:var(--foreground-secondary);font-weight:600}
+.panel[data-ready="1"] .fallback{display:none}
+
 .sat-badge{
   flex:none;padding:1px 7px;border-radius:var(--radius-pill);
   border:1px solid var(--border-default);background:var(--surface-2);
@@ -434,8 +448,8 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"></path></svg>
       <span id="autoLbl">自动播放</span>
     </button>
-    <button class="btn btn--sm" id="fitBtn" type="button" title="缩到能看见走过的整张画布：每下钻一站，画布就往外长一站，前面几站留成虚线轨迹卡">总览 · 整条路径</button>
-    <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到当前这一站（主视图 + 五块卫星）">回这一站</button>
+    <button class="btn btn--sm" id="fitBtn" type="button" title="缩到能看见摊开的所有格子——展开得越多画布越大">适配全部</button>
+    <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到主视图（并行拓扑）">回主视图</button>
     <a class="btn btn--sm btn--ghost" id="srcWorkbench" href="../combo-workbench/" title="出处之一：本仓的组合工作台——这一页的 token、外壳骨架与 URL 约定都来自它">组合工作台<sup>°</sup></a>
     <a class="btn btn--sm btn--ghost" id="srcUpstream" href="https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" target="_blank" rel="noopener" title="出处之二：config-relation-observer——两条故事线、11 个事件与全部数值都来自它">原页 · 配置关系观测<sup>°</sup></a>
     <button class="btn btn--icon btn--ghost" id="themeBtn" type="button" title="切换明暗：与被嵌页面一起换" aria-label="切换明暗">
@@ -445,7 +459,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 
   <div id="viewport">
     <div id="world">
-      <svg id="links" aria-hidden="true"></svg>
+      <svg id="conns" aria-hidden="true"></svg>
     </div>
 
     <nav class="hud" id="crumbs" aria-label="下钻路径"></nav>
@@ -464,7 +478,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 <script>
 (function () {
 'use strict';
-
 /* ══════════════════════════════════════════════════════════════════════
    ① 故事线数据
    逐条取自 compute-graph-viewer / training-run-twin-standalone 的
@@ -955,34 +968,56 @@ var TOPO = {
   }
 };
 
-/* 五块卫星 + 中心舞台的世界坐标。改这张表就是改编排，别处不用动。 */
-var LAY = {
-  stage: { x: 0,    y: 0,    w: 980, h: 620 },
-  north: { x: 30,   y: -224, w: 920, h: 172 },
-  west:  { x: -444, y: 40,   w: 402, h: 560 },
-  east:  { x: 1032, y: -24,  w: 420, h: 318 },
-  sedge: { x: 1032, y: 328,  w: 420, h: 374 },
-  south: { x: 58,   y: 684,  w: 864, h: 272 }
-};
-var SATS = [
-  { id: 'north', box: 'north', badge: 'N · 故事线', title: '故事线 · 事件序列', sub: '点任一枚就下钻到那个事件' },
-  { id: 'west',  box: 'west',  badge: 'W · 作用面', title: '作用面 · 谁被影响', sub: '层 / 专家 / rank / stage 的当前范围' },
-  { id: 'east',  box: 'east',  badge: 'E · 读数',   title: '读数 · 关键指标', sub: '当前这一层的量' },
-  { id: 'sedge', box: 'sedge', badge: 'SE · 证据',  title: '证据 · 图表',     sub: '支撑这条结论的那张图' },
-  { id: 'south', box: 'south', badge: 'S · 泳道',   title: '泳道 · 时间',     sub: '同一件事落在一个 step 的哪一刻' }
-];
-/* 连线层的局部坐标 = 世界坐标 + 这个偏移（SVG 不吃负坐标，整体推正） */
-var OFF = { x: 560, y: 420 };
 
 /* ══════════════════════════════════════════════════════════════════════
-   ③ 画布引擎：平移 / 缩放 / 适配
+   ③ 画布编排 —— 主视图钉在原点，别的格子按需展开在它四周
+   改这张表就是改编排，别处不用动。box 是世界坐标（画布自己的坐标系，
+   与缩放无关）。main.always=1：它是这一页的主语，不提供收起。
    ══════════════════════════════════════════════════════════════════════ */
+var PANELS = [
+  { id:'main',     always:1, kind:'frame', box:{ x:0,     y:0,    w:1340, h:840 },
+    title:'并行拓扑 · 模型分片与训练设备映射',
+    sub:'/patterns/net-slicing/ 本体 · 五刀全落并进卡维度' },
+
+  { id:'story',    kind:'native', box:{ x:70,    y:-390, w:1200, h:200 },
+    exp:'故事线', title:'故事线 · 运行事件', sub:'点任一枚事件下钻' },
+
+  { id:'netgraph', kind:'frame',  box:{ x:-920,  y:20,   w:860,  h:800 },
+    exp:'整网', title:'整网 · 真图展开',
+    sub:'同一个 pattern 的另一份配置 · 不落 DP、不进卡维度' },
+
+  { id:'swimlane', kind:'frame',  box:{ x:100,   y:900,  w:1140, h:320 },
+    exp:'泳道', title:'泳道 · 微批次生命周期',
+    sub:'/combo-workbench/swimlane.html 本体 · MB07 · step 18420' },
+
+  { id:'event',    kind:'native', box:{ x:1420,  y:-330, w:820,  h:620 },
+    title:'事件 · 传播关系', sub:'传播源 → 途经 → 受影响' },
+
+  { id:'mech',     kind:'native', box:{ x:1420,  y:330,  w:860,  h:510 },
+    title:'机制舞台', sub:'范围图答「打到了谁」，这里答「凭什么传过去」' },
+
+  { id:'evidence', kind:'native', box:{ x:2340,  y:-390, w:540,  h:620 },
+    title:'证据 · 图表', sub:'支撑这条结论的那张图' },
+
+  { id:'rank',     kind:'native', box:{ x:2340,  y:270,  w:540,  h:570 },
+    title:'单卡解剖', sub:'这张卡装了什么、此刻在干什么' },
+
+  { id:'board',    kind:'native', box:{ x:1420,  y:890,  w:1180, h:440 },
+    exp:'大盘', title:'训推大盘 · 关键少数',
+    sub:'口径取自 pangu_sophon_pytorch' }
+];
+var P = {};                       // id → { def, root, body, head, … }
+PANELS.forEach(function (d) { P[d.id] = { def: d }; });
+/* 哪几格此刻摊开着。主视图不在这张表里——它永远在。 */
+var open = {};
+function isOpen(id) { return id === 'main' || !!open[id]; }
+
 var vp = document.getElementById('viewport');
 var world = document.getElementById('world');
-var links = document.getElementById('links');
+var conns = document.getElementById('conns');
 var tip = document.getElementById('tip');
 var view = { x: 0, y: 0, k: 1 };
-var MINK = 0.09, MAXK = 2.6;
+var MINK = 0.12, MAXK = 2.4;
 
 function applyView() {
   world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
@@ -993,26 +1028,11 @@ function applyView() {
   if (z) z.textContent = Math.round(view.k * 100) + '%';
 }
 function clampK(k) { return Math.max(MINK, Math.min(MAXK, k)); }
-
-/* ── 无限画布的骨架 ────────────────────────────────────────────────
-   下钻不是把中心那块的内容换掉，而是**往画布上继续铺一站**：
-   每下钻一级，整个星系（主视图 + 五块卫星）搬到一个新原点，原地留下一张
-   虚线的轨迹卡，两站之间用一条长曲线连起来。于是画布真的随探索变大——
-   缩小就能看见自己走过的整条路径，点任一张轨迹卡原路退回。
-   「换内容」与「铺新地方」的差别就在这里：前者是一块屏幕，后者才是一张画布。 */
-var RING_DX = 1500, RING_DY = 820;
-function ORIG(d) { return { x: d * RING_DX, y: d * RING_DY }; }
-var RING_W = (LAY.east.x + LAY.east.w) - LAY.west.x;
-var RING_H = (LAY.south.y + LAY.south.h) - LAY.north.y;
-function ringBox(d) {
-  var o = ORIG(d);
-  return { x: o.x + LAY.west.x, y: o.y + LAY.north.y, w: RING_W, h: RING_H };
-}
-var GHOST_W = 500, GHOST_H = 260;
-function ghostBox(d) {
-  var o = ORIG(d);
-  return { x: o.x + LAY.stage.x + (LAY.stage.w - GHOST_W) / 2,
-           y: o.y + LAY.stage.y + (LAY.stage.h - GHOST_H) / 2, w: GHOST_W, h: GHOST_H };
+function zoomAt(cx, cy, nk) {
+  nk = clampK(nk);
+  var wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
+  view.k = nk; view.x = cx - wx * nk; view.y = cy - wy * nk;
+  applyView();
 }
 function unionBox(list) {
   var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1022,38 +1042,23 @@ function unionBox(list) {
   });
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
-/* 已经走过的整张画布：前面几站只剩轨迹卡，只有当前这一站是完整的星系 */
-function exploredBox() {
-  var d = curDepth(), list = [ringBox(d)];
-  for (var i = 0; i < d; i++) list.push(ghostBox(i));
-  return unionBox(list);
+/* 此刻摊开的那一片画布。展开得越多它越大——「无限画布」在这一页就是这个意思。 */
+function openBox() {
+  return unionBox(PANELS.filter(function (d) { return isOpen(d.id); })
+                        .map(function (d) { return d.box; }));
 }
-function zoomAt(cx, cy, nk) {
-  nk = clampK(nk);
-  var wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
-  view.k = nk; view.x = cx - wx * nk; view.y = cy - wy * nk;
-  applyView();
-}
-function fitBox(box, pad) {
-  var r = vp.getBoundingClientRect();
-  pad = pad == null ? 40 : pad;
-  var k = clampK(Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h));
-  view.k = k;
-  view.x = (r.width - box.w * k) / 2 - box.x * k;
-  view.y = (r.height - box.h * k) / 2 - box.y * k;
-  applyView();
-}
-/* 带缓动的镜头：下钻时画布是「走过去」的，瞬移看不出自己往哪儿走了一步 */
+
+/* 带缓动的镜头。展开一格时「走过去」而不是瞬移——瞬移看不出新格子落在哪儿。 */
 var flyRAF = null;
 function flyTo(box, pad, ms) {
   var r = vp.getBoundingClientRect();
-  pad = pad == null ? 40 : pad;
+  pad = pad == null ? 44 : pad;
   var k = clampK(Math.min((r.width - pad * 2) / box.w, (r.height - pad * 2) / box.h));
   var tx = (r.width - box.w * k) / 2 - box.x * k;
   var ty = (r.height - box.h * k) / 2 - box.y * k;
+  cancelAnimationFrame(flyRAF);
   if (!ms) { view.k = k; view.x = tx; view.y = ty; applyView(); return; }
   var f = { x: view.x, y: view.y, k: view.k }, t0 = performance.now();
-  cancelAnimationFrame(flyRAF);
   var step = function (now) {
     var q = Math.min(1, (now - t0) / ms);
     var e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2;   // easeInOutQuad
@@ -1064,29 +1069,32 @@ function flyTo(box, pad, ms) {
   };
   flyRAF = requestAnimationFrame(step);
 }
-/* 总览 = 已经走过的**整张**画布（含前面每一站的轨迹卡），不是当前这一站 */
-function fitAll() { flyTo(exploredBox(), 72, 420); }
-function fitStage() { flyTo(ringBox(curDepth()), 40, 420); }
+function fitAll(ms) { flyTo(openBox(), 44, ms == null ? 420 : ms); }
+function fitMain(ms) { flyTo(P.main.def.box, 48, ms == null ? 420 : ms); }
+/* 展开一格之后镜头框住「主视图 + 这一格」：只框新格子会把主语挤出画面，
+   框整张画布又会因为别的格子已经摊开而缩得太小。 */
+function fitPair(id, ms) {
+  if (id === 'main') return fitMain(ms);
+  flyTo(unionBox([P.main.def.box, P[id].def.box]), 44, ms == null ? 480 : ms);
+}
 
-/* 平移：在空白处（或面板头）按下拖动。面板正文里的滚动与点击不受影响。 */
+/* 平移：在空白处或格头上按下拖动。格身里的滚动、点击、iframe 交互不受影响。 */
 (function () {
   var down = null;
   vp.addEventListener('pointerdown', function (e) {
     if (e.button !== 0) return;
     if (e.target.closest('.hud')) return;
-    if (e.target.closest('button, a, input, .panel__body')) {
-      if (!e.target.closest('.stagecanvas') && !e.target.closest('.panel__head')) return;
-      if (e.target.closest('button, a, input')) return;
-    }
-    down = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
+    /* 只有空白与格头可以起拖。格身里可能是 iframe（拖它是 pattern 自己的平移），
+       也可能是可滚动的正文，都不该被画布抢走。 */
+    if (e.target.closest('.panel') && !e.target.closest('.panel__head')) return;
+    if (e.target.closest('button, a, input')) return;
+    down = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
     vp.classList.add('is-panning');
     vp.setPointerCapture(e.pointerId);
   });
   vp.addEventListener('pointermove', function (e) {
     if (!down) return;
-    var dx = e.clientX - down.x, dy = e.clientY - down.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) down.moved = true;
-    view.x = down.vx + dx; view.y = down.vy + dy;
+    view.x = down.vx + (e.clientX - down.x); view.y = down.vy + (e.clientY - down.y);
     applyView();
   });
   var up = function (e) {
@@ -1098,9 +1106,10 @@ function fitStage() { flyTo(ringBox(curDepth()), 40, 420); }
   vp.addEventListener('pointercancel', up);
 
   vp.addEventListener('wheel', function (e) {
+    /* iframe 内部的滚轮事件不冒泡到这里（它在自己的文档里），所以主视图里
+       转 pattern 的镜头与画布缩放不打架。 */
     e.preventDefault();
     var r = vp.getBoundingClientRect();
-    /* trackpad 的双指滚动惯性很大，除以 380 之后手感与鼠标滚轮接近 */
     zoomAt(e.clientX - r.left, e.clientY - r.top, view.k * Math.exp(-e.deltaY / 380));
   }, { passive: false });
 
@@ -1116,8 +1125,8 @@ document.getElementById('zIn').addEventListener('click', function () {
 document.getElementById('zOut').addEventListener('click', function () {
   var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k / 1.25);
 });
-document.getElementById('fitBtn').addEventListener('click', fitAll);
-document.getElementById('focusBtn').addEventListener('click', fitStage);
+document.getElementById('fitBtn').addEventListener('click', function () { fitAll(); });
+document.getElementById('focusBtn').addEventListener('click', function () { fitMain(); });
 
 /* ══════════════════════════════════════════════════════════════════════
    ④ 悬浮提示（一处实现，全页共用 data-tip）
@@ -1142,57 +1151,12 @@ document.addEventListener('pointerout', function (e) {
   if (t) tip.removeAttribute('data-on');
 });
 
-/* ══════════════════════════════════════════════════════════════════════
-   ⑤ 状态：一条下钻栈 + 当前故事线
-   栈里每一层是 { view, label, ... }，面包屑就是它的可视形态；
-   URL 写的也是它——看到哪一屏，链接就是哪一屏。
-   ══════════════════════════════════════════════════════════════════════ */
-var S = {
-  group: GROUPS[0].id,
-  eventId: null,     // 下钻到事件之后非空
-  phase: 0,          // 机制相位
-  rank: null,        // 下钻到单卡之后非空
-  lane: false,       // 是否把泳道推进中心
-  board: false,      // 是否把训推大盘推进中心
-  auto: false
-};
-function curGroup() { return GROUPS.filter(function (g) { return g.id === S.group; })[0] || GROUPS[0]; }
-function curEvent() {
-  var g = curGroup();
-  if (!S.eventId) return null;
-  return g.events.filter(function (e) { return e.id === S.eventId; })[0] || null;
-}
-/* 下钻链 —— 整页唯一的那份真源。
-   主视图看哪一档、面包屑有几级、画布上走到第几站，三件事全从这一条链读；
-   以前它们各写一份判断，加一档就得三处同时改，漏一处就错位。 */
-function levelChain() {
-  var ev = curEvent();
-  var out = [{ v: 'cluster', t: '整网 · 2048 卡' }];
-  if (ev) out.push({ v: 'flow', t: ev.title });
-  if (ev && ev.mechanism && S.mech) out.push({ v: 'mech', t: '机制 · ' + ev.mechanism.name });
-  if (S.rank != null) out.push({ v: 'rank', t: 'rank ' + S.rank });
-  if (S.lane) out.push({ v: 'lane', t: '泳道 · 一个 step' });
-  if (S.board) out.push({ v: 'board', t: '训推大盘' });
-  return out;
-}
-function curView() { var c = levelChain(); return c[c.length - 1].v; }
-function curDepth() { return levelChain().length - 1; }
-/* 退到第 i 级：把比它高的那几级各自的开关逐个关掉。
-   一处实现，面包屑与画布上的轨迹卡共用。 */
-function popTo(i) {
-  var chain = levelChain();
-  return function () {
-    for (var j = chain.length - 1; j > i; j--) {
-      var v = chain[j].v;
-      if (v === 'board') S.board = false;
-      else if (v === 'lane') S.lane = false;
-      else if (v === 'rank') S.rank = null;
-      else if (v === 'mech') S.mech = false;
-      else if (v === 'flow') { S.eventId = null; S.mech = false; }
-    }
-  };
-}
 
+/* ══════════════════════════════════════════════════════════════════════
+   ⑥ 格子骨架 + 连线
+   DOM 只建一次，展开/收起只切 hidden——重建会把 iframe 整个重载一遍，
+   格子里选中的那张卡、视角、缩放全没了。
+   ══════════════════════════════════════════════════════════════════════ */
 var el = function (tag, cls, txt) {
   var n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -1206,170 +1170,153 @@ function svgEl(tag, attrs) {
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
   return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function bindTip(e, t) { e.setAttribute('data-tip', t); }
 
-/* ══════════════════════════════════════════════════════════════════════
-   ⑥ 面板骨架：中心舞台 + 五块卫星
-   位置全部来自 LAY，DOM 只建一次，之后只换 body 的内容——
-   重建整块面板会把滚动位置与过渡一起丢掉。
-   ══════════════════════════════════════════════════════════════════════ */
-var PANE = {};
-function mkPanel(id, box, opts) {
-  var p = el('div', 'panel ' + (opts.stage ? 'panel--stage' : 'panel--sat'));
-  p.id = 'pane-' + id;
-  p.style.left = box.x + 'px'; p.style.top = box.y + 'px';
-  p.style.width = box.w + 'px'; p.style.height = box.h + 'px';
+PANELS.forEach(function (d) {
+  var box = d.box;
+  var root = el('div', 'panel ' + (d.id === 'main' ? 'panel--stage' : 'panel--sat'));
+  root.id = 'pane-' + d.id;
+  root.style.left = box.x + 'px'; root.style.top = box.y + 'px';
+  root.style.width = box.w + 'px'; root.style.height = box.h + 'px';
+
   var head = el('div', 'panel__head');
   head.appendChild(el('span', 'panel__dot'));
-  if (opts.badge) head.appendChild(el('span', 'sat-badge', opts.badge));
-  var t = el('span', 'panel__title', opts.title); head.appendChild(t);
-  var s = el('span', 'panel__sub', opts.sub || ''); head.appendChild(s);
+  var title = el('span', 'panel__title', d.title);
+  var sub = el('span', 'panel__sub', d.sub || '');
+  head.appendChild(title); head.appendChild(sub);
   var acts = el('div', 'panel__acts'); head.appendChild(acts);
-  p.appendChild(head);
-  var body = el('div', 'panel__body' + (opts.flush ? ' panel__body--flush' : ''));
-  p.appendChild(body);
-  world.appendChild(p);
-  PANE[id] = { root: p, head: head, title: t, sub: s, acts: acts, body: body, box: box };
-  return PANE[id];
-}
-mkPanel('stage', LAY.stage, { stage: true, title: '主视图', sub: '', flush: true });
-SATS.forEach(function (s) {
-  mkPanel(s.id, LAY[s.box], { badge: s.badge, title: s.title, sub: s.sub, flush: s.id === 'north' || s.id === 'south' });
+  root.appendChild(head);
+
+  var body = el('div', 'panel__body' + (d.kind === 'frame' || d.id === 'story' ? ' panel__body--flush' : ''));
+  if (d.kind === 'frame') {
+    body.style.position = 'relative';
+    var fb = el('div', 'fallback');
+    fb.innerHTML = '<span><b>' + esc(d.title) + '</b><br>这一格嵌的是规范路径上的 pattern 本体，'
+      + '它是<b>构建期产物</b>——本地直接开 public/ 时不存在。<br>要看真样子请打开发布后的站点。</span>';
+    body.appendChild(fb);
+  }
+  root.appendChild(body);
+  world.appendChild(root);
+
+  /* 除主视图外都给一颗收起键：展开是可逆的，否则画布只会越摊越大 */
+  if (!d.always) {
+    var x = el('button', 'btn btn--icon btn--ghost');
+    x.type = 'button';
+    x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    bindTip(x, '收起这一格');
+    x.addEventListener('click', function () { collapse(d.id); });
+    acts.appendChild(x);
+    root.hidden = true;
+  }
+  P[d.id].root = root; P[d.id].head = head; P[d.id].title = title;
+  P[d.id].sub = sub; P[d.id].acts = acts; P[d.id].body = body;
 });
 
-/* 连线：从中心舞台的边缘出发，落到每块卫星的边缘。
-   与卫星内容当前是否跟着主视图变有关时点亮（is-on）并让虚线流动。 */
-/* 轨迹层：连各站的那几条长曲线。单独一层，因为它跨站、要跟着画布一起长，
-   而 #links 那层只画当前这一站的星系内部连线。 */
-var trailSvg = svgEl('svg', { id: 'trail', 'aria-hidden': 'true' });
-trailSvg.style.cssText = 'position:absolute;pointer-events:none;overflow:visible';
-world.insertBefore(trailSvg, links);
-var ghostHost = el('div');
-ghostHost.style.cssText = 'position:absolute;left:0;top:0';
-world.insertBefore(ghostHost, links);
-
-links.setAttribute('width', '2400'); links.setAttribute('height', '1700');
-links.style.left = (-OFF.x) + 'px'; links.style.top = (-OFF.y) + 'px';
-var LINKPATH = {};
-(function buildLinks() {
-  var c = LAY.stage, cx = c.x + c.w / 2, cy = c.y + c.h / 2;
-  SATS.forEach(function (s) {
-    var b = LAY[s.box];
-    var bx = b.x + b.w / 2, by = b.y + b.h / 2;
-    /* 起终点各自贴到两个矩形朝向对方的那条边上 */
-    var a = anchor(c, bx, by), z = anchor(b, cx, cy);
-    var mx = (a.x + z.x) / 2, my = (a.y + z.y) / 2;
-    var d = 'M' + (a.x + OFF.x) + ' ' + (a.y + OFF.y) +
-            ' C' + (mx + OFF.x) + ' ' + (a.y + OFF.y) +
-            ' ' + (mx + OFF.x) + ' ' + (z.y + OFF.y) +
-            ' ' + (z.x + OFF.x) + ' ' + (z.y + OFF.y);
-    var p = svgEl('path', { d: d, class: 'link' });
-    links.appendChild(p);
-    LINKPATH[s.id] = p;
+/* 主视图格头上那排「展开」筹码 —— 下钻的入口长在主语自己身上 */
+(function () {
+  var bar = el('div', 'exp');
+  PANELS.filter(function (d) { return d.exp; }).forEach(function (d) {
+    var b = el('button', 'expb');
+    b.type = 'button'; b.dataset.exp = d.id;
+    b.appendChild(el('i'));
+    b.appendChild(el('span', null, d.exp));
+    bindTip(b, d.title + '\n' + (d.sub || '') + '\n\n点一下在画布上展开这一格');
+    b.addEventListener('click', function () { toggle(d.id); });
+    bar.appendChild(b);
   });
-  function anchor(box, tx, ty) {
-    var cx = box.x + box.w / 2, cy = box.y + box.h / 2;
-    var dx = tx - cx, dy = ty - cy;
-    if (Math.abs(dx) / (box.w / 2) > Math.abs(dy) / (box.h / 2)) {
-      return { x: cx + (dx > 0 ? box.w / 2 : -box.w / 2), y: cy + dy * (box.w / 2 / Math.abs(dx)) };
-    }
-    return { x: cx + dx * (box.h / 2 / Math.abs(dy)), y: cy + (dy > 0 ? box.h / 2 : -box.h / 2) };
-  }
+  P.main.acts.appendChild(bar);
 })();
-function setLinked(ids) {
-  SATS.forEach(function (s) {
-    var on = ids.indexOf(s.id) >= 0;
-    LINKPATH[s.id].classList.toggle('is-on', on);
-    PANE[s.id].root.classList.toggle('is-linked', on);
+
+/* 连线：主视图边缘 → 每一格摊开的边缘。只画摊开着的那几条。 */
+var OFF = { x: 1200, y: 600 };
+conns.style.left = (-OFF.x) + 'px'; conns.style.top = (-OFF.y) + 'px';
+function edge(box, tx, ty) {
+  var cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  var dx = tx - cx, dy = ty - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  if (Math.abs(dx) / (box.w / 2) > Math.abs(dy) / (box.h / 2)) {
+    return { x: cx + (dx > 0 ? box.w / 2 : -box.w / 2), y: cy + dy * (box.w / 2 / Math.abs(dx)) };
+  }
+  return { x: cx + dx * (box.h / 2 / Math.abs(dy)), y: cy + (dy > 0 ? box.h / 2 : -box.h / 2) };
+}
+function drawConns() {
+  conns.innerHTML = '';
+  var b = openBox(), pad = 400;
+  conns.style.left = (b.x - pad) + 'px'; conns.style.top = (b.y - pad) + 'px';
+  conns.setAttribute('width', b.w + pad * 2); conns.setAttribute('height', b.h + pad * 2);
+  var lx = function (x) { return x - b.x + pad; }, ly = function (y) { return y - b.y + pad; };
+  var m = P.main.def.box, mcx = m.x + m.w / 2, mcy = m.y + m.h / 2;
+  PANELS.forEach(function (d) {
+    if (d.id === 'main' || !isOpen(d.id)) return;
+    var t = d.box, tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+    var a = edge(m, tcx, tcy), z = edge(t, mcx, mcy);
+    var mx = (a.x + z.x) / 2;
+    conns.appendChild(svgEl('path', {
+      class: 'link is-on',
+      d: 'M' + lx(a.x) + ' ' + ly(a.y) + ' C' + lx(mx) + ' ' + ly(a.y) +
+         ' ' + lx(mx) + ' ' + ly(z.y) + ' ' + lx(z.x) + ' ' + ly(z.y) }));
+    conns.appendChild(svgEl('circle', { cx: lx(a.x), cy: ly(a.y), r: 4.5,
+      fill: 'var(--primary)', opacity: .8 }));
   });
 }
 
-/* 把整个星系（主视图 + 五块卫星 + 星系内连线）搬到第 d 站。
-   面板的 DOM 不重建——重建会把滚动位置、过渡和正在播的机制相位一起丢掉。 */
-function applyRing(d) {
-  var o = ORIG(d);
-  PANE.stage.root.style.left = (o.x + LAY.stage.x) + 'px';
-  PANE.stage.root.style.top = (o.y + LAY.stage.y) + 'px';
-  SATS.forEach(function (s) {
-    var b = LAY[s.box];
-    PANE[s.id].root.style.left = (o.x + b.x) + 'px';
-    PANE[s.id].root.style.top = (o.y + b.y) + 'px';
-  });
-  links.style.left = (o.x - OFF.x) + 'px';
-  links.style.top = (o.y - OFF.y) + 'px';
+/* 展开 / 收起。展开是真的「在画布上多出一块地方」，所以镜头要跟过去。 */
+function expand(id, fly) {
+  if (id === 'main' || open[id]) { if (fly) fitPair(id); return; }
+  open[id] = 1;
+  P[id].root.hidden = false;
+  if (P[id].def.kind === 'frame') loadFrame(id);
+  render();
+  if (fly !== false) fitPair(id);
 }
-
-var VIEWLABEL = { cluster: '整网全景', flow: '传播关系', mech: '机制舞台',
-                  rank: '单卡解剖', lane: '时间泳道', board: '训推大盘' };
-/* 走过的每一站留一张虚线轨迹卡，站与站之间连一条长曲线。
-   卡上写「第几站 / 那一级看的是什么 / 哪一档主视图」，点它原路退回。 */
-function renderTrail() {
-  var chain = levelChain(), d = chain.length - 1;
-  ghostHost.innerHTML = '';
-  trailSvg.innerHTML = '';
-  var seg = [];
-  for (var i = 0; i < d; i++) {
-    var gb = ghostBox(i);
-    var card = el('button', 'ghost'); card.type = 'button';
-    card.style.left = gb.x + 'px'; card.style.top = gb.y + 'px';
-    card.style.width = gb.w + 'px'; card.style.height = gb.h + 'px';
-    var idx = el('div', 'ghost__i');
-    idx.innerHTML = '<b>' + (i + 1) + '</b><span>/ ' + (d + 1) + ' 站</span>';
-    card.appendChild(idx);
-    card.appendChild(el('div', 'ghost__t', chain[i].t));
-    card.appendChild(el('div', 'ghost__v', '主视图 · ' + (VIEWLABEL[chain[i].v] || chain[i].v)));
-    card.appendChild(el('div', 'ghost__back', '← 回到这一站'));
-    bindTip(card, '第 ' + (i + 1) + ' 站：' + chain[i].t + '\n点一下退回这一级，后面几站会收掉');
-    (function (idx) { card.addEventListener('click', function () { popTo(idx)(); render(); }); })(i);
-    ghostHost.appendChild(card);
-    seg.push(gb);
-  }
-  seg.push(ringBox(d));
-  if (seg.length < 2) return;
-  /* svg 不吃负坐标，整体推正；尺寸按已走过的范围现算，画布长它也跟着长 */
-  var ex = exploredBox(), pad = 200;
-  trailSvg.style.left = (ex.x - pad) + 'px';
-  trailSvg.style.top = (ex.y - pad) + 'px';
-  trailSvg.setAttribute('width', ex.w + pad * 2);
-  trailSvg.setAttribute('height', ex.h + pad * 2);
-  var lx = function (x) { return x - ex.x + pad; }, ly = function (y) { return y - ex.y + pad; };
-  for (var j = 0; j < seg.length - 1; j++) {
-    var a = seg[j], z = seg[j + 1];
-    var ax = lx(a.x + a.w), ay = ly(a.y + a.h / 2);
-    var zx = lx(z.x), zy = ly(z.y + z.h / 2);
-    var mx = (ax + zx) / 2;
-    trailSvg.appendChild(svgEl('path', { class: 'trail',
-      d: 'M' + ax + ' ' + ay + ' C' + mx + ' ' + ay + ' ' + mx + ' ' + zy + ' ' + zx + ' ' + zy }));
-    trailSvg.appendChild(svgEl('circle', { class: 'trail-dot', cx: ax, cy: ay, r: 6 }));
-    trailSvg.appendChild(svgEl('circle', { class: 'trail-dot', cx: zx, cy: zy, r: 6 }));
-  }
+function collapse(id) {
+  if (id === 'main' || !open[id]) return;
+  delete open[id];
+  P[id].root.hidden = true;
+  render();
 }
+function toggle(id) { if (open[id]) collapse(id); else expand(id, true); }
 
 /* ══════════════════════════════════════════════════════════════════════
-   ⑦ 面包屑 —— 下钻栈的可视形态，点哪一级就退回哪一级
+   ⑤ 状态：选中什么 + 摊开了哪几格
+   没有「下钻栈」了——这一页的下钻是**空间上的展开**，不是一层盖一层。
+   所以状态只有两件事：当前选中（故事线/事件/相位/卡），以及 open 里有谁。
    ══════════════════════════════════════════════════════════════════════ */
-function crumbTrail() {
-  var g = curGroup(), chain = levelChain(), out = [];
-  out.push({ t: '整网 · 2048 卡', go: popTo(0) });
-  out.push({ t: g.name.split(' · ')[0], go: popTo(0) });
-  for (var i = 1; i < chain.length; i++) out.push({ t: chain[i].t, go: popTo(i) });
-  return out;
+var S = {
+  group: GROUPS[0].id,
+  eventId: null,
+  phase: 0,
+  rank: null,
+  range: 'global',    // 泳道那一格看哪一段
+  auto: false
+};
+function curGroup() { return GROUPS.filter(function (g) { return g.id === S.group; })[0] || GROUPS[0]; }
+function curEvent() {
+  if (!S.eventId) return null;
+  return curGroup().events.filter(function (e) { return e.id === S.eventId; })[0] || null;
 }
-function renderCrumbs() {
-  var host = document.getElementById('crumbs');
-  host.innerHTML = '';
-  var trail = crumbTrail();
-  trail.forEach(function (c, i) {
-    if (i) { var sep = el('span', 'crumb__sep', '›'); host.appendChild(sep); }
-    var b = el('button', 'crumb', c.t);
-    b.type = 'button';
-    if (i === trail.length - 1) b.setAttribute('aria-current', 'true');
-    else b.addEventListener('click', function () { c.go(); render(); });
-    host.appendChild(b);
-  });
+
+/* 选一个事件：把相关的几格一起摊开。这就是「下钻」——
+   不是把主视图换掉，是在它旁边多摆几块证据，主视图自己被点亮。 */
+function selectEvent(id, fly) {
+  S.eventId = id; S.phase = 0;
+  var ev = curEvent();
+  open.story = 1; P.story.root.hidden = false;
+  open.event = 1; P.event.root.hidden = false;
+  open.evidence = 1; P.evidence.root.hidden = false;
+  if (!ev || !ev.mechanism) { delete open.mech; P.mech.root.hidden = true; }
+  render();
+  if (fly !== false) flyTo(unionBox([P.main.def.box, P.event.def.box, P.evidence.def.box]), 44, 480);
+}
+function selectRank(r, fly) {
+  S.rank = r;
+  open.rank = 1; P.rank.root.hidden = false;
+  render();
+  if (fly !== false) fitPair('rank');
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   ⑧ URL 即这一屏
+   ⑧ URL 即这一屏 —— 连「摊开了哪几格」一起写进去
    ══════════════════════════════════════════════════════════════════════ */
 var booting = true;
 function writeURL() {
@@ -1377,11 +1324,13 @@ function writeURL() {
   var q = new URLSearchParams(location.search);
   q.set('g', S.group);
   if (S.eventId) q.set('e', S.eventId); else q.delete('e');
-  if (S.mech) q.set('ph', String(S.phase + 1)); else q.delete('ph');
+  if (open.mech) q.set('ph', String(S.phase + 1)); else q.delete('ph');
   if (S.rank != null) q.set('r', String(S.rank)); else q.delete('r');
-  if (S.lane) q.set('lane', '1'); else q.delete('lane');
-  if (S.board) q.set('b', '1'); else q.delete('b');
-  q.set('theme', document.documentElement.dataset.theme);
+  var on = PANELS.filter(function (d) { return !d.always && open[d.id]; })
+                 .map(function (d) { return d.id; });
+  if (on.length) q.set('open', on.join(',')); else q.delete('open');
+  if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
+  q.set('theme', themeNow());
   history.replaceState(null, '', location.pathname + '?' + q.toString());
 }
 function readURL() {
@@ -1393,13 +1342,228 @@ function readURL() {
   if (g && GROUPS.some(function (x) { return x.id === g; })) S.group = g;
   var e = q.get('e');
   if (e && curGroup().events.some(function (x) { return x.id === e; })) S.eventId = e;
-  var ph = parseInt(q.get('ph'), 10);
-  var ev = curEvent();
-  if (ev && ev.mechanism && ph >= 1 && ph <= ev.mechanism.phases.length) { S.mech = true; S.phase = ph - 1; }
   var r = parseInt(q.get('r'), 10);
   if (isFinite(r) && r >= 0 && r < TOPO.world) S.rank = r;
-  if (q.get('lane') === '1') S.lane = true;
-  if (q.get('b') === '1') S.board = true;
+  var rg = q.get('range');
+  if (rg && ['global', 'pp2', 'l34'].indexOf(rg) >= 0) S.range = rg;
+  (q.get('open') || '').split(',').forEach(function (id) {
+    if (id && P[id] && !P[id].def.always) open[id] = 1;
+  });
+  /* 选了事件却没写 open：给它该有的那几格，免得链接只带 ?e= 时点开一片空 */
+  if (S.eventId && !q.has('open')) { open.story = 1; open.event = 1; open.evidence = 1; }
+  if (S.rank != null && !q.has('open')) open.rank = 1;
+  var ph = parseInt(q.get('ph'), 10);
+  var ev = curEvent();
+  if (ev && ev.mechanism && ph >= 1 && ph <= ev.mechanism.phases.length) {
+    S.phase = ph - 1; open.mech = 1;
+  }
+  if (open.mech && !(ev && ev.mechanism)) delete open.mech;
+  /* 默认那一屏：主视图 + 故事线。别的格子留给读者自己展开。 */
+  if (!Object.keys(open).length) open.story = 1;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑦ 内嵌被复用的三份 pattern
+   嵌的是**规范路径上的本体**，不是拷贝——所以「画布里的那一份」和「直接打开
+   那条链接」永远是同一个文件、同一个版本。
+   BASE 由发布步骤按入口改写：/incident-canvas/ 是 '..'，
+   /patterns/incident-canvas/ 是 '../..'。整页只有这一处知道相对深度。
+   ══════════════════════════════════════════════════════════════════════ */
+var BASE = '..';
+
+/* 并行拓扑的配置口径照抄组合工作台的缺省（CloudMatrix384 那一套），
+   两边因此讲的是同一批机器；改这里等于改这一页讲的是哪个集群。 */
+var CFG = { world:128, tp:2, cp:1, pp:4, ep:8, perNode:8, nodeRack:4, podCards:384 };
+function cfgQuery(q, includeDp) {
+  ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(CFG[k])); });
+  ['perNode','nodeRack','podCards'].forEach(function (k) { q.set(k, String(CFG[k])); });
+  /* cuts：d(dp) p(pp) c(cp) t(tp·sp) e(ep)。主视图五刀全落，整网那格独独不落 DP
+     ——「复印几份」对「一张整网被切成什么」这一问没有信息量，落下来只会把同一张图
+     重复 16 遍。 */
+  q.set('cuts', (includeDp ? 'd' : '') + 'pcte');
+}
+function themeNow() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
+
+var FRAMESRC = {
+  /* 主视图：就是组合工作台舞台上那一格。不传 stitle，用 pattern 自己的题面
+     「模型分片与训练设备映射」——那正是它要回答的问题。 */
+  main: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'chain');
+    cfgQuery(q, true);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 整网：同一份实现的另一份配置。rank=0 不进卡维度，vtab=side 落侧视
+     ——这一屏把每个算子被哪把刀沿哪根轴切标在旁边。 */
+  netgraph: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'chain');
+    q.set('rank', '0');
+    q.set('vtab', 'side');
+    q.set('stitle', '模型整网视图 · 真图展开');
+    cfgQuery(q, false);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 泳道：compute-graph-viewer 的上游拷贝，原样嵌入。chrome=0 收它自带的顶栏。 */
+  swimlane: function () {
+    var q = new URLSearchParams();
+    q.set('chrome', '0');
+    q.set('theme', themeNow());
+    q.set('range', S.range || 'global');
+    return BASE + '/combo-workbench/swimlane.html?' + q.toString();
+  }
+};
+
+/* 把被这一页接管的控件从格子里藏掉。走 CSS 而不是内联样式：pattern 每次改状态
+   都重画工具条，内联的会被冲掉。这几条与组合工作台同源，理由见那边的注释。 */
+var HIDECSS = {
+  main:
+    /* 数据标注那组：:not(.pt-disp) 是必须的——⚙（显示设置）跟它共用 .pt-mv
+       那层排版壳，光写 .pt-mv 会把 ⚙ 一起按掉，而它管的图例/通信再也开不出来。 */
+    '.pt-mv:not(.pt-disp){display:none!important}',
+  netgraph:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    /* 名字归格头，藏掉它画布左上角那一枚；只藏标题那一枚，不是整条——
+       「＋ 搜索」就长在同一行里，整条藏掉会把搜索一起按没。 */
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    /* 这一格是跟随视图，不是第二个操作台：选中由主视图发起。 */
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+    '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+    /* 立身之本就是「不进卡维度」，给个入口等于邀请人把它变成第二个并行拓扑 */
+    '.pt-cfgpanel .cg:has([data-act="rankmode"]){display:none!important}' +
+    '#zoomHud{display:none!important}' +
+    '.pt-grid-title{display:none!important}' +
+    '[data-act="persp"]{display:none!important}',
+  swimlane:
+    /* 名字归格头；整条藏掉之后**网格轨还占着 42px**，不收轨就会在格头与泳道之间
+       空出一条横贯整格的白带（组合工作台踩过一次，这里一并收掉）。 */
+    '.timeline-pane .pane__header{display:none!important}' +
+    '.timeline-pane{grid-template-rows:0 minmax(0,1fr)!important}' +
+    '.pto-ide-frame__standalone-chrome{display:none!important}'
+};
+/* 等谁按格子来：并行拓扑那两格的控件都带 [data-act]，泳道那份是上游拷贝、
+   一个 data-act 都没有——写死 [data-act] 的话它永远等不到，只能一路耗到超时
+   才放行（白等一次，还不报错，最难查的那种）。 */
+var READYSEL = { main: '[data-act]', netgraph: '[data-act]',
+                 swimlane: '.timeline-pane .pane__header, .timeline-scroll' };
+
+function frameOf(id) { return P[id] && P[id].body.querySelector('iframe'); }
+
+function loadFrame(id) {
+  var pane = P[id];
+  if (pane.frame) return;
+  var f = el('iframe', 'frame');
+  f.setAttribute('data-slot', id);
+  f.setAttribute('loading', 'eager');
+  f.src = FRAMESRC[id]();
+  pane.body.appendChild(f);
+  pane.frame = f;
+  f.addEventListener('load', function () { settleFrame(id, f); });
+}
+
+/* 装配：pattern 的工具条是 JS 后建的，load 那一刻多半还不在，所以轮询等它出来，
+   再一次性把「藏控件 / 推状态」做完，最后才让这一格淡入。等不到就到点放行——
+   宁可样式没接管，也不能白屏。 */
+function settleFrame(id, f) {
+  var tries = 0;
+  function ready() {
+    try {
+      var doc = f.contentDocument;
+      if (!doc || doc.readyState === 'loading') return false;
+      return !!doc.querySelector(READYSEL[id] || '*');
+    } catch (err) { return true; }          // 跨源：没什么可等的
+  }
+  function done() {
+    try {
+      var doc = f.contentDocument;
+      if (doc && doc.head && HIDECSS[id] && !doc.getElementById('ic-hide')) {
+        var st = doc.createElement('style');
+        st.id = 'ic-hide'; st.textContent = HIDECSS[id];
+        doc.head.appendChild(st);
+      }
+      if (id === 'netgraph') wireOpToMain(f);
+    } catch (err) { /* 跨源 */ }
+    P[id].root.dataset.ready = '1';
+    pushSelection();                        // 刚装配好的这一格补一份当前选中
+  }
+  (function poll() {
+    if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
+    setTimeout(poll, 150);
+  })();
+}
+
+/* 往某一格推一份**过路的高亮**。走 pattern 的 pto:state.hl —— 它不落标签、
+   不浮读出卡，读者点一下那格的画布空白就散。
+   为什么不替对面落一枚搜索标签：标签是读者在那一屏**自己下的条件**（带 ×、
+   一直在），而这只是「别处点了什么」的回声。两件事混成一件之后，画面上就分不出
+   「我筛的」和「它照过来的」，也没有一个自然的收手动作。 */
+function pushHL(id, obj) {
+  var f = frameOf(id);
+  if (!f || !f.contentWindow || !isOpen(id)) return;
+  try { f.contentWindow.postMessage({ type: 'pto:state', hl: obj }, '*'); } catch (e) {}
+}
+/* 当前选中照给两格 pattern —— **只推层号，不推 rank**。
+   为什么：故事线讲的是一个 2048 卡的实跑（PP4 × EDP8 × EP64，rank 1559 /
+   1553 是那个集群里的门牌）；而被嵌的 pattern 画的是它自己那个 128 卡的演示
+   集群（world 128 · TP2 × PP4 × DP16 · EP8，与组合工作台同一套缺省）。
+   两边卡数不同，rank 号天然对不上——把 1559 推过去要么无声无息（它那儿只有
+   R0–R127），要么照亮一张**根本不是那张**的卡，后者比不亮更坏。
+   试过让 pattern 直接画 2048 卡：DP 512 行会退化成一条看不清的斜线，
+   还要 12 秒才画完，那不是「更真」，是把主视图毁了。
+
+   层号则是两边**都成立**的主键：L38 在故事线里落在 PP3（L34–L45），
+   在 pattern 的 48 层口径里也落在 PP3（L36–L47）——同一段流水线。
+   所以桥就搭在层上：选中一个事件，主视图点亮**承载这一层的那些卡**。
+   rank 只从 pattern 流回来（读者在整网那格点算子），不往它那儿推。 */
+function pushSelection() {
+  var ev = curEvent();
+  var hl = { layer: ev ? eventLayer(ev) : null };
+  ['main', 'netgraph'].forEach(function (id) { pushHL(id, hl); });
+}
+/* 事件落在哪一层 / 哪张卡——只读事件自己写的 focus 与 origin，不另算一套 */
+function eventLayer(ev) {
+  if (ev.focus && ev.focus.kind === 'layer') return ev.focus.layer;
+  if (ev.origin && ev.origin.layers && ev.origin.layers.length === 1) return ev.origin.layers[0];
+  if (ev.scope && ev.scope.layers && ev.scope.layers.length === 1) return ev.scope.layers[0];
+  return null;
+}
+/* 只给叙事面板用（单卡解剖读它）——不推给 pattern，理由见 pushSelection */
+function eventRank(ev) {
+  if (ev.focus && ev.focus.kind === 'rank') return ev.focus.rank;
+  if (ev.origin && Array.isArray(ev.origin.ranks)) return ev.origin.ranks[0];
+  return null;
+}
+
+/* 整网那格点了一个**算子** → 主视图照亮持有它的那些卡。
+   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键。
+   为什么不另造一套「算子 → rank」的算法：那等于在这一页重写一遍它的坐标算术，
+   而层号这条路它本来就懂。只旁听、不拦截。 */
+function wireOpToMain(f) {
+  try {
+    var doc = f.contentDocument;
+    if (!doc || doc.__icOpLink) return;
+    doc.__icOpLink = 1;
+    doc.addEventListener('click', function (ev) {
+      var hit = ev.target && ev.target.closest && ev.target.closest('[data-act="opdetail"]');
+      if (!hit) return;
+      var li = parseInt(hit.getAttribute('data-li'), 10);
+      if (isFinite(li)) pushHL('main', { layer: li });
+    }, true);
+  } catch (err) { /* 跨源 */ }
+}
+
+/* 主题换了要把三格一起换——换主题不重载（重载会丢掉格子里选中的那张卡） */
+function pushTheme() {
+  ['main', 'netgraph', 'swimlane'].forEach(function (id) {
+    var f = frameOf(id);
+    if (f && f.contentWindow) {
+      try { f.contentWindow.postMessage({ type: 'pto:state', theme: themeNow() }, '*'); } catch (e) {}
+    }
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1580,23 +1744,20 @@ var TIERC = ['var(--cell-base)', 'var(--cell-mid)',
              'color-mix(in srgb,var(--warning) 82%,transparent)', 'var(--danger)'];
 var TIERN = ['其他 stage', '同 stage', '同 EP 组（barrier 空等）', '震中 / 首个失败卡'];
 
+
 /* ══════════════════════════════════════════════════════════════════════
-   ⑪ 主视图 —— 五档，每档一个函数，都往同一副骨架里填
+   ⑪ 各格自己的内容
+   一格一个函数，都往同一副骨架（panelShell）里填。骨架写进 RT 指的那一格，
+   所以从旧版「主视图换一张图」搬过来的那几个渲染函数一个字没动就能用。
    ══════════════════════════════════════════════════════════════════════ */
-var VIEWNAME = { cluster: '主视图 · 整网全景', flow: '主视图 · 传播关系',
-                 mech: '主视图 · 机制舞台', rank: '主视图 · 单卡解剖', lane: '主视图 · 时间泳道',
-                 board: '主视图 · 训推大盘' };
+var RT = 'event';                 // 当前这一次 panelShell 往哪一格写
 function stageShell(title, sub, noteHTML) {
-  PANE.stage.title.textContent = VIEWNAME[curView()] || '主视图';
-  PANE.stage.sub.textContent = '点图里的东西继续下钻 · Esc 退一级';
-  var b = PANE.stage.body;
+  var pane = P[RT];
+  pane.title.textContent = title;
+  pane.sub.textContent = sub || '';
+  var b = pane.body;
   b.innerHTML = '';
   var wrap = el('div', 'stagewrap');
-  var bar = el('div', 'stagebar');
-  bar.appendChild(el('span', 'stagebar__t', title));
-  if (sub) bar.appendChild(el('span', 'stagebar__s', sub));
-  var sp = el('span'); sp.style.flex = '1'; bar.appendChild(sp);
-  wrap.appendChild(bar);
   var canvas = el('div', 'stagecanvas');
   wrap.appendChild(canvas);
   if (noteHTML) {
@@ -1605,63 +1766,228 @@ function stageShell(title, sub, noteHTML) {
     wrap.appendChild(note);
   }
   b.appendChild(wrap);
-  return { bar: bar, canvas: canvas };
+  return { canvas: canvas };
+}
+/* 连线现在由 open 推出来（drawConns），不再由各档自己声明谁该亮。
+   保留这个空壳是为了让搬过来的渲染函数一个字不用改。 */
+function setLinked() {}
+
+/* ── 故事线 ───────────────────────────────────────────────────────── */
+function renderStory() {
+  var g = curGroup(), pane = P.story;
+  pane.title.textContent = '故事线 · ' + g.name;
+  pane.sub.textContent = g.events.length + ' 个事件 · 点任一枚下钻';
+  var b = pane.body; b.innerHTML = '';
+  var tl = el('div', 'tl');
+  tl.appendChild(el('div', 'tl__spine'));
+  var row = el('div', 'tl__row');
+  g.events.forEach(function (ev) {
+    var c = el('button', 'tlc'); c.type = 'button';
+    c.dataset.sev = ev.sev;
+    c.setAttribute('aria-pressed', String(ev.id === S.eventId));
+    var top = el('div', 'tlc__top');
+    top.appendChild(el('span', 'tlc__pin'));
+    top.appendChild(el('span', 'tlc__t', ev.time));
+    c.appendChild(top);
+    c.appendChild(el('div', 'tlc__title', ev.title));
+    c.appendChild(el('div', 'tlc__dim', ev.dimension + (ev.isRoot ? ' · 根因' : '')));
+    if (ev.mechanism) c.appendChild(el('span', 'tlc__mech', '机制'));
+    bindTip(c, ev.title + '\n' + ev.conclusion
+      + (ev.mechanism ? '\n\n带机制图：点进去可以按相位看它是怎么传的' : ''));
+    c.addEventListener('click', function () { selectEvent(ev.id); });
+    row.appendChild(c);
+  });
+  tl.appendChild(row);
+  b.appendChild(tl);
 }
 
-/* ── 档 1 · 集群全景 ────────────────────────────────────────────────
-   2048 张卡按 PP4 × EDP8 × EP64 摆成四块。染色读的是 impactTier——
-   同一套判据下面构成图与泳道也在用，三处不会各说各的。
-   点任一格就下钻到那张卡。 */
-function viewCluster() {
-  var g = curGroup(), ev = curEvent();
-  var sh = stageShell('整网 · ' + TOPO.world + ' 张卡',
-    'PP ' + TOPO.pp + ' × EDP ' + TOPO.edp + ' × EP ' + TOPO.ep + ' · global rank = stage×512 + edp×64 + ep',
-    ev ? ('<b>' + esc(ev.title) + '</b> · ' + esc(ev.impact))
-       : ('<b>' + esc(g.name) + '</b> · ' + esc(g.lede)));
-  var W = 952, LEFT = 42, CW = 14, CH = 13, BG = 12, TOP = 16;
-  var cols = TOPO.ep, rows = TOPO.edp;
-  var blockH = rows * CH;
-  var H = TOP + TOPO.pp * (blockH + BG) + 26;
+/* ── 证据 · 图表 + 读数 + 根因/影响 ───────────────────────────────── */
+function renderEvidence() {
+  var ev = curEvent(), pane = P.evidence, b = pane.body;
+  b.innerHTML = '';
+  if (!ev) {
+    pane.title.textContent = '证据 · 图表';
+    pane.sub.textContent = '先在故事线上选一个事件';
+    var e0 = el('div');
+    e0.style.cssText = 'display:grid;place-items:center;height:100%;text-align:center';
+    e0.innerHTML = '<p class="cnote" style="max-width:260px">上面那条<b>故事线</b>里点任一个事件，'
+      + '这里就换成支撑它那条结论的图。<br><br>两条线一共 11 个事件、11 张图，'
+      + '全部取自 config-relation-observer 原页，数值一个没改。</p>';
+    b.appendChild(e0);
+    return;
+  }
+  pane.title.textContent = '证据 · ' + ev.title;
+  pane.sub.textContent = ev.dimension;
+  renderChart(b, ev.chart);
+  b.appendChild(el('div', 'hr'));
+  var mg = el('div', 'mgrid');
+  (ev.metrics || []).forEach(function (r) {
+    var row = el('div', 'mrow');
+    row.appendChild(el('span', 'mrow__l', r.label));
+    row.appendChild(el('span', 'mrow__v' + (r.tone ? ' tone-' + r.tone : ''), r.value));
+    mg.appendChild(row);
+  });
+  b.appendChild(mg);
+  b.appendChild(el('div', 'hr'));
+  var facts = el('div', 'facts');
+  [['根因', ev.root, 1], ['影响', ev.impact, 0]].forEach(function (f) {
+    var d = el('div', 'fact' + (f[2] ? ' fact--hi' : ''));
+    d.appendChild(el('div', 'fact__k', f[0]));
+    d.appendChild(el('div', 'fact__v', f[1]));
+    facts.appendChild(d);
+  });
+  b.appendChild(facts);
+}
+
+/* ── 机制舞台 ─────────────────────────────────────────────────────── */
+function renderMech() {
+  var ev = curEvent();
+  if (!ev || !ev.mechanism) {
+    P.mech.title.textContent = '机制舞台';
+    P.mech.sub.textContent = '这个事件没有机制图';
+    P.mech.body.innerHTML = '<p class="cnote">11 个事件里有 5 个带机制图'
+      + '（路由塌缩 / barrier 语义 / 依赖链回压 / 存活区间叠加 / 碎片）。'
+      + '在故事线上挑一枚带「机制」角标的。</p>';
+    return;
+  }
+  var m = ev.mechanism, ph = Math.max(0, Math.min(m.phases.length - 1, S.phase));
+  S.phase = ph;
+  var p = m.phases[ph];
+  RT = 'mech';
+  var sh = stageShell('机制 · ' + m.name, ev.title + ' · ' + ev.time, null);
+  var box = el('div', 'mech');
+
+  var row = el('div', 'phaserow');
+  var play = el('button', 'btn btn--icon btn--ghost'); play.type = 'button';
+  play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></svg>';
+  bindTip(play, '把四相连着播一遍');
+  play.addEventListener('click', function () { playPhases(); });
+  row.appendChild(play);
+  m.phases.forEach(function (x, i) {
+    var b2 = el('button', 'phase'); b2.type = 'button';
+    b2.setAttribute('aria-pressed', String(i === ph));
+    b2.appendChild(el('span', null, x.tag));
+    b2.appendChild(el('span', 'phase__clock', x.clock));
+    b2.addEventListener('click', function () { S.phase = i; render(); });
+    row.appendChild(b2);
+  });
+  box.appendChild(row);
+
+  var scene = el('div', 'mech__scene');
+  var W = 900, H = 330;
   var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' });
-  var gridW = cols * CW;
+  (MECH[m.kind] || function () {})(svg, ph, W, H);
+  scene.appendChild(svg);
+  box.appendChild(scene);
 
-  for (var st = 0; st < TOPO.pp; st++) {
-    var y0 = TOP + st * (blockH + BG);
-    var lab = svgEl('text', { x: 0, y: y0 + blockH / 2 + 4, class: 'lbl lbl--big' });
-    lab.textContent = 'PP' + st;
-    svg.appendChild(lab);
-    var sub = svgEl('text', { x: 0, y: y0 + blockH / 2 + 16, class: 'lbl' });
-    sub.textContent = 'L' + TOPO.stageRange[st][0] + '-' + TOPO.stageRange[st][1];
-    svg.appendChild(sub);
-    for (var d = 0; d < rows; d++) {
-      for (var e = 0; e < cols; e++) {
-        var r = TOPO.rank(st, d, e), t = impactTier(r);
-        var rect = svgEl('rect', {
-          x: LEFT + e * CW, y: y0 + d * CH, width: CW - 1.6, height: CH - 1.6,
-          rx: 2, fill: TIERC[t], class: 'cell',
-          'data-tip': 'global rank ' + r + '\nPP' + st + ' / EDP' + d + ' / EP' + e +
-                      '\n' + TIERN[t] + '\n点一下进这张卡的内部'
-        });
-        if (t === 3) { rect.setAttribute('stroke', 'var(--foreground)'); rect.setAttribute('stroke-width', '1.4'); }
-        (function (rr) {
-          rect.addEventListener('click', function () { S.rank = rr; S.lane = false; render(); });
-        })(r);
-        svg.appendChild(rect);
-      }
-    }
-  }
-  /* 顶上一行 EP 刻度：64 列不逐个标，每 8 列一枚 */
-  for (var e2 = 0; e2 <= cols; e2 += 8) {
-    var tk = svgEl('text', { x: LEFT + e2 * CW, y: TOP - 5, class: 'lbl' });
-    tk.textContent = 'EP' + e2; svg.appendChild(tk);
-  }
-  var axl = svgEl('text', { x: LEFT, y: H - 8, class: 'lbl' });
-  axl.textContent = '横轴 EP 0→63（一整行 = 一个 all-to-all 域）　纵轴 EDP 0→7（一列纵向 8 个 = 8 个完整模型副本）';
-  svg.appendChild(axl);
-  sh.canvas.appendChild(svg);
-  setLinked(['north', 'west', 'east', 'sedge', 'south']);
+  var cap = el('div', 'mech__cap');
+  cap.innerHTML = '<b>' + esc(p.tag) + '　' + esc(p.clock) + '</b>　'
+    + esc(p.caption).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  box.appendChild(cap);
+
+  sh.canvas.appendChild(box);
+  sh.canvas.style.overflow = 'hidden';
 }
 
+/* ── 主视图格头：把当前选中报出来，并同步那排展开筹码 ─────────────── */
+function renderMain() {
+  var ev = curEvent();
+  var dp = CFG.world / (CFG.tp * CFG.cp * CFG.pp);
+  var shape = 'world ' + CFG.world + ' · TP' + CFG.tp + ' × PP' + CFG.pp + ' × DP' + dp + ' · EP' + CFG.ep;
+  var L = ev ? eventLayer(ev) : null;
+  P.main.sub.textContent = L != null
+    ? ('已照亮 L' + L + '（' + shape + '）')
+    : shape;
+  bindTip(P.main.head, '主视图就是 /patterns/net-slicing/ 本体，与组合工作台舞台上那一格'
+    + '是同一个文件、同一份配置：' + shape + '。\n\n它画的是**这套并行策略长什么样**；'
+    + '故事线讲的是另一跑（2048 卡 · PP4 × EDP8 × EP64）。两边卡数不同、rank 号对不上，'
+    + '所以联动搭在**层号**上——选中事件，这里点亮承载那一层的卡。');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-exp]'), function (b) {
+    b.setAttribute('aria-pressed', String(!!open[b.dataset.exp]));
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑭ 一次 render 把摊开的每一格刷一遍
+   主视图是 iframe，不归这里画——它只收一份高亮（pushSelection）。
+   ══════════════════════════════════════════════════════════════════════ */
+function render() {
+  renderMain();
+  if (isOpen('story')) renderStory();
+  if (isOpen('event')) { RT = 'event'; if (curEvent()) viewFlow(); else emptyEvent(); }
+  if (isOpen('evidence')) renderEvidence();
+  if (isOpen('mech')) renderMech();
+  if (isOpen('rank')) { RT = 'rank'; if (S.rank != null) viewRank(); else emptyRank(); }
+  if (isOpen('board')) { RT = 'board'; viewBoard(); }
+  if (isOpen('swimlane')) syncSwimlane();
+  drawConns();
+  renderLegend();
+  syncTop();
+  pushSelection();
+  writeURL();
+}
+function emptyEvent() {
+  P.event.title.textContent = '事件 · 传播关系';
+  P.event.sub.textContent = '先在故事线上选一个事件';
+  P.event.body.innerHTML = '<p class="cnote">范围图答「打到了谁」。'
+    + '在故事线里点一枚事件，这里就摊开它的传播源 → 途经 → 受影响。</p>';
+}
+function emptyRank() {
+  P.rank.title.textContent = '单卡解剖';
+  P.rank.sub.textContent = '先选一张卡';
+  P.rank.body.innerHTML = '<p class="cnote">在<b>主视图</b>里点一张卡，'
+    + '或从事件的传播源里点一个 rank 对象。</p>';
+}
+/* 泳道那一格换段不重载：range 走 pto:state，选中的那条事件、缩放都留在原地 */
+function syncSwimlane() {
+  P.swimlane.sub.textContent = { global: 'MB07 从 PP0 前向到 PP0 反向的完整链路',
+    pp2: 'PP2 的等待 / 计算 / 通信 / 激活驻留',
+    l34: 'L34 模块与保存激活的生产—消费关系' }[S.range] || '';
+  var f = frameOf('swimlane');
+  if (f && f.contentWindow) {
+    try { f.contentWindow.postMessage({ type: 'pto:state', range: S.range }, '*'); } catch (e) {}
+  }
+}
+
+function renderLegend() {
+  var host = document.getElementById('legendhud');
+  host.innerHTML = '';
+  host.appendChild(el('span', 'k', '读法'));
+  var n = PANELS.filter(function (d) { return !d.always && open[d.id]; }).length;
+  var say = el('span', 'lg');
+  say.textContent = '主视图是并行拓扑 pattern 本体，永远在；'
+    + (n ? ('已摊开 ' + n + ' 格') : '格头那排筹码把别的格子展开到画布上');
+  host.appendChild(say);
+  var hint = el('span', 'lg');
+  hint.style.color = 'var(--foreground-muted)';
+  hint.textContent = '滚轮缩放 · 拖空白平移 · 双击空白适配全部';
+  host.appendChild(hint);
+}
+function syncTop() {
+  var g = curGroup(), ev = curEvent();
+  document.getElementById('brandSub').textContent =
+    ev ? (ev.time + ' · ' + ev.title) : (g.events.length + ' 个事件 · 展开下钻');
+  Array.prototype.forEach.call(document.querySelectorAll('#lineSeg button'), function (b) {
+    b.setAttribute('aria-pressed', String(b.dataset.g === S.group));
+  });
+}
+
+/* 顶栏故事线段控 */
+(function () {
+  var host = document.getElementById('lineSeg');
+  GROUPS.forEach(function (g) {
+    var b = el('button', null, g.name);
+    b.type = 'button'; b.dataset.g = g.id;
+    bindTip(b, g.lede);
+    b.addEventListener('click', function () {
+      if (S.group === g.id) return;
+      S.group = g.id; S.eventId = null; S.phase = 0; S.rank = null;
+      delete open.mech; P.mech.root.hidden = true;
+      render();
+    });
+    host.appendChild(b);
+  });
+})();
 /* ── 档 2 · 传播图 ──────────────────────────────────────────────────
    「传播源 → 途经 → 受影响」。中间那栏是 event.path 拆出来的链路步骤，
    这条链是事件自己写的，不是我们按范围反推的——反推只答得出「打到了谁」，
@@ -1694,12 +2020,14 @@ function viewFlow() {
       card.appendChild(el('div', 'ocard__d', o.desc));
       card.addEventListener('click', function () {
         if (!o.go) return;
-        if (o.go.rank != null) { S.rank = o.go.rank; S.lane = false; render(); return; }
-        if (o.go.stage != null) { S.rank = TOPO.rank(o.go.stage, 0, 0); S.lane = false; render(); return; }
-        if (o.go.all) { S.eventId = S.eventId; S.mech = false; S.rank = null; S.lane = false; render(); return; }
-        if (ev.mechanism) { S.mech = true; S.phase = ev.mechanism.phases.length - 1; render(); }
+        /* 「往这个对象里走」= 在画布上把承载它的那一格展开出来。
+           rank 类对象进单卡解剖；别的暂时只把主视图的高亮换过去
+           （pushSelection 在 render 里统一推）。 */
+        if (o.go.rank != null) { selectRank(o.go.rank); return; }
+        if (o.go.stage != null) { selectRank(TOPO.rank(o.go.stage, 0, 0)); return; }
+        if (ev.mechanism) { S.phase = ev.mechanism.phases.length - 1; expand('mech', true); }
       });
-      bindTip(card, o.go ? '点一下往这个对象里走' : '本事件在这一侧列出的对象');
+      bindTip(card, o.go ? '点一下在画布上展开这个对象' : '本事件在这一侧列出的对象');
       box.appendChild(card);
     });
     c.appendChild(box);
@@ -1735,7 +2063,7 @@ function viewFlow() {
     mb.style.margin = '4px auto 0';
     mb.textContent = '看机制 · ' + ev.mechanism.name + ' ▸';
     bindTip(mb, '范围图答「打到了谁」，机制图答「凭什么传过去」——后者要让时间跑起来才成立');
-    mb.addEventListener('click', function () { S.mech = true; S.phase = 0; render(); });
+    mb.addEventListener('click', function () { S.phase = 0; expand('mech', true); });
     mid.appendChild(mb);
   }
   flow.appendChild(mid);
@@ -2034,44 +2362,6 @@ MECH['fragmented-oom'] = function (svg, ph, W, H) {
     { size: 11, fill: ph === 0 ? 'var(--foreground-muted)' : 'var(--danger)', w: 600 }));
 };
 
-function viewMech() {
-  var ev = curEvent(), m = ev.mechanism, ph = Math.max(0, Math.min(m.phases.length - 1, S.phase));
-  S.phase = ph;
-  var p = m.phases[ph];
-  var sh = stageShell('机制 · ' + m.name, ev.title + ' · ' + ev.time, null);
-  var box = el('div', 'mech');
-
-  var row = el('div', 'phaserow');
-  var play = el('button', 'btn btn--icon btn--ghost'); play.type = 'button';
-  play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></svg>';
-  bindTip(play, '把四相连着播一遍');
-  play.addEventListener('click', function () { playPhases(); });
-  row.appendChild(play);
-  m.phases.forEach(function (x, i) {
-    var b = el('button', 'phase'); b.type = 'button';
-    b.setAttribute('aria-pressed', String(i === ph));
-    b.appendChild(el('span', null, x.tag));
-    b.appendChild(el('span', 'phase__clock', x.clock));
-    b.addEventListener('click', function () { S.phase = i; render(); });
-    row.appendChild(b);
-  });
-  box.appendChild(row);
-
-  var scene = el('div', 'mech__scene');
-  var W = 900, H = 372;
-  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' });
-  (MECH[m.kind] || function () {})(svg, ph, W, H);
-  scene.appendChild(svg);
-  box.appendChild(scene);
-
-  var cap = el('div', 'mech__cap');
-  cap.innerHTML = '<b>' + esc(p.tag) + '　' + esc(p.clock) + '</b>　' + esc(p.caption).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-  box.appendChild(cap);
-
-  sh.canvas.appendChild(box);
-  sh.canvas.style.overflow = 'hidden';
-  setLinked(['north', 'east', 'sedge']);
-}
 var playTimer = null;
 function playPhases() {
   var ev = curEvent(); if (!ev || !ev.mechanism) return;
@@ -2185,121 +2475,14 @@ function viewRank() {
   var go = el('button', 'btn btn--sm'); go.type = 'button';
   go.style.alignSelf = 'flex-start';
   go.textContent = '把这张卡放到时间轴上 ▸';
-  bindTip(go, '同一件事落在一个 step 的哪一刻——泳道推进中心');
-  go.addEventListener('click', function () { S.lane = true; render(); });
+  bindTip(go, '同一件事落在一个 step 的哪一刻——在画布上展开泳道那一格\n（嵌的是 /combo-workbench/swimlane.html 本体）');
+  go.addEventListener('click', function () { expand('swimlane', true); });
   right.appendChild(go);
 
   box.appendChild(right);
   sh.canvas.appendChild(box);
   sh.canvas.style.overflow = 'hidden';
   setLinked(['west', 'east', 'south']);
-}
-
-/* ── 档 5 · 泳道 ────────────────────────────────────────────────────
-   一个 step 的 1F1B。为什么整合进来：前四档答的都是**空间**（哪一层、
-   哪张卡、切成几份），而「63 张卡空等 30 s」这句话里最要紧的那个量是
-   时间——它只在时间轴上才有形状。 */
-function buildSchedule(M) {
-  var out = [];
-  for (var s = 0; s < TOPO.pp; s++) {
-    var ops = [], w = TOPO.pp - 1 - s, f = 0, b = 0;
-    for (; f < w; f++) ops.push({ k: 'F', m: f });
-    while (f < M) { ops.push({ k: 'F', m: f++ }); ops.push({ k: 'B', m: b++ }); }
-    while (b < M) ops.push({ k: 'B', m: b++ });
-    var t = s;
-    out.push(ops.map(function (o) { return { k: o.k, m: o.m, t0: t++, t1: t }; }));
-  }
-  return out;
-}
-function viewLane() {
-  var ev = curEvent(), M = 8, sched = buildSchedule(M);
-  var fr = S.rank != null ? TOPO.decode(S.rank) : { stage: 3, edp: 0, ep: 23 };
-  var stall = !!(ev && (ev.id === 'p1-a2a' || ev.id === 'p1-spread' || ev.id === 'p1-log'));
-  var sh = stageShell('一个 step 的 1F1B', 'PP 4 · micro-batch ' + M + ' · ' +
-      (stall ? '叠上 all-to-all 的 30 s 阻塞' : '稳态形状'),
-    stall ? '<b>空等不是「通信慢」</b> · 各 rank 的<b>结束</b>时间本来就对齐（barrier 是同步点），要看的是谁<b>最晚进入</b>——那张才是真凶，其余的长条是空等。'
-          : '<b>读法</b> · 前向 F 与反向 B 交替，warmup 阶段的空白就是流水线气泡；把事件叠上来之后，多出来的那截才是这次故障的代价。');
-  var box = el('div', 'lane');
-  var lanes = [];
-  for (var s = 0; s < TOPO.pp; s++) lanes.push({ name: 'PP' + s, sub: 'L' + TOPO.stageRange[s][0] + '-' + TOPO.stageRange[s][1], s: s, focus: false });
-  lanes.splice(fr.stage + 1, 0, { name: 'rank ' + (S.rank != null ? S.rank : 1559), sub: 'PP' + fr.stage + ' / EP' + fr.ep, s: fr.stage, focus: true });
-
-  var maxT = 0;
-  sched.forEach(function (ops) { ops.forEach(function (o) { maxT = Math.max(maxT, o.t1); }); });
-  var STALLW = stall ? 9 : 0;                    // 30 s 折成 9 个格，画得下又不至于吃掉整条
-  var TOT = maxT + STALLW + 1;
-  var W = 880, LEFT = 96, RIGHT = 12, lh = 30, gap = 7;
-  var H = 30 + lanes.length * (lh + gap) + 16;
-  var xs = function (t) { return LEFT + t * (W - LEFT - RIGHT) / TOT; };
-  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMin meet' });
-  svg.setAttribute('height', H);
-
-  for (var t = 0; t <= TOT; t += 4) {
-    svg.appendChild(svgEl('line', { x1: xs(t), y1: 22, x2: xs(t), y2: H - 14,
-      stroke: 'var(--border-subtle)', 'stroke-width': 1 }));
-    svg.appendChild(T(xs(t), 16, 't' + t, { size: 9, mono: true, anchor: 'middle', fill: 'var(--foreground-muted)' }));
-  }
-  /* L38 的 all-to-all 落在 PP3 的第一次前向上——阻塞就从那里开始 */
-  var stallAt = sched[fr.stage][0].t1;
-  lanes.forEach(function (ln, i) {
-    var y = 30 + i * (lh + gap);
-    svg.appendChild(T(0, y + lh / 2 + 1, ln.name, { size: 11.5, w: 700,
-      fill: ln.focus ? 'var(--danger)' : 'var(--foreground)' }));
-    svg.appendChild(T(0, y + lh / 2 + 13, ln.sub, { size: 9.5, mono: true, fill: 'var(--foreground-muted)' }));
-    svg.appendChild(svgEl('rect', { x: LEFT, y: y, width: W - LEFT - RIGHT, height: lh, rx: 4,
-      fill: 'var(--surface-2)', opacity: .7 }));
-    sched[ln.s].forEach(function (o) {
-      var shift = 0, blocked = false;
-      if (stall) {
-        if (o.t0 >= stallAt) { shift = STALLW; blocked = !ln.focus; }
-      }
-      var x = xs(o.t0 + shift), w2 = xs(o.t1 + shift) - x - 2;
-      var fwd = o.k === 'F';
-      svg.appendChild(svgEl('rect', { x: x, y: y + 4, width: Math.max(2, w2), height: lh - 8, rx: 3,
-        fill: fwd ? 'var(--primary)' : 'color-mix(in srgb,var(--primary) 52%,var(--danger))',
-        opacity: blocked ? .32 : .88,
-        'data-tip': (fwd ? '前向 F' : '反向 B') + ' · micro-batch ' + o.m + ' · ' + ln.name +
-          (blocked ? '\n被上游的阻塞整体推后，这一截不是它自己慢' : '') }));
-      if (w2 > 16) svg.appendChild(T(x + w2 / 2, y + lh / 2 + 4, o.k + o.m,
-        { size: 9.5, mono: true, anchor: 'middle', fill: '#fff', w: 700 }));
-    });
-    if (stall) {
-      var sx = xs(stallAt), sw = xs(stallAt + STALLW) - sx;
-      if (ln.focus) {
-        svg.appendChild(svgEl('rect', { x: sx, y: y + 4, width: sw, height: lh - 8, rx: 3,
-          fill: 'var(--danger)', opacity: .9,
-          'data-tip': 'rank 1559 的 all-to-all 阻塞 30 s\nsend=0 / recv=9832 —— 它是唯一「自己出了问题」的对象' }));
-        svg.appendChild(T(sx + sw / 2, y + lh / 2 + 4, 'all-to-all 阻塞 30 s',
-          { size: 10, anchor: 'middle', fill: '#fff', w: 700 }));
-      } else if (ln.s === fr.stage) {
-        svg.appendChild(svgEl('rect', { x: sx, y: y + 4, width: sw, height: lh - 8, rx: 3,
-          fill: 'var(--warning)', opacity: .42,
-          'data-tip': '同 EP 组的 63 张卡在 barrier 上空等 30 s\n算力零产出，而日志上什么都不报' }));
-        svg.appendChild(T(sx + sw / 2, y + lh / 2 + 4, '63 卡 barrier 空等',
-          { size: 10, anchor: 'middle', fill: 'var(--foreground)', w: 600 }));
-      } else {
-        svg.appendChild(svgEl('rect', { x: sx, y: y + 4, width: sw, height: lh - 8, rx: 3,
-          fill: 'var(--cell-mid)', opacity: .3,
-          'data-tip': ln.name + ' 停在 PP 依赖上——它没有自己的故障' }));
-        svg.appendChild(T(sx + sw / 2, y + lh / 2 + 4, '等上游',
-          { size: 10, anchor: 'middle', fill: 'var(--foreground-muted)' }));
-      }
-    }
-  });
-  if (stall) svg.appendChild(svgEl('line', { x1: xs(stallAt), y1: 22, x2: xs(stallAt), y2: H - 14,
-    stroke: 'var(--danger)', 'stroke-width': 1.6, 'stroke-dasharray': '5 4' }));
-  var grid = el('div', 'lane__grid'); grid.appendChild(svg);
-  box.appendChild(grid);
-  var lg = el('div', 'lane__lg');
-  [['前向 F', 'var(--primary)'], ['反向 B', 'color-mix(in srgb,var(--primary) 52%,var(--danger))'],
-   ['震中阻塞', 'var(--danger)'], ['barrier 空等', 'color-mix(in srgb,var(--warning) 70%,transparent)'],
-   ['等上游（无自身故障）', 'var(--cell-mid)']].forEach(function (x) {
-    var s3 = el('span', 'lg'); var i2 = el('i'); i2.style.background = x[1];
-    s3.appendChild(i2); s3.appendChild(document.createTextNode(x[0])); lg.appendChild(s3);
-  });
-  box.appendChild(lg);
-  sh.canvas.appendChild(box);
-  setLinked(['north', 'west', 'east']);
 }
 
 /* ── 档 6 · 训推大盘 ────────────────────────────────────────────────
@@ -2341,9 +2524,7 @@ function viewBoard() {
       var s2 = c2 ? rank[c2.s] || 0 : 0;
       if (s2 > bestS) { bestS = s2; best = e2; }
     });
-    if (best) t.addEventListener('click', function () {
-      S.eventId = best.id; S.mech = false; S.rank = null; S.lane = false; render();
-    });
+    if (best) t.addEventListener('click', function () { selectEvent(best.id, false); render(); });
     else t.dataset.na = '1';
     grid.appendChild(t);
   });
@@ -2517,287 +2698,6 @@ function renderChart(host, c) {
   if (c.note) host.appendChild(el('p', 'cnote', c.note));
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   ⑬ 五块卫星
-   ══════════════════════════════════════════════════════════════════════ */
-function satNorth() {
-  var g = curGroup(), P = PANE.north;
-  P.title.textContent = '故事线 · ' + g.name;
-  P.sub.textContent = g.events.length + ' 个事件 · 点任一枚下钻';
-  var b = P.body; b.innerHTML = '';
-  var tl = el('div', 'tl');
-  tl.appendChild(el('div', 'tl__spine'));
-  var row = el('div', 'tl__row');
-  g.events.forEach(function (ev) {
-    var c = el('button', 'tlc'); c.type = 'button';
-    c.dataset.sev = ev.sev;
-    c.setAttribute('aria-pressed', String(ev.id === S.eventId));
-    var top = el('div', 'tlc__top');
-    top.appendChild(el('span', 'tlc__pin'));
-    top.appendChild(el('span', 'tlc__t', ev.time));
-    c.appendChild(top);
-    c.appendChild(el('div', 'tlc__title', ev.title));
-    c.appendChild(el('div', 'tlc__dim', ev.dimension + (ev.isRoot ? ' · 根因' : '')));
-    if (ev.mechanism) c.appendChild(el('span', 'tlc__mech', '机制'));
-    bindTip(c, ev.title + '\n' + ev.conclusion + (ev.mechanism ? '\n\n这个事件带机制图：点进去可以按相位看它是怎么传的' : ''));
-    c.addEventListener('click', function () {
-      S.eventId = ev.id; S.mech = false; S.phase = 0; S.rank = null; S.lane = false; render();
-    });
-    row.appendChild(c);
-  });
-  tl.appendChild(row);
-  b.appendChild(tl);
-}
-
-function satWest() {
-  var ev = curEvent(), g = curGroup(), P = PANE.west, b = P.body;
-  P.title.textContent = '作用面 · 谁被影响';
-  b.innerHTML = '';
-  if (S.rank != null) {
-    var p = TOPO.decode(S.rank);
-    P.sub.textContent = 'rank ' + S.rank + ' 的坐标';
-    b.appendChild(el('div', 'k', '这张卡在哪'));
-    var mg = el('div', 'mgrid'); mg.style.marginTop = '7px';
-    [['global rank', String(S.rank)], ['PP stage', 'PP' + p.stage + ' · L' + TOPO.stageRange[p.stage][0] + '~L' + TOPO.stageRange[p.stage][1]],
-     ['EDP 副本', 'EDP' + p.edp + ' / 8'], ['EP rank', 'EP' + p.ep + ' / 64'],
-     ['所在 all-to-all 域', 'PP' + p.stage + ' · EDP' + p.edp + ' 那一整行 64 卡'],
-     ['离震中', TIERN[impactTier(S.rank)]]].forEach(function (r) {
-      var row = el('div', 'mrow');
-      row.appendChild(el('span', 'mrow__l', r[0]));
-      row.appendChild(el('span', 'mrow__v', r[1]));
-      mg.appendChild(row);
-    });
-    b.appendChild(mg);
-    b.appendChild(el('div', 'hr'));
-  }
-  var secs = ev
-    ? [['传播源', ev.origin], ['途经', ev.propagation], ['受影响', ev.victim]]
-    : [['这条故事线的作用面', g.context]];
-  P.sub.textContent = ev ? (ev.time + ' · ' + ev.dimension) : '整条故事线的范围';
-  secs.forEach(function (sec) {
-    var list = expandScope(sec[1], ev);
-    if (!list.length) return;
-    b.appendChild(el('div', 'k', sec[0]));
-    var box = el('div'); box.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin:7px 0 12px';
-    list.forEach(function (o) {
-      var card = el('button', 'ocard'); card.type = 'button';
-      var t = el('div', 'ocard__t');
-      t.appendChild(el('span', 'ocard__k', o.kind));
-      t.appendChild(el('span', 'ocard__n', o.name));
-      card.appendChild(t);
-      card.appendChild(el('div', 'ocard__d', o.desc));
-      card.addEventListener('click', function () {
-        if (o.go && o.go.rank != null) { S.rank = o.go.rank; S.lane = false; render(); }
-        else if (o.go && o.go.stage != null) { S.rank = TOPO.rank(o.go.stage, 0, 0); S.lane = false; render(); }
-      });
-      box.appendChild(card);
-    });
-    b.appendChild(box);
-  });
-  if (ev) {
-    b.appendChild(el('div', 'hr'));
-    var facts = el('div', 'facts');
-    [['结论', ev.conclusion, 0], ['根因', ev.root, 1], ['影响', ev.impact, 0]].forEach(function (f) {
-      var d = el('div', 'fact' + (f[2] ? ' fact--hi' : ''));
-      d.appendChild(el('div', 'fact__k', f[0]));
-      d.appendChild(el('div', 'fact__v', f[1]));
-      facts.appendChild(d);
-    });
-    b.appendChild(facts);
-  }
-}
-
-function satEast() {
-  var ev = curEvent(), P = PANE.east, b = P.body;
-  b.innerHTML = '';
-  P.acts.innerHTML = '';
-  var toBoard = el('button', 'btn btn--sm'); toBoard.type = 'button';
-  toBoard.textContent = S.board ? '已在中心' : '训推大盘 \u25b8';
-  toBoard.disabled = !!S.board;
-  bindTip(toBoard, '把读数换成训练框架真的在盯的那块表：pangu_sophon_pytorch 每个 log_interval\n打印的十条「关键少数」，加上触发早停的五个钩子。\n这一格放不下十格，所以它自己占一站。');
-  toBoard.addEventListener('click', function () { S.board = true; render(); });
-  P.acts.appendChild(toBoard);
-  var rows, title, sub;
-  if (S.mech && ev && ev.mechanism) {
-    var p = ev.mechanism.phases[S.phase];
-    title = '读数 · 机制 ' + p.tag.slice(0, 2);
-    sub = p.clock;
-    rows = [{ label: '当前相位', value: p.tag }, { label: '相位读数', value: p.clock, tone: S.phase >= 2 ? 'danger' : null }]
-      .concat(ev.metrics || []);
-  } else if (S.rank != null) {
-    var d = TOPO.decode(S.rank), tier = impactTier(S.rank);
-    title = '读数 · rank ' + S.rank; sub = 'PP' + d.stage + ' / EDP' + d.edp + ' / EP' + d.ep;
-    rows = [
-      { label: '显存峰值 / 容量', value: '64.0 / 64 GB', tone: 'danger' },
-      { label: '激活占比', value: '56.6%' },
-      { label: '碎片率', value: '83%', tone: tier >= 2 ? 'danger' : null },
-      { label: '装载层段', value: 'L' + TOPO.stageRange[d.stage][0] + '~L' + TOPO.stageRange[d.stage][1] },
-      { label: '持有专家', value: '4 / 256' },
-      { label: '角色', value: TIERN[tier], tone: tier === 3 ? 'danger' : (tier === 2 ? 'warning' : null) }
-    ];
-  } else if (ev) {
-    title = '读数 · ' + ev.title; sub = ev.time + ' · ' + ev.dimension;
-    rows = ev.metrics || [];
-  } else {
-    var g = curGroup();
-    title = '读数 · 整网'; sub = g.name;
-    rows = [
-      { label: '总卡数', value: TOPO.world + ' 张' },
-      { label: '并行度', value: 'PP ' + TOPO.pp + ' × EDP ' + TOPO.edp + ' × EP ' + TOPO.ep },
-      { label: '模型层数', value: TOPO.layers + ' 层' },
-      { label: '路由专家', value: TOPO.experts + ' 个 · Top-' + TOPO.topK },
-      { label: '本故事线事件数', value: g.events.length + ' 个' },
-      { label: '带机制图的事件', value: g.events.filter(function (e) { return e.mechanism; }).length + ' 个' }
-    ];
-  }
-  P.title.textContent = title; P.sub.textContent = sub;
-  var mg = el('div', 'mgrid');
-  rows.forEach(function (r) {
-    var row = el('div', 'mrow');
-    row.appendChild(el('span', 'mrow__l', r.label));
-    var v = el('span', 'mrow__v' + (r.tone ? ' tone-' + r.tone : ''), r.value);
-    row.appendChild(v);
-    mg.appendChild(row);
-  });
-  b.appendChild(mg);
-}
-
-function satSedge() {
-  var ev = curEvent(), P = PANE.sedge, b = P.body;
-  b.innerHTML = '';
-  if (!ev) {
-    P.title.textContent = '证据 · 图表'; P.sub.textContent = '先选一个事件';
-    var e0 = el('div'); e0.style.cssText = 'display:grid;place-items:center;height:100%;text-align:center;padding:20px';
-    e0.innerHTML = '<p class="cnote" style="max-width:250px">上面那条<b>故事线</b>里点任一个事件，这里就换成支撑它那条结论的图。' +
-      '<br><br>两条线一共 11 个事件、11 张图，全部取自 config-relation-observer 原页，数值一个没改。</p>';
-    b.appendChild(e0);
-    return;
-  }
-  P.title.textContent = '证据 · ' + ev.title;
-  P.sub.textContent = ev.dimension;
-  renderChart(b, ev.chart);
-}
-
-function satSouth() {
-  var P = PANE.south, b = P.body, ev = curEvent();
-  P.title.textContent = '泳道 · 时间';
-  P.sub.textContent = S.lane ? '已推进中心' : '一个 step 的 1F1B · 点开进中心';
-  b.innerHTML = '';
-  var box = el('div'); box.style.cssText = 'height:100%;display:flex;flex-direction:column';
-  var bar = el('div'); bar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 14px;flex:none';
-  bar.appendChild(el('span', 'k', '前四档答的是空间，这一档答时间'));
-  var sp = el('span'); sp.style.flex = '1'; bar.appendChild(sp);
-  var go = el('button', 'btn btn--sm'); go.type = 'button';
-  go.textContent = S.lane ? '已在中心' : '推进中心 ▸';
-  go.disabled = S.lane;
-  go.addEventListener('click', function () { S.lane = true; S.board = false; render(); });
-  bar.appendChild(go);
-  box.appendChild(bar);
-
-  /* 缩略泳道：只画四条 PP，形状与中心那张同源（同一个 buildSchedule） */
-  var sched = buildSchedule(8), W = 820, lh = 22, gap = 5, LEFT = 40;
-  var stall = !!(ev && (ev.id === 'p1-a2a' || ev.id === 'p1-spread' || ev.id === 'p1-log'));
-  var STALLW = stall ? 9 : 0;
-  var maxT = 0; sched.forEach(function (o) { o.forEach(function (x) { maxT = Math.max(maxT, x.t1); }); });
-  var TOT = maxT + STALLW + 1, H = 6 + 4 * (lh + gap);
-  var xs = function (t) { return LEFT + t * (W - LEFT - 10) / TOT; };
-  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' });
-  svg.style.width = '100%'; svg.style.height = 'auto';
-  var stallAt = sched[3][0].t1;
-  sched.forEach(function (ops, s) {
-    var y = 4 + s * (lh + gap);
-    svg.appendChild(T(0, y + lh / 2 + 4, 'PP' + s, { size: 10, mono: true, w: 700 }));
-    svg.appendChild(svgEl('rect', { x: LEFT, y: y, width: W - LEFT - 10, height: lh, rx: 3, fill: 'var(--surface-2)', opacity: .7 }));
-    ops.forEach(function (o) {
-      var shift = stall && o.t0 >= stallAt ? STALLW : 0;
-      var x = xs(o.t0 + shift), w = xs(o.t1 + shift) - x - 1.6;
-      svg.appendChild(svgEl('rect', { x: x, y: y + 3, width: Math.max(1.6, w), height: lh - 6, rx: 2,
-        fill: o.k === 'F' ? 'var(--primary)' : 'color-mix(in srgb,var(--primary) 52%,var(--danger))',
-        opacity: stall && shift ? .34 : .85 }));
-    });
-    if (stall) {
-      var sx = xs(stallAt), sw = xs(stallAt + STALLW) - sx;
-      svg.appendChild(svgEl('rect', { x: sx, y: y + 3, width: sw, height: lh - 6, rx: 2,
-        fill: s === 3 ? 'var(--danger)' : 'var(--cell-mid)', opacity: s === 3 ? .85 : .32 }));
-    }
-  });
-  var wrap = el('div'); wrap.style.cssText = 'flex:1 1 auto;min-height:0;padding:0 14px 10px;display:flex;align-items:center';
-  wrap.appendChild(svg);
-  box.appendChild(wrap);
-  b.appendChild(box);
-}
-
-/* ══════════════════════════════════════════════════════════════════════
-   ⑭ 一次 render 把六块一起刷新
-   主视图由 curView() 的栈顶决定；五块卫星各自读同一份 S，所以不会出现
-   「中心换了、边上还停在上一屏」——这一条是整页唯一的一致性保证。
-   ══════════════════════════════════════════════════════════════════════ */
-var VIEWS = { cluster: viewCluster, flow: viewFlow, mech: viewMech, rank: viewRank, lane: viewLane, board: viewBoard };
-var lastDepth = -1;
-function render() {
-  var v = curView(), d = curDepth();
-  applyRing(d);
-  (VIEWS[v] || viewCluster)();
-  satNorth(); satWest(); satEast(); satSedge(); satSouth();
-  renderTrail();
-  renderCrumbs(); renderLegend(); syncTop();
-  writeURL();
-  /* 换站才动镜头。同一站里改相位、换事件不动——镜头跟着每一次点击跑会晕。
-     首帧（lastDepth < 0）交给启动那一段，它要的是「先看见整张构图」。 */
-  if (lastDepth >= 0 && d !== lastDepth) flyTo(ringBox(d), 40, 520);
-  lastDepth = d;
-}
-function renderLegend() {
-  var host = document.getElementById('legendhud');
-  host.innerHTML = '';
-  var v = curView();
-  var head = el('span', 'k', v === 'cluster' ? '离震中多远' : v === 'lane' ? '泳道读法' : '读法');
-  host.appendChild(head);
-  var items = v === 'lane'
-    ? [['前向 F', 'var(--primary)'], ['反向 B', 'color-mix(in srgb,var(--primary) 52%,var(--danger))'],
-       ['震中阻塞', 'var(--danger)'], ['barrier 空等', 'color-mix(in srgb,var(--warning) 70%,transparent)']]
-    : v === 'cluster' ? TIERN.map(function (n, i) { return [n, TIERC[i]]; }) : null;
-  if (items) items.forEach(function (x) {
-    var s = el('span', 'lg'); var i = el('i'); i.style.background = x[1];
-    s.appendChild(i); s.appendChild(document.createTextNode(x[0])); host.appendChild(s);
-  });
-  else {
-    var say = el('span', 'lg');
-    say.textContent = v === 'mech' ? '相位轴上点任一相，或按 ▶ 连着播一遍'
-      : v === 'flow' ? '左右两栏的对象卡可以点进去，中间那栏是事件自己写的链路'
-      : v === 'board' ? '十格里「—」表示这条故事线没采到这一格；点任一格跳到本线里它最差的那个事件'
-      : '容量段、层段、端口条都带悬浮读数';
-    host.appendChild(say);
-  }
-  var hint = el('span', 'lg');
-  hint.style.color = 'var(--foreground-muted)';
-  hint.textContent = '下钻 = 往画布外再铺一站 · 滚轮缩放 · 拖空白平移 · 双击空白看整条路径';
-  host.appendChild(hint);
-}
-function syncTop() {
-  var g = curGroup(), ev = curEvent();
-  document.getElementById('brandSub').textContent =
-    ev ? (ev.time + ' · ' + ev.title) : (g.events.length + ' 个事件 · 逐级下钻');
-  Array.prototype.forEach.call(document.querySelectorAll('#lineSeg button'), function (b) {
-    b.setAttribute('aria-pressed', String(b.dataset.g === S.group));
-  });
-}
-
-/* 顶栏故事线段控 */
-(function () {
-  var host = document.getElementById('lineSeg');
-  GROUPS.forEach(function (g) {
-    var b = el('button', null, g.name);
-    b.type = 'button'; b.dataset.g = g.id;
-    bindTip(b, g.lede);
-    b.addEventListener('click', function () {
-      if (S.group === g.id) return;
-      S.group = g.id; S.eventId = null; S.mech = false; S.phase = 0; S.rank = null; S.lane = false; S.board = false;
-      render();
-    });
-    host.appendChild(b);
-  });
-})();
 
 /* ══════════════════════════════════════════════════════════════════════
    ⑮ 主题桥 —— 认 ?theme=，也认 pto:state（与 combo-workbench 同一套约定，
@@ -2806,6 +2706,7 @@ function syncTop() {
 function setTheme(t) {
   document.documentElement.dataset.theme = t;
   document.body.dataset.theme = t;
+  pushTheme();                 /* 三格内嵌 pattern 跟着换，不重载 */
   var b = document.getElementById('themeBtn');
   b.title = t === 'dark' ? '切回浅色' : '切换到深色';
   writeURL();
@@ -2821,9 +2722,9 @@ window.addEventListener('message', function (e) {
   if (d.event) {
     var hit = null;
     GROUPS.forEach(function (g) { g.events.forEach(function (ev) { if (ev.id === d.event) { hit = g.id; } }); });
-    if (hit) { S.group = hit; S.eventId = d.event; S.mech = false; S.rank = null; S.lane = false; render(); }
+    if (hit) { S.group = hit; S.rank = null; selectEvent(d.event, false); }
   }
-  if (typeof d.rank === 'number' && d.rank >= 0 && d.rank < TOPO.world) { S.rank = d.rank; render(); }
+  if (typeof d.rank === 'number' && d.rank >= 0 && d.rank < TOPO.world) selectRank(d.rank, false);
 });
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -2845,9 +2746,10 @@ function autoStart() {
   var step = function () {
     if (!S.auto) return;
     var ev = g.events[i % g.events.length];
-    S.eventId = ev.id; S.rank = null; S.lane = false;
-    if (ev.mechanism) { S.mech = true; S.phase = 0; render(); playPhases(); }
-    else { S.mech = false; render(); }
+    S.rank = null;
+    selectEvent(ev.id, false);
+    if (ev.mechanism) { S.phase = 0; expand('mech', false); playPhases(); }
+    else { collapse('mech'); }
     i++;
   };
   step();
@@ -2871,28 +2773,36 @@ window.addEventListener('keydown', function (e) {
     var n = idx + (e.key === 'ArrowRight' ? 1 : -1);
     if (n < 0) n = g.events.length - 1;
     if (n >= g.events.length) n = 0;
-    S.eventId = g.events[n].id; S.mech = false; S.phase = 0; S.rank = null; S.lane = false; render();
+    S.rank = null; selectEvent(g.events[n].id);
   } else if (e.key === 'Escape') {
-    var trail = crumbTrail();
-    if (trail.length > 1) { trail[trail.length - 2].go(); render(); }
+    /* 从外往里收：先收最靠外的那一格。没有「栈」可退了，收起就是退。 */
+    var order = ['board', 'swimlane', 'netgraph', 'rank', 'mech', 'evidence', 'event'];
+    for (var i = 0; i < order.length; i++) {
+      if (open[order[i]]) { collapse(order[i]); return; }
+    }
   } else if (e.key === '0') { fitAll(); }
-  else if (e.key === 'f' || e.key === 'F') { fitStage(); }
+  else if (e.key === 'f' || e.key === 'F') { fitMain(); }
 });
+
 
 /* ══════════════════════════════════════════════════════════════════════
    ⑰ 启动
    ══════════════════════════════════════════════════════════════════════ */
 readURL();
 setTheme(document.documentElement.dataset.theme || 'light');
+/* 主视图先装：它是这一页的主语，别的格子等它就位再补高亮（settleFrame 会补） */
+loadFrame('main');
+Object.keys(open).forEach(function (id) {
+  P[id].root.hidden = false;
+  if (P[id].def.kind === 'frame') loadFrame(id);
+});
 booting = false;
 render();
-/* 第一屏落在**当前这一站**：带 ?e=&r=&lane= 的深链一进来就该是能读的那一屏。
-   整条路径是「总览」那颗键或双击空白，是刻意的动作——一进来就缩到地图那一档，
-   等于把人扔在一张看不清字的地图上。 */
-requestAnimationFrame(function () { flyTo(ringBox(curDepth()), 40, 0); });
+/* 第一屏：摊开了几格就框几格。只有主视图时它等于「回主视图」。 */
+requestAnimationFrame(function () { fitAll(0); });
 window.addEventListener('resize', function () {
   clearTimeout(window.__rz);
-  window.__rz = setTimeout(function () { if (view.k <= 0.95) flyTo(ringBox(curDepth()), 40, 0); }, 160);
+  window.__rz = setTimeout(function () { if (view.k <= 0.95) fitAll(0); }, 160);
 });
 })();
 </script>
