@@ -1011,6 +1011,11 @@ var TOPO = {
    改这张表就是改编排，别处不用动。box 是世界坐标（画布自己的坐标系，
    与缩放无关）。main.always=1：它是这一页的主语，不提供收起。
    ══════════════════════════════════════════════════════════════════════ */
+/* 一进来就摊开的那几格：与主视图格头上那排「展开」筹码一一对应。
+   它们是常备面——故事线给时间、整网给结构、泳道给时序、大盘给读数。
+   事件相关的几格不在这里：没有选中的事件它们就是空的。 */
+var DEFAULT_OPEN = ['story', 'netgraph', 'swimlane', 'board'];
+
 var PANELS = [
   { id:'main',     always:1, kind:'frame', box:{ x:0,     y:0,    w:1340, h:840 },
     title:'并行拓扑 · 模型分片与训练设备映射',
@@ -1426,7 +1431,10 @@ function writeURL() {
   if (S.rank != null) q.set('r', String(S.rank)); else q.delete('r');
   var on = PANELS.filter(function (d) { return !d.always && open[d.id]; })
                  .map(function (d) { return d.id; });
-  if (on.length) q.set('open', on.join(',')); else q.delete('open');
+  /* 一格不剩时写 none，而不是把 open 删掉：删掉的话下次打开这条链接会被当成
+     「没指定」，四格默认又全回来——读者刚把它们一个个关掉，刷新一下全长回来，
+     那是 bug 不是默认值。 */
+  if (on.length) q.set('open', on.join(',')); else q.set('open', 'none');
   if (S.mainView !== 'chain') q.set('mv', S.mainView); else q.delete('mv');
   if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
   q.set('theme', themeNow());
@@ -1447,9 +1455,12 @@ function readURL() {
   if (rg && LANE_RANGES.some(function (x) { return x.v === rg; })) S.range = rg;
   var mv = q.get('mv');
   if (mv && MAIN_VIEWS.some(function (x) { return x.v === mv; })) S.mainView = mv;
-  (q.get('open') || '').split(',').forEach(function (id) {
+  var openParam = q.get('open');
+  (openParam || '').split(',').forEach(function (id) {
     if (id && P[id] && !P[id].def.always) open[id] = 1;
   });
+  /* 显式的「一格不剩」：不能再落回默认 */
+  if (openParam === 'none') return;
   /* 选了事件却没写 open：给它该有的那几格，免得链接只带 ?e= 时点开一片空 */
   if (S.eventId && !q.has('open')) { open.story = 1; open.event = 1; open.evidence = 1; }
   if (S.rank != null && !q.has('open')) open.rank = 1;
@@ -1459,8 +1470,11 @@ function readURL() {
     S.phase = ph - 1; open.mech = 1;
   }
   if (open.mech && !(ev && ev.mechanism)) delete open.mech;
-  /* 默认那一屏：主视图 + 故事线。别的格子留给读者自己展开。 */
-  if (!Object.keys(open).length) open.story = 1;
+  /* 默认那一屏：格头那排筹码代表的四格**一进来就是摊开的**——它们是这一页
+     的常备面（故事线给时间、整网给结构、泳道给时序、大盘给读数），不该让人
+     先去点一遍才看得见。事件相关的那几格（传播 / 机制 / 证据 / 血缘 / 单卡）
+     仍然按需展开：它们得先有一个选中的事件才有内容。 */
+  if (!Object.keys(open).length) DEFAULT_OPEN.forEach(function (id) { open[id] = 1; });
 }
 
 /* ══════════════════════════════════════════════════════════════════════

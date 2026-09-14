@@ -91,7 +91,7 @@
     "e": "事件 id（p1-warning … p2-oom）",
     "ph": "机制相位，1 起数（同时意味着机制那格是摊开的）",
     "r": "单卡解剖看哪张卡（故事线那个 2048 卡集群的门牌）",
-    "open": "摊开了哪几格，逗号分隔",
+    "open": "摊开了哪几格，逗号分隔；一格不剩时写 none（写 none 而不是删参数，否则刷新会落回默认）",
     "range": "泳道那格看哪一段（global / pp2 / l34）",
     "theme": "light / dark",
     "embed": "1 = 收起顶栏（被嵌形态）",
@@ -119,7 +119,14 @@
       "min": 0.12,
       "max": 2.4
     },
-    "collapse": "每格一颗 ×；Esc 从最外面那一格开始收"
+    "collapse": "每格一颗 ×；Esc 从最外面那一格开始收",
+    "defaultOpen": [
+      "story",
+      "netgraph",
+      "swimlane",
+      "board"
+    ],
+    "defaultOpenWhy": "常备面：故事线给时间、整网给结构、泳道给时序、大盘给读数；事件相关的几格按需展开"
   },
   "embeds": [
     {
