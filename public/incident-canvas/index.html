@@ -411,24 +411,41 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
    右边留出 486px 是给右上角那排格子筹码（458 + 间距）让位：两块都钉在顶上，
    谁也不该压着谁。窄到 1100 以下时筹码那排自己会占满顶栏，告警就整体下移一档。 */
 #floatlayer{position:absolute;inset:0;pointer-events:none;z-index:6}
-/* 收起时留在画布上的那枚告警牌：它是这条故事线唯一的入口，所以要显眼——
-   带一颗会呼吸的红点、写明是哪一个问题、有几个事件。点开才铺成事件链。 */
-#alertpill{
-  position:absolute;left:14px;top:14px;display:inline-flex;align-items:center;gap:9px;
-  height:36px;padding:0 14px 0 12px;border-radius:999px;cursor:pointer;
+/* 收起时留在画布上的那一条：告警的入口 + 问题段控，两件事合成一件。
+   居中而不是靠左：它是这一页唯一的入口，居中才是入口该在的地方；靠左会读成
+   「角落里的一个附件」。缩到最小——不写当前选中的那件事（那是抽屉里的内容，
+   写在这儿只会把条子撑成半屏），只留红点、事件数，和你此刻在看哪一个问题。
+
+   问题段控从顶栏挪了进来：它选的是**哪一条告警**，本来就属于告警这一块；
+   长在顶栏时，告警收起之后顶栏还替它留着一排按钮，两处各说各的。 */
+#alertbar{
+  position:absolute;left:50%;transform:translateX(-50%);top:14px;
+  display:inline-flex;align-items:center;gap:8px;
+  padding:3px;border-radius:999px;
   border:1px solid var(--danger);background:var(--background);
-  color:var(--foreground);font:inherit;font-size:12.5px;
   box-shadow:0 8px 22px -8px rgba(220,38,38,.42),0 1px 3px rgba(15,23,42,.1)}
-/* 自己写了 display 就得自己把 hidden 挡回来：inline-flex 比 UA 的 [hidden]{display:none}
-   更具体，不写这一条，牌子在抽屉摊开之后还会留在原地。 */
-#alertpill[hidden]{display:none!important}
-#alertpill:hover{background:var(--background-hover, var(--background))}
-#alertpill .dot{
-  width:8px;height:8px;border-radius:50%;background:var(--danger);flex:none;
+/* 自己写了 display 就得自己把 hidden 挡回来：inline-flex 比 UA 的
+   [hidden]{display:none} 更具体，不写这一条，条子在抽屉摊开之后还会留在原地。 */
+#alertbar[hidden]{display:none!important}
+#alertopen{
+  display:inline-flex;align-items:center;gap:7px;flex:none;cursor:pointer;
+  height:28px;padding:0 12px 0 11px;border-radius:999px;
+  border:0;background:transparent;color:var(--foreground);font:inherit;font-size:12.5px}
+#alertopen:hover{background:var(--state-hover)}
+#alertopen .dot{
+  width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none;
   animation:apulse 1.9s ease-in-out infinite}
-#alertpill .n{color:var(--foreground-muted);font-variant-numeric:tabular-nums}
+#alertopen .n{color:var(--foreground-muted);font-variant-numeric:tabular-nums}
+#alertbar .seg{border:0;background:transparent;padding:0}
+/* 居中的条宽约 428，右上角那排筹码宽约 446 且右贴边——视口窄到 1348 以下两者就会
+   碰上（(V+428)/2 > V-460 解出来的）。取 1360 作阈值，窄屏时条子整体下移一档，
+   让到筹码底下去，和摊开的抽屉走同一个避让规则。 */
+@media (max-width:1360px){ #alertbar{top:60px} }
 @keyframes apulse{0%,100%{opacity:1}50%{opacity:.32}}
-@media (prefers-reduced-motion:reduce){#alertpill .dot{animation:none}}
+@media (prefers-reduced-motion:reduce){#alertopen .dot{animation:none}}
+/* 摊开之后段控挪进抽屉的格头，格头那条本来就窄，给它压一档字号 */
+.panel__acts .seg{border:0;background:transparent;padding:0}
+.panel__acts .seg button{height:22px;padding:0 9px;font-size:11.5px}
 #floatlayer > *{pointer-events:auto}
 .panel--float{
   position:absolute;left:14px;right:486px;top:14px;height:238px;
@@ -497,8 +514,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
       <span id="brandSub">一个主视图 · 四周联动 · 逐级下钻</span>
     </div>
     <span class="spacer"></span>
-    <div class="seg" id="lineSeg" role="group" aria-label="选择故事线"></div>
-    <span class="spacer"></span>
     <button class="btn btn--sm" id="autoBtn" type="button" aria-pressed="false" title="按故事线顺序自动走一遍：每 4 秒推进一个事件，机制相位自己播">
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"></path></svg>
       <span id="autoLbl">自动播放</span>
@@ -518,7 +533,10 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
     </div>
 
     <div id="floatlayer" aria-label="悬浮告警">
-      <button id="alertpill" type="button" hidden></button>
+      <div id="alertbar" hidden>
+        <button id="alertopen" type="button"></button>
+        <div class="seg" id="lineSeg" role="group" aria-label="选择故事线"></div>
+      </div>
     </div>
 
     <div class="hud" id="panelshud" aria-label="画布上摊开了哪几格"></div>
@@ -1270,7 +1288,7 @@ document.getElementById('zIn').addEventListener('click', function () {
 document.getElementById('zOut').addEventListener('click', function () {
   var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k / 1.25);
 });
-document.getElementById('alertpill').addEventListener('click', function () { expand('story'); });
+document.getElementById('alertopen').addEventListener('click', function () { expand('story'); });
 document.getElementById('fitBtn').addEventListener('click', function () { fitAll(); });
 document.getElementById('focusBtn').addEventListener('click', function () { fitMain(); });
 
@@ -2231,18 +2249,22 @@ function stageShell(title, sub, noteHTML) {
 function setLinked() {}
 
 /* ── 故事线 ───────────────────────────────────────────────────────── */
-/* 告警收起时画布上留下的那枚牌子。它和抽屉互斥：摊开了就不需要牌子。
-   选中了某一件事就把那一件写在牌上——收起之后还知道自己停在哪一步。 */
-function renderAlertPill() {
-  var pill = document.getElementById('alertpill');
-  if (isOpen('story')) { pill.hidden = true; return; }
-  var g = curGroup(), ev = curEvent();
-  pill.hidden = false;
-  pill.innerHTML = '';
-  pill.appendChild(el('span', 'dot'));
-  pill.appendChild(el('span', '', ev ? ev.title : ('告警 · ' + g.name)));
-  pill.appendChild(el('span', 'n', '· ' + (ev ? g.name : g.events.length + ' 个事件')));
-  bindTip(pill, '摊开这条告警的事件链——' + g.events.length + ' 个事件，点任一枚下钻');
+/* 告警收起时画布上留下的那一条，和抽屉互斥。
+   问题段控只此一份，在两个宿主之间**搬家**而不是各建一套：收起时挂在这条上，
+   摊开时挂进抽屉的格头。两套的话「哪个是真的」这个问题就永远要回答一次。 */
+function renderAlertBar() {
+  var bar = document.getElementById('alertbar');
+  var seg = document.getElementById('lineSeg');
+  var g = curGroup(), open = isOpen('story');
+  if (open) { if (seg.parentNode !== P.story.acts) P.story.acts.insertBefore(seg, P.story.acts.firstChild); }
+  else      { if (seg.parentNode !== bar) bar.appendChild(seg); }
+  bar.hidden = open;
+  if (open) return;
+  var b = document.getElementById('alertopen');
+  b.innerHTML = '';
+  b.appendChild(el('span', 'dot'));
+  b.appendChild(el('span', 'n', g.events.length));
+  bindTip(b, '摊开这条告警的事件链——' + g.events.length + ' 个事件，点任一枚下钻');
 }
 
 function renderStory() {
@@ -2383,7 +2405,7 @@ function renderMain() {
    ══════════════════════════════════════════════════════════════════════ */
 function render() {
   renderMain();
-  renderAlertPill();
+  renderAlertBar();
   if (isOpen('story')) renderStory();
   if (isOpen('event')) { RT = 'event'; if (curEvent()) viewFlow(); else emptyEvent(); }
   if (isOpen('evidence')) renderEvidence();
