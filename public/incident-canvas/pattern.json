@@ -69,6 +69,11 @@
       "id": "board",
       "name": "训推大盘",
       "answers": "十条关键少数 + 五个早停钩子"
+    },
+    {
+      "id": "lineage",
+      "name": "计算血缘",
+      "answers": "同一个算子从模型语义一路降到 Kernel，五层各叫什么名字"
     }
   ],
   "topology": {
@@ -89,7 +94,8 @@
     "open": "摊开了哪几格，逗号分隔",
     "range": "泳道那格看哪一段（global / pp2 / l34）",
     "theme": "light / dark",
-    "embed": "1 = 收起顶栏（被嵌形态）"
+    "embed": "1 = 收起顶栏（被嵌形态）",
+    "mv": "主视图看哪一档（chain / story / dim / compose / anatomy / solid / time）"
   },
   "postMessage": {
     "accepts": "pto:state",
@@ -141,7 +147,7 @@
   "linkage": {
     "key": "layer",
     "why": "故事线讲的是 2048 卡的实跑，被嵌 pattern 画的是它自己 128 卡的演示集群，rank 号天然对不上——推过去要么无声无息，要么照亮一张根本不是那张的卡。层号两边都成立（L38 两处都落在 PP3），所以桥搭在层上。",
-    "direction": "事件 → 主视图 / 整网（推 hl.layer）；整网点算子 → 主视图（回推 hl.layer）；rank 不往 pattern 推"
+    "direction": "事件 → 主视图 / 整网（推 hl.layer）；两格之间双向层联动（读各自的搜索标签、推对方的高亮，不同源所以无回声）；rank 不往 pattern 推"
   },
   "mechanisms": [
     "router-collapse",
@@ -149,5 +155,24 @@
     "pp-cascade",
     "activation-lifetime",
     "fragmented-oom"
-  ]
+  ],
+  "mainViews": [
+    "chain",
+    "story",
+    "dim",
+    "compose",
+    "anatomy",
+    "solid",
+    "time"
+  ],
+  "laneRanges": [
+    "global",
+    "pp2",
+    "l34"
+  ],
+  "transport": {
+    "what": "走带：进度 t 推给两格 pattern 的 pto:state.step，游标叠在泳道 iframe 上",
+    "why": "泳道画什么时候在算什么，拓扑画那一刻显存里装着什么，本来是同一件事的两面",
+    "default": "收回走带 = 回到峰值"
+  }
 }

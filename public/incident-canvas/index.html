@@ -214,6 +214,36 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .panel__body--flush{padding:0}
 
 /* 卫星面板的方位徽标 */
+/* 格内工具条：主视图的七个视图挤不进格头（那儿还有标题、副标题和展开筹码），
+   所以单独占一条，压在画布上方。 */
+.ptoolbar{
+  display:flex;align-items:center;gap:8px;flex:none;
+  padding:7px 12px;border-bottom:1px solid var(--border-subtle);
+  background:color-mix(in srgb, var(--surface-2) 46%, transparent);
+  overflow-x:auto;
+}
+.ptoolbar .k{flex:none}
+.framewrap{position:relative;flex:1 1 auto;min-height:0}
+.ptabs{display:inline-flex;padding:2px;gap:2px;flex:none;
+  border-radius:var(--radius-md);background:var(--surface-2);border:1px solid var(--border-subtle)}
+.ptabs button{
+  height:23px;padding:0 10px;border:0;border-radius:6px;background:transparent;
+  font:500 11.5px/1 var(--font-sans);color:var(--foreground-secondary);white-space:nowrap;
+  transition:background var(--duration-fast),color var(--duration-fast);
+}
+.ptabs button:hover{background:var(--state-hover);color:var(--foreground)}
+.ptabs button[aria-pressed="true"]{background:var(--surface-1);color:var(--foreground);box-shadow:var(--shadow-sm)}
+.tsep{flex:none;width:1px;height:18px;background:var(--border-default)}
+.xp{display:flex;align-items:center;gap:7px;flex:none}
+.xp input[type=range]{width:150px;accent-color:var(--primary);cursor:pointer}
+.xp b{font:600 11px/1 var(--font-mono);min-width:52px;color:var(--foreground-secondary)}
+/* 游标叠在泳道 iframe 上的一层，不改那份逐字节拷贝来的上游文件 */
+.xcursor{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+.xcursor i{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--danger) 30%,transparent);font-style:normal}
+.xcursor i::before{content:'';position:absolute;top:0;left:-4px;border:5px solid transparent;
+  border-top-color:var(--danger)}
+
 /* 展开格的头上那排「展开 ▸」筹码：下钻的入口长在主视图自己的格头上 */
 .exp{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .expb{
@@ -322,7 +352,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
   padding:0 5px;border-radius:var(--radius-pill);
   background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
 
-/* ═══ 主视图 · 集群矩阵 ═════════════════════════════════════════════ */
+/* ═══ 各格正文的骨架（panelShell 填的就是这一副）═══════════════════ */
 .stagewrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column}
 .stagebar{
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:none;
@@ -332,11 +362,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .stagebar__t{font:600 13.5px/1.2 var(--font-sans)}
 .stagebar__s{font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-secondary)}
 .stagecanvas{flex:1 1 auto;min-height:0;position:relative;padding:12px 14px}
-/* 只管**直接挂在画布上**的那张主图（集群矩阵那一档）。写成后代选择器时，
-   传播图里那几枚 16px 的链路箭头也是 .stagecanvas 的后代，会被这条
-   (0,1,1) 的规则盖过它自己那条 (0,1,0)——实机涨成半屏高一支箭头。
-   其余各档的 svg 各有自己的容器规则（.mech__scene / .lane__grid / .chartwrap）。 */
-.stagecanvas > svg{display:block;width:100%;height:100%;overflow:visible}
 .stagenote{
   flex:none;padding:9px 14px;border-top:1px solid var(--border-subtle);
   font:400 12px/1.5 var(--font-sans);color:var(--foreground-secondary);
@@ -344,11 +369,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 }
 .stagenote b{color:var(--foreground);font-weight:600}
 
-.cell{cursor:pointer}
-.cell:hover{stroke:var(--foreground);stroke-width:1.2}
-.lbl{font:600 10px/1 var(--font-mono);fill:var(--foreground-muted);letter-spacing:.04em}
-.lbl--big{font-size:12px;fill:var(--foreground-secondary)}
-.axis{stroke:var(--border-default);stroke-width:1}
 
 /* ═══ 主视图 · 传播图 ═══════════════════════════════════════════════ */
 .objcard{cursor:pointer}
@@ -496,6 +516,7 @@ var GROUPS = [
       {
         id: 'p1-warning', time: '15k', dimension: '数值 · 预警', sev: 'warning',
         title: 'Loss scale 连续衰减',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', stages: ['model'] },
         focus: { kind: 'layer', layer: 38 },
         origin: { layers: [38], segments: ['moe'] },
         victim: { layers: [38], segments: ['moe'] },
@@ -521,6 +542,7 @@ var GROUPS = [
       {
         id: 'p1-nan', time: '15203', dimension: '耗时 · 数值', sev: 'danger',
         title: 'Loss NaN / grad_norm Inf',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', stages: ['model'] },
         focus: { kind: 'layer', layer: 38 },
         origin: { layers: [38], segments: ['moe'] },
         propagation: { stages: [3] },
@@ -548,6 +570,8 @@ var GROUPS = [
       {
         id: 'p1-log', time: '+8ms', dimension: '通信 · 日志', sev: 'danger',
         title: 'Plog 暴露 buffer 失配',
+        lineage: { operator: 'EP Dispatch / All-to-All', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'], originNode: { stage: 'runtime', index: 0 } },
         focus: { kind: 'rank', rank: 1559 },
         origin: { ranks: [1559] },
         propagation: { layers: [38], experts: [193], segments: ['moe'] },
@@ -575,6 +599,8 @@ var GROUPS = [
       {
         id: 'p1-a2a', time: '+30s', dimension: '通信 · 耗时', sev: 'danger',
         title: 'All-to-all 超时，63 rank 空等',
+        lineage: { operator: 'HCCL All-to-All', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'] },
         focus: { kind: 'rank', rank: 1559 },
         origin: { ranks: [1559] },
         propagation: { layers: [38], experts: [193], segments: ['moe'], ranks: 'ep-stage' },
@@ -614,6 +640,9 @@ var GROUPS = [
       {
         id: 'p1-root', time: '-30s', dimension: '数值 · 负载', sev: 'danger', isRoot: true,
         title: 'Router FP8 溢出，E193 吸收 98% token',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', rank: 1559,
+                    stages: ['model', 'fx', 'ge', 'runtime', 'kernel'],
+                    originNode: { stage: 'model', index: 0 }, victimStage: 'runtime' },
         focus: { kind: 'expert', expert: 193 },
         origin: { layers: [38], segments: ['moe'] },
         propagation: { ranks: [1559] },
@@ -656,6 +685,8 @@ var GROUPS = [
       {
         id: 'p1-spread', time: '+30.1s', dimension: '通信 · 扩散', sev: 'danger',
         title: 'PP3 断裂，2048 NPU hang',
+        lineage: { operator: 'EP Barrier / PP3 等待链', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'] },
         focus: { kind: 'stage', stage: 3 },
         origin: { ranks: [1559] },
         propagation: { stages: [3], ranks: 'stage' },
@@ -706,6 +737,7 @@ var GROUPS = [
       {
         id: 'p2-rise', time: '8000+', dimension: '显存 · 趋势', sev: 'warning',
         title: '显存从 55 GB 持续爬升',
+        lineage: { operator: 'PP3 激活生命周期', layer: 38, stages: ['model'] },
         focus: { kind: 'stage', stage: 3 },
         origin: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ['moe'] },
         victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ['head'] },
@@ -730,6 +762,7 @@ var GROUPS = [
       {
         id: 'p2-cost', time: '12000', dimension: '耗时 · 显存', sev: 'warning',
         title: '分配/释放 API 占时 7.4%',
+        lineage: { operator: '显存分配 / 释放 API', stages: ['runtime'] },
         focus: { kind: 'stage', stage: 3 },
         origin: { layers: [38], segments: ['moe'] },
         propagation: { layers: [34,35,36,37,38,39,40,41,42,43,44,45] },
@@ -757,6 +790,7 @@ var GROUPS = [
       {
         id: 'p2-peak', time: '12000', dimension: '显存 · 容量', sev: 'danger',
         title: '激活值占用 36.2 GB',
+        lineage: { operator: 'PP3 激活值生命周期', layer: 38, stages: ['model'] },
         focus: { kind: 'stage', stage: 3 },
         origin: { layers: [38], segments: ['moe'] },
         propagation: { segments: ['moe','head'] },
@@ -798,6 +832,7 @@ var GROUPS = [
       {
         id: 'p2-layer', time: '12000', dimension: '显存 · Layer', sev: 'warning',
         title: 'L38 单层激活达到 1.2 GB',
+        lineage: { operator: 'Layer 38 Expert Dispatch Buffer', layer: 38, segment: 'moe', bar: 'a2a_dispatch', stages: ['model'] },
         focus: { kind: 'layer', layer: 38 },
         origin: { layers: [38], segments: ['moe'] },
         propagation: { stages: [3] },
@@ -830,6 +865,8 @@ var GROUPS = [
       {
         id: 'p2-oom', time: '12003', dimension: '显存 · OOM', sev: 'danger', isRoot: true,
         title: 'EP rank 17（global rank 1553）触顶并发生碎片 OOM',
+        lineage: { operator: '0.5 GB 临时 Buffer 申请', rank: 1553, stages: ['runtime'],
+                    originNode: { stage: 'runtime', index: 0 }, victimStage: 'runtime' },
         focus: { kind: 'rank', rank: 1553 },
         origin: { ranks: [1553] },
         propagation: { stages: [3], ranks: 'stage' },
@@ -1001,6 +1038,9 @@ var PANELS = [
 
   { id:'rank',     kind:'native', box:{ x:2340,  y:270,  w:540,  h:570 },
     title:'单卡解剖', sub:'这张卡装了什么、此刻在干什么' },
+
+  { id:'lineage',  kind:'native', box:{ x:-1400, y:900,  w:1300, h:430 },
+    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' },
 
   { id:'board',    kind:'native', box:{ x:1420,  y:890,  w:1180, h:440 },
     exp:'大盘', title:'训推大盘 · 关键少数',
@@ -1188,14 +1228,21 @@ PANELS.forEach(function (d) {
   root.appendChild(head);
 
   var body = el('div', 'panel__body' + (d.kind === 'frame' || d.id === 'story' ? ' panel__body--flush' : ''));
+  var mount = body;
   if (d.kind === 'frame') {
-    body.style.position = 'relative';
+    body.style.display = 'flex';
+    body.style.flexDirection = 'column';
+    var wrap = el('div', 'framewrap');
     var fb = el('div', 'fallback');
     fb.innerHTML = '<span><b>' + esc(d.title) + '</b><br>这一格嵌的是规范路径上的 pattern 本体，'
       + '它是<b>构建期产物</b>——本地直接开 public/ 时不存在。<br>要看真样子请打开发布后的站点。</span>';
-    body.appendChild(fb);
+    wrap.appendChild(fb);
+    body.appendChild(wrap);
+    mount = wrap;
   }
   root.appendChild(body);
+  P[d.id] = P[d.id] || {};
+  P[d.id].mount = mount;
   world.appendChild(root);
 
   /* 除主视图外都给一颗收起键：展开是可逆的，否则画布只会越摊越大 */
@@ -1210,6 +1257,7 @@ PANELS.forEach(function (d) {
   }
   P[d.id].root = root; P[d.id].head = head; P[d.id].title = title;
   P[d.id].sub = sub; P[d.id].acts = acts; P[d.id].body = body;
+  P[d.id].def = d;
 });
 
 /* 主视图格头上那排「展开」筹码 —— 下钻的入口长在主语自己身上 */
@@ -1226,6 +1274,54 @@ PANELS.forEach(function (d) {
   });
   P.main.acts.appendChild(bar);
 })();
+
+/* 主视图的视图段控：并行拓扑本来就有七个视图，钉死在「整网切分」一档
+   等于把它砍掉六分之五。放在格内工具条而不是格头——格头那条还得装标题、
+   副标题和展开筹码，七枚按钮挤不下。 */
+function buildToolbars() {
+  var bar = el('div', 'ptoolbar');
+  bar.appendChild(el('span', 'k', '视图'));
+  P.main.syncTabs = mkTabs(bar, MAIN_VIEWS, function () { return S.mainView; }, function (v) {
+    if (S.mainView === v) return;
+    S.mainView = v;
+    pushMainView();
+    render();
+  });
+  /* 走带接在视图段控右边：它驱动的正是主视图里每张卡的激活体 */
+  bar.appendChild(el('span', 'tsep'));
+  bar.appendChild(el('span', 'k', '走带'));
+  var xp = el('div', 'xp');
+  var play = el('button', 'btn btn--icon btn--ghost');
+  play.type = 'button'; play.id = 'xpPlay'; play.setAttribute('aria-pressed', 'false');
+  play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></svg>';
+  bindTip(play, '播放一个训练步：游标走一遍泳道，两格 pattern 里每张卡的激活体\n跟着这一刻的 1F1B 在途份数变化。收回走带回到峰值。');
+  play.addEventListener('click', function () { xpPlay(!xpPlaying); });
+  xp.appendChild(play);
+  var sl = el('input'); sl.type = 'range'; sl.id = 'xpT';
+  sl.min = '0'; sl.max = '1000'; sl.value = '0';
+  bindTip(sl, '拖到这一步的任意时刻');
+  sl.addEventListener('input', function () { xpPlay(false); xpApply(parseInt(sl.value, 10) / 1000, true); });
+  xp.appendChild(sl);
+  xp.appendChild(el('b', null, '峰值')).id = 'xpPct';
+  var off = el('button', 'btn btn--sm btn--ghost'); off.type = 'button';
+  off.textContent = '收回';
+  bindTip(off, '收回走带，回到峰值——那才是「一张卡要多少显存」的默认答案');
+  off.addEventListener('click', function () { xpPlay(false); xpApply(null, true); });
+  xp.appendChild(off);
+  bar.appendChild(xp);
+  P.main.body.insertBefore(bar, P.main.body.firstChild);
+
+  /* 泳道的三段。它一直认 ?range=，但此前没有 UI——只能手改链接才切得动，
+     等于有半条腿。 */
+  P.swimlane.syncTabs = mkTabs(P.swimlane.acts, LANE_RANGES, function () { return S.range; }, function (v) {
+    if (S.range === v) return;
+    S.range = v;
+    syncSwimlane();
+    render();
+  });
+  /* 收起键是建格子时先加的，把它挪到段控右边 */
+  P.swimlane.acts.appendChild(P.swimlane.acts.firstChild);
+}
 
 /* 连线：主视图边缘 → 每一格摊开的边缘。只画摊开着的那几条。 */
 var OFF = { x: 1200, y: 600 };
@@ -1287,6 +1383,7 @@ var S = {
   eventId: null,
   phase: 0,
   rank: null,
+  mainView: 'chain',  // 主视图看哪一档（并行拓扑那七个视图）
   range: 'global',    // 泳道那一格看哪一段
   auto: false
 };
@@ -1305,6 +1402,7 @@ function selectEvent(id, fly) {
   open.event = 1; P.event.root.hidden = false;
   open.evidence = 1; P.evidence.root.hidden = false;
   if (!ev || !ev.mechanism) { delete open.mech; P.mech.root.hidden = true; }
+  if (!ev || !ev.lineage) { delete open.lineage; P.lineage.root.hidden = true; }
   render();
   if (fly !== false) flyTo(unionBox([P.main.def.box, P.event.def.box, P.evidence.def.box]), 44, 480);
 }
@@ -1329,6 +1427,7 @@ function writeURL() {
   var on = PANELS.filter(function (d) { return !d.always && open[d.id]; })
                  .map(function (d) { return d.id; });
   if (on.length) q.set('open', on.join(',')); else q.delete('open');
+  if (S.mainView !== 'chain') q.set('mv', S.mainView); else q.delete('mv');
   if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
   q.set('theme', themeNow());
   history.replaceState(null, '', location.pathname + '?' + q.toString());
@@ -1345,7 +1444,9 @@ function readURL() {
   var r = parseInt(q.get('r'), 10);
   if (isFinite(r) && r >= 0 && r < TOPO.world) S.rank = r;
   var rg = q.get('range');
-  if (rg && ['global', 'pp2', 'l34'].indexOf(rg) >= 0) S.range = rg;
+  if (rg && LANE_RANGES.some(function (x) { return x.v === rg; })) S.range = rg;
+  var mv = q.get('mv');
+  if (mv && MAIN_VIEWS.some(function (x) { return x.v === mv; })) S.mainView = mv;
   (q.get('open') || '').split(',').forEach(function (id) {
     if (id && P[id] && !P[id].def.always) open[id] = 1;
   });
@@ -1384,13 +1485,35 @@ function cfgQuery(q, includeDp) {
 }
 function themeNow() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
 
+/* 并行拓扑自己的七个视图。v 值与说明逐条取自组合工作台的 SLOTS.topology.tabs
+   ——同一个 pattern、同一套状态名，两边点出来的是同一屏。 */
+var MAIN_VIEWS = [
+  { v:'chain',   t:'整网切分',   d:'五把刀按嵌套序串成一条链' },
+  { v:'story',   t:'一个 step',  d:'五幕：前向 / 反向 / 通信 / 更新' },
+  { v:'dim',     t:'单维切分',   d:'一次只看一把刀；配 l5 的五级粒度轴：整网 → 层 → 算子 → kernel → 卡' },
+  { v:'compose', t:'合成·卡阵',  d:'全部卡摆成阵列' },
+  { v:'anatomy', t:'卡内解剖',   d:'层 → 算子 → kernel → 流' },
+  { v:'solid',   t:'交集腔',     d:'权重体 ∩ 激活体 = 这张卡的那一腔' },
+  { v:'time',    t:'时间·流',    d:'时间轴与通信流' }
+];
+var LANE_RANGES = [
+  { v:'global', t:'训练步全貌',   d:'MB07 从 PP0 前向到 PP0 反向的完整链路' },
+  { v:'pp2',    t:'PP2 生命周期', d:'PP2 的等待 / 计算 / 通信 / 激活驻留' },
+  { v:'l34',    t:'L34 对象链',   d:'L34 模块与保存激活的生产—消费关系' }
+];
+
 var FRAMESRC = {
   /* 主视图：就是组合工作台舞台上那一格。不传 stitle，用 pattern 自己的题面
      「模型分片与训练设备映射」——那正是它要回答的问题。 */
   main: function () {
     var q = new URLSearchParams();
     q.set('theme', themeNow());
-    q.set('view', 'chain');
+    q.set('view', S.mainView);
+    /* l5=1：单维切分那一屏的**五级粒度轴**（整网 → 层 → 算子 → kernel → 卡）。
+       不带它那一屏只有卡一级，读不出「同一把刀在五个粒度上各切成什么」。
+       它在 pattern 的 pto:state 白名单里，但首载就给上更稳——换视图走消息、
+       不重载，首载没给的话后面补不回来。 */
+    q.set('l5', '1');
     cfgQuery(q, true);
     return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
   },
@@ -1452,6 +1575,26 @@ var READYSEL = { main: '[data-act]', netgraph: '[data-act]',
                  swimlane: '.timeline-pane .pane__header, .timeline-scroll' };
 
 function frameOf(id) { return P[id] && P[id].body.querySelector('iframe'); }
+/* 一段可复用的段控：主视图的七个视图、泳道的三段，都是「换的是同一份文档的
+   一个状态」——所以一律走 postMessage，不重载。重载一次要几百毫秒，还会把格子里
+   的视角、缩放、选中卡全丢掉。 */
+function mkTabs(host, items, getCur, onPick) {
+  var box = el('div', 'ptabs');
+  items.forEach(function (t) {
+    var b = el('button', null, t.t);
+    b.type = 'button'; b.dataset.v = t.v;
+    if (t.d) bindTip(b, t.t + '\n' + t.d);
+    b.addEventListener('click', function () { onPick(t.v); });
+    box.appendChild(b);
+  });
+  host.appendChild(box);
+  return function sync() {
+    var cur = getCur();
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.v === cur));
+    });
+  };
+}
 
 function loadFrame(id) {
   var pane = P[id];
@@ -1460,7 +1603,7 @@ function loadFrame(id) {
   f.setAttribute('data-slot', id);
   f.setAttribute('loading', 'eager');
   f.src = FRAMESRC[id]();
-  pane.body.appendChild(f);
+  (pane.mount || pane.body).appendChild(f);
   pane.frame = f;
   f.addEventListener('load', function () { settleFrame(id, f); });
 }
@@ -1489,6 +1632,8 @@ function settleFrame(id, f) {
     } catch (err) { /* 跨源 */ }
     P[id].root.dataset.ready = '1';
     pushSelection();                        // 刚装配好的这一格补一份当前选中
+    if (id === 'main') pushMainView();      // 首载给的就是当前档，这里只做一次对齐
+    if (id === 'swimlane') { syncSwimlane(); xpPlaceCursor(); }
   }
   (function poll() {
     if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
@@ -1554,6 +1699,128 @@ function wireOpToMain(f) {
       if (isFinite(li)) pushHL('main', { layer: li });
     }, true);
   } catch (err) { /* 跨源 */ }
+}
+
+/* 换视图走消息、不重载：重载一次要几百毫秒，还会把格子里的视角、缩放、
+   选中的那张卡全丢掉。pattern 的 pto:state 白名单里本来就有 view。 */
+function pushMainView() {
+  var f = frameOf('main');
+  if (f && f.contentWindow) {
+    try { f.contentWindow.postMessage({ type: 'pto:state', view: S.mainView, l5: 1 }, '*'); } catch (e) {}
+  }
+}
+
+/* ══ 走带：一个训练步的进度 ═══════════════════════════════════════════
+   泳道是一张**静态**甘特图——上游那份没有游标、没有播放。而「这一步走到此刻，
+   每张卡手上压着多少激活」正是它和拓扑之间还没接上的那条线：泳道画的是什么时候
+   在算什么，拓扑画的是那一刻显存里装着什么，本来就是同一件事的两面。
+   所以走带长在这一页上：进度 t（0–1）推给两格 pattern（pto:state 的 step），
+   游标是叠在泳道 iframe 上的一层 div，不改上游那个逐字节拷贝来的文件。
+   收回走带（t=null）就回到峰值——那才是「一张卡要多少显存」的默认答案。 */
+var XP_GUTTER = 236, XP_PAD_R = 16;   /* 抄自 swimlane.html 的 draw()：左边那栏泳道名 */
+var XP_DUR_MS = 7000;                 /* 真实是 315.61ms，放慢到看得清 */
+var XP_PUSH_MS = 90;                  /* 每次推送两格各重画一次 SVG，按挂钟节流 */
+var xpT = null, xpPlaying = false, xpRAF = 0, xpLast = 0, xpPushedAt = 0;
+
+function xpPush(force) {
+  var now = performance.now();
+  if (!force && now - xpPushedAt < XP_PUSH_MS) return;
+  xpPushedAt = now;
+  ['main', 'netgraph'].forEach(function (id) {
+    var f = frameOf(id);
+    if (!f || !f.contentWindow || !isOpen(id)) return;
+    try { f.contentWindow.postMessage({ type: 'pto:state', step: xpT }, '*'); } catch (e) {}
+  });
+}
+/* 游标贴到泳道那根时间轴上。缩放与横向滚动都是**实时状态**，必须读而不是假定：
+     内容坐标 = gutter + t · (width − 16 − gutter)   —— width 已经吃了 zoom
+     屏幕坐标 = 内容坐标 − scrollLeft
+   width 写在 #timelineSurface 的内联宽度里，与 #timelineScroll.scrollLeft 一样，
+   都是同源、可读的渲染结果，不是要猜的内部状态。 */
+function xpPlaceCursor() {
+  var pane = P.swimlane, f = frameOf('swimlane');
+  if (!pane || !pane.mount) return;
+  var cur = pane.mount.querySelector('.xcursor');
+  if (xpT === null || !isOpen('swimlane') || !f) { if (cur) cur.hidden = true; return; }
+  var doc = null;
+  try { doc = f.contentDocument; } catch (e) {}
+  var scrollEl = doc && doc.getElementById('timelineScroll');
+  var surfaceEl = doc && doc.getElementById('timelineSurface');
+  if (!scrollEl || !surfaceEl) { if (cur) cur.hidden = true; return; }
+  if (!cur) {
+    cur = el('div', 'xcursor'); cur.appendChild(el('i'));
+    pane.mount.appendChild(cur);
+  }
+  /* 用户直接拖泳道自己的横向滚动条时也要跟着挪；iframe 重载会换一个新的
+     scrollEl，标记跟着没，不会重复绑。 */
+  if (!scrollEl.__xpBound) { scrollEl.__xpBound = true; scrollEl.addEventListener('scroll', xpPlaceCursor); }
+  var width = surfaceEl.getBoundingClientRect().width;
+  var l = XP_GUTTER, r = Math.max(l + 1, width - XP_PAD_R);
+  cur.hidden = false;
+  cur.firstElementChild.style.left = (l + (r - l) * xpT - scrollEl.scrollLeft) + 'px';
+}
+function xpApply(t, push) {
+  xpT = t;
+  var sl = document.getElementById('xpT'), rd = document.getElementById('xpPct');
+  if (sl && t !== null) sl.value = String(Math.round(t * 1000));
+  if (rd) rd.textContent = t === null ? '峰值' : (Math.round(t * 100) + '%');
+  xpPush(push);
+  xpPlaceCursor();
+}
+function xpTick(ts) {
+  if (!xpPlaying) return;
+  var dt = xpLast ? ts - xpLast : 16; xpLast = ts;
+  var t = (xpT === null ? 0 : xpT) + dt / XP_DUR_MS;
+  if (t >= 1) { xpApply(1, true); xpPlay(false); return; }
+  xpApply(t);
+  xpRAF = requestAnimationFrame(xpTick);
+}
+function xpPlay(on) {
+  xpPlaying = on;
+  var btn = document.getElementById('xpPlay');
+  if (btn) btn.setAttribute('aria-pressed', String(on));
+  cancelAnimationFrame(xpRAF); xpLast = 0;
+  if (on) { if (xpT === null || xpT >= 1) xpApply(0, true); xpRAF = requestAnimationFrame(xpTick); }
+}
+
+/* ══ 双向层联动 ═══════════════════════════════════════════════════════
+   两格是同一个 pattern 的两份配置：整网那格问「第 ℓ 层长什么样、被哪几刀切开」，
+   主视图问「第 ℓ 层落在哪些 rank 上」。层号是两边共同的主键，而且同源、天然一致。
+
+   读的是那一格**自己的搜索标签**，推出去的是**高亮**——两者不同源，所以不会回声：
+   高亮不产生标签，下一轮读到的还是读者自己那枚，边沿不会被自己的推送重新触发。
+   （先前两边都落标签时才需要那套「谁先变」的仲裁，那条路还有回声竞态。）
+
+   为什么轮询而不是监听点击：一格里改「看哪一层」的路子不止一条（点侧视的逐层
+   命中区、手填搜索框、点 × 摘标签、正视那组换层步进），盯住**结果**比盯住每一条
+   入口可靠——按入口写迟早漏掉一条。 */
+function paneLayerChip(doc) {
+  var dels = doc.querySelectorAll('[data-act="chipdel"]');
+  for (var i = 0; i < dels.length; i++) {
+    var chip = dels[i].parentElement;
+    var tag = chip && chip.querySelector('i');
+    if (!tag || (tag.textContent || '').trim() !== '层') continue;
+    var m = (chip.textContent || '').match(/(\d+)/);
+    return m ? +m[1] : null;
+  }
+  return null;
+}
+function paneDoc(id) {
+  var f = frameOf(id);
+  if (!f || !isOpen(id)) return null;
+  try { return f.contentDocument || null; } catch (err) { return null; }   // 跨源
+}
+var seenLayer = { main: undefined, netgraph: undefined };
+function wireLinkage() {
+  setInterval(function () {
+    ['main', 'netgraph'].forEach(function (id) {
+      var doc = paneDoc(id); if (!doc) return;
+      var v = paneLayerChip(doc);
+      if (v === seenLayer[id]) return;
+      seenLayer[id] = v;
+      pushHL(id === 'main' ? 'netgraph' : 'main', { layer: v });
+    });
+  }, 300);
 }
 
 /* 主题换了要把三格一起换——换主题不重载（重载会丢掉格子里选中的那张卡） */
@@ -1666,7 +1933,32 @@ document.head.insertAdjacentHTML('beforeend', '<style>' + [
 '  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
 '.hook__dots{display:flex;gap:3px;margin-top:2px}',
 '.hook__dots i{width:7px;height:7px;border-radius:99px;background:var(--cell-base);font-style:normal;flex:none}',
-'.hook__dots i[data-f="1"]{background:var(--danger)}'
+'.hook__dots i[data-f="1"]{background:var(--danger)}',
+/* 计算血缘：五层横向轨 */
+'.lin{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:4px}',
+'.lin__st{flex:1 1 0;min-width:132px;display:flex;flex-direction:column;gap:7px;',
+'  padding:10px 11px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface-2)}',
+'.lin__st[data-got="0"]{opacity:.45;border-style:dashed}',
+'.lin__hd{display:flex;align-items:baseline;gap:6px}',
+'.lin__i{width:17px;height:17px;border-radius:99px;display:grid;place-items:center;flex:none;',
+'  font:700 10px/1 var(--font-mono);background:var(--primary);color:#fff}',
+'.lin__st[data-got="0"] .lin__i{background:var(--cell-mid)}',
+'.lin__t{font:600 12px/1.3 var(--font-sans)}',
+'.lin__nodes{display:flex;flex-direction:column;gap:5px}',
+'.lin__n{position:relative;padding:6px 8px;border-radius:6px;background:var(--surface-1);',
+'  border:1px solid var(--border-default);font:500 10.5px/1.4 var(--font-mono);word-break:break-all}',
+'.lin__n[data-role="origin"]{border-color:var(--danger);',
+'  background:color-mix(in srgb,var(--danger) 10%,transparent)}',
+'.lin__n[data-role="victim"]{border-color:var(--warning);',
+'  background:color-mix(in srgb,var(--warning) 14%,transparent)}',
+'.lin__tag{display:block;margin-top:3px;font:600 9px/1.4 var(--font-sans);letter-spacing:.04em}',
+'.lin__n[data-role="origin"] .lin__tag{color:var(--danger)}',
+'.lin__n[data-role="victim"] .lin__tag{color:color-mix(in srgb,var(--warning) 78%,var(--foreground))}',
+'.lin__none{font:400 11px/1.4 var(--font-mono);color:var(--foreground-muted)}',
+'.lin__arrow{flex:none;width:62px;display:flex;flex-direction:column;align-items:center;',
+'  justify-content:center;gap:3px;color:var(--foreground-muted)}',
+'.lin__arrow span:first-child{font:400 15px/1 var(--font-sans)}',
+'.lin__arrow-l{font:500 9.5px/1.3 var(--font-sans);text-align:center}'
 ].join('') + '</style>');
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1714,7 +2006,7 @@ function expandScope(d, ev) {
 }
 
 /* 一张卡离震中多远：0 无关 / 1 同 stage / 2 同 EP 组 / 3 震中本身。
-   集群矩阵、构成图、泳道三处都读它，判据只写一遍。 */
+   单卡解剖与构成图都读它，判据只写一遍。 */
 function impactTier(r) {
   var ev = curEvent(), g = curGroup();
   var focusRank = null, stage = null;
@@ -1895,9 +2187,10 @@ function renderMain() {
   var dp = CFG.world / (CFG.tp * CFG.cp * CFG.pp);
   var shape = 'world ' + CFG.world + ' · TP' + CFG.tp + ' × PP' + CFG.pp + ' × DP' + dp + ' · EP' + CFG.ep;
   var L = ev ? eventLayer(ev) : null;
-  P.main.sub.textContent = L != null
-    ? ('已照亮 L' + L + '（' + shape + '）')
-    : shape;
+  var vn = MAIN_VIEWS.filter(function (x) { return x.v === S.mainView; })[0];
+  P.main.sub.textContent = (vn ? vn.t + ' · ' : '')
+    + (L != null ? ('已照亮 L' + L + ' · ' + shape) : shape);
+  if (P.main.syncTabs) P.main.syncTabs();
   bindTip(P.main.head, '主视图就是 /patterns/net-slicing/ 本体，与组合工作台舞台上那一格'
     + '是同一个文件、同一份配置：' + shape + '。\n\n它画的是**这套并行策略长什么样**；'
     + '故事线讲的是另一跑（2048 卡 · PP4 × EDP8 × EP64）。两边卡数不同、rank 号对不上，'
@@ -1917,9 +2210,11 @@ function render() {
   if (isOpen('event')) { RT = 'event'; if (curEvent()) viewFlow(); else emptyEvent(); }
   if (isOpen('evidence')) renderEvidence();
   if (isOpen('mech')) renderMech();
+  if (isOpen('lineage')) renderLineage();
   if (isOpen('rank')) { RT = 'rank'; if (S.rank != null) viewRank(); else emptyRank(); }
   if (isOpen('board')) { RT = 'board'; viewBoard(); }
   if (isOpen('swimlane')) syncSwimlane();
+  xpPlaceCursor();
   drawConns();
   renderLegend();
   syncTop();
@@ -1940,9 +2235,9 @@ function emptyRank() {
 }
 /* 泳道那一格换段不重载：range 走 pto:state，选中的那条事件、缩放都留在原地 */
 function syncSwimlane() {
-  P.swimlane.sub.textContent = { global: 'MB07 从 PP0 前向到 PP0 反向的完整链路',
-    pp2: 'PP2 的等待 / 计算 / 通信 / 激活驻留',
-    l34: 'L34 模块与保存激活的生产—消费关系' }[S.range] || '';
+  var cur = LANE_RANGES.filter(function (x) { return x.v === S.range; })[0];
+  P.swimlane.sub.textContent = cur ? cur.d : '';
+  if (P.swimlane.syncTabs) P.swimlane.syncTabs();
   var f = frameOf('swimlane');
   if (f && f.contentWindow) {
     try { f.contentWindow.postMessage({ type: 'pto:state', range: S.range }, '*'); } catch (e) {}
@@ -2065,6 +2360,15 @@ function viewFlow() {
     bindTip(mb, '范围图答「打到了谁」，机制图答「凭什么传过去」——后者要让时间跑起来才成立');
     mb.addEventListener('click', function () { S.phase = 0; expand('mech', true); });
     mid.appendChild(mb);
+  }
+  if (ev.lineage) {
+    var lb = el('button', 'btn btn--sm');
+    lb.type = 'button';
+    lb.style.margin = '4px auto 0';
+    lb.textContent = '计算血缘 ▸';
+    bindTip(lb, '报错点在 Kernel 层，能改的东西在模型语义层——中间隔着三道转换，\n名字每过一道就换一次。这一格把那条链摆出来。');
+    lb.addEventListener('click', function () { expand('lineage', true); });
+    mid.appendChild(lb);
   }
   flow.appendChild(mid);
 
@@ -2374,7 +2678,7 @@ function playPhases() {
 }
 
 /* ── 档 4 · 单卡解剖 ────────────────────────────────────────────────
-   集群矩阵回答「是哪张卡」，这一档回答「这张卡里装了什么、此刻在干什么」。
+   主视图回答「是哪张卡」，这一格回答「这张卡里装了什么、此刻在干什么」。
    容量分段取 p2-peak 那张 64 GB 构成图，不另编一套。 */
 var CAPSEG = [
   { label: '权重', gb: 14.1, color: 'var(--primary)' },
@@ -2557,6 +2861,104 @@ function viewBoard() {
   sh.canvas.appendChild(box);
   sh.canvas.style.overflow = 'hidden';
   setLinked(['north', 'west', 'east', 'sedge']);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   计算血缘 —— 同一个算子在五层里各叫什么名字
+   这是观测台那一页的一项独门内容：一次故障报在 Kernel 层（比如
+   「HCCL AllToAll executor」），而人能改的东西在模型语义层（Router 的 Top-2 gate）。
+   中间隔着 FX 捕获、GE 融合、Runtime 下发三道转换，名字每过一道就换一次——
+   不把这条链摆出来，「报错点」和「震中」就永远对不上号。
+   下面三张表逐字取自原页的 LINEAGE_LOWERING / LINEAGE_STAGE_META：
+   只收本页 11 个事件真正用到的那两个 op（gate / comm）加一个兜底。
+   ══════════════════════════════════════════════════════════════════════ */
+var LIN_STAGES = [
+  { id:'model',   title:'模型语义',        system:'模型语义层，用于定位用户模型中的结构与算子意图' },
+  { id:'fx',      title:'FX Graph',        system:'PyTorch FX 图层，用于记录框架捕获后的算子级表达' },
+  { id:'ge',      title:'GE Graph',        system:'GE 图编译层，用于呈现昇腾侧 Lowering、融合与图优化结果' },
+  { id:'runtime', title:'Runtime',         system:'CANN 运行时层，用于展示任务下发、Stream 与 Rank 执行位置' },
+  { id:'kernel',  title:'Kernel / Executor', system:'Kernel 执行层，用于说明最终 Kernel、通信执行器与 Tiling 选择' }
+];
+/* lineage.bar 是结构条的 id，降级表按它的 op 查——本页只用到这两条 */
+var LIN_BAR_OP = { gate: 'gate', a2a_dispatch: 'comm' };
+var LIN_LOWERING = {
+  gate: { fx:['aten.linear.default', 'aten.softmax.int', 'aten.topk.default'],
+          ge:['MatMul', 'SoftmaxV2', 'TopK'],
+          runtime:['Router MatMul task', 'Router select task'],
+          kernel:['router_matmul_cube_v3', 'softmax_topk_vector_v4'] },
+  comm: { fx:['call_function.npu_all_to_all'], ge:['HcomAllToAll'],
+          runtime:['HCCL collective task'], kernel:['HCCL AllToAll executor'] }
+};
+var LIN_DEFAULT = { fx:['call_function.custom_op'], ge:['CustomOp'],
+                    runtime:['Custom operator task'], kernel:['custom_aicore_kernel'] };
+/* 两层之间发生了什么：节点数变少是融合、变多是拆分，其余按层各有定名 */
+function linTransition(stageId, a, b) {
+  if (stageId === 'model')   return a < b ? '捕获展开' : '捕获';
+  if (stageId === 'fx')      return a > b ? '融合' : (a < b ? '拆分' : 'Lowering');
+  if (stageId === 'ge')      return a > b ? '任务聚合' : '任务下发';
+  if (stageId === 'runtime') return a > b ? '执行器合并' : 'Kernel 选择';
+  return '';
+}
+function renderLineage() {
+  var ev = curEvent(), pane = P.lineage, b = pane.body;
+  b.innerHTML = '';
+  if (!ev || !ev.lineage) {
+    pane.title.textContent = '计算血缘';
+    pane.sub.textContent = '先在故事线上选一个事件';
+    b.innerHTML = '<p class="cnote">一次故障报在 Kernel 层，而人能改的东西在模型语义层，'
+      + '中间隔着 FX 捕获、GE 融合、Runtime 下发三道转换——名字每过一道就换一次。'
+      + '选一个事件，这里把那条链摆出来。</p>';
+    return;
+  }
+  var L = ev.lineage;
+  var low = LIN_LOWERING[LIN_BAR_OP[L.bar]] || LIN_DEFAULT;
+  pane.title.textContent = '计算血缘 · ' + L.operator;
+  pane.sub.textContent = [L.layer != null ? 'L' + L.layer : '',
+                          L.segment ? SEGNAME[L.segment] || L.segment : '',
+                          L.rank != null ? 'rank ' + L.rank : ''].filter(Boolean).join(' · ');
+  var nodesOf = function (sid) { return sid === 'model' ? [L.operator] : (low[sid] || []); };
+  var track = el('div', 'lin');
+  LIN_STAGES.forEach(function (st, i) {
+    var got = L.stages.indexOf(st.id) >= 0;
+    var col = el('div', 'lin__st');
+    col.dataset.got = got ? '1' : '0';
+    var hd = el('div', 'lin__hd');
+    hd.appendChild(el('span', 'lin__i', String(i + 1)));
+    hd.appendChild(el('span', 'lin__t', st.title));
+    col.appendChild(hd);
+    bindTip(col, st.title + '\n' + st.system
+      + (got ? '\n\n本事件在这一层采到了证据' : '\n\n本事件没有采到这一层——不是它不存在，是这一跑没留下这一层的记录'));
+    var list = el('div', 'lin__nodes');
+    nodesOf(st.id).forEach(function (n, idx) {
+      var node = el('div', 'lin__n', n);
+      if (L.originNode && L.originNode.stage === st.id && L.originNode.index === idx) {
+        node.dataset.role = 'origin';
+        node.appendChild(el('span', 'lin__tag', '传播源'));
+      } else if (L.victimStage === st.id && idx === 0 && !(L.originNode && L.originNode.stage === st.id)) {
+        node.dataset.role = 'victim';
+        node.appendChild(el('span', 'lin__tag', '受影响'));
+      }
+      list.appendChild(node);
+    });
+    if (!nodesOf(st.id).length) list.appendChild(el('div', 'lin__none', '—'));
+    col.appendChild(list);
+    track.appendChild(col);
+    if (i < LIN_STAGES.length - 1) {
+      var arr = el('div', 'lin__arrow');
+      arr.appendChild(el('span', null, '→'));
+      var lb = linTransition(st.id, nodesOf(st.id).length, nodesOf(LIN_STAGES[i + 1].id).length);
+      if (lb) arr.appendChild(el('span', 'lin__arrow-l', lb));
+      track.appendChild(arr);
+    }
+  });
+  b.appendChild(track);
+  var note = el('p', 'cnote');
+  note.innerHTML = '本事件采到的是 <b>' + L.stages.map(function (s) {
+      var m = LIN_STAGES.filter(function (x) { return x.id === s; })[0];
+      return m ? m.title : s; }).join(' / ')
+    + '</b> 这几层；灰掉的那几层不是不存在，是这一跑没留下它们的记录。'
+    + '降级口径逐字取自 config-relation-observer 的 <span class="mono">LINEAGE_LOWERING</span>。';
+  b.appendChild(note);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -2776,7 +3178,7 @@ window.addEventListener('keydown', function (e) {
     S.rank = null; selectEvent(g.events[n].id);
   } else if (e.key === 'Escape') {
     /* 从外往里收：先收最靠外的那一格。没有「栈」可退了，收起就是退。 */
-    var order = ['board', 'swimlane', 'netgraph', 'rank', 'mech', 'evidence', 'event'];
+    var order = ['board', 'lineage', 'swimlane', 'netgraph', 'rank', 'mech', 'evidence', 'event'];
     for (var i = 0; i < order.length; i++) {
       if (open[order[i]]) { collapse(order[i]); return; }
     }
@@ -2796,6 +3198,8 @@ Object.keys(open).forEach(function (id) {
   P[id].root.hidden = false;
   if (P[id].def.kind === 'frame') loadFrame(id);
 });
+buildToolbars();
+wireLinkage();
 booting = false;
 render();
 /* 第一屏：摊开了几格就框几格。只有主视图时它等于「回主视图」。 */
