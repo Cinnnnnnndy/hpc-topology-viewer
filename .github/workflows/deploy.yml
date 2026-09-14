@@ -702,9 +702,16 @@ jobs:
           # 断言：两条相对路径在规范入口下都必须已经多退一级。
           # 漏改不会让页面报错——BASE 错了只是三格 iframe 静默 404、显示兜底文案，
           # 出处链接错了只是那一条 404。都是从线上看不出来的坏法，必须在这里拦住。
-          test "$(grep -c \"^var BASE = '\.\./\.\.';\" $PAT/pattern.html)" = "1"
-          test "$(grep -c \"^var BASE = '\.\.';\" $PAT/pattern.html)" = "0"
-          test "$(grep -c \"^var BASE = '\.\.';\" $DIR/index.html)" = "1"
+          # 待比的两串里都带单引号，所以既不能用单引号裹、也不要在 "$( )" 里写 \" ——
+          # 后者会被重新解析成一个**字面的引号字符**传给 grep（grep 把它当成 pattern，
+          # 把真正的 pattern 当成文件名，报 "No such file or directory" 并返回空，
+          # 于是 test '' = 1 失败）。2026-09-14 这一版就是这么挂的。
+          # 改成变量 + grep -F（定长匹配，连正则转义也省了）。
+          BASE_SUB="var BASE = '../..';"
+          BASE_TOP="var BASE = '..';"
+          test "$(grep -cF "$BASE_SUB" $PAT/pattern.html)" = "1"
+          test "$(grep -cF "$BASE_TOP" $PAT/pattern.html)" = "0"
+          test "$(grep -cF "$BASE_TOP" $DIR/index.html)" = "1"
           test "$(grep -c 'href="../../combo-workbench/"' $PAT/pattern.html)" = "1"
           test "$(grep -c 'href="../combo-workbench/"' $PAT/pattern.html)" = "0"
           test "$(grep -c 'href="../combo-workbench/"' $DIR/index.html)" = "1"
