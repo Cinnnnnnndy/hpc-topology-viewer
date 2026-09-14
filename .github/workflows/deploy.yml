@@ -35,11 +35,17 @@ name: Deploy to GitHub Pages
 #       继续用于开发；只是发布这一步现在只认 main。
 #   · claude/compassionate-volta-09jc46
 #       → /incident-canvas/ 与 /patterns/incident-canvas/（故障故事线 · 无限画布：
-#         一个主视图坐在无限画布正中、五块卫星围着它联动，点主视图里的东西逐级下钻。
-#         故事线与全部数值取自 compute-graph-viewer 的 config-relation-observer，
-#         形制与 token 取自本仓 /combo-workbench/。整页自包含单文件、零外部依赖。）
+#         一个主视图坐在无限画布正中、五块卫星围着它联动，点主视图里的东西逐级下钻，
+#         下钻即在画布上再铺一站，退回原路留着虚线轨迹卡。故事线与全部数值取自
+#         compute-graph-viewer 的 config-relation-observer，形制与 token 取自本仓
+#         /combo-workbench/，训推指标口径取自 pangu_sophon_pytorch。整页自包含单文件、
+#         零外部依赖。）
 #       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
-#         public/incident-canvas/launch-card.html）
+#         public/incident-canvas/launch-card.html，见下面那一步）
+#       源码已经进 main（/public/incident-canvas/），下面的 "Checkout incident-canvas
+#       branch" 那一步现在从 main 自己取，不再指向这条分支——与 combo-workbench /
+#       parallel-topology 当年的迁法一样：分支本身还在，继续用于开发；只是发布这一步
+#       现在只认 main，避免「推 main」与「推分支」谁最后跑谁赢、线上内容悄悄落后的老问题。
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -643,12 +649,10 @@ jobs:
       - name: Checkout incident-canvas branch
         uses: actions/checkout@v4
         with:
-          # 这份源码还没进 main，所以按 ref 取本分支（与 rubik / spec / netobj 三条同一种
-          # 走法）。它**不进** on.push.branches：本文件顶部那段注释说过，发布口子只留
-          # main 一处——每条分支都能触发这份整站替换的工作流时，谁最后跑谁赢，已经发出去
-          # 的链接内容会在几版之间来回跳。合进 main 之后把这里的 ref 改成 main 即可，
-          # 与 parallel-topology / combo-workbench 当年的迁法一样。
-          ref: claude/compassionate-volta-09jc46
+          # 源码已经进 main（/public/incident-canvas/），所以从 main 自己取——与
+          # combo-workbench / parallel-topology 当年的迁法一样：原来按 ref 指向
+          # 分支时，谁改了分支忘记合回 main，线上内容就悄悄落后于 main 且不报错。
+          ref: main
           path: canvas-src
 
       - name: Overlay 故障故事线 at /incident-canvas/ 与 /patterns/incident-canvas/
