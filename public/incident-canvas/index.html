@@ -1060,7 +1060,7 @@ var TOPO = {
 /* 告警（story）**不在**这张表里：它是悬浮的一块，摊开时要占掉三分之一视口，
    默认铺开会把主视图压到 54%——而主视图才是这一页的主语。所以默认是收起的
    一枚告警牌，点它（或右上角那枚「告警」筹码）才铺成事件链。 */
-var DEFAULT_OPEN = ['netgraph', 'dim', 'anatomy', 'swimlane', 'board'];
+var DEFAULT_OPEN = ['board', 'netgraph', 'dim', 'anatomy', 'swimlane'];
 
 var PANELS = [
   /* ── 原点 · 主语。always=1，不提供收起 ──────────────────────────── */
@@ -1076,6 +1076,14 @@ var PANELS = [
          或顶栏的问题页签开，随时压在画布上方，关掉画布也不少一块地。 */
   { id:'story',    float:1, kind:'native',
     exp:'告警', title:'告警 · 运行事件链', sub:'点任一枚事件下钻' },
+
+  /* ── 上 · 读数。告警挪成悬浮之后这一带空了出来，大盘补上来——
+         它原先钉在右下角，那个位置不答任何方向上的问题，它就只是「还有一格」。
+         挪到主视图正上方，四个方位才齐：抬头看这一跑整体健不健康，往左看结构，
+         往右看某一件事怎么传的，往下看一个 step 里的时序。 */
+  { id:'board',    kind:'native', box:{ x:80,    y:-520, w:1180, h:440 },
+    exp:'大盘', title:'训推大盘 · 关键少数',
+    sub:'口径取自 pangu_sophon_pytorch' },
 
   /* ── 左 · 结构。三格一行，粒度由粗到细一路往外走：
          整网（整张图）→ 单维切分（连接两端的那根粒度轴）→ 卡内解剖（一张卡里面）。
@@ -1114,12 +1122,7 @@ var PANELS = [
     sub:'/combo-workbench/swimlane.html 本体 · MB07 · step 18420' },
 
   { id:'lineage',  kind:'native', box:{ x:20,    y:1320, w:1300, h:430 },
-    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' },
-
-  /* ── 右下 · 读数。不属于任何一条下钻链，是这一跑的体检单 ──────────── */
-  { id:'board',    kind:'native', box:{ x:1420,  y:1320, w:1180, h:440 },
-    exp:'大盘', title:'训推大盘 · 关键少数',
-    sub:'口径取自 pangu_sophon_pytorch' }
+    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' }
 ];
 var P = {};                       // id → { def, root, body, head, … }
 PANELS.forEach(function (d) { P[d.id] = { def: d }; });
@@ -3364,7 +3367,7 @@ window.addEventListener('keydown', function (e) {
        原先这张表按纯几何排，最靠外的卡内解剖排在最前——结果刚点完一个事件
        按 Esc，收掉的是画布最左边那一格，而不是刚刚点出来的下钻。 */
     var order = ['rank', 'mech', 'lineage', 'evidence', 'event',
-                 'anatomy', 'dim', 'netgraph', 'board', 'swimlane', 'story'];
+                 'anatomy', 'dim', 'netgraph', 'swimlane', 'board', 'story'];
     for (var i = 0; i < order.length; i++) {
       if (open[order[i]]) { collapse(order[i]); return; }
     }
