@@ -402,14 +402,11 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
   -webkit-backdrop-filter:blur(14px) saturate(1.15);
   box-shadow:var(--shadow-sm);
 }
-/* 格子控制钉在画布右上角：它管的是「这张画布上摊开了哪几格」，是页面级的开关，
-   不该长在主视图的格头里——长在那儿它会跟着画布一起缩放平移，镜头一挪开主视图
-   就够不着了，而这恰恰是你想收起某一格时最需要它的时候。 */
 /* 悬浮告警层：钉在视口上，不在 #world 里，所以不跟着画布缩放平移。
    pointer-events 只给真正的那块牌子，层本身放行——否则它会盖住整张画布，
    拖不动也点不着。
-   右边留出 486px 是给右上角那排格子筹码（458 + 间距）让位：两块都钉在顶上，
-   谁也不该压着谁。窄到 1100 以下时筹码那排自己会占满顶栏，告警就整体下移一档。 */
+   画布顶上那一带整条都归它：格子筹码已经挪进顶栏，这里不再有第二个住户，
+   所以收起态与摊开态都直接居中贴顶，没有让位规则。 */
 #floatlayer{position:absolute;inset:0;pointer-events:none;z-index:6}
 /* 收起时留在画布上的那一条：告警的入口 + 问题段控，两件事合成一件。
    居中而不是靠左：它是这一页唯一的入口，居中才是入口该在的地方；靠左会读成
@@ -419,7 +416,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
    问题段控从顶栏挪了进来：它选的是**哪一条告警**，本来就属于告警这一块；
    长在顶栏时，告警收起之后顶栏还替它留着一排按钮，两处各说各的。 */
 #alertbar{
-  position:absolute;left:50%;transform:translateX(-50%);top:14px;
+  position:absolute;left:50%;transform:translateX(-50%);top:12px;
   display:inline-flex;align-items:center;gap:8px;
   padding:3px;border-radius:999px;
   border:1px solid var(--danger);background:var(--background);
@@ -444,10 +441,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
    没有开合可言，给了角标反而像在说它也能开。 */
 .seg--alert .caret{width:9px;height:9px;flex:none;opacity:.5}
 #alertbar .seg{border:0;background:transparent;padding:0}
-/* 居中的条宽约 466（每条问题多了点和计数），右上角那排筹码宽约 446 且右贴边——
-   视口窄到 1386 以下两者就会碰上（(V+466)/2 > V-460 解出来的）。取 1400 作阈值，
-   窄屏时条子整体下移一档，让到筹码底下去，和摊开的抽屉走同一个避让规则。 */
-@media (max-width:1400px){ #alertbar{top:60px} }
 @keyframes apulse{0%,100%{opacity:1}50%{opacity:.32}}
 @media (prefers-reduced-motion:reduce){.seg--alert .dot{animation:none}}
 /* 摊开之后段控挪进抽屉的格头，格头那条本来就窄，给它压一档字号 */
@@ -456,18 +449,24 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .panel__acts .seg--alert .n{font-size:10.5px}
 #floatlayer > *{pointer-events:auto}
 /* 抽屉也居中，跟收起态那条对齐——两个形态是同一块东西，不该一个居中一个靠左。
-   固定落在右上角那排筹码**底下**（top:60）：居中之后它的右缘会伸到筹码那一带
-   （1040 宽在 1680 下右缘到 1360，筹码从 1220 起），与其按宽度分档避让，不如
-   干脆让它常驻下面一行——一个规则，所有宽度都成立。
-   920 × 144 是**量出来的下限**，不是估的：再窄一档（880）「Router FP8 溢出，E193
-   吸收 98% token」那条标题就会被 line-clamp 截掉；再矮一档（138）会一次截掉 5 条。
+   贴着画布顶上 12px：格子筹码挪进顶栏之后这一带不再有别人，它不用再往下让一行。
+   1000 × 144 是**两条问题线一起量出来的下限**。宽度的紧约束在问题1 而不是问题2：
+   问题2 六张卡（卡宽 144）880 就开始截「Router FP8 溢出，E193 吸收 98% token」，
+   而问题1 只有五张卡、卡反而更宽（191），却卡在更长的那条标题上——
+   「EP rank 17（global rank 1553）触顶并发生碎片 OOM」要到 1000 才不被 line-clamp 截。
+   高度 144 是下限：138 会一次截掉 5 条标题。
    原先是 1180 × 238——卡片在行里是 stretch 撑满的，多出来的高度全变成卡片下半截的
    空白，看着像留白，其实只是没人要的那截。 */
 .panel--float{
   position:absolute;left:50%;transform:translateX(-50%);
-  top:60px;width:min(920px,calc(100% - 28px));height:144px;
+  top:12px;width:min(1000px,calc(100% - 28px));height:144px;
   box-shadow:0 18px 44px -12px rgba(15,23,42,.28),0 2px 8px rgba(15,23,42,.08)}
-#panelshud{right:14px;top:14px;max-width:calc(100% - 320px);flex-wrap:wrap;gap:8px}
+/* 格子控制挪进顶栏，挨着「适配全部 / 回主视图」：这三样管的是同一件事——镜头与
+   画布的整体状态，本来就该待在一处。原先它浮在画布右上角，于是画布顶上那一带成了
+   它一个人的地盘：告警条要躲它、摊开的抽屉也要躲它，两条避让规则都是为它加的。
+   挪走之后那一带整个腾给告警，规则跟着删掉，不是留着不用。
+   不给底色也不给边框：顶栏本来就是一条底，再套一层白底会变成「条里又有一条」。 */
+#panelshud{display:flex;align-items:center;gap:6px;flex:0 1 auto;min-width:0;overflow:hidden}
 #panelshud .k{flex:none}
 #zoomhud{right:14px;bottom:14px}
 #legendhud{left:14px;bottom:14px;gap:10px;padding:7px 11px;flex-wrap:wrap;max-width:calc(100% - 220px)}
@@ -534,6 +533,7 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
     </button>
     <button class="btn btn--sm" id="fitBtn" type="button" title="缩到能看见摊开的所有格子——展开得越多画布越大">适配全部</button>
     <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到主视图（并行拓扑）">回主视图</button>
+    <div id="panelshud" aria-label="画布上摊开了哪几格"></div>
     <a class="btn btn--sm btn--ghost" id="srcWorkbench" href="../combo-workbench/" title="出处之一：本仓的组合工作台——这一页的 token、外壳骨架与 URL 约定都来自它">组合工作台<sup>°</sup></a>
     <a class="btn btn--sm btn--ghost" id="srcUpstream" href="https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" target="_blank" rel="noopener" title="出处之二：config-relation-observer——两条故事线、11 个事件与全部数值都来自它">原页 · 配置关系观测<sup>°</sup></a>
     <button class="btn btn--icon btn--ghost" id="themeBtn" type="button" title="切换明暗：与被嵌页面一起换" aria-label="切换明暗">
@@ -551,8 +551,6 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
         <div class="seg seg--alert" id="lineSeg" role="group" aria-label="告警 · 选择问题线"></div>
       </div>
     </div>
-
-    <div class="hud" id="panelshud" aria-label="画布上摊开了哪几格"></div>
 
     <div class="hud" id="legendhud" aria-label="图例"></div>
 
@@ -1091,7 +1089,7 @@ var TOPO = {
 /* 告警（story）**不在**这张表里：它是悬浮的一块，摊开时要占掉三分之一视口，
    默认铺开会把主视图压到 54%——而主视图才是这一页的主语。所以默认是收起的
    一枚告警牌，点它（或右上角那枚「告警」筹码）才铺成事件链。 */
-var DEFAULT_OPEN = ['board', 'netgraph', 'dim', 'anatomy', 'swimlane'];
+var DEFAULT_OPEN = ['netgraph', 'dim', 'anatomy', 'swimlane', 'board'];
 
 var PANELS = [
   /* ── 原点 · 主语。always=1，不提供收起 ──────────────────────────── */
@@ -1107,14 +1105,6 @@ var PANELS = [
          或顶栏的问题页签开，随时压在画布上方，关掉画布也不少一块地。 */
   { id:'story',    float:1, kind:'native',
     exp:'告警', title:'告警 · 运行事件链', sub:'点任一枚事件下钻' },
-
-  /* ── 上 · 读数。告警挪成悬浮之后这一带空了出来，大盘补上来——
-         它原先钉在右下角，那个位置不答任何方向上的问题，它就只是「还有一格」。
-         挪到主视图正上方，四个方位才齐：抬头看这一跑整体健不健康，往左看结构，
-         往右看某一件事怎么传的，往下看一个 step 里的时序。 */
-  { id:'board',    kind:'native', box:{ x:80,    y:-520, w:1180, h:440 },
-    exp:'大盘', title:'训推大盘 · 关键少数',
-    sub:'口径取自 pangu_sophon_pytorch' },
 
   /* ── 左 · 结构。三格一行，粒度由粗到细一路往外走：
          整网（整张图）→ 单维切分（连接两端的那根粒度轴）→ 卡内解剖（一张卡里面）。
@@ -1153,7 +1143,16 @@ var PANELS = [
     sub:'/combo-workbench/swimlane.html 本体 · MB07 · step 18420' },
 
   { id:'lineage',  kind:'native', box:{ x:20,    y:1320, w:1300, h:430 },
-    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' }
+    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' },
+
+  /* ── 右下 · 读数。试过把它摆到主视图正上方（告警挪成悬浮之后那一带空了出来），
+         行不通：画布顶上那一条是**悬浮告警的地盘**，告警一摊开就压住大盘的格头，
+         切换问题之后大盘明明更新了，人却看不见自己在看哪条问题、数据变成了什么。
+         这不是时机问题，绕不开——悬浮层盖住底下的东西是它的定义。
+         所以「上」这个方位就归告警，别的格子不进去；大盘回到右下角。 */
+  { id:'board',    kind:'native', box:{ x:1420,  y:1320, w:1180, h:440 },
+    exp:'大盘', title:'训推大盘 · 关键少数',
+    sub:'口径取自 pangu_sophon_pytorch' }
 ];
 var P = {};                       // id → { def, root, body, head, … }
 PANELS.forEach(function (d) { P[d.id] = { def: d }; });
@@ -1492,19 +1491,33 @@ function drawConns() {
 function expand(id, fly) {
   if (id === 'main' || open[id]) { if (fly) fitPair(id); return; }
   open[id] = 1;
+  var i0 = P[id].def.float ? topInset() : 0;
   P[id].root.hidden = false;
   if (P[id].def.kind === 'frame') loadFrame(id);
   render();
-  /* 告警一开一关，视口让出来的那一带就变了——按当前档位重新落位一次。 */
-  if (P[id].def.float) { refit(); return; }
+  if (P[id].def.float) { nudgeForFloat(i0); return; }
   if (fly !== false) fitPair(id);
 }
 function collapse(id) {
   if (id === 'main' || !open[id]) return;
+  var fl = P[id].def.float, i0 = fl ? topInset() : 0;
   delete open[id];
   P[id].root.hidden = true;
   render();
-  if (P[id].def.float) refit();
+  if (fl) nudgeForFloat(i0);
+}
+
+/* 告警一开一关，它盖住的那一带就变了，画布得交代一下。
+   镜头还停在 main / all 档 → 按那一档重新落位。
+   读者自己摊过、拖过（free）→ **只平移让出的那点差值**，不动他的缩放和构图。
+   为什么要这一下：悬浮层盖住底下的东西是必然的，而正上方那一格恰恰是大盘——
+   切换问题之后大盘更新了，人却看不见，因为它的格头正压在告警底下。
+   refit 在 free 档上什么都不做（那是故意的，不能把读者摆好的那一屏抢走），
+   所以这里给一个更轻的手法：只把被盖住的那点挪出来。 */
+function nudgeForFloat(before) {
+  var after = topInset();
+  if (lastFit === 'free') { view.y += (after - before); applyView(); }
+  else refit();
 }
 function toggle(id) { if (open[id]) collapse(id); else expand(id, true); }
 
@@ -3414,7 +3427,7 @@ window.addEventListener('keydown', function (e) {
        原先这张表按纯几何排，最靠外的卡内解剖排在最前——结果刚点完一个事件
        按 Esc，收掉的是画布最左边那一格，而不是刚刚点出来的下钻。 */
     var order = ['rank', 'mech', 'lineage', 'evidence', 'event',
-                 'anatomy', 'dim', 'netgraph', 'swimlane', 'board', 'story'];
+                 'anatomy', 'dim', 'netgraph', 'board', 'swimlane', 'story'];
     for (var i = 0; i < order.length; i++) {
       if (open[order[i]]) { collapse(order[i]); return; }
     }
