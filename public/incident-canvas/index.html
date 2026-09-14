@@ -455,12 +455,18 @@ a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:
 .panel__acts .seg button{height:22px;padding:0 9px;font-size:11.5px}
 .panel__acts .seg--alert .n{font-size:10.5px}
 #floatlayer > *{pointer-events:auto}
+/* 抽屉也居中，跟收起态那条对齐——两个形态是同一块东西，不该一个居中一个靠左。
+   固定落在右上角那排筹码**底下**（top:60）：居中之后它的右缘会伸到筹码那一带
+   （1040 宽在 1680 下右缘到 1360，筹码从 1220 起），与其按宽度分档避让，不如
+   干脆让它常驻下面一行——一个规则，所有宽度都成立。
+   920 × 144 是**量出来的下限**，不是估的：再窄一档（880）「Router FP8 溢出，E193
+   吸收 98% token」那条标题就会被 line-clamp 截掉；再矮一档（138）会一次截掉 5 条。
+   原先是 1180 × 238——卡片在行里是 stretch 撑满的，多出来的高度全变成卡片下半截的
+   空白，看着像留白，其实只是没人要的那截。 */
 .panel--float{
-  position:absolute;left:14px;right:486px;top:14px;height:238px;
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:60px;width:min(920px,calc(100% - 28px));height:144px;
   box-shadow:0 18px 44px -12px rgba(15,23,42,.28),0 2px 8px rgba(15,23,42,.08)}
-@media (max-width:1100px){
-  .panel--float{right:14px;top:60px}
-}
 #panelshud{right:14px;top:14px;max-width:calc(100% - 320px);flex-wrap:wrap;gap:8px}
 #panelshud .k{flex:none}
 #zoomhud{right:14px;bottom:14px}
