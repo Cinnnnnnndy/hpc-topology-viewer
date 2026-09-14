@@ -1012,9 +1012,13 @@ var TOPO = {
    与缩放无关）。main.always=1：它是这一页的主语，不提供收起。
    ══════════════════════════════════════════════════════════════════════ */
 /* 一进来就摊开的那几格：与主视图格头上那排「展开」筹码一一对应。
-   它们是常备面——故事线给时间、整网给结构、泳道给时序、大盘给读数。
-   事件相关的几格不在这里：没有选中的事件它们就是空的。 */
-var DEFAULT_OPEN = ['story', 'netgraph', 'swimlane', 'board'];
+   它们是常备面——故事线给时间，整网 / 单维切分 / 卡内解剖给结构的三个粒度，
+   泳道给时序，大盘给读数。
+   事件相关的几格（传播 / 机制 / 证据 / 血缘 / 单卡）不在这里：
+   没有选中的事件它们就是空的，默认开出来是几块空板。
+   实测五格 iframe 全部就位约 2.6 s——四份嵌的是同一个 pattern 文件，
+   浏览器只下一次，所以多开两格几乎不额外花钱。 */
+var DEFAULT_OPEN = ['story', 'dim', 'anatomy', 'netgraph', 'swimlane', 'board'];
 
 var PANELS = [
   { id:'main',     always:1, kind:'frame', box:{ x:0,     y:0,    w:1340, h:840 },
@@ -1023,6 +1027,14 @@ var PANELS = [
 
   { id:'story',    kind:'native', box:{ x:70,    y:-390, w:1200, h:200 },
     exp:'故事线', title:'故事线 · 运行事件', sub:'点任一枚事件下钻' },
+
+  { id:'dim',      kind:'frame',  box:{ x:-920,  y:-880, w:860,  h:820 },
+    exp:'单维切分', title:'单维切分 · 五级粒度轴',
+    sub:'一次只看一把刀：整网 → 层 → 算子 → kernel → 卡' },
+
+  { id:'anatomy',  kind:'frame',  box:{ x:-2320, y:20,   w:1340, h:800 },
+    exp:'卡内解剖', title:'卡内解剖',
+    sub:'一张卡里：层段 → 算子片 → kernel → 流' },
 
   { id:'netgraph', kind:'frame',  box:{ x:-920,  y:20,   w:860,  h:800 },
     exp:'整网', title:'整网 · 真图展开',
@@ -1285,15 +1297,6 @@ PANELS.forEach(function (d) {
    副标题和展开筹码，七枚按钮挤不下。 */
 function buildToolbars() {
   var bar = el('div', 'ptoolbar');
-  bar.appendChild(el('span', 'k', '视图'));
-  P.main.syncTabs = mkTabs(bar, MAIN_VIEWS, function () { return S.mainView; }, function (v) {
-    if (S.mainView === v) return;
-    S.mainView = v;
-    pushMainView();
-    render();
-  });
-  /* 走带接在视图段控右边：它驱动的正是主视图里每张卡的激活体 */
-  bar.appendChild(el('span', 'tsep'));
   bar.appendChild(el('span', 'k', '走带'));
   var xp = el('div', 'xp');
   var play = el('button', 'btn btn--icon btn--ghost');
@@ -1388,7 +1391,6 @@ var S = {
   eventId: null,
   phase: 0,
   rank: null,
-  mainView: 'chain',  // 主视图看哪一档（并行拓扑那七个视图）
   range: 'global',    // 泳道那一格看哪一段
   auto: false
 };
@@ -1435,7 +1437,6 @@ function writeURL() {
      「没指定」，四格默认又全回来——读者刚把它们一个个关掉，刷新一下全长回来，
      那是 bug 不是默认值。 */
   if (on.length) q.set('open', on.join(',')); else q.set('open', 'none');
-  if (S.mainView !== 'chain') q.set('mv', S.mainView); else q.delete('mv');
   if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
   q.set('theme', themeNow());
   history.replaceState(null, '', location.pathname + '?' + q.toString());
@@ -1453,8 +1454,6 @@ function readURL() {
   if (isFinite(r) && r >= 0 && r < TOPO.world) S.rank = r;
   var rg = q.get('range');
   if (rg && LANE_RANGES.some(function (x) { return x.v === rg; })) S.range = rg;
-  var mv = q.get('mv');
-  if (mv && MAIN_VIEWS.some(function (x) { return x.v === mv; })) S.mainView = mv;
   var openParam = q.get('open');
   (openParam || '').split(',').forEach(function (id) {
     if (id && P[id] && !P[id].def.always) open[id] = 1;
@@ -1499,35 +1498,22 @@ function cfgQuery(q, includeDp) {
 }
 function themeNow() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
 
-/* 并行拓扑自己的七个视图。v 值与说明逐条取自组合工作台的 SLOTS.topology.tabs
-   ——同一个 pattern、同一套状态名，两边点出来的是同一屏。 */
-var MAIN_VIEWS = [
-  { v:'chain',   t:'整网切分',   d:'五把刀按嵌套序串成一条链' },
-  { v:'story',   t:'一个 step',  d:'五幕：前向 / 反向 / 通信 / 更新' },
-  { v:'dim',     t:'单维切分',   d:'一次只看一把刀；配 l5 的五级粒度轴：整网 → 层 → 算子 → kernel → 卡' },
-  { v:'compose', t:'合成·卡阵',  d:'全部卡摆成阵列' },
-  { v:'anatomy', t:'卡内解剖',   d:'层 → 算子 → kernel → 流' },
-  { v:'solid',   t:'交集腔',     d:'权重体 ∩ 激活体 = 这张卡的那一腔' },
-  { v:'time',    t:'时间·流',    d:'时间轴与通信流' }
-];
 var LANE_RANGES = [
   { v:'global', t:'训练步全貌',   d:'MB07 从 PP0 前向到 PP0 反向的完整链路' },
   { v:'pp2',    t:'PP2 生命周期', d:'PP2 的等待 / 计算 / 通信 / 激活驻留' },
   { v:'l34',    t:'L34 对象链',   d:'L34 模块与保存激活的生产—消费关系' }
 ];
-
+/* 泳道那格的三段。并行拓扑的七个视图不在这里——它们不做成页签：
+   这一页的机制是「四周点击展开」，页签是第二套并行机制，同页摆两套只会让人
+   分不清哪些屏是格子、哪些屏是页签。要用到的那两屏（单维切分 / 卡内解剖）
+   已经各自成格，跟整网、泳道、大盘一样从四周展开。 */
 var FRAMESRC = {
   /* 主视图：就是组合工作台舞台上那一格。不传 stitle，用 pattern 自己的题面
      「模型分片与训练设备映射」——那正是它要回答的问题。 */
   main: function () {
     var q = new URLSearchParams();
     q.set('theme', themeNow());
-    q.set('view', S.mainView);
-    /* l5=1：单维切分那一屏的**五级粒度轴**（整网 → 层 → 算子 → kernel → 卡）。
-       不带它那一屏只有卡一级，读不出「同一把刀在五个粒度上各切成什么」。
-       它在 pattern 的 pto:state 白名单里，但首载就给上更稳——换视图走消息、
-       不重载，首载没给的话后面补不回来。 */
-    q.set('l5', '1');
+    q.set('view', 'chain');
     cfgQuery(q, true);
     return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
   },
@@ -1541,6 +1527,27 @@ var FRAMESRC = {
     q.set('vtab', 'side');
     q.set('stitle', '模型整网视图 · 真图展开');
     cfgQuery(q, false);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 单维切分：l5=1 才有那根五级粒度轴（整网 → 层 → 算子 → kernel → 卡）。
+     不带它这一屏只剩卡一级，读不出「同一把刀在五个粒度上各切成什么」，
+     而那正是这一屏的题面。 */
+  dim: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'dim');
+    q.set('l5', '1');
+    q.set('stitle', '单维切分 · 五级粒度轴');
+    cfgQuery(q, true);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 卡内解剖：主视图答「落到哪张卡」，这一屏答「那张卡里面长什么样」 */
+  anatomy: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'anatomy');
+    q.set('stitle', '卡内解剖');
+    cfgQuery(q, true);
     return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
   },
   /* 泳道：compute-graph-viewer 的上游拷贝，原样嵌入。chrome=0 收它自带的顶栏。 */
@@ -1575,6 +1582,20 @@ var HIDECSS = {
     '#zoomHud{display:none!important}' +
     '.pt-grid-title{display:none!important}' +
     '[data-act="persp"]{display:none!important}',
+  /* 这两屏与整网同为跟随视图：名字归格头、选中由主视图发起，所以藏同一批
+     被这一页接管的控件。机位段控与刀键不藏——那是它们各自屏内的读法。 */
+  dim:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '#zoomHud{display:none!important}',
+  anatomy:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '#zoomHud{display:none!important}',
   swimlane:
     /* 名字归格头；整条藏掉之后**网格轨还占着 42px**，不收轨就会在格头与泳道之间
        空出一条横贯整格的白带（组合工作台踩过一次，这里一并收掉）。 */
@@ -1585,7 +1606,7 @@ var HIDECSS = {
 /* 等谁按格子来：并行拓扑那两格的控件都带 [data-act]，泳道那份是上游拷贝、
    一个 data-act 都没有——写死 [data-act] 的话它永远等不到，只能一路耗到超时
    才放行（白等一次，还不报错，最难查的那种）。 */
-var READYSEL = { main: '[data-act]', netgraph: '[data-act]',
+var READYSEL = { main: '[data-act]', netgraph: '[data-act]', dim: '[data-act]', anatomy: '[data-act]',
                  swimlane: '.timeline-pane .pane__header, .timeline-scroll' };
 
 function frameOf(id) { return P[id] && P[id].body.querySelector('iframe'); }
@@ -1646,7 +1667,6 @@ function settleFrame(id, f) {
     } catch (err) { /* 跨源 */ }
     P[id].root.dataset.ready = '1';
     pushSelection();                        // 刚装配好的这一格补一份当前选中
-    if (id === 'main') pushMainView();      // 首载给的就是当前档，这里只做一次对齐
     if (id === 'swimlane') { syncSwimlane(); xpPlaceCursor(); }
   }
   (function poll() {
@@ -1681,7 +1701,7 @@ function pushHL(id, obj) {
 function pushSelection() {
   var ev = curEvent();
   var hl = { layer: ev ? eventLayer(ev) : null };
-  ['main', 'netgraph'].forEach(function (id) { pushHL(id, hl); });
+  ['main', 'netgraph', 'dim', 'anatomy'].forEach(function (id) { pushHL(id, hl); });
 }
 /* 事件落在哪一层 / 哪张卡——只读事件自己写的 focus 与 origin，不另算一套 */
 function eventLayer(ev) {
@@ -1715,15 +1735,6 @@ function wireOpToMain(f) {
   } catch (err) { /* 跨源 */ }
 }
 
-/* 换视图走消息、不重载：重载一次要几百毫秒，还会把格子里的视角、缩放、
-   选中的那张卡全丢掉。pattern 的 pto:state 白名单里本来就有 view。 */
-function pushMainView() {
-  var f = frameOf('main');
-  if (f && f.contentWindow) {
-    try { f.contentWindow.postMessage({ type: 'pto:state', view: S.mainView, l5: 1 }, '*'); } catch (e) {}
-  }
-}
-
 /* ══ 走带：一个训练步的进度 ═══════════════════════════════════════════
    泳道是一张**静态**甘特图——上游那份没有游标、没有播放。而「这一步走到此刻，
    每张卡手上压着多少激活」正是它和拓扑之间还没接上的那条线：泳道画的是什么时候
@@ -1740,7 +1751,7 @@ function xpPush(force) {
   var now = performance.now();
   if (!force && now - xpPushedAt < XP_PUSH_MS) return;
   xpPushedAt = now;
-  ['main', 'netgraph'].forEach(function (id) {
+  ['main', 'netgraph', 'dim', 'anatomy'].forEach(function (id) {
     var f = frameOf(id);
     if (!f || !f.contentWindow || !isOpen(id)) return;
     try { f.contentWindow.postMessage({ type: 'pto:state', step: xpT }, '*'); } catch (e) {}
@@ -1839,7 +1850,7 @@ function wireLinkage() {
 
 /* 主题换了要把三格一起换——换主题不重载（重载会丢掉格子里选中的那张卡） */
 function pushTheme() {
-  ['main', 'netgraph', 'swimlane'].forEach(function (id) {
+  ['main', 'netgraph', 'dim', 'anatomy', 'swimlane'].forEach(function (id) {
     var f = frameOf(id);
     if (f && f.contentWindow) {
       try { f.contentWindow.postMessage({ type: 'pto:state', theme: themeNow() }, '*'); } catch (e) {}
@@ -2201,10 +2212,7 @@ function renderMain() {
   var dp = CFG.world / (CFG.tp * CFG.cp * CFG.pp);
   var shape = 'world ' + CFG.world + ' · TP' + CFG.tp + ' × PP' + CFG.pp + ' × DP' + dp + ' · EP' + CFG.ep;
   var L = ev ? eventLayer(ev) : null;
-  var vn = MAIN_VIEWS.filter(function (x) { return x.v === S.mainView; })[0];
-  P.main.sub.textContent = (vn ? vn.t + ' · ' : '')
-    + (L != null ? ('已照亮 L' + L + ' · ' + shape) : shape);
-  if (P.main.syncTabs) P.main.syncTabs();
+  P.main.sub.textContent = L != null ? ('已照亮 L' + L + ' · ' + shape) : shape;
   bindTip(P.main.head, '主视图就是 /patterns/net-slicing/ 本体，与组合工作台舞台上那一格'
     + '是同一个文件、同一份配置：' + shape + '。\n\n它画的是**这套并行策略长什么样**；'
     + '故事线讲的是另一跑（2048 卡 · PP4 × EDP8 × EP64）。两边卡数不同、rank 号对不上，'

@@ -74,6 +74,16 @@
       "id": "lineage",
       "name": "计算血缘",
       "answers": "同一个算子从模型语义一路降到 Kernel，五层各叫什么名字"
+    },
+    {
+      "id": "dim",
+      "name": "单维切分 · 五级粒度轴",
+      "answers": "一把刀在五个粒度上各切成什么：整网 → 层 → 算子 → kernel → 卡"
+    },
+    {
+      "id": "anatomy",
+      "name": "卡内解剖",
+      "answers": "那张卡里面长什么样：层段 → 算子片 → kernel → 流"
     }
   ],
   "topology": {
@@ -94,8 +104,7 @@
     "open": "摊开了哪几格，逗号分隔；一格不剩时写 none（写 none 而不是删参数，否则刷新会落回默认）",
     "range": "泳道那格看哪一段（global / pp2 / l34）",
     "theme": "light / dark",
-    "embed": "1 = 收起顶栏（被嵌形态）",
-    "mv": "主视图看哪一档（chain / story / dim / compose / anatomy / solid / time）"
+    "embed": "1 = 收起顶栏（被嵌形态）"
   },
   "postMessage": {
     "accepts": "pto:state",
@@ -122,18 +131,23 @@
     "collapse": "每格一颗 ×；Esc 从最外面那一格开始收",
     "defaultOpen": [
       "story",
+      "dim",
+      "anatomy",
       "netgraph",
       "swimlane",
       "board"
     ],
-    "defaultOpenWhy": "常备面：故事线给时间、整网给结构、泳道给时序、大盘给读数；事件相关的几格按需展开"
+    "defaultOpenWhy": "常备面：故事线给时间、整网给结构、泳道给时序、大盘给读数；事件相关的几格按需展开",
+    "noTabs": "并行拓扑的七个视图不做成页签：页签会成为第二套并行机制，同页摆两套人就分不清哪些屏是画布上的格子、哪些屏是某一格里的页签。要用到的那两屏各自成格，从四周展开。"
   },
   "embeds": [
     {
       "path": "<BASE>/patterns/net-slicing/pattern.html",
       "as": [
-        "主视图（五刀全落并进卡维度）",
-        "整网 · 真图展开（不落 DP、不进卡维度）"
+        "主视图 view=chain（五刀全落并进卡维度）",
+        "整网 · 真图展开 view=chain&rank=0&vtab=side（不落 DP、不进卡维度）",
+        "单维切分 view=dim&l5=1（五级粒度轴）",
+        "卡内解剖 view=anatomy"
       ]
     },
     {
@@ -162,15 +176,6 @@
     "pp-cascade",
     "activation-lifetime",
     "fragmented-oom"
-  ],
-  "mainViews": [
-    "chain",
-    "story",
-    "dim",
-    "compose",
-    "anatomy",
-    "solid",
-    "time"
   ],
   "laneRanges": [
     "global",
