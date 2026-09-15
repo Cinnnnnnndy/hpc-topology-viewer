@@ -108,6 +108,32 @@ md 跟着发出去就等于同一份内容有两条链接。
 `?open=` 把「当时摊开了哪几格」也写进链接。细节见
 [`public/incident-canvas/README.md`](public/incident-canvas/README.md)。
 
+## 黑白版并行拓扑 pattern（`/patterns/rank-topology-mono/` · main 自带）
+
+`/patterns/rank-topology-3d/` 那一屏的**另一个页面**——同一题面（五刀切完之后落到哪张卡上），
+换一种画法与一套视觉：黑白极简的数据界面，只用中性灰（R = G = B），背景 `#111111`、
+表面 `#131313–#282828`、主文字 `#E8E8E8`、次文字 `#A0A0A0`，纯白只给选中态；轮廓 1.5px
+直边、小控件 4–5px 圆角，没有渐变、阴影、发光。**没有合并进 `demo.html`**，源在
+`public/patterns/rank-topology-mono/`（pattern.html / css / js / json 同级，无 vendor），
+vite 直接拷进 dist，发布流水线只补 `?v=` 版本戳。
+
+画的是**分片而不是逐张卡**：world 张卡里真正不同的只有 `pp × (tp, ep)` 这几种分片，
+DP / CP 只是把同一份复制 N 遍——128 卡是 32 个平面、盘古 4000 卡是 40 个平面，副本数写在
+标注里（×N 副本）。固定斜向平行投影的 2.5D 层叠，选中的平面沿层序向上抽出、仍被前方平面
+部分遮挡；平面里是「层 × 算子块」的正方形宫格，灰度 = 该层该块在本卡上的字节（log 尺度、
+全图一把尺）。三种口径：权重 / 通信（每步跨卡字节，EP 各边不等不给数）/ 显存（模型态 +
+HBM 合计与容量线，ZeRO 0–3）。下方是每段一行、共用基线的柱状选择器，只在选中柱顶显示数值。
+数值口径逐条照搬 `demo.html`，坐标算术同源。
+
+URL 即状态：`?preset=pangu&mode=hbm&zero=1&sel=1203&group=tp`；参数表见
+[`public/patterns/rank-topology-mono/README.md`](public/patterns/rank-topology-mono/README.md)。
+
+**驾驶舱右栏嵌的就是它。** `public/cube-cockpit.html` 这一页改成了同一套黑白视觉（token
+整体换成中性灰、明暗合一、去阴影、四把刀与三档负载各占一档灰度），右栏原来的「逻辑魔方」
+槽位换成这份 pattern 的 iframe（`preset=pangu&zero=1`，盘古 Pro MoE · 4000 卡 ·
+tp8·pp5·dp100·ep2），并成为默认形态；播放阶段与着色透镜落到 pattern 的「同组标记」上。
+物理层级、层级堆叠两个形态与左栏各页原样保留，只换了颜色。其它页面没有动。
+
 ## 组合工作台（`/combo-workbench/` · 独立迭代）
 
 一块**摞格子**的应用台面，后续的工作台组合往它上面继续摞。形制与视觉语言同

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>模型分片与训练设备映射 · 黑白版</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./pattern.css">
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <div class="eyebrow">PARALLEL TOPOLOGY / RANK ATLAS</div>
+    <h1>模型分片与训练设备映射<span id="title-sub"></span></h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="status" id="status">模拟数据</div>
+</header>
+<div class="view-head">
+  <div class="tabs" role="group" aria-label="矩阵口径">
+    <button type="button" data-mode="weight" aria-pressed="true">权重</button>
+    <button type="button" data-mode="comm" aria-pressed="false">通信</button>
+    <button type="button" data-mode="hbm" aria-pressed="false">显存</button>
+  </div>
+  <div class="legend"><span>低</span><span class="ramp"></span><span>高</span><span id="legend-hollow" style="display:none"> · <i class="hollow"></i>EP 不给数</span><span> · </span><span id="legend-text"></span></div>
+</div>
+<div class="view">
+  <svg id="scene" viewBox="0 0 1400 850" role="img" aria-label="全部模型分片的 2.5D 层叠图：每个平面一种分片，平面里是层 × 算子块的宫格；通过下方分片选择器可选择任意一张卡">
+    <g id="guides" aria-hidden="true"></g>
+    <g id="planes"></g>
+    <g id="annotation" pointer-events="none"></g>
+  </svg>
+</div>
+<div class="bottom">
+  <div class="layer-top"><div id="selected-summary" aria-live="polite"></div><span>每行一个流水段 · 每根柱一种分片（编号 = 该分片最小的 global rank）</span></div>
+  <div class="bar-heading"><span id="bar-metric">本卡权重</span><span id="rms-range"></span></div>
+  <div class="rows" id="rows"></div>
+  <div class="controls">
+    <div class="grp">
+      <button id="previous" class="arrow-button" aria-label="上一片">←</button>
+      <button id="next" class="arrow-button" aria-label="下一片">→</button>
+    </div>
+    <div class="grp"><span class="lab">同组标记</span>
+      <div class="seg" role="group" aria-label="沿哪把刀标记与选中卡同组的分片">
+        <button type="button" data-group="none" aria-pressed="true">无</button>
+        <button type="button" data-group="tp" aria-pressed="false">TP</button>
+        <button type="button" data-group="dp" aria-pressed="false">DP</button>
+        <button type="button" data-group="ep" aria-pressed="false">EP</button>
+        <button type="button" data-group="pp" aria-pressed="false">PP</button>
+      </div>
+    </div>
+    <div class="grp"><span class="lab">ZeRO</span>
+      <div class="seg" role="group" aria-label="ZeRO 档位：模型态沿 DP 域切几档">
+        <button type="button" data-zero="0" aria-pressed="true">0</button>
+        <button type="button" data-zero="1" aria-pressed="false">1</button>
+        <button type="button" data-zero="2" aria-pressed="false">2</button>
+        <button type="button" data-zero="3" aria-pressed="false">3</button>
+      </div>
+    </div>
+  </div>
+  <div class="hint">
+    <span>平面 = 一种模型分片（pp · tp · ep 的交集）；DP / CP 副本不另画，记为 ×N。灰度 = 该层该块在本卡上的字节，log 尺度、全图一把尺。点平面或柱选中；← → 逐片。</span>
+    <span class="dense-legend">URL 即状态：?preset=pangu&amp;mode=comm&amp;sel=23&amp;group=tp&amp;zero=1</span>
+  </div>
+</div>
+</main>
+<script src="./pattern.js"></script>
+</body>
+</html>
