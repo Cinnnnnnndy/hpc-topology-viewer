@@ -2,10 +2,6 @@ name: Deploy to GitHub Pages
 
 # 部署策略：站点框架（工作台/驾驶舱）永远从 main 构建，两个 pattern 分支都不进框架，
 # 各自只贡献一个自包含的静态子目录，叠加在 main 构建产物之上一起发布：
-#   · main 自己
-#       → /patterns/rank-topology-mono/（黑白版「模型分片与训练设备映射」pattern：源在
-#         public/patterns/rank-topology-mono/，vite 直接拷进 dist，下面只打 ?v= 版本戳）
-#       → /cube-cockpit.html 右栏「并行拓扑」槽位嵌的就是它（盘古 Pro MoE · 4000 卡）
 #   · claude/rubik-view-pattern-extraction-7pk0qt
 #       → /rubik/ 与 /patterns/rubik-cube-logical/（逻辑魔方 pattern 本体）
 #   · claude/logic-cube-pattern-spec-3oycmv
@@ -110,31 +106,6 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Stamp /patterns/rank-topology-mono/（main 自带的黑白版并行拓扑 pattern）
-        # 源就在 main 的 public/patterns/rank-topology-mono/（pattern.html/css/js/json 同级、无 vendor），
-        # vite build 已把它原样拷进 dist/patterns/。这里只补两件事：页面里的本地资源链接打
-        # ?v=<短SHA>、pattern.json 的 version 写同一个值——缓存与对账用（见
-        # .claude/skills/shareable-pattern-link）。驾驶舱右栏嵌的也是这一份（cube-cockpit.html
-        # 里的 iframe，带宿主给的 ?v=）。
-        run: |
-          set -euo pipefail
-          SHA=$(git rev-parse --short HEAD)
-          PD=dist/patterns/rank-topology-mono
-          test -s $PD/pattern.html
-          test -s $PD/pattern.js
-          test -s $PD/pattern.css
-          sed -i -e "s#\(\./pattern\.\(css\|js\)\)\"#\1?v=$SHA\"#g" $PD/pattern.html
-          grep -q "pattern.js?v=$SHA" $PD/pattern.html
-          grep -q "pattern.css?v=$SHA" $PD/pattern.html
-          node -e "
-            const fs=require('fs');
-            const f='$PD/pattern.json';
-            const o=JSON.parse(fs.readFileSync(f,'utf8'));
-            o.version='$SHA';
-            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
-          "
-          echo "published: /patterns/rank-topology-mono/pattern.html?v=$SHA"
 
       - name: Checkout rubik pattern branch
         uses: actions/checkout@v4

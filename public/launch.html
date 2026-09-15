@@ -548,55 +548,6 @@ body {
           </div>
         </article>
 
-        <article class="card">
-          <div class="card-head">
-            <h3 class="card-title"><a href="./patterns/rank-topology-mono/pattern.html">模型分片与训练设备映射 · 黑白版</a></h3>
-            <div class="card-tags">
-              <span class="tag tag--k-pat">Pattern</span>
-              <span class="tag">2.5D 分片层叠</span>
-              <span class="tag">只用中性灰</span>
-            </div>
-          </div>
-          <div class="card-preview" aria-hidden="true">
-            <svg viewBox="0 0 320 160">
-              <g fill="#161616" stroke="#5a5a5a" stroke-width="1.2">
-                <path d="M150 40 l60 20 v70 l-60 -20 z"/>
-                <path d="M138 46 l60 20 v70 l-60 -20 z"/>
-                <path d="M126 52 l60 20 v70 l-60 -20 z"/>
-                <path d="M114 58 l60 20 v70 l-60 -20 z" stroke="#8a8a8a"/>
-                <path d="M102 64 l60 20 v70 l-60 -20 z" stroke="#a0a0a0"/>
-                <path d="M90 22 l60 20 v70 l-60 -20 z" fill="#1b1b1b" stroke="#ffffff" stroke-width="1.8"/>
-                <path d="M78 76 l60 20 v70 l-60 -20 z" stroke="#c4c4c4"/>
-              </g>
-              <g>
-                <rect x="96" y="34" width="6" height="6" fill="#3a3a3a" transform="skewY(18.4)"/><rect x="104" y="34" width="6" height="6" fill="#6a6a6a" transform="skewY(18.4)"/><rect x="112" y="34" width="6" height="6" fill="#d8d8d8" transform="skewY(18.4)"/><rect x="120" y="34" width="6" height="6" fill="#dcdcdc" transform="skewY(18.4)"/>
-                <rect x="96" y="43" width="6" height="6" fill="#3a3a3a" transform="skewY(18.4)"/><rect x="104" y="43" width="6" height="6" fill="#6a6a6a" transform="skewY(18.4)"/><rect x="112" y="43" width="6" height="6" fill="#d8d8d8" transform="skewY(18.4)"/><rect x="120" y="43" width="6" height="6" fill="#dcdcdc" transform="skewY(18.4)"/>
-                <rect x="96" y="52" width="6" height="6" fill="#3a3a3a" transform="skewY(18.4)"/><rect x="104" y="52" width="6" height="6" fill="#6a6a6a" transform="skewY(18.4)"/><rect x="112" y="52" width="6" height="6" fill="#d8d8d8" transform="skewY(18.4)"/><rect x="120" y="52" width="6" height="6" fill="#dcdcdc" transform="skewY(18.4)"/>
-              </g>
-              <path d="M52 40 H84" stroke="#bdbdbd" stroke-width="1"/>
-              <text x="46" y="36" text-anchor="end" fill="#e0e0e0" font-size="11" font-family="Inter,sans-serif">rank 23</text>
-              <text x="46" y="48" text-anchor="end" fill="#8a8a8a" font-size="7" font-family="ui-monospace,monospace">pp0 · tp1 · ep7 · ×4</text>
-              <g fill="#bdbdbd">
-                <rect x="232" y="122" width="8" height="18"/><rect x="244" y="118" width="8" height="22"/><rect x="256" y="120" width="8" height="20" fill="#ffffff"/><rect x="268" y="124" width="8" height="16"/><rect x="280" y="121" width="8" height="19"/>
-              </g>
-              <path d="M228 140 H292" stroke="#444" stroke-width="1"/>
-            </svg>
-          </div>
-          <p class="card-desc">与 3D 版同一题面——切完之后落到哪张卡上——换成黑白极简的数据界面：斜向平行投影的层叠平面，每个平面一种模型分片（pp·tp·ep 交集，DP/CP 副本记为 ×N），平面里是「层 × 算子块」的宫格，灰度＝该层该块在本卡上的字节。权重 / 通信 / 显存三种口径，URL 即状态；驾驶舱右栏嵌的就是它（盘古 Pro MoE · 4000 卡）。</p>
-          <div class="card-links">
-            <a class="lnk lnk--primary" href="./patterns/rank-topology-mono/pattern.html">打开</a>
-            <a class="lnk" href="./patterns/rank-topology-mono/pattern.html?preset=pangu&amp;zero=1&amp;mode=hbm&amp;sel=1203">盘古 4000 卡 · 显存</a>
-            <a class="lnk" href="./patterns/rank-topology-mono/README.md">使用文档</a>
-            <a class="lnk" href="./patterns/rank-topology-mono/pattern.json">契约</a>
-          </div>
-          <div class="card-src">
-            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/patterns/rank-topology-mono" target="_blank" rel="noopener">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              public/patterns/rank-topology-mono/
-            </a>
-          </div>
-        </article>
-
       </div>
     </section>
 
@@ -614,6 +565,59 @@ body {
         <div class="group-rule" aria-hidden="true"></div>
       </div>
       <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./supernode-intro/">超节点集群 · 八步</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">讲解</span>
+              <span class="tag">一步一张简图</span>
+              <span class="tag">?step= 可分享</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect x="0" y="0" width="320" height="160" fill="#111111"/>
+              <!-- 一张卡 → 一台节点 → 一个超节点：三级包含，逐级放大 -->
+              <rect x="22" y="58" width="26" height="26" fill="#242424" stroke="#ffffff" stroke-width="1.5"/>
+              <g stroke="#3a3a3a" fill="#242424">
+                <rect x="78" y="48" width="11" height="11"/><rect x="93" y="48" width="11" height="11"/>
+                <rect x="108" y="48" width="11" height="11"/><rect x="123" y="48" width="11" height="11"/>
+                <rect x="78" y="63" width="11" height="11"/><rect x="93" y="63" width="11" height="11"/>
+                <rect x="108" y="63" width="11" height="11"/><rect x="123" y="63" width="11" height="11"/>
+              </g>
+              <rect x="73" y="43" width="66" height="36" fill="none" stroke="#7fc9d6" stroke-width="1.2"/>
+              <g fill="#1e1e1e" stroke="#333333">
+                <rect x="170" y="44" width="16" height="16"/><rect x="190" y="44" width="16" height="16"/>
+                <rect x="210" y="44" width="16" height="16"/><rect x="230" y="44" width="16" height="16"/>
+                <rect x="170" y="64" width="16" height="16"/><rect x="190" y="64" width="16" height="16"/>
+                <rect x="210" y="64" width="16" height="16"/><rect x="230" y="64" width="16" height="16"/>
+              </g>
+              <rect x="165" y="39" width="86" height="46" fill="none" stroke="#7fc9d6" stroke-width="1.2"/>
+              <!-- 只有最外那一跳是跨域 -->
+              <path d="M256 62 H298" stroke="#d9a441" stroke-width="2"/>
+              <rect x="160" y="34" width="138" height="56" fill="none" stroke="#d9a441" stroke-width="1" stroke-dasharray="3 4"/>
+              <!-- 下沿：八步 -->
+              <g fill="#3a3a3a"><rect x="22" y="126" width="30" height="2"/><rect x="60" y="126" width="30" height="2"/>
+                <rect x="98" y="126" width="30" height="2"/><rect x="136" y="126" width="30" height="2"/>
+                <rect x="174" y="126" width="30" height="2"/><rect x="212" y="126" width="30" height="2"/>
+                <rect x="250" y="126" width="30" height="2"/></g>
+              <rect x="288" y="125" width="10" height="4" fill="#e8e8e8"/>
+            </svg>
+          </div>
+          <p class="card-desc">一张卡怎么长成一个 8,192 卡的集群，以及哪一层才是换挡点。八步各一张简图：卡 · 节点 · 超节点 · 边界 · 集群 · 盘古 Pro MoE 4,000 卡配置 · 一张卡的四类通信关系 · 跑起来的八级读数。只讲结构，不放大段说明。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./supernode-intro/">打开</a>
+            <a class="lnk" href="./supernode-intro/?step=4">换挡点在哪</a>
+            <a class="lnk" href="./supernode-intro/?step=6">盘古 4,000 卡配置</a>
+          </div>
+          <div class="card-src">
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/supernode-intro/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              public/supernode-intro/index.html
+            </a>
+          </div>
+        </article>
 
         <article class="card">
           <div class="card-head">
