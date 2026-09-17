@@ -92,6 +92,13 @@
 .prc-root .btn.is-selected:hover {
   background: var(--primary); border-color: var(--primary); color: var(--primary-foreground);
 }
+/* 着色镜头选了「素色」：卡阵已经退成中性灰，顶栏那圈选中态的主色蓝也跟着
+   退成中性灰——只在这一个 rubik-cube 实例的根节点上覆盖，不碰设计系统的
+   --primary 令牌本身，不影响页面上其余用到 --primary 的地方。 */
+.prc-root.is-neutral-theme .btn.is-selected,
+.prc-root.is-neutral-theme .btn.is-selected:hover {
+  background: var(--foreground-secondary); border-color: var(--foreground-secondary); color: var(--background);
+}
 
 /* 浮在画面上的卡片一律用大圆角（--radius-xl），比 panel-shell 默认的 14px 更圆，
    与顶栏那排胶囊控件是同一种语气 */

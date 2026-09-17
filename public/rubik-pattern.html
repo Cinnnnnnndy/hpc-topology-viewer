@@ -32,7 +32,10 @@
      ?mode=std|dp|ep|tp|pp|phys（或 0-5）  形态
      ?view=3d|top|front|side（或 0-3）    视角
      ?tp= &cp= &pp= &dp= &ep=            并行度（给几个改几个）· cp=上下文并行（真实维、与 TP 共轴，默认 1）
-     ?color=load|tp|pp|dp|ep|host|pod     着色镜头
+     ?color=load|tp|pp|dp|ep|host|pod     着色镜头（另有 neutral = 素色，只看阵列形状）
+     ?groupgap=<1..6>                     分组间距放大倍数（默认 1 = 原样）。放大的是卡与卡
+                                          之间的**缝**、不是卡本身，块与块的空档跟着等比变宽，
+                                          4000 卡这种规模下「这是几段 / 几片」才读得出来。
                                           |w|act|grad|opt（内存构成：权重/激活/梯度/优化器态占比）
      ?anom=none|tp|pp|dp|ep               异常注入
      ?phase=TP|PP|EP|DP  或 ?t=0..1       时间轴位置
@@ -57,6 +60,12 @@
   var VIEWS = { '3d': 0, iso: 0, top: 1, front: 2, side: 3 };
   var cfg = { tp: 2, pp: 4, dp: 16, ep: 8 };   // 默认 = 128 卡小规格（看得清每一张卡）
   ['tp', 'cp', 'pp', 'dp', 'ep'].forEach(function(k){ if (num(k)) cfg[k] = num(k); });   // cp：上下文并行（真实 rank 维、与 TP 共轴），不给则 1，与改动前逐位相同
+  /* 分组间距（?groupgap=）：跟 tp/pp/dp/ep 一样属于**布局模型**的输入，所以走
+     cfg 而不是 mount 之后的 setter——setConfig 重建模型时 Object.assign 会把它
+     一起带过去，换预置（比如工具栏那颗「盘古ProMoE」）不会把它丢掉。
+     不给或给非法值就是 1，整套布局与改动前逐位相同。 */
+  var ggap = parseFloat(qs.get('groupgap'));
+  if (isFinite(ggap) && ggap > 1) cfg.groupGap = Math.min(6, ggap);
 
   var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
     theme: theme,

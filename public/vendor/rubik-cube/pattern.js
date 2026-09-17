@@ -326,15 +326,27 @@
     const N = TP * CP * PP * REP;         // rank 总数 = tp × cp × pp × dp
     const LPS = Math.max(1, Math.round(C.layers / PP));            // 每段层数
     const EXP_PER = Math.max(1, Math.floor(C.experts / EP));       // 每桶专家数
+    /* ── 分组间距放大（groupGap）────────────────────────────────────────────
+       默认 1 = 一个字节都不动（已经发出去的链接、别的宿主看到的都还是原来那副
+       样子）。给大于 1 的数，把**缝**（不是卡本身）按比例拉开：卡还是那么大，
+       块与块之间的空档变宽，于是「这是四段 / 这是八片」在一屏 4000 卡的规模下
+       才读得出来——参照的是并行拓扑矩阵那一屏（demo.html）里 PP 段与 EP 组之间
+       那道明显的留白。放大的是 stepOf 的缝，所以 padOf（块间留白，按块跨度成
+       比例）与 clampFor2D（2D 稀疏条纹的封顶）都跟着等比走，布局不变量
+       （步距 ≥ 卡尺寸 + 最小缝）也照旧成立，不必逐形态手调。
+       上限 6：再大就不是"分组更明显"而是"卡散成一片星点"，四个形态的块读法
+       全都失效。 */
+    const GK = Math.max(1, Math.min(6, +C.groupGap || 1));
+    const stepK = (ax, n, tier) => CARD[ax] + GAP_BY_N(n) * TIER[tier || 'normal'] * GK;
     // ── 轴步距（布局规则推导）──
     const CY = 9;                                    // 逻辑体离地高度（各形态统一）
-    const tpStep = stepOf('x', TPL);                 // 板 / 墙内 TP(×CP) 列步距
-    const ppStep = stepOf('y', PP);                  // 板 / 墙内 PP 行步距
+    const tpStep = stepK('x', TPL);                  // 板 / 墙内 TP(×CP) 列步距
+    const ppStep = stepK('y', PP);                   // 板 / 墙内 PP 行步距
     const blockW = TPL * tpStep;                     // 一面墙的宽度（EP 聚簇：内维 TP(×CP) 一字排开）
     /* DP 平铺的「板」：把板内 TP 折成 (TPC 列 × TPD 排)，让板有厚度——一字排开的板
        只有 1 张卡厚，在顶视/侧视里都退化成稀疏条纹。取「宽 ≥ 深」且世界跨度最接近
        方形的分法（TP=8 → 4×2 · TP=16 → 4×4 · TP=2 → 2×1）。 */
-    const tpStepZ = stepOf('z', TPL);                // 板内 TP(×CP)「排」的纵深步距
+    const tpStepZ = stepK('z', TPL);                // 板内 TP(×CP)「排」的纵深步距
     const TPC = (() => {
       const ideal = Math.sqrt(TPL * tpStepZ / tpStep), lo = Math.sqrt(TPL) - 1e-9;
       let best = TPL, err = Infinity;
@@ -418,17 +430,17 @@
          空档、读得出是「四组」而不是「一片」，但「把这根轴拉开」这个动作仍然归 PP流水
          ——两者因此还是差一个量级，而不是差一点点。三轴步距比也都在 MAX_RATIO 以内
          （128 卡：2.13 / 0.90 / 1.45），2D 不会散成稀疏条纹。 */
-      std: { sx: stepOf('x', PP, 'spread'), sy: stepOf('y', REP), sz: stepOf('z', TPL), cy: CY },
+      std: { sx: stepK('x', PP, 'spread'), sy: stepK('y', REP), sz: stepK('z', TPL), cy: CY },
       // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
       dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
-      ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepOf('y', PP), dom: stepOf('z', DOM, 'spread'), cy: CY },
+      ep: { gapE: blockW + padOf(blockW), tp: tpStep, pp: stepK('y', PP), dom: stepK('z', DOM, 'spread'), cy: CY },
       // TP切片 / PP流水 是「强调类」形态：主轴用 emph 层级（4×）拉开，强调
       // 「墙拉开查同槽位 / 段拉开找慢段」的读法。这个 4× 正好卡在 MAX_RATIO 上，
       // 2D 里主轴会显得稀疏 —— 靠 axBlockFrames 给每块套框把条纹读成整块，不靠压步距
       // （压了这两个形态就没意义了）。
-      tps: { gapT: stepOf('x', TPL, 'emph'), pp: stepOf('y', PP), rep: stepOf('z', REP), cy: CY },
-      ppf: { gapP: stepOf('x', PP, 'emph'), tp: stepOf('y', TPL), rep: stepOf('z', REP), cy: CY },
+      tps: { gapT: stepK('x', TPL, 'emph'), pp: stepK('y', PP), rep: stepK('z', REP), cy: CY },
+      ppf: { gapP: stepK('x', PP, 'emph'), tp: stepK('y', TPL), rep: stepK('z', REP), cy: CY },
       /* 物理平铺：不看任何并行分组，只回答「这张卡插在机房哪个槽位」——X=host 内卡位(slot)
          · Z=host 序号 · Y 恒 0（各形态里唯一不叠高度的一种，真摊平，不是「压扁的立方」）。
          host 数一多会排成一条极长的线，超过 64 台折成 hgx×hgz 近方格（同 DP 平铺的折法）；
@@ -438,9 +450,9 @@
         const foldHost = HOSTS > 64;
         const hgx = foldHost ? Math.max(1, Math.ceil(Math.sqrt(HOSTS))) : 1;
         const hgz = foldHost ? Math.ceil(HOSTS / hgx) : HOSTS;
-        const slot = stepOf('x', CPH);
+        const slot = stepK('x', CPH);
         const hostBlockW = CPH * slot;
-        return { hgx, hgz, slot, gapX: hostBlockW + padOf(hostBlockW), gapZ: stepOf('z', hgz) };
+        return { hgx, hgz, slot, gapX: hostBlockW + padOf(hostBlockW), gapZ: stepK('z', hgz) };
       })(),
     };
 
@@ -724,7 +736,14 @@
       return { r: bg.r + (c.r - bg.r) * c.a, g: bg.g + (c.g - bg.g) * c.a, b: bg.b + (c.b - bg.b) * c.a, a: 1 };
     }
     const tokHex = (key, fallback) => { const c = tokRGB(key, fallback); return '#' + hex2(c.r) + hex2(c.g) + hex2(c.b); };
-    const dimc = (d) => tokHex(DIM_TOKEN[d]);
+    /* 素色镜头下，维度签名色（TP 青 / PP 橙 / DP 蓝 / EP 紫）连同它们画出来的东西
+       ——轴刻度、块分隔线、块框、坐标轴说明、悬停卡的标题色——一起收成灰阶。
+       只改这一个出口就够了：整个 3D 标注体系的颜色都是从 dimc() 要来的。
+       四维仍然各给一格明度（不是同一个灰），于是"这是 TP 轴还是 DP 轴"在同屏
+       对照时还分得开，只是不再靠色相。卡阵本体的素色在 colorOfRank 里，那是
+       另一条路（同一个 S.colorBy 开关）。 */
+    const DIM_MONO = { TP: '#C8C8C8', SP: '#C8C8C8', CP: '#9A9A9A', PP: '#E2E2E2', DP: '#AEAEAE', EP: '#868686' };
+    const dimc = (d) => (S.colorBy === 'neutral' && DIM_MONO[d]) ? DIM_MONO[d] : tokHex(DIM_TOKEN[d]);
     const tierc = (k) => tokHex(TIER_TOKEN[k]);          // 物理链路层级色（同机 / Pod 内 / 跨 Pod）
     const groupColor = (i) => tokHex(GROUP_TOKENS[i % GROUP_TOKENS.length]);
 
@@ -3181,6 +3200,9 @@
       } else if (S.colorBy === 'load') {
         parts.push(sec('着色 · 状态热力'),
           `<div class="prc-lgrow prc-ramp"><i></i><span>负载 低→高</span></div>`);
+      } else if (S.colorBy === 'neutral') {
+        parts.push(sec('着色 · 素色'),
+          row(tokHex('--foreground-secondary'), '不按维度/负载区分——先看阵列形状'));
       } else if (MEM_LENS_KEY[S.colorBy]) {
         /* 颜色画的是「这张卡在全网 min→max 之间排第几」，不是「占这张卡总内存的百分之几」
            ——后者被参数量的量级摊平成一条死色，前者才拉得出结构性差异（见 colorOfRank
@@ -3703,8 +3725,11 @@
       if (vg) vg.style.display = vlist.length > 1 ? '' : 'none';
       const vhelp = vg && vg.nextElementSibling && vg.nextElementSibling.classList.contains('prc-help') ? vg.nextElementSibling : null;
       if (vhelp) vhelp.style.display = vlist.length > 1 ? '' : 'none';
-      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod', 'w', 'act', 'grad', 'opt'];
+      const lensKeys = ['load', 'tp', 'pp', 'dp', 'ep', 'host', 'pod', 'w', 'act', 'grad', 'opt', 'neutral'];
       lensBtns.forEach((b, i) => b.classList.toggle('is-selected', lensKeys[i] === S.colorBy));
+      // 素色镜头选中时，顶栏那圈"选中态=主色蓝"的胶囊按钮也一并退成中性灰——
+      // 不然卡阵已经素净了，顶栏还留一圈蓝，"素色"这句话只说了一半。
+      root.classList.toggle('is-neutral-theme', S.colorBy === 'neutral');
       if (objSel) objSel.value = S.obj || '';
       if (objGo) {
         const o = S.obj && model.netObjBy[S.obj];
@@ -4180,7 +4205,16 @@
         S.view = v | 0; fitView(); applyAxVisibility(); fitView(); rebuildComm(); refresh2D(); syncHelp(); renderInfo();
       },
       setSlice(on, val) { S.sliceOn = !!on; if (val != null) S.sliceVal = val | 0; refresh2D(); },
-      setColorBy(k) { S.colorBy = k; recolor(); renderLegend(); syncChrome(); },
+      /* 素色这档不只换卡的颜色，还把维度签名色（dimc）整体换掉，而轴刻度、块框、
+         嵌套壳、通信线都是**建好之后不再重算颜色**的 Three 对象——只调 recolor()
+         的话卡阵素了、四周那圈青/橙/蓝/紫的标注还在（实机就是"卡灰了、字还是彩的"）。
+         所以进出素色时连它们一起重建。非素色之间互相切（load↔tp↔w…）不受影响，
+         走的还是原来那条最轻的路。 */
+      setColorBy(k) {
+        const wasMono = S.colorBy === 'neutral', nowMono = k === 'neutral';
+        S.colorBy = k; recolor(); renderLegend(); syncChrome();
+        if (wasMono !== nowMono) { renderAxes(); applyAxVisibility(); rebuildComm(); buildNest(); refresh2D(); }
+      },
       setAnomaly(k) { S.anom = k; recolor(); renderHud(); renderLegend(); syncChrome(); },
       select(r) {
         S.sel = r;
