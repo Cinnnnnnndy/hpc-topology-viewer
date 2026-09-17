@@ -10266,15 +10266,43 @@ var viewRendered = null, crispT = 0;
    整套相机代码搬进 netScene 里。只在 ui.fastCard 时才有消费者读它，其余场景多出
    的这一次赋值可忽略不计。 */
 var chainCardAnchorG = null;
+/* 飞焦动画：跟 startSqAnim 同一套 ease-out cubic（快启动、慢停靠），但只改
+   ui.zoom3/panX3/panY3 走 applyViewTransform 的 CSS-transform 捷径——不是
+   render()。理由跟 applyViewTransform 顶上那段注释一样：这段是纯镜头运动，
+   全量重画几万个图元只会把动画拖成一帧一帧的顿挫。动画收尾调一次
+   scheduleCrisp()，补一帧矢量级别的清晰重绘（跟拖拽松手后的收尾同一条路）。 */
+var camAnim = null;
+function animateCamera(toZoom, toPanX, toPanY){
+  if(camAnim && camAnim.raf != null) cancelAnimationFrame(camAnim.raf);
+  var t0 = (window.performance || Date).now(), dur = 560;
+  var from = {zoom: ui.zoom3, panX: ui.panX3, panY: ui.panY3};
+  var self = camAnim = {t0:t0, dur:dur, raf:null};
+  function step(){
+    var now = (window.performance || Date).now();
+    var p = Math.min(1, (now - self.t0) / self.dur);
+    var e = 1 - Math.pow(1 - p, 3);
+    ui.zoom3 = from.zoom + (toZoom - from.zoom)*e;
+    ui.panX3 = from.panX + (toPanX - from.panX)*e;
+    ui.panY3 = from.panY + (toPanY - from.panY)*e;
+    applyViewTransform();
+    if(p < 1){ self.raf = requestAnimationFrame(step); }
+    else{
+      ui.zoom3 = toZoom; ui.panX3 = toPanX; ui.panY3 = toPanY;
+      applyViewTransform();
+      if(camAnim === self) camAnim = null;
+      scheduleCrisp();
+    }
+  }
+  self.raf = requestAnimationFrame(step);
+}
+function resetCamera(){ animateCamera(1, 0, 0); }
 function focusCardCamera(g){
   var a = chainCardAnchorG && chainCardAnchorG[g], vr = viewRendered;
   if(!a || !vr) return;
   var cx = isFinite(vr.cx) ? vr.cx : (vr.vx||0) + vr.vw/2;
   var cy = isFinite(vr.cy) ? vr.cy : (vr.vy||0) + vr.vh/2;
-  ui.zoom3 = clamp(9, 0.2, 20);
-  ui.panX3 = ui.zoom3*(cx - a[0]);
-  ui.panY3 = ui.zoom3*(cy - a[1]);
-  applyViewTransform();
+  var toZoom = clamp(9, 0.2, 20);
+  animateCamera(toZoom, toZoom*(cx - a[0]), toZoom*(cy - a[1]));
 }
 function applyViewTransform(){
   var svg = $('stage').querySelector('svg');
@@ -13322,7 +13350,7 @@ document.addEventListener('click', function(ev){
     if(liBlank !== null) startSqAnim(sqT, 0, liBlank); else render();
     /* fastCard：取消选中时飞回默认机位——不然镜头还停在刚才那张卡的放大
        位置，而那张卡已经跟着别的卡一起消失了，画面上只剩一片空白。 */
-    if(ui.fastCard){ ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; applyViewTransform(); }
+    if(ui.fastCard) resetCamera();
     ptoNotifyHost(); return;
   }
   if(!b) return;
@@ -13565,7 +13593,7 @@ document.addEventListener('click', function(ev){
          会看着一屏空白发呆——刚才对着的那张卡已经跟着别的卡一起消失了。 */
       if(ui.fastCard){
         if(sel !== null) focusCardCamera(sel);
-        else { ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; applyViewTransform(); }
+        else resetCamera();
       }
       ptoNotifyHost();
     }
