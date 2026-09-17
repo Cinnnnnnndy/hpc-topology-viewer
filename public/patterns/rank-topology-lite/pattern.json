@@ -1,23 +1,23 @@
 {
   "id": "rank-topology-lite",
   "name": "模型分片与训练设备映射 · 简洁版",
-  "description": "/patterns/rank-topology-3d/ 的简洁版：矩阵、排布、六档通信、preset、ZeRO、物理平铺一个字节不碰——中央 iframe 嵌的就是 /patterns/rank-topology-3d/pattern.html 本体（同源，不是拷贝），固定落在 preset=pangu·theme=dark（盘古 ProMoE 公开口径 TP8×PP5×DP100=4000 卡，EP2 是路由维度不参与 rank 计数）。变的是外层：环绕式的无限画布，矩阵钉在正中央、是画面里最大最先看到的主体；点一张卡下钻之后，那张卡的真实坐标（矩阵页自己 postMessage 上报的 pto:select，不是另算的）落成一张卫星卡浮在矩阵四周，一条细线连回去，下钻越多画布摊得越大。外层画布与卫星卡走 compute-graph-viewer 的『抽象图网页 prompt』——深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线；这份 prompt 管外层，不管矩阵内部怎么画。",
-  "version": "3.0.0",
+  "description": "/patterns/rank-topology-3d/ 的简洁版：矩阵、排布、六档通信、preset、ZeRO、物理平铺一个字节不碰——中央 iframe 嵌的就是 /patterns/rank-topology-3d/pattern.html 本体（同源，不是拷贝），铺满整个视口、边到边、不加框不缩小，固定落在 preset=pangu·theme=dark（盘古 ProMoE 公开口径 TP8×PP5×DP100=4000 卡，EP2 是路由维度不参与 rank 计数）。拓扑本身就是全屏幕的无限画布——不是另包一层镜头、把矩阵缩成一张卡片放在中间；它自己的拖动/缩放/选组镜头原样在场，这一层不额外叠加镜头。点一张卡下钻之后（矩阵页自己 postMessage 上报的 pto:select，不是另算的），那张卡的真实坐标浮成一张卫星卡贴在屏幕右边，像便签一样浮在主画布上层，不占用、不缩小主画布本身。卫星卡走 compute-graph-viewer 的『抽象图网页 prompt』——深色极简、无边框灰卡、语义配色只用在训练语义图元上；这份 prompt 管卫星卡，不管矩阵内部怎么画。",
+  "version": "3.1.0",
   "entry": "pattern.html",
   "selfContained": false,
-  "canvas": "infinite",
+  "canvas": "full-bleed",
   "variantOf": "rank-topology-3d",
   "derivedFrom": {
     "topic": "/patterns/rank-topology-3d/pattern.html 本体，同源 iframe 嵌入（preset=pangu·theme=dark），不复制它的任何代码",
-    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（只用于外层画布与卫星卡，不用于中央矩阵内部）",
-    "structure": "/patterns/incident-canvas/ 的『主视图 + 卫星 + 连线』无限画布结构（同一套思路，代码是精简重写，不是整段搬运）"
+    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（只用于贴边的卫星卡，不用于中央矩阵内部）"
   },
   "urlParams": {
     "sel": "逗号分隔的 rank 列表（如 12,45,90）—— 打开时直接摆好对应的卫星卡；假设默认盘古预置，不给就不预开任何卫星卡"
   },
   "constraints": [
-    "中央矩阵是同源 iframe，指向 /patterns/rank-topology-3d/pattern.html，不是另一份拷贝或重新实现——它的六档通信、preset、ZeRO、物理平铺、真实计时口径全部原样可用，这一份不做任何裁剪，只是默认把 preset 定在 pangu、theme 定在 dark。",
+    "中央矩阵是同源 iframe，指向 /patterns/rank-topology-3d/pattern.html，不是另一份拷贝或重新实现——它的六档通信、preset、ZeRO、物理平铺、真实计时口径、它自己的拖动/缩放镜头全部原样可用，这一份不做任何裁剪，只是默认把 preset 定在 pangu、theme 定在 dark，并且让它铺满整个视口（不缩小、不包一层额外的镜头）。",
     "盘古 ProMoE 预置 world=4000 = TP8×PP5×DP100，EP2 是同一批 rank 内部的专家路由维度（All-to-All），不额外乘进 rank 总数——这是从矩阵页实际上报的 config 里读回来的口径，不是按『EP 也是并行维就该相乘』的直觉猜的。",
+    "卫星卡贴在屏幕右边固定叠一层（position:fixed），不跟随矩阵自己的镜头缩放/平移——矩阵怎么转、怎么缩，卫星卡都不动，避免再有第二套镜头逻辑跟矩阵自己的镜头打架。",
     "卫星卡的坐标数据来自矩阵页自己的 postMessage（pto:select 事件里的 groups 字段），是矩阵页当场算出来的真实坐标，不是这一层自己重新推导；只有 URL 深链（?sel=）在页面刚打开、还没收到任何真实事件时，才用一份本地小算式按盘古预置的固定参数补算坐标，仅用于恢复深链，不作为运行期的权威来源。",
     "卫星卡里的『执行活动』色块只是示意色条，没有真实计时依据，标注『长度示意，非实测』；真实的耗时估算与传输时间下界仍在矩阵本体内部（悬停/选中之后的读出面板）。",
     "颜色语义仅用于卫星卡：前向 #4469EF、反向 #FF4C7C、通信 #05D793、优化器 #FFAA3B。中央矩阵内部的配色由它自己的 theme=dark 决定，这一层不覆盖、不注入额外样式。",

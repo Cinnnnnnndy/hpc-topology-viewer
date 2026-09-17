@@ -11,53 +11,24 @@
 <!--
   rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁版。
 
-  「简洁」落在外层，不落在矩阵本身：矩阵、排布、六档通信、preset、ZeRO、
-  物理平铺——这些一个字节都不碰。中央嵌的就是 /patterns/rank-topology-3d/
-  pattern.html 本体（?embed=1&theme=dark&preset=pangu，同源 iframe，不是拷贝），
-  盘古 ProMoE 4000 卡的全量密度就是它本来的样子，接受它、不裁剪。
+  拓扑本身就是全屏幕的无限画布——不是「一张卡片放中间」。中央这块 iframe
+  就是 /patterns/rank-topology-3d/pattern.html 本体（?embed=1，同源，不是
+  拷贝），铺满整个视口，边到边，不加框、不加标题条、不缩小。它自己的拖动/
+  缩放/选组/换预置/换视角——矩阵自带的那一整套镜头与控制——原样在场，这一层
+  什么都不裁剪、不额外包一层镜头。固定给它 preset=pangu·theme=dark：盘古
+  ProMoE 4000 卡、它自己支持的深色 token，不额外注入样式。
 
-  变的是外层：环绕式的无限画布。矩阵钉在正中央，是画面里最大、最先看到的
-  主体；点一张卡下钻之后，那张卡的坐标（真实来自矩阵页自己 postMessage 上报
-  的 pto:select，不是另算的）落成一张卫星卡浮在矩阵四周，用一条细线连回去。
-  下钻越多，画布摊得越大——这是「无限画布」在这里的意思，抄的是
-  /patterns/incident-canvas/ 同一套主视图 + 卫星 + 连线的做法（结构抄，
-  代码没有整段照搬，实现比它精简）。
-
-  颜色风格走矩阵自己已经支持的 theme=dark（design-system 的深色 token），
-  外层画布与卫星卡走 compute-graph-viewer 的抽象图网页 prompt（深色极简、
-  无边框灰卡、语义配色只用在训练语义图元上、直角连线）——这份 prompt 管的
-  是外层，不管矩阵内部怎么画。
+  下钻一张卡（矩阵页自己上报的 postMessage pto:select）之后，那张卡的真实
+  坐标浮成一张卫星卡贴在屏幕边上——像 Miro 贴便签一样浮在主画布上层，不占
+  用、不缩小主画布本身的可视范围。
 -->
 </head>
 <body>
-  <header class="hdr">
-    <div class="hdr-title">模型分片与训练设备映射 · 简洁版</div>
-    <div class="hdr-sub">中央矩阵是 /patterns/rank-topology-3d/ 本体（盘古 ProMoE · 4000 卡） · 环绕式下钻画布</div>
-    <a class="hdr-link" href="../rank-topology-3d/pattern.html">完整独立页 →</a>
-  </header>
+  <iframe id="matrixFrame" class="matrix-frame" title="rank-topology-3d 本体（盘古 ProMoE · 4000 卡）"></iframe>
 
-  <div id="viewport" class="viewport">
-    <div id="world" class="world">
-      <svg id="conns" class="conns"><g></g></svg>
+  <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
 
-      <div id="mainView" class="main-view">
-        <div class="main-view-head">中央矩阵 · 盘古 ProMoE · TP8×PP5×DP100 = 4000 卡（EP2 不参与 rank 计数）</div>
-        <div class="main-view-body">
-          <iframe id="matrixFrame" title="rank-topology-3d 本体"></iframe>
-        </div>
-      </div>
-
-      <div id="satLayer"></div>
-    </div>
-
-    <div class="hud">
-      <button id="zIn" title="放大">+</button>
-      <button id="zOut" title="缩小">−</button>
-      <button id="fitMainBtn" title="回到矩阵">⌖</button>
-      <button id="fitAllBtn" title="看全部">⤢</button>
-      <span id="zVal" class="zval">100%</span>
-    </div>
-  </div>
+  <div id="satLayer" class="sat-layer"></div>
 
   <script src="./pattern.js"></script>
 </body>
