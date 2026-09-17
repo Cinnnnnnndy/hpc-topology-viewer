@@ -1006,6 +1006,24 @@ var VC_SOURCE = {
 };
 var VC = {};
 var MEMC = {};
+/* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
+   反馈原话「做默认关掉颜色只有黑白」。原来这一屏的颜色同时在说三件事：
+   维度签名（VC.tp/pp/dp/ep 的青/橙/蓝/紫）、显存成分（MEMC 的蓝/青/紫/绿/黄）、
+   容量告警（CAP_C.red）。三套色系叠在同一只卡上，读者第一眼读到的是"一片花"，
+   而这一屏真正要说的是**形状**：这一只卡站在阵列的哪儿、它装的几档各占多少。
+   所以素色这一路把前两套整体收成一条灰阶——信息一个字都不丢（维度名写在悬停里、
+   档名写在读出卡上），只是不再靠色相去说。
+
+   为什么直接写死灰值、不过 topologyThemeColor()：那支函数对**低饱和**的输入
+   有一条专门的支路（hsl.s < .08 → 统一压到 profile.neutralL），整条灰阶会被
+   压成同一个亮度，正好把这里唯一还剩的区分手段（明度差）抹掉。素色这一路
+   只服务深色主题（rank-topology-lite 固定 theme=dark），直接给最终值最省事。
+
+   灰阶怎么排：显存那七档是**摞在同一只卡里**的，相邻两档必须错开明度才数得清，
+   所以按 w/agw/g/opt/otmp/act/rsv 的摞放次序交替深浅，而不是按语义排成单调递增。
+   维度那五支画的是棱线/地面带/芯片，彼此不相邻，只要各自跟背景拉得开即可。 */
+var VC_MONO  = {tp:'#B9B9B9', cp:'#8F8F8F', pp:'#D2D2D2', dp:'#A3A3A3', ep:'#7C7C7C'};
+var MEM_MONO = {w:'#8E8E8E', agw:'#C6C6C6', g:'#5F5F5F', opt:'#B0B0B0', otmp:'#DCDCDC', act:'#737373', rsv:'#454545'};
 var topologyPaletteTheme = '';
 
 function topologyColorRgb(value, fallback){
@@ -1046,8 +1064,16 @@ function topologyThemeColor(value, fallback, profile){
 }
 function syncTopologyPalette(){
   var theme9 = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-  if(topologyPaletteTheme === theme9) return;
-  topologyPaletteTheme = theme9;
+  /* 缓存键要带上素色这一位：不带的话在设置面板里把素色开关拨回来，主题没变，
+     这支函数直接 return，调色板停在上一套上（画面要等到换主题才跟上）。 */
+  var key9 = theme9 + (ui.mono ? '|mono' : '');
+  if(topologyPaletteTheme === key9) return;
+  topologyPaletteTheme = key9;
+  if(ui.mono){
+    Object.keys(VC_SOURCE).forEach(function(k){ VC[k] = VC_MONO[k]; });
+    Object.keys(MEM_BASE).forEach(function(k){ MEMC[k] = MEM_MONO[k]; });
+    return;
+  }
   var profile9 = TOPOLOGY_COLOR_PROFILE[theme9];
   Object.keys(VC_SOURCE).forEach(function(k){
     VC[k] = topologyThemeColor(VC_SOURCE[k][0], VC_SOURCE[k][1], profile9);
@@ -1151,6 +1177,23 @@ var ui = {
      （meC，恒为 var(--pt-fg)）与告警红（capCol）不受这个开关影响，那两个不
      是"维度色"。设置面板"图层"那组新增一颗按钮，也认 URL ?neutralsibs=1。 */
   neutralSibs:false,
+  /* 素色（黑白灰）：整屏不再用色相说话——维度签名色（VC）与显存成分色（MEMC）
+     一起收成灰阶（见 VC_MONO / MEM_MONO），通信芯片的字、读出卡每行前面那枚
+     色块、容量告警的棱线也一并退回中性。默认关闭，只认显式 ?mono=1 与设置面板
+     "图层"那颗按钮——rank-topology-lite 默认传它（那一屏要的就是"先看形状"），
+     rank-topology-3d / net-slicing / model-netgraph 直接打开一个字节不变。
+     它与 fastcard 是两件事：fastcard 管**画多少**（合批、隐去无关卡、飞焦），
+     mono 管**上不上色**。早先这几条色彩让位是挂在 fastCard 上的，那是把两件事
+     绑在一起——真要"快但有色"或"慢但素色"时就没有开关了。 */
+  mono:false,
+  /* 单卡下钻（三档取景里的第三档）：选中一张卡之后再往里走一层——连兄弟卡
+     一起不画，画面上只剩这一只，镜头再推近一档，读的是它**内部**的事
+     （卡内那一级通信 cgrain=intra、左下角那张容量/显存读出卡）。
+     与 fastCard 的 tier0 隐去是同一条机制、差一档：
+       tier0（无关卡）不画 —— fastCard 开着就生效，那是第二档"选中 + 兄弟"；
+       tier1（兄弟卡）不画 —— 再加这一条，才是第三档"只看这一只"。
+     默认关闭，认 ?solo=1。它要求已经有选中卡，没选中时这条不起任何作用。 */
+  soloCard:false,
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 通信连线的**粒度**：一次只画一级。三级本来是同一件事的三种问法
      （谁跟谁通信 / 张量的哪几块换了位置 / 卡里那一段搬运不出卡），
@@ -1354,6 +1397,12 @@ function urlLoad(){
   if(q.get('mem')==='0') ui.memFill = false;
   if(q.get('fastcard')==='1') ui.fastCard = true;
   if(q.get('neutralsibs')==='1') ui.neutralSibs = true;
+  if(q.get('mono')==='1') ui.mono = true;
+  /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
+     取景直接带它进来，所以这条链接自己就是那一屏，不靠宿主再发一次消息。
+     通信粒度跟着收到卡内那一级——写在下面 cgrain 解析**之前**，链接里显式
+     写了 cgrain 的话仍旧以它为准。 */
+  if(q.get('solo')==='1'){ ui.soloCard = true; ui.commGrain = 'intra'; }
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
@@ -3852,7 +3901,10 @@ function netScene(D, g, box, step){
          整档一起变红会把已经装进去的那部分也说成越界。 */
       function push9(a9, b9, over9){
         if(b9 - a9 < 0.0005) return;
-        out9.push({f0:a9, f1:b9, c:(over9 ? CAP_C.red : sg9.color), over:!!over9,
+        /* 素色：顶出壳外那一截换成纯白——它是这条灰阶里最亮的一格（阶梯最高到
+           #DCDCDC），加上"画在壳顶之上"这个位置本身，"没装下的是这一截"仍旧
+           一眼可读，不必借红色。 */
+        out9.push({f0:a9, f1:b9, c:(over9 ? (ui.mono ? 'var(--pt-fg)' : CAP_C.red) : sg9.color), over:!!over9,
                    act:base9.act, k:base9.k, label:base9.label});
       }
       if(f0 < 1 && f1 > 1){ push9(f0, 1, false); push9(1, f1, true); }
@@ -4967,7 +5019,10 @@ function netScene(D, g, box, step){
            一起跳过，不是淡到 0.16（那是 rank-topology-3d 自己的默认读法，这个
            简洁版要的是"选中的才有线，其余的直接消失"）。kc 在 physOn 下被
            借道改写过，continue 前先还原，跟这个 for 循环正常收尾时同一动作。 */
-        if(ui.fastCard && hasSel && tier9 === 0){ kc = kcOrig; continue; }
+        /* solo（第三档取景）：连兄弟卡一起不画，画面上只剩选中那一只。
+           判据写成 tier9 !== 2 而不是再列一遍 tier 号——2 就是"选中的那只"
+           （见 selTier），别的全部让路。 */
+        if(ui.fastCard && hasSel && (ui.soloCard ? tier9 !== 2 : tier9 === 0)){ kc = kcOrig; continue; }
         var rankFade9 = spotShellDim || tier9 === 0;
         if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : '0.16')+'" filter="url(#ptGray)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
@@ -5331,13 +5386,30 @@ function netScene(D, g, box, step){
            一字不差，只是这次没人先在这个规模上点开看过。跟 wantFill 那条改法
            同一个方向：静置态（没选中任何卡）退回中性棱色，不重复染满屏；
            选中一张卡、要看「这一只和它的兄弟到底超没超」时，红线照常给出来。 */
-        var capCol = (hasSel && tier9 !== 0 && (capLv === 'oom' || capLv === 'red')) ? CAP_C.red : null;
+        /* 素色：告警**不取消**，只是不用色相说——换成次级灰，配上原来那档加粗与
+           满不透明。盘古 ZeRO-0 下几乎每只兄弟卡都 oom，一屏粉红本来就是噪音；
+           退成灰之后"哪几只描得粗而亮"仍然一眼可数，而选中那只的纯白框不再被
+           压掉（见下面 edgeCol9）。超了多少交给读出卡的数字与浮卡上的计数。 */
+        var capCol = (hasSel && tier9 !== 0 && (capLv === 'oom' || capLv === 'red'))
+          ? (ui.mono ? 'var(--pt-fg2)' : CAP_C.red) : null;
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         if(fcOn){
           CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
         } else {
           CE.forEach(function(e){
-            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.neutralSibs ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
+            /* 素色：选中那张卡的白框是"这是哪一张"的身份标记，容量告警红是
+               "超没超"的状态标记——两句话都要紧，但盘古 ZeRO=0 下结构性溢出面
+               太大，几乎每张卡（含选中的这张）都会命中 capCol，红一压下来白框
+               就没了，读者反而认不出选中的是哪一张。身份优先于告警：selected
+               卡的白框固定不被 capCol 顶掉，超没超交给左下角读出卡的数字说
+               （它已经写着"合计 XGB / 64GB"）。这条只在 mono 下生效——
+               rank-topology-3d 直接访问时 capCol 仍按原样压过 meC。
+               告警本身不丢，只是改用**非色相**的记号说：capCol 那一档在 mono 下
+               已经换成了次级灰（见上面 capCol 的三目），线宽/不透明度的加粗照旧，
+               于是三层关系还在——选中（纯白）＞ 告警（次级灰·粗）＞ 普通（暗灰）。 */
+            var edgeCol9 = (ui.mono && meC) ? 'var(--pt-fg)'
+              : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? ((ui.neutralSibs || ui.mono) ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
+            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
           });
         }
@@ -5371,12 +5443,16 @@ function netScene(D, g, box, step){
             var ovP9 = P(0.5, ovTopV9, cw0, kc);
             var needGB9 = Math.round(cMS9.ratio * D.hbm);
             var mulTxt = '×' + (cMS9.ratio >= 10 ? Math.round(cMS9.ratio) : cMS9.ratio.toFixed(1));
-            body.push(txt(ovP9[0], ovP9[1] - 12, '装不下 '+mulTxt, 8.5, 'var(--pt-danger)', 'middle',
+            /* 素色：这两行字换成纯白/次级灰。它们本来就把话说全了（"装不下 ×N ·
+               要 NGB / 只有 64GB"），红色只是在重复那句话的语气。 */
+            var ovC9 = ui.mono ? 'var(--pt-fg)' : 'var(--pt-danger)';
+            var ovC29 = ui.mono ? 'var(--pt-fg2)' : 'var(--pt-danger)';
+            body.push(txt(ovP9[0], ovP9[1] - 12, '装不下 '+mulTxt, 8.5, ovC9, 'middle',
               'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
-            body.push(txt(ovP9[0], ovP9[1] - 3.5, '要 '+needGB9+'GB · 只有 '+D.hbm+'GB', 6.4, 'var(--pt-danger)', 'middle',
+            body.push(txt(ovP9[0], ovP9[1] - 3.5, '要 '+needGB9+'GB · 只有 '+D.hbm+'GB', 6.4, ovC29, 'middle',
               'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
           } else {
-            [[CAP_AMBER, CAP_C.amber], [CAP_RED, CAP_C.red]].forEach(function(mk){
+            [[CAP_AMBER, ui.mono ? 'var(--pt-fg3)' : CAP_C.amber], [CAP_RED, ui.mono ? 'var(--pt-fg2)' : CAP_C.red]].forEach(function(mk){
               var vy = cv1 - (cv1 - cv0) * mk[0];
               var qa = P(-0.04, vy, cw0, kc), qb = P(1.04, vy, cw0, kc);
               body.push(seg(qa, qb, 'stroke:'+mk[1]+';stroke-width:1.1;stroke-dasharray:4 3;opacity:.95'));
@@ -5666,7 +5742,11 @@ function netScene(D, g, box, step){
          那几行**更早**用到 eCol9，而 var 只提升声明不提升赋值——放到后面就是
          一条 undefined 描边的线（本仓 chipRects 踩过同一个坑）。 */
       var fb9 = fabricOfGroup(mem9, D), pods9 = podSpan9(mem9, D);
-      var eCol9 = cgFab9 ? fb9.col : VC[cs9.dim];
+      /* 素色：卡对卡通信线/芯片的维度签名色也让位给白——这一屏的重点已经收到
+         "选中的这张卡"，不需要再靠颜色分辨"这条边是哪一维"，读法交给悬停里的
+         文字（tip9 已经把维度名写清楚了）。载体色（fb9.col，UB/RoCE 那套）
+         同理：素色这一路连它一起收，否则地面那几条带又是一套新色系。 */
+      var eCol9 = ui.mono ? 'var(--pt-fg)' : (cgFab9 ? fb9.col : VC[cs9.dim]);
       if(mem9.length < 2) return;
       /* 层构成下连的是**块**不是卡：这一维的通信发生在哪一块上是有定论的——
          TP 的归约在 attn.out（行切算子算出的是部分和）、EP 的 All-to-All 在
@@ -5997,7 +6077,12 @@ function netScene(D, g, box, step){
           'ag', '分块之间', 'tp');
       }
       if(wantEP9){
-        var RIBC = ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
+        /* 每条 A2A 支路一个颜色，是为了让"这一条通向哪只对端"在一团弧里还分得开。
+           素色下换成同一族的明度阶（这一屏唯一还剩的区分手段）——条宽本来就已经
+           在说 token 多少，颜色只负责"哪条是哪条"，明度阶做得到。 */
+        var RIBC = ui.mono
+          ? ['#E6E6E6','#B4B4B4','#8C8C8C','#D2D2D2','#A0A0A0','#787878','#C4C4C4','#949494']
+          : ['#5B8CFF','#22C4A6','#F2589D','#F5A623','#8E5BFF','#38BDF8','#F97316','#A3E635'];
         var mem9 = epMembers(g, D).filter(function(r9){ return r9 !== g; });
         var atEP9 = null;
         mem9.forEach(function(r9, i9){
@@ -10304,13 +10389,109 @@ function animateCamera(toZoom, toPanX, toPanY){
   self.raf = requestAnimationFrame(step);
 }
 function resetCamera(){ animateCamera(1, 0, 0); }
-function focusCardCamera(g){
+/* 三档取景各有自己的机位高度（见 ui.soloCard 那段）：
+     第二档「选中 + 兄弟」—— 9，框得住一整条 DP 行/一列 PP 段，兄弟卡要看得见；
+     第三档「只看这一只」—— 20（zoom 的上限），这时要读的是它**内部**的
+       五档色带与卡内那三条箭头，兄弟卡本来就不画了，留着 9 只是浪费画布。
+   不传第二个参数时保持 9（原行为，别处的调用一个字不用改）。 */
+function focusCardCamera(g, zoom9){
   var a = chainCardAnchorG && chainCardAnchorG[g], vr = viewRendered;
   if(!a || !vr) return;
+  /* C 取 applyViewTransform 用的那一个（vr.cx/cy），因为下面这段算的是"这次
+     变换之后它落在哪"，而那次变换正是由 applyViewTransform 施加的——两边必须
+     用同一个 C，否则算得再准也对不上。 */
   var cx = isFinite(vr.cx) ? vr.cx : (vr.vx||0) + vr.vw/2;
   var cy = isFinite(vr.cy) ? vr.cy : (vr.vy||0) + vr.vh/2;
-  var toZoom = clamp(9, 0.2, 20);
-  animateCamera(toZoom, toZoom*(cx - a[0]), toZoom*(cy - a[1]));
+  /* 落点不是 C，而是**当前可视区的正中**：viewBox 每次渲染都被 fitSceneViewBox
+     按内容包围盒重算一遍（vr.vx/vy/vw/vh），画面正中因此并不等于 VW/2、H/2。
+     原来这里拿 C 当落点，于是选中卡稳定地偏在中心偏下——放大倍数越高偏得越远
+     （第三档 17 倍时直接掉出画面）。 */
+  var tx = (vr.vx || 0) + vr.vw/2, ty = (vr.vy || 0) + vr.vh/2;
+  var toZoom = clamp(zoom9 || 9, 0.2, 20);
+  /* chainCardAnchor 记的是**这一次渲染出来的**屏幕坐标（P() 里已经吃过 zoom/pan），
+     不是 pan/zoom 之前那一层的 base 坐标——文件上面那句注释写反了。
+     zoom=1、pan=0 那一次（首屏深链）两者恰好相等，所以一直没暴露；一旦是
+     "已经飞过一次、再从第二档换到第三档"，旧公式就会把已经放大过的坐标当 base
+     再放大一次。这里按 applyViewTransform 的换算式反推，对任何起始机位都成立：
+       新位置 = C + p1 + k·(旧位置 − C − p0)，k = z1/z0
+     令新位置 = 落点，解出 p1。 */
+  var k9 = toZoom / (vr.zoom || 1);
+  animateCamera(toZoom,
+    tx - cx - k9*(a[0] - cx - (vr.panX || 0)),
+    ty - cy - k9*(a[1] - cy - (vr.panY || 0)));
+  /* 收尾再量一次、补一次差：上面那一步算的是"变换之后"，而动画停下 420ms 后
+     scheduleCrisp 会按新机位**重新渲染**一遍，那一遍里 netScene 自己的定心
+     （box 中心再上抬 26）与 fitSceneViewBox 的重新取景都会再动一点——隐去兄弟
+     卡之后包围盒整个换了一副样子，动得尤其多。与其把这两段都推进公式里（推错
+     一次就再也看不出是哪一段错了），不如等尘埃落定之后直接量渲染结果补一刀。 */
+  scheduleCamSettle(g);
+}
+/* 量出来的差超过这个数（CSS px）才补——量得到的抖动本来就有一两个像素，
+   门槛太低会在两次补正之间来回荡。 */
+var CAM_SETTLE_EPS = 6;
+var camSettleT = null;
+function scheduleCamSettle(g9){
+  clearTimeout(camSettleT);
+  /* 560（飞焦动画）+ 420（scheduleCrisp 的空档）+ 一点余量 */
+  camSettleT = setTimeout(function(){
+    camSettleT = null;
+    var svg = $('stage').querySelector('svg');
+    /* 量的是卡自己那块命中面（shellOf 里给每只卡 push 的 hull2 多边形）——
+       netScene 的卡没有 .cardg 那种包裹 <g>（那是 renderSolidGrid 的方阵用的），
+       这块多边形才是"这张卡在屏幕上占的那块地"的唯一现成表示。 */
+    var el = svg && svg.querySelector('[data-act="chainpick"][data-k="card"][data-i="'+g9+'"]');
+    var vr = viewRendered;
+    if(!el || !vr || sel !== g9) return;
+    var r = el.getBoundingClientRect(), sb = $('stage').getBoundingClientRect();
+    if(!(r.width > 0.5) || !(sb.width > 0)) return;
+    var dx = (sb.left + sb.width/2) - (r.left + r.width/2);
+    var dy = (sb.top + sb.height/2) - (r.top + r.height/2);
+    if(Math.abs(dx) < CAM_SETTLE_EPS && Math.abs(dy) < CAM_SETTLE_EPS) return;
+    /* CSS px → viewBox 单位：meet 取两轴较小的那个比例，两轴同一个 m。 */
+    var m9 = Math.min(sb.width/vr.vw, sb.height/vr.vh);
+    if(!(m9 > 0)) return;
+    animateCamera(ui.zoom3, ui.panX3 + dx/m9, ui.panY3 + dy/m9);
+  }, 1100);
+}
+/* ── 三档取景（rank-topology-lite 的"无限画布"就是这三档）────────────────────
+     1 集群     —— 没选中任何卡，整片阵列（这一屏里就是 fastCard 的静置合批态）
+     2 选中+兄弟 —— 选中一张卡，无关卡不画，镜头飞到它身上
+     3 单卡下钻 —— 连兄弟一起不画，镜头再推近，通信收到卡内那一级（cgrain=intra）
+   档位不是第四个独立状态变量，而是 sel / ui.soloCard 两个已有状态读出来的**结论**，
+   所以永远不会和画面对不上（多存一份就会有"状态说 3、画面还是 2"的那种病）。 */
+function ptoTier(){ return sel === null ? 1 : (ui.soloCard ? 3 : 2); }
+/* 换档：只在 fastCard 这一路有意义（别处没有"无关卡不画"这条前提，
+   第三档看上去会像"整屏只剩一只卡而其余凭空消失"）。 */
+function ptoSetTier(n9){
+  if(!ui.fastCard) return false;
+  if(n9 === ptoTier()) return false;
+  if(n9 === 1){
+    takeSel(); sel = null; ui.soloCard = false; ui.memSel = null;
+    if(ui.commGrain === 'intra') ui.commGrain = 'rank';
+    render(); resetCamera();
+  } else if(n9 === 2){
+    if(sel === null) return false;
+    ui.soloCard = false;
+    if(ui.commGrain === 'intra') ui.commGrain = 'rank';
+    render(); focusCardCamera(sel, 9);
+  } else if(n9 === 3){
+    if(sel === null) return false;
+    ui.soloCard = true;
+    /* 第三档问的是"这一只里面"，跨卡的边这时全指向不再画出来的兄弟卡——
+       把通信粒度一起收到卡内那一级，线才有落点（见 cgLocal9 的两道闸）。 */
+    ui.commGrain = 'intra';
+    render(); focusCardCamera(sel, 20);
+  } else return false;
+  ptoNotifyTier();
+  return true;
+}
+/* 档位上报给宿主（rank-topology-lite）：它的返回按钮/浮卡要跟着这一档变，
+   而换档既可能来自宿主的 pto:tier，也可能来自画布上的点击。独立打开时
+   parent === window，这里什么也不做。 */
+function ptoNotifyTier(){
+  if(window.parent && window.parent !== window){
+    window.parent.postMessage({type:'pto:tier', tier: ptoTier(), sel: sel}, '*');
+  }
 }
 function applyViewTransform(){
   var svg = $('stage').querySelector('svg');
@@ -11185,6 +11366,10 @@ function buildCfgSurface(D){
       + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么"><s>✓</s>图例</button>'
       + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网内容不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——3D/顶视的卡内容与正视/侧视三个机位一起变，卡壳、门牌与容量视图不受影响"><s>✓</s>模块视图</button>'
       + '<button class="mvi'+(ui.neutralSibs?' is-on':'')+'" data-act="neutralsibstoggle" title="兄弟卡素色：卡维度选中一张卡之后，兄弟卡棱线默认按 TP/PP/DP/EP 维度签名色描边——开了这颗按钮，兄弟卡棱线一律回落中性灰，选中卡本身与告警红不受影响"><s>✓</s>兄弟卡素色</button>'
+      /* 整屏素色：比上面那颗管得宽——维度签名色与显存成分色一起收成灰阶。
+         两颗分开留着，是因为它们答的不是同一个问题：上面那颗只管"兄弟卡的棱
+         要不要带维度色"，这颗管"这一屏还上不上色"。 */
+      + '<button class="mvi'+(ui.mono?' is-on':'')+'" data-act="monotoggle" title="素色：整屏不再用色相说话——TP/PP/DP/EP 的维度签名色与权重/梯度/优化器态那套显存成分色一起收成黑白灰阶（明度仍然逐档错开，摞在卡里的五档照样数得清），容量告警改用加粗的亮棱与读出卡上的数字表达。信息一个字不少，只是不靠颜色区分"><s>✓</s>素色</button>'
     + '</div>'
     /* 数据标注这一组仍然裹在 .pt-mv 里：工作台把它提到台面统一出，靠
        `.pt-mv:not(.pt-disp){display:none}` 把格子里这一份藏掉，并翻进来点
@@ -12977,6 +13162,10 @@ function renderRankMem(D){
   var cap = D.hbm*Math.pow(2,30);
   /* otmp / agw 原来不在这张表里——otmp 有字节时（步末）色块背景会解析成 undefined，
      只是极少有人正好在那一刻截图才没被发现。补齐，顺手把新加的 agw 一起放进来。 */
+  /* 素色下 MEMC 本身已经是一条灰阶（见 MEM_MONO），所以这里照常取 MEMC 就够了——
+     色块跟卡上那条带永远同一个值，读者不必回头对照第二套记号。
+     早先那一版把七档一起压成同一个 var(--pt-fg3)，结果是读出卡上七枚一模一样的
+     灰点：既不再抢注意力，也不再指向卡上任何一条带，等于白画。 */
   var TONE = {w:MEMC.w, agw:MEMC.agw, g:MEMC.g, opt:MEMC.opt, otmp:MEMC.otmp, act:MEMC.act, rsv:MEMC.rsv};
   /* 这一档属于模型态还是执行态。两类的读法不同（/parallel-reference/ §14 一）：模型态问「哪一段
      归我」，执行态问「什么时候生、什么时候死」。混在一张表里逐行读，读者会对激活
@@ -12991,6 +13180,8 @@ function renderRankMem(D){
     rows.kind = KIND[sg.k] || 'exec';
     groups.push(rows);
     if(!sg.bytes) return;                       /* 这一刻是 0 的档（比如没跑走带时的优化器临时区）不占一行 */
+    /* 激活那行的字取 VC.dp（它是"被 DP 真切开"的那一档，与卡上那条虚缝同色）——
+       素色下 VC.dp 本身已经是灰阶里的一格，不必再单独开分支避开它。 */
     var col = sg.k==='act' ? VC.dp : (sg.k==='rsv' ? 'var(--pt-fg3)' : 'var(--pt-fg)');
     /* 整行可点 → 展开这一档自己的读数（见 memBlockDetail）。选中态反白它自己的
        签名色，与卡上那条带同一个颜色，不用回头对照图例。 */
@@ -13354,13 +13545,22 @@ document.addEventListener('click', function(ev){
      不然一旦点中某张卡，读出面板就再也关不掉了（只剩面板上那颗 ✕）。
      只认舞台内的空白：点工具条、抽屉、面板都不算。 */
   if(!b && ev.target.closest('#stage') && (sel !== null || ui.opSel || ui.openLayer !== null)){
+    /* 三档取景：点空白**一次退一档**，不是一步退回最外面。
+       原来的做法（直接清 sel、飞回默认机位）在只有两档时是对的；有了第三档之后
+       还这么退，读者从"只看这一只"点一下空白就被甩回整片阵列，中间那一档
+       （它和它的兄弟）永远只能靠重新点一次卡才回得去。 */
+    if(ui.fastCard && ui.soloCard && sel !== null && !ui.opSel && ui.openLayer === null){
+      ui.memSel = null;
+      ptoSetTier(2); return;
+    }
     var liBlank = ui.openLayer;
-    sel = null; ui.opSel = null; ui.openLayer = null;
+    sel = null; ui.opSel = null; ui.openLayer = null; ui.soloCard = false;
+    if(ui.commGrain === 'intra' && ui.fastCard) ui.commGrain = 'rank';
     if(liBlank !== null) startSqAnim(sqT, 0, liBlank); else render();
     /* fastCard：取消选中时飞回默认机位——不然镜头还停在刚才那张卡的放大
        位置，而那张卡已经跟着别的卡一起消失了，画面上只剩一片空白。 */
     if(ui.fastCard) resetCamera();
-    ptoNotifyHost(); return;
+    ptoNotifyHost(); ptoNotifyTier(); return;
   }
   if(!b) return;
   var act = b.getAttribute('data-act');
@@ -13481,6 +13681,10 @@ document.addEventListener('click', function(ev){
   else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='moduleviewtoggle'){ ui.moduleView = !ui.moduleView; ui.dispOpen = false; render(); }
   else if(act==='neutralsibstoggle'){ ui.neutralSibs = !ui.neutralSibs; ui.dispOpen = false; render(); }
+  /* 素色开关：memStack 的缓存把**颜色**一起存进去了（out9 里每一档的 c），
+     不清一次的话拨开关之后卡上那几条带还是上一套色（读出卡与图例倒是立刻变了，
+     于是两边对不上）。调色板那边的缓存键已经带上了 mono 这一位，见 syncTopologyPalette。 */
+  else if(act==='monotoggle'){ ui.mono = !ui.mono; ui.dispOpen = false; topologyPaletteTheme = ''; render(); }
   else if(act==='opdetail'){
     ui.opSel = {nid:b.getAttribute('data-nid'), li:+b.getAttribute('data-li'), key:b.getAttribute('data-key')||''};
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
@@ -13596,16 +13800,34 @@ document.addEventListener('click', function(ev){
        卡架、读出卡一起塌掉——一次误点的代价大得离谱，而且轴上根本没有"没有第几组"
        这个状态可落。card 不一样：它就是那张卡本身，"不看这张了"是一个真实的意思。
        hlSel 亮着的那张再点一次不算 toggle：那不是我选的，第一次点是"我确认选它"。 */
+    /* 三档取景下，"再点一次已经选中的这张卡"= 往里再走一档（第二档 → 第三档）。
+       只对 data-k="card"（卡本身那块命中面）且**已经选中的那一张**成立：
+       点别的卡永远是"换选这一张"（回到第二档看它和它的兄弟），不然一路点下去
+       会越钻越深；轴刻度那几键（d/p/t/c/e）是坐标选择器，更不能读成"往里走"。
+       退出去的路是点画布空白（见下面那段）。 */
+    if(kk === 'card' && ui.fastCard && sel === iv && !ui.hlSel && !ui.soloCard){
+      if(ptoSetTier(3)){ ptoNotifyHost(); return; }
+    }
+    /* 已经钻进第三档时点中别的东西（换卡/换坐标）：先退回第二档再换选——
+       第三档是"只看这一只"，换了主角还留在第三档，兄弟卡那一层就被跳过了。 */
+    var wasSolo9 = ui.soloCard;
+    if(wasSolo9){ ui.soloCard = false; if(ui.commGrain === 'intra') ui.commGrain = 'rank'; }
     if(applyParallelGroupPick(kk, iv)) {
       render();
       /* fastCard：点中一张卡直接飞过去看清它（其余卡这一刻已经在上面的
          tier0-continue 里不画了）；toggle 掉选中时飞回默认机位，不然读者
          会看着一屏空白发呆——刚才对着的那张卡已经跟着别的卡一起消失了。 */
       if(ui.fastCard){
-        if(sel !== null) focusCardCamera(sel);
+        if(sel !== null) focusCardCamera(sel, 9);
         else resetCamera();
       }
-      ptoNotifyHost();
+      ptoNotifyHost(); ptoNotifyTier();
+    } else if(wasSolo9){
+      /* 换选没成立（点的就是当前那一格），但刚才已经把 solo 撤了——把画面
+         补回第二档，不能停在"状态是第二档、画的还是第三档"的半截上。 */
+      render();
+      if(ui.fastCard && sel !== null) focusCardCamera(sel, 9);
+      ptoNotifyTier();
     }
   }
   /* 正视换层：落的是同一枚「层 · Ln」标签（与搜索、与宿主两格之间的层联动同一条路）。
@@ -13783,6 +14005,25 @@ window.addEventListener('message', function(ev){
   if((d.type==='theme'||d.type==='pto:theme') && (d.value==='dark'||d.value==='light')){
     document.documentElement.setAttribute('data-theme', d.value); render(); return;
   }
+  /* 宿主换档（rank-topology-lite 的三档取景）：{type:'pto:tier', tier:1|2|3, sel?}
+     带 sel 时先换选中卡再换档——从最外面那一档直接跳进第二/三档就是这一条
+     （宿主那边刚在魔方上点了一张卡，这一格还没选中过任何卡）。
+     不重载 iframe：矩阵本体把 4000 只卡铺出来要好几秒，每换一档重载一次，
+     "连续变焦"就成了三次白屏。 */
+  if(d.type==='pto:tier'){
+    if(typeof d.sel === 'number' && d.sel >= 0){ takeSel(); sel = d.sel; }
+    var tn9 = +d.tier;
+    if(tn9 >= 1 && tn9 <= 3){
+      /* 已经在这一档、但刚换了卡：ptoSetTier 会以"档没变"为由直接返回，
+         那样新选中的卡不会重绘，也不会飞焦过去。这里补一次。 */
+      if(!ptoSetTier(tn9) && typeof d.sel === 'number'){
+        render();
+        if(sel !== null && ui.fastCard) focusCardCamera(sel, ui.soloCard ? 20 : 9);
+        ptoNotifyTier();
+      }
+    }
+    return;
+  }
   /* 宿主（驾驶舱）驱动：不重载 iframe 也能换视图 / 选中卡 / 换预置。
      只认白名单字段，非法值忽略——宿主传错不该让这一格白屏。 */
   if(d.type==='pto:state'){
@@ -13918,7 +14159,13 @@ render();
 /* fastCard：URL 直接带 ?sel= 打开（rank-topology-lite 从逻辑魔方跳过来就是这条
    路，不经过 chainpick 点击）也要飞到那张卡——上面 chainpick 分支里那次调用管的
    是"页面已经开着、这一刻点了一张卡"，这一条管的是"页面一开就已经是选中态"。 */
-if(ui.fastCard && sel !== null) focusCardCamera(sel);
+if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? 20 : 9);
+/* 没选中任何卡时 ?solo=1 没有意义（第三档要有主角才成立）——落地就撤掉，
+   免得之后随手点一张卡就莫名其妙直接进了第三档。 */
+if(sel === null) ui.soloCard = false;
+/* 一开场就把自己停在哪一档报给宿主：rank-topology-lite 的档位条/浮卡要跟着
+   这一条落位，不能等到读者第一次点击才知道这一格现在是第几档。 */
+ptoNotifyTier();
 })();
 </script>
 </body>
