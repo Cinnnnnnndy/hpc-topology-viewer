@@ -21,9 +21,12 @@
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
   // ── 并行拓扑矩阵：固定 preset=pangu·theme=dark，view/card/vtab 沿用它自己的默认值 ──
+  // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
+  // 详情态才会「不画坐标轴/EP 组框、无关联的卡直接不画、选中即飞焦、取消选中飞回
+  // 默认机位」；不传就是 rank-topology-3d 自己原本的样子（标签/群组色照常画）。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: 'pangu',
+      embed: '1', theme: 'dark', preset: 'pangu', fastcard: '1',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel)
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
