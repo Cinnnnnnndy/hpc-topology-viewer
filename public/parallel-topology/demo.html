@@ -5393,7 +5393,7 @@ function netScene(D, g, box, step){
            机位天然分不开），这一层标注让位给 PP 门牌。（物理平铺下顶视/侧视
            摆位逻辑不同——物理平铺压根不改这两个机位的镜头，两条理由照旧成立，
            所以这条排除不跟着 physOn 走。） */
-        if(cutEP && (physOn || pc2 === 0) && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
+        if(!fcOn && cutEP && (physOn || pc2 === 0) && !lowDetail && ui.viewTab !== 'top' && ui.viewTab !== 'side'){
           var epTag = epOf(tc, co.c, dc, D);
           var epSame = hasSel && epTag.ep === epOf(co.t, co.c, co.d, D).ep;
           /* 选中一张卡时，别的桶的牌压到 .22：它们仍然在（读者还能数出「一共几个桶、
@@ -5405,7 +5405,7 @@ function netScene(D, g, box, step){
         /* rank 标号：关掉整网之后每只盒子都写 R{n}。128 只一模一样的空盒子，
            不写号谁是谁完全读不出来——参考页里那枚门牌就是这一屏的主角。
            盒子在屏幕上小到装不下号时不写（按投影后的实际宽度判，不按缩放判）。 */
-        if(ui.netOff && !lowDetail && !meC && !spotShellDim && !hasSel){
+        if(!fcOn && ui.netOff && !lowDetail && !meC && !spotShellDim && !hasSel){
           /* 号写在盒子**顶面正上方**（参考页那枚门牌就在这个位置）。写在前脸中心的话
              它落在盒子肚子里，和穿过去的那些棱叠在一起，读者分不清这个号算哪一只；
              顶上那一圈是空的，一只盒子一个号，正上正下对得死死的。 */
@@ -5457,7 +5457,13 @@ function netScene(D, g, box, step){
         kc = kcOrig;     /* 借道用完即还原：下一段（或下一次调用 dc/tc 的判断）不受影响 */
       }
   }
-  if(ui.cardMode && !physOn){
+  /* fastCard 静置态：连同轴刻度（DP×100/CP/TP/PP）与 EP 组框一起让位——
+     跟卡本身的棱/面合批是同一个诉求：静置时读者要看的是「阵列有多密、
+     排成什么形状」，不是把 100+400 张牌子全糊在屏幕上（EP 组门牌尤其密，
+     每两张卡一块，400 块布满整个阵列）。照魔方那套参考图，这些牌子该是
+     点开一张卡、下钻到它自己的坐标时才需要读的东西，不是静置态的默认项。
+     选中一张卡（fcOn 自动关闭）立刻恢复，一个字节都不少。 */
+  if(!fcOn && ui.cardMode && !physOn){
     /* ── 轴标签（照魔方那套）：三根轴各自沿线标刻度 ──────────────────
        128 只壳摆在那儿，不标轴就只是一堆盒子——读者认不出「横着是副本、
        竖着是锯片、纵深是段」。每根轴用它自己的维度签名色。
@@ -5492,7 +5498,7 @@ function netScene(D, g, box, step){
       var sg2 = segW(pa), l0a = pa*lps, l1a = Math.min(D.layers, (pa+1)*lps) - 1;
       axLab(P(-0.42, AR + 0.34, (sg2[0]+sg2[1])/2, rowLast), 'PP'+pa, 'L'+l0a+'–L'+l1a, VC.pp, hasSel && pa === co.p);
     }
-  } else if(cutEP && KD > 1 && !physOn) drawEpFrames(false);
+  } else if(!fcOn && cutEP && KD > 1 && !physOn) drawEpFrames(false);
   /* ── 物理平铺下的机柜 / 超节点框 ────────────────────────────────────────
      物理平铺原来只摆得出「一台 node 八张卡、一台挨一台」，机柜与超节点这两级
      只在配置面板里是数字，图上看不见。可它们恰恰是**载体那一层的分界**：同一个
