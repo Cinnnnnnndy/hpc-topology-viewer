@@ -3934,13 +3934,23 @@ function netScene(D, g, box, step){
        画不出东西的循环不该跑：卡维度下非焦点列只剩卡壳（层板本来就不画），
        全景下只留首尾两层的层板（那是「有一叠在那儿」的轮廓）。 */
     var lqSkip = lowDetail && !isF;
+    /* 卡维度默认（没选中任何卡）只画空壳，不画层/算子内容：下面 4083 附近那条
+       「卡维度下每张卡都要看得见自己装了什么——128 只空壳说明不了任何事」的
+       老结论是在 128 卡的规模下写的，到盘古 4000 卡这个假设直接翻车——真按它
+       走，非焦点列一样要跑满这条 netNodes.forEach（4010 起），只是描边加粗透明
+       度提到 .8（见 4083-4087），一个字节没少画，属于「有主角时才退到淡档」
+       那条老逻辑漏了「没有主角、但卡数已经太多」这一档。选中一张卡之后没有
+       这个问题：rankTier===0（跟选中毫无组关系）已经在上面 continue 掉了，
+       剩下的就是选中卡本身与它的兄弟卡（tier 1/2），量级回到可以承受的范围，
+       该有的内部填充照常画。这一条只收「静置态」这一档，不改选中之后的画法。 */
+    var cardIdle = ui.cardMode && !hasSel;
     /* 物理平铺时也不画：这段按层画的算子内容用的是**本列**这一个 (X,Y) 铺满全部
        PP 段深度（wOf(li) 一次扫过整条 TOTW），跟 shellOf 里逐段借道到各自 host
        的壳对不上——PP 没落下时二者本就重合（只有一段），PP 落下时会变成内容摆
        在旧列位置、壳摆在新物理位置的两处分离。宁可这一档退回「摆对位置的空壳」
        （shellOf 的磨砂面还在，容量视图的显存带也还在——那条路走的是 cw0/cw1，
        本来就已经改问物理位置），也不画一份对不上号的内容。 */
-    var LQN = (ui.netOff || physOn || (lqSkip && ui.cardMode)) ? 0 : L;
+    var LQN = (ui.netOff || physOn || cardIdle || (lqSkip && ui.cardMode)) ? 0 : L;
     var spotHasLayers = spot && Object.keys(spot.layers).length > 0;
     for(var lq = 0; lq < LQN; lq++){
       var li = wDesc ? (L-1-lq) : lq;
@@ -4986,14 +4996,24 @@ function netScene(D, g, box, step){
                转台/缩放中的 lowDetail 降级档）：那两种情形下卡里是空的，六面壳
                是唯一能证明「这里立着一张卡」的东西，留着透明是对的——它本来就是
                在演示「玻璃」。memFill 真的画出东西来了，色带自己就是这张卡的内容，
-               不需要再罩一层壳装饰它，壳（连同它的透明）整个让路。 */
-            var wantShell9 = lowDetail || !ui.memFill;
+               不需要再罩一层壳装饰它，壳（连同它的透明）整个让路。
+               ── 4000 卡规模下的降级：wantFill 再叠一条 hasSel && tier9!==0 ──────
+               上面这套「壳 vs 色带二选一」是在 128 卡规模下写的，默认（没有任何
+               选中）也会画色带——128 只还担得起。盘古预置 4000 只之后，没人点开
+               任何一张卡的静置态也在给全部 4000 只画五档色带，这才是转不动、
+               看着一团花的真正来源（netScene 那条 op 循环反而不是大头，量级早被
+               rankTier===0 的 continue 收住了）。「选中卡看得见自己装了什么」这个
+               产品意图没变，只是把它从「默认全量」改成「点开之后才给选中卡与它的
+               兄弟卡（tier 1/2）」——没有选中任何卡、或者这张卡跟选中的毫无组关系
+               （tier 0）时退回素壳，跟 mem=0 用户手动关掉时同一条路径，不是新画法。 */
+            var wantFill = ui.memFill && hasSel && tier9 !== 0;
+            var wantShell9 = lowDetail || !wantFill;
             if(wantShell9){
               body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
               body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
               body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
             }
-            if(!lowDetail && ui.memFill){
+            if(!lowDetail && wantFill){
               /* 选中那一只画得更实：兑底色的百分比整体拉高一档，透明度回到 1。
                  128 只半透的盒子叠在一起，选中的那只如果和邻居同一个浓度，就得靠
                  「哪只描边粗」去找它——而这一屏点开一只卡是要**读它的层次**的
@@ -5234,7 +5254,15 @@ function netScene(D, g, box, step){
            橙仍然有用，但它的位置是**选中那只卡上的那条线**：那里它回答的是「这一只
            离满还有多远」，是一个刻度；而棱上的颜色回答的是「哪几只出事了」，
            那必须稀有才有信息量。 */
-        var capCol = (capLv === 'oom' || capLv === 'red') ? CAP_C.red : null;
+        /* 跟上面橙档同一个毛病，只是没人在盘古预置上试过：oom 这一档原来不看
+           ACT_T、也不看选没选中，结构性超了就直通棱标红——「EP 拨掉、300GB 对
+           64GB」那种真正稀有的场景下这条路是对的。但盘古 ProMoE 4000 卡的默认
+           配置本身就装不下（ZeRO-0 下几乎每只都 oom），于是这条「稀有才有信息量」
+           的红线变成了 4000 只卡 × 12 条棱全红——跟上面那句注释描述的橙档毛病
+           一字不差，只是这次没人先在这个规模上点开看过。跟 wantFill 那条改法
+           同一个方向：静置态（没选中任何卡）退回中性棱色，不重复染满屏；
+           选中一张卡、要看「这一只和它的兄弟到底超没超」时，红线照常给出来。 */
+        var capCol = (hasSel && tier9 !== 0 && (capLv === 'oom' || capLv === 'red')) ? CAP_C.red : null;
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         CE.forEach(function(e){
           body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
