@@ -1,28 +1,26 @@
 {
   "id": "rank-topology-lite",
   "name": "模型分片与训练设备映射 · 简洁版",
-  "description": "/patterns/rank-topology-3d/ 的简洁版：矩阵、排布、六档通信、preset、ZeRO、物理平铺一个字节不碰——中央 iframe 嵌的就是 /patterns/rank-topology-3d/pattern.html 本体（同源，不是拷贝），铺满整个视口、边到边、不加框不缩小，固定落在 preset=pangu·theme=dark（盘古 ProMoE 公开口径 TP8×PP5×DP100=4000 卡，EP2 是路由维度不参与 rank 计数）。拓扑本身就是全屏幕的无限画布——不是另包一层镜头、把矩阵缩成一张卡片放在中间；它自己的拖动/缩放/选组镜头原样在场，这一层不额外叠加镜头。点一张卡下钻之后（矩阵页自己 postMessage 上报的 pto:select，不是另算的），一张卫星卡浮出来贴在屏幕右边，像便签一样浮在主画布上层，不占用、不缩小主画布本身。卫星卡走 compute-graph-viewer 的『抽象图网页 prompt』——深色极简、无边框灰卡、语义配色只用在训练语义图元上，不放文字标签：卡上只留 rank 号和一条执行活动色条，没有坐标行、没有色块逐个的提示文字，靠颜色本身说话；真实坐标等数值信息回矩阵本体选中同一张卡看，这份 prompt 只管卫星卡，不管矩阵内部怎么画。",
-  "version": "3.4.0",
+  "description": "/patterns/rank-topology-3d/ 的简洁版：两个本体各管一半，都是同源 iframe、都不改功能/外观。未点开任何一张卡时，铺满整个视口的是逻辑魔方（/rubik-pattern.html，WebGL 实例化网格，盘古 ProMoE 预置 tp8·pp5·dp100·ep2=4000 卡全量渲染）——它本来就是素块、没有文字标签、没有显示密度问题、也没有性能问题，这正是『点开之前』想要的默认视图。点开一张魔方方块之后（它自己 postMessage 上报的 rubik-select），这一层把 (tp,pp,rep) 坐标换算成并行拓扑矩阵本体自己的 rank 编号（两边内部打包公式不同，不能直接传数字，已验证换算正确），把矩阵 iframe（/patterns/rank-topology-3d/pattern.html?embed=1&preset=pangu&sel=...）切到最上层——真实坐标、内存/容量读出、六档通信、兄弟卡高亮，矩阵自己的选中态渲染原样接管，这一层不重新画一遍。左上角『← 返回魔方视图』切回去不销毁两个 iframe，只是换哪个在最上层。拓扑本身就是全屏幕的无限画布——两个 iframe 都铺满整个视口，边到边，不加框、不缩小。",
+  "version": "4.0.0",
   "entry": "pattern.html",
   "selfContained": false,
   "canvas": "full-bleed",
   "variantOf": "rank-topology-3d",
   "derivedFrom": {
-    "topic": "/patterns/rank-topology-3d/pattern.html 本体，同源 iframe 嵌入（preset=pangu·theme=dark），不复制它的任何代码",
-    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（只用于贴边的卫星卡，不用于中央矩阵内部）"
+    "topic": "/rubik-pattern.html（逻辑魔方，默认层）+ /patterns/rank-topology-3d/pattern.html（并行拓扑矩阵，详情层），都是同源 iframe 嵌入，不复制它们的任何代码",
+    "bridge": "逻辑魔方的 onSelect 回调给出 {tp,pp,rep}，按并行拓扑矩阵自己的 rankOf 公式 (pp×DP+dp)×TP+tp 重新打包成它的 sel——两边内部打包顺序不同（逻辑魔方是 (rep×PP+pp)×TP+tp），不能直接传 rank 数字"
   },
   "urlParams": {
-    "sel": "逗号分隔的 rank 列表（如 12,45,90）—— 打开时直接摆好对应的卫星卡；假设默认盘古预置，不给就不预开任何卫星卡"
+    "sel": "并行拓扑矩阵自己的 rank 编号（0–3999），如 2566 —— 打开时直接进入详情层显示这张卡；深链场景不经过逻辑魔方，用的是矩阵本体自己的编号，没有换算的必要"
   },
   "constraints": [
-    "中央矩阵是同源 iframe，指向 /patterns/rank-topology-3d/pattern.html，不是另一份拷贝或重新实现——它的六档通信、preset、ZeRO、物理平铺、真实计时口径、它自己的拖动/缩放镜头全部原样可用，这一份不做任何裁剪，只是默认把 preset 定在 pangu、theme 定在 dark，并且让它铺满整个视口（不缩小、不包一层额外的镜头）。",
-    "盘古 ProMoE 预置 world=4000 = TP8×PP5×DP100，EP2 是同一批 rank 内部的专家路由维度（All-to-All），不额外乘进 rank 总数——这是从矩阵页实际上报的 config 里读回来的口径，不是按『EP 也是并行维就该相乘』的直觉猜的。",
-    "卫星卡贴在屏幕右边固定叠一层（position:fixed），不跟随矩阵自己的镜头缩放/平移——矩阵怎么转、怎么缩，卫星卡都不动，避免再有第二套镜头逻辑跟矩阵自己的镜头打架。",
-    "卫星卡的坐标数据来自矩阵页自己的 postMessage（pto:select 事件里的 groups 字段），是矩阵页当场算出来的真实坐标，不是这一层自己重新推导；只有 URL 深链（?sel=）在页面刚打开、还没收到任何真实事件时，才用一份本地小算式按盘古预置的固定参数补算坐标，仅用于恢复深链，不作为运行期的权威来源。",
-    "卫星卡里的『执行活动』色块只是示意色条，没有真实计时依据，标注『长度示意，非实测』；真实的耗时估算与传输时间下界仍在矩阵本体内部（悬停/选中之后的读出面板）。",
-    "颜色语义仅用于卫星卡：前向 #4469EF、反向 #FF4C7C、通信 #05D793、优化器 #FFAA3B。中央矩阵内部的配色由它自己的 theme=dark 决定，这一层不覆盖、不注入额外样式。",
-    "不是自包含：依赖同一个站点上 /patterns/rank-topology-3d/pattern.html 一起发布——离线打开这一份文件、或站点没有那条路径时，中央矩阵会是一格空白 iframe。这是有意的取舍：换成打包一份拷贝会让两份实现分叉、demo.html 的修复不会自动传到这一份。",
-    "iframe 多传一个 fastcard=1：矩阵共用的 demo.html 里新增的默认关闭的可选参数，静置态（没有任何选中）把 4000 只素壳的棱/面按深度分桶合批成几百个 <path>，并且连同轴刻度（DP×100/CP/TP/PP）与 EP 组框一起让位（照魔方参考图：默认全是素块，不放标签，点开才聚焦/详情）。DOM 节点数从约 10.7 万降到约 9 千，选中一张卡后坐标轴/EP 组框/详细内容全部按原样恢复。这个参数默认不传，不影响 rank-topology-3d 直接访问时的行为——只有这个简洁版会传它。"
+    "两个 iframe 都是同源嵌入，不是拷贝或重新实现——逻辑魔方指向 /rubik-pattern.html?theme=dark&tp=8&pp=5&dp=100&ep=2，矩阵本体指向 /patterns/rank-topology-3d/pattern.html?embed=1&theme=dark&preset=pangu&card=1&sel=<换算后的编号>，各自的功能/外观这一份都不裁剪、不覆盖样式。",
+    "默认层（未点开任何卡）是逻辑魔方，不是矩阵本体的弱化渲染——两个系统各自最擅长的那一半各司其职：逻辑魔方负责静态全貌（WebGL 实例化，天然没有密度/性能问题），矩阵本体负责选中后的详情（内存/容量读出、六档通信、真实坐标）。",
+    "逻辑魔方与矩阵本体各自独立实现了一遍 rank↔(tp,pp,dp) 坐标换算，内部打包顺序不同（逻辑魔方 rank=(rep×PP+pp)×TP+tp；矩阵本体 rank=(pp×DP+dp)×TP+tp，cp 固定 0），只有 tp 在两边都是最内层——点选时必须按坐标三元组换算，不能把 rank 数字直接抄过去。已验证：逻辑魔方 rank 830（tp6·pp3·rep20）换算得到矩阵 rank 2566，矩阵本体用 sel=2566 打开时读出的坐标正是 tp6·cp0·dp20·pp3，逐位一致。",
+    "盘古 ProMoE 预置 world=4000=TP8×PP5×DP100，EP2 是同一批 rank 内部的专家路由维度（All-to-All），不额外乘进 rank 总数——两个本体各自的 README 都确认了这个口径，不是按『EP 也是并行维就该相乘』的直觉猜的。",
+    "两个 iframe 用 opacity+pointer-events 切换谁在最上层，不销毁/不重新加载未显示的那个——切回魔方视图时它保留上次的镜头位置（旋转/缩放/形态），矩阵 iframe 则在每次选中新的卡时用新的 sel 重新加载（矩阵本体自己不支持不重载切换选中卡）。",
+    "不是自包含：依赖同一个站点上 /rubik-pattern.html 和 /patterns/rank-topology-3d/pattern.html 一起发布——离线打开这一份文件、或站点没有那两条路径时，对应的 iframe 会是一格空白。这是有意的取舍：打包拷贝会让实现分叉，两个本体各自的修复不会自动传到这一份。"
   ],
-  "embedding": "这一份本身就是别的页面嵌 /patterns/rank-topology-3d/pattern.html 的一种用法示范；它自己更适合直接打开整页看，不建议再嵌进第三层 iframe。"
+  "embedding": "这一份本身就是别的页面用坐标换算桥接两个既有 pattern 的一种用法示范；它自己更适合直接打开整页看，不建议再嵌进第三层 iframe。"
 }

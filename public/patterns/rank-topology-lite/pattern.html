@@ -9,28 +9,33 @@
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="./pattern.css" />
 <!--
-  rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁版。
+  rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁版。两个本体各管一半，
+  谁都不重新实现：
 
-  拓扑本身就是全屏幕的无限画布——不是「一张卡片放中间」。中央这块 iframe
-  就是 /patterns/rank-topology-3d/pattern.html 本体（?embed=1，同源，不是
-  拷贝），铺满整个视口，边到边，不加框、不加标题条、不缩小。它自己的拖动/
-  缩放/选组/换预置/换视角——矩阵自带的那一整套镜头与控制——原样在场，这一层
-  什么都不裁剪、不额外包一层镜头。固定给它 preset=pangu·theme=dark：盘古
-  ProMoE 4000 卡、它自己支持的深色 token，不额外注入样式。
+  · 没点开任何一张卡时：铺满整个视口的是 /rubik-pattern.html（逻辑魔方，同源
+    iframe，盘古 ProMoE 预置 tp8·pp5·dp100·ep2 = 4000 卡全量）。它自己就是
+    WebGL 实例化网格——素块、没有文字标签、没有显示/性能问题，这正是这一屏
+    「未点击之前」想要的样子，不必在 SVG 矩阵里另外拼一套。
+  · 点开一张卡（逻辑魔方自己 postMessage 上报的 rubik-select）之后，切换成
+    /patterns/rank-topology-3d/pattern.html（同源 iframe，带上换算过的
+    ?sel=），矩阵本体自己的选中态渲染——真实坐标、内存/容量读出、六档通信、
+    兄弟卡高亮——原样接管，这一层不重新画一遍。逻辑魔方与并行拓扑各自的
+    rank 编号公式不同（内部打包顺序不一样），切换时按 (tp,pp,dp) 坐标换算，
+    不是直接把数字抄过去（见 pattern.js 里 rubikSelToMatrixSel 的注释）。
+  · 「← 返回魔方视图」按钮把画面切回逻辑魔方（不销毁两个 iframe，只是换哪个
+    在最上层），随时可以再点别的卡。
 
-  下钻一张卡（矩阵页自己上报的 postMessage pto:select）之后，一张卫星卡浮
-  在屏幕边上——像 Miro 贴便签一样浮在主画布上层，不占用、不缩小主画布本身
-  的可视范围。卫星卡不放文字标签：只留 rank 号（认卡、点了能收起）和一条
-  执行活动色条，没有坐标行、没有色块逐个的提示文字——真实坐标、六档通信、
-  耗时读数这些还是回矩阵本体里选中同一张卡去看，卫星卡不重复画一遍。
+  两边都不缩小、不加框，边到边铺满视口——拓扑本身就是全屏幕的画布，不是
+  「一张卡片放中间」。
 -->
 </head>
 <body>
-  <iframe id="matrixFrame" class="matrix-frame" title="rank-topology-3d 本体（盘古 ProMoE · 4000 卡）"></iframe>
+  <iframe id="rubikFrame" class="stage-frame" title="逻辑魔方（盘古 ProMoE · 4000 卡全量视图）"></iframe>
+  <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 选中卡详情"></iframe>
+
+  <button id="backBtn" class="back-btn is-hidden" type="button">← 返回魔方视图</button>
 
   <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
-
-  <div id="satLayer" class="sat-layer"></div>
 
   <script src="./pattern.js"></script>
 </body>

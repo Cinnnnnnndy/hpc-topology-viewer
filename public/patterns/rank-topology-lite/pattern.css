@@ -1,8 +1,7 @@
-/* rank-topology-lite · 拓扑本身就是全屏幕的无限画布
-   矩阵本体（全屏 iframe）用它自己的 theme=dark，一个像素不碰、不缩小。
-   贴在屏幕边上的卫星卡走 compute-graph-viewer 的抽象图网页 prompt：
-   深色极简、无边框灰卡、语义配色只用在训练语义图元上——不放文字标签，
-   卡上只留 rank 号和一条执行活动色条，靠颜色本身说话。 */
+/* rank-topology-lite · 两个本体各管一半，边到边铺满整个视口，不加框、不缩小。
+   没点开卡：逻辑魔方（WebGL 实例化网格，素块、无标签、无性能问题）。
+   点开一张卡：并行拓扑矩阵本体自己的选中态渲染接管。谁在最上层用 opacity+
+   pointer-events 切，不销毁 iframe——切回去不用重新加载逻辑魔方那份场景。 */
 
 * { box-sizing: border-box; }
 
@@ -13,14 +12,28 @@ html, body {
   color: #E8E8E8;
 }
 
-/* ── 中央矩阵：铺满整个视口，边到边，不加框、不缩小 ──────────────────── */
-.matrix-frame {
+/* ── 两个本体舞台：都铺满整个视口，边到边，不加框、不缩小 ──────────────── */
+.stage-frame {
   position: fixed; inset: 0; width: 100%; height: 100%;
   border: 0; display: block;
+  opacity: 1; transition: opacity .2s ease;
 }
+.stage-frame.is-hidden { opacity: 0; pointer-events: none; }
 
-/* ── 角标：极小、不占视野，唯一的外层 chrome。放在下边正中——矩阵自己的
-   标题/设置按钮占了左上右上，群组控件占了左下，这是唯一空的一角。 ────── */
+/* ── 返回按钮：只在矩阵详情态出现，左上角——魔方视图没有任何角标占用那一格 ── */
+.back-btn {
+  position: fixed; left: 16px; top: 16px; z-index: 6;
+  font-size: 12px; color: rgba(255, 255, 255, 0.72); text-decoration: none;
+  background: rgba(20, 20, 20, 0.72); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 999px;
+  padding: 6px 14px; cursor: pointer;
+  transition: opacity .2s ease;
+}
+.back-btn:hover { color: #FFFFFF; background: rgba(32, 32, 32, 0.85); }
+.back-btn.is-hidden { opacity: 0; pointer-events: none; }
+
+/* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
+   各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
 .corner-link {
   position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5;
   font-size: 11px; color: rgba(255, 255, 255, 0.4); text-decoration: none;
@@ -28,32 +41,3 @@ html, body {
   pointer-events: auto;
 }
 .corner-link:hover { color: #FFFFFF; background: rgba(0, 0, 0, 0.55); }
-
-/* ── 卫星卡层：贴在屏幕右边，像便签一样浮在主画布上层，不占用画布本身 ── */
-.sat-layer {
-  position: fixed; top: 16px; right: 16px; bottom: 16px; z-index: 4;
-  display: flex; flex-direction: column; gap: 10px;
-  width: 280px; overflow-y: auto;
-  pointer-events: none; /* 层本身不挡矩阵的拖动，卫星卡各自开回 auto */
-}
-.sat {
-  pointer-events: auto;
-  flex: 0 0 auto;
-  background: rgba(31, 31, 31, 0.92); backdrop-filter: blur(6px);
-  border-radius: 14px; padding: 14px 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.sat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.sat-id { font-size: 14px; font-weight: 500; color: #E8E8E8; font-variant-numeric: tabular-nums; }
-.sat-close {
-  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px; border: 0;
-  background: transparent; color: #A0A0A0; font-size: 13px; line-height: 20px; cursor: pointer;
-}
-.sat-close:hover { background: rgba(255, 255, 255, 0.1); color: #FFFFFF; }
-
-.sat-blocks { display: flex; gap: 6px; margin-top: 10px; height: 26px; }
-.sat-block { border-radius: 3px; }
-.sat-fwd { background: #4469EF; flex: 5; }
-.sat-comm { background: #05D793; flex: 1; }
-.sat-bwd { background: #FF4C7C; flex: 5; }
-.sat-opt { background: #FFAA3B; flex: 2; }

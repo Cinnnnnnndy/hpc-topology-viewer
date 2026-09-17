@@ -1,71 +1,72 @@
 /* rank-topology-lite · pattern.js
-   拓扑本身就是全屏幕的无限画布：中央 iframe 铺满整个视口，边到边，一个像素
-   不缩小——它就是 /patterns/rank-topology-3d/pattern.html 本体（同源嵌入，
-   不是拷贝），矩阵/排布/六档通信/preset/ZeRO/物理平铺/它自己的拖动缩放镜头，
-   全部原样在场，这一层不额外包一层镜头、不裁剪任何功能。固定给它
-   preset=pangu·theme=dark（它自己支持的深色 token，不额外注入样式）。
-
-   下钻一张卡（矩阵页自己上报的 postMessage pto:select）就在屏幕右边浮一张
-   卫星卡——贴在视口上，不占用、不缩小主画布本身，随时可以再点开新的一张。
+   没点开卡：逻辑魔方 iframe 在最上层（盘古 ProMoE 预置，WebGL 实例化网格，
+   素块、无标签、无性能问题——这正是"未点击之前"想要的默认视图，不在 SVG
+   矩阵里另外拼一套弱化渲染）。
+   点开一张卡：逻辑魔方自己 postMessage 上报 rubik-select，这一层把它的
+   (tp,pp,rep) 坐标换算成并行拓扑矩阵自己的 rank 编号，把矩阵 iframe 换到
+   最上层并带上 ?sel=——矩阵本体自己的选中态渲染（真实坐标、内存/容量读出、
+   六档通信、兄弟卡高亮）原样接管，这一层不重画一遍。
 */
 (function () {
   'use strict';
 
   var qs = new URLSearchParams(location.search);
 
-  // ── 中央矩阵：固定 preset=pangu·theme=dark，view/card/vtab 沿用它自己的默认值 ──
-  var frame = document.getElementById('matrixFrame');
-  var matrixParams = new URLSearchParams({
-    embed: '1', theme: 'dark', preset: 'pangu',
-    view: 'chain', card: '1', vtab: '3d',
-    // fastcard=1：静置态把 4000 只素壳合批成按深度分桶的几百个 <path>，
-    // 不再是每只卡各自十几个 DOM 节点——只有这个简洁版自己传这个参数，
-    // 直接打开 rank-topology-3d 不受影响（demo.html 里默认关闭）。
-    fastcard: '1'
-  });
-  frame.src = '../rank-topology-3d/pattern.html?' + matrixParams.toString();
+  var rubikFrame = document.getElementById('rubikFrame');
+  var matrixFrame = document.getElementById('matrixFrame');
+  var backBtn = document.getElementById('backBtn');
 
-  // ── 卫星卡：贴在屏幕右边的便签层，不跟随矩阵自己的镜头缩放/平移 ─────────
-  var satLayer = document.getElementById('satLayer');
-  var satellites = {};
+  // ── 逻辑魔方：固定盘古 ProMoE 预置（tp8·pp5·dp100·ep2 = 4000 卡），深色主题 ──
+  var rubikParams = new URLSearchParams({ theme: 'dark', tp: '8', pp: '5', dp: '100', ep: '2' });
+  rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
-  // 不放文字标签：卡上只留 rank 号（区分哪张卡、点哪张能收起）和一条执行
-  // 活动色条，没有坐标行、没有色块逐个的提示文字。「非实测」这句仍然要说真话，
-  // 但不再常驻占地方——挪进 sat-blocks 自己的 title，只在悬停时才弹出来。
-  function spawnSatellite(sel) {
-    if (satellites[sel]) return;
-    var card = document.createElement('div');
-    card.className = 'sat';
-    card.innerHTML =
-      '<div class="sat-head">' +
-        '<div class="sat-id">' + sel + '</div>' +
-        '<button class="sat-close" title="收起">×</button>' +
-      '</div>' +
-      '<div class="sat-blocks" title="执行活动 · 长度示意，非实测">' +
-        '<div class="sat-block sat-fwd"></div>' +
-        '<div class="sat-block sat-comm"></div>' +
-        '<div class="sat-block sat-bwd"></div>' +
-        '<div class="sat-block sat-comm"></div>' +
-        '<div class="sat-block sat-opt"></div>' +
-      '</div>';
-    satLayer.insertBefore(card, satLayer.firstChild);
-    satellites[sel] = card;
-    card.querySelector('.sat-close').addEventListener('click', function () {
-      card.remove(); delete satellites[sel];
+  // ── 并行拓扑矩阵：固定 preset=pangu·theme=dark，view/card/vtab 沿用它自己的默认值 ──
+  function matrixSrcFor(matrixSel) {
+    var p = new URLSearchParams({
+      embed: '1', theme: 'dark', preset: 'pangu',
+      view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel)
     });
+    return '../rank-topology-3d/pattern.html?' + p.toString();
   }
 
-  // ── 接矩阵页自己上报的下钻事件：pto:select 是它页内换选中卡时主动发的 ────
+  /* 逻辑魔方与并行拓扑矩阵各自实现了一遍"rank ↔ (tp,pp,dp) 坐标"的换算，
+     内部打包顺序不一样，同一个数字在两边指的不是同一张卡：
+       逻辑魔方（pattern.js）  rankOf = (rep*PP + pp) * TP + tp
+       并行拓扑（demo.html）   rankOf = (pp*DP + dp) * TP + tp   （cp 固定 0）
+     只有 tp 在两边都是最内层（同一个 %TP），pp/dp(rep) 的打包顺序不同，
+     所以必须按坐标三元组换算，不能把 rank 数字直接抄过去——实测验证过：
+     逻辑魔方 rank 830（tp6·pp3·rep20）对应并行拓扑 rank 2566，矩阵本体
+     读出的坐标正是 tp6·cp0·dp20·pp3，与逻辑魔方报的坐标逐位一致。 */
+  var MATRIX_D = { tp: 8, dp: 100 };
+  function rubikSelToMatrixSel(sel) {
+    return (sel.pp * MATRIX_D.dp + sel.rep) * MATRIX_D.tp + sel.tp;
+  }
+
+  function showDetail(matrixSel) {
+    matrixFrame.src = matrixSrcFor(matrixSel);
+    matrixFrame.classList.remove('is-hidden');
+    rubikFrame.classList.add('is-hidden');
+    backBtn.classList.remove('is-hidden');
+  }
+
+  function showOverview() {
+    matrixFrame.classList.add('is-hidden');
+    rubikFrame.classList.remove('is-hidden');
+    backBtn.classList.add('is-hidden');
+  }
+
+  backBtn.addEventListener('click', showOverview);
+
+  // ── 接逻辑魔方自己上报的下钻事件：rubik-select 是它页内换选中卡时主动发的 ──
   window.addEventListener('message', function (ev) {
-    if (ev.source !== frame.contentWindow) return;
+    if (ev.source !== rubikFrame.contentWindow) return;
     var d = ev.data;
-    if (!d || d.type !== 'pto:select' || d.sel == null) return;
-    spawnSatellite(d.sel);
+    if (!d || d.type !== 'rubik-select') return;
+    if (d.sel && d.sel.rank != null) showDetail(rubikSelToMatrixSel(d.sel));
+    else showOverview();
   });
 
-  // ── URL 深链：?sel=12,45 打开时直接摆好对应卫星卡 ──────────────────────
-  (qs.get('sel') || '').split(',').forEach(function (s) {
-    var n = parseInt(s, 10);
-    if (isFinite(n) && n >= 0 && n < 4000) spawnSatellite(n);
-  });
+  // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进详情态 ──────
+  var qsel = parseInt(qs.get('sel'), 10);
+  if (isFinite(qsel) && qsel >= 0 && qsel < 4000) showDetail(qsel);
 })();
