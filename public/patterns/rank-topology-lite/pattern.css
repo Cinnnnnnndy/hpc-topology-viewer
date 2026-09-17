@@ -1,0 +1,137 @@
+/* rank-topology-lite · 抽象关系图风格
+   色值与留白按 compute-graph-viewer/docs/抽象图网页prompt.md 的规范逐条对齐：
+   深色极简、无边框灰卡、语义配色只用在训练语义图元上，其余保持中性灰。 */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #111111;
+  overflow: hidden; /* 不靠纵向滚动容纳主体内容，画布整体等比缩放 */
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
+  color: #E8E8E8;
+}
+
+#viewport {
+  position: fixed;
+  inset: 0;
+}
+
+/* 固定 1600×900（16:9）画布：标题、图例、状态信息全部在这一块里，整体缩放，不单独滚动。
+   left/top 由 pattern.js 按可用空间算好写入（配合 transform-origin: top left 做居中），
+   不用 flex 居中——flex 会按缩放前的 1600×900 布局盒定位，缩小之后视觉上会偏向左上角。 */
+#stage {
+  position: absolute;
+  width: 1600px;
+  height: 900px;
+  transform-origin: top left;
+  background: #111111;
+  user-select: none;
+}
+
+#stage.embed { background: transparent; }
+
+.abs { position: absolute; }
+
+/* ── 顶栏 ───────────────────────────────────────────────────────────── */
+.hdr-title {
+  left: 40px; top: 16px; width: 900px;
+  font-size: 24px; font-weight: 500; line-height: 32px;
+  color: #E8E8E8;
+}
+.hdr-run {
+  right: 40px; top: 14px; width: 420px; text-align: right;
+  font-size: 13px; color: #A0A0A0; font-variant-numeric: tabular-nums;
+}
+.hdr-link {
+  right: 40px; top: 36px; width: 420px; text-align: right;
+  font-size: 12px;
+}
+.hdr-link a { color: #A0A0A0; text-decoration: none; }
+.hdr-link a:hover { color: #FFFFFF; }
+.hdr.embed-hidden, .ftr.embed-hidden { display: none; }
+
+/* ── 连线层：静态直角连线，1.5px 中性灰，不穿过卡片内容 ─────────────── */
+#lines { position: absolute; inset: 0; pointer-events: none; }
+#lines line { stroke: #3A3A3A; stroke-width: 1.5; transition: stroke .15s, opacity .15s; }
+#lines line.dim { opacity: .35; }
+#lines line.active { stroke: #6B6B6B; }
+
+/* ── 组织树文字（Model / PP / TP）───────────────────────────────────── */
+.node-label {
+  text-align: center; white-space: nowrap;
+  font-weight: 500; color: #E8E8E8;
+  transition: opacity .15s, color .15s;
+}
+.node-label.dim { opacity: .4; }
+.lbl-root { font-size: 13px; font-weight: 400; color: #A0A0A0; }
+.lbl-pp   { font-size: 15px; }
+.lbl-tp   { font-size: 14px; color: #C7C7C7; }
+
+/* ── Rank 导航条：等高短横线 + 编号，白色边框与编号高亮当前选中 ──────── */
+.rank-bar {
+  width: 50px; height: 14px; border-radius: 3px;
+  background: #282828; cursor: pointer;
+  transition: background .12s, box-shadow .12s;
+}
+.rank-bar:hover { background: #333333; }
+.rank-bar.selected {
+  background: #3A3A3A;
+  box-shadow: inset 0 0 0 1.5px #FFFFFF;
+}
+.rank-num {
+  width: 50px; text-align: center;
+  font-size: 11px; color: #A0A0A0; font-variant-numeric: tabular-nums;
+  transition: color .12s, opacity .15s;
+}
+.rank-num.selected { color: #FFFFFF; font-weight: 500; }
+.rank-num.dim { opacity: .4; }
+
+/* ── Rank 详情标题与分组标题 ─────────────────────────────────────────── */
+.rank-title {
+  text-align: center; font-size: 17px; font-weight: 500; color: #FFFFFF;
+  font-variant-numeric: tabular-nums;
+}
+.group-label { font-size: 15px; font-weight: 500; color: #E8E8E8; text-align: center; }
+
+/* ── 内容卡片：无边框、圆角、单一中性底色 ────────────────────────────── */
+.card {
+  background: #1F1F1F; border-radius: 16px;
+}
+.card-caption {
+  font-size: 14px; font-weight: 500; color: #E8E8E8;
+  font-variant-numeric: tabular-nums;
+}
+.card-note {
+  font-size: 11px; color: #A0A0A0;
+}
+
+/* ── 执行活动：填充色块，前向/反向用方向相反的箭头纹理 ───────────────── */
+.act-block { border-radius: 3px; }
+.act-fwd { background: #4469EF; }
+.act-bwd { background: #FF4C7C; }
+.act-comm { background: #05D793; }
+.act-opt { background: #FFAA3B; }
+.act-caption-label {
+  text-align: center; font-size: 10px; color: #A0A0A0;
+}
+
+/* ── 激活驻留：低透明度紫色长条 + 两端菱形端点，边界是唯一保留的描边 ─── */
+.res-bar {
+  background: rgba(142, 74, 206, .22);
+  border: 1px solid rgba(142, 74, 206, .75);
+  border-radius: 4px;
+}
+.res-diamond { width: 14px; height: 14px; transform: rotate(45deg); border-radius: 2px; }
+.res-spawn { background: #A856F7; }
+.res-release { background: #88C911; }
+
+/* ── 图例与状态信息 ──────────────────────────────────────────────────── */
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
+.legend-diamond { width: 10px; height: 10px; transform: rotate(45deg); border-radius: 2px; flex: 0 0 auto; }
+.legend-label { font-size: 11px; color: #A0A0A0; }
+.status-text { font-size: 11px; color: #A0A0A0; text-align: right; }

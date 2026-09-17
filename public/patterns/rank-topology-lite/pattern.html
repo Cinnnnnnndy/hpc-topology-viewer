@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="referrer" content="no-referrer" />
+<title>模型分片与训练设备映射 · 简洁版</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="./pattern.css" />
+<!--
+  rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁抽象版。
+
+  同一个题面（五刀切完之后落到哪张卡上），换一种画法：不用可转动的三维阵列，
+  改用 compute-graph-viewer 的「抽象图网页 prompt」（见该仓
+  docs/抽象图网页prompt.md）——深色极简、无边框灰卡、语义配色只用在训练语义
+  图元上、直角连线、不搭装饰性中间层。规模也简化到 TP2×PP2×DP2=8 卡、省略 EP，
+  只求「组织关系一眼看懂」，不追求覆盖完整并行度组合或真实计时——
+  这些仍然是 /patterns/rank-topology-3d/ 的题面。
+
+  结构：组织树（模型 → PP → TP → Rank 导航条）选中一张 Rank 之后，
+  用「执行活动」与「激活驻留」两组共同标题直接连接各自的内容卡片
+  （抽象图 prompt 里给的例子原句）。
+-->
+</head>
+<body>
+  <div id="viewport">
+    <div id="stage">
+      <svg id="lines" viewBox="0 0 1600 900" preserveAspectRatio="none"></svg>
+    </div>
+  </div>
+  <script src="./pattern.js"></script>
+</body>
+</html>
