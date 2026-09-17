@@ -1,125 +1,94 @@
-/* rank-topology-lite · 抽象关系图风格
-   色值与留白按 compute-graph-viewer/docs/抽象图网页prompt.md 的规范逐条对齐：
-   深色极简、无边框灰卡、语义配色只用在训练语义图元上，其余保持中性灰。 */
+/* rank-topology-lite · 环绕式下钻画布
+   矩阵本体（中央 iframe）用它自己的 theme=dark，一个像素不碰。
+   外层画布 + 卫星卡走 compute-graph-viewer 的抽象图网页 prompt：
+   深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线。 */
 
 * { box-sizing: border-box; }
 
 html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  background: #111111;
-  overflow: hidden; /* 不靠纵向滚动容纳主体内容，画布整体等比缩放 */
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  background: #111111; overflow: hidden;
   font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
   color: #E8E8E8;
 }
 
-#viewport {
-  position: fixed;
-  inset: 0;
+/* ── 顶栏：细，不抢矩阵的主体地位 ─────────────────────────────────────── */
+.hdr {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+  display: flex; align-items: baseline; gap: 16px;
+  padding: 14px 24px; pointer-events: none;
+}
+.hdr-title { font-size: 17px; font-weight: 500; color: #E8E8E8; }
+.hdr-sub { font-size: 12px; color: #A0A0A0; flex: 1; }
+.hdr-link { font-size: 12px; color: #A0A0A0; text-decoration: none; pointer-events: auto; }
+.hdr-link:hover { color: #FFFFFF; }
+
+/* ── 无限画布 ─────────────────────────────────────────────────────────── */
+.viewport {
+  position: fixed; inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: var(--dot, 26px) var(--dot, 26px);
+  background-position: var(--dotx, 0) var(--doty, 0);
+  cursor: grab;
+}
+.viewport.is-panning { cursor: grabbing; }
+.world {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
 }
 
-/* 固定 1600×900（16:9）画布：标题、图例、状态信息全部在这一块里，整体缩放，不单独滚动。
-   left/top 由 pattern.js 按可用空间算好写入（配合 transform-origin: top left 做居中），
-   不用 flex 居中——flex 会按缩放前的 1600×900 布局盒定位，缩小之后视觉上会偏向左上角。 */
-#stage {
-  position: absolute;
-  width: 1600px;
-  height: 900px;
-  transform-origin: top left;
-  background: #111111;
-  user-select: none;
-}
+/* ── 连线层：直角/直线细连线，1.5px 中性灰 ───────────────────────────── */
+.conns { position: absolute; left: -100000px; top: -100000px; width: 200000px; height: 200000px; overflow: visible; pointer-events: none; }
+.conns line { stroke: #3A3A3A; stroke-width: 1.5; }
 
-#stage.embed { background: transparent; }
-
-.abs { position: absolute; }
-
-/* ── 顶栏 ───────────────────────────────────────────────────────────── */
-.hdr-title {
-  left: 40px; top: 16px; width: 900px;
-  font-size: 24px; font-weight: 500; line-height: 32px;
-  color: #E8E8E8;
+/* ── 中央矩阵：最大、最先看到的主体，无边框只留极细描边区分背景 ──────── */
+.main-view {
+  position: absolute; left: -680px; top: -400px; width: 1360px; height: 800px;
+  background: #0c0c0c; border-radius: 16px;
+  box-shadow: inset 0 0 0 1px #262626;
+  display: flex; flex-direction: column; overflow: hidden;
 }
-.hdr-run {
-  right: 40px; top: 14px; width: 420px; text-align: right;
-  font-size: 13px; color: #A0A0A0; font-variant-numeric: tabular-nums;
+.main-view-head {
+  flex: 0 0 auto; padding: 10px 18px; font-size: 12px; color: #A0A0A0;
+  border-bottom: 1px solid #222222; cursor: grab;
 }
-.hdr-link {
-  right: 40px; top: 36px; width: 420px; text-align: right;
-  font-size: 12px;
-}
-.hdr-link a { color: #A0A0A0; text-decoration: none; }
-.hdr-link a:hover { color: #FFFFFF; }
-.hdr.embed-hidden, .ftr.embed-hidden { display: none; }
+.viewport.is-panning .main-view-head { cursor: grabbing; }
+.main-view-body { flex: 1 1 auto; position: relative; }
+.main-view-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
-/* ── 连线层：静态直角连线，1.5px 中性灰，不穿过卡片内容 ─────────────── */
-#lines { position: absolute; inset: 0; pointer-events: none; }
-#lines line { stroke: #3A3A3A; stroke-width: 1.5; transition: stroke .15s, opacity .15s; }
-#lines line.dim { opacity: .35; }
-#lines line.active { stroke: #6B6B6B; }
-
-/* ── 3D 卡阵：world=4000 张卡（TP8×PP5×DP50×EP2）的全量 WebGL 实例化阵列 ──── */
-.cube-canvas-wrap { cursor: grab; }
-.cube-canvas-wrap:active { cursor: grabbing; }
-.cube-canvas-wrap canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.cube-hint { text-align: center; font-size: 11px; color: #A0A0A0; }
-
-/* ── 精确点选兜底：4000 张卡摆不出按钮，直接输入 rank 跳转 ────────────── */
-.rank-jump { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.rank-jump-label { font-size: 12px; color: #A0A0A0; white-space: nowrap; }
-.rank-jump-input {
-  width: 84px; height: 26px; padding: 0 8px;
-  background: #1F1F1F; border: 1px solid #3A3A3A; border-radius: 6px;
-  color: #E8E8E8; font-size: 13px; font-variant-numeric: tabular-nums;
-  font-family: inherit;
+/* ── 卫星卡：点一张卡下钻之后，浮在矩阵四周的内容卡片 ────────────────── */
+#satLayer { position: absolute; left: 0; top: 0; }
+.sat {
+  position: absolute; width: 300px;
+  background: #1F1F1F; border-radius: 14px;
+  padding: 16px 18px;
 }
-.rank-jump-input:focus { outline: none; border-color: #6B6B6B; }
-.rank-jump-hint { font-size: 11px; color: #A0A0A0; white-space: nowrap; }
+.sat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sat-title { font-size: 14px; font-weight: 500; color: #E8E8E8; font-variant-numeric: tabular-nums; }
+.sat-close {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: 5px; border: 0;
+  background: transparent; color: #A0A0A0; font-size: 13px; line-height: 20px; cursor: pointer;
+}
+.sat-close:hover { background: #2A2A2A; color: #FFFFFF; }
+.sat-coords { margin-top: 4px; font-size: 11px; color: #A0A0A0; font-variant-numeric: tabular-nums; }
 
-/* ── Rank 详情标题与分组标题 ─────────────────────────────────────────── */
-.rank-title {
-  text-align: center; font-size: 17px; font-weight: 500; color: #FFFFFF;
-  font-variant-numeric: tabular-nums;
-}
-.group-label { font-size: 15px; font-weight: 500; color: #E8E8E8; text-align: center; }
+.sat-blocks { display: flex; gap: 6px; margin-top: 14px; height: 30px; }
+.sat-block { border-radius: 3px; }
+.sat-fwd { background: #4469EF; flex: 5; }
+.sat-comm { background: #05D793; flex: 1; }
+.sat-bwd { background: #FF4C7C; flex: 5; }
+.sat-opt { background: #FFAA3B; flex: 2; }
+.sat-note { margin-top: 10px; font-size: 10px; color: #A0A0A0; }
 
-/* ── 内容卡片：无边框、圆角、单一中性底色 ────────────────────────────── */
-.card {
-  background: #1F1F1F; border-radius: 16px;
+/* ── 工具条：缩放 / 回到矩阵 / 看全部，钉在视口上不随画布移动 ────────── */
+.hud {
+  position: fixed; right: 20px; bottom: 20px; z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+  background: #1F1F1F; border-radius: 10px; padding: 6px;
 }
-.card-caption {
-  font-size: 14px; font-weight: 500; color: #E8E8E8;
-  font-variant-numeric: tabular-nums;
+.hud button {
+  width: 30px; height: 30px; border-radius: 6px; border: 0;
+  background: transparent; color: #E8E8E8; font-size: 15px; cursor: pointer;
 }
-.card-note {
-  font-size: 11px; color: #A0A0A0;
-}
-
-/* ── 执行活动：填充色块，前向/反向用方向相反的箭头纹理 ───────────────── */
-.act-block { border-radius: 3px; }
-.act-fwd { background: #4469EF; }
-.act-bwd { background: #FF4C7C; }
-.act-comm { background: #05D793; }
-.act-opt { background: #FFAA3B; }
-.act-caption-label {
-  text-align: center; font-size: 10px; color: #A0A0A0;
-}
-
-/* ── 激活驻留：低透明度紫色长条 + 两端菱形端点，边界是唯一保留的描边 ─── */
-.res-bar {
-  background: rgba(142, 74, 206, .22);
-  border: 1px solid rgba(142, 74, 206, .75);
-  border-radius: 4px;
-}
-.res-diamond { width: 14px; height: 14px; transform: rotate(45deg); border-radius: 2px; }
-.res-spawn { background: #A856F7; }
-.res-release { background: #88C911; }
-
-/* ── 图例与状态信息 ──────────────────────────────────────────────────── */
-.legend-item { display: flex; align-items: center; gap: 6px; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
-.legend-diamond { width: 10px; height: 10px; transform: rotate(45deg); border-radius: 2px; flex: 0 0 auto; }
-.legend-label { font-size: 11px; color: #A0A0A0; }
-.status-text { font-size: 11px; color: #A0A0A0; text-align: right; }
+.hud button:hover { background: #2A2A2A; }
+.zval { font-size: 11px; color: #A0A0A0; padding: 0 6px; font-variant-numeric: tabular-nums; }

@@ -1,28 +1,27 @@
 {
   "id": "rank-topology-lite",
   "name": "模型分片与训练设备映射 · 简洁版",
-  "description": "/patterns/rank-topology-3d/ 的简洁版：同一个题面（五刀切完之后落到哪张卡上），保留同一个核心比喻——world 张卡壳排成的立体阵列——而且是全量：世界大小按盘古 ProMoE 的公开并行度口径取 TP8×PP5×DP50×EP2=4000，4000 张卡真的都在场，每张都是一个会被光照出明暗的立方体（THREE.BoxGeometry + InstancedMesh），不是拿平面卡片摆位置充数。去掉的是六档通信切换、preset 切换、ZeRO、物理平铺这些控制面板，只留『转一转、点一张卡（或输入 rank 跳转）』。选中一张卡后，详情区换成 compute-graph-viewer 的『抽象图网页 prompt』画法——深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线、不搭装饰性中间层，这份 prompt 只管详情区，不管 3D 卡阵本身。",
-  "version": "2.0.0",
+  "description": "/patterns/rank-topology-3d/ 的简洁版：矩阵、排布、六档通信、preset、ZeRO、物理平铺一个字节不碰——中央 iframe 嵌的就是 /patterns/rank-topology-3d/pattern.html 本体（同源，不是拷贝），固定落在 preset=pangu·theme=dark（盘古 ProMoE 公开口径 TP8×PP5×DP100=4000 卡，EP2 是路由维度不参与 rank 计数）。变的是外层：环绕式的无限画布，矩阵钉在正中央、是画面里最大最先看到的主体；点一张卡下钻之后，那张卡的真实坐标（矩阵页自己 postMessage 上报的 pto:select，不是另算的）落成一张卫星卡浮在矩阵四周，一条细线连回去，下钻越多画布摊得越大。外层画布与卫星卡走 compute-graph-viewer 的『抽象图网页 prompt』——深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线；这份 prompt 管外层，不管矩阵内部怎么画。",
+  "version": "3.0.0",
   "entry": "pattern.html",
-  "selfContained": true,
-  "canvas": "fixed-16:9",
+  "selfContained": false,
+  "canvas": "infinite",
   "variantOf": "rank-topology-3d",
   "derivedFrom": {
-    "topic": "public/parallel-topology/demo.html 的 view=chain·card=1·vtab=3d 屏 + pangu 预置（/patterns/rank-topology-3d/）",
-    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（用于选中后的详情区，不用于 3D 卡阵本身）"
+    "topic": "/patterns/rank-topology-3d/pattern.html 本体，同源 iframe 嵌入（preset=pangu·theme=dark），不复制它的任何代码",
+    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（只用于外层画布与卫星卡，不用于中央矩阵内部）",
+    "structure": "/patterns/incident-canvas/ 的『主视图 + 卫星 + 连线』无限画布结构（同一套思路，代码是精简重写，不是整段搬运）"
   },
   "urlParams": {
-    "rank": "0–3999 —— 选中哪张卡（TP8×PP5×DP50×EP2 的 global rank）；不给或非法值退回 0，不报错",
-    "embed": "1 —— 嵌入形态：收起顶栏（标题/Run 信息/完整版链接）与页脚（图例/状态行），只剩 3D 卡阵与 Rank 详情两块"
+    "sel": "逗号分隔的 rank 列表（如 12,45,90）—— 打开时直接摆好对应的卫星卡；假设默认盘古预置，不给就不预开任何卫星卡"
   },
   "constraints": [
-    "固定拓扑 TP8×PP5×DP50×EP2=4000（盘古 ProMoE 的公开预置），全量渲染，不做「规模太大就默认折叠」的降级——这正是这一版想直接看到的东西。简洁版不追求覆盖 /patterns/rank-topology-3d/ 的六档通信切换、preset 切换、ZeRO 或物理平铺。",
-    "3D 卡阵是真的 WebGL 场景（three.js InstancedMesh），不是 CSS 3D 或 SVG：4000 个会被光照出明暗的立方体，纯 CSS/DOM 撑不住这个规模。拖动旋转、静置时缓慢自转，转一下或选中一张卡之后自转停住。",
-    "4 个并行维（TP/PP/DP/EP）只有 3 根空间轴可用，且 DP=50 比其余几维大得多：把 DP 拆成 10×5 两段分别并进深度轴与纵向轴，换来一个接近立方体的外形。因此卡阵里的空间位置只是直觉示意，不是可以直接读出坐标的图——选中之后的真实 (TP,PP,DP,EP) 只看下方标题文字，不看它在阵列里的位置。",
-    "4000 张卡里的大多数都被压在实心阵列内部，从外部几乎不可见/点不到；精确选择走下方的 rank 跳转输入框（0–3999，Enter 跳转），不是逐张点选。选中标记关闭了深度测试，会穿透前排的卡持续可见，不会被挡住。",
-    "执行活动块的宽度与激活驻留条的长度都没有真实计时依据，页面上一律标『示意 / 非实测』，不暗示精确耗时——真实的传输时间下界与耗时估算仍在 /patterns/rank-topology-3d/。",
-    "颜色沿用该 pattern 的语义映射：前向 #4469EF、反向 #FF4C7C、通信 #05D793、优化器 #FFAA3B、激活驻留 #8E4ACE（低透明度长条）、驻留产生端点 #A856F7、释放端点 #88C911。3D 卡阵本身保持中性灰——rank 身份不是训练语义，不套用那套配色。",
-    "自包含但不是零依赖：整页 pattern.html + pattern.css + pattern.js + favicon.svg + vendor/three-r128.min.js（同目录自带一份拷贝，不引 CDN）。"
+    "中央矩阵是同源 iframe，指向 /patterns/rank-topology-3d/pattern.html，不是另一份拷贝或重新实现——它的六档通信、preset、ZeRO、物理平铺、真实计时口径全部原样可用，这一份不做任何裁剪，只是默认把 preset 定在 pangu、theme 定在 dark。",
+    "盘古 ProMoE 预置 world=4000 = TP8×PP5×DP100，EP2 是同一批 rank 内部的专家路由维度（All-to-All），不额外乘进 rank 总数——这是从矩阵页实际上报的 config 里读回来的口径，不是按『EP 也是并行维就该相乘』的直觉猜的。",
+    "卫星卡的坐标数据来自矩阵页自己的 postMessage（pto:select 事件里的 groups 字段），是矩阵页当场算出来的真实坐标，不是这一层自己重新推导；只有 URL 深链（?sel=）在页面刚打开、还没收到任何真实事件时，才用一份本地小算式按盘古预置的固定参数补算坐标，仅用于恢复深链，不作为运行期的权威来源。",
+    "卫星卡里的『执行活动』色块只是示意色条，没有真实计时依据，标注『长度示意，非实测』；真实的耗时估算与传输时间下界仍在矩阵本体内部（悬停/选中之后的读出面板）。",
+    "颜色语义仅用于卫星卡：前向 #4469EF、反向 #FF4C7C、通信 #05D793、优化器 #FFAA3B。中央矩阵内部的配色由它自己的 theme=dark 决定，这一层不覆盖、不注入额外样式。",
+    "不是自包含：依赖同一个站点上 /patterns/rank-topology-3d/pattern.html 一起发布——离线打开这一份文件、或站点没有那条路径时，中央矩阵会是一格空白 iframe。这是有意的取舍：换成打包一份拷贝会让两份实现分叉、demo.html 的修复不会自动传到这一份。"
   ],
-  "embedding": "<iframe src=\"/patterns/rank-topology-lite/pattern.html?embed=1&rank=2500\" style=\"width:100%;height:100%;border:0\"></iframe>"
+  "embedding": "这一份本身就是别的页面嵌 /patterns/rank-topology-3d/pattern.html 的一种用法示范；它自己更适合直接打开整页看，不建议再嵌进第三层 iframe。"
 }
