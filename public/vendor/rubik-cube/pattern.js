@@ -2059,6 +2059,9 @@
         if (inAnomGroup(r)) return cTmp.set(tokHex('--danger'));
         return restColor(r);
       }
+      // 素色镜头：不按任何维度/负载上色，全阵列一个中性灰——给想要「先看形状、
+      // 不看颜色」的读者一个开关，默认仍是 load（负载热力），这颗镜头要显式选。
+      if (S.colorBy === 'neutral') return cTmp.set(tokHex('--foreground-secondary'));
       if (S.colorBy === 'load') return loadColor(load01(r));
       // 内存构成透镜：全网相对位置 → 复用负载热力那条渐变（同一色带，换一个分子）。
       if (MEM_LENS_KEY[S.colorBy]) {
@@ -3831,7 +3834,9 @@
         ['主机', 'host'], ['Pod', 'pod'],
         // 内存构成：权重/激活是用户明确点名「现在比较少、要看清楚」的两档，排在前面；
         // 梯度/优化器态是同一套机制顺手加的对照档（见 memBytesOfRank 顶注），排在后面。
-        ['权重占比', 'w'], ['激活占比', 'act'], ['梯度占比', 'grad'], ['优化器态占比', 'opt']]
+        ['权重占比', 'w'], ['激活占比', 'act'], ['梯度占比', 'grad'], ['优化器态占比', 'opt'],
+        // 素色：不按任何维度/负载上色，先看阵列形状、不看颜色——排最后，默认仍是「状态热力」。
+        ['素色', 'neutral']]
         .map(([t, k]) => lensSeg.appendChild(chipBtn(t, () => { S.colorBy = k; recolor(); renderLegend(); syncChrome(); })));
       /* 时间轴 = 一个 step 的 4 个通信阶段（对齐集群驾驶舱）。
          播放/暂停常驻顶栏（只有图标），阶段轨道悬停时才弹出——它不是常用控件，

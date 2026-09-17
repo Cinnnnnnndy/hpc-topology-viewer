@@ -1144,6 +1144,13 @@ var ui = {
      画法与之前逐字节相同，只有显式要这份轻量初始渲染的嵌入方（rank-topology-lite）
      会传这个参数。见 shellOf 里 fcOn 那段、以及本文件最下面 fcFlush()。 */
   fastCard:false,
+  /* 兄弟卡素色：卡维度选中一张卡之后，兄弟卡（tier1）的棱线默认按它们各自的
+     维度签名色描边（VC.tp/pp/dp/ep），颜色在传递"这一只是靠哪根轴挨上选中
+     那张"的信息，不是纯装饰——所以默认不关，只给想要更素净读法的人开一个
+     开关：开了之后兄弟卡棱线一律回落中性灰 var(--pt-fg3)，选中卡本身
+     （meC，恒为 var(--pt-fg)）与告警红（capCol）不受这个开关影响，那两个不
+     是"维度色"。设置面板"图层"那组新增一颗按钮，也认 URL ?neutralsibs=1。 */
+  neutralSibs:false,
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 通信连线的**粒度**：一次只画一级。三级本来是同一件事的三种问法
      （谁跟谁通信 / 张量的哪几块换了位置 / 卡里那一段搬运不出卡），
@@ -1346,6 +1353,7 @@ function urlLoad(){
   if(q.get('fill')==='comp'){ ui.compFill = true; ui.netOff = false; }
   if(q.get('mem')==='0') ui.memFill = false;
   if(q.get('fastcard')==='1') ui.fastCard = true;
+  if(q.get('neutralsibs')==='1') ui.neutralSibs = true;
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
@@ -5329,7 +5337,7 @@ function netScene(D, g, box, step){
           CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
         } else {
           CE.forEach(function(e){
-            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
+            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.neutralSibs ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
           });
         }
@@ -11176,6 +11184,7 @@ function buildCfgSurface(D){
     + '<div class="cg"><h6>图层</h6>'
       + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么"><s>✓</s>图例</button>'
       + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网内容不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——3D/顶视的卡内容与正视/侧视三个机位一起变，卡壳、门牌与容量视图不受影响"><s>✓</s>模块视图</button>'
+      + '<button class="mvi'+(ui.neutralSibs?' is-on':'')+'" data-act="neutralsibstoggle" title="兄弟卡素色：卡维度选中一张卡之后，兄弟卡棱线默认按 TP/PP/DP/EP 维度签名色描边——开了这颗按钮，兄弟卡棱线一律回落中性灰，选中卡本身与告警红不受影响"><s>✓</s>兄弟卡素色</button>'
     + '</div>'
     /* 数据标注这一组仍然裹在 .pt-mv 里：工作台把它提到台面统一出，靠
        `.pt-mv:not(.pt-disp){display:none}` 把格子里这一份藏掉，并翻进来点
@@ -13471,6 +13480,7 @@ document.addEventListener('click', function(ev){
   else if(act==='memfill'){ ui.memFill = !ui.memFill; render(); }
   else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='moduleviewtoggle'){ ui.moduleView = !ui.moduleView; ui.dispOpen = false; render(); }
+  else if(act==='neutralsibstoggle'){ ui.neutralSibs = !ui.neutralSibs; ui.dispOpen = false; render(); }
   else if(act==='opdetail'){
     ui.opSel = {nid:b.getAttribute('data-nid'), li:+b.getAttribute('data-li'), key:b.getAttribute('data-key')||''};
     var Do9 = derive(cfg); if(Do9.ok) renderOpCard(Do9);
