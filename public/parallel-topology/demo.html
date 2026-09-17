@@ -1138,6 +1138,12 @@ var ui = {
   /* 默认就落在「打开 Rank + 关闭整网」：这一屏问的是「128 张卡怎么排」，
      它比「一张整网被切成什么」更接近读者进来时的第一个问题。 */
   cardMode:true,    /* 卡维度：四刀切完的交集恰好是一张卡持有的东西，把它单独收进一只卡壳里看 */
+  /* fastCard：静置态（未选中任何卡）把 4000 只素壳的棱/面合批成按深度分桶的
+     几十个 <path>，不再是每只卡各自 18 个 DOM 节点。默认关闭、只认显式 URL
+     参数 ?fastcard=1——不传的话这一屏（包括直接打开 rank-topology-3d）
+     画法与之前逐字节相同，只有显式要这份轻量初始渲染的嵌入方（rank-topology-lite）
+     会传这个参数。见 shellOf 里 fcOn 那段、以及本文件最下面 fcFlush()。 */
+  fastCard:false,
   commOn:true, legendOn:false, dispOpen:false,      /* L5·算子级通信：TP 的 AG/RS、EP 的 A2A、PP 的 P2P、DP 的梯度 AllReduce，各锚在产生它的算子上 */
   /* 通信连线的**粒度**：一次只画一级。三级本来是同一件事的三种问法
      （谁跟谁通信 / 张量的哪几块换了位置 / 卡里那一段搬运不出卡），
@@ -1339,6 +1345,7 @@ function urlLoad(){
      所以顺手把 netOff 拨回去——老链接 net=0&fill=comp 这种矛盾组合按 comp 认。 */
   if(q.get('fill')==='comp'){ ui.compFill = true; ui.netOff = false; }
   if(q.get('mem')==='0') ui.memFill = false;
+  if(q.get('fastcard')==='1') ui.fastCard = true;
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
@@ -3874,6 +3881,41 @@ function netScene(D, g, box, step){
     memStackCache[ck9] = out9;
     return out9;
   }
+  /* ── fastCard 合批：静置态（没有任何选中/搜索命中）下，shellOf 给每只卡画的
+     6 块面 + 12 条棱在 ui.netOff 分支里全部走同一套公式（只随 dT 连续变化），
+     没有 meC/sibE9/capCol/rankFade9 这些例外——这正是"能安全合批"的条件：
+     不用逐卡判断该不该合批，fcOn 一开，这一整轮全部卡都走得进同一套桶。
+     dT 舍到 1/50 分桶（够细，看不出台阶），面/棱各自按公式分桶攒 path 'd'
+     片段，整轮画完由 fcFlush() 一次性各出一条 <path>——4000 只卡的静置壳从
+     ~72000 个 DOM 节点收到几百个。桶内子路径按原本的画家序（copyOrder 由远
+     到近）依次 append，同一桶内前后关系不丢；不同桶（不同深度）之间没有互相
+     遮挡的画法差异（都是同一层次的壳面/棱，不会因为分桶顺序而错叠）。
+     只在显式 ?fastcard=1 时开——不传这一屏（含 rank-topology-3d 直接访问）
+     一个字节不变，仍然走原来的逐卡 push。 */
+  var fcOn = ui.fastCard && ui.cardMode && ui.netOff && !hasSel && !spot;
+  var fcBucket = {};
+  function fcKey(dT){ return Math.round(dT*50); }
+  function fcPushFace(dT, pts, which){
+    var kk = fcKey(dT), b = fcBucket[kk] || (fcBucket[kk] = {dT:dT, A:[], B:[], C:[], E:[]});
+    b[which].push('M'+pts[0][0].toFixed(1)+','+pts[0][1].toFixed(1)
+      +'L'+pts[1][0].toFixed(1)+','+pts[1][1].toFixed(1)
+      +'L'+pts[2][0].toFixed(1)+','+pts[2][1].toFixed(1)
+      +'L'+pts[3][0].toFixed(1)+','+pts[3][1].toFixed(1)+'Z');
+  }
+  function fcPushEdge(dT, a, b9){
+    var kk = fcKey(dT), b = fcBucket[kk] || (fcBucket[kk] = {dT:dT, A:[], B:[], C:[], E:[]});
+    b.E.push('M'+a[0].toFixed(1)+','+a[1].toFixed(1)+'L'+b9[0].toFixed(1)+','+b9[1].toFixed(1));
+  }
+  function fcFlush(){
+    Object.keys(fcBucket).forEach(function(kk){
+      var b = fcBucket[kk], dT = b.dT;
+      if(b.A.length) body.push('<path d="'+b.A.join('')+'" style="fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none"/>');
+      if(b.B.length) body.push('<path d="'+b.B.join('')+'" style="fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none"/>');
+      if(b.C.length) body.push('<path d="'+b.C.join('')+'" style="fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none"/>');
+      if(b.E.length) body.push('<path d="'+b.E.join('')+'" style="fill:none;stroke:var(--pt-fg3);stroke-width:'+(0.62 - dT*0.30).toFixed(2)+';opacity:1"/>');
+    });
+    fcBucket = {};
+  }
   for(var ci = 0; ci < copyOrder.length; ci++){
     k = copyOrder[ci].i;
     var kOff = k;
@@ -4259,6 +4301,7 @@ function netScene(D, g, box, step){
         'data-act="chainpick" data-k="d" data-i="'+k+'"')+'</g>');
     }
   }
+  if(fcOn) fcFlush();   /* 全部列都跑完、shellOf 攒的合批账本清空成几百条 <path> */
   /* ── 卡维度：把四刀的交集装进一只卡壳 ────────────────────────────────
      四把刀切完，剩下的这一份就是**一张卡**：副本 co.d 里、stage co.p 那几层、
      每个算子沿 h 轴的第 co.t 片、MoE 那段的第 me.ep 个桶。上面已经只画了这一份，
@@ -5009,9 +5052,15 @@ function netScene(D, g, box, step){
             var wantFill = ui.memFill && hasSel && tier9 !== 0;
             var wantShell9 = lowDetail || !wantFill;
             if(wantShell9){
-              body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
-              body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
-              body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
+              if(fcOn){
+                fcPushFace(dT, !fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'A');
+                fcPushFace(dT, !fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'B');
+                fcPushFace(dT, !fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'C');
+              } else {
+                body.push(quad(!fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
+                body.push(quad(!fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
+                body.push(quad(!fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
+              }
             }
             if(!lowDetail && wantFill){
               /* 选中那一只画得更实：兑底色的百分比整体拉高一档，透明度回到 1。
@@ -5184,9 +5233,15 @@ function netScene(D, g, box, step){
                这里再摆一层透明灰雾上去，是刚才那句反馈的真正来源。wantShell9
                为假时（memFill 有内容）这三面整个跳过，让 memFill 的颜色做底。 */
             if(wantShell9){
-              body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
-              body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
-              body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
+              if(fcOn){
+                fcPushFace(dT, fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'A');
+                fcPushFace(dT, fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'B');
+                fcPushFace(dT, fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'C');
+              } else {
+                body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(8 + dT*4))+';stroke:none'));
+                body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+memSolid('var(--pt-bg)',(18 + dT*5))+';stroke:none'));
+                body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+memSolid('var(--pt-bg)',(14 + dT*6))+';stroke:none'));
+              }
             }
             /* 命中的卡**不再刷一层蓝**。原来给六个面各兑一层 DP 蓝，结果是：
                ① 卡里那几档载荷（权重的刀色、激活的蓝、优化器态的淡紫）全被同一层蓝
@@ -5264,10 +5319,14 @@ function netScene(D, g, box, step){
            选中一张卡、要看「这一只和它的兄弟到底超没超」时，红线照常给出来。 */
         var capCol = (hasSel && tier9 !== 0 && (capLv === 'oom' || capLv === 'red')) ? CAP_C.red : null;
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
-        CE.forEach(function(e){
-          body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
-            +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
-        });
+        if(fcOn){
+          CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
+        } else {
+          CE.forEach(function(e){
+            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? VC[sibE9] : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))))
+              +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
+          });
+        }
         /* 过路高亮：在这只卡的 12 条棱**之外**再叠一遍虚线脉冲。
            为什么不像正视/侧视那样套一个外框：3D 里这只卡是个透视投影的六面体，
            它的"外框"在屏幕上是一个随机位变形的凸包，要正确算出来得先做一次凸包

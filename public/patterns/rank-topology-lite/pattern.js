@@ -17,7 +17,11 @@
   var frame = document.getElementById('matrixFrame');
   var matrixParams = new URLSearchParams({
     embed: '1', theme: 'dark', preset: 'pangu',
-    view: 'chain', card: '1', vtab: '3d'
+    view: 'chain', card: '1', vtab: '3d',
+    // fastcard=1：静置态把 4000 只素壳合批成按深度分桶的几百个 <path>，
+    // 不再是每只卡各自十几个 DOM 节点——只有这个简洁版自己传这个参数，
+    // 直接打开 rank-topology-3d 不受影响（demo.html 里默认关闭）。
+    fastcard: '1'
   });
   frame.src = '../rank-topology-3d/pattern.html?' + matrixParams.toString();
 
@@ -25,31 +29,25 @@
   var satLayer = document.getElementById('satLayer');
   var satellites = {};
 
-  function coordLabel(groups) {
-    if (!groups) return '';
-    var s = 'TP ' + groups.t + ' · CP ' + groups.c + ' · PP ' + groups.p + ' · DP ' + groups.d;
-    if (groups.e != null) s += ' · EP ' + groups.e;
-    return s;
-  }
-
-  function spawnSatellite(sel, groups) {
+  // 不放文字标签：卡上只留 rank 号（区分哪张卡、点哪张能收起）和一条执行
+  // 活动色条，没有坐标行、没有色块逐个的提示文字。「非实测」这句仍然要说真话，
+  // 但不再常驻占地方——挪进 sat-blocks 自己的 title，只在悬停时才弹出来。
+  function spawnSatellite(sel) {
     if (satellites[sel]) return;
     var card = document.createElement('div');
     card.className = 'sat';
     card.innerHTML =
       '<div class="sat-head">' +
-        '<div class="sat-title">Rank R' + sel + '</div>' +
+        '<div class="sat-id">' + sel + '</div>' +
         '<button class="sat-close" title="收起">×</button>' +
       '</div>' +
-      '<div class="sat-coords">' + coordLabel(groups) + '</div>' +
-      '<div class="sat-blocks">' +
-        '<div class="sat-block sat-fwd" title="前向"></div>' +
-        '<div class="sat-block sat-comm" title="通信"></div>' +
-        '<div class="sat-block sat-bwd" title="反向"></div>' +
-        '<div class="sat-block sat-comm" title="通信"></div>' +
-        '<div class="sat-block sat-opt" title="优化器"></div>' +
-      '</div>' +
-      '<div class="sat-note">执行活动 · 长度示意，非实测</div>';
+      '<div class="sat-blocks" title="执行活动 · 长度示意，非实测">' +
+        '<div class="sat-block sat-fwd"></div>' +
+        '<div class="sat-block sat-comm"></div>' +
+        '<div class="sat-block sat-bwd"></div>' +
+        '<div class="sat-block sat-comm"></div>' +
+        '<div class="sat-block sat-opt"></div>' +
+      '</div>';
     satLayer.insertBefore(card, satLayer.firstChild);
     satellites[sel] = card;
     card.querySelector('.sat-close').addEventListener('click', function () {
@@ -57,38 +55,17 @@
     });
   }
 
-  // ── 盘古预置的坐标算术：仅用于 URL 深链恢复卫星卡时的本地解码——实时下钻
-  // 一律信矩阵页自己 postMessage 上报的 groups（真实、可能已被用户切换过预置），
-  // 这份本地小算式假设的是固定 preset=pangu，不作为运行期的权威来源。
-  // world=4000=TP8×PP5×DP100：EP2 是同批 rank 内部的路由维度，不参与 rank 计数
-  // （实测矩阵页上报的 config.dp 就是 100，不是按 world/(tp·cp·pp·ep) 算出的 50）。
-  var PANGU_D = { tp: 8, cp: 1, dp: 100, pp: 5, ep: 2, etp: 1 };
-  function coordsOfPangu(g) {
-    var D = PANGU_D;
-    return {
-      t: g % D.tp,
-      c: Math.floor(g / D.tp) % D.cp,
-      d: Math.floor(g / (D.tp * D.cp)) % D.dp,
-      p: Math.floor(g / (D.tp * D.cp * D.dp)) % D.pp
-    };
-  }
-  function groupsOfPangu(g) {
-    var co = coordsOfPangu(g);
-    var q = (co.d * PANGU_D.cp + co.c) * PANGU_D.tp + co.t;
-    return { t: co.t, c: co.c, d: co.d, p: co.p, e: Math.floor(q / PANGU_D.etp) % PANGU_D.ep };
-  }
-
   // ── 接矩阵页自己上报的下钻事件：pto:select 是它页内换选中卡时主动发的 ────
   window.addEventListener('message', function (ev) {
     if (ev.source !== frame.contentWindow) return;
     var d = ev.data;
     if (!d || d.type !== 'pto:select' || d.sel == null) return;
-    spawnSatellite(d.sel, d.groups);
+    spawnSatellite(d.sel);
   });
 
-  // ── URL 深链：?sel=12,45 打开时直接摆好对应卫星卡（假设默认盘古预置） ──
+  // ── URL 深链：?sel=12,45 打开时直接摆好对应卫星卡 ──────────────────────
   (qs.get('sel') || '').split(',').forEach(function (s) {
     var n = parseInt(s, 10);
-    if (isFinite(n) && n >= 0 && n < 4000) spawnSatellite(n, groupsOfPangu(n));
+    if (isFinite(n) && n >= 0 && n < 4000) spawnSatellite(n);
   });
 })();
