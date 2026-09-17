@@ -1,25 +1,30 @@
 /* rank-topology-lite · pattern.js
-   TP2×PP2×DP2=8 卡的简化拓扑，省略 EP。同源 pattern：/patterns/rank-topology-3d/
-   （完整交互版，Three.js）。这一份保留「可转动的三维卡阵」这个核心比喻——world 张
-   卡壳排成的三维阵列，每只装它自己那一份——但把承载它的引擎换成纯 CSS 3D
-   transform（无 three.js / WebGL），并去掉六档通信切换、preset、ZeRO、物理平铺
-   这些控制面板，只留「转一转、点一张卡」。
+   盘古 ProMoE · 4000 卡（TP8×PP5×DP50×EP2）的全量三维卡阵。同源 pattern：
+   /patterns/rank-topology-3d/（完整交互版）。这一份保留「world 张卡壳排成的
+   立体阵列」这个核心比喻，而且是**全量**——4000 张卡真的都在场，每张都是一个
+   有六个面、会被光照出明暗的立方体（THREE.BoxGeometry + InstancedMesh），
+   不是拿平面卡片摆位置充数。承载它的引擎因此换回 WebGL（three.js）——
+   4000 个会转动的立体实例，纯 CSS/DOM 撑不住这个规模。
+   「简化」落在别处：不做六档通信切换、preset 切换、ZeRO、物理平铺，
+   只留「转一转、点一张卡（或直接输入 rank 跳转）」。
    选中之后的详情区（执行活动 / 激活驻留）沿用 compute-graph-viewer 的
-   抽象图网页 prompt（深色极简、语义配色、直角连线、无装饰中间层）画。
+   抽象图网页 prompt（深色极简、语义配色、直角连线、无装饰中间层）画，
+   这份 prompt 只管详情区，不管 3D 卡阵本身。
 */
 (function () {
   'use strict';
 
-  // ── 拓扑：固定 TP2×PP2×DP2，省略 EP —— 简洁版不追求覆盖完整并行度组合 ──
-  var TP = 2, PP = 2, DP = 2;
-  var RANKS = [];
-  for (var pp = 0; pp < PP; pp++) {
-    for (var tp = 0; tp < TP; tp++) {
-      for (var dp = 0; dp < DP; dp++) {
-        var id = pp * (TP * DP) + tp * DP + dp;
-        RANKS[id] = { id: id, pp: pp, tp: tp, dp: dp };
-      }
-    }
+  // ── 拓扑：盘古 ProMoE 的公开并行度口径（demo.html 的 pangu 预置，world=4000）──
+  var TP = 8, PP = 5, DP = 50, EP = 2;
+  var WORLD = TP * PP * DP * EP;
+
+  function idOf(tp, pp, dp, ep) { return ((pp * DP + dp) * TP + tp) * EP + ep; }
+  function decode(id) {
+    var ep = id % EP; id = (id - ep) / EP;
+    var tp = id % TP; id = (id - tp) / TP;
+    var dp = id % DP; id = (id - dp) / DP;
+    var pp = id;
+    return { tp: tp, pp: pp, dp: dp, ep: ep };
   }
 
   var qs = new URLSearchParams(location.search);
@@ -27,7 +32,7 @@
 
   function pickRank(v) {
     var n = parseInt(v, 10);
-    return isFinite(n) && n >= 0 && n < RANKS.length ? n : 0;
+    return isFinite(n) && n >= 0 && n < WORLD ? n : 0;
   }
   var state = { selected: pickRank(qs.get('rank')) };
 
@@ -73,101 +78,162 @@
     link.innerHTML = '<a href="../rank-topology-3d/pattern.html">完整版 · 3D →</a>';
   }
 
-  // ── 3D 卡阵：world=8 张卡排成 TP×PP×DP 的可转动阵列（CSS 3D，无 three.js）──
-  var H = 60; // 每根轴上两个位置分别落在 -H / +H
-  var cubeViewport = el('div', 'cube-viewport', { x: 550, y: 56, w: 500, h: 250 });
-  var cubeWorld = document.createElement('div');
-  cubeWorld.className = 'cube-world';
-  cubeViewport.appendChild(cubeWorld);
+  // ── 3D 卡阵：world=4000 张卡（盘古 ProMoE 预置 TP8×PP5×DP50×EP2）全量实例化 ──
+  var CANVAS_BOX = { x: 200, y: 56, w: 1200, h: 270 };
+  var canvasWrap = el('div', 'cube-canvas-wrap', CANVAS_BOX);
+  var canvas = document.createElement('canvas');
+  canvasWrap.appendChild(canvas);
 
-  var rankCards3d = {};
-  RANKS.forEach(function (r) {
-    var x = r.tp === 0 ? -H : H;
-    var y = r.pp === 0 ? -H : H;
-    var z = r.dp === 0 ? -H : H;
-    var card = document.createElement('div');
-    card.className = 'rank-card3d';
-    card.dataset.rank = String(r.id);
-    card.style.transform = 'translate3d(' + x + 'px,' + y + 'px,' + z + 'px)';
-    card.innerHTML =
-      '<div class="r3d-num">R' + r.id + '</div>' +
-      '<div class="r3d-sub">TP' + r.tp + '·PP' + r.pp + '·DP' + r.dp + '</div>';
-    cubeWorld.appendChild(card);
-    rankCards3d[r.id] = card;
-  });
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(CANVAS_BOX.w, CANVAS_BOX.h, false);
 
-  var cubeHint = el('div', 'cube-hint', { x: 550, y: 312, w: 500, h: 16 });
-  cubeHint.textContent = '拖动旋转 · 水平 = TP · 纵向 = PP · 深度 = DP';
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  var dl = new THREE.DirectionalLight(0xffffff, 0.85);
+  dl.position.set(40, 70, 90);
+  scene.add(dl);
+  var dlFill = new THREE.DirectionalLight(0xffffff, 0.25);
+  dlFill.position.set(-50, -20, -60);
+  scene.add(dlFill);
 
-  // 精确点选：8 张卡各领一条等高短横线 + 编号，和 3D 卡阵共享同一份选中态——
-  // 卡阵转到某个角度时后排的卡不好点，这一条兜底可以稳定选中任意一张。
-  var rankBars = {}, rankNums = {};
-  var stripXs = [555, 625, 695, 765, 835, 905, 975, 1045];
-  RANKS.forEach(function (r) {
-    var cx = stripXs[r.id];
-    var bar = el('div', 'rank-bar', { x: cx - 25, y: 336, w: 50, h: 14 });
-    bar.title = 'Rank ' + r.id + ' · TP ' + r.tp + ' · PP ' + r.pp + ' · DP ' + r.dp;
-    bar.addEventListener('click', function () { select(r.id, true); });
-    rankBars[r.id] = bar;
+  var camera = new THREE.PerspectiveCamera(42, CANVAS_BOX.w / CANVAS_BOX.h, 0.1, 2000);
 
-    var num = el('div', 'rank-num', { x: cx - 25, y: 354, w: 50, h: 16 });
-    num.textContent = 'R' + r.id;
-    rankNums[r.id] = num;
-  });
-
-  // 拖动旋转 + 静置时缓慢自转；用 elementFromPoint 而不是卡片自己的 click 监听器，
-  // 这样「点一下」和「拖一下」不会因为 pointer capture 打架。
-  var rot = { x: -18, y: -28 };
-  var dragging = false, lastX = 0, lastY = 0, moved = 0;
-  function applyRot() {
-    cubeWorld.style.transform = 'rotateX(' + rot.x + 'deg) rotateY(' + rot.y + 'deg)';
+  // 网格坐标：4 个并行维只有 3 根轴可用，DP=50 又比其余几维大得多，直接拿一根轴
+  // 装它会拉成一条长条（试过，难看也不好转着看）。所以把 DP 拆成 10×5 两段，
+  // 分别并进深度轴与纵向轴，凑出一个更接近立方体的外形——位置因此是直觉示意，
+  // 不是一张可以直接读坐标的图，选中之后的真实 (TP,PP,DP,EP) 只看下方标题文字。
+  var SPACING = 1.2;
+  var DP_A = 10, DP_B = DP / DP_A; // 50 = 10 × 5
+  var XN = TP * EP, YN = PP * DP_B, ZN = DP_A;
+  function gridPos(tp, pp, dp, ep) {
+    var dpa = dp % DP_A, dpb = (dp - dpa) / DP_A;
+    var xi = tp * EP + ep, yi = pp * DP_B + dpb, zi = dpa;
+    return {
+      x: (xi - (XN - 1) / 2) * SPACING,
+      y: (yi - (YN - 1) / 2) * SPACING,
+      z: (zi - (ZN - 1) / 2) * SPACING
+    };
   }
-  applyRot();
 
-  cubeViewport.addEventListener('pointerdown', function (e) {
-    dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
-    cubeViewport.setPointerCapture(e.pointerId);
+  var geo = new THREE.BoxGeometry(0.92, 0.92, 0.92);
+  var mat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.75, metalness: 0.05 });
+  var field = new THREE.InstancedMesh(geo, mat, WORLD);
+  var dummy = new THREE.Object3D();
+  for (var pp = 0; pp < PP; pp++) {
+    for (var dp = 0; dp < DP; dp++) {
+      for (var tp = 0; tp < TP; tp++) {
+        for (var ep = 0; ep < EP; ep++) {
+          var p = gridPos(tp, pp, dp, ep);
+          dummy.position.set(p.x, p.y, p.z);
+          dummy.updateMatrix();
+          field.setMatrixAt(idOf(tp, pp, dp, ep), dummy.matrix);
+        }
+      }
+    }
+  }
+  scene.add(field);
+
+  // 选中态：单独一个略大的白色描边立方体，跟到选中实例的位置——不改 InstancedMesh
+  // 本身的颜色缓冲区，逻辑更简单，也不影响其余 3999 张卡的中性灰底色。多数 rank
+  // 都被压在实心卡阵内部，选中它时深度测试会让高亮标记被前排的卡挡住、什么都
+  // 看不见——所以关掉 depthTest，让标记穿透显示，永远看得见选的是哪张。
+  var highlightGeo = new THREE.BoxGeometry(1.28, 1.28, 1.28);
+  var highlight = new THREE.Mesh(highlightGeo, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.22, depthTest: false
+  }));
+  var highlightEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(highlightGeo),
+    new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false })
+  );
+  highlight.renderOrder = 999;
+  highlightEdges.renderOrder = 999;
+  scene.add(highlight);
+  scene.add(highlightEdges);
+
+  var cubeHint = el('div', 'cube-hint', { x: 200, y: 330, w: 1200, h: 16 });
+  cubeHint.textContent = '拖动旋转 · 4000 张卡按 TP·PP·DP·EP 摆成立体阵列，位置为直觉示意 · 真实坐标看下方标题';
+
+  // 精确点选兜底：4000 张卡没法给每张摆一个按钮，直接输入 rank 跳转最可靠——
+  // 卡阵转到某个角度时，深处的卡会被前排完全挡住，点不到。
+  var jumpWrap = el('div', 'rank-jump', { x: 0, y: 352, h: 26 });
+  centered(jumpWrap, 800, 360);
+  jumpWrap.innerHTML =
+    '<span class="rank-jump-label">跳转到 Rank</span>' +
+    '<input type="number" class="rank-jump-input" min="0" max="' + (WORLD - 1) + '" step="1">' +
+    '<span class="rank-jump-hint">0–' + (WORLD - 1) + ' · Enter 跳转</span>';
+  var jumpInput = jumpWrap.querySelector('.rank-jump-input');
+  jumpInput.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var n = parseInt(jumpInput.value, 10);
+    if (isFinite(n)) select(Math.max(0, Math.min(WORLD - 1, n)), true);
   });
-  cubeViewport.addEventListener('pointermove', function (e) {
+
+  // 拖动旋转（球坐标手摇）+ 静置时缓慢自转；转一下或选中一张卡之后自转停住——
+  // 不然刚点亮的选中卡马上又转走，看不清「哪张卡长什么样」。
+  var orbit = { theta: -0.55, phi: 0.32, radius: 52 };
+  function applyOrbit() {
+    camera.position.set(
+      orbit.radius * Math.sin(orbit.theta) * Math.cos(orbit.phi),
+      orbit.radius * Math.sin(orbit.phi),
+      orbit.radius * Math.cos(orbit.theta) * Math.cos(orbit.phi)
+    );
+    camera.lookAt(0, 0, 0);
+  }
+  applyOrbit();
+
+  var dragging = false, lastX = 0, lastY = 0, moved = 0, userActed = false;
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+
+  function pick(clientX, clientY) {
+    var r = canvas.getBoundingClientRect();
+    ndc.x = ((clientX - r.left) / r.width) * 2 - 1;
+    ndc.y = -((clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    var hit = raycaster.intersectObject(field)[0];
+    return hit ? hit.instanceId : null;
+  }
+
+  canvasWrap.addEventListener('pointerdown', function (e) {
+    dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
+    canvasWrap.setPointerCapture(e.pointerId);
+  });
+  canvasWrap.addEventListener('pointermove', function (e) {
     if (!dragging) return;
     var dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     moved += Math.abs(dx) + Math.abs(dy);
-    rot.y += dx * 0.4;
-    rot.x = Math.max(-70, Math.min(20, rot.x - dy * 0.4));
-    applyRot();
+    orbit.theta += dx * 0.006;
+    orbit.phi = Math.max(-1.2, Math.min(1.2, orbit.phi - dy * 0.006));
+    applyOrbit();
   });
-  // 转一下或选一张之后就不再自转——继续转的话，刚点亮的选中卡马上又转走了，
-  // 看不清「哪张卡长什么样」。自转只服务「还没碰过」的展示态。
-  var userActed = false;
-  function endDrag(e) {
+  canvasWrap.addEventListener('pointerup', function (e) {
     dragging = false;
     if (moved >= 6) { userActed = true; return; }
-    if (e.clientX != null) {
-      var under = document.elementFromPoint(e.clientX, e.clientY);
-      var cardEl = under && under.closest('.rank-card3d');
-      if (cardEl) select(parseInt(cardEl.dataset.rank, 10), true);
-    }
-  }
-  cubeViewport.addEventListener('pointerup', endDrag);
-  cubeViewport.addEventListener('pointercancel', function () { dragging = false; });
+    var id = pick(e.clientX, e.clientY);
+    if (id != null) select(id, true);
+  });
+  canvasWrap.addEventListener('pointercancel', function () { dragging = false; });
 
   var lastSpin = null;
-  function spin(now) {
+  function frame(now) {
     if (lastSpin == null) lastSpin = now;
     var dt = now - lastSpin;
     lastSpin = now;
     if (!dragging && !userActed) {
-      rot.y += dt * 0.012; // 缓慢自转，拖动或选中之后停住
-      applyRot();
+      orbit.theta += dt * 0.00015; // 缓慢自转，拖动或选中之后停住
+      applyOrbit();
     }
-    requestAnimationFrame(spin);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(spin);
+  requestAnimationFrame(frame);
 
   // ── Rank 详情：标题 → 「执行活动」/「激活驻留」两组共同标题直连各自内容卡片 ──
   var rankTitle = el('div', 'rank-title', { x: 0, y: 404, h: 24 });
-  centered(rankTitle, 800, 500);
+  centered(rankTitle, 800, 560);
 
   line(800, 428, 800, 444);
   line(450, 444, 1150, 444);
@@ -247,28 +313,23 @@
       wrap.appendChild(lab);
     });
 
-    var status = el('div', 'status-text', { x: 1140, y: 850, w: 420, h: 16 });
-    status.textContent = '抽象示意：TP2×PP2×DP2=8 卡（省略 EP）';
+    var status = el('div', 'status-text', { x: 1040, y: 850, w: 520, h: 16 });
+    status.textContent = '盘古 ProMoE 预置 · TP8×PP5×DP50×EP2 = 4000 卡';
   }
 
-  // ── 选中态：3D 卡阵与导航条共享同一份状态，其余卡适度降低透明度 ─────────
+  // ── 选中态：高亮方块跟到选中实例位置，标题与详情区随之更新 ─────────────
   function select(id, isUserAction) {
     state.selected = id;
     if (isUserAction) userActed = true;
-    var r = RANKS[id];
+    var r = decode(id);
+    var p = gridPos(r.tp, r.pp, r.dp, r.ep);
+    highlight.position.set(p.x, p.y, p.z);
+    highlightEdges.position.set(p.x, p.y, p.z);
+    jumpInput.value = String(id);
 
-    RANKS.forEach(function (other) {
-      var isSel = other.id === id;
-      rankCards3d[other.id].classList.toggle('selected', isSel);
-      rankCards3d[other.id].classList.toggle('dim', !isSel);
-      rankBars[other.id].classList.toggle('selected', isSel);
-      rankNums[other.id].classList.toggle('selected', isSel);
-      rankNums[other.id].classList.toggle('dim', !isSel);
-    });
-
-    rankTitle.textContent = 'Rank R' + id + ' · TP ' + r.tp + ' · PP ' + r.pp + ' · DP ' + r.dp;
+    rankTitle.textContent = 'Rank R' + id + ' · TP ' + r.tp + ' · PP ' + r.pp + ' · DP ' + r.dp + ' · EP ' + r.ep;
     // 微批次编号只是让详情区随选中变化，属于同一份示意数据，不代表真实调度顺序。
-    execCaption.textContent = '微批次 ' + ((id % 3) + 1) + ' / 24';
+    execCaption.textContent = '微批次 ' + ((id % 24) + 1) + ' / 24';
 
     var next = new URLSearchParams(location.search);
     next.set('rank', String(id));

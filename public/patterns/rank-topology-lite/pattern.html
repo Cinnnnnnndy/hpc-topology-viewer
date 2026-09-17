@@ -12,17 +12,21 @@
   rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁版。
 
   同一个题面（五刀切完之后落到哪张卡上），保留同一个核心比喻——world 张卡壳
-  排成的可转动三维阵列——但把承载它的引擎从 Three.js 换成纯 CSS 3D transform
-  （无 three.js / WebGL），并去掉六档通信切换、preset、ZeRO、物理平铺这些
-  控制面板，只留「转一转、点一张卡」。规模也简化到 TP2×PP2×DP2=8 卡、省略 EP，
-  只求「组织关系一眼看懂」，不追求覆盖完整并行度组合或真实计时——
-  这些仍然是 /patterns/rank-topology-3d/ 的题面。
+  排成的立体阵列——而且是**全量**：世界大小按盘古 ProMoE 的公开并行度口径
+  取 TP8×PP5×DP50×EP2=4000，4000 张卡真的都在场，每张都是一个会被光照出
+  明暗的立方体（THREE.BoxGeometry + InstancedMesh），不是拿平面卡片摆位置
+  充数——这个规模纯 CSS/DOM 撑不住，所以引擎用回了 WebGL（three.js）。
+  「简化」落在别处：去掉六档通信切换、preset 切换、ZeRO、物理平铺这些
+  控制面板，只留「转一转、点一张卡（或直接输入 rank 跳转）」，不追求覆盖
+  完整并行度组合或真实计时——这些仍然是 /patterns/rank-topology-3d/ 的题面。
 
-  结构：上半屏是 3D 卡阵（拖动旋转 + 一条精确点选的导航条兜底）；选中一张
+  结构：上半屏是 4000 卡的 3D 卡阵（拖动旋转 + 一个精确点选的 rank 跳转框
+  兜底——卡阵转到某个角度时，深处的卡会被前排完全挡住，点不到）；选中一张
   Rank 之后，下半屏用 compute-graph-viewer 的「抽象图网页 prompt」（见该仓
   docs/抽象图网页prompt.md）画详情——深色极简、无边框灰卡、语义配色只用在
   训练语义图元上、直角连线——用「执行活动」与「激活驻留」两组共同标题直接
-  连接各自的内容卡片（抽象图 prompt 里给的例子原句）。
+  连接各自的内容卡片（抽象图 prompt 里给的例子原句）。这份 prompt 只管
+  详情区，不管 3D 卡阵本身。
 -->
 </head>
 <body>
@@ -31,6 +35,7 @@
       <svg id="lines" viewBox="0 0 1600 900" preserveAspectRatio="none"></svg>
     </div>
   </div>
+  <script src="./vendor/three-r128.min.js"></script>
   <script src="./pattern.js"></script>
 </body>
 </html>
