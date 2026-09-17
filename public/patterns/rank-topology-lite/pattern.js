@@ -1,8 +1,10 @@
 /* rank-topology-lite · pattern.js
-   抽象关系图：TP2×PP2×DP2=8 卡的简化拓扑，省略 EP。
-   同源 pattern：/patterns/rank-topology-3d/（完整交互版）。
-   这一份只回答两件事——「这张卡挂在组织树的哪个位置」与「选中它之后，
-   执行活动 / 激活驻留两组内容长什么样」，用 compute-graph-viewer 的
+   TP2×PP2×DP2=8 卡的简化拓扑，省略 EP。同源 pattern：/patterns/rank-topology-3d/
+   （完整交互版，Three.js）。这一份保留「可转动的三维卡阵」这个核心比喻——world 张
+   卡壳排成的三维阵列，每只装它自己那一份——但把承载它的引擎换成纯 CSS 3D
+   transform（无 three.js / WebGL），并去掉六档通信切换、preset、ZeRO、物理平铺
+   这些控制面板，只留「转一转、点一张卡」。
+   选中之后的详情区（执行活动 / 激活驻留）沿用 compute-graph-viewer 的
    抽象图网页 prompt（深色极简、语义配色、直角连线、无装饰中间层）画。
 */
 (function () {
@@ -15,7 +17,7 @@
     for (var tp = 0; tp < TP; tp++) {
       for (var dp = 0; dp < DP; dp++) {
         var id = pp * (TP * DP) + tp * DP + dp;
-        RANKS[id] = { id: id, pp: pp, tp: tp, dp: dp, x: 100 + 200 * id };
+        RANKS[id] = { id: id, pp: pp, tp: tp, dp: dp };
       }
     }
   }
@@ -47,11 +49,10 @@
     return n;
   }
 
-  function line(x1, y1, x2, y2, key) {
+  function line(x1, y1, x2, y2) {
     var l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     l.setAttribute('x1', x1); l.setAttribute('y1', y1);
     l.setAttribute('x2', x2); l.setAttribute('y2', y2);
-    if (key) l.dataset.key = key;
     svg.appendChild(l);
     return l;
   }
@@ -72,76 +73,106 @@
     link.innerHTML = '<a href="../rank-topology-3d/pattern.html">完整版 · 3D →</a>';
   }
 
-  // ── 组织树：模型 → PP → TP → Rank（DP 导航条）───────────────────────
-  var rootLabel = el('div', 'node-label lbl-root', { x: 0, y: 138, h: 20 });
-  rootLabel.textContent = '模型 · 24 层';
-  centered(rootLabel, 800, 220);
+  // ── 3D 卡阵：world=8 张卡排成 TP×PP×DP 的可转动阵列（CSS 3D，无 three.js）──
+  var H = 60; // 每根轴上两个位置分别落在 -H / +H
+  var cubeViewport = el('div', 'cube-viewport', { x: 550, y: 56, w: 500, h: 250 });
+  var cubeWorld = document.createElement('div');
+  cubeWorld.className = 'cube-world';
+  cubeViewport.appendChild(cubeWorld);
 
-  line(800, 158, 800, 174, 'root');
-  line(400, 174, 1200, 174, 'root');
-  line(400, 174, 400, 190, 'pp0');
-  line(1200, 174, 1200, 190, 'pp1');
-
-  var ppMeta = [
-    { key: 'pp0', cx: 400, text: 'PP 0 · 层 0–11' },
-    { key: 'pp1', cx: 1200, text: 'PP 1 · 层 12–23' }
-  ];
-  var ppLabels = {};
-  ppMeta.forEach(function (p) {
-    var n = el('div', 'node-label lbl-pp', { x: 0, y: 190, h: 22 });
-    n.textContent = p.text;
-    centered(n, p.cx, 320);
-    ppLabels[p.key] = n;
-
-    line(p.cx, 212, p.cx, 228, p.key);
-    var tpXs = [p.cx - 200, p.cx + 200];
-    line(tpXs[0], 228, tpXs[1], 228, p.key);
-  });
-
-  var tpMeta = [
-    { key: 'pp0.tp0', cx: 200, text: 'TP 0' },
-    { key: 'pp0.tp1', cx: 600, text: 'TP 1' },
-    { key: 'pp1.tp0', cx: 1000, text: 'TP 0' },
-    { key: 'pp1.tp1', cx: 1400, text: 'TP 1' }
-  ];
-  var tpLabels = {};
-  tpMeta.forEach(function (t) {
-    var ppKey = t.key.split('.')[0];
-    line(t.cx, 228, t.cx, 244, ppKey);
-
-    var n = el('div', 'node-label lbl-tp', { x: 0, y: 244, h: 20 });
-    n.textContent = t.text;
-    centered(n, t.cx, 140);
-    tpLabels[t.key] = n;
-
-    line(t.cx, 264, t.cx, 276, t.key);
-    var dpXs = [t.cx - 100, t.cx + 100];
-    line(dpXs[0], 276, dpXs[1], 276, t.key);
-  });
-
-  var rankBars = {}, rankNums = {};
+  var rankCards3d = {};
   RANKS.forEach(function (r) {
-    var tpKey = 'pp' + r.pp + '.tp' + r.tp;
-    line(r.x, 276, r.x, 288, 'rank' + r.id);
+    var x = r.tp === 0 ? -H : H;
+    var y = r.pp === 0 ? -H : H;
+    var z = r.dp === 0 ? -H : H;
+    var card = document.createElement('div');
+    card.className = 'rank-card3d';
+    card.dataset.rank = String(r.id);
+    card.style.transform = 'translate3d(' + x + 'px,' + y + 'px,' + z + 'px)';
+    card.innerHTML =
+      '<div class="r3d-num">R' + r.id + '</div>' +
+      '<div class="r3d-sub">TP' + r.tp + '·PP' + r.pp + '·DP' + r.dp + '</div>';
+    cubeWorld.appendChild(card);
+    rankCards3d[r.id] = card;
+  });
 
-    var bar = el('div', 'rank-bar', { x: r.x - 25, y: 288, w: 50, h: 14 });
+  var cubeHint = el('div', 'cube-hint', { x: 550, y: 312, w: 500, h: 16 });
+  cubeHint.textContent = '拖动旋转 · 水平 = TP · 纵向 = PP · 深度 = DP';
+
+  // 精确点选：8 张卡各领一条等高短横线 + 编号，和 3D 卡阵共享同一份选中态——
+  // 卡阵转到某个角度时后排的卡不好点，这一条兜底可以稳定选中任意一张。
+  var rankBars = {}, rankNums = {};
+  var stripXs = [555, 625, 695, 765, 835, 905, 975, 1045];
+  RANKS.forEach(function (r) {
+    var cx = stripXs[r.id];
+    var bar = el('div', 'rank-bar', { x: cx - 25, y: 336, w: 50, h: 14 });
     bar.title = 'Rank ' + r.id + ' · TP ' + r.tp + ' · PP ' + r.pp + ' · DP ' + r.dp;
-    bar.addEventListener('click', function () { select(r.id); });
+    bar.addEventListener('click', function () { select(r.id, true); });
     rankBars[r.id] = bar;
 
-    var num = el('div', 'rank-num', { x: r.x - 25, y: 304, w: 50, h: 16 });
+    var num = el('div', 'rank-num', { x: cx - 25, y: 354, w: 50, h: 16 });
     num.textContent = 'R' + r.id;
     rankNums[r.id] = num;
   });
+
+  // 拖动旋转 + 静置时缓慢自转；用 elementFromPoint 而不是卡片自己的 click 监听器，
+  // 这样「点一下」和「拖一下」不会因为 pointer capture 打架。
+  var rot = { x: -18, y: -28 };
+  var dragging = false, lastX = 0, lastY = 0, moved = 0;
+  function applyRot() {
+    cubeWorld.style.transform = 'rotateX(' + rot.x + 'deg) rotateY(' + rot.y + 'deg)';
+  }
+  applyRot();
+
+  cubeViewport.addEventListener('pointerdown', function (e) {
+    dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
+    cubeViewport.setPointerCapture(e.pointerId);
+  });
+  cubeViewport.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    rot.y += dx * 0.4;
+    rot.x = Math.max(-70, Math.min(20, rot.x - dy * 0.4));
+    applyRot();
+  });
+  // 转一下或选一张之后就不再自转——继续转的话，刚点亮的选中卡马上又转走了，
+  // 看不清「哪张卡长什么样」。自转只服务「还没碰过」的展示态。
+  var userActed = false;
+  function endDrag(e) {
+    dragging = false;
+    if (moved >= 6) { userActed = true; return; }
+    if (e.clientX != null) {
+      var under = document.elementFromPoint(e.clientX, e.clientY);
+      var cardEl = under && under.closest('.rank-card3d');
+      if (cardEl) select(parseInt(cardEl.dataset.rank, 10), true);
+    }
+  }
+  cubeViewport.addEventListener('pointerup', endDrag);
+  cubeViewport.addEventListener('pointercancel', function () { dragging = false; });
+
+  var lastSpin = null;
+  function spin(now) {
+    if (lastSpin == null) lastSpin = now;
+    var dt = now - lastSpin;
+    lastSpin = now;
+    if (!dragging && !userActed) {
+      rot.y += dt * 0.012; // 缓慢自转，拖动或选中之后停住
+      applyRot();
+    }
+    requestAnimationFrame(spin);
+  }
+  requestAnimationFrame(spin);
 
   // ── Rank 详情：标题 → 「执行活动」/「激活驻留」两组共同标题直连各自内容卡片 ──
   var rankTitle = el('div', 'rank-title', { x: 0, y: 404, h: 24 });
   centered(rankTitle, 800, 500);
 
-  line(800, 428, 800, 444, 'detail');
-  line(450, 444, 1150, 444, 'detail');
-  line(450, 444, 450, 460, 'detail');
-  line(1150, 444, 1150, 460, 'detail');
+  line(800, 428, 800, 444);
+  line(450, 444, 1150, 444);
+  line(450, 444, 450, 460);
+  line(1150, 444, 1150, 460);
 
   var execLabel = el('div', 'group-label', { x: 0, y: 460, h: 24 });
   execLabel.textContent = '执行活动';
@@ -150,8 +181,8 @@
   resLabel.textContent = '激活驻留';
   centered(resLabel, 1150, 300);
 
-  line(450, 484, 450, 500, 'detail');
-  line(1150, 484, 1150, 500, 'detail');
+  line(450, 484, 450, 500);
+  line(1150, 484, 1150, 500);
 
   el('div', 'card', { x: 140, y: 500, w: 620, h: 300 });
   el('div', 'card', { x: 840, y: 500, w: 620, h: 300 });
@@ -220,25 +251,16 @@
     status.textContent = '抽象示意：TP2×PP2×DP2=8 卡（省略 EP）';
   }
 
-  // ── 选中态：更新标题/说明，路径上的连线与文字保持常态，其余降低透明度 ──
-  function ancestryKeys(r) {
-    return ['root', 'pp' + r.pp, 'pp' + r.pp + '.tp' + r.tp, 'rank' + r.id, 'detail'];
-  }
-
-  function select(id) {
+  // ── 选中态：3D 卡阵与导航条共享同一份状态，其余卡适度降低透明度 ─────────
+  function select(id, isUserAction) {
     state.selected = id;
+    if (isUserAction) userActed = true;
     var r = RANKS[id];
-    var keep = ancestryKeys(r);
 
-    Array.prototype.forEach.call(svg.querySelectorAll('line'), function (l) {
-      var on = keep.indexOf(l.dataset.key) !== -1;
-      l.classList.toggle('dim', !on);
-      l.classList.toggle('active', on && l.dataset.key !== 'detail' && l.dataset.key !== 'root');
-    });
-    Object.keys(ppLabels).forEach(function (k) { ppLabels[k].classList.toggle('dim', keep.indexOf(k) === -1); });
-    Object.keys(tpLabels).forEach(function (k) { tpLabels[k].classList.toggle('dim', keep.indexOf(k) === -1); });
     RANKS.forEach(function (other) {
       var isSel = other.id === id;
+      rankCards3d[other.id].classList.toggle('selected', isSel);
+      rankCards3d[other.id].classList.toggle('dim', !isSel);
       rankBars[other.id].classList.toggle('selected', isSel);
       rankNums[other.id].classList.toggle('selected', isSel);
       rankNums[other.id].classList.toggle('dim', !isSel);

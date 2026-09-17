@@ -1,22 +1,23 @@
 {
   "id": "rank-topology-lite",
-  "name": "模型分片与训练设备映射 · 简洁版（抽象图）",
-  "description": "/patterns/rank-topology-3d/ 的简洁抽象版：同一个题面（五刀切完之后落到哪张卡上），换成 compute-graph-viewer 的『抽象图网页 prompt』画法——深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线、不搭装饰性中间层。规模简化到 TP2×PP2×DP2=8 卡、省略 EP，只求组织关系一眼看懂，不覆盖完整并行度组合或真实计时。",
-  "version": "1.0.0",
+  "name": "模型分片与训练设备映射 · 简洁版",
+  "description": "/patterns/rank-topology-3d/ 的简洁版：同一个题面（五刀切完之后落到哪张卡上），保留同一个核心比喻——world 张卡壳排成的可转动三维阵列——但把承载它的引擎从 Three.js 换成纯 CSS 3D transform，并去掉六档通信切换、preset、ZeRO、物理平铺这些控制面板，只留『转一转、点一张卡』。规模简化到 TP2×PP2×DP2=8 卡、省略 EP。选中一张卡后，详情区换成 compute-graph-viewer 的『抽象图网页 prompt』画法——深色极简、无边框灰卡、语义配色只用在训练语义图元上、直角连线、不搭装饰性中间层。",
+  "version": "1.1.0",
   "entry": "pattern.html",
   "selfContained": true,
   "canvas": "fixed-16:9",
   "variantOf": "rank-topology-3d",
   "derivedFrom": {
     "topic": "public/parallel-topology/demo.html 的 view=chain·card=1·vtab=3d 屏（/patterns/rank-topology-3d/）",
-    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格"
+    "styleGuide": "yinyucheng0601/compute-graph-viewer docs/抽象图网页prompt.md —— 深色极简数据关系图风格（用于选中后的详情区，不用于 3D 卡阵本身）"
   },
   "urlParams": {
     "rank": "0–7 —— 选中哪张卡（TP2×PP2×DP2 的 global rank）；不给或非法值退回 0，不报错",
-    "embed": "1 —— 嵌入形态：收起顶栏（标题/Run 信息/完整版链接）与页脚（图例/状态行），只剩组织树与 Rank 详情两块"
+    "embed": "1 —— 嵌入形态：收起顶栏（标题/Run 信息/完整版链接）与页脚（图例/状态行），只剩 3D 卡阵与 Rank 详情两块"
   },
   "constraints": [
     "固定拓扑 TP2×PP2×DP2=8，省略 EP：简洁版不追求覆盖 /patterns/rank-topology-3d/ 的完整并行度组合与 preset。",
+    "3D 卡阵用纯 CSS 3D transform（perspective + preserve-3d）实现，不是 Three.js/WebGL 场景：拖动旋转、静置时缓慢自转，转一下或选中一张卡之后自转停住；下方另有一条等高短横线导航条作为精确点选的兜底（卡阵转到某个角度时后排的卡不好点）。",
     "执行活动块的宽度与激活驻留条的长度都没有真实计时依据，页面上一律标『示意 / 非实测』，不暗示精确耗时——真实的传输时间下界与耗时估算仍在 /patterns/rank-topology-3d/。",
     "颜色沿用该 pattern 的语义映射：前向 #4469EF、反向 #FF4C7C、通信 #05D793、优化器 #FFAA3B、激活驻留 #8E4ACE（低透明度长条）、驻留产生端点 #A856F7、释放端点 #88C911。",
     "不引三方依赖（无 three.js、无 CDN 字体/脚本）：整页仅 pattern.html + pattern.css + pattern.js + favicon.svg 四个文件，纯 HTML/CSS/SVG 实现。"

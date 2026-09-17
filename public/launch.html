@@ -554,20 +554,21 @@ body {
             <div class="card-tags">
               <span class="tag tag--k-pat">Pattern</span>
               <span class="tag">变体 variantOf</span>
-              <span class="tag">抽象图</span>
+              <span class="tag">CSS 3D</span>
             </div>
           </div>
           <div class="card-preview" aria-hidden="true">
             <svg viewBox="0 0 320 160">
-              <circle cx="83" cy="24" r="4" fill="#8b95ab"/>
-              <path class="pv-line" d="M83 28 V38 M83 38 H50 M83 38 H116 M50 38 V46 M116 38 V46"/>
-              <rect class="pv-soft" x="34" y="46" width="32" height="14" rx="4"/>
-              <rect class="pv-soft" x="100" y="46" width="32" height="14" rx="4"/>
-              <path class="pv-line" d="M50 60 V70 M116 60 V70"/>
-              <rect x="30" y="70" width="16" height="7" rx="2" fill="#eef2f9" stroke="rgba(19,26,42,.3)" stroke-width="1"/>
-              <rect x="54" y="70" width="16" height="7" rx="2" fill="#ffffff" stroke="#131a2a" stroke-width="1.4"/>
-              <rect x="96" y="70" width="16" height="7" rx="2" fill="#eef2f9" stroke="rgba(19,26,42,.3)" stroke-width="1"/>
-              <rect x="120" y="70" width="16" height="7" rx="2" fill="#eef2f9" stroke="rgba(19,26,42,.3)" stroke-width="1"/>
+              <g opacity=".4">
+                <rect class="pv-soft" x="46" y="24" width="30" height="30" rx="6"/>
+                <rect class="pv-soft" x="82" y="24" width="30" height="30" rx="6"/>
+                <rect class="pv-soft" x="46" y="60" width="30" height="30" rx="6"/>
+                <rect class="pv-soft" x="82" y="60" width="30" height="30" rx="6"/>
+              </g>
+              <rect class="pv-box" x="30" y="42" width="30" height="30" rx="6"/>
+              <rect class="pv-box" x="66" y="42" width="30" height="30" rx="6"/>
+              <rect x="30" y="78" width="30" height="30" rx="6" fill="#4369ef" stroke="#131a2a" stroke-width="1.6"/>
+              <rect class="pv-box" x="66" y="78" width="30" height="30" rx="6"/>
               <rect class="pv-box" x="168" y="16" width="130" height="50" rx="8"/>
               <rect x="178" y="38" width="30" height="14" rx="2" fill="#4369ef"/>
               <rect x="212" y="38" width="8" height="14" rx="2" fill="#04d793"/>
@@ -580,7 +581,7 @@ body {
               <rect x="261.5" y="95.5" width="9" height="9" rx="2" fill="#04d793" transform="rotate(45 266 100)"/>
             </svg>
           </div>
-          <p class="card-desc">/patterns/rank-topology-3d/ 的简洁抽象版：同一个题面换成 compute-graph-viewer 抽象图网页 prompt 的画法——深色极简、无边框灰卡、语义配色只落在训练语义图元上、直角连线。规模简化到 TP2×PP2×DP2=8、省略 EP，点一张 Rank 看「执行活动」与「激活驻留」两组示意内容。</p>
+          <p class="card-desc">/patterns/rank-topology-3d/ 的简洁版：保留同一个「world 张卡壳排成的可转动三维阵列」比喻，引擎从 Three.js 换成纯 CSS 3D transform，去掉六档通信切换、preset、ZeRO 等控制面板，只留「转一转、点一张卡」。规模简化到 TP2×PP2×DP2=8、省略 EP，选中后详情区用 compute-graph-viewer 抽象图网页 prompt 的画法，看「执行活动」与「激活驻留」两组示意内容。</p>
           <div class="card-links">
             <a class="lnk lnk--primary" href="./patterns/rank-topology-lite/pattern.html">发布 pattern</a>
             <a class="lnk" href="./patterns/rank-topology-3d/pattern.html">完整版 · 3D<sup>°</sup></a>
