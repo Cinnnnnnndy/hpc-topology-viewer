@@ -34,6 +34,13 @@
   font: var(--type-body); font-weight: 700; color: var(--foreground);
   white-space: nowrap; padding-left: var(--space-1);
 }
+/* chrome:false 时 brandname 不再套进 .prc-topbar 那张卡——自己接管定位，
+   逐位照抄 .prc-topbar 给它的那份（top/left/z-index/pointer-events），宿主
+   摘掉整套操作面板时，题面（面包屑）落地的位置不因此跳一下。 */
+.prc-brandname.is-bare {
+  position: absolute; top: var(--space-3); left: var(--space-3); z-index: 6;
+  pointer-events: none;
+}
 .prc-tools {
   /* 不再套一张大卡：每组自己就是一张胶囊卡（segmented-control / btn），
      叠两层底会让底色看起来是错的。窄屏时整组换行，绝不横向溢出。 */

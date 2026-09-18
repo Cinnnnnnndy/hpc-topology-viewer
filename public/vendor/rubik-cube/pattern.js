@@ -773,20 +773,31 @@
     const root = document.createElement('div');
     root.className = 'prc-root';
     root.setAttribute('data-theme', S.theme);
+    /* brandName：默认还是"逻辑魔方"（这个 pattern 自己的名字）——只有
+       显式传了 opts.brandName 的宿主（目前只有 rank-topology-lite，见它
+       自己的 ?brand= 桥接）才会换成别的名字，独立打开 /rubik-pattern.html
+       或别处嵌入这份 pattern 都不受影响。这里插进 innerHTML 的字符串，
+       跟文件别处的 esc() 一个手法，自己转义一遍，不信任调用方传干净的。 */
+    const brandNameHtml = String(opts.brandName || '逻辑魔方').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     root.innerHTML = [
       '<div class="prc-stage"></div>',
-      opts.chrome === false ? '' : [
+      opts.chrome === false
+        /* chrome:false 收起的是"操作面板那一整套"（形态/视角/更多抽屉/图例/
+           选中卡侧栏 .prc-info）——不是"这张图叫什么"这句话。宿主（比如
+           rank-topology-lite）关掉 chrome 之后往往自己接了面包屑逻辑
+           （opts.brandTierLabel、选中后追加 rank N），brandname 这个挂点没了，
+           syncBrand() 就成了改一个不存在的元素，读者也看不出选中的是哪张卡、
+           换到第三档时题面还断了一截（反馈"标题没了？"）。brandname 单独摘出来，
+           裸文字浮在左上角——没有 prc-topbar 那张卡包着，也不占用任何操作面板
+           的空间，其余控件照常一个都不画。 */
+        ? '<div class="prc-brandname is-bare">' + brandNameHtml + '</div>'
+        : [
         // 常驻只留「形态 / 视角」——它们决定画面本身怎么摆；其余（着色/注入/连线/时间/
         // 并行）是筛选与工况，收进一个可开合的抽屉，默认收起，画面因此干净。
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
         '<div class="prc-topbar">',
-        /* brandName：默认还是"逻辑魔方"（这个 pattern 自己的名字）——只有
-           显式传了 opts.brandName 的宿主（目前只有 rank-topology-lite，见它
-           自己的 ?brand= 桥接）才会换成别的名字，独立打开 /rubik-pattern.html
-           或别处嵌入这份 pattern 都不受影响。这里插进 innerHTML 的字符串，
-           跟文件别处的 esc() 一个手法，自己转义一遍，不信任调用方传干净的。 */
-        '  <div class="prc-brandname">' + String(opts.brandName || '逻辑魔方').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>',
+        '  <div class="prc-brandname">' + brandNameHtml + '</div>',
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',
