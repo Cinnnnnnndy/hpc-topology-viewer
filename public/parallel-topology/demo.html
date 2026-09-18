@@ -4054,8 +4054,18 @@ function netScene(D, g, box, step){
       /* 隐去档（见上面 selTier）：这一层归的那只 rank 与选中的没有任何组关系，
          内容整个不画。放在 spotLayerMiss 那对 <g> 之前 return，组不会开一半。
          批绘（wq/qBatch）要到层循环之后才落批，所以这里只能「不画」，不能靠
-         包一层 <g opacity>——包了也罩不住已经进了批次的那些面。 */
-      if(ui.cardMode && rankTier(rankOf(tIdx, cIdx, dIdx, cutPP ? stOf(li) : co.p, D)) === 0) continue;
+         包一层 <g opacity>——包了也罩不住已经进了批次的那些面。
+         solo（第三档取景）下连兄弟卡（tier 1）也要跟着不画：这条原来只认
+         tier===0，「模型分片/层构成」这两档各自另起一份内容循环（显存占用
+         走的是 5017 附近那条，netOff 时 LQN=0、这条压根不会跑），没跟上
+         5017 那条「ui.soloCard 时连兄弟一起 continue」的判据——于是切到
+         模型分片/层构成时兄弟卡的层内容照画不误，壳虽然被后面的逻辑收了，
+         内容本身却已经落进了 body（反馈原话「这里切换到其他的填充还会显示
+         周围的，要屏蔽一下」，附图正是 solo 档下模型分片那一屏兄弟卡的算子
+         块还飘在四周）。solo 档下判据抄 5017 那条，同一个 tier9 只是换成这层循环
+         自己的 rank。 */
+      var lyTier9 = rankTier(rankOf(tIdx, cIdx, dIdx, cutPP ? stOf(li) : co.p, D));
+      if(ui.cardMode && ((ui.fastCard && ui.soloCard) ? lyTier9 !== 2 : lyTier9 === 0)) continue;
       if(spotLayerMiss) body.push('<g opacity="0.28" filter="url(#ptGray)">');
       /* 卡维度下每一层都归它自己那个 stage 的卡，所以层层都要画实的；
          非卡维度时只有本卡那个 stage 是实的，其余是背景。 */
@@ -5454,6 +5464,19 @@ function netScene(D, g, box, step){
               'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
             body.push(txt(ovPl9[0], ovP9[1] - 3.5 + ovDy9, ovTxt2_9, 6.4, ovC29, 'middle',
               'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
+            /* solo（第三档）镜头收尾时，scheduleCamSettle 量的是「卡自己那块命中面」
+               （下面 hit.push 的 hull2(C8)，只到壳顶 cv0，也就是 64GB 那条线）来把它
+               摆到画面正中——装不下的这一截**顶在壳外**（见 memStack 的
+               「顶出壳外」），不在这块命中面里，于是镜头把壳摆正中央时，壳外这一截
+               全部堆在正中央的上方，画面看着就是「整块图偏上」（反馈原话「zoomin
+               之后要显示在中间」）。这里另挂一块**不可点**（pointer-events:none，
+               只挂 data-k="cardfull" 供测量用，不接管点击）的命中面：把顶出去的那
+               一截也圈进来，scheduleCamSettle 优先找它，找不到（没有溢出的卡）才
+               退回原来那块只到壳顶的 data-k="card"。 */
+            hit.push('<polygon points="'+ptsStr(hull2(C8.concat([
+              P(cu0, ovTopV9, cw0, kc), P(cu1, ovTopV9, cw0, kc),
+              P(cu0, ovTopV9, cw1, kc), P(cu1, ovTopV9, cw1, kc)
+            ])))+'" style="fill:transparent;pointer-events:none" data-k="cardfull" data-i="'+gc+'"/>');
           } else {
             [[CAP_AMBER, ui.mono ? 'var(--pt-fg3)' : CAP_C.amber], [CAP_RED, ui.mono ? 'var(--pt-fg2)' : CAP_C.red]].forEach(function(mk){
               var vy = cv1 - (cv1 - cv0) * mk[0];
@@ -6252,32 +6275,14 @@ function netScene(D, g, box, step){
         'paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" font-weight="700"'));
     });
   }
-  /* ── 层深轴：把「不重复的那两头」标出来 ──────────────────────────────
-     层与层的差异有两种，各归各的表达：
-       · Dense 还是 MoE —— 交给层板的描边颜色（前几层青、其余中性），沿层深看过去
-         颜色变的那一处就是模型换挡的地方，不需要文字；
-       · 入口 / 出口 —— 只有两层有，给门牌。挂在它那层板的正上方，不拉引线：
-         引线要从画面这头拉到那头，穿过三十层，比它说明的事还吵。 */
-  /* Rank 打开时也给。「哪几张卡带着入口、哪几张带着出口」正是卡与卡结构不同的
-     那件事——PP0 那一段的每张卡都多一份词嵌入，末段的每张卡都多一份 LM Head 与
-     MTP 尾巴，中间几段没有。挂在焦点那一列的首/末张卡上方。 */
-  if(IXg && cutPP && L > 2 && ui.viewTab !== 'top'){
-    /* 门牌只写两个字。这一屏上它是个**路标**——「这一头不重复」——具体不重复在
-       哪几个算子、各被哪把刀切，展开写就是一条横贯半屏的长句，把它说明的那几层
-       全挡住了。细节挪到 hover：想知道再问，不问就不占地方。 */
-    [[0, '入口', 'head', 0], [L-1, '出口', 'tail', D.pp-1]].forEach(function(it, ii){
-      /* 两枚门牌错开一行：正视是把层深压掉的正交投影，第 0 层与最后一层会投到
-         同一个位置，同一高度的话两枚门牌正好叠在一起。 */
-      var pt9 = P(0.5, -0.10 - ii*0.125, wOf(it[0]), offAt(it[3]));
-      var w9 = 34, h9 = 16;
-      body.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="4" '
-        +'style="fill:var(--pt-bg);stroke:var(--pt-fg2);stroke-width:1;opacity:.97"/>');
-      body.push(txt(pt9[0], pt9[1]+3.6, esc(it[1]), 8, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-      /* 悬停靶子进 hit 层：body 整个是 pointer-events:none 的，挂在那儿收不到鼠标 */
-      hit.push('<rect x="'+(pt9[0]-w9/2)+'" y="'+(pt9[1]-h9/2)+'" width="'+w9+'" height="'+h9+'" rx="8" '
-        +'style="fill:transparent;cursor:help" data-tipk="'+it[2]+'"/>');
-    });
-  }
+  /* 入口/出口门牌（挂在首/末层板正上方）已删：反馈「出口入口删掉」——这两枚牌
+     单独摘出来看没有落点（截图里只剩一枚孤零零的"出口"浮在空画布上），信息量
+     不够撑起一整块 UI；哪几层是入口/出口，层板本身的描边颜色（Dense 段的青边）
+     与 hover 明细已经答了。连带把它一直预留的那截画布上方留白（vLo 的
+     -0.10/-0.225 那两档）也一并收回，solo 档（tier3）镜头贴得极近时不用再为
+     两枚已经不存在的牌子空出这块地——这正是反馈「zoomin 之后要显示在中间」
+     背后的一部分成因：预留的留白只在上方，包围盒因此偏上，镜头居中的落点
+     跟着偏。 */
   /* 反查那一层的门牌：把「牵动多少张卡」这个数摆在图上。
      「第 ℓ 层在哪张卡上」是这一屏最容易被说成单数的地方——数字写出来就没得含糊。 */
   if(revLi >= 0 && IXg){
@@ -10441,8 +10446,13 @@ function scheduleCamSettle(g9){
     var svg = $('stage').querySelector('svg');
     /* 量的是卡自己那块命中面（shellOf 里给每只卡 push 的 hull2 多边形）——
        netScene 的卡没有 .cardg 那种包裹 <g>（那是 renderSolidGrid 的方阵用的），
-       这块多边形才是"这张卡在屏幕上占的那块地"的唯一现成表示。 */
-    var el = svg && svg.querySelector('[data-act="chainpick"][data-k="card"][data-i="'+g9+'"]');
+       这块多边形才是"这张卡在屏幕上占的那块地"的唯一现成表示。
+       装不下时优先找 data-k="cardfull"：那块多边形连「顶出壳外」的溢出部分
+       也圈了进去（见 memStack 附近那段），只用壳本身（到 64GB 那条线为止）
+       会把镜头摆正壳、却把壳外那一大截晾在画面上方，整块图看着就偏了。
+       没有溢出的卡不会有这块多边形，退回原来那块。 */
+    var el = svg && (svg.querySelector('[data-k="cardfull"][data-i="'+g9+'"]')
+      || svg.querySelector('[data-act="chainpick"][data-k="card"][data-i="'+g9+'"]'));
     var vr = viewRendered;
     if(!el || !vr || sel !== g9) return;
     var r = el.getBoundingClientRect(), sb = $('stage').getBoundingClientRect();

@@ -806,12 +806,15 @@
     const stageEl = $('.prc-stage'), tipEl = $('.prc-tip');
     /* 招牌名字后面跟一句"选中的是谁"（?brand= 的宿主才用得上这个后缀，
        独立打开时 opts.brandName 是空，brandBase 就是"逻辑魔方"，跟改动前
-       一样不带任何后缀）——面包屑挂在名字后面，不再单独占一块地。 */
+       一样不带任何后缀）——面包屑挂在名字后面，不再单独占一块地。
+       分隔符用 "/" 不用 "·"：反馈「都放成面包屑用/分隔」，跟矩阵那边
+       stitle 的写法（见 rank-topology-lite/pattern.js 的 matrixSrcFor）
+       对齐，两块题面换形态时读起来是同一套语法。 */
     const brandEl = $('.prc-brandname');
     const brandBase = String(opts.brandName || '逻辑魔方');
     function syncBrand() {
       if (!brandEl) return;
-      brandEl.textContent = brandBase + (S.sel != null ? ' · rank ' + S.sel : '');
+      brandEl.textContent = brandBase + (S.sel != null ? ' / rank ' + S.sel : '');
     }
 
     /* ── three 场景 ── */

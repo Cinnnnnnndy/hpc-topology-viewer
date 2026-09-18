@@ -55,10 +55,13 @@
   if (world <= 64) {
     /* 规模小：矩阵本体自己一屏就是全部——不铺逻辑魔方、不裁剪它的任何交互，
        与直接打开 /patterns/rank-topology-3d/ 逐字节相同。stitle 换成模型
-       名称，跟三档取景那条路用的是同一个名字来源，不是另起一套说法。 */
+       名称，跟三档取景那条路用的是同一个名字来源，不是另起一套说法。
+       分隔符用 "/"：反馈「都放成面包屑用/分隔」，与下面 tier3 那条、
+       逻辑魔方自己的招牌（见 pattern.js 的 syncBrand）三处统一成同一套
+       写法，不是"这条 · 那条 /"各写各的。 */
     var plainP = new URLSearchParams({
       embed: '1', theme: 'dark', preset: PS.matrixPreset, card: '1', view: 'chain', vtab: '3d',
-      stitle: PS.modelName + ' · ' + world + ' 卡'
+      stitle: PS.modelName + ' / ' + world + ' 卡'
     });
     matrixFrame.src = '../rank-topology-3d/pattern.html?' + plainP.toString();
     matrixFrame.classList.remove('is-hidden');
@@ -112,11 +115,13 @@
   // stitle：矩阵原生的画布名字接管这块地时，续用同一个模型名称（"用模型
   // 名称来做全部的命名和面包屑"）——不换一套说法，读者从第二档点进来，
   // 左上角那行字只是从这一层渲染的换成矩阵自己渲染的，内容不跳。
+  // 分隔符用 "/" 不用 "·"："都放成面包屑用/分隔"——与逻辑魔方招牌
+  // （syncBrand）、上面 world≤64 那条 stitle 统一成同一套写法。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
       embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
-      stitle: PS.modelName + ' · rank ' + matrixSel
+      stitle: PS.modelName + ' / rank ' + matrixSel
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
   }
