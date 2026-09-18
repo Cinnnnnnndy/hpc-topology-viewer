@@ -44,18 +44,20 @@ html, body {
 .back-btn:hover { color: #E8E8E8; }
 .back-btn.is-hidden { opacity: 0; pointer-events: none; }
 
-/* ── 悬浮数据卡：只在第二/三档出现，钉在视口右下角（不跟画布缩放平移）——
-   左上是返回按钮、下边正中是角标、矩阵自己的设置齿轮在右上角，右下是唯一
-   稳定空着的一角。配色与返回按钮同一套 compute-graph-viewer 令牌，浮卡本身
-   也不例外于"默认只有黑白"：容量告警只靠说法/字重分挡，不引入色相。 ──── */
+/* ── 悬浮数据卡：只在第二/三档出现，钉在视口右上角、让开顶栏一档（不跟画布
+   缩放平移）——左上是返回按钮、下边正中是角标；右下角在第二档（逻辑魔方）
+   是它自己图例的地盘（.prc-legend，同一角落），第三档（矩阵）右上角只有一颗
+   小齿轮、这颗卡让开一档就不会压到它——两档统一走右上，不必按档位换位置。
+   配色与返回按钮同一套 compute-graph-viewer 令牌，浮卡本身也不例外于
+   "默认只有黑白"：容量告警只靠说法/字重分挡，不引入色相。 ──────────────── */
 .brief-card {
-  position: fixed; right: 16px; bottom: 16px; z-index: 6;
+  position: fixed; right: 16px; top: 60px; z-index: 6;
   min-width: 200px; max-width: 260px;
   background: #1F1F1F; border-radius: 12px; padding: 12px 14px;
   font-size: 12px; line-height: 1.6; color: #A0A0A0;
   transition: opacity .2s ease, transform .2s ease;
 }
-.brief-card.is-hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+.brief-card.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
 .brief-h {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 2px;
@@ -70,6 +72,17 @@ html, body {
 .brief-row span { color: #A0A0A0; }
 .brief-row b { color: #E8E8E8; font-weight: 600; }
 .brief-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #2B2B2B; }
+
+/* 第二档的浮卡是一句邀请（"↓ 单卡下钻"），不是数据行——按钮撑满卡宽，
+   跟下面第三档摆的数据行区分开：那时读者不是在读数，是在决定要不要往里走。 */
+.brief-card.is-cta { padding-bottom: 10px; }
+.brief-cta {
+  display: block; width: 100%; margin-top: 8px;
+  background: #2B2B2B; color: #E8E8E8; border: 0; border-radius: 8px;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 10px;
+  cursor: pointer; transition: background .2s ease;
+}
+.brief-cta:hover { background: #3A3A3A; }
 
 /* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
    各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */

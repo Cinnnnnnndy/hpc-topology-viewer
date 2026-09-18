@@ -1,20 +1,29 @@
 /* rank-topology-lite · pattern.js
-   "无限画布"分三档取景，档位的真相全在矩阵 iframe 自己身上，这一层只是转发
-   坐标、跟读档位、按档位摆宿主自己的 chrome（返回按钮、悬浮数据卡）：
-     1 集群       —— 逻辑魔方 iframe 在最上层（盘古 ProMoE 预置，WebGL 实例化
-                     网格，素块、无标签、无性能问题——这正是"未点击之前"想要的
-                     默认视图，不在 SVG 矩阵里另外拼一套弱化渲染）。
-     2 选中+兄弟   —— 逻辑魔方自己 postMessage 上报 rubik-select，这一层把它的
-                     (tp,pp,rep) 坐标换算成并行拓扑矩阵自己的 rank 编号，把矩阵
-                     iframe 换到最上层并带上 ?sel=——矩阵本体自己的选中态渲染
-                     （真实坐标、内存/容量读出、六档通信、兄弟卡高亮）原样
-                     接管，这一层不重画一遍。
-     3 单卡下钻   —— 矩阵 iframe 内部再点一次选中卡，它自己切到 soloCard，
-                     连兄弟卡也隐去；这一层不换 iframe，只跟着它上报的
-                     pto:tier 消息换一档 chrome。
-   退档同一条规矩——点空白/点返回按钮一次退一档，不直接甩回最外层，
-   由矩阵 iframe 通过 pto:tier 消息把真实档位报回来，这一层永远是跟读，
-   不自己猜。
+   规模够大才值得用逻辑魔方当默认层（世界卡数 world ≤ 64 时，矩阵本体自己
+   一屏就够清楚——64 张卡的 SVG 阵列不存在密度/性能问题，逻辑魔方那层
+   "先看形状"的价值这时反而是多绕一圈）。按这条规则分两条路：
+
+   world ≤ 64：直接铺满并行拓扑矩阵本体的原页（不传 fastcard/mono/solo，
+     就是 rank-topology-3d 独立打开的样子），没有逻辑魔方、没有返回按钮、
+     没有三档——矩阵自己的"选中/取消选中"手势已经够用，不必再包一层。
+
+   world > 64（默认，盘古 ProMoE·4000 卡）："无限画布"分三档取景，档位越
+   往里，画得越少、看得越细：
+     1 集群       —— 逻辑魔方铺满，没有选中任何卡。
+     2 选中+兄弟   —— 逻辑魔方里点一张方块，**留在逻辑魔方自己身上**：它自带
+                     的"卡内魔方"局部聚焦（选中卡与它所在的行列一起被摄像机
+                     框住，中间浮出这张卡自己的层/算子构成）已经是干净的效果，
+                     不必换到矩阵那一屏再画一遍——矩阵在这个规模下要给每张
+                     兄弟卡都摆通信芯片/容量告警，牌子挤在一起反而更花。
+                     宿主右下角浮出一句极简的"↓ 单卡下钻"邀请，点了才进详情。
+     3 单卡下钻    —— 点那句邀请，才真正换到并行拓扑矩阵本体（fastcard=1&
+                     mono=1&solo=1）：连兄弟卡也隐去，看的是这一张卡内部
+                     的填充版——真实容量读出、显存构成明细、卡内那一级通信。
+   退档同一条规矩——点空白/点返回按钮一次退一档：第 3→2 档不换 iframe，
+   只让矩阵切自己的 soloCard（一句 pto:tier 指令）；第 2→1 档才真的把矩阵
+   藏起来，回到逻辑魔方（它本来就还停在原地，不用重新加载）。tier2 完全
+   不涉及 iframe 切换，天然没有闪烁——切换的"丝滑"就是靠少切一次做到的，
+   不是靠更长的过渡动画补出来的。
 */
 (function () {
   'use strict';
@@ -26,29 +35,54 @@
   var backBtn = document.getElementById('backBtn');
   var briefCard = document.getElementById('briefCard');
 
-  // ── 逻辑魔方：固定盘古 ProMoE 预置（tp8·pp5·dp100·ep2 = 4000 卡），深色主题 ──
+  /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
+     的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
+     ?preset=dense64 是 demo.html 自己现成的 64 卡预置，用来验证"world ≤ 64
+     直接显示矩阵原页"这条规则确实会触发，不是摆着不用的死分支。 */
+  var PRESETS = {
+    pangu: { tp: 8, pp: 5, dp: 100, ep: 2, matrixPreset: 'pangu' },
+    dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64' }
+  };
+  var PS = PRESETS[qs.get('preset')] || PRESETS.pangu;
+  var world = PS.tp * PS.pp * PS.dp;
+
+  if (world <= 64) {
+    /* 规模小：矩阵本体自己一屏就是全部——不铺逻辑魔方、不裁剪它的任何交互，
+       与直接打开 /patterns/rank-topology-3d/ 逐字节相同。 */
+    var plainP = new URLSearchParams({
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, card: '1', view: 'chain', vtab: '3d'
+    });
+    matrixFrame.src = '../rank-topology-3d/pattern.html?' + plainP.toString();
+    matrixFrame.classList.remove('is-hidden');
+    rubikFrame.classList.add('is-hidden');
+    return;
+  }
+
+  // ── 逻辑魔方：固定当前预置，深色主题 ──────────────────────────────────
   // color=neutral：默认就是素色（中性灰），不是负载热力橙→粉——这个简洁版要的
   // 默认态是"先看形状、不看颜色"，颜色留给选中/告警这些真正需要强调的状态。
   // 逻辑魔方自己独立打开（/rubik-pattern.html）默认仍是负载热力，这个参数只在
   // 这里传，不改它自己的默认值。
-  // groupgap=3：拉开 tp/pp/dp/ep 各组之间的缝，4000 卡这种规模下"这是几段/几片"
-  // 才读得出来——独立打开的 /rubik-pattern.html 默认 1（原样间距），这个参数
+  // groupgap=3：拉开 tp/pp/dp/ep 各组之间的缝，这种规模下"这是几段/几片"才
+  // 读得出来——独立打开的 /rubik-pattern.html 默认 1（原样间距），这个参数
   // 只在这里传，呼应"默认状态下参考并行拓扑拉大间距、让分组更明显"那条反馈。
-  var rubikParams = new URLSearchParams({ theme: 'dark', tp: '8', pp: '5', dp: '100', ep: '2', color: 'neutral', groupgap: '3' });
+  var rubikParams = new URLSearchParams({
+    theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
+    color: 'neutral', groupgap: '3'
+  });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
-  // ── 并行拓扑矩阵：固定 preset=pangu·theme=dark，view/card/vtab 沿用它自己的默认值 ──
+  // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&mono=1&solo=1 ──────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
-  // 详情态才会「不画坐标轴/EP 组框、无关联的卡直接不画、选中即飞焦、取消选中飞回
-  // 默认机位」；不传就是 rank-topology-3d 自己原本的样子（标签/群组色照常画）。
+  // 详情态才会「不画坐标轴/EP 组框、无关联的卡直接不画、选中即飞焦」；不传就是
+  // rank-topology-3d 自己原本的样子（标签/群组色照常画）。
   // mono=1：整屏收成黑白灰阶——维度签名色、显存成分色、通信芯片、容量告警棱线、
-  // 卡面填充一起退回中性（见 demo.html 里 ui.mono/VC_MONO/MEM_MONO 那段）。
-  // 早先只传窄一档的 neutralsibs（只收兄弟卡棱线）时，芯片文字与卡面填充还是
-  // 漏网的——"这里描边和填充还是不对"那条反馈说的正是这个缺口；mono 是同一件
-  // 事的完整版，rank-topology-3d/net-slicing/model-netgraph 独立打开一个字节不变。
+  // 卡面填充一起退回中性。
+  // solo=1：连兄弟卡也隐去，只看这一张卡内部——矩阵现在只在第三档才被打开，
+  // 打开就直接是这一档，不必先落在"选中+兄弟"再等一次点击才往里走。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: 'pangu', fastcard: '1', mono: '1',
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', mono: '1', solo: '1',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel)
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
@@ -62,43 +96,53 @@
      所以必须按坐标三元组换算，不能把 rank 数字直接抄过去——实测验证过：
      逻辑魔方 rank 830（tp6·pp3·rep20）对应并行拓扑 rank 2566，矩阵本体
      读出的坐标正是 tp6·cp0·dp20·pp3，与逻辑魔方报的坐标逐位一致。 */
-  var MATRIX_D = { tp: 8, dp: 100 };
   function rubikSelToMatrixSel(sel) {
-    return (sel.pp * MATRIX_D.dp + sel.rep) * MATRIX_D.tp + sel.tp;
+    return (sel.pp * PS.dp + sel.rep) * PS.tp + sel.tp;
   }
 
-  /* ── 三档取景（"无限画布"就是这三档，矩阵本体 demo.html 里 ptoTier() 那段
-     注释写的是同一件事，这里是宿主这一侧）──────────────────────────────
-       1 集群       —— 逻辑魔方铺满，没有选中任何卡
-       2 选中+兄弟   —— 矩阵接管，选中卡与它的兄弟卡都画，无关卡隐去
-       3 单卡下钻    —— 再往里一层，连兄弟卡也隐去，看的是这一张卡内部
-     档位真正的主人是矩阵 iframe 自己（sel / ui.soloCard 两个状态读出来的结论，
-     见 demo.html 的 ptoTier()）；这里的 tier 只是**跟读**它通过 pto:tier
-     报上来的数，不自己决定档位该是几——矩阵那边换档既可能来自宿主转发的
-     指令，也可能来自画布上直接点击/点空白，宿主必须以它上报的为准。 */
   var tier = 1;
-
-  function showDetail(matrixSel) {
-    matrixFrame.src = matrixSrcFor(matrixSel);
-    matrixFrame.classList.remove('is-hidden');
-    rubikFrame.classList.add('is-hidden');
-    backBtn.classList.remove('is-hidden');
-    backBtn.textContent = '← 返回魔方视图';
-    tier = 2;
-    hideBrief();
-  }
+  var pendingMatrixSel = null;   // 第二档选中的那张卡，换算好的矩阵 rank——第三档就是拿它去开矩阵
 
   function showOverview() {
     matrixFrame.classList.add('is-hidden');
     rubikFrame.classList.remove('is-hidden');
     backBtn.classList.add('is-hidden');
     tier = 1;
+    pendingMatrixSel = null;
+    hideBrief();
+  }
+
+  /* 第二档：留在逻辑魔方身上，只换宿主自己这层的 chrome——返回按钮出现，
+     右下角浮出"下钻"邀请。逻辑魔方的选中态是它自己的事（这一刻画面早就是
+     对的，从来路径无关：可能是它刚刚 postMessage 报过来的新选中，也可能是
+     从第三档退回来、它本来就还停在原地没变过），这个函数从不碰 rubikFrame，
+     只管 sel（换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行
+     副标题，两条来路各自负责按自己手上有的坐标格式拼好再传进来）。 */
+  function showTier2(matrixSel, subLine) {
+    matrixFrame.classList.add('is-hidden');
+    rubikFrame.classList.remove('is-hidden');
+    backBtn.classList.remove('is-hidden');
+    backBtn.textContent = '← 返回魔方视图';
+    tier = 2;
+    pendingMatrixSel = matrixSel;
+    renderDrillInvite(matrixSel, subLine);
+  }
+
+  /* 第三档：真正换到矩阵那一屏，solo=1 直接落在"只看这一只"。 */
+  function showDetail(matrixSel) {
+    matrixFrame.src = matrixSrcFor(matrixSel);
+    matrixFrame.classList.remove('is-hidden');
+    rubikFrame.classList.add('is-hidden');
+    backBtn.classList.remove('is-hidden');
+    backBtn.textContent = '← 返回选中+兄弟';
+    tier = 3;
     hideBrief();
   }
 
   /* 返回按钮跟"点空白处"走同一条规矩——一次退一档，不是直接甩回最外层：
-     第三档（单卡下钻）点一下退到第二档（选中+兄弟），矩阵 iframe 不用重新
-     加载，只发一句 pto:tier 指令让它自己切换；已经在第二档才整层退回魔方。 */
+     第三档点一下退到第二档，矩阵 iframe 不用重新加载，只发一句 pto:tier
+     指令让它自己切换（切完它会自己上报新档位，交给下面的消息监听器接住）；
+     第二档点一下才真的把矩阵藏起来、回到逻辑魔方。 */
   function stepBack() {
     if (tier === 3 && matrixFrame.contentWindow) {
       matrixFrame.contentWindow.postMessage({ type: 'pto:tier', tier: 2 }, '*');
@@ -108,40 +152,67 @@
   }
   backBtn.addEventListener('click', stepBack);
 
-  // ── 接逻辑魔方自己上报的下钻事件：rubik-select 是它页内换选中卡时主动发的 ──
-  // ── 接矩阵本体上报的换档事件：pto:tier 带着 {tier, sel, brief}，brief 是它
-  //    已经算好的这只卡摘要（容量/层段/兄弟数/显存构成）——宿主自己不重算一遍，
-  //    两边数字对不上是最难查的那种错。 ─────────────────────────────────
+  // ── 接逻辑魔方自己上报的选中事件：rubik-select 是它页内换选中卡时主动发的——
+  //    选中就是第二档，取消选中（点空白，它自己原有的手势）就退回第一档。 ──
+  // ── 接矩阵本体上报的换档事件：pto:tier 带着 {tier, sel, brief}。矩阵现在
+  //    只在第三档才被打开，收到 tier<3（矩阵里点空白退出 soloCard）就说明
+  //    读者要退回第二档——切回逻辑魔方（它一直还停在原地、选中态没变过），
+  //    副标题这时改用矩阵自己上报的 brief.coord/layers 拼（跟逻辑魔方自己
+  //    的 tp/pp/rep 是两套坐标格式，不能混用同一个拼法）。 ──
   window.addEventListener('message', function (ev) {
     var d = ev.data;
     if (!d) return;
     if (ev.source === rubikFrame.contentWindow) {
       if (d.type !== 'rubik-select') return;
-      if (d.sel && d.sel.rank != null) showDetail(rubikSelToMatrixSel(d.sel));
-      else showOverview();
+      if (d.sel && d.sel.rank != null) {
+        var st9 = d.sel.stage;
+        showTier2(rubikSelToMatrixSel(d.sel), 'tp' + d.sel.tp + ' pp' + d.sel.pp + ' rep' + d.sel.rep
+          + (st9 ? ' · L' + st9.lo + '–L' + st9.hi : ''));
+      } else showOverview();
       return;
     }
     if (ev.source === matrixFrame.contentWindow) {
       if (d.type !== 'pto:tier') return;
-      if (d.tier === 1) { showOverview(); return; }
-      tier = d.tier;
-      backBtn.textContent = tier === 3 ? '← 返回选中+兄弟' : '← 返回魔方视图';
-      renderBrief(d.brief, tier);
+      if (d.tier === 3) {
+        tier = 3;
+        backBtn.textContent = '← 返回选中+兄弟';
+        renderBrief(d.brief);
+      } else if (d.sel != null && d.brief) {
+        showTier2(d.sel, 'tp' + d.brief.coord.tp + ' cp' + d.brief.coord.cp + ' dp' + d.brief.coord.dp
+          + ' pp' + d.brief.coord.pp + (d.brief.coord.ep != null ? ' ep' + d.brief.coord.ep : '')
+          + ' · L' + d.brief.layers.lo + '–L' + d.brief.layers.hi);
+      } else {
+        showOverview();
+      }
     }
   });
 
   function hideBrief() {
+    briefCard.classList.remove('is-cta');
     briefCard.classList.add('is-hidden');
     briefCard.innerHTML = '';
   }
 
-  /* 悬浮数据卡：只在第二/三档出现（第一档——集群整体——目前没有现成的、
-     已经算好的聚合读数可用，宁可不摆牌子也不在浮卡上编数字）。内容全部来自
-     矩阵上报的 brief，不自己再算一遍；第三档多摆一份显存构成明细，因为那正是
-     这一档要下钻着看的东西。level 只用字重/说法分挡，不引入色相——呼应
-     "默认关掉颜色只有黑白"那条反馈，浮卡本身也不例外。 */
+  /* 第二档的浮卡是一句邀请，不是数据——这一档故意不摆容量/显存数字：矩阵
+     没打开，那些数字本来就不存在，编不出来；逻辑魔方自己已经在画面中间浮出
+     "卡内 · L{lo}-L{hi}" 那张小牌子，宿主再摆一份等于同一句话说两遍。 */
+  function renderDrillInvite(matrixSel, subLine) {
+    briefCard.innerHTML = '<div class="brief-h">rank ' + matrixSel + '</div>'
+      + '<div class="brief-sub">' + subLine + '</div>'
+      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+    briefCard.classList.add('is-cta');
+    briefCard.classList.remove('is-hidden');
+  }
+  briefCard.addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) showDetail(pendingMatrixSel);
+  });
+
+  /* 第三档的浮卡才是真数据：内容全部来自矩阵上报的、已经算好的摘要
+     （ptoRankBrief：坐标/层段/容量/显存构成）——宿主自己不重算一遍，读出
+     面板与浮卡两套数字迟早对不上。容量告警只用文字/底色深浅分挡，不引入
+     色相，呼应"默认关掉颜色只有黑白"那条反馈。 */
   var CAP_LABEL = { oom: '⚠ 超出容量', red: '⚠ 逼近红线', amber: '临界（黄线）', ok: '正常' };
-  function renderBrief(brief, tier9) {
+  function renderBrief(brief) {
     if (!brief) { hideBrief(); return; }
     var gb = function (v) { return (Math.round(v * 10) / 10) + ' GB'; };
     var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
@@ -149,21 +220,17 @@
     var html = '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
       + '<div class="brief-sub">tp' + brief.coord.tp + ' cp' + brief.coord.cp + ' dp' + brief.coord.dp
       + ' pp' + brief.coord.pp + (brief.coord.ep != null ? ' ep' + brief.coord.ep : '')
-      + ' · L' + brief.layers.lo + '–L' + brief.layers.hi + '</div>';
-    if (tier9 === 3) {
-      html += brief.segs.map(function (s) {
+      + ' · L' + brief.layers.lo + '–L' + brief.layers.hi + '</div>'
+      + brief.segs.map(function (s) {
         return '<div class="brief-row"><span>' + s.label + '</span><b>' + gb(s.gb) + '</b></div>';
-      }).join('');
-      html += '<div class="brief-row brief-total"><span>合计 / ' + brief.hbm + ' GB</span><b>' + gb(brief.cap.totGB) + '</b></div>';
-    } else {
-      html += '<div class="brief-row"><span>兄弟卡</span><b>' + brief.sibs + ' 张</b></div>'
-        + '<div class="brief-row brief-total"><span>显存</span><b>' + gb(brief.cap.totGB) + ' / ' + brief.hbm + ' GB</b></div>';
-    }
+      }).join('')
+      + '<div class="brief-row brief-total"><span>合计 / ' + brief.hbm + ' GB</span><b>' + gb(brief.cap.totGB) + '</b></div>';
+    briefCard.classList.remove('is-cta');
     briefCard.innerHTML = html;
     briefCard.classList.remove('is-hidden');
   }
 
-  // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进详情态 ──────
+  // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进第三档 ─────
   var qsel = parseInt(qs.get('sel'), 10);
-  if (isFinite(qsel) && qsel >= 0 && qsel < 4000) showDetail(qsel);
+  if (isFinite(qsel) && qsel >= 0 && qsel < world) showDetail(qsel);
 })();

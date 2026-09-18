@@ -5439,9 +5439,18 @@ function netScene(D, g, box, step){
                要 NGB / 只有 64GB"），红色只是在重复那句话的语气。 */
             var ovC9 = ui.mono ? 'var(--pt-fg)' : 'var(--pt-danger)';
             var ovC29 = ui.mono ? 'var(--pt-fg2)' : 'var(--pt-danger)';
-            body.push(txt(ovP9[0], ovP9[1] - 12, '装不下 '+mulTxt, 8.5, ovC9, 'middle',
+            /* 这块牌子原来直接 txt() 写死位置，不登记进 chipRects——选中卡的
+               通信芯片、入口/出口门牌都会往上让开这块地，它却不让开别人：
+               卡小、牌子多的场景（比如兄弟卡沿一条轴摆成一整排）几样牌子会
+               整叠在同一点上。两行当一块地登记，形参照 axLab 的做法估。 */
+            var ovTxt1_9 = '装不下 '+mulTxt, ovTxt2_9 = '要 '+needGB9+'GB · 只有 '+D.hbm+'GB';
+            var ovW9 = Math.max(ovTxt1_9.length*8.5*0.85, ovTxt2_9.length*6.4*0.62) + 6;
+            var ovMidY9 = ovP9[1] - 7.75;
+            var ovPl9 = placeAt(ovP9[0], ovMidY9, ovW9, 22);
+            var ovDy9 = ovPl9[1] - ovMidY9;
+            body.push(txt(ovPl9[0], ovP9[1] - 12 + ovDy9, ovTxt1_9, 8.5, ovC9, 'middle',
               'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
-            body.push(txt(ovP9[0], ovP9[1] - 3.5, '要 '+needGB9+'GB · 只有 '+D.hbm+'GB', 6.4, ovC29, 'middle',
+            body.push(txt(ovPl9[0], ovP9[1] - 3.5 + ovDy9, ovTxt2_9, 6.4, ovC29, 'middle',
               'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
           } else {
             [[CAP_AMBER, ui.mono ? 'var(--pt-fg3)' : CAP_C.amber], [CAP_RED, ui.mono ? 'var(--pt-fg2)' : CAP_C.red]].forEach(function(mk){
