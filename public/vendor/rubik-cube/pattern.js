@@ -2701,6 +2701,11 @@
       /* 没聚焦某个对象时，卡内画「卡内魔方」（这张卡的层 × 算子）；
          聚焦了某个对象，才切换成那个对象的分片切分。两者都在「切分」图层下。 */
       if (S.wire.payload && !objOn() && S.sel != null) {
+        /* opts.cardCube === false（?cc=0）：画布里整块「卡内魔方」彩色格子都不画了，
+           不是只收字牌（那是 cardCubeLabels 管的）。用在宿主自己有一张详情卡把同一句话
+           （rank / 层区间 / 对象持有情况）说得更清楚的场合——画布这时候只留场景本身，
+           不重复摆一份。默认仍画，不改变任何既有消费者的样子。 */
+        if (opts.cardCube === false) { shardGroup.visible = false; return; }
         shardGroup.visible = true; buildCardCube(); return;
       }
       const on = S.wire.payload && objOn() && S.sel != null;

@@ -83,14 +83,17 @@
   // 少的只是文字；独立打开 /rubik-pattern.html 不受影响，默认还画这两枚牌。
   // axsel=0：选中一张卡时收起"贴在几何体上"那类轴刻度字牌（TP0/PP3 这种，
   // 世界尺寸固定）——第二档的镜头贴得极近（"局部聚焦"），这类字牌会占满
-  // 大半个画布、糊住选中卡自己的坐标读出（反馈原话"彻底去掉3d画布中的
-  // 显示"，附图正是一枚巨大的"PP3"盖住了悬停小牌）。坐标信息本来就写在
-  // DOM 侧栏与悬浮数据卡里，画布里不用再重复一遍。彩色小格阵列/卡内魔方
-  // 的颜色不受这条影响——那是"卡片还是保留彩色"要留住的部分，跟这条字牌
-  // 收放是两件事。
+  // 大半个画布、糊住选中卡自己的坐标读出。坐标信息本来就写在 DOM 侧栏与
+  // 悬浮数据卡里，画布里不用再重复一遍。
+  // cc=0：选中一张卡时画布里那圈"卡内魔方"彩色小格阵列整个不画了——不只是
+  // 字牌（cclabels 管那个），是格子本身。反馈原话"不是说去色的问题，是
+  // 不要在画布中显示"：同一句话（rank / 层区间 / 对象持有情况）右侧详情卡
+  // 已经摆得清清楚楚，画布这层不用再重复一份彩色阵列；"卡片还是保留彩色"
+  // 指的是右侧详情卡与装载清单的颜色，那两处不受这条影响，独立打开
+  // /rubik-pattern.html 也不受影响，默认还画这圈格子。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
-    color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0'
+    color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0'
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 

@@ -75,6 +75,9 @@
     // 卡内魔方的两枚 3D 字牌（?cclabels=0 收起）：默认画，宿主自己的详情侧栏
     // 与它说的是同一句话时才用得上这个参数，见 pattern.js 里的注释。
     cardCubeLabels: qs.get('cclabels') === '0' ? false : undefined,
+    // 选中一张卡时画布里整块"卡内魔方"彩色格子都不画（?cc=0）——不是收字牌，是整个
+    // 组件都不摆；宿主自己的详情卡已经把同一句话说清楚时用，见 pattern.js 里的注释。
+    cardCube: qs.get('cc') === '0' ? false : undefined,
     // 选中一张卡时收起"贴在几何体上"的那类轴刻度字牌（TP0/PP3 这种，世界
     // 尺寸固定，镜头贴近一张卡时会占满大半个画布）——?axsel=0，默认画。
     axisLabelsOnSelect: qs.get('axsel') === '0' ? false : undefined,
