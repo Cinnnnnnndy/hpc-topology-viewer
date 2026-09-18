@@ -22,11 +22,14 @@
                      梯度/优化器态/专家/激活各自的颜色在说"这一块字节是
                      什么"，现在只服务一张卡，不会跟别的卡的颜色打架）、
                      卡内那一级通信。
-   退档同一条规矩——点空白/点返回按钮一次退一档：第 3→2 档不换 iframe，
-   只让矩阵切自己的 soloCard（一句 pto:tier 指令）；第 2→1 档才真的把矩阵
-   藏起来，回到逻辑魔方（它本来就还停在原地，不用重新加载）。tier2 完全
-   不涉及 iframe 切换，天然没有闪烁——切换的"丝滑"就是靠少切一次做到的，
-   不是靠更长的过渡动画补出来的。
+   退档不靠宿主自己另起一颗按钮：点空白就是每一档自带的手势——逻辑魔方
+   点空白取消选中（第 2→1 档），矩阵点空白退出 soloCard（第 3→2 档，
+   一句 pto:tier 指令，不重新加载 iframe）。"← 返回…"那颗按钮删了（反馈
+   原话"有了面包屑不要这个了"）：档位已经写在面包屑里（逻辑魔方顶栏的
+   模型名 + rank 后缀、矩阵自己的画布名字），退档交给两个 iframe 原生就有
+   的手势，不必再摆一层复述"你在哪/怎么回去"的按钮。tier2 完全不涉及
+   iframe 切换，天然没有闪烁——切换的"丝滑"就是靠少切一次做到的，不是靠
+   更长的过渡动画补出来的。
 */
 (function () {
   'use strict';
@@ -35,7 +38,6 @@
 
   var rubikFrame = document.getElementById('rubikFrame');
   var matrixFrame = document.getElementById('matrixFrame');
-  var backBtn = document.getElementById('backBtn');
   var briefCard = document.getElementById('briefCard');
 
   /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
@@ -138,7 +140,6 @@
     return (sel.pp * PS.dp + sel.rep) * PS.tp + sel.tp;
   }
 
-  var tier = 1;
   var pendingMatrixSel = null;   // 第二档选中的那张卡，换算好的矩阵 rank——第三档就是拿它去开矩阵
 
   /* 三档的"这是什么"这句话，全部交给当前显示的那个 iframe 自己的原生标题说，
@@ -151,24 +152,19 @@
   function showOverview() {
     matrixFrame.classList.add('is-hidden');
     rubikFrame.classList.remove('is-hidden');
-    backBtn.classList.add('is-hidden');
-    tier = 1;
     pendingMatrixSel = null;
     hideBrief();
   }
 
-  /* 第二档：留在逻辑魔方身上，只换宿主自己这层的 chrome——返回按钮出现，
-     右下角浮出"下钻"邀请。逻辑魔方的选中态是它自己的事（这一刻画面早就是
-     对的，从来路径无关：可能是它刚刚 postMessage 报过来的新选中，也可能是
-     从第三档退回来、它本来就还停在原地没变过），这个函数从不碰 rubikFrame，
-     只管 sel（换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行
+  /* 第二档：留在逻辑魔方身上，只换宿主自己这层的 chrome——右下角浮出"下钻"
+     邀请。逻辑魔方的选中态是它自己的事（这一刻画面早就是对的，从来路径
+     无关：可能是它刚刚 postMessage 报过来的新选中，也可能是从第三档退
+     回来、它本来就还停在原地没变过），这个函数从不碰 rubikFrame，只管
+     sel（换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行
      副标题，两条来路各自负责按自己手上有的坐标格式拼好再传进来）。 */
   function showTier2(matrixSel, subLine) {
     matrixFrame.classList.add('is-hidden');
     rubikFrame.classList.remove('is-hidden');
-    backBtn.classList.remove('is-hidden');
-    backBtn.textContent = '← 返回魔方视图';
-    tier = 2;
     pendingMatrixSel = matrixSel;
     renderDrillInvite(matrixSel, subLine);
   }
@@ -178,24 +174,8 @@
     matrixFrame.src = matrixSrcFor(matrixSel);
     matrixFrame.classList.remove('is-hidden');
     rubikFrame.classList.add('is-hidden');
-    backBtn.classList.remove('is-hidden');
-    backBtn.textContent = '← 返回选中+兄弟';
-    tier = 3;
     hideBrief();
   }
-
-  /* 返回按钮跟"点空白处"走同一条规矩——一次退一档，不是直接甩回最外层：
-     第三档点一下退到第二档，矩阵 iframe 不用重新加载，只发一句 pto:tier
-     指令让它自己切换（切完它会自己上报新档位，交给下面的消息监听器接住）；
-     第二档点一下才真的把矩阵藏起来、回到逻辑魔方。 */
-  function stepBack() {
-    if (tier === 3 && matrixFrame.contentWindow) {
-      matrixFrame.contentWindow.postMessage({ type: 'pto:tier', tier: 2 }, '*');
-      return;
-    }
-    showOverview();
-  }
-  backBtn.addEventListener('click', stepBack);
 
   // ── 接逻辑魔方自己上报的选中事件：rubik-select 是它页内换选中卡时主动发的——
   //    选中就是第二档，取消选中（点空白，它自己原有的手势）就退回第一档。 ──
@@ -226,8 +206,6 @@
     if (ev.source === matrixFrame.contentWindow) {
       if (d.type !== 'pto:tier') return;
       if (d.tier === 3) {
-        tier = 3;
-        backBtn.textContent = '← 返回选中+兄弟';
         renderBrief(d.brief);
       } else if (d.sel != null && d.brief) {
         showTier2(d.sel, 'tp' + d.brief.coord.tp + ' cp' + d.brief.coord.cp + ' dp' + d.brief.coord.dp

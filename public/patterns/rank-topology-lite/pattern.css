@@ -30,29 +30,16 @@ html, body {
   pointer-events: none;
 }
 
-/* ── 返回按钮：第二/三档出现，左上角。top 让开矩阵自己的画布名字（第三档
-   显示矩阵时，它自己的 .pt-stagetitle 在 embed 形态下占 top:10px、
-   min-height:44px——矩阵自己的返回钮在这个形态下也是让到 top:56px，
-   这里贴同一个数，不是另起一个凑出来的间距，也不碰矩阵自己的标题）。
-   配色贴 compute-graph-viewer 抽象图网页 prompt 的深色卡片令牌：surface
-   #1F1F1F、主文字 #E8E8E8、次文字 #A0A0A0——不描边（"无边框灰卡"，区域靠
-   色差/间距分，不靠框线）、不用玻璃模糊（prompt 明确避免玻璃效果）。 ───── */
-.back-btn {
-  position: fixed; left: 16px; top: 56px; z-index: 6;
-  font-size: 12px; color: #A0A0A0; text-decoration: none;
-  background: #1F1F1F; border: 0; border-radius: 999px;
-  padding: 6px 14px; cursor: pointer;
-  transition: opacity .2s ease, color .2s ease;
-}
-.back-btn:hover { color: #E8E8E8; }
-.back-btn.is-hidden { opacity: 0; pointer-events: none; }
-
 /* ── 悬浮数据卡：只在第二/三档出现，钉在视口右上角、让开顶栏一档（不跟画布
-   缩放平移）——左上是返回按钮、下边正中是角标；右下角在第二档（逻辑魔方）
-   是它自己图例的地盘（.prc-legend，同一角落），第三档（矩阵）右上角只有一颗
-   小齿轮、这颗卡让开一档就不会压到它——两档统一走右上，不必按档位换位置。
-   配色与返回按钮同一套 compute-graph-viewer 令牌，浮卡本身也不例外于
-   "默认只有黑白"：容量告警只靠说法/字重分挡，不引入色相。 ──────────────── */
+   缩放平移）——档位读法交给面包屑（逻辑魔方顶栏的模型名+rank 后缀、矩阵
+   自己的画布名字），这颗卡不用再跟一颗"返回"按钮分地盘；右下角在第二档
+   （逻辑魔方）是它自己图例的地盘（.prc-legend，同一角落），第三档（矩阵）
+   右上角只有一颗小齿轮、这颗卡让开一档就不会压到它——两档统一走右上，
+   不必按档位换位置。配色贴 compute-graph-viewer 抽象图网页 prompt 的深色
+   卡片令牌：surface #1F1F1F、主文字 #E8E8E8、次文字 #A0A0A0——不描边
+   （"无边框灰卡"，区域靠色差/间距分，不靠框线）、不用玻璃模糊（prompt 明确
+   避免玻璃效果），浮卡本身也不例外于"默认只有黑白"：容量告警只靠说法/
+   字重分挡，不引入色相。 ──────────────────────────────────────────── */
 .brief-card {
   position: fixed; right: 16px; top: 60px; z-index: 6;
   min-width: 200px; max-width: 260px;
