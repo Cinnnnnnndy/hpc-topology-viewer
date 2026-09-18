@@ -51,6 +51,12 @@
     pangu: { tp: 8, pp: 5, dp: 100, ep: 2, matrixPreset: 'pangu', modelName: '盘古 ProMoE' },
     dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64', modelName: '稠密预置' }
   };
+  /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
+     原来选中之后不管第二档（留在逻辑魔方，选中+兄弟）还是第三档（下钻到
+     矩阵），面包屑都只写"模型名 / rank N"两段，第二档这一步在面包屑里
+     直接被跳过了。这里补成第三段，两处（逻辑魔方招牌的 tierlabel、矩阵
+     stitle 的对应写法）用同一个字符串，读起来是同一句话。 */
+  var TIER2_LABEL = '选中+兄弟';
   var PS = PRESETS[qs.get('preset')] || PRESETS.pangu;
   var world = PS.tp * PS.pp * PS.dp;
 
@@ -96,9 +102,12 @@
   // 已经摆得清清楚楚，画布这层不用再重复一份彩色阵列；"卡片还是保留彩色"
   // 指的是右侧详情卡与装载清单的颜色，那两处不受这条影响，独立打开
   // /rubik-pattern.html 也不受影响，默认还画这圈格子。
+  // tierlabel=：面包屑第三段，见上面 TIER2_LABEL 的注释——独立打开
+  // /rubik-pattern.html 不传这个参数，默认还是"模型名 / rank N"两段。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
-    color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0'
+    color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0',
+    tierlabel: TIER2_LABEL
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
@@ -118,12 +127,15 @@
   // 名称来做全部的命名和面包屑"）——不换一套说法，读者从第二档点进来，
   // 左上角那行字只是从这一层渲染的换成矩阵自己渲染的，内容不跳。
   // 分隔符用 "/" 不用 "·"："都放成面包屑用/分隔"——与逻辑魔方招牌
-  // （syncBrand）、上面 world≤64 那条 stitle 统一成同一套写法。
+  // （syncBrand）、上面 world≤64 那条 stitle 统一成同一套写法。三段式
+  // （模型名 / TIER2_LABEL / rank N）跟逻辑魔方那边的 tierlabel 拼法
+  // 完全一致：从第二档点"下钻"换到这一屏时，左上角那行字只是从逻辑魔方
+  // 渲染的换成矩阵渲染的，字面上一个字不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
       embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
-      stitle: PS.modelName + ' / rank ' + matrixSel
+      stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
   }

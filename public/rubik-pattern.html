@@ -85,6 +85,10 @@
     // 自己的名字——只有宿主想把它认成别的东西（比如 rank-topology-lite
     // 把它接进真实模型的三档取景，招牌该写模型名而不是 pattern 名）时才用。
     brandName: qs.get('brand') || undefined,
+    // 选中之后插在"模型名"和"rank N"中间的第三段面包屑（?tierlabel=）：
+    // 宿主自己的取景档位名字（比如 rank-topology-lite 第二档的"选中+
+    // 兄弟"），默认不传，面包屑仍是"模型名 / rank N"两段，跟改动前一样。
+    brandTierLabel: qs.get('tierlabel') || undefined,
     // 并行度配置（默认值，工具栏「并行」输入排可随时改）：128 卡小规格
     // rank = tp×pp×dp = 2×4×16 = 128（EP 不参与乘法，折入 DP 轴：ep8 把 16 副本
     // 分成 8 桶 × 2 个 A2A 域）。落地这一档是因为每张卡看得清、每一段数得出，

@@ -809,12 +809,22 @@
        一样不带任何后缀）——面包屑挂在名字后面，不再单独占一块地。
        分隔符用 "/" 不用 "·"：反馈「都放成面包屑用/分隔」，跟矩阵那边
        stitle 的写法（见 rank-topology-lite/pattern.js 的 matrixSrcFor）
-       对齐，两块题面换形态时读起来是同一套语法。 */
+       对齐，两块题面换形态时读起来是同一套语法。
+       opts.brandTierLabel（?tierlabel= 转进来的）：选中之后插在"模型名"和
+       "rank N"中间的第三段面包屑，比如 rank-topology-lite 的第二档"选中+
+       兄弟"——反馈「面包屑应该是3层」「这一层没有对应的面包屑」：宿主有
+       自己的取景档位概念（1 集群 / 2 选中+兄弟 / 3 单卡下钻），只写模型名
+       和 rank 号，中间那一档在面包屑里直接被跳过了，读者看不出"选中+
+       兄弟"这一步存在过。这个名字是宿主自己的取景语汇，逻辑魔方不该替
+       它编，所以走 opts 传入；默认不传，行为跟改动前一样，只有一段
+       "模型名 / rank N"。 */
     const brandEl = $('.prc-brandname');
     const brandBase = String(opts.brandName || '逻辑魔方');
+    const brandTier = opts.brandTierLabel ? String(opts.brandTierLabel) : '';
     function syncBrand() {
       if (!brandEl) return;
-      brandEl.textContent = brandBase + (S.sel != null ? ' / rank ' + S.sel : '');
+      brandEl.textContent = brandBase
+        + (S.sel != null ? (brandTier ? ' / ' + brandTier : '') + ' / rank ' + S.sel : '');
     }
 
     /* ── three 场景 ── */
