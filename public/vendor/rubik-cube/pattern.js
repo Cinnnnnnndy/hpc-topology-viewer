@@ -759,7 +759,12 @@
         // 顶栏（对齐设计系统 sidecar 的页头）：左边是这张图叫什么 + 规格小签，
         // 右边是配置（形态 / 视角两组互斥控件 + 「更多」抽屉）。
         '<div class="prc-topbar">',
-        '  <div class="prc-brandname">逻辑魔方</div>',
+        /* brandName：默认还是"逻辑魔方"（这个 pattern 自己的名字）——只有
+           显式传了 opts.brandName 的宿主（目前只有 rank-topology-lite，见它
+           自己的 ?brand= 桥接）才会换成别的名字，独立打开 /rubik-pattern.html
+           或别处嵌入这份 pattern 都不受影响。这里插进 innerHTML 的字符串，
+           跟文件别处的 esc() 一个手法，自己转义一遍，不信任调用方传干净的。 */
+        '  <div class="prc-brandname">' + String(opts.brandName || '逻辑魔方').replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>',
         '  <div class="prc-tools">',
         '    <span class="prc-group segmented-control prc-row-modes"></span>',
         '    <span class="prc-group segmented-control prc-row-views"></span>',

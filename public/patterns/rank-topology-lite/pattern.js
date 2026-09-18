@@ -41,19 +41,24 @@
   /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
      ?preset=dense64 是 demo.html 自己现成的 64 卡预置，用来验证"world ≤ 64
-     直接显示矩阵原页"这条规则确实会触发，不是摆着不用的死分支。 */
+     直接显示矩阵原页"这条规则确实会触发，不是摆着不用的死分支。
+     modelName：全部命名/面包屑的唯一来源——不编一个新名字，直接抄 demo.html
+     自己 PRESETS 数组里给这个 preset 起的名字（那份是"模型叫什么"这件事的
+     权威出处），这一层不重复维护第二份。 */
   var PRESETS = {
-    pangu: { tp: 8, pp: 5, dp: 100, ep: 2, matrixPreset: 'pangu' },
-    dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64' }
+    pangu: { tp: 8, pp: 5, dp: 100, ep: 2, matrixPreset: 'pangu', modelName: '盘古 ProMoE' },
+    dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64', modelName: '稠密预置' }
   };
   var PS = PRESETS[qs.get('preset')] || PRESETS.pangu;
   var world = PS.tp * PS.pp * PS.dp;
 
   if (world <= 64) {
     /* 规模小：矩阵本体自己一屏就是全部——不铺逻辑魔方、不裁剪它的任何交互，
-       与直接打开 /patterns/rank-topology-3d/ 逐字节相同。 */
+       与直接打开 /patterns/rank-topology-3d/ 逐字节相同。stitle 换成模型
+       名称，跟三档取景那条路用的是同一个名字来源，不是另起一套说法。 */
     var plainP = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, card: '1', view: 'chain', vtab: '3d'
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, card: '1', view: 'chain', vtab: '3d',
+      stitle: PS.modelName + ' · ' + world + ' 卡'
     });
     matrixFrame.src = '../rank-topology-3d/pattern.html?' + plainP.toString();
     matrixFrame.classList.remove('is-hidden');
@@ -69,9 +74,11 @@
   // groupgap=3：拉开 tp/pp/dp/ep 各组之间的缝，这种规模下"这是几段/几片"才
   // 读得出来——独立打开的 /rubik-pattern.html 默认 1（原样间距），这个参数
   // 只在这里传，呼应"默认状态下参考并行拓扑拉大间距、让分组更明显"那条反馈。
+  // brand=：逻辑魔方顶栏那块"逻辑魔方"招牌换成模型名称——同一条"用模型
+  // 名称做全部命名"的规矩，这一层管得到的每一处都不留生造的产品名。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
-    color: 'neutral', groupgap: '3'
+    color: 'neutral', groupgap: '3', brand: PS.modelName
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
@@ -87,10 +94,14 @@
   // 现在只服务一张卡（不再是一整条兄弟行），色相不会跟别的卡打架，彩色
   // 反而比黑白更好读。mono 继续保留给 rank-topology-3d/net-slicing/
   // model-netgraph 这类会同屏画很多卡、需要收敛色相的场景用。
+  // stitle：矩阵原生的画布名字接管这块地时，续用同一个模型名称（"用模型
+  // 名称来做全部的命名和面包屑"）——不换一套说法，读者从第二档点进来，
+  // 左上角那行字只是从这一层渲染的换成矩阵自己渲染的，内容不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
       embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1',
-      view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel)
+      view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
+      stitle: PS.modelName + ' · rank ' + matrixSel
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
   }
@@ -109,6 +120,13 @@
 
   var tier = 1;
   var pendingMatrixSel = null;   // 第二档选中的那张卡，换算好的矩阵 rank——第三档就是拿它去开矩阵
+
+  /* 三档的"这是什么"这句话，全部交给当前显示的那个 iframe 自己的原生标题说，
+     这一层不再另起一块牌子重复一遍：第一/二档是逻辑魔方自己的顶栏招牌
+     （见 rubikParams 的 brand=，已经从它自己的默认名"逻辑魔方"换成模型
+     名称）与它选中后自己浮出的"RANK / rank N"身份面板；第三档是矩阵自己的
+     画布名字（见 matrixSrcFor 的 stitle=）。三处名字同一个来源（PS.modelName），
+     读起来是一句话，不是宿主外挂一层跟原生标题抢地、还经常撞在一起的重复牌子。 */
 
   function showOverview() {
     matrixFrame.classList.add('is-hidden');

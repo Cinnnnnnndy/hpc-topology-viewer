@@ -5389,17 +5389,19 @@ function netScene(D, g, box, step){
           CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
         } else {
           CE.forEach(function(e){
-            /* 素色：选中那张卡的白框是"这是哪一张"的身份标记，容量告警红是
-               "超没超"的状态标记——两句话都要紧，但盘古 ZeRO=0 下结构性溢出面
-               太大，几乎每张卡（含选中的这张）都会命中 capCol，红一压下来白框
-               就没了，读者反而认不出选中的是哪一张。身份优先于告警：selected
+            /* 选中那张卡的白框是"这是哪一张"的身份标记，容量告警红是"超没超"的
+               状态标记——两句话都要紧，但盘古 ZeRO=0 下结构性溢出面太大，
+               几乎每张卡（含选中的这张）都会命中 capCol，红一压下来白框就
+               没了，读者反而认不出选中的是哪一张。身份优先于告警：selected
                卡的白框固定不被 capCol 顶掉，超没超交给左下角读出卡的数字说
-               （它已经写着"合计 XGB / 64GB"）。这条只在 mono 下生效——
-               rank-topology-3d 直接访问时 capCol 仍按原样压过 meC。
-               告警本身不丢，只是改用**非色相**的记号说：capCol 那一档在 mono 下
-               已经换成了次级灰（见上面 capCol 的三目），线宽/不透明度的加粗照旧，
-               于是三层关系还在——选中（纯白）＞ 告警（次级灰·粗）＞ 普通（暗灰）。 */
-            var edgeCol9 = (ui.mono && meC) ? 'var(--pt-fg)'
+               （它已经写着"合计 XGB / 64GB"）。这条挂在 fastCard 上——
+               不管这一刻上不上色（mono 开关另算，见下面那半句），"选中的是
+               哪一张"这件事对这个简洁版永远要紧；rank-topology-3d 直接访问
+               （不传 fastcard）时 capCol 仍按原样压过 meC，不改它的既有行为。
+               mono 下 capCol 那一档已经换成了次级灰（见上面 capCol 的三目），
+               线宽/不透明度的加粗照旧，于是三层关系还在——选中（纯白）＞
+               告警（红或次级灰·粗）＞ 普通（维度色或暗灰）。 */
+            var edgeCol9 = (ui.fastCard && meC) ? 'var(--pt-fg)'
               : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.mono ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
             body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
