@@ -17,8 +17,11 @@
                      兄弟卡都摆通信芯片/容量告警，牌子挤在一起反而更花。
                      宿主右下角浮出一句极简的"↓ 单卡下钻"邀请，点了才进详情。
      3 单卡下钻    —— 点那句邀请，才真正换到并行拓扑矩阵本体（fastcard=1&
-                     mono=1&solo=1）：连兄弟卡也隐去，看的是这一张卡内部
-                     的填充版——真实容量读出、显存构成明细、卡内那一级通信。
+                     solo=1）：连兄弟卡也隐去，看的是这一张卡内部的填充版
+                     ——真实容量读出、显存构成明细（保留原本的彩色：权重/
+                     梯度/优化器态/专家/激活各自的颜色在说"这一块字节是
+                     什么"，现在只服务一张卡，不会跟别的卡的颜色打架）、
+                     卡内那一级通信。
    退档同一条规矩——点空白/点返回按钮一次退一档：第 3→2 档不换 iframe，
    只让矩阵切自己的 soloCard（一句 pto:tier 指令）；第 2→1 档才真的把矩阵
    藏起来，回到逻辑魔方（它本来就还停在原地，不用重新加载）。tier2 完全
@@ -72,17 +75,21 @@
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
-  // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&mono=1&solo=1 ──────
+  // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
   // 详情态才会「不画坐标轴/EP 组框、无关联的卡直接不画、选中即飞焦」；不传就是
   // rank-topology-3d 自己原本的样子（标签/群组色照常画）。
-  // mono=1：整屏收成黑白灰阶——维度签名色、显存成分色、通信芯片、容量告警棱线、
-  // 卡面填充一起退回中性。
   // solo=1：连兄弟卡也隐去，只看这一张卡内部——矩阵现在只在第三档才被打开，
   // 打开就直接是这一档，不必先落在"选中+兄弟"再等一次点击才往里走。
+  // 不传 mono：早先给这一档也传过 mono=1（整屏收黑白灰阶），但反馈原话
+  // "选中之后的内部填充维持之前的彩色"——显存构成（权重/梯度/优化器态/
+  // 专家/激活…）各自的颜色不是装饰，是在说"这一块字节是什么"，solo 视图
+  // 现在只服务一张卡（不再是一整条兄弟行），色相不会跟别的卡打架，彩色
+  // 反而比黑白更好读。mono 继续保留给 rank-topology-3d/net-slicing/
+  // model-netgraph 这类会同屏画很多卡、需要收敛色相的场景用。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', mono: '1', solo: '1',
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel)
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
