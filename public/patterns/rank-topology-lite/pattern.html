@@ -22,11 +22,14 @@
     兄弟卡高亮——原样接管，这一层不重新画一遍。逻辑魔方与并行拓扑各自的
     rank 编号公式不同（内部打包顺序不一样），切换时按 (tp,pp,dp) 坐标换算，
     不是直接把数字抄过去（见 pattern.js 里 rubikSelToMatrixSel 的注释）。
-  · 「← 返回魔方视图」按钮把画面切回逻辑魔方（不销毁两个 iframe，只是换哪个
-    在最上层），随时可以再点别的卡。
+  · 矩阵内部再点一次选中卡，会切到它自己的"单卡下钻"档（连兄弟卡也隐去，
+    看的是这一张卡内部），通过 pto:tier 消息把档位报回这一层，返回按钮与
+    悬浮数据卡跟着换。「← 返回」按钮跟"点空白处"一个规矩——一次退一档。
 
   两边都不缩小、不加框，边到边铺满视口——拓扑本身就是全屏幕的画布，不是
-  「一张卡片放中间」。
+  「一张卡片放中间」。选中卡之后，右下角悬浮一张数据卡（rank 坐标、层段、
+  容量告警、兄弟卡数/显存构成明细），数据全部来自矩阵 iframe 上报的已算好的
+  摘要，这一层不重算、不编数字。
 -->
 </head>
 <body>
@@ -34,6 +37,8 @@
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 选中卡详情"></iframe>
 
   <button id="backBtn" class="back-btn is-hidden" type="button">← 返回魔方视图</button>
+
+  <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
 
   <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
 

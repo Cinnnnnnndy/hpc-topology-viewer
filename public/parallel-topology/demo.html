@@ -10490,8 +10490,53 @@ function ptoSetTier(n9){
    parent === window，这里什么也不做。 */
 function ptoNotifyTier(){
   if(window.parent && window.parent !== window){
-    window.parent.postMessage({type:'pto:tier', tier: ptoTier(), sel: sel}, '*');
+    window.parent.postMessage({type:'pto:tier', tier: ptoTier(), sel: sel, brief: ptoRankBrief()}, '*');
   }
+}
+/* 选中这只卡的一份**已经算好的**摘要，随档位一起发给宿主。
+   为什么由这一格算、而不是让宿主自己算：容量口径（memParts / capVerdict / 组成员）
+   全在这个文件里，宿主再实现一遍就会有两套数——同一屏上读出卡写 754GB、
+   浮卡写别的，那种不一致查起来最费劲。宿主只负责摆版式，一个数都不自己造。 */
+function ptoRankBrief(){
+  var D9 = derive(cfg);
+  if(!D9.ok || sel === null || sel >= D9.world) return null;
+  var GiB = Math.pow(2, 30);
+  var co9 = coordsOf(sel, D9);
+  var e9 = D9.moe ? epOf(co9.t, co9.c, co9.d, D9) : null;
+  /* cutDP/cutPP/... 是各条渲染路径（renderChain/graphSVG/sideScene/netScene）
+     各自的局部变量，这个函数是独立的顶层函数，够不到那几个闭包——在这里按
+     同一条公式（见那几处 render 函数开头）自己算一遍，口径必须一致，否则
+     兄弟数就对不上画面上真正高亮的那一批。 */
+  var cutDP9 = ui.kDP && D9.dp > 1, cutPP9 = ui.kPP && D9.pp > 1, cutCP9 = ui.kCP && D9.cp > 1,
+      cutTP9 = ui.kTP && D9.tp > 1, cutEP9 = ui.kEP && D9.moe && D9.ep > 1;
+  var V9 = capVerdict(D9, cutPP9 ? co9.p : 0, sel);
+  var grp9 = {};
+  ['tp','cp','pp','dp','ep'].forEach(function(dm9){
+    var m9 = groupMembers(dm9, sel, D9);
+    grp9[dm9] = m9 ? m9.length : 1;
+  });
+  /* 兄弟卡总数 = 沿任一把**落下的**刀与它同组的卡，去重之后的个数——
+     与 shellOf 里 selTier 那份判断同一个口径（那边定的是"谁画得出来"，
+     这边说的是"一共有几只"，必须是同一批，否则浮卡上的数和画面上数得出来的对不上）。 */
+  var sib9 = {};
+  ['pp','tp','ep','cp','dp'].forEach(function(dm9){
+    if(dm9 === 'pp' && !cutPP9) return;
+    if(dm9 === 'tp' && !cutTP9) return;
+    if(dm9 === 'ep' && !cutEP9) return;
+    if(dm9 === 'cp' && !cutCP9) return;
+    if(dm9 === 'dp' && !cutDP9) return;
+    groupMembers(dm9, sel, D9).forEach(function(r9){ sib9[r9] = 1; });
+  });
+  return {
+    rank: sel, world: D9.world, hbm: D9.hbm,
+    coord: {tp:co9.t, cp:co9.c, dp:co9.d, pp:co9.p, ep: e9 ? e9.ep : null},
+    layers: {lo: co9.p*D9.layersPerStage, hi: (co9.p+1)*D9.layersPerStage - 1, per: D9.layersPerStage},
+    group: grp9,
+    sibs: Math.max(0, Object.keys(sib9).length - 1),
+    cap: {totGB: V9.tot/GiB, capGB: V9.cap/GiB, ratio: V9.ratio, level: V9.level},
+    segs: V9.segs.filter(function(s9){ return s9.bytes > 0; })
+                 .map(function(s9){ return {k:s9.k, label:s9.label, gb:s9.bytes/GiB}; })
+  };
 }
 function applyViewTransform(){
   var svg = $('stage').querySelector('svg');

@@ -44,6 +44,33 @@ html, body {
 .back-btn:hover { color: #E8E8E8; }
 .back-btn.is-hidden { opacity: 0; pointer-events: none; }
 
+/* ── 悬浮数据卡：只在第二/三档出现，钉在视口右下角（不跟画布缩放平移）——
+   左上是返回按钮、下边正中是角标、矩阵自己的设置齿轮在右上角，右下是唯一
+   稳定空着的一角。配色与返回按钮同一套 compute-graph-viewer 令牌，浮卡本身
+   也不例外于"默认只有黑白"：容量告警只靠说法/字重分挡，不引入色相。 ──── */
+.brief-card {
+  position: fixed; right: 16px; bottom: 16px; z-index: 6;
+  min-width: 200px; max-width: 260px;
+  background: #1F1F1F; border-radius: 12px; padding: 12px 14px;
+  font-size: 12px; line-height: 1.6; color: #A0A0A0;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.brief-card.is-hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+.brief-h {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 2px;
+}
+.brief-badge {
+  font-size: 10px; font-weight: 600; color: #A0A0A0;
+  background: #2B2B2B; border-radius: 999px; padding: 1px 8px;
+}
+.brief-badge.is-alert { color: #111111; background: #E8E8E8; }
+.brief-sub { color: #6E6E6E; margin-bottom: 8px; }
+.brief-row { display: flex; justify-content: space-between; gap: 12px; }
+.brief-row span { color: #A0A0A0; }
+.brief-row b { color: #E8E8E8; font-weight: 600; }
+.brief-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #2B2B2B; }
+
 /* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
    各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
 .corner-link {
