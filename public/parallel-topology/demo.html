@@ -522,6 +522,32 @@
 .pt-rankmem .rm-d .c5 .c5h .c5d{color:var(--c); font-weight:800; margin-right:4px}
 .pt-rankmem .rm-d .c5 dd b{color:var(--pt-fg); font-weight:700}
 .pt-rankmem .rm-d .c5why{color:var(--pt-fg3); font-size:11.5px; line-height:1.45}
+/* ── solo 档（第三档单卡下钻）的浮卡群：显存构成不再挤进一张带嵌套明细的
+   表格（.pt-rankmem），拆成几张"纯卡片"各自贴着卡壳上那一条带浮着——
+   参照 incident-canvas 关键少数看板"关键数据都是卡片悬浮在画布上"那条
+   语汇，也是反馈原话"纯卡片"。容器本身不接管点击（转台/缩放的拖拽要
+   照常落到画布上），每张卡自己开一小块热区。 */
+.pt-memcards{position:absolute; inset:0; z-index:8; pointer-events:none}
+.pt-memcards[hidden]{display:none}
+.mc-card{
+  position:absolute; pointer-events:none; width:148px;
+  background:var(--pt-s1); border:1px solid var(--pt-bd); border-radius:10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.16); padding:7px 10px;
+  font-family:var(--pt-mono); transition:opacity .15s ease;
+}
+.mc-card .mc-k{font-size:11px; color:var(--pt-fg3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.mc-card .mc-v{font-size:14px; font-weight:800; color:var(--pt-fg); margin-top:1px}
+.mc-card.mc-over .mc-v{color:var(--mc-over-c, var(--pt-danger))}
+/* 每张卡自己一根引线，指回它在卡壳上那条带——纯色细线，不抢卡片本身的注意力。 */
+.mc-leader{position:absolute; height:1.5px; background:rgba(255,255,255,.55); transform-origin:0 50%; pointer-events:none; box-shadow:0 0 2px rgba(0,0,0,.4)}
+/* 汇总卡（rank 号 + 坐标 + 合计/余量）：这一组浮卡里唯一一张"这是谁"的卡，
+   钉在卡壳门牌旁边，字号比单档卡大一档、宽一档，一眼分得出它是索引不是数据。 */
+.mc-sum{width:190px}
+.mc-sum .mc-rank{font-size:15px; font-weight:800; color:var(--pt-fg)}
+.mc-sum .mc-coord{font-size:11px; color:var(--pt-fg3); margin-top:1px; line-height:1.4}
+.mc-sum .mc-tot{margin-top:5px; padding-top:5px; border-top:1px solid var(--pt-bd); font-size:12.5px; font-weight:800; color:var(--pt-fg)}
+.mc-sum.mc-over .mc-tot{color:var(--mc-over-c, var(--pt-danger))}
+.mc-sum .mc-rem{font-size:11px; color:var(--pt-fg3); font-weight:400}
 /* 粒度标签：三级粒度（副本之间 / 分块之间 / 段与段之间 / rank 内）要一眼能比，
    所以每块都带一枚，位置固定在原语那一行下面。 */
 .pt-rankmem .rm-d .c5gr{color:var(--c, var(--pt-fg3)); font-size:10.5px; letter-spacing:.04em; opacity:.85; margin-bottom:2px}
@@ -912,8 +938,13 @@
     </div>
     <!-- 算子明细卡：点一个算子浮出来，跟着那个算子的位置走 -->
     <aside class="pt-opcard" id="opCard" hidden></aside>
-    <!-- 选中 rank 的容器卡（Rank+关整网）：点亮哪只卡，那只卡「装了什么」浮出来 -->
+    <!-- 选中 rank 的容器卡（Rank+关整网）：点亮哪只卡，那只卡「装了什么」浮出来。
+         solo 档（第三档单卡下钻）下这张卡让位给 memCards——见 renderRankMem 的
+         on 条件与 renderMemCards 的注释。 -->
     <aside class="pt-rankmem" id="rankMem" hidden></aside>
+    <!-- solo 档专用：把显存构成拆成几张纯卡片，各自贴着卡壳上那一条带浮着，
+         而不是挤在一张表里——见 renderMemCards/placeMemCards。 -->
+    <div class="pt-memcards" id="memCards" hidden></div>
     <!-- 选组 HUD：四个视角共用的一行切分组切换（TP·SP/CP/EP/DP/PP），钉在画布下沿 -->
     <div class="pt-grouphud" id="groupHud" hidden></div>
     <div class="pt-animcap" id="animCap"></div>
@@ -5186,7 +5217,23 @@ function netScene(D, g, box, step){
                     mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
                     mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
                 var lzM = 1;
-                if(meC) bandAnchor9[sg8.k] = [(mq0[0]+mq2[0])/2, (mq0[1]+mq2[1])/2];
+                /* 一档跨过壳顶时 MS9 里连着两条（壳内 in + 壳外 over，见 memStack 里
+                   push9 的注释），这两条都是同一个 sg8.k——只认第一条（壳内那半，
+                   真装进去的那部分）当这一档的锚点/代表点：那半是这一档在卡上**看
+                   得见的主体**，壳外那半往往只是一小截溢出的尾巴，拿它当代表点会把
+                   浮卡的引线甩到卡顶老远的地方去。只有整档都在壳外（没有壳内那半）
+                   才退回用壳外那半。 */
+                if(meC && (!sg8.over || !bandAnchor9[sg8.k])){
+                  bandAnchor9[sg8.k] = [(mq0[0]+mq2[0])/2, (mq0[1]+mq2[1])/2];
+                  /* solo 档的浮卡（renderMemCards/placeMemCards）要贴着这一档在屏幕上
+                     的真实位置走——不接着这里的 viewBox 坐标自己算一遍 CSS px（那份
+                     math 跟 applyViewTransform 的 zoom/pan/rotate 增量强绑定，抄错一步
+                     就会在转台/缩放时跟丢），照抄 placeOpCard 的路子：挂一个不接管
+                     点击的锚点（pointer-events:none），要贴哪儿直接量它的
+                     getBoundingClientRect()，浏览器已经把当前那套变换算好了。 */
+                  hit.push('<circle cx="'+bandAnchor9[sg8.k][0].toFixed(1)+'" cy="'+bandAnchor9[sg8.k][1].toFixed(1)
+                    +'" r="1" style="fill:transparent;pointer-events:none" data-memblock="'+sg8.k+'"/>');
+                }
                 /* ── (a) 读出卡点开某一块 → 卡上那条带跳出来 ────────────────
                    压暗**别的**档而不是给选中那档描边：这只卡本来就密（五档 + 算子块
                    + 缝），再加一圈亮边只是多一样东西；把其余压下去，剩下的那条自然
@@ -10601,6 +10648,7 @@ function applyViewTransform(){
     ? '' : 'translate('+(Ax*(1-k) + m*tx).toFixed(2)+'px,'+(Ay*(1-k) + m*ty).toFixed(2)+'px) scale('+k.toFixed(4)+')';
   syncZoomHud();
   placeOpCard();            /* 手势里卡跟着它那个算子走：只重新贴位，不重排内容 */
+  placeMemCards();          /* solo 档浮卡同理：转台/缩放/平移时只重新贴位 */
   scheduleCrisp();
 }
 function scheduleCrisp(){
@@ -13228,7 +13276,13 @@ function renderRankMem(D){
      ——两份读数摆在同一屏，读者会先花一秒确认它们是不是同一份。改成**只留这张
      标准卡**，那栏文字删掉（见 renderSolidGrid），腾出来的画布宽度分给托盘本身。 */
   var inGrid = ui.view==='solid' && ui.persp==='grid';
-  var on = (ui.view==='chain' && ui.cardMode && ui.netOff || inGrid) && sel!==null && !ui.hlSel && D.ok && sel < D.world;
+  /* solo 档（第三档单卡下钻，ui.fastCard && ui.soloCard）让位给 renderMemCards——
+     反馈「纯卡片」「也作为卡片悬浮在整个3d的卡片四周」：这一档只服务一张卡，
+     这张带嵌套明细/可展开行的标准读出卡换成几张贴着卡壳浮的纯卡片更合这一档
+     的题面。别的场景（默认矩阵、net-slicing、model-netgraph，以及 fastCard
+     但没进 solo 的第二档取景）这张卡照旧，不受影响。 */
+  var solo9 = ui.fastCard && ui.soloCard;
+  var on = (ui.view==='chain' && ui.cardMode && ui.netOff || inGrid) && sel!==null && !ui.hlSel && D.ok && sel < D.world && !solo9;
   if(!on){ el.hidden = true; ui.memSel = null; ui.memSelG = null; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, lps = D.layersPerStage;
   /* 点开的那一块只属于**点开它时那张卡**：换了卡还留着上一张的展开，读者会把
@@ -13344,6 +13398,92 @@ function renderRankMem(D){
 ;
   el.hidden = false;
 }
+/* ── solo 档（第三档单卡下钻）浮卡群：显存构成不再挤进 renderRankMem 那张
+   带嵌套明细的标准读出卡，拆成几张"纯卡片"——一档一张，只写名字与字节数，
+   不带可展开的子行/公式/反查那些第二档还有意义、这一档已经用不上的东西
+   （反馈原话「纯卡片」）。汇总卡（rank 号/坐标/合计/余量）另算一张，钉在
+   卡壳自己的门牌上方。每张卡的屏幕位置不接着 viewBox 坐标自己算一遍
+   （那份 math 跟 applyViewTransform 的 zoom/pan/rotate 增量强绑定），照抄
+   placeOpCard 的路子：量对应那个锚点元素的 getBoundingClientRect()。 */
+function renderMemCards(D){
+  var elWrap = $('memCards');
+  if(!elWrap) return;
+  var solo9 = ui.fastCard && ui.soloCard;
+  var on = solo9 && ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel<D.world;
+  if(!on){ elWrap.hidden = true; elWrap.innerHTML = ''; return; }
+  var g = sel, co = coordsOf(g, D), p = co.p, me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
+  var segs = memParts(D, p, g).filter(function(sg){ return sg.bytes > 0; });
+  var tot = segs.reduce(function(a,x){ return a+x.bytes; }, 0);
+  var cap = D.hbm*Math.pow(2,30), over9 = tot > cap;
+  /* 素色下告警红也换灰：跟画布里这一档一直守的那条规矩（memStack 里 ovC9 的
+     写法）同一句话，不给浮卡另开一套配色。 */
+  var overC9 = ui.mono ? 'var(--pt-fg)' : 'var(--pt-danger)';
+  var html = '<div class="mc-card mc-sum'+(over9?' mc-over':'')+'" style="--mc-over-c:'+overC9+'" data-mc="__sum__">'
+    + '<div class="mc-rank">rank '+g+(over9?' <span style="color:'+overC9+';font-size:11px;font-weight:700">⚠ 超出容量</span>':'')+'</div>'
+    + '<div class="mc-coord">tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+p+(me?' ep'+me.ep:'')+' · L'+(p*D.layersPerStage)+'–L'+((p+1)*D.layersPerStage-1)+'</div>'
+    + '<div class="mc-tot">合计 '+fmtGB(tot)+' / '+D.hbm+' GB<br><span class="mc-rem">余量 '+fmtGB(cap-tot)+'</span></div></div>';
+  segs.forEach(function(sg){
+    html += '<div class="mc-card" data-mc="'+esc(sg.k)+'"><div class="mc-k">'+esc(sg.label)+'</div><div class="mc-v">'+fmtGB(sg.bytes)+' GB</div></div>';
+  });
+  elWrap.hidden = false;
+  elWrap.innerHTML = html;
+  placeMemCards();
+}
+/* 贴位：卡壳窄、几档的锚点（data-memblock，登记在 MS9 渲染那一步，见 5180 行
+   附近）挤在同一小片屏幕里，直接"贴着锚点摆"几乎必叠。改成两段：
+     汇总卡——贴这张卡自己的命中面（装不下时优先用 cardfull，圈住顶出壳外的
+       那截，跟 scheduleCamSettle 的居中锚点同一个道理），钉在卡壳正上方；
+     每档卡——不贴锚点本身，摆成卡壳一侧的**一列**（右侧放不下就换左侧），
+       固定间距纵向排开，不会互相挤；每张卡另拉一根细引线连回它真正的锚点，
+       "在哪列/第几张"与"它说的是卡上哪条带"两件事分开各自解决，就不需要
+       一套真正的矩形装箱算法来防叠。 */
+function placeMemCards(){
+  var elWrap = $('memCards');
+  if(!elWrap || elWrap.hidden) return;
+  var st = $('stage'); if(!st) return;
+  var sr = st.getBoundingClientRect();
+  var g9 = sel;
+  Array.prototype.forEach.call(elWrap.querySelectorAll('.mc-leader'), function(l){ l.remove(); });
+  var boxEl = st.querySelector('[data-k="cardfull"][data-i="'+g9+'"]')
+    || st.querySelector('[data-act="chainpick"][data-k="card"][data-i="'+g9+'"]');
+  var boxR = boxEl ? boxEl.getBoundingClientRect() : sr;
+  var boxLeft = boxR.left - sr.left, boxRight = boxR.right - sr.left, boxTop = boxR.top - sr.top;
+
+  var sumCard = elWrap.querySelector('.mc-card[data-mc="__sum__"]');
+  if(sumCard){
+    var scw = sumCard.offsetWidth || 190, sch = sumCard.offsetHeight || 70;
+    sumCard.style.left = clamp((boxLeft+boxRight)/2 - scw/2, 4, Math.max(4, sr.width - scw - 4)).toFixed(0)+'px';
+    sumCard.style.top = clamp(boxTop - sch - 16, 4, Math.max(4, sr.height - sch - 4)).toFixed(0)+'px';
+  }
+
+  var segCards = Array.prototype.filter.call(elWrap.querySelectorAll('.mc-card'), function(c){ return c !== sumCard; });
+  if(!segCards.length) return;
+  var cw0 = segCards[0].offsetWidth || 148, gap = 10, margin = 24;
+  var side = (sr.width - boxRight - margin) >= cw0 + 8 ? 'right' : 'left';
+  var stackX = side === 'right' ? Math.min(boxRight + margin, sr.width - cw0 - 8) : Math.max(boxLeft - margin - cw0, 8);
+  var y = clamp(boxTop + 8, 4, sr.height - 8);
+  segCards.forEach(function(card){
+    var k = card.getAttribute('data-mc');
+    var anchorEl = st.querySelector('[data-memblock="'+k+'"]');
+    var cw = card.offsetWidth || cw0, ch = card.offsetHeight || 40;
+    var top = clamp(y, 4, Math.max(4, sr.height - ch - 4));
+    var left = clamp(stackX, 4, Math.max(4, sr.width - cw - 4));
+    card.style.left = left.toFixed(0)+'px';
+    card.style.top = top.toFixed(0)+'px';
+    y = top + ch + gap;
+    if(!anchorEl) return;
+    var tr = anchorEl.getBoundingClientRect();
+    var ax = tr.left + tr.width/2 - sr.left, ay = tr.top + tr.height/2 - sr.top;
+    var ex = side === 'right' ? left : left + cw, ey = top + ch/2;
+    var dx = ex - ax, dy = ey - ay, len = Math.sqrt(dx*dx + dy*dy);
+    var leader = document.createElement('div');
+    leader.className = 'mc-leader';
+    leader.style.left = ax.toFixed(1)+'px'; leader.style.top = ay.toFixed(1)+'px';
+    leader.style.width = len.toFixed(1)+'px';
+    leader.style.transform = 'rotate('+(Math.atan2(dy, dx)*180/Math.PI).toFixed(2)+'deg)';
+    elWrap.appendChild(leader);
+  });
+}
 
 /* ═════════ 总渲染 ═════════ */
 function render(){
@@ -13386,6 +13526,7 @@ function render(){
     else renderV2(D);
   }
   renderRankMem(D);
+  renderMemCards(D);
   renderDetail(D);
   renderHLBadge(D);
   var dr = $('drawer');
