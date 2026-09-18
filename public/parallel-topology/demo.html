@@ -13450,10 +13450,19 @@ function placeMemCards(){
   var boxLeft = boxR.left - sr.left, boxRight = boxR.right - sr.left, boxTop = boxR.top - sr.top;
 
   var sumCard = elWrap.querySelector('.mc-card[data-mc="__sum__"]');
+  var sumBottom9 = boxTop;   /* 舞台矮/嵌入 iframe 窄时兜底：没有汇总卡就当它贴着壳顶 */
   if(sumCard){
     var scw = sumCard.offsetWidth || 190, sch = sumCard.offsetHeight || 70;
+    var sumTop9 = clamp(boxTop - sch - 16, 4, Math.max(4, sr.height - sch - 4));
     sumCard.style.left = clamp((boxLeft+boxRight)/2 - scw/2, 4, Math.max(4, sr.width - scw - 4)).toFixed(0)+'px';
-    sumCard.style.top = clamp(boxTop - sch - 16, 4, Math.max(4, sr.height - sch - 4)).toFixed(0)+'px';
+    sumCard.style.top = sumTop9.toFixed(0)+'px';
+    /* 汇总卡钉的是"壳顶上方 16px"，可舞台矮（比如嵌进 rank-topology-lite 的
+       那格 iframe，高度远不到 900）、壳顶本身就离舞台顶不到 sch+16 时，上面
+       那行 clamp 会把它摁到 top:4 强行塞下——这一夹，汇总卡的下沿就可能反而
+       落到壳顶**下面**去，跟第一张纵列卡撞在一起（反馈原话"点开每一个都
+       超出rank了"：各档卡的框线压住了汇总卡）。纵列的起点因此不能只认
+       boxTop，要跟汇总卡真实落地之后的下沿取较大值。 */
+    sumBottom9 = sumTop9 + sch;
   }
 
   var segCards = Array.prototype.filter.call(elWrap.querySelectorAll('.mc-card'), function(c){ return c !== sumCard; });
@@ -13461,7 +13470,7 @@ function placeMemCards(){
   var cw0 = segCards[0].offsetWidth || 148, gap = 10, margin = 24;
   var side = (sr.width - boxRight - margin) >= cw0 + 8 ? 'right' : 'left';
   var stackX = side === 'right' ? Math.min(boxRight + margin, sr.width - cw0 - 8) : Math.max(boxLeft - margin - cw0, 8);
-  var y = clamp(boxTop + 8, 4, sr.height - 8);
+  var y = clamp(Math.max(boxTop + 8, sumBottom9 + gap), 4, sr.height - 8);
   segCards.forEach(function(card){
     var k = card.getAttribute('data-mc');
     var anchorEl = st.querySelector('[data-memblock="'+k+'"]');
