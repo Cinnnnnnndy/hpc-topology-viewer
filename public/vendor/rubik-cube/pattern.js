@@ -2640,20 +2640,31 @@
             mm.position.set(px, py, 0); mm.renderOrder = 7; shardGroup.add(mm);
           }
         }
-        // 行末挂算子名（本卡没有的压暗）
-        const lab = makeLabel(o.short || o.name.split(/[ （(]/)[0], carried ? fam : bd, 2.4);
-        lab.position.set(-w / 2 - CARD.x * 0.28, ((objs.length - 1) / 2 - yi) * (CW + GAP), 0);
-        lab.center.set(1, 0.5);
-        lab.material.opacity = carried ? 1 : 0.45;
-        lab.material.userData = { base: carried ? 1 : 0.45, noPulse: true };
-        lab.renderOrder = 8; shardGroup.add(lab);
+        /* 行末挂算子名（本卡没有的压暗）——只在 opts.cardCubeLabels 不为 false
+           时画。这两枚字牌钉在 3D 世界坐标上，跟着相机转，规模一大、卡挤在
+           一起时会飘到宿主自己的 DOM 侧栏（选中卡详情、连线图例）那片地界
+           上，两层信息叠在一起。右侧详情卡（detailEl，见 syncDetailCap）
+           已经把同一句话（rank / 层区间 / 横纵轴 / 对象列表）摆得清清楚楚，
+           这两枚字牌因此是可选的——默认还画（不改变任何既有消费者的样子），
+           只有显式传了 cardCubeLabels:false 的宿主才会收起来，格子本身
+           （下面那圈彩色小方块）照常画，少的只是文字。 */
+        if (opts.cardCubeLabels !== false) {
+          const lab = makeLabel(o.short || o.name.split(/[ （(]/)[0], carried ? fam : bd, 2.4);
+          lab.position.set(-w / 2 - CARD.x * 0.28, ((objs.length - 1) / 2 - yi) * (CW + GAP), 0);
+          lab.center.set(1, 0.5);
+          lab.material.opacity = carried ? 1 : 0.45;
+          lab.material.userData = { base: carried ? 1 : 0.45, noPulse: true };
+          lab.renderOrder = 8; shardGroup.add(lab);
+        }
       });
-      // 顶部一枚牌交代这个小魔方的两根轴
-      const cap = makeLabel(`卡内 · L${lr.lo}-L${lr.hi}`, tokHex('--foreground'), 3.4,
-        `横=层 ×${LN} · 纵=算子 ×${objs.length}`);
-      cap.position.set(0, h / 2 + CARD.y * 0.42, 0);
-      cap.material.userData = { base: 1, noPulse: true };
-      cap.renderOrder = 8; shardGroup.add(cap);
+      if (opts.cardCubeLabels !== false) {
+        // 顶部一枚牌交代这个小魔方的两根轴
+        const cap = makeLabel(`卡内 · L${lr.lo}-L${lr.hi}`, tokHex('--foreground'), 3.4,
+          `横=层 ×${LN} · 纵=算子 ×${objs.length}`);
+        cap.position.set(0, h / 2 + CARD.y * 0.42, 0);
+        cap.material.userData = { base: 1, noPulse: true };
+        cap.renderOrder = 8; shardGroup.add(cap);
+      }
     }
 
     function buildShard() {
@@ -4095,6 +4106,18 @@
       if (r == null) {
         const e = pickEdge(ev);
         if (e) { api.selectEdge(e); return; }      // 点在连线上 → 只报边，不动选中的卡
+      }
+      /* 再点一次已经选中的那张卡 = 下钻，不是「重新选一遍」（跟并行拓扑矩阵
+         自己那条「再点一次选中的卡 = 往里走一档」的手势同一个读法——两边
+         应该是同一句话）。只在 opts.onDrill 存在时才拦：没传这个回调的宿主
+         （独立打开 /rubik-pattern.html、或者只想要普通选中语义的嵌入方）
+         不受影响，行为跟改动前逐字节相同。 */
+      if (r != null && r === S.sel && opts.onDrill) {
+        opts.onDrill({
+          rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
+          bucket: model.epOf(r), domain: model.domOf(r), stage: model.stageLayerRange(model.ppOf(r)),
+        });
+        return;
       }
       api.select(r == null ? null : r);
     });

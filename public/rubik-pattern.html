@@ -72,6 +72,9 @@
     mode: pick('mode', MODES, 4),        // 落地 = PP流水（能直接读出「哪一段慢」；标准是基准投影，排在最后）
     // 全局字牌字号（?label=16）：整套 3D 标注只此一个入口，越界回落 16
     labelPx: num('label'),
+    // 卡内魔方的两枚 3D 字牌（?cclabels=0 收起）：默认画，宿主自己的详情侧栏
+    // 与它说的是同一句话时才用得上这个参数，见 pattern.js 里的注释。
+    cardCubeLabels: qs.get('cclabels') === '0' ? false : undefined,
     // 顶栏那块"逻辑魔方"招牌换名字（?brand=）：默认不传，就是这个 pattern
     // 自己的名字——只有宿主想把它认成别的东西（比如 rank-topology-lite
     // 把它接进真实模型的三档取景，招牌该写模型名而不是 pattern 名）时才用。
@@ -93,6 +96,12 @@
     onSelect: function(sel){
       // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
       try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}
+    },
+    /* 再点一次已经选中的那张卡：宿主想接的话自己听 rubik-drill；这个 postMessage
+       始终发，不监听它的宿主不受影响（点已选中的卡本来就是空操作，多发一条
+       没人听的消息不改变任何看得见的行为）。 */
+    onDrill: function(sel){
+      try { parent.postMessage({ type: 'rubik-drill', sel: sel }, '*'); } catch(e) {}
     },
     onSelectEdge: function(edge){
       // 联动挂点：点中一条通信边 → 谁到谁、哪一维、哪种原语、跨了哪层物理链路。

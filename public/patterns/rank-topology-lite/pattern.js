@@ -76,9 +76,14 @@
   // 只在这里传，呼应"默认状态下参考并行拓扑拉大间距、让分组更明显"那条反馈。
   // brand=：逻辑魔方顶栏那块"逻辑魔方"招牌换成模型名称——同一条"用模型
   // 名称做全部命名"的规矩，这一层管得到的每一处都不留生造的产品名。
+  // cclabels=0：收起"卡内魔方"那两枚钉在 3D 世界坐标上的字牌（行末算子名 +
+  // 顶部"卡内 · L.."标题）——它们跟着相机转，规模一大会飘到这一层自己的
+  // 悬浮数据卡/返回按钮那片地界上，跟已经在讲同一句话的右侧详情卡叠在一起
+  // （反馈原话"不再这里显示只显示右侧卡片就好"）。彩色小格阵列本身照常画，
+  // 少的只是文字；独立打开 /rubik-pattern.html 不受影响，默认还画这两枚牌。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
-    color: 'neutral', groupgap: '3', brand: PS.modelName
+    color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0'
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
@@ -188,6 +193,13 @@
     var d = ev.data;
     if (!d) return;
     if (ev.source === rubikFrame.contentWindow) {
+      if (d.type === 'rubik-drill') {
+        /* 再点一次已经选中的那张方块 = 下钻——逻辑魔方自己报的坐标已经够
+           换算出矩阵 rank，不用等 pendingMatrixSel（用户可能从深链或退档
+           回来，那个变量这一刻不一定是这张卡），直接算一遍最准。 */
+        if (d.sel && d.sel.rank != null) showDetail(rubikSelToMatrixSel(d.sel));
+        return;
+      }
       if (d.type !== 'rubik-select') return;
       if (d.sel && d.sel.rank != null) {
         var st9 = d.sel.stage;
