@@ -456,7 +456,18 @@
       // 差数量级但都比 1× 松，读者能看出"这也是分着组的"，又不会跟 4× 的主轴
       // 抢视觉重心（4× 定义的就是"主轴该多显眼"，两次遇到的从来不是它）。
       tps: { gapT: stepK('x', TPL, 'emph'), pp: stepK('y', PP, 'spread'), rep: stepK('z', REP, 'spread'), cy: CY },
-      ppf: { gapP: stepK('x', PP, 'emph'), tp: stepK('y', TPL, 'spread'), rep: stepK('z', REP, 'spread'), cy: CY },
+      /* 反馈「按照分组拉开间距」「各个切分组之间拉开间距」——moe718b128k 那档
+         CP=16，PP流水的 Y 轴摆的是 TP×CP 合并 lane（=128），上面那条 'spread'
+         只把 128 个 lane 的步距整体调松，并没有在"这是第几个 CP 组"这件事上
+         留出断点：128 条紧挨着的横线，肉眼看不出是 16 组各 8 条，跟"只有 PP
+         之间有间距"是同一类问题，只是换了一根轴。这里把 Y 轴从"128 个 lane
+         的单一步距"改成"CP 外层分组（块高度+留白）+ TP 内层步距"的复合轴，
+         做法照抄 EP 聚簇形态 X 轴的 gapE（桶墙外维 + tp 内维）那一套——tpIn 是
+         组内每条 TP 的步距，cpGap 是组与组之间的缝（组高度 + padOf），CP=1
+         的预置（tpIn 退化成单组）跟改动前逐位相同。 */
+      ppf: { gapP: stepK('x', PP, 'emph'), tpIn: stepK('y', TP, 'spread'),
+        cpGap: TP * stepK('y', TP, 'spread') + padOf(TP * stepK('y', TP, 'spread')),
+        rep: stepK('z', REP, 'spread'), cy: CY },
       /* 物理平铺：不看任何并行分组，只回答「这张卡插在机房哪个槽位」——X=host 内卡位(slot)
          · Z=host 序号 · Y 恒 0（各形态里唯一不叠高度的一种，真摊平，不是「压扁的立方」）。
          host 数一多会排成一条极长的线，超过 64 台折成 hgx×hgz 近方格（同 DP 平铺的折法）；
@@ -500,7 +511,9 @@
       if (mode === 4) {          // PP 流水：段横向展开成流水线（找慢段/气泡）
         const s = SP.ppf;
         out.x = (pp - cP) * s.gapP;
-        out.y = s.cy + (tp - cT) * s.tp;
+        // Y 轴拆成两层：CP 外层分组（cpGap）+ TP 内层步距（tpIn），CP=1 时
+        // cpOf(r) 恒为 0，退化成单组，与改动前 (tp - cT) * s.tp 逐位相同。
+        out.y = s.cy + (cpOf(r) - (CP - 1) / 2) * s.cpGap + (tpOf(r) - (TP - 1) / 2) * s.tpIn;
         out.z = (rep - cR) * s.rep;
         return out;
       }
@@ -1775,7 +1788,7 @@
       clearAxes();
       axNotes = [];
       updateLabelScale();
-      const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'),
+      const TPc = dimc('TP'), PPc = dimc('PP'), DPc = dimc('DP'), EPc = dimc('EP'), CPc = dimc('CP'),
         NTc = tokHex('--foreground-secondary');   // 中性注释 = 次级前景色
       const hx = (c) => new THREE.Color(c).getHex();
       const TPw = hx(TPc), PPw = hx(PPc), EPw = hx(EPc), NTw = hx(NTc);
@@ -1946,9 +1959,22 @@
         ax3dTicks((i) => `PP${i}`, PPc, 2.6, 'x', PP, (i) => bb.x0 + i * s.gapP, bb,
           { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
         ax3dTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
-        ax3dTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb);
         axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
-        axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tp, bb);
+        if (CP > 1) {
+          /* 反馈「按照分组拉开间距」之后 Y 轴变成了 CP 外层分组 + TP 内层车道的
+             复合轴（见 SP.ppf 定义处注释）——刻度也要跟着换轴：外层 CP 给完整
+             刻度 + 分组隔线（仿 EP 聚簇形态桶墙那一套读法），内层 TP 不再单独
+             出刻度，同一组内的 8 条车道靠间距本身读，跟 EP 桶墙内的 TP 列是
+             同一个读法（那边也没给 TP 单独出刻度）。CP=1 走 else 分支，跟改动
+             前的单层 TP 刻度逐位相同。 */
+          const cpAt = (i) => s.cy + ((CP - 1) / 2 - i) * s.cpGap;
+          axBlockDividers('y', cutsBetween(CP, cpAt), bb, CPc);
+          ax3dTicks((i) => `CP${i}`, CPc, 1.6, 'y', CP, cpAt, bb);
+          axAxisTicks((i) => `CP${i}`, CPc, 1.6, 'y', CP, cpAt, bb);
+        } else {
+          ax3dTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tpIn, bb);
+          axAxisTicks((i) => `TP${i}`, TPc, 1.6, 'y', TP, (i) => s.cy + ((TP - 1) / 2 - i) * s.tpIn, bb);
+        }
       }
       applyGridEmphasis();   // 网格材质刚重建 → 若正处于聚焦态，立刻补回加强
     }
