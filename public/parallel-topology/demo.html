@@ -1171,6 +1171,22 @@ var PRESETS = [
   {id:'moe64', name:'MoE折叠·64卡', cfg:{world:64, tp:2, cp:1, pp:4, ep:8, etp:1, layers:32, hidden:4096, heads:32, kv:8, ffn:2048, vocab:128256, seq:8192, experts:64, topk:2, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}},
   {id:'story128', name:'故事·128卡 tp2·pp4·dp16（48层·H8192）', cfg:{world:128, tp:2, cp:1, pp:4, ep:1, etp:1, layers:48, hidden:8192, heads:64, kv:8, ffn:32768, vocab:128256, seq:8192, experts:0, topk:0, mbs:4, ga:8, hbm:64}},
   {id:'pangu', name:'盘古ProMoE·4000卡', cfg:{world:4000, tp:8, cp:1, pp:5, ep:2, etp:1, layers:40, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:64, topk:8, mbs:1, ga:20, hbm:64}},
+  /* 下面两档取自对 pangu_sophon_pytorch 仓库（Megatron-LM 系、面向昇腾 NPU 的
+     训练框架）config/ 目录的真实读数，不是这一屏自己编的规格：
+       · 13BV2——world/tp/pp/dp 与 model.yaml 的 hidden/layers/heads/ffn、
+         train.yaml 的 seq、accelerate.yaml 的 tp/mbs 逐项对得上（该仓库的
+         world_size = DP×TP×PP×CP 这条公式与本页的 world=tp·cp·pp·dp 是
+         同一条，folding 惯例也一致：详情态字段不冲突）。vocab 那份分析没给
+         精确值（数据集路径里的"7Bvocab"指的是分词器版本号，不是词表大小），
+         沿用本页其余预置常见的 128256，不是从那份分析抄来的。
+       · moe30B——并行切分（tp2·ep32·world64，"30B 参/2B 激活"）是仓库配置表
+         里给的真实数字；但那份分析没给这个 MoE 规格自己的 hidden/layers/
+         heads/ffn/专家数，下面这几项是按"30B 总参、2B 激活"这个量级估的
+         代表值，不是仓库原文——两档预置放在一起，前者每个数字都能对到
+         分析原文，后者只有并行切分那几个数字是，字段来源不一样，别混着当
+         同一件事引用。 */
+  {id:'dense13b', name:'13BV2·32卡 tp8·dp4', cfg:{world:32, tp:8, cp:1, pp:1, ep:1, etp:1, layers:39, hidden:5120, heads:40, kv:40, ffn:20480, vocab:128256, seq:4096, experts:0, topk:0, mbs:2, ga:8, hbm:64}},
+  {id:'moe30b', name:'MoE 30B(A2B)·64卡 tp2·ep32', cfg:{world:64, tp:2, cp:1, pp:1, ep:32, etp:1, layers:24, hidden:2048, heads:16, kv:16, ffn:1024, vocab:128256, seq:4096, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 
