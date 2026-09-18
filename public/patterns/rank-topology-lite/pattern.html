@@ -43,7 +43,14 @@
   4000 张卡的 SVG），报一句"全网多少张卡超容/逼近红线"，不用先点进第三档
   才看到第一个真实数字。点它直接下钻到 ratio 最高的那张卡（第三档），跟
   档二那句"↓ 单卡下钻"邀请殊途同归。
--->
+
+  ?preset=incident2048 时，底部常驻一条真实故障复盘面板（incidentPanel）：
+  时间线 + 十格"关键少数"指标卡，数据逐字抄自 /incident-canvas/（那份的
+  GROUPS/TRAIN_METRICS/BOARD 本身照抄 compute-graph-viewer 的
+  INCIDENT_GROUPS，数值一个没改）。这是另一次独立的 2048 卡训练的真实
+  事故，不随当前选中卡变化——跟右上角显存构成卡（渲染的是本页自己按架构
+  字段估出的假设值）是两套口径，同屏出现时不要混着读，见 pattern.js 顶部
+  INCIDENT_* 数据块的注释。 -->
 </head>
 <body>
   <iframe id="rubikFrame" class="stage-frame" title="逻辑魔方（盘古 ProMoE · 4000 卡全量视图）"></iframe>
@@ -52,6 +59,8 @@
   <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
 
   <button type="button" id="clusterBadge" class="cluster-badge is-hidden" aria-live="polite"></button>
+
+  <aside id="incidentPanel" class="incident-panel is-hidden" aria-live="polite"></aside>
 
   <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
 

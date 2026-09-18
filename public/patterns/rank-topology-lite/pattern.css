@@ -90,6 +90,59 @@ html, body {
 .cluster-badge:hover { background: #3A3A3A; }
 .cluster-badge.is-alert:hover { background: #FFFFFF; }
 
+/* ── 真实故障复盘面板：只在 incident2048 预置下出现，钉在视口底部，跨三档
+   常驻。时间线（事件按问题分组、圆点按严重度着色）+ 十格指标卡（读数/
+   为什么），配色沿用 incident-canvas 自己的严重度三色（ok 绿 / warn 橙 /
+   bad 红——JS 里按事件写进 --ip-sevc 这个自定义属性），这是唯一一处主动
+   引入色相的地方：这个面板讲的是别人的真实告警，不是本页默认"只有黑白"
+   那条规则要管的容量态。折叠只留头一行，默认展开——刚切到这个预置就是
+   要看这块内容。 ──────────────────────────────────────────────────────── */
+.incident-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
+  max-height: 46vh; overflow-y: auto;
+  background: #17171A; padding: 10px 16px 12px; font-size: 12px; color: #A0A0A0;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.incident-panel.is-hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
+.incident-panel.is-collapsed .ip-conc,
+.incident-panel.is-collapsed .ip-timeline,
+.incident-panel.is-collapsed .ip-cards,
+.incident-panel.is-collapsed .ip-foot { display: none; }
+.ip-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.ip-evtitle { font-size: 13px; font-weight: 700; color: #E8E8E8; }
+.ip-evtitle-empty { font-size: 12px; font-weight: 400; color: #6E6E6E; }
+.ip-evsev { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: #111; background: var(--ip-sevc); }
+.ip-drill {
+  margin-left: auto; font: inherit; font-size: 11px; font-weight: 600; color: #E8E8E8;
+  background: #2B2B2B; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer;
+}
+.ip-drill:hover { background: #3A3A3A; }
+.ip-collapse {
+  margin-left: auto; font: inherit; font-size: 11px; color: #6E6E6E;
+  background: transparent; border: 0; padding: 2px 6px; cursor: pointer;
+}
+.ip-hd .ip-drill + .ip-collapse { margin-left: 4px; }
+.ip-conc { color: #A0A0A0; margin-bottom: 8px; line-height: 1.5; }
+.ip-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.ip-prob { display: flex; align-items: center; gap: 10px; }
+.ip-probname { flex: 0 0 auto; width: 200px; font-size: 11px; color: #6E6E6E; }
+.ip-events { display: flex; gap: 6px; flex-wrap: wrap; }
+.ip-dot {
+  display: flex; align-items: center; gap: 5px; font: inherit; font-size: 10px; color: #A0A0A0;
+  background: #232326; border: 1px solid transparent; border-radius: 999px; padding: 3px 8px 3px 6px; cursor: pointer;
+}
+.ip-dotmark { width: 7px; height: 7px; border-radius: 50%; background: var(--ip-sevc); flex: none; }
+.ip-dot:hover { background: #2E2E32; }
+.ip-dot.is-on { border-color: var(--ip-sevc); color: #E8E8E8; background: #2E2E32; }
+.ip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.ip-card { background: #1F1F1F; border-left: 3px solid var(--ip-sevc); border-radius: 6px; padding: 8px 10px; }
+.ip-k { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11px; color: #6E6E6E; margin-bottom: 3px; }
+.ip-want { font-size: 10px; color: #6E6E6E; white-space: nowrap; }
+.ip-v { font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 3px; }
+.ip-why, .ip-src { font-size: 10.5px; color: #6E6E6E; line-height: 1.4; }
+.ip-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2B2B2B; font-size: 10.5px; color: #6E6E6E; }
+body:has(.incident-panel:not(.is-hidden)) .corner-link { display: none; }
+
 /* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
    各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
 .corner-link {

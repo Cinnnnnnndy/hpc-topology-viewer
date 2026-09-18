@@ -1187,6 +1187,28 @@ var PRESETS = [
          同一件事引用。 */
   {id:'dense13b', name:'13BV2·32卡 tp8·dp4', cfg:{world:32, tp:8, cp:1, pp:1, ep:1, etp:1, layers:39, hidden:5120, heads:40, kv:40, ffn:20480, vocab:128256, seq:4096, experts:0, topk:0, mbs:2, ga:8, hbm:64}},
   {id:'moe30b', name:'MoE 30B(A2B)·64卡 tp2·ep32', cfg:{world:64, tp:2, cp:1, pp:1, ep:32, etp:1, layers:24, hidden:2048, heads:16, kv:16, ffn:1024, vocab:128256, seq:4096, experts:64, topk:8, mbs:1, ga:8, hbm:64}},
+  /* incident2048：另一起真实故障复盘（Router FP8 溢出→通信死锁→OOM 级联），取自
+     incident-canvas 的 GROUPS/TOPO（那份原样照抄了 compute-graph-viewer /
+     training-run-twin-standalone 的 INCIDENT_GROUPS，数值一个没改）——是一次
+     独立的 2048 卡训练，并行切分与"盘古ProMoE·4000卡"那档对不上号，不能套用。
+     real（来自 incident-canvas 的 TOPO 常量）：world=2048、pp=4、experts=256、
+     topk=2（Top-2 gate）、hbm=64（事故报的显存峰值就是按 64GB 容量算的，
+     "64.0/64 GB"）。tp=1·cp=1·etp=1：源数据没有独立的张量并行轴（TOPO 只给了
+     pp/edp/ep 三维），不替它编一个 tp。
+     推算：真实 world=pp×edp×ep=4×8×64=2048，本页公式 world=tp×cp×pp×dp，
+     故 dp=edp×ep=512、ep=64（EP 整除 dp，domOf=dp/ep=8 自动等于 edp）——
+     取这组 tp/pp/dp/ep 是唯一一组能让 demo.html 自己的 rankOf/epOf 公式
+     算出跟事故原文一致的 rank 号的取法：rank 1559→pp3·ep23·edp0，
+     rank 1553→pp3·ep17·edp0，与故事线原文"PP3/EP23""PP3/EP17"逐位对上。
+     layers=48（LPS=12）：真实 46 层按 [12,12,10,12] 不均匀分了 4 段（第三段
+     只有 10 层），本页要求 layers%pp===0（§11，段必须均分），46 除不尽 4；
+     48 是能让病灶 Layer 38 仍落在 PP3 段的最近合法值（12×3=36≤38≤47），
+     stage 边界因此跟原文 34-45 差 2 层，不是原文数字。
+     hidden/heads/kv/ffn/vocab/seq/mbs/ga：故事线没给模型架构细节（只给了
+     并行切分与显存/时序读数），沿用同一模型家族"盘古ProMoE·4000卡"那档的
+     架构字段，不是从这份事故分析抄来的——跟 moe30B 那档同样的字段来源
+     分层，别当成事故原文引用。 */
+  {id:'incident2048', name:'2048卡·Router溢出复盘 pp4·edp8·ep64', cfg:{world:2048, tp:1, cp:1, pp:4, ep:64, etp:1, layers:48, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:256, topk:2, mbs:1, ga:8, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 

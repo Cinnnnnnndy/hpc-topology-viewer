@@ -50,7 +50,12 @@
      权威出处），这一层不重复维护第二份。 */
   var PRESETS = {
     pangu: { tp: 8, pp: 5, dp: 100, ep: 2, matrixPreset: 'pangu', modelName: '盘古 ProMoE' },
-    dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64', modelName: '稠密预置' }
+    dense64: { tp: 4, pp: 4, dp: 4, ep: 1, matrixPreset: 'dense64', modelName: '稠密预置' },
+    /* incident2048：demo.html 那份「2048卡·Router溢出复盘」预置的桥接条目——
+       tp/pp/dp/ep 取值与 demo.html PRESETS 里 incident2048 的注释同一份推算
+       （world=pp×edp×ep=4×8×64=2048 → dp=edp×ep=512、ep=64），两边用同一组
+       数字，rank 号才能对得上。见下面 INCIDENT 数据块与 renderIncident()。 */
+    incident2048: { tp: 1, pp: 4, dp: 512, ep: 64, matrixPreset: 'incident2048', modelName: '2048卡·Router溢出复盘' }
   };
   /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
      原来选中之后不管第二档（留在逻辑魔方，选中卡与它所在的并行组）还是第三档
@@ -64,6 +69,109 @@
   var TIER2_LABEL = '同组定位';
   var PS = PRESETS[qs.get('preset')] || PRESETS.pangu;
   var world = PS.tp * PS.pp * PS.dp;
+
+  /* ══════════════════════════════════════════════════════════════════════
+     真实故障复盘数据（仅 preset=incident2048 时出现）——反馈「这里真实监控
+     数据卡片放到哪个屋里」选了"总览+单卡下钻都要，带时间线联动"。
+     逐字抄自 /incident-canvas/index.html 的 GROUPS / TRAIN_METRICS / BOARD /
+     TRAIN_HOOKS（那份本身照抄 compute-graph-viewer 的 INCIDENT_GROUPS，数值
+     一个没改）——这里只挑了卡片要用的字段（不带 mechanism 分相/chart 曲线，
+     那部分是 incident-canvas 自己的画布长项，这一层不重新实现一遍），事件
+     顺序、conclusion 原文、BOARD 每格的 v/s/why 逐位照抄，没有改写。
+     这是**另一次独立的 2048 卡训练**的真实事故（见 incident2048 预置注释），
+     不是"当前选中卡正在发生的事"——两侧显存构成卡（renderMemCards）用的是
+     本页自己按架构字段估出的假设值，跟这里引用的事故原文数字并不是同一套
+     口径，两者一起出现时不要混着读。 */
+  var INCIDENT_PROBLEMS = [
+    { id: 'problem-2', name: '问题2 · Router 溢出与通信死锁',
+      lede: '报错点在 HCCL 通信超时，震中却在 Layer 38 的 Router——一次 FP8 数值溢出，经 EP barrier 与 PP 依赖扩散成 2048 卡停摆。',
+      events: [
+        { id: 'p1-warning', time: '15k', dim: '数值·预警', sev: 'warn', title: 'Loss scale 连续衰减',
+          conclusion: 'Layer 38 的数值健康已提前恶化，AMP scaler 从 65536 衰减到 4096。' },
+        { id: 'p1-nan', time: '15203', dim: '耗时·数值', sev: 'bad', title: 'Loss NaN / grad_norm Inf',
+          conclusion: '异常只在多卡复现，Layer 38 是首个数值病灶候选。' },
+        { id: 'p1-log', time: '+8ms', dim: '通信·日志', sev: 'bad', title: 'Plog 暴露 buffer 失配', rank: 1559,
+          conclusion: '运行时 EP rank 23 的 send=0、recv=9832；通信报错同时携带 router_logits Inf 证据。' },
+        { id: 'p1-a2a', time: '+30s', dim: '通信·耗时', sev: 'bad', title: 'All-to-all 超时，63 rank 空等', rank: 1559,
+          conclusion: 'EP rank 23 是首个阻塞者，其余 63 个 EP rank 是 barrier 受害者，不应被判为 64 个独立根因。' },
+        { id: 'p1-root', time: '-30s', dim: '数值·负载', sev: 'bad', root: true, title: 'Router FP8 溢出，E193 吸收 98% token',
+          conclusion: '这是问题2的根因事件：FP8 softmax 溢出导致路由塌缩，而不是 HCCL 自身故障。' },
+        { id: 'p1-spread', time: '+30.1s', dim: '通信·扩散', sev: 'bad', title: 'PP3 断裂，2048 NPU hang',
+          conclusion: '报错点是通信 timeout，异常震中却在 Layer 38 Router；单点经 EP barrier 和 PP 依赖扩散至整网。' }
+      ] },
+    { id: 'problem-1', name: '问题1 · 显存峰值与碎片 OOM',
+      lede: '显存从 55 GB 一路爬到顶：12 层激活的存活区间在前向末尾全部重叠，叠上 LM Head 的 logits 把 64 GB 顶满，最后死在一次 0.5 GB 的临时申请上。',
+      events: [
+        { id: 'p2-rise', time: '8000+', dim: '显存·趋势', sev: 'warn', title: '显存从 55 GB 持续爬升',
+          conclusion: 'PP stage 3 的显存不再回落，吞吐同期下降 12.5%。' },
+        { id: 'p2-cost', time: '12000', dim: '耗时·显存', sev: 'warn', title: '分配/释放 API 占时 7.4%',
+          conclusion: '显存管理耗时 890 ms，明显高于正常值 2%；带宽利用率 78%，可排除纯带宽瓶颈。' },
+        { id: 'p2-peak', time: '12000', dim: '显存·容量', sev: 'bad', title: '激活值占用 36.2 GB',
+          conclusion: '激活值占峰值的 56.6%，是唯一可大幅缩减的组成。' },
+        { id: 'p2-layer', time: '12000', dim: '显存·Layer', sev: 'warn', title: 'L38 单层激活达到 1.2 GB',
+          conclusion: 'Layer 38 比普通 Dense 层高 1.7 倍，额外占用来自 expert dispatch buffer。' },
+        { id: 'p2-oom', time: '12003', dim: '显存·OOM', sev: 'bad', root: true, title: 'EP rank 17（global rank 1553）触顶并发生碎片 OOM', rank: 1553,
+          conclusion: '64/64 GB 容量不足是主因，83% 碎片率让 0.5 GB 临时 buffer 更早申请失败。' }
+      ] }
+  ];
+  var INCIDENT_METRICS = [
+    { k: 'loss',    name: 'lm loss',            want: '↓',    src: 'loss_func() → training_log()' },
+    { k: 'gnorm',   name: 'grad_norm',          want: '稳定',  src: 'training_log()' },
+    { k: 'lscale',  name: 'loss_scale',         want: '不触发', src: 'logger_and_track_metrics_callback.py:74' },
+    { k: 'zeros',   name: 'num_zeros_in_grad',  want: '↓',    src: 'training_log()' },
+    { k: 'tflops',  name: 'throughput',         want: '↑',    src: 'PretrainMetricConfig._compute_throughput' },
+    { k: 'mfu',     name: 'MFU',                want: '↑',    src: 'PretrainMetricConfig._compute_mfu' },
+    { k: 'tokday',  name: 'throughput_per_day', want: '↑',    src: '_build_log_dict:1505' },
+    { k: 'steptime',name: 'elapsed time / iter',want: '↓',    src: '_build_log_dict:1491' },
+    { k: 'lr',      name: 'learning_rate',      want: '按计划', src: 'lr scheduler（cosine / WSD）' },
+    { k: 'mem',     name: 'mem_reserved_bytes', want: '平稳',  src: 'NPU 保留显存 / theoretical_memory' }
+  ];
+  var INCIDENT_HOOKS = [
+    { k: 'nan',       name: 'NaN / Inf 检测',   src: 'check_for_nan_in_loss_and_grad', act: '任一 rank 的 loss 出现 NaN 直接报错退出' },
+    { k: 'spike',     name: 'Loss Spike 监控',  src: 'loss_spike_monitor_callback',    act: '损失突然飙升时触发回调' },
+    { k: 'heartbeat', name: 'Heartbeat 监控',   src: 'init_heartbeat_monitor_pid',     act: '训练进程无响应则重启' },
+    { k: 'dataspeed', name: '数据生产速度告警', src: '_warn_data_production_speed',    act: '数据加载速度接近训练速度时告警' },
+    { k: 'oom',       name: 'OOM 前兆',         src: 'mem_reserved_bytes 增长趋势',    act: '保留显存持续增长，容量见底' }
+  ];
+  var INCIDENT_BOARD = {
+    'p1-warning': { hooks: ['spike'], m: {
+      lscale: { v: '65536 → 4096', s: 'warn', why: '连续四次减半，越过三级预警线 8192' },
+      loss: { v: '仍在正常区间', s: 'ok', why: '距崩溃尚有 53 step——这正是它作为预警的价值' } } },
+    'p1-nan': { hooks: ['nan', 'spike'], m: {
+      loss: { v: 'NaN', s: 'bad', why: '本轮梯度整段作废' },
+      gnorm: { v: 'Inf', s: 'bad', why: '末段每 step 涨约一个数量级，越界在同层反向' },
+      lscale: { v: '已退到 4096', s: 'warn', why: '再退也救不回来，溢出的是 logits 不是梯度尺度' } } },
+    'p1-log': { hooks: [], m: {
+      steptime: { v: '+8 ms 起', s: 'warn', why: '收发失配刚发生，还没变成等待' } } },
+    'p1-a2a': { hooks: ['heartbeat'], m: {
+      steptime: { v: '+30 000', s: 'bad', why: '等满 HCCL 超时阈值 30 s' },
+      tflops: { v: '0（63 卡）', s: 'bad', why: '空等期间算力零产出，而日志上什么都不报' },
+      mfu: { v: '0', s: 'bad', why: '同上——这正是「看起来通信很慢」最容易骗人的地方' },
+      tokday: { v: '0', s: 'bad', why: '累计空转 63 × 30 s ≈ 1890 卡·秒' } } },
+    'p1-root': { hooks: [], m: {
+      zeros: { v: '247 / 256 专家无梯度', s: 'bad', why: '路由塌缩后它们再没收到过 token' },
+      loss: { v: '—', s: 'na', why: '本事件采的是路由份额与 logits，不在这十格里' } } },
+    'p1-spread': { hooks: ['heartbeat'], m: {
+      steptime: { v: 'hang', s: 'bad', why: '依赖环闭合，4 个 stage 全停在等待上' },
+      tflops: { v: '0（2048 卡）', s: 'bad', why: '99.95% 的卡只是被链条拖住的' },
+      mfu: { v: '0', s: 'bad' }, tokday: { v: '0', s: 'bad' } } },
+    'p2-rise': { hooks: ['oom'], m: {
+      mem: { v: '55 → 63.7', s: 'bad', why: '4000 step 未回落，被留住的是一直活着的激活' },
+      tokday: { v: '3200 → 2800 tokens/s', s: 'warn', why: '同期吞吐下降 12.5%' },
+      tflops: { v: '同比 −12.5%', s: 'warn', why: '原文给的是 tokens/s，这一格按同一口径读' } } },
+    'p2-cost': { hooks: [], m: {
+      steptime: { v: '12 000', s: 'warn', why: '其中 890 ms（7.4%）花在显存分配/释放上，正常水位约 2%' },
+      mem: { v: 'HBM 带宽 78%', s: 'ok', why: '可排除纯带宽瓶颈——贵在碎片整理与换页，不在搬数据' } } },
+    'p2-peak': { hooks: ['oom'], m: {
+      mem: { v: '64.0 / 64', s: 'bad', why: '激活占 56.6%，安全余量 0 GB' } } },
+    'p2-layer': { hooks: [], m: {
+      mem: { v: 'L38 单层 1.2', s: 'warn', why: '同段普通层 0.71 GB，多出来的 0.5 GB 来自 expert dispatch buffer' } } },
+    'p2-oom': { hooks: ['oom'], m: {
+      mem: { v: '已分配 60.1 / 64', s: 'bad', why: '碎片率 83%，最大连续块只有 0.32 GB' },
+      steptime: { v: '中断', s: 'bad', why: '它一崩 PP3 就断，全网跟着停在等待上' } } }
+  };
+  var INCIDENT_SEVC = { ok: '#3FB950', warn: '#D29922', bad: '#F85149', na: '#6E6E6E' };
+  var INCIDENT_SEVN = { ok: '正常', warn: '预警', bad: '告警', na: '未采' };
 
   if (world <= 64) {
     /* 规模小：矩阵本体自己一屏就是全部——不铺逻辑魔方、不裁剪它的任何交互，
@@ -153,6 +261,66 @@
   clusterBadge && clusterBadge.addEventListener('click', function () {
     if (clusterWorstRank != null) showDetail(clusterWorstRank);
   });
+
+  // ── 真实故障复盘面板：只在 incident2048 预置下出现 ────────────────────────
+  // 底部常驻，跨三档都不收起——它讲的是另一起独立事故，不是"当前选中卡这一刻
+  // 的状态"，所以不必跟着档位增删。时间线选中一个事件 → 下面十格指标卡按
+  // INCIDENT_BOARD[事件id] 更新；没选中事件或这一格没被那次事件采到，一律
+  // 显示"—"（INCIDENT_BOARD 里就没有对应的键），不拿"—"以外的东西顶格。
+  var incidentPanel = document.getElementById('incidentPanel');
+  var incidentSel = null;
+  function incidentEventById(id) {
+    for (var i = 0; i < INCIDENT_PROBLEMS.length; i++) {
+      var evs = INCIDENT_PROBLEMS[i].events;
+      for (var j = 0; j < evs.length; j++) if (evs[j].id === id) return evs[j];
+    }
+    return null;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function renderIncidentPanel() {
+    if (!incidentPanel || PS.matrixPreset !== 'incident2048') return;
+    var ev = incidentSel ? incidentEventById(incidentSel) : null;
+    var board = incidentSel ? INCIDENT_BOARD[incidentSel] : null;
+    var timelineHtml = INCIDENT_PROBLEMS.map(function (prob) {
+      var dots = prob.events.map(function (e) {
+        var on = e.id === incidentSel;
+        return '<button type="button" class="ip-dot' + (on ? ' is-on' : '') + '" data-ev="' + e.id + '"'
+          + ' style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.time + ' · ' + e.title) + '">'
+          + '<span class="ip-dotmark"></span><span class="ip-dottime">' + esc(e.time) + '</span></button>';
+      }).join('');
+      return '<div class="ip-prob"><span class="ip-probname">' + esc(prob.name) + '</span><div class="ip-events">' + dots + '</div></div>';
+    }).join('');
+    var cardsHtml = INCIDENT_METRICS.map(function (m) {
+      var cell = board && board.m && board.m[m.k];
+      var v = cell ? cell.v : '—';
+      var sevKey = cell ? cell.s : 'na';
+      return '<div class="ip-card" style="--ip-sevc:' + INCIDENT_SEVC[sevKey] + '">'
+        + '<div class="ip-k">' + esc(m.name) + '<span class="ip-want">要求 ' + esc(m.want) + '</span></div>'
+        + '<div class="ip-v">' + esc(v) + '</div>'
+        + (cell && cell.why ? '<div class="ip-why">' + esc(cell.why) + '</div>' : '<div class="ip-src">' + esc(m.src) + '</div>')
+        + '</div>';
+    }).join('');
+    var headHtml = ev
+      ? '<span class="ip-evtitle">' + esc(ev.title) + '</span><span class="ip-evsev" style="--ip-sevc:' + INCIDENT_SEVC[ev.sev] + '">' + INCIDENT_SEVN[ev.sev] + '</span>'
+        + (ev.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + ev.rank + '">下钻 rank ' + ev.rank + ' →</button>' : '')
+      : '<span class="ip-evtitle ip-evtitle-empty">先在时间线上点一个事件——十格读数按那一刻的原文填，没采到的写「—」</span>';
+    var concHtml = ev ? '<div class="ip-conc">' + esc(ev.conclusion) + '</div>' : '';
+    incidentPanel.innerHTML =
+      '<div class="ip-hd">' + headHtml + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
+      + concHtml
+      + '<div class="ip-timeline">' + timelineHtml + '</div>'
+      + '<div class="ip-cards">' + cardsHtml + '</div>'
+      + '<div class="ip-foot">口径来自 pangu_sophon_pytorch · 这十条是真的会被打印、画成曲线的那几个；另一次独立 2048 卡训练的真实复盘，与当前预置的架构字段无关，不替它编一个。</div>';
+    incidentPanel.classList.remove('is-hidden');
+  }
+  incidentPanel && incidentPanel.addEventListener('click', function (ev) {
+    var dot = ev.target.closest('[data-ev]');
+    if (dot) { incidentSel = dot.getAttribute('data-ev'); renderIncidentPanel(); return; }
+    if (ev.target.closest('[data-act="ip-collapse"]')) { incidentPanel.classList.toggle('is-collapsed'); renderIncidentPanel(); return; }
+    var drill = ev.target.closest('[data-act="ip-drill"]');
+    if (drill) showDetail(parseInt(drill.getAttribute('data-rank'), 10));
+  });
+  renderIncidentPanel();
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
