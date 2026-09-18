@@ -430,7 +430,16 @@
          空档、读得出是「四组」而不是「一片」，但「把这根轴拉开」这个动作仍然归 PP流水
          ——两者因此还是差一个量级，而不是差一点点。三轴步距比也都在 MAX_RATIO 以内
          （128 卡：2.13 / 0.90 / 1.45），2D 不会散成稀疏条纹。 */
-      std: { sx: stepK('x', PP, 'spread'), sy: stepK('y', REP), sz: stepK('z', TPL), cy: CY },
+      /* 反馈「现在的间距只有 pp 之间有，dp、tp 之间的间距也要拉开分组」——
+         之前只有 X（PP）传了 'spread' 层级，Y（DP）/Z（TP）沿用默认 'normal'（1×），
+         于是 PP 只有几段时读得出段与段的留白，DP 这种上百个副本的轴因为
+         GAP_BY_N 本来就随数量收缩、又没有额外层级加成，挤成了一条看不出
+         断点的斜线。三根轴统一换成 'spread'，缝随各自的枚数走（GAP_BY_N）、
+         层级系数三轴相同——比值只由「这根轴有几格」决定，不会因为独厚 PP
+         一根轴而失衡（三轴同乘 1.8×，比值反而比原来更收拢，不会破 MAX_RATIO
+         这条不变量）。EP 在标准形态里没有自己的轴（折在 DP 里），它的分组
+         留白看「EP 聚簇」那个形态（已经是 stepK(..., 'spread') 处理）。 */
+      std: { sx: stepK('x', PP, 'spread'), sy: stepK('y', REP, 'spread'), sz: stepK('z', TPL, 'spread'), cy: CY },
       // DP 平铺：外维 = 副本宫格（列距 = 板宽 + 留白 · 行距受 2D 约束）· 内维 = 板内 TP 列 / PP 行
       dpt: { gapX: dptCellX, gapZ: dptCellZ, tp: tpStep, tpz: tpStepZ, pp: ppStep, y0: 1.0, cols: TPC, rows: TPD },
       // EP 聚簇：外维 = 桶墙（墙宽 + 块间留白）· 内维 = 墙内 TP 列 · Z = A2A 域（留白层级，域界可读）
@@ -439,8 +448,15 @@
       // 「墙拉开查同槽位 / 段拉开找慢段」的读法。这个 4× 正好卡在 MAX_RATIO 上，
       // 2D 里主轴会显得稀疏 —— 靠 axBlockFrames 给每块套框把条纹读成整块，不靠压步距
       // （压了这两个形态就没意义了）。
-      tps: { gapT: stepK('x', TPL, 'emph'), pp: stepK('y', PP), rep: stepK('z', REP), cy: CY },
-      ppf: { gapP: stepK('x', PP, 'emph'), tp: stepK('y', TPL), rep: stepK('z', REP), cy: CY },
+      // 反馈「现在的间距只有 pp 之间有，dp、tp 之间的间距也要拉开分组」——这两个
+      // 形态原来只有主轴传 'emph'，另外两根轴沿用默认 'normal'（1×），PP流水
+      // 落地就是 rank-topology-lite 没传 ?mode= 时的默认形态（pick 的落地值 4），
+      // 盘古预置那种 tp8·rep100 规模下，没升级层级的那两根轴全挤成一条看不出
+      // 断点的斜线——跟标准形态是同一个毛病、同一个修法：非主轴也升到 'spread'，
+      // 差数量级但都比 1× 松，读者能看出"这也是分着组的"，又不会跟 4× 的主轴
+      // 抢视觉重心（4× 定义的就是"主轴该多显眼"，两次遇到的从来不是它）。
+      tps: { gapT: stepK('x', TPL, 'emph'), pp: stepK('y', PP, 'spread'), rep: stepK('z', REP, 'spread'), cy: CY },
+      ppf: { gapP: stepK('x', PP, 'emph'), tp: stepK('y', TPL, 'spread'), rep: stepK('z', REP, 'spread'), cy: CY },
       /* 物理平铺：不看任何并行分组，只回答「这张卡插在机房哪个槽位」——X=host 内卡位(slot)
          · Z=host 序号 · Y 恒 0（各形态里唯一不叠高度的一种，真摊平，不是「压扁的立方」）。
          host 数一多会排成一条极长的线，超过 64 台折成 hgx×hgz 近方格（同 DP 平铺的折法）；
@@ -2432,22 +2448,22 @@
       };
       const stageN = boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === 0);
       const sameAsTP = stageN && stageN.n === TP;      // CP=1 时段就是 TP 组
+      /* 三层壳的说明牌全删了：反馈「标签删掉」——嵌套框贴得近，牌子的锚点
+         （框角外侧）落到几乎同一块屏幕位置，DP/PP 两张牌的标题+副标题四行
+         字挤成一坨，没法既不重叠又不做整套碰撞避让。壳本身（半透明面+
+         描边线）还在画，层级关系看框套框就够；具体是哪一层、切了几份，
+         交给右侧选中后的详情卡与顶栏坐标读，不在画布里硬挂文字。 */
       // ① 一个副本
-      draw(boxOf((r) => model.repOf(r) === rep), CARD.x * 1.15, 'DP',
-        `DP 副本 ×${REP}`, `一个副本 = 整模型一份 · 切成 ${PP} 段`, true);
-      // ② 副本切成的每一段（只给第 0 段挂牌，其余靠框）
+      draw(boxOf((r) => model.repOf(r) === rep), CARD.x * 1.15, 'DP', null, null, true);
+      // ② 副本切成的每一段
       for (let pp = 0; pp < PP; pp++) {
-        draw(boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === pp), CARD.x * 0.5, 'PP',
-          pp === 0 ? `PP 段 ×${PP}` : null,
-          pp === 0 ? (sameAsTP ? `一段 = 一个 TP 组 ×${TP} 卡` : `一段 = ${CP} 个 TP 组 · 共 ${TP * CP} 卡`) : null,
-          false);
+        draw(boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === pp), CARD.x * 0.5, 'PP', null, null, false);
       }
       // ③ 只有 CP>1 时段内才真的还有一层（CP=1 时段就是 TP 组，画了就是假层级）
       if (!sameAsTP) {
         for (let cp = 0; cp < CP; cp++) {
           draw(boxOf((r) => model.repOf(r) === rep && model.ppOf(r) === 0 && model.cpOf(r) === cp),
-            CARD.x * 0.18, 'TP', cp === 0 ? `TP 组 ×${TP}` : null,
-            cp === 0 ? '组内每卡持有不同的 head 分片' : null, false);
+            CARD.x * 0.18, 'TP', null, null, false);
         }
       }
     }
