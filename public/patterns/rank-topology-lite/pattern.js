@@ -222,10 +222,18 @@
   // 推近一半（不是矩阵那种贴近单卡的"局部聚焦"，这里镜头还是全景机位，
   // 只是缩小取景范围），取消选中飞回原机位。独立打开 /rubik-pattern.html
   // 不传这个参数，选中不受影响。
+  // chrome=0：反馈「点击单卡会卡在这里」「去掉标签，下面的内容放到标题后面去」——
+  // 附图是逻辑魔方自带的选中卡侧栏（.prc-info，"RANK"kicker+标题+键值表那一整套）
+  // 在窄屏媒体查询下挪到画面底部，跟这一层自己的 briefCard/角标/corner-link 叠在
+  // 一起，还用它的透明留白盖住了舞台——点上去点在了这张看不见的卡上，画布本身
+  // 反而没反应，看着像"卡住了"。这一层右上角的 briefCard 早就把"选中的是哪张卡、
+  // 什么坐标"说清楚了，.prc-info 与顶栏那一整套（形态/视角按钮、更多抽屉、图例）
+  // 全是重复的第二份 chrome——直接让逻辑魔方自己那套别画，不止是这一个面板的
+  // 样式问题。独立打开 /rubik-pattern.html 不传这个参数，默认还画，不受影响。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
     color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0',
-    tierlabel: TIER2_LABEL, zoomsel: '0.5'
+    tierlabel: TIER2_LABEL, zoomsel: '0.5', chrome: '0'
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
