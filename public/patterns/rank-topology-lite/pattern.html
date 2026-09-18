@@ -58,10 +58,22 @@
   进来」指的是默认这一屏就要摸得到，不是要翻 URL 参数文档才找得到。所以
   左上角聚合角标下面常驻一条入口（incidentLink，除了 incident2048 自己，
   别的预置都显示），点一下直接跳转 ?preset=incident2048——一次导航换整
-  页拓扑，rank 号照样精确对应，不是把两套数据硬凑到同一份拓扑上。 -->
+  页拓扑，rank 号照样精确对应，不是把两套数据硬凑到同一份拓扑上。
+
+  ?view=universe（或点右上角「🌌 宇宙视图」那颗切换钮）：第一档换一种画法——
+  不铺逻辑魔方，铺一张内联 SVG 的径向星图（universeStage）：中心=模型本身，
+  第一圈=各条 PP 段（沿用这个仓库里"PP流水=段"的既有心智模型，不是新发明
+  一套分类法），每段外沿撒开一批采样出来的真实 rank 作为叶子点。点一个叶子
+  = 第二档（同组定位，走的还是 showTier2 那同一条路，只是发起点从"逻辑魔方
+  postMessage 上报"换成"宿主自己算好 sel 直接调用"）；点空白 = 退回总览。
+  第三档（单卡下钻）不分岔——两种视图落的都是同一个 matrixFrame solo 页，
+  这一层不重复实现一遍详情渲染。这一版**没有**参考图里那颗"AI 分析/问答"
+  输入框：那是接了真实 agent 的产品功能，这里接不出来，摆一个只会点了没
+  反应的输入框比不摆更误导人，所以没做。 -->
 </head>
 <body>
   <iframe id="rubikFrame" class="stage-frame" title="逻辑魔方（盘古 ProMoE · 4000 卡全量视图）"></iframe>
+  <div id="universeStage" class="stage-frame is-hidden universe-stage" role="img" aria-label="径向星图：中心为模型，一圈为流水线段，叶子为采样出的真实 rank"></div>
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 选中卡详情"></iframe>
 
   <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
@@ -71,6 +83,8 @@
   <a id="incidentLink" class="incident-link is-hidden" href="?preset=incident2048">⚠ 真实故障复盘 · Router 溢出与通信死锁 →</a>
 
   <aside id="incidentPanel" class="incident-panel is-hidden is-collapsed" aria-live="polite"></aside>
+
+  <button type="button" id="universeToggle" class="universe-toggle is-hidden" aria-pressed="false">🌌 宇宙视图</button>
 
   <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
 

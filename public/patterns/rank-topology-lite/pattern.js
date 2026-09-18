@@ -41,6 +41,8 @@
   var briefCard = document.getElementById('briefCard');
   var clusterBadge = document.getElementById('clusterBadge');
   var incidentLink = document.getElementById('incidentLink');
+  var universeStage = document.getElementById('universeStage');
+  var universeToggle = document.getElementById('universeToggle');
 
   /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
@@ -268,6 +270,140 @@
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
+  // ── 宇宙视图：第一档的第二种画法，内联 SVG 径向星图（不是 iframe） ─────
+  // 中心 = 模型本身；第一圈 = 各条 PP 段（沿用这个仓库里"PP流水=段"的既有
+  // 心智模型，跟逻辑魔方 PP流水形态、并行拓扑矩阵段落条讲的是同一件事，
+  // 不是另起一套分类）；每段外沿撒开一批采样出的**真实** rank 当叶子点——
+  // 叶子的 tp/cp/rep 坐标是在 tp×cp×dp 这条扁平轴上等距抽样出来的，不是
+  // 摆拍凑数量，点开哪一颗都能换算出一个真实存在的 rank。
+  // 这里不重新发明"选中之后干什么"：叶子点点击算出 sel 直接调
+  // showTier2/rubikSelToMatrixSel，跟逻辑魔方 postMessage 报上来的走的
+  // 是同一条路径、落的是同一张 briefCard——两种视图只是"从哪触发选中"
+  // 不同，选中之后的下钻/详情渲染一个字不重复实现。
+  var universeMode = false;
+  var universeBuilt = false;
+  // 参考图那种暖金/紫青撞色，圈内按段循环取色，同一段的叶子跟着它所在的
+  // hub 同色（深浅由 CSS 的 hover/dim 状态区分，不再按叶子逐个换色）。
+  var HUB_PALETTE = ['#8B7CF6', '#4FC3D9', '#E8637A', '#F2B84B', '#5FD3A5', '#C77DFF', '#4FA6E8', '#F28B5B'];
+  // 第二档副标题的公共写法：逻辑魔方 postMessage 上报的选中（见下面 message
+  // 监听里的 rubik-select 分支）与宇宙视图叶子点击共用同一句拼法，唯一的
+  // 差别是前者能带上 rubik-cube 自己算好的层区间（L{lo}-L{hi}），宇宙视图
+  // 这条路径没有 rubik-cube 的模型可查，就不编一段假的层区间——宁可这一档
+  // 副标题短一截，也不摆一个编出来的数字。
+  function tier2SubLine(sel) {
+    return 'tp' + sel.tp + ((PS.cp || 1) > 1 ? ' cp' + sel.cp : '') + ' pp' + sel.pp + ' rep' + sel.rep;
+  }
+  function buildUniverseSvg() {
+    var W = 1600, H = 1000, CX = W / 2, CY = H / 2;
+    var PPN = PS.pp, TPN = PS.tp, CPN = PS.cp || 1, DPN = PS.dp;
+    var R1 = 250, R2 = 430;
+    var perStage = TPN * CPN * DPN;
+    var leafN = Math.min(9, perStage);
+    var hubsHtml = '', leavesHtml = '', linksHtml = '';
+    for (var i = 0; i < PPN; i++) {
+      var theta = (i / PPN) * Math.PI * 2 - Math.PI / 2;
+      var hx = CX + Math.cos(theta) * R1, hy = CY + Math.sin(theta) * R1;
+      var color = HUB_PALETTE[i % HUB_PALETTE.length];
+      linksHtml += '<line class="u-ray" data-pp="' + i + '" x1="' + CX + '" y1="' + CY + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="' + color + '"/>';
+      hubsHtml += '<g class="u-hub" data-pp="' + i + '">'
+        + '<circle class="u-hubglow" cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="24" fill="' + color + '"/>'
+        + '<circle class="u-hubcore" cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="13" fill="' + color + '"/>'
+        + '<text class="u-hublabel" x="' + hx.toFixed(1) + '" y="' + (hy + 34).toFixed(1) + '" text-anchor="middle">PP' + i + '</text>'
+        + '</g>';
+      // 扇形半张角按"这一段跟相邻段隔多远"来定（相邻 hub 的夹角是
+      // 2π/PPN），封顶在那个夹角的 42%——留出至少约 16% 的空隙，扇面才会
+      // 读成"16 段各喷一束"而不是糊成一整条连续的外圈圆环（PPN 大、段挨得
+      // 近时尤其明显，第一版没按 PPN 收窄，实测 16 段时叶子首尾相接、
+      // 整圈看着像一根圆环，这里改成跟 hub 间距挂钩才是真正的修法）。
+      var fanHalf = Math.min(0.34, (Math.PI / PPN) * 0.42);
+      for (var k = 0; k < leafN; k++) {
+        // 在 tp×cp×dp 这条扁平轴上等距抽样（不是随机取样），保证 leafN 颗
+        // 叶子覆盖这一段的坐标空间、互不重号；flat 反解回 (tp,cp,rep) 的
+        // 顺序跟 rubik-cube 自己的 laneOf 折法一致（tp 最内层）。
+        var flat = Math.floor(k * perStage / leafN);
+        var tp9 = flat % TPN, cp9 = Math.floor(flat / TPN) % CPN, rep9 = Math.floor(flat / (TPN * CPN));
+        var lt = leafN > 1 ? (k / (leafN - 1) - 0.5) * 2 * fanHalf : 0;
+        var la = theta + lt;
+        var lx = CX + Math.cos(la) * R2, ly = CY + Math.sin(la) * R2;
+        linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + lx.toFixed(1) + '" y2="' + ly.toFixed(1) + '" stroke="' + color + '"/>';
+        var sel = { tp: tp9, cp: cp9, pp: i, rep: rep9 };
+        leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + rep9 + '"'
+          + ' cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="6" fill="' + color + '">'
+          + '<title>' + esc(tier2SubLine(sel)) + '</title></circle>';
+      }
+    }
+    // 稀疏星点只做氛围，不承载数据——数量固定、每次重建（理论上只建一次，
+    // 见 renderUniverse 的 universeBuilt 守卫）位置会不一样，纯装饰，不影响
+    // 任何可读信息。
+    var stars = '';
+    for (var s = 0; s < 140; s++) {
+      var sx = Math.random() * W, sy = Math.random() * H, sr = Math.random() * 1.1 + 0.2;
+      stars += '<circle class="u-star" cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="' + sr.toFixed(2) + '"/>';
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+      + '<defs>'
+      + '<radialGradient id="uCoreGrad" cx="40%" cy="35%" r="65%">'
+      + '<stop offset="0%" stop-color="#FFF6DD"/><stop offset="55%" stop-color="#E8C468"/><stop offset="100%" stop-color="#8A6A1E"/>'
+      + '</radialGradient>'
+      + '<filter id="uGlow" x="-200%" y="-200%" width="500%" height="500%">'
+      + '<feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
+      + '</filter>'
+      + '</defs>'
+      + '<g class="u-stars">' + stars + '</g>'
+      + '<g class="u-links">' + linksHtml + '</g>'
+      + '<g class="u-leaves" filter="url(#uGlow)">' + leavesHtml + '</g>'
+      + '<g class="u-hubs" filter="url(#uGlow)">' + hubsHtml + '</g>'
+      + '<circle class="u-core" cx="' + CX + '" cy="' + CY + '" r="46" fill="url(#uCoreGrad)" filter="url(#uGlow)"/>'
+      + '<text class="u-corelabel" x="' + CX + '" y="' + (CY + 74) + '" text-anchor="middle">' + esc(PS.modelName) + '</text>'
+      + '<text class="u-coresub" x="' + CX + '" y="' + (CY + 96) + '" text-anchor="middle">' + world + ' 卡 · ' + PPN + ' 段流水线</text>'
+      + '</svg>';
+  }
+  function renderUniverse() {
+    if (universeBuilt) return;
+    universeStage.innerHTML = buildUniverseSvg();
+    universeBuilt = true;
+  }
+  // 点一个 hub（段本身）= 聚焦这一段、把其余段的 hub/射线/叶子调暗，不下钻
+  // （一段里有好几张卡，hub 本身不对应唯一 rank）；ppIdx=null 时全部复原。
+  function focusHub(ppIdx) {
+    if (!universeBuilt) return;
+    var sel9 = ppIdx == null ? null : String(ppIdx);
+    universeStage.querySelectorAll('.u-hub, .u-leaf, .u-ray, .u-thread').forEach(function (el) {
+      el.classList.toggle('is-dim', sel9 != null && el.getAttribute('data-pp') !== sel9);
+    });
+  }
+  universeStage.addEventListener('click', function (ev) {
+    var leaf = ev.target.closest('.u-leaf');
+    if (leaf) {
+      var sel = { tp: +leaf.getAttribute('data-tp'), cp: +leaf.getAttribute('data-cp'), pp: +leaf.getAttribute('data-pp'), rep: +leaf.getAttribute('data-rep') };
+      focusHub(sel.pp);
+      showTier2(rubikSelToMatrixSel(sel), tier2SubLine(sel));
+      return;
+    }
+    var hub = ev.target.closest('.u-hub');
+    if (hub) { focusHub(hub.getAttribute('data-pp')); return; }
+    focusHub(null);
+    showOverview();
+  });
+  if (universeToggle) {
+    universeToggle.classList.remove('is-hidden');
+    universeMode = qs.get('view') === 'universe';
+    universeToggle.classList.toggle('is-on', universeMode);
+    universeToggle.setAttribute('aria-pressed', String(universeMode));
+    universeToggle.addEventListener('click', function () {
+      universeMode = !universeMode;
+      universeToggle.classList.toggle('is-on', universeMode);
+      universeToggle.setAttribute('aria-pressed', String(universeMode));
+      showOverview();
+    });
+    /* HTML 默认铺的是逻辑魔方（no is-hidden）；?view=universe 打开时要在
+       第一帧就换成宇宙视图，不能等用户点一次切换钮才生效。showOverview()
+       在这里调用是安全的——pendingMatrixSel/briefCard 这一刻本来就是初始
+       态，不会覆盖掉任何还没发生的状态；下面 ?sel= 深链分支如果命中，会
+       在此之后再调 showDetail() 把它换成第三档，两次调用顺序不冲突。 */
+    if (universeMode) showOverview();
+  }
+
   // ── 集群总览角标：一开场就借矩阵本体算一遍「多少张卡超容」，不用等读者
   //    下钻到第三档才看到真实数字 ────────────────────────────────────────
   // 容量/显存那套判定（capVerdict/memParts）全在矩阵共用的 demo.html 里，这
@@ -416,22 +552,37 @@
      画布名字（见 matrixSrcFor 的 stitle=）。三处名字同一个来源（PS.modelName），
      读起来是一句话，不是宿主外挂一层跟原生标题抢地、还经常撞在一起的重复牌子。 */
 
-  function showOverview() {
+  /* 第一档有两种画法（逻辑魔方 iframe / 宇宙视图内联 SVG），由 universeMode
+     决定当前显示哪一个——showOverview/showTier2 共用这一个开关函数，不必
+     各自重复一遍"显哪个、藏哪个"。matrixFrame 两处都要藏：从第三档退回来
+     时它还开着。 */
+  function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
-    rubikFrame.classList.remove('is-hidden');
-    pendingMatrixSel = null;
-    hideBrief();
+    if (universeMode) {
+      renderUniverse();
+      universeStage.classList.remove('is-hidden');
+      rubikFrame.classList.add('is-hidden');
+    } else {
+      universeStage.classList.add('is-hidden');
+      rubikFrame.classList.remove('is-hidden');
+    }
   }
 
-  /* 第二档：留在逻辑魔方身上，只换宿主自己这层的 chrome——右下角浮出"下钻"
-     邀请。逻辑魔方的选中态是它自己的事（这一刻画面早就是对的，从来路径
-     无关：可能是它刚刚 postMessage 报过来的新选中，也可能是从第三档退
-     回来、它本来就还停在原地没变过），这个函数从不碰 rubikFrame，只管
-     sel（换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行
-     副标题，两条来路各自负责按自己手上有的坐标格式拼好再传进来）。 */
+  function showOverview() {
+    showTier1Visual();
+    pendingMatrixSel = null;
+    hideBrief();
+    focusHub(null);
+  }
+
+  /* 第二档：留在第一档那个视图身上（逻辑魔方或宇宙视图，看 universeMode），
+     只换宿主自己这层的 chrome——右下角浮出"下钻"邀请。选中态是那个视图
+     自己的事（这一刻画面早就是对的，来路无关：可能是刚刚报上来的新选中，
+     也可能是从第三档退回来、本来就还停在原地没变过），这个函数只管 sel
+     （换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行副标题，
+     各来路按自己手上的坐标格式拼好再传进来，见 tier2SubLine）。 */
   function showTier2(matrixSel, subLine) {
-    matrixFrame.classList.add('is-hidden');
-    rubikFrame.classList.remove('is-hidden');
+    showTier1Visual();
     pendingMatrixSel = matrixSel;
     renderDrillInvite(matrixSel, subLine);
   }
@@ -441,6 +592,7 @@
     matrixFrame.src = matrixSrcFor(matrixSel);
     matrixFrame.classList.remove('is-hidden');
     rubikFrame.classList.add('is-hidden');
+    universeStage.classList.add('is-hidden');
     hideBrief();
   }
 
