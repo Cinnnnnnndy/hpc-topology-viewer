@@ -2225,6 +2225,28 @@
     // —— 三根世界轴等比缩短、互成 120°，这才是「轴测」该有的样子。
     const ISO = { theta: Math.PI / 4, phi: Math.asin(Math.tan(Math.PI / 6)) };
     const cam = { theta: ISO.theta, phi: ISO.phi, half: 30, cx: 0, cy: 8, cz: 0, panX: 0, panY: 0 };
+    /* opts.zoomOnSelect（?zoomsel= 转进来的一个 0~1 的倍数）：选中一张卡时把
+       镜头往那张卡推近一档——反馈截图是 4000 卡的盘古预置，选中的那一列在
+       整片阵列里只占几个像素，"rank 1406"那句提示都快找不到自己指的是哪儿。
+       默认不传，行为跟改动前一样（选中不动镜头，这是绝大多数消费者一直
+       以来的样子，独立打开 /rubik-pattern.html 也不受影响）。
+       camTarget 非空时 frame() 每帧把 cam.half/cx/cy/cz 往它那边挪一点，
+       挪到位就清空——用的是指数缓动，不是单独再起一套时间轴动画。
+       camPreSel 记的是"推近之前"那一份机位，取消选中时原样还回去。 */
+    let camTarget = null, camPreSel = null;
+    function stepCamera() {
+      if (!camTarget) return;
+      const k = 0.16;
+      cam.half += (camTarget.half - cam.half) * k;
+      cam.cx += (camTarget.cx - cam.cx) * k;
+      cam.cy += (camTarget.cy - cam.cy) * k;
+      cam.cz += (camTarget.cz - cam.cz) * k;
+      const done = Math.abs(camTarget.half - cam.half) < 0.02
+        && Math.abs(camTarget.cx - cam.cx) < 0.02
+        && Math.abs(camTarget.cy - cam.cy) < 0.02
+        && Math.abs(camTarget.cz - cam.cz) < 0.02;
+      if (done) { cam.half = camTarget.half; cam.cx = camTarget.cx; cam.cy = camTarget.cy; cam.cz = camTarget.cz; camTarget = null; }
+    }
     // 顶视是否转 90°：Z 跨度比 X 长就转（依据只此一条，fitView 与 applyCamera 共用）
     function topRotated() {
       const b = model.boundsOf(S.mode);
@@ -4169,6 +4191,7 @@
     });
     renderer.domElement.addEventListener('wheel', (ev) => {
       ev.preventDefault();
+      camTarget = null;   /* 手动滚轮缩放优先：打断 zoomOnSelect 还没走完的那截自动推近 */
       cam.half = Math.max(4, Math.min(220, cam.half * (ev.deltaY > 0 ? 1.1 : 0.9)));
     }, { passive: false });
 
@@ -4229,6 +4252,7 @@
       place(hovBox, S.hover === S.sel ? null : S.hover);
       updateSelFx(nowMs);
       updateMovers();
+      stepCamera();
       applyCamera();
       renderer.render(scene, camera);
       renderDetail();          // 细节窗画在主画面之上（自己的视口 + scissor）
@@ -4267,6 +4291,11 @@
         S.mode = Math.max(0, Math.min(model.modes.length - 1, m | 0));
         // 收编后的形态只允许自己声明的视角；正交下切过去自动落回轴测
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(S.view)) S.view = 0;
+        /* 换形态是全新的一次 fitView（下面就会立刻按新形态重算机位），camTarget/
+           camPreSel 记的是旧形态那份机位，留着不清会让 stepCamera 在这之后
+           反过来把镜头拉回旧形态的框——zoomOnSelect 只管"同一形态内选中/取消
+           选中"这一步，跨形态直接信 fitView 的结果。 */
+        camTarget = null; camPreSel = null;
         retarget(); fitView(); renderAxes(); applyAxVisibility(); fitView(); updateSlab(); buildShard(); buildDetail(); syncDetailCap(); buildNest();
         renderHud(); syncHelp(); syncChrome(); refresh2D();
       },
@@ -4274,6 +4303,7 @@
         if (!(model.modes[S.mode].views || [0, 1, 2, 3]).includes(v | 0)) return;
         // 点「轴测」= 回到标准等距机位（拖歪之后也能一键复位，按钮在任何时候都有反馈）
         if ((v | 0) === 0) { cam.theta = ISO.theta; cam.phi = ISO.phi; }
+        camTarget = null; camPreSel = null;   /* 同 setMode：换屏信这里马上算的新机位 */
         /* 换屏要重建走线：哪一维塌成点是**逐屏**的判断（groupFlat 读 screenAxes(S.view)），
            不重建就还留着上一屏的画法。 */
         S.view = v | 0; fitView(); applyAxVisibility(); fitView(); rebuildComm(); refresh2D(); syncHelp(); renderInfo();
@@ -4293,6 +4323,21 @@
       select(r) {
         S.sel = r;
         if (S.selEdge) { S.selEdge = null; drawSelEdge(); if (opts.onSelectEdge) opts.onSelectEdge(null); }
+        /* opts.zoomOnSelect：选中飞近一档，取消选中飞回选中前那份机位（见
+           cam 声明旁边的注释）。camPreSel 只在"从没选中→选中"这一刻记一次
+           ——连续换选（选中 A 又直接点 B）不会把"没选中"那份机位弄丢，
+           一路换到最后一次取消选中，飞回去的还是最初那份。 */
+        if (opts.zoomOnSelect) {
+          if (r != null) {
+            if (!camPreSel) camPreSel = { half: cam.half, cx: cam.cx, cy: cam.cy, cz: cam.cz };
+            camTarget = {
+              half: Math.max(4, camPreSel.half * opts.zoomOnSelect),
+              cx: cur[r * 3], cy: cur[r * 3 + 1], cz: cur[r * 3 + 2],
+            };
+          } else if (camPreSel) {
+            camTarget = camPreSel; camPreSel = null;
+          }
+        }
         rebuildComm(); refreshFocus(); renderInfo(); syncChrome();
         /* opts.axisLabelsOnSelect===false 那条只在 applyAxVisibility 里判——
            选中态一变就得重跑一遍，不然刚选中那一刻世界尺寸字牌还亮着，要等

@@ -89,6 +89,10 @@
     // 宿主自己的取景档位名字（比如 rank-topology-lite 第二档的"选中+
     // 兄弟"），默认不传，面包屑仍是"模型名 / rank N"两段，跟改动前一样。
     brandTierLabel: qs.get('tierlabel') || undefined,
+    // 选中一张卡时镜头往那张卡推近一档（?zoomsel=0.5，取消选中飞回原机位）：
+    // 默认不传，选中不动镜头，跟改动前一样——规模大的预置（比如盘古 4000 卡）
+    // 选中的那一列在满屏阵列里只占几个像素时才用得上这个参数。
+    zoomOnSelect: (function () { var z = parseFloat(qs.get('zoomsel')); return isFinite(z) && z > 0 && z < 1 ? z : undefined; })(),
     // 并行度配置（默认值，工具栏「并行」输入排可随时改）：128 卡小规格
     // rank = tp×pp×dp = 2×4×16 = 128（EP 不参与乘法，折入 DP 轴：ep8 把 16 副本
     // 分成 8 桶 × 2 个 A2A 域）。落地这一档是因为每张卡看得清、每一段数得出，

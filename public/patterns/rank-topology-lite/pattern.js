@@ -104,10 +104,15 @@
   // /rubik-pattern.html 也不受影响，默认还画这圈格子。
   // tierlabel=：面包屑第三段，见上面 TIER2_LABEL 的注释——独立打开
   // /rubik-pattern.html 不传这个参数，默认还是"模型名 / rank N"两段。
+  // zoomsel=0.5：反馈「在这一步就做一个小的zoomin」附图是盘古预置选中一张
+  // 卡后，那一列在 4000 卡满屏阵列里只有几个像素——选中时镜头往那张卡
+  // 推近一半（不是矩阵那种贴近单卡的"局部聚焦"，这里镜头还是全景机位，
+  // 只是缩小取景范围），取消选中飞回原机位。独立打开 /rubik-pattern.html
+  // 不传这个参数，选中不受影响。
   var rubikParams = new URLSearchParams({
     theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
     color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0',
-    tierlabel: TIER2_LABEL
+    tierlabel: TIER2_LABEL, zoomsel: '0.5'
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
 
