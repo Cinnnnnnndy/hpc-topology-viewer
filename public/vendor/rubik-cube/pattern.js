@@ -746,6 +746,12 @@
     const dimc = (d) => (S.colorBy === 'neutral' && DIM_MONO[d]) ? DIM_MONO[d] : tokHex(DIM_TOKEN[d]);
     const tierc = (k) => tokHex(TIER_TOKEN[k]);          // 物理链路层级色（同机 / Pod 内 / 跨 Pod）
     const groupColor = (i) => tokHex(GROUP_TOKENS[i % GROUP_TOKENS.length]);
+    /* 算子族色（OPV）同一个开关也要认——"卡内魔方"/装载清单那几处小方块原来
+       直接读 OPV，选了素色之后阵列本体、轴标、图例都退成灰阶了，唯独这几块
+       还留着原色，读者会觉得"没去干净"。跟 dimc 一样只改这一个出口：族色
+       本身跨 pattern 复用（见 OPV 定义处的注释），不能就地改数组，只能在
+       读取的地方按开关岔一下。 */
+    const famc = (fam) => S.colorBy === 'neutral' ? tokHex('--foreground-secondary') : (OPV[fam] || OPV.linear);
 
     /* ── DOM 骨架 ── */
     const root = document.createElement('div');
@@ -798,6 +804,15 @@
     readTokens();   // 挂进文档后才能解析 token（detached 元素读不到 computed style）
     const $ = (sel) => root.querySelector(sel);
     const stageEl = $('.prc-stage'), tipEl = $('.prc-tip');
+    /* 招牌名字后面跟一句"选中的是谁"（?brand= 的宿主才用得上这个后缀，
+       独立打开时 opts.brandName 是空，brandBase 就是"逻辑魔方"，跟改动前
+       一样不带任何后缀）——面包屑挂在名字后面，不再单独占一块地。 */
+    const brandEl = $('.prc-brandname');
+    const brandBase = String(opts.brandName || '逻辑魔方');
+    function syncBrand() {
+      if (!brandEl) return;
+      brandEl.textContent = brandBase + (S.sel != null ? ' · rank ' + S.sel : '');
+    }
 
     /* ── three 场景 ── */
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -2519,7 +2534,7 @@
       objs.forEach((o) => {
         const carried = model.objCarry(o.id, r);
         const sh = carried ? model.objShard(o.id, r) : null;
-        const fam = OPV[o.fam] || OPV.linear;
+        const fam = famc(o.fam);
         const of = sh ? sh.of : 1, idx = sh ? sh.idx : 0;
         const focused = objOn() && S.obj === o.id;
         // 底槽：这个对象的全部分片（其余片在别的卡上 → 只给一层很淡的底）
@@ -2623,7 +2638,7 @@
       objs.forEach((o, yi) => {
         const carried = model.objCarry(o.id, r);
         const sh = carried ? model.objShard(o.id, r) : null;
-        const fam = OPV[o.fam] || OPV.linear;
+        const fam = famc(o.fam);
         for (let xi = 0; xi < LN; xi++) {
           const px = (xi - (LN - 1) / 2) * (CW + GAP);
           const py = ((objs.length - 1) / 2 - yi) * (CW + GAP);
@@ -2682,7 +2697,7 @@
       if (!o || o.comm) { shardGroup.visible = false; return; }
       const carried = model.objCarry(o.id, r);
       const sh = carried ? model.objShard(o.id, r) : null;
-      const fam = OPV[o.fam] || OPV.linear;
+      const fam = famc(o.fam);
       const L = CARD.x * 1.5;                                   // 略大于选中卡（1.45）→ 包住它
       const solid = (w, h, d, x, y, z, color, op) => {
         const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
@@ -3383,7 +3398,7 @@
         b.items.push(o);
       });
       const row = (o) => {
-        const dot = `<i class="prc-fam" style="background:${OPV[o.fam] || OPV.linear}"></i>`;
+        const dot = `<i class="prc-fam" style="background:${famc(o.fam)}"></i>`;
         let state, cls = '';
         if (o.comm) {
           const g = model.commGroup(r, o.comm);
@@ -3707,7 +3722,7 @@
       cfgErr.textContent = '';
     }
     function syncChrome() {
-      syncHelp(); syncBarH();                                           // 问号气泡与标题规格随状态更新
+      syncBrand(); syncHelp(); syncBarH();                              // 招牌名字/问号气泡/标题规格随状态更新
       if (anomBtns[4]) anomBtns[4].textContent = `EP桶${anomBucket()}`;   // 示意桶号随 EP 收缩
       /* 形态按钮的**显示顺序**：PP · TP · EP · DP · 标准。
          前四个按并行维排（与设计系统 sidecar 的并行切换同一顺序，读者的肌肉记忆一致），
