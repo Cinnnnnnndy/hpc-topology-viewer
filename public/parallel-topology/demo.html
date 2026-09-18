@@ -1230,10 +1230,17 @@ var PRESETS = [
      assumed（原文没给确定值，按本页约束推出能过校验的最小/占位值，不是
      从配置抄来的）：
        world/dp——原文自己都没敲定（8192~262144 试了一圈），这里取满足
-       moeMin 约束的最小值：dp=1、world=tp·cp·pp·dp=8·16·16·1=2048，
-       是这组 tp/pp/cp/ep 组合下能跑通本页校验的下限，不代表"真实训练
-       就是 2048 卡"——真实 DP 多半远不止 1，只是没有可信数字之前，占位
-       用最小值比替它编一个大数更诚实。
+       约束的最小值。本页自己的 moeMin/plane 校验，dp=1 就够（world=
+       tp·cp·pp·dp=8·16·16·1=2048）；但这档预置同时桥接进了
+       rank-topology-lite 的逻辑魔方视图（见那份 pattern.js 的
+       PRESETS.moe718b128k），逻辑魔方自己的模型对 EP 折叠用的是更简单
+       的一条约束——EP 必须整除 DP 本身（不是本页这种折进 TP·CP·DP 合并
+       平面的折法），dp=1 时 "ep(4) 须整除 dp(1)" 直接建模失败。两边都要
+       满足的最小值是 dp=4（4 是能被 ep=4 整除的最小正整数）：
+       world=8·16·16·4=8192。仍然不代表"真实训练就是 8192 卡"，只是
+       "满足全部约束的下限"从 2048 变成了 8192——这条约束本身是真的（两个
+       组件各自的模型代码），取整的理由不是又猜了一个新数，是把逻辑魔方
+       那边的隐藏约束也算进来了。
        layers=64——原文给的是 62 层，本页要求 layers%pp===0，62 除不尽
        16，64 是最近的合法值。heads=64、kv=64（原文用的是 MLA
        多头潜在注意力，q_lora_rank/kv_lora_rank 那套机制本页不建模，
@@ -1241,9 +1248,9 @@ var PRESETS = [
        不代表真有 GQA 分组）、ffn=19200（原文没给，按同项目 pangu 预置
        ffn/hidden≈2.5 的比例估的）、vocab=153376（沿用同项目"pangu"
        预置的词表大小，不是这份分析给的）、ga=256（按 global_batch_size
-       =256、mbs=1、上面假设的 dp=1 反推 gbs=mbs·ga·dp 得出，dp 本身是
+       =256、mbs=1、上面假设的 dp=4 反推 gbs=mbs·ga·dp 得出，dp 本身是
        假设值，这一项跟着不确定）。 */
-  {id:'moe718b128k', name:'MoE 718B(A39B)·128K序列 tp8·pp16·cp16·ep4', cfg:{world:2048, tp:8, cp:16, pp:16, ep:4, etp:1, layers:64, hidden:7680, heads:64, kv:64, ffn:19200, vocab:153376, seq:131072, experts:256, topk:8, mbs:1, ga:256, hbm:64}},
+  {id:'moe718b128k', name:'MoE 718B(A39B)·128K序列 tp8·pp16·cp16·ep4', cfg:{world:8192, tp:8, cp:16, pp:16, ep:4, etp:1, layers:64, hidden:7680, heads:64, kv:64, ffn:19200, vocab:153376, seq:131072, experts:256, topk:8, mbs:1, ga:64, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 

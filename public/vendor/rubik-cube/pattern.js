@@ -4209,7 +4209,7 @@
          不受影响，行为跟改动前逐字节相同。 */
       if (r != null && r === S.sel && opts.onDrill) {
         opts.onDrill({
-          rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
+          rank: r, tp: model.tpOf(r), cp: model.cpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
           bucket: model.epOf(r), domain: model.domOf(r), stage: model.stageLayerRange(model.ppOf(r)),
         });
         return;
@@ -4372,7 +4372,12 @@
         if (opts.axisLabelsOnSelect === false) applyAxVisibility();
         if (opts.onSelect) {
           opts.onSelect(r == null ? null : {
-            rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
+            /* cp：CP=1（绝大多数消费者）时恒为 0，字段一直都在，只是没人问过——
+               这次是第一个 cp>1 的宿主（rank-topology-lite 接 moe718b128k，
+               cp=16）要靠它换算矩阵 rank，见 model.cpOf 的注释：CP 与 TP 共轴，
+               不是折叠维，选中态不给这个数就没法往回换算。纯加字段，旧消费者
+               不读它不受影响。 */
+            rank: r, tp: model.tpOf(r), cp: model.cpOf(r), pp: model.ppOf(r), rep: model.repOf(r),
             bucket: model.epOf(r), domain: model.domOf(r), stage: model.stageLayerRange(model.ppOf(r)),
           });
         }

@@ -56,7 +56,17 @@
        tp/pp/dp/ep 取值与 demo.html PRESETS 里 incident2048 的注释同一份推算
        （world=pp×edp×ep=4×8×64=2048 → dp=edp×ep=512、ep=64），两边用同一组
        数字，rank 号才能对得上。见下面 INCIDENT 数据块与 renderIncident()。 */
-    incident2048: { tp: 1, pp: 4, dp: 512, ep: 64, matrixPreset: 'incident2048', modelName: '2048卡·Router溢出复盘' }
+    incident2048: { tp: 1, pp: 4, dp: 512, ep: 64, matrixPreset: 'incident2048', modelName: '2048卡·Router溢出复盘' },
+    /* moe718b128k：demo.html 那份 PRESETS.moe718b128k 的桥接条目，tp/cp/pp/dp/ep
+       逐位照抄那边的 cfg（world=tp·cp·pp·dp=8·16·16·4=8192；dp=4 不是 1——
+       逻辑魔方自己的模型要求 EP 必须整除 DP 本身，dp=1 时 ep(4) 除不尽会
+       直接抛异常建模失败，dp=4 是两边约束都满足的最小值，demo.html 那份
+       PRESETS 的注释里有完整推导）。这是第一个 cp>1 的桥接预置，之前
+       pangu/dense64/incident2048 都是 cp=1（省了这个字段也一样），这档
+       必须显式给 cp，不然逻辑魔方按 cp=1 建模型，跟矩阵本体的四维结构
+       对不上、rank 换算全错。世界卡数公式与 rubikParams/
+       rubikSelToMatrixSel 里补的 cp 项，见下面对应位置的注释。 */
+    moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K序列' }
   };
   /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
      原来选中之后不管第二档（留在逻辑魔方，选中卡与它所在的并行组）还是第三档
@@ -68,8 +78,17 @@
      选中卡摆进它所在的 TP/PP/DP 并行组里定个位，还没下钻到字节级详情，
      名字直说这件事，不再是简写。 */
   var TIER2_LABEL = '同组定位';
-  var PS = PRESETS[qs.get('preset')] || PRESETS.pangu;
-  var world = PS.tp * PS.pp * PS.dp;
+  /* 默认预置：反馈「改这里的默认配置」——原来落地是 pangu（4000卡演示规格），
+     换成 moe718b128k（pangu_sophon_pytorch 项目里体量最大的一档真实 MoE，
+     见 demo.html PRESETS.moe718b128k 的来源注释）。不带 ?preset= 打开这一层
+     现在直接落在这档真实数据上；旧链接 ?preset=pangu/dense64/incident2048
+     照样认得，不受影响。 */
+  var PS = PRESETS[qs.get('preset')] || PRESETS.moe718b128k;
+  /* world 公式补上 cp：原来只有 tp×pp×dp，pangu/dense64/incident2048 都是
+     cp=1（省了这个乘数结果一样），moe718b128k 是第一个 cp>1（=16）的桥接
+     预置，不补的话这里算出的卡数只有真实 world 的 1/16，逻辑魔方与矩阵
+     本体从一开始就对不上。PS.cp 缺省仍按 1 处理，旧预置的 world 逐位不变。 */
+  var world = PS.tp * (PS.cp || 1) * PS.pp * PS.dp;
 
   /* ══════════════════════════════════════════════════════════════════════
      真实故障复盘数据（仅 preset=incident2048 时出现）——反馈「这里真实监控
@@ -239,7 +258,11 @@
   // 全是重复的第二份 chrome——直接让逻辑魔方自己那套别画，不止是这一个面板的
   // 样式问题。独立打开 /rubik-pattern.html 不传这个参数，默认还画，不受影响。
   var rubikParams = new URLSearchParams({
-    theme: 'dark', tp: String(PS.tp), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
+    /* cp：缺省按 1（PS.cp||1）——pangu/dense64/incident2048 没有这个字段，
+       String(undefined) 会变成字面量 "undefined" 传出去，||1 兜底成
+       rubik-pattern.html 自己的默认值，三档旧预置的取景逐位不变；
+       moe718b128k 第一次真的用上非 1 的 cp。 */
+    theme: 'dark', tp: String(PS.tp), cp: String(PS.cp || 1), pp: String(PS.pp), dp: String(PS.dp), ep: String(PS.ep),
     color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0',
     tierlabel: TIER2_LABEL, zoomsel: '0.5', chrome: '0'
   });
@@ -367,16 +390,21 @@
     return '../rank-topology-3d/pattern.html?' + p.toString();
   }
 
-  /* 逻辑魔方与并行拓扑矩阵各自实现了一遍"rank ↔ (tp,pp,dp) 坐标"的换算，
+  /* 逻辑魔方与并行拓扑矩阵各自实现了一遍"rank ↔ (tp,cp,pp,dp) 坐标"的换算，
      内部打包顺序不一样，同一个数字在两边指的不是同一张卡：
-       逻辑魔方（pattern.js）  rankOf = (rep*PP + pp) * TP + tp
-       并行拓扑（demo.html）   rankOf = (pp*DP + dp) * TP + tp   （cp 固定 0）
+       逻辑魔方（pattern.js）  rankOf = ((rep*PP + pp)*CP + cp) * TP + tp
+       并行拓扑（demo.html）   rankOf = ((pp*DP + dp)*CP + cp) * TP + tp
      只有 tp 在两边都是最内层（同一个 %TP），pp/dp(rep) 的打包顺序不同，
      所以必须按坐标三元组换算，不能把 rank 数字直接抄过去——实测验证过：
      逻辑魔方 rank 830（tp6·pp3·rep20）对应并行拓扑 rank 2566，矩阵本体
-     读出的坐标正是 tp6·cp0·dp20·pp3，与逻辑魔方报的坐标逐位一致。 */
+     读出的坐标正是 tp6·cp0·dp20·pp3，与逻辑魔方报的坐标逐位一致。
+     cp 那一项：pangu/dense64/incident2048 都是 CP=1，sel.cp 恒为 0、
+     PS.cp 缺省按 1，这一项乘完加完等于没有，公式跟改动前逐位相同；
+     moe718b128k（CP=16）是第一个用上它的预置——逻辑魔方的 onSelect
+     payload 补了 cp 字段（见 vendor/rubik-cube/pattern.js 的注释）才有
+     这个数可用。 */
   function rubikSelToMatrixSel(sel) {
-    return (sel.pp * PS.dp + sel.rep) * PS.tp + sel.tp;
+    return ((sel.pp * PS.dp + sel.rep) * (PS.cp || 1) + (sel.cp || 0)) * PS.tp + sel.tp;
   }
 
   var pendingMatrixSel = null;   // 第二档选中的那张卡，换算好的矩阵 rank——第三档就是拿它去开矩阵
@@ -437,7 +465,11 @@
       if (d.type !== 'rubik-select') return;
       if (d.sel && d.sel.rank != null) {
         var st9 = d.sel.stage;
-        showTier2(rubikSelToMatrixSel(d.sel), 'tp' + d.sel.tp + ' pp' + d.sel.pp + ' rep' + d.sel.rep
+        /* cp 只在 PS.cp>1 时才显示——d.sel.cp===0 是合法坐标（CP>1 时也有
+           第 0 段），不能拿它的真假值判断"要不要显示"，得看这份预置本身
+           有没有 CP 这根轴。 */
+        showTier2(rubikSelToMatrixSel(d.sel), 'tp' + d.sel.tp
+          + ((PS.cp || 1) > 1 ? ' cp' + d.sel.cp : '') + ' pp' + d.sel.pp + ' rep' + d.sel.rep
           + (st9 ? ' · L' + st9.lo + '–L' + st9.hi : ''));
       } else showOverview();
       return;
