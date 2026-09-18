@@ -50,7 +50,15 @@
   INCIDENT_GROUPS，数值一个没改）。这是另一次独立的 2048 卡训练的真实
   事故，不随当前选中卡变化——跟右上角显存构成卡（渲染的是本页自己按架构
   字段估出的假设值）是两套口径，同屏出现时不要混着读，见 pattern.js 顶部
-  INCIDENT_* 数据块的注释。 -->
+  INCIDENT_* 数据块的注释。
+
+  这份真实数据只在 incident2048 那档才出现——不是随手不给，是那份事故的
+  rank 号（1559/1553 这些）本来就属于另一次 2048 卡训练自己的坐标系，接
+  在默认盘古预置的拓扑上会对不上号。但反馈「不是说好要放进来」——「放
+  进来」指的是默认这一屏就要摸得到，不是要翻 URL 参数文档才找得到。所以
+  左上角聚合角标下面常驻一条入口（incidentLink，除了 incident2048 自己，
+  别的预置都显示），点一下直接跳转 ?preset=incident2048——一次导航换整
+  页拓扑，rank 号照样精确对应，不是把两套数据硬凑到同一份拓扑上。 -->
 </head>
 <body>
   <iframe id="rubikFrame" class="stage-frame" title="逻辑魔方（盘古 ProMoE · 4000 卡全量视图）"></iframe>
@@ -59,6 +67,8 @@
   <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
 
   <button type="button" id="clusterBadge" class="cluster-badge is-hidden" aria-live="polite"></button>
+
+  <a id="incidentLink" class="incident-link is-hidden" href="?preset=incident2048">⚠ 真实故障复盘 · Router 溢出与通信死锁 →</a>
 
   <aside id="incidentPanel" class="incident-panel is-hidden" aria-live="polite"></aside>
 

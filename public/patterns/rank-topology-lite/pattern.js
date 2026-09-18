@@ -40,6 +40,7 @@
   var matrixFrame = document.getElementById('matrixFrame');
   var briefCard = document.getElementById('briefCard');
   var clusterBadge = document.getElementById('clusterBadge');
+  var incidentLink = document.getElementById('incidentLink');
 
   /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
@@ -189,6 +190,13 @@
     rubikFrame.classList.add('is-hidden');
     return;
   }
+
+  /* 真实故障复盘入口：除了 incident2048 自己，别的预置都显示——反馈「不是
+     说好要放进来」，数据本身仍然只在 incident2048 那档出现（见 pattern.html
+     顶部注释），这颗链接负责让默认屏幕也摸得到它，不用先知道 URL 参数。
+     href 保留原有 preset 之外的其余参数没有意义（这一层自己不认识别的
+     查询参数），直接给 ?preset=incident2048 足够。 */
+  if (incidentLink) incidentLink.classList.toggle('is-hidden', PS.matrixPreset === 'incident2048');
 
   // ── 逻辑魔方：固定当前预置，深色主题 ──────────────────────────────────
   // color=neutral：默认就是素色（中性灰），不是负载热力橙→粉——这个简洁版要的

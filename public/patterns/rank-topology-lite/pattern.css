@@ -90,6 +90,24 @@ html, body {
 .cluster-badge:hover { background: #3A3A3A; }
 .cluster-badge.is-alert:hover { background: #FFFFFF; }
 
+/* ── 真实故障复盘入口：贴在聚合角标下面，常驻左上角（incident2048 自己
+   那一档不显示——已经在那儿了，不需要指向自己的链接）。反馈「不是说好
+   要放进来」——数据本身仍然只在 incident2048 那档出现（rank 号对不上默认
+   预置的拓扑，见 pattern.html 顶部注释），但入口摆在默认屏幕上，不用先
+   知道 URL 参数才找得到。配色沿用 incidentPanel 自己的告警红（--ip-sevc
+   同一个 bad 色阶），跟聚合角标的"只反色不引入色相"规则不是同一件事——
+   这颗链接说的是"这儿有一份真实告警"，跟角标说的"这份配置本身超没超容"
+   是两句话，用同一种红只是恰好都在说"需要注意"。 ──────────────────── */
+.incident-link {
+  position: fixed; left: 16px; top: 96px; z-index: 6;
+  display: block; font-size: 11px; font-weight: 600; color: #F85149;
+  background: #1F1F1F; border-radius: 999px; padding: 5px 12px;
+  text-decoration: none; white-space: nowrap;
+  transition: opacity .2s ease, transform .2s ease, background .2s ease;
+}
+.incident-link.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.incident-link:hover { background: #3A3A3A; }
+
 /* ── 真实故障复盘面板：只在 incident2048 预置下出现，钉在视口底部，跨三档
    常驻。时间线（事件按问题分组、圆点按严重度着色）+ 十格指标卡（读数/
    为什么），配色沿用 incident-canvas 自己的严重度三色（ok 绿 / warn 橙 /
