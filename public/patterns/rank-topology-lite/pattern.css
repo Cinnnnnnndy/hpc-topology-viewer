@@ -74,6 +74,22 @@ html, body {
 }
 .brief-cta:hover { background: #3A3A3A; }
 
+/* ── 集群聚合角标：常驻左上角，两个本体各自的招牌/工具栏都在这一格顶栏，
+   top:60 让开一行（跟右上角 .brief-card 的让法一样）。默认态（level 全 ok）
+   跟 brief-card 未告警时同一路配色——暗灰底、灰字，只在有容量告警时才翻成
+   高对比（跟 .brief-badge.is-alert 同一条規則：告警只靠反色/说法分挡，不
+   引入色相）。按钮而不是纯文字：点它直接下钻到最惨那张卡。 ──────────── */
+.cluster-badge {
+  position: fixed; left: 16px; top: 60px; z-index: 6;
+  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
+  background: #1F1F1F; border: 0; border-radius: 999px; padding: 6px 14px;
+  cursor: pointer; transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+}
+.cluster-badge.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.cluster-badge.is-alert { color: #111111; background: #E8E8E8; }
+.cluster-badge:hover { background: #3A3A3A; }
+.cluster-badge.is-alert:hover { background: #FFFFFF; }
+
 /* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
    各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
 .corner-link {

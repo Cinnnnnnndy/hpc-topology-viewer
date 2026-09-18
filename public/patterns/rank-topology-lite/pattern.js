@@ -39,6 +39,7 @@
   var rubikFrame = document.getElementById('rubikFrame');
   var matrixFrame = document.getElementById('matrixFrame');
   var briefCard = document.getElementById('briefCard');
+  var clusterBadge = document.getElementById('clusterBadge');
 
   /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
@@ -115,6 +116,39 @@
     tierlabel: TIER2_LABEL, zoomsel: '0.5'
   });
   rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
+
+  // ── 集群总览角标：一开场就借矩阵本体算一遍「多少张卡超容」，不用等读者
+  //    下钻到第三档才看到真实数字 ────────────────────────────────────────
+  // 容量/显存那套判定（capVerdict/memParts）全在矩阵共用的 demo.html 里，这
+  // 一层不重算一遍（重算会有两套数）。矩阵本体现在只在第三档才真的打开、
+  // 画满屏 SVG——但只要「算一遍聚合、报个数」，不需要真的铺开那张画。给
+  // matrixFrame 先借用一次，带 ?brief=1：demo.html 收到这个参数会跳过
+  // urlLoad 之后那一整套 render()，只算 ptoClusterBrief() 就地 postMessage
+  // 报完，不建 SVG、不占那几秒的渲染开销。matrixFrame 这一刻仍然是
+  // is-hidden（CSS 已经收着），第三档真正下钻时 showDetail() 照常把它的
+  // src 换成真正的详情页——两次导航互不冲突，只是多一次不可见的加载。
+  var clusterWorstRank = null;
+  (function () {
+    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1' });
+    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+  })();
+  var CLUSTER_CAP_LABEL = { oom: '⚠ 超出容量', red: '⚠ 逼近红线', amber: '临界（黄线）' };
+  function renderClusterBadge(brief) {
+    if (!brief || !clusterBadge) return;
+    var n = brief.n, level = n.oom > 0 ? 'oom' : n.red > 0 ? 'red' : n.amber > 0 ? 'amber' : 'ok';
+    clusterWorstRank = brief.worst;
+    var text = level === 'ok' ? (brief.world + ' 卡 · 全部正常')
+      : CLUSTER_CAP_LABEL[level] + ' · ' + n[level] + '/' + brief.world + ' 卡';
+    clusterBadge.textContent = text;
+    clusterBadge.classList.toggle('is-alert', level !== 'ok');
+    clusterBadge.classList.remove('is-hidden');
+  }
+  /* 点一下角标直接下钻到最惨那张卡（ratio 最高，聚合时顺手记下的）——不用先
+     经过「随便选一张再看是不是这张最严重」。角标是全局状态，跟当前在哪一档
+     无关，点开永远落在第三档，跟从档二点"↓ 单卡下钻"一致。 */
+  clusterBadge && clusterBadge.addEventListener('click', function () {
+    if (clusterWorstRank != null) showDetail(clusterWorstRank);
+  });
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
@@ -221,6 +255,7 @@
       return;
     }
     if (ev.source === matrixFrame.contentWindow) {
+      if (d.type === 'pto:cluster') { renderClusterBadge(d.brief); return; }
       if (d.type !== 'pto:tier') return;
       if (d.tier === 3) {
         renderBrief(d.brief);

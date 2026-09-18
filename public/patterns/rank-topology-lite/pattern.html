@@ -37,6 +37,12 @@
   「一张卡片放中间」。选中卡之后，右下角悬浮一张数据卡（rank 坐标、层段、
   容量告警、兄弟卡数/显存构成明细），数据全部来自矩阵 iframe 上报的已算好的
   摘要，这一层不重算、不编数字。
+
+  左上角常驻一颗聚合角标（clusterBadge）：一开场就借 matrixFrame 跑一次
+  ?brief=1（demo.html 收到这个参数只算 ptoClusterBrief() 就地报数，不铺
+  4000 张卡的 SVG），报一句"全网多少张卡超容/逼近红线"，不用先点进第三档
+  才看到第一个真实数字。点它直接下钻到 ratio 最高的那张卡（第三档），跟
+  档二那句"↓ 单卡下钻"邀请殊途同归。
 -->
 </head>
 <body>
@@ -44,6 +50,8 @@
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 选中卡详情"></iframe>
 
   <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
+
+  <button type="button" id="clusterBadge" class="cluster-badge is-hidden" aria-live="polite"></button>
 
   <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
 

@@ -2207,6 +2207,23 @@ function capVerdict(D, ppRank, g){
     why: why, segs: segs
   };
 }
+/* 全网聚合一遍容量判定：宿主（rank-topology-lite 集群总览那一档）要一句
+   「⚠ 128/4000 卡超容量」，逐卡判定复用 capVerdict——跟悬停提示、选中详情卡
+   同一处口径，不为总览另起一份容易跟正式判定读数对不上的近似算法。
+   顺手记一下 ratio 最高的那张卡：总览角标点开就直接下钻到它，不用先经过
+   「随便选一张再看是不是这张最惨」。 */
+function ptoClusterBrief(){
+  var D = derive(cfg);
+  if(!D.ok) return null;
+  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1;
+  for(var r=0; r<D.world; r++){
+    var co = coordsOf(r, D);
+    var V = capVerdict(D, co.p, r);
+    n[V.level]++;
+    if(V.ratio > worstRatio){ worstRatio = V.ratio; worst = r; }
+  }
+  return { world:D.world, hbm:D.hbm, n:n, worst:worst };
+}
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
    这就是 A3「加 DP 不买余量」的现场证明，而不是一句口号。 */
@@ -14395,19 +14412,33 @@ if(window.ResizeObserver){
 }
 
 urlLoad();
-/* q= 带进来的那句话要真的生效（选中卡、落下刀），不能只是把字填回框里 */
-(function(){ var D0 = derive(cfg); if(D0.ok && ui.chips.length) applyQuery(D0); })();
-render();
-/* fastCard：URL 直接带 ?sel= 打开（rank-topology-lite 从逻辑魔方跳过来就是这条
-   路，不经过 chainpick 点击）也要飞到那张卡——上面 chainpick 分支里那次调用管的
-   是"页面已经开着、这一刻点了一张卡"，这一条管的是"页面一开就已经是选中态"。 */
-if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? 20 : 9);
-/* 没选中任何卡时 ?solo=1 没有意义（第三档要有主角才成立）——落地就撤掉，
-   免得之后随手点一张卡就莫名其妙直接进了第三档。 */
-if(sel === null) ui.soloCard = false;
-/* 一开场就把自己停在哪一档报给宿主：rank-topology-lite 的档位条/浮卡要跟着
-   这一条落位，不能等到读者第一次点击才知道这一格现在是第几档。 */
-ptoNotifyTier();
+/* ?brief=1：宿主只要一句聚合容量徽标（rank-topology-lite 集群总览那一档），
+   不要 4000 张卡的 SVG——报完聚合数就地打住，不进 applyQuery/render 那一整套。
+   本体自己独立打开、或宿主要真的看画面时都不传这个参数，走的还是下面原来
+   那条路，逐位不变。urlLoad() 里那个 q 是它自己函数作用域内的局部变量，
+   这里够不到，重新读一遍 URL——就一次查询，成本可以忽略。 */
+var q9brief = new URLSearchParams(location.search);
+if(q9brief.get('brief')==='1'){
+  if(window.parent && window.parent !== window){
+    window.parent.postMessage({type:'pto:cluster', brief: ptoClusterBrief()}, '*');
+  }
+} else {
+  /* q= 带进来的那句话要真的生效（选中卡、落下刀），不能只是把字填回框里 */
+  (function(){ var D0 = derive(cfg); if(D0.ok && ui.chips.length) applyQuery(D0); })();
+  render();
+  /* fastCard：URL 直接带 ?sel= 打开（rank-topology-lite 从逻辑魔方跳过来就是这条
+     路，不经过 chainpick 点击）也要飞到那张卡——上面 chainpick 分支里那次调用管的
+     是"页面已经开着、这一刻点了一张卡"，这一条管的是"页面一开就已经是选中态"。 */
+  if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? 20 : 9);
+  /* 没选中任何卡时 ?solo=1 没有意义（第三档要有主角才成立）——落地就撤掉，
+     免得之后随手点一张卡就莫名其妙直接进了第三档。 */
+  if(sel === null) ui.soloCard = false;
+  /* 一开场就把自己停在哪一档报给宿主：rank-topology-lite 的档位条/浮卡要跟着
+     这一条落位，不能等到读者第一次点击才知道这一格现在是第几档。brief=1
+     那条分支已经报过 pto:cluster、直接结束——这里再报一遍 pto:tier 只会让
+     宿主收到一条它没料到的"第一档"消息，平白多一次状态判断。 */
+  ptoNotifyTier();
+}
 })();
 </script>
 </body>
