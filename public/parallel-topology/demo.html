@@ -1209,6 +1209,41 @@ var PRESETS = [
      架构字段，不是从这份事故分析抄来的——跟 moe30B 那档同样的字段来源
      分层，别当成事故原文引用。 */
   {id:'incident2048', name:'2048卡·Router溢出复盘 pp4·edp8·ep64', cfg:{world:2048, tp:1, cp:1, pp:4, ep:64, etp:1, layers:48, hidden:5120, heads:40, kv:8, ffn:12800, vocab:153376, seq:4096, experts:256, topk:2, mbs:1, ga:8, hbm:64}},
+  /* moe718b128k：pangu_sophon_pytorch 项目里体量最大的一档 MoE（718B 总参/39B
+     激活），来自另一轮对同一个项目的分析——那份分析先给了一版"预设规划"
+     的数字（自己后来承认不是真实集群规模），追问"能不能找到最大集群的
+     真实参数"之后，改口说 TP/PP/CP/EP 这几个是从配置文件读出来的，但
+     总卡数（DP/world_size）这一项它自己也在猜：同一档配置里先后试了
+     DP=1/2/4/8/16 好几种，算出 8192/16384/32768/65536 好几个互相矛盾的
+     总数，没有一个是从某一行配置直接读出来的确定值——跟 13BV2/moe30B
+     那两档"每个数字都能对到原文"不是一回事，这里坦白只是"猜得没那么
+     离谱"。
+     real（这几项在原分析里被称作直接读自配置文件，不是推算）：
+       tp=8、pp=16（原文提到 VPP=2、32 个虚拟 stage，本页不建模虚拟流水
+       并行，只按物理 pp=16 处理）、cp=16（全 Ulysses，无 KV 子分解，与
+       本页 cp 的语义一致）、ep=4（256 个专家）、topk=8、hidden=7680、
+       mbs=1、global_batch_size=256、seq=128K=131072、hbm=64（原文给的
+       "device_C：昇腾 910B，单卡 64GB HBM"）。
+       原文另提"expert_parallel_inner=8"，语义是 EP 内部再分一层，跟本页
+       etp（专家自己的张量并行）不是同一件事，本页模型不支持嵌套 EP，
+       这一项没有映射进来，etp 留 1。
+     assumed（原文没给确定值，按本页约束推出能过校验的最小/占位值，不是
+     从配置抄来的）：
+       world/dp——原文自己都没敲定（8192~262144 试了一圈），这里取满足
+       moeMin 约束的最小值：dp=1、world=tp·cp·pp·dp=8·16·16·1=2048，
+       是这组 tp/pp/cp/ep 组合下能跑通本页校验的下限，不代表"真实训练
+       就是 2048 卡"——真实 DP 多半远不止 1，只是没有可信数字之前，占位
+       用最小值比替它编一个大数更诚实。
+       layers=64——原文给的是 62 层，本页要求 layers%pp===0，62 除不尽
+       16，64 是最近的合法值。heads=64、kv=64（原文用的是 MLA
+       多头潜在注意力，q_lora_rank/kv_lora_rank 那套机制本页不建模，
+       没法照抄，按 hidden/headDim 比例估了一版占位，kv 沿用同一个数，
+       不代表真有 GQA 分组）、ffn=19200（原文没给，按同项目 pangu 预置
+       ffn/hidden≈2.5 的比例估的）、vocab=153376（沿用同项目"pangu"
+       预置的词表大小，不是这份分析给的）、ga=256（按 global_batch_size
+       =256、mbs=1、上面假设的 dp=1 反推 gbs=mbs·ga·dp 得出，dp 本身是
+       假设值，这一项跟着不确定）。 */
+  {id:'moe718b128k', name:'MoE 718B(A39B)·128K序列 tp8·pp16·cp16·ep4', cfg:{world:2048, tp:8, cp:16, pp:16, ep:4, etp:1, layers:64, hidden:7680, heads:64, kv:64, ffn:19200, vocab:153376, seq:131072, experts:256, topk:8, mbs:1, ga:256, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 
