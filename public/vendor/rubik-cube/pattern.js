@@ -746,12 +746,12 @@
     const dimc = (d) => (S.colorBy === 'neutral' && DIM_MONO[d]) ? DIM_MONO[d] : tokHex(DIM_TOKEN[d]);
     const tierc = (k) => tokHex(TIER_TOKEN[k]);          // 物理链路层级色（同机 / Pod 内 / 跨 Pod）
     const groupColor = (i) => tokHex(GROUP_TOKENS[i % GROUP_TOKENS.length]);
-    /* 算子族色（OPV）同一个开关也要认——"卡内魔方"/装载清单那几处小方块原来
-       直接读 OPV，选了素色之后阵列本体、轴标、图例都退成灰阶了，唯独这几块
-       还留着原色，读者会觉得"没去干净"。跟 dimc 一样只改这一个出口：族色
-       本身跨 pattern 复用（见 OPV 定义处的注释），不能就地改数组，只能在
-       读取的地方按开关岔一下。 */
-    const famc = (fam) => S.colorBy === 'neutral' ? tokHex('--foreground-secondary') : (OPV[fam] || OPV.linear);
+    /* 算子族色（OPV）刻意不认素色开关：反馈原话"卡片还是保留彩色"——卡内
+       魔方那圈小方块与装载清单的色点是"结构长什么样"的视觉本体，跟维度
+       签名色（TP/PP/DP/EP，答的是"被哪一维切"）不是一回事，素色开关收的
+       是后者。这一路一度也接上了同一个开关（famc()，已撤销），选了素色
+       之后这几处会跟着退灰——用户随后反馈要把它们的颜色留住，只去掉画布
+       里挤在一起读不出来的那些字牌（见 cclabels / axisLabelsOnSelect）。 */
 
     /* ── DOM 骨架 ── */
     const root = document.createElement('div');
@@ -1404,6 +1404,19 @@
           return;
         }
         if (!o.isSprite && !o.isLine) return;
+        /* 选中一张卡、且宿主选择收起这一路时：把「贴在几何体上」的那一类字牌
+           （TP0/PP3 这种轴刻度、桶号——世界尺寸固定，跟着相机一起放大缩小）
+           全部关掉。「贴边」的那一类（fixedPx=true，图表框架的一部分）不在
+           这条里——它们本来就是固定屏幕尺寸，不会因为贴近一张卡而爆大。
+           反馈原话「彻底去掉 3D 画布中的显示，卡片还是保留彩色」：rank-
+           topology-lite 的第二档把相机怼得极近（"局部聚焦"那颗镜头），世界
+           尺寸字牌这时候会占据大半个画布、糊住宿主自己的详情卡——而这些
+           坐标信息本来就已经在 DOM 侧栏里写着，没有必要在画布里重复一遍，
+           还占那么大的地方。独立打开 /rubik-pattern.html 或没传这个选项的
+           宿主一个字节不变。 */
+        if (opts.axisLabelsOnSelect === false && S.sel != null && o.isSprite && !o.userData.fixedPx) {
+          o.visible = false; return;
+        }
         if (o.userData.banner) { o.visible = S.view === 0; return; }
         if (o.userData.views) o.visible = o.userData.views.indexOf(S.view) >= 0 && !o.userData.tickHide;
       });
@@ -2534,7 +2547,7 @@
       objs.forEach((o) => {
         const carried = model.objCarry(o.id, r);
         const sh = carried ? model.objShard(o.id, r) : null;
-        const fam = famc(o.fam);
+        const fam = OPV[o.fam] || OPV.linear;
         const of = sh ? sh.of : 1, idx = sh ? sh.idx : 0;
         const focused = objOn() && S.obj === o.id;
         // 底槽：这个对象的全部分片（其余片在别的卡上 → 只给一层很淡的底）
@@ -2638,7 +2651,7 @@
       objs.forEach((o, yi) => {
         const carried = model.objCarry(o.id, r);
         const sh = carried ? model.objShard(o.id, r) : null;
-        const fam = famc(o.fam);
+        const fam = OPV[o.fam] || OPV.linear;
         for (let xi = 0; xi < LN; xi++) {
           const px = (xi - (LN - 1) / 2) * (CW + GAP);
           const py = ((objs.length - 1) / 2 - yi) * (CW + GAP);
@@ -2697,7 +2710,7 @@
       if (!o || o.comm) { shardGroup.visible = false; return; }
       const carried = model.objCarry(o.id, r);
       const sh = carried ? model.objShard(o.id, r) : null;
-      const fam = famc(o.fam);
+      const fam = OPV[o.fam] || OPV.linear;
       const L = CARD.x * 1.5;                                   // 略大于选中卡（1.45）→ 包住它
       const solid = (w, h, d, x, y, z, color, op) => {
         const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
@@ -3398,7 +3411,7 @@
         b.items.push(o);
       });
       const row = (o) => {
-        const dot = `<i class="prc-fam" style="background:${famc(o.fam)}"></i>`;
+        const dot = `<i class="prc-fam" style="background:${OPV[o.fam] || OPV.linear}"></i>`;
         let state, cls = '';
         if (o.comm) {
           const g = model.commGroup(r, o.comm);
@@ -4263,6 +4276,10 @@
         S.sel = r;
         if (S.selEdge) { S.selEdge = null; drawSelEdge(); if (opts.onSelectEdge) opts.onSelectEdge(null); }
         rebuildComm(); refreshFocus(); renderInfo(); syncChrome();
+        /* opts.axisLabelsOnSelect===false 那条只在 applyAxVisibility 里判——
+           选中态一变就得重跑一遍，不然刚选中那一刻世界尺寸字牌还亮着，要等
+           下一次换形态/换视角才会被收掉。 */
+        if (opts.axisLabelsOnSelect === false) applyAxVisibility();
         if (opts.onSelect) {
           opts.onSelect(r == null ? null : {
             rank: r, tp: model.tpOf(r), pp: model.ppOf(r), rep: model.repOf(r),

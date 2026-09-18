@@ -75,6 +75,9 @@
     // 卡内魔方的两枚 3D 字牌（?cclabels=0 收起）：默认画，宿主自己的详情侧栏
     // 与它说的是同一句话时才用得上这个参数，见 pattern.js 里的注释。
     cardCubeLabels: qs.get('cclabels') === '0' ? false : undefined,
+    // 选中一张卡时收起"贴在几何体上"的那类轴刻度字牌（TP0/PP3 这种，世界
+    // 尺寸固定，镜头贴近一张卡时会占满大半个画布）——?axsel=0，默认画。
+    axisLabelsOnSelect: qs.get('axsel') === '0' ? false : undefined,
     // 顶栏那块"逻辑魔方"招牌换名字（?brand=）：默认不传，就是这个 pattern
     // 自己的名字——只有宿主想把它认成别的东西（比如 rank-topology-lite
     // 把它接进真实模型的三档取景，招牌该写模型名而不是 pattern 名）时才用。
