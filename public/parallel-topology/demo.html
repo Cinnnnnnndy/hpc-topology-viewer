@@ -1170,13 +1170,6 @@ var ui = {
      画法与之前逐字节相同，只有显式要这份轻量初始渲染的嵌入方（rank-topology-lite）
      会传这个参数。见 shellOf 里 fcOn 那段、以及本文件最下面 fcFlush()。 */
   fastCard:false,
-  /* 兄弟卡素色：卡维度选中一张卡之后，兄弟卡（tier1）的棱线默认按它们各自的
-     维度签名色描边（VC.tp/pp/dp/ep），颜色在传递"这一只是靠哪根轴挨上选中
-     那张"的信息，不是纯装饰——所以默认不关，只给想要更素净读法的人开一个
-     开关：开了之后兄弟卡棱线一律回落中性灰 var(--pt-fg3)，选中卡本身
-     （meC，恒为 var(--pt-fg)）与告警红（capCol）不受这个开关影响，那两个不
-     是"维度色"。设置面板"图层"那组新增一颗按钮，也认 URL ?neutralsibs=1。 */
-  neutralSibs:false,
   /* 素色（黑白灰）：整屏不再用色相说话——维度签名色（VC）与显存成分色（MEMC）
      一起收成灰阶（见 VC_MONO / MEM_MONO），通信芯片的字、读出卡每行前面那枚
      色块、容量告警的棱线也一并退回中性。默认关闭，只认显式 ?mono=1 与设置面板
@@ -1396,7 +1389,6 @@ function urlLoad(){
   if(q.get('fill')==='comp'){ ui.compFill = true; ui.netOff = false; }
   if(q.get('mem')==='0') ui.memFill = false;
   if(q.get('fastcard')==='1') ui.fastCard = true;
-  if(q.get('neutralsibs')==='1') ui.neutralSibs = true;
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
      取景直接带它进来，所以这条链接自己就是那一屏，不靠宿主再发一次消息。
@@ -5408,7 +5400,7 @@ function netScene(D, g, box, step){
                已经换成了次级灰（见上面 capCol 的三目），线宽/不透明度的加粗照旧，
                于是三层关系还在——选中（纯白）＞ 告警（次级灰·粗）＞ 普通（暗灰）。 */
             var edgeCol9 = (ui.mono && meC) ? 'var(--pt-fg)'
-              : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? ((ui.neutralSibs || ui.mono) ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
+              : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.mono ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
             body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
           });
@@ -11410,10 +11402,6 @@ function buildCfgSurface(D){
     + '<div class="cg"><h6>图层</h6>'
       + '<button class="mvi'+(ui.legendOn?' is-on':'')+'" data-act="legendtoggle" title="图例：画面上每种形状代表什么"><s>✓</s>图例</button>'
       + '<button class="mvi'+(ui.moduleView?' is-on':'')+'" data-act="moduleviewtoggle" title="模块视图：整网内容不再逐算子展开，收成 attn.qkv / attn.core / attn.out / router / experts（dense 配置下 FFN 侧收成 mlp）这几个功能块，块间的 AllGather/AllToAll 等通信仍单独画出——3D/顶视的卡内容与正视/侧视三个机位一起变，卡壳、门牌与容量视图不受影响"><s>✓</s>模块视图</button>'
-      + '<button class="mvi'+(ui.neutralSibs?' is-on':'')+'" data-act="neutralsibstoggle" title="兄弟卡素色：卡维度选中一张卡之后，兄弟卡棱线默认按 TP/PP/DP/EP 维度签名色描边——开了这颗按钮，兄弟卡棱线一律回落中性灰，选中卡本身与告警红不受影响"><s>✓</s>兄弟卡素色</button>'
-      /* 整屏素色：比上面那颗管得宽——维度签名色与显存成分色一起收成灰阶。
-         两颗分开留着，是因为它们答的不是同一个问题：上面那颗只管"兄弟卡的棱
-         要不要带维度色"，这颗管"这一屏还上不上色"。 */
       + '<button class="mvi'+(ui.mono?' is-on':'')+'" data-act="monotoggle" title="素色：整屏不再用色相说话——TP/PP/DP/EP 的维度签名色与权重/梯度/优化器态那套显存成分色一起收成黑白灰阶（明度仍然逐档错开，摞在卡里的五档照样数得清），容量告警改用加粗的亮棱与读出卡上的数字表达。信息一个字不少，只是不靠颜色区分"><s>✓</s>素色</button>'
     + '</div>'
     /* 数据标注这一组仍然裹在 .pt-mv 里：工作台把它提到台面统一出，靠
@@ -13725,7 +13713,6 @@ document.addEventListener('click', function(ev){
   else if(act==='memfill'){ ui.memFill = !ui.memFill; render(); }
   else if(act==='legendtoggle'){ ui.legendOn = !ui.legendOn; ui.dispOpen = false; render(); }
   else if(act==='moduleviewtoggle'){ ui.moduleView = !ui.moduleView; ui.dispOpen = false; render(); }
-  else if(act==='neutralsibstoggle'){ ui.neutralSibs = !ui.neutralSibs; ui.dispOpen = false; render(); }
   /* 素色开关：memStack 的缓存把**颜色**一起存进去了（out9 里每一档的 c），
      不清一次的话拨开关之后卡上那几条带还是上一套色（读出卡与图例倒是立刻变了，
      于是两边对不上）。调色板那边的缓存键已经带上了 mono 这一位，见 syncTopologyPalette。 */
