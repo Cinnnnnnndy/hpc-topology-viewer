@@ -308,8 +308,12 @@ a.btn{text-decoration:none}
 /* ═══ 舞台：左 整网图 ｜ 右 并行拓扑（同一个 pattern 的两份配置） ═══ */
 #stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
 #slot-netgraph{flex:0 0 var(--side-w,460px);min-width:240px}
-/* 收起 = 整格关闭（开关在顶栏，随时能开回来），不是塌成格头一条 */
+/* 收起 = 整格关闭（开关在底部工具栏，随时能开回来），不是塌成格头一条 */
 #slot-netgraph[data-folded="1"]{display:none}
+/* 第三格 · 层级剖面：引自 cube-cockpit.html 的 #left（见 SLOTS 里 hierarchy 那条的
+   注释）。定宽、不接拖拽分隔条——它是参考面板，不是要天天调宽的主工作区，
+   跟整网图那格「可能要腾更多屏幕」不是一回事，少写一条 vsplit 逻辑不算偷懒。 */
+#slot-hierarchy{flex:0 0 380px;min-width:260px;margin-left:8px}
 /* 右侧格头覆盖在画布上：第一行是正式标题与说明，第二行的视角 Tab 在格子内
    水平居中。只有 Tab 接事件，其余不吃事件，免得挡住画布拖拽。 */
 #slot-netgraph .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
@@ -355,10 +359,35 @@ body.is-resizing-x iframe{pointer-events:none}
 .slot-title{margin-right:2px;color:var(--foreground);font:var(--ide-frame-title-font);white-space:nowrap;
   display:flex;align-items:center;gap:6px}
 .slot-head .spacer{flex:1 1 auto}
-/* 顶栏面板开关按 ide-frame window-action 形制：纯 icon、面板可见=高亮。
-   pattern 只给了常规态与 hover，is-selected 这一态在这里补齐。 */
-.pto-ide-frame__window-action.is-selected{background:var(--state-hover);color:var(--foreground)}
-.pto-ide-frame__window-action.is-selected .pto-ide-frame__window-icon{opacity:1}
+/* ═══ 底部工具栏：浮动胶囊，画布正下方居中（仿 Figma 画布下方那条）═══
+   整网图 / 层级图 / 泳道图 三格现在默认收起（见 readURL 的 foldDefault），
+   这颗胶囊是打开它们的唯一入口——原先顶栏那两颗 window-action 开关拿掉了，
+   同一件事两个入口正是这份文件其它地方一直在避免的那种界面（顶栏「数据
+   标注」那条注释也是同一个理由）。「配置」额外给一个入口，代理的还是同一个
+   #globalConfig 抽屉（见 .global-config-toggle）；「并行对象/数据标注」
+   留在顶栏不搬——它们问的是「看哪个对象/哪类读数」，跟「开哪张图」不是
+   一回事，硬凑进同一条胶囊只会更难找。
+   fixed 定位、不进 #app 的 flex 流：抽屉开多高、整网图拖多宽都不会把它推走，
+   这也是唯一一处**没有**跟着开关收起的控件——它自己就是开关。 */
+.wb-dock{
+  position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:110;
+  display:flex;align-items:center;gap:3px;padding:5px;
+  border:1px solid var(--ide-frame-pane-border);border-radius:var(--radius-pill);
+  background:var(--ide-frame-pane-fill);box-shadow:var(--shadow-md);
+  backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+  -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+}
+.wb-dock__btn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;
+  border:0;border-radius:calc(var(--radius-pill) - 3px);padding:6px 10px 5px;
+  background:transparent;color:var(--foreground-secondary);font-size:10.5px;font-weight:600;
+  transition:background var(--duration-fast) ease,color var(--duration-fast) ease;
+}
+.wb-dock__btn svg{width:18px;height:18px;stroke-width:1.8}
+.wb-dock__btn:hover{background:var(--state-hover);color:var(--foreground)}
+.wb-dock__btn[aria-pressed="true"],.wb-dock__btn[aria-expanded="true"]{background:var(--state-selected);color:var(--primary)}
+.wb-dock__sep{width:1px;height:26px;background:var(--border-default);flex:0 0 auto;margin:0 2px}
+@media (max-width:1080px){ .wb-dock{bottom:8px} }
 
 /* ── 走带 + 游标 ─────────────────────────────────────────────────────────
    走带长在泳道的格头里（它量的是泳道那根时间轴），游标叠在泳道画布上。
@@ -479,7 +508,7 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </div>
 
-    <button class="btn btn-outline btn-compact topbar-action-btn" id="globalConfigBtn" type="button" data-ide-toggle="global-config" aria-label="打开并行配置" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
+    <button class="btn btn-outline btn-compact topbar-action-btn global-config-toggle" id="globalConfigBtn" type="button" aria-label="打开并行配置" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
       <span>并行配置</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
     </button>
 
@@ -496,16 +525,9 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </div>
 
-    <!-- 面板开关：整网图 / 底部泳道 的显示与关闭。IDE 那套 window-actions 形制，
-         放页面右上角（顶栏），不在各自格头里——收起后整格关闭，开关得留在屏上。 -->
-    <div class="pto-ide-frame__window-actions" aria-label="面板开关">
-      <button class="pto-ide-frame__window-action is-selected" type="button" data-fold-toggle="netgraph" aria-controls="slot-netgraph" aria-expanded="true" aria-pressed="true" title="显示/关闭整网图" aria-label="显示/关闭整网图">
-        <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
-      </button>
-      <button class="pto-ide-frame__window-action is-selected" type="button" data-fold-toggle="swimlane" aria-controls="dock" aria-expanded="true" aria-pressed="true" title="显示/关闭底部泳道" aria-label="显示/关闭底部泳道">
-        <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/></svg>
-      </button>
-    </div>
+    <!-- 面板开关（整网图/层级图/底部泳道）挪到画布正下方那条浮动胶囊了，见
+         #app 末尾的 .wb-dock——三格现在默认收起，开关理应挨着它们要出现的
+         画布，而不是留在顶栏这条跟画布本身隔着一整个舞台的窄条上。 -->
 
     <button class="btn btn-ghost btn-icon btn-compact" id="themeBtn" type="button" data-state="inactive" title="切换到深色主题：外壳与三格里的页面一起换" aria-label="切换到深色主题">
       <svg class="btn-state-icon--default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
@@ -672,6 +694,30 @@ body.is-resizing iframe{pointer-events:none}
       </div>
     </section>
 
+    <!-- 第三格：层级剖面——引自 cube-cockpit.html 的 #left（Global → Cluster →
+         Service Pool → Pod → Host → Chip → Die → Core-Group，另有「整网分隔
+         映射」页签，切页签就在这一格里点，不归台面管）。整块 iframe 嵌入：
+         cube-cockpit.html 现成、已验证过，没有必要为「借它这一块面板」重写
+         一遍同样的 L0-L7 渲染逻辑。跟右边那格是同一种做法（hideCss 精确藏掉
+         不要的部分），但**不接语义联动**——它是一份独立的物理参考面板，答的是
+         「这张卡插在机房哪个物理层级」，不像整网图那样与左边主视图共享同一套
+         rank 选中状态，没有必要为了这个把它接进 wireOpToRank/pushHL 那一整套。 -->
+    <section class="slot" id="slot-hierarchy">
+      <header class="slot-head">
+        <div class="slot-heading">
+          <span class="slot-title">层级剖面</span>
+          <button type="button" class="slot-help" aria-label="说明" title="Global → Cluster → Service Pool → Pod → Host → Chip → Die → Core-Group 的物理层级剖面；格子内自带「整网分隔映射」页签可切。引自 cube-cockpit.html，独立参考面板，不与左侧主视图联动选中。">?</button>
+        </div>
+      </header>
+      <div class="slot-body">
+        <iframe data-slot="hierarchy" title="AI Infra 层级剖面 · 整网分隔映射"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>../cube-cockpit.html</code>。</p>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="拖动调整下方抽屉高度"></div>
@@ -766,6 +812,32 @@ body.is-resizing iframe{pointer-events:none}
     </div>
   </section>
 
+  <!-- ═══ 底部工具栏（浮动胶囊）══════════════════════════════════════════
+       整网图 / 层级图 / 泳道图默认收起（见 readURL 的 foldDefault），这是
+       打开它们的唯一入口——按钮复用的还是既有的 data-fold-toggle 机制
+       （wirePanelToggles 通吃，见下方 JS），只是把开关从顶栏搬到了画布
+       正下方、换成更贴近「工具栏」的胶囊形制。「配置」代理的是同一个
+       #globalConfig 抽屉（见 .global-config-toggle），不是另开一份状态。 -->
+  <div class="wb-dock" role="toolbar" aria-label="视图面板">
+    <button class="wb-dock__btn" type="button" data-fold-toggle="netgraph" aria-controls="slot-netgraph" aria-expanded="false" aria-pressed="false" title="整网图：一张整网怎么被切开（PP/TP·SP/EP 都落下，不落 DP）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+      <span>整网</span>
+    </button>
+    <button class="wb-dock__btn" type="button" data-fold-toggle="hierarchy" aria-controls="slot-hierarchy" aria-expanded="false" aria-pressed="false" title="层级图：Global→Cluster→Service Pool→Pod→Host→Chip→Die→Core-Group 物理层级剖面（引自 cube-cockpit.html）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>层级图</span>
+    </button>
+    <button class="wb-dock__btn" type="button" data-fold-toggle="swimlane" aria-controls="dock" aria-expanded="false" aria-pressed="false" title="泳道图：微批次生命周期的甘特时间线">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/></svg>
+      <span>泳道图</span>
+    </button>
+    <span class="wb-dock__sep" aria-hidden="true"></span>
+    <button class="wb-dock__btn global-config-toggle" type="button" id="wbConfigBtn" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h10"/><circle cx="17" cy="6" r="2"/><circle cx="9" cy="18" r="2"/></svg>
+      <span>配置</span>
+    </button>
+  </div>
+
 </div>
 
 <script src="./observatory/vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
@@ -849,6 +921,7 @@ var SLOTS = [
     key: 'n',              // URL：?n=cav 打开「全局切分」，默认 net（整网图）不写
     def: 'net',
     foldable: true,        // 格头上有「收起」，与抽屉那格同一套
+    foldDefault: true,     // 默认收起，靠底部工具栏「整网」按钮展开
     /* 只藏两样：
        ① .pt-mv（数据标注）——归框架层了，与右边那格共用顶栏那颗，藏掉格子里这份；
        ② .pt-stagetitle 里 pattern 自己那条名字——名字由格头出（见 HTML），
@@ -1012,7 +1085,8 @@ var SLOTS = [
     el: 'dock',
     key: 'b',
     def: 'global',
-    foldable: true,        // 只有它的格头上有「收起」，见下面 readURL 里的守卫
+    foldable: true,        // 见下面 readURL 里 !c.foldable 那条守卫
+    foldDefault: true,     // 默认收起，靠底部工具栏「泳道图」按钮展开
     src: function (s) {
       var q = new URLSearchParams();
       /* 通信观测：另一份文档（3D Rank Deck + 地面 Ribbon + 时间轴，上游拷贝自
@@ -1072,6 +1146,41 @@ var SLOTS = [
       { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' },
       { v: 'obs',    t: '通信观测',     d: '3D Rank Deck + 地面 Rank→Rank 流量带 + 通信时间轴（Mock Scenario）' }
     ]
+  },
+  {
+    /* 层级剖面。整块引自 cube-cockpit.html 的 #left（层级剖面/整网分隔映射
+       两个页签），不是抽出来的独立 pattern——它是那一整个「AI Infra 统一
+       驾驶舱」页面的一部分，#left 与 #right（它自己的 3D 主画布）、#footer
+       （播放条）同属一个 #main。这里只要 #left，其余用 hideCss 精确藏掉，
+       跟右边整网图那格「精确藏掉不要的部分」是同一种做法，只是这次要藏的
+       是**另一整块面板**而不是几颗按钮。
+       #topbar/#scenbar 不用我们藏：cube-cockpit.html 自己的 #host-fusion
+       样式块已经无条件藏掉了它们（它本来就是照「被嵌」的样子在维护），我们
+       只需要再藏 #footer（52px 高的常驻播放条，跟层级剖面无关）与 #right
+       （它自己的 3D 主画布——这一格只要 2D 的层级剖面，不需要在小小一格
+       侧栏里重复摆一份 3D 场景），并把 #left 从固定 430px 撑开到占满剩余
+       空间。 */
+    id: 'hierarchy',
+    el: 'slot-hierarchy',
+    foldable: true,
+    foldDefault: true,     // 默认收起，靠底部工具栏「层级图」按钮展开
+    src: function () {
+      var q = new URLSearchParams();
+      q.set('theme', shellDark ? 'dark' : 'light');
+      return '../cube-cockpit.html?' + q.toString();
+    },
+    hideCss: '#footer{display:none!important}' +
+             '#right{display:none!important}' +
+             '#left{flex:1 1 auto!important;width:auto!important;border-right:0!important}',
+    /* #tabHier 是静态标记（层级剖面页签按钮），DOM 一解析出来就在，不用等
+       cube-cockpit.html 自己的 JS 把 KPI 数字填完——用它当 readySel 比落回
+       默认的 [data-act]（这份页面压根不用这个属性）快得多，不用等到 6s
+       超时兜底才淡入。 */
+    readySel: '#tabHier',
+    /* cube-cockpit.html 的主题桥走的是 {type:'cockpit-theme',theme} 这个
+       专属消息（见它自己文件里 parent.postMessage 那段），不是台面其余三格
+       共用的 pto:state——applyShellTheme 按格子取 themeMsg，没有就退回默认。 */
+    themeMsg: function () { return { type: 'cockpit-theme', theme: theme() }; }
   }
 ];
 
@@ -1141,12 +1250,16 @@ function readURL() {
     ['perNode','nodeRack','podCards'].forEach(function (k, i) { globalCfg[k] = phy[i]; });
   }
   if (q.get('fab') === '1') globalFabric = true;
-  var has = {};
-  Object.keys(FLAGS).forEach(function (f) { has[f] = (q.get(FLAGS[f]) || '').split(','); });
+  var has = {}, present = {};
+  Object.keys(FLAGS).forEach(function (f) { present[f] = q.has(FLAGS[f]); has[f] = (q.get(FLAGS[f]) || '').split(','); });
   SLOTS.forEach(function (c) {
     var v = c.key ? q.get(c.key) : null;
     var s = { value: tabsOf(c).some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
-    Object.keys(FLAGS).forEach(function (f) { s[f] = has[f].indexOf(c.id) >= 0; });
+    /* fold= 没出现在链接里（没人明确收放过）时落回每格自己的 foldDefault——
+       整网图/层级图/泳道图三格现在缺省就是收起的（画布正下方那颗胶囊才是
+       打开它们的入口），跟「链接里明写了 fold=」是两件事：后者是读者发出去
+       的那一屏，必须逐位照办，哪怕写的是「什么都别收」（fold= 空串）。 */
+    Object.keys(FLAGS).forEach(function (f) { s[f] = present[f] ? (has[f].indexOf(c.id) >= 0) : !!c.foldDefault; });
     /* 格头上没有「收起」的格子不认 fold=：否则 ?fold=topology 这种链接会把舞台
        折起来、而页面上没有任何一颗按钮能再把它展开——一条打不开的死链。 */
     if (!c.foldable) s.folded = false;
@@ -1300,23 +1413,31 @@ function applyShellTheme() {
   SLOTS.forEach(function (slot) {
     var frame = $('iframe[data-slot="' + slot.id + '"]');
     if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
-    if (frame.contentWindow) frame.contentWindow.postMessage({ type: 'pto:state', theme: theme() }, '*');
+    /* 大多数格子共用 pto:state 那份契约；层级图那格接的是另一个页面
+       （cube-cockpit.html），主题消息的形状不一样，见它 SLOT 定义里的
+       themeMsg。 */
+    var msg = slot.themeMsg ? slot.themeMsg() : { type: 'pto:state', theme: theme() };
+    if (frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
   });
 }
 
-/* ── 全局配置与双视图 Hover Bar ─────────────────────────────────── */
+/* ── 全局配置与双视图 Hover Bar ───────────────────────────────────
+   两颗触发钮（顶栏「并行配置」+ 底部工具栏「配置」）代理的是同一个抽屉，
+   同一个 .global-config-toggle class 通吃，不用各写各的开合状态。 */
 function setGlobalConfigOpen(open) {
-  var panel = $('#globalConfig'), btn = $('#globalConfigBtn');
+  var panel = $('#globalConfig');
   if (open) {
     var dataMenu = $('#dmenu'), dataBtn = $('#dmenuBtn');
     dataMenu.classList.remove('open');
     dataBtn.setAttribute('aria-expanded', 'false');
   }
   panel.setAttribute('aria-hidden', String(!open));
-  btn.classList.toggle('is-selected', open);
-  btn.setAttribute('aria-expanded', String(open));
-  btn.setAttribute('aria-pressed', String(open));
-  btn.setAttribute('aria-label', open ? '关闭并行配置' : '打开并行配置');
+  document.querySelectorAll('.global-config-toggle').forEach(function (btn) {
+    btn.classList.toggle('is-selected', open);
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-pressed', String(open));
+    btn.setAttribute('aria-label', open ? '关闭并行配置' : '打开并行配置');
+  });
   if (open) setTimeout(function () { var f = panel.querySelector('input'); if (f) f.focus(); }, 190);
 }
 
@@ -1444,7 +1565,9 @@ function clearGlobalFilter() {
 }
 
 function wireGlobalControls() {
-  $('#globalConfigBtn').addEventListener('click', function () { setGlobalConfigOpen($('#globalConfig').getAttribute('aria-hidden') === 'true'); });
+  document.querySelectorAll('.global-config-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () { setGlobalConfigOpen($('#globalConfig').getAttribute('aria-hidden') === 'true'); });
+  });
   $('#globalConfigClose').addEventListener('click', function () { setGlobalConfigOpen(false); });
   $('#globalCuts').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-global-cut]'); if (!b) return;
