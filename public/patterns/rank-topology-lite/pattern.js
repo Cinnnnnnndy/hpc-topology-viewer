@@ -7,8 +7,9 @@
      就是 rank-topology-3d 独立打开的样子），没有逻辑魔方、没有返回按钮、
      没有三档——矩阵自己的"选中/取消选中"手势已经够用，不必再包一层。
 
-   world > 64（默认，盘古 ProMoE·4000 卡）："无限画布"分三档取景，档位越
-   往里，画得越少、看得越细：
+   world > 64（?preset=pangu/moe718b128k/incident2048，非默认——见下面
+   「默认预置」那段注释，规模先收回到 64 卡，等交互形式定下来再考虑扩大）：
+   "无限画布"分三档取景，档位越往里，画得越少、看得越细：
      1 集群       —— 逻辑魔方铺满，没有选中任何卡。
      2 同组定位   —— 逻辑魔方里点一张方块，**留在逻辑魔方自己身上**：它自带
                      的"卡内魔方"局部聚焦（选中卡与它所在的行列一起被摄像机
@@ -40,7 +41,6 @@
   var matrixFrame = document.getElementById('matrixFrame');
   var briefCard = document.getElementById('briefCard');
   var clusterBadge = document.getElementById('clusterBadge');
-  var incidentLink = document.getElementById('incidentLink');
   var universeStage = document.getElementById('universeStage');
   var universeToggle = document.getElementById('universeToggle');
 
@@ -80,12 +80,18 @@
      选中卡摆进它所在的 TP/PP/DP 并行组里定个位，还没下钻到字节级详情，
      名字直说这件事，不再是简写。 */
   var TIER2_LABEL = '同组定位';
-  /* 默认预置：反馈「改这里的默认配置」——原来落地是 pangu（4000卡演示规格），
-     换成 moe718b128k（pangu_sophon_pytorch 项目里体量最大的一档真实 MoE，
-     见 demo.html PRESETS.moe718b128k 的来源注释）。不带 ?preset= 打开这一层
-     现在直接落在这档真实数据上；旧链接 ?preset=pangu/dense64/incident2048
-     照样认得，不受影响。 */
-  var PS = PRESETS[qs.get('preset')] || PRESETS.moe718b128k;
+  /* 默认预置：先后改过两次。第一次反馈「改这里的默认配置」，从 pangu
+     （4000卡演示规格）换成 moe718b128k（pangu_sophon_pytorch 项目里体量
+     最大的一档真实 MoE）；随后反馈"这个的rank数量太多了……回退一步回到
+     之前只用64个rank的时候，也就是并行拓扑本身的pattern的配置"+"等到
+     我们的形式确定之后再扩大rank的数量"——8192 卡（尤其宇宙视图一屏 16
+     段×9 叶子）密度已经压过"先把交互形式定下来"这个当下的目的，退回到
+     dense64（world=64，demo.html 自己现成的稠密预置，就是并行拓扑矩阵
+     本体自己那份配置，不是这一层另起的）。moe718b128k 不是删掉，只是不
+     再是默认——?preset=moe718b128k 仍旧可以直接打开看那档真实数据，形式
+     定下来之后再考虑要不要重新扩大默认规模。旧链接 ?preset=pangu/dense64/
+     incident2048/moe718b128k 都照样认得。 */
+  var PS = PRESETS[qs.get('preset')] || PRESETS.dense64;
   /* world 公式补上 cp：原来只有 tp×pp×dp，pangu/dense64/incident2048 都是
      cp=1（省了这个乘数结果一样），moe718b128k 是第一个 cp>1（=16）的桥接
      预置，不补的话这里算出的卡数只有真实 world 的 1/16，逻辑魔方与矩阵
@@ -195,6 +201,86 @@
   var INCIDENT_SEVC = { ok: '#3FB950', warn: '#D29922', bad: '#F85149', na: '#6E6E6E' };
   var INCIDENT_SEVN = { ok: '正常', warn: '预警', bad: '告警', na: '未采' };
 
+  // ── 真实故障复盘面板：直接摆在最外层拓扑上，不必先跳一次预置 ─────────────
+  // 原来只在 ?preset=incident2048 才渲染，默认屏幕上只留一条「⚠ 真实故障
+  // 复盘…」链接，点了才整页跳到 incident2048（另一份拓扑）才看得到数据。
+  // 反馈「不希望问题定位的那一块儿和本身的拓扑是分离的，现在必须要点击
+  // 左上角的告警才能进入有数据的界面，我希望这个界面直接显示在最外层的
+  // 拓扑上」——这份数据本身（时间线/十格指标卡）跟当前正在看哪个预置的
+  // 拓扑无关，是另一起独立训练的历史复盘，没有理由非要先跳转页面才能看到，
+  // 所以这段渲染逻辑挪到 `world ≤ 64` 分流之前，任何预置打开都会显示（默认
+  // 收起，跟以前一样，只是不再需要一次页面跳转才能展开）。
+  //
+  // 会跟着预置变的只有「下钻」按钮：事件里的 rank 号（1559/1553 这些）是
+  // incident2048 那份 2048 卡拓扑自己坐标系里的真实 rank，当前预置不是
+  // incident2048 时，这个数字在当前这张拓扑里根本不存在（比如默认的
+  // dense64 只有 64 张卡）——不能假装它能在当前页面内下钻到同一张卡，那是
+  // 编数据。所以按钮改成看当前预置：是 incident2048 就地下钻（跟以前
+  // 一样）；不是的话，按钮改一句更诚实的说法并整页跳转到 incident2048（带
+  // 上这个 rank 号），把读者带到这个数字真正有意义的那张拓扑上，不在当前
+  // 页面里硬凑一个假坐标。
+  var incidentPanel = document.getElementById('incidentPanel');
+  var incidentSel = null;
+  function incidentEventById(id) {
+    for (var i = 0; i < INCIDENT_PROBLEMS.length; i++) {
+      var evs = INCIDENT_PROBLEMS[i].events;
+      for (var j = 0; j < evs.length; j++) if (evs[j].id === id) return evs[j];
+    }
+    return null;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function renderIncidentPanel() {
+    if (!incidentPanel) return;
+    var ev = incidentSel ? incidentEventById(incidentSel) : null;
+    var board = incidentSel ? INCIDENT_BOARD[incidentSel] : null;
+    var timelineHtml = INCIDENT_PROBLEMS.map(function (prob) {
+      var dots = prob.events.map(function (e) {
+        var on = e.id === incidentSel;
+        return '<button type="button" class="ip-dot' + (on ? ' is-on' : '') + '" data-ev="' + e.id + '"'
+          + ' style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.time + ' · ' + e.title) + '">'
+          + '<span class="ip-dotmark"></span><span class="ip-dottime">' + esc(e.time) + '</span></button>';
+      }).join('');
+      return '<div class="ip-prob"><span class="ip-probname">' + esc(prob.name) + '</span><div class="ip-events">' + dots + '</div></div>';
+    }).join('');
+    var cardsHtml = INCIDENT_METRICS.map(function (m) {
+      var cell = board && board.m && board.m[m.k];
+      var v = cell ? cell.v : '—';
+      var sevKey = cell ? cell.s : 'na';
+      return '<div class="ip-card" style="--ip-sevc:' + INCIDENT_SEVC[sevKey] + '">'
+        + '<div class="ip-k">' + esc(m.name) + '<span class="ip-want">要求 ' + esc(m.want) + '</span></div>'
+        + '<div class="ip-v">' + esc(v) + '</div>'
+        + (cell && cell.why ? '<div class="ip-why">' + esc(cell.why) + '</div>' : '<div class="ip-src">' + esc(m.src) + '</div>')
+        + '</div>';
+    }).join('');
+    var onIncident = PS.matrixPreset === 'incident2048';
+    var headHtml = ev
+      ? '<span class="ip-evtitle">' + esc(ev.title) + '</span><span class="ip-evsev" style="--ip-sevc:' + INCIDENT_SEVC[ev.sev] + '">' + INCIDENT_SEVN[ev.sev] + '</span>'
+        + (ev.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + ev.rank + '">'
+          + (onIncident ? '下钻 rank ' + ev.rank + ' →' : '查看 rank ' + ev.rank + ' 所在的真实拓扑 →') + '</button>' : '')
+      : '<span class="ip-evtitle ip-evtitle-empty">先在时间线上点一个事件——十格读数按那一刻的原文填，没采到的写「—」</span>';
+    var concHtml = ev ? '<div class="ip-conc">' + esc(ev.conclusion) + '</div>' : '';
+    incidentPanel.innerHTML =
+      '<div class="ip-hd">' + headHtml + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
+      + concHtml
+      + '<div class="ip-timeline">' + timelineHtml + '</div>'
+      + '<div class="ip-cards">' + cardsHtml + '</div>'
+      + '<div class="ip-foot">口径来自 pangu_sophon_pytorch · 这十条是真的会被打印、画成曲线的那几个；另一次独立 2048 卡训练的真实复盘，与当前预置的架构字段无关，不替它编一个'
+      + (onIncident ? '' : '——当前预置不是 incident2048，事件里的 rank 号在这张拓扑上并不存在，点"查看真实拓扑"会整页跳转')
+      + '。</div>';
+    incidentPanel.classList.remove('is-hidden');
+  }
+  incidentPanel && incidentPanel.addEventListener('click', function (ev) {
+    var dot = ev.target.closest('[data-ev]');
+    if (dot) { incidentSel = dot.getAttribute('data-ev'); renderIncidentPanel(); return; }
+    if (ev.target.closest('[data-act="ip-collapse"]')) { incidentPanel.classList.toggle('is-collapsed'); renderIncidentPanel(); return; }
+    var drill = ev.target.closest('[data-act="ip-drill"]');
+    if (!drill) return;
+    var rank9 = parseInt(drill.getAttribute('data-rank'), 10);
+    if (PS.matrixPreset === 'incident2048') showDetail(rank9);
+    else location.href = '?preset=incident2048&sel=' + rank9;
+  });
+  renderIncidentPanel();
+
   if (world <= 64) {
     /* 规模小：矩阵本体自己一屏就是全部——不铺逻辑魔方、不裁剪它的任何交互，
        与直接打开 /patterns/rank-topology-3d/ 逐字节相同。stitle 换成模型
@@ -212,12 +298,6 @@
     return;
   }
 
-  /* 真实故障复盘入口：除了 incident2048 自己，别的预置都显示——反馈「不是
-     说好要放进来」，数据本身仍然只在 incident2048 那档出现（见 pattern.html
-     顶部注释），这颗链接负责让默认屏幕也摸得到它，不用先知道 URL 参数。
-     href 保留原有 preset 之外的其余参数没有意义（这一层自己不认识别的
-     查询参数），直接给 ?preset=incident2048 足够。 */
-  if (incidentLink) incidentLink.classList.toggle('is-hidden', PS.matrixPreset === 'incident2048');
 
   // ── 逻辑魔方：固定当前预置，深色主题 ──────────────────────────────────
   // color=neutral：默认就是素色（中性灰），不是负载热力橙→粉——这个简洁版要的
@@ -293,12 +373,47 @@
   function tier2SubLine(sel) {
     return 'tp' + sel.tp + ((PS.cp || 1) > 1 ? ' cp' + sel.cp : '') + ' pp' + sel.pp + ' rep' + sel.rep;
   }
+  /* 把 count 个点铺进一段扇形楔子（原点 ox,oy · 中心角 baseAngle · 半张角
+     fanHalf · 半径 [rNear,rFar]），按行铺开的网格，不是全挤在一条半径线上。
+     反馈「这个宇宙视图中间的rank也要按照真实的数量来……现在的数量是远远
+     不够的」——第一版把整段的叶子都摆在同一个半径上，count 一大（比如
+     pangu 预置一个子组 100 颗）扇面里那点角宽度根本不够摊开，100 个点挤
+     成了肉眼看着像 1 个点的一团——「数字是真的」但看不出「真的有这么多」，
+     没解决反馈要的问题。这里改成二维网格：径向分成几"环"，同一环内再按
+     角度摊开，两个维度一起摊，同样的角宽能摆下多得多的点、彼此还分得开。 */
+  function layoutWedge(ox, oy, baseAngle, fanHalf, count, rNear, rFar) {
+    var cols = Math.max(1, Math.min(count, Math.round(Math.sqrt(count * 2.4))));
+    var rows = Math.ceil(count / cols);
+    var pts = [];
+    for (var k = 0; k < count; k++) {
+      var row = Math.floor(k / cols);
+      var rowStart = row * cols;
+      var colsInRow = Math.min(cols, count - rowStart);
+      var col = k - rowStart;
+      var colT = colsInRow > 1 ? (col / (colsInRow - 1) - 0.5) * 2 : 0;
+      var rowT = rows > 1 ? row / (rows - 1) : 0;
+      var a = baseAngle + colT * fanHalf;
+      var r = rNear + rowT * (rFar - rNear);
+      pts.push({ x: ox + Math.cos(a) * r, y: oy + Math.sin(a) * r });
+    }
+    return pts;
+  }
   function buildUniverseSvg() {
     var W = 1600, H = 1000, CX = W / 2, CY = H / 2;
     var PPN = PS.pp, TPN = PS.tp, CPN = PS.cp || 1, DPN = PS.dp;
-    var R1 = 250, R2 = 430;
-    var perStage = TPN * CPN * DPN;
-    var leafN = Math.min(9, perStage);
+    var R1 = 250, RSUB = 340, R2 = 460;
+    // 真实数量，不抽样：外圈 hub = PP 段（不变），每段内再按 TP×CP 分出
+    // 子组（groupCount，TP/CP 都是 1 时退化成没有子组，直接进内层），子组
+    // 内的叶子 = 这个 (pp,tp,cp) 组合下**全部** DPN 个 rep，一个不少——
+    // tp·cp·pp·dp 四个因子相乘正好等于 world，这一屏画的就是全部 world
+    // 张卡，不是取景。
+    var groupCount = TPN * CPN;
+    // 叶子数一多，每颗都连一条到 hub/子 hub 的线只会糊成一团黑（100 条线
+    // 挤在几十像素宽的楔子里，比不画还难看），加上每条 <line> 都是一个新
+    // DOM 节点——数量一大直接翻倍。超过这个阈值就只画点、不画连线，靠点
+    // 本身的聚簇位置读出"这是哪个子组的"，小数量（≤12，比如 moe718b128k
+     // 一个子组只有 4 个 dp）继续画线，读起来更直接。
+    var THREAD_MAX = 12;
     var hubsHtml = '', leavesHtml = '', linksHtml = '';
     for (var i = 0; i < PPN; i++) {
       var theta = (i / PPN) * Math.PI * 2 - Math.PI / 2;
@@ -312,24 +427,47 @@
         + '</g>';
       // 扇形半张角按"这一段跟相邻段隔多远"来定（相邻 hub 的夹角是
       // 2π/PPN），封顶在那个夹角的 42%——留出至少约 16% 的空隙，扇面才会
-      // 读成"16 段各喷一束"而不是糊成一整条连续的外圈圆环（PPN 大、段挨得
-      // 近时尤其明显，第一版没按 PPN 收窄，实测 16 段时叶子首尾相接、
-      // 整圈看着像一根圆环，这里改成跟 hub 间距挂钩才是真正的修法）。
+      // 读成"N 段各喷一束"而不是糊成一整条连续的外圈圆环。
       var fanHalf = Math.min(0.34, (Math.PI / PPN) * 0.42);
-      for (var k = 0; k < leafN; k++) {
-        // 在 tp×cp×dp 这条扁平轴上等距抽样（不是随机取样），保证 leafN 颗
-        // 叶子覆盖这一段的坐标空间、互不重号；flat 反解回 (tp,cp,rep) 的
-        // 顺序跟 rubik-cube 自己的 laneOf 折法一致（tp 最内层）。
-        var flat = Math.floor(k * perStage / leafN);
-        var tp9 = flat % TPN, cp9 = Math.floor(flat / TPN) % CPN, rep9 = Math.floor(flat / (TPN * CPN));
-        var lt = leafN > 1 ? (k / (leafN - 1) - 0.5) * 2 * fanHalf : 0;
-        var la = theta + lt;
-        var lx = CX + Math.cos(la) * R2, ly = CY + Math.sin(la) * R2;
-        linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + lx.toFixed(1) + '" y2="' + ly.toFixed(1) + '" stroke="' + color + '"/>';
-        var sel = { tp: tp9, cp: cp9, pp: i, rep: rep9 };
-        leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + rep9 + '"'
-          + ' cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="6" fill="' + color + '">'
-          + '<title>' + esc(tier2SubLine(sel)) + '</title></circle>';
+      if (groupCount <= 1) {
+        // TP=CP=1：这一段没有第二层可分（比如 incident2048），DPN 个叶子
+        // 铺进 hub 直接张开的那一整个楔子（径向 R1+50…R2）。
+        var pts0 = layoutWedge(CX, CY, theta, fanHalf, DPN, R1 + 50, R2);
+        for (var r0 = 0; r0 < DPN; r0++) {
+          var p0 = pts0[r0];
+          if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '" stroke="' + color + '"/>';
+          var sel0 = { tp: 0, cp: 0, pp: i, rep: r0 };
+          leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
+            + ' cx="' + p0.x.toFixed(1) + '" cy="' + p0.y.toFixed(1) + '" r="4" fill="' + color + '">'
+            + '<title>' + esc(tier2SubLine(sel0)) + '</title></circle>';
+        }
+      } else {
+        // 有 TP/CP 结构：段内再分 groupCount 个子组（子 hub），子组之间的
+        // 角距跟外圈"段与段之间留缝"是同一个道理——子扇半张角封顶在"这个
+        // 子组自己的角位槽宽"的 42%，组与组之间才不会糊在一起。子组本身
+        // 复用 .u-hub 这个类（只是多一个 .u-subhub 标记做小尺寸样式），
+        // 点击时走跟点外圈 hub 一样的"聚焦这一整个 PP 段"逻辑——子组不是
+        // 唯一 rank，点了下钻没有意义，只聚焦讲得通。
+        var groupSpacing = groupCount > 1 ? (2 * fanHalf) / (groupCount - 1) : 2 * fanHalf;
+        var subFanHalf = Math.min(groupSpacing * 0.42, 0.15);
+        for (var g = 0; g < groupCount; g++) {
+          var tp9 = g % TPN, cp9 = Math.floor(g / TPN) % CPN;
+          var gt = groupCount > 1 ? (g / (groupCount - 1) - 0.5) * 2 * fanHalf : 0;
+          var ga = theta + gt;
+          var sx = CX + Math.cos(ga) * RSUB, sy = CY + Math.sin(ga) * RSUB;
+          linksHtml += '<line class="u-ray is-sub" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + sx.toFixed(1) + '" y2="' + sy.toFixed(1) + '" stroke="' + color + '"/>';
+          hubsHtml += '<circle class="u-hub u-subhub" data-pp="' + i + '" cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="4" fill="' + color + '">'
+            + '<title>' + esc('pp' + i + ' tp' + tp9 + ((CPN > 1) ? ' cp' + cp9 : '')) + '</title></circle>';
+          var pts = layoutWedge(CX, CY, ga, subFanHalf, DPN, RSUB + 30, R2);
+          for (var r = 0; r < DPN; r++) {
+            var p = pts[r];
+            if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '" stroke="' + color + '"/>';
+            var sel = { tp: tp9, cp: cp9, pp: i, rep: r };
+            leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
+              + ' cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + color + '">'
+              + '<title>' + esc(tier2SubLine(sel)) + '</title></circle>';
+          }
+        }
       }
     }
     // 稀疏星点只做氛围，不承载数据——数量固定、每次重建（理论上只建一次，
@@ -436,66 +574,6 @@
   clusterBadge && clusterBadge.addEventListener('click', function () {
     if (clusterWorstRank != null) showDetail(clusterWorstRank);
   });
-
-  // ── 真实故障复盘面板：只在 incident2048 预置下出现 ────────────────────────
-  // 底部常驻，跨三档都不收起——它讲的是另一起独立事故，不是"当前选中卡这一刻
-  // 的状态"，所以不必跟着档位增删。时间线选中一个事件 → 下面十格指标卡按
-  // INCIDENT_BOARD[事件id] 更新；没选中事件或这一格没被那次事件采到，一律
-  // 显示"—"（INCIDENT_BOARD 里就没有对应的键），不拿"—"以外的东西顶格。
-  var incidentPanel = document.getElementById('incidentPanel');
-  var incidentSel = null;
-  function incidentEventById(id) {
-    for (var i = 0; i < INCIDENT_PROBLEMS.length; i++) {
-      var evs = INCIDENT_PROBLEMS[i].events;
-      for (var j = 0; j < evs.length; j++) if (evs[j].id === id) return evs[j];
-    }
-    return null;
-  }
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function renderIncidentPanel() {
-    if (!incidentPanel || PS.matrixPreset !== 'incident2048') return;
-    var ev = incidentSel ? incidentEventById(incidentSel) : null;
-    var board = incidentSel ? INCIDENT_BOARD[incidentSel] : null;
-    var timelineHtml = INCIDENT_PROBLEMS.map(function (prob) {
-      var dots = prob.events.map(function (e) {
-        var on = e.id === incidentSel;
-        return '<button type="button" class="ip-dot' + (on ? ' is-on' : '') + '" data-ev="' + e.id + '"'
-          + ' style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.time + ' · ' + e.title) + '">'
-          + '<span class="ip-dotmark"></span><span class="ip-dottime">' + esc(e.time) + '</span></button>';
-      }).join('');
-      return '<div class="ip-prob"><span class="ip-probname">' + esc(prob.name) + '</span><div class="ip-events">' + dots + '</div></div>';
-    }).join('');
-    var cardsHtml = INCIDENT_METRICS.map(function (m) {
-      var cell = board && board.m && board.m[m.k];
-      var v = cell ? cell.v : '—';
-      var sevKey = cell ? cell.s : 'na';
-      return '<div class="ip-card" style="--ip-sevc:' + INCIDENT_SEVC[sevKey] + '">'
-        + '<div class="ip-k">' + esc(m.name) + '<span class="ip-want">要求 ' + esc(m.want) + '</span></div>'
-        + '<div class="ip-v">' + esc(v) + '</div>'
-        + (cell && cell.why ? '<div class="ip-why">' + esc(cell.why) + '</div>' : '<div class="ip-src">' + esc(m.src) + '</div>')
-        + '</div>';
-    }).join('');
-    var headHtml = ev
-      ? '<span class="ip-evtitle">' + esc(ev.title) + '</span><span class="ip-evsev" style="--ip-sevc:' + INCIDENT_SEVC[ev.sev] + '">' + INCIDENT_SEVN[ev.sev] + '</span>'
-        + (ev.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + ev.rank + '">下钻 rank ' + ev.rank + ' →</button>' : '')
-      : '<span class="ip-evtitle ip-evtitle-empty">先在时间线上点一个事件——十格读数按那一刻的原文填，没采到的写「—」</span>';
-    var concHtml = ev ? '<div class="ip-conc">' + esc(ev.conclusion) + '</div>' : '';
-    incidentPanel.innerHTML =
-      '<div class="ip-hd">' + headHtml + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
-      + concHtml
-      + '<div class="ip-timeline">' + timelineHtml + '</div>'
-      + '<div class="ip-cards">' + cardsHtml + '</div>'
-      + '<div class="ip-foot">口径来自 pangu_sophon_pytorch · 这十条是真的会被打印、画成曲线的那几个；另一次独立 2048 卡训练的真实复盘，与当前预置的架构字段无关，不替它编一个。</div>';
-    incidentPanel.classList.remove('is-hidden');
-  }
-  incidentPanel && incidentPanel.addEventListener('click', function (ev) {
-    var dot = ev.target.closest('[data-ev]');
-    if (dot) { incidentSel = dot.getAttribute('data-ev'); renderIncidentPanel(); return; }
-    if (ev.target.closest('[data-act="ip-collapse"]')) { incidentPanel.classList.toggle('is-collapsed'); renderIncidentPanel(); return; }
-    var drill = ev.target.closest('[data-act="ip-drill"]');
-    if (drill) showDetail(parseInt(drill.getAttribute('data-rank'), 10));
-  });
-  renderIncidentPanel();
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，

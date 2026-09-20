@@ -90,31 +90,14 @@ html, body {
 .cluster-badge:hover { background: #3A3A3A; }
 .cluster-badge.is-alert:hover { background: #FFFFFF; }
 
-/* ── 真实故障复盘入口：贴在聚合角标下面，常驻左上角（incident2048 自己
-   那一档不显示——已经在那儿了，不需要指向自己的链接）。反馈「不是说好
-   要放进来」——数据本身仍然只在 incident2048 那档出现（rank 号对不上默认
-   预置的拓扑，见 pattern.html 顶部注释），但入口摆在默认屏幕上，不用先
-   知道 URL 参数才找得到。配色沿用 incidentPanel 自己的告警红（--ip-sevc
-   同一个 bad 色阶），跟聚合角标的"只反色不引入色相"规则不是同一件事——
-   这颗链接说的是"这儿有一份真实告警"，跟角标说的"这份配置本身超没超容"
-   是两句话，用同一种红只是恰好都在说"需要注意"。 ──────────────────── */
-.incident-link {
-  position: fixed; left: 16px; top: 96px; z-index: 6;
-  display: block; font-size: 11px; font-weight: 600; color: #F85149;
-  background: #1F1F1F; border-radius: 999px; padding: 5px 12px;
-  text-decoration: none; white-space: nowrap;
-  transition: opacity .2s ease, transform .2s ease, background .2s ease;
-}
-.incident-link.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
-.incident-link:hover { background: #3A3A3A; }
-
-/* ── 真实故障复盘面板：只在 incident2048 预置下出现，钉在视口底部，跨三档
-   常驻。时间线（事件按问题分组、圆点按严重度着色）+ 十格指标卡（读数/
+/* ── 真实故障复盘面板：任何预置打开都有（原来只在 incident2048 才渲染，
+   反馈「不希望问题定位跟拓扑分离」之后挪到 world≤64 分流之前，见 pattern.js
+   顶部注释），钉在视口底部，跨三档常驻、默认收起（is-collapsed，折叠只留
+   头一行）。时间线（事件按问题分组、圆点按严重度着色）+ 十格指标卡（读数/
    为什么），配色沿用 incident-canvas 自己的严重度三色（ok 绿 / warn 橙 /
    bad 红——JS 里按事件写进 --ip-sevc 这个自定义属性），这是唯一一处主动
    引入色相的地方：这个面板讲的是别人的真实告警，不是本页默认"只有黑白"
-   那条规则要管的容量态。折叠只留头一行，默认展开——刚切到这个预置就是
-   要看这块内容。 ──────────────────────────────────────────────────────── */
+   那条规则要管的容量态。 ──────────────────────────────────────────────── */
 .incident-panel {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
   max-height: 46vh; overflow-y: auto;
@@ -213,8 +196,14 @@ body:has(.incident-panel:not(.is-hidden)) .corner-link { display: none; }
   font-size: 15px; font-weight: 700; fill: #E8E8E8; pointer-events: none;
   font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
 }
+/* 段内 TP×CP 子组（子 hub）：比外圈 PP hub 小一号，没有独立发光圈——它只是
+   一层结构标记（讲清"这一撮叶子是同一个 tp/cp"），不是第二个可下钻的锚点，
+   视觉上不该跟外圈 hub 抢重量。 */
+.u-subhub { transition: r .15s ease, opacity .25s ease; }
+.u-subhub:hover { r: 6; }
+.u-ray.is-sub { stroke-opacity: .2; }
 .u-leaf { cursor: pointer; transition: r .15s ease, opacity .25s ease; }
-.u-leaf:hover { r: 9; }
+.u-leaf:hover { r: 7; }
 .u-leaf.is-dim { opacity: .15; }
 .u-core { pointer-events: none; }
 .u-corelabel { font-size: 22px; font-weight: 800; fill: #F5EBD1; pointer-events: none;
