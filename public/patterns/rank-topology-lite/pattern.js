@@ -242,7 +242,13 @@
       }).join('');
       return '<div class="ip-prob"><span class="ip-probname">' + esc(prob.name) + '</span><div class="ip-events">' + dots + '</div></div>';
     }).join('');
-    var cardsHtml = INCIDENT_METRICS.map(function (m) {
+    // 十格指标卡只在选中了具体事件时才画——没选中事件时这十格清一色是「—」
+    // 占位，不是数据。反馈「默认展开数据只展开有的数据」：面板默认展开（见
+    // 下面去掉 is-collapsed），但只展开"有数据"的那部分——时间线本身随时
+    // 都是真数据（11 个真实事件），默认就露出来；十格卡片在没选中事件之前
+    // 一格数字都没有，展开了也只是十个「—」，不算「有数据」，索性不摆这块
+    // 空壳，选中事件之后再补上，那时才真的有内容可展开。
+    var cardsHtml = ev ? INCIDENT_METRICS.map(function (m) {
       var cell = board && board.m && board.m[m.k];
       var v = cell ? cell.v : '—';
       var sevKey = cell ? cell.s : 'na';
@@ -251,7 +257,7 @@
         + '<div class="ip-v">' + esc(v) + '</div>'
         + (cell && cell.why ? '<div class="ip-why">' + esc(cell.why) + '</div>' : '<div class="ip-src">' + esc(m.src) + '</div>')
         + '</div>';
-    }).join('');
+    }).join('') : '';
     var onIncident = PS.matrixPreset === 'incident2048';
     var headHtml = ev
       ? '<span class="ip-evtitle">' + esc(ev.title) + '</span><span class="ip-evsev" style="--ip-sevc:' + INCIDENT_SEVC[ev.sev] + '">' + INCIDENT_SEVN[ev.sev] + '</span>'
@@ -263,7 +269,7 @@
       '<div class="ip-hd">' + headHtml + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
       + concHtml
       + '<div class="ip-timeline">' + timelineHtml + '</div>'
-      + '<div class="ip-cards">' + cardsHtml + '</div>'
+      + (ev ? '<div class="ip-cards">' + cardsHtml + '</div>' : '')
       + '<div class="ip-foot">口径来自 pangu_sophon_pytorch · 这十条是真的会被打印、画成曲线的那几个；另一次独立 2048 卡训练的真实复盘，与当前预置的架构字段无关，不替它编一个'
       + (onIncident ? '' : '——当前预置不是 incident2048，事件里的 rank 号在这张拓扑上并不存在，点"查看真实拓扑"会整页跳转')
       + '。</div>';
