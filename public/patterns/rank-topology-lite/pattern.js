@@ -13,10 +13,16 @@
      1 集群       —— 逻辑魔方铺满，没有选中任何卡。
      2 同组定位   —— 逻辑魔方里点一张方块，**留在逻辑魔方自己身上**：它自带
                      的"卡内魔方"局部聚焦（选中卡与它所在的行列一起被摄像机
-                     框住，中间浮出这张卡自己的层/算子构成）已经是干净的效果，
-                     不必换到矩阵那一屏再画一遍——矩阵在这个规模下要给每张
-                     兄弟卡都摆通信芯片/容量告警，牌子挤在一起反而更花。
-                     宿主右下角浮出一句极简的"↓ 单卡下钻"邀请，点了才进详情。
+                     框住）已经是干净的效果，不必换到矩阵那一屏再画一遍——
+                     矩阵在这个规模下要给每张兄弟卡都摆通信芯片/容量告警，
+                     牌子挤在一起反而更花；但 cc=0/cclabels=0 把逻辑魔方
+                     画布里那份"层/算子构成"的显示关掉了（见 rubikParams
+                     的注释），宿主右下角这张浮卡要接住这句话，不能真的
+                     只剩一句邀请——选中的瞬间先摆邀请（rank/坐标/层区间，
+                     不留空白），紧接着借矩阵本体一次不铺屏的 ?brief=1&sel=
+                     请求（requestTier2Brief），回信一到就原地升级成跟
+                     第三档一样的层区间/显存构成明细，读者不用先点"下钻"
+                     才看得到这些数字。
      3 单卡下钻    —— 点那句邀请，才真正换到并行拓扑矩阵本体（fastcard=1&
                      solo=1）：连兄弟卡也隐去，看的是这一张卡内部的填充版
                      ——真实容量读出、显存构成明细（保留原本的彩色：权重/
@@ -610,6 +616,24 @@
     return '../rank-topology-3d/pattern.html?' + p.toString();
   }
 
+  /* 第二档悄悄问矩阵本体要这张卡自己的显存构成——跟集群角标那次 ?brief=1
+     借用是同一条"不铺满屏 SVG、只要 ptoRankBrief() 那份已经算好的摘要"的
+     路，多带一个 sel=矩阵 rank。反馈「现在看不到rank中间的层和分片了还有
+     显存」：cc=0/cclabels=0 把逻辑魔方画布里"卡内魔方"那份显示去掉之后
+     （见 rubikParams 的注释），第二档原来只留一句"↓ 单卡下钻"邀请、不摆
+     数字——那时候数字确实拿不到（矩阵没打开，编不出来），现在矩阵本体能
+     在不渲染整屏的前提下就把这张卡的层区间/显存构成算完发回来（demo.html
+     那边的改动同样是 opt-in，只在已有的 brief=1 分支里加一步，其他消费
+     这份 demo.html 的 pattern 不传 sel 就不会触发，行为不变），没理由再让
+     读者多点一次"下钻"才看到。选中就立刻发起这次请求，回信之前浮卡先
+     显示邀请那版（不留空白，见 renderDrillInvite），回信到了再原地升级
+     成真数据——这一步不换档，读者仍在第二档，"下钻"按钮还在，点了才真的
+     飞到矩阵那一屏（solo）。 */
+  function requestTier2Brief(matrixSel) {
+    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1', sel: String(matrixSel) });
+    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+  }
+
   /* 逻辑魔方与并行拓扑矩阵各自实现了一遍"rank ↔ (tp,cp,pp,dp) 坐标"的换算，
      内部打包顺序不一样，同一个数字在两边指的不是同一张卡：
        逻辑魔方（pattern.js）  rankOf = ((rep*PP + pp)*CP + cp) * TP + tp
@@ -628,6 +652,7 @@
   }
 
   var pendingMatrixSel = null;   // 第二档选中的那张卡，换算好的矩阵 rank——第三档就是拿它去开矩阵
+  var pendingSubLine = null;     // 第二档那行坐标副标题——brief 回信之后原地升级要用同一句
 
   /* 三档的"这是什么"这句话，全部交给当前显示的那个 iframe 自己的原生标题说，
      这一层不再另起一块牌子重复一遍：第一/二档是逻辑魔方自己的顶栏招牌
@@ -668,7 +693,9 @@
   function showTier2(matrixSel, subLine) {
     showTier1Visual();
     pendingMatrixSel = matrixSel;
-    renderDrillInvite(matrixSel, subLine);
+    pendingSubLine = subLine;
+    renderDrillInvite(matrixSel, subLine, null);
+    requestTier2Brief(matrixSel);
   }
 
   /* 第三档：真正换到矩阵那一屏，solo=1 直接落在"只看这一只"。 */
@@ -712,6 +739,12 @@
     }
     if (ev.source === matrixFrame.contentWindow) {
       if (d.type === 'pto:cluster') { renderClusterBadge(d.brief); return; }
+      if (d.type === 'pto:rank-brief') {
+        // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
+        // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
+        if (d.brief && d.brief.rank === pendingMatrixSel) renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief);
+        return;
+      }
       if (d.type !== 'pto:tier') return;
       if (d.tier === 3) {
         renderBrief(d.brief);
@@ -731,13 +764,43 @@
     briefCard.innerHTML = '';
   }
 
-  /* 第二档的浮卡是一句邀请，不是数据——这一档故意不摆容量/显存数字：矩阵
-     没打开，那些数字本来就不存在，编不出来；逻辑魔方自己已经在画面中间浮出
-     "卡内 · L{lo}-L{hi}" 那张小牌子，宿主再摆一份等于同一句话说两遍。 */
-  function renderDrillInvite(matrixSel, subLine) {
-    briefCard.innerHTML = '<div class="brief-h">rank ' + matrixSel + '</div>'
-      + '<div class="brief-sub">' + subLine + '</div>'
-      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+  /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
+     升级之后与第三档共用同一份拼法：两边的数字都来自矩阵本体同一个
+     ptoRankBrief()（见 requestTier2Brief 与 matrixSrcFor 各自怎么问它要），
+     这里只拼一次版式，不为两档各写一份、读出两套数。容量告警只用文字/
+     底色深浅分挡，不引入色相，呼应"默认关掉颜色只有黑白"那条反馈。 */
+  var CAP_LABEL = { oom: '⚠ 超出容量', red: '⚠ 逼近红线', amber: '临界（黄线）', ok: '正常' };
+  function gbFmt(v) { return (Math.round(v * 10) / 10) + ' GB'; }
+  function coordSubLine(brief) {
+    return 'tp' + brief.coord.tp + ' cp' + brief.coord.cp + ' dp' + brief.coord.dp
+      + ' pp' + brief.coord.pp + (brief.coord.ep != null ? ' ep' + brief.coord.ep : '')
+      + ' · L' + brief.layers.lo + '–L' + brief.layers.hi;
+  }
+  function memBriefHtml(brief) {
+    var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
+      + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
+    return '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
+      + '<div class="brief-sub">' + coordSubLine(brief) + '</div>'
+      + brief.segs.map(function (s) {
+        return '<div class="brief-row"><span>' + s.label + '</span><b>' + gbFmt(s.gb) + '</b></div>';
+      }).join('')
+      + '<div class="brief-row brief-total"><span>合计 / ' + brief.hbm + ' GB</span><b>' + gbFmt(brief.cap.totGB) + '</b></div>';
+  }
+
+  /* 第二档的浮卡：选中的瞬间先摆一句邀请（brief 还没回来，不留空白）；
+     requestTier2Brief 那次借用回信之后（brief 参数非空、rank 对得上），
+     原地升级成跟第三档一样详细的卡片——层区间/显存构成不再是编不出来的
+     数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
+     不是换档，点了才真的飞到矩阵那一屏（solo）。 */
+  function renderDrillInvite(matrixSel, subLine, brief) {
+    if (brief && brief.rank === matrixSel) {
+      briefCard.innerHTML = memBriefHtml(brief)
+        + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+    } else {
+      briefCard.innerHTML = '<div class="brief-h">rank ' + matrixSel + '</div>'
+        + '<div class="brief-sub">' + subLine + '</div>'
+        + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+    }
     briefCard.classList.add('is-cta');
     briefCard.classList.remove('is-hidden');
   }
@@ -745,26 +808,12 @@
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) showDetail(pendingMatrixSel);
   });
 
-  /* 第三档的浮卡才是真数据：内容全部来自矩阵上报的、已经算好的摘要
-     （ptoRankBrief：坐标/层段/容量/显存构成）——宿主自己不重算一遍，读出
-     面板与浮卡两套数字迟早对不上。容量告警只用文字/底色深浅分挡，不引入
-     色相，呼应"默认关掉颜色只有黑白"那条反馈。 */
-  var CAP_LABEL = { oom: '⚠ 超出容量', red: '⚠ 逼近红线', amber: '临界（黄线）', ok: '正常' };
+  /* 第三档的浮卡：不再留"下钻"按钮（已经在这一档了），正文跟第二档升级后
+     共用同一个 memBriefHtml。 */
   function renderBrief(brief) {
     if (!brief) { hideBrief(); return; }
-    var gb = function (v) { return (Math.round(v * 10) / 10) + ' GB'; };
-    var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
-      + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
-    var html = '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
-      + '<div class="brief-sub">tp' + brief.coord.tp + ' cp' + brief.coord.cp + ' dp' + brief.coord.dp
-      + ' pp' + brief.coord.pp + (brief.coord.ep != null ? ' ep' + brief.coord.ep : '')
-      + ' · L' + brief.layers.lo + '–L' + brief.layers.hi + '</div>'
-      + brief.segs.map(function (s) {
-        return '<div class="brief-row"><span>' + s.label + '</span><b>' + gb(s.gb) + '</b></div>';
-      }).join('')
-      + '<div class="brief-row brief-total"><span>合计 / ' + brief.hbm + ' GB</span><b>' + gb(brief.cap.totGB) + '</b></div>';
     briefCard.classList.remove('is-cta');
-    briefCard.innerHTML = html;
+    briefCard.innerHTML = memBriefHtml(brief);
     briefCard.classList.remove('is-hidden');
   }
 

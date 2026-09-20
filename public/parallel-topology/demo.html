@@ -14480,11 +14480,21 @@ urlLoad();
    不要 4000 张卡的 SVG——报完聚合数就地打住，不进 applyQuery/render 那一整套。
    本体自己独立打开、或宿主要真的看画面时都不传这个参数，走的还是下面原来
    那条路，逐位不变。urlLoad() 里那个 q 是它自己函数作用域内的局部变量，
-   这里够不到，重新读一遍 URL——就一次查询，成本可以忽略。 */
+   这里够不到，重新读一遍 URL——就一次查询，成本可以忽略。
+   同一条 brief=1 路径上再加一步：urlLoad() 已经把 ?sel= 解析进全局 sel
+   （不管 brief 是不是 1，两条路共用那一行），这里顺手多报一条 rank 自己的
+   摘要（ptoRankBrief()：坐标/层段/容量/显存构成）——rank-topology-lite
+   第二档（同组定位）原来问不到这份数据，只能等真的下钻到第三档才看得到
+   显存，这一步让它在不铺整屏 SVG 的前提下也能借到同一份口径。sel 为空时
+   ptoRankBrief() 自己会返回 null，不额外判断；只有 rank-topology-lite 会
+   在 brief=1 之外再带 sel=，net-slicing/model-netgraph 这些同样共用这份
+   demo.html 的消费方都不传，行为不变。 */
 var q9brief = new URLSearchParams(location.search);
 if(q9brief.get('brief')==='1'){
   if(window.parent && window.parent !== window){
     window.parent.postMessage({type:'pto:cluster', brief: ptoClusterBrief()}, '*');
+    var rb9brief = ptoRankBrief();
+    if(rb9brief) window.parent.postMessage({type:'pto:rank-brief', brief: rb9brief}, '*');
   }
 } else {
   /* q= 带进来的那句话要真的生效（选中卡、落下刀），不能只是把字填回框里 */
