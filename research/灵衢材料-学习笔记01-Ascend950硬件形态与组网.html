@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵衢材料 · 学习笔记 01：Ascend 950 硬件形态与组网配方</title>
+<style>
+:root{
+  --bg:#ffffff; --surface:#f7f8fa; --surface2:#eef1f5; --border:#dde2e9; --border2:#c3ccd8;
+  --fg:#1c2029; --fg2:#4a5464; --fg3:#7c8695;
+  --accent:#2f6fb5; --accent-soft:#2f6fb514;
+  --ok:#1f7a4d; --warn:#9a6b12; --bad:#b3352c; --info:#5a4d99;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --maxw:820px;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.75 var(--sans);
+     -webkit-font-smoothing:antialiased;}
+#layout{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1180px;margin:0 auto;gap:36px;}
+
+#toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;
+     padding:26px 0 26px 20px;font-size:13px;}
+#toc .toc-title{color:var(--fg3);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+     margin-bottom:10px;font-weight:600;}
+#toc a{display:block;color:var(--fg2);text-decoration:none;padding:3px 10px;border-left:2px solid transparent;
+     line-height:1.5;margin-bottom:1px;}
+#toc a:hover{color:var(--fg);background:var(--accent-soft);}
+#toc a.lvl3{padding-left:22px;font-size:12.5px;color:var(--fg3);}
+#toc a.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft);}
+
+main{padding:26px 24px 100px;max-width:var(--maxw);min-width:0;}
+header.doc{border-bottom:1px solid var(--border);padding-bottom:18px;margin-bottom:26px;}
+header.doc h1{font-size:25px;line-height:1.35;margin:0 0 12px;letter-spacing:-.01em;}
+.meta{font-size:12.5px;color:var(--fg2);display:grid;grid-template-columns:auto 1fr;gap:3px 12px;}
+.meta dt{color:var(--fg3);white-space:nowrap;}
+.meta dd{margin:0;}
+
+h2{font-size:19px;margin:44px 0 14px;padding-top:8px;letter-spacing:-.005em;scroll-margin-top:16px;}
+h3{font-size:15.5px;margin:26px 0 10px;color:var(--fg);scroll-margin-top:16px;}
+p{margin:0 0 14px;}
+strong{color:var(--fg);font-weight:600;}
+a{color:var(--accent);}
+ul,ol{margin:0 0 14px;padding-left:22px;}
+li{margin-bottom:5px;}
+code{font-family:var(--mono);font-size:.88em;background:var(--surface2);padding:1px 5px;
+     border-radius:3px;border:1px solid var(--border);}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:14px 16px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;margin:0 0 16px;}
+pre code{background:none;border:none;padding:0;font-size:inherit;}
+
+.tldr{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:0 7px 7px 0;
+      padding:14px 18px;margin:0 0 26px;font-size:15.5px;}
+.tldr .lbl{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+      color:var(--accent);font-weight:700;margin-bottom:5px;}
+
+table{border-collapse:collapse;width:100%;margin:0 0 18px;font-size:13.5px;}
+th,td{border:1px solid var(--border);padding:7px 11px;text-align:left;vertical-align:top;}
+th{background:var(--surface2);font-weight:600;color:var(--fg);}
+tbody tr:nth-child(even) td{background:var(--surface);}
+
+.ev{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:1px 7px;border-radius:11px;
+    border:1px solid;white-space:nowrap;font-family:var(--sans);vertical-align:middle;line-height:1.6;}
+.ev-verified{color:var(--ok);border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent);}
+.ev-title   {color:var(--accent);border-color:var(--accent);background:var(--accent-soft);}
+.ev-third   {color:var(--info);border-color:var(--info);background:color-mix(in srgb,var(--info) 10%,transparent);}
+.ev-single  {color:var(--warn);border-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent);}
+.ev-inferred{color:var(--bad);border-color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent);}
+.src{font-family:var(--mono);font-size:11.5px;color:var(--fg3);}
+
+.myth{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin:0 0 18px;}
+.myth>div{padding:11px 15px;}
+.myth .wrong{background:color-mix(in srgb,var(--bad) 8%,transparent);border-bottom:1px solid var(--border);}
+.myth .right{background:color-mix(in srgb,var(--ok) 8%,transparent);}
+.myth .tag{font-weight:700;margin-right:6px;}
+.myth .wrong .tag{color:var(--bad);} .myth .right .tag{color:var(--ok);}
+
+figure{margin:0 0 22px;background:var(--surface);border:1px solid var(--border);
+       border-radius:8px;padding:18px 16px 12px;}
+figure svg{display:block;width:100%;height:auto;max-width:100%;}
+figcaption{margin-top:11px;padding-top:9px;border-top:1px solid var(--border);
+           font-size:12.5px;color:var(--fg2);}
+figcaption .fignum{color:var(--accent);font-weight:700;margin-right:6px;}
+svg text{fill:var(--fg2);font-family:var(--sans);}
+svg text.lbl-strong{fill:var(--fg);font-weight:600;}
+svg .box{fill:var(--surface2);stroke:var(--border2);}
+svg .box-hl{fill:var(--accent-soft);stroke:var(--accent);}
+svg .box-warn{fill:color-mix(in srgb,var(--warn) 12%,transparent);stroke:var(--warn);}
+svg .line{stroke:var(--border2);fill:none;}
+svg .line-hl{stroke:var(--accent);fill:none;}
+svg .mark-bad{fill:var(--bad);stroke:var(--bad);}
+svg .mark-ok{fill:var(--ok);stroke:var(--ok);}
+
+.calc{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--ok);
+      border-radius:0 7px 7px 0;padding:12px 16px;margin:0 0 18px;font-family:var(--mono);
+      font-size:12.5px;line-height:1.85;white-space:pre-wrap;}
+
+/* ── 渐进图解：仿 llm-compute-diagrams 的逐步揭示 + 底部 step 导航，配色沿用本篇浅色系统 ── */
+.pg-caption{background:var(--surface2);border:1px solid var(--border);border-radius:7px;
+      padding:10px 14px;margin:0 0 12px;font-size:13px;color:var(--fg2);min-height:3.4em;}
+#progressive-svg [data-step]{transition:opacity .25s ease;}
+#progressive-svg g.current-step rect{stroke:var(--accent);stroke-width:2.2px;}
+.pg-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px;flex-wrap:wrap;}
+.pg-btn{font:inherit;font-size:12.5px;padding:5px 13px;border-radius:14px;border:1px solid var(--border2);
+      background:var(--surface);color:var(--fg2);cursor:pointer;}
+.pg-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.pg-btn:disabled{opacity:.4;cursor:default;}
+.pg-step-title{font-size:12px;color:var(--fg3);min-width:150px;text-align:center;}
+.pg-dots{display:flex;gap:6px;}
+.pg-dot{width:9px;height:9px;border-radius:50%;background:var(--border2);border:none;cursor:pointer;padding:0;}
+.pg-dot.active{background:var(--accent);}
+@media print{
+  #progressive-svg [data-step]{opacity:1 !important;}
+  .pg-nav{display:none;}
+  .pg-caption::before{content:"（完整态，交互步骤在纸面上不适用）";color:var(--fg3);}
+}
+
+.todo{list-style:none;padding-left:0;}
+.todo li{padding-left:26px;position:relative;margin-bottom:7px;}
+.todo li::before{content:"☐";position:absolute;left:4px;color:var(--fg3);font-size:14px;}
+.todo li.done::before{content:"☑";color:var(--ok);}
+.todo li.done{color:var(--fg3);text-decoration:line-through;}
+
+#revisions table{font-size:12.5px;}
+#revisions td:first-child{white-space:nowrap;font-family:var(--mono);color:var(--fg3);}
+.retracted{text-decoration:line-through;color:var(--fg3);}
+.retract-note{font-size:12.5px;color:var(--warn);border-left:2px solid var(--warn);
+              padding:4px 0 4px 11px;margin:6px 0 14px;}
+
+details{border:1px solid var(--border);border-radius:7px;padding:10px 14px;margin:0 0 16px;
+        background:var(--surface);}
+details summary{cursor:pointer;color:var(--fg2);font-size:13.5px;font-weight:600;}
+details[open] summary{margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;}
+
+@media (max-width:900px){
+  #layout{grid-template-columns:1fr;gap:0;}
+  #toc{position:static;max-height:none;padding:16px 20px 0;border-bottom:1px solid var(--border);}
+  #toc a{display:inline-block;border-left:none;border-bottom:2px solid transparent;}
+  #toc a.active{border-left:none;border-bottom-color:var(--accent);}
+  main{padding:20px 20px 70px;}
+  header.doc h1{font-size:21px;}
+  .meta{grid-template-columns:1fr;gap:2px;}
+  .meta dt{margin-top:5px;}
+}
+@media print{
+  #toc{display:none;}
+  #layout{display:block;max-width:none;}
+  main{max-width:none;padding:0;}
+  body{background:#fff;color:#000;font-size:11pt;}
+  details{border:none;padding:0;}
+  details>*{display:block !important;}
+  figure,table,.calc,.myth{break-inside:avoid;}
+  h2{break-after:avoid;}
+  a{color:#000;text-decoration:underline;}
+}
+</style>
+</head>
+<body>
+<div id="layout">
+  <nav id="toc"><div class="toc-title">目录</div><div id="toc-links"></div></nav>
+
+  <main>
+    <header class="doc">
+      <h1>灵衢材料 · 学习笔记 01：Ascend 950 硬件形态与组网配方</h1>
+      <dl class="meta">
+        <dt>整理日期</dt><dd>2026-09-21</dd>
+        <dt>最近更新</dt><dd>2026-09-21（第 2 次迭代，见文末修订历史）</dd>
+        <dt>资料来源</dt><dd>用户提供的 4 张截图，出自华为《CANN NEXT 系列直播·面向下一代硬件，CANN技术架构的变与不变》</dd>
+        <dt>核实来源</dt><dd>4 张截图原文（主要证据）+ 本仓库既有研究文件 <code>research/昇腾超节点-各级互联设计简报.md</code>、<code>data/ascend-superpod-viz-spec.json</code>（交叉核对）</dd>
+        <dt>定位</dt><dd>灵衢材料学习笔记系列第 1 篇——此前无同系列笔记，本篇为新建；后续同主题新材料应就地迭代本文件，不再新开一篇</dd>
+      </dl>
+    </header>
+
+    <div class="tldr">
+      <span class="lbl">一句话结论</span>
+      这 4 页材料把 Ascend 950 超节点从"终态规模数字"变成了"积木怎么拼出来的"：标卡(4卡)/Server(8NPU+2CPU)/POD(64NPU+16CPU) 三级硬件构建块，靠单层或两层 SW 的 Fullmesh+Clos 拼出 128 卡 → 1024 卡 → 1024P 集群，并且从头到尾贯穿"多个独立平面、平面间无互联"的容错设计——这些都是本仓库现有可视化数据规格（<code>ascend-superpod-viz-spec.json</code>）里完全没有的中间层信息。
+    </div>
+
+    <!-- ══ 全局位置 ══ -->
+    <section id="overview">
+      <h2>全局位置</h2>
+      <p>本仓库已有一份「昇腾超节点·各级互联」设计简报，讲的是 UB/灵衢总线如何用统一内存语义抹掉"服务器内总线"与"服务器外网络"的边界（Die→NPU→节点→机柜→超节点→跨超节点七层抽象，见 <code>research/昇腾超节点-各级互联设计简报.md</code> §3.1-3.2）。那份简报的数据主要来自 A3(910C/384卡) 世代，对 A5(950) 只给了终态数字（8192 卡 / 128 计算+32 互联=160 柜），<strong>没有说清 950 这台"万卡计算机"是怎么一级级拼出来的</strong>。</p>
+      <p>本篇笔记只回答这一个缺口：<strong>950 世代的硬件构建块长什么样、怎么组网到 128/1024/1024P 规模</strong>。不重复讲既有简报已经覆盖的并行流量映射（TP/EP/PP/DP 落在哪一级互联）、也不涉及可视化设计本身的交互规格——那些留在姊妹篇里。</p>
+
+      <figure>
+        <svg viewBox="0 0 400 150" role="img" aria-label="全局位置：本篇在灵衢研究体系中的位置">
+          <rect class="box" x="10" y="10" width="380" height="130" rx="6"/>
+          <text x="20" y="27" font-size="11">昇腾超节点 · 灵衢(UB)研究体系</text>
+
+          <rect class="box" x="24" y="40" width="108" height="82" rx="5"/>
+          <text x="78" y="58" text-anchor="middle" font-size="11.5">各级互联设计简报</text>
+          <text x="78" y="74" text-anchor="middle" font-size="10">Die→NPU→节点→</text>
+          <text x="78" y="88" text-anchor="middle" font-size="10">机柜→超节点→集群</text>
+          <text x="78" y="104" text-anchor="middle" font-size="10" fill="var(--fg3)">主要覆盖 A3 世代</text>
+
+          <rect class="box-hl" x="146" y="40" width="108" height="82" rx="5"/>
+          <text class="lbl-strong" x="200" y="58" text-anchor="middle" font-size="11.5">本篇</text>
+          <text x="200" y="74" text-anchor="middle" font-size="10">950 硬件形态</text>
+          <text x="200" y="88" text-anchor="middle" font-size="10">(标卡/Server/POD)</text>
+          <text x="200" y="103" text-anchor="middle" font-size="10">+ 128/1024/1024P 组网</text>
+
+          <rect class="box" x="268" y="40" width="108" height="82" rx="5"/>
+          <text x="322" y="58" text-anchor="middle" font-size="11.5">并行流量映射</text>
+          <text x="322" y="74" text-anchor="middle" font-size="10">TP/EP/PP/DP</text>
+          <text x="322" y="88" text-anchor="middle" font-size="10">落在哪一级互联</text>
+          <text x="322" y="103" text-anchor="middle" font-size="10" fill="var(--fg3)">本篇不讲，见简报§3.3</text>
+        </svg>
+        <figcaption><span class="fignum"></span>本篇（高亮）只补"950 硬件构建块 + 组网配方"这一段，左右两块是既有资料已经覆盖、本篇不重复的部分。</figcaption>
+      </figure>
+
+      <h3>知识地图：按什么顺序读</h3>
+      <p>先懂 UB 互联的三条设计原则，才能看懂"为什么标卡/Server/POD 能像积木一样互相嵌套复用同一套协议"；懂了硬件形态，才能懂两条组网路径（Server 逐级 SW / POD 间多平面 Clos）为什么殊途同归都收敛到"1024"这个规模节点。</p>
+      <figure>
+        <svg viewBox="0 0 400 160" role="img" aria-label="知识地图：三条原则→三种硬件形态→两条组网路径→与既有数据对接">
+          <rect class="box" x="10" y="55" width="96" height="42" rx="5"/>
+          <text x="58" y="72" text-anchor="middle" font-size="11">① UB 互联</text>
+          <text x="58" y="86" text-anchor="middle" font-size="11">三条原则</text>
+
+          <path class="line-hl" d="M108 76 H140" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+          <rect class="box" x="142" y="55" width="96" height="42" rx="5"/>
+          <text x="190" y="72" text-anchor="middle" font-size="11">② 三种硬件</text>
+          <text x="190" y="86" text-anchor="middle" font-size="11">形态</text>
+
+          <path class="line-hl" d="M240 66 L272 30" stroke-width="1.5" marker-end="url(#arrow)"/>
+          <path class="line-hl" d="M240 86 L272 122" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+          <rect class="box" x="274" y="8" width="116" height="44" rx="5"/>
+          <text x="332" y="26" text-anchor="middle" font-size="10.5">③a Server 路径</text>
+          <text x="332" y="40" text-anchor="middle" font-size="10.5">128卡→1024卡(SW)</text>
+
+          <rect class="box" x="274" y="100" width="116" height="44" rx="5"/>
+          <text x="332" y="118" text-anchor="middle" font-size="10.5">③b POD 路径</text>
+          <text x="332" y="132" text-anchor="middle" font-size="10.5">1024P(多平面Clos)</text>
+
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+        </svg>
+        <figcaption><span class="fignum"></span>知识地图：③a、③b 是两条独立给出的组网路径，都以"1024"为汇合点——第「手算示例」节会验算它们是否真的对得上。</figcaption>
+      </figure>
+    </section>
+
+    <!-- ══ 用语约定 ══ -->
+    <section id="glossary">
+      <h2>用语约定</h2>
+      <p>本篇涉及的几个词，和本仓库既有资料（A3 世代）里的同名概念口径不完全一样，先对齐：</p>
+      <table>
+        <thead><tr><th>本篇用语</th><th>指什么（950 世代）</th><th>与既有资料（A3 世代）的区别</th></tr></thead>
+        <tbody>
+          <tr><td>标卡</td><td>x86 底座 + 4 张 NPU 卡，卡间 UB fullmesh，是最小的独立可部署 UB 互联单元</td><td>既有资料的 <code>abstraction_layers</code>/<code>entities</code> 里完全没有这一级，是本篇新识别的构建块</td></tr>
+          <tr><td>Server</td><td>8 NPU + 2 CPU，Server 内 fullmesh、出 Server 走 Clos</td><td>既有 JSON 的 <code>compute_node</code> 是「1 CPU + 8 NPU + 1 L1 交换芯片」——950 的 CPU 数翻倍，且不含独立 L1 交换芯片这一描述</td></tr>
+          <tr><td>POD</td><td>64 NPU + 16 CPU，1D fullmesh + Clos，是可整框部署的中等规模构建块</td><td>既有资料里的"机柜 Rack"是容器概念（装节点），POD 是更接近"可整体出货的互联单元"这一新颗粒度</td></tr>
+          <tr><td>超节点 / SuperPOD</td><td>由 POD 或 Server 组网而成的对等全互联域（128 卡、1024 卡…）</td><td>与既有资料的 SuperPoD 概念一致，只是本篇给出了内部怎么拼出来</td></tr>
+          <tr><td>平面 (plane)</td><td>一套独立的 SW 组网，多个平面并存但<strong>互不连接</strong></td><td>既有资料的 A3 UB-Mesh 描述里没有"多平面"这个说法，是 950 材料新强调的设计原则</td></tr>
+          <tr><td>L1 SW / L2 SW</td><td>灵衢交换的两个层级，二者构成 Clos 互联</td><td>与既有资料的 <code>l1_switch</code>/<code>l2_switch</code> 概念一致，可直接复用</td></tr>
+          <tr><td>DPU</td><td>独立于 CPU 的部件，经 PCIe 接 CPU、经 UB 直接入 L1 灵衢 Switch，RoCE 从 DPU 侧出</td><td>既有 JSON 用的是「擎天 NIC(VPC)」描述南北向网卡，且假设 RDMA 端口在 NPU 上（<code>npu_rdma_port</code>）——两者挂载点不一致，见下方「常见误解」</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ══ 常见误解 ══ -->
+    <section id="myths">
+      <h2>常见误解</h2>
+      <div class="myth">
+        <div class="wrong"><span class="tag">✗ 错误直觉</span>Ascend 950 的计算节点还是 A3 那样"1 个 CPU 配 8 个 NPU"。</div>
+        <div class="right"><span class="tag">✓ 正确机制</span>950 的 Server 形态是 <strong>2 CPU + 8 NPU</strong>，CPU 配比比 A3 世代翻了一倍；而且 950 不再只有"节点"一级，而是标卡(4卡)/Server(8卡)/POD(64卡) 三级并列的构建块，具体用哪一级取决于目标部署规模。
+          <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·Ascend 950硬件形态：POD&amp;Server&amp;标卡</span></div>
+      </div>
+      <div class="myth">
+        <div class="wrong"><span class="tag">✗ 错误直觉</span>RDMA/RoCE 的收发端口在 NPU 上（沿用本仓库既有 <code>ascend-superpod-viz-spec.json</code> 里 <code>npu_rdma_port</code> 的假设）。</div>
+        <div class="right"><span class="tag">✓ 正确机制</span>950 的拓扑图明确把 RoCE 画在 <strong>DPU</strong> 一侧：DPU 通过 PCIe 接 CPU、通过 UB 直接入 L1 灵衢 Switch，RoCE 从 DPU 往外接；NPU 本身只出现在 UB 平面里，图上没有单独画 NPU 直连 RDMA 的线。
+          <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·UB互联特征拓扑图</span>
+          <span class="ev ev-single">⚠️ 单一来源</span>——只有这一张截图作为依据，与既有 JSON 的出入点尚未找到第三份材料交叉验证，标注在「待深化」里。</div>
+      </div>
+    </section>
+
+    <!-- ══ 核心内容 1：三种硬件形态 ══ -->
+    <section id="forms">
+      <h2>三种硬件形态：标卡 / Server / POD</h2>
+      <p>三者是<strong>同一套 UB 协议在不同密度下的复用</strong>：都用 X4 UB 口做 fullmesh，区别只是卡数、CPU 配比、以及"出向"用什么拓扑对接更大规模。
+        <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·Ascend 950硬件形态：POD&amp;Server&amp;标卡</span></p>
+
+      <table>
+        <thead><tr><th>形态</th><th>规模</th><th>内部拓扑</th><th>出向拓扑</th><th>备注</th></tr></thead>
+        <tbody>
+          <tr><td>标卡</td><td>x86 底座 + 4 卡</td><td>每卡 3×X4 UB 口 fullmesh</td><td>可插第三方网卡做参数面互联</td><td>本仓库既有资料里没有的最小构建块</td></tr>
+          <tr><td>Server</td><td>8 NPU + 2 CPU</td><td>Server 内 fullmesh，7×X4 UB 口</td><td>出 Server 走 Clos，8×X4 UB 口</td><td>CPU 配比比 A3 世代（1:8）翻倍</td></tr>
+          <tr><td>POD</td><td>64 NPU + 16 CPU</td><td>1D fullmesh + Clos；计算板每 D 出 7×X4 UB 口 fullmesh，另出 8 口接 L1 SW</td><td>交换板可配成每 D 出 4 口或 8 口，分别用于框内板间 / 框间互联</td><td>可整框部署的中等规模构建块</td></tr>
+        </tbody>
+      </table>
+
+      <figure>
+        <svg viewBox="0 0 400 150" role="img" aria-label="标卡、Server、POD 三级构建块的规模递进">
+          <rect class="box" x="16" y="30" width="90" height="90" rx="6"/>
+          <text class="lbl-strong" x="61" y="52" text-anchor="middle" font-size="12">标卡</text>
+          <text x="61" y="70" text-anchor="middle" font-size="10.5">x86 + 4 卡</text>
+          <text x="61" y="86" text-anchor="middle" font-size="10">每卡 3×X4 UB</text>
+          <text x="61" y="100" text-anchor="middle" font-size="10">口 fullmesh</text>
+
+          <path class="line-hl" d="M108 75 H144" stroke-width="1.5" marker-end="url(#arrow2)"/>
+          <text x="126" y="66" text-anchor="middle" font-size="9.5">×2 CPU 配比</text>
+
+          <rect class="box" x="146" y="20" width="100" height="110" rx="6"/>
+          <text class="lbl-strong" x="196" y="42" text-anchor="middle" font-size="12">Server</text>
+          <text x="196" y="60" text-anchor="middle" font-size="10.5">8 NPU + 2 CPU</text>
+          <text x="196" y="78" text-anchor="middle" font-size="10">内：fullmesh</text>
+          <text x="196" y="92" text-anchor="middle" font-size="10">7×X4 UB</text>
+          <text x="196" y="110" text-anchor="middle" font-size="10">出：Clos 8×X4 UB</text>
+
+          <path class="line-hl" d="M248 75 H284" stroke-width="1.5" marker-end="url(#arrow2)"/>
+          <text x="266" y="66" text-anchor="middle" font-size="9.5">×8 台整合</text>
+
+          <rect class="box-hl" x="286" y="10" width="104" height="130" rx="6"/>
+          <text class="lbl-strong" x="338" y="32" text-anchor="middle" font-size="12">POD</text>
+          <text x="338" y="50" text-anchor="middle" font-size="10.5">64 NPU + 16 CPU</text>
+          <text x="338" y="68" text-anchor="middle" font-size="10">1D fullmesh</text>
+          <text x="338" y="82" text-anchor="middle" font-size="10">+ Clos</text>
+          <text x="338" y="100" text-anchor="middle" font-size="10">每 D：7×X4</text>
+          <text x="338" y="114" text-anchor="middle" font-size="10">fullmesh + 8 口→L1</text>
+          <text x="338" y="128" text-anchor="middle" font-size="9.5" fill="var(--fg3)">可整框出货</text>
+
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+        </svg>
+        <figcaption><span class="fignum"></span>三级构建块按规模递进（标卡→Server→POD），全部用 X4 UB 口做 fullmesh，只是密度和出向拓扑不同；"×8 台整合"是示意规模关系，非官方倍数标注。</figcaption>
+      </figure>
+    </section>
+
+    <!-- ══ 核心内容 2：UB 互联三原则与拓扑 ══ -->
+    <section id="ub-principles">
+      <h2>UB 互联三原则与 950 超节点拓扑</h2>
+      <p>950 超节点用 POD & Server 作为基本互联单位，通过灵衢互联构建高性能集群，三条设计原则：
+        <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·UB互联特征</span></p>
+      <ol>
+        <li><strong>对等架构</strong>：CPU、NPU、存储等异构组件无主从直接通信，组件对等协同——打破以 CPU 为中心的传统互联模式。</li>
+        <li><strong>协议归一</strong>：超节点内所有节点用同一套 UB 协议互连，无协议转换网关。</li>
+        <li><strong>全域内存语义</strong>：原生支持内存语义，兼顾异步访问的消息语义，既保证极致性能又兼顾兼容性；用内存地址访问降低编程复杂度。</li>
+      </ol>
+      <p>这与既有简报「灵衢用统一内存语义总线抹掉服务器内外边界」的核心叙事完全一致（<code>research/昇腾超节点-各级互联设计简报.md</code> 第 0 节），可以互相印证，不是新论断。</p>
+
+      <figure>
+        <svg viewBox="0 0 400 190" role="img" aria-label="950超节点内部拓扑：DPU/CPU/NPU经L1/L2灵衢Switch互联，跨超节点走UBoE">
+          <rect class="box" x="10" y="10" width="380" height="170" rx="6"/>
+          <text x="20" y="26" font-size="10.5">Ascend 950 超节点 1</text>
+
+          <rect class="box" x="24" y="36" width="150" height="70" rx="5"/>
+          <text x="99" y="50" text-anchor="middle" font-size="10">AI 机柜 1</text>
+          <rect class="box-warn" x="34" y="58" width="46" height="24" rx="4"/>
+          <text x="57" y="73" text-anchor="middle" font-size="9">DPU</text>
+          <rect class="box" x="88" y="58" width="46" height="24" rx="4"/>
+          <text x="111" y="73" text-anchor="middle" font-size="9">CPU</text>
+          <text x="99" y="97" text-anchor="middle" font-size="8.5" fill="var(--fg3)">PCIe(DPU↔CPU) · UB(→NPU/L1)</text>
+
+          <path class="line-hl" d="M57 58 V44" stroke-width="1.3" marker-end="url(#arrow3)"/>
+          <text x="40" y="42" font-size="8" fill="var(--bad)">RoCE(出)</text>
+
+          <rect class="box" x="200" y="36" width="80" height="70" rx="5"/>
+          <text x="240" y="50" text-anchor="middle" font-size="10">NPU ×N</text>
+          <text x="240" y="68" text-anchor="middle" font-size="9">UB 平面</text>
+          <text x="240" y="84" text-anchor="middle" font-size="8.5" fill="var(--fg3)">不直连 RDMA</text>
+
+          <path class="line" d="M174 71 H200" stroke-width="1.3" marker-end="url(#arrow3)"/>
+
+          <rect class="box-hl" x="34" y="122" width="246" height="26" rx="4"/>
+          <text class="lbl-strong" x="157" y="139" text-anchor="middle" font-size="10">L1 灵衢 Switch</text>
+          <path class="line" d="M99 106 V122" stroke-width="1.3"/>
+          <path class="line" d="M240 106 V122" stroke-width="1.3"/>
+
+          <rect class="box-hl" x="34" y="156" width="246" height="20" rx="4"/>
+          <text class="lbl-strong" x="157" y="170" text-anchor="middle" font-size="9.5">L2 灵衢 Switch / 以太交换机</text>
+          <path class="line" d="M157 148 V156" stroke-width="1.3"/>
+
+          <path class="line-hl" d="M280 166 H340" stroke-width="1.5" marker-end="url(#arrow3)"/>
+          <text x="310" y="160" text-anchor="middle" font-size="8.5">UB / UBoE</text>
+          <rect class="box" x="336" y="150" width="48" height="32" rx="5"/>
+          <text x="360" y="164" text-anchor="middle" font-size="8.5">超节点 N</text>
+          <text x="360" y="176" text-anchor="middle" font-size="8">(跨超节点)</text>
+
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+        </svg>
+        <figcaption><span class="fignum"></span>橙色 DPU = 图例中"第三方或华为部件"，绿色 CPU/NPU/Switch = "华为部件"；<strong>RoCE 挂在 DPU 一侧</strong>而非 NPU，是与既有 JSON 假设不一致、需要更新的点（见「常见误解」）。跨超节点经 L2 走 UBoE，与既有简报 <code>ic_cluster</code> 的描述一致。</figcaption>
+      </figure>
+    </section>
+
+    <!-- ══ 核心内容 3：组网配方 ══ -->
+    <section id="scaling">
+      <h2>组网配方：128 卡 / 1024 卡 / 1024P</h2>
+      <p>材料给出两条独立的组网路径，殊途同归都落在"1024"这个规模节点上。</p>
+
+      <h3>路径 A：Server 逐级 SW（单层→两层）</h3>
+      <ol>
+        <li><strong>128 卡超节点</strong>：16 台 Server，<strong>单层</strong> SW 设备，128 张卡对等全互联。</li>
+        <li><strong>1024 卡（1K）超节点</strong>：L1 SW 先做 Server 内 8 卡接入，L2 SW 做 TOR 互联汇聚（<strong>两层</strong>）。</li>
+        <li>两档都强调"<strong>多个独立平面，平面间无互联</strong>"。</li>
+      </ol>
+      <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·Ascend 950 server使用单层或者两层SW构建多种规格超节点</span>
+
+      <h3>路径 B：POD 间多平面 Clos</h3>
+      <ol>
+        <li>POD 可用出框<strong>单层</strong> SW 构建 SuperPOD 超节点。</li>
+        <li>L1 SW 和 L2 SW 构成 Clos 互联。</li>
+        <li>同样强调"多个独立平面，平面间无互联"；图上标注 <strong>8 个独立平面</strong>，每平面 4×SW2，向下接两组各 8+8 颗 SW1 的 POD 群，总计 <strong>128 × 8 = 1024P</strong>。</li>
+      </ol>
+      <span class="ev ev-verified">✅ 已核实-原文</span> <span class="src">CANN NEXT 直播截图·Ascend 950 POD间使用单层SW组网构建1024P超节点集群（"128*8=1024P"为图上原始标注）</span>
+
+      <p>下面这张图把上面两条路径做成<strong>渐进图解</strong>——点「下一步」逐级展开，而不是一次性把全部层级摊开；参考了 <a href="https://yinyucheng0601.github.io/AI_Infra/ai-infra-research/skills.html" target="_blank" rel="noopener">AI Infra Skill 库</a> 里 <code>llm-compute-diagrams</code> 技能「逐页揭示信息、每步只引入必要的新结构、旧内容留痕变暗」的图解方式；配色与图元仍沿用本篇 §4 的浅色系统，不搬那个技能的深色计算图配色（那套蓝/金/紫是给张量语义用的，和拓扑图不是一回事）。</p>
+
+      <figure>
+        <div class="pg-caption" id="pg-caption">加载中…</div>
+        <svg id="progressive-svg" viewBox="0 0 560 270" role="img" aria-label="标卡/Server/POD 三种形态渐进展开为 Route A(128→1024卡) 与 Route B(1024P) 两条组网路径">
+          <g id="g-card" class="pg-el" data-step="1">
+            <rect class="box" x="20" y="20" width="90" height="50" rx="5"/>
+            <text class="lbl-strong" x="65" y="42" text-anchor="middle" font-size="11">标卡</text>
+            <text x="65" y="58" text-anchor="middle" font-size="9" fill="var(--fg3)">x86+4卡 fullmesh</text>
+          </g>
+          <g id="g-server" class="pg-el" data-step="1">
+            <rect class="box" x="130" y="20" width="90" height="50" rx="5"/>
+            <text class="lbl-strong" x="175" y="42" text-anchor="middle" font-size="11">Server</text>
+            <text x="175" y="58" text-anchor="middle" font-size="9" fill="var(--fg3)">8NPU+2CPU</text>
+          </g>
+          <g id="g-pod" class="pg-el" data-step="1">
+            <rect class="box" x="240" y="20" width="90" height="50" rx="5"/>
+            <text class="lbl-strong" x="285" y="42" text-anchor="middle" font-size="11">POD</text>
+            <text x="285" y="58" text-anchor="middle" font-size="9" fill="var(--fg3)">64NPU+16CPU</text>
+          </g>
+
+          <g id="g-arrow-a1" class="pg-el" data-step="2">
+            <path class="line-hl" d="M175 70 V100" stroke-width="1.6" marker-end="url(#arrowP)"/>
+          </g>
+          <g id="g-box128" class="pg-el" data-step="2">
+            <rect class="box" x="115" y="102" width="120" height="54" rx="6"/>
+            <text class="lbl-strong" x="175" y="122" text-anchor="middle" font-size="10.5">128 卡超节点</text>
+            <text x="175" y="138" text-anchor="middle" font-size="9" fill="var(--fg3)">16×Server · 单层 SW</text>
+            <text x="175" y="151" text-anchor="middle" font-size="9" fill="var(--fg3)">对等全互联</text>
+          </g>
+
+          <g id="g-arrow-a2" class="pg-el" data-step="3">
+            <path class="line-hl" d="M175 156 V186" stroke-width="1.6" marker-end="url(#arrowP)"/>
+            <text x="215" y="175" text-anchor="middle" font-size="8.5" fill="var(--fg3)">+L2 SW</text>
+          </g>
+          <g id="g-box1024" class="pg-el" data-step="3">
+            <rect class="box" x="95" y="188" width="160" height="62" rx="6"/>
+            <text class="lbl-strong" x="175" y="208" text-anchor="middle" font-size="10.5">1024 卡超节点</text>
+            <text x="175" y="224" text-anchor="middle" font-size="9" fill="var(--fg3)">128×Server</text>
+            <text x="175" y="238" text-anchor="middle" font-size="9" fill="var(--fg3)">L1接入 + L2 TOR汇聚（两层）</text>
+          </g>
+
+          <g id="g-arrow-b" class="pg-el" data-step="4">
+            <path class="line-hl" d="M285 70 C285 128, 430 128, 430 186" stroke-width="1.6" fill="none" marker-end="url(#arrowP)"/>
+          </g>
+          <g id="g-box1024p" class="pg-el" data-step="4">
+            <rect class="box" x="330" y="188" width="210" height="72" rx="6"/>
+            <text class="lbl-strong" x="435" y="204" text-anchor="middle" font-size="10.5">1024P 超节点集群</text>
+            <text x="435" y="218" text-anchor="middle" font-size="9" fill="var(--fg3)">POD 群 · 单层 SW · 8 个独立平面</text>
+            <rect x="358" y="224" width="14" height="14" rx="2" fill="var(--surface2)" stroke="var(--border2)"/>
+            <rect x="376" y="224" width="14" height="14" rx="2" fill="var(--surface2)" stroke="var(--border2)"/>
+            <rect x="394" y="224" width="14" height="14" rx="2" fill="var(--surface2)" stroke="var(--border2)"/>
+            <text x="416" y="235" text-anchor="middle" font-size="10" fill="var(--fg3)">…</text>
+            <rect x="432" y="224" width="14" height="14" rx="2" fill="var(--surface2)" stroke="var(--border2)"/>
+            <rect x="450" y="224" width="14" height="14" rx="2" fill="var(--surface2)" stroke="var(--border2)"/>
+            <text x="500" y="235" text-anchor="middle" font-size="8.5" fill="var(--bad)">✕互不连接</text>
+            <text x="435" y="253" text-anchor="middle" font-size="9.5" class="lbl-strong">128 × 8 = 1024P</text>
+          </g>
+
+          <defs>
+            <marker id="arrowP" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+        </svg>
+
+        <div class="pg-nav">
+          <button type="button" class="pg-btn" id="pg-prev">‹ 上一步</button>
+          <span class="pg-step-title" id="pg-step-title"></span>
+          <div class="pg-dots" id="pg-dots"></div>
+          <button type="button" class="pg-btn" id="pg-next">下一步 ›</button>
+        </div>
+
+        <figcaption><span class="fignum"></span>Route A（Server 逐级 SW）与 Route B（POD 多平面 Clos）都从同一组基础形态出发，最终都停在「1024」这个规模节点——但 Route A 是一张单一的全互联网络，Route B 内部是 8 张互不连接的平面。展开到最后一步即为完整对照，打印时自动显示完整态。</figcaption>
+      </figure>
+
+      <script>
+      (function(){
+        var steps = [
+          { title:'① 三种基础形态',
+            caption:'标卡(4卡)/Server(8NPU+2CPU)/POD(64NPU+16CPU) 是三档<strong>并列</strong>的硬件形态，不是互相嵌套的层级——三者都用 X4 UB 口做 fullmesh，只是密度和出向拓扑不同。标卡面向边缘/小规模部署，不参与下面两条组网路径。' },
+          { title:'② Route A · 128 卡超节点',
+            caption:'<strong>Route A 第一跳</strong>：以 Server 为基本单元，16 台 Server 经单层 SW 对等全互联，拼出 128 张卡的超节点。' },
+          { title:'③ Route A · 1024 卡超节点',
+            caption:'<strong>Route A 第二跳</strong>：规模扩到 1024 卡（128 台 Server）时单层 SW 不够用，新增一层 L2 SW 做 TOR 汇聚——这正是"新交换层级在哪一档长出来"的具体例证。' },
+          { title:'④ Route B · 1024P 超节点集群',
+            caption:'<strong>Route B（独立路径）</strong>：POD 直接出框走单层 SW，多个 POD 群接入 8 个互不连接的独立平面构成 Clos 互联，128×8=1024。与 Route A 的"1024 卡"殊途同归都停在 1024 这个规模节点上，但内部是 8 张互相隔离的网络（见下方手算示例）。' }
+        ];
+        var svg = document.getElementById('progressive-svg');
+        var captionEl = document.getElementById('pg-caption');
+        var titleEl = document.getElementById('pg-step-title');
+        var dotsEl = document.getElementById('pg-dots');
+        var prevBtn = document.getElementById('pg-prev');
+        var nextBtn = document.getElementById('pg-next');
+        var current = 1;
+
+        steps.forEach(function(_, i){
+          var dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = 'pg-dot';
+          dot.setAttribute('aria-label', '跳到第 ' + (i+1) + ' 步');
+          dot.addEventListener('click', function(){ render(i+1); });
+          dotsEl.appendChild(dot);
+        });
+
+        function render(step){
+          current = Math.max(1, Math.min(steps.length, step));
+          svg.querySelectorAll('[data-step]').forEach(function(el){
+            var s = +el.getAttribute('data-step');
+            el.style.opacity = s <= current ? '1' : '0.12';
+            el.classList.toggle('current-step', s === current);
+          });
+          captionEl.innerHTML = steps[current-1].caption;
+          titleEl.textContent = steps[current-1].title;
+          [].forEach.call(dotsEl.children, function(d, i){ d.classList.toggle('active', i === current-1); });
+          prevBtn.disabled = current === 1;
+          nextBtn.disabled = current === steps.length;
+        }
+        prevBtn.addEventListener('click', function(){ render(current-1); });
+        nextBtn.addEventListener('click', function(){ render(current+1); });
+        render(1);
+      })();
+      </script>
+    </section>
+
+    <!-- ══ 概念间关系 ══ -->
+    <section id="relations">
+      <h2>概念间关系</h2>
+      <h3>三种硬件形态对比</h3>
+      <table>
+        <thead><tr><th>维度</th><th>标卡</th><th>Server</th><th>POD</th></tr></thead>
+        <tbody>
+          <tr><td>规模</td><td>4 卡</td><td>8 NPU + 2 CPU</td><td>64 NPU + 16 CPU</td></tr>
+          <tr><td>单卡/单板出口</td><td>3×X4 UB</td><td>7×X4 UB（内）/ 8×X4 UB（出）</td><td>7×X4 UB fullmesh + 8 口→L1（内）；每 D 可配 4 或 8 口（出）</td></tr>
+          <tr><td>内部拓扑</td><td>Fullmesh</td><td>Fullmesh</td><td>1D Fullmesh + Clos</td></tr>
+          <tr><td>出向对接</td><td>第三方网卡（参数面）</td><td>Clos</td><td>灵活复用为框内板间 / 框间互联</td></tr>
+          <tr><td>典型定位</td><td>最小可独立部署单元</td><td>标准中间构建块</td><td>可整框出货的中等规模积木</td></tr>
+        </tbody>
+      </table>
+
+      <h3>A3(910C) 世代 vs A5(950) 世代关键差异</h3>
+      <table>
+        <thead><tr><th>维度</th><th>A3 / 910C（既有简报口径）</th><th>A5 / 950（本篇口径）</th></tr></thead>
+        <tbody>
+          <tr><td>基本节点 CPU:NPU</td><td>1 CPU + 8 NPU</td><td>2 CPU + 8 NPU（Server）</td></tr>
+          <tr><td>RDMA/RoCE 挂载点</td><td>假设在 NPU（<code>npu_rdma_port</code>）</td><td>明确在 DPU</td></tr>
+          <tr><td>最小构建块颗粒度</td><td>节点（8 NPU）起</td><td>标卡（4 卡）起，多一级更细粒度</td></tr>
+          <tr><td>多平面设计</td><td>简报未强调（单一 UB-Mesh 描述）</td><td>128/1024/1024P 三档都明确"多个独立平面，平面间无互联"</td></tr>
+          <tr><td>终态规模</td><td>384 卡（满配）</td><td>8192 卡（既有 JSON 给出，本篇材料只讲到 1024P，未覆盖到 8192 的最后一段）</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ══ 成本-收益 ══ -->
+    <section id="tradeoff">
+      <h2>成本-收益：多个独立平面，平面间无互联</h2>
+      <table>
+        <thead><tr><th>机制</th><th>代价</th><th>收益</th><th>净效果</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>多平面隔离（无跨平面互联）</td>
+            <td>单张卡若挂在某一平面，无法直接访问其它平面的资源；软件/调度层需要感知多平面拓扑做流量分片与容灾路由</td>
+            <td>故障域隔离——一个平面故障不拖累其它 7 个平面；线性扩展带宽——加平面即加总带宽，不增加单平面内部复杂度；每平面可独立升级/维护</td>
+            <td>大规模 RDMA fabric 的标准做法，<strong>总是值得</strong>；代价集中在软件层（拓扑感知调度），不在硬件层</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ══ 手算示例 ══ -->
+    <section id="worked">
+      <h2>手算示例：两条组网路径是否真的收敛到 1024</h2>
+      <div class="calc">路径 A（Server 逐级 SW，slide 3 原文数字）：
+  128 卡超节点 = 16 台 Server × 8 NPU/Server = 128  ✓（图文直接给出）
+  1024 卡超节点 = 128 台 Server × 8 NPU/Server = 1024  ✓（图文直接给出）
+
+路径 B（POD 间多平面 Clos，slide 4 原文标注）：
+  1024P = 128 × 8（平面数）= 1024  ✓（图上原始标注，direct 已核实）
+  若按"每份128 = 2 个 64-NPU POD"回推：64 × 2 = 128  🔸推断，未在文字中直接确认
+
+交叉观察：
+  两条路径都在"128"这个中间节点上重合——路径 A 的"128 卡超节点"本身就是一个完整命名规格，
+  路径 B 的"128"份额也复用了同一个数字。不能排除二者说的是同一个 128-卡积木，
+  只是分别用 Server 单层 SW 和 POD 多平面两种方式描述其内部/外部构成；也可能是两种独立的
+  参考设计。文字材料未明说，已列入「待深化」。</div>
+    </section>
+
+    <!-- ══ 例外与边界 ══ -->
+    <section id="edges">
+      <h2>例外与边界</h2>
+      <ul>
+        <li>POD 间 1024P 组网图里画了<strong>两个</strong>"128"构成框（各配 8+8 颗 SW1），但文字没有说明为什么画两份——可能代表两条独立上联路径，也可能只是版面对称的示意画法，本篇按 🔸推断处理，不作为确定结论。</li>
+        <li>"标卡可接第三方网卡做参数面互联"，据此推断其目标场景偏边缘/小规模推理一体机，但材料未直接给出官方命名或应用场景标签——这是推断，非原文直述。</li>
+        <li>DPU 的数量、端口带宽、与 CPU/NPU 的确切配比，材料未标注具体数字，只能确定其拓扑位置（PCIe 接 CPU、UB 接 L1、RoCE 对外）。</li>
+        <li>本篇材料止步于 1024P，既有 JSON 给出的 950 终态规模是 8192 卡——从 1024P 到 8192 卡之间还有一段组网路径，本篇未覆盖。</li>
+      </ul>
+    </section>
+
+    <!-- ══ 待深化 ══ -->
+    <section id="todo">
+      <h2>待深化</h2>
+      <ul class="todo">
+        <li>核实 1024P 组网图中"128"份额的确切构成：是否等于 2 个 64-NPU POD（8+8 颗 SW1 对应两个 POD 各自的 L1 SW）。</li>
+        <li>核实 DPU 的端口带宽、数量配比，以及它与既有 JSON「擎天 NIC(VPC)」描述之间的关系——是替代关系还是并存的两个不同部件。</li>
+        <li>确认标卡形态的官方定位/命名（是否对应某个具体产品型号或部署场景）。</li>
+        <li>补齐 1024P → 8192 卡（950 终态规模）之间的组网路径，看是否还是"继续加平面"或换成别的拼装方式。</li>
+        <li>把本篇结论同步进 <code>data/ascend-superpod-viz-spec.json</code>：是否新增"标卡"抽象层级、是否修正 <code>npu_rdma_port</code>/DPU 的挂载点描述——这是后续单独的工程任务，本篇笔记只负责把事实理清楚，不直接改数据文件。</li>
+      </ul>
+    </section>
+
+    <!-- ══ 参考 ══ -->
+    <section id="refs">
+      <h2>参考</h2>
+      <ul>
+        <li>《CANN NEXT 系列直播·面向下一代硬件，CANN技术架构的变与不变》，用户提供截图 4 张，2026-09-21（一手：华为官方直播 PPT 截图，本篇核心依据）</li>
+        <li><code>research/昇腾超节点-各级互联设计简报.md</code> §0、§3.1-3.2（本仓库既有事实源，交叉核对灵衢总线核心叙事）</li>
+        <li><code>data/ascend-superpod-viz-spec.json</code> · <code>abstraction_layers</code> / <code>entities</code> / <code>products.A5</code>（本仓库既有可视化数据规格，交叉核对 950 世代已知数字与本篇出入点）</li>
+        <li><a href="https://yinyucheng0601.github.io/AI_Infra/ai-infra-research/skills.html" target="_blank" rel="noopener">AI Infra Skill 库</a> · <code>llm-compute-diagrams</code> 技能（<code>SKILL.md</code> + <code>references/visual-system.md</code>）——组网配方一节的渐进图解交互方式参考，未采用其深色计算图配色</li>
+      </ul>
+    </section>
+
+    <!-- ══ 修订历史 ══ -->
+    <section id="revisions">
+      <h2>修订历史</h2>
+      <table>
+        <thead><tr><th>日期</th><th>改了什么</th><th>为什么</th></tr></thead>
+        <tbody>
+          <tr><td>2026-09-21</td><td>初版：整理 4 张 Ascend 950 拓扑截图，建立标卡/Server/POD 三级构建块、UB互联三原则、128/1024/1024P 组网配方，并与仓库既有研究资料交叉核对，标出新增信息与出入点</td><td>用户要求把此前的口头分析沉淀为灵衢材料学习笔记，此前无同系列笔记，新建第 01 篇</td></tr>
+          <tr><td>2026-09-21</td><td>「组网配方」一节的两张静态对比图合并重做为一张可点击「上一步/下一步」的渐进图解：三种基础形态 → Route A(128卡→1024卡) → Route B(1024P)，逐步展开、已展开内容保持可见（不回退变暗）；补充「参考」条目</td><td>用户要求参照 AI Infra Skill 库的 <code>llm-compute-diagrams</code> 技能做渐进图解并入笔记；采纳其「逐步揭示、旧内容留痕、底部 step 导航」的交互思路，配色仍用本篇既有浅色系统而非该技能的深色计算图配色</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('figure').forEach((f,i)=>{
+  const n=f.querySelector('.fignum');
+  if(n) n.textContent = '图 ' + (i+1);
+  f.id = f.id || ('fig-' + (i+1));
+});
+
+const box=document.getElementById('toc-links');
+const heads=[...document.querySelectorAll('main h2, main h3')];
+heads.forEach((h,i)=>{
+  if(!h.id) h.id = 'h-' + i;
+  const a=document.createElement('a');
+  a.href='#'+h.id; a.textContent=h.textContent;
+  if(h.tagName==='H3') a.className='lvl3';
+  box.appendChild(a);
+});
+const links=[...box.querySelectorAll('a')];
+const obs=new IntersectionObserver(es=>{
+  es.forEach(e=>{
+    if(!e.isIntersecting) return;
+    links.forEach(l=>l.classList.remove('active'));
+    const cur=links.find(l=>l.getAttribute('href')==='#'+e.target.id);
+    if(cur) cur.classList.add('active');
+  });
+},{rootMargin:'0px 0px -75% 0px'});
+heads.forEach(h=>obs.observe(h));
+</script>
+</body>
+</html>
