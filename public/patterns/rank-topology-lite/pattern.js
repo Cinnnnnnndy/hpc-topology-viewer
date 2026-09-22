@@ -43,6 +43,7 @@
   var drawer = document.getElementById('drawer');
   var drawerFrame = document.getElementById('drawerFrame');
   var drawerTitle = document.getElementById('drawerTitle');
+  var alertBadge = document.getElementById('alertBadge');
 
   /* 预置表，world = tp×cp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径，pangu_sophon_pytorch 项目代码里的
@@ -254,7 +255,7 @@
       var open = !!incidentOpen[prob.id];
       return '<div class="ip-col ' + (i9 === 0 ? 'ip-col-left' : 'ip-col-right') + (open ? ' is-open' : '') + '">'
         + '<button type="button" class="ip-prob' + (open ? ' is-on' : '') + '" data-prob="' + prob.id + '"><b>' + esc(prob.name) + '</b>'
-        + '<span>' + prob.events.length + ' 个事件' + (root ? ' · 根因 ' + esc(root.title) : '') + ' · 2048 卡训练</span></button>'
+        + '<span>' + prob.events.length + ' 事件 · 2048 卡</span></button>'
         + '<div class="ip-chain">' + evs + '</div></div>';
     });
     incidentPanel.innerHTML = lanes.join('');
@@ -266,7 +267,9 @@
      CSS 变量，链自动让开。 */
   function syncCardHeights() {
     document.documentElement.style.setProperty('--lc-h', (leftCard ? leftCard.offsetHeight : 0) + 'px');
-    document.documentElement.style.setProperty('--rc-h', (briefCard ? briefCard.offsetHeight : 0) + 'px');
+    // 右列的起点：右卡隐藏时只让开角标那一行
+    var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight + (briefCard.classList.contains('is-tip') ? 34 : 0) : 34;
+    document.documentElement.style.setProperty('--rc-h', rh + 'px');
   }
   window.addEventListener('resize', syncCardHeights);
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
@@ -453,7 +456,7 @@
           if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '" stroke="' + color + '"/>';
           var sel0 = { tp: 0, cp: 0, pp: i, rep: r0 };
           leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
-            + ' cx="' + p0.x.toFixed(1) + '" cy="' + p0.y.toFixed(1) + '" r="4" fill="' + color + '">'
+            + ' cx="' + p0.x.toFixed(1) + '" cy="' + p0.y.toFixed(1) + '" r="4">'
             + '<title>' + esc(tier2SubLine(sel0)) + '</title></circle>';
         }
       } else {
@@ -479,7 +482,7 @@
             if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '" stroke="' + color + '"/>';
             var sel = { tp: tp9, cp: cp9, pp: i, rep: r };
             leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
-              + ' cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + color + '">'
+              + ' cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3">'
               + '<title>' + esc(tier2SubLine(sel)) + '</title></circle>';
           }
         }
@@ -515,6 +518,7 @@
     if (universeBuilt) return;
     universeStage.innerHTML = '<div class="zp-box">' + buildUniverseSvg() + '</div>';
     universeBuilt = true;
+    applyAlerts();
   }
   // 点一个 hub（段本身）= 聚焦这一段、把其余段的 hub/射线/叶子调暗，不下钻
   // （一段里有好几张卡，hub 本身不对应唯一 rank）；ppIdx=null 时全部复原。
@@ -531,7 +535,8 @@
     var leaf = ev.target.closest('.u-leaf');
     if (leaf) {
       var sel = { tp: +leaf.getAttribute('data-tp'), cp: +leaf.getAttribute('data-cp'), pp: +leaf.getAttribute('data-pp'), rep: +leaf.getAttribute('data-rep') };
-      showTier2(rubikSelToMatrixSel(sel), tier2SubLine(sel));
+      var ms = rubikSelToMatrixSel(sel);
+      if (ms === curSel) showDetail(ms); else showTier2(ms, tier2SubLine(sel));
       return;
     }
     var hub = ev.target.closest('.u-hub');
@@ -581,7 +586,7 @@
     for (i = 0; i < PS.pp; i++) g.pp.push(rankOfCoord({ tp: c.tp, cp: c.cp, dp: c.dp, pp: i }));
     return g;
   }
-  var LINK_LEVELS = ['板内 UB fullmesh', 'POD 内 · L1 灵衢 SW', '超节点内 · L2 平面 Clos', '跨超节点 · UBoE'];
+  var LINK_LEVELS = ['板内', 'POD 内', '超节点内', '跨超节点'];
   var GC = { tp: '#36E0C4', cp: '#4FA6E8', ep: '#FF5D8F', dp: '#9D7BFF', pp: '#FFD54A' };
   function levelBetween(a, b) {
     var p = physOf(a), q = physOf(b);
@@ -657,7 +662,7 @@
               var r = pBase + b * 8 + n; if (r >= world) break;
               var c = coordOfRank(r);
               nodes.push('<circle class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
-                + ' cx="' + (pdx + 22 + n * PITCH + PITCH / 2) + '" cy="' + ry + '" r="3.2" fill="' + HUB_PALETTE[c.pp % HUB_PALETTE.length] + '">'
+                + ' cx="' + (pdx + 22 + n * PITCH + PITCH / 2) + '" cy="' + ry + '" r="3.2">'
                 + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></circle>');
             }
           }
@@ -684,6 +689,7 @@
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
     physBuilt = true;
+    applyAlerts();
   }
   /* 选中/聚焦态：选中了 rank 就按五个通信组描边、其余压暗；只聚焦了 PP 段就
      把别的段压暗；都没有就全亮。同时把所在 POD / 超节点的框点亮。 */
@@ -699,14 +705,14 @@
       var r = +el.getAttribute('data-rank'), extra;
       if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
       else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
-      el.setAttribute('class', 'p-npu' + extra);
+      el.setAttribute('class', 'p-npu' + extra + (oomSet && oomSet[r] ? ' is-oom' : ''));
     });
     physStage.querySelectorAll('.p-pod').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-pod') === here.pod); });
     physStage.querySelectorAll('.p-sp').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-sp') === here.sp); });
   }
   physStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
-    if (npu) { var r = +npu.getAttribute('data-rank'); showTier2(r, coordLine(r)); return; }
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) showDetail(r); else showTier2(r, coordLine(r)); return; }
     var box = ev.target.closest('.p-pod, .p-sp');
     if (box) { physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), box.classList.contains('p-pod') ? 60 : 30); return; }
     if (curSel != null) { showOverview(true); return; }
@@ -822,9 +828,8 @@
     for (var i = 0; i < PS.pp; i++) seg += '<button type="button" class="lc-seg' + (focusPP === i ? ' is-on' : '') + '" data-pp="' + i + '" style="--seg-c:' + HUB_PALETTE[i % HUB_PALETTE.length] + '">PP' + i + '</button>';
     leftCard.innerHTML = '<div class="lc-title">' + esc(PS.modelName) + '</div>'
       + '<div class="lc-sub">' + world + ' 卡 · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
-      + '<div class="lc-row"><span>物理<em class="tag">假设</em></span><b>' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板</b></div>'
-      + '<div class="lc-k">流水线段</div><div class="lc-segs">' + seg + '</div>'
-      + '<div class="lc-legend"><span><i class="lg lg-npu"></i>NPU <i class="lg lg-cpu"></i>CPU <i class="lg lg-dpu"></i>DPU <i class="lg lg-nic"></i>NIC <i class="lg lg-sw"></i>SW <i class="lg lg-uboe"></i>UBoE</span></div>';
+      + '<div class="lc-sub">' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板<em class="tag">假设</em></div>'
+      + '<div class="lc-segs">' + seg + '</div>';
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
@@ -871,7 +876,21 @@
   function renderClusterBadge(brief) {
     if (!brief) return;
     lastCluster = brief;
+    oomSet = {};
+    (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
+    applyAlerts();
     if (tier === 1) renderRightIdle();
+  }
+  /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
+     不给 PP 段用（段的颜色只留在左卡的段按钮与宇宙视图的 hub 上）。 */
+  var oomSet = null;
+  function applyAlerts() {
+    if (!oomSet) return;
+    physStage.querySelectorAll('.p-npu').forEach(function (el) { el.classList.toggle('is-oom', !!oomSet[+el.getAttribute('data-rank')]); });
+    universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
+      var sel = { tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') };
+      el.classList.toggle('is-oom', !!oomSet[rubikSelToMatrixSel(sel)]);
+    });
   }
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
@@ -896,7 +915,7 @@
   // 渲染的换成矩阵渲染的，字面上一个字不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1',
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1', memcards: '0',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
@@ -967,7 +986,7 @@
   /* 回到当前这一层的"没选中"态。keepLevel=true 只取消选中、留在原来那一层
      （段层就还在段里）；否则回到集群层、清掉段聚焦。 */
   function showOverview(keepLevel) {
-    tier = 1; curSel = null; pendingMatrixSel = null; pendingSubLine = null;
+    tier = 1; curSel = null; pendingMatrixSel = null; pendingSubLine = null; rankTipOpen = false;
     if (!keepLevel) { level = 'cluster'; focusPP = null; }
     showTier1Visual();
     renderRightIdle(); renderLeftCard(); renderCrumb();
@@ -1062,21 +1081,33 @@
 
   /* 右卡第一档：集群容量汇总（矩阵借用 ?brief=1 算出来的聚合数）+ 一键跳到
      最严重的那张卡。不摆别的——这一档右卡只回答"全网现在怎么样"。 */
+  /* 第一层不默认摊开容量面板：右上角只有一颗角标（红 = 有卡顶出容量），点它才
+     弹出 tips（容量各档 + 最严重 rank）。 */
+  var alertTipOpen = false;
   function renderRightIdle() {
     briefCard.classList.remove('is-cta');
+    briefCard.classList.toggle('is-tip', true);
     if (!lastCluster) {
-      briefCard.innerHTML = '<div class="brief-h">集群容量</div><div class="brief-sub">正在借矩阵本体算一遍…</div>';
+      alertBadge.classList.add('is-hidden');
+      briefCard.classList.add('is-hidden');
     } else {
-      // 只写非零的档：全是 0 的行不是信息（消融）
       var n = lastCluster.n, ok = lastCluster.world - n.oom - n.red - n.amber;
+      alertBadge.textContent = n.oom > 0 ? '⚠ ' + n.oom : (n.red > 0 ? '⚠ ' + n.red : '✓');
+      alertBadge.classList.toggle('is-quiet', n.oom === 0 && n.red === 0);
+      alertBadge.classList.toggle('is-on', alertTipOpen);
+      alertBadge.classList.remove('is-hidden');
       var rows = [['超出容量', n.oom], ['逼近红线', n.red], ['临界', n.amber], ['正常', ok]].filter(function (x) { return x[1] > 0; });
-      briefCard.innerHTML = '<div class="brief-h">集群容量 · ' + lastCluster.world + ' 卡' + (n.oom > 0 ? '<span class="brief-badge is-alert">⚠ 超出容量</span>' : '') + '</div>'
+      briefCard.innerHTML = '<div class="brief-h">容量 · ' + lastCluster.world + ' 卡</div>'
         + rows.map(function (x) { return '<div class="brief-row"><span>' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('')
-        + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ 最严重 rank ' + lastCluster.worst + '</button>' : '');
+        + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ rank ' + lastCluster.worst + '</button>' : '');
+      briefCard.classList.toggle('is-hidden', !alertTipOpen);
     }
-    briefCard.classList.remove('is-hidden');
     syncCardHeights();
   }
+  alertBadge.addEventListener('click', function () {
+    if (curSel == null) { alertTipOpen = !alertTipOpen; renderRightIdle(); }
+    else { rankTipOpen = !rankTipOpen; rerenderRank(); }
+  });
   /* 选中卡的物理位置 + 五个通信组各走哪一级链路（落位假设见左卡）。EP 跟 DP
      成员完全一样时（DP=EP）合成一行，不摆两行一样的话。 */
   function physInfoHtml(r) {
@@ -1089,9 +1120,7 @@
       var lv = linkLevel(x[2], x[0] === 'pp');
       return '<div class="brief-row"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><b>' + LINK_LEVELS[lv] + '</b></div>';
     }).join('');
-    return '<div class="brief-k">位置<em>假设</em></div>'
-      + '<div class="brief-sub">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '</div>'
-      + '<div class="brief-k">通信组</div>' + html;
+    return '<div class="brief-sub" style="margin-top:8px">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '<em class="tag">假设</em></div>' + html;
   }
 
   /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
@@ -1109,12 +1138,13 @@
   function memBriefHtml(brief) {
     var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
       + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
+    // 档名只留头两三个字：「权重 (bf16)」→「权重」、「激活·在途6μb」→「激活」
     return '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
       + '<div class="brief-sub">' + coordSubLine(brief) + '</div>'
       + brief.segs.map(function (s) {
-        return '<div class="brief-row"><span>' + s.label + '</span><b>' + gbFmt(s.gb) + '</b></div>';
+        return '<div class="brief-row"><span>' + String(s.label).replace(/\s*[（(].*$/, '').replace(/[·／/].*$/, '') + '</span><b>' + gbFmt(s.gb) + '</b></div>';
       }).join('')
-      + '<div class="brief-row brief-total"><span>合计 / ' + brief.hbm + ' GB</span><b>' + gbFmt(brief.cap.totGB) + '</b></div>';
+      + '<div class="brief-row brief-total"><span>合计</span><b>' + gbFmt(brief.cap.totGB).replace(' GB', '') + ' / ' + brief.hbm + ' GB</b></div>';
   }
 
   /* 第二档的浮卡：选中的瞬间先摆一句邀请（brief 还没回来，不留空白）；
@@ -1123,8 +1153,8 @@
      数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
      不是换档，点了才真的飞到矩阵那一屏（solo）。 */
   function renderDrillInvite(matrixSel, subLine, brief, noCta) {
-    var cta = noCta ? '' : (level === 'cluster' ? '<button type="button" class="brief-cta" data-act="seg">→ 看它所在的 PP' + coordOfRank(matrixSel).pp + ' 段</button>' : '')
-      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+    var cta = noCta ? '' : (level === 'cluster' ? '<button type="button" class="brief-cta" data-act="seg">→ PP' + coordOfRank(matrixSel).pp + ' 段</button>' : '')
+      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡</button>';
     if (brief && brief.rank === matrixSel) {
       briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(matrixSel) + cta;
     } else {
@@ -1132,8 +1162,25 @@
         + '<div class="brief-sub">' + subLine + '</div>' + physInfoHtml(matrixSel) + cta;
     }
     briefCard.classList.toggle('is-cta', !noCta);
-    briefCard.classList.remove('is-hidden');
+    showRankBadge(matrixSel);
+  }
+  /* 选中 rank 之后右侧不默认摊开详情：只留一颗「rank N ⚠」角标，点它才弹卡
+     （反馈「点击小的告警徽标再出现具体信息，不要默认悬浮在右侧」）。再点一次
+     已选中的 NPU/叶子 = 直接下钻，不必先开卡。 */
+  var rankTipOpen = false;
+  function showRankBadge(r) {
+    var bad = !!(oomSet && oomSet[r]);
+    alertBadge.textContent = 'rank ' + r + (bad ? ' ⚠' : '');
+    alertBadge.classList.toggle('is-quiet', !bad);
+    alertBadge.classList.toggle('is-on', rankTipOpen);
+    alertBadge.classList.remove('is-hidden');
+    briefCard.classList.add('is-tip');
+    briefCard.classList.toggle('is-hidden', !rankTipOpen);
     syncCardHeights();
+  }
+  function rerenderRank() {
+    if (tier === 3 && lastBrief && lastBrief.rank === curSel) renderBrief(lastBrief);
+    else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null, tier === 3);
   }
   briefCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
@@ -1149,11 +1196,9 @@
     briefCard.classList.remove('is-cta');
     // 单卡层矩阵自己已经把显存构成摆成浮卡贴在卡壳旁边了，右卡不再重复那五行
     // （消融），只留矩阵画布上没有的：物理位置与通信组链路等级。
-    var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">' + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
-    briefCard.innerHTML = '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
-      + '<div class="brief-sub">' + coordSubLine(brief) + '</div>' + physInfoHtml(brief.rank);
-    briefCard.classList.remove('is-hidden');
-    syncCardHeights();
+    // 矩阵 solo 那群显存浮卡与引线关掉了（memcards=0），数字直接放这张右卡
+    briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
+    showRankBadge(brief.rank);
   }
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik

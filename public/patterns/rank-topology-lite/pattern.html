@@ -62,14 +62,16 @@
     <iframe id="drawerFrame" title="参考面板"></iframe>
   </aside>
 
+  <button type="button" id="alertBadge" class="alert-badge is-hidden" aria-live="polite"></button>
+
   <div id="dock" class="dock is-hidden">
-    <button type="button" data-zoom="out" title="缩小">−</button>
-    <button type="button" data-zoom="reset" title="复位">复位</button>
-    <button type="button" data-zoom="in" title="放大">＋</button>
+    <button type="button" data-zoom="out" title="缩小" aria-label="缩小"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14M5 7h4"/></svg></button>
+    <button type="button" data-zoom="reset" title="复位" aria-label="复位"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg></button>
+    <button type="button" data-zoom="in" title="放大" aria-label="放大"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14M5 7h4M7 5v4"/></svg></button>
     <i class="dock-sep"></i>
-    <button type="button" data-drawer="netgraph">整网图</button>
-    <button type="button" data-drawer="swimlane">泳道图</button>
-    <button type="button" data-drawer="rubik">逻辑魔方</button>
+    <button type="button" data-drawer="netgraph" title="整网图" aria-label="整网图"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="2"/><circle cx="13" cy="3.5" r="2"/><circle cx="13" cy="12.5" r="2"/><path d="M5 7.2 11 4.3M5 8.8l6 2.9"/></svg></button>
+    <button type="button" data-drawer="swimlane" title="泳道图" aria-label="泳道图"><svg viewBox="0 0 16 16"><path d="M2 4h6M5 8h7M8 12h6"/></svg></button>
+    <button type="button" data-drawer="rubik" title="逻辑魔方" aria-label="逻辑魔方"><svg viewBox="0 0 16 16"><path d="M8 1.5 14 4.75v6.5L8 14.5 2 11.25v-6.5z"/><path d="M8 1.5v13M2 4.75l6 3.25 6-3.25"/></svg></button>
   </div>
 
   <script src="./pattern.js"></script>

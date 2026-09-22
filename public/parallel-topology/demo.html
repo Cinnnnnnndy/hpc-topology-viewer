@@ -1528,6 +1528,9 @@ function urlLoad(){
   if(q.get('fill')==='comp'){ ui.compFill = true; ui.netOff = false; }
   if(q.get('mem')==='0') ui.memFill = false;
   if(q.get('fastcard')==='1') ui.fastCard = true;
+  /* memcards=0：solo 档不画那群显存浮卡与引线（宿主自己在右侧摆数字时传，
+     rank-topology-lite 用；默认不传，solo 独立打开照旧画）。 */
+  if(q.get('memcards')==='0') ui.noMemCards = true;
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
      取景直接带它进来，所以这条链接自己就是那一屏，不靠宿主再发一次消息。
@@ -2307,14 +2310,15 @@ function capVerdict(D, ppRank, g){
 function ptoClusterBrief(){
   var D = derive(cfg);
   if(!D.ok) return null;
-  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1;
+  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1, oom = [];
   for(var r=0; r<D.world; r++){
     var co = coordsOf(r, D);
     var V = capVerdict(D, co.p, r);
     n[V.level]++;
+    if(V.level === 'oom') oom.push(r);          /* 宿主要把顶出容量的卡逐张标红 */
     if(V.ratio > worstRatio){ worstRatio = V.ratio; worst = r; }
   }
-  return { world:D.world, hbm:D.hbm, n:n, worst:worst };
+  return { world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
@@ -13534,7 +13538,7 @@ function renderMemCards(D){
   var elWrap = $('memCards');
   if(!elWrap) return;
   var solo9 = ui.fastCard && ui.soloCard;
-  var on = solo9 && ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel<D.world;
+  var on = solo9 && !ui.noMemCards && ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel<D.world;
   if(!on){ elWrap.hidden = true; elWrap.innerHTML = ''; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
   var segs = memParts(D, p, g).filter(function(sg){ return sg.bytes > 0; });

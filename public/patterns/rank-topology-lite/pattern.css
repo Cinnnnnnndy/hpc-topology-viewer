@@ -134,12 +134,27 @@ html, body {
 }
 .dock.is-hidden { opacity: 0; pointer-events: none; }
 .dock button {
-  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
-  background: transparent; border: 0; border-radius: 999px; min-width: 30px; padding: 4px 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: #A0A0A0;
+  background: transparent; border: 0; border-radius: 999px; width: 32px; height: 28px; padding: 0; cursor: pointer;
 }
+.dock svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .dock button:hover { color: #E8E8E8; background: #2B2B2B; }
 .dock button.is-on { color: #111111; background: #E8E8E8; }
 .dock-sep { width: 1px; height: 16px; background: #3A3A3A; margin: 0 4px; }
+
+/* ── 告警角标：第一层不默认摊开容量面板，右上角只留一颗红色角标，点它才弹
+   容量 tips（就是右卡那份内容）。选中 rank 之后右卡换成 rank 详情，角标收起。 */
+.alert-badge {
+  position: fixed; right: 16px; top: 60px; z-index: 6;
+  font: inherit; font-size: 12px; font-weight: 700; color: #FFFFFF;
+  background: rgba(248, 81, 73, .9); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+.alert-badge.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.alert-badge.is-quiet { color: #A0A0A0; background: rgba(31, 31, 31, .72); }
+.alert-badge.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); }
+.side-right.is-tip { top: 94px; }
 
 /* ── 参考抽屉：从左侧展开，盖住左卡那一列（左卡此时收起），不动画布。 ── */
 .drawer {
@@ -199,15 +214,18 @@ html, body {
 .lc-legend span { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .lg { display: inline-block; width: 8px; height: 8px; margin-left: 5px; }
 .lg:first-child { margin-left: 0; }
-.lg-npu { border-radius: 50%; background: #A0A0A0; }
+.lg-npu { border-radius: 50%; background: #E8E8E8; }
+.lg-oom { border-radius: 50%; background: #F85149; }
 .lg-cpu { background: #8A8A8A; }
 .lg-dpu { background: #F2B84B; }
 .lg-nic { width: 3px; height: 9px; background: #5FD3A5; }
 .lg-sw { background: #4FA6E8; }
 .lg-uboe { height: 2px; background: #9D7BFF; vertical-align: 2px; }
-.p-npu { cursor: pointer; transition: opacity .2s ease; }
+/* rank 默认全白；顶出容量的标红。颜色只给告警，不给 PP 段。 */
+.p-npu { fill: #E8E8E8; cursor: pointer; transition: opacity .2s ease; }
+.p-npu.is-oom { fill: #F85149; }
 .p-npu.is-dim { opacity: .12; }
-.p-npu.is-sel { stroke: #FFFFFF; stroke-width: 2.2; }
+.p-npu.is-sel { fill: #111111; stroke: #FFFFFF; stroke-width: 2.2; }
 .p-npu.g-tp { stroke: #36E0C4; stroke-width: 1.8; }
 .p-npu.g-cp { stroke: #4FA6E8; stroke-width: 1.8; }
 .p-npu.g-ep { stroke: #FF5D8F; stroke-width: 1.6; }
@@ -292,7 +310,8 @@ html, body {
 .u-subhub { transition: r .15s ease, opacity .25s ease; }
 .u-subhub:hover { r: 6; }
 .u-ray.is-sub { stroke-opacity: .2; }
-.u-leaf { cursor: pointer; transition: r .15s ease, opacity .25s ease; }
+.u-leaf { fill: #E8E8E8; cursor: pointer; transition: r .15s ease, opacity .25s ease; }
+.u-leaf.is-oom { fill: #F85149; }
 .u-leaf:hover { r: 7; }
 .u-leaf.is-dim { opacity: .15; }
 .u-core { pointer-events: none; }
