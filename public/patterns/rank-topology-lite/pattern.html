@@ -10,103 +10,67 @@
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="./pattern.css" />
 <!--
-  rank-topology-lite —— /patterns/rank-topology-3d/ 的简洁版。两个本体各管
-  一半，谁都不重新实现。默认预置是 moe504b32k（world=4096，pangu_sophon_
-  pytorch 项目 config/llm/moe_504B_A18B/ 里 32K 序列那档的真实切分
-  tp4·cp8·pp8·dp16·ep16）——交互形式定下来之后反馈「我还是想用超大集群的
-  数量，按照我之前给你提供的数据选择一个较大的集群数量和合适的切分」，
-  8192 那档被否（"太大太卡"），按第三轮扫描出的真实配置选了这一档：卡数与
-  pangu 同量级（两种第一档画法都验证过不卡），但每个数字都能对到 yaml
-  或从项目代码的公式推出（dp=16 是 EP|DP 的最小合法值，不是猜的），
-  见 pattern.js 里 PRESETS 与「默认预置」那两段注释。dense64（64 卡）/
-  pangu（4000）/moe718b128k（8192）/incident2048（2048）仍旧靠 ?preset=
-  直接打开。
+  rank-topology-lite —— 一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。
+  默认预置 moe504b32k（tp4·cp8·pp8·dp16·ep16，world=4096，pangu_sophon_pytorch
+  项目 config/llm/moe_504B_A18B/ 里 32K 序列那档的真实切分，dp=16 是 EP|DP
+  的最小合法值，见 pattern.js 的预置注释）。
 
-  world ≤ 64（只有 ?preset=dense64）：直接铺满并行拓扑矩阵本体原页（见
-  pattern.js 顶部注释），没有逻辑魔方、没有三档取景——矩阵自己的"选中/
-  取消选中"手势已经够用，规模小到不必再包一层。world > 64（默认，及
-  ?preset=pangu/moe718b128k/incident2048）走下面这套"无限画布"三档取景：
+  故事线（反馈「按下钻的逻辑把整个视图串起来，而不是视图 tab 切换」）：
+  · 集群 —— 灵衢物理拓扑（physStage，内联 SVG）：4 个超节点各自的 8 个 L2
+    平面（4×SW2）、8 个 128 卡组（8 颗 L1 SW + 2 个 64 卡 POD）、POD 里 8 块板
+    （每板 2 CPU + 8 NPU + DPU + 4 NIC），超节点之间 UBoE。NPU 按 PP 段着色——
+    并行拓扑已经叠在物理图上。滚轮缩放、拖拽平移；点 POD/超节点取景过去。
+  · 段 —— 宇宙视图（universeStage）聚焦一条 PP 段：TP×CP 子组 × DP 副本。
+    从左卡的段按钮或右卡「看它所在的段」进来。
+  · 卡 —— 任一层点一颗 NPU/叶子 = 选中 rank：右卡先摆坐标行，再借矩阵本体
+    一次不铺屏的 ?brief=1&sel= 请求，回信一到升级成层区间/显存构成，外加
+    物理位置（假设落位）与五个通信组各走哪一级链路。
+  · 单卡 —— 「↓ 单卡下钻」换到 /patterns/rank-topology-3d/pattern.html
+    （同源 iframe，fastcard=1&solo=1）：矩阵本体自己的 solo 渲染接管。
+  顶栏胶囊里的面包屑（集群 › PP 段 › rank › 单卡）每一级都能点回去；三张卡
+  跨四层常驻，只换内容不换位置。
 
-  · 第一档（没点开任何一张卡）：铺满整个视口的是 /rubik-pattern.html（逻辑
-    魔方，同源 iframe）。它自己就是 WebGL 实例化网格——素块、没有文字
-    标签、没有显示/性能问题，这正是这一屏「未点击之前」想要的样子。
-  · 第二档（逻辑魔方自己 postMessage 上报的 rubik-select）：**留在逻辑魔方
-    身上**，不切 iframe——它自带的局部聚焦（选中卡与所在行列一起被摄像机
-    框住）已经是干净的效果，宿主右下角浮出一张详情卡：选中瞬间先是一句
-    "↓ 单卡下钻"邀请（rank/坐标/层区间），紧接着借矩阵本体一次不铺屏的
-    ?brief=1&sel= 请求算出这张卡的层区间/显存构成，回信一到就原地升级成
-    真数据——反馈「现在看不到rank中间的层和分片了还有显存」：cc=0/
-    cclabels=0 关掉了逻辑魔方画布里那份显示之后，这张浮卡本该接住同一句
-    话，不能只剩一句不带数字的邀请。"↓ 单卡下钻"仍旧留着，点了才真的换到
-    矩阵那一屏（第三档）。
-  · 第三档（点那句邀请）：才真正换到 /patterns/rank-topology-3d/pattern.html
-    （同源 iframe，fastcard=1&solo=1，带上换算过的 ?sel=），矩阵本体自己的
-    solo 渲染——真实坐标、内存/容量读出、卡内那一级通信——原样接管。逻辑
-    魔方与并行拓扑各自的 rank 编号公式不同（内部打包顺序不一样），切换时按
-    (tp,pp,dp) 坐标换算，不是直接把数字抄过去（见 pattern.js 里
-    rubikSelToMatrixSel 的注释）。矩阵内部再点一次选中卡会退出 solo（连
-    pto:tier 消息把档位报回这一层，宿主据此切回第二档，不重新加载 iframe）。
-  · ?view=universe（或点右上角「🌌 宇宙视图」那颗切换钮）：第一档换一种
-    画法——不铺逻辑魔方，铺一张内联 SVG 的径向星图（universeStage）：
-    中心=模型本身，第一圈=各条 PP 段（沿用这个仓库里"PP流水=段"的既有心智
-    模型，不是新发明一套分类法），每段外沿撒开一批采样出来的真实 rank
-    作为叶子点。点一个叶子 = 第二档（同组定位，走的还是 showTier2 那同一
-    条路，只是发起点从"逻辑魔方 postMessage 上报"换成"宿主自己算好 sel
-    直接调用"）；点空白 = 退回总览。第三档不分岔——两种视图落的都是同一个
-    matrixFrame solo 页，这一层不重复实现一遍详情渲染。这一版**没有**参考
-    图里那颗"AI 分析/问答"输入框：那是接了真实 agent 的产品功能，这里接
-    不出来，摆一个只会点了没反应的输入框比不摆更误导人，所以没做。
+  三张卡：左卡 = 模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设；右卡 =
+  第一层集群容量汇总（借矩阵 ?brief=1 聚合），选中后换成 rank 详情；底卡 =
+  真实故障复盘，11 个事件平铺、每张只写真采到的读数（另一次独立 2048 卡
+  训练的事故，与当前预置无关，页脚直说）。底部工具条（仿 Figma）：缩放 +
+  三个参考抽屉——整网图（同一预置）/ 泳道图（上游 32 卡示例）/ 逻辑魔方
+  （点方块也能选中 rank）——它们是主线之外的并列参考。
 
-  退档不靠宿主自己另起一颗按钮：点空白就是每一档自带的手势（逻辑魔方点空白
-  取消选中、矩阵点空白退出 solo）。档位写在面包屑里——逻辑魔方顶栏的模型名
-  + rank 后缀、矩阵自己的画布名字（stitle=）——不用另摆一颗"你在哪/怎么
-  回去"的按钮。
+  落位是假设：配置里没有 rank→NPU 的映射，这一层按「rank 连续摆放」推
+  （r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋），左卡与右卡都写明；切分、
+  通信组成员、各组跨到哪一级链路都是从配置和公式算出来的，不是编的。
 
-  两边都不缩小、不加框，边到边铺满视口——拓扑本身就是全屏幕的画布，不是
-  「一张卡片放中间」。选中卡之后，右下角悬浮一张数据卡（rank 坐标、层段、
-  容量告警、兄弟卡数/显存构成明细），数据全部来自矩阵 iframe 上报的已算好的
-  摘要，这一层不重算、不编数字。
-
-  左上角常驻一颗聚合角标（clusterBadge，只在 world>64 的三档取景才出现）：
-  一开场就借 matrixFrame 跑一次 ?brief=1（demo.html 收到这个参数只算
-  ptoClusterBrief() 就地报数，不铺整屏卡阵的 SVG），报一句"全网多少张卡超容
-  /逼近红线"，不用先点进第三档才看到第一个真实数字。点它直接下钻到 ratio
-  最高的那张卡（第三档），跟档二那句"↓ 单卡下钻"邀请殊途同归。
-
-  底部常驻一条真实故障复盘面板（incidentPanel，任何预置打开都有，默认
-  收起）：时间线 + 十格"关键少数"指标卡，数据逐字抄自 /incident-canvas/
-  （那份的 GROUPS/TRAIN_METRICS/BOARD 本身照抄 compute-graph-viewer 的
-  INCIDENT_GROUPS，数值一个没改）。这是另一次独立的 2048 卡训练的真实
-  事故，不随当前选中卡变化——跟右上角显存构成卡（渲染的是本页自己按架构
-  字段估出的假设值）是两套口径，同屏出现时不要混着读，见 pattern.js 顶部
-  INCIDENT_* 数据块的注释。
-
-  原来这份数据只在 ?preset=incident2048 那档渲染，默认屏幕只留一条链接，
-  点了才整页跳到那份拓扑——反馈「不希望问题定位的那一块儿和本身的拓扑是
-  分离的，现在必须要点击左上角的告警才能进入有数据的界面，我希望这个界面
-  直接显示在最外层的拓扑上」，所以现在任何预置打开都会看到这块面板，不用
-  先跳转页面。会跟着预置变的只有事件卡片上"下钻 rank N"那颗按钮：事件里
-  的 rank 号（1559/1553 这些）是 incident2048 那份 2048 卡拓扑自己坐标系
-  里的真实 rank，当前预置不是 incident2048 时这个数字并不存在于当前这张
-  拓扑上（比如默认 moe504b32k 的 4096 张卡是另一套坐标系）——按钮这时改成"查看 rank N 所在
-  的真实拓扑 →"，点了整页跳转到 ?preset=incident2048&sel=N，把读者带到这
-  个数字真正有意义的那张拓扑，不在当前页面里假装能下钻到同一张卡（那是
-  编数据）。 -->
+  world ≤ 64（只有 ?preset=dense64）：直接铺满矩阵本体原页，没有这套链——
+  规模小到不必再包一层。 -->
 </head>
 <body>
-  <iframe id="rubikFrame" class="stage-frame" title="逻辑魔方（盘古 ProMoE · 4000 卡全量视图）"></iframe>
-  <div id="universeStage" class="stage-frame is-hidden universe-stage" role="img" aria-label="径向星图：中心为模型，一圈为流水线段，叶子为采样出的真实 rank"></div>
+  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：超节点 / L2 平面 / L1 交换 / POD / 板（NPU·CPU·DPU·NIC）"></div>
+  <div id="universeStage" class="stage-frame is-hidden universe-stage" role="img" aria-label="径向星图：中心为模型，一圈为流水线段，叶子为全部真实 rank"></div>
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 选中卡详情"></iframe>
 
-  <aside id="briefCard" class="brief-card is-hidden" aria-live="polite"></aside>
+  <header id="topbar" class="topbar is-hidden">
+    <nav id="crumb" class="crumb" aria-label="档位"></nav>
+  </header>
 
-  <button type="button" id="clusterBadge" class="cluster-badge is-hidden" aria-live="polite"></button>
-
+  <aside id="leftCard" class="side-card side-left is-hidden"></aside>
+  <aside id="briefCard" class="side-card side-right brief-card is-hidden" aria-live="polite"></aside>
   <aside id="incidentPanel" class="incident-panel is-hidden" aria-live="polite"></aside>
 
-  <button type="button" id="universeToggle" class="universe-toggle is-hidden" aria-pressed="false">🌌 宇宙视图</button>
+  <aside id="drawer" class="drawer is-hidden">
+    <div class="drawer-hd"><span id="drawerTitle"></span><button type="button" data-act="drawer-close" title="收起">×</button></div>
+    <iframe id="drawerFrame" title="参考面板"></iframe>
+  </aside>
 
-  <a class="corner-link" href="../rank-topology-3d/pattern.html">简洁版 · 完整独立页 →</a>
+  <div id="dock" class="dock is-hidden">
+    <button type="button" data-zoom="out" title="缩小">−</button>
+    <button type="button" data-zoom="reset" title="复位">复位</button>
+    <button type="button" data-zoom="in" title="放大">＋</button>
+    <i class="dock-sep"></i>
+    <button type="button" data-drawer="netgraph">整网图</button>
+    <button type="button" data-drawer="swimlane">泳道图</button>
+    <button type="button" data-drawer="rubik">逻辑魔方</button>
+  </div>
 
   <script src="./pattern.js"></script>
 </body>

@@ -1,7 +1,7 @@
-/* rank-topology-lite · 两个本体各管一半，边到边铺满整个视口，不加框、不缩小。
-   没点开卡：逻辑魔方（WebGL 实例化网格，素块、无标签、无性能问题）。
-   点开一张卡：并行拓扑矩阵本体自己的选中态渲染接管。谁在最上层用 opacity+
-   pointer-events 切，不销毁 iframe——切回去不用重新加载逻辑魔方那份场景。 */
+/* rank-topology-lite · 一条下钻链（集群 → 段 → 卡 → 单卡）+ 三张常驻悬浮卡
+   + 一块可缩放的画布。舞台（物理拓扑 SVG / 宇宙视图 SVG / 矩阵 iframe）边到边
+   铺满视口，谁在最上层用 opacity+pointer-events 切，不销毁；三张卡与顶栏、
+   底部工具条钉在视口上，跨四层不动位置、只换内容。 */
 
 * { box-sizing: border-box; }
 
@@ -40,14 +40,34 @@ html, body {
    （"无边框灰卡"，区域靠色差/间距分，不靠框线）、不用玻璃模糊（prompt 明确
    避免玻璃效果），浮卡本身也不例外于"默认只有黑白"：容量告警只靠说法/
    字重分挡，不引入色相。 ──────────────────────────────────────────── */
-.brief-card {
-  position: fixed; right: 16px; top: 60px; z-index: 6;
-  min-width: 200px; max-width: 260px;
+/* 左右两张悬浮卡共用一套壳（.side-card）：右卡就是 briefCard——第一档摆集群
+   容量汇总，第二/三档换成选中卡详情，卡本身不换、位置不动，只换内容。 */
+.side-card {
+  position: fixed; top: 60px; z-index: 6; width: 250px;
+  max-height: calc(100vh - 60px - var(--ipanel-h, 170px) - 28px); overflow-y: auto;
   background: #1F1F1F; border-radius: 12px; padding: 12px 14px;
   font-size: 12px; line-height: 1.6; color: #A0A0A0;
   transition: opacity .2s ease, transform .2s ease;
 }
-.brief-card.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.side-card.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.side-left { left: 16px; }
+.side-right { right: 16px; }
+.lc-title { font-size: 14px; font-weight: 700; color: #E8E8E8; }
+.lc-sub { color: #6E6E6E; margin-bottom: 8px; }
+.lc-row { display: flex; justify-content: space-between; gap: 10px; }
+.lc-row b { color: #E8E8E8; font-weight: 600; text-align: right; }
+.lc-k, .brief-k { margin-top: 10px; margin-bottom: 4px; font-size: 10.5px; color: #6E6E6E; letter-spacing: .04em; }
+.brief-k em { font-style: normal; color: #6E6E6E; background: #2B2B2B; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+.lc-segs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.lc-seg {
+  font: inherit; font-size: 11px; font-weight: 600; color: #A0A0A0;
+  background: #2B2B2B; border: 0; border-left: 3px solid var(--seg-c); border-radius: 6px;
+  padding: 4px 6px; cursor: pointer; text-align: left;
+}
+.lc-seg:hover { color: #E8E8E8; background: #3A3A3A; }
+.lc-seg.is-on { color: #111111; background: var(--seg-c); }
+.lc-note { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2B2B2B; font-size: 10.5px; color: #6E6E6E; line-height: 1.45; }
+.gc { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
 .brief-h {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 2px;
@@ -74,21 +94,118 @@ html, body {
 }
 .brief-cta:hover { background: #3A3A3A; }
 
-/* ── 集群聚合角标：常驻左上角，两个本体各自的招牌/工具栏都在这一格顶栏，
-   top:60 让开一行（跟右上角 .brief-card 的让法一样）。默认态（level 全 ok）
-   跟 brief-card 未告警时同一路配色——暗灰底、灰字，只在有容量告警时才翻成
-   高对比（跟 .brief-badge.is-alert 同一条規則：告警只靠反色/说法分挡，不
-   引入色相）。按钮而不是纯文字：点它直接下钻到最惨那张卡。 ──────────── */
-.cluster-badge {
-  position: fixed; left: 16px; top: 60px; z-index: 6;
-  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
-  background: #1F1F1F; border: 0; border-radius: 999px; padding: 6px 14px;
-  cursor: pointer; transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+/* ── 顶栏胶囊：居中，只放面包屑（集群 › PP段 › rank）+ 三种画法切换。放正中
+   而不是通栏：逻辑魔方/矩阵各自的原生标题在左上角、矩阵的齿轮在右上角，
+   居中的胶囊跟它们都不抢地。 ─────────────────────────────────────── */
+.topbar {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 8;
+  display: flex; align-items: center; gap: 14px;
+  background: #1F1F1F; border-radius: 999px; padding: 5px 6px 5px 14px; font-size: 12px;
+  transition: opacity .2s ease;
 }
-.cluster-badge.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
-.cluster-badge.is-alert { color: #111111; background: #E8E8E8; }
-.cluster-badge:hover { background: #3A3A3A; }
-.cluster-badge.is-alert:hover { background: #FFFFFF; }
+.topbar.is-hidden { opacity: 0; pointer-events: none; }
+.crumb { display: flex; align-items: center; gap: 6px; color: #A0A0A0; white-space: nowrap; }
+.crumb i { font-style: normal; color: #6E6E6E; }
+.crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 0; padding: 2px 4px; cursor: pointer; border-radius: 6px; }
+.crumb .cr:hover { color: #E8E8E8; background: #2B2B2B; }
+.crumb .cr.is-cur { color: #E8E8E8; font-weight: 600; cursor: default; }
+.tb-views { display: flex; gap: 2px; background: #2B2B2B; border-radius: 999px; padding: 2px; }
+.tb-views button {
+  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
+  background: transparent; border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer;
+}
+.tb-views button:hover { color: #E8E8E8; }
+.tb-views button.is-on { color: #111111; background: #E8E8E8; }
+
+/* ── 底部工具条（仿 Figma 画布下方那条）：画布正下方、底卡之上（bottom 跟着
+   底卡实际高度走，见 JS 写的 --ipanel-h）。左半是缩放，右半唤起三个参考
+   抽屉（整网图 / 泳道图 / 逻辑魔方）——它们是主线之外的并列参考，不在
+   集群→段→卡→单卡这条下钻主线上。 ────────────────────────────────── */
+.dock {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--ipanel-h, 170px) + 28px); z-index: 6;
+  display: flex; align-items: center; gap: 2px; background: #1F1F1F; border-radius: 999px; padding: 3px;
+  transition: opacity .2s ease;
+}
+.dock.is-hidden { opacity: 0; pointer-events: none; }
+.dock button {
+  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
+  background: transparent; border: 0; border-radius: 999px; min-width: 30px; padding: 4px 10px; cursor: pointer;
+}
+.dock button:hover { color: #E8E8E8; background: #2B2B2B; }
+.dock button.is-on { color: #111111; background: #E8E8E8; }
+.dock-sep { width: 1px; height: 16px; background: #3A3A3A; margin: 0 4px; }
+
+/* ── 参考抽屉：从左侧展开，盖住左卡那一列（左卡此时收起），不动画布。 ── */
+.drawer {
+  position: fixed; left: 16px; top: 52px; width: 44vw; min-width: 420px;
+  bottom: calc(var(--ipanel-h, 170px) + 28px); z-index: 7;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #1F1F1F; border-radius: 12px;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.drawer.is-hidden { opacity: 0; transform: translateX(-12px); pointer-events: none; }
+.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #E8E8E8; }
+.drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; cursor: pointer; padding: 0 4px; }
+.drawer-hd button:hover { color: #E8E8E8; }
+.drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }
+
+/* ── 灵衢物理拓扑（默认第一屏）：超节点面板 → L2 平面条（8 平面 × 4 SW2）→
+   8 个 128 卡组（各 8 颗 L1 SW + 2 个 64 卡 POD）→ POD 内 8 板 × 8 NPU。NPU 点
+   按 PP 段着色（跟宇宙视图同一套 HUB_PALETTE），选中之后五个通信组各描一圈
+   自己的颜色（tp/cp/ep/dp/pp 沿用 data/ascend-superpod-viz-spec.json 里
+   parallel_mappings 的配色），其余点压暗。交换机/链路只用一种蓝、UBoE 一种
+   紫——它们是"这一级走哪条线"的标记，不是数据。 ──────────────────────── */
+.phys-stage {
+  background: radial-gradient(ellipse 120% 90% at 50% 50%, #131419 0%, #0B0B0E 70%, #070708 100%);
+  cursor: grab;
+}
+.phys-stage:active, .universe-stage:active { cursor: grabbing; }
+/* 两种内联 SVG 画法都装在 .zp-box 里：这个盒子就是"画布的可视区"——让开左右
+   两张卡、顶栏与底卡，SVG 按 meet 缩进这个盒子里，初始态整张图完整可见、
+   不被任何卡压住；缩放/平移的 transform 写在盒子里的 <svg> 上，盒子本身
+   不动，指针坐标才有稳定的参照。 */
+.zp-box { position: absolute; left: 282px; right: 282px; top: 52px; bottom: calc(var(--ipanel-h, 170px) + 56px); }
+.zp-box svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.p-sp { fill: #17181D; stroke: #2B2B2B; stroke-width: 1; transition: stroke .2s ease; }
+.p-sp.is-on { stroke: #6E6E6E; }
+.p-splabel, .p-planelabel, .p-sw1label, .p-uboelabel {
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none;
+}
+.p-splabel { font-size: 13px; font-weight: 700; fill: #E8E8E8; }
+.p-plane { fill: #1F1F1F; stroke: #2B2B2B; }
+.p-planelabel { font-size: 8.5px; fill: #6E6E6E; }
+.p-sw2 { fill: #4FA6E8; opacity: .8; }
+.p-sw1 { fill: #3A3A3A; stroke: #4FA6E8; stroke-width: .6; }
+.p-sw1label { font-size: 8px; fill: #A0A0A0; }
+.p-pod { fill: #121317; stroke: #2B2B2B; stroke-width: 1; cursor: zoom-in; transition: stroke .2s ease; }
+.p-pod:hover { stroke: #6E6E6E; }
+.p-pod.is-on { stroke: #E8E8E8; }
+.p-l2 { stroke: #4FA6E8; stroke-opacity: .12; stroke-width: .8; fill: none; }
+.p-l1 { stroke: #4FA6E8; stroke-opacity: .35; stroke-width: 1.2; }
+.p-uboe { stroke: #9D7BFF; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+.p-uboelabel { font-size: 10px; font-weight: 600; fill: #9D7BFF; }
+.p-cpu { fill: #8A8A8A; }
+.p-dpu { fill: #F2B84B; opacity: .85; }
+.p-nic { fill: #5FD3A5; opacity: .8; }
+.p-roce { stroke: #5FD3A5; stroke-opacity: .45; stroke-width: 1; stroke-dasharray: 3 3; }
+.p-rocelabel { font-size: 8px; fill: #5FD3A5; }
+.lc-legend { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 10.5px; color: #A0A0A0; }
+.lg { display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: -1px; }
+.lg-npu { border-radius: 50%; background: #A0A0A0; }
+.lg-cpu { background: #8A8A8A; }
+.lg-dpu { background: #F2B84B; }
+.lg-nic { width: 3px; height: 9px; background: #5FD3A5; margin-right: 11px; }
+.lg-sw { background: #4FA6E8; }
+.lg-uboe { height: 2px; background: #9D7BFF; vertical-align: 2px; }
+.p-npu { cursor: pointer; transition: opacity .2s ease; }
+.p-npu.is-dim { opacity: .12; }
+.p-npu.is-sel { stroke: #FFFFFF; stroke-width: 2.2; }
+.p-npu.g-tp { stroke: #36E0C4; stroke-width: 1.8; }
+.p-npu.g-cp { stroke: #4FA6E8; stroke-width: 1.8; }
+.p-npu.g-ep { stroke: #FF5D8F; stroke-width: 1.6; }
+.p-npu.g-dp { stroke: #9D7BFF; stroke-width: 1.6; }
+.p-npu.g-pp { stroke: #FFD54A; stroke-width: 1.8; }
 
 /* ── 真实故障复盘面板：任何预置打开都有（原来只在 incident2048 才渲染，
    反馈「不希望问题定位跟拓扑分离」之后挪到 world≤64 分流之前，见 pattern.js
@@ -104,76 +221,38 @@ html, body {
    面板讲的是别人的真实告警，不是本页默认"只有黑白"那条规则要管的容量态。
    ──────────────────────────────────────────────────────────────────── */
 .incident-panel {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
-  max-height: 46vh; overflow-y: auto;
-  background: #17171A; padding: 10px 16px 12px; font-size: 12px; color: #A0A0A0;
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 7;
+  max-height: 30vh; overflow-y: auto;
+  background: #1F1F1F; border-radius: 12px; padding: 10px 14px 12px; font-size: 12px; color: #A0A0A0;
   transition: opacity .2s ease, transform .2s ease;
 }
 .incident-panel.is-hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
-.incident-panel.is-collapsed .ip-conc,
-.incident-panel.is-collapsed .ip-timeline,
-.incident-panel.is-collapsed .ip-cards,
-.incident-panel.is-collapsed .ip-foot { display: none; }
+/* 平铺：两条问题线各一行，每个事件一张小卡，卡里只写这一刻真采到的读数
+   （没采到的格子不出现——反馈「空值横杠不要显示」「不要靠 tab 切换看数」）。
+   结论/来源收进 hover 的 title，不占版面。 */
+.incident-panel.is-collapsed .ip-lanes { display: none; }
 .ip-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.ip-evtitle { font-size: 13px; font-weight: 700; color: #E8E8E8; }
-.ip-evtitle-empty { font-size: 12px; font-weight: 400; color: #6E6E6E; }
-.ip-evsev { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: #111; background: var(--ip-sevc); }
+.ip-evtitle { font-size: 12px; font-weight: 700; color: #E8E8E8; white-space: nowrap; }
+.ip-foot { flex: 1; font-size: 10.5px; color: #6E6E6E; }
+.ip-collapse { font: inherit; font-size: 11px; color: #6E6E6E; background: transparent; border: 0; padding: 2px 6px; cursor: pointer; }
+.ip-lanes { display: flex; flex-direction: column; gap: 6px; }
+.ip-lane { display: flex; gap: 10px; align-items: flex-start; }
+.ip-probname { flex: none; width: 168px; font-size: 11px; color: #6E6E6E; padding-top: 5px; }
+.ip-evs { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.ip-ev { background: #2B2B2B; border-left: 3px solid var(--ip-sevc); border-radius: 6px; padding: 4px 8px 5px; min-width: 0; }
+.ip-ev.is-root { box-shadow: inset 0 0 0 1px var(--ip-sevc); }
+.ip-evhd { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #E8E8E8; white-space: nowrap; }
+.ip-time { color: #6E6E6E; font-variant-numeric: tabular-nums; }
+.ip-root { font-size: 9.5px; font-weight: 600; color: #111; background: var(--ip-sevc); border-radius: 999px; padding: 0 6px; }
 .ip-drill {
-  margin-left: auto; font: inherit; font-size: 11px; font-weight: 600; color: #E8E8E8;
-  background: #2B2B2B; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer;
+  font: inherit; font-size: 10.5px; font-weight: 600; color: #E8E8E8;
+  background: #3A3A3A; border: 0; border-radius: 999px; padding: 2px 8px; cursor: pointer;
 }
-.ip-drill:hover { background: #3A3A3A; }
-.ip-collapse {
-  margin-left: auto; font: inherit; font-size: 11px; color: #6E6E6E;
-  background: transparent; border: 0; padding: 2px 6px; cursor: pointer;
-}
-.ip-hd .ip-drill + .ip-collapse { margin-left: 4px; }
-.ip-conc { color: #A0A0A0; margin-bottom: 8px; line-height: 1.5; }
-.ip-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.ip-prob { display: flex; align-items: center; gap: 10px; }
-.ip-probname { flex: 0 0 auto; width: 200px; font-size: 11px; color: #6E6E6E; }
-.ip-events { display: flex; gap: 6px; flex-wrap: wrap; }
-.ip-dot {
-  display: flex; align-items: center; gap: 5px; font: inherit; font-size: 10px; color: #A0A0A0;
-  background: #232326; border: 1px solid transparent; border-radius: 999px; padding: 3px 8px 3px 6px; cursor: pointer;
-}
-.ip-dotmark { width: 7px; height: 7px; border-radius: 50%; background: var(--ip-sevc); flex: none; }
-.ip-dot:hover { background: #2E2E32; }
-.ip-dot.is-on { border-color: var(--ip-sevc); color: #E8E8E8; background: #2E2E32; }
-.ip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
-.ip-card { background: #1F1F1F; border-left: 3px solid var(--ip-sevc); border-radius: 6px; padding: 8px 10px; }
-.ip-k { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11px; color: #6E6E6E; margin-bottom: 3px; }
-.ip-want { font-size: 10px; color: #6E6E6E; white-space: nowrap; }
-.ip-v { font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 3px; }
-.ip-why, .ip-src { font-size: 10.5px; color: #6E6E6E; line-height: 1.4; }
-.ip-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2B2B2B; font-size: 10.5px; color: #6E6E6E; }
-body:has(.incident-panel:not(.is-hidden)) .corner-link { display: none; }
-
-/* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
-   各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
-.corner-link {
-  position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5;
-  font-size: 11px; color: #A0A0A0; text-decoration: none;
-  background: #1F1F1F; padding: 4px 10px; border-radius: 999px;
-  pointer-events: auto;
-  transition: color .2s ease;
-}
-.corner-link:hover { color: #E8E8E8; }
-
-/* ── 宇宙视图切换钮：第一档的第二种画法（内联 SVG 径向星图，替掉逻辑魔方
-   那个 iframe），跟聚合角标/故障入口同一种胶囊形制，摆右上角——那一角在
-   briefCard（top:60）出现之前是空的，不跟任何常驻控件抢地。只在 world>64
-   的三档取景才显示（world≤64 那条早退分支没有逻辑魔方可换）。 ─────────── */
-.universe-toggle {
-  position: fixed; right: 16px; top: 16px; z-index: 6;
-  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
-  background: #1F1F1F; border: 0; border-radius: 999px; padding: 6px 14px;
-  cursor: pointer; transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
-}
-.universe-toggle.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
-.universe-toggle:hover { background: #3A3A3A; color: #E8E8E8; }
-.universe-toggle.is-on { color: #111111; background: #E8E8E8; }
-.universe-toggle.is-on:hover { background: #FFFFFF; }
+.ip-drill:hover { background: #4A4A4A; }
+.ip-ms { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 3px; }
+.ip-m { font-size: 11px; font-weight: 600; color: #E8E8E8; white-space: nowrap; }
+.ip-m em { font-style: normal; font-weight: 400; color: #A0A0A0; margin-right: 4px; }
+.ip-m::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ip-sevc); margin-right: 5px; vertical-align: 1px; }
 
 /* ── 宇宙视图本体：中心=模型 · 一圈=PP 流水线段（沿用这个仓库里"PP流水=段"
    的既有心智模型，不是另起一套分类）· 每段外沿撒开一批采样出的真实 rank
@@ -185,9 +264,8 @@ body:has(.incident-panel:not(.is-hidden)) .corner-link { display: none; }
   background:
     radial-gradient(ellipse 70% 55% at 50% 46%, rgba(232,196,104,.07), transparent 60%),
     radial-gradient(ellipse 120% 90% at 50% 50%, #14151A 0%, #0A0A0C 70%, #060607 100%);
-  cursor: pointer;
+  cursor: grab;
 }
-.universe-stage svg { display: block; width: 100%; height: 100%; }
 .u-star { fill: #ffffff; opacity: .35; }
 .u-ray, .u-thread { stroke-opacity: .28; stroke-width: 1; fill: none; transition: opacity .25s ease; }
 .u-thread { stroke-opacity: .16; }

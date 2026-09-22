@@ -13596,9 +13596,16 @@ function placeMemCards(){
   var side = (sr.width - boxRight - margin) >= cw0 + 8 ? 'right' : 'left';
   var stackX = side === 'right' ? Math.min(boxRight + margin, sr.width - cw0 - 8) : Math.max(boxLeft - margin - cw0, 8);
   var y = clamp(Math.max(boxTop + 8, sumBottom9 + gap), 4, sr.height - 8);
-  segCards.forEach(function(card){
-    var k = card.getAttribute('data-mc');
-    var anchorEl = st.querySelector('[data-memblock="'+k+'"]');
+  /* 纵列的顺序跟着锚点在卡壳上的高低走（从上到下），而不是 memParts 的固定
+     档序：卡的顺序与锚点顺序一致，引线才不会互相交叉（反馈「连线不要交叉」）。
+     没有锚点的卡（这一档没画出带子）排到最后，相对顺序不变。 */
+  var placed9 = segCards.map(function(card, i9){
+    var k = card.getAttribute('data-mc'), anchorEl = st.querySelector('[data-memblock="'+k+'"]');
+    var ay9 = anchorEl ? anchorEl.getBoundingClientRect().top : Infinity;
+    return { card: card, anchorEl: anchorEl, ay: ay9, i: i9 };
+  }).sort(function(a, b){ return a.ay - b.ay || a.i - b.i; });
+  placed9.forEach(function(it){
+    var card = it.card, anchorEl = it.anchorEl;
     var cw = card.offsetWidth || cw0, ch = card.offsetHeight || 40;
     var top = clamp(y, 4, Math.max(4, sr.height - ch - 4));
     var left = clamp(stackX, 4, Math.max(4, sr.width - cw - 4));

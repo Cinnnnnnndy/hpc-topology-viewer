@@ -1,55 +1,48 @@
 /* rank-topology-lite · pattern.js
-   规模够大才值得用逻辑魔方当默认层（世界卡数 world ≤ 64 时，矩阵本体自己
-   一屏就够清楚——64 张卡的 SVG 阵列不存在密度/性能问题，逻辑魔方那层
-   "先看形状"的价值这时反而是多绕一圈）。按这条规则分两条路：
+   一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布（结构见 pattern.html 顶部
+   注释与 README）。分两条路：
 
    world ≤ 64（只有 ?preset=dense64 会落到这条）：直接铺满并行拓扑矩阵本体
      的原页（不传 fastcard/mono/solo，就是 rank-topology-3d 独立打开的样子），
-     没有逻辑魔方、没有返回按钮、没有三档——矩阵自己的"选中/取消选中"手势
-     已经够用，不必再包一层。
+     没有这套下钻链——矩阵自己的"选中/取消选中"手势已经够用，不必再包一层。
 
-   world > 64（默认 moe504b32k·4096 卡；?preset=pangu/moe718b128k/
-   incident2048 也走这条——见下面「默认预置」那段注释）：
-   "无限画布"分三档取景，档位越往里，画得越少、看得越细：
-     1 集群       —— 逻辑魔方铺满，没有选中任何卡。
-     2 同组定位   —— 逻辑魔方里点一张方块，**留在逻辑魔方自己身上**：它自带
-                     的"卡内魔方"局部聚焦（选中卡与它所在的行列一起被摄像机
-                     框住）已经是干净的效果，不必换到矩阵那一屏再画一遍——
-                     矩阵在这个规模下要给每张兄弟卡都摆通信芯片/容量告警，
-                     牌子挤在一起反而更花；但 cc=0/cclabels=0 把逻辑魔方
-                     画布里那份"层/算子构成"的显示关掉了（见 rubikParams
-                     的注释），宿主右下角这张浮卡要接住这句话，不能真的
-                     只剩一句邀请——选中的瞬间先摆邀请（rank/坐标/层区间，
-                     不留空白），紧接着借矩阵本体一次不铺屏的 ?brief=1&sel=
-                     请求（requestTier2Brief），回信一到就原地升级成跟
-                     第三档一样的层区间/显存构成明细，读者不用先点"下钻"
-                     才看得到这些数字。
-     3 单卡下钻    —— 点那句邀请，才真正换到并行拓扑矩阵本体（fastcard=1&
-                     solo=1）：连兄弟卡也隐去，看的是这一张卡内部的填充版
-                     ——真实容量读出、显存构成明细（保留原本的彩色：权重/
-                     梯度/优化器态/专家/激活各自的颜色在说"这一块字节是
-                     什么"，现在只服务一张卡，不会跟别的卡的颜色打架）、
-                     卡内那一级通信。
-   退档不靠宿主自己另起一颗按钮：点空白就是每一档自带的手势——逻辑魔方
-   点空白取消选中（第 2→1 档），矩阵点空白退出 soloCard（第 3→2 档，
-   一句 pto:tier 指令，不重新加载 iframe）。"← 返回…"那颗按钮删了（反馈
-   原话"有了面包屑不要这个了"）：档位已经写在面包屑里（逻辑魔方顶栏的
-   模型名 + rank 后缀、矩阵自己的画布名字），退档交给两个 iframe 原生就有
-   的手势，不必再摆一层复述"你在哪/怎么回去"的按钮。tier2 完全不涉及
-   iframe 切换，天然没有闪烁——切换的"丝滑"就是靠少切一次做到的，不是靠
-   更长的过渡动画补出来的。
+   world > 64（默认 moe504b32k·4096 卡；?preset=pangu/moe718b128k/incident2048
+   也走这条）：level ∈ cluster / segment / card 由下钻状态决定画布铺哪张：
+     cluster 集群 —— 灵衢物理拓扑（buildPhysSvg）：超节点 / L2 平面 / L1 SW /
+                     POD / 板上的 CPU·NPU·DPU·NIC，NPU 按 PP 段着色。点 NPU =
+                     选中 rank；点 POD/超节点 = 取景过去；点空白 = 复位。
+     segment 段   —— 宇宙视图（buildUniverseSvg）取景到一条 PP 段的楔子
+                     （goSegment，用 uniWedge 记的 viewBox 包围盒）。点叶子 =
+                     选中 rank。
+     （选中 rank：右卡先摆坐标行，再借矩阵本体一次不铺屏的 ?brief=1&sel=
+       请求（requestTier2Brief），pto:rank-brief 回信原地升级成层区间/显存
+       构成 + 物理位置 + 五个通信组各走哪一级（physInfoHtml）。）
+     card 单卡    —— showDetail 换到矩阵本体（fastcard=1&solo=1）：真实容量
+                     读出、显存构成（原色）、卡内那一级通信。矩阵里点空白退出
+                     solo，pto:tier 报回来，退到进来之前那一层（backLevel）。
+   面包屑（renderCrumb）每一级都能点回去。逻辑魔方 / 整网图 / 泳道图是底部
+   工具条唤起的参考抽屉（openDrawer），不在主线上；逻辑魔方里点方块报上来
+   的 rubik-select 换算之后走同一条 showTier2。
+
+   落位是假设（PHYS / physOf）：rank 连续摆放。通信组成员（commGroups）与
+   各组走哪一级链路（linkLevel）是从矩阵本体的 rankOf 公式算出来的。
 */
 (function () {
   'use strict';
 
   var qs = new URLSearchParams(location.search);
 
-  var rubikFrame = document.getElementById('rubikFrame');
   var matrixFrame = document.getElementById('matrixFrame');
   var briefCard = document.getElementById('briefCard');
-  var clusterBadge = document.getElementById('clusterBadge');
   var universeStage = document.getElementById('universeStage');
-  var universeToggle = document.getElementById('universeToggle');
+  var physStage = document.getElementById('physStage');
+  var leftCard = document.getElementById('leftCard');
+  var topbar = document.getElementById('topbar');
+  var crumbEl = document.getElementById('crumb');
+  var dock = document.getElementById('dock');
+  var drawer = document.getElementById('drawer');
+  var drawerFrame = document.getElementById('drawerFrame');
+  var drawerTitle = document.getElementById('drawerTitle');
 
   /* 预置表，world = tp×cp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
      的 README 都确认过这个口径，pangu_sophon_pytorch 项目代码里的
@@ -240,64 +233,42 @@
   // 上这个 rank 号），把读者带到这个数字真正有意义的那张拓扑上，不在当前
   // 页面里硬凑一个假坐标。
   var incidentPanel = document.getElementById('incidentPanel');
-  var incidentSel = null;
-  function incidentEventById(id) {
-    for (var i = 0; i < INCIDENT_PROBLEMS.length; i++) {
-      var evs = INCIDENT_PROBLEMS[i].events;
-      for (var j = 0; j < evs.length; j++) if (evs[j].id === id) return evs[j];
-    }
-    return null;
-  }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  /* 平铺：11 个事件全部摊开，每张小卡只写这一刻真采到的读数（BOARD 里
+     s==='na' 的「—」占位不算采到，不画）。反馈「这些数值卡片就是应该直接出现
+     在进去的第1个视图中」+「通过 tab 的形式去切换查看数值比较费劲，平铺，
+     空值横杠不要显示」——不再有"选中一个事件才显示十格"这一步；结论与来源
+     收进 hover 的 title。 */
   function renderIncidentPanel() {
     if (!incidentPanel) return;
-    var ev = incidentSel ? incidentEventById(incidentSel) : null;
-    var board = incidentSel ? INCIDENT_BOARD[incidentSel] : null;
-    var timelineHtml = INCIDENT_PROBLEMS.map(function (prob) {
-      var dots = prob.events.map(function (e) {
-        var on = e.id === incidentSel;
-        return '<button type="button" class="ip-dot' + (on ? ' is-on' : '') + '" data-ev="' + e.id + '"'
-          + ' style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.time + ' · ' + e.title) + '">'
-          + '<span class="ip-dotmark"></span><span class="ip-dottime">' + esc(e.time) + '</span></button>';
-      }).join('');
-      return '<div class="ip-prob"><span class="ip-probname">' + esc(prob.name) + '</span><div class="ip-events">' + dots + '</div></div>';
-    }).join('');
-    // 十格指标卡只在选中了具体事件时才画——没选中事件时这十格清一色是「—」
-    // 占位，不是数据。反馈「默认展开数据只展开有的数据」：面板默认展开（见
-    // 下面去掉 is-collapsed），但只展开"有数据"的那部分——时间线本身随时
-    // 都是真数据（11 个真实事件），默认就露出来；十格卡片在没选中事件之前
-    // 一格数字都没有，展开了也只是十个「—」，不算「有数据」，索性不摆这块
-    // 空壳，选中事件之后再补上，那时才真的有内容可展开。
-    var cardsHtml = ev ? INCIDENT_METRICS.map(function (m) {
-      var cell = board && board.m && board.m[m.k];
-      var v = cell ? cell.v : '—';
-      var sevKey = cell ? cell.s : 'na';
-      return '<div class="ip-card" style="--ip-sevc:' + INCIDENT_SEVC[sevKey] + '">'
-        + '<div class="ip-k">' + esc(m.name) + '<span class="ip-want">要求 ' + esc(m.want) + '</span></div>'
-        + '<div class="ip-v">' + esc(v) + '</div>'
-        + (cell && cell.why ? '<div class="ip-why">' + esc(cell.why) + '</div>' : '<div class="ip-src">' + esc(m.src) + '</div>')
-        + '</div>';
-    }).join('') : '';
     var onIncident = PS.matrixPreset === 'incident2048';
-    var headHtml = ev
-      ? '<span class="ip-evtitle">' + esc(ev.title) + '</span><span class="ip-evsev" style="--ip-sevc:' + INCIDENT_SEVC[ev.sev] + '">' + INCIDENT_SEVN[ev.sev] + '</span>'
-        + (ev.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + ev.rank + '">'
-          + (onIncident ? '下钻 rank ' + ev.rank + ' →' : '查看 rank ' + ev.rank + ' 所在的真实拓扑 →') + '</button>' : '')
-      : '<span class="ip-evtitle ip-evtitle-empty">先在时间线上点一个事件——十格读数按那一刻的原文填，没采到的写「—」</span>';
-    var concHtml = ev ? '<div class="ip-conc">' + esc(ev.conclusion) + '</div>' : '';
+    var lanes = INCIDENT_PROBLEMS.map(function (prob) {
+      var evs = prob.events.map(function (e) {
+        var board = INCIDENT_BOARD[e.id], m = board && board.m ? board.m : {};
+        var chips = INCIDENT_METRICS.filter(function (x) { return m[x.k] && m[x.k].s !== 'na'; }).map(function (x) {
+          var c = m[x.k];
+          return '<span class="ip-m" style="--ip-sevc:' + INCIDENT_SEVC[c.s] + '" title="' + esc((c.why ? c.why + ' · ' : '') + '来源 ' + x.src) + '"><em>' + esc(x.name) + '</em>' + esc(c.v) + '</span>';
+        }).join('');
+        return '<div class="ip-ev' + (e.root ? ' is-root' : '') + '" style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.conclusion) + '">'
+          + '<div class="ip-evhd"><span class="ip-time">' + esc(e.time) + '</span><span class="ip-title">' + esc(e.title) + '</span>'
+          + (e.root ? '<span class="ip-root">根因</span>' : '')
+          + (e.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + e.rank + '">' + (onIncident ? '下钻 rank ' + e.rank : 'rank ' + e.rank + ' 的真实拓扑 →') + '</button>' : '')
+          + '</div>'
+          + (chips ? '<div class="ip-ms">' + chips + '</div>' : '')
+          + '</div>';
+      }).join('');
+      return '<div class="ip-lane"><div class="ip-probname">' + esc(prob.name) + '</div><div class="ip-evs">' + evs + '</div></div>';
+    }).join('');
     incidentPanel.innerHTML =
-      '<div class="ip-hd">' + headHtml + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
-      + concHtml
-      + '<div class="ip-timeline">' + timelineHtml + '</div>'
-      + (ev ? '<div class="ip-cards">' + cardsHtml + '</div>' : '')
-      + '<div class="ip-foot">口径来自 pangu_sophon_pytorch · 这十条是真的会被打印、画成曲线的那几个；另一次独立 2048 卡训练的真实复盘，与当前预置的架构字段无关，不替它编一个'
-      + (onIncident ? '' : '——当前预置不是 incident2048，事件里的 rank 号在这张拓扑上并不存在，点"查看真实拓扑"会整页跳转')
-      + '。</div>';
+      '<div class="ip-hd"><span class="ip-evtitle">真实故障复盘 · 另一次 2048 卡训练</span>'
+      + '<span class="ip-foot">读数逐字来自事故原文，与当前预置无关' + (onIncident ? '' : '；rank 号是那张拓扑的，点了整页跳转') + '</span>'
+      + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
+      + '<div class="ip-lanes">' + lanes + '</div>';
     incidentPanel.classList.remove('is-hidden');
+    // 底卡实际高度写成 CSS 变量：左右卡的最大高度、缩放工具条的落点都要让开它
+    document.documentElement.style.setProperty('--ipanel-h', incidentPanel.offsetHeight + 'px');
   }
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
-    var dot = ev.target.closest('[data-ev]');
-    if (dot) { incidentSel = dot.getAttribute('data-ev'); renderIncidentPanel(); return; }
     if (ev.target.closest('[data-act="ip-collapse"]')) { incidentPanel.classList.toggle('is-collapsed'); renderIncidentPanel(); return; }
     var drill = ev.target.closest('[data-act="ip-drill"]');
     if (!drill) return;
@@ -320,7 +291,6 @@
     });
     matrixFrame.src = '../rank-topology-3d/pattern.html?' + plainP.toString();
     matrixFrame.classList.remove('is-hidden');
-    rubikFrame.classList.add('is-hidden');
     return;
   }
 
@@ -374,7 +344,8 @@
     color: 'neutral', groupgap: '3', brand: PS.modelName, cclabels: '0', axsel: '0', cc: '0',
     tierlabel: TIER2_LABEL, zoomsel: '0.5', chrome: '0'
   });
-  rubikFrame.src = '../../rubik-pattern.html?' + rubikParams.toString();
+  // 逻辑魔方现在不是主线上的一档，是底部工具条唤起的参考抽屉（见 openDrawer）
+  var rubikSrc = '../../rubik-pattern.html?' + rubikParams.toString();
 
   // ── 宇宙视图：第一档的第二种画法，内联 SVG 径向星图（不是 iframe） ─────
   // 中心 = 模型本身；第一圈 = 各条 PP 段（沿用这个仓库里"PP流水=段"的既有
@@ -386,8 +357,22 @@
   // showTier2/rubikSelToMatrixSel，跟逻辑魔方 postMessage 报上来的走的
   // 是同一条路径、落的是同一张 briefCard——两种视图只是"从哪触发选中"
   // 不同，选中之后的下钻/详情渲染一个字不重复实现。
-  var universeMode = false;
-  var universeBuilt = false;
+  // 故事线是一条下钻链，不是几个并列的 tab（反馈「按下钻的逻辑把整个视图串
+  // 起来，而不是视图 tab 切换」）：
+  //   cluster 集群 —— 灵衢物理拓扑：4096 张卡物理上怎么连（超节点/平面/SW/
+  //                  POD/板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段着色，并行
+  //                  拓扑已经叠在物理图上；
+  //   segment 段  —— 宇宙视图聚焦一条 PP 段：这一段在模型里怎么分组（TP×CP
+  //                  子组 × DP 副本），从左卡的段按钮或右卡"看它所在的段"进；
+  //   （任一层点一颗卡 = 选中 rank，右卡给层区间/显存/物理位置/通信组走哪一级）
+  //   card 单卡    —— 矩阵 solo：这一张卡里装了什么。
+  // 面包屑随时回退；逻辑魔方/整网图/泳道图是主线之外的参考抽屉（底部工具条）。
+  // curSel 是当前选中的矩阵 rank，focusPP 是当前聚焦的 PP 段，tier 是档位
+  // （1 集群 · 2 同组定位 · 3 单卡下钻），level 是画布现在停在哪一层。
+  var level = 'cluster', backLevel = 'cluster';
+  var universeBuilt = false, physBuilt = false;
+  var curSel = null, focusPP = null, tier = 1;
+  var uniWedge = [];   // 宇宙视图每条 PP 段（hub + 叶子）的 viewBox 包围盒，聚焦一段时取景用
   // 参考图那种暖金/紫青撞色，圈内按段循环取色，同一段的叶子跟着它所在的
   // hub 同色（深浅由 CSS 的 hover/dim 状态区分，不再按叶子逐个换色）。
   var HUB_PALETTE = ['#8B7CF6', '#4FC3D9', '#E8637A', '#F2B84B', '#5FD3A5', '#C77DFF', '#4FA6E8', '#F28B5B'];
@@ -407,6 +392,7 @@
      成了肉眼看着像 1 个点的一团——「数字是真的」但看不出「真的有这么多」，
      没解决反馈要的问题。这里改成二维网格：径向分成几"环"，同一环内再按
      角度摊开，两个维度一起摊，同样的角宽能摆下多得多的点、彼此还分得开。 */
+  function wdExt(w, p) { if (p.x < w.x0) w.x0 = p.x; if (p.x > w.x1) w.x1 = p.x; if (p.y < w.y0) w.y0 = p.y; if (p.y > w.y1) w.y1 = p.y; }
   function layoutWedge(ox, oy, baseAngle, fanHalf, count, rNear, rFar) {
     var cols = Math.max(1, Math.min(count, Math.round(Math.sqrt(count * 2.4))));
     var rows = Math.ceil(count / cols);
@@ -445,6 +431,7 @@
       var theta = (i / PPN) * Math.PI * 2 - Math.PI / 2;
       var hx = CX + Math.cos(theta) * R1, hy = CY + Math.sin(theta) * R1;
       var color = HUB_PALETTE[i % HUB_PALETTE.length];
+      var wd = uniWedge[i] = { x0: hx - 30, y0: hy - 30, x1: hx + 30, y1: hy + 44 };
       linksHtml += '<line class="u-ray" data-pp="' + i + '" x1="' + CX + '" y1="' + CY + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="' + color + '"/>';
       hubsHtml += '<g class="u-hub" data-pp="' + i + '">'
         + '<circle class="u-hubglow" cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="24" fill="' + color + '"/>'
@@ -460,7 +447,7 @@
         // 铺进 hub 直接张开的那一整个楔子（径向 R1+50…R2）。
         var pts0 = layoutWedge(CX, CY, theta, fanHalf, DPN, R1 + 50, R2);
         for (var r0 = 0; r0 < DPN; r0++) {
-          var p0 = pts0[r0];
+          var p0 = pts0[r0]; wdExt(wd, p0);
           if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '" stroke="' + color + '"/>';
           var sel0 = { tp: 0, cp: 0, pp: i, rep: r0 };
           leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
@@ -486,7 +473,7 @@
             + '<title>' + esc('pp' + i + ' tp' + tp9 + ((CPN > 1) ? ' cp' + cp9 : '')) + '</title></circle>';
           var pts = layoutWedge(CX, CY, ga, subFanHalf, DPN, RSUB + 30, R2);
           for (var r = 0; r < DPN; r++) {
-            var p = pts[r];
+            var p = pts[r]; wdExt(wd, p);
             if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '" stroke="' + color + '"/>';
             var sel = { tp: tp9, cp: cp9, pp: i, rep: r };
             leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
@@ -524,7 +511,7 @@
   }
   function renderUniverse() {
     if (universeBuilt) return;
-    universeStage.innerHTML = buildUniverseSvg();
+    universeStage.innerHTML = '<div class="zp-box">' + buildUniverseSvg() + '</div>';
     universeBuilt = true;
   }
   // 点一个 hub（段本身）= 聚焦这一段、把其余段的 hub/射线/叶子调暗，不下钻
@@ -536,36 +523,337 @@
       el.classList.toggle('is-dim', sel9 != null && el.getAttribute('data-pp') !== sel9);
     });
   }
+  // 拖拽平移之后松手的那一下 click 已被 attachZoomPan 在捕获阶段吃掉，
+  // 这里收到的都是真正的点击。
   universeStage.addEventListener('click', function (ev) {
     var leaf = ev.target.closest('.u-leaf');
     if (leaf) {
       var sel = { tp: +leaf.getAttribute('data-tp'), cp: +leaf.getAttribute('data-cp'), pp: +leaf.getAttribute('data-pp'), rep: +leaf.getAttribute('data-rep') };
-      focusHub(sel.pp);
       showTier2(rubikSelToMatrixSel(sel), tier2SubLine(sel));
       return;
     }
     var hub = ev.target.closest('.u-hub');
-    if (hub) { focusHub(hub.getAttribute('data-pp')); return; }
-    focusHub(null);
+    if (hub) { focusSegment(+hub.getAttribute('data-pp')); return; }
     showOverview();
   });
-  if (universeToggle) {
-    universeToggle.classList.remove('is-hidden');
-    universeMode = qs.get('view') === 'universe';
-    universeToggle.classList.toggle('is-on', universeMode);
-    universeToggle.setAttribute('aria-pressed', String(universeMode));
-    universeToggle.addEventListener('click', function () {
-      universeMode = !universeMode;
-      universeToggle.classList.toggle('is-on', universeMode);
-      universeToggle.setAttribute('aria-pressed', String(universeMode));
-      showOverview();
+
+  // ── 灵衢物理拓扑：第一档的第三种画法，也是默认的第一屏 ──────────────────
+  // 按 CANN NEXT 直播讲的 Ascend 950 积木（见 research/灵衢材料-学习笔记01）：
+  //   板（Server 内 8 NPU，UB fullmesh）→ POD（64 NPU = 8 板，L1 灵衢 SW）
+  //   → 128 卡组（2 个 POD，配 8 颗 L1 SW、每平面一颗）→ 超节点（1024P =
+  //   8 组，8 个独立平面、每平面 4×SW2，L1/L2 构成 Clos，平面间无互联）
+  //   → 超节点之间经 L2 走 UBoE。
+  // rank 落到哪颗 NPU 配置里没有——这一层按「rank 连续摆放」这条**假设**
+  // 推（r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋ · 槽 r%8），左卡上写明。
+  // 在这条假设下，五个通信组各走哪一级链路是能算出来的：组内成员的最远
+  // 一对落在同一块板 / 同一个 POD / 同一个超节点 / 跨超节点，就是它走的
+  // 那一级——这部分是公式，不是编的；只有落位那一条是假设。
+  var PHYS = { board: 8, pod: 64, group: 128, sp: 1024 };
+  var physCount = {
+    sp: Math.ceil(world / PHYS.sp), groups: Math.ceil(world / PHYS.group),
+    pods: Math.ceil(world / PHYS.pod), boards: Math.ceil(world / PHYS.board)
+  };
+  function physOf(r) {
+    return { sp: Math.floor(r / PHYS.sp), group: Math.floor(r / PHYS.group), pod: Math.floor(r / PHYS.pod), board: Math.floor(r / PHYS.board), slot: r % PHYS.board };
+  }
+  /* demo.html 的 rankOf = ((pp·DP + dp)·CP + cp)·TP + tp 的正反两向。 */
+  function coordOfRank(r) {
+    var TP = PS.tp, CP = PS.cp || 1, DP = PS.dp;
+    return { tp: r % TP, cp: Math.floor(r / TP) % CP, dp: Math.floor(r / (TP * CP)) % DP, pp: Math.floor(r / (TP * CP * DP)) };
+  }
+  function rankOfCoord(c) { var TP = PS.tp, CP = PS.cp || 1, DP = PS.dp; return ((c.pp * DP + c.dp) * CP + c.cp) * TP + c.tp; }
+  function coordLine(r) { var c = coordOfRank(r); return 'tp' + c.tp + ((PS.cp || 1) > 1 ? ' cp' + c.cp : '') + ' dp' + c.dp + ' pp' + c.pp; }
+  /* 五个通信组的成员。EP 落在 DP 域内（ep_over_sp）：同一 (pp,cp,tp) 下的
+     dp 按每 EP 个一桶，桶内的 rank 共享一组专家（demo.html 的 epOf 就是
+     ep = dp % EP、edp = ⌊dp/EP⌋，这里取同一桶）。 */
+  function commGroups(r) {
+    var c = coordOfRank(r), g = { tp: [], cp: [], ep: [], dp: [], pp: [] }, i;
+    for (i = 0; i < PS.tp; i++) g.tp.push(rankOfCoord({ tp: i, cp: c.cp, dp: c.dp, pp: c.pp }));
+    for (i = 0; i < (PS.cp || 1); i++) g.cp.push(rankOfCoord({ tp: c.tp, cp: i, dp: c.dp, pp: c.pp }));
+    var ep = Math.max(1, PS.ep || 1), blk = Math.floor(c.dp / ep);
+    for (i = 0; i < PS.dp; i++) {
+      var r2 = rankOfCoord({ tp: c.tp, cp: c.cp, dp: i, pp: c.pp });
+      g.dp.push(r2);
+      if (Math.floor(i / ep) === blk) g.ep.push(r2);
+    }
+    for (i = 0; i < PS.pp; i++) g.pp.push(rankOfCoord({ tp: c.tp, cp: c.cp, dp: c.dp, pp: i }));
+    return g;
+  }
+  var LINK_LEVELS = ['板内 UB fullmesh', 'POD 内 · L1 灵衢 SW', '超节点内 · L2 平面 Clos', '跨超节点 · UBoE'];
+  var GC = { tp: '#36E0C4', cp: '#4FA6E8', ep: '#FF5D8F', dp: '#9D7BFF', pp: '#FFD54A' };
+  function levelBetween(a, b) {
+    var p = physOf(a), q = physOf(b);
+    return p.sp !== q.sp ? 3 : p.pod !== q.pod ? 2 : p.board !== q.board ? 1 : 0;
+  }
+  /* 集合通信组（TP/CP/EP/DP）：组里最远的一对决定这次集合走哪一级；
+     PP 是相邻段之间的点对点，看的是相邻一跳里最远的那一跳。 */
+  function linkLevel(ranks, chain) {
+    var lv = 0, i;
+    if (chain) { for (i = 1; i < ranks.length; i++) lv = Math.max(lv, levelBetween(ranks[i - 1], ranks[i])); }
+    else { for (i = 1; i < ranks.length; i++) lv = Math.max(lv, levelBetween(ranks[0], ranks[i])); }
+    return lv;
+  }
+
+  /* 一块板（Server 形态：8 NPU + 2 CPU，直播第二页）画成 POD 里的一行：
+     [CPU CPU][8 颗 NPU][DPU][NIC×4]。CPU/DPU 各自一条 UB 上联到 L1 SW（第三页：
+     CPU —UB— L1，DPU —PCIe— CPU、—UB— L1），NIC 走 RoCE 出到参数面（第二页
+     Server 图里 NIC 挂在 NPU 下面、RoCE 出框），不进 L1——所以 NIC 那条线是
+     另一种颜色、往上穿过 SW1 行。每板 1 颗 DPU / 4 张 NIC 是按第二页 Server
+     图数的（4 个 NIC 框），直播没给每板 DPU 的确切数，这一项是示意。 */
+  function buildPhysSvg() {
+    var SPN = physCount.sp, cols = SPN > 2 ? 2 : SPN, rows = Math.ceil(SPN / cols);
+    var PITCH = 9, ROWP = 10, PODW = 126, PODH = 92, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
+    var SW1H = 16, PLANEH = 34, PAD = 18, HEAD = 26, GRPCOLS = 2;
+    var GRPROWS = Math.ceil((PHYS.sp / PHYS.group) / GRPCOLS);
+    var SPW = PAD * 2 + GRPCOLS * GRPW + (GRPCOLS - 1) * GRPGAP;
+    var GRPH = SW1H + 8 + PODH;
+    var SPH = HEAD + PLANEH + 14 + GRPROWS * GRPH + (GRPROWS - 1) * 16 + PAD;
+    var SPGAP = 70, M = 40;
+    var W = cols * SPW + (cols - 1) * SPGAP + M * 2, H = rows * SPH + (rows - 1) * SPGAP + M * 2;
+    var panels = [], links = [], nodes = [], sps = [];
+    for (var s = 0; s < SPN; s++) {
+      var sx = M + (s % cols) * (SPW + SPGAP), sy = M + Math.floor(s / cols) * (SPH + SPGAP);
+      sps.push({ x: sx, y: sy });
+      var base = s * PHYS.sp, inSp = Math.min(PHYS.sp, world - base);
+      panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '" rx="14"/>'
+        + '<text class="p-splabel" x="' + (sx + PAD) + '" y="' + (sy + 18) + '">超节点 ' + s + ' · ' + inSp + ' NPU</text>');
+      var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
+      for (var pl = 0; pl < 8; pl++) {
+        var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
+        panels.push('<rect class="p-plane" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"/>'
+          + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 11) + '" text-anchor="middle">平面 ' + (pl + 1) + '</text>');
+        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8" rx="2"/>');
+        planeC.push({ x: px + planeW / 2, y: py + PLANEH });
+      }
+      var groups = Math.ceil(inSp / PHYS.group);
+      for (var g = 0; g < groups; g++) {
+        var gx = sx + PAD + (g % GRPCOLS) * (GRPW + GRPGAP), gy = sy + HEAD + PLANEH + 14 + Math.floor(g / GRPCOLS) * (GRPH + 16);
+        var gBase = base + g * PHYS.group, sw1w = (GRPW - 7 * 4) / 8;
+        for (var k = 0; k < 8; k++) {
+          var swx = gx + k * (sw1w + 4);
+          panels.push('<rect class="p-sw1" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '" rx="3"/>');
+          links.push('<line class="p-l2" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
+        }
+        panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 SW ×8</text>');
+        for (var pd = 0; pd < 2; pd++) {
+          var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
+          var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
+          panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '" rx="8">'
+            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC</title></rect>');
+          // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
+          [pdx + 11, pdx + 58, pdx + 101].forEach(function (ux) {
+            links.push('<line class="p-l1" x1="' + ux + '" y1="' + (gy + SW1H) + '" x2="' + ux + '" y2="' + pdy + '"/>');
+          });
+          links.push('<line class="p-roce" x1="' + (pdx + 115) + '" y1="' + (gy - 3) + '" x2="' + (pdx + 115) + '" y2="' + pdy + '"/>');
+          if (g === 0 && pd === 0) panels.push('<text class="p-rocelabel" x="' + (pdx + 119) + '" y="' + (gy - 4) + '">RoCE</text>');
+          for (var b = 0; b < 8; b++) {
+            var ry = pdy + 6 + b * ROWP + ROWP / 2;
+            panels.push('<rect class="p-cpu" x="' + (pdx + 5) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
+              + '<rect class="p-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
+              + '<rect class="p-dpu" x="' + (pdx + 98) + '" y="' + (ry - 3) + '" width="6" height="6" rx="1"/>');
+            for (var ni = 0; ni < 4; ni++) panels.push('<rect class="p-nic" x="' + (pdx + 108 + ni * 4) + '" y="' + (ry - 3) + '" width="2.5" height="6" rx=".5"/>');
+            for (var n = 0; n < 8; n++) {
+              var r = pBase + b * 8 + n; if (r >= world) break;
+              var c = coordOfRank(r);
+              nodes.push('<circle class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
+                + ' cx="' + (pdx + 22 + n * PITCH + PITCH / 2) + '" cy="' + ry + '" r="3.2" fill="' + HUB_PALETTE[c.pp % HUB_PALETTE.length] + '">'
+                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></circle>');
+            }
+          }
+        }
+      }
+    }
+    // 超节点之间：L2 经 UBoE 互联。直播里只说"经 UBoE 跨超节点"，没给超节点间
+    // 的具体拓扑，这里只把相邻面板连起来做示意，不假装知道是环还是全互联。
+    for (var s2 = 1; s2 < SPN; s2++) {
+      var A = sps[s2 - 1], B = sps[s2];
+      if (Math.floor(s2 / cols) === Math.floor((s2 - 1) / cols)) {
+        links.push('<line class="p-uboe" x1="' + (A.x + SPW) + '" y1="' + (A.y + HEAD + PLANEH / 2) + '" x2="' + B.x + '" y2="' + (B.y + HEAD + PLANEH / 2) + '"/>'
+          + '<text class="p-uboelabel" x="' + (A.x + SPW + SPGAP / 2) + '" y="' + (A.y + HEAD + PLANEH / 2 - 6) + '" text-anchor="middle">UBoE</text>');
+      } else {
+        var U = sps[s2 - cols];
+        links.push('<line class="p-uboe" x1="' + (U.x + SPW / 2) + '" y1="' + (U.y + SPH) + '" x2="' + (B.x + SPW / 2) + '" y2="' + B.y + '"/>'
+          + '<text class="p-uboelabel" x="' + (U.x + SPW / 2 + 8) + '" y="' + (U.y + SPH + SPGAP / 2 + 3) + '">UBoE</text>');
+      }
+    }
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+      + '<g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></svg>';
+  }
+  function renderPhys() {
+    if (physBuilt) return;
+    physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
+    physBuilt = true;
+  }
+  /* 选中/聚焦态：选中了 rank 就按五个通信组描边、其余压暗；只聚焦了 PP 段就
+     把别的段压暗；都没有就全亮。同时把所在 POD / 超节点的框点亮。 */
+  function physApplySelection() {
+    if (!physBuilt) return;
+    var g = curSel != null ? commGroups(curSel) : null, cls = {};
+    if (g) {
+      ['pp', 'dp', 'ep', 'cp', 'tp'].forEach(function (k) { g[k].forEach(function (r) { cls[r] = 'g-' + k; }); });
+      cls[curSel] = 'is-sel';
+    }
+    var here = curSel != null ? physOf(curSel) : null;
+    physStage.querySelectorAll('.p-npu').forEach(function (el) {
+      var r = +el.getAttribute('data-rank'), extra;
+      if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
+      else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
+      el.setAttribute('class', 'p-npu' + extra);
     });
-    /* HTML 默认铺的是逻辑魔方（no is-hidden）；?view=universe 打开时要在
-       第一帧就换成宇宙视图，不能等用户点一次切换钮才生效。showOverview()
-       在这里调用是安全的——pendingMatrixSel/briefCard 这一刻本来就是初始
-       态，不会覆盖掉任何还没发生的状态；下面 ?sel= 深链分支如果命中，会
-       在此之后再调 showDetail() 把它换成第三档，两次调用顺序不冲突。 */
-    if (universeMode) showOverview();
+    physStage.querySelectorAll('.p-pod').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-pod') === here.pod); });
+    physStage.querySelectorAll('.p-sp').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-sp') === here.sp); });
+  }
+  physStage.addEventListener('click', function (ev) {
+    var npu = ev.target.closest('.p-npu');
+    if (npu) { var r = +npu.getAttribute('data-rank'); showTier2(r, coordLine(r)); return; }
+    var box = ev.target.closest('.p-pod, .p-sp');
+    if (box) { physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), box.classList.contains('p-pod') ? 60 : 30); return; }
+    if (curSel != null) { showOverview(true); return; }
+    physZP.reset();
+    showOverview();
+  });
+
+  // ── 画布缩放/平移：滚轮以指针为中心缩放，拖拽平移，双击/工具条复位 ────
+  // 变换写在 <svg> 元素的 CSS transform 上（合成器路径，几千个图元不重光栅化，
+  // 与 demo.html 的 applyViewTransform 同一个理由）。拖动过就吃掉随后的
+  // click（捕获阶段），免得松手时误触叶子/NPU。
+  function attachZoomPan(stage) {
+    var st = { k: 1, tx: 0, ty: 0, stage: stage, drag: null, moved: false };
+    function svg() { return stage.querySelector('.zp-box svg'); }
+    // 参照系是 .zp-box（不动的盒子），不是被 transform 过的 <svg>。用 offset*
+    // 而不是 getBoundingClientRect：舞台切换那 .5s 里 .is-hidden 的 scale(1.5)
+    // 过渡会把矩形量大，取景就落偏；offset* 是布局值，不受 transform 影响，
+    // 舞台本身 fixed inset:0，所以 offsetLeft/Top 就是视口坐标。
+    st.rect = function () {
+      var b = stage.querySelector('.zp-box');
+      if (!b) return stage.getBoundingClientRect();
+      return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
+    };
+    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; }
+    st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
+    st.zoomAt = function (f, px, py) {
+      var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
+      st.tx = px - (px - st.tx) * f; st.ty = py - (py - st.ty) * f; st.k = k2; apply();
+    };
+    /* 按 viewBox 坐标取景（不量 DOM 矩形：舞台切换时 .is-hidden 的 scale 过渡
+       会把矩形量歪）：先算 meet 缩放下这块区域落在盒子里的像素位置，再解出
+       让它居中撑满的 k/tx/ty。 */
+    st.fitVB = function (x, y, w, h, pad) {
+      var s = svg(); if (!s) return;
+      var vb = s.viewBox.baseVal, R = st.rect();
+      var m = Math.min(R.width / vb.width, R.height / vb.height);
+      var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
+      var px = ox + x * m, py = oy + y * m, pw = w * m, ph = h * m;
+      var k = Math.min(16, Math.max(0.4, Math.min((R.width - pad * 2) / pw, (R.height - pad * 2) / ph)));
+      st.k = k; st.tx = R.width / 2 - k * (px + pw / 2); st.ty = R.height / 2 - k * (py + ph / 2); apply();
+    };
+    stage.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var R = st.rect();
+      st.zoomAt(Math.exp(-ev.deltaY * 0.0015), ev.clientX - R.left, ev.clientY - R.top);
+    }, { passive: false });
+    stage.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0) return;
+      st.drag = { x: ev.clientX, y: ev.clientY, tx: st.tx, ty: st.ty }; st.moved = false;
+    });
+    window.addEventListener('pointermove', function (ev) {
+      if (!st.drag) return;
+      var dx = ev.clientX - st.drag.x, dy = ev.clientY - st.drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) st.moved = true;
+      if (st.moved) { st.tx = st.drag.tx + dx; st.ty = st.drag.ty + dy; apply(); }
+    });
+    window.addEventListener('pointerup', function () { st.drag = null; });
+    stage.addEventListener('click', function (ev) { if (st.moved) { ev.stopPropagation(); ev.preventDefault(); st.moved = false; } }, true);
+    stage.addEventListener('dblclick', function () { st.reset(); });
+    return st;
+  }
+  var uniZP = attachZoomPan(universeStage), physZP = attachZoomPan(physStage);
+
+  // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
+  var DRAWERS = {
+    netgraph: { title: '整网图 · 同一预置', src: function () { return '../model-netgraph/pattern.html?' + new URLSearchParams({ embed: '1', theme: 'dark', preset: PS.matrixPreset }).toString(); } },
+    // 泳道是 compute-graph-viewer 的上游拷贝，画的是它自己那份 32 卡示例，不接
+    // 当前预置——标题里直说，不冒充。
+    swimlane: { title: '微批次生命周期泳道 · 上游 32 卡示例，非当前预置', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
+    rubik: { title: '逻辑魔方（点一张方块 = 选中 rank）', src: function () { return rubikSrc; } }
+  };
+  var drawerOpen = null;
+  function openDrawer(key) {
+    if (drawerOpen === key || !key) {
+      drawerOpen = null; drawer.classList.add('is-hidden'); leftCard.classList.remove('is-hidden');
+    } else {
+      drawerOpen = key; drawerTitle.textContent = DRAWERS[key].title;
+      var src = DRAWERS[key].src();
+      if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src;
+      drawer.classList.remove('is-hidden'); leftCard.classList.add('is-hidden');
+    }
+    dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
+  }
+  drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
+  dock.addEventListener('click', function (ev) {
+    var d = ev.target.closest('[data-drawer]');
+    if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
+    var b = ev.target.closest('[data-zoom]'); if (!b) return;
+    var z = level === 'segment' ? uniZP : physZP, R = z.rect(), a = b.getAttribute('data-zoom');
+    if (a === 'reset') z.reset(); else z.zoomAt(a === 'in' ? 1.4 : 1 / 1.4, R.width / 2, R.height / 2);
+  });
+
+  // ── 顶栏：面包屑（集群 › PP 段 › rank › 单卡），每一级都能点回去 ──────────
+  topbar.addEventListener('click', function (ev) {
+    var cr = ev.target.closest('[data-cr]');
+    if (!cr) return;
+    var to = cr.getAttribute('data-cr');
+    if (to === 'root') showOverview();
+    else if (to === 'pp') goSegment(focusPP, true);
+    else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
+  });
+  function renderCrumb() {
+    var parts = ['<button type="button" class="cr" data-cr="root">集群</button>'];
+    if (focusPP != null) parts.push(level === 'segment' && curSel == null ? '<span class="cr is-cur">PP' + focusPP + '</span>' : '<button type="button" class="cr" data-cr="pp">PP' + focusPP + '</button>');
+    if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
+    if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
+    crumbEl.innerHTML = parts.join('<i>›</i>');
+  }
+
+  // ── 左卡：模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设 ──────────────
+  function renderLeftCard() {
+    var seg = '';
+    for (var i = 0; i < PS.pp; i++) seg += '<button type="button" class="lc-seg' + (focusPP === i ? ' is-on' : '') + '" data-pp="' + i + '" style="--seg-c:' + HUB_PALETTE[i % HUB_PALETTE.length] + '">PP' + i + '</button>';
+    leftCard.innerHTML = '<div class="lc-title">' + esc(PS.modelName) + '</div>'
+      + '<div class="lc-sub">' + world + ' 卡 · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
+      + '<div class="lc-row"><span>物理</span><b>' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板</b></div>'
+      + '<div class="lc-k">流水线段 · 点进这一段</div><div class="lc-segs">' + seg + '</div>'
+      + '<div class="lc-k">图例</div><div class="lc-legend">'
+      + '<span><i class="lg lg-npu"></i>NPU ×8/板，按 PP 段着色</span>'
+      + '<span><i class="lg lg-cpu"></i>CPU ×2/板 · UB 入 L1</span>'
+      + '<span><i class="lg lg-dpu"></i>DPU · PCIe 接 CPU · UB 入 L1</span>'
+      + '<span><i class="lg lg-nic"></i>NIC ×4/板 · RoCE 参数面</span>'
+      + '<span><i class="lg lg-sw"></i>L1 SW ×8/组 · L2 8 平面×4 SW2 · UB</span>'
+      + '<span><i class="lg lg-uboe"></i>UBoE 跨超节点</span></div>'
+      + '<div class="lc-note">落位是假设：rank 连续摆放，r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋。切分与通信组来自配置。</div>';
+  }
+  leftCard.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.lc-seg'); if (!b) return;
+    goSegment(+b.getAttribute('data-pp'));
+  });
+  /* 进"段"这一层：画布换成宇宙视图并取景到这条 PP 段。keepSel=true 时保留
+     已选中的 rank（它就在这一段里）；否则清掉选中。 */
+  function goSegment(k, keepSel) {
+    if (k == null) k = 0;
+    if (!keepSel || (curSel != null && coordOfRank(curSel).pp !== k)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; }
+    level = 'segment'; focusPP = k;
+    showTier1Visual();
+    uniZP.reset();
+    var wd = uniWedge[k];
+    if (wd) uniZP.fitVB(wd.x0, wd.y0, wd.x1 - wd.x0, wd.y1 - wd.y0, 50);
+    if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
+    renderLeftCard(); renderCrumb();
+  }
+  function focusSegment(k) {
+    focusPP = k;
+    focusHub(k);
+    physApplySelection();
+    renderLeftCard(); renderCrumb();
   }
 
   // ── 集群总览角标：一开场就借矩阵本体算一遍「多少张卡超容」，不用等读者
@@ -578,28 +866,18 @@
   // 报完，不建 SVG、不占那几秒的渲染开销。matrixFrame 这一刻仍然是
   // is-hidden（CSS 已经收着），第三档真正下钻时 showDetail() 照常把它的
   // src 换成真正的详情页——两次导航互不冲突，只是多一次不可见的加载。
-  var clusterWorstRank = null;
+  var lastCluster = null, lastBrief = null;
   (function () {
     var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1' });
     matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
   })();
-  var CLUSTER_CAP_LABEL = { oom: '⚠ 超出容量', red: '⚠ 逼近红线', amber: '临界（黄线）' };
+  /* 聚合结果进右卡的第一档内容（原来是左上角一颗角标，现在三张卡的位置固定，
+     集群容量就是右卡在没选中任何卡时该说的那句话）。 */
   function renderClusterBadge(brief) {
-    if (!brief || !clusterBadge) return;
-    var n = brief.n, level = n.oom > 0 ? 'oom' : n.red > 0 ? 'red' : n.amber > 0 ? 'amber' : 'ok';
-    clusterWorstRank = brief.worst;
-    var text = level === 'ok' ? (brief.world + ' 卡 · 全部正常')
-      : CLUSTER_CAP_LABEL[level] + ' · ' + n[level] + '/' + brief.world + ' 卡';
-    clusterBadge.textContent = text;
-    clusterBadge.classList.toggle('is-alert', level !== 'ok');
-    clusterBadge.classList.remove('is-hidden');
+    if (!brief) return;
+    lastCluster = brief;
+    if (tier === 1) renderRightIdle();
   }
-  /* 点一下角标直接下钻到最惨那张卡（ratio 最高，聚合时顺手记下的）——不用先
-     经过「随便选一张再看是不是这张最严重」。角标是全局状态，跟当前在哪一档
-     无关，点开永远落在第三档，跟从档二点"↓ 单卡下钻"一致。 */
-  clusterBadge && clusterBadge.addEventListener('click', function () {
-    if (clusterWorstRank != null) showDetail(clusterWorstRank);
-  });
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
   // fastcard=1：矩阵共用的 demo.html 里的可选参数，默认关闭——这个简洁版传了它，
@@ -679,23 +957,25 @@
      决定当前显示哪一个——showOverview/showTier2 共用这一个开关函数，不必
      各自重复一遍"显哪个、藏哪个"。matrixFrame 两处都要藏：从第三档退回来
      时它还开着。 */
+  /* 画布停在哪一层就铺哪张：cluster = 灵衢物理，segment = 宇宙视图；card 层
+     由 showDetail 自己切矩阵。两张 SVG 舞台都受同一套选中/聚焦状态驱动。 */
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
-    if (universeMode) {
-      renderUniverse();
-      universeStage.classList.remove('is-hidden');
-      rubikFrame.classList.add('is-hidden');
-    } else {
-      universeStage.classList.add('is-hidden');
-      rubikFrame.classList.remove('is-hidden');
-    }
+    if (level === 'segment') renderUniverse(); else renderPhys();
+    universeStage.classList.toggle('is-hidden', level !== 'segment');
+    physStage.classList.toggle('is-hidden', level === 'segment');
+    dock.classList.remove('is-hidden');
+    focusHub(focusPP);
+    physApplySelection();
   }
 
-  function showOverview() {
+  /* 回到当前这一层的"没选中"态。keepLevel=true 只取消选中、留在原来那一层
+     （段层就还在段里）；否则回到集群层、清掉段聚焦。 */
+  function showOverview(keepLevel) {
+    tier = 1; curSel = null; pendingMatrixSel = null; pendingSubLine = null;
+    if (!keepLevel) { level = 'cluster'; focusPP = null; }
     showTier1Visual();
-    pendingMatrixSel = null;
-    hideBrief();
-    focusHub(null);
+    renderRightIdle(); renderLeftCard(); renderCrumb();
   }
 
   /* 第二档：留在第一档那个视图身上（逻辑魔方或宇宙视图，看 universeMode），
@@ -705,20 +985,32 @@
      （换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行副标题，
      各来路按自己手上的坐标格式拼好再传进来，见 tier2SubLine）。 */
   function showTier2(matrixSel, subLine) {
+    tier = 2; curSel = matrixSel; pendingMatrixSel = matrixSel; pendingSubLine = subLine;
+    focusPP = coordOfRank(matrixSel).pp;
+    if (level === 'card') level = backLevel;
     showTier1Visual();
-    pendingMatrixSel = matrixSel;
-    pendingSubLine = subLine;
-    renderDrillInvite(matrixSel, subLine, null);
-    requestTier2Brief(matrixSel);
+    renderDrillInvite(matrixSel, subLine, lastBrief && lastBrief.rank === matrixSel ? lastBrief : null);
+    if (!(lastBrief && lastBrief.rank === matrixSel)) requestTier2Brief(matrixSel);
+    renderLeftCard(); renderCrumb();
   }
 
-  /* 第三档：真正换到矩阵那一屏，solo=1 直接落在"只看这一只"。 */
+  /* 第三档：真正换到矩阵那一屏，solo=1 直接落在"只看这一只"。三张卡不动：
+     右卡先留着第二档已经拿到的数字，矩阵自己的 pto:tier 回报到了再换成它
+     报的那份（同一个 ptoRankBrief，数字一样，只是去掉"下钻"按钮）。 */
   function showDetail(matrixSel) {
+    tier = 3; curSel = matrixSel; pendingMatrixSel = matrixSel;
+    if (focusPP == null) focusPP = coordOfRank(matrixSel).pp;
+    if (level !== 'card') backLevel = level;
+    level = 'card';
     matrixFrame.src = matrixSrcFor(matrixSel);
     matrixFrame.classList.remove('is-hidden');
-    rubikFrame.classList.add('is-hidden');
     universeStage.classList.add('is-hidden');
-    hideBrief();
+    physStage.classList.add('is-hidden');
+    dock.classList.add('is-hidden');
+    openDrawer(null);
+    if (lastBrief && lastBrief.rank === matrixSel) renderBrief(lastBrief);
+    else renderDrillInvite(matrixSel, pendingSubLine || coordLine(matrixSel), null, true);
+    renderLeftCard(); renderCrumb();
   }
 
   // ── 接逻辑魔方自己上报的选中事件：rubik-select 是它页内换选中卡时主动发的——
@@ -731,7 +1023,7 @@
   window.addEventListener('message', function (ev) {
     var d = ev.data;
     if (!d) return;
-    if (ev.source === rubikFrame.contentWindow) {
+    if (drawerFrame && ev.source === drawerFrame.contentWindow) {
       if (d.type === 'rubik-drill') {
         /* 再点一次已经选中的那张方块 = 下钻——逻辑魔方自己报的坐标已经够
            换算出矩阵 rank，不用等 pendingMatrixSel（用户可能从深链或退档
@@ -756,7 +1048,8 @@
       if (d.type === 'pto:rank-brief') {
         // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
         // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
-        if (d.brief && d.brief.rank === pendingMatrixSel) renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief);
+        if (d.brief) lastBrief = d.brief;
+        if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief);
         return;
       }
       if (d.type !== 'pto:tier') return;
@@ -772,10 +1065,38 @@
     }
   });
 
-  function hideBrief() {
+  /* 右卡第一档：集群容量汇总（矩阵借用 ?brief=1 算出来的聚合数）+ 一键跳到
+     最严重的那张卡。不摆别的——这一档右卡只回答"全网现在怎么样"。 */
+  function renderRightIdle() {
     briefCard.classList.remove('is-cta');
-    briefCard.classList.add('is-hidden');
-    briefCard.innerHTML = '';
+    if (!lastCluster) {
+      briefCard.innerHTML = '<div class="brief-h">集群容量</div><div class="brief-sub">正在借矩阵本体算一遍…</div>';
+    } else {
+      var n = lastCluster.n, ok = lastCluster.world - n.oom - n.red - n.amber;
+      briefCard.innerHTML = '<div class="brief-h">集群容量' + (n.oom > 0 ? '<span class="brief-badge is-alert">⚠ 超出容量</span>' : '') + '</div>'
+        + '<div class="brief-row"><span>超出容量</span><b>' + n.oom + ' / ' + lastCluster.world + '</b></div>'
+        + '<div class="brief-row"><span>逼近红线</span><b>' + n.red + '</b></div>'
+        + '<div class="brief-row"><span>临界</span><b>' + n.amber + '</b></div>'
+        + '<div class="brief-row"><span>正常</span><b>' + ok + '</b></div>'
+        + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ 最严重 rank ' + lastCluster.worst + '</button>' : '');
+    }
+    briefCard.classList.remove('is-hidden');
+  }
+  /* 选中卡的物理位置 + 五个通信组各走哪一级链路（落位假设见左卡）。EP 跟 DP
+     成员完全一样时（DP=EP）合成一行，不摆两行一样的话。 */
+  function physInfoHtml(r) {
+    var p = physOf(r), g = commGroups(r);
+    var rows = [['tp', 'TP', g.tp], ['cp', 'CP', g.cp]];
+    if (g.ep.length === g.dp.length) rows.push(['ep', 'EP=DP', g.dp]);
+    else { rows.push(['ep', 'EP', g.ep]); rows.push(['dp', 'DP', g.dp]); }
+    rows.push(['pp', 'PP', g.pp]);
+    var html = rows.filter(function (x) { return x[2].length > 1; }).map(function (x) {
+      var lv = linkLevel(x[2], x[0] === 'pp');
+      return '<div class="brief-row"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><b>' + LINK_LEVELS[lv] + '</b></div>';
+    }).join('');
+    return '<div class="brief-k">物理位置<em>假设落位</em></div>'
+      + '<div class="brief-sub">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '</div>'
+      + '<div class="brief-k">通信组走哪一级</div>' + html;
   }
 
   /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
@@ -806,30 +1127,40 @@
      原地升级成跟第三档一样详细的卡片——层区间/显存构成不再是编不出来的
      数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
      不是换档，点了才真的飞到矩阵那一屏（solo）。 */
-  function renderDrillInvite(matrixSel, subLine, brief) {
+  function renderDrillInvite(matrixSel, subLine, brief, noCta) {
+    var cta = noCta ? '' : (level === 'cluster' ? '<button type="button" class="brief-cta" data-act="seg">→ 看它所在的 PP' + coordOfRank(matrixSel).pp + ' 段</button>' : '')
+      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
     if (brief && brief.rank === matrixSel) {
-      briefCard.innerHTML = memBriefHtml(brief)
-        + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+      briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(matrixSel) + cta;
     } else {
       briefCard.innerHTML = '<div class="brief-h">rank ' + matrixSel + '</div>'
-        + '<div class="brief-sub">' + subLine + '</div>'
-        + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡下钻 · 查看填充详情</button>';
+        + '<div class="brief-sub">' + subLine + '</div>' + physInfoHtml(matrixSel) + cta;
     }
-    briefCard.classList.add('is-cta');
+    briefCard.classList.toggle('is-cta', !noCta);
     briefCard.classList.remove('is-hidden');
   }
   briefCard.addEventListener('click', function (ev) {
-    if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) showDetail(pendingMatrixSel);
+    if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
+    if (ev.target.closest('[data-act="seg"]') && curSel != null) { goSegment(coordOfRank(curSel).pp, true); return; }
+    if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) showTier2(lastCluster.worst, coordLine(lastCluster.worst));
   });
 
   /* 第三档的浮卡：不再留"下钻"按钮（已经在这一档了），正文跟第二档升级后
-     共用同一个 memBriefHtml。 */
+     共用同一个 memBriefHtml + physInfoHtml。 */
   function renderBrief(brief) {
-    if (!brief) { hideBrief(); return; }
+    if (!brief) { renderRightIdle(); return; }
+    lastBrief = brief;
     briefCard.classList.remove('is-cta');
-    briefCard.innerHTML = memBriefHtml(brief);
+    briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
     briefCard.classList.remove('is-hidden');
   }
+
+  // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
+  //    换另外两种画法（旧链接 ?view=universe 照样认得）。 ────────────────────
+  topbar.classList.remove('is-hidden');
+  leftCard.classList.remove('is-hidden');
+  showOverview();
+  if (qs.get('view') === 'universe') goSegment(0);
 
   // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进第三档 ─────
   var qsel = parseInt(qs.get('sel'), 10);
