@@ -36,6 +36,7 @@
   var briefCard = document.getElementById('briefCard');
   var universeStage = document.getElementById('universeStage');
   var physStage = document.getElementById('physStage');
+  var boardStage = document.getElementById('boardStage');
   var leftCard = document.getElementById('leftCard');
   var topbar = document.getElementById('topbar');
   var crumbEl = document.getElementById('crumb');
@@ -587,6 +588,9 @@
     return g;
   }
   var LINK_LEVELS = ['板内', 'POD 内', '超节点内', '跨超节点'];
+  /* 8 个平面各一种颜色（直播第一页：L1/L2 按平面成 Clos，平面之间没有互联——
+     颜色就是「这颗 L1、这 4 颗 SW2、这根上联属于哪个平面」的标记）。 */
+  var PLANE_C = ['#4FA6E8', '#36E0C4', '#9D7BFF', '#F2B84B', '#FF5D8F', '#5FD3A5', '#F28B5B', '#C77DFF'];
   var GC = { tp: '#36E0C4', cp: '#4FA6E8', ep: '#FF5D8F', dp: '#9D7BFF', pp: '#FFD54A' };
   function levelBetween(a, b) {
     var p = physOf(a), q = physOf(b);
@@ -627,8 +631,9 @@
       var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
       for (var pl = 0; pl < 8; pl++) {
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
-        panels.push('<rect class="p-plane" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"><title>平面 ' + (pl + 1) + ' · 4×SW2</title></rect>');
-        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8" rx="2"/>');
+        panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
+          + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
+        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" style="--pc:' + PLANE_C[pl] + '" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8" rx="2"/>');
         planeC.push({ x: px + planeW / 2, y: py + PLANEH });
       }
       var groups = Math.ceil(inSp / PHYS.group);
@@ -637,15 +642,15 @@
         var gBase = base + g * PHYS.group, sw1w = (GRPW - 7 * 4) / 8;
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
-          panels.push('<rect class="p-sw1" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '" rx="3"/>');
-          links.push('<line class="p-l2" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
+          panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '" rx="3"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
+          links.push('<line class="p-l2" style="--pc:' + PLANE_C[k] + '" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
         }
         if (g === 0) panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 SW ×8</text>');
         for (var pd = 0; pd < 2; pd++) {
           var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
           panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '" rx="8">'
-            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC</title></rect>');
+            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
           // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
           [pdx + 11, pdx + 58, pdx + 101].forEach(function (ux) {
             links.push('<line class="p-l1" x1="' + ux + '" y1="' + (gy + SW1H) + '" x2="' + ux + '" y2="' + pdy + '"/>');
@@ -653,7 +658,8 @@
           links.push('<line class="p-roce" x1="' + (pdx + 115) + '" y1="' + (gy - 3) + '" x2="' + (pdx + 115) + '" y2="' + pdy + '"/>');
           if (g === 0 && pd === 0) panels.push('<text class="p-rocelabel" x="' + (pdx + 119) + '" y="' + (gy - 4) + '">RoCE</text>');
           for (var b = 0; b < 8; b++) {
-            var ry = pdy + 6 + b * ROWP + ROWP / 2;
+            var ry = pdy + 6 + b * ROWP + ROWP / 2, bIdx = Math.floor(pBase / PHYS.board) + b;
+            panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '" rx="2"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
             panels.push('<rect class="p-cpu" x="' + (pdx + 5) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
               + '<rect class="p-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
               + '<rect class="p-dpu" x="' + (pdx + 98) + '" y="' + (ry - 3) + '" width="6" height="6" rx="1"/>');
@@ -701,23 +707,143 @@
       cls[curSel] = 'is-sel';
     }
     var here = curSel != null ? physOf(curSel) : null;
-    physStage.querySelectorAll('.p-npu').forEach(function (el) {
+    document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
       var r = +el.getAttribute('data-rank'), extra;
       if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
       else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
-      el.setAttribute('class', 'p-npu' + extra + (oomSet && oomSet[r] ? ' is-oom' : ''));
+      el.setAttribute('class', 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + (oomSet && oomSet[r] ? ' is-oom' : ''));
+    });
+    // 板视图：选中那颗 NPU 自己的链路（出板 8 口、H2D、NIC）点亮，其余链路退后
+    var slot = here != null && here.board === curBoard ? here.slot : null;
+    boardStage.querySelectorAll('[data-n]').forEach(function (el) {
+      el.classList.toggle('is-hot', slot != null && +el.getAttribute('data-n') === slot);
+      el.classList.toggle('is-cold', slot != null && +el.getAttribute('data-n') !== slot);
     });
     physStage.querySelectorAll('.p-pod').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-pod') === here.pod); });
     physStage.querySelectorAll('.p-sp').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-sp') === here.sp); });
   }
+  /* 集群层的点击：NPU = 选中（再点 = 下钻）；POD 第一下 = 取景过去，取景之后
+     再点它里面的某一行 = 进那块板（板视图）；超节点 = 取景；空白 = 取消选中/复位。 */
+  var fitPod = null;
   physStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
     if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) showDetail(r); else showTier2(r, coordLine(r)); return; }
+    var row = ev.target.closest('.p-board');
+    if (row && fitPod === +row.getAttribute('data-pod')) { goBoard(+row.getAttribute('data-board'), true); return; }
     var box = ev.target.closest('.p-pod, .p-sp');
-    if (box) { physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), box.classList.contains('p-pod') ? 60 : 30); return; }
+    if (box) {
+      var isPod = box.classList.contains('p-pod');
+      fitPod = isPod ? +box.getAttribute('data-pod') : null;
+      physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
+      if (isPod) box.classList.add('is-fit');
+      physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), isPod ? 60 : 30);
+      return;
+    }
     if (curSel != null) { showOverview(true); return; }
     physZP.reset();
     showOverview();
+  });
+
+  // ── 板视图：一块板（Server 形态）的全部关系，按直播四页的图一处不落 ──────
+  // 第二页 Server：8 NPU + 2 CPU（1650/鲲鹏），server 内 NPU 之间 UB fullmesh
+  //   （每卡 7×X4 UB 口），出 server 走 Clos（每卡 8×X4 UB 口 → 8 颗 L1，每平面
+  //   一颗）；H2D：A+K 2 口 UB（鲲鹏），A+X 走 4 口 PCIe SW（x86，第三页标卡）；
+  //   NIC 1 口 UB 挂在 NPU 下面、RoCE 出框到参数面，每张 NIC 服务相邻两颗 NPU。
+  // 第三页 POD：CPU 8 口/C 上 L1、NIC 2 口/N；标卡：CPU0—CPU1 互联，PCIe SW 各带
+  //   4 卡 + 2 NIC。第四页机柜：DPU —PCIe— CPU、DPU —RoCE→ 外、CPU/NPU/DPU 各自
+  //   —UB→ L1 灵衢 SW，L1 —UB→ L2（灵衢/以太），L2 —UB→ 其他机柜，超节点之间
+  //   UBoE。第一页：每平面 4×SW2，L1/L2 成 Clos，平面间无互联。
+  // 版式照第二页 Server 图：CPU 行在上，NPU 行居中，fullmesh 弧画在 NPU 行上方，
+  //   NPU 往下 8 口扇出到 L1 行，L1 再到各自平面的 4×SW2。
+  var curBoard = null, boardBuilt = null;
+  function buildBoardSvg(bIdx) {
+    var W = 960, H = 560, base = bIdx * PHYS.board, pb = physOf(base);
+    var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心
+    var NPUY = 150, NPUH = 40, L1Y = 330, L1H = 24, L2Y = 430, L2H = 30, CPUY = 58;
+    var bg = [], links = [], nodes = [], txt = [];
+    function box(cls, cx, y, w, h, label, title, attrs) {
+      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="5"/>'
+        + '<text x="' + cx + '" y="' + (y + h / 2 + 3.5) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
+    }
+    // 参数面 RoCE 总线（顶）：NIC 与 DPU 都从这儿出框
+    links.push('<line class="b-roce b-bus" x1="60" y1="22" x2="900" y2="22"/>');
+    txt.push('<text class="b-lbl b-lbl-roce" x="904" y="25">RoCE · 参数面</text>');
+    // CPU 行：DPU · NIC0 · CPU0 · NIC1 · NIC2 · CPU1 · NIC3
+    box('b-dpu', 72, CPUY, 64, 22, 'DPU', 'DPU · PCIe 接 CPU0 · UB 上 L1 · RoCE 出框');
+    links.push('<line class="b-roce" x1="72" y1="22" x2="72" y2="' + CPUY + '"/>');
+    for (var k = 0; k < 4; k++) {
+      var nx = (NX(2 * k) + NX(2 * k + 1)) / 2;
+      box('b-nic', nx, CPUY + 2, 44, 20, 'NIC' + k, 'NIC' + k + ' · 1 口 UB 挂 NPU' + (2 * k) + '/NPU' + (2 * k + 1) + ' · RoCE 出框', ' data-nic="' + k + '"');
+      links.push('<line class="b-roce" x1="' + nx + '" y1="22" x2="' + nx + '" y2="' + (CPUY + 2) + '"/>');
+      [2 * k, 2 * k + 1].forEach(function (i) {
+        links.push('<line class="b-nicl" data-n="' + i + '" x1="' + nx + '" y1="' + (CPUY + 22) + '" x2="' + NX(i) + '" y2="' + NPUY + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></line>');
+      });
+    }
+    [0, 1].forEach(function (c) {
+      var cx = (NX(4 * c + 1) + NX(4 * c + 2)) / 2;
+      box('b-cpu', cx, CPUY, 110, 34, 'CPU' + c + ' · 鲲鹏', 'CPU' + c + ' · H2D 每卡 2 口 UB（x86 走 4 口 PCIe SW）· 8 口 UB 上 L1', ' data-cpu="' + c + '"');
+      for (var i = 4 * c; i < 4 * c + 4; i++) links.push('<line class="b-h2d" data-n="' + i + '" x1="' + cx + '" y1="' + (CPUY + 34) + '" x2="' + NX(i) + '" y2="' + NPUY + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></line>');
+    });
+    var c0 = (NX(1) + NX(2)) / 2, c1 = (NX(5) + NX(6)) / 2;
+    links.push('<path class="b-cpul" d="M' + (c0 + 55) + ',' + (CPUY + 10) + ' C' + (c0 + 120) + ',' + (CPUY - 22) + ' ' + (c1 - 120) + ',' + (CPUY - 22) + ' ' + (c1 - 55) + ',' + (CPUY + 10) + '"><title>CPU0 — CPU1 互联</title></path>');
+    txt.push('<text class="b-lbl" x="' + ((c0 + c1) / 2) + '" y="' + (CPUY - 2) + '" text-anchor="middle">CPU 互联</text>');
+    // DPU —PCIe— CPU0；DPU/CPU0 —UB— L1（走左边沿）；CPU1 —UB— L1（走右边沿）
+    links.push('<path class="b-pcie" d="M88,' + (CPUY + 22) + ' V' + (CPUY + 30) + ' H' + (c0 - 55) + '"><title>DPU — CPU0 · PCIe</title></path>');
+    txt.push('<text class="b-lbl" x="' + ((88 + c0 - 55) / 2) + '" y="' + (CPUY + 41) + '" text-anchor="middle">PCIe</text>');
+    links.push('<path class="b-ub" d="M56,' + (CPUY + 22) + ' V' + (CPUY + 34) + ' H20 V' + (L1Y + L1H / 2) + ' H' + (NX(0) - 32) + '"><title>DPU / CPU0 — L1 · UB</title></path>');
+    links.push('<path class="b-ub" d="M' + (c0 - 55) + ',' + (CPUY + 34) + ' H20"/>');
+    links.push('<path class="b-ub" d="M' + (c1 + 55) + ',' + (CPUY + 34) + ' H940 V' + (L1Y + L1H / 2) + ' H' + (NX(7) + 32) + '"><title>CPU1 — L1 · UB</title></path>');
+    txt.push('<text class="b-lbl" x="14" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(-90 14 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
+    txt.push('<text class="b-lbl" x="946" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(90 946 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
+    // NPU 行 + 板内 fullmesh（弧在行上方）
+    for (var i = 0; i < 8; i++) {
+      var r = base + i; if (r >= world) break;
+      nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '" rx="6"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
+        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 16) + '" text-anchor="middle">NPU' + i + '</text><text class="b-npur" x="' + NX(i) + '" y="' + (NPUY + 31) + '" text-anchor="middle">rank ' + r + '</text></g>');
+      for (var j = i + 1; j < 8; j++) {
+        var off = 12 + (j - i) * 13;
+        links.push('<path class="b-mesh" d="M' + NX(i) + ',' + NPUY + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (NPUY - off) + ' ' + NX(j) + ',' + NPUY + '"/>');
+      }
+    }
+    txt.push('<text class="b-lbl b-lbl-mesh" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (NPUY - 58) + '" text-anchor="middle">板内 UB fullmesh · 每卡 7×X4</text>');
+    // 出板：每颗 NPU 8 口，每口一颗 L1（每平面一颗）
+    for (var i2 = 0; i2 < 8; i2++) for (var k2 = 0; k2 < 8; k2++) {
+      if (base + i2 >= world) break;
+      links.push('<line class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" x1="' + NX(i2) + '" y1="' + (NPUY + NPUH) + '" x2="' + NX(k2) + '" y2="' + L1Y + '"/>');
+    }
+    txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (L1Y - 8) + '" text-anchor="middle">出板 Clos · 每卡 8×X4 UB → 8 颗 L1（每平面 1 口）</text>');
+    // L1 行（每平面一颗）→ 本平面 4×SW2（L2）
+    for (var k3 = 0; k3 < 8; k3++) {
+      box('b-l1', NX(k3), L1Y, 64, L1H, 'L1 · P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"');
+      bg.push('<rect class="b-plane" style="--pc:' + PLANE_C[k3] + '" x="' + (NX(k3) - 32) + '" y="' + L2Y + '" width="64" height="' + L2H + '" rx="5"><title>L2 · 平面 ' + (k3 + 1) + ' · 4×SW2 · 与本平面每颗 L1 成 Clos</title></rect>');
+      for (var q = 0; q < 4; q++) {
+        var qx = NX(k3) - 24 + q * 16;
+        bg.push('<rect class="b-sw2" style="--pc:' + PLANE_C[k3] + '" x="' + (qx - 4) + '" y="' + (L2Y + L2H - 11) + '" width="10" height="6" rx="1.5"/>');
+        links.push('<line class="b-l12" style="--pc:' + PLANE_C[k3] + '" x1="' + NX(k3) + '" y1="' + (L1Y + L1H) + '" x2="' + (qx + 1) + '" y2="' + (L2Y + L2H - 11) + '"/>');
+      }
+      txt.push('<text class="b-lbl b-lbl-plane" x="' + NX(k3) + '" y="' + (L2Y + 12) + '" text-anchor="middle">P' + (k3 + 1) + ' · 4×SW2</text>');
+      links.push('<line class="b-ub b-out" x1="' + NX(k3) + '" y1="' + (L2Y + L2H) + '" x2="' + NX(k3) + '" y2="' + (L2Y + L2H + 22) + '"/>');
+    }
+    txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (L2Y - 8) + '" text-anchor="middle">L1 4 口 → 本平面 4×SW2 · 平面间无互联</text>');
+    links.push('<line class="b-ub b-bus" x1="60" y1="' + (L2Y + L2H + 22) + '" x2="' + (NX(3) + 40) + '" y2="' + (L2Y + L2H + 22) + '"/>'
+      + '<line class="b-uboe b-bus" x1="' + (NX(4) - 40) + '" y1="' + (L2Y + L2H + 22) + '" x2="900" y2="' + (L2Y + L2H + 22) + '"/>');
+    txt.push('<text class="b-lbl b-lbl-ub" x="60" y="' + (L2Y + L2H + 36) + '">UB → 其他 POD / 机柜的 L1</text>'
+      + '<text class="b-lbl b-lbl-uboe" x="900" y="' + (L2Y + L2H + 36) + '" text-anchor="end">UBoE → 其他超节点</text>');
+    txt.push('<text class="b-lbl b-lbl-pos" x="900" y="' + (H - 8) + '" text-anchor="end">超节点 ' + pb.sp + ' · POD ' + pb.pod + ' · 板 ' + bIdx + ' · 落位为假设</text>');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+      + '<g class="b-bg">' + bg.join('') + '</g><g class="b-links">' + links.join('') + '</g><g class="b-nodes">' + nodes.join('') + '</g><g class="b-txt">' + txt.join('') + '</g></svg>';
+  }
+  function renderBoard(bIdx) {
+    if (boardBuilt === bIdx) return;
+    boardStage.innerHTML = '<div class="zp-box">' + buildBoardSvg(bIdx) + '</div>';
+    boardBuilt = bIdx;
+    applyAlerts();
+  }
+  boardStage.addEventListener('click', function (ev) {
+    var npu = ev.target.closest('.p-npu');
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) showDetail(r); else showTier2(r, coordLine(r)); return; }
+    if (curSel != null) { showOverview(true); return; }
+    boardZP.reset();
   });
 
   // ── 画布缩放/平移：滚轮以指针为中心缩放，拖拽平移，双击/工具条复位 ────
@@ -774,7 +900,9 @@
     stage.addEventListener('dblclick', function () { st.reset(); });
     return st;
   }
-  var uniZP = attachZoomPan(universeStage), physZP = attachZoomPan(physStage);
+  var uniZP = attachZoomPan(universeStage), physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
+  (function () { var r0 = physZP.reset; physZP.reset = function () { fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(); }; })();
+  function curZP() { return level === 'segment' ? uniZP : level === 'board' ? boardZP : physZP; }
 
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
   var DRAWERS = {
@@ -784,24 +912,33 @@
     swimlane: { title: '泳道图 · 上游 32 卡示例', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
     rubik: { title: '逻辑魔方', src: function () { return rubikSrc; } }
   };
+  /* 三个参考面板不悬浮在画布上，而是像 combo-workbench 的槽位那样占一边、把
+     画布挤过去：泳道图在下方（一条横向的时间轴，天然横着放），整网图在右侧，
+     逻辑魔方在左侧。哪一边开着，那一边的悬浮卡/链路就让位（CSS 按 body 上的
+     panel-* 类收起），.zp-box 的内边距同步收缩，画布始终完整可见、不被压。 */
+  var DRAWER_POS = { netgraph: 'right', swimlane: 'bottom', rubik: 'left' };
   var drawerOpen = null;
   function openDrawer(key) {
+    ['at-left', 'at-right', 'at-bottom'].forEach(function (c) { drawer.classList.remove(c); });
+    ['panel-left', 'panel-right', 'panel-bottom'].forEach(function (c) { document.body.classList.remove(c); });
     if (drawerOpen === key || !key) {
-      drawerOpen = null; drawer.classList.add('is-hidden'); leftCard.classList.remove('is-hidden');
+      drawerOpen = null; drawer.classList.add('is-hidden');
     } else {
       drawerOpen = key; drawerTitle.textContent = DRAWERS[key].title;
       var src = DRAWERS[key].src();
       if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src;
-      drawer.classList.remove('is-hidden'); leftCard.classList.add('is-hidden');
+      drawer.classList.add('at-' + DRAWER_POS[key]); document.body.classList.add('panel-' + DRAWER_POS[key]);
+      drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
+    syncCardHeights();
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
   dock.addEventListener('click', function (ev) {
     var d = ev.target.closest('[data-drawer]');
     if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
     var b = ev.target.closest('[data-zoom]'); if (!b) return;
-    var z = level === 'segment' ? uniZP : physZP, R = z.rect(), a = b.getAttribute('data-zoom');
+    var z = curZP(), R = z.rect(), a = b.getAttribute('data-zoom');
     if (a === 'reset') z.reset(); else z.zoomAt(a === 'in' ? 1.4 : 1 / 1.4, R.width / 2, R.height / 2);
   });
 
@@ -812,11 +949,14 @@
     var to = cr.getAttribute('data-cr');
     if (to === 'root') showOverview();
     else if (to === 'pp') goSegment(focusPP, true);
+    else if (to === 'board') goBoard(curBoard, true);
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
   });
   function renderCrumb() {
     var parts = ['<button type="button" class="cr" data-cr="root">集群</button>'];
-    if (focusPP != null) parts.push(level === 'segment' && curSel == null ? '<span class="cr is-cur">PP' + focusPP + '</span>' : '<button type="button" class="cr" data-cr="pp">PP' + focusPP + '</button>');
+    var mid = level === 'card' ? backLevel : level;
+    if (mid === 'segment' && focusPP != null) parts.push(level === 'segment' && curSel == null ? '<span class="cr is-cur">PP' + focusPP + '</span>' : '<button type="button" class="cr" data-cr="pp">PP' + focusPP + '</button>');
+    if (mid === 'board' && curBoard != null) parts.push(level === 'board' && curSel == null ? '<span class="cr is-cur">板 ' + curBoard + '</span>' : '<button type="button" class="cr" data-cr="board">板 ' + curBoard + '</button>');
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
     crumbEl.innerHTML = parts.join('<i>›</i>');
@@ -840,12 +980,25 @@
      已选中的 rank（它就在这一段里）；否则清掉选中。 */
   function goSegment(k, keepSel) {
     if (k == null) k = 0;
-    if (!keepSel || (curSel != null && coordOfRank(curSel).pp !== k)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; }
+    if (!keepSel || (curSel != null && coordOfRank(curSel).pp !== k)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = false; }
+    else if (curSel != null) tier = 2;   // 从单卡层退回来：还选着，但已不在单卡档
     level = 'segment'; focusPP = k;
     showTier1Visual();
     uniZP.reset();
     var wd = uniWedge[k];
     if (wd) uniZP.fitVB(wd.x0, wd.y0, wd.x1 - wd.x0, wd.y1 - wd.y0, 50);
+    if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
+    renderLeftCard(); renderCrumb();
+  }
+  /* 进「板」这一层：画布换成这块板的 Server 形态图。keepSel=true 且选中的 rank
+     就在这块板上时保留选中；否则清掉。 */
+  function goBoard(b, keepSel) {
+    if (b == null) return;
+    if (!keepSel || (curSel != null && physOf(curSel).board !== b)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = false; }
+    else if (curSel != null) tier = 2;
+    level = 'board'; curBoard = b;
+    showTier1Visual();
+    boardZP.reset();
     if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
     renderLeftCard(); renderCrumb();
   }
@@ -886,7 +1039,7 @@
   var oomSet = null;
   function applyAlerts() {
     if (!oomSet) return;
-    physStage.querySelectorAll('.p-npu').forEach(function (el) { el.classList.toggle('is-oom', !!oomSet[+el.getAttribute('data-rank')]); });
+    document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) { el.classList.toggle('is-oom', !!oomSet[+el.getAttribute('data-rank')]); });
     universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
       var sel = { tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') };
       el.classList.toggle('is-oom', !!oomSet[rubikSelToMatrixSel(sel)]);
@@ -975,9 +1128,10 @@
      由 showDetail 自己切矩阵。两张 SVG 舞台都受同一套选中/聚焦状态驱动。 */
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
-    if (level === 'segment') renderUniverse(); else renderPhys();
+    if (level === 'segment') renderUniverse(); else if (level === 'board') renderBoard(curBoard); else renderPhys();
     universeStage.classList.toggle('is-hidden', level !== 'segment');
-    physStage.classList.toggle('is-hidden', level === 'segment');
+    boardStage.classList.toggle('is-hidden', level !== 'board');
+    physStage.classList.toggle('is-hidden', level === 'segment' || level === 'board');
     dock.classList.remove('is-hidden');
     focusHub(focusPP);
     physApplySelection();
@@ -1020,6 +1174,7 @@
     matrixFrame.classList.remove('is-hidden');
     universeStage.classList.add('is-hidden');
     physStage.classList.add('is-hidden');
+    boardStage.classList.add('is-hidden');
     dock.classList.add('is-hidden');
     openDrawer(null);
     if (lastBrief && lastBrief.rank === matrixSel) renderBrief(lastBrief);
@@ -1120,7 +1275,13 @@
       var lv = linkLevel(x[2], x[0] === 'pp');
       return '<div class="brief-row"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><b>' + LINK_LEVELS[lv] + '</b></div>';
     }).join('');
-    return '<div class="brief-sub" style="margin-top:8px">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '<em class="tag">假设</em></div>' + html;
+    // 这颗 NPU 自己的物理链路（直播第二/四页的 Server/机柜关系，槽位 → CPU/NIC 是
+    // 板视图里同一套配对：CPU 各带 4 卡、NIC 各带相邻 2 卡）
+    var phy = '<div class="brief-row"><span>板内</span><b>UB fullmesh · 7 卡</b></div>'
+      + '<div class="brief-row"><span>出板</span><b>8 口 → L1 ×8</b></div>'
+      + '<div class="brief-row"><span>H2D</span><b>CPU' + (p.slot < 4 ? 0 : 1) + ' · UB</b></div>'
+      + '<div class="brief-row"><span>参数面</span><b>NIC' + Math.floor(p.slot / 2) + ' · RoCE</b></div>';
+    return '<div class="brief-sub" style="margin-top:8px">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '<em class="tag">假设</em></div>' + html + phy;
   }
 
   /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
@@ -1153,7 +1314,8 @@
      数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
      不是换档，点了才真的飞到矩阵那一屏（solo）。 */
   function renderDrillInvite(matrixSel, subLine, brief, noCta) {
-    var cta = noCta ? '' : (level === 'cluster' ? '<button type="button" class="brief-cta" data-act="seg">→ PP' + coordOfRank(matrixSel).pp + ' 段</button>' : '')
+    var cta = noCta ? '' : (level !== 'segment' ? '<button type="button" class="brief-cta" data-act="seg">→ PP' + coordOfRank(matrixSel).pp + ' 段</button>' : '')
+      + (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">→ 板 ' + physOf(matrixSel).board + '</button>' : '')
       + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡</button>';
     if (brief && brief.rank === matrixSel) {
       briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(matrixSel) + cta;
@@ -1185,6 +1347,7 @@
   briefCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
     if (ev.target.closest('[data-act="seg"]') && curSel != null) { goSegment(coordOfRank(curSel).pp, true); return; }
+    if (ev.target.closest('[data-act="board"]') && curSel != null) { goBoard(physOf(curSel).board, true); return; }
     if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) showTier2(lastCluster.worst, coordLine(lastCluster.worst));
   });
 

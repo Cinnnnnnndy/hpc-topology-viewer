@@ -2,7 +2,7 @@
 
 > 构建产物：`/patterns/rank-topology-lite/pattern.html`
 > 本体：[`/patterns/rank-topology-3d/`](../rank-topology-3d/pattern.html)（并行拓扑矩阵——单卡下钻那一层，
-> 也是借来算集群容量/单卡显存的那一份）；参考抽屉：[`/rubik-pattern.html`](../../rubik-pattern.html)（逻辑魔方）、
+> 也是借来算集群容量/单卡显存的那一份）；参考面板：[`/rubik-pattern.html`](../../rubik-pattern.html)（逻辑魔方）、
 > [`/patterns/model-netgraph/`](../model-netgraph/pattern.html)（整网图）、`/combo-workbench/swimlane.html`（泳道）——
 > 都是同源 iframe 嵌入，不是拷贝
 > 契约：同级 `pattern.json`
@@ -20,13 +20,15 @@ L2 平面 / L1 交换 / POD / 板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段�
 合法值。默认预置先后改过三次（pangu → moe718b128k → dense64 → moe504b32k），每次的原话与取舍见 `pattern.js`
 「默认预置」那段注释；四档旧预置都没删，`?preset=` 照样认得。
 
-## 故事线：集群 → 段 → 卡 → 单卡
+## 故事线：集群 → 板 / 段 → 卡 → 单卡
 
 反馈「按下钻的逻辑把整个视图串起来，而不是视图 tab 切换」。不再有并列的画法切换，画布停在哪一层由
 下钻状态决定：
 
 1. **集群**（默认第一屏）——灵衢物理拓扑，内联 SVG。滚轮以指针为中心缩放、拖拽平移；点一个 POD 或
    超节点取景过去，点空白复位。点一颗 NPU = 选中 rank（进「卡」）。
+1′. **板**——POD 取景之后再点它里面的一行，或右卡「→ 板 N」：画布换成这块板的 Server 形态图（下一节的
+   表里「板」那一行的全部关系，一处不落）。板上点 NPU = 选中 rank；面包屑 `集群 › 板 158 › rank 1267`。
 2. **段**——点左卡的 PP 段按钮，或右卡「→ 看它所在的 PP 段」：画布换成宇宙视图并取景到这条段的楔子
    （hub + 全部叶子），叶子 = 这一段的全部真实 rank（TP×CP 子组 × DP 副本，不抽样）。点叶子 = 选中 rank。
 3. **卡**——任一层选中之后右卡先摆坐标行（不留空白），紧接着借矩阵本体一次不铺屏的 `?brief=1&sel=`
@@ -35,7 +37,8 @@ L2 平面 / L1 交换 / POD / 板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段�
 4. **单卡**——「↓ 单卡下钻」换到矩阵本体（`fastcard=1&solo=1`）：真实容量读出、显存构成（原色）、卡内那一级
    通信。矩阵里点空白退出 solo，`pto:tier` 报回来，这一层退到上一层，不重新加载。
 
-顶栏胶囊只放面包屑：`集群 › PP2 › rank 1271 › 单卡`，每一级都能点回去（回段层保留段聚焦、回集群清掉）。
+顶栏胶囊只放面包屑：`集群 › PP2 › rank 1271 › 单卡` 或 `集群 › 板 158 › rank 1267 › 单卡`，每一级都能点回去
+（回段/板层保留选中、回集群清掉）。
 
 ## 第一屏：灵衢物理拓扑
 
@@ -43,10 +46,10 @@ L2 平面 / L1 交换 / POD / 板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段�
 
 | 层级 | 画法 | 出处 |
 |---|---|---|
-| 板（Server 形态） | POD 里的一行：`[CPU CPU][8 NPU][DPU][NIC×4]`；CPU/NPU/DPU 各一条 UB 上联到 L1 SW，NIC 一条 RoCE 穿过 SW1 行出到参数面 | 8 NPU + 2 CPU、7×X4 UB fullmesh、NIC 挂 NPU 下走 RoCE（第二页）；DPU —PCIe— CPU、—UB— L1（第三页） |
+| 板（Server 形态） | 集群层：POD 里的一行 `[CPU CPU][8 NPU][DPU][NIC×4]`；CPU/NPU/DPU 各一条 UB 上联到 L1 SW，NIC 一条 RoCE 穿过 SW1 行出到参数面。**板层**（点进去）把这一行摊开成 Server 图：CPU0—CPU1 互联、DPU —PCIe— CPU0、DPU/CPU —UB→ L1（沿边框的虚线）、H2D（CPU 各带 4 卡，UB 2 口）、NIC 各挂相邻 2 卡（UB 1 口）并 RoCE 出到顶部「参数面」总线、板内 8 卡 UB fullmesh（7×X4，NPU 行上方的弧）、出板 Clos 每卡 8×X4 UB 扇到 8 颗 L1（每平面 1 口，按平面着色）、L1 4 口 → 本平面 4×SW2、L2 —UB→ 其他 POD、—UBoE→ 其他超节点。选中一颗 NPU 后只有它自己的扇出/H2D/NIC 线保持亮度 | 8 NPU + 2 CPU（1650/鲲鹏）、server 内 7×X4 UB fullmesh、出 server 8×X4 UB Clos、H2D A+K 2 口 UB / A+X 4 口 PCIe SW、NIC 1 口 UB 挂 NPU 下走 RoCE（第二页）；POD 形态 8 口/C、2 口/N，标卡 CPU0—CPU1（第三页）；DPU —PCIe— CPU、DPU/CPU/NPU —UB→ L1、L1 —UB→ L2、超节点间 UBoE（第四页） |
 | POD | 8 块板，64 NPU + 16 CPU | 第二页 POD 形态 |
 | 128 卡组 | 2 个 POD + 8 颗 L1 SW（每平面一颗） | 第四页「两组 POD 各配 8+8 颗 SW1」 |
-| 超节点 1024P | 8 组；顶部 8 个独立平面、每平面 4×SW2，L1/L2 Clos，平面间无互联 | 第四页 |
+| 超节点 1024P | 8 组；顶部 8 个独立平面、每平面 4×SW2，L1/L2 Clos，平面间无互联。L1、SW2 与 L1→平面那根线按平面着 8 种颜色（P1…P8） | 第一页 |
 | 跨超节点 | L2 经 UBoE 相连（只连相邻面板做示意，直播没给超节点间的具体拓扑） | 第三页 |
 
 每板 1 颗 DPU / 4 张 NIC 是按第二页 Server 图数的（4 个 NIC 框），直播没给每板 DPU 的确切数——这一项是示意。
@@ -75,10 +78,16 @@ EP 与 DP 成员完全一样时（DP=EP）合成一行，不摆两行一样的�
   点一张才展开这条问题线的事件链，见下一节。
 - 四周所有悬浮卡统一毛玻璃（半透明底 + backdrop blur）；卡上不放解释性文字，只放结果——落位假设、
   上游示例这类限定只留一个两字标签（「假设」「上游 32 卡示例」），解释在这份 README 与代码注释里。
-- **底部工具条**（仿 Figma 画布下方那条）：缩放三钮 + 三个参考抽屉——**整网图**（`/patterns/model-netgraph/`，
+- **底部工具条**（仿 Figma 画布下方那条）：缩放三钮 + 三个参考面板——**整网图**（`/patterns/model-netgraph/`，
   传同一个 `preset`，段数/层数跟当前预置一致）、**泳道图**（compute-graph-viewer 的上游拷贝，画的是它自己那份
   32 卡示例，标题里直说"非当前预置"）、**逻辑魔方**（`/rubik-pattern.html`，点一张方块 = 选中 rank，跟画布
-  上点 NPU 走同一条路）。抽屉从左侧展开、盖住左卡那一列，不动画布；它们是主线之外的并列参考。
+  上点 NPU 走同一条路）。面板**不悬浮在画布上**，像 combo-workbench 的槽位那样占住一边把画布挤过去（反馈
+  「甬道浮现放在最下方，整网也是，不要悬浮在无限画布上」）：泳道图在下方（36vh，工具条抬到它上面），整网图
+  在右侧、逻辑魔方在左侧（各 40vw）；哪一边开着那一边的卡与链就让位，`.zp-box` 同步收缩，画布始终完整可见。
+  它们是主线之外的并列参考，进单卡层时收起。
+- **rank 卡里的物理链路**：位置行下面除了五个通信组各走哪一级，再摆这颗 NPU 自己的四条——板内 UB fullmesh
+  7 卡、出板 8 口 → L1 ×8、H2D 到哪颗 CPU（槽 0–3 → CPU0，4–7 → CPU1）、参数面走哪张 NIC（相邻两槽一张）。
+  单卡层（矩阵 3D）右卡同一份，所以这些关系在 3D 那一屏也在。
 - 缩放/平移的 transform 写在 `.zp-box` 里的 `<svg>` 上（合成器路径，几千个图元不重光栅化）；`.zp-box` 让开
   左右两张卡、顶栏与底卡，初始态整张图完整可见、不被任何卡压住。
 
@@ -129,6 +138,6 @@ rank 830（`tp6·pp3·rep20`）→ 矩阵 rank 2566，矩阵读出 `tp6·cp0·dp
 
 ## 依赖
 
-不是自包含：依赖同一个站点上 `/patterns/rank-topology-3d/pattern.html`（必需）以及三个抽屉页
+不是自包含：依赖同一个站点上 `/patterns/rank-topology-3d/pattern.html`（必需）以及三个面板页
 （`/rubik-pattern.html`、`/patterns/model-netgraph/pattern.html`、`/combo-workbench/swimlane.html`）
 一起发布。离线打开或站点没有那些路径时，对应的 iframe 会是一格空白——有意的取舍：打包拷贝会让实现分叉。

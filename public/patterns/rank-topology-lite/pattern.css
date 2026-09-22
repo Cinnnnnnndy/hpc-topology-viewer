@@ -128,7 +128,7 @@ html, body {
    参考，不在集群→段→卡→单卡这条下钻主线上。 ────────────────────────── */
 .dock {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: 16px; z-index: 6;
+  bottom: calc(16px + var(--pb, 0px)); z-index: 6;
   display: flex; align-items: center; gap: 2px; border-radius: 999px; padding: 3px;
   transition: opacity .2s ease;
 }
@@ -156,19 +156,32 @@ html, body {
 .alert-badge.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); }
 .side-right.is-tip { top: 94px; }
 
-/* ── 参考抽屉：从左侧展开，盖住左卡那一列（左卡此时收起），不动画布。 ── */
+/* ── 参考面板：不悬浮在画布上，像 combo-workbench 的槽位一样占住一边——泳道图
+   在下方（横向时间轴），整网图在右侧，逻辑魔方在左侧；body 上的 panel-* 类让
+   .zp-box 同步收缩、那一边的悬浮卡与链路让位，画布始终完整可见。 ──────── */
 .drawer {
-  position: fixed; left: 16px; top: 52px; width: 44vw; min-width: 420px;
-  bottom: 60px; z-index: 7;
+  position: fixed; z-index: 7;
   display: flex; flex-direction: column; overflow: hidden;
   border-radius: 12px;
   transition: opacity .2s ease, transform .2s ease;
 }
-.drawer.is-hidden { opacity: 0; transform: translateX(-12px); pointer-events: none; }
+.drawer.at-left { left: 16px; top: 52px; bottom: 60px; width: 40vw; min-width: 420px; }
+.drawer.at-right { right: 16px; top: 52px; bottom: 60px; width: 40vw; min-width: 420px; }
+.drawer.at-bottom { left: 16px; right: 16px; bottom: 16px; height: 36vh; min-height: 260px; }
+.drawer.is-hidden { opacity: 0; pointer-events: none; }
+.drawer.at-left.is-hidden { transform: translateX(-12px); }
+.drawer.at-right.is-hidden { transform: translateX(12px); }
+.drawer.at-bottom.is-hidden { transform: translateY(12px); }
 .drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #E8E8E8; }
 .drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; cursor: pointer; padding: 0 4px; }
 .drawer-hd button:hover { color: #E8E8E8; }
 .drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }
+body.panel-bottom { --pb: calc(36vh + 8px); }
+body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
+body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
+body.panel-left .zp-box { left: calc(40vw + 32px); }
+body.panel-right .zp-box { right: calc(40vw + 32px); }
+body.panel-bottom .side-card { max-height: calc(100vh - 120px - var(--pb)); }
 
 /* ── 灵衢物理拓扑（默认第一屏）：超节点面板 → L2 平面条（8 平面 × 4 SW2）→
    8 个 128 卡组（各 8 颗 L1 SW + 2 个 64 卡 POD）→ POD 内 8 板 × 8 NPU。NPU 点
@@ -185,7 +198,7 @@ html, body {
    两张卡、顶栏与底卡，SVG 按 meet 缩进这个盒子里，初始态整张图完整可见、
    不被任何卡压住；缩放/平移的 transform 写在盒子里的 <svg> 上，盒子本身
    不动，指针坐标才有稳定的参照。 */
-.zp-box { position: absolute; left: 282px; right: 282px; top: 52px; bottom: 60px; }
+.zp-box { position: absolute; left: 282px; right: 282px; top: 52px; bottom: calc(60px + var(--pb, 0px)); }
 .zp-box svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .p-sp { fill: #17181D; stroke: #2B2B2B; stroke-width: 1; transition: stroke .2s ease; }
 .p-sp.is-on { stroke: #6E6E6E; }
@@ -193,15 +206,19 @@ html, body {
   font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none;
 }
 .p-splabel { font-size: 13px; font-weight: 700; fill: #E8E8E8; }
-.p-plane { fill: #1F1F1F; stroke: #2B2B2B; }
-.p-planelabel { font-size: 8.5px; fill: #6E6E6E; }
-.p-sw2 { fill: #4FA6E8; opacity: .8; }
-.p-sw1 { fill: #3A3A3A; stroke: #4FA6E8; stroke-width: .6; }
+.p-plane { fill: #1A1B20; stroke: var(--pc, #2B2B2B); stroke-opacity: .35; }
+.p-planelabel { font-size: 8px; font-weight: 600; fill: #6E6E6E; }
+.p-sw2 { fill: var(--pc, #4FA6E8); opacity: .8; }
+.p-sw1 { fill: #2B2B2B; stroke: var(--pc, #4FA6E8); stroke-width: .8; }
 .p-sw1label { font-size: 8px; fill: #A0A0A0; }
 .p-pod { fill: #121317; stroke: #2B2B2B; stroke-width: 1; cursor: zoom-in; transition: stroke .2s ease; }
 .p-pod:hover { stroke: #6E6E6E; }
 .p-pod.is-on { stroke: #E8E8E8; }
-.p-l2 { stroke: #4FA6E8; stroke-opacity: .12; stroke-width: .8; fill: none; }
+.p-pod.is-fit { stroke: #6E6E6E; }
+/* POD 取景之后，每一行（一块板）是一个可点的热区：悬停提亮，点进板视图 */
+.p-board { fill: transparent; cursor: pointer; transition: fill .15s ease; }
+.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: rgba(255, 255, 255, .06); }
+.p-l2 { stroke: var(--pc, #4FA6E8); stroke-opacity: .16; stroke-width: .8; fill: none; }
 .p-l1 { stroke: #4FA6E8; stroke-opacity: .35; stroke-width: 1.2; }
 .p-uboe { stroke: #9D7BFF; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
 .p-uboelabel { font-size: 10px; font-weight: 600; fill: #9D7BFF; }
@@ -232,6 +249,50 @@ html, body {
 .p-npu.g-dp { stroke: #9D7BFF; stroke-width: 1.6; }
 .p-npu.g-pp { stroke: #FFD54A; stroke-width: 1.8; }
 
+/* ── 板视图：一块板的 Server 形态（直播第二页的版式）。灰盒子是部件，线的颜色
+   只区分链路种类：UB 蓝、扇出按平面色、fullmesh 粉、H2D 淡蓝、NIC 绿、RoCE 绿虚、
+   PCIe 灰虚、UBoE 紫虚；选中一颗 NPU 后只有它自己的链路保持亮度。 ──────── */
+.board-stage svg text { font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none; }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #2B2B2B; stroke: #3A3A3A; stroke-width: 1; }
+.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text { font-size: 11px; font-weight: 600; fill: #E8E8E8; }
+.b-nic text { font-size: 10px; }
+.b-dpu rect { stroke: #F2B84B; }
+.b-nic rect { stroke: #5FD3A5; }
+.b-l1 rect { stroke: var(--pc); }
+.b-l1 text { font-size: 10px; }
+.b-plane { fill: #1A1B20; stroke: var(--pc); stroke-opacity: .45; }
+.b-sw2 { fill: var(--pc); opacity: .85; }
+.p-bnpu { stroke: #3A3A3A; stroke-width: 1; }
+.p-bnpu.is-sel { fill: #111111; stroke: #FFFFFF; stroke-width: 2.2; }
+.b-npul { font-size: 11px; font-weight: 700; fill: #111111; }
+.b-npur { font-size: 9.5px; fill: #3A3A3A; }
+.p-bnpu.is-sel ~ .b-npul { fill: #FFFFFF; }
+.p-bnpu.is-sel ~ .b-npur { fill: #A0A0A0; }
+.p-bnpu.is-oom ~ .b-npul { fill: #FFFFFF; }
+.p-bnpu.is-oom ~ .b-npur { fill: #FFE0DE; }
+.b-lbl { font-size: 9.5px; fill: #6E6E6E; paint-order: stroke; stroke: #0E0E11; stroke-width: 3px; stroke-linejoin: round; }
+.b-lbl-mesh { fill: #FF5D8F; opacity: .8; }
+.b-lbl-roce { fill: #5FD3A5; }
+.b-lbl-ub { fill: #4FA6E8; }
+.b-lbl-uboe { fill: #9D7BFF; }
+.b-lbl-plane { fill: #A0A0A0; font-weight: 600; }
+.b-lbl-pos { fill: #6E6E6E; }
+.b-mesh { fill: none; stroke: #FF5D8F; stroke-opacity: .22; stroke-width: .9; }
+.b-fan { stroke: var(--pc); stroke-opacity: .22; stroke-width: 1; transition: stroke-opacity .2s ease; }
+.b-h2d { stroke: #4FA6E8; stroke-opacity: .45; stroke-width: 1.2; transition: stroke-opacity .2s ease; }
+.b-nicl { stroke: #5FD3A5; stroke-opacity: .5; stroke-width: 1.2; transition: stroke-opacity .2s ease; }
+.b-roce { stroke: #5FD3A5; stroke-opacity: .55; stroke-width: 1; stroke-dasharray: 3 3; }
+.b-pcie { fill: none; stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1; stroke-dasharray: 2 3; }
+.b-ub { fill: none; stroke: #4FA6E8; stroke-opacity: .45; stroke-width: 1.2; stroke-dasharray: 5 3; }
+.b-cpul { fill: none; stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1.2; }
+.b-l12 { stroke: var(--pc); stroke-opacity: .5; stroke-width: 1; }
+.b-uboe { stroke: #9D7BFF; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 6 4; }
+.b-bus { stroke-width: 1.2; }
+.b-fan.is-hot { stroke-opacity: .95; stroke-width: 1.6; }
+.b-h2d.is-hot, .b-nicl.is-hot { stroke-opacity: 1; stroke-width: 1.8; }
+.b-fan.is-cold { stroke-opacity: .06; }
+.b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .12; }
+
 /* ── 真实故障复盘面板：任何预置打开都有（原来只在 incident2048 才渲染，
    反馈「不希望问题定位跟拓扑分离」之后挪到 world≤64 分流之前，见 pattern.js
    顶部注释），钉在视口底部，跨三档常驻。默认**展开**（is-collapsed 只在读者
@@ -251,7 +312,7 @@ html, body {
    放不下时列内滚动。整个面板本身不吃指针，只有列吃。 */
 .incident-panel { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-size: 12px; color: #A0A0A0; transition: opacity .2s ease; }
 .incident-panel.is-hidden { opacity: 0; }
-.ip-col { position: absolute; width: 250px; bottom: 16px; overflow-y: auto; pointer-events: auto; }
+.ip-col { position: absolute; width: 250px; bottom: calc(16px + var(--pb, 0px)); overflow-y: auto; pointer-events: auto; }
 .ip-col-left { left: 16px; top: calc(60px + var(--lc-h, 330px) + 12px); }
 .ip-col-right { right: 16px; top: calc(60px + var(--rc-h, 160px) + 12px); }
 /* 先只出现问题卡；点它才展开这条问题线的链路。 */
