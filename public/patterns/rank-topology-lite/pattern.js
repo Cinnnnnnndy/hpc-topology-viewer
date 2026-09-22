@@ -167,13 +167,6 @@
     { k: 'lr',      name: 'learning_rate',      want: '按计划', src: 'lr scheduler（cosine / WSD）' },
     { k: 'mem',     name: 'mem_reserved_bytes', want: '平稳',  src: 'NPU 保留显存 / theoretical_memory' }
   ];
-  var INCIDENT_HOOKS = [
-    { k: 'nan',       name: 'NaN / Inf 检测',   src: 'check_for_nan_in_loss_and_grad', act: '任一 rank 的 loss 出现 NaN 直接报错退出' },
-    { k: 'spike',     name: 'Loss Spike 监控',  src: 'loss_spike_monitor_callback',    act: '损失突然飙升时触发回调' },
-    { k: 'heartbeat', name: 'Heartbeat 监控',   src: 'init_heartbeat_monitor_pid',     act: '训练进程无响应则重启' },
-    { k: 'dataspeed', name: '数据生产速度告警', src: '_warn_data_production_speed',    act: '数据加载速度接近训练速度时告警' },
-    { k: 'oom',       name: 'OOM 前兆',         src: 'mem_reserved_bytes 增长趋势',    act: '保留显存持续增长，容量见底' }
-  ];
   var INCIDENT_BOARD = {
     'p1-warning': { hooks: ['spike'], m: {
       lscale: { v: '65536 → 4096', s: 'warn', why: '连续四次减半，越过三级预警线 8192' },
@@ -212,7 +205,6 @@
       steptime: { v: '中断', s: 'bad', why: '它一崩 PP3 就断，全网跟着停在等待上' } } }
   };
   var INCIDENT_SEVC = { ok: '#3FB950', warn: '#D29922', bad: '#F85149', na: '#6E6E6E' };
-  var INCIDENT_SEVN = { ok: '正常', warn: '预警', bad: '告警', na: '未采' };
 
   // ── 真实故障复盘面板：直接摆在最外层拓扑上，不必先跳一次预置 ─────────────
   // 原来只在 ?preset=incident2048 才渲染，默认屏幕上只留一条「⚠ 真实故障
@@ -242,12 +234,13 @@
   function renderIncidentPanel() {
     if (!incidentPanel) return;
     var onIncident = PS.matrixPreset === 'incident2048';
-    var lanes = INCIDENT_PROBLEMS.map(function (prob) {
+    var lanes = INCIDENT_PROBLEMS.map(function (prob, i9) {
       var evs = prob.events.map(function (e) {
         var board = INCIDENT_BOARD[e.id], m = board && board.m ? board.m : {};
         var chips = INCIDENT_METRICS.filter(function (x) { return m[x.k] && m[x.k].s !== 'na'; }).map(function (x) {
           var c = m[x.k];
-          return '<span class="ip-m" style="--ip-sevc:' + INCIDENT_SEVC[c.s] + '" title="' + esc((c.why ? c.why + ' · ' : '') + '来源 ' + x.src) + '"><em>' + esc(x.name) + '</em>' + esc(c.v) + '</span>';
+          // 标签用短键（loss/gnorm/mem…），全名与来源进 hover——同一行能放下更多真读数
+          return '<span class="ip-m" style="--ip-sevc:' + INCIDENT_SEVC[c.s] + '" title="' + esc(x.name + (c.why ? ' · ' + c.why : '') + ' · 来源 ' + x.src) + '"><em>' + esc(x.k) + '</em>' + esc(c.v) + '</span>';
         }).join('');
         return '<div class="ip-ev' + (e.root ? ' is-root' : '') + '" style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.conclusion) + '">'
           + '<div class="ip-evhd"><span class="ip-time">' + esc(e.time) + '</span><span class="ip-title">' + esc(e.title) + '</span>'
@@ -257,19 +250,28 @@
           + (chips ? '<div class="ip-ms">' + chips + '</div>' : '')
           + '</div>';
       }).join('');
-      return '<div class="ip-lane"><div class="ip-probname">' + esc(prob.name) + '</div><div class="ip-evs">' + evs + '</div></div>';
-    }).join('');
-    incidentPanel.innerHTML =
-      '<div class="ip-hd"><span class="ip-evtitle">真实故障复盘 · 另一次 2048 卡训练</span>'
-      + '<span class="ip-foot">读数逐字来自事故原文，与当前预置无关' + (onIncident ? '' : '；rank 号是那张拓扑的，点了整页跳转') + '</span>'
-      + '<button type="button" class="ip-collapse" data-act="ip-collapse" title="收起/展开">' + (incidentPanel.classList.contains('is-collapsed') ? '▲' : '▼') + '</button></div>'
-      + '<div class="ip-lanes">' + lanes + '</div>';
+      var root = prob.events.filter(function (e) { return e.root; })[0];
+      var open = !!incidentOpen[prob.id];
+      return '<div class="ip-col ' + (i9 === 0 ? 'ip-col-left' : 'ip-col-right') + (open ? ' is-open' : '') + '">'
+        + '<button type="button" class="ip-prob' + (open ? ' is-on' : '') + '" data-prob="' + prob.id + '"><b>' + esc(prob.name) + '</b>'
+        + '<span>' + prob.events.length + ' 个事件' + (root ? ' · 根因 ' + esc(root.title) : '') + ' · 2048 卡训练</span></button>'
+        + '<div class="ip-chain">' + evs + '</div></div>';
+    });
+    incidentPanel.innerHTML = lanes.join('');
     incidentPanel.classList.remove('is-hidden');
-    // 底卡实际高度写成 CSS 变量：左右卡的最大高度、缩放工具条的落点都要让开它
-    document.documentElement.style.setProperty('--ipanel-h', incidentPanel.offsetHeight + 'px');
   }
+  // 先只出现问题，点了才展开这条问题线的链路
+  var incidentOpen = {};
+  /* 两条链的起点跟着左右卡的实际高度走：卡的内容一变（选中/取消选中）就重写
+     CSS 变量，链自动让开。 */
+  function syncCardHeights() {
+    document.documentElement.style.setProperty('--lc-h', (leftCard ? leftCard.offsetHeight : 0) + 'px');
+    document.documentElement.style.setProperty('--rc-h', (briefCard ? briefCard.offsetHeight : 0) + 'px');
+  }
+  window.addEventListener('resize', syncCardHeights);
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
-    if (ev.target.closest('[data-act="ip-collapse"]')) { incidentPanel.classList.toggle('is-collapsed'); renderIncidentPanel(); return; }
+    var pb = ev.target.closest('[data-prob]');
+    if (pb) { var id9 = pb.getAttribute('data-prob'); incidentOpen[id9] = !incidentOpen[id9]; renderIncidentPanel(); return; }
     var drill = ev.target.closest('[data-act="ip-drill"]');
     if (!drill) return;
     var rank9 = parseInt(drill.getAttribute('data-rank'), 10);
@@ -620,8 +622,7 @@
       var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
       for (var pl = 0; pl < 8; pl++) {
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
-        panels.push('<rect class="p-plane" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"/>'
-          + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 11) + '" text-anchor="middle">平面 ' + (pl + 1) + '</text>');
+        panels.push('<rect class="p-plane" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"><title>平面 ' + (pl + 1) + ' · 4×SW2</title></rect>');
         for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8" rx="2"/>');
         planeC.push({ x: px + planeW / 2, y: py + PLANEH });
       }
@@ -634,7 +635,7 @@
           panels.push('<rect class="p-sw1" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '" rx="3"/>');
           links.push('<line class="p-l2" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
         }
-        panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 SW ×8</text>');
+        if (g === 0) panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 SW ×8</text>');
         for (var pd = 0; pd < 2; pd++) {
           var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
@@ -771,11 +772,11 @@
 
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
   var DRAWERS = {
-    netgraph: { title: '整网图 · 同一预置', src: function () { return '../model-netgraph/pattern.html?' + new URLSearchParams({ embed: '1', theme: 'dark', preset: PS.matrixPreset }).toString(); } },
+    netgraph: { title: '整网图', src: function () { return '../model-netgraph/pattern.html?' + new URLSearchParams({ embed: '1', theme: 'dark', preset: PS.matrixPreset }).toString(); } },
     // 泳道是 compute-graph-viewer 的上游拷贝，画的是它自己那份 32 卡示例，不接
-    // 当前预置——标题里直说，不冒充。
-    swimlane: { title: '微批次生命周期泳道 · 上游 32 卡示例，非当前预置', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
-    rubik: { title: '逻辑魔方（点一张方块 = 选中 rank）', src: function () { return rubikSrc; } }
+    // 当前预置——标题里带一句，不冒充。
+    swimlane: { title: '泳道图 · 上游 32 卡示例', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
+    rubik: { title: '逻辑魔方', src: function () { return rubikSrc; } }
   };
   var drawerOpen = null;
   function openDrawer(key) {
@@ -821,16 +822,10 @@
     for (var i = 0; i < PS.pp; i++) seg += '<button type="button" class="lc-seg' + (focusPP === i ? ' is-on' : '') + '" data-pp="' + i + '" style="--seg-c:' + HUB_PALETTE[i % HUB_PALETTE.length] + '">PP' + i + '</button>';
     leftCard.innerHTML = '<div class="lc-title">' + esc(PS.modelName) + '</div>'
       + '<div class="lc-sub">' + world + ' 卡 · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
-      + '<div class="lc-row"><span>物理</span><b>' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板</b></div>'
-      + '<div class="lc-k">流水线段 · 点进这一段</div><div class="lc-segs">' + seg + '</div>'
-      + '<div class="lc-k">图例</div><div class="lc-legend">'
-      + '<span><i class="lg lg-npu"></i>NPU ×8/板，按 PP 段着色</span>'
-      + '<span><i class="lg lg-cpu"></i>CPU ×2/板 · UB 入 L1</span>'
-      + '<span><i class="lg lg-dpu"></i>DPU · PCIe 接 CPU · UB 入 L1</span>'
-      + '<span><i class="lg lg-nic"></i>NIC ×4/板 · RoCE 参数面</span>'
-      + '<span><i class="lg lg-sw"></i>L1 SW ×8/组 · L2 8 平面×4 SW2 · UB</span>'
-      + '<span><i class="lg lg-uboe"></i>UBoE 跨超节点</span></div>'
-      + '<div class="lc-note">落位是假设：rank 连续摆放，r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋。切分与通信组来自配置。</div>';
+      + '<div class="lc-row"><span>物理<em class="tag">假设</em></span><b>' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板</b></div>'
+      + '<div class="lc-k">流水线段</div><div class="lc-segs">' + seg + '</div>'
+      + '<div class="lc-legend"><span><i class="lg lg-npu"></i>NPU <i class="lg lg-cpu"></i>CPU <i class="lg lg-dpu"></i>DPU <i class="lg lg-nic"></i>NIC <i class="lg lg-sw"></i>SW <i class="lg lg-uboe"></i>UBoE</span></div>';
+    syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
     var b = ev.target.closest('.lc-seg'); if (!b) return;
@@ -1072,15 +1067,15 @@
     if (!lastCluster) {
       briefCard.innerHTML = '<div class="brief-h">集群容量</div><div class="brief-sub">正在借矩阵本体算一遍…</div>';
     } else {
+      // 只写非零的档：全是 0 的行不是信息（消融）
       var n = lastCluster.n, ok = lastCluster.world - n.oom - n.red - n.amber;
-      briefCard.innerHTML = '<div class="brief-h">集群容量' + (n.oom > 0 ? '<span class="brief-badge is-alert">⚠ 超出容量</span>' : '') + '</div>'
-        + '<div class="brief-row"><span>超出容量</span><b>' + n.oom + ' / ' + lastCluster.world + '</b></div>'
-        + '<div class="brief-row"><span>逼近红线</span><b>' + n.red + '</b></div>'
-        + '<div class="brief-row"><span>临界</span><b>' + n.amber + '</b></div>'
-        + '<div class="brief-row"><span>正常</span><b>' + ok + '</b></div>'
+      var rows = [['超出容量', n.oom], ['逼近红线', n.red], ['临界', n.amber], ['正常', ok]].filter(function (x) { return x[1] > 0; });
+      briefCard.innerHTML = '<div class="brief-h">集群容量 · ' + lastCluster.world + ' 卡' + (n.oom > 0 ? '<span class="brief-badge is-alert">⚠ 超出容量</span>' : '') + '</div>'
+        + rows.map(function (x) { return '<div class="brief-row"><span>' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('')
         + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ 最严重 rank ' + lastCluster.worst + '</button>' : '');
     }
     briefCard.classList.remove('is-hidden');
+    syncCardHeights();
   }
   /* 选中卡的物理位置 + 五个通信组各走哪一级链路（落位假设见左卡）。EP 跟 DP
      成员完全一样时（DP=EP）合成一行，不摆两行一样的话。 */
@@ -1094,9 +1089,9 @@
       var lv = linkLevel(x[2], x[0] === 'pp');
       return '<div class="brief-row"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><b>' + LINK_LEVELS[lv] + '</b></div>';
     }).join('');
-    return '<div class="brief-k">物理位置<em>假设落位</em></div>'
+    return '<div class="brief-k">位置<em>假设</em></div>'
       + '<div class="brief-sub">超节点 ' + p.sp + ' · POD ' + p.pod + ' · 板 ' + p.board + ' · 槽 ' + p.slot + '</div>'
-      + '<div class="brief-k">通信组走哪一级</div>' + html;
+      + '<div class="brief-k">通信组</div>' + html;
   }
 
   /* rank 详情卡的正文（容量徽标 + 坐标/层区间 + 显存构成 + 合计）——第二档
@@ -1138,6 +1133,7 @@
     }
     briefCard.classList.toggle('is-cta', !noCta);
     briefCard.classList.remove('is-hidden');
+    syncCardHeights();
   }
   briefCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
@@ -1151,8 +1147,13 @@
     if (!brief) { renderRightIdle(); return; }
     lastBrief = brief;
     briefCard.classList.remove('is-cta');
-    briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
+    // 单卡层矩阵自己已经把显存构成摆成浮卡贴在卡壳旁边了，右卡不再重复那五行
+    // （消融），只留矩阵画布上没有的：物理位置与通信组链路等级。
+    var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">' + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
+    briefCard.innerHTML = '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
+      + '<div class="brief-sub">' + coordSubLine(brief) + '</div>' + physInfoHtml(brief.rank);
     briefCard.classList.remove('is-hidden');
+    syncCardHeights();
   }
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
