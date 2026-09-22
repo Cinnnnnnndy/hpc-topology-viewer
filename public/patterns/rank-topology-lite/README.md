@@ -46,29 +46,31 @@ L2 平面 / L1 交换 / POD / 板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段�
 
 | 层级 | 画法 | 出处 |
 |---|---|---|
-| 板（Server 形态） | 集群层：POD 里的一行 `[CPU CPU][8 NPU][DPU][NIC×4]`；CPU/NPU/DPU 各一条 UB 上联到 L1 SW，NIC 一条 RoCE 穿过 SW1 行出到参数面。**板层**（点进去）把这一行摊开成 Server 图：CPU0—CPU1 互联、DPU —PCIe— CPU0、DPU/CPU —UB→ L1（沿边框的虚线）、H2D（CPU 各带 4 卡，UB 2 口）、NIC 各挂相邻 2 卡（UB 1 口）并 RoCE 出到顶部「参数面」总线、板内 8 卡 UB fullmesh（7×X4，NPU 行上方的弧）、出板 Clos 每卡 8×X4 UB 扇到 8 颗 L1（每平面 1 口，按平面着色）、L1 4 口 → 本平面 4×SW2、L2 —UB→ 其他 POD、—UBoE→ 其他超节点。选中一颗 NPU 后只有它自己的扇出/H2D/NIC 线保持亮度 | 8 NPU + 2 CPU（1650/鲲鹏）、server 内 7×X4 UB fullmesh、出 server 8×X4 UB Clos、H2D A+K 2 口 UB / A+X 4 口 PCIe SW、NIC 1 口 UB 挂 NPU 下走 RoCE（第二页）；POD 形态 8 口/C、2 口/N，标卡 CPU0—CPU1（第三页）；DPU —PCIe— CPU、DPU/CPU/NPU —UB→ L1、L1 —UB→ L2、超节点间 UBoE（第四页） |
+| 板（Server 形态） | 集群层：POD 里的一行 `[CPU CPU][8 NPU][DPU][NIC×4]`；CPU/NPU/DPU 各一条 UB 上联到 L1 SW，NIC 一条 RoCE 穿过 SW1 行出到参数面。**板层**（点进去）把这一行摊开成 Server 图：CPU0—CPU1 互联、DPU —PCIe— CPU0、DPU/CPU —UB→ L1（沿边框的虚线）、H2D（CPU 各带 4 卡，UB 2 口）、NIC 各挂相邻 2 卡（UB 1 口）并 RoCE 出到顶部「参数面」总线、板内 8 卡 UB fullmesh（7×X4，NPU 行上方的弧）、出板 Clos 每卡 8×X4 UB 扇到 8 颗 L1（每平面 1 口）、L1 4 口 → 本平面 4×SW2、L2 —UB→ 其他 POD、—UBoE→ 其他超节点。选中一颗 NPU 后只有它自己的扇出/H2D/NIC 线保持亮度 | 8 NPU + 2 CPU（1650/鲲鹏）、server 内 7×X4 UB fullmesh、出 server 8×X4 UB Clos、H2D A+K 2 口 UB / A+X 4 口 PCIe SW、NIC 1 口 UB 挂 NPU 下走 RoCE（第二页）；POD 形态 8 口/C、2 口/N，标卡 CPU0—CPU1（第三页）；DPU —PCIe— CPU、DPU/CPU/NPU —UB→ L1、L1 —UB→ L2、超节点间 UBoE（第四页） |
 | POD | 8 块板，64 NPU + 16 CPU | 第二页 POD 形态 |
 | 128 卡组 | 2 个 POD + 8 颗 L1 SW（每平面一颗） | 第四页「两组 POD 各配 8+8 颗 SW1」 |
-| 超节点 1024P | 8 组；顶部 8 个独立平面、每平面 4×SW2，L1/L2 Clos，平面间无互联。L1、SW2 与 L1→平面那根线按平面着 8 种颜色（P1…P8） | 第一页 |
+| 超节点 1024P | 8 组；顶部 8 个独立平面（标 P1…P8）、每平面 4×SW2，L1/L2 Clos，平面间无互联 | 第一页 |
 | 跨超节点 | L2 经 UBoE 相连（只连相邻面板做示意，直播没给超节点间的具体拓扑） | 第三页 |
 
 每板 1 颗 DPU / 4 张 NIC 是按第二页 Server 图数的（4 个 NIC 框），直播没给每板 DPU 的确切数——这一项是示意。
 
-**rank 默认全白，颜色只给告警**：矩阵借用 `?brief=1` 回报的 `ptoClusterBrief()` 多带一个 `oom` 数组（顶出容量的
-卡），这些 rank 在物理图与宇宙视图里标红，其余白；PP 段的颜色只留在左卡段按钮与宇宙视图 hub 上。默认预置按本页估
+**默认只有黑白，颜色只给告警**（回到简洁版最初的提示词）：矩阵借用 `?brief=1` 回报的 `ptoClusterBrief()` 多带一个
+`oom` 数组（顶出容量的卡），这些 rank 在物理图、板视图与宇宙视图里标红，其余白。交换机、平面、CPU/DPU/NIC、
+各种链路全是灰阶，链路种类靠线型分（实线 UB、长虚 UB 上联、短虚 RoCE、点线 PCIe、粗长虚 UBoE）；PP 段 hub 与
+段按钮也不着色。默认预置按本页估
 的显存 3959/4096 张顶出 64 GB，所以第一屏几乎全红——估算口径下的事实，不是着色错误。
 
 **落位是假设**：配置里没有 rank→NPU 的映射，这一层按「rank 连续摆放」推（`r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ ·
 板 ⌊r/8⌋ · 槽 r%8`），左卡与右卡都写明。在这条假设下能算出真东西——五个通信组的成员由矩阵本体的
 `rankOf = ((pp·DP+dp)·CP+cp)·TP+tp` 反算，组内最远的一对落在同一块板 / 同一个 POD / 同一个超节点 / 跨超节点，
 就是它走的那一级：默认预置里 TP（4 卡）永远在板内 fullmesh，CP（32 卡）在半个 POD 内走 L1，EP=DP（16 副本）
-跨 8 个 POD 走 L2 平面，PP 相邻段每两段跨一次超节点走 UBoE。选中一张卡，它的五个组各自描一圈自己的颜色
-（tp/cp/ep/dp/pp 沿用 `data/ascend-superpod-viz-spec.json` 的 parallel_mappings 配色），其余点压暗；
+跨 8 个 POD 走 L2 平面，PP 相邻段每两段跨一次超节点走 UBoE。选中一张卡，它的五个组各自描一圈——只分灰阶与线型
+（TP 白实线最粗、CP 浅灰、EP/DP 中灰、PP 白虚线，右卡的小方块同一套），其余点压暗；
 EP 与 DP 成员完全一样时（DP=EP）合成一行，不摆两行一样的话。
 
 ## 三张卡 + 顶栏 + 底部工具条
 
-- **左卡**：模型名、world、切分、物理规模（超节点/POD/板数）、PP 段入口（按段着色，点进段层）、图例、落位假设。
+- **左卡**：模型名、world、切分、物理规模（超节点/POD/板数）、PP 段入口（灰色按钮，点进段层，当前段反白）、落位假设。
 - **右上角**：不默认摊开任何卡。第一层只有一颗容量角标（红 = 有卡顶出容量，写张数；借矩阵 `?brief=1` 跑一次
   `ptoClusterBrief()`，逐卡复用 `capVerdict`），点它才弹容量 tips +「→ rank N」；选中 rank 之后角标变成
   「rank N ⚠」，点它才弹 rank 详情（显存五档 + 位置 + 通信组链路等级 +「→ PP 段」「↓ 单卡」）。再点一次已选中的

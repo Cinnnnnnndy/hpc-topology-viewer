@@ -381,7 +381,9 @@
   var uniWedge = [];   // 宇宙视图每条 PP 段（hub + 叶子）的 viewBox 包围盒，聚焦一段时取景用
   // 参考图那种暖金/紫青撞色，圈内按段循环取色，同一段的叶子跟着它所在的
   // hub 同色（深浅由 CSS 的 hover/dim 状态区分，不再按叶子逐个换色）。
-  var HUB_PALETTE = ['#8B7CF6', '#4FC3D9', '#E8637A', '#F2B84B', '#5FD3A5', '#C77DFF', '#4FA6E8', '#F28B5B'];
+  /* 回到简洁版最初的提示词：默认只有黑白，颜色只给告警（超容标红）。段 hub、
+     段按钮、平面、链路种类全部靠灰阶/线型/粗细分，不引入色相。 */
+  var HUB_PALETTE = ['#E8E8E8'];
   // 第二档副标题的公共写法：逻辑魔方 postMessage 上报的选中（见下面 message
   // 监听里的 rubik-select 分支）与宇宙视图叶子点击共用同一句拼法，唯一的
   // 差别是前者能带上 rubik-cube 自己算好的层区间（L{lo}-L{hi}），宇宙视图
@@ -500,7 +502,7 @@
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
       + '<defs>'
       + '<radialGradient id="uCoreGrad" cx="40%" cy="35%" r="65%">'
-      + '<stop offset="0%" stop-color="#FFF6DD"/><stop offset="55%" stop-color="#E8C468"/><stop offset="100%" stop-color="#8A6A1E"/>'
+      + '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#C8C8C8"/><stop offset="100%" stop-color="#4A4A4A"/>'
       + '</radialGradient>'
       + '<filter id="uGlow" x="-200%" y="-200%" width="500%" height="500%">'
       + '<feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
@@ -588,10 +590,11 @@
     return g;
   }
   var LINK_LEVELS = ['板内', 'POD 内', '超节点内', '跨超节点'];
-  /* 8 个平面各一种颜色（直播第一页：L1/L2 按平面成 Clos，平面之间没有互联——
-     颜色就是「这颗 L1、这 4 颗 SW2、这根上联属于哪个平面」的标记）。 */
-  var PLANE_C = ['#4FA6E8', '#36E0C4', '#9D7BFF', '#F2B84B', '#FF5D8F', '#5FD3A5', '#F28B5B', '#C77DFF'];
-  var GC = { tp: '#36E0C4', cp: '#4FA6E8', ep: '#FF5D8F', dp: '#9D7BFF', pp: '#FFD54A' };
+  /* 8 个平面（直播第一页：L1/L2 按平面成 Clos，平面之间没有互联）只用 P1…P8 的
+     标签区分，不按平面着色——黑白规则。PLANE_C 留着做统一灰阶入口。 */
+  var PLANE_C = ['#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E'];
+  /* 五个通信组的描边只分灰阶：TP 白实线最粗、CP 浅灰、EP/DP 中灰、PP 白虚线。 */
+  var GC = { tp: '#FFFFFF', cp: '#B4B4B4', ep: '#7A7A7A', dp: '#7A7A7A', pp: '#E8E8E8' };
   function levelBetween(a, b) {
     var p = physOf(a), q = physOf(b);
     return p.sp !== q.sp ? 3 : p.pod !== q.pod ? 2 : p.board !== q.board ? 1 : 0;
