@@ -1251,6 +1251,33 @@ var PRESETS = [
        =256、mbs=1、上面假设的 dp=4 反推 gbs=mbs·ga·dp 得出，dp 本身是
        假设值，这一项跟着不确定）。 */
   {id:'moe718b128k', name:'MoE 718B(A39B)·128K序列 tp8·pp16·cp16·ep4', cfg:{world:8192, tp:8, cp:16, pp:16, ep:4, etp:1, layers:64, hidden:7680, heads:64, kv:64, ffn:19200, vocab:153376, seq:131072, experts:256, topk:8, mbs:1, ga:64, hbm:64}},
+  /* moe504b32k：同一个 pangu_sophon_pytorch 项目 config/llm/moe_504B_A18B/ 目录
+     里 32K 序列那档的真实读数（504B 总参/18B 激活），来自对该目录的第三轮
+     完整扫描——这一轮比 moe718b128k 那轮多了一条从项目代码里确认的公式：
+       data_parallel_size = world_size ÷ (TP×PP×CP)，EP 落在 DP 域内
+       （ep_over_sp），不进 world 主公式；
+     所以 world 不再是猜的：EP 必须整除 DP（本页 plane 校验与逻辑魔方的
+     EP|DP 约束都要求这一点），DP=EP=16 是最小合法值，world=4·8·8·16=4096
+     是"这组切分能成立的下限"，不是从一堆互相矛盾的候选里挑的。
+     real（accelerate.yaml / model yaml 直接读出）：tp=4、pp=8、cp=8
+       （ulysses_cp_size=8，纯 Ulysses，与本页 cp 语义一致）、ep=16、
+       mbs=1、seq=32K=32768、experts=384、hidden=5120、ffn=1792
+       （routed_expert_hidden_size，本页 ffn 在 MoE 下就是单个专家的 FFN
+       宽度——拿它算 384 个专家的总字节正好落在 5×10¹¹ 参这个量级，跟
+       "504B"对得上）、hbm=64（同项目同硬件，昇腾 910B 单卡 64GB）。
+     assumed（原文没给或本页模型接不住，按本页约束取的占位值）：
+       dp=16/world=4096——如上，是"满足 EP|DP 的最小值"，真实训练用了几倍
+       于此的 DP 原文没写，不替它编；
+       layers=48——原文 51 层，本页要求 layers%pp===0，51 除不尽 8，48 是
+       最近的合法值（每段 6 层）；
+       heads=40、kv=40——原文是 MLA（q_lora_rank/kv_lora_rank 那套），本页
+       不建模，按 hidden/headDim=128 估 40 头，kv 沿用同一个数，不代表有
+       GQA 分组；topk=8——这档的 yaml 没抄到 topk，沿用同项目 718B/74b
+       两档都是 8 的读数；vocab=153376——沿用同项目 pangu 预置的词表；
+       ga=32——32K 那档的 global_batch_size 原文没给（只有 4K=16128、
+       128K=512），这里借 128K 的 512 按 gbs=mbs·ga·dp 反推，dp 本身是
+       假设值，这一项跟着不确定。 */
+  {id:'moe504b32k', name:'MoE 504B(A18B)·32K序列 tp4·pp8·cp8·ep16', cfg:{world:4096, tp:4, cp:8, pp:8, ep:16, etp:1, layers:48, hidden:5120, heads:40, kv:40, ffn:1792, vocab:153376, seq:32768, experts:384, topk:8, mbs:1, ga:32, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 

@@ -3,12 +3,13 @@
    一屏就够清楚——64 张卡的 SVG 阵列不存在密度/性能问题，逻辑魔方那层
    "先看形状"的价值这时反而是多绕一圈）。按这条规则分两条路：
 
-   world ≤ 64：直接铺满并行拓扑矩阵本体的原页（不传 fastcard/mono/solo，
-     就是 rank-topology-3d 独立打开的样子），没有逻辑魔方、没有返回按钮、
-     没有三档——矩阵自己的"选中/取消选中"手势已经够用，不必再包一层。
+   world ≤ 64（只有 ?preset=dense64 会落到这条）：直接铺满并行拓扑矩阵本体
+     的原页（不传 fastcard/mono/solo，就是 rank-topology-3d 独立打开的样子），
+     没有逻辑魔方、没有返回按钮、没有三档——矩阵自己的"选中/取消选中"手势
+     已经够用，不必再包一层。
 
-   world > 64（?preset=pangu/moe718b128k/incident2048，非默认——见下面
-   「默认预置」那段注释，规模先收回到 64 卡，等交互形式定下来再考虑扩大）：
+   world > 64（默认 moe504b32k·4096 卡；?preset=pangu/moe718b128k/
+   incident2048 也走这条——见下面「默认预置」那段注释）：
    "无限画布"分三档取景，档位越往里，画得越少、看得越细：
      1 集群       —— 逻辑魔方铺满，没有选中任何卡。
      2 同组定位   —— 逻辑魔方里点一张方块，**留在逻辑魔方自己身上**：它自带
@@ -50,8 +51,10 @@
   var universeStage = document.getElementById('universeStage');
   var universeToggle = document.getElementById('universeToggle');
 
-  /* 两档预置，world = tp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
-     的 README 都确认过这个口径）。默认盘古 ProMoE，world=4000，走三档取景；
+  /* 预置表，world = tp×cp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
+     的 README 都确认过这个口径，pangu_sophon_pytorch 项目代码里的
+     data_parallel_size = world_size ÷ (TP×PP×CP) 也是同一条）。默认
+     moe504b32k，world=4096，走三档取景（见下面「默认预置」注释）；
      ?preset=dense64 是 demo.html 自己现成的 64 卡预置，用来验证"world ≤ 64
      直接显示矩阵原页"这条规则确实会触发，不是摆着不用的死分支。
      modelName：全部命名/面包屑的唯一来源——不编一个新名字，直接抄 demo.html
@@ -74,7 +77,15 @@
        必须显式给 cp，不然逻辑魔方按 cp=1 建模型，跟矩阵本体的四维结构
        对不上、rank 换算全错。世界卡数公式与 rubikParams/
        rubikSelToMatrixSel 里补的 cp 项，见下面对应位置的注释。 */
-    moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K序列' }
+    moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K序列' },
+    /* moe504b32k：demo.html 那份 PRESETS.moe504b32k 的桥接条目（同一个
+       pangu_sophon_pytorch 项目里 504B/18B 激活那档、32K 序列），tp/cp/pp/
+       dp/ep 逐位照抄那边的 cfg（world=4·8·8·16=4096）。dp=16 不是猜的：
+       项目代码里 data_parallel_size = world_size ÷ (TP×PP×CP)、EP 落在 DP
+       域内，EP 必须整除 DP，DP=EP=16 就是这组切分的最小合法值——比
+       moe718b128k 那档"从一堆矛盾候选里挑一个"扎实。字段来源分层（real/
+       assumed）见 demo.html 那条预置的注释，这里不重复第二份。 */
+    moe504b32k: { tp: 4, cp: 8, pp: 8, dp: 16, ep: 16, matrixPreset: 'moe504b32k', modelName: 'MoE 504B(A18B)·32K序列' }
   };
   /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
      原来选中之后不管第二档（留在逻辑魔方，选中卡与它所在的并行组）还是第三档
@@ -86,18 +97,21 @@
      选中卡摆进它所在的 TP/PP/DP 并行组里定个位，还没下钻到字节级详情，
      名字直说这件事，不再是简写。 */
   var TIER2_LABEL = '同组定位';
-  /* 默认预置：先后改过两次。第一次反馈「改这里的默认配置」，从 pangu
+  /* 默认预置：先后改过三次。第一次反馈「改这里的默认配置」，从 pangu
      （4000卡演示规格）换成 moe718b128k（pangu_sophon_pytorch 项目里体量
      最大的一档真实 MoE）；随后反馈"这个的rank数量太多了……回退一步回到
-     之前只用64个rank的时候，也就是并行拓扑本身的pattern的配置"+"等到
-     我们的形式确定之后再扩大rank的数量"——8192 卡（尤其宇宙视图一屏 16
-     段×9 叶子）密度已经压过"先把交互形式定下来"这个当下的目的，退回到
-     dense64（world=64，demo.html 自己现成的稠密预置，就是并行拓扑矩阵
-     本体自己那份配置，不是这一层另起的）。moe718b128k 不是删掉，只是不
-     再是默认——?preset=moe718b128k 仍旧可以直接打开看那档真实数据，形式
-     定下来之后再考虑要不要重新扩大默认规模。旧链接 ?preset=pangu/dense64/
-     incident2048/moe718b128k 都照样认得。 */
-  var PS = PRESETS[qs.get('preset')] || PRESETS.dense64;
+     之前只用64个rank的时候"+"等到我们的形式确定之后再扩大rank的数量"，
+     退回 dense64（world=64）；交互形式（三档取景、宇宙视图、故障复盘面板
+     直接摆在最外层、第二档浮卡原地升级）定下来之后，反馈"我还是想用超大
+     集群的数量，按照我之前给你提供的数据选择一个较大的集群数量和合适的
+     切分"——8192 那档被明确否掉（"太大太卡了"），incident2048 的 ep=64
+     也被质疑，最后按第三轮扫描出来的真实配置选了 moe504b32k：world=4096，
+     跟 pangu 同一个量级（两种第一档画法都验证过不卡），但每个数字都能对
+     到 config/llm/moe_504B_A18B/ 的 yaml 或从项目代码里的公式推出来，
+     不再是"演示规格"。dense64/pangu/moe718b128k/incident2048 都没删，
+     ?preset= 照样认得；dense64 现在是唯一一条会走 world ≤ 64 早退分支
+     （直接铺矩阵原页）的预置。 */
+  var PS = PRESETS[qs.get('preset')] || PRESETS.moe504b32k;
   /* world 公式补上 cp：原来只有 tp×pp×dp，pangu/dense64/incident2048 都是
      cp=1（省了这个乘数结果一样），moe718b128k 是第一个 cp>1（=16）的桥接
      预置，不补的话这里算出的卡数只有真实 world 的 1/16，逻辑魔方与矩阵
