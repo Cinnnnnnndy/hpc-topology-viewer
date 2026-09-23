@@ -66,6 +66,13 @@ L2 平面 / L1 交换 / POD / 板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段�
   两条线的值。
 - **设备各有各的形**：只有 NPU 是实心格（填充 = 占用率这份数据），CPU 是空心方框、DPU 是空心菱形、NIC 是四根端口短竖线，
   交换机是轮廓。放大到 3× 出列头（CPU / NPU · POD n / DPU / NIC）和板分隔线，6× 出每格的 rank 号。
+- **硬件图元取自 [hpc-topology-node](https://github.com/Cinnnnnnndy/hpc-topology-node)**：`hw-icons.js` 是那个库
+  `icon-defs.js`（commit 75ecf2a）的 2D 图标——NPU 昇腾封装、CPU 鲲鹏、NIC 擎天、UB 交换机——按深色默认态逐元素转成
+  `<symbol>`，本页用 `<use href="#hw-*">` 引用：集群层的 CPU / DPU / NIC / L1 / SW2、放大到 6× 时每格 NPU 的封装、板视图
+  每个部件框左侧的图标都是它。沿用该库的规则「形状即类型、灰度即结构」；两处带色相的色值按亮度换成等亮灰（交换面板
+  `#2e3d52` → `#3B3B3B`，黄铜螺丝 `#B8A06A` → `#A1A1A1`）。库里没有 DPU，`hw-dpu` 沿用 nic 卡的语言再加一颗大 ASIC。
+  NPU 格子的灰度仍是占用率数据：封装图标内缩，数据色留成外框与底部 rank 号那一条。重新生成：在 hpc-topology-node 的
+  checkout 里用一个假的 `createElement` 跑 `HWICONS.build(id, null, R, false)`，把结果包成 `<symbol viewBox="0 0 48 36">`。
 - 几何对象直边，主轮廓 1.5px，缩放时线宽不变（non-scaling-stroke 再除以画布缩放倍数）；小按钮 4px 圆角。
   不用渐变、玻璃、发光、阴影。rank 是正方形宫格（每板一行 8 格，POD 8×8）。
 - **选中**：白色边框套在格子外、中间留一圈底色缝，格子本身的灰度不动；左上侧一条短细引线 + 一行

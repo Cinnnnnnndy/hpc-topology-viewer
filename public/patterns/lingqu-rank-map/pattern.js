@@ -626,7 +626,7 @@
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
         panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
           + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
-        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" style="--pc:' + PLANE_C[pl] + '" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8"/>');
+        for (var q = 0; q < 4; q++) panels.push('<use class="p-sw2" href="#hw-sw" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 14) + '" width="' + (sw2w - 3) + '" height="10"/>');
         planeC.push({ x: px + planeW / 2, y: py + PLANEH });
       }
       var groups = Math.ceil(inSp / PHYS.group);
@@ -636,6 +636,7 @@
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
           panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
+          panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>');
           links.push('<line class="p-l2" style="--pc:' + PLANE_C[k] + '" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
         }
         if (g === 0) panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 ×8</text>');
@@ -660,10 +661,11 @@
             panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
             /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
                其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
-            panels.push('<rect class="p-cpu" x="' + (pdx + 5.3) + '" y="' + (ry - 2.2) + '" width="4.4" height="4.4"/>'
-              + '<rect class="p-cpu" x="' + (pdx + 11.3) + '" y="' + (ry - 2.2) + '" width="4.4" height="4.4"/>'
-              + '<rect class="p-dpu" x="' + (pdx + 99) + '" y="' + (ry - 2) + '" width="4" height="4" transform="rotate(45 ' + (pdx + 101) + ' ' + ry + ')"/>');
-            for (var ni = 0; ni < 4; ni++) panels.push('<line class="p-nic" x1="' + (pdx + 109.25 + ni * 4) + '" y1="' + (ry - 3) + '" x2="' + (pdx + 109.25 + ni * 4) + '" y2="' + (ry + 3) + '"/>');
+            // 图形直接用 hpc-topology-node 的 2D 图元（hw-icons.js 里的 <symbol>）：CPU 鲲鹏、DPU、NIC 擎天
+            panels.push('<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 4.6) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
+              + '<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
+              + '<use class="p-dpu" href="#hw-dpu" x="' + (pdx + 97.4) + '" y="' + (ry - 3) + '" width="8" height="6"/>');
+            for (var ni = 0; ni < 4; ni++) panels.push('<use class="p-nic" href="#hw-nic" x="' + (pdx + 107.2 + (ni % 2) * 6.8) + '" y="' + (ry - 3.4 + Math.floor(ni / 2) * 3.4) + '" width="6.4" height="3.2"/>');
             if (b > 0) panels.push('<line class="p-bdiv lod1" x1="' + (pdx + 3) + '" y1="' + (ry - ROWP / 2) + '" x2="' + (pdx + PODW - 3) + '" y2="' + (ry - ROWP / 2) + '"/>');
             for (var n = 0; n < 8; n++) {
               var r = pBase + b * 8 + n; if (r >= world) break;
@@ -671,7 +673,8 @@
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
                 + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>'
-                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 0.8) + '" text-anchor="middle">' + r + '</text>');
+                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 3.1) + '" text-anchor="middle">' + r + '</text>'
+                + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (pdx + 22 + n * PITCH + 1.7) + '" y="' + (ry - 2.9) + '" width="5.6" height="4.2"/>');
             }
           }
         }
@@ -769,9 +772,13 @@
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心
     var NPUY = 150, NPUH = 40, L1Y = 330, L1H = 24, L2Y = 430, L2H = 30, CPUY = 58;
     var bg = [], links = [], nodes = [], txt = [];
+    /* 部件框：左边一枚 hpc-topology-node 的 2D 图元（hw-icons.js），右边是名字 */
+    var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw' };
     function box(cls, cx, y, w, h, label, title, attrs) {
-      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'
-        + '<text x="' + cx + '" y="' + (y + h / 2 + 3.5) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
+      var ic = BOX_ICON[cls], ih = h - 6, iw = ih * 4 / 3, x0 = cx - w / 2;
+      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + x0 + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'
+        + (ic ? '<use href="#' + ic + '" x="' + (x0 + 3) + '" y="' + (y + 3) + '" width="' + iw + '" height="' + ih + '"/>' : '')
+        + '<text x="' + (ic ? x0 + 3 + iw + (w - 3 - iw) / 2 : cx) + '" y="' + (y + h / 2 + 3.5) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
     }
     // 参数面 RoCE 总线（顶）：NIC 与 DPU 都从这儿出框
     links.push('<line class="b-roce b-bus" x1="60" y1="22" x2="900" y2="22"/>');
@@ -781,7 +788,7 @@
     links.push('<line class="b-roce" x1="72" y1="22" x2="72" y2="' + CPUY + '"/>');
     for (var k = 0; k < 4; k++) {
       var nx = (NX(2 * k) + NX(2 * k + 1)) / 2;
-      box('b-nic', nx, CPUY + 2, 44, 20, 'NIC' + k, 'NIC' + k + ' · 1 口 UB 挂 NPU' + (2 * k) + '/NPU' + (2 * k + 1) + ' · RoCE 出框', ' data-nic="' + k + '"');
+      box('b-nic', nx, CPUY + 1, 58, 22, 'NIC' + k, 'NIC' + k + ' · 1 口 UB 挂 NPU' + (2 * k) + '/NPU' + (2 * k + 1) + ' · RoCE 出框', ' data-nic="' + k + '"');
       links.push('<line class="b-roce" x1="' + nx + '" y1="22" x2="' + nx + '" y2="' + (CPUY + 2) + '"/>');
       [2 * k, 2 * k + 1].forEach(function (i) {
         links.push('<line class="b-nicl" data-n="' + i + '" x1="' + nx + '" y1="' + (CPUY + 22) + '" x2="' + NX(i) + '" y2="' + NPUY + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></line>');
@@ -807,7 +814,8 @@
     for (var i = 0; i < 8; i++) {
       var r = base + i; if (r >= world) break;
       nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
-        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 17) + '" text-anchor="middle">' + r + '</text><text class="b-npur" x="' + NX(i) + '" y="' + (NPUY + 31) + '" text-anchor="middle">npu' + i + '</text></g>');
+        + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 29) + '" y="' + (NPUY + 9.5) + '" width="28" height="21"/>'
+        + '<text class="b-npul" x="' + (NX(i) + 15) + '" y="' + (NPUY + 18) + '" text-anchor="middle">' + r + '</text><text class="b-npur" x="' + (NX(i) + 15) + '" y="' + (NPUY + 31) + '" text-anchor="middle">npu' + i + '</text></g>');
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
         links.push('<path class="b-mesh" d="M' + NX(i) + ',' + NPUY + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (NPUY - off) + ' ' + NX(j) + ',' + NPUY + '"/>');
@@ -822,7 +830,7 @@
     txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (L1Y - 8) + '" text-anchor="middle">Clos 8×X4</text>');
     // L1 行（每平面一颗）→ 本平面 4×SW2（L2）
     for (var k3 = 0; k3 < 8; k3++) {
-      box('b-l1', NX(k3), L1Y, 64, L1H, 'L1 · P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"');
+      box('b-l1', NX(k3), L1Y, 64, L1H, 'P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"');
       bg.push('<rect class="b-plane" style="--pc:' + PLANE_C[k3] + '" x="' + (NX(k3) - 32) + '" y="' + L2Y + '" width="64" height="' + L2H + '"><title>L2 · 平面 ' + (k3 + 1) + ' · 4×SW2 · 与本平面每颗 L1 成 Clos</title></rect>');
       for (var q = 0; q < 4; q++) {
         var qx = NX(k3) - 24 + q * 16;
