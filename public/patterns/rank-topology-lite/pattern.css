@@ -308,3 +308,10 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .u-core { fill: #1E1E1E; stroke: #E8E8E8; stroke-width: calc(1.5px / var(--zk, 1)); }
 .u-corelabel { font-size: 16px; font-weight: 500; fill: #E8E8E8; }
 .u-coresub { font-size: 11px; fill: #A0A0A0; }
+
+/* ZeRO 档位切换：左列图例下面一行小分段按钮 */
+.lc-zero { display: flex; align-items: center; gap: 2px; margin-top: 10px; font-size: 10px; color: #5C5C5C; }
+.lc-zero button { font: inherit; font-size: 10px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; width: 20px; height: 18px; padding: 0; cursor: pointer; }
+.lc-zero button:first-of-type { margin-left: 6px; }
+.lc-zero button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.lc-zero button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }

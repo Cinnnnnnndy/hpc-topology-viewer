@@ -80,7 +80,7 @@
        域内，EP 必须整除 DP，DP=EP=16 就是这组切分的最小合法值——比
        moe718b128k 那档"从一堆矛盾候选里挑一个"扎实。字段来源分层（real/
        assumed）见 demo.html 那条预置的注释，这里不重复第二份。 */
-    moe504b32k: { tp: 4, cp: 8, pp: 8, dp: 16, ep: 16, matrixPreset: 'moe504b32k', modelName: 'MoE 504B(A18B)·32K序列' }
+    moe504b32k: { tp: 4, cp: 8, pp: 8, dp: 16, ep: 16, matrixPreset: 'moe504b32k', zero: 1, modelName: 'MoE 504B(A18B)·32K序列' }
   };
   /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
      原来选中之后不管第二档（留在逻辑魔方，选中卡与它所在的并行组）还是第三档
@@ -107,6 +107,11 @@
      ?preset= 照样认得；dense64 现在是唯一一条会走 world ≤ 64 早退分支
      （直接铺矩阵原页）的预置。 */
   var PS = PRESETS[qs.get('preset')] || PRESETS.moe504b32k;
+  /* 优化器切分档位（ZeRO 0–3），传给矩阵本体的 ?zero=，它的显存估算按这一档切模型态。
+     moe504b32k 默认 1（分布式优化器：优化器状态沿 DP 切 16 份）——Megatron 系训练大 MoE
+     的常规做法，64 GB 卡上能跑也要求如此；但 504B 那份 yaml 不在本仓库，未逐字核对，
+     是假设。不切（0）时 4096 张卡里 3959 张顶出 64 GB，左列可切回去对比。 */
+  var ZERO = (function () { var z = parseInt(qs.get('zero'), 10); return isFinite(z) && z >= 0 && z <= 3 ? z : (PS.zero || 0); })();
   /* world 公式补上 cp：原来只有 tp×pp×dp，pangu/dense64/incident2048 都是
      cp=1（省了这个乘数结果一样），moe718b128k 是第一个 cp>1（=16）的桥接
      预置，不补的话这里算出的卡数只有真实 world 的 1/16，逻辑魔方与矩阵
@@ -989,10 +994,14 @@
       + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
       + '<svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
-      + lg;
+      + lg
+      + '<div class="lc-zero" title="优化器切分：0 = 不切，1 = 分布式优化器（优化器状态按 DP 切），2 = 再切梯度，3 = 再切权重。本预置默认 1 为假设">zero'
+      + [0, 1, 2, 3].map(function (z) { return '<button type="button" data-zero="' + z + '"' + (z === ZERO ? ' class="is-on"' : '') + '>' + z + '</button>'; }).join('') + '</div>';
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
+    var zb = ev.target.closest('[data-zero]');
+    if (zb) { setZero(+zb.getAttribute('data-zero')); return; }
     var b = ev.target.closest('.pb'); if (!b) return;
     goSegment(+b.getAttribute('data-pp'));
   });
@@ -1022,6 +1031,21 @@
     if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
     renderLeftCard(); renderCrumb();
   }
+  /* 换 ZeRO 档：URL 跟着改（URL 即状态），矩阵重算一遍——单卡层直接重载那一屏；
+     其余层借一次 ?brief=1（带 sel 时同一次回信里也有集群聚合），回信到了格子、柱、
+     角标、右列都按新口径重画。 */
+  var clusterStale = false;
+  function setZero(z) {
+    if (z === ZERO) return;
+    ZERO = z; lastBrief = null; ppPeak = null;
+    var u = new URLSearchParams(location.search);
+    if (z === (PS.zero || 0)) u.delete('zero'); else u.set('zero', String(z));
+    history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u.toString() : '') + location.hash);
+    if (tier === 3) { clusterStale = true; matrixFrame.src = matrixSrcFor(curSel); }
+    else if (curSel != null) requestTier2Brief(curSel);
+    else requestClusterBrief();
+    renderLeftCard();
+  }
   function focusSegment(k) {
     focusPP = k;
     focusHub(k);
@@ -1041,9 +1065,12 @@
   // src 换成真正的详情页——两次导航互不冲突，只是多一次不可见的加载。
   var lastCluster = null, lastBrief = null;
   (function () {
-    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1' });
-    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+    requestClusterBrief();
   })();
+  function requestClusterBrief() {
+    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1', zero: String(ZERO) });
+    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+  }
   /* 聚合结果进右卡的第一档内容（原来是左上角一颗角标，现在三张卡的位置固定，
      集群容量就是右卡在没选中任何卡时该说的那句话）。 */
   function renderClusterBadge(brief) {
@@ -1052,7 +1079,7 @@
     oomSet = {};
     (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();
-    if (tier === 1) renderRightIdle();
+    if (tier === 1) renderRightIdle(); else if (curSel != null) showRankBadge(curSel);
   }
   /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
      不给 PP 段用（段的颜色只留在左卡的段按钮与宇宙视图的 hub 上）。 */
@@ -1061,8 +1088,9 @@
   var oomSet = null;
   function capClass(r) {
     var R = lastCluster && lastCluster.ratio ? lastCluster.ratio[r] : null;
-    if (R == null) return oomSet && oomSet[r] ? 'c3' : '';
-    return R > 1 ? 'c3' : R >= lastCluster.red ? 'c2' : R >= lastCluster.amber ? 'c1' : 'c0';
+    if (oomSet && oomSet[r]) return 'c3';   // 超容以矩阵本体的判定为准（它还算优化器步临时区），与角标同一个数
+    if (R == null) return '';
+    return R >= lastCluster.red ? 'c2' : R >= lastCluster.amber ? 'c1' : 'c0';
   }
   function applyAlerts() {
     if (!oomSet) return;
@@ -1100,7 +1128,7 @@
   // 渲染的换成矩阵渲染的，字面上一个字不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, fastcard: '1', solo: '1', memcards: '0',
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
@@ -1121,7 +1149,7 @@
      成真数据——这一步不换档，读者仍在第二档，"下钻"按钮还在，点了才真的
      飞到矩阵那一屏（solo）。 */
   function requestTier2Brief(matrixSel) {
-    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1', sel: String(matrixSel) });
+    var bp = new URLSearchParams({ embed: '1', preset: PS.matrixPreset, brief: '1', zero: String(ZERO), sel: String(matrixSel) });
     matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
   }
 
@@ -1160,6 +1188,7 @@
      由 showDetail 自己切矩阵。两张 SVG 舞台都受同一套选中/聚焦状态驱动。 */
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
+    if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
     if (level === 'segment') renderUniverse(); else if (level === 'board') renderBoard(curBoard); else renderPhys();
     universeStage.classList.toggle('is-hidden', level !== 'segment');
     boardStage.classList.toggle('is-hidden', level !== 'board');
