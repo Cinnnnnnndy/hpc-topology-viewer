@@ -4,8 +4,8 @@
    · 代码字体（等宽）贯穿全页；文字只留名称、数值与短键，解释进 hover。
    · 只用中性灰，所有颜色 R＝G＝B——例外只有告警：超容格、告警角标、故障链严重度用红/琥珀。背景 #111111，表面 #131313–#282828，主文字
      #E8E8E8，次文字 #A0A0A0；纯白 #FFFFFF 只给当前选中对象的边框与关键高亮。
-   · 数据灰度 = 占用率（合计 / HBM），全页同一把尺：c0 #2E2E2E < 70% ≤ c1 #5C5C5C
-     < 88% ≤ c2 #9A9A9A ≤ 100% < c3 #E8E8E8。越满越亮。
+   · 数据灰度 = 占用率（合计 / HBM），全页同一把尺：c0 #4A4A4A < 70% ≤ c1 #808080
+     < 88% ≤ c2 #BDBDBD ≤ 100% < c3 告警红。越满越亮。
    · 几何对象直边，主轮廓 1.5px；小按钮/切换 4–5px 圆角。不用渐变、玻璃、发光、
      厚阴影。层次靠轮廓、留白、遮挡与灰度。
    · Inter / 同类无衬线，字重 400–500，标题 24px，正文与控件 12–13px，数字等宽。
@@ -32,6 +32,8 @@ b, strong { font-weight: 500; }
 }
 .stage-frame.is-hidden { opacity: 0; pointer-events: none; }
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
+/* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
+.drawer[data-panel="swimlane"] iframe { filter: none; }
 
 /* ── 边缘文字列：左 = 标题 + 规模 + PP 段柱状选择器 + 图例；右 = 选中 rank 的
    读数。不套卡片（无底、无框），主可视区裁在自己的矩形里，所以不会压到它们。 */
@@ -46,7 +48,7 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .side-right { right: 24px; }
 .lc-title { margin: 0 0 8px; white-space: nowrap; font-size: 18px; line-height: 1.25; font-weight: 500; color: #E8E8E8; letter-spacing: -.03em; }
 .lc-sub { color: #A0A0A0; font-size: 11px; line-height: 1.7; }
-.lc-k, .brief-k { margin-top: 14px; margin-bottom: 4px; font-size: 10px; color: #5C5C5C; letter-spacing: .04em; }
+.lc-k, .brief-k { margin-top: 14px; margin-bottom: 4px; font-size: 10px; color: #8A8A8A; letter-spacing: .04em; }
 .tag { display: none; font-style: normal; font-size: 11px; color: #A0A0A0; border: 1.5px solid #282828; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
 .gc { display: none; }
 
@@ -58,7 +60,7 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .pb.is-on .pb-bar { stroke: #FFFFFF; stroke-width: 1.5; }
 .pb:hover .pb-bar { stroke: #A0A0A0; stroke-width: 1.5; }
 .pb.is-on:hover .pb-bar { stroke: #FFFFFF; }
-.pb-num { font-size: 9px; fill: #5C5C5C; }
+.pb-num { font-size: 9px; fill: #8A8A8A; }
 .pb.is-on .pb-num { fill: #FFFFFF; }
 .pb-val { font-size: 10px; fill: #FFFFFF; }
 .pb-base { stroke: #3A3A3A; stroke-width: 1; }
@@ -66,22 +68,22 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .c-none { fill: #282828; }
 
 /* 灰度图例（占用率） */
-.lc-legend { position: relative; display: grid; grid-template-columns: repeat(4, 22px); gap: 2px; margin-top: 12px; padding-bottom: 14px; font-size: 9px; color: #5C5C5C; }
+.lc-legend { position: relative; display: grid; grid-template-columns: repeat(4, 22px); gap: 2px; margin-top: 12px; padding-bottom: 14px; font-size: 9px; color: #8A8A8A; }
 .lc-legend span { position: absolute; top: 9px; transform: translateX(-50%); }
 .lc-legend span:nth-of-type(1) { left: 23px; } .lc-legend span:nth-of-type(2) { left: 47px; } .lc-legend span:nth-of-type(3) { left: 71px; }
 .lg { display: block; width: 22px; height: 6px; }
 
 /* 统一的四档灰度：画布格子、宇宙叶子、板上 NPU、柱、图例共用 */
-.c0 { fill: #2E2E2E; background: #2E2E2E; }
-.c1 { fill: #5C5C5C; background: #5C5C5C; }
-.c2 { fill: #9A9A9A; background: #9A9A9A; }
+.c0 { fill: #4A4A4A; background: #4A4A4A; }
+.c1 { fill: #808080; background: #808080; }
+.c2 { fill: #BDBDBD; background: #BDBDBD; }
 .c3 { fill: var(--alert); background: var(--alert); }   /* 超容 = 告警，唯一用色 */
 
 /* 右列：rank 读数 */
 .brief-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: #E8E8E8; margin-bottom: 2px; }
 .brief-badge { font-size: 10px; font-weight: 500; color: #A0A0A0; border: 1px solid #282828; border-radius: 3px; padding: 0 5px; }
 .brief-badge.is-alert { color: #FFFFFF; background: var(--alert); border-color: var(--alert); }
-.brief-sub { color: #5C5C5C; font-size: 11px; margin-bottom: 6px; }
+.brief-sub { color: #8A8A8A; font-size: 11px; margin-bottom: 6px; }
 .brief-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; line-height: 1.75; }
 .brief-row span { color: #A0A0A0; }
 .brief-row b { color: #E8E8E8; font-weight: 400; }
@@ -93,7 +95,7 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
   background: transparent; color: #A0A0A0; border: 1px solid #282828; border-radius: 3px;
   font: inherit; font-size: 11px; padding: 3px 8px; text-align: left; cursor: pointer;
 }
-.brief-cta:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.brief-cta:hover { color: #FFFFFF; border-color: #8A8A8A; }
 
 /* ── 面包屑：顶部居中，纯文字 */
 .topbar {
@@ -103,7 +105,7 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 }
 .topbar.is-hidden { opacity: 0; pointer-events: none; }
 .crumb { display: flex; align-items: center; gap: 4px; color: #A0A0A0; white-space: nowrap; }
-.crumb i { font-style: normal; color: #5C5C5C; }
+.crumb i { font-style: normal; color: #8A8A8A; }
 .crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 1.5px solid transparent; padding: 1px 6px; cursor: pointer; border-radius: 4px; }
 .crumb .cr:hover { color: #E8E8E8; border-color: #282828; }
 .crumb .cr.is-cur { color: #E8E8E8; cursor: default; }
@@ -152,19 +154,31 @@ body.t3 .ip-col-right { top: calc(104px + var(--rc-h, 160px) + 20px); }
   background: #131313; border: 1.5px solid #282828;
   transition: opacity .15s ease;
 }
-.drawer.at-left { left: 24px; top: 64px; bottom: 64px; width: 40vw; min-width: 420px; }
-.drawer.at-right { right: 24px; top: 64px; bottom: 64px; width: 40vw; min-width: 420px; }
-.drawer.at-bottom { left: 24px; right: 24px; bottom: 18px; height: 36vh; min-height: 260px; }
+.drawer.at-left { left: 24px; top: 64px; bottom: 64px; width: var(--ps-w, 40vw); }
+.drawer.at-right { right: 24px; top: 64px; bottom: 64px; width: var(--ps-w, 40vw); }
+.drawer.at-bottom { left: 24px; right: 24px; bottom: 18px; height: var(--pb-h, 36vh); }
 .drawer.is-hidden { opacity: 0; pointer-events: none; }
+/* 拖动条：泳道的上沿调高度，左右面板的内沿调宽度；拖动时 iframe 不吃指针，免得半路被它截走 */
+.drawer-grip { position: absolute; z-index: 2; background: transparent; }
+.drawer-grip::after { content: ''; position: absolute; background: #3A3A3A; border-radius: 1px; transition: background .15s ease; }
+.drawer-grip:hover::after, body.is-resizing .drawer-grip::after { background: #E8E8E8; }
+.drawer.at-bottom .drawer-grip { left: 0; right: 0; top: 0; height: 8px; cursor: ns-resize; }
+.drawer.at-bottom .drawer-grip::after { left: 50%; top: 3px; width: 32px; height: 2px; transform: translateX(-50%); }
+.drawer.at-left .drawer-grip { top: 0; bottom: 0; right: 0; width: 8px; cursor: ew-resize; }
+.drawer.at-right .drawer-grip { top: 0; bottom: 0; left: 0; width: 8px; cursor: ew-resize; }
+.drawer.at-left .drawer-grip::after, .drawer.at-right .drawer-grip::after { top: 50%; left: 3px; width: 2px; height: 32px; transform: translateY(-50%); }
+body.is-resizing, body.is-resizing * { user-select: none; }
+body.is-resizing iframe { pointer-events: none; }
+body.is-resizing .zp-box, body.is-resizing .dock, body.is-resizing .ip-col { transition: none; }
 .drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; color: #E8E8E8; border-bottom: 1.5px solid #282828; }
 .drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; border-radius: 4px; cursor: pointer; padding: 0 6px; }
 .drawer-hd button:hover { color: #E8E8E8; background: #1E1E1E; }
 .drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }
-body.panel-bottom { --pb: calc(36vh + 10px); }
+body.panel-bottom { --pb: calc(var(--pb-h, 36vh) + 10px); }
 body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
 body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
-body.panel-left .zp-box { left: calc(40vw + 48px); }
-body.panel-right .zp-box { right: calc(40vw + 48px); }
+body.panel-left .zp-box { left: calc(var(--ps-w, 40vw) + 48px); }
+body.panel-right .zp-box { right: calc(var(--ps-w, 40vw) + 48px); }
 body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 
 /* ── 主可视区：裁在自己的矩形里，四周留白给边缘的文字与导航 */
@@ -192,34 +206,43 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 
 /* ── 集群层：灵衢物理拓扑。结构件只用表面灰 + 1.5px 轮廓，数据（NPU 格）用四档
    占用率灰度；链路只分线型：实线 UB、虚线 RoCE、粗虚 UBoE。 */
-.p-sp { fill: #131313; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; }
+.p-sp { fill: #151515; stroke: #444444; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; }
 .p-sp.is-on { stroke: #5C5C5C; }
-.p-splabel { font-size: 11px; fill: #A0A0A0; }
-.p-plane { fill: #1A1A1A; stroke: #282828; stroke-width: calc(1px / var(--zk, 1)); }
+.p-splabel { font-size: 11px; fill: #E8E8E8; }
+.p-plane { fill: #1C1C1C; stroke: #3A3A3A; stroke-width: calc(1px / var(--zk, 1)); }
 .p-planelabel { font-size: 8px; fill: #A0A0A0; }
-.p-sw2 { fill: #5C5C5C; }
-.p-sw1 { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(.8px / var(--zk, 1)); }
+.p-sw2 { fill: #8A8A8A; }
+.p-sw1 { fill: #222222; stroke: #808080; stroke-width: calc(.8px / var(--zk, 1)); }
 .p-sw1label { font-size: 8px; fill: #A0A0A0; }
-.p-pod { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; cursor: zoom-in; }
+.p-pod { fill: #181818; stroke: #3E3E3E; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; cursor: zoom-in; }
 .p-pod:hover { stroke: #5C5C5C; }
 .p-pod.is-on { stroke: #A0A0A0; }
 .p-pod.is-fit { stroke: #5C5C5C; }
 .p-board { fill: transparent; cursor: pointer; }
 .p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #202020; }
-.p-l2 { stroke: #5C5C5C; stroke-opacity: .5; stroke-width: calc(.6px / var(--zk, 1)); fill: none; }
-.p-l1 { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.p-l2 { stroke: #808080; stroke-opacity: .45; stroke-width: calc(.6px / var(--zk, 1)); fill: none; }
+.p-l1 { stroke: #808080; stroke-width: calc(1px / var(--zk, 1)); }
 .p-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 4; fill: none; }
 .p-uboelabel { font-size: 10px; fill: #A0A0A0; }
-.p-cpu { fill: #3A3A3A; }
-.p-dpu { fill: #3A3A3A; stroke: #5C5C5C; stroke-width: calc(.6px / var(--zk, 1)); }
-.p-nic { fill: #3A3A3A; }
-.p-roce { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.p-cpu { fill: none; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); }
+.p-dpu { fill: none; stroke: #E8E8E8; stroke-width: calc(1px / var(--zk, 1)); }
+.p-nic { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
+.p-bdiv { stroke: #262626; stroke-width: calc(1px / var(--zk, 1)); }
+/* 细节随缩放出现：lod1（≥3×）出列头与板分隔，lod2（≥6×）出每格的 rank 号 */
+.lod1, .lod2 { display: none; }
+svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
+.p-colhd text { font-size: 2.6px; fill: #8A8A8A; letter-spacing: .02em; }
+.p-npunum { font-size: 2.2px; fill: #E8E8E8; pointer-events: none; }
+.p-npu.c2 + .p-npunum { fill: #111111; }
+.p-npu.is-dim + .p-npunum { opacity: .3; }
+.p-npu.is-sel + .p-npunum { fill: #FFFFFF; font-weight: 500; }
+.p-roce { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
 .p-rocelabel { font-size: 8px; fill: #A0A0A0; }
 
 /* rank 格：正方形宫格，灰度 = 占用率；选中 = 纯白边框（不改它自己的灰度）；
    通信组成员保持原灰度、其余压暗，组别靠描边线型分 */
 .p-npu { cursor: pointer; transition: opacity .15s ease; }
-.p-npu.is-dim { opacity: .14; }
+.p-npu.is-dim { opacity: .22; }
 .p-npu.is-sel { stroke: none; }
 .p-npu.g-tp { stroke: #FFFFFF; stroke-width: calc(1px / var(--zk, 1)); }
 .p-npu.g-cp { stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); }
@@ -227,11 +250,11 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .p-npu.g-pp { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
 
 /* ── 板层：一块板的 Server 形态 */
-.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #222222; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); }
 .b-cpu text, .b-dpu text, .b-nic text, .b-l1 text { font-size: 10px; fill: #E8E8E8; }
 .b-nic text, .b-l1 text { font-size: 10px; }
 .b-plane { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); }
-.b-sw2 { fill: #5C5C5C; }
+.b-sw2 { fill: #8A8A8A; }
 .p-bnpu { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); }
 .p-bnpu.is-sel { stroke: #111111; }
 .b-npul { font-size: 11px; fill: #E8E8E8; }
@@ -241,14 +264,14 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .p-bnpu.c3 ~ .b-npul, .p-bnpu.c3 ~ .b-npur { fill: #FFFFFF; }
 .b-lbl { font-size: 9px; fill: #A0A0A0; paint-order: stroke; stroke: #111111; stroke-width: calc(3px / var(--zk, 1)); stroke-linejoin: round; }
 .b-lbl-plane { fill: #A0A0A0; }
-.b-mesh { fill: none; stroke: #A0A0A0; stroke-opacity: .3; stroke-width: calc(.8px / var(--zk, 1)); }
-.b-fan { stroke: #5C5C5C; stroke-opacity: .6; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
+.b-mesh { fill: none; stroke: #C8C8C8; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan { stroke: #8A8A8A; stroke-opacity: .5; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
 .b-h2d, .b-nicl { stroke: #A0A0A0; stroke-opacity: .6; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
-.b-roce { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.b-roce { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
 .b-pcie { fill: none; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1 3; }
-.b-ub { fill: none; stroke: #5C5C5C; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 3; }
+.b-ub { fill: none; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 3; }
 .b-cpul { fill: none; stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
-.b-l12 { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.b-l12 { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); }
 .b-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 8 4; }
 .b-bus { stroke-width: calc(1.5px / var(--zk, 1)); }
 .b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.5px / var(--zk, 1)); }
@@ -274,7 +297,7 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .ip-prob.is-on { border-top-color: #FFFFFF; }
 .ip-chain { position: relative; padding-left: 14px; display: none; }
 .ip-col.is-open .ip-chain { display: block; }
-.ip-chain::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: #3A3A3A; }
+.ip-chain::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: #5A5A5A; }
 .ip-ev { position: relative; padding: 5px 0 7px; }
 .ip-ev::before { content: ''; position: absolute; left: -14px; top: 9px; width: 7px; height: 7px; background: var(--ip-sevc); }
 .ip-ev.is-root::before { outline: 1px solid var(--ip-sevc); outline-offset: 1.5px; }
@@ -285,15 +308,15 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
   font: inherit; font-size: 11px; color: #E8E8E8;
   background: #131313; border: 1.5px solid #282828; border-radius: 4px; padding: 0 6px; cursor: pointer;
 }
-.ip-drill:hover { border-color: #5C5C5C; }
+.ip-drill:hover { border-color: #8A8A8A; }
 .ip-ms { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; }
 .ip-m { font-size: 10px; font-weight: 400; color: #E8E8E8; white-space: nowrap; }
 .ip-m em { font-style: normal; font-weight: 400; color: #A0A0A0; margin-right: 4px; }
 .ip-m::before { content: ''; display: inline-block; width: 5px; height: 5px; background: var(--ip-sevc); margin-right: 5px; vertical-align: 1px; }
 
 /* ── 段层：宇宙视图。中心 = 模型，一圈 = PP 段，叶子 = 该段全部 rank（灰度 = 占用率）。 */
-.u-ray, .u-thread { stroke: #3A3A3A; stroke-width: calc(1px / var(--zk, 1)); fill: none; transition: opacity .15s ease; }
-.u-thread { stroke: #282828; }
+.u-ray, .u-thread { stroke: #5A5A5A; stroke-width: calc(1px / var(--zk, 1)); fill: none; transition: opacity .15s ease; }
+.u-thread { stroke: #3E3E3E; }
 .u-ray.is-sub { stroke: #3A3A3A; }
 .u-ray.is-dim, .u-thread.is-dim { opacity: .15; }
 .u-hub { cursor: pointer; }
@@ -310,8 +333,8 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .u-coresub { font-size: 11px; fill: #A0A0A0; }
 
 /* ZeRO 档位切换：左列图例下面一行小分段按钮 */
-.lc-zero { display: flex; align-items: center; gap: 2px; margin-top: 10px; font-size: 10px; color: #5C5C5C; }
+.lc-zero { display: flex; align-items: center; gap: 2px; margin-top: 10px; font-size: 10px; color: #8A8A8A; }
 .lc-zero button { font: inherit; font-size: 10px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; width: 20px; height: 18px; padding: 0; cursor: pointer; }
 .lc-zero button:first-of-type { margin-left: 6px; }
-.lc-zero button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.lc-zero button:hover { color: #FFFFFF; border-color: #8A8A8A; }
 .lc-zero button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }

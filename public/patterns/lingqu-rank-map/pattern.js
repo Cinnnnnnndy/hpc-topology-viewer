@@ -650,19 +650,28 @@
           });
           links.push('<line class="p-roce" x1="' + (pdx + 115) + '" y1="' + (gy - 3) + '" x2="' + (pdx + 115) + '" y2="' + pdy + '"/>');
           if (g === 0 && pd === 0) panels.push('<text class="p-rocelabel" x="' + (pdx + 119) + '" y="' + (gy - 4) + '">RoCE</text>');
+          panels.push('<g class="lod1 p-colhd">'
+            + '<text x="' + (pdx + 10.5) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">CPU</text>'
+            + '<text x="' + (pdx + 58) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NPU · POD ' + podIdx + '</text>'
+            + '<text x="' + (pdx + 101) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">DPU</text>'
+            + '<text x="' + (pdx + 115) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NIC</text></g>');
           for (var b = 0; b < 8; b++) {
             var ry = pdy + 6 + b * ROWP + ROWP / 2, bIdx = Math.floor(pBase / PHYS.board) + b;
             panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
-            panels.push('<rect class="p-cpu" x="' + (pdx + 5) + '" y="' + (ry - 2.5) + '" width="5" height="5"/>'
-              + '<rect class="p-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.5) + '" width="5" height="5"/>'
-              + '<rect class="p-dpu" x="' + (pdx + 98) + '" y="' + (ry - 3) + '" width="6" height="6"/>');
-            for (var ni = 0; ni < 4; ni++) panels.push('<rect class="p-nic" x="' + (pdx + 108 + ni * 4) + '" y="' + (ry - 3) + '" width="2.5" height="6"/>');
+            /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
+               其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
+            panels.push('<rect class="p-cpu" x="' + (pdx + 5.3) + '" y="' + (ry - 2.2) + '" width="4.4" height="4.4"/>'
+              + '<rect class="p-cpu" x="' + (pdx + 11.3) + '" y="' + (ry - 2.2) + '" width="4.4" height="4.4"/>'
+              + '<rect class="p-dpu" x="' + (pdx + 99) + '" y="' + (ry - 2) + '" width="4" height="4" transform="rotate(45 ' + (pdx + 101) + ' ' + ry + ')"/>');
+            for (var ni = 0; ni < 4; ni++) panels.push('<line class="p-nic" x1="' + (pdx + 109.25 + ni * 4) + '" y1="' + (ry - 3) + '" x2="' + (pdx + 109.25 + ni * 4) + '" y2="' + (ry + 3) + '"/>');
+            if (b > 0) panels.push('<line class="p-bdiv lod1" x1="' + (pdx + 3) + '" y1="' + (ry - ROWP / 2) + '" x2="' + (pdx + PODW - 3) + '" y2="' + (ry - ROWP / 2) + '"/>');
             for (var n = 0; n < 8; n++) {
               var r = pBase + b * 8 + n; if (r >= world) break;
               var c = coordOfRank(r);
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
-                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>');
+                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>'
+                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 0.8) + '" text-anchor="middle">' + r + '</text>');
             }
           }
         }
@@ -860,7 +869,7 @@
       if (!b) return stage.getBoundingClientRect();
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
-    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); placeSelLabel(); }
+    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); placeSelLabel(); }
     st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
     st.zoomAt = function (f, px, py) {
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
@@ -914,7 +923,9 @@
      画布挤过去：泳道图在下方（一条横向的时间轴，天然横着放），整网图在右侧，
      逻辑魔方在左侧。哪一边开着，那一边的悬浮卡/链路就让位（CSS 按 body 上的
      panel-* 类收起），.zp-box 的内边距同步收缩，画布始终完整可见、不被压。 */
-  var DRAWER_POS = { netgraph: 'right', swimlane: 'bottom', rubik: 'left' };
+  var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'left' };
+  /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
+  var PANEL_H0 = { swimlane: 272, netgraph: 0.46 };
   var drawerOpen = null;
   function openDrawer(key) {
     ['at-left', 'at-right', 'at-bottom'].forEach(function (c) { drawer.classList.remove(c); });
@@ -926,12 +937,56 @@
       var src = DRAWERS[key].src();
       if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src;
       drawer.classList.add('at-' + DRAWER_POS[key]); document.body.classList.add('panel-' + DRAWER_POS[key]);
+      applyPanelHeight();
+      drawer.setAttribute('data-panel', key);
       drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
     syncCardHeights();
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
+  /* 面板尺寸可拖：泳道（下方）拖上沿改高度，整网图/魔方（左右）拖内沿改宽度。尺寸写成
+     根元素上的 --pb-h / --ps-w，画布可视区、工具条、两条链都跟着这两个变量让位；
+     记在本机（localStorage，读不到就用默认），双击拖动条复位。 */
+  var drawerGrip = document.getElementById('drawerGrip'), rootStyle = document.documentElement.style;
+  function panelKey(k) { return 'rtl.panel.' + (k === 'h' ? 'h.' + drawerOpen : 'w'); }
+  function setPanelSize(k, px, noSave) {
+    if (k === 'h') px = Math.max(140, Math.min(window.innerHeight - 200, px));
+    else px = Math.max(320, Math.min(window.innerWidth - 480, px));
+    rootStyle.setProperty(k === 'h' ? '--pb-h' : '--ps-w', px + 'px');
+    if (!noSave) try { localStorage.setItem(panelKey(k), String(Math.round(px))); } catch (e) {}
+  }
+  /* 打开某个下方面板时换上它自己的高度（记过的优先，否则默认） */
+  function applyPanelHeight() {
+    if (DRAWER_POS[drawerOpen] !== 'bottom') return;
+    var v = 0; try { v = +localStorage.getItem(panelKey('h')); } catch (e) {}
+    var d0 = PANEL_H0[drawerOpen] || 220;
+    setPanelSize('h', v || (d0 < 1 ? d0 * window.innerHeight : d0), true);
+  }
+  try { var pw0 = +localStorage.getItem('rtl.panel.w'); if (pw0) rootStyle.setProperty('--ps-w', pw0 + 'px'); } catch (e) {}
+  drawerGrip.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    var pos = DRAWER_POS[drawerOpen]; if (!pos) return;
+    var r = drawer.getBoundingClientRect();
+    document.body.classList.add('is-resizing');
+    function mv(e) {
+      if (pos === 'bottom') setPanelSize('h', r.bottom - e.clientY);
+      else if (pos === 'left') setPanelSize('w', e.clientX - r.left);
+      else setPanelSize('w', r.right - e.clientX);
+      syncCardHeights(); placeSelLabel();
+    }
+    function up() {
+      document.body.classList.remove('is-resizing');
+      window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
+    }
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  });
+  drawerGrip.addEventListener('dblclick', function () {
+    var k = DRAWER_POS[drawerOpen] === 'bottom' ? 'h' : 'w';
+    try { localStorage.removeItem(panelKey(k)); } catch (e) {}
+    if (k === 'h') applyPanelHeight(); else rootStyle.removeProperty('--ps-w');
+    syncCardHeights(); placeSelLabel();
+  });
   dock.addEventListener('click', function (ev) {
     var d = ev.target.closest('[data-drawer]');
     if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
