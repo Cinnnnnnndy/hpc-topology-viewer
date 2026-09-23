@@ -2310,15 +2310,17 @@ function capVerdict(D, ppRank, g){
 function ptoClusterBrief(){
   var D = derive(cfg);
   if(!D.ok) return null;
-  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1, oom = [];
+  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1, oom = [], ratio = [];
   for(var r=0; r<D.world; r++){
     var co = coordsOf(r, D);
     var V = capVerdict(D, co.p, r);
     n[V.level]++;
     if(V.level === 'oom') oom.push(r);          /* 宿主要把顶出容量的卡逐张标红 */
+    ratio.push(Math.round(V.ratio * 1000) / 1000); /* 逐卡占用率（= 合计 / HBM）：宿主按它分灰阶 */
     if(V.ratio > worstRatio){ worstRatio = V.ratio; worst = r; }
   }
-  return { world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom };
+  return { world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom, ratio:ratio,
+           amber:CAP_AMBER, red:CAP_RED };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，

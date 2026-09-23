@@ -1,7 +1,15 @@
-/* rank-topology-lite · 一条下钻链（集群 → 段 → 卡 → 单卡）+ 三张常驻悬浮卡
-   + 一块可缩放的画布。舞台（物理拓扑 SVG / 宇宙视图 SVG / 矩阵 iframe）边到边
-   铺满视口，谁在最上层用 opacity+pointer-events 切，不销毁；三张卡与顶栏、
-   底部工具条钉在视口上，跨四层不动位置、只换内容。 */
+/* rank-topology-lite · 黑白极简数据界面
+   一块居中的主可视区（.zp-box，裁在自己的矩形里）+ 边缘的标题/导航/图例。
+   规则（本页视觉提示词）：
+   · 只用中性灰，所有颜色 R＝G＝B。背景 #111111，表面 #131313–#282828，主文字
+     #E8E8E8，次文字 #A0A0A0；纯白 #FFFFFF 只给当前选中对象的边框与关键高亮。
+   · 数据灰度 = 占用率（合计 / HBM），全页同一把尺：c0 #2E2E2E < 70% ≤ c1 #5C5C5C
+     < 88% ≤ c2 #9A9A9A ≤ 100% < c3 #E8E8E8。越满越亮。
+   · 几何对象直边，主轮廓 1.5px；小按钮/切换 4–5px 圆角。不用渐变、玻璃、发光、
+     厚阴影。层次靠轮廓、留白、遮挡与灰度。
+   · Inter / 同类无衬线，字重 400–500，标题 24px，正文与控件 12–13px，数字等宽。
+   · 嵌进来的 iframe（矩阵 / 整网图 / 泳道 / 魔方）是别的页面，本页不改它们的
+     源码，只在宿主这一侧给 iframe 套 grayscale(1)，保证画面里没有色相。 */
 
 * { box-sizing: border-box; }
 
@@ -9,371 +17,288 @@ html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
   background: #111111; overflow: hidden;
   font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
-  color: #E8E8E8;
+  font-size: 13px; font-weight: 400; color: #E8E8E8;
+  font-variant-numeric: tabular-nums;
 }
+b, strong { font-weight: 500; }
 
-/* ── 两个本体舞台：都铺满整个视口，边到边，不加框、不缩小。
-   切层不是平板 crossfade：退场那个放大+模糊+淡出（像镜头从它面前飞过去），
-   进场那个反过来从放大+模糊状态收回到 scale(1) 清晰——两句话共用同一条
-   .is-hidden 规则，谁在这一刻被换下去就套这条，方向自然由「加/摘 class」
-   决定，不用两套规则。呼应参考视频里"层层递进、在一张画布上"的那种
-   连续变焦感，而不是硬切。矩阵那边选中卡之后自己的 focusCardCamera 飞焦
-   动画会接着这一棒，两段动画首尾相连。 ──────────────────────────────── */
+/* ── 舞台：铺满视口，谁在上层只用 opacity 切（轻量，不做模糊/缩放飞镜头）。 */
 .stage-frame {
   position: fixed; inset: 0; width: 100%; height: 100%;
-  border: 0; display: block;
-  opacity: 1; filter: blur(0); transform: scale(1); transform-origin: 50% 50%;
-  transition: opacity .5s ease, filter .5s ease, transform .5s ease;
+  border: 0; display: block; background: #111111;
+  opacity: 1; transition: opacity .25s ease;
 }
-.stage-frame.is-hidden {
-  opacity: 0; filter: blur(14px); transform: scale(1.5);
-  pointer-events: none;
-}
+.stage-frame.is-hidden { opacity: 0; pointer-events: none; }
+iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 
-/* ── 悬浮数据卡：只在第二/三档出现，钉在视口右上角、让开顶栏一档（不跟画布
-   缩放平移）——档位读法交给面包屑（逻辑魔方顶栏的模型名+rank 后缀、矩阵
-   自己的画布名字），这颗卡不用再跟一颗"返回"按钮分地盘；右下角在第二档
-   （逻辑魔方）是它自己图例的地盘（.prc-legend，同一角落），第三档（矩阵）
-   右上角只有一颗小齿轮、这颗卡让开一档就不会压到它——两档统一走右上，
-   不必按档位换位置。配色贴 compute-graph-viewer 抽象图网页 prompt 的深色
-   卡片令牌：surface #1F1F1F、主文字 #E8E8E8、次文字 #A0A0A0——不描边
-   （"无边框灰卡"，区域靠色差/间距分，不靠框线）、不用玻璃模糊（prompt 明确
-   避免玻璃效果），浮卡本身也不例外于"默认只有黑白"：容量告警只靠说法/
-   字重分挡，不引入色相。 ──────────────────────────────────────────── */
-/* 左右两张悬浮卡共用一套壳（.side-card）：右卡就是 briefCard——第一档摆集群
-   容量汇总，第二/三档换成选中卡详情，卡本身不换、位置不动，只换内容。 */
-/* 四周所有悬浮卡统一毛玻璃：半透明底 + backdrop blur，画布从卡后面透出来 */
-.side-card, .topbar, .dock, .drawer, .ip-ev, .ip-prob {
-  background: rgba(31, 31, 31, .72);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
-}
+/* ── 边缘文字列：左 = 标题 + 规模 + PP 段柱状选择器 + 图例；右 = 选中 rank 的
+   读数。不套卡片（无底、无框），主可视区裁在自己的矩形里，所以不会压到它们。 */
 .side-card {
-  position: fixed; top: 60px; z-index: 6; width: 250px;
-  max-height: 56vh; overflow-y: auto;
-  border-radius: 12px; padding: 12px 14px;
+  position: fixed; top: 64px; z-index: 6; width: 264px;
+  max-height: calc(100vh - 140px); overflow-y: auto;
   font-size: 12px; line-height: 1.6; color: #A0A0A0;
-  transition: opacity .2s ease, transform .2s ease;
+  transition: opacity .15s ease;
 }
-.side-card.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
-.side-left { left: 16px; }
-.side-right { right: 16px; }
-.lc-title { font-size: 14px; font-weight: 700; color: #E8E8E8; }
-.lc-sub { color: #6E6E6E; margin-bottom: 8px; }
-.lc-row { display: flex; justify-content: space-between; gap: 10px; }
-.lc-row span { white-space: nowrap; }
-.lc-row b { color: #E8E8E8; font-weight: 600; text-align: right; }
-.lc-k, .brief-k { margin-top: 10px; margin-bottom: 4px; font-size: 10.5px; color: #6E6E6E; letter-spacing: .04em; }
-.brief-k em { font-style: normal; color: #6E6E6E; background: #2B2B2B; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
-.lc-segs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.lc-seg {
-  font: inherit; font-size: 11px; font-weight: 600; color: #A0A0A0;
-  background: #2B2B2B; border: 0; border-left: 3px solid var(--seg-c); border-radius: 6px;
-  padding: 4px 6px; cursor: pointer; text-align: left;
-}
-.lc-seg:hover { color: #E8E8E8; background: #3A3A3A; }
-.lc-seg.is-on { color: #111111; background: var(--seg-c); }
-.tag { font-style: normal; font-size: 10px; color: #6E6E6E; background: #2B2B2B; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
-.gc { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
-.brief-h {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 2px;
-}
-.brief-badge {
-  font-size: 10px; font-weight: 600; color: #A0A0A0;
-  background: #2B2B2B; border-radius: 999px; padding: 1px 8px;
-}
-.brief-badge.is-alert { color: #111111; background: #E8E8E8; }
-.brief-sub { color: #6E6E6E; margin-bottom: 8px; }
+.side-card.is-hidden { opacity: 0; pointer-events: none; }
+.side-left { left: 24px; top: 20px; width: 288px; }
+.side-right { right: 24px; }
+.lc-title { margin: 0 0 6px; white-space: nowrap; font-size: 24px; line-height: 1.2; font-weight: 500; color: #E8E8E8; letter-spacing: -.01em; }
+.lc-sub { color: #A0A0A0; }
+.lc-k, .brief-k { margin-top: 18px; margin-bottom: 6px; font-size: 12px; color: #A0A0A0; }
+.tag { font-style: normal; font-size: 11px; color: #A0A0A0; border: 1.5px solid #282828; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+.gc { display: inline-block; width: 10px; height: 0; border-top: 1.5px solid; margin-right: 8px; vertical-align: 3px; }
+
+/* 柱状选择器：共用基线，柱高 = 段内峰值占用，灰度同画布；虚线 = 100% */
+.pbars { display: block; overflow: visible; }
+.pb { cursor: pointer; }
+.pb-hit { fill: transparent; }
+.pb-bar { stroke: none; }
+.pb.is-on .pb-bar { stroke: #FFFFFF; stroke-width: 1.5; }
+.pb:hover .pb-bar { stroke: #A0A0A0; stroke-width: 1.5; }
+.pb.is-on:hover .pb-bar { stroke: #FFFFFF; }
+.pb-num { font-size: 11px; fill: #A0A0A0; }
+.pb.is-on .pb-num { fill: #FFFFFF; }
+.pb-val { font-size: 11px; font-weight: 500; fill: #FFFFFF; }
+.pb-base { stroke: #3A3A3A; stroke-width: 1.5; }
+.pb-cap { stroke: #5C5C5C; stroke-width: 1; stroke-dasharray: 3 3; }
+.c-none { fill: #282828; }
+
+/* 灰度图例（占用率） */
+.lc-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 11px; color: #A0A0A0; }
+.lc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { display: inline-block; width: 9px; height: 9px; }
+
+/* 统一的四档灰度：画布格子、宇宙叶子、板上 NPU、柱、图例共用 */
+.c0 { fill: #2E2E2E; background: #2E2E2E; }
+.c1 { fill: #5C5C5C; background: #5C5C5C; }
+.c2 { fill: #9A9A9A; background: #9A9A9A; }
+.c3 { fill: #E8E8E8; background: #E8E8E8; }
+
+/* 右列：rank 读数 */
+.brief-h { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: #E8E8E8; margin-bottom: 2px; }
+.brief-badge { font-size: 11px; font-weight: 500; color: #A0A0A0; border: 1.5px solid #282828; border-radius: 4px; padding: 0 6px; }
+.brief-badge.is-alert { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+.brief-sub { color: #A0A0A0; margin-bottom: 8px; }
 .brief-row { display: flex; justify-content: space-between; gap: 12px; }
 .brief-row span { color: #A0A0A0; }
-.brief-row b { color: #E8E8E8; font-weight: 600; }
-.brief-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #2B2B2B; }
-
-/* 第二档的浮卡是一句邀请（"↓ 单卡下钻"），不是数据行——按钮撑满卡宽，
-   跟下面第三档摆的数据行区分开：那时读者不是在读数，是在决定要不要往里走。 */
-.brief-card.is-cta { padding-bottom: 10px; }
+.brief-row b { color: #E8E8E8; font-weight: 500; }
+.brief-total { margin-top: 4px; padding-top: 6px; border-top: 1.5px solid #282828; }
+.brief-card.is-cta { padding-bottom: 0; }
 .brief-cta {
   display: block; width: 100%; margin-top: 8px;
-  background: #2B2B2B; color: #E8E8E8; border: 0; border-radius: 8px;
-  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 10px;
-  cursor: pointer; transition: background .2s ease;
+  background: #131313; color: #E8E8E8; border: 1.5px solid #282828; border-radius: 4px;
+  font: inherit; font-size: 12px; padding: 6px 10px; text-align: left; cursor: pointer;
 }
-.brief-cta:hover { background: #3A3A3A; }
+.brief-cta:hover { border-color: #5C5C5C; }
 
-/* ── 顶栏胶囊：居中，只放面包屑（集群 › PP段 › rank）+ 三种画法切换。放正中
-   而不是通栏：逻辑魔方/矩阵各自的原生标题在左上角、矩阵的齿轮在右上角，
-   居中的胶囊跟它们都不抢地。 ─────────────────────────────────────── */
+/* ── 面包屑：顶部居中，纯文字 */
 .topbar {
-  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 8;
-  display: flex; align-items: center; gap: 14px;
-  border-radius: 999px; padding: 5px 6px 5px 14px; font-size: 12px;
-  transition: opacity .2s ease;
+  position: fixed; top: 22px; left: 50%; transform: translateX(-50%); z-index: 8;
+  display: flex; align-items: center; font-size: 12px;
+  transition: opacity .15s ease;
 }
 .topbar.is-hidden { opacity: 0; pointer-events: none; }
-.crumb { display: flex; align-items: center; gap: 6px; color: #A0A0A0; white-space: nowrap; }
-.crumb i { font-style: normal; color: #6E6E6E; }
-.crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 0; padding: 2px 4px; cursor: pointer; border-radius: 6px; }
-.crumb .cr:hover { color: #E8E8E8; background: #2B2B2B; }
-.crumb .cr.is-cur { color: #E8E8E8; font-weight: 600; cursor: default; }
-.tb-views { display: flex; gap: 2px; background: #2B2B2B; border-radius: 999px; padding: 2px; }
-.tb-views button {
-  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
-  background: transparent; border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer;
-}
-.tb-views button:hover { color: #E8E8E8; }
-.tb-views button.is-on { color: #111111; background: #E8E8E8; }
+.crumb { display: flex; align-items: center; gap: 4px; color: #A0A0A0; white-space: nowrap; }
+.crumb i { font-style: normal; color: #5C5C5C; }
+.crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 1.5px solid transparent; padding: 1px 6px; cursor: pointer; border-radius: 4px; }
+.crumb .cr:hover { color: #E8E8E8; border-color: #282828; }
+.crumb .cr.is-cur { color: #E8E8E8; cursor: default; }
 
-/* ── 底部工具条（仿 Figma 画布下方那条）：画布正下方居中。左半是缩放，右半
-   唤起三个参考抽屉（整网图 / 泳道图 / 逻辑魔方）——它们是主线之外的并列
-   参考，不在集群→段→卡→单卡这条下钻主线上。 ────────────────────────── */
+/* ── 底部工具条：缩放 + 三个参考面板 */
 .dock {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(16px + var(--pb, 0px)); z-index: 6;
-  display: flex; align-items: center; gap: 2px; border-radius: 999px; padding: 3px;
-  transition: opacity .2s ease;
+  bottom: calc(18px + var(--pb, 0px)); z-index: 6;
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  background: #131313; border: 1.5px solid #282828; border-radius: 5px;
+  transition: opacity .15s ease;
 }
 .dock.is-hidden { opacity: 0; pointer-events: none; }
 .dock button {
   display: flex; align-items: center; justify-content: center; color: #A0A0A0;
-  background: transparent; border: 0; border-radius: 999px; width: 32px; height: 28px; padding: 0; cursor: pointer;
+  background: transparent; border: 0; border-radius: 4px; width: 30px; height: 26px; padding: 0; cursor: pointer;
 }
-.dock svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.dock button:hover { color: #E8E8E8; background: #2B2B2B; }
+.dock svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: square; stroke-linejoin: miter; }
+.dock button:hover { color: #E8E8E8; background: #1E1E1E; }
 .dock button.is-on { color: #111111; background: #E8E8E8; }
-.dock-sep { width: 1px; height: 16px; background: #3A3A3A; margin: 0 4px; }
+.dock-sep { width: 1.5px; height: 16px; background: #282828; margin: 0 4px; }
 
-/* ── 告警角标：第一层不默认摊开容量面板，右上角只留一颗红色角标，点它才弹
-   容量 tips（就是右卡那份内容）。选中 rank 之后右卡换成 rank 详情，角标收起。 */
+/* ── 右上角告警角标：点它才弹容量 / rank 读数 */
 .alert-badge {
-  position: fixed; right: 16px; top: 60px; z-index: 6;
-  font: inherit; font-size: 12px; font-weight: 700; color: #FFFFFF;
-  background: rgba(248, 81, 73, .9); border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  transition: opacity .2s ease, transform .2s ease;
+  position: fixed; right: 24px; top: 20px; z-index: 6;
+  font: inherit; font-size: 12px; font-weight: 500; color: #111111;
+  background: #E8E8E8; border: 1.5px solid #E8E8E8; border-radius: 4px; padding: 3px 10px; cursor: pointer;
+  transition: opacity .15s ease;
 }
-.alert-badge.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
-.alert-badge.is-quiet { color: #A0A0A0; background: rgba(31, 31, 31, .72); }
-.alert-badge.is-on { box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); }
-.side-right.is-tip { top: 94px; }
+.alert-badge.is-hidden { opacity: 0; pointer-events: none; }
+.alert-badge.is-quiet { color: #E8E8E8; background: #131313; border-color: #282828; }
+.alert-badge.is-on { border-color: #FFFFFF; outline: 1.5px solid #FFFFFF; outline-offset: 2px; }
+.side-right.is-tip { top: 64px; }
+/* 单卡层：矩阵自己的标题在左上、齿轮在右上——左列收掉标题、右上角标与右列让开一行 */
+body.t3 .side-left { top: 64px; }
+body.t3 .lc-title { display: none; }
+body.t3 .alert-badge { top: 64px; }
+body.t3 .side-right { top: 104px; }
+body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 20px); }
+body.t3 .ip-col-right { top: calc(104px + var(--rc-h, 160px) + 20px); }
 
-/* ── 参考面板：不悬浮在画布上，像 combo-workbench 的槽位一样占住一边——泳道图
-   在下方（横向时间轴），整网图在右侧，逻辑魔方在左侧；body 上的 panel-* 类让
-   .zp-box 同步收缩、那一边的悬浮卡与链路让位，画布始终完整可见。 ──────── */
+/* ── 参考面板：占住一边，把主可视区挤过去（泳道下方 / 整网图右侧 / 魔方左侧） */
 .drawer {
   position: fixed; z-index: 7;
   display: flex; flex-direction: column; overflow: hidden;
-  border-radius: 12px;
-  transition: opacity .2s ease, transform .2s ease;
+  background: #131313; border: 1.5px solid #282828;
+  transition: opacity .15s ease;
 }
-.drawer.at-left { left: 16px; top: 52px; bottom: 60px; width: 40vw; min-width: 420px; }
-.drawer.at-right { right: 16px; top: 52px; bottom: 60px; width: 40vw; min-width: 420px; }
-.drawer.at-bottom { left: 16px; right: 16px; bottom: 16px; height: 36vh; min-height: 260px; }
+.drawer.at-left { left: 24px; top: 64px; bottom: 64px; width: 40vw; min-width: 420px; }
+.drawer.at-right { right: 24px; top: 64px; bottom: 64px; width: 40vw; min-width: 420px; }
+.drawer.at-bottom { left: 24px; right: 24px; bottom: 18px; height: 36vh; min-height: 260px; }
 .drawer.is-hidden { opacity: 0; pointer-events: none; }
-.drawer.at-left.is-hidden { transform: translateX(-12px); }
-.drawer.at-right.is-hidden { transform: translateX(12px); }
-.drawer.at-bottom.is-hidden { transform: translateY(12px); }
-.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #E8E8E8; }
-.drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; cursor: pointer; padding: 0 4px; }
-.drawer-hd button:hover { color: #E8E8E8; }
+.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; color: #E8E8E8; border-bottom: 1.5px solid #282828; }
+.drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; border-radius: 4px; cursor: pointer; padding: 0 6px; }
+.drawer-hd button:hover { color: #E8E8E8; background: #1E1E1E; }
 .drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }
-body.panel-bottom { --pb: calc(36vh + 8px); }
+body.panel-bottom { --pb: calc(36vh + 10px); }
 body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
 body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
-body.panel-left .zp-box { left: calc(40vw + 32px); }
-body.panel-right .zp-box { right: calc(40vw + 32px); }
-body.panel-bottom .side-card { max-height: calc(100vh - 120px - var(--pb)); }
+body.panel-left .zp-box { left: calc(40vw + 48px); }
+body.panel-right .zp-box { right: calc(40vw + 48px); }
+body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 
-/* ── 灵衢物理拓扑（默认第一屏）：超节点面板 → L2 平面条（8 平面 × 4 SW2）→
-   8 个 128 卡组（各 8 颗 L1 SW + 2 个 64 卡 POD）→ POD 内 8 板 × 8 NPU。NPU 点
-   按 PP 段着色（跟宇宙视图同一套 HUB_PALETTE），选中之后五个通信组各描一圈
-   自己的颜色（tp/cp/ep/dp/pp 沿用 data/ascend-superpod-viz-spec.json 里
-   parallel_mappings 的配色），其余点压暗。交换机/链路只用一种蓝、UBoE 一种
-   紫——它们是"这一级走哪条线"的标记，不是数据。 ──────────────────────── */
-.phys-stage {
-  background: radial-gradient(ellipse 120% 90% at 50% 50%, #131419 0%, #0B0B0E 70%, #070708 100%);
-  cursor: grab;
-}
+/* ── 主可视区：裁在自己的矩形里，四周留白给边缘的文字与导航 */
+.phys-stage, .universe-stage { background: #111111; cursor: grab; }
 .phys-stage:active, .universe-stage:active { cursor: grabbing; }
-/* 两种内联 SVG 画法都装在 .zp-box 里：这个盒子就是"画布的可视区"——让开左右
-   两张卡、顶栏与底卡，SVG 按 meet 缩进这个盒子里，初始态整张图完整可见、
-   不被任何卡压住；缩放/平移的 transform 写在盒子里的 <svg> 上，盒子本身
-   不动，指针坐标才有稳定的参照。 */
-.zp-box { position: absolute; left: 282px; right: 282px; top: 52px; bottom: calc(60px + var(--pb, 0px)); }
+.zp-box { position: absolute; left: 312px; right: 312px; top: 64px; bottom: calc(64px + var(--pb, 0px)); overflow: hidden; }
 .zp-box svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.p-sp { fill: #17181D; stroke: #2B2B2B; stroke-width: 1; transition: stroke .2s ease; }
-.p-sp.is-on { stroke: #6E6E6E; }
-.p-splabel, .p-planelabel, .p-sw1label, .p-uboelabel {
-  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none;
+.zp-box svg text { font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none; }
+
+/* 缩放时线宽不变：所有描边按屏幕像素算（non-scaling-stroke 抵掉 viewBox），再除以
+   画布缩放倍数 --zk（JS 在 apply() 里写），抵掉 <svg> 上的 CSS transform。 */
+.zp-box svg * { vector-effect: non-scaling-stroke; }
+
+/* 选中标注：左上侧，短细引线 */
+.sel-label {
+  position: fixed; z-index: 5; pointer-events: none; white-space: nowrap;
+  font-size: 12px; font-weight: 500; color: #FFFFFF;
+  background: #111111; padding: 1px 5px;
 }
-.p-splabel { font-size: 13px; font-weight: 700; fill: #E8E8E8; }
-.p-plane { fill: #1A1B20; stroke: #3A3A3A; }
-.p-planelabel { font-size: 8px; font-weight: 600; fill: #6E6E6E; }
-.p-sw2 { fill: #6E6E6E; opacity: .9; }
-.p-sw1 { fill: #2B2B2B; stroke: #6E6E6E; stroke-width: .8; }
+.sel-label span { font-weight: 400; color: #A0A0A0; }
+.sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(1.5px / var(--zk, 1)); pointer-events: none; }
+.sel-lead { position: fixed; z-index: 5; pointer-events: none; overflow: visible; }
+.sel-lead line { stroke: #FFFFFF; stroke-width: 1; }
+.sel-label.is-hidden, .sel-lead.is-hidden { display: none; }
+
+/* ── 集群层：灵衢物理拓扑。结构件只用表面灰 + 1.5px 轮廓，数据（NPU 格）用四档
+   占用率灰度；链路只分线型：实线 UB、虚线 RoCE、粗虚 UBoE。 */
+.p-sp { fill: #131313; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; }
+.p-sp.is-on { stroke: #5C5C5C; }
+.p-splabel { font-size: 13px; font-weight: 500; fill: #E8E8E8; }
+.p-plane { fill: #1A1A1A; stroke: #282828; stroke-width: calc(1px / var(--zk, 1)); }
+.p-planelabel { font-size: 8px; fill: #A0A0A0; }
+.p-sw2 { fill: #5C5C5C; }
+.p-sw1 { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(.8px / var(--zk, 1)); }
 .p-sw1label { font-size: 8px; fill: #A0A0A0; }
-.p-pod { fill: #121317; stroke: #2B2B2B; stroke-width: 1; cursor: zoom-in; transition: stroke .2s ease; }
-.p-pod:hover { stroke: #6E6E6E; }
-.p-pod.is-on { stroke: #E8E8E8; }
-.p-pod.is-fit { stroke: #6E6E6E; }
-/* POD 取景之后，每一行（一块板）是一个可点的热区：悬停提亮，点进板视图 */
-.p-board { fill: transparent; cursor: pointer; transition: fill .15s ease; }
-.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: rgba(255, 255, 255, .06); }
-.p-l2 { stroke: #A0A0A0; stroke-opacity: .14; stroke-width: .8; fill: none; }
-.p-l1 { stroke: #A0A0A0; stroke-opacity: .35; stroke-width: 1.2; }
-.p-uboe { stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
-.p-uboelabel { font-size: 10px; font-weight: 600; fill: #A0A0A0; }
-.p-cpu { fill: #8A8A8A; }
-.p-dpu { fill: #6E6E6E; }
-.p-nic { fill: #4A4A4A; }
-.p-roce { stroke: #A0A0A0; stroke-opacity: .4; stroke-width: 1; stroke-dasharray: 3 3; }
-.p-rocelabel { font-size: 8px; fill: #6E6E6E; }
-.lc-legend { margin-top: 10px; font-size: 10px; color: #A0A0A0; }
-.lc-legend span { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
-.lg { display: inline-block; width: 8px; height: 8px; margin-left: 5px; }
-.lg:first-child { margin-left: 0; }
-.lg-npu { border-radius: 50%; background: #E8E8E8; }
-.lg-oom { border-radius: 50%; background: #F85149; }
-.lg-cpu { background: #8A8A8A; }
-.lg-dpu { background: #6E6E6E; }
-.lg-nic { width: 3px; height: 9px; background: #4A4A4A; }
-.lg-sw { background: #6E6E6E; }
-.lg-uboe { height: 2px; background: #A0A0A0; vertical-align: 2px; }
-/* rank 默认全白；顶出容量的标红。颜色只给告警，不给 PP 段。 */
-.p-npu { fill: #E8E8E8; cursor: pointer; transition: opacity .2s ease; }
-.p-npu.is-oom { fill: #F85149; }
-.p-npu.is-dim { opacity: .12; }
-.p-npu.is-sel { fill: #111111; stroke: #FFFFFF; stroke-width: 2.2; }
-/* 通信组描边只分灰阶与线型（黑白规则）：TP 白实线最粗、CP 浅灰、EP/DP 中灰、PP 白虚线 */
-.p-npu.g-tp { stroke: #FFFFFF; stroke-width: 2; }
-.p-npu.g-cp { stroke: #B4B4B4; stroke-width: 1.6; }
-.p-npu.g-ep { stroke: #7A7A7A; stroke-width: 1.6; }
-.p-npu.g-dp { stroke: #7A7A7A; stroke-width: 1.6; }
-.p-npu.g-pp { stroke: #E8E8E8; stroke-width: 1.6; stroke-dasharray: 2 1.5; }
+.p-pod { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; cursor: zoom-in; }
+.p-pod:hover { stroke: #5C5C5C; }
+.p-pod.is-on { stroke: #A0A0A0; }
+.p-pod.is-fit { stroke: #5C5C5C; }
+.p-board { fill: transparent; cursor: pointer; }
+.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #202020; }
+.p-l2 { stroke: #5C5C5C; stroke-opacity: .5; stroke-width: calc(.6px / var(--zk, 1)); fill: none; }
+.p-l1 { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.p-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 4; fill: none; }
+.p-uboelabel { font-size: 10px; fill: #A0A0A0; }
+.p-cpu { fill: #3A3A3A; }
+.p-dpu { fill: #3A3A3A; stroke: #5C5C5C; stroke-width: calc(.6px / var(--zk, 1)); }
+.p-nic { fill: #3A3A3A; }
+.p-roce { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.p-rocelabel { font-size: 8px; fill: #A0A0A0; }
 
-/* ── 板视图：一块板的 Server 形态（直播第二页的版式）。灰盒子是部件，链路种类
-   只靠线型与灰阶分（黑白规则）：实线 = UB 板内/扇出/H2D/NIC，长虚 = UB 上联，
-   短虚 = RoCE，点线 = PCIe，粗长虚 = UBoE；选中一颗 NPU 后只有它自己的链路
-   保持亮度。 ──────────────────────────────────────────────────────────── */
-.board-stage svg text { font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; pointer-events: none; }
-.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #2B2B2B; stroke: #3A3A3A; stroke-width: 1; }
-.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text { font-size: 11px; font-weight: 600; fill: #E8E8E8; }
-.b-nic text { font-size: 10px; }
-.b-l1 rect { stroke: #6E6E6E; }
-.b-l1 text { font-size: 10px; }
-.b-plane { fill: #1A1B20; stroke: #3A3A3A; }
-.b-sw2 { fill: #6E6E6E; }
-.p-bnpu { stroke: #3A3A3A; stroke-width: 1; }
-.p-bnpu.is-sel { fill: #111111; stroke: #FFFFFF; stroke-width: 2.2; }
-.b-npul { font-size: 11px; font-weight: 700; fill: #111111; }
-.b-npur { font-size: 9.5px; fill: #3A3A3A; }
-.p-bnpu.is-sel ~ .b-npul { fill: #FFFFFF; }
-.p-bnpu.is-sel ~ .b-npur { fill: #A0A0A0; }
-.p-bnpu.is-oom ~ .b-npul { fill: #FFFFFF; }
-.p-bnpu.is-oom ~ .b-npur { fill: #FFFFFF; opacity: .8; }
-.b-lbl { font-size: 9.5px; fill: #6E6E6E; paint-order: stroke; stroke: #0E0E11; stroke-width: 3px; stroke-linejoin: round; }
-.b-lbl-mesh, .b-lbl-roce, .b-lbl-ub, .b-lbl-uboe { fill: #A0A0A0; }
-.b-lbl-plane { fill: #A0A0A0; font-weight: 600; }
-.b-lbl-pos { fill: #6E6E6E; }
-.b-mesh { fill: none; stroke: #E8E8E8; stroke-opacity: .16; stroke-width: .9; }
-.b-fan { stroke: #A0A0A0; stroke-opacity: .18; stroke-width: 1; transition: stroke-opacity .2s ease; }
-.b-h2d { stroke: #A0A0A0; stroke-opacity: .45; stroke-width: 1.2; transition: stroke-opacity .2s ease; }
-.b-nicl { stroke: #A0A0A0; stroke-opacity: .45; stroke-width: 1.2; transition: stroke-opacity .2s ease; }
-.b-roce { stroke: #A0A0A0; stroke-opacity: .5; stroke-width: 1; stroke-dasharray: 3 3; }
-.b-pcie { fill: none; stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1; stroke-dasharray: 2 3; }
-.b-ub { fill: none; stroke: #A0A0A0; stroke-opacity: .45; stroke-width: 1.2; stroke-dasharray: 6 3; }
-.b-cpul { fill: none; stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1.2; }
-.b-l12 { stroke: #A0A0A0; stroke-opacity: .4; stroke-width: 1; }
-.b-uboe { stroke: #A0A0A0; stroke-opacity: .6; stroke-width: 1.5; stroke-dasharray: 8 4; }
-.b-bus { stroke-width: 1.2; }
-.b-fan.is-hot { stroke: #FFFFFF; stroke-opacity: .95; stroke-width: 1.6; }
-.b-h2d.is-hot, .b-nicl.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: 1.8; }
-.b-fan.is-cold { stroke-opacity: .06; }
-.b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .12; }
+/* rank 格：正方形宫格，灰度 = 占用率；选中 = 纯白边框（不改它自己的灰度）；
+   通信组成员保持原灰度、其余压暗，组别靠描边线型分 */
+.p-npu { cursor: pointer; transition: opacity .15s ease; }
+.p-npu.is-dim { opacity: .14; }
+.p-npu.is-sel { stroke: none; }
+.p-npu.g-tp { stroke: #FFFFFF; stroke-width: calc(1px / var(--zk, 1)); }
+.p-npu.g-cp { stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); }
+.p-npu.g-ep, .p-npu.g-dp { stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
+.p-npu.g-pp { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
 
-/* ── 真实故障复盘面板：任何预置打开都有（原来只在 incident2048 才渲染，
-   反馈「不希望问题定位跟拓扑分离」之后挪到 world≤64 分流之前，见 pattern.js
-   顶部注释），钉在视口底部，跨三档常驻。默认**展开**（is-collapsed 只在读者
-   点了折叠钮之后才加上）——反馈「默认展开数据只展开有的数据」：时间线本身
-   随时都是真数据（11 个真实事件），默认就该露出来，不必先点一下才看得见；
-   但十格指标卡在没选中具体事件之前一格数字都没有，展开了也只是十个「—」
-   占位，不算"有数据"，所以那块由 renderIncidentPanel() 按有没有选中事件
-   决定画不画（见 pattern.js），不是靠这里的 CSS 折叠。时间线（事件按问题
-   分组、圆点按严重度着色）+ 十格指标卡（读数/为什么），配色沿用
-   incident-canvas 自己的严重度三色（ok 绿 / warn 橙 / bad 红——JS 里按事件
-   写进 --ip-sevc 这个自定义属性），这是唯一一处主动引入色相的地方：这个
-   面板讲的是别人的真实告警，不是本页默认"只有黑白"那条规则要管的容量态。
-   ──────────────────────────────────────────────────────────────────── */
-/* 两条链路：问题2 挂在左卡下面、问题1 挂在右卡下面，各自一条从上往下的时间
-   链（反馈「以悬浮卡片的形式分布在画布四周，不要堆砌在最下方，最好有一个
-   链路式」）。列的起点跟着上面那张卡的实际高度走（JS 写的 --lc-h / --rc-h），
-   放不下时列内滚动。整个面板本身不吃指针，只有列吃。 */
-.incident-panel { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-size: 12px; color: #A0A0A0; transition: opacity .2s ease; }
+/* ── 板层：一块板的 Server 形态 */
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text { font-size: 11px; font-weight: 500; fill: #E8E8E8; }
+.b-nic text, .b-l1 text { font-size: 10px; }
+.b-plane { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-sw2 { fill: #5C5C5C; }
+.p-bnpu { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); }
+.p-bnpu.is-sel { stroke: #111111; }
+.b-npul { font-size: 11px; font-weight: 500; fill: #E8E8E8; }
+.b-npur { font-size: 10px; fill: #A0A0A0; }
+.p-bnpu.c2 ~ .b-npul, .p-bnpu.c3 ~ .b-npul { fill: #111111; }
+.p-bnpu.c2 ~ .b-npur, .p-bnpu.c3 ~ .b-npur { fill: #2E2E2E; }
+.b-lbl { font-size: 10px; fill: #A0A0A0; paint-order: stroke; stroke: #111111; stroke-width: calc(3px / var(--zk, 1)); stroke-linejoin: round; }
+.b-lbl-plane { fill: #A0A0A0; }
+.b-mesh { fill: none; stroke: #A0A0A0; stroke-opacity: .3; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan { stroke: #5C5C5C; stroke-opacity: .6; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
+.b-h2d, .b-nicl { stroke: #A0A0A0; stroke-opacity: .6; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
+.b-roce { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.b-pcie { fill: none; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1 3; }
+.b-ub { fill: none; stroke: #5C5C5C; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 3; }
+.b-cpul { fill: none; stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-l12 { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.b-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 8 4; }
+.b-bus { stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-fan.is-cold { stroke-opacity: .12; }
+.b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .15; }
+
+/* ── 故障复盘：两条链挂在左右两列下面。问题是一行文字 + 细分隔线，点开才出现
+   链；严重度只分明暗（--ip-sevc：越严重越亮）。 */
+.incident-panel { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-size: 12px; color: #A0A0A0; transition: opacity .15s ease; }
 .incident-panel.is-hidden { opacity: 0; }
-.ip-col { position: absolute; width: 250px; bottom: calc(16px + var(--pb, 0px)); overflow-y: auto; pointer-events: auto; }
-.ip-col-left { left: 16px; top: calc(60px + var(--lc-h, 330px) + 12px); }
-.ip-col-right { right: 16px; top: calc(60px + var(--rc-h, 160px) + 12px); }
-/* 先只出现问题卡；点它才展开这条问题线的链路。 */
-.ip-prob { display: block; width: 100%; text-align: left; font: inherit; color: #E8E8E8; border: 0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
-.ip-prob b { display: block; font-size: 12px; font-weight: 700; }
-.ip-prob span { font-size: 10.5px; color: #A0A0A0; }
-.ip-prob:hover { background: rgba(58, 58, 58, .8); }
-.ip-prob.is-on { box-shadow: inset 0 0 0 1px #6E6E6E; }
+.ip-col { position: absolute; width: 264px; bottom: calc(18px + var(--pb, 0px)); overflow-y: auto; pointer-events: auto; }
+.ip-col-left { left: 24px; top: calc(20px + var(--lc-h, 330px) + 20px); }
+.ip-col-right { right: 24px; top: calc(64px + var(--rc-h, 160px) + 20px); }
+.ip-prob {
+  display: block; width: 100%; text-align: left; font: inherit; color: #E8E8E8;
+  background: transparent; border: 0; border-top: 1.5px solid #282828; border-radius: 0;
+  padding: 8px 0; cursor: pointer;
+}
+.ip-prob b { display: block; font-size: 12px; font-weight: 500; }
+.ip-prob span { font-size: 11px; color: #A0A0A0; }
+.ip-prob:hover b { color: #FFFFFF; }
+.ip-prob.is-on { border-top-color: #FFFFFF; }
 .ip-chain { position: relative; padding-left: 14px; display: none; }
 .ip-col.is-open .ip-chain { display: block; }
-.ip-chain::before { content: ''; position: absolute; left: 4px; top: 10px; bottom: 10px; width: 1px; background: #6E6E6E; }
-.ip-ev { position: relative; border-radius: 10px; padding: 6px 10px 7px; margin-bottom: 6px; }
-.ip-ev::before { content: ''; position: absolute; left: -13px; top: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--ip-sevc); }
-.ip-ev.is-root { box-shadow: inset 0 0 0 1px var(--ip-sevc); }
-.ip-evhd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; color: #E8E8E8; line-height: 1.35; }
-.ip-time { color: #6E6E6E; font-variant-numeric: tabular-nums; }
-.ip-root { font-size: 9.5px; font-weight: 600; color: #111; background: var(--ip-sevc); border-radius: 999px; padding: 0 6px; }
+.ip-chain::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: #3A3A3A; }
+.ip-ev { position: relative; padding: 5px 0 7px; }
+.ip-ev::before { content: ''; position: absolute; left: -14px; top: 9px; width: 7px; height: 7px; background: var(--ip-sevc); }
+.ip-ev.is-root::before { outline: 1.5px solid #FFFFFF; outline-offset: 1.5px; }
+.ip-evhd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: #E8E8E8; line-height: 1.35; }
+.ip-time { color: #A0A0A0; }
+.ip-root { font-size: 10px; font-weight: 500; color: #111111; background: #E8E8E8; border-radius: 4px; padding: 0 5px; }
 .ip-drill {
-  font: inherit; font-size: 10.5px; font-weight: 600; color: #E8E8E8;
-  background: #3A3A3A; border: 0; border-radius: 999px; padding: 2px 8px; cursor: pointer;
+  font: inherit; font-size: 11px; color: #E8E8E8;
+  background: #131313; border: 1.5px solid #282828; border-radius: 4px; padding: 0 6px; cursor: pointer;
 }
-.ip-drill:hover { background: #4A4A4A; }
+.ip-drill:hover { border-color: #5C5C5C; }
 .ip-ms { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; }
-.ip-m { font-size: 11px; font-weight: 600; color: #E8E8E8; white-space: nowrap; }
+.ip-m { font-size: 11px; font-weight: 500; color: #E8E8E8; white-space: nowrap; }
 .ip-m em { font-style: normal; font-weight: 400; color: #A0A0A0; margin-right: 4px; }
-.ip-m::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--ip-sevc); margin-right: 5px; vertical-align: 1px; }
+.ip-m::before { content: ''; display: inline-block; width: 5px; height: 5px; background: var(--ip-sevc); margin-right: 5px; vertical-align: 1px; }
 
-/* ── 宇宙视图本体：中心=模型 · 一圈=PP 流水线段（沿用这个仓库里"PP流水=段"
-   的既有心智模型，不是另起一套分类）· 每段外沿撒开一批采样出的真实 rank
-   当叶子点。深色径向底 + 稀疏星点，是这一档唯一主动引入"宇宙感"氛围的
-   地方——其余 chrome（briefCard/角标/故障面板）配色不变，呼应参考图那种
-   "黑底+发光轨道+暖金中心"的读法，但连线角度/坐标全部来自真实的 tp/cp/
-   pp/rep，不是摆拍。 ────────────────────────────────────────────────── */
-.universe-stage {
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 46%, rgba(255,255,255,.04), transparent 60%),
-    radial-gradient(ellipse 120% 90% at 50% 50%, #14151A 0%, #0A0A0C 70%, #060607 100%);
-  cursor: grab;
-}
-.u-star { fill: #ffffff; opacity: .35; }
-.u-ray, .u-thread { stroke-opacity: .28; stroke-width: 1; fill: none; transition: opacity .25s ease; }
-.u-thread { stroke-opacity: .16; }
-.u-ray.is-dim, .u-thread.is-dim { opacity: .12; }
-.u-hubcore { transition: r .15s ease; }
+/* ── 段层：宇宙视图。中心 = 模型，一圈 = PP 段，叶子 = 该段全部 rank（灰度 = 占用率）。 */
+.u-ray, .u-thread { stroke: #3A3A3A; stroke-width: calc(1px / var(--zk, 1)); fill: none; transition: opacity .15s ease; }
+.u-thread { stroke: #282828; }
+.u-ray.is-sub { stroke: #3A3A3A; }
+.u-ray.is-dim, .u-thread.is-dim { opacity: .15; }
 .u-hub { cursor: pointer; }
-.u-hub:hover .u-hubcore { r: 15; }
-.u-hubglow { opacity: .22; }
+.u-hubcore { fill: #1E1E1E; stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
+.u-hub:hover .u-hubcore { stroke: #E8E8E8; }
 .u-hub.is-dim { opacity: .25; }
-.u-hublabel {
-  font-size: 15px; font-weight: 700; fill: #E8E8E8; pointer-events: none;
-  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
-}
-/* 段内 TP×CP 子组（子 hub）：比外圈 PP hub 小一号，没有独立发光圈——它只是
-   一层结构标记（讲清"这一撮叶子是同一个 tp/cp"），不是第二个可下钻的锚点，
-   视觉上不该跟外圈 hub 抢重量。 */
-.u-subhub { transition: r .15s ease, opacity .25s ease; }
-.u-subhub:hover { r: 6; }
-.u-ray.is-sub { stroke-opacity: .2; }
-.u-leaf { fill: #E8E8E8; cursor: pointer; transition: r .15s ease, opacity .25s ease; }
-.u-leaf.is-oom { fill: #F85149; }
-.u-leaf:hover { r: 7; }
+.u-hublabel { font-size: 15px; font-weight: 500; fill: #E8E8E8; }
+.u-subhub { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.u-leaf { cursor: pointer; transition: opacity .15s ease; }
 .u-leaf.is-dim { opacity: .15; }
-.u-core { pointer-events: none; }
-.u-corelabel { font-size: 22px; font-weight: 800; fill: #E8E8E8; pointer-events: none;
-  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; }
-.u-coresub { font-size: 13px; fill: #A0A0A0; pointer-events: none;
-  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; }
+.u-leaf.is-sel { stroke: none; }
+.u-core { fill: #1E1E1E; stroke: #E8E8E8; stroke-width: calc(1.5px / var(--zk, 1)); }
+.u-corelabel { font-size: 24px; font-weight: 500; fill: #E8E8E8; }
+.u-coresub { font-size: 13px; fill: #A0A0A0; }

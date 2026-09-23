@@ -206,7 +206,7 @@
       mem: { v: '已分配 60.1 / 64', s: 'bad', why: '碎片率 83%，最大连续块只有 0.32 GB' },
       steptime: { v: '中断', s: 'bad', why: '它一崩 PP3 就断，全网跟着停在等待上' } } }
   };
-  var INCIDENT_SEVC = { ok: '#3FB950', warn: '#D29922', bad: '#F85149', na: '#6E6E6E' };
+  var INCIDENT_SEVC = { ok: '#5A5A5A', warn: '#A0A0A0', bad: '#E8E8E8', na: '#3A3A3A' };   // 严重度只分明暗：越严重越亮
 
   // ── 真实故障复盘面板：直接摆在最外层拓扑上，不必先跳一次预置 ─────────────
   // 原来只在 ?preset=incident2048 才渲染，默认屏幕上只留一条「⚠ 真实故障
@@ -269,7 +269,7 @@
   function syncCardHeights() {
     document.documentElement.style.setProperty('--lc-h', (leftCard ? leftCard.offsetHeight : 0) + 'px');
     // 右列的起点：右卡隐藏时只让开角标那一行
-    var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight + (briefCard.classList.contains('is-tip') ? 34 : 0) : 34;
+    var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight : 0;
     document.documentElement.style.setProperty('--rc-h', rh + 'px');
   }
   window.addEventListener('resize', syncCardHeights);
@@ -440,10 +440,9 @@
       var hx = CX + Math.cos(theta) * R1, hy = CY + Math.sin(theta) * R1;
       var color = HUB_PALETTE[i % HUB_PALETTE.length];
       var wd = uniWedge[i] = { x0: hx - 30, y0: hy - 30, x1: hx + 30, y1: hy + 44 };
-      linksHtml += '<line class="u-ray" data-pp="' + i + '" x1="' + CX + '" y1="' + CY + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '" stroke="' + color + '"/>';
+      linksHtml += '<line class="u-ray" data-pp="' + i + '" x1="' + CX + '" y1="' + CY + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '""/>';
       hubsHtml += '<g class="u-hub" data-pp="' + i + '">'
-        + '<circle class="u-hubglow" cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="24" fill="' + color + '"/>'
-        + '<circle class="u-hubcore" cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="13" fill="' + color + '"/>'
+        + '<rect class="u-hubcore" x="' + (hx - 11).toFixed(1) + '" y="' + (hy - 11).toFixed(1) + '" width="22" height="22"/>'
         + '<text class="u-hublabel" x="' + hx.toFixed(1) + '" y="' + (hy + 34).toFixed(1) + '" text-anchor="middle">PP' + i + '</text>'
         + '</g>';
       // 扇形半张角按"这一段跟相邻段隔多远"来定（相邻 hub 的夹角是
@@ -456,11 +455,11 @@
         var pts0 = layoutWedge(CX, CY, theta, fanHalf, DPN, R1 + 50, R2);
         for (var r0 = 0; r0 < DPN; r0++) {
           var p0 = pts0[r0]; wdExt(wd, p0);
-          if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '" stroke="' + color + '"/>';
+          if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '""/>';
           var sel0 = { tp: 0, cp: 0, pp: i, rep: r0 };
-          leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
-            + ' cx="' + p0.x.toFixed(1) + '" cy="' + p0.y.toFixed(1) + '" r="4">'
-            + '<title>' + esc(tier2SubLine(sel0)) + '</title></circle>';
+          leavesHtml += '<rect class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
+            + ' x="' + (p0.x - 3.5).toFixed(1) + '" y="' + (p0.y - 3.5).toFixed(1) + '" width="7" height="7">'
+            + '<title>' + esc(tier2SubLine(sel0)) + '</title></rect>';
         }
       } else {
         // 有 TP/CP 结构：段内再分 groupCount 个子组（子 hub），子组之间的
@@ -476,17 +475,17 @@
           var gt = groupCount > 1 ? (g / (groupCount - 1) - 0.5) * 2 * fanHalf : 0;
           var ga = theta + gt;
           var sx = CX + Math.cos(ga) * RSUB, sy = CY + Math.sin(ga) * RSUB;
-          linksHtml += '<line class="u-ray is-sub" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + sx.toFixed(1) + '" y2="' + sy.toFixed(1) + '" stroke="' + color + '"/>';
-          hubsHtml += '<circle class="u-hub u-subhub" data-pp="' + i + '" cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="4" fill="' + color + '">'
-            + '<title>' + esc('pp' + i + ' tp' + tp9 + ((CPN > 1) ? ' cp' + cp9 : '')) + '</title></circle>';
+          linksHtml += '<line class="u-ray is-sub" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + sx.toFixed(1) + '" y2="' + sy.toFixed(1) + '""/>';
+          hubsHtml += '<rect class="u-hub u-subhub" data-pp="' + i + '" x="' + (sx - 3).toFixed(1) + '" y="' + (sy - 3).toFixed(1) + '" width="6" height="6">'
+            + '<title>' + esc('pp' + i + ' tp' + tp9 + ((CPN > 1) ? ' cp' + cp9 : '')) + '</title></rect>';
           var pts = layoutWedge(CX, CY, ga, subFanHalf, DPN, RSUB + 30, R2);
           for (var r = 0; r < DPN; r++) {
             var p = pts[r]; wdExt(wd, p);
-            if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '" stroke="' + color + '"/>';
+            if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '""/>';
             var sel = { tp: tp9, cp: cp9, pp: i, rep: r };
-            leavesHtml += '<circle class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
-              + ' cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3">'
-              + '<title>' + esc(tier2SubLine(sel)) + '</title></circle>';
+            leavesHtml += '<rect class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
+              + ' x="' + (p.x - 2.5).toFixed(1) + '" y="' + (p.y - 2.5).toFixed(1) + '" width="5" height="5">'
+              + '<title>' + esc(tier2SubLine(sel)) + '</title></rect>';
           }
         }
       }
@@ -494,25 +493,11 @@
     // 稀疏星点只做氛围，不承载数据——数量固定、每次重建（理论上只建一次，
     // 见 renderUniverse 的 universeBuilt 守卫）位置会不一样，纯装饰，不影响
     // 任何可读信息。
-    var stars = '';
-    for (var s = 0; s < 140; s++) {
-      var sx = Math.random() * W, sy = Math.random() * H, sr = Math.random() * 1.1 + 0.2;
-      stars += '<circle class="u-star" cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" r="' + sr.toFixed(2) + '"/>';
-    }
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
-      + '<defs>'
-      + '<radialGradient id="uCoreGrad" cx="40%" cy="35%" r="65%">'
-      + '<stop offset="0%" stop-color="#FFFFFF"/><stop offset="55%" stop-color="#C8C8C8"/><stop offset="100%" stop-color="#4A4A4A"/>'
-      + '</radialGradient>'
-      + '<filter id="uGlow" x="-200%" y="-200%" width="500%" height="500%">'
-      + '<feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
-      + '</filter>'
-      + '</defs>'
-      + '<g class="u-stars">' + stars + '</g>'
       + '<g class="u-links">' + linksHtml + '</g>'
-      + '<g class="u-leaves" filter="url(#uGlow)">' + leavesHtml + '</g>'
-      + '<g class="u-hubs" filter="url(#uGlow)">' + hubsHtml + '</g>'
-      + '<circle class="u-core" cx="' + CX + '" cy="' + CY + '" r="46" fill="url(#uCoreGrad)" filter="url(#uGlow)"/>'
+      + '<g class="u-leaves">' + leavesHtml + '</g>'
+      + '<g class="u-hubs">' + hubsHtml + '</g>'
+      + '<rect class="u-core" x="' + (CX - 30) + '" y="' + (CY - 30) + '" width="60" height="60"/>'
       + '<text class="u-corelabel" x="' + CX + '" y="' + (CY + 74) + '" text-anchor="middle">' + esc(PS.modelName) + '</text>'
       + '<text class="u-coresub" x="' + CX + '" y="' + (CY + 96) + '" text-anchor="middle">' + world + ' 卡 · ' + PPN + ' 段流水线</text>'
       + '</svg>';
@@ -616,7 +601,7 @@
      图数的（4 个 NIC 框），直播没给每板 DPU 的确切数，这一项是示意。 */
   function buildPhysSvg() {
     var SPN = physCount.sp, cols = SPN > 2 ? 2 : SPN, rows = Math.ceil(SPN / cols);
-    var PITCH = 9, ROWP = 10, PODW = 126, PODH = 92, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
+    var PITCH = 9, ROWP = 9, PODW = 126, PODH = 84, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
     var SW1H = 16, PLANEH = 34, PAD = 18, HEAD = 26, GRPCOLS = 2;
     var GRPROWS = Math.ceil((PHYS.sp / PHYS.group) / GRPCOLS);
     var SPW = PAD * 2 + GRPCOLS * GRPW + (GRPCOLS - 1) * GRPGAP;
@@ -629,14 +614,14 @@
       var sx = M + (s % cols) * (SPW + SPGAP), sy = M + Math.floor(s / cols) * (SPH + SPGAP);
       sps.push({ x: sx, y: sy });
       var base = s * PHYS.sp, inSp = Math.min(PHYS.sp, world - base);
-      panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '" rx="14"/>'
+      panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '"/>'
         + '<text class="p-splabel" x="' + (sx + PAD) + '" y="' + (sy + 18) + '">超节点 ' + s + ' · ' + inSp + ' NPU</text>');
       var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
       for (var pl = 0; pl < 8; pl++) {
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
-        panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '" rx="5"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
+        panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
           + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
-        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" style="--pc:' + PLANE_C[pl] + '" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8" rx="2"/>');
+        for (var q = 0; q < 4; q++) panels.push('<rect class="p-sw2" style="--pc:' + PLANE_C[pl] + '" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 13) + '" width="' + (sw2w - 3) + '" height="8"/>');
         planeC.push({ x: px + planeW / 2, y: py + PLANEH });
       }
       var groups = Math.ceil(inSp / PHYS.group);
@@ -645,14 +630,14 @@
         var gBase = base + g * PHYS.group, sw1w = (GRPW - 7 * 4) / 8;
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
-          panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '" rx="3"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
+          panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
           links.push('<line class="p-l2" style="--pc:' + PLANE_C[k] + '" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
         }
         if (g === 0) panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 SW ×8</text>');
         for (var pd = 0; pd < 2; pd++) {
           var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
-          panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '" rx="8">'
+          panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '">'
             + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
           // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
           [pdx + 11, pdx + 58, pdx + 101].forEach(function (ux) {
@@ -662,17 +647,17 @@
           if (g === 0 && pd === 0) panels.push('<text class="p-rocelabel" x="' + (pdx + 119) + '" y="' + (gy - 4) + '">RoCE</text>');
           for (var b = 0; b < 8; b++) {
             var ry = pdy + 6 + b * ROWP + ROWP / 2, bIdx = Math.floor(pBase / PHYS.board) + b;
-            panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '" rx="2"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
-            panels.push('<rect class="p-cpu" x="' + (pdx + 5) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
-              + '<rect class="p-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.5) + '" width="5" height="5" rx="1"/>'
-              + '<rect class="p-dpu" x="' + (pdx + 98) + '" y="' + (ry - 3) + '" width="6" height="6" rx="1"/>');
-            for (var ni = 0; ni < 4; ni++) panels.push('<rect class="p-nic" x="' + (pdx + 108 + ni * 4) + '" y="' + (ry - 3) + '" width="2.5" height="6" rx=".5"/>');
+            panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
+            panels.push('<rect class="p-cpu" x="' + (pdx + 5) + '" y="' + (ry - 2.5) + '" width="5" height="5"/>'
+              + '<rect class="p-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.5) + '" width="5" height="5"/>'
+              + '<rect class="p-dpu" x="' + (pdx + 98) + '" y="' + (ry - 3) + '" width="6" height="6"/>');
+            for (var ni = 0; ni < 4; ni++) panels.push('<rect class="p-nic" x="' + (pdx + 108 + ni * 4) + '" y="' + (ry - 3) + '" width="2.5" height="6"/>');
             for (var n = 0; n < 8; n++) {
               var r = pBase + b * 8 + n; if (r >= world) break;
               var c = coordOfRank(r);
-              nodes.push('<circle class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
-                + ' cx="' + (pdx + 22 + n * PITCH + PITCH / 2) + '" cy="' + ry + '" r="3.2">'
-                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></circle>');
+              nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
+                + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
+                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>');
             }
           }
         }
@@ -714,8 +699,14 @@
       var r = +el.getAttribute('data-rank'), extra;
       if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
       else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
-      el.setAttribute('class', 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + (oomSet && oomSet[r] ? ' is-oom' : ''));
+      el.setAttribute('class', 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + ' ' + capClass(r));
     });
+    if (universeBuilt) universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
+      var on = curSel != null && rubikSelToMatrixSel({ tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') }) === curSel;
+      el.classList.toggle('is-sel', on);
+    });
+    [physStage, boardStage, universeStage].forEach(markSelFrame);
+    setTimeout(placeSelLabel, 0);
     // 板视图：选中那颗 NPU 自己的链路（出板 8 口、H2D、NIC）点亮，其余链路退后
     var slot = here != null && here.board === curBoard ? here.slot : null;
     boardStage.querySelectorAll('[data-n]').forEach(function (el) {
@@ -765,7 +756,7 @@
     var NPUY = 150, NPUH = 40, L1Y = 330, L1H = 24, L2Y = 430, L2H = 30, CPUY = 58;
     var bg = [], links = [], nodes = [], txt = [];
     function box(cls, cx, y, w, h, label, title, attrs) {
-      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="5"/>'
+      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + h + '"/>'
         + '<text x="' + cx + '" y="' + (y + h / 2 + 3.5) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
     }
     // 参数面 RoCE 总线（顶）：NIC 与 DPU 都从这儿出框
@@ -801,7 +792,7 @@
     // NPU 行 + 板内 fullmesh（弧在行上方）
     for (var i = 0; i < 8; i++) {
       var r = base + i; if (r >= world) break;
-      nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '" rx="6"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
+      nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
         + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 16) + '" text-anchor="middle">NPU' + i + '</text><text class="b-npur" x="' + NX(i) + '" y="' + (NPUY + 31) + '" text-anchor="middle">rank ' + r + '</text></g>');
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
@@ -818,10 +809,10 @@
     // L1 行（每平面一颗）→ 本平面 4×SW2（L2）
     for (var k3 = 0; k3 < 8; k3++) {
       box('b-l1', NX(k3), L1Y, 64, L1H, 'L1 · P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"');
-      bg.push('<rect class="b-plane" style="--pc:' + PLANE_C[k3] + '" x="' + (NX(k3) - 32) + '" y="' + L2Y + '" width="64" height="' + L2H + '" rx="5"><title>L2 · 平面 ' + (k3 + 1) + ' · 4×SW2 · 与本平面每颗 L1 成 Clos</title></rect>');
+      bg.push('<rect class="b-plane" style="--pc:' + PLANE_C[k3] + '" x="' + (NX(k3) - 32) + '" y="' + L2Y + '" width="64" height="' + L2H + '"><title>L2 · 平面 ' + (k3 + 1) + ' · 4×SW2 · 与本平面每颗 L1 成 Clos</title></rect>');
       for (var q = 0; q < 4; q++) {
         var qx = NX(k3) - 24 + q * 16;
-        bg.push('<rect class="b-sw2" style="--pc:' + PLANE_C[k3] + '" x="' + (qx - 4) + '" y="' + (L2Y + L2H - 11) + '" width="10" height="6" rx="1.5"/>');
+        bg.push('<rect class="b-sw2" style="--pc:' + PLANE_C[k3] + '" x="' + (qx - 4) + '" y="' + (L2Y + L2H - 11) + '" width="10" height="6"/>');
         links.push('<line class="b-l12" style="--pc:' + PLANE_C[k3] + '" x1="' + NX(k3) + '" y1="' + (L1Y + L1H) + '" x2="' + (qx + 1) + '" y2="' + (L2Y + L2H - 11) + '"/>');
       }
       txt.push('<text class="b-lbl b-lbl-plane" x="' + NX(k3) + '" y="' + (L2Y + 12) + '" text-anchor="middle">P' + (k3 + 1) + ' · 4×SW2</text>');
@@ -865,7 +856,7 @@
       if (!b) return stage.getBoundingClientRect();
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
-    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; }
+    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); placeSelLabel(); }
     st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
     st.zoomAt = function (f, px, py) {
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
@@ -950,7 +941,7 @@
     var cr = ev.target.closest('[data-cr]');
     if (!cr) return;
     var to = cr.getAttribute('data-cr');
-    if (to === 'root') showOverview();
+    if (to === 'root') { physZP.reset(); showOverview(); }
     else if (to === 'pp') goSegment(focusPP, true);
     else if (to === 'board') goBoard(curBoard, true);
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
@@ -963,20 +954,48 @@
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
     crumbEl.innerHTML = parts.join('<i>›</i>');
+    document.body.classList.toggle('t3', tier === 3);
+    syncCardHeights();
+    placeSelLabel();
   }
 
   // ── 左卡：模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设 ──────────────
+  /* 左侧：标题（模型名）+ 规模两行 + PP 段柱状选择器 + 灰度图例，不套卡片。
+     每段一根柱、共用基线：柱高 = 这一段里占用率最高那张卡（合计 / HBM），
+     柱的灰度与画布上的格子同一把尺；虚线是 100% 容量线。只有选中那根柱顶上
+     写具体数值，点柱 = 进这一段。 */
+  var ppPeak = null;
+  function ppPeaks() {
+    if (ppPeak || !lastCluster || !lastCluster.ratio) return ppPeak;
+    ppPeak = [];
+    for (var i = 0; i < PS.pp; i++) ppPeak.push({ v: 0, r: null });
+    lastCluster.ratio.forEach(function (v, r) { var k = coordOfRank(r).pp; if (v > ppPeak[k].v) { ppPeak[k].v = v; ppPeak[k].r = r; } });
+    return ppPeak;
+  }
+  function ratioClass(v) { return !lastCluster ? '' : v > 1 ? 'c3' : v >= lastCluster.red ? 'c2' : v >= lastCluster.amber ? 'c1' : 'c0'; }
   function renderLeftCard() {
-    var seg = '';
-    for (var i = 0; i < PS.pp; i++) seg += '<button type="button" class="lc-seg' + (focusPP === i ? ' is-on' : '') + '" data-pp="' + i + '" style="--seg-c:' + HUB_PALETTE[i % HUB_PALETTE.length] + '">PP' + i + '</button>';
-    leftCard.innerHTML = '<div class="lc-title">' + esc(PS.modelName) + '</div>'
+    var pk = ppPeaks(), N = PS.pp, W = 218, H = 64, BASE = 50, gap = 6;
+    var bw = (W - gap * (N - 1)) / N, top = Math.max(1.1, pk ? Math.max.apply(null, pk.map(function (x) { return x.v; })) : 1.1);
+    var y100 = BASE - (1 / top) * (BASE - 12), bars = '';
+    for (var i = 0; i < N; i++) {
+      var v = pk ? pk[i].v : 0.5, h = Math.max(2, (v / top) * (BASE - 12)), x = i * (bw + gap), on = focusPP === i;
+      bars += '<g class="pb' + (on ? ' is-on' : '') + '" data-pp="' + i + '"><rect class="pb-hit" x="' + x + '" y="0" width="' + bw + '" height="' + H + '"/>'
+        + '<rect class="pb-bar ' + (pk ? ratioClass(v) : 'c-none') + '" x="' + x + '" y="' + (BASE - h) + '" width="' + bw + '" height="' + h + '"/>'
+        + (on && pk ? '<text class="pb-val" x="' + (x + bw / 2) + '" y="' + (BASE - h - 4) + '" text-anchor="middle">' + gbFmt(v * lastCluster.hbm).replace(' GB', '') + '</text>' : '')
+        + '<text class="pb-num" x="' + (x + bw / 2) + '" y="' + (BASE + 12) + '" text-anchor="middle">' + i + '</text></g>';
+    }
+    var lg = lastCluster ? [['c0', '<' + Math.round(lastCluster.amber * 100) + '%'], ['c1', Math.round(lastCluster.amber * 100) + '–' + Math.round(lastCluster.red * 100) + '%'], ['c2', Math.round(lastCluster.red * 100) + '–100%'], ['c3', '>100%']]
+      .map(function (x) { return '<span><i class="lg ' + x[0] + '"></i>' + x[1] + '</span>'; }).join('') : '';
+    leftCard.innerHTML = '<h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
       + '<div class="lc-sub">' + world + ' 卡 · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub">' + physCount.sp + ' 超节点 · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板<em class="tag">假设</em></div>'
-      + '<div class="lc-segs">' + seg + '</div>';
+      + '<div class="lc-k">PP 段 · 峰值占用</div>'
+      + '<svg class="pbars" viewBox="0 -2 ' + W + ' ' + (H + 2) + '" width="' + W + '" height="' + (H + 2) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
+      + (lg ? '<div class="lc-legend">' + lg + '</div>' : '');
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
-    var b = ev.target.closest('.lc-seg'); if (!b) return;
+    var b = ev.target.closest('.pb'); if (!b) return;
     goSegment(+b.getAttribute('data-pp'));
   });
   /* 进"段"这一层：画布换成宇宙视图并取景到这条 PP 段。keepSel=true 时保留
@@ -1031,7 +1050,7 @@
      集群容量就是右卡在没选中任何卡时该说的那句话）。 */
   function renderClusterBadge(brief) {
     if (!brief) return;
-    lastCluster = brief;
+    lastCluster = brief; ppPeak = null;
     oomSet = {};
     (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();
@@ -1039,14 +1058,26 @@
   }
   /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
      不给 PP 段用（段的颜色只留在左卡的段按钮与宇宙视图的 hub 上）。 */
+  /* 灰度 = 占用率（合计 / HBM），全页同一把尺：c0 < 黄线 ≤ c1 < 红线 ≤ c2 ≤ 100% < c3。
+     越满越亮，超容最亮；选中用纯白边框，不改这一格的灰度。 */
   var oomSet = null;
+  function capClass(r) {
+    var R = lastCluster && lastCluster.ratio ? lastCluster.ratio[r] : null;
+    if (R == null) return oomSet && oomSet[r] ? 'c3' : '';
+    return R > 1 ? 'c3' : R >= lastCluster.red ? 'c2' : R >= lastCluster.amber ? 'c1' : 'c0';
+  }
   function applyAlerts() {
     if (!oomSet) return;
-    document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) { el.classList.toggle('is-oom', !!oomSet[+el.getAttribute('data-rank')]); });
+    document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
+      var c = capClass(+el.getAttribute('data-rank'));
+      ['c0', 'c1', 'c2', 'c3'].forEach(function (k) { el.classList.toggle(k, k === c); });
+    });
     universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
       var sel = { tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') };
-      el.classList.toggle('is-oom', !!oomSet[rubikSelToMatrixSel(sel)]);
+      var c = capClass(rubikSelToMatrixSel(sel));
+      ['c0', 'c1', 'c2', 'c3'].forEach(function (k) { el.classList.toggle(k, k === c); });
     });
+    renderLeftCard();
   }
 
   // ── 并行拓扑矩阵：只在第三档才加载，固定带 fastcard=1&solo=1 ─────────────
@@ -1220,7 +1251,7 @@
       if (d.type === 'pto:rank-brief') {
         // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
         // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
-        if (d.brief) lastBrief = d.brief;
+        if (d.brief) { lastBrief = d.brief; placeSelLabel(); }
         if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief);
         return;
       }
@@ -1366,6 +1397,36 @@
     briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
     showRankBadge(brief.rank);
   }
+
+  /* 选中框：纯白边框套在选中格外面、中间留一圈底色缝——格子本身的灰度（数据）不动，
+     在最亮的超容格上也看得出来。 */
+  function markSelFrame(stage) {
+    var svgEl = stage.querySelector('.zp-box svg'); if (!svgEl) return;
+    var fr = svgEl.querySelector('.sel-frame'), el = curSel != null ? stage.querySelector('.is-sel') : null;
+    if (!el) { if (fr) fr.remove(); return; }
+    if (!fr) { fr = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); fr.setAttribute('class', 'sel-frame'); }
+    svgEl.appendChild(fr);
+    var bb = el.getBBox(), m = Math.max(1.5, bb.width * 0.22);
+    fr.setAttribute('x', bb.x - m); fr.setAttribute('y', bb.y - m); fr.setAttribute('width', bb.width + 2 * m); fr.setAttribute('height', bb.height + 2 * m);
+  }
+  /* 选中标注：只给当前选中的那一格，放在它左上侧、一根短细引线连过去，
+     不压在主体上；缩放/平移/换层时跟着重算位置，出了画布可视区就收起。 */
+  var selLabel = document.getElementById('selLabel'), selLead = document.getElementById('selLead');
+  function placeSelLabel() {
+    if (!selLabel) return;
+    var stage = tier === 3 || curSel == null ? null : level === 'segment' ? universeStage : level === 'board' ? boardStage : physStage;
+    var el = stage && stage.querySelector('.is-sel'), box = stage && stage.querySelector('.zp-box');
+    if (!el || !box) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
+    var r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
+    if (r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
+    var gb = lastBrief && lastBrief.rank === curSel ? ' · ' + gbFmt(lastBrief.cap.totGB) : '';
+    selLabel.innerHTML = 'rank ' + curSel + '<span>' + gb + '</span>';
+    var ax = r.left, ay = r.top, ex = ax - 16, ey = ay - 16;
+    selLabel.style.left = (ex - selLabel.offsetWidth) + 'px'; selLabel.style.top = (ey - selLabel.offsetHeight + 4) + 'px';
+    selLead.setAttribute('style', 'left:' + ex + 'px;top:' + ey + 'px;width:' + (ax - ex) + 'px;height:' + (ay - ey) + 'px');
+    selLabel.classList.remove('is-hidden'); selLead.classList.remove('is-hidden');
+  }
+  window.addEventListener('resize', placeSelLabel);
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
   //    换另外两种画法（旧链接 ?view=universe 照样认得）。 ────────────────────
