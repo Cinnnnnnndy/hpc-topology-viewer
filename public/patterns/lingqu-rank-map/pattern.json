@@ -2,7 +2,7 @@
   "id": "lingqu-rank-map",
   "name": "模型分片与训练设备映射 · 简洁版",
   "description": "一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。集群（默认第一屏，灵衢物理拓扑：超节点 / 8 个 L2 平面×4 SW2（标 P1…P8）/ 128 卡组的 8 颗 L1 SW / 64 卡 POD / 板上的 2 CPU + 8 NPU + DPU + 4 NIC，超节点间 UBoE，rank 格灰度 = 占用率，四档，越满越亮）→ 板（POD 取景后再点一行，或右卡「→ 板」：一块板的 Server 形态图，CPU0—CPU1 互联、DPU —PCIe— CPU、CPU/DPU —UB→ L1、H2D、NIC 挂相邻 2 卡 + RoCE 参数面、板内 UB fullmesh、出板每卡 8 口扇到 8 颗 L1、L1 → 本平面 4×SW2、L2 → 其他 POD / UBoE 其他超节点）或 段（宇宙视图聚焦一条 PP 段：TP×CP 子组 × DP 副本，真实数量不抽样）→ 卡（右卡：坐标 + 借矩阵本体 ?brief=1&sel= 算回来的层区间/显存构成 + 假设落位的物理位置 + 五个通信组各走哪一级链路）→ 单卡（矩阵本体 fastcard=1&solo=1 的 solo 渲染）。面包屑每一级可回退；三张卡跨四层只换内容不换位置；底部工具条（仿 Figma）放缩放与三个参考面板（整网图·同一预置 → 右侧 / 泳道图·上游示例 → 下方 / 逻辑魔方 → 左侧），面板占住一边把画布挤过去，不悬浮在画布上。默认预置 moe504b32k（tp4·cp8·pp8·dp16·ep16，world=4096，pangu_sophon_pytorch config/llm/moe_504B_A18B/ 32K 序列那档的真实切分；dp=16 是 EP|DP 的最小合法值，从项目代码 data_parallel_size=world_size÷(TP×PP×CP) 推出）。world ≤ 64 的预置（只有 dense64）直接铺满矩阵原页，没有这套链。",
-  "version": "8.9.0",
+  "version": "8.10.0",
   "entry": "pattern.html",
   "selfContained": false,
   "canvas": "full-bleed",
@@ -32,7 +32,7 @@
     "默认预置的显存口径：矩阵本体默认 ZeRO-0（每卡整份 fp32 优化器态 ≈46 GB），moe504b32k 在这个口径下 3959/4096 张超容——这是估算口径造成的，不是真告警（反馈「一下告警会有这么多红色么」）。本页对 moe504b32k 默认传 zero=1（分布式优化器，Megatron 系大 MoE 常规做法；64 GB 卡能跑这套配置也要求如此），全部卡落在 32–42%，第一屏暗灰、红色只留给真告警；这是假设（yaml 未逐字核对），左列可切回 0 对比。三种矩阵请求（集群聚合 brief、选中卡 brief+sel、单卡层）都带 zero；单卡层切档直接重载那一屏，集群聚合在回到上层时补拉一次。超容格以矩阵本体的 oom 判定为准（含优化器步临时区），与角标同一个数。",
     "发布路径：/patterns/lingqu-rank-map/pattern.html（反馈「不要在启动页放卡片，给一个单独的链接」）——启动页不再有这张卡；旧地址 /patterns/rank-topology-lite/pattern.html 留一个只做跳转的别名页（带上 query 与 hash），已发出去的链接不失效。",
     "放大后设备要能一眼分开（反馈「放大之后不太精致，要突出不同元素之间的特征」）：只有 NPU 实心（填充 = 占用率数据），CPU 空心方框、DPU 空心菱形、NIC 四根端口短竖线、交换机为轮廓；随缩放出细节——≥3× 出每个 POD 的列头与板分隔线（lod1），≥6× 出每格 rank 号（lod2），类名写在 <svg> 上、由 attachZoomPan 的 apply() 按缩放倍数切。灰度整体提亮（c0 #4A4A4A / c1 #808080 / c2 #BDBDBD，结构线与次文字同步提亮），反馈「现在有点灰了」。",
-    "硬件图元取自 Cinnnnnnndy/hpc-topology-node 的 icon-defs.js（commit 75ecf2a，2D 图标深色默认态）：hw-icons.js 把 npu / cpu / nic / ub_switch 转成 <symbol id=\"hw-*\" viewBox=\"0 0 48 36\">，另派生 hw-dpu（nic 卡 + 大 ASIC，库里没有 DPU）；集群层 CPU/DPU/NIC/L1/SW2、6× 时 NPU 封装、板视图部件框都用 <use> 引用。沿用该库「形状即类型、灰度即结构」；两处色相值按亮度换成等亮灰（#2e3d52→#3B3B3B，#B8A06A→#A1A1A1）。NPU 格灰度仍是占用率数据，封装图标内缩、数据色留外框。"
+    "硬件图元取自 Cinnnnnnndy/hpc-topology-node 的 icon-defs.js（commit 75ecf2a，2D 图标深色默认态）：hw-icons.js 把 npu / cpu / nic / ub_switch 转成 <symbol id=\"hw-*\" viewBox=\"0 0 48 36\">，另派生 hw-dpu（nic 卡 + 大 ASIC，库里没有 DPU）；集群层 CPU/DPU/NIC/L1/SW2、6× 时 NPU 封装、板视图部件框都用 <use> 引用。沿用该库「形状即类型、灰度即结构」；两处色相值按亮度换成等亮灰（#2e3d52→#3B3B3B，#B8A06A→#A1A1A1）。NPU 格灰度仍是占用率数据，封装图标内缩、数据色留外框。 图元后面不垫卡片：6× 以后 NPU 格子透明，占用率进图标下沿状态条（超容红）；放大与板视图里不给通信组描框。对比度：灰阶统一过 v′ = 46 + 0.84·v 提亮（该库深色态按 #313232 画布调色，本页是 #111111）。选中白框直接贴图元外边框（有封装图标时贴其圆角，否则贴格子），不留缝。"
   ],
   "embedding": "这一份本身就是别的页面用坐标换算桥接既有 pattern 的一种用法示范；它自己更适合直接打开整页看，不建议再嵌进第三层 iframe。"
 }

@@ -673,8 +673,9 @@
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
                 + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>'
-                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 3.1) + '" text-anchor="middle">' + r + '</text>'
-                + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (pdx + 22 + n * PITCH + 1.7) + '" y="' + (ry - 2.9) + '" width="5.6" height="4.2"/>');
+                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 3.55) + '" text-anchor="middle">' + r + '</text>'
+                + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="5.25"/>'
+                + '<rect class="p-npustrip lod2" x="' + (pdx + 22 + n * PITCH + 1.9) + '" y="' + (ry + 1.95) + '" width="5.2" height="0.45"/>');
             }
           }
         }
@@ -814,8 +815,9 @@
     for (var i = 0; i < 8; i++) {
       var r = base + i; if (r >= world) break;
       nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
-        + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 29) + '" y="' + (NPUY + 9.5) + '" width="28" height="21"/>'
-        + '<text class="b-npul" x="' + (NX(i) + 15) + '" y="' + (NPUY + 18) + '" text-anchor="middle">' + r + '</text><text class="b-npur" x="' + (NX(i) + 15) + '" y="' + (NPUY + 31) + '" text-anchor="middle">npu' + i + '</text></g>');
+        + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 32) + '" y="' + (NPUY + 4) + '" width="36" height="27"/>'
+        + '<rect class="b-npustrip" x="' + (NX(i) - 28) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
+        + '<text class="b-npul" x="' + (NX(i) + 19) + '" y="' + (NPUY + 18) + '" text-anchor="middle">' + r + '</text><text class="b-npur" x="' + (NX(i) + 15) + '" y="' + (NPUY + 31) + '" text-anchor="middle">npu' + i + '</text></g>');
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
         links.push('<path class="b-mesh" d="M' + NX(i) + ',' + NPUY + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (NPUY - off) + ' ' + NX(j) + ',' + NPUY + '"/>');
@@ -877,7 +879,7 @@
       if (!b) return stage.getBoundingClientRect();
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
-    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); placeSelLabel(); }
+    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); if (curSel != null) markSelFrame(stage); placeSelLabel(); }
     st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
     st.zoomAt = function (f, px, py) {
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
@@ -1497,8 +1499,14 @@
     if (!el) { if (fr) fr.remove(); return; }
     if (!fr) { fr = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); fr.setAttribute('class', 'sel-frame'); }
     svgEl.appendChild(fr);
-    var bb = el.getBBox(), m = Math.max(1.5, bb.width * 0.22);
-    fr.setAttribute('x', bb.x - m); fr.setAttribute('y', bb.y - m); fr.setAttribute('width', bb.width + 2 * m); fr.setAttribute('height', bb.height + 2 * m);
+    /* 框选直接描在图元自己的外边框上（反馈「框选样式直接在图元外边框高亮」）：看得见封装图标时
+       （板视图、集群 6× 以上）贴着图标的圆角外框；否则贴着这一格本身。不再留缝、不再另起一个大框。 */
+    var icon = null, lod2 = svgEl.classList.contains('lod2') || stage === boardStage;
+    if (lod2) { icon = el.nextElementSibling; while (icon && icon.tagName !== 'use') icon = icon.nextElementSibling; }
+    var tgt = icon || el, x = +tgt.getAttribute('x'), y = +tgt.getAttribute('y'), w = +tgt.getAttribute('width'), h = +tgt.getAttribute('height');
+    if (!isFinite(x) || !w) { var bb = el.getBBox(); x = bb.x; y = bb.y; w = bb.width; h = bb.height; }
+    fr.setAttribute('x', x); fr.setAttribute('y', y); fr.setAttribute('width', w); fr.setAttribute('height', h);
+    fr.setAttribute('rx', icon ? w * 7.5 / 48 : 0);
   }
   /* 选中标注：只给当前选中的那一格，放在它左上侧、一根短细引线连过去，
      不压在主体上；缩放/平移/换层时跟着重算位置，出了画布可视区就收起。 */
@@ -1506,7 +1514,7 @@
   function placeSelLabel() {
     if (!selLabel) return;
     var stage = tier === 3 || curSel == null ? null : level === 'segment' ? universeStage : level === 'board' ? boardStage : physStage;
-    var el = stage && stage.querySelector('.is-sel'), box = stage && stage.querySelector('.zp-box');
+    var el = stage && (stage.querySelector('.sel-frame') || stage.querySelector('.is-sel')), box = stage && stage.querySelector('.zp-box');
     if (!el || !box) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
     var r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
     if (r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }

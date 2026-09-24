@@ -199,7 +199,7 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
   background: #111111; padding: 1px 5px;
 }
 .sel-label span { font-weight: 400; color: #A0A0A0; }
-.sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(1.5px / var(--zk, 1)); pointer-events: none; }
+.sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(2px / var(--zk, 1)); pointer-events: none; }
 .sel-lead { position: fixed; z-index: 5; pointer-events: none; overflow: visible; }
 .sel-lead line { stroke: #FFFFFF; stroke-width: 1; }
 .sel-label.is-hidden, .sel-lead.is-hidden { display: none; }
@@ -342,3 +342,26 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .lc-zero button:first-of-type { margin-left: 6px; }
 .lc-zero button:hover { color: #FFFFFF; border-color: #8A8A8A; }
 .lc-zero button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+
+/* 图元后面不垫卡片（反馈「不要每个图元后面的卡片」）：放大到 6× 以后 NPU 格子本身透明，只剩
+   hpc-topology-node 的封装图标；占用率这份数据挪进图标下沿的状态条（该库 NPU 的状态条就在
+   die 窗口底部），超容仍是告警红。板视图同理，部件框只留名字，不留底和框。 */
+svg.lod2 .p-npu:not(.is-sel) { fill-opacity: 0; }
+svg.lod2 .p-npu.is-sel { fill-opacity: 0; }
+.p-npustrip, .b-npustrip { fill: #3A3A3A; pointer-events: none; }
+.p-npu.c0 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c0 + .b-npuicon + .b-npustrip { fill: #4A4A4A; }
+.p-npu.c1 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c1 + .b-npuicon + .b-npustrip { fill: #808080; }
+.p-npu.c2 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c2 + .b-npuicon + .b-npustrip { fill: #BDBDBD; }
+.p-npu.c3 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c3 + .b-npuicon + .b-npustrip { fill: var(--alert); }
+svg.lod2 .p-npunum { fill: #A0A0A0; }
+svg.lod2 .p-npu.c2 + .p-npunum { fill: #A0A0A0; }
+svg.lod2 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; }
+.p-npu.is-dim + .p-npunum + .p-npupkg, .p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip { opacity: .25; }
+.p-bnpu { fill-opacity: 0; stroke: none; }
+.p-bnpu.is-dim + .b-npuicon, .p-bnpu.is-dim + .b-npuicon + .b-npustrip { opacity: .3; }
+.b-npul { fill: #E8E8E8 !important; }
+.b-npur { fill: #A0A0A0 !important; }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: transparent; stroke: none; }
+.p-sw1 { fill: transparent; stroke: none; }
+/* 放大后与板视图里不再给通信组描框（框一描就又成了卡片）：组员靠「不压暗」读出，选中靠外圈白框 */
+svg.lod2 .p-npu, .board-stage .p-npu { stroke: none !important; }
