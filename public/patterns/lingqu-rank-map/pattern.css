@@ -560,3 +560,24 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .dc-fig svg { display: block; width: 100%; height: auto; max-height: 150px; }
 .dc-ckv { color: #A0A0A0; }
 .dc-ckv i { font-style: normal; color: #6A6A6A; }
+/* ── 原生泳道（本预置的 1F1B）：保留泳道原来那几种必要的颜色——前向蓝、反向粉、通信绿 */
+.sw { display: block; font-family: var(--mono); }
+.sw-wait { color: #6A6A6A; padding: 12px 0; }
+.sw-tick { stroke: #222222; stroke-width: 1; }
+.sw-tt { font-size: 9px; fill: #6A6A6A; }
+.sw-row { cursor: pointer; transition: opacity .15s ease; }
+.sw-row.is-dim { opacity: .3; }
+.sw-row.is-rank { cursor: default; }
+.sw-bg { fill: #161616; }
+.sw-row.is-on .sw-bg { fill: #1E1E1E; stroke: #E8E8E8; stroke-width: 1; }
+.sw-lbl { font-size: 10.5px; fill: #C8C8C8; }
+.sw-row.is-on .sw-lbl, .sw-row.is-rank .sw-lbl { fill: #FFFFFF; }
+.sw-l2 { fill: #6A6A6A; font-size: 9.5px; }
+.sw-f { fill: #4369EF; }
+.sw-b { fill: #FF4B7B; }
+.sw-f.is-own, .sw-b.is-own { fill-opacity: .55; }
+.sw-p2p { stroke: #04D793; stroke-width: 1.5; }
+.sw-dp { fill: #04D793; fill-opacity: .7; }
+.sw.is-hm [data-m]:not(.is-m) { opacity: .25; }
+.sw-foot text { font-size: 10px; fill: #A0A0A0; }
+.sw-foot .sw-demo { fill: #6A6A6A; }

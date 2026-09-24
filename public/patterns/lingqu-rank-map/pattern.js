@@ -656,7 +656,7 @@
     });
     [physStage, boardStage].forEach(markSelFrame);
     if (curSel != null) showRelations(physOf(curSel).board);
-    if (drawerOpen === 'hier') renderHier();
+    renderPanel();
     setTimeout(placeSelLabel, 0);
     // 板视图：选中那颗 NPU 自己的链路（出板 8 口、板内 fullmesh 7 根、H2D、NIC）换激活样式，其余退后；
     // 集群层放大后原地展开的那块板（.rel）同一套
@@ -978,9 +978,10 @@
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
   var DRAWERS = {
     netgraph: { title: '整网图', src: function () { return '../model-netgraph/pattern.html?' + new URLSearchParams({ embed: '1', theme: 'dark', preset: PS.matrixPreset }).toString(); } },
-    // 泳道是 compute-graph-viewer 的上游拷贝，画的是它自己那份 32 卡示例，不接
-    // 当前预置——标题里带一句，不冒充。
-    swimlane: { title: '泳道图 · 上游 32 卡示例', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
+    /* 泳道：原来嵌的是 compute-graph-viewer 的上游拷贝，画的是它自己那份 32 卡示例（PP4·TP2·EP2），
+       段号、rank 号都对不上本预置，联动不起来。反馈「修改泳道的数据，让它也能和集群联动」——换成本页原生：
+       按当前预置（PP、GA、每段层数）算一步 1F1B 调度，见 renderSwim。 */
+    swimlane: { title: '泳道', native: true },
     rubik: { title: '逻辑魔方', src: function () { return rubikSrc; } },
     hier: { title: '层级剖面', native: true }
   };
@@ -1002,7 +1003,7 @@
       drawerOpen = key; drawerTitle.textContent = DRAWERS[key].title;
       var nat = !!DRAWERS[key].native;
       drawerFrame.style.display = nat ? 'none' : ''; drawerBody.hidden = !nat;
-      if (nat) renderHier();
+      if (nat) renderPanel();
       else { var src = DRAWERS[key].src(); if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src; }
       drawer.classList.add('at-' + DRAWER_POS[key]); document.body.classList.add('panel-' + DRAWER_POS[key]);
       applyPanelHeight(); applyPanelWidth();
@@ -1051,7 +1052,7 @@
       syncCardHeights(); placeSelLabel();
     }
     function up() {
-      document.body.classList.remove('is-resizing'); curZP().refit(); if (drawerOpen === 'hier') renderHier();
+      document.body.classList.remove('is-resizing'); curZP().refit(); renderPanel();
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
     }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
@@ -1209,7 +1210,7 @@
     (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();
     if (tier === 1) renderRightIdle(); else if (curSel != null) showRankBadge(curSel);
-    if (drawerOpen === 'hier') renderHier();
+    renderPanel();
     renderDataCards();
   }
   /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
@@ -1400,9 +1401,7 @@
                  ← rubik-select
        整网图    → pto:state hl.rank（同一个矩阵预置，rank 号一一对应）；只聚焦段时 filters.p
                  ← pto:select
-       泳道      → pto:state filters {t,e,p}——它画的是上游 32 卡示例（TP2·EP2·PP4），只传落在
-                   这个范围里的那几维，超出的维传 null，不去假装定位到一条不相干的泳道
-                 ← pto:swimlane-select 的 groups.p → 聚焦同号 PP 段
+       泳道      本页原生（按当前预置算的 1F1B）：重画即高亮所在段、多一条选中 rank 的道；点一段 = 聚焦
        层级剖面  本页原生：重画即高亮（POD / 板 / NPU 三张格子），点格子 = 选中
      回声：面板报上来的那一次改动不再推回同一个面板（linkMute），否则泳道自己的选中态会被
      宿主的 filters 盖掉；魔方收到 select 会再报一次 rubik-select，同一张卡直接忽略。 */
@@ -1414,7 +1413,7 @@
     var key = curSel + '|' + focusPP;
     if (!force && linkSent[drawerOpen] === key) return;
     linkSent[drawerOpen] = key;
-    if (drawerOpen === 'hier') { renderHier(); return; }
+    if (DRAWERS[drawerOpen].native) { renderPanel(); return; }
     if (linkMute) return;
     var w = drawerFrame.contentWindow; if (!w) return;
     var c = curSel != null ? coordOfRank(curSel) : null, pp = c ? c.pp : focusPP;
@@ -1424,12 +1423,9 @@
       w.postMessage(curSel != null ? { type: 'pto:state', filters: NOF, hl: { rank: curSel } }
         : pp != null ? { type: 'pto:state', hl: null, filters: { t: null, e: null, p: pp, d: null } }
         : { type: 'pto:state', hl: null, filters: NOF }, '*');
-    } else if (drawerOpen === 'swimlane') {
-      var ep = c ? c.dp % (PS.ep || 1) : null;
-      w.postMessage({ type: 'pto:state', filters: { t: c && c.tp < 2 ? c.tp : null, e: ep != null && ep < 2 ? ep : null, p: pp != null && pp < 4 ? pp : null } }, '*');
     }
   }
-  drawerFrame.addEventListener('load', function () { if (drawerOpen && drawerOpen !== 'hier') { delete linkSent[drawerOpen]; setTimeout(function () { syncLinked(true); }, 300); } });
+  drawerFrame.addEventListener('load', function () { if (drawerOpen && !DRAWERS[drawerOpen].native) { delete linkSent[drawerOpen]; setTimeout(function () { syncLinked(true); }, 300); } });
 
   window.addEventListener('message', function (ev) {
     var d = ev.data;
@@ -1439,15 +1435,6 @@
         // 整网图里点了一张卡 / 点空白
         if (typeof d.sel === 'number' && d.sel >= 0 && d.sel < world) { if (d.sel !== curSel) fromPanel(function () { showTier2(d.sel, coordLine(d.sel)); }); }
         else if (d.sel == null && curSel != null) fromPanel(function () { showOverview(true); });
-        return;
-      }
-      if (d.type === 'pto:swimlane-select') {
-        // 泳道点了一节：它的 rank 是示例里的 32 卡编号，对不上本预置；能对上的是 PP 段号
-        var gp = d.groups && d.groups.p;
-        if (typeof gp === 'number' && gp >= 0 && gp < PS.pp) fromPanel(function () {
-          if (curSel != null && coordOfRank(curSel).pp !== gp) showOverview(true);
-          focusSegment(gp);
-        });
         return;
       }
       if (d.type === 'rubik-drill') {
@@ -1716,9 +1703,106 @@
     drawGrid(cvs[1], nBoard, 32, 8, 7, 1, 4, function (i9) { return cellColor(A.board[i9] && A.board[i9].v, A.board[i9] && A.board[i9].bad); }, here ? here.board : null);
     drawGrid(cvs[2], world, 64, 8, 4, 1, 2, function (i9) { return cellColor(lastCluster && lastCluster.ratio ? lastCluster.ratio[i9] : null, !!(oomSet && oomSet[i9])); }, curSel);
   }
+  /* ── 原生泳道：本预置一步训练的 1F1B 调度 ──────────────────────────────────────────
+     每段（PP 号）一条道，道上是这一段处理的全部 GA 个 micro-batch：前向（蓝）、反向（粉），
+     调度按标准 1F1B（第 p 段先灌 PP−p−1 个前向，之后一前一后，最后排空反向）逐个解依赖算出来；
+     空出来的就是流水气泡，占比 = (PP−1)/GA，与流水卡同一个数。时间以「一个 μb 的前向」为 1、
+     反向按 2 计——相对时长，不是实测毫秒（右下角挂「示意」）。选中 rank 时，在它所在那一段下面多
+     一条它自己的道，并标出它这一步的通信：段边界收发激活/梯度（绿竖线）、步末 DP 同步。
+     联动：画布上选中 / 聚焦哪一段，这里那一段亮、其余压暗；点一条道（或道上的块）= 聚焦那一段，
+     再点取消；悬停一个 μb，它在各段上的前向反向一起亮。 */
+  var swimCache = null;
+  function sched1F1B(P, M) {
+    var ops = [], free = [], out = [], fEnd = {}, bEnd = {}, p, i;
+    for (p = 0; p < P; p++) {
+      var w = Math.min(P - p - 1, M), q = [];
+      for (i = 0; i < w; i++) q.push(['F', i]);
+      for (i = 0; i < M - w; i++) { q.push(['F', w + i]); q.push(['B', i]); }
+      for (i = M - w; i < M; i++) q.push(['B', i]);
+      ops.push(q); free.push(0); out.push([]);
+    }
+    for (var guard = 0; guard < P * M * 4; guard++) {
+      var moved = false;
+      for (p = 0; p < P; p++) {
+        var op = ops[p][0]; if (!op) continue;
+        var dep = op[0] === 'F' ? (p === 0 ? 0 : fEnd[(p - 1) + ':' + op[1]]) : (p === P - 1 ? fEnd[p + ':' + op[1]] : bEnd[(p + 1) + ':' + op[1]]);
+        if (dep === undefined) continue;
+        var st = Math.max(free[p], dep), en = st + (op[0] === 'F' ? 1 : 2);
+        (op[0] === 'F' ? fEnd : bEnd)[p + ':' + op[1]] = en; free[p] = en;
+        out[p].push({ k: op[0], m: op[1], s: st, e: en }); ops[p].shift(); moved = true;
+      }
+      if (!moved) break;
+    }
+    return { lanes: out, T: Math.max.apply(null, free) };
+  }
+  function renderSwim() {
+    if (!drawerBody || drawerOpen !== 'swimlane') return;
+    var C = lastCluster, M = C && C.model ? C.model.ga : null, P = PS.pp;
+    if (!M) { drawerBody.innerHTML = '<div class="sw-wait">…</div>'; return; }
+    if (!swimCache || swimCache.P !== P || swimCache.M !== M) swimCache = { P: P, M: M, S: sched1F1B(P, M) };
+    var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P);
+    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 112, RH = 16, GAP = 5, TOP = 18;
+    var sx = (W - LBL - 8) / T, X = function (t) { return (LBL + t * sx).toFixed(1); };
+    var fp = curSel != null ? coordOfRank(curSel).pp : focusPP;
+    var rows = [], y = TOP, h = [];
+    for (var p = 0; p < P; p++) { rows.push({ p: p, y: y }); y += RH + GAP; if (curSel != null && p === fp) { rows.push({ p: p, y: y, rank: true }); y += RH + GAP; } }
+    var H = y + 22;
+    // 时间轴
+    var step = T > 200 ? 20 : T > 80 ? 10 : 5;
+    for (var t = 0; t <= T; t += step) h.push('<line class="sw-tick" x1="' + X(t) + '" x2="' + X(t) + '" y1="' + (TOP - 4) + '" y2="' + (H - 22) + '"/><text class="sw-tt" x="' + X(t) + '" y="10" text-anchor="middle">' + t + '</text>');
+    rows.forEach(function (r) {
+      var on = fp == null || r.p === fp, cls = 'sw-row' + (on ? '' : ' is-dim') + (r.rank ? ' is-rank' : '') + (fp === r.p && !r.rank ? ' is-on' : '');
+      h.push('<g class="' + cls + '" data-p="' + r.p + '">');
+      h.push('<rect class="sw-bg" x="' + LBL + '" y="' + r.y + '" width="' + (W - LBL - 8) + '" height="' + RH + '"/>');
+      h.push(r.rank
+        ? '<text class="sw-lbl" x="12" y="' + (r.y + 12) + '">rank ' + curSel + '</text>'
+        : '<text class="sw-lbl" x="0" y="' + (r.y + 12) + '">PP' + r.p + '<tspan class="sw-l2"> L' + (r.p * lps) + '–' + ((r.p + 1) * lps - 1) + '</tspan></text>');
+      S.lanes[r.p].forEach(function (b) {
+        h.push('<rect class="sw-' + b.k.toLowerCase() + (r.rank ? ' is-own' : '') + '" data-m="' + b.m + '" x="' + X(b.s) + '" y="' + (r.y + 1) + '" width="' + Math.max(1, (b.e - b.s) * sx - 1).toFixed(1) + '" height="' + (RH - 2) + '"><title>PP' + r.p + ' · μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向') + '</title></rect>');
+        // 选中 rank 自己那条道：段边界的收发（前向收上一段激活、发给下一段；反向反过来）
+        if (r.rank) {
+          var recv = b.k === 'F' ? r.p > 0 : r.p < P - 1, send = b.k === 'F' ? r.p < P - 1 : r.p > 0;
+          if (recv) h.push('<line class="sw-p2p" x1="' + X(b.s) + '" x2="' + X(b.s) + '" y1="' + r.y + '" y2="' + (r.y + RH) + '"/>');
+          if (send) h.push('<line class="sw-p2p" x1="' + X(b.e) + '" x2="' + X(b.e) + '" y1="' + r.y + '" y2="' + (r.y + RH) + '"/>');
+        }
+      });
+      if (r.rank) {
+        var tEnd = S.lanes[r.p][S.lanes[r.p].length - 1].e;
+        h.push('<rect class="sw-dp" x="' + X(tEnd) + '" y="' + (r.y + 1) + '" width="' + Math.max(3, (T - tEnd) * sx + 6).toFixed(1) + '" height="' + (RH - 2) + '"><title>步末 DP 梯度同步' + (C.comm && C.comm.dp ? ' · ' + C.comm.dp.txt : '') + '</title></rect>');
+      }
+      h.push('</g>');
+    });
+    // 底部 key / value
+    var busy = M * 3, idle = T - busy;
+    var foot = '<g class="sw-foot" transform="translate(0,' + (H - 8) + ')">'
+      + '<rect class="sw-f" x="0" y="-8" width="10" height="8"/><text x="14" y="0">F</text>'
+      + '<rect class="sw-b" x="32" y="-8" width="10" height="8"/><text x="46" y="0">B</text>'
+      + '<line class="sw-p2p" x1="68" x2="68" y1="-9" y2="1"/><text x="74" y="0">P2P</text>'
+      + '<rect class="sw-dp" x="104" y="-8" width="10" height="8"/><text x="118" y="0">DP</text>'
+      + '<text x="150" y="0">PP ' + P + ' · μb ' + M + ' · 气泡 ' + pct(idle / busy) + '</text>'
+      + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测</title>示意 · B=2F</text></g>';
+    drawerBody.innerHTML = '<svg class="sw" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + h.join('') + foot + '</svg>';
+  }
+  function swimClick(t) {
+    var r = t.closest && t.closest('.sw-row'); if (!r || r.classList.contains('is-rank')) return;
+    var p = +r.getAttribute('data-p');
+    if (curSel == null && focusPP === p) { focusSegment(null); return; }
+    if (curSel != null && coordOfRank(curSel).pp !== p) showOverview(true);
+    focusSegment(p);
+  }
+  drawerBody && drawerBody.addEventListener('mouseover', function (ev) {
+    if (drawerOpen !== 'swimlane') return;
+    var svg9 = drawerBody.querySelector('svg.sw'); if (!svg9) return;
+    var m = ev.target.getAttribute && ev.target.getAttribute('data-m');
+    svg9.querySelectorAll('.is-m').forEach(function (el) { el.classList.remove('is-m'); });
+    svg9.classList.toggle('is-hm', m != null);
+    if (m != null) svg9.querySelectorAll('[data-m="' + m + '"]').forEach(function (el) { el.classList.add('is-m'); });
+  });
+  function renderPanel() { if (drawerOpen === 'hier') renderHier(); else if (drawerOpen === 'swimlane') renderSwim(); }
   function ensureCluster() { if (tier === 3 || level !== 'cluster') { showOverview(); } }
   drawerBody && drawerBody.addEventListener('click', function (ev) {
     var t = ev.target;
+    if (drawerOpen === 'swimlane') { swimClick(t); return; }
     if (t.closest('[data-hact="root"]')) { physZP.reset(); showOverview(); return; }
     var spb = t.closest('[data-hsp]');
     if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30); return; }
@@ -2010,7 +2094,7 @@
   }
   window.addEventListener('resize', placeSelLabel);
   var refitT = 0;
-  window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); if (drawerOpen === 'hier') renderHier(); }, 120); });
+  window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); renderPanel(); }, 120); });
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑（旧链接 ?view=universe 不再换画法：
   //    段视图已归档到 /patterns/pp-segment-radial/）。 ────────────────────
