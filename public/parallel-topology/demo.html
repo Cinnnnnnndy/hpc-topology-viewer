@@ -1531,6 +1531,11 @@ function urlLoad(){
   /* memcards=0：solo 档不画那群显存浮卡与引线（宿主自己在右侧摆数字时传，
      rank-topology-lite 用；默认不传，solo 独立打开照旧画）。 */
   if(q.get('memcards')==='0') ui.noMemCards = true;
+  /* 两个 opt-in（默认不传照旧）：plate=0 不画选中卡底下那块门牌（rank + 坐标两行）与溢出卡壳上
+     的「装不下 ×N / 要 N GB · 只有 64GB」两行——宿主自己有 rank 读数时它们是压在卡体上的重复信息；solozoom=N 把 solo 档的飞焦倍数从 20 提到 N（上限 80），
+     容量占用低的卡本身很矮，20 倍下只有指甲盖大。只有 lingqu-rank-map 传。 */
+  if(q.get('plate')==='0') ui.noPlate = true;
+  var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
      取景直接带它进来，所以这条链接自己就是那一屏，不靠宿主再发一次消息。
@@ -1577,7 +1582,7 @@ function urlLoad(){
   });
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
-  var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
+  var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, Math.max(20, ui.soloZoom || 0));
   var px3 = parseFloat(q.get('px')); if(isFinite(px3)) ui.panX3 = px3;
   var py3 = parseFloat(q.get('py')); if(isFinite(py3)) ui.panY3 = py3;
   var cy2 = parseFloat(q.get('cyaw')); if(isFinite(cy2)) ui.cavYaw = cy2;
@@ -5661,10 +5666,13 @@ function netScene(D, g, box, step){
             var ovMidY9 = ovP9[1] - 7.75;
             var ovPl9 = placeAt(ovP9[0], ovMidY9, ovW9, 22);
             var ovDy9 = ovPl9[1] - ovMidY9;
+            /* plate=0（宿主自己摆 rank 读数）时这两行也不写：它们压在卡体上，宿主右列已有同样的数 */
+            if(!ui.noPlate){
             body.push(txt(ovPl9[0], ovP9[1] - 12 + ovDy9, ovTxt1_9, 8.5, ovC9, 'middle',
               'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
             body.push(txt(ovPl9[0], ovP9[1] - 3.5 + ovDy9, ovTxt2_9, 6.4, ovC29, 'middle',
               'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
+            }
             /* solo（第三档）镜头收尾时，scheduleCamSettle 量的是「卡自己那块命中面」
                （下面 hit.push 的 hull2(C8)，只到壳顶 cv0，也就是 64GB 那条线）来把它
                摆到画面正中——装不下的这一截**顶在壳外**（见 memStack 的
@@ -5738,7 +5746,7 @@ function netScene(D, g, box, step){
               + ' opacity="'+(1 - dT*0.55).toFixed(2)+'"'));
         }
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
-        if(meC){
+        if(meC && !ui.noPlate){
           /* 门牌挂卡**底下**。挂顶上时它会整块盖住斜后方那张卡（转台是俯视，
              卡的上方正好压着后一排），底边外侧那一圈是空的。 */
           var cTop = P(0.5, cv1 + 0.13, cw0, kc);
@@ -10616,7 +10624,7 @@ function focusCardCamera(g, zoom9){
      原来这里拿 C 当落点，于是选中卡稳定地偏在中心偏下——放大倍数越高偏得越远
      （第三档 17 倍时直接掉出画面）。 */
   var tx = (vr.vx || 0) + vr.vw/2, ty = (vr.vy || 0) + vr.vh/2;
-  var toZoom = clamp(zoom9 || 9, 0.2, 20);
+  var toZoom = clamp(zoom9 || 9, 0.2, Math.max(20, ui.soloZoom || 0));
   /* chainCardAnchor 记的是**这一次渲染出来的**屏幕坐标（P() 里已经吃过 zoom/pan），
      不是 pan/zoom 之前那一层的 base 坐标——文件上面那句注释写反了。
      zoom=1、pan=0 那一次（首屏深链）两者恰好相等，所以一直没暴露；一旦是
@@ -10694,7 +10702,7 @@ function ptoSetTier(n9){
     /* 第三档问的是"这一只里面"，跨卡的边这时全指向不再画出来的兄弟卡——
        把通信粒度一起收到卡内那一级，线才有落点（见 cgLocal9 的两道闸）。 */
     ui.commGrain = 'intra';
-    render(); focusCardCamera(sel, 20);
+    render(); focusCardCamera(sel, ui.soloZoom || 20);
   } else return false;
   ptoNotifyTier();
   return true;
@@ -10912,7 +10920,7 @@ function placeOpCard(){
   el.style.right = 'auto'; el.style.left = l9.toFixed(0)+'px'; el.style.top = t9.toFixed(0)+'px';
 }
 function nudgeZoom(f){
-  ui.zoom3 = clamp(ui.zoom3 * f, 0.2, 20);
+  ui.zoom3 = clamp(ui.zoom3 * f, 0.2, Math.max(20, ui.soloZoom || 0));
   applyViewTransform();
 }
 function renderChain(D){
@@ -13816,7 +13824,7 @@ $('stage').addEventListener('wheel', function(ev){
   var svg = $('stage').querySelector('svg');
   if(!svg) return;
   var factor = ev.deltaY > 0 ? 1/1.15 : 1.15;
-  var next = clamp(ui.zoom3 * factor, 0.2, 20);
+  var next = clamp(ui.zoom3 * factor, 0.2, Math.max(20, ui.soloZoom || 0));
   var r = next / ui.zoom3;
   var ctm = svg.getScreenCTM();
   if(ctm){
@@ -13870,7 +13878,7 @@ $('stage').addEventListener('touchmove', function(ev){
   var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
   var dist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
   var r = dist / touch3.dist;
-  ui.zoom3 = clamp(touch3.zoom * r, 0.2, 20);
+  ui.zoom3 = clamp(touch3.zoom * r, 0.2, Math.max(20, ui.soloZoom || 0));
   ui.panX3 = touch3.panX + (mx - touch3.mx)*touch3.cs;
   ui.panY3 = touch3.panY + (my - touch3.my)*touch3.cs;
   applyViewTransform();               /* 双指也是仿射：不重建，跟手 */
@@ -14382,7 +14390,7 @@ window.addEventListener('message', function(ev){
          那样新选中的卡不会重绘，也不会飞焦过去。这里补一次。 */
       if(!ptoSetTier(tn9) && typeof d.sel === 'number'){
         render();
-        if(sel !== null && ui.fastCard) focusCardCamera(sel, ui.soloCard ? 20 : 9);
+        if(sel !== null && ui.fastCard) focusCardCamera(sel, ui.soloCard ? (ui.soloZoom || 20) : 9);
         ptoNotifyTier();
       }
     }
@@ -14544,7 +14552,7 @@ if(q9brief.get('brief')==='1'){
   /* fastCard：URL 直接带 ?sel= 打开（rank-topology-lite 从逻辑魔方跳过来就是这条
      路，不经过 chainpick 点击）也要飞到那张卡——上面 chainpick 分支里那次调用管的
      是"页面已经开着、这一刻点了一张卡"，这一条管的是"页面一开就已经是选中态"。 */
-  if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? 20 : 9);
+  if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? (ui.soloZoom || 20) : 9);
   /* 没选中任何卡时 ?solo=1 没有意义（第三档要有主角才成立）——落地就撤掉，
      免得之后随手点一张卡就莫名其妙直接进了第三档。 */
   if(sel === null) ui.soloCard = false;

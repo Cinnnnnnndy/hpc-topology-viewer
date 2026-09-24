@@ -33,6 +33,7 @@
   var qs = new URLSearchParams(location.search);
 
   var matrixFrame = document.getElementById('matrixFrame');
+  var detailFrame = document.getElementById('detailFrame');
   var briefCard = document.getElementById('briefCard');
   var universeStage = document.getElementById('universeStage');
   var physStage = document.getElementById('physStage');
@@ -259,12 +260,16 @@
       }).join('');
       var root = prob.events.filter(function (e) { return e.root; })[0];
       var open = !!incidentOpen[prob.id];
-      return '<div class="ip-col ' + (i9 === 0 ? 'ip-col-left' : 'ip-col-right') + (open ? ' is-open' : '') + '">'
+      return '<div class="ip-grp' + (open ? ' is-open' : '') + '">'
         + '<button type="button" class="ip-prob' + (open ? ' is-on' : '') + '" data-prob="' + prob.id + '" title="' + prob.events.length + ' 个事件 · 另一次 2048 卡训练的真实事故"><b>' + esc(prob.name.replace(/^问题\d+\s*·\s*/, '')) + '</b>'
         + '<span>' + prob.events.length + '</span></button>'
         + '<div class="ip-chain">' + evs + '</div></div>';
     });
-    incidentPanel.innerHTML = lanes.join('');
+    /* 告警全放左列（反馈「告警都放在左侧」「为什么左边一个右边一个」）：两条问题线上下叠，
+       按时间先后——问题 1（step 12000，显存 OOM）在上，问题 2（step 15k，Router 溢出）在下。
+       两者是同一次 2048 卡训练里的两个独立问题，不是因果。 */
+    var order = INCIDENT_PROBLEMS.map(function (p9, i9) { return [p9.id, i9]; }).sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+    incidentPanel.innerHTML = '<div class="ip-col ip-col-left">' + order.map(function (x) { return lanes[x[1]]; }).join('') + '</div>';
     incidentPanel.classList.remove('is-hidden');
   }
   // 先只出现问题，点了才展开这条问题线的链路
@@ -529,7 +534,7 @@
     if (leaf) {
       var sel = { tp: +leaf.getAttribute('data-tp'), cp: +leaf.getAttribute('data-cp'), pp: +leaf.getAttribute('data-pp'), rep: +leaf.getAttribute('data-rep') };
       var ms = rubikSelToMatrixSel(sel);
-      if (ms === curSel) showDetail(ms); else showTier2(ms, tier2SubLine(sel));
+      if (ms === curSel) { var lb = leaf.getBBox(); uniZP.fitVB(lb.x, lb.y, lb.width, lb.height, 160); } else showTier2(ms, tier2SubLine(sel));
       return;
     }
     var hub = ev.target.closest('.u-hub');
@@ -604,9 +609,10 @@
      Server 图里 NIC 挂在 NPU 下面、RoCE 出框），不进 L1——所以 NIC 那条线是
      另一种颜色、往上穿过 SW1 行。每板 1 颗 DPU / 4 张 NIC 是按第二页 Server
      图数的（4 个 NIC 框），直播没给每板 DPU 的确切数，这一项是示意。 */
+  var GEO = { sw1: {}, sw2: {}, board: {} }, PITCH_ = 9, ROWP_ = 9, PODW_ = 126;
   function buildPhysSvg() {
     var SPN = physCount.sp, cols = SPN > 2 ? 2 : SPN, rows = Math.ceil(SPN / cols);
-    var PITCH = 9, ROWP = 9, PODW = 126, PODH = 84, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
+    var PITCH = PITCH_, ROWP = ROWP_, PODW = PODW_, PODH = 84, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
     var SW1H = 16, PLANEH = 34, PAD = 18, HEAD = 26, GRPCOLS = 2;
     var GRPROWS = Math.ceil((PHYS.sp / PHYS.group) / GRPCOLS);
     var SPW = PAD * 2 + GRPCOLS * GRPW + (GRPCOLS - 1) * GRPGAP;
@@ -627,6 +633,7 @@
         panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
           + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
         for (var q = 0; q < 4; q++) panels.push('<use class="p-sw2" href="#hw-sw" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 14) + '" width="' + (sw2w - 3) + '" height="10"/>');
+        (GEO.sw2[s] = GEO.sw2[s] || [])[pl] = [0, 1, 2, 3].map(function (q9) { return { x: px + 6 + q9 * sw2w + (sw2w - 3) / 2, y: py + PLANEH - 4 }; });
         planeC.push({ x: px + planeW / 2, y: py + PLANEH });
       }
       var groups = Math.ceil(inSp / PHYS.group);
@@ -635,6 +642,7 @@
         var gBase = base + g * PHYS.group, sw1w = (GRPW - 7 * 4) / 8;
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
+          (GEO.sw1[gBase / PHYS.group] = GEO.sw1[gBase / PHYS.group] || [])[k] = { x: swx + sw1w / 2, top: gy, bot: gy + SW1H };
           panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
           panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>');
           links.push('<line class="p-l2" style="--pc:' + PLANE_C[k] + '" x1="' + planeC[k].x + '" y1="' + planeC[k].y + '" x2="' + (swx + sw1w / 2) + '" y2="' + gy + '"/>');
@@ -658,6 +666,7 @@
             + '<text x="' + (pdx + 115) + '" y="' + (pdy + 4.2) + '" text-anchor="middle">NIC</text></g>');
           for (var b = 0; b < 8; b++) {
             var ry = pdy + 6 + b * ROWP + ROWP / 2, bIdx = Math.floor(pBase / PHYS.board) + b;
+            GEO.board[bIdx] = { pdx: pdx, pdy: pdy, ry: ry, grp: gBase / PHYS.group, sp: s };
             panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>板 ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
             /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
                其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
@@ -697,6 +706,60 @@
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
       + '<g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></svg>';
   }
+  /* ── 放大后在集群画布上原地画出一块板的全部关系（反馈「这些关系好像都看不到了，一个都不能少」）──
+     放大到 3× 以上，指针所在的那块板（选中了 rank 就是它所在的那块）把直播四页里的关系原地展开：
+     ① 板内 8 卡 UB fullmesh（28 条弧，7×X4）  ② 出板 Clos：每卡 8 口到本组 8 颗 L1（每平面 1 颗）
+     ③ L1 → 本平面 4×SW2（L2，4 口）  ④ CPU —UB→ L1（8 口/C）  ⑤ H2D：CPU0 带 NPU0–3、CPU1 带 NPU4–7
+     ⑥ CPU0 — CPU1 互联  ⑦ DPU —PCIe— CPU0、DPU —UB→ L1  ⑧ NIC k 挂 NPU 2k/2k+1（1 口 UB）
+     ⑨ NIC / DPU —RoCE→ 出框（参数面）；超节点之间的 UBoE 本来就画着。线型与板视图一致。 */
+  var relBoard = null;
+  function relSvg(b) {
+    var G = GEO.board[b]; if (!G) return '';
+    var L1 = GEO.sw1[G.grp] || [], P2 = GEO.sw2[G.sp] || [], out = [], x0 = G.pdx, ry = G.ry, i, k;
+    var NX = function (n) { return x0 + 22 + n * PITCH_ + 4.5; }, NT = ry - 3.5, NB = ry + 3.5;
+    var CPU = [x0 + 7.7, x0 + 14.1], DPU = x0 + 101.4, NIC = function (k9) { return { x: x0 + 107.2 + (k9 % 2) * 6.8 + 3.2, y: ry - 3.4 + Math.floor(k9 / 2) * 3.4 + 1.6 }; };
+    function ln(cls, x1, y1, x2, y2) { out.push('<line class="' + cls + '" x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '"/>'); }
+    function cv(cls, x1, y1, x2, y2, bend) { out.push('<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' Q' + ((x1 + x2) / 2) + ',' + (Math.min(y1, y2) + bend) + ' ' + x2 + ',' + y2 + '"/>'); }
+    // ③ L1 → plane SW2
+    L1.forEach(function (s1, k9) { (P2[k9] || []).forEach(function (s2) { ln('rel-l12', s1.x, s1.top, s2.x, s2.y); }); });
+    // ② NPU → 8 L1   ④ CPU → 8 L1   ⑦ DPU → L1
+    for (i = 0; i < 8; i++) L1.forEach(function (s1) { ln('rel-clos', NX(i), NT, s1.x, s1.bot); });
+    CPU.forEach(function (cx) { L1.forEach(function (s1) { ln('rel-ub', cx, ry - 2.6, s1.x, s1.bot); }); });
+    if (L1[7]) ln('rel-ub', DPU, ry - 3, L1[7].x, L1[7].bot);
+    // ① fullmesh arcs (above the NPU row)
+    for (i = 0; i < 8; i++) for (k = i + 1; k < 8; k++) cv('rel-mesh', NX(i), NT, NX(k), NT, -(0.6 + (k - i) * 0.55));
+    // ⑤ H2D (below the row)   ⑥ CPU↔CPU   ⑦ DPU—PCIe—CPU0   ⑧ NIC ↔ NPU pair
+    for (i = 0; i < 8; i++) cv('rel-h2d', CPU[i < 4 ? 0 : 1], ry + 2.6, NX(i), NB, 2.4 + (i % 4) * 0.5);
+    ln('rel-cpu', CPU[0] + 3.1, ry, CPU[1] - 3.1, ry);
+    cv('rel-pcie', DPU, ry + 3, CPU[0], ry + 2.6, 5.2);
+    for (k = 0; k < 4; k++) { var nc = NIC(k); [2 * k, 2 * k + 1].forEach(function (n9) { cv('rel-nic', nc.x, nc.y + 1.6, NX(n9), NB, 3.6 + k * 0.4); }); }
+    // ⑨ RoCE out of the frame (NICs and DPU), up past the L1 row
+    for (k = 0; k < 4; k++) { var nr = NIC(k); ln('rel-roce', nr.x, nr.y - 1.6, nr.x, (L1[0] ? L1[0].top : ry) - 4); }
+    ln('rel-roce', DPU, ry - 3, DPU, (L1[0] ? L1[0].top : ry) - 4);
+    // the board row itself
+    out.push('<rect class="rel-row" x="' + (x0 + 2) + '" y="' + (ry - ROWP_ / 2) + '" width="' + (PODW_ - 4) + '" height="' + ROWP_ + '"/>');
+    return '<g class="rel lod1" pointer-events="none">' + out.join('') + '</g>';
+  }
+  function showRelations(b) {
+    if (b === relBoard) return;
+    relBoard = b;
+    var svgEl = physStage.querySelector('.zp-box svg'); if (!svgEl) return;
+    var old = svgEl.querySelector('g.rel'); if (old) old.remove();
+    if (b == null) return;
+    var tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    tmp.innerHTML = relSvg(b);
+    // 关系画在设备之下、结构之上：插在节点层前面，选中框仍在最上
+    var nodesG = svgEl.querySelector('.p-nodes');
+    svgEl.insertBefore(tmp.firstChild, nodesG);
+  }
+  physStage.addEventListener('pointerover', function (ev) {
+    var svgEl = physStage.querySelector('.zp-box svg');
+    if (!svgEl || !svgEl.classList.contains('lod1')) return;
+    var t = ev.target.closest('.p-npu, .p-board');
+    if (!t) return;
+    var b = t.hasAttribute('data-board') ? +t.getAttribute('data-board') : physOf(+t.getAttribute('data-rank')).board;
+    showRelations(b);
+  });
   function renderPhys() {
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
@@ -724,6 +787,7 @@
       el.classList.toggle('is-sel', on);
     });
     [physStage, boardStage, universeStage].forEach(markSelFrame);
+    if (curSel != null) showRelations(physOf(curSel).board);
     setTimeout(placeSelLabel, 0);
     // 板视图：选中那颗 NPU 自己的链路（出板 8 口、H2D、NIC）点亮，其余链路退后
     var slot = here != null && here.board === curBoard ? here.slot : null;
@@ -737,9 +801,18 @@
   /* 集群层的点击：NPU = 选中（再点 = 下钻）；POD 第一下 = 取景过去，取景之后
      再点它里面的某一行 = 进那块板（板视图）；超节点 = 取景；空白 = 取消选中/复位。 */
   var fitPod = null;
+  function zoomToPod(r) {
+    var pod = physStage.querySelector('.p-pod[data-pod="' + physOf(r).pod + '"]'); if (!pod) return;
+    fitPod = +pod.getAttribute('data-pod');
+    physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
+    pod.classList.add('is-fit');
+    physZP.fitVB(+pod.getAttribute('x'), +pod.getAttribute('y'), +pod.getAttribute('width'), +pod.getAttribute('height'), 40);
+  }
   physStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
-    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) showDetail(r); else showTier2(r, coordLine(r)); return; }
+    /* 再点一次（双击）已选中的格 = 放大到它所在的 POD，看得见封装图元；不再直接下钻单卡——
+       下钻只走右列「↓ 单卡」（反馈：双击之后跳到单卡那一屏「完全看不清」「这里为什么不放大了」） */
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) zoomToPod(r); else showTier2(r, coordLine(r)); return; }
     var row = ev.target.closest('.p-board');
     if (row && fitPod === +row.getAttribute('data-pod')) { goBoard(+row.getAttribute('data-board'), true); return; }
     var box = ev.target.closest('.p-pod, .p-sp');
@@ -858,7 +931,7 @@
   }
   boardStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
-    if (npu) { var r = +npu.getAttribute('data-rank'); if (r === curSel) showDetail(r); else showTier2(r, coordLine(r)); return; }
+    if (npu) { var r = +npu.getAttribute('data-rank'); if (r !== curSel) showTier2(r, coordLine(r)); return; }
     if (curSel != null) { showOverview(true); return; }
     boardZP.reset();
   });
@@ -914,7 +987,7 @@
     });
     window.addEventListener('pointerup', function () { st.drag = null; });
     stage.addEventListener('click', function (ev) { if (st.moved) { ev.stopPropagation(); ev.preventDefault(); st.moved = false; } }, true);
-    stage.addEventListener('dblclick', function () { st.reset(); });
+    stage.addEventListener('dblclick', function (ev) { if (!ev.target.closest('.p-npu, .u-leaf, .p-pod, .p-board, .u-hub')) st.reset(); });
     return st;
   }
   var uniZP = attachZoomPan(universeStage), physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
@@ -933,7 +1006,7 @@
      画布挤过去：泳道图在下方（一条横向的时间轴，天然横着放），整网图在右侧，
      逻辑魔方在左侧。哪一边开着，那一边的悬浮卡/链路就让位（CSS 按 body 上的
      panel-* 类收起），.zp-box 的内边距同步收缩，画布始终完整可见、不被压。 */
-  var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'left' };
+  var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right' };
   /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
   var PANEL_H0 = { swimlane: 272, netgraph: 0.46 };
   var drawerOpen = null;
@@ -1023,7 +1096,7 @@
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
     crumbEl.innerHTML = parts.join('<i>›</i>');
-    document.body.classList.toggle('t3', tier === 3);
+    document.body.classList.toggle('t3', tier === 3 && !detailFrame.classList.contains('is-hidden'));
     syncCardHeights();
     placeSelLabel();
   }
@@ -1042,6 +1115,15 @@
     return ppPeak;
   }
   function ratioClass(v) { return !lastCluster ? '' : v > 1 ? 'c3' : v >= lastCluster.red ? 'c2' : v >= lastCluster.amber ? 'c1' : 'c0'; }
+  /* 容量告警也在左列（反馈「告警都放在左侧」「一起放在左侧」）：只写有的那几档，
+     紧跟一颗「→ rank N」跳到最严重那张；全部正常时整块不出现。 */
+  function capAlertHtml() {
+    if (!lastCluster) return '';
+    var n = lastCluster.n, rows = [['超容', n.oom, 'is-bad'], ['红线', n.red, 'is-warn']].filter(function (x) { return x[1] > 0; });
+    if (!rows.length) return '';
+    return '<div class="lc-cap">' + rows.map(function (x) { return '<div class="lc-caprow ' + x[2] + '"><span>' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('')
+      + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ rank ' + lastCluster.worst + '</button>' : '') + '</div>';
+  }
   function renderLeftCard() {
     var pk = ppPeaks(), N = PS.pp, W = 200, H = 50, BASE = 36, gap = 10;
     var bw = (W - gap * (N - 1)) / N, top = Math.max(1.1, pk ? Math.max.apply(null, pk.map(function (x) { return x.v; })) : 1.1);
@@ -1060,11 +1142,13 @@
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
       + '<svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
       + lg
+      + capAlertHtml()
       + '<div class="lc-zero" title="优化器切分：0 = 不切，1 = 分布式优化器（优化器状态按 DP 切），2 = 再切梯度，3 = 再切权重。本预置默认 1 为假设">zero'
       + [0, 1, 2, 3].map(function (z) { return '<button type="button" data-zero="' + z + '"' + (z === ZERO ? ' class="is-on"' : '') + '>' + z + '</button>'; }).join('') + '</div>';
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) { showTier2(lastCluster.worst, coordLine(lastCluster.worst)); return; }
     var zb = ev.target.closest('[data-zero]');
     if (zb) { setZero(+zb.getAttribute('data-zero')); return; }
     var b = ev.target.closest('.pb'); if (!b) return;
@@ -1106,7 +1190,7 @@
     var u = new URLSearchParams(location.search);
     if (z === (PS.zero || 0)) u.delete('zero'); else u.set('zero', String(z));
     history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u.toString() : '') + location.hash);
-    if (tier === 3) { clusterStale = true; matrixFrame.src = matrixSrcFor(curSel); }
+    if (tier === 3) { clusterStale = true; loadDetail(curSel); }
     else if (curSel != null) requestTier2Brief(curSel);
     else requestClusterBrief();
     renderLeftCard();
@@ -1193,7 +1277,7 @@
   // 渲染的换成矩阵渲染的，字面上一个字不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0',
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: '0', solozoom: '44',
       view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
@@ -1253,6 +1337,8 @@
      由 showDetail 自己切矩阵。两张 SVG 舞台都受同一套选中/聚焦状态驱动。 */
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
+    detailFrame.classList.add('is-hidden');
+    clearTimeout(detailRevealT); detailRevealT = null; document.body.classList.remove('is-loading');
     if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
     if (level === 'segment') renderUniverse(); else if (level === 'board') renderBoard(curBoard); else renderPhys();
     universeStage.classList.toggle('is-hidden', level !== 'segment');
@@ -1284,25 +1370,46 @@
     if (level === 'card') level = backLevel;
     showTier1Visual();
     renderDrillInvite(matrixSel, subLine, lastBrief && lastBrief.rank === matrixSel ? lastBrief : null);
-    if (!(lastBrief && lastBrief.rank === matrixSel)) requestTier2Brief(matrixSel);
+    if (!(lastBrief && lastBrief.rank === matrixSel)) requestTier2Brief(matrixSel); else loadDetail(matrixSel);
     renderLeftCard(); renderCrumb();
   }
 
   /* 第三档：真正换到矩阵那一屏，solo=1 直接落在"只看这一只"。三张卡不动：
      右卡先留着第二档已经拿到的数字，矩阵自己的 pto:tier 回报到了再换成它
      报的那份（同一个 ptoRankBrief，数字一样，只是去掉"下钻"按钮）。 */
+  /* ── 单卡层不卡顿（反馈「不丝滑的是下钻之后的场景，要从代码上处理」）──────────────
+     原来点「↓ 单卡」那一刻才把 1.4 万行的矩阵本体装进 iframe：加载、首渲、再飞 560ms
+     镜头、420ms 后重渲收尾——读者看着一块空白慢慢长出一张卡。现在单卡页单独占一个
+     detailFrame，**选中一张卡、显存读数回来之后就在后台预载**（隐藏着把镜头也飞完）；
+     点下钻时它多半已经就绪，直接淡入。没就绪就原画面不动、面包屑挂个「…」，等它报
+     pto:tier=3（首渲完成）后再留 700ms 让镜头落定，然后才淡入；5 秒兜底。
+     matrixFrame 只剩「借来算数」（brief=1）这一个用途，永远不显示。 */
+  var detailSrc = null, detailReady = false, detailRevealT = null;
+  function loadDetail(sel) {
+    var src = matrixSrcFor(sel);
+    if (src === detailSrc) return;
+    detailSrc = src; detailReady = false; detailFrame.src = src;
+  }
+  function revealDetail() {
+    clearTimeout(detailRevealT); detailRevealT = null;
+    document.body.classList.remove('is-loading');
+    if (tier !== 3) return;
+    detailFrame.classList.remove('is-hidden');
+    universeStage.classList.add('is-hidden');
+    physStage.classList.add('is-hidden');
+    boardStage.classList.add('is-hidden');
+    renderCrumb();
+  }
   function showDetail(matrixSel) {
     tier = 3; curSel = matrixSel; pendingMatrixSel = matrixSel;
     if (focusPP == null) focusPP = coordOfRank(matrixSel).pp;
     if (level !== 'card') backLevel = level;
     level = 'card';
-    matrixFrame.src = matrixSrcFor(matrixSel);
-    matrixFrame.classList.remove('is-hidden');
-    universeStage.classList.add('is-hidden');
-    physStage.classList.add('is-hidden');
-    boardStage.classList.add('is-hidden');
+    loadDetail(matrixSel);
     dock.classList.add('is-hidden');
     openDrawer(null);
+    if (detailReady) revealDetail();
+    else { document.body.classList.add('is-loading'); clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 5000); }
     if (lastBrief && lastBrief.rank === matrixSel) renderBrief(lastBrief);
     else renderDrillInvite(matrixSel, pendingSubLine || coordLine(matrixSel), null, true);
     renderLeftCard(); renderCrumb();
@@ -1344,13 +1451,22 @@
         // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
         // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
         if (d.brief) { lastBrief = d.brief; placeSelLabel(); }
-        if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief);
+        if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) { renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief); loadDetail(pendingMatrixSel); }
         return;
       }
+      return;
+    }
+    if (ev.source === detailFrame.contentWindow) {
       if (d.type !== 'pto:tier') return;
       if (d.tier === 3) {
-        renderBrief(d.brief);
-      } else if (d.sel != null && d.brief) {
+        // 预载完成（可能是在后台、读者还没点下钻）：记下就绪；读者已经在等这一张就留 700ms 让镜头落定再淡入
+        detailReady = true;
+        if (tier === 3 && d.sel === curSel) { renderBrief(d.brief); if (detailFrame.classList.contains('is-hidden')) { clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 700); } }
+        else if (d.brief) lastBrief = d.brief;
+        return;
+      }
+      if (tier !== 3 || detailFrame.classList.contains('is-hidden')) return;   // 后台那张的消息不驱动界面
+      if (d.sel != null && d.brief) {
         showTier2(d.sel, 'tp' + d.brief.coord.tp + ' cp' + d.brief.coord.cp + ' dp' + d.brief.coord.dp
           + ' pp' + d.brief.coord.pp + (d.brief.coord.ep != null ? ' ep' + d.brief.coord.ep : '')
           + ' · L' + d.brief.layers.lo + '–L' + d.brief.layers.hi);
@@ -1367,6 +1483,8 @@
   var alertTipOpen = false;
   function renderRightIdle() {
     briefCard.classList.remove('is-cta');
+    // 没选中 rank 时右侧什么都不放：容量告警已经在左列
+    alertBadge.classList.add('is-hidden'); briefCard.classList.add('is-hidden'); alertTipOpen = false; syncCardHeights(); return;
     briefCard.classList.toggle('is-tip', true);
     if (!lastCluster) {
       alertBadge.classList.add('is-hidden');
@@ -1518,6 +1636,8 @@
     if (!el || !box) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
     var r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
     if (r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
+    /* 画布上不再挂文字标注（反馈「不要让字和标签遮挡主体」）：选中只靠白框，rank 名在右上角角标里 */
+    if (true) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
     var gb = lastBrief && lastBrief.rank === curSel ? ' · ' + gbFmt(lastBrief.cap.totGB) : '';
     selLabel.innerHTML = 'rank ' + curSel + '<span>' + gb + '</span>';
     var ax = r.left, ay = r.top, ex = ax - 16, ey = ay - 16;

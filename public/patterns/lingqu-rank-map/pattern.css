@@ -300,7 +300,8 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .ip-prob:hover b { color: #FFFFFF; }
 .ip-prob.is-on { border-top-color: #FFFFFF; }
 .ip-chain { position: relative; padding-left: 14px; display: none; }
-.ip-col.is-open .ip-chain { display: block; }
+.ip-grp.is-open .ip-chain { display: block; }
+.ip-grp + .ip-grp { margin-top: 4px; }
 .ip-chain::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: #5A5A5A; }
 .ip-ev { position: relative; padding: 5px 0 7px; }
 .ip-ev::before { content: ''; position: absolute; left: -14px; top: 9px; width: 7px; height: 7px; background: var(--ip-sevc); }
@@ -365,3 +366,26 @@ svg.lod2 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; }
 .p-sw1 { fill: transparent; stroke: none; }
 /* 放大后与板视图里不再给通信组描框（框一描就又成了卡片）：组员靠「不压暗」读出，选中靠外圈白框 */
 svg.lod2 .p-npu, .board-stage .p-npu { stroke: none !important; }
+/* 单卡页还在后台就绪中：原画面不动，面包屑末尾挂一个静态「…」，不做转圈动画 */
+body.is-loading .crumb .cr.is-cur:last-child::after { content: ' …'; color: #8A8A8A; }
+/* 左列的容量告警：一两行「超容 N / 红线 N」，数字用告警色 */
+.lc-cap { margin-top: 14px; }
+.lc-caprow { display: flex; justify-content: space-between; font-size: 11px; line-height: 1.8; color: #A0A0A0; }
+.lc-caprow b { font-weight: 500; }
+.lc-caprow.is-bad b { color: var(--alert); }
+.lc-caprow.is-warn b { color: #E3A33B; }
+.lc-cap .brief-cta { margin-top: 6px; }
+/* 放大后原地展开的一块板的全部关系（线型与板视图一致：实线 UB，长虚 UB 上联，短虚 RoCE，点线 PCIe） */
+.rel { display: none; }
+svg.lod1 .rel { display: inline; }
+.rel line, .rel path { fill: none; stroke-width: calc(1px / var(--zk, 1)); }
+.rel-mesh { stroke: #E8E8E8; stroke-opacity: .55; }
+.rel-clos { stroke: #BDBDBD; stroke-opacity: .35; }
+.rel-l12 { stroke: #808080; stroke-opacity: .6; }
+.rel-ub { stroke: #A0A0A0; stroke-opacity: .6; stroke-dasharray: 3 2; }
+.rel-h2d { stroke: #A0A0A0; stroke-opacity: .8; }
+.rel-nic { stroke: #808080; stroke-opacity: .9; }
+.rel-cpu { stroke: #E8E8E8; stroke-width: calc(1.5px / var(--zk, 1)) !important; }
+.rel-pcie { stroke: #A0A0A0; stroke-dasharray: 1 1.5; }
+.rel-roce { stroke: #808080; stroke-dasharray: 1.2 1.2; }
+.rel-row { fill: #FFFFFF; fill-opacity: .04; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 2 2; }
