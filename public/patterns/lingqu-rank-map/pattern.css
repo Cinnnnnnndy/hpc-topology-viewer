@@ -153,12 +153,14 @@ body.t3 .ip-col-right { top: calc(104px + var(--rc-h, 160px) + 20px); }
 .drawer {
   position: fixed; z-index: 7;
   display: flex; flex-direction: column; overflow: hidden;
-  background: #131313; border: 1.5px solid #282828;
+  /* 和四周小卡同一套毛玻璃，只是更实一点：面板里是整页内容，透太多读不清 */
+  background: rgba(20, 20, 20, .78); border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
+  -webkit-backdrop-filter: blur(16px) saturate(1.1); backdrop-filter: blur(16px) saturate(1.1);
   transition: opacity .15s ease;
 }
-.drawer.at-left { left: 24px; top: 64px; bottom: 64px; width: var(--ps-w, 40vw); }
-.drawer.at-right { right: 24px; top: 64px; bottom: 64px; width: var(--ps-w, 40vw); }
-.drawer.at-bottom { left: 24px; right: 24px; bottom: 18px; height: var(--pb-h, 36vh); }
+.drawer.at-left { left: 16px; top: 64px; bottom: 16px; width: var(--ps-w, 40vw); }
+.drawer.at-right { right: 16px; top: 64px; bottom: 16px; width: var(--ps-w, 40vw); }
+.drawer.at-bottom { left: 16px; right: 16px; bottom: 16px; height: var(--pb-h, 36vh); }
 .drawer.is-hidden { opacity: 0; pointer-events: none; }
 /* 拖动条：泳道的上沿调高度，左右面板的内沿调宽度；拖动时 iframe 不吃指针，免得半路被它截走 */
 .drawer-grip { position: absolute; z-index: 2; background: transparent; }
@@ -172,7 +174,7 @@ body.t3 .ip-col-right { top: calc(104px + var(--rc-h, 160px) + 20px); }
 body.is-resizing, body.is-resizing * { user-select: none; }
 body.is-resizing iframe { pointer-events: none; }
 body.is-resizing .zp-box, body.is-resizing .dock, body.is-resizing .ip-col { transition: none; }
-.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; color: #E8E8E8; border-bottom: 1.5px solid #282828; }
+.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; color: #E8E8E8; border-bottom: 1px solid rgba(255, 255, 255, .08); }
 .drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; border-radius: 4px; cursor: pointer; padding: 0 6px; }
 .drawer-hd button:hover { color: #E8E8E8; background: #1E1E1E; }
 .drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }

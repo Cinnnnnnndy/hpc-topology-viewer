@@ -1021,6 +1021,7 @@
        四周的卡是半透明悬浮的；取景时把内容摆进卡与卡之间那块「安全区」的正中，初始/复位也一样。 */
     st.reset = function () { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0); };
     st.zoomAt = function (f, px, py) {
+      st.auto = false;
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
       st.tx = px - (px - st.tx) * f; st.ty = py - (py - st.ty) * f; st.k = k2; apply();
     };
@@ -1035,7 +1036,11 @@
       var px = ox + (x - vb.x) * m, py = oy + (y - vb.y) * m, pw = w * m, ph = h * m, S = safeArea(R);
       var k = Math.min(16, Math.max(0.2, Math.min((S.w - pad * 2) / pw, (S.h - pad * 2) / ph)));
       st.k = k; st.tx = S.x + S.w / 2 - k * (px + pw / 2); st.ty = S.y + S.h / 2 - k * (py + ph / 2); apply();
+      st.last = [x, y, w, h, pad]; st.auto = true;
     };
+    /* 面板开合 / 窗口变化后安全区变了：用户没手动缩放拖动过，就按上一次的取景目标重新摆正；
+       手动动过就不抢镜头。 */
+    st.refit = function () { if (st.auto && st.last) st.fitVB.apply(null, st.last); };
     stage.addEventListener('wheel', function (ev) {
       ev.preventDefault();
       var R = st.rect();
@@ -1049,7 +1054,7 @@
       if (!st.drag) return;
       var dx = ev.clientX - st.drag.x, dy = ev.clientY - st.drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) st.moved = true;
-      if (st.moved) { st.tx = st.drag.tx + dx; st.ty = st.drag.ty + dy; apply(); }
+      if (st.moved) { st.auto = false; st.tx = st.drag.tx + dx; st.ty = st.drag.ty + dy; apply(); }
     });
     window.addEventListener('pointerup', function () { st.drag = null; });
     stage.addEventListener('click', function (ev) { if (st.moved) { ev.stopPropagation(); ev.preventDefault(); st.moved = false; } }, true);
@@ -1095,7 +1100,7 @@
       drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
-    syncCardHeights();
+    syncCardHeights(); curZP().refit();
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
   /* 面板尺寸可拖：泳道（下方）拖上沿改高度，整网图/魔方（左右）拖内沿改宽度。尺寸写成
@@ -1136,7 +1141,7 @@
       syncCardHeights(); placeSelLabel();
     }
     function up() {
-      document.body.classList.remove('is-resizing');
+      document.body.classList.remove('is-resizing'); curZP().refit();
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
     }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
@@ -1870,6 +1875,8 @@
     selLabel.classList.remove('is-hidden'); selLead.classList.remove('is-hidden');
   }
   window.addEventListener('resize', placeSelLabel);
+  var refitT = 0;
+  window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); }, 120); });
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
   //    换另外两种画法（旧链接 ?view=universe 照样认得）。 ────────────────────
