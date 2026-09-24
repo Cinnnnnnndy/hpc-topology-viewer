@@ -2324,8 +2324,16 @@ function ptoClusterBrief(){
     ratio.push(Math.round(V.ratio * 1000) / 1000); /* 逐卡占用率（= 合计 / HBM）：宿主按它分灰阶 */
     if(V.ratio > worstRatio){ worstRatio = V.ratio; worst = r; }
   }
+  /* model / comm / bubble：宿主（lingqu-rank-map）集群层的数据卡要用；只多带字段，本页不读 */
+  var comm9 = {};
+  ['tp','pp','dp'].forEach(function(dm9){
+    var T9 = commLoad9(D, dm9, 0);
+    if(T9 && D[dm9] > 1) comm9[dm9] = {txt:T9.txt, how:T9.how};
+  });
   return { world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom, ratio:ratio,
-           amber:CAP_AMBER, red:CAP_RED };
+           amber:CAP_AMBER, red:CAP_RED,
+           model:{layers:D.layers, hidden:D.hidden, seq:D.seq, mbs:D.mbs, ga:D.ga, experts:D.experts || 0, topk:D.topk || 0, lps:D.layersPerStage},
+           comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0 };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
@@ -10757,7 +10765,29 @@ function ptoRankBrief(){
     sibs: Math.max(0, Object.keys(sib9).length - 1),
     cap: {totGB: V9.tot/GiB, capGB: V9.cap/GiB, ratio: V9.ratio, level: V9.level},
     segs: V9.segs.filter(function(s9){ return s9.bytes > 0; })
-                 .map(function(s9){ return {k:s9.k, label:s9.label, gb:s9.bytes/GiB}; })
+                 .map(function(s9){ return {k:s9.k, label:s9.label, gb:s9.bytes/GiB}; }),
+    /* detail：renderRankMem 那张读出卡的全部内容，拆成数据给宿主（lingqu-rank-map 把它拆成一张张
+       悬浮小卡）。只多带字段，本页任何画面不变——口径就是读出卡用的同一批函数：
+         segs[].own/life  模型态写归属、执行态写相位（stateOwn / stateLife，峰值口径）
+         segs[].sub       权重带里逐块：哪个算子块、被哪把刀切、怎么切、多少 GB（wCutBlocks）
+         comm[]           各维每条边的载荷（commLoad9：TP/PP/DP 给字节，CP/EP 宁缺毋误不给数）
+         bubble           (PP−1)/GA */
+    detail: {
+      zero: D9.zero === undefined ? zeroLv() : D9.zero,
+      segs: V9.segs.filter(function(s9){ return s9.bytes > 0; }).map(function(s9){
+        return {k:s9.k, label:s9.label, gb:s9.bytes/GiB, zdiv: s9.zdiv || 1,
+                own: stateOwn(D9, s9.k, sel), life: stateLife(D9, s9.k, null),
+                sub: s9.sub ? s9.sub.filter(function(x9){ return x9.bytes > 0; })
+                  .map(function(x9){ return {id:x9.id, cut:x9.cut, how:x9.how, gb:x9.bytes/GiB}; }) : null};
+      }),
+      comm: ['tp','cp','ep','pp','dp'].map(function(dm9){
+        if(grp9[dm9] <= 1) return null;
+        var T9 = commLoad9(D9, dm9, co9.p); if(!T9) return null;
+        return {dim:dm9, n:grp9[dm9], txt:T9.txt, how:T9.how, exact:T9.exact, sum:T9.sum || null};
+      }).filter(Boolean),
+      bubble: D9.pp > 1 ? (D9.pp - 1) / Math.max(1, D9.ga) : 0,
+      model: {layers:D9.layers, hidden:D9.hidden, seq:D9.seq, mbs:D9.mbs, ga:D9.ga, experts:D9.experts || 0, topk:D9.topk || 0}
+    }
   };
 }
 function applyViewTransform(){
