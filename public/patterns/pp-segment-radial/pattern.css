@@ -1,0 +1,515 @@
+/* rank-topology-lite · 黑白极简数据界面
+   一块居中的主可视区（.zp-box，裁在自己的矩形里）+ 边缘的标题/导航/图例。
+   规则（本页视觉提示词）：
+   · 代码字体（等宽）贯穿全页；文字只留名称、数值与短键，解释进 hover。
+   · 只用中性灰，所有颜色 R＝G＝B——例外只有告警：超容格、告警角标、故障链严重度用红/琥珀。背景 #111111，表面 #131313–#282828，主文字
+     #E8E8E8，次文字 #A0A0A0；纯白 #FFFFFF 只给当前选中对象的边框与关键高亮。
+   · 数据灰度 = 占用率（合计 / HBM），全页同一把尺：c0 #4A4A4A < 70% ≤ c1 #808080
+     < 88% ≤ c2 #BDBDBD ≤ 100% < c3 告警红。越满越亮。
+   · 几何对象直边，主轮廓 1.5px；小按钮/切换 4–5px 圆角。不用渐变、玻璃、发光、
+     厚阴影。层次靠轮廓、留白、遮挡与灰度。
+   · Inter / 同类无衬线，字重 400–500，标题 24px，正文与控件 12–13px，数字等宽。
+   · 嵌进来的 iframe（矩阵 / 整网图 / 泳道 / 魔方）是别的页面，本页不改它们的
+     源码，只在宿主这一侧给 iframe 套 grayscale(1)，保证画面里没有色相。 */
+
+* { box-sizing: border-box; }
+
+:root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  background: #111111; overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px; font-weight: 400; color: #E8E8E8; letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+}
+b, strong { font-weight: 500; }
+
+/* ── 舞台：铺满视口，谁在上层只用 opacity 切（轻量，不做模糊/缩放飞镜头）。 */
+.stage-frame {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  border: 0; display: block; background: #111111;
+  opacity: 1; transition: opacity .25s ease; z-index: 0;
+}
+/* 藏起来的舞台只是沉到底下（z-index 不继承），不再用 pointer-events:none——那是继承属性，
+   每切一次层，舞台里上万个 SVG 元素都得重算一遍样式，下钻/返回一次卡 100ms+。 */
+.stage-frame.is-hidden { opacity: 0; z-index: -1; }
+iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
+/* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
+.drawer[data-panel="swimlane"] iframe { filter: none; }
+
+/* ── 边缘文字列：左 = 标题 + 规模 + PP 段柱状选择器 + 图例；右 = 选中 rank 的
+   读数。不套卡片（无底、无框），主可视区裁在自己的矩形里，所以不会压到它们。 */
+.side-card {
+  position: fixed; top: 64px; z-index: 6; width: 264px;
+  max-height: calc(100vh - 140px); overflow-y: auto;
+  font-size: 12px; line-height: 1.6; color: #A0A0A0;
+  transition: opacity .15s ease;
+}
+.side-card.is-hidden { opacity: 0; pointer-events: none; }
+.side-left { left: 24px; top: 20px; width: 288px; }
+.side-right { right: 24px; }
+.lc-title { margin: 0 0 8px; white-space: nowrap; font-size: 18px; line-height: 1.25; font-weight: 500; color: #E8E8E8; letter-spacing: -.03em; }
+.lc-sub { color: #A0A0A0; font-size: 11px; line-height: 1.7; }
+.lc-k, .brief-k { margin-top: 14px; margin-bottom: 4px; font-size: 10px; color: #8A8A8A; letter-spacing: .04em; }
+.tag { display: none; font-style: normal; font-size: 11px; color: #A0A0A0; border: 1.5px solid #282828; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+.gc { display: none; }
+
+/* 柱状选择器：共用基线，柱高 = 段内峰值占用，灰度同画布；虚线 = 100% */
+.pbars { display: block; overflow: visible; margin-top: 14px; }
+.pb { cursor: pointer; }
+.pb-hit { fill: transparent; }
+.pb-bar { stroke: none; }
+.pb.is-on .pb-bar { stroke: #FFFFFF; stroke-width: 1.5; }
+.pb:hover .pb-bar { stroke: #A0A0A0; stroke-width: 1.5; }
+.pb.is-on:hover .pb-bar { stroke: #FFFFFF; }
+.pb-num { font-size: 9px; fill: #8A8A8A; }
+.pb.is-on .pb-num { fill: #FFFFFF; }
+.pb-val { font-size: 10px; fill: #FFFFFF; }
+.pb-base { stroke: #3A3A3A; stroke-width: 1; }
+.pb-cap { stroke: #5C5C5C; stroke-width: 1; stroke-dasharray: 3 3; }
+.c-none { fill: #282828; }
+
+/* 灰度图例（占用率） */
+.lc-legend { position: relative; display: grid; grid-template-columns: repeat(4, 22px); gap: 2px; margin-top: 12px; padding-bottom: 14px; font-size: 9px; color: #8A8A8A; }
+.lc-legend span { position: absolute; top: 9px; transform: translateX(-50%); }
+.lc-legend span:nth-of-type(1) { left: 23px; } .lc-legend span:nth-of-type(2) { left: 47px; } .lc-legend span:nth-of-type(3) { left: 71px; }
+.lg { display: block; width: 22px; height: 6px; }
+
+/* 统一的四档灰度：画布格子、宇宙叶子、板上 NPU、柱、图例共用 */
+.c0 { fill: #4A4A4A; background: #4A4A4A; }
+.c1 { fill: #808080; background: #808080; }
+.c2 { fill: #BDBDBD; background: #BDBDBD; }
+.c3 { fill: var(--alert); background: var(--alert); }   /* 超容 = 告警，唯一用色 */
+
+/* 右列：rank 读数 */
+.brief-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: #E8E8E8; margin-bottom: 2px; }
+.brief-badge { font-size: 10px; font-weight: 500; color: #A0A0A0; border: 1px solid #282828; border-radius: 3px; padding: 0 5px; }
+.brief-badge.is-alert { color: #FFFFFF; background: var(--alert); border-color: var(--alert); }
+.brief-sub { color: #8A8A8A; font-size: 11px; margin-bottom: 6px; }
+.brief-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; line-height: 1.75; }
+.brief-row span { color: #A0A0A0; }
+.brief-row b { color: #E8E8E8; font-weight: 400; }
+.brief-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid #282828; }
+.brief-total b { font-weight: 500; }
+.brief-card.is-cta { padding-bottom: 0; }
+.brief-cta {
+  display: inline-block; width: auto; margin: 10px 6px 0 0;
+  background: transparent; color: #A0A0A0; border: 1px solid #282828; border-radius: 3px;
+  font: inherit; font-size: 11px; padding: 3px 8px; text-align: left; cursor: pointer;
+}
+.brief-cta:hover { color: #FFFFFF; border-color: #8A8A8A; }
+
+/* ── 面包屑：顶部居中，纯文字 */
+.topbar {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 8;
+  display: flex; align-items: center; font-size: 11px;
+  transition: opacity .15s ease;
+}
+.topbar.is-hidden { opacity: 0; pointer-events: none; }
+.crumb { display: flex; align-items: center; gap: 4px; color: #A0A0A0; white-space: nowrap; }
+.crumb i { font-style: normal; color: #8A8A8A; }
+.crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 1.5px solid transparent; padding: 1px 6px; cursor: pointer; border-radius: 4px; }
+.crumb .cr:hover { color: #E8E8E8; border-color: #282828; }
+.crumb .cr.is-cur { color: #E8E8E8; cursor: default; }
+
+/* ── 底部工具条：缩放 + 三个参考面板 */
+.dock {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(18px + var(--pb, 0px)); z-index: 6;
+  display: flex; align-items: center; gap: 2px; padding: 3px;
+  background: #131313; border: 1.5px solid #282828; border-radius: 5px;
+  transition: opacity .15s ease;
+}
+.dock.is-hidden { opacity: 0; pointer-events: none; }
+.dock button {
+  display: flex; align-items: center; justify-content: center; color: #A0A0A0;
+  background: transparent; border: 0; border-radius: 4px; width: 30px; height: 26px; padding: 0; cursor: pointer;
+}
+.dock svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: square; stroke-linejoin: miter; }
+.dock button:hover { color: #E8E8E8; background: #1E1E1E; }
+.dock button.is-on { color: #111111; background: #E8E8E8; }
+.dock-sep { width: 1.5px; height: 16px; background: #282828; margin: 0 4px; }
+
+/* ── 右上角告警角标：点它才弹容量 / rank 读数 */
+.alert-badge {
+  position: fixed; right: 24px; top: 20px; z-index: 6;
+  font: inherit; font-size: 11px; font-weight: 500; color: #FFFFFF;
+  background: var(--alert); border: 1px solid var(--alert); border-radius: 3px; padding: 3px 9px; cursor: pointer;
+  transition: opacity .15s ease;
+}
+.alert-badge.is-hidden { opacity: 0; pointer-events: none; }
+.alert-badge.is-quiet { color: #A0A0A0; background: transparent; border-color: #282828; }
+.alert-badge.is-on { outline: 1px solid #FFFFFF; outline-offset: 2px; }
+.side-right.is-tip { top: 64px; }
+/* 单卡层：矩阵自己的标题在左上、齿轮在右上——左列收掉标题、右上角标与右列让开一行 */
+body.t3 .side-left { top: 64px; }
+body.t3 .lc-title { display: none; }
+body.t3 .alert-badge { top: 64px; }
+body.t3 .side-right { top: 104px; }
+body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 20px); }
+body.t3 .ip-col-right { top: calc(104px + var(--rc-h, 160px) + 20px); }
+
+/* ── 参考面板：占住一边，把主可视区挤过去（泳道下方 / 整网图右侧 / 魔方左侧） */
+.drawer {
+  position: fixed; z-index: 7;
+  display: flex; flex-direction: column; overflow: hidden;
+  /* 和四周小卡同一套毛玻璃，只是更实一点：面板里是整页内容，透太多读不清 */
+  background: rgba(20, 20, 20, .78); border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
+  -webkit-backdrop-filter: blur(16px) saturate(1.1); backdrop-filter: blur(16px) saturate(1.1);
+  transition: opacity .15s ease;
+}
+.drawer.at-left { left: 16px; top: 64px; bottom: 16px; width: var(--ps-w, 40vw); }
+.drawer.at-right { right: 16px; top: 64px; bottom: 16px; width: var(--ps-w, 40vw); }
+.drawer.at-bottom { left: 16px; right: 16px; bottom: 16px; height: var(--pb-h, 36vh); }
+.drawer.is-hidden { opacity: 0; pointer-events: none; }
+/* 拖动条：泳道的上沿调高度，左右面板的内沿调宽度；拖动时 iframe 不吃指针，免得半路被它截走 */
+.drawer-grip { position: absolute; z-index: 2; background: transparent; }
+.drawer-grip::after { content: ''; position: absolute; background: #3A3A3A; border-radius: 1px; transition: background .15s ease; }
+.drawer-grip:hover::after, body.is-resizing .drawer-grip::after { background: #E8E8E8; }
+.drawer.at-bottom .drawer-grip { left: 0; right: 0; top: 0; height: 8px; cursor: ns-resize; }
+.drawer.at-bottom .drawer-grip::after { left: 50%; top: 3px; width: 32px; height: 2px; transform: translateX(-50%); }
+.drawer.at-left .drawer-grip { top: 0; bottom: 0; right: 0; width: 8px; cursor: ew-resize; }
+.drawer.at-right .drawer-grip { top: 0; bottom: 0; left: 0; width: 8px; cursor: ew-resize; }
+.drawer.at-left .drawer-grip::after, .drawer.at-right .drawer-grip::after { top: 50%; left: 3px; width: 2px; height: 32px; transform: translateY(-50%); }
+body.is-resizing, body.is-resizing * { user-select: none; }
+body.is-resizing iframe { pointer-events: none; }
+body.is-resizing .zp-box, body.is-resizing .dock, body.is-resizing .ip-col { transition: none; }
+.drawer-hd { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; color: #E8E8E8; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.drawer-hd button { font: inherit; font-size: 14px; color: #A0A0A0; background: transparent; border: 0; border-radius: 4px; cursor: pointer; padding: 0 6px; }
+.drawer-hd button:hover { color: #E8E8E8; background: #1E1E1E; }
+.drawer iframe { flex: 1; width: 100%; border: 0; background: #111111; }
+body.panel-bottom { --pb: calc(var(--pb-h, 36vh) + 10px); }
+body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
+body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
+body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
+
+/* ── 主可视区：裁在自己的矩形里，四周留白给边缘的文字与导航 */
+.phys-stage, .universe-stage { background: #111111; cursor: grab; }
+.phys-stage:active, .universe-stage:active { cursor: grabbing; }
+.zp-box { position: absolute; inset: 0; overflow: hidden; }   /* 画布铺满视口，卡片悬浮在上面 */
+.zp-box svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.zp-box svg text { font-family: var(--mono); pointer-events: none; }
+
+/* 缩放时线宽不变：所有描边按屏幕像素算（non-scaling-stroke 抵掉 viewBox），再除以
+   画布缩放倍数 --zk（JS 在 apply() 里写），抵掉 <svg> 上的 CSS transform。 */
+.zp-box svg * { vector-effect: non-scaling-stroke; }
+
+/* 选中标注：左上侧，短细引线 */
+.sel-label {
+  position: fixed; z-index: 5; pointer-events: none; white-space: nowrap;
+  font-size: 11px; font-weight: 500; color: #FFFFFF;
+  background: #111111; padding: 1px 5px;
+}
+.sel-label span { font-weight: 400; color: #A0A0A0; }
+.sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(2px / var(--zk, 1)); pointer-events: none; }
+.sel-lead { position: fixed; z-index: 5; pointer-events: none; overflow: visible; }
+.sel-lead line { stroke: #FFFFFF; stroke-width: 1; }
+.sel-label.is-hidden, .sel-lead.is-hidden { display: none; }
+
+/* ── 集群层：灵衢物理拓扑。结构件只用表面灰 + 1.5px 轮廓，数据（NPU 格）用四档
+   占用率灰度；链路只分线型：实线 UB、虚线 RoCE、粗虚 UBoE。 */
+.p-sp { fill: #151515; stroke: #444444; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; }
+.p-sp.is-on { stroke: #5C5C5C; }
+.p-splabel { font-size: 11px; fill: #E8E8E8; }
+.p-plane { fill: #1C1C1C; stroke: #3A3A3A; stroke-width: calc(1px / var(--zk, 1)); }
+.p-planelabel { font-size: 8px; fill: #A0A0A0; }
+
+.p-sw1 { fill: #222222; stroke: #808080; stroke-width: calc(.8px / var(--zk, 1)); }
+.p-sw1label { font-size: 8px; fill: #A0A0A0; }
+.p-pod { fill: #181818; stroke: #3E3E3E; stroke-width: calc(1.5px / var(--zk, 1)); vector-effect: non-scaling-stroke; cursor: zoom-in; }
+.p-pod:hover { stroke: #5C5C5C; }
+.p-pod.is-on { stroke: #A0A0A0; }
+.p-pod.is-fit { stroke: #5C5C5C; }
+.p-board { fill: transparent; cursor: pointer; }
+.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #202020; }
+.p-l2 { stroke: #808080; stroke-opacity: .45; stroke-width: calc(.6px / var(--zk, 1)); fill: none; }
+.p-l1 { stroke: #808080; stroke-width: calc(1px / var(--zk, 1)); }
+.p-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 4; fill: none; }
+.p-uboelabel { font-size: 10px; fill: #A0A0A0; }
+/* CPU / DPU / NIC / 交换机 / NPU 封装都是 hpc-topology-node 的 2D 图元（<use href="#hw-*">），
+   图元自带灰阶，这里只清掉会被继承进去的描边 */
+.p-cpu, .p-dpu, .p-nic, .p-sw2, .p-swicon, .p-npupkg, .b-npuicon, [class^="b-"] use { stroke: none; vector-effect: none; }
+.p-npupkg { pointer-events: none; }
+.b-npuicon { pointer-events: none; }
+
+
+.p-bdiv { stroke: #262626; stroke-width: calc(1px / var(--zk, 1)); }
+/* 细节随缩放出现：lod1（≥3×）出列头与板分隔，lod2（≥6×）出每格的 rank 号 */
+.lod1, .lod2 { display: none; }
+svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
+.p-colhd text { font-size: 2.6px; fill: #8A8A8A; letter-spacing: .02em; }
+.p-npunum { font-size: 1.5px; fill: #E8E8E8; pointer-events: none; }
+.p-npu.c2 + .p-npunum { fill: #111111; }
+.p-npu.is-dim + .p-npunum { opacity: .3; }
+.p-npu.is-sel + .p-npunum { fill: #FFFFFF; font-weight: 500; }
+.p-roce { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.p-rocelabel { font-size: 8px; fill: #A0A0A0; }
+
+/* rank 格：正方形宫格，灰度 = 占用率；选中 = 纯白边框（不改它自己的灰度）；
+   通信组成员保持原灰度、其余压暗，组别靠描边线型分 */
+.p-npu { cursor: pointer; transition: opacity .15s ease; }
+.p-npu.is-dim { opacity: .22; }
+.p-npu.is-sel { stroke: none; }
+.p-npu.g-tp { stroke: #FFFFFF; stroke-width: calc(1px / var(--zk, 1)); }
+.p-npu.g-cp { stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); }
+.p-npu.g-ep, .p-npu.g-dp { stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
+.p-npu.g-pp { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
+
+/* ── 板层：一块板的 Server 形态 */
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect, .b-nsw rect, .b-swb rect { fill: #222222; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text, .b-nsw text, .b-swb text { font-size: 10px; fill: #E8E8E8; }
+.b-nic text, .b-l1 text { font-size: 10px; }
+.b-plane { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-sw2 { fill: #8A8A8A; }
+.p-bnpu { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); }
+.p-bnpu.is-sel { stroke: #111111; }
+.b-npul { font-size: 11px; fill: #E8E8E8; }
+.b-npur { font-size: 9px; fill: #A0A0A0; }
+.p-bnpu.c2 ~ .b-npul { fill: #111111; }
+.p-bnpu.c2 ~ .b-npur { fill: #2E2E2E; }
+.p-bnpu.c3 ~ .b-npul, .p-bnpu.c3 ~ .b-npur { fill: #FFFFFF; }
+.b-lbl { font-size: 9px; fill: #A0A0A0; paint-order: stroke; stroke: #111111; stroke-width: calc(3px / var(--zk, 1)); stroke-linejoin: round; }
+.b-lbl-plane { fill: #A0A0A0; }
+.b-mesh { fill: none; stroke: #C8C8C8; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan { stroke: #8A8A8A; stroke-opacity: .5; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
+.b-h2d, .b-nicl { stroke: #A0A0A0; stroke-opacity: .6; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
+.b-roce { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 3 3; }
+.b-pcie { fill: none; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1 3; }
+.b-ub { fill: none; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 3; }
+.b-cpul { fill: none; stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-l12 { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); }
+.b-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 8 4; }
+.b-bus { stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.8px / var(--zk, 1)); }
+.b-fan.is-cold, .b-mesh.is-cold { stroke-opacity: .1; }
+.b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .15; }
+
+/* ── 连线样式（hpc-topology-node · 连线样式 Round 6 的结构，去色）：衬边 + 芯线 ──
+   衬边 .lkc 是底色、比芯线宽，把交叉处切开；芯线的实/虚节奏区分介质：
+     铜缆（板内：CPU↔CPU、H2D、NIC、NIC 交换、交换板出线）实线 · 光 UB（出板 → L1、L1 → L2、
+     CPU/DPU → L1）虚线 7 5 · 长距 UBoE 稀虚线 4 7、半透明 · RoCE 3 3 + 端头空心环 · PCIe 点线。
+   只在「近看」出现：板视图（svg.near）始终是；集群层放大 6× 以上（lod2）展开的那块板才加衬边。 */
+.lkc { fill: none; stroke: #111111; stroke-linecap: round; stroke-linejoin: round; stroke-width: calc(4.5px / var(--zk, 1)); pointer-events: none; }
+.rel .lkc { display: none; stroke: #181818; stroke-width: calc(3.5px / var(--zk, 1)); }
+svg.lod2 .rel .lkc { display: inline; }
+svg.near .b-links line, svg.near .b-links path { stroke-linecap: round; stroke-linejoin: round; }
+svg.near .b-ub { stroke-dasharray: 7 5; }
+svg.near .b-uboe { stroke-dasharray: 4 7; stroke-opacity: .75; }
+.b-nsw-l, .b-swbx { fill: none; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
+.b-swbl { stroke: #8A8A8A; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-rdma { fill: #111111; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
+/* 端点：稀疏干线两头是端口环（marker，见 pattern.js lkDefs）；从总线落下来的那一头是汇接点；
+   成束的密线平时不加（64 根的端点只会糊成一排点），选中那颗 NPU 的线加白端口 */
+svg.near .b-cpul, svg.near .b-pcie, svg.near .b-ub:not(.b-bus), svg.near .b-nsw-l, svg.near .b-swbx,
+svg.near .b-h2d, svg.near .b-nicl { marker-start: url(#b-lkp); marker-end: url(#b-lkp); }
+svg.near .b-roce:not(.b-bus) { marker-start: url(#b-lkj); }
+svg.near .b-out { marker-end: url(#b-lkj); }
+svg.near .b-links .is-hot { marker-start: url(#b-lkh); marker-end: url(#b-lkh); }
+svg.near .b-links .is-cold { marker-start: none; marker-end: none; }
+svg.lod2 .rel-cpu, svg.lod2 .rel-pcie, svg.lod2 .rel-ub, svg.lod2 .rel-nic, svg.lod2 .rel-nsw, svg.lod2 .rel-h2d { marker-start: url(#p-lkp); marker-end: url(#p-lkp); }
+svg.lod2 .rel-roce { marker-start: url(#p-lkj); }
+svg.lod2 .rel .is-hot { marker-start: url(#p-lkh); marker-end: url(#p-lkh); }
+svg.lod2 .rel .is-cold { marker-start: none; marker-end: none; }
+/* 激活链路上跑的点：深色珠子 + 白描边，贴在白芯线上 */
+.lk-dot { fill: #111111; stroke: #FFFFFF; stroke-width: calc(.9px / var(--zk, 1)); pointer-events: none; }
+/* 集群层：选中那颗 NPU 在原地展开的板内关系里，它自己的线换白、其余退后（点不跑：线不到 1px） */
+.rel .is-hot { stroke: #FFFFFF !important; stroke-opacity: 1 !important; }
+.rel .is-cold { stroke-opacity: .12 !important; }
+.rel-nsw { stroke: #808080; stroke-opacity: .8; }
+.rel-inf { stroke: #A0A0A0; stroke-opacity: .7; }
+/* 太细时换显示方式：集群总览（< 3×）线宽不到 1px，虚线只剩噪点——RoCE 收成实线、压淡，只看走向 */
+#physStage svg:not(.lod1) .p-roce { stroke-dasharray: none; stroke-opacity: .5; }
+#physStage svg:not(.lod1) .p-l2 { stroke-opacity: .3; }
+
+/* ── 故障复盘：两条链挂在左右两列下面。问题是一行文字 + 细分隔线，点开才出现
+   链；严重度只分明暗（--ip-sevc：越严重越亮）。 */
+.incident-panel { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-size: 12px; color: #A0A0A0; transition: opacity .15s ease; }
+.incident-panel.is-hidden { opacity: 0; }
+.ip-col { position: absolute; width: 264px; bottom: calc(18px + var(--pb, 0px)); overflow-y: auto; pointer-events: auto; }
+.ip-col-left { left: 24px; top: calc(20px + var(--lc-h, 330px) + 20px); }
+.ip-col-right { right: 24px; top: calc(64px + var(--rc-h, 160px) + 20px); }
+.ip-prob {
+  display: block; width: 100%; text-align: left; font: inherit; color: #E8E8E8;
+  background: transparent; border: 0; border-top: 1.5px solid #282828; border-radius: 0;
+  padding: 8px 0; cursor: pointer;
+}
+.ip-prob { display: flex !important; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ip-prob b { font-size: 11px; font-weight: 400; }
+.ip-prob span { font-size: 10px; color: var(--alert); }
+.ip-prob:hover b { color: #FFFFFF; }
+.ip-prob.is-on { border-top-color: #FFFFFF; }
+.ip-chain { position: relative; padding-left: 14px; display: none; }
+.ip-grp.is-open .ip-chain { display: block; }
+.ip-grp + .ip-grp { margin-top: 4px; }
+.ip-chain::before { content: ''; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: #5A5A5A; }
+.ip-ev { position: relative; padding: 5px 0 7px; }
+.ip-ev::before { content: ''; position: absolute; left: -14px; top: 9px; width: 7px; height: 7px; background: var(--ip-sevc); }
+.ip-ev.is-root::before { outline: 1px solid var(--ip-sevc); outline-offset: 1.5px; }
+.ip-evhd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; color: #E8E8E8; line-height: 1.35; }
+.ip-time { color: #A0A0A0; }
+.ip-root { font-size: 9px; font-weight: 500; color: #FFFFFF; background: var(--alert); border-radius: 4px; padding: 0 5px; }
+.ip-drill {
+  font: inherit; font-size: 11px; color: #E8E8E8;
+  background: #131313; border: 1.5px solid #282828; border-radius: 4px; padding: 0 6px; cursor: pointer;
+}
+.ip-drill:hover { border-color: #8A8A8A; }
+.ip-ms { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 3px; }
+.ip-m { font-size: 10px; font-weight: 400; color: #E8E8E8; white-space: nowrap; }
+.ip-m em { font-style: normal; font-weight: 400; color: #A0A0A0; margin-right: 4px; }
+.ip-m::before { content: ''; display: inline-block; width: 5px; height: 5px; background: var(--ip-sevc); margin-right: 5px; vertical-align: 1px; }
+
+/* ── 段层：宇宙视图。中心 = 模型，一圈 = PP 段，叶子 = 该段全部 rank（灰度 = 占用率）。 */
+.u-ray, .u-thread { stroke: #5A5A5A; stroke-width: calc(1px / var(--zk, 1)); fill: none; transition: opacity .15s ease; }
+.u-thread { stroke: #3E3E3E; }
+.u-ray.is-sub { stroke: #3A3A3A; }
+.u-ray.is-dim, .u-thread.is-dim { opacity: .15; }
+.u-hub { cursor: pointer; }
+.u-hubcore { fill: #1E1E1E; stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); }
+.u-hub:hover .u-hubcore { stroke: #E8E8E8; }
+.u-hub.is-dim { opacity: .25; }
+.u-hublabel { font-size: 13px; fill: #E8E8E8; }
+.u-subhub { fill: #1E1E1E; stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); }
+.u-leaf { cursor: pointer; transition: opacity .15s ease; }
+.u-leaf.is-dim { opacity: .15; }
+.u-leaf.is-sel { stroke: none; }
+.u-core { fill: #1E1E1E; stroke: #E8E8E8; stroke-width: calc(1.5px / var(--zk, 1)); }
+.u-corelabel { font-size: 16px; font-weight: 500; fill: #E8E8E8; }
+.u-coresub { font-size: 11px; fill: #A0A0A0; }
+
+/* ZeRO 档位切换：左列图例下面一行小分段按钮 */
+.lc-zero { display: flex; align-items: center; gap: 2px; margin-top: 10px; font-size: 10px; color: #8A8A8A; }
+.lc-zero button { font: inherit; font-size: 10px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; width: 20px; height: 18px; padding: 0; cursor: pointer; }
+.lc-zero button:first-of-type { margin-left: 6px; }
+.lc-zero button:hover { color: #FFFFFF; border-color: #8A8A8A; }
+.lc-zero button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+
+/* 图元后面不垫卡片（反馈「不要每个图元后面的卡片」）：放大到 6× 以后 NPU 格子本身透明，只剩
+   hpc-topology-node 的封装图标；占用率这份数据挪进图标下沿的状态条（该库 NPU 的状态条就在
+   die 窗口底部），超容仍是告警红。板视图同理，部件框只留名字，不留底和框。 */
+svg.lod2 .p-npu:not(.is-sel) { fill-opacity: 0; }
+svg.lod2 .p-npu.is-sel { fill-opacity: 0; }
+.p-npustrip, .b-npustrip { fill: #3A3A3A; pointer-events: none; }
+.p-npu.c0 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c0 + .b-npuicon + .b-npustrip { fill: #4A4A4A; }
+.p-npu.c1 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c1 + .b-npuicon + .b-npustrip { fill: #808080; }
+.p-npu.c2 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c2 + .b-npuicon + .b-npustrip { fill: #BDBDBD; }
+.p-npu.c3 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c3 + .b-npuicon + .b-npustrip { fill: var(--alert); }
+svg.lod2 .p-npunum { fill: #A0A0A0; }
+svg.lod2 .p-npu.c2 + .p-npunum { fill: #A0A0A0; }
+svg.lod2 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; }
+.p-npu.is-dim + .p-npunum + .p-npupkg, .p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip { opacity: .25; }
+.p-bnpu { fill-opacity: 0; stroke: none; }
+.p-bnpu.is-dim + .b-npuicon, .p-bnpu.is-dim + .b-npuicon + .b-npustrip { opacity: .3; }
+.b-npul { fill: #E8E8E8 !important; }
+.b-npur { fill: #A0A0A0 !important; }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect, .b-nsw rect, .b-swb rect { fill: transparent; stroke: none; }
+.p-sw1 { fill: transparent; stroke: none; }
+/* 放大后与板视图里不再给通信组描框（框一描就又成了卡片）：组员靠「不压暗」读出，选中靠外圈白框 */
+svg.lod2 .p-npu, .board-stage .p-npu { stroke: none !important; }
+/* 单卡页还在后台就绪中：原画面不动，面包屑末尾挂一个静态「…」，不做转圈动画 */
+body.is-loading .crumb .cr.is-cur:last-child::after { content: ' …'; color: #8A8A8A; }
+/* 左列的容量告警：一两行「超容 N / 红线 N」，数字用告警色 */
+.lc-cap { margin-top: 14px; }
+.lc-caprow { display: flex; justify-content: space-between; font-size: 11px; line-height: 1.8; color: #A0A0A0; }
+.lc-caprow b { font-weight: 500; }
+.lc-caprow.is-bad b { color: var(--alert); }
+.lc-caprow.is-warn b { color: #E3A33B; }
+.lc-cap .brief-cta { margin-top: 6px; }
+/* 放大后原地展开的一块板的全部关系（线型与板视图一致：实线 UB，长虚 UB 上联，短虚 RoCE，点线 PCIe） */
+.rel { display: none; }
+svg.lod1 .rel { display: inline; }
+.rel line, .rel path { fill: none; stroke-width: calc(1px / var(--zk, 1)); }
+.rel-mesh { stroke: #E8E8E8; stroke-opacity: .55; }
+.rel-clos { stroke: #BDBDBD; stroke-opacity: .35; }
+.rel-l12 { stroke: #808080; stroke-opacity: .6; }
+.rel-ub { stroke: #A0A0A0; stroke-opacity: .6; stroke-dasharray: 3 2; }
+.rel-h2d { stroke: #A0A0A0; stroke-opacity: .8; }
+.rel-nic { stroke: #808080; stroke-opacity: .9; }
+.rel-cpu { stroke: #E8E8E8; stroke-width: calc(1.5px / var(--zk, 1)) !important; }
+.rel-pcie { stroke: #A0A0A0; stroke-dasharray: 1 1.5; }
+.rel-roce { stroke: #808080; stroke-dasharray: 1.2 1.2; }
+.rel-row { fill: #FFFFFF; fill-opacity: .04; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 2 2; }
+
+/* ── 数据标注开关（配置浮层）：关掉哪类就在 body 上挂 ann-no* ── */
+body.ann-noocc .p-npu:not(.is-sel), body.ann-noocc .u-leaf, body.ann-noocc .pb-bar { fill: #6A6A6A !important; }
+body.ann-noocc .p-npustrip, body.ann-noocc .b-npustrip { fill: #3A3A3A !important; }
+body.ann-nonum .p-npunum { display: none !important; }
+body.ann-norel .rel { display: none !important; }
+
+/* ── 配置浮层：工具条正上方，一张窄卡，四段：并行配置 / 并行对象 / 数据标注 / 单卡 ── */
+.cfg-pop {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(62px + var(--pb, 0px)); z-index: 9;
+  width: 300px; max-height: 64vh; overflow-y: auto; padding: 4px 14px 10px;
+  background: #131313; border: 1.5px solid #282828; border-radius: 5px;
+  font-size: 11px; color: #A0A0A0;
+}
+.cfg-pop.is-hidden { display: none; }
+.cf-sec { padding: 10px 0 8px; border-bottom: 1px solid #222222; }
+.cf-sec:last-child { border-bottom: 0; }
+.cf-k { font-size: 10px; color: #8A8A8A; letter-spacing: .04em; margin-bottom: 6px; }
+.cf-sub { margin-top: 6px; color: #8A8A8A; }
+.cf-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cf-line > span:first-child { width: 28px; color: #8A8A8A; }
+.cf-sel { width: 100%; font: inherit; font-size: 11px; color: #E8E8E8; background: #111111; border: 1px solid #282828; border-radius: 3px; padding: 4px 6px; }
+.cf-seg { display: inline-flex; gap: 2px; flex-wrap: wrap; }
+.cf-seg button { font: inherit; font-size: 10.5px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; min-width: 24px; height: 20px; padding: 0 6px; cursor: pointer; }
+.cf-seg button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.cf-seg button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+.cf-step b { color: #E8E8E8; font-weight: 500; min-width: 44px; text-align: center; }
+.cf-step button { font: inherit; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; width: 22px; height: 20px; cursor: pointer; }
+.cf-step button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.cf-chk { display: inline-flex; align-items: center; gap: 6px; margin: 2px 12px 2px 0; cursor: pointer; color: #C8C8C8; }
+.cf-chk input { appearance: none; width: 11px; height: 11px; margin: 0; border: 1px solid #5C5C5C; border-radius: 2px; background: transparent; cursor: pointer; }
+.cf-chk input:checked { background: #E8E8E8; border-color: #E8E8E8; box-shadow: inset 0 0 0 2px #131313; }
+
+/* ── 层级剖面（右侧面板，原生绘制） ── */
+.drawer-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
+.hv-row { padding: 10px 0; border-bottom: 1px solid #222222; }
+.hv-row.is-ghost { opacity: .5; }
+.hv-hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+.hv-lv { font-size: 10px; color: #8A8A8A; width: 18px; }
+.hv-nm { color: #E8E8E8; font-weight: 500; }
+.hv-ct { color: #8A8A8A; }
+.hv-dims { margin-left: auto; color: #E8E8E8; font-size: 10px; border: 1px solid #3A3A3A; border-radius: 3px; padding: 0 5px; }
+.hv-bar { display: block; width: 100%; text-align: left; font: inherit; font-size: 11px; color: #C8C8C8; background: transparent; border: 1px solid #282828; border-radius: 3px; padding: 4px 8px; cursor: pointer; }
+.hv-bar:hover { border-color: #5C5C5C; color: #FFFFFF; }
+.hv-chips { display: flex; gap: 3px; flex-wrap: wrap; }
+.hv-chip { flex: 1; font: inherit; font-size: 10.5px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; padding: 2px 10px; cursor: pointer; }
+.hv-chip:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.hv-chip.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+.hv-grid { display: block; max-width: 100%; cursor: pointer; }
+.hv-dies { display: flex; gap: 4px; }
+.hv-die { flex: 1; text-align: center; font-size: 10px; color: #C8C8C8; border: 1px solid #5C5C5C; border-radius: 3px; padding: 3px 0; }
+.hv-die.is-io { color: #8A8A8A; border-color: #3A3A3A; border-style: dashed; }
+.hv-cg { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
+.hv-cg i { display: block; aspect-ratio: 1; background: #3A3A3A; }
+.hv-cg i:nth-child(2n) { background: #5C5C5C; }
+/* 单卡层工具条只留「配置」（机位 / 通信连线作用在这一屏），缩放与参考面板不适用 */
+body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep { display: none; }
+
+/* ── 悬浮毛玻璃小卡（反馈「悬浮在画布上，做成一个一个小的卡片，毛玻璃，不遮挡画布后面的内容」）──
+   画布铺满整个视口；左列拆成三张小卡（标题 / PP 段柱 / 容量告警），故障问题每条一张，右侧 rank 读数、
+   面包屑、工具条都是同一种半透明玻璃：底只有 50% 左右不透明度 + 模糊，画布透得过来。 */
+.gcard, .side-right, .ip-grp, .topbar, .dock, .cfg-pop {
+  background: rgba(20, 20, 20, .5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
+}
+.side-left { width: 272px; top: 16px; left: 16px; overflow: visible; max-height: none; }
+.gcard { padding: 10px 12px; }
+.gcard + .gcard { margin-top: 8px; }
+.gcard .lc-title { margin-bottom: 6px; }
+.gcard .pbars { margin-top: 0; }
+.gcard .lc-cap { margin-top: 0; }
+.side-right { right: 16px; top: 60px; width: 272px; padding: 10px 12px; }
+body.t3 .side-right { top: 104px; }
+.ip-col { width: 272px; overflow-y: auto; }
+.ip-col-left { left: 16px; top: calc(16px + var(--lc-h, 300px) + 8px); }
+body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 8px); }
+.ip-grp { padding: 0 12px; }
+.ip-grp + .ip-grp { margin-top: 8px; }
+.ip-prob { border-top: 0; padding: 9px 0; }
+.ip-grp.is-open .ip-chain { padding-bottom: 6px; }
+.topbar { padding: 3px 8px; top: 16px; }
+.dock { border-radius: 6px; }
+.cfg-pop { background: rgba(20, 20, 20, .78); }
+.alert-badge { top: 16px; right: 16px; }

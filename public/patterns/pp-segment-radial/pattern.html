@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="referrer" content="no-referrer" />
+<title>PP 段径向星图</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="./pattern.css" />
+<!--
+  rank-topology-lite —— 一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。
+  默认预置 moe504b32k（tp4·cp8·pp8·dp16·ep16，world=4096，pangu_sophon_pytorch
+  项目 config/llm/moe_504B_A18B/ 里 32K 序列那档的真实切分，dp=16 是 EP|DP
+  的最小合法值，见 pattern.js 的预置注释）。
+
+  故事线（反馈「按下钻的逻辑把整个视图串起来，而不是视图 tab 切换」）：
+  · 集群 —— 灵衢物理拓扑（physStage，内联 SVG）：4 个超节点各自的 8 个 L2
+    平面（4×SW2，按平面着色）、8 个 128 卡组（8 颗 L1 SW + 2 个 64 卡 POD）、
+    POD 里 8 块板（每板 2 CPU + 8 NPU + DPU + 4 NIC），超节点之间 UBoE。NPU
+    默认全白、超容标红。滚轮缩放、拖拽平移；点 POD 取景过去，再点一行进板。
+  · 板 —— 板视图（boardStage）：一块板的 Server 形态，直播四页里的关系一处
+    不落：CPU0—CPU1 互联、DPU —PCIe— CPU、CPU/DPU —UB→ L1、H2D（CPU 各带
+    4 卡，UB 2 口）、NIC 各挂相邻 2 卡（UB 1 口）并 RoCE 出到参数面、板内 8 卡
+    UB fullmesh（7×X4）、出板 Clos 每卡 8 口扇到 8 颗 L1（每平面一颗）、L1 4 口
+    到本平面 4×SW2（平面间无互联）、L2 —UB→ 其他 POD、超节点之间 UBoE。
+  · 段 —— 宇宙视图（universeStage）聚焦一条 PP 段：TP×CP 子组 × DP 副本。
+    从左卡的段按钮或右卡「看它所在的段」进来。
+  · 卡 —— 任一层点一颗 NPU/叶子 = 选中 rank：右卡先摆坐标行，再借矩阵本体
+    一次不铺屏的 ?brief=1&sel= 请求，回信一到升级成层区间/显存构成，外加
+    物理位置（假设落位）与五个通信组各走哪一级链路。
+  · 单卡 —— 「↓ 单卡下钻」换到 /patterns/rank-topology-3d/pattern.html
+    （同源 iframe，fastcard=1&solo=1）：矩阵本体自己的 solo 渲染接管。
+  顶栏胶囊里的面包屑（集群 › PP 段 › rank › 单卡）每一级都能点回去；三张卡
+  跨四层常驻，只换内容不换位置。
+
+  三张卡：左卡 = 模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设；右卡 =
+  第一层集群容量汇总（借矩阵 ?brief=1 聚合），选中后换成 rank 详情；底卡 =
+  真实故障复盘，11 个事件平铺、每张只写真采到的读数（另一次独立 2048 卡
+  训练的事故，与当前预置无关，页脚直说）。底部工具条（仿 Figma）：缩放 +
+  三个参考面板——整网图（同一预置，右侧）/ 泳道图（上游 32 卡示例，下方）/
+  逻辑魔方（左侧，点方块也能选中 rank）——像 combo-workbench 的槽位那样占住
+  一边、把画布挤过去，不悬浮在画布上。
+
+  落位是假设：配置里没有 rank→NPU 的映射，这一层按「rank 连续摆放」推
+  （r → 超节点 ⌊r/1024⌋ · POD ⌊r/64⌋ · 板 ⌊r/8⌋），左卡与右卡都写明；切分、
+  通信组成员、各组跨到哪一级链路都是从配置和公式算出来的，不是编的。
+
+  world ≤ 64（只有 ?preset=dense64）：直接铺满矩阵本体原页，没有这套链——
+  规模小到不必再包一层。 -->
+</head>
+<body>
+  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：超节点 / L2 平面 / L1 交换 / POD / 板（NPU·CPU·DPU·NIC）"></div>
+  <div id="boardStage" class="stage-frame is-hidden phys-stage board-stage" role="img" aria-label="板视图：一块板的 Server 形态——2 CPU · 8 NPU · DPU · 4 NIC，板内 UB fullmesh，出板 8 口到 8 颗 L1，L1 到各自平面的 4×SW2"></div>
+  <div id="universeStage" class="stage-frame is-hidden universe-stage" role="img" aria-label="径向星图：中心为模型，一圈为流水线段，叶子为全部真实 rank"></div>
+  <iframe id="matrixFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 借来算数（brief=1），不显示"></iframe>
+  <iframe id="detailFrame" class="stage-frame is-hidden" title="rank-topology-3d 本体 · 单卡详情（选中即预载）"></iframe>
+
+  <header id="topbar" class="topbar is-hidden">
+    <nav id="crumb" class="crumb" aria-label="档位"></nav>
+  </header>
+
+  <aside id="leftCard" class="side-card side-left is-hidden"></aside>
+  <aside id="briefCard" class="side-card side-right brief-card is-hidden" aria-live="polite"></aside>
+  <aside id="incidentPanel" class="incident-panel is-hidden" aria-live="polite"></aside>
+
+  <aside id="drawer" class="drawer is-hidden">
+    <div id="drawerGrip" class="drawer-grip" title="拖动调节 · 双击复位"></div>
+    <div class="drawer-hd"><span id="drawerTitle"></span><button type="button" data-act="drawer-close" title="收起">×</button></div>
+    <iframe id="drawerFrame" title="参考面板"></iframe>
+    <div id="drawerBody" class="drawer-body" hidden></div>
+  </aside>
+
+  <div id="selLabel" class="sel-label is-hidden"></div>
+  <svg id="selLead" class="sel-lead is-hidden" preserveAspectRatio="none" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" vector-effect="non-scaling-stroke"/></svg>
+
+  <button type="button" id="alertBadge" class="alert-badge is-hidden" aria-live="polite"></button>
+
+  <div id="cfgPop" class="cfg-pop is-hidden" role="dialog" aria-label="配置"></div>
+
+  <div id="dock" class="dock is-hidden">
+    <button type="button" data-zoom="out" title="缩小" aria-label="缩小"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14M5 7h4"/></svg></button>
+    <button type="button" data-zoom="reset" title="复位" aria-label="复位"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg></button>
+    <button type="button" data-zoom="in" title="放大" aria-label="放大"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14M5 7h4M7 5v4"/></svg></button>
+    <i class="dock-sep"></i>
+    <button type="button" data-drawer="netgraph" title="整网图" aria-label="整网图"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="2"/><circle cx="13" cy="3.5" r="2"/><circle cx="13" cy="12.5" r="2"/><path d="M5 7.2 11 4.3M5 8.8l6 2.9"/></svg></button>
+    <button type="button" data-drawer="swimlane" title="泳道图" aria-label="泳道图"><svg viewBox="0 0 16 16"><path d="M2 4h6M5 8h7M8 12h6"/></svg></button>
+    <button type="button" data-drawer="rubik" title="逻辑魔方" aria-label="逻辑魔方"><svg viewBox="0 0 16 16"><path d="M8 1.5 14 4.75v6.5L8 14.5 2 11.25v-6.5z"/><path d="M8 1.5v13M2 4.75l6 3.25 6-3.25"/></svg></button>
+    <button type="button" data-drawer="hier" title="层级剖面" aria-label="层级剖面"><svg viewBox="0 0 16 16"><path d="M3 2.5h10M4.5 5.5h7M3 8.5h10M5.5 11.5h5M7 14h2"/></svg></button>
+    <i class="dock-sep"></i>
+    <button type="button" data-pop="cfg" title="配置" aria-label="配置"><svg viewBox="0 0 16 16"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0"/><path d="M9 2.5v3M4 6.5v3M11 10.5v3"/></svg></button>
+  </div>
+
+  <script src="./hw-icons.js"></script>
+  <script src="./pattern.js"></script>
+</body>
+</html>
