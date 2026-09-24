@@ -112,6 +112,21 @@
      moe504b32k 默认 1（分布式优化器：优化器状态沿 DP 切 16 份）——Megatron 系训练大 MoE
      的常规做法，64 GB 卡上能跑也要求如此；但 504B 那份 yaml 不在本仓库，未逐字核对，
      是假设。不切（0）时 4096 张卡里 3959 张顶出 64 GB，左列可切回去对比。 */
+  /* 配置（工具条「配置」浮层，反馈「对应的配置也要拿过来，简化显示」）——都是 URL 即状态：
+     hide=occ,num,rel,grp 关掉哪几类数据标注；obj=pp:2 并行对象高亮；cam=3d|front|side|top 与
+     comm3=1 是单卡页的机位和通信连线。缺省都不写进链接。 */
+  var ANN = (function () { var h = (qs.get('hide') || '').split(','); return { occ: h.indexOf('occ') < 0, num: h.indexOf('num') < 0, rel: h.indexOf('rel') < 0, grp: h.indexOf('grp') < 0 }; })();
+  /* 机位只给 3D 与顶视：矩阵本体的 solo 飞焦在正视/侧视两个场景里不成立（那两屏是另一套 frontScene/sideScene，
+     卡会飞出画面、整屏空白），所以不开放；老链接 cam=front|side 退回 3D。 */
+  var DV = { vtab: qs.get('cam') === 'top' ? 'top' : '3d', comm: qs.get('comm3') === '1' };
+  var OBJ = (function () { var m = /^(tp|cp|ep|dp|pp):(\d+)$/.exec(qs.get('obj') || ''); return m ? { dim: m[1], idx: +m[2] } : { dim: null, idx: 0 }; })();
+  function setQS(k, v) {
+    var u = new URLSearchParams(location.search);
+    if (v == null || v === '') u.delete(k); else u.set(k, v);
+    history.replaceState(null, '', location.pathname + (u.toString() ? '?' + u.toString() : '') + location.hash);
+  }
+  function objSize(d) { return d === 'cp' ? (PS.cp || 1) : d === 'ep' ? Math.max(1, PS.ep || 1) : PS[d]; }
+  function objVal(r, d) { var c = coordOfRank(r); return d === 'ep' ? c.dp % Math.max(1, PS.ep || 1) : c[d]; }
   var ZERO = (function () { var z = parseInt(qs.get('zero'), 10); return isFinite(z) && z >= 0 && z <= 3 ? z : (PS.zero || 0); })();
   /* world 公式补上 cp：原来只有 tp×pp×dp，pangu/dense64/incident2048 都是
      cp=1（省了这个乘数结果一样），moe718b128k 是第一个 cp>1（=16）的桥接
@@ -276,11 +291,21 @@
   var incidentOpen = {};
   /* 两条链的起点跟着左右卡的实际高度走：卡的内容一变（选中/取消选中）就重写
      CSS 变量，链自动让开。 */
+  /* 性能：这两个变量只写在故障链那一层（#incidentPanel）上，且值不变就不写——原来写在根元素上，
+     自定义属性会继承，每写一次整页 1.2 万个 SVG 元素都要重算样式，再读 offsetHeight 强制排版，
+     一次 500ms，下钻「不丝滑」的大头就是它（反馈「下钻之后的场景不丝滑」）。 */
+  var lastLcH = -1, lastRcH = -1, syncQueued = false;
+  // 合并到下一帧再量：一次交互里会调好几次，而且量高度会逼浏览器立刻排版
   function syncCardHeights() {
-    document.documentElement.style.setProperty('--lc-h', (leftCard ? leftCard.offsetHeight : 0) + 'px');
-    // 右列的起点：右卡隐藏时只让开角标那一行
+    if (syncQueued) return; syncQueued = true;
+    requestAnimationFrame(function () { syncQueued = false; doSyncCardHeights(); });
+  }
+  function doSyncCardHeights() {
+    if (!incidentPanel) return;
+    var lh = leftCard ? leftCard.offsetHeight : 0;
     var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight : 0;
-    document.documentElement.style.setProperty('--rc-h', rh + 'px');
+    if (lh !== lastLcH) { lastLcH = lh; incidentPanel.style.setProperty('--lc-h', lh + 'px'); }
+    if (rh !== lastRcH) { lastRcH = rh; incidentPanel.style.setProperty('--rc-h', rh + 'px'); }
   }
   window.addEventListener('resize', syncCardHeights);
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
@@ -770,24 +795,26 @@
      把别的段压暗；都没有就全亮。同时把所在 POD / 超节点的框点亮。 */
   function physApplySelection() {
     if (!physBuilt) return;
-    var g = curSel != null ? commGroups(curSel) : null, cls = {};
-    if (g) {
-      ['pp', 'dp', 'ep', 'cp', 'tp'].forEach(function (k) { g[k].forEach(function (r) { cls[r] = 'g-' + k; }); });
-      cls[curSel] = 'is-sel';
-    }
+    var g = curSel != null && ANN.grp ? commGroups(curSel) : null, cls = {};
+    if (g) ['pp', 'dp', 'ep', 'cp', 'tp'].forEach(function (k) { g[k].forEach(function (r) { cls[r] = 'g-' + k; }); });
+    if (curSel != null) cls[curSel] = 'is-sel';
     var here = curSel != null ? physOf(curSel) : null;
     document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
       var r = +el.getAttribute('data-rank'), extra;
       if (g) extra = cls[r] ? ' ' + cls[r] : ' is-dim';
+      else if (curSel != null) extra = cls[r] ? ' ' + cls[r] : '';
+      else if (OBJ.dim) extra = objVal(r, OBJ.dim) !== OBJ.idx ? ' is-dim' : '';
       else extra = focusPP != null && +el.getAttribute('data-pp') !== focusPP ? ' is-dim' : '';
-      el.setAttribute('class', 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + ' ' + capClass(r));
+      var nc = 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + ' ' + capClass(r);
+      if (el.getAttribute('class') !== nc) el.setAttribute('class', nc);
     });
     if (universeBuilt) universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
       var on = curSel != null && rubikSelToMatrixSel({ tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') }) === curSel;
-      el.classList.toggle('is-sel', on);
+      if (el.classList.contains('is-sel') !== on) el.classList.toggle('is-sel', on);
     });
     [physStage, boardStage, universeStage].forEach(markSelFrame);
     if (curSel != null) showRelations(physOf(curSel).board);
+    if (drawerOpen === 'hier') renderHier();
     setTimeout(placeSelLabel, 0);
     // 板视图：选中那颗 NPU 自己的链路（出板 8 口、H2D、NIC）点亮，其余链路退后
     var slot = here != null && here.board === curBoard ? here.slot : null;
@@ -940,6 +967,34 @@
   // 变换写在 <svg> 元素的 CSS transform 上（合成器路径，几千个图元不重光栅化，
   // 与 demo.html 的 applyViewTransform 同一个理由）。拖动过就吃掉随后的
   // click（捕获阶段），免得松手时误触叶子/NPU。
+  /* 缩放时线宽不变：不再把倍数写成根上的继承变量 --zk（一改就让舞台里上万个元素全部重算样式，
+     回到集群一次 300ms+），而是开场时把 CSS 里所有用到 var(--zk) 的描边规则登记下来，每个舞台
+     缩放时往一张专用 <style> 里写一份「#舞台 选择器 { stroke-width: 基准/倍数 }」——只有真正带描边的
+     那几百个元素被重算。倍数没变就不写。 */
+  var ZK_RULES = null, zkSheet = document.createElement('style'), zkText = {}, zkLast = {};
+  document.head.appendChild(zkSheet);
+  function collectZkRules() {
+    ZK_RULES = [];
+    Array.prototype.forEach.call(document.styleSheets, function (sh) {
+      var rules; try { rules = sh.cssRules; } catch (e) { return; }
+      Array.prototype.forEach.call(rules || [], function (r) {
+        if (!r.style) return;
+        var v = r.style.getPropertyValue('stroke-width'), m = /calc\(\s*([0-9.]+)px\s*\/\s*var\(--zk/.exec(v);
+        if (m) ZK_RULES.push({ sel: r.selectorText, px: +m[1], imp: r.style.getPropertyPriority('stroke-width') });
+      });
+    });
+  }
+  function setZoomStroke(stage, k) {
+    if (!stage.id) return;
+    var kk = Math.round(k * 100) / 100;
+    if (zkLast[stage.id] === kk) return;
+    zkLast[stage.id] = kk;
+    if (!ZK_RULES) collectZkRules();
+    zkText[stage.id] = ZK_RULES.map(function (r) {
+      return r.sel.split(',').map(function (x) { return '#' + stage.id + ' ' + x.trim(); }).join(', ') + ' { stroke-width: ' + (r.px / kk).toFixed(3) + 'px' + (r.imp ? ' !important' : '') + '; }';
+    }).join('\n');
+    zkSheet.textContent = Object.keys(zkText).map(function (id) { return zkText[id]; }).join('\n');
+  }
   function attachZoomPan(stage) {
     var st = { k: 1, tx: 0, ty: 0, stage: stage, drag: null, moved: false };
     function svg() { return stage.querySelector('.zp-box svg'); }
@@ -952,7 +1007,7 @@
       if (!b) return stage.getBoundingClientRect();
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
-    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; s.style.setProperty('--zk', st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); if (curSel != null) markSelFrame(stage); placeSelLabel(); }
+    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; setZoomStroke(stage, st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); if (curSel != null) markSelFrame(stage); placeSelLabel(); }
     st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
     st.zoomAt = function (f, px, py) {
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
@@ -1000,13 +1055,15 @@
     // 泳道是 compute-graph-viewer 的上游拷贝，画的是它自己那份 32 卡示例，不接
     // 当前预置——标题里带一句，不冒充。
     swimlane: { title: '泳道图 · 上游 32 卡示例', src: function () { return '../../combo-workbench/swimlane.html?chrome=0&theme=dark'; } },
-    rubik: { title: '逻辑魔方', src: function () { return rubikSrc; } }
+    rubik: { title: '逻辑魔方', src: function () { return rubikSrc; } },
+    hier: { title: '层级剖面', native: true }
   };
   /* 三个参考面板不悬浮在画布上，而是像 combo-workbench 的槽位那样占一边、把
      画布挤过去：泳道图在下方（一条横向的时间轴，天然横着放），整网图在右侧，
      逻辑魔方在左侧。哪一边开着，那一边的悬浮卡/链路就让位（CSS 按 body 上的
      panel-* 类收起），.zp-box 的内边距同步收缩，画布始终完整可见、不被压。 */
-  var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right' };
+  var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right', hier: 'right' };
+  var PANEL_W0 = { rubik: 0.4, hier: 372 };
   /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
   var PANEL_H0 = { swimlane: 272, netgraph: 0.46 };
   var drawerOpen = null;
@@ -1017,10 +1074,12 @@
       drawerOpen = null; drawer.classList.add('is-hidden');
     } else {
       drawerOpen = key; drawerTitle.textContent = DRAWERS[key].title;
-      var src = DRAWERS[key].src();
-      if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src;
+      var nat = !!DRAWERS[key].native;
+      drawerFrame.style.display = nat ? 'none' : ''; drawerBody.hidden = !nat;
+      if (nat) renderHier();
+      else { var src = DRAWERS[key].src(); if (drawerFrame.getAttribute('src') !== src) drawerFrame.src = src; }
       drawer.classList.add('at-' + DRAWER_POS[key]); document.body.classList.add('panel-' + DRAWER_POS[key]);
-      applyPanelHeight();
+      applyPanelHeight(); applyPanelWidth();
       drawer.setAttribute('data-panel', key);
       drawer.classList.remove('is-hidden');
     }
@@ -1031,8 +1090,9 @@
   /* 面板尺寸可拖：泳道（下方）拖上沿改高度，整网图/魔方（左右）拖内沿改宽度。尺寸写成
      根元素上的 --pb-h / --ps-w，画布可视区、工具条、两条链都跟着这两个变量让位；
      记在本机（localStorage，读不到就用默认），双击拖动条复位。 */
+  var drawerBody = document.getElementById('drawerBody');
   var drawerGrip = document.getElementById('drawerGrip'), rootStyle = document.documentElement.style;
-  function panelKey(k) { return 'rtl.panel.' + (k === 'h' ? 'h.' + drawerOpen : 'w'); }
+  function panelKey(k) { return 'rtl.panel.' + k + '.' + drawerOpen; }
   function setPanelSize(k, px, noSave) {
     if (k === 'h') px = Math.max(140, Math.min(window.innerHeight - 200, px));
     else px = Math.max(320, Math.min(window.innerWidth - 480, px));
@@ -1046,7 +1106,13 @@
     var d0 = PANEL_H0[drawerOpen] || 220;
     setPanelSize('h', v || (d0 < 1 ? d0 * window.innerHeight : d0), true);
   }
-  try { var pw0 = +localStorage.getItem('rtl.panel.w'); if (pw0) rootStyle.setProperty('--ps-w', pw0 + 'px'); } catch (e) {}
+  /* 侧边面板各自的默认宽度：魔方要看立体网格，宽；层级剖面是一列窄条，窄 */
+  function applyPanelWidth() {
+    if (DRAWER_POS[drawerOpen] === 'bottom') return;
+    var v = 0; try { v = +localStorage.getItem(panelKey('w')); } catch (e) {}
+    var d0 = PANEL_W0[drawerOpen] || 0.4;
+    setPanelSize('w', v || (d0 < 1 ? d0 * window.innerWidth : d0), true);
+  }
   drawerGrip.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
     var pos = DRAWER_POS[drawerOpen]; if (!pos) return;
@@ -1067,10 +1133,11 @@
   drawerGrip.addEventListener('dblclick', function () {
     var k = DRAWER_POS[drawerOpen] === 'bottom' ? 'h' : 'w';
     try { localStorage.removeItem(panelKey(k)); } catch (e) {}
-    if (k === 'h') applyPanelHeight(); else rootStyle.removeProperty('--ps-w');
+    if (k === 'h') applyPanelHeight(); else applyPanelWidth();
     syncCardHeights(); placeSelLabel();
   });
   dock.addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-pop="cfg"]')) { toggleCfg(); return; }
     var d = ev.target.closest('[data-drawer]');
     if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
     var b = ev.target.closest('[data-zoom]'); if (!b) return;
@@ -1143,14 +1210,11 @@
       + '<svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
       + lg
       + capAlertHtml()
-      + '<div class="lc-zero" title="优化器切分：0 = 不切，1 = 分布式优化器（优化器状态按 DP 切），2 = 再切梯度，3 = 再切权重。本预置默认 1 为假设">zero'
-      + [0, 1, 2, 3].map(function (z) { return '<button type="button" data-zero="' + z + '"' + (z === ZERO ? ' class="is-on"' : '') + '>' + z + '</button>'; }).join('') + '</div>';
+      ;
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) { showTier2(lastCluster.worst, coordLine(lastCluster.worst)); return; }
-    var zb = ev.target.closest('[data-zero]');
-    if (zb) { setZero(+zb.getAttribute('data-zero')); return; }
     var b = ev.target.closest('.pb'); if (!b) return;
     goSegment(+b.getAttribute('data-pp'));
   });
@@ -1229,6 +1293,7 @@
     (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();
     if (tier === 1) renderRightIdle(); else if (curSel != null) showRankBadge(curSel);
+    if (drawerOpen === 'hier') renderHier();
   }
   /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
      不给 PP 段用（段的颜色只留在左卡的段按钮与宇宙视图的 hub 上）。 */
@@ -1277,8 +1342,8 @@
   // 渲染的换成矩阵渲染的，字面上一个字不跳。
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
-      embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: '0', solozoom: '44',
-      view: 'chain', card: '1', vtab: '3d', sel: String(matrixSel),
+      embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: DV.comm ? '1' : '0', solozoom: '44',
+      view: 'chain', card: '1', vtab: DV.vtab, sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
     return '../rank-topology-3d/pattern.html?' + p.toString();
@@ -1406,7 +1471,6 @@
     if (level !== 'card') backLevel = level;
     level = 'card';
     loadDetail(matrixSel);
-    dock.classList.add('is-hidden');
     openDrawer(null);
     if (detailReady) revealDetail();
     else { document.body.classList.add('is-loading'); clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 5000); }
@@ -1608,6 +1672,155 @@
     briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
     showRankBadge(brief.rank);
   }
+
+
+  /* ── 层级剖面（工具条「层级」，右侧面板；反馈「这个部分也要加进来」）─────────────────
+     引自 cube-cockpit.html 的「层级剖面」（combo-workbench 第三格），按本页的数据与视觉重做成
+     原生的一列，而不是嵌那份彩色页面：L7 Global → L6 集群 → L5 超节点 → L4 POD → L3 板 →
+     L2 NPU → L1 Die → L0 Core-Group。L4/L3/L2 是正方形宫格，灰度 = 占用率（同画布那把尺，超容红），
+     聚合层取峰值；每一层标出在这一层内闭合的并行维度（由本页的 linkLevel 算，不是写死）。
+     点 POD / 板 / NPU 画布跟着走；选中的那一格描白。 */
+  var hierAgg = null;
+  function hierAggregates() {
+    if (hierAgg && hierAgg.src === lastCluster) return hierAgg;
+    var R = lastCluster && lastCluster.ratio, n = world, pod = [], board = [], i;
+    for (i = 0; i < n; i++) {
+      var v = R ? R[i] : null, bad = !!(oomSet && oomSet[i]), p9 = Math.floor(i / PHYS.pod), b9 = Math.floor(i / PHYS.board);
+      if (!pod[p9]) pod[p9] = { v: -1, bad: false }; if (!board[b9]) board[b9] = { v: -1, bad: false };
+      if (v != null) { pod[p9].v = Math.max(pod[p9].v, v); board[b9].v = Math.max(board[b9].v, v); }
+      if (bad) { pod[p9].bad = true; board[b9].bad = true; }
+    }
+    hierAgg = { src: lastCluster, pod: pod, board: board };
+    return hierAgg;
+  }
+  var HC = { c0: '#4A4A4A', c1: '#808080', c2: '#BDBDBD', c3: '#F85149', none: '#282828' };
+  function cellColor(v, bad) { if (bad) return HC.c3; if (v == null || v < 0 || !lastCluster) return HC.none; return v >= lastCluster.red ? HC.c2 : v >= lastCluster.amber ? HC.c1 : HC.c0; }
+  function drawGrid(cv, n, cols, grp, cell, gap, ggap, colorOf, selIdx) {
+    var rows = Math.ceil(n / cols), W = cols * cell + (cols - 1) * gap + Math.floor((cols - 1) / grp) * ggap, H = rows * (cell + gap) - gap;
+    var d = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = W * d; cv.height = H * d; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    var ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0);
+    var rects = [];
+    for (var i = 0; i < n; i++) {
+      var c = i % cols, r = Math.floor(i / cols), x = c * (cell + gap) + Math.floor(c / grp) * ggap, y = r * (cell + gap);
+      ctx.fillStyle = colorOf(i); ctx.fillRect(x, y, cell, cell); rects.push([x, y]);
+    }
+    if (selIdx != null && rects[selIdx]) { ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1.5; ctx.strokeRect(rects[selIdx][0] - 1, rects[selIdx][1] - 1, cell + 2, cell + 2); }
+    cv._hit = function (px, py) {
+      for (var k = 0; k < rects.length; k++) if (px >= rects[k][0] - gap / 2 && px < rects[k][0] + cell + gap / 2 && py >= rects[k][1] - gap / 2 && py < rects[k][1] + cell + gap / 2) return k;
+      return -1;
+    };
+  }
+  function hierDims() {
+    var r0 = curSel != null ? curSel : 0, g = commGroups(r0), by = { 0: [], 1: [], 2: [], 3: [] };
+    var rows = [['TP', g.tp, false], ['CP', g.cp, false]];
+    if (g.ep.length === g.dp.length) rows.push(['EP=DP', g.dp, false]); else { rows.push(['EP', g.ep, false]); rows.push(['DP', g.dp, false]); }
+    rows.push(['PP', g.pp, true]);
+    rows.forEach(function (x) { if (x[1].length > 1) by[linkLevel(x[1], x[2])].push(x[0] + '×' + x[1].length); });
+    return by;   // 0 板内 → L3，1 POD → L4，2 SP → L5，3 跨 SP → L6
+  }
+  function renderHier() {
+    if (!drawerBody || drawerOpen !== 'hier') return;
+    var A = hierAggregates(), dims = hierDims(), here = curSel != null ? physOf(curSel) : null;
+    var nPod = physCount.pods, nBoard = physCount.boards;
+    function hd(lv, nm, ct, dm) {
+      return '<div class="hv-hd"><span class="hv-lv">' + lv + '</span><span class="hv-nm">' + nm + '</span><span class="hv-ct">' + ct + '</span>'
+        + (dm && dm.length ? '<span class="hv-dims">' + dm.join(' · ') + '</span>' : '') + '</div>';
+    }
+    var sp = '';
+    for (var i = 0; i < physCount.sp; i++) sp += '<button type="button" class="hv-chip' + (here && here.sp === i ? ' is-on' : '') + '" data-hsp="' + i + '">SP' + i + '</button>';
+    var die = ['D0 · 计算', 'D1 · 计算', 'D2 · IO', 'D3 · IO'].map(function (t) { return '<span class="hv-die' + (t.indexOf('IO') > 0 ? ' is-io' : '') + '">' + t + '</span>'; }).join('');
+    var cg = ''; for (var k = 0; k < 32; k++) cg += '<i></i>';
+    drawerBody.innerHTML = '<div class="hv">'
+      + '<div class="hv-row is-ghost">' + hd('L7', 'Global', 'N 集群 · DCN') + '</div>'
+      + '<div class="hv-row">' + hd('L6', '集群', world + ' NPU', dims[3]) + '<button type="button" class="hv-bar" data-hact="root">' + physCount.sp + ' SP · ' + nPod + ' POD · ' + nBoard + ' 板</button></div>'
+      + '<div class="hv-row">' + hd('L5', '超节点', physCount.sp + ' · 1024 NPU/SP', dims[2]) + '<div class="hv-chips">' + sp + '</div></div>'
+      + '<div class="hv-row">' + hd('L4', 'POD', nPod + ' · 64 NPU/POD', dims[1]) + '<canvas class="hv-grid" data-hl="pod"></canvas></div>'
+      + '<div class="hv-row">' + hd('L3', '板', nBoard + ' · 8 NPU + 2 CPU', dims[0]) + '<canvas class="hv-grid" data-hl="board"></canvas></div>'
+      + '<div class="hv-row">' + hd('L2', 'NPU', world + ' · 昇腾 950') + '<canvas class="hv-grid" data-hl="chip"></canvas></div>'
+      + '<div class="hv-row">' + hd('L1', 'Die', '×4 / 卡') + '<div class="hv-dies">' + die + '</div></div>'
+      + '<div class="hv-row">' + hd('L0', 'Core-Group', '×32 / 卡 · AIC / AIV') + '<div class="hv-cg">' + cg + '</div></div>'
+      + '</div>';
+    var cvs = drawerBody.querySelectorAll('canvas.hv-grid');
+    drawGrid(cvs[0], nPod, 16, 8, 17, 2, 4, function (i9) { return cellColor(A.pod[i9] && A.pod[i9].v, A.pod[i9] && A.pod[i9].bad); }, here ? here.pod : null);
+    drawGrid(cvs[1], nBoard, 32, 8, 7, 1, 4, function (i9) { return cellColor(A.board[i9] && A.board[i9].v, A.board[i9] && A.board[i9].bad); }, here ? here.board : null);
+    drawGrid(cvs[2], world, 64, 8, 4, 1, 2, function (i9) { return cellColor(lastCluster && lastCluster.ratio ? lastCluster.ratio[i9] : null, !!(oomSet && oomSet[i9])); }, curSel);
+  }
+  function ensureCluster() { if (tier === 3 || level !== 'cluster') { showOverview(); } }
+  drawerBody && drawerBody.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.closest('[data-hact="root"]')) { physZP.reset(); showOverview(); return; }
+    var spb = t.closest('[data-hsp]');
+    if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30); return; }
+    if (t.tagName !== 'CANVAS' || !t._hit) return;
+    var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top); if (k < 0) return;
+    var kind = t.getAttribute('data-hl');
+    if (kind === 'pod') { ensureCluster(); zoomToPod(k * PHYS.pod); }
+    else if (kind === 'board') goBoard(k, false);
+    else if (kind === 'chip') showTier2(k, coordLine(k));
+  });
+  drawerBody && drawerBody.addEventListener('mousemove', function (ev) {
+    var t = ev.target; if (t.tagName !== 'CANVAS' || !t._hit) return;
+    var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top), kind = t.getAttribute('data-hl');
+    t.title = k < 0 ? '' : kind === 'pod' ? 'POD ' + k : kind === 'board' ? '板 ' + k : 'rank ' + k + ' · ' + coordLine(k);
+  });
+
+  /* ── 配置浮层（工具条「配置」；反馈「对应的配置也要拿过来，简化显示」）──────────────────
+     把 combo-workbench 顶栏的「并行配置 / 并行对象 / 数据标注」与矩阵本体设置面板里和本页
+     相关的那几项，收成一张小浮层：
+       并行配置 —— 预置切换（整页按 ?preset= 重载）+ ZeRO 档；切分五维只读显示
+       并行对象 —— 选一维 + 一个下标，画布上只亮这一组（与选中 rank 互斥，选中时以选中为准）
+       数据标注 —— 占用率着色 / rank 号 / 板内关系 / 通信组 四类，逐类开关
+       单卡     —— 机位 3D·正视·侧视·顶视 与 通信连线开关，作用在下钻后的矩阵本体
+     其余（搜索、观察层级、卡片内容、设备排列、图层……）是矩阵自己那一屏的事，不搬。 */
+  var cfgPop = document.getElementById('cfgPop'), cfgOpen = false;
+  var PRESET_ORDER = ['moe504b32k', 'moe718b128k', 'pangu', 'incident2048', 'dense64'];
+  function segBtns(attr, items, cur) {
+    return '<div class="cf-seg">' + items.map(function (x) { return '<button type="button" data-' + attr + '="' + x[0] + '"' + (String(x[0]) === String(cur) ? ' class="is-on"' : '') + '>' + x[1] + '</button>'; }).join('') + '</div>';
+  }
+  function renderCfg() {
+    var curKey = PRESET_ORDER.filter(function (k) { return PRESETS[k] === PS; })[0] || 'moe504b32k';
+    var dimsTxt = 'tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep;
+    var objDims = ['tp', 'cp', 'ep', 'dp', 'pp'].filter(function (d) { return objSize(d) > 1; });
+    var od = OBJ.dim, n9 = od ? objSize(od) : 0;
+    cfgPop.innerHTML = '<div class="cf-sec"><div class="cf-k">并行配置</div>'
+      + '<select class="cf-sel" data-cf="preset">' + PRESET_ORDER.filter(function (k) { return PRESETS[k]; }).map(function (k) { return '<option value="' + k + '"' + (k === curKey ? ' selected' : '') + '>' + esc(PRESETS[k].modelName) + '</option>'; }).join('') + '</select>'
+      + '<div class="cf-sub">' + world + ' · ' + dimsTxt + '</div>'
+      + '<div class="cf-line"><span>zero</span>' + segBtns('zero', [[0, '0'], [1, '1'], [2, '2'], [3, '3']], ZERO) + '</div></div>'
+      + '<div class="cf-sec"><div class="cf-k">并行对象</div>'
+      + segBtns('odim', [['', '无']].concat(objDims.map(function (d) { return [d, d.toUpperCase()]; })), od || '')
+      + (od ? '<div class="cf-line cf-step"><button type="button" data-ostep="-1">‹</button><b>' + od + ' ' + OBJ.idx + '</b><span>/ ' + n9 + '</span><button type="button" data-ostep="1">›</button></div>' : '') + '</div>'
+      + '<div class="cf-sec"><div class="cf-k">数据标注</div>'
+      + [['occ', '占用率'], ['num', 'rank 号'], ['rel', '板内关系'], ['grp', '通信组']].map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-ann="' + x[0] + '"' + (ANN[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
+      + '<div class="cf-sec"><div class="cf-k">单卡</div>'
+      + '<div class="cf-line"><span>机位</span>' + segBtns('cam', [['3d', '3D'], ['top', '顶视']], DV.vtab) + '</div>'
+      + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>通信连线</span></label></div>';
+  }
+  function toggleCfg(on) {
+    cfgOpen = on == null ? !cfgOpen : on;
+    if (cfgOpen) renderCfg();
+    cfgPop.classList.toggle('is-hidden', !cfgOpen);
+    dock.querySelectorAll('[data-pop="cfg"]').forEach(function (b) { b.classList.toggle('is-on', cfgOpen); });
+  }
+  function applyAnn() { ['occ', 'num', 'rel'].forEach(function (k) { document.body.classList.toggle('ann-no' + k, !ANN[k]); }); }
+  function refreshDetail() { if (tier === 3) { loadDetail(curSel); } }
+  cfgPop.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (t.getAttribute('data-cf') === 'preset') { var u = new URLSearchParams(location.search); u.set('preset', t.value); ['sel', 'obj', 'zero'].forEach(function (k) { u.delete(k); }); location.search = u.toString(); return; }
+    var a = t.getAttribute('data-ann');
+    if (a) { ANN[a] = t.checked; setQS('hide', ['occ', 'num', 'rel', 'grp'].filter(function (k) { return !ANN[k]; }).join(',')); applyAnn(); physApplySelection(); return; }
+    if (t.hasAttribute('data-dvcomm')) { DV.comm = t.checked; setQS('comm3', DV.comm ? '1' : ''); refreshDetail(); }
+  });
+  cfgPop.addEventListener('click', function (ev) {
+    var b;
+    if ((b = ev.target.closest('[data-zero]'))) { setZero(+b.getAttribute('data-zero')); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-odim]'))) { var d = b.getAttribute('data-odim') || null; OBJ = { dim: d, idx: 0 }; setQS('obj', d ? d + ':0' : ''); if (d && curSel != null) showOverview(true); physApplySelection(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-ostep]')) && OBJ.dim) { var n = objSize(OBJ.dim); OBJ.idx = (OBJ.idx + +b.getAttribute('data-ostep') + n) % n; setQS('obj', OBJ.dim + ':' + OBJ.idx); physApplySelection(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-cam]'))) { DV.vtab = b.getAttribute('data-cam'); setQS('cam', DV.vtab === '3d' ? '' : DV.vtab); refreshDetail(); renderCfg(); }
+  });
+  document.addEventListener('pointerdown', function (ev) { if (cfgOpen && !ev.target.closest('#cfgPop, [data-pop="cfg"]')) toggleCfg(false); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && cfgOpen) toggleCfg(false); });
+  applyAnn();
 
   /* 选中框：纯白边框套在选中格外面、中间留一圈底色缝——格子本身的灰度（数据）不动，
      在最亮的超容格上也看得出来。 */

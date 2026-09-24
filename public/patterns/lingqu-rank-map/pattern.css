@@ -28,9 +28,11 @@ b, strong { font-weight: 500; }
 .stage-frame {
   position: fixed; inset: 0; width: 100%; height: 100%;
   border: 0; display: block; background: #111111;
-  opacity: 1; transition: opacity .25s ease;
+  opacity: 1; transition: opacity .25s ease; z-index: 0;
 }
-.stage-frame.is-hidden { opacity: 0; pointer-events: none; }
+/* 藏起来的舞台只是沉到底下（z-index 不继承），不再用 pointer-events:none——那是继承属性，
+   每切一次层，舞台里上万个 SVG 元素都得重算一遍样式，下钻/返回一次卡 100ms+。 */
+.stage-frame.is-hidden { opacity: 0; z-index: -1; }
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 /* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
 .drawer[data-panel="swimlane"] iframe { filter: none; }
@@ -389,3 +391,60 @@ svg.lod1 .rel { display: inline; }
 .rel-pcie { stroke: #A0A0A0; stroke-dasharray: 1 1.5; }
 .rel-roce { stroke: #808080; stroke-dasharray: 1.2 1.2; }
 .rel-row { fill: #FFFFFF; fill-opacity: .04; stroke: #A0A0A0; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 2 2; }
+
+/* ── 数据标注开关（配置浮层）：关掉哪类就在 body 上挂 ann-no* ── */
+body.ann-noocc .p-npu:not(.is-sel), body.ann-noocc .u-leaf, body.ann-noocc .pb-bar { fill: #6A6A6A !important; }
+body.ann-noocc .p-npustrip, body.ann-noocc .b-npustrip { fill: #3A3A3A !important; }
+body.ann-nonum .p-npunum { display: none !important; }
+body.ann-norel .rel { display: none !important; }
+
+/* ── 配置浮层：工具条正上方，一张窄卡，四段：并行配置 / 并行对象 / 数据标注 / 单卡 ── */
+.cfg-pop {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(62px + var(--pb, 0px)); z-index: 9;
+  width: 300px; max-height: 64vh; overflow-y: auto; padding: 4px 14px 10px;
+  background: #131313; border: 1.5px solid #282828; border-radius: 5px;
+  font-size: 11px; color: #A0A0A0;
+}
+.cfg-pop.is-hidden { display: none; }
+.cf-sec { padding: 10px 0 8px; border-bottom: 1px solid #222222; }
+.cf-sec:last-child { border-bottom: 0; }
+.cf-k { font-size: 10px; color: #8A8A8A; letter-spacing: .04em; margin-bottom: 6px; }
+.cf-sub { margin-top: 6px; color: #8A8A8A; }
+.cf-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cf-line > span:first-child { width: 28px; color: #8A8A8A; }
+.cf-sel { width: 100%; font: inherit; font-size: 11px; color: #E8E8E8; background: #111111; border: 1px solid #282828; border-radius: 3px; padding: 4px 6px; }
+.cf-seg { display: inline-flex; gap: 2px; flex-wrap: wrap; }
+.cf-seg button { font: inherit; font-size: 10.5px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; min-width: 24px; height: 20px; padding: 0 6px; cursor: pointer; }
+.cf-seg button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.cf-seg button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+.cf-step b { color: #E8E8E8; font-weight: 500; min-width: 44px; text-align: center; }
+.cf-step button { font: inherit; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; width: 22px; height: 20px; cursor: pointer; }
+.cf-step button:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.cf-chk { display: inline-flex; align-items: center; gap: 6px; margin: 2px 12px 2px 0; cursor: pointer; color: #C8C8C8; }
+.cf-chk input { appearance: none; width: 11px; height: 11px; margin: 0; border: 1px solid #5C5C5C; border-radius: 2px; background: transparent; cursor: pointer; }
+.cf-chk input:checked { background: #E8E8E8; border-color: #E8E8E8; box-shadow: inset 0 0 0 2px #131313; }
+
+/* ── 层级剖面（右侧面板，原生绘制） ── */
+.drawer-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
+.hv-row { padding: 10px 0; border-bottom: 1px solid #222222; }
+.hv-row.is-ghost { opacity: .5; }
+.hv-hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+.hv-lv { font-size: 10px; color: #8A8A8A; width: 18px; }
+.hv-nm { color: #E8E8E8; font-weight: 500; }
+.hv-ct { color: #8A8A8A; }
+.hv-dims { margin-left: auto; color: #E8E8E8; font-size: 10px; border: 1px solid #3A3A3A; border-radius: 3px; padding: 0 5px; }
+.hv-bar { display: block; width: 100%; text-align: left; font: inherit; font-size: 11px; color: #C8C8C8; background: transparent; border: 1px solid #282828; border-radius: 3px; padding: 4px 8px; cursor: pointer; }
+.hv-bar:hover { border-color: #5C5C5C; color: #FFFFFF; }
+.hv-chips { display: flex; gap: 3px; flex-wrap: wrap; }
+.hv-chip { font: inherit; font-size: 10.5px; color: #A0A0A0; background: transparent; border: 1px solid #282828; border-radius: 3px; padding: 2px 10px; cursor: pointer; }
+.hv-chip:hover { color: #FFFFFF; border-color: #5C5C5C; }
+.hv-chip.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
+.hv-grid { display: block; cursor: pointer; }
+.hv-dies { display: flex; gap: 4px; }
+.hv-die { flex: 1; text-align: center; font-size: 10px; color: #C8C8C8; border: 1px solid #5C5C5C; border-radius: 3px; padding: 3px 0; }
+.hv-die.is-io { color: #8A8A8A; border-color: #3A3A3A; border-style: dashed; }
+.hv-cg { display: grid; grid-template-columns: repeat(16, 8px); gap: 2px; }
+.hv-cg i { display: block; width: 8px; height: 8px; background: #3A3A3A; }
+.hv-cg i:nth-child(2n) { background: #5C5C5C; }
+/* 单卡层工具条只留「配置」（机位 / 通信连线作用在这一屏），缩放与参考面板不适用 */
+body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep { display: none; }

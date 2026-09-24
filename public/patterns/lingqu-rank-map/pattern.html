@@ -69,12 +69,15 @@
     <div id="drawerGrip" class="drawer-grip" title="拖动调节 · 双击复位"></div>
     <div class="drawer-hd"><span id="drawerTitle"></span><button type="button" data-act="drawer-close" title="收起">×</button></div>
     <iframe id="drawerFrame" title="参考面板"></iframe>
+    <div id="drawerBody" class="drawer-body" hidden></div>
   </aside>
 
   <div id="selLabel" class="sel-label is-hidden"></div>
   <svg id="selLead" class="sel-lead is-hidden" preserveAspectRatio="none" viewBox="0 0 10 10"><line x1="0" y1="0" x2="10" y2="10" vector-effect="non-scaling-stroke"/></svg>
 
   <button type="button" id="alertBadge" class="alert-badge is-hidden" aria-live="polite"></button>
+
+  <div id="cfgPop" class="cfg-pop is-hidden" role="dialog" aria-label="配置"></div>
 
   <div id="dock" class="dock is-hidden">
     <button type="button" data-zoom="out" title="缩小" aria-label="缩小"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14M5 7h4"/></svg></button>
@@ -84,6 +87,9 @@
     <button type="button" data-drawer="netgraph" title="整网图" aria-label="整网图"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="2"/><circle cx="13" cy="3.5" r="2"/><circle cx="13" cy="12.5" r="2"/><path d="M5 7.2 11 4.3M5 8.8l6 2.9"/></svg></button>
     <button type="button" data-drawer="swimlane" title="泳道图" aria-label="泳道图"><svg viewBox="0 0 16 16"><path d="M2 4h6M5 8h7M8 12h6"/></svg></button>
     <button type="button" data-drawer="rubik" title="逻辑魔方" aria-label="逻辑魔方"><svg viewBox="0 0 16 16"><path d="M8 1.5 14 4.75v6.5L8 14.5 2 11.25v-6.5z"/><path d="M8 1.5v13M2 4.75l6 3.25 6-3.25"/></svg></button>
+    <button type="button" data-drawer="hier" title="层级剖面" aria-label="层级剖面"><svg viewBox="0 0 16 16"><path d="M3 2.5h10M4.5 5.5h7M3 8.5h10M5.5 11.5h5M7 14h2"/></svg></button>
+    <i class="dock-sep"></i>
+    <button type="button" data-pop="cfg" title="配置" aria-label="配置"><svg viewBox="0 0 16 16"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9M14 12h0"/><path d="M9 2.5v3M4 6.5v3M11 10.5v3"/></svg></button>
   </div>
 
   <script src="./hw-icons.js"></script>
