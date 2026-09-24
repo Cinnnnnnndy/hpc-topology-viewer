@@ -473,7 +473,7 @@ body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep 
 /* ── 悬浮毛玻璃小卡（反馈「悬浮在画布上，做成一个一个小的卡片，毛玻璃，不遮挡画布后面的内容」）──
    画布铺满整个视口；左列拆成三张小卡（标题 / PP 段柱 / 容量告警），故障问题每条一张，右侧 rank 读数、
    面包屑、工具条都是同一种半透明玻璃：底只有 50% 左右不透明度 + 模糊，画布透得过来。 */
-.gcard, .side-right, .ip-grp, .topbar, .dock, .cfg-pop {
+.gcard, .side-right, .ip-grp, .topbar, .dock, .cfg-pop, .dcard {
   background: rgba(20, 20, 20, .5);
   -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1);
   border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
@@ -497,3 +497,66 @@ body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 8px); }
 .dock { border-radius: 6px; }
 .cfg-pop { background: rgba(20, 20, 20, .78); }
 .alert-badge { top: 16px; right: 16px; }
+
+/* ── 数据卡：同一套毛玻璃小卡。右列接在右卡下面（集群 / POD / 板 / rank 各出各的），
+   单卡层拆成 3D 卡两侧的两列（左：模型态 + 权重逐块切分；右：执行态 + 各维通信 + 流水） */
+.data-col, .shard-col { position: fixed; z-index: 5; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; scrollbar-width: none; pointer-events: auto; }
+.data-col::-webkit-scrollbar, .shard-col::-webkit-scrollbar { display: none; }
+.data-col { right: 16px; width: 272px; top: 60px; bottom: 76px; }
+.shard-col { left: 16px; top: 64px; bottom: 72px; width: 272px; }   /* 底下留给矩阵自己的选组工具条 */
+.data-col.is-hidden, .shard-col.is-hidden { display: none; }
+body.panel-right .data-col { display: none; }
+body:not(.t3) .shard-col { display: none; }
+.dcard { flex: none; padding: 8px 10px; font-size: 10.5px; color: #A0A0A0; }
+.dcard.is-sub { margin-left: 12px; padding: 6px 9px; }
+.dc-h { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.dc-t { color: #E8E8E8; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-tag { flex: none; font-size: 9px; line-height: 14px; padding: 0 4px; border-radius: 3px; color: #A0A0A0; border: 1px solid #3A3A3A; }
+.dc-tag.is-asm, .dc-tag.is-demo { border-style: dashed; color: #8A8A8A; }
+.dc-cut { margin-left: 6px; font-size: 9px; color: #111111; background: #BDBDBD; border-radius: 2px; padding: 0 3px; font-weight: 500; }
+.dc-big { font-size: 17px; color: #FFFFFF; line-height: 1.2; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+.dc-big small { font-size: 10px; color: #8A8A8A; }
+.dc-r { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; line-height: 17px; }
+.dc-r span { color: #8A8A8A; white-space: nowrap; }
+.dc-r b { font-weight: 400; color: #E8E8E8; text-align: right; font-variant-numeric: tabular-nums; }
+.dc-r.is-bad b, .dc-r.is-bad span { color: var(--alert); }
+.dc-r.is-warn b { color: #FFFFFF; }
+.dc-r.is-na b { color: #8A8A8A; }
+.dc-rbar { display: grid; grid-template-columns: 58px 1fr 38px; align-items: center; }
+.dc-bar { display: block; height: 4px; background: #262626; border-radius: 2px; overflow: hidden; }
+.dc-bar > i { display: block; height: 100%; background: #BDBDBD; }
+.dc-bar.is-bad > i { background: var(--alert); }
+.dc-bar.is-warn > i { background: #FFFFFF; }
+.dc-sub { color: #8A8A8A; font-size: 10px; line-height: 14px; margin-top: 2px; }
+.dc-note { color: #6A6A6A; font-size: 9.5px; margin-top: 4px; }
+.dc-link { font: inherit; color: #E8E8E8; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: #5C5C5C; text-underline-offset: 2px; }
+.dc-link:hover { color: #FFFFFF; }
+body.dc-noinc .incident-panel { display: none; }
+.cf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.cf-all { gap: 6px; }
+.cf-all button { font: inherit; font-size: 10.5px; color: #A0A0A0; background: transparent; border: 1px solid #3A3A3A; border-radius: 3px; padding: 1px 8px; cursor: pointer; }
+.cf-all button:hover { color: #FFFFFF; border-color: #8A8A8A; }
+
+/* 每一屏只留对这一屏有意义的东西：板视图与单卡层不看整个集群的段峰值柱、超容名单与故障复盘链 */
+body.t3 .lc-pp, body.t3 .lc-capc, body.lv-board .lc-pp, body.lv-board .lc-capc { display: none; }
+body.t3 .incident-panel, body.lv-board .incident-panel { display: none !important; }
+/* 单卡层的切分小卡：可点开 */
+.dcard.is-split { cursor: pointer; }
+.dcard.is-split:hover { border-color: rgba(255, 255, 255, .22); }
+.dcard.is-open { border-color: rgba(255, 255, 255, .35); }
+.dc-v { font-weight: 400; color: #FFFFFF; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dc-v small { font-size: 9.5px; color: #8A8A8A; }
+.dcard.is-split .dc-h { margin-bottom: 0; }
+.dc-open { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, .08); cursor: default; }
+.dc-note2 { color: #A0A0A0; font-size: 10px; line-height: 14px; margin-bottom: 4px; }
+.dc-k { color: #E8E8E8; margin-top: 6px; }
+.dc-comm { display: flex; flex-direction: column; margin-top: 3px; font-size: 10px; line-height: 14px; }
+.dc-comm b { font-weight: 400; color: #C8C8C8; }
+.dc-comm span { color: #8A8A8A; }
+/* 腔图（矩阵读出卡里那几张 SVG，原样搬过来）：套本页灰阶 + 它用到的几个 token */
+.dc-fig { margin: 6px 0 2px; filter: grayscale(1) brightness(1.15);
+  --pt-fg: #E8E8E8; --pt-fg2: #A0A0A0; --pt-fg3: #6A6A6A; --pt-bg: #111111; --pt-bd: #3A3A3A; --pt-bds: #282828;
+  --pt-s1: #181818; --pt-s2: #1E1E1E; --pt-danger: #F85149; --pt-mono: var(--mono); --pt-sans: var(--mono); }
+.dc-fig svg { display: block; width: 100%; height: auto; max-height: 150px; }
+.dc-ckv { color: #A0A0A0; }
+.dc-ckv i { font-style: normal; color: #6A6A6A; }

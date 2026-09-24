@@ -305,6 +305,9 @@
     var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight : 0;
     if (lh !== lastLcH) { lastLcH = lh; incidentPanel.style.setProperty('--lc-h', lh + 'px'); }
     if (rh !== lastRcH) { lastRcH = rh; incidentPanel.style.setProperty('--rc-h', rh + 'px'); }
+    // 右侧数据卡列接在右卡下面（右卡收起时顶到右卡原位）
+    if (typeof shardL !== 'undefined' && shardL) { var t8 = (leftCard.offsetTop || 16) + lh + 8; if (shardL._top !== t8) { shardL._top = t8; shardL.style.top = t8 + 'px'; } }
+    if (typeof dataCol !== 'undefined' && dataCol) { var t9 = (briefCard.offsetTop || 60) + (rh ? rh + 8 : 0); if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
   }
   window.addEventListener('resize', syncCardHeights);
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
@@ -698,6 +701,7 @@
     physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
     pod.classList.add('is-fit');
     physZP.fitVB(+pod.getAttribute('x'), +pod.getAttribute('y'), +pod.getAttribute('width'), +pod.getAttribute('height'), 40);
+    renderDataCards();
   }
   physStage.addEventListener('click', function (ev) {
     var npu = ev.target.closest('.p-npu');
@@ -713,6 +717,7 @@
       physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
       if (isPod) box.classList.add('is-fit');
       physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), isPod ? 60 : 30);
+      renderDataCards();
       return;
     }
     if (curSel != null) { showOverview(true); return; }
@@ -967,7 +972,7 @@
     return st;
   }
   var physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
-  (function () { var r0 = physZP.reset; physZP.reset = function () { fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(); }; })();
+  (function () { var r0 = physZP.reset; physZP.reset = function () { fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(); if (typeof renderDataCards === 'function') renderDataCards(); }; })();
   function curZP() { return level === 'board' ? boardZP : physZP; }
 
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
@@ -1083,9 +1088,12 @@
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
     crumbEl.innerHTML = parts.join('<i>›</i>');
     document.body.classList.toggle('t3', tier === 3 && !detailFrame.classList.contains('is-hidden'));
+    // 每一屏只留对这一屏有意义的东西（见 README「每一屏讲什么」）：板与单卡不看整个集群的段峰值、超容名单与故障复盘链
+    document.body.classList.toggle('lv-board', level === 'board' && tier !== 3);
     syncCardHeights();
     placeSelLabel();
     syncLinked();
+    renderDataCards();
   }
 
   // ── 左卡：模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设 ──────────────
@@ -1125,12 +1133,12 @@
     var lg = lastCluster ? '<div class="lc-legend" title="格子/柱的灰度 = 显存占用率（合计 / HBM），超出容量标红"><i class="lg c0"></i><i class="lg c1"></i><i class="lg c2"></i><i class="lg c3"></i>'
       + '<span>' + Math.round(lastCluster.amber * 100) + '</span><span>' + Math.round(lastCluster.red * 100) + '</span><span>100%</span></div>' : '';
     var cap = capAlertHtml();
-    leftCard.innerHTML = '<div class="gcard"><h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
+    leftCard.innerHTML = '<div class="gcard lc-cfg"><h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
       + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
-      + '</div><div class="gcard"><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
+      + '</div><div class="gcard lc-pp"><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
       + lg + '</div>'
-      + (cap ? '<div class="gcard">' + cap + '</div>' : '');
+      + (cap ? '<div class="gcard lc-capc">' + cap + '</div>' : '');
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
@@ -1202,6 +1210,7 @@
     applyAlerts();
     if (tier === 1) renderRightIdle(); else if (curSel != null) showRankBadge(curSel);
     if (drawerOpen === 'hier') renderHier();
+    renderDataCards();
   }
   /* rank 默认全白，只有顶出容量（level==='oom'）的卡标红——颜色只给告警用，
      不给 PP 段用（段的颜色只留在左卡的段按钮与宇宙视图的 hub 上）。 */
@@ -1471,7 +1480,7 @@
       if (d.type === 'pto:rank-brief') {
         // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
         // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
-        if (d.brief) { lastBrief = d.brief; placeSelLabel(); }
+        if (d.brief) { lastBrief = d.brief; placeSelLabel(); renderDataCards(); }
         if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) { renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief); loadDetail(pendingMatrixSel); }
         return;
       }
@@ -1624,8 +1633,10 @@
     // 单卡层矩阵自己已经把显存构成摆成浮卡贴在卡壳旁边了，右卡不再重复那五行
     // （消融），只留矩阵画布上没有的：物理位置与通信组链路等级。
     // 矩阵 solo 那群显存浮卡与引线关掉了（memcards=0），数字直接放这张右卡
-    briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(brief.rank);
+    // 单卡层：显存各档已经拆成 3D 卡两侧的小卡（数据卡「显存各档」开着时），右卡不再重复
+    briefCard.innerHTML = (tier === 3 && DCK.state && brief.detail ? '<div class="brief-h">rank ' + brief.rank + '</div><div class="brief-sub">' + coordLine(brief.rank) + ' · L' + brief.layers.lo + '–L' + brief.layers.hi + '</div>' : memBriefHtml(brief)) + physInfoHtml(brief.rank);
     showRankBadge(brief.rank);
+    renderDataCards();
   }
 
 
@@ -1751,6 +1762,10 @@
       + (od ? '<div class="cf-line cf-step"><button type="button" data-ostep="-1">‹</button><b>' + od + ' ' + OBJ.idx + '</b><span>/ ' + n9 + '</span><button type="button" data-ostep="1">›</button></div>' : '') + '</div>'
       + '<div class="cf-sec"><div class="cf-k">数据标注</div>'
       + [['occ', '占用率'], ['num', 'rank 号'], ['rel', '板内关系'], ['grp', '通信组']].map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-ann="' + x[0] + '"' + (ANN[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
+      + '<div class="cf-sec"><div class="cf-k">数据卡</div>'
+      + '<div class="cf-line"><span>工况</span>' + segBtns('mode', [['train', '训练'], ['infer', '推理']], MODE) + '</div>'
+      + '<div class="cf-grid">' + DCT.map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-dk="' + x[0] + '"' + (DCK[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
+      + '<div class="cf-line cf-all"><button type="button" data-dall="1">全开</button><button type="button" data-dall="0">全关</button></div></div>'
       + '<div class="cf-sec"><div class="cf-k">单卡</div>'
       + '<div class="cf-line"><span>机位</span>' + segBtns('cam', [['3d', '3D'], ['top', '顶视']], DV.vtab) + '</div>'
       + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>通信连线</span></label></div>';
@@ -1769,17 +1784,193 @@
     var a = t.getAttribute('data-ann');
     if (a) { ANN[a] = t.checked; setQS('hide', ['occ', 'num', 'rel', 'grp'].filter(function (k) { return !ANN[k]; }).join(',')); applyAnn(); physApplySelection(); return; }
     if (t.hasAttribute('data-dvcomm')) { DV.comm = t.checked; setQS('comm3', DV.comm ? '1' : ''); refreshDetail(); }
+    var dk = t.getAttribute('data-dk');
+    if (dk) { DCK[dk] = t.checked; saveDCK(); }
   });
+  function saveDCK() {
+    setQS('dhide', DCT.filter(function (x) { return !DCK[x[0]]; }).map(function (x) { return x[0]; }).join(','));
+    renderDataCards(); if (lastBrief && tier === 3) renderBrief(lastBrief);
+  }
   cfgPop.addEventListener('click', function (ev) {
     var b;
     if ((b = ev.target.closest('[data-zero]'))) { setZero(+b.getAttribute('data-zero')); renderCfg(); return; }
     if ((b = ev.target.closest('[data-odim]'))) { var d = b.getAttribute('data-odim') || null; OBJ = { dim: d, idx: 0 }; setQS('obj', d ? d + ':0' : ''); if (d && curSel != null) showOverview(true); physApplySelection(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-ostep]')) && OBJ.dim) { var n = objSize(OBJ.dim); OBJ.idx = (OBJ.idx + +b.getAttribute('data-ostep') + n) % n; setQS('obj', OBJ.dim + ':' + OBJ.idx); physApplySelection(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-mode]'))) { MODE = b.getAttribute('data-mode'); setQS('mode', MODE === 'infer' ? 'infer' : ''); renderDataCards(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-dall]'))) { var on9 = b.getAttribute('data-dall') === '1'; DCT.forEach(function (x) { DCK[x[0]] = on9; }); saveDCK(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-cam]'))) { DV.vtab = b.getAttribute('data-cam'); setQS('cam', DV.vtab === '3d' ? '' : DV.vtab); refreshDetail(); renderCfg(); }
   });
   document.addEventListener('pointerdown', function (ev) { if (cfgOpen && !ev.target.closest('#cfgPop, [data-pop="cfg"]')) toggleCfg(false); });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && cfgOpen) toggleCfg(false); });
   applyAnn();
+
+  /* ── 数据卡（反馈「训练/推理过程中要看哪些数据、不同大小看哪些数据，做成悬浮小卡飘在四周，
+     设置里能按类型开关——非常重要」+「把并行拓扑里点开 rank 的那张卡拆开，每个小切分和对应的数值
+     做成单独的卡，放在单卡视图四周」）──────────────────────────────────────────────
+     调研（仓库里的研究笔记 + 并行拓扑/整网图/泳道已有的数据开关）归成九类，设置里逐类开关，
+     URL ?dhide=键,键；工况 训练 / 推理 用 ?mode=infer 切。每张卡右上角一个小标，说清这数是什么口径：
+       实算 —— 并行拓扑矩阵本体算的（ptoClusterBrief / ptoRankBrief，与矩阵同一批函数）
+       假设 —— 落位按 rank 连续摆放推的（配置里没有 rank→NPU 映射）
+       示意 —— 不是这套硬件/这次训练的实测：步时分解与推理指标取自盘古 Pro MoE 技术报告
+                （src/scene/data.ts 的 STEP_DECOMP / WORKLOAD，Ascend 800I A2），只当量级参考
+     哪一层出哪几张（主卡默认开）：
+       集群   容量分布 · 通信闭合 · 流水气泡 · 步时分解（训练）/ 推理指标（推理）
+       POD    POD 负载 · 本级闭合
+       板     八卡占用 · 板载配对
+       rank   通信载荷（显存构成 / 位置 / 通信组已在右卡）
+       单卡   右卡那份读出拆成一张张小卡，贴在 3D 卡两侧：左边模型态（权重 → 逐块切分、梯度、
+              优化器态），右边执行态（激活、优化器步临时区、碎片）+ 各维通信载荷 + 流水 */
+  var DCT = [['cap', '容量'], ['state', '显存各档'], ['wshard', '权重切分'], ['comm', '通信'], ['pipe', '流水·气泡'],
+    ['phys', '物理'], ['step', '步时'], ['infer', '推理'], ['inc', '故障复盘']];
+  var DCK = (function () { var h = (qs.get('dhide') || '').split(','), o = {}; DCT.forEach(function (x) { o[x[0]] = h.indexOf(x[0]) < 0; }); return o; })();
+  var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
+  var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
+  var DC_TAG = { calc: '实算', asm: '假设', demo: '示意' };
+  function dcRow(k, v, cls, tip) { return '<div class="dc-r' + (cls ? ' ' + cls : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>'; }
+  function dcBar(frac, cls) { return '<i class="dc-bar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%"></i></i>'; }
+  function dcCard(key, title, body, tag, tip, big) {
+    if (!DCK[key]) return '';
+    return '<section class="dcard" data-dk="' + key + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
+      + (tag && tag !== 'calc' ? '<span class="dc-tag is-' + tag + '">' + DC_TAG[tag] + '</span>' : '') + '</div>'
+      + (big != null ? '<div class="dc-big">' + big + '</div>' : '') + body + '</section>';
+  }
+  function pct(x) { return x == null ? '—' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%'; }
+  function gb(x) { return x >= 10 ? x.toFixed(0) : x.toFixed(1); }
+  function closureRows() {
+    var d = hierDims(), L = ['板内', 'POD', 'SP', '跨 SP'], h = '';
+    for (var i = 0; i < 4; i++) if (d[i].length) h += dcRow(L[i], d[i].join(' '));
+    return h;
+  }
+  function rangeStats(lo, hi) {
+    var R = lastCluster && lastCluster.ratio; if (!R) return null;
+    var mx = -1, sum = 0, n = 0, over = 0;
+    for (var r = lo; r < hi && r < R.length; r++) { var v = R[r]; mx = Math.max(mx, v); sum += v; n++; if (oomSet && oomSet[r]) over++; }
+    return n ? { peak: mx, avg: sum / n, over: over, n: n } : null;
+  }
+  var STEP_DEMO = {
+    pretrain: [['计算', .58], ['通信', .30], ['访存', .12]]
+  };
+  function stepRows(parts) { return parts.map(function (x) { return '<div class="dc-r dc-rbar"><span>' + x[0] + '</span>' + dcBar(x[1]) + '<b>' + pct(x[1]) + '</b></div>'; }).join(''); }
+  var SRC_DEMO = '盘古 Pro MoE 技术报告（Ascend 800I A2 实测）· src/scene/data.ts——不是本硬件、本次训练的读数，只当量级参考';
+  function levelCards() {
+    var C = lastCluster, out = [];
+    if (tier === 3) return out;
+    if (level === 'board' && curBoard != null) {
+      var b0 = curBoard * PHYS.board, st = rangeStats(b0, b0 + PHYS.board), R = C && C.ratio, bars = '';
+      for (var i = 0; i < 8 && b0 + i < world; i++) bars += '<div class="dc-r dc-rbar"><span>' + (b0 + i) + '</span>' + dcBar(R ? Math.min(1, R[b0 + i]) : 0, oomSet && oomSet[b0 + i] ? 'is-bad' : '') + '<b>' + (R ? pct(R[b0 + i]) : '—') + '</b></div>';
+      out.push(dcCard('cap', '板 ' + curBoard, (st ? dcRow('峰值', pct(st.peak)) : '') + bars, 'calc'));
+      out.push(dcCard('phys', '板载', dcRow('H2D', '0–3→CPU0 · 4–7→CPU1') + dcRow('NIC', 'k ↔ 2k, 2k+1') + dcRow('板内', '7×X4')
+        + dcRow('出板', '8×X4 → L1') + dcRow('NIC SW', '1/C · 2/N'), 'asm', '按 CANN NEXT 直播四页的 POD / Server 形态图；rank 落位按连续摆放推'));
+    } else if (curSel == null && fitPod != null) {
+      var p0 = fitPod * PHYS.pod, sp = rangeStats(p0, p0 + PHYS.pod), dd = hierDims();
+      out.push(dcCard('cap', 'POD ' + fitPod, sp ? dcRow('峰值', pct(sp.peak)) + dcRow('均值', pct(sp.avg)) + dcRow('超容', sp.over, sp.over ? 'is-bad' : '') : dcRow('读数', '…'), 'calc'));
+      out.push(dcCard('comm', '闭合', (dd[0].length ? dcRow('板内', dd[0].join(' ')) : '') + (dd[1].length ? dcRow('POD', dd[1].join(' ')) : '') + dcRow('出 POD', (dd[2].concat(dd[3])).join(' ') || '—'), 'asm'));
+    } else if (curSel == null) {
+      if (C) {
+        var n = C.n, W = C.world, rows = [['ok', n.ok, ''], ['黄线 70%', n.amber, ''], ['红线 88%', n.red, n.red ? 'is-warn' : ''], ['超容', n.oom, n.oom ? 'is-bad' : '']];
+        out.push(dcCard('cap', '容量', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
+          + (C.worst != null ? dcRow('最满', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">' + C.worst + ' · ' + pct(C.ratio[C.worst]) + '</button>') : ''), 'calc'));
+        out.push(dcCard('comm', '通信', closureRows()
+          + (C.comm && C.comm.tp ? dcRow('TP', C.comm.tp.txt, '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', C.comm.pp.txt, '', C.comm.pp.how) : '') + (C.comm && C.comm.dp ? dcRow('DP', C.comm.dp.txt, '', C.comm.dp.how) : '')
+          + dcRow('UB · RoCE', '196 · 50 GB/s'), 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数'));
+        if (C.model) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
+          'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满'));
+      }
+      if (MODE === 'train') out.push(dcCard('step', '步时', stepRows(STEP_DEMO.pretrain), 'demo', SRC_DEMO));
+      else out.push(dcCard('infer', '推理', dcRow('TTFT', '424 ms') + dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
+        'demo', SRC_DEMO + '；显存仍按训练口径，KV cache 未建模'));
+    }
+    if (curSel != null && tier === 2) {
+      var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
+      if (Dt) {
+        out.push(dcCard('comm', '通信', Dt.comm.map(function (c) { return dcRow(c.dim.toUpperCase() + ' ×' + c.n, c.exact ? esc(c.txt) : '—', c.exact ? '' : 'is-na', c.how); }).join(''), 'calc', '每条边一次搬多少；CP / EP 由路由与切法当场决定，不给数'));
+        out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('层', 'L' + B.layers.lo + '–L' + B.layers.hi) + dcRow('ZeRO', Dt.zero), 'calc'));
+      }
+    }
+    return out;
+  }
+  var CUT_NAME = { tp: 'TP', ep: 'EP', cp: 'CP', sp: 'SP', none: '复制' };
+  /* 单卡层：并行拓扑读出卡（renderRankMem）拆开——每一档、权重带里的每一块各一张小卡，接在左列配置卡
+     下面往下排（反馈「从告警继续往下排」，不另起第二列）。卡面只放名字、切法、GB 与一句归属/相位；
+     点开 = 读出卡里点开那一块时的那一栏（memBlockDetail 原文拆出来的：dt/dd 行、腔图、对应通信、兄弟卡），
+     再点收起。 */
+  var dcOpen = {}, dcOpenRank = null;
+  /* 点开之后也只留 key / value（反馈「字太多、只留 key 和 value、不要解释」）：括号里的说明、整句解释的行、
+     ⓘ 那句、兄弟卡那句都不上卡面；对应通信只留「维 原语」一行一条；腔图留第一张（本卡拿的是哪一格）。 */
+  function kvClean(v) { return v.replace(/的切法$/, '').replace(/（[^）]*）/g, '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(); }
+  function blockBody(k) {
+    var B = lastBrief && lastBrief.detail && lastBrief.detail.blocks && lastBrief.detail.blocks[k];
+    if (!B) return '';
+    var rows = B.rows.map(function (r) {
+      // 「这一块 / 这一档」开头那个 GB 数卡头已经有了，只留后半：每层形状 / 参数量
+      var v = kvClean(r[1]).replace(/^[\d.,]+ GB( · )?/, '');
+      var k = r[0] === '这一块' ? '每层' : r[0] === '这一档' ? '参数' : r[0];
+      return [k, v.replace(/^每层 /, '').replace(' M 参数 ×', 'M ×')];
+    }).filter(function (r) { return r[1] && r[1].length <= 34 && r[0] !== '它是什么'; });
+    var comm = B.comm.map(function (c) {
+      var d = /^(TP|CP|EP|PP|DP|SP)/.exec(c.head), pr = /(AllToAll|AllGather|ReduceScatter|AllReduce|Send\/Recv|P2P|Broadcast)/i.exec(c.head);
+      return d ? d[1] + (pr ? ' ' + pr[1] : '') : '';
+    }).filter(Boolean);
+    var h = '<div class="dc-open"' + (B.note ? ' title="' + esc(B.note) + '"' : '') + '>';
+    h += rows.map(function (r) { return dcRow(esc(r[0]), esc(r[1])); }).join('');
+    if (comm.length) h += dcRow('通信', esc(comm.join(' · ')));
+    if (B.figs[0]) h += '<div class="dc-fig" title="' + esc(B.figs[0].cap) + '">' + B.figs[0].svg + '</div>';
+    return h + '</div>';
+  }
+  function splitCard(key, dk, title, chip, big, sub, isSub) {
+    if (!DCK[dk]) return '';
+    var open = !!dcOpen[key];
+    // 消融：卡面只留名字、切法、数值；归属/相位/怎么切收进悬停
+    return '<section class="dcard is-split' + (isSub ? ' is-sub' : '') + (open ? ' is-open' : '') + '" data-bk="' + esc(key) + '" title="' + (sub ? sub + ' · ' : '') + (open ? '收起' : '点开') + '">'
+      + '<div class="dc-h"><span class="dc-t">' + title + (chip ? '<span class="dc-cut">' + chip + '</span>' : '') + '</span><b class="dc-v">' + big + '</b></div>'
+      + (open ? blockBody(key) : '') + '</section>';
+  }
+  function shardCards() {
+    var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail, L = [];
+    if (tier !== 3 || !Dt) return L;
+    if (dcOpenRank !== curSel) { dcOpen = {}; dcOpenRank = curSel; }   // 点开的那一块只属于点开它时那张卡
+    // 模型态在前（权重 → 逐块、梯度、优化器态、AllGather 窗口），执行态在后（激活、临时区、碎片）
+    var ORD = { w: 0, agw: 1, g: 2, opt: 3, otmp: 4, act: 5, rsv: 6 };
+    Dt.segs.slice().sort(function (a, b) { return (ORD[a.k] == null ? 9 : ORD[a.k]) - (ORD[b.k] == null ? 9 : ORD[b.k]); }).forEach(function (s) {
+      L.push(splitCard(s.k, 'state', esc(s.label.replace(/ ·.*$/, '').replace(/\s*\(.*\)$/, '').replace(/·在途.*$/, '')), s.zdiv > 1 ? '1/' + s.zdiv : '', gb(s.gb) + '<small> GB</small>', esc([s.own, s.life].filter(Boolean).join(' · '))));
+      if (s.k === 'w' && s.sub) s.sub.forEach(function (x) {
+        L.push(splitCard('w:' + x.id, 'wshard', esc(x.id), CUT_NAME[x.cut] || esc(x.cut), gb(x.gb) + '<small> GB</small>', esc(x.how), true));
+      });
+    });
+    return L;
+  }
+  function t3SideCards() {
+    var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail, R = [];
+    if (tier !== 3 || !Dt) return R;
+    var rows9 = [];
+    Dt.comm.forEach(function (c) {
+      // 消融：一维一行 key/value，怎么算的收进悬停；CP/EP 不给数的写「—」
+      rows9.push(dcRow(c.dim.toUpperCase() + ' ×' + c.n, c.exact ? esc(c.txt) : '—', c.exact ? '' : 'is-na', c.how + (c.sum ? ' · ' + c.sum : '')));
+    });
+    R.unshift(dcCard('comm', '通信', rows9.join(''), 'calc'));
+    R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('层', 'L' + B.layers.lo + '–L' + B.layers.hi) + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
+    return R;
+  }
+  var dcQueued = false;
+  function renderDataCards() {
+    if (dcQueued) return; dcQueued = true;
+    requestAnimationFrame(function () {
+      dcQueued = false;
+      document.body.classList.toggle('dc-noinc', !DCK.inc);
+      var lv = (tier === 3 ? t3SideCards() : levelCards()).filter(Boolean), sh = shardCards().filter(Boolean);
+      dataCol.innerHTML = lv.join(''); dataCol.classList.toggle('is-hidden', !lv.length);
+      shardL.innerHTML = sh.join(''); shardL.classList.toggle('is-hidden', !sh.length);
+      doSyncCardHeights();
+    });
+  }
+  shardL.addEventListener('click', function (ev) {
+    var c = ev.target.closest('[data-bk]'); if (!c) return;
+    var k = c.getAttribute('data-bk'); dcOpen[k] = !dcOpen[k]; renderDataCards();
+  });
+  dataCol.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-dact="sel"]'); if (!b) return;
+    var r = +b.getAttribute('data-r'); showTier2(r, coordLine(r));
+  });
 
   /* 选中框：纯白边框套在选中格外面、中间留一圈底色缝——格子本身的灰度（数据）不动，
      在最亮的超容格上也看得出来。 */

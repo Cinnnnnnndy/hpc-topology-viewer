@@ -10786,9 +10786,55 @@ function ptoRankBrief(){
         return {dim:dm9, n:grp9[dm9], txt:T9.txt, how:T9.how, exact:T9.exact, sum:T9.sum || null};
       }).filter(Boolean),
       bubble: D9.pp > 1 ? (D9.pp - 1) / Math.max(1, D9.ga) : 0,
-      model: {layers:D9.layers, hidden:D9.hidden, seq:D9.seq, mbs:D9.mbs, ga:D9.ga, experts:D9.experts || 0, topk:D9.topk || 0}
+      model: {layers:D9.layers, hidden:D9.hidden, seq:D9.seq, mbs:D9.mbs, ga:D9.ga, experts:D9.experts || 0, topk:D9.topk || 0},
+      blocks: ptoBlockDetails(D9, sel, V9.segs)
     }
   };
+}
+/* 读出卡里「点开某一档 / 某一块」那一栏（memBlockDetail）原样交给宿主：不另写一套口径，
+   直接把它生成的那段 HTML 拆成结构——标题、说明（ⓘ 悬停那句）、dt/dd 行、图（腔图 SVG +
+   它的悬停说明）、对应通信（逐条边的抬头与一句话）、兄弟卡那一行。宿主（lingqu-rank-map）
+   把每一档、每一块做成一张可点开的小卡。只读，不改本页任何状态。 */
+function ptoBlockDetails(D, g, segs){
+  var out = {}, keys = [];
+  if(typeof DOMParser === 'undefined') return out;
+  segs.forEach(function(s9){
+    if(!(s9.bytes > 0)) return;
+    keys.push(s9.k);
+    if(s9.k === 'w' && s9.sub) s9.sub.forEach(function(x9){ if(x9.bytes > 0) keys.push('w:' + x9.id); });
+  });
+  var dp = new DOMParser();
+  keys.forEach(function(k9){
+    var html = '';
+    try { html = memBlockDetail(D, g, k9); } catch(e){ html = ''; }
+    if(!html) return;
+    var doc = dp.parseFromString('<div>' + html + '</div>', 'text/html');
+    var root = doc.querySelector('.rm-d'); if(!root) return;
+    var t9 = root.querySelector('.rm-dh b'), n9 = root.querySelector('.rm-dh span[title]');
+    var rows = [], dts = root.querySelectorAll(':scope > dl > dt');
+    Array.prototype.forEach.call(dts, function(dt){
+      var dd = dt.nextElementSibling;
+      rows.push([dt.textContent.trim(), dd ? dd.textContent.trim() : '']);
+    });
+    var figs = [];
+    Array.prototype.forEach.call(root.querySelectorAll(':scope > .rm-fig'), function(f){
+      figs.push({cap: f.getAttribute('title') || '', svg: f.innerHTML});
+    });
+    var comm = [];
+    Array.prototype.forEach.call(root.querySelectorAll('.c5'), function(c){
+      var h = c.querySelector('.c5h'), gr = c.querySelector('.c5gr');
+      var kv9 = [];
+      Array.prototype.forEach.call(c.querySelectorAll('dt'), function(dt){ var dd = dt.nextElementSibling; kv9.push([dt.textContent.trim(), dd ? dd.textContent.replace(/\s+/g, ' ').trim() : '']); });
+      comm.push({head: h ? h.textContent.replace(/\s+/g, ' ').trim() : '', sub: gr ? gr.textContent.replace(/\s+/g, ' ').trim() : '', rows: kv9});
+    });
+    var notes = [];
+    Array.prototype.forEach.call(root.querySelectorAll(':scope > .rm-note'), function(nn){
+      var tx = nn.textContent.replace(/\s+/g, ' ').replace(/ⓘ/g, '').trim();
+      if(tx && tx !== '对应通信') notes.push(tx);
+    });
+    out[k9] = {title: t9 ? t9.textContent.trim() : k9, note: n9 ? n9.getAttribute('title') : '', rows: rows, figs: figs, comm: comm, notes: notes};
+  });
+  return out;
 }
 function applyViewTransform(){
   var svg = $('stage').querySelector('svg');
