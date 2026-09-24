@@ -1535,6 +1535,13 @@ function urlLoad(){
      的「装不下 ×N / 要 N GB · 只有 64GB」两行——宿主自己有 rank 读数时它们是压在卡体上的重复信息；solozoom=N 把 solo 档的飞焦倍数从 20 提到 N（上限 80），
      容量占用低的卡本身很矮，20 倍下只有指甲盖大。只有 lingqu-rank-map 传。 */
   if(q.get('plate')==='0') ui.noPlate = true;
+  /* 两个 opt-in（只有 lingqu-rank-map 的单卡层传，默认不传照旧）：
+     sibs=ghost|on —— solo 档里兄弟 rank（沿落下的刀与它同组）也画出来，但只画壳、不画容量色带：
+       ghost 淡到隐约，机位不动；on 实一些，镜头退到第二档那个倍数让兄弟看得见，通信按 rank 粒度连到兄弟上。
+       点兄弟卡 = 换选它、仍留在 solo（不退回第二档）。超大集群里兄弟可能上百张，所以宿主默认只给 ghost。
+     clbl=0 —— 通信连线不挂芯片与字标（关键值、前/反/更），只留线；详情仍在悬停。 */
+  if(q.get('sibs')==='ghost' || q.get('sibs')==='on') ui.soloSibs = q.get('sibs');
+  if(q.get('clbl')==='0') ui.noCommChip = true;
   var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
@@ -5222,9 +5229,10 @@ function netScene(D, g, box, step){
         /* solo（第三档取景）：连兄弟卡一起不画，画面上只剩选中那一只。
            判据写成 tier9 !== 2 而不是再列一遍 tier 号——2 就是"选中的那只"
            （见 selTier），别的全部让路。 */
-        if(ui.fastCard && hasSel && (ui.soloCard ? tier9 !== 2 : tier9 === 0)){ kc = kcOrig; continue; }
-        var rankFade9 = spotShellDim || tier9 === 0;
-        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : '0.16')+'" filter="url(#ptGray)">');
+        var sibGhost9 = ui.fastCard && hasSel && ui.soloCard && ui.soloSibs && tier9 === 1;
+        if(ui.fastCard && hasSel && (ui.soloCard ? (tier9 !== 2 && !sibGhost9) : tier9 === 0)){ kc = kcOrig; continue; }
+        var rankFade9 = spotShellDim || tier9 === 0 || sibGhost9;
+        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? '0.42' : '0.18') : '0.16')+'" filter="url(#ptGray)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -5318,7 +5326,7 @@ function netScene(D, g, box, step){
                产品意图没变，只是把它从「默认全量」改成「点开之后才给选中卡与它的
                兄弟卡（tier 1/2）」——没有选中任何卡、或者这张卡跟选中的毫无组关系
                （tier 0）时退回素壳，跟 mem=0 用户手动关掉时同一条路径，不是新画法。 */
-            var wantFill = ui.memFill && hasSel && tier9 !== 0;
+            var wantFill = ui.memFill && hasSel && tier9 !== 0 && !sibGhost9;   /* 兄弟在 solo 档只画壳：只有选中那只显示内部容量 */
             var wantShell9 = lowDetail || !wantFill;
             if(wantShell9){
               if(fcOn){
@@ -6115,7 +6123,7 @@ function netScene(D, g, box, step){
       }
       /* rank / 时序 / 影响：一条边一枚极简芯片，钉在「本卡 → 组心」的中途，
          详情走悬停；三档的区别只在芯片上写什么（谁和谁 / 何时 / 代价）。 */
-      if((cgRank9 || cgTime9 || cgCost9 || cgFab9) && code9){
+      if(!ui.noCommChip && (cgRank9 || cgTime9 || cgCost9 || cgFab9) && code9){
         var lp9 = chainCardAnchor[g];
         var bx9 = lp9 ? lp9[0] + (cx9 - lp9[0])*0.58 : cx9, by9 = lp9 ? lp9[1] + (cy9 - lp9[1])*0.58 : cy9;
         var rep9 = ['tp','cp','ep'].indexOf(cs9.dim) >= 0
@@ -6156,7 +6164,7 @@ function netScene(D, g, box, step){
           + (dash8 ? ';stroke-dasharray:'+dash8 : '') + ';marker-end:url(#arrx)"/>');
         if(lab8){
           body.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="5.2" style="fill:var(--pt-bg);stroke:'+(col8||IC9)+';stroke-width:.9"/>');
-          body.push(txt(mx8, my8+2.4, lab8, 6, col8||IC9, 'middle', 'font-weight="800"'));
+          if(!ui.noCommChip) body.push(txt(mx8, my8+2.4, lab8, 6, col8||IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="7" style="fill:transparent;cursor:help"><title>'+esc(tip8||'')+'</title></circle>');
         }
       }
@@ -6182,7 +6190,7 @@ function netScene(D, g, box, step){
         function badge9(at8, lab8, tip8){
           if(!at8) return;
           body.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="5.4" style="fill:var(--pt-bg);stroke:'+IC9+';stroke-width:.9"/>');
-          body.push(txt(at8[0], at8[1]+2.4, lab8, 6, IC9, 'middle', 'font-weight="800"'));
+          if(!ui.noCommChip) body.push(txt(at8[0], at8[1]+2.4, lab8, 6, IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="7.5" style="fill:transparent;cursor:help"><title>'+esc(tip8)+'</title></circle>');
         }
         var up9 = pl9.map(function(q8){ return [q8[0] - 7, q8[1] - 7]; });
@@ -14259,6 +14267,15 @@ document.addEventListener('click', function(ev){
     /* 已经钻进第三档时点中别的东西（换卡/换坐标）：先退回第二档再换选——
        第三档是"只看这一只"，换了主角还留在第三档，兄弟卡那一层就被跳过了。 */
     var wasSolo9 = ui.soloCard;
+    /* sibs 模式（宿主 opt-in）：solo 档里点兄弟卡 = 换选它、仍留在 solo */
+    if(wasSolo9 && ui.soloSibs && kk === 'card' && iv !== sel){
+      if(applyParallelGroupPick(kk, iv) && sel !== null){
+        ui.commGrain = ui.soloSibs === 'on' ? 'rank' : 'intra';
+        render(); focusCardCamera(sel, ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20));
+        ptoNotifyHost(); ptoNotifyTier();
+      }
+      return;
+    }
     if(wasSolo9){ ui.soloCard = false; if(ui.commGrain === 'intra') ui.commGrain = 'rank'; }
     if(applyParallelGroupPick(kk, iv)) {
       render();
@@ -14458,6 +14475,17 @@ window.addEventListener('message', function(ev){
      （宿主那边刚在魔方上点了一张卡，这一格还没选中过任何卡）。
      不重载 iframe：矩阵本体把 4000 只卡铺出来要好几秒，每换一档重载一次，
      "连续变焦"就成了三次白屏。 */
+  /* 宿主（lingqu-rank-map 单卡层）不重载就换：兄弟 rank 显示档（ghost / on）、通信连线总闸、逐维开关 */
+  if(d.type==='pto:solo'){
+    if(d.sibs === 'ghost' || d.sibs === 'on') ui.soloSibs = d.sibs;
+    if(typeof d.comm === 'boolean') ui.commOn = d.comm;
+    if(d.commk && typeof d.commk === 'object') ['tp','cp','ep','pp','dp'].forEach(function(k9){ if(typeof d.commk[k9] === 'boolean') ui.comm[k9] = d.commk[k9]; });
+    if(typeof d.stitle === 'string' && d.stitle) ui.stageTitle = d.stitle.slice(0, 40);
+    if(ui.soloCard) ui.commGrain = ui.soloSibs === 'on' ? 'rank' : 'intra';
+    render();
+    if(sel !== null && ui.fastCard && ui.soloCard) focusCardCamera(sel, ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20));
+    return;
+  }
   if(d.type==='pto:tier'){
     if(typeof d.sel === 'number' && d.sel >= 0){ takeSel(); sel = d.sel; }
     var tn9 = +d.tier;

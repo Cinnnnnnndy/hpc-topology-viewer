@@ -581,3 +581,8 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .sw.is-hm [data-m]:not(.is-m) { opacity: .25; }
 .sw-foot text { font-size: 10px; fill: #A0A0A0; }
 .sw-foot .sw-demo { fill: #6A6A6A; }
+
+/* 单卡层的两颗开关：兄弟 rank（隐约 ⇄ 展开）、通信连线；只在单卡层出现 */
+.dock [data-solo] { display: none; }
+body.t3 .dock [data-solo] { display: flex; }
+.cf-ck { flex-wrap: wrap; gap: 0 2px; }

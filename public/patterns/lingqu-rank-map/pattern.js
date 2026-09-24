@@ -117,7 +117,11 @@
   var ANN = (function () { var h = (qs.get('hide') || '').split(','); return { occ: h.indexOf('occ') < 0, num: h.indexOf('num') < 0, rel: h.indexOf('rel') < 0, grp: h.indexOf('grp') < 0 }; })();
   /* 机位只给 3D 与顶视：矩阵本体的 solo 飞焦在正视/侧视两个场景里不成立（那两屏是另一套 frontScene/sideScene，
      卡会飞出画面、整屏空白），所以不开放；老链接 cam=front|side 退回 3D。 */
-  var DV = { vtab: qs.get('cam') === 'top' ? 'top' : '3d', comm: qs.get('comm3') === '1' };
+  /* 单卡层：机位、通信连线总闸与逐维开关（commk3=tp,ep… 只列开着的）、兄弟 rank 显示档
+     （sibs=on 展开，缺省 ghost 隐约——超大集群里兄弟可能上百张，默认不全放） */
+  var DV = { vtab: qs.get('cam') === 'top' ? 'top' : '3d', comm: qs.get('comm3') === '1',
+    commk: (function () { var o = {}, h = qs.has('commk3') ? String(qs.get('commk3')).split(',') : null; ['tp', 'cp', 'ep', 'pp', 'dp'].forEach(function (k) { o[k] = !h || h.indexOf(k) >= 0; }); return o; })(),
+    sibs: qs.get('sibs') === 'on' ? 'on' : 'ghost' };
   var OBJ = (function () { var m = /^(tp|cp|ep|dp|pp):(\d+)$/.exec(qs.get('obj') || ''); return m ? { dim: m[1], idx: +m[2] } : { dim: null, idx: 0 }; })();
   function setQS(k, v) {
     var u = new URLSearchParams(location.search);
@@ -1256,6 +1260,7 @@
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams({
       embed: '1', theme: 'dark', preset: PS.matrixPreset, zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: DV.comm ? '1' : '0', solozoom: '44',
+      sibs: DV.sibs, clbl: '0', commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
       view: 'chain', card: '1', vtab: DV.vtab, sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     });
@@ -1476,6 +1481,8 @@
     if (ev.source === detailFrame.contentWindow) {
       if (d.type !== 'pto:tier') return;
       if (d.tier === 3) {
+        // 单卡层里点了一张兄弟卡：矩阵原地换选（仍在 solo），宿主跟着换，不重载
+        if (tier === 3 && d.sel != null && d.sel !== curSel && !detailFrame.classList.contains('is-hidden')) { adoptSolo(d.sel, d.brief); return; }
         // 预载完成（可能是在后台、读者还没点下钻）：记下就绪；读者已经在等这一张就留 700ms 让镜头落定再淡入
         detailReady = true;
         if (tier === 3 && d.sel === curSel) { renderBrief(d.brief); if (detailFrame.classList.contains('is-hidden')) { clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 700); } }
@@ -1852,7 +1859,9 @@
       + '<div class="cf-line cf-all"><button type="button" data-dall="1">全开</button><button type="button" data-dall="0">全关</button></div></div>'
       + '<div class="cf-sec"><div class="cf-k">单卡</div>'
       + '<div class="cf-line"><span>机位</span>' + segBtns('cam', [['3d', '3D'], ['top', '顶视']], DV.vtab) + '</div>'
-      + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>通信连线</span></label></div>';
+      + '<div class="cf-line"><span>兄弟</span>' + segBtns('sibs', [['ghost', '隐约'], ['on', '展开']], DV.sibs) + '</div>'
+      + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>通信连线</span></label>'
+      + (DV.comm ? '<div class="cf-line cf-ck">' + ['tp', 'cp', 'ep', 'pp', 'dp'].map(function (k) { return '<label class="cf-chk"><input type="checkbox" data-dvck="' + k + '"' + (DV.commk[k] ? ' checked' : '') + '><span>' + k.toUpperCase() + '</span></label>'; }).join('') + '</div>' : '') + '</div>';
   }
   function toggleCfg(on) {
     cfgOpen = on == null ? !cfgOpen : on;
@@ -1861,13 +1870,48 @@
     dock.querySelectorAll('[data-pop="cfg"]').forEach(function (b) { b.classList.toggle('is-on', cfgOpen); });
   }
   function applyAnn() { ['occ', 'num', 'rel'].forEach(function (k) { document.body.classList.toggle('ann-no' + k, !ANN[k]); }); }
-  function refreshDetail() { if (tier === 3) { loadDetail(curSel); } }
+  /* 单卡层的开关不重载矩阵：已就绪就发 pto:solo 原地换，同时把 detailSrc 改成等价的新地址
+     （之后 loadDetail 同一张卡不会因为地址变了再加载一遍）；还没就绪就走地址。 */
+  function refreshDetail(camOnly) {
+    if (tier !== 3 && !detailSrc) return;
+    if (detailReady && !camOnly && detailFrame.contentWindow) {
+      detailFrame.contentWindow.postMessage({ type: 'pto:solo', sibs: DV.sibs, comm: DV.comm, commk: DV.commk }, '*');
+      detailSrc = matrixSrcFor(curSel);
+    } else if (tier === 3) loadDetail(curSel);
+    syncSoloDock();
+  }
+  function saveDV() {
+    setQS('comm3', DV.comm ? '1' : ''); setQS('sibs', DV.sibs === 'on' ? 'on' : '');
+    var ck = ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; });
+    setQS('commk3', ck.length === 5 ? '' : ck.join(','));
+  }
+  function adoptSolo(r, brief) {
+    curSel = r; pendingMatrixSel = r; focusPP = coordOfRank(r).pp;
+    detailSrc = matrixSrcFor(r);
+    detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + r }, '*');
+    if (brief) renderBrief(brief);
+    physApplySelection(); renderLeftCard(); renderCrumb();
+  }
+  function syncSoloDock() {
+    dock.querySelectorAll('[data-solo]').forEach(function (b) {
+      var k = b.getAttribute('data-solo');
+      b.classList.toggle('is-on', k === 'sibs' ? DV.sibs === 'on' : DV.comm);
+    });
+  }
+  dock.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-solo]'); if (!b) return;
+    if (b.getAttribute('data-solo') === 'sibs') DV.sibs = DV.sibs === 'on' ? 'ghost' : 'on';
+    else DV.comm = !DV.comm;
+    saveDV(); refreshDetail(); if (cfgOpen) renderCfg();
+  });
   cfgPop.addEventListener('change', function (ev) {
     var t = ev.target;
     if (t.getAttribute('data-cf') === 'preset') { var u = new URLSearchParams(location.search); u.set('preset', t.value); ['sel', 'obj', 'zero'].forEach(function (k) { u.delete(k); }); location.search = u.toString(); return; }
     var a = t.getAttribute('data-ann');
     if (a) { ANN[a] = t.checked; setQS('hide', ['occ', 'num', 'rel', 'grp'].filter(function (k) { return !ANN[k]; }).join(',')); applyAnn(); physApplySelection(); return; }
-    if (t.hasAttribute('data-dvcomm')) { DV.comm = t.checked; setQS('comm3', DV.comm ? '1' : ''); refreshDetail(); }
+    if (t.hasAttribute('data-dvcomm')) { DV.comm = t.checked; saveDV(); refreshDetail(); renderCfg(); }
+    var ck9 = t.getAttribute('data-dvck');
+    if (ck9) { DV.commk[ck9] = t.checked; saveDV(); refreshDetail(); }
     var dk = t.getAttribute('data-dk');
     if (dk) { DCK[dk] = t.checked; saveDCK(); }
   });
@@ -1882,11 +1926,13 @@
     if ((b = ev.target.closest('[data-ostep]')) && OBJ.dim) { var n = objSize(OBJ.dim); OBJ.idx = (OBJ.idx + +b.getAttribute('data-ostep') + n) % n; setQS('obj', OBJ.dim + ':' + OBJ.idx); physApplySelection(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-mode]'))) { MODE = b.getAttribute('data-mode'); setQS('mode', MODE === 'infer' ? 'infer' : ''); renderDataCards(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-dall]'))) { var on9 = b.getAttribute('data-dall') === '1'; DCT.forEach(function (x) { DCK[x[0]] = on9; }); saveDCK(); renderCfg(); return; }
-    if ((b = ev.target.closest('[data-cam]'))) { DV.vtab = b.getAttribute('data-cam'); setQS('cam', DV.vtab === '3d' ? '' : DV.vtab); refreshDetail(); renderCfg(); }
+    if ((b = ev.target.closest('[data-sibs]'))) { DV.sibs = b.getAttribute('data-sibs'); saveDV(); refreshDetail(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-cam]'))) { DV.vtab = b.getAttribute('data-cam'); setQS('cam', DV.vtab === '3d' ? '' : DV.vtab); refreshDetail(true); renderCfg(); }
   });
   document.addEventListener('pointerdown', function (ev) { if (cfgOpen && !ev.target.closest('#cfgPop, [data-pop="cfg"]')) toggleCfg(false); });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && cfgOpen) toggleCfg(false); });
   applyAnn();
+  syncSoloDock();
 
   /* ── 数据卡（反馈「训练/推理过程中要看哪些数据、不同大小看哪些数据，做成悬浮小卡飘在四周，
      设置里能按类型开关——非常重要」+「把并行拓扑里点开 rank 的那张卡拆开，每个小切分和对应的数值
