@@ -729,7 +729,7 @@
           + '<text class="p-uboelabel" x="' + (U.x + SPW / 2 + 8) + '" y="' + (U.y + SPH + SPGAP / 2 + 3) + '">UBoE</text>');
       }
     }
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('p-')
       + '<g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></svg>';
   }
   /* ── 放大后在集群画布上原地画出一块板的全部关系（反馈「这些关系好像都看不到了，一个都不能少」）──
@@ -916,6 +916,18 @@
          只剩噪点，所以平时就是一根发丝线；只有选中那颗 NPU 自己的那几根换成激活样式
        · 集群总览（线宽不到 1px）：不画衬边、虚线收成实线（UBoE 除外），只看走向；
          放大到 3× 起衬边与虚线节奏才出来，板视图始终是近看档 */
+  /* 端点（反馈「连线的开头和结尾有点生硬，给一个精致的端点」）：参照 hpc-topology-node 3D 线端的
+     「底座环 + 白心」，2D 里做成 marker——底色实心环 + 灰描边 + 中心小点，像一个端口；并进总线的
+     那一头是一颗实心汇接点。markerUnits=strokeWidth，跟线宽一起缩放，放大缩小比例不变；
+     激活（选中那颗 NPU 的线）换白色、稍小一号，免得端点压过线本身。 */
+  function lkDefs(p) {
+    function port(id, ring, dot, r) {
+      return '<marker id="' + p + id + '" viewBox="-5 -5 10 10" markerWidth="10" markerHeight="10" markerUnits="strokeWidth" refX="0" refY="0" orient="auto">'
+        + '<circle r="' + r + '" fill="#111111" stroke="' + ring + '" stroke-width="0.9"/><circle r="' + (r * 0.36).toFixed(2) + '" fill="' + dot + '"/></marker>';
+    }
+    return '<defs>' + port('lkp', '#A0A0A0', '#C8C8C8', 2.6) + port('lkh', '#FFFFFF', '#FFFFFF', 2.1)
+      + '<marker id="' + p + 'lkj" viewBox="-3 -3 6 6" markerWidth="6" markerHeight="6" markerUnits="strokeWidth" refX="0" refY="0"><circle r="1.7" fill="#A0A0A0"/></marker></defs>';
+  }
   function cased(el) { return el.replace(/ class="[^"]*"/, ' class="lkc"').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
@@ -1010,11 +1022,12 @@
       links.push(cased('<line class="b-swbx" x1="' + (sx + (si ? 38 : -38)) + '" y1="' + (SWBY + SWBH / 2) + '" x2="' + (si ? 948 : 12) + '" y2="' + (SWBY + SWBH / 2) + '"><title>交换板 → 框内其他板</title></line>'));
     });
     txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (SWBY + 14) + '" text-anchor="middle">框内 4口 · 交换板</text>');
-    links.push(cased('<line class="b-ub b-bus" x1="60" y1="' + (L2Y + L2H + 22) + '" x2="' + (NX(3) + 40) + '" y2="' + (L2Y + L2H + 22) + '"/>')
-      + cased('<line class="b-uboe b-bus" x1="' + (NX(4) - 40) + '" y1="' + (L2Y + L2H + 22) + '" x2="900" y2="' + (L2Y + L2H + 22) + '"/>'));
+    // 底部总线不加衬边：上面落下来的 8 根短线要在它身上汇成一排汇接点，衬边会把接点切掉
+    links.push('<line class="b-ub b-bus" x1="60" y1="' + (L2Y + L2H + 22) + '" x2="' + (NX(3) + 40) + '" y2="' + (L2Y + L2H + 22) + '"/>'
+      + '<line class="b-uboe b-bus" x1="' + (NX(4) - 40) + '" y1="' + (L2Y + L2H + 22) + '" x2="900" y2="' + (L2Y + L2H + 22) + '"/>');
     txt.push('<text class="b-lbl b-lbl-ub" x="60" y="' + (L2Y + L2H + 36) + '">UB → POD</text>'
       + '<text class="b-lbl b-lbl-uboe" x="900" y="' + (L2Y + L2H + 36) + '" text-anchor="end">UBoE → SuperPoD</text>');
-    return '<svg class="near" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
+    return '<svg class="near" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('b-')
       + '<g class="b-bg">' + bg.join('') + '</g><g class="b-links">' + links.join('') + '</g><g class="b-flow"></g><g class="b-nodes">' + nodes.join('') + '</g><g class="b-txt">' + txt.join('') + '</g></svg>';
   }
   function renderBoard(bIdx) {

@@ -298,6 +298,18 @@ svg.near .b-uboe { stroke-dasharray: 4 7; stroke-opacity: .75; }
 .b-nsw-l, .b-swbx { fill: none; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
 .b-swbl { stroke: #8A8A8A; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
 .b-rdma { fill: #111111; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
+/* 端点：稀疏干线两头是端口环（marker，见 pattern.js lkDefs）；从总线落下来的那一头是汇接点；
+   成束的密线平时不加（64 根的端点只会糊成一排点），选中那颗 NPU 的线加白端口 */
+svg.near .b-cpul, svg.near .b-pcie, svg.near .b-ub:not(.b-bus), svg.near .b-nsw-l, svg.near .b-swbx,
+svg.near .b-h2d, svg.near .b-nicl { marker-start: url(#b-lkp); marker-end: url(#b-lkp); }
+svg.near .b-roce:not(.b-bus) { marker-start: url(#b-lkj); }
+svg.near .b-out { marker-end: url(#b-lkj); }
+svg.near .b-links .is-hot { marker-start: url(#b-lkh); marker-end: url(#b-lkh); }
+svg.near .b-links .is-cold { marker-start: none; marker-end: none; }
+svg.lod2 .rel-cpu, svg.lod2 .rel-pcie, svg.lod2 .rel-ub, svg.lod2 .rel-nic, svg.lod2 .rel-nsw, svg.lod2 .rel-h2d { marker-start: url(#p-lkp); marker-end: url(#p-lkp); }
+svg.lod2 .rel-roce { marker-start: url(#p-lkj); }
+svg.lod2 .rel .is-hot { marker-start: url(#p-lkh); marker-end: url(#p-lkh); }
+svg.lod2 .rel .is-cold { marker-start: none; marker-end: none; }
 /* 激活链路上跑的点：深色珠子 + 白描边，贴在白芯线上 */
 .lk-dot { fill: #111111; stroke: #FFFFFF; stroke-width: calc(.9px / var(--zk, 1)); pointer-events: none; }
 /* 集群层：选中那颗 NPU 在原地展开的板内关系里，它自己的线换白、其余退后（点不跑：线不到 1px） */
