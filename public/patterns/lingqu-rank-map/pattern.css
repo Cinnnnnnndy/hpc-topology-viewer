@@ -256,8 +256,8 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .p-npu.g-pp { stroke: #5C5C5C; stroke-width: calc(1px / var(--zk, 1)); stroke-dasharray: 1.5 1; }
 
 /* ── 板层：一块板的 Server 形态 */
-.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: #222222; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); }
-.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text { font-size: 10px; fill: #E8E8E8; }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect, .b-nsw rect, .b-swb rect { fill: #222222; stroke: #8A8A8A; stroke-width: calc(1.5px / var(--zk, 1)); }
+.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text, .b-nsw text, .b-swb text { font-size: 10px; fill: #E8E8E8; }
 .b-nic text, .b-l1 text { font-size: 10px; }
 .b-plane { fill: #161616; stroke: #282828; stroke-width: calc(1.5px / var(--zk, 1)); }
 .b-sw2 { fill: #8A8A8A; }
@@ -280,9 +280,34 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .b-l12 { stroke: #8A8A8A; stroke-width: calc(1px / var(--zk, 1)); }
 .b-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 8 4; }
 .b-bus { stroke-width: calc(1.5px / var(--zk, 1)); }
-.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.5px / var(--zk, 1)); }
-.b-fan.is-cold { stroke-opacity: .12; }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.8px / var(--zk, 1)); }
+.b-fan.is-cold, .b-mesh.is-cold { stroke-opacity: .1; }
 .b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .15; }
+
+/* ── 连线样式（hpc-topology-node · 连线样式 Round 6 的结构，去色）：衬边 + 芯线 ──
+   衬边 .lkc 是底色、比芯线宽，把交叉处切开；芯线的实/虚节奏区分介质：
+     铜缆（板内：CPU↔CPU、H2D、NIC、NIC 交换、交换板出线）实线 · 光 UB（出板 → L1、L1 → L2、
+     CPU/DPU → L1）虚线 7 5 · 长距 UBoE 稀虚线 4 7、半透明 · RoCE 3 3 + 端头空心环 · PCIe 点线。
+   只在「近看」出现：板视图（svg.near）始终是；集群层放大 6× 以上（lod2）展开的那块板才加衬边。 */
+.lkc { fill: none; stroke: #111111; stroke-linecap: round; stroke-linejoin: round; stroke-width: calc(4.5px / var(--zk, 1)); pointer-events: none; }
+.rel .lkc { display: none; stroke: #181818; stroke-width: calc(3.5px / var(--zk, 1)); }
+svg.lod2 .rel .lkc { display: inline; }
+svg.near .b-links line, svg.near .b-links path { stroke-linecap: round; stroke-linejoin: round; }
+svg.near .b-ub { stroke-dasharray: 7 5; }
+svg.near .b-uboe { stroke-dasharray: 4 7; stroke-opacity: .75; }
+.b-nsw-l, .b-swbx { fill: none; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
+.b-swbl { stroke: #8A8A8A; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-rdma { fill: #111111; stroke: #A0A0A0; stroke-width: calc(1.2px / var(--zk, 1)); }
+/* 激活链路上跑的点：深色珠子 + 白描边，贴在白芯线上 */
+.lk-dot { fill: #111111; stroke: #FFFFFF; stroke-width: calc(.9px / var(--zk, 1)); pointer-events: none; }
+/* 集群层：选中那颗 NPU 在原地展开的板内关系里，它自己的线换白、其余退后（点不跑：线不到 1px） */
+.rel .is-hot { stroke: #FFFFFF !important; stroke-opacity: 1 !important; }
+.rel .is-cold { stroke-opacity: .12 !important; }
+.rel-nsw { stroke: #808080; stroke-opacity: .8; }
+.rel-inf { stroke: #A0A0A0; stroke-opacity: .7; }
+/* 太细时换显示方式：集群总览（< 3×）线宽不到 1px，虚线只剩噪点——RoCE 收成实线、压淡，只看走向 */
+#physStage svg:not(.lod1) .p-roce { stroke-dasharray: none; stroke-opacity: .5; }
+#physStage svg:not(.lod1) .p-l2 { stroke-opacity: .3; }
 
 /* ── 故障复盘：两条链挂在左右两列下面。问题是一行文字 + 细分隔线，点开才出现
    链；严重度只分明暗（--ip-sevc：越严重越亮）。 */
@@ -364,7 +389,7 @@ svg.lod2 .p-npu.is-sel + .p-npunum { fill: #FFFFFF; }
 .p-bnpu.is-dim + .b-npuicon, .p-bnpu.is-dim + .b-npuicon + .b-npustrip { opacity: .3; }
 .b-npul { fill: #E8E8E8 !important; }
 .b-npur { fill: #A0A0A0 !important; }
-.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect { fill: transparent; stroke: none; }
+.b-cpu rect, .b-dpu rect, .b-nic rect, .b-l1 rect, .b-nsw rect, .b-swb rect { fill: transparent; stroke: none; }
 .p-sw1 { fill: transparent; stroke: none; }
 /* 放大后与板视图里不再给通信组描框（框一描就又成了卡片）：组员靠「不压暗」读出，选中靠外圈白框 */
 svg.lod2 .p-npu, .board-stage .p-npu { stroke: none !important; }
