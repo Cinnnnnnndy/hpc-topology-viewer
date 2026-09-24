@@ -179,14 +179,12 @@ body.is-resizing .zp-box, body.is-resizing .dock, body.is-resizing .ip-col { tra
 body.panel-bottom { --pb: calc(var(--pb-h, 36vh) + 10px); }
 body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
 body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
-body.panel-left .zp-box { left: calc(var(--ps-w, 40vw) + 48px); }
-body.panel-right .zp-box { right: calc(var(--ps-w, 40vw) + 48px); }
 body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 
 /* ── 主可视区：裁在自己的矩形里，四周留白给边缘的文字与导航 */
 .phys-stage, .universe-stage { background: #111111; cursor: grab; }
 .phys-stage:active, .universe-stage:active { cursor: grabbing; }
-.zp-box { position: absolute; left: 312px; right: 312px; top: 64px; bottom: calc(64px + var(--pb, 0px)); overflow: hidden; }
+.zp-box { position: absolute; inset: 0; overflow: hidden; }   /* 画布铺满视口，卡片悬浮在上面 */
 .zp-box svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .zp-box svg text { font-family: var(--mono); pointer-events: none; }
 
@@ -448,3 +446,31 @@ body.ann-norel .rel { display: none !important; }
 .hv-cg i:nth-child(2n) { background: #5C5C5C; }
 /* 单卡层工具条只留「配置」（机位 / 通信连线作用在这一屏），缩放与参考面板不适用 */
 body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep { display: none; }
+
+/* ── 悬浮毛玻璃小卡（反馈「悬浮在画布上，做成一个一个小的卡片，毛玻璃，不遮挡画布后面的内容」）──
+   画布铺满整个视口；左列拆成三张小卡（标题 / PP 段柱 / 容量告警），故障问题每条一张，右侧 rank 读数、
+   面包屑、工具条都是同一种半透明玻璃：底只有 50% 左右不透明度 + 模糊，画布透得过来。 */
+.gcard, .side-right, .ip-grp, .topbar, .dock, .cfg-pop {
+  background: rgba(20, 20, 20, .5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1);
+  border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
+}
+.side-left { width: 272px; top: 16px; left: 16px; overflow: visible; max-height: none; }
+.gcard { padding: 10px 12px; }
+.gcard + .gcard { margin-top: 8px; }
+.gcard .lc-title { margin-bottom: 6px; }
+.gcard .pbars { margin-top: 0; }
+.gcard .lc-cap { margin-top: 0; }
+.side-right { right: 16px; top: 60px; width: 272px; padding: 10px 12px; }
+body.t3 .side-right { top: 104px; }
+.ip-col { width: 272px; overflow-y: auto; }
+.ip-col-left { left: 16px; top: calc(16px + var(--lc-h, 300px) + 8px); }
+body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 8px); }
+.ip-grp { padding: 0 12px; }
+.ip-grp + .ip-grp { margin-top: 8px; }
+.ip-prob { border-top: 0; padding: 9px 0; }
+.ip-grp.is-open .ip-chain { padding-bottom: 6px; }
+.topbar { padding: 3px 8px; top: 16px; }
+.dock { border-radius: 6px; }
+.cfg-pop { background: rgba(20, 20, 20, .78); }
+.alert-badge { top: 16px; right: 16px; }

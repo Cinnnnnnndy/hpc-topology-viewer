@@ -541,6 +541,7 @@
     if (universeBuilt) return;
     universeStage.innerHTML = '<div class="zp-box">' + buildUniverseSvg() + '</div>';
     universeBuilt = true;
+    if (typeof uniZP !== 'undefined' && uniZP) uniZP.reset();
     applyAlerts();
   }
   // 点一个 hub（段本身）= 聚焦这一段、把其余段的 hub/射线/叶子调暗，不下钻
@@ -789,6 +790,7 @@
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
     physBuilt = true;
+    if (typeof physZP !== 'undefined' && physZP) physZP.reset();
     applyAlerts();
   }
   /* 选中/聚焦态：选中了 rank 就按五个通信组描边、其余压暗；只聚焦了 PP 段就
@@ -995,6 +997,13 @@
     }).join('\n');
     zkSheet.textContent = Object.keys(zkText).map(function (id) { return zkText[id]; }).join('\n');
   }
+  function safeArea(R) {
+    var bc = document.body.classList, l = 312, r = 312, t = 64, b = 72;
+    if (bc.contains('panel-right')) r = drawer.offsetWidth + 40;
+    if (bc.contains('panel-left')) l = drawer.offsetWidth + 40;
+    if (bc.contains('panel-bottom')) b = drawer.offsetHeight + 72;
+    return { x: l, y: t, w: Math.max(200, R.width - l - r), h: Math.max(200, R.height - t - b) };
+  }
   function attachZoomPan(stage) {
     var st = { k: 1, tx: 0, ty: 0, stage: stage, drag: null, moved: false };
     function svg() { return stage.querySelector('.zp-box svg'); }
@@ -1008,7 +1017,9 @@
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
     function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; setZoomStroke(stage, st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); if (curSel != null) markSelFrame(stage); placeSelLabel(); }
-    st.reset = function () { st.k = 1; st.tx = 0; st.ty = 0; apply(); };
+    /* 画布铺满整个视口（反馈「左边不要做成单独的面板，卡片悬浮在画布上、毛玻璃、不遮挡后面」），
+       四周的卡是半透明悬浮的；取景时把内容摆进卡与卡之间那块「安全区」的正中，初始/复位也一样。 */
+    st.reset = function () { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0); };
     st.zoomAt = function (f, px, py) {
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
       st.tx = px - (px - st.tx) * f; st.ty = py - (py - st.ty) * f; st.k = k2; apply();
@@ -1021,9 +1032,9 @@
       var vb = s.viewBox.baseVal, R = st.rect();
       var m = Math.min(R.width / vb.width, R.height / vb.height);
       var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
-      var px = ox + x * m, py = oy + y * m, pw = w * m, ph = h * m;
-      var k = Math.min(16, Math.max(0.4, Math.min((R.width - pad * 2) / pw, (R.height - pad * 2) / ph)));
-      st.k = k; st.tx = R.width / 2 - k * (px + pw / 2); st.ty = R.height / 2 - k * (py + ph / 2); apply();
+      var px = ox + (x - vb.x) * m, py = oy + (y - vb.y) * m, pw = w * m, ph = h * m, S = safeArea(R);
+      var k = Math.min(16, Math.max(0.2, Math.min((S.w - pad * 2) / pw, (S.h - pad * 2) / ph)));
+      st.k = k; st.tx = S.x + S.w / 2 - k * (px + pw / 2); st.ty = S.y + S.h / 2 - k * (py + ph / 2); apply();
     };
     stage.addEventListener('wheel', function (ev) {
       ev.preventDefault();
@@ -1204,13 +1215,13 @@
     }
     var lg = lastCluster ? '<div class="lc-legend" title="格子/柱的灰度 = 显存占用率（合计 / HBM），超出容量标红"><i class="lg c0"></i><i class="lg c1"></i><i class="lg c2"></i><i class="lg c3"></i>'
       + '<span>' + Math.round(lastCluster.amber * 100) + '</span><span>' + Math.round(lastCluster.red * 100) + '</span><span>100%</span></div>' : '';
-    leftCard.innerHTML = '<h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
+    var cap = capAlertHtml();
+    leftCard.innerHTML = '<div class="gcard"><h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
       + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
-      + '<svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
-      + lg
-      + capAlertHtml()
-      ;
+      + '</div><div class="gcard"><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
+      + lg + '</div>'
+      + (cap ? '<div class="gcard">' + cap + '</div>' : '');
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
