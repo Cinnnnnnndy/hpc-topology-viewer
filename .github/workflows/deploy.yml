@@ -46,6 +46,9 @@ name: Deploy to GitHub Pages
 #       branch" 那一步现在从 main 自己取，不再指向这条分支——与 combo-workbench /
 #       parallel-topology 当年的迁法一样：分支本身还在，继续用于开发；只是发布这一步
 #       现在只认 main，避免「推 main」与「推分支」谁最后跑谁赢、线上内容悄悄落后的老问题。
+#   · claude/pp-segment-radial-archive
+#       → /patterns/pp-segment-radial/（PP 段径向星图：lingqu-rank-map 8.14 的「段」视图整份归档；
+#         启动页卡片直接写在 main 的 public/launch.html 里）
 #   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
 #       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
 #       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
@@ -802,6 +805,28 @@ jobs:
           cp -r ptods-src/patterns/model-architecture-training-sidecar $DST/patterns/model-architecture-training-sidecar
           echo "published: /pto-ds/patterns/model-parallel-rank-deck/pattern.html (rank-deck@$SHA)"
           echo "published: /pto-ds/patterns/model-architecture-training-sidecar/pattern.html (sidecar@$SHA)"
+
+      - name: Checkout PP 段径向星图归档分支
+        uses: actions/checkout@v4
+        with:
+          ref: claude/pp-segment-radial-archive
+          path: ppfan-src
+
+      - name: Overlay PP 段径向星图（归档）at /patterns/pp-segment-radial/
+        # lingqu-rank-map 8.14 的「段」视图整份归档在这条分支（简洁版 demo 里先不放）。
+        # 目录自包含：与 lingqu-rank-map 同深度，../../parallel-topology、../../rubik-pattern.html
+        # 这些同源 iframe 依赖都由 main 的构建产物提供，原样拷过去即可。卡片直接写在 main 的
+        # public/launch.html 里（不是构建期插入）。发布口子仍只有 main——推这条分支不触发发布，
+        # 改完之后推一次 main（或手动跑本工作流）即可带上它的最新版。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ppfan-src rev-parse --short HEAD)
+          mkdir -p dist/patterns
+          rm -rf dist/patterns/pp-segment-radial
+          cp -r ppfan-src/public/patterns/pp-segment-radial dist/patterns/pp-segment-radial
+          node -e "const f='dist/patterns/pp-segment-radial/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version=o.version+'+'+'$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
+          test -s dist/patterns/pp-segment-radial/pattern.html
+          echo "published: /patterns/pp-segment-radial/pattern.html (@$SHA)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

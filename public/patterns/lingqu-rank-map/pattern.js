@@ -7,13 +7,13 @@
      没有这套下钻链——矩阵自己的"选中/取消选中"手势已经够用，不必再包一层。
 
    world > 64（默认 moe504b32k·4096 卡；?preset=pangu/moe718b128k/incident2048
-   也走这条）：level ∈ cluster / segment / card 由下钻状态决定画布铺哪张：
+   也走这条）：level ∈ cluster / board / card 由下钻状态决定画布铺哪张：
      cluster 集群 —— 灵衢物理拓扑（buildPhysSvg）：超节点 / L2 平面 / L1 SW /
                      POD / 板上的 CPU·NPU·DPU·NIC，NPU 按 PP 段着色。点 NPU =
                      选中 rank；点 POD/超节点 = 取景过去；点空白 = 复位。
-     segment 段   —— 宇宙视图（buildUniverseSvg）取景到一条 PP 段的楔子
-                     （goSegment，用 uniWedge 记的 viewBox 包围盒）。点叶子 =
-                     选中 rank。
+     （原来还有一层 segment 段——宇宙视图 / 径向星图聚焦一条 PP 段。反馈「这个视图先不做，
+       归档到另一个分支」：整份代码存在分支 claude/pp-segment-radial-archive，发布在
+       /patterns/pp-segment-radial/，启动页有卡片。本页左卡的 PP 段按钮现在只在原地聚焦那一段。）
      （选中 rank：右卡先摆坐标行，再借矩阵本体一次不铺屏的 ?brief=1&sel=
        请求（requestTier2Brief），pto:rank-brief 回信原地升级成层区间/显存
        构成 + 物理位置 + 五个通信组各走哪一级（physInfoHtml）。）
@@ -35,7 +35,6 @@
   var matrixFrame = document.getElementById('matrixFrame');
   var detailFrame = document.getElementById('detailFrame');
   var briefCard = document.getElementById('briefCard');
-  var universeStage = document.getElementById('universeStage');
   var physStage = document.getElementById('physStage');
   var boardStage = document.getElementById('boardStage');
   var leftCard = document.getElementById('leftCard');
@@ -388,185 +387,17 @@
   // 逻辑魔方现在不是主线上的一档，是底部工具条唤起的参考抽屉（见 openDrawer）
   var rubikSrc = '../../rubik-pattern.html?' + rubikParams.toString();
 
-  // ── 宇宙视图：第一档的第二种画法，内联 SVG 径向星图（不是 iframe） ─────
-  // 中心 = 模型本身；第一圈 = 各条 PP 段（沿用这个仓库里"PP流水=段"的既有
-  // 心智模型，跟逻辑魔方 PP流水形态、并行拓扑矩阵段落条讲的是同一件事，
-  // 不是另起一套分类）；每段外沿撒开一批采样出的**真实** rank 当叶子点——
-  // 叶子的 tp/cp/rep 坐标是在 tp×cp×dp 这条扁平轴上等距抽样出来的，不是
-  // 摆拍凑数量，点开哪一颗都能换算出一个真实存在的 rank。
-  // 这里不重新发明"选中之后干什么"：叶子点点击算出 sel 直接调
-  // showTier2/rubikSelToMatrixSel，跟逻辑魔方 postMessage 报上来的走的
-  // 是同一条路径、落的是同一张 briefCard——两种视图只是"从哪触发选中"
-  // 不同，选中之后的下钻/详情渲染一个字不重复实现。
-  // 故事线是一条下钻链，不是几个并列的 tab（反馈「按下钻的逻辑把整个视图串
-  // 起来，而不是视图 tab 切换」）：
-  //   cluster 集群 —— 灵衢物理拓扑：4096 张卡物理上怎么连（超节点/平面/SW/
-  //                  POD/板上的 NPU·CPU·DPU·NIC），NPU 按 PP 段着色，并行
-  //                  拓扑已经叠在物理图上；
-  //   segment 段  —— 宇宙视图聚焦一条 PP 段：这一段在模型里怎么分组（TP×CP
-  //                  子组 × DP 副本），从左卡的段按钮或右卡"看它所在的段"进；
+  // 故事线是一条下钻链，不是几个并列的 tab：
+  //   cluster 集群 —— 灵衢物理拓扑：4096 张卡物理上怎么连；左卡的 PP 段按钮 = 原地聚焦一段
+  //   board   板   —— 一块板的 Server 形态图
   //   （任一层点一颗卡 = 选中 rank，右卡给层区间/显存/物理位置/通信组走哪一级）
   //   card 单卡    —— 矩阵 solo：这一张卡里装了什么。
-  // 面包屑随时回退；逻辑魔方/整网图/泳道图是主线之外的参考抽屉（底部工具条）。
+  // 面包屑随时回退；逻辑魔方/整网图/泳道图/层级剖面是主线之外的参考面板（底部工具条）。
   // curSel 是当前选中的矩阵 rank，focusPP 是当前聚焦的 PP 段，tier 是档位
   // （1 集群 · 2 同组定位 · 3 单卡下钻），level 是画布现在停在哪一层。
   var level = 'cluster', backLevel = 'cluster';
-  var universeBuilt = false, physBuilt = false;
+  var physBuilt = false;
   var curSel = null, focusPP = null, tier = 1;
-  var uniWedge = [];   // 宇宙视图每条 PP 段（hub + 叶子）的 viewBox 包围盒，聚焦一段时取景用
-  // 参考图那种暖金/紫青撞色，圈内按段循环取色，同一段的叶子跟着它所在的
-  // hub 同色（深浅由 CSS 的 hover/dim 状态区分，不再按叶子逐个换色）。
-  /* 回到简洁版最初的提示词：默认只有黑白，颜色只给告警（超容标红）。段 hub、
-     段按钮、平面、链路种类全部靠灰阶/线型/粗细分，不引入色相。 */
-  var HUB_PALETTE = ['#E8E8E8'];
-  // 第二档副标题的公共写法：逻辑魔方 postMessage 上报的选中（见下面 message
-  // 监听里的 rubik-select 分支）与宇宙视图叶子点击共用同一句拼法，唯一的
-  // 差别是前者能带上 rubik-cube 自己算好的层区间（L{lo}-L{hi}），宇宙视图
-  // 这条路径没有 rubik-cube 的模型可查，就不编一段假的层区间——宁可这一档
-  // 副标题短一截，也不摆一个编出来的数字。
-  function tier2SubLine(sel) {
-    return 'tp' + sel.tp + ((PS.cp || 1) > 1 ? ' cp' + sel.cp : '') + ' pp' + sel.pp + ' rep' + sel.rep;
-  }
-  /* 把 count 个点铺进一段扇形楔子（原点 ox,oy · 中心角 baseAngle · 半张角
-     fanHalf · 半径 [rNear,rFar]），按行铺开的网格，不是全挤在一条半径线上。
-     反馈「这个宇宙视图中间的rank也要按照真实的数量来……现在的数量是远远
-     不够的」——第一版把整段的叶子都摆在同一个半径上，count 一大（比如
-     pangu 预置一个子组 100 颗）扇面里那点角宽度根本不够摊开，100 个点挤
-     成了肉眼看着像 1 个点的一团——「数字是真的」但看不出「真的有这么多」，
-     没解决反馈要的问题。这里改成二维网格：径向分成几"环"，同一环内再按
-     角度摊开，两个维度一起摊，同样的角宽能摆下多得多的点、彼此还分得开。 */
-  function wdExt(w, p) { if (p.x < w.x0) w.x0 = p.x; if (p.x > w.x1) w.x1 = p.x; if (p.y < w.y0) w.y0 = p.y; if (p.y > w.y1) w.y1 = p.y; }
-  function layoutWedge(ox, oy, baseAngle, fanHalf, count, rNear, rFar) {
-    var cols = Math.max(1, Math.min(count, Math.round(Math.sqrt(count * 2.4))));
-    var rows = Math.ceil(count / cols);
-    var pts = [];
-    for (var k = 0; k < count; k++) {
-      var row = Math.floor(k / cols);
-      var rowStart = row * cols;
-      var colsInRow = Math.min(cols, count - rowStart);
-      var col = k - rowStart;
-      var colT = colsInRow > 1 ? (col / (colsInRow - 1) - 0.5) * 2 : 0;
-      var rowT = rows > 1 ? row / (rows - 1) : 0;
-      var a = baseAngle + colT * fanHalf;
-      var r = rNear + rowT * (rFar - rNear);
-      pts.push({ x: ox + Math.cos(a) * r, y: oy + Math.sin(a) * r });
-    }
-    return pts;
-  }
-  function buildUniverseSvg() {
-    var W = 1600, H = 1000, CX = W / 2, CY = H / 2;
-    var PPN = PS.pp, TPN = PS.tp, CPN = PS.cp || 1, DPN = PS.dp;
-    var R1 = 250, RSUB = 340, R2 = 460;
-    // 真实数量，不抽样：外圈 hub = PP 段（不变），每段内再按 TP×CP 分出
-    // 子组（groupCount，TP/CP 都是 1 时退化成没有子组，直接进内层），子组
-    // 内的叶子 = 这个 (pp,tp,cp) 组合下**全部** DPN 个 rep，一个不少——
-    // tp·cp·pp·dp 四个因子相乘正好等于 world，这一屏画的就是全部 world
-    // 张卡，不是取景。
-    var groupCount = TPN * CPN;
-    // 叶子数一多，每颗都连一条到 hub/子 hub 的线只会糊成一团黑（100 条线
-    // 挤在几十像素宽的楔子里，比不画还难看），加上每条 <line> 都是一个新
-    // DOM 节点——数量一大直接翻倍。超过这个阈值就只画点、不画连线，靠点
-    // 本身的聚簇位置读出"这是哪个子组的"，小数量（≤12，比如 moe718b128k
-     // 一个子组只有 4 个 dp）继续画线，读起来更直接。
-    var THREAD_MAX = 12;
-    var hubsHtml = '', leavesHtml = '', linksHtml = '';
-    for (var i = 0; i < PPN; i++) {
-      var theta = (i / PPN) * Math.PI * 2 - Math.PI / 2;
-      var hx = CX + Math.cos(theta) * R1, hy = CY + Math.sin(theta) * R1;
-      var color = HUB_PALETTE[i % HUB_PALETTE.length];
-      var wd = uniWedge[i] = { x0: hx - 30, y0: hy - 30, x1: hx + 30, y1: hy + 44 };
-      linksHtml += '<line class="u-ray" data-pp="' + i + '" x1="' + CX + '" y1="' + CY + '" x2="' + hx.toFixed(1) + '" y2="' + hy.toFixed(1) + '""/>';
-      hubsHtml += '<g class="u-hub" data-pp="' + i + '">'
-        + '<rect class="u-hubcore" x="' + (hx - 11).toFixed(1) + '" y="' + (hy - 11).toFixed(1) + '" width="22" height="22"/>'
-        + '<text class="u-hublabel" x="' + hx.toFixed(1) + '" y="' + (hy + 34).toFixed(1) + '" text-anchor="middle">PP' + i + '</text>'
-        + '</g>';
-      // 扇形半张角按"这一段跟相邻段隔多远"来定（相邻 hub 的夹角是
-      // 2π/PPN），封顶在那个夹角的 42%——留出至少约 16% 的空隙，扇面才会
-      // 读成"N 段各喷一束"而不是糊成一整条连续的外圈圆环。
-      var fanHalf = Math.min(0.34, (Math.PI / PPN) * 0.42);
-      if (groupCount <= 1) {
-        // TP=CP=1：这一段没有第二层可分（比如 incident2048），DPN 个叶子
-        // 铺进 hub 直接张开的那一整个楔子（径向 R1+50…R2）。
-        var pts0 = layoutWedge(CX, CY, theta, fanHalf, DPN, R1 + 50, R2);
-        for (var r0 = 0; r0 < DPN; r0++) {
-          var p0 = pts0[r0]; wdExt(wd, p0);
-          if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + p0.x.toFixed(1) + '" y2="' + p0.y.toFixed(1) + '""/>';
-          var sel0 = { tp: 0, cp: 0, pp: i, rep: r0 };
-          leavesHtml += '<rect class="u-leaf" data-pp="' + i + '" data-tp="0" data-cp="0" data-rep="' + r0 + '"'
-            + ' x="' + (p0.x - 3.5).toFixed(1) + '" y="' + (p0.y - 3.5).toFixed(1) + '" width="7" height="7">'
-            + '<title>' + esc(tier2SubLine(sel0)) + '</title></rect>';
-        }
-      } else {
-        // 有 TP/CP 结构：段内再分 groupCount 个子组（子 hub），子组之间的
-        // 角距跟外圈"段与段之间留缝"是同一个道理——子扇半张角封顶在"这个
-        // 子组自己的角位槽宽"的 42%，组与组之间才不会糊在一起。子组本身
-        // 复用 .u-hub 这个类（只是多一个 .u-subhub 标记做小尺寸样式），
-        // 点击时走跟点外圈 hub 一样的"聚焦这一整个 PP 段"逻辑——子组不是
-        // 唯一 rank，点了下钻没有意义，只聚焦讲得通。
-        var groupSpacing = groupCount > 1 ? (2 * fanHalf) / (groupCount - 1) : 2 * fanHalf;
-        var subFanHalf = Math.min(groupSpacing * 0.42, 0.15);
-        for (var g = 0; g < groupCount; g++) {
-          var tp9 = g % TPN, cp9 = Math.floor(g / TPN) % CPN;
-          var gt = groupCount > 1 ? (g / (groupCount - 1) - 0.5) * 2 * fanHalf : 0;
-          var ga = theta + gt;
-          var sx = CX + Math.cos(ga) * RSUB, sy = CY + Math.sin(ga) * RSUB;
-          linksHtml += '<line class="u-ray is-sub" data-pp="' + i + '" x1="' + hx.toFixed(1) + '" y1="' + hy.toFixed(1) + '" x2="' + sx.toFixed(1) + '" y2="' + sy.toFixed(1) + '""/>';
-          hubsHtml += '<rect class="u-hub u-subhub" data-pp="' + i + '" x="' + (sx - 3).toFixed(1) + '" y="' + (sy - 3).toFixed(1) + '" width="6" height="6">'
-            + '<title>' + esc('pp' + i + ' tp' + tp9 + ((CPN > 1) ? ' cp' + cp9 : '')) + '</title></rect>';
-          var pts = layoutWedge(CX, CY, ga, subFanHalf, DPN, RSUB + 30, R2);
-          for (var r = 0; r < DPN; r++) {
-            var p = pts[r]; wdExt(wd, p);
-            if (DPN <= THREAD_MAX) linksHtml += '<line class="u-thread" data-pp="' + i + '" x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + p.x.toFixed(1) + '" y2="' + p.y.toFixed(1) + '""/>';
-            var sel = { tp: tp9, cp: cp9, pp: i, rep: r };
-            leavesHtml += '<rect class="u-leaf" data-pp="' + i + '" data-tp="' + tp9 + '" data-cp="' + cp9 + '" data-rep="' + r + '"'
-              + ' x="' + (p.x - 2.5).toFixed(1) + '" y="' + (p.y - 2.5).toFixed(1) + '" width="5" height="5">'
-              + '<title>' + esc(tier2SubLine(sel)) + '</title></rect>';
-          }
-        }
-      }
-    }
-    // 稀疏星点只做氛围，不承载数据——数量固定、每次重建（理论上只建一次，
-    // 见 renderUniverse 的 universeBuilt 守卫）位置会不一样，纯装饰，不影响
-    // 任何可读信息。
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">'
-      + '<g class="u-links">' + linksHtml + '</g>'
-      + '<g class="u-leaves">' + leavesHtml + '</g>'
-      + '<g class="u-hubs">' + hubsHtml + '</g>'
-      + '<rect class="u-core" x="' + (CX - 30) + '" y="' + (CY - 30) + '" width="60" height="60"/>'
-      + '<text class="u-corelabel" x="' + CX + '" y="' + (CY + 74) + '" text-anchor="middle">' + esc(PS.modelName) + '</text>'
-      + '<text class="u-coresub" x="' + CX + '" y="' + (CY + 96) + '" text-anchor="middle">' + world + ' 卡 · ' + PPN + ' 段流水线</text>'
-      + '</svg>';
-  }
-  function renderUniverse() {
-    if (universeBuilt) return;
-    universeStage.innerHTML = '<div class="zp-box">' + buildUniverseSvg() + '</div>';
-    universeBuilt = true;
-    if (typeof uniZP !== 'undefined' && uniZP) uniZP.reset();
-    applyAlerts();
-  }
-  // 点一个 hub（段本身）= 聚焦这一段、把其余段的 hub/射线/叶子调暗，不下钻
-  // （一段里有好几张卡，hub 本身不对应唯一 rank）；ppIdx=null 时全部复原。
-  function focusHub(ppIdx) {
-    if (!universeBuilt) return;
-    var sel9 = ppIdx == null ? null : String(ppIdx);
-    universeStage.querySelectorAll('.u-hub, .u-leaf, .u-ray, .u-thread').forEach(function (el) {
-      el.classList.toggle('is-dim', sel9 != null && el.getAttribute('data-pp') !== sel9);
-    });
-  }
-  // 拖拽平移之后松手的那一下 click 已被 attachZoomPan 在捕获阶段吃掉，
-  // 这里收到的都是真正的点击。
-  universeStage.addEventListener('click', function (ev) {
-    var leaf = ev.target.closest('.u-leaf');
-    if (leaf) {
-      var sel = { tp: +leaf.getAttribute('data-tp'), cp: +leaf.getAttribute('data-cp'), pp: +leaf.getAttribute('data-pp'), rep: +leaf.getAttribute('data-rep') };
-      var ms = rubikSelToMatrixSel(sel);
-      if (ms === curSel) { var lb = leaf.getBBox(); uniZP.fitVB(lb.x, lb.y, lb.width, lb.height, 160); } else showTier2(ms, tier2SubLine(sel));
-      return;
-    }
-    var hub = ev.target.closest('.u-hub');
-    if (hub) { focusSegment(+hub.getAttribute('data-pp')); return; }
-    showOverview();
-  });
 
   // ── 灵衢物理拓扑：第一档的第三种画法，也是默认的第一屏 ──────────────────
   // 按 CANN NEXT 直播讲的 Ascend 950 积木（见 research/灵衢材料-学习笔记01）：
@@ -820,11 +651,7 @@
       var nc = 'p-npu' + (el.hasAttribute('data-slot') ? ' p-bnpu' : '') + extra + ' ' + capClass(r);
       if (el.getAttribute('class') !== nc) el.setAttribute('class', nc);
     });
-    if (universeBuilt) universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
-      var on = curSel != null && rubikSelToMatrixSel({ tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') }) === curSel;
-      if (el.classList.contains('is-sel') !== on) el.classList.toggle('is-sel', on);
-    });
-    [physStage, boardStage, universeStage].forEach(markSelFrame);
+    [physStage, boardStage].forEach(markSelFrame);
     if (curSel != null) showRelations(physOf(curSel).board);
     if (drawerOpen === 'hier') renderHier();
     setTimeout(placeSelLabel, 0);
@@ -1139,9 +966,9 @@
     stage.addEventListener('dblclick', function (ev) { if (!ev.target.closest('.p-npu, .u-leaf, .p-pod, .p-board, .u-hub')) st.reset(); });
     return st;
   }
-  var uniZP = attachZoomPan(universeStage), physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
+  var physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
   (function () { var r0 = physZP.reset; physZP.reset = function () { fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(); }; })();
-  function curZP() { return level === 'segment' ? uniZP : level === 'board' ? boardZP : physZP; }
+  function curZP() { return level === 'board' ? boardZP : physZP; }
 
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
   var DRAWERS = {
@@ -1245,14 +1072,12 @@
     if (!cr) return;
     var to = cr.getAttribute('data-cr');
     if (to === 'root') { physZP.reset(); showOverview(); }
-    else if (to === 'pp') goSegment(focusPP, true);
     else if (to === 'board') goBoard(curBoard, true);
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
   });
   function renderCrumb() {
     var parts = ['<button type="button" class="cr" data-cr="root">集群</button>'];
     var mid = level === 'card' ? backLevel : level;
-    if (mid === 'segment' && focusPP != null) parts.push(level === 'segment' && curSel == null ? '<span class="cr is-cur">PP' + focusPP + '</span>' : '<button type="button" class="cr" data-cr="pp">PP' + focusPP + '</button>');
     if (mid === 'board' && curBoard != null) parts.push(level === 'board' && curSel == null ? '<span class="cr is-cur">板 ' + curBoard + '</span>' : '<button type="button" class="cr" data-cr="board">板 ' + curBoard + '</button>');
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
@@ -1310,23 +1135,12 @@
   }
   leftCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) { showTier2(lastCluster.worst, coordLine(lastCluster.worst)); return; }
+    // PP 段按钮：原地聚焦这一段（其余段压暗），再点一次取消；不再换到段视图（段视图已归档）
     var b = ev.target.closest('.pb'); if (!b) return;
-    goSegment(+b.getAttribute('data-pp'));
+    var k9 = +b.getAttribute('data-pp');
+    if (curSel != null && coordOfRank(curSel).pp !== k9) showOverview(true);
+    focusSegment(focusPP === k9 && curSel == null ? null : k9);
   });
-  /* 进"段"这一层：画布换成宇宙视图并取景到这条 PP 段。keepSel=true 时保留
-     已选中的 rank（它就在这一段里）；否则清掉选中。 */
-  function goSegment(k, keepSel) {
-    if (k == null) k = 0;
-    if (!keepSel || (curSel != null && coordOfRank(curSel).pp !== k)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = false; }
-    else if (curSel != null) tier = 2;   // 从单卡层退回来：还选着，但已不在单卡档
-    level = 'segment'; focusPP = k;
-    showTier1Visual();
-    uniZP.reset();
-    var wd = uniWedge[k];
-    if (wd) uniZP.fitVB(wd.x0, wd.y0, wd.x1 - wd.x0, wd.y1 - wd.y0, 50);
-    if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
-    renderLeftCard(); renderCrumb();
-  }
   /* 进「板」这一层：画布换成这块板的 Server 形态图。keepSel=true 且选中的 rank
      就在这块板上时保留选中；否则清掉。 */
   function goBoard(b, keepSel) {
@@ -1356,7 +1170,6 @@
   }
   function focusSegment(k) {
     focusPP = k;
-    focusHub(k);
     physApplySelection();
     renderLeftCard(); renderCrumb();
   }
@@ -1405,11 +1218,6 @@
     if (!oomSet) return;
     document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
       var c = capClass(+el.getAttribute('data-rank'));
-      ['c0', 'c1', 'c2', 'c3'].forEach(function (k) { el.classList.toggle(k, k === c); });
-    });
-    universeStage.querySelectorAll('.u-leaf').forEach(function (el) {
-      var sel = { tp: +el.getAttribute('data-tp'), cp: +el.getAttribute('data-cp'), pp: +el.getAttribute('data-pp'), rep: +el.getAttribute('data-rep') };
-      var c = capClass(rubikSelToMatrixSel(sel));
       ['c0', 'c1', 'c2', 'c3'].forEach(function (k) { el.classList.toggle(k, k === c); });
     });
     renderLeftCard();
@@ -1489,23 +1297,18 @@
      画布名字（见 matrixSrcFor 的 stitle=）。三处名字同一个来源（PS.modelName），
      读起来是一句话，不是宿主外挂一层跟原生标题抢地、还经常撞在一起的重复牌子。 */
 
-  /* 第一档有两种画法（逻辑魔方 iframe / 宇宙视图内联 SVG），由 universeMode
-     决定当前显示哪一个——showOverview/showTier2 共用这一个开关函数，不必
-     各自重复一遍"显哪个、藏哪个"。matrixFrame 两处都要藏：从第三档退回来
-     时它还开着。 */
-  /* 画布停在哪一层就铺哪张：cluster = 灵衢物理，segment = 宇宙视图；card 层
-     由 showDetail 自己切矩阵。两张 SVG 舞台都受同一套选中/聚焦状态驱动。 */
+  /* 画布停在哪一层就铺哪张：cluster = 灵衢物理，board = 板视图；card 层由 showDetail
+     自己切矩阵。showOverview/showTier2 共用这一个开关函数；matrixFrame / detailFrame
+     都要藏：从第三档退回来时它还开着。两张 SVG 舞台受同一套选中/聚焦状态驱动。 */
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
     detailFrame.classList.add('is-hidden');
     clearTimeout(detailRevealT); detailRevealT = null; document.body.classList.remove('is-loading');
     if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
-    if (level === 'segment') renderUniverse(); else if (level === 'board') renderBoard(curBoard); else renderPhys();
-    universeStage.classList.toggle('is-hidden', level !== 'segment');
+    if (level === 'board') renderBoard(curBoard); else renderPhys();
     boardStage.classList.toggle('is-hidden', level !== 'board');
-    physStage.classList.toggle('is-hidden', level === 'segment' || level === 'board');
+    physStage.classList.toggle('is-hidden', level === 'board');
     dock.classList.remove('is-hidden');
-    focusHub(focusPP);
     physApplySelection();
   }
 
@@ -1518,12 +1321,12 @@
     renderRightIdle(); renderLeftCard(); renderCrumb();
   }
 
-  /* 第二档：留在第一档那个视图身上（逻辑魔方或宇宙视图，看 universeMode），
+  /* 第二档：留在当前那张画布上（集群或板），
      只换宿主自己这层的 chrome——右下角浮出"下钻"邀请。选中态是那个视图
      自己的事（这一刻画面早就是对的，来路无关：可能是刚刚报上来的新选中，
      也可能是从第三档退回来、本来就还停在原地没变过），这个函数只管 sel
      （换算好的矩阵 rank，供下钻按钮用）与 subLine（下钻邀请那一行副标题，
-     各来路按自己手上的坐标格式拼好再传进来，见 tier2SubLine）。 */
+     各来路按自己手上的坐标格式拼好再传进来）。 */
   function showTier2(matrixSel, subLine) {
     tier = 2; curSel = matrixSel; pendingMatrixSel = matrixSel; pendingSubLine = subLine;
     focusPP = coordOfRank(matrixSel).pp;
@@ -1555,7 +1358,6 @@
     document.body.classList.remove('is-loading');
     if (tier !== 3) return;
     detailFrame.classList.remove('is-hidden');
-    universeStage.classList.add('is-hidden');
     physStage.classList.add('is-hidden');
     boardStage.classList.add('is-hidden');
     renderCrumb();
@@ -1778,8 +1580,7 @@
      数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
      不是换档，点了才真的飞到矩阵那一屏（solo）。 */
   function renderDrillInvite(matrixSel, subLine, brief, noCta) {
-    var cta = noCta ? '' : (level !== 'segment' ? '<button type="button" class="brief-cta" data-act="seg">→ pp' + coordOfRank(matrixSel).pp + '</button>' : '')
-      + (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">→ 板' + physOf(matrixSel).board + '</button>' : '')
+    var cta = noCta ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">→ 板' + physOf(matrixSel).board + '</button>' : '')
       + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡</button>';
     if (brief && brief.rank === matrixSel) {
       briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(matrixSel) + cta;
@@ -1810,7 +1611,6 @@
   }
   briefCard.addEventListener('click', function (ev) {
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
-    if (ev.target.closest('[data-act="seg"]') && curSel != null) { goSegment(coordOfRank(curSel).pp, true); return; }
     if (ev.target.closest('[data-act="board"]') && curSel != null) { goBoard(physOf(curSel).board, true); return; }
     if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) showTier2(lastCluster.worst, coordLine(lastCluster.worst));
   });
@@ -2003,7 +1803,7 @@
   var selLabel = document.getElementById('selLabel'), selLead = document.getElementById('selLead');
   function placeSelLabel() {
     if (!selLabel) return;
-    var stage = tier === 3 || curSel == null ? null : level === 'segment' ? universeStage : level === 'board' ? boardStage : physStage;
+    var stage = tier === 3 || curSel == null ? null : level === 'board' ? boardStage : physStage;
     var el = stage && (stage.querySelector('.sel-frame') || stage.querySelector('.is-sel')), box = stage && stage.querySelector('.zp-box');
     if (!el || !box) { selLabel.classList.add('is-hidden'); selLead.classList.add('is-hidden'); return; }
     var r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
@@ -2021,12 +1821,11 @@
   var refitT = 0;
   window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); if (drawerOpen === 'hier') renderHier(); }, 120); });
 
-  // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
-  //    换另外两种画法（旧链接 ?view=universe 照样认得）。 ────────────────────
+  // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑（旧链接 ?view=universe 不再换画法：
+  //    段视图已归档到 /patterns/pp-segment-radial/）。 ────────────────────
   topbar.classList.remove('is-hidden');
   leftCard.classList.remove('is-hidden');
   showOverview();
-  if (qs.get('view') === 'universe') goSegment(0);
 
   // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进第三档 ─────
   var qsel = parseInt(qs.get('sel'), 10);

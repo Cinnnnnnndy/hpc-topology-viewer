@@ -560,6 +560,38 @@ body {
           </div>
         </article>
 
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./patterns/pp-segment-radial/pattern.html">PP 段径向星图</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">归档</span>
+              <span class="tag">4096 rank 全量</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect class="pv-box" x="44" y="66" width="28" height="28" rx="3"/>
+              <path d="M72 80 L150 34 M72 80 L150 52 M72 80 L150 70 M72 80 L150 90 M72 80 L150 108 M72 80 L150 126" fill="none" stroke="rgba(19,26,42,.35)" stroke-width="1"/>
+              <path d="M150 28 Q160 80 150 132" fill="none" stroke="#4369ef" stroke-width="7" stroke-linecap="round"/>
+              <path d="M200 20 Q214 80 200 140" fill="none" stroke="rgba(19,26,42,.3)" stroke-width="7" stroke-linecap="round"/>
+              <path d="M250 14 Q268 80 250 146" fill="none" stroke="rgba(19,26,42,.3)" stroke-width="7" stroke-linecap="round"/>
+              <rect x="203" y="92" width="10" height="10" fill="none" stroke="#131a2a" stroke-width="1.6"/>
+            </svg>
+          </div>
+          <p class="card-desc">从 lingqu-rank-map（模型分片与训练设备映射 · 简洁版）归档出来的「段」视图：中心是模型、一圈是流水线段，每段的叶子是这一段的全部真实 rank（TP×CP 子组 × DP 副本，不抽样），灰度 = 显存占用率。点叶子选中 rank，再点下钻单卡。简洁版里先不放这一屏，代码整份存在分支 claude/pp-segment-radial-archive，之后要用再接回去。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./patterns/pp-segment-radial/pattern.html">打开 pattern</a>
+            <a class="lnk" href="./patterns/pp-segment-radial/pattern.html?pp=2">PP2 这一段</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/claude/pp-segment-radial-archive/public/patterns/pp-segment-radial" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>pp-segment-radial-archive
+            </a>
+          </div>
+        </article>
+
       </div>
     </section>
 
