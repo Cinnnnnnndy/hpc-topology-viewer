@@ -188,6 +188,12 @@
       else if (d.cmd === 'bucket') handle.selectBucket(d.value == null ? null : d.value|0);
       else if (d.cmd === 'anom') handle.setAnomaly(d.value || 'none');
       else if (d.cmd === 'time') handle.setTime(d.value);
+      /* 宿主替它选中一张卡（lingqu-rank-map 的跨视图联动）：value 是本页自己的 rank 序
+         （model.rankOf），null = 取消选中。只在宿主发这条指令时才动，独立打开不受影响。 */
+      else if (d.cmd === 'select') {
+        var r9 = d.value == null ? null : d.value | 0;
+        if (r9 === null || (r9 >= 0 && r9 < handle.model.N)) handle.select(r9);
+      }
     }
   });
 })();

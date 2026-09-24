@@ -1100,7 +1100,7 @@
       drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
-    syncCardHeights(); curZP().refit();
+    syncCardHeights(); curZP().refit(); syncLinked(true);
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
   /* 面板尺寸可拖：泳道（下方）拖上沿改高度，整网图/魔方（左右）拖内沿改宽度。尺寸写成
@@ -1141,7 +1141,7 @@
       syncCardHeights(); placeSelLabel();
     }
     function up() {
-      document.body.classList.remove('is-resizing'); curZP().refit();
+      document.body.classList.remove('is-resizing'); curZP().refit(); if (drawerOpen === 'hier') renderHier();
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
     }
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
@@ -1182,6 +1182,7 @@
     document.body.classList.toggle('t3', tier === 3 && !detailFrame.classList.contains('is-hidden'));
     syncCardHeights();
     placeSelLabel();
+    syncLinked();
   }
 
   // ── 左卡：模型/切分/物理规模 + PP 段入口 + 图例 + 落位假设 ──────────────
@@ -1502,10 +1503,64 @@
   //    读者要退回第二档——切回逻辑魔方（它一直还停在原地、选中态没变过），
   //    副标题这时改用矩阵自己上报的 brief.coord/layers 拼（跟逻辑魔方自己
   //    的 tp/pp/rep 是两套坐标格式，不能混用同一个拼法）。 ──
+  /* ── 跨视图联动（反馈「泳道、整网、层级、魔方和中间的集群图，相同的元素要可以联动选中和显示」）──
+     宿主是唯一的选中源：curSel（rank）/ focusPP（PP 段）一变（每条改状态的路径最后都走
+     renderCrumb），就推给当前开着的那个参考面板；面板里点了什么，也折回同一条
+     showTier2 / focusSegment 路径，于是集群 / 板 / 段三张画布、左右卡、面包屑一起跟。
+       逻辑魔方  → rubik-cmd select（魔方自己的 rank 序：rep 在外、pp 在内，见 rubikIdxOf）
+                 ← rubik-select
+       整网图    → pto:state hl.rank（同一个矩阵预置，rank 号一一对应）；只聚焦段时 filters.p
+                 ← pto:select
+       泳道      → pto:state filters {t,e,p}——它画的是上游 32 卡示例（TP2·EP2·PP4），只传落在
+                   这个范围里的那几维，超出的维传 null，不去假装定位到一条不相干的泳道
+                 ← pto:swimlane-select 的 groups.p → 聚焦同号 PP 段
+       层级剖面  本页原生：重画即高亮（POD / 板 / NPU 三张格子），点格子 = 选中
+     回声：面板报上来的那一次改动不再推回同一个面板（linkMute），否则泳道自己的选中态会被
+     宿主的 filters 盖掉；魔方收到 select 会再报一次 rubik-select，同一张卡直接忽略。 */
+  var linkSent = {}, linkMute = false;
+  function rubikIdxOf(ms) { var c = coordOfRank(ms); return ((c.dp * PS.pp + c.pp) * (PS.cp || 1) + c.cp) * PS.tp + c.tp; }
+  function fromPanel(fn) { linkMute = true; try { fn(); } finally { linkMute = false; } }
+  function syncLinked(force) {
+    if (!drawerOpen) return;
+    var key = curSel + '|' + focusPP;
+    if (!force && linkSent[drawerOpen] === key) return;
+    linkSent[drawerOpen] = key;
+    if (drawerOpen === 'hier') { renderHier(); return; }
+    if (linkMute) return;
+    var w = drawerFrame.contentWindow; if (!w) return;
+    var c = curSel != null ? coordOfRank(curSel) : null, pp = c ? c.pp : focusPP;
+    var NOF = { t: null, e: null, p: null, d: null };
+    if (drawerOpen === 'rubik') w.postMessage({ type: 'rubik-cmd', cmd: 'select', value: curSel != null ? rubikIdxOf(curSel) : null }, '*');
+    else if (drawerOpen === 'netgraph') {
+      w.postMessage(curSel != null ? { type: 'pto:state', filters: NOF, hl: { rank: curSel } }
+        : pp != null ? { type: 'pto:state', hl: null, filters: { t: null, e: null, p: pp, d: null } }
+        : { type: 'pto:state', hl: null, filters: NOF }, '*');
+    } else if (drawerOpen === 'swimlane') {
+      var ep = c ? c.dp % (PS.ep || 1) : null;
+      w.postMessage({ type: 'pto:state', filters: { t: c && c.tp < 2 ? c.tp : null, e: ep != null && ep < 2 ? ep : null, p: pp != null && pp < 4 ? pp : null } }, '*');
+    }
+  }
+  drawerFrame.addEventListener('load', function () { if (drawerOpen && drawerOpen !== 'hier') { delete linkSent[drawerOpen]; setTimeout(function () { syncLinked(true); }, 300); } });
+
   window.addEventListener('message', function (ev) {
     var d = ev.data;
     if (!d) return;
     if (drawerFrame && ev.source === drawerFrame.contentWindow) {
+      if (d.type === 'pto:select') {
+        // 整网图里点了一张卡 / 点空白
+        if (typeof d.sel === 'number' && d.sel >= 0 && d.sel < world) { if (d.sel !== curSel) fromPanel(function () { showTier2(d.sel, coordLine(d.sel)); }); }
+        else if (d.sel == null && curSel != null) fromPanel(function () { showOverview(true); });
+        return;
+      }
+      if (d.type === 'pto:swimlane-select') {
+        // 泳道点了一节：它的 rank 是示例里的 32 卡编号，对不上本预置；能对上的是 PP 段号
+        var gp = d.groups && d.groups.p;
+        if (typeof gp === 'number' && gp >= 0 && gp < PS.pp) fromPanel(function () {
+          if (curSel != null && coordOfRank(curSel).pp !== gp) showOverview(true);
+          focusSegment(gp);
+        });
+        return;
+      }
       if (d.type === 'rubik-drill') {
         /* 再点一次已经选中的那张方块 = 下钻——逻辑魔方自己报的坐标已经够
            换算出矩阵 rank，不用等 pendingMatrixSel（用户可能从深链或退档
@@ -1514,6 +1569,11 @@
         return;
       }
       if (d.type !== 'rubik-select') return;
+      // 宿主刚推过去的那张卡，魔方会原样再报一次——同一张卡 / 本来就没选中，都不再走一遍
+      if (d.sel && d.sel.rank != null && rubikSelToMatrixSel(d.sel) === curSel) return;
+      if (!(d.sel && d.sel.rank != null) && curSel == null) return;
+      linkMute = true;
+      try {
       if (d.sel && d.sel.rank != null) {
         var st9 = d.sel.stage;
         /* cp 只在 PS.cp>1 时才显示——d.sel.cp===0 是合法坐标（CP>1 时也有
@@ -1523,6 +1583,7 @@
           + ((PS.cp || 1) > 1 ? ' cp' + d.sel.cp : '') + ' pp' + d.sel.pp + ' rep' + d.sel.rep
           + (st9 ? ' · L' + st9.lo + '–L' + st9.hi : ''));
       } else showOverview();
+      } finally { linkMute = false; }
       return;
     }
     if (ev.source === matrixFrame.contentWindow) {
@@ -1712,7 +1773,11 @@
   var HC = { c0: '#4A4A4A', c1: '#808080', c2: '#BDBDBD', c3: '#F85149', none: '#282828' };
   function cellColor(v, bad) { if (bad) return HC.c3; if (v == null || v < 0 || !lastCluster) return HC.none; return v >= lastCluster.red ? HC.c2 : v >= lastCluster.amber ? HC.c1 : HC.c0; }
   function drawGrid(cv, n, cols, grp, cell, gap, ggap, colorOf, selIdx) {
-    var rows = Math.ceil(n / cols), W = cols * cell + (cols - 1) * gap + Math.floor((cols - 1) / grp) * ggap, H = rows * (cell + gap) - gap;
+    /* 每一层都撑满面板宽（反馈「所有层级都适配宽度，不要一个长一个短」）：cell 只是下限参考，
+       实际格宽 = (可用宽 − 缝) / 列数，格子保持正方形 */
+    var ng = Math.floor((cols - 1) / grp), avail = cv.parentNode ? cv.parentNode.clientWidth : 0;
+    if (avail > 0) cell = Math.max(2, (avail - (cols - 1) * gap - ng * ggap) / cols);
+    var rows = Math.ceil(n / cols), W = cols * cell + (cols - 1) * gap + ng * ggap, H = rows * (cell + gap) - gap;
     var d = Math.min(window.devicePixelRatio || 1, 2);
     cv.width = W * d; cv.height = H * d; cv.style.width = W + 'px'; cv.style.height = H + 'px';
     var ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -1876,7 +1941,7 @@
   }
   window.addEventListener('resize', placeSelLabel);
   var refitT = 0;
-  window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); }, 120); });
+  window.addEventListener('resize', function () { clearTimeout(refitT); refitT = setTimeout(function () { curZP().refit(); if (drawerOpen === 'hier') renderHier(); }, 120); });
 
   // ── 开场：三张卡 + 顶栏就位，第一档默认铺灵衢物理拓扑；?view=universe/rubik
   //    换另外两种画法（旧链接 ?view=universe 照样认得）。 ────────────────────
