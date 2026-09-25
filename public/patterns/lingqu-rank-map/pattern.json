@@ -2,7 +2,7 @@
   "id": "lingqu-rank-map",
   "name": "模型分片与训练设备映射 · 简洁版",
   "description": "一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。集群（默认第一屏，灵衢物理拓扑：超节点 / 8 个 L2 平面×4 SW2（标 P1…P8）/ 128 卡组的 8 颗 L1 SW / 64 卡 POD / 板上的 2 CPU + 8 NPU + DPU + 4 NIC，超节点间 UBoE，rank 格灰度 = 占用率，四档，越满越亮）→ 板（POD 取景后再点一行，或右卡「→ 板」：一块板的 Server 形态图，CPU0—CPU1 互联、DPU —PCIe— CPU、CPU/DPU —UB→ L1、H2D、NIC 挂相邻 2 卡 + RoCE 参数面、板内 UB fullmesh、出板每卡 8 口扇到 8 颗 L1、L1 → 本平面 4×SW2、L2 → 其他 POD / UBoE 其他超节点）（段视图已归档到 /patterns/pp-segment-radial/）→ 卡（右卡：坐标 + 借矩阵本体 ?brief=1&sel= 算回来的层区间/显存构成 + 假设落位的物理位置 + 五个通信组各走哪一级链路）→ 单卡（矩阵本体 fastcard=1&solo=1 的 solo 渲染）。面包屑每一级可回退；三张卡跨四层只换内容不换位置；底部工具条（仿 Figma）放缩放与三个参考面板（整网图·同一预置 → 右侧 / 泳道图·上游示例 → 下方 / 逻辑魔方 → 左侧），面板占住一边把画布挤过去，不悬浮在画布上。默认预置 moe504b32k（tp4·cp8·pp8·dp16·ep16，world=4096，pangu_sophon_pytorch config/llm/moe_504B_A18B/ 32K 序列那档的真实切分；dp=16 是 EP|DP 的最小合法值，从项目代码 data_parallel_size=world_size÷(TP×PP×CP) 推出）。world ≤ 64 的预置（只有 dense64）直接铺满矩阵原页，没有这套链。",
-  "version": "9.2.0",
+  "version": "9.3.0",
   "entry": "pattern.html",
   "selfContained": false,
   "canvas": "full-bleed",
@@ -22,7 +22,12 @@
     "dhide": "cap,state,wshard,comm,pipe,phys,step,infer,inc 的子集：关掉哪几类数据卡",
     "mode": "infer = 推理工况（缺省训练）",
     "sibs": "on = 单卡层兄弟 rank 展开（缺省 ghost 隐约）",
-    "commk3": "单卡层通信连线逐维开关：列出开着的维（tp,cp,ep,pp,dp），缺省全开"
+    "commk3": "单卡层通信连线逐维开关：列出开着的维（tp,cp,ep,pp,dp），缺省全开",
+    "tp": "覆盖预置的 TP（设置「并行配置」×2/÷2 后「应用」写入）；world = tp×cp×pp×dp，全篇与矩阵、整网图、魔方同一组数",
+    "cp": "覆盖预置的 CP（设置「并行配置」×2/÷2 后「应用」写入）；world = tp×cp×pp×dp，全篇与矩阵、整网图、魔方同一组数",
+    "pp": "覆盖预置的 PP（设置「并行配置」×2/÷2 后「应用」写入）；world = tp×cp×pp×dp，全篇与矩阵、整网图、魔方同一组数",
+    "dp": "覆盖预置的 DP（设置「并行配置」×2/÷2 后「应用」写入）；world = tp×cp×pp×dp，全篇与矩阵、整网图、魔方同一组数",
+    "ep": "覆盖预置的 EP（设置「并行配置」×2/÷2 后「应用」写入）；world = tp×cp×pp×dp，全篇与矩阵、整网图、魔方同一组数"
   },
   "constraints": [
     "故事线是一条下钻链，不是并列 tab（反馈「按下钻的逻辑把整个视图串起来，而不是视图 tab 切换」）：level ∈ cluster/board/segment/card 由下钻状态决定画布铺哪张——cluster 铺灵衢物理 SVG，board 铺一块板的 Server 形态 SVG（boardStage，按板号惰性建一次；集群层 POD 取景之后再点它里面的一行 = 进板，或右卡「→ 板 N」；面包屑 集群 › 板 N › rank › 单卡），segment 铺宇宙视图并取景到那条 PP 段的楔子（uniWedge 记的是 viewBox 包围盒，不量 DOM：舞台切换那 .5s 里 .is-hidden 的 scale(1.5) 过渡会把矩形量歪），card 由 showDetail 切矩阵 iframe。面包屑 集群 › PP 段 › rank › 单卡 每一级可点回去：回段层保留段聚焦、回集群清掉；矩阵里点空白退出 solo 经 pto:tier 报回来，退到进来之前那一层（backLevel）。",
@@ -51,7 +56,10 @@
     "单卡层把并行拓扑的 rank 读出卡拆成切分小卡，接在左列配置卡下面一列往下排（不另起第二列），每张可点开看 memBlockDetail 那一栏；右列放 rank 位置与通信组、各维通信载荷、流水",
     "每一屏只留对这一屏有意义的：板与单卡不显示集群段峰值柱、超容名单与故障复盘链（见 README「每一屏讲什么」）",
     "泳道是本页原生（本预置的 1F1B：PP 段 × GA 个 μb，B=2F 相对时长，示意），不再嵌上游 32 卡示例；与集群双向联动（选中/聚焦段 ⇄ 点道）",
-    "单卡层兄弟 rank：默认隐约（只画淡壳），「兄弟 rank」按钮展开；只有选中 rank 画内部容量；点兄弟 = 原地换选；通信连线不挂标签"
+    "单卡层兄弟 rank：默认隐约（只画淡壳），「兄弟 rank」按钮展开；只有选中 rank 画内部容量；点兄弟 = 原地换选；通信连线不挂标签",
+    "切分只有一个来源（PS），矩阵 / 整网图 / 魔方链接显式带同一组 world·tp·cp·pp·ep 与 perNode 8 / nodeRack 8 / podCards 1024；brief.config 运行时核对",
+    "EP 组按矩阵口径：(dp,cp,tp) 拉平后连号 EP 个（epMembers）",
+    "颜色只给每一屏的关键要素，且只用矩阵那一套维度色 / 显存档色（--c-*）；其余黑白"
   ],
   "embedding": "这一份本身就是别的页面用坐标换算桥接既有 pattern 的一种用法示范；它自己更适合直接打开整页看，不建议再嵌进第三层 iframe。"
 }

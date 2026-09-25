@@ -1542,6 +1542,11 @@ function urlLoad(){
      clbl=0 —— 通信连线不挂芯片与字标（关键值、前/反/更），只留线；详情仍在悬停。 */
   if(q.get('sibs')==='ghost' || q.get('sibs')==='on') ui.soloSibs = q.get('sibs');
   if(q.get('clbl')==='0') ui.noCommChip = true;
+  /* lstyle=flow（opt-in，lingqu-rank-map 传）：卡对卡的通信线换成宿主那套「衬边 + 芯线 + 两端端口环 + 一颗顺着线跑的点」，
+     不画箭头；各原语一律拆成逐段：p2p 串成链、环形集合通信沿环、alltoall 从本卡星形发出。 */
+  if(q.get('lstyle')==='flow') ui.flowEdges = true;
+  /* capln=reach（opt-in）：卡壳上的 70% / 88% 两条警戒线只在这张卡真的够到时才画，够不到就不画 */
+  if(q.get('capln')==='reach') ui.capLineReach = true;
   var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
@@ -2321,7 +2326,10 @@ function capVerdict(D, ppRank, g){
    「随便选一张再看是不是这张最惨」。 */
 function ptoClusterBrief(){
   var D = derive(cfg);
-  if(!D.ok) return null;
+  /* 配置不合法（切分对不上模型：heads % TP、layers % PP、experts % EP、world 整除……）时把原因交给宿主，
+     不再只回一个 null——宿主（lingqu-rank-map）的切分是可改的，改错了要当场说清楚错在哪。 */
+  if(!D.ok) return {ok:false, errors: D.errors.map(function(e9){ return e9.msg; }),
+    fixes: [].concat.apply([], D.errors.map(function(e9){ return (e9.fixes || []).map(function(f9){ return f9.label; }); })).slice(0, 8)};
   var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1, oom = [], ratio = [];
   for(var r=0; r<D.world; r++){
     var co = coordsOf(r, D);
@@ -2337,7 +2345,11 @@ function ptoClusterBrief(){
     var T9 = commLoad9(D, dm9, 0);
     if(T9 && D[dm9] > 1) comm9[dm9] = {txt:T9.txt, how:T9.how};
   });
-  return { world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom, ratio:ratio,
+  return { ok:true, world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom, ratio:ratio,
+           /* 本页实际按哪一组切分算的：宿主拿它核对「两边是不是同一套数」 */
+           config:{world:D.world, tp:D.tp, cp:D.cp, pp:D.pp, dp:D.dp, ep:D.ep, perNode:D.perNode, nodeRack:D.nodeRack, podCards:D.podCards},
+           /* 维度色与显存档色：宿主给「每一屏最关键的那个要素」上色时用同一套，全篇一个颜色一个意思 */
+           dimCol:{tp:VC.tp, cp:VC.cp, ep:VC.ep, dp:VC.dp, pp:VC.pp}, memCol: MEMC,
            amber:CAP_AMBER, red:CAP_RED,
            model:{layers:D.layers, hidden:D.hidden, seq:D.seq, mbs:D.mbs, ga:D.ga, experts:D.experts || 0, topk:D.topk || 0, lps:D.layersPerStage},
            comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0 };
@@ -2433,8 +2445,28 @@ function schedule(D){
 
 
 /* ═════════ 线型语义（§8）：由原语决定，与维度无关 ═════════ */
+function flowEdgeSVG(pts, prim, color, opts){
+  var w = Math.max(1.2, Math.min(3, opts.w || 2)), n = pts.length, segs = [], i, out = '', dots = '';
+  if(prim === 'alltoall' && opts.hub != null && opts.hub >= 0 && opts.hub < n){ for(i = 0; i < n; i++) if(i !== opts.hub) segs.push([pts[opts.hub], pts[i]]); }
+  else { for(i = 0; i < n - 1; i++) segs.push([pts[i], pts[i+1]]); if(prim !== 'p2p' && n > 2) segs.push([pts[n-1], pts[0]]); }
+  segs.forEach(function(sg, k){
+    var a = sg[0], b = sg[1], d = 'M'+a[0].toFixed(1)+','+a[1].toFixed(1)+' L'+b[0].toFixed(1)+','+b[1].toFixed(1);
+    out += '<path d="'+d+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(w+3.2)+';stroke-linecap:round"/>'
+         + '<path d="'+d+'" style="fill:none;stroke:'+color+';stroke-width:'+w+';stroke-linecap:round"/>';
+    if(k < 24) dots += '<circle r="'+(w*0.95).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.6).toFixed(2)+'"><animateMotion dur="'+(1.6 + (k % 3)*0.35).toFixed(2)+'s" repeatCount="indefinite" path="'+d+'"/></circle>';
+  });
+  /* 两端端口：底色实心环 + 描边 + 中心点，同一个点只画一次 */
+  var seen = {};
+  segs.forEach(function(sg){ sg.forEach(function(p){
+    var key = p[0].toFixed(0)+','+p[1].toFixed(0); if(seen[key]) return; seen[key] = 1;
+    out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.5).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.55).toFixed(2)+'"/>'
+         + '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*0.5).toFixed(2)+'" style="fill:'+color+'"/>';
+  }); });
+  return '<g>' + out + dots + '</g>';
+}
 function edgeSVG(pts, prim, color, opts){
   opts = opts || {};
+  if(ui.flowEdges && pts.length >= 2) return flowEdgeSVG(pts, prim, color, opts);
   var w = opts.w || 2, out='', i, j, n = pts.length, mid = opts.mid || 'x';
   /* alltoall 那一支原来把线宽写死（0.7–1.8 的伪随机），opts.w 传进来就用它：
      路由那一档要靠**条宽**表达「这条边分到多少 token」，宽度不能是装饰。 */
@@ -5704,6 +5736,7 @@ function netScene(D, g, box, step){
             ])))+'" style="fill:transparent;pointer-events:none" data-k="cardfull" data-i="'+gc+'"/>');
           } else {
             [[CAP_AMBER, ui.mono ? 'var(--pt-fg3)' : CAP_C.amber], [CAP_RED, ui.mono ? 'var(--pt-fg2)' : CAP_C.red]].forEach(function(mk){
+              if(ui.capLineReach && !(cMS9.ratio >= mk[0])) return;
               var vy = cv1 - (cv1 - cv0) * mk[0];
               var qa = P(-0.04, vy, cw0, kc), qb = P(1.04, vy, cw0, kc);
               body.push(seg(qa, qb, 'stroke:'+mk[1]+';stroke-width:1.1;stroke-dasharray:4 3;opacity:.95'));
@@ -10783,10 +10816,10 @@ function ptoRankBrief(){
     detail: {
       zero: D9.zero === undefined ? zeroLv() : D9.zero,
       segs: V9.segs.filter(function(s9){ return s9.bytes > 0; }).map(function(s9){
-        return {k:s9.k, label:s9.label, gb:s9.bytes/GiB, zdiv: s9.zdiv || 1,
+        return {k:s9.k, label:s9.label, gb:s9.bytes/GiB, zdiv: s9.zdiv || 1, col: MEMC[s9.k] || null,
                 own: stateOwn(D9, s9.k, sel), life: stateLife(D9, s9.k, null),
                 sub: s9.sub ? s9.sub.filter(function(x9){ return x9.bytes > 0; })
-                  .map(function(x9){ return {id:x9.id, cut:x9.cut, how:x9.how, gb:x9.bytes/GiB}; }) : null};
+                  .map(function(x9){ return {id:x9.id, cut:x9.cut, how:x9.how, gb:x9.bytes/GiB, col: VC[x9.cut] || null}; }) : null};
       }),
       comm: ['tp','cp','ep','pp','dp'].map(function(dm9){
         if(grp9[dm9] <= 1) return null;
