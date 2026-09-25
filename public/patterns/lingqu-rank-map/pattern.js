@@ -1347,7 +1347,7 @@
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams(splitParams({
       embed: '1', theme: 'dark', zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: DV.comm ? '1' : '0', solozoom: '44',
-      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
+      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', slabgap: '1', commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
       view: 'chain', card: '1', vtab: DV.vtab, sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     }));

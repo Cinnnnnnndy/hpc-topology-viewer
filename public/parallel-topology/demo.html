@@ -1549,6 +1549,9 @@ function urlLoad(){
   if(q.get('lstyle')==='flow') ui.flowEdges = true;
   /* capln=reach（opt-in）：卡壳上的 70% / 88% 两条警戒线只在这张卡真的够到时才画，够不到就不画 */
   if(q.get('capln')==='reach') ui.capLineReach = true;
+  /* slabgap=1（opt-in）：选中那只卡放大到单卡时，各档显存从容器壁、容器底内缩一圈，档与档之间留缝——
+     每一档成为一块独立的板，读得出「这是几块、各多厚」。壳顶仍然恒等于 HBM 容量（缝与边距从同一段高度里扣）。 */
+  if(q.get('slabgap')==='1') ui.slabGap = true;
   var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
@@ -5396,13 +5399,36 @@ function netScene(D, g, box, step){
               body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
               body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+capBgS9+';stroke:none'));
               body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
+              /* slabgap：内缩 + 档间留缝（只给选中那只；阵列里 128 只各留缝就碎了） */
+              var inS9 = !!(ui.slabGap && meC);
+              var sPadU9 = inS9 ? (cu1 - cu0)*0.08 : 0, sPadW9 = inS9 ? (cw1 - cw0)*0.08 : 0;
+              var sPadV9 = inS9 ? vSp9*0.03 : 0, sGap9 = inS9 ? vSp9*0.03 : 0;
+              /* 内缩档里同一把刀连着的几块并成一块画（attn.q/kv/out 三片 TP 各只有几像素宽，分开画是几道毛刺），
+                 板面上只剩「TP 那一截 | EP 那一截」这种一眼读得出的分段；点选命中仍按原来的逐块 */
+              var opsM9 = (MS9.opSegs || []);
+              if(inS9){
+                opsM9 = [];
+                (MS9.opSegs || []).forEach(function(o9){
+                  var l9 = opsM9[opsM9.length - 1];
+                  if(l9 && l9.cut === o9.cut) l9.u1 = o9.u1; else opsM9.push({id:o9.id, cut:o9.cut, u0:o9.u0, u1:o9.u1});
+                });
+              }
+              var nIn9 = 0; MS9.forEach(function(x9){ if(!x9.over) nIn9++; });
+              var sAvail9 = vSp9 - sPadV9 - Math.max(0, nIn9 - 1)*sGap9;
+              var su0 = cu0 + sPadU9, su1 = cu1 - sPadU9, sw0 = cw0 + sPadW9, sw1 = cw1 - sPadW9;
+              /* 板彼此分开之后，哪三个面朝向读者要按真实机位算（turn3 后法线的深度分量 < 0 即朝向镜头）；
+                 fTop/fFront/fRight 那组是按默认机位的近似，板贴在一起时看不出差，分开就会把背面画到前面来 */
+              var vis9 = function(a9, b9, c9){ return turn3(a9, b9, c9, yaw, pitch)[2] < 0; };
+              var sTopV9 = vis9(0, -1, 0), sU1V9 = vis9(1, 0, 0), sW1V9 = vis9(0, 0, 1);
+              var swF9 = sW1V9 ? sw1 : sw0;   /* 朝向读者的那张 w 面：块、缝都画在它上面 */
               for(var m8 = 0; m8 < MS9.length; m8++){
                 var sg8 = MS9[m8];
-                var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
-                var mq0 = P(cu0,vB9,cw0,kc), mq1 = P(cu1,vB9,cw0,kc),
-                    mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
-                    mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
-                    mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
+                var vA9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f0 - m8*sGap9) : (cv1 - vSp9*sg8.f0),
+                    vB9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f1 - m8*sGap9) : (cv1 - vSp9*sg8.f1);
+                var mq0 = P(su0,vB9,sw0,kc), mq1 = P(su1,vB9,sw0,kc),
+                    mq2 = P(su1,vA9,sw0,kc), mq3 = P(su0,vA9,sw0,kc),
+                    mq4 = P(su0,vB9,sw1,kc), mq5 = P(su1,vB9,sw1,kc),
+                    mq6 = P(su1,vA9,sw1,kc), mq7 = P(su0,vA9,sw1,kc);
                 var lzM = 1;
                 /* 一档跨过壳顶时 MS9 里连着两条（壳内 in + 壳外 over，见 memStack 里
                    push9 的注释），这两条都是同一个 sg8.k——只认第一条（壳内那半，
@@ -5454,13 +5480,27 @@ function netScene(D, g, box, step){
                    内容本身的颜色也带没了。 */
                 var fPct9 = Math.round(100 * dimPct9);
                 var sideDark9 = Math.round(2 * (2 - dimPct9));
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+kerf));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+kerf));
-                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+';stroke:none'));
-                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
-                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
+                var fc9 = (dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9));
+                /* 内缩成独立的板：三个可见面分三档明暗（顶最亮、正面本色、侧面最暗），近面描一道同色提亮的细边——
+                   板与板之间隔着缝，靠这道边与明暗认出每一块的轮廓，不再是一整根色柱 */
+                var topC9 = inS9 ? 'color-mix(in srgb, '+fc9+' 90%, white)' : fc9;
+                var sideC9 = inS9 ? memShade(fc9, 22) : memShade(sg8.c, sideDark9);
+                var nearK9 = inS9 ? (';stroke:color-mix(in srgb, '+fc9+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9') : ';stroke:none';
+                if(inS9){
+                  /* 只画朝向读者的三面：正面本色、侧面压暗、顶（或底）提亮 */
+                  body.push(quad(sW1V9?[mq4,mq5,mq6,mq7]:[mq0,mq1,mq2,mq3], 'fill:'+fc9+nearK9));
+                  body.push(quad(sU1V9?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+nearK9));
+                  body.push(quad(sTopV9?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+nearK9));
+                } else {
+                var hasTop9 = sg8.top;
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+fc9+kerf));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+kerf));
+                if(hasTop9) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+';stroke:none'));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+fc9+nearK9));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+nearK9));
+                if(hasTop9) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+nearK9));
+                }
+                if(sg8.act) body.push(inS9 && sW1V9 ? seg(mq4, mq5, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2') : seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
                    那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
@@ -5496,7 +5536,7 @@ function netScene(D, g, box, step){
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
                   var seamCol9 = memShade('var(--pt-bg)', 34);
-                  var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
+                  var uAt9 = function(u9){ return su0 + (su1 - su0)*u9; };
                   /* 权重带画 TP/EP 色块（52% 混合），g/opt/otmp 跟同一刀但只画
                      白色切分线、不铺色块——线够说清「这儿断开了」，色块留给权重。 */
                   if(sg8.k === 'w' && (MS9.opSegs || []).length){
@@ -5505,6 +5545,14 @@ function netScene(D, g, box, step){
                     /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
                        和五档之间那套压暗是同一种语言，读者不用学第二种。 */
                     var pickId9 = (meC && ui.memSel && ui.memSel.indexOf('w:') === 0) ? ui.memSel.slice(2) : null;
+                    var drawM9 = inS9 && !pickId9;
+                    if(drawM9) opsM9.forEach(function(o8){
+                      var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
+                      var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
+                      if(oc8) body.push(quad([P(ua8,vB9,swF9,kc),P(ub8,vB9,swF9,kc),P(ub8,vA9,swF9,kc),P(ua8,vA9,swF9,kc)],
+                        'fill:color-mix(in srgb, '+oc8+' 52%, '+sg8.c+');stroke:none'));
+                      if(o8.u0 > 0.002) body.push(seg(P(ua8,vB9,swF9,kc), P(ua8,vA9,swF9,kc), 'stroke:var(--pt-bg);stroke-width:.8'));
+                    });
                     MS9.opSegs.forEach(function(o8){
                       if((o8.u1 - o8.u0)*cardPxW9 < 0.7) return;
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
@@ -5513,13 +5561,15 @@ function netScene(D, g, box, step){
                       /* 非选中块的弱化：兑淡刀色混合比例 */
                       var oPickDim9 = (pickId9 && o8.id !== pickId9) ? 0.28 : 1;
                       var oMix9 = Math.round(52 * oPickDim9);
-                      if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
-                                                      :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
+                      var bw8 = inS9 ? swF9 : (!fFront ? sw0 : sw1);
+                      if(meC) hitOps.push(quad([P(ua8,vB9,bw8,kc),P(ub8,vB9,bw8,kc),P(ub8,vA9,bw8,kc),P(ua8,vA9,bw8,kc)],
                         'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(o8.id)+'"',
                         esc(o8.id)+'：点开看这一块的切分'));
-                      body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
-                                             :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
-                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35'));
+                      if(drawM9) return;
+                      body.push(quad([P(ua8,vB9,bw8,kc),P(ub8,vB9,bw8,kc),P(ub8,vA9,bw8,kc),P(ua8,vA9,bw8,kc)],
+                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+')'+(inS9 ? ';stroke:none' : ';stroke:var(--pt-bg);stroke-width:.35')));
+                      /* 内缩档：块与块之间只在内侧切一道底色缝，不给整块描黑边（描边会把板的外轮廓也勾成黑框） */
+                      if(inS9 && o8.u0 > 0.002) body.push(seg(P(ua8,vB9,bw8,kc), P(ua8,vA9,bw8,kc), 'stroke:var(--pt-bg);stroke-width:.8'));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
                     /* g/opt/otmp 跟权重同一套 TP/EP 切分，但只画切分线、不填色块。
@@ -5527,17 +5577,17 @@ function netScene(D, g, box, step){
                        otmp #F5E6A8）上白线看不见，改用带色本身压暗 50% 的深色线。 */
                     var cutCol8 = (sg8.k === 'g') ? '#fff' : memShade(sg8.c, 50);
                     var lastPx8 = -1e9;
-                    MS9.opSegs.forEach(function(o8){
+                    opsM9.forEach(function(o8){
                       var px8 = o8.u0 * cardPxW9;
                       if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
                       lastPx8 = px8;
-                      body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
+                      body.push(seg(P(uAt9(o8.u0), vB9, inS9 ? swF9 : sw0, kc), P(uAt9(o8.u0), vA9, inS9 ? swF9 : sw0, kc),
                         'stroke:'+cutCol8+';stroke-width:.55'));
                     });
                   } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
                     for(var mm9 = 1; mm9 < MS9.mub; mm9++){
-                      body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
+                      body.push(seg(P(uAt9(mm9/MS9.mub), vB9, inS9 ? swF9 : sw0, kc), P(uAt9(mm9/MS9.mub), vA9, inS9 ? swF9 : sw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.6;stroke-dasharray:2.2 1.8'));
                     }
                   }
@@ -5668,7 +5718,10 @@ function netScene(D, g, box, step){
                mono 下 capCol 那一档已经换成了次级灰（见上面 capCol 的三目），
                线宽/不透明度的加粗照旧，于是三层关系还在——选中（纯白）＞
                告警（红或次级灰·粗）＞ 普通（维度色或暗灰）。 */
-            var edgeCol9 = (ui.fastCard && meC) ? 'var(--pt-fg)'
+            /* slabgap 下选中那只的壳收成一只细玻璃框：里面的板已经是主角，粗白框会压过它们 */
+            if(ui.slabGap && meC && !capCol){ eW = 0.9; }
+            var edgeCol9 = (ui.slabGap && meC) ? 'color-mix(in srgb, var(--pt-fg) 62%, var(--pt-bg))'
+              : (ui.fastCard && meC) ? 'var(--pt-fg)'
               : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.mono ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
             body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
