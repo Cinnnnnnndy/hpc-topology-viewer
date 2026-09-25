@@ -143,7 +143,9 @@
      （sibs=on 展开，缺省 ghost 隐约——超大集群里兄弟可能上百张，默认不全放） */
   var DV = { vtab: qs.get('cam') === 'top' ? 'top' : '3d', comm: qs.get('comm3') === '1',
     commk: (function () { var o = {}, h = qs.has('commk3') ? String(qs.get('commk3')).split(',') : null; ['tp', 'cp', 'ep', 'pp', 'dp'].forEach(function (k) { o[k] = !h || h.indexOf(k) >= 0; }); return o; })(),
-    sibs: qs.get('sibs') === 'on' ? 'on' : 'ghost' };
+    sibs: qs.get('sibs') === 'on' ? 'on' : 'ghost',
+    /* 单卡里画什么：显存板（mem）/ 整网里这张卡拿走哪一片（net）/ 逐层算子块（comp） */
+    rv: qs.get('rv3') === 'net' || qs.get('rv3') === 'comp' ? qs.get('rv3') : 'mem' };
   var OBJ = (function () { var m = /^(tp|cp|ep|dp|pp):(\d+)$/.exec(qs.get('obj') || ''); return m ? { dim: m[1], idx: +m[2] } : { dim: null, idx: 0 }; })();
   function setQS(k, v) {
     var u = new URLSearchParams(location.search);
@@ -1347,7 +1349,7 @@
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams(splitParams({
       embed: '1', theme: 'dark', zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: DV.comm ? '1' : '0', solozoom: '44',
-      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', slabgap: '1', commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
+      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', slabgap: '1', rankview: DV.rv, commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
       view: 'chain', card: '1', vtab: DV.vtab, sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     }));
@@ -2029,13 +2031,13 @@
   function refreshDetail(camOnly) {
     if (tier !== 3 && !detailSrc) return;
     if (detailReady && !camOnly && detailFrame.contentWindow) {
-      detailFrame.contentWindow.postMessage({ type: 'pto:solo', sibs: DV.sibs, comm: DV.comm, commk: DV.commk }, '*');
+      detailFrame.contentWindow.postMessage({ type: 'pto:solo', sibs: DV.sibs, comm: DV.comm, commk: DV.commk, rankview: DV.rv }, '*');
       detailSrc = matrixSrcFor(curSel);
     } else if (tier === 3) loadDetail(curSel);
     syncSoloDock();
   }
   function saveDV() {
-    setQS('comm3', DV.comm ? '1' : ''); setQS('sibs', DV.sibs === 'on' ? 'on' : '');
+    setQS('comm3', DV.comm ? '1' : ''); setQS('sibs', DV.sibs === 'on' ? 'on' : ''); setQS('rv3', DV.rv === 'mem' ? '' : DV.rv);
     var ck = ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; });
     setQS('commk3', ck.length === 5 ? '' : ck.join(','));
   }
@@ -2053,8 +2055,11 @@
       var k = b.getAttribute('data-solo');
       b.classList.toggle('is-on', k === 'sibs' ? DV.sibs === 'on' : DV.comm);
     });
+    dock.querySelectorAll('[data-rv]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-rv') === DV.rv); });
   }
   dock.addEventListener('click', function (ev) {
+    var rv = ev.target.closest('[data-rv]');
+    if (rv) { DV.rv = rv.getAttribute('data-rv'); saveDV(); refreshDetail(); return; }
     var b = ev.target.closest('[data-solo]'); if (!b) return;
     if (b.getAttribute('data-solo') === 'sibs') DV.sibs = DV.sibs === 'on' ? 'ghost' : 'on';
     else DV.comm = !DV.comm;

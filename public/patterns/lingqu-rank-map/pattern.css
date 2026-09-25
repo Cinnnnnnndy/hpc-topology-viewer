@@ -598,8 +598,9 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .sw-foot .sw-demo { fill: #6A6A6A; }
 
 /* 单卡层的两颗开关：兄弟 rank（隐约 ⇄ 展开）、通信连线；只在单卡层出现 */
-.dock [data-solo] { display: none; }
-body.t3 .dock [data-solo] { display: flex; }
+.dock [data-solo], .dock [data-rv], .dock .dock-sep-rv { display: none; }
+body.t3 .dock [data-solo], body.t3 .dock [data-rv] { display: flex; }
+body.t3 .dock .dock-sep-rv { display: block; }
 .cf-ck { flex-wrap: wrap; gap: 0 2px; }
 
 /* 设置浮层：切分五维可改（×2 / ÷2），改过的数字高亮；不合法时给矩阵报回来的原因 */

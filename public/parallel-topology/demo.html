@@ -1552,6 +1552,9 @@ function urlLoad(){
   /* slabgap=1（opt-in）：选中那只卡放大到单卡时，各档显存从容器壁、容器底内缩一圈，档与档之间留缝——
      每一档成为一块独立的板，读得出「这是几块、各多厚」。壳顶仍然恒等于 HBM 容量（缝与边距从同一段高度里扣）。 */
   if(q.get('slabgap')==='1') ui.slabGap = true;
+  /* rankview=net|comp（opt-in，需 slabgap）：选中那只卡里不画显存，改画「整网里这张卡拿走了哪一片」（net）
+     或「这张卡逐层装了哪些算子块」（comp）——同一套内缩、互有间距的板块画法 */
+  if(q.get('rankview')==='net' || q.get('rankview')==='comp') ui.rankView = q.get('rankview');
   var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
@@ -5421,7 +5424,103 @@ function netScene(D, g, box, step){
               var vis9 = function(a9, b9, c9){ return turn3(a9, b9, c9, yaw, pitch)[2] < 0; };
               var sTopV9 = vis9(0, -1, 0), sU1V9 = vis9(1, 0, 0), sW1V9 = vis9(0, 0, 1);
               var swF9 = sW1V9 ? sw1 : sw0;   /* 朝向读者的那张 w 面：块、缝都画在它上面 */
-              for(var m8 = 0; m8 < MS9.length; m8++){
+              /* 板内的切分也拆成互有间距的小块：权重按算子块（experts / attn.q / attn.kv / attn.out …），
+                 梯度、优化器态跟同一套切分（同一份参数的 ×1 / ×k），激活按在途微批。
+                 字节占比不到 0.5% 的块（router、norm 这种 0.0GB 的复制件）不单画；最窄的块至少给 3.5% 宽，
+                 否则 0.1GB 的 attn 片只有一两个像素、缝比块还宽——精确数字在左侧逐块列着，这里要的是「切成了几块」。 */
+              var splitW9 = null;
+              if(inS9){
+                var rawP9 = (MS9.opSegs || []).map(function(o9){ return {id:o9.id, cut:o9.cut, s:o9.u1 - o9.u0}; })
+                              .filter(function(x9){ return x9.s >= 0.005; });
+                var sumP9 = rawP9.reduce(function(a9, x9){ return a9 + x9.s; }, 0);
+                if(rawP9.length > 1 && sumP9 > 0){
+                  var MINP9 = 0.035, smallP9 = 0, bigP9 = 0;
+                  rawP9.forEach(function(x9){ x9.s /= sumP9; if(x9.s < MINP9) smallP9 += MINP9; else bigP9 += x9.s; });
+                  rawP9.forEach(function(x9){ x9.f = x9.s < MINP9 ? MINP9 : x9.s*(1 - smallP9)/bigP9; });
+                  splitW9 = rawP9;
+                }
+              }
+              var pickW9 = (meC && ui.memSel && ui.memSel.indexOf('w:') === 0) ? ui.memSel.slice(2) : null;
+              if(inS9 && ui.rankView) (function(){
+                /* ── 选中那只卡的另外两种内容：整网分片（net）/ 层构成（comp）────────────────
+                   与显存板同一套画法：内缩、行与行留缝、块与块留缝，只画朝向读者的三面。 */
+                var rk9 = rankOf(tIdx, cIdx, dIdx, pc2, D), co9 = coordsOf(rk9, memD), me9 = memD.moe ? epOf(co9.t, co9.c, co9.d, memD) : null;
+                var lps9 = memD.layersPerStage, st9 = cutPP ? co9.p : 0, L9 = memD.layers;
+                var ghostF9 = 'color-mix(in srgb, var(--pt-fg) 7%, var(--pt-bg))';
+                function cutCol9(c9){ return c9 === 'tp' ? VC.tp : (c9 === 'ep' ? VC.ep : 'color-mix(in srgb, var(--pt-fg) 42%, var(--pt-bg))'); }
+                function box9(a9, b9, vA, vB, col, ghost, hitId){
+                  var q0 = P(a9,vB,sw0,kc), q1 = P(b9,vB,sw0,kc), q2 = P(b9,vA,sw0,kc), q3 = P(a9,vA,sw0,kc),
+                      q4 = P(a9,vB,sw1,kc), q5 = P(b9,vB,sw1,kc), q6 = P(b9,vA,sw1,kc), q7 = P(a9,vA,sw1,kc);
+                  var fr = sW1V9 ? [q4,q5,q6,q7] : [q0,q1,q2,q3];
+                  var sd = sU1V9 ? [q1,q5,q6,q2] : [q0,q4,q7,q3];
+                  var tp = sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7];
+                  if(ghost){
+                    /* ghost === true：不归这张卡的层，中性淡影；ghost 是颜色：归这张卡的层里别人拿走的那几片，同刀色的淡影 */
+                    var gt = ghost === true ? 'var(--pt-fg)' : ghost, gf = 'color-mix(in srgb, '+gt+' '+(ghost === true ? 7 : 20)+'%, var(--pt-bg))';
+                    var ge = ';stroke:color-mix(in srgb, '+gt+' '+(ghost === true ? 20 : 38)+'%, var(--pt-bg));stroke-width:.3;stroke-linejoin:round';
+                    body.push(quad(fr, 'fill:'+gf+ge)); body.push(quad(sd, 'fill:'+memShade(gf, 20)+ge));
+                    body.push(quad(tp, 'fill:color-mix(in srgb, '+gt+' '+(ghost === true ? 11 : 28)+'%, var(--pt-bg))'+ge));
+                  } else {
+                    var ed = ';stroke:color-mix(in srgb, '+col+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9';
+                    body.push(quad(fr, 'fill:'+col+ed)); body.push(quad(sd, 'fill:'+memShade(col, 22)+ed));
+                    body.push(quad(tp, 'fill:color-mix(in srgb, '+col+' 90%, white)'+ed));
+                  }
+                  if(hitId && meC) hitOps.push(quad(fr, 'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(hitId)+'"', esc(hitId)+'：点开看这一块的切分'));
+                }
+                /* 一行里的块：宽度 ∝ 字节，不到 0.5% 的不单画，最窄给 3.5%，块间留缝 */
+                function layout9(items){
+                  var it = items.filter(function(x){ return x.b > 0; }), sum = it.reduce(function(a,x){ return a + x.b; }, 0);
+                  if(!sum) return [];
+                  it = it.filter(function(x){ return x.b/sum >= 0.005; });
+                  sum = it.reduce(function(a,x){ return a + x.b; }, 0);
+                  var MIN = 0.035, sm = 0, bg = 0;
+                  it.forEach(function(x){ x.s = x.b/sum; if(x.s < MIN) sm += MIN; else bg += x.s; });
+                  it.forEach(function(x){ x.f = x.s < MIN ? MIN : x.s*(1 - sm)/bg; });
+                  var gU = (su1 - su0)*0.03, W = (su1 - su0) - gU*(it.length - 1), ux = su0;
+                  it.forEach(function(x){ x.a = ux; x.bb = ux + W*x.f; ux = x.bb + gU; });
+                  if(!sU1V9) it.reverse();
+                  return it;
+                }
+                var ops9 = opBytes(memD).filter(function(o){ return o.b > 0; });
+                var vocB9 = 2*Math.ceil(memD.vocab/memD.tp)*memD.hidden;
+                var rows9 = [];
+                if(ui.rankView === 'comp'){
+                  /* 层构成：只画这张卡自己的层，逐层一排「它拿到的」算子块（字节 = 每卡字节），颜色 = 切它的那把刀 */
+                  if(st9 === 0) rows9.push({h:0.6, items:[{id:'embed', cut:'tp', b:vocB9}]});
+                  for(var l9 = 0; l9 < lps9; l9++) rows9.push({h:1, items:ops9.map(function(o){ return {id:o.id, cut:o.cut, b:o.b}; })});
+                  if(st9 === memD.pp - 1) rows9.push({h:0.6, items:[{id:'lm_head', cut:'tp', b:vocB9}]});
+                } else {
+                  /* 整网分片：整张网自下而上（embed → L 层 → lm_head），宽度按整层（未切）的字节；
+                     这张卡所在 PP 段的那几层实心，块里只有它拿走的那一片（TP 的第 t 片 / EP 的第 e 桶）上色，其余是空位；
+                     不归它的层整排只留一块淡影 */
+                  var full9 = function(o){ return {id:o.id, cut:o.cut, b:o.cut === 'tp' ? o.b*memD.tp : (o.cut === 'ep' ? o.b*memD.ep : o.b)}; };
+                  rows9.push({h:1, held:st9 === 0, items:[{id:'embed', cut:'tp', b:vocB9*memD.tp}]});
+                  for(var l8 = 0; l8 < L9; l8++) rows9.push({h:1, held:Math.floor(l8/lps9) === st9, items:ops9.map(full9)});
+                  rows9.push({h:1, held:st9 === memD.pp - 1, items:[{id:'lm_head', cut:'tp', b:vocB9*memD.tp}]});
+                }
+                var hSum9 = rows9.reduce(function(a,r){ return a + r.h; }, 0), nR9 = rows9.length;
+                var padB9 = vSp9*0.03, padT9 = vSp9*(ui.rankView === 'comp' ? 0.10 : 0.03);
+                var rGap9 = Math.min(vSp9*0.03, (vSp9 - padB9 - padT9)/nR9*0.32);
+                var unit9 = (vSp9 - padB9 - padT9 - rGap9*(nR9 - 1))/hSum9, vy9 = cv1 - padB9;
+                var rowPos9 = rows9.map(function(r){ var vA = vy9, vB = vy9 - unit9*r.h; vy9 = vB - rGap9; return {r:r, vA:vA, vB:vB}; });
+                if(!sTopV9) rowPos9.reverse();
+                rowPos9.forEach(function(rp){
+                  var r = rp.r;
+                  if(ui.rankView === 'net' && !r.held){ box9(su0, su1, rp.vA, rp.vB, null, true); return; }
+                  layout9(r.items).forEach(function(x){
+                    var col = 'color-mix(in srgb, '+cutCol9(x.cut)+' 80%, var(--pt-bg))';
+                    if(ui.rankView === 'comp'){ box9(x.a, x.bb, rp.vA, rp.vB, col, false, x.id); return; }
+                    /* 这张卡拿走的是哪一片：TP 按 t、EP 按桶号、复制件整块都是它的 */
+                    var n = x.cut === 'tp' ? memD.tp : (x.cut === 'ep' ? memD.ep : 1);
+                    var i = x.cut === 'tp' ? co9.t : (x.cut === 'ep' && me9 ? me9.ep : 0);
+                    var w = (x.bb - x.a)/n, h0 = x.a + w*i, h1 = h0 + w;
+                    var segs = [[x.a, h0, true], [h0, h1, false], [h1, x.bb, true]].filter(function(s){ return s[1] - s[0] > 1e-6; });
+                    if(!sU1V9) segs.reverse();
+                    segs.forEach(function(s){ box9(s[0], s[1], rp.vA, rp.vB, col, s[2] ? cutCol9(x.cut) : false, s[2] ? null : x.id); });
+                  });
+                });
+              })();
+              else for(var m8 = 0; m8 < MS9.length; m8++){
                 var sg8 = MS9[m8];
                 var vA9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f0 - m8*sGap9) : (cv1 - vSp9*sg8.f0),
                     vB9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f1 - m8*sGap9) : (cv1 - vSp9*sg8.f1);
@@ -5487,10 +5586,32 @@ function netScene(D, g, box, step){
                 var sideC9 = inS9 ? memShade(fc9, 22) : memShade(sg8.c, sideDark9);
                 var nearK9 = inS9 ? (';stroke:color-mix(in srgb, '+fc9+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9') : ';stroke:none';
                 if(inS9){
-                  /* 只画朝向读者的三面：正面本色、侧面压暗、顶（或底）提亮 */
-                  body.push(quad(sW1V9?[mq4,mq5,mq6,mq7]:[mq0,mq1,mq2,mq3], 'fill:'+fc9+nearK9));
-                  body.push(quad(sU1V9?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+nearK9));
-                  body.push(quad(sTopV9?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+nearK9));
+                  var parts9;
+                  if(sg8.over) parts9 = [{f:1}];
+                  else if(splitW9 && (sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp')) parts9 = splitW9;
+                  else if(sg8.k === 'act' && MS9.mub > 1){ parts9 = []; for(var pm9 = 0; pm9 < MS9.mub; pm9++) parts9.push({f:1/MS9.mub}); }
+                  else parts9 = [{f:1}];
+                  var gU9 = (su1 - su0)*0.03, wU9 = (su1 - su0) - gU9*(parts9.length - 1), ux9 = su0, boxes9 = [];
+                  parts9.forEach(function(pt9){ var a9 = ux9, b9 = ux9 + wU9*pt9.f; boxes9.push({a:a9, b:b9, pt:pt9}); ux9 = b9 + gU9; });
+                  /* 画家序：离镜头远的那一端先画（+u 面朝向读者时，u 小的在远处） */
+                  if(!sU1V9) boxes9.reverse();
+                  boxes9.forEach(function(bx9){
+                    var col9 = fc9;
+                    if(sg8.k === 'w' && bx9.pt.cut){
+                      var oc9 = bx9.pt.cut === 'tp' ? VC.tp : (bx9.pt.cut === 'ep' ? VC.ep : null);
+                      if(oc9) col9 = 'color-mix(in srgb, '+oc9+' '+Math.round(52*((pickW9 && bx9.pt.id !== pickW9) ? 0.28 : 1))+'%, '+fc9+')';
+                    }
+                    var q0 = P(bx9.a,vB9,sw0,kc), q1 = P(bx9.b,vB9,sw0,kc), q2 = P(bx9.b,vA9,sw0,kc), q3 = P(bx9.a,vA9,sw0,kc),
+                        q4 = P(bx9.a,vB9,sw1,kc), q5 = P(bx9.b,vB9,sw1,kc), q6 = P(bx9.b,vA9,sw1,kc), q7 = P(bx9.a,vA9,sw1,kc);
+                    var edge9 = ';stroke:color-mix(in srgb, '+col9+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9';
+                    /* 只画朝向读者的三面：正面本色、侧面压暗、顶（或底）提亮 */
+                    var front9 = sW1V9 ? [q4,q5,q6,q7] : [q0,q1,q2,q3];
+                    body.push(quad(front9, 'fill:'+col9+edge9));
+                    body.push(quad(sU1V9 ? [q1,q5,q6,q2] : [q0,q4,q7,q3], 'fill:'+memShade(col9, 22)+edge9));
+                    body.push(quad(sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7], 'fill:color-mix(in srgb, '+col9+' 90%, white)'+edge9));
+                    if(meC && sg8.k === 'w' && bx9.pt.id) hitOps.push(quad(front9, 'fill:transparent;cursor:pointer',
+                      'data-act="memblockpick" data-mk="w:'+esc(bx9.pt.id)+'"', esc(bx9.pt.id)+'：点开看这一块的切分'));
+                  });
                 } else {
                 var hasTop9 = sg8.top;
                 body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+fc9+kerf));
@@ -5500,7 +5621,7 @@ function netScene(D, g, box, step){
                 body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+nearK9));
                 if(hasTop9) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+nearK9));
                 }
-                if(sg8.act) body.push(inS9 && sW1V9 ? seg(mq4, mq5, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2') : seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
+                if(sg8.act && !inS9) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
                    那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
@@ -5531,7 +5652,7 @@ function netScene(D, g, box, step){
                    画，缩回全景自然又收回去。 */
                 var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
                 var fineOK9 = meC || cardPxW9 >= 34;
-                if((vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
+                if(!inS9 && (vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
@@ -5747,7 +5868,7 @@ function netScene(D, g, box, step){
            的那根轴。结果不是「线消失」而是「线在屏幕上瘫成同一条」：一整排卡
            各画一遍、各自的两条虚线全叠在同一个 v 高度上，看着像凭空多出一条
            贯穿全宽的灰线。侧视本来看的是 PP 分段，不是某张卡装了多少——让位。 */
-        if(meC && ui.netOff && ui.memFill && !lowDetail && ui.viewTab !== 'side'){
+        if(meC && ui.netOff && ui.memFill && !lowDetail && ui.viewTab !== 'side' && !(ui.slabGap && ui.rankView)){
           var cMS9 = memStack(pc2, gc);
           if(cMS9.overflow){
             /* 壳顶就是 64GB——不必再标一条线说它在哪，壳自己在那儿。要标的是
@@ -14592,6 +14713,7 @@ window.addEventListener('message', function(ev){
     if(typeof d.comm === 'boolean') ui.commOn = d.comm;
     if(d.commk && typeof d.commk === 'object') ['tp','cp','ep','pp','dp'].forEach(function(k9){ if(typeof d.commk[k9] === 'boolean') ui.comm[k9] = d.commk[k9]; });
     if(typeof d.stitle === 'string' && d.stitle) ui.stageTitle = d.stitle.slice(0, 40);
+    if(d.rankview === 'mem' || d.rankview === 'net' || d.rankview === 'comp') ui.rankView = d.rankview === 'mem' ? null : d.rankview;
     /* pause：宿主把这一格藏起来时让它停下所有动画（SMIL + CSS），显出来时再放开——藏起来的 iframe 跟宿主共用主线程，
        它逐帧重绘会让宿主这边的每一次点击都排队 */
     if(typeof d.pause === 'boolean'){
