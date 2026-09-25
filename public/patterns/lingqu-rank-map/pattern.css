@@ -28,11 +28,23 @@ b, strong { font-weight: 500; }
 .stage-frame {
   position: fixed; inset: 0; width: 100%; height: 100%;
   border: 0; display: block; background: #111111;
-  opacity: 1; transition: opacity .25s ease; z-index: 0;
+  opacity: 1; transition: opacity .25s ease; z-index: 2;
+  /* 淡入淡出放到合成器上做：不提层的话，四万个图元的集群图在淡出的每一帧都要重新光栅化（逐帧看过，进板视图那一下 2.7 秒几乎全是它） */
+  will-change: opacity; contain: strict;
 }
 /* 藏起来的舞台只是沉到底下（z-index 不继承），不再用 pointer-events:none——那是继承属性，
    每切一次层，舞台里上万个 SVG 元素都得重算一遍样式，下钻/返回一次卡 100ms+。 */
-.stage-frame.is-hidden { opacity: 0; z-index: -1; }
+.stage-frame.is-hidden { opacity: 0; z-index: 1; transition: opacity .15s ease; }
+/* 换台时新的一层抬到 3 淡入，旧的一层在 2 保持不透明，淡入完再收成 1（见 pattern.js showStage）。都在页面底色之上——
+   原来藏起来的放 -1，会被 body 的底色盖住，旧的一层一被标成藏起来就立刻看不见，中间闪一帧黑。 */
+.stage-frame.is-top { z-index: 3; }
+/* 单卡页预载好之后不沉到底下，而是以 1% 不透明度压在最上层、不接指针：被不透明的一层完全盖住的图层，
+   合成器会跳过它的光栅化——逐帧看过，下钻时单卡页要到淡入开始才整页光栅化，中间空白 0.6–0.9 秒。
+   浮在上面就会在后台先光栅化好（它藏着时是暂停的静态画面，只光栅一次）。只对 iframe 这么做：
+   iframe 的 pointer-events 不会继承进它自己的文档，不会触发整页重算样式。 */
+#detailFrame.is-hidden { opacity: .01; z-index: 4; pointer-events: none; transition: none; }
+/* 交叉淡入不经过黑：新的一层在上面 .25s 淡入，旧的一层先沉到下面、保持不透明，等新的一层满了（.24s 延迟）再淡出——
+   逐帧看过，原来两层同时一出一进，中间有一两帧整块画布是黑的 */
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 /* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
 .drawer[data-panel="swimlane"] iframe { filter: none; }

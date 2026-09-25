@@ -571,10 +571,8 @@
               var c = coordOfRank(r);
               nodes.push('<rect class="p-npu" data-rank="' + r + '" data-pp="' + c.pp + '" data-pod="' + podIdx + '"'
                 + ' x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="7">'
-                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>'
-                + '<text class="p-npunum lod2" x="' + (pdx + 22 + n * PITCH + 4.5) + '" y="' + (ry + 3.55) + '" text-anchor="middle">' + r + '</text>'
-                + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (pdx + 22 + n * PITCH + 1) + '" y="' + (ry - 3.5) + '" width="7" height="5.25"/>'
-                + '<rect class="p-npustrip lod2" x="' + (pdx + 22 + n * PITCH + 1.9) + '" y="' + (ry + 1.95) + '" width="5.2" height="0.45"/>');
+                + '<title>rank ' + r + ' · ' + coordLine(r) + ' · 超节点' + s + ' POD' + podIdx + ' 板' + b + ' 槽' + n + '</title></rect>');
+              // rank 号 / 封装图标 / 占用条这三件只在放大到 6× 以上才看得见：不在这里一次建 4096×3 个，见 ensurePodDetail
             }
           }
         }
@@ -660,9 +658,34 @@
     var b = t.hasAttribute('data-board') ? +t.getAttribute('data-board') : physOf(+t.getAttribute('data-rank')).board;
     showRelations(b);
   });
+  /* 放大到 6×（lod2）才出现的逐卡细节（rank 号 / 封装图标 / 占用条）按 POD 懒建：只给画面里看得见的那几个 POD 建，
+     建过的留着。逐帧看过，原来一次建 4096×3 个、跨进 6× 那一下四万个图元一起重算样式，取景到一个 POD 要卡 1.7 秒。 */
+  var podDetailDone = {};
+  function ensurePodDetail(zp) {
+    var svgEl = physStage.querySelector('.zp-box svg');
+    if (!svgEl || !svgEl.classList.contains('lod2')) return;
+    var vb = svgEl.viewBox.baseVal, R = zp.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
+    var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
+    function sx(px) { return ((px - zp.tx) / zp.k - ox) / m + vb.x; }
+    function sy(py) { return ((py - zp.ty) / zp.k - oy) / m + vb.y; }
+    var x0 = sx(0), x1 = sx(R.width), y0 = sy(0), y1 = sy(R.height);
+    physStage.querySelectorAll('.p-pod').forEach(function (pod) {
+      var i = pod.getAttribute('data-pod'); if (podDetailDone[i]) return;
+      var x = +pod.getAttribute('x'), y = +pod.getAttribute('y'), w = +pod.getAttribute('width'), h = +pod.getAttribute('height');
+      if (x > x1 || x + w < x0 || y > y1 || y + h < y0) return;
+      podDetailDone[i] = true;
+      physStage.querySelectorAll('.p-npu[data-pod="' + i + '"]').forEach(function (el) {
+        var ex = +el.getAttribute('x'), ey = +el.getAttribute('y');
+        el.insertAdjacentHTML('afterend', '<text class="p-npunum lod2" x="' + (ex + 3.5) + '" y="' + (ey + 7.05) + '" text-anchor="middle">' + el.getAttribute('data-rank') + '</text>'
+          + '<use class="p-npupkg lod2" href="#hw-npu" x="' + ex + '" y="' + ey + '" width="7" height="5.25"/>'
+          + '<rect class="p-npustrip lod2" x="' + (ex + 0.9) + '" y="' + (ey + 5.45) + '" width="5.2" height="0.45"/>');
+      });
+    });
+  }
   function renderPhys() {
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
+    podDetailDone = {};
     physBuilt = true;
     if (typeof physZP !== 'undefined' && physZP) physZP.reset();
     applyAlerts();
@@ -715,7 +738,8 @@
      板内铜缆快、出板光 UB 慢）。只在板视图画：集群层那几根线不到 1px，点跑起来只是闪烁。 */
   function flowDots(slot) {
     var g = boardStage.querySelector('.b-flow'); if (!g) return;
-    if (slot == null) { g.innerHTML = ''; return; }
+    // 板视图不在台上（集群 / 单卡）时不留会动的点：藏着的 SVG 动画一样逐帧重绘
+    if (slot == null || level !== 'board' || tier === 3) { if (g.firstChild) g.innerHTML = ''; return; }
     var html = [];
     boardStage.querySelectorAll('.b-links .is-hot').forEach(function (el) {
       var d = el.tagName === 'line' ? 'M' + el.getAttribute('x1') + ',' + el.getAttribute('y1') + ' L' + el.getAttribute('x2') + ',' + el.getAttribute('y2') : el.getAttribute('d');
@@ -932,7 +956,7 @@
   }
   function setZoomStroke(stage, k) {
     if (!stage.id) return;
-    var kk = Math.round(k * 100) / 100;
+    var kk = Math.pow(1.15, Math.round(Math.log(k) / Math.log(1.15)));   // ×1.15 一档：同一档内不重写样式表
     if (zkLast[stage.id] === kk) return;
     zkLast[stage.id] = kk;
     if (!ZK_RULES) collectZkRules();
@@ -960,7 +984,22 @@
       if (!b) return stage.getBoundingClientRect();
       return { left: b.offsetLeft, top: b.offsetTop, width: b.offsetWidth, height: b.offsetHeight };
     };
-    function apply() { var s = svg(); if (!s) return; s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')'; setZoomStroke(stage, st.k); s.classList.toggle('lod1', st.k >= 3); s.classList.toggle('lod2', st.k >= 6); if (curSel != null) markSelFrame(stage); placeSelLabel(); }
+    /* 逐帧看过：放大到一个 POD 那一下卡 3 秒——apply 里换了线宽样式表、切了 lod 类，紧接着 markSelFrame 的 getBBox
+       与 placeSelLabel 的 getBoundingClientRect 在同一个处理函数里把四万个图元的样式重算强制同步做完。现在：
+         · 变换本身立刻写（合成器路径，不重算样式）；
+         · 线宽样式表按 ×1.15 一档量化，滚轮 / 拖动进行中不写，停手 120ms 后写一次；
+         · 选中框与标注挪到下一帧，跟浏览器本来就要做的那次样式计算合并。 */
+    var strokeT = 0, frameQ = false;
+    function apply() {
+      var s = svg(); if (!s) return;
+      s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')';
+      clearTimeout(strokeT);
+      if (st.gesture) strokeT = setTimeout(function () { st.gesture = false; setZoomStroke(stage, st.k); if (stage === physStage) { ensurePodDetail(st); if (curSel != null) markSelFrame(stage); } }, 120);
+      else setZoomStroke(stage, st.k);
+      if (s.classList.contains('lod1') !== (st.k >= 3)) s.classList.toggle('lod1', st.k >= 3);
+      if (s.classList.contains('lod2') !== (st.k >= 6)) s.classList.toggle('lod2', st.k >= 6);
+      if (!frameQ) { frameQ = true; requestAnimationFrame(function () { frameQ = false; if (stage === physStage && !st.gesture) ensurePodDetail(st); if (curSel != null) markSelFrame(stage); placeSelLabel(); }); }
+    }
     /* 画布铺满整个视口（反馈「左边不要做成单独的面板，卡片悬浮在画布上、毛玻璃、不遮挡后面」），
        四周的卡是半透明悬浮的；取景时把内容摆进卡与卡之间那块「安全区」的正中，初始/复位也一样。 */
     st.reset = function () { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0); };
@@ -988,6 +1027,7 @@
     stage.addEventListener('wheel', function (ev) {
       ev.preventDefault();
       var R = st.rect();
+      st.gesture = true;
       st.zoomAt(Math.exp(-ev.deltaY * 0.0015), ev.clientX - R.left, ev.clientY - R.top);
     }, { passive: false });
     stage.addEventListener('pointerdown', function (ev) {
@@ -1000,7 +1040,7 @@
       if (Math.abs(dx) + Math.abs(dy) > 4) st.moved = true;
       if (st.moved) { st.auto = false; st.tx = st.drag.tx + dx; st.ty = st.drag.ty + dy; apply(); }
     });
-    window.addEventListener('pointerup', function () { st.drag = null; });
+    window.addEventListener('pointerup', function () { if (st.drag && st.moved && stage === physStage) ensurePodDetail(st); st.drag = null; });
     stage.addEventListener('click', function (ev) { if (st.moved) { ev.stopPropagation(); ev.preventDefault(); st.moved = false; } }, true);
     stage.addEventListener('dblclick', function (ev) { if (!ev.target.closest('.p-npu, .u-leaf, .p-pod, .p-board, .u-hub')) st.reset(); });
     return st;
@@ -1238,8 +1278,8 @@
     requestClusterBrief();
   })();
   function requestClusterBrief() {
-    var bp = new URLSearchParams(splitParams({ embed: '1', brief: '1', zero: String(ZERO) }));
-    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+    briefBase = briefSrc(); briefLive = false;
+    matrixFrame.src = briefBase;
   }
   /* 聚合结果进右卡的第一档内容（原来是左上角一颗角标，现在三张卡的位置固定，
      集群容量就是右卡在没选中任何卡时该说的那句话）。 */
@@ -1327,9 +1367,14 @@
      显示邀请那版（不留空白，见 renderDrillInvite），回信到了再原地升级
      成真数据——这一步不换档，读者仍在第二档，"下钻"按钮还在，点了才真的
      飞到矩阵那一屏（solo）。 */
+  /* 借数那一格加载一次就留着：同一组切分 / ZeRO 下再问别的卡，用 pto:brief 消息就地问，不重载整页（见 demo.html） */
+  var briefBase, briefLive;   // 不带初值：上面的 IIFE 已先调过 requestClusterBrief 赋过值，这里再赋 null 会把它冲掉
+  function briefSrc(extra) { return '../rank-topology-3d/pattern.html?' + new URLSearchParams(splitParams(Object.assign({ embed: '1', brief: '1', zero: String(ZERO) }, extra || {}))).toString(); }
   function requestTier2Brief(matrixSel) {
-    var bp = new URLSearchParams(splitParams({ embed: '1', brief: '1', zero: String(ZERO), sel: String(matrixSel) }));
-    matrixFrame.src = '../rank-topology-3d/pattern.html?' + bp.toString();
+    var base = briefSrc();
+    if (briefLive && briefBase === base && matrixFrame.contentWindow) { matrixFrame.contentWindow.postMessage({ type: 'pto:brief', sel: matrixSel }, '*'); return; }
+    briefBase = base; briefLive = false;
+    matrixFrame.src = briefSrc({ sel: String(matrixSel) });
   }
 
   /* 逻辑魔方与并行拓扑矩阵各自实现了一遍"rank ↔ (tp,cp,pp,dp) 坐标"的换算，
@@ -1362,14 +1407,28 @@
   /* 画布停在哪一层就铺哪张：cluster = 灵衢物理，board = 板视图；card 层由 showDetail
      自己切矩阵。showOverview/showTier2 共用这一个开关函数；matrixFrame / detailFrame
      都要藏：从第三档退回来时它还开着。两张 SVG 舞台受同一套选中/聚焦状态驱动。 */
+  /* 藏起来的单卡矩阵停住动画：它跟本页同一条主线程，藏着还在逐帧重绘，本页的每一次点击都得排在它后面
+     （逐帧看过：返回板视图那一下晚了 1.7 秒才动） */
+  function pauseDetail(on) { if (on) detailSettleAt = performance.now(); try { detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', pause: on }, '*'); } catch (e) {} }
+  /* 换台：新的一层先抬到最上面淡入，旧的一层在下面保持不透明，等新的一层淡入完（.3s）再收起。
+     逐帧看过：两层同时一出一进时，新的一层刚从 opacity 0 显出来还没光栅化完（集群图四万个图元），旧的一层已经按时
+     淡掉了——中间闪一两帧黑。 */
+  var stageHideT = 0;
+  function showStage(el) {
+    var all = [physStage, boardStage, detailFrame];
+    clearTimeout(stageHideT);
+    all.forEach(function (s9) { s9.classList.toggle('is-top', s9 === el); });
+    el.classList.remove('is-hidden');
+    stageHideT = setTimeout(function () {
+      all.forEach(function (s9) { if (s9 !== el && !s9.classList.contains('is-hidden')) { s9.classList.add('is-hidden'); if (s9 === detailFrame) pauseDetail(true); } });
+    }, 320);
+  }
   function showTier1Visual() {
     matrixFrame.classList.add('is-hidden');
-    detailFrame.classList.add('is-hidden');
     clearTimeout(detailRevealT); detailRevealT = null; document.body.classList.remove('is-loading');
     if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
     if (level === 'board') renderBoard(curBoard); else renderPhys();
-    boardStage.classList.toggle('is-hidden', level !== 'board');
-    physStage.classList.toggle('is-hidden', level === 'board');
+    showStage(level === 'board' ? boardStage : physStage);
     dock.classList.remove('is-hidden');
     physApplySelection();
   }
@@ -1395,7 +1454,7 @@
     if (level === 'card') level = backLevel;
     showTier1Visual();
     renderDrillInvite(matrixSel, subLine, lastBrief && lastBrief.rank === matrixSel ? lastBrief : null);
-    if (!(lastBrief && lastBrief.rank === matrixSel)) requestTier2Brief(matrixSel); else loadDetail(matrixSel);
+    if (!(lastBrief && lastBrief.rank === matrixSel)) requestTier2Brief(matrixSel); else preloadDetail(matrixSel);
     renderLeftCard(); renderCrumb();
   }
 
@@ -1410,7 +1469,47 @@
      pto:tier=3（首渲完成）后再留 700ms 让镜头落定，然后才淡入；5 秒兜底。
      matrixFrame 只剩「借来算数」（brief=1）这一个用途，永远不显示。 */
   var detailSrc = null, detailReady = false, detailRevealT = null;
+  /* 什么时候淡入单卡页：等它「静下来」。逐帧看过，报就绪之后单卡页自己还会再收一次镜头（约 1 秒后、逐帧改 DOM），
+     入场淡入动画藏着时也不会走；这时显出来，画面在淡入中间一直在变、要重新光栅化，中间空白 0.6–0.9 秒。
+     单卡页与本页同源，直接盯它的 DOM：静了 250ms → 停住一次（入场动画走到终态）→ 再留 200ms 给后台光栅化 → 淡入。
+     读者点得快就原画面不动、面包屑挂「…」；3 秒兜底。 */
+  var detailMutAt = 0, detailSettleAt = 0, detailMO = null;
+  detailFrame.addEventListener('load', function () {
+    detailMutAt = performance.now(); detailSettleAt = 0;
+    try {
+      if (detailMO) detailMO.disconnect();
+      var root9 = detailFrame.contentDocument.documentElement;
+      // 暂停本身会改根节点的 class（pt-paused），那一下不算「还在动」
+      detailMO = new MutationObserver(function (l) { if (l.some(function (r) { return !(r.target === root9 && r.attributeName === 'class'); })) detailMutAt = performance.now(); });
+      detailMO.observe(root9, { subtree: true, childList: true, attributes: true, characterData: true });
+    } catch (e) { detailMO = null; }
+  });
+  function scheduleReveal() {
+    clearTimeout(detailRevealT);
+    var t0 = performance.now();
+    (function tick() {
+      if (tier !== 3) return;
+      var now = performance.now();
+      var still = now - detailMutAt >= 250, settled = detailSettleAt > detailMutAt && now - detailSettleAt >= 200;
+      if ((still && settled) || now - t0 > 3000) { revealDetail(); return; }
+      if (still && !(detailSettleAt > detailMutAt)) pauseDetail(true);
+      document.body.classList.add('is-loading');
+      detailRevealT = setTimeout(tick, 60);
+    })();
+  }
+  /* 选中那一刻的预载往后挪：选中动画（镜头 + 高亮，约 600ms）先走完、主线程空下来再装单卡页，
+     否则隐藏 iframe 的首渲和选中动画抢同一条主线程，逐帧看就是 100–150ms 的连续长帧。
+     真正下钻（showDetail）不等，直接装。 */
+  var preloadT = 0;
+  function preloadDetail(sel) {
+    clearTimeout(preloadT);
+    preloadT = setTimeout(function () {
+      var go = function () { if (tier === 2 && curSel === sel) loadDetail(sel); };
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 1200 }); else go();
+    }, 650);
+  }
   function loadDetail(sel) {
+    clearTimeout(preloadT);
     var src = matrixSrcFor(sel);
     if (src === detailSrc) return;
     detailSrc = src; detailReady = false; detailFrame.src = src;
@@ -1419,9 +1518,10 @@
     clearTimeout(detailRevealT); detailRevealT = null;
     document.body.classList.remove('is-loading');
     if (tier !== 3) return;
-    detailFrame.classList.remove('is-hidden');
-    physStage.classList.add('is-hidden');
-    boardStage.classList.add('is-hidden');
+    pauseDetail(true);   // 显出来之前再停一次：停的同时把还悬着的入场动画走到终态，淡入时画面已经是完整的
+    showStage(detailFrame);
+    // 放开动画放到淡入走完之后：放开那一下单卡页整页重算样式、重绘，赶在淡入中间做就是一两帧空白
+    setTimeout(function () { if (tier === 3) pauseDetail(false); }, 360);
     renderCrumb();
   }
   function showDetail(matrixSel) {
@@ -1430,8 +1530,9 @@
     if (level !== 'card') backLevel = level;
     level = 'card';
     loadDetail(matrixSel);
+    flowDots(null);   // 板视图的流动点藏着也在逐帧重绘：下钻时收掉
     openDrawer(null);
-    if (detailReady) revealDetail();
+    if (detailReady) scheduleReveal();
     else { document.body.classList.add('is-loading'); clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 5000); }
     if (lastBrief && lastBrief.rank === matrixSel) renderBrief(lastBrief);
     else renderDrillInvite(matrixSel, pendingSubLine || coordLine(matrixSel), null, true);
@@ -1515,12 +1616,12 @@
       return;
     }
     if (ev.source === matrixFrame.contentWindow) {
-      if (d.type === 'pto:cluster') { renderClusterBadge(d.brief); return; }
+      if (d.type === 'pto:cluster') { briefLive = true; renderClusterBadge(d.brief); return; }
       if (d.type === 'pto:rank-brief') {
         // 这次借用可能是为了一张早就不再选中的卡（读者点得快，回信滞后）——
         // 只在还是当前这张卡时才拿去升级浮卡，旧回信直接丢弃。
         if (d.brief) { lastBrief = d.brief; placeSelLabel(); renderDataCards(); }
-        if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) { renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief); loadDetail(pendingMatrixSel); }
+        if (d.brief && d.brief.rank === pendingMatrixSel && tier === 2) { renderDrillInvite(pendingMatrixSel, pendingSubLine, d.brief); preloadDetail(pendingMatrixSel); }
         return;
       }
       return;
@@ -1530,9 +1631,10 @@
       if (d.tier === 3) {
         // 单卡层里点了一张兄弟卡：矩阵原地换选（仍在 solo），宿主跟着换，不重载
         if (tier === 3 && d.sel != null && d.sel !== curSel && !detailFrame.classList.contains('is-hidden')) { adoptSolo(d.sel, d.brief); return; }
-        // 预载完成（可能是在后台、读者还没点下钻）：记下就绪；读者已经在等这一张就留 700ms 让镜头落定再淡入
+        // 预载完成（可能是在后台、读者还没点下钻）：记下就绪；读者已经在等这一张就等它静下来再淡入（scheduleReveal）
         detailReady = true;
-        if (tier === 3 && d.sel === curSel) { renderBrief(d.brief); if (detailFrame.classList.contains('is-hidden')) { clearTimeout(detailRevealT); detailRevealT = setTimeout(revealDetail, 700); } }
+        if (detailFrame.classList.contains('is-hidden')) pauseDetail(true);
+        if (tier === 3 && d.sel === curSel) { renderBrief(d.brief); if (detailFrame.classList.contains('is-hidden')) scheduleReveal(); }
         else if (d.brief) lastBrief = d.brief;
         return;
       }
@@ -1939,6 +2041,8 @@
   }
   function adoptSolo(r, brief) {
     curSel = r; pendingMatrixSel = r; focusPP = coordOfRank(r).pp;
+    // 从板视图下钻进来的：换选的兄弟可能在另一块板上，面包屑里的「板 N」跟着它走（否则回去落到旧板、选中被清掉）
+    if (backLevel === 'board') curBoard = physOf(r).board;
     detailSrc = matrixSrcFor(r);
     detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + r }, '*');
     if (brief) renderBrief(brief);
@@ -2172,7 +2276,8 @@
     /* 框选直接描在图元自己的外边框上（反馈「框选样式直接在图元外边框高亮」）：看得见封装图标时
        （板视图、集群 6× 以上）贴着图标的圆角外框；否则贴着这一格本身。不再留缝、不再另起一个大框。 */
     var icon = null, lod2 = svgEl.classList.contains('lod2') || stage === boardStage;
-    if (lod2) { icon = el.nextElementSibling; while (icon && icon.tagName !== 'use') icon = icon.nextElementSibling; }
+    // 板视图：图标紧跟在 NPU 后面；集群：rank 号后面那一个（懒建之前没有就退回格子本身，不去错抓下一张卡的图标）
+    if (lod2) { var n1 = el.nextElementSibling; icon = n1 && n1.tagName === 'use' ? n1 : (n1 && n1.classList.contains('p-npunum') ? n1.nextElementSibling : null); }
     var tgt = icon || el, x = +tgt.getAttribute('x'), y = +tgt.getAttribute('y'), w = +tgt.getAttribute('width'), h = +tgt.getAttribute('height');
     if (!isFinite(x) || !w) { var bb = el.getBBox(); x = bb.x; y = bb.y; w = bb.width; h = bb.height; }
     fr.setAttribute('x', x); fr.setAttribute('y', y); fr.setAttribute('width', w); fr.setAttribute('height', h);

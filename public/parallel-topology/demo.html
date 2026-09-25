@@ -898,6 +898,8 @@
   .pt-detail{width:min(86%, 240px)}
   .pt-stagebar{max-width:96%}
 }
+  /* 宿主（lingqu-rank-map）藏起这一格时加上：所有 CSS 动画停住 */
+  html.pt-paused *, html.pt-paused *::before, html.pt-paused *::after { animation-play-state: paused !important; }
 </style>
 </head>
 <body>
@@ -2446,14 +2448,15 @@ function schedule(D){
 
 /* ═════════ 线型语义（§8）：由原语决定，与维度无关 ═════════ */
 function flowEdgeSVG(pts, prim, color, opts){
-  var w = Math.max(1.2, Math.min(3, opts.w || 2)), n = pts.length, segs = [], i, out = '', dots = '';
+  /* 不放顺线跑的点：这张 SVG 铺满整个舞台，任何一处动画都会让整张图逐帧重绘（实测每帧 120–180ms），
+     单卡层会一直掉帧、连带宿主那边的点击都排在它后面。「流动」这层交给衬边 + 端口去说。 */
+  var w = Math.max(1.2, Math.min(3, opts.w || 2)), n = pts.length, segs = [], i, out = '';
   if(prim === 'alltoall' && opts.hub != null && opts.hub >= 0 && opts.hub < n){ for(i = 0; i < n; i++) if(i !== opts.hub) segs.push([pts[opts.hub], pts[i]]); }
   else { for(i = 0; i < n - 1; i++) segs.push([pts[i], pts[i+1]]); if(prim !== 'p2p' && n > 2) segs.push([pts[n-1], pts[0]]); }
   segs.forEach(function(sg, k){
     var a = sg[0], b = sg[1], d = 'M'+a[0].toFixed(1)+','+a[1].toFixed(1)+' L'+b[0].toFixed(1)+','+b[1].toFixed(1);
     out += '<path d="'+d+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+(w+3.2)+';stroke-linecap:round"/>'
          + '<path d="'+d+'" style="fill:none;stroke:'+color+';stroke-width:'+w+';stroke-linecap:round"/>';
-    if(k < 24) dots += '<circle r="'+(w*0.95).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.6).toFixed(2)+'"><animateMotion dur="'+(1.6 + (k % 3)*0.35).toFixed(2)+'s" repeatCount="indefinite" path="'+d+'"/></circle>';
   });
   /* 两端端口：底色实心环 + 描边 + 中心点，同一个点只画一次 */
   var seen = {};
@@ -2462,7 +2465,7 @@ function flowEdgeSVG(pts, prim, color, opts){
     out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.5).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.55).toFixed(2)+'"/>'
          + '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*0.5).toFixed(2)+'" style="fill:'+color+'"/>';
   }); });
-  return '<g>' + out + dots + '</g>';
+  return '<g>' + out + '</g>';
 }
 function edgeSVG(pts, prim, color, opts){
   opts = opts || {};
@@ -10996,7 +10999,7 @@ window.addEventListener('resize', function(){
 /* 字体换完再量一次：首帧用的是后备字体，等宽与中文各差几像素，三十来格累起来
    足够把「装得下」翻成「装不下」。fonts.ready 之后重量一遍，是这条带唯一会
    自己变宽的时刻。 */
-if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ fitGroupHud(); });
+if(document.fonts && document.fonts.ready && !/[?&]brief=1(&|$)/.test(location.search)) document.fonts.ready.then(function(){ fitGroupHud(); });
 /* 算子明细卡：内容 + 贴位。贴位单独一支（placeOpCard），因为缩放/平移时
    内容没变、只是那个算子挪了地方——手势里每帧只需要重新贴一次位。 */
 function renderOpCard(D){
@@ -13758,6 +13761,14 @@ function placeMemCards(){
 }
 
 /* ═════════ 总渲染 ═════════ */
+/* 宿主暂停这一格时，把有限次的入场动画（刀序生长、块淡入）直接走到终态：藏着的 iframe 没被画出来，合成器动画的起点一直悬着，
+   等显出来才从头播——宿主逐帧看就是先一片空白、0.7 秒后块才浮出来。无限循环的（脉冲、流动线）不动，由 pt-paused 停住。 */
+function ptoSettleAnims(){
+  if(!document.getAnimations) return;
+  document.getAnimations().forEach(function(a9){
+    try { var t9 = a9.effect && a9.effect.getComputedTiming(); if(t9 && isFinite(t9.endTime)) a9.finish(); } catch(e9){}
+  });
+}
 function render(){
   syncTopologyPalette();
   var D = derive(cfg);
@@ -14508,12 +14519,37 @@ window.addEventListener('message', function(ev){
      （宿主那边刚在魔方上点了一张卡，这一格还没选中过任何卡）。
      不重载 iframe：矩阵本体把 4000 只卡铺出来要好几秒，每换一档重载一次，
      "连续变焦"就成了三次白屏。 */
+  /* brief=1 那一格已经加载好了：宿主再问另一张卡的摘要时发 pto:brief {sel}，就地算、就地回，不再整页重载
+     （逐帧看过：每选一张卡都把这 1.4 万行重新解析一遍，选中那一下连着好几个 100ms+ 的长任务）。只在 brief=1 下认。 */
+  if(d.type==='pto:brief' && roBriefOnly){
+    if(typeof d.sel === 'number' && d.sel >= 0) sel = d.sel;
+    var rb9 = ptoRankBrief();
+    if(ev.source) ev.source.postMessage({type:'pto:rank-brief', brief: rb9}, '*');
+    return;
+  }
   /* 宿主（lingqu-rank-map 单卡层）不重载就换：兄弟 rank 显示档（ghost / on）、通信连线总闸、逐维开关 */
   if(d.type==='pto:solo'){
+    if(!render.__ptoWrap){
+      /* 停住期间的重画（镜头落定后的收尾重渲等）新长出来的入场动画同样直接走到终态——只在宿主暂停时生效，独立打开不受影响 */
+      var r0 = render;
+      render = function(){ var v9 = r0.apply(this, arguments); if(document.documentElement.classList.contains('pt-paused')) ptoSettleAnims(); return v9; };
+      render.__ptoWrap = true;
+    }
     if(d.sibs === 'ghost' || d.sibs === 'on') ui.soloSibs = d.sibs;
     if(typeof d.comm === 'boolean') ui.commOn = d.comm;
     if(d.commk && typeof d.commk === 'object') ['tp','cp','ep','pp','dp'].forEach(function(k9){ if(typeof d.commk[k9] === 'boolean') ui.comm[k9] = d.commk[k9]; });
     if(typeof d.stitle === 'string' && d.stitle) ui.stageTitle = d.stitle.slice(0, 40);
+    /* pause：宿主把这一格藏起来时让它停下所有动画（SMIL + CSS），显出来时再放开——藏起来的 iframe 跟宿主共用主线程，
+       它逐帧重绘会让宿主这边的每一次点击都排队 */
+    if(typeof d.pause === 'boolean'){
+      /* 停住前先把有限次的入场动画（刀序生长、块淡入）直接走到终态：藏着的这一格没被画出来，合成器动画的起点一直悬着，
+         等显出来才从头播——宿主那边逐帧看就是先一片空白、0.7 秒后块才浮出来。无限循环的（脉冲、流动线）只停住。 */
+      if(d.pause) ptoSettleAnims();
+      document.documentElement.classList.toggle('pt-paused', d.pause);
+      var sv9 = $('stage') && $('stage').querySelector('svg');
+      if(sv9 && sv9.pauseAnimations){ if(d.pause) sv9.pauseAnimations(); else sv9.unpauseAnimations(); }
+      if(Object.keys(d).length === 2) return;   // 只是暂停 / 放开：不重画
+    }
     if(ui.soloCard) ui.commGrain = ui.soloSibs === 'on' ? 'rank' : 'intra';
     render();
     if(sel !== null && ui.fastCard && ui.soloCard) focusCardCamera(sel, ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20));
@@ -14645,7 +14681,10 @@ window.ptoNotifyHost = function(){
    全局切分（renderSolidGrid）同理，但它盯的是**宽度**本身，不是长宽比——k（像素目标
    缩放）与 stacked（并排/摞叠切换的 760px 门槛）都直接读 clientWidth：组合工作台里
    拖动分栏宽度、或首帧量到 iframe 还没被父页面定宽时的临时值，都要能补一次重画。 */
-if(window.ResizeObserver){
+/* brief=1（宿主只借一句聚合数）时不挂这个观察者：它首次 observe 就会触发一次，
+   60ms 后整张 SVG render() 一遍——逐帧看过，宿主那边选中一张卡就因为这一下卡掉半秒多。 */
+var roBriefOnly = /[?&]brief=1(&|$)/.test(location.search);
+if(window.ResizeObserver && !roBriefOnly){
   var roLast = 0, roLastW = 0, roTimer = 0;
   new ResizeObserver(function(){
     var el = $('stage'); if(!el || el.clientHeight<60) return;
