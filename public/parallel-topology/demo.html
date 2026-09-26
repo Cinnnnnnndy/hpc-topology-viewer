@@ -1559,6 +1559,8 @@ function urlLoad(){
   /* ggap=1（opt-in）：切分组不挂文字牌（TP0 / CP0 / DP3 / PP7 / EP 组），改用组间间距 + 维度色区分——
      CP 块之间再掰开一条比 EP 组缝更宽的缝，展开的兄弟 rank 棱按它与选中卡同组的那一维上色 */
   if(q.get('ggap')==='1') ui.groupGap = true;
+  /* notitle=1（opt-in）：不画左上角题面——宿主（lingqu-rank-map）自己的标题面包屑占着那个位置 */
+  if(q.get('notitle')==='1') ui.noTitle = true;
   /* rankview=net|comp（opt-in，需 slabgap）：选中那只卡里不画显存，改画「整网里这张卡拿走了哪一片」（net）
      或「这张卡逐层装了哪些算子块」（comp）——同一套内缩、互有间距的板块画法 */
   if(q.get('rankview')==='net' || q.get('rankview')==='comp') ui.rankView = q.get('rankview');
@@ -12904,6 +12906,7 @@ function renderFoot(D){
    不是三份共用一句「模型分片与训练设备映射」。缺省仍是这句，老链接一个不动。 */
 function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
+  if(ui.noTitle){ el.style.display = 'none'; return; }
   if(el.firstChild) return;
   el.innerHTML = '<span class="pt-stagecopy"><b>'+esc(ui.stageTitle)+'</b>'
     + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';

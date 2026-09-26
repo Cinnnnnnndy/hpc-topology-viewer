@@ -1162,12 +1162,16 @@
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
   });
   function renderCrumb() {
-    var parts = ['<button type="button" class="cr" data-cr="root">集群</button>'];
+    /* 标题即面包屑（反馈「标题和顶部居中的面包屑合并到标题的位置，点它回退」）：模型名是根，
+       往下 板 N / rank N / 单卡，除了当前这一级都能点回去 */
     var mid = level === 'card' ? backLevel : level;
+    var atRoot = !(mid === 'board' && curBoard != null) && curSel == null && tier !== 3;
+    // 根（模型名）永远可点：在集群层点它 = 画布复位
+    var parts = ['<button type="button" class="cr cr-root' + (atRoot ? ' is-cur' : '') + '" data-cr="root">' + esc(PS.modelName) + '</button>'];
     if (mid === 'board' && curBoard != null) parts.push(level === 'board' && curSel == null ? '<span class="cr is-cur">板 ' + curBoard + '</span>' : '<button type="button" class="cr" data-cr="board">板 ' + curBoard + '</button>');
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
-    crumbEl.innerHTML = parts.join('<i>›</i>');
+    crumbEl.innerHTML = parts.join('<i>/</i>');
     document.body.classList.toggle('t3', tier === 3 && !detailFrame.classList.contains('is-hidden'));
     // 每一屏只留对这一屏有意义的东西（见 README「每一屏讲什么」）：板与单卡不看整个集群的段峰值、超容名单与故障复盘链
     document.body.classList.toggle('lv-board', level === 'board' && tier !== 3);
@@ -1206,7 +1210,8 @@
     }
     var lg = lastCluster ? '<div class="lc-legend" title="格子/柱的灰度 = 显存占用率（合计 / HBM），超出容量标红"><i class="lg c0"></i><i class="lg c1"></i><i class="lg c2"></i><i class="lg c3"></i>'
       + '<span>' + Math.round(lastCluster.amber * 100) + '</span><span>' + Math.round(lastCluster.red * 100) + '</span><span>100%</span></div>' : '';
-    leftCard.innerHTML = '<div class="gcard lc-cfg"><h1 class="lc-title">' + esc(PS.modelName) + '</h1>'
+    // 模型名挪到左上角的标题面包屑里（#crumb），左卡只留配置
+    leftCard.innerHTML = '<div class="gcard lc-cfg">'
       + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
       + '</div><div class="gcard lc-pp"><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
@@ -1229,7 +1234,7 @@
      就在这块板上时保留选中；否则清掉。 */
   function goBoard(b, keepSel) {
     if (b == null) return;
-    if (!keepSel || (curSel != null && physOf(curSel).board !== b)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = false; }
+    if (!keepSel || (curSel != null && physOf(curSel).board !== b)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = true; }
     else if (curSel != null) tier = 2;
     level = 'board'; curBoard = b;
     showTier1Visual();
@@ -1342,7 +1347,7 @@
   function matrixSrcFor(matrixSel) {
     var p = new URLSearchParams(splitParams({
       embed: '1', theme: 'dark', zero: String(ZERO), fastcard: '1', solo: '1', memcards: '0', plate: '0', comm: DV.comm ? '1' : '0', solozoom: DV.sibs === 'on' ? '9' : '44',
-      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', slabgap: '1', ggap: '1', rankview: DV.rv, commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
+      sibs: DV.sibs, clbl: '0', lstyle: 'flow', capln: 'reach', slabgap: '1', ggap: '1', notitle: '1', rankview: DV.rv, commk: ['tp', 'cp', 'ep', 'pp', 'dp'].filter(function (k) { return DV.commk[k]; }).join(','),
       view: 'chain', card: '1', vtab: DV.vtab, sel: String(matrixSel),
       stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + matrixSel
     }));
@@ -1431,7 +1436,7 @@
   /* 回到当前这一层的"没选中"态。keepLevel=true 只取消选中、留在原来那一层
      （段层就还在段里）；否则回到集群层、清掉段聚焦。 */
   function showOverview(keepLevel) {
-    tier = 1; curSel = null; pendingMatrixSel = null; pendingSubLine = null; rankTipOpen = false;
+    tier = 1; curSel = null; pendingMatrixSel = null; pendingSubLine = null; rankTipOpen = true;
     if (!keepLevel) { level = 'cluster'; focusPP = null; }
     showTier1Visual();
     renderRightIdle(); renderLeftCard(); renderCrumb();
@@ -1745,13 +1750,11 @@
   /* 选中 rank 之后右侧不默认摊开详情：只留一颗「rank N ⚠」角标，点它才弹卡
      （反馈「点击小的告警徽标再出现具体信息，不要默认悬浮在右侧」）。再点一次
      已选中的 NPU/叶子 = 直接下钻，不必先开卡。 */
-  var rankTipOpen = false;
+  /* 右上角那枚「rank N」描边标签删掉（反馈）：选中即直接在右列最上面摊开 rank 卡，
+     超容与否由卡抬头的徽标说；再点一次选中的那张 = 下钻，照旧 */
+  var rankTipOpen = true;
   function showRankBadge(r) {
-    var bad = !!(oomSet && oomSet[r]);
-    alertBadge.textContent = 'rank ' + r + (bad ? ' ⚠' : '');
-    alertBadge.classList.toggle('is-quiet', !bad);
-    alertBadge.classList.toggle('is-on', rankTipOpen);
-    alertBadge.classList.remove('is-hidden');
+    alertBadge.classList.add('is-hidden');
     briefCard.classList.add('is-tip');
     briefCard.classList.toggle('is-hidden', !rankTipOpen);
     syncCardHeights();

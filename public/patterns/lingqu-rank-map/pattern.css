@@ -116,18 +116,20 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 }
 .brief-cta:hover { color: #FFFFFF; border-color: #8A8A8A; }
 
-/* ── 面包屑：顶部居中，纯文字 */
+/* ── 标题即面包屑：左上角，模型名 / 板 N / rank N / 单卡，除当前一级外都能点回去 */
 .topbar {
-  position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 8;
+  position: fixed; top: 16px; left: 16px; z-index: 8;
   display: flex; align-items: center; font-size: 11px;
   transition: opacity .15s ease;
 }
 .topbar.is-hidden { opacity: 0; pointer-events: none; }
-.crumb { display: flex; align-items: center; gap: 4px; color: #A0A0A0; white-space: nowrap; }
-.crumb i { font-style: normal; color: #8A8A8A; }
-.crumb .cr { font: inherit; color: #A0A0A0; background: transparent; border: 1.5px solid transparent; padding: 1px 6px; cursor: pointer; border-radius: 4px; }
-.crumb .cr:hover { color: #E8E8E8; border-color: #282828; }
+.crumb { display: flex; align-items: baseline; gap: 6px; color: #A0A0A0; white-space: nowrap; font-size: 14px; line-height: 24px; }
+.crumb i { font-style: normal; color: #5A5A5A; }
+.crumb .cr { font: inherit; color: #8A8A8A; background: transparent; border: 0; padding: 0; cursor: pointer; letter-spacing: -.01em; }
+.crumb .cr-root { font-size: 18px; font-weight: 500; letter-spacing: -.03em; }
+.crumb .cr:hover { color: #FFFFFF; }
 .crumb .cr.is-cur { color: #E8E8E8; cursor: default; }
+.crumb .cr-root.is-cur { cursor: pointer; }
 
 /* ── 底部工具条：缩放 + 三个参考面板 */
 .dock {
@@ -157,9 +159,9 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .alert-badge.is-hidden { opacity: 0; pointer-events: none; }
 .alert-badge.is-quiet { color: #A0A0A0; background: transparent; border-color: #282828; }
 .alert-badge.is-on { outline: 1px solid #FFFFFF; outline-offset: 2px; }
-.side-right.is-tip { top: 64px; }
+.side-right.is-tip { top: 16px; }
 /* 单卡层：矩阵自己的标题在左上、齿轮在右上——左列收掉标题、右上角标与右列让开一行 */
-body.t3 .side-left { top: 64px; }
+body.t3 .side-left { top: 56px; }
 body.t3 .lc-title { display: none; }
 body.t3 .alert-badge { top: 64px; }
 body.t3 .side-right { top: 104px; }
@@ -499,23 +501,24 @@ body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep 
   -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
   border: 0; border-radius: 6px;
 }
-.side-left { width: 272px; top: 16px; left: 16px; overflow: visible; max-height: none; }
+.side-left { width: 272px; top: 56px; left: 16px; overflow: visible; max-height: none; }
 .gcard { padding: 10px 12px; }
 .gcard + .gcard { margin-top: 8px; }
 .gcard .lc-title { margin-bottom: 6px; }
 .gcard .pbars { margin-top: 0; }
 .gcard .lc-cap { margin-top: 0; }
 /* 右列一列一个宽度：rank 卡与下面每一张数据卡都是 224px */
-.side-right { right: 16px; top: 60px; width: 224px; box-sizing: border-box; padding: 10px 12px; }
-body.t3 .side-right { top: 104px; }
+.side-right { right: 16px; top: 16px; width: 224px; box-sizing: border-box; padding: 10px 12px; }
+body.t3 .side-right { top: 64px; }   /* 单卡页右上角有它自己的设置圆钮，让开 */
 .ip-col { width: 272px; overflow-y: auto; }
-.ip-col-left { left: 16px; top: calc(16px + var(--lc-h, 300px) + 8px); }
-body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 8px); }
+.ip-col-left { left: 16px; top: calc(56px + var(--lc-h, 300px) + 8px); }
+body.t3 .ip-col-left { top: calc(56px + var(--lc-h, 300px) + 8px); }
 .ip-grp { padding: 0 12px; }
 .ip-grp + .ip-grp { margin-top: 8px; }
 .ip-prob { border-top: 0; padding: 9px 0; }
 .ip-grp.is-open .ip-chain { padding-bottom: 6px; }
-.topbar { padding: 3px 8px; top: 16px; }
+/* 标题面包屑是画布上的字，不是卡：不套毛玻璃 */
+.topbar { padding: 0; top: 16px; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .dock { border-radius: 6px; }
 .cfg-pop { background: rgba(20, 20, 20, .78); }
 .alert-badge { top: 16px; right: 16px; }
