@@ -493,9 +493,11 @@ body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep 
    画布铺满整个视口；左列拆成三张小卡（标题 / PP 段柱 / 容量告警），故障问题每条一张，右侧 rank 读数、
    面包屑、工具条都是同一种半透明玻璃：底只有 50% 左右不透明度 + 模糊，画布透得过来。 */
 .gcard, .side-right, .ip-grp, .topbar, .dock, .cfg-pop, .dcard {
-  background: rgba(20, 20, 20, .5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.1); backdrop-filter: blur(12px) saturate(1.1);
-  border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px;
+  /* 只要填充不要描边（反馈「卡片不要描边，只要填充，填充用毛玻璃」）：去掉 1px 边，底色略提、模糊加重，
+     靠毛玻璃自己的明度差把卡片从画布上托出来 */
+  background: rgba(30, 30, 30, .58);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+  border: 0; border-radius: 6px;
 }
 .side-left { width: 272px; top: 16px; left: 16px; overflow: visible; max-height: none; }
 .gcard { padding: 10px 12px; }
@@ -503,7 +505,8 @@ body.t3 .dock [data-zoom], body.t3 .dock [data-drawer], body.t3 .dock .dock-sep 
 .gcard .lc-title { margin-bottom: 6px; }
 .gcard .pbars { margin-top: 0; }
 .gcard .lc-cap { margin-top: 0; }
-.side-right { right: 16px; top: 60px; width: max-content; min-width: 184px; max-width: 272px; padding: 10px 12px; }
+/* 右列一列一个宽度：rank 卡与下面每一张数据卡都是 224px */
+.side-right { right: 16px; top: 60px; width: 224px; box-sizing: border-box; padding: 10px 12px; }
 body.t3 .side-right { top: 104px; }
 .ip-col { width: 272px; overflow-y: auto; }
 .ip-col-left { left: 16px; top: calc(16px + var(--lc-h, 300px) + 8px); }
@@ -527,7 +530,8 @@ body.t3 .ip-col-left { top: calc(64px + var(--lc-h, 300px) + 8px); }
 body.panel-right .data-col { display: none; }
 body:not(.t3) .shard-col { display: none; }
 .dcard { flex: none; padding: 8px 10px; font-size: 10.5px; color: #A0A0A0; }
-.dcard.is-sub { margin-left: 12px; padding: 6px 9px; }
+/* 权重里的逐块：跟上级同宽（同一列宽度一致），层级靠卡内缩进表达 */
+.dcard.is-sub { padding: 6px 10px 6px 22px; }
 .dc-h { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
 .dc-t { color: #E8E8E8; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-tag { flex: none; font-size: 9px; line-height: 14px; padding: 0 4px; border-radius: 3px; color: #A0A0A0; border: 1px solid #3A3A3A; }
@@ -568,8 +572,8 @@ body.t3 .lc-pp, body.lv-board .lc-pp { display: none; }
 body.t3 .incident-panel, body.lv-board .incident-panel { display: none !important; }
 /* 单卡层的切分小卡：可点开 */
 .dcard.is-split { cursor: pointer; }
-.dcard.is-split:hover { border-color: rgba(255, 255, 255, .22); }
-.dcard.is-open { border-color: rgba(255, 255, 255, .35); }
+.dcard.is-split:hover { background: rgba(44, 44, 44, .64); }
+.dcard.is-open { background: rgba(50, 50, 50, .68); }
 .dc-v { font-weight: 400; color: #FFFFFF; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dc-v small { font-size: 9.5px; color: #8A8A8A; }
 .dcard.is-split .dc-h { margin-bottom: 0; }
@@ -626,9 +630,9 @@ body.t3 .dock .dock-sep-rv { display: block; }
 .cf-all span { color: #A0A0A0; margin-right: auto; }
 .cf-err { margin-top: 6px; color: var(--alert); font-size: 10px; line-height: 14px; }
 
-/* 右侧数值卡：内容少就窄，按内容定宽（右对齐排成一列），最宽不超过 272 */
-.data-col { width: auto; max-width: 272px; align-items: flex-end; }
-.data-col .dcard { width: max-content; min-width: 168px; max-width: 272px; box-sizing: border-box; }
+/* 右侧数值卡：与 rank 卡同宽（同一列宽度一致，反馈「同一列的卡片宽度保持一致」） */
+.data-col { width: 224px; align-items: stretch; }
+.data-col .dcard { width: 100%; box-sizing: border-box; }
 .data-col .dc-r { gap: 14px; }
 /* 单卡层：这张卡的显存构成就是这一屏的主角——矩阵本体不再套灰阶，显存各档与通信线用它自己的颜色 */
 #detailFrame { filter: none; }
