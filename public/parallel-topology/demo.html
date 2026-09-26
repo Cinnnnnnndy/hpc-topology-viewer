@@ -900,6 +900,12 @@
 }
   /* 宿主（lingqu-rank-map）藏起这一格时加上：所有 CSS 动画停住 */
   html.pt-paused *, html.pt-paused *::before, html.pt-paused *::after { animation-play-state: paused !important; }
+  /* 宿主单卡层的入场编排（见 pto:solo 的 play / sibs / comm）：只动 opacity */
+  @keyframes ptFadeIn { from { opacity: 0; } }
+  html.pt-stack-in .pt-slab { animation: ptFadeIn .42s cubic-bezier(.2,.7,.2,1) backwards; animation-delay: var(--sd, 0ms); }
+  html.pt-sib-in g.pt-sib { animation: ptFadeIn .4s ease-out backwards; animation-delay: var(--sd, 0ms); }
+  html.pt-comm-in .pt-cc { animation: ptFadeIn .5s ease-out backwards; animation-delay: .12s; }
+  @media (prefers-reduced-motion: reduce) { html.pt-stack-in .pt-slab, html.pt-sib-in g.pt-sib, html.pt-comm-in .pt-cc { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -2493,7 +2499,7 @@ function flowEdgeSVG(pts, prim, color, opts){
     out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.5).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.55).toFixed(2)+'"/>'
          + '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*0.5).toFixed(2)+'" style="fill:'+color+'"/>';
   }); });
-  return '<g>' + out + '</g>';
+  return '<g' + (opts.solo ? ' class="pt-cc"' : '') + '>' + out + '</g>';
 }
 function edgeSVG(pts, prim, color, opts){
   opts = opts || {};
@@ -5304,7 +5310,9 @@ function netScene(D, g, box, step){
         var solidSib9 = sibGhost9 && ui.slabGap && ui.netOff;
         /* 打开通信时，被连到的那几只兄弟块提亮：线的两端落在看得见的块上，不是连向一片淡影 */
         var sibLinked9 = solidSib9 && ui.soloSibs === 'on' && memSibs && memSibs[gc] && commLit(memSibs[gc]);
-        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? (sibLinked9 ? '0.9' : '0.55') : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.4' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
+        /* 兄弟展开时由近及远地涟漪出来：TP（同板）→ CP / EP（同 POD）→ DP（同 SP）→ PP（跨 SP） */
+        var sibD9 = solidSib9 ? ({tp:0, cp:90, ep:170, dp:250, pp:330}[memSibs && memSibs[gc]] || 0) + (gc % 7) * 14 : 0;
+        if(rankFade9) body.push('<g'+(solidSib9 ? ' class="pt-sib" style="--sd:'+sibD9+'ms"' : '')+' opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? (sibLinked9 ? '0.9' : '0.55') : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.4' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -5543,9 +5551,15 @@ function netScene(D, g, box, step){
                 var padB9 = vSp9*0.03, padT9 = vSp9*(ui.rankView === 'comp' ? 0.10 : 0.03);
                 var rGap9 = Math.min(vSp9*0.03, (vSp9 - padB9 - padT9)/nR9*0.32);
                 var unit9 = (vSp9 - padB9 - padT9 - rGap9*(nR9 - 1))/hSum9, vy9 = cv1 - padB9;
-                var rowPos9 = rows9.map(function(r){ var vA = vy9, vB = vy9 - unit9*r.h; vy9 = vB - rGap9; return {r:r, vA:vA, vB:vB}; });
+                var rowStep9 = Math.max(12, Math.min(90, 900 / rows9.length));
+                var rowPos9 = rows9.map(function(r, i){ var vA = vy9, vB = vy9 - unit9*r.h; vy9 = vB - rGap9; return {r:r, vA:vA, vB:vB, d:Math.round(i*rowStep9)}; });
                 if(!sTopV9) rowPos9.reverse();
                 rowPos9.forEach(function(rp){
+                  var bi8 = body.length;
+                  rowBody9(rp);
+                  body.splice(bi8, 0, '<g class="pt-slab" style="--sd:'+rp.d+'ms">'); body.push('</g>');
+                });
+                function rowBody9(rp){
                   var r = rp.r;
                   if(ui.rankView === 'net' && !r.held){ box9(su0, su1, rp.vA, rp.vB, null, true); return; }
                   layout9(r.items).forEach(function(x){
@@ -5559,10 +5573,10 @@ function netScene(D, g, box, step){
                     if(!sU1V9) segs.reverse();
                     segs.forEach(function(s){ box9(s[0], s[1], rp.vA, rp.vB, col, s[2] ? cutCol9(x.cut) : false, s[2] ? null : x.id); });
                   });
-                });
+                }
               })();
               else for(var m8 = 0; m8 < MS9.length; m8++){
-                var sg8 = MS9[m8];
+                var sg8 = MS9[m8], bi8 = body.length;
                 var vA9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f0 - m8*sGap9) : (cv1 - vSp9*sg8.f0),
                     vB9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f1 - m8*sGap9) : (cv1 - vSp9*sg8.f1);
                 var mq0 = P(su0,vB9,sw0,kc), mq1 = P(su1,vB9,sw0,kc),
@@ -5754,6 +5768,8 @@ function netScene(D, g, box, step){
                     }
                   }
                 }
+                /* 宿主单卡层：每一档包一层，下钻落地时自下而上逐档「码」上去（宿主发 play:'stack' 才播） */
+                if(inS9){ body.splice(bi8, 0, '<g class="pt-slab" style="--sd:'+(m8*80)+'ms">'); body.push('</g>'); }
               }
               /* 顶出壳外那一截的收尾：壳顶画一条实线（那才是 64GB 的位置），
                  被截断的地方画锯齿边表示「还在往上」。壳的线框照旧在外面画，
@@ -14763,6 +14779,14 @@ window.addEventListener('message', function(ev){
   }
   /* 宿主（lingqu-rank-map 单卡层）不重载就换：兄弟 rank 显示档（ghost / on）、通信连线总闸、逐维开关 */
   if(d.type==='pto:solo'){
+    /* 宿主单卡层的入场编排（opt-in，只由宿主消息触发）：
+       play:'stack' → 显存板自下而上逐档出现；兄弟从隐约切到展开 → 由近及远涟漪；通信从关到开 → 线淡入 */
+    var rootEl9 = document.documentElement;
+    var cueT9 = window.__ptCueT || (window.__ptCueT = {});
+    function cue9(cls, ms){ rootEl9.classList.add(cls); clearTimeout(cueT9[cls]); cueT9[cls] = setTimeout(function(){ rootEl9.classList.remove(cls); }, ms); }
+    if(d.play === 'stack'){ cue9('pt-stack-in', 2600); if(Object.keys(d).length === 2) return; }
+    if(d.sibs === 'on' && ui.soloSibs !== 'on') cue9('pt-sib-in', 1600);
+    if(d.comm === true && !ui.commOn) cue9('pt-comm-in', 1400);
     if(!render.__ptoWrap){
       /* 停住期间的重画（镜头落定后的收尾重渲等）新长出来的入场动画同样直接走到终态——只在宿主暂停时生效，独立打开不受影响 */
       var r0 = render;

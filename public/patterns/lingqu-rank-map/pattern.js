@@ -760,7 +760,7 @@
     fitPod = +pod.getAttribute('data-pod');
     physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
     pod.classList.add('is-fit');
-    physZP.fitVB(+pod.getAttribute('x'), +pod.getAttribute('y'), +pod.getAttribute('width'), +pod.getAttribute('height'), 40);
+    physZP.fitVB(+pod.getAttribute('x'), +pod.getAttribute('y'), +pod.getAttribute('width'), +pod.getAttribute('height'), 40, true);
     renderDataCards();
   }
   physStage.addEventListener('click', function (ev) {
@@ -776,12 +776,12 @@
       fitPod = isPod ? +box.getAttribute('data-pod') : null;
       physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); });
       if (isPod) box.classList.add('is-fit');
-      physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), isPod ? 60 : 30);
+      physZP.fitVB(+box.getAttribute('x'), +box.getAttribute('y'), +box.getAttribute('width'), +box.getAttribute('height'), isPod ? 60 : 30, true);
       renderDataCards();
       return;
     }
     if (curSel != null) { showOverview(true); return; }
-    physZP.reset();
+    physZP.reset(true);
     showOverview();
   });
 
@@ -967,6 +967,8 @@
     }).join('\n');
     zkSheet.textContent = Object.keys(zkText).map(function (id) { return zkText[id]; }).join('\n');
   }
+  // 系统设置了「减少动态效果」就不飞镜头、不做卡片入场，直接落到终态
+  var REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   function safeArea(R) {
     var bc = document.body.classList, l = 312, r = 312, t = 64, b = 72;
     if (bc.contains('panel-right')) r = drawer.offsetWidth + 40;
@@ -998,30 +1000,78 @@
       clearTimeout(strokeT);
       if (st.gesture) strokeT = setTimeout(function () { st.gesture = false; setZoomStroke(stage, st.k); if (stage === physStage) { ensurePodDetail(st); if (curSel != null) markSelFrame(stage); } }, 120);
       else setZoomStroke(stage, st.k);
-      if (s.classList.contains('lod1') !== (st.k >= 3)) s.classList.toggle('lod1', st.k >= 3);
-      if (s.classList.contains('lod2') !== (st.k >= 6)) s.classList.toggle('lod2', st.k >= 6);
+      /* 飞行途中细节档取起止两端里较低的那一档：拉远一起飞就换成轻的画法（逐帧画的是轻图），推近则保持轻的画法到落地再加细节。
+         中途不切档——切一次就是四万个图元重算样式 */
+      var lk = st.flying ? st.flyLodK : st.k;
+      if (s.classList.contains('lod1') !== (lk >= 3)) s.classList.toggle('lod1', lk >= 3);
+      if (s.classList.contains('lod2') !== (lk >= 6)) s.classList.toggle('lod2', lk >= 6);
       if (!frameQ) { frameQ = true; requestAnimationFrame(function () { frameQ = false; if (stage === physStage && !st.gesture) ensurePodDetail(st); if (curSel != null) markSelFrame(stage); placeSelLabel(); }); }
     }
     /* 画布铺满整个视口（反馈「左边不要做成单独的面板，卡片悬浮在画布上、毛玻璃、不遮挡后面」），
        四周的卡是半透明悬浮的；取景时把内容摆进卡与卡之间那块「安全区」的正中，初始/复位也一样。 */
-    st.reset = function () { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0); };
+    st.reset = function (anim, done) { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0, anim, done); };
+    /* ── 镜头飞行（层级串联动画）：取景不再一帧跳过去，而是 ~480ms 缓入缓出飞过去。
+       缩放按对数插值、屏幕中心对着的那一点按线性插值——放大缩小的速度感均匀，不会前半段猛冲。
+       飞行中走手势那条路：线宽样式表与 LOD 不逐帧切，落地后一次切完；reduced-motion 下直接落地。 */
+    /* 合成层只在一次推近飞行期间存在：任何新的飞行 / 直接取景开始前先撤掉上一只（被打断的飞行不会跑到自己的收尾，
+       漏掉的合成层会把光栅比例钉在高倍，下一次拉远就是整张图按高倍重画——逐帧看过，3.9 秒） */
+    function dropLayer() { if (st.layer) { st.layer.style.willChange = ''; st.layer = null; } }
+    st.fly = function (k1, tx1, ty1, dur, done) {
+      cancelAnimationFrame(st.flyRaf); dropLayer();
+      if (REDUCED || !dur) { st.k = k1; st.tx = tx1; st.ty = ty1; st.flying = false; apply(); if (done) done(); return; }   // dropLayer 已在上面做过
+      var R = st.rect(), cx = R.width / 2, cy = R.height / 2, k0 = st.k;
+      var p0x = (cx - st.tx) / k0, p0y = (cy - st.ty) / k0, p1x = (cx - tx1) / k1, p1y = (cy - ty1) / k1, t0 = performance.now();
+      st.flying = true; st.gesture = true; st.flyLodK = Math.min(k0, k1);
+      /* 推近时把 SVG 提成合成层：合成器按起飞时的比例光栅化一次、之后直接放大位图，不逐帧重画四万个图元；落地后撤掉，
+         按新比例清晰重画一次。拉远不提：合成层的光栅比例会钉在起飞时的高倍，拉远到全图等于按高倍把整张图光栅一遍（逐帧看过，2.8 秒） */
+      if (k1 > k0 * 1.05) { st.layer = svg(); if (st.layer) st.layer.style.willChange = 'transform'; }
+      (function step(now) {
+        var u = Math.min(1, (now - t0) / dur), e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+        var k = k0 * Math.pow(k1 / k0, e), px = p0x + (p1x - p0x) * e, py = p0y + (p1y - p0y) * e;
+        st.k = k; st.tx = cx - k * px; st.ty = cy - k * py;
+        if (u >= 1) { st.k = k1; st.tx = tx1; st.ty = ty1; st.flying = false; st.flyRaf = 0; dropLayer(); apply(); if (done) done(); return; }
+        apply(); st.flyRaf = requestAnimationFrame(step);
+      })(t0);
+    };
+    /* 下钻的「推近」：把选中那一格挪到安全区正中、镜头再推近 factor 倍（推之前的镜头由 trail 记，见「层级串联」） */
+    st.pushTo = function (x, y, w, h, factor, dur) {
+      var s = svg(); if (!s) return;
+      var vb = s.viewBox.baseVal, R = st.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
+      var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2, S = safeArea(R);
+      var pcx = ox + (x + w / 2 - vb.x) * m, pcy = oy + (y + h / 2 - vb.y) * m, k1 = Math.min(16, st.k * factor);
+      st.fly(k1, S.x + S.w / 2 - k1 * pcx, S.y + S.h / 2 - k1 * pcy, dur);
+    };
+    /* 把 viewBox 里的一块区域 (vx,vy,vw,vh) 飞到屏幕上的一个矩形 (sx,sy,sw,sh)：按宽度对齐、竖直居中——进板的「接缝」用 */
+    st.flyToRect = function (vx, vy, vw, vh, sx, sy, sw, sh, dur, done) {
+      var s = svg(); if (!s) { if (done) done(); return; }
+      var vb = s.viewBox.baseVal, R = st.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
+      var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
+      var bx0 = ox + (vx - vb.x) * m, by = oy + (vy + vh / 2 - vb.y) * m, k = Math.min(16, sw / (vw * m));
+      st.auto = false; st.fly(k, sx - R.left - k * bx0, sy - R.top + sh / 2 - k * by, dur, done);
+    };
+    st.cam = function () { return { k: st.k, tx: st.tx, ty: st.ty, auto: st.auto, last: st.last }; };
+    st.flyToCam = function (c, dur) { st.auto = c.auto; st.last = c.last; st.fly(c.k, c.tx, c.ty, dur); };
+    // 读者自己动手（滚轮 / 拖动）就打断正在飞的镜头，从当前位置接手
+    st.stopFly = function () { if (st.flyRaf) { cancelAnimationFrame(st.flyRaf); st.flyRaf = 0; st.flying = false; dropLayer(); } };
     st.zoomAt = function (f, px, py) {
-      st.auto = false;
+      st.stopFly(); st.auto = false;
       var k2 = Math.min(16, Math.max(0.4, st.k * f)); f = k2 / st.k;
       st.tx = px - (px - st.tx) * f; st.ty = py - (py - st.ty) * f; st.k = k2; apply();
     };
     /* 按 viewBox 坐标取景（不量 DOM 矩形：舞台切换时 .is-hidden 的 scale 过渡
        会把矩形量歪）：先算 meet 缩放下这块区域落在盒子里的像素位置，再解出
        让它居中撑满的 k/tx/ty。 */
-    st.fitVB = function (x, y, w, h, pad) {
+    st.fitVB = function (x, y, w, h, pad, anim, done) {
       var s = svg(); if (!s) return;
       var vb = s.viewBox.baseVal, R = st.rect();
       var m = Math.min(R.width / vb.width, R.height / vb.height);
       var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
       var px = ox + (x - vb.x) * m, py = oy + (y - vb.y) * m, pw = w * m, ph = h * m, S = safeArea(R);
       var k = Math.min(16, Math.max(0.2, Math.min((S.w - pad * 2) / pw, (S.h - pad * 2) / ph)));
-      st.k = k; st.tx = S.x + S.w / 2 - k * (px + pw / 2); st.ty = S.y + S.h / 2 - k * (py + ph / 2); apply();
+      var tx1 = S.x + S.w / 2 - k * (px + pw / 2), ty1 = S.y + S.h / 2 - k * (py + ph / 2);
       st.last = [x, y, w, h, pad]; st.auto = true;
+      if (anim) st.fly(k, tx1, ty1, 480, done);
+      else { cancelAnimationFrame(st.flyRaf); dropLayer(); st.flying = false; st.k = k; st.tx = tx1; st.ty = ty1; apply(); if (done) done(); }
     };
     /* 面板开合 / 窗口变化后安全区变了：用户没手动缩放拖动过，就按上一次的取景目标重新摆正；
        手动动过就不抢镜头。 */
@@ -1034,6 +1084,7 @@
     }, { passive: false });
     stage.addEventListener('pointerdown', function (ev) {
       if (ev.button !== 0) return;
+      st.stopFly();
       st.drag = { x: ev.clientX, y: ev.clientY, tx: st.tx, ty: st.ty }; st.moved = false;
     });
     window.addEventListener('pointermove', function (ev) {
@@ -1048,7 +1099,7 @@
     return st;
   }
   var physZP = attachZoomPan(physStage), boardZP = attachZoomPan(boardStage);
-  (function () { var r0 = physZP.reset; physZP.reset = function () { fitPod = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(); if (typeof renderDataCards === 'function') renderDataCards(); }; })();
+  (function () { var r0 = physZP.reset; physZP.reset = function (anim, done) { fitPod = null; if (trail && trail.zp === physZP) trail = null; physStage.querySelectorAll('.p-pod.is-fit').forEach(function (el) { el.classList.remove('is-fit'); }); r0(anim, done); if (typeof renderDataCards === 'function') renderDataCards(); }; })();
   function curZP() { return level === 'board' ? boardZP : physZP; }
 
   // ── 底部工具条：缩放 + 三个参考抽屉 ─────────────────────────────────────
@@ -1157,10 +1208,11 @@
     var cr = ev.target.closest('[data-cr]');
     if (!cr) return;
     var to = cr.getAttribute('data-cr');
-    if (to === 'root') { physZP.reset(); showOverview(); }
+    if (to === 'root') { trail = null; physZP.reset(true); showOverview(); }
     else if (to === 'board') goBoard(curBoard, true);
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
   });
+  var crumbN = 1;
   function renderCrumb() {
     /* 标题即面包屑（反馈「标题和顶部居中的面包屑合并到标题的位置，点它回退」）：模型名是根，
        往下 板 N / rank N / 单卡，除了当前这一级都能点回去 */
@@ -1172,7 +1224,11 @@
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
     crumbEl.innerHTML = parts.join('<i>/</i>');
+    // 往下走了一级：新出现的那一段从左边滑进来；往回退不播
+    if (parts.length > crumbN && !REDUCED) { var last9 = crumbEl.querySelector('.cr:last-child'); if (last9) last9.classList.add('cr-new'); }
+    crumbN = parts.length;
     document.body.classList.toggle('t3', tier === 3 && !detailFrame.classList.contains('is-hidden'));
+    syncWarm();
     // 每一屏只留对这一屏有意义的东西（见 README「每一屏讲什么」）：板与单卡不看整个集群的段峰值、超容名单与故障复盘链
     document.body.classList.toggle('lv-board', level === 'board' && tier !== 3);
     syncCardHeights();
@@ -1232,13 +1288,53 @@
   });
   /* 进「板」这一层：画布换成这块板的 Server 形态图。keepSel=true 且选中的 rank
      就在这块板上时保留选中；否则清掉。 */
+  /* 进板的串联：集群图先把镜头飞到这块板那一行，落地再换到板视图（板视图从略小的比例「落」进来）；
+     回集群时集群图还停在这块板上，点标题复位就是一路拉远——进出同一条路径 */
   function goBoard(b, keepSel) {
     if (b == null) return;
+    if (!REDUCED && level !== 'board' && tier !== 3 && !physStage.classList.contains('is-hidden')) {
+      /* 接缝：先在看不见的板视图里量出它那 8 颗 NPU 落在屏幕上的位置，再让集群镜头把这块板的 8 格正好飞到那里——
+         淡入的那一下，格子原地换成板视图里的 NPU，前后是同一排东西，没有尺度跳变 */
+      var a8 = physStage.querySelector('.p-npu[data-rank="' + (b * PHYS.board) + '"]'), z8 = physStage.querySelector('.p-npu[data-rank="' + Math.min(world - 1, b * PHYS.board + PHYS.board - 1) + '"]');
+      if (a8 && z8) {
+        renderBoard(b); boardZP.reset();
+        var n0 = boardStage.querySelector('.p-bnpu[data-slot="0"]'), n7 = boardStage.querySelector('.p-bnpu[data-slot="' + (PHYS.board - 1) + '"]');
+        if (n0 && n7) {
+          var r0 = n0.getBoundingClientRect(), r7 = n7.getBoundingClientRect();
+          var ax = +a8.getAttribute('x'), zx = +z8.getAttribute('x') + +z8.getAttribute('width');
+          setTrail(physZP);
+          physZP.flyToRect(ax, +a8.getAttribute('y'), zx - ax, +a8.getAttribute('height'), r0.left, r0.top, r7.right - r0.left, r0.height, 520,
+            function () { if (level !== 'board') goBoardNow(b, keepSel); });
+          return;
+        }
+      }
+    }
+    goBoardNow(b, keepSel);
+  }
+  /* 板视图「搭起来」：落地那一刻 NPU 那一排（刚刚与集群格子对齐的那一排）先在，其余按离它的竖直距离由近到远
+     依次淡入——CPU / fullmesh 弧、往下扇出到 L1、L1、再到各平面 SW2。只动小图（板视图几百个元素）的 opacity */
+  var buildT = 0;
+  function boardBuildIn() {
+    if (REDUCED) return;
+    var sv = boardStage.querySelector('svg'), npu = boardStage.querySelector('.p-bnpu'); if (!sv || !npu) return;
+    var ay = +npu.getAttribute('y') + +npu.getAttribute('height') / 2, H = sv.viewBox.baseVal.height || 590;
+    boardStage.querySelectorAll('.b-bg > *, .b-links > *, .b-nodes > *, .b-txt > *').forEach(function (el) {
+      var bb; try { bb = el.getBBox(); } catch (e) { return; }
+      var d = Math.abs(bb.y + bb.height / 2 - ay) / H;
+      el.style.setProperty('--bd', Math.round(Math.min(1, d * 1.6) * 520) + 'ms');
+    });
+    clearTimeout(buildT);
+    boardStage.classList.add('is-building');
+    buildT = setTimeout(function () { boardStage.classList.remove('is-building'); }, 1200);
+  }
+  function goBoardNow(b, keepSel) {
+    var entering = level !== 'board';
     if (!keepSel || (curSel != null && physOf(curSel).board !== b)) { curSel = null; pendingMatrixSel = null; pendingSubLine = null; tier = 1; rankTipOpen = true; }
     else if (curSel != null) tier = 2;
     level = 'board'; curBoard = b;
     showTier1Visual();
     boardZP.reset();
+    if (entering) boardBuildIn();
     if (curSel == null) renderRightIdle(); else renderDrillInvite(curSel, pendingSubLine || coordLine(curSel), lastBrief && lastBrief.rank === curSel ? lastBrief : null);
     renderLeftCard(); renderCrumb();
   }
@@ -1409,10 +1505,24 @@
      都要藏：从第三档退回来时它还开着。两张 SVG 舞台受同一套选中/聚焦状态驱动。 */
   /* 藏起来的单卡矩阵停住动画：它跟本页同一条主线程，藏着还在逐帧重绘，本页的每一次点击都得排在它后面
      （逐帧看过：返回板视图那一下晚了 1.7 秒才动） */
+  function cueDetail(what) { if (REDUCED) return; try { detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', play: what }, '*'); } catch (e) {} }
   function pauseDetail(on) { if (on) detailSettleAt = performance.now(); try { detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', pause: on }, '*'); } catch (e) {} }
   /* 换台：新的一层先抬到最上面淡入，旧的一层在下面保持不透明，等新的一层淡入完（.3s）再收起。
      逐帧看过：两层同时一出一进时，新的一层刚从 opacity 0 显出来还没光栅化完（集群图四万个图元），旧的一层已经按时
      淡掉了——中间闪一两帧黑。 */
+  /* ── 层级串联（进板、下钻、返回）只在这一处记「之前」：trail = 进去之前那一层的镜头。
+     回到同一层时用一次就丢；回到别的层、或点标题复位，就作废——不跨状态引用旧镜头，免得某条别的路径
+     回来时镜头莫名其妙飞回很久以前的位置。 */
+  var trail = null;
+  /* 预载好的单卡页只在「选中了一张卡、还没下钻」（第二档）时以 1% 压在最上层预热；其余时候完全透明——
+     集群层没有选中时不留任何一层旧单卡的影子 */
+  function syncWarm() { document.body.classList.toggle('detail-warm', tier === 2 && detailReady); }
+  function setTrail(zp) { trail = { zp: zp, cam: zp.cam(), level: level }; }
+  function pullTrail() {
+    var t = trail; trail = null;
+    if (!t || t.level !== level || t.zp !== (level === 'board' ? boardZP : physZP)) return;
+    t.zp.flyToCam(t.cam, 480);
+  }
   var stageHideT = 0;
   function showStage(el) {
     var all = [physStage, boardStage, detailFrame];
@@ -1429,6 +1539,7 @@
     if (clusterStale) { clusterStale = false; if (curSel != null) requestTier2Brief(curSel); else requestClusterBrief(); }
     if (level === 'board') renderBoard(curBoard); else renderPhys();
     showStage(level === 'board' ? boardStage : physStage);
+    pullTrail();   // 从单卡 / 板回到记下镜头的那一层：拉回进去之前的取景
     dock.classList.remove('is-hidden');
     physApplySelection();
   }
@@ -1519,12 +1630,20 @@
     document.body.classList.remove('is-loading');
     if (tier !== 3) return;
     pauseDetail(true);   // 显出来之前再停一次：停的同时把还悬着的入场动画走到终态，淡入时画面已经是完整的
+    /* 落地编排：壳（玻璃框）随淡入出现，里面的显存板先藏着；淡入走完、放开动画的那一刻，板自下而上逐档码上去 */
+    cueDetail('stack');
     showStage(detailFrame);
     // 放开动画放到淡入走完之后：放开那一下单卡页整页重算样式、重绘，赶在淡入中间做就是一两帧空白
     setTimeout(function () { if (tier === 3) pauseDetail(false); }, 360);
     renderCrumb();
   }
   function showDetail(matrixSel) {
+    // 下钻的串联：当前画布（集群 / 板）先朝选中那一格推近，单卡页准备好后从这个推近的画面上淡入；返回时再拉回来
+    if (tier !== 3 && !REDUCED) {
+      var zp9 = level === 'board' ? boardZP : physZP, st9 = level === 'board' ? boardStage : physStage;
+      var el9 = st9.querySelector('.p-npu[data-rank="' + matrixSel + '"]');
+      if (el9 && !st9.classList.contains('is-hidden')) { setTrail(zp9); zp9.pushTo(+el9.getAttribute('x'), +el9.getAttribute('y'), +el9.getAttribute('width'), +el9.getAttribute('height'), 1.9, 620); }
+    }
     tier = 3; curSel = matrixSel; pendingMatrixSel = matrixSel;
     if (focusPP == null) focusPP = coordOfRank(matrixSel).pp;
     if (level !== 'card') backLevel = level;
@@ -1632,7 +1751,7 @@
         // 单卡层里点了一张兄弟卡：矩阵原地换选（仍在 solo），宿主跟着换，不重载
         if (tier === 3 && d.sel != null && d.sel !== curSel && !detailFrame.classList.contains('is-hidden')) { adoptSolo(d.sel, d.brief); return; }
         // 预载完成（可能是在后台、读者还没点下钻）：记下就绪；读者已经在等这一张就等它静下来再淡入（scheduleReveal）
-        detailReady = true;
+        detailReady = true; syncWarm();
         if (detailFrame.classList.contains('is-hidden')) pauseDetail(true);
         if (tier === 3 && d.sel === curSel) { renderBrief(d.brief); if (detailFrame.classList.contains('is-hidden')) scheduleReveal(); }
         else if (d.brief) lastBrief = d.brief;
@@ -1753,8 +1872,11 @@
   /* 右上角那枚「rank N」描边标签删掉（反馈）：选中即直接在右列最上面摊开 rank 卡，
      超容与否由卡抬头的徽标说；再点一次选中的那张 = 下钻，照旧 */
   var rankTipOpen = true;
+  var briefAnimRank = null, briefAnimFlip = false;
   function showRankBadge(r) {
     alertBadge.classList.add('is-hidden');
+    // 换了一张卡：rank 卡整张淡入上浮一次（两套同样的动画名交替，同一元素也能重播，不用强制回流）
+    if (r !== briefAnimRank && !REDUCED) { briefAnimRank = r; briefAnimFlip = !briefAnimFlip; briefCard.classList.remove('card-in-a', 'card-in-b'); briefCard.classList.add(briefAnimFlip ? 'card-in-a' : 'card-in-b'); }
     briefCard.classList.add('is-tip');
     briefCard.classList.toggle('is-hidden', !rankTipOpen);
     syncCardHeights();
@@ -1963,7 +2085,7 @@
     if (drawerOpen === 'swimlane') { swimClick(t); return; }
     if (t.closest('[data-hact="root"]')) { physZP.reset(); showOverview(); return; }
     var spb = t.closest('[data-hsp]');
-    if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30); return; }
+    if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30, true); return; }
     if (t.tagName !== 'CANVAS' || !t._hit) return;
     var rc = t.getBoundingClientRect(), k = t._hit(ev.clientX - rc.left, ev.clientY - rc.top); if (k < 0) return;
     var kind = t.getAttribute('data-hl');
@@ -2049,6 +2171,7 @@
     if (backLevel === 'board') curBoard = physOf(r).board;
     detailSrc = matrixSrcFor(r);
     detailFrame.contentWindow && detailFrame.contentWindow.postMessage({ type: 'pto:solo', stitle: PS.modelName + ' / ' + TIER2_LABEL + ' / rank ' + r }, '*');
+    cueDetail('stack');   // 换到兄弟卡：它的板同样逐档码上去
     if (brief) renderBrief(brief);
     physApplySelection(); renderLeftCard(); renderCrumb();
   }
@@ -2061,7 +2184,7 @@
   }
   dock.addEventListener('click', function (ev) {
     var rv = ev.target.closest('[data-rv]');
-    if (rv) { DV.rv = rv.getAttribute('data-rv'); saveDV(); refreshDetail(); return; }
+    if (rv) { DV.rv = rv.getAttribute('data-rv'); saveDV(); refreshDetail(); cueDetail('stack'); return; }
     var b = ev.target.closest('[data-solo]'); if (!b) return;
     if (b.getAttribute('data-solo') === 'sibs') DV.sibs = DV.sibs === 'on' ? 'ghost' : 'on';
     else DV.comm = !DV.comm;
@@ -2266,6 +2389,7 @@
     return R;
   }
   var dcQueued = false;
+  var dcCtx = null, dcEnterT = 0;
   function renderDataCards() {
     if (dcQueued) return; dcQueued = true;
     requestAnimationFrame(function () {
@@ -2273,8 +2397,15 @@
       document.body.classList.toggle('dc-noinc', !DCK.inc);
       renderLeftCard();   // 容量卡住在左列配置卡里，跟着这一层（集群 / POD / 板）一起换
       var lv = (tier === 3 ? t3SideCards() : levelCards()).filter(Boolean), sh = shardCards().filter(Boolean);
+      /* 卡片入场（层级串联动画）：只在「上下文」换了（层 / 档 / 选中 / 板 / POD / 单卡内容）时，
+         新插进来的卡错峰淡入上浮；同一上下文里的重画（点开切分卡等）不再播，免得一闪一闪 */
+      var ctx9 = [tier, level, curSel, curBoard, fitPod, DV.rv].join('|'), fresh9 = ctx9 !== dcCtx;
+      dcCtx = ctx9;
+      [dataCol, shardL, leftCard].forEach(function (el) { el.classList.toggle('dc-enter', fresh9 && !REDUCED); });
+      clearTimeout(dcEnterT); if (fresh9) dcEnterT = setTimeout(function () { [dataCol, shardL, leftCard].forEach(function (el) { el.classList.remove('dc-enter'); }); }, 900);
       dataCol.innerHTML = lv.join(''); dataCol.classList.toggle('is-hidden', !lv.length);
       shardL.innerHTML = sh.join(''); shardL.classList.toggle('is-hidden', !sh.length);
+      [dataCol, shardL, leftCard].forEach(function (el) { for (var i9 = 0; i9 < el.children.length; i9++) el.children[i9].style.setProperty('--i', Math.min(i9, 12)); });
       doSyncCardHeights();
     });
   }

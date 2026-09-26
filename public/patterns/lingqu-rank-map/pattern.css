@@ -42,7 +42,8 @@ b, strong { font-weight: 500; }
    合成器会跳过它的光栅化——逐帧看过，下钻时单卡页要到淡入开始才整页光栅化，中间空白 0.6–0.9 秒。
    浮在上面就会在后台先光栅化好（它藏着时是暂停的静态画面，只光栅一次）。只对 iframe 这么做：
    iframe 的 pointer-events 不会继承进它自己的文档，不会触发整页重算样式。 */
-#detailFrame.is-hidden { opacity: .01; z-index: 4; pointer-events: none; transition: none; }
+#detailFrame.is-hidden { opacity: 0; z-index: 4; pointer-events: none; transition: none; }
+body.detail-warm #detailFrame.is-hidden { opacity: .01; }
 /* 交叉淡入不经过黑：新的一层在上面 .25s 淡入，旧的一层先沉到下面、保持不透明，等新的一层满了（.24s 延迟）再淡出——
    逐帧看过，原来两层同时一出一进，中间有一两帧整块画布是黑的 */
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
@@ -647,3 +648,22 @@ svg.lod2 .p-npu.g-cp + .p-npunum { fill: var(--c-cp) !important; }
 svg.lod2 .p-npu.g-ep + .p-npunum { fill: var(--c-ep) !important; }
 svg.lod2 .p-npu.g-dp + .p-npunum { fill: var(--c-dp) !important; }
 svg.lod2 .p-npu.g-pp + .p-npunum { fill: var(--c-pp) !important; }
+
+/* ── 层级串联动画 ─────────────────────────────────────────────────────────
+   镜头飞行在 pattern.js（attachZoomPan.fly）；这里是卡片、面包屑、板视图落地的入场。
+   只动 opacity / transform（合成器路径），不动布局。 */
+@keyframes cardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cardInB { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.dc-enter > * { animation: cardIn .34s cubic-bezier(.2, .7, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+.side-right.card-in-a { animation: cardIn .34s cubic-bezier(.2, .7, .2, 1) backwards; }
+.side-right.card-in-b { animation: cardInB .34s cubic-bezier(.2, .7, .2, 1) backwards; }
+@keyframes crIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+.crumb .cr-new { display: inline-block; animation: crIn .3s cubic-bezier(.2, .7, .2, 1) backwards; }
+/* 板视图搭起来：离 NPU 那一排越远越晚出现（--bd 由 boardBuildIn 按竖直距离写） */
+@keyframes bIn { from { opacity: 0; } to { opacity: 1; } }
+.board-stage.is-building .b-bg > *, .board-stage.is-building .b-links > *, .board-stage.is-building .b-nodes > *, .board-stage.is-building .b-txt > * {
+  animation: bIn .36s ease-out backwards; animation-delay: var(--bd, 0ms); }
+@media (prefers-reduced-motion: reduce) {
+  .board-stage.is-building * { animation: none !important; }
+  .dc-enter > *, .side-right.card-in-a, .side-right.card-in-b, .crumb .cr-new { animation: none !important; }
+}
