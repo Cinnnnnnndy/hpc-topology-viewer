@@ -667,3 +667,29 @@ svg.lod2 .p-npu.g-pp + .p-npunum { fill: var(--c-pp) !important; }
   .board-stage.is-building * { animation: none !important; }
   .dc-enter > *, .side-right.card-in-a, .side-right.card-in-b, .crumb .cr-new { animation: none !important; }
 }
+
+/* ── 小屏收紧（body.is-compact，见 pattern.js syncCompact）──────────────────────────
+   两列宽度不动（画布中间仍留 700px 以上），只压纵向：内边距、行高、卡间距一档；rank 卡五档显存换成一根分段条、
+   四行链路换成一行。大屏下分段条与一行链路不出现。 */
+.brief-segbar, .brief-link1 { display: none; }
+.brief-segbar { height: 6px; margin: 4px 0 6px; border-radius: 2px; overflow: hidden; background: #262626; gap: 1px; }
+.brief-segbar i { display: block; height: 100%; flex: none; }
+body.is-compact .brief-segbar { display: flex; }
+body.is-compact .brief-link1 { display: flex; }
+body.is-compact .brief-segrows, body.is-compact .brief-links { display: none; }
+body.is-compact .crumb .cr-root { font-size: 16px; }
+body.is-compact .crumb { font-size: 13px; }
+body.is-compact .side-left { top: 50px; }
+body.is-compact .ip-col-left { top: calc(50px + var(--lc-h, 300px) + 6px); }
+body.is-compact .gcard { padding: 8px 10px; }
+body.is-compact .gcard + .gcard, body.is-compact #leftCard > .dcard { margin-top: 6px; }
+body.is-compact .side-right { padding: 8px 10px; }
+body.is-compact .brief-row { line-height: 1.55; }
+body.is-compact .brief-k { margin-top: 6px; }
+body.is-compact .dcard { padding: 6px 9px; }
+body.is-compact .dcard.is-sub { padding: 5px 9px 5px 20px; }
+body.is-compact .dc-r { line-height: 15px; }
+body.is-compact .data-col, body.is-compact .shard-col { gap: 6px; }
+body.is-compact .lc-sub { line-height: 1.55; }
+body.is-compact .ip-grp + .ip-grp { margin-top: 6px; }
+body.is-compact .ip-prob { padding: 7px 0; }

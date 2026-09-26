@@ -337,7 +337,11 @@
     if (typeof shardL !== 'undefined' && shardL) { var t8 = (leftCard.offsetTop || 16) + lh + 8; if (shardL._top !== t8) { shardL._top = t8; shardL.style.top = t8 + 'px'; } }
     if (typeof dataCol !== 'undefined' && dataCol) { var t9 = (briefCard.offsetTop || 60) + (rh ? rh + 8 : 0); if (dataCol._top !== t9) { dataCol._top = t9; dataCol.style.top = t9 + 'px'; } }
   }
-  window.addEventListener('resize', syncCardHeights);
+  /* 小屏（笔记本 1280×720 / 1366×768 这一档）：高度不到 840 或宽度不到 1400 就收紧——卡片内边距、行高、卡间距压一档，
+     rank 卡五档显存收成一根分段条、四行链路收成一行；大屏不变 */
+  function syncCompact() { document.body.classList.toggle('is-compact', window.innerHeight < 840 || window.innerWidth < 1400); }
+  syncCompact();
+  window.addEventListener('resize', function () { syncCompact(); syncCardHeights(); });
   incidentPanel && incidentPanel.addEventListener('click', function (ev) {
     var pb = ev.target.closest('[data-prob]');
     if (pb) { var id9 = pb.getAttribute('data-prob'); incidentOpen[id9] = !incidentOpen[id9]; renderIncidentPanel(); return; }
@@ -1816,11 +1820,13 @@
     }).join('');
     // 这颗 NPU 自己的物理链路（直播第二/四页的 Server/机柜关系，槽位 → CPU/NIC 是
     // 板视图里同一套配对：CPU 各带 4 卡、NIC 各带相邻 2 卡）
-    var phy = '<div class="brief-k">link</div>'
+    // 小屏（is-compact）：四行链路收成一行
+    var phy = '<div class="brief-links"><div class="brief-k">link</div>'
       + '<div class="brief-row"><span>fullmesh</span><b>×7</b></div>'
       + '<div class="brief-row"><span>Clos</span><b>L1 ×8</b></div>'
       + '<div class="brief-row"><span>H2D</span><b>CPU' + (p.slot < 4 ? 0 : 1) + '</b></div>'
-      + '<div class="brief-row"><span>RoCE</span><b>NIC' + Math.floor(p.slot / 2) + '</b></div>';
+      + '<div class="brief-row"><span>RoCE</span><b>NIC' + Math.floor(p.slot / 2) + '</b></div></div>'
+      + '<div class="brief-row brief-link1"><span>link</span><b>mesh×7 · L1×8 · CPU' + (p.slot < 4 ? 0 : 1) + ' · NIC' + Math.floor(p.slot / 2) + '</b></div>';
     return '<div class="brief-k" title="落位为假设：rank 连续摆放">SP' + p.sp + ' · POD' + p.pod + ' · 板' + p.board + ' · 槽' + p.slot + ' *</div>' + html + phy;
   }
 
@@ -1844,9 +1850,15 @@
       + '<div class="brief-sub">' + coordSubLine(brief) + '</div>'
       // 先答「装得下吗」：合计紧跟在抬头下面，逐档构成排在它后面
       + '<div class="brief-row brief-total"><span>合计</span><b>' + gbFmt(brief.cap.totGB).replace(' GB', '') + ' / ' + brief.hbm + ' GB</b></div>'
-      + brief.segs.map(function (s) {
+      // 小屏（is-compact）：五档收成合计下面一根按 HBM 比例的分段条，悬停看名字与 GB；大屏照旧逐行
+      + '<div class="brief-segbar">' + brief.segs.map(function (s, i) {
+        var dc = brief.detail && brief.detail.segs && brief.detail.segs[i], col = (dc && dc.col) || '#6A6A6A';
+        var nm = String(s.label).replace(/\s*[（(].*$/, '').replace(/[·／/].*$/, '');
+        return '<i style="width:' + Math.max(0.6, Math.min(100, s.gb / brief.hbm * 100)).toFixed(2) + '%;background:' + col + '" title="' + esc(nm + ' ' + gbFmt(s.gb)) + '"></i>';
+      }).join('') + '</div>'
+      + '<div class="brief-segrows">' + brief.segs.map(function (s) {
         return '<div class="brief-row"><span>' + String(s.label).replace(/\s*[（(].*$/, '').replace(/[·／/].*$/, '') + '</span><b>' + gbFmt(s.gb) + '</b></div>';
-      }).join('');
+      }).join('') + '</div>';
   }
 
   /* 第二档的浮卡：选中的瞬间先摆一句邀请（brief 还没回来，不留空白）；
