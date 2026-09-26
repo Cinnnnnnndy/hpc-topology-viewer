@@ -573,10 +573,11 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .dc-comm b { font-weight: 400; color: #C8C8C8; }
 .dc-comm span { color: #8A8A8A; }
 /* 腔图（矩阵读出卡里那几张 SVG，原样搬过来）：套本页灰阶 + 它用到的几个 token */
-.dc-fig { margin: 6px 0 2px; filter: grayscale(1) brightness(1.15);
+/* 切分简图（并行拓扑工作台读出卡里那张）：保留维度色——哪一把刀切的、本卡是哪一格，靠的就是这层颜色 */
+.dc-fig { margin: 8px 0 2px;
   --pt-fg: #E8E8E8; --pt-fg2: #A0A0A0; --pt-fg3: #6A6A6A; --pt-bg: #111111; --pt-bd: #3A3A3A; --pt-bds: #282828;
   --pt-s1: #181818; --pt-s2: #1E1E1E; --pt-danger: #F85149; --pt-mono: var(--mono); --pt-sans: var(--mono); }
-.dc-fig svg { display: block; width: 100%; height: auto; max-height: 150px; }
+.dc-fig svg { display: block; width: 100%; height: auto; max-height: 180px; }
 .dc-ckv { color: #A0A0A0; }
 .dc-ckv i { font-style: normal; color: #6A6A6A; }
 /* ── 原生泳道（本预置的 1F1B）：保留泳道原来那几种必要的颜色——前向蓝、反向粉、通信绿 */

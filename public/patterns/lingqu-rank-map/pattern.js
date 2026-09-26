@@ -479,7 +479,7 @@
      标签区分，不按平面着色——黑白规则。PLANE_C 留着做统一灰阶入口。 */
   var PLANE_C = ['#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E', '#6E6E6E'];
   /* 五个通信组的描边只分灰阶：TP 白实线最粗、CP 浅灰、EP/DP 中灰、PP 白虚线。 */
-  /* 维度色：跟矩阵本体同一套（brief.dimCol 到了就覆盖 CSS 变量 --c-*），全篇一个颜色一个意思 */
+  /* 维度色：本页 CSS 变量 --c-* 这一套；单卡页（demo.html slabgap）也换成同一套，全篇一个颜色一个意思 */
   var GC = { tp: 'var(--c-tp)', cp: 'var(--c-cp)', ep: 'var(--c-ep)', dp: 'var(--c-dp)', pp: 'var(--c-pp)' };
   function dimDot(d) { return '<i class="gc" style="background:' + GC[d] + '"></i>'; }
   function levelBetween(a, b) {
@@ -1298,7 +1298,7 @@
       if (splitDiff.length) console.warn('lingqu-rank-map: 矩阵与本页切分不一致', splitDiff); else splitDiff = null;
     }
     lastCluster = brief; ppPeak = null;
-    if (brief.dimCol) Object.keys(brief.dimCol).forEach(function (k) { if (brief.dimCol[k]) document.documentElement.style.setProperty('--c-' + k, brief.dimCol[k]); });
+    // 维度色不再拿矩阵报来的那套覆盖：单卡页（slabgap）反过来用本页这套（--c-*），全篇一个颜色一个意思
     oomSet = {};
     (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();

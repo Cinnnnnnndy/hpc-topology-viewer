@@ -14000,6 +14000,8 @@ function ptoSettleAnims(){
 }
 function render(){
   syncTopologyPalette();
+  /* slabgap（宿主单卡层）：维度色整套换成宿主那套，3D、连线、读出卡里的切分简图与宿主左右卡片上的色点同一个颜色 */
+  if(ui.slabGap) Object.keys(HOST_DC).forEach(function(k9){ VC[k9] = HOST_DC[k9]; });
   var D = derive(cfg);
   cflowN = CFLOW_MAX;                       /* 流动虚线的预算按「每次重绘」发，不跨帧累积 */
   /* 选中卡越界就夹回 null——**来路标记必须跟着一起清**。宿主转过来的 rank 未必在
