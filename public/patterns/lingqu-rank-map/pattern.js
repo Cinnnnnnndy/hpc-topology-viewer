@@ -1688,9 +1688,14 @@
     var rows = [['tp', 'TP', g.tp], ['cp', 'CP', g.cp]];
     rows.push(['ep', 'EP', g.ep]); rows.push(['dp', 'DP', g.dp]);
     rows.push(['pp', 'PP', g.pp]);
+    /* 并行组与「通信」合成一张表（原来右卡一份 group、下面数据卡再一份通信，五维列两遍）：
+       维 ×组大小 · 闭合在哪一级 · 一次搬多少（CP/EP 由路由与切法当场决定，写「—」） */
+    var cm = {}, B9 = DCK.comm && lastBrief && lastBrief.rank === r && lastBrief.detail;   // 设置里关掉「通信」这一类就不带量
+    if (B9 && B9.comm) B9.comm.forEach(function (c) { cm[c.dim] = c; });
     var html = '<div class="brief-k">group</div>' + rows.filter(function (x) { return x[2].length > 1; }).map(function (x) {
-      var lv = linkLevel(x[2], x[0] === 'pp');
-      return '<div class="brief-row"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><b>' + LINK_LEVELS[lv] + '</b></div>';
+      var lv = linkLevel(x[2], x[0] === 'pp'), c = cm[x[0]];
+      var vol = B9 ? '<b class="' + (c && c.exact ? '' : 'is-na') + '"' + (c && c.how ? ' title="' + esc(c.how) + '"' : '') + '>' + (c && c.exact ? esc(c.txt) : '—') + '</b>' : '';
+      return '<div class="brief-row brief-row3"><span><i class="gc" style="background:' + GC[x[0]] + '"></i>' + x[1] + ' ×' + x[2].length + '</span><em>' + LINK_LEVELS[lv] + '</em>' + vol + '</div>';
     }).join('');
     // 这颗 NPU 自己的物理链路（直播第二/四页的 Server/机柜关系，槽位 → CPU/NIC 是
     // 板视图里同一套配对：CPU 各带 4 卡、NIC 各带相邻 2 卡）
@@ -2181,8 +2186,8 @@
     if (curSel != null && tier === 2) {
       var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
       if (Dt) {
-        out.push(dcCard('comm', '通信', Dt.comm.map(function (c) { return dcRow(dimDot(c.dim) + c.dim.toUpperCase() + ' ×' + c.n, c.exact ? esc(c.txt) : '—', c.exact ? '' : 'is-na', c.how); }).join(''), 'calc', '每条边一次搬多少；CP / EP 由路由与切法当场决定，不给数'));
-        out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('层', 'L' + B.layers.lo + '–L' + B.layers.hi) + dcRow('ZeRO', Dt.zero), 'calc'));
+        // 通信并进右卡的 group 表；层区间已在右卡抬头
+        out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('ZeRO', Dt.zero), 'calc'));
       }
     }
     return out;
@@ -2240,13 +2245,8 @@
   function t3SideCards() {
     var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail, R = [];
     if (tier !== 3 || !Dt) return R;
-    var rows9 = [];
-    Dt.comm.forEach(function (c) {
-      // 消融：一维一行 key/value，怎么算的收进悬停；CP/EP 不给数的写「—」
-      rows9.push(dcRow(dimDot(c.dim) + c.dim.toUpperCase() + ' ×' + c.n, c.exact ? esc(c.txt) : '—', c.exact ? '' : 'is-na', c.how + (c.sum ? ' · ' + c.sum : '')));
-    });
-    R.unshift(dcCard('comm', '通信', rows9.join(''), 'calc'));
-    R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('层', 'L' + B.layers.lo + '–L' + B.layers.hi) + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
+    // 通信并进右卡的 group 表（维 · 闭合级 · 一次搬多少），这里不再单列；层区间已在右卡抬头
+    R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
     return R;
   }
   var dcQueued = false;

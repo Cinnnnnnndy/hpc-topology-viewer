@@ -102,6 +102,10 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .brief-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; line-height: 1.75; }
 .brief-row span { color: #A0A0A0; }
 .brief-row b { color: #E8E8E8; font-weight: 400; }
+/* group 表三列：维 ×n · 闭合级 · 一次搬多少 */
+.brief-row3 { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; }
+.brief-row3 em { font-style: normal; color: #6A6A6A; text-align: right; }
+.brief-row3 b.is-na { color: #4A4A4A; }
 .brief-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid #282828; }
 .brief-total b { font-weight: 500; }
 .brief-card.is-cta { padding-bottom: 0; }
