@@ -2,7 +2,7 @@
   "id": "lingqu-rank-map",
   "name": "模型分片与训练设备映射 · 简洁版",
   "description": "一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。集群（默认第一屏，灵衢物理拓扑：超节点 / 8 个 L2 平面×4 SW2（标 P1…P8）/ 128 卡组的 8 颗 L1 SW / 64 卡 POD / 板上的 2 CPU + 8 NPU + DPU + 4 NIC，超节点间 UBoE，rank 格灰度 = 占用率，四档，越满越亮）→ 板（POD 取景后再点一行，或右卡「→ 板」：一块板的 Server 形态图，CPU0—CPU1 互联、DPU —PCIe— CPU、CPU/DPU —UB→ L1、H2D、NIC 挂相邻 2 卡 + RoCE 参数面、板内 UB fullmesh、出板每卡 8 口扇到 8 颗 L1、L1 → 本平面 4×SW2、L2 → 其他 POD / UBoE 其他超节点）（段视图已归档到 /patterns/pp-segment-radial/）→ 卡（右卡：坐标 + 借矩阵本体 ?brief=1&sel= 算回来的层区间/显存构成 + 假设落位的物理位置 + 五个通信组各走哪一级链路）→ 单卡（矩阵本体 fastcard=1&solo=1 的 solo 渲染）。面包屑每一级可回退；三张卡跨四层只换内容不换位置；底部工具条（仿 Figma）放缩放与三个参考面板（整网图·同一预置 → 右侧 / 泳道图·上游示例 → 下方 / 逻辑魔方 → 左侧），面板占住一边把画布挤过去，不悬浮在画布上。默认预置 moe504b32k（tp4·cp8·pp8·dp16·ep16，world=4096，pangu_sophon_pytorch config/llm/moe_504B_A18B/ 32K 序列那档的真实切分；dp=16 是 EP|DP 的最小合法值，从项目代码 data_parallel_size=world_size÷(TP×PP×CP) 推出）。world ≤ 64 的预置（只有 dense64）直接铺满矩阵原页，没有这套链。",
-  "version": "9.14.0",
+  "version": "9.15.0",
   "entry": "pattern.html",
   "selfContained": false,
   "canvas": "full-bleed",

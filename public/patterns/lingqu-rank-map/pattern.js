@@ -742,16 +742,20 @@
   }
   /* 激活链路上跑的小圆点（hpc-topology-node Round 4：两颗、相差半个周期；速度 = 带宽——
      板内铜缆快、出板光 UB 慢）。只在板视图画：集群层那几根线不到 1px，点跑起来只是闪烁。 */
+  var NO_FLOW_DOTS = true;
   function flowDots(slot) {
     var g = boardStage.querySelector('.b-flow'); if (!g) return;
     // 板视图不在台上（集群 / 单卡）时不留会动的点：藏着的 SVG 动画一样逐帧重绘
     if (slot == null || level !== 'board' || tier === 3) { if (g.firstChild) g.innerHTML = ''; return; }
+    /* 顺线跑的珠子不画了：定格时它们就是一颗颗停在线中段的点，读不出是什么（反馈「有些点飘在不知道哪里」）；
+       选中那颗 NPU 的线已经换成激活样式，「哪几根在走」不靠珠子说 */
+    if (NO_FLOW_DOTS) { if (g.firstChild) g.innerHTML = ''; return; }
     var html = [];
     boardStage.querySelectorAll('.b-links .is-hot').forEach(function (el) {
       var d = el.tagName === 'line' ? 'M' + el.getAttribute('x1') + ',' + el.getAttribute('y1') + ' L' + el.getAttribute('x2') + ',' + el.getAttribute('y2') : el.getAttribute('d');
       var fast = !el.classList.contains('b-fan'), dur = fast ? 0.9 : 1.4;
       [0, dur / 2].forEach(function (off) {
-        html.push('<circle class="lk-dot" r="2.4"><animateMotion dur="' + dur + 's" begin="-' + off + 's" repeatCount="indefinite" path="' + d + '"/></circle>');
+        html.push('<circle class="lk-dot" r="1.7"><animateMotion dur="' + dur + 's" begin="-' + off + 's" repeatCount="indefinite" path="' + d + '"/></circle>');
       });
     });
     g.innerHTML = html.join('');
@@ -812,23 +816,25 @@
          只剩噪点，所以平时就是一根发丝线；只有选中那颗 NPU 自己的那几根换成激活样式
        · 集群总览（线宽不到 1px）：不画衬边、虚线收成实线（UBoE 除外），只看走向；
          放大到 3× 起衬边与虚线节奏才出来，板视图始终是近看档 */
-  /* 端点（反馈「连线的开头和结尾有点生硬，给一个精致的端点」）：参照 hpc-topology-node 3D 线端的
-     「底座环 + 白心」，2D 里做成 marker——底色实心环 + 灰描边 + 中心小点，像一个端口；并进总线的
-     那一头是一颗实心汇接点。markerUnits=strokeWidth，跟线宽一起缩放，放大缩小比例不变；
-     激活（选中那颗 NPU 的线）换白色、稍小一号，免得端点压过线本身。 */
+  /* 端点：一颗比线略粗的实心小点，颜色跟线走。原来是「底色实心环 + 描边 + 中心点」的端口环，
+     几根线收在同一颗 NPU 上时七八只环叠成一团，比线本身还重（反馈「端点太强势」）。
+     markerUnits=strokeWidth，跟线宽一起缩放；汇接点（并进总线那头）同样是点，再淡一档。 */
   function lkDefs(p) {
-    function port(id, ring, dot, r) {
-      return '<marker id="' + p + id + '" viewBox="-5 -5 10 10" markerWidth="10" markerHeight="10" markerUnits="strokeWidth" refX="0" refY="0" orient="auto">'
-        + '<circle r="' + r + '" fill="#111111" stroke="' + ring + '" stroke-width="0.9"/><circle r="' + (r * 0.36).toFixed(2) + '" fill="' + dot + '"/></marker>';
+    function port(id, col, r, op) {
+      return '<marker id="' + p + id + '" viewBox="-3 -3 6 6" markerWidth="6" markerHeight="6" markerUnits="strokeWidth" refX="0" refY="0">'
+        + '<circle r="' + r + '" fill="' + col + '" fill-opacity="' + op + '"/></marker>';
     }
-    return '<defs>' + port('lkp', '#A0A0A0', '#C8C8C8', 2.6) + port('lkh', '#FFFFFF', '#FFFFFF', 2.1)
-      + '<marker id="' + p + 'lkj" viewBox="-3 -3 6 6" markerWidth="6" markerHeight="6" markerUnits="strokeWidth" refX="0" refY="0"><circle r="1.7" fill="#A0A0A0"/></marker></defs>';
+    return '<defs>' + port('lkp', '#A0A0A0', 1.3, .85) + port('lkh', '#FFFFFF', 1.2, .9) + port('lkj', '#8A8A8A', 1.15, .8) + '</defs>';
   }
   function cased(el) { return el.replace(/ class="[^"]*"/, ' class="lkc"').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心
     var NPUY = 150, NPUH = 40, L1Y = 330, L1H = 24, SWBY = 386, SWBH = 20, L2Y = 452, L2H = 30, CPUY = 58;
+    /* NPU 的连线端点落在**图元**上，不落在命中框上：命中框 64 宽（右半边是 rank 号），封装图标只占左边 36，
+       按命中框中心接线，端点全堆在图标右上角。从上面来的线（fullmesh / H2D / NIC）接图标顶边中点，
+       往下走的出板 Clos 从占用条底边中点出。 */
+    var AX = function (i) { return NX(i) - 14; }, AT = NPUY + 4, AB = NPUY + 37;
     var bg = [], links = [], nodes = [], txt = [];
     /* 部件框：左边一枚 hpc-topology-node 的 2D 图元（hw-icons.js），右边是名字 */
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
@@ -851,15 +857,15 @@
       // RDMA 端头：NIC 顶上一个空心环（hpc-topology-node 的 RDMA 端点画法）
       nodes.push('<circle class="b-rdma" cx="' + nx + '" cy="' + (CPUY + 1) + '" r="3.2"/>');
       // NIC 交换（POD 形态图「SW 4*N · 2口/N」）：每张 NIC 2 口汇到右侧那颗小交换
-      links.push(cased('<path class="b-nsw-l" d="M' + (nx + 16) + ',' + (CPUY + 1) + ' V48 H881"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>'));
+      links.push(cased('<path class="b-nsw-l" d="M' + (nx + 16) + ',' + (CPUY + 1) + ' V48 H887 V' + (CPUY + 1) + '"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>'));
       [2 * k, 2 * k + 1].forEach(function (i) {
-        links.push('<line class="b-nicl" data-n="' + i + '" x1="' + nx + '" y1="' + (CPUY + 22) + '" x2="' + NX(i) + '" y2="' + NPUY + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></line>');
+        links.push('<line class="b-nicl" data-n="' + i + '" x1="' + nx + '" y1="' + (CPUY + 22) + '" x2="' + AX(i) + '" y2="' + AT + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></line>');
       });
     }
     [0, 1].forEach(function (c) {
       var cx = (NX(4 * c + 1) + NX(4 * c + 2)) / 2;
       box('b-cpu', cx, CPUY, 110, 34, 'CPU' + c, 'CPU' + c + ' · H2D 每卡 2 口 UB（x86 走 4 口 PCIe SW）· 8 口 UB 上 L1', ' data-cpu="' + c + '"');
-      for (var i = 4 * c; i < 4 * c + 4; i++) links.push('<line class="b-h2d" data-n="' + i + '" x1="' + cx + '" y1="' + (CPUY + 34) + '" x2="' + NX(i) + '" y2="' + NPUY + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></line>');
+      for (var i = 4 * c; i < 4 * c + 4; i++) links.push('<line class="b-h2d" data-n="' + i + '" x1="' + cx + '" y1="' + (CPUY + 34) + '" x2="' + AX(i) + '" y2="' + AT + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></line>');
     });
     var c0 = (NX(1) + NX(2)) / 2, c1 = (NX(5) + NX(6)) / 2;
     box('b-nsw', 905, CPUY + 1, 48, 22, 'SW', 'NIC 交换（POD 形态：SW 挂 4×NIC，每 NIC 2 口；每颗 CPU 1 口）');
@@ -873,7 +879,7 @@
     links.push(cased('<path class="b-pcie" d="M88,' + (CPUY + 22) + ' V' + (CPUY + 30) + ' H' + (c0 - 55) + '"><title>DPU — CPU0 · PCIe</title></path>'));
     txt.push('<text class="b-lbl" x="' + ((88 + c0 - 55) / 2) + '" y="' + (CPUY + 41) + '" text-anchor="middle">PCIe</text>');
     links.push(cased('<path class="b-ub" d="M56,' + (CPUY + 22) + ' V' + (CPUY + 34) + ' H20 V' + (L1Y + L1H / 2) + ' H' + (NX(0) - 32) + '"><title>DPU / CPU0 — L1 · UB</title></path>'));
-    links.push(cased('<path class="b-ub" d="M' + (c0 - 55) + ',' + (CPUY + 34) + ' H20"/>'));
+    links.push(cased('<path class="b-ub b-join" d="M' + (c0 - 55) + ',' + (CPUY + 34) + ' H20"/>'));
     links.push(cased('<path class="b-ub" d="M' + (c1 + 55) + ',' + (CPUY + 34) + ' H940 V' + (L1Y + L1H / 2) + ' H' + (NX(7) + 32) + '"><title>CPU1 — L1 · UB</title></path>'));
     txt.push('<text class="b-lbl" x="14" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(-90 14 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
     txt.push('<text class="b-lbl" x="946" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(90 946 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
@@ -886,14 +892,14 @@
         + '<text class="b-npul" x="' + (NX(i) + 19) + '" y="' + (NPUY + 18) + '" text-anchor="middle">' + r + '</text><text class="b-npur" x="' + (NX(i) + 15) + '" y="' + (NPUY + 31) + '" text-anchor="middle">npu' + i + '</text></g>');
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
-        links.push('<path class="b-mesh" data-m="' + i + ',' + j + '" d="M' + NX(i) + ',' + NPUY + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (NPUY - off) + ' ' + NX(j) + ',' + NPUY + '"/>');
+        links.push('<path class="b-mesh" data-m="' + i + ',' + j + '" d="M' + AX(i) + ',' + AT + ' Q' + ((AX(i) + AX(j)) / 2) + ',' + (AT - off) + ' ' + AX(j) + ',' + AT + '"/>');
       }
     }
     txt.push('<text class="b-lbl b-lbl-mesh" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (NPUY - 58) + '" text-anchor="middle">fullmesh 7×X4</text>');
     // 出板：每颗 NPU 8 口，每口一颗 L1（每平面一颗）
     for (var i2 = 0; i2 < 8; i2++) for (var k2 = 0; k2 < 8; k2++) {
       if (base + i2 >= world) break;
-      links.push('<line class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" x1="' + NX(i2) + '" y1="' + (NPUY + NPUH) + '" x2="' + NX(k2) + '" y2="' + L1Y + '"/>');
+      links.push('<line class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" x1="' + AX(i2) + '" y1="' + AB + '" x2="' + NX(k2) + '" y2="' + L1Y + '"/>');
     }
     txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (L1Y - 8) + '" text-anchor="middle">Clos 8×X4</text>');
     // L1 行（每平面一颗）→ 本平面 4×SW2（L2）

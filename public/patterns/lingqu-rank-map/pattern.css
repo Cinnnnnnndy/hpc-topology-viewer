@@ -328,12 +328,14 @@ svg.near .b-roce:not(.b-bus) { marker-start: url(#b-lkj); }
 svg.near .b-out { marker-end: url(#b-lkj); }
 svg.near .b-links .is-hot { marker-start: url(#b-lkh); marker-end: url(#b-lkh); }
 svg.near .b-links .is-cold { marker-start: none; marker-end: none; }
+/* 端点只落在器件上：并进另一根线的那头（b-join）、出到画框边的交换板外连（b-swbx 右 / 左端）不打点，不然就是飘在半空的点 */
+svg.near .b-ub.b-join, svg.near .b-swbx { marker-end: none; }
 svg.lod2 .rel-cpu, svg.lod2 .rel-pcie, svg.lod2 .rel-ub, svg.lod2 .rel-nic, svg.lod2 .rel-nsw, svg.lod2 .rel-h2d { marker-start: url(#p-lkp); marker-end: url(#p-lkp); }
 svg.lod2 .rel-roce { marker-start: url(#p-lkj); }
 svg.lod2 .rel .is-hot { marker-start: url(#p-lkh); marker-end: url(#p-lkh); }
 svg.lod2 .rel .is-cold { marker-start: none; marker-end: none; }
-/* 激活链路上跑的点：深色珠子 + 白描边，贴在白芯线上 */
-.lk-dot { fill: #111111; stroke: #FFFFFF; stroke-width: calc(.9px / var(--zk, 1)); pointer-events: none; }
+/* 激活链路上跑的点：跟端点同一套——白色实心小点，不再是深色珠子 + 白描边（一圈圈环在线上比线还重） */
+.lk-dot { fill: #FFFFFF; fill-opacity: .8; stroke: none; pointer-events: none; }
 /* 集群层：选中那颗 NPU 在原地展开的板内关系里，它自己的线换白、其余退后（点不跑：线不到 1px） */
 .rel .is-hot { stroke: #FFFFFF !important; stroke-opacity: 1 !important; }
 .rel .is-cold { stroke-opacity: .12 !important; }

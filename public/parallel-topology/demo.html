@@ -2492,10 +2492,12 @@ function flowEdgeSVG(pts, prim, color, opts){
     out += '<path d="'+d+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+caseW+';stroke-linecap:round'+caseOp+'"/>'
          + '<path d="'+d+'" style="fill:none;stroke:'+color+';stroke-width:'+w+';stroke-linecap:round'+lineOp+'"/>';
   });
-  /* 两端端口：底色实心环 + 描边 + 中心点，同一个点只画一次 */
+  /* 两端端口：底色实心环 + 描边 + 中心点，同一个点只画一次。
+     单卡层（solo）收成一颗比线略粗的实心点：几维的线都收在选中卡顶上，一圈圈端口环叠在一起比线还重 */
   var seen = {};
   segs.forEach(function(sg){ sg.forEach(function(p){
     var key = p[0].toFixed(0)+','+p[1].toFixed(0); if(seen[key]) return; seen[key] = 1;
+    if(opts.solo){ out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.05).toFixed(2)+'" style="fill:'+color+';fill-opacity:.85"/>'; return; }
     out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.5).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.55).toFixed(2)+'"/>'
          + '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*0.5).toFixed(2)+'" style="fill:'+color+'"/>';
   }); });
@@ -5258,6 +5260,14 @@ function netScene(D, g, box, step){
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         chainCardAnchor[gc] = [(C8[0][0]+C8[1][0]+C8[2][0]+C8[3][0])/4, (C8[0][1]+C8[1][1]+C8[2][1]+C8[3][1])/4];
+        /* 宿主单卡层（slabgap + solo）：卡对卡的线接在块的**顶面中心**，不接前脸中心——前脸中心在块半腰，
+           线像是从块身上戳进去的；顶面中心是这只块「朝上的口」，几维的线都从那儿出，读起来是一只器件的端口 */
+        if(ui.slabGap && ui.soloCard){
+          var tA9 = [C8[0],C8[1],C8[5],C8[4]], tB9 = [C8[3],C8[2],C8[6],C8[7]];
+          var tcA9 = [(tA9[0][0]+tA9[1][0]+tA9[2][0]+tA9[3][0])/4, (tA9[0][1]+tA9[1][1]+tA9[2][1]+tA9[3][1])/4];
+          var tcB9 = [(tB9[0][0]+tB9[1][0]+tB9[2][0]+tB9[3][0])/4, (tB9[0][1]+tB9[1][1]+tB9[2][1]+tB9[3][1])/4];
+          chainCardAnchor[gc] = tcA9[1] <= tcB9[1] ? tcA9 : tcB9;
+        }
         (function(){
           var bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
           for(var q8 = 0; q8 < 8; q8++){
@@ -6445,7 +6455,8 @@ function netScene(D, g, box, step){
         body.push('<path d="'+d8+'" style="fill:none;stroke:'+(col8||IC9)+';stroke-width:1.3'
           + (dash8 ? ';stroke-dasharray:'+dash8 : '') + ';marker-end:url(#arrx)"/>');
         if(lab8){
-          body.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="5.2" style="fill:var(--pt-bg);stroke:'+(col8||IC9)+';stroke-width:.9"/>');
+          /* 字关掉时（clbl=0）宿主单卡层不留那只空环：没有字的深色圆圈只是一颗很重的黑点，悬停热区照留 */
+          if(!(ui.noCommChip && ui.slabGap)) body.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="5.2" style="fill:var(--pt-bg);stroke:'+(col8||IC9)+';stroke-width:.9"/>');
           if(!ui.noCommChip) body.push(txt(mx8, my8+2.4, lab8, 6, col8||IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="7" style="fill:transparent;cursor:help"><title>'+esc(tip8||'')+'</title></circle>');
         }
@@ -6471,7 +6482,7 @@ function netScene(D, g, box, step){
         }
         function badge9(at8, lab8, tip8){
           if(!at8) return;
-          body.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="5.4" style="fill:var(--pt-bg);stroke:'+IC9+';stroke-width:.9"/>');
+          if(!(ui.noCommChip && ui.slabGap)) body.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="5.4" style="fill:var(--pt-bg);stroke:'+IC9+';stroke-width:.9"/>');
           if(!ui.noCommChip) body.push(txt(at8[0], at8[1]+2.4, lab8, 6, IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="7.5" style="fill:transparent;cursor:help"><title>'+esc(tip8)+'</title></circle>');
         }
