@@ -557,7 +557,14 @@ body.dc-noinc .incident-panel { display: none; }
 .cf-all button:hover { color: #FFFFFF; border-color: #8A8A8A; }
 
 /* 每一屏只留对这一屏有意义的东西：板视图与单卡层不看整个集群的段峰值柱、超容名单与故障复盘链 */
-body.t3 .lc-pp, body.t3 .lc-capc, body.lv-board .lc-pp, body.lv-board .lc-capc { display: none; }
+body.t3 .lc-pp, body.lv-board .lc-pp { display: none; }
+/* 左列里的容量卡跟配置卡、PP 段卡同一列同一间距 */
+#leftCard > .dcard { margin-top: 8px; }
+/* 单卡层左列第一张：合计 / HBM（先答装不装得下） */
+.dc-total .dc-h { margin-bottom: 0; }
+.dc-total .dc-v { font-size: 13px; color: #FFFFFF; }
+.dc-total .dc-v small { color: #8A8A8A; }
+.dc-total.is-alert .dc-v { color: var(--alert); }
 body.t3 .incident-panel, body.lv-board .incident-panel { display: none !important; }
 /* 单卡层的切分小卡：可点开 */
 .dcard.is-split { cursor: pointer; }
