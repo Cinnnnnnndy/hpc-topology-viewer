@@ -5297,7 +5297,7 @@ function netScene(D, g, box, step){
         var sibKeepCol9 = sibGhost9 && ui.groupGap && ui.soloSibs === 'on';
         /* slabgap 下兄弟 rank 画成实心块（三面明暗 + 同色细边），不再是 12 条棱的线框——一屏几十只线框叠起来全是线 */
         var solidSib9 = sibGhost9 && ui.slabGap && ui.netOff;
-        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? '1' : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.45' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
+        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? '0.55' : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.4' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -5395,7 +5395,8 @@ function netScene(D, g, box, step){
             var wantShell9 = (lowDetail || !wantFill) && !solidSib9;
             if(solidSib9){
               var sbC9 = (sibKeepCol9 && memSibs && memSibs[gc]) ? dimCol(memSibs[gc]) : 'var(--pt-fg)';
-              var sbK9 = sbC9 === 'var(--pt-fg)' ? [16, 10, 22, 34] : [30, 20, 42, 60];
+              /* 实心块收成淡显：维度色只兑一小份进底色，读得出是哪一维，但不跟选中卡与连线抢 */
+              var sbK9 = sbC9 === 'var(--pt-fg)' ? [14, 9, 19, 28] : [20, 13, 28, 42];
               var vis8 = function(a8, b8, c8){ return turn3(a8, b8, c8, yaw, pitch)[2] < 0; };
               var sbE9 = ';stroke:color-mix(in srgb, '+sbC9+' '+sbK9[3]+'%, var(--pt-bg));stroke-width:.35;stroke-linejoin:round';
               body.push(quad(vis8(0,0,1) ? [C8[4],C8[5],C8[6],C8[7]] : [C8[0],C8[1],C8[2],C8[3]], 'fill:color-mix(in srgb, '+sbC9+' '+sbK9[0]+'%, var(--pt-bg))'+sbE9));
