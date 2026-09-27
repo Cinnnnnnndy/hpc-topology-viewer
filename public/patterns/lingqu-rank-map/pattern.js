@@ -889,13 +889,13 @@
     links.push(cased('<path class="b-ub" d="M' + CP[1].x + ',' + CP[1].lb + ' V' + UBY + ' H940 V' + L1A[7].m + ' H' + L1A[7].r + '"><title>CPU1 — L1 · UB</title></path>'));
     txt.push('<text class="b-lbl" x="14" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(-90 14 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
     txt.push('<text class="b-lbl" x="946" y="' + ((CPUY + L1Y) / 2) + '" text-anchor="middle" transform="rotate(90 946 ' + ((CPUY + L1Y) / 2) + ')">UB → L1</text>');
-    // NPU 行 + 板内 fullmesh（弧在行上方）：图标居中，rank 号 + 槽号一行放在图标下方
+    // NPU 行 + 板内 fullmesh（弧在行上方）：图标居中，rank 号放在图标下方
     for (var i = 0; i < 8; i++) {
       var r = base + i; if (r >= world) break;
       nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
         + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 18) + '" y="' + (NPUY + 4) + '" width="36" height="27"/>'
         + '<rect class="b-npustrip" x="' + (NX(i) - 14) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
-        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 53) + '" text-anchor="middle">' + r + '<tspan class="b-npur" dx="4">npu' + i + '</tspan></text></g>');
+        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 53) + '" text-anchor="middle">' + r + '</text></g>');   // 只写全局 rank 号；板内槽号（npuN）只进悬停
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
         links.push('<path class="b-mesh" data-m="' + i + ',' + j + '" d="M' + NX(i) + ',' + AT + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (AT - off) + ' ' + NX(j) + ',' + AT + '"/>');
