@@ -291,6 +291,8 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .p-bnpu.c2 ~ .b-npur { fill: #2E2E2E; }
 .p-bnpu.c3 ~ .b-npul, .p-bnpu.c3 ~ .b-npur { fill: #FFFFFF; }
 .b-lbl { font-size: 9px; fill: #A0A0A0; paint-order: stroke; stroke: #111111; stroke-width: calc(3px / var(--zk, 1)); stroke-linejoin: round; }
+/* 器件名在图标正下方：往下走的线从名字下沿出，近旁仍有斜线擦过，名字同样垫一圈底色 */
+.b-cpu text, .b-dpu text, .b-nic text, .b-l1 text, .b-nsw text, .b-swb text, .b-npul { paint-order: stroke; stroke: #111111; stroke-width: calc(3px / var(--zk, 1)); stroke-linejoin: round; }
 .b-lbl-plane { fill: #A0A0A0; }
 .b-mesh { fill: none; stroke: #C8C8C8; stroke-opacity: .35; stroke-width: calc(.8px / var(--zk, 1)); }
 .b-fan { stroke: #8A8A8A; stroke-opacity: .5; stroke-width: calc(1px / var(--zk, 1)); transition: stroke-opacity .15s ease; }
