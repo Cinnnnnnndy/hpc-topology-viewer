@@ -1603,8 +1603,19 @@
      单卡页与本页同源，直接盯它的 DOM：静了 250ms → 停住一次（入场动画走到终态）→ 再留 200ms 给后台光栅化 → 淡入。
      读者点得快就原画面不动、面包屑挂「…」；3 秒兜底。 */
   var detailMutAt = 0, detailSettleAt = 0, detailMO = null;
+  /* 单卡页的正文是无衬线（Inter），底角那组「选组 − ＋」会露出一套别的字：同源，落地时把它的两套字体变量都指到本页的等宽栈，
+     并把同一份 JetBrains Mono 样式表挂进去（字体是按文档加载的，本页加载过的它用不上） */
+  function monoDetail() {
+    var d = detailFrame.contentDocument; if (!d || !d.documentElement) return;
+    var mono = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
+    // 它的字体变量定义在 .pt-root 上，挂在根节点上够不着：注入一条更具体的规则（html .pt-root）盖过去
+    if (mono && d.head && !d.getElementById('lq-mono-v')) { var st = d.createElement('style'); st.id = 'lq-mono-v'; st.textContent = 'html .pt-root{--font-sans:' + mono + ';--pt-sans:' + mono + ';--pt-mono:' + mono + '}'; d.head.appendChild(st); }
+    var src = document.querySelector('link[href*="JetBrains+Mono"]');
+    if (src && d.head && !d.getElementById('lq-mono')) { var l = d.createElement('link'); l.id = 'lq-mono'; l.rel = 'stylesheet'; l.href = src.href; d.head.appendChild(l); }
+  }
   detailFrame.addEventListener('load', function () {
     detailMutAt = performance.now(); detailSettleAt = 0;
+    try { monoDetail(); } catch (e) { /* 跨源时不动它 */ }
     try {
       if (detailMO) detailMO.disconnect();
       var root9 = detailFrame.contentDocument.documentElement;

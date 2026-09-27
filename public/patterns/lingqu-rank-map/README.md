@@ -279,6 +279,13 @@ rank 太多」「其他 rank 弱化，只有选中的显示内部容量；点到
 加一张**切分简图**（工作台同一张图：层线按 PP、切线按切它的那把刀上色，本卡拿到的那一格实心），图注收在悬停里。
 简图保留维度色，不再去色。
 
+## 字体
+
+图里的英文与数字一律用代码字体 **JetBrains Mono**（中文落到系统黑体）。原来它只写在字体栈第一位、并不加载，每台机器实际落到的
+等宽字各不相同（Mac 上 Chrome 是 Menlo、Safari 是 SF Mono、Windows 是 Consolas）；现在 `pattern.html` 从 Google Fonts 加载
+（400–800 字重）。单卡页（同源 iframe）的正文原是 Inter，落地时宿主往里注入同一份样式表，并把它的 `--pt-sans / --pt-mono`
+都指到本页的等宽栈——底角「选组 − ＋」也是等宽字。拿不到 Google Fonts 时按原字体栈回退。
+
 ## 维度色只有一套
 
 本页 `--c-*`（TP #22d3ee / CP #86c70f / EP #9b3cf6 / DP #4369ef / PP #ffaa3b）是唯一的一套：单卡页（demo.html `slabgap=1`）
