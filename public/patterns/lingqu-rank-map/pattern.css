@@ -14,6 +14,14 @@
 
 * { box-sizing: border-box; }
 
+/* JetBrains Mono（可变字重 100–800，SIL OFL 1.1，见 fonts/OFL-JetBrainsMono.txt）：只带拉丁与拉丁扩展两个子集，
+   中文按字体栈落到系统黑体 */
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 :root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; }
 html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
@@ -646,12 +654,8 @@ body.t3 .dock .dock-sep-rv { display: block; }
 #detailFrame { filter: none; }
 /* 板视图：选中 NPU 连到它 TP 组员的那几根板内 fullmesh 就是 TP 流量真正走的线——染 TP 色 */
 svg.near .b-mesh.is-hot.is-tp { stroke: var(--c-tp); }
-/* 放大到 6× 以上格子不再描边（描了像一张张卡片）：组员的维度色改落在它自己的 rank 号上 */
-svg.lod2 .p-npu.g-tp + .p-npunum { fill: var(--c-tp) !important; }
-svg.lod2 .p-npu.g-cp + .p-npunum { fill: var(--c-cp) !important; }
-svg.lod2 .p-npu.g-ep + .p-npunum { fill: var(--c-ep) !important; }
-svg.lod2 .p-npu.g-dp + .p-npunum { fill: var(--c-dp) !important; }
-svg.lod2 .p-npu.g-pp + .p-npunum { fill: var(--c-pp) !important; }
+/* 名字（rank 号）一律不上色（反馈「名称字体不要颜色」）：组员只比非组员亮一档（非组员整格压暗），维度看连线 */
+svg.lod2 .p-npu[class*="g-"] + .p-npunum { fill: #E8E8E8 !important; }
 
 /* ── 层级串联动画 ─────────────────────────────────────────────────────────
    镜头飞行在 pattern.js（attachZoomPan.fly）；这里是卡片、面包屑、板视图落地的入场。

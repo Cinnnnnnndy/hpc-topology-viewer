@@ -8,10 +8,9 @@
 <meta name="referrer" content="no-referrer" />
 <title>模型分片与训练设备映射 · 简洁版</title>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-<!-- 图里的英文与数字一律 JetBrains Mono（代码字体）：只写进字体栈不加载的话，每台机器落到的等宽字各不相同（Menlo / SF Mono / Consolas…） -->
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400..800&display=swap" />
+<!-- 图里的英文与数字一律 JetBrains Mono（代码字体）：字体文件随页面放在 ./fonts/（@font-face 见 pattern.css 顶部），
+     不走 Google Fonts——国内网络常常拿不到，拿不到就退回各机器自己的等宽字 / 黑体，数字看着就不是代码字体了 -->
+<link rel="preload" href="./fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="./pattern.css" />
 <!--
   rank-topology-lite —— 一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布。

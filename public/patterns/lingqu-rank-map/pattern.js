@@ -611,7 +611,7 @@
   function relSvg(b) {
     var G = GEO.board[b]; if (!G) return '';
     var L1 = GEO.sw1[G.grp] || [], P2 = GEO.sw2[G.sp] || [], out = [], x0 = G.pdx, ry = G.ry, i, k;
-    var NX = function (n) { return x0 + 22 + n * PITCH_ + 4.5; }, NT = ry - 3.5, NB = ry + 3.5;
+    var NX = function (n) { return x0 + 22 + n * PITCH_ + 4.5; }, NT = ry - 3.5, NB = ry + 4.1;   // NB：rank 号下沿（往下的线不穿字）
     var CPU = [x0 + 7.7, x0 + 14.1], DPU = x0 + 101.4, NIC = function (k9) { return { x: x0 + 107.2 + (k9 % 2) * 6.8 + 3.2, y: ry - 3.4 + Math.floor(k9 / 2) * 3.4 + 1.6 }; };
     // n：这根线属于哪颗 NPU（data-n，选中它就换激活样式）；稀疏干线加衬边（见上面「连线样式」）
     var SPARSE = { 'rel-ub': 1, 'rel-cpu': 1, 'rel-pcie': 1, 'rel-nic': 1, 'rel-roce': 1, 'rel-nsw': 1, 'rel-inf': 1, 'rel-h2d': 1 };
@@ -682,9 +682,10 @@
       podDetailDone[i] = true;
       physStage.querySelectorAll('.p-npu[data-pod="' + i + '"]').forEach(function (el) {
         var ex = +el.getAttribute('x'), ey = +el.getAttribute('y');
-        el.insertAdjacentHTML('afterend', '<text class="p-npunum lod2" x="' + (ex + 3.5) + '" y="' + (ey + 7.05) + '" text-anchor="middle">' + el.getAttribute('data-rank') + '</text>'
-          + '<use class="p-npupkg lod2" href="#hw-npu" x="' + ex + '" y="' + ey + '" width="7" height="5.25"/>'
-          + '<rect class="p-npustrip lod2" x="' + (ex + 0.9) + '" y="' + (ey + 5.45) + '" width="5.2" height="0.45"/>');
+        // 图标收一号（7→6 宽）让出一截：rank 号完整落在图标与占用条的**下方**居中，不再贴着占用条
+        el.insertAdjacentHTML('afterend', '<text class="p-npunum lod2" x="' + (ex + 3.5) + '" y="' + (ey + 7.35) + '" text-anchor="middle">' + el.getAttribute('data-rank') + '</text>'
+          + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (ex + 0.5) + '" y="' + ey + '" width="6" height="4.5"/>'
+          + '<rect class="p-npustrip lod2" x="' + (ex + 1.25) + '" y="' + (ey + 4.75) + '" width="4.5" height="0.4"/>');
       });
     });
   }
@@ -830,11 +831,11 @@
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心 = 每颗器件图标的中线
-    var NPUY = 150, NPUH = 54, L1Y = 330, L1H = 24, SWBY = 386, SWBH = 20, L2Y = 452, L2H = 30, CPUY = 58;
+    var NPUY = 160, NPUH = 58, L1Y = 340, L1H = 24, SWBY = 400, SWBH = 20, L2Y = 470, L2H = 30, CPUY = 58;   // 名字挪到图标下方后各行之间多留一截
     /* 端点只落在图元上（反馈「算中点的时候不要带上文字」「文字统一放在图标下方居中」）：
        每个器件图标居中、名字在图标正下方居中；从上面来的线接图标**顶边中点**，侧向的线接图标**左右边中点**
        （名字挪到下面之后两侧是空的），往下走的线从**名字下沿中点**出——不穿过字 */
-    var AT = NPUY + 4, NB = NPUY + 53;   // NPU：图标顶边 / 名字下沿
+    var AT = NPUY + 4, NB = NPUY + 57;   // NPU：图标顶边 / 名字下沿
     var bg = [], links = [], nodes = [], txt = [];
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
     // 图元在 48×36 viewBox 里实际画到哪（留白不算）：端点贴的是看得见的边
@@ -842,11 +843,11 @@
     /* 部件：图标居中 + 名字在下。返回端口：x 图标中线，t / b 图标顶 / 底边，m 竖向中线，l / r 左右边，lb 名字下沿 */
     function box(cls, cx, y, w, h, label, title, attrs) {
       var ic = BOX_ICON[cls], ih = h - 6, iw = ih * 4 / 3, ix = cx - iw / 2, iy = y + 3, v = ICV[ic];
-      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + (h + 12) + '"/>'
+      nodes.push('<g class="' + cls + '"' + (attrs || '') + '><rect x="' + (cx - w / 2) + '" y="' + y + '" width="' + w + '" height="' + (h + 15) + '"/>'
         + '<use href="#' + ic + '" x="' + ix + '" y="' + iy + '" width="' + iw + '" height="' + ih + '"/>'
-        + '<text x="' + cx + '" y="' + (y + h + 8) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
+        + '<text x="' + cx + '" y="' + (y + h + 11) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
       var t = iy + v[1] * ih / 36, b = iy + v[3] * ih / 36;
-      return { x: cx, t: t, b: b, m: (t + b) / 2, l: ix + v[0] * iw / 48, r: ix + v[2] * iw / 48, lb: y + h + 12 };
+      return { x: cx, t: t, b: b, m: (t + b) / 2, l: ix + v[0] * iw / 48, r: ix + v[2] * iw / 48, lb: y + h + 15 };   // 图标与名字之间留 5 左右
     }
     // 参数面 RoCE 总线（顶）：NIC 与 DPU 都从这儿出框
     links.push(cased('<line class="b-roce b-bus" x1="60" y1="22" x2="900" y2="22"/>'));
@@ -880,7 +881,7 @@
     var L1A = [];
     for (var k3 = 0; k3 < 8; k3++) L1A.push(box('b-l1', NX(k3), L1Y, 64, L1H, 'P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"'));
     // DPU —PCIe— CPU0（两头都从名字下沿出）；DPU/CPU0 —UB— L1 P1 左边中点（走左边沿）；CPU1 —UB— L1 P8 右边中点（走右边沿）
-    var PCY = CPUY + 52, UBY = CPUY + 58;
+    var PCY = CPUY + 56, UBY = CPUY + 62;
     links.push(cased('<path class="b-pcie" d="M' + DP.x + ',' + DP.lb + ' V' + PCY + ' H' + CP[0].x + ' V' + CP[0].lb + '"><title>DPU — CPU0 · PCIe</title></path>'));
     txt.push('<text class="b-lbl" x="' + (DP.x + 42) + '" y="' + (PCY - 3) + '" text-anchor="middle">PCIe</text>');
     links.push(cased('<path class="b-ub" d="M' + DP.x + ',' + DP.lb + ' V' + UBY + ' H20 V' + L1A[0].m + ' H' + L1A[0].l + '"><title>DPU / CPU0 — L1 · UB</title></path>'));
@@ -894,7 +895,7 @@
       nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
         + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 18) + '" y="' + (NPUY + 4) + '" width="36" height="27"/>'
         + '<rect class="b-npustrip" x="' + (NX(i) - 14) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
-        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 49) + '" text-anchor="middle">' + r + '<tspan class="b-npur" dx="4">npu' + i + '</tspan></text></g>');
+        + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 53) + '" text-anchor="middle">' + r + '<tspan class="b-npur" dx="4">npu' + i + '</tspan></text></g>');
       for (var j = i + 1; j < 8; j++) {
         var off = 12 + (j - i) * 13;
         links.push('<path class="b-mesh" data-m="' + i + ',' + j + '" d="M' + NX(i) + ',' + AT + ' Q' + ((NX(i) + NX(j)) / 2) + ',' + (AT - off) + ' ' + NX(j) + ',' + AT + '"/>');
@@ -1610,8 +1611,12 @@
     var mono = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
     // 它的字体变量定义在 .pt-root 上，挂在根节点上够不着：注入一条更具体的规则（html .pt-root）盖过去
     if (mono && d.head && !d.getElementById('lq-mono-v')) { var st = d.createElement('style'); st.id = 'lq-mono-v'; st.textContent = 'html .pt-root{--font-sans:' + mono + ';--pt-sans:' + mono + ';--pt-mono:' + mono + '}'; d.head.appendChild(st); }
-    var src = document.querySelector('link[href*="JetBrains+Mono"]');
-    if (src && d.head && !d.getElementById('lq-mono')) { var l = d.createElement('link'); l.id = 'lq-mono'; l.rel = 'stylesheet'; l.href = src.href; d.head.appendChild(l); }
+    // 同一份 @font-face 挂进去（字体按文档加载；地址按本页解析成绝对路径，单卡页在别的目录下也找得到）
+    if (d.head && !d.getElementById('lq-mono')) {
+      var fs = [].map.call(document.styleSheets, function (sh) { try { return [].filter.call(sh.cssRules, function (r) { return r.type === 5; }).map(function (r) { return r.cssText; }).join('\n'); } catch (e) { return ''; } }).join('\n');
+      var base = new URL('./', location.href).href;
+      var sf = d.createElement('style'); sf.id = 'lq-mono'; sf.textContent = fs.replace(/url\("\.\//g, 'url("' + base); d.head.appendChild(sf);
+    }
   }
   detailFrame.addEventListener('load', function () {
     detailMutAt = performance.now(); detailSettleAt = 0;
