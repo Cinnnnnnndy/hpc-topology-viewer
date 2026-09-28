@@ -2286,11 +2286,12 @@
        单卡   右卡那份读出拆成一张张小卡，贴在 3D 卡两侧：左边模型态（权重 → 逐块切分、梯度、
               优化器态），右边执行态（激活、优化器步临时区、碎片）+ 各维通信载荷 + 流水 */
   var DCT = [['cap', '容量'], ['state', '显存各档'], ['wshard', '权重切分'], ['comm', '通信'], ['pipe', '流水·气泡'],
-    ['phys', '物理'], ['step', '步时'], ['infer', '推理'], ['inc', '故障复盘']];
+    ['thr', '吞吐'], ['step', '步时'], ['moe', 'MoE'], ['health', '训练健康'], ['pub', '公开读数'],
+    ['phys', '物理'], ['infer', '推理'], ['inc', '故障复盘']];
   var DCK = (function () { var h = (qs.get('dhide') || '').split(','), o = {}; DCT.forEach(function (x) { o[x[0]] = h.indexOf(x[0]) < 0; }); return o; })();
   var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
   var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
-  var DC_TAG = { calc: '实算', asm: '假设', demo: '示意' };
+  var DC_TAG = { calc: '实算', asm: '假设', demo: '示意', pub: '公开' };
   function dcRow(k, v, cls, tip) { return '<div class="dc-r' + (cls ? ' ' + cls : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>'; }
   function dcBar(frac, cls) { return '<i class="dc-bar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%"></i></i>'; }
   function dcCard(key, title, body, tag, tip, big) {
@@ -2321,6 +2322,44 @@
      左列答「这是什么、装得下吗」：配置 → 这一层的容量（集群 / POD / 板 / 单卡合计→逐档）→ 告警；
      右列答「选中的是谁、跟谁通信、怎么随时间跑」：选中对象（rank 卡）→ 通信 / 闭合 / 板载 → 流水 → 步时。
      每一层都按这一个顺序摆，读者换层不用重新找。 */
+  /* ── 性能卡（反馈「页面上的性能数据还是少」+「把整网图上那几类数据放到周边卡片」）──────────────
+     数都来自矩阵本体的 ptoPerf（pto:cluster / pto:brief 里的 perf 字段），与整网图同一批函数、同一个种子：
+       吞吐      FLOPs 公式 × 假设的峰值与 MFU——不是实测，卡角标「假设」，悬停写全公式
+       MoE       本卡专家 / μb token / All-to-All 派发上限是实算；Pmax、熵、失衡、容量利用是整网图「MoE」那一类的示意读数
+       训练健康  整网图「数值 / 梯度 / 训练」三类的示意读数：梯度 L2、Δ/W、激活 Amax、告警层（与图上标橙的层同一套阈值）
+       公开读数  openPangu-2.0 训练代码发布时公开的效率数字（只有相对提升，没有公开 MFU / 每卡吞吐） */
+  function fmtN(x) { return x >= 1e9 ? (x / 1e9).toFixed(x >= 1e10 ? 0 : 1) + 'G' : x >= 1e6 ? (x / 1e6).toFixed(x >= 1e7 ? 0 : 1) + 'M' : x >= 1e4 ? (x / 1e3).toFixed(0) + 'K' : String(Math.round(x)); }
+  function thrCard(P) {
+    if (!P || !P.thr) return '';
+    var T = P.thr;
+    return dcCard('thr', '吞吐', dcRow('每步 token', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × 序列')
+      + dcRow('每 token', (T.fTok / 1e9).toFixed(0) + ' GFLOP', '', '6·N激活（≈' + (T.nAct / 1e9).toFixed(1) + 'B 矩阵参数）+ 6·L·h·s 因果注意力；共享专家、MLA、DSA/SWA 稀疏未计入')
+      + dcRow('MFU', pct(T.mfu), '', '假设：盘古 Ultra MoE 报告量级（6K 卡 30%），openPangu-2.0 未公开')
+      + dcRow('步时', T.stepS.toFixed(1) + ' s') + dcRow('全网', fmtN(T.tokS) + ' tok/s') + dcRow('每卡', Math.round(T.tgs) + ' tok/s'),
+      'asm', '步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 ' + T.peakTF + ' TFLOPS × MFU）；峰值按昇腾 910 标称 FP16，MFU 是假设值——看量级与随切分怎么变，不是实测');
+  }
+  function moeCard(P, scope) {
+    var M = P && P.moe; if (!M) return '';
+    return dcCard('moe', scope ? 'MoE · ' + scope : 'MoE', dcRow('本卡专家', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
+      + dcRow('μb token', fmtN(M.tokMb), '', '每 μb 每卡 = mbs × 序列 ÷ CP')
+      + dcRow('A2A 派发', '≤' + Math.round(M.a2aMB) + ' MB', '', '每层每 μb 上限：token × topk × h × 2B，没算同卡去重')
+      + dcRow('失衡', M.imb.toFixed(2) + '× · 峰 ' + M.imbMax.toFixed(2) + '×', M.imbMax > 1.15 ? 'is-warn' : '', '峰值在 L' + M.imbAt + '；> 1.15× 与整网图同一条告警线')
+      + dcRow('Pmax · 熵', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)) + dcRow('容量利用', pct(M.cap)),
+      'demo', '本卡专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与整网图「MoE」那一类同一套示意读数');
+  }
+  function healthCard(P, scope) {
+    var H = P && P.health; if (!H || MODE !== 'train') return '';
+    return dcCard('health', scope ? '训练健康 · ' + scope : '训练健康', dcRow('step', H.step + ' · ckpt/' + H.ckpt)
+      + dcRow('梯度 L2', H.grad.toFixed(2)) + dcRow('Δ/W', H.uRatio.toExponential(1))
+      + dcRow('Amax 峰', H.amax.toFixed(1) + ' · L' + H.amaxAt)
+      + dcRow('告警层', H.warn + ' / ' + H.n, H.warn ? 'is-warn' : '', '专家 Amax > 9.35 或路由失衡 > 1.15×——整网图上标橙的就是这几层'),
+      'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数');
+  }
+  function pubCard() {
+    return dcCard('pub', '公开读数', dcRow('超节点亲和', '+30%') + dcRow('512K 吞吐', '+50%') + dcRow('推理单卡', '2×')
+      + dcRow('预训练', '34T tok'),
+      'pub', 'openPangu-2.0 训练代码开源时的公开数字（2026-09-28，TechNode / IT之家）：只有相对提升，未公开 MFU、每卡吞吐与步时');
+  }
   /* 左列：这一层的容量卡（接在配置卡里，告警面板照旧排在它下面） */
   function capCardHtml() {
     var C = lastCluster;
@@ -2336,6 +2375,9 @@
     }
     if (!C) return '';
     var n = C.n, W = C.world, rows = [['ok', n.ok, ''], ['黄线 70%', n.amber, ''], ['红线 88%', n.red, n.red ? 'is-warn' : ''], ['超容', n.oom, n.oom ? 'is-bad' : '']];
+    return capClusterHtml(C, n, W, rows) + pubCard();
+  }
+  function capClusterHtml(C, n, W, rows) {
     return dcCard('cap', '容量', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
       + (C.worst != null ? dcRow('最满', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">' + C.worst + ' · ' + pct(C.ratio[C.worst]) + '</button>') : ''), 'calc');
   }
@@ -2359,14 +2401,17 @@
         if (C.model) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
           'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满'));
       }
+      if (MODE === 'train' && C) out.push(thrCard(C.perf));
       if (MODE === 'train') out.push(dcCard('step', '步时', stepRows(STEP_DEMO.pretrain), 'demo', SRC_DEMO));
       else out.push(dcCard('infer', '推理', dcRow('TTFT', '424 ms') + dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
         'demo', SRC_DEMO + '；显存仍按训练口径，KV cache 未建模'));
+      if (C && C.perf) { out.push(moeCard(C.perf)); out.push(healthCard(C.perf)); }
     }
     if (rankOpen) {
       var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
       // 通信并进右卡的 group 表；层区间已在右卡抬头
       if (Dt) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('ZeRO', Dt.zero), 'calc'));
+      if (Dt && Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; out.push(moeCard(Dt.perf, sc9)); out.push(healthCard(Dt.perf, sc9)); }
     }
     return out;
   }
@@ -2428,6 +2473,7 @@
     if (tier !== 3 || !Dt) return R;
     // 通信并进右卡的 group 表（维 · 闭合级 · 一次搬多少），这里不再单列；层区间已在右卡抬头
     R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
+    if (Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; R.push(moeCard(Dt.perf, sc9)); R.push(healthCard(Dt.perf, sc9)); }
     return R;
   }
   var dcQueued = false;

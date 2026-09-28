@@ -2377,7 +2377,8 @@ function ptoClusterBrief(){
            dimCol:{tp:VC.tp, cp:VC.cp, ep:VC.ep, dp:VC.dp, pp:VC.pp}, memCol: MEMC,
            amber:CAP_AMBER, red:CAP_RED,
            model:{layers:D.layers, hidden:D.hidden, seq:D.seq, mbs:D.mbs, ga:D.ga, experts:D.experts || 0, topk:D.topk || 0, lps:D.layersPerStage},
-           comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0 };
+           comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0,
+           perf: ptoPerf(D, null) };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
@@ -11029,6 +11030,55 @@ function ptoNotifyTier(){
    为什么由这一格算、而不是让宿主自己算：容量口径（memParts / capVerdict / 组成员）
    全在这个文件里，宿主再实现一遍就会有两套数——同一屏上读出卡写 754GB、
    浮卡写别的，那种不一致查起来最费劲。宿主只负责摆版式，一个数都不自己造。 */
+/* ── 性能摘要（宿主 lingqu-rank-map 的周边数据卡用；只多带字段，本页不读）───────────────
+   三块，各自标明口径：
+     thr    吞吐——FLOPs 公式 × 假设的峰值与 MFU（不是实测）：
+              每 token FLOPs ≈ 6·N_激活（矩阵参数：注意力 4h²·(kv/heads 折算) + MoE topk·3·h·ffn / 稠密 3·h·ffn，
+              再加词表头 V·h）+ 6·L·h·s（因果注意力前向 + 反向）；共享专家、MLA 压缩、DSA/SWA 稀疏都没进公式；
+              步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 × MFU）
+     moe    本卡专家数 / 每 μb token / All-to-All 派发上限（实算），加上整网图「MoE」那一类的读数
+            （Router Pmax / 熵 / 失衡、专家 token 负载 / 容量利用）——与整网图同一个种子，图上读到的是同一个数
+     health 整网图「数值 / 梯度 / 训练」三类的读数（梯度 L2、Δ/W、激活 Amax、告警层、step、checkpoint）
+   stage 给了就只看这一段的层（rank / 单卡层），没给就是全网（集群层）。 */
+var PERF_PEAK_TF = 320, PERF_MFU = 0.30;   /* 昇腾 910 标称 FP16 320 TFLOPS；MFU 30% 取盘古 Ultra MoE 报告量级——都是假设 */
+function sdIdx9(id){ var idx = 0, i; for(i = 0; i < id.length; i++) idx = (idx + id.charCodeAt(i)) % 97; return idx; }
+function sdSm9(li, id, salt, mn, mx){ return mn + sdSeed(li, sdIdx9(id) * 7 + salt) * (mx - mn); }
+function ptoPerf(D, stage){
+  var L = D.layers, h = D.hidden, hd = h / Math.max(1, D.heads);
+  var attnP = 2 * h * D.heads * hd + 2 * h * D.kv * hd;
+  var mlpP = D.moe ? D.topk * 3 * h * D.ffn : 3 * h * D.ffn;
+  var nAct = L * (attnP + mlpP) + D.vocab * h;
+  var fTok = 6 * nAct + 6 * L * h * D.seq;
+  var tokStep = D.gbs * D.seq, stepF = tokStep * fTok;
+  var stepS = stepF / (D.world * PERF_PEAK_TF * 1e12 * PERF_MFU);
+  var thr = {nAct: nAct, fTok: fTok, tokStep: tokStep, gbs: D.gbs, peakTF: PERF_PEAK_TF, mfu: PERF_MFU,
+             stepS: stepS, tokS: tokStep / stepS, tgs: tokStep / stepS / D.world, tfCard: PERF_PEAK_TF * PERF_MFU,
+             bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0};
+  var l0 = stage == null ? 0 : stage * D.layersPerStage, l1 = stage == null ? L - 1 : l0 + D.layersPerStage - 1;
+  var moe = null;
+  if(D.moe){
+    var tokMb = D.mbs * D.seq / Math.max(1, D.cp);
+    moe = {ePer: D.experts / D.ep, experts: D.experts, topk: D.topk, ep: D.ep, tokMb: tokMb,
+           a2aMB: tokMb * D.topk * h * 2 / 1048576, pmax: 0, ent: 0, imb: 0, imbMax: 0, imbAt: -1, load: 0, cap: 0, n: 0};
+  }
+  var hl = {grad: 0, uRatio: 0, amax: 0, amaxAt: -1, warn: 0, n: 0, l0: l0, l1: l1, step: 18420, ckpt: 1000};
+  for(var li = l0; li <= l1; li++){
+    var s9 = sdSnap(li, D), w9 = false;
+    hl.grad += s9.grad; hl.uRatio += s9.uRatio; hl.n++;
+    if(s9.amax > hl.amax){ hl.amax = s9.amax; hl.amaxAt = li; }
+    if(moe && !s9.dense){
+      var imb = sdSm9(li, 'route_topk', 37, 1.02, 1.18), eam = sdSm9(li, 'routed_expert_bank', 33, 5.4, 9.65);
+      moe.pmax += sdSm9(li, 'route_topk', 36, .48, .72); moe.ent += sdSm9(li, 'route_topk', 38, 1.56, 2.08);
+      moe.imb += imb; if(imb > moe.imbMax){ moe.imbMax = imb; moe.imbAt = li; }
+      moe.load += sdSm9(li, 'routed_expert_bank', 44, 36, 76); moe.cap += sdSm9(li, 'routed_expert_bank', 45, .72, .96); moe.n++;
+      w9 = imb > 1.15 || eam > 9.35;   /* 与整网图 sdOpWarn 同一套阈值：图上标橙的层就是这里数到的层 */
+    }
+    if(w9) hl.warn++;
+  }
+  hl.grad /= Math.max(1, hl.n); hl.uRatio /= Math.max(1, hl.n);
+  if(moe && moe.n){ ['pmax','ent','imb','load','cap'].forEach(function(k){ moe[k] /= moe.n; }); }
+  return {thr: thr, moe: moe, health: hl};
+}
 function ptoRankBrief(){
   var D9 = derive(cfg);
   if(!D9.ok || sel === null || sel >= D9.world) return null;
@@ -11089,6 +11139,7 @@ function ptoRankBrief(){
       }).filter(Boolean),
       bubble: D9.pp > 1 ? (D9.pp - 1) / Math.max(1, D9.ga) : 0,
       model: {layers:D9.layers, hidden:D9.hidden, seq:D9.seq, mbs:D9.mbs, ga:D9.ga, experts:D9.experts || 0, topk:D9.topk || 0},
+      perf: ptoPerf(D9, co9.p),
       blocks: ptoBlockDetails(D9, sel, V9.segs)
     }
   };

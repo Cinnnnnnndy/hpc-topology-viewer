@@ -552,6 +552,7 @@ body:not(.t3) .shard-col { display: none; }
 .dc-t { color: #E8E8E8; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-tag { flex: none; font-size: 9px; line-height: 14px; padding: 0 4px; border-radius: 3px; color: #A0A0A0; border: 1px solid #3A3A3A; }
 .dc-tag.is-asm, .dc-tag.is-demo { border-style: dashed; color: #8A8A8A; }
+.dc-tag.is-pub { color: #C8C8C8; border-color: #5C5C5C; }
 .dc-cut { margin-left: 6px; font-size: 9px; color: #111111; background: #BDBDBD; border-radius: 2px; padding: 0 3px; font-weight: 500; }
 .dc-big { font-size: 17px; color: #FFFFFF; line-height: 1.2; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
 .dc-big small { font-size: 10px; color: #8A8A8A; }
