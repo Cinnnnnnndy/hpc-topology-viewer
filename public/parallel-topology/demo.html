@@ -11059,20 +11059,26 @@ function ptoPerf(D, stage){
   if(D.moe){
     var tokMb = D.mbs * D.seq / Math.max(1, D.cp);
     moe = {ePer: D.experts / D.ep, experts: D.experts, topk: D.topk, ep: D.ep, tokMb: tokMb,
-           a2aMB: tokMb * D.topk * h * 2 / 1048576, pmax: 0, ent: 0, imb: 0, imbMax: 0, imbAt: -1, load: 0, cap: 0, n: 0};
+           a2aMB: tokMb * D.topk * h * 2 / 1048576, pmax: 0, ent: 0, imb: 0, imbMax: 0, imbAt: -1, load: 0, cap: 0, n: 0,
+           imbL: []};   /* 逐层失衡（稠密层 null）：宿主画折线 */
   }
-  var hl = {grad: 0, uRatio: 0, amax: 0, amaxAt: -1, warn: 0, n: 0, l0: l0, l1: l1, step: 18420, ckpt: 1000};
+  /* amaxL：逐层 Amax——MoE 层取专家那一格（整网图告警就看它），稠密层取激活快照；gradL：逐层梯度 L2；warnL：整网图标橙的层 */
+  var hl = {grad: 0, uRatio: 0, amax: 0, amaxAt: -1, warn: 0, n: 0, l0: l0, l1: l1, step: 18420, ckpt: 1000,
+            amaxL: [], gradL: [], warnL: [], thrAmax: 9.35, thrImb: 1.15};
   for(var li = l0; li <= l1; li++){
-    var s9 = sdSnap(li, D), w9 = false;
-    hl.grad += s9.grad; hl.uRatio += s9.uRatio; hl.n++;
-    if(s9.amax > hl.amax){ hl.amax = s9.amax; hl.amaxAt = li; }
+    var s9 = sdSnap(li, D), w9 = false, am9 = s9.amax;
+    hl.grad += s9.grad; hl.uRatio += s9.uRatio; hl.n++; hl.gradL.push(s9.grad);
+    if(moe) moe.imbL.push(s9.dense ? null : sdSm9(li, 'route_topk', 37, 1.02, 1.18));
     if(moe && !s9.dense){
       var imb = sdSm9(li, 'route_topk', 37, 1.02, 1.18), eam = sdSm9(li, 'routed_expert_bank', 33, 5.4, 9.65);
       moe.pmax += sdSm9(li, 'route_topk', 36, .48, .72); moe.ent += sdSm9(li, 'route_topk', 38, 1.56, 2.08);
       moe.imb += imb; if(imb > moe.imbMax){ moe.imbMax = imb; moe.imbAt = li; }
       moe.load += sdSm9(li, 'routed_expert_bank', 44, 36, 76); moe.cap += sdSm9(li, 'routed_expert_bank', 45, .72, .96); moe.n++;
       w9 = imb > 1.15 || eam > 9.35;   /* 与整网图 sdOpWarn 同一套阈值：图上标橙的层就是这里数到的层 */
+      am9 = eam;
     }
+    hl.amaxL.push(am9); hl.warnL.push(w9);
+    if(am9 > hl.amax){ hl.amax = am9; hl.amaxAt = li; }
     if(w9) hl.warn++;
   }
   hl.grad /= Math.max(1, hl.n); hl.uRatio /= Math.max(1, hl.n);

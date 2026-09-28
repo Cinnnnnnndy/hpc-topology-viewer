@@ -702,3 +702,40 @@ body.is-compact .data-col, body.is-compact .shard-col { gap: 6px; }
 body.is-compact .lc-sub { line-height: 1.55; }
 body.is-compact .ip-grp + .ip-grp { margin-top: 6px; }
 body.is-compact .ip-prob { padding: 7px 0; }
+
+/* ── 卡内小图（vz-*）：单系列灰阶，超阈值琥珀（状态色 warning，旁边总有文字写明），字用文字色 ── */
+.vz { display: block; margin: 4px 0 3px; overflow: visible; font-family: var(--mono); }
+.vz-inline { display: inline-block; margin: 0 6px 0 auto; vertical-align: middle; flex: none; }
+.vz-track { fill: none; stroke: #2E2E2E; }
+rect.vz-track { fill: #2A2A2A; stroke: none; }
+path.vz-track { stroke-width: 7; }
+.vz-arc { fill: none; stroke: #E8E8E8; stroke-width: 7; }
+.vz-fill { fill: #D0D0D0; }
+.vz-mute { fill: #5C5C5C; }
+.vz-warn { fill: #FAB219; }
+.vz-tick { fill: #8A8A8A; }
+.vz-grid { stroke: #333333; stroke-width: 1; }
+.vz-thr { stroke: #FAB219; stroke-width: 1; opacity: .75; }
+.vz-line { fill: none; stroke: #D0D0D0; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.vz-spark { fill: none; stroke: #8A8A8A; stroke-width: 1.2; stroke-linejoin: round; }
+.vz-ring { fill: #1E1E1E; }
+.vz-hit { fill: transparent; cursor: help; }
+.vz-hit:hover { fill: rgba(255, 255, 255, .06); }
+.vz text { font-size: 8.5px; }
+.vz-ax { fill: #707070; }
+.vz-lb { fill: #A0A0A0; font-size: 10px !important; }
+.vz-v { fill: #E8E8E8; font-size: 10px !important; }
+.vz-gv { fill: #FFFFFF; font-size: 15px !important; font-weight: 500; }
+.vz-cap { font-size: 9.5px; color: #8A8A8A; margin-top: 2px; }
+.vz-kpi { display: flex; align-items: center; gap: 10px; margin: 2px 0 4px; }
+.vz-stat { display: flex; flex-direction: column; line-height: 1.25; }
+.vz-stat b { font-size: 20px; font-weight: 500; color: #FFFFFF; }
+.vz-stat span { font-size: 9.5px; color: #8A8A8A; }
+.vz-stat em { font-style: normal; font-size: 10.5px; color: #C8C8C8; margin-top: 3px; }
+.vz-legend { display: flex; justify-content: space-between; gap: 6px; margin: 5px 0 1px; font-size: 9.5px; color: #8A8A8A; }
+.vz-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: #5C5C5C; margin-right: 4px; vertical-align: -1px; }
+.vz-legend i.is-on { background: #D0D0D0; }
+.vz-legend b { font-weight: 400; color: #E8E8E8; }
+body.is-compact .vz-cap { display: none; }
+.vz-cut { stroke: #1E1E1E; stroke-width: 2; }
+.data-col.is-over:not(.at-end), .shard-col.is-over:not(.at-end) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }

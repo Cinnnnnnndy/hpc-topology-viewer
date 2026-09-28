@@ -2328,35 +2328,132 @@
        MoE       本卡专家 / μb token / All-to-All 派发上限是实算；Pmax、熵、失衡、容量利用是整网图「MoE」那一类的示意读数
        训练健康  整网图「数值 / 梯度 / 训练」三类的示意读数：梯度 L2、Δ/W、激活 Amax、告警层（与图上标橙的层同一套阈值）
        公开读数  openPangu-2.0 训练代码发布时公开的效率数字（只有相对提升，没有公开 MFU / 每卡吞吐） */
+  /* ── 卡内小图（反馈「数据用合适的图表：折线、条形、仪表盘」）─────────────────────────────
+     单系列一律灰阶（这一页的彩色已经被五维与告警占了：维度色一色一义，红 = 超容）；超阈值的那几根用状态色
+     warning 琥珀，且旁边总有文字行写明——颜色从不单独表意。字用文字色，不用数据色；网格 / 轴是一根发丝线。
+     每个标记都挂 <title>：悬停出读数，同一个数在卡里的文字行也读得到（悬停只是增强）。 */
+  var VZ_W = 204;   // 右列卡内宽（224 − 左右各 10 内边距）；左列 252
+  function vzT(t) { return '<title>' + esc(t) + '</title>'; }
+  function vzSvg(w, h, body, cls) { return '<svg class="vz' + (cls ? ' ' + cls : '') + '" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' + body + '</svg>'; }
+  // 仪表盘：半圆，底轨同一灰阶浅一档，填充到比例；中间写读数
+  function vzGauge(frac, big, sub, tip) {
+    var w = 86, h = 52, cx = w / 2, cy = 45, r = 36, f = Math.max(0, Math.min(1, frac)), a = Math.PI * (1 - f);
+    var ex = cx + r * Math.cos(a), ey = cy - r * Math.sin(a);
+    return vzSvg(w, h, '<path class="vz-track" d="M' + (cx - r) + ',' + cy + ' A' + r + ',' + r + ' 0 0 1 ' + (cx + r) + ',' + cy + '"/>'
+      + (f > 0 ? '<path class="vz-arc" d="M' + (cx - r) + ',' + cy + ' A' + r + ',' + r + ' 0 0 1 ' + ex.toFixed(2) + ',' + ey.toFixed(2) + '"/>' : '')
+      + '<text class="vz-gv" x="' + cx + '" y="' + (cy - 6) + '" text-anchor="middle">' + big + '</text>'
+      + '<text class="vz-ax" x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle">' + sub + '</text>' + vzT(tip), 'vz-gauge');
+  }
+  // 进度条：同一灰阶的底轨 + 填充；thr 给了画一根刻度，超过就换状态色
+  function vzMeter(frac, thr, tip, w) {
+    w = w || VZ_W; var f = Math.max(0, Math.min(1, frac)), warn = thr != null && frac > thr;
+    return vzSvg(w, 10, '<rect class="vz-track" x="0" y="2" width="' + w + '" height="6" rx="3"/>'
+      + (f > 0 ? '<rect class="' + (warn ? 'vz-warn' : 'vz-fill') + '" x="0" y="2" width="' + Math.max(3, f * w).toFixed(1) + '" height="6" rx="3"/>' : '')
+      + (thr != null ? '<rect class="vz-tick" x="' + (thr * w - 0.5).toFixed(1) + '" y="0" width="1" height="10"/>' : '') + vzT(tip));
+  }
+  // 堆叠条：部分构成整体；段与段之间留 2px 底色缝；要强调的那一段亮、其余灰；图例放在条下面
+  function vzStack(parts, emph, w) {
+    w = w || VZ_W; var x = 0, gap = 2, tot = parts.reduce(function (a, p) { return a + p[1]; }, 0), avail = w - gap * (parts.length - 1), h = '';
+    parts.forEach(function (p, i) {
+      var sw = avail * p[1] / tot, cls = p[0] === emph ? 'vz-fill' : 'vz-mute';
+      h += '<rect class="' + cls + '" x="' + x.toFixed(1) + '" y="0" width="' + sw.toFixed(1) + '" height="8" rx="' + (i === 0 || i === parts.length - 1 ? 3 : 0) + '">' + vzT(p[0] + ' ' + pct(p[1])) + '</rect>';
+      x += sw + gap;
+    });
+    return vzSvg(w, 8, h) + '<div class="vz-legend">' + parts.map(function (p) { return '<span><i class="' + (p[0] === emph ? 'is-on' : '') + '"></i>' + p[0] + ' <b>' + pct(p[1]) + '</b></span>'; }).join('') + '</div>';
+  }
+  // 逐层折线：x = 层，y = 读数；阈值一根琥珀发丝线；峰值一个带底色环的点；null（稠密层）处断开
+  function vzLine(vals, x0, lo, hi, thr, fmt, name, w, H0) {
+    w = w || VZ_W; var H = H0 || 56, pl = 26, pr = 4, pt = 6, pb = 12, pw = w - pl - pr, ph = H - pt - pb, n = vals.length;
+    function X(i) { return pl + (n > 1 ? pw * i / (n - 1) : pw / 2); }
+    function Y(v) { return pt + ph * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)); }
+    var d = '', pen = false, pk = -1, h = '';
+    vals.forEach(function (v, i) { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(v).toFixed(1); pen = true; if (pk < 0 || v > vals[pk]) pk = i; });
+    h += '<line class="vz-grid" x1="' + pl + '" x2="' + (w - pr) + '" y1="' + (pt + ph) + '" y2="' + (pt + ph) + '"/>';
+    h += '<text class="vz-ax" x="' + (pl - 3) + '" y="' + (pt + ph + 3) + '" text-anchor="end">' + fmt(lo) + '</text><text class="vz-ax" x="' + (pl - 3) + '" y="' + (pt + 3) + '" text-anchor="end">' + fmt(hi) + '</text>';
+    if (thr != null) h += '<line class="vz-thr" x1="' + pl + '" x2="' + (w - pr) + '" y1="' + Y(thr).toFixed(1) + '" y2="' + Y(thr).toFixed(1) + '">' + vzT('告警线 ' + fmt(thr)) + '</line>';
+    h += '<path class="vz-line" d="' + d + '"/>';
+    if (pk >= 0) h += '<circle class="vz-ring" cx="' + X(pk).toFixed(1) + '" cy="' + Y(vals[pk]).toFixed(1) + '" r="4"/><circle class="' + (thr != null && vals[pk] > thr ? 'vz-warn' : 'vz-fill') + '" cx="' + X(pk).toFixed(1) + '" cy="' + Y(vals[pk]).toFixed(1) + '" r="2.6"/>';
+    h += '<text class="vz-ax" x="' + pl + '" y="' + (H - 1) + '">L' + x0 + '</text><text class="vz-ax" x="' + (w - pr) + '" y="' + (H - 1) + '" text-anchor="end">L' + (x0 + n - 1) + '</text>';
+    // 悬停：每层一条透明竖带（比点宽得多），读出这一层的值
+    var bw = n > 1 ? pw / (n - 1) : pw;
+    vals.forEach(function (v, i) { h += '<rect class="vz-hit" x="' + (X(i) - bw / 2).toFixed(1) + '" y="0" width="' + bw.toFixed(1) + '" height="' + (pt + ph) + '">' + vzT('L' + (x0 + i) + ' · ' + name + ' ' + (v == null ? '—（稠密层）' : fmt(v))) + '</rect>'; });
+    return vzSvg(w, H, h);
+  }
+  // 逐层柱：从 0 起；超阈值的柱用琥珀，其余灰；阈值一根发丝线
+  function vzCols(vals, warnL, x0, hi, thr, fmt, name, w, H0) {
+    w = w || VZ_W; var H = H0 || 50, pl = 26, pr = 4, pt = 4, pb = 12, pw = w - pl - pr, ph = H - pt - pb, n = vals.length;
+    var gap = n > 24 ? 1 : 2, bw = Math.min(24, (pw - gap * (n - 1)) / n), used = n * bw + gap * (n - 1), ox = pl + (pw - used) / 2, h = '';
+    function Y(v) { return pt + ph * (1 - Math.min(hi, v) / hi); }
+    h += '<line class="vz-grid" x1="' + pl + '" x2="' + (w - pr) + '" y1="' + (pt + ph) + '" y2="' + (pt + ph) + '"/>';
+    h += '<text class="vz-ax" x="' + (pl - 3) + '" y="' + (pt + ph + 3) + '" text-anchor="end">0</text><text class="vz-ax" x="' + (pl - 3) + '" y="' + (Y(thr) + 3).toFixed(1) + '" text-anchor="end">' + thr + '</text>';
+    vals.forEach(function (v, i) {
+      var x = ox + i * (bw + gap), y = Y(v), r = Math.min(2, bw / 2);
+      h += '<path class="' + (warnL[i] ? 'vz-warn' : 'vz-mute') + '" d="M' + x.toFixed(1) + ',' + (pt + ph) + 'V' + (y + r).toFixed(1) + 'Q' + x.toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + r).toFixed(1) + ',' + y.toFixed(1)
+        + 'H' + (x + bw - r).toFixed(1) + 'Q' + (x + bw).toFixed(1) + ',' + y.toFixed(1) + ' ' + (x + bw).toFixed(1) + ',' + (y + r).toFixed(1) + 'V' + (pt + ph) + 'Z"/>';
+      h += '<rect class="vz-hit" x="' + (x - gap / 2).toFixed(1) + '" y="0" width="' + (bw + gap).toFixed(1) + '" height="' + (pt + ph) + '">' + vzT('L' + (x0 + i) + ' · ' + name + ' ' + fmt(v) + (warnL[i] ? ' · 告警' : '')) + '</rect>';
+    });
+    h += '<line class="vz-thr" x1="' + pl + '" x2="' + (w - pr) + '" y1="' + Y(thr).toFixed(1) + '" y2="' + Y(thr).toFixed(1) + '"/>';
+    h += '<text class="vz-ax" x="' + pl + '" y="' + (H - 1) + '">L' + x0 + '</text><text class="vz-ax" x="' + (w - pr) + '" y="' + (H - 1) + '" text-anchor="end">L' + (x0 + n - 1) + '</text>';
+    return vzSvg(w, H, h);
+  }
+  // 行内迷你折线（跟在一行读数后面）
+  function vzSpark(vals, tip) {
+    var w = 56, h = 14, mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), n = vals.length, d = '';
+    vals.forEach(function (v, i) { d += (i ? 'L' : 'M') + (n > 1 ? 1 + (w - 2) * i / (n - 1) : w / 2).toFixed(1) + ',' + (1 + (h - 2) * (1 - (v - mn) / ((mx - mn) || 1))).toFixed(1); });
+    return vzSvg(w, h, '<path class="vz-spark" d="' + d + '"/>' + vzT(tip), 'vz-inline');
+  }
+  // 以 1× 为共同基线的横条：几项相对提升摆在一起比
+  function vzIdx(items, w) {
+    var H = items.length * 16 + 10, pl = 70, pr = 34, pw = w - pl - pr, mx = 2.2, h = '';
+    function X(v) { return pl + pw * v / mx; }
+    h += '<line class="vz-grid" x1="' + X(1).toFixed(1) + '" x2="' + X(1).toFixed(1) + '" y1="0" y2="' + (H - 10) + '"/><text class="vz-ax" x="' + X(1).toFixed(1) + '" y="' + (H - 1) + '" text-anchor="middle">1×</text>';
+    items.forEach(function (it, i) {
+      var y = i * 16 + 2;
+      h += '<text class="vz-lb" x="0" y="' + (y + 8) + '">' + it[0] + '</text>'
+        + '<path class="vz-fill" d="M' + pl + ',' + y + 'H' + (X(it[1]) - 3).toFixed(1) + 'Q' + X(it[1]).toFixed(1) + ',' + y + ' ' + X(it[1]).toFixed(1) + ',' + (y + 3) + 'V' + (y + 7) + 'Q' + X(it[1]).toFixed(1) + ',' + (y + 10) + ' ' + (X(it[1]) - 3).toFixed(1) + ',' + (y + 10) + 'H' + pl + 'Z">' + vzT(it[0] + ' ' + it[2]) + '</path>'
+        + '<text class="vz-v" x="' + (X(it[1]) + 4).toFixed(1) + '" y="' + (y + 8) + '">' + it[2] + '</text>';
+    });
+    // 1× 基线压在条上（底色缝）：条被切成「基线」与「提升」两段，提升多少一眼可见
+    h += '<line class="vz-cut" x1="' + X(1).toFixed(1) + '" x2="' + X(1).toFixed(1) + '" y1="0" y2="' + (H - 10) + '"/>';
+    return vzSvg(w, H, h);
+  }
   function fmtN(x) { return x >= 1e9 ? (x / 1e9).toFixed(x >= 1e10 ? 0 : 1) + 'G' : x >= 1e6 ? (x / 1e6).toFixed(x >= 1e7 ? 0 : 1) + 'M' : x >= 1e4 ? (x / 1e3).toFixed(0) + 'K' : String(Math.round(x)); }
   function thrCard(P) {
     if (!P || !P.thr) return '';
     var T = P.thr;
-    return dcCard('thr', '吞吐', dcRow('每步 token', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × 序列')
-      + dcRow('每 token', (T.fTok / 1e9).toFixed(0) + ' GFLOP', '', '6·N激活（≈' + (T.nAct / 1e9).toFixed(1) + 'B 矩阵参数）+ 6·L·h·s 因果注意力；共享专家、MLA、DSA/SWA 稀疏未计入')
-      + dcRow('MFU', pct(T.mfu), '', '假设：盘古 Ultra MoE 报告量级（6K 卡 30%），openPangu-2.0 未公开')
-      + dcRow('步时', T.stepS.toFixed(1) + ' s') + dcRow('全网', fmtN(T.tokS) + ' tok/s') + dcRow('每卡', Math.round(T.tgs) + ' tok/s'),
+    return dcCard('thr', '吞吐', '<div class="vz-kpi">' + vzGauge(T.mfu, pct(T.mfu), 'MFU', 'MFU ' + pct(T.mfu) + '（假设：盘古 Ultra MoE 报告量级，openPangu-2.0 未公开）')
+      + '<div class="vz-stat"><b>' + Math.round(T.tgs) + '</b><span>tok/s · 每卡</span><em>步时 ' + T.stepS.toFixed(1) + ' s</em></div></div>'
+      + dcRow('全网', fmtN(T.tokS) + ' tok/s') + dcRow('每步 token', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × 序列')
+      + dcRow('每 token', (T.fTok / 1e9).toFixed(0) + ' GFLOP', '', '6·N激活（≈' + (T.nAct / 1e9).toFixed(1) + 'B 矩阵参数）+ 6·L·h·s 因果注意力；共享专家、MLA、DSA/SWA 稀疏未计入'),
       'asm', '步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 ' + T.peakTF + ' TFLOPS × MFU）；峰值按昇腾 910 标称 FP16，MFU 是假设值——看量级与随切分怎么变，不是实测');
   }
   function moeCard(P, scope) {
     var M = P && P.moe; if (!M) return '';
-    return dcCard('moe', scope ? 'MoE · ' + scope : 'MoE', dcRow('本卡专家', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
+    var x2 = function (v) { return v.toFixed(2) + '×'; };
+    // rank / 单卡层（scope 给了）只留本段自己的读数：本卡专家 / μb token / A2A 是配置级的，集群层已经写过
+    var head = (scope ? '' : '<div class="vz-cap">逐层路由失衡</div>') + vzLine(M.imbL, P.health.l0, 1, 1.2, 1.15, x2, '失衡', null, scope ? 44 : 56)
+      + dcRow('失衡', x2(M.imb) + ' · 峰 ' + x2(M.imbMax) + ' L' + M.imbAt, M.imbMax > 1.15 ? 'is-warn' : '', '逐层路由失衡；> 1.15× 与整网图同一条告警线')
+      + dcRow('容量利用', pct(M.cap)) + vzMeter(M.cap, null, '专家容量利用 ' + pct(M.cap));
+    if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', '整网图「MoE」那一类的示意读数，只看本段的层');
+    return dcCard('moe', 'MoE', head
+      + dcRow('本卡专家', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
       + dcRow('μb token', fmtN(M.tokMb), '', '每 μb 每卡 = mbs × 序列 ÷ CP')
       + dcRow('A2A 派发', '≤' + Math.round(M.a2aMB) + ' MB', '', '每层每 μb 上限：token × topk × h × 2B，没算同卡去重')
-      + dcRow('失衡', M.imb.toFixed(2) + '× · 峰 ' + M.imbMax.toFixed(2) + '×', M.imbMax > 1.15 ? 'is-warn' : '', '峰值在 L' + M.imbAt + '；> 1.15× 与整网图同一条告警线')
-      + dcRow('Pmax · 熵', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)) + dcRow('容量利用', pct(M.cap)),
+      + dcRow('Pmax · 熵', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)),
       'demo', '本卡专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与整网图「MoE」那一类同一套示意读数');
   }
-  function healthCard(P, scope) {
+  function healthCard(P, scope, w) {
     var H = P && P.health; if (!H || MODE !== 'train') return '';
-    return dcCard('health', scope ? '训练健康 · ' + scope : '训练健康', dcRow('step', H.step + ' · ckpt/' + H.ckpt)
-      + dcRow('梯度 L2', H.grad.toFixed(2)) + dcRow('Δ/W', H.uRatio.toExponential(1))
-      + dcRow('Amax 峰', H.amax.toFixed(1) + ' · L' + H.amaxAt)
-      + dcRow('告警层', H.warn + ' / ' + H.n, H.warn ? 'is-warn' : '', '专家 Amax > 9.35 或路由失衡 > 1.15×——整网图上标橙的就是这几层'),
+    var f1 = function (v) { return v.toFixed(1); };
+    var head = (scope ? '' : '<div class="vz-cap">逐层激活 Amax</div>') + vzCols(H.amaxL, H.amaxL.map(function (v) { return v > H.thrAmax; }), H.l0, 10, H.thrAmax, f1, 'Amax', w, scope ? 40 : 50)
+      + dcRow('告警层', H.warn + ' / ' + H.n, H.warn ? 'is-warn' : '', '告警层 = 专家 Amax > 9.35（柱图里琥珀色的柱）或路由失衡 > 1.15×（MoE 折线越过告警线的点）——整网图上标橙的就是这几层')
+      + '<div class="dc-r"><span>梯度 L2</span>' + vzSpark(H.gradL, '逐层梯度 L2：L' + H.l0 + '–L' + H.l1) + '<b>' + H.grad.toFixed(2) + '</b></div>';
+    return dcCard('health', scope ? '训练健康 · ' + scope : '训练健康', head
+      + (scope ? '' : dcRow('Amax 峰', H.amax.toFixed(1) + ' · L' + H.amaxAt) + dcRow('Δ/W', H.uRatio.toExponential(1)) + dcRow('step', H.step + ' · ckpt/' + H.ckpt)),
       'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数');
   }
   function pubCard() {
-    return dcCard('pub', '公开读数', dcRow('超节点亲和', '+30%') + dcRow('512K 吞吐', '+50%') + dcRow('推理单卡', '2×')
+    return dcCard('pub', '公开读数', vzIdx([['超节点亲和', 1.3, '+30%'], ['512K 吞吐', 1.5, '+50%'], ['推理单卡', 2, '2×']], 252)
       + dcRow('预训练', '34T tok'),
       'pub', 'openPangu-2.0 训练代码开源时的公开数字（2026-09-28，TechNode / IT之家）：只有相对提升，未公开 MFU、每卡吞吐与步时');
   }
@@ -2375,7 +2472,8 @@
     }
     if (!C) return '';
     var n = C.n, W = C.world, rows = [['ok', n.ok, ''], ['黄线 70%', n.amber, ''], ['红线 88%', n.red, n.red ? 'is-warn' : ''], ['超容', n.oom, n.oom ? 'is-bad' : '']];
-    return capClusterHtml(C, n, W, rows) + pubCard();
+    // 左列：容量（装得下吗）→ 训练健康（稳不稳）→ 公开读数；告警面板排在它们下面
+    return capClusterHtml(C, n, W, rows) + (C.perf ? healthCard(C.perf, null, 252) : '') + pubCard();
   }
   function capClusterHtml(C, n, W, rows) {
     return dcCard('cap', '容量', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
@@ -2398,19 +2496,19 @@
         out.push(dcCard('comm', '通信', closureRows()
           + (C.comm && C.comm.tp ? dcRow('TP', C.comm.tp.txt, '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', C.comm.pp.txt, '', C.comm.pp.how) : '') + (C.comm && C.comm.dp ? dcRow('DP', C.comm.dp.txt, '', C.comm.dp.how) : '')
           + dcRow('UB · RoCE', '196 · 50 GB/s'), 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数'));
-        if (C.model) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
+        if (C.model) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
           'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满'));
       }
       if (MODE === 'train' && C) out.push(thrCard(C.perf));
-      if (MODE === 'train') out.push(dcCard('step', '步时', stepRows(STEP_DEMO.pretrain), 'demo', SRC_DEMO));
+      if (MODE === 'train') out.push(dcCard('step', '步时', vzStack(STEP_DEMO.pretrain, '通信'), 'demo', SRC_DEMO));
       else out.push(dcCard('infer', '推理', dcRow('TTFT', '424 ms') + dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
         'demo', SRC_DEMO + '；显存仍按训练口径，KV cache 未建模'));
-      if (C && C.perf) { out.push(moeCard(C.perf)); out.push(healthCard(C.perf)); }
+      if (C && C.perf) out.push(moeCard(C.perf));
     }
     if (rankOpen) {
       var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
       // 通信并进右卡的 group 表；层区间已在右卡抬头
-      if (Dt) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('ZeRO', Dt.zero), 'calc'));
+      if (Dt) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble), Dt.bubble > 0.25 ? 'is-warn' : '') + vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('ZeRO', Dt.zero), 'calc'));
       if (Dt && Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; out.push(moeCard(Dt.perf, sc9)); out.push(healthCard(Dt.perf, sc9)); }
     }
     return out;
@@ -2472,7 +2570,7 @@
     var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail, R = [];
     if (tier !== 3 || !Dt) return R;
     // 通信并进右卡的 group 表（维 · 闭合级 · 一次搬多少），这里不再单列；层区间已在右卡抬头
-    R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble)) + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
+    R.push(dcCard('pipe', '流水', dcRow('气泡', pct(Dt.bubble), Dt.bubble > 0.25 ? 'is-warn' : '') + vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
     if (Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; R.push(moeCard(Dt.perf, sc9)); R.push(healthCard(Dt.perf, sc9)); }
     return R;
   }
@@ -2495,8 +2593,19 @@
       shardL.innerHTML = sh.join(''); shardL.classList.toggle('is-hidden', !sh.length);
       [dataCol, shardL, leftCard].forEach(function (el) { for (var i9 = 0; i9 < el.children.length; i9++) el.children[i9].style.setProperty('--i', Math.min(i9, 12)); });
       doSyncCardHeights();
+      requestAnimationFrame(syncOverFade);
     });
   }
+  /* 列装不下时底部淡出一截（滚动条是藏着的）：读者看得出下面还有卡；滚到底就不再淡 */
+  function syncOverFade() {
+    [dataCol, shardL].forEach(function (el) {
+      var over = el.scrollHeight > el.clientHeight + 2;
+      el.classList.toggle('is-over', over);
+      el.classList.toggle('at-end', !over || el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+    });
+  }
+  [dataCol, shardL].forEach(function (el) { el.addEventListener('scroll', syncOverFade, { passive: true }); });
+  window.addEventListener('resize', function () { requestAnimationFrame(syncOverFade); });
   shardL.addEventListener('click', function (ev) {
     var c = ev.target.closest('[data-bk]'); if (!c) return;
     var k = c.getAttribute('data-bk'); dcOpen[k] = !dcOpen[k]; renderDataCards();
