@@ -1,5 +1,10 @@
 # 模型分片与训练设备映射 · 简洁版 · Pattern
 
+> **版权与开源协议** —— © 2026 **王欣迪 (Cindy_wxd)**。代码采用 **[Apache License 2.0](./LICENSE)**，
+> 说明文字 / 设计与图示采用 **[CC BY 4.0](./LICENSE-CC-BY-4.0)**。使用、修改或再分发须保留作者署名「王欣迪」、
+> 版权声明与 [`NOTICE`](./NOTICE)；协议不授予商标权。three.js（MIT）、JetBrains Mono（OFL）以及
+> 华为 / 昇腾 / CANN / 灵衢 / openPangu 等名称与引用资料归各自权利人所有——详见 [`NOTICE`](./NOTICE)。
+
 > **这条分支是什么**：`claude/shard-device-map` 是这个 demo 的独立分支，只放它自己的文件（分支根目录就是 pattern 目录），
 > 与本仓库其它页面没有代码关联，以后可以原样搬到另一个仓库（这条分支直接作为新仓库的 main）。
 > **发布**：main 的 `.github/workflows/deploy.yml` 里有一步把这条分支叠加到 `/patterns/shard-device-map/`。

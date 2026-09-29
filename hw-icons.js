@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
 /* 硬件图元 2D 图标 —— 直接取自 Cinnnnnnndy/hpc-topology-node 的 icon-defs.js（commit 75ecf2a，
    HWICONS.build(id, null, R, light=false) 的深色默认态），逐元素转成 <symbol>，全页用 <use> 引用。
    · 形状即类型、灰度即结构（沿用该库 uxspec）。本页只有中性灰：带色相的色值先按亮度换成等亮灰

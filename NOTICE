@@ -1,0 +1,21 @@
+模型分片与训练设备映射 · 简洁版（shard-device-map）
+Copyright © 2026 王欣迪 (Cindy_wxd, https://github.com/Cinnnnnnndy)
+
+双协议（dual licensing）：
+  · 代码 —— Apache License 2.0（见 LICENSE）：pattern.html / pattern.js / pattern.css / hw-icons.js / engine/ 下的全部页面与脚本。
+  · 内容 —— CC BY 4.0（见 LICENSE-CC-BY-4.0）：README 与 pattern.json 里的说明文字、设计与图示。
+
+署名与再分发要求（知识产权声明）
+  1. 使用、修改或再分发本项目任何部分，须保留原作者署名「王欣迪 (Cindy_wxd)」、上述版权声明、本 NOTICE 文件
+     以及文件头里的 SPDX 许可证标识；修改过的文件须注明已修改（Apache-2.0 第 4 条）。
+  2. 转载或改编内容须按 CC BY 4.0 注明作者「王欣迪」、原始链接与所用协议，并说明是否做过修改。
+  3. 两份协议都不授予商标权：不得使用作者姓名、项目名称或其标识为衍生作品背书或暗示关联（Apache-2.0 第 6 条）。
+  4. 以「现状」提供，不附带任何担保。
+
+第三方内容（不在上述两份协议范围内，归各自权利人所有）
+  · three.js（vendor/three-r128.min.js）—— MIT License, © three.js authors
+  · JetBrains Mono 字体（fonts/）—— SIL Open Font License 1.1, © The JetBrains Mono Project Authors（许可证见 fonts/OFL-JetBrainsMono.txt）
+  · 华为、昇腾（Ascend）、CANN、灵衢、盘古 / openPangu 等名称与商标归华为技术有限公司所有；引用的公开资料
+    （技术报告、直播材料、新闻报道等）归原作者 / 原发布方所有，仅作研究引用。
+  · vendor/ 下其余目录是作者本人其它项目的快照（pto-design-system、pto-tokens、model-graphviz、net-sharding、rubik-cube），
+    以其各自目录内的声明为准；未单独声明的，随本项目按 Apache-2.0 授权。
