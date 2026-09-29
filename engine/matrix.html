@@ -2380,7 +2380,34 @@ function ptoClusterBrief(){
            amber:CAP_AMBER, red:CAP_RED,
            model:{layers:D.layers, hidden:D.hidden, seq:D.seq, mbs:D.mbs, ga:D.ga, experts:D.experts || 0, topk:D.topk || 0, lps:D.layersPerStage},
            comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0,
-           perf: ptoPerf(D, null) };
+           perf: ptoPerf(D, null), infer: ptoInferMem(D) };
+}
+/* 推理口径的显存（宿主 shard-device-map 推理工况用；本页不读）：没有梯度、优化器态与 ZeRO，
+   权重 bf16 按同一套 TP/EP/PP 切分常驻；KV cache = 2(K,V) × 本段层数 × 本卡 KV 头 × headDim × 本卡序列(seq/cp) × 并发 × 2B；
+   KV 头少于 TP 时整头复制（GQA 常见）。MLA / 量化 KV 都没建模——按 MHA/GQA 口径是上限。
+   workspace = 一段 prefill 的激活（按 8K token 一块、hidden×10 份 bf16 估），碎片/预留 1.5 GiB 同训练口径。
+   并发 batch 取每个副本 64 条满上下文——是「最坏的那一刻」，另给出按 90% HBM 能容纳的最大并发。 */
+var INFER_BATCH = 64, INFER_CHUNK = 8192;
+function ptoInferMem(D){
+  var kvCard = Math.max(1, Math.ceil(D.kv / D.tp)), sCard = D.seq / D.cp, GiB = Math.pow(2, 30);
+  var kvSeq = 2 * D.layersPerStage * kvCard * D.headDim * sCard * 2;
+  var ws = 2 * D.hidden * INFER_CHUNK * 10, rsv = 1.5 * GiB, st = [];
+  for(var p = 0; p < D.pp; p++){
+    var w = 2 * paramsPerCard(D, p, null), kv = kvSeq * INFER_BATCH;
+    var free = D.hbm * GiB * 0.9 - w - ws - rsv;
+    st.push({ w: w, kv: kv, ws: ws, rsv: rsv, tot: w + kv + ws + rsv, bmax: Math.max(0, Math.floor(free / kvSeq)) });
+  }
+  var n = {ok:0, amber:0, red:0, oom:0}, oom = [], ratio = [], worst = null, wr = -1;
+  for(var r = 0; r < D.world; r++){
+    var sp = st[coordsOf(r, D).p], v = sp.tot / (D.hbm * GiB);
+    var lv = v > 1 ? 'oom' : v >= CAP_RED ? 'red' : v >= CAP_AMBER ? 'amber' : 'ok';
+    n[lv]++; if(lv === 'oom') oom.push(r);
+    ratio.push(Math.round(v * 1000) / 1000);
+    if(v > wr){ wr = v; worst = r; }
+  }
+  return { batch: INFER_BATCH, ctx: D.seq, chunk: INFER_CHUNK, kvHeadsCard: kvCard, kvSeq: kvSeq, stages: st,
+           n: n, oom: oom, ratio: ratio, worst: worst,
+           bmax: Math.min.apply(null, st.map(function(x){ return x.bmax; })) };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，

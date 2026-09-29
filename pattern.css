@@ -916,3 +916,4 @@ body.panel-bottom .side-card.side-left { max-height: none; }
 body.is-compact .journey { top: 10px; }
 body.is-compact .jn-mode button, body.is-compact .jn-steps button { font-size: 11.5px; padding-top: 1px; padding-bottom: 1px; }
 body.is-compact .jn-steps li + li::before { width: 6px; }
+.sw-mark { stroke: #8A8A8A; stroke-width: 1; stroke-dasharray: 2 2; }

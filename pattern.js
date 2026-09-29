@@ -1424,7 +1424,15 @@
   // 报完，不建 SVG、不占那几秒的渲染开销。matrixFrame 这一刻仍然是
   // is-hidden（CSS 已经收着），第三档真正下钻时 showDetail() 照常把它的
   // src 换成真正的详情页——两次导航互不冲突，只是多一次不可见的加载。
-  var lastCluster = null, lastBrief = null;
+  var lastCluster = null, lastBrief = null, rawBrief = null;
+  /* 推理工况（?mode=infer）：集群的逐卡占用率 / 四档计数 / 最满那张卡换成推理口径（矩阵本体 ptoInferMem：
+     权重 + KV cache + workspace + 预留，没有梯度与优化器态）——画布灰度、容量卡、「最满」、诊断那一步都跟着换。 */
+  function viewBrief(b) {
+    if (!b || b.ok === false || MODE !== 'infer' || !b.infer) return b;
+    var o = {}; for (var k in b) o[k] = b[k];
+    o.n = b.infer.n; o.oom = b.infer.oom; o.ratio = b.infer.ratio; o.worst = b.infer.worst;
+    return o;
+  }
   (function () {
     requestClusterBrief();
   })();
@@ -1446,10 +1454,10 @@
       splitDiff = Object.keys(want).filter(function (k) { return brief.config[k] !== want[k]; }).map(function (k) { return k + ' ' + want[k] + '≠' + brief.config[k]; });
       if (splitDiff.length) console.warn('shard-device-map: 矩阵与本页切分不一致', splitDiff); else splitDiff = null;
     }
-    lastCluster = brief; ppPeak = null;
+    rawBrief = brief; lastCluster = viewBrief(brief); ppPeak = null;
     // 维度色不再拿矩阵报来的那套覆盖：单卡页（slabgap）反过来用本页这套（--c-*），全篇一个颜色一个意思
     oomSet = {};
-    (brief.oom || []).forEach(function (r) { oomSet[r] = 1; });
+    (lastCluster.oom || []).forEach(function (r) { oomSet[r] = 1; });
     applyAlerts();
     if (tier === 1) renderRightIdle(); else if (curSel != null) showRankBadge(curSel);
     renderPanel();
@@ -1908,7 +1916,20 @@
       + ' pp' + brief.coord.pp + (brief.coord.ep != null ? ' ep' + brief.coord.ep : '')
       + ' · L' + brief.layers.lo + '–L' + brief.layers.hi;
   }
+  /* 推理口径的这一段（按 PP 段）显存：四档 + 合计 + 档位 */
+  function inferMem(pp) {
+    var I = rawBrief && rawBrief.infer; if (!I || !I.stages[pp]) return null;
+    var st = I.stages[pp], G = Math.pow(2, 30), M = rawBrief.memCol || {}, hbm = rawBrief.hbm, v = st.tot / G / hbm;
+    return { totGB: st.tot / G, hbm: hbm, level: v > 1 ? 'oom' : v >= rawBrief.red ? 'red' : v >= rawBrief.amber ? 'amber' : 'ok', bmax: st.bmax,
+      segs: [{ label: '权重', gb: st.w / G, col: M.w }, { label: 'KV cache', gb: st.kv / G, col: M.act }, { label: 'workspace', gb: st.ws / G, col: M.otmp }, { label: '碎片/预留', gb: st.rsv / G, col: M.rsv }] };
+  }
   function memBriefHtml(brief) {
+    var IM = MODE === 'infer' && brief.coord ? inferMem(brief.coord.pp) : null;
+    if (IM) {   // 推理工况：显存构成换成推理口径，其余（坐标 / 层区间）不变
+      var b2 = {}; for (var k9 in brief) b2[k9] = brief[k9];
+      b2.cap = { level: IM.level, totGB: IM.totGB }; b2.segs = IM.segs; b2.detail = { segs: IM.segs.map(function (x) { return { col: x.col }; }) };
+      brief = b2;
+    }
     var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
       + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
     // 档名只留头两三个字：「权重 (bf16)」→「权重」、「激活·在途6μb」→「激活」
@@ -2110,27 +2131,69 @@
     var c1 = tA + 6, n = Math.floor((tB - 6 - c1) / 3);
     return n >= 3 ? { c1: c1, c2: c1 + n * 3, n: n, tA: tA, tB: tB } : null;
   }
+  /* 推理泳道（?mode=infer）：一批请求先 prefill——提示词切成 4 块，逐段流水（每块 3 格）；首 token 出来之后进 decode——
+     PP 路请求轮流在飞（M = PP，流水刚好灌满），每个 token 过每一段 1 格，上一个 token 从末段出来下一个才能从首段进。
+     依赖驱动的列表调度，与训练 1F1B 同一套写法；稳态 decode 一轮 = PP 格，折叠长度取它的整数倍。 */
+  function schedInfer(P) {
+    var C = 4, N = 24, M = P, ops = [], free = [], out = [], done = {}, p, i;
+    for (p = 0; p < P; p++) {
+      var q = [];
+      for (i = 0; i < C; i++) q.push(['P', i, 0]);
+      for (var t = 0; t < N; t++) for (var m = 0; m < M; m++) q.push(['D', m, t]);
+      ops.push(q); free.push(0); out.push([]);
+    }
+    for (var guard = 0; guard < P * (C + N * M) * 3; guard++) {
+      var moved = false;
+      for (p = 0; p < P; p++) {
+        var op = ops[p][0]; if (!op) continue;
+        var dep = p > 0 ? done[(p - 1) + ':' + op.join(',')]
+          : op[0] === 'P' ? 0 : op[2] === 0 ? done[(P - 1) + ':P,' + (C - 1) + ',0'] : done[(P - 1) + ':D,' + op[1] + ',' + (op[2] - 1)];
+        if (dep === undefined) continue;
+        var st = Math.max(free[p], dep), en = st + (op[0] === 'P' ? 3 : 1);
+        done[p + ':' + op.join(',')] = en; free[p] = en;
+        out[p].push({ k: op[0], m: op[1], t: op[2], s: st, e: en }); ops[p].shift(); moved = true;
+      }
+      if (!moved) break;
+    }
+    var pe = 0; out[P - 1].forEach(function (b) { if (b.k === 'P') pe = b.e; });
+    return { lanes: out, T: Math.max.apply(null, free), prefillEnd: pe, N: N, C: C };
+  }
+  function swimFoldInfer(S, P) {
+    var tA = 0, tB = Infinity;
+    S.lanes.forEach(function (L) {
+      var fd = null, ld = null;
+      L.forEach(function (x) { if (x.k === 'D') { if (fd == null) fd = x.s; ld = x.e; } });
+      if (fd != null) tA = Math.max(tA, fd); if (ld != null) tB = Math.min(tB, ld);
+    });
+    var c1 = tA + 2 * P, n = Math.floor((tB - 2 * P - c1) / P);
+    return n >= 3 ? { c1: c1, c2: c1 + n * P, n: n, tA: tA, tB: tB } : null;
+  }
   function renderSwim() {
     if (!drawerBody || drawerOpen !== 'swimlane') return;
     var C = lastCluster, M = C && C.model ? C.model.ga : null, P = PS.pp;
     if (!M) { drawerBody.innerHTML = '<div class="sw-wait">…</div>'; return; }
-    if (!swimCache || swimCache.P !== P || swimCache.M !== M) swimCache = { P: P, M: M, S: sched1F1B(P, M) };
-    var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P), F = swimFold(S);
+    var INF = MODE === 'infer';
+    if (!swimCache || swimCache.P !== P || swimCache.M !== M || swimCache.inf !== INF) swimCache = { P: P, M: M, inf: INF, S: INF ? schedInfer(P) : sched1F1B(P, M) };
+    var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P), F = INF ? swimFoldInfer(S, P) : swimFold(S);
     var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 92, RH = 10, GAP = 5, TOP = 22, G = F ? 44 : 0;
     var cut = F ? F.c2 - F.c1 : 0, sx = (W - LBL - 8 - G) / (T - cut);
     var X = function (t) { return LBL + (F && t > F.c1 ? (t >= F.c2 ? (t - cut) * sx + G : F.c1 * sx + G * (t - F.c1) / cut) : t * sx); };
     var fp = curSel != null ? coordOfRank(curSel).pp : focusPP;
     var h = [], y = TOP, H = TOP + P * (RH + GAP) - GAP + 26;
     // 相位：预热 / 稳态 / 冷却（稳态从最后一段进稳态算起，到第一段出稳态为止）
-    var tA = F ? F.tA : T * 0.2, tB = F ? F.tB : T * 0.8, ph = [['预热', 0, tA], ['稳态 1F1B', tA, tB], ['冷却', tB, T]];
+    var tA = F ? F.tA : T * 0.2, tB = F ? F.tB : T * 0.8;
+    var ph = INF ? [['prefill', 0, S.prefillEnd], ['首 token → decode', S.prefillEnd, T]] : [['预热', 0, tA], ['稳态 1F1B', tA, tB], ['冷却', tB, T]];
+    var foldPh = 1, foldName = INF ? '首 token → decode' : '稳态 1F1B', foldUnit = INF ? 'token' : 'μb';
     ph.forEach(function (q, i) {
       var x1 = X(q[1]), x2 = X(q[2]);
       h.push('<line class="sw-ph" x1="' + (x1 + (i ? 3 : 0)).toFixed(1) + '" x2="' + (x2 - 3).toFixed(1) + '" y1="12.5" y2="12.5"/>');
-      if (!(F && i === 1)) h.push('<text class="sw-tt" x="' + x1.toFixed(1) + '" y="8">' + q[0] + '</text>');
+      if (!(F && i === foldPh)) h.push('<text class="sw-tt" x="' + x1.toFixed(1) + '" y="8">' + q[0] + '</text>');
     });
+    // 推理：首 token 出来的那一刻（= TTFT）一根竖虚线贯穿各段——prefill 与 decode 的分界
+    if (INF) h.push('<line class="sw-mark" x1="' + X(S.prefillEnd).toFixed(1) + '" x2="' + X(S.prefillEnd).toFixed(1) + '" y1="16" y2="' + (TOP + P * (RH + GAP) - GAP + 2) + '"><title>首 token · TTFT</title></line>');
     if (F) {
       var fx = X(F.c1) + G / 2;
-      h.push('<text class="sw-tt sw-fold-t" x="' + X(tA).toFixed(1) + '" y="8">稳态 1F1B<tspan class="sw-fold-n" x="' + fx.toFixed(1) + '" text-anchor="middle">⋯ ' + F.n + ' μb ⋯</tspan></text>');
+      h.push('<text class="sw-tt sw-fold-t" x="' + X(ph[foldPh][1]).toFixed(1) + '" y="8">' + foldName + '<tspan class="sw-fold-n" x="' + fx.toFixed(1) + '" text-anchor="middle">⋯ ' + F.n + ' ' + foldUnit + ' ⋯</tspan></text>');
     }
     for (var p = 0; p < P; p++) {
       var isR = curSel != null && p === fp, on = fp == null || p === fp;
@@ -2147,24 +2210,33 @@
         var segs = !F || b.e <= F.c1 || b.s >= F.c2 ? [[b.s, b.e]] : b.s >= F.c1 && b.e <= F.c2 ? [] : [[b.s, Math.min(b.e, F.c1)], [Math.max(b.s, F.c2), b.e]].filter(function (q) { return q[1] - q[0] > 0 && (q[1] <= F.c1 || q[0] >= F.c2); });
         segs.forEach(function (q) {
           var x1 = X(q[0]), w = Math.max(1, X(q[1]) - x1 - 1);
-          h.push('<rect class="sw-' + b.k.toLowerCase() + '" data-m="' + b.m + '" x="' + x1.toFixed(1) + '" y="' + (y + 1) + '" width="' + w.toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>PP' + p + ' · μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向') + '</title></rect>');
+          var kc = b.k === 'F' || b.k === 'P' ? 'sw-f' : 'sw-b';
+          var tt = b.k === 'P' ? 'prefill · 第 ' + (b.m + 1) + ' 块' : b.k === 'D' ? 'decode · 请求组 ' + b.m + ' · token ' + b.t : 'μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向');
+          h.push('<rect class="' + kc + '" data-m="' + (b.k === 'D' ? 'd' + b.m : b.k === 'P' ? 'p' + b.m : b.m) + '" x="' + x1.toFixed(1) + '" y="' + (y + 1) + '" width="' + w.toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>PP' + p + ' · ' + tt + '</title></rect>');
         });
         // 选中 rank 那一段：段边界的收发（前向收上一段激活、发给下一段；反向反过来）
         if (isR && segs.length === 1 && segs[0][0] === b.s && segs[0][1] === b.e) {
-          var recv = b.k === 'F' ? p > 0 : p < P - 1, send = b.k === 'F' ? p < P - 1 : p > 0;
+          var fw = b.k !== 'B', recv = fw ? p > 0 : p < P - 1, send = fw ? p < P - 1 : p > 0;
           if (recv) h.push('<line class="sw-p2p" x1="' + X(b.s).toFixed(1) + '" x2="' + X(b.s).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
           if (send) h.push('<line class="sw-p2p" x1="' + (X(b.e) - 1).toFixed(1) + '" x2="' + (X(b.e) - 1).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
         }
       });
-      if (isR) {
+      if (isR && !INF) {
         var tEnd = S.lanes[p][S.lanes[p].length - 1].e;
         h.push('<rect class="sw-dp" x="' + X(tEnd).toFixed(1) + '" y="' + (y + 1) + '" width="' + Math.max(3, X(T) - X(tEnd) + 6).toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>步末 DP 梯度同步' + (C.comm && C.comm.dp ? ' · ' + C.comm.dp.txt : '') + '</title></rect>');
       }
       h.push('</g>');
       y += RH + GAP;
     }
-    var busy = M * 3, idle = T - busy;
-    var foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
+    var busy = M * 3, idle = T - busy, foot;
+    if (INF) {
+      foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
+        + '<rect class="sw-f" x="0" y="-7" width="16" height="7" rx="1"/><text x="20" y="0">prefill</text>'
+        + '<rect class="sw-b" x="70" y="-7" width="6" height="7" rx="1"/><text x="80" y="0">decode</text>'
+        + (curSel != null ? '<line class="sw-p2p" x1="130" x2="130" y1="-8" y2="1"/><text x="136" y="0">P2P</text>' : '')
+        + '<text class="sw-kv" x="' + (curSel != null ? 178 : 132) + '" y="0">TTFT <tspan>424 ms</tspan> · TPOT <tspan>96 ms</tspan> · 在飞 ' + P + ' 组</text>'
+        + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>prefill 一块按 3 格、decode 一个 token 过一段按 1 格：相对时长；TTFT/TPOT 取自盘古 Pro MoE 技术报告，只当量级参考</title>示意 · 在飞请求组 = PP</text></g>';
+    } else foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
       + '<rect class="sw-f" x="0" y="-7" width="10" height="7" rx="1"/><text x="14" y="0">前向</text>'
       + '<rect class="sw-b" x="46" y="-7" width="16" height="7" rx="1"/><text x="66" y="0">反向</text>'
       + (curSel != null ? '<line class="sw-p2p" x1="104" x2="104" y1="-8" y2="1"/><text x="110" y="0">P2P</text><rect class="sw-dp" x="140" y="-7" width="10" height="7" rx="1"/><text x="154" y="0">DP 同步</text>' : '')
@@ -2377,7 +2449,7 @@
     ],
     infer: [
       { k: 'deploy', n: '部署', q: '权重 + KV cache 放得下吗？prefill / decode 怎么分？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
-      { k: 'run', n: '监控', q: 'TTFT、TPOT、吞吐达标吗？', cards: ['infer', 'moe', 'comm', 'pipe'], go: 'swim' },
+      { k: 'run', n: '监控', q: 'TTFT、TPOT、吞吐达标吗？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
       { k: 'diag', n: '诊断', q: '慢在 prefill 还是 decode？哪个专家过热？', cards: ['infer', 'moe', 'state', 'cap'], go: 'worst' },
       { k: 'scale', n: '扩缩', q: '加卡还是改切分？改完装得下、够快吗？', cards: ['infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
@@ -2427,6 +2499,8 @@
     MODE = m === 'infer' ? 'infer' : 'train'; setQS('mode', MODE === 'infer' ? 'infer' : '');
     // 换工况时尽量停在同名的那一步（监控 / 诊断两边都有），没有就回到全部
     if (STAGE) { STAGE = stageOf(STAGE.k); setQS('stage', STAGE ? STAGE.k : ''); }
+    if (rawBrief && rawBrief.ok !== false) renderClusterBadge(rawBrief);
+    if (curSel != null) rerenderRank();
     if (drawerOpen === 'swimlane') renderSwim();
     renderDataCards(); renderCfg(); renderJourney();
   }
@@ -2616,7 +2690,20 @@
     if (!C) return '';
     var n = C.n, W = C.world, rows = [['ok', n.ok, ''], ['黄线 70%', n.amber, ''], ['红线 88%', n.red, n.red ? 'is-warn' : ''], ['超容', n.oom, n.oom ? 'is-bad' : '']];
     // 左列：容量（装得下吗）→ 训练健康（稳不稳）→ 公开读数；告警面板排在它们下面
-    return capClusterHtml(C, n, W, rows) + (C.perf ? healthCard(C.perf, null, 252) : '') + pubCard();
+    return capClusterHtml(C, n, W, rows) + (MODE === 'infer' ? inferMemCard() : C.perf ? healthCard(C.perf, null, 252) : '') + pubCard();
+  }
+  /* 推理 · 显存：最满那一段的四档（关键点 KV cache 高亮，其余灰）+ 合计 + 每条 KV + 并发上限 */
+  function inferMemCard(pp) {
+    var I = rawBrief && rawBrief.infer; if (!I) return '';
+    if (pp == null) { pp = 0; I.stages.forEach(function (x, i) { if (x.tot > I.stages[pp].tot) pp = i; }); }
+    var IM = inferMem(pp), G = Math.pow(2, 30);
+    return dcCard('state', '显存 · 推理' + (PS.pp > 1 ? ' · pp' + pp : ''),
+      vzStack(IM.segs.map(function (x) { return [x.label, x.gb / IM.totGB]; }), 'KV cache')
+      + dcRow('合计', (Math.round(IM.totGB * 10) / 10) + ' / ' + IM.hbm + ' GB', IM.level === 'ok' ? '' : IM.level === 'oom' ? 'is-bad' : 'is-warn')
+      + dcRow('KV cache', gb(IM.segs[1].gb) + ' GB · ' + I.batch + '×' + (I.ctx >= 1024 ? Math.round(I.ctx / 1024) + 'K' : I.ctx))
+      + dcRow('KV / 条', (I.kvSeq / G).toFixed(3) + ' GB')
+      + dcRow('并发上限', IM.bmax + ' 条', IM.bmax < I.batch ? 'is-bad' : ''),
+      'asm', '推理口径（矩阵 ptoInferMem）：权重 bf16 按同一套 TP/EP/PP 常驻，无梯度 / 优化器态；KV = 2×本段层数×本卡 KV 头×headDim×seq/cp×并发×2B（MHA/GQA 口径，MLA、量化 KV 未建模——是上限）；并发上限按 90% HBM 算');
   }
   function capClusterHtml(C, n, W, rows) {
     return dcCard('cap', '容量', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
@@ -2637,15 +2724,15 @@
     } else if (!rankOpen) {
       if (C) {
         out.push(dcCard('comm', '通信', closureRows()
-          + (C.comm && C.comm.tp ? dcRow('TP', C.comm.tp.txt, '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', C.comm.pp.txt, '', C.comm.pp.how) : '') + (C.comm && C.comm.dp ? dcRow('DP', C.comm.dp.txt, '', C.comm.dp.how) : '')
+          + (C.comm && C.comm.tp ? dcRow('TP', C.comm.tp.txt, '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', C.comm.pp.txt, '', C.comm.pp.how) : '') + (C.comm && C.comm.dp && MODE !== 'infer' ? dcRow('DP', C.comm.dp.txt, '', C.comm.dp.how) : '')
           + dcRow('UB · RoCE', '196 · 50 GB/s'), 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数'));
-        if (C.model) out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
+        if (C.model && MODE !== 'infer') out.push(dcCard('pipe', '流水', dcRow('气泡', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('层/段', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
           'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满'));
       }
       if (MODE === 'train' && C) out.push(thrCard(C.perf));
       if (MODE === 'train') out.push(dcCard('step', '步时', vzStack(STEP_DEMO.pretrain, '通信'), 'demo', SRC_DEMO));
       else out.push(dcCard('infer', '推理', dcRow('TTFT', '424 ms') + dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
-        'demo', SRC_DEMO + '；显存仍按训练口径，KV cache 未建模'));
+        'demo', SRC_DEMO + '；显存见「显存 · 推理」卡（按本页切分估算）'));
       if (C && C.perf) out.push(moeCard(C.perf));
     }
     if (rankOpen) {
@@ -2698,8 +2785,10 @@
     if (dcOpenRank !== curSel) { dcOpen = {}; dcOpenRank = curSel; }   // 点开的那一块只属于点开它时那张卡
     // 模型态在前（权重 → 逐块、梯度、优化器态、AllGather 窗口），执行态在后（激活、临时区、碎片）
     var ORD = { w: 0, agw: 1, g: 2, opt: 3, otmp: 4, act: 5, rsv: 6 };
+    // 推理工况：3D 卡仍按训练口径画，这里先放一张推理口径的本卡显存
+    if (MODE === 'infer' && B.coord) L.push(inferMemCard(B.coord.pp));
     // 先答「装得下吗」：合计 / HBM 一张卡排在最前，逐档构成跟在后面
-    if (DCK.state && B.cap) L.push('<section class="dcard dc-total' + (B.cap.level === 'ok' ? '' : ' is-alert') + '"><div class="dc-h"><span class="dc-t">合计</span><b class="dc-v">'
+    if (DCK.state && B.cap) L.push('<section class="dcard dc-total' + (B.cap.level === 'ok' ? '' : ' is-alert') + '"><div class="dc-h"><span class="dc-t">' + (MODE === 'infer' ? '合计 · 训练口径' : '合计') + '</span><b class="dc-v">'
       + (Math.round(B.cap.totGB * 10) / 10) + '<small> / ' + B.hbm + ' GB</small></b></div></section>');
     Dt.segs.slice().sort(function (a, b) { return (ORD[a.k] == null ? 9 : ORD[a.k]) - (ORD[b.k] == null ? 9 : ORD[b.k]); }).forEach(function (s) {
       L.push(splitCard(s.k, 'state', esc(s.label.replace(/ ·.*$/, '').replace(/\s*\(.*\)$/, '').replace(/·在途.*$/, '')), s.zdiv > 1 ? '1/' + s.zdiv : '', gb(s.gb) + '<small> GB</small>', esc([s.own, s.life].filter(Boolean).join(' · ')), false, s.col));
