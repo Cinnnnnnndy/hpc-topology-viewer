@@ -274,6 +274,21 @@ canvas 画，直接复用同一份设计系统组件 `vendor/swimlane-task/patte
   URL `?goal=` 键相应改成 `alert / plan / map / perf / tune`。
 - 数据卡右上角的口径小标（Demo / Public / Est.）去掉，口径说明留在整张卡的悬停提示里；泳道图例尾巴上的「Demo ·」也去掉。
 
+## 术语：业内通用英文的用英文，国内通用中文的保持中文（10.7.0）
+
+全页（集群 / 板 / rank / 单卡三种内容 / 配置浮层 / 告警清单 / 泳道 / 层级剖面 / 整网图 / 逻辑魔方 / 推理）逐条过了一遍可见文字。
+
+- **改成英文**（训练 / 推理圈子里说英文的）：序列 → seq（`MoE 504B(A18B)·32K seq`）、吞吐 → Throughput、步时 → Step Time、
+  气泡 → Bubble、通信 → Comm（通信组 → Comm Group、通信连线 → Comm Links、通信图层 → Comm Layers）、路由 → Router、
+  时序 → Timeline、载荷 → Payload、载体 → Fabric、并发 → Batch、工况 训练 / 推理 → Train / Inference、rank 号 → Rank ID；
+  数据卡开关名与卡片标题一致（Capacity / Comm / Pipeline · Bubble / Throughput / Step Time / Training Health …）；
+  工具条提示与参考面板标题 Network Graph / Swimlane / Logical Cube / Hierarchy / Sharding。
+- **保持中文**（国内通用中文的）：显存、集群、单卡、板、切分、权重切分、张量、模型、并行、原语、占用率、数值 / 梯度 / 性能 / 训练（整网图数据标注）、
+  场景名（故障定位 / 切分规划 …）、当前告警 / 历史事故，以及操作按钮（应用、复位、展开 …）。
+- 真实事故原文（事件标题、结论、指标注记）逐字引用，不改。
+- **英文术语悬停出中文释义**：一份词表（约 110 条：指标、并行维度 TP/PP/DP/CP/EP、ZeRO、显存各档、推理 TTFT/TPOT/KV Cache、泳道图例、
+  参考面板名、链路名……）+ 一个 MutationObserver，各处重画后自动给英文标签补 `title`=「中文 — 含义」，文字下一道极淡的点线提示可悬停。
+
 ## 两套 rank 编号
 
 逻辑魔方与并行拓扑矩阵各自独立实现了一遍「rank ↔ (tp, cp, pp, dp) 坐标」的换算，内部打包顺序不一样：

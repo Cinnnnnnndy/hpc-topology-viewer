@@ -11833,7 +11833,7 @@ function renderLegend(D){
   }).join('') + '<br><i>灰掉的是这一屏没落下的刀（或这个模型没有那根轴）。</i></div></div>');
 
   if(ui.commOn){
-    h.push('<div class="lg-sec">通信图层</div>');
+    h.push('<div class="lg-sec">Comm Layers</div>');
     h.push(lgRow(lgGlyph('<path d="M2 12 Q13 1 24 12" style="fill:none;stroke:'+VC.tp+';stroke-width:1.2"/>'
       + '<circle cx="2" cy="12" r="1.6" style="fill:'+VC.tp+'"/><circle cx="24" cy="12" r="1.6" style="fill:'+VC.tp+'"/>'),
       '<b>弧线 = 一次通信</b>，两端是参与的两张卡（或算子被锯开的那条缝）。'
@@ -12058,8 +12058,8 @@ function buildCfgSurface(D){
             }).join('')
           + '</div></div>';
       })() : '')
-    + '<div class="cg"><h6>通信连线</h6>'
-      + '<div class="cgrow">' + swBtn('commtoggle', '通信图层', ui.commOn,
+    + '<div class="cg"><h6>Comm Links</h6>'
+      + '<div class="cgrow">' + swBtn('commtoggle', 'Comm Layers', ui.commOn,
           ui.commOn ? '关掉：画面上不叠任何通信' : '打开：把通信按维叠回图上') + '</div>'
       /* 粒度三选一：一次只画一级（见 ui.commGrain）。放在维度多选之前——
          先问「看哪一级」，再问「看哪几维」，由粗到细。 */
@@ -12070,15 +12070,15 @@ function buildCfgSurface(D){
         + ['rank','tensor','route','time','cost','intra','fabric'].map(function(gk9){
             var GN9 = {rank:  ['rank','谁和谁 —— 卡与卡的边，一条边一枚芯片，字节/带宽/耗时走悬停'],
                        tensor:['张量','搬的是什么 —— 前态→后态的变换徽章，同时把算子级的弧线放出来'],
-                       route: ['路由','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张卡，两者一叠决定这次 A2A 的流量'],
-                       time:  ['时序','什么时候搬、藏住没有 —— 本卡这一步的 F/B/AllReduce 排布'],
+                       route: ['Router','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张卡，两者一叠决定这次 A2A 的流量'],
+                       time:  ['Timeline','什么时候搬、藏住没有 —— 本卡这一步的 F/B/AllReduce 排布'],
                        cost:  ['影响','造成了什么后果 —— 空转（气泡）与步末 AllReduce 抬到警示色'],
                        intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张卡里做完'],
                        /* 第十层：这条边**走哪张网**。前九层问的都是逻辑侧（谁、什么、
                           怎么搬、何时、代价），这一层第一次把物理侧接进来——同一条
                           AllToAll 是快是慢，不取决于它连了几张卡，取决于这几张卡
                           在不在同一个超节点里。 */
-                       fabric:['载体','走哪张网 —— 超节点内 UB、跨超节点 RoCE；node 边界在超节点内不降速（公开资料口径）']}[gk9];
+                       fabric:['Fabric','走哪张网 —— 超节点内 UB、跨超节点 RoCE；node 边界在超节点内不降速（公开资料口径）']}[gk9];
             /* 路由那一档只有 MoE + EP 落刀时答得上，其余配置下置灰——「不适用」
                不该假装成一个能点开却什么都没有的档（读出卡那排九格同一口径）。 */
             var dis9 = gk9 === 'route' && !(ui.kEP && moe9 && D.ep > 1);
@@ -13701,15 +13701,15 @@ var COMM_L9 = [
   {k:'par',    ab:'并', n:'并行',  ask:'为什么需要它'},
   {k:'rank',   ab:'r',  n:'rank',  ask:'谁和谁'},
   {k:'prim',   ab:'原', n:'原语',  ask:'怎么搬'},
-  {k:'load',   ab:'载', n:'载荷',  ask:'搬多少'},
-  {k:'route',  ab:'路', n:'路由',  ask:'token 去哪了'},
-  {k:'time',   ab:'时', n:'时序',  ask:'什么时候搬、藏住没有'},
+  {k:'load',   ab:'载', n:'Payload',  ask:'搬多少'},
+  {k:'route',  ab:'路', n:'Router',  ask:'token 去哪了'},
+  {k:'time',   ab:'时', n:'Timeline',  ask:'什么时候搬、藏住没有'},
   {k:'cost',   ab:'影', n:'影响',  ask:'造成了什么后果'},
   /* 第十层：前九层问的都是逻辑侧（谁 / 什么 / 怎么搬 / 何时 / 代价），这一层第一次
      把物理侧接进来。它不是九层的补充说明，是九层答不了的一问：同一条 AllToAll
      是快是慢，不取决于它连了几张卡，取决于这几张卡在不在同一个超节点里。 */
   /* 缩写用「网」不用「载」：载荷那一格已经占了「载」，两格同一个字读者分不开。 */
-  {k:'fabric', ab:'网', n:'载体',  ask:'走哪张网'}
+  {k:'fabric', ab:'网', n:'Fabric',  ask:'走哪张网'}
 ];
 /* 每一层现在答到什么程度——按维给，不给一份通用答案：这九格要是每条边都长一样，
    它就退化成一张装饰用的图例，读者也就不会再去看它。 */

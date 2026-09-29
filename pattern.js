@@ -63,7 +63,7 @@
        tp/pp/dp/ep 取值与 demo.html PRESETS 里 incident2048 的注释同一份推算
        （world=pp×edp×ep=4×8×64=2048 → dp=edp×ep=512、ep=64），两边用同一组
        数字，rank 号才能对得上。见下面 INCIDENT 数据块与 renderIncident()。 */
-    incident2048: { tp: 1, pp: 4, dp: 512, ep: 64, matrixPreset: 'incident2048', modelName: '2048卡·Router溢出复盘' },
+    incident2048: { tp: 1, pp: 4, dp: 512, ep: 64, matrixPreset: 'incident2048', modelName: '2048 NPU · Router overflow' },
     /* moe718b128k：demo.html 那份 PRESETS.moe718b128k 的桥接条目，tp/cp/pp/dp/ep
        逐位照抄那边的 cfg（world=tp·cp·pp·dp=8·16·16·4=8192；dp=4 不是 1——
        逻辑魔方自己的模型要求 EP 必须整除 DP 本身，dp=1 时 ep(4) 除不尽会
@@ -73,7 +73,7 @@
        必须显式给 cp，不然逻辑魔方按 cp=1 建模型，跟矩阵本体的四维结构
        对不上、rank 换算全错。世界卡数公式与 rubikParams/
        rubikSelToMatrixSel 里补的 cp 项，见下面对应位置的注释。 */
-    moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K序列' },
+    moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K seq' },
     /* moe504b32k：demo.html 那份 PRESETS.moe504b32k 的桥接条目（同一个
        pangu_sophon_pytorch 项目里 504B/18B 激活那档、32K 序列），tp/cp/pp/
        dp/ep 逐位照抄那边的 cfg（world=4·8·8·16=4096）。dp=16 不是猜的：
@@ -81,7 +81,7 @@
        域内，EP 必须整除 DP，DP=EP=16 就是这组切分的最小合法值——比
        moe718b128k 那档"从一堆矛盾候选里挑一个"扎实。字段来源分层（real/
        assumed）见 demo.html 那条预置的注释，这里不重复第二份。 */
-    moe504b32k: { tp: 4, cp: 8, pp: 8, dp: 16, ep: 16, matrixPreset: 'moe504b32k', zero: 1, modelName: 'MoE 504B(A18B)·32K序列' }
+    moe504b32k: { tp: 4, cp: 8, pp: 8, dp: 16, ep: 16, matrixPreset: 'moe504b32k', zero: 1, modelName: 'MoE 504B(A18B)·32K seq' }
   };
   /* 面包屑第二段：反馈「面包屑应该是3层」「这一层没有对应的面包屑」——
      原来选中之后不管第二档（留在逻辑魔方，选中卡与它所在的并行组）还是第三档
@@ -128,7 +128,7 @@
      依赖全在 ./vendor/。原来借用的 /patterns/rank-topology-3d/、/patterns/model-netgraph/ 是发布时往同一份 demo 里注入
      默认取景参数得到的——这里在拼地址时自己补上同一组默认值（只补缺席的，显式传的优先）。 */
   var ENG_3D = { view: 'chain', card: '1', vtab: '3d', stitle: '模型分片与训练设备映射', embed: '1' };
-  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: '模型整网视图 · 真图展开', embed: '1' };
+  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: 'Network Graph', embed: '1' };
   function engineSrc(def, q) {
     q = new URLSearchParams(q);
     for (var k in def) if (!q.has(k)) q.set(k, def[k]);
@@ -2391,15 +2391,15 @@
       + segBtns('odim', [['', '无']].concat(objDims.map(function (d) { return [d, d.toUpperCase()]; })), od || '')
       + (od ? '<div class="cf-line cf-step"><button type="button" data-ostep="-1">‹</button><b>' + od + ' ' + OBJ.idx + '</b><span>/ ' + n9 + '</span><button type="button" data-ostep="1">›</button></div>' : '') + '</div>'
       + '<div class="cf-sec"><div class="cf-k">数据标注</div>'
-      + [['occ', '占用率'], ['num', 'rank 号'], ['rel', '板内关系'], ['grp', '通信组']].map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-ann="' + x[0] + '"' + (ANN[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
+      + [['occ', '占用率'], ['num', 'Rank ID'], ['rel', '板内关系'], ['grp', 'Comm Group']].map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-ann="' + x[0] + '"' + (ANN[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
       + '<div class="cf-sec"><div class="cf-k">数据卡</div>'
-      + '<div class="cf-line"><span>工况</span>' + segBtns('mode', [['train', '训练'], ['infer', '推理']], MODE) + '</div>'
+      + '<div class="cf-line"><span>工况</span>' + segBtns('mode', [['train', 'Train'], ['infer', 'Inference']], MODE) + '</div>'
       + '<div class="cf-grid">' + DCT.map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-dk="' + x[0] + '"' + (DCK[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
       + '<div class="cf-line cf-all"><button type="button" data-dall="1">全开</button><button type="button" data-dall="0">全关</button></div></div>'
       + '<div class="cf-sec"><div class="cf-k">单卡</div>'
       + '<div class="cf-line"><span>机位</span>' + segBtns('cam', [['3d', '3D'], ['top', '顶视']], DV.vtab) + '</div>'
       + '<div class="cf-line"><span>兄弟</span>' + segBtns('sibs', [['ghost', '隐约'], ['on', '展开']], DV.sibs) + '</div>'
-      + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>通信连线</span></label>'
+      + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>Comm Links</span></label>'
       + (DV.comm ? '<div class="cf-line cf-ck">' + ['tp', 'cp', 'ep', 'pp', 'dp'].map(function (k) { return '<label class="cf-chk"><input type="checkbox" data-dvck="' + k + '"' + (DV.commk[k] ? ' checked' : '') + '><span>' + k.toUpperCase() + '</span></label>'; }).join('') + '</div>' : '') + '</div>';
   }
   function toggleCfg(on) {
@@ -2502,9 +2502,9 @@
        rank   通信载荷（显存构成 / 位置 / 通信组已在右卡）
        单卡   右卡那份读出拆成一张张小卡，贴在 3D 卡两侧：左边模型态（权重 → 逐块切分、梯度、
               优化器态），右边执行态（激活、优化器步临时区、碎片）+ 各维通信载荷 + 流水 */
-  var DCT = [['cap', '容量'], ['state', '显存各档'], ['wshard', '权重切分'], ['comm', '通信'], ['pipe', '流水·气泡'],
-    ['thr', '吞吐'], ['step', '步时'], ['moe', 'MoE'], ['health', '训练健康'], ['pub', '公开读数'],
-    ['phys', '物理'], ['infer', '推理'], ['inc', '故障复盘'], ['cmp', '调优对比']];
+  var DCT = [['cap', 'Capacity'], ['state', '显存'], ['wshard', '权重切分'], ['comm', 'Comm'], ['pipe', 'Pipeline · Bubble'],
+    ['thr', 'Throughput'], ['step', 'Step Time'], ['moe', 'MoE'], ['health', 'Training Health'], ['pub', 'Public Figures'],
+    ['phys', 'On-board'], ['infer', 'Inference'], ['inc', '历史事故'], ['cmp', 'Before → After']];
   var DCK = (function () { var h = (qs.get('dhide') || '').split(','), o = {}; DCT.forEach(function (x) { o[x[0]] = h.indexOf(x[0]) < 0; }); return o; })();
   var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
   var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
@@ -2521,14 +2521,14 @@
   var GOALS = {
     train: [
       { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
-      { k: 'plan', n: '切分规划', q: '这套切分装得下吗？每一维通信在哪一层闭合？', cards: ['cap', 'state', 'wshard', 'comm', 'pipe'], go: 'hier' },
+      { k: 'plan', n: '切分规划', q: '这套切分装得下吗？每一维 Comm 在哪一层闭合？', cards: ['cap', 'state', 'wshard', 'comm', 'pipe'], go: 'hier' },
       { k: 'map', n: '设备映射', q: '每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
-      { k: 'perf', n: '性能调优', q: '吞吐、步时、气泡、MoE 负载正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
+      { k: 'perf', n: '性能调优', q: 'Throughput、Step Time、Bubble、MoE 负载正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
       { k: 'tune', n: '变更评估', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
     ],
     infer: [
       { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
-      { k: 'plan', n: '部署规划', q: '权重 + KV cache 放得下吗？并发还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
+      { k: 'plan', n: '部署规划', q: '权重 + KV Cache 放得下吗？Batch 还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
       { k: 'perf', n: '时延优化', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
       { k: 'tune', n: '扩缩评估', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
@@ -2768,7 +2768,7 @@
     var T = P.thr;
     return dcCard('thr', 'Throughput', '<div class="vz-kpi">' + vzGauge(T.mfu, pct(T.mfu), 'MFU', 'MFU ' + pct(T.mfu) + '（假设：盘古 Ultra MoE 报告量级，openPangu-2.0 未公开）')
       + '<div class="vz-stat"><b>' + Math.round(T.tgs) + '</b><span>tok/s · per card</span><em>step ' + T.stepS.toFixed(1) + ' s</em></div></div>'
-      + dcRow('Cluster', fmtN(T.tokS) + ' tok/s') + dcRow('Tokens / Step', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × 序列')
+      + dcRow('Cluster', fmtN(T.tokS) + ' tok/s') + dcRow('Tokens / Step', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × seq')
       + dcRow('FLOPs / Token', (T.fTok / 1e9).toFixed(0) + ' GFLOP', '', '6·N激活（≈' + (T.nAct / 1e9).toFixed(1) + 'B 矩阵参数）+ 6·L·h·s 因果注意力；共享专家、MLA、DSA/SWA 稀疏未计入'),
       'asm', '步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 ' + T.peakTF + ' TFLOPS × MFU）；峰值按昇腾 910 标称 FP16，MFU 是假设值——看量级与随切分怎么变，不是实测');
   }
@@ -2782,7 +2782,7 @@
     if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', '整网图「MoE」那一类的示意读数，只看本段的层');
     return dcCard('moe', 'MoE', head
       + dcRow('Local Experts', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
-      + dcRow('μb token', fmtN(M.tokMb), '', '每 μb 每卡 = mbs × 序列 ÷ CP')
+      + dcRow('μb token', fmtN(M.tokMb), '', 'per μb per card = mbs × seq ÷ CP')
       + dcRow('A2A Dispatch', '≤' + Math.round(M.a2aMB) + ' MB', '', '每层每 μb 上限：token × topk × h × 2B，没算同卡去重')
       + dcRow('Pmax · Entropy', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)),
       'demo', '本卡专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与整网图「MoE」那一类同一套示意读数');
@@ -3099,4 +3099,169 @@
   var qsel = parseInt(qs.get('sel'), 10);
   if (isFinite(qsel) && qsel >= 0 && qsel < world) showDetail(qsel);
   else if (STAGE) stageGo(STAGE);   // ?stage= 深链：落到这一步该看的地方
+})();
+
+/* ── 英文术语的中文释义（反馈「用英文词的话，hover 要显示中文和对应的含义」）─────────────────────────────
+   页面上凡是用英文的指标 / 术语（卡片标题、行名、图例、配置开关、参考面板标题、告警条目），悬停都出「中文 — 含义」。
+   一份词表 + 一个观察器：各处重画后自动补上 title，不改各处的拼法。按「整串相等 → 以词条开头」匹配，长词条优先。 */
+(function () {
+  'use strict';
+  var G = {
+    'Capacity': '容量 — 每张卡显存占用落在哪一档：OK / Warn / Crit / OOM',
+    'OK': '正常 — 显存占用低于 70%',
+    'Warn 70%': '预警 — 占用 ≥ 70%，已经没有余量吃一次路由抖动',
+    'Crit 88%': '临界 — 占用 ≥ 88%，再有一点波动就 OOM',
+    'Critical 88%': '临界 — 占用 ≥ 88%，再有一点波动就 OOM',
+    'OOM': '显存溢出 — 占用超过 HBM 容量，这一刻放不下',
+    'Peak Rank': '最满的卡 — 全网显存占用率最高的那个 rank，点一下下钻',
+    'Peak Usage': '峰值占用 — 全网显存占用率最高的那张卡',
+    'Peak': '峰值 — 这一组卡里占用率最高的那张',
+    'Mean': '均值 — 这一组卡的平均占用率',
+    'Reading': '读数',
+    'Board': '板 — 同一块板上的 8 张卡（板内 UB fullmesh）',
+    'PP Stage · Peak Usage': 'PP 段峰值占用 — 每个流水段里占用率最高那张卡的占用',
+    'Training Health': '训练健康 — 数值稳定性与梯度状态（激活 Amax、梯度范数、更新比）',
+    'Activation Amax / Layer': '逐层激活最大值 — 超过 9.35 的层标琥珀，有 FP8 / BF16 溢出风险',
+    'Alert Layers': '告警层 — 激活 Amax 超阈或路由失衡超阈的层数',
+    'Grad L2': '梯度 L2 范数 — 逐层梯度的大小，突增 / 突降说明训练不稳',
+    'Amax Peak': '激活峰值 — 全网最大的激活值及其所在层',
+    'Amax': '激活最大值（absolute max）— 超阈说明数值有溢出风险',
+    'Δ/W': '更新比 — 一步参数更新量相对参数本身的量级',
+    'step': '训练步 — 当前步数与 checkpoint 间隔',
+    'Public Figures': '公开读数 — openPangu-2.0 开源时公布的相对提升（无绝对值）',
+    'SP Affinity': '超节点亲和 — 按超节点拓扑亲和编排带来的提升',
+    '512K Tput': '512K 序列吞吐 — 超长序列训练的吞吐提升',
+    'Infer/Card': '推理单卡 — 单卡推理性能提升',
+    'Pretrain': '预训练 token 量',
+    'Communication': '通信 — 各并行维度的通信在哪一层闭合、一次搬多少',
+    'Comm': '通信（communication）',
+    'Comm Group': '通信组 — 画布上标出同一并行组的卡',
+    'Comm Links': '通信连线 — 单卡视图里画出与兄弟卡之间的通信',
+    'Comm Layers': '通信图层 — 把通信按维叠回图上',
+    'Closure': '闭合 — 这一维通信在哪一级（板内 / POD / 超节点）就能完成',
+    'Beyond POD': '出 POD — 需要跨 POD 才能完成的维度',
+    'Cross-SP': '跨超节点 — 需要走超节点之间的网络',
+    'SP': '超节点（SuperPoD）',
+    'POD': 'POD — 超节点里的一组板',
+    'On-board': '板载 — 板内的 CPU / NIC / NPU 配对与连线',
+    'Intra-board': '板内 — 同一块板上的 NPU 互联',
+    'Off-board': '出板 — 板上 NPU 连到 L1 交换',
+    'Pipeline': '流水线 — PP 流水并行的气泡与微批次',
+    'Pipeline · Bubble': '流水线 · 气泡',
+    'Bubble': '气泡 — 流水线空转的占比，约 (PP−1)/GA',
+    'Layers / Stage': '每段层数 — 每个 PP 段负责几层',
+    'μb': '微批次（micro-batch）',
+    'μb token': '每个微批次在每张卡上的 token 数',
+    'Throughput': '吞吐 — 每卡每秒处理的 token 数与 MFU',
+    'MFU': '模型算力利用率 — 实际训练 FLOPs / 硬件峰值 FLOPs',
+    'Cluster': '全网 — 整个集群每秒处理的 token',
+    'Tokens / Step': '每步 token 数 — 一步训练吃进的 token',
+    'FLOPs / Token': '每 token 计算量',
+    'Step Time': '步时 — 一步训练的时间构成（计算 / 通信 / 访存）',
+    'Compute': '计算',
+    'Memory': '访存',
+    'MoE': '混合专家（Mixture of Experts）',
+    'Routing Imbalance / Layer': '逐层路由失衡 — 最忙专家负载 / 平均负载，> 1.15× 告警',
+    'Routing Imbalance': '路由失衡 — 最忙专家负载 / 平均负载，> 1.15× 告警',
+    'Imbalance': '失衡 — 最忙专家负载 / 平均负载',
+    'Capacity Util': '专家容量利用率 — 专家槽位被用上的比例',
+    'Local Experts': '本卡专家数 — 这张卡上放了几个专家 / 共几个 · top-k',
+    'A2A Dispatch': 'All-to-All 派发量 — 每层每个微批次发往其他卡的 token 数据量上限',
+    'Pmax · Entropy': '路由最大概率 · 路由熵 — 路由有多「偏」',
+    'Inference': '推理',
+    'Memory · Inference': '推理显存 — 权重 + KV cache + 工作区 + 预留',
+    'TTFT': '首 token 时延（Time To First Token）',
+    'TPOT': '每个输出 token 的时延（Time Per Output Token）',
+    'prefill': '预填充 — 一次性处理完整个提示词',
+    'Prefill': '预填充 — 一次性处理完整个提示词',
+    'decode': '解码 — 逐个生成输出 token',
+    'Decode': '解码 — 逐个生成输出 token',
+    'batch': '并发请求数',
+    'Total': '合计 — 这张卡的显存总占用 / HBM 容量',
+    'Total · Training': '合计（训练口径）',
+    'Weights': '权重',
+    'Grads': '梯度',
+    'Optimizer': '优化器状态（fp32 主参数 + 两份动量）',
+    'Opt Step Tmp': '优化器步临时区 — 步末梯度归约的临时副本',
+    'AG Window': 'AllGather 窗口 — ZeRO-3 计算时拼回完整参数的那一截',
+    'Activations': '激活 — 前向留给反向用的中间结果',
+    'Reserve': '碎片 / 预留',
+    'KV Cache': '键值缓存 — 推理时每条序列每层缓存的 K / V',
+    'KV Cache overflow': 'KV 缓存放不下 — 按当前并发，KV cache 超出显存',
+    'Workspace': '工作区 — prefill 计算的临时激活',
+    'KV / Seq': '每条序列的 KV cache 大小',
+    'Max Batch': '最大并发 — 按 90% HBM 能容纳的并发请求数',
+    'Before → After': '改前 → 改后 — 最近一次改 ZeRO / 切分 / 预置前后的读数对比',
+    'Model': '模型',
+    'Memory GB': '显存合计（GB）',
+    'OOM Ranks': '超容的卡数',
+    'Critical Ranks': '越过 88% 红线的卡数',
+    'tok/s · per card': '每卡每秒 token 数',
+    'Step Time s': '步时（秒）',
+    'Swimlane': '泳道 — 各 PP 段按时间排开的前向 / 反向（推理：prefill / decode）',
+    'Network Graph': '整网图 — 模型结构与各层切分',
+    'Logical Cube': '逻辑魔方 — TP × PP × DP 的逻辑排布',
+    'Hierarchy': '层级剖面 — 集群 → 超节点 → POD → 板 → NPU → Die',
+    'Sharding': '整网分片 — 这张卡拿到模型的哪一块',
+    'Forward': '前向',
+    'Backward': '反向',
+    'P2P': '点对点通信 — PP 段之间传激活 / 梯度',
+    'P2P / DP Sync': '点对点通信 / 数据并行梯度同步',
+    'DP AllReduce': '数据并行梯度同步（AllReduce）',
+    'Idle': '空闲 — 等上游激活（›）或下游梯度（‹）',
+    'Warmup': '预热 — 流水线逐段灌满',
+    'Steady 1F1B': '稳态 — 每段一前向一反向交替',
+    'Cooldown': '冷却 — 流水线逐段排空',
+    'Train': '训练',
+    'Rank ID': 'rank 号',
+    'Router': '路由 — MoE 把 token 分给哪个专家',
+    'Timeline': '时序 — 什么时候搬、有没有被计算藏住',
+    'Payload': '载荷 — 一次搬多少',
+    'Fabric': '载体 — 走哪张网（超节点内 UB / 跨超节点 RoCE）',
+    'group': '并行组 — 这张卡所在的各维并行组、闭合级别与通信量',
+    'link': '物理链路 — 这张卡的板内互联、交换、CPU、网卡',
+    'Lane / Object': '泳道 / 对象',
+    'Utilization': '占用率',
+    'TP': '张量并行（Tensor Parallel）— 把一层的矩阵按行 / 列切到几张卡',
+    'PP': '流水并行（Pipeline Parallel）— 按层切成几段，段与段之间传激活',
+    'DP': '数据并行（Data Parallel）— 每份模型吃不同的数据，步末同步梯度',
+    'CP': '上下文并行（Context Parallel）— 把长序列切到几张卡',
+    'EP': '专家并行（Expert Parallel）— MoE 的专家分到不同卡',
+    'SP ': '序列并行',
+    'ZeRO': 'ZeRO — 把优化器状态 / 梯度 / 权重沿数据并行切开，档位越高省得越多',
+    'PP · GA': 'PP 段数 · 梯度累积步数（GA，一步里的微批次数）',
+    'GA': '梯度累积步数 — 一步里的微批次数',
+    'UB · RoCE': 'UB 超节点内互联 · RoCE 跨超节点网络的带宽',
+    'fullmesh': '板内全互联 — 8 张卡两两直连',
+    'Clos': 'Clos 交换网络 — 板上 NPU 连到 L1 交换',
+    'H2D': 'Host to Device — 卡连到哪颗 CPU',
+    'RoCE': 'RoCE 网络 — 卡用哪块网卡走跨超节点网络',
+    'experts': '专家权重',
+    'attn.q': 'Attention Q 投影权重',
+    'attn.kv': 'Attention K / V 投影权重',
+    'attn.out': 'Attention 输出投影权重',
+    'router': '路由权重 — MoE 选专家的那一层',
+    'norm×2': '两层归一化（RMSNorm）的权重',
+    'Rep': '复制 — 每张卡一份，不切分'
+  };
+  var KEYS = Object.keys(G).sort(function (a, b) { return b.length - a.length; });
+  function lookup(t) {
+    t = (t || '').replace(/\s+/g, ' ').trim(); if (!t || t.length > 60) return null;
+    if (G[t]) return G[t];
+    for (var i = 0; i < KEYS.length; i++) { var k = KEYS[i]; if (t.indexOf(k) === 0 && /^[\s·:>\d(（/A-Z×]/.test(t.slice(k.length))) return G[k] + (t.length > k.length ? '\n' + t : ''); }
+    return null;
+  }
+  var SEL = '.dc-t, .dc-r > span:first-child, .lc-sub, .vz-cap, .vz-legend span, .sw-legend span, .sw-legend .sw-kv, .cf-chk span, .cf-seg button, .jn-mode button, #drawerTitle, .brief-row > span:first-child, .brief-row3 > span, .brief-k, .jn-al b, .dc-cmp > span';
+  var q = false;
+  function apply() {
+    q = false;
+    document.querySelectorAll(SEL).forEach(function (el) {
+      var t = el.textContent, g = lookup(t);
+      if (!g) { if (el.dataset.gloss) { el.removeAttribute('title'); delete el.dataset.gloss; } return; }
+      if (el.dataset.gloss === g) return;
+      el.setAttribute('title', g); el.dataset.gloss = g; el.classList.add('has-gloss');
+    });
+  }
+  new MutationObserver(function () { if (!q) { q = true; requestAnimationFrame(apply); } }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  apply();
 })();

@@ -1027,3 +1027,8 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .jn-alerts .ip-chain { margin: 2px 8px 6px 26px; }
 .jn-alerts .jn-al + .jn-al.is-info, .jn-alerts .jn-al:not(.is-past) + .jn-al.is-past { margin-top: 0; box-shadow: none; border-radius: 8px; }
 .jn-al.is-past i { outline: none; width: 7px; height: 7px; box-shadow: inset 0 0 0 1px #6A6A6A; }
+
+/* 带中文释义的英文术语：悬停时是「帮助」光标，文字下一道极淡的点线提示「可以悬停看释义」 */
+.has-gloss { cursor: help; text-decoration: underline dotted rgba(255, 255, 255, .22); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.jn-al b.has-gloss, .jn-mode button.has-gloss, .cf-seg button.has-gloss, #drawerTitle.has-gloss { text-decoration: none; }
+.jn-mode button.has-gloss, .cf-seg button.has-gloss, .jn-al b.has-gloss { cursor: pointer; }
