@@ -1,5 +1,5 @@
 /*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
-/* rank-topology-lite · 黑白极简数据界面
+/* shard-device-map · 黑白极简数据界面
    一块居中的主可视区（.zp-box，裁在自己的矩形里）+ 边缘的标题/导航/图例。
    规则（本页视觉提示词）：
    · 代码字体（等宽）贯穿全页；文字只留名称、数值与短键，解释进 hover。

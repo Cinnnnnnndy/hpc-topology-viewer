@@ -1,5 +1,5 @@
 /*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
-/* rank-topology-lite · pattern.js
+/* shard-device-map · pattern.js
    一条下钻链 + 三张常驻悬浮卡 + 一块可缩放的画布（结构见 pattern.html 顶部
    注释与 README）。分两条路：
 
@@ -1419,7 +1419,7 @@
     if (brief.config) {
       var want = { world: world, tp: PS.tp, cp: PS.cp, pp: PS.pp, dp: PS.dp, ep: PS.ep, podCards: PHYS_CHAIN.podCards };
       splitDiff = Object.keys(want).filter(function (k) { return brief.config[k] !== want[k]; }).map(function (k) { return k + ' ' + want[k] + '≠' + brief.config[k]; });
-      if (splitDiff.length) console.warn('lingqu-rank-map: 矩阵与本页切分不一致', splitDiff); else splitDiff = null;
+      if (splitDiff.length) console.warn('shard-device-map: 矩阵与本页切分不一致', splitDiff); else splitDiff = null;
     }
     lastCluster = brief; ppPeak = null;
     // 维度色不再拿矩阵报来的那套覆盖：单卡页（slabgap）反过来用本页这套（--c-*），全篇一个颜色一个意思
