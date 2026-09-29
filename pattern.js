@@ -1296,7 +1296,7 @@
     leftCard.innerHTML = '<div class="gcard lc-cfg">'
       + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' 板 *</div>'
-      + '</div><div class="gcard lc-pp"><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
+      + '</div><div class="gcard lc-pp"><div class="lc-sub">PP 段 · 峰值占用</div><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
       + lg + '</div>'
       + capCardHtml()
       + (splitErr ? '<div class="gcard lc-err"><div class="dc-r is-bad"><span>切分</span><b>不合法</b></div>' + splitErr.errors.slice(0, 3).map(function (e) { return '<div class="dc-sub">' + esc(e.replace(/（[^）]*）/g, '')) + '</div>'; }).join('') + '</div>' : '')
@@ -2460,7 +2460,7 @@
       + dcRow('告警层', H.warn + ' / ' + H.n, H.warn ? 'is-warn' : '', '告警层 = 专家 Amax > 9.35（柱图里琥珀色的柱）或路由失衡 > 1.15×（MoE 折线越过告警线的点）——整网图上标橙的就是这几层')
       + '<div class="dc-r"><span>梯度 L2</span>' + vzSpark(H.gradL, '逐层梯度 L2：L' + H.l0 + '–L' + H.l1) + '<b>' + H.grad.toFixed(2) + '</b></div>';
     return dcCard('health', scope ? '训练健康 · ' + scope : '训练健康', head
-      + (scope ? '' : dcRow('Amax 峰', H.amax.toFixed(1) + ' · L' + H.amaxAt) + dcRow('Δ/W', H.uRatio.toExponential(1)) + dcRow('step', H.step + ' · ckpt/' + H.ckpt)),
+      + (scope ? '' : '<div class="dc-more">' + dcRow('Amax 峰', H.amax.toFixed(1) + ' · L' + H.amaxAt) + dcRow('Δ/W', H.uRatio.toExponential(1)) + dcRow('step', H.step + ' · ckpt/' + H.ckpt) + '</div>'),
       'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数');
   }
   function pubCard() {

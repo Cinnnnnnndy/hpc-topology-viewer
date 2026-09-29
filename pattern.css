@@ -740,3 +740,71 @@ path.vz-track { stroke-width: 7; }
 body.is-compact .vz-cap { display: none; }
 .vz-cut { stroke: #1E1E1E; stroke-width: 2; }
 .data-col.is-over:not(.at-end), .shard-col.is-over:not(.at-end) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
+
+/* ══ 视觉精修（反馈「整体再精致一些：对比度、必要处加光泽感、间距」）════════════════════════════
+   只动表皮，不动结构与信息：
+   ① 光泽：所有悬浮面同一套「玻璃」——顶端 1px 高光（像玻璃边缘反的一道光，不是描边）+ 自上而下渐隐的一层亮面
+      + 一圈柔和投影把卡从画布上托起来；底更实一档（.58 → .74），画布上的线不再从字底下穿过去。
+   ② 对比度：标签灰 #A0A0A0 → #A8A8A8 层级不变，次要字（轴、单位、注记）#6A–#70 → #80 左右，标题 / 数值提到近白。
+   ③ 间距：卡内边距 8/10 → 10/12，卡间距 8 → 10，行高 17 → 18；小屏（is-compact）维持原来的紧凑值。 */
+:root { --glass: rgba(24, 24, 24, .74); --glass-hi: linear-gradient(180deg, rgba(255, 255, 255, .06) 0, rgba(255, 255, 255, .016) 40px, rgba(255, 255, 255, 0) 100%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, .075); --glass-drop: 0 14px 32px -16px rgba(0, 0, 0, .75), 0 2px 6px -2px rgba(0, 0, 0, .4); }
+.gcard, .side-right, .ip-grp, .dock, .cfg-pop, .dcard {
+  background: var(--glass-hi), var(--glass);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow: var(--glass-edge), var(--glass-drop);
+  border-radius: 8px;
+}
+.cfg-pop { background: var(--glass-hi), rgba(20, 20, 20, .9); }
+.dcard.is-split:hover { background: var(--glass-hi), rgba(42, 42, 42, .82); }
+.dcard.is-open { background: var(--glass-hi), rgba(46, 46, 46, .86); }
+.drawer { background: var(--glass-hi), rgba(18, 18, 18, .94); border: 0; border-radius: 10px; box-shadow: var(--glass-edge), 0 18px 48px -18px rgba(0, 0, 0, .85); }
+.drawer-hd { padding: 9px 14px; font-size: 12.5px; color: #F2F2F2; border-bottom-color: rgba(255, 255, 255, .06); }
+/* 工具条：同一块玻璃，按下的那一格是一枚带微弱纵向渐变的亮片 */
+.dock { border-radius: 10px; padding: 4px; }
+.dock button { border-radius: 6px; transition: background .15s ease, color .15s ease; }
+.dock button:hover { background: rgba(255, 255, 255, .07); color: #F2F2F2; }
+.dock button.is-on { color: #111111; background: linear-gradient(180deg, #FFFFFF, #D9D9D9); box-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.dock-sep { background: rgba(255, 255, 255, .1); width: 1px; }
+
+/* 文字层级：标题近白、数值亮、标签中灰、注记可读 */
+.dc-t { color: #F5F5F5; font-size: 11.5px; letter-spacing: .01em; }
+.dcard { color: #A8A8A8; }
+.dc-r b { color: #EDEDED; }
+.dc-big small, .dc-v small { color: #8C8C8C; }
+.dc-tag { color: #A8A8A8; border-color: #444444; }
+.brief-row span { color: #A8A8A8; }
+.brief-row b { color: #F0F0F0; }
+.brief-row3 em { color: #7E7E7E; }
+.vz-ax { fill: #808080; }
+.vz-cap { color: #969696; }
+.vz-legend { color: #969696; }
+.pb-num { fill: #969696; }
+.sw-tt { fill: #7E7E7E; }
+.sw-foot text { fill: #ADADAD; }
+.lc-title { color: #F5F5F5; }
+.lc-sub { font-size: 11px; color: #D8D8D8; margin: 0 0 2px; letter-spacing: .01em; }
+
+/* 间距（大屏）：卡内更透气，列内卡与卡之间多一点缝 */
+body:not(.is-compact) .dcard { padding: 10px 12px; }
+body:not(.is-compact) .dcard.is-sub { padding: 7px 12px 7px 24px; }
+body:not(.is-compact) .dc-h { margin-bottom: 6px; }
+body:not(.is-compact) .dc-r { line-height: 18px; }
+body:not(.is-compact) .data-col, body:not(.is-compact) .shard-col { gap: 10px; }
+body:not(.is-compact) .gcard { padding: 12px 14px; }
+body:not(.is-compact) .gcard + .gcard, body:not(.is-compact) #leftCard > .dcard { margin-top: 10px; }
+body:not(.is-compact) .side-right { padding: 12px 14px; }
+body:not(.is-compact) .ip-grp + .ip-grp { margin-top: 10px; }
+
+/* 切分标签（TP / EP / 复制…）：小圆角胶囊，字重收一档，不再像一块贴上去的色块 */
+.dc-cut { border-radius: 3px; padding: 0 4px; line-height: 13px; font-weight: 600; letter-spacing: .02em; }
+
+/* 泳道：原来的亮粉在深底上过亮（校验器 lightness band 不过），换成同色相收一档的一对（F 蓝 / B 玫红，
+   深色模式校验全过：CVD ΔE 15.3、正常视觉 ΔE 24.8、对比 ≥ 3:1）；块之间靠底色缝分开 */
+.sw-f { fill: #4F7BE0; }
+.sw-b { fill: #D65A7E; }
+.sw-bg { fill: #151515; }
+
+/* 小屏：训练健康卡只留图 + 告警层 + 梯度两行，细项收起（悬停图上的柱仍能读到逐层值）；告警列表到底就滚动，不再伸出视口 */
+body.is-compact .dc-more { display: none; }
+.ip-col-left { bottom: 16px; max-height: none; }

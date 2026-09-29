@@ -5325,7 +5325,7 @@ function netScene(D, g, box, step){
         var sibLinked9 = solidSib9 && ui.soloSibs === 'on' && memSibs && memSibs[gc] && commLit(memSibs[gc]);
         /* 兄弟展开时由近及远地涟漪出来：TP（同板）→ CP / EP（同 POD）→ DP（同 SP）→ PP（跨 SP） */
         var sibD9 = solidSib9 ? ({tp:0, cp:90, ep:170, dp:250, pp:330}[memSibs && memSibs[gc]] || 0) + (gc % 7) * 14 : 0;
-        if(rankFade9) body.push('<g'+(solidSib9 ? ' class="pt-sib" style="--sd:'+sibD9+'ms"' : '')+' opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? (sibLinked9 ? '0.9' : '0.55') : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.4' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
+        if(rankFade9) body.push('<g'+(solidSib9 ? ' class="pt-sib" style="--sd:'+sibD9+'ms"' : '')+' opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? (sibLinked9 ? '0.9' : '0.55') : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.28' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
