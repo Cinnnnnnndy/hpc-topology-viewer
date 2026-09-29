@@ -898,14 +898,6 @@
   .pt-detail{width:min(86%, 240px)}
   .pt-stagebar{max-width:96%}
 }
-  /* 宿主（lingqu-rank-map）藏起这一格时加上：所有 CSS 动画停住 */
-  html.pt-paused *, html.pt-paused *::before, html.pt-paused *::after { animation-play-state: paused !important; }
-  /* 宿主单卡层的入场编排（见 pto:solo 的 play / sibs / comm）：只动 opacity */
-  @keyframes ptFadeIn { from { opacity: 0; } }
-  html.pt-stack-in .pt-slab { animation: ptFadeIn .42s cubic-bezier(.2,.7,.2,1) backwards; animation-delay: var(--sd, 0ms); }
-  html.pt-sib-in g.pt-sib { animation: ptFadeIn .4s ease-out backwards; animation-delay: var(--sd, 0ms); }
-  html.pt-comm-in .pt-cc { animation: ptFadeIn .5s ease-out backwards; animation-delay: .12s; }
-  @media (prefers-reduced-motion: reduce) { html.pt-stack-in .pt-slab, html.pt-sib-in g.pt-sib, html.pt-comm-in .pt-cc { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -1045,10 +1037,6 @@ var VC_SOURCE = {
   ep:['var(--pt-ep)', '#9B3CF6']
 };
 var VC = {};
-/* slabgap（宿主 lingqu-rank-map 的单卡层）用宿主那套维度色：这份调色板里的 DP #1237BA 在黑底上近乎看不见，
-   提亮后又跟 EP 的紫混成一团。线与兄弟块都走它，和宿主左右卡片上的色点是同一套颜色。 */
-var HOST_DC = {tp:'#22d3ee', cp:'#86c70f', ep:'#9b3cf6', dp:'#4369ef', pp:'#ffaa3b'};
-function dimCol(d){ return (ui.slabGap && HOST_DC[d]) ? HOST_DC[d] : VC[d]; }
 var MEMC = {};
 /* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
    反馈原话「做默认关掉颜色只有黑白」。原来这一屏的颜色同时在说三件事：
@@ -1264,33 +1252,6 @@ var PRESETS = [
        =256、mbs=1、上面假设的 dp=4 反推 gbs=mbs·ga·dp 得出，dp 本身是
        假设值，这一项跟着不确定）。 */
   {id:'moe718b128k', name:'MoE 718B(A39B)·128K序列 tp8·pp16·cp16·ep4', cfg:{world:8192, tp:8, cp:16, pp:16, ep:4, etp:1, layers:64, hidden:7680, heads:64, kv:64, ffn:19200, vocab:153376, seq:131072, experts:256, topk:8, mbs:1, ga:64, hbm:64}},
-  /* moe504b32k：同一个 pangu_sophon_pytorch 项目 config/llm/moe_504B_A18B/ 目录
-     里 32K 序列那档的真实读数（504B 总参/18B 激活），来自对该目录的第三轮
-     完整扫描——这一轮比 moe718b128k 那轮多了一条从项目代码里确认的公式：
-       data_parallel_size = world_size ÷ (TP×PP×CP)，EP 落在 DP 域内
-       （ep_over_sp），不进 world 主公式；
-     所以 world 不再是猜的：EP 必须整除 DP（本页 plane 校验与逻辑魔方的
-     EP|DP 约束都要求这一点），DP=EP=16 是最小合法值，world=4·8·8·16=4096
-     是"这组切分能成立的下限"，不是从一堆互相矛盾的候选里挑的。
-     real（accelerate.yaml / model yaml 直接读出）：tp=4、pp=8、cp=8
-       （ulysses_cp_size=8，纯 Ulysses，与本页 cp 语义一致）、ep=16、
-       mbs=1、seq=32K=32768、experts=384、hidden=5120、ffn=1792
-       （routed_expert_hidden_size，本页 ffn 在 MoE 下就是单个专家的 FFN
-       宽度——拿它算 384 个专家的总字节正好落在 5×10¹¹ 参这个量级，跟
-       "504B"对得上）、hbm=64（同项目同硬件，昇腾 910B 单卡 64GB）。
-     assumed（原文没给或本页模型接不住，按本页约束取的占位值）：
-       dp=16/world=4096——如上，是"满足 EP|DP 的最小值"，真实训练用了几倍
-       于此的 DP 原文没写，不替它编；
-       layers=48——原文 51 层，本页要求 layers%pp===0，51 除不尽 8，48 是
-       最近的合法值（每段 6 层）；
-       heads=40、kv=40——原文是 MLA（q_lora_rank/kv_lora_rank 那套），本页
-       不建模，按 hidden/headDim=128 估 40 头，kv 沿用同一个数，不代表有
-       GQA 分组；topk=8——这档的 yaml 没抄到 topk，沿用同项目 718B/74b
-       两档都是 8 的读数；vocab=153376——沿用同项目 pangu 预置的词表；
-       ga=32——32K 那档的 global_batch_size 原文没给（只有 4K=16128、
-       128K=512），这里借 128K 的 512 按 gbs=mbs·ga·dp 反推，dp 本身是
-       假设值，这一项跟着不确定。 */
-  {id:'moe504b32k', name:'MoE 504B(A18B)·32K序列 tp4·pp8·cp8·ep16', cfg:{world:4096, tp:4, cp:8, pp:8, ep:16, etp:1, layers:48, hidden:5120, heads:40, kv:40, ffn:1792, vocab:153376, seq:32768, experts:384, topk:8, mbs:1, ga:32, hbm:64}},
   {id:'bad', name:'非法示例(A6)', bad:true, cfg:{world:64, tp:16, cp:1, pp:4, ep:1, etp:1, layers:32, hidden:4096, heads:33, kv:8, ffn:14336, vocab:128256, seq:8192, experts:0, topk:0, mbs:1, ga:8, hbm:64, perNode:8, nodeRack:4, podCards:384}}
 ];
 
@@ -1540,45 +1501,12 @@ function urlLoad(){
   if(q.get('fill')==='comp'){ ui.compFill = true; ui.netOff = false; }
   if(q.get('mem')==='0') ui.memFill = false;
   if(q.get('fastcard')==='1') ui.fastCard = true;
-  /* memcards=0：solo 档不画那群显存浮卡与引线（宿主自己在右侧摆数字时传，
-     rank-topology-lite 用；默认不传，solo 独立打开照旧画）。 */
-  if(q.get('memcards')==='0') ui.noMemCards = true;
-  /* 两个 opt-in（默认不传照旧）：plate=0 不画选中卡底下那块门牌（rank + 坐标两行）与溢出卡壳上
-     的「装不下 ×N / 要 N GB · 只有 64GB」两行——宿主自己有 rank 读数时它们是压在卡体上的重复信息；solozoom=N 把 solo 档的飞焦倍数从 20 提到 N（上限 80），
-     容量占用低的卡本身很矮，20 倍下只有指甲盖大。只有 lingqu-rank-map 传。 */
-  if(q.get('plate')==='0') ui.noPlate = true;
-  /* 两个 opt-in（只有 lingqu-rank-map 的单卡层传，默认不传照旧）：
-     sibs=ghost|on —— solo 档里兄弟 rank（沿落下的刀与它同组）也画出来，但只画壳、不画容量色带：
-       ghost 淡到隐约，机位不动；on 实一些，镜头退到第二档那个倍数让兄弟看得见，通信按 rank 粒度连到兄弟上。
-       点兄弟卡 = 换选它、仍留在 solo（不退回第二档）。超大集群里兄弟可能上百张，所以宿主默认只给 ghost。
-     clbl=0 —— 通信连线不挂芯片与字标（关键值、前/反/更），只留线；详情仍在悬停。 */
-  if(q.get('sibs')==='ghost' || q.get('sibs')==='on') ui.soloSibs = q.get('sibs');
-  if(q.get('clbl')==='0') ui.noCommChip = true;
-  /* lstyle=flow（opt-in，lingqu-rank-map 传）：卡对卡的通信线换成宿主那套「衬边 + 芯线 + 两端端口环 + 一颗顺着线跑的点」，
-     不画箭头；各原语一律拆成逐段：p2p 串成链、环形集合通信沿环、alltoall 从本卡星形发出。 */
-  if(q.get('lstyle')==='flow') ui.flowEdges = true;
-  /* capln=reach（opt-in）：卡壳上的 70% / 88% 两条警戒线只在这张卡真的够到时才画，够不到就不画 */
-  if(q.get('capln')==='reach') ui.capLineReach = true;
-  /* slabgap=1（opt-in）：选中那只卡放大到单卡时，各档显存从容器壁、容器底内缩一圈，档与档之间留缝——
-     每一档成为一块独立的板，读得出「这是几块、各多厚」。壳顶仍然恒等于 HBM 容量（缝与边距从同一段高度里扣）。 */
-  if(q.get('slabgap')==='1') ui.slabGap = true;
-  /* ggap=1（opt-in）：切分组不挂文字牌（TP0 / CP0 / DP3 / PP7 / EP 组），改用组间间距 + 维度色区分——
-     CP 块之间再掰开一条比 EP 组缝更宽的缝，展开的兄弟 rank 棱按它与选中卡同组的那一维上色 */
-  if(q.get('ggap')==='1') ui.groupGap = true;
-  /* notitle=1（opt-in）：不画左上角题面——宿主（lingqu-rank-map）自己的标题面包屑占着那个位置 */
-  if(q.get('notitle')==='1') ui.noTitle = true;
-  /* rankview=net|comp（opt-in，需 slabgap）：选中那只卡里不画显存，改画「整网里这张卡拿走了哪一片」（net）
-     或「这张卡逐层装了哪些算子块」（comp）——同一套内缩、互有间距的板块画法 */
-  if(q.get('rankview')==='net' || q.get('rankview')==='comp') ui.rankView = q.get('rankview');
-  var sz9 = parseFloat(q.get('solozoom')); if(isFinite(sz9) && sz9 > 0) ui.soloZoom = Math.min(80, sz9);
   if(q.get('mono')==='1') ui.mono = true;
   /* 下钻到"只看这一只"（tier3）：见 ui.soloCard。rank-topology-lite 的第三档
      取景直接带它进来，所以这条链接自己就是那一屏，不靠宿主再发一次消息。
      通信粒度跟着收到卡内那一级——写在下面 cgrain 解析**之前**，链接里显式
      写了 cgrain 的话仍旧以它为准。 */
   if(q.get('solo')==='1'){ ui.soloCard = true; ui.commGrain = 'intra'; }
-  /* 直接带 sibs=on 打开时与宿主发 pto:solo 切过去是同一个样子：卡对卡的通信层（不是卡内那层） */
-  if(q.get('solo')==='1' && ui.slabGap && q.get('sibs')==='on') ui.commGrain = 'rank';
   if(!ui.cardMode) ui.netOff = false;
   if(q.get('comm')==='1') ui.commOn = true;
   else if(q.get('comm')==='0') ui.commOn = false;
@@ -1619,7 +1547,7 @@ function urlLoad(){
   });
   var yw = parseFloat(q.get('yaw')); if(isFinite(yw)) ui.yaw3 = yw;
   var pt = parseFloat(q.get('pitch')); if(isFinite(pt)) ui.pitch3 = clamp(pt, -0.9, 1.57);
-  var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, Math.max(20, ui.soloZoom || 0));
+  var zm = parseFloat(q.get('zoom')); if(isFinite(zm) && zm>0) ui.zoom3 = clamp(zm, 0.2, 20);
   var px3 = parseFloat(q.get('px')); if(isFinite(px3)) ui.panX3 = px3;
   var py3 = parseFloat(q.get('py')); if(isFinite(py3)) ui.panY3 = py3;
   var cy2 = parseFloat(q.get('cyaw')); if(isFinite(cy2)) ui.cavYaw = cy2;
@@ -2351,34 +2279,15 @@ function capVerdict(D, ppRank, g){
    「随便选一张再看是不是这张最惨」。 */
 function ptoClusterBrief(){
   var D = derive(cfg);
-  /* 配置不合法（切分对不上模型：heads % TP、layers % PP、experts % EP、world 整除……）时把原因交给宿主，
-     不再只回一个 null——宿主（lingqu-rank-map）的切分是可改的，改错了要当场说清楚错在哪。 */
-  if(!D.ok) return {ok:false, errors: D.errors.map(function(e9){ return e9.msg; }),
-    fixes: [].concat.apply([], D.errors.map(function(e9){ return (e9.fixes || []).map(function(f9){ return f9.label; }); })).slice(0, 8)};
-  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1, oom = [], ratio = [];
+  if(!D.ok) return null;
+  var n = {ok:0, amber:0, red:0, oom:0}, worst = null, worstRatio = -1;
   for(var r=0; r<D.world; r++){
     var co = coordsOf(r, D);
     var V = capVerdict(D, co.p, r);
     n[V.level]++;
-    if(V.level === 'oom') oom.push(r);          /* 宿主要把顶出容量的卡逐张标红 */
-    ratio.push(Math.round(V.ratio * 1000) / 1000); /* 逐卡占用率（= 合计 / HBM）：宿主按它分灰阶 */
     if(V.ratio > worstRatio){ worstRatio = V.ratio; worst = r; }
   }
-  /* model / comm / bubble：宿主（lingqu-rank-map）集群层的数据卡要用；只多带字段，本页不读 */
-  var comm9 = {};
-  ['tp','pp','dp'].forEach(function(dm9){
-    var T9 = commLoad9(D, dm9, 0);
-    if(T9 && D[dm9] > 1) comm9[dm9] = {txt:T9.txt, how:T9.how};
-  });
-  return { ok:true, world:D.world, hbm:D.hbm, n:n, worst:worst, oom:oom, ratio:ratio,
-           /* 本页实际按哪一组切分算的：宿主拿它核对「两边是不是同一套数」 */
-           config:{world:D.world, tp:D.tp, cp:D.cp, pp:D.pp, dp:D.dp, ep:D.ep, perNode:D.perNode, nodeRack:D.nodeRack, podCards:D.podCards},
-           /* 维度色与显存档色：宿主给「每一屏最关键的那个要素」上色时用同一套，全篇一个颜色一个意思 */
-           dimCol:{tp:VC.tp, cp:VC.cp, ep:VC.ep, dp:VC.dp, pp:VC.pp}, memCol: MEMC,
-           amber:CAP_AMBER, red:CAP_RED,
-           model:{layers:D.layers, hidden:D.hidden, seq:D.seq, mbs:D.mbs, ga:D.ga, experts:D.experts || 0, topk:D.topk || 0, lps:D.layersPerStage},
-           comm:comm9, bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0,
-           perf: ptoPerf(D, null) };
+  return { world:D.world, hbm:D.hbm, n:n, worst:worst };
 }
 /* 本刀对「每卡容量」的贡献：把这一维设回 1，看同一张卡会装多少。
    DP 会算出一模一样的数——因为 paramsPerCard/memParts 里没有任何一项含 dp，
@@ -2471,42 +2380,8 @@ function schedule(D){
 
 
 /* ═════════ 线型语义（§8）：由原语决定，与维度无关 ═════════ */
-function flowEdgeSVG(pts, prim, color, opts){
-  /* 不放顺线跑的点：这张 SVG 铺满整个舞台，任何一处动画都会让整张图逐帧重绘（实测每帧 120–180ms），
-     单卡层会一直掉帧、连带宿主那边的点击都排在它后面。「流动」这层交给衬边 + 端口去说。 */
-  var w = Math.max(1.2, Math.min(3, opts.w || 2)), n = pts.length, segs = [], i, out = '';
-  /* 这套调色板里的维度色偏深（DP #1237BA 在深底上几乎看不见）：线色统一兑三成白提亮，五维在黑底上一样读得清 */
-  if(ui.slabGap && color){ for(var dk9 in HOST_DC) if(VC[dk9] === color){ color = HOST_DC[dk9]; break; } }
-  if(prim === 'alltoall' && opts.hub != null && opts.hub >= 0 && opts.hub < n){ for(i = 0; i < n; i++) if(i !== opts.hub) segs.push([pts[opts.hub], pts[i]]); }
-  else { for(i = 0; i < n - 1; i++) segs.push([pts[i], pts[i+1]]); if(prim !== 'p2p' && n > 2 && !opts.solo) segs.push([pts[n-1], pts[0]]); }   /* 单卡层（bend）不画环的收尾段：首尾相距最远，那一笔横穿全屏 */
-  /* 单卡层（bend）：兄弟块已经淡显，线跟着收一档——细一点、衬边淡一点，不要比它连着的块还重 */
-  if(opts.solo) w = 1.15;
-  var caseW = opts.solo ? w + 1.6 : w + 3.2, caseOp = opts.solo ? ';stroke-opacity:.7' : '', lineOp = opts.solo ? ';stroke-opacity:.9' : '';
-  segs.forEach(function(sg, k){
-    var a = sg[0], b = sg[1], d = 'M'+a[0].toFixed(1)+','+a[1].toFixed(1)+' L'+b[0].toFixed(1)+','+b[1].toFixed(1);
-    if(opts.bend){
-      /* 弯成二次曲线：控制点在中点沿法向偏 bend × 线长（统一朝屏幕上方为正），几维叠在同一排时各走各的弧 */
-      var mx = (a[0]+b[0])/2, my = (a[1]+b[1])/2, dx = b[0]-a[0], dy = b[1]-a[1], L = Math.sqrt(dx*dx+dy*dy) || 1;
-      var nx = -dy/L, ny = dx/L; if(ny > 0){ nx = -nx; ny = -ny; }
-      d = 'M'+a[0].toFixed(1)+','+a[1].toFixed(1)+' Q'+(mx + nx*L*opts.bend).toFixed(1)+','+(my + ny*L*opts.bend).toFixed(1)+' '+b[0].toFixed(1)+','+b[1].toFixed(1);
-    }
-    out += '<path d="'+d+'" style="fill:none;stroke:var(--pt-bg);stroke-width:'+caseW+';stroke-linecap:round'+caseOp+'"/>'
-         + '<path d="'+d+'" style="fill:none;stroke:'+color+';stroke-width:'+w+';stroke-linecap:round'+lineOp+'"/>';
-  });
-  /* 两端端口：底色实心环 + 描边 + 中心点，同一个点只画一次。
-     单卡层（solo）收成一颗比线略粗的实心点：几维的线都收在选中卡顶上，一圈圈端口环叠在一起比线还重 */
-  var seen = {};
-  segs.forEach(function(sg){ sg.forEach(function(p){
-    var key = p[0].toFixed(0)+','+p[1].toFixed(0); if(seen[key]) return; seen[key] = 1;
-    if(opts.solo){ out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.05).toFixed(2)+'" style="fill:'+color+';fill-opacity:.85"/>'; return; }
-    out += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*1.5).toFixed(2)+'" style="fill:var(--pt-bg);stroke:'+color+';stroke-width:'+(w*0.55).toFixed(2)+'"/>'
-         + '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="'+(w*0.5).toFixed(2)+'" style="fill:'+color+'"/>';
-  }); });
-  return '<g' + (opts.solo ? ' class="pt-cc"' : '') + '>' + out + '</g>';
-}
 function edgeSVG(pts, prim, color, opts){
   opts = opts || {};
-  if(ui.flowEdges && pts.length >= 2) return flowEdgeSVG(pts, prim, color, opts);
   var w = opts.w || 2, out='', i, j, n = pts.length, mid = opts.mid || 'x';
   /* alltoall 那一支原来把线宽写死（0.7–1.8 的伪随机），opts.w 传进来就用它：
      路由那一档要靠**条宽**表达「这条边分到多少 token」，宽度不能是装饰。 */
@@ -3418,9 +3293,7 @@ function netScene(D, g, box, step){
         return gcol[Math.max(0, Math.min(d9, gcol.length-1))] - gcol[0]; };
     }
   }
-  /* ggap：CP 一块（KD 列）一块之间再掰开一条缝，比 EP 组缝宽一档——层级越高缝越宽，数缝就数得出组 */
-  var CPGAP = (ui.groupGap && ui.spread && KC > 1) ? CU*2.6 : 0;
-  function colX(c0){ return c0*CU + (EPGAP ? epColG(c0)*EPGAP : 0) + (CPGAP ? Math.floor(((c0|0) % (KC*KD))/KD)*CPGAP : 0); }
+  function colX(c0){ return c0*CU + (EPGAP ? epColG(c0)*EPGAP : 0); }
   function stOf(li){ return Math.min(D.pp-1, Math.floor(li/lps)); }
   function wOf(li){ return DEP*li/L + (cutPP ? GAPW*stOf(li) : 0); }
   function segW(st){ var a0 = DEP*(st*lps)/L + GAPW*st;
@@ -4763,7 +4636,6 @@ function netScene(D, g, box, step){
       +'style="fill:transparent;cursor:help"><title>'+esc(tip)+'</title></rect>');
   }
   function axLab(pt, s1, s2, col, strong, sz, op9){
-    if(ui.groupGap) return;   /* ggap：切分组靠间距与颜色区分，不挂文字牌 */
     var f1 = sz || 7, w1 = Math.max(String(s1).length, s2 ? String(s2).length : 0)*(f1*0.57) + 11;
     var h1 = s2 ? 20 : Math.round(f1*1.9);
     /* 画上去的牌子一律登记进同一张占位账（chipRects）：芯片原来只跟芯片互相
@@ -5261,14 +5133,6 @@ function netScene(D, g, box, step){
         var C8 = [ P(cu0,cv0,cw0,kc), P(cu1,cv0,cw0,kc), P(cu1,cv1,cw0,kc), P(cu0,cv1,cw0,kc),
                    P(cu0,cv0,cw1,kc), P(cu1,cv0,cw1,kc), P(cu1,cv1,cw1,kc), P(cu0,cv1,cw1,kc) ];
         chainCardAnchor[gc] = [(C8[0][0]+C8[1][0]+C8[2][0]+C8[3][0])/4, (C8[0][1]+C8[1][1]+C8[2][1]+C8[3][1])/4];
-        /* 宿主单卡层（slabgap + solo）：卡对卡的线接在块的**顶面中心**，不接前脸中心——前脸中心在块半腰，
-           线像是从块身上戳进去的；顶面中心是这只块「朝上的口」，几维的线都从那儿出，读起来是一只器件的端口 */
-        if(ui.slabGap && ui.soloCard){
-          var tA9 = [C8[0],C8[1],C8[5],C8[4]], tB9 = [C8[3],C8[2],C8[6],C8[7]];
-          var tcA9 = [(tA9[0][0]+tA9[1][0]+tA9[2][0]+tA9[3][0])/4, (tA9[0][1]+tA9[1][1]+tA9[2][1]+tA9[3][1])/4];
-          var tcB9 = [(tB9[0][0]+tB9[1][0]+tB9[2][0]+tB9[3][0])/4, (tB9[0][1]+tB9[1][1]+tB9[2][1]+tB9[3][1])/4];
-          chainCardAnchor[gc] = tcA9[1] <= tcB9[1] ? tcA9 : tcB9;
-        }
         (function(){
           var bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
           for(var q8 = 0; q8 < 8; q8++){
@@ -5312,18 +5176,9 @@ function netScene(D, g, box, step){
         /* solo（第三档取景）：连兄弟卡一起不画，画面上只剩选中那一只。
            判据写成 tier9 !== 2 而不是再列一遍 tier 号——2 就是"选中的那只"
            （见 selTier），别的全部让路。 */
-        var sibGhost9 = ui.fastCard && hasSel && ui.soloCard && ui.soloSibs && tier9 === 1;
-        if(ui.fastCard && hasSel && (ui.soloCard ? (tier9 !== 2 && !sibGhost9) : tier9 === 0)){ kc = kcOrig; continue; }
-        var rankFade9 = spotShellDim || tier9 === 0 || sibGhost9;
-        /* ggap 下展开的兄弟不去色：它们的棱色（与选中卡同组的那一维）就是区分切分组的线索 */
-        var sibKeepCol9 = sibGhost9 && ui.groupGap && ui.soloSibs === 'on';
-        /* slabgap 下兄弟 rank 画成实心块（三面明暗 + 同色细边），不再是 12 条棱的线框——一屏几十只线框叠起来全是线 */
-        var solidSib9 = sibGhost9 && ui.slabGap && ui.netOff;
-        /* 打开通信时，被连到的那几只兄弟块提亮：线的两端落在看得见的块上，不是连向一片淡影 */
-        var sibLinked9 = solidSib9 && ui.soloSibs === 'on' && memSibs && memSibs[gc] && commLit(memSibs[gc]);
-        /* 兄弟展开时由近及远地涟漪出来：TP（同板）→ CP / EP（同 POD）→ DP（同 SP）→ PP（跨 SP） */
-        var sibD9 = solidSib9 ? ({tp:0, cp:90, ep:170, dp:250, pp:330}[memSibs && memSibs[gc]] || 0) + (gc % 7) * 14 : 0;
-        if(rankFade9) body.push('<g'+(solidSib9 ? ' class="pt-sib" style="--sd:'+sibD9+'ms"' : '')+' opacity="'+(spotShellDim ? '0.10' : sibGhost9 ? (ui.soloSibs === 'on' ? (solidSib9 ? (sibLinked9 ? '0.9' : '0.55') : sibKeepCol9 ? '0.7' : '0.42') : (solidSib9 ? '0.4' : '0.18')) : '0.16')+'"'+(sibKeepCol9 ? '' : ' filter="url(#ptGray)"')+'>');
+        if(ui.fastCard && hasSel && (ui.soloCard ? tier9 !== 2 : tier9 === 0)){ kc = kcOrig; continue; }
+        var rankFade9 = spotShellDim || tier9 === 0;
+        if(rankFade9) body.push('<g opacity="'+(spotShellDim ? '0.10' : '0.16')+'" filter="url(#ptGray)">');
         /* 壳走中性淡灰，不带维度色：128 只壳一起上蓝会把整屏染成一片蓝，
            而且卡本身不是某一个维度——它是四个维度的交点。颜色留给里面的载荷。
            前脸铺一层极淡的底，卡才有体积感；只有描边的话是一只铁丝笼。 */
@@ -5417,18 +5272,8 @@ function netScene(D, g, box, step){
                产品意图没变，只是把它从「默认全量」改成「点开之后才给选中卡与它的
                兄弟卡（tier 1/2）」——没有选中任何卡、或者这张卡跟选中的毫无组关系
                （tier 0）时退回素壳，跟 mem=0 用户手动关掉时同一条路径，不是新画法。 */
-            var wantFill = ui.memFill && hasSel && tier9 !== 0 && !sibGhost9;   /* 兄弟在 solo 档只画壳：只有选中那只显示内部容量 */
-            var wantShell9 = (lowDetail || !wantFill) && !solidSib9;
-            if(solidSib9){
-              var sbC9 = (sibKeepCol9 && memSibs && memSibs[gc]) ? dimCol(memSibs[gc]) : 'var(--pt-fg)';
-              /* 实心块收成淡显：维度色只兑一小份进底色，读得出是哪一维，但不跟选中卡与连线抢 */
-              var sbK9 = sbC9 === 'var(--pt-fg)' ? [14, 9, 19, 28] : (sibLinked9 ? [30, 20, 40, 58] : [20, 13, 28, 42]);
-              var vis8 = function(a8, b8, c8){ return turn3(a8, b8, c8, yaw, pitch)[2] < 0; };
-              var sbE9 = ';stroke:color-mix(in srgb, '+sbC9+' '+sbK9[3]+'%, var(--pt-bg));stroke-width:.35;stroke-linejoin:round';
-              body.push(quad(vis8(0,0,1) ? [C8[4],C8[5],C8[6],C8[7]] : [C8[0],C8[1],C8[2],C8[3]], 'fill:color-mix(in srgb, '+sbC9+' '+sbK9[0]+'%, var(--pt-bg))'+sbE9));
-              body.push(quad(vis8(1,0,0) ? [C8[1],C8[5],C8[6],C8[2]] : [C8[0],C8[4],C8[7],C8[3]], 'fill:color-mix(in srgb, '+sbC9+' '+sbK9[1]+'%, var(--pt-bg))'+sbE9));
-              body.push(quad(vis8(0,-1,0) ? [C8[0],C8[1],C8[5],C8[4]] : [C8[3],C8[2],C8[6],C8[7]], 'fill:color-mix(in srgb, '+sbC9+' '+sbK9[2]+'%, var(--pt-bg))'+sbE9));
-            }
+            var wantFill = ui.memFill && hasSel && tier9 !== 0;
+            var wantShell9 = lowDetail || !wantFill;
             if(wantShell9){
               if(fcOn){
                 fcPushFace(dT, !fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'A');
@@ -5462,138 +5307,13 @@ function netScene(D, g, box, step){
               body.push(quad(fFront?[C8[0],C8[1],C8[2],C8[3]]:[C8[4],C8[5],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
               body.push(quad(fRight?[C8[1],C8[5],C8[6],C8[2]]:[C8[0],C8[4],C8[7],C8[3]], 'fill:'+capBgS9+';stroke:none'));
               body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
-              /* slabgap：内缩 + 档间留缝（只给选中那只；阵列里 128 只各留缝就碎了） */
-              var inS9 = !!(ui.slabGap && meC);
-              var sPadU9 = inS9 ? (cu1 - cu0)*0.08 : 0, sPadW9 = inS9 ? (cw1 - cw0)*0.08 : 0;
-              var sPadV9 = inS9 ? vSp9*0.03 : 0, sGap9 = inS9 ? vSp9*0.03 : 0;
-              /* 内缩档里同一把刀连着的几块并成一块画（attn.q/kv/out 三片 TP 各只有几像素宽，分开画是几道毛刺），
-                 板面上只剩「TP 那一截 | EP 那一截」这种一眼读得出的分段；点选命中仍按原来的逐块 */
-              var opsM9 = (MS9.opSegs || []);
-              if(inS9){
-                opsM9 = [];
-                (MS9.opSegs || []).forEach(function(o9){
-                  var l9 = opsM9[opsM9.length - 1];
-                  if(l9 && l9.cut === o9.cut) l9.u1 = o9.u1; else opsM9.push({id:o9.id, cut:o9.cut, u0:o9.u0, u1:o9.u1});
-                });
-              }
-              var nIn9 = 0; MS9.forEach(function(x9){ if(!x9.over) nIn9++; });
-              var sAvail9 = vSp9 - sPadV9 - Math.max(0, nIn9 - 1)*sGap9;
-              var su0 = cu0 + sPadU9, su1 = cu1 - sPadU9, sw0 = cw0 + sPadW9, sw1 = cw1 - sPadW9;
-              /* 板彼此分开之后，哪三个面朝向读者要按真实机位算（turn3 后法线的深度分量 < 0 即朝向镜头）；
-                 fTop/fFront/fRight 那组是按默认机位的近似，板贴在一起时看不出差，分开就会把背面画到前面来 */
-              var vis9 = function(a9, b9, c9){ return turn3(a9, b9, c9, yaw, pitch)[2] < 0; };
-              var sTopV9 = vis9(0, -1, 0), sU1V9 = vis9(1, 0, 0), sW1V9 = vis9(0, 0, 1);
-              var swF9 = sW1V9 ? sw1 : sw0;   /* 朝向读者的那张 w 面：块、缝都画在它上面 */
-              /* 板内的切分也拆成互有间距的小块：权重按算子块（experts / attn.q / attn.kv / attn.out …），
-                 梯度、优化器态跟同一套切分（同一份参数的 ×1 / ×k），激活按在途微批。
-                 字节占比不到 0.5% 的块（router、norm 这种 0.0GB 的复制件）不单画；最窄的块至少给 3.5% 宽，
-                 否则 0.1GB 的 attn 片只有一两个像素、缝比块还宽——精确数字在左侧逐块列着，这里要的是「切成了几块」。 */
-              var splitW9 = null;
-              if(inS9){
-                var rawP9 = (MS9.opSegs || []).map(function(o9){ return {id:o9.id, cut:o9.cut, s:o9.u1 - o9.u0}; })
-                              .filter(function(x9){ return x9.s >= 0.005; });
-                var sumP9 = rawP9.reduce(function(a9, x9){ return a9 + x9.s; }, 0);
-                if(rawP9.length > 1 && sumP9 > 0){
-                  var MINP9 = 0.035, smallP9 = 0, bigP9 = 0;
-                  rawP9.forEach(function(x9){ x9.s /= sumP9; if(x9.s < MINP9) smallP9 += MINP9; else bigP9 += x9.s; });
-                  rawP9.forEach(function(x9){ x9.f = x9.s < MINP9 ? MINP9 : x9.s*(1 - smallP9)/bigP9; });
-                  splitW9 = rawP9;
-                }
-              }
-              var pickW9 = (meC && ui.memSel && ui.memSel.indexOf('w:') === 0) ? ui.memSel.slice(2) : null;
-              if(inS9 && ui.rankView) (function(){
-                /* ── 选中那只卡的另外两种内容：整网分片（net）/ 层构成（comp）────────────────
-                   与显存板同一套画法：内缩、行与行留缝、块与块留缝，只画朝向读者的三面。 */
-                var rk9 = rankOf(tIdx, cIdx, dIdx, pc2, D), co9 = coordsOf(rk9, memD), me9 = memD.moe ? epOf(co9.t, co9.c, co9.d, memD) : null;
-                var lps9 = memD.layersPerStage, st9 = cutPP ? co9.p : 0, L9 = memD.layers;
-                var ghostF9 = 'color-mix(in srgb, var(--pt-fg) 7%, var(--pt-bg))';
-                function cutCol9(c9){ return c9 === 'tp' ? VC.tp : (c9 === 'ep' ? VC.ep : 'color-mix(in srgb, var(--pt-fg) 42%, var(--pt-bg))'); }
-                function box9(a9, b9, vA, vB, col, ghost, hitId){
-                  var q0 = P(a9,vB,sw0,kc), q1 = P(b9,vB,sw0,kc), q2 = P(b9,vA,sw0,kc), q3 = P(a9,vA,sw0,kc),
-                      q4 = P(a9,vB,sw1,kc), q5 = P(b9,vB,sw1,kc), q6 = P(b9,vA,sw1,kc), q7 = P(a9,vA,sw1,kc);
-                  var fr = sW1V9 ? [q4,q5,q6,q7] : [q0,q1,q2,q3];
-                  var sd = sU1V9 ? [q1,q5,q6,q2] : [q0,q4,q7,q3];
-                  var tp = sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7];
-                  if(ghost){
-                    /* ghost === true：不归这张卡的层，中性淡影；ghost 是颜色：归这张卡的层里别人拿走的那几片，同刀色的淡影 */
-                    var gt = ghost === true ? 'var(--pt-fg)' : ghost, gf = 'color-mix(in srgb, '+gt+' '+(ghost === true ? 7 : 20)+'%, var(--pt-bg))';
-                    var ge = ';stroke:color-mix(in srgb, '+gt+' '+(ghost === true ? 20 : 38)+'%, var(--pt-bg));stroke-width:.3;stroke-linejoin:round';
-                    body.push(quad(fr, 'fill:'+gf+ge)); body.push(quad(sd, 'fill:'+memShade(gf, 20)+ge));
-                    body.push(quad(tp, 'fill:color-mix(in srgb, '+gt+' '+(ghost === true ? 11 : 28)+'%, var(--pt-bg))'+ge));
-                  } else {
-                    var ed = ';stroke:color-mix(in srgb, '+col+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9';
-                    body.push(quad(fr, 'fill:'+col+ed)); body.push(quad(sd, 'fill:'+memShade(col, 22)+ed));
-                    body.push(quad(tp, 'fill:color-mix(in srgb, '+col+' 90%, white)'+ed));
-                  }
-                  if(hitId && meC) hitOps.push(quad(fr, 'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(hitId)+'"', esc(hitId)+'：点开看这一块的切分'));
-                }
-                /* 一行里的块：宽度 ∝ 字节，不到 0.5% 的不单画，最窄给 3.5%，块间留缝 */
-                function layout9(items){
-                  var it = items.filter(function(x){ return x.b > 0; }), sum = it.reduce(function(a,x){ return a + x.b; }, 0);
-                  if(!sum) return [];
-                  it = it.filter(function(x){ return x.b/sum >= 0.005; });
-                  sum = it.reduce(function(a,x){ return a + x.b; }, 0);
-                  var MIN = 0.035, sm = 0, bg = 0;
-                  it.forEach(function(x){ x.s = x.b/sum; if(x.s < MIN) sm += MIN; else bg += x.s; });
-                  it.forEach(function(x){ x.f = x.s < MIN ? MIN : x.s*(1 - sm)/bg; });
-                  var gU = (su1 - su0)*0.03, W = (su1 - su0) - gU*(it.length - 1), ux = su0;
-                  it.forEach(function(x){ x.a = ux; x.bb = ux + W*x.f; ux = x.bb + gU; });
-                  if(!sU1V9) it.reverse();
-                  return it;
-                }
-                var ops9 = opBytes(memD).filter(function(o){ return o.b > 0; });
-                var vocB9 = 2*Math.ceil(memD.vocab/memD.tp)*memD.hidden;
-                var rows9 = [];
-                if(ui.rankView === 'comp'){
-                  /* 层构成：只画这张卡自己的层，逐层一排「它拿到的」算子块（字节 = 每卡字节），颜色 = 切它的那把刀 */
-                  if(st9 === 0) rows9.push({h:0.6, items:[{id:'embed', cut:'tp', b:vocB9}]});
-                  for(var l9 = 0; l9 < lps9; l9++) rows9.push({h:1, items:ops9.map(function(o){ return {id:o.id, cut:o.cut, b:o.b}; })});
-                  if(st9 === memD.pp - 1) rows9.push({h:0.6, items:[{id:'lm_head', cut:'tp', b:vocB9}]});
-                } else {
-                  /* 整网分片：整张网自下而上（embed → L 层 → lm_head），宽度按整层（未切）的字节；
-                     这张卡所在 PP 段的那几层实心，块里只有它拿走的那一片（TP 的第 t 片 / EP 的第 e 桶）上色，其余是空位；
-                     不归它的层整排只留一块淡影 */
-                  var full9 = function(o){ return {id:o.id, cut:o.cut, b:o.cut === 'tp' ? o.b*memD.tp : (o.cut === 'ep' ? o.b*memD.ep : o.b)}; };
-                  rows9.push({h:1, held:st9 === 0, items:[{id:'embed', cut:'tp', b:vocB9*memD.tp}]});
-                  for(var l8 = 0; l8 < L9; l8++) rows9.push({h:1, held:Math.floor(l8/lps9) === st9, items:ops9.map(full9)});
-                  rows9.push({h:1, held:st9 === memD.pp - 1, items:[{id:'lm_head', cut:'tp', b:vocB9*memD.tp}]});
-                }
-                var hSum9 = rows9.reduce(function(a,r){ return a + r.h; }, 0), nR9 = rows9.length;
-                var padB9 = vSp9*0.03, padT9 = vSp9*(ui.rankView === 'comp' ? 0.10 : 0.03);
-                var rGap9 = Math.min(vSp9*0.03, (vSp9 - padB9 - padT9)/nR9*0.32);
-                var unit9 = (vSp9 - padB9 - padT9 - rGap9*(nR9 - 1))/hSum9, vy9 = cv1 - padB9;
-                var rowStep9 = Math.max(12, Math.min(90, 900 / rows9.length));
-                var rowPos9 = rows9.map(function(r, i){ var vA = vy9, vB = vy9 - unit9*r.h; vy9 = vB - rGap9; return {r:r, vA:vA, vB:vB, d:Math.round(i*rowStep9)}; });
-                if(!sTopV9) rowPos9.reverse();
-                rowPos9.forEach(function(rp){
-                  var bi8 = body.length;
-                  rowBody9(rp);
-                  body.splice(bi8, 0, '<g class="pt-slab" style="--sd:'+rp.d+'ms">'); body.push('</g>');
-                });
-                function rowBody9(rp){
-                  var r = rp.r;
-                  if(ui.rankView === 'net' && !r.held){ box9(su0, su1, rp.vA, rp.vB, null, true); return; }
-                  layout9(r.items).forEach(function(x){
-                    var col = 'color-mix(in srgb, '+cutCol9(x.cut)+' 80%, var(--pt-bg))';
-                    if(ui.rankView === 'comp'){ box9(x.a, x.bb, rp.vA, rp.vB, col, false, x.id); return; }
-                    /* 这张卡拿走的是哪一片：TP 按 t、EP 按桶号、复制件整块都是它的 */
-                    var n = x.cut === 'tp' ? memD.tp : (x.cut === 'ep' ? memD.ep : 1);
-                    var i = x.cut === 'tp' ? co9.t : (x.cut === 'ep' && me9 ? me9.ep : 0);
-                    var w = (x.bb - x.a)/n, h0 = x.a + w*i, h1 = h0 + w;
-                    var segs = [[x.a, h0, true], [h0, h1, false], [h1, x.bb, true]].filter(function(s){ return s[1] - s[0] > 1e-6; });
-                    if(!sU1V9) segs.reverse();
-                    segs.forEach(function(s){ box9(s[0], s[1], rp.vA, rp.vB, col, s[2] ? cutCol9(x.cut) : false, s[2] ? null : x.id); });
-                  });
-                }
-              })();
-              else for(var m8 = 0; m8 < MS9.length; m8++){
-                var sg8 = MS9[m8], bi8 = body.length;
-                var vA9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f0 - m8*sGap9) : (cv1 - vSp9*sg8.f0),
-                    vB9 = inS9 ? (cv1 - sPadV9 - sAvail9*sg8.f1 - m8*sGap9) : (cv1 - vSp9*sg8.f1);
-                var mq0 = P(su0,vB9,sw0,kc), mq1 = P(su1,vB9,sw0,kc),
-                    mq2 = P(su1,vA9,sw0,kc), mq3 = P(su0,vA9,sw0,kc),
-                    mq4 = P(su0,vB9,sw1,kc), mq5 = P(su1,vB9,sw1,kc),
-                    mq6 = P(su1,vA9,sw1,kc), mq7 = P(su0,vA9,sw1,kc);
+              for(var m8 = 0; m8 < MS9.length; m8++){
+                var sg8 = MS9[m8];
+                var vA9 = cv1 - vSp9*sg8.f0, vB9 = cv1 - vSp9*sg8.f1;
+                var mq0 = P(cu0,vB9,cw0,kc), mq1 = P(cu1,vB9,cw0,kc),
+                    mq2 = P(cu1,vA9,cw0,kc), mq3 = P(cu0,vA9,cw0,kc),
+                    mq4 = P(cu0,vB9,cw1,kc), mq5 = P(cu1,vB9,cw1,kc),
+                    mq6 = P(cu1,vA9,cw1,kc), mq7 = P(cu0,vA9,cw1,kc);
                 var lzM = 1;
                 /* 一档跨过壳顶时 MS9 里连着两条（壳内 in + 壳外 over，见 memStack 里
                    push9 的注释），这两条都是同一个 sg8.k——只认第一条（壳内那半，
@@ -5645,49 +5365,13 @@ function netScene(D, g, box, step){
                    内容本身的颜色也带没了。 */
                 var fPct9 = Math.round(100 * dimPct9);
                 var sideDark9 = Math.round(2 * (2 - dimPct9));
-                var fc9 = (dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9));
-                /* 内缩成独立的板：三个可见面分三档明暗（顶最亮、正面本色、侧面最暗），近面描一道同色提亮的细边——
-                   板与板之间隔着缝，靠这道边与明暗认出每一块的轮廓，不再是一整根色柱 */
-                var topC9 = inS9 ? 'color-mix(in srgb, '+fc9+' 90%, white)' : fc9;
-                var sideC9 = inS9 ? memShade(fc9, 22) : memShade(sg8.c, sideDark9);
-                var nearK9 = inS9 ? (';stroke:color-mix(in srgb, '+fc9+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9') : ';stroke:none';
-                if(inS9){
-                  var parts9;
-                  if(sg8.over) parts9 = [{f:1}];
-                  else if(splitW9 && (sg8.k === 'w' || sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp')) parts9 = splitW9;
-                  else if(sg8.k === 'act' && MS9.mub > 1){ parts9 = []; for(var pm9 = 0; pm9 < MS9.mub; pm9++) parts9.push({f:1/MS9.mub}); }
-                  else parts9 = [{f:1}];
-                  var gU9 = (su1 - su0)*0.03, wU9 = (su1 - su0) - gU9*(parts9.length - 1), ux9 = su0, boxes9 = [];
-                  parts9.forEach(function(pt9){ var a9 = ux9, b9 = ux9 + wU9*pt9.f; boxes9.push({a:a9, b:b9, pt:pt9}); ux9 = b9 + gU9; });
-                  /* 画家序：离镜头远的那一端先画（+u 面朝向读者时，u 小的在远处） */
-                  if(!sU1V9) boxes9.reverse();
-                  boxes9.forEach(function(bx9){
-                    var col9 = fc9;
-                    if(sg8.k === 'w' && bx9.pt.cut){
-                      var oc9 = bx9.pt.cut === 'tp' ? VC.tp : (bx9.pt.cut === 'ep' ? VC.ep : null);
-                      if(oc9) col9 = 'color-mix(in srgb, '+oc9+' '+Math.round(52*((pickW9 && bx9.pt.id !== pickW9) ? 0.28 : 1))+'%, '+fc9+')';
-                    }
-                    var q0 = P(bx9.a,vB9,sw0,kc), q1 = P(bx9.b,vB9,sw0,kc), q2 = P(bx9.b,vA9,sw0,kc), q3 = P(bx9.a,vA9,sw0,kc),
-                        q4 = P(bx9.a,vB9,sw1,kc), q5 = P(bx9.b,vB9,sw1,kc), q6 = P(bx9.b,vA9,sw1,kc), q7 = P(bx9.a,vA9,sw1,kc);
-                    var edge9 = ';stroke:color-mix(in srgb, '+col9+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9';
-                    /* 只画朝向读者的三面：正面本色、侧面压暗、顶（或底）提亮 */
-                    var front9 = sW1V9 ? [q4,q5,q6,q7] : [q0,q1,q2,q3];
-                    body.push(quad(front9, 'fill:'+col9+edge9));
-                    body.push(quad(sU1V9 ? [q1,q5,q6,q2] : [q0,q4,q7,q3], 'fill:'+memShade(col9, 22)+edge9));
-                    body.push(quad(sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7], 'fill:color-mix(in srgb, '+col9+' 90%, white)'+edge9));
-                    if(meC && sg8.k === 'w' && bx9.pt.id) hitOps.push(quad(front9, 'fill:transparent;cursor:pointer',
-                      'data-act="memblockpick" data-mk="w:'+esc(bx9.pt.id)+'"', esc(bx9.pt.id)+'：点开看这一块的切分'));
-                  });
-                } else {
-                var hasTop9 = sg8.top;
-                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+fc9+kerf));
-                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+kerf));
-                if(hasTop9) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+';stroke:none'));
-                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+fc9+nearK9));
-                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+sideC9+nearK9));
-                if(hasTop9) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+topC9+nearK9));
-                }
-                if(sg8.act && !inS9) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
+                body.push(quad(!fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+kerf));
+                body.push(quad(!fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+kerf));
+                if(sg8.top) body.push(quad(!fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
+                body.push(quad(fFront?[mq0,mq1,mq2,mq3]:[mq4,mq5,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
+                body.push(quad(fRight?[mq1,mq5,mq6,mq2]:[mq0,mq4,mq7,mq3], 'fill:'+memShade(sg8.c, sideDark9)+';stroke:none'));
+                if(sg8.top) body.push(quad(fTop?[mq0,mq1,mq5,mq4]:[mq3,mq2,mq6,mq7], 'fill:'+(dimPct9 >= 1 ? sg8.c : memSolid(sg8.c, fPct9))+';stroke:none'));
+                if(sg8.act) body.push(seg(mq0, mq1, 'stroke:'+VC.dp+';stroke-width:.8;stroke-dasharray:2.4 2'));
                 /* ── (b) 卡上点这条带 → 读出卡展开它 ────────────────────────
                    命中面只给选中那只卡：别的卡上点一下应该是「换选这张卡」，
                    那是外面 .cardg 已经在管的事，这里插一层会把它抢走。 */
@@ -5718,12 +5402,12 @@ function netScene(D, g, box, step){
                    画，缩回全景自然又收回去。 */
                 var cardPxW9 = Math.abs(P(cu1, vB9, cw0, kc)[0] - P(cu0, vB9, cw0, kc)[0]);
                 var fineOK9 = meC || cardPxW9 >= 34;
-                if(!inS9 && (vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
+                if((vA9 - vB9) > 0.010 && !sg8.over && (sg8.k === 'w' || fineOK9)){
                   /* 缝色兑 34% 前景，不用纯底色白。L3 那只卡的 g/opt 是灰阶，白缝
                      压上去读得出；这一屏的优化器态是极淡的紫（面积最大的一档必须最弱），
                      白线画在它上面实测一道都看不见。 */
                   var seamCol9 = memShade('var(--pt-bg)', 34);
-                  var uAt9 = function(u9){ return su0 + (su1 - su0)*u9; };
+                  var uAt9 = function(u9){ return cu0 + (cu1 - cu0)*u9; };
                   /* 权重带画 TP/EP 色块（52% 混合），g/opt/otmp 跟同一刀但只画
                      白色切分线、不铺色块——线够说清「这儿断开了」，色块留给权重。 */
                   if(sg8.k === 'w' && (MS9.opSegs || []).length){
@@ -5732,14 +5416,6 @@ function netScene(D, g, box, step){
                     /* 点开的是权重里某一块时，只有它保持满色，同带的兄弟压到 .28——
                        和五档之间那套压暗是同一种语言，读者不用学第二种。 */
                     var pickId9 = (meC && ui.memSel && ui.memSel.indexOf('w:') === 0) ? ui.memSel.slice(2) : null;
-                    var drawM9 = inS9 && !pickId9;
-                    if(drawM9) opsM9.forEach(function(o8){
-                      var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
-                      var ua8 = uAt9(o8.u0), ub8 = uAt9(o8.u1);
-                      if(oc8) body.push(quad([P(ua8,vB9,swF9,kc),P(ub8,vB9,swF9,kc),P(ub8,vA9,swF9,kc),P(ua8,vA9,swF9,kc)],
-                        'fill:color-mix(in srgb, '+oc8+' 52%, '+sg8.c+');stroke:none'));
-                      if(o8.u0 > 0.002) body.push(seg(P(ua8,vB9,swF9,kc), P(ua8,vA9,swF9,kc), 'stroke:var(--pt-bg);stroke-width:.8'));
-                    });
                     MS9.opSegs.forEach(function(o8){
                       if((o8.u1 - o8.u0)*cardPxW9 < 0.7) return;
                       var oc8 = o8.cut === 'tp' ? VC.tp : (o8.cut === 'ep' ? VC.ep : null);
@@ -5748,15 +5424,13 @@ function netScene(D, g, box, step){
                       /* 非选中块的弱化：兑淡刀色混合比例 */
                       var oPickDim9 = (pickId9 && o8.id !== pickId9) ? 0.28 : 1;
                       var oMix9 = Math.round(52 * oPickDim9);
-                      var bw8 = inS9 ? swF9 : (!fFront ? sw0 : sw1);
-                      if(meC) hitOps.push(quad([P(ua8,vB9,bw8,kc),P(ub8,vB9,bw8,kc),P(ub8,vA9,bw8,kc),P(ua8,vA9,bw8,kc)],
+                      if(meC) hitOps.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
+                                                      :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
                         'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(o8.id)+'"',
                         esc(o8.id)+'：点开看这一块的切分'));
-                      if(drawM9) return;
-                      body.push(quad([P(ua8,vB9,bw8,kc),P(ub8,vB9,bw8,kc),P(ub8,vA9,bw8,kc),P(ua8,vA9,bw8,kc)],
-                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+')'+(inS9 ? ';stroke:none' : ';stroke:var(--pt-bg);stroke-width:.35')));
-                      /* 内缩档：块与块之间只在内侧切一道底色缝，不给整块描黑边（描边会把板的外轮廓也勾成黑框） */
-                      if(inS9 && o8.u0 > 0.002) body.push(seg(P(ua8,vB9,bw8,kc), P(ua8,vA9,bw8,kc), 'stroke:var(--pt-bg);stroke-width:.8'));
+                      body.push(quad(!fFront?[P(ua8,vB9,cw0,kc),P(ub8,vB9,cw0,kc),P(ub8,vA9,cw0,kc),P(ua8,vA9,cw0,kc)]
+                                             :[P(ua8,vB9,cw1,kc),P(ub8,vB9,cw1,kc),P(ub8,vA9,cw1,kc),P(ua8,vA9,cw1,kc)],
+                        'fill:color-mix(in srgb, '+oc8+' '+oMix9+'%, '+sg8.c+');stroke:var(--pt-bg);stroke-width:.35'));
                     });
                   } else if(fineOK9 && (sg8.k === 'g' || sg8.k === 'opt' || sg8.k === 'otmp') && (MS9.opSegs || []).length){
                     /* g/opt/otmp 跟权重同一套 TP/EP 切分，但只画切分线、不填色块。
@@ -5764,23 +5438,21 @@ function netScene(D, g, box, step){
                        otmp #F5E6A8）上白线看不见，改用带色本身压暗 50% 的深色线。 */
                     var cutCol8 = (sg8.k === 'g') ? '#fff' : memShade(sg8.c, 50);
                     var lastPx8 = -1e9;
-                    opsM9.forEach(function(o8){
+                    MS9.opSegs.forEach(function(o8){
                       var px8 = o8.u0 * cardPxW9;
                       if(o8.u0 < 0.005 || px8 - lastPx8 < 2.2 || (cardPxW9 - px8) < 2.2) return;
                       lastPx8 = px8;
-                      body.push(seg(P(uAt9(o8.u0), vB9, inS9 ? swF9 : sw0, kc), P(uAt9(o8.u0), vA9, inS9 ? swF9 : sw0, kc),
+                      body.push(seg(P(uAt9(o8.u0), vB9, cw0, kc), P(uAt9(o8.u0), vA9, cw0, kc),
                         'stroke:'+cutCol8+';stroke-width:.55'));
                     });
                   } else if(fineOK9 && sg8.k === 'act' && MS9.mub > 1 && cardPxW9/MS9.mub >= 2.2){
                     /* 激活按在途份数分格，虚线以示它是**流**、不是切出来的常驻账 */
                     for(var mm9 = 1; mm9 < MS9.mub; mm9++){
-                      body.push(seg(P(uAt9(mm9/MS9.mub), vB9, inS9 ? swF9 : sw0, kc), P(uAt9(mm9/MS9.mub), vA9, inS9 ? swF9 : sw0, kc),
+                      body.push(seg(P(uAt9(mm9/MS9.mub), vB9, cw0, kc), P(uAt9(mm9/MS9.mub), vA9, cw0, kc),
                         'stroke:'+seamCol9+';stroke-width:.6;stroke-dasharray:2.2 1.8'));
                     }
                   }
                 }
-                /* 宿主单卡层：每一档包一层，下钻落地时自下而上逐档「码」上去（宿主发 play:'stack' 才播） */
-                if(inS9){ body.splice(bi8, 0, '<g class="pt-slab" style="--sd:'+(m8*80)+'ms">'); body.push('</g>'); }
               }
               /* 顶出壳外那一截的收尾：壳顶画一条实线（那才是 64GB 的位置），
                  被截断的地方画锯齿边表示「还在往上」。壳的线框照旧在外面画，
@@ -5893,7 +5565,7 @@ function netScene(D, g, box, step){
         if(capCol){ eW = Math.max(eW, 1.4); eO = 1; }
         if(fcOn){
           CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
-        } else if(!solidSib9){
+        } else {
           CE.forEach(function(e){
             /* 选中那张卡的白框是"这是哪一张"的身份标记，容量告警红是"超没超"的
                状态标记——两句话都要紧，但盘古 ZeRO=0 下结构性溢出面太大，
@@ -5907,10 +5579,7 @@ function netScene(D, g, box, step){
                mono 下 capCol 那一档已经换成了次级灰（见上面 capCol 的三目），
                线宽/不透明度的加粗照旧，于是三层关系还在——选中（纯白）＞
                告警（红或次级灰·粗）＞ 普通（维度色或暗灰）。 */
-            /* slabgap 下选中那只的壳收成一只细玻璃框：里面的板已经是主角，粗白框会压过它们 */
-            if(ui.slabGap && meC && !capCol){ eW = 0.9; }
-            var edgeCol9 = (ui.slabGap && meC) ? 'color-mix(in srgb, var(--pt-fg) 62%, var(--pt-bg))'
-              : (ui.fastCard && meC) ? 'var(--pt-fg)'
+            var edgeCol9 = (ui.fastCard && meC) ? 'var(--pt-fg)'
               : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.mono ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
             body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
               +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
@@ -5936,7 +5605,7 @@ function netScene(D, g, box, step){
            的那根轴。结果不是「线消失」而是「线在屏幕上瘫成同一条」：一整排卡
            各画一遍、各自的两条虚线全叠在同一个 v 高度上，看着像凭空多出一条
            贯穿全宽的灰线。侧视本来看的是 PP 分段，不是某张卡装了多少——让位。 */
-        if(meC && ui.netOff && ui.memFill && !lowDetail && ui.viewTab !== 'side' && !(ui.slabGap && ui.rankView)){
+        if(meC && ui.netOff && ui.memFill && !lowDetail && ui.viewTab !== 'side'){
           var cMS9 = memStack(pc2, gc);
           if(cMS9.overflow){
             /* 壳顶就是 64GB——不必再标一条线说它在哪，壳自己在那儿。要标的是
@@ -5959,13 +5628,10 @@ function netScene(D, g, box, step){
             var ovMidY9 = ovP9[1] - 7.75;
             var ovPl9 = placeAt(ovP9[0], ovMidY9, ovW9, 22);
             var ovDy9 = ovPl9[1] - ovMidY9;
-            /* plate=0（宿主自己摆 rank 读数）时这两行也不写：它们压在卡体上，宿主右列已有同样的数 */
-            if(!ui.noPlate){
             body.push(txt(ovPl9[0], ovP9[1] - 12 + ovDy9, ovTxt1_9, 8.5, ovC9, 'middle',
               'font-weight="900" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
             body.push(txt(ovPl9[0], ovP9[1] - 3.5 + ovDy9, ovTxt2_9, 6.4, ovC29, 'middle',
               'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4" pointer-events="none"'));
-            }
             /* solo（第三档）镜头收尾时，scheduleCamSettle 量的是「卡自己那块命中面」
                （下面 hit.push 的 hull2(C8)，只到壳顶 cv0，也就是 64GB 那条线）来把它
                摆到画面正中——装不下的这一截**顶在壳外**（见 memStack 的
@@ -5981,7 +5647,6 @@ function netScene(D, g, box, step){
             ])))+'" style="fill:transparent;pointer-events:none" data-k="cardfull" data-i="'+gc+'"/>');
           } else {
             [[CAP_AMBER, ui.mono ? 'var(--pt-fg3)' : CAP_C.amber], [CAP_RED, ui.mono ? 'var(--pt-fg2)' : CAP_C.red]].forEach(function(mk){
-              if(ui.capLineReach && !(cMS9.ratio >= mk[0])) return;
               var vy = cv1 - (cv1 - cv0) * mk[0];
               var qa = P(-0.04, vy, cw0, kc), qb = P(1.04, vy, cw0, kc);
               body.push(seg(qa, qb, 'stroke:'+mk[1]+';stroke-width:1.1;stroke-dasharray:4 3;opacity:.95'));
@@ -6040,7 +5705,7 @@ function netScene(D, g, box, step){
               + ' opacity="'+(1 - dT*0.55).toFixed(2)+'"'));
         }
         /* 门牌只给选中的那张写全：128 只卡每只都挂两行字必然糊成一片 */
-        if(meC && !ui.noPlate){
+        if(meC){
           /* 门牌挂卡**底下**。挂顶上时它会整块盖住斜后方那张卡（转台是俯视，
              卡的上方正好压着后一排），底边外侧那一圈是空的。 */
           var cTop = P(0.5, cv1 + 0.13, cw0, kc);
@@ -6228,10 +5893,6 @@ function netScene(D, g, box, step){
        一根线都没有，那就成了自相矛盾。所以只在点开档时，用这一层的真实锚点
        （chainCardAnchor）把那几条补上——真实锚点在物理平铺下照样准。 */
     var physSel9 = physOn && !!memSel9;
-    /* 宿主的单卡层（slabgap + solo）不画地面流量带，TP/CP/DP/EP 这几条原本交给它的边在这里用卡对卡的线补上——
-       否则打开通信只剩 PP 一条 */
-    var soloCC9 = !!(ui.slabGap && ui.soloCard && ui.fastCard);
-    if(soloCC9){ physSel9 = true; if(!memSel9) cw9.cp = true; }
     var CARD_COMM = [
       /* 点开激活档时 TP 这条换个说法：那时它传的不是 partial sum 而是激活本身，
          SP 把 s 切开、进 TP 区前 AllGather 回全长——同一根线，两件事，标签得跟着换，
@@ -6271,15 +5932,6 @@ function netScene(D, g, box, step){
     CARD_COMM.forEach(function(cs9){
       if(!cs9.on) return;
       var mem9 = groupMembers(cs9.dim, g, D);
-      /* 单卡层：阵列只摆了一部分副本（选组），组里没摆出来的成员不连，连得上的照样连——不因为缺一只就整组不画 */
-      if(soloCC9){
-        /* 只连镜头里（留一点余量）看得见的成员：连到屏幕外的线只是几根甩出画面的长弧，终点落在看不见的地方 */
-        /* 量纲按卡距（CU·s）：单卡层兄弟展开时一屏横向约 ±11 个卡距，留余量取 ±16 / 纵向 ±10 */
-        var me9 = chainCardAnchor[g], cd9 = CU*s;
-        var hw9 = cd9*16, hh9 = cd9*10;
-        mem9 = mem9.filter(function(r9){ var a9 = chainCardAnchor[r9];
-          return r9 === g || (!!a9 && (!me9 || (Math.abs(a9[0]-me9[0]) <= hw9 && Math.abs(a9[1]-me9[1]) <= hh9))); });
-      }
       /* 载体与着色必须在这儿就算出来：下面画边（edgeSVG）比读出卡那段注释里
          那几行**更早**用到 eCol9，而 var 只提升声明不提升赋值——放到后面就是
          一条 undefined 描边的线（本仓 chipRects 踩过同一个坑）。 */
@@ -6353,9 +6005,7 @@ function netScene(D, g, box, step){
         }
       }
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
-        + edgeSVG(pts9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9,
-                  /* 单卡层：几维的组常落在同一排（EP 组跨 CP 块、DP 环在块内），直线会叠成一根——每维弯出不同的弧度分开 */
-                  solo: soloCC9, bend: soloCC9 ? ({tp:0.22, cp:0.16, ep:-0.2, dp:0.1, pp:0}[cs9.dim] || 0) : 0}) + '</g>');
+        + edgeSVG(pts9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9}) + '</g>');
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
          中心取本卡与下一段的中点，落在那一跳上。 */
       var cx9 = 0, cy9 = 0, mN9 = pts9.length, ci9;
@@ -6416,7 +6066,7 @@ function netScene(D, g, box, step){
       }
       /* rank / 时序 / 影响：一条边一枚极简芯片，钉在「本卡 → 组心」的中途，
          详情走悬停；三档的区别只在芯片上写什么（谁和谁 / 何时 / 代价）。 */
-      if(!ui.noCommChip && (cgRank9 || cgTime9 || cgCost9 || cgFab9) && code9){
+      if((cgRank9 || cgTime9 || cgCost9 || cgFab9) && code9){
         var lp9 = chainCardAnchor[g];
         var bx9 = lp9 ? lp9[0] + (cx9 - lp9[0])*0.58 : cx9, by9 = lp9 ? lp9[1] + (cy9 - lp9[1])*0.58 : cy9;
         var rep9 = ['tp','cp','ep'].indexOf(cs9.dim) >= 0
@@ -6456,9 +6106,8 @@ function netScene(D, g, box, step){
         body.push('<path d="'+d8+'" style="fill:none;stroke:'+(col8||IC9)+';stroke-width:1.3'
           + (dash8 ? ';stroke-dasharray:'+dash8 : '') + ';marker-end:url(#arrx)"/>');
         if(lab8){
-          /* 字关掉时（clbl=0）宿主单卡层不留那只空环：没有字的深色圆圈只是一颗很重的黑点，悬停热区照留 */
-          if(!(ui.noCommChip && ui.slabGap)) body.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="5.2" style="fill:var(--pt-bg);stroke:'+(col8||IC9)+';stroke-width:.9"/>');
-          if(!ui.noCommChip) body.push(txt(mx8, my8+2.4, lab8, 6, col8||IC9, 'middle', 'font-weight="800"'));
+          body.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="5.2" style="fill:var(--pt-bg);stroke:'+(col8||IC9)+';stroke-width:.9"/>');
+          body.push(txt(mx8, my8+2.4, lab8, 6, col8||IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="7" style="fill:transparent;cursor:help"><title>'+esc(tip8||'')+'</title></circle>');
         }
       }
@@ -6483,8 +6132,8 @@ function netScene(D, g, box, step){
         }
         function badge9(at8, lab8, tip8){
           if(!at8) return;
-          if(!(ui.noCommChip && ui.slabGap)) body.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="5.4" style="fill:var(--pt-bg);stroke:'+IC9+';stroke-width:.9"/>');
-          if(!ui.noCommChip) body.push(txt(at8[0], at8[1]+2.4, lab8, 6, IC9, 'middle', 'font-weight="800"'));
+          body.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="5.4" style="fill:var(--pt-bg);stroke:'+IC9+';stroke-width:.9"/>');
+          body.push(txt(at8[0], at8[1]+2.4, lab8, 6, IC9, 'middle', 'font-weight="800"'));
           hit.push('<circle cx="'+at8[0].toFixed(1)+'" cy="'+at8[1].toFixed(1)+'" r="7.5" style="fill:transparent;cursor:help"><title>'+esc(tip8)+'</title></circle>');
         }
         var up9 = pl9.map(function(q8){ return [q8[0] - 7, q8[1] - 7]; });
@@ -6533,8 +6182,7 @@ function netScene(D, g, box, step){
      卡已经挪到 shellOf 借道出的那个物理位置，两边对不上——上面那段用
      chainCardAnchor 画的卡对卡连线覆盖的是同一件事（TP/PP/DP/EP 组内连线），
      且用的是真实锚点，物理平铺下继续画。 */
-  /* 宿主单卡层（slabgap + solo）五维都由卡对卡连线画了，这层地面流量带不再叠一遍（否则底部多出两条直的平行带） */
-  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn && !cgLocal9 && !(ui.slabGap && ui.soloCard && ui.fastCard)){
+  if(ui.commOn && !lowDetail && ui.netOff && ui.cardMode && hasSel && !physOn && !cgLocal9){
     /* memSel9 / cw9 在上面那段（卡对卡通信线）已经按同一张卡算过一次，两段共用
        同一个答案——同一屏上两层线各问各的，迟早会出现「一层收窄了另一层没收」。
        commLit(dim) 那道门仍旧要单独过一次：它是读者在配置面板里把这一维的连线
@@ -10935,7 +10583,7 @@ function focusCardCamera(g, zoom9){
      原来这里拿 C 当落点，于是选中卡稳定地偏在中心偏下——放大倍数越高偏得越远
      （第三档 17 倍时直接掉出画面）。 */
   var tx = (vr.vx || 0) + vr.vw/2, ty = (vr.vy || 0) + vr.vh/2;
-  var toZoom = clamp(zoom9 || 9, 0.2, Math.max(20, ui.soloZoom || 0));
+  var toZoom = clamp(zoom9 || 9, 0.2, 20);
   /* chainCardAnchor 记的是**这一次渲染出来的**屏幕坐标（P() 里已经吃过 zoom/pan），
      不是 pan/zoom 之前那一层的 base 坐标——文件上面那句注释写反了。
      zoom=1、pan=0 那一次（首屏深链）两者恰好相等，所以一直没暴露；一旦是
@@ -11013,7 +10661,7 @@ function ptoSetTier(n9){
     /* 第三档问的是"这一只里面"，跨卡的边这时全指向不再画出来的兄弟卡——
        把通信粒度一起收到卡内那一级，线才有落点（见 cgLocal9 的两道闸）。 */
     ui.commGrain = 'intra';
-    render(); focusCardCamera(sel, ui.soloZoom || 20);
+    render(); focusCardCamera(sel, 20);
   } else return false;
   ptoNotifyTier();
   return true;
@@ -11030,61 +10678,6 @@ function ptoNotifyTier(){
    为什么由这一格算、而不是让宿主自己算：容量口径（memParts / capVerdict / 组成员）
    全在这个文件里，宿主再实现一遍就会有两套数——同一屏上读出卡写 754GB、
    浮卡写别的，那种不一致查起来最费劲。宿主只负责摆版式，一个数都不自己造。 */
-/* ── 性能摘要（宿主 lingqu-rank-map 的周边数据卡用；只多带字段，本页不读）───────────────
-   三块，各自标明口径：
-     thr    吞吐——FLOPs 公式 × 假设的峰值与 MFU（不是实测）：
-              每 token FLOPs ≈ 6·N_激活（矩阵参数：注意力 4h²·(kv/heads 折算) + MoE topk·3·h·ffn / 稠密 3·h·ffn，
-              再加词表头 V·h）+ 6·L·h·s（因果注意力前向 + 反向）；共享专家、MLA 压缩、DSA/SWA 稀疏都没进公式；
-              步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 × MFU）
-     moe    本卡专家数 / 每 μb token / All-to-All 派发上限（实算），加上整网图「MoE」那一类的读数
-            （Router Pmax / 熵 / 失衡、专家 token 负载 / 容量利用）——与整网图同一个种子，图上读到的是同一个数
-     health 整网图「数值 / 梯度 / 训练」三类的读数（梯度 L2、Δ/W、激活 Amax、告警层、step、checkpoint）
-   stage 给了就只看这一段的层（rank / 单卡层），没给就是全网（集群层）。 */
-var PERF_PEAK_TF = 320, PERF_MFU = 0.30;   /* 昇腾 910 标称 FP16 320 TFLOPS；MFU 30% 取盘古 Ultra MoE 报告量级——都是假设 */
-function sdIdx9(id){ var idx = 0, i; for(i = 0; i < id.length; i++) idx = (idx + id.charCodeAt(i)) % 97; return idx; }
-function sdSm9(li, id, salt, mn, mx){ return mn + sdSeed(li, sdIdx9(id) * 7 + salt) * (mx - mn); }
-function ptoPerf(D, stage){
-  var L = D.layers, h = D.hidden, hd = h / Math.max(1, D.heads);
-  var attnP = 2 * h * D.heads * hd + 2 * h * D.kv * hd;
-  var mlpP = D.moe ? D.topk * 3 * h * D.ffn : 3 * h * D.ffn;
-  var nAct = L * (attnP + mlpP) + D.vocab * h;
-  var fTok = 6 * nAct + 6 * L * h * D.seq;
-  var tokStep = D.gbs * D.seq, stepF = tokStep * fTok;
-  var stepS = stepF / (D.world * PERF_PEAK_TF * 1e12 * PERF_MFU);
-  var thr = {nAct: nAct, fTok: fTok, tokStep: tokStep, gbs: D.gbs, peakTF: PERF_PEAK_TF, mfu: PERF_MFU,
-             stepS: stepS, tokS: tokStep / stepS, tgs: tokStep / stepS / D.world, tfCard: PERF_PEAK_TF * PERF_MFU,
-             bubble: D.pp > 1 ? (D.pp - 1) / Math.max(1, D.ga) : 0};
-  var l0 = stage == null ? 0 : stage * D.layersPerStage, l1 = stage == null ? L - 1 : l0 + D.layersPerStage - 1;
-  var moe = null;
-  if(D.moe){
-    var tokMb = D.mbs * D.seq / Math.max(1, D.cp);
-    moe = {ePer: D.experts / D.ep, experts: D.experts, topk: D.topk, ep: D.ep, tokMb: tokMb,
-           a2aMB: tokMb * D.topk * h * 2 / 1048576, pmax: 0, ent: 0, imb: 0, imbMax: 0, imbAt: -1, load: 0, cap: 0, n: 0,
-           imbL: []};   /* 逐层失衡（稠密层 null）：宿主画折线 */
-  }
-  /* amaxL：逐层 Amax——MoE 层取专家那一格（整网图告警就看它），稠密层取激活快照；gradL：逐层梯度 L2；warnL：整网图标橙的层 */
-  var hl = {grad: 0, uRatio: 0, amax: 0, amaxAt: -1, warn: 0, n: 0, l0: l0, l1: l1, step: 18420, ckpt: 1000,
-            amaxL: [], gradL: [], warnL: [], thrAmax: 9.35, thrImb: 1.15};
-  for(var li = l0; li <= l1; li++){
-    var s9 = sdSnap(li, D), w9 = false, am9 = s9.amax;
-    hl.grad += s9.grad; hl.uRatio += s9.uRatio; hl.n++; hl.gradL.push(s9.grad);
-    if(moe) moe.imbL.push(s9.dense ? null : sdSm9(li, 'route_topk', 37, 1.02, 1.18));
-    if(moe && !s9.dense){
-      var imb = sdSm9(li, 'route_topk', 37, 1.02, 1.18), eam = sdSm9(li, 'routed_expert_bank', 33, 5.4, 9.65);
-      moe.pmax += sdSm9(li, 'route_topk', 36, .48, .72); moe.ent += sdSm9(li, 'route_topk', 38, 1.56, 2.08);
-      moe.imb += imb; if(imb > moe.imbMax){ moe.imbMax = imb; moe.imbAt = li; }
-      moe.load += sdSm9(li, 'routed_expert_bank', 44, 36, 76); moe.cap += sdSm9(li, 'routed_expert_bank', 45, .72, .96); moe.n++;
-      w9 = imb > 1.15 || eam > 9.35;   /* 与整网图 sdOpWarn 同一套阈值：图上标橙的层就是这里数到的层 */
-      am9 = eam;
-    }
-    hl.amaxL.push(am9); hl.warnL.push(w9);
-    if(am9 > hl.amax){ hl.amax = am9; hl.amaxAt = li; }
-    if(w9) hl.warn++;
-  }
-  hl.grad /= Math.max(1, hl.n); hl.uRatio /= Math.max(1, hl.n);
-  if(moe && moe.n){ ['pmax','ent','imb','load','cap'].forEach(function(k){ moe[k] /= moe.n; }); }
-  return {thr: thr, moe: moe, health: hl};
-}
 function ptoRankBrief(){
   var D9 = derive(cfg);
   if(!D9.ok || sel === null || sel >= D9.world) return null;
@@ -11123,77 +10716,8 @@ function ptoRankBrief(){
     sibs: Math.max(0, Object.keys(sib9).length - 1),
     cap: {totGB: V9.tot/GiB, capGB: V9.cap/GiB, ratio: V9.ratio, level: V9.level},
     segs: V9.segs.filter(function(s9){ return s9.bytes > 0; })
-                 .map(function(s9){ return {k:s9.k, label:s9.label, gb:s9.bytes/GiB}; }),
-    /* detail：renderRankMem 那张读出卡的全部内容，拆成数据给宿主（lingqu-rank-map 把它拆成一张张
-       悬浮小卡）。只多带字段，本页任何画面不变——口径就是读出卡用的同一批函数：
-         segs[].own/life  模型态写归属、执行态写相位（stateOwn / stateLife，峰值口径）
-         segs[].sub       权重带里逐块：哪个算子块、被哪把刀切、怎么切、多少 GB（wCutBlocks）
-         comm[]           各维每条边的载荷（commLoad9：TP/PP/DP 给字节，CP/EP 宁缺毋误不给数）
-         bubble           (PP−1)/GA */
-    detail: {
-      zero: D9.zero === undefined ? zeroLv() : D9.zero,
-      segs: V9.segs.filter(function(s9){ return s9.bytes > 0; }).map(function(s9){
-        return {k:s9.k, label:s9.label, gb:s9.bytes/GiB, zdiv: s9.zdiv || 1, col: MEMC[s9.k] || null,
-                own: stateOwn(D9, s9.k, sel), life: stateLife(D9, s9.k, null),
-                sub: s9.sub ? s9.sub.filter(function(x9){ return x9.bytes > 0; })
-                  .map(function(x9){ return {id:x9.id, cut:x9.cut, how:x9.how, gb:x9.bytes/GiB, col: VC[x9.cut] || null}; }) : null};
-      }),
-      comm: ['tp','cp','ep','pp','dp'].map(function(dm9){
-        if(grp9[dm9] <= 1) return null;
-        var T9 = commLoad9(D9, dm9, co9.p); if(!T9) return null;
-        return {dim:dm9, n:grp9[dm9], txt:T9.txt, how:T9.how, exact:T9.exact, sum:T9.sum || null};
-      }).filter(Boolean),
-      bubble: D9.pp > 1 ? (D9.pp - 1) / Math.max(1, D9.ga) : 0,
-      model: {layers:D9.layers, hidden:D9.hidden, seq:D9.seq, mbs:D9.mbs, ga:D9.ga, experts:D9.experts || 0, topk:D9.topk || 0},
-      perf: ptoPerf(D9, co9.p),
-      blocks: ptoBlockDetails(D9, sel, V9.segs)
-    }
+                 .map(function(s9){ return {k:s9.k, label:s9.label, gb:s9.bytes/GiB}; })
   };
-}
-/* 读出卡里「点开某一档 / 某一块」那一栏（memBlockDetail）原样交给宿主：不另写一套口径，
-   直接把它生成的那段 HTML 拆成结构——标题、说明（ⓘ 悬停那句）、dt/dd 行、图（腔图 SVG +
-   它的悬停说明）、对应通信（逐条边的抬头与一句话）、兄弟卡那一行。宿主（lingqu-rank-map）
-   把每一档、每一块做成一张可点开的小卡。只读，不改本页任何状态。 */
-function ptoBlockDetails(D, g, segs){
-  var out = {}, keys = [];
-  if(typeof DOMParser === 'undefined') return out;
-  segs.forEach(function(s9){
-    if(!(s9.bytes > 0)) return;
-    keys.push(s9.k);
-    if(s9.k === 'w' && s9.sub) s9.sub.forEach(function(x9){ if(x9.bytes > 0) keys.push('w:' + x9.id); });
-  });
-  var dp = new DOMParser();
-  keys.forEach(function(k9){
-    var html = '';
-    try { html = memBlockDetail(D, g, k9); } catch(e){ html = ''; }
-    if(!html) return;
-    var doc = dp.parseFromString('<div>' + html + '</div>', 'text/html');
-    var root = doc.querySelector('.rm-d'); if(!root) return;
-    var t9 = root.querySelector('.rm-dh b'), n9 = root.querySelector('.rm-dh span[title]');
-    var rows = [], dts = root.querySelectorAll(':scope > dl > dt');
-    Array.prototype.forEach.call(dts, function(dt){
-      var dd = dt.nextElementSibling;
-      rows.push([dt.textContent.trim(), dd ? dd.textContent.trim() : '']);
-    });
-    var figs = [];
-    Array.prototype.forEach.call(root.querySelectorAll(':scope > .rm-fig'), function(f){
-      figs.push({cap: f.getAttribute('title') || '', svg: f.innerHTML});
-    });
-    var comm = [];
-    Array.prototype.forEach.call(root.querySelectorAll('.c5'), function(c){
-      var h = c.querySelector('.c5h'), gr = c.querySelector('.c5gr');
-      var kv9 = [];
-      Array.prototype.forEach.call(c.querySelectorAll('dt'), function(dt){ var dd = dt.nextElementSibling; kv9.push([dt.textContent.trim(), dd ? dd.textContent.replace(/\s+/g, ' ').trim() : '']); });
-      comm.push({head: h ? h.textContent.replace(/\s+/g, ' ').trim() : '', sub: gr ? gr.textContent.replace(/\s+/g, ' ').trim() : '', rows: kv9});
-    });
-    var notes = [];
-    Array.prototype.forEach.call(root.querySelectorAll(':scope > .rm-note'), function(nn){
-      var tx = nn.textContent.replace(/\s+/g, ' ').replace(/ⓘ/g, '').trim();
-      if(tx && tx !== '对应通信') notes.push(tx);
-    });
-    out[k9] = {title: t9 ? t9.textContent.trim() : k9, note: n9 ? n9.getAttribute('title') : '', rows: rows, figs: figs, comm: comm, notes: notes};
-  });
-  return out;
 }
 function applyViewTransform(){
   var svg = $('stage').querySelector('svg');
@@ -11314,7 +10838,7 @@ window.addEventListener('resize', function(){
 /* 字体换完再量一次：首帧用的是后备字体，等宽与中文各差几像素，三十来格累起来
    足够把「装得下」翻成「装不下」。fonts.ready 之后重量一遍，是这条带唯一会
    自己变宽的时刻。 */
-if(document.fonts && document.fonts.ready && !/[?&]brief=1(&|$)/.test(location.search)) document.fonts.ready.then(function(){ fitGroupHud(); });
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ fitGroupHud(); });
 /* 算子明细卡：内容 + 贴位。贴位单独一支（placeOpCard），因为缩放/平移时
    内容没变、只是那个算子挪了地方——手势里每帧只需要重新贴一次位。 */
 function renderOpCard(D){
@@ -11355,7 +10879,7 @@ function placeOpCard(){
   el.style.right = 'auto'; el.style.left = l9.toFixed(0)+'px'; el.style.top = t9.toFixed(0)+'px';
 }
 function nudgeZoom(f){
-  ui.zoom3 = clamp(ui.zoom3 * f, 0.2, Math.max(20, ui.soloZoom || 0));
+  ui.zoom3 = clamp(ui.zoom3 * f, 0.2, 20);
   applyViewTransform();
 }
 function renderChain(D){
@@ -12990,7 +12514,6 @@ function renderFoot(D){
    不是三份共用一句「模型分片与训练设备映射」。缺省仍是这句，老链接一个不动。 */
 function renderStageTitle(){
   var el = $('stageTitle'); if(!el) return;
-  if(ui.noTitle){ el.style.display = 'none'; return; }
   if(el.firstChild) return;
   el.innerHTML = '<span class="pt-stagecopy"><b>'+esc(ui.stageTitle)+'</b>'
     + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';
@@ -13984,7 +13507,7 @@ function renderMemCards(D){
   var elWrap = $('memCards');
   if(!elWrap) return;
   var solo9 = ui.fastCard && ui.soloCard;
-  var on = solo9 && !ui.noMemCards && ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel<D.world;
+  var on = solo9 && ui.view==='chain' && ui.cardMode && ui.netOff && sel!==null && !ui.hlSel && D.ok && sel<D.world;
   if(!on){ elWrap.hidden = true; elWrap.innerHTML = ''; return; }
   var g = sel, co = coordsOf(g, D), p = co.p, me = D.moe ? epOf(co.t,co.c,co.d,D) : null;
   var segs = memParts(D, p, g).filter(function(sg){ return sg.bytes > 0; });
@@ -14046,16 +13569,9 @@ function placeMemCards(){
   var side = (sr.width - boxRight - margin) >= cw0 + 8 ? 'right' : 'left';
   var stackX = side === 'right' ? Math.min(boxRight + margin, sr.width - cw0 - 8) : Math.max(boxLeft - margin - cw0, 8);
   var y = clamp(Math.max(boxTop + 8, sumBottom9 + gap), 4, sr.height - 8);
-  /* 纵列的顺序跟着锚点在卡壳上的高低走（从上到下），而不是 memParts 的固定
-     档序：卡的顺序与锚点顺序一致，引线才不会互相交叉（反馈「连线不要交叉」）。
-     没有锚点的卡（这一档没画出带子）排到最后，相对顺序不变。 */
-  var placed9 = segCards.map(function(card, i9){
-    var k = card.getAttribute('data-mc'), anchorEl = st.querySelector('[data-memblock="'+k+'"]');
-    var ay9 = anchorEl ? anchorEl.getBoundingClientRect().top : Infinity;
-    return { card: card, anchorEl: anchorEl, ay: ay9, i: i9 };
-  }).sort(function(a, b){ return a.ay - b.ay || a.i - b.i; });
-  placed9.forEach(function(it){
-    var card = it.card, anchorEl = it.anchorEl;
+  segCards.forEach(function(card){
+    var k = card.getAttribute('data-mc');
+    var anchorEl = st.querySelector('[data-memblock="'+k+'"]');
     var cw = card.offsetWidth || cw0, ch = card.offsetHeight || 40;
     var top = clamp(y, 4, Math.max(4, sr.height - ch - 4));
     var left = clamp(stackX, 4, Math.max(4, sr.width - cw - 4));
@@ -14077,18 +13593,8 @@ function placeMemCards(){
 }
 
 /* ═════════ 总渲染 ═════════ */
-/* 宿主暂停这一格时，把有限次的入场动画（刀序生长、块淡入）直接走到终态：藏着的 iframe 没被画出来，合成器动画的起点一直悬着，
-   等显出来才从头播——宿主逐帧看就是先一片空白、0.7 秒后块才浮出来。无限循环的（脉冲、流动线）不动，由 pt-paused 停住。 */
-function ptoSettleAnims(){
-  if(!document.getAnimations) return;
-  document.getAnimations().forEach(function(a9){
-    try { var t9 = a9.effect && a9.effect.getComputedTiming(); if(t9 && isFinite(t9.endTime)) a9.finish(); } catch(e9){}
-  });
-}
 function render(){
   syncTopologyPalette();
-  /* slabgap（宿主单卡层）：维度色整套换成宿主那套，3D、连线、读出卡里的切分简图与宿主左右卡片上的色点同一个颜色 */
-  if(ui.slabGap) Object.keys(HOST_DC).forEach(function(k9){ VC[k9] = HOST_DC[k9]; });
   var D = derive(cfg);
   cflowN = CFLOW_MAX;                       /* 流动虚线的预算按「每次重绘」发，不跨帧累积 */
   /* 选中卡越界就夹回 null——**来路标记必须跟着一起清**。宿主转过来的 rank 未必在
@@ -14270,7 +13776,7 @@ $('stage').addEventListener('wheel', function(ev){
   var svg = $('stage').querySelector('svg');
   if(!svg) return;
   var factor = ev.deltaY > 0 ? 1/1.15 : 1.15;
-  var next = clamp(ui.zoom3 * factor, 0.2, Math.max(20, ui.soloZoom || 0));
+  var next = clamp(ui.zoom3 * factor, 0.2, 20);
   var r = next / ui.zoom3;
   var ctm = svg.getScreenCTM();
   if(ctm){
@@ -14324,7 +13830,7 @@ $('stage').addEventListener('touchmove', function(ev){
   var mx = (t[0].clientX+t[1].clientX)/2, my = (t[0].clientY+t[1].clientY)/2;
   var dist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
   var r = dist / touch3.dist;
-  ui.zoom3 = clamp(touch3.zoom * r, 0.2, Math.max(20, ui.soloZoom || 0));
+  ui.zoom3 = clamp(touch3.zoom * r, 0.2, 20);
   ui.panX3 = touch3.panX + (mx - touch3.mx)*touch3.cs;
   ui.panY3 = touch3.panY + (my - touch3.my)*touch3.cs;
   applyViewTransform();               /* 双指也是仿射：不重建，跟手 */
@@ -14629,15 +14135,6 @@ document.addEventListener('click', function(ev){
     /* 已经钻进第三档时点中别的东西（换卡/换坐标）：先退回第二档再换选——
        第三档是"只看这一只"，换了主角还留在第三档，兄弟卡那一层就被跳过了。 */
     var wasSolo9 = ui.soloCard;
-    /* sibs 模式（宿主 opt-in）：solo 档里点兄弟卡 = 换选它、仍留在 solo */
-    if(wasSolo9 && ui.soloSibs && kk === 'card' && iv !== sel){
-      if(applyParallelGroupPick(kk, iv) && sel !== null){
-        ui.commGrain = ui.soloSibs === 'on' ? 'rank' : 'intra';
-        render(); focusCardCamera(sel, ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20));
-        ptoNotifyHost(); ptoNotifyTier();
-      }
-      return;
-    }
     if(wasSolo9){ ui.soloCard = false; if(ui.commGrain === 'intra') ui.commGrain = 'rank'; }
     if(applyParallelGroupPick(kk, iv)) {
       render();
@@ -14837,51 +14334,6 @@ window.addEventListener('message', function(ev){
      （宿主那边刚在魔方上点了一张卡，这一格还没选中过任何卡）。
      不重载 iframe：矩阵本体把 4000 只卡铺出来要好几秒，每换一档重载一次，
      "连续变焦"就成了三次白屏。 */
-  /* brief=1 那一格已经加载好了：宿主再问另一张卡的摘要时发 pto:brief {sel}，就地算、就地回，不再整页重载
-     （逐帧看过：每选一张卡都把这 1.4 万行重新解析一遍，选中那一下连着好几个 100ms+ 的长任务）。只在 brief=1 下认。 */
-  if(d.type==='pto:brief' && roBriefOnly){
-    if(typeof d.sel === 'number' && d.sel >= 0) sel = d.sel;
-    var rb9 = ptoRankBrief();
-    if(ev.source) ev.source.postMessage({type:'pto:rank-brief', brief: rb9}, '*');
-    return;
-  }
-  /* 宿主（lingqu-rank-map 单卡层）不重载就换：兄弟 rank 显示档（ghost / on）、通信连线总闸、逐维开关 */
-  if(d.type==='pto:solo'){
-    /* 宿主单卡层的入场编排（opt-in，只由宿主消息触发）：
-       play:'stack' → 显存板自下而上逐档出现；兄弟从隐约切到展开 → 由近及远涟漪；通信从关到开 → 线淡入 */
-    var rootEl9 = document.documentElement;
-    var cueT9 = window.__ptCueT || (window.__ptCueT = {});
-    function cue9(cls, ms){ rootEl9.classList.add(cls); clearTimeout(cueT9[cls]); cueT9[cls] = setTimeout(function(){ rootEl9.classList.remove(cls); }, ms); }
-    if(d.play === 'stack'){ cue9('pt-stack-in', 2600); if(Object.keys(d).length === 2) return; }
-    if(d.sibs === 'on' && ui.soloSibs !== 'on') cue9('pt-sib-in', 1600);
-    if(d.comm === true && !ui.commOn) cue9('pt-comm-in', 1400);
-    if(!render.__ptoWrap){
-      /* 停住期间的重画（镜头落定后的收尾重渲等）新长出来的入场动画同样直接走到终态——只在宿主暂停时生效，独立打开不受影响 */
-      var r0 = render;
-      render = function(){ var v9 = r0.apply(this, arguments); if(document.documentElement.classList.contains('pt-paused')) ptoSettleAnims(); return v9; };
-      render.__ptoWrap = true;
-    }
-    if(d.sibs === 'ghost' || d.sibs === 'on') ui.soloSibs = d.sibs;
-    if(typeof d.comm === 'boolean') ui.commOn = d.comm;
-    if(d.commk && typeof d.commk === 'object') ['tp','cp','ep','pp','dp'].forEach(function(k9){ if(typeof d.commk[k9] === 'boolean') ui.comm[k9] = d.commk[k9]; });
-    if(typeof d.stitle === 'string' && d.stitle) ui.stageTitle = d.stitle.slice(0, 40);
-    if(d.rankview === 'mem' || d.rankview === 'net' || d.rankview === 'comp') ui.rankView = d.rankview === 'mem' ? null : d.rankview;
-    /* pause：宿主把这一格藏起来时让它停下所有动画（SMIL + CSS），显出来时再放开——藏起来的 iframe 跟宿主共用主线程，
-       它逐帧重绘会让宿主这边的每一次点击都排队 */
-    if(typeof d.pause === 'boolean'){
-      /* 停住前先把有限次的入场动画（刀序生长、块淡入）直接走到终态：藏着的这一格没被画出来，合成器动画的起点一直悬着，
-         等显出来才从头播——宿主那边逐帧看就是先一片空白、0.7 秒后块才浮出来。无限循环的（脉冲、流动线）只停住。 */
-      if(d.pause) ptoSettleAnims();
-      document.documentElement.classList.toggle('pt-paused', d.pause);
-      var sv9 = $('stage') && $('stage').querySelector('svg');
-      if(sv9 && sv9.pauseAnimations){ if(d.pause) sv9.pauseAnimations(); else sv9.unpauseAnimations(); }
-      if(Object.keys(d).length === 2) return;   // 只是暂停 / 放开：不重画
-    }
-    if(ui.soloCard) ui.commGrain = ui.soloSibs === 'on' ? 'rank' : 'intra';
-    render();
-    if(sel !== null && ui.fastCard && ui.soloCard) focusCardCamera(sel, ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20));
-    return;
-  }
   if(d.type==='pto:tier'){
     if(typeof d.sel === 'number' && d.sel >= 0){ takeSel(); sel = d.sel; }
     var tn9 = +d.tier;
@@ -14890,7 +14342,7 @@ window.addEventListener('message', function(ev){
          那样新选中的卡不会重绘，也不会飞焦过去。这里补一次。 */
       if(!ptoSetTier(tn9) && typeof d.sel === 'number'){
         render();
-        if(sel !== null && ui.fastCard) focusCardCamera(sel, ui.soloCard ? (ui.soloZoom || 20) : 9);
+        if(sel !== null && ui.fastCard) focusCardCamera(sel, ui.soloCard ? 20 : 9);
         ptoNotifyTier();
       }
     }
@@ -15008,10 +14460,7 @@ window.ptoNotifyHost = function(){
    全局切分（renderSolidGrid）同理，但它盯的是**宽度**本身，不是长宽比——k（像素目标
    缩放）与 stacked（并排/摞叠切换的 760px 门槛）都直接读 clientWidth：组合工作台里
    拖动分栏宽度、或首帧量到 iframe 还没被父页面定宽时的临时值，都要能补一次重画。 */
-/* brief=1（宿主只借一句聚合数）时不挂这个观察者：它首次 observe 就会触发一次，
-   60ms 后整张 SVG render() 一遍——逐帧看过，宿主那边选中一张卡就因为这一下卡掉半秒多。 */
-var roBriefOnly = /[?&]brief=1(&|$)/.test(location.search);
-if(window.ResizeObserver && !roBriefOnly){
+if(window.ResizeObserver){
   var roLast = 0, roLastW = 0, roTimer = 0;
   new ResizeObserver(function(){
     var el = $('stage'); if(!el || el.clientHeight<60) return;
@@ -15055,7 +14504,7 @@ if(q9brief.get('brief')==='1'){
   /* fastCard：URL 直接带 ?sel= 打开（rank-topology-lite 从逻辑魔方跳过来就是这条
      路，不经过 chainpick 点击）也要飞到那张卡——上面 chainpick 分支里那次调用管的
      是"页面已经开着、这一刻点了一张卡"，这一条管的是"页面一开就已经是选中态"。 */
-  if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? (ui.soloZoom || 20) : 9);
+  if(ui.fastCard && sel !== null) focusCardCamera(sel, ui.soloCard ? 20 : 9);
   /* 没选中任何卡时 ?solo=1 没有意义（第三档要有主角才成立）——落地就撤掉，
      免得之后随手点一张卡就莫名其妙直接进了第三档。 */
   if(sel === null) ui.soloCard = false;
