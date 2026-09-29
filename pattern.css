@@ -1137,3 +1137,21 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 }
 .jn-mode button { padding: 4px 14px; }
 .jn-mode button.is-on { background: var(--cam-bg3); }
+
+/* 小标签统一一套尺寸（反馈「注意小标签的高度和圆角」）：原来配置胶囊 24px 全圆、切法小标 12px 直角 3、计数角标 15px、rank 档位 20px，各不相同。
+   现在一律：高 18px、圆角 6px、左右 7px、字 10.5px 等宽、行高 = 高度（文字垂直居中）；小标上不再带「可悬停」点线。 */
+.lc-chip, .dc-cut, .jn-badge, .brief-badge, .ip-root, .ip-drill {
+  box-sizing: border-box; height: 18px; line-height: 18px; padding: 0 7px; border-radius: 6px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;
+}
+.lc-chip { background: var(--cam-bg2); color: #F2F2F7; }
+.lc-chip em { font-size: 10px; line-height: 18px; }
+.lc-chips { gap: 5px; }
+.dc-cut { margin-left: 6px; color: #111111; font-weight: 600; letter-spacing: .02em; }
+.jn-badge { min-width: 18px; justify-content: center; padding: 0 5px; margin-left: 2px; }
+.brief-badge { background: var(--cam-bg2); color: var(--cam-label); margin-left: 8px; }
+.brief-badge.is-alert { color: #FFFFFF; }
+.ip-drill { border: 0; background: var(--cam-bg3); color: #F2F2F7; cursor: pointer; }
+.ip-drill:hover { background: #48484A; }
+.lc-chip.has-gloss, .dc-cut.has-gloss, .jn-badge.has-gloss, .brief-badge.has-gloss, .dc-cut .has-gloss { text-decoration: none; }
+.dcard.is-split .dc-h { align-items: center; }

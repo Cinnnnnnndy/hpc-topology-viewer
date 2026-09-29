@@ -3274,6 +3274,7 @@
     q = false;
     document.querySelectorAll(SEL).forEach(function (el) {
       var t = el.textContent, g = lookup(t);
+      if (el.querySelector('.dc-cut')) t = el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.nodeValue : t, g = lookup(t);
       if (!g) { if (el.dataset.gloss) { el.removeAttribute('title'); delete el.dataset.gloss; } return; }
       if (el.dataset.gloss === g) return;
       el.setAttribute('title', g); el.dataset.gloss = g; el.classList.add('has-gloss');
