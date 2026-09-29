@@ -2319,7 +2319,7 @@
     if ((b = ev.target.closest('[data-zero]'))) { setZero(+b.getAttribute('data-zero')); renderCfg(); return; }
     if ((b = ev.target.closest('[data-odim]'))) { var d = b.getAttribute('data-odim') || null; OBJ = { dim: d, idx: 0 }; setQS('obj', d ? d + ':0' : ''); if (d && curSel != null) showOverview(true); physApplySelection(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-ostep]')) && OBJ.dim) { var n = objSize(OBJ.dim); OBJ.idx = (OBJ.idx + +b.getAttribute('data-ostep') + n) % n; setQS('obj', OBJ.dim + ':' + OBJ.idx); physApplySelection(); renderCfg(); return; }
-    if ((b = ev.target.closest('[data-mode]'))) { MODE = b.getAttribute('data-mode'); setQS('mode', MODE === 'infer' ? 'infer' : ''); renderDataCards(); renderCfg(); return; }
+    if ((b = ev.target.closest('[data-mode]'))) { setMode(b.getAttribute('data-mode')); return; }
     if ((b = ev.target.closest('[data-dall]'))) { var on9 = b.getAttribute('data-dall') === '1'; DCT.forEach(function (x) { DCK[x[0]] = on9; }); saveDCK(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-sp]'))) { var d8 = b.getAttribute('data-sp'), v8 = Math.round(SPD[d8] * +b.getAttribute('data-sx')); if (v8 >= 1 && v8 <= 4096) SPD[d8] = v8; renderCfg(); return; }
     if ((b = ev.target.closest('[data-spapply]')) || (b = ev.target.closest('[data-spreset]'))) {
@@ -2358,11 +2358,87 @@
   var DCK = (function () { var h = (qs.get('dhide') || '').split(','), o = {}; DCT.forEach(function (x) { o[x[0]] = h.indexOf(x[0]) < 0; }); return o; })();
   var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
   var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
+
+  /* ── 旅程步进条（反馈「整体场景是模型的训练和推理，按整个训练推理的用户旅程梳理用户路径和故事线」）──────────
+     标题正上方居中一条细步进条：左边工况（训练 / 推理），右边这条工况的几步。点一步 =
+       ① 数据卡只留这一步要回答的问题用得上的几类（其余收起；左列配置卡与 PP 段柱图常驻）；
+       ② 画布 / 面板切到这一步该看的地方（规划 → 集群 + 层级剖面；映射 → 集群 + 亮出一组 TP；监控 → 泳道；
+          诊断 → 下钻到最满的那张卡；调优 / 扩缩 → 打开配置；复盘 → 故障复盘的第一条问题线展开）；
+       ③ 步进条下面一行灰字写出这一步要回答的问题。
+     再点一次当前那步 = 回到全部。URL ?stage=键。单卡层（第三档）不按步收卡——那一层本来就只讲这一张卡。 */
+  var JOURNEY = {
+    train: [
+      { k: 'plan', n: '规划', q: '这套切分装得下吗？通信在哪一层闭合？', cards: ['cap', 'state', 'wshard', 'comm', 'pipe', 'pub'], go: 'hier' },
+      { k: 'map', n: '映射', q: '每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
+      { k: 'run', n: '监控', q: '吞吐、步时、气泡、MoE 负载、训练健康正常吗？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
+      { k: 'diag', n: '诊断', q: '哪一张卡异常？是显存、通信还是路由？', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'worst' },
+      { k: 'tune', n: '调优', q: '改了 ZeRO 或切分之后，变好了多少？', cards: ['cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' },
+      { k: 'review', n: '复盘', q: '这次事故的时间线和根因是什么？', cards: ['inc', 'health', 'moe'], go: 'inc' }
+    ],
+    infer: [
+      { k: 'deploy', n: '部署', q: '权重 + KV cache 放得下吗？prefill / decode 怎么分？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
+      { k: 'run', n: '监控', q: 'TTFT、TPOT、吞吐达标吗？', cards: ['infer', 'moe', 'comm', 'pipe'], go: 'swim' },
+      { k: 'diag', n: '诊断', q: '慢在 prefill 还是 decode？哪个专家过热？', cards: ['infer', 'moe', 'state', 'cap'], go: 'worst' },
+      { k: 'scale', n: '扩缩', q: '加卡还是改切分？改完装得下、够快吗？', cards: ['infer', 'cap', 'state', 'comm'], go: 'cfg' }
+    ]
+  };
+  function stageOf(k) { return (JOURNEY[MODE] || []).filter(function (x) { return x.k === k; })[0] || null; }
+  var STAGE = stageOf(qs.get('stage') || ''), stageObj = false;
+  function stageShows(key) { return !STAGE || tier === 3 || STAGE.cards.indexOf(key) >= 0; }
+  var journey = document.createElement('nav');
+  journey.className = 'journey is-hidden'; journey.setAttribute('aria-label', '训练 / 推理旅程');
+  document.body.appendChild(journey);
+  function renderJourney() {
+    var steps = JOURNEY[MODE] || [], cur = STAGE ? steps.indexOf(STAGE) : -1;
+    journey.innerHTML = '<div class="jn-bar"><div class="jn-mode">'
+      + [['train', '训练'], ['infer', '推理']].map(function (x) { return '<button type="button" data-jmode="' + x[0] + '"' + (x[0] === MODE ? ' class="is-on"' : '') + '>' + x[1] + '</button>'; }).join('')
+      + '</div><ol class="jn-steps">' + steps.map(function (x, i) {
+        return '<li class="' + (i === cur ? 'is-cur' : cur >= 0 && i < cur ? 'is-done' : '') + '"><button type="button" data-stage="' + x.k + '" title="' + esc(x.q) + '"><b>' + (i + 1) + '</b>' + x.n + '</button></li>';
+      }).join('') + '</ol></div>'
+      + '<div class="jn-q' + (STAGE ? '' : ' is-empty') + '">' + (STAGE ? esc(STAGE.q) : '') + '</div>';
+    journey.classList.toggle('is-hidden', world <= 64);
+  }
+  function stageGo(st) {
+    if (stageObj) { stageObj = false; OBJ = { dim: null, idx: 0 }; setQS('obj', ''); physApplySelection(); }
+    if (!st) return;
+    var g = st.go;
+    if (g === 'hier' || g === 'map' || g === 'inc') { if (tier !== 1 || level !== 'cluster') { physZP.reset(); showOverview(); } }
+    // 每一步只开它自己的参考面板，上一步留下的面板收起
+    var want = g === 'hier' ? 'hier' : g === 'swim' ? 'swimlane' : null;
+    if (g === 'swim' && tier === 3) showOverview(true);
+    if (drawerOpen !== want) openDrawer(want);
+    if (g === 'map') {
+      var d9 = ['tp', 'ep', 'cp', 'dp'].filter(function (d) { return objSize(d) > 1; })[0];
+      if (d9) { OBJ = { dim: d9, idx: 0 }; stageObj = true; setQS('obj', d9 + ':0'); physApplySelection(); }
+    }
+    if (g === 'worst' && lastCluster && lastCluster.worst != null) { if (tier === 3) showOverview(true); showTier2(lastCluster.worst, coordLine(lastCluster.worst)); }
+    if (g === 'cfg') toggleCfg(true);
+    if (g === 'inc' && INCIDENT_PROBLEMS.length) { incidentOpen[INCIDENT_PROBLEMS[0].id] = true; renderIncidentPanel(); }
+    renderCfg();
+  }
+  function setStage(k) {
+    var st = k ? stageOf(k) : null;
+    if (st && st === STAGE) st = null;   // 再点一次当前那步 = 回到全部
+    STAGE = st; setQS('stage', st ? st.k : '');
+    stageGo(st);
+    renderDataCards(); renderJourney();
+  }
+  function setMode(m) {
+    MODE = m === 'infer' ? 'infer' : 'train'; setQS('mode', MODE === 'infer' ? 'infer' : '');
+    // 换工况时尽量停在同名的那一步（监控 / 诊断两边都有），没有就回到全部
+    if (STAGE) { STAGE = stageOf(STAGE.k); setQS('stage', STAGE ? STAGE.k : ''); }
+    if (drawerOpen === 'swimlane') renderSwim();
+    renderDataCards(); renderCfg(); renderJourney();
+  }
+  journey.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-stage]'); if (b) { setStage(b.getAttribute('data-stage')); return; }
+    var m = ev.target.closest('[data-jmode]'); if (m && m.getAttribute('data-jmode') !== MODE) setMode(m.getAttribute('data-jmode'));
+  });
   var DC_TAG = { calc: '实算', asm: '假设', demo: '示意', pub: '公开' };
   function dcRow(k, v, cls, tip) { return '<div class="dc-r' + (cls ? ' ' + cls : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>'; }
   function dcBar(frac, cls) { return '<i class="dc-bar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%"></i></i>'; }
   function dcCard(key, title, body, tag, tip, big) {
-    if (!DCK[key]) return '';
+    if (!DCK[key] || !stageShows(key)) return '';
     return '<section class="dcard" data-dk="' + key + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
       + (tag && tag !== 'calc' ? '<span class="dc-tag is-' + tag + '">' + DC_TAG[tag] + '</span>' : '') + '</div>'
       + (big != null ? '<div class="dc-big">' + big + '</div>' : '') + body + '</section>';
@@ -2647,7 +2723,8 @@
     if (dcQueued) return; dcQueued = true;
     requestAnimationFrame(function () {
       dcQueued = false;
-      document.body.classList.toggle('dc-noinc', !DCK.inc);
+      document.body.classList.toggle('dc-noinc', !DCK.inc || !stageShows('inc'));
+      renderJourney();
       renderLeftCard();   // 容量卡住在左列配置卡里，跟着这一层（集群 / POD / 板）一起换
       var lv = (tier === 3 ? t3SideCards() : levelCards()).filter(Boolean), sh = shardCards().filter(Boolean);
       /* 卡片入场（层级串联动画）：只在「上下文」换了（层 / 档 / 选中 / 板 / POD / 单卡内容）时，
@@ -2762,4 +2839,5 @@
   // ── URL 深链：?sel=<并行拓扑矩阵自己的 rank 编号> 打开时直接进第三档 ─────
   var qsel = parseInt(qs.get('sel'), 10);
   if (isFinite(qsel) && qsel >= 0 && qsel < world) showDetail(qsel);
+  else if (STAGE) stageGo(STAGE);   // ?stage= 深链：落到这一步该看的地方
 })();
