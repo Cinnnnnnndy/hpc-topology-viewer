@@ -2303,7 +2303,7 @@
       : '<span><i class="is-flow is-forward" style="--legend-color:' + SW_COL.forward + '"></i>Forward</span><span><i class="is-flow is-backward" style="--legend-color:' + SW_COL.backward + '"></i>Backward</span>'
         + '<span><i style="--legend-color:' + SW_COL.comm + '"></i>P2P / DP Sync</span><span><i class="is-idle">›‹</i>Idle</span>'
         + '<span class="sw-kv">Bubble <b>' + pct(idle / busy) + '</b> · μb ' + M + '</span>')
-      + '<em title="' + (INF ? 'prefill 一块按 3 格、decode 一个 token 过一段按 1 格：相对时长；TTFT/TPOT 取自盘古 Pro MoE 技术报告，只当量级参考' : '时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测') + '">' + (INF ? 'Demo · In-flight = PP' : 'Demo · Bwd = 2× Fwd') + '</em>';
+      + '<em title="' + (INF ? 'prefill 一块按 3 格、decode 一个 token 过一段按 1 格：相对时长；TTFT/TPOT 取自盘古 Pro MoE 技术报告，只当量级参考' : '时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测') + '">' + (INF ? 'In-flight = PP' : 'Bwd = 2× Fwd') + '</em>';
   }
   function swimHit(ev) {
     var cv = drawerBody.querySelector('canvas.sw-cv'); if (!cv || !swimGeo) return null;
@@ -2516,19 +2516,21 @@
      点一下直接定位：到那张卡（下钻 rank）、到那一段（PP 段聚焦）、或展开那条故障链。
      其余几个目的：点了只留这件事用得上的数据卡，画布 / 面板切到该看的地方，下面一行灰字是这件事要回答的问题；
      再点一次 = 回到全部。URL ?goal=键。单卡层（第三档）不按目的收卡。 */
+  /* 场景而不是数据类型（反馈「这里应该是场景，而不是按数据类型」）：每个场景是用户在训练 / 推理里的一件事，
+     点开后把这件事要用到的几类数据一起摆出来（容量、通信、流水……跨类组合），画布 / 面板切到该看的地方。 */
   var GOALS = {
     train: [
-      { k: 'alert', n: '告警', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
-      { k: 'cap', n: '容量', q: '这套切分装得下吗？最满的卡在哪？', cards: ['cap', 'state', 'wshard', 'pub'], go: 'hier' },
-      { k: 'comm', n: '通信', q: '每一维通信在哪一层闭合？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
-      { k: 'perf', n: '吞吐', q: '吞吐、步时、气泡正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe'], go: 'swim' },
-      { k: 'tune', n: '对比', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
+      { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
+      { k: 'plan', n: '切分规划', q: '这套切分装得下吗？每一维通信在哪一层闭合？', cards: ['cap', 'state', 'wshard', 'comm', 'pipe'], go: 'hier' },
+      { k: 'map', n: '设备映射', q: '每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
+      { k: 'perf', n: '性能调优', q: '吞吐、步时、气泡、MoE 负载正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
+      { k: 'tune', n: '变更评估', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
     ],
     infer: [
-      { k: 'alert', n: '告警', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
-      { k: 'cap', n: 'KV 容量', q: '权重 + KV cache 放得下吗？并发还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
-      { k: 'perf', n: '延迟', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
-      { k: 'tune', n: '对比', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
+      { k: 'alert', n: '故障定位', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
+      { k: 'plan', n: '部署规划', q: '权重 + KV cache 放得下吗？并发还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
+      { k: 'perf', n: '时延优化', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
+      { k: 'tune', n: '扩缩评估', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
   };
   function stageOf(k) { return (GOALS[MODE] || []).filter(function (x) { return x.k === k; })[0] || null; }
@@ -2638,7 +2640,7 @@
   function dcCard(key, title, body, tag, tip, big) {
     if (!DCK[key] || !stageShows(key)) return '';
     return '<section class="dcard" data-dk="' + key + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
-      + (tag && tag !== 'calc' ? '<span class="dc-tag is-' + tag + '">' + DC_TAG[tag] + '</span>' : '') + '</div>'
+      + '</div>'   // 口径小标（Demo / Public / Est.）不上卡面（反馈「不要这几个标记」），口径说明留在整张卡的悬停提示里
       + (big != null ? '<div class="dc-big">' + big + '</div>' : '') + body + '</section>';
   }
   function pct(x) { return x == null ? '—' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%'; }
