@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /* rank-topology-lite · pattern.js
    规模够大才值得用逻辑魔方当默认层（世界卡数 world ≤ 64 时，矩阵本体自己
    一屏就够清楚——64 张卡的 SVG 阵列不存在密度/性能问题，逻辑魔方那层

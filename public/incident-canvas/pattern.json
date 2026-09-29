@@ -2,6 +2,8 @@
   "id": "incident-canvas",
   "name": "故障故事线 · 无限画布",
   "version": "dev",
+  "license": "Apache-2.0",
+  "author": "王欣迪 (Cindy_wxd)",
   "summary": "主视图永远是并行拓扑 pattern 本体（/patterns/net-slicing/，就是组合工作台舞台上那一格）；画布围着它长——下钻 = 在画布上把一格展开出来，展开得越多画布越大。整网与泳道复用的也是规范路径上的本体（net-slicing 的另一份配置 / combo-workbench 的 swimlane.html），不是拷贝。故事线与全部数值取自 config-relation-observer，训推大盘的指标口径取自 pangu_sophon_pytorch。",
   "entry": "pattern.html",
   "selfContained": false,

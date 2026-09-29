@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * ConsoleView — 联动控制台. One linked module fusing the three existing views per the reference
  * Smartscape (Dynatrace-style) interaction:

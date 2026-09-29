@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * op-schedule — 真实数据输入：泳道 / 算子时序的真实锚点（加法，暂不接入视图，P2 泳道消费）。
  *

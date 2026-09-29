@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * CubeView — P1「立方体重排」新视图（加法·独立·不碰 FullPodScene）。
  *

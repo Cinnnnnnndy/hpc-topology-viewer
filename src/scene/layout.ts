@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * layout — 立方体重排布局引擎（P1 · 5 种 3D 堆法，纯函数，不碰渲染）。
  *

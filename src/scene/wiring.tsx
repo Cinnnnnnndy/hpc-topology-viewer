@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 // ─── 连线样式（bus-wiring 风格）──────────────────────────────────────────────
 // 参考 https://github.com/Cinnnnnnndy/bus-wiring 的连线样式：圆角管体（TubeGeometry
 // 走 roundedCurve 二次贝塞尔折角）+ ShaderMaterial 实色 + 沿线流动的白色「彗星」高亮

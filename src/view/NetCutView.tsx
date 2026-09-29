@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 // ─────────────────────────────────────────────────────────────────────────────
 // NetCutView — 「整网切分」：整网图（左，逻辑计算图）× 立方重组（右，物理卡阵）。
 // 一句话故事：整网（切什么）── 按并行切 ──▶ 立方（切到哪张卡）。

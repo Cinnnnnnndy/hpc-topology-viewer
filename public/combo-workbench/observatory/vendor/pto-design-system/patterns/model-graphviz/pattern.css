@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 .pto-model-graphviz-pattern-page {
   --model-graphviz-bg: var(--background);
   --model-graphviz-surface: color-mix(in srgb, var(--panel-shell-bg) 94%, transparent);

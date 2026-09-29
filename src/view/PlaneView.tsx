@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * PlaneView — a flat 2-D "tiled" diagram of the full super-node, complementary to
  * the 3-D full-pod view (which it does not touch). Drawn on a 2-D <canvas> so it

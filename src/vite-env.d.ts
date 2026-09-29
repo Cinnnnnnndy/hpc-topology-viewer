@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /// <reference types="vite/client" />
 
 // 构建期注入的唯一 id（见 vite.config.ts define），用于给 iframe 静态资源做缓存刷新。

@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * DOM 级运行时回归测试（无需真实浏览器/WebGL）
  * 用法：npm i jsdom three@0.128.0 && node tools/harness.js [html路径]

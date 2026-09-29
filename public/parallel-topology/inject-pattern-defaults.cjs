@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /* 把一份 pattern 的**默认 URL 状态**写进页面本身。
    用法：node inject-pattern-defaults.cjs <pattern.html> "view=chain&card=1&vtab=3d"
 

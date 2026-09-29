@@ -1,5 +1,11 @@
 # HPC Topology Viewer
 
+> **版权与开源协议** —— © 2026 **王欣迪 (Cindy_wxd)**。
+> **代码**（全部 demo 页面、pattern、`src/`、`scripts/` 等程序代码）采用 **[Apache License 2.0](./LICENSE)**；
+> **内容**（`docs/`、`research/` 研究报告、说明文档、设计稿与图示）采用 **[CC BY 4.0](./LICENSE-CC-BY-4.0)**。
+> 使用、修改或再分发须保留作者署名「王欣迪」、版权声明与 [`NOTICE`](./NOTICE)；协议不授予商标权。
+> 华为 / 昇腾 / CANN / 灵衢 / openPangu 等名称与引用资料归各自权利人所有，不在本仓库协议范围内——详见 [`NOTICE`](./NOTICE)。
+
 > **启动页（一站入口）：<https://cinnnnnnndy.github.io/hpc-topology-viewer/launch.html>**
 > —— 工作台、驾驶舱、独立 pattern、参照系 / PRD / 映射简图与 `research/` 研究报告
 > 按组整合在一张浅色启动页上，点开即看（dev: `/hpc-topology-viewer/launch.html`）。

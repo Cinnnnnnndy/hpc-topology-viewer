@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * CommView — 通信全景（rank×rank 通信矩阵）. A DEDICATED, NON-hierarchical 2-D view for the
  * communication RELATIONSHIP itself, added as its own 2D 分析 view (NOT inside 运行状态).

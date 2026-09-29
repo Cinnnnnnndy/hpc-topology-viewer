@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /* rank-topology-lite · 两个本体各管一半，边到边铺满整个视口，不加框、不缩小。
    没点开卡：逻辑魔方（WebGL 实例化网格，素块、无标签、无性能问题）。
    点开一张卡：并行拓扑矩阵本体自己的选中态渲染接管。谁在最上层用 opacity+

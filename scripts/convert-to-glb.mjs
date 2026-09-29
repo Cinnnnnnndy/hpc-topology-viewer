@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * convert-to-glb.mjs — convert open-source hardware models to optimized GLB and
  * drop them where the model-registry auto-detects them.

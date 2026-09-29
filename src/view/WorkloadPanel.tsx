@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 /**
  * WorkloadPanel — a DEEP, reusable real-data panel for the Pangu Pro MoE workload
  * (arXiv:2505.21411). Mirrors the rich panels StatusView shows, so the plane / 3-D

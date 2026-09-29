@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 // ─── 2D 连线样式（bus-wiring 风格）────────────────────────────────────────────
 // 参考 https://github.com/Cinnnnnnndy/bus-wiring 的连线样式，在 2D <canvas> 上还原其
 // 视觉语言：圆角走线 + 沿线流动的「彗星」白色亮带 + 两端 connector 接点（色环 + 白芯）。

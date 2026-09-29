@@ -1,0 +1,25 @@
+HPC Topology Viewer
+Copyright © 2026 王欣迪 (Cindy_wxd, https://github.com/Cinnnnnnndy)
+
+本仓库采用双协议（dual licensing）：
+
+  · 代码 —— Apache License 2.0（见 LICENSE）
+    所有程序代码：HTML / JS / TS / CSS / 构建脚本 / 工作流，包括 public/ 下全部 demo 页面与 pattern、src/、scripts/。
+
+  · 内容 —— Creative Commons Attribution 4.0 International（CC BY 4.0，见 LICENSE-CC-BY-4.0）
+    文档、研究报告、设计稿与图示：docs/、research/（含由构建带进站点的 /research/*.html）、各目录下的 README / 说明文字、
+    PRD 与设计材料、页面里的插图与示意图。
+
+署名与再分发要求（知识产权声明）
+  1. 使用、修改或再分发本仓库任何部分，须保留原作者署名「王欣迪 (Cindy_wxd)」、上述版权声明、
+     本 NOTICE 文件以及文件头里的 SPDX 许可证标识；修改过的文件须注明已修改（Apache-2.0 第 4 条）。
+  2. 转载或改编内容（文档 / 研究报告 / 设计）须按 CC BY 4.0 注明作者「王欣迪」、原始链接与所用协议，并说明是否做过修改。
+  3. 两份协议都不授予商标权：不得使用作者姓名、项目名称或其标识为衍生作品背书或暗示关联（Apache-2.0 第 6 条）。
+  4. 本仓库以「现状」提供，不附带任何担保（Apache-2.0 第 7、8 条；CC BY 4.0 第 5 条）。
+
+第三方内容（不在上述两份协议范围内，归各自权利人所有）
+  · three.js（public/vendor/three-r128.min.js）—— MIT License, © three.js authors
+  · JetBrains Mono 字体（分支 claude/shard-device-map 的 fonts/）—— SIL Open Font License 1.1, © The JetBrains Mono Project Authors
+  · 华为、昇腾（Ascend）、CANN、灵衢、盘古 / openPangu、鲲鹏等名称与商标归华为技术有限公司所有；
+    文中引用的公开资料（技术报告、直播材料、新闻报道等）归原作者 / 原发布方所有，仅作研究引用，不因本仓库的协议而被再授权。
+  · 其他在文件或目录中自带版权 / 许可声明的材料，以其自带声明为准。

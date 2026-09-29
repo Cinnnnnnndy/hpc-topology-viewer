@@ -1,3 +1,4 @@
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE（https://github.com/Cinnnnnnndy/hpc-topology-viewer） */
 // ─────────────────────────────────────────────────────────────────────────────
 // L0 Core-Group 内部架构视图 —— 复用 pto-design-system 的 memory-architecture
 // pattern（vendored 于 src/vendor/memory-architecture，依赖 aic/aiv-core-object）。
