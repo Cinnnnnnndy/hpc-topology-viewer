@@ -1015,3 +1015,15 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
   background-size: var(--dot-s, 24px) var(--dot-s, 24px);
   background-position: var(--dot-x, 0) var(--dot-y, 0);
 }
+
+/* 告警清单里并进来的故障复盘：分两节（Live · 当前配置 / Post-mortem · 另一次 2048 卡训练），复盘行点开就地展开事件链 */
+.jn-alerts { max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .16) transparent; }
+.jn-sec { padding: 6px 8px 3px; font-size: 10.5px; color: rgba(255, 255, 255, .42); letter-spacing: .02em; }
+.jn-sec:not(:first-child) { margin-top: 4px; border-top: 1px solid rgba(255, 255, 255, .06); padding-top: 8px; }
+.jn-alerts .jn-pm { padding: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; }
+.jn-alerts .jn-pm + .jn-pm { margin-top: 0; }
+.jn-rel { display: none; padding: 0 8px 2px 28px; font-family: var(--mono); font-size: 10px; color: rgba(255, 255, 255, .42); }
+.jn-pm.is-open .jn-rel { display: block; }
+.jn-alerts .ip-chain { margin: 2px 8px 6px 26px; }
+.jn-alerts .jn-al + .jn-al.is-info, .jn-alerts .jn-al:not(.is-past) + .jn-al.is-past { margin-top: 0; box-shadow: none; border-radius: 8px; }
+.jn-al.is-past i { outline: none; width: 7px; height: 7px; box-shadow: inset 0 0 0 1px #6A6A6A; }

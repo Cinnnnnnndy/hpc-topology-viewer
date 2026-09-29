@@ -292,39 +292,31 @@
      在进去的第1个视图中」+「通过 tab 的形式去切换查看数值比较费劲，平铺，
      空值横杠不要显示」——不再有"选中一个事件才显示十格"这一步；结论与来源
      收进 hover 的 title。 */
+  /* 故障复盘并进顶上的告警清单（反馈「告警和左侧的显存峰值还有溢出的关系是什么？如果是一起的，就合并到顶上的告警中间去」）：
+     左列原来那两条（显存峰值与碎片 OOM / Router 溢出与通信死锁）就是告警清单里「Post-mortem」那两行，同一份数据摆了两处。
+     现在左列不再画，事件链改在告警清单里就地展开（chainHtml），rank 按钮照旧能下钻。 */
+  function incidentChainHtml(prob) {
+    return prob.events.map(function (e) {
+      var board = INCIDENT_BOARD[e.id], m = board && board.m ? board.m : {};
+      var chips = INCIDENT_METRICS.filter(function (x) { return m[x.k] && m[x.k].s !== 'na'; }).map(function (x) {
+        var c = m[x.k];
+        return '<span class="ip-m" style="--ip-sevc:' + INCIDENT_SEVC[c.s] + '" title="' + esc(x.name + (c.why ? ' · ' + c.why : '') + ' · 来源 ' + x.src) + '"><em>' + esc(x.k) + '</em>' + esc(c.v) + '</span>';
+      }).join('');
+      return '<div class="ip-ev' + (e.root ? ' is-root' : '') + '" style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.conclusion) + '">'
+        + '<div class="ip-evhd"><span class="ip-time">' + esc(e.time) + '</span><span class="ip-title">' + esc(e.title) + '</span>'
+        + (e.root ? '<span class="ip-root">Root Cause</span>' : '')
+        + (e.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + e.rank + '">' + ('rank ' + e.rank + ' →') + '</button>' : '')
+        + '</div>' + (chips ? '<div class="ip-ms">' + chips + '</div>' : '') + '</div>';
+    }).join('');
+  }
+  function incidentDrill(rank9) {
+    if (PS.matrixPreset === 'incident2048') showDetail(rank9);
+    else location.href = '?preset=incident2048&sel=' + rank9;
+  }
   function renderIncidentPanel() {
     if (!incidentPanel) return;
-    var onIncident = PS.matrixPreset === 'incident2048';
-    var lanes = INCIDENT_PROBLEMS.map(function (prob, i9) {
-      var evs = prob.events.map(function (e) {
-        var board = INCIDENT_BOARD[e.id], m = board && board.m ? board.m : {};
-        var chips = INCIDENT_METRICS.filter(function (x) { return m[x.k] && m[x.k].s !== 'na'; }).map(function (x) {
-          var c = m[x.k];
-          // 标签用短键（loss/gnorm/mem…），全名与来源进 hover——同一行能放下更多真读数
-          return '<span class="ip-m" style="--ip-sevc:' + INCIDENT_SEVC[c.s] + '" title="' + esc(x.name + (c.why ? ' · ' + c.why : '') + ' · 来源 ' + x.src) + '"><em>' + esc(x.k) + '</em>' + esc(c.v) + '</span>';
-        }).join('');
-        return '<div class="ip-ev' + (e.root ? ' is-root' : '') + '" style="--ip-sevc:' + INCIDENT_SEVC[e.sev] + '" title="' + esc(e.conclusion) + '">'
-          + '<div class="ip-evhd"><span class="ip-time">' + esc(e.time) + '</span><span class="ip-title">' + esc(e.title) + '</span>'
-          + (e.root ? '<span class="ip-root">根因</span>' : '')
-          + (e.rank != null ? '<button type="button" class="ip-drill" data-act="ip-drill" data-rank="' + e.rank + '">' + ('rank ' + e.rank + ' →') + '</button>' : '')
-          + '</div>'
-          + (chips ? '<div class="ip-ms">' + chips + '</div>' : '')
-          + '</div>';
-      }).join('');
-      var root = prob.events.filter(function (e) { return e.root; })[0];
-      var open = !!incidentOpen[prob.id];
-      return '<div class="ip-grp' + (open ? ' is-open' : '') + '">'
-        + '<button type="button" class="ip-prob' + (open ? ' is-on' : '') + '" data-prob="' + prob.id + '" title="' + prob.events.length + ' 个事件 · 另一次 2048 卡训练的真实事故"><b>' + esc(prob.name.replace(/^问题\d+\s*·\s*/, '')) + '</b>'
-        + '<span>' + prob.events.length + '</span></button>'
-        + '<div class="ip-chain">' + evs + '</div></div>';
-    });
-    /* 告警全放左列（反馈「告警都放在左侧」「为什么左边一个右边一个」）：两条问题线上下叠，
-       按时间先后——问题 1（step 12000，显存 OOM）在上，问题 2（step 15k，Router 溢出）在下。
-       两者是同一次 2048 卡训练里的两个独立问题，不是因果。 */
-    var order = INCIDENT_PROBLEMS.map(function (p9, i9) { return [p9.id, i9]; }).sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
-    incidentPanel.innerHTML = '<div class="ip-col ip-col-left vs-host">' + order.map(function (x) { return lanes[x[1]]; }).join('') + '</div>';
-    incidentPanel.classList.remove('is-hidden');
-    requestAnimationFrame(function () { syncOverFade(); });
+    incidentPanel.innerHTML = ''; incidentPanel.classList.add('is-hidden');
+    if (typeof renderJourney === 'function' && typeof journey !== 'undefined') renderJourney();
   }
   // 先只出现问题，点了才展开这条问题线的链路
   var incidentOpen = {};
@@ -2526,17 +2518,17 @@
      再点一次 = 回到全部。URL ?goal=键。单卡层（第三档）不按目的收卡。 */
   var GOALS = {
     train: [
-      { k: 'alert', n: '定位告警', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
-      { k: 'cap', n: '查容量', q: '这套切分装得下吗？最满的卡在哪？', cards: ['cap', 'state', 'wshard', 'pub'], go: 'hier' },
-      { k: 'comm', n: '看通信', q: '每一维通信在哪一层闭合？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
-      { k: 'perf', n: '调吞吐', q: '吞吐、步时、气泡正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe'], go: 'swim' },
-      { k: 'tune', n: '比改动', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
+      { k: 'alert', n: '告警', q: '', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'alerts' },
+      { k: 'cap', n: '容量', q: '这套切分装得下吗？最满的卡在哪？', cards: ['cap', 'state', 'wshard', 'pub'], go: 'hier' },
+      { k: 'comm', n: '通信', q: '每一维通信在哪一层闭合？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
+      { k: 'perf', n: '吞吐', q: '吞吐、步时、气泡正常吗？慢在哪一段？', cards: ['thr', 'step', 'pipe', 'moe'], go: 'swim' },
+      { k: 'tune', n: '对比', q: '改了 ZeRO / 切分 / 预置之后，变好还是变差？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' }
     ],
     infer: [
-      { k: 'alert', n: '定位告警', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
-      { k: 'cap', n: '查 KV 容量', q: '权重 + KV cache 放得下吗？并发还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
-      { k: 'perf', n: '看延迟', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
-      { k: 'tune', n: '比改动', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
+      { k: 'alert', n: '告警', q: '', cards: ['cap', 'state', 'moe', 'infer'], go: 'alerts' },
+      { k: 'cap', n: 'KV 容量', q: '权重 + KV cache 放得下吗？并发还能加多少？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
+      { k: 'perf', n: '延迟', q: 'TTFT、TPOT 达标吗？慢在 prefill 还是 decode？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
+      { k: 'tune', n: '对比', q: '加卡或改切分之后，装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
   };
   function stageOf(k) { return (GOALS[MODE] || []).filter(function (x) { return x.k === k; })[0] || null; }
@@ -2568,8 +2560,10 @@
     if (M && M.imbMax > H.thrImb) out.push({ sev: 'warn', t: 'Routing Imbalance ' + M.imbMax.toFixed(2) + '×', w: 'L' + M.imbAt + ' · pp' + ppOf(M.imbAt), go: goSeg(ppOf(M.imbAt)) });
     if (MODE === 'train' && B.bubble > 0.25) out.push({ sev: 'warn', t: 'Bubble ' + pct(B.bubble) + ' > 25%', w: 'PP ' + PS.pp + ' · GA ' + (C.model ? C.model.ga : '—'), go: function () { if (drawerOpen !== 'swimlane') openDrawer('swimlane'); } });
     if (wr != null && !(C.n && (C.n.oom || C.n.red))) out.push({ sev: 'info', t: 'Peak Usage ' + pct(wv), w: 'rank ' + wr, go: goRank(wr) });
-    if (DCK.inc) INCIDENT_PROBLEMS.forEach(function (pb) {
-      out.push({ sev: 'past', t: 'Post-mortem · ' + pb.events.length + ' events', w: pb.name.replace(/^问题\d+\s*·\s*/, ''), go: function () { incidentOpen[pb.id] = true; renderIncidentPanel(); } });
+    // 历史复盘：另一次 2048 卡训练的两起真实事故——是上面同类告警一路恶化下去的样子（显存类 ↔ 问题 1，路由 / 数值类 ↔ 问题 2）
+    var REL = { 'problem-1': 'OOM · Crit · Peak Usage', 'problem-2': 'Routing Imbalance · Amax' };
+    if (DCK.inc) INCIDENT_PROBLEMS.slice().sort(function (a, b) { return a.id < b.id ? -1 : 1; }).forEach(function (pb) {
+      out.push({ sev: 'past', t: pb.name.replace(/^问题\d+\s*·\s*/, ''), w: pb.events.length + ' events', rel: REL[pb.id], pm: pb });
     });
     return out;
   }
@@ -2581,11 +2575,17 @@
       + [['train', 'Train'], ['infer', 'Inference']].map(function (x) { return '<button type="button" data-jmode="' + x[0] + '"' + (x[0] === MODE ? ' class="is-on"' : '') + '>' + x[1] + '</button>'; }).join('')
       + '</div><div class="jn-goals">' + goals.map(function (x) {
         var badge = x.k === 'alert' && live ? '<i class="jn-badge' + (worst === 0 ? ' is-crit' : '') + '">' + live + '</i>' : '';
-        return '<button type="button" data-stage="' + x.k + '" class="' + (STAGE === x ? 'is-cur' : '') + (x.k === 'alert' ? ' jn-alert' : '') + '"' + (x.q ? ' title="' + esc(x.q) + '"' : '') + '>' + (x.k === 'alert' ? '<svg viewBox="0 0 16 16"><path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.4v.1"/></svg>' : '') + x.n + badge + '</button>';
+        return '<button type="button" data-stage="' + x.k + '" class="' + (STAGE === x ? 'is-cur' : '') + (x.k === 'alert' ? ' jn-alert' : '') + '"' + (x.q ? ' title="' + esc(x.q) + '"' : '') + '>' + x.n + badge + '</button>';
       }).join('') + '</div></div>'
       + (STAGE && STAGE.k === 'alert'
         ? '<div class="jn-alerts">' + (AL.length ? AL.map(function (x, i) {
-            return '<button type="button" class="jn-al is-' + x.sev + (i === alertAt ? ' is-on' : '') + '" data-alert="' + i + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span><em>定位</em></button>';
+            var head = i === 0 && x.sev !== 'past' ? '<div class="jn-sec">Live · 当前配置</div>' : x.sev === 'past' && (i === 0 || AL[i - 1].sev !== 'past') ? '<div class="jn-sec">Post-mortem · 另一次 2048 卡训练的真实事故</div>' : '';
+            if (x.pm) {
+              var op = !!incidentOpen[x.pm.id];
+              return head + '<div class="jn-pm ip-grp' + (op ? ' is-open' : '') + '"><button type="button" class="jn-al is-past' + (op ? ' is-on' : '') + '" data-pm="' + x.pm.id + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span><em>' + (op ? '收起' : '展开') + '</em></button>'
+                + '<div class="jn-rel">同类告警 · ' + esc(x.rel || '') + '</div><div class="ip-chain">' + incidentChainHtml(x.pm) + '</div></div>';
+            }
+            return head + '<button type="button" class="jn-al is-' + x.sev + (i === alertAt ? ' is-on' : '') + '" data-alert="' + i + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span><em>定位</em></button>';
           }).join('') : '<div class="jn-none">没有告警</div>') + '</div>'
         : '<div class="jn-q' + (STAGE ? '' : ' is-empty') + '">' + (STAGE ? esc(STAGE.q) : '') + '</div>');
     journey._alerts = AL;
@@ -2625,6 +2625,8 @@
     renderDataCards(); renderCfg(); renderJourney();
   }
   journey.addEventListener('click', function (ev) {
+    var dr = ev.target.closest('[data-act="ip-drill"]'); if (dr) { incidentDrill(parseInt(dr.getAttribute('data-rank'), 10)); return; }
+    var pm = ev.target.closest('[data-pm]'); if (pm) { var id9 = pm.getAttribute('data-pm'); incidentOpen[id9] = !incidentOpen[id9]; renderJourney(); return; }
     var a = ev.target.closest('[data-alert]');
     if (a) { var i9 = +a.getAttribute('data-alert'), x9 = journey._alerts && journey._alerts[i9]; if (x9 && x9.go) { alertAt = i9; x9.go(); renderJourney(); } return; }
     var b = ev.target.closest('[data-stage]'); if (b) { setStage(b.getAttribute('data-stage')); return; }
