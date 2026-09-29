@@ -1033,6 +1033,11 @@
     function apply() {
       var s = svg(); if (!s) return;
       s.style.transformOrigin = '0 0'; s.style.transform = 'translate(' + st.tx + 'px,' + st.ty + 'px) scale(' + st.k + ')';
+      /* 无限画布的点阵底（反馈「无限画布加点状背景，淡一些」）：点跟着画布平移 / 缩放一起走；间距 = 24px × 缩放，
+         按 2 的幂折回 [20, 40) 之间——放大、缩小都不会糊成一片或稀到看不见（Figma 那种画法） */
+      var sp = 24 * st.k; while (sp >= 40) sp /= 2; while (sp < 20) sp *= 2;
+      var bx = ((st.tx % sp) + sp) % sp, by = ((st.ty % sp) + sp) % sp;
+      stage.style.setProperty('--dot-s', sp.toFixed(2) + 'px'); stage.style.setProperty('--dot-x', bx.toFixed(1) + 'px'); stage.style.setProperty('--dot-y', by.toFixed(1) + 'px');
       clearTimeout(strokeT);
       if (st.gesture) strokeT = setTimeout(function () { st.gesture = false; setZoomStroke(stage, st.k); if (stage === physStage) { ensurePodDetail(st); if (curSel != null) markSelFrame(stage); } }, 120);
       else setZoomStroke(stage, st.k);
@@ -2787,7 +2792,7 @@
       'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数');
   }
   function pubCard() {
-    return dcCard('pub', 'Public Figures', vzIdx([['SuperPod Affinity', 1.3, '+30%'], ['512K Throughput', 1.5, '+50%'], ['Infer / Card', 2, '2×']], 252)
+    return dcCard('pub', 'Public Figures', vzIdx([['SP Affinity', 1.3, '+30%'], ['512K Tput', 1.5, '+50%'], ['Infer/Card', 2, '2×']], 252)
       + dcRow('Pretrain', '34T tok'),
       'pub', 'openPangu-2.0 训练代码开源时的公开数字（2026-09-28，TechNode / IT之家）：只有相对提升，未公开 MFU、每卡吞吐与步时');
   }
@@ -2805,7 +2810,7 @@
       return dcCard('cap', 'POD ' + fitPod, sp ? dcRow('Peak', pct(sp.peak)) + dcRow('Mean', pct(sp.avg)) + dcRow('OOM', sp.over, sp.over ? 'is-bad' : '') : dcRow('Reading', '…'), 'calc');
     }
     if (!C) return '';
-    var n = C.n, W = C.world, rows = [['OK', n.ok, ''], ['Warn 70%', n.amber, ''], ['Critical 88%', n.red, n.red ? 'is-warn' : ''], ['OOM', n.oom, n.oom ? 'is-bad' : '']];
+    var n = C.n, W = C.world, rows = [['OK', n.ok, ''], ['Warn 70%', n.amber, ''], ['Crit 88%', n.red, n.red ? 'is-warn' : ''], ['OOM', n.oom, n.oom ? 'is-bad' : '']];
     // 左列：容量（装得下吗）→ 训练健康（稳不稳）→ 公开读数；告警面板排在它们下面
     return capClusterHtml(C, n, W, rows) + (MODE === 'infer' ? inferMemCard() : C.perf ? healthCard(C.perf, null, 252) : '') + pubCard();
   }

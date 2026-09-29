@@ -1007,3 +1007,11 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .sw-tip b { font-weight: 600; color: #FFFFFF; }
 .sw-tip span { color: rgba(255, 255, 255, .5); font-size: 10px; }
 .sw-tip[hidden] { display: none; }
+
+/* 无限画布点阵底：1px 圆点、白 7%，间距与位置由 zoom-pan 写进 --dot-s / --dot-x / --dot-y（见 pattern.js attachZoomPan） */
+.phys-stage {
+  background-color: #111111;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .075) 0 .8px, transparent 1.1px);
+  background-size: var(--dot-s, 24px) var(--dot-s, 24px);
+  background-position: var(--dot-x, 0) var(--dot-y, 0);
+}
