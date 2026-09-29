@@ -917,3 +917,15 @@ body.is-compact .journey { top: 10px; }
 body.is-compact .jn-mode button, body.is-compact .jn-steps button { font-size: 11.5px; padding-top: 1px; padding-bottom: 1px; }
 body.is-compact .jn-steps li + li::before { width: 6px; }
 .sw-mark { stroke: #8A8A8A; stroke-width: 1; stroke-dasharray: 2 2; }
+
+/* 调优对比：改前灰色删除线、改后近白；差值记号 ▲▼——变差琥珀、变好 / 不变灰（颜色不单独承担意义，记号 + 位置也说清楚） */
+.dc-cmp b { display: inline-flex; align-items: baseline; gap: 6px; }
+.dc-cmp s, .dc-cmp-cfg s { color: #6E6E6E; text-decoration-color: rgba(255, 255, 255, .25); font-weight: 400; }
+.dc-cmp i { font-style: normal; font-size: 9px; width: 9px; text-align: center; color: #8C8C8C; }
+.dc-cmp.is-worse i, .dc-cmp.is-worse b { color: #FAB219; }
+.dc-cmp.is-worse s { color: #7A6A48; }
+.dc-cmp.is-same b { color: #A8A8A8; }
+.dc-cmp-cfg { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px; font-family: var(--mono); font-size: 10.5px; color: #EDEDED; }
+.dc-cmp-cfg s { font-size: 10px; }
+.dc-x { margin-left: auto; font: inherit; font-size: 13px; line-height: 1; color: #8C8C8C; background: transparent; border: 0; border-radius: 4px; padding: 0 4px; cursor: pointer; }
+.dc-x:hover { color: #F0F0F0; background: rgba(255, 255, 255, .06); }

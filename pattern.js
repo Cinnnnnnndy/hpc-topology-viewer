@@ -1399,6 +1399,7 @@
   var clusterStale = false;
   function setZero(z) {
     if (z === ZERO) return;
+    saveBase();
     ZERO = z; lastBrief = null; ppPeak = null;
     var u = new URLSearchParams(location.search);
     if (z === (PS.zero || 0)) u.delete('zero'); else u.set('zero', String(z));
@@ -2373,7 +2374,7 @@
   });
   cfgPop.addEventListener('change', function (ev) {
     var t = ev.target;
-    if (t.getAttribute('data-cf') === 'preset') { var u = new URLSearchParams(location.search); u.set('preset', t.value); ['sel', 'obj', 'zero'].forEach(function (k) { u.delete(k); }); location.search = u.toString(); return; }
+    if (t.getAttribute('data-cf') === 'preset') { saveBase(true); var u = new URLSearchParams(location.search); u.set('preset', t.value); ['sel', 'obj', 'zero'].forEach(function (k) { u.delete(k); }); location.search = u.toString(); return; }
     var a = t.getAttribute('data-ann');
     if (a) { ANN[a] = t.checked; setQS('hide', ['occ', 'num', 'rel', 'grp'].filter(function (k) { return !ANN[k]; }).join(',')); applyAnn(); physApplySelection(); return; }
     if (t.hasAttribute('data-dvcomm')) { DV.comm = t.checked; saveDV(); refreshDetail(); renderCfg(); }
@@ -2398,7 +2399,7 @@
       var u8 = new URLSearchParams(location.search), base8 = PRESETS[qs.get('preset')] || PRESETS.moe504b32k, reset8 = b.hasAttribute('data-spreset');
       ['tp', 'cp', 'pp', 'dp', 'ep'].forEach(function (d) { var v = reset8 ? null : SPD[d]; if (v == null || v === (base8[d] || 1)) u8.delete(d); else u8.set(d, String(v)); });
       ['sel', 'obj'].forEach(function (k) { u8.delete(k); });
-      location.search = u8.toString(); return;
+      saveBase(true); location.search = u8.toString(); return;
     }
     if ((b = ev.target.closest('[data-sibs]'))) { DV.sibs = b.getAttribute('data-sibs'); saveDV(); refreshDetail(); renderCfg(); return; }
     if ((b = ev.target.closest('[data-cam]'))) { DV.vtab = b.getAttribute('data-cam'); setQS('cam', DV.vtab === '3d' ? '' : DV.vtab); refreshDetail(true); renderCfg(); }
@@ -2426,7 +2427,7 @@
               优化器态），右边执行态（激活、优化器步临时区、碎片）+ 各维通信载荷 + 流水 */
   var DCT = [['cap', '容量'], ['state', '显存各档'], ['wshard', '权重切分'], ['comm', '通信'], ['pipe', '流水·气泡'],
     ['thr', '吞吐'], ['step', '步时'], ['moe', 'MoE'], ['health', '训练健康'], ['pub', '公开读数'],
-    ['phys', '物理'], ['infer', '推理'], ['inc', '故障复盘']];
+    ['phys', '物理'], ['infer', '推理'], ['inc', '故障复盘'], ['cmp', '调优对比']];
   var DCK = (function () { var h = (qs.get('dhide') || '').split(','), o = {}; DCT.forEach(function (x) { o[x[0]] = h.indexOf(x[0]) < 0; }); return o; })();
   var MODE = qs.get('mode') === 'infer' ? 'infer' : 'train';
   var dataCol = document.getElementById('dataCol'), shardL = document.getElementById('shardL');
@@ -2444,14 +2445,14 @@
       { k: 'map', n: '映射', q: '每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？', cards: ['comm', 'phys', 'cap'], go: 'map' },
       { k: 'run', n: '监控', q: '吞吐、步时、气泡、MoE 负载、训练健康正常吗？', cards: ['thr', 'step', 'pipe', 'moe', 'health'], go: 'swim' },
       { k: 'diag', n: '诊断', q: '哪一张卡异常？是显存、通信还是路由？', cards: ['cap', 'state', 'health', 'moe', 'pipe', 'inc'], go: 'worst' },
-      { k: 'tune', n: '调优', q: '改了 ZeRO 或切分之后，变好了多少？', cards: ['cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' },
+      { k: 'tune', n: '调优', q: '改了 ZeRO 或切分之后，变好了多少？', cards: ['cmp', 'cap', 'state', 'step', 'thr', 'pipe'], go: 'cfg' },
       { k: 'review', n: '复盘', q: '这次事故的时间线和根因是什么？', cards: ['inc', 'health', 'moe'], go: 'inc' }
     ],
     infer: [
       { k: 'deploy', n: '部署', q: '权重 + KV cache 放得下吗？prefill / decode 怎么分？', cards: ['cap', 'state', 'wshard', 'comm'], go: 'hier' },
       { k: 'run', n: '监控', q: 'TTFT、TPOT、吞吐达标吗？', cards: ['infer', 'moe', 'comm', 'state'], go: 'swim' },
       { k: 'diag', n: '诊断', q: '慢在 prefill 还是 decode？哪个专家过热？', cards: ['infer', 'moe', 'state', 'cap'], go: 'worst' },
-      { k: 'scale', n: '扩缩', q: '加卡还是改切分？改完装得下、够快吗？', cards: ['infer', 'cap', 'state', 'comm'], go: 'cfg' }
+      { k: 'scale', n: '扩缩', q: '加卡还是改切分？改完装得下、够快吗？', cards: ['cmp', 'infer', 'cap', 'state', 'comm'], go: 'cfg' }
     ]
   };
   function stageOf(k) { return (JOURNEY[MODE] || []).filter(function (x) { return x.k === k; })[0] || null; }
@@ -2711,6 +2712,45 @@
   }
   /* 右列：关系（通信 / 闭合 / 板载）→ 时间（流水 → 步时）。选中了 rank 但 rank 卡还收着时，右列保持这一层原来那几张，
      不先冒出一张孤零零的「流水」；rank 卡打开后才换成这张卡自己的流水，排在 rank 卡下面。 */
+  /* ── 调优对比（旅程「调优 / 扩缩」那一步：反馈「改了参数之后没有前后对比」）──────────────────────────
+     改 ZeRO 档、改切分「应用」、换预置的那一刻，先把当前这一组读数存成「改前」（切分 / 预置会整页重载，
+     所以同时写进 sessionStorage，重载后读回一次就删）；新读数回来后，右列最上面一张「改前 → 改后」：
+     每项一行，改后近白、改前灰、差值带 ▲▼——变差的那一项差值用琥珀（状态色，只给这一种用途），变好不着色。
+     卡头 × 清掉对比。只比同一个工况（训练 / 推理）里有意义的几项。 */
+  var BASE = (function () { try { var v = sessionStorage.getItem('sdm.base'); sessionStorage.removeItem('sdm.base'); return v ? JSON.parse(v) : null; } catch (e) { return null; } })();
+  function snapNow() {
+    var B = rawBrief; if (!B || B.ok === false) return null;
+    var pk = 0; (B.ratio || []).forEach(function (v) { if (v > pk) pk = v; });
+    var T = B.perf && B.perf.thr, I = B.infer, it = 0;
+    if (I) I.stages.forEach(function (x) { if (x.tot > it) it = x.tot; });
+    return { cfg: 'tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + ' · z' + ZERO,
+      model: PS.modelName, peak: pk, oom: B.n ? B.n.oom : 0, red: B.n ? B.n.red : 0, bubble: B.bubble,
+      tgs: T ? T.tgs : null, step: T ? T.stepS : null, mfu: T ? T.mfu : null,
+      itot: I ? it / Math.pow(2, 30) : null, bmax: I ? I.bmax : null, ioom: I ? I.n.oom : null };
+  }
+  function saveBase(persist) {
+    var s9 = snapNow(); if (!s9) return;
+    BASE = s9;
+    if (persist) try { sessionStorage.setItem('sdm.base', JSON.stringify(s9)); } catch (e) {}
+  }
+  function cmpRow(k, a, b, fmt, lowerBetter) {
+    if (a == null || b == null) return '';
+    var d = b - a, same = Math.abs(d) < 1e-9 || fmt(a) === fmt(b), worse = !same && (lowerBetter ? d > 0 : d < 0);
+    return '<div class="dc-r dc-cmp' + (same ? ' is-same' : worse ? ' is-worse' : ' is-better') + '"><span>' + k + '</span><b><s>' + fmt(a) + '</s> ' + fmt(b)
+      + '<i>' + (same ? '=' : (d > 0 ? '▲' : '▼')) + '</i></b></div>';
+  }
+  function cmpCard() {
+    if (!BASE || tier === 3) return '';
+    var N = snapNow(); if (!N) return '';
+    var f1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); }, fi = function (x) { return String(Math.round(x)); };
+    var rows = (BASE.model !== N.model ? dcRow('模型', esc(N.model)) : '')
+      + '<div class="dc-cmp-cfg"><s>' + esc(BASE.cfg) + '</s><span>→ ' + esc(N.cfg) + '</span></div>';
+    if (MODE === 'infer') rows += cmpRow('显存合计 GB', BASE.itot, N.itot, f1, true) + cmpRow('并发上限', BASE.bmax, N.bmax, fi, false) + cmpRow('超容卡', BASE.ioom, N.ioom, fi, true);
+    else rows += cmpRow('峰值占用', BASE.peak, N.peak, pct, true) + cmpRow('超容卡', BASE.oom, N.oom, fi, true) + cmpRow('红线卡', BASE.red, N.red, fi, true)
+      + cmpRow('气泡', BASE.bubble, N.bubble, pct, true) + cmpRow('tok/s · 每卡', BASE.tgs, N.tgs, fi, false) + cmpRow('步时 s', BASE.step, N.step, f1, true);
+    return dcCard('cmp', '改前 → 改后', rows, null, '改前 = 最近一次改 ZeRO / 切分 / 预置之前的读数；变差的差值用琥珀，变好不着色')
+      .replace('</span></div>', '</span><button type="button" class="dc-x" data-act="cmp-clear" title="清掉对比">×</button></div>');
+  }
   function levelCards() {
     var C = lastCluster, out = [];
     if (tier === 3) return out;
@@ -2722,6 +2762,7 @@
       var dd = hierDims();
       out.push(dcCard('comm', '闭合', (dd[0].length ? dcRow('板内', dd[0].join(' ')) : '') + (dd[1].length ? dcRow('POD', dd[1].join(' ')) : '') + dcRow('出 POD', (dd[2].concat(dd[3])).join(' ') || '—'), 'asm'));
     } else if (!rankOpen) {
+      out.push(cmpCard());
       if (C) {
         out.push(dcCard('comm', '通信', closureRows()
           + (C.comm && C.comm.tp ? dcRow('TP', C.comm.tp.txt, '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', C.comm.pp.txt, '', C.comm.pp.how) : '') + (C.comm && C.comm.dp && MODE !== 'infer' ? dcRow('DP', C.comm.dp.txt, '', C.comm.dp.how) : '')
@@ -2874,6 +2915,7 @@
     var k = c.getAttribute('data-bk'); dcOpen[k] = !dcOpen[k]; renderDataCards();
   });
   dataCol.addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-act="cmp-clear"]')) { BASE = null; renderDataCards(); return; }
     var b = ev.target.closest('[data-dact="sel"]'); if (!b) return;
     var r = +b.getAttribute('data-r'); showTier2(r, coordLine(r));
   });
