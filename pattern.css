@@ -986,3 +986,24 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .jn-al.is-past b { color: #BDBDBD; }
 .jn-al + .jn-al.is-info, .jn-al:not(.is-past) + .jn-al.is-past { margin-top: 4px; box-shadow: 0 -1px 0 rgba(255, 255, 255, .06); border-radius: 0 0 8px 8px; }
 .jn-none { font-size: 12px; color: #9A9A9A; padding: 6px 10px; }
+
+/* 泳道（10.5.0）：复用并行拓扑工作台 swimlane.html 的画法——画布本体见 pattern.js renderSwim；这里是图例与悬停卡，
+   图例照工作台 .legend：9px 色块，前向 / 反向色块带 chevron 纹理 */
+.sw-wrap { position: relative; }
+.sw-cv { display: block; }
+.sw-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 8px 10px 0; font-size: 11px; color: rgba(255, 255, 255, .55); }
+.sw-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sw-legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--legend-color); font-style: normal; }
+.sw-legend i.is-flow { background-repeat: repeat-x; background-size: 5px 100%; width: 16px; }
+.sw-legend i.is-flow.is-forward { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M.5 0 L4.5 4.5 L.5 9' fill='none' stroke='white' stroke-width='.55' opacity='.34'/%3E%3C/svg%3E"); }
+.sw-legend i.is-flow.is-backward { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M4.5 0 L.5 4.5 L4.5 9' fill='none' stroke='white' stroke-width='.55' opacity='.34'/%3E%3C/svg%3E"); }
+.sw-legend i.is-idle { width: auto; height: auto; background: none; font-family: var(--mono); font-weight: 800; font-size: 13px; line-height: 9px; color: rgba(138, 147, 166, .7); }
+.sw-legend i.is-dash { width: 0; height: 11px; border-left: 1px dashed rgba(255, 255, 255, .6); border-radius: 0; background: none; }
+.sw-legend .sw-kv { font-family: var(--mono); color: rgba(255, 255, 255, .55); }
+.sw-legend .sw-kv b { font-weight: 500; color: #F0F0F0; }
+.sw-legend em { margin-left: auto; font-style: normal; font-family: var(--mono); font-size: 10.5px; color: rgba(255, 255, 255, .4); }
+.sw-tip { position: absolute; z-index: 3; pointer-events: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 9px; border-radius: 8px; font-family: var(--mono); font-size: 11px; color: #EDEDED;
+  background: rgba(24, 24, 24, .82); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: var(--glass-edge), 0 8px 20px -8px rgba(0, 0, 0, .8); }
+.sw-tip b { font-weight: 600; color: #FFFFFF; }
+.sw-tip span { color: rgba(255, 255, 255, .5); font-size: 10px; }
+.sw-tip[hidden] { display: none; }

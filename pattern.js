@@ -1155,7 +1155,7 @@
   var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right', hier: 'right' };
   var PANEL_W0 = { rubik: 0.4, hier: 372 };
   /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
-  var PANEL_H0 = { swimlane: 222, netgraph: 0.46 };
+  var PANEL_H0 = { swimlane: 270, netgraph: 0.46 };
   var drawerOpen = null;
   function openDrawer(key) {
     ['at-left', 'at-right', 'at-bottom'].forEach(function (c) { drawer.classList.remove(c); });
@@ -2173,6 +2173,41 @@
     var c1 = tA + 2 * P, n = Math.floor((tB - 2 * P - c1) / P);
     return n >= 3 ? { c1: c1, c2: c1 + n * P, n: n, tA: tA, tB: tB } : null;
   }
+  /* ── 泳道画法：复用并行拓扑工作台（combo-workbench/swimlane.html「MB07 生命周期泳道」）那一套（反馈「泳道的样式尽量复用
+     之前并行拓扑工作台的泳道」）——同一份设计系统组件 vendor/swimlane-task/pattern.js 的 drawTaskBar 画条（淡底 + 实色 + 顶 1px
+     高光 + 细边），条内同样的 chevron 细线表示方向（前向 › / 反向 ‹）、条宽够就写标签；左侧同样的圆角对象标签「PP0 · L0–5」；
+     行高 / 条高同一套比例（22 / 16，这里压到 20 / 14）、隔行底纹、行分隔线、刻度竖线；空闲的行首 / 行尾同样铺一截大号 › / ‹
+     纹理（等上游激活 / 等下游梯度）；通信与工作台一样用绿色块；色值取工作台 COLORS（forward #4369EF / backward #FF4B7B /
+     comm #04D793）。
+     保留本页的两条：稳态折叠（「⋯ 20 μb ⋯」）与去色——工作台自己的「聚焦」画法是非聚焦事件整体换成中性灰、37% 不透明，
+     本页默认就处在这种聚焦态：只有关键点（聚焦 / 选中的那一段、选中 rank、指针所在的那个 μb）上工作台的实色，其余一律中性灰。 */
+  var SW_COL = { forward: '#4369EF', backward: '#FF4B7B', comm: '#04D793', muted: '#8A93A6' };
+  var swimHover = null, swimGeo = null;
+  function swimFont(w, px) { return w + ' ' + px + 'px ' + (getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace'); }
+  function swimRR(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+  // 工作台 drawChevronTrack：条内等距的方向细线
+  function swimChevrons(ctx, x, y, w, h, dir, color) {
+    if (w <= 0) return;
+    var step = 6, inset = .65;
+    ctx.save(); swimRR(ctx, x, y, w, h, 3); ctx.clip();
+    ctx.strokeStyle = color; ctx.lineWidth = .55; ctx.lineJoin = 'miter';
+    for (var px = x - step; px < x + w + step; px += step) {
+      ctx.beginPath();
+      if (dir > 0) { ctx.moveTo(px + inset, y + inset); ctx.lineTo(px + step - inset, y + h / 2); ctx.lineTo(px + inset, y + h - inset); }
+      else { ctx.moveTo(px + step - inset, y + inset); ctx.lineTo(px + inset, y + h / 2); ctx.lineTo(px + step - inset, y + h - inset); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 工作台 drawLaneGlyphTrack：行首 / 行尾空闲处的一截大号 › / ‹ 纹理
+  function swimGlyphs(ctx, x, y, w, h, dir, color) {
+    if (w <= 4) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    ctx.fillStyle = color; ctx.globalAlpha = .32; ctx.font = swimFont('800', 17); ctx.textBaseline = 'middle';
+    var g = dir > 0 ? '›' : '‹', st = ctx.measureText(g).width + 3;
+    for (var px = x + 3; px < x + w + st; px += st) ctx.fillText(g, px, y + h / 2 + .5);
+    ctx.restore();
+  }
   function renderSwim() {
     if (!drawerBody || drawerOpen !== 'swimlane') return;
     var C = lastCluster, M = C && C.model ? C.model.ga : null, P = PS.pp;
@@ -2180,95 +2215,136 @@
     var INF = MODE === 'infer';
     if (!swimCache || swimCache.P !== P || swimCache.M !== M || swimCache.inf !== INF) swimCache = { P: P, M: M, inf: INF, S: INF ? schedInfer(P) : sched1F1B(P, M) };
     var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P), F = INF ? swimFoldInfer(S, P) : swimFold(S);
-    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 92, RH = 10, GAP = 5, TOP = 22, G = F ? 44 : 0;
-    var cut = F ? F.c2 - F.c1 : 0, sx = (W - LBL - 8 - G) / (T - cut);
-    var X = function (t) { return LBL + (F && t > F.c1 ? (t >= F.c2 ? (t - cut) * sx + G : F.c1 * sx + G * (t - F.c1) / cut) : t * sx); };
-    var fp = curSel != null ? coordOfRank(curSel).pp : focusPP;
-    var h = [], y = TOP, H = TOP + P * (RH + GAP) - GAP + 26;
-    // 相位：预热 / 稳态 / 冷却（稳态从最后一段进稳态算起，到第一段出稳态为止）
+    var W = Math.max(360, drawerBody.clientWidth - 32), GUT = 150, HEAD = 26, RH = 20, BH = 14, G = F ? 46 : 0;
+    var cut = F ? F.c2 - F.c1 : 0, sx = (W - GUT - 10 - G) / (T - cut);
+    var X = function (t) { return GUT + (F && t > F.c1 ? (t >= F.c2 ? (t - cut) * sx + G : F.c1 * sx + G * (t - F.c1) / cut) : t * sx); };
+    var fp = curSel != null ? coordOfRank(curSel).pp : focusPP, H = HEAD + P * RH + 2;
+    var cv = drawerBody.querySelector('canvas.sw-cv');
+    if (!cv) {
+      drawerBody.innerHTML = '<div class="sw-wrap"><canvas class="sw-cv"></canvas><div class="sw-legend"></div><div class="sw-tip" hidden></div></div>';
+      cv = drawerBody.querySelector('canvas.sw-cv');
+    }
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    var TXT = 'rgba(255,255,255,.90)', MUT = 'rgba(255,255,255,.40)', SUB = 'rgba(255,255,255,.06)';
+    var hm = swimHover && swimHover.key, bars = [];
+    // 表头：相位（工作台是 ms 刻度，本页的时间是相对格数，改写成相位名）+ 相位分界竖线
     var tA = F ? F.tA : T * 0.2, tB = F ? F.tB : T * 0.8;
-    var ph = INF ? [['Prefill', 0, S.prefillEnd], ['First Token → Decode', S.prefillEnd, T]] : [['Warmup', 0, tA], ['Steady 1F1B', tA, tB], ['Cooldown', tB, T]];
-    var foldPh = 1, foldName = INF ? 'First Token → Decode' : 'Steady 1F1B', foldUnit = INF ? 'token' : 'μb';
+    var ph = INF ? [['Prefill', 0, S.prefillEnd], ['Decode', S.prefillEnd, T]] : [['Warmup', 0, tA], ['Steady 1F1B', tA, tB], ['Cooldown', tB, T]];
+    ctx.font = swimFont('600', 11); ctx.fillStyle = TXT; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.fillText('Lane / Object', 10, HEAD / 2);
     ph.forEach(function (q, i) {
-      var x1 = X(q[1]), x2 = X(q[2]);
-      h.push('<line class="sw-ph" x1="' + (x1 + (i ? 3 : 0)).toFixed(1) + '" x2="' + (x2 - 3).toFixed(1) + '" y1="12.5" y2="12.5"/>');
-      if (!(F && i === foldPh)) h.push('<text class="sw-tt" x="' + x1.toFixed(1) + '" y="8">' + q[0] + '</text>');
+      var x1 = X(q[1]);
+      if (i) { ctx.strokeStyle = SUB; ctx.beginPath(); ctx.moveTo(Math.round(x1) + .5, HEAD - 6); ctx.lineTo(Math.round(x1) + .5, H); ctx.stroke(); }
+      ctx.font = swimFont('500', 10); ctx.fillStyle = MUT; ctx.fillText(q[0], x1 + 4, HEAD / 2);
     });
-    // 推理：首 token 出来的那一刻（= TTFT）一根竖虚线贯穿各段——prefill 与 decode 的分界
-    if (INF) h.push('<line class="sw-mark" x1="' + X(S.prefillEnd).toFixed(1) + '" x2="' + X(S.prefillEnd).toFixed(1) + '" y1="16" y2="' + (TOP + P * (RH + GAP) - GAP + 2) + '"><title>首 token · TTFT</title></line>');
     if (F) {
       var fx = X(F.c1) + G / 2;
-      h.push('<text class="sw-tt sw-fold-t" x="' + X(ph[foldPh][1]).toFixed(1) + '" y="8">' + foldName + '<tspan class="sw-fold-n" x="' + fx.toFixed(1) + '" text-anchor="middle">⋯ ' + F.n + ' ' + foldUnit + ' ⋯</tspan></text>');
+      ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.fillText('⋯ ' + F.n + ' ' + (INF ? 'token' : 'μb') + ' ⋯', fx, HEAD / 2 + 9);
+      ctx.textAlign = 'left';
     }
+    ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.beginPath(); ctx.moveTo(0, HEAD - .5); ctx.lineTo(W, HEAD - .5); ctx.stroke();
     for (var p = 0; p < P; p++) {
-      var isR = curSel != null && p === fp, on = fp == null || p === fp;
-      var cls = 'sw-row' + (on ? '' : ' is-dim') + (p === fp ? ' is-on' : '') + (isR ? ' is-rank' : '');
-      h.push('<g class="' + cls + '" data-p="' + p + '">');
-      h.push('<rect class="sw-hit" x="0" y="' + (y - GAP / 2) + '" width="' + W + '" height="' + (RH + GAP) + '"/>');
-      h.push('<text class="sw-lbl" x="0" y="' + (y + RH - 1.5) + '">PP' + p + '<tspan class="sw-l2" x="30">' + (isR ? 'rank ' + curSel : 'L' + (p * lps) + '–' + ((p + 1) * lps - 1)) + '</tspan></text>');
-      if (F) {
-        h.push('<rect class="sw-bg" x="' + LBL + '" y="' + y + '" width="' + (X(F.c1) - LBL).toFixed(1) + '" height="' + RH + '" rx="2"/>');
-        h.push('<rect class="sw-bg" x="' + X(F.c2).toFixed(1) + '" y="' + y + '" width="' + (W - 8 - X(F.c2)).toFixed(1) + '" height="' + RH + '" rx="2"/>');
-        h.push('<text class="sw-dots" x="' + fx.toFixed(1) + '" y="' + (y + RH - 2) + '" text-anchor="middle">⋯</text>');
-      } else h.push('<rect class="sw-bg" x="' + LBL + '" y="' + y + '" width="' + (W - LBL - 8) + '" height="' + RH + '" rx="2"/>');
-      S.lanes[p].forEach(function (b) {
+      var y = HEAD + p * RH, by = y + (RH - BH) / 2, isR = curSel != null && p === fp, key = fp != null && p === fp;
+      // 隔行底纹 + 行分隔线（工作台同款）
+      if (p % 2) { ctx.fillStyle = 'rgba(255,255,255,.035)'; ctx.fillRect(0, y, W, RH); }
+      if (key) { ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fillRect(0, y, W, RH); }
+      ctx.strokeStyle = SUB; ctx.beginPath(); ctx.moveTo(0, y + RH - .5); ctx.lineTo(W, y + RH - .5); ctx.stroke();
+      // 左侧对象标签：圆角胶囊「PP0 · L0–5」+ 语义（选中 rank 时写 rank 号）
+      ctx.font = swimFont('650', 10);
+      var tag = 'PP' + p + ' · L' + (p * lps) + '–' + ((p + 1) * lps - 1), tw = ctx.measureText(tag).width + 14, th = 16, ty = y + (RH - th) / 2;
+      swimRR(ctx, 10, ty, tw, th, 6); ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fill();
+      ctx.strokeStyle = key ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.16)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = key || fp == null ? TXT : 'rgba(255,255,255,.55)'; ctx.fillText(tag, 17, ty + th / 2 + .25);
+      if (isR) { ctx.font = swimFont('600', 10); ctx.fillStyle = TXT; ctx.fillText('rank ' + curSel, 10 + tw + 8, y + RH / 2 + .25); }
+      var L = S.lanes[p], fwdK = INF ? 'P' : 'F', firstF = null, lastB = null;
+      L.forEach(function (b0) { if (b0.k === fwdK && firstF == null) firstF = b0.s; if (b0.k === 'B') lastB = b0.e; });
+      // 行首 / 行尾空闲纹理：等上游激活（›）、等下游梯度（‹）
+      if (firstF > 0) swimGlyphs(ctx, GUT, by, X(firstF) - GUT - 2, BH, 1, key ? SW_COL.forward : SW_COL.muted);
+      if (lastB != null && lastB < T) swimGlyphs(ctx, X(lastB) + 2, by, X(T) - X(lastB) - 2, BH, -1, key ? SW_COL.backward : SW_COL.muted);
+      if (F) { ctx.font = swimFont('700', 11); ctx.fillStyle = key ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.28)'; ctx.textAlign = 'center'; ctx.fillText('⋯', X(F.c1) + G / 2, y + RH / 2); ctx.textAlign = 'left'; }
+      L.forEach(function (b) {
         var segs = !F || b.e <= F.c1 || b.s >= F.c2 ? [[b.s, b.e]] : b.s >= F.c1 && b.e <= F.c2 ? [] : [[b.s, Math.min(b.e, F.c1)], [Math.max(b.s, F.c2), b.e]].filter(function (q) { return q[1] - q[0] > 0 && (q[1] <= F.c1 || q[0] >= F.c2); });
+        var fwd = b.k === 'F' || b.k === 'P' || b.k === 'D', mk = (b.k === 'D' ? 'd' : b.k === 'P' ? 'p' : 'm') + b.m;
+        var hot = key || (hm != null && hm === mk), col = hot ? (fwd && b.k !== 'D' ? SW_COL.forward : SW_COL.backward) : SW_COL.muted;
+        var lab = b.k === 'P' ? 'P' + (b.m + 1) : b.k === 'D' ? 't' + b.t : b.k + b.m;
         segs.forEach(function (q) {
-          var x1 = X(q[0]), w = Math.max(1, X(q[1]) - x1 - 1);
-          var kc = b.k === 'F' || b.k === 'P' ? 'sw-f' : 'sw-b';
-          var tt = b.k === 'P' ? 'Prefill · chunk ' + (b.m + 1) : b.k === 'D' ? 'Decode · group ' + b.m + ' · token ' + b.t : 'μb ' + b.m + ' · ' + (b.k === 'F' ? 'Forward' : 'Backward');
-          h.push('<rect class="' + kc + '" data-m="' + (b.k === 'D' ? 'd' + b.m : b.k === 'P' ? 'p' + b.m : b.m) + '" x="' + x1.toFixed(1) + '" y="' + (y + 1) + '" width="' + w.toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>PP' + p + ' · ' + tt + '</title></rect>');
+          var x1 = X(q[0]) + .5, w = Math.max(2, X(q[1]) - x1 - 1);
+          ctx.save(); if (!hot) ctx.globalAlpha = .38;
+          if (window.PtoSwimlaneTaskPattern) window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, { x: x1, y: by, width: w, height: BH, baseColor: col, task: { label: lab }, isSelected: hot && hm === mk, isEmphasized: hot, fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace' });
+          else { swimRR(ctx, x1, by, w, BH, 3); ctx.fillStyle = col; ctx.fill(); }
+          swimChevrons(ctx, x1, by, w, BH, b.k === 'B' ? -1 : 1, hot ? 'rgba(255,255,255,.30)' : 'rgba(138,147,166,.38)');
+          ctx.restore();
+          bars.push({ x: x1, y: by, w: w, h: BH, p: p, b: b, mk: mk });
         });
-        // 选中 rank 那一段：段边界的收发（前向收上一段激活、发给下一段；反向反过来）
+        // 选中 rank 那一段：段边界的 P2P（工作台的绿色通信块，这里压成 3px 窄条贴在条的收 / 发两端）
         if (isR && segs.length === 1 && segs[0][0] === b.s && segs[0][1] === b.e) {
-          var fw = b.k !== 'B', recv = fw ? p > 0 : p < P - 1, send = fw ? p < P - 1 : p > 0;
-          if (recv) h.push('<line class="sw-p2p" x1="' + X(b.s).toFixed(1) + '" x2="' + X(b.s).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
-          if (send) h.push('<line class="sw-p2p" x1="' + (X(b.e) - 1).toFixed(1) + '" x2="' + (X(b.e) - 1).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
+          var recv = fwd ? p > 0 : p < P - 1, send = fwd ? p < P - 1 : p > 0;
+          ctx.fillStyle = SW_COL.comm;
+          if (recv) { swimRR(ctx, X(b.s) - 1, by - 1, 3, BH + 2, 1.5); ctx.fill(); }
+          if (send) { swimRR(ctx, X(b.e) - 2.5, by - 1, 3, BH + 2, 1.5); ctx.fill(); }
         }
       });
       if (isR && !INF) {
-        var tEnd = S.lanes[p][S.lanes[p].length - 1].e;
-        h.push('<rect class="sw-dp" x="' + X(tEnd).toFixed(1) + '" y="' + (y + 1) + '" width="' + Math.max(3, X(T) - X(tEnd) + 6).toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>DP grad sync' + (C.comm && C.comm.dp ? ' · ' + C.comm.dp.txt : '') + '</title></rect>');
+        var tEnd = L[L.length - 1].e, dx = X(tEnd) + 2, dw = Math.max(20, X(T) - dx);
+        if (window.PtoSwimlaneTaskPattern) window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, { x: dx, y: by, width: dw, height: BH, baseColor: SW_COL.comm, task: { label: 'DP AllReduce' }, isEmphasized: true, fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace' });
+        bars.push({ x: dx, y: by, w: dw, h: BH, p: p, dp: true });
       }
-      h.push('</g>');
-      y += RH + GAP;
     }
-    var busy = M * 3, idle = T - busy, foot;
-    if (INF) {
-      foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
-        + '<rect class="sw-f" x="0" y="-7" width="16" height="7" rx="1"/><text x="20" y="0">Prefill</text>'
-        + '<rect class="sw-b" x="70" y="-7" width="6" height="7" rx="1"/><text x="80" y="0">Decode</text>'
-        + (curSel != null ? '<line class="sw-p2p" x1="130" x2="130" y1="-8" y2="1"/><text x="136" y="0">P2P</text>' : '')
-        + '<text class="sw-kv" x="' + (curSel != null ? 178 : 132) + '" y="0">TTFT <tspan>424 ms</tspan> · TPOT <tspan>96 ms</tspan> · In-flight ' + P + '</text>'
-        + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>prefill 一块按 3 格、decode 一个 token 过一段按 1 格：相对时长；TTFT/TPOT 取自盘古 Pro MoE 技术报告，只当量级参考</title>Demo · In-flight = PP</text></g>';
-    } else foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
-      + '<rect class="sw-f" x="0" y="-7" width="10" height="7" rx="1"/><text x="14" y="0">Forward</text>'
-      + '<rect class="sw-b" x="66" y="-7" width="16" height="7" rx="1"/><text x="86" y="0">Backward</text>'
-      + (curSel != null ? '<line class="sw-p2p" x1="144" x2="144" y1="-8" y2="1"/><text x="150" y="0">P2P</text><rect class="sw-dp" x="180" y="-7" width="10" height="7" rx="1"/><text x="194" y="0">DP Sync</text>' : '')
-      + '<text class="sw-kv" x="' + (curSel != null ? 256 : 144) + '" y="0">Bubble <tspan>' + pct(idle / busy) + '</tspan> · μb ' + M + '</text>'
-      + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测</title>Demo · Bwd = 2× Fwd</text></g>';
-    drawerBody.innerHTML = '<svg class="sw" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + h.join('') + foot + '</svg>';
+    // 推理：首 token 那一刻（TTFT）一根竖虚线
+    if (INF) { var mx = Math.round(X(S.prefillEnd)) + .5; ctx.save(); ctx.setLineDash([2, 2]); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.moveTo(mx, HEAD - 6); ctx.lineTo(mx, H); ctx.stroke(); ctx.restore(); }
+    // 分隔：对象列与时间轴之间一根竖线（工作台同款）
+    ctx.strokeStyle = 'rgba(255,255,255,.10)'; ctx.beginPath(); ctx.moveTo(GUT - 6.5, 0); ctx.lineTo(GUT - 6.5, H); ctx.stroke();
+    swimGeo = { HEAD: HEAD, RH: RH, P: P, bars: bars, W: W };
+    // 图例（工作台 .legend：色块 + 名称；前向 / 反向色块带 chevron 纹理）
+    var busy = M * 3, idle = T - busy, lg = drawerBody.querySelector('.sw-legend');
+    lg.innerHTML = (INF
+      ? '<span><i class="is-flow is-forward" style="--legend-color:' + SW_COL.forward + '"></i>Prefill</span><span><i class="is-flow is-backward" style="--legend-color:' + SW_COL.backward + '"></i>Decode</span>'
+        + '<span><i style="--legend-color:' + SW_COL.comm + '"></i>P2P</span><span><i class="is-dash"></i>TTFT</span>'
+        + '<span class="sw-kv">TTFT <b>424 ms</b> · TPOT <b>96 ms</b> · In-flight ' + P + '</span>'
+      : '<span><i class="is-flow is-forward" style="--legend-color:' + SW_COL.forward + '"></i>Forward</span><span><i class="is-flow is-backward" style="--legend-color:' + SW_COL.backward + '"></i>Backward</span>'
+        + '<span><i style="--legend-color:' + SW_COL.comm + '"></i>P2P / DP Sync</span><span><i class="is-idle">›‹</i>Idle</span>'
+        + '<span class="sw-kv">Bubble <b>' + pct(idle / busy) + '</b> · μb ' + M + '</span>')
+      + '<em title="' + (INF ? 'prefill 一块按 3 格、decode 一个 token 过一段按 1 格：相对时长；TTFT/TPOT 取自盘古 Pro MoE 技术报告，只当量级参考' : '时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测') + '">' + (INF ? 'Demo · In-flight = PP' : 'Demo · Bwd = 2× Fwd') + '</em>';
   }
-  function swimClick(t) {
-    var r = t.closest && t.closest('.sw-row'); if (!r || r.classList.contains('is-rank')) return;
-    var p = +r.getAttribute('data-p');
+  function swimHit(ev) {
+    var cv = drawerBody.querySelector('canvas.sw-cv'); if (!cv || !swimGeo) return null;
+    var r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+    var bar = null; for (var i = swimGeo.bars.length - 1; i >= 0; i--) { var q = swimGeo.bars[i]; if (x >= q.x && x <= q.x + q.w && y >= q.y - 2 && y <= q.y + q.h + 2) { bar = q; break; } }
+    var row = y >= swimGeo.HEAD ? Math.floor((y - swimGeo.HEAD) / swimGeo.RH) : -1;
+    return { bar: bar, row: row >= 0 && row < swimGeo.P ? row : -1, x: x, y: y };
+  }
+  function swimClick(ev) {
+    var h9 = swimHit(ev); if (!h9 || h9.row < 0) return;
+    var p = h9.row;
+    if (curSel != null && coordOfRank(curSel).pp === p) return;
     if (curSel == null && focusPP === p) { focusSegment(null); return; }
-    if (curSel != null && coordOfRank(curSel).pp !== p) showOverview(true);
+    if (curSel != null) showOverview(true);
     focusSegment(p);
   }
-  drawerBody && drawerBody.addEventListener('mouseover', function (ev) {
+  drawerBody && drawerBody.addEventListener('mousemove', function (ev) {
     if (drawerOpen !== 'swimlane') return;
-    var svg9 = drawerBody.querySelector('svg.sw'); if (!svg9) return;
-    var m = ev.target.getAttribute && ev.target.getAttribute('data-m');
-    svg9.querySelectorAll('.is-m').forEach(function (el) { el.classList.remove('is-m'); });
-    svg9.classList.toggle('is-hm', m != null);
-    if (m != null) svg9.querySelectorAll('[data-m="' + m + '"]').forEach(function (el) { el.classList.add('is-m'); });
+    var h9 = swimHit(ev), tip = drawerBody.querySelector('.sw-tip'); if (!h9 || !tip) return;
+    var nk = h9.bar && !h9.bar.dp ? h9.bar.mk : null;
+    if ((swimHover && swimHover.key) !== nk) { swimHover = nk ? { key: nk } : null; renderSwim(); tip = drawerBody.querySelector('.sw-tip'); }
+    drawerBody.querySelector('canvas.sw-cv').style.cursor = h9.row >= 0 ? 'pointer' : '';
+    if (!h9.bar) { tip.hidden = true; return; }
+    var b = h9.bar.b, t9 = h9.bar.dp ? 'DP AllReduce · grad sync' + (lastCluster && lastCluster.comm && lastCluster.comm.dp ? ' · ' + unitEN(lastCluster.comm.dp.txt) : '')
+      : b.k === 'P' ? 'Prefill · chunk ' + (b.m + 1) : b.k === 'D' ? 'Decode · group ' + b.m + ' · token ' + b.t : (b.k === 'F' ? 'Forward' : 'Backward') + ' · μb ' + b.m;
+    tip.innerHTML = '<b>PP' + h9.bar.p + '</b> ' + esc(t9) + (b ? '<span>t ' + b.s + ' → ' + b.e + '</span>' : '');
+    tip.hidden = false; tip.style.left = Math.min(h9.x + 12, swimGeo.W - 220) + 'px'; tip.style.top = (h9.y + 14) + 'px';
+  });
+  drawerBody && drawerBody.addEventListener('mouseleave', function () {
+    if (drawerOpen !== 'swimlane') return;
+    var tip = drawerBody.querySelector('.sw-tip'); if (tip) tip.hidden = true;
+    if (swimHover) { swimHover = null; renderSwim(); }
   });
   function renderPanel() { if (drawerOpen === 'hier') renderHier(); else if (drawerOpen === 'swimlane') renderSwim(); }
   function ensureCluster() { if (tier === 3 || level !== 'cluster') { showOverview(); } }
   drawerBody && drawerBody.addEventListener('click', function (ev) {
     var t = ev.target;
-    if (drawerOpen === 'swimlane') { swimClick(t); return; }
+    if (drawerOpen === 'swimlane') { swimClick(ev); return; }
     if (t.closest('[data-hact="root"]')) { physZP.reset(); showOverview(); return; }
     var spb = t.closest('[data-hsp]');
     if (spb) { ensureCluster(); var el = physStage.querySelector('.p-sp[data-sp="' + spb.getAttribute('data-hsp') + '"]'); if (el) physZP.fitVB(+el.getAttribute('x'), +el.getAttribute('y'), +el.getAttribute('width'), +el.getAttribute('height'), 30, true); return; }

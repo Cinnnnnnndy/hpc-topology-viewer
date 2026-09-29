@@ -225,6 +225,23 @@ Training Health / Alert Layers / Grad L2 / Routing Imbalance / Throughput / Step
 口径标签 Calc / Est. / Demo / Public；矩阵本体报上来的中文档名、通信量单位（/层、/步）在宿主换成英文。
 面包屑、按目的引导、悬停说明保留中文。
 
+## 泳道复用并行拓扑工作台画法（10.5.0）
+
+反馈「泳道的样式尽量复用之前并行拓扑工作台的泳道」。对照 `combo-workbench/swimlane.html`（MB07 微批次生命周期泳道）改成
+canvas 画，直接复用同一份设计系统组件 `vendor/swimlane-task/pattern.js`（从 combo-workbench 原样拷来，只用它的
+`drawTaskBar`，不引它那份会改 body 的 pattern.css）：
+
+- 条：`drawTaskBar`——淡底 + 实色 + 顶 1px 高光 + 细边，条宽够就在条内写标签（F7 / B7 / P1 / t3）；条内同一套 chevron
+  细线表方向（前向 › / 反向 ‹）。
+- 行：左侧圆角对象标签「PP0 · L0–5」（选中 rank 时后面跟 rank 号）、隔行底纹、行分隔线、对象列与时间轴之间一根竖线；
+  行首 / 行尾空闲处铺一截大号 › / ‹ 纹理（等上游激活 / 等下游梯度）。行高 / 条高按工作台 22 / 16 的比例压到 20 / 14。
+- 色：工作台 COLORS——Forward #4369EF、Backward #FF4B7B、通信 #04D793（选中 rank 那一段收发两端的 P2P 窄块、步末
+  `DP AllReduce` 条）。
+- 图例照工作台 `.legend`：9px 色块，前向 / 反向色块带 chevron 纹理。悬停出小卡（段 · 前向/反向 · μb · 时间）。
+- 保留本页的稳态折叠（「⋯ 20 μb ⋯」）与去色：工作台自己的「聚焦」是非聚焦事件整体换中性灰 #8A93A6、38% 不透明，
+  本页默认就处在这种聚焦态——只有关键点上实色：聚焦 / 选中的那一段、选中 rank、指针所在的那个 μb（悬停一个 μb，
+  它在每一段的前向与反向同时亮起，就是工作台「MB07 生命周期」那条链）。推理下同一套画法画 prefill → decode。
+
 ## 两套 rank 编号
 
 逻辑魔方与并行拓扑矩阵各自独立实现了一遍「rank ↔ (tp, cp, pp, dp) 坐标」的换算，内部打包顺序不一样：
