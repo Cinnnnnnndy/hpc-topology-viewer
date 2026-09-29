@@ -1035,3 +1035,92 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .dc-fig + .dc-fig { margin-top: 10px; }
 .dc-fig-cap { font-size: 10px; color: rgba(255, 255, 255, .5); margin: 0 0 4px; line-height: 1.35; }
 .dc-fig svg { max-height: 220px; }
+
+/* ═══ 相机式界面（反馈「试试类似这样的 UI 风格」——FinalCut Camera）═════════════════════════════════════
+   · 面板：实色深灰（#1C1C1E，略透、仍带模糊），大圆角 22、无描边无高光沿，只留柔和投影；
+   · 卡片：小号灰标签在上（像「色溫」），下面一个大数（像「2300」）+ 小号单位 / 口径；
+   · 胶囊：配置、工况、目的、状态都是全圆角胶囊，深一档的底（#2C2C2E）；
+   · 按钮：工具条是一串圆形按钮，按下的那一个图标变黄（像「24 MM」）；
+   · 页签：目的是纯文字页签，当前那一个下面一个黄色小三角（像「白平衡 ▲」）；
+   · 刻度尺：读数用细刻度 + 亮针（像色温滑尺）；
+   · 参考面板：底部抽屉（bottom sheet），顶上一根抓手条，右上一个圆形 ×。
+   黄色 #FFD60A 只用于「当前选中 / 激活」这类界面状态；数据阈值仍是琥珀。 */
+:root {
+  --cam-bg: rgba(28, 28, 30, .88);
+  --cam-bg2: #2C2C2E;
+  --cam-bg3: #3A3A3C;
+  --cam-label: rgba(235, 235, 245, .6);
+  --cam-label2: rgba(235, 235, 245, .3);
+  --cam-accent: #FFD60A;
+  --cam-shadow: 0 16px 36px -14px rgba(0, 0, 0, .75), 0 2px 8px -2px rgba(0, 0, 0, .4);
+  --cam-fx: blur(24px) saturate(1.4);
+}
+.gcard, .side-right, .ip-grp, .dock, .cfg-pop, .dcard, .jn-bar, .jn-alerts {
+  background: var(--cam-bg);
+  -webkit-backdrop-filter: var(--cam-fx); backdrop-filter: var(--cam-fx);
+  box-shadow: var(--cam-shadow);
+  border-radius: 22px;
+}
+body:not(.is-compact) .dcard, body:not(.is-compact) .gcard, body:not(.is-compact) .side-right { padding: 14px 16px; }
+body.is-compact .dcard, body.is-compact .gcard, body.is-compact .side-right { padding: 10px 12px; border-radius: 18px; }
+.dcard.is-split { border-radius: 16px; padding: 9px 14px; }
+.dcard.is-split:hover { background: rgba(44, 44, 46, .92); }
+.dcard.is-open { background: rgba(44, 44, 46, .94); }
+.dc-t { color: var(--cam-label); font-size: 12px; font-weight: 500; letter-spacing: .01em; }
+.dcard.is-split .dc-t { color: #F2F2F7; }
+.dc-big { font-size: 30px; font-weight: 600; line-height: 1.05; color: #FFFFFF; margin: 4px 0 10px; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 8px; }
+.dc-big small { font-size: 11px; font-weight: 400; color: var(--cam-label); letter-spacing: .01em; }
+body.is-compact .dc-big { font-size: 22px; margin: 2px 0 6px; }
+.dc-r span { color: var(--cam-label); }
+.dc-r b { color: #F2F2F7; }
+.vz-cap { color: var(--cam-label2); }
+.vz-stat b { font-size: 30px; font-weight: 600; }
+/* 刻度尺 */
+.vz-ron { fill: rgba(235, 235, 245, .6); }
+.vz-roff { fill: rgba(235, 235, 245, .22); }
+.vz-rthr { fill: #FAB219; }
+.vz-needle { fill: #FFFFFF; }
+/* 配置卡：大数 + 胶囊 + 灰字 */
+.lc-big { font-size: 30px; font-weight: 600; line-height: 1.05; color: #FFFFFF; display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.lc-big small { font-size: 11px; font-weight: 400; color: var(--cam-label); }
+.lc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.lc-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--cam-bg2); font-family: var(--mono); font-size: 11.5px; color: #F2F2F7; }
+.lc-chip em { font-style: normal; font-size: 10px; color: var(--cam-label); }
+.lc-sub { color: var(--cam-label); }
+body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
+/* 顶上：工况胶囊 + 目的页签（当前那一个下面一个黄色小三角） */
+.jn-bar { border-radius: 999px; padding: 5px; gap: 4px; }
+.jn-mode { background: var(--cam-bg2); border-radius: 999px; padding: 3px; border-right: 0; margin-right: 6px; }
+.jn-mode button { border-radius: 999px; padding: 3px 12px; color: var(--cam-label); }
+.jn-mode button.is-on { background: var(--cam-bg3); color: #FFFFFF; box-shadow: none; }
+.jn-goals button { position: relative; background: transparent !important; color: var(--cam-label); font-size: 13px; padding: 4px 11px 7px; border-radius: 12px; }
+.jn-goals button:hover { color: #FFFFFF; }
+.jn-goals button.is-cur { color: #FFFFFF; font-weight: 600; }
+.jn-goals button.is-cur::after { content: ''; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 4px solid var(--cam-accent); }
+.jn-badge { background: var(--cam-bg3); color: #FFFFFF; }
+.jn-badge.is-crit { background: #E5484D; }
+.jn-alerts { border-radius: 20px; }
+/* 工具条：一串圆形按钮，按下的那个图标变黄 */
+.dock { border-radius: 999px; padding: 6px; gap: 4px; }
+.dock button { width: 36px; height: 36px; border-radius: 50%; background: var(--cam-bg2); }
+.dock button:hover { background: var(--cam-bg3); }
+.dock button.is-on { background: var(--cam-bg3) !important; color: var(--cam-accent) !important; box-shadow: none; }
+.dock button.is-on svg { stroke: var(--cam-accent); }
+.dock-sep { background: transparent !important; width: 4px; }
+/* 配置浮层 */
+.cfg-pop { border-radius: 22px; }
+.cf-seg { background: var(--cam-bg2); border-radius: 999px; padding: 2px; }
+.cf-seg button { border-radius: 999px; }
+.cf-seg button.is-on { background: var(--cam-bg3); color: #FFFFFF; }
+/* 参考面板：底部抽屉 */
+.drawer { background: rgba(28, 28, 30, .94); border-radius: 28px; box-shadow: var(--cam-shadow); }
+.drawer.at-bottom .drawer-grip::after { width: 40px; height: 5px; border-radius: 3px; background: #5A5A5E; top: 6px; }
+.drawer-hd { border-bottom: 0; padding: 14px 16px 6px; font-size: 13px; font-weight: 600; color: #FFFFFF; }
+.drawer-hd button { width: 28px; height: 28px; border-radius: 50%; background: var(--cam-bg3); color: #FFFFFF; font-size: 16px; line-height: 28px; padding: 0; text-align: center; }
+.drawer-hd button:hover { background: #48484A; }
+/* rank 卡 */
+.side-right .brief-h { font-size: 16px; font-weight: 600; color: #FFFFFF; }
+.brief-row span { color: var(--cam-label); }
+.brief-badge { border-radius: 999px; background: var(--cam-bg2); padding: 1px 8px; }
+.dc-total .dc-big { margin-bottom: 6px; }

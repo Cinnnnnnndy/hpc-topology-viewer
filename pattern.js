@@ -1315,8 +1315,11 @@
     var lg = lastCluster ? '<div class="lc-legend" title="格子/柱的灰度 = 显存占用率（合计 / HBM），超出容量标红"><i class="lg c0"></i><i class="lg c1"></i><i class="lg c2"></i><i class="lg c3"></i>'
       + '<span>' + Math.round(lastCluster.amber * 100) + '</span><span>' + Math.round(lastCluster.red * 100) + '</span><span>100%</span></div>' : '';
     // 模型名挪到左上角的标题面包屑里（#crumb），左卡只留配置
+    /* 配置卡照相机界面那张「iPhone · 2時 · 4K·30·HEVC·HDR」：一个大数（卡数）+ 一排胶囊（各维切分）+ 一行灰字（物理规模） */
+    var chips = [['TP', PS.tp], ['CP', PS.cp || 1], ['PP', PS.pp], ['DP', PS.dp], ['EP', PS.ep], ['ZeRO', ZERO]].filter(function (x) { return x[0] === 'ZeRO' || x[1] > 1; });
     leftCard.innerHTML = '<div class="gcard lc-cfg">'
-      + '<div class="lc-sub">' + world + ' · tp' + PS.tp + ((PS.cp || 1) > 1 ? ' cp' + PS.cp : '') + ' pp' + PS.pp + ' dp' + PS.dp + ' ep' + PS.ep + '</div>'
+      + '<div class="lc-big">' + world + '<small>NPU</small></div>'
+      + '<div class="lc-chips">' + chips.map(function (x) { return '<span class="lc-chip"><em>' + x[0] + '</em>' + x[1] + '</span>'; }).join('') + '</div>'
       + '<div class="lc-sub" title="rank 按连续摆放落位（配置里没有 rank→NPU 映射），这是假设">' + physCount.sp + ' SP · ' + physCount.pods + ' POD · ' + physCount.boards + ' Boards *</div>'
       + '</div><div class="gcard lc-pp"><div class="lc-sub">PP Stage · Peak Usage</div><svg class="pbars" viewBox="0 -14 ' + W + ' ' + (H + 14) + '" width="' + W + '" height="' + (H + 14) + '"><line class="pb-cap" x1="0" x2="' + W + '" y1="' + y100 + '" y2="' + y100 + '"/><line class="pb-base" x1="0" x2="' + W + '" y1="' + BASE + '" y2="' + BASE + '"/>' + bars + '</svg>'
       + lg + '</div>'
@@ -2690,11 +2693,17 @@
       + '<text class="vz-ax" x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle">' + sub + '</text>' + vzT(tip), 'vz-gauge');
   }
   // 进度条：同一灰阶的底轨 + 填充；thr 给了画一根刻度，超过就换状态色
+  /* 刻度尺（反馈「试试类似这样的 UI 风格」——FinalCut Camera 的色温 / 色调滑尺）：细刻度一排，每 25% 一根长刻度，
+     读数是一根亮针；针左边的刻度亮、右边暗；阈值那一根刻度用琥珀（状态色，只给阈值用） */
   function vzMeter(frac, thr, tip, w) {
-    w = w || VZ_W; var f = Math.max(0, Math.min(1, frac)), warn = thr != null && frac > thr;
-    return vzSvg(w, 10, '<rect class="vz-track" x="0" y="2" width="' + w + '" height="6" rx="3"/>'
-      + (f > 0 ? '<rect class="' + (warn ? 'vz-warn' : 'vz-fill') + '" x="0" y="2" width="' + Math.max(3, f * w).toFixed(1) + '" height="6" rx="3"/>' : '')
-      + (thr != null ? '<rect class="vz-tick" x="' + (thr * w - 0.5).toFixed(1) + '" y="0" width="1" height="10"/>' : '') + vzT(tip));
+    w = w || VZ_W; var f = Math.max(0, Math.min(1, frac)), warn = thr != null && frac > thr, N = 40, h = '';
+    for (var i = 0; i <= N; i++) {
+      var x = (i / N) * (w - 2) + 1, major = i % 10 === 0, t = i / N;
+      var isThr = thr != null && Math.abs(t - thr) < 0.5 / N;
+      h += '<rect class="' + (isThr ? 'vz-rthr' : t <= f ? 'vz-ron' : 'vz-roff') + '" x="' + (x - 0.5).toFixed(1) + '" y="' + (major || isThr ? 3 : 6) + '" width="1" height="' + (major || isThr ? 10 : 7) + '"/>';
+    }
+    h += '<rect class="' + (warn ? 'vz-warn' : 'vz-needle') + '" x="' + (f * (w - 2) + 1 - 1).toFixed(1) + '" y="0" width="2" height="16" rx="1"/>';
+    return vzSvg(w, 16, h + vzT(tip));
   }
   // 堆叠条：部分构成整体；段与段之间留 2px 底色缝；要强调的那一段亮、其余灰；图例放在条下面
   function vzStack(parts, emph, w) {
@@ -2777,25 +2786,26 @@
     var x2 = function (v) { return v.toFixed(2) + '×'; };
     // rank / 单卡层（scope 给了）只留本段自己的读数：本卡专家 / μb token / A2A 是配置级的，集群层已经写过
     var head = (scope ? '' : '<div class="vz-cap">Routing Imbalance / Layer</div>') + vzLine(M.imbL, P.health.l0, 1, 1.2, 1.15, x2, 'Imbalance', null, scope ? 44 : 56)
-      + dcRow('Imbalance', x2(M.imb) + ' · peak ' + x2(M.imbMax) + ' L' + M.imbAt, M.imbMax > 1.15 ? 'is-warn' : '', '逐层路由失衡；> 1.15× 与整网图同一条告警线')
+      + dcRow('Imbalance', x2(M.imb) + ' avg', '', '逐层路由失衡；> 1.15× 与整网图同一条告警线')
       + dcRow('Capacity Util', pct(M.cap)) + vzMeter(M.cap, null, '专家容量利用 ' + pct(M.cap));
-    if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', '整网图「MoE」那一类的示意读数，只看本段的层');
+    var hero = x2(M.imbMax) + '<small>peak · L' + M.imbAt + '</small>';
+    if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', '整网图「MoE」那一类的示意读数，只看本段的层', hero);
     return dcCard('moe', 'MoE', head
       + dcRow('Local Experts', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
       + dcRow('μb token', fmtN(M.tokMb), '', 'per μb per card = mbs × seq ÷ CP')
       + dcRow('A2A Dispatch', '≤' + Math.round(M.a2aMB) + ' MB', '', '每层每 μb 上限：token × topk × h × 2B，没算同卡去重')
       + dcRow('Pmax · Entropy', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)),
-      'demo', '本卡专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与整网图「MoE」那一类同一套示意读数');
+      'demo', '本卡专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与整网图「MoE」那一类同一套示意读数', hero);
   }
   function healthCard(P, scope, w) {
     var H = P && P.health; if (!H || MODE !== 'train') return '';
     var f1 = function (v) { return v.toFixed(1); };
     var head = (scope ? '' : '<div class="vz-cap">Activation Amax / Layer</div>') + vzCols(H.amaxL, H.amaxL.map(function (v) { return v > H.thrAmax; }), H.l0, 10, H.thrAmax, f1, 'Amax', w, scope ? 40 : 50)
-      + dcRow('Alert Layers', H.warn + ' / ' + H.n, H.warn ? 'is-warn' : '', '告警层 = 专家 Amax > 9.35（柱图里琥珀色的柱）或路由失衡 > 1.15×（MoE 折线越过告警线的点）——整网图上标橙的就是这几层')
       + '<div class="dc-r"><span>Grad L2</span>' + vzSpark(H.gradL, '逐层梯度 L2：L' + H.l0 + '–L' + H.l1) + '<b>' + H.grad.toFixed(2) + '</b></div>';
     return dcCard('health', scope ? 'Training Health · ' + scope : 'Training Health', head
       + (scope ? '' : '<div class="dc-more">' + dcRow('Amax Peak', H.amax.toFixed(1) + ' · L' + H.amaxAt) + dcRow('Δ/W', H.uRatio.toExponential(1)) + dcRow('step', H.step + ' · ckpt/' + H.ckpt) + '</div>'),
-      'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数');
+      'demo', '整网图「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在整网图与这里读到同一个数',
+      H.warn + '<small>/ ' + H.n + ' Alert Layers</small>');
   }
   function pubCard() {
     return dcCard('pub', 'Public Figures', vzIdx([['SP Affinity', 1.3, '+30%'], ['512K Tput', 1.5, '+50%'], ['Infer/Card', 2, '2×']], 252)
@@ -2827,15 +2837,16 @@
     var IM = inferMem(pp), G = Math.pow(2, 30);
     return dcCard('state', 'Memory · Inference' + (PS.pp > 1 ? ' · pp' + pp : ''),
       vzStack(IM.segs.map(function (x) { return [x.label, x.gb / IM.totGB]; }), 'KV Cache')
-      + dcRow('Total', (Math.round(IM.totGB * 10) / 10) + ' / ' + IM.hbm + ' GB', IM.level === 'ok' ? '' : IM.level === 'oom' ? 'is-bad' : 'is-warn')
       + dcRow('KV Cache', gb(IM.segs[1].gb) + ' GB · ' + I.batch + '×' + (I.ctx >= 1024 ? Math.round(I.ctx / 1024) + 'K' : I.ctx))
       + dcRow('KV / Seq', (I.kvSeq / G).toFixed(3) + ' GB')
       + dcRow('Max Batch', IM.bmax, IM.bmax < I.batch ? 'is-bad' : ''),
-      'asm', '推理口径（矩阵 ptoInferMem）：权重 bf16 按同一套 TP/EP/PP 常驻，无梯度 / 优化器态；KV = 2×本段层数×本卡 KV 头×headDim×seq/cp×并发×2B（MHA/GQA 口径，MLA、量化 KV 未建模——是上限）；并发上限按 90% HBM 算');
+      'asm', '推理口径（矩阵 ptoInferMem）：权重 bf16 按同一套 TP/EP/PP 常驻，无梯度 / 优化器态；KV = 2×本段层数×本卡 KV 头×headDim×seq/cp×并发×2B（MHA/GQA 口径，MLA、量化 KV 未建模——是上限）；并发上限按 90% HBM 算',
+      (Math.round(IM.totGB * 10) / 10) + '<small>/ ' + IM.hbm + ' GB · Total</small>');
   }
   function capClusterHtml(C, n, W, rows) {
     return dcCard('cap', 'Capacity', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
-      + (C.worst != null ? dcRow('Peak Rank', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">' + C.worst + ' · ' + pct(C.ratio[C.worst]) + '</button>') : ''), 'calc');
+      + (C.worst != null ? dcRow('Peak Rank', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">rank ' + C.worst + '</button>') : ''), 'calc', null,
+      C.worst != null ? pct(C.ratio[C.worst]) + '<small>Peak Usage</small>' : null);
   }
   /* 右列：关系（通信 / 闭合 / 板载）→ 时间（流水 → 步时）。选中了 rank 但 rank 卡还收着时，右列保持这一层原来那几张，
      不先冒出一张孤零零的「流水」；rank 卡打开后才换成这张卡自己的流水，排在 rank 卡下面。 */
@@ -2894,19 +2905,19 @@
         out.push(dcCard('comm', 'Communication', closureRows()
           + (C.comm && C.comm.tp ? dcRow('TP', unitEN(C.comm.tp.txt), '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', unitEN(C.comm.pp.txt), '', C.comm.pp.how) : '') + (C.comm && C.comm.dp && MODE !== 'infer' ? dcRow('DP', unitEN(C.comm.dp.txt), '', C.comm.dp.how) : '')
           + dcRow('UB · RoCE', '196 · 50 GB/s'), 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数'));
-        if (C.model && MODE !== 'infer') out.push(dcCard('pipe', 'Pipeline', dcRow('Bubble', pct(C.bubble), C.bubble > 0.25 ? 'is-warn' : '') + vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('Layers / Stage', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
-          'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满'));
+        if (C.model && MODE !== 'infer') out.push(dcCard('pipe', 'Pipeline', vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('Layers / Stage', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
+          'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满', pct(C.bubble) + '<small>Bubble</small>'));
       }
       if (MODE === 'train' && C) out.push(thrCard(C.perf));
       if (MODE === 'train') out.push(dcCard('step', 'Step Time', vzStack(STEP_DEMO.pretrain, 'Comm'), 'demo', SRC_DEMO));
-      else out.push(dcCard('infer', 'Inference', dcRow('TTFT', '424 ms') + dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
-        'demo', SRC_DEMO + '；显存见「显存 · 推理」卡（按本页切分估算）'));
+      else out.push(dcCard('infer', 'Inference', dcRow('TPOT', '96 ms') + dcRow('prefill', '4828 tok/s') + dcRow('decode', '1148 tok/s') + dcRow('batch', '64'),
+        'demo', SRC_DEMO + '；显存见「显存 · 推理」卡（按本页切分估算）', '424<small>ms · TTFT</small>'));
       if (C && C.perf) out.push(moeCard(C.perf));
     }
     if (rankOpen) {
       var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail;
       // 通信并进右卡的 group 表；层区间已在右卡抬头
-      if (Dt) out.push(dcCard('pipe', 'Pipeline', dcRow('Bubble', pct(Dt.bubble), Dt.bubble > 0.25 ? 'is-warn' : '') + vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('ZeRO', Dt.zero), 'calc'));
+      if (Dt) out.push(dcCard('pipe', 'Pipeline', vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('ZeRO', Dt.zero), 'calc', null, pct(Dt.bubble) + '<small>Bubble</small>'));
       if (Dt && Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; out.push(moeCard(Dt.perf, sc9)); out.push(healthCard(Dt.perf, sc9)); }
     }
     return out;
@@ -2963,8 +2974,8 @@
     // 推理工况：3D 卡仍按训练口径画，这里先放一张推理口径的本卡显存
     if (MODE === 'infer' && B.coord) L.push(inferMemCard(B.coord.pp));
     // 先答「装得下吗」：合计 / HBM 一张卡排在最前，逐档构成跟在后面
-    if (DCK.state && B.cap) L.push('<section class="dcard dc-total' + (B.cap.level === 'ok' ? '' : ' is-alert') + '"><div class="dc-h"><span class="dc-t">' + (MODE === 'infer' ? 'Total · Training' : 'Total') + '</span><b class="dc-v">'
-      + (Math.round(B.cap.totGB * 10) / 10) + '<small> / ' + B.hbm + ' GB</small></b></div></section>');
+    if (DCK.state && B.cap) L.push('<section class="dcard dc-total' + (B.cap.level === 'ok' ? '' : ' is-alert') + '"><div class="dc-h"><span class="dc-t">' + (MODE === 'infer' ? 'Total · Training' : 'Total') + '</span></div><div class="dc-big">'
+      + (Math.round(B.cap.totGB * 10) / 10) + '<small>/ ' + B.hbm + ' GB</small></div>' + vzMeter(B.cap.totGB / B.hbm, 0.88, '合计 / HBM；刻度 = 88% 红线') + '</section>');
     Dt.segs.slice().sort(function (a, b) { return (ORD[a.k] == null ? 9 : ORD[a.k]) - (ORD[b.k] == null ? 9 : ORD[b.k]); }).forEach(function (s) {
       L.push(splitCard(s.k, 'state', esc(memEN(s.label)), s.zdiv > 1 ? '1/' + s.zdiv : '', gb(s.gb) + '<small> GB</small>', esc([s.own, s.life].filter(Boolean).join(' · ')), false, s.col));
       if (s.k === 'w' && s.sub) s.sub.forEach(function (x) {
@@ -2977,7 +2988,7 @@
     var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, Dt = B && B.detail, R = [];
     if (tier !== 3 || !Dt) return R;
     // 通信并进右卡的 group 表（维 · 闭合级 · 一次搬多少），这里不再单列；层区间已在右卡抬头
-    R.push(dcCard('pipe', 'Pipeline', dcRow('Bubble', pct(Dt.bubble), Dt.bubble > 0.25 ? 'is-warn' : '') + vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc'));
+    R.push(dcCard('pipe', 'Pipeline', vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc', null, pct(Dt.bubble) + '<small>Bubble</small>'));
     if (Dt.perf) { var sc9 = 'L' + Dt.perf.health.l0 + '–L' + Dt.perf.health.l1; R.push(moeCard(Dt.perf, sc9)); R.push(healthCard(Dt.perf, sc9)); }
     return R;
   }
