@@ -322,8 +322,9 @@
        按时间先后——问题 1（step 12000，显存 OOM）在上，问题 2（step 15k，Router 溢出）在下。
        两者是同一次 2048 卡训练里的两个独立问题，不是因果。 */
     var order = INCIDENT_PROBLEMS.map(function (p9, i9) { return [p9.id, i9]; }).sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
-    incidentPanel.innerHTML = '<div class="ip-col ip-col-left">' + order.map(function (x) { return lanes[x[1]]; }).join('') + '</div>';
+    incidentPanel.innerHTML = '<div class="ip-col ip-col-left vs-host">' + order.map(function (x) { return lanes[x[1]]; }).join('') + '</div>';
     incidentPanel.classList.remove('is-hidden');
+    requestAnimationFrame(function () { syncOverFade(); });
   }
   // 先只出现问题，点了才展开这条问题线的链路
   var incidentOpen = {};
@@ -340,6 +341,15 @@
   }
   function doSyncCardHeights() {
     if (!incidentPanel) return;
+    /* 下方面板打开时是挤压关系（反馈「泳道打开和上面是挤压关系，上面应该出现滚动条而不是和泳道重叠」）：
+       左卡的可用高度 = 视口 − 顶 − 下方面板 − 底下故障列要占的那截，装不下就在卡内滚动 */
+    if (leftCard) {
+      var pbH = document.body.classList.contains('panel-bottom') && !drawer.classList.contains('is-hidden') ? drawer.offsetHeight + 10 : 0;
+      var ipl = incidentPanel.querySelector('.ip-col-left'), avail = window.innerHeight - (leftCard.offsetTop || 56) - 16 - pbH;
+      var ipH = ipl ? vsContentH(ipl) : 0, ipNeed = ipH ? Math.min(ipH, Math.round(avail * 0.4)) + 8 : 0;   // 故障列内容自身的高（scrollHeight 会被列高撑大，不用）
+      var mh = Math.max(120, avail - ipNeed) + 'px';
+      if (leftCard.style.maxHeight !== mh) leftCard.style.maxHeight = mh;
+    }
     var lh = leftCard ? leftCard.offsetHeight : 0;
     var rh = briefCard && !briefCard.classList.contains('is-hidden') ? briefCard.offsetHeight : 0;
     if (lh !== lastLcH) { lastLcH = lh; incidentPanel.style.setProperty('--lc-h', lh + 'px'); }
@@ -1145,7 +1155,7 @@
   var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right', hier: 'right' };
   var PANEL_W0 = { rubik: 0.4, hier: 372 };
   /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
-  var PANEL_H0 = { swimlane: 214, netgraph: 0.46 };
+  var PANEL_H0 = { swimlane: 222, netgraph: 0.46 };
   var drawerOpen = null;
   function openDrawer(key) {
     ['at-left', 'at-right', 'at-bottom'].forEach(function (c) { drawer.classList.remove(c); });
@@ -1168,7 +1178,7 @@
       drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
-    syncCardHeights(); curZP().refit(); syncLinked(true);
+    syncCardHeights(); curZP().refit(); syncLinked(true); requestAnimationFrame(function () { requestAnimationFrame(syncOverFade); });
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
   /* 面板尺寸可拖：泳道（下方）拖上沿改高度，整网图/魔方（左右）拖内沿改宽度。尺寸写成
@@ -2083,52 +2093,83 @@
     }
     return { lanes: out, T: Math.max.apply(null, free) };
   }
+  /* 泳道（10.3.0 重画，反馈「非常不精致、数据重复罗列」）：
+     - 稳态 1F1B 每个 μb 都是同一个「F 一格 + B 两格」的节拍，原样平铺 32 个 μb 就是一条条条形码。
+       这里把所有段都进了稳态之后的中间一大截折起来（折掉的长度取节拍 3 的整数倍，两边的块首尾对得上），
+       折缝处每行一个「⋯」，顶上写折了几个 μb；只留预热 → 进稳态的两拍 → 出稳态 → 冷却，气泡（阶梯形的空白）一眼可见。
+     - 顶上的 0/10/20… 是相对时长单位，没有读数意义，换成三段相位：预热 / 稳态 / 冷却。
+     - 选中 rank 不再在它那一段下面再复制一行同样的块：直接在那一段上叠 P2P 收发与步末 DP 同步，标签换成 rank 号。
+     - 页脚只留图例与气泡率（PP 数就是行数，不再重复写）。 */
+  function swimFold(S) {
+    var tA = 0, tB = Infinity;
+    S.lanes.forEach(function (L) {
+      var fb = null, lf = null;
+      L.forEach(function (x) { if (x.k === 'B' && fb == null) fb = x.s; if (x.k === 'F') lf = x.e; });
+      if (fb != null) tA = Math.max(tA, fb); if (lf != null) tB = Math.min(tB, lf);
+    });
+    var c1 = tA + 6, n = Math.floor((tB - 6 - c1) / 3);
+    return n >= 3 ? { c1: c1, c2: c1 + n * 3, n: n, tA: tA, tB: tB } : null;
+  }
   function renderSwim() {
     if (!drawerBody || drawerOpen !== 'swimlane') return;
     var C = lastCluster, M = C && C.model ? C.model.ga : null, P = PS.pp;
     if (!M) { drawerBody.innerHTML = '<div class="sw-wait">…</div>'; return; }
     if (!swimCache || swimCache.P !== P || swimCache.M !== M) swimCache = { P: P, M: M, S: sched1F1B(P, M) };
-    var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P);
-    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 112, RH = 10, GAP = 4, TOP = 18;   // 行收矮（反馈「每一行太高了不精致」）：16/5 → 10/4
-    var sx = (W - LBL - 8) / T, X = function (t) { return (LBL + t * sx).toFixed(1); };
+    var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P), F = swimFold(S);
+    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 92, RH = 10, GAP = 5, TOP = 22, G = F ? 44 : 0;
+    var cut = F ? F.c2 - F.c1 : 0, sx = (W - LBL - 8 - G) / (T - cut);
+    var X = function (t) { return LBL + (F && t > F.c1 ? (t >= F.c2 ? (t - cut) * sx + G : F.c1 * sx + G * (t - F.c1) / cut) : t * sx); };
     var fp = curSel != null ? coordOfRank(curSel).pp : focusPP;
-    var rows = [], y = TOP, h = [];
-    for (var p = 0; p < P; p++) { rows.push({ p: p, y: y }); y += RH + GAP; if (curSel != null && p === fp) { rows.push({ p: p, y: y, rank: true }); y += RH + GAP; } }
-    var H = y + 22;
-    // 时间轴
-    var step = T > 200 ? 20 : T > 80 ? 10 : 5;
-    for (var t = 0; t <= T; t += step) h.push('<line class="sw-tick" x1="' + X(t) + '" x2="' + X(t) + '" y1="' + (TOP - 4) + '" y2="' + (H - 22) + '"/><text class="sw-tt" x="' + X(t) + '" y="10" text-anchor="middle">' + t + '</text>');
-    rows.forEach(function (r) {
-      var on = fp == null || r.p === fp, cls = 'sw-row' + (on ? '' : ' is-dim') + (r.rank ? ' is-rank' : '') + (fp === r.p && !r.rank ? ' is-on' : '');
-      h.push('<g class="' + cls + '" data-p="' + r.p + '">');
-      h.push('<rect class="sw-bg" x="' + LBL + '" y="' + r.y + '" width="' + (W - LBL - 8) + '" height="' + RH + '"/>');
-      h.push(r.rank
-        ? '<text class="sw-lbl" x="12" y="' + (r.y + RH - 1.5) + '">rank ' + curSel + '</text>'
-        : '<text class="sw-lbl" x="0" y="' + (r.y + RH - 1.5) + '">PP' + r.p + '<tspan class="sw-l2"> L' + (r.p * lps) + '–' + ((r.p + 1) * lps - 1) + '</tspan></text>');
-      S.lanes[r.p].forEach(function (b) {
-        h.push('<rect class="sw-' + b.k.toLowerCase() + (r.rank ? ' is-own' : '') + '" data-m="' + b.m + '" x="' + X(b.s) + '" y="' + (r.y + 1) + '" width="' + Math.max(1, (b.e - b.s) * sx - 1).toFixed(1) + '" height="' + (RH - 2) + '"><title>PP' + r.p + ' · μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向') + '</title></rect>');
-        // 选中 rank 自己那条道：段边界的收发（前向收上一段激活、发给下一段；反向反过来）
-        if (r.rank) {
-          var recv = b.k === 'F' ? r.p > 0 : r.p < P - 1, send = b.k === 'F' ? r.p < P - 1 : r.p > 0;
-          if (recv) h.push('<line class="sw-p2p" x1="' + X(b.s) + '" x2="' + X(b.s) + '" y1="' + r.y + '" y2="' + (r.y + RH) + '"/>');
-          if (send) h.push('<line class="sw-p2p" x1="' + X(b.e) + '" x2="' + X(b.e) + '" y1="' + r.y + '" y2="' + (r.y + RH) + '"/>');
+    var h = [], y = TOP, H = TOP + P * (RH + GAP) - GAP + 26;
+    // 相位：预热 / 稳态 / 冷却（稳态从最后一段进稳态算起，到第一段出稳态为止）
+    var tA = F ? F.tA : T * 0.2, tB = F ? F.tB : T * 0.8, ph = [['预热', 0, tA], ['稳态 1F1B', tA, tB], ['冷却', tB, T]];
+    ph.forEach(function (q, i) {
+      var x1 = X(q[1]), x2 = X(q[2]);
+      h.push('<line class="sw-ph" x1="' + (x1 + (i ? 3 : 0)).toFixed(1) + '" x2="' + (x2 - 3).toFixed(1) + '" y1="12.5" y2="12.5"/>');
+      if (!(F && i === 1)) h.push('<text class="sw-tt" x="' + x1.toFixed(1) + '" y="8">' + q[0] + '</text>');
+    });
+    if (F) {
+      var fx = X(F.c1) + G / 2;
+      h.push('<text class="sw-tt sw-fold-t" x="' + X(tA).toFixed(1) + '" y="8">稳态 1F1B<tspan class="sw-fold-n" x="' + fx.toFixed(1) + '" text-anchor="middle">⋯ ' + F.n + ' μb ⋯</tspan></text>');
+    }
+    for (var p = 0; p < P; p++) {
+      var isR = curSel != null && p === fp, on = fp == null || p === fp;
+      var cls = 'sw-row' + (on ? '' : ' is-dim') + (p === fp ? ' is-on' : '') + (isR ? ' is-rank' : '');
+      h.push('<g class="' + cls + '" data-p="' + p + '">');
+      h.push('<rect class="sw-hit" x="0" y="' + (y - GAP / 2) + '" width="' + W + '" height="' + (RH + GAP) + '"/>');
+      h.push('<text class="sw-lbl" x="0" y="' + (y + RH - 1.5) + '">PP' + p + '<tspan class="sw-l2" x="30">' + (isR ? 'rank ' + curSel : 'L' + (p * lps) + '–' + ((p + 1) * lps - 1)) + '</tspan></text>');
+      if (F) {
+        h.push('<rect class="sw-bg" x="' + LBL + '" y="' + y + '" width="' + (X(F.c1) - LBL).toFixed(1) + '" height="' + RH + '" rx="2"/>');
+        h.push('<rect class="sw-bg" x="' + X(F.c2).toFixed(1) + '" y="' + y + '" width="' + (W - 8 - X(F.c2)).toFixed(1) + '" height="' + RH + '" rx="2"/>');
+        h.push('<text class="sw-dots" x="' + fx.toFixed(1) + '" y="' + (y + RH - 2) + '" text-anchor="middle">⋯</text>');
+      } else h.push('<rect class="sw-bg" x="' + LBL + '" y="' + y + '" width="' + (W - LBL - 8) + '" height="' + RH + '" rx="2"/>');
+      S.lanes[p].forEach(function (b) {
+        var segs = !F || b.e <= F.c1 || b.s >= F.c2 ? [[b.s, b.e]] : b.s >= F.c1 && b.e <= F.c2 ? [] : [[b.s, Math.min(b.e, F.c1)], [Math.max(b.s, F.c2), b.e]].filter(function (q) { return q[1] - q[0] > 0 && (q[1] <= F.c1 || q[0] >= F.c2); });
+        segs.forEach(function (q) {
+          var x1 = X(q[0]), w = Math.max(1, X(q[1]) - x1 - 1);
+          h.push('<rect class="sw-' + b.k.toLowerCase() + '" data-m="' + b.m + '" x="' + x1.toFixed(1) + '" y="' + (y + 1) + '" width="' + w.toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>PP' + p + ' · μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向') + '</title></rect>');
+        });
+        // 选中 rank 那一段：段边界的收发（前向收上一段激活、发给下一段；反向反过来）
+        if (isR && segs.length === 1 && segs[0][0] === b.s && segs[0][1] === b.e) {
+          var recv = b.k === 'F' ? p > 0 : p < P - 1, send = b.k === 'F' ? p < P - 1 : p > 0;
+          if (recv) h.push('<line class="sw-p2p" x1="' + X(b.s).toFixed(1) + '" x2="' + X(b.s).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
+          if (send) h.push('<line class="sw-p2p" x1="' + (X(b.e) - 1).toFixed(1) + '" x2="' + (X(b.e) - 1).toFixed(1) + '" y1="' + (y - 1.5) + '" y2="' + (y + RH + 1.5) + '"/>');
         }
       });
-      if (r.rank) {
-        var tEnd = S.lanes[r.p][S.lanes[r.p].length - 1].e;
-        h.push('<rect class="sw-dp" x="' + X(tEnd) + '" y="' + (r.y + 1) + '" width="' + Math.max(3, (T - tEnd) * sx + 6).toFixed(1) + '" height="' + (RH - 2) + '"><title>步末 DP 梯度同步' + (C.comm && C.comm.dp ? ' · ' + C.comm.dp.txt : '') + '</title></rect>');
+      if (isR) {
+        var tEnd = S.lanes[p][S.lanes[p].length - 1].e;
+        h.push('<rect class="sw-dp" x="' + X(tEnd).toFixed(1) + '" y="' + (y + 1) + '" width="' + Math.max(3, X(T) - X(tEnd) + 6).toFixed(1) + '" height="' + (RH - 2) + '" rx="1"><title>步末 DP 梯度同步' + (C.comm && C.comm.dp ? ' · ' + C.comm.dp.txt : '') + '</title></rect>');
       }
       h.push('</g>');
-    });
-    // 底部 key / value
+      y += RH + GAP;
+    }
     var busy = M * 3, idle = T - busy;
-    var foot = '<g class="sw-foot" transform="translate(0,' + (H - 8) + ')">'
-      + '<rect class="sw-f" x="0" y="-8" width="10" height="8"/><text x="14" y="0">F</text>'
-      + '<rect class="sw-b" x="32" y="-8" width="10" height="8"/><text x="46" y="0">B</text>'
-      + '<line class="sw-p2p" x1="68" x2="68" y1="-9" y2="1"/><text x="74" y="0">P2P</text>'
-      + '<rect class="sw-dp" x="104" y="-8" width="10" height="8"/><text x="118" y="0">DP</text>'
-      + '<text x="150" y="0">PP ' + P + ' · μb ' + M + ' · 气泡 ' + pct(idle / busy) + '</text>'
-      + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测</title>示意 · B=2F</text></g>';
+    var foot = '<g class="sw-foot" transform="translate(0,' + (H - 4) + ')">'
+      + '<rect class="sw-f" x="0" y="-7" width="10" height="7" rx="1"/><text x="14" y="0">前向</text>'
+      + '<rect class="sw-b" x="46" y="-7" width="16" height="7" rx="1"/><text x="66" y="0">反向</text>'
+      + (curSel != null ? '<line class="sw-p2p" x1="104" x2="104" y1="-8" y2="1"/><text x="110" y="0">P2P</text><rect class="sw-dp" x="140" y="-7" width="10" height="7" rx="1"/><text x="154" y="0">DP 同步</text>' : '')
+      + '<text class="sw-kv" x="' + (curSel != null ? 214 : 104) + '" y="0">气泡 <tspan>' + pct(idle / busy) + '</tspan> · μb ' + M + '</text>'
+      + '<text class="sw-demo" x="' + (W - 8) + '" y="0" text-anchor="end"><title>时间以一个 μb 的前向为 1、反向按 2 计：相对时长，不是实测</title>示意 · 反向 = 2× 前向</text></g>';
     drawerBody.innerHTML = '<svg class="sw" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + h.join('') + foot + '</svg>';
   }
   function swimClick(t) {
@@ -2622,15 +2663,45 @@
       requestAnimationFrame(syncOverFade);
     });
   }
-  /* 列装不下时底部淡出一截（滚动条是藏着的）：读者看得出下面还有卡；滚到底就不再淡 */
-  function syncOverFade() {
-    [dataCol, shardL].forEach(function (el) {
-      var over = el.scrollHeight > el.clientHeight + 2;
-      el.classList.toggle('is-over', over);
-      el.classList.toggle('at-end', !over || el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
-    });
+  /* 列内滚动用「虚拟滚动」而不是 overflow:auto（反馈「玻璃要有透明度」）：Chromium 里真正在滚的容器会把里面卡片的
+     backdrop-filter 截断——卡片只能「看到」容器自己，看不到后面的画布，磨砂模糊整个失效（右列数据卡从来就没糊上过）。
+     这里列容器一律 overflow:hidden，滚轮 / 拖滚动条时改列上的 --sy，卡片用 translate 整体上移；滚动条是自绘的 4px 细条，
+     只有装不下时才出现。四种列共用：左卡、右侧数据列、单卡层左列、故障列（.vs-host）。 */
+  function vsHosts() { return document.querySelectorAll('.vs-host'); }
+  function vsContentH(el) {
+    var h = 0;
+    for (var i = 0; i < el.children.length; i++) { var c = el.children[i]; if (c.classList.contains('vs-bar')) continue; h = Math.max(h, c.offsetTop + c.offsetHeight); }
+    return h;
   }
-  [dataCol, shardL].forEach(function (el) { el.addEventListener('scroll', syncOverFade, { passive: true }); });
+  function vsMax(el) { var m = Math.ceil(vsContentH(el) - el.clientHeight); return m > 4 ? m + 2 : 0; }   // 差几像素（卡片投影、取整）不算装不下
+  function vsSet(el, v) {
+    var max = vsMax(el); v = Math.max(0, Math.min(max, v || 0)); el._sy = v;
+    el.style.setProperty('--sy', v + 'px');
+    var bar = el.querySelector(':scope > .vs-bar');
+    if (!bar) { bar = document.createElement('i'); bar.className = 'vs-bar'; el.appendChild(bar); }
+    var ch = el.clientHeight, th = max ? Math.max(24, ch * ch / (ch + max)) : 0;
+    bar.style.height = th + 'px'; bar.style.top = (max ? (ch - th) * v / max : 0) + 'px';
+    el.classList.toggle('is-over', max > 0);
+    el.classList.toggle('at-end', !max || v >= max - 1);
+  }
+  function syncOverFade() { vsHosts().forEach(function (el) { vsSet(el, el._sy); }); }
+  [dataCol, shardL, leftCard].forEach(function (el) { el.classList.add('vs-host'); });
+  window.addEventListener('wheel', function (ev) {
+    var el = ev.target.closest && ev.target.closest('.vs-host'); if (!el) return;
+    if (!vsMax(el)) return;
+    ev.preventDefault();
+    vsSet(el, (el._sy || 0) + (ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY));
+  }, { passive: false });
+  // 拖滚动条
+  document.addEventListener('pointerdown', function (ev) {
+    var bar = ev.target.closest && ev.target.closest('.vs-bar'); if (!bar) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var el = bar.parentElement, y0 = ev.clientY, s0 = el._sy || 0, max = vsMax(el), ch = el.clientHeight, th = bar.offsetHeight;
+    el.classList.add('is-drag');
+    function mv(e) { vsSet(el, s0 + (e.clientY - y0) * max / Math.max(1, ch - th)); }
+    function up() { el.classList.remove('is-drag'); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); }
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  }, true);
   window.addEventListener('resize', function () { requestAnimationFrame(syncOverFade); });
   shardL.addEventListener('click', function (ev) {
     var c = ev.target.closest('[data-bk]'); if (!c) return;
