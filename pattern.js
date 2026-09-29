@@ -2937,7 +2937,13 @@
     var h = '<div class="dc-open"' + (B.note ? ' title="' + esc(B.note) + '"' : '') + '>';
     h += rows.map(function (r) { return dcRow(esc(r[0]), esc(r[1])); }).join('');
     if (comm.length) h += dcRow('Comm', esc(comm.join(' · ')));
-    if (B.figs[0]) h += '<div class="dc-fig" title="' + esc(B.figs[0].cap) + '">' + B.figs[0].svg + '</div>';
+    /* 进一步的切分（反馈「点开单个图例会对激活 / 权重做进一步的切分显示，这部分也放进可展开的卡片」）：矩阵读出卡点开一块时
+       给的那几张图都带上——字节按刀的占比条、这一块在三根轴（ℓ × h × e / ℓ × s × b）上本卡拿的是哪一格、
+       激活还有 1F1B 此刻压着几份 μb；只去掉「生命周期」那张（讲的是时间不是切分，右侧流水卡已经有）。每张图上一行小标题。 */
+    B.figs.filter(function (f) { return !/淡的那几格可点/.test(f.cap); }).forEach(function (f) {
+      var cap = f.cap.replace(/（[^）]*）/g, '').replace(/\s+/g, ' ').trim();
+      h += '<div class="dc-fig"><div class="dc-fig-cap">' + esc(cap.length > 40 ? cap.slice(0, 39) + '…' : cap) + '</div>' + f.svg + '</div>';
+    });
     return h + '</div>';
   }
   function splitCard(key, dk, title, chip, big, sub, isSub, col, chipCol) {

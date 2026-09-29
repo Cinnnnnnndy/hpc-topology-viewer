@@ -1032,3 +1032,6 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .has-gloss { cursor: help; text-decoration: underline dotted rgba(255, 255, 255, .22); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .jn-al b.has-gloss, .jn-mode button.has-gloss, .cf-seg button.has-gloss, #drawerTitle.has-gloss { text-decoration: none; }
 .jn-mode button.has-gloss, .cf-seg button.has-gloss, .jn-al b.has-gloss { cursor: pointer; }
+.dc-fig + .dc-fig { margin-top: 10px; }
+.dc-fig-cap { font-size: 10px; color: rgba(255, 255, 255, .5); margin: 0 0 4px; line-height: 1.35; }
+.dc-fig svg { max-height: 220px; }
