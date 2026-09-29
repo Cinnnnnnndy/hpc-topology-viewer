@@ -1124,3 +1124,7 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 .brief-row span { color: var(--cam-label); }
 .brief-badge { border-radius: 999px; background: var(--cam-bg2); padding: 1px 8px; }
 .dc-total .dc-big { margin-bottom: 6px; }
+
+/* 场景页签：选中只靠文字（反馈「选中不要用小三角，直接文字就可以，不要占用高度」）——去掉三角与为它留的底部内边距 */
+.jn-goals button { padding: 4px 11px; }
+.jn-goals button.is-cur::after { content: none; }
