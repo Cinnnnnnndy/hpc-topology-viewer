@@ -929,3 +929,60 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .dc-cmp-cfg s { font-size: 10px; }
 .dc-x { margin-left: auto; font: inherit; font-size: 13px; line-height: 1; color: #8C8C8C; background: transparent; border: 0; border-radius: 4px; padding: 0 4px; cursor: pointer; }
 .dc-x:hover { color: #F0F0F0; background: rgba(255, 255, 255, .06); }
+
+/* ── 液态玻璃（反馈「不喜欢渐变，不要加渐变」「尝试苹果的液态玻璃质感」）──────────────────────────────
+   去掉所有渐变亮面与颗粒。液态玻璃的质感靠三样：① 很透——底色只剩 .30，后面的画布被强模糊 + 提饱和、提亮一点透上来；
+   ② 边缘高光——左上一道 1px 亮沿、右下一道弱一些的反光、整圈一根极细的边光，像光打在一块有厚度的玻璃边上；
+   ③ 内侧一圈很淡的内辉，给玻璃「厚度」。圆角放大一档。
+   （真正的边缘折射要 SVG 位移滤镜做 backdrop-filter，Chromium 里位移图读不进来，这里不做，只做光感。） */
+:root {
+  --glass: rgba(30, 30, 30, .30);
+  --glass-hi: none;
+  --glass-grain: none;
+  --glass-edge: inset 1px 1px 0 rgba(255, 255, 255, .24), inset -1px -1px 0 rgba(255, 255, 255, .08), inset 0 0 0 1px rgba(255, 255, 255, .06), inset 0 0 20px rgba(255, 255, 255, .03);
+  --glass-drop: 0 12px 32px -12px rgba(0, 0, 0, .7), 0 2px 6px -2px rgba(0, 0, 0, .35);
+  --glass-fx: blur(14px) saturate(1.9) brightness(1.08);
+}
+.gcard, .side-right, .ip-grp, .dock, .cfg-pop, .dcard, .jn-bar {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx);
+  box-shadow: var(--glass-edge), var(--glass-drop);
+  border-radius: 12px;
+}
+.dock, .jn-bar { border-radius: 16px; }
+.cfg-pop { background: rgba(26, 26, 26, .52); border-radius: 14px; }
+.dcard.is-split:hover { background: rgba(60, 60, 60, .34); }
+.dcard.is-open { background: rgba(64, 64, 64, .38); }
+.drawer { background: rgba(20, 20, 20, .5); border-radius: 16px; -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.05); backdrop-filter: blur(18px) saturate(1.8) brightness(1.05); box-shadow: var(--glass-edge), 0 18px 48px -18px rgba(0, 0, 0, .85); }
+/* 按下的那一格：实心的亮片，不再是渐变 */
+.dock button.is-on, .jn-mode button.is-on { color: #111111; background: #EDEDED; box-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.dock button { border-radius: 10px; }
+
+/* ── 目的导向的引导：胶囊里是并列的几个目的（没有序号、没有连线）；「定位告警」带告警数角标，
+   点开在胶囊下面出一张告警清单——每条一行：严重度记号 · 指标 · 在哪 · 「定位」。
+   记号：超容 = 红实心、告警 = 琥珀实心、参考读数 = 灰空心、历史复盘 = 灰虚线圈——形状 + 颜色两路都说清楚。 */
+.jn-goals { display: flex; align-items: center; gap: 2px; }
+.jn-goals button { position: relative; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; line-height: 20px; border: 0; background: transparent; cursor: pointer; border-radius: 10px; padding: 3px 10px; color: #9A9A9A; transition: color .15s ease, background .15s ease; }
+.jn-goals button:hover { color: #F0F0F0; background: rgba(255, 255, 255, .06); }
+.jn-goals button.is-cur { color: #111111; background: #EDEDED; }
+.jn-goals svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.jn-badge { font-style: normal; font-family: var(--mono); font-size: 10px; line-height: 15px; min-width: 15px; padding: 0 4px; box-sizing: border-box; text-align: center; border-radius: 8px; color: #111111; background: #FAB219; }
+.jn-badge.is-crit { color: #FFFFFF; background: #E5484D; }
+.jn-mode button, .jn-goals button { border-radius: 10px; }
+.jn-alerts { pointer-events: auto; display: flex; flex-direction: column; min-width: 360px; max-width: 460px; padding: 6px; border-radius: 14px;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-edge), var(--glass-drop); }
+.jn-al { display: grid; grid-template-columns: 12px 1fr auto auto; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 11.5px; line-height: 18px;
+  border: 0; background: transparent; color: #CFCFCF; border-radius: 8px; padding: 4px 8px; cursor: pointer; transition: background .15s ease; }
+.jn-al:hover, .jn-al.is-on { background: rgba(255, 255, 255, .07); }
+.jn-al b { font-family: var(--mono); font-weight: 500; color: #F0F0F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jn-al span { font-family: var(--mono); font-size: 10.5px; color: #9A9A9A; white-space: nowrap; }
+.jn-al em { font-style: normal; font-size: 10.5px; color: #6E6E6E; }
+.jn-al:hover em, .jn-al.is-on em { color: #F0F0F0; }
+.jn-al i { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
+.jn-al.is-crit i { background: #E5484D; }
+.jn-al.is-warn i { background: #FAB219; }
+.jn-al.is-info i { box-shadow: inset 0 0 0 1.5px #8A8A8A; }
+.jn-al.is-past i { box-shadow: inset 0 0 0 1px #6A6A6A; outline: 1px dashed #5A5A5A; outline-offset: 1px; width: 6px; height: 6px; }
+.jn-al.is-past b { color: #BDBDBD; }
+.jn-al + .jn-al.is-info, .jn-al:not(.is-past) + .jn-al.is-past { margin-top: 4px; box-shadow: 0 -1px 0 rgba(255, 255, 255, .06); border-radius: 0 0 8px 8px; }
+.jn-none { font-size: 12px; color: #9A9A9A; padding: 6px 10px; }

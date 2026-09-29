@@ -190,6 +190,41 @@ world=pp×edp×ep=2048，本页公式 world=tp×cp×pp×dp，故 dp=edp×ep=512�
   页脚只留图例与「气泡 · μb」。
 - **磨砂玻璃加透明度**：底色不透明度 .74 → .46，模糊 28px、饱和 1.6，叠一层 4% 的 SVG 颗粒；参考面板 .66、配置浮层 .62。
 
+## 目的导向 · 推理口径 · 调优对比 · 液态玻璃 · 英文指标（10.4.0）
+
+**按目的引导（不是步骤条）**：标题正上方一枚玻璃胶囊——左边工况 `Train / Inference`，右边并列几个「我要做什么」，
+没有序号、没有先后：
+
+| 训练 | 推理 | 点了之后 |
+|---|---|---|
+| 定位告警 | 定位告警 | 胶囊下出一张告警清单（角标 = 待处理数），按严重度排：OOM → Critical 88% → KV Cache overflow → Amax 超阈的层（前 3）→ Routing Imbalance → Bubble > 25% → Alert Layers 汇总 / Peak Usage → 历史故障复盘。每条「指标 · 在哪 · 定位」，点一下：到那张卡（下钻 rank）、到那一段（PP 段聚焦）、打开整网图 / 泳道，或展开那条故障链 |
+| 查容量 | 查 KV 容量 | 只留容量类卡片，打开层级剖面 |
+| 看通信 | — | 只留通信 / 闭合，画布亮出一组 TP |
+| 调吞吐 | 看延迟 | 只留吞吐 / 步时 / 气泡（推理：延迟 / MoE），打开泳道 |
+| 比改动 | 比改动 | 打开配置；改 ZeRO / 切分 / 预置之后右列最上面出「Before → After」 |
+
+再点一次当前目的 = 回到全部。URL `?goal=键`。严重度记号：红实心 = OOM / 溢出、琥珀实心 = 告警、灰空心 = 参考读数、灰虚线圈 = 历史复盘（形状 + 颜色两路）。
+
+**推理口径**（`?mode=infer`）：矩阵本体新增 `ptoInferMem(D)`——权重 bf16 按同一套 TP/EP/PP 常驻，没有梯度与优化器态；
+KV cache = 2 × 本段层数 × 本卡 KV 头 × headDim × seq/cp × 并发 × 2B（MHA/GQA 口径，MLA 与量化 KV 未建模，是上限）；
+workspace 按 8K token 一块 prefill 估；并发取每副本 64 条满上下文，另给 90% HBM 下的最大并发。画布灰度、Capacity、
+Peak Rank、rank 卡显存构成、单卡层都换成这一口径；左列多一张 `Memory · Inference`（KV Cache 高亮，其余灰）。
+泳道换成 prefill（4 块逐段流水）→ 首 token（竖虚线 = TTFT）→ decode（PP 路请求在飞，一个 token 过一段 1 格），
+稳态 decode 同样折叠。训练专有的 Pipeline 气泡卡与 DP 梯度同步在推理下收起。
+
+**Before → After**：改 ZeRO 档、切分「应用」、换预置的那一刻存一份读数（切分 / 预置会整页重载，同时写进 sessionStorage，
+重载后读回一次即删）。训练比 Peak Usage / OOM Ranks / Critical Ranks / Bubble / tok/s / Step Time，推理比 Memory / Max Batch /
+OOM Ranks。改前灰色删除线、改后近白、▲▼ 记号，变差的一项琥珀；卡头 × 清掉。
+
+**液态玻璃**：去掉所有渐变亮面与颗粒。底色只剩 .30，后面画布强模糊 + 提饱和提亮；左上 1px 亮沿、右下弱反光、整圈极细边光、
+内侧一圈淡内辉；圆角放大（卡 12、工具条 / 胶囊 16）。按下的格子是实心亮片。真正的边缘折射需要 SVG 位移图做
+backdrop-filter，Chromium 读不进位移图，没做。
+
+**指标名英文**：数据卡、rank 卡、单卡层、泳道、层级剖面、参考面板标题里的指标名一律英文（Capacity / Peak Rank /
+Training Health / Alert Layers / Grad L2 / Routing Imbalance / Throughput / Step Time / Bubble / Weights / KV Cache …），
+口径标签 Calc / Est. / Demo / Public；矩阵本体报上来的中文档名、通信量单位（/层、/步）在宿主换成英文。
+面包屑、按目的引导、悬停说明保留中文。
+
 ## 两套 rank 编号
 
 逻辑魔方与并行拓扑矩阵各自独立实现了一遍「rank ↔ (tp, cp, pp, dp) 坐标」的换算，内部打包顺序不一样：
