@@ -1145,7 +1145,7 @@
   var DRAWER_POS = { netgraph: 'bottom', swimlane: 'bottom', rubik: 'right', hier: 'right' };
   var PANEL_W0 = { rubik: 0.4, hier: 372 };
   /* 下方面板各自的默认高度：泳道只有几条道，矮一点；整网图要看层结构，高一点 */
-  var PANEL_H0 = { swimlane: 272, netgraph: 0.46 };
+  var PANEL_H0 = { swimlane: 214, netgraph: 0.46 };
   var drawerOpen = null;
   function openDrawer(key) {
     ['at-left', 'at-right', 'at-bottom'].forEach(function (c) { drawer.classList.remove(c); });
@@ -1239,13 +1239,28 @@
     else if (to === 'rank') showTier2(curSel, pendingSubLine || coordLine(curSel));
   });
   var crumbN = 1;
+  /* 大标题排版（反馈「大标题的字体字号不太好看」）：模型名拆成主名 + 规格小标——
+     「MoE 504B(A18B)·32K序列」→ 主名「MoE 504B」大一号、字重高一档；「A18B · 32K 序列」小一号、浅一档。
+     拉丁与汉字之间补半角空格，括号与间隔点统一成「 · 」。没有括号 / 间隔点的名字原样当主名。 */
+  function titleHtml(name) {
+    name = String(name || ''); var main = name, rest = [], k = name.search(/[(（]/);
+    if (k > 0) {
+      var e = name.slice(k + 1).search(/[)）]/), inner = e >= 0 ? name.slice(k + 1, k + 1 + e) : name.slice(k + 1);
+      var after = e >= 0 ? name.slice(k + 2 + e).replace(/^\s*[·・]\s*/, '') : '';
+      main = name.slice(0, k); rest = [inner, after];
+    } else if ((k = name.indexOf('·')) > 0) { main = name.slice(0, k); rest = [name.slice(k + 1)]; }
+    var meta = rest.filter(function (x) { return x && x.trim(); }).map(function (x) { return x.trim(); }).join(' · ');
+    meta = meta.replace(/([0-9A-Za-z])([\u4e00-\u9fff])/g, '$1 $2').replace(/([\u4e00-\u9fff])([0-9A-Za-z])/g, '$1 $2');
+    return '<span class="cr-main">' + esc(main.trim()) + '</span>' + (meta ? '<span class="cr-meta">' + esc(meta) + '</span>' : '');
+  }
+
   function renderCrumb() {
     /* 标题即面包屑（反馈「标题和顶部居中的面包屑合并到标题的位置，点它回退」）：模型名是根，
        往下 板 N / rank N / 单卡，除了当前这一级都能点回去 */
     var mid = level === 'card' ? backLevel : level;
     var atRoot = !(mid === 'board' && curBoard != null) && curSel == null && tier !== 3;
     // 根（模型名）永远可点：在集群层点它 = 画布复位
-    var parts = ['<button type="button" class="cr cr-root' + (atRoot ? ' is-cur' : '') + '" data-cr="root">' + esc(PS.modelName) + '</button>'];
+    var parts = ['<button type="button" class="cr cr-root' + (atRoot ? ' is-cur' : '') + '" data-cr="root" title="' + esc(PS.modelName) + '">' + titleHtml(PS.modelName) + '</button>'];
     if (mid === 'board' && curBoard != null) parts.push(level === 'board' && curSel == null ? '<span class="cr is-cur">板 ' + curBoard + '</span>' : '<button type="button" class="cr" data-cr="board">板 ' + curBoard + '</button>');
     if (curSel != null) parts.push(tier === 3 ? '<button type="button" class="cr" data-cr="rank">rank ' + curSel + '</button>' : '<span class="cr is-cur">rank ' + curSel + '</span>');
     if (tier === 3) parts.push('<span class="cr is-cur">单卡</span>');
@@ -2074,7 +2089,7 @@
     if (!M) { drawerBody.innerHTML = '<div class="sw-wait">…</div>'; return; }
     if (!swimCache || swimCache.P !== P || swimCache.M !== M) swimCache = { P: P, M: M, S: sched1F1B(P, M) };
     var S = swimCache.S, T = S.T, lps = C.model.lps || Math.round(C.model.layers / P);
-    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 112, RH = 16, GAP = 5, TOP = 18;
+    var W = Math.max(360, drawerBody.clientWidth - 32), LBL = 112, RH = 10, GAP = 4, TOP = 18;   // 行收矮（反馈「每一行太高了不精致」）：16/5 → 10/4
     var sx = (W - LBL - 8) / T, X = function (t) { return (LBL + t * sx).toFixed(1); };
     var fp = curSel != null ? coordOfRank(curSel).pp : focusPP;
     var rows = [], y = TOP, h = [];
@@ -2088,8 +2103,8 @@
       h.push('<g class="' + cls + '" data-p="' + r.p + '">');
       h.push('<rect class="sw-bg" x="' + LBL + '" y="' + r.y + '" width="' + (W - LBL - 8) + '" height="' + RH + '"/>');
       h.push(r.rank
-        ? '<text class="sw-lbl" x="12" y="' + (r.y + 12) + '">rank ' + curSel + '</text>'
-        : '<text class="sw-lbl" x="0" y="' + (r.y + 12) + '">PP' + r.p + '<tspan class="sw-l2"> L' + (r.p * lps) + '–' + ((r.p + 1) * lps - 1) + '</tspan></text>');
+        ? '<text class="sw-lbl" x="12" y="' + (r.y + RH - 1.5) + '">rank ' + curSel + '</text>'
+        : '<text class="sw-lbl" x="0" y="' + (r.y + RH - 1.5) + '">PP' + r.p + '<tspan class="sw-l2"> L' + (r.p * lps) + '–' + ((r.p + 1) * lps - 1) + '</tspan></text>');
       S.lanes[r.p].forEach(function (b) {
         h.push('<rect class="sw-' + b.k.toLowerCase() + (r.rank ? ' is-own' : '') + '" data-m="' + b.m + '" x="' + X(b.s) + '" y="' + (r.y + 1) + '" width="' + Math.max(1, (b.e - b.s) * sx - 1).toFixed(1) + '" height="' + (RH - 2) + '"><title>PP' + r.p + ' · μb ' + b.m + ' · ' + (b.k === 'F' ? '前向' : '反向') + '</title></rect>');
         // 选中 rank 自己那条道：段边界的收发（前向收上一段激活、发给下一段；反向反过来）

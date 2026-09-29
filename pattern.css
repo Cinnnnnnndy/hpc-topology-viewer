@@ -808,3 +808,31 @@ body:not(.is-compact) .ip-grp + .ip-grp { margin-top: 10px; }
 /* 小屏：训练健康卡只留图 + 告警层 + 梯度两行，细项收起（悬停图上的柱仍能读到逐层值）；告警列表到底就滚动，不再伸出视口 */
 body.is-compact .dc-more { display: none; }
 .ip-col-left { bottom: 16px; max-height: none; }
+
+/* 泳道去色（反馈「太花了，去色处理，只有关键点才高亮」）：默认全部灰——前向浅灰、反向深灰（明度区分 + 图例），
+   P2P / DP 也收成灰；只有关键点着色：选中 / 聚焦的那一段、选中 rank 自己那一行、指针所在的那个 μb */
+.sw-f { fill: #6E6E6E; }
+.sw-b { fill: #444444; }
+.sw-p2p { stroke: #8A8A8A; stroke-width: 1; }
+.sw-dp { fill: #9A9A9A; fill-opacity: .35; }
+.sw-row.is-on .sw-f, .sw-row.is-rank .sw-f, .sw.is-hm .sw-f.is-m { fill: #4F7BE0; }
+.sw-row.is-on .sw-b, .sw-row.is-rank .sw-b, .sw.is-hm .sw-b.is-m { fill: #D65A7E; }
+.sw-row.is-on .sw-p2p, .sw-row.is-rank .sw-p2p { stroke: #E8E8E8; }
+.sw-row.is-on .sw-dp, .sw-row.is-rank .sw-dp { fill: #E8E8E8; fill-opacity: .55; }
+.sw-row.is-on .sw-bg { stroke: none; fill: #202020; }
+.sw-lbl { font-size: 10px; }
+.sw-l2 { font-size: 9px; }
+
+/* 大标题：主名大一号、字重高、不压字距（等宽字压负字距会挤）、任何一级都保持亮；规格小标浅一档；
+   面包屑其余几级小一号，分隔符更淡、两侧留白 */
+.crumb { gap: 10px; align-items: baseline; }
+.crumb i { color: #3E3E3E; font-size: 13px; }
+.crumb .cr { letter-spacing: 0; font-size: 13px; color: #8C8C8C; }
+.crumb .cr.is-cur { color: #F0F0F0; }
+.crumb .cr-root { display: inline-flex; align-items: baseline; gap: 10px; font-size: 21px; font-weight: 600; letter-spacing: 0; color: #F5F5F5; }
+.crumb .cr-root .cr-main { letter-spacing: -.005em; }
+.crumb .cr-root .cr-meta { font-size: 12px; font-weight: 400; color: #8C8C8C; letter-spacing: .02em; }
+.crumb .cr-root:hover .cr-main { color: #FFFFFF; }
+body.is-compact .crumb .cr-root { font-size: 18px; }
+body.is-compact .crumb .cr-root .cr-meta { font-size: 11px; }
+body.is-compact .crumb .cr { font-size: 12px; }
