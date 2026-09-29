@@ -2581,7 +2581,9 @@
       }).join('') + '</div></div>'
       + (STAGE && STAGE.k === 'alert'
         ? '<div class="jn-alerts">' + (AL.length ? AL.map(function (x, i) {
-            var head = i === 0 && x.sev !== 'past' ? '<div class="jn-sec">Live · 当前配置</div>' : x.sev === 'past' && (i === 0 || AL[i - 1].sev !== 'past') ? '<div class="jn-sec">Post-mortem · 另一次 2048 卡训练的真实事故</div>' : '';
+            /* 两类不是一回事（反馈「live 当前配置和真实事故的关系是什么？不是同样的就用简洁的名词概括」）：
+               当前告警 = 按当前配置实时算出来的风险；历史事故 = 另一次 2048 卡训练里真实发生过的事故，是同类告警一路恶化下去的样子 */
+            var head = i === 0 && x.sev !== 'past' ? '<div class="jn-sec" title="按当前配置实时算出来的风险">当前告警</div>' : x.sev === 'past' && (i === 0 || AL[i - 1].sev !== 'past') ? '<div class="jn-sec" title="另一次 2048 卡训练里真实发生过的事故——同类告警一路恶化下去的样子">历史事故</div>' : '';
             if (x.pm) {
               var op = !!incidentOpen[x.pm.id];
               return head + '<div class="jn-pm ip-grp' + (op ? ' is-open' : '') + '"><button type="button" class="jn-al is-past' + (op ? ' is-on' : '') + '" data-pm="' + x.pm.id + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span><em>' + (op ? '收起' : '展开') + '</em></button>'
