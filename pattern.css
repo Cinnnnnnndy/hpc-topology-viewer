@@ -1128,3 +1128,12 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 /* 场景页签：选中只靠文字（反馈「选中不要用小三角，直接文字就可以，不要占用高度」）——去掉三角与为它留的底部内边距 */
 .jn-goals button { padding: 4px 11px; }
 .jn-goals button.is-cur::after { content: none; }
+
+/* 工况切换与场景切换分开（反馈「训练推理的切换和后面的切换分开」）：两枚独立的胶囊，中间留一段空 */
+.jn-bar { background: none !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; padding: 0; gap: 10px; }
+.jn-mode, .jn-goals {
+  background: var(--cam-bg); -webkit-backdrop-filter: var(--cam-fx); backdrop-filter: var(--cam-fx);
+  box-shadow: var(--cam-shadow); border-radius: 999px; padding: 5px; margin: 0;
+}
+.jn-mode button { padding: 4px 14px; }
+.jn-mode button.is-on { background: var(--cam-bg3); }
