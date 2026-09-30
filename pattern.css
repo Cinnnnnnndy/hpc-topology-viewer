@@ -1225,3 +1225,16 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 /* NPU 图标 3× 起出现：从这一档起方块本身透明（占用灰度改由图标下的占用条表达），与 CPU / DPU / NIC 同一档 */
 svg.lod1 .p-npu:not(.is-sel), svg.lod1 .p-npu.is-sel { fill-opacity: 0; }
 svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: .25; }
+
+/* ── 10.10：板视图连线统一成直角走线 + 圆角（见 pattern.js rp）──
+   共线的几根线叠在一条轨道上，半透明会越叠越亮、轨道一段亮一段暗；改用实色分档：
+   平时一档暗灰，选中那颗的线白色（TP 那几根青色），其余退到更暗一档 */
+.b-mesh, .b-fan, .b-h2d, .b-nicl, .b-l12, .b-swbl { fill: none; stroke-opacity: 1; stroke-linejoin: round; transition: stroke .15s ease; }
+.b-mesh { stroke: #4E4E50; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan { stroke: #454547; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-h2d, .b-nicl { stroke: #5C5C5E; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-l12 { stroke: #5C5C5E; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-swbl { stroke: #454547; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.6px / var(--zk, 1)); }
+.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #2C2C2E; stroke-opacity: 1; }
+.b-lbl-mesh { fill: #A0A0A0; }
