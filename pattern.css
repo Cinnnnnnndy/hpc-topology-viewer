@@ -1300,3 +1300,14 @@ svg.has-sel .lkd { stroke-width: calc(1.3px / var(--zk, 1)); }
 .pb-cap { stroke: #3E3E40; }
 .sw-mark { stroke: #5A5A5C; }
 svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe { stroke: #3A3A3C; }
+
+/* ── 10.13：连线上的小数据标签（板视图）── 不用标签框：一行小号等宽字、垫一圈底色；平时藏着，放大到 1.5× 起淡入；
+   需要注意的读数琥珀色（阈值色），带琥珀读数的那一条不放大也显示 */
+.b-dlbl { font-family: var(--mono, ui-monospace, monospace); font-size: 5.2px; fill: #8E8E90; letter-spacing: .02em;
+  paint-order: stroke; stroke: #111111; stroke-width: calc(2.4px / var(--zk, 1)); stroke-linejoin: round;
+  opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+.b-dlbl .dl-k { fill: #C8C8CA; }
+.b-dlbl .dl-sep { fill: #5A5A5C; }
+.b-dlbl .is-warn { fill: #FAB219; }
+svg.lodz .b-dlbl, .b-dlbl.has-warn { opacity: 1; }
+svg.has-sel .b-dlbl:not(.has-warn) { fill: #6A6A6C; }

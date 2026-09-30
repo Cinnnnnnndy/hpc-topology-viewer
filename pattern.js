@@ -1135,6 +1135,12 @@
       + '<line class="b-uboe b-bus" x1="' + (NX(4) - 40) + '" y1="' + (L2Y + L2H + 22) + '" x2="900" y2="' + (L2Y + L2H + 22) + '"/>');
     txt.push('<text class="b-lbl b-lbl-ub" x="60" y="' + (L2Y + L2H + 36) + '">UB → POD</text>'
       + '<text class="b-lbl b-lbl-uboe" x="900" y="' + (L2Y + L2H + 36) + '" text-anchor="end">UBoE → SuperPoD</text>');
+    /* 连线上的数据（10.13）：四个槽位，对应四级闭合——板内（fullmesh）· POD（出板 Clos）· SP（L2 UB 总线）· 跨 SP（UBoE 总线）。
+       每个槽位放在那一类线旁边一块空着的地方（不压线、不挪版式），文字由 boardLinkLabels 按当前配置填 */
+    var ZX = (NX(3) + NX(4)) / 2, BUSY = L2Y + L2H + 22;
+    [[0, ZX, MY(mTop) - 8 * BP - 4], [1, ZX, CY(7) + 9], [2, (NX(1) + NX(2)) / 2, BUSY - 4], [3, (NX(5) + NX(6)) / 2, BUSY - 4]].forEach(function (q) {
+      txt.push('<text class="b-dlbl" data-lv="' + q[0] + '" x="' + q[1] + '" y="' + q[2] + '" text-anchor="middle"></text>');
+    });
     // 选中时把那颗 NPU 的 fullmesh 抬到最上面一组连续轨道（见 liftMesh）：这里记下起点与层距
     return '<svg class="near" data-lift="' + AT + ',' + MY(mTop) + ',' + BP + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('b-')
       + '<g class="b-bg">' + bg.join('') + '</g><g class="b-links">' + links.join('') + '</g><g class="b-flow"></g><g class="b-nodes">' + nodes.join('') + '</g><g class="b-txt">' + txt.join('') + '</g></svg>';
@@ -1227,11 +1233,13 @@
       var lk = st.flying ? st.flyLodK : st.k;
       if (s.classList.contains('lod1') !== (lk >= 3)) s.classList.toggle('lod1', lk >= 3);
       if (s.classList.contains('lod2') !== (lk >= 6)) s.classList.toggle('lod2', lk >= 6);
+      var zr = lk / (st.kFit || 1);   // 板视图连线上的小数据标签：相对「铺满」那一档放大到 1.5× 起出现
+      if (s.classList.contains('lodz') !== (zr >= 1.5)) s.classList.toggle('lodz', zr >= 1.5);
       if (!frameQ) { frameQ = true; requestAnimationFrame(function () { frameQ = false; if (stage === physStage && !st.gesture) ensurePodDetail(st); if (curSel != null) markSelFrame(stage); placeSelLabel(); }); }
     }
     /* 画布铺满整个视口（反馈「左边不要做成单独的面板，卡片悬浮在画布上、毛玻璃、不遮挡后面」），
        四周的卡是半透明悬浮的；取景时把内容摆进卡与卡之间那块「安全区」的正中，初始/复位也一样。 */
-    st.reset = function (anim, done) { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0, anim, done); };
+    st.reset = function (anim, done) { var s = svg(); if (!s) { st.k = 1; st.tx = 0; st.ty = 0; apply(); return; } var vb = s.viewBox.baseVal; st.fitVB(vb.x, vb.y, vb.width, vb.height, 0, anim, function () { st.kFit = st.k; apply(); if (done) done(); }); };
     /* ── 镜头飞行（层级串联动画）：取景不再一帧跳过去，而是 ~480ms 缓入缓出飞过去。
        缩放按对数插值、屏幕中心对着的那一点按线性插值——放大缩小的速度感均匀，不会前半段猛冲。
        飞行中走手势那条路：线宽样式表与 LOD 不逐帧切，落地后一次切完；reduced-motion 下直接落地。 */
@@ -1664,7 +1672,37 @@
     if (R == null) return '';
     return R >= lastCluster.red ? 'c2' : R >= lastCluster.amber ? 'c1' : 'c0';
   }
+  /* 连线上的小标签：每一维通信量写在它闭合的那一级链路旁（闭合级别同 Closure 卡，按 rank 连续落位推）。
+     平时只在放大到 1.5× 起出现（svg.lodz）；超阈值的读数（EP 路由失衡 > 告警线、PP 气泡 > 25%）琥珀色，不放大也在 */
+  function boardLinkLabels() {
+    var sv = boardStage.querySelector('svg'); if (!sv) return;
+    var C = lastCluster, B = rawBrief, P = B && B.perf, M = P && P.moe, H = P && P.health, dd = hierDims();
+    var val = function (d) {
+      if (!C) return '';
+      if (d === 'TP' && C.comm && C.comm.tp) return unitEN(C.comm.tp.txt);
+      if (d === 'PP' && C.comm && C.comm.pp) return unitEN(C.comm.pp.txt);
+      if (d === 'DP' && C.comm && C.comm.dp && MODE !== 'infer') return unitEN(C.comm.dp.txt);
+      if (d === 'EP' && M) return 'A2A ≤' + Math.round(M.a2aMB) + ' MB';
+      return '';
+    };
+    var warn = function (d) {
+      if (d === 'EP' && M && H && M.imbMax > H.thrImb) return M.imbMax.toFixed(2) + '× > ' + H.thrImb;
+      if (d === 'PP' && MODE === 'train' && B && B.bubble > 0.25) return 'bubble ' + pct(B.bubble);
+      return '';
+    };
+    sv.querySelectorAll('.b-dlbl').forEach(function (el) {
+      var parts = [], hot = false;
+      (dd[+el.getAttribute('data-lv')] || []).forEach(function (x) {
+        var d = x.split('×')[0], v = val(d), w = warn(d); if (!v && !w) return;
+        if (w) hot = true;
+        parts.push('<tspan class="dl-k">' + d + '</tspan> ' + esc(v) + (w ? ' <tspan class="is-warn">' + esc(w) + '</tspan>' : ''));
+      });
+      el.innerHTML = parts.join('<tspan class="dl-sep">  ·  </tspan>');
+      el.classList.toggle('has-warn', hot);
+    });
+  }
   function applyAlerts() {
+    boardLinkLabels();
     if (!oomSet) return;
     document.querySelectorAll('.phys-stage .p-npu').forEach(function (el) {
       var c = capClass(+el.getAttribute('data-rank'));
