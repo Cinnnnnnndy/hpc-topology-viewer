@@ -2594,7 +2594,7 @@
             }
             return head + '<button type="button" class="jn-al is-' + x.sev + (i === alertAt ? ' is-on' : '') + '" data-alert="' + i + '"><i></i><b>' + esc(x.t) + '</b><span>' + esc(x.w) + '</span><em>定位</em></button>';
           }).join('') : '<div class="jn-none">没有告警</div>') + '</div>'
-        : '<div class="jn-q' + (STAGE ? '' : ' is-empty') + '">' + (STAGE ? esc(STAGE.q) : '') + '</div>');
+        : '');   // 场景下面那行问句不再出（反馈「不要胶囊下面那段话」），问句只留在场景按钮的悬停提示里
     journey._alerts = AL;
     journey.classList.toggle('is-hidden', world <= 64);
   }
