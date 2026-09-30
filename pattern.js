@@ -741,7 +741,11 @@
     var lkG = boardStage.querySelector('.b-links');
     // 选中一颗 NPU 时整张板进「聚焦」档：与它无关的干线（RoCE / UB / PCIe / NIC 交换 …）一起退暗，只留它自己的那几根亮着
     var bSvg = boardStage.querySelector('svg'); if (bSvg) bSvg.classList.toggle('has-sel', slot != null);
-    if (lkG) boardStage.querySelectorAll('.b-links > .is-hot').forEach(function (el) { lkG.appendChild(el); });
+    if (lkG) boardStage.querySelectorAll('.b-links > .is-hot').forEach(function (el) {
+      var cs = el.previousElementSibling;   // 它自己的底色描边一起挪，交叉处照样被切开
+      if (cs && cs.classList.contains('lkc')) lkG.appendChild(cs);
+      lkG.appendChild(el);
+    });
     // 选中 NPU 与同板 TP 组员之间的 fullmesh 弧：标 is-tp（TP 流量走的就是这几根）
     var tpSlots = {};
     if (slot != null) commGroups(curSel).tp.forEach(function (r9) { var q9 = physOf(r9); if (q9.board === curBoard && r9 !== curSel) tpSlots[q9.slot] = 1; });
@@ -865,20 +869,39 @@
     return d + ' L' + f(z[0]) + ',' + f(z[1]);
   }
   var RC = 5;   // 圆角半径
-  function cased(el) { return el.replace(/ class="[^"]*"/, ' class="lkc"').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
+  function cased(el, cc) { return el.replace(/ class="[^"]*"/, ' class="' + (cc || 'lkc') + '"').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心 = 每颗器件图标的中线
-    var NPUY = 172, NPUH = 58, L1Y = 340, L1H = 24, SWBY = 400, SWBH = 20, L2Y = 470, L2H = 30, CPUY = 58;   // 名字挪到图标下方后各行之间多留一截
+    var NPUY = 180, NPUH = 58, L1Y = 340, L1H = 24, SWBY = 400, SWBH = 20, L2Y = 470, L2H = 30, CPUY = 58;   // 名字挪到图标下方后各行之间多留一截
     /* 端点只落在图元上（反馈「算中点的时候不要带上文字」「文字统一放在图标下方居中」）：
        每个器件图标居中、名字在图标正下方居中；从上面来的线接图标**顶边中点**，侧向的线接图标**左右边中点**
        （名字挪到下面之后两侧是空的），往下走的线从**名字下沿中点**出——不穿过字 */
     var AT = NPUY + 4, NB = NPUY + 57;   // NPU：图标顶边 / 名字下沿
     /* 上方三层走线轨道（由上到下）：H2D 分叉 · NIC 分叉 · fullmesh 7 层（跨距 d 的那一对走第 d 层）；
        NPU 顶边三个口：H2D 在左 −9、fullmesh 居中、NIC 在右 +9，互不共线 */
-    var HFY = 128, NFY = 136, MY = function (d) { return AT - 4 * d; };   // 层距 4（反馈「缩小层叠线之间的间距」）
+    /* 线束（参考 BMC bus-wiring：每根线一条自己的车道、平行不合并，线心间距约 1.8× 线宽，外包一圈底色描边）：
+       NPU 顶边出 fullmesh 7 根一束、底边出 Clos 8 根一束，束内间距 BP；H2D 在束左 −12、NIC 在束右 +12 */
+    var BP = 2.2, HFY = 128, NFY = 136;
+    // fullmesh：NPU i 那一束里通往 j 的车道（按 j 从左到右）
+    var ML = function (i, j) { return NX(i) + ((j < i ? j : j - 1) - 3) * BP; };
+    /* 每一对走哪一层：按跨距从短到长依次放，放进最低一层、且与这层已有横段不相叠的位置——
+       短的在里、长的在外，同一层上的横段首尾错开，不再有两根线共用一段 */
+    var MLV = {}, mLv = [], mTop = 0;
+    (function () {
+      var pr = [];
+      for (var a = 0; a < 8; a++) for (var b = a + 1; b < 8; b++) pr.push([a, b]);
+      pr.sort(function (u, v) { return (u[1] - u[0]) - (v[1] - v[0]) || u[0] - v[0]; });
+      pr.forEach(function (q) {
+        var x0 = ML(q[0], q[1]), x1 = ML(q[1], q[0]), L = 0;
+        while (mLv[L] && mLv[L].some(function (r) { return x0 < r[1] + BP && x1 > r[0] - BP; })) L++;
+        (mLv[L] = mLv[L] || []).push([x0, x1]); MLV[q[0] + ',' + q[1]] = L; mTop = Math.max(mTop, L);
+      });
+    })();
+    var MY = function (L) { return AT - 5 - L * BP; };
     /* 下方：出板 Clos 8 条平面轨道（平面 k 走第 k 条）；NPU 列往下穿过全部轨道，L1 k 只从第 k 条落下 */
-    var CY = function (k) { return (NB + L1Y) / 2 - 12 + k * 4; };   // 8 条轨道层距 4，整组落在 NPU 行与 L1 行正中
+    var CY = function (k) { return (NB + L1Y) / 2 - 3.5 * BP + k * BP; };   // 8 条平面轨道，间距同束内，整组落在 NPU 行与 L1 行正中
+    var CL = function (i, k) { return NX(i) + (k - 3.5) * BP; };   // Clos：NPU i 那一束里去平面 k 的车道
     var bg = [], links = [], nodes = [], txt = [];
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
     // 图元在 48×36 viewBox 里实际画到哪（留白不算）：端点贴的是看得见的边
@@ -907,12 +930,12 @@
       // NIC 交换（POD 形态图「SW 4*N · 2口/N」）：每张 NIC 2 口汇到右侧那颗小交换的顶边中点
       links.push(cased('<path class="b-nsw-l" d="' + rp([[NC.x, NC.t], [NC.x, 48], [SW.x, 48], [SW.x, SW.t]], RC) + '"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>'));
       [2 * k, 2 * k + 1].forEach(function (i) {
-        links.push('<path class="b-nicl" data-n="' + i + '" d="' + rp([[NC.x, NC.lb], [NC.x, NFY], [NX(i) + 9, NFY], [NX(i) + 9, AT]], RC) + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></path>');
+        links.push(cased('<path class="b-nicl" data-n="' + i + '" d="' + rp([[NC.x, NC.lb], [NC.x, NFY], [NX(i) + 12, NFY], [NX(i) + 12, AT]], RC) + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></path>', 'lkc lkd'));
       });
     }
     var CP = [0, 1].map(function (c) {
       var A = box('b-cpu', (NX(4 * c + 1) + NX(4 * c + 2)) / 2, CPUY, 110, 34, 'CPU' + c, 'CPU' + c + ' · H2D 每卡 2 口 UB（x86 走 4 口 PCIe SW）· 8 口 UB 上 L1', ' data-cpu="' + c + '"');
-      for (var i = 4 * c; i < 4 * c + 4; i++) links.push('<path class="b-h2d" data-n="' + i + '" d="' + rp([[A.x, A.lb], [A.x, HFY], [NX(i) - 9, HFY], [NX(i) - 9, AT]], RC) + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></path>');
+      for (var i = 4 * c; i < 4 * c + 4; i++) links.push(cased('<path class="b-h2d" data-n="' + i + '" d="' + rp([[A.x, A.lb], [A.x, HFY], [NX(i) - 12, HFY], [NX(i) - 12, AT]], RC) + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></path>', 'lkc lkd'));
       links.push(cased('<path class="b-nsw-l" d="' + rp([[A.x, A.t], [A.x, 40], [SW.x, 40], [SW.x, SW.t]], RC) + '"><title>CPU' + c + ' — NIC 交换 · 1 口</title></path>'));
       return A;
     });
@@ -941,16 +964,17 @@
         + '<rect class="b-npustrip" x="' + (NX(i) - 14) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
         + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 53) + '" text-anchor="middle">' + r + '</text></g>');   // 只写全局 rank 号；板内槽号（npuN）只进悬停
       for (var j = i + 1; j < 8; j++) {
-        links.push('<path class="b-mesh" data-m="' + i + ',' + j + '" d="' + rp([[NX(i), AT], [NX(i), MY(j - i)], [NX(j), MY(j - i)], [NX(j), AT]], 3) + '"/>');
+        var ly = MY(MLV[i + ',' + j]);
+        links.push(cased('<path class="b-mesh" data-m="' + i + ',' + j + '" d="' + rp([[ML(i, j), AT], [ML(i, j), ly], [ML(j, i), ly], [ML(j, i), AT]], 2) + '"/>', 'lkc lkd'));
       }
     }
     // 各层走线的名字统一收在左侧留白里、右对齐，不压在线上
     var LX = NX(0) - 42;
-    txt.push('<text class="b-lbl b-lbl-mesh" x="' + LX + '" y="' + ((MY(1) + MY(7)) / 2 + 3) + '" text-anchor="end">fullmesh 7×X4</text>');
+    txt.push('<text class="b-lbl b-lbl-mesh" x="' + LX + '" y="' + ((MY(0) + MY(mTop)) / 2 + 3) + '" text-anchor="end">fullmesh 7×X4</text>');
     // 出板：每颗 NPU 8 口（名字下沿中点出），每口一颗 L1（每平面一颗，接图标顶边中点）
     for (var i2 = 0; i2 < 8; i2++) for (var k2 = 0; k2 < 8; k2++) {
       if (base + i2 >= world) break;
-      links.push('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp([[NX(i2), NB], [NX(i2), CY(k2)], [NX(k2), CY(k2)], [NX(k2), L1A[k2].t]], 3) + '"/>');
+      links.push(cased('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp([[CL(i2, k2), NB], [CL(i2, k2), CY(k2)], [NX(k2), CY(k2)], [NX(k2), L1A[k2].t]], 2) + '"/>', 'lkc lkd'));
     }
     txt.push('<text class="b-lbl" x="' + LX + '" y="' + ((CY(0) + CY(7)) / 2 + 3) + '" text-anchor="end">Clos 8×X4</text>');
     // L1 → 本平面 4×SW2（L2）
@@ -959,7 +983,7 @@
       for (var q = 0; q < 4; q++) {
         var qx = NX(k3) - 24 + q * 16;
         bg.push('<rect class="b-sw2" style="--pc:' + PLANE_C[k3] + '" x="' + (qx - 4) + '" y="' + (L2Y + L2H - 11) + '" width="10" height="6"/>');
-        links.push('<path class="b-l12" style="--pc:' + PLANE_C[k3] + '" d="' + rp([[L1A[k3].x, L1A[k3].lb], [L1A[k3].x, L2Y - 14], [qx + 1, L2Y - 14], [qx + 1, L2Y + L2H - 11]], RC) + '"/>');
+        links.push(cased('<path class="b-l12" style="--pc:' + PLANE_C[k3] + '" d="' + rp([[L1A[k3].x, L1A[k3].lb], [L1A[k3].x, L2Y - 14], [qx + 1, L2Y - 14], [qx + 1, L2Y + L2H - 11]], RC) + '"/>', 'lkc lkd'));
       }
       txt.push('<text class="b-lbl b-lbl-plane" x="' + NX(k3) + '" y="' + (L2Y + 12) + '" text-anchor="middle">P' + (k3 + 1) + '</text>');
       links.push(cased('<line class="b-ub b-out" x1="' + NX(k3) + '" y1="' + (L2Y + L2H) + '" x2="' + NX(k3) + '" y2="' + (L2Y + L2H + 22) + '"/>'));
@@ -970,7 +994,7 @@
        交换板这一层画在 L1 与平面之间，只连 L1、两侧短线表示它通向框内其他板。 */
     [(NX(1) + NX(2)) / 2, (NX(5) + NX(6)) / 2].forEach(function (sx, si) {
       var SB = box('b-swb', sx, SWBY, 76, SWBH, '2×SW', '框内 L2 交换板 ' + (si ? 'B' : 'A') + ' · 2×SW · 每颗 L1 4 口 · 框内板间互联（配 8 口时可出框）');
-      for (var k4 = 0; k4 < 8; k4++) links.push('<path class="b-swbl" d="' + rp([[L1A[k4].x, L1A[k4].lb], [L1A[k4].x, SWBY - 8], [SB.x, SWBY - 8], [SB.x, SB.t]], RC) + '"/>');
+      for (var k4 = 0; k4 < 8; k4++) links.push(cased('<path class="b-swbl" d="' + rp([[L1A[k4].x, L1A[k4].lb], [L1A[k4].x, SWBY - 8], [SB.x, SWBY - 8], [SB.x, SB.t]], RC) + '"/>', 'lkc lkd'));
       links.push(cased('<line class="b-swbx" x1="' + (si ? SB.r : SB.l) + '" y1="' + SB.m + '" x2="' + (si ? 948 : 12) + '" y2="' + SB.m + '"><title>交换板 → 框内其他板</title></line>'));
     });
     txt.push('<text class="b-lbl" x="' + ((NX(3) + NX(4)) / 2) + '" y="' + (SWBY + 14) + '" text-anchor="middle">框内 4口 · 交换板</text>');

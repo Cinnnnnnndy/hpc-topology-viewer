@@ -1272,3 +1272,8 @@ svg.has-sel .b-lbl { fill: #6A6A6C; }
 svg.near .lkc { stroke-width: calc(2.2px / var(--zk, 1)); }
 .b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-width: calc(.8px / var(--zk, 1)); }
 svg.near .b-mesh.is-hot.is-tp { stroke-width: calc(.9px / var(--zk, 1)); }
+
+/* ── 10.11：线束（参考 BMC bus-wiring）──
+   束内每根线一条车道、间距 2.2；每根密线也垫一圈底色描边（.lkd），交叉处切开、看得出谁压谁 */
+svg.near .lkd { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); stroke-linecap: butt; }
+svg.has-sel .lkd { stroke-width: calc(1.3px / var(--zk, 1)); }
