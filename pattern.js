@@ -688,10 +688,14 @@
     var dH = function (n) { return MYr(MP.mTop) + 1 + n * DQ; };   // n = 0..7：CPU0 的 4 根在上（近的浅），CPU1 的 4 根在下
     var dN = function (n) { return dH(8) + (7 - n) * DQ; };          // NIC → NPU n：近的（n 大）浅
     var dS = dN(-1), dP = dS + DQ;                                    // NIC 交换、PCIe 最深
+    /* 选中卡在这块板上时：它连向同组 TP 卡的 fullmesh 标 is-tp（白 = 选中），连向其余卡的是连带（浅灰）；同组 TP 卡加一圈连带选中框 */
+    var sS = curSel != null && physOf(curSel).board === b ? physOf(curSel).slot : null, tpS = {};
+    if (sS != null) commGroups(curSel).tp.forEach(function (r9) { var q9 = physOf(r9); if (q9.board === b && r9 !== curSel) tpS[q9.slot] = 1; });
     for (i = 0; i < 8; i++) for (k = i + 1; k < 8; k++) {
-      var yy = MYr(MP.MLV[i + ',' + k]);
-      pt('rel-mesh', [[MP.ML(i, k), NB], [MP.ML(i, k), yy], [MP.ML(k, i), yy], [MP.ML(k, i), NB]], i + ',' + k);
+      var yy = MYr(MP.MLV[i + ',' + k]), tp9 = sS != null && ((i === sS && tpS[k]) || (k === sS && tpS[i]));
+      pt('rel-mesh' + (tp9 ? ' is-tp' : ''), [[MP.ML(i, k), NB], [MP.ML(i, k), yy], [MP.ML(k, i), yy], [MP.ML(k, i), NB]], i + ',' + k);
     }
+    Object.keys(tpS).forEach(function (n) { out.push('<rect class="rel-relf" x="' + (NX(+n) - 3.6) + '" y="' + (ry - 4.1) + '" width="7.2" height="5.7" rx="1.3"/>'); });   // 贴封装图标外 0.6，同选中白框一个画法
     var cB = [0, 1].map(function (c) {
       var it = [];
       for (var n = 4 * c; n < 4 * c + 4; n++) it.push({ key: 'h' + n, d: 1, f: -dH(n) });
@@ -790,7 +794,7 @@
       if (el.getAttribute('class') !== nc) el.setAttribute('class', nc);
     });
     [physStage, boardStage].forEach(markSelFrame);
-    if (curSel != null) showRelations(physOf(curSel).board);
+    if (curSel != null) { relBoard = null; showRelations(physOf(curSel).board); }   // 选中变了就重画：选中 / 连带选中的标记画在关系图里
     renderPanel();
     setTimeout(placeSelLabel, 0);
     // 板视图：选中那颗 NPU 自己的链路（出板 8 口、板内 fullmesh 7 根、H2D、NIC）换激活样式，其余退后；
@@ -810,7 +814,7 @@
     // 选中 NPU 与同板 TP 组员之间的 fullmesh 弧：标 is-tp（TP 流量走的就是这几根）
     var tpSlots = {};
     if (slot != null) commGroups(curSel).tp.forEach(function (r9) { var q9 = physOf(r9); if (q9.board === curBoard && r9 !== curSel) tpSlots[q9.slot] = 1; });
-    boardStage.querySelectorAll('.b-mesh').forEach(function (el) { var ab = el.getAttribute('data-m').split(','); el.classList.toggle('is-tp', slot != null && ((+ab[0] === slot && tpSlots[+ab[1]]) || (+ab[1] === slot && tpSlots[+ab[0]]))); });
+    boardStage.querySelectorAll('.b-mesh').forEach(function (el) { var ab = el.getAttribute('data-m').split(','); el.classList.toggle('is-tp', !!(slot != null && ((+ab[0] === slot && tpSlots[+ab[1]]) || (+ab[1] === slot && tpSlots[+ab[0]])))); });
     markHot(physStage, here != null ? here.slot : null);
     flowDots(slot);
     physStage.querySelectorAll('.p-pod').forEach(function (el) { el.classList.toggle('is-on', here != null && +el.getAttribute('data-pod') === here.pod); });
@@ -1090,6 +1094,7 @@
       nodes.push('<g class="b-npug"><rect class="p-npu p-bnpu" data-rank="' + r + '" data-slot="' + i + '" data-pp="' + coordOfRank(r).pp + '" x="' + (NX(i) - 32) + '" y="' + NPUY + '" width="64" height="' + NPUH + '"><title>NPU' + i + ' · rank ' + r + ' · ' + coordLine(r) + '</title></rect>'
         + '<use class="b-npuicon" href="#hw-npu" x="' + (NX(i) - 18) + '" y="' + (NPUY + 4) + '" width="36" height="27"/>'
         + '<rect class="b-npustrip" x="' + (NX(i) - 14) + '" y="' + (NPUY + 34) + '" width="28" height="3"/>'
+        + '<rect class="b-relf" x="' + (NX(i) - 21) + '" y="' + (NPUY + 1) + '" width="42" height="33" rx="7.5"/>'   // 连带选中框：同组成员
         + '<text class="b-npul" x="' + NX(i) + '" y="' + (NPUY + 53) + '" text-anchor="middle">' + r + '</text></g>');   // 只写全局 rank 号；板内槽号（npuN）只进悬停
       for (var j = i + 1; j < 8; j++) {
         var ly = MY(MLV[i + ',' + j]);
@@ -1181,6 +1186,9 @@
         if (!r.style) return;
         var v = r.style.getPropertyValue('stroke-width'), m = /calc\(\s*([0-9.]+)px\s*\/\s*var\(--zk/.exec(v);
         if (m) ZK_RULES.push({ sel: r.selectorText, px: +m[1], imp: r.style.getPropertyPriority('stroke-width') });
+        /* 虚线段长同样按屏幕像素定（--zdash: 实 空，单位 px）：缩放时段长不跟着变，任何倍数下虚线疏密一致 */
+        var zd = (r.style.getPropertyValue('--zdash') || '').trim();
+        if (zd) ZK_RULES.push({ sel: r.selectorText, dash: zd.split(/\s+/).map(Number) });
       });
     });
   }
@@ -1191,7 +1199,9 @@
     zkLast[stage.id] = kk;
     if (!ZK_RULES) collectZkRules();
     zkText[stage.id] = ZK_RULES.map(function (r) {
-      return r.sel.split(',').map(function (x) { return '#' + stage.id + ' ' + x.trim(); }).join(', ') + ' { stroke-width: ' + (r.px / kk).toFixed(3) + 'px' + (r.imp ? ' !important' : '') + '; }';
+      var sel = r.sel.split(',').map(function (x) { return '#' + stage.id + ' ' + x.trim(); }).join(', ');
+      if (r.dash) return sel + ' { stroke-dasharray: ' + r.dash.map(function (d) { return (d / kk).toFixed(3); }).join(' ') + '; }';
+      return sel + ' { stroke-width: ' + (r.px / kk).toFixed(3) + 'px' + (r.imp ? ' !important' : '') + '; }';
     }).join('\n');
     zkSheet.textContent = Object.keys(zkText).map(function (id) { return zkText[id]; }).join('\n');
   }
@@ -1680,7 +1690,7 @@
   /* 连线上的小标签：每一维通信量写在它闭合的那一级链路旁（闭合级别同 Closure 卡，按 rank 连续落位推）。
      平时只在放大到 1.5× 起出现（svg.lodz）；超阈值的读数（EP 路由失衡 > 告警线、PP 气泡 > 25%）琥珀色，不放大也在 */
   function boardLinkLabels() {
-    var sv = boardStage.querySelector('svg'); if (!sv) return;
+    var sv = boardStage.querySelector('svg');
     var C = lastCluster, B = rawBrief, P = B && B.perf, M = P && P.moe, H = P && P.health, dd = hierDims();
     var val = function (d) {
       if (!C) return '';
@@ -1695,7 +1705,7 @@
       if (d === 'PP' && MODE === 'train' && B && B.bubble > 0.25) return 'bubble ' + pct(B.bubble);
       return '';
     };
-    sv.querySelectorAll('.b-dlbl').forEach(function (el) {
+    if (sv) sv.querySelectorAll('.b-dlbl').forEach(function (el) {
       var parts = [], hot = false;
       (dd[+el.getAttribute('data-lv')] || []).forEach(function (x) {
         var d = x.split('×')[0], v = val(d), w = warn(d); if (!v && !w) return;

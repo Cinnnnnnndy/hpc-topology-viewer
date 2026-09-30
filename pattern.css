@@ -1320,3 +1320,25 @@ svg.has-sel .b-dlbl:not(.has-warn) { fill: #6A6A6C; }
 .b-led { display: none; fill: #FAB219; pointer-events: none; }
 svg.st-ep .b-led { display: inline; }
 svg.st-ep .b-fan.is-hot, svg.st-ep .rel-clos.is-hot { stroke: #FAB219 !important; }
+
+/* ── 10.15：颜色只表示状态，线型区分介质；选中 / 连带选中分开（反馈「为什么还有蓝色的线」「用颜色表示状态，线型就用线的样式区分」
+   「注意选中状态和连带选中的状态」）──
+   状态（颜色）：灰 = 默认 · 白 = 选中 · 浅灰 = 连带选中 · 琥珀 = 告警 · 红 = 故障。维度签名色不再上线、不再描卡。
+   介质（线型，同一灰）：UB 实线 · UBoE 长虚线 · RoCE / NIC 交换 短虚线 · PCIe 点线；虚线段长按屏幕像素定（--zdash），缩放不变 */
+.b-uboe, .p-uboe { stroke: #8A8A8C; --zdash: 7 3; stroke-linecap: butt; }
+.b-roce, .p-roce, .rel-roce, .b-nsw-l { stroke: #767678; --zdash: 2.6 2.2; stroke-linecap: butt; }
+.b-pcie, .rel-pcie { stroke: #8A8A8C; --zdash: 0.01 2.4; stroke-linecap: round; }
+.b-ub, .rel-ub, .b-cpul, .b-swbx { stroke: #767678; }
+svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe, svg.has-sel .b-nsw-l { stroke: #3A3A3C; }
+/* 选中卡自己的线：承载本组流量的（TP 组员之间的 fullmesh、出板 Clos、H2D、NIC）白 = 选中；
+   连向组外那几张卡的 fullmesh 是它的线、但不走本组流量 → 浅灰 = 连带选中 */
+svg.near .b-mesh.is-hot.is-tp { stroke: #FFFFFF; }
+svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E90; }
+/* 连带选中的器件：同组成员一圈浅灰细框（板视图贴封装图标、集群贴格子），选中那一张仍是白框 */
+.b-relf { display: none; fill: none; stroke: #A8A8AA; stroke-width: calc(1px / var(--zk, 1)); pointer-events: none; }
+/* 板视图的连带选中 = 与选中卡在本板上直接走白线的那几张（TP 组员）；EP / CP 组员的流量出板走 Clos，不在板内连带 */
+.p-bnpu.g-tp ~ .b-relf { display: inline; }
+.p-bnpu[class*=" g-"] { stroke: none !important; }
+.p-npu.g-tp, .p-npu.g-cp, .p-npu.g-ep, .p-npu.g-dp, .p-npu.g-pp { stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
+.rel .rel-mesh.is-hot:not(.is-tp) { stroke: #8E8E90 !important; }
+.rel .rel-relf { fill: none; stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
