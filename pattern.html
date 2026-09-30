@@ -56,10 +56,10 @@
   规模小到不必再包一层。 -->
 </head>
 <body>
-  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：超节点 / L2 平面 / L1 交换 / POD / 板（NPU·CPU·DPU·NIC）"></div>
+  <div id="physStage" class="stage-frame is-hidden phys-stage" role="img" aria-label="灵衢物理拓扑：SuperPoD / L2 平面 / L1 SW / POD / Board（NPU·CPU·DPU·NIC）"></div>
   <div id="boardStage" class="stage-frame is-hidden phys-stage board-stage" role="img" aria-label="板视图：一块板的 Server 形态——2 CPU · 8 NPU · DPU · 4 NIC，板内 UB fullmesh，出板 8 口到 8 颗 L1，L1 到各自平面的 4×SW2"></div>
   <iframe id="matrixFrame" class="stage-frame is-hidden" title="矩阵引擎 · 借来算数（brief=1），不显示"></iframe>
-  <iframe id="detailFrame" class="stage-frame is-hidden" title="矩阵引擎 · 单卡详情（选中即预载）"></iframe>
+  <iframe id="detailFrame" class="stage-frame is-hidden" title="矩阵引擎 · NPU 详情（选中即预载）"></iframe>
 
   <header id="topbar" class="topbar is-hidden">
     <nav id="crumb" class="crumb" aria-label="档位"></nav>
@@ -68,7 +68,7 @@
   <aside id="leftCard" class="side-card side-left is-hidden"></aside>
   <aside id="briefCard" class="side-card side-right brief-card is-hidden" aria-live="polite"></aside>
   <aside id="dataCol" class="data-col is-hidden" aria-label="数据卡"></aside>
-  <aside id="shardL" class="shard-col is-hidden" aria-label="单卡 · 读出卡拆开的切分小卡"></aside>
+  <aside id="shardL" class="shard-col is-hidden" aria-label="NPU · 切分小卡"></aside>
   <aside id="incidentPanel" class="incident-panel is-hidden" aria-live="polite"></aside>
 
   <aside id="drawer" class="drawer is-hidden">
@@ -95,8 +95,8 @@
     <button type="button" data-drawer="rubik" title="Logical Cube" aria-label="Logical Cube"><svg viewBox="0 0 16 16"><path d="M8 1.5 14 4.75v6.5L8 14.5 2 11.25v-6.5z"/><path d="M8 1.5v13M2 4.75l6 3.25 6-3.25"/></svg></button>
     <button type="button" data-drawer="hier" title="Hierarchy" aria-label="Hierarchy"><svg viewBox="0 0 16 16"><path d="M3 2.5h10M4.5 5.5h7M3 8.5h10M5.5 11.5h5M7 14h2"/></svg></button>
     <button type="button" data-rv="mem" title="显存" aria-label="显存"><svg viewBox="0 0 16 16"><rect x="3" y="2.5" width="10" height="2.5"/><rect x="3" y="6.75" width="10" height="2.5"/><rect x="3" y="11" width="10" height="2.5"/></svg></button>
-    <button type="button" data-rv="net" title="Sharding" aria-label="Sharding"><svg viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" stroke-dasharray="1.4 1.2"/><rect x="4" y="6.5" width="8" height="3"/><path d="M9.5 6.5v3"/></svg></button>
-    <button type="button" data-rv="comp" title="层构成" aria-label="层构成"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="2.5" height="4"/><rect x="6.5" y="3" width="7" height="4"/><rect x="2.5" y="9" width="2.5" height="4"/><rect x="6.5" y="9" width="7" height="4"/></svg></button>
+    <button type="button" data-rv="net" title="整网切分" aria-label="整网切分"><svg viewBox="0 0 16 16"><rect x="4" y="1.5" width="8" height="13" stroke-dasharray="1.4 1.2"/><rect x="4" y="6.5" width="8" height="3"/><path d="M9.5 6.5v3"/></svg></button>
+    <button type="button" data-rv="comp" title="Layers" aria-label="Layers"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="2.5" height="4"/><rect x="6.5" y="3" width="7" height="4"/><rect x="2.5" y="9" width="2.5" height="4"/><rect x="6.5" y="9" width="7" height="4"/></svg></button>
     <i class="dock-sep dock-sep-rv"></i>
     <button type="button" data-solo="sibs" title="兄弟 rank" aria-label="兄弟 rank"><svg viewBox="0 0 16 16"><rect x="6" y="5.5" width="4" height="5"/><rect x="1.5" y="6.5" width="3" height="3" stroke-dasharray="1.2 1"/><rect x="11.5" y="6.5" width="3" height="3" stroke-dasharray="1.2 1"/></svg></button>
     <button type="button" data-solo="comm" title="Comm Links" aria-label="Comm Links"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.6"/><circle cx="13" cy="4" r="1.6"/><circle cx="13" cy="12" r="1.6"/><path d="M4.5 7.4 11.5 4.6M4.5 8.6l7 2.8"/></svg></button>

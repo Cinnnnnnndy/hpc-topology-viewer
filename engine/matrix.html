@@ -1146,10 +1146,10 @@ var COMM_DIMS = ['tp','cp','pp','dp','ep'];
    不持有字节、不被切，只占链路与时间。 */
 var PRIMS = [
   {id:'p2p', name:'P2P(Ring)', kind:'点对点', why:'send/recv 一对一：不是集合通信，而是集合原语的底座——ring AllReduce/AllGather 都由一串 P2P 接成'},
-  {id:'allgather', name:'AllGather', kind:'集合', why:'组内每张卡把自己的片给所有人 → 人人持全份'},
+  {id:'allgather', name:'AllGather', kind:'集合', why:'组内每张 NPU 把自己的片给所有人 → 人人持全份'},
   {id:'reducescatter', name:'ReduceScatter', kind:'集合', why:'求和后按片散开 → 人人持一片的和'},
   {id:'allreduce', name:'AllReduce', kind:'集合', why:'ReduceScatter + AllGather：人人持全份的和'},
-  {id:'alltoall', name:'All-to-All', kind:'集合', why:'每张卡给每张卡各发一份不同载荷 → 载荷不等（MoE 路由）'}
+  {id:'alltoall', name:'All-to-All', kind:'集合', why:'每张 NPU 给每张 NPU 各发一份不同载荷 → 载荷不等（MoE 路由）'}
 ];
 var COMMON = { tp:['allreduce','reducescatter','allgather'], cp:['p2p','alltoall','allgather'], pp:['p2p'], dp:['allreduce'], ep:['alltoall'] };
 
@@ -1700,7 +1700,7 @@ function ptoNotifyComm(){
 function commLit(d9){ return ui.commOn && ui.comm[d9] !== false; }
 function commLitN(){ return COMMK.reduce(function(a9, k9){ return a9 + (commLit(k9[0]) ? 1 : 0); }, 0); }
 /* 逐类开关的名录：维 · 按钮上的名字 · 这一维走的原语（提示语用） */
-var COMMK = [['tp','TP','AllGather(s→h) / Reduce-Scatter(h→s)：进出 TP 区的换轴器'],
+var COMMK = [['tp','TP','AllGather(s→h) / ReduceScatter(h→s)：进出 TP 区的换轴器'],
              ['cp','CP','Ring / Ulysses(All-to-All) / 朴素 AllGather：attention 要看到全序列'],
              ['ep','EP','All-to-All dispatch / combine：token 去专家那儿走一趟再回来'],
              ['pp','PP','P2P Send/Recv：段边界上只传激活（正向 H×4、反向 ∂H×4）'],
@@ -1749,7 +1749,7 @@ function derive(c){
       [{label:'world → '+D.moeMin, patch:{world:D.moeMin}}]);
     if(D.dpOk){
       D.plane = D.tp*D.cp*D.dp;
-      if(D.plane % (D.ep*D.etp) !== 0) err('plane_ep','(TP·CP·DP) % (EP·ETP) ≠ 0：stage 内平面 '+D.plane+' 张卡折不成 EP·ETP='+(D.ep*D.etp)+' 组（folding）。', []);
+      if(D.plane % (D.ep*D.etp) !== 0) err('plane_ep','(TP·CP·DP) % (EP·ETP) ≠ 0：stage 内平面 '+D.plane+' 张 NPU 折不成 EP·ETP='+(D.ep*D.etp)+' 组（folding）。', []);
     }
   }
   if(D.hidden % D.heads !== 0) D.warns.push('hidden % heads ≠ 0：headDim 非整数，按取整显示。');
@@ -1884,13 +1884,13 @@ function realOps(D, g){
 function blockComm(D, o){
   var id = String(o.id || ''), cut = o.cut;
   if(id === 'attn.core') return {dim:null, kind:'无', why:'无参算子（flash-attn）：没有权重要对齐，这一块不产生跨卡通信'};
-  if(cut === 'none')     return {dim:null, kind:'无', why:'复制块：每张卡逐字节相同，没有要对齐的东西'};
+  if(cut === 'none')     return {dim:null, kind:'无', why:'复制块：每张 NPU 逐字节相同，没有要对齐的东西'};
   if(cut === 'ep')       return {dim:'ep', kind:'All-to-All ×2',
     why:'桶切：token 先送到专家所在的卡（dispatch）、算完送回（combine），这一块的入口出口各一次'
         + (D.etp > 1 ? '；ETP=' + D.etp + '，桶内每个专家的 ffn 维还被再切一层，那一层是块内部的 TP 通信' : '；ETP=1，桶内每个专家是整份的，块内不再切')};
-  if(id === 'attn.out' || id === 'mlp.down') return {dim:'tp', kind:'AllReduce / Reduce-Scatter',
-    why:'行切：每片算出来的是**部分和**，不归约就是错的答案——所以通信恰好落在这一块的出口（开 SP 是 Reduce-Scatter，不开是 AllReduce）'};
-  if(id === 'lm_head')   return {dim:'tp', kind:'AllGather(logits)', why:'词表列切：各卡各拿一段 logits，算 loss 前要收齐'};
+  if(id === 'attn.out' || id === 'mlp.down') return {dim:'tp', kind:'AllReduce / ReduceScatter',
+    why:'行切：每片算出来的是**部分和**，不归约就是错的答案——所以通信恰好落在这一块的出口（开 SP 是 ReduceScatter，不开是 AllReduce）'};
+  if(id === 'lm_head')   return {dim:'tp', kind:'AllGather(logits)', why:'词表列切：各 NPU 各拿一段 logits，算 loss 前要收齐'};
   return {dim:null, kind:'无', why:'列切 / 头切：同一个张量沿 h 切开，每片各算各的、各拿一段结果，块这一级不通信——代价推到下游行切那一块的出口'};
 }
 function opBytes(D){ /* 单层各算子的每卡权重字节（bf16），供 V3 卡内解剖 & 读出 */
@@ -2073,7 +2073,7 @@ function zeroLv(){
   var z = parseInt(cfg.zero, 10);
   return (isFinite(z) && z >= 0 && z <= 3) ? z : 0;
 }
-var ZERO_NAME = ['关（各卡一份完整）', 'ZeRO-1 · 切优化器态', 'ZeRO-2 · 再切梯度', 'ZeRO-3 / FSDP · 连参数也切'];
+var ZERO_NAME = ['关（各 NPU 一份完整）', 'ZeRO-1 · 切优化器态', 'ZeRO-2 · 再切梯度', 'ZeRO-3 / FSDP · 连参数也切'];
 var ZERO_SHORT = ['ZeRO 关', 'ZeRO-1', 'ZeRO-2', 'ZeRO-3'];
 /* 这一档被沿 DP 域切成几份：1 = 没切（整份压在本卡上）。三处口径共用这一个函数，
    免得 memParts、读出卡、说明表各写一遍除法，往后改一处漏两处。 */
@@ -2136,13 +2136,13 @@ function zeroDiv(D, k){
    分片本身通信。合成一列的那一刻，这张图就开始把复制读成切分。 */
 var MEM_OBJ = {
   w:   {sib:['pp','tp','ep'],
-        comm:[{d:'tp', t:'AllGather / Reduce-Scatter · TP 换轴器'},
+        comm:[{d:'tp', t:'AllGather / ReduceScatter · TP 换轴器'},
               {d:'ep', t:'AllToAll · EP 分桶'}]},
   g:   {sib:['pp','tp','ep'], follow:'跟随权重的切法——同一份参数的同一份切分',
         comm:[{d:'dp', t:'梯度 AllReduce · DP 组（反向末尾一次）'}]},
   opt: {sib:['pp','tp','ep'], follow:'跟随权重的切法',
         comm:[],
-        silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。'},
+        silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本 NPU，就地更新。'},
   /* ZeRO-3 独有：权重的临时完整副本。它的兄弟轴与权重一样，通信却是 DP 方向的
      ——这正是「同一样东西，分片归属换了一根轴」最直白的一例。 */
   agw: {sib:['pp','tp','ep','dp'],
@@ -2152,7 +2152,7 @@ var MEM_OBJ = {
   act: {sib:['pp','cp'],
         comm:[{d:'pp', t:'P2P · 段→段传的就是它'},
               {d:'cp', t:'AllGather(KV) · CP 组（s 被切开，注意力要全局）'},
-              {d:'tp', t:'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'}]},
+              {d:'tp', t:'AllGather(s→h) / ReduceScatter(h→s) · TP=SP 换轴'}]},
   rsv: {sib:[], comm:[], silent:'不参与任何一把刀，真的不通信。'}
 };
 /* 权重带里每一块被哪把刀切。这本是 opBytes(D) 的 cut 字段，但那份要 D 才拿得到，
@@ -2174,8 +2174,8 @@ function zeroPatch(o, key){
   var sharded = (key === 'opt') || (key === 'g' && z >= 2) || (key === 'w' && z >= 3);
   if(!sharded) return o;
   var r = {sib:(o.sib||[]).concat(['dp']), comm:(o.comm||[]).slice(), follow:o.follow};
-  if(key === 'opt') r.comm.push({d:'dp', t:'（分片持有）步末只更新本卡那一段，不再整份复印'});
-  if(key === 'g')   r.comm = [{d:'dp', t:'梯度 ReduceScatter · DP 组（不再 AllReduce：只收本卡那一段）'}];
+  if(key === 'opt') r.comm.push({d:'dp', t:'（分片持有）步末只更新本 NPU 那一段，不再整份复印'});
+  if(key === 'g')   r.comm = [{d:'dp', t:'梯度 ReduceScatter · DP 组（不再 AllReduce：只收本 NPU 那一段）'}];
   if(key === 'w')   r.comm = r.comm.concat([{d:'dp', t:'参数 AllGather · DP 组（前向一次、反向一次，用毕丢弃）'}]);
   return r;
 }
@@ -2287,7 +2287,7 @@ function stateLife(D, k, t){
     if(t < 0.40) return '尚未产生';
     if(t < 0.80) return '反向逐层生成 · 累积';
     if(t < 0.86) return sharded ? 'ReduceScatter 中' : 'AllReduce 中';
-    if(t < 0.97) return sharded ? '本卡那一片（已规约）' : '完整（已规约）';
+    if(t < 0.97) return sharded ? '本 NPU 那一片（已规约）' : '完整（已规约）';
     return '清零';
   }
   if(k === 'opt')  return t > 0.86 ? '被读写更新' : '常驻整步 · 不动';
@@ -2681,7 +2681,7 @@ function renderDim(D){
 
   /* 该维没切开：给说明与一键预置，不硬画（DP-5） */
   if(size <= 1 || (dim==='ep' && !D.moe)){
-    var fix = dim==='cp' ? {id:'longcp', label:'载入「长序列 CP」预置'} : {id:'default128', label:'载入默认 128 卡（含 EP8）'};
+    var fix = dim==='cp' ? {id:'longcp', label:'载入「长序列 CP」预置'} : {id:'default128', label:'载入默认 128 NPU（含 EP8）'};
     $('stage').innerHTML = '<div class="pt-blocked"><div><b style="color:'+col+'">'+DIMN[dim]+' = '+size+'</b><br>'
       + '<span style="font-size:12.5px">当前配置里这一维没有发生切分——没有片、没有组内通信,也就没有可画的关系(宁缺毋误)。</span><br>'
       + '<button class="pb" data-act="preset" data-id="'+fix.id+'">'+fix.label+'</button></div></div>';
@@ -3000,7 +3000,7 @@ function renderDim(D){
       opHit.push('<rect x="'+x.toFixed(1)+'" y="'+R.op+'" width="'+Math.max(1,w).toFixed(1)+'" height="'+HR.op
         + '" style="fill:transparent;cursor:help"><title>'+esc(lbl
         + (isCut ? ' · 被 '+DIMN[dim]+' 沿 '+(o.axisName||o.axis||'—')+' 切 '+pieces+' 片'
-                   + (o.range ? '（本卡持 '+o.range[0]+'–'+o.range[1]+'）' : '')
+                   + (o.range ? '（本 NPU 持 '+o.range[0]+'–'+o.range[1]+'）' : '')
                    + (o.partial ? ' · 算出的是 partial，需归约' : '')
                  : (o.cut==='none' ? ' · 本维不切（各格相同）' : ' · 由别的刀切'))
         + (o.note ? ' —— '+o.note : ''))+'</title></rect>');
@@ -3044,7 +3044,7 @@ function renderDim(D){
        但「不切」值得用真图说——每个算子都完整地在，s 轴上变少的是流过它们的 token。 */
     opLane('cp');
     say(R.op+HR.op/2-2, '算子 — 权重完整（CP 只切激活的 s 轴）',
-        '每卡 token 少 1/'+size+' · 算子一个不缺');
+        '每 NPU token 少 1/'+size+' · 算子一个不缺');
   }
 
   /* ── 放大锥①：层 → 算子。样本层张开成整行——「算子行就是 L·liHi 的内部」。
@@ -3089,7 +3089,7 @@ function renderDim(D){
     parts.push(rect(kx0-1.2, R.ker-1.5, (kx1-kx0)+2.4, HR.ker+3, 'none', 'var(--pt-fg)', 1.2, 'pointer-events="none"'));
     var midX9 = Math.max(X0+70, Math.min(X0+MW-70, (src.hotX+src.hotW/2+kx0+(kx1-kx0)/2)/2));
     parts.push(txt(midX9, ky1-5, '⊕ '+(src.label.length>13?src.label.slice(0,12)+'…':src.label)
-      +((dim==='tp'||dim==='ep')?' 的本卡那片':'')+' → 这张卡的 kernel', 7.2, 'var(--pt-fg2)', 'middle',
+      +((dim==='tp'||dim==='ep')?' 的本 NPU 那片':'')+' → 这张 NPU 的 kernel', 7.2, 'var(--pt-fg2)', 'middle',
       'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6" pointer-events="none"'));
   })();
   say(R.ker+HR.ker/2-2, 'kernel — 永不跨柱（柱壁就是它的边界）',
@@ -3139,7 +3139,7 @@ function renderDim(D){
     var tx0 = sx(N)+gap/2, tw = X0+MW-tx0-gap;
     parts.push(rect(tx0, R.card, tw, HR.card, mix('var(--pt-fg)',3), 'var(--pt-bds)', .8, 'stroke-dasharray="4 3" pointer-events="none"'));
     if(tw>50){
-      parts.push(txt(tx0+tw/2, R.card+22, '+'+tail+' 份 · '+fmt(tail*groupsPer)+' 张卡', 8, 'var(--pt-fg2)', 'middle', 'font-weight="700" pointer-events="none"'));
+      parts.push(txt(tx0+tw/2, R.card+22, '+'+tail+' 份 · '+fmt(tail*groupsPer)+' 张 NPU', 8, 'var(--pt-fg2)', 'middle', 'font-weight="700" pointer-events="none"'));
       parts.push(txt(tx0+tw/2, R.card+34, '同构，宽度按比例', 7.2, 'var(--pt-fg3)', 'middle', 'pointer-events="none"'));
     }
   }
@@ -3229,8 +3229,8 @@ function renderDim(D){
   parts.push('<g transform="rotate(-90 '+(X0-156)+' '+((R.net+R.ker)/2)+')">'+txt(X0-156, (R.net+R.ker)/2, '粒度（坐标轴 §15）', 8.4, 'var(--pt-fg2)', 'middle', 'font-weight="700"')+'</g>');
 
   /* ── 全量对账 + 尺寸纪律（页脚一行，与切分链同一句纪律） ── */
-  parts.push(txtI(X0+MW, H-30, '全量 '+fmt(D.world)+' 卡 = '+size+' 份 × '+fmt(groupsPer)+' 张',
-    '全量 '+fmt(D.world)+' 卡 = '+size+' 份（'+DIMN[dim]+'）× 每份 '+fmt(groupsPer)+' 张同构卡'
+  parts.push(txtI(X0+MW, H-30, '全量 '+fmt(D.world)+' NPU = '+size+' 份 × '+fmt(groupsPer)+' 张',
+    '全量 '+fmt(D.world)+' NPU = '+size+' 份（'+DIMN[dim]+'）× 每份 '+fmt(groupsPer)+' 张同构 NPU'
     + (tail>0 ? ' · 逐柱画了前 '+N+' 份，余 '+tail+' 份在压缩带里（宽度按比例，未省面积）' : ' · '+size+' 份全部逐柱画出'),
     8.8, 'var(--pt-fg2)', 'end', 'font-weight="600"'));
   parts.push(txtI(X0+MW, H-16, '尺寸纪律',
@@ -3271,7 +3271,7 @@ var KNIVES = [
   {k:'dp',  n:'DP 复印',  s:'复印整网 —— 模型不切、每份等大；同一把刀真切输入的 b 轴'},
   {k:'pp',  n:'PP 切段',  s:'切层序 ℓ —— 每一份复制体都被切开（面积守恒），段与段之间掰开'},
   {k:'cp',  n:'CP 切序列',s:'切 s 轴 —— 切的是输入不是整网：权重持有量一点不变'},
-  {k:'tp',  n:'TP 锯片',  s:'锯算子 h 轴 —— 刀口在算子内部，非本卡的片打成斜纹'},
+  {k:'tp',  n:'TP 锯片',  s:'锯算子 h 轴 —— 刀口在算子内部，非本 NPU 的片打成斜纹'},
   {k:'ep',  n:'EP 分桶',  s:'重组专家 e 轴 —— 不是新轴，是对同一批卡的重解释'}
 ];
 /* 序号按**本配置里真正落下的刀**连号——CP/EP 被配置过滤掉时不该在编号上留个洞 */
@@ -5137,7 +5137,7 @@ function netScene(D, g, box, step){
           var mtTP9 = loadTxt9('tp', liRep9, 'attention_reduce_scatter', 'tp-ag-rs');
           /* 浮标签只留「这是什么通信、发生在哪一组」，读数从副标题里搬到线上——
              同一份数字写两处，看图的人得先判断这两处是不是同一个数才能往下读。 */
-          arcLab9(mTP, 'TP·AG/RS', 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内 · PP'+pF+' · L'+l0TP9+'–L'+l1TP9+' · TP 组 ×'+D.tp+' · '+mtTP9, VC.tp);
+          arcLab9(mTP, 'TP·AG/RS', 'AllGather(s→h) / ReduceScatter(h→s) · TP=SP 组内 · PP'+pF+' · L'+l0TP9+'–L'+l1TP9+' · TP 组 ×'+D.tp+' · '+mtTP9, VC.tp);
         }
       }
     }
@@ -5194,7 +5194,7 @@ function netScene(D, g, box, step){
         if(mEP){
           var liRepEP9 = Math.min(D.layers - 1, Math.max(liRep9, denseTop));
           var mtEP9 = loadTxt9('ep', liRepEP9, 'moe_all_to_all_dispatch', 'ep-a2a');
-          arcLab9([mEP[0], mEP[1] + 32], 'EP·A2A', 'AllToAll ×2 · EP 组（token 去而复返） · 对端 '+epN9+' 张卡 · L'+liRepEP9+' · '+mtEP9, VC.ep);
+          arcLab9([mEP[0], mEP[1] + 32], 'EP·A2A', 'AllToAll ×2 · EP 组（token 去而复返） · 对端 '+epN9+' 张 NPU · L'+liRepEP9+' · '+mtEP9, VC.ep);
         }
       }
     }
@@ -6190,8 +6190,8 @@ function netScene(D, g, box, step){
       var px9 = 1e9, py9 = 1e9;
       PF9.forEach(function(q9){ px9 = Math.min(px9, q9[0]); py9 = Math.min(py9, q9[1]); });
       var pxM9 = 0; PF9.forEach(function(q9){ pxM9 = Math.max(pxM9, q9[0]); });
-      axLab([(px9+pxM9)/2, py9 - 14], '超节点 '+pd9,
-            (pn1-pn0+1)*D.perNode+' 卡 · UB 边界', FABRIC9.ub.col, true);
+      axLab([(px9+pxM9)/2, py9 - 14], 'SuperPoD '+pd9,
+            (pn1-pn0+1)*D.perNode+' NPU · UB 边界', FABRIC9.ub.col, true);
     }
   }
   /* 同一个道理：drawCommArcs 的弧线锚在「列」上（offC/wMid 都是列号/段号算出来的
@@ -6275,7 +6275,7 @@ function netScene(D, g, box, step){
           归约（值变、形不变 → 副本之间）。同一根线两件事，形状也不是同一个形状。 */
        xf: memSel9 === 'act' ? 'ag' : 'ar', grain: memSel9 === 'act' ? '分块之间' : '副本之间',
        code: memSel9 === 'act' ? 'TP·AG/RS' : 'TP·AR',
-       label: memSel9 === 'act' ? 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'
+       label: memSel9 === 'act' ? 'AllGather(s→h) / ReduceScatter(h→s) · TP=SP 换轴'
                                 : 'TP AllReduce · 组内同步',
        load: commLoad9(D, 'tp', pF9c), ms: commMsTxt(D, 'attention_reduce_scatter', 'tp-ag-rs', liRep9c)},
       /* CP：s 被切成 cp 段，算全局注意力得把别人那几段的 KV 取回来。
@@ -6292,7 +6292,7 @@ function netScene(D, g, box, step){
           而是 ReduceScatter 成各留一段。画布上必须跟着变，否则它和读出卡打架。 */
        xf: D.zero >= 2 ? 'rs' : 'ar', grain: D.zero >= 2 ? '副本 → 分块' : '副本之间',
        code: D.zero >= 2 ? 'DP·RS' : 'DP·AR',
-       label: D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）' : '梯度 AllReduce · DP 组（反向）', load: commLoad9(D, 'dp', pF9c), ms: commMsTxt(D, null, 'dp-ar-grad', liRep9c)},
+       label: D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本 NPU 那一段）' : '梯度 AllReduce · DP 组（反向）', load: commLoad9(D, 'dp', pF9c), ms: commMsTxt(D, null, 'dp-ar-grad', liRep9c)},
       {dim:'ep', on: cw9.ep && commLit('ep') && (!ui.netOff || physSel9) && cutEP && D.moe && D.ep > 1, prim:'alltoall',
        xf:'a2a', grain:'分块之间 · 重排', code:'EP·A2A',
        label:'AllToAll · EP 组（token 去而复返）', load: commLoad9(D, 'ep', pF9c), ms: commMsTxt(D, 'moe_all_to_all_dispatch', 'ep-a2a', liRepEP9c)}
@@ -6403,7 +6403,7 @@ function netScene(D, g, box, step){
       var tip9 = cs9.label
         + (ld9 ? ' · 载荷 ' + ld9.txt + (ld9.sum ? '（' + ld9.sum + '）' : '') + ' —— ' + ld9.how : '')
         + ' · 载体 ' + fb9.name + (fb9.bw ? '（' + fb9.bw + '）' : '')
-        + '：' + (pods9 > 1 ? '这一组横跨 ' + pods9 + ' 个超节点，' : '组内 ' + mem9.length + ' 张卡同在一个超节点，')
+        + '：' + (pods9 > 1 ? '这一组横跨 ' + pods9 + ' 个 SuperPoD，' : '组内 ' + mem9.length + ' 张 NPU 同在一个 SuperPoD，')
         + fb9.how
         + (lbMs9 != null
              ? ' · 传输下界 ≥' + msTxt9fmt(lbMs9) + '（' + ld9.txt.split(' ')[0] + ' ÷ ' + fb9.bw
@@ -6426,7 +6426,7 @@ function netScene(D, g, box, step){
          把 0.17ms 钉在这儿等于把一个时间**区间**压成一个点，还不说它落在前向、
          反向还是步末。耗时留给「时序 / 影响」两档（cgrain=time / cost）。 */
       var code9 = (ld9 && ld9.txt) || cs9.code;
-      if(cgFab9) code9 = fb9.short + (pods9 > 1 ? ' 跨' + pods9 + '超节点' : '');
+      if(cgFab9) code9 = fb9.short + (pods9 > 1 ? ' 跨' + pods9 + 'SuperPoD' : '');
       else if(cgTime9) code9 = DIMN[cs9.dim] + '·' + WHENC9;
       else if(cgCost9) code9 = cs9.dim === 'pp' ? ('气泡 ' + Math.round(D.bubble*100) + '%') : (msTxt9 || cs9.code);
       /* 载体档在跨超节点时把「慢多少」也写上：这一条是这一档存在的理由。 */
@@ -6492,8 +6492,8 @@ function netScene(D, g, box, step){
           hit.push('<circle cx="'+mx8.toFixed(1)+'" cy="'+my8.toFixed(1)+'" r="7" style="fill:transparent;cursor:help"><title>'+esc(tip8||'')+'</title></circle>');
         }
       }
-      var TIP_F9 = '前向：激活 A × 权重 W → out。读的是这张卡上的权重，没出卡。';
-      var TIP_B9 = '反向：∂L/∂out × 激活 A → 梯度 ∇W。梯度由本卡的激活生出来，也没出卡。';
+      var TIP_F9 = '前向：激活 A × 权重 W → out。读的是这张 NPU 上的权重，没出卡。';
+      var TIP_B9 = '反向：∂L/∂out × 激活 A → 梯度 ∇W。梯度由本 NPU 的激活生出来，也没出卡。';
       var TIP_U9 = '更新：优化器态 + 梯度 ∇W → 下一步的 W。三条都只在 HBM ↔ 片上缓冲 ↔ 计算单元之间搬运，归属不变，不跨通信域。';
       if(ui.compFill && focusLayerPts9.length > 1){
         /* 沿**层**走：前向从第一层到最后一层（本卡这一段的 12 层就摆在那儿），
@@ -6521,7 +6521,7 @@ function netScene(D, g, box, step){
         poly9(pl9, null, true);
         poly9(up9.slice().reverse(), '4 3', true);
         var n9 = pl9.length;
-        badge9(pl9[Math.max(0, Math.floor(n9*0.22))], '前', TIP_F9 + '（沿本卡这一段的层逐层走一遍）');
+        badge9(pl9[Math.max(0, Math.floor(n9*0.22))], '前', TIP_F9 + '（沿本 NPU 这一段的层逐层走一遍）');
         badge9(up9[Math.min(n9-1, Math.floor(n9*0.72))], '反', TIP_B9 + '（沿同一串层折回）');
         badge9([pl9[n9-1][0] + 12, pl9[n9-1][1] + 8], '更', TIP_U9);
       } else if(ui.netOff && bandAnchor9.w){
@@ -6633,7 +6633,7 @@ function netScene(D, g, box, step){
           if(mF9 && mF9.length > 1){ fbF9 = fabricOfGroup(mF9, D); pdF9 = podSpan9(mF9, D); }
         }
         if(fbF9){
-          commChip([at9[0], at9[1] - 10], fbF9.short + (pdF9 > 1 ? ' 跨' + pdF9 + '超节点' : ''), fbF9.col,
+          commChip([at9[0], at9[1] - 10], fbF9.short + (pdF9 > 1 ? ' 跨' + pdF9 + 'SuperPoD' : ''), fbF9.col,
             text9 + ' · 载体 ' + fbF9.name + '（' + fbF9.bw + '）：' + fbF9.how
             + (metric9 ? ' · ' + metric9 : ''), zoomF9);
           return;
@@ -6648,7 +6648,7 @@ function netScene(D, g, box, step){
       var liRepFloor9 = Math.min(D.layers - 1, co.p*lps + (lps >> 1));
       if(wantTP9){
         var atTP9 = floorBand(groupMembers('tp', g, D).filter(function(r9){ return r9 !== g; }), VC.tp, null, 1.6, 'bi');
-        floorLab(atTP9, 'TP·AG/RS', 'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 组内', VC.tp,
+        floorLab(atTP9, 'TP·AG/RS', 'AllGather(s→h) / ReduceScatter(h→s) · TP=SP 组内', VC.tp,
           loadTxt9('tp', liRepFloor9, 'attention_reduce_scatter', 'tp-ag-rs'),
           'ag', '分块之间', 'tp');
       }
@@ -6680,7 +6680,7 @@ function netScene(D, g, box, step){
            它就是这一次归约在显存上占的那块 fp32 缓冲，所以标签跟着换个说法，
            线还是同一根，不另画一层假装有两次。 */
         var atDP9 = floorBand(groupMembers('dp', g, D).filter(function(r9){ return r9 !== g; }), VC.dp, '4 2', 1.4, 'back');
-        floorLab(atDP9, (D.zero >= 2 ? 'DP·RS' : 'DP·AR'), (D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本卡那一段）'
+        floorLab(atDP9, (D.zero >= 2 ? 'DP·RS' : 'DP·AR'), (D.zero >= 2 ? '梯度 ReduceScatter · DP 组（只收本 NPU 那一段）'
                         : (memSel9 === 'otmp' ? '梯度 AllReduce · DP 组（这一档就是它的 fp32 缓冲）'
                                               : '梯度 AllReduce · DP 组（反向）')), VC.dp,
           loadTxt9('dp', liRepFloor9, null, 'dp-ar-grad'),
@@ -6837,7 +6837,7 @@ function netScene(D, g, box, step){
      「第 ℓ 层在哪张卡上」是这一屏最容易被说成单数的地方——数字写出来就没得含糊。 */
   if(revLi >= 0 && IXg){
     var hv9 = layerHome(D, revLi);
-    axLab(P(0.5, AR + 0.17, wOf(revLi), offAt(stOf(revLi))), 'L'+revLi+' · '+fmt(hv9.tot)+' 张卡',
+    axLab(P(0.5, AR + 0.17, wOf(revLi), offAt(stOf(revLi))), 'L'+revLi+' · '+fmt(hv9.tot)+' 张 NPU',
           hv9.frag > 1 ? ('各持 1/'+hv9.frag+'，无一张完整') : '每张持有完整的它',
           VC.dp, true, 7.4);
   }
@@ -6943,13 +6943,13 @@ function renderStory(D){
   parts.push(txt(28+bw/2, 44.5, act.once?'只做一次':'每个 micro-batch 重来', 8, act.once?VC.pp:VC.dp, 'middle', 'font-weight="800"'));
   parts.push(txt(866, 26, '跟住 global_rank = '+g, 11, 'var(--pt-fg)', 'end', 'font-weight="800"'));
   parts.push(txt(866, 40, (A===0 ? '门牌号还没算出来 —— 第 1 幕才有　' : '(pp'+co.p+' · dp'+co.d+' · cp'+co.c+' · tp'+co.t+(me?' · ep'+me.ep:'')+')　')
-    + fmt(D.world)+' 卡 = TP'+D.tp+'·CP'+D.cp+'·PP'+D.pp+'·DP'+D.dp, 8, 'var(--pt-fg3)', 'end'));
+    + fmt(D.world)+' NPU = TP'+D.tp+'·CP'+D.cp+'·PP'+D.pp+'·DP'+D.dp, 8, 'var(--pt-fg3)', 'end'));
   var narr = [];
 
   if(A===0){
     /* ── 第 0 幕 · 开机：唯一的差别是一个数字 ── */
     var L0 = lattice(110, 196, 750, 152, {plain:true, tint:function(gg,hot){ return hot ? 'var(--pt-fg)' : mix('var(--pt-fg)', 16); }});
-    parts.push(txtI(485, 96, '启动器拉起 '+fmt(D.world)+' 个进程，各绑一张卡',
+    parts.push(txtI(485, 96, '启动器拉起 '+fmt(D.world)+' 个进程，各绑一张 NPU',
       '代码完全相同。此刻它们一模一样：同一份代码、同一份权重定义、同一份配置——全图同色不是偷懒，是这一幕的事实。',
       11, 'var(--pt-fg)', 'middle', 'font-weight="700"'));
     parts.push('<g pointer-events="none">'+L0.body+'</g>');
@@ -7044,8 +7044,8 @@ function renderStory(D){
       parts.push(txt(48, y3, q.n+' {'+lst+'}　沿 '+q.ax+' 轴的一根棱', 8.6, VC[q.d], 'start', 'font-weight="700"'));
       parts.push(txt(48, y3+10, esc(q.why), 7.4, 'var(--pt-fg3)', 'start'));
     });
-    parts.push(txt(28, 452+GRP.length*24+10, '换个 order，它算出的就是另一组 —— 组是算出来的，不是配出来的。点棱上任意一格换一张卡跟。', 9, 'var(--pt-fg)', 'start', 'font-weight="700"'));
-    narr = ['门牌 = 坐标，所以三个组是穿过这张卡的三根「正交」棱：TP 沿 x（同 stage 同副本）· PP 沿 y（同副本同片）· DP 沿 z（同 stage 同片）。',
+    parts.push(txt(28, 452+GRP.length*24+10, '换个 order，它算出的就是另一组 —— 组是算出来的，不是配出来的。点棱上任意一格换一张 NPU 跟。', 9, 'var(--pt-fg)', 'start', 'font-weight="700"'));
+    narr = ['门牌 = 坐标，所以三个组是穿过这张 NPU 的三根「正交」棱：TP 沿 x（同 stage 同副本）· PP 沿 y（同副本同片）· DP 沿 z（同 stage 同片）。',
             '平铺格子里得靠「相邻 / 同列 / 等间隔」去解码，点阵里一眼可辨——这就是这一幕该是魔方而不是格子的原因。'];
   }
 
@@ -7064,7 +7064,7 @@ function renderStory(D){
     parts.push(txt(DKX, DKY+30, 'L0', 7.4, 'var(--pt-fg3)', 'start'));
     parts.push(txt(DKX+(D.layers-1)*sx+DW, DKY-(D.layers-1)*sy-7, 'L'+(D.layers-1), 7.4, 'var(--pt-fg3)', 'end'));
     parts.push(txt(DKX+l0*sx-6, DKY-l0*sy+DH+3, 'L'+l0+'–L'+l1, 9.6, VC.pp, 'end', 'font-weight="800"'));
-    parts.push(txt(DKX, 400, '实心 = 这张卡真的建了的 '+lps+' 层', 8, VC.pp, 'start', 'font-weight="700"'));
+    parts.push(txt(DKX, 400, '实心 = 这张 NPU 真的建了的 '+lps+' 层', 8, VC.pp, 'start', 'font-weight="700"'));
     parts.push(txt(DKX, 412, '虚线 = 只存在于代码里的 '+(D.layers-lps)+' 层', 8, 'var(--pt-fg3)', 'start'));
     parts.push(txt(DKX, 434, '整网从头到尾只存在于代码里，', 8.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
     parts.push(txt(DKX, 446, '物理上从来没有在任何一处', 8.6, 'var(--pt-fg)', 'start', 'font-weight="800"'));
@@ -7073,7 +7073,7 @@ function renderStory(D){
     parts.push(txt(DKX, 494, '复用 TP 组，把 norm / 逐元素沿 seq', 7.4, 'var(--pt-fg3)', 'start'));
     parts.push(txt(DKX, 504, '也切开——图上标 SP，借 TP 的色。', 7.4, 'var(--pt-fg3)', 'start'));
     parts.push(txt(DKX, 514, 'TP 区 ⇄ SP 区之间那两条虚线，', 7.4, 'var(--pt-fg3)', 'start'));
-    parts.push(txt(DKX, 524, '就是 AllGather / Reduce-Scatter。', 7.4, 'var(--pt-fg3)', 'start'));
+    parts.push(txt(DKX, 524, '就是 AllGather / ReduceScatter。', 7.4, 'var(--pt-fg3)', 'start'));
     /* 放大一层：真图的真节点、真层级、真连边、真切分标注 */
     var GX = 340, GY = 66, GW = 300, GH = 474;
     parts.push(rc(GX-6, GY-6, GW+12, GH+12, 'none', 'var(--pt-bd)', 1, 'rx="5"'));
@@ -7103,7 +7103,7 @@ function renderStory(D){
       parts.push(txt(RX2+28, y4+23, esc(q.s), 7.6, 'var(--pt-fg3)', 'start'));
     });
     parts.push(txt(RX2, 214+CUTS.length*38+16, '通信在图里是动作：一条线，不是体 —— 它不持有字节、不被切，', 7.6, 'var(--pt-fg2)', 'start'));
-    parts.push(txt(RX2, 214+CUTS.length*38+27, '只占链路与时间。左边真图里的 AllGather / Reduce-Scatter 就是这么画的。', 7.6, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(RX2, 214+CUTS.length*38+27, '只占链路与时间。左边真图里的 AllGather / ReduceScatter 就是这么画的。', 7.6, 'var(--pt-fg2)', 'start'));
     narr = ['左边那叠板是 ℓ 轴的真相：'+D.layers+' 层里只有 '+lps+' 层是实心的。中间是把其中一层放大到真图——节点、层级、连边、切分标注全部取自 openPangu 真图与它的切分表，不是示意。',
             '真图是 MoE 版；本配置 experts='+D.experts+(D.moe?'，所以 MoE 分支照常实例化。':'，所以 MoE 分支在图上标成「不实例化」，不假装它存在。')];
   }
@@ -7154,15 +7154,15 @@ function renderStory(D){
       parts.push(txt(BX+250, y5, esc(q.s), 8.2, 'var(--pt-fg2)', 'start'));
     });
     narr = ['这一幕每个 micro-batch 都重来：权重那一份是第 2 幕冻结好的，token 这一份每步都换。',
-            'GA 与 DP 的区别常被混：DP 是空间上分给别的卡，GA 是同一张卡在时间上分批攒——所以 GA 不增加并行度，只降瞬时激活。'];
+            'GA 与 DP 的区别常被混：DP 是空间上分给别的卡，GA 是同一张 NPU 在时间上分批攒——所以 GA 不增加并行度，只降瞬时激活。'];
   }
 
   if(A===4){
     /* ── 第 4 幕 · 开算：两条链唯一的交点在 kernel ── */
     var CX = 120, CX2 = 620, CW2 = 180;
-    var LOGI = [{t:'整网', s:D.layers+' 层的图'}, {t:'层 ℓ', s:'本卡 L'+l0+'–L'+l1},
+    var LOGI = [{t:'整网', s:D.layers+' 层的图'}, {t:'层 ℓ', s:'本 NPU L'+l0+'–L'+l1},
                 {t:'算子', s:'MatMul · Softmax'}, {t:'kernel', s:'挑实现 + 融合 + tiling', joint:true}];
-    var PHYS = [{t:'集群', s:'world_size '+fmt(D.world)+' 张卡'}, {t:'卡', s:'显存 + 计算单元 + 流'},
+    var PHYS = [{t:'集群', s:'world_size '+fmt(D.world)+' 张 NPU'}, {t:'卡', s:'显存 + 计算单元 + 流'},
                 {t:'流', s:'时间容器（kernel 排队）'}, {t:'kernel', s:'两条链在这里碰头', joint:true}];
     parts.push(txt(CX+CW2/2, 78, '逻辑侧（越往下越细）', 10, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
     parts.push(txt(CX2+CW2/2, 78, '物理侧（越往下越细）', 10, 'var(--pt-fg2)', 'middle', 'font-weight="700"'));
@@ -7238,7 +7238,7 @@ function renderStory(D){
     });
     var LY9 = EY + FLOW.length*30 + 14;
     parts.push(rc(28, LY9, 818, 44, mix(VC.dp,6), VC.dp, 1.2, 'rx="5"'));
-    parts.push(txt(42, LY9+18, D.ga+' 批的前向与反向都走完之后，它才和 DP 组的其他 '+(D.dp-1)+' 张卡做这个 step 唯一的一次梯度 AllReduce', 9.6, VC.dp, 'start', 'font-weight="800"'));
+    parts.push(txt(42, LY9+18, D.ga+' 批的前向与反向都走完之后，它才和 DP 组的其他 '+(D.dp-1)+' 张 NPU 做这个 step 唯一的一次梯度 AllReduce', 9.6, VC.dp, 'start', 'font-weight="800"'));
     parts.push(txt(42, LY9+34, '参数更新 → 回到第 3 幕重来。第 0/1/2 幕不再执行 —— 这就是「只做一次」与「每 micro-batch」的分界。', 8.4, 'var(--pt-fg2)', 'start'));
     narr = ['AllReduce 把 '+D.dp+' 份梯度平均回来，使 '+D.dp+' 份复印件下一步仍逐字节相同 —— 复印必须靠这一次同步来维持。',
             '一个 step = 1 次第 3–5 幕的循环 × '+D.ga+' 个 μbatch + 1 次 AllReduce + 1 次参数更新。'];
@@ -7300,7 +7300,7 @@ var EXTRA_NODES = [
    x:1575, y:115, width:270, height:66, at:'head',
    by:[{dim:'dp', axis:'batch'}, {dim:'cp', axis:'seq'}]},
   /* ── 输出段：LM Head 之后、Logits 之前的那次归约 ── */
-  {id:'logits_allgather', label:'Logits All-Gather', kind:'op', parent:'model-core', colorKey:'opv:comm',
+  {id:'logits_allgather', label:'Logits AllGather', kind:'op', parent:'model-core', colorKey:'opv:comm',
    x:935, y:3693, width:480, height:34, at:'tail',
    by:[{dim:'tp', axis:'vocab'}]},
   /* ── MTP 尾巴：真图把它收成一个 collapsed module，这里按 3d-deck 展开成 5 步 ── */
@@ -7419,16 +7419,16 @@ function physOf(r9, D){
 var UB_TIERS9 = [
   {k:'node', name:'同 node',        bps:196e9, how:'同一块板上的卡，板载 UB 交换芯片直连'},
   {k:'rack', name:'同机柜',          bps:196e9, how:'板间，经机柜内 UB 交换'},
-  {k:'pod',  name:'跨机柜 · 同超节点', bps:196e9, how:'机架间，经通信柜的 UB 交换'}
+  {k:'pod',  name:'跨机柜 · 同 SuperPoD', bps:196e9, how:'机架间，经通信柜的 UB 交换'}
 ];
 var FABRIC9 = {
   local: {id:'local', name:'片内',  short:'片内',  col:'var(--pt-fg3)', bw:null, bps:null,
-          how:'同一张卡内部，不出卡'},
+          how:'同一张 NPU 内部，不出卡'},
   ub:    {id:'ub',    name:'UB 平面', short:'UB',   col:'#0ea5b7',       bw:'196 GB/s 单向/卡', bps:196e9,
-          how:'超节点内非阻塞全互联（灵衢 UnifiedBus）'},
+          how:'SuperPoD 内非阻塞全互联（灵衢 UnifiedBus）'},
   /* 400 Gbps = 50 GB/s：比 UB 低约四倍，是真正的换挡点。 */
   roce:  {id:'roce',  name:'RDMA 平面', short:'RoCE', col:'#e0562b',     bw:'400 Gbps/卡', bps:50e9,
-          how:'跨超节点 scale-out，走 RoCE'}
+          how:'跨 SuperPoD scale-out，走 RoCE'}
 };
 /* 两张卡之间：先判平面（UB / RoCE），UB 再判它落在哪一档。返回的是一个**新对象**，
    不要改 FABRIC9 上那三个原型——它们被多处共用。 */
@@ -7507,7 +7507,7 @@ function commLoad9(D, dim, ppRank){
     pp: {bytes: actB, per: '/μb',
          how: '段边界只传激活；每个 micro-batch 一次，共 ' + Math.max(0, D.pp-1) + ' 处边界'},
     dp: {bytes: 2 * paramsPerCard(D, ppRank || 0), per: '/步',
-         how: '本卡梯度 bf16 全量 = 2×参数量；步末一次，层内不发生'},
+         how: '本 NPU 梯度 bf16 全量 = 2×参数量；步末一次，层内不发生'},
     cp: {bytes: null, per: '/跳', txt: '每跳一块 KV',
          how: '环上逐跳取回一块 KV，块大小取决于 kv 头数与切法——不给数，宁缺毋误'},
     ep: {bytes: null, per: '×2/MoE 层', txt: '各边不等',
@@ -8216,8 +8216,8 @@ function renderSolidMap(D){
     {k:'ten', y:484, t:'张量',      s:'权重 · 激活值'}
   ];
   var PHY = [
-    {k:'clu',  y:118, t:'集群',        s:'world_size '+fmt(D.world)+' 张卡'},
-    {k:'mac',  y:202, t:'机',          s:PER+' 卡 · 机内高带宽 · 共 '+fmt(MACH)+' 台'},
+    {k:'clu',  y:118, t:'集群',        s:'world_size '+fmt(D.world)+' 张 NPU'},
+    {k:'mac',  y:202, t:'机',          s:PER+' NPU · 机内高带宽 · 共 '+fmt(MACH)+' 台'},
     {k:'card', y:352, t:'卡',          s:'显存 + 计算单元 + 流', big:true},
     {k:'unit', y:474, t:'计算单元',    s:'矩阵 + 向量单元'},
     {k:'buf',  y:552, t:'片上 buffer', s:'各级缓存'}
@@ -8277,7 +8277,7 @@ function renderSolidMap(D){
   }
   parts.push(txt(PX0-8, cy+2, '卡', 11, 'var(--pt-fg)', 'end', 'font-weight="800"'));
   parts.push(txt(PX0-8, cy+14, '显存+计算单元+流', 6.6, 'var(--pt-fg3)', 'end'));
-  parts.push(txt(PX0+CW0+CDX+8, cy-CDY+2, fmt(MACH)+' 台机 × '+PER+' 卡', 7.4, 'var(--pt-fg3)', 'start'));
+  parts.push(txt(PX0+CW0+CDX+8, cy-CDY+2, fmt(MACH)+' 台机 × '+PER+' NPU', 7.4, 'var(--pt-fg3)', 'start'));
   parts.push(txt(PX0+CW0+CDX+8, cy-CDY+12, '= '+fmt(D.world)+' 张（全画）', 7.4, 'var(--pt-fg3)', 'start'));
   if(tiny) parts.push(txt(PX0, cy+CTH+16, fmt(D.world)+' 张全画出来了，但格子已细到点不动 —— 点选请用顶栏的「选中卡」输入框', 7, 'var(--pt-fg3)', 'start'));
   /* ── 七条映射：四条并行的全部收在「卡」那一点 ── */
@@ -8307,16 +8307,16 @@ function renderSolidMap(D){
   var VY = 572;
   parts.push(txt(36, VY, '把「卡」画成整个平面，这两条就验得了：', 9, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   parts.push(ln([36, VY+13], [48, VY+13], 'stroke:'+VC.tp+';stroke-width:3.4'));
-  parts.push(txt(54, VY+16, 'TP 分片必须机内：本卡 TP 组 '+tpM.length+' 张 → '
+  parts.push(txt(54, VY+16, 'TP 分片必须机内：本 NPU TP 组 '+tpM.length+' 张 → '
     + (tpIn ? '同 1 台机 ✓' : '跨 '+Object.keys(tpMach).length+' 台机 ✗ 违反约束'), 8.4, tpIn?VC.tp:'var(--pt-danger)', 'start', 'font-weight="700"'));
   parts.push(ln([36, VY+28], [48, VY+28], 'stroke:'+VC.pp+';stroke-width:3.4'));
-  parts.push(txt(54, VY+31, 'PP 划分可跨机：本卡 PP 链 '+ppM.length+' 张 → 跨 '+Object.keys(ppMach).length+' 台机'
+  parts.push(txt(54, VY+31, 'PP 划分可跨机：本 NPU PP 链 '+ppM.length+' 张 → 跨 '+Object.keys(ppMach).length+' 台机'
     + (Object.keys(ppMach).length>1 ? '（本来就该跨）' : '（恰好同机）'), 8.4, VC.pp, 'start', 'font-weight="700"'));
-  parts.push(txtI(54, VY+43, '机 = '+PER+' 卡是拓扑假设',
+  parts.push(txtI(54, VY+43, '机 = '+PER+' NPU 是拓扑假设',
     'FIG 09 口径，不由并行配置推出 —— 换机器规格，上面那两条结论会变。', 7.2, 'var(--pt-fg3)', 'start'));
   parts.push(txtI(36, H-24, '怎么读这一屏',
     '连线的斜度就是「逻辑侧第 N 级 ≠ 物理侧第 N 级」。容器（板）有体积，机制（框）是扁的——参照系里只有卡与流两个容器。'
-    + '另一个问题「这张卡到底装了哪一块」由第二视角『交集腔』回答：四条梁交出来的那个小长方体就是它。',
+    + '另一个问题「这张 NPU 到底装了哪一块」由第二视角『交集腔』回答：四条梁交出来的那个小长方体就是它。',
     8.4, 'var(--pt-fg)', 'start', 'font-weight="700"'));
 
   $('stage').innerHTML = '<svg viewBox="0 0 1080 '+H+'" preserveAspectRatio="xMidYMid meet">'+defsSVG()
@@ -8468,8 +8468,8 @@ function renderSolidCav(D){
   }
 
   /* ═══ 抬头 ═══ */
-  parts.push(txt(600, 28, '一张卡 = 各轴区间的交集，不是缩小的整网', 13, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(600, 44, '每把刀是一整片板，切穿整只盒子；三片板相交剁出一个小长方体 —— 体积 ∶ 全盒 = 这张卡的持有占比', 9, 'var(--pt-fg2)'));
+  parts.push(txt(600, 28, '一张 NPU = 各轴区间的交集，不是缩小的整网', 13, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
+  parts.push(txt(600, 44, '每把刀是一整片板，切穿整只盒子；三片板相交剁出一个小长方体 —— 体积 ∶ 全盒 = 这张 NPU 的持有占比', 9, 'var(--pt-fg2)'));
 
   /* ═══ 盒① 权重体：ℓ × h × e ═══ */
   rcx = BW/2; rcy = BH/2; rcz = BD1/2;
@@ -8488,7 +8488,7 @@ function renderSolidCav(D){
   parts.push('<g transform="translate('+TX1+','+TY+')">'+b1.body+'</g>');
   hits.push('<g transform="translate('+TX1+','+TY+')">'+b1.hit+'</g>');
   parts.push(txt(TX1-4, 92, '① 权重体 · 索引空间 '+(D.moe?'ℓ × h × e（三轴）':'ℓ × h（两轴，无 MoE）'), 11, 'var(--pt-fg)', 'middle', 'font-weight="800"'));
-  parts.push(txt(TX1-4, 105, '被剁成 '+D.pp+'×'+D.tp+(D.moe?'×'+D.ep:'')+' = '+fmt(D.pp*D.tp*(D.moe?D.ep:1))+' 个腔，这张卡持有其中 1 个', 8.2, 'var(--pt-fg2)'));
+  parts.push(txt(TX1-4, 105, '被剁成 '+D.pp+'×'+D.tp+(D.moe?'×'+D.ep:'')+' = '+fmt(D.pp*D.tp*(D.moe?D.ep:1))+' 个腔，这张 NPU 持有其中 1 个', 8.2, 'var(--pt-fg2)'));
   /* DP 副本尺：收起②之后它就没地方了，可它恰恰是 A3 的操作台——挪到①底下，
      位置反而更对：「换副本 → 看①的腔」本来就该在同一只盒子旁边完成。 */
   if(!SEC && D.dp>1){
@@ -8558,7 +8558,7 @@ function renderSolidCav(D){
   }
   function hr(y){ parts.push(ln([RX, y], [RX+RW, y], 'stroke:var(--pt-bds);stroke-width:.7')); }
   function head(y, t, col){ parts.push(txt(RX, y, esc(t), 9.2, col||'var(--pt-fg)', 'start', 'font-weight="800"')); }
-  parts.push(txt(RX, RY, '读数 · 这张卡 g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+  parts.push(txt(RX, RY, '读数 · 这张 NPU g='+g, 10.5, 'var(--pt-fg)', 'start', 'font-weight="800"'));
   parts.push(txt(RX, RY+12, '(tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(me?' ep'+me.ep:'')+')　地址只标不画', 7.4, 'var(--pt-fg3)', 'start'));
   head(RY+32, '① 权重体腔'); hr(RY+36);
   row(RY+49, 'ℓ ← PP', 'L'+(co.p*lps)+'–L'+((co.p+1)*lps-1), VC.pp);
@@ -8577,7 +8577,7 @@ function renderSolidCav(D){
   parts.push(txt(RX, RY+116, etpGap ? '差额主因：专家权重只被 EP 切，h 方向没切——那要 ETP'
                                     : ('差额 = 复制项（norm'+(D.moe?' / router':'')+' / KV 头）：谁也不切它们，'), 6.8, 'var(--pt-fg3)', 'start'));
   parts.push(txt(RX, RY+125, etpGap ? '（本配置 ETP='+D.etp+'）。盒上虚线框就是这块。'
-                                    : '每卡各存一份，所以字节比体积多出来一点。', 6.8, 'var(--pt-fg3)', 'start'));
+                                    : '每 NPU 各存一份，所以字节比体积多出来一点。', 6.8, 'var(--pt-fg3)', 'start'));
   head(RY+145, '② 激活体腔'+(SEC?'':'（第二视角·已收起）'), VC.dp); hr(RY+149);
   row(RY+162, 'b ← DP', '副本'+co.d+' 的 '+fmt(D.mbs*D.ga)+' 样本', VC.dp);
   row(RY+175, 's ← CP', D.cp>1 ? '段'+co.c+' ∪ 段'+(2*D.cp-1-co.c) : '全部 '+fmt(D.seq)+' token', D.cp>1?VC.cp:'var(--pt-fg3)');
@@ -8728,8 +8728,8 @@ function renderSolidCav(D){
     gc9 += boxSVG(0, 0, 0, CW9, CH9, CD9, 1, {wire:true, stroke:'var(--pt-fg2)', sw:1.1});
     parts.push('<g transform="translate('+GXc+','+GYc+')">'+gc9+'</g>');
     /* 抬头（左列 A3 框下面的空当）与右侧分层标注 */
-    parts.push(txt(RX, 636, '容器（L3）· 卡 = 显存 '+D.hbm+' GB', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
-    parts.push(txt(RX, 648, '两个腔加起来，才是这张卡装的东西', 7.2, 'var(--pt-fg2)', 'start'));
+    parts.push(txt(RX, 636, '容器（L3）· NPU = 显存 '+D.hbm+' GB', 9.2, 'var(--pt-fg)', 'start', 'font-weight="800"'));
+    parts.push(txt(RX, 648, '两个腔加起来，才是这张 NPU 装的东西', 7.2, 'var(--pt-fg2)', 'start'));
     parts.push(txt(RX, 659, '另一只容器是流（容量=时间）：装满只变慢', 6.8, 'var(--pt-fg3)', 'start'));
     labs9.sort(function(a,b){ return b.ay - a.ay; });
     var LX9 = 584, LY9 = 792, LST9 = 27;
@@ -9138,7 +9138,7 @@ function renderSolidGrid(D){
   /* 恢复选中 DP 的 proj 偏移 */
   proj = savedProjSel;
   /* 标题 */
-  labels9.push('<text class="pt-grid-title" x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' 卡') + '</text>');
+  labels9.push('<text class="pt-grid-title" x="24" y="28" style="font-size:16px;fill:var(--pt-fg);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;font-weight:800;pointer-events:none">' + esc(D.world + ' NPU') + '</text>');
   labels9.push('<text class="pt-grid-title" x="24" y="50" style="font-size:14px;fill:var(--pt-fg2);stroke:#fff;stroke-width:3px;paint-order:stroke;text-anchor:start;pointer-events:none">' + esc('合计 ' + fmtGB(totalGlobal) + ' GB/卡 · 全局 ' + fmtGB(totalGlobal*D.world) + ' GB · PP×' + PP + ' · TP×' + D.tp + (D.moe ? ' · EP×'+D.ep : '') + ' · DP×' + D.dp) + '</text>');
 
   /* ═══ 说明弹层 ═══ */
@@ -9148,23 +9148,23 @@ function renderSolidGrid(D){
   var zW9 = zeroDiv(D,'w'), zG9 = zeroDiv(D,'g'), zO9 = zeroDiv(D,'opt');
   var FORMS = [
     {sw:CW,        name:'W 权重 (bf16)',        space:'ℓ×h'+(D.moe?'×e':'')+' ← PP·TP'+(D.moe?'·EP':''), bytes:'2 B/参数'+(zW9>1?' ÷'+D.dp:''),
-     dp: zW9>1 ? '沿 DP 切 ×'+D.dp+' · 各卡一片' : '复印 ×'+D.dp+' · 逐字节相同',
+     dp: zW9>1 ? '沿 DP 切 ×'+D.dp+' · 各 NPU 一片' : '复印 ×'+D.dp+' · 逐字节相同',
      life: zW9>1 ? '前向 AllGather 拼回 · 用毕丢弃 · 反向再拼一次' : '常驻整步'},
     {sw:MEMC.g,    name:'G 梯度 (bf16)',        space:'同 W —— 同轴同刀',                                bytes:'2 B/参数'+(zG9>1?' ÷'+D.dp:''),
-     dp: zG9>1 ? '各算各的 → ReduceScatter · 只留本卡那一段' : '各算各的 → AllReduce 后相同',
+     dp: zG9>1 ? '各算各的 → ReduceScatter · 只留本 NPU 那一段' : '各算各的 → AllReduce 后相同',
      life:'反向逐层长出 · 更新后清零'},
     {sw:MEMC.opt,  name:'O 优化器态 (fp32×3)',  space:'同 W —— 同轴同刀',                                bytes:'12 B/参数'+(zO9>1?' ÷'+D.dp:''),
-     dp: zO9>1 ? '沿 DP 切 ×'+D.dp+' · 只更新本卡那一段' : '复印（档位=关，整份压在本卡）',
+     dp: zO9>1 ? '沿 DP 切 ×'+D.dp+' · 只更新本 NPU 那一段' : '复印（档位=关，整份压在本 NPU）',
      life:'常驻 · 仅更新一步读写'},
     {sw:MEMC.act,  name:'A 激活',               space:'ℓ×h×b×s ← PP·TP·DP·CP',                           bytes:'随在途 μb 涨落', dp:'b 被真切（不是复印）',              life:'前向攒 · 反向放（1F1B）'}
   ];
   /* ZeRO-3 才有的那一格：不列出来，「16/dp」会被读成「权重显存变成 1/dp」 */
   if(D.zero >= 3) FORMS.splice(1, 0, {sw:MEMC.agw, name:'AllGather 窗口', space:'一个 wrap 单元（本页取一层）+ 预取',
-     bytes:'2 B/参数 × 2 层', dp:'临时拼回全长，不属于任何一张卡', life:'只在这一层的计算窗口里存在'});
+     bytes:'2 B/参数 × 2 层', dp:'临时拼回全长，不属于任何一张 NPU', life:'只在这一层的计算窗口里存在'});
   var gridHelpHTML = '<div style="font-size:12px;line-height:1.65;color:var(--pt-fg2)">'
     + '<b style="color:var(--pt-fg)">内存分层总账</b>：六个档位分层展开，厚度 ∝ 字节数，权重层按算子×切法分色。'
-    + '点击层侧面 → 高亮左侧面板对应档位；W 层顶面 TP×EP 格点 → 定位持有它的那张卡'
-    + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张卡）。点 PP 标签换段。<br>'
+    + '点击层侧面 → 高亮左侧面板对应档位；W 层顶面 TP×EP 格点 → 定位持有它的那张 NPU'
+    + '（选中跨视图保持；在组合工作台里，并行拓扑与泳道跟着照亮同一张 NPU）。点 PP 标签换段。<br>'
     + (D.moe
         ? 'EP 桶沿深度轴完整展开（每桶一片，间隔标色）。斜线空格 = 没有持有者：EP 折叠 q=(d·CP+c)·TP+t 把 e 桶错开在 h 片上。'
         : '参数系没有 e 轴（无 MoE）：每格的持有者是跨 b/s 的那组复印卡。')
@@ -9198,7 +9198,7 @@ function renderSolidGrid(D){
   $('stagebar').innerHTML = '<button class="pb" data-act="persp" data-p="map">双链映射</button>'
     + '<button class="pb" data-act="persp" data-p="cav">交集腔</button>'
     + '<button class="pb is-on" data-act="persp" data-p="grid">内存分层</button>'
-    + '<button class="pb" data-act="persp" data-p="cav" title="回到单卡几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
+    + '<button class="pb" data-act="persp" data-p="cav" title="回到 NPU 几何证明：为什么恰好是这一块">这一腔为什么是它 ↗</button>'
     + '<span class="pt-cfg pt-gridhelp">'
     + '<button class="pt-cfgbtn'+(ui.gridHelp?' is-on':'')+'" data-act="gridhelp" title="说明：总账题面、怎么点、四个形态差在哪">？</button>'
     + '<div class="pt-cfgpanel'+(ui.gridHelp?' is-open':'')+'" style="width:min(640px, calc(100vw - 32px));text-align:left">'+gridHelpHTML+'</div>'
@@ -9732,8 +9732,8 @@ function frontScene(D, g, box){
       hit.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+cellW.toFixed(1)+'" height="'+cellH.toFixed(1)
         +'" style="fill:transparent;cursor:pointer" class="cgrow" data-act="chainpick" data-k="card" data-i="'+rk+'"'
         +'><title>r'+rk+' · TP·SP'+t9+'·CP'+c9+'·DP'+d9+'·PP'+pSel
-        +' · 超节点'+pfF9.pod+'·机柜'+pfF9.rack+'·node'+pfF9.node+'·槽'+pfF9.slot
-        +(hasSel ? (samePodF9 ? '（与 r'+sel+' 同超节点 → UB）' : '（与 r'+sel+' 跨超节点 → RoCE）') : '')
+        +' · SuperPoD'+pfF9.pod+'·机柜'+pfF9.rack+'·node'+pfF9.node+'·槽'+pfF9.slot
+        +(hasSel ? (samePodF9 ? '（与 r'+sel+' 同 SuperPoD → UB）' : '（与 r'+sel+' 跨 SuperPoD → RoCE）') : '')
         +(isF&&!hlS9?'（已选中，再点一次取消）':'')+'</title></rect>');
     }
   }
@@ -9848,8 +9848,8 @@ function frontScene(D, g, box){
      画的是一层的算子，不在同一个几何里，就不硬塞。 */
   if(hasSel && ui.commOn && ui.commGrain === 'intra'){
     var ix0 = cellX(focusQ), iy0 = cellY(focusR);
-    var IROW = [['前', 0.30, false, '前向：激活 A × 权重 W → out。读的是这张卡上的权重，没出卡。'],
-                ['反', 0.52, true,  '反向：∂L/∂out × 激活 A → 梯度 ∇W。梯度由本卡的激活生出来，也没出卡。'],
+    var IROW = [['前', 0.30, false, '前向：激活 A × 权重 W → out。读的是这张 NPU 上的权重，没出卡。'],
+                ['反', 0.52, true,  '反向：∂L/∂out × 激活 A → 梯度 ∇W。梯度由本 NPU 的激活生出来，也没出卡。'],
                 ['更', 0.74, false, '更新：优化器态 + 梯度 ∇W → 下一步的 W。三条都只在卡内搬运，归属不变。']];
     IROW.forEach(function(rw9){
       var yy9 = iy0 + cellH*rw9[1], xa9 = ix0 + cellW*0.18, xb9 = ix0 + cellW*0.82;
@@ -10028,8 +10028,8 @@ function sideScene(D, g, box){
       if(cutCP){ chips.push('<tspan fill="'+VC.cp+'">CP ×'+D.cp+'</tspan>'); chipsP9.push('CP ×'+D.cp); }
       if(cutEP){ chips.push('<tspan fill="'+VC.ep+'">EP ×'+D.ep+'</tspan>'); chipsP9.push('EP ×'+D.ep); }
       if(cutDP){ chips.push('<tspan fill="'+VC.dp+'">DP ×'+D.dp+'</tspan>'); chipsP9.push('DP ×'+D.dp); }
-      chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' 卡</tspan>');
-      chipsP9.push('×'+fmt(D.world / D.pp)+' 卡');
+      chips.push('<tspan fill="var(--pt-fg3)">×'+fmt(D.world / D.pp)+' NPU</tspan>');
+      chipsP9.push('×'+fmt(D.world / D.pp)+' NPU');
       /* 因子行缩到半档还装不下就整行不写：那时它在屏幕上只有两三个像素，留着
          也读不出来，却正好宽到压进隔壁段的同一行（本页一贯的「装不下就不写」）。 */
       var chipsS9 = chipsP9.join(' · '), fitC9 = fitFs9(chipsS9, 6.4);
@@ -10053,7 +10053,7 @@ function sideScene(D, g, box){
          关心的是"我这张卡在那一段对应谁"，换段不该顺手把 tp/cp/dp 也重置了。 */
       hit.push('<rect x="'+xa.toFixed(1)+'" y="'+(yH - 12/FS_Z).toFixed(1)+'" width="'+(xb-xa).toFixed(1)+'" height="'+(30/FS_Z).toFixed(1)
         +'" style="fill:transparent;cursor:pointer" data-act="chainpick" data-k="p" data-i="'+st9+'"'
-        +'><title>PP Stage '+st9+' · L'+lo9+'–L'+hi9+'：选中本卡在这一段的同位体（tp/cp/dp 不变）</title></rect>');
+        +'><title>PP Stage '+st9+' · L'+lo9+'–L'+hi9+'：选中本 NPU 在这一段的同位体（tp/cp/dp 不变）</title></rect>');
       if(st9 > 0){
         var xd = xa - stGap/2 - colGap/2;
         body.push('<line x1="'+xd.toFixed(1)+'" y1="'+(yMet-16).toFixed(1)+'" x2="'+xd.toFixed(1)+'" y2="'+(yOp+8).toFixed(1)
@@ -10324,7 +10324,7 @@ function sideScene(D, g, box){
       if(opLab && liVis && (yb - ya) >= 10.5/FS_Z){
         var lbl9 = n9.label;
         if(n9.id === 'attention_all_gather' || n9.id === 'ffn_all_gather') lbl9 = 'TP/SP AllGather';
-        if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl9 = 'TP/SP Reduce-Scatter';
+        if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl9 = 'TP/SP ReduceScatter';
         var tag9 = (colW * Zv >= 220 * TG && b0) ? ' · '+(b0.dim === 'sp' ? 'SP' : b0.dim.toUpperCase())+'切'+(b0.axis||'') : '';
         /* 再放大一档：把这一层这算子的数据标注（与正视胶囊同一份）单独画出来，
            不再拼进名字那串——拼在一起字号只能跟名字（5.8）一样大，数值要明显
@@ -10396,7 +10396,7 @@ function sideScene(D, g, box){
     'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.4"'));
   body.push('<line x1="'+mx0.toFixed(1)+'" y1="'+yOp.toFixed(1)+'" x2="'+mx1.toFixed(1)+'" y2="'+yOp.toFixed(1)
     +'" style="stroke:'+GCOL+';stroke-width:'+(1.1/FS_Z).toFixed(2)+';stroke-dasharray:'+(6/FS_Z).toFixed(2)+' '+(3/FS_Z).toFixed(2)+'"/>');
-  body.push(fsTxt((mx0+mx1)/2, yOp - 6, 'Accumulation → DP Gradient Sync → Unscale / Clip → Optimizer Step → W(t+1)', 6,
+  body.push(fsTxt((mx0+mx1)/2, yOp - 6, 'Accumulation → DP AllReduce → Unscale / Clip → Optimizer Step → W(t+1)', 6,
     'var(--pt-fg)', 'middle', 'font-weight="800" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.6"'));
   for(var lg9 = 0; lg9 < L; lg9++){
     var gx9 = xOf(lg9) + colW/2, sg9 = snaps9[lg9];
@@ -10415,7 +10415,7 @@ function sideScene(D, g, box){
   /* Checkpoint 是「训练」这一类自己的读数：轨关掉了它照样该在（存盘节奏与
      optimizer step 的节奏本来就是两件事），只是没有轨的时候贴着底走。 */
   if(ui.mv.train)
-    body.push(fsTxt(mx1, railOn ? (yOp + 12) : (y1 + 14), 'Checkpoint · every 1000 steps', 5.6, 'var(--pt-fg3)', 'end',
+    body.push(fsTxt(mx1, railOn ? (yOp + 12) : (y1 + 14), 'ckpt · every 1000 steps', 5.6, 'var(--pt-fg3)', 'end',
       'font-weight="700" paint-order="stroke" stroke="var(--pt-bg)" stroke-width="2.2"'));
   /* ── 行标签总览：没放大时在模型中列标一次（放大后换成条内逐个写，这排就收起） ── */
   if(!opLab && colW * Zv >= 1.1){
@@ -10438,7 +10438,7 @@ function sideScene(D, g, box){
       var b8 = by8[0] || null;
       var lbl = n9.label;
       if(n9.id === 'attention_all_gather' || n9.id === 'ffn_all_gather') lbl = 'TP/SP AllGather';
-      if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl = 'TP/SP Reduce-Scatter';
+      if(n9.id === 'attention_reduce_scatter' || n9.id === 'ffn_reduce_scatter') lbl = 'TP/SP ReduceScatter';
       if(n9.id === 'attention_core') lbl = lbl + ' · DSA/SWA 按层';
       var tag = b8 ? ' · '+(b8.dim === 'sp' ? 'SP' : b8.dim.toUpperCase())+'切'+(b8.axis||'') : '';
       /* 通信行在这儿补一段读数。侧视的**每列**读数是有的（下面那个 opLab 分支），
@@ -10465,7 +10465,7 @@ function sideScene(D, g, box){
       if(yc - lastY2 < 7.4/FS_Z) return;
       lastY2 = yc;
       var lbl = n9.id === 'ffn_all_gather' ? 'Dense TP/SP AllGather'
-              : n9.id === 'ffn_reduce_scatter' ? 'Dense TP/SP Reduce-Scatter' : 'Dense '+n9.label.replace(/^Dense /,'');
+              : n9.id === 'ffn_reduce_scatter' ? 'Dense TP/SP ReduceScatter' : 'Dense '+n9.label.replace(/^Dense /,'');
       /* Dense 段那几行同理：它们贴在图的左外侧，是这几行唯一的字。读数用 L0
          那一档——Dense FFN 按定义只存在于开头那几层，拿选中段的中间层去读会
          读到一层根本没有 Dense FFN 的账。 */
@@ -10524,7 +10524,7 @@ function sideScene(D, g, box){
   var tailTags = [
     ['Final RMSNorm', cutTP ? VC.tp : 'var(--pt-bds)', false, 0],
     ['LM Head W → LM Head', cutTP ? VC.tp : 'var(--pt-bds)', false, 0],
-    ['Logits All-Gather', VC.tp, true, 0],
+    ['Logits AllGather', VC.tp, true, 0],
     ['Logits', 'var(--pt-bds)', false, 0],
     ['MTP Input Norms', cutTP ? VC.tp : 'var(--pt-bds)', false, 1],
     ['EH Projection', cutTP ? VC.tp : 'var(--pt-bds)', false, 1],
@@ -10587,7 +10587,7 @@ function sideScene(D, g, box){
       var dw = Math.min(9, (rxb - rxa - 4) / colsR - 1.4);
       var dh = Math.min(8, (BM - ANN - 44) / rowsR - 1.4);
       if(dw < 2 || dh < 2){
-        fsPill(body, hit, (rxa+rxb)/2, rackTop + 10, 'PP'+stR+' · ×'+fmt(D.world/D.pp)+' 卡', VC.pp, stR === selStage, ['p', stR], 6.2);
+        fsPill(body, hit, (rxa+rxb)/2, rackTop + 10, 'PP'+stR+' · ×'+fmt(D.world/D.pp)+' NPU', VC.pp, stR === selStage, ['p', stR], 6.2);
         continue;
       }
       var rgx = rxa + ((rxb - rxa) - colsR*(dw+1.4))/2;
@@ -10620,8 +10620,8 @@ function sideScene(D, g, box){
         hit.push('<rect x="'+(rgx + cc9*(dw+1.4) - .7).toFixed(1)+'" y="'+(rackTop + rr9*(dh+1.4) - .7).toFixed(1)
           +'" width="'+(dw+1.4).toFixed(1)+'" height="'+(dh+1.4).toFixed(1)+'" style="fill:transparent;cursor:pointer" '
           +'data-act="chainpick" data-k="card" data-i="'+rk9+'"><title>r'+rk9+' · TP'+rr9+'·CP'+cR+'·DP'+dR+'·PP'+stR
-          +' · 超节点'+pf9.pod+'·机柜'+pf9.rack+'·node'+pf9.node+'·槽'+pf9.slot
-          +(hasSel ? (samePod9 ? '（与 r'+g+' 同超节点 → UB）' : '（与 r'+g+' 跨超节点 → RoCE）') : '')
+          +' · SuperPoD'+pf9.pod+'·机柜'+pf9.rack+'·node'+pf9.node+'·槽'+pf9.slot
+          +(hasSel ? (samePod9 ? '（与 r'+g+' 同 SuperPoD → UB）' : '（与 r'+g+' 跨 SuperPoD → RoCE）') : '')
           +(onR && !hlS9 ? '（已选中，再点一次取消）' : '')+'</title></rect>');
       }
       /* 两枚行标之间只隔 (rowsR-1)×(dh+1.4) 这么点——字号增益一抬高，它们先跟
@@ -10648,7 +10648,7 @@ function sideScene(D, g, box){
      像头尾标签那样的胶囊背景可以算宽度，标签本身还带一截动态字节读数
      （' · 29MB' 这种，长度不固定）——按最长的基础文案 + 一截宽裕的读数余量
      估一个够用的宽度，同样纳入 clip 的左边界，不然它跟头尾标签是同一个坑。 */
-  var maxDenseW = 'Dense TP/SP Reduce-Scatter · 999.9MB'.length * (6/FS_Z*0.6) + 8;
+  var maxDenseW = 'Dense TP/SP ReduceScatter · 999.9MB'.length * (6/FS_Z*0.6) + 8;
   clipX0 = Math.min(clipX0, xOf(0) - 8 - maxDenseW);
   var wrapped = '<defs>'+hatchDefsSVG(FS_Z)+'<clipPath id="'+CID+'"><rect x="'+clipX0.toFixed(1)+'" y="'+box.y+'" width="'+(clipX1-clipX0).toFixed(1)+'" height="'+box.h+'"/></clipPath></defs>'
     + '<g clip-path="url(#'+CID+')">' + body.join('') + '</g>';
@@ -11302,7 +11302,7 @@ function renderGroupHud(D){
     var cells = '', i;
     for(i = 0; i < gr.n; i++){
       cells += '<button class="pt-ghc'+(i === gr.cur ? (hlS9 ? ' is-on is-hl' : ' is-on') : '')+'" data-act="chainpick" data-k="'+gr.k+'" data-i="'+i
-        +'" title="'+gr.name+' 第 '+i+' 组：点了把「本卡」换到这一组，图上的实心/斜纹、门牌全部跟着换'
+        +'" title="'+gr.name+' 第 '+i+' 组：点了把「本 NPU」换到这一组，图上的实心/斜纹、门牌全部跟着换'
         +(i === gr.cur && hlS9 ? '（此刻这一组是别的视图点过来的联动高亮）' : '')+'">'
         +(gr.lab ? esc(gr.lab(i)) : i)+'</button>';
     }
@@ -11359,7 +11359,7 @@ function renderOpCard(D){
   var sc9 = d9.warn ? 'var(--pt-warn, #d97706)' : 'var(--pt-ok, #16a34a)';
   el.hidden = false;
   el.innerHTML = '<div class="oc-h"><div><div class="oc-k">'+esc(d9.kind)+'</div><h4>'+esc(d9.title)+'</h4></div>'
-    + '<button class="oc-x" data-act="opclose" title="关掉这张卡">×</button></div>'
+    + '<button class="oc-x" data-act="opclose" title="关掉这张 NPU">×</button></div>'
     + '<p class="oc-d">'+esc(d9.def)+'</p>'
     + '<section class="oc-v">'+d9.values.map(function(kv){
         return '<div><span>'+esc(kv[0])+'</span><b>'+esc(kv[1])+'</b></div>'; }).join('')+'</section>'
@@ -11528,7 +11528,7 @@ function chipState(c, D){
   }
   if(c.k==='rank'){
     var g = parseInt(v,10);
-    if(!isFinite(g) || g<0 || g>=D.world) return {kind:'bad', msg:'只有 '+fmt(D.world)+' 张卡（r0–r'+(D.world-1)+'）', col:p.col};
+    if(!isFinite(g) || g<0 || g>=D.world) return {kind:'bad', msg:'只有 '+fmt(D.world)+' 张 NPU（r0–r'+(D.world-1)+'）', col:p.col};
     return {kind:'rank', g:g, col:p.col};
   }
   if(c.k==='dim'){
@@ -11698,7 +11698,7 @@ function renderRevBar(D){
         + (D.moe ? row('ep', h.isMoe ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>' : '这一层是 <b>Dense</b>，没有 e 轴') : '')
         + (D.cp>1 ? row('cp', '输入再切 <b>'+D.cp+' 段</b>') : '')
         + row('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>')
-        + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张卡与第 '+s2.li+' 层有关（world/PP）'
+        + '<div class="sum">= 共 <b>'+fmt(h.tot)+'</b> 张 NPU 与第 '+s2.li+' 层有关（world/PP）'
         + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
         + '</div></div>';
     }
@@ -11790,19 +11790,19 @@ function renderLegend(D){
     + '<rect x="13" y=".5" width="12" height="6.5" style="fill:none;stroke:'+VC.tp+';stroke-width:.6;opacity:.5"/>'
     + '<rect x=".5" y="7.5" width="12" height="6" style="fill:none;stroke:'+VC.cp+';stroke-width:.6;opacity:.5"/>'
     + '<rect x="13" y="7.5" width="12" height="6" style="fill:none;stroke:'+VC.tp+';stroke-width:.6;opacity:.3"/>'),
-    '<b>网格 = 两把刀都过</b>。attention 的 head 归 TP、ctx 归 CP，本卡拿其中一格'
+    '<b>网格 = 两把刀都过</b>。attention 的 head 归 TP、ctx 归 CP，本 NPU 拿其中一格'
     + '——那就是 <code>[·, S/CP, H/TP]</code> 的形状本身。'));
   h.push(lgRow(lgGlyph('<rect x=".5" y=".5" width="11" height="13" style="fill:'+mix(VC.tp,66)+';stroke:'+VC.tp+';stroke-width:.9"/>'
     + '<g transform="translate(13,0)">'+hatch('var(--pt-fg3)',false).replace(/26/g,'12')+'</g>'),
-    '<b>实心 = 本卡真持有的那一份</b>，<b>纹路 = 被锯走了、不归它</b>。'
-    + '<i> 打开 Rank 后不归它的直接不画（只剩一张卡时，空片会被读成卡里凭空多出来的格子）；'
+    '<b>实心 = 本 NPU 真持有的那一份</b>，<b>纹路 = 被锯走了、不归它</b>。'
+    + '<i> 打开 Rank 后不归它的直接不画（只剩一张 NPU 时，空片会被读成卡里凭空多出来的格子）；'
     + '片薄到一像素以下时也不逐片画，改成整块——片数看轴上的刻度带和算子标签，如 <code>SP0/131072</code>。</i>'));
 
   h.push('<div class="lg-sec">画面上的几何体</div>');
   h.push(lgRow(lgGlyph('<rect x="1" y="1" width="16" height="12" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.1"/>'
     + '<path d="M17 1 L24 4 L24 13 L17 13" style="fill:none;stroke:var(--pt-fg2);stroke-width:.7"/>'),
-    (ui.cardMode ? '<b>卡壳</b>＝<b>一张卡</b>：五刀的交集恰好是它装的全部字节。'
-                 : '<b>层板</b>＝<b>一层</b>。打开 Rank 之后换成卡壳（一只 = 一张卡）。')));
+    (ui.cardMode ? '<b>卡壳</b>＝<b>一张 NPU</b>：五刀的交集恰好是它装的全部字节。'
+                 : '<b>层板</b>＝<b>一层</b>。打开 Rank 之后换成卡壳（一只 = 一张 NPU）。')));
   h.push(lgRow(lgGlyph('<rect x="1" y="1" width="24" height="12" style="fill:none;stroke:var(--pt-bd);stroke-width:.8"/>'
     + '<rect x="3.5" y="3.5" width="5" height="7" style="fill:'+mix(VC.tp,40)+';stroke:var(--pt-bds);stroke-width:.6"/>'
     + '<rect x="10" y="3.5" width="4" height="7" style="fill:'+mix(VC.cp,40)+';stroke:var(--pt-bds);stroke-width:.6"/>'
@@ -11818,7 +11818,7 @@ function renderLegend(D){
   if(cutEP) h.push(lgRow(lgGlyph('<rect x="1" y="1" width="24" height="12" style="fill:none;stroke:'+VC.ep+';stroke-width:1.4"/>'
     + '<line x1="9" y1="1" x2="9" y2="13" style="stroke:'+VC.ep+';stroke-width:.5;opacity:.5"/>'
     + '<line x1="17" y1="1" x2="17" y2="13" style="stroke:'+VC.ep+';stroke-width:.5;opacity:.5"/>'),
-    '<b style="color:'+VC.ep+'">EP 组框</b>：框住的那几张卡合起来正好凑齐<b>全部专家</b>，也就是 all-to-all 的对端。'
+    '<b style="color:'+VC.ep+'">EP 组框</b>：框住的那几张 NPU 合起来正好凑齐<b>全部专家</b>，也就是 all-to-all 的对端。'
     + '<i> 折叠发生在一个 PP 段之内，所以框按段画、不跨段。</i>'));
 
   h.push('<div class="lg-sec">颜色 = 哪把刀</div>');
@@ -11837,12 +11837,12 @@ function renderLegend(D){
     h.push('<div class="lg-sec">Comm Layers</div>');
     h.push(lgRow(lgGlyph('<path d="M2 12 Q13 1 24 12" style="fill:none;stroke:'+VC.tp+';stroke-width:1.2"/>'
       + '<circle cx="2" cy="12" r="1.6" style="fill:'+VC.tp+'"/><circle cx="24" cy="12" r="1.6" style="fill:'+VC.tp+'"/>'),
-      '<b>弧线 = 一次通信</b>，两端是参与的两张卡（或算子被锯开的那条缝）。'
+      '<b>弧线 = 一次通信</b>，两端是参与的两张 NPU（或算子被锯开的那条缝）。'
       + '<i> 每条都锚在<b>产生它的那个算子</b>上：切分在哪儿留下切口，通信就欠在哪儿。</i>'));
     h.push(lgRow(lgGlyph('<path d="M2 12 Q13 1 24 12" style="fill:none;stroke:'+VC.dp+';stroke-width:1.2;stroke-dasharray:3 2"/>'),
       '<b>虚线 = 反向</b>（DP 的梯度 AllReduce，一个 step 只有一次）。'));
     h.push(lgRow(lgGlyph('<line x1="1" y1="7" x2="24" y2="7" style="stroke:'+VC.tp+';stroke-width:1.1"/>'),
-      '<b>AllGather(s→h) / Reduce-Scatter(h→s)</b> 是<b>换轴器</b>：进 TP 区把沿 s 切的收齐，出 TP 区归约的同时沿 s 散开。'
+      '<b>AllGather(s→h) / ReduceScatter(h→s)</b> 是<b>换轴器</b>：进 TP 区把沿 s 切的收齐，出 TP 区归约的同时沿 s 散开。'
       + '<i> 总通信量与一次 AllReduce 完全相同——SP 省 TP 倍激活显存的代价就是拆成两次。</i>'));
   }
 
@@ -11850,7 +11850,7 @@ function renderLegend(D){
   h.push(lgRow(lgGlyph('<rect x="1" y="2" width="10" height="10" style="fill:none;stroke:var(--pt-fg2);stroke-width:1.1"/>'
     + '<rect x="14" y="3.5" width="8" height="7" style="fill:none;stroke:var(--pt-fg2);stroke-width:.45;opacity:.45"/>'),
     '<b>越远越淡越细</b>（空气透视），不表示别的意思。'
-    + (ui.cardMode ? '<i> 选中的那张卡不上雾。</i>' : '')));
+    + (ui.cardMode ? '<i> 选中的那张 NPU 不上雾。</i>' : '')));
 
   /* 标题单独一行，其余包进 lg-body 横铺：位置够就一行，不够自适应换行 */
   el.innerHTML = h[0] + '<div class="lg-body">' + h.slice(1).join('') + '</div>';
@@ -12002,7 +12002,7 @@ function buildCfgSurface(D){
     + '</span>';
   var deviceLayoutSeg = '<span class="pt-seg">'
     + '<button'+(!ui.cardMode?' disabled':'')+(!ui.kPhys?' class="is-on"':'')+' data-act="devlayout" data-v="parallel" title="依据 TP、CP、PP、DP 排列">按并行组</button>'
-    + '<button'+(!ui.cardMode?' disabled':'')+(ui.kPhys?' class="is-on"':'')+' data-act="devlayout" data-v="physical" title="每台服务器显示 8 张卡">按服务器槽位</button>'
+    + '<button'+(!ui.cardMode?' disabled':'')+(ui.kPhys?' class="is-on"':'')+' data-act="devlayout" data-v="physical" title="每台服务器显示 8 张 NPU">按服务器槽位</button>'
     + '</span>';
   var obsBlock = '<div class="cgrow"><span class="pt-cap">观察层级</span></div>'
     + '<div class="cgrow">' + rankSeg + '</div>'
@@ -12071,15 +12071,15 @@ function buildCfgSurface(D){
         + ['rank','tensor','route','time','cost','intra','fabric'].map(function(gk9){
             var GN9 = {rank:  ['rank','谁和谁 —— 卡与卡的边，一条边一枚芯片，字节/带宽/耗时走悬停'],
                        tensor:['张量','搬的是什么 —— 前态→后态的变换徽章，同时把算子级的弧线放出来'],
-                       route: ['Router','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张卡，两者一叠决定这次 A2A 的流量'],
-                       time:  ['Timeline','什么时候搬、藏住没有 —— 本卡这一步的 F/B/AllReduce 排布'],
+                       route: ['Router','token 去哪了 —— 只有 EP 有：router 选专家、专家住哪张 NPU，两者一叠决定这次 A2A 的流量'],
+                       time:  ['Timeline','什么时候搬、藏住没有 —— 本 NPU 这一步的 F/B/AllReduce 排布'],
                        cost:  ['影响','造成了什么后果 —— 空转（气泡）与步末 AllReduce 抬到警示色'],
-                       intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张卡里做完'],
+                       intra: ['rank 内','不跨通信域的那一级 —— 前向/反向/更新三行都在这张 NPU 里做完'],
                        /* 第十层：这条边**走哪张网**。前九层问的都是逻辑侧（谁、什么、
                           怎么搬、何时、代价），这一层第一次把物理侧接进来——同一条
                           AllToAll 是快是慢，不取决于它连了几张卡，取决于这几张卡
                           在不在同一个超节点里。 */
-                       fabric:['Fabric','走哪张网 —— 超节点内 UB、跨超节点 RoCE；node 边界在超节点内不降速（公开资料口径）']}[gk9];
+                       fabric:['Fabric','走哪张网 —— SuperPoD 内 UB、跨 SuperPoD RoCE；node 边界在 SuperPoD 内不降速（公开资料口径）']}[gk9];
             /* 路由那一档只有 MoE + EP 落刀时答得上，其余配置下置灰——「不适用」
                不该假装成一个能点开却什么都没有的档（读出卡那排九格同一口径）。 */
             var dis9 = gk9 === 'route' && !(ui.kEP && moe9 && D.ep > 1);
@@ -12307,7 +12307,7 @@ function renderV1(D){
       ? (D.tp*D.dp*D.pp>1000
           ? '这套配置 '+fmt(D.tp*D.dp*D.pp)+' 个实例，默认不全量渲染（要几秒）——先画前 '+DPn+' 个 DP 副本。DP 是对称维，看一组等于看全部（DP-3）。<button class="pb" data-act="unfold">仍要全部画出</button>'
           : 'DP='+D.dp+' 为对称维，只画前 '+DPn+' 个副本——看一个组等于看全部（DP-3/DP-5）。<button class="pb" data-act="unfold">全部画出</button>')
-      : fmt(D.tp*DPn*D.pp)+' 张卡全量渲染中。<button class="pb" data-act="refold">恢复折叠</button>';
+      : fmt(D.tp*DPn*D.pp)+' 张 NPU 全量渲染中。<button class="pb" data-act="refold">恢复折叠</button>';
   }else{ $('stageNote').hidden = true; }
 
   /* 抽离图（R2；CP 组唯一入口） */
@@ -12323,7 +12323,7 @@ function fixFacetButtons(facet){ /* 简化 is-on 写法（字符串拼接里难�
 function detachHTML(D, refG){
   var dim = ui.commDim, col = VC[dim], mem = groupMembers(dim, refG, D);
   var n = mem.length;
-  if(n===1) return '<b style="font-size:12px">抽离 · '+DIMN[dim]+' 组</b><div style="font-size:12px;color:var(--pt-fg2);margin-top:4px">'+DIMN[dim]+'=1：组内只有一张卡（rank '+mem[0]+'），无通信发生。</div>';
+  if(n===1) return '<b style="font-size:12px">抽离 · '+DIMN[dim]+' 组</b><div style="font-size:12px;color:var(--pt-fg2);margin-top:4px">'+DIMN[dim]+'=1：组内只有一张 NPU（rank '+mem[0]+'），无通信发生。</div>';
   var w = Math.max(340, Math.min(560, n*64)), h = 170, pts=[], i;
   if(ui.commPrim!=='p2p'){
     var cx=w/2, cy=h/2-8, R=Math.min(h/2-30, 56);
@@ -12338,7 +12338,7 @@ function detachHTML(D, refG){
   }).join('');
   var edges = edgeSVG(pts.map(function(p2){ return [p2[0], p2[1]-13]; }), ui.commPrim, col, {mid:dim, ring:true});
   return '<b style="font-size:12px">抽离模式 · 只看连线（R2）</b> '
-    + '<span class="mono" style="font-size:12px;color:var(--pt-fg2)">'+DIMN[dim]+' 组 × '+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+' · '+n+' 张卡'+(sel===null?'（示意 0 号组）':'')+(dim==='cp'?' · CP 组跨分面，只在此呈现':'')+'</span>'
+    + '<span class="mono" style="font-size:12px;color:var(--pt-fg2)">'+DIMN[dim]+' 组 × '+PRIMS.filter(function(x){return x.id===ui.commPrim;})[0].name+' · '+n+' 张 NPU'+(sel===null?'（示意 0 号组）':'')+(dim==='cp'?' · CP 组跨分面，只在此呈现':'')+'</span>'
     + '<svg viewBox="0 0 '+w+' '+h+'">'+defsSVG()+edges+nodes+'</svg>';
 }
 
@@ -12528,7 +12528,7 @@ function renderV3(D){
   /* 门牌本身是正文（这张卡是谁），「地址只标不画」是读法——收进悬停。 */
   parts.push(txtI(door[0]-6, door[1]-12,
     '门牌: global_rank '+g+' · tp'+co.t+' cp'+co.c+' dp'+co.d+' pp'+co.p+(D.moe?(function(){var me=epOf(co.t,co.c,co.d,D);return ' ep'+me.ep;})():''),
-    '地址只标不画：门牌是这张卡在五元组坐标系里的号，画布上不为它画任何几何——同一张卡在别的维还有别的号（1:N，§10）。',
+    '地址只标不画：门牌是这张 NPU 在五元组坐标系里的号，画布上不为它画任何几何——同一张 NPU 在别的维还有别的号（1:N，§10）。',
     9.5, 'var(--pt-fg2)', 'start'));
   reg([door[0]-6, door[1]-26], 0, 320, 14, 0);
 
@@ -12553,7 +12553,7 @@ function renderV3(D){
   /* 层段是正文；「L 是什么号」那两句是读法，合成一枚 ⓘ。 */
   parts.push(txtI(capL[0], capL[1]+20, '层段 L'+l0+'–L'+(l0+Lps-1)+'（'+Lps+' 层）',
     '点任一层可以把它抽出来。L = 整网的全局层号（ℓ 轴 · 整网共 '+D.layers+' 层 L0–L'+(D.layers-1)+'），不是卡内序号；'
-    + 'PP 刀把它切成 '+D.pp+' 段，这张卡只装 stage'+co.p+' 这一段。',
+    + 'PP 刀把它切成 '+D.pp+' 段，这张 NPU 只装 stage'+co.p+' 这一段。',
     9.5, 'var(--pt-fg3)', 'middle'));
   parts.push(txt(capL[0], capL[1]+44, '当前抽出：L'+(l0+picked)+' = 整网第 '+(l0+picked)+' 层 · 段内第 '+(picked+1)+'/'+Lps, 8.6, VC.pp, 'middle', 'font-weight="700"'));
   reg([capL[0], capL[1]+44], 300, 300, 0, 10);
@@ -12676,7 +12676,7 @@ function renderV3(D){
     'kernel 在此排队；装满不会崩，只是变慢（§08）。'
     + '同号对应：'+(opIdx['attn.q']||'①')+'+'+(opIdx['attn.kv']||'②')+' → 一个 kernel（融合 N:1）；'
     + (opIdx[nDown]||'⑥')+' → 两个 kernel（分段 1:N），标签在轨道下方、与块同号。'
-    + 'kernel 永远单卡持有——逻辑与物理唯一的交点。',
+    + 'kernel 永远 NPU 持有——逻辑与物理唯一的交点。',
     8.8, 'var(--pt-fg2)', 'end', 'font-weight="600"'));
   reg([fl[0]-16, fl[1]+11], 300, 0, 14, 8);
 
@@ -12722,7 +12722,7 @@ function renderHLBadge(D){
   if(!onS && !onL){ el.hidden = true; el.innerHTML = ''; return; }
   var what = [];
   if(onS) what.push('<b>rank '+sel+'</b>');
-  if(onL) what.push('<b>L'+hlLi+'</b>' + (onS ? '' : ' 住着的那几张卡'));
+  if(onL) what.push('<b>L'+hlLi+'</b>' + (onS ? '' : ' 住着的那几张 NPU'));
   el.hidden = false;
   el.innerHTML = '<span class="hlk" style="--c:'+VC.dp+'"></span>'
     + '<span>联动高亮 · ' + what.join(' · ')
@@ -12824,16 +12824,16 @@ function renderRevOut(D){
   }
   out.innerHTML = '<div class="formula" style="margin:5px 0 4px">'
     + '<b>L'+L+'</b> 住在哪'
-    + step('pp', '落在 <b>stage '+stage+'</b>（L'+h.l0+'–L'+h.l1+'）—— 决定它<b>去哪几张卡</b>')
+    + step('pp', '落在 <b>stage '+stage+'</b>（L'+h.l0+'–L'+h.l1+'）—— 决定它<b>去哪几张 NPU</b>')
     + step('tp', (D.tp>1 ? '段内切成 <b>'+D.tp+' 份</b>（带着 SP）' : '×1，不切')
-        + ' —— 决定它<b>在那几张卡里怎么碎</b>')
+        + ' —— 决定它<b>在那几张 NPU 里怎么碎</b>')
     + (D.moe ? step('ep', h.isMoe
         ? '这一层是 MoE，专家再分 <b>'+D.ep+' 桶</b>（重分组，<b>不新增卡</b>）'
         : '这一层是 Dense，<b>没有 e 轴</b>，EP 这一刀落不下来') : '')
     + (D.cp>1 ? step('cp', '输入再切 <b>'+D.cp+' 段</b>（切的是 s，不减权重）') : '')
     + step('dp', '上述整个安排<b>复制 '+D.dp+' 份</b>')
     + '<div style="margin-top:4px;border-top:1px solid var(--pt-bd);padding-top:3px">= 共 <b>'+fmt(h.tot)
-    + '</b> 张卡与 L'+L+' 有关（world/PP）'
+    + '</b> 张 NPU 与 L'+L+' 有关（world/PP）'
     + (h.frag>1 ? '，<b>无一张持有完整的它</b>（各持 1/'+h.frag+'）' : '，每张持有<b>完整</b>的它')
     + '</div></div>'
     + '<div class="rankchips">'+mem.map(function(r){return '<button data-act="pick" data-g="'+r+'">'+r+'</button>';}).join('')
@@ -12906,13 +12906,13 @@ function drawerHTML(D){
        perNode 整除只意味着最后一台机没插满，不是配置非法。 */
     + '<div style="margin:12px 0 0;padding:10px 0 0;border-top:1px solid var(--pt-bd)">'
     + '<div style="font-size:12px;font-weight:700;color:var(--pt-fg);margin-bottom:6px">物理链 · 机器怎么摆'
-    + '<span class="hint" style="font-weight:400;margin-left:8px">缺省照 CloudMatrix384 的公开口径：1 node = 8 NPU，48 node = 1 超节点 = 384 卡</span></div>'
+    + '<span class="hint" style="font-weight:400;margin-left:8px">缺省照 CloudMatrix384 的公开口径：1 node = 8 NPU，48 node = 1 SuperPoD = 384 NPU</span></div>'
     + '<div class="cfg-cols">'
-    + '<div>'+numIn('perNode','node 几张卡',{min:1,hint:'1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片'})+'</div>'
-    + '<div>'+numIn('nodeRack','机柜几台 node',{min:1,hint:'12 计算柜 + 4 通信柜 = 16 柜/超节点'})+'</div>'
-    + '<div>'+numIn('podCards','超节点几张卡',{min:1,hint:'UB 的边界：组内全在一个超节点里就走 UB，跨了才换 RoCE'})+'</div>'
+    + '<div>'+numIn('perNode','node 几张 NPU',{min:1,hint:'1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片'})+'</div>'
+    + '<div>'+numIn('nodeRack','机柜几台 node',{min:1,hint:'12 计算柜 + 4 通信柜 = 16 柜/SuperPoD'})+'</div>'
+    + '<div>'+numIn('podCards','SuperPoD 几张 NPU',{min:1,hint:'UB 的边界：组内全在一个 SuperPoD 里就走 UB，跨了才换 RoCE'})+'</div>'
     + '</div>'
-    + '<div class="hint" style="margin-top:6px">⚠ 口径假设：<b>超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间</b>。'
+    + '<div class="hint" style="margin-top:6px">⚠ 口径假设：<b>SuperPoD 内一律按 UB 同一档算，不区分板内 / 板间 / 机架间</b>。'
     + '公开资料的说法是「单板内、单板间、机架间 NPU 全互联」，读起来是同一档；板间与机架间到底有没有降速，待灵衢团队确认。'
     + '真有差异时改的只是判定与带宽表，图与读数的结构一个字不用动。</div>'
     + '</div>'
@@ -13023,7 +13023,7 @@ function renderStageTitle(){
   if(ui.noTitle){ el.style.display = 'none'; return; }
   if(el.firstChild) return;
   el.innerHTML = '<span class="pt-stagecopy"><b>'+esc(ui.stageTitle)+'</b>'
-    + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 Rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';
+    + '<button type="button" class="pt-stagehelp" aria-label="说明" title="每个方框代表一个 rank（分布式训练进程，通常绑定一张加速卡），框内展示它负责的模型分片与数据。">?</button></span>';
 }
 
 /* ══ 二级读数：读出卡里点开的那一**块**显存 ═══════════════════════════════
@@ -13277,11 +13277,11 @@ function memBlockDetail(D, g, key){
        attn.* 只被 TP 切 h，router/norm 一刀没挨。同一只盒子、不同的切法——
        并排点过去就看得出「这条带里每块的刀各不相同」，那正是上一级说不清的事。 */
     var cavW9 = {n:1, dim:'tp', i:0}, cavE9 = {n:1, dim:'ep', i:0}, cap9 = blk.how;
-    if(blk.cut === 'tp'){ cavW9 = {n:D.tp, dim:'tp', i:co.t}; cap9 = blk.how+' · 本卡第 '+co.t+' 片'; }
+    if(blk.cut === 'tp'){ cavW9 = {n:D.tp, dim:'tp', i:co.t}; cap9 = blk.how+' · 本 NPU 第 '+co.t+' 片'; }
     else if(blk.cut === 'ep' && me){
       var kE = D.experts/D.ep, e0 = me.ep*kE;
-      cavE9 = {n:D.ep, dim:'ep', i:me.ep}; cap9 = blk.how+' · 本卡 E'+e0+'–E'+(e0+kE-1);
-    } else if(blk.cut === 'none') cap9 = '不切——每张卡逐字节相同';
+      cavE9 = {n:D.ep, dim:'ep', i:me.ep}; cap9 = blk.how+' · 本 NPU E'+e0+'–E'+(e0+kE-1);
+    } else if(blk.cut === 'none') cap9 = '不切——每张 NPU 逐字节相同';
     figs.push('<div class="rm-fig"'+(cap9?' title="'+esc(cap9)+'"':'')+'>'
       + cavityBox3D(cavW9, {n:D.pp, dim:'pp', i:p}, cavE9, {cell:tint})
       + '</div>');
@@ -13313,7 +13313,7 @@ function memBlockDetail(D, g, key){
          **单块**才答得上来的问题（带里每块的刀都不一样），留给点开某一块时再答。 */
       figs.push('<div class="rm-fig" title="'+esc('宽度=字节占比 · 颜色=切它那把刀')+'">'+compStrip(wCutBlocks(D, p, L))+'</div>');
       /* ①腔本体：ℓ←PP × h←TP × e←EP，本卡持有交出来那一格 */
-      figs.push('<div class="rm-fig" title="'+esc('①权重体 ℓ×h×e · 本卡 = 三根轴的交集那一格')+'">'
+      figs.push('<div class="rm-fig" title="'+esc('①权重体 ℓ×h×e · 本 NPU = 三根轴的交集那一格')+'">'
         + cavityBox3D({n:D.tp, dim:'tp', i:co.t},
                       {n:D.pp, dim:'pp', i:p},
                       {n:(D.moe?D.ep:1), dim:'ep', i:(me?me.ep:0)},
@@ -13324,7 +13324,7 @@ function memBlockDetail(D, g, key){
          这句话不写出来，读者只会以为「三张图长得一样」是偷懒。 */
       if(MEM_OBJ[key] && MEM_OBJ[key].follow) kv('切法', esc(MEM_OBJ[key].follow));
     }
-    if(key === 'w')   note = '每块的刀各不相同——点下面任意一块，才谈得上「本卡拿的是哪一份」。';
+    if(key === 'w')   note = '每块的刀各不相同——点下面任意一块，才谈得上「本 NPU 拿的是哪一份」。';
     if(key === 'g')   note = '每个 DP 副本各吃各的微批、各算出一份偏导，步末归约成同一份——'
       + '不归约，下一步各副本的权重就漂开了。';
     if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，'
@@ -13357,7 +13357,7 @@ function memBlockDetail(D, g, key){
     if(key === 'rsv'){
       fig({nx:1, ix:0, lx:'没有轴', ny:1, iy:0, ly:'不参与任何一把刀', c:MEMC.rsv},
           'allocator 碎片与 workspace');
-      note = '每张卡的分配历史不同，这一截本来就不是同一个数。';
+      note = '每张 NPU 的分配历史不同，这一截本来就不是同一个数。';
     }
   }
   /* ── 这一档在关系链上的位置 ──────────────────────────────────────────────
@@ -13409,7 +13409,7 @@ function memBlockDetail(D, g, key){
       + esc('一次搬运记全是五样：源 / 张量（含前后 layout）/ 并行域 / 原语 / 宿。\n'
           + '每条边下面那排十格 = 九层可观测性 + 载体（模·张·并·r·原·载·路·时·影·网）：'
           + '前九格问逻辑侧（谁 / 什么 / 怎么搬 / 何时 / 代价），最后一格问物理侧'
-          + '（这条边走 UB 还是 RoCE——同一条 AllToAll 是快是慢，取决于这几张卡在不在同一个超节点里）。'
+          + '（这条边走 UB 还是 RoCE——同一条 AllToAll 是快是慢，取决于这几张 NPU 在不在同一个 SuperPoD 里）。'
           + '实心=答得出、描边=只答了一半、虚线=缺、极淡=不适用；每一格都可点，'
           + '去到答得出它的那一屏（卡内解剖 / 单维切分 / 画布对应那一层 / 时间·流）。')
       + '"><b style="color:var(--pt-fg)">对应通信</b> <span style="opacity:.6">ⓘ</span></div>'
@@ -13434,12 +13434,12 @@ function memBlockDetail(D, g, key){
   var sibLine = '';
   var sibDs = memSibDims(key).filter(dimLive9);
   if(sibDs.length){
-    sibLine = '<div class="rm-note">兄弟卡已点亮：'
+    sibLine = '<div class="rm-note">兄弟 rank已点亮：'
       + sibDs.map(function(dm9){
           var n9 = dm9 === 'ep' ? D.ep : D[dm9];
           return '<b style="color:'+VC[dm9]+'">'+DIMN[dm9]+' 组</b> '+(n9-1)+' 张';
         }).join(' · ')
-      + '——沿这几根轴与本卡凑齐一整份（棱色=刀色）</div>';
+      + '——沿这几根轴与本 NPU 凑齐一整份（棱色=刀色）</div>';
   }
   return '<div class="rm-d" style="--rmc:'+tint+'">'
     + '<div class="rm-dh"><b style="color:'+tint+'">'+esc(title)+'</b>'
@@ -13495,15 +13495,15 @@ function xformSVG(D, o){
   if(o.kind === 'ag' || o.kind === 'rs'){
     var lf = o.kind === 'ag' ? [mine] : all, rf = o.kind === 'ag' ? all : [mine];
     s += bar(X0, lf) + bar(X1, rf);
-    s += cap(X0 + BW/2, BY - 6, o.kind === 'ag' ? '每卡一片（亮的是本卡）' : '完整一份');
-    s += cap(X1 + BW/2, BY - 6, o.kind === 'ag' ? '拼成完整一份' : '切开（亮的是本卡）');
+    s += cap(X0 + BW/2, BY - 6, o.kind === 'ag' ? '每 NPU 一片（亮的是本 NPU）' : '完整一份');
+    s += cap(X1 + BW/2, BY - 6, o.kind === 'ag' ? '拼成完整一份' : '切开（亮的是本 NPU）');
   }else if(o.kind === 'ar'){
     /* 值不同 → 值相同：形状一模一样，靠深浅表示「各卡的数不一样」 */
     var t, out = '';
     for(t = 0; t < n; t++) out += seg(X0 + t*(BW/n), BY, BW/n - 1, BH, mix(col, 26 + t*22), col);
     s += out + bar(X1, all);
-    s += cap(X0 + BW/2, BY - 6, '各卡各一份 · 值不同');
-    s += cap(X1 + BW/2, BY - 6, '各卡同一份 · 已求和');
+    s += cap(X0 + BW/2, BY - 6, '各 NPU 各一份 · 值不同');
+    s += cap(X1 + BW/2, BY - 6, '各 NPU 同一份 · 已求和');
   }else if(o.kind === 'a2a'){
     /* 每一格给一个自己的色阶，两边同源同色——不然「重排」只是几根装饰性的交叉线，
        读者看不出哪一格去了哪儿。有了色阶，连线是可追的：同色的两格就是同一批 token。 */
@@ -13527,10 +13527,10 @@ function xformSVG(D, o){
     s += seg(X1 - 2, BY - 8, BW + 4, BH + 16, 'transparent', dim, '4 3');
     s += seg(X0 + 4, BY, BW - 8, BH, col, col);
     s += seg(X1 + 4, BY, BW - 8, BH, 'transparent', col, '3 3');
-    s += cap(X0 + BW/2, H - 4, o.srcLab || '本卡');
+    s += cap(X0 + BW/2, H - 4, o.srcLab || '本 NPU');
     s += cap(X1 + BW/2, H - 4, o.dstLab || '下一段');
     s += cap(X0 + BW/2, BY - 12, '形状不变');
-    s += cap(X1 + BW/2, BY - 12, '只是换了张卡');
+    s += cap(X1 + BW/2, BY - 12, '只是换了张 NPU');
   }else{
     return '';
   }
@@ -13614,7 +13614,7 @@ function comm5Spec(D, key, dim){
       gfx:'a2a', code:'All-to-All', grain:'分块之间 · 按 token 重排',
       prim:'All-to-All（dispatch），算完 combine 再一次',
       tensor:'本层 router 判定后的 token',
-      before:'按序列排布 · 本卡 ' + fmt(mb*sCp) + ' token × top' + D.topk,
+      before:'按序列排布 · 本 NPU ' + fmt(mb*sCp) + ' token × top' + D.topk,
       after:'按目的专家排布（permute 成连续段才发得出去）',
       effect:'<b>归属再分配 + 重排</b>——整张图上唯一一条按数据内容决定去向的边',
       dual:'combine 时按同一张置换表逆排回原位置，否则接不上残差'
@@ -13623,7 +13623,7 @@ function comm5Spec(D, key, dim){
       gfx:'ag', code:'AllGather', grain:'分块之间 · 同一张量的分片',
       prim:'AllGather（前向一次、反向一次）',
       tensor:'本层参数 W',
-      before:'各卡 1/' + D.dp + ' 片',
+      before:'各 NPU 1/' + D.dp + ' 片',
       after:'完整一层',
       effect:'分片 → 完整，<b>用毕丢弃</b>——这一档的常驻量没变，变的是它什么时候在',
       dual:'反向还要再拼一次；ZeRO-2 的差别就在「前向做完要不要立刻丢」这一个布尔量'
@@ -13632,7 +13632,7 @@ function comm5Spec(D, key, dim){
       gfx:'ag', code:'AllGather', grain:'分块之间 · 同一张量的分片',
       prim:'AllGather',
       tensor:'本层参数 W（拼回来的那一份）',
-      before:'各卡 1/' + D.dp + ' 片',
+      before:'各 NPU 1/' + D.dp + ' 片',
       after:'完整一层 + 预取的下一层',
       effect:'分片 → 完整（归属临时失效）',
       dual:'反向再来一次；窗口宽度 = FSDP 的 wrap 粒度'
@@ -13642,16 +13642,16 @@ function comm5Spec(D, key, dim){
       prim: D.zero >= 2 ? 'ReduceScatter' : 'AllReduce',
       tensor:'本段参数的梯度 ∇W',
       before:'dp 个副本各一份完整的偏导（各吃各的微批，值互不相同）',
-      after: D.zero >= 2 ? '只留本卡那一段（1/' + D.dp + '），已求和' : '各卡同一份，已求和',
+      after: D.zero >= 2 ? '只留本 NPU 那一段（1/' + D.dp + '），已求和' : '各 NPU 同一份，已求和',
       effect: D.zero >= 2 ? '<b>值变（求和）＋ 归属再分配</b>（完整 → 分片）' : '<b>值变（求和），layout 与归属都不变</b>',
       dual: D.zero >= 2 ? '与参数 AllGather 成对：AllReduce = ReduceScatter + AllGather，ZeRO 做的就是把这一对拆开' : '反向本身就是它——它是反向的收尾'
     },
     'act|pp': {
-      gfx:'p2p', code:'P2P', grain:'段与段之间 · 换一张卡',
+      gfx:'p2p', code:'P2P', grain:'段与段之间 · 换一张 NPU',
       prim:'P2P Send/Recv（<b>点对点，不是集合通信</b>）',
       tensor:'段边界的激活',
       before:'stage ' + '{p}' + ' 的输出 ' + shp(mb, fmt(sCp), fmt(h)),
-      after:'stage ' + '{p1}' + ' 的输入（同一个张量，换了张卡）',
+      after:'stage ' + '{p1}' + ' 的输入（同一个张量，换了张 NPU）',
       effect:'<b>归属换卡，layout 不变</b>——五条边里唯一不改形状的一条',
       dual:'反向沿相反方向传 ∂L/∂act'
     },
@@ -13659,7 +13659,7 @@ function comm5Spec(D, key, dim){
       gfx:'ag', code:'AllGather', grain:'分块之间 · 序列被切开的那几段',
       prim:'AllGather(KV)',
       tensor:'K / V',
-      before:'本卡那一段序列的 KV ' + shp(mb, fmt(sCp), kvPerTp(D) + '·' + hd),
+      before:'本 NPU 那一段序列的 KV ' + shp(mb, fmt(sCp), kvPerTp(D) + '·' + hd),
       after:'全序列 KV ' + shp(mb, fmt(D.seq), kvPerTp(D) + '·' + hd),
       effect:'分片 → 完整；<b>只发生在 attention</b>，其余算子照常（没有跨 token 运算）',
       dual:'反向对 KV 的激活梯度做 ReduceScatter；Ring 实现下这一对底层跑成环形 P2P——语义与实现是两层'
@@ -13674,11 +13674,11 @@ function comm5Spec(D, key, dim){
       dual:'成对：前向 AG 的反向就是 RS'
     },
     'opt|dp': {
-      gfx:'none', grain:'不出这张卡',
+      gfx:'none', grain:'不出这张 NPU',
       prim:'不过网络',
       tensor:'主参数 fp32 + m + v',
-      before:'本卡那一段',
-      after:'本卡那一段（就地更新）',
+      before:'本 NPU 那一段',
+      after:'本 NPU 那一段（就地更新）',
       effect:'<b>不通信</b>：归属早在梯度 ReduceScatter 那一步就分好了，这一档自己不用再说话',
       dual:'—'
     }
@@ -13721,7 +13721,7 @@ function commL9(D, dim){
                  : ['h','只到「代表算子 / 代表层」这一级：这一维的边挂在本段的代表算子上，不是逐算子给'],
     tensor:['y','张量是什么、前态 → 后态的 layout，上面「张量」一行与那张变换图都在说它'],
     par:   ['y','并行域与组大小（' + DIMN[dim] + ' 组，成员在「源→宿」一行里列全）'],
-    rank:  ['y','源与宿都落到具体的 r 号；画布上这一条边连的就是这几张卡'],
+    rank:  ['y','源与宿都落到具体的 r 号；画布上这一条边连的就是这几张 NPU'],
     prim:  ['y','原语写明，画布上的芯片右半也是它（AR / AG·RS / A2A / P2P）'],
     /* 这一格曾经写成「答得出」，是抬高了自己：那三个数走的是 sdOpBuckets 的
        **示意口径**（按算子类别给量级，不是拿真 shape 算出来的），画布上 EP 那条
@@ -13741,15 +13741,15 @@ function commL9(D, dim){
        DP 组全在本超节点内、另一张的跨了两个超节点）。没选中卡就没有主语，如实说。 */
     fabric: (function(){
       if(sel === null || sel === undefined || sel >= D.world)
-        return ['h','要先选一张卡：载体由「这一维的这一组卡在不在同一个超节点里」决定，没有主语就没有答案'];
+        return ['h','要先选一张 NPU：载体由「这一维的这一组卡在不在同一个 SuperPoD 里」决定，没有主语就没有答案'];
       var mem0 = groupMembers(dim, sel, D);
       if(!mem0 || mem0.length < 2)
-        return ['na', DIMN[dim] + ' 组只有本卡一张，这一维不出卡——不适用，不是缺'];
+        return ['na', DIMN[dim] + ' 组只有本 NPU 一张，这一维不出卡——不适用，不是缺'];
       var fb0 = fabricOfGroup(mem0, D), pd0 = podSpan9(mem0, D);
       return pd0 > 1
-        ? ['y','这一组横跨 ' + pd0 + ' 个超节点 → 走 ' + fb0.name + '（' + fb0.bw + '），比 UB 低一个数量级：'
+        ? ['y','这一组横跨 ' + pd0 + ' 个 SuperPoD → 走 ' + fb0.name + '（' + fb0.bw + '），比 UB 低一个数量级：'
              + DIMN[dim] + ' 是被 scale-out 卡住的那一条']
-        : ['y','组内 ' + mem0.length + ' 张卡同在一个超节点 → 走 ' + fb0.name + '（' + fb0.bw + '，非阻塞全互联）。'
+        : ['y','组内 ' + mem0.length + ' 张 NPU 同在一个 SuperPoD → 走 ' + fb0.name + '（' + fb0.bw + '，非阻塞全互联）。'
              + '板内 / 板间 / 机架间按同一档算，待灵衢确认'];
     })()
   };
@@ -13859,7 +13859,7 @@ function comm5HTML(D, g, key, c, live, why){
     + gsvg
     + '<dl>'
     + '<dt>张量</dt><dd>' + esc(sp.tensor) + '</dd>'
-    + '<dt>源→宿</dt><dd>本卡 r' + g + ' → ' + dst + '</dd>'
+    + '<dt>源→宿</dt><dd>本 NPU r' + g + ' → ' + dst + '</dd>'
     + '<dt>效果</dt><dd>' + sp.effect + '</dd>'
     + '</dl>'
     + commL9HTML(D, c.d)
@@ -13946,7 +13946,7 @@ function renderRankMem(D){
          还会让人以为「本卡持有每一块的十六分之一」——那是假的。 */
       if(sg.zdiv > 1) rows.push('<tr><td></td><td colspan="2" style="padding:2px 0 4px" title="'
         + esc('沿 DP 切的是参数拉平后的连续区间，不是每块各切 1/'+D.dp
-              +'——某一块可能整块在本卡，也可能一个字节都没有（FSDP：all, some, or none）。')
+              +'——某一块可能整块在本 NPU，也可能一个字节都没有（FSDP：all, some, or none）。')
         + '"><span style="font-size:10.5px;letter-spacing:.06em;color:var(--pt-fg3);border:1px dashed var(--pt-bd);border-radius:3px;padding:0 4px;cursor:help">整份的构成</span></td></tr>');
       sg.sub.forEach(function(x){
         if(!x.bytes) return;
@@ -14816,7 +14816,7 @@ document.addEventListener('mousemove', function(ev){
   if(g && g.classList.contains('opblk')){
     var D3 = derive(cfg), o = opBytes(D3).filter(function(x){return x.id===g.getAttribute('data-op');})[0];
     if(o){
-      tip.innerHTML = '<b>'+esc(o.id)+'</b><br>'+esc(o.how)+'<br>'+esc(o.shape)+(o.b?'<br>'+fmtGB(o.b)+' GB / 卡':'');
+      tip.innerHTML = '<b>'+esc(o.id)+'</b><br>'+esc(o.how)+'<br>'+esc(o.shape)+(o.b?'<br>'+fmtGB(o.b)+' GB / NPU':'');
       tip.style.display='block';
       tip.style.left = Math.min(window.innerWidth-280, ev.clientX+13)+'px';
       tip.style.top = (ev.clientY+13)+'px';
@@ -15122,6 +15122,16 @@ if(q9brief.get('brief')==='1'){
       el.style.setProperty('stroke-linecap', 'butt');
     });
   }
+  /* 10.17：数值与单位之间统一空一格（31MB → 31 MB、1.45ms → 1.45 ms），同宿主写法 */
+  var UNIT_RE = /(\d)(MB|GB|KB|TB|ms|μs|us)(?![A-Za-z])/g;
+  function units() {
+    document.querySelectorAll('svg text, svg tspan').forEach(function (el) {
+      if (el.childElementCount) return;
+      var t = el.textContent; if (t && UNIT_RE.test(t)) { UNIT_RE.lastIndex = 0; el.textContent = t.replace(UNIT_RE, '$1 $2'); }
+      UNIT_RE.lastIndex = 0;
+    });
+  }
+  var normBase = norm; norm = function () { normBase(); units(); };
   function kick() { if (!pend) { pend = 1; requestAnimationFrame(norm); } }
   new MutationObserver(kick).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'stroke-dasharray'] });
   kick();

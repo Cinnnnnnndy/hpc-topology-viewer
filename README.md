@@ -711,6 +711,35 @@ BMC 那套走线的要点是**每根线一条自己的车道、平行不合并**
 - **缩放**：集群的 SP / UBoE / RoCE 标签与板视图数据标签字号按屏幕像素定（CSS `--zfs`，同线宽一套机制），放大不再变得特别大、铺满也不会只剩 3px；
   面包屑垫一圈底色，高倍放大时不被画布内容吃掉。
 
+**全站术语表（10.17）**：反馈「确定全局使用的词汇和概念是有一致性的，不要同一个概念用两个词，或一会儿中文一会儿英文」。
+原则沿用：业内通用英文的用英文（悬停出「中文 — 含义」），国内通用中文的用中文；**每个概念全站只一个写法**——卡面、画布、抽屉、
+引擎（Network Graph / NPU / Logical Cube）、告警与事故叙述、悬停说明一律照此。悬停词条只解释含义，不再用另一个名字复述一遍（原来「Network Graph」悬停出「整网图 — …」，等于同一个视图两个名字，已去掉）；缩写的中文全称（TP = 张量并行）属于释义，保留。
+
+| 概念 | 全站写法 | 不再出现的写法 |
+|---|---|---|
+| 超节点 | **SuperPoD**（Cross-SuperPoD） | SP、超节点（「SP」在整网图里是序列并行，同一个缩写不能指两件事） |
+| 板 | **Board** | 板、Boards |
+| 卡 / 单卡 | **NPU**（第三档面包屑与按钮也叫 NPU；Logical Cube 的说明文字同改） | 单卡、本卡、每张卡、卡、card |
+| 视图 | **Network Graph / Logical Cube / Hierarchy / Swimlane** | 整网图、逻辑魔方、层级剖面 |
+| 微批次 | **μb**（只有 μb 词条本身写「微批次（micro-batch）」） | 微批次 |
+| SP | **SP = 序列并行**（切分卡与 Logical Cube 里的用法；悬停词条原来写成「超节点」，已改正） | — |
+| 进程号 | **rank** | Rank、Rank ID |
+| 层 | **Layer**（L12–L17） | 层构成 → Layers |
+| 流水段 | **PP2**（PP Stage 为统称） | pp2、PP Stage 2 |
+| 显存 | **显存** | Memory |
+| 切分 | **切分**（整网切分 / 权重切分 / 切分规划） | Sharding、分片 |
+| 告警 / 事故 / 根因 | **告警 / 事故 / 根因** | Alert、Root Cause |
+| 通信 | **Comm**（Comm Links / Comm Group） | Communication、通信 |
+| 峰值 / 激活 / 吞吐 | **Peak / Activations / Throughput** | 峰值、激活、Tput |
+| 前向 / 反向 | **Forward / Backward** | Fwd / Bwd |
+| 梯度同步 | **DP AllReduce** | DP Sync、DP Gradient Sync |
+| 集合通信 | **A2A、AllGather、ReduceScatter** | All-to-All、All-Gather、Reduce-Scatter |
+| 检查点 | **ckpt** | Checkpoint |
+| 档位 | **OK / Warn / Critical / OOM** | ok、Crit、红线 / 黄线 |
+| 单位 | **7.7 GB/step、40 MB ×2/layer、1.45 ms** | 7.7GB /step、31MB、1.45ms |
+
+Logical Cube 的抬头也改成本页标题的写法（`MoE 504B A18B · 32K seq / rank N`），不再多一段「同组定位」。
+
 **端点落在哪**：只落在器件上，而且落在器件图元的中线上——
 - 板视图所有器件（NPU / CPU / NIC / DPU / SW / L1 / 交换板）统一「图标居中、名字在图标正下方居中」，中点只按图标算、
   不带名字：从上面来的线接图标**顶边中点**；侧向的线（CPU↔CPU、左右两根 UB 干线进 L1、交换板外连）接图标**左右边中点**

@@ -66,7 +66,7 @@
                  输出是 partial sum，必须归约）；norm 不改变特征维、沿 token 切最省
                  显存，这正是 SP 的存在理由；MoE 专家 bank 沿 expert 轴切。
        `carry`   哪些 rank 承载它（PP 首/末段专属的对象只落在那一段）
-       `shard`   这张卡持有的是第几片、区间是什么
+       `shard`   这张 NPU 持有的是第几片、区间是什么
        `best`    切到哪个形态，这个对象的分片会 snap 成规整的块/墙
                  —— 这是魔方「异常的形状 = 根因类别」那条设计语言的推广：
                     **切分的形状 = 这个对象被哪一维切**。
@@ -104,7 +104,7 @@
 
     { id: 'qkv', fam: 'linear', short: 'QKV', band: 'Attention', name: 'QKV 投影 Q/KV Up Linear',
       by: [{ dim: 'TP', axis: 'head' }], best: 'tps',
-      note: '注意力头按 TP 切：每张卡只算自己那几个 head。一整根纵深行 = 一个 TP 组，组内 8 片拼成全部 head。',
+      note: '注意力头按 TP 切：每张 NPU 只算自己那几个 head。一整根纵深行 = 一个 TP 组，组内 8 片拼成全部 head。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '注意力头', idx: m.tpOf(r), of: m.TP, range: rgOf(m.config.heads, m.TP, m.tpOf(r), 'h') }) },
 
@@ -128,7 +128,7 @@
 
     { id: 'o_proj', fam: 'linear', short: 'O 投影', band: 'Attention', name: 'Output Projection（行切）',
       by: [{ dim: 'TP', axis: 'hidden' }], best: 'tps', partial: true,
-      note: '行并行：每张卡算出来的是 partial sum，必须在 TP 组内归约才是完整输出。',
+      note: '行并行：每张 NPU 算出来的是 partial sum，必须在 TP 组内归约才是完整输出。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: '隐藏维', idx: m.tpOf(r), of: m.TP }) },
 
@@ -146,18 +146,18 @@
 
     { id: 'router', fam: 'gate', short: 'Router', band: 'MoE', name: 'Router Gate / TopK（复制）',
       by: [], best: null,
-      note: '路由门是复制的：每张卡都独立算一遍 token 该去哪个专家——先知道去哪，才谈得上把 token 发出去。',
+      note: '路由门是复制的：每张 NPU 都独立算一遍 token 该去哪个专家——先知道去哪，才谈得上把 token 发出去。',
       carry: () => true, shard: () => null },
 
     { id: 'experts', fam: 'moe', short: '路由专家', band: 'MoE', name: '路由专家 bank Routed Experts',
       by: [{ dim: 'EP', axis: 'expert' }], best: 'ep',
-      note: '专家按 EP 切：每张卡只持有自己那一桶专家的权重 —— MoE 显存不爆的根本原因。',
+      note: '专家按 EP 切：每张 NPU 只持有自己那一桶专家的权重 —— MoE 显存不爆的根本原因。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'EP', axis: '专家', idx: m.epOf(r), of: m.EP, range: m.expRange(m.epOf(r)) }) },
 
     { id: 'shared_expert', fam: 'mlp', short: '共享专家', band: 'MoE', name: '共享专家 Shared Expert',
       by: [{ dim: 'TP', axis: 'ffn' }], best: 'tps',
-      note: '共享专家每张卡都有（不按 EP 切），内部按 TP 切中间维 —— 与路由专家正好相反，值得对照着看。',
+      note: '共享专家每张 NPU 都有（不按 EP 切），内部按 TP 切中间维 —— 与路由专家正好相反，值得对照着看。',
       carry: () => true,
       shard: (m, r) => ({ dim: 'TP', axis: 'FFN 中间维', idx: m.tpOf(r), of: m.TP }) },
 
@@ -629,7 +629,7 @@
            同一个槽位——它是最稳定的那个坐标系，切分再怎么变，物理位置不跟着变。 */
         key: 'phys', name: '物理平铺', short: '物理',
         sub: `物理平铺：${HOSTS} 台机 × ${CPH} 卡摊成一张机房俯视图（不看并行分组，只看插在哪）`,
-        why: `不问「归哪个并行组」，只问「这张卡插在机房哪个槽位」· 单层摊平（Y 恒 0，各形态里唯一不叠高度的一种）`,
+        why: `不问「归哪个并行组」，只问「这张 NPU 插在机房哪个槽位」· 单层摊平（Y 恒 0，各形态里唯一不叠高度的一种）`,
         viewLabels: { 1: '顶 机房俯视（Host×槽位）' },
         depth: { 1: [] },
         // Y 恒为 0（真摊平），3D 与顶视看到的是同一份东西 → 顶视本身就是「最该看的一屏」，
@@ -791,7 +791,7 @@
        自己的 ?brand= 桥接）才会换成别的名字，独立打开 /rubik-pattern.html
        或别处嵌入这份 pattern 都不受影响。这里插进 innerHTML 的字符串，
        跟文件别处的 esc() 一个手法，自己转义一遍，不信任调用方传干净的。 */
-    const brandNameHtml = String(opts.brandName || '逻辑魔方').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const brandNameHtml = String(opts.brandName || 'Logical Cube').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     root.innerHTML = [
       '<div class="prc-stage"></div>',
       opts.chrome === false
@@ -859,7 +859,7 @@
        它编，所以走 opts 传入；默认不传，行为跟改动前一样，只有一段
        "模型名 / rank N"。 */
     const brandEl = $('.prc-brandname');
-    const brandBase = String(opts.brandName || '逻辑魔方');
+    const brandBase = String(opts.brandName || 'Logical Cube');
     const brandTier = opts.brandTierLabel ? String(opts.brandTierLabel) : '';
     /* 显示用的 rank 号（宿主可换算）：本页 rank 序是 rep 在外、pp 在内；宿主若按 pp 在外编号，就传 opts.rankLabel 把显示换成宿主的号，
        内部选中 / 联动仍用本页自己的序。不传 = 原样 */
@@ -2666,7 +2666,7 @@
       // 标题：这块板说的是哪张卡
       lab([{ t: `rank ${r}`, c: tokHex('--foreground') }], tokHex('--foreground'),
         PAY.LAB * 1.15, -PAY.W / 2 - 7, PAY.STEP * 0.95, 'right');
-      lab('整条=全部分片 · 实心=本卡这一片', tokHex('--foreground-secondary'),
+      lab('整条=全部分片 · 实心=本 NPU 这一片', tokHex('--foreground-secondary'),
         PAY.LAB * 0.92, -PAY.W / 2, PAY.STEP * 0.95, 'left');
       // 引线：把板和它说的那张卡连起来（不缩放，走世界坐标，每帧随卡位重算）
       const g = new THREE.BufferGeometry().setFromPoints([V3(0, 0, 0), V3(0, 0, 0)]);
@@ -2982,9 +2982,9 @@
        后者原先只藏在侧栏清单里，3D 里没有入口。 */
     detailEl.innerHTML = '<div class="prc-detail-cap"></div>'
       + '<div class="prc-detail-foot">'
-      + '<button class="prc-objstep" data-d="-1" type="button" title="本卡持有的上一个对象（不换卡）">‹</button>'
+      + '<button class="prc-objstep" data-d="-1" type="button" title="本 NPU 持有的上一个对象（不换 NPU）">‹</button>'
       + '<span class="prc-objnow"></span>'
-      + '<button class="prc-objstep" data-d="1" type="button" title="本卡持有的下一个对象（不换卡）">›</button>'
+      + '<button class="prc-objstep" data-d="1" type="button" title="本 NPU 持有的下一个对象（不换 NPU）">›</button>'
       + '</div>';
     root.appendChild(detailEl);
     /* 本卡持有的对象序列（不含通信算子与不承载的）——「rank 内部」走的就是这一串。 */
@@ -3012,10 +3012,10 @@
         const nObj = model.netObjects.filter((x) => !x.comm).length;
         detailEl.firstChild.innerHTML = `<b>rank ${S.sel}</b> · 卡内`
           + ` <span>L${lr.lo}-L${lr.hi}</span>`
-          + `<em>横=层 · 纵=算子 ×${nObj} · 空框=本卡没有</em>`;
+          + `<em>横=层 · 纵=算子 ×${nObj} · 空框=本 NPU 没有</em>`;
         const list0 = carriedObjs(S.sel);
         const now0 = detailEl.querySelector('.prc-objnow');
-        if (now0) now0.innerHTML = `本卡对象 <b>${list0.length}</b>`;
+        if (now0) now0.innerHTML = `本 NPU 对象 <b>${list0.length}</b>`;
         return;
       }
       const sh = model.objCarry(o.id, S.sel) ? model.objShard(o.id, S.sel) : null;
@@ -3024,11 +3024,11 @@
       detailEl.firstChild.innerHTML =
         `<b>rank ${S.sel}</b> · ${esc(o.short || o.name)}`
         + (sh ? ` <span>${sh.idx}/${sh.of}</span>` : ' <span>整份</span>')
-        + (sh ? `<em>全 ${sh.of} 片 · 亮的是本卡 · 其余在别的卡</em>` : '<em>复制 · 每张卡各一份</em>');
+        + (sh ? `<em>全 ${sh.of} 片 · 亮的是本 NPU · 其余在别的 NPU</em>` : '<em>复制 · 每张 NPU 各一份</em>');
       const list = carriedObjs(S.sel);
       const i = list.findIndex((x) => x.id === S.obj);
       const now = detailEl.querySelector('.prc-objnow');
-      if (now) now.innerHTML = `本卡对象 <b>${i < 0 ? '—' : i + 1}/${list.length}</b>`;
+      if (now) now.innerHTML = `本 NPU 对象 <b>${i < 0 ? '—' : i + 1}/${list.length}</b>`;
     }
     /* ── 细节窗里切换片 ─────────────────────────────────────────────────────
        「点片切换」的正确落点是这里，不是主场景：主场景里片只有几个像素、被邻卡和连线
@@ -3289,10 +3289,10 @@
       const d = curDepth();
       if (!d) return '';
       const rest = d.fold / d.slice.n;   // 开剖面后仍被折叠的卡数（多折叠维时 > 1）
-      if (!S.sliceOn) return `每格 ${d.fold} 张卡重叠（${d.label} 折入视线，可开剖面逐层翻）`;
+      if (!S.sliceOn) return `每格 ${d.fold} 张 NPU 重叠（${d.label} 折入视线，可开剖面逐层翻）`;
       return rest > 1
-        ? `每格 ${rest} 张卡重叠（正翻 ${d.slice.lab}=${S.sliceVal}，其余维仍折叠）`
-        : `每格 1 张卡（正翻 ${d.slice.lab}=${S.sliceVal}）`;
+        ? `每格 ${rest} 张 NPU 重叠（正翻 ${d.slice.lab}=${S.sliceVal}，其余维仍折叠）`
+        : `每格 1 张 NPU（正翻 ${d.slice.lab}=${S.sliceVal}）`;
     }
     // 图例必须跟着「当前卡块着色」走：分组着色时列出各组的实际配色，负载着色时给色带，
     // 注入异常时给异常组——否则切了着色图例纹丝不动，读者按图例根本对不上画面。
@@ -3312,10 +3312,10 @@
           const gl = o.alias || o.comm;
           parts.push(row(dimc(o.comm), `${gl} 组 · ${o.prim}`));
           parts.push(S.sel == null
-            ? `<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">通信算子属于通信组、不属于单张卡 —— 先选一张卡，才有「哪个组」可高亮</span></div>`
+            ? `<div class="prc-lgrow"><i style="background:transparent"></i><span class="prc-dim">通信算子属于通信组、不属于单个 NPU —— 先选一张 NPU，才有「哪个组」可高亮</span></div>`
             : row(rgbCss(restColor(2)), '组外'));
         } else if (!o.by.length) {
-          parts.push(row(tokHex('--foreground-secondary'), '复制 · 每张卡各一份完整的'));
+          parts.push(row(tokHex('--foreground-secondary'), '复制 · 每张 NPU 各一份完整的'));
         } else {
           /* 图例的「切成几片、沿哪根轴」必须与着色同源 —— 着色走 objShard（承载者按
              持有第几片着色），所以这里也走 objShard，别用 o.by[0]。否则 attn_core 这类
@@ -3423,7 +3423,7 @@
         `<button class="prc-infoclose btn btn-sm" type="button" aria-label="取消选中">${ICON.close}</button>` +
         `<div class="prc-kicker">RANK</div>` +
         `<div class="prc-title">rank ${rankLabel(r)} <span class="prc-dim">/ ${N}</span></div>` +
-        `<p class="prc-prose">这张卡同时属于四个通信域：换形态只改变它摆在哪，不改变下面这四个身份。</p>` +
+        `<p class="prc-prose">这张 NPU 同时属于四个通信域：换形态只改变它摆在哪，不改变下面这四个身份。</p>` +
         `<div class="prc-kv">` +
         kv('TP 槽位', `<b style="color:${dimc('TP')}">TP${model.tpOf(r)}</b> <span class="prc-dim">/ ${TP}</span>`) +
         kv('PP 段', `<b style="color:${dimc('PP')}">PP${st}</b> <span class="prc-dim">S${st}·L${lr.lo}-${lr.hi}</span>`) +
@@ -3528,10 +3528,10 @@
           + `${dot}<span class="prc-rostername">${esc(o.name)}</span><span class="prc-rosterval">${state}</span></button>`;
       };
       const lr = model.stageLayerRange(model.ppOf(r));
-      return `<div class="prc-kicker" style="margin-top:9px">装载清单 · 这张卡是整网的哪一堆碎片</div>`
+      return `<div class="prc-kicker" style="margin-top:9px">装载清单 · 这张 NPU 是整网的哪一堆碎片</div>`
         + `<p class="prc-prose">rank 不是先存在、再由对象落上去——它就是六维切分切出来的那个格子。`
         + `本段只有 <b>L${lr.lo}-L${lr.hi}</b>（${lr.hi - lr.lo + 1}/${model.config.layers} 层），`
-        + `其余 ${model.config.layers - (lr.hi - lr.lo + 1)} 层这张卡一个字节都没有。点一行看那个对象。</p>`
+        + `其余 ${model.config.layers - (lr.hi - lr.lo + 1)} 层这张 NPU 一个字节都没有。点一行看那个对象。</p>`
         + bands.map((b) => `<div class="prc-rosterband">${esc(b.name)}</div>` + b.items.map(row).join('')).join('')
         /* 两个色系的解释放悬停里，不占四行散文（同「行尾说明一律进问号气泡」那条纪律）。 */
         + `<p class="prc-prose prc-dim" title="族色取自已发布的整网图 pattern（model-architecture-3d-deck / …-training-sidecar）的 COLOR_FALLBACKS，其 key 与 openpangu 图节点的 opv:* colorKey 同源，两边同一族算子同一个色。维度签名色则是 TP/PP/DP/EP/CP/SP 那一套。">`
@@ -3551,16 +3551,16 @@
         return head + `<div class="prc-kv">`
           + kv('通信组', `<b style="color:${dimc(o.comm)}">${esc(o.alias || o.comm)} 组</b> <span class="prc-dim">${g.length} 员</span>`)
           + kv('集合原语', `<b>${esc(o.prim)}</b>`)
-          + `</div><p class="prc-prose">通信算子不属于单张卡，而属于一个通信组：组内每张卡上各有一个实例。上面这一组就是本卡参与的那个。</p>`;
+          + `</div><p class="prc-prose">通信算子不属于单个 NPU，而属于一个通信组：组内每张 NPU 上各有一个实例。上面这一组就是本 NPU 参与的那个。</p>`;
       }
       const sh = model.objShard(S.obj, r);
       const carried = model.objCarry(S.obj, r);
       if (!carried) {
-        return head + `<div class="prc-status">本卡<b>不承载</b>这个对象`
-          + `<span class="prc-dim">（${o.firstStage ? '只落在 PP 首段' : o.lastStage ? '只落在 PP 末段' : '不在本段'}，本卡在 PP${model.ppOf(r)}）</span></div>`;
+        return head + `<div class="prc-status">本 NPU<b>不承载</b>这个对象`
+          + `<span class="prc-dim">（${o.firstStage ? '只落在 PP 首段' : o.lastStage ? '只落在 PP 末段' : '不在本段'}，本 NPU 在 PP${model.ppOf(r)}）</span></div>`;
       }
       if (!sh) {
-        return head + `<div class="prc-status">复制 —— 每张卡各持一份完整的<span class="prc-dim">（不被任何维切开）</span></div>`;
+        return head + `<div class="prc-status">复制 —— 每张 NPU 各持一份完整的<span class="prc-dim">（不被任何维切开）</span></div>`;
       }
       /* 被多维同时切的对象（attn_core = TP head × CP ctx）要**每一维各给一行**：
          只报主导那一维等于把话说了一半。单维对象 objShards 退化成 [shard]，同一段代码。 */
@@ -3570,14 +3570,14 @@
         + alls.map((x) => kv(`${x.dim} 沿${esc(x.axis)}切`,
           `<b style="color:${dimc(x.dim)}">第 ${x.idx} 片</b> <span class="prc-dim">/ ${x.of}</span>`
           + (x.range ? ` <span class="prc-dim">${esc(x.range)}</span>` : ''))).join('')
-        + (grid ? kv('这张卡 = 网格一格',
+        + (grid ? kv('这张 NPU = 网格一格',
           `<b>${alls.map((x) => x.idx).join(' × ')}</b> <span class="prc-dim">/ ${alls.map((x) => x.of).join(' × ')} = ${alls.reduce((a, x) => a * x.of, 1)} 格</span>`) : '')
         + `</div>`
         /* 片选择条：切换片的**可靠**入口。在 3D 里点小方块受遮挡与透视影响，
            很容易误触（尤其片是空框时）；这里一排编号，点哪片就跳到持有那片的 rank。
            两条路并存：场景里点得中就点，点不中来这儿。 */
         + model.objShards(o.id, r).map((x) => shardStrip(r, o, x)).join('')
-        + (o.partial ? `<div class="prc-status">行切算子 —— 本卡算出的是 <b>partial sum</b>，要在 TP 组内归约才完整</div>` : '');
+        + (o.partial ? `<div class="prc-status">行切算子 —— 本 NPU 算出的是 <b>partial sum</b>，要在 TP 组内归约才完整</div>` : '');
     }
 
     /* 「此刻这一维的走线各跨了哪层」——3D 里画层级色线看不出来（线太细、又和 TP 组
@@ -3635,7 +3635,7 @@
           <dt>Ctrl / ⌘ + 拖动</dt><dd>平移画布（中键拖同样）。<b>不会</b>把正交视角踢回 3D——挪到哪儿看还是那一屏</dd>
           <dt>滚轮</dt><dd>缩放。切形态或切视角会重新取景，平移量一并归零</dd>
         </dl>
-        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张卡就写在上面这行「此刻」里。</p>`,
+        <p class="prc-helpnote">折叠不隐瞒：每格重叠多少张 NPU 就写在上面这行「此刻」里。</p>`,
       obj: `<h4>对象 · 整网的一个东西被切成了什么样</h4>
         <p>魔方本来回答「谁和谁一组」。选一个<b>整网对象</b>（模型计算图上的一个模块 / 算子 / HCCL 算子），它多回答一件事：<b>这个对象是怎么被切开、落到哪些卡上的</b>。</p>
         <p>选中后<b>对象接管着色</b>（与注入同一个约定，两套颜色不能同时在）：承载它的卡按「持有第几片」着色，不承载的退成背景。于是——</p>
@@ -3643,12 +3643,12 @@
           <dt>路由专家</dt><dd>按 EP 切 → 切到 EP聚簇，每面墙就是一个专家桶</dd>
           <dt>QKV 投影</dt><dd>按 TP 沿注意力头切 → 切到 TP切片，每片墙是一个 head 分片</dd>
           <dt>词嵌入 / LM Head</dt><dd>只落在 PP 首 / 末段 → 切到 PP流水，只有那一段亮着</dd>
-          <dt>Router</dt><dd>复制的：每张卡各一份完整的，没有「片」可言</dd>
+          <dt>Router</dt><dd>复制的：每张 NPU 各一份完整的，没有「片」可言</dd>
         </dl>
         <p class="prc-helpnote"><b>切分的形状 = 这个对象被哪一维切</b> —— 这是「异常的形状 = 根因类别」那条读法的推广。每个对象都知道自己该去哪一屏，「去 XX」按钮直接飞过去。</p>
-        <p>通信算子（HCCL）那一带按另一条规则：<b>它不属于单张卡，而属于一个通信组</b>，组内每张卡上各有一个实例。所以要先选一张卡，才有「哪个组」可高亮。</p>`,
+        <p>通信算子（HCCL）那一带按另一条规则：<b>它不属于单个 NPU，而属于一个通信组</b>，组内每张 NPU 上各有一个实例。所以要先选一张 NPU，才有「哪个组」可高亮。</p>`,
       slice: `<h4>剖面 · 折掉的那一维翻到第几层</h4>
-        <p>正交 2D 会把与视线平行的那一维折进屏幕，于是一格里叠着好几张卡。剖面就是<b>只看这一维的某一层</b>，其余压暗——它跟着视角走（换一屏，折掉的是另一维，剖面翻的也就换成那一维），所以排在「视角」后面而不是自成一档。</p>
+        <p>正交 2D 会把与视线平行的那一维折进屏幕，于是一格里叠着好几张 NPU。剖面就是<b>只看这一维的某一层</b>，其余压暗——它跟着视角走（换一屏，折掉的是另一维，剖面翻的也就换成那一维），所以排在「视角」后面而不是自成一档。</p>
         <dl>
           <dt>剖面</dt><dd>开 / 关。关掉 = 把 N 张叠在一起看</dd>
           <dt>滑杆</dt><dd>翻到第几层。拖它会自动开——抓住把手本身就是「我要逐层看」</dd>
@@ -3660,7 +3660,7 @@
           <dt>状态热力</dt><dd>当前通信阶段的负载，绿→黄→红，跟着时间轴走</dd>
           <dt>TP / PP / DP / EP</dt><dd>按该维的组号上色，同色即同组——用来肉眼验证「这种堆法下同组是不是真的连成一块」</dd>
           <dt>主机 / Pod</dt><dd>按物理落位上色，看 rail 亲和：同色连成块 = 这一组正好装在一台机 / 一个 Pod 里</dd>
-          <dt>权重占比 / 激活占比 / 梯度占比 / 优化器态占比</dt><dd>这张卡在全网同一档字节数里排 min→max 的第几位，绿→黄→红，与状态热力共用同一条色带（换分子不换调色板）。<b>结构性</b>读数——同一 TP/PP/EP 坐标永远算出同一个数，不随时间轴变化；切一下并行度或形态，花纹会跟着重新排布。图例那两个 GB 数字是真实端点，颜色是这两个端点之间的相对位置，不是占卡内总内存的百分比</dd>
+          <dt>权重占比 / 激活占比 / 梯度占比 / 优化器态占比</dt><dd>这张 NPU 在全网同一档字节数里排 min→max 的第几位，绿→黄→红，与状态热力共用同一条色带（换分子不换调色板）。<b>结构性</b>读数——同一 TP/PP/EP 坐标永远算出同一个数，不随时间轴变化；切一下并行度或形态，花纹会跟着重新排布。图例那两个 GB 数字是真实端点，颜色是这两个端点之间的相对位置，不是占卡内总内存的百分比</dd>
         </dl>
         <p class="prc-helpnote">右下角图例只列「颜色 + 名字」。组数超过色环时会 12 色循环，<b>同色不一定同组</b>，以「… 共 N 组」为准；图例里那条灰色是「与选中卡无关」的压暗卡，不是另一个组。内存构成四档给的是全网 min→max 的 GB 数，不是某张代表卡的读数。</p>`,
       anom: `<h4>注入 · 假装某一维出故障</h4>
@@ -3668,7 +3668,7 @@
         <p><b>与着色的关系</b>：注入不是另一种镜头，而是<b>接管</b>着色——一旦注入非「无」，卡色改由故障决定（受影响的卡＝危险红，其余按低负载淡色），上面选的着色镜头暂时让位，图例也随之切换；选回「无」即恢复。</p>
         <p class="prc-helpnote">例：注入 EP桶3 → 标准形态下是一圈周期条带，切到 EP 聚簇就 snap 成一整面墙，这就是「热点桶」的形状。</p>`,
       wire: `<h4>连线 · 选中卡的四个通信域怎么收发</h4>
-        <p>必须先选中一张卡（点画面里的小方块），否则没有对象可画。</p>
+        <p>必须先选中一张 NPU（点画面里的小方块），否则没有对象可画。</p>
         <dl>
           <dt>成员</dt><dd>同域对端卡的线框描边</dd>
           <dt>通信线</dt><dd>按集合算法画的走线</dd>
@@ -3698,7 +3698,7 @@
         // 当前形态「给你看什么」——一格之隔 vs 一堵墙之隔，各自对应哪类问题
         const DETAIL = {
           std: `三根语义轴各放一维（X=PP 左→右 Stage0→末 · Y=DP 上→下 · Z=TP 纵深），`
-            + `一张卡的位置就是它的 (TP,PP,DP) 坐标；第 4 维 EP 靠着色透镜叠上去。`
+            + `一张 NPU 的位置就是它的 (TP,PP,DP) 坐标；第 4 维 EP 靠着色透镜叠上去。`
             + `<b>前 PP-DP 面是一张现成的「哪一段 × 哪个副本」表</b>——两根有编号、要一段段读的`
             + `轴都在屏幕上；TP 收进纵深，因为一整根纵深行就是一个 TP 组，翻它用剖面。`
             + `这是「查身份」的形态，不是「找形状」的形态。`,
@@ -3708,8 +3708,8 @@
             + `<b>热点/坏桶 = 一整面墙同色</b>；横穿所有墙的同一排 = 一个 A2A 域（每桶各出 1 员互发）。桶↔卡非 1:1。`,
           tps: `坐标系与标准完全相同，只把 TP 轴的间距拉到「强调」档：<b>一面墙 = 全网 TP 槽位相同的卡</b>`
             + `（横跨所有 PP 段与所有 DP 副本，共 ${PP * REP} 张）。同槽位的系统性问题——固件/驱动版本不一致、`
-            + `某槽位风道差、某条 rail 上的第 k 张卡——在标准形态里是每隔 ${TP} 张出现一次的周期细条纹，`
-            + `在这里是<b>一整面墙同红</b>（注入「TP槽0」可当场对照）。选中一张卡时，它的 TP AllReduce 组`
+            + `某槽位风道差、某条 rail 上的第 k 张 NPU——在标准形态里是每隔 ${TP} 张出现一次的周期细条纹，`
+            + `在这里是<b>一整面墙同红</b>（注入「TP槽0」可当场对照）。选中一张 NPU 时，它的 TP AllReduce 组`
             + `= 每面墙各一张，连线横穿全部 ${TP} 面墙——这就是「每次层内 AllReduce 要跨过多少堵墙」。`,
           ppf: `这个形态<b>换了轴</b>：X=PP（段，左→右就是前向数据流）· Y=TP · Z=DP。`
             + `<b>一面墙 = 一个流水段的所有卡</b>（连续 ${LPS} 层 × 所有 TP × 所有 DP）。`
