@@ -386,7 +386,7 @@
      压在浅色底上发脏 → pattern 自备一档，待回补上游（同 --dim-tp 的处理）。 */
   --prc-float-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.06);
   --dim-tp: #39c5cf;
-  --dim-pp: #ffaa3b;
+  --dim-pp: #f472b6;   /* 10.16：同宿主，PP 不再用琥珀 */
   --dim-dp: #4369ef;
   --dim-ep: #9b3cf6;
 }

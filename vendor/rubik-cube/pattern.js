@@ -861,10 +861,13 @@
     const brandEl = $('.prc-brandname');
     const brandBase = String(opts.brandName || '逻辑魔方');
     const brandTier = opts.brandTierLabel ? String(opts.brandTierLabel) : '';
+    /* 显示用的 rank 号（宿主可换算）：本页 rank 序是 rep 在外、pp 在内；宿主若按 pp 在外编号，就传 opts.rankLabel 把显示换成宿主的号，
+       内部选中 / 联动仍用本页自己的序。不传 = 原样 */
+    const rankLabel = typeof opts.rankLabel === 'function' ? opts.rankLabel : function (r) { return r; };
     function syncBrand() {
       if (!brandEl) return;
       brandEl.textContent = brandBase
-        + (S.sel != null ? (brandTier ? ' / ' + brandTier : '') + ' / rank ' + S.sel : '');
+        + (S.sel != null ? (brandTier ? ' / ' + brandTier : '') + ' / rank ' + rankLabel(S.sel) : '');
     }
 
     /* ── three 场景 ── */
@@ -1817,7 +1820,7 @@
            分段靠**线**标，间距是留给「强调形态」的唯一手段，标准用掉了 PP流水 就没得拉。 */
         axBlockDividers('x', cutsBetween(PP, xS), bb, PPc);
         axRegionsAlong(PP, 'x', xS, bb, (i) => { const r = model.stageLayerRange(i);
-          return { title: `PP Stage ${i} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
+          return { title: `PP${i} · L${r.lo}–L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         // 块标走 series：摆不下就自动少摆几枚（原来一块一枚，密了就叠成一摞）
         /* 牌上只留**身份 + 这个形态最要紧的那个限定**（哪一段 · 管哪几层），
            规格（里面有多少张卡）收进悬停——牌一短，一条边上就摆得下全部几段，
@@ -1828,10 +1831,10 @@
         // 段标两行：`PP0` / `L0-L11`。PP 现在落在下方那条边，占位量的是**宽度**——
         // 一行摆的话四段只摆得下两段（见 axOnAxisSeries 的 subOf 注释）。
         axOnAxisSeries(PP, (i) => `PP${i}`, PPc, 6, 'x', xS, bb,
-          { plate: true, rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
+          { plate: true, rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}–L${r.hi}`; } });
         // 3D：段标整排贴着 X 轴（与 DP 平铺的列/行同一种做法）
         ax3dTicks((i) => `PP${i}`, PPc, 2.6, 'x', PP, xS, bb,
-          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
+          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}–L${r.hi}`; } });
       } else if (S.mode === 1) {
         const s = sp.dpt, COLS = model.COLS, ROWS = model.ROWS;
         const bb = model.boundsOf(1);
@@ -1951,13 +1954,13 @@
         axGridBox(b, xL, [], zL, true, { x: PPc, z: DPc });
         axBlockDividers('x', cutsBetween(PP, (st) => bb.x0 + st * s.gapP), bb, PPc);
         axRegionsAlong(PP, 'x', (st) => bb.x0 + st * s.gapP, bb, (st) => { const r = model.stageLayerRange(st);
-          return { title: `PP Stage ${st} · L${r.lo}-L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
+          return { title: `PP${st} · L${r.lo}–L${r.hi}`, sub: `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`, color: PPc }; });
         const pSub = `TP ×${TP} · DP ×${REP} = ${TP * REP} 卡`;
-        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}-L${r.hi}`; },
+        axOnAxisSeries(PP, (i) => { const r = model.stageLayerRange(i); return `PP${i} · L${r.lo}–L${r.hi}`; },
           PPc, 6, 'x', (i) => bb.x0 + i * s.gapP, bb, { plate: true, rank: 1 });
         axText(seg2(`前向激活 PP0→PP${PP - 1}`, PPc, `（左→右，即 Stage0→Stage${PP - 1}）· 反向梯度 ← · 段间 P2P · 每段=连续 ${LPS} 层`), PPc, 10.5);
         ax3dTicks((i) => `PP${i}`, PPc, 2.6, 'x', PP, (i) => bb.x0 + i * s.gapP, bb,
-          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}-L${r.hi}`; } });
+          { rank: 1, subOf: (i) => { const r = model.stageLayerRange(i); return `L${r.lo}–L${r.hi}`; } });
         ax3dTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         axAxisTicks((i) => `DP${i}`, DPc, 1.6, 'z', REP, zD, bb);
         if (CP > 1) {
@@ -3419,7 +3422,7 @@
       info.innerHTML =
         `<button class="prc-infoclose btn btn-sm" type="button" aria-label="取消选中">${ICON.close}</button>` +
         `<div class="prc-kicker">RANK</div>` +
-        `<div class="prc-title">rank ${r} <span class="prc-dim">/ ${N}</span></div>` +
+        `<div class="prc-title">rank ${rankLabel(r)} <span class="prc-dim">/ ${N}</span></div>` +
         `<p class="prc-prose">这张卡同时属于四个通信域：换形态只改变它摆在哪，不改变下面这四个身份。</p>` +
         `<div class="prc-kv">` +
         kv('TP 槽位', `<b style="color:${dimc('TP')}">TP${model.tpOf(r)}</b> <span class="prc-dim">/ ${TP}</span>`) +

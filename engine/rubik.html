@@ -94,6 +94,12 @@
     // 自己的名字——只有宿主想把它认成别的东西（比如 rank-topology-lite
     // 把它接进真实模型的三档取景，招牌该写模型名而不是 pattern 名）时才用。
     brandName: qs.get('brand') || undefined,
+    /* ?rankorder=pp：宿主（shard-device-map）按 ((pp·DP+dp)·CP+cp)·TP+tp 编 rank，本页是 ((dp·PP+pp)·CP+cp)·TP+tp——显示换成宿主的号 */
+    rankLabel: qs.get('rankorder') === 'pp' ? function (i) {
+      var TP = cfg.tp, CP = cfg.cp || 1, PP = cfg.pp, DP = cfg.dp;
+      var tp = i % TP, cp = Math.floor(i / TP) % CP, q = Math.floor(i / (TP * CP)), pp = q % PP, dp = Math.floor(q / PP);
+      return ((pp * DP + dp) * CP + cp) * TP + tp;
+    } : undefined,
     // 选中之后插在"模型名"和"rank N"中间的第三段面包屑（?tierlabel=）：
     // 宿主自己的取景档位名字（比如 rank-topology-lite 第二档的"选中+
     // 兄弟"），默认不传，面包屑仍是"模型名 / rank N"两段，跟改动前一样。

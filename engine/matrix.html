@@ -47,7 +47,7 @@
    ════════════════════════════════════════════════════════════════════ */
 .pt-root{
   --pt-tp: var(--dim-tp, #22d3ee);
-  --pt-pp: var(--warning, #ffaa3b);
+  --pt-pp: var(--dim-pp, #f472b6);   /* 10.16：PP 原取 --warning（告警琥珀），维度色不能借状态色 */
   --pt-dp: var(--primary, #4369ef);
   --pt-ep: var(--highlight-l0a-violet-400, #9b3cf6);
   --pt-cp: var(--highlight-ub-green-600, #86c70f);
@@ -1044,13 +1044,13 @@ var TOPOLOGY_COLOR_PROFILE = {
 };
 var VC_SOURCE = {
   tp:['var(--pt-tp)', '#22D3EE'], cp:['var(--pt-cp)', '#86C70F'],
-  pp:['var(--pt-pp)', '#FFAA3B'], dp:['var(--pt-dp)', '#4369EF'],
+  pp:['var(--pt-pp)', '#F472B6'], dp:['var(--pt-dp)', '#4369EF'],
   ep:['var(--pt-ep)', '#9B3CF6']
 };
 var VC = {};
 /* slabgap（宿主 lingqu-rank-map 的单卡层）用宿主那套维度色：这份调色板里的 DP #1237BA 在黑底上近乎看不见，
    提亮后又跟 EP 的紫混成一团。线与兄弟块都走它，和宿主左右卡片上的色点是同一套颜色。 */
-var HOST_DC = {tp:'#22d3ee', cp:'#86c70f', ep:'#9b3cf6', dp:'#4369ef', pp:'#ffaa3b'};
+var HOST_DC = {tp:'#22d3ee', cp:'#86c70f', ep:'#9b3cf6', dp:'#4369ef', pp:'#f472b6'};   // 10.16：PP 同宿主改粉（原琥珀与告警撞色）
 function dimCol(d){ return (ui.slabGap && HOST_DC[d]) ? HOST_DC[d] : VC[d]; }
 var MEMC = {};
 /* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
@@ -10009,8 +10009,8 @@ function sideScene(D, g, box){
       function fitFs9(str9, base9){
         return Math.min(1, segRoom9 / Math.max(1, fsW(str9, base9/FS_Z)));
       }
-      var ttlS9 = 'PP Stage '+st9+' · L'+lo9+'–L'+hi9, fitT9 = fitFs9(ttlS9, 7.4);
-      if(fitT9 < 0.78){ ttlS9 = 'PP'+st9+' · L'+lo9+'–'+hi9; fitT9 = Math.max(0.5, fitFs9(ttlS9, 7.4)); }
+      var ttlS9 = 'PP'+st9+' · L'+lo9+'–L'+hi9, fitT9 = fitFs9(ttlS9, 7.4);
+      if(fitT9 < 0.78){ ttlS9 = 'PP'+st9+' · L'+lo9+'–L'+hi9; fitT9 = Math.max(0.5, fitFs9(ttlS9, 7.4)); }
       /* 过路高亮：段头也套一圈虚线（与正视格框、3D 卡壳同一套语言）。
          段头本来就是"选中那张卡落在哪一段"的显示器（on9），亮的理由和格框
          完全一样，来路也就该用完全一样的记号说出来。
@@ -11294,7 +11294,7 @@ function renderGroupHud(D){
   if(ui.kTP && D.tp > 1) groups.push({k:'t', name:'TP·SP', n:D.tp, cur:cur9(co.t), col:VC.tp});
   if(ui.kEP && D.moe && D.ep > 1) groups.push({k:'e', name:'EP', n:D.ep, cur:cur9(me ? me.ep : 0), col:VC.ep});
   if(ui.kPP && D.pp > 1) groups.push({k:'p', name:'PP', n:D.pp, cur:cur9(co.p), col:VC.pp,
-    lab:function(i){ return 'PP'+i+'·L'+(i*lps)+'–'+Math.min(L-1,(i+1)*lps-1); }});
+    lab:function(i){ return 'PP'+i+' · L'+(i*lps)+'–L'+Math.min(L-1,(i+1)*lps-1); }});   // 10.16：层段统一写 Lx–Ly
   if(!groups.length){ el.hidden = true; ui.ghOpen = false; return; }
   el.hidden = false;
   el.classList.toggle('is-open', ui.ghOpen);

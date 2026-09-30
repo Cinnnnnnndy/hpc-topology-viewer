@@ -23,7 +23,7 @@
 @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
   src: url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-:root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; }
+:root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; --warn: #FAB219; --assoc: #A8A8AA; }
 html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
   background: #111111; overflow: hidden;
@@ -74,7 +74,7 @@ iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
 .lc-sub { color: #A0A0A0; font-size: 11px; line-height: 1.7; }
 .lc-k, .brief-k { margin-top: 14px; margin-bottom: 4px; font-size: 10px; color: #8A8A8A; letter-spacing: .04em; }
 .tag { display: none; font-style: normal; font-size: 11px; color: #A0A0A0; border: 1.5px solid #282828; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
-:root { --c-tp: #22d3ee; --c-cp: #86c70f; --c-ep: #9b3cf6; --c-dp: #4369ef; --c-pp: #ffaa3b; }
+:root { --c-tp: #22d3ee; --c-cp: #86c70f; --c-ep: #9b3cf6; --c-dp: #4369ef; --c-pp: #f472b6; }   /* 10.16：PP 原是 #ffaa3b，与告警琥珀撞色 → 粉 */
 .gc { display: inline-block; width: 6px; height: 6px; border-radius: 1px; margin-right: 6px; vertical-align: 1px; }
 
 /* 柱状选择器：共用基线，柱高 = 段内峰值占用，灰度同画布；虚线 = 100% */
@@ -431,7 +431,7 @@ body.is-loading .crumb .cr.is-cur:last-child::after { content: ' …'; color: #8
 .lc-caprow { display: flex; justify-content: space-between; font-size: 11px; line-height: 1.8; color: #A0A0A0; }
 .lc-caprow b { font-weight: 500; }
 .lc-caprow.is-bad b { color: var(--alert); }
-.lc-caprow.is-warn b { color: #E3A33B; }
+.lc-caprow.is-warn b { color: var(--warn); }
 .lc-cap .brief-cta { margin-top: 6px; }
 /* 放大后原地展开的一块板的全部关系（线型与板视图一致：实线 UB，长虚 UB 上联，短虚 RoCE，点线 PCIe） */
 .rel { display: none; }
@@ -622,11 +622,11 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .sw-lbl { font-size: 10.5px; fill: #C8C8C8; }
 .sw-row.is-on .sw-lbl, .sw-row.is-rank .sw-lbl { fill: #FFFFFF; }
 .sw-l2 { fill: #6A6A6A; font-size: 9.5px; }
-.sw-f { fill: #4369EF; }
-.sw-b { fill: #FF4B7B; }
+.sw-f { fill: #F2F2F2; }
+.sw-b { fill: #B8B8BA; }
 .sw-f.is-own, .sw-b.is-own { fill-opacity: .55; }
-.sw-p2p { stroke: #04D793; stroke-width: 1.5; }
-.sw-dp { fill: #04D793; fill-opacity: .7; }
+.sw-p2p { stroke: var(--c-pp); stroke-width: 1.5; }
+.sw-dp { fill: var(--c-dp); fill-opacity: .7; }
 .sw.is-hm [data-m]:not(.is-m) { opacity: .25; }
 .sw-foot text { font-size: 10px; fill: #A0A0A0; }
 .sw-foot .sw-demo { fill: #6A6A6A; }
@@ -801,8 +801,8 @@ body:not(.is-compact) .ip-grp + .ip-grp { margin-top: 10px; }
 
 /* 泳道：原来的亮粉在深底上过亮（校验器 lightness band 不过），换成同色相收一档的一对（F 蓝 / B 玫红，
    深色模式校验全过：CVD ΔE 15.3、正常视觉 ΔE 24.8、对比 ≥ 3:1）；块之间靠底色缝分开 */
-.sw-f { fill: #4F7BE0; }
-.sw-b { fill: #D65A7E; }
+.sw-f { fill: #F2F2F2; }
+.sw-b { fill: #B8B8BA; }
 .sw-bg { fill: #151515; }
 
 /* 小屏：训练健康卡只留图 + 告警层 + 梯度两行，细项收起（悬停图上的柱仍能读到逐层值）；告警列表到底就滚动，不再伸出视口 */
@@ -815,8 +815,8 @@ body.is-compact .dc-more { display: none; }
 .sw-b { fill: #444444; }
 .sw-p2p { stroke: #8A8A8A; stroke-width: 1; }
 .sw-dp { fill: #9A9A9A; fill-opacity: .35; }
-.sw-row.is-on .sw-f, .sw-row.is-rank .sw-f, .sw.is-hm .sw-f.is-m { fill: #4F7BE0; }
-.sw-row.is-on .sw-b, .sw-row.is-rank .sw-b, .sw.is-hm .sw-b.is-m { fill: #D65A7E; }
+.sw-row.is-on .sw-f, .sw-row.is-rank .sw-f, .sw.is-hm .sw-f.is-m { fill: #F2F2F2; }
+.sw-row.is-on .sw-b, .sw-row.is-rank .sw-b, .sw.is-hm .sw-b.is-m { fill: #B8B8BA; }
 .sw-row.is-on .sw-p2p, .sw-row.is-rank .sw-p2p { stroke: #E8E8E8; }
 .sw-row.is-on .sw-dp, .sw-row.is-rank .sw-dp { fill: #E8E8E8; fill-opacity: .55; }
 .sw-row.is-on .sw-bg { stroke: none; fill: #202020; }
@@ -923,7 +923,7 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .dc-cmp s, .dc-cmp-cfg s { color: #6E6E6E; text-decoration-color: rgba(255, 255, 255, .25); font-weight: 400; }
 .dc-cmp i { font-style: normal; font-size: 9px; width: 9px; text-align: center; color: #8C8C8C; }
 .dc-cmp.is-worse i, .dc-cmp.is-worse b { color: #FAB219; }
-.dc-cmp.is-worse s { color: #7A6A48; }
+.dc-cmp.is-worse s { color: var(--warn); opacity: .6; }
 .dc-cmp.is-same b { color: #A8A8A8; }
 .dc-cmp-cfg { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px; font-family: var(--mono); font-size: 10.5px; color: #EDEDED; }
 .dc-cmp-cfg s { font-size: 10px; }
@@ -967,7 +967,7 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .jn-goals button.is-cur { color: #111111; background: #EDEDED; }
 .jn-goals svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
 .jn-badge { font-style: normal; font-family: var(--mono); font-size: 10px; line-height: 15px; min-width: 15px; padding: 0 4px; box-sizing: border-box; text-align: center; border-radius: 8px; color: #111111; background: #FAB219; }
-.jn-badge.is-crit { color: #FFFFFF; background: #E5484D; }
+.jn-badge.is-crit { color: #FFFFFF; background: var(--alert); }
 .jn-mode button, .jn-goals button { border-radius: 10px; }
 .jn-alerts { pointer-events: auto; display: flex; flex-direction: column; min-width: 360px; max-width: 460px; padding: 6px; border-radius: 14px;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-fx); backdrop-filter: var(--glass-fx); box-shadow: var(--glass-edge), var(--glass-drop); }
@@ -979,7 +979,7 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .jn-al em { font-style: normal; font-size: 10.5px; color: #6E6E6E; }
 .jn-al:hover em, .jn-al.is-on em { color: #F0F0F0; }
 .jn-al i { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
-.jn-al.is-crit i { background: #E5484D; }
+.jn-al.is-crit i { background: var(--alert); }
 .jn-al.is-warn i { background: #FAB219; }
 .jn-al.is-info i { box-shadow: inset 0 0 0 1.5px #8A8A8A; }
 .jn-al.is-past i { box-shadow: inset 0 0 0 1px #6A6A6A; outline: 1px dashed #5A5A5A; outline-offset: 1px; width: 6px; height: 6px; }
@@ -1051,7 +1051,7 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
   --cam-bg3: #3A3A3C;
   --cam-label: rgba(235, 235, 245, .6);
   --cam-label2: rgba(235, 235, 245, .3);
-  --cam-accent: #FFD60A;
+  --cam-accent: #FFFFFF;   /* 10.16：界面选中也用白——全页「选中」只有一种颜色，黄色撤掉（与阈值琥珀两种黄并存） */
   --cam-shadow: 0 16px 36px -14px rgba(0, 0, 0, .75), 0 2px 8px -2px rgba(0, 0, 0, .4);
   --cam-fx: blur(24px) saturate(1.4);
 }
@@ -1099,7 +1099,7 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 .jn-goals button.is-cur::after { content: ''; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 0; height: 0;
   border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 4px solid var(--cam-accent); }
 .jn-badge { background: var(--cam-bg3); color: #FFFFFF; }
-.jn-badge.is-crit { background: #E5484D; }
+.jn-badge.is-crit { background: var(--alert); }
 .jn-alerts { border-radius: 20px; }
 /* 工具条：一串圆形按钮，按下的那个图标变黄 */
 .dock { border-radius: 999px; padding: 6px; gap: 4px; }
@@ -1342,3 +1342,20 @@ svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E90; }
 .p-npu.g-tp, .p-npu.g-cp, .p-npu.g-ep, .p-npu.g-dp, .p-npu.g-pp { stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
 .rel .rel-mesh.is-hot:not(.is-tp) { stroke: #8E8E90 !important; }
 .rel .rel-relf { fill: none; stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
+.brief-loc { white-space: normal; }
+.brief-loc sup { font-size: 8px; margin-left: 1px; vertical-align: super; }
+
+/* ── 10.16 全局一致性（审计）──
+   选中态全页一种：深底 #3A3A3C + 白字、无描边（胶囊、dock、设置分段、层级剖面格）；画布上是白框。
+   设置里的按钮不再用细线框，同 rank 卡按钮一样实底全圆角。标签字号按屏幕像素定。面包屑垫一圈底色，放大后不被画布内容吃掉 */
+.cf-seg button, .hv-chip { border-color: transparent !important; }
+.cf-seg button.is-on, .hv-chip.is-on { background: var(--cam-bg3) !important; color: #FFFFFF !important; border-color: transparent !important; }
+.cf-step button, .cf-sp button, .cf-all button { border: 0 !important; background: var(--cam-bg2); border-radius: 999px !important; color: #E8E8E8; }
+.cf-step button:hover, .cf-sp button:hover, .cf-all button:hover { background: var(--cam-bg3); color: #FFFFFF; }
+.cf-sp b.is-mod { background: var(--cam-bg3); color: #FFFFFF; border-radius: 999px; }
+.crumb .cr, .crumb i { text-shadow: 0 0 3px #111111, 0 0 8px #111111, 0 0 14px #111111; }
+.p-splabel { --zfs: 11; }
+.p-uboelabel { --zfs: 10; }
+.p-rocelabel { --zfs: 8; }
+.b-dlbl { --zfs: 8; }
+.ip-m em { margin-right: 6px !important; color: #8A8A8A; }
