@@ -869,7 +869,7 @@
     return d + ' L' + f(z[0]) + ',' + f(z[1]);
   }
   var RC = 5;   // 圆角半径
-  function cased(el, cc) { return el.replace(/ class="[^"]*"/, ' class="' + (cc || 'lkc') + '"').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
+  function cased(el, cc) { return el.replace(/ class="[^"]*"/, ' class="' + (cc || 'lkc') + '"').replace(/ data-[nm]="[^"]*"/g, '').replace(/<title>[\s\S]*?<\/title>/, '') + el; }
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心 = 每颗器件图标的中线
@@ -881,10 +881,12 @@
     /* 上方三层走线轨道（由上到下）：H2D 分叉 · NIC 分叉 · fullmesh 7 层（跨距 d 的那一对走第 d 层）；
        NPU 顶边三个口：H2D 在左 −9、fullmesh 居中、NIC 在右 +9，互不共线 */
     /* 线束（参考 BMC bus-wiring：每根线一条自己的车道、平行不合并，线心间距约 1.8× 线宽，外包一圈底色描边）：
-       NPU 顶边出 fullmesh 7 根一束、底边出 Clos 8 根一束，束内间距 BP；H2D 在束左 −12、NIC 在束右 +12 */
+       NPU 顶边出 fullmesh 7 根一束、底边出 Clos 8 根一束，束内间距 BP；H2D、NIC 并进顶边那一束最左、最右两道（±4·BP），顶边 9 道等距 */
     var BP = 2.2, HFY = 128, NFY = 136;
-    // fullmesh：NPU i 那一束里通往 j 的车道（按 j 从左到右）
-    var ML = function (i, j) { return NX(i) + ((j < i ? j : j - 1) - 3) * BP; };
+    /* fullmesh：NPU i 那一束里通往 j 的车道。套环顺序——近的伙伴在外道、远的在里道：
+       往左拐的从最左道起依次是 i−1、i−2 … 0，往右拐的从最右道起依次是 i+1 … 7，
+       外道拐得低、里道拐得高，同一束里的线拐出去时互不横穿 */
+    var ML = function (i, j) { var o = j < i ? (i - 1 - j) : (i - 1) + (7 - j) + 1; return NX(i) + (o - 3) * BP; };
     /* 每一对走哪一层：按跨距从短到长依次放，放进最低一层、且与这层已有横段不相叠的位置——
        短的在里、长的在外，同一层上的横段首尾错开，不再有两根线共用一段 */
     var MLV = {}, mLv = [], mTop = 0;
@@ -898,10 +900,12 @@
         (mLv[L] = mLv[L] || []).push([x0, x1]); MLV[q[0] + ',' + q[1]] = L; mTop = Math.max(mTop, L);
       });
     })();
-    var MY = function (L) { return AT - 5 - L * BP; };
+    var MY = function (L) { return AT - 9 - L * BP; };   // 离开 NPU 先直走一截（束的「颈」）再分叉
     /* 下方：出板 Clos 8 条平面轨道（平面 k 走第 k 条）；NPU 列往下穿过全部轨道，L1 k 只从第 k 条落下 */
     var CY = function (k) { return (NB + L1Y) / 2 - 3.5 * BP + k * BP; };   // 8 条平面轨道，间距同束内，整组落在 NPU 行与 L1 行正中
-    var CL = function (i, k) { return NX(i) + (k - 3.5) * BP; };   // Clos：NPU i 那一束里去平面 k 的车道
+    /* Clos：NPU i 那一束里去平面 k 的车道。往左拐的按 k 升序排在左边（最外道拐进最上面那条轨道），
+       往右拐的按 k 降序排在右边（最外道 i+1 拐进它们当中最上面那条），本平面那一道居中、直落到 L1——束里的线拐出去互不横穿 */
+    var CL = function (i, k) { var o = k <= i ? k : i + (7 - k) + 1; return NX(i) + (o - 3.5) * BP; };
     var bg = [], links = [], nodes = [], txt = [];
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
     // 图元在 48×36 viewBox 里实际画到哪（留白不算）：端点贴的是看得见的边
@@ -930,12 +934,12 @@
       // NIC 交换（POD 形态图「SW 4*N · 2口/N」）：每张 NIC 2 口汇到右侧那颗小交换的顶边中点
       links.push(cased('<path class="b-nsw-l" d="' + rp([[NC.x, NC.t], [NC.x, 48], [SW.x, 48], [SW.x, SW.t]], RC) + '"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>'));
       [2 * k, 2 * k + 1].forEach(function (i) {
-        links.push(cased('<path class="b-nicl" data-n="' + i + '" d="' + rp([[NC.x, NC.lb], [NC.x, NFY], [NX(i) + 12, NFY], [NX(i) + 12, AT]], RC) + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></path>', 'lkc lkd'));
+        links.push(cased('<path class="b-nicl" data-n="' + i + '" d="' + rp([[NC.x, NC.lb], [NC.x, NFY], [NX(i) + 4 * BP, NFY], [NX(i) + 4 * BP, AT]], RC) + '"><title>NIC' + k + ' — NPU' + i + ' · UB 1 口</title></path>', 'lkc lkd'));
       });
     }
     var CP = [0, 1].map(function (c) {
       var A = box('b-cpu', (NX(4 * c + 1) + NX(4 * c + 2)) / 2, CPUY, 110, 34, 'CPU' + c, 'CPU' + c + ' · H2D 每卡 2 口 UB（x86 走 4 口 PCIe SW）· 8 口 UB 上 L1', ' data-cpu="' + c + '"');
-      for (var i = 4 * c; i < 4 * c + 4; i++) links.push(cased('<path class="b-h2d" data-n="' + i + '" d="' + rp([[A.x, A.lb], [A.x, HFY], [NX(i) - 12, HFY], [NX(i) - 12, AT]], RC) + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></path>', 'lkc lkd'));
+      for (var i = 4 * c; i < 4 * c + 4; i++) links.push(cased('<path class="b-h2d" data-n="' + i + '" d="' + rp([[A.x, A.lb], [A.x, HFY], [NX(i) - 4 * BP, HFY], [NX(i) - 4 * BP, AT]], RC) + '"><title>CPU' + c + ' — NPU' + i + ' · H2D · UB 2 口</title></path>', 'lkc lkd'));
       links.push(cased('<path class="b-nsw-l" d="' + rp([[A.x, A.t], [A.x, 40], [SW.x, 40], [SW.x, SW.t]], RC) + '"><title>CPU' + c + ' — NIC 交换 · 1 口</title></path>'));
       return A;
     });
@@ -974,7 +978,7 @@
     // 出板：每颗 NPU 8 口（名字下沿中点出），每口一颗 L1（每平面一颗，接图标顶边中点）
     for (var i2 = 0; i2 < 8; i2++) for (var k2 = 0; k2 < 8; k2++) {
       if (base + i2 >= world) break;
-      links.push(cased('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp([[CL(i2, k2), NB], [CL(i2, k2), CY(k2)], [NX(k2), CY(k2)], [NX(k2), L1A[k2].t]], 2) + '"/>', 'lkc lkd'));
+      links.push(cased('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp(i2 === k2 ? [[CL(i2, k2), NB], [CL(i2, k2), L1A[k2].t]] : [[CL(i2, k2), NB], [CL(i2, k2), CY(k2)], [CL(k2, k2), CY(k2)], [CL(k2, k2), L1A[k2].t]], 2) + '"/>', 'lkc lkd'));
     }
     txt.push('<text class="b-lbl" x="' + LX + '" y="' + ((CY(0) + CY(7)) / 2 + 3) + '" text-anchor="end">Clos 8×X4</text>');
     // L1 → 本平面 4×SW2（L2）
