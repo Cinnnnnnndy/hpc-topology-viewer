@@ -1238,3 +1238,27 @@ svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: .25; }
 .b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.6px / var(--zk, 1)); }
 .b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #2C2C2E; stroke-opacity: 1; }
 .b-lbl-mesh { fill: #A0A0A0; }
+
+/* ── 10.10.1：连线收细、拉开层级（反馈「太粗了，看不到重点」）──
+   器件是主角、线是背景：平时所有线都退成细线（密线 .6、干线 .8–1），衬边收窄；
+   选中一颗 NPU 时它自己的线是唯一亮的（白 1.1、TP 青 1.3），其余密线几乎看不见、干线退到暗灰、端点小点也收掉 */
+.b-mesh { stroke: #3C3C3E; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-fan { stroke: #38383A; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-swbl { stroke: #38383A; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-h2d, .b-nicl, .b-l12 { stroke: #4A4A4C; stroke-width: calc(.7px / var(--zk, 1)); }
+.b-roce { stroke: #6A6A6C; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-pcie { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-ub { stroke: #6A6A6C; stroke-width: calc(1px / var(--zk, 1)); }
+.b-uboe { stroke: #7A7A7C; stroke-width: calc(1px / var(--zk, 1)); }
+.b-bus { stroke-width: calc(1px / var(--zk, 1)); }
+.b-cpul, .b-nsw-l, .b-swbx { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-rdma { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
+svg.near .lkc { stroke-width: calc(3px / var(--zk, 1)); }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #F2F2F2; stroke-width: calc(1.1px / var(--zk, 1)); }
+svg.near .b-mesh.is-hot.is-tp { stroke: var(--c-tp); stroke-width: calc(1.3px / var(--zk, 1)); }
+.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #252527; }
+svg.has-sel .b-l12, svg.has-sel .b-swbl { stroke: #252527; }
+svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe,
+svg.has-sel .b-cpul, svg.has-sel .b-nsw-l, svg.has-sel .b-swbx, svg.has-sel .b-rdma { stroke: #3A3A3C; }
+svg.has-sel .b-links > :not(.is-hot) { marker-start: none; marker-end: none; }
+svg.has-sel .b-lbl { fill: #6A6A6C; }

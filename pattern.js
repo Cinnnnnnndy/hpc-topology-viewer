@@ -739,6 +739,8 @@
     markHot(boardStage, slot);
     /* 直角走线里同一列 / 同一条轨道被好几根线共用：选中那颗的线挪到最后画，才不会被旁边退后的线盖住 */
     var lkG = boardStage.querySelector('.b-links');
+    // 选中一颗 NPU 时整张板进「聚焦」档：与它无关的干线（RoCE / UB / PCIe / NIC 交换 …）一起退暗，只留它自己的那几根亮着
+    var bSvg = boardStage.querySelector('svg'); if (bSvg) bSvg.classList.toggle('has-sel', slot != null);
     if (lkG) boardStage.querySelectorAll('.b-links > .is-hot').forEach(function (el) { lkG.appendChild(el); });
     // 选中 NPU 与同板 TP 组员之间的 fullmesh 弧：标 is-tp（TP 流量走的就是这几根）
     var tpSlots = {};
