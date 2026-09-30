@@ -1277,3 +1277,26 @@ svg.near .b-mesh.is-hot.is-tp { stroke-width: calc(.9px / var(--zk, 1)); }
    束内每根线一条车道、间距 2.2；每根密线也垫一圈底色描边（.lkd），交叉处切开、看得出谁压谁 */
 svg.near .lkd { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); stroke-linecap: butt; }
 svg.has-sel .lkd { stroke-width: calc(1.3px / var(--zk, 1)); }
+
+/* ── 10.12：集群放大后原地展开的那块板，同板视图的线束画法 ── 底色描边跟 POD 底色走 */
+.rel .lkc { stroke: #1F1F21; stroke-width: calc(2.6px / var(--zk, 1)); stroke-linecap: butt; }
+.rel line, .rel path { stroke-width: calc(.7px / var(--zk, 1)); }
+.rel-cpu { stroke-width: calc(1px / var(--zk, 1)) !important; }
+.rel .rel-scrim { fill: #1F1F21; fill-opacity: .97; stroke: none; }
+
+/* ── 10.12：虚线全部改实线（反馈「虚线效果非常差，全部调整」）──
+   虚线节奏在细线上只剩一串噪点，缩放时段长还跟着变。介质改用**灰度**区分，线型一律实线：
+     UBoE 最亮 #A8A8AA · PCIe #8E8E90 · UB #767678 · RoCE（参数面，出框）最暗 #5A5A5C；
+   选中后的亮 / 退暗规则不变。泳道、流水线图上的辅助标记同样改实线、压淡 */
+.b-ub, .b-uboe, .b-roce, .b-pcie, svg.near .b-ub, svg.near .b-uboe,
+.p-uboe, .p-roce, #physStage svg:not(.lod1) .p-roce,
+.rel-ub, .rel-pcie, .rel-roce, .rel-row, .pb-cap, .sw-mark { stroke-dasharray: none; }
+.b-uboe, .p-uboe { stroke: #A8A8AA; stroke-opacity: 1; }
+.b-pcie, .rel-pcie { stroke: #8E8E90; }
+.b-ub, .rel-ub { stroke: #767678; }
+.b-roce, .p-roce, .rel-roce { stroke: #5A5A5C; stroke-opacity: 1; }
+.rel-ub { stroke-opacity: 1; }
+.rel-row { stroke: #5A5A5C; }
+.pb-cap { stroke: #3E3E40; }
+.sw-mark { stroke: #5A5A5C; }
+svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe { stroke: #3A3A3C; }

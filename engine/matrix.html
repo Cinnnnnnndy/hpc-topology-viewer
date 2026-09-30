@@ -39,6 +39,9 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
 <link rel="stylesheet" href="../vendor/rubik-cube/pattern.css">
 <style>
+/* 10.12：虚线一律改实线（反馈「虚线效果非常差，全部调整」）——原来靠虚线区分的虚影 / 备选，本身就带压低的透明度或另一种颜色，线型统一实线 */
+svg [stroke-dasharray], svg [style*="stroke-dasharray"] { stroke-dasharray: none !important; }
+
 /* ════════════════════════════════════════════════════════════════════
    parallel-topology demo —— PRD 的应用形态呈现（参照逻辑魔方 pattern 的壳）。
    纪律与 net-sharding 相同：视觉一律取 token（带回退），维度只用签名色；
