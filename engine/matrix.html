@@ -39,8 +39,6 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
 <link rel="stylesheet" href="../vendor/rubik-cube/pattern.css">
 <style>
-/* 10.12：虚线一律改实线（反馈「虚线效果非常差，全部调整」）——原来靠虚线区分的虚影 / 备选，本身就带压低的透明度或另一种颜色，线型统一实线 */
-svg [stroke-dasharray], svg [style*="stroke-dasharray"] { stroke-dasharray: none !important; }
 
 /* ════════════════════════════════════════════════════════════════════
    parallel-topology demo —— PRD 的应用形态呈现（参照逻辑魔方 pattern 的壳）。
@@ -15097,6 +15095,36 @@ if(q9brief.get('brief')==='1'){
      宿主收到一条它没料到的"第一档"消息，平白多一次状态判断。 */
   ptoNotifyTier();
 }
+})();
+</script>
+<script>
+/* 10.12.1：虚影 / 备选仍用虚线，只把线型统一（反馈「虚影和备选还是用虚线，只是调一下虚线的线型」）。
+   原来各处各写一套节奏（5 4、3 3、2 3、9 5、1.5 1.5 …），细线上短段、长段、点混在一起，看着像噪点。
+   现在所有静态虚线都按**自己的线宽**取同一个比例：实段 3.5×线宽、空段 2.5×线宽、平头——
+   线宽已经按缩放折算过（…/zs、…/FS_Z），比例跟着走，任何倍数下虚线的疏密都一样。
+   流动层（style 里带 --cfd 的那一类，靠 dashoffset 动画表示通信方向）不动。 */
+(function () {
+  var pend = 0;
+  function same(cs, a, b) {
+    var v = String(cs).split(/[ ,]+/).map(parseFloat).filter(function (x) { return !isNaN(x); });
+    return v.length === 2 && Math.abs(v[0] - a) < 0.02 && Math.abs(v[1] - b) < 0.02;
+  }
+  function norm() {
+    pend = 0;
+    document.querySelectorAll('svg [stroke-dasharray], svg [style*="stroke-dasharray"]').forEach(function (el) {
+      var st = el.getAttribute('style') || '';
+      if (st.indexOf('--cfd') >= 0 || el.classList.contains('cfl')) return;
+      var cs = getComputedStyle(el), da = cs.strokeDasharray;
+      if (!da || da === 'none') return;
+      var w = parseFloat(cs.strokeWidth) || 1, a = +(w * 3.5).toFixed(2), b = +(w * 2.5).toFixed(2);
+      if (same(da, a, b)) return;
+      el.style.setProperty('stroke-dasharray', a + ' ' + b);
+      el.style.setProperty('stroke-linecap', 'butt');
+    });
+  }
+  function kick() { if (!pend) { pend = 1; requestAnimationFrame(norm); } }
+  new MutationObserver(kick).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'stroke-dasharray'] });
+  kick();
 })();
 </script>
 </body>
