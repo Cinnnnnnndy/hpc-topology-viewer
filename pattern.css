@@ -1210,3 +1210,18 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 /* 板视图：机框 / 平面同样实底 + 圆角 */
 .b-plane { rx: 8px; ry: 8px; }
 .p-bnpu { rx: 6px; ry: 6px; }
+
+/* rank 卡上的跳转按钮（板 N / 单卡 / rank N）：不用线框、不带箭头图标，按现在的规范做成实底文字按钮——
+   高 24px、圆角 12（全圆胶囊）、左右 12px、12px 字；主操作「单卡」亮一档（浅底深字），次操作深灰底 */
+.brief-cta {
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  height: 24px; line-height: 24px; padding: 0 12px; border: 0 !important; border-radius: 12px;
+  background: var(--cam-bg2); color: #F2F2F7; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+  margin: 8px 6px 0 0; transition: background .15s ease;
+}
+.brief-cta:hover { background: var(--cam-bg3); color: #FFFFFF; }
+.brief-cta.is-primary { background: #EDEDED; color: #111111; }
+.brief-cta.is-primary:hover { background: #FFFFFF; color: #000000; }
+/* NPU 图标 3× 起出现：从这一档起方块本身透明（占用灰度改由图标下的占用条表达），与 CPU / DPU / NIC 同一档 */
+svg.lod1 .p-npu:not(.is-sel), svg.lod1 .p-npu.is-sel { fill-opacity: 0; }
+svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: .25; }

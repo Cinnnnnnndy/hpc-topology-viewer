@@ -682,7 +682,9 @@
   var podDetailDone = {};
   function ensurePodDetail(zp) {
     var svgEl = physStage.querySelector('.zp-box svg');
-    if (!svgEl || !svgEl.classList.contains('lod2')) return;
+    /* NPU 图标与 CPU / DPU / NIC 同一档出现（反馈「CPU、DPU 都用了图标，NPU 还是方块」）：放大到 3×（lod1）就换成封装图标 + 占用条；
+       3× 以下每格只有两三个像素，图标认不出、而且那一格的灰度就是占用热力图，仍用方块。rank 号字太小，仍到 6×（lod2）才出。 */
+    if (!svgEl || !svgEl.classList.contains('lod1')) return;
     var vb = svgEl.viewBox.baseVal, R = zp.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
     var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
     function sx(px) { return ((px - zp.tx) / zp.k - ox) / m + vb.x; }
@@ -697,8 +699,8 @@
         var ex = +el.getAttribute('x'), ey = +el.getAttribute('y');
         // 图标收一号（7→6 宽）让出一截：rank 号完整落在图标与占用条的**下方**居中，不再贴着占用条
         el.insertAdjacentHTML('afterend', '<text class="p-npunum lod2" x="' + (ex + 3.5) + '" y="' + (ey + 7.35) + '" text-anchor="middle">' + el.getAttribute('data-rank') + '</text>'
-          + '<use class="p-npupkg lod2" href="#hw-npu" x="' + (ex + 0.5) + '" y="' + ey + '" width="6" height="4.5"/>'
-          + '<rect class="p-npustrip lod2" x="' + (ex + 1.25) + '" y="' + (ey + 4.75) + '" width="4.5" height="0.4"/>');
+          + '<use class="p-npupkg lod1" href="#hw-npu" x="' + (ex + 0.5) + '" y="' + ey + '" width="6" height="4.5"/>'
+          + '<rect class="p-npustrip lod1" x="' + (ex + 1.25) + '" y="' + (ey + 4.75) + '" width="4.5" height="0.4"/>');
       });
     });
   }
@@ -1869,7 +1871,7 @@
       var rows = [['超容', n.oom], ['红线', n.red], ['黄线', n.amber], ['ok', ok]].filter(function (x) { return x[1] > 0; });
       briefCard.innerHTML = '<div class="brief-h">' + lastCluster.world + ' 卡</div>'
         + rows.map(function (x) { return '<div class="brief-row"><span>' + x[0] + '</span><b>' + x[1] + '</b></div>'; }).join('')
-        + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">→ rank ' + lastCluster.worst + '</button>' : '');
+        + (lastCluster.worst != null ? '<button type="button" class="brief-cta" data-act="worst">rank ' + lastCluster.worst + '</button>' : '');
       briefCard.classList.toggle('is-hidden', !alertTipOpen);
     }
     syncCardHeights();
@@ -1959,8 +1961,8 @@
      数字。"↓ 单卡下钻"按钮两种状态都留着：这一步升级的只是内容详细度，
      不是换档，点了才真的飞到矩阵那一屏（solo）。 */
   function renderDrillInvite(matrixSel, subLine, brief, noCta) {
-    var cta = noCta ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">→ 板' + physOf(matrixSel).board + '</button>' : '')
-      + '<button type="button" class="brief-cta" data-act="drill">↓ 单卡</button>';
+    var cta = noCta ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">板 ' + physOf(matrixSel).board + '</button>' : '')
+      + '<button type="button" class="brief-cta is-primary" data-act="drill">单卡</button>';
     if (brief && brief.rank === matrixSel) {
       briefCard.innerHTML = memBriefHtml(brief) + physInfoHtml(matrixSel) + cta;
     } else {
@@ -3075,7 +3077,7 @@
     svgEl.appendChild(fr);
     /* 框选直接描在图元自己的外边框上（反馈「框选样式直接在图元外边框高亮」）：看得见封装图标时
        （板视图、集群 6× 以上）贴着图标的圆角外框；否则贴着这一格本身。不再留缝、不再另起一个大框。 */
-    var icon = null, lod2 = svgEl.classList.contains('lod2') || stage === boardStage;
+    var icon = null, lod2 = svgEl.classList.contains('lod1') || stage === boardStage;   // 图标从 3× 起就有
     // 板视图：图标紧跟在 NPU 后面；集群：rank 号后面那一个（懒建之前没有就退回格子本身，不去错抓下一张卡的图标）
     if (lod2) { var n1 = el.nextElementSibling; icon = n1 && n1.tagName === 'use' ? n1 : (n1 && n1.classList.contains('p-npunum') ? n1.nextElementSibling : null); }
     var tgt = icon || el, x = +tgt.getAttribute('x'), y = +tgt.getAttribute('y'), w = +tgt.getAttribute('width'), h = +tgt.getAttribute('height');
