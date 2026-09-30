@@ -1262,3 +1262,13 @@ svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe
 svg.has-sel .b-cpul, svg.has-sel .b-nsw-l, svg.has-sel .b-swbx, svg.has-sel .b-rdma { stroke: #3A3A3C; }
 svg.has-sel .b-links > :not(.is-hot) { marker-start: none; marker-end: none; }
 svg.has-sel .b-lbl { fill: #6A6A6C; }
+
+/* ── 10.10.2：再收细、层距收紧（反馈「缩小层叠线之间的间距」「粗细再收一下」）──
+   轨道层距 6/8 → 4；所有线再细一档，选中那颗的线也从 1.1 收到 .8，重点靠亮度而不是粗细 */
+.b-mesh, .b-fan, .b-swbl { stroke-width: calc(.45px / var(--zk, 1)); }
+.b-h2d, .b-nicl, .b-l12 { stroke-width: calc(.5px / var(--zk, 1)); }
+.b-roce, .b-pcie, .b-cpul, .b-nsw-l, .b-swbx, .b-rdma { stroke-width: calc(.6px / var(--zk, 1)); }
+.b-ub, .b-uboe, .b-bus { stroke-width: calc(.7px / var(--zk, 1)); }
+svg.near .lkc { stroke-width: calc(2.2px / var(--zk, 1)); }
+.b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-width: calc(.8px / var(--zk, 1)); }
+svg.near .b-mesh.is-hot.is-tp { stroke-width: calc(.9px / var(--zk, 1)); }

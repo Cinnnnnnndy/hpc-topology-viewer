@@ -869,16 +869,16 @@
   function buildBoardSvg(bIdx) {
     var W = 960, H = 590, base = bIdx * PHYS.board, pb = physOf(base);
     var NX = function (i) { return 152 + i * 100; };   // NPU/L1/L2 列中心 = 每颗器件图标的中线
-    var NPUY = 184, NPUH = 58, L1Y = 340, L1H = 24, SWBY = 400, SWBH = 20, L2Y = 470, L2H = 30, CPUY = 58;   // 名字挪到图标下方后各行之间多留一截
+    var NPUY = 172, NPUH = 58, L1Y = 340, L1H = 24, SWBY = 400, SWBH = 20, L2Y = 470, L2H = 30, CPUY = 58;   // 名字挪到图标下方后各行之间多留一截
     /* 端点只落在图元上（反馈「算中点的时候不要带上文字」「文字统一放在图标下方居中」）：
        每个器件图标居中、名字在图标正下方居中；从上面来的线接图标**顶边中点**，侧向的线接图标**左右边中点**
        （名字挪到下面之后两侧是空的），往下走的线从**名字下沿中点**出——不穿过字 */
     var AT = NPUY + 4, NB = NPUY + 57;   // NPU：图标顶边 / 名字下沿
     /* 上方三层走线轨道（由上到下）：H2D 分叉 · NIC 分叉 · fullmesh 7 层（跨距 d 的那一对走第 d 层）；
        NPU 顶边三个口：H2D 在左 −9、fullmesh 居中、NIC 在右 +9，互不共线 */
-    var HFY = 128, NFY = 136, MY = function (d) { return AT - 6 * d; };
+    var HFY = 128, NFY = 136, MY = function (d) { return AT - 4 * d; };   // 层距 4（反馈「缩小层叠线之间的间距」）
     /* 下方：出板 Clos 8 条平面轨道（平面 k 走第 k 条）；NPU 列往下穿过全部轨道，L1 k 只从第 k 条落下 */
-    var CY = function (k) { return NB + 16 + k * 8; };
+    var CY = function (k) { return (NB + L1Y) / 2 - 12 + k * 4; };   // 8 条轨道层距 4，整组落在 NPU 行与 L1 行正中
     var bg = [], links = [], nodes = [], txt = [];
     var BOX_ICON = { 'b-cpu': 'hw-cpu', 'b-dpu': 'hw-dpu', 'b-nic': 'hw-nic', 'b-l1': 'hw-sw', 'b-nsw': 'hw-sw', 'b-swb': 'hw-sw' };
     // 图元在 48×36 viewBox 里实际画到哪（留白不算）：端点贴的是看得见的边
@@ -950,7 +950,7 @@
     // 出板：每颗 NPU 8 口（名字下沿中点出），每口一颗 L1（每平面一颗，接图标顶边中点）
     for (var i2 = 0; i2 < 8; i2++) for (var k2 = 0; k2 < 8; k2++) {
       if (base + i2 >= world) break;
-      links.push('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp([[NX(i2), NB], [NX(i2), CY(k2)], [NX(k2), CY(k2)], [NX(k2), L1A[k2].t]], RC) + '"/>');
+      links.push('<path class="b-fan" data-n="' + i2 + '" style="--pc:' + PLANE_C[k2] + '" d="' + rp([[NX(i2), NB], [NX(i2), CY(k2)], [NX(k2), CY(k2)], [NX(k2), L1A[k2].t]], 3) + '"/>');
     }
     txt.push('<text class="b-lbl" x="' + LX + '" y="' + ((CY(0) + CY(7)) / 2 + 3) + '" text-anchor="end">Clos 8×X4</text>');
     // L1 → 本平面 4×SW2（L2）
