@@ -1020,7 +1020,7 @@
         + '<use href="#' + ic + '" x="' + ix + '" y="' + iy + '" width="' + iw + '" height="' + ih + '"/>'
         + '<text x="' + cx + '" y="' + (y + h + 11) + '" text-anchor="middle">' + label + '</text>' + (title ? '<title>' + title + '</title>' : '') + '</g>');
       var t = iy + v[1] * ih / 36, b = iy + v[3] * ih / 36;
-      return { x: cx, t: t, b: b, m: (t + b) / 2, l: ix + v[0] * iw / 48, r: ix + v[2] * iw / 48, lb: y + h + 15 };   // 图标与名字之间留 5 左右
+      return { x: cx, t: t, b: b, m: (t + b) / 2, l: ix + v[0] * iw / 48, r: ix + v[2] * iw / 48, lb: y + h + 15, ix: ix, iy: iy, iw: iw, ih: ih };   // 图标与名字之间留 5 左右
     }
     // 参数面 RoCE 总线（顶）：NIC 与 DPU 都从这儿出框
     links.push(cased('<line class="b-roce b-bus" x1="60" y1="22" x2="900" y2="22"/>'));
@@ -1067,6 +1067,11 @@
     // L1 行（每平面一颗）：先定位置，左右两根 UB 干线要接它们的侧边中点
     var L1A = [];
     for (var k3 = 0; k3 < 8; k3++) L1A.push(box('b-l1', NX(k3), L1Y, 64, L1H, 'P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"'));
+    /* 状态点（10.14，照 hpc-topology-node：状态色嵌在图元体内——交换机是「首个端口点」变色，不另浮标记）：
+       L1 承载 POD 内的 EP All-to-All，路由失衡超告警线时首个端口点亮琥珀；平时不画 */
+    L1A.forEach(function (A) {
+      nodes.push('<rect class="b-led" x="' + (A.ix + A.iw / 48) + '" y="' + (A.iy + 10 * A.ih / 36) + '" width="' + (2 * A.iw / 48) + '" height="' + (2 * A.ih / 36) + '" rx="0.4"/>');
+    });
     // DPU —PCIe— CPU0（两头都从名字下沿出）；DPU/CPU0 —UB— L1 P1 左边中点（走左边沿）；CPU1 —UB— L1 P8 右边中点（走右边沿）
     /* DPU 底边两道（UB 在左往左拐、PCIe 在右往右拐）；CPU0 束最左两道是 PCIe、UB。DPU 与 CPU0 的 UB 各走各的：
        DPU 在外（x=20、从下面进 P1），CPU0 在里（x=20+BP、从上面进 P1），不再在半路并成一根 */
@@ -1700,6 +1705,9 @@
       el.innerHTML = parts.join('<tspan class="dl-sep">  ·  </tspan>');
       el.classList.toggle('has-warn', hot);
     });
+    // 链路状态：EP 路由失衡超线 → 板视图 L1 端口点亮琥珀、选中卡出板 Clos（它的 EP 走这几根）由白改琥珀；集群放大后的原地关系同一条规则
+    var epW = !!warn('EP');
+    [sv, physStage.querySelector('.zp-box svg')].forEach(function (x) { if (x) x.classList.toggle('st-ep', epW); });
   }
   function applyAlerts() {
     boardLinkLabels();

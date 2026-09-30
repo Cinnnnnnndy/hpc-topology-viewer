@@ -1311,3 +1311,12 @@ svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe
 .b-dlbl .is-warn { fill: #FAB219; }
 svg.lodz .b-dlbl, .b-dlbl.has-warn { opacity: 1; }
 svg.has-sel .b-dlbl:not(.has-warn) { fill: #6A6A6C; }
+
+/* ── 10.14：必要的状态点缀（照 hpc-topology-node：状态色嵌在图元体内、只在出事时出现，平时全灰）──
+   器件：NPU 状态条（die 窗口底下那一条）——显存 ≥ 红线（Critical）琥珀、OOM 告警红；其余仍是占用灰阶。
+   交换机：首个端口点——EP 路由失衡超线时琥珀。
+   链路：平时灰、选中白；选中卡承载告警流量的那几根（EP 失衡时它的出板 Clos）由白改琥珀。只做这三种，不加常亮的「正常」绿 */
+.p-npu.c2 + .p-npunum + .p-npupkg + .p-npustrip, .p-bnpu.c2 + .b-npuicon + .b-npustrip { fill: #FAB219; }
+.b-led { display: none; fill: #FAB219; pointer-events: none; }
+svg.st-ep .b-led { display: inline; }
+svg.st-ep .b-fan.is-hot, svg.st-ep .rel-clos.is-hot { stroke: #FAB219 !important; }
