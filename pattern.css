@@ -1155,3 +1155,39 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 .ip-drill:hover { background: #48484A; }
 .lc-chip.has-gloss, .dc-cut.has-gloss, .jn-badge.has-gloss, .brief-badge.has-gloss, .dc-cut .has-gloss { text-decoration: none; }
 .dcard.is-split .dc-h { align-items: center; }
+
+/* 小标签再紧凑一档（反馈「参考相机界面的小标签，是不是还可以紧凑」——0.0EV / AF / 2500K 那种）：
+   全圆角胶囊，高 16px（上下几乎不留空），左右 6px，前缀与数值只隔 3px，字 10px。 */
+.lc-chip, .dc-cut, .jn-badge, .brief-badge, .ip-root, .ip-drill {
+  height: 16px; line-height: 16px; padding: 0 6px; border-radius: 8px; font-size: 10px; gap: 3px;
+}
+.lc-chip em { font-size: 9.5px; line-height: 16px; }
+.lc-chips { gap: 4px; margin-bottom: 8px; }
+.jn-badge { min-width: 16px; padding: 0 4px; }
+.dc-cut { margin-left: 5px; }
+
+/* 卡片整体再紧凑一档（反馈「包括其他卡片的尺寸」）：按相机界面那张「iPhone · 2時」卡的比例——
+   内边距 12/14、圆角 16、大数 24px、行高 16px、卡间距 8；切分小卡 7/12、圆角 12；顶上胶囊与工具条按钮各矮一档。 */
+.gcard, .side-right, .ip-grp, .cfg-pop, .dcard, .jn-alerts { border-radius: 16px; }
+body:not(.is-compact) .dcard, body:not(.is-compact) .gcard, body:not(.is-compact) .side-right { padding: 11px 14px; }
+body.is-compact .dcard, body.is-compact .gcard, body.is-compact .side-right { padding: 8px 11px; border-radius: 14px; }
+body:not(.is-compact) .data-col, body:not(.is-compact) .shard-col { gap: 8px; }
+body:not(.is-compact) .gcard + .gcard, body:not(.is-compact) #leftCard > .dcard { margin-top: 8px; }
+.dcard.is-split { border-radius: 12px; padding: 7px 12px; }
+.dc-h { margin-bottom: 3px; }
+.dc-big, .lc-big { font-size: 24px; margin: 2px 0 7px; }
+.lc-big { margin-bottom: 8px; }
+body.is-compact .dc-big, body.is-compact .lc-big { font-size: 20px; margin: 1px 0 5px; }
+body:not(.is-compact) .dc-r { line-height: 16px; }
+.dc-r + .dc-r { margin-top: 2px; }
+.vz-stat b { font-size: 24px; }
+.side-right .brief-h { font-size: 14px; }
+/* 顶上两枚胶囊、工具条、抽屉 */
+.jn-mode, .jn-goals { padding: 3px; }
+.jn-mode button { padding: 2px 12px; }
+.jn-goals button { padding: 2px 10px; font-size: 12.5px; }
+.dock { padding: 4px; gap: 3px; }
+.dock button { width: 32px; height: 32px; }
+.drawer { border-radius: 20px; }
+.drawer-hd { padding: 10px 14px 4px; }
+.drawer-hd button { width: 24px; height: 24px; line-height: 24px; font-size: 14px; }
