@@ -1191,3 +1191,22 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 .drawer { border-radius: 20px; }
 .drawer-hd { padding: 10px 14px 4px; }
 .drawer-hd button { width: 24px; height: 24px; line-height: 24px; font-size: 14px; }
+
+/* 集群画布与四周卡片做一定程度的统一（反馈「内部集群主要是线的形式、无圆角，和周边视觉做一定程度的统一，以独立显示效果为准」）：
+   容器从「只描一根线」改成「深灰实底 + 圆角 + 很淡的边」——超节点像一张大卡、POD 像卡里的小卡、NPU 格子带一点圆角；
+   链路、交换、占用灰度这些读数的画法不动，边线只是压淡（不去掉：放大缩小时靠它分清层级）。 */
+.p-sp { rx: 14px; ry: 14px; fill: rgba(28, 28, 30, .72); stroke: rgba(255, 255, 255, .09); }
+.p-sp.is-on { stroke: rgba(255, 255, 255, .22); }
+.p-plane { rx: 6px; ry: 6px; fill: #232325; stroke: rgba(255, 255, 255, .07); }
+.p-pod { rx: 7px; ry: 7px; fill: #1F1F21; stroke: rgba(255, 255, 255, .10); }
+.p-pod:hover { stroke: rgba(255, 255, 255, .28); }
+.p-pod.is-on { stroke: rgba(255, 255, 255, .6); }
+.p-pod.is-fit { stroke: rgba(255, 255, 255, .28); }
+.p-board { rx: 3px; ry: 3px; }
+.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #2A2A2C; }
+.p-bdiv { stroke: rgba(255, 255, 255, .05); }
+.p-npu { rx: 1.4px; ry: 1.4px; }
+.p-splabel { fill: rgba(235, 235, 245, .6); }
+/* 板视图：机框 / 平面同样实底 + 圆角 */
+.b-plane { rx: 8px; ry: 8px; }
+.p-bnpu { rx: 6px; ry: 6px; }
