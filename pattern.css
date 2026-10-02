@@ -1364,3 +1364,13 @@ svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E90; }
 .p-rocelabel { --zfs: 8; }
 /* 10.18：数据标签不再按屏幕定字号——跟板上其它标签一起随画布缩放，比例与图元一致；字号取板上最小一档 */
 .ip-m em { margin-right: 6px !important; color: #8A8A8A; }
+
+/* ── 10.20 全局排布：rank 卡在左列（配置卡下面），抬头字号同原来右上那张；跳转按钮一行 ── */
+.lc-rank .brief-h { font-size: 14px; font-weight: 600; color: #FFFFFF; }
+.lc-rank .brief-loc { margin-top: 8px; display: flex; flex-wrap: wrap; column-gap: 6px; }
+.lc-rank .brief-loc span + span::before { content: '· '; }
+.lc-rank .brief-loc span { white-space: nowrap; }
+.lc-rank-cta { display: flex; flex-wrap: wrap; }
+/* 左列每张卡之间同一个间距（10.20 起 PP 段柱接在容量卡后面，原来只给 .gcard + .gcard 与 > .dcard 留了缝） */
+#leftCard > .gcard + .gcard, #leftCard > * + .gcard { margin-top: 8px; }
+body.is-compact #leftCard > * + .gcard { margin-top: 6px; }

@@ -759,6 +759,19 @@ Logical Cube 的抬头也改成本页标题的写法（`MoE 504B A18B · 32K seq
 - Logical Cube 抽屉里那行「模型名 / rank N」不再画（`notitle=1`）：页面左上角的面包屑已经写着，抽屉头写着 Logical Cube。
 - 引擎自带的左下角那条 HUD（选组 + 缩放 / 居中 / 复位）在 NPU 页与 Network Graph 抽屉里都不画了（`hud=0`）。NPU 页改用本页底部工具条的缩小 / 复位 / 放大（转给引擎 `pto:zoom`），镜头始终对着选中的 NPU，复位回到进页时的机位；换组走画布上点兄弟 rank。Network Graph 抽屉里滚轮照常缩放。
 
+**全局排布（10.20）**：反馈「左边和上面是重要的信息，需要一眼看到的信息」。各层、各工况、各目的共用同一套读序——先左后右、先上后下，越靠左上越该一眼看到：
+
+| 位置 | 放什么 | 例 |
+|---|---|---|
+| 顶栏 | 在哪（标题 · 面包屑）、在干什么（Train / Inference · 目的），告警个数 | 故障定位 4 |
+| 左列 | **对象与结论**：配置 → 改前 / 改后（有对比时）→ 选中的对象 → 装得下吗 → 头部读数 → Reference 垫底 | 集群：Capacity → PP Stage · Peak Usage → Throughput → Step Time → Reference；推理：Capacity → PP 段 → 显存 · Inference → Inference（TTFT）→ Reference；POD：POD → PP 段；Board：Board；第二档：rank 卡 → Board（或 Capacity → PP 段）；NPU 页：rank 卡 → Total → 显存各档 |
+| 右列 | **信号与依据**：带阈值的信号在上（Training Health → MoE，越线琥珀）→ Pipeline → Comm / Group / On-board | 集群：Training Health → MoE → Pipeline → Comm；第二档与 NPU 页：Training Health → MoE → Pipeline → Group（→ On-board） |
+
+- rank 卡从右上挪到左列配置卡下面（选中的对象是第二 / 三档最该先看到的）：抬头（rank · 档位标 · 坐标 · 层段）→ Total 与显存构成 → 落位（两行，不再把「3*」挤到第二行）→ Board / NPU 按钮。原来 rank 卡下半截的并行组表与链路改成右列一张「Group」卡。
+- 第二档右列原来四张卡叠在 rank 卡下面会溢出屏幕（Training Health 被切掉一半），现在两列都在 1600×1000 一屏内放下；小屏（1366×768）装不下时，被裁的是两列最底下的 Reference / Comm，不是最要紧的。
+- 目的（故障定位 / 切分规划 / …）只按卡的种类筛，排好的顺序不变。
+- 左列每张卡之间统一 8 px（原来 PP 段柱接在容量卡后面时没有缝）；「改前 / 改后」里的「Memory GB」改成「显存 GB」（术语表）。
+
 **端点落在哪**：只落在器件上，而且落在器件图元的中线上——
 - 板视图所有器件（NPU / CPU / NIC / DPU / SW / L1 / 交换板）统一「图标居中、名字在图标正下方居中」，中点只按图标算、
   不带名字：从上面来的线接图标**顶边中点**；侧向的线（CPU↔CPU、左右两根 UB 干线进 L1、交换板外连）接图标**左右边中点**
