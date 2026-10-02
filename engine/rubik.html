@@ -56,6 +56,8 @@
      ?v=<任意串>                          版本戳，仅用于跳过缓存，页面忽略它
      不认识的参数一律忽略；参数非法时退回默认值，不报错。 */
   var qs = new URLSearchParams(location.search);
+  /* ?notitle=1：宿主抽屉头已写 Logical Cube、页面左上角已有模型名 / rank 面包屑，左上角这行题面不再画第二遍 */
+  if (qs.get('notitle') === '1') { var nt = document.createElement('style'); nt.textContent = '.prc-brandname{display:none !important}'; document.head.appendChild(nt); }
   var theme = qs.get('theme') === 'dark' ? 'dark' : 'light';   // 默认浅色
   var num = function(k){ var v = parseInt(qs.get(k), 10); return isFinite(v) && v > 0 ? v : null; };
   var pick = function(k, map, dflt){

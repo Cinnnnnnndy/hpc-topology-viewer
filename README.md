@@ -745,7 +745,7 @@ Logical Cube 的抬头也改成本页标题的写法（`MoE 504B A18B · 32K seq
 | 视角 | 页面 | 连线 | 颜色 | 维度怎么读 |
 |---|---|---|---|---|
 | 2D | 集群、POD、Board、Network Graph | 正交走线、细线、底色衬边 | 只表示状态：灰 = 默认、白 = 选中、浅灰 = 连带选中、琥珀 = Warn、红 = Critical / OOM | 线型分链路类型（UB 实线 / UBoE 长虚 / RoCE · NIC SW 短虚 / PCIe 点线） |
-| 3D | NPU 页、Logical Cube | 卡对卡直线（NPU 页原来每维弯一道弧，已拉直） | 素色，与 Logical Cube 的 `color=neutral` 同一组灰（TP #C8C8C8 · CP #9A9A9A · EP #868686 · DP #AEAEAE · PP #E2E2E2）；NPU 页兄弟块同样只兑一点素色 | 方向（每一维占一个方向）+ 悬停文字 |
+| 3D | NPU 页、Logical Cube | NPU 页卡对卡是弧线，每维弧度不同、互不重叠（10.18 一度拉直，10.19 按反馈恢复弧线）；Logical Cube 沿轴直线 | 素色，与 Logical Cube 的 `color=neutral` 同一组灰（TP #C8C8C8 · CP #9A9A9A · EP #868686 · DP #AEAEAE · PP #E2E2E2）；NPU 页兄弟块同样只兑一点素色 | 方向（每一维占一个方向）+ 弧度 + 悬停文字 |
 
 维度签名色（TP 青、CP 绿、EP 紫、DP 蓝、PP 粉）只留在卡片上，两种画布都不用。
 
@@ -753,6 +753,11 @@ Logical Cube 的抬头也改成本页标题的写法（`MoE 504B A18B · 32K seq
 - Board 上连线旁的数据标签（含琥珀告警读数）改成跟画布一起缩放，字号是板上最小一档；只在放大到 1.5× 起出现，铺满时不显示——不放大时琥珀线与 L1 端口点已经报了状态。原来告警读数按屏幕定字号、铺满也常驻，字比器件标签大出一截。
 - Network Graph 抽屉不再画第二遍题面（抽屉头已经写了 Network Graph）。
 - 右侧抽屉（Logical Cube / Hierarchy）打开时，底部工具条与配置浮层居中到剩下的画布里，不再被抽屉压住右半截。
+
+10.19 跟进：
+- NPU 页卡对卡的通信线恢复弧线（反馈「3D 部分 NPU 的通信还是用本来的弧线效果比较好」），颜色仍是素色。
+- Logical Cube 抽屉里那行「模型名 / rank N」不再画（`notitle=1`）：页面左上角的面包屑已经写着，抽屉头写着 Logical Cube。
+- 引擎自带的左下角那条 HUD（选组 + 缩放 / 居中 / 复位）在 NPU 页与 Network Graph 抽屉里都不画了（`hud=0`）。NPU 页改用本页底部工具条的缩小 / 复位 / 放大（转给引擎 `pto:zoom`），镜头始终对着选中的 NPU，复位回到进页时的机位；换组走画布上点兄弟 rank。Network Graph 抽屉里滚轮照常缩放。
 
 **端点落在哪**：只落在器件上，而且落在器件图元的中线上——
 - 板视图所有器件（NPU / CPU / NIC / DPU / SW / L1 / 交换板）统一「图标居中、名字在图标正下方居中」，中点只按图标算、

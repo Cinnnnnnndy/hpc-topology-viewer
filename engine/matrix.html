@@ -156,6 +156,7 @@
   backdrop-filter:blur(6px);
 }
 .pt-zoomhud[hidden]{display:none}
+.pt-root.nohud #zoomHud, .pt-root.nohud #groupHud{display:none !important}
 .pt-zoomhud button{
   min-width:26px; height:26px; padding:0 8px; border:none; border-radius:999px;
   background:transparent; color:var(--pt-fg2); font-size:13px; font-weight:700; line-height:1;
@@ -1052,8 +1053,8 @@ var VC = {};
    提亮后又跟 EP 的紫混成一团。线与兄弟块都走它，和宿主左右卡片上的色点是同一套颜色。 */
 var HOST_DC = {tp:'#22d3ee', cp:'#86c70f', ep:'#9b3cf6', dp:'#4369ef', pp:'#f472b6'};   // 10.16：PP 同宿主改粉（原琥珀与告警撞色）
 function dimCol(d){ return (ui.slabGap && HOST_DC[d]) ? HOST_DC[d] : VC[d]; }
-/* 10.18：3D 视角一套显示形式——宿主的 NPU 页与 Logical Cube 同一套：直线、素色（与魔方 color=neutral 的 DIM_MONO 同值），
-   维度靠方向与悬停文字读，不靠彩色；彩色维度签名只留在卡片上。 */
+/* 10.18：3D 视角素色——宿主的 NPU 页与 Logical Cube 同一组灰（魔方 color=neutral 的 DIM_MONO 同值），
+   维度靠方向、弧度与悬停文字读，不靠彩色；彩色维度签名只留在卡片上。10.19 起 NPU 页卡对卡仍是弧线（反馈）。 */
 var HOST_MONO = {tp:'#C8C8C8', cp:'#9A9A9A', ep:'#868686', dp:'#AEAEAE', pp:'#E2E2E2'};
 var MEMC = {};
 /* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
@@ -1509,6 +1510,8 @@ function urlLoad(){
   /* embed=1：整页只剩画布——顶栏、页脚全收起来，给「一条链接就是一张图」的
      嵌入形态用（host=cockpit 是早先驾驶舱用的写法，一并认）。 */
   if(q.get('embed')==='1' || q.get('host')==='cockpit') $('app').classList.add('embed');
+  /* hud=0（10.19）：选组 HUD 与缩放 HUD 都不画——宿主（shard-device-map）的底部工具条接管缩放 / 复位（pto:zoom），选组走画布点选 */
+  if(q.get('hud')==='0') $('app').classList.add('nohud');
   if(AXIS_DOMAIN.indexOf(q.get('axis'))>=0) ui.axis = q.get('axis');
   if(COMM_DIMS.indexOf(q.get('dim'))>=0) ui.commDim = q.get('dim');
   if(PRIMS.some(function(x){return x.id===q.get('prim');})) ui.commPrim = q.get('prim');
@@ -6389,7 +6392,7 @@ function netScene(D, g, box, step){
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
         + edgeSVG(pts9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9,
                   /* 单卡层：几维的组常落在同一排（EP 组跨 CP 块、DP 环在块内），直线会叠成一根——每维弯出不同的弧度分开 */
-                  solo: soloCC9, bend: 0}) + '</g>');   /* 10.18：3D 视角统一直线（同 Logical Cube），不再每维弯一道弧 */
+                  solo: soloCC9, bend: soloCC9 ? ({tp:0.22, cp:0.16, ep:-0.2, dp:0.1, pp:0}[cs9.dim] || 0) : 0}) + '</g>');   /* 10.19：反馈「NPU 的通信还是用本来的弧线效果比较好」——弧线恢复，颜色仍是素色 */
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
          中心取本卡与下一段的中点，落在那一跳上。 */
       var cx9 = 0, cy9 = 0, mN9 = pts9.length, ci9;
@@ -14863,6 +14866,20 @@ function ptoStateSnapshot(){
 window.addEventListener('message', function(ev){
   var d = ev && ev.data;
   if(!d) return;
+  /* 宿主工具条的缩放 / 复位（hud=0 时引擎自己的缩放 HUD 不画） */
+  if(d.type==='pto:zoom'){
+    /* 单卡层：镜头始终对着选中卡缩放（focusCardCamera），复位 = 进页时那个机位；其它取景按画面中心缩放 / 回 zoom=1 */
+    var soloF7 = ui.soloCard && ui.fastCard && sel !== null, z07 = ui.soloSibs === 'on' ? 9 : (ui.soloZoom || 20);
+    if(d.v === 'reset'){
+      var tp7 = VTAB_POSE[ui.viewTab] || VTAB_POSE['3d']; ui.yaw3 = tp7[0]; ui.pitch3 = tp7[1];
+      if(soloF7){ render(); focusCardCamera(sel, z07); }
+      else { ui.zoom3 = 1; ui.panX3 = 0; ui.panY3 = 0; render(); }
+    } else {
+      var f7 = d.v === 'in' ? 1.25 : 1/1.25;
+      if(soloF7) focusCardCamera(sel, ui.zoom3 * f7); else nudgeZoom(f7);
+    }
+    return;
+  }
   if((d.type==='theme'||d.type==='pto:theme') && (d.value==='dark'||d.value==='light')){
     document.documentElement.setAttribute('data-theme', d.value); render(); return;
   }

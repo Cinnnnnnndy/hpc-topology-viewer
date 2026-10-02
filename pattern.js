@@ -127,8 +127,8 @@
   /* 引擎（自带、与站内旧页面无关）：./engine/matrix.html 是这一版矩阵本体的分叉，./engine/rubik.html 是逻辑魔方的分叉，
      依赖全在 ./vendor/。原来借用的 /patterns/rank-topology-3d/、/patterns/model-netgraph/ 是发布时往同一份 demo 里注入
      默认取景参数得到的——这里在拼地址时自己补上同一组默认值（只补缺席的，显式传的优先）。 */
-  var ENG_3D = { view: 'chain', card: '1', vtab: '3d', stitle: '模型分片与训练设备映射', embed: '1' };
-  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: 'Network Graph', embed: '1', notitle: '1' };   // 10.18：抽屉头已写 Network Graph，引擎不再画第二遍题面
+  var ENG_3D = { view: 'chain', card: '1', vtab: '3d', stitle: '模型分片与训练设备映射', embed: '1', hud: '0' };   // 10.19：引擎左下角选组 / 缩放 HUD 不画，缩放复位走本页工具条
+  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: 'Network Graph', embed: '1', notitle: '1', hud: '0' };   // 10.18：抽屉头已写 Network Graph，引擎不再画第二遍题面；10.19：左下角选组 / 缩放 HUD 也不画（滚轮照常缩放）
   function engineSrc(def, q) {
     q = new URLSearchParams(q);
     for (var k in def) if (!q.has(k)) q.set(k, def[k]);
@@ -432,6 +432,7 @@
     /* 10.17：魔方抬头同本页标题的写法（「MoE 504B A18B · 32K seq / rank N」）——不再多一段「同组定位」、模型名也不再是括号写法 */
     color: 'neutral', groupgap: '3', brand: String(PS.modelName).replace(/\(([^)]+)\)\s*·?\s*/, ' $1 · '), cclabels: '0', axsel: '0', cc: '0',
     zoomsel: '0.5', chrome: '0',
+    notitle: '1',     // 10.19：抽屉里不再重复「模型名 / rank N」——页面左上角面包屑已经写着
     rankorder: 'pp'   // 魔方显示的 rank 号换成本页的编号（10.16：原来标题写的是魔方内部序号，选 1267 显示成 1875）
   });
   // Logical Cube 现在不是主线上的一档，是底部工具条唤起的参考抽屉（见 openDrawer）
@@ -1451,7 +1452,10 @@
     var d = ev.target.closest('[data-drawer]');
     if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
     var b = ev.target.closest('[data-zoom]'); if (!b) return;
-    var z = curZP(), R = z.rect(), a = b.getAttribute('data-zoom');
+    var a = b.getAttribute('data-zoom');
+    /* NPU 页：画布是引擎的 3D 场景，缩放 / 复位转给它（引擎自己的缩放 HUD 已收起） */
+    if (document.body.classList.contains('t3')) { try { detailFrame.contentWindow.postMessage({ type: 'pto:zoom', v: a }, '*'); } catch (e) {} return; }
+    var z = curZP(), R = z.rect();
     if (a === 'reset') z.reset(); else z.zoomAt(a === 'in' ? 1.4 : 1 / 1.4, R.width / 2, R.height / 2);
   });
 
