@@ -1561,6 +1561,7 @@
     syncCardHeights();
   }
   leftCard.addEventListener('click', function (ev) {
+    if (dcFoldClick(ev)) return;
     if (ev.target.closest('[data-act="worst"]') && lastCluster && lastCluster.worst != null) { showTier2(lastCluster.worst, coordLine(lastCluster.worst)); return; }
     if (ev.target.closest('[data-act="drill"]') && pendingMatrixSel != null) { showDetail(pendingMatrixSel); return; }
     if (ev.target.closest('[data-act="board"]') && curSel != null) { goBoard(physOf(curSel).board, true); return; }
@@ -2936,11 +2937,26 @@
   var DC_TAG = { calc: 'Calc', asm: 'Est.', demo: 'Demo', pub: 'Public' };
   function dcRow(k, v, cls, tip) { return '<div class="dc-r' + (cls ? ' ' + cls : '') + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><span>' + k + '</span><b>' + v + '</b></div>'; }
   function dcBar(frac, cls) { return '<i class="dc-bar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, frac * 100)).toFixed(1) + '%"></i></i>'; }
-  function dcCard(key, title, body, tag, tip, big) {
+  /* 10.21 简略卡（反馈「可以显示简略卡片然后点击再出现详情」）：有头部读数（big）或摘要行（opt.sum）的卡默认只摆
+     卡名 + 读数 + 摘要（越线的那几行），点卡展开图表与明细，点卡头收起；展开与否按卡种记住（浏览器本地，只是个人习惯）。
+     opt.state = 'warn' | 'alert'：越线时读数琥珀 / 红——收起来也看得见告警。opt.bigClosedOnly：读数只在收起时摆（展开后的图里已经有同一个数） */
+  var dcFold = (function () { try { return JSON.parse(localStorage.getItem('sdm.dcopen') || '{}') || {}; } catch (e) { return {}; } })();
+  function dcCard(key, title, body, tag, tip, big, opt) {
     if (!DCK[key] || !stageShows(key)) return '';
-    return '<section class="dcard" data-dk="' + key + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
+    opt = opt || {};
+    var sum = opt.sum || '', fold = !opt.nofold && !!body && (big != null || !!sum || !!opt.fold), open = !fold || !!dcFold[key];
+    return '<section class="dcard' + (fold ? ' is-fold' + (open ? ' is-open' : '') : '') + (opt.state ? ' dc-' + opt.state : '') + '" data-dk="' + key + '"' + (fold ? ' data-fold="' + key + '"' : '')
+      + (tip || fold ? ' title="' + esc((tip ? tip : '') + (fold ? (tip ? ' · ' : '') + (open ? '点卡头收起' : '点开看详情') : '')) + '"' : '') + '><div class="dc-h"><span class="dc-t">' + title + '</span>'
       + '</div>'   // 口径小标（Demo / Public / Est.）不上卡面（反馈「不要这几个标记」），口径说明留在整张 NPU 的悬停提示里
-      + (big != null ? '<div class="dc-big">' + big + '</div>' : '') + body + '</section>';
+      + (big != null && !(fold && open && opt.bigClosedOnly) ? '<div class="dc-big">' + big + '</div>' : '') + sum + (open ? body : '') + '</section>';
+  }
+  function dcFoldClick(ev) {
+    var c = ev.target.closest('[data-fold]'); if (!c) return false;
+    if (ev.target.closest('button, a, [data-dact], [data-act], .pb')) return false;
+    if (c.classList.contains('is-open') && !ev.target.closest('.dc-h')) return false;   // 展开后只有卡头收起：图表上的悬停 / 点选不误触
+    var k = c.getAttribute('data-fold'); dcFold[k] = !c.classList.contains('is-open');
+    try { localStorage.setItem('sdm.dcopen', JSON.stringify(dcFold)); } catch (e) {}
+    renderDataCards(); return true;
   }
   function pct(x) { return x == null ? '—' : (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%'; }
   function gb(x) { return x >= 10 ? x.toFixed(0) : x.toFixed(1); }
@@ -3073,7 +3089,8 @@
       + '<div class="vz-stat"><b>' + Math.round(T.tgs) + '</b><span>tok/s · per NPU</span><em>step ' + T.stepS.toFixed(1) + ' s</em></div></div>'
       + dcRow('Cluster', fmtN(T.tokS) + ' tok/s') + dcRow('Tokens / Step', fmtN(T.tokStep), '', 'gbs ' + T.gbs + ' × seq')
       + dcRow('FLOPs / Token', (T.fTok / 1e9).toFixed(0) + ' GFLOP', '', '6·N激活（≈' + (T.nAct / 1e9).toFixed(1) + 'B 矩阵参数）+ 6·L·h·s 因果注意力；共享专家、MLA、DSA/SWA 稀疏未计入'),
-      'asm', '步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 ' + T.peakTF + ' TFLOPS × MFU）；峰值按昇腾 910 标称 FP16，MFU 是假设值——看量级与随切分怎么变，不是实测');
+      'asm', '步时 = 每步 token × 每 token FLOPs ÷（卡数 × 峰值 ' + T.peakTF + ' TFLOPS × MFU）；峰值按昇腾 910 标称 FP16，MFU 是假设值——看量级与随切分怎么变，不是实测',
+      Math.round(T.tgs) + '<small>tok/s · per NPU · MFU ' + pct(T.mfu) + '</small>', { bigClosedOnly: true });
   }
   function moeCard(P, scope) {
     var M = P && P.moe; if (!M) return '';
@@ -3082,14 +3099,14 @@
     var head = (scope ? '' : '<div class="vz-cap">Routing Imbalance / Layer</div>') + vzLine(M.imbL, P.health.l0, 1, 1.2, 1.15, x2, 'Imbalance', null, scope ? 44 : 56)
       + dcRow('Imbalance', x2(M.imb) + ' avg', '', '逐层路由失衡；> 1.15× 与 Network Graph 同一条告警线')
       + dcRow('Capacity Util', pct(M.cap)) + vzMeter(M.cap, null, '专家容量利用 ' + pct(M.cap));
-    var hero = x2(M.imbMax) + '<small>peak · L' + M.imbAt + '</small>';
-    if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', 'Network Graph「MoE」那一类的示意读数，只看本段的层', hero);
+    var hero = x2(M.imbMax) + '<small>peak · L' + M.imbAt + '</small>', mo = { state: P.health && M.imbMax > P.health.thrImb ? 'warn' : '' };
+    if (scope) return dcCard('moe', 'MoE · ' + scope, head, 'demo', 'Network Graph「MoE」那一类的示意读数，只看本段的层', hero, mo);
     return dcCard('moe', 'MoE', head
       + dcRow('Local Experts', M.ePer + ' / ' + M.experts + ' · top' + M.topk)
       + dcRow('μb token', fmtN(M.tokMb), '', 'per μb per NPU = mbs × seq ÷ CP')
       + dcRow('A2A Dispatch', '≤' + Math.round(M.a2aMB) + ' MB', '', '每层每 μb 上限：token × topk × h × 2B，没算同卡去重')
       + dcRow('Pmax · Entropy', M.pmax.toFixed(2) + ' · ' + M.ent.toFixed(2)),
-      'demo', '本 NPU 专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与 Network Graph「MoE」那一类同一套示意读数', hero);
+      'demo', '本 NPU 专家 / μb token / A2A 派发上限是实算；失衡、Router Pmax / 熵、容量利用与 Network Graph「MoE」那一类同一套示意读数', hero, mo);
   }
   function healthCard(P, scope, w) {
     var H = P && P.health; if (!H || MODE !== 'train') return '';
@@ -3099,7 +3116,7 @@
     return dcCard('health', scope ? 'Training Health · ' + scope : 'Training Health', head
       + (scope ? '' : '<div class="dc-more">' + dcRow('Amax Peak', H.amax.toFixed(1) + ' · L' + H.amaxAt) + dcRow('Δ/W', H.uRatio.toExponential(1)) + dcRow('Step', H.step + ' · ckpt/' + H.ckpt) + '</div>'),
       'demo', 'Network Graph「数值 / 梯度 / 训练」三类的示意读数（step 18420 那一次快照），同一层在 Network Graph 与这里读到同一个数',
-      H.warn + '<small>/ ' + H.n + ' 告警 Layers</small>');
+      H.warn + '<small>/ ' + H.n + ' 告警 Layers</small>', { state: H.warn > 0 ? 'warn' : '' });
   }
   function stepCard() { return dcCard('step', 'Step Time', vzStack(STEP_DEMO.pretrain, 'Comm'), 'demo', SRC_DEMO); }
   function inferKpiCard() {
@@ -3116,19 +3133,24 @@
     else head = '<div class="brief-h">rank ' + curSel + '</div><div class="brief-sub">' + (pendingSubLine || coordLine(curSel)) + '</div>';
     var cta = tier === 3 ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">Board ' + p.board + '</button>' : '')
       + '<button type="button" class="brief-cta is-primary" data-act="drill">NPU</button>';
-    return '<section class="dcard lc-rank">' + head
-      + '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放"><span>SuperPoD ' + p.sp + ' · POD ' + p.pod + '</span><span>Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></span></div>'
+    /* 10.21 简略卡：收起时只留抬头 + Total（第二档）+ 跳转按钮；点开才摊显存构成与落位 */
+    var open = !!dcFold.rank, cut = head.indexOf('<div class="brief-segbar">');
+    if (!open && cut >= 0) head = head.slice(0, cut);
+    return '<section class="dcard lc-rank is-fold' + (open ? ' is-open' : '') + '" data-fold="rank" title="' + (open ? '点卡头收起' : '点开看显存构成与落位') + '"><div class="dc-h lc-rank-h">' + head.replace(/^(<div class="brief-h">[\s\S]*?<\/div>)/, '$1</div>')
+      + (open ? '<div class="brief-k brief-loc" title="落位为假设：rank 连续摆放"><span>SuperPoD ' + p.sp + ' · POD ' + p.pod + '</span><span>Board ' + p.board + ' · Slot ' + p.slot + '<sup>*</sup></span></div>' : '')
       + (cta ? '<div class="lc-rank-cta">' + cta + '</div>' : '') + '</section>';
   }
   /* 右列的 Group：五个并行组 × 闭合级 × 一次搬多少 + 这颗 NPU 的物理链路（原来是 rank 卡的下半截） */
   function groupCardHtml() {
     if (curSel == null || tier < 2 || (STAGE && !stageShows('comm') && !stageShows('phys'))) return '';
-    return '<section class="dcard" data-dk="group"><div class="dc-h"><span class="dc-t">Group</span></div>' + physInfoHtml(curSel, true) + '</section>';
+    var h9 = physInfoHtml(curSel, true), cut9 = h9.indexOf('<div class="brief-links">'), open9 = !!dcFold.group;
+    return '<section class="dcard is-fold' + (open9 ? ' is-open' : '') + '" data-dk="group" data-fold="group" title="' + (open9 ? '点卡头收起' : '点开看详情') + '"><div class="dc-h"><span class="dc-t">Group</span></div>'
+      + (cut9 < 0 ? h9 : h9.slice(0, cut9) + (open9 ? '<div class="dc-open">' + h9.slice(cut9) + '</div>' : '')) + '</section>';
   }
   function pubCard() {
     return dcCard('pub', 'Reference', vzIdx([['SuperPoD Affinity', 1.3, '+30%'], ['512K Throughput', 1.5, '+50%'], ['Infer/NPU', 2, '2×']], 252)
       + dcRow('Pretrain', '34T tok'),
-      'pub', 'openPangu-2.0 训练代码开源时的公开数字（2026-09-28，TechNode / IT之家）：只有相对提升，未公开 MFU、每 NPU Throughput 与步时');
+      'pub', 'openPangu-2.0 训练代码开源时的公开数字（2026-09-28，TechNode / IT之家）：只有相对提升，未公开 MFU、每 NPU Throughput 与步时', null, { fold: true });
   }
   /* 左列：这一层的容量卡（接在配置卡里，告警面板照旧排在它下面） */
   function capCardHtml(ppH) {
@@ -3138,11 +3160,12 @@
     if (level === 'board' && curBoard != null) {
       var b0 = curBoard * PHYS.board, st = rangeStats(b0, b0 + PHYS.board), R = C && C.ratio, bars = '';
       for (var i = 0; i < 8 && b0 + i < world; i++) bars += '<div class="dc-r dc-rbar"><span>' + (b0 + i) + '</span>' + dcBar(R ? Math.min(1, R[b0 + i]) : 0, oomSet && oomSet[b0 + i] ? 'is-bad' : '') + '<b>' + (R ? pct(R[b0 + i]) : '—') + '</b></div>';
-      return dcCard('cap', 'Board ' + curBoard, (st ? dcRow('Peak', pct(st.peak)) : '') + bars, 'calc');
+      return dcCard('cap', 'Board ' + curBoard, bars, 'calc', null, st ? pct(st.peak) + '<small>Peak</small>' : null, { state: st && st.over ? 'alert' : '' });
     }
     if (curSel == null && fitPod != null) {
       var p0 = fitPod * PHYS.pod, sp = rangeStats(p0, p0 + PHYS.pod);
-      return dcCard('cap', 'POD ' + fitPod, sp ? dcRow('Peak', pct(sp.peak)) + dcRow('Mean', pct(sp.avg)) + dcRow('OOM', sp.over, sp.over ? 'is-bad' : '') : dcRow('Reading', '…'), 'calc') + ppH;
+      return dcCard('cap', 'POD ' + fitPod, sp ? dcRow('Mean', pct(sp.avg)) + dcRow('OOM', sp.over, sp.over ? 'is-bad' : '') : dcRow('Reading', '…'), 'calc', null, sp ? pct(sp.peak) + '<small>Peak</small>' : null,
+        { sum: sp && sp.over && !dcFold.cap ? dcRow('OOM', sp.over, 'is-bad') : '', state: sp && sp.over ? 'alert' : '' }) + ppH;
     }
     if (!C) return ppH;
     var n = C.n, W = C.world, rows = [['OK', n.ok, ''], ['Warn', n.amber, ''], ['Critical', n.red, n.red ? 'is-warn' : ''], ['OOM', n.oom, n.oom ? 'is-bad' : '']];   // 阈值（70 / 88%）进悬停释义，行名不带百分比——长的「Critical 88%」挤进条里
@@ -3162,12 +3185,15 @@
       + dcRow('KV / Seq', (I.kvSeq / G).toFixed(3) + ' GB')
       + dcRow('Max Batch', IM.bmax, IM.bmax < I.batch ? 'is-bad' : ''),
       'asm', '推理口径（矩阵 ptoInferMem）：权重 bf16 按同一套 TP/EP/PP 常驻，无梯度 / 优化器态；KV = 2×本段层数×本 NPU KV 头×headDim×seq/cp×并发×2B（MHA/GQA 口径，MLA、量化 KV 未建模——是上限）；并发上限按 90% HBM 算',
-      (Math.round(IM.totGB * 10) / 10) + '<small>/ ' + IM.hbm + ' GB · Total</small>');
+      (Math.round(IM.totGB * 10) / 10) + '<small>/ ' + IM.hbm + ' GB · Total</small>', { state: IM.bmax < I.batch ? 'alert' : '' });
   }
   function capClusterHtml(C, n, W, rows) {
-    return dcCard('cap', 'Capacity', rows.map(function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; }).join('')
+    var rowH = function (x) { return '<div class="dc-r dc-rbar' + (x[2] ? ' ' + x[2] : '') + '"><span>' + x[0] + '</span>' + dcBar(x[1] / W, x[2]) + '<b>' + x[1] + '</b></div>'; };
+    var hot = rows.filter(function (x) { return x[0] !== 'OK' && x[1] > 0; });   // 收起时只摆越线的那几档
+    return dcCard('cap', 'Capacity', rows.map(rowH).join('')
       + (C.worst != null ? dcRow('Peak rank', '<button type="button" class="dc-link" data-dact="sel" data-r="' + C.worst + '">rank ' + C.worst + '</button>') : ''), 'calc', null,
-      C.worst != null ? pct(C.ratio[C.worst]) + '<small>Peak Usage</small>' : null);
+      C.worst != null ? pct(C.ratio[C.worst]) + '<small>Peak Usage</small>' : null,
+      { sum: dcFold.cap ? '' : hot.map(rowH).join(''), state: n.oom ? 'alert' : n.red ? 'warn' : '' });
   }
   /* 右列：关系（Comm / 闭合 / 板载）→ 时间（流水 → 步时）。选中了 rank 但 rank 卡还收着时，右列保持这一层原来那几张，
      不先冒出一张孤零零的「流水」；rank 卡打开后才换成这张 NPU 自己的流水，排在 rank 卡下面。 */
@@ -3215,7 +3241,7 @@
       + dcRow('Clos', '8×X4 → L1') + dcRow('NIC SW', '1口/C · 2口/N')   /* 同板视图画布上的叫法（审计：卡里写 Intra-board / Off-board，画布写 fullmesh / Clos） */, 'asm', '按 CANN NEXT 直播四页的 POD / Server 形态图；rank 落位按连续摆放推');
   }
   function pipeCardRank(Dt, withGA) {
-    return dcCard('pipe', 'Pipeline', vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + (withGA ? dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) : '') + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc', null, pct(Dt.bubble) + '<small>Bubble</small>');
+    return dcCard('pipe', 'Pipeline', vzMeter(Dt.bubble, 0.25, '气泡 ' + pct(Dt.bubble) + '；刻度 = 25% 告警线') + (withGA ? dcRow('PP · GA', PS.pp + ' · ' + Dt.model.ga) : '') + dcRow('ZeRO', Dt.zero ? Dt.zero : '0'), 'calc', null, pct(Dt.bubble) + '<small>Bubble</small>', { state: Dt.bubble > 0.25 ? 'warn' : '' });
   }
   /* 右列（10.20）：带阈值的信号在上（Training Health → MoE，越线时琥珀）→ 依据（Pipeline → Comm / Group → On-board）。
      头部读数（Throughput / Step Time / Inference）与 Reference 挪到左列 */
@@ -3240,10 +3266,10 @@
     if (C.perf && MODE === 'train') out.push(healthCard(C.perf));
     if (C.perf) out.push(moeCard(C.perf));
     if (C.model && MODE !== 'infer') out.push(dcCard('pipe', 'Pipeline', vzMeter(C.bubble, 0.25, '气泡 ' + pct(C.bubble) + '；刻度 = 25% 告警线') + dcRow('PP · GA', PS.pp + ' · ' + C.model.ga) + dcRow('Layers / Stage', C.model.lps) + dcRow('μb', C.model.mbs + '×' + C.model.seq),
-      'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满', pct(C.bubble) + '<small>Bubble</small>'));
-    out.push(dcCard('comm', 'Comm', closureRows()
+      'calc', '(PP−1)/GA；>25% 告警，GA<PP 灌不满', pct(C.bubble) + '<small>Bubble</small>', { state: C.bubble > 0.25 ? 'warn' : '' }));
+    out.push(dcCard('comm', 'Comm', '<div class="dc-open">'
       + (C.comm && C.comm.tp ? dcRow('TP', unitEN(C.comm.tp.txt), '', C.comm.tp.how) : '') + (C.comm && C.comm.pp ? dcRow('PP', unitEN(C.comm.pp.txt), '', C.comm.pp.how) : '') + (C.comm && C.comm.dp && MODE !== 'infer' ? dcRow('DP', unitEN(C.comm.dp.txt), '', C.comm.dp.how) : '')
-      + dcRow('UB · RoCE', '196 · 50 GB/s'), 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数'));
+      + dcRow('UB · RoCE', '196 · 50 GB/s') + '</div>', 'calc', '闭合级别按 rank 连续落位推（假设）；字节按矩阵 commLoad9；CP / EP 各边不等，不给数', null, { sum: closureRows() }));
     return out;
   }
   var CUT_NAME = { tp: 'TP', ep: 'EP', cp: 'CP', sp: 'SP', none: 'Rep' };
@@ -3385,6 +3411,7 @@
     var k = c.getAttribute('data-bk'); dcOpen[k] = !dcOpen[k]; renderDataCards();
   });
   dataCol.addEventListener('click', function (ev) {
+    if (dcFoldClick(ev)) return;
     if (ev.target.closest('[data-act="cmp-clear"]')) { BASE = null; renderDataCards(); return; }
     var b = ev.target.closest('[data-dact="sel"]'); if (!b) return;
     var r = +b.getAttribute('data-r'); showTier2(r, coordLine(r));
