@@ -1052,6 +1052,9 @@ var VC = {};
    提亮后又跟 EP 的紫混成一团。线与兄弟块都走它，和宿主左右卡片上的色点是同一套颜色。 */
 var HOST_DC = {tp:'#22d3ee', cp:'#86c70f', ep:'#9b3cf6', dp:'#4369ef', pp:'#f472b6'};   // 10.16：PP 同宿主改粉（原琥珀与告警撞色）
 function dimCol(d){ return (ui.slabGap && HOST_DC[d]) ? HOST_DC[d] : VC[d]; }
+/* 10.18：3D 视角一套显示形式——宿主的 NPU 页与 Logical Cube 同一套：直线、素色（与魔方 color=neutral 的 DIM_MONO 同值），
+   维度靠方向与悬停文字读，不靠彩色；彩色维度签名只留在卡片上。 */
+var HOST_MONO = {tp:'#C8C8C8', cp:'#9A9A9A', ep:'#868686', dp:'#AEAEAE', pp:'#E2E2E2'};
 var MEMC = {};
 /* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
    反馈原话「做默认关掉颜色只有黑白」。原来这一屏的颜色同时在说三件事：
@@ -5450,9 +5453,10 @@ function netScene(D, g, box, step){
             var wantFill = ui.memFill && hasSel && tier9 !== 0 && !sibGhost9;   /* 兄弟在 solo 档只画壳：只有选中那只显示内部容量 */
             var wantShell9 = (lowDetail || !wantFill) && !solidSib9;
             if(solidSib9){
-              var sbC9 = (sibKeepCol9 && memSibs && memSibs[gc]) ? dimCol(memSibs[gc]) : 'var(--pt-fg)';
+              var sbMono9 = !!(ui.soloCard && ui.slabGap && memSibs && HOST_MONO[memSibs[gc]]);   /* 3D 视角素色：兄弟块同魔方，只兑一点素色 */
+              var sbC9 = (sibKeepCol9 && memSibs && memSibs[gc]) ? (sbMono9 ? HOST_MONO[memSibs[gc]] : dimCol(memSibs[gc])) : 'var(--pt-fg)';
               /* 实心块收成淡显：维度色只兑一小份进底色，读得出是哪一维，但不跟选中卡与连线抢 */
-              var sbK9 = sbC9 === 'var(--pt-fg)' ? [14, 9, 19, 28] : (sibLinked9 ? [30, 20, 40, 58] : [20, 13, 28, 42]);
+              var sbK9 = (sbC9 === 'var(--pt-fg)' || sbMono9) ? (sibLinked9 ? [18, 12, 24, 40] : [14, 9, 19, 28]) : (sibLinked9 ? [30, 20, 40, 58] : [20, 13, 28, 42]);
               var vis8 = function(a8, b8, c8){ return turn3(a8, b8, c8, yaw, pitch)[2] < 0; };
               var sbE9 = ';stroke:color-mix(in srgb, '+sbC9+' '+sbK9[3]+'%, var(--pt-bg));stroke-width:.35;stroke-linejoin:round';
               body.push(quad(vis8(0,0,1) ? [C8[4],C8[5],C8[6],C8[7]] : [C8[0],C8[1],C8[2],C8[3]], 'fill:color-mix(in srgb, '+sbC9+' '+sbK9[0]+'%, var(--pt-bg))'+sbE9));
@@ -6318,7 +6322,7 @@ function netScene(D, g, box, step){
          "选中的这张卡"，不需要再靠颜色分辨"这条边是哪一维"，读法交给悬停里的
          文字（tip9 已经把维度名写清楚了）。载体色（fb9.col，UB/RoCE 那套）
          同理：素色这一路连它一起收，否则地面那几条带又是一套新色系。 */
-      var eCol9 = ui.mono ? 'var(--pt-fg)' : (cgFab9 ? fb9.col : VC[cs9.dim]);
+      var eCol9 = ui.mono ? 'var(--pt-fg)' : (soloCC9 ? HOST_MONO[cs9.dim] : (cgFab9 ? fb9.col : VC[cs9.dim]));
       if(mem9.length < 2) return;
       /* 层构成下连的是**块**不是卡：这一维的通信发生在哪一块上是有定论的——
          TP 的归约在 attn.out（行切算子算出的是部分和）、EP 的 All-to-All 在
@@ -6385,7 +6389,7 @@ function netScene(D, g, box, step){
       body.push('<g opacity="'+(cgBlock9 ? '.5' : '.92')+'" pointer-events="none">'
         + edgeSVG(pts9, cs9.prim, eCol9, {mid: cs9.dim, ring:false, hub: mem9.indexOf(g), w: eW9,
                   /* 单卡层：几维的组常落在同一排（EP 组跨 CP 块、DP 环在块内），直线会叠成一根——每维弯出不同的弧度分开 */
-                  solo: soloCC9, bend: soloCC9 ? ({tp:0.22, cp:0.16, ep:-0.2, dp:0.1, pp:0}[cs9.dim] || 0) : 0}) + '</g>');
+                  solo: soloCC9, bend: 0}) + '</g>');   /* 10.18：3D 视角统一直线（同 Logical Cube），不再每维弯一道弧 */
       /* 组心：那正是这条关系「在画面上的位置」。P2P 是一条链不是一个环，
          中心取本卡与下一段的中点，落在那一跳上。 */
       var cx9 = 0, cy9 = 0, mN9 = pts9.length, ci9;

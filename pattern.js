@@ -128,7 +128,7 @@
      依赖全在 ./vendor/。原来借用的 /patterns/rank-topology-3d/、/patterns/model-netgraph/ 是发布时往同一份 demo 里注入
      默认取景参数得到的——这里在拼地址时自己补上同一组默认值（只补缺席的，显式传的优先）。 */
   var ENG_3D = { view: 'chain', card: '1', vtab: '3d', stitle: '模型分片与训练设备映射', embed: '1' };
-  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: 'Network Graph', embed: '1' };
+  var ENG_NG = { view: 'chain', cuts: 'pcte', rank: '0', vtab: 'side', stitle: 'Network Graph', embed: '1', notitle: '1' };   // 10.18：抽屉头已写 Network Graph，引擎不再画第二遍题面
   function engineSrc(def, q) {
     q = new URLSearchParams(q);
     for (var k in def) if (!q.has(k)) q.set(k, def[k]);

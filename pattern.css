@@ -210,6 +210,9 @@ body.is-resizing .zp-box, body.is-resizing .dock, body.is-resizing .ip-col { tra
 body.panel-bottom { --pb: calc(var(--pb-h, 36vh) + 10px); }
 body.panel-left .side-left, body.panel-left .ip-col-left { display: none; }
 body.panel-right .side-right, body.panel-right .alert-badge, body.panel-right .ip-col-right { display: none; }
+/* 10.18：右侧抽屉打开时工具条与配置浮层居中到剩下的画布里，不再被抽屉压住右半截 */
+body.panel-right .dock, body.panel-right .cfg-pop { left: calc((100vw - var(--ps-w, 40vw) - 16px) / 2); transition: opacity .15s ease, left .2s ease; }
+body.is-resizing.panel-right .dock { transition: none; }
 body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 
 /* ── 主可视区：裁在自己的矩形里，四周留白给边缘的文字与导航 */
@@ -1303,14 +1306,15 @@ svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe
 
 /* ── 10.13：连线上的小数据标签（板视图）── 不用标签框：一行小号等宽字、垫一圈底色；平时藏着，放大到 1.5× 起淡入；
    需要注意的读数琥珀色（阈值色），带琥珀读数的那一条不放大也显示 */
-.b-dlbl { font-family: var(--mono, ui-monospace, monospace); font-size: 5.2px; fill: #8E8E90; letter-spacing: .02em;
+.b-dlbl { font-family: var(--mono, ui-monospace, monospace); font-size: 6px; fill: #8E8E90; letter-spacing: .02em;
   paint-order: stroke; stroke: #111111; stroke-width: calc(2.4px / var(--zk, 1)); stroke-linejoin: round;
   opacity: 0; transition: opacity .2s ease; pointer-events: none; }
 .b-dlbl .dl-k { fill: #C8C8CA; }
 .b-dlbl .dl-sep { fill: #5A5A5C; }
 .b-dlbl .is-warn { fill: #FAB219; }
-svg.lodz .b-dlbl, .b-dlbl.has-warn { opacity: 1; }
-svg.has-sel .b-dlbl:not(.has-warn) { fill: #6A6A6C; }
+/* 10.18：告警读数也只在放大后出现（反馈：铺满时那一条琥珀标签字太大、和整体比例不协调）——不放大时琥珀线 / L1 端口点已经报了状态 */
+svg.lodz .b-dlbl { opacity: 1; }
+svg.has-sel .b-dlbl { fill: #6A6A6C; }
 
 /* ── 10.14：必要的状态点缀（照 hpc-topology-node：状态色嵌在图元体内、只在出事时出现，平时全灰）──
    器件：NPU 状态条（die 窗口底下那一条）——显存 ≥ 红线（Critical）琥珀、OOM 告警红；其余仍是占用灰阶。
@@ -1357,5 +1361,5 @@ svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E90; }
 .p-splabel { --zfs: 11; }
 .p-uboelabel { --zfs: 10; }
 .p-rocelabel { --zfs: 8; }
-.b-dlbl { --zfs: 8; }
+/* 10.18：数据标签不再按屏幕定字号——跟板上其它标签一起随画布缩放，比例与图元一致；字号取板上最小一档 */
 .ip-m em { margin-right: 6px !important; color: #8A8A8A; }
