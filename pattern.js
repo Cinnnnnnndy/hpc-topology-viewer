@@ -3135,8 +3135,8 @@
     if (B && tier === 3 && DCK.state && B.detail) head = '<div class="brief-h">rank ' + B.rank + capBadgeHtml(B.cap) + '</div><div class="brief-sub">' + coordSubLine(B) + '</div>';
     else if (B) head = memBriefHtml(B);
     else head = '<div class="brief-h">rank ' + curSel + '</div><div class="brief-sub">' + (pendingSubLine || coordLine(curSel)) + '</div>';
-    /* 10.22 跳转按钮带「下钻」图标（反馈「改一个更明确的图标，表明这个按钮去往哪里」）：↳ 下一层（先下、再进去），文字写目的地；不用「箭头进框」——读着像下载 */
-    var DRILL = '<svg class="cta-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v6a2.5 2.5 0 0 0 2.5 2.5h7"/><path d="M10.5 8l3 3-3 3"/></svg>';
+    /* 10.22 跳转按钮带图标（反馈「改一个更明确的图标，表明这个按钮去往哪里」→「用跳转的图标，这个像是下载」）：↗ 跳转，文字写目的地；箭头朝下的（进框 / ↳）读着都像下载 */
+    var DRILL = '<svg class="cta-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 11.5 11.5 4.5"/><path d="M5.5 4.5h6v6"/></svg>';
     var cta = tier === 3 ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board" title="下钻到 Board ' + p.board + '（rank ' + curSel + ' 所在的板）">' + DRILL + 'Board ' + p.board + '</button>' : '')
       + '<button type="button" class="brief-cta is-primary" data-act="drill" title="下钻到 rank ' + curSel + ' 的 NPU 页">' + DRILL + 'NPU</button>';
     /* 10.21 简略卡：收起时只留抬头 + Total（第二档）+ 跳转按钮；点开才摊显存构成与落位 */
