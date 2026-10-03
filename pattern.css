@@ -1389,3 +1389,8 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .dcard.dc-warn .dc-big small, .dcard.dc-alert .dc-big small { color: var(--cam-label, #8C8C8C); }
 /* 简略卡展开后底色不变（.is-open 的浅底是 NPU 页切分小卡「点开了哪一块」的选中提示，这里只是展开，不是选中） */
 .dcard.is-fold.is-open, .dcard.is-fold:hover { background: var(--cam-bg); }
+/* 10.22 状态标：只在 Warn / Critical（琥珀）与 OOM（红）时出现，OK 不画 */
+.brief-badge.is-warn { color: #111111; background: var(--warn); border-color: var(--warn); }
+.brief-badge.is-alert { color: #FFFFFF; background: var(--alert); border-color: var(--alert); }
+/* 下钻按钮的图标：同 dock 图标的线宽与端点，跟着按钮文字色 */
+.brief-cta .cta-ico { width: 14px; height: 14px; margin: 0 6px 0 -2px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }

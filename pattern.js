@@ -2190,6 +2190,11 @@
      这里只拼一次版式，不为两档各写一份、读出两套数。容量告警只用文字/
      底色深浅分挡，不引入色相，呼应"默认关掉颜色只有黑白"那条反馈。 */
   var CAP_LABEL = { oom: 'OOM', red: 'Critical', amber: 'Warn', ok: 'OK' };
+  /* 10.22 状态标只在出事时出现（反馈「状态正常就不用标记，告警再标记」）：OK 不画；Warn / Critical 琥珀、OOM 红——同画布与卡上读数的两种状态色 */
+  function capBadgeHtml(cap) {
+    if (!cap || !cap.level || cap.level === 'ok') return '';
+    return '<span class="brief-badge ' + (cap.level === 'oom' ? 'is-alert' : 'is-warn') + '">' + (CAP_LABEL[cap.level] || cap.level) + '</span>';
+  }
   /* 指标名一律英文（反馈「指标的命名全部采用英文」）：矩阵本体报上来的显存档名是中文，这里按开头换 */
   var MEM_EN = [[/^权重/, 'Weights'], [/^AllGather/, 'AG Window'], [/^梯度/, 'Grads'], [/^优化器步/, 'Opt Step Tmp'], [/^优化器/, 'Optimizer'], [/^激活/, 'Activations'], [/^碎片/, 'Reserve']];
   function memEN(label) { var t = String(label); for (var i = 0; i < MEM_EN.length; i++) if (MEM_EN[i][0].test(t)) return MEM_EN[i][1]; return t.replace(/\s*[（(].*$/, '').replace(/[·／/].*$/, ''); }
@@ -2215,8 +2220,7 @@
       b2.cap = { level: IM.level, totGB: IM.totGB }; b2.segs = IM.segs; b2.detail = { segs: IM.segs.map(function (x) { return { col: x.col }; }) };
       brief = b2;
     }
-    var capBadge = '<span class="brief-badge' + (brief.cap.level === 'ok' ? '' : ' is-alert') + '">'
-      + (CAP_LABEL[brief.cap.level] || brief.cap.level) + '</span>';
+    var capBadge = capBadgeHtml(brief.cap);
     // 档名只留头两三个字：「权重 (bf16)」→「权重」、「Activations·在途6μb」→「Activations」
     return '<div class="brief-h">rank ' + brief.rank + capBadge + '</div>'
       + '<div class="brief-sub">' + coordSubLine(brief) + '</div>'
@@ -2286,7 +2290,7 @@
     // （消融），只留矩阵画布上没有的：物理位置与 Comm 组链路等级。
     // 矩阵 solo 那群显存浮卡与引线关掉了（memcards=0），数字直接放这张右卡
     // NPU 层：显存各档已经拆成 3D 卡两侧的小卡（数据卡「显存各档」开着时），右卡不再重复
-    briefCard.innerHTML = (tier === 3 && DCK.state && brief.detail ? '<div class="brief-h">rank ' + brief.rank + '<span class="brief-badge' + (brief.cap && brief.cap.level !== 'ok' ? ' is-alert' : '') + '">' + (brief.cap ? CAP_LABEL[brief.cap.level] || brief.cap.level : 'OK') + '</span></div><div class="brief-sub">' + coordSubLine(brief) + '</div>' : memBriefHtml(brief))   /* NPU 层抬头同第二档：rank · 档位标 · 坐标（含 ep）· 层段 */ + physInfoHtml(brief.rank);
+    briefCard.innerHTML = (tier === 3 && DCK.state && brief.detail ? '<div class="brief-h">rank ' + brief.rank + capBadgeHtml(brief.cap) + '</div><div class="brief-sub">' + coordSubLine(brief) + '</div>' : memBriefHtml(brief))   /* NPU 层抬头同第二档：rank · 档位标 · 坐标（含 ep）· 层段 */ + physInfoHtml(brief.rank);
     showRankBadge(brief.rank);
     renderDataCards();
   }
@@ -3128,11 +3132,13 @@
   function rankHeadHtml() {
     if (curSel == null || tier < 2) return '';
     var B = lastBrief && lastBrief.rank === curSel ? lastBrief : null, p = physOf(curSel), head;
-    if (B && tier === 3 && DCK.state && B.detail) head = '<div class="brief-h">rank ' + B.rank + '<span class="brief-badge' + (B.cap && B.cap.level !== 'ok' ? ' is-alert' : '') + '">' + (B.cap ? CAP_LABEL[B.cap.level] || B.cap.level : 'OK') + '</span></div><div class="brief-sub">' + coordSubLine(B) + '</div>';
+    if (B && tier === 3 && DCK.state && B.detail) head = '<div class="brief-h">rank ' + B.rank + capBadgeHtml(B.cap) + '</div><div class="brief-sub">' + coordSubLine(B) + '</div>';
     else if (B) head = memBriefHtml(B);
     else head = '<div class="brief-h">rank ' + curSel + '</div><div class="brief-sub">' + (pendingSubLine || coordLine(curSel)) + '</div>';
-    var cta = tier === 3 ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board">Board ' + p.board + '</button>' : '')
-      + '<button type="button" class="brief-cta is-primary" data-act="drill">NPU</button>';
+    /* 10.22 跳转按钮带「下钻」图标（反馈「改一个更明确的图标，表明这个按钮去往哪里」）：↳ 下一层（先下、再进去），文字写目的地；不用「箭头进框」——读着像下载 */
+    var DRILL = '<svg class="cta-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v6a2.5 2.5 0 0 0 2.5 2.5h7"/><path d="M10.5 8l3 3-3 3"/></svg>';
+    var cta = tier === 3 ? '' : (level !== 'board' ? '<button type="button" class="brief-cta" data-act="board" title="下钻到 Board ' + p.board + '（rank ' + curSel + ' 所在的板）">' + DRILL + 'Board ' + p.board + '</button>' : '')
+      + '<button type="button" class="brief-cta is-primary" data-act="drill" title="下钻到 rank ' + curSel + ' 的 NPU 页">' + DRILL + 'NPU</button>';
     /* 10.21 简略卡：收起时只留抬头 + Total（第二档）+ 跳转按钮；点开才摊显存构成与落位 */
     var open = !!dcFold.rank, cut = head.indexOf('<div class="brief-segbar">');
     if (!open && cut >= 0) head = head.slice(0, cut);
