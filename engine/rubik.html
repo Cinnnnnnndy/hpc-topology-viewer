@@ -194,6 +194,7 @@
     if (d.type === 'rubik-theme' || d.type === 'cockpit-theme') applyTheme(d.theme);
     if (d.type === 'rubik-cmd'){                   // 宿主 → pattern 指令桥（与 cockpit-cmd 同思路）
       if (d.cmd === 'mode') handle.setMode(d.value|0);
+      else if (d.cmd === 'view') handle.setView(d.value|0);   // 宿主底部工具条的视角切换（10.23）
       else if (d.cmd === 'layer') handle.selectLayer(d.value == null ? null : d.value|0);
       else if (d.cmd === 'bucket') handle.selectBucket(d.value == null ? null : d.value|0);
       else if (d.cmd === 'anom') handle.setAnomaly(d.value || 'none');

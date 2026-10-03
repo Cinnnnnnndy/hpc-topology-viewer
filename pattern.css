@@ -1394,3 +1394,25 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .brief-badge.is-alert { color: #FFFFFF; background: var(--alert); border-color: var(--alert); }
 /* 下钻按钮的图标：同 dock 图标的线宽与端点，跟着按钮文字色 */
 .brief-cta .cta-ico { width: 14px; height: 14px; margin: 0 6px 0 -2px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── 10.23 集群 2.5D：dock 里的切换只在集群 / POD 这一层出现（Board 与 NPU 页各有自己的画法）；板厚两档暗、顶面一层很淡的斜向光泽 ── */
+.p-thk { pointer-events: none; }
+.p-thk-sp { rx: 14px; ry: 14px; fill: #0B0B0C; stroke: rgba(255, 255, 255, .05); stroke-width: calc(1px / var(--zk, 1)); }
+.p-thk-pod { rx: 7px; ry: 7px; fill: #121214; }
+.phys-stage:not(.is-iso) .p-thick, .phys-stage:not(.is-iso) .p-thick-pod { display: none; }
+.phys-stage.is-iso .p-sp { fill: url(#iso-sheen); stroke: url(#iso-rim); }
+/* 底部工具条的视角段：胶囊分段（同设置里的分段按钮），选中 = 深底白字；Logical Cube 那段前面一枚小字标签说明管的是谁 */
+.dock-views { display: flex; align-items: center; gap: 4px; }
+.dock-views.is-empty { display: none; }
+.dv-seg { display: flex; gap: 2px; padding: 0; }
+.dock .dv-b { width: auto; min-width: 36px; height: 36px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 500; color: #A8A8AA; white-space: nowrap; }
+.dock .dv-b:disabled { opacity: .35; cursor: default; }
+.dv-sep { width: 1px; height: 18px; background: rgba(255, 255, 255, .1); margin: 0 4px; }
+.dv-lbl { font-size: 10px; color: #6A6A6E; margin: 0 2px 0 4px; white-space: nowrap; letter-spacing: .02em; }
+.dv-menu-w { position: relative; display: flex; }
+.dock .dv-mode { gap: 6px; }
+.dv-car { width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(1px) rotate(-135deg); opacity: .7; }
+.dv-mode.is-open .dv-car { transform: translateY(-2px) rotate(45deg); }
+.dv-menu { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--cam-bg); -webkit-backdrop-filter: var(--cam-fx); backdrop-filter: var(--cam-fx); box-shadow: var(--cam-shadow); border-radius: 18px; z-index: 12; }
+.dock .dv-menu .dv-b { justify-content: flex-start; height: 30px; }

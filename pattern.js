@@ -523,6 +523,93 @@
      另一种颜色、往上穿过 SW1 行。每 Board 1 颗 DPU / 4 张 NIC 是按第二页 Server
      图数的（4 个 NIC 框），直播没给每 Board DPU 的确切数，这一项是示意。 */
   var GEO = { sw1: {}, sw2: {}, board: {} }, PITCH_ = 9, ROWP_ = 9, PODW_ = 126;
+  /* ── 10.23 集群 2.5D（反馈「整体集群的视角再给一个 2.5D 可以切换，切换放在下面的工具栏」）──────────────
+     同 hpc-topology-node 的 iso 预设（镜头方向 [1, .82, 1]：俯角 ≈30°、方位 45°）：整张平面图在 SVG 里套一层正交轴测投影
+     （g.iso-g 的 transform，平移缩放仍在外层 <svg> 上），SuperPoD / POD 垫一层板厚。取景、POD 懒建的可见范围、选中框、
+     原地关系层都按同一个投影算——画面上的东西点得中、框得准。ISO.t 是 0（平面）→ 1（2.5D）的过渡进度。 */
+  var ISO = { on: qs.get('view') === 'iso', t: qs.get('view') === 'iso' ? 1 : 0, m: [1, 0, 0, 1, 0, 0], raf: 0 };
+  function isoFull(vb) {
+    var a = Math.SQRT1_2, b = 0.3536, c = -Math.SQRT1_2, d = 0.3536, cx = vb.x + vb.width / 2, cy = vb.y + vb.height / 2;
+    var sc = Math.min(vb.width / (a * (vb.width + vb.height)), vb.height / (b * (vb.width + vb.height))) * 0.94;
+    a *= sc; b *= sc; c *= sc; d *= sc;
+    return [a, b, c, d, cx - (a * cx + c * cy), cy - (b * cx + d * cy)];
+  }
+  function isoRoot(svgEl) { return (svgEl && svgEl.querySelector(':scope > g.iso-g')) || svgEl; }
+  function isoPt(x, y) { var M = ISO.m; return [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]]; }
+  function isoInv(x, y) { var M = ISO.m, det = M[0] * M[3] - M[1] * M[2]; x -= M[4]; y -= M[5]; return [(M[3] * x - M[2] * y) / det, (-M[1] * x + M[0] * y) / det]; }
+  function isoRect(x, y, w, h) {
+    if (!ISO.t) return [x, y, w, h];
+    var P = [isoPt(x, y), isoPt(x + w, y), isoPt(x, y + h), isoPt(x + w, y + h)], xs = P.map(function (p) { return p[0]; }), ys = P.map(function (p) { return p[1]; });
+    var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+    return [x0, y0, Math.max.apply(null, xs) - x0, Math.max.apply(null, ys) - y0];
+  }
+  /* 板厚：SuperPoD 底板与 POD 框各垫一块同形的暗板，沿「屏幕正下方」挪出厚度（在投影前的平面里就是对角线方向），
+     随 ISO.t 从 0 长出来；顶面一层很淡的斜向光泽（左上亮、右下暗），只在 2.5D 时出现 */
+  function isoApply() {
+    var svgEl = physStage.querySelector('.zp-box svg'), g = svgEl && svgEl.querySelector(':scope > g.iso-g'); if (!g) return;
+    var F = isoFull(svgEl.viewBox.baseVal), t = ISO.t, I = [1, 0, 0, 1, 0, 0];
+    ISO.m = I.map(function (v, i) { return v + (F[i] - v) * t; });
+    g.setAttribute('transform', t ? 'matrix(' + ISO.m.map(function (v) { return v.toFixed(5); }).join(' ') + ')' : '');
+    var thick = g.querySelector(':scope > g.p-thick');
+    if (!thick) {
+      thick = document.createElementNS('http://www.w3.org/2000/svg', 'g'); thick.setAttribute('class', 'p-thick');
+      var h = '';
+      g.querySelectorAll('.p-sp').forEach(function (r) { h += '<rect class="p-thk p-thk-sp" x="' + r.getAttribute('x') + '" y="' + r.getAttribute('y') + '" width="' + r.getAttribute('width') + '" height="' + r.getAttribute('height') + '"/>'; });
+      thick.innerHTML = h;
+      var pods = '';
+      g.querySelectorAll('.p-pod').forEach(function (r) { pods += '<rect class="p-thk p-thk-pod" x="' + r.getAttribute('x') + '" y="' + r.getAttribute('y') + '" width="' + r.getAttribute('width') + '" height="' + r.getAttribute('height') + '"/>'; });
+      var gp = document.createElementNS('http://www.w3.org/2000/svg', 'g'); gp.setAttribute('class', 'p-thick-pod'); gp.innerHTML = pods;
+      g.insertBefore(thick, g.firstChild);
+      var pn = g.querySelector('.p-panels'), fp = pn && pn.querySelector('.p-pod'); if (fp) fp.parentNode.insertBefore(gp, fp);   // 垫在 POD 框底下、SuperPoD 板上面
+    }
+    /* 厚度按屏幕上的 svg 单位给（SuperPoD 10、POD 3.5），换回投影前平面里的对角向量 */
+    var sc = F[0] / Math.SQRT1_2;   // 投影里的整体缩放；屏幕正下方 T = 平面里 (v, v)，v = T / (2·0.3536·sc)
+    var vs = (10 / (2 * 0.3536 * sc)) * t, vp = (3.5 / (2 * 0.3536 * sc)) * t;
+    thick.setAttribute('transform', 'translate(' + vs.toFixed(2) + ' ' + vs.toFixed(2) + ')');
+    var gpod = g.querySelector('.p-thick-pod'); if (gpod) gpod.setAttribute('transform', 'translate(' + vp.toFixed(2) + ' ' + vp.toFixed(2) + ')');
+    svgEl.style.setProperty('--iso-t', t.toFixed(3));
+    physStage.classList.toggle('is-iso', t > 0.02);
+  }
+  function setIso(on, instant) {
+    ISO.on = !!on; setQS('view', ISO.on ? 'iso' : '');
+    renderDockViews();
+    cancelAnimationFrame(ISO.raf);
+    var t0 = ISO.t, t1 = ISO.on ? 1 : 0, T0 = performance.now(), D = (REDUCED || instant) ? 0 : 560;
+    var refit = function () { if (physZP.auto && physZP.last) { var l = physZP.last; physZP.fitVB(l[0], l[1], l[2], l[3], l[4], !(REDUCED || instant)); } else physZP.reset(!(REDUCED || instant)); };
+    if (!D) { ISO.t = t1; isoApply(); refit(); return; }
+    (function step(now) {
+      var u = Math.min(1, (now - T0) / D), e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      ISO.t = t0 + (t1 - t0) * e; isoApply();
+      if (u < 1) ISO.raf = requestAnimationFrame(step); else { ISO.raf = 0; refit(); }
+    })(T0);
+  }
+  /* ── 10.23 视角切换都在底部工具条（反馈「并行拓扑的各种视角切换也要放在下面的工具栏中」）──────────────
+     跟着画面上是什么出现：集群 = 平面 | 2.5D；NPU 页 = 3D | 顶视（原在设置里的「机位」，挪到这里）；
+     Logical Cube 抽屉开着时再接一段：它自己的视角（3D / 正视 / 侧视 / 顶视，按形态可用的那几个）+ 形态菜单
+     （标准 / DP平铺 / EP聚簇 / TP切片 / PP流水 / 物理平铺）——魔方在宿主里不画自己的工具条（chrome=0），这里经 rubik-cmd 指过去 */
+  var CUBE = { mode: 0, view: 0, menu: false };
+  var CUBE_MODES = [['标准', [0, 1, 2, 3]], ['DP平铺', [0, 1, 2, 3]], ['EP聚簇', [0, 1, 2, 3]], ['TP切片', [0, 1, 2]], ['PP流水', [0, 1, 2]], ['物理平铺', [0, 1]]];
+  var CUBE_VIEWS = [[0, '3D'], [2, '正视'], [3, '侧视'], [1, '顶视']];
+  function cubeCmd(cmd, v) { if (drawerOpen !== 'rubik') return; try { drawerFrame.contentWindow.postMessage({ type: 'rubik-cmd', cmd: cmd, value: v }, '*'); } catch (e) {} }
+  function dvSeg(kind, items, cur, tip) {
+    return '<span class="dv-seg">' + items.map(function (x) {
+      return '<button type="button" class="dv-b' + (String(x[0]) === String(cur) ? ' is-on' : '') + '" data-dv="' + kind + '" data-v="' + x[0] + '"' + (x[2] ? ' disabled' : '') + ' title="' + (tip ? tip + ' · ' : '') + x[1] + '">' + x[1] + '</button>';
+    }).join('') + '</span>';
+  }
+  function renderDockViews() {
+    var el = document.getElementById('dockViews'); if (!el) return;
+    var t3 = document.body.classList.contains('t3'), h = '';
+    if (t3) h = dvSeg('npu', [['3d', '3D'], ['top', '顶视']], DV.vtab, 'NPU');
+    else if (level !== 'board') h = dvSeg('clu', [['flat', '平面'], ['iso', '2.5D']], ISO.on ? 'iso' : 'flat', 'Cluster');
+    if (drawerOpen === 'rubik' && !t3) {
+      var al = CUBE_MODES[CUBE.mode][1];
+      h += (h ? '<i class="dv-sep"></i>' : '') + '<span class="dv-lbl">Logical Cube</span>'
+        + dvSeg('cube', CUBE_VIEWS.map(function (x) { return [x[0], x[1], al.indexOf(x[0]) < 0]; }), CUBE.view, 'Logical Cube')
+        + '<span class="dv-menu-w"><button type="button" class="dv-b dv-mode' + (CUBE.menu ? ' is-open' : '') + '" data-dv="cube-menu" title="Logical Cube · 形态">' + CUBE_MODES[CUBE.mode][0] + '<i class="dv-car"></i></button>'
+        + (CUBE.menu ? '<span class="dv-menu">' + CUBE_MODES.map(function (m, i) { return '<button type="button" class="dv-b' + (i === CUBE.mode ? ' is-on' : '') + '" data-dv="cube-mode" data-v="' + i + '">' + m[0] + '</button>'; }).join('') + '</span>' : '') + '</span>';
+    }
+    el.innerHTML = h; el.classList.toggle('is-empty', !h);
+  }
   function buildPhysSvg() {
     var SPN = physCount.sp, cols = SPN > 2 ? 2 : SPN, rows = Math.ceil(SPN / cols);
     var PITCH = PITCH_, ROWP = ROWP_, PODW = PODW_, PODH = 84, GAPP = 6, GRPW = PODW * 2 + GAPP, GRPGAP = 18;
@@ -636,8 +723,11 @@
           + '<text class="p-uboelabel" x="' + (U.x + SPW / 2 + 8) + '" y="' + (U.y + SPH + SPGAP / 2 + 3) + '">UBoE</text>');
       }
     }
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('p-')
-      + '<g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></svg>';
+    /* 2.5D 的顶面光泽与描边渐变：左上迎光略亮、右下收暗；描边上沿亮、下沿几乎看不见（克制：亮度差只有几个百分点） */
+    var isoDefs = '<defs><linearGradient id="iso-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A2A2E"/><stop offset=".45" stop-color="#1D1D20"/><stop offset="1" stop-color="#151517"/></linearGradient>'
+      + '<linearGradient id="iso-rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".30"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity=".08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".03"/></linearGradient></defs>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('p-') + isoDefs
+      + '<g class="iso-g"><g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></g></svg>';
   }
   /* ── 放大后在集群画布上原地画出一块板的全部关系（反馈「这些关系好像都看不到了，一个都不能少」）──
      放大到 3× 以上，指针所在的那块 Board（选中了 rank 就是它所在的那块）把直播四页里的关系原地展开：
@@ -734,8 +824,8 @@
     var tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     tmp.innerHTML = relSvg(b);
     // 关系画在设备之上（下面垫一层挖空当前行的暗底，见 relSvg），选中框仍在最上
-    var frame = svgEl.querySelector('.sel-frame');
-    svgEl.insertBefore(tmp.firstChild, frame && frame.parentNode === svgEl ? frame : null);
+    var frame = svgEl.querySelector('.sel-frame'), root9 = isoRoot(svgEl);
+    root9.insertBefore(tmp.firstChild, frame && frame.parentNode === root9 ? frame : null);
   }
   physStage.addEventListener('pointerover', function (ev) {
     var svgEl = physStage.querySelector('.zp-box svg');
@@ -758,6 +848,11 @@
     function sx(px) { return ((px - zp.tx) / zp.k - ox) / m + vb.x; }
     function sy(py) { return ((py - zp.ty) / zp.k - oy) / m + vb.y; }
     var x0 = sx(0), x1 = sx(R.width), y0 = sy(0), y1 = sy(R.height);
+    if (ISO.t) {   // 2.5D：屏幕四角反投影回平面，取包围盒
+      var C9 = [isoInv(x0, y0), isoInv(x1, y0), isoInv(x0, y1), isoInv(x1, y1)];
+      x0 = Math.min.apply(null, C9.map(function (p) { return p[0]; })); x1 = Math.max.apply(null, C9.map(function (p) { return p[0]; }));
+      y0 = Math.min.apply(null, C9.map(function (p) { return p[1]; })); y1 = Math.max.apply(null, C9.map(function (p) { return p[1]; }));
+    }
     physStage.querySelectorAll('.p-pod').forEach(function (pod) {
       var i = pod.getAttribute('data-pod'); if (podDetailDone[i]) return;
       var x = +pod.getAttribute('x'), y = +pod.getAttribute('y'), w = +pod.getAttribute('width'), h = +pod.getAttribute('height');
@@ -775,6 +870,7 @@
   function renderPhys() {
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
+    isoApply();
     podDetailDone = {};
     physBuilt = true;
     if (typeof physZP !== 'undefined' && physZP) physZP.reset();
@@ -1289,6 +1385,7 @@
     /* 下钻的「推近」：把选中那一格挪到安全区正中、镜头再推近 factor 倍（推之前的镜头由 trail 记，见「层级串联」） */
     st.pushTo = function (x, y, w, h, factor, dur) {
       var s = svg(); if (!s) return;
+      if (stage === physStage) { var r9 = isoRect(x, y, w, h); x = r9[0]; y = r9[1]; w = r9[2]; h = r9[3]; }
       var vb = s.viewBox.baseVal, R = st.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
       var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2, S = safeArea(R);
       var pcx = ox + (x + w / 2 - vb.x) * m, pcy = oy + (y + h / 2 - vb.y) * m, k1 = Math.min(16, st.k * factor);
@@ -1297,6 +1394,7 @@
     /* 把 viewBox 里的一块区域 (vx,vy,vw,vh) 飞到屏幕上的一个矩形 (sx,sy,sw,sh)：按宽度对齐、竖直居中——进板的「接缝」用 */
     st.flyToRect = function (vx, vy, vw, vh, sx, sy, sw, sh, dur, done) {
       var s = svg(); if (!s) { if (done) done(); return; }
+      if (stage === physStage) { var r9 = isoRect(vx, vy, vw, vh); vx = r9[0]; vy = r9[1]; vw = r9[2]; vh = r9[3]; }
       var vb = s.viewBox.baseVal, R = st.rect(), m = Math.min(R.width / vb.width, R.height / vb.height);
       var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
       var bx0 = ox + (vx - vb.x) * m, by = oy + (vy + vh / 2 - vb.y) * m, k = Math.min(16, sw / (vw * m));
@@ -1316,13 +1414,15 @@
        让它居中撑满的 k/tx/ty。 */
     st.fitVB = function (x, y, w, h, pad, anim, done) {
       var s = svg(); if (!s) return;
+      var raw9 = [x, y, w, h];
+      if (stage === physStage) { var r9 = isoRect(x, y, w, h); x = r9[0]; y = r9[1]; w = r9[2]; h = r9[3]; }
       var vb = s.viewBox.baseVal, R = st.rect();
       var m = Math.min(R.width / vb.width, R.height / vb.height);
       var ox = (R.width - vb.width * m) / 2, oy = (R.height - vb.height * m) / 2;
       var px = ox + (x - vb.x) * m, py = oy + (y - vb.y) * m, pw = w * m, ph = h * m, S = safeArea(R);
       var k = Math.min(16, Math.max(0.2, Math.min((S.w - pad * 2) / pw, (S.h - pad * 2) / ph)));
       var tx1 = S.x + S.w / 2 - k * (px + pw / 2), ty1 = S.y + S.h / 2 - k * (py + ph / 2);
-      st.last = [x, y, w, h, pad]; st.auto = true;
+      st.last = [raw9[0], raw9[1], raw9[2], raw9[3], pad]; st.auto = true;   // 记平面坐标：切 2.5D 后按新投影重新取景
       if (anim) st.fly(k, tx1, ty1, 480, done);
       else { cancelAnimationFrame(st.flyRaf); dropLayer(); st.flying = false; st.k = k; st.tx = tx1; st.ty = ty1; apply(); if (done) done(); }
     };
@@ -1395,6 +1495,8 @@
       drawer.classList.remove('is-hidden');
     }
     dock.querySelectorAll('[data-drawer]').forEach(function (b) { b.classList.toggle('is-on', b.getAttribute('data-drawer') === drawerOpen); });
+    if (drawerOpen !== 'rubik') CUBE.menu = false;
+    renderDockViews();
     syncCardHeights(); curZP().refit(); syncLinked(true); requestAnimationFrame(function () { requestAnimationFrame(syncOverFade); });
   }
   drawer.addEventListener('click', function (ev) { if (ev.target.closest('[data-act="drawer-close"]')) openDrawer(null); });
@@ -1451,6 +1553,16 @@
     if (ev.target.closest('[data-pop="cfg"]')) { toggleCfg(); return; }
     var d = ev.target.closest('[data-drawer]');
     if (d) { openDrawer(d.getAttribute('data-drawer')); return; }
+    var dv9 = ev.target.closest('[data-dv]');
+    if (dv9) {
+      var k9 = dv9.getAttribute('data-dv'), v9 = dv9.getAttribute('data-v');
+      if (k9 === 'clu') { if ((v9 === 'iso') !== ISO.on) setIso(v9 === 'iso'); }
+      else if (k9 === 'npu') { if (DV.vtab !== v9) { DV.vtab = v9; setQS('cam', v9 === '3d' ? '' : v9); refreshDetail(true); } }
+      else if (k9 === 'cube') { CUBE.view = +v9; CUBE.menu = false; cubeCmd('view', +v9); }
+      else if (k9 === 'cube-menu') CUBE.menu = !CUBE.menu;
+      else if (k9 === 'cube-mode') { CUBE.mode = +v9; CUBE.menu = false; if (CUBE_MODES[CUBE.mode][1].indexOf(CUBE.view) < 0) CUBE.view = 0; cubeCmd('mode', +v9); }
+      renderDockViews(); return;
+    }
     var b = ev.target.closest('[data-zoom]'); if (!b) return;
     var a = b.getAttribute('data-zoom');
     /* NPU 页：画布是引擎的 3D 场景，缩放 / 复位转给它（引擎自己的缩放 HUD 已收起） */
@@ -1579,7 +1691,7 @@
      回集群时集群图还停在这块板上，点标题复位就是一路拉远——进出同一条路径 */
   function goBoard(b, keepSel) {
     if (b == null) return;
-    if (!REDUCED && level !== 'board' && tier !== 3 && !physStage.classList.contains('is-hidden')) {
+    if (!REDUCED && !ISO.t && level !== 'board' && tier !== 3 && !physStage.classList.contains('is-hidden')) {   // 2.5D 下格子是斜的，不做「格子对齐图标」的接缝
       /* 接缝：先在看不见的板视图里量出它那 8 颗 NPU 落在屏幕上的位置，再让集群镜头把这块板的 8 格正好飞到那里——
          淡入的那一下，格子原地换成板视图里的 NPU，前后是同一排东西，没有尺度跳变 */
       var a8 = physStage.querySelector('.p-npu[data-rank="' + (b * PHYS.board) + '"]'), z8 = physStage.querySelector('.p-npu[data-rank="' + Math.min(world - 1, b * PHYS.board + PHYS.board - 1) + '"]');
@@ -2054,7 +2166,7 @@
         : { type: 'pto:state', hl: null, filters: NOF }, '*');
     }
   }
-  drawerFrame.addEventListener('load', function () { if (drawerOpen && !DRAWERS[drawerOpen].native) { delete linkSent[drawerOpen]; setTimeout(function () { syncLinked(true); }, 300); } });
+  drawerFrame.addEventListener('load', function () { if (drawerOpen === 'rubik') { CUBE.mode = 0; CUBE.view = 0; CUBE.menu = false; renderDockViews(); } if (drawerOpen && !DRAWERS[drawerOpen].native) { delete linkSent[drawerOpen]; setTimeout(function () { syncLinked(true); }, 300); } });
 
   window.addEventListener('message', function (ev) {
     var d = ev.data;
@@ -2687,7 +2799,6 @@
       + '<div class="cf-grid">' + DCT.map(function (x) { return '<label class="cf-chk"><input type="checkbox" data-dk="' + x[0] + '"' + (DCK[x[0]] ? ' checked' : '') + '><span>' + x[1] + '</span></label>'; }).join('') + '</div>'
       + '<div class="cf-line cf-all"><button type="button" data-dall="1">全开</button><button type="button" data-dall="0">全关</button></div></div>'
       + '<div class="cf-sec"><div class="cf-k">NPU</div>'
-      + '<div class="cf-line"><span>机位</span>' + segBtns('cam', [['3d', '3D'], ['top', '顶视']], DV.vtab) + '</div>'
       + '<div class="cf-line"><span>兄弟</span>' + segBtns('sibs', [['ghost', '隐约'], ['on', '展开']], DV.sibs) + '</div>'
       + '<label class="cf-chk"><input type="checkbox" data-dvcomm="1"' + (DV.comm ? ' checked' : '') + '><span>Comm Links</span></label>'
       + (DV.comm ? '<div class="cf-line cf-ck">' + ['tp', 'cp', 'ep', 'pp', 'dp'].map(function (k) { return '<label class="cf-chk"><input type="checkbox" data-dvck="' + k + '"' + (DV.commk[k] ? ' checked' : '') + '><span>' + k.toUpperCase() + '</span></label>'; }).join('') + '</div>' : '') + '</div>';
@@ -3357,6 +3468,7 @@
       dcQueued = false;
       document.body.classList.toggle('dc-noinc', !DCK.inc || !stageShows('inc'));
       renderJourney();
+      renderDockViews();
       renderLeftCard();   // 容量卡住在左列配置卡里，跟着这一层（集群 / POD / 板）一起换
       var lv = (tier === 3 ? t3SideCards() : levelCards()).filter(Boolean), sh = shardCards().filter(Boolean);
       /* 卡片入场（层级串联动画）：只在「上下文」换了（层 / 档 / 选中 / 板 / POD / NPU 内容）时，
@@ -3430,7 +3542,7 @@
     var fr = svgEl.querySelector('.sel-frame'), el = curSel != null ? stage.querySelector('.is-sel') : null;
     if (!el) { if (fr) fr.remove(); return; }
     if (!fr) { fr = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); fr.setAttribute('class', 'sel-frame'); }
-    svgEl.appendChild(fr);
+    isoRoot(svgEl).appendChild(fr);
     /* 框选直接描在图元自己的外边框上（反馈「框选样式直接在图元外边框高亮」）：看得见封装图标时
        （板视图、集群 6× 以上）贴着图标的圆角外框；否则贴着这一格本身。不再留缝、不再另起一个大框。 */
     var icon = null, lod2 = svgEl.classList.contains('lod1') || stage === boardStage;   // 图标从 3× 起就有

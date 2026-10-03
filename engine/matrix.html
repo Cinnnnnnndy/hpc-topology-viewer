@@ -1056,6 +1056,31 @@ function dimCol(d){ return (ui.slabGap && HOST_DC[d]) ? HOST_DC[d] : VC[d]; }
 /* 10.18：3D 视角素色——宿主的 NPU 页与 Logical Cube 同一组灰（魔方 color=neutral 的 DIM_MONO 同值），
    维度靠方向、弧度与悬停文字读，不靠彩色；彩色维度签名只留在卡片上。10.19 起 NPU 页卡对卡仍是弧线（反馈）。 */
 var HOST_MONO = {tp:'#C8C8C8', cp:'#9A9A9A', ep:'#868686', dp:'#AEAEAE', pp:'#E2E2E2'};
+/* 10.23 克制的光泽（反馈「必要的地方加类似描边的渐变或光泽感的渐变，尤其是转动视角的时候；克制但精致」）：
+   只给宿主 NPU 页选中的那一只卡（slabgap + 选中）。光源钉在屏幕左上（像摄影棚的主光，不跟着盒子转）——
+   于是转动时哪几条棱、哪一侧顶面迎光是跟着机位变的：玻璃壳 12 条棱各自一支沿棱的渐变（迎光端亮、背光端淡），
+   显存板的顶面叠一层很淡的斜向光泽（左上 +14% 白 → 右下 0）。只调亮度，不加色相。 */
+var GLINT_L = [-0.62, -0.78];
+function glintFrame(C8){
+  var cx = 0, cy = 0, R = 1e-6;
+  C8.forEach(function(p){ cx += p[0]; cy += p[1]; }); cx /= C8.length; cy /= C8.length;
+  C8.forEach(function(p){ R = Math.max(R, Math.sqrt((p[0]-cx)*(p[0]-cx) + (p[1]-cy)*(p[1]-cy))); });
+  return {cx:cx, cy:cy, R:R};
+}
+function glintEdgeDefs(C8, CE){
+  var F = glintFrame(C8);
+  var lum = function(p){ var t = ((p[0]-F.cx)*GLINT_L[0] + (p[1]-F.cy)*GLINT_L[1]) / F.R; t = Math.max(-1, Math.min(1, t)); return 0.18 + 0.74*Math.pow((t + 1)/2, 1.5); };
+  return '<defs>' + CE.map(function(e, i){
+    var a = C8[e[0]], b = C8[e[1]];
+    return '<linearGradient id="ptGlE'+i+'" gradientUnits="userSpaceOnUse" x1="'+a[0].toFixed(1)+'" y1="'+a[1].toFixed(1)+'" x2="'+b[0].toFixed(1)+'" y2="'+b[1].toFixed(1)+'">'
+      + '<stop offset="0" style="stop-color:var(--pt-fg);stop-opacity:'+lum(a).toFixed(2)+'"/><stop offset="1" style="stop-color:var(--pt-fg);stop-opacity:'+lum(b).toFixed(2)+'"/></linearGradient>';
+  }).join('') + '</defs>';
+}
+function glintSheenDefs(C8){
+  var F = glintFrame(C8), x1 = F.cx + GLINT_L[0]*F.R, y1 = F.cy + GLINT_L[1]*F.R, x2 = F.cx - GLINT_L[0]*F.R, y2 = F.cy - GLINT_L[1]*F.R;
+  return '<defs><linearGradient id="ptGlS" gradientUnits="userSpaceOnUse" x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'">'
+    + '<stop offset="0" style="stop-color:#FFFFFF;stop-opacity:.16"/><stop offset=".45" style="stop-color:#FFFFFF;stop-opacity:.05"/><stop offset="1" style="stop-color:#FFFFFF;stop-opacity:0"/></linearGradient></defs>';
+}
 var MEMC = {};
 /* ── 素色（mono）：?fastcard=1 这一路（rank-topology-lite）的**默认**调色板 ────
    反馈原话「做默认关掉颜色只有黑白」。原来这一屏的颜色同时在说三件事：
@@ -5501,6 +5526,7 @@ function netScene(D, g, box, step){
               body.push(quad(fTop?[C8[0],C8[1],C8[5],C8[4]]:[C8[3],C8[2],C8[6],C8[7]], 'fill:'+capBg9+';stroke:none'));
               /* slabgap：内缩 + 档间留缝（只给选中那只；阵列里 128 只各留缝就碎了） */
               var inS9 = !!(ui.slabGap && meC);
+              if(inS9) body.push(glintSheenDefs(C8));
               var sPadU9 = inS9 ? (cu1 - cu0)*0.08 : 0, sPadW9 = inS9 ? (cw1 - cw0)*0.08 : 0;
               var sPadV9 = inS9 ? vSp9*0.03 : 0, sGap9 = inS9 ? vSp9*0.03 : 0;
               /* 内缩档里同一把刀连着的几块并成一块画（attn.q/kv/out 三片 TP 各只有几像素宽，分开画是几道毛刺），
@@ -5561,6 +5587,7 @@ function netScene(D, g, box, step){
                     var ed = ';stroke:color-mix(in srgb, '+col+' 55%, white);stroke-width:.35;stroke-linejoin:round;stroke-opacity:.9';
                     body.push(quad(fr, 'fill:'+col+ed)); body.push(quad(sd, 'fill:'+memShade(col, 22)+ed));
                     body.push(quad(tp, 'fill:color-mix(in srgb, '+col+' 90%, white)'+ed));
+                    body.push(quad(tp, 'fill:url(#ptGlS);stroke:none;pointer-events:none'));
                   }
                   if(hitId && meC) hitOps.push(quad(fr, 'fill:transparent;cursor:pointer', 'data-act="memblockpick" data-mk="w:'+esc(hitId)+'"', esc(hitId)+'：点开看这一块的切分'));
                 }
@@ -5712,6 +5739,7 @@ function netScene(D, g, box, step){
                     body.push(quad(front9, 'fill:'+col9+edge9));
                     body.push(quad(sU1V9 ? [q1,q5,q6,q2] : [q0,q4,q7,q3], 'fill:'+memShade(col9, 22)+edge9));
                     body.push(quad(sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7], 'fill:color-mix(in srgb, '+col9+' 90%, white)'+edge9));
+                    body.push(quad(sTopV9 ? [q0,q1,q5,q4] : [q3,q2,q6,q7], 'fill:url(#ptGlS);stroke:none;pointer-events:none'));
                     if(meC && sg8.k === 'w' && bx9.pt.id) hitOps.push(quad(front9, 'fill:transparent;cursor:pointer',
                       'data-act="memblockpick" data-mk="w:'+esc(bx9.pt.id)+'"', esc(bx9.pt.id)+'：点开看这一块的切分'));
                   });
@@ -5931,7 +5959,9 @@ function netScene(D, g, box, step){
         if(fcOn){
           CE.forEach(function(e){ fcPushEdge(dT, C8[e[0]], C8[e[1]]); });
         } else if(!solidSib9){
-          CE.forEach(function(e){
+          var glint9 = !!(ui.slabGap && meC && !capCol);
+          if(glint9) body.push(glintEdgeDefs(C8, CE));
+          CE.forEach(function(e, ei9){
             /* 选中那张卡的白框是"这是哪一张"的身份标记，容量告警红是"超没超"的
                状态标记——两句话都要紧，但盘古 ZeRO=0 下结构性溢出面太大，
                几乎每张卡（含选中的这张）都会命中 capCol，红一压下来白框就
@@ -5949,8 +5979,8 @@ function netScene(D, g, box, step){
             var edgeCol9 = (ui.slabGap && meC) ? 'color-mix(in srgb, var(--pt-fg) 62%, var(--pt-bg))'
               : (ui.fastCard && meC) ? 'var(--pt-fg)'
               : (capCol || (meC ? 'var(--pt-fg)' : (sibE9 ? (ui.mono ? 'var(--pt-fg3)' : VC[sibE9]) : (spot && spotCard ? VC.dp : 'var(--pt-fg3)'))));
-            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+edgeCol9
-              +';stroke-width:'+eW.toFixed(2)+';opacity:'+eO.toFixed(2)));
+            body.push(seg(C8[e[0]], C8[e[1]], 'stroke:'+(glint9 ? 'url(#ptGlE'+ei9+')' : edgeCol9)
+              +';stroke-width:'+(glint9 ? 1.1 : eW).toFixed(2)+';opacity:'+(glint9 ? 1 : eO).toFixed(2)));
           });
         }
         /* 过路高亮：在这只卡的 12 条棱**之外**再叠一遍虚线脉冲。
@@ -14231,6 +14261,7 @@ $('stage').addEventListener('pointerdown', function(ev){
     var ctm = svg.getScreenCTM();
     if(ctm) cs = 1/ctm.a;
   }
+  soloPin0 = (ui.soloCard && sel !== null) ? soloAnchorPx() : null;
   drag3 = {x:ev.clientX, y:ev.clientY,
             yaw: isCav ? (ui.cavYaw||0) : ui.yaw3,
             pitch: isCav ? (ui.cavPitch||0) : ui.pitch3,
@@ -14267,9 +14298,25 @@ $('stage').addEventListener('pointermove', function(ev){
   lowDetail = true;
   if(!drag3.raf) drag3.raf = requestAnimationFrame(function(){
     if(drag3) drag3.raf = 0;
-    var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='solid'&&ui.persp==='grid') renderSolidGrid(D9); }
+    /* 10.23 单卡层转台以选中卡为轴心：原来绕整片阵列的原点转，镜头推到选中卡上（zoom 44）时稍一拖它就甩出画面——见 soloPinned */
+    soloPinned(function(){ var D9 = derive(cfg); if(D9.ok){ if(ui.view==='chain') renderChain(D9); else if(ui.view==='solid'&&ui.persp==='grid') renderSolidGrid(D9); } });
   });
 });
+/* 选中卡在屏幕上的像素位置（锚点是 viewBox 坐标；每次真渲染 fitSceneViewBox 会按包围盒重取 viewBox，所以要换成像素比） */
+function soloAnchorPx(){
+  var a = chainCardAnchorG && sel !== null && chainCardAnchorG[sel], vr = viewRendered, svg = $('stage').querySelector('svg');
+  if(!a || !vr || !svg) return null;
+  var cw = svg.clientWidth || 1, ch = svg.clientHeight || 1, m = Math.min(cw/vr.vw, ch/vr.vh);
+  return {x: (cw - m*vr.vw)/2 + (a[0] - (vr.vx||0))*m, y: (ch - m*vr.vh)/2 + (a[1] - (vr.vy||0))*m, m: m};
+}
+/* 包一次重画：单卡层转台时选中卡钉在屏幕原处（量重画前后的像素位置，差多少平移补多少；只动 CSS 变换，下一次真渲染按新平移画） */
+var soloPin0 = null;   /* 这次转台开始时选中卡在屏幕上的像素位置：每帧都往这一个固定点拉回，不累积误差 */
+function soloPinned(fn){
+  var p0 = soloPin0 || ((ui.soloCard && sel !== null) ? soloAnchorPx() : null);
+  fn();
+  var p1 = p0 && soloAnchorPx();
+  if(p1){ var dx = (p0.x - p1.x)/p1.m, dy = (p0.y - p1.y)/p1.m; if(Math.abs(dx) + Math.abs(dy) > 0.02){ ui.panX3 += dx; ui.panY3 += dy; applyViewTransform(); } }
+}
 var swallowClick = false;
 function endDrag3(ev){
   if(!drag3) return;
@@ -14287,7 +14334,8 @@ function endDrag3(ev){
        卡顿——写回 URL，让 crisp 防抖去补那帧清晰的。转台松手才需要立即全量
        （lowDetail 期间少画的东西要立刻补回来）。 */
     if(wasPan){ urlWrite(); scheduleCrisp(); }
-    else render();
+    else soloPinned(render);
+    soloPin0 = null;
   }
 }
 $('stage').addEventListener('click', function(ev){
