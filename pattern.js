@@ -550,25 +550,10 @@
     var F = isoFull(svgEl.viewBox.baseVal), t = ISO.t, I = [1, 0, 0, 1, 0, 0];
     ISO.m = I.map(function (v, i) { return v + (F[i] - v) * t; });
     g.setAttribute('transform', t ? 'matrix(' + ISO.m.map(function (v) { return v.toFixed(5); }).join(' ') + ')' : '');
-    var thick = g.querySelector(':scope > g.p-thick');
-    if (!thick) {
-      thick = document.createElementNS('http://www.w3.org/2000/svg', 'g'); thick.setAttribute('class', 'p-thick');
-      var h = '';
-      g.querySelectorAll('.p-sp').forEach(function (r) { h += '<rect class="p-thk p-thk-sp" x="' + r.getAttribute('x') + '" y="' + r.getAttribute('y') + '" width="' + r.getAttribute('width') + '" height="' + r.getAttribute('height') + '"/>'; });
-      thick.innerHTML = h;
-      var pods = '';
-      g.querySelectorAll('.p-pod').forEach(function (r) { pods += '<rect class="p-thk p-thk-pod" x="' + r.getAttribute('x') + '" y="' + r.getAttribute('y') + '" width="' + r.getAttribute('width') + '" height="' + r.getAttribute('height') + '"/>'; });
-      var gp = document.createElementNS('http://www.w3.org/2000/svg', 'g'); gp.setAttribute('class', 'p-thick-pod'); gp.innerHTML = pods;
-      g.insertBefore(thick, g.firstChild);
-      var pn = g.querySelector('.p-panels'), fp = pn && pn.querySelector('.p-pod'); if (fp) fp.parentNode.insertBefore(gp, fp);   // 垫在 POD 框底下、SuperPoD 板上面
-    }
-    /* 厚度按屏幕上的 svg 单位给（SuperPoD 10、POD 3.5），换回投影前平面里的对角向量 */
-    var sc = F[0] / Math.SQRT1_2;   // 投影里的整体缩放；屏幕正下方 T = 平面里 (v, v)，v = T / (2·0.3536·sc)
-    var vs = (10 / (2 * 0.3536 * sc)) * t, vp = (3.5 / (2 * 0.3536 * sc)) * t;
-    thick.setAttribute('transform', 'translate(' + vs.toFixed(2) + ' ' + vs.toFixed(2) + ')');
-    var gpod = g.querySelector('.p-thick-pod'); if (gpod) gpod.setAttribute('transform', 'translate(' + vp.toFixed(2) + ' ' + vp.toFixed(2) + ')');
     svgEl.style.setProperty('--iso-t', t.toFixed(3));
     physStage.classList.toggle('is-iso', t > 0.02);
+    svgEl.classList.toggle('svg-iso', t > 0.02);   // 线宽按 --zk 换算的那套规则挂在 #physStage 下，选择器得落在 svg 自己身上
+    physStage.classList.toggle('iso-up', ISO.on && t > 0.999);   // 落定后才抬起顶面、显出侧面（侧面按最终投影烘焙，过渡途中不对）
   }
   function setIso(on, instant) {
     ISO.on = !!on; setQS('view', ISO.on ? 'iso' : '');
@@ -621,15 +606,34 @@
     var SPGAP = 70, M = 40;
     var W = cols * SPW + (cols - 1) * SPGAP + M * 2, H = rows * SPH + (rows - 1) * SPGAP + M * 2;
     var panels = [], links = [], nodes = [], sps = [];
+    /* 10.24 2.5D 的立体元素按 hpc-topology-node（src/scene/scenes.tsx）的语汇画：SuperPoD = 基板 Slab、L2 平面 / L1 = 交换柜
+       CabinetBox、POD = 托盘、Board = 刀片 BladeTray、NPU = 芯片块 NpuChip、CPU / DPU / NIC = 小芯片 CpuChip。每块 = 顶面 + 朝向读者的
+       两个侧面（左前面迎光、右前面背光）。侧面在这里按最终轴测投影烘焙成多边形（只在 2.5D 落定后显示），顶面由 CSS 按层高抬起。
+       层高按屏幕上的 svg 单位给（Z），换回投影前平面里的对角位移 u = Z / (2·0.3536·sc) */
+    var isoSc = isoFull({ x: 0, y: 0, width: W, height: H })[0] / Math.SQRT1_2, uOf = function (L) { return L / (2 * 0.3536 * isoSc); };
+    var ZL = { sp: 3, plane: 8, sw1: 5.5, pod: 4.4, board: 5.2, dev: 6.2, npu: 7.6 };   // 比例照 Node：NPU 块高 ≈ 宽的 1/3，刀片 / 托盘都是薄板，交换柜最高
+    var exPath = function (cls, R) {
+      var l = '', r = '';
+      R.forEach(function (q) {
+        var x = q[0], y = q[1], x1 = q[0] + q[2], y1 = q[1] + q[3], ub = uOf(q[4]), ut = uOf(q[5]);
+        var P = function (px, py, u) { return (px - u).toFixed(2) + ' ' + (py - u).toFixed(2); };
+        l += 'M' + P(x, y1, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x, y1, ut) + 'Z';
+        r += 'M' + P(x1, y, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x1, y, ut) + 'Z';
+      });
+      return '<path class="p-ex exL ' + cls + '" d="' + l + '"/><path class="p-ex exR ' + cls + '" d="' + r + '"/>';
+    };
+    var isoVars = Object.keys(ZL).map(function (k) { return '--z-' + k + ':' + uOf(ZL[k]).toFixed(3) + 'px'; }).join(';');
     for (var s = 0; s < SPN; s++) {
       var sx = M + (s % cols) * (SPW + SPGAP), sy = M + Math.floor(s / cols) * (SPH + SPGAP);
       sps.push({ x: sx, y: sy });
       var base = s * PHYS.sp, inSp = Math.min(PHYS.sp, world - base);
+      panels.push(exPath('ex-sp', [[sx, sy, SPW, SPH, 0, ZL.sp]]));
       panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '"/>'
         + '<text class="p-splabel" x="' + (sx + PAD) + '" y="' + (sy + 18) + '">SuperPoD ' + s + ' · ' + inSp + '</text>');
       var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
       for (var pl = 0; pl < 8; pl++) {
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
+        panels.push(exPath('ex-cab', [[px, py, planeW, PLANEH, ZL.sp, ZL.plane]]));
         panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
           + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
         for (var q = 0; q < 4; q++) panels.push('<use class="p-sw2" href="#hw-sw" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 14) + '" width="' + (sw2w - 3) + '" height="10"/>');
@@ -643,6 +647,7 @@
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
           (GEO.sw1[gBase / PHYS.group] = GEO.sw1[gBase / PHYS.group] || [])[k] = { x: swx + sw1w / 2, top: gy, bot: gy + SW1H };
+          panels.push(exPath('ex-cab', [[swx, gy, sw1w, SW1H, ZL.sp, ZL.sw1]]));
           panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
           panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>');
           l2s.push({ g: g, k: k, x: swx + sw1w / 2, top: gy, col: g % GRPCOLS, row: Math.floor(g / GRPCOLS) });
@@ -651,6 +656,7 @@
         for (var pd = 0; pd < 2; pd++) {
           var pBase = gBase + pd * PHYS.pod; if (pBase >= world) break;
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
+          panels.push(exPath('ex-pod', [[pdx, pdy, PODW, PODH, ZL.sp, ZL.pod]]));
           panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '">'
             + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
           // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
@@ -667,7 +673,11 @@
           for (var b = 0; b < 8; b++) {
             var ry = pdy + 6 + b * ROWP + ROWP / 2, bIdx = Math.floor(pBase / PHYS.board) + b;
             GEO.board[bIdx] = { pdx: pdx, pdy: pdy, ry: ry, grp: gBase / PHYS.group, sp: s };
+            panels.push(exPath('ex-board', [[pdx + 2, ry - ROWP / 2, PODW - 4, ROWP, ZL.pod, ZL.board]]));
             panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>Board ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
+            var devR = [[pdx + 4.6, ry - 2.6, 6.2, 5.2, ZL.board, ZL.dev], [pdx + 11, ry - 2.6, 6.2, 5.2, ZL.board, ZL.dev], [pdx + 97.4, ry - 3, 8, 6, ZL.board, ZL.dev]];
+            for (var ni9 = 0; ni9 < 4; ni9++) devR.push([pdx + 107.2 + (ni9 % 2) * 6.8, ry - 3.4 + Math.floor(ni9 / 2) * 3.4, 6.4, 3.2, ZL.board, ZL.dev]);
+            panels.push(exPath('ex-dev', devR));
             /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
                其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
             // 图形直接用 hpc-topology-node 的 2D 图元（hw-icons.js 里的 <symbol>）：CPU 鲲鹏、DPU、NIC 擎天
@@ -676,6 +686,9 @@
               + '<use class="p-dpu" href="#hw-dpu" x="' + (pdx + 97.4) + '" y="' + (ry - 3) + '" width="8" height="6"/>');
             for (var ni = 0; ni < 4; ni++) panels.push('<use class="p-nic" href="#hw-nic" x="' + (pdx + 107.2 + (ni % 2) * 6.8) + '" y="' + (ry - 3.4 + Math.floor(ni / 2) * 3.4) + '" width="6.4" height="3.2"/>');
             if (b > 0) panels.push('<line class="p-bdiv lod1" x1="' + (pdx + 3) + '" y1="' + (ry - ROWP / 2) + '" x2="' + (pdx + PODW - 3) + '" y2="' + (ry - ROWP / 2) + '"/>');
+            var npuR = [];
+            for (var n9 = 0; n9 < 8 && pBase + b * 8 + n9 < world; n9++) npuR.push([pdx + 22 + n9 * PITCH + 1, ry - 3.5, 7, 7, ZL.board, ZL.npu]);
+            nodes.push(exPath('ex-npu', npuR));
             for (var n = 0; n < 8; n++) {
               var r = pBase + b * 8 + n; if (r >= world) break;
               var c = coordOfRank(r);
@@ -724,9 +737,9 @@
       }
     }
     /* 2.5D 的顶面光泽与描边渐变：左上迎光略亮、右下收暗；描边上沿亮、下沿几乎看不见（克制：亮度差只有几个百分点） */
-    var isoDefs = '<defs><linearGradient id="iso-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A2A2E"/><stop offset=".45" stop-color="#1D1D20"/><stop offset="1" stop-color="#151517"/></linearGradient>'
+    var isoDefs = '<defs><linearGradient id="iso-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A303B"/><stop offset=".45" stop-color="#1F242C"/><stop offset="1" stop-color="#191D24"/></linearGradient>'
       + '<linearGradient id="iso-rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".30"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity=".08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".03"/></linearGradient></defs>';
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">' + lkDefs('p-') + isoDefs
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="' + isoVars + '">' + lkDefs('p-') + isoDefs
       + '<g class="iso-g"><g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></g></svg>';
   }
   /* ── 放大后在集群画布上原地画出一块板的全部关系（反馈「这些关系好像都看不到了，一个都不能少」）──
@@ -852,6 +865,7 @@
       var C9 = [isoInv(x0, y0), isoInv(x1, y0), isoInv(x0, y1), isoInv(x1, y1)];
       x0 = Math.min.apply(null, C9.map(function (p) { return p[0]; })); x1 = Math.max.apply(null, C9.map(function (p) { return p[0]; }));
       y0 = Math.min.apply(null, C9.map(function (p) { return p[1]; })); y1 = Math.max.apply(null, C9.map(function (p) { return p[1]; }));
+      x0 -= 80; y0 -= 80; x1 += 80; y1 += 80;   // 顶面抬起后往屏幕上方挪了、侧面又往下多占一截：平面里四边都多留一截，画面边上那几个 POD 的芯片细节照样建出来
     }
     physStage.querySelectorAll('.p-pod').forEach(function (pod) {
       var i = pod.getAttribute('data-pod'); if (podDetailDone[i]) return;
@@ -3550,6 +3564,8 @@
     if (lod2) { var n1 = el.nextElementSibling; icon = n1 && n1.tagName === 'use' ? n1 : (n1 && n1.classList.contains('p-npunum') ? n1.nextElementSibling : null); }
     var tgt = icon || el, x = +tgt.getAttribute('x'), y = +tgt.getAttribute('y'), w = +tgt.getAttribute('width'), h = +tgt.getAttribute('height');
     if (!isFinite(x) || !w) { var bb = el.getBBox(); x = bb.x; y = bb.y; w = bb.width; h = bb.height; }
+    /* 2.5D：照 Node NpuChip 的选中——套在芯片外面一圈放大的亮框（halo），不贴着封装图标自己的浅色边，否则两条线叠成一条看不出来 */
+    if (stage === physStage && ISO.t > 0.5) { var g9 = Math.max(w, h) * 0.16; x -= g9; y -= g9; w += g9 * 2; h += g9 * 2; }
     fr.setAttribute('x', x); fr.setAttribute('y', y); fr.setAttribute('width', w); fr.setAttribute('height', h);
     fr.setAttribute('rx', icon ? w * 7.5 / 48 : 0);
   }
