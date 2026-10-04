@@ -543,6 +543,21 @@
     var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
     return [x0, y0, Math.max.apply(null, xs) - x0, Math.max.apply(null, ys) - y0];
   }
+  /* 10.25 立体块的几何：R = [[x, y, w, h, 底 u, 顶 u], …]（u = 投影前平面里的对角位移，屏幕上就是正上方）→
+     左前面（+y，迎光）/ 右前面（+x，背光）/ 顶面 / 棱线（顶面四边 + 朝向读者的那根竖棱，照 Node Slab 的 <Edges>）四条 path */
+  function exGeo(R) {
+    var o = { l: '', r: '', t: '', e: '' };
+    R.forEach(function (q) {
+      var x = q[0], y = q[1], x1 = x + q[2], y1 = y + q[3], ub = q[4], ut = q[5];
+      var P = function (px, py, u) { return (px - u).toFixed(2) + ' ' + (py - u).toFixed(2); };
+      var top = 'M' + P(x, y, ut) + 'L' + P(x1, y, ut) + 'L' + P(x1, y1, ut) + 'L' + P(x, y1, ut) + 'Z';
+      o.l += 'M' + P(x, y1, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x, y1, ut) + 'Z';
+      o.r += 'M' + P(x1, y, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x1, y, ut) + 'Z';
+      o.t += top; o.e += top + 'M' + P(x1, y1, ut) + 'L' + P(x1, y1, ub);
+    });
+    return o;
+  }
+  var ZU = {};   // 各层高换成的 u，buildPhysSvg 里算好，ensurePodDetail 建芯片 / 器件细节时用
   /* 板厚：SuperPoD 底板与 POD 框各垫一块同形的暗板，沿「屏幕正下方」挪出厚度（在投影前的平面里就是对角线方向），
      随 ISO.t 从 0 长出来；顶面一层很淡的斜向光泽（左上亮、右下暗），只在 2.5D 时出现 */
   function isoApply() {
@@ -611,30 +626,40 @@
        两个侧面（左前面迎光、右前面背光）。侧面在这里按最终轴测投影烘焙成多边形（只在 2.5D 落定后显示），顶面由 CSS 按层高抬起。
        层高按屏幕上的 svg 单位给（Z），换回投影前平面里的对角位移 u = Z / (2·0.3536·sc) */
     var isoSc = isoFull({ x: 0, y: 0, width: W, height: H })[0] / Math.SQRT1_2, uOf = function (L) { return L / (2 * 0.3536 * isoSc); };
-    var ZL = { sp: 3, plane: 8, sw1: 5.5, pod: 4.4, board: 5.2, dev: 6.2, npu: 7.6 };   // 比例照 Node：NPU 块高 ≈ 宽的 1/3，刀片 / 托盘都是薄板，交换柜最高
+    /* 10.25 阶梯（反馈「减少 rank 的高度做出阶梯的形式」）：每一层只比上一层高一级台阶，越往里台阶越矮——
+       SuperPoD 2.2 → POD +1.2 → Board +0.8 → NPU +0.7（原来 NPU 一块就 2.4，比刀片、托盘加起来还高，像一片楼）。CPU / DPU / NIC 比 NPU 再矮一点；
+       交换柜仍是最高的那一层（Node 里 CabinetBox 是唯一的「立柜」） */
+    var ZL = { sp: 2.2, plane: 6.2, sw1: 4.6, pod: 3.4, board: 4.2, dev: 4.8, npu: 4.9 };
+    var exU = function (R) { return R.map(function (q) { return [q[0], q[1], q[2], q[3], uOf(q[4]), uOf(q[5])]; }); };
     var exPath = function (cls, R) {
-      var l = '', r = '';
-      R.forEach(function (q) {
-        var x = q[0], y = q[1], x1 = q[0] + q[2], y1 = q[1] + q[3], ub = uOf(q[4]), ut = uOf(q[5]);
-        var P = function (px, py, u) { return (px - u).toFixed(2) + ' ' + (py - u).toFixed(2); };
-        l += 'M' + P(x, y1, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x, y1, ut) + 'Z';
-        r += 'M' + P(x1, y, ub) + 'L' + P(x1, y1, ub) + 'L' + P(x1, y1, ut) + 'L' + P(x1, y, ut) + 'Z';
-      });
-      return '<path class="p-ex exL ' + cls + '" d="' + l + '"/><path class="p-ex exR ' + cls + '" d="' + r + '"/>';
+      var o = exGeo(exU(R));
+      return '<path class="p-ex exL ' + cls + '" d="' + o.l + '"/><path class="p-ex exR ' + cls + '" d="' + o.r + '"/>';
     };
+    var exEdge = function (cls, R) { return '<path class="p-ex exE ' + cls + '" d="' + exGeo(exU(R)).e + '"/>'; };
+    /* 交换柜（Node CabinetBox）：前脸一扇内缩的柜门（rackDoor）+ 三道通风格栅（vent），只画在朝向读者的 +y 面上 */
+    var cabFace = function (x, y, w, h, b, t) {
+      var ub = uOf(b), ut = uOf(t), y1 = y + h, m = Math.min(1.6, w * 0.08), d = '', v = '';
+      var P = function (px, u) { return (px - u).toFixed(2) + ' ' + (y1 - u).toFixed(2); };
+      var u0 = ub + (ut - ub) * 0.16, u1 = ut - (ut - ub) * 0.2;
+      d = 'M' + P(x + m, u0) + 'L' + P(x + w - m, u0) + 'L' + P(x + w - m, u1) + 'L' + P(x + m, u1) + 'Z';
+      [0.3, 0.5, 0.7].forEach(function (f) { var u = u0 + (u1 - u0) * f; v += 'M' + P(x + m * 2, u) + 'L' + P(x + w - m * 2, u); });
+      return '<path class="p-ex exD ex-cab" d="' + d + '"/><path class="p-ex exV ex-cab" d="' + v + '"/>';
+    };
+    Object.keys(ZL).forEach(function (k) { ZU[k] = uOf(ZL[k]); }); ZU.k = uOf(1);
     var isoVars = Object.keys(ZL).map(function (k) { return '--z-' + k + ':' + uOf(ZL[k]).toFixed(3) + 'px'; }).join(';');
     for (var s = 0; s < SPN; s++) {
       var sx = M + (s % cols) * (SPW + SPGAP), sy = M + Math.floor(s / cols) * (SPH + SPGAP);
       sps.push({ x: sx, y: sy });
       var base = s * PHYS.sp, inSp = Math.min(PHYS.sp, world - base);
       panels.push(exPath('ex-sp', [[sx, sy, SPW, SPH, 0, ZL.sp]]));
-      panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '"/>'
+      panels.push('<rect class="p-sp" data-sp="' + s + '" x="' + sx + '" y="' + sy + '" width="' + SPW + '" height="' + SPH + '"/>' + exEdge('ex-sp', [[sx, sy, SPW, SPH, 0, ZL.sp]])
         + '<text class="p-splabel" x="' + (sx + PAD) + '" y="' + (sy + 18) + '">SuperPoD ' + s + ' · ' + inSp + '</text>');
       var planeW = (SPW - PAD * 2 - 7 * 8) / 8, py = sy + HEAD, planeC = [];
       for (var pl = 0; pl < 8; pl++) {
         var px = sx + PAD + pl * (planeW + 8), sw2w = (planeW - 12) / 4;
-        panels.push(exPath('ex-cab', [[px, py, planeW, PLANEH, ZL.sp, ZL.plane]]));
+        panels.push(exPath('ex-cab', [[px, py, planeW, PLANEH, ZL.sp, ZL.plane]]) + cabFace(px, py, planeW, PLANEH, ZL.sp, ZL.plane));
         panels.push('<rect class="p-plane" style="--pc:' + PLANE_C[pl] + '" x="' + px + '" y="' + py + '" width="' + planeW + '" height="' + PLANEH + '"><title>平面 ' + (pl + 1) + ' · 4×SW2 · 与平面内每颗 L1 成 Clos · 平面间无互联</title></rect>'
+          + exEdge('ex-cab', [[px, py, planeW, PLANEH, ZL.sp, ZL.plane]])
           + '<text class="p-planelabel" x="' + (px + planeW / 2) + '" y="' + (py + 13) + '" text-anchor="middle">P' + (pl + 1) + '</text>');
         for (var q = 0; q < 4; q++) panels.push('<use class="p-sw2" href="#hw-sw" x="' + (px + 6 + q * sw2w) + '" y="' + (py + PLANEH - 14) + '" width="' + (sw2w - 3) + '" height="10"/>');
         (GEO.sw2[s] = GEO.sw2[s] || [])[pl] = [0, 1, 2, 3].map(function (q9) { return { x: px + 6 + q9 * sw2w + (sw2w - 3) / 2, y: py + PLANEH - 4 }; });
@@ -647,9 +672,9 @@
         for (var k = 0; k < 8; k++) {
           var swx = gx + k * (sw1w + 4);
           (GEO.sw1[gBase / PHYS.group] = GEO.sw1[gBase / PHYS.group] || [])[k] = { x: swx + sw1w / 2, top: gy, bot: gy + SW1H };
-          panels.push(exPath('ex-cab', [[swx, gy, sw1w, SW1H, ZL.sp, ZL.sw1]]));
+          panels.push(exPath('ex-cab', [[swx, gy, sw1w, SW1H, ZL.sp, ZL.sw1]]) + cabFace(swx, gy, sw1w, SW1H, ZL.sp, ZL.sw1));
           panels.push('<rect class="p-sw1" style="--pc:' + PLANE_C[k] + '" x="' + swx + '" y="' + gy + '" width="' + sw1w + '" height="' + SW1H + '"><title>L1 SW · 平面 ' + (k + 1) + ' · 下接 2 个 POD 每颗 NPU 1 口 · 上接本平面 4×SW2（4 口）</title></rect>');
-          panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>');
+          panels.push('<use class="p-swicon" href="#hw-sw" x="' + (swx + 1) + '" y="' + (gy + 1) + '" width="' + (sw1w - 2) + '" height="' + (SW1H - 2) + '"/>' + exEdge('ex-cab', [[swx, gy, sw1w, SW1H, ZL.sp, ZL.sw1]]));
           l2s.push({ g: g, k: k, x: swx + sw1w / 2, top: gy, col: g % GRPCOLS, row: Math.floor(g / GRPCOLS) });
         }
         if (g === 0) panels.push('<text class="p-sw1label" x="' + (gx + GRPW / 2) + '" y="' + (gy + SW1H - 4) + '" text-anchor="middle">L1 ×8</text>');
@@ -658,7 +683,7 @@
           var pdx = gx + pd * (PODW + GAPP), pdy = gy + SW1H + 8, podIdx = Math.floor(pBase / PHYS.pod);
           panels.push(exPath('ex-pod', [[pdx, pdy, PODW, PODH, ZL.sp, ZL.pod]]));
           panels.push('<rect class="p-pod" data-pod="' + podIdx + '" data-sp="' + s + '" x="' + pdx + '" y="' + pdy + '" width="' + PODW + '" height="' + PODH + '">'
-            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>');
+            + '<title>POD ' + podIdx + ' · 8 板 · 64 NPU · 16 CPU · 每板 1 DPU · 4 NIC · 点一下取景，再点某一行进那块板</title></rect>' + exEdge('ex-pod', [[pdx, pdy, PODW, PODH, ZL.sp, ZL.pod]]));
           // 上联：CPU 列、NPU 列、DPU 列各一条 UB 到 L1 SW；NIC 列一条 RoCE 穿过 SW1 行出去
           [pdx + 11, pdx + 58, pdx + 101].forEach(function (ux) {
             links.push('<line class="p-l1" x1="' + ux + '" y1="' + (gy + SW1H) + '" x2="' + ux + '" y2="' + pdy + '"/>');
@@ -868,9 +893,11 @@
       x0 -= 80; y0 -= 80; x1 += 80; y1 += 80;   // 顶面抬起后往屏幕上方挪了、侧面又往下多占一截：平面里四边都多留一截，画面边上那几个 POD 的芯片细节照样建出来
     }
     physStage.querySelectorAll('.p-pod').forEach(function (pod) {
-      var i = pod.getAttribute('data-pod'); if (podDetailDone[i]) return;
+      var i = pod.getAttribute('data-pod'); if (podDetailDone[i] && (podIsoDone[i] || !ISO.on)) return;
       var x = +pod.getAttribute('x'), y = +pod.getAttribute('y'), w = +pod.getAttribute('width'), h = +pod.getAttribute('height');
       if (x > x1 || x + w < x0 || y > y1 || y + h < y0) return;
+      if (ISO.on && !podIsoDone[i]) { podIsoDone[i] = true; podIso3d(i, x, y); }
+      if (podDetailDone[i]) return;
       podDetailDone[i] = true;
       physStage.querySelectorAll('.p-npu[data-pod="' + i + '"]').forEach(function (el) {
         var ex = +el.getAttribute('x'), ey = +el.getAttribute('y');
@@ -879,13 +906,57 @@
           + '<use class="p-npupkg lod1" href="#hw-npu" x="' + (ex + 0.5) + '" y="' + ey + '" width="6" height="4.5"/>'
           + '<rect class="p-npustrip lod1" x="' + (ex + 1.25) + '" y="' + (ey + 4.75) + '" width="4.5" height="0.4"/>');
       });
+      if (podIsoDone[i]) podIsoDies(i);
     });
+  }
+  /* 10.25 细化模型（反馈「细化所有的模型」）：放大到 3× 起、2.5D 下，每个 POD 第一次进画面时补建，照 Node 的部件：
+     · NPU = NpuChip：封装顶面（npuBody）上一圈内缩基板 + 后排 2 颗计算 Die（中间一道 UMA 桥连成一个设备）+ 前排 2 颗 IO Die，
+       顶视图标 #hw-npu 就是它的俯视，2.5D 下换成这组立起来的 Die；占用条留在封装前沿——那是数据
+     · CPU = CpuChip：封装 + 内缩金属顶盖；DPU = 卡体 + 中间主芯片；NIC = 卡体 + 侧边光口笼
+     Die 组跟在每颗 NPU 的占用条后面，压暗 / 选中跟着那颗卡走；器件细节按 POD 并成几条 path。层高都按屏幕单位给（ZU.k = 1 个单位） */
+  var podIsoDone = {};
+  function podIsoDies(i) {
+    var k = ZU.k || 1;
+    physStage.querySelectorAll('.p-npu[data-pod="' + i + '"]').forEach(function (el) {
+      var strip = el.nextElementSibling && el.nextElementSibling.nextElementSibling && el.nextElementSibling.nextElementSibling.nextElementSibling;
+      if (!strip || !strip.classList.contains('p-npustrip') || (strip.nextElementSibling && strip.nextElementSibling.classList.contains('p-npu3d'))) return;
+      var ex = +el.getAttribute('x'), ey = +el.getAttribute('y'), s0 = 0.1 * k;
+      var sub = exGeo([[ex + 0.6, ey + 0.5, 5.8, 3.9, 0, s0]]);
+      var back = exGeo([[ex + 1, ey + 0.85, 2.3, 1.55, s0, 0.42 * k], [ex + 3.7, ey + 0.85, 2.3, 1.55, s0, 0.42 * k]]);
+      var br = exGeo([[ex + 3.3, ey + 1.3, 0.4, 0.65, s0, 0.46 * k]]);
+      var front = exGeo([[ex + 1, ey + 2.75, 2.3, 1.25, s0, 0.3 * k], [ex + 3.7, ey + 2.75, 2.3, 1.25, s0, 0.3 * k]]);
+      strip.insertAdjacentHTML('afterend', '<g class="p-npu3d">'
+        + '<path class="d3-sub" d="' + sub.t + '"/>'
+        + '<path class="d3-face" d="' + back.l + back.r + '"/><path class="d3-cmp" d="' + back.t + '"/>'
+        + '<path class="d3-br" d="' + br.t + '"/>'
+        + '<path class="d3-face" d="' + front.l + front.r + '"/><path class="d3-io" d="' + front.t + '"/></g>');
+    });
+  }
+  function podIso3d(i, px, py) {
+    if (!ZU.dev) return;
+    podIsoDies(i);
+    var k = ZU.k, b0 = ZU.dev, body = [], lid = [], chip = [], cage = [];
+    for (var b = 0; b < 8; b++) {
+      var ry = py + 6 + b * ROWP_ + ROWP_ / 2;
+      [[px + 4.6, ry - 2.6], [px + 11, ry - 2.6]].forEach(function (c) { body.push([c[0], c[1], 6.2, 5.2, b0, b0]); lid.push([c[0] + 0.9, c[1] + 0.8, 4.4, 3.6, b0, b0 + 0.35 * k]); });
+      body.push([px + 97.4, ry - 3, 8, 6, b0, b0]); chip.push([px + 99.6, ry - 1.7, 3.6, 2.8, b0, b0 + 0.26 * k]);
+      for (var n = 0; n < 4; n++) {
+        var nx = px + 107.2 + (n % 2) * 6.8, ny = ry - 3.4 + Math.floor(n / 2) * 3.4;
+        body.push([nx, ny, 6.4, 3.2, b0, b0]); cage.push([nx + 0.25, ny + 0.35, 1.2, 2.5, b0, b0 + 0.22 * k]);
+      }
+    }
+    var gB = exGeo(body), gL = exGeo(lid), gC = exGeo(chip), gN = exGeo(cage);
+    var nodesG = physStage.querySelector('.p-nodes'); if (!nodesG) return;
+    nodesG.insertAdjacentHTML('beforeend', '<g class="p-d3" data-pod="' + i + '"><path class="d3-body" d="' + gB.t + '"/>'
+      + '<path class="d3-face" d="' + gL.l + gL.r + gC.l + gC.r + gN.l + gN.r + '"/>'
+      + '<path class="d3-lid" d="' + gL.t + '"/><path class="d3-chip" d="' + gC.t + '"/><path class="d3-cage" d="' + gN.t + '"/>'
+      + '<path class="d3-edge" d="' + gL.e + gC.e + gN.e + '"/></g>');
   }
   function renderPhys() {
     if (physBuilt) return;
     physStage.innerHTML = '<div class="zp-box">' + buildPhysSvg() + '</div>';
     isoApply();
-    podDetailDone = {};
+    podDetailDone = {}; podIsoDone = {};
     physBuilt = true;
     if (typeof physZP !== 'undefined' && physZP) physZP.reset();
     applyAlerts();

@@ -1447,3 +1447,37 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
    「只露当前行」的暗底在 2.5D 里与抬起的刀片对不齐，不画——无关的卡本来就压暗了 */
 svg.svg-iso .sel-frame { stroke-width: calc(4px / var(--zk, 1)); }
 .phys-stage.iso-up .rel .rel-scrim { display: none; }
+
+/* ── 10.25 阶梯 + 细化模型（反馈「减少 rank 的高度做出阶梯的形式，然后细化所有的模型」）──
+   层高见 buildPhysSvg 的 ZL；棱线（.exE）照 Node Slab 的 <Edges>（rackEdge），只给基板 / 交换柜 / POD 托盘这几百个大件——
+   刀片顶面本来就有描边，器件与 NPU 放大后有立起来的部件；给这几千个小件再各描一圈，全景糊成一层灰，放大后每帧重绘也慢约四分之一。放大后顶视图标换成立起来的部件（.p-npu3d / .p-d3，由 ensurePodDetail 按 POD 补建）。
+   配色全取 Node dark 调色板的中性色：rackDoor / vent / npuBody / npuTop / cpuBody / metal；Node 里的青 / 橙发光条不搬——
+   这张图里色相只留给通信组和告警 */
+.exE { fill: none; stroke-linejoin: round; }
+.exE.ex-sp { stroke: #2F3540; stroke-width: calc(.8px / var(--zk, 1)); }
+.exE.ex-cab, .exE.ex-pod { stroke: #3D4452; stroke-width: calc(.7px / var(--zk, 1)); }
+.exD.ex-cab { fill: #1B1E24; }
+.exV.ex-cab { fill: none; stroke: #6B7688; stroke-opacity: .45; stroke-width: calc(.5px / var(--zk, 1)); }
+.p-npu3d, .p-d3 { display: none; pointer-events: none; }
+.phys-stage.iso-up svg.lod1 .p-npu3d, .phys-stage.iso-up svg.lod1 .p-d3 { display: inline; }
+.phys-stage .p-npu3d { transition: transform .32s ease; }
+.phys-stage.iso-up .p-npu3d { transform: translate(calc(var(--z-npu) * -1), calc(var(--z-npu) * -1)); }
+.p-npu3d path, .p-d3 path { stroke: none; }
+.d3-sub { fill: #23272E; }
+.d3-cmp { fill: #4B5160; }
+.d3-br { fill: #8A93A6; }
+.d3-io { fill: #5C6680; }
+.d3-face { fill: #1A1D23; }
+.d3-body { fill: #283038; }
+.d3-lid { fill: #565E6C; }
+.d3-chip { fill: #46526C; }
+.d3-cage { fill: #7A8496; }
+.p-d3 .d3-edge { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: calc(.4px / var(--zk, 1)); }
+.phys-stage.iso-up svg.lod1 .p-npupkg, .phys-stage.iso-up svg.lod1 .p-cpu, .phys-stage.iso-up svg.lod1 .p-dpu, .phys-stage.iso-up svg.lod1 .p-nic { display: none; }
+.phys-stage.iso-up svg.lod1 .p-npu { fill: #2B303A; fill-opacity: 1; }
+.phys-stage.iso-up .p-npu { rx: .4px; ry: .4px; }
+.p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip + .p-npu3d { opacity: .25; }
+/* 2.5D 下顶面的圆角收小：侧面是直角棱，顶面还留平面图那种大圆角的话，转角处顶面和侧面对不上 */
+.phys-stage.iso-up .p-sp { rx: 1.5px; ry: 1.5px; }
+.phys-stage.iso-up .p-plane, .phys-stage.iso-up .p-pod { rx: .8px; ry: .8px; }
+.phys-stage.iso-up .p-board { rx: .3px; ry: .3px; }
