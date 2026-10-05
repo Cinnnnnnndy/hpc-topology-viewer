@@ -23,7 +23,7 @@
 @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
   src: url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-:root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; --warn: #FAB219; --assoc: #A8A8AA; }
+:root { --mono: "JetBrains Mono", "SF Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Source Han Sans SC", monospace; --alert: #F85149; --warn: #FAB219; --assoc: #A8A8A8; }
 html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
   background: #111111; overflow: hidden;
@@ -627,7 +627,7 @@ body.t3 .incident-panel, body.lv-board .incident-panel { display: none !importan
 .sw-row.is-on .sw-lbl, .sw-row.is-rank .sw-lbl { fill: #FFFFFF; }
 .sw-l2 { fill: #6A6A6A; font-size: 9.5px; }
 .sw-f { fill: #F2F2F2; }
-.sw-b { fill: #B8B8BA; }
+.sw-b { fill: #B8B8B8; }
 .sw-f.is-own, .sw-b.is-own { fill-opacity: .55; }
 .sw-p2p { stroke: var(--c-pp); stroke-width: 1.5; }
 .sw-dp { fill: var(--c-dp); fill-opacity: .7; }
@@ -806,7 +806,7 @@ body:not(.is-compact) .ip-grp + .ip-grp { margin-top: 10px; }
 /* 泳道：原来的亮粉在深底上过亮（校验器 lightness band 不过），换成同色相收一档的一对（F 蓝 / B 玫红，
    深色模式校验全过：CVD ΔE 15.3、正常视觉 ΔE 24.8、对比 ≥ 3:1）；块之间靠底色缝分开 */
 .sw-f { fill: #F2F2F2; }
-.sw-b { fill: #B8B8BA; }
+.sw-b { fill: #B8B8B8; }
 .sw-bg { fill: #151515; }
 
 /* 小屏：训练健康卡只留图 + 告警层 + 梯度两行，细项收起（悬停图上的柱仍能读到逐层值）；告警列表到底就滚动，不再伸出视口 */
@@ -820,7 +820,7 @@ body.is-compact .dc-more { display: none; }
 .sw-p2p { stroke: #8A8A8A; stroke-width: 1; }
 .sw-dp { fill: #9A9A9A; fill-opacity: .35; }
 .sw-row.is-on .sw-f, .sw-row.is-rank .sw-f, .sw.is-hm .sw-f.is-m { fill: #F2F2F2; }
-.sw-row.is-on .sw-b, .sw-row.is-rank .sw-b, .sw.is-hm .sw-b.is-m { fill: #B8B8BA; }
+.sw-row.is-on .sw-b, .sw-row.is-rank .sw-b, .sw.is-hm .sw-b.is-m { fill: #B8B8B8; }
 .sw-row.is-on .sw-p2p, .sw-row.is-rank .sw-p2p { stroke: #E8E8E8; }
 .sw-row.is-on .sw-dp, .sw-row.is-rank .sw-dp { fill: #E8E8E8; fill-opacity: .55; }
 .sw-row.is-on .sw-bg { stroke: none; fill: #202020; }
@@ -1001,7 +1001,7 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .sw-legend i.is-flow { background-repeat: repeat-x; background-size: 5px 100%; width: 16px; }
 .sw-legend i.is-flow.is-forward { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M.5 0 L4.5 4.5 L.5 9' fill='none' stroke='white' stroke-width='.55' opacity='.34'/%3E%3C/svg%3E"); }
 .sw-legend i.is-flow.is-backward { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M4.5 0 L.5 4.5 L4.5 9' fill='none' stroke='white' stroke-width='.55' opacity='.34'/%3E%3C/svg%3E"); }
-.sw-legend i.is-idle { width: auto; height: auto; background: none; font-family: var(--mono); font-weight: 800; font-size: 13px; line-height: 9px; color: rgba(138, 147, 166, .7); }
+.sw-legend i.is-idle { width: auto; height: auto; background: none; font-family: var(--mono); font-weight: 800; font-size: 13px; line-height: 9px; color: rgba(146, 146, 146, .7); }
 .sw-legend i.is-dash { width: 0; height: 11px; border-left: 1px dashed rgba(255, 255, 255, .6); border-radius: 0; background: none; }
 .sw-legend .sw-kv { font-family: var(--mono); color: rgba(255, 255, 255, .55); }
 .sw-legend .sw-kv b { font-weight: 500; color: #F0F0F0; }
@@ -1041,20 +1041,20 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 .dc-fig svg { max-height: 220px; }
 
 /* ═══ 相机式界面（反馈「试试类似这样的 UI 风格」——FinalCut Camera）═════════════════════════════════════
-   · 面板：实色深灰（#1C1C1E，略透、仍带模糊），大圆角 22、无描边无高光沿，只留柔和投影；
+   · 面板：实色深灰（#1C1C1C，略透、仍带模糊），大圆角 22、无描边无高光沿，只留柔和投影；
    · 卡片：小号灰标签在上（像「色溫」），下面一个大数（像「2300」）+ 小号单位 / 口径；
-   · 胶囊：配置、工况、目的、状态都是全圆角胶囊，深一档的底（#2C2C2E）；
+   · 胶囊：配置、工况、目的、状态都是全圆角胶囊，深一档的底（#2C2C2C）；
    · 按钮：工具条是一串圆形按钮，按下的那一个图标变黄（像「24 MM」）；
    · 页签：目的是纯文字页签，当前那一个下面一个黄色小三角（像「白平衡 ▲」）；
    · 刻度尺：读数用细刻度 + 亮针（像色温滑尺）；
    · 参考面板：底部抽屉（bottom sheet），顶上一根抓手条，右上一个圆形 ×。
    黄色 #FFD60A 只用于「当前选中 / 激活」这类界面状态；数据阈值仍是琥珀。 */
 :root {
-  --cam-bg: rgba(28, 28, 30, .88);
-  --cam-bg2: #2C2C2E;
-  --cam-bg3: #3A3A3C;
-  --cam-label: rgba(235, 235, 245, .6);
-  --cam-label2: rgba(235, 235, 245, .3);
+  --cam-bg: rgba(28, 28, 28, .88);
+  --cam-bg2: #2C2C2C;
+  --cam-bg3: #3A3A3A;
+  --cam-label: rgba(236, 236, 236, .6);
+  --cam-label2: rgba(236, 236, 236, .3);
   --cam-accent: #FFFFFF;   /* 10.16：界面选中也用白——全页「选中」只有一种颜色，黄色撤掉（与阈值琥珀两种黄并存） */
   --cam-shadow: 0 16px 36px -14px rgba(0, 0, 0, .75), 0 2px 8px -2px rgba(0, 0, 0, .4);
   --cam-fx: blur(24px) saturate(1.4);
@@ -1068,27 +1068,27 @@ body.is-compact .jn-steps li + li::before { width: 6px; }
 body:not(.is-compact) .dcard, body:not(.is-compact) .gcard, body:not(.is-compact) .side-right { padding: 14px 16px; }
 body.is-compact .dcard, body.is-compact .gcard, body.is-compact .side-right { padding: 10px 12px; border-radius: 18px; }
 .dcard.is-split { border-radius: 16px; padding: 9px 14px; }
-.dcard.is-split:hover { background: rgba(44, 44, 46, .92); }
-.dcard.is-open { background: rgba(44, 44, 46, .94); }
+.dcard.is-split:hover { background: rgba(44, 44, 44, .92); }
+.dcard.is-open { background: rgba(44, 44, 44, .94); }
 .dc-t { color: var(--cam-label); font-size: 12px; font-weight: 500; letter-spacing: .01em; }
-.dcard.is-split .dc-t { color: #F2F2F7; }
+.dcard.is-split .dc-t { color: #F2F2F2; }
 .dc-big { font-size: 30px; font-weight: 600; line-height: 1.05; color: #FFFFFF; margin: 4px 0 10px; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 8px; }
 .dc-big small { font-size: 11px; font-weight: 400; color: var(--cam-label); letter-spacing: .01em; }
 body.is-compact .dc-big { font-size: 22px; margin: 2px 0 6px; }
 .dc-r span { color: var(--cam-label); }
-.dc-r b { color: #F2F2F7; }
+.dc-r b { color: #F2F2F2; }
 .vz-cap { color: var(--cam-label2); }
 .vz-stat b { font-size: 30px; font-weight: 600; }
 /* 刻度尺 */
-.vz-ron { fill: rgba(235, 235, 245, .6); }
-.vz-roff { fill: rgba(235, 235, 245, .22); }
+.vz-ron { fill: rgba(236, 236, 236, .6); }
+.vz-roff { fill: rgba(236, 236, 236, .22); }
 .vz-rthr { fill: #FAB219; }
 .vz-needle { fill: #FFFFFF; }
 /* 配置卡：大数 + 胶囊 + 灰字 */
 .lc-big { font-size: 30px; font-weight: 600; line-height: 1.05; color: #FFFFFF; display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .lc-big small { font-size: 11px; font-weight: 400; color: var(--cam-label); }
 .lc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.lc-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--cam-bg2); font-family: var(--mono); font-size: 11.5px; color: #F2F2F7; }
+.lc-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--cam-bg2); font-family: var(--mono); font-size: 11.5px; color: #F2F2F2; }
 .lc-chip em { font-style: normal; font-size: 10px; color: var(--cam-label); }
 .lc-sub { color: var(--cam-label); }
 body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
@@ -1118,11 +1118,11 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
 .cf-seg button { border-radius: 999px; }
 .cf-seg button.is-on { background: var(--cam-bg3); color: #FFFFFF; }
 /* 参考面板：底部抽屉 */
-.drawer { background: rgba(28, 28, 30, .94); border-radius: 28px; box-shadow: var(--cam-shadow); }
-.drawer.at-bottom .drawer-grip::after { width: 40px; height: 5px; border-radius: 3px; background: #5A5A5E; top: 6px; }
+.drawer { background: rgba(28, 28, 28, .94); border-radius: 28px; box-shadow: var(--cam-shadow); }
+.drawer.at-bottom .drawer-grip::after { width: 40px; height: 5px; border-radius: 3px; background: #5A5A5A; top: 6px; }
 .drawer-hd { border-bottom: 0; padding: 14px 16px 6px; font-size: 13px; font-weight: 600; color: #FFFFFF; }
 .drawer-hd button { width: 28px; height: 28px; border-radius: 50%; background: var(--cam-bg3); color: #FFFFFF; font-size: 16px; line-height: 28px; padding: 0; text-align: center; }
-.drawer-hd button:hover { background: #48484A; }
+.drawer-hd button:hover { background: #484848; }
 /* rank 卡 */
 .side-right .brief-h { font-size: 16px; font-weight: 600; color: #FFFFFF; }
 .brief-row span { color: var(--cam-label); }
@@ -1148,15 +1148,15 @@ body.is-compact .lc-big { font-size: 22px; margin-bottom: 6px; }
   box-sizing: border-box; height: 18px; line-height: 18px; padding: 0 7px; border-radius: 6px;
   font-family: var(--mono); font-size: 10.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;
 }
-.lc-chip { background: var(--cam-bg2); color: #F2F2F7; }
+.lc-chip { background: var(--cam-bg2); color: #F2F2F2; }
 .lc-chip em { font-size: 10px; line-height: 18px; }
 .lc-chips { gap: 5px; }
 .dc-cut { margin-left: 6px; color: #111111; font-weight: 600; letter-spacing: .02em; }
 .jn-badge { min-width: 18px; justify-content: center; padding: 0 5px; margin-left: 2px; }
 .brief-badge { background: var(--cam-bg2); color: var(--cam-label); margin-left: 8px; }
 .brief-badge.is-alert { color: #FFFFFF; }
-.ip-drill { border: 0; background: var(--cam-bg3); color: #F2F2F7; cursor: pointer; }
-.ip-drill:hover { background: #48484A; }
+.ip-drill { border: 0; background: var(--cam-bg3); color: #F2F2F2; cursor: pointer; }
+.ip-drill:hover { background: #484848; }
 .lc-chip.has-gloss, .dc-cut.has-gloss, .jn-badge.has-gloss, .brief-badge.has-gloss, .dc-cut .has-gloss { text-decoration: none; }
 .dcard.is-split .dc-h { align-items: center; }
 
@@ -1199,18 +1199,18 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 /* 集群画布与四周卡片做一定程度的统一（反馈「内部集群主要是线的形式、无圆角，和周边视觉做一定程度的统一，以独立显示效果为准」）：
    容器从「只描一根线」改成「深灰实底 + 圆角 + 很淡的边」——超节点像一张大卡、POD 像卡里的小卡、NPU 格子带一点圆角；
    链路、交换、占用灰度这些读数的画法不动，边线只是压淡（不去掉：放大缩小时靠它分清层级）。 */
-.p-sp { rx: 14px; ry: 14px; fill: rgba(28, 28, 30, .72); stroke: rgba(255, 255, 255, .09); }
+.p-sp { rx: 14px; ry: 14px; fill: rgba(28, 28, 28, .72); stroke: rgba(255, 255, 255, .09); }
 .p-sp.is-on { stroke: rgba(255, 255, 255, .22); }
-.p-plane { rx: 6px; ry: 6px; fill: #232325; stroke: rgba(255, 255, 255, .07); }
-.p-pod { rx: 7px; ry: 7px; fill: #1F1F21; stroke: rgba(255, 255, 255, .10); }
+.p-plane { rx: 6px; ry: 6px; fill: #232323; stroke: rgba(255, 255, 255, .07); }
+.p-pod { rx: 7px; ry: 7px; fill: #1F1F1F; stroke: rgba(255, 255, 255, .10); }
 .p-pod:hover { stroke: rgba(255, 255, 255, .28); }
 .p-pod.is-on { stroke: rgba(255, 255, 255, .6); }
 .p-pod.is-fit { stroke: rgba(255, 255, 255, .28); }
 .p-board { rx: 3px; ry: 3px; }
-.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #2A2A2C; }
+.p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #2A2A2A; }
 .p-bdiv { stroke: rgba(255, 255, 255, .05); }
 .p-npu { rx: 1.4px; ry: 1.4px; }
-.p-splabel { fill: rgba(235, 235, 245, .6); }
+.p-splabel { fill: rgba(236, 236, 236, .6); }
 /* 板视图：机框 / 平面同样实底 + 圆角 */
 .b-plane { rx: 8px; ry: 8px; }
 .p-bnpu { rx: 6px; ry: 6px; }
@@ -1220,7 +1220,7 @@ body:not(.is-compact) .dc-r { line-height: 16px; }
 .brief-cta {
   display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
   height: 24px; line-height: 24px; padding: 0 12px; border: 0 !important; border-radius: 12px;
-  background: var(--cam-bg2); color: #F2F2F7; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+  background: var(--cam-bg2); color: #F2F2F2; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
   margin: 8px 6px 0 0; transition: background .15s ease;
 }
 .brief-cta:hover { background: var(--cam-bg3); color: #FFFFFF; }
@@ -1234,38 +1234,38 @@ svg.lod1 .p-npu.is-dim + .p-npunum + .p-npupkg { opacity: .25; }
    共线的几根线叠在一条轨道上，半透明会越叠越亮、轨道一段亮一段暗；改用实色分档：
    平时一档暗灰，选中那颗的线白色（TP 那几根青色），其余退到更暗一档 */
 .b-mesh, .b-fan, .b-h2d, .b-nicl, .b-l12, .b-swbl { fill: none; stroke-opacity: 1; stroke-linejoin: round; transition: stroke .15s ease; }
-.b-mesh { stroke: #4E4E50; stroke-width: calc(.8px / var(--zk, 1)); }
-.b-fan { stroke: #454547; stroke-width: calc(.9px / var(--zk, 1)); }
-.b-h2d, .b-nicl { stroke: #5C5C5E; stroke-width: calc(.9px / var(--zk, 1)); }
-.b-l12 { stroke: #5C5C5E; stroke-width: calc(.9px / var(--zk, 1)); }
-.b-swbl { stroke: #454547; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-mesh { stroke: #4E4E4E; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-fan { stroke: #454545; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-h2d, .b-nicl { stroke: #5C5C5C; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-l12 { stroke: #5C5C5C; stroke-width: calc(.9px / var(--zk, 1)); }
+.b-swbl { stroke: #454545; stroke-width: calc(.8px / var(--zk, 1)); }
 .b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #FFFFFF; stroke-opacity: 1; stroke-width: calc(1.6px / var(--zk, 1)); }
-.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #2C2C2E; stroke-opacity: 1; }
+.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #2C2C2C; stroke-opacity: 1; }
 .b-lbl-mesh { fill: #A0A0A0; }
 
 /* ── 10.10.1：连线收细、拉开层级（反馈「太粗了，看不到重点」）──
    器件是主角、线是背景：平时所有线都退成细线（密线 .6、干线 .8–1），衬边收窄；
    选中一颗 NPU 时它自己的线是唯一亮的（白 1.1、TP 青 1.3），其余密线几乎看不见、干线退到暗灰、端点小点也收掉 */
-.b-mesh { stroke: #3C3C3E; stroke-width: calc(.6px / var(--zk, 1)); }
-.b-fan { stroke: #38383A; stroke-width: calc(.6px / var(--zk, 1)); }
-.b-swbl { stroke: #38383A; stroke-width: calc(.6px / var(--zk, 1)); }
-.b-h2d, .b-nicl, .b-l12 { stroke: #4A4A4C; stroke-width: calc(.7px / var(--zk, 1)); }
-.b-roce { stroke: #6A6A6C; stroke-width: calc(.8px / var(--zk, 1)); }
-.b-pcie { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
-.b-ub { stroke: #6A6A6C; stroke-width: calc(1px / var(--zk, 1)); }
-.b-uboe { stroke: #7A7A7C; stroke-width: calc(1px / var(--zk, 1)); }
+.b-mesh { stroke: #3C3C3C; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-fan { stroke: #383838; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-swbl { stroke: #383838; stroke-width: calc(.6px / var(--zk, 1)); }
+.b-h2d, .b-nicl, .b-l12 { stroke: #4A4A4A; stroke-width: calc(.7px / var(--zk, 1)); }
+.b-roce { stroke: #6A6A6A; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-pcie { stroke: #7A7A7A; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-ub { stroke: #6A6A6A; stroke-width: calc(1px / var(--zk, 1)); }
+.b-uboe { stroke: #7A7A7A; stroke-width: calc(1px / var(--zk, 1)); }
 .b-bus { stroke-width: calc(1px / var(--zk, 1)); }
-.b-cpul, .b-nsw-l, .b-swbx { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
-.b-rdma { stroke: #7A7A7C; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-cpul, .b-nsw-l, .b-swbx { stroke: #7A7A7A; stroke-width: calc(.8px / var(--zk, 1)); }
+.b-rdma { stroke: #7A7A7A; stroke-width: calc(.8px / var(--zk, 1)); }
 svg.near .lkc { stroke-width: calc(3px / var(--zk, 1)); }
 .b-fan.is-hot, .b-h2d.is-hot, .b-nicl.is-hot, .b-mesh.is-hot { stroke: #F2F2F2; stroke-width: calc(1.1px / var(--zk, 1)); }
 svg.near .b-mesh.is-hot.is-tp { stroke: var(--c-tp); stroke-width: calc(1.3px / var(--zk, 1)); }
-.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #252527; }
-svg.has-sel .b-l12, svg.has-sel .b-swbl { stroke: #252527; }
+.b-fan.is-cold, .b-mesh.is-cold, .b-h2d.is-cold, .b-nicl.is-cold { stroke: #252525; }
+svg.has-sel .b-l12, svg.has-sel .b-swbl { stroke: #252525; }
 svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe,
-svg.has-sel .b-cpul, svg.has-sel .b-nsw-l, svg.has-sel .b-swbx, svg.has-sel .b-rdma { stroke: #3A3A3C; }
+svg.has-sel .b-cpul, svg.has-sel .b-nsw-l, svg.has-sel .b-swbx, svg.has-sel .b-rdma { stroke: #3A3A3A; }
 svg.has-sel .b-links > :not(.is-hot) { marker-start: none; marker-end: none; }
-svg.has-sel .b-lbl { fill: #6A6A6C; }
+svg.has-sel .b-lbl { fill: #6A6A6A; }
 
 /* ── 10.10.2：再收细、层距收紧（反馈「缩小层叠线之间的间距」「粗细再收一下」）──
    轨道层距 6/8 → 4；所有线再细一档，选中那颗的线也从 1.1 收到 .8，重点靠亮度而不是粗细 */
@@ -1283,39 +1283,39 @@ svg.near .lkd { stroke: #111111; stroke-width: calc(1.5px / var(--zk, 1)); strok
 svg.has-sel .lkd { stroke-width: calc(1.3px / var(--zk, 1)); }
 
 /* ── 10.12：集群放大后原地展开的那块板，同板视图的线束画法 ── 底色描边跟 POD 底色走 */
-.rel .lkc { stroke: #1F1F21; stroke-width: calc(2.6px / var(--zk, 1)); stroke-linecap: butt; }
+.rel .lkc { stroke: #1F1F1F; stroke-width: calc(2.6px / var(--zk, 1)); stroke-linecap: butt; }
 .rel line, .rel path { stroke-width: calc(.7px / var(--zk, 1)); }
 .rel-cpu { stroke-width: calc(1px / var(--zk, 1)) !important; }
-.rel .rel-scrim { fill: #1F1F21; fill-opacity: .97; stroke: none; }
+.rel .rel-scrim { fill: #1F1F1F; fill-opacity: .97; stroke: none; }
 
 /* ── 10.12：虚线全部改实线（反馈「虚线效果非常差，全部调整」）──
    虚线节奏在细线上只剩一串噪点，缩放时段长还跟着变。介质改用**灰度**区分，线型一律实线：
-     UBoE 最亮 #A8A8AA · PCIe #8E8E90 · UB #767678 · RoCE（参数面，出框）最暗 #5A5A5C；
+     UBoE 最亮 #A8A8A8 · PCIe #8E8E8E · UB #767676 · RoCE（参数面，出框）最暗 #5A5A5A；
    选中后的亮 / 退暗规则不变。泳道、流水线图上的辅助标记同样改实线、压淡 */
 .b-ub, .b-uboe, .b-roce, .b-pcie, svg.near .b-ub, svg.near .b-uboe,
 .p-uboe, .p-roce, #physStage svg:not(.lod1) .p-roce,
 .rel-ub, .rel-pcie, .rel-roce, .rel-row, .pb-cap, .sw-mark { stroke-dasharray: none; }
-.b-uboe, .p-uboe { stroke: #A8A8AA; stroke-opacity: 1; }
-.b-pcie, .rel-pcie { stroke: #8E8E90; }
-.b-ub, .rel-ub { stroke: #767678; }
-.b-roce, .p-roce, .rel-roce { stroke: #5A5A5C; stroke-opacity: 1; }
+.b-uboe, .p-uboe { stroke: #A8A8A8; stroke-opacity: 1; }
+.b-pcie, .rel-pcie { stroke: #8E8E8E; }
+.b-ub, .rel-ub { stroke: #767676; }
+.b-roce, .p-roce, .rel-roce { stroke: #5A5A5A; stroke-opacity: 1; }
 .rel-ub { stroke-opacity: 1; }
-.rel-row { stroke: #5A5A5C; }
-.pb-cap { stroke: #3E3E40; }
-.sw-mark { stroke: #5A5A5C; }
-svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe { stroke: #3A3A3C; }
+.rel-row { stroke: #5A5A5A; }
+.pb-cap { stroke: #3E3E3E; }
+.sw-mark { stroke: #5A5A5A; }
+svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe { stroke: #3A3A3A; }
 
 /* ── 10.13：连线上的小数据标签（板视图）── 不用标签框：一行小号等宽字、垫一圈底色；平时藏着，放大到 1.5× 起淡入；
    需要注意的读数琥珀色（阈值色），带琥珀读数的那一条不放大也显示 */
-.b-dlbl { font-family: var(--mono, ui-monospace, monospace); font-size: 6px; fill: #8E8E90; letter-spacing: .02em;
+.b-dlbl { font-family: var(--mono, ui-monospace, monospace); font-size: 6px; fill: #8E8E8E; letter-spacing: .02em;
   paint-order: stroke; stroke: #111111; stroke-width: calc(2.4px / var(--zk, 1)); stroke-linejoin: round;
   opacity: 0; transition: opacity .2s ease; pointer-events: none; }
-.b-dlbl .dl-k { fill: #C8C8CA; }
-.b-dlbl .dl-sep { fill: #5A5A5C; }
+.b-dlbl .dl-k { fill: #C8C8C8; }
+.b-dlbl .dl-sep { fill: #5A5A5A; }
 .b-dlbl .is-warn { fill: #FAB219; }
 /* 10.18：告警读数也只在放大后出现（反馈：铺满时那一条琥珀标签字太大、和整体比例不协调）——不放大时琥珀线 / L1 端口点已经报了状态 */
 svg.lodz .b-dlbl { opacity: 1; }
-svg.has-sel .b-dlbl { fill: #6A6A6C; }
+svg.has-sel .b-dlbl { fill: #6A6A6A; }
 
 /* ── 10.14：必要的状态点缀（照 hpc-topology-node：状态色嵌在图元体内、只在出事时出现，平时全灰）──
    器件：NPU 状态条（die 窗口底下那一条）——显存 ≥ 红线（Critical）琥珀、OOM 告警红；其余仍是占用灰阶。
@@ -1330,28 +1330,28 @@ svg.st-ep .b-fan.is-hot, svg.st-ep .rel-clos.is-hot { stroke: #FAB219 !important
    「注意选中状态和连带选中的状态」）──
    状态（颜色）：灰 = 默认 · 白 = 选中 · 浅灰 = 连带选中 · 琥珀 = 告警 · 红 = 故障。维度签名色不再上线、不再描卡。
    介质（线型，同一灰）：UB 实线 · UBoE 长虚线 · RoCE / NIC 交换 短虚线 · PCIe 点线；虚线段长按屏幕像素定（--zdash），缩放不变 */
-.b-uboe, .p-uboe { stroke: #8A8A8C; --zdash: 7 3; stroke-linecap: butt; }
-.b-roce, .p-roce, .rel-roce, .b-nsw-l { stroke: #767678; --zdash: 2.6 2.2; stroke-linecap: butt; }
-.b-pcie, .rel-pcie { stroke: #8A8A8C; --zdash: 0.01 2.4; stroke-linecap: round; }
-.b-ub, .rel-ub, .b-cpul, .b-swbx { stroke: #767678; }
-svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe, svg.has-sel .b-nsw-l { stroke: #3A3A3C; }
+.b-uboe, .p-uboe { stroke: #8A8A8A; --zdash: 7 3; stroke-linecap: butt; }
+.b-roce, .p-roce, .rel-roce, .b-nsw-l { stroke: #767676; --zdash: 2.6 2.2; stroke-linecap: butt; }
+.b-pcie, .rel-pcie { stroke: #8A8A8A; --zdash: 0.01 2.4; stroke-linecap: round; }
+.b-ub, .rel-ub, .b-cpul, .b-swbx { stroke: #767676; }
+svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe, svg.has-sel .b-nsw-l { stroke: #3A3A3A; }
 /* 选中卡自己的线：承载本组流量的（TP 组员之间的 fullmesh、出板 Clos、H2D、NIC）白 = 选中；
    连向组外那几张卡的 fullmesh 是它的线、但不走本组流量 → 浅灰 = 连带选中 */
 svg.near .b-mesh.is-hot.is-tp { stroke: #FFFFFF; }
-svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E90; }
+svg.near .b-mesh.is-hot:not(.is-tp) { stroke: #8E8E8E; }
 /* 连带选中的器件：同组成员一圈浅灰细框（板视图贴封装图标、集群贴格子），选中那一张仍是白框 */
-.b-relf { display: none; fill: none; stroke: #A8A8AA; stroke-width: calc(1px / var(--zk, 1)); pointer-events: none; }
+.b-relf { display: none; fill: none; stroke: #A8A8A8; stroke-width: calc(1px / var(--zk, 1)); pointer-events: none; }
 /* 板视图的连带选中 = 与选中卡在本板上直接走白线的那几张（TP 组员）；EP / CP 组员的流量出板走 Clos，不在板内连带 */
 .p-bnpu.g-tp ~ .b-relf { display: inline; }
 .p-bnpu[class*=" g-"] { stroke: none !important; }
-.p-npu.g-tp, .p-npu.g-cp, .p-npu.g-ep, .p-npu.g-dp, .p-npu.g-pp { stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
-.rel .rel-mesh.is-hot:not(.is-tp) { stroke: #8E8E90 !important; }
-.rel .rel-relf { fill: none; stroke: #A8A8AA; stroke-width: calc(.8px / var(--zk, 1)); }
+.p-npu.g-tp, .p-npu.g-cp, .p-npu.g-ep, .p-npu.g-dp, .p-npu.g-pp { stroke: #A8A8A8; stroke-width: calc(.8px / var(--zk, 1)); }
+.rel .rel-mesh.is-hot:not(.is-tp) { stroke: #8E8E8E !important; }
+.rel .rel-relf { fill: none; stroke: #A8A8A8; stroke-width: calc(.8px / var(--zk, 1)); }
 .brief-loc { white-space: normal; }
 .brief-loc sup { font-size: 8px; margin-left: 1px; vertical-align: super; }
 
 /* ── 10.16 全局一致性（审计）──
-   选中态全页一种：深底 #3A3A3C + 白字、无描边（胶囊、dock、设置分段、层级剖面格）；画布上是白框。
+   选中态全页一种：深底 #3A3A3A + 白字、无描边（胶囊、dock、设置分段、层级剖面格）；画布上是白框。
    设置里的按钮不再用细线框，同 rank 卡按钮一样实底全圆角。标签字号按屏幕像素定。面包屑垫一圈底色，放大后不被画布内容吃掉 */
 .cf-seg button, .hv-chip { border-color: transparent !important; }
 .cf-seg button.is-on, .hv-chip.is-on { background: var(--cam-bg3) !important; color: #FFFFFF !important; border-color: transparent !important; }
@@ -1377,9 +1377,9 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .dcard.is-fold { cursor: pointer; }
 .dcard.is-fold.is-open { cursor: default; }
 .dcard.is-fold.is-open .dc-h { cursor: pointer; }
-.dcard.is-fold .dc-h::after { content: ''; flex: none; width: 5px; height: 5px; margin-right: 2px; border-right: 1.5px solid #6A6A6E; border-bottom: 1.5px solid #6A6A6E; transform: translateY(-2px) rotate(45deg); transition: transform .15s ease, border-color .15s ease; }
+.dcard.is-fold .dc-h::after { content: ''; flex: none; width: 5px; height: 5px; margin-right: 2px; border-right: 1.5px solid #6A6A6A; border-bottom: 1.5px solid #6A6A6A; transform: translateY(-2px) rotate(45deg); transition: transform .15s ease, border-color .15s ease; }
 .dcard.is-fold.is-open .dc-h::after { transform: translateY(1px) rotate(-135deg); }
-.dcard.is-fold:hover .dc-h::after { border-color: #C8C8CA; }
+.dcard.is-fold:hover .dc-h::after { border-color: #C8C8C8; }
 .dcard.is-fold:not(.is-open) .dc-big { margin-bottom: 0; }
 .dcard.is-fold:not(.is-open) .dc-big + .dc-r { margin-top: 6px; }
 .dcard.is-fold:not(.is-open) .dc-h { margin-bottom: 2px; }
@@ -1400,10 +1400,10 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .dock-views { display: flex; align-items: center; gap: 4px; }
 .dock-views.is-empty { display: none; }
 .dv-seg { display: flex; gap: 2px; padding: 0; }
-.dock .dv-b { width: auto; min-width: 36px; height: 36px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 500; color: #A8A8AA; white-space: nowrap; }
+.dock .dv-b { width: auto; min-width: 36px; height: 36px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 500; color: #A8A8A8; white-space: nowrap; }
 .dock .dv-b:disabled { opacity: .35; cursor: default; }
 .dv-sep { width: 1px; height: 18px; background: rgba(255, 255, 255, .1); margin: 0 4px; }
-.dv-lbl { font-size: 10px; color: #6A6A6E; margin: 0 2px 0 4px; white-space: nowrap; letter-spacing: .02em; }
+.dv-lbl { font-size: 10px; color: #6A6A6A; margin: 0 2px 0 4px; white-space: nowrap; letter-spacing: .02em; }
 .dv-menu-w { position: relative; display: flex; }
 .dock .dv-mode { gap: 6px; }
 .dv-car { width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(1px) rotate(-135deg); opacity: .7; }
@@ -1417,12 +1417,12 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .p-ex { display: none; pointer-events: none; stroke: none; }
 .phys-stage.iso-up .p-ex { display: inline; animation: ex-in .32s ease both; }
 @keyframes ex-in { from { opacity: 0; } to { opacity: 1; } }
-.ex-sp.exL { fill: #181C23; } .ex-sp.exR { fill: #12151A; }
-.ex-cab.exL { fill: #262B33; } .ex-cab.exR { fill: #1C2027; }
-.ex-pod.exL { fill: #1E2229; } .ex-pod.exR { fill: #171A20; }
-.ex-board.exL { fill: #252A32; } .ex-board.exR { fill: #1C2027; }
-.ex-dev.exL { fill: #2A323B; } .ex-dev.exR { fill: #20262D; }
-.ex-npu.exL { fill: #2E3440; } .ex-npu.exR { fill: #22272F; }
+.ex-sp.exL { fill: #1C1C1C; } .ex-sp.exR { fill: #151515; }
+.ex-cab.exL { fill: #2B2B2B; } .ex-cab.exR { fill: #202020; }
+.ex-pod.exL { fill: #222222; } .ex-pod.exR { fill: #1A1A1A; }
+.ex-board.exL { fill: #2A2A2A; } .ex-board.exR { fill: #202020; }
+.ex-dev.exL { fill: #313131; } .ex-dev.exR { fill: #252525; }
+.ex-npu.exL { fill: #343434; } .ex-npu.exR { fill: #272727; }
 .phys-stage .p-splabel, .phys-stage .p-l1, .phys-stage .p-roce, .phys-stage .p-l2, .phys-stage .p-uboe, .phys-stage .p-uboelabel, .phys-stage .p-rocelabel, .phys-stage .p-sw1label,
 .phys-stage .p-plane, .phys-stage .p-planelabel, .phys-stage .p-sw2, .phys-stage .p-sw1, .phys-stage .p-swicon, .phys-stage .p-pod, .phys-stage .p-colhd,
 .phys-stage .p-board, .phys-stage .p-bdiv, .phys-stage .p-cpu, .phys-stage .p-dpu, .phys-stage .p-nic,
@@ -1439,10 +1439,10 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .phys-stage.iso-up .sel-frame, .phys-stage.iso-up g.rel { transform: translate(calc(var(--z-npu) * -1), calc(var(--z-npu) * -1)); }
 /* 顶面换成 Node 的 dark 调色板：基板 substrate、托盘 rackBody、刀片 nodeUnit、交换柜 switchUnit；描边 rackEdge */
 .phys-stage.is-iso .p-sp { fill: url(#iso-sheen); fill-opacity: .9; stroke: url(#iso-rim); }
-.phys-stage.iso-up .p-pod { fill: #23262D; stroke: #3D4452; }
-.phys-stage.iso-up .p-board { fill: #2A2F38; stroke: rgba(61, 68, 82, .7); stroke-width: calc(.5px / var(--zk, 1)); }
-.phys-stage.iso-up .p-plane { fill: #2C313A; }
-.phys-stage.iso-up .p-sw1 { fill: #2C313A; stroke: #3D4452; }
+.phys-stage.iso-up .p-pod { fill: #262626; stroke: #444444; }
+.phys-stage.iso-up .p-board { fill: #2F2F2F; stroke: rgba(68, 68, 68, .7); stroke-width: calc(.5px / var(--zk, 1)); }
+.phys-stage.iso-up .p-plane { fill: #313131; }
+.phys-stage.iso-up .p-sw1 { fill: #313131; stroke: #444444; }
 /* 2.5D 下的选中框：投影把线压扁了（纵向只剩 0.35），加粗一倍才和平面图里一样醒目；
    「只露当前行」的暗底在 2.5D 里与抬起的刀片对不齐，不画——无关的卡本来就压暗了 */
 svg.svg-iso .sel-frame { stroke-width: calc(4px / var(--zk, 1)); }
@@ -1451,30 +1451,30 @@ svg.svg-iso .sel-frame { stroke-width: calc(4px / var(--zk, 1)); }
 /* ── 10.25 阶梯 + 细化模型（反馈「减少 rank 的高度做出阶梯的形式，然后细化所有的模型」）──
    层高见 buildPhysSvg 的 ZL；棱线（.exE）照 Node Slab 的 <Edges>（rackEdge），只给基板 / 交换柜 / POD 托盘这几百个大件——
    刀片顶面本来就有描边，器件与 NPU 放大后有立起来的部件；给这几千个小件再各描一圈，全景糊成一层灰，放大后每帧重绘也慢约四分之一。放大后顶视图标换成立起来的部件（.p-npu3d / .p-d3，由 ensurePodDetail 按 POD 补建）。
-   配色全取 Node dark 调色板的中性色：rackDoor / vent / npuBody / npuTop / cpuBody / metal；Node 里的青 / 橙发光条不搬——
-   这张图里色相只留给通信组和告警 */
+   配色按 Node dark 调色板各部件的明暗取值，再去色成纯灰（10.26「除了高亮的彩色都是黑白灰」：Node 的中性色本身偏蓝）；
+   Node 里的青 / 橙发光条不搬——这张图里色相只留给通信组和告警 */
 .exE { fill: none; stroke-linejoin: round; }
-.exE.ex-sp { stroke: #2F3540; stroke-width: calc(.8px / var(--zk, 1)); }
-.exE.ex-cab, .exE.ex-pod { stroke: #3D4452; stroke-width: calc(.7px / var(--zk, 1)); }
-.exD.ex-cab { fill: #1B1E24; }
-.exV.ex-cab { fill: none; stroke: #6B7688; stroke-opacity: .45; stroke-width: calc(.5px / var(--zk, 1)); }
+.exE.ex-sp { stroke: #353535; stroke-width: calc(.8px / var(--zk, 1)); }
+.exE.ex-cab, .exE.ex-pod { stroke: #444444; stroke-width: calc(.7px / var(--zk, 1)); }
+.exD.ex-cab { fill: #1E1E1E; }
+.exV.ex-cab { fill: none; stroke: #757575; stroke-opacity: .45; stroke-width: calc(.5px / var(--zk, 1)); }
 .p-npu3d, .p-d3 { display: none; pointer-events: none; }
 .phys-stage.iso-up svg.lod1 .p-npu3d, .phys-stage.iso-up svg.lod1 .p-d3 { display: inline; }
 .phys-stage .p-npu3d { transition: transform .32s ease; }
 .phys-stage.iso-up .p-npu3d { transform: translate(calc(var(--z-npu) * -1), calc(var(--z-npu) * -1)); }
 .p-npu3d path, .p-d3 path { stroke: none; }
-.d3-sub { fill: #23272E; }
-.d3-cmp { fill: #4B5160; }
-.d3-br { fill: #8A93A6; }
-.d3-io { fill: #5C6680; }
-.d3-face { fill: #1A1D23; }
-.d3-body { fill: #283038; }
-.d3-lid { fill: #565E6C; }
-.d3-chip { fill: #46526C; }
-.d3-cage { fill: #7A8496; }
+.d3-sub { fill: #272727; }
+.d3-cmp { fill: #515151; }
+.d3-br { fill: #929292; }
+.d3-io { fill: #666666; }
+.d3-face { fill: #1D1D1D; }
+.d3-body { fill: #2F2F2F; }
+.d3-lid { fill: #5D5D5D; }
+.d3-chip { fill: #515151; }
+.d3-cage { fill: #838383; }
 .p-d3 .d3-edge { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: calc(.4px / var(--zk, 1)); }
 .phys-stage.iso-up svg.lod1 .p-npupkg, .phys-stage.iso-up svg.lod1 .p-cpu, .phys-stage.iso-up svg.lod1 .p-dpu, .phys-stage.iso-up svg.lod1 .p-nic { display: none; }
-.phys-stage.iso-up svg.lod1 .p-npu { fill: #2B303A; fill-opacity: 1; }
+.phys-stage.iso-up svg.lod1 .p-npu { fill: #303030; fill-opacity: 1; }
 .phys-stage.iso-up .p-npu { rx: .4px; ry: .4px; }
 .p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip + .p-npu3d { opacity: .25; }
 /* 2.5D 下顶面的圆角收小：侧面是直角棱，顶面还留平面图那种大圆角的话，转角处顶面和侧面对不上 */

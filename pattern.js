@@ -762,7 +762,7 @@
       }
     }
     /* 2.5D 的顶面光泽与描边渐变：左上迎光略亮、右下收暗；描边上沿亮、下沿几乎看不见（克制：亮度差只有几个百分点） */
-    var isoDefs = '<defs><linearGradient id="iso-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A303B"/><stop offset=".45" stop-color="#1F242C"/><stop offset="1" stop-color="#191D24"/></linearGradient>'
+    var isoDefs = '<defs><linearGradient id="iso-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#303030"/><stop offset=".45" stop-color="#242424"/><stop offset="1" stop-color="#1D1D1D"/></linearGradient>'
       + '<linearGradient id="iso-rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".30"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity=".08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".03"/></linearGradient></defs>';
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" style="' + isoVars + '">' + lkDefs('p-') + isoDefs
       + '<g class="iso-g"><g class="p-links">' + links.join('') + '</g><g class="p-panels">' + panels.join('') + '</g><g class="p-nodes">' + nodes.join('') + '</g></g></svg>';
@@ -2665,7 +2665,7 @@
      本页默认就处在这种聚焦态：只有关键点（聚焦 / 选中的那一段、选中 rank、指针所在的那个 μb）上工作台的实色，其余一律中性灰。 */
   /* 10.16 颜色只表示状态（审计：前向蓝 = DP 维度蓝、反向 #FF4B7B 贴着告警红）：选中那一行的计算块用选中色（前向白、反向浅灰，方向靠 › ‹ 纹理），
      其余行中性灰；Comm 块用它所属维度的签名色——P2P 属 PP、梯度同步属 DP，同 NPU / Network Graph 里那两维一个颜色 */
-  var SW_COL = { forward: '#F2F2F2', backward: '#B8B8BA', comm: '#F472B6', dp: '#4369EF', muted: '#5C5C5E' };
+  var SW_COL = { forward: '#F2F2F2', backward: '#B8B8B8', comm: '#F472B6', dp: '#4369EF', muted: '#5C5C5C' };
   var swimHover = null, swimGeo = null;
   function swimFont(w, px) { return w + ' ' + px + 'px ' + (getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace'); }
   function swimRR(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
@@ -2758,7 +2758,7 @@
           ctx.save(); if (!hot) ctx.globalAlpha = .38;
           if (window.PtoSwimlaneTaskPattern) window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, { x: x1, y: by, width: w, height: BH, baseColor: col, task: { label: lab }, isSelected: hot && hm === mk, isEmphasized: hot, fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono') || 'monospace' });
           else { swimRR(ctx, x1, by, w, BH, 3); ctx.fillStyle = col; ctx.fill(); }
-          swimChevrons(ctx, x1, by, w, BH, b.k === 'B' ? -1 : 1, hot ? 'rgba(0,0,0,.32)' : 'rgba(142,142,144,.38)');
+          swimChevrons(ctx, x1, by, w, BH, b.k === 'B' ? -1 : 1, hot ? 'rgba(0,0,0,.32)' : 'rgba(142,142,142,.38)');
           ctx.restore();
           bars.push({ x: x1, y: by, w: w, h: BH, p: p, b: b, mk: mk });
         });
