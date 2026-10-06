@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>集群 2.5D / 3D · 硬件图元</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #111111; }
+  canvas { display: block; outline: none; }
+  .tip { position: fixed; pointer-events: none; padding: 5px 9px; border-radius: 8px; background: rgba(28, 28, 28, .92); color: #E6E6E6;
+    font: 11px/1.4 "JetBrains Mono", ui-monospace, Menlo, monospace; white-space: nowrap; transform: translate(12px, 12px); display: none; }
+</style>
+<!-- three.js r134：图元库自己用的那一版（同一份 vendor/three.min.js），光照 / 颜色与库页面逐像素一致 -->
+<script src="../vendor/hpc-topology-node/three-r134.min.js"></script>
+<!-- 图元本体：Cinnnnnnndy/hpc-topology-node（commit 75ecf2a）的 entity-builders.js，原样 -->
+<script src="../vendor/hpc-topology-node/entity-builders.js"></script>
+</head>
+<body>
+<div class="tip" id="tip"></div>
+<script src="./hw3d.js"></script>
+</body>
+</html>

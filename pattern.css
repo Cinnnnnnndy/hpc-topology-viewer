@@ -56,6 +56,8 @@ body.detail-warm #detailFrame.is-hidden { opacity: .01; }
 /* 交叉淡入不经过黑：新的一层在上面 .25s 淡入，旧的一层先沉到下面、保持不透明，等新的一层满了（.24s 延迟）再淡出——
    逐帧看过，原来两层同时一出一进，中间有一两帧整块画布是黑的 */
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
+/* 10.27 集群 2.5D / 3D 用的是 hpc-topology-node 的立体图元，颜色照搬图元库原色（与 2D 图元同一套）——这一个 iframe 不去色 */
+iframe#hwFrame { filter: none; background: #111111; }
 /* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
 .drawer[data-panel="swimlane"] iframe { filter: none; }
 
@@ -1395,7 +1397,12 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 /* 下钻按钮的图标：同 dock 图标的线宽与端点，跟着按钮文字色 */
 .brief-cta .cta-ico { width: 14px; height: 14px; margin: 0 6px 0 -2px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-
+/* ── 10.23 集群 2.5D：dock 里的切换只在集群 / POD 这一层出现（Board 与 NPU 页各有自己的画法）；板厚两档暗、顶面一层很淡的斜向光泽 ── */
+.p-thk { pointer-events: none; }
+.p-thk-sp { rx: 14px; ry: 14px; fill: #0B0B0B; stroke: rgba(255, 255, 255, .05); stroke-width: calc(1px / var(--zk, 1)); }
+.p-thk-pod { rx: 7px; ry: 7px; fill: #121212; }
+.phys-stage:not(.is-iso) .p-thick, .phys-stage:not(.is-iso) .p-thick-pod { display: none; }
+.phys-stage.is-iso .p-sp { fill: url(#iso-sheen); stroke: url(#iso-rim); }
 /* 底部工具条的视角段：胶囊分段（同设置里的分段按钮），选中 = 深底白字；Logical Cube 那段前面一枚小字标签说明管的是谁 */
 .dock-views { display: flex; align-items: center; gap: 4px; }
 .dock-views.is-empty { display: none; }
@@ -1411,73 +1418,3 @@ body.is-compact #leftCard > * + .gcard { margin-top: 6px; }
 .dv-menu { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px;
   background: var(--cam-bg); -webkit-backdrop-filter: var(--cam-fx); backdrop-filter: var(--cam-fx); box-shadow: var(--cam-shadow); border-radius: 18px; z-index: 12; }
 .dock .dv-menu .dv-b { justify-content: flex-start; height: 30px; }
-
-/* ── 10.24 集群 2.5D 的立体元素（照 hpc-topology-node scenes.tsx 的 Slab / CabinetBox / BladeTray / NpuChip / CpuChip，配色取它的 dark 调色板）──
-   侧面（.p-ex）只在 2.5D 落定后出现；顶面按层高抬起（--z-* 由 buildPhysSvg 按投影算好写在 svg 上）。NPU 顶面仍是显存占用灰阶 / 状态色——那是数据，不换 */
-.p-ex { display: none; pointer-events: none; stroke: none; }
-.phys-stage.iso-up .p-ex { display: inline; animation: ex-in .32s ease both; }
-@keyframes ex-in { from { opacity: 0; } to { opacity: 1; } }
-.ex-sp.exL { fill: #1C1C1C; } .ex-sp.exR { fill: #151515; }
-.ex-cab.exL { fill: #2B2B2B; } .ex-cab.exR { fill: #202020; }
-.ex-pod.exL { fill: #222222; } .ex-pod.exR { fill: #1A1A1A; }
-.ex-board.exL { fill: #2A2A2A; } .ex-board.exR { fill: #202020; }
-.ex-dev.exL { fill: #313131; } .ex-dev.exR { fill: #252525; }
-.ex-npu.exL { fill: #343434; } .ex-npu.exR { fill: #272727; }
-.phys-stage .p-splabel, .phys-stage .p-l1, .phys-stage .p-roce, .phys-stage .p-l2, .phys-stage .p-uboe, .phys-stage .p-uboelabel, .phys-stage .p-rocelabel, .phys-stage .p-sw1label,
-.phys-stage .p-plane, .phys-stage .p-planelabel, .phys-stage .p-sw2, .phys-stage .p-sw1, .phys-stage .p-swicon, .phys-stage .p-pod, .phys-stage .p-colhd,
-.phys-stage .p-board, .phys-stage .p-bdiv, .phys-stage .p-cpu, .phys-stage .p-dpu, .phys-stage .p-nic,
-.phys-stage .p-npunum, .phys-stage .p-npupkg, .phys-stage .p-npustrip, .phys-stage .sel-frame, .phys-stage g.rel { transition: transform .32s ease; }
-.phys-stage .p-npu { transition: opacity .15s ease, transform .32s ease; }
-.phys-stage.iso-up .p-splabel, .phys-stage.iso-up .p-l1, .phys-stage.iso-up .p-roce, .phys-stage.iso-up .p-l2, .phys-stage.iso-up .p-uboe, .phys-stage.iso-up .p-uboelabel,
-.phys-stage.iso-up .p-rocelabel, .phys-stage.iso-up .p-sw1label { transform: translate(calc(var(--z-sp) * -1), calc(var(--z-sp) * -1)); }
-.phys-stage.iso-up .p-plane, .phys-stage.iso-up .p-planelabel, .phys-stage.iso-up .p-sw2 { transform: translate(calc(var(--z-plane) * -1), calc(var(--z-plane) * -1)); }
-.phys-stage.iso-up .p-sw1, .phys-stage.iso-up .p-swicon { transform: translate(calc(var(--z-sw1) * -1), calc(var(--z-sw1) * -1)); }
-.phys-stage.iso-up .p-pod, .phys-stage.iso-up .p-colhd { transform: translate(calc(var(--z-pod) * -1), calc(var(--z-pod) * -1)); }
-.phys-stage.iso-up .p-board, .phys-stage.iso-up .p-bdiv { transform: translate(calc(var(--z-board) * -1), calc(var(--z-board) * -1)); }
-.phys-stage.iso-up .p-cpu, .phys-stage.iso-up .p-dpu, .phys-stage.iso-up .p-nic { transform: translate(calc(var(--z-dev) * -1), calc(var(--z-dev) * -1)); }
-.phys-stage.iso-up .p-npu, .phys-stage.iso-up .p-npunum, .phys-stage.iso-up .p-npupkg, .phys-stage.iso-up .p-npustrip,
-.phys-stage.iso-up .sel-frame, .phys-stage.iso-up g.rel { transform: translate(calc(var(--z-npu) * -1), calc(var(--z-npu) * -1)); }
-/* 顶面换成 Node 的 dark 调色板：基板 substrate、托盘 rackBody、刀片 nodeUnit、交换柜 switchUnit；描边 rackEdge */
-.phys-stage.is-iso .p-sp { fill: url(#iso-sheen); fill-opacity: .9; stroke: url(#iso-rim); }
-.phys-stage.iso-up .p-pod { fill: #262626; stroke: #444444; }
-.phys-stage.iso-up .p-board { fill: #2F2F2F; stroke: rgba(68, 68, 68, .7); stroke-width: calc(.5px / var(--zk, 1)); }
-.phys-stage.iso-up .p-plane { fill: #313131; }
-.phys-stage.iso-up .p-sw1 { fill: #313131; stroke: #444444; }
-/* 2.5D 下的选中框：投影把线压扁了（纵向只剩 0.35），加粗一倍才和平面图里一样醒目；
-   「只露当前行」的暗底在 2.5D 里与抬起的刀片对不齐，不画——无关的卡本来就压暗了 */
-svg.svg-iso .sel-frame { stroke-width: calc(4px / var(--zk, 1)); }
-.phys-stage.iso-up .rel .rel-scrim { display: none; }
-
-/* ── 10.25 阶梯 + 细化模型（反馈「减少 rank 的高度做出阶梯的形式，然后细化所有的模型」）──
-   层高见 buildPhysSvg 的 ZL；棱线（.exE）照 Node Slab 的 <Edges>（rackEdge），只给基板 / 交换柜 / POD 托盘这几百个大件——
-   刀片顶面本来就有描边，器件与 NPU 放大后有立起来的部件；给这几千个小件再各描一圈，全景糊成一层灰，放大后每帧重绘也慢约四分之一。放大后顶视图标换成立起来的部件（.p-npu3d / .p-d3，由 ensurePodDetail 按 POD 补建）。
-   配色按 Node dark 调色板各部件的明暗取值，再去色成纯灰（10.26「除了高亮的彩色都是黑白灰」：Node 的中性色本身偏蓝）；
-   Node 里的青 / 橙发光条不搬——这张图里色相只留给通信组和告警 */
-.exE { fill: none; stroke-linejoin: round; }
-.exE.ex-sp { stroke: #353535; stroke-width: calc(.8px / var(--zk, 1)); }
-.exE.ex-cab, .exE.ex-pod { stroke: #444444; stroke-width: calc(.7px / var(--zk, 1)); }
-.exD.ex-cab { fill: #1E1E1E; }
-.exV.ex-cab { fill: none; stroke: #757575; stroke-opacity: .45; stroke-width: calc(.5px / var(--zk, 1)); }
-.p-npu3d, .p-d3 { display: none; pointer-events: none; }
-.phys-stage.iso-up svg.lod1 .p-npu3d, .phys-stage.iso-up svg.lod1 .p-d3 { display: inline; }
-.phys-stage .p-npu3d { transition: transform .32s ease; }
-.phys-stage.iso-up .p-npu3d { transform: translate(calc(var(--z-npu) * -1), calc(var(--z-npu) * -1)); }
-.p-npu3d path, .p-d3 path { stroke: none; }
-.d3-sub { fill: #272727; }
-.d3-cmp { fill: #515151; }
-.d3-br { fill: #929292; }
-.d3-io { fill: #666666; }
-.d3-face { fill: #1D1D1D; }
-.d3-body { fill: #2F2F2F; }
-.d3-lid { fill: #5D5D5D; }
-.d3-chip { fill: #515151; }
-.d3-cage { fill: #838383; }
-.p-d3 .d3-edge { fill: none; stroke: rgba(255, 255, 255, .14); stroke-width: calc(.4px / var(--zk, 1)); }
-.phys-stage.iso-up svg.lod1 .p-npupkg, .phys-stage.iso-up svg.lod1 .p-cpu, .phys-stage.iso-up svg.lod1 .p-dpu, .phys-stage.iso-up svg.lod1 .p-nic { display: none; }
-.phys-stage.iso-up svg.lod1 .p-npu { fill: #303030; fill-opacity: 1; }
-.phys-stage.iso-up .p-npu { rx: .4px; ry: .4px; }
-.p-npu.is-dim + .p-npunum + .p-npupkg + .p-npustrip + .p-npu3d { opacity: .25; }
-/* 2.5D 下顶面的圆角收小：侧面是直角棱，顶面还留平面图那种大圆角的话，转角处顶面和侧面对不上 */
-.phys-stage.iso-up .p-sp { rx: 1.5px; ry: 1.5px; }
-.phys-stage.iso-up .p-plane, .phys-stage.iso-up .p-pod { rx: .8px; ry: .8px; }
-.phys-stage.iso-up .p-board { rx: .3px; ry: .3px; }
