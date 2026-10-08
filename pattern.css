@@ -69,7 +69,7 @@ iframe#hwFrame { filter: none; background: #111111; }
   font-size: 12px; line-height: 1.6; color: #A0A0A0;
   transition: opacity .15s ease;
 }
-.side-card.is-hidden { opacity: 0; pointer-events: none; }
+.side-card.is-hidden { opacity: 0; pointer-events: none; animation: none !important; }   /* 10.29 调整：入场动画（opacity 0→1，backwards）播放期间会压过隐藏——10.20 起永远隐藏的旧右上 rank 卡每次换选中都闪出来叠在右列上 */
 .side-left { left: 24px; top: 20px; width: 288px; }
 .side-right { right: 24px; }
 .lc-title { margin: 0 0 8px; white-space: nowrap; font-size: 18px; line-height: 1.25; font-weight: 500; color: #E8E8E8; letter-spacing: -.03em; }
@@ -235,6 +235,10 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
   background: #111111; padding: 1px 5px;
 }
 .sel-label span { font-weight: 400; color: #A0A0A0; }
+/* 10.29 调整：平面图 / 板视图的悬停提示，同 2.5D / 3D 引擎里那枚（engine/hw3d.html .tip） */
+.cv-tip { position: fixed; z-index: 30; pointer-events: none; padding: 5px 9px; border-radius: 8px; background: rgba(28, 28, 28, .92); color: #E6E6E6;
+  font: 11px/1.4 var(--mono); white-space: nowrap; transform: translate(12px, 12px); display: none; }
+.cv-tip.is-flip { transform: translate(calc(-100% - 12px), 12px); }
 .sel-frame { fill: none; stroke: #FFFFFF; stroke-width: calc(2px / var(--zk, 1)); pointer-events: none; }
 .sel-frame.al-warn { stroke: var(--warn); stroke-width: calc(3px / var(--zk, 1)); }   /* 10.29 选中的这张就是点中的告警对象：框用那条告警的状态色 */
 .sel-frame.al-crit { stroke: var(--alert); stroke-width: calc(3px / var(--zk, 1)); }
@@ -258,6 +262,11 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .p-pod:hover { stroke: #5C5C5C; }
 .p-pod.is-on { stroke: #A0A0A0; }
 .p-pod.is-fit { stroke: #5C5C5C; }
+/* 10.29 调整：段告警时这一段的 Rack 外缘描一圈状态色——ZeRO 0 下整片都是超容红，格子本身的琥珀看不出是哪一段被点亮（琥珀不把超容卡降成琥珀） */
+.p-pod.al-warn { stroke: var(--warn); }
+.p-pod.al-crit { stroke: var(--alert); }
+.pb.al-warn .pb-bar { stroke: var(--warn); stroke-width: 1.5; }
+.pb.al-crit .pb-bar { stroke: var(--alert); stroke-width: 1.5; }
 .p-board { fill: transparent; cursor: pointer; }
 .p-pod.is-fit ~ .p-board:hover, .p-board:hover { fill: #202020; }
 .p-l2 { stroke: #808080; stroke-opacity: .45; stroke-width: calc(.6px / var(--zk, 1)); fill: none; }
@@ -551,7 +560,7 @@ body.t3 .dock .dock-sep:first-of-type { display: block; }   /* 10.19：NPU 页�
 .gcard .lc-cap { margin-top: 0; }
 /* 右列一列一个宽度：rank 卡与下面每一张数据卡都是 224px */
 .side-right { right: 16px; top: 16px; width: 224px; box-sizing: border-box; padding: 10px 12px; }
-body.t3 .side-right { top: 64px; }   /* 单卡页右上角有它自己的设置圆钮，让开 */
+/* 10.29 调整：单卡页右上角那枚引擎自带的设置圆钮不再画（宿主注入样式收掉，见 monoDetail），右列不用再为它让位 */
 .ip-col { width: 272px; overflow-y: auto; }
 .ip-col-left { left: 16px; top: calc(56px + var(--lc-h, 300px) + 8px); }
 body.t3 .ip-col-left { top: calc(56px + var(--lc-h, 300px) + 8px); }
@@ -572,7 +581,12 @@ body.t3 .ip-col-left { top: calc(56px + var(--lc-h, 300px) + 8px); }
 .data-col { right: 16px; width: 272px; top: 60px; bottom: 76px; }
 .shard-col { left: 16px; top: 64px; bottom: 72px; width: 272px; }   /* 底下留给矩阵自己的选组工具条 */
 .data-col.is-hidden, .shard-col.is-hidden { display: none; }
+/* 10.29 调整：右列 / NPU 页左列是一整条到底的固定列，卡片下面的空白也吃事件——放大后落在那一条里的格子点不中，指针在空白上滚轮滚的是卡片列、不是画布。
+   列本身不接指针，只有卡片（与自绘滚动条）接；滚轮在卡片上照旧滚这一列（.vs-host） */
+.data-col, .shard-col { pointer-events: none; }
+.data-col > *, .shard-col > * { pointer-events: auto; }
 body.panel-right .data-col { display: none; }
+body.panel-right.panel-narrow .data-col:not(.is-hidden) { display: flex; right: calc(var(--ps-w, 372px) + 24px); }   /* 10.29 调整：窄面板（Hierarchy）旁边仍摆右列，见 syncPanelNarrow */
 body:not(.t3) .shard-col { display: none; }
 .dcard { flex: none; padding: 8px 10px; font-size: 10.5px; color: #A0A0A0; }
 /* 权重里的逐块：跟上级同宽（同一列宽度一致），层级靠卡内缩进表达 */
@@ -615,6 +629,9 @@ body.t3 .lc-pp, body.lv-board .lc-pp { display: none; }
 .dc-total .dc-v { font-size: 13px; color: #FFFFFF; }
 .dc-total .dc-v small { color: #8A8A8A; }
 .dc-total.is-alert .dc-v { color: var(--alert); }
+/* 10.29 调整：推理 NPU 页左列的训练口径那一组（3D 卡同口径）——一个小标 + 整组退后一档，与上面推理口径那张分开读 */
+.dc-cal { font-size: 10px; letter-spacing: .04em; color: #8A8A8A; padding: 4px 4px 0; }
+.shard-col .dc-cal ~ .dcard { opacity: .72; }
 body.t3 .incident-panel, body.lv-board .incident-panel { display: none !important; }
 /* 单卡层的切分小卡：可点开 */
 .dcard.is-split { cursor: pointer; }
@@ -675,6 +692,11 @@ body.t3 .dock .dock-sep-rv { display: block; }
 .cf-all button:disabled { opacity: .35; cursor: default; }
 .cf-all span { color: #A0A0A0; margin-right: auto; }
 .cf-err { margin-top: 6px; color: var(--alert); font-size: 10px; line-height: 14px; }
+.cf-fix { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }   /* 10.29 调整：草稿不合法时的可行改法，点了就改草稿 */
+.cf-fix button { font: inherit; font-size: 10px; color: #E8E8E8; background: transparent; border: 1px solid #5C5C5C; border-radius: 999px; padding: 0 8px; cursor: pointer; }
+.cf-fix button:hover { border-color: #A0A0A0; }
+.cf-chk.is-na span { opacity: .45; }   /* 10.29 调整：当前场景不摆的数据卡 */
+.jn-car { font-style: normal; font-size: 9px; line-height: 1; opacity: .7; margin-left: -1px; }   /* 10.29 调整：故障定位是个下拉 */
 
 /* 右侧数值卡：与 rank 卡同宽（同一列宽度一致，反馈「同一列的卡片宽度保持一致」） */
 .data-col { width: 224px; align-items: stretch; }
@@ -861,6 +883,9 @@ body.is-compact .dc-more { display: none; }
 .crumb .cr-root .cr-main { letter-spacing: -.005em; }
 .crumb .cr-root .cr-meta { font-size: 12px; font-weight: 400; color: #8C8C8C; letter-spacing: .02em; }
 .crumb .cr-root:hover .cr-main { color: #FFFFFF; }
+/* 10.29 调整：面包屑会压到顶上居中的场景胶囊时先收规格小标，还压就把模型主名截成省略号（见 fitCrumb） */
+.crumb.cr-tight .cr-root .cr-meta { display: none; }
+.crumb.cr-tight2 .cr-root .cr-main { display: inline-block; max-width: 7.5em; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 body.is-compact .crumb .cr-root { font-size: 18px; }
 body.is-compact .crumb .cr-root .cr-meta { font-size: 11px; }
 body.is-compact .crumb .cr { font-size: 12px; }

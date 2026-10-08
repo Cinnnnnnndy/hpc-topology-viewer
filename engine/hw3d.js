@@ -358,10 +358,10 @@
   var drag = null, ray = new T.Raycaster(), ndc = new T.Vector2(), tip = document.getElementById('tip');
   var el = renderer.domElement;
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  el.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY, b: e.button, sh: e.shiftKey, moved: false }; el.setPointerCapture(e.pointerId); });
+  el.addEventListener('pointerdown', function (e) { drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, b: e.button, sh: e.shiftKey, moved: false }; el.setPointerCapture(e.pointerId); });
   el.addEventListener('pointermove', function (e) {
     if (!drag) { hover(e); return; }
-    var dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(e.clientX - drag.x0) + Math.abs(e.clientY - drag.y0) > 4) drag.moved = true;   // 10.30 按离按下点的总距离判拖动（同平面图 4px）：原来逐帧比，慢慢拖每一帧都不到 3px，松手被当成点击
     drag.x = e.clientX; drag.y = e.clientY; anim = null;
     if (ST.mode === '3d' && drag.b === 0 && !drag.sh) { V.az -= dx * 0.006; V.pol = Math.max(0.12, Math.min(1.45, V.pol - dy * 0.006)); }
     else { var u = cam === ortho ? 1 / V.zoom : viewSpan() / H0, ca = Math.cos(V.az), sa = Math.sin(V.az), sc = 1 / Math.max(0.3, Math.cos(V.pol));
@@ -392,6 +392,10 @@
     var g = groundAt(x, y, baseY('npu') + hN / 2);
     if (g) { var n = npuAt(g.x, g.z); if (n != null) return { kind: 'rank', rank: n }; }
     for (var i = 0; i < hs.length; i++) { var o = hs[i].object; if (o === pick.npu) return { kind: 'rank', rank: hs[i].instanceId }; if (o === pick.board) return { kind: 'board', board: LAY.board[hs[i].instanceId][4] }; if (o === pick.pod) return { kind: 'pod', pod: LAY.pod[hs[i].instanceId][4] }; }
+    /* 10.29 调整：地面分两种，同平面图——落在某个 SuperPoD 底板上（含它上面的 L2 平面 / L1）= 点那块底板（宿主 spClick：先撤选中 / 退出板 / Rack 退到它，
+       没取景就取景它），落在 SuperPoD 之外才是真正的空白（宿主 noneClick）。原来两种都报 none，立体的「点空白」与平面图退层的顺序对不上 */
+    var gs = groundAt(x, y);
+    if (gs && LAY.sp) for (var s9 = 0; s9 < LAY.sp.length; s9++) { var q9 = LAY.sp[s9]; if (gs.x >= q9[0] && gs.x <= q9[0] + q9[2] && gs.z >= q9[1] && gs.z <= q9[1] + q9[3]) return { kind: 'sp', sp: q9[4] }; }
     return null;
   }
   function npuAt(x, z) {   // NPU 顶面略高于托盘：取托盘顶面的地面交点附近的格子
@@ -405,6 +409,7 @@
   function hover(e) {
     var now = performance.now(); if (now - hovT < 60) return; hovT = now;
     var h = hit(e.clientX, e.clientY), txt = '';
+    if (h && h.kind === 'sp') h = null;   // SuperPoD 底板：不出提示、不换指针（同平面图）
     if (h && h.kind === 'rank') txt = 'rank ' + h.rank + ' · Board ' + Math.floor(h.rank / 8) + ' · Rack ' + Math.floor(h.rank / 64) + ' · SuperPoD ' + Math.floor(h.rank / 1024)
       + (h.rank !== ST.rank ? '' : ST.pod === Math.floor(h.rank / 64) || ST.board === Math.floor(h.rank / 8) ? ' · 再点进 NPU 页' : ' · 再点放大到 Rack');   // 10.29 选中的那颗再点去哪（同宿主 hwPick）
     else if (h && h.kind === 'board') txt = 'Board ' + h.board + ' · rank ' + h.board * 8 + '–' + (h.board * 8 + 7);
@@ -444,7 +449,8 @@
       if (fk !== ST.fk) { ST.fk = fk; fitRect(s.focus || [0, 0, LAY.W, LAY.H], !s.instant); }
       else applyCam();
     } else if (d.type === 'hw:zoom') {
-      if (d.dir === 'reset') { ST.fk = ''; fitRect([0, 0, LAY.W, LAY.H], true); return; }
+      /* 复位：宿主在板层时带上这块板的矩形（10.29 调整，同平面板视图的复位 = 重新取景这块板；原来拉到整个集群、层级还是板，下一次同步又飞回板） */
+      if (d.dir === 'reset') { ST.fk = JSON.stringify(d.focus || null); fitRect(d.focus || [0, 0, LAY.W, LAY.H], true); return; }
       var f = d.dir === 'in' ? 1.4 : 1 / 1.4; anim = null;
       if (cam === ortho) V.zoom *= f; else V.dist /= f; applyCam(); schedDetail();
     }

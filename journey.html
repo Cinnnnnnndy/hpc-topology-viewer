@@ -1,0 +1,1094 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="referrer" content="no-referrer" />
+<meta name="author" content="王欣迪" />
+<meta name="copyright" content="© 2026 王欣迪 (Cindy_wxd) · Apache-2.0" />
+<title>交互地图 · 模型分片与训练设备映射</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<style>
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
+/* 交互地图：一张无限画布。节点 = demo 的真截图，线 = 从源截图上点的位置连到目标截图上落到的位置。
+   视觉同 demo：#111 底、灰阶；状态色只用在状态上（琥珀 / 红）；选中与热点一律白。 */
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 100 800; font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2-variations"), url("./fonts/jetbrains-mono-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+:root {
+  --bg: #111111; --s1: #1A1A1A; --s2: #222222; --s3: #2A2A2A; --bd: #2E2E2E;
+  --tx: #E8E8E8; --tx2: #8A8A8A; --tx3: #5C5C5C; --warn: #FAB219; --crit: #F85149;
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --inv: 1; --bs: 1;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--tx); font-family: var(--mono); overflow: hidden; -webkit-font-smoothing: antialiased; letter-spacing: -.01em; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+
+/* ── 无限画布 */
+#vp { position: fixed; inset: 0; overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .075) 0 .8px, transparent 1.1px);
+  background-size: var(--dot-s, 24px) var(--dot-s, 24px); background-position: var(--dot-x, 0) var(--dot-y, 0); }
+#vp.is-drag { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#vp.is-moving #world { will-change: transform; }
+
+/* 截图卡 */
+.card { position: absolute; width: 1200px; }
+.card .hd { position: relative; height: 150px; }
+/* 标题随缩小变大（屏上约 11px），但不超过一列的宽度（列距 IW + GV），放不下就省略号 */
+.card .nm { position: absolute; left: 0; bottom: 64px; max-width: 1960px; overflow: hidden; text-overflow: ellipsis; font-size: clamp(40px, calc(11px * var(--inv)), 240px); font-weight: 600; line-height: 1.12; white-space: nowrap; color: var(--tx); }
+.card .ds { position: absolute; left: 0; right: 0; bottom: 6px; height: 56px; font-size: 21px; line-height: 28px; color: var(--tx2); overflow: hidden; }
+/* 深链签单独一行，放在标题上面（只在 35% 以上显示，那时标题固定 40px） */
+.card .dl { position: absolute; right: 0; bottom: 114px; display: flex; gap: 8px; flex-wrap: nowrap; justify-content: flex-end; max-width: 1200px; }
+.card .dl span { font-size: 18px; line-height: 28px; padding: 0 10px; border-radius: 14px; border: 1px dashed #5a5a5a; color: var(--tx2); cursor: default; white-space: nowrap; }
+.card .dl span.on, .card .dl span:hover { color: #fff; border-color: #fff; }
+.card .shot { position: relative; width: 1200px; height: 750px; border-radius: 14px; overflow: hidden; background: #0c0c0c; box-shadow: 0 0 0 2px var(--bd); cursor: zoom-in; }
+.card .shot img { position: absolute; left: 0; top: 0; display: block; width: 1200px; height: 750px; }
+.card.on .shot { box-shadow: 0 0 0 5px #fff; }
+.card .hs { list-style: none; margin: 18px 0 0; padding: 0; columns: 2; column-gap: 28px; font-size: 19px; line-height: 30px; }
+.card .hs li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--tx); cursor: pointer; border-radius: 6px; padding: 0 6px; break-inside: avoid; }
+.card .hs li b { font-weight: 500; margin-right: 4px; }
+.card .hs li i { font-style: normal; color: var(--tx2); }
+.card .hs li.bk { color: var(--tx2); }
+.card .hs li.bk i { color: var(--tx3); }
+.card .hs li:hover, .card .hs li.on { background: #fff; color: #111; }
+.card .hs li:hover i, .card .hs li.on i { color: #333; }
+.far .card .ds, .far .card .hs, .far .card .dl { visibility: hidden; }
+
+/* 画布上的面板 */
+.panel { position: absolute; background: var(--s1); border: 2px solid var(--bd); border-radius: 32px; padding: 56px 60px; overflow: hidden; color: var(--tx); font-size: 28px; line-height: 1.5; }
+.panel h2 { margin: 0 0 10px; font-size: 56px; line-height: 1.2; font-weight: 600; }
+.panel h3 { margin: 30px 0 8px; font-size: 32px; font-weight: 600; color: var(--tx); }
+.panel .sub { color: var(--tx2); font-size: 27px; margin: 0 0 28px; }
+.panel table { border-collapse: collapse; width: 100%; font-size: 25px; line-height: 1.42; }
+.panel td, .panel th { text-align: left; vertical-align: top; padding: 8px 14px 8px 0; border-top: 1px solid var(--s3); }
+.panel th { color: var(--tx2); font-weight: 500; font-size: 22px; border-top: 0; }
+.panel td:first-child { white-space: nowrap; color: #fff; }
+.panel code { font-family: var(--mono); color: #fff; }
+.panel ul, .panel ol { margin: 0; padding-left: 1.4em; }
+.panel li { margin: 4px 0; }
+.panel .cols3 { columns: 3; column-gap: 72px; font-size: 28px; }
+.panel .cols2 { columns: 2; column-gap: 90px; }
+.panel .fx li { margin: 6px 0; }
+.panel .cols2 li { break-inside: avoid; }
+.panel .fn { list-style: none; padding: 0; margin: 22px 0 0; color: var(--tx2); font-size: 24px; line-height: 1.45; }
+.panel .fn li { margin: 4px 0; }
+.panel.p-gest li { margin: 10px 0; }
+.panel .cols3 li { break-inside: avoid; }
+.panel .k { color: var(--tx2); }
+.panel .warn { color: var(--warn); } .panel .crit { color: var(--crit); }
+.panel.jp { cursor: pointer; }
+.panel.jp:hover, .panel.jp.on { border-color: #fff; }
+.panel.jp ol { padding-left: 0; list-style: none; counter-reset: s; }
+.panel.jp ol li { counter-increment: s; position: relative; padding-left: 64px; margin: 12px 0; font-size: 28px; }
+.panel.jp ol li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 44px; height: 44px; border-radius: 50%; background: #fff; color: #111; font-size: 24px; line-height: 44px; text-align: center; font-weight: 600; }
+.panel.jp .mode { font-size: 24px; color: var(--tx2); border: 2px solid #444; border-radius: 20px; padding: 2px 16px; margin-left: 18px; vertical-align: middle; }
+.panel .lg { display: grid; grid-template-columns: 210px 1fr; gap: 16px 26px; align-items: center; font-size: 26px; line-height: 1.35; }
+.panel .lg svg { width: 210px; height: 50px; overflow: visible; }
+/* 列头 / 行头：缩小时跟着变大（屏上约 12px），适配全图时也读得出深度与视图 */
+.lbl { position: absolute; color: #8a8a8a; font-weight: 600; line-height: 1.18; }
+.lbl.col { width: 1980px; word-break: keep-all; font-size: max(44px, calc(11.5px * var(--inv))); transform: translateY(calc(-100% - max(40px, calc(8px * var(--inv))))); }
+.lbl.row { width: max(640px, calc(112px * var(--inv))); word-break: keep-all; font-size: max(38px, calc(11.5px * var(--inv))); text-align: right; transform: translateX(calc(-100% - max(40px, calc(10px * var(--inv))))); }
+
+/* 连线层 */
+#ov { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+#ov .ln, #ov .cs, #ov .ht { fill: none; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+#ov .cs { stroke: #0b0b0b; stroke-opacity: .75; stroke-width: 3.6px; }
+#ov .ln { stroke: #B4B4B4; stroke-width: 1.5px; }
+#ov .s-dash .ln { stroke-dasharray: 7 5; }
+#ov .s-dot .ln { stroke-dasharray: 1.2 4.2; stroke-linecap: round; stroke-width: 1.7px; }
+#ov .s-thin .ln { stroke-width: .9px; stroke: #888; }
+#ov .ld .ln { stroke-dasharray: 2 3 !important; stroke-width: 1px !important; }
+#ov .ht { stroke: transparent; stroke-width: 14px; pointer-events: stroke; cursor: pointer; }
+#ov .ah { fill: #B4B4B4; transform-box: fill-box; transform-origin: 100% 50%; transform: scale(var(--bs)); }
+#ov .lb { fill: none; stroke: #fff; stroke-width: 1.4px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; opacity: .55; }
+/* 示意落点：目标截图只是同类状态（别的卡 / Rack / 视图 / 场景），框换点划线 */
+#ov .lb.ax { stroke-dasharray: 12 4 2 4; }
+/* 线在源 / 目标截图里面的那一段压在内容上：平时淡，亮起时才全显 */
+#ov .inn .ln { stroke-opacity: .28; }
+#ov .inn .cs { stroke-opacity: .2; }
+#ov .on.inn .ln { stroke-opacity: 1; }
+#ov .on.inn .cs { stroke-opacity: .9; }
+#ov .hb { fill: none; stroke: #fff; stroke-width: 1.6px; vector-effect: non-scaling-stroke; pointer-events: all; cursor: pointer; }
+#ov .hb.area { stroke-dasharray: 3 3; }
+#ov .hp { fill: none; stroke: #fff; stroke-width: 1.8px; vector-effect: non-scaling-stroke; }
+#ov .bd { pointer-events: all; cursor: pointer; }
+/* 编号圆放在热点框左上角的外面（右下切点贴着框角），放大缩小都绕这个切点，不压热点本身 */
+#ov .bdi { transform-box: fill-box; transform-origin: 100% 100%; transform: scale(var(--bs)); }
+#ov .key .bdi { transform-origin: 50% 50%; }
+#ov .bdi circle { fill: #fff; stroke: #111; stroke-width: 2px; }
+#ov .bdi text { fill: #111; font-size: 17px; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: var(--mono); }
+#ov .bk .bdi circle { fill: #3a3a3a; stroke: #fff; stroke-width: 1.5px; stroke-dasharray: 2 2.4; }
+#ov .bk .bdi text { fill: #fff; }
+#ov .bk .hb { stroke-dasharray: 2 3; opacity: .8; }
+#ov .key rect { fill: #2a2a2a; stroke: #fff; stroke-width: 1.4px; vector-effect: non-scaling-stroke; }
+#ov .key text { fill: #fff; font-size: 17px; font-weight: 600; text-anchor: middle; dominant-baseline: central; font-family: var(--mono); }
+#ov .chip { pointer-events: all; cursor: pointer; }
+#ov .chip rect { fill: #1A1A1A; stroke: #555; stroke-width: 1.2px; vector-effect: non-scaling-stroke; }
+#ov .chip .c1 { fill: #E8E8E8; font-size: 22px; font-weight: 500; font-family: var(--mono); }
+#ov .chip .c2 { fill: #8A8A8A; font-size: 17px; font-family: var(--mono); }
+#ov .chip .nw { fill: #111; font-size: 15px; font-weight: 700; font-family: var(--mono); }
+#ov .chip .nwb { fill: #fff; }
+#ov .step { display: none; }
+#ov .step circle { fill: #fff; stroke: #111; stroke-width: 3px; }
+#ov .step text { fill: #111; font-size: 32px; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: var(--mono); }
+#ov .stepw { transform-box: fill-box; transform-origin: 50% 50%; transform: scale(var(--bs)); }
+/* 返回线 / 原地 / 深链：默认收起，高亮时出来 */
+#ov .g-back, #ov .g-self, #ov .g-url { display: none; }
+#ov.show-back .g-back { display: inline; }
+#ov .on.g-back, #ov .on.g-self, #ov .on.g-url { display: inline; }
+#ov .chip.g-back, #ov .chip.g-self { display: none; }
+#ov.show-back .chip.g-back { display: inline; }
+#ov .chip.on { display: inline; }
+.far #ov .chip { display: none !important; }
+.far #ov .chip.pin { display: inline !important; }
+/* 高亮：一条（悬停）或一个场景 */
+#ov.hl [data-e]:not(.on), #ov.sc [data-e]:not(.on) { opacity: .1; }
+#ov.hl .on .ln, #ov.sc .on .ln { stroke: #fff; stroke-width: 3px; }
+#ov.hl .on .cs, #ov.sc .on .cs { stroke-width: 7px; stroke-opacity: .9; }
+#ov.hl .on .ah, #ov.sc .on .ah { fill: #fff; }
+#ov .on .lb, #ov .on.lb { opacity: 1; stroke-width: 2.4px; }
+#ov.hl .chip.on rect, #ov.sc .chip.on rect { stroke: #fff; stroke-width: 2px; }
+#ov.sc .step.on { display: inline; }
+#world.dim .card:not(.on) { opacity: .45; }
+#world.dim .panel:not(.on) { opacity: .5; }
+#ov [data-e] { transition: opacity .15s; }
+
+/* ── 固定在屏幕上的一小块 */
+.ui { position: fixed; z-index: 10; }
+#top { left: 16px; top: 16px; max-width: calc(100vw - 32px); background: rgba(26, 26, 26, .92); border: 1px solid var(--bd); border-radius: 18px; padding: 12px 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+#top h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.35; }
+#top p { margin: 3px 0 0; font-size: 12px; color: var(--tx2); line-height: 1.45; }
+#top a { display: inline-block; margin-top: 6px; font-size: 12px; color: #fff; text-decoration: none; border: 1px solid #555; border-radius: 12px; padding: 2px 10px; }
+#top a:hover { background: #fff; color: #111; }
+/* 场景面板：上面一排按钮、下面这一条的步骤；两块都能在自己里面滚，整块不高过「视口 − 顶栏」 */
+#scn { left: 16px; bottom: 16px; width: 232px; max-height: calc(100vh - var(--top-h, 120px) - 28px); display: flex; flex-direction: column; background: rgba(26, 26, 26, .92); border: 1px solid var(--bd); border-radius: 18px; padding: 10px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size: 12px; }
+#scn .bt { flex: 0 1 auto; min-height: 64px; overflow-y: auto; scrollbar-width: thin; }
+#scn .gt { color: var(--tx3); font-size: 11px; margin: 8px 6px 3px; }
+#scn .gt:first-child { margin-top: 2px; }
+#scn button { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 9px; padding: 5px 8px; font-size: 12.5px; cursor: pointer; color: var(--tx); }
+#scn button:hover { background: var(--s3); }
+#scn button.on { background: #fff; color: #111; }
+#scn .q { flex: 0 1 auto; min-height: 0; overflow-y: auto; color: var(--tx2); font-size: 11px; line-height: 1.4; margin: 6px 0 2px; padding: 0 6px; border-top: 1px solid var(--s3); scrollbar-width: thin; }
+#scn .q:empty { display: none; }
+#scn .q summary { list-style: none; cursor: default; padding-top: 6px; }
+#scn .q summary::-webkit-details-marker { display: none; }
+#scn .q b { color: var(--tx); font-weight: 500; }
+#scn .q ol { margin: 6px 0 0; padding-left: 1.5em; color: var(--tx); }
+#scn .q li { margin: 2px 0; }
+#scn .q li span { color: var(--tx2); }
+#ctl { right: 16px; bottom: 16px; display: flex; gap: 6px; align-items: center; background: rgba(26, 26, 26, .92); border: 1px solid var(--bd); border-radius: 22px; padding: 5px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+#ctl button { min-width: 34px; height: 34px; border-radius: 17px; border: 0; background: none; cursor: pointer; font-size: 14px; padding: 0 10px; }
+#ctl button:hover { background: var(--s3); }
+#ctl button.on { background: #fff; color: #111; }
+#ctl .zl { font-size: 11px; color: var(--tx2); min-width: 44px; text-align: center; }
+#mini { right: 16px; bottom: 64px; background: rgba(17, 17, 17, .92); border: 1px solid var(--bd); border-radius: 12px; cursor: pointer; }
+#mini canvas { display: block; border-radius: 12px; }
+#tip { position: fixed; z-index: 20; pointer-events: none; max-width: 340px; background: #1A1A1A; border: 1px solid #555; border-radius: 10px; padding: 7px 10px; font-size: 12px; line-height: 1.45; color: var(--tx); display: none; }
+#tip b { font-weight: 600; }
+#tip .p { color: var(--tx2); }
+#tip .ax { color: var(--tx2); margin-top: 4px; padding-top: 4px; border-top: 1px dashed #444; }
+#tip.dock { pointer-events: auto; left: 8px !important; right: 8px; top: auto !important; bottom: 106px; max-width: none; font-size: 13px; padding: 9px 12px; }
+/* 详情 */
+#dt { position: fixed; inset: 0; z-index: 30; background: #0a0a0a; display: none; overflow: auto; -webkit-overflow-scrolling: touch; }
+#dt.open { display: block; }
+#dt .in { max-width: 1240px; margin: 0 auto 60px; padding: 8px 20px 0; }
+/* 关闭 / 定位那一排是 .in 的直接子元素、sticky 贴顶：往下滚多远都在 */
+#dt .bar { position: sticky; top: 0; z-index: 3; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 0; background: #0a0a0a; }
+#dt .hd { display: block; }
+#dt .keys { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; font-size: 12px; }
+#dt .keys span { border: 1px solid #fff; background: #2a2a2a; border-radius: 7px; padding: 2px 8px; }
+#dt .keys span.on { background: #fff; color: #111; }
+#dt h2 { margin: 0; font-size: 22px; font-weight: 600; }
+#dt .ds { color: var(--tx2); font-size: 13px; margin: 6px 0 14px; line-height: 1.5; }
+#dt .x { flex: none; border: 1px solid #555; background: var(--s1); border-radius: 16px; height: 32px; padding: 0 12px; cursor: pointer; font-size: 13px; }
+#dt .x:hover { background: #fff; color: #111; }
+#dt .im { position: relative; width: 100%; aspect-ratio: 1200 / 750; margin-top: 22px; border-radius: 12px; background: #0c0c0c; box-shadow: 0 0 0 1px var(--bd); }
+#dt .im img, #dt .im svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+#dt .im img { border-radius: 12px; }
+#dt .im svg { overflow: visible; }
+#dt .im .hb { fill: none; stroke: #fff; stroke-width: 2px; }
+#dt .im .hb.area { stroke-dasharray: 4 3; }
+#dt .im .lb { fill: none; stroke: #fff; stroke-width: 2px; stroke-dasharray: 6 4; }
+#dt .im .bdc { fill: #fff; stroke: #111; stroke-width: 2px; }
+#dt .im .bdt { fill: #111; font: 700 17px var(--mono); text-anchor: middle; dominant-baseline: central; }
+#dt .im .bk .bdc { fill: #3a3a3a; stroke: #fff; stroke-dasharray: 2 2.4; }
+#dt .im .bk .bdt { fill: #fff; }
+#dt .im .lt { fill: #fff; font: 600 15px var(--mono); paint-order: stroke; stroke: #111; stroke-width: 4px; }
+#dt .lists { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 18px; }
+#dt h3 { font-size: 14px; margin: 0 0 8px; color: var(--tx2); font-weight: 500; }
+#dt ul { list-style: none; margin: 0; padding: 0; font-size: 13px; line-height: 1.5; }
+#dt li { padding: 6px 8px; border-radius: 8px; border-top: 1px solid var(--s3); }
+#dt li:hover, #dt li.on { background: var(--s2); }
+#dt li .p { color: var(--tx2); font-size: 12px; display: block; }
+#dt li .lk { font: inherit; color: inherit; background: none; border: 0; padding: 0; border-bottom: 1px solid #666; cursor: pointer; text-align: left; }
+#dt li .lk:hover, #dt li .lk:focus-visible { border-color: #fff; outline: none; color: #fff; }
+#dt li .ax { color: var(--tx2); font-size: 12px; display: block; }
+#dt .im .lb.ax { stroke-dasharray: 14 5 3 5; }
+#dt .x:focus-visible, #scn button:focus-visible, #ctl button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+#dt li.bk { color: var(--tx2); }
+@media (max-width: 760px) {
+  .lbl.col { font-size: max(44px, calc(7.5px * var(--inv))); }
+  .lbl.row { width: max(640px, calc(70px * var(--inv))); font-size: max(38px, calc(8px * var(--inv))); transform: translateX(calc(-100% - max(40px, calc(6px * var(--inv))))); }
+  #scn { left: 8px; right: 8px; bottom: 58px; width: auto; max-height: 52vh; padding: 6px; border-radius: 14px; }
+  #scn .bt { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; min-height: 0; flex: none; scrollbar-width: none; }
+  #scn .bt::-webkit-scrollbar { display: none; }
+  #scn .gt { display: none; }
+  #scn button { flex: none; width: auto; white-space: nowrap; padding: 6px 10px; }
+  /* 手机上步骤做成可收起的一页：点标题收起 / 展开 */
+  #scn .q { order: -1; margin: 0 0 6px; padding: 0 6px 6px; border-top: 0; border-bottom: 1px solid var(--s3); font-size: 12px; }
+  #scn .q summary { cursor: pointer; padding-top: 2px; }
+  #scn .q summary::after { content: ' ▾'; color: var(--tx2); }
+  #scn .q details:not([open]) summary::after { content: ' ▸'; }
+  #ctl { right: 8px; bottom: 8px; left: 8px; justify-content: space-between; }
+  #mini { display: none; }
+  #top { left: 8px; top: 8px; max-width: calc(100vw - 16px); padding: 9px 12px; }
+  #top h1 { font-size: 14px; }
+  #top p { font-size: 11px; }
+  #dt .in { margin-top: 12px; padding: 0 12px; }
+  #dt .lists { grid-template-columns: 1fr; }
+  #dt .bar { padding: 8px 0; }
+  #dt h2 { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<div id="vp" aria-label="交互地图画布：拖动平移，滚轮或双指缩放">
+  <div id="world"></div>
+</div>
+<header id="top" class="ui">
+  <h1>交互地图 · 模型分片与训练设备映射</h1>
+  <p id="sub">版本 10.30 · 每条线从源截图上点的位置连到目标截图上落到的位置</p>
+  <a href="./pattern.html" target="_blank" rel="noopener noreferrer">打开 demo →</a>
+</header>
+<nav id="scn" class="ui" aria-label="场景路径"></nav>
+<div id="mini" class="ui" aria-label="小地图"><canvas width="220" height="200"></canvas></div>
+<div id="ctl" class="ui">
+  <button type="button" data-z="out" aria-label="缩小" title="缩小（−）">−</button>
+  <span class="zl" id="zl">—</span>
+  <button type="button" data-z="in" aria-label="放大" title="放大（+）">+</button>
+  <button type="button" data-z="fit" title="适配全部截图（0）">适配</button>
+  <button type="button" data-z="back" id="bkBtn" title="显示返回线（点空白 / Esc / 面包屑往上 / 复位）">返回线</button>
+</div>
+<div id="tip" role="status"></div>
+<div id="dt" role="dialog" aria-modal="true" aria-label="截图详情"></div>
+<script type="application/json" id="jdata">{"v":"10.30","scn":{"alert":"故障定位","plan":"切分规划","map":"设备映射","perf":"性能调优","tune":"变更评估","i-alert":"推理 · 故障定位","i-plan":"部署规划","i-perf":"时延优化","i-tune":"扩缩评估","general":"通用"},"cols":["集群 · 变体","集群","SuperPoD 取景","Rack 取景","板视图","NPU 页","NPU 页 · 换内容","NPU 页 · 兄弟"],"rows":["告警 · 默认","告警 · ZeRO 0（超容）","平面 · 无选中","平面 · 选中","段聚焦 / 并行对象","2.5D / 3D","2.5D / 3D · 选中","Hierarchy（切分规划）","Hierarchy · 选中","参考面板","配置浮层","推理","推理 · 配置浮层"],"nodes":[{"id":"alert-seg","name":"告警定位 · 一段","desc":"点 Amax / Routing Imbalance：那一段的卡涂琥珀、Rack 外缘与左列 PP 柱一起描琥珀，其余退后","col":0,"row":0,"img":"journey/alert-seg.webp","th":"journey/t/alert-seg.webp"},{"id":"alert-list","name":"故障定位 · 告警清单","desc":"「故障定位 ▾」展开的下拉（默认 ZeRO 1，徽标 4）：Amax × 3、Routing Imbalance、告警 Layers、Peak Usage 42% · rank 208，下面是历史事故；没有超容 / 红线行","col":1,"row":0,"img":"journey/alert-list.webp","th":"journey/t/alert-list.webp"},{"id":"incident","name":"历史事故 · 事件链","desc":"点一条历史事故就地展开时间线；带 rank 的事件有「↗ rank 1559 · 2048 NPU」按钮","col":2,"row":0,"img":"journey/incident.webp","th":"journey/t/incident.webp"},{"id":"peak","name":"Peak rank · 选中 + 取景 Rack 3","desc":"默认没有超容：点 Capacity 的「Peak rank · rank 208」或清单的「Peak Usage 42%」= 选中全网最满那张（42%），推到它的 Rack 3，不上状态色","col":3,"row":0,"img":"journey/peak.webp","th":"journey/t/peak.webp"},{"id":"incident-npu","name":"事故现场 · 2048 NPU 的 NPU 页","desc":"新标签页按事故拓扑打开（?preset=incident2048&sel=1559），本页不动","col":5,"row":0,"img":"journey/incident-npu.webp","th":"journey/t/incident-npu.webp"},{"id":"dense64","name":"小规模直出矩阵页","desc":"?preset=dense64（world ≤ 64）：没有顶栏、卡片、工具条，整屏是矩阵引擎原页","col":7,"row":0,"img":"journey/dense64.webp","th":"journey/t/dense64.webp"},{"id":"alert-list0","name":"告警清单 · ZeRO 0","desc":"?zero=0&goal=alert，或变更评估里把 ZeRO 改成 0 再点「故障定位」：清单最上面多出 OOM · 3959 ranks（红）与 Critical 88% · 137 ranks（琥珀），徽标 6；其余行同默认","col":1,"row":1,"img":"journey/alert-list0.webp","th":"journey/t/alert-list0.webp"},{"id":"alert-rank","name":"告警定位 · 一张卡（OOM）","desc":"点 OOM：选中最满那张超容卡（rank 208，113%）并取景它的 Rack 3；卡本身红，选中框加粗白（Critical 同理，选中框琥珀）","col":3,"row":1,"img":"journey/alert-rank.webp","th":"journey/t/alert-rank.webp"},{"id":"alert-board","name":"告警定位 · 它那块板","desc":"点 rank 208 那一行的行底：进 Board 26 的板视图，左列多一张 Board 26 卡（8 张卡 108–113%，Peak 113% 红）","col":4,"row":1,"img":"journey/alert-board.webp","th":"journey/t/alert-board.webp"},{"id":"alert-npu","name":"告警定位 · rank 208 的 NPU 页","desc":"板上再点选中的 208（或左列 ↗ NPU）：Total 72.3 / 64 GB 标红，Optimizer 48 GB —— ZeRO 0 不切优化器态，是它撑爆的","col":5,"row":1,"img":"journey/alert-npu.webp","th":"journey/t/alert-npu.webp"},{"id":"near","name":"集群 · 近看（3×）","desc":"滚轮推到 3× 起：Rack 出列头与封装图标，指针下那一行的板原地展开连线","col":0,"row":2,"img":"journey/near.webp","th":"journey/t/near.webp"},{"id":"cluster","name":"集群总览 · 平面","desc":"默认首屏：4 个 SuperPoD、64 个 Rack、4096 颗 NPU（灰度 = 显存占用，超容标红）；停在「故障定位」","col":1,"row":2,"img":"journey/cluster.webp","th":"journey/t/cluster.webp"},{"id":"sp","name":"SuperPoD 取景","desc":"点 SuperPoD 底板、L2 平面或 L1：镜头取景这个 SuperPoD（约 1.8×），16 个 Rack 摆满安全区","col":2,"row":2,"img":"journey/sp.webp","th":"journey/t/sp.webp"},{"id":"rack","name":"Rack 取景","desc":"一个 Rack（机柜，8 块板 · 64 NPU）摆到正中（约 8×），左列换成 Rack 容量卡；指针划过一行展开这块板的连线","col":3,"row":2,"img":"journey/rack.webp","th":"journey/t/rack.webp"},{"id":"board","name":"板视图","desc":"一块板的 Server 形态：2 CPU · 8 NPU · DPU · 4 NIC，板内 fullmesh、出板 8 口到 8 颗 L1","col":4,"row":2,"img":"journey/board.webp","th":"journey/t/board.webp"},{"id":"closeup","name":"集群 · 特写（≥6×）","desc":"6× 起每颗 NPU 下出 rank 号；这一档里点选中的那颗，再点直接进 NPU 页","col":0,"row":3,"img":"journey/closeup.webp","th":"journey/t/closeup.webp"},{"id":"sel","name":"选中 rank（第二档）","desc":"选中格套白框，五个通信组的组员按维度色描边、其余退后；左列出 rank 卡（↗ Board / ↗ NPU），面包屑多两段","col":1,"row":3,"img":"journey/sel.webp","th":"journey/t/sel.webp"},{"id":"sel-rack","name":"选中 + 放大到它的 Rack","desc":"再点选中的卡：镜头推到它的 Rack，选中那颗的封装描白、它那一行的连线常驻；悬停写「再点进 NPU 页」","col":3,"row":3,"img":"journey/sel-rack.webp","th":"journey/t/sel-rack.webp"},{"id":"board-sel","name":"板视图 · 选中","desc":"选中那颗白框，它自己的链路（出板 8 口、板内 7 根 fullmesh、H2D、NIC）换激活样式，其余退暗","col":4,"row":3,"img":"journey/board-sel.webp","th":"journey/t/board-sel.webp"},{"id":"npu","name":"NPU 页（第三档）","desc":"矩阵引擎的单卡 3D：显存自下而上码成五档；左列切分小卡，右列按场景收卡，工具条换成 NPU 页那一组","col":5,"row":3,"img":"journey/npu.webp","th":"journey/t/npu.webp"},{"id":"npu-net","name":"NPU 页 · 整网切分","desc":"卡里改画整网里这张卡拿走的是哪一片（?rv3=net）","col":6,"row":3,"img":"journey/npu-net.webp","th":"journey/t/npu-net.webp"},{"id":"npu-comp","name":"NPU 页 · Layers","desc":"卡里换成这张卡负责的逐层算子块（?rv3=comp）","col":7,"row":3,"img":"journey/npu-comp.webp","th":"journey/t/npu-comp.webp"},{"id":"npu-top","name":"NPU 页 · 顶视","desc":"同一张卡从正上方看各档各占多大一块（?cam=top）","col":6,"row":2,"img":"journey/npu-top.webp","th":"journey/t/npu-top.webp"},{"id":"obj","name":"设备映射 · 并行对象","desc":"「设备映射」自动挂上并行对象 TP 0：只亮这一组 1024 张，其余退后；右列只剩 Comm","col":0,"row":4,"img":"journey/obj.webp","th":"journey/t/obj.webp"},{"id":"pp-focus","name":"PP 段聚焦","desc":"只亮这一段的 512 张卡，其余段与所有板的 CPU / DPU / NIC 退后；左列那根 PP 柱描白并写出峰值","col":1,"row":4,"img":"journey/pp-focus.webp","th":"journey/t/pp-focus.webp"},{"id":"ann-off","name":"数据标注关闭","desc":"?hide=occ,num,rel,grp：格子不上占用灰度、不写 rank 号、不画板内关系与通信组","col":2,"row":4,"img":"journey/ann-off.webp","th":"journey/t/ann-off.webp"},{"id":"npu-mem","name":"NPU 页 · 显存层 ↔ 切分小卡","desc":"点 3D 卡里的一层或左列同名小卡：两边一起亮 / 展开（Grads）","col":5,"row":4,"img":"journey/npu-mem.webp","th":"journey/t/npu-mem.webp"},{"id":"npu-sibs","name":"NPU 页 · 兄弟 rank 展开","desc":"镜头拉远，四周铺开同组兄弟卡，按 TP / CP / EP / DP / PP 描色框（?sibs=on）","col":6,"row":4,"img":"journey/npu-sibs.webp","th":"journey/t/npu-sibs.webp"},{"id":"npu-comm","name":"NPU 页 · Comm Links","desc":"卡与兄弟之间按维画通信连线（?comm3=1），逐维开关在配置浮层","col":7,"row":4,"img":"journey/npu-comm.webp","th":"journey/t/npu-comm.webp"},{"id":"iso","name":"集群 · 2.5D 等轴测","desc":"同一张平面图把每个对象原位立起来（正交轴测，俯角 35.26°）：拖动 = 平移、滚轮缩放，不能转；慢慢拖（每步 ≤ 3px）松手仍算一次点击","col":0,"row":5,"img":"journey/iso.webp","th":"journey/t/iso.webp"},{"id":"3d","name":"集群 · 3D 透视","desc":"同一套立体图元换透视镜头：左键拖 = 转，右键 / Shift 拖 = 平移；悬停出深色小提示；慢慢拖（每步 ≤ 3px）松手仍算一次点击","col":1,"row":5,"img":"journey/3d.webp","th":"journey/t/3d.webp"},{"id":"hw-sp","name":"3D · SuperPoD 取景","desc":"Rack 取景时点 SuperPoD 底板：退到这个 SuperPoD；再点底板不动，点底板外回整个集群","col":2,"row":5,"img":"journey/hw-sp.webp","th":"journey/t/hw-sp.webp"},{"id":"hw-rack","name":"3D · Rack 取景","desc":"点板身（NPU 以外）：镜头飞到这个 Rack、四周白线框，近看换完整图元；左列换成 Rack 容量卡","col":3,"row":5,"img":"journey/hw-rack.webp","th":"journey/t/hw-rack.webp"},{"id":"hw-board","name":"3D · 板层","desc":"再点同一块板：层级记成 Board，镜头推到这块板，邻板与邻 Rack 都还在画面里、都能点","col":4,"row":5,"img":"journey/hw-board.webp","th":"journey/t/hw-board.webp"},{"id":"npu-sib","name":"NPU 页 · 换到兄弟 rank","desc":"点兄弟卡：引擎原地换主角，面包屑、左列、右列一起换成 rank 1323（Board 165 · Rack 20）","col":7,"row":5,"img":"journey/npu-sib.webp","th":"journey/t/npu-sib.webp"},{"id":"hw-alert","name":"2.5D · 告警定位","desc":"立体里点段告警：镜头回整个集群，那一段的卡顶面涂告警琥珀，其余褪色","col":0,"row":6,"img":"journey/hw-alert.webp","th":"journey/t/hw-alert.webp"},{"id":"hw-sel","name":"3D · 选中 rank","desc":"选中那颗外面一圈白线框，组员保持本色，其余往托盘色褪；悬停写「再点放大到 Rack」","col":1,"row":6,"img":"journey/hw-sel.webp","th":"journey/t/hw-sel.webp"},{"id":"hw-sel-rack","name":"3D · 选中 + Rack 取景","desc":"再点选中那颗：取景它的 Rack，白线框套在它的图元上；悬停写「再点进 NPU 页」","col":3,"row":6,"img":"journey/hw-sel-rack.webp","th":"journey/t/hw-sel-rack.webp"},{"id":"hw-board-sel","name":"3D · 板层 · 选中","desc":"板层里点一颗：选中、镜头仍推在这块板；再点进 NPU 页","col":4,"row":6,"img":"journey/hw-board-sel.webp","th":"journey/t/hw-board-sel.webp"},{"id":"hier","name":"切分规划 · Hierarchy","desc":"「切分规划」打开右侧 Hierarchy（L7 → L0）；面板较窄，右列卡挪到面板左边照样看得到","col":1,"row":7,"img":"journey/hier.webp","th":"journey/t/hier.webp"},{"id":"hier-sp","name":"Hierarchy · SuperPoD","desc":"点 L5「SuperPoD 1」：画布取景这个 SuperPoD，面板里那颗胶囊白框","col":2,"row":7,"img":"journey/hier-sp.webp","th":"journey/t/hier-sp.webp"},{"id":"hier-rack","name":"Hierarchy · Rack","desc":"点 L4 Rack 格：画布取景这个 Rack；面板里它白框、上级灰框、下级整段框出","col":3,"row":7,"img":"journey/hier-rack.webp","th":"journey/t/hier-rack.webp"},{"id":"hier-board","name":"Hierarchy · Board","desc":"点 L3 Board 格：进这块板的板视图；再点同一格退回它的 Rack","col":4,"row":7,"img":"journey/hier-board.webp","th":"journey/t/hier-board.webp"},{"id":"hier-sel","name":"Hierarchy · 选中一张卡","desc":"在 L2 NPU 格点一格：画布同步选中（镜头不动），L1 Die / L0 Core-Group 跟着亮","col":1,"row":8,"img":"journey/hier-sel.webp","th":"journey/t/hier-sel.webp"},{"id":"hier-sel-rack","name":"Hierarchy · 选中 + Rack","desc":"再点同一格：画布放大到它的 Rack，面板仍开着；第三次点进 NPU 页","col":3,"row":8,"img":"journey/hier-sel-rack.webp","th":"journey/t/hier-sel-rack.webp"},{"id":"netgraph","name":"Network Graph","desc":"工具条打开底部整网图：PP0…PP7 段头与逐层算子 / Comm；点段头 = 聚焦这一段","col":0,"row":9,"img":"journey/netgraph.webp","th":"journey/t/netgraph.webp"},{"id":"perf","name":"性能调优 · Swimlane","desc":"「性能调优」打开底部 1F1B 泳道（每段一条道）；左列 Throughput / Step Time，右列 Health / MoE / Pipeline","col":1,"row":9,"img":"journey/perf.webp","th":"journey/t/perf.webp"},{"id":"cube","name":"Logical Cube","desc":"工具条打开右侧逻辑魔方（4096 块）；工具条多出它的视角与形态菜单","col":2,"row":9,"img":"journey/cube.webp","th":"journey/t/cube.webp"},{"id":"cube-sel","name":"Logical Cube · 选中","desc":"点一块方块 = 选中那张卡（第二档），镜头飞到它；悬停与读出都写本页的 rank 号","col":3,"row":9,"img":"journey/cube-sel.webp","th":"journey/t/cube-sel.webp"},{"id":"tune","name":"变更评估 · 配置浮层","desc":"「变更评估」自动打开配置浮层：并行配置 / ZeRO / 并行对象 / 数据标注 / 数据卡；不在本场景的卡置灰","col":1,"row":10,"img":"journey/tune.webp","th":"journey/t/tune.webp"},{"id":"cmp","name":"Before / After","desc":"浮层里把 ZeRO 改成 0：左列出对比卡（Peak 42% → 113%、OOM 0 → 3959，变差琥珀）","col":2,"row":10,"img":"journey/cmp.webp","th":"journey/t/cmp.webp"},{"id":"split-bad","name":"切分草稿不合法","desc":"EP 连点 4 次 ×2 到 256：384 个专家分不匀，红字写原因，「应用」不可点，可行改法做成可点的胶囊「EP → 128」","col":3,"row":10,"img":"journey/split-bad.webp","th":"journey/t/split-bad.webp"},{"id":"cmp-clr","name":"Before / After 清掉之后","desc":"对比卡头「×」：对比卡撤掉；× 在浮层外，浮层跟着收起；ZeRO 仍是 0，集群仍按 113% 标红（?goal=tune&zero=0）","col":0,"row":10,"img":"journey/cmp-clr.webp","th":"journey/t/cmp-clr.webp"},{"id":"split-url","name":"切分不合法（深链）","desc":"?ep=3 这类不合法的切分只会从深链进来：左列红字 Split Invalid，Capacity 与告警全空","col":4,"row":10,"img":"journey/split-url.webp","th":"journey/t/split-url.webp"},{"id":"infer","name":"推理 · 故障定位","desc":"Inference：画布占用换推理口径（权重 + KV Cache + 工作区），页签换成 故障定位 / 部署规划 / 时延优化 / 扩缩评估","col":1,"row":11,"img":"journey/infer.webp","th":"journey/t/infer.webp"},{"id":"infer-plan","name":"推理 · 部署规划","desc":"右侧 Hierarchy；左列 Capacity / PP Stage / 显存 · Inference","col":2,"row":11,"img":"journey/infer-plan.webp","th":"journey/t/infer-plan.webp"},{"id":"infer-perf","name":"推理 · 时延优化","desc":"底部泳道换成 prefill / decode；左列 Inference（TTFT / TPOT）","col":0,"row":11,"img":"journey/infer-perf.webp","th":"journey/t/infer-perf.webp"},{"id":"infer-tune","name":"推理 · 扩缩评估","desc":"配置浮层打开；改过之后 Before / After 换推理口径（显存 GB / Max Batch / OOM Ranks）","col":1,"row":12,"img":"journey/infer-tune.webp","th":"journey/t/infer-tune.webp"},{"id":"infer-sel","name":"推理 · 第二档","desc":"rank 卡换推理口径：Total 17.5 / 64 GB、Weights / KV Cache / Workspace / Reserve；右列只剩 MoE","col":3,"row":11,"img":"journey/infer-sel.webp","th":"journey/t/infer-sel.webp"},{"id":"infer-npu","name":"推理 · NPU 页","desc":"左列先「显存 · Inference」，训练口径的 3D 卡那组前面加小标、退后一档；右列只有 MoE","col":5,"row":11,"img":"journey/infer-npu.webp","th":"journey/t/infer-npu.webp"}],"edges":[{"id":"cluster>sel#0","f":"cluster","t":"sel","k":"canvas","back":false,"tr":"点 NPU 格子","p":"故障定位 / 设备映射 / 切分规划 · 这张卡是谁、装得下吗、五个通信组落在物理图哪里","sc":["alert","map","plan"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"ok":true,"ax":""},{"id":"cluster>sel-rack#0","f":"cluster","t":"sel-rack","k":"dbl","back":false,"tr":"双击 NPU 格子","p":"故障定位 · 双击 = 选中 + 放大到它的 Rack（不直接跳 NPU 页）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"cluster>peak#0","f":"cluster","t":"peak","k":"button","back":false,"tr":"点 Capacity「Peak rank · rank 208」","p":"故障定位 · 全网最满的那张卡：选中并推到它的 Rack 3（同清单的 Peak Usage 行）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":186.3,"y":255.2,"w":42,"h":13.3},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"cluster>rack#0","f":"cluster","t":"rack","k":"canvas","back":false,"tr":"点 Rack 框（框边）","p":"故障定位 / 设备映射 · 看一个机柜的容量（Rack N · Peak / Mean / OOM）","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":691,"y":182.2,"w":62,"h":41.3,"cx":722,"cy":183.1},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"cluster>rack#1","f":"cluster","t":"rack","k":"canvas","back":false,"tr":"点 Rack 里的板行 / CPU · DPU · NIC","p":"故障定位 · 远看点机柜里任一板行，同样取景这个 Rack（同立体）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":693.4,"y":195.2,"w":2.8,"h":2.2},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"cluster>sp#0","f":"cluster","t":"sp","k":"canvas","back":false,"tr":"点 SuperPoD 底板空处","p":"设备映射 · 只看一个 SuperPoD（1024 卡）","sc":["map"],"way":0,"area":true,"self":false,"T":{"x":617.2,"y":73,"w":280.4,"h":281.4,"cx":623.9,"cy":347.8},"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"cluster>sp#1","f":"cluster","t":"sp","k":"dbl","back":false,"tr":"双击 SuperPoD 底板","p":"通用 · 双击底板也停在 SuperPoD 取景（不再飞进去又复位）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":617.2,"y":73,"w":280.4,"h":281.4,"cx":623.9,"cy":347.8},"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"cluster>sp#2","f":"cluster","t":"sp","k":"canvas","back":false,"tr":"点 L2 平面 / SW2 / L1","p":"设备映射 · 平面条和 L1 代表它们所在的 SuperPoD","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":692.7,"y":85.8,"w":29.4,"h":16.7},"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"cluster>near#0","f":"cluster","t":"near","k":"wheel","back":false,"tr":"滚轮放大（以指针为中心）","p":"设备映射 · 自己推近看一片区域，不必先选卡","sc":["map","plan"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":710.4,"y":182.3,"w":20.8,"h":20.8},"ok":true,"ax":""},{"id":"cluster>near#1","f":"cluster","t":"near","k":"button","back":false,"tr":"工具条「放大」连点 4 次","p":"通用 · 不用滚轮也能放大：每次 ×1.4、绕画面中心（0.85× → 约 3.3×）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":469.5,"y":703.3,"w":26.7,"h":26.7},"L":{"x":500,"y":275,"w":200,"h":200},"ok":true,"ax":"推近的是画面中心；截图是以 rank 1355 为中心滚轮推近的"},{"id":"cluster>pp-focus#0","f":"cluster","t":"pp-focus","k":"button","back":false,"tr":"点左列 PP Stage 柱","p":"性能调优 / 切分规划 · 峰值落在哪一段、这一段的卡在物理图上占哪几片","sc":["perf","plan"],"way":0,"area":false,"self":false,"T":{"x":90.6,"y":322.4,"w":13.5,"h":41.7},"L":{"x":90,"y":322.4,"w":14.8,"h":42.5},"ok":true,"ax":""},{"id":"cluster>alert-list#0","f":"cluster","t":"alert-list","k":"tab","back":false,"tr":"点「故障定位 ▾」","p":"故障定位 · 现在有哪些告警、各落在哪一段 / 哪张卡","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"cluster>hier#0","f":"cluster","t":"hier","k":"tab","back":false,"tr":"点「切分规划」","p":"切分规划 · 这套切分装得下吗？每一维 Comm 在哪一层闭合？","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":593.9,"y":14.2,"w":58.3,"h":20},"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"cluster>obj#0","f":"cluster","t":"obj","k":"tab","back":false,"tr":"点「设备映射」","p":"设备映射 · 同一组（TP 0）的卡挨不挨着","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":653.9,"y":14.2,"w":58.3,"h":20},"L":{"x":653.9,"y":14.2,"w":58.3,"h":20},"ok":true,"ax":""},{"id":"cluster>perf#0","f":"cluster","t":"perf","k":"tab","back":false,"tr":"点「性能调优」","p":"性能调优 · Throughput、Bubble、MoE 负载正常吗？慢在哪一段？","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":713.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":""},{"id":"cluster>tune#0","f":"cluster","t":"tune","k":"tab","back":false,"tr":"点「变更评估」","p":"变更评估 · 改了 ZeRO / 切分 / 预置之后，变好还是变差？","sc":["tune"],"way":0,"area":false,"self":false,"T":{"x":773.9,"y":14.2,"w":58.3,"h":20},"L":{"x":475,"y":224.2,"w":250,"h":474.2},"ok":true,"ax":""},{"id":"cluster>infer#0","f":"cluster","t":"infer","k":"tab","back":false,"tr":"点「Inference」","p":"推理 · 换成推理口径（权重 + KV Cache，没有梯度 / 优化器态）","sc":["i-alert","i-plan","i-perf","i-tune"],"way":0,"area":false,"self":false,"T":{"x":419.5,"y":14.2,"w":74,"h":20},"L":{"x":449.5,"y":14.2,"w":74,"h":20},"ok":true,"ax":""},{"id":"cluster>iso#0","f":"cluster","t":"iso","k":"button","back":false,"tr":"工具条「2.5D」","p":"设备映射 · 换个立体视角看机柜与板的层次","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":540.3,"y":701.7,"w":44,"h":30},"L":{"x":540.3,"y":701.7,"w":44,"h":30},"ok":true,"ax":""},{"id":"cluster>3d#0","f":"cluster","t":"3d","k":"button","back":false,"tr":"工具条「3D」","p":"通用 · 可转的透视","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":586,"y":701.7,"w":32,"h":30},"L":{"x":586,"y":701.7,"w":32,"h":30},"ok":true,"ax":""},{"id":"cluster>netgraph#0","f":"cluster","t":"netgraph","k":"button","back":false,"tr":"工具条「Network Graph」","p":"性能调优 / 故障定位 · 逐层看数值与 Comm","sc":["perf","alert"],"way":0,"area":false,"self":false,"T":{"x":633,"y":703.3,"w":26.7,"h":26.7},"L":{"x":13.3,"y":391.7,"w":1173.3,"h":345},"ok":true,"ax":""},{"id":"cluster>perf#1","f":"cluster","t":"perf","k":"button","back":false,"tr":"工具条「Swimlane」（只开面板）","p":"性能调优 · 一步里每段什么时候在算、气泡在哪；场景仍是故障定位、卡片不换","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":662.2,"y":703.3,"w":26.7,"h":26.7},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":"场景仍是故障定位（左列 Capacity）；截图是「性能调优」场景"},{"id":"cluster>cube#0","f":"cluster","t":"cube","k":"button","back":false,"tr":"工具条「Logical Cube」","p":"设备映射 / 切分规划 · rank 在 TP / CP / PP / DP 逻辑空间里的位置","sc":["map","plan"],"way":0,"area":false,"self":false,"T":{"x":691.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":706.7,"y":53.3,"w":480,"h":683.3},"ok":true,"ax":""},{"id":"cluster>hier#1","f":"cluster","t":"hier","k":"button","back":false,"tr":"工具条「Hierarchy」（只开面板）","p":"切分规划 · 各级（Board / Rack / SuperPoD）装了哪几维；场景仍是故障定位","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":720.5,"y":703.3,"w":26.7,"h":26.7},"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":"场景仍是故障定位（右列 Health / MoE / Pipeline）；截图是「切分规划」场景"},{"id":"cluster>tune#1","f":"cluster","t":"tune","k":"button","back":false,"tr":"工具条「配置」（只开浮层）","p":"通用 · 调切分 / ZeRO / 并行对象 / 标注 / 数据卡；场景仍是故障定位，卡片不置灰","sc":["general","tune"],"way":0,"area":false,"self":false,"T":{"x":762.2,"y":703.3,"w":26.7,"h":26.7},"L":{"x":475,"y":224.2,"w":250,"h":474.2},"ok":true,"ax":"场景仍是故障定位、卡片不换；截图是「变更评估」场景"},{"id":"cluster>cluster#0","f":"cluster","t":"cluster","k":"button","back":false,"tr":"点卡头（右列 MoE）","p":"通用 · 收起暂时不看的卡（记在本机，刷新、换场景都保留）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":1011.7,"y":209.3,"w":163.3,"h":13.3},"L":{"x":1000,"y":200.2,"w":186.7,"h":54.3},"ok":true,"ax":""},{"id":"cluster>cluster#1","f":"cluster","t":"cluster","k":"hover","back":false,"tr":"悬停一颗 NPU","p":"通用 · 跟手小提示：rank · 并行坐标 · SuperPoD · Rack · Board · Slot（与 3D 同样式，3D 只写 rank · Board · Rack · SuperPoD）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":655.1,"y":194.5,"w":3.4,"h":3.4},"L":{"x":666.8,"y":206.3,"w":398.4,"h":21.2},"ok":true,"ax":""},{"id":"near>closeup#0","f":"near","t":"closeup","k":"wheel","back":false,"tr":"继续滚轮放大到 6×","p":"设备映射 · 读出每格的 rank 号","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":710.4,"y":182.3,"w":20.8,"h":20.8},"L":{"x":697,"y":162.4,"w":64.9,"h":64.9},"ok":true,"ax":""},{"id":"near>near#0","f":"near","t":"near","k":"hover","back":false,"tr":"指针划过一行","p":"切分规划 · 3× 起划过一行，那块板的关系原地展开（滚轮跨进 3× 时按指针位置补一次）","sc":["plan"],"way":0,"area":false,"self":true,"T":{"x":344.2,"y":209.1,"w":20.8,"h":20.8},"L":{"x":168.6,"y":0,"w":1031.4,"h":384.7},"ok":true,"ax":""},{"id":"near>cluster#0","f":"near","t":"cluster","k":"back","back":true,"tr":"工具条「复位」","p":"通用 · 回到全景","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"closeup>sel#0","f":"closeup","t":"sel","k":"canvas","back":false,"tr":"在 6× 以上点一颗 NPU","p":"设备映射 · 已经放大了，直接点名一张卡（镜头不动，再点就进 NPU 页）","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":697,"y":162.4,"w":64.9,"h":64.9},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":"镜头停在特写倍数；截图是 0.85× 的总览选中"},{"id":"sp>rack#0","f":"sp","t":"rack","k":"canvas","back":false,"tr":"点 Rack 框（框边 / 板行 / CPU · DPU · NIC）","p":"故障定位 / 设备映射 · 看这个机柜里的 8 块板","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":461.5,"y":306,"w":129.2,"h":86.2,"cx":526.2,"cy":307.7},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"sp>sp#0","f":"sp","t":"sp","k":"canvas","back":false,"tr":"点底板 / L2 平面（还在这个 SuperPoD）","p":"通用 · 点的还在这个 SuperPoD 里，就停在它（不再整幅复位）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":465.1,"y":105,"w":61.3,"h":34.9},"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"sp>cluster#0","f":"sp","t":"cluster","k":"back","back":true,"tr":"点 SuperPoD 外的空白","p":"通用 · 回整个集群","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":853.1,"y":675.8,"w":11.7,"h":11.7,"cx":859,"cy":681.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"sp>cluster#1","f":"sp","t":"cluster","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：SuperPoD → 整个集群","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"rack>rack#0","f":"rack","t":"rack","k":"hover","back":false,"tr":"指针划过一行","p":"切分规划 · 这块板怎么连：板内 fullmesh、出板 8 口到 8 颗 L1、H2D、NIC","sc":["plan"],"way":0,"area":false,"self":true,"T":{"x":319.2,"y":247.4,"w":561.6,"h":41.4,"cx":577,"cy":268.1},"L":{"x":0,"y":0,"w":1200,"h":565},"ok":true,"ax":""},{"id":"rack>board#0","f":"rack","t":"board","k":"canvas","back":false,"tr":"点这一行（行底 / 行间空隙）","p":"切分规划 · 进这块板看完整的 Server 形态","sc":["plan","map"],"way":0,"area":false,"self":false,"T":{"x":319.2,"y":247.4,"w":561.6,"h":41.4,"cx":577,"cy":268.1},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"rack>board#1","f":"rack","t":"board","k":"canvas","back":false,"tr":"点行里的 CPU / DPU / NIC 图标","p":"切分规划 · 板行上的器件就代表这块板：进板（不再整幅复位）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":760.7,"y":257.4,"w":32.2,"h":21.5},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"rack>sel-rack#0","f":"rack","t":"sel-rack","k":"canvas","back":false,"tr":"点 Rack 里的一颗 NPU","p":"故障定位 · 在机柜里点名一张卡，再点就进 NPU 页","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":540.2,"y":252,"w":32.2,"h":32.2},"L":{"x":539.2,"y":245.1,"w":29.2,"h":21.9},"ok":true,"ax":""},{"id":"rack>sel-rack#1","f":"rack","t":"sel-rack","k":"dbl","back":false,"tr":"双击一颗没选中的 NPU","p":"故障定位 · 双击只选中它，不直接整页跳走","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":664.4,"y":293.4,"w":32.2,"h":32.2},"L":{"x":666.7,"y":293.4,"w":27.6,"h":20.7},"ok":true,"ax":"选中的是 rank 1366；截图选中的是 1355"},{"id":"rack>sp#0","f":"rack","t":"sp","k":"back","back":true,"tr":"点 Rack 外的 SuperPoD 底板","p":"通用 · 退一层：Rack → 它的 SuperPoD","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":0,"y":0,"w":1200,"h":750,"cx":600,"cy":590},"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"rack>sp#1","f":"rack","t":"sp","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：Rack → 它的 SuperPoD","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":307.7,"y":78.3,"w":584.6,"h":586.7},"ok":true,"ax":""},{"id":"rack>cluster#0","f":"rack","t":"cluster","k":"back","back":true,"tr":"工具条「复位」","p":"通用 · 回到全景（撤掉取景）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"rack>cluster#1","f":"rack","t":"cluster","k":"wheel","back":false,"tr":"滚轮拉远到取景倍数一半以下","p":"通用 · 手动拉远就撤掉 Rack 取景，左列回到 Capacity（停在拉远后的倍数）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":369.2,"w":11.7,"h":11.7,"cx":600,"cy":375},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":"停在拉远后的倍数（约 0.6×），不是适配全图"},{"id":"rack>hw-rack#0","f":"rack","t":"hw-rack","k":"button","back":false,"tr":"工具条「3D」（取景带过去）","p":"设备映射 · 同一个机柜换立体看","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":586,"y":701.7,"w":32,"h":30},"L":{"x":625.3,"y":317.4,"w":36.7,"h":36.7,"cx":643.6,"cy":335.7},"ok":true,"ax":""},{"id":"board>board-sel#0","f":"board","t":"board-sel","k":"canvas","back":false,"tr":"点板上的 NPU","p":"切分规划 · 这张卡自己的链路（出板 8 口、板内 7 根、H2D、NIC）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"board>rack#0","f":"board","t":"rack","k":"back","back":true,"tr":"点空白 → 退回它的 Rack","p":"通用 · 板视图有了画布上的出口：原路拉回镜头（点工具条上方的空处）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":627.5,"w":11.7,"h":11.7,"cx":600,"cy":633.3},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"board>rack#1","f":"board","t":"rack","k":"back","back":true,"tr":"双击空白","p":"通用 · 同点空白：回到它的 Rack","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":910.8,"y":694.2,"w":11.7,"h":11.7,"cx":916.7,"cy":700},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"board>rack#2","f":"board","t":"rack","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：板 → 它的 Rack","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"board>board#0","f":"board","t":"board","k":"back","back":true,"tr":"工具条「复位」= 板镜头复位","p":"通用 · 只想复位板的镜头时用它（层级不变）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"board>cluster#0","f":"board","t":"cluster","k":"crumb","back":true,"tr":"面包屑根（模型名）","p":"通用 · 一步回到整个集群","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":13.3,"y":13.3,"w":178.5,"h":22.5},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"board>hw-board#0","f":"board","t":"hw-board","k":"button","back":false,"tr":"工具条「3D」（板层带过去）","p":"切分规划 · 板换立体看","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":586,"y":701.7,"w":32,"h":30},"L":{"x":581.7,"y":339.6,"w":36.7,"h":36.7,"cx":600,"cy":357.9},"ok":true,"ax":""},{"id":"board-sel>npu#0","f":"board-sel","t":"npu","k":"canvas","back":false,"tr":"再点选中的 NPU","p":"切分规划 / 故障定位 · 看完板上的连法，进这张卡","sc":["plan","alert"],"way":3,"area":false,"self":false,"T":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"board-sel>board-sel#0","f":"board-sel","t":"board-sel","k":"canvas","back":false,"tr":"点板上另一颗 NPU","p":"切分规划 · 比较同板两张卡的链路","sc":["plan"],"way":0,"area":false,"self":true,"T":{"x":699.2,"y":300.1,"w":45.3,"h":41.1},"L":{"x":699.2,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"board-sel>board#0","f":"board-sel","t":"board","k":"back","back":true,"tr":"点空白 → 撤选中","p":"通用 · 取消选中、留在板上（点工具条上方的空处）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":627.5,"w":11.7,"h":11.7,"cx":600,"cy":633.3},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"board-sel>board#1","f":"board-sel","t":"board","k":"crumb","back":true,"tr":"面包屑「Board 169」","p":"通用 · 撤选中、留在这块板上","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":119.7,"y":15.8,"w":58.5,"h":20},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"board-sel>board#2","f":"board-sel","t":"board","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：撤选中","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":""},{"id":"sel>sel-rack#0","f":"sel","t":"sel-rack","k":"canvas","back":false,"tr":"再点选中的卡","p":"故障定位 · 远看它只有 4px：放大到它的 Rack 看清封装与这一行的连线","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"sel>npu#0","f":"sel","t":"npu","k":"button","back":false,"tr":"左列 rank 卡「↗ NPU」","p":"故障定位 / 性能调优 · 远看时也能一步进 NPU 页：这张卡的显存被谁占了","sc":["alert","perf","tune"],"way":1,"area":false,"self":false,"T":{"x":119,"y":338.1,"w":53,"h":20},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"sel>board-sel#0","f":"sel","t":"board-sel","k":"button","back":false,"tr":"左列 rank 卡「↗ Board 169」","p":"设备映射 / 切分规划 · 它在板上和谁 fullmesh、走哪颗 CPU / NIC","sc":["map","plan"],"way":0,"area":false,"self":false,"T":{"x":25,"y":338.1,"w":89,"h":20},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"sel>board-sel#1","f":"sel","t":"board-sel","k":"crumb","back":false,"tr":"面包屑「Board 169」","p":"切分规划 · 同一个去处（选中约半秒后面包屑才收紧到这个位置）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":119.7,"y":15.8,"w":58.5,"h":20},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"sel>sel#0","f":"sel","t":"sel","k":"canvas","back":false,"tr":"点另一颗 NPU","p":"设备映射 · 换一张卡看它的组员落位（旧右上卡不再闪）","sc":["map"],"way":0,"area":false,"self":true,"T":{"x":322.5,"y":562.6,"w":3.4,"h":3.4},"L":{"x":322.5,"y":562.6,"w":3.4,"h":3.4},"ok":true,"ax":""},{"id":"sel>sel#1","f":"sel","t":"sel","k":"button","back":false,"tr":"点 rank 卡头","p":"通用 · 收起 / 展开五档显存与落位","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":25,"y":147.4,"w":203.3,"h":20.3},"L":{"x":13.3,"y":138.2,"w":226.7,"h":106.9},"ok":true,"ax":""},{"id":"sel>sel#2","f":"sel","t":"sel","k":"hover","back":false,"tr":"悬停选中那格","p":"通用 · 跟手提示写下一步：「再点放大到 Rack」","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":215,"y":201.8,"w":492.3,"h":21.2},"ok":true,"ax":""},{"id":"sel>sel#3","f":"sel","t":"sel","k":"drag","back":false,"tr":"按住拖动平移","p":"通用 · 拖动只平移，松手不算点击（不换选中）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":322.5,"y":562.6,"w":3.4,"h":3.4},"L":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"ok":true,"ax":""},{"id":"sel>pp-focus#0","f":"sel","t":"pp-focus","k":"button","back":false,"tr":"点左列另一段的 PP 柱","p":"性能调优 · 不盯这张卡了，看另一段整体（选中先撤）","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":90.6,"y":558.1,"w":13.5,"h":41.7},"L":{"x":90,"y":322.4,"w":14.8,"h":42.5},"ok":true,"ax":""},{"id":"sel>hier-sel#0","f":"sel","t":"hier-sel","k":"tab","back":false,"tr":"点「切分规划」（留选中）","p":"切分规划 · 看选中这张在层级里的位置（Hierarchy 亮出这张卡）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":593.9,"y":14.2,"w":58.3,"h":20},"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"sel>sel#4","f":"sel","t":"sel","k":"tab","back":false,"tr":"点「设备映射」（留选中，场景跟着换）","p":"设备映射 · 原地换场景：并行对象取它所在的组（?obj=tp:3），右列换成 group","sc":["map"],"way":0,"area":false,"self":true,"T":{"x":653.9,"y":14.2,"w":58.3,"h":20},"L":{"x":653.9,"y":14.2,"w":58.3,"h":20},"ok":true,"ax":""},{"id":"sel>perf#0","f":"sel","t":"perf","k":"tab","back":false,"tr":"点「性能调优」（留选中）","p":"性能调优 · 泳道多一条这张卡的道","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":713.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":"rank 1355 仍选中；截图没有选中"},{"id":"sel>infer-sel#0","f":"sel","t":"infer-sel","k":"tab","back":false,"tr":"点「Inference」","p":"推理 · 故障定位 · 同一张卡按推理口径装得下吗","sc":["i-alert"],"way":0,"area":false,"self":false,"T":{"x":419.5,"y":14.2,"w":74,"h":20},"L":{"x":13.3,"y":138.2,"w":226.7,"h":213},"ok":true,"ax":""},{"id":"sel>cluster#0","f":"sel","t":"cluster","k":"back","back":true,"tr":"点空白 → 撤选中","p":"通用 · 选中带出来的段聚焦一起撤，直接回干净的集群","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":365.8,"w":11.7,"h":11.7,"cx":600,"cy":371.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"sel>cluster#1","f":"sel","t":"cluster","k":"back","back":true,"tr":"点 SuperPoD 底板 → 撤选中","p":"通用 · SuperPoD 底板算这个 SuperPoD 里的空白：先撤选中","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":617.2,"y":73,"w":280.4,"h":281.4,"cx":623.9,"cy":347.8},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"sel>cluster#2","f":"sel","t":"cluster","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：撤选中","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"sel>cluster#3","f":"sel","t":"cluster","k":"crumb","back":true,"tr":"面包屑根（模型名）","p":"通用 · 一步回到整个集群（撤选中、段聚焦、取景）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":13.3,"y":13.3,"w":83.3,"h":20},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"sel-rack>npu#0","f":"sel-rack","t":"npu","k":"canvas","back":false,"tr":"再点选中的卡（悬停写「再点进 NPU 页」）","p":"故障定位 · 看清之后进这张卡：显存构成 / 切分","sc":["alert","plan"],"way":2,"area":false,"self":false,"T":{"x":536.7,"y":245.1,"w":34.1,"h":34.1},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"sel-rack>npu#1","f":"sel-rack","t":"npu","k":"button","back":false,"tr":"左列「↗ NPU」","p":"故障定位 · 回去再看一眼同一张卡（再进也是单卡页）","sc":["alert"],"way":1,"area":false,"self":false,"T":{"x":119,"y":338.1,"w":53,"h":20},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"sel-rack>sel-rack#0","f":"sel-rack","t":"sel-rack","k":"canvas","back":false,"tr":"点同一 Rack 里另一颗 NPU","p":"故障定位 / 设备映射 · 在机柜里换一张卡比较（取景不变）","sc":["alert","map"],"way":0,"area":false,"self":true,"T":{"x":668.1,"y":288.9,"w":34.1,"h":34.1},"L":{"x":668.1,"y":288.9,"w":34.1,"h":34.1},"ok":true,"ax":""},{"id":"sel-rack>board-sel#0","f":"sel-rack","t":"board-sel","k":"canvas","back":false,"tr":"点选中卡那一行的行底","p":"切分规划 · 从机柜进选中卡的那块板","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":303.1,"y":240.2,"w":593.9,"h":43.8,"cx":619.5,"cy":262.1},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"sel-rack>board#0","f":"sel-rack","t":"board","k":"canvas","back":false,"tr":"点同 Rack 另一行的行底","p":"切分规划 · 进邻板（选中跟着撤）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":303.1,"y":327.9,"w":593.9,"h":43.8,"cx":531.9,"cy":349.8},"L":{"x":345,"y":300.1,"w":541.2,"h":41.1},"ok":true,"ax":"进的是 Board 171；截图是 Board 169"},{"id":"sel-rack>rack#0","f":"sel-rack","t":"rack","k":"back","back":true,"tr":"点 Rack 外的 SuperPoD 底板 → 撤选中","p":"通用 · 先撤选中、仍取景这个 Rack","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":0,"y":0,"w":1200,"h":750,"cx":600,"cy":601.1},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"sel-rack>rack#1","f":"sel-rack","t":"rack","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：撤选中，取景不变","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"sel-rack>sel#0","f":"sel-rack","t":"sel","k":"back","back":true,"tr":"工具条「复位」","p":"通用 · 回到全景，选中保留","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"ok":true,"ax":""},{"id":"npu>sel-rack#0","f":"npu","t":"sel-rack","k":"back","back":true,"tr":"点空白 → 退一档（从 Rack 进来时）","p":"通用 · 回到进来前那一档：从 Rack 再点进来（NPU ②）回 Rack 取景；背景里隐约的兄弟卡也算空白","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":827.5,"y":202.5,"w":11.7,"h":11.7,"cx":833.3,"cy":208.3},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"npu>sel-rack#1","f":"npu","t":"sel-rack","k":"back","back":true,"tr":"点主卡（3D 卡本身，从 Rack 进来时）","p":"通用 · 退一档、选中保留（不再一步退到底）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":478.2,"y":168,"w":243.7,"h":414.1},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"npu>sel-rack#2","f":"npu","t":"sel-rack","k":"crumb","back":true,"tr":"面包屑「rank 1355」（从 Rack 进来时）","p":"通用 · 回第二档、回到进来前的取景","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":201.3,"y":15.8,"w":58.5,"h":20},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"npu>sel-rack#3","f":"npu","t":"sel-rack","k":"key","back":true,"tr":"Esc（从 Rack 进来时）","p":"通用 · 退一层：回第二档、选中保留，回到 Rack 取景","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"npu>board-sel#0","f":"npu","t":"board-sel","k":"crumb","back":true,"tr":"面包屑「Board 169」","p":"设备映射 / 切分规划 · 从卡直接回它那块板","sc":["map","plan"],"way":0,"area":false,"self":false,"T":{"x":119.7,"y":15.8,"w":58.5,"h":20},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"npu>cluster#0","f":"npu","t":"cluster","k":"crumb","back":true,"tr":"面包屑根（模型名）","p":"通用 · 一步回集群","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":13.3,"y":13.3,"w":83.3,"h":20},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"npu>npu-top#0","f":"npu","t":"npu-top","k":"button","back":false,"tr":"工具条「顶视」","p":"切分规划 · 从上往下看各档各占多大一块","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":540.6,"y":701.7,"w":40,"h":30},"L":{"x":523.6,"y":262,"w":152.7,"h":226},"ok":true,"ax":""},{"id":"npu>npu-net#0","f":"npu","t":"npu-net","k":"button","back":false,"tr":"工具条「整网切分」","p":"切分规划 / 设备映射 · 整网里这张卡拿走的是哪一片","sc":["plan","map"],"way":0,"area":false,"self":false,"T":{"x":624.8,"y":703.3,"w":26.7,"h":26.7},"L":{"x":478.2,"y":168,"w":243.6,"h":414.1},"ok":true,"ax":""},{"id":"npu>npu-comp#0","f":"npu","t":"npu-comp","k":"button","back":false,"tr":"工具条「Layers」","p":"切分规划 / 性能调优 · 这张卡上是哪几层、每层什么算子","sc":["plan","perf"],"way":0,"area":false,"self":false,"T":{"x":653.9,"y":703.3,"w":26.7,"h":26.7},"L":{"x":478.2,"y":168,"w":243.6,"h":414.1},"ok":true,"ax":""},{"id":"npu>npu-sibs#0","f":"npu","t":"npu-sibs","k":"button","back":false,"tr":"工具条「兄弟 rank」","p":"设备映射 · 同组的卡都是谁","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":695.6,"y":703.3,"w":26.7,"h":26.7},"L":{"x":575.1,"y":332.6,"w":49.9,"h":84.7},"ok":true,"ax":""},{"id":"npu>npu-sibs#1","f":"npu","t":"npu-sibs","k":"button","back":false,"tr":"工具条「配置」→ 浮层往下滚 → 兄弟「展开」","p":"设备映射 · 同一个开关在配置浮层最下面的 NPU 段：1440×900 下它被工具条挡着，先在浮层里往下滚","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":753.9,"y":703.3,"w":26.7,"h":26.7},"L":{"x":575.1,"y":332.6,"w":49.9,"h":84.7},"ok":true,"ax":"浮层仍开着；截图是关掉浮层后的样子"},{"id":"npu>npu-comm#0","f":"npu","t":"npu-comm","k":"button","back":false,"tr":"工具条「Comm Links」","p":"设备映射 / 性能调优 · 这张卡与兄弟走哪几维通信","sc":["map","perf"],"way":0,"area":false,"self":false,"T":{"x":724.8,"y":703.3,"w":26.7,"h":26.7},"L":{"x":575.1,"y":332.7,"w":49.9,"h":84.7},"ok":true,"ax":""},{"id":"npu>npu-mem#0","f":"npu","t":"npu-mem","k":"canvas","back":false,"tr":"点 3D 卡里的 Grads 那一层","p":"故障定位 · 哪一档最占地方（左列同名小卡跟着展开）","sc":["alert","plan"],"way":0,"area":false,"self":false,"T":{"x":497.7,"y":471.7,"w":123.4,"h":50.1},"L":{"x":13.3,"y":561,"w":226.7,"h":189},"ok":true,"ax":""},{"id":"npu>npu-mem#1","f":"npu","t":"npu-mem","k":"button","back":false,"tr":"点左列「Grads」小卡","p":"切分规划 · 这一档怎么切、跟哪把刀、走什么通信（3D 卡那一层跟着亮）","sc":["plan","alert"],"way":0,"area":false,"self":false,"T":{"x":25,"y":570.2,"w":203.3,"h":14.2},"L":{"x":13.3,"y":561,"w":226.7,"h":189},"ok":true,"ax":""},{"id":"npu>npu#0","f":"npu","t":"npu","k":"button","back":false,"tr":"工具条「缩小」/「复位」","p":"通用 · 缩小把卡推远、复位拉回；默认机位已是最近，「放大」看不出变化","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":419.4,"y":703.3,"w":26.7,"h":26.7},"L":{"x":502.5,"y":209.3,"w":194.9,"h":331.3},"ok":true,"ax":""},{"id":"npu>npu#1","f":"npu","t":"npu","k":"tab","back":false,"tr":"点「故障定位 ▾」","p":"故障定位 · 原地：清单在 NPU 页上展开，不离开单卡；点一行才去定位","sc":["alert"],"way":0,"area":false,"self":true,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"npu>hier-sel-rack#0","f":"npu","t":"hier-sel-rack","k":"tab","back":false,"tr":"点「切分规划」","p":"切分规划 · 退回第二档、留选中，Hierarchy 亮出这张卡","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":593.9,"y":14.2,"w":58.3,"h":20},"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"npu>sel-rack#4","f":"npu","t":"sel-rack","k":"tab","back":false,"tr":"点「设备映射」","p":"设备映射 · 退回第二档、留选中，并行对象取它的组","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":653.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":"场景换成设备映射（右列 group）；截图是故障定位"},{"id":"npu>perf#0","f":"npu","t":"perf","k":"tab","back":false,"tr":"点「性能调优」","p":"性能调优 · 退回第二档、留选中、开泳道","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":713.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":"rank 1355 仍选中；截图没有选中"},{"id":"npu>npu#2","f":"npu","t":"npu","k":"tab","back":false,"tr":"点「变更评估」","p":"变更评估 · 原地：留在 NPU 页、配置浮层打开；改 ZeRO 后左列摆 Before / After","sc":["tune"],"way":0,"area":false,"self":true,"T":{"x":773.9,"y":14.2,"w":58.3,"h":20},"L":{"x":475,"y":218.3,"w":250,"h":480},"ok":true,"ax":""},{"id":"npu>sel#0","f":"npu","t":"sel","k":"key","back":true,"tr":"Esc / 点空白（从总览 ↗ NPU 进来时）","p":"通用 · 回到进来前那一档：总览 0.85×、选中保留","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"ok":true,"ax":""},{"id":"npu>board-sel#1","f":"npu","t":"board-sel","k":"key","back":true,"tr":"Esc / 点空白（从板视图进来时）","p":"通用 · 回到进来前那一档：板视图、选中保留","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"npu-top>npu#0","f":"npu-top","t":"npu","k":"back","back":true,"tr":"工具条「3D」","p":"通用 · 回到立体","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":506.9,"y":701.7,"w":32,"h":30},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-net>npu#0","f":"npu-net","t":"npu","k":"back","back":true,"tr":"工具条「显存」","p":"通用 · 回到显存板","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":595.6,"y":703.3,"w":26.7,"h":26.7},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-comp>npu#0","f":"npu-comp","t":"npu","k":"back","back":true,"tr":"工具条「显存」","p":"通用 · 回到显存板","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":595.6,"y":703.3,"w":26.7,"h":26.7},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-sibs>npu#0","f":"npu-sibs","t":"npu","k":"back","back":true,"tr":"再点「兄弟 rank」","p":"通用 · 回到只看这一张","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":695.6,"y":703.3,"w":26.7,"h":26.7},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-sibs>npu-sib#0","f":"npu-sibs","t":"npu-sib","k":"canvas","back":false,"tr":"点兄弟 rank 1323 的卡","p":"设备映射 · 换到同组另一张卡看","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":372,"y":305.8,"w":49.9,"h":84.7},"L":{"x":575.1,"y":332.7,"w":49.9,"h":84.7},"ok":true,"ax":""},{"id":"npu-sibs>npu-comm#0","f":"npu-sibs","t":"npu-comm","k":"button","back":false,"tr":"工具条「Comm Links」","p":"设备映射 / 性能调优 · 卡与兄弟之间按维画通信连线","sc":["map","perf"],"way":0,"area":false,"self":false,"T":{"x":724.8,"y":703.3,"w":26.7,"h":26.7},"L":{"x":575.1,"y":332.7,"w":49.9,"h":84.7},"ok":true,"ax":""},{"id":"npu-comm>npu-sibs#0","f":"npu-comm","t":"npu-sibs","k":"back","back":true,"tr":"再点「Comm Links」","p":"通用 · 收起连线","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":724.8,"y":703.3,"w":26.7,"h":26.7},"L":{"x":575.1,"y":332.6,"w":49.9,"h":84.7},"ok":true,"ax":""},{"id":"npu-mem>npu#0","f":"npu-mem","t":"npu","k":"back","back":true,"tr":"再点小卡头","p":"通用 · 收起（3D 卡那一层一起熄灭）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":25,"y":570.2,"w":203.3,"h":14.2},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-mem>npu#1","f":"npu-mem","t":"npu","k":"back","back":true,"tr":"再点 3D 卡里同一层","p":"通用 · 撤掉高亮（左列小卡一起收起）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":497.7,"y":471.7,"w":123.4,"h":50.1},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"npu-sib>sel-rack#0","f":"npu-sib","t":"sel-rack","k":"crumb","back":true,"tr":"面包屑「rank 1323」/ Esc","p":"设备映射 · 回第二档，取景到兄弟所在的 Rack 20","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":201.3,"y":15.8,"w":58.5,"h":20},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":"取景的是 Rack 20、选中 1323；截图是 Rack 21 / 1355"},{"id":"npu-sib>board-sel#0","f":"npu-sib","t":"board-sel","k":"crumb","back":true,"tr":"面包屑「Board 165」","p":"设备映射 · 去兄弟那块板（板号跟着换）","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":119.7,"y":15.8,"w":58.5,"h":20},"L":{"x":557.5,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":"进的是 Board 165、选中 1323；截图是 Board 169 / 1355"},{"id":"alert-list>peak#0","f":"alert-list","t":"peak","k":"button","back":false,"tr":"点「Peak Usage 42% · rank 208」","p":"故障定位 · 默认没有超容：全网最满那张卡在哪（选中 + 取景 Rack 3，不上状态色）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":175,"w":333.3,"h":21.7},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":""},{"id":"alert-list>alert-seg#0","f":"alert-list","t":"alert-seg","k":"button","back":false,"tr":"点「Amax 9.64 > 9.35 · L7 · PP1」","p":"故障定位 · 数值告警落在哪一段、那一段的卡在哪","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":66.7,"w":333.3,"h":21.7},"L":{"x":311.2,"y":243.3,"w":262.7,"h":102.3},"ok":true,"ax":""},{"id":"alert-list>alert-seg#1","f":"alert-list","t":"alert-seg","k":"button","back":false,"tr":"点「Routing Imbalance · PP3 等 7 段」","p":"故障定位 · MoE 路由失衡越线的是哪几段、最重的是哪段","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":131.7,"w":333.3,"h":21.7},"L":{"x":90,"y":322.4,"w":14.8,"h":42.5},"ok":true,"ax":"亮的是 7 段、聚焦 PP3；截图是 Amax 的 PP1"},{"id":"alert-list>netgraph#0","f":"alert-list","t":"netgraph","k":"button","back":false,"tr":"点「告警 Layers · 13 / 48」","p":"故障定位 · 越线的是哪些层（在整网图上逐层看；上一条的状态色保留）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":153.3,"w":333.3,"h":21.7},"L":{"x":13.3,"y":391.7,"w":1173.3,"h":345},"ok":true,"ax":""},{"id":"alert-list>incident#0","f":"alert-list","t":"incident","k":"button","back":false,"tr":"点「Router 溢出与 Comm 死锁 · 6 起」","p":"故障定位 · 同类告警一路恶化下去会是什么样（另一次 2048 NPU 训练的真实事故）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":252.5,"w":333.3,"h":21.7},"L":{"x":417.4,"y":252.5,"w":365.1,"h":268.8},"ok":true,"ax":""},{"id":"alert-list>cluster#0","f":"alert-list","t":"cluster","k":"back","back":true,"tr":"点画布（只收清单）","p":"通用 · 清单开着时点画布那一下只收清单，画布不退层","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":910.8,"y":660.8,"w":11.7,"h":11.7,"cx":916.7,"cy":666.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"alert-list>cluster#1","f":"alert-list","t":"cluster","k":"tab","back":true,"tr":"再点「故障定位 ▴」","p":"通用 · 收起清单回到画布","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":506.8,"y":14.2,"w":85.4,"h":20},"ok":true,"ax":""},{"id":"alert-list>cluster#2","f":"alert-list","t":"cluster","k":"key","back":true,"tr":"Esc","p":"通用 · 收起清单","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":506.8,"y":14.2,"w":85.4,"h":20},"ok":true,"ax":""},{"id":"alert-list0>alert-rank#0","f":"alert-list0","t":"alert-rank","k":"button","back":false,"tr":"点「OOM · 3959 ranks · rank 208」","p":"故障定位 · 这张超容的卡落在哪个机柜、哪块板","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":66.7,"w":333.3,"h":21.7},"L":{"x":407.7,"y":288.9,"w":29.2,"h":21.9},"ok":true,"ax":""},{"id":"alert-list0>alert-rank#1","f":"alert-list0","t":"alert-rank","k":"button","back":false,"tr":"点「Critical 88% · rank 2708」","p":"故障定位 · 红线档里最满、还没超容的那张卡（琥珀框、取景 Rack 42）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":433.3,"y":88.3,"w":333.3,"h":21.7},"L":{"x":293.3,"y":167.2,"w":613.3,"h":408.9},"ok":true,"ax":"选中的是 rank 2708、取景 Rack 42、琥珀框；截图是 OOM 的 rank 208 / Rack 3"},{"id":"alert-seg>sel#0","f":"alert-seg","t":"sel","k":"canvas","back":false,"tr":"点亮着的那一段里的一张卡","p":"故障定位 · 告警段里点名一张卡（段的琥珀撤掉，换成选中 + 组员）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":340.2,"y":329.8,"w":3.4,"h":3.4},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":"选中的是段里的 rank 812；截图是 rank 1355"},{"id":"alert-seg>cluster#0","f":"alert-seg","t":"cluster","k":"back","back":true,"tr":"点空白","p":"通用 · 撤定位（状态色一起撤）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":365.8,"w":11.7,"h":11.7,"cx":600,"cy":371.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"alert-seg>alert-list#0","f":"alert-seg","t":"alert-list","k":"tab","back":false,"tr":"再点「故障定位 ▾」","p":"故障定位 · 看下一条告警（点过的那条 is-on）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"alert-rank>alert-npu#0","f":"alert-rank","t":"alert-npu","k":"canvas","back":false,"tr":"再点选中的卡（已在它的 Rack 里）","p":"故障定位 · 进这张超容卡看是哪一档撑爆的","sc":["alert"],"way":2,"area":false,"self":false,"T":{"x":405.3,"y":288.9,"w":34.1,"h":34.1},"L":{"x":478.2,"y":223,"w":243.5,"h":414},"ok":true,"ax":""},{"id":"alert-rank>alert-npu#1","f":"alert-rank","t":"alert-npu","k":"button","back":false,"tr":"左列「↗ NPU」","p":"故障定位 · 这张超容的卡里是什么撑爆的（显存构成）","sc":["alert"],"way":1,"area":false,"self":false,"T":{"x":113,"y":338.1,"w":53,"h":20},"L":{"x":478.2,"y":223,"w":243.5,"h":414},"ok":true,"ax":""},{"id":"alert-rank>alert-board#0","f":"alert-rank","t":"alert-board","k":"canvas","back":false,"tr":"点它那一行的行底","p":"故障定位 · 它在哪块板、同板的卡挤不挤","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":303.1,"y":284,"w":593.9,"h":43.8,"cx":575.7,"cy":306},"L":{"x":345,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"alert-rank>rack#0","f":"alert-rank","t":"rack","k":"back","back":true,"tr":"点 Rack 外的 SuperPoD 底板 → 撤选中","p":"通用 · 先撤选中与状态色框、仍取景这个 Rack","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":0,"y":0,"w":994.3,"h":750,"cx":600,"cy":601.1},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":"取景的是 Rack 3（ZeRO 0，仍标红）；截图是默认的 Rack 21"},{"id":"alert-board>alert-npu#0","f":"alert-board","t":"alert-npu","k":"canvas","back":false,"tr":"再点选中的 rank 208","p":"故障定位 · 看完同板 8 张都超容，进这张卡看是哪一档撑爆的","sc":["alert"],"way":3,"area":false,"self":false,"T":{"x":345,"y":300.1,"w":45.3,"h":41.1},"L":{"x":478.2,"y":223,"w":243.5,"h":414},"ok":true,"ax":""},{"id":"alert-npu>alert-npu#0","f":"alert-npu","t":"alert-npu","k":"button","back":false,"tr":"点左列「Optimizer 48 GB」","p":"故障定位 · 原地展开这一档（3D 卡那一层跟着亮）：ZeRO 0 不切优化器态，一张卡背 48 GB","sc":["alert"],"way":0,"area":false,"self":true,"T":{"x":25,"y":641.8,"w":203.3,"h":14.2},"L":{"x":13.3,"y":632.7,"w":226.7,"h":117.3},"ok":true,"ax":""},{"id":"alert-npu>alert-board#0","f":"alert-npu","t":"alert-board","k":"key","back":true,"tr":"Esc / 点空白（从板视图进来时）","p":"通用 · 回到 Board 26 的板视图，选中保留","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":345,"y":300.1,"w":45.3,"h":41.1},"ok":true,"ax":""},{"id":"incident>incident-npu#0","f":"incident","t":"incident-npu","k":"button","back":false,"tr":"点「↗ rank 1559 · 2048 NPU」","p":"故障定位 · 事故根因那张卡当时装了什么（新标签页，按事故拓扑）","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":588.8,"y":366.4,"w":120,"h":13.3},"L":{"x":551.6,"y":333.9,"w":96.8,"h":159.4},"ok":true,"ax":""},{"id":"incident>alert-list#0","f":"incident","t":"alert-list","k":"back","back":true,"tr":"再点同一条历史事故","p":"通用 · 收起事件链","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":417.4,"y":252.5,"w":365.1,"h":21.7},"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"pp-focus>sel#0","f":"pp-focus","t":"sel","k":"canvas","back":false,"tr":"点段里一张卡","p":"性能调优 · 点名这一段里的一张卡","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":650.7,"y":255.6,"w":3.4,"h":3.4},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":"选中的是 PP3 里的 rank 1555；截图是 rank 1355"},{"id":"pp-focus>cluster#0","f":"pp-focus","t":"cluster","k":"back","back":true,"tr":"再点同一根柱","p":"通用 · 撤段聚焦","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":90,"y":322.4,"w":14.8,"h":42.5},"L":{"x":13.3,"y":284.4,"w":226.7,"h":115.6},"ok":true,"ax":""},{"id":"pp-focus>cluster#1","f":"pp-focus","t":"cluster","k":"back","back":true,"tr":"点空白","p":"通用 · 撤段聚焦，回干净的集群","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":365.8,"w":11.7,"h":11.7,"cx":600,"cy":371.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"pp-focus>cluster#2","f":"pp-focus","t":"cluster","k":"key","back":true,"tr":"Esc","p":"通用 · 退层的最后一档：撤段聚焦","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"obj>cluster#0","f":"obj","t":"cluster","k":"key","back":true,"tr":"Esc","p":"通用 · 退层的最后一档：撤并行对象（场景不变，仍是设备映射）","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":"场景仍是设备映射（右列 Comm）；截图是故障定位"},{"id":"obj>sel#0","f":"obj","t":"sel","k":"canvas","back":false,"tr":"点一颗 NPU","p":"设备映射 · 点名对象里的一张卡（选中压过并行对象；场景不变）","sc":["map"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"ok":true,"ax":"场景仍是设备映射（右列 group）；截图是故障定位"},{"id":"obj>cluster#1","f":"obj","t":"cluster","k":"back","back":true,"tr":"点空白 → 撤并行对象","p":"通用 · 已是干净的集群时点空白撤掉高亮（场景不变，仍是设备映射）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":594.2,"y":365.8,"w":11.7,"h":11.7,"cx":600,"cy":371.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":"场景仍是设备映射（右列 Comm）；截图是故障定位"},{"id":"obj>infer#0","f":"obj","t":"infer","k":"tab","back":false,"tr":"点「Inference」","p":"推理 · 换工况落到推理的故障定位，并行对象一起撤","sc":["i-alert"],"way":0,"area":false,"self":false,"T":{"x":419.5,"y":14.2,"w":74,"h":20},"L":{"x":449.5,"y":14.2,"w":74,"h":20},"ok":true,"ax":""},{"id":"iso>3d#0","f":"iso","t":"3d","k":"button","back":false,"tr":"工具条「3D」","p":"通用 · 可转的透视","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":586,"y":701.7,"w":32,"h":30},"L":{"x":586,"y":701.7,"w":32,"h":30},"ok":true,"ax":""},{"id":"iso>cluster#0","f":"iso","t":"cluster","k":"button","back":false,"tr":"工具条「平面」","p":"通用 · 回平面图（选中 / 段聚焦 / 告警色跨视图保留）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":498.7,"y":701.7,"w":40,"h":30},"L":{"x":498.7,"y":701.7,"w":40,"h":30},"ok":true,"ax":""},{"id":"iso>hw-sel#0","f":"iso","t":"hw-sel","k":"canvas","back":false,"tr":"点 NPU 方块","p":"故障定位 / 设备映射 · 在立体里点名一张卡（停在 2.5D）","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":737.2,"y":346.9,"w":11.7,"h":11.7,"cx":743.1,"cy":352.7},"L":{"x":735.6,"y":345.2,"w":15,"h":15,"cx":743.1,"cy":352.7},"ok":true,"ax":"停在 2.5D；截图是 3D 的同一步"},{"id":"iso>hw-rack#0","f":"iso","t":"hw-rack","k":"canvas","back":false,"tr":"点 Rack 里的板身（NPU 以外）","p":"故障定位 · 2.5D 里看这个机柜（停在 2.5D）","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":727.4,"y":341.2,"w":11.7,"h":11.7,"cx":733.2,"cy":347.1},"L":{"x":647.2,"y":299.3,"w":36.7,"h":36.7,"cx":665.6,"cy":317.7},"ok":true,"ax":"停在 2.5D；截图是 3D 的同一步"},{"id":"iso>iso#0","f":"iso","t":"iso","k":"drag","back":false,"tr":"左键拖动 = 平移","p":"通用 · 2.5D 只平移、不能转","sc":["general"],"way":0,"area":true,"self":true,"T":{"x":594.2,"y":494.2,"w":11.7,"h":11.7,"cx":600,"cy":500},"L":null,"ok":true,"ax":""},{"id":"iso>hw-alert#0","f":"iso","t":"hw-alert","k":"button","back":false,"tr":"展开「故障定位」，点「Amax · PP1」","p":"故障定位 · 立体里这一段的卡在哪几片","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":46.3,"y":322.4,"w":14.8,"h":42.5},"ok":true,"ax":""},{"id":"3d>hw-sel#0","f":"3d","t":"hw-sel","k":"canvas","back":false,"tr":"点 NPU 方块","p":"故障定位 · 在立体里点名一张卡","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":692.2,"y":352.8,"w":11.7,"h":11.7,"cx":698.1,"cy":358.7},"L":{"x":690.6,"y":351.2,"w":15,"h":15,"cx":698.1,"cy":358.7},"ok":true,"ax":""},{"id":"3d>hw-rack#0","f":"3d","t":"hw-rack","k":"canvas","back":false,"tr":"点 Rack（板身，NPU 以外）","p":"故障定位 · 看这个机柜","sc":["alert","map"],"way":0,"area":false,"self":false,"T":{"x":685.1,"y":349,"w":11.7,"h":11.7,"cx":690.9,"cy":354.9},"L":{"x":625.3,"y":317.4,"w":36.7,"h":36.7,"cx":643.6,"cy":335.7},"ok":true,"ax":""},{"id":"3d>3d#0","f":"3d","t":"3d","k":"drag","back":false,"tr":"左键拖动 = 转","p":"设备映射 · 转一个角度看层次（右键 / Shift 拖 = 平移）","sc":["map"],"way":0,"area":true,"self":true,"T":{"x":594.2,"y":494.2,"w":11.7,"h":11.7,"cx":600,"cy":500},"L":null,"ok":true,"ax":""},{"id":"3d>3d#1","f":"3d","t":"3d","k":"hover","back":false,"tr":"悬停 NPU","p":"通用 · 深色小提示：rank · Board · Rack · SuperPoD","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":692.2,"y":352.8,"w":11.7,"h":11.7,"cx":698.1,"cy":358.7},"L":{"x":690.6,"y":351.2,"w":15,"h":15,"cx":698.1,"cy":358.7},"ok":true,"ax":""},{"id":"3d>cluster#0","f":"3d","t":"cluster","k":"button","back":false,"tr":"工具条「平面」","p":"通用 · 回平面","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":498.7,"y":701.7,"w":40,"h":30},"L":{"x":498.7,"y":701.7,"w":40,"h":30},"ok":true,"ax":""},{"id":"3d>iso#0","f":"3d","t":"iso","k":"button","back":false,"tr":"工具条「2.5D」","p":"通用 · 换回等轴测","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":540.3,"y":701.7,"w":44,"h":30},"L":{"x":540.3,"y":701.7,"w":44,"h":30},"ok":true,"ax":""},{"id":"hw-sel>hw-sel-rack#0","f":"hw-sel","t":"hw-sel-rack","k":"canvas","back":false,"tr":"再点选中的卡（「再点放大到 Rack」）","p":"故障定位 · 放大到它的 Rack","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":692.2,"y":352.8,"w":11.7,"h":11.7,"cx":698.1,"cy":358.7},"L":{"x":617.4,"y":315.9,"w":15,"h":15,"cx":624.9,"cy":323.4},"ok":true,"ax":""},{"id":"hw-sel>hw-sel#0","f":"hw-sel","t":"hw-sel","k":"hover","back":false,"tr":"悬停选中的卡","p":"通用 · 提示再点去哪（「再点放大到 Rack」）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":692.2,"y":352.8,"w":11.7,"h":11.7,"cx":698.1,"cy":358.7},"L":{"x":690.6,"y":351.2,"w":15,"h":15,"cx":698.1,"cy":358.7},"ok":true,"ax":""},{"id":"hw-sel>3d#0","f":"hw-sel","t":"3d","k":"back","back":true,"tr":"点地面 → 撤选中","p":"通用 · 段聚焦一起撤，回干净的集群（不再是死路）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":671.1,"y":319.6,"w":11.7,"h":11.7,"cx":676.9,"cy":325.4},"L":{"x":586,"y":701.7,"w":32,"h":30},"ok":true,"ax":""},{"id":"hw-sel>3d#1","f":"hw-sel","t":"3d","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：撤选中","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":586,"y":701.7,"w":32,"h":30},"ok":true,"ax":""},{"id":"hw-sel-rack>npu#0","f":"hw-sel-rack","t":"npu","k":"canvas","back":false,"tr":"再点选中的卡（「再点进 NPU 页」）","p":"故障定位 · 在 3D 里进这张卡","sc":["alert"],"way":2,"area":false,"self":false,"T":{"x":619.1,"y":317.6,"w":11.7,"h":11.7,"cx":624.9,"cy":323.4},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"hw-sel-rack>hw-board-sel#0","f":"hw-sel-rack","t":"hw-board-sel","k":"canvas","back":false,"tr":"点选中卡那块板的板身","p":"切分规划 · 在立体里进选中卡的板（选中保留）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":541.8,"y":276.4,"w":11.7,"h":11.7,"cx":547.7,"cy":282.2},"L":{"x":569.3,"y":334.4,"w":15,"h":15,"cx":576.8,"cy":341.9},"ok":true,"ax":""},{"id":"hw-sel-rack>hw-sel#0","f":"hw-sel-rack","t":"hw-sel","k":"back","back":true,"tr":"工具条「复位」","p":"通用 · 回到全景，选中保留","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":690.6,"y":351.2,"w":15,"h":15,"cx":698.1,"cy":358.7},"ok":true,"ax":""},{"id":"hw-sel-rack>hw-rack#0","f":"hw-sel-rack","t":"hw-rack","k":"back","back":true,"tr":"点 SuperPoD 底板 → 撤选中","p":"通用 · 先撤选中、仍取景这个 Rack","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":386.2,"y":384.2,"w":11.7,"h":11.7,"cx":392,"cy":390},"L":{"x":625.3,"y":317.4,"w":36.7,"h":36.7,"cx":643.6,"cy":335.7},"ok":true,"ax":""},{"id":"hw-sel-rack>hw-sel-rack#0","f":"hw-sel-rack","t":"hw-sel-rack","k":"hover","back":false,"tr":"悬停选中的卡","p":"通用 · 提示「再点进 NPU 页」","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":619.1,"y":317.6,"w":11.7,"h":11.7,"cx":624.9,"cy":323.4},"L":{"x":617.4,"y":315.9,"w":15,"h":15,"cx":624.9,"cy":323.4},"ok":true,"ax":""},{"id":"npu>hw-sel-rack#0","f":"npu","t":"hw-sel-rack","k":"crumb","back":true,"tr":"面包屑「rank 1355」（从 3D 进来的）","p":"通用 · 回到 3D 取景（不会变回平面图）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":201.3,"y":15.8,"w":58.5,"h":20},"L":{"x":617.4,"y":315.9,"w":15,"h":15,"cx":624.9,"cy":323.4},"ok":true,"ax":""},{"id":"hw-rack>hw-board#0","f":"hw-rack","t":"hw-board","k":"canvas","back":false,"tr":"再点这块板（NPU 以外）","p":"切分规划 · 进这块板（立体里是镜头推到这块板）","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":541.8,"y":276.4,"w":11.7,"h":11.7,"cx":547.7,"cy":282.2},"L":{"x":581.7,"y":339.6,"w":36.7,"h":36.7,"cx":600,"cy":357.9},"ok":true,"ax":""},{"id":"hw-rack>hw-sp#0","f":"hw-rack","t":"hw-sp","k":"back","back":true,"tr":"点 SuperPoD 底板","p":"通用 · 退一层：Rack → 它的 SuperPoD","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":386.2,"y":384.2,"w":11.7,"h":11.7,"cx":392,"cy":390},"L":{"x":455.6,"y":300.9,"w":66.7,"h":66.7,"cx":488.9,"cy":334.2},"ok":true,"ax":""},{"id":"hw-rack>hw-sp#1","f":"hw-rack","t":"hw-sp","k":"key","back":true,"tr":"Esc","p":"通用 · 退一层：Rack → 它的 SuperPoD","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":455.6,"y":300.9,"w":66.7,"h":66.7,"cx":488.9,"cy":334.2},"ok":true,"ax":""},{"id":"hw-rack>rack#0","f":"hw-rack","t":"rack","k":"button","back":false,"tr":"工具条「平面」（取景带回平面）","p":"通用 · 平面镜头与 Rack 框的 is-fit 静默跟上，两边看到同一个取景","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":498.7,"y":701.7,"w":40,"h":30},"L":{"x":310,"y":178.3,"w":580,"h":386.7},"ok":true,"ax":""},{"id":"hw-sp>3d#0","f":"hw-sp","t":"3d","k":"back","back":true,"tr":"点底板外的地面","p":"通用 · 回整个集群","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":546.1,"y":268.3,"w":11.7,"h":11.7,"cx":551.9,"cy":274.2},"L":{"x":586,"y":701.7,"w":32,"h":30},"ok":true,"ax":""},{"id":"hw-sp>hw-sp#0","f":"hw-sp","t":"hw-sp","k":"back","back":true,"tr":"再点 SuperPoD 底板","p":"通用 · 还在这个 SuperPoD 里：不动","sc":["general"],"way":0,"area":true,"self":true,"T":{"x":539.6,"y":348.9,"w":11.7,"h":11.7,"cx":545.5,"cy":354.8},"L":null,"ok":true,"ax":""},{"id":"hw-sp>hw-rack#0","f":"hw-sp","t":"hw-rack","k":"canvas","back":false,"tr":"点 Rack 板身","p":"故障定位 · 取景这个机柜","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":566.1,"y":328.9,"w":11.7,"h":11.7,"cx":572,"cy":334.7},"L":{"x":625.3,"y":317.4,"w":36.7,"h":36.7,"cx":643.6,"cy":335.7},"ok":true,"ax":""},{"id":"hw-board>hw-board-sel#0","f":"hw-board","t":"hw-board-sel","k":"canvas","back":false,"tr":"点这块板上的 NPU","p":"切分规划 · 在立体板层点名一张卡","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":571,"y":336.1,"w":11.7,"h":11.7,"cx":576.8,"cy":341.9},"L":{"x":569.3,"y":334.4,"w":15,"h":15,"cx":576.8,"cy":341.9},"ok":true,"ax":""},{"id":"hw-board>hw-board-sel#1","f":"hw-board","t":"hw-board-sel","k":"canvas","back":false,"tr":"点邻板上的 NPU","p":"切分规划 · 先换到那块板：面包屑、左列、镜头与选中指向同一块","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":527,"y":336.1,"w":11.7,"h":11.7,"cx":532.8,"cy":341.9},"L":{"x":548,"y":322.4,"w":15,"h":15,"cx":555.5,"cy":329.9},"ok":true,"ax":"选中的是 Board 170 上的 1362；截图是 Board 169 / 1355"},{"id":"hw-board>hw-board#0","f":"hw-board","t":"hw-board","k":"canvas","back":false,"tr":"点隔壁 Rack 的一块板（NPU 以外）","p":"切分规划 · 直接换到隔壁机柜的板（Board 176 · Rack 22），取景跟着换，退出时落在新 Rack","sc":["plan"],"way":0,"area":false,"self":true,"T":{"x":889.2,"y":486.4,"w":11.7,"h":11.7,"cx":895,"cy":492.2},"L":null,"ok":true,"ax":"换到了 Board 176（Rack 22）；这张截图仍是 Board 169"},{"id":"hw-board>hw-board#1","f":"hw-board","t":"hw-board","k":"back","back":true,"tr":"工具条「复位」= 重新取景这块板","p":"通用 · 同平面板视图的「板镜头复位」，层级不变、不会再飞回去","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":440.3,"y":703.3,"w":26.7,"h":26.7},"L":{"x":581.7,"y":339.6,"w":36.7,"h":36.7,"cx":600,"cy":357.9},"ok":true,"ax":""},{"id":"hw-board>hw-rack#0","f":"hw-board","t":"hw-rack","k":"back","back":true,"tr":"点地面","p":"通用 · 退出板，回到它的 Rack","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":259.9,"y":425.9,"w":11.7,"h":11.7,"cx":265.7,"cy":431.7},"L":{"x":625.3,"y":317.4,"w":36.7,"h":36.7,"cx":643.6,"cy":335.7},"ok":true,"ax":""},{"id":"hw-board-sel>npu#0","f":"hw-board-sel","t":"npu","k":"canvas","back":false,"tr":"再点选中的卡（「再点进 NPU 页」）","p":"故障定位 · 进这张卡","sc":["alert","plan"],"way":3,"area":false,"self":false,"T":{"x":571,"y":336.1,"w":11.7,"h":11.7,"cx":576.8,"cy":341.9},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"hw-board-sel>hw-board#0","f":"hw-board-sel","t":"hw-board","k":"back","back":true,"tr":"点地面 → 撤选中","p":"通用 · 取消选中、留在板层","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":259.9,"y":425.9,"w":11.7,"h":11.7,"cx":265.7,"cy":431.7},"L":{"x":581.7,"y":339.6,"w":36.7,"h":36.7,"cx":600,"cy":357.9},"ok":true,"ax":""},{"id":"hw-alert>iso#0","f":"hw-alert","t":"iso","k":"back","back":true,"tr":"点地面","p":"通用 · 撤定位（状态色一起撤）","sc":["general"],"way":0,"area":true,"self":false,"T":{"x":711,"y":295.4,"w":11.7,"h":11.7,"cx":716.9,"cy":301.2},"L":{"x":540.3,"y":701.7,"w":44,"h":30},"ok":true,"ax":""},{"id":"hier>hier-sp#0","f":"hier","t":"hier-sp","k":"button","back":false,"tr":"点 L5「SuperPoD 1」","p":"切分规划 · 一个超节点里怎么摆","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":961.5,"y":203.3,"w":69,"h":16.7},"L":{"x":285,"y":199.4,"w":343.3,"h":344.5},"ok":true,"ax":""},{"id":"hier>hier-rack#0","f":"hier","t":"hier-rack","k":"canvas","back":false,"tr":"点 L4 Rack 格","p":"切分规划 · 这个机柜里闭合了哪几维","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":978.3,"y":273.3,"w":17.5,"h":17.5,"cx":987.1,"cy":282.1},"L":{"x":293.3,"y":262.8,"w":326.7,"h":217.8},"ok":true,"ax":""},{"id":"hier>hier-sel#0","f":"hier","t":"hier-sel","k":"canvas","back":false,"tr":"在 L2 NPU 格点一格","p":"切分规划 · 从层级里挑一张卡，看它闭合在哪级","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":940,"y":623.3,"w":4.2,"h":4.2,"cx":942.1,"cy":625.4},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":""},{"id":"hier>cluster#0","f":"hier","t":"cluster","k":"back","back":true,"tr":"抽屉头「×」","p":"通用 · 收起参考面板（场景不变，仍是切分规划）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":1155,"y":61.7,"w":20,"h":20},"L":{"x":1000,"y":13.3,"w":195,"h":673.3},"ok":true,"ax":"场景仍是切分规划（右列 Pipeline / Comm）；截图是故障定位"},{"id":"hier>alert-list#0","f":"hier","t":"alert-list","k":"tab","back":false,"tr":"点「故障定位」","p":"故障定位 · 切回时收起上一个场景的面板、展开清单","sc":["alert"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"hier-sp>hier-rack#0","f":"hier-sp","t":"hier-rack","k":"canvas","back":false,"tr":"点 L4 Rack 格","p":"切分规划 · 这个机柜里闭合了哪几维","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":978.3,"y":273.3,"w":17.5,"h":17.5,"cx":987.1,"cy":282.1},"L":{"x":293.3,"y":262.8,"w":326.7,"h":217.8},"ok":true,"ax":""},{"id":"hier-sp>hier#0","f":"hier-sp","t":"hier","k":"back","back":true,"tr":"点 L6 Cluster 条","p":"通用 · 回整个集群","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":890,"y":148.3,"w":283.3,"h":20},"L":{"x":272.2,"y":186.6,"w":368.9,"h":370.2},"ok":true,"ax":""},{"id":"hier-rack>hier-board#0","f":"hier-rack","t":"hier-board","k":"canvas","back":false,"tr":"点 L3 Board 格","p":"切分规划 · TP 这一维在板内闭合了吗","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":970.8,"y":405.4,"w":9.2,"h":8.3,"cx":975.4,"cy":409.6},"L":{"x":309.2,"y":330.3,"w":313,"h":23.8},"ok":true,"ax":""},{"id":"hier-rack>hier-sp#0","f":"hier-rack","t":"hier-sp","k":"back","back":true,"tr":"再点当前 Rack 格","p":"通用 · 退回它的 SuperPoD","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":978.3,"y":273.3,"w":17.5,"h":17.5,"cx":987.1,"cy":282.1},"L":{"x":285,"y":199.4,"w":343.3,"h":344.5},"ok":true,"ax":""},{"id":"hier-rack>hier-sel-rack#0","f":"hier-rack","t":"hier-sel-rack","k":"canvas","back":false,"tr":"点 L2 NPU 格","p":"切分规划 · 这张卡的显存与通信组","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":940,"y":623.3,"w":4.2,"h":4.2,"cx":942.1,"cy":625.4},"L":{"x":424.3,"y":304.3,"w":15.6,"h":11.7},"ok":true,"ax":""},{"id":"hier-board>hier-rack#0","f":"hier-board","t":"hier-rack","k":"back","back":true,"tr":"再点当前 Board 格","p":"通用 · 退回它的 Rack","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":970.8,"y":405.4,"w":9.2,"h":8.3,"cx":975.4,"cy":409.6},"L":{"x":293.3,"y":262.8,"w":326.7,"h":217.8},"ok":true,"ax":""},{"id":"hier-sel>hier-sel-rack#0","f":"hier-sel","t":"hier-sel-rack","k":"canvas","back":false,"tr":"再点同一格","p":"切分规划 · 先看清：画布放大到它的 Rack，面板仍开着","sc":["plan"],"way":0,"area":false,"self":false,"T":{"x":940,"y":623.3,"w":4.2,"h":4.2,"cx":942.1,"cy":625.4},"L":{"x":293.3,"y":262.8,"w":326.7,"h":217.8},"ok":true,"ax":""},{"id":"hier-sel-rack>npu#0","f":"hier-sel-rack","t":"npu","k":"canvas","back":false,"tr":"第三次点同一格","p":"切分规划 · 进卡看切分（Hierarchy 收起，退回来重新打开）","sc":["plan"],"way":2,"area":false,"self":false,"T":{"x":940,"y":623.3,"w":4.2,"h":4.2,"cx":942.1,"cy":625.4},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":"场景仍是切分规划（右列 Pipeline / group）；截图是故障定位"},{"id":"npu>hier-sel-rack#1","f":"npu","t":"hier-sel-rack","k":"key","back":true,"tr":"Esc（从 Hierarchy 下钻来的）","p":"切分规划 · 离开 NPU 页时重新打开下钻前的面板","sc":["plan"],"way":0,"area":false,"self":false,"T":null,"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"netgraph>pp-focus#0","f":"netgraph","t":"pp-focus","k":"canvas","back":false,"tr":"点段头「PP3」","p":"性能调优 · 聚焦这一段（同左列 PP 柱，再点撤；整网图仍开着）","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":497.1,"y":457,"w":97.3,"h":30.5},"L":{"x":90,"y":322.4,"w":14.8,"h":42.5},"ok":true,"ax":"整网图仍开着；截图是关掉面板后的段聚焦"},{"id":"netgraph>cluster#0","f":"netgraph","t":"cluster","k":"back","back":true,"tr":"再点工具条图标 / 抽屉「×」","p":"通用 · 收起参考面板","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":633,"y":350,"w":26.7,"h":26.7},"L":{"x":1000,"y":13.3,"w":195,"h":673.3},"ok":true,"ax":""},{"id":"perf>pp-focus#0","f":"perf","t":"pp-focus","k":"canvas","back":false,"tr":"点泳道 PP3 那条道","p":"性能调优 · 气泡出在哪一段，这一段在集群里铺在哪（泳道仍开、场景不变）","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":28.3,"y":621.7,"w":573.3,"h":15,"cx":60,"cy":629.2},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":"泳道仍开、场景仍是性能调优（左列没有 PP 柱）；截图是故障定位的段聚焦"},{"id":"perf>perf#0","f":"perf","t":"perf","k":"tab","back":false,"tr":"关掉泳道后再点「性能调优」","p":"性能调优 · 再点当前场景 = 重新打开它的面板","sc":["perf"],"way":0,"area":false,"self":true,"T":{"x":713.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":""},{"id":"perf>netgraph#0","f":"perf","t":"netgraph","k":"button","back":false,"tr":"工具条「Network Graph」（替换泳道）","p":"性能调优 · 逐层看哪一层慢（场景不变）","sc":["perf"],"way":0,"area":false,"self":false,"T":{"x":633,"y":470,"w":26.7,"h":26.7},"L":{"x":13.3,"y":391.7,"w":1173.3,"h":345},"ok":true,"ax":"场景仍是性能调优；截图是故障定位"},{"id":"cube>cube-sel#0","f":"cube","t":"cube-sel","k":"canvas","back":false,"tr":"点一块方块","p":"设备映射 / 切分规划 · 逻辑空间里这一格对应哪张物理卡","sc":["map","plan"],"way":0,"area":false,"self":false,"T":{"x":906.7,"y":475.6,"w":11.7,"h":11.7,"cx":912.5,"cy":481.4},"L":{"x":13.3,"y":138.2,"w":226.7,"h":229},"ok":true,"ax":""},{"id":"cube>cube#0","f":"cube","t":"cube","k":"button","back":false,"tr":"工具条「正视 / 侧视 / 顶视」或「形态」","p":"设备映射 · 换一个角度 / 摆法看分组","sc":["map"],"way":0,"area":false,"self":true,"T":{"x":342.5,"y":701.7,"w":40,"h":30},"L":null,"ok":true,"ax":""},{"id":"cube-sel>npu#0","f":"cube-sel","t":"npu","k":"canvas","back":false,"tr":"镜头停稳后再点选中的那块","p":"设备映射 / 切分规划 · 从魔方直接进卡","sc":["map","plan"],"way":2,"area":false,"self":false,"T":{"x":940.7,"y":405.2,"w":11.7,"h":11.7,"cx":946.6,"cy":411.1},"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"tune>cmp#0","f":"tune","t":"cmp","k":"button","back":false,"tr":"浮层 ZeRO 点「0」","p":"变更评估 · 不切优化器态会怎样（42% → 113%、3959 张超容）","sc":["tune"],"way":0,"area":false,"self":false,"T":{"x":518.3,"y":367.5,"w":20,"h":16.7},"L":{"x":13.3,"y":138.2,"w":226.7,"h":165.8},"ok":true,"ax":""},{"id":"tune>split-bad#0","f":"tune","t":"split-bad","k":"button","back":false,"tr":"切分 EP「×2」连点 4 次","p":"变更评估 · 改切分前先判一遍：EP 256 分不匀 384 个专家，「应用」不可点","sc":["tune"],"way":0,"area":false,"self":false,"T":{"x":682.8,"y":317.5,"w":18.3,"h":11.7},"L":{"x":486.7,"y":358.3,"w":226.7,"h":28.3},"ok":true,"ax":""},{"id":"split-bad>tune#0","f":"split-bad","t":"tune","k":"button","back":false,"tr":"点可行改法「EP → 128」","p":"变更评估 · 一键改成合法的组合（草稿 EP 128），「应用」恢复可点","sc":["tune"],"way":0,"area":false,"self":false,"T":{"x":486.7,"y":373.3,"w":55,"h":13.3},"L":{"x":646.7,"y":340.4,"w":30.8,"h":14.2},"ok":true,"ax":"草稿是 EP 128；截图里还是没改过的 EP 16"},{"id":"tune>tune#0","f":"tune","t":"tune","k":"button","back":false,"tr":"并行对象「EP」→「›」","p":"设备映射 · 原地：画布只亮 EP 1 这一组，其余退后（场景仍是变更评估、浮层仍开）","sc":["map","tune"],"way":0,"area":false,"self":true,"T":{"x":558.1,"y":420,"w":22.2,"h":16.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"tune>tune#1","f":"tune","t":"tune","k":"button","back":false,"tr":"数据标注去掉「Usage」勾","p":"通用 · 原地：一次去一个勾，这一下只撤占用灰度（rank 号 / 关系 / 通信组各有一个勾，全去掉见「数据标注关闭」）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":486.7,"y":473.8,"w":9.2,"h":9.2},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"tune>infer-tune#0","f":"tune","t":"infer-tune","k":"button","back":false,"tr":"数据卡 · 工况「Inference」","p":"扩缩评估 · 同一组改动看推理口径","sc":["i-tune"],"way":0,"area":false,"self":false,"T":{"x":557.9,"y":536.7,"w":58.9,"h":16.7},"L":{"x":449.5,"y":14.2,"w":74,"h":20},"ok":true,"ax":""},{"id":"tune>tune#2","f":"tune","t":"tune","k":"button","back":false,"tr":"数据卡「全关 / 全开」","p":"通用 · 按类型开关数据卡（与场景筛选叠加，不在本场景的置灰）","sc":["general"],"way":0,"area":false,"self":true,"T":{"x":522.5,"y":669.2,"w":30.8,"h":14.2},"L":{"x":13.3,"y":46.7,"w":235,"h":207.1},"ok":true,"ax":""},{"id":"tune>cluster#0","f":"tune","t":"cluster","k":"back","back":true,"tr":"Esc / 点浮层外 / 再点「配置」","p":"通用 · 关浮层（场景不变，仍是变更评估）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":762.2,"y":703.3,"w":26.7,"h":26.7},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":"场景仍是变更评估（左列 Capacity · Throughput · Step Time）；截图是故障定位"},{"id":"cmp>cmp-clr#0","f":"cmp","t":"cmp-clr","k":"back","back":true,"tr":"Before / After 卡头「×」","p":"变更评估 · 清掉对比；× 在浮层外，浮层跟着收起，ZeRO 仍是 0","sc":["tune"],"way":0,"area":false,"self":false,"T":{"x":215.2,"y":150,"w":13.2,"h":10.8},"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"cmp>alert-list0#0","f":"cmp","t":"alert-list0","k":"tab","back":false,"tr":"点「故障定位 ▾」（ZeRO 0 带过去）","p":"故障定位 · 刚改出来的 3959 张超容卡排在清单第一行（浮层收起）","sc":["alert","tune"],"way":0,"area":false,"self":false,"T":{"x":506.8,"y":14.2,"w":85.4,"h":20},"L":{"x":428.3,"y":41.7,"w":343.3,"h":259.2},"ok":true,"ax":""},{"id":"infer>infer-plan#0","f":"infer","t":"infer-plan","k":"tab","back":false,"tr":"点「部署规划」","p":"部署规划 · 权重 + KV Cache 放得下吗？Batch 还能加多少？","sc":["i-plan"],"way":0,"area":false,"self":false,"T":{"x":623.9,"y":14.2,"w":58.3,"h":20},"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"infer>infer-perf#0","f":"infer","t":"infer-perf","k":"tab","back":false,"tr":"点「时延优化」","p":"时延优化 · TTFT、TPOT 达标吗？慢在 prefill 还是 decode？","sc":["i-perf"],"way":0,"area":false,"self":false,"T":{"x":683.9,"y":14.2,"w":58.3,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":""},{"id":"infer>infer-tune#0","f":"infer","t":"infer-tune","k":"tab","back":false,"tr":"点「扩缩评估」","p":"扩缩评估 · 加卡或改切分之后，装得下、够快吗？","sc":["i-tune"],"way":0,"area":false,"self":false,"T":{"x":743.9,"y":14.2,"w":58.3,"h":20},"L":{"x":475,"y":224.2,"w":250,"h":474.2},"ok":true,"ax":""},{"id":"infer>infer-sel#0","f":"infer","t":"infer-sel","k":"canvas","back":false,"tr":"点 NPU 格子","p":"推理 · 故障定位 / 部署规划 · 这张卡权重 + KV Cache 放得下吗","sc":["i-alert","i-plan"],"way":0,"area":false,"self":false,"T":{"x":715.6,"y":190.1,"w":3.4,"h":3.4},"L":{"x":13.3,"y":138.2,"w":226.7,"h":213},"ok":true,"ax":""},{"id":"infer>cluster#0","f":"infer","t":"cluster","k":"tab","back":false,"tr":"点「Train」","p":"通用 · 换回训练口径（尽量停在同名场景）","sc":["general"],"way":0,"area":false,"self":false,"T":{"x":397.8,"y":14.2,"w":50,"h":20},"L":{"x":367.8,"y":14.2,"w":50,"h":20},"ok":true,"ax":""},{"id":"infer-plan>infer-sel#0","f":"infer-plan","t":"infer-sel","k":"canvas","back":false,"tr":"点 NPU 格子","p":"部署规划 · 挑一张卡看 KV Cache 占多少（Hierarchy 仍开、场景不变）","sc":["i-plan"],"way":0,"area":false,"self":false,"T":{"x":528.3,"y":259.2,"w":2.1,"h":2.1},"L":{"x":13.3,"y":138.2,"w":226.7,"h":213},"ok":true,"ax":"Hierarchy 仍开、场景仍是部署规划；截图是推理 · 故障定位"},{"id":"infer-perf>perf#0","f":"infer-perf","t":"perf","k":"tab","back":false,"tr":"点「Train」","p":"时延优化 · 同一个问题换回训练口径对照（泳道照开）","sc":["i-perf"],"way":0,"area":false,"self":false,"T":{"x":397.8,"y":14.2,"w":50,"h":20},"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":""},{"id":"infer-tune>infer-tune#0","f":"infer-tune","t":"infer-tune","k":"button","back":false,"tr":"浮层 ZeRO / 切分改一档","p":"扩缩评估 · Before / After 换推理口径（显存 GB / Max Batch / OOM Ranks）","sc":["i-tune"],"way":0,"area":false,"self":true,"T":{"x":518.3,"y":367.5,"w":20,"h":16.7},"L":{"x":13.3,"y":138.2,"w":226.7,"h":118.3},"ok":true,"ax":""},{"id":"infer-sel>infer-npu#0","f":"infer-sel","t":"infer-npu","k":"button","back":false,"tr":"左列「↗ NPU」","p":"部署规划 / 推理 · 故障定位 · KV Cache 占多少、Batch 还能加多少","sc":["i-plan","i-alert"],"way":1,"area":false,"self":false,"T":{"x":119,"y":322,"w":53,"h":20},"L":{"x":13.3,"y":241.7,"w":226.7,"h":141},"ok":true,"ax":""},{"id":"url>alert-list#0","f":null,"t":"alert-list","k":"url","back":false,"tr":"?goal=alert","p":"故障定位 · 开场就展开告警清单","sc":["alert"],"way":0,"area":false,"self":false,"T":null,"L":{"x":428.3,"y":41.7,"w":343.3,"h":237.5},"ok":true,"ax":""},{"id":"url>alert-list0#0","f":null,"t":"alert-list0","k":"url","back":false,"tr":"?zero=0&goal=alert","p":"故障定位 · 分享一条直接看超容告警的链接（ZeRO 0）","sc":["alert"],"way":0,"area":false,"self":false,"T":null,"L":{"x":428.3,"y":41.7,"w":343.3,"h":259.2},"ok":true,"ax":""},{"id":"url>hier#0","f":null,"t":"hier","k":"url","back":false,"tr":"?goal=plan","p":"切分规划 · 分享场景（map / perf / tune 同理）","sc":["plan"],"way":0,"area":false,"self":false,"T":null,"L":{"x":876.7,"y":53.3,"w":310,"h":683.3},"ok":true,"ax":""},{"id":"url>obj#0","f":null,"t":"obj","k":"url","back":false,"tr":"?goal=map&obj=dp:3","p":"设备映射 · 深链里的并行对象保留","sc":["map"],"way":0,"area":false,"self":false,"T":null,"L":{"x":653.9,"y":14.2,"w":58.3,"h":20},"ok":true,"ax":"亮的是 DP 3 这一组；截图是 TP 0"},{"id":"url>perf#0","f":null,"t":"perf","k":"url","back":false,"tr":"?goal=perf","p":"性能调优 · 分享场景","sc":["perf"],"way":0,"area":false,"self":false,"T":null,"L":{"x":13.3,"y":511.7,"w":1173.3,"h":225},"ok":true,"ax":""},{"id":"url>tune#0","f":null,"t":"tune","k":"url","back":false,"tr":"?goal=tune","p":"变更评估 · 分享场景","sc":["tune"],"way":0,"area":false,"self":false,"T":null,"L":{"x":475,"y":224.2,"w":250,"h":474.2},"ok":true,"ax":""},{"id":"url>npu#0","f":null,"t":"npu","k":"url","back":false,"tr":"?sel=1355","p":"通用 · 分享一张卡的 NPU 页（?sel 只在 NPU 页时写进地址）","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":478.2,"y":168,"w":243.7,"h":414.1},"ok":true,"ax":""},{"id":"url>npu-top#0","f":null,"t":"npu-top","k":"url","back":false,"tr":"?sel=1355&cam=top","p":"通用 · 分享单卡的机位与内容（rv3 / sibs / comm3 同理）","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":523.6,"y":262,"w":152.7,"h":226},"ok":true,"ax":""},{"id":"url>iso#0","f":null,"t":"iso","k":"url","back":false,"tr":"?view=iso","p":"通用 · 分享立体视图（?view=3d 同理）","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":540.3,"y":701.7,"w":44,"h":30},"ok":true,"ax":""},{"id":"url>netgraph#0","f":null,"t":"netgraph","k":"url","back":false,"tr":"?panel=netgraph","p":"通用 · 新增：把另开的那块面板写进地址","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":13.3,"y":391.7,"w":1173.3,"h":345},"ok":true,"ax":""},{"id":"url>ann-off#0","f":null,"t":"ann-off","k":"url","back":false,"tr":"?hide=occ,num,rel,grp","p":"通用 · 关掉画布标注","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":302.3,"y":73,"w":595.3,"h":597.3},"ok":true,"ax":""},{"id":"url>split-url#0","f":null,"t":"split-url","k":"url","back":false,"tr":"?ep=3","p":"切分规划 · 这组切分合不合法","sc":["plan"],"way":0,"area":false,"self":false,"T":null,"L":{"x":13.3,"y":233.8,"w":226.7,"h":56.7},"ok":true,"ax":""},{"id":"url>dense64#0","f":null,"t":"dense64","k":"url","back":false,"tr":"?preset=dense64","p":"通用 · 小规模直接看矩阵","sc":["general"],"way":0,"area":false,"self":false,"T":null,"L":{"x":0,"y":0,"w":1200,"h":750},"ok":true,"ax":""},{"id":"url>incident-npu#0","f":null,"t":"incident-npu","k":"url","back":false,"tr":"?preset=incident2048&sel=1559","p":"故障定位 · 事故根因卡","sc":["alert"],"way":0,"area":false,"self":false,"T":null,"L":{"x":551.6,"y":333.9,"w":96.8,"h":159.4},"ok":true,"ax":""},{"id":"url>infer#0","f":null,"t":"infer","k":"url","back":false,"tr":"?mode=infer","p":"推理 · 推理口径（对不上工况的 goal 退回故障定位）","sc":["i-alert"],"way":0,"area":false,"self":false,"T":null,"L":{"x":449.5,"y":14.2,"w":74,"h":20},"ok":true,"ax":""}],"journeys":[{"k":"alert","mode":"train","n":"故障定位","q":"哪张卡超容了、落在哪个机柜哪块板、里面是什么撑爆的？（默认 ZeRO 1 没有超容，从 ZeRO 0 的现场开始）","steps":["url>alert-list0#0","alert-list0>alert-rank#0","alert-rank>alert-board#0","alert-board>alert-npu#0","alert-npu>alert-npu#0"]},{"k":"plan","mode":"train","n":"切分规划","q":"这套切分装得下吗？每一维 Comm 在哪一层闭合？","steps":["cluster>hier#0","hier>hier-sp#0","hier-sp>hier-rack#0","hier-rack>hier-board#0","hier-board>hier-rack#0","hier-rack>hier-sel-rack#0","hier-sel-rack>npu#0","npu>npu-net#0","npu>hier-sel-rack#1"]},{"k":"map","mode":"train","n":"设备映射","q":"每个 rank 落在哪张物理卡上？同一组的卡挨不挨着？","steps":["cluster>obj#0","obj>sel#0","sel>board-sel#0","board-sel>npu#0","npu>npu-sibs#0","npu-sibs>npu-sib#0","npu-sib>board-sel#0"]},{"k":"perf","mode":"train","n":"性能调优","q":"Throughput、Step Time、Bubble、MoE 负载正常吗？慢在哪一段？","steps":["cluster>perf#0","perf>pp-focus#0","pp-focus>sel#0","sel>npu#0","npu>npu-comp#0","npu>perf#0"]},{"k":"tune","mode":"train","n":"变更评估","q":"改了 ZeRO / 切分 / 预置之后，变好还是变差？","steps":["cluster>tune#0","tune>split-bad#0","split-bad>tune#0","tune>cmp#0","cmp>cmp-clr#0"]},{"k":"i-alert","mode":"infer","n":"故障定位（推理）","q":"同一张卡按推理口径（权重 + KV Cache）装得下吗？","steps":["cluster>infer#0","infer>infer-sel#0","infer-sel>infer-npu#0"]},{"k":"i-plan","mode":"infer","n":"部署规划","q":"权重 + KV Cache 放得下吗？Batch 还能加多少？","steps":["cluster>infer#0","infer>infer-plan#0","infer-plan>infer-sel#0","infer-sel>infer-npu#0"]},{"k":"i-perf","mode":"infer","n":"时延优化","q":"TTFT、TPOT 达标吗？慢在 prefill 还是 decode？","steps":["cluster>infer#0","infer>infer-perf#0","infer-perf>perf#0"]},{"k":"i-tune","mode":"infer","n":"扩缩评估","q":"加卡或改切分之后，装得下、够快吗？","steps":["cluster>infer#0","infer>infer-tune#0","infer-tune>infer-tune#0"]},{"k":"x-npu","mode":"topic","n":"进 NPU 页的三条路","q":"现在是怎么点击下钻到 NPU 页（3D 卡）的？","steps":["cluster>sel#0","sel>npu#0","sel>sel-rack#0","sel-rack>npu#0","sel>board-sel#0","board-sel>npu#0"]},{"k":"x-3d","mode":"topic","n":"在 3D 里下钻","q":"在 3D 里找到一张卡、进去、再回到 3D","steps":["cluster>3d#0","3d>hw-sel#0","hw-sel>hw-sel-rack#0","hw-sel-rack>npu#0","npu>hw-sel-rack#0"]}]}</script>
+<script>
+/*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
+(function () {
+  'use strict';
+  function main() {
+  var D = JSON.parse(document.getElementById('jdata').textContent);
+  var IW = 1200, IH = 750, HH = 150, GV = 860, GH = 400, LST = 30, LSTPAD = 18;
+  var NS = 'http://www.w3.org/2000/svg';
+  var vp = document.getElementById('vp'), world = document.getElementById('world');
+  var NODE = {}, EDGE = {};
+  D.nodes.forEach(function (n) { NODE[n.id] = n; n.out = []; n.inc = []; n.urls = []; });
+  D.edges.forEach(function (e) {
+    EDGE[e.id] = e;
+    if (e.k === 'url') NODE[e.t].urls.push(e); else { NODE[e.f].out.push(e); }
+    NODE[e.t].inc.push(e);
+    e.st = e.back ? 'dot' : ({ canvas: 'solid', dbl: 'solid', wheel: 'solid', drag: 'solid', button: 'dash', tab: 'dash', crumb: 'dash', hover: 'thin', auto: 'thin', url: 'dash' })[e.k] || 'solid';
+  });
+  function circ(n) {
+    if (n <= 20) return String.fromCharCode(0x245F + n);
+    if (n <= 35) return String.fromCharCode(0x3250 + n - 20);
+    if (n <= 50) return String.fromCharCode(0x32B1 + n - 36);
+    return '(' + n + ')';
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function where(L) {
+    if (!L) return '';
+    var cx = L.x + L.w / 2, cy = L.y + L.h / 2;
+    if (L.w > IW * .7 && L.h > IH * .7) return '整屏';
+    var h = cx < IW / 3 ? 0 : cx < IW * 2 / 3 ? 1 : 2, v = cy < IH / 3 ? 0 : cy < IH * 2 / 3 ? 1 : 2;
+    return [['左上', '上方', '右上'], ['左侧', '中间', '右侧'], ['左下', '下方', '右下']][v][h];
+  }
+  // 热点编号：每张截图按热点位置从上到下、从左到右编号；没有位置的（Esc）排最后
+  D.nodes.forEach(function (n) {
+    n.out.sort(function (a, b) {
+      var ay = a.T ? (a.T.cy != null ? a.T.cy : a.T.y + a.T.h / 2) : 1e9, by = b.T ? (b.T.cy != null ? b.T.cy : b.T.y + b.T.h / 2) : 1e9;
+      if (Math.abs(ay - by) > 6) return ay - by;
+      var ax = a.T ? a.T.x : 0, bx = b.T ? b.T.x : 0; return ax - bx || (a.back - b.back);
+    });
+    n.out.forEach(function (e, i) { e.n = i + 1; });
+  });
+
+  /* ── 面板内容 */
+  var GESTURES = [
+    '滚轮 = 以指针为中心缩放（平面 0.4×–16×）：3× 起出封装图标、列头与展开连线，6× 起出 rank 号；原地滚轮跨进 3× 时按指针位置补一次展开连线；把取景的 Rack 拉远到不足一半就撤掉取景',
+    '左键拖 = 平移（平面、板视图、2.5D）；3D 左键拖 = 转，右键 / Shift 拖 = 平移。平面与板视图按累计距离算：拖过 4px 松手不算点击；2.5D / 3D 只看每一步移动是否超过 3px，慢慢拖（每步 ≤ 3px）松手仍会算一次点击（demo 现有的毛病）',
+    '单击 NPU = 选中（第二档）；再点选中那颗 = 先放大到它的 Rack；已在它的 Rack、6× 以上、板视图、立体取景后再点 = 进 NPU 页（Hierarchy L2 格同一规则）；Logical Cube 里点一块 = 选中，选中后再点直接进 NPU 页（没有 Rack 那一步）',
+    '单击 Rack（框边、板行、CPU / DPU / NIC）= 取景这个 Rack；取景后点它的一行或行上的器件 = 进板视图；单击 SuperPoD 底板、L2 平面、SW2、L1 = 取景这个 SuperPoD',
+    '点空白 / Esc = 退一层，平面、2.5D / 3D、板视图共用一套顺序：取消选中 → 退出板（回到它的 Rack）→ Rack 退到 SuperPoD → SuperPoD 退到整个集群 → 撤段聚焦 / 并行对象',
+    '有选中时点 SuperPoD 底板 = 先撤选中、保留 Rack 取景；SuperPoD 之外才是真正的空白',
+    '双击只在真正的空白上复位；双击 NPU = 两次单击（远看：选中 + 放大到 Rack；Rack 里：只选中，不直接跳页）',
+    'Esc：先关配置浮层，再收告警清单，再按点空白的顺序退一层；NPU 页里 Esc 回第二档、选中保留',
+    '告警清单是下拉：点画布那一下只收清单（画布不退层），点清单外或 Esc 也收；「故障定位 ▾ / ▴」',
+    '面包屑：模型名 = 回整个集群；Board N = 进 / 回那块板（板视图里选中时 = 撤选中）；rank N（NPU 页里）= 回第二档',
+    '工具条：缩小 / 复位 / 放大（每次 ×1.4，绕画面中心，0.85× 到 3× 要连点 4 次；板视图复位板的镜头，立体板层重新取景这块板；NPU 页默认机位已是最近，放大看不出变化）；平面 / 2.5D / 3D 互相带着取景',
+    '悬停：平面、板视图、2.5D / 3D 同一种样式的跟手小提示（平面多写并行坐标与 Slot，3D 只写 rank · Board · Rack · SuperPoD），选中那颗写下一步（「再点放大到 Rack」/「再点进 NPU 页」）',
+    '浏览器后退会离开本页：整页按「URL 即状态」用 replaceState，没有站内历史'
+  ];
+  var DEEP = [
+    ['?goal=alert|plan|map|perf|tune', '开场场景；alert 展开告警清单；对不上工况的键退回故障定位并从地址里去掉', 'alert-list'],
+    ['?mode=infer', '推理工况（占用口径、卡片、告警、泳道、场景都换）', 'infer'],
+    ['?zero=0..3', 'ZeRO 档；ZeRO 0 下 3959 张超容，配 ?goal=alert 开出的清单第一行是 OOM · rank 208', 'alert-list0'],
+    ['?sel=<rank>', '直接进这张卡的 NPU 页；只在 NPU 页时写进地址，离开就去掉', 'npu'],
+    ['?panel=<面板>', '新增：场景自带面板之外另开的那块（netgraph / swimlane / rubik / hier；关掉自带面板写 none）', 'netgraph'],
+    ['?view=iso|3d', '集群开在 2.5D 等轴测 / 3D 透视', 'iso'],
+    ['?obj=tp:0', '并行对象高亮（tp|cp|ep|dp|pp:下标，越界按组数折回）；设备映射保留深链里的对象', 'obj'],
+    ['?cam=top · ?rv3=net|comp', 'NPU 页顶视 / 整网切分 / 逐层算子', 'npu-top'],
+    ['?sibs=on · ?comm3=1 · ?commk3=…', 'NPU 页兄弟 rank 展开 / 通信连线（逐维）', 'npu-comm'],
+    ['?hide=occ,num,rel,grp', '关掉画布的占用灰度 / rank 号 / 展开连线 / 通信组', 'ann-off'],
+    ['?dhide=cap,state,…', '关掉哪几类数据卡（与场景筛选叠加）', null],
+    ['?tp= ?cp= ?pp= ?dp= ?ep=', '覆盖预置切分；不合法时左列 Split Invalid', 'split-url'],
+    ['?preset=<键>', 'moe504b32k（缺省）/ moe718b128k / pangu / incident2048 / dense64（直出矩阵页）', 'dense64'],
+    ['?fps=1', '透传给 2.5D / 3D 引擎，角上显示帧率', null]
+  ];
+  var CARDS = {
+    train: [['故障定位', '告警清单（▾）', 'Capacity · 显存¹ · Training Health · MoE · Pipeline · 历史事故³'],
+      ['切分规划', 'Hierarchy（右侧，窄面板时右列挪到面板左边）', 'Capacity · 显存¹ · 权重切分² · Comm · Pipeline'],
+      ['设备映射', '并行对象 TP 0（有选中时取它的组）', 'Comm · On-board⁴ · Capacity'],
+      ['性能调优', 'Swimlane（1F1B）', 'Throughput · Step Time · Pipeline · MoE · Training Health · Reference'],
+      ['变更评估', '配置浮层', 'Before / After · Capacity · 显存¹ · Step Time · Throughput · Pipeline']],
+    infer: [['故障定位', '告警清单（▾）', 'Capacity · 显存¹ · MoE · Inference'],
+      ['部署规划', 'Hierarchy', 'Capacity · 显存¹ · 权重切分² · Comm'],
+      ['时延优化', 'Swimlane（prefill / decode）', 'Inference · MoE · Comm · 显存¹ · Reference'],
+      ['扩缩评估', '配置浮层', 'Before / After · Inference · Capacity · 显存¹ · Comm']]
+  };
+  var CARDNOTE = ['¹ 显存没有单独的卡：选中一张卡后，是左列 rank 卡里的五档（Weights / Grads / Optimizer / Activations / Reserve）', '² 权重切分 = NPU 页左列的切分小卡', '³ 历史事故 = 告警清单下面的几行', '⁴ On-board = 板视图里有选中时，左列多出的那张板卡', '表里是每个场景允许摆的卡；集群这一档故障定位实际看到的是左列 Capacity + PP Stage、右列 Training Health / MoE / Pipeline'];
+  var ALERTS = [
+    ['OOM（超容）', '选中最满那张超容卡并取景它的 Rack；卡本身红，选中框加粗白', 'crit', '红'],
+    ['Critical 88%', '红线档里最满、还没超容的那张，取景它的 Rack，选中框琥珀', 'warn', '琥珀'],
+    ['Peak Usage', '没有超容 / 红线时才出现：最满那张，选中 + 取景，不上色', '', '灰（info）'],
+    ['Amax 越线', '回整个集群；那一段的卡涂琥珀，Rack 外缘与左列 PP 柱描琥珀', 'warn', '琥珀'],
+    ['Routing Imbalance', '越线的几段一起涂琥珀（写「PP3 等 7 段」），聚焦落在最高那段', 'warn', '琥珀'],
+    ['KV Cache overflow', '推理：那一段的段告警', 'crit', '红'],
+    ['Bubble > 25%', '打开 Swimlane（如 incident2048 预置）', 'warn', '琥珀'],
+    ['告警 Layers', '打开 Network Graph，不撤上一条的状态色与段聚焦', '', '灰（info）'],
+    ['历史事故 · 训练', '就地展开事件链；rank 按钮写「↗ rank 1559 · 2048 NPU」，新标签页按事故拓扑打开', '', '读数签琥珀 / 红']
+  ];
+  var FIXED = [
+    '取消选中时，选中带出来的 PP 段聚焦一起撤；2.5D / 3D 里点地面不再有撤不掉的死路',
+    '点空白一层层往外退：平面、2.5D / 3D、板视图、Esc 共用一套顺序',
+    '板视图有了画布上的出口：点空白 / 双击空白 / Esc 回到它所在的 Rack',
+    'Esc = 退一层：先关配置浮层、收告警清单；NPU 页里 Esc 回第二档',
+    'Rack 里的板行、CPU / DPU / NIC 能点（取景 / 进板），L2 平面 / L1 取景它的 SuperPoD',
+    '双击不再闪一下、也不直接跳页',
+    '板视图选中时，面包屑「Board N」= 撤选中、留在板上',
+    '立体板层：点邻板的卡先换板，跨 Rack 换板后退回新 Rack，复位 = 重新取景这块板',
+    '平面 ↔ 立体的取景同步：两边切换后看到同一个取景',
+    '悬停提示统一写全局 Board 号；平面也换成跟手的深色小提示',
+    '并行对象高亮可以用点空白撤掉',
+    '滚轮拉远撤掉 Rack 取景；原地滚轮放大到 3× 补上展开连线',
+    '告警清单按下拉的规矩收起；「故障定位」页签带 ▾ / ▴',
+    '右列和 NPU 页左列下面的空白不再挡画布',
+    'ZeRO 0 下段告警：Rack 外缘与 PP 柱描状态色，看得出是哪一段',
+    'NPU 页：再进同一张卡回到单卡、点主卡退一档、背景兄弟算空白、换 Rack 兄弟后取景跟过去',
+    'NPU 页右上角不再出现引擎自带的设置圆钮',
+    '面包屑不再钻到场景胶囊底下',
+    '换选中时旧的右上 rank 卡不再闪出来',
+    '换场景不丢选中：切分规划 / 设备映射 / 性能调优从 NPU 页退回第二档并开面板',
+    '下钻时收起的面板，离开 NPU 页重新打开；?sel 跟着 NPU 页走，新增 ?panel',
+    'Capacity 的 Peak rank 与告警行同一条定位（选中并推到它的 Rack）',
+    'NPU 页也按场景收卡；变更评估在 NPU 页也摆 Before / After',
+    'Hierarchy 开在右侧时，右列卡片挪到面板左边、仍然看得到',
+    '3D 卡的显存层与左列切分小卡互相联动',
+    'Network Graph 的段头 = 聚焦这一段（不再选中段里第一张卡）',
+    'Logical Cube 悬停写本页的 rank 号',
+    '历史事故的 rank 按钮写明去处，新标签页打开',
+    '配置浮层：NPU 段只在 NPU 页、场景外的卡置灰、切分草稿先校验并给可点的改法',
+    '?obj 下标越界按组数折回',
+    '告警清单写「PP3 等 7 段」；info 行不撤上一条的状态色；推理里标「历史事故 · 训练」',
+    '设备映射保留深链里的并行对象'
+  ];
+  var WAYS = [
+    ['① 左列 rank 卡「↗ NPU」', '选中一张卡后任何缩放下都在：一步进 NPU 页（Rack 取景、告警定位、推理里同样有）'],
+    ['② 画布上再点', '点 NPU 选中 → 再点放大到它的 Rack → 再点进 NPU 页；6× 以上、2.5D / 3D 取景后、Hierarchy L2 格同一规则；Logical Cube 选中后再点直接进（没有 Rack 那一步）'],
+    ['③ 板视图里再点', '「↗ Board N」或在 Rack 里点一行进板 → 点 NPU 选中 → 再点进 NPU 页；3D 板层同样']
+  ];
+  // 画布上空出来的格子放面板：[key, col, row, colspan, rowspan]。面板一律只占一行（不挡行间的横沟），
+  // 文字多的占两格宽、分栏；行高按面板内容量出来，放得下为止
+  // 第 6 项 = 面板宽度上限：长文字面板不铺满两格，宽约 2300（适配到这块面板时约 40%，一屏读完、不用横着拖）
+  var PANELS = [['legend', 4, 0, 1, 1], ['alerts', 6, 1, 1, 1], ['ways', 5, 2, 1, 1], ['ways3d', 7, 2, 1, 1], ['gest', 4, 9, 2, 1, 2300], ['fixed', 2, 12, 2, 1, 2300], ['cards', 4, 12, 2, 1, 2300], ['deep', 6, 12, 2, 1, 2300]];
+  var JCELLS = [[5, 6], [6, 6], [7, 6], [5, 7], [6, 7], [7, 7], [5, 8], [6, 8], [7, 8], [6, 9], [7, 9]];
+
+  /* ── 量字 */
+  var mctx = document.createElement('canvas').getContext('2d');
+  function tw(s, px, wt) { mctx.font = (wt || 400) + ' ' + px + 'px ' + getComputedStyle(document.body).fontFamily; return mctx.measureText(s).width; }
+  function wrap(s, px, maxW, maxLines, wt, indent) {
+    var out = [], cur = '', lim = function () { return maxW - (out.length === 0 ? (indent || 0) : 0); };
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (tw(cur + c, px, wt) > lim() && cur) { out.push(cur); cur = c.trim() ? c : ''; if (out.length === maxLines) { cur = null; break; } }
+      else cur += c;
+    }
+    if (cur != null && cur) out.push(cur);
+    if (cur === null) { var last = out[maxLines - 1]; while (last.length && tw(last + '…', px, wt) > maxW) last = last.slice(0, -1); out[maxLines - 1] = last + '…'; }
+    return out;
+  }
+
+  /* ── 面板内容：先拼好，放进看不见的同宽容器里量高，行高按它来 */
+  function lgRow(svg, t) { return '<svg viewBox="0 0 170 40">' + svg + '</svg><div>' + t + '</div>'; }
+  var LG = '<h2>图例</h2><p class="sub">悬停热点、连线或下面的条目，只亮这一条；点截图看大图与进出列表</p><div class="lg">'
+    + lgRow('<path d="M4 20H150" stroke="#9a9a9a" stroke-width="2.4" fill="none"/><path d="M150 13 166 20 150 27z" fill="#9a9a9a"/>', '实线 · 画布上点 / 双击 / 滚轮 / 拖动')
+    + lgRow('<path d="M4 20H150" stroke="#9a9a9a" stroke-width="2.4" stroke-dasharray="12 8" fill="none"/><path d="M150 13 166 20 150 27z" fill="#9a9a9a"/>', '虚线 · 按钮 / 场景页签 / 面包屑往下 / 工具条')
+    + lgRow('<path d="M4 20H150" stroke="#9a9a9a" stroke-width="3" stroke-dasharray="1.5 7" stroke-linecap="round" fill="none"/><path d="M150 13 166 20 150 27z" fill="#9a9a9a"/>', '点线 · 返回：点空白 / Esc / 面包屑往上 / 复位（默认收起，右下「返回线」打开）')
+    + lgRow('<path d="M4 20H150" stroke="#7a7a7a" stroke-width="1.2" fill="none"/><path d="M150 15 162 20 150 25z" fill="#7a7a7a"/>', '细线 · 悬停 / 自动')
+    + lgRow('<rect x="40" y="6" width="56" height="28" rx="7" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="40" cy="6" r="13" fill="#fff" stroke="#111" stroke-width="2"/><text x="40" y="7" font-size="15" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#111">2</text>', '热点 · 白框 = 点的那个元素，编号同截图下的列表')
+    + lgRow('<circle cx="70" cy="20" r="11" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="70" cy="20" r="2.5" fill="#fff"/>', '一大片可点的区域（底板 / 空白）只标点下去的位置')
+    + lgRow('<rect x="40" y="6" width="56" height="28" rx="7" fill="none" stroke="#fff" stroke-width="2.4" stroke-dasharray="7 5"/>', '落点 · 虚线白框 = 到了目标页落在哪')
+    + lgRow('<rect x="40" y="6" width="56" height="28" rx="7" fill="none" stroke="#fff" stroke-width="2.4" stroke-dasharray="14 5 3 5"/>', '示意落点 · 点划框 = 目标截图只是同类状态（别的卡 / Rack / 视图 / 场景），悬停写明差在哪')
+    + lgRow('<path d="M4 20H70" stroke="#9a9a9a" stroke-opacity=".3" stroke-width="2.4" fill="none"/><path d="M70 20H166" stroke="#9a9a9a" stroke-width="2.4" fill="none"/>', '线在截图里面的那一段平时淡，亮起时全显')
+    + lgRow('<circle cx="40" cy="20" r="13" fill="#3a3a3a" stroke="#fff" stroke-width="2" stroke-dasharray="3 3"/><text x="40" y="21" font-size="15" font-weight="700" text-anchor="middle" dominant-baseline="central" fill="#fff">5</text><rect x="70" y="8" width="56" height="26" rx="6" fill="#2a2a2a" stroke="#fff" stroke-width="1.6"/><text x="98" y="21" font-size="14" font-weight="600" text-anchor="middle" dominant-baseline="central" fill="#fff">Esc</text>', '灰底编号 = 返回；Esc 键标在截图外的边上（朝着去处那一边）')
+    + lgRow('<text x="4" y="22" font-size="19" fill="#8a8a8a">↩ · 原地</text>', '「原地」= 还在这一页（悬停时画出页内的小弧线）')
+    + '</div>';
+  var WY = '<h2>怎么进 NPU 页（3D 卡）</h2><p class="sub">三条路，线上标着「NPU ①②③」；左下角「进 NPU 页的三条路」一次亮出来</p>'
+    + WAYS.map(function (w) { return '<h3>' + w[0] + '</h3><div class="k">' + w[1] + '</div>'; }).join('')
+    + '<h3>回来</h3><div class="k">点空白 / Esc 回到进来前那一档，选中保留：① 从总览 ↗ NPU 进来回总览，② 从 Rack 再点进来回 Rack 取景，③ 从板视图进来回板视图；从 3D 进来的回到 3D。图上 NPU 页那几条「点主卡 / 面包屑 rank」画的是 ② 的情形</div>';
+  var WY3 = '<h2>在 3D 里下钻</h2><p class="sub">工具条「3D」→ 点 NPU 方块（白线框，悬停写「再点放大到 Rack」）→ 再点（取景它的 Rack，悬停写「再点进 NPU 页」）→ 再点进 NPU 页；面包屑「rank N」回到 3D 取景</p>'
+    + '<h3>点板身（NPU 以外）</h3><div class="k">第一下取景这个 Rack，第二下进板层；板层里点一颗选中、再点进 NPU 页</div>'
+    + '<h3>点地面</h3><div class="k">SuperPoD 底板 = 这个 SuperPoD 里的空白（先撤选中、再退出板、Rack → SuperPoD）；底板之外 = 回整个集群，最后撤段聚焦</div>'
+    + '<h3>平面 ↔ 立体</h3><div class="k">取景两边同步：3D 里取景的 Rack 切回平面照样取景、Rack 框描亮</div>';
+  var GS = '<h2>全局手势</h2><ul class="cols2">' + GESTURES.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('') + '</ul>';
+  var DP = '<h2>深链参数</h2><table><tr><th>参数</th><th>打开什么</th></tr>' + DEEP.map(function (d) { return '<tr><td><code>' + esc(d[0]) + '</code></td><td>' + esc(d[1]) + (d[2] ? ' <span class="k">→ ' + esc(NODE[d[2]].name) + '</span>' : '') + '</td></tr>'; }).join('') + '</table>';
+  var AL = '<h2>告警类型</h2><table><tr><th>告警</th><th>点了定位到哪</th><th>状态色</th></tr>' + ALERTS.map(function (a) { return '<tr><td>' + esc(a[0]) + '</td><td>' + esc(a[1]) + '</td><td class="' + a[2] + '">' + esc(a[3]) + '</td></tr>'; }).join('') + '</table><p class="sub" style="margin-top:14px">琥珀的告警不会把一张超容的卡降成琥珀；单卡告警在板视图里点 = 换到它那块板</p>';
+  var FX = '<h2>这次梳理顺手改掉的</h2><p class="sub">画这张图时发现的不顺，已在 10.30 里改掉；图上画的都是改完之后的行为</p><ol class="cols2 fx">' + FIXED.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ol>';
+  var CD = '<h2>场景与卡片</h2><p class="sub">永远停在一个场景上（默认故障定位）；每个场景只摆它用得上的卡，再点当前场景 = 重新打开它的面板</p>'
+    + ['train', 'infer'].map(function (m) { return '<h3>' + (m === 'train' ? 'Train · 训练' : 'Inference · 推理') + '</h3><table><tr><th>场景</th><th>打开的面板</th><th>摆的卡</th></tr>' + CARDS[m].map(function (r) { return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td></tr>'; }).join('') + '</table>'; }).join('')
+    + '<ul class="fn">' + CARDNOTE.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>';
+  var PC = { legend: LG, ways: WY, ways3d: WY3, gest: GS, deep: DP, alerts: AL, fixed: FX, cards: CD };
+  var PANS = PANELS.map(function (p) { return { key: p[0], c: p[1], r: p[2], span: p[3], rs: p[4], maxw: p[5], inner: PC[p[0]], cls: 'p-' + p[0] }; });
+  D.journeys.forEach(function (j, i) {
+    var c = JCELLS[i]; if (!c) return;
+    var steps = j.steps.map(function (id) { var e = EDGE[id]; return '<li>' + esc(e.f ? NODE[e.f].name : '地址栏 ' + e.tr) + ' <span class="k">— ' + esc(e.f ? e.tr : '打开') + ' →</span> ' + esc(e.self ? '原地' : NODE[e.t].name) + (e.ax ? ' <span class="k">（示意落点）</span>' : '') + '</li>'; }).join('');
+    PANS.push({ key: 'j-' + j.k, c: c[0], r: c[1], span: 1, rs: 1, cls: 'jp', inner: '<h2>' + esc(j.n) + '<span class="mode">' + (j.mode === 'train' ? 'Train' : j.mode === 'infer' ? 'Inference' : '专题') + '</span></h2><p class="sub">' + esc(j.q) + '</p><ol>' + steps + '</ol>' });
+  });
+  (function () {
+    var m = document.createElement('div'); m.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden'; world.appendChild(m);
+    PANS.forEach(function (P) { var w = Math.min(P.maxw || 1e9, P.span * IW + (P.span - 1) * GV); m.innerHTML = '<div class="panel ' + P.cls + '" style="position:relative;width:' + w + 'px">' + P.inner + '</div>'; P.need = m.firstChild.offsetHeight + 12; });
+    world.removeChild(m);
+  })();
+
+  /* ── 布局：列 = 深度，行 = 视图 / 场景 */
+  var NC = D.cols.length, NR = D.rows.length;
+  var rowH = [];
+  for (var r = 0; r < NR; r++) rowH[r] = 600;
+  D.nodes.forEach(function (n) {
+    var items = n.out.length;
+    n.listH = items ? LSTPAD + Math.ceil(items / 2) * LST + 8 : 0;
+    n.h = HH + IH + n.listH;
+    rowH[n.row] = Math.max(rowH[n.row], n.h);
+  });
+  PANS.forEach(function (P) { if (P.rs === 1) rowH[P.r] = Math.max(rowH[P.r], P.need + 40); });
+  var colX = [], rowY = [];
+  for (var c = 0; c < NC; c++) colX[c] = c * (IW + GV);
+  var yy = 0; for (r = 0; r < NR; r++) { rowY[r] = yy; yy += rowH[r] + GH; }
+  var WMIN = { x: -GV / 2 - 760, y: -GH / 2 - 420 }, WMAX = { x: colX[NC - 1] + IW + GV / 2 + 60, y: yy - GH / 2 + 60 };
+  function gvx(g) { return g === 0 ? colX[0] - GV / 2 : g === NC ? colX[NC - 1] + IW + GV / 2 : colX[g] - GV / 2; }
+  function ghy(h) { return h === 0 ? rowY[0] - GH / 2 : h === NR ? rowY[NR - 1] + rowH[NR - 1] + GH / 2 : rowY[h] - GH / 2; }
+  D.nodes.forEach(function (n) { n.x = colX[n.col]; n.y = rowY[n.row]; n.sx = n.x; n.sy = n.y + HH; });
+  var BLOCK = [];   // 卡与面板的矩形：标签不能压上去
+  D.nodes.forEach(function (n) { BLOCK.push({ x: n.x - 8, y: n.y + 20, w: IW + 16, h: n.h - 20 }); });
+
+  /* ── 世界层 DOM */
+  var html = [];
+  // 大标题不再画在画布上（顶栏已经写了）；列头底边贴着第一行上沿，行头右边贴着第 0 列左边的沟
+  D.cols.forEach(function (t, c) { html.push('<div class="lbl col" style="left:' + colX[c] + 'px;top:' + rowY[0] + 'px">' + esc(t) + '</div>'); });
+  D.rows.forEach(function (t, r) { html.push('<div class="lbl row" style="left:' + (colX[0] - GV / 2 - 60) + 'px;top:' + (rowY[r] + HH) + 'px">' + esc(t) + '</div>'); });
+  D.nodes.forEach(function (n) {
+    var li = n.out.map(function (e) {
+      var to = e.self ? '原地' : NODE[e.t].name;
+      var wh = where(e.L);
+      return '<li data-e="' + e.id + '"' + (e.back ? ' class="bk"' : '') + ' title="' + esc(circ(e.n) + ' ' + e.tr + ' → ' + to + (wh ? '（' + wh + '）' : '') + '\n' + e.p + (e.ax ? '\n示意落点：' + e.ax : '')) + '"><b>' + circ(e.n) + '</b>' + (e.back ? '↩ ' : '') + esc(e.tr) + ' <i>→ ' + esc(to) + (wh && !e.self ? '（' + wh + (e.ax ? '，示意' : '') + '）' : '') + '</i></li>';
+    }).join('');
+    var dl = n.urls.map(function (e) { return '<span data-e="' + e.id + '" title="' + esc(e.p) + '">深链 ' + esc(e.tr) + '</span>'; }).join('');
+    html.push('<div class="card" data-n="' + n.id + '" style="left:' + n.x + 'px;top:' + n.y + 'px;height:' + n.h + 'px">'
+      + '<div class="hd"><div class="nm" title="' + esc(n.name) + '">' + esc(n.name) + '</div>' + (dl ? '<div class="dl">' + dl + '</div>' : '') + '<div class="ds">' + esc(n.desc) + '</div></div>'
+      // 远看先用 320px 的小图（同步解码、一次画出）；推近到 10% 以上再换 1200px 的原图
+      + '<div class="shot"><img class="th" src="' + n.th + '" alt="" aria-hidden="true" width="1200" height="750" draggable="false"><img class="fu" data-src="' + n.img + '" alt="' + esc(n.name) + '" width="1200" height="750" draggable="false"></div>'
+      + (li ? '<ol class="hs">' + li + '</ol>' : '') + '</div>');
+  });
+  var PC = { legend: LG, ways: WY, ways3d: WY3, gest: GS, deep: DP, alerts: AL, fixed: FX, cards: CD };
+  function cell(c, r, span, rs, maxw) { var w = Math.min(maxw || 1e9, (span || 1) * IW + ((span || 1) - 1) * GV), r2 = r + (rs || 1) - 1; return { x: colX[c], y: rowY[r] + 40, w: w, h: rowY[r2] + rowH[r2] - rowY[r] - 40 }; }
+  function panel(key, rc, inner, cls) { BLOCK.push(rc); return '<div class="panel ' + (cls || '') + '" data-p="' + key + '" style="left:' + rc.x + 'px;top:' + rc.y + 'px;width:' + rc.w + 'px;height:' + rc.h + 'px">' + inner + '</div>'; }
+  PANS.forEach(function (P) { html.push(panel(P.key, cell(P.c, P.r, P.span, P.rs, P.maxw), P.inner, P.cls)); });
+  world.innerHTML = html.join('');
+  world.style.width = (WMAX.x - WMIN.x) + 'px'; world.style.height = (WMAX.y - WMIN.y) + 'px';
+
+  /* ── 热点几何（先算，连线从这里出发） */
+  D.nodes.forEach(function (n) {
+    var keyI = { L: 0, R: 0 };
+    n.out.forEach(function (e) {
+      if (!e.T) {
+        // Esc 没有点的位置：标在截图外、朝去处那一边的边上，线直接往沟里走，不横穿截图
+        var side = NODE[e.t].col < n.col ? 'L' : 'R';
+        e.key = true; e.kside = side; e.anchor = [side === 'L' ? n.sx - 54 : n.sx + IW + 54, n.sy + 26 + keyI[side] * 44];
+        e.hbox = { x: e.anchor[0] - 36, y: e.anchor[1] - 16, w: 72, h: 32 }; keyI[side]++; BLOCK.push({ x: e.hbox.x - 6, y: e.hbox.y - 6, w: 84, h: 44 }); return;
+      }
+      var T = e.T, w = Math.max(T.w, 20), h = Math.max(T.h, 20);
+      var ax = n.sx + (T.cx != null ? T.cx : T.x + T.w / 2), ay = n.sy + (T.cy != null ? T.cy : T.y + T.h / 2);
+      e.anchor = [ax, ay];
+      e.hbox = e.area ? { x: ax - 13, y: ay - 13, w: 26, h: 26 } : { x: n.sx + T.x - (w - T.w) / 2, y: n.sy + T.y - (h - T.h) / 2, w: w, h: h };
+    });
+  });
+
+  /* ── 连线：热点 → 出卡（水平）→ 竖向沟 → 横向沟 → 目标旁的竖向沟 → 落点；同一条沟里分道 */
+  var routed = [], INMAX = 480;
+  D.edges.forEach(function (e) {
+    if (e.k === 'url' || e.self || !e.L || !e.anchor) return;
+    var A = NODE[e.f], B = NODE[e.t], P = { x: e.anchor[0], y: e.anchor[1] };
+    var Lb = { x: B.sx + e.L.x, y: B.sy + e.L.y, w: e.L.w, h: e.L.h }, Ly = Lb.y + Lb.h / 2, Lx = Lb.x + Lb.w / 2;
+    var ex, en;
+    if (B.col > A.col) { ex = 'R'; en = 'L'; } else if (B.col < A.col) { ex = 'L'; en = 'R'; }
+    else { var dl = (P.x - A.sx) + (Lx - B.sx), dr = (A.sx + IW - P.x) + (B.sx + IW - Lx); ex = en = dl <= dr ? 'L' : 'R'; }
+    // 朝去处那一边要在截图里横穿太长（> INMAX），而另一边明显更近时，改从近的那条边出去 / 进来，在沟里绕
+    var opp = function (x) { return x === 'L' ? 'R' : 'L'; }, dIn = function (side, x, n) { return side === 'R' ? n.sx + IW - x : x - n.sx; };
+    var nearer = function (side, x, n) { var a = dIn(side, x, n), b = dIn(opp(side), x, n); return a > INMAX && b < a * .6; };
+    if (e.key) ex = e.kside;
+    else if (nearer(ex, P.x, A)) ex = opp(ex);
+    if (nearer(en, Lx, B)) en = opp(en);
+    var gA = ex === 'R' ? A.col + 1 : A.col, gB = en === 'L' ? B.col : B.col + 1, h = null;
+    if (gA !== gB) {
+      if (A.row === B.row) h = ((P.y + Ly) / 2 < A.y + A.h / 2) ? A.row : A.row + 1;
+      else h = B.row > A.row ? A.row + 1 : A.row;
+    }
+    var hb = e.hbox, sx = ex === 'R' ? hb.x + hb.w : hb.x;
+    var tx = en === 'L' ? Lb.x - 3 : Lb.x + Lb.w + 3;
+    // 截图边：线在这之内的那段淡一些
+    var e1 = e.key ? sx : (ex === 'R' ? Math.max(sx, A.sx + IW) : Math.min(sx, A.sx)), e2 = en === 'L' ? Math.min(tx, B.sx) : Math.max(tx, B.sx + IW);
+    routed.push({ e: e, sx: sx, sy: P.y, tx: tx, ty: Ly, gA: gA, gB: gB, h: h, ex: ex, en: en, e1: e1, e2: e2 });
+  });
+  function lanes(segs) {
+    var by = {};
+    segs.forEach(function (s) { (by[s.g] = by[s.g] || []).push(s); });
+    Object.keys(by).forEach(function (g) {
+      var L = by[g].sort(function (a, b) { return a.a - b.a || (b.b - a.b); }), ends = [];
+      L.forEach(function (s) { var i = 0; while (i < ends.length && ends[i] > s.a) i++; ends[i] = s.b; s.lane = i; });
+      L.forEach(function (s) { s.n = ends.length; });
+    });
+  }
+  var vsegs = [], hsegs = [];
+  routed.forEach(function (R) {
+    var PAD = 40;
+    if (R.gA === R.gB) { R.v1 = { g: 'v' + R.gA, a: Math.min(R.sy, R.ty) - PAD, b: Math.max(R.sy, R.ty) + PAD }; vsegs.push(R.v1); }
+    else {
+      var yH = ghy(R.h), xa = gvx(R.gA), xb = gvx(R.gB);
+      R.v1 = { g: 'v' + R.gA, a: Math.min(R.sy, yH) - PAD, b: Math.max(R.sy, yH) + PAD }; vsegs.push(R.v1);
+      R.h1 = { g: 'h' + R.h, a: Math.min(xa, xb) - PAD - GV / 2, b: Math.max(xa, xb) + PAD + GV / 2 }; hsegs.push(R.h1);
+      R.v2 = { g: 'v' + R.gB, a: Math.min(yH, R.ty) - PAD, b: Math.max(yH, R.ty) + PAD }; vsegs.push(R.v2);
+    }
+  });
+  lanes(vsegs); lanes(hsegs);
+  function laneX(s, g) { var sp = Math.min(14, (GV - 240) / Math.max(1, s.n)); return gvx(g) + (s.lane - (s.n - 1) / 2) * sp; }
+  function laneY(s, h) { var sp = Math.min(13, (GH - 110) / Math.max(1, s.n)); return ghy(h) + (s.lane - (s.n - 1) / 2) * sp; }
+  routed.forEach(function (R) {
+    // R.pts = 截图外的那一段（从源截图边到目标截图边），R.in1 / R.in2 = 截图里面的两小段
+    var xA = laneX(R.v1, R.gA), pts = [[R.e1, R.sy], [xA, R.sy]];
+    if (R.gA === R.gB) pts.push([xA, R.ty]);
+    else { var yH = laneY(R.h1, R.h), xB = laneX(R.v2, R.gB); pts.push([xA, yH], [xB, yH], [xB, R.ty]); R.yH = yH; }
+    pts.push([R.e2, R.ty]);
+    R.pts = pts;
+    R.in1 = Math.abs(R.e1 - R.sx) > 1 ? [[R.sx, R.sy], [R.e1, R.sy]] : null;
+    R.in2 = Math.abs(R.tx - R.e2) > 1 ? [[R.e2, R.ty], [R.tx, R.ty]] : null;
+  });
+  function pathD(pts, rad) {
+    var p = pts.filter(function (q, i) { return i === 0 || Math.abs(q[0] - pts[i - 1][0]) + Math.abs(q[1] - pts[i - 1][1]) > .5; });
+    var d = 'M' + p[0][0].toFixed(1) + ' ' + p[0][1].toFixed(1);
+    for (var i = 1; i < p.length; i++) {
+      if (i < p.length - 1) {
+        var a = p[i - 1], b = p[i], c = p[i + 1];
+        var l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]), r = Math.min(rad, l1 / 2, l2 / 2);
+        var p1 = [b[0] - (b[0] - a[0]) / l1 * r, b[1] - (b[1] - a[1]) / l1 * r], p2 = [b[0] + (c[0] - b[0]) / l2 * r, b[1] + (c[1] - b[1]) / l2 * r];
+        d += 'L' + p1[0].toFixed(1) + ' ' + p1[1].toFixed(1) + 'Q' + b[0].toFixed(1) + ' ' + b[1].toFixed(1) + ' ' + p2[0].toFixed(1) + ' ' + p2[1].toFixed(1);
+      } else d += 'L' + p[i][0].toFixed(1) + ' ' + p[i][1].toFixed(1);
+    }
+    return d;
+  }
+  // 标签：沿沟里的几段找第一处不压卡、不压别的标签的位置（离起点近的优先）；线从标签中间穿过
+  function hit(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
+  function gutterX(g) { var l = g === 0 ? -1e9 : colX[g - 1] + IW + 18, r = g === NC ? 1e9 : colX[g] - 18; return [l, r]; }
+  function gutterY(h) { var t = h === 0 ? -1e9 : rowY[h - 1] + rowH[h - 1] + 14, b = h === NR ? 1e9 : rowY[h] + 14; return [t, b]; }
+  function placeChip(R, cw, ch, set) {
+    var p = R.pts, segs = [];
+    if (R.gA === R.gB) segs.push({ a: p[1], b: p[2], g: R.gA, v: true });
+    else segs.push({ a: p[1], b: p[2], g: R.gA, v: true }, { a: p[2], b: p[3], h: R.h, v: false }, { a: p[3], b: p[4], g: R.gB, v: true });
+    function free(rc) { for (var k = 0; k < BLOCK.length; k++) if (hit(rc, BLOCK[k])) return false; for (k = 0; k < set.length; k++) if (hit(rc, set[k])) return false; return true; }
+    function cands(S, x, y) {
+      if (S.v) { var gx = gutterX(S.g), c = Math.max(gx[0], Math.min(gx[1] - cw, x - cw / 2)); return [{ x: c, y: y - ch / 2, w: cw, h: ch }, { x: gx[0], y: y - ch / 2, w: cw, h: ch }, { x: gx[1] - cw, y: y - ch / 2, w: cw, h: ch }]; }
+      var gy = gutterY(S.h), cy = Math.max(gy[0], Math.min(gy[1] - ch, y - ch / 2)); return [{ x: x - cw / 2, y: cy, w: cw, h: ch }, { x: x - cw / 2, y: gy[0], w: cw, h: ch }, { x: x - cw / 2, y: gy[1] - ch, w: cw, h: ch }];
+    }
+    for (var si = 0; si < segs.length; si++) {
+      var S = segs[si], len = Math.hypot(S.b[0] - S.a[0], S.b[1] - S.a[1]), t = 0;
+      while (true) {
+        var f = len < 1 ? 0 : Math.min(1, t / len), x = S.a[0] + (S.b[0] - S.a[0]) * f, y = S.a[1] + (S.b[1] - S.a[1]) * f, cs = cands(S, x, y);
+        for (var c = 0; c < cs.length; c++) if (free(cs[c])) return { rc: cs[c], at: [x, y] };
+        if (f >= 1 || len < 1) break;
+        t += t < 1400 ? 26 : 110;
+      }
+    }
+    // 路线上放不下：在第一段所在的沟里上下找空位，用一根细引线接回线上
+    var S0 = segs[0], best = null;
+    for (var d = 30; d < 2600 && !best; d += 30) {
+      [-1, 1].forEach(function (sg) {
+        if (best) return;
+        var end = sg < 0 ? (S0.a[1] < S0.b[1] ? S0.a : S0.b) : (S0.a[1] < S0.b[1] ? S0.b : S0.a);
+        if (!S0.v) end = S0.a;
+        var cs = cands(S0, end[0], end[1] + sg * d);
+        for (var c = 0; c < cs.length; c++) if (free(cs[c])) { best = { rc: cs[c], at: end }; break; }
+      });
+    }
+    if (best) return best;
+    var cs0 = cands(S0, S0.a[0], S0.a[1]); return { rc: cs0[0], at: S0.a };
+  }
+
+  /* ── SVG */
+  var ov = document.createElementNS(NS, 'svg');
+  ov.id = 'ov';
+  ov.setAttribute('width', WMAX.x - WMIN.x); ov.setAttribute('height', WMAX.y - WMIN.y);
+  ov.setAttribute('viewBox', WMIN.x + ' ' + WMIN.y + ' ' + (WMAX.x - WMIN.x) + ' ' + (WMAX.y - WMIN.y));
+  ov.style.left = WMIN.x + 'px'; ov.style.top = WMIN.y + 'px';
+  function mk(tag, a, par) { var x = document.createElementNS(NS, tag); for (var k in a) x.setAttribute(k, a[k]); if (par) par.appendChild(x); return x; }
+  var gLand = mk('g', { class: 'LB' }), gLines = mk('g', { class: 'L' }), gHot = mk('g', { class: 'H' }), gChip = mk('g', { class: 'C' }), gStep = mk('g', { class: 'S' });
+  [gLand, gLines, gHot, gChip, gStep].forEach(function (g) { ov.appendChild(g); });
+  world.appendChild(ov);
+  var EL = {};
+  function reg(id, x) { (EL[id] = EL[id] || []).push(x); x.setAttribute('data-e', id); return x; }
+  function grpCls(e) { return 's-' + e.st + (e.back ? ' g-back' : '') + (e.self ? ' g-self' : '') + (e.k === 'url' ? ' g-url' : ''); }
+  // 落点框
+  D.edges.forEach(function (e) {
+    if (!e.L) return; var B = NODE[e.t];
+    var w = Math.max(e.L.w, 24), h = Math.max(e.L.h, 24), x = B.sx + e.L.x - (w - e.L.w) / 2, y = B.sy + e.L.y - (h - e.L.h) / 2;
+    reg(e.id, mk('rect', { class: 'lb ' + (e.ax ? 'ax ' : '') + grpCls(e), x: x, y: y, width: w, height: h, rx: 8 }, gLand));
+  });
+  // 线
+  routed.forEach(function (R) {
+    var e = R.e, d = pathD(R.pts, 28), g = reg(e.id, mk('g', { class: 'ed ' + grpCls(e) }, gLines));
+    mk('path', { class: 'cs', d: d }, g); mk('path', { class: 'ln', d: d }, g); mk('path', { class: 'ht', d: d }, g);
+    [R.in1, R.in2].forEach(function (q) {
+      if (!q) return; var dq = 'M' + q[0][0].toFixed(1) + ' ' + q[0][1].toFixed(1) + 'L' + q[1][0].toFixed(1) + ' ' + q[1][1].toFixed(1);
+      var gi = reg(e.id, mk('g', { class: 'ed inn ' + grpCls(e) }, gLines)); mk('path', { class: 'cs', d: dq }, gi); mk('path', { class: 'ln', d: dq }, gi); mk('path', { class: 'ht', d: dq }, gi);
+    });
+    var aw = reg(e.id, mk('g', { class: 'aw ' + grpCls(e), transform: 'translate(' + R.tx.toFixed(1) + ' ' + R.ty.toFixed(1) + ') rotate(' + (R.en === 'L' ? 0 : 180) + ')' }, gLines));
+    mk('path', { class: 'ah', d: 'M-16 -7 L0 0 L-16 7Z' }, aw);
+  });
+  // 原地：页内小弧线
+  D.edges.forEach(function (e) {
+    if (!e.self || !e.anchor) return; var n = NODE[e.f];
+    var a = e.anchor, L = e.L || e.T || { x: a[0] - n.sx, y: a[1] - n.sy, w: 0, h: 0 }, bx = n.sx + L.x + L.w / 2, by = n.sy + L.y + L.h / 2, d;
+    if (Math.hypot(bx - a[0], by - a[1]) < 40) d = 'M' + (a[0] + 14) + ' ' + (a[1] - 10) + ' C' + (a[0] + 80) + ' ' + (a[1] - 90) + ' ' + (a[0] + 100) + ' ' + (a[1] + 50) + ' ' + (a[0] + 16) + ' ' + (a[1] + 12);
+    else { var mx = (a[0] + bx) / 2, my = (a[1] + by) / 2, dx = bx - a[0], dy = by - a[1]; d = 'M' + a[0] + ' ' + a[1] + ' Q' + (mx - dy * .3) + ' ' + (my + dx * .3) + ' ' + bx + ' ' + by; }
+    var g = reg(e.id, mk('g', { class: 'ed ' + grpCls(e) }, gLines));
+    mk('path', { class: 'cs', d: d }, g); mk('path', { class: 'ln', d: d }, g);
+  });
+  // 热点
+  D.nodes.forEach(function (n) {
+    var seen = {};
+    n.out.forEach(function (e) {
+      var g = reg(e.id, mk('g', { class: 'hs s-' + e.st + (e.back ? ' bk' : '') }, gHot)), hb = e.hbox;
+      if (e.key) {
+        var kg = mk('g', { class: 'key bd', transform: 'translate(' + e.anchor[0] + ' ' + e.anchor[1] + ')' }, g), ki = mk('g', { class: 'bdi' }, kg);
+        mk('rect', { x: -36, y: -16, width: 72, height: 32, rx: 7 }, ki); var kt = mk('text', { x: 0, y: 1 }, ki); kt.textContent = 'Esc ' + e.n;
+        return;
+      }
+      // 编号圆的右下切点贴在热点框的左上角（框外），同一角上有几个就往左排
+      var bx, by;
+      if (e.area) { mk('circle', { class: 'hp', cx: e.anchor[0], cy: e.anchor[1], r: 13 }, g); mk('circle', { cx: e.anchor[0], cy: e.anchor[1], r: 3, fill: '#fff' }, g); bx = e.anchor[0] - 9; by = e.anchor[1] - 9; }
+      else { mk('rect', { class: 'hb', x: hb.x, y: hb.y, width: hb.w, height: hb.h, rx: Math.min(8, hb.w / 3, hb.h / 3) }, g); bx = hb.x - 1; by = hb.y - 1; }
+      var sk = Math.round(bx / 8) + ',' + Math.round(by / 8), off = seen[sk] || 0; seen[sk] = off + 1;
+      var bg = mk('g', { class: 'bd', transform: 'translate(' + (bx - off * 32) + ' ' + by + ')' }, g), bi = mk('g', { class: 'bdi' }, bg);
+      mk('circle', { cx: -15, cy: -15, r: 15 }, bi); var bt = mk('text', { x: -15, y: -14 }, bi); bt.textContent = e.n;
+    });
+  });
+  // 标签
+  // 标签：第一行（编号 + 怎么点）放不下就折成两行，再放不下省略号（悬停提示里有全文）；第二行是用途，最多两行
+  function chipFor(e) {
+    var t1 = circ(e.n) + ' ' + e.tr, nw = e.way ? 'NPU ' + circ(e.way) : '', CW = 480, pad = 16;
+    var nwW = nw ? tw(nw, 15, 700) + 26 : 0, room = CW - 2 * pad - 4;
+    var l1 = tw(t1, 22, 500) + nwW <= room ? [t1] : wrap(t1, 22, room, 2, 500, nwW);
+    var l2 = wrap(e.p, 17, CW - 2 * pad, 2);
+    var w1 = Math.max.apply(null, l1.map(function (s, i) { return tw(s, 22, 500) + (i === 0 ? nwW : 0); })), w2 = Math.max.apply(null, l2.map(function (s) { return tw(s, 17); }));
+    return { l1: l1, nw: nw, l2: l2, cw: Math.min(CW, Math.max(w1, w2) + 2 * pad + 6), ch: 50 + (l1.length - 1) * 28 + l2.length * 23 + 6 };
+  }
+  function drawChip(e, c, rc) {
+    var g = reg(e.id, mk('g', { class: 'chip ' + grpCls(e), transform: 'translate(' + rc.x.toFixed(1) + ' ' + rc.y.toFixed(1) + ')' }, gChip));
+    mk('rect', { x: 0, y: 0, width: rc.w, height: rc.h, rx: 12 }, g);
+    var x0 = 16;
+    if (c.nw) { var nwW = tw(c.nw, 15, 700) + 16; mk('rect', { class: 'nwb', x: x0, y: 14, width: nwW, height: 25, rx: 12.5 }, g); var tn = mk('text', { class: 'nw', x: x0 + 8, y: 32 }, g); tn.textContent = c.nw; x0 += nwW + 10; }
+    c.l1.forEach(function (s, i) { var t = mk('text', { class: 'c1', x: i === 0 ? x0 : 16, y: 35 + i * 28 }, g); t.textContent = s; });
+    var dy = (c.l1.length - 1) * 28;
+    c.l2.forEach(function (s, i) { var u = mk('text', { class: 'c2', x: 16, y: 64 + dy + i * 23 }, g); u.textContent = s; });
+    e.chip = rc;
+  }
+  var placed = [], placedBack = [];
+  routed.slice().sort(function (a, b) { return (a.e.back - b.e.back) || (b.e.way - a.e.way); }).forEach(function (R) {
+    var e = R.e, c = chipFor(e), pc = placeChip(R, c.cw, c.ch, e.back ? placedBack.concat(placed) : placed), rc = pc.rc;
+    (e.back ? placedBack : placed).push(rc);
+    // 标签不压在线上时补一根引线
+    var ax = pc.at[0], ay = pc.at[1], inX = ax > rc.x + 6 && ax < rc.x + rc.w - 6, inY = ay > rc.y + 4 && ay < rc.y + rc.h - 4;
+    if (!(inX && inY)) {
+      var qx = Math.max(rc.x, Math.min(rc.x + rc.w, ax)), qy = Math.max(rc.y, Math.min(rc.y + rc.h, ay));
+      var lg = reg(e.id, mk('g', { class: 'ed ld ' + grpCls(e) }, gLines)); mk('path', { class: 'ln', d: 'M' + qx.toFixed(1) + ' ' + qy.toFixed(1) + 'L' + ax.toFixed(1) + ' ' + ay.toFixed(1) }, lg);
+    }
+    drawChip(e, c, rc);
+  });
+  D.edges.forEach(function (e) {
+    if (!e.self || !e.anchor) return;
+    var c = chipFor(e), n = NODE[e.f], a = e.anchor;
+    var x = Math.max(n.sx + 8, Math.min(a[0] + 30, n.sx + IW - c.cw - 8)), y = Math.min(Math.max(a[1] + 24, n.sy + 8), n.sy + IH - c.ch - 8);
+    drawChip(e, c, { x: x, y: y, w: c.cw, h: c.ch });
+  });
+  // 场景步号
+  var STEPS = {}, STEPPOS = {};
+  D.journeys.forEach(function (j) {
+    STEPPOS[j.k] = [];
+    STEPS[j.k] = j.steps.map(function (id, i) {
+      var e = EDGE[id], p;
+      // 深链那一步没有热点：步号标在目标截图的左上角外
+      if (e.chip) p = [e.chip.x - 6, e.chip.y + 6]; else if (e.anchor) p = [e.anchor[0] + 30, e.anchor[1] - 30]; else if (e.k === 'url') p = [NODE[e.t].sx - 40, NODE[e.t].sy - 40]; else return null;
+      STEPPOS[j.k].push(p);
+      var g = mk('g', { class: 'step', transform: 'translate(' + p[0] + ' ' + p[1] + ')' }, gStep);
+      var w = mk('g', { class: 'stepw' }, g); mk('circle', { r: 30 }, w); var t = mk('text', { y: 1 }, w); t.textContent = i + 1;
+      return g;
+    }).filter(Boolean);
+  });
+
+  /* ── 平移缩放 */
+  // KMAX = 4：截图是 1200px 宽，放到 4 倍已经看清每个像素；FAR = 0.35：再远标签 / 列表 / 说明都小到读不出，干脆收起
+  var cam = { k: 1, x: 0, y: 0 }, KMIN = .015, KMAX = 4, FAR = .35, FULL = .1, varT = 0, movT = 0;
+  function apply() {
+    world.style.transform = 'translate(' + cam.x.toFixed(2) + 'px,' + cam.y.toFixed(2) + 'px) scale(' + cam.k.toFixed(5) + ')';
+    var sp = 24 * cam.k; while (sp >= 40) sp /= 2; while (sp < 20) sp *= 2;
+    vp.style.setProperty('--dot-s', sp.toFixed(2) + 'px');
+    vp.style.setProperty('--dot-x', (((cam.x % sp) + sp) % sp).toFixed(1) + 'px');
+    vp.style.setProperty('--dot-y', (((cam.y % sp) + sp) % sp).toFixed(1) + 'px');
+    document.getElementById('zl').textContent = Math.round(cam.k * 100) + '%';
+    vp.classList.add('is-moving'); clearTimeout(movT); movT = setTimeout(function () { vp.classList.remove('is-moving'); }, 160);
+    clearTimeout(varT); varT = setTimeout(zoomVars, 90);
+    drawMini();
+  }
+  var lastVarK = 0, fullOn = false;
+  function zoomVars() {
+    if (lastVarK && Math.abs(lastVarK / cam.k - 1) < .04) return; lastVarK = cam.k;
+    world.style.setProperty('--inv', (1 / cam.k).toFixed(3));
+    ov.style.setProperty('--bs', Math.min(5, Math.max(1, .3 / cam.k)).toFixed(3));
+    world.classList.toggle('far', cam.k < FAR);
+    // 推近到 10% 以上才去拿 1200px 的原图（只拿一次）；远看用小图
+    if (!fullOn && cam.k >= FULL) {
+      fullOn = true;
+      world.querySelectorAll('img.fu').forEach(function (im) { im.loading = 'lazy'; im.src = im.getAttribute('data-src'); });
+    }
+  }
+  // 图片解码完成后补一次重绘（有的浏览器在变换后的层里不会自己重画刚解码的图）
+  var nudgeT = 0;
+  world.addEventListener('load', function (ev) {
+    if (ev.target.tagName !== 'IMG') return;
+    clearTimeout(nudgeT); nudgeT = setTimeout(function () { cam.x += .01; apply(); requestAnimationFrame(function () { cam.x -= .01; apply(); }); }, 120);
+  }, true);
+  function zoomAt(px, py, f) {
+    var k = Math.max(KMIN, Math.min(KMAX, cam.k * f)); f = k / cam.k;
+    cam.x = px - (px - cam.x) * f; cam.y = py - (py - cam.y) * f; cam.k = k; apply();
+  }
+  function vpRect() { return { w: vp.clientWidth, h: vp.clientHeight }; }
+  var topEl = document.getElementById('top');
+  function topH() { var r = topEl.getBoundingClientRect(); return Math.ceil(r.bottom); }
+  function syncTopH() { document.documentElement.style.setProperty('--top-h', topH() + 'px'); }
+  // 屏幕上留给画面的区域：上面让开顶栏（实测），左边让开场景面板，下面让开工具条
+  function margins(lab) {
+    var V = vpRect(), ph = V.w < 760;
+    var m = { top: topH() + 12, bot: ph ? 120 : 70, left: ph ? 12 : 266, right: ph ? 12 : (V.w > 1100 ? 196 : 40) };
+    if (ph) m.bot = V.h - Math.min(V.h - 60, scnBox.getBoundingClientRect().top) + 12;
+    if (lab) { m.top += ph ? 26 : 40; m.left += ph ? 74 : 124; }   // 适配全图时再给列头 / 行头留地方
+    return m;
+  }
+  function fitK(rc, pad, lab) { var V = vpRect(), M = margins(lab), W = Math.max(60, V.w - M.left - M.right), H = Math.max(60, V.h - M.top - M.bot); return Math.max(KMIN, Math.min(KMAX, Math.min(W / (rc.w + 2 * pad), H / (rc.h + 2 * pad)))); }
+  function fitRect(rc, anim, pad, lab, kmin) {
+    var V = vpRect(), M = margins(lab);
+    pad = pad || 0;
+    var W = Math.max(60, V.w - M.left - M.right), H = Math.max(60, V.h - M.top - M.bot);
+    var k = fitK(rc, pad, lab);
+    if (kmin && k < kmin) return false;
+    var to = { k: k, x: M.left + (W - rc.w * k) / 2 - rc.x * k, y: M.top + (H - rc.h * k) / 2 - rc.y * k };
+    if (!anim) { if (hlId && hlId !== pinId) clearHl(true); cam.k = to.k; cam.x = to.x; cam.y = to.y; flyId++; apply(); return true; }
+    fly(to); return true;
+  }
+  var flyId = 0;
+  function fly(to) {
+    if (hlId && hlId !== pinId) clearHl(true);
+    var from = { k: cam.k, x: cam.x, y: cam.y }, t0 = performance.now(), id = ++flyId, dur = 650;
+    // 在 log 空间插值缩放，屏幕中心按世界坐标平滑移动
+    var V = vpRect(), cx0 = (V.w / 2 - from.x) / from.k, cy0 = (V.h / 2 - from.y) / from.k, cx1 = (V.w / 2 - to.x) / to.k, cy1 = (V.h / 2 - to.y) / to.k;
+    (function tick(now) {
+      if (id !== flyId) return;
+      var t = Math.min(1, (now - t0) / dur), s = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      var k = Math.exp(Math.log(from.k) + (Math.log(to.k) - Math.log(from.k)) * s), cx = cx0 + (cx1 - cx0) * s, cy = cy0 + (cy1 - cy0) * s;
+      cam.k = k; cam.x = V.w / 2 - cx * k; cam.y = V.h / 2 - cy * k; apply();
+      if (t < 1) requestAnimationFrame(tick);
+    })(t0);
+  }
+  function union(rs) { var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; rs.forEach(function (r) { if (!r) return; x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + (r.w || 0)); y1 = Math.max(y1, r.y + (r.h || 0)); }); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; }
+  var gridRect = union(D.nodes.map(function (n) { return { x: n.x, y: n.y, w: IW, h: n.h }; }).concat(BLOCK));
+  function fitAll(anim) { fitRect(gridRect, anim, 60, true); }
+
+  var ptrs = {}, drag = null, moved = 0, pinch = null, lastPT = 'mouse';
+  vp.addEventListener('pointerdown', function (ev) {
+    lastPT = ev.pointerType || 'mouse';
+    if (ev.button !== 0 && ev.pointerType === 'mouse') return;
+    ptrs[ev.pointerId] = { x: ev.clientX, y: ev.clientY };
+    var ids = Object.keys(ptrs);
+    if (ids.length === 1) { drag = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y }; moved = 0; flyId++; }
+    else if (ids.length === 2) { var a = ptrs[ids[0]], b = ptrs[ids[1]]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: cam.k, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, cx: cam.x, cy: cam.y }; drag = null; moved = 99; }
+  });
+  window.addEventListener('pointermove', function (ev) {
+    if (!ptrs[ev.pointerId]) { hoverMove(ev); return; }
+    ptrs[ev.pointerId] = { x: ev.clientX, y: ev.clientY };
+    var ids = Object.keys(ptrs);
+    if (pinch && ids.length >= 2) {
+      var a = ptrs[ids[0]], b = ptrs[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var k = Math.max(KMIN, Math.min(KMAX, pinch.k * d / pinch.d)), f = k / pinch.k;
+      cam.k = k; cam.x = mx - (pinch.mx - pinch.cx) * f; cam.y = my - (pinch.my - pinch.cy) * f; apply(); return;
+    }
+    if (drag) {
+      var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) { moved = Math.max(moved, Math.abs(dx) + Math.abs(dy)); vp.classList.add('is-drag'); if (!pinId) hideTip(); }
+      if (moved > 4) { cam.x = drag.cx + dx; cam.y = drag.cy + dy; apply(); }
+    }
+  });
+  function up(ev) {
+    delete ptrs[ev.pointerId];
+    var ids = Object.keys(ptrs);
+    if (ids.length < 2 && pinch) {
+      pinch = null;
+      // 双指松开一指：剩下那根手指接着拖（moved 保持 99，松手不算点击）
+      if (ids.length === 1) { var q = ptrs[ids[0]]; drag = { x: q.x, y: q.y, cx: cam.x, cy: cam.y }; moved = 99; }
+    }
+    if (!ids.length) { drag = null; vp.classList.remove('is-drag'); }
+  }
+  window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  vp.addEventListener('wheel', function (ev) {
+    ev.preventDefault(); flyId++;
+    if (hlId && hlId !== pinId) clearHl(true);
+    var dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+    if (!ev.ctrlKey && Math.abs(ev.deltaX) > Math.abs(dy) * 1.2) { cam.x -= ev.deltaX; apply(); return; }
+    zoomAt(ev.clientX, ev.clientY, Math.exp(-dy * (ev.ctrlKey ? .012 : .0016)));
+  }, { passive: false });
+  document.getElementById('ctl').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button'); if (!b) return; var V = vpRect();
+    if (b.dataset.z === 'in') zoomAt(V.w / 2, V.h / 2, 1.5);
+    else if (b.dataset.z === 'out') zoomAt(V.w / 2, V.h / 2, 1 / 1.5);
+    else if (b.dataset.z === 'fit') fitAll(true);
+    else if (b.dataset.z === 'back') { ov.classList.toggle('show-back'); b.classList.toggle('on', ov.classList.contains('show-back')); }
+  });
+  window.addEventListener('keydown', function (ev) {
+    if (ev.target.closest && ev.target.closest('input,textarea')) return;
+    var V = vpRect();
+    if (ev.key === 'Escape') { if (dt.classList.contains('open')) closeDetail(); else if (pinId) unpin(); else if (scnKey) setScn(null); return; }
+    if (dt.classList.contains('open')) return;
+    if (ev.key === '+' || ev.key === '=') zoomAt(V.w / 2, V.h / 2, 1.5);
+    else if (ev.key === '-' || ev.key === '_') zoomAt(V.w / 2, V.h / 2, 1 / 1.5);
+    else if (ev.key === '0') fitAll(true);
+  });
+  window.addEventListener('resize', function () { syncTopH(); apply(); });
+
+  /* ── 高亮一条（悬停 / 点住）或一个场景 */
+  var tip = document.getElementById('tip'), hlId = null, hlT = 0, pinId = null;
+  function setOn(id, on) { (EL[id] || []).forEach(function (x) { x.classList.toggle('on', on); }); document.querySelectorAll('[data-e="' + id + '"]').forEach(function (x) { if (!(x instanceof SVGElement)) x.classList.toggle('on', on); }); }
+  function cardOn(id, on) { var c = world.querySelector('.card[data-n="' + id + '"]'); if (c) c.classList.toggle('on', on); }
+  function tipHtml(e) {
+    return '<b>' + (e.f ? esc(NODE[e.f].name) + ' ' + circ(e.n) : '地址栏') + '</b> ' + esc(e.tr) + ' → <b>' + esc(e.self ? '原地' : NODE[e.t].name) + '</b><div class="p">' + esc(e.p) + '</div>'
+      + (e.ax ? '<div class="ax">示意落点（同类截图）：' + esc(e.ax) + '</div>' : '');
+  }
+  function hl(id, ev, dock) {
+    clearTimeout(hlT);
+    if (hlId === id) { if (ev && !dock) placeTip(ev); return; }
+    clearHl(true);
+    if (!id || !EDGE[id]) return;
+    hlId = id; var e = EDGE[id];
+    ov.classList.add('hl'); setOn(id, true);
+    if (!scnKey) { world.classList.add('dim'); if (e.f) cardOn(e.f, true); cardOn(e.t, true); }
+    tip.innerHTML = tipHtml(e);
+    tip.classList.toggle('dock', !!dock);
+    tip.style.display = 'block'; if (ev && !dock) placeTip(ev);
+  }
+  function clearHl(now) {
+    if (!hlId) return;
+    var id = hlId, e = EDGE[id]; hlId = null;
+    setOn(id, false); ov.classList.remove('hl'); tip.style.display = 'none'; tip.classList.remove('dock');
+    if (!scnKey) { world.classList.remove('dim'); if (e.f) cardOn(e.f, false); cardOn(e.t, false); }
+    else reapplyScn();
+  }
+  function hideTip() { tip.style.display = 'none'; }
+  function placeTip(ev) { var x = ev.clientX + 16, y = ev.clientY + 14; var w = tip.offsetWidth, h = tip.offsetHeight; if (x + w > innerWidth - 8) x = ev.clientX - w - 16; if (y + h > innerHeight - 8) y = ev.clientY - h - 14; tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px'; }
+  function hoverMove(ev) {
+    if (drag || ev.pointerType === 'touch') return;
+    var t = ev.target, x = t && t.closest ? t.closest('[data-e]') : null;
+    if (x && world.contains(x)) hl(x.getAttribute('data-e'), ev);
+    else if (hlId && hlId !== pinId) { clearTimeout(hlT); hlT = setTimeout(function () { clearHl(); showPin(); }, 60); }
+    else if (hlId && hlId === pinId && !pinDock) hideTip();
+  }
+  // 点住一条：一直亮着，直到点空白 / Esc；触屏没有悬停，说明钉在屏幕下方
+  var pinDock = false;
+  function showPin() { if (!pinId) return; hl(pinId, null, pinDock); if (!pinDock) hideTip(); }
+  function pin(id, ev) { pinId = id; pinDock = lastPT !== 'mouse'; if (hlId !== id || pinDock) { clearHl(true); hl(id, pinDock ? null : ev, pinDock); } }
+  function unpin() { pinId = null; clearHl(true); }
+  // 点：热点 / 线 / 列表 = 点住这一条并飞到它的两端；截图 = 详情；面板（场景）= 选中场景；空白 = 放开
+  vp.addEventListener('click', function (ev) {
+    if (moved > 4) { moved = 0; return; }
+    var t = ev.target, x = t.closest ? t.closest('[data-e]') : null;
+    if (x) { var id = x.getAttribute('data-e'); pin(id, ev); flyEdge(id); return; }
+    var jp = t.closest ? t.closest('.panel.jp') : null;
+    if (jp) { setScn(jp.getAttribute('data-p').slice(2)); return; }
+    var sh = t.closest ? t.closest('.card .shot') : null;
+    if (sh) { openDetail(sh.parentNode.getAttribute('data-n')); return; }
+    if (pinId) unpin();
+  });
+  function rectOfNodes(ids) { return union(ids.map(function (id) { var n = NODE[id]; return { x: n.x, y: n.y, w: IW, h: n.h }; })); }
+  // 飞到这一条：两端都框进来；框进来读不出字（手机上常见）就只框源截图和它的标签
+  function flyEdge(id) {
+    var e = EDGE[id], both = rectOfNodes(e.f ? [e.f, e.t] : [e.t]), ph = vpRect().w < 760;
+    if (fitRect(both, true, 120, false, ph ? .1 : 0)) return;
+    fitRect(union([rectOfNodes([e.f || e.t]), e.chip]), true, 60);
+  }
+
+  // 场景
+  var scnKey = null, scnBox = document.getElementById('scn');
+  (function () {
+    var h = ['<div class="bt"><div class="gt">场景路径</div><button type="button" data-s="">全部</button>'];
+    [['train', '训练'], ['infer', '推理'], ['topic', '专题']].forEach(function (m) {
+      h.push('<div class="gt">' + m[1] + '</div>');
+      D.journeys.filter(function (j) { return j.mode === m[0]; }).forEach(function (j) { h.push('<button type="button" data-s="' + j.k + '">' + esc(j.n) + '</button>'); });
+    });
+    h.push('</div><div class="q" id="scnQ"></div>');
+    scnBox.innerHTML = h.join('');
+    scnBox.querySelector('[data-s=""]').classList.add('on');
+  })();
+  scnBox.addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (b) setScn(b.dataset.s || null, true); });
+  function reapplyScn() {
+    var j = D.journeys.filter(function (x) { return x.k === scnKey; })[0]; if (!j) return;
+    j.steps.forEach(function (id) { setOn(id, true); });
+  }
+  function setScn(k, anim) {
+    if (pinId) pinId = null;
+    if (hlId) clearHl(true);
+    if (scnKey) {
+      var old = D.journeys.filter(function (x) { return x.k === scnKey; })[0];
+      old.steps.forEach(function (id) { setOn(id, false); }); (STEPS[scnKey] || []).forEach(function (g) { g.classList.remove('on'); });
+      world.querySelectorAll('.card.on, .panel.on').forEach(function (c) { c.classList.remove('on'); });
+    }
+    scnKey = k || null;
+    scnBox.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', (b.dataset.s || null) === scnKey); });
+    var q = document.getElementById('scnQ');
+    if (!scnKey) { ov.classList.remove('sc'); world.classList.remove('dim'); q.innerHTML = ''; if (anim !== false) fitAll(true); return; }
+    var j = D.journeys.filter(function (x) { return x.k === scnKey; })[0];
+    ov.classList.add('sc'); world.classList.add('dim');
+    var ids = {}, rs = [];
+    j.steps.forEach(function (id) { setOn(id, true); var e = EDGE[id]; if (e.f) ids[e.f] = 1; ids[e.t] = 1; if (e.chip) rs.push(e.chip); });
+    Object.keys(ids).forEach(function (id) { cardOn(id, true); });
+    var pn = world.querySelector('.panel[data-p="j-' + scnKey + '"]'); if (pn) pn.classList.add('on');
+    (STEPS[scnKey] || []).forEach(function (g) { g.classList.add('on'); });
+    q.innerHTML = '<details open><summary><b>' + esc(j.n) + '</b> · ' + esc(j.q) + '</summary><ol>' + j.steps.map(function (id) { var e = EDGE[id]; return '<li>' + esc(e.f ? NODE[e.f].name : '地址栏 ' + e.tr) + ' <span>— ' + esc(e.f ? e.tr : '打开') + ' →</span> ' + esc(e.self ? '原地' : NODE[e.t].name) + (e.ax ? ' <span>（示意落点）</span>' : '') + '</li>'; }).join('') + '</ol></details>';
+    // 框住这条路上的截图、标签和步号（步号圆半径 30，远看按 --bs 放大，最多 5 倍）
+    requestAnimationFrame(function () {
+      var base = union([rectOfNodes(Object.keys(ids))].concat(rs)), k0 = fitK(base, 160), bsz = 34 * Math.min(5, Math.max(1, .3 / k0)), all = rs.slice();
+      (STEPPOS[scnKey] || []).forEach(function (p) { all.push({ x: p[0] - bsz, y: p[1] - bsz, w: 2 * bsz, h: 2 * bsz }); });
+      fitRect(union([rectOfNodes(Object.keys(ids))].concat(all)), true, 160);
+    });
+  }
+
+  /* ── 详情 */
+  var dt = document.getElementById('dt'), dtFrom = null, dtBack = null, BEHIND = ['vp', 'top', 'scn', 'ctl', 'mini'];
+  function openDetail(id) {
+    var n = NODE[id]; if (!n) return; hideTip();
+    var svg = ['<svg viewBox="0 0 1200 750" aria-hidden="true">'];
+    n.inc.forEach(function (e) {
+      if (!e.L || e.self) return;
+      var w = Math.max(e.L.w, 24), h = Math.max(e.L.h, 24), x = e.L.x - (w - e.L.w) / 2, y = e.L.y - (h - e.L.h) / 2;
+      svg.push('<g data-d="' + e.id + '"><rect class="lb' + (e.ax ? ' ax' : '') + '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="8"/></g>');
+    });
+    var keys = [];
+    n.out.forEach(function (e) {
+      if (!e.T) { keys.push('<span data-d="' + e.id + '">Esc ' + e.n + '</span>'); return; }
+      var bx, by, s = '<g class="' + (e.back ? 'bk' : '') + '" data-d="' + e.id + '">';
+      var T = e.T, w = Math.max(T.w, 20), h = Math.max(T.h, 20), x = T.x - (w - T.w) / 2, y = T.y - (h - T.h) / 2;
+      if (e.area) { var ax = T.cx != null ? T.cx : T.x + T.w / 2, ay = T.cy != null ? T.cy : T.y + T.h / 2; s += '<circle class="hb area" cx="' + ax + '" cy="' + ay + '" r="13"/>'; bx = ax - 9; by = ay - 9; }
+      else { s += '<rect class="hb" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="6"/>'; bx = x - 1; by = y - 1; }
+      // 编号放在框左上角外面（截图外也照画，.im 不裁 SVG）
+      var cx = Math.max(-14, bx - 15), cy = Math.max(-14, by - 15);
+      s += '<circle class="bdc" cx="' + cx + '" cy="' + cy + '" r="15"/><text class="bdt" x="' + cx + '" y="' + (cy + 1) + '">' + e.n + '</text></g>';
+      svg.push(s);
+    });
+    svg.push('</svg>');
+    var go = function (to, label) { return '<button type="button" class="lk" data-go="' + to + '">' + esc(label) + '</button>'; };
+    var outs = n.out.map(function (e) { return '<li data-d="' + e.id + '"' + (e.back ? ' class="bk"' : '') + '><b>' + circ(e.n) + '</b> ' + esc(e.tr) + ' → ' + (e.self ? '原地' : go(e.t, NODE[e.t].name) + (where(e.L) ? '（' + where(e.L) + '）' : '')) + '<span class="p">' + esc(e.p) + '</span>' + (e.ax ? '<span class="ax">示意落点（同类截图）：' + esc(e.ax) + '</span>' : '') + '</li>'; }).join('');
+    var ins = n.inc.filter(function (e) { return !e.self; }).map(function (e) { return '<li data-d="' + e.id + '"' + (e.back ? ' class="bk"' : '') + '>' + (e.f ? go(e.f, NODE[e.f].name) + ' ' + circ(e.n) : '地址栏') + ' · ' + esc(e.tr) + (where(e.L) ? ' → 落在' + where(e.L) : '') + '<span class="p">' + esc(e.p) + '</span>' + (e.ax ? '<span class="ax">示意落点：' + esc(e.ax) + '</span>' : '') + '</li>'; }).join('');
+    dt.innerHTML = '<div class="in"><div class="bar"><button type="button" class="x" data-loc="' + n.id + '">在地图上定位</button><button type="button" class="x" data-close="1">关闭 Esc</button></div>'
+      + '<div class="hd"><h2>' + esc(n.name) + '</h2><div class="ds">' + esc(n.desc) + '</div></div>'
+      + (keys.length ? '<div class="keys" aria-label="键盘">' + keys.join('') + '</div>' : '')
+      + '<div class="im"><img src="' + n.img + '" alt="' + esc(n.name) + '">' + svg.join('') + '</div>'
+      + '<div class="lists"><div><h3>从这里出去（' + n.out.length + '）· 白框 = 点的位置</h3><ul>' + (outs || '<li>—</li>') + '</ul></div><div><h3>从哪里进来（' + n.inc.filter(function (e) { return !e.self; }).length + '）· 虚线框 = 落在这一页的位置，点划框 = 示意</h3><ul>' + (ins || '<li>—</li>') + '</ul></div></div></div>';
+    if (!dt.classList.contains('open')) {
+      dtBack = document.activeElement;
+      BEHIND.forEach(function (k) { var el = document.getElementById(k); if (el) el.inert = true; });
+    }
+    dt.classList.add('open'); dt.scrollTop = 0; dtFrom = id;
+    var cb = dt.querySelector('[data-close]'); if (cb) cb.focus({ preventScroll: true });
+  }
+  function closeDetail() {
+    dt.classList.remove('open'); dt.innerHTML = '';
+    BEHIND.forEach(function (k) { var el = document.getElementById(k); if (el) el.inert = false; });
+    if (dtBack && dtBack.focus && document.contains(dtBack)) dtBack.focus({ preventScroll: true }); dtBack = null;
+  }
+  dt.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.closest('[data-close]') || t === dt) { closeDetail(); return; }
+    var g = t.closest('[data-go]'); if (g) { openDetail(g.getAttribute('data-go')); return; }
+    var loc = t.closest('[data-loc]'); if (loc) { var id = loc.getAttribute('data-loc'); closeDetail(); fitRect(rectOfNodes([id]), true, 60); }
+  });
+  dt.addEventListener('pointerover', function (ev) {
+    var li = ev.target.closest('[data-d]'); dt.querySelectorAll('.on').forEach(function (x) { x.classList.remove('on'); });
+    if (!li) return; dt.querySelectorAll('[data-d="' + li.getAttribute('data-d') + '"]').forEach(function (x) { x.classList.add('on'); });
+  });
+
+  /* ── 小地图 */
+  var mini = document.getElementById('mini'), mc = mini.querySelector('canvas'), mx = mc.getContext('2d');
+  var MAR = (WMAX.y - WMIN.y) / (WMAX.x - WMIN.x), MH = Math.min(150, Math.round(160 * MAR)), MW = Math.round(MH / MAR); mc.width = MW * 2; mc.height = MH * 2; mc.style.width = MW + 'px'; mc.style.height = MH + 'px';
+  var ms = MW / (WMAX.x - WMIN.x), miniQ = false;
+  function drawMini() {
+    if (miniQ) return; miniQ = true;
+    requestAnimationFrame(function () {
+      miniQ = false; if (getComputedStyle(mini).display === 'none') return;
+      mx.setTransform(2, 0, 0, 2, 0, 0); mx.clearRect(0, 0, MW, MH);
+      mx.fillStyle = '#2a2a2a'; BLOCK.forEach(function (b) { mx.fillRect((b.x - WMIN.x) * ms, (b.y - WMIN.y) * ms, b.w * ms, b.h * ms); });
+      mx.fillStyle = '#6a6a6a'; D.nodes.forEach(function (n) { mx.fillRect((n.sx - WMIN.x) * ms, (n.sy - WMIN.y) * ms, IW * ms, IH * ms); });
+      var V = vpRect(), x0 = (-cam.x / cam.k - WMIN.x) * ms, y0 = (-cam.y / cam.k - WMIN.y) * ms;
+      mx.strokeStyle = '#fff'; mx.lineWidth = 1.2; mx.strokeRect(x0, y0, V.w / cam.k * ms, V.h / cam.k * ms);
+    });
+  }
+  function miniGo(ev) { var r = mc.getBoundingClientRect(), wx = (ev.clientX - r.left) / ms + WMIN.x, wy = (ev.clientY - r.top) / ms + WMIN.y, V = vpRect(); flyId++; cam.x = V.w / 2 - wx * cam.k; cam.y = V.h / 2 - wy * cam.k; apply(); }
+  var miniDown = false;
+  mini.addEventListener('pointerdown', function (ev) { miniDown = true; mini.setPointerCapture(ev.pointerId); miniGo(ev); });
+  mini.addEventListener('pointermove', function (ev) { if (miniDown) miniGo(ev); });
+  mini.addEventListener('pointerup', function () { miniDown = false; });
+
+  var nAx = D.edges.filter(function (e) { return e.ax; }).length;
+  document.getElementById('sub').textContent = '版本 ' + D.v + ' · ' + D.nodes.length + ' 张截图 · ' + D.edges.filter(function (e) { return e.k !== 'url'; }).length + ' 条交互：线从源截图上点的位置连到目标截图上落到的位置；点划框 = 示意落点（' + nAx + ' 条落在同类截图上）';
+  syncTopH(); fitAll(false); zoomVars();
+  window.__journey = { cam: cam, fitAll: fitAll, setScn: setScn, openDetail: openDetail, fitRect: fitRect, rectOfNodes: rectOfNodes, hl: hl, pin: pin, D: D, margins: margins };
+  }
+  // 标签宽度按 JetBrains Mono 量：等字体到了再排（最多等 2.5s，拿不到就按退回字体排）
+  var started = false;
+  function start() { if (started) return; started = true; main(); }
+  var fl = document.fonts && document.fonts.load ? Promise.all([document.fonts.load('500 22px "JetBrains Mono"'), document.fonts.load('400 17px "JetBrains Mono"')]) : Promise.resolve();
+  fl.then(start, start); setTimeout(start, 2500);
+})();
+</script>
+</body>
+</html>

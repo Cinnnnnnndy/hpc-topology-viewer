@@ -3075,7 +3075,7 @@
       tipEl.style.left = (ev.clientX - rc.left + 14) + 'px';
       tipEl.style.top = (ev.clientY - rc.top + 12) + 'px';
       tipEl.innerHTML = `第 ${d.i} 片 · ${esc(o.short || o.name)}`
-        + (rr != null ? `<br><span style="opacity:.75">点一下 → 切到 rank ${rr}</span>` : '');
+        + (rr != null ? `<br><span style="opacity:.75">点一下 → 切到 rank ${rankLabel(rr)}</span>` : '');
     });
     detailEl.addEventListener('pointerleave', () => {
       detailEl.classList.remove('is-hit'); tipEl.style.display = 'none';
@@ -3403,7 +3403,7 @@
     // 选中的那条通信边（点线之后）：谁到谁、跨了哪层物理链路
     function edgeLine() {
       const e = S.selEdge; if (!e) return '';
-      return `<b>${e.dim} ${e.prim}</b> rank ${e.from} → ${e.to}` +
+      return `<b>${e.dim} ${e.prim}</b> rank ${rankLabel(e.from)} → ${rankLabel(e.to)}` +
         ` · <span style="color:${tierc(e.tier)}">${TIER_LAB[e.tier]}</span>` +
         `<span class="prc-dim">（机${e.hosts[0]}→${e.hosts[1]} · Pod${e.pods[0]}→${e.pods[1]}）</span>`;
     }
@@ -4206,9 +4206,9 @@
       };
       if (r != null) {
         const st = model.ppOf(r), lr = model.stageLayerRange(st);
-        showTip(`rank ${r} · TP${model.tpOf(r)} PP${st}(L${lr.lo}-${lr.hi}) DP${model.repOf(r)} · 桶${model.epOf(r)} 域${model.domOf(r)}`);
+        showTip(`rank ${rankLabel(r)} · TP${model.tpOf(r)} PP${st}(L${lr.lo}-${lr.hi}) DP${model.repOf(r)} · 桶${model.epOf(r)} 域${model.domOf(r)}`);   // 悬停也写宿主的号（同标题与读出卡；原来写本页内部序号，悬停 3159、点下去宿主写 1431）
       } else if (e) {
-        showTip(`${e.dim} ${e.prim} · rank ${e.from} → ${e.to} · <span style="color:${tierc(e.tier)}">${TIER_LAB[e.tier]}</span>`);
+        showTip(`${e.dim} ${e.prim} · rank ${rankLabel(e.from)} → ${rankLabel(e.to)} · <span style="color:${tierc(e.tier)}">${TIER_LAB[e.tier]}</span>`);
       } else if (g) {
         // 分段的悬停：与规格牌一模一样的两行，牌被抽掉的那几块靠这里问出来
         showTip(`<b style="color:${esc(g.color)}">${esc(g.title)}</b><br>${esc(g.sub)}`);
