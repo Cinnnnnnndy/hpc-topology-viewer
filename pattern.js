@@ -13,7 +13,7 @@
                      POD / 板上的 CPU·NPU·DPU·NIC，NPU 按 PP 段着色。点 NPU =
                      选中 rank；点 POD/超节点 = 取景过去；点空白 = 复位。
      （原来还有一层 segment 段——宇宙视图 / 径向星图聚焦一条 PP 段。反馈「这个视图先不做，
-       归档到另一个分支」：整份代码存在分支 claude/pp-segment-radial-archive，发布在
+       归档到另一个分支」：整份代码存在归档分支，发布在
        /patterns/pp-segment-radial/，启动页有卡片。本页左卡的 PP 段按钮现在只在原地聚焦那一段。）
      （选中 rank：右卡先摆坐标行，再借矩阵本体一次不铺屏的 ?brief=1&sel=
        请求（requestTier2Brief），pto:rank-brief 回信原地升级成层区间/显存
@@ -48,7 +48,7 @@
   var alertBadge = document.getElementById('alertBadge');
 
   /* 预置表，world = tp×cp×pp×dp（EP 折在 DP 内部，不进世界卡数——两个本体
-     的 README 都确认过这个口径，pangu_sophon_pytorch 项目代码里的
+     的 README 都确认过这个口径，参考训练工程 项目代码里的
      data_parallel_size = world_size ÷ (TP×PP×CP) 也是同一条）。默认
      moe504b32k，world=4096，走三档取景（见下面「默认预置」注释）；
      ?preset=dense64 是 demo.html 自己现成的 64 卡预置，用来验证"world ≤ 64
@@ -75,7 +75,7 @@
        rubikSelToMatrixSel 里补的 cp 项，见下面对应位置的注释。 */
     moe718b128k: { tp: 8, cp: 16, pp: 16, dp: 4, ep: 4, matrixPreset: 'moe718b128k', modelName: 'MoE 718B(A39B)·128K seq' },
     /* moe504b32k：demo.html 那份 PRESETS.moe504b32k 的桥接条目（同一个
-       pangu_sophon_pytorch 项目里 504B/18B 激活那档、32K 序列），tp/cp/pp/
+       参考训练工程 项目里 504B/18B 激活那档、32K 序列），tp/cp/pp/
        dp/ep 逐位照抄那边的 cfg（world=4·8·8·16=4096）。dp=16 不是猜的：
        项目代码里 data_parallel_size = world_size ÷ (TP×PP×CP)、EP 落在 DP
        域内，EP 必须整除 DP，DP=EP=16 就是这组切分的最小合法值——比
@@ -94,7 +94,7 @@
      名字直说这件事，不再是简写。 */
   var TIER2_LABEL = '同组定位';
   /* 默认预置：先后改过三次。第一次反馈「改这里的默认配置」，从 pangu
-     （4000卡演示规格）换成 moe718b128k（pangu_sophon_pytorch 项目里体量
+     （4000卡演示规格）换成 moe718b128k（参考训练工程 项目里体量
      最大的一档真实 MoE）；随后反馈"这个的rank数量太多了……回退一步回到
      之前只用64个rank的时候"+"等到我们的形式确定之后再扩大rank的数量"，
      退回 dense64（world=64）；交互形式（三档取景、宇宙视图、故障复盘面板
@@ -524,10 +524,10 @@
      图数的（4 个 NIC 框），直播没给每 Board DPU 的确切数，这一项是示意。 */
   var GEO = { sw1: {}, sw2: {}, board: {} }, PITCH_ = 9, ROWP_ = 9, PODW_ = 126;
   /* ── 10.23 集群 2.5D（反馈「整体集群的视角再给一个 2.5D 可以切换，切换放在下面的工具栏」）──────────────
-     同 hpc-topology-node 的 iso 预设（镜头方向 [1, .82, 1]：俯角 ≈30°、方位 45°）：整张平面图在 SVG 里套一层正交轴测投影
+     同 硬件图元库 的 iso 预设（镜头方向 [1, .82, 1]：俯角 ≈30°、方位 45°）：整张平面图在 SVG 里套一层正交轴测投影
      （g.iso-g 的 transform，平移缩放仍在外层 <svg> 上），SuperPoD / POD 垫一层板厚。取景、POD 懒建的可见范围、选中框、
      原地关系层都按同一个投影算——画面上的东西点得中、框得准。ISO.t 是 0（平面）→ 1（2.5D）的过渡进度。 */
-  /* 10.27：集群的 2.5D / 3D 改由 engine/hw3d 用 hpc-topology-node 的立体图元画（见下面 CV / HW），这套 SVG 轴测投影不再启用——
+  /* 10.27：集群的 2.5D / 3D 改由 engine/hw3d 用 硬件图元库 的立体图元画（见下面 CV / HW），这套 SVG 轴测投影不再启用——
      ISO 恒为 0，取景 / 懒建 / 选中框里的投影分支都退化成平面 */
   var ISO = { on: false, t: 0, m: [1, 0, 0, 1, 0, 0], raf: 0 };
   function isoFull(vb) {
@@ -612,7 +612,7 @@
     }
     el.innerHTML = h; el.classList.toggle('is-empty', !h);
   }
-  /* ── 10.27 集群 2.5D / 3D = hpc-topology-node 的立体图元（反馈「用我做的一系列 node 里的节点」「2D 和 2.5D/3D 要保持一致」）──────
+  /* ── 10.27 集群 2.5D / 3D = 硬件图元库 的立体图元（反馈「用我做的一系列 node 里的节点」「2D 和 2.5D/3D 要保持一致」）──────
      平面图用的是那个库 icon-defs.js 的 2D 图元，立体用同一提交的 entity-builders.js（engine/hw3d），颜色两边都照搬图元库原色。
      立体不另排版：把平面图里每个对象的矩形原样发给引擎（hw:layout），引擎把对应图元原位立起来——同一张图的两种画法。
      工具条集群段：平面 | 2.5D（正交轴测，只平移缩放）| 3D（透视，可转）。层级、面包屑、卡片仍归宿主：
@@ -751,7 +751,7 @@
             panels.push('<rect class="p-board" data-board="' + bIdx + '" data-pod="' + podIdx + '" x="' + (pdx + 2) + '" y="' + (ry - ROWP / 2) + '" width="' + (PODW - 4) + '" height="' + ROWP + '"><title>Board ' + bIdx + ' · 2 CPU + 8 NPU + DPU + 4 NIC</title></rect>');
             /* 设备各有各的形：只有 NPU 是实心（填充 = 显存占用率这份数据），
                其余都是空心轮廓——CPU 方框、DPU 菱形、NIC 四根端口短竖线。 */
-            // 图形直接用 hpc-topology-node 的 2D 图元（hw-icons.js 里的 <symbol>）：CPU 鲲鹏、DPU、NIC 擎天
+            // 图形直接用 硬件图元库 的 2D 图元（hw-icons.js 里的 <symbol>）：CPU 鲲鹏、DPU、NIC 擎天
             panels.push('<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 4.6) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
               + '<use class="p-cpu" href="#hw-cpu" x="' + (pdx + 11) + '" y="' + (ry - 2.6) + '" width="6.2" height="5.2"/>'
               + '<use class="p-dpu" href="#hw-dpu" x="' + (pdx + 97.4) + '" y="' + (ry - 3) + '" width="8" height="6"/>');
@@ -1031,7 +1031,7 @@
       el.classList.toggle('is-cold', on === false);
     });
   }
-  /* 激活链路上跑的小圆点（hpc-topology-node Round 4：两颗、相差半个周期；速度 = 带宽——
+  /* 激活链路上跑的小圆点（硬件图元库 Round 4：两颗、相差半个周期；速度 = 带宽——
      板内铜缆快、出板光 UB 慢）。只在板视图画：集群层那几根线不到 1px，点跑起来只是闪烁。 */
   var NO_FLOW_DOTS = true;
   function flowDots(slot) {
@@ -1096,7 +1096,7 @@
   // 版式照第二页 Server 图：CPU 行在上，NPU 行居中，fullmesh 弧画在 NPU 行上方，
   //   NPU 往下 8 口扇出到 L1 行，L1 再到各自平面的 4×SW2。
   var curBoard = null, boardBuilt = null;
-  /* ── 连线样式（反馈「连线按 hpc-topology-node 的连线样式适配；太细时要换显示方式」）──
+  /* ── 连线样式（反馈「连线按 硬件图元库 的连线样式适配；太细时要换显示方式」）──
      那边（硬件图元库 · 连线样式 Round 6）每条线是两层：一条底色衬边（casing）把交叉处
      切开，上面一条芯线，芯线的实线 / 虚线节奏区分介质——铜缆实线、光 UB 虚线 7 5、
      长距 UBoE 稀虚线 4 7 且半透明、RDMA 端头一个空心环；激活的链路芯线走流动虚线，
@@ -1222,7 +1222,7 @@
     for (var k = 0; k < 4; k++) {
       var NC = box('b-nic', (NX(2 * k) + NX(2 * k + 1)) / 2, CPUY + 1, 58, 22, 'NIC' + k, 'NIC' + k + ' · 1 口 UB 挂 NPU' + (2 * k) + '/NPU' + (2 * k + 1) + ' · RoCE 出框', ' data-nic="' + k + '"');
       links.push(cased('<line class="b-roce" x1="' + NC.x + '" y1="22" x2="' + NC.x + '" y2="' + NC.t + '"/>'));
-      // RDMA 端头：NIC 顶上一个空心环（hpc-topology-node 的 RDMA 端点画法）
+      // RDMA 端头：NIC 顶上一个空心环（硬件图元库 的 RDMA 端点画法）
       nodes.push('<circle class="b-rdma" cx="' + NC.x + '" cy="' + NC.t + '" r="3.2"/>');
       // NIC 交换（POD 形态图「SW 4*N · 2口/N」）：每张 NIC 2 口汇到右侧那颗小交换的顶边中点
       links.push(cased('<path class="b-nsw-l" d="' + nswPath(NC.x + 3 * BP, NC.t, NSI.nic[k]) + '"><title>NIC' + k + ' — NIC 交换 · 2 口</title></path>', 'lkc lkd'));
@@ -1253,7 +1253,7 @@
     // L1 行（每平面一颗）：先定位置，左右两根 UB 干线要接它们的侧边中点
     var L1A = [];
     for (var k3 = 0; k3 < 8; k3++) L1A.push(box('b-l1', NX(k3), L1Y, 64, L1H, 'P' + (k3 + 1), 'L1 灵衢 SW · 平面 ' + (k3 + 1) + ' · 4 口 → 本平面 4×SW2', ' style="--pc:' + PLANE_C[k3] + '"'));
-    /* 状态点（10.14，照 hpc-topology-node：状态色嵌在图元体内——交换机是「首个端口点」变色，不另浮标记）：
+    /* 状态点（10.14，照 硬件图元库：状态色嵌在图元体内——交换机是「首个端口点」变色，不另浮标记）：
        L1 承载 POD 内的 EP All-to-All，路由失衡超告警线时首个端口点亮琥珀；平时不画 */
     L1A.forEach(function (A) {
       nodes.push('<rect class="b-led" x="' + (A.ix + A.iw / 48) + '" y="' + (A.iy + 10 * A.ih / 36) + '" width="' + (2 * A.iw / 48) + '" height="' + (2 * A.ih / 36) + '" rx="0.4"/>');

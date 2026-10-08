@@ -1,5 +1,5 @@
 /*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
-/* 硬件图元 2D 图标 —— 直接取自 Cinnnnnnndy/hpc-topology-node 的 icon-defs.js（commit 75ecf2a），
+/* 硬件图元 2D 图标 —— 直接取自 硬件图元库 的 icon-defs.js，
    HWICONS.build(id, null, R, light=false) 的深色默认态原样转成 <symbol>，全页用 <use> 引用。
    10.27：颜色完全照搬图元库（反馈「2D 和 2.5D/3D 要保持一致」「都用图元库原色」）——撤掉 10.x 时的去色相与提亮曲线，
    与集群 2.5D / 3D 里用的 entity-builders.js（同一提交）是同一套色值。

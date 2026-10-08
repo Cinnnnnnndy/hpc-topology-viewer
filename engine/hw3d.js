@@ -1,6 +1,6 @@
 /*! © 2026 王欣迪 (Cindy_wxd) · SPDX-License-Identifier: Apache-2.0 · 使用、修改或再分发须保留本署名与 NOTICE */
 /* 集群 2.5D / 3D —— 平面图的同一张图「立起来」（反馈「2D 有对应的 2.5D 和 3D，用我做的一系列 node 里的节点」）。
-   · 器件本体全部来自 Cinnnnnnndy/hpc-topology-node（commit 75ecf2a）的 entity-builders.js：npu / cpu / nic / ub_switch，
+   · 器件本体全部来自 硬件图元库的 entity-builders.js：npu / cpu / nic / ub_switch，
      DPU 沿用 nic 的语言加一颗大 ASIC（2D 图标同一个补法）；配色 = 该库深色态 _CD，helpers（Phong + 描边 + 圆角盒）照抄库页面的 _makeHelpers，
      three.js 用库自带的同一份 r134——光照、颜色与库页面一致。
    · 位置不另排：宿主把平面图里每个对象的矩形（SuperPoD / L2 平面 / SW2 / L1 SW / POD / Board / CPU / DPU / NIC / NPU）原样发过来（hw:layout），

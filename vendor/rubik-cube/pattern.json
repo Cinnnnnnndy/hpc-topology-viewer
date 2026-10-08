@@ -8,7 +8,7 @@
       "public/cube-cockpit.html 逻辑魔方（chipCubeM 五形态 / renderCubeAxes 轴标注 / ODEP 折叠维表 / CUBE_WHY 读图钥匙 / #cardGran 粒度贴士 / DIMHEX 维度签名色 / PHASES 通信阶段）",
       "data/ascend-workload-pangu-moe.json parallel_mapping_runtime（盘古 Pro MoE 真实并行策略 TP8·EP2·PP5·4K NPU）",
       "public/vendor/pto-design-system/（PTO Design System 上游快照：tokens/ + css/style.css）——组件、字体、颜色、间距、圆角、阴影一律取自其 token 与类实现",
-      "hpc-topology-node 硬件图元库 · 第 6 组「连线样式 Pattern 参考」——casing + glow core + 流动暗点三层结构，速率对应带宽·时延",
+      "硬件图元库 · 第 6 组「连线样式 Pattern 参考」——casing + glow core + 流动暗点三层结构，速率对应带宽·时延",
       "pto-design-system patterns/model-architecture-training-sidecar —— 字牌/注释的排版纪律：几何标注的屏幕像素地板与兜底、语义色只落在名字上、注释对比度低于模型、引线代替压字、过渡期去强调"
     ],
     "patternHtml": "public/rubik-pattern.html",

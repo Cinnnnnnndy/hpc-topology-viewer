@@ -1,5 +1,5 @@
 模型分片与训练设备映射 · 简洁版（shard-device-map）
-Copyright © 2026 王欣迪 (Cindy_wxd, https://github.com/Cinnnnnnndy)
+Copyright © 2026 王欣迪 (Cindy_wxd)
 
 双协议（dual licensing）：
   · 代码 —— Apache License 2.0（见 LICENSE）：pattern.html / pattern.js / pattern.css / hw-icons.js / engine/ 下的全部页面与脚本。

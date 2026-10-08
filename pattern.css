@@ -56,7 +56,7 @@ body.detail-warm #detailFrame.is-hidden { opacity: .01; }
 /* 交叉淡入不经过黑：新的一层在上面 .25s 淡入，旧的一层先沉到下面、保持不透明，等新的一层满了（.24s 延迟）再淡出——
    逐帧看过，原来两层同时一出一进，中间有一两帧整块画布是黑的 */
 iframe.stage-frame, .drawer iframe { filter: grayscale(1); }
-/* 10.27 集群 2.5D / 3D 用的是 hpc-topology-node 的立体图元，颜色照搬图元库原色（与 2D 图元同一套）——这一个 iframe 不去色 */
+/* 10.27 集群 2.5D / 3D 用的是 硬件图元库 的立体图元，颜色照搬图元库原色（与 2D 图元同一套）——这一个 iframe 不去色 */
 iframe#hwFrame { filter: none; background: #111111; }
 /* 泳道例外：阶段/通信种类靠它自己的颜色区分，灰掉就读不出来——保留原色 */
 .drawer[data-panel="swimlane"] iframe { filter: none; }
@@ -260,7 +260,7 @@ body.panel-bottom .side-card { max-height: calc(100vh - 140px - var(--pb)); }
 .p-l1 { stroke: #808080; stroke-width: calc(1px / var(--zk, 1)); }
 .p-uboe { stroke: #A0A0A0; stroke-width: calc(1.5px / var(--zk, 1)); stroke-dasharray: 6 4; fill: none; }
 .p-uboelabel { font-size: 10px; fill: #A0A0A0; }
-/* CPU / DPU / NIC / 交换机 / NPU 封装都是 hpc-topology-node 的 2D 图元（<use href="#hw-*">），
+/* CPU / DPU / NIC / 交换机 / NPU 封装都是 硬件图元库 的 2D 图元（<use href="#hw-*">），
    图元自带灰阶，这里只清掉会被继承进去的描边 */
 .p-cpu, .p-dpu, .p-nic, .p-sw2, .p-swicon, .p-npupkg, .b-npuicon, [class^="b-"] use { stroke: none; vector-effect: none; }
 .p-npupkg { pointer-events: none; }
@@ -322,7 +322,7 @@ svg.lod1 .lod1, svg.lod2 .lod2 { display: inline; }
 .b-fan.is-cold, .b-mesh.is-cold { stroke-opacity: .1; }
 .b-h2d.is-cold, .b-nicl.is-cold { stroke-opacity: .15; }
 
-/* ── 连线样式（hpc-topology-node · 连线样式 Round 6 的结构，去色）：衬边 + 芯线 ──
+/* ── 连线样式（硬件图元库 · 连线样式 Round 6 的结构，去色）：衬边 + 芯线 ──
    衬边 .lkc 是底色、比芯线宽，把交叉处切开；芯线的实/虚节奏区分介质：
      铜缆（板内：CPU↔CPU、H2D、NIC、NIC 交换、交换板出线）实线 · 光 UB（出板 → L1、L1 → L2、
      CPU/DPU → L1）虚线 7 5 · 长距 UBoE 稀虚线 4 7、半透明 · RoCE 3 3 + 端头空心环 · PCIe 点线。
@@ -408,7 +408,7 @@ svg.lod2 .rel .is-cold { marker-start: none; marker-end: none; }
 .lc-zero button.is-on { color: #111111; background: #E8E8E8; border-color: #E8E8E8; }
 
 /* 图元后面不垫卡片（反馈「不要每个图元后面的卡片」）：放大到 6× 以后 NPU 格子本身透明，只剩
-   hpc-topology-node 的封装图标；占用率这份数据挪进图标下沿的状态条（该库 NPU 的状态条就在
+   硬件图元库 的封装图标；占用率这份数据挪进图标下沿的状态条（该库 NPU 的状态条就在
    die 窗口底部），超容仍是告警红。板视图同理，部件框只留名字，不留底和框。 */
 svg.lod2 .p-npu:not(.is-sel) { fill-opacity: 0; }
 svg.lod2 .p-npu.is-sel { fill-opacity: 0; }
@@ -1319,7 +1319,7 @@ svg.has-sel .b-roce, svg.has-sel .b-pcie, svg.has-sel .b-ub, svg.has-sel .b-uboe
 svg.lodz .b-dlbl { opacity: 1; }
 svg.has-sel .b-dlbl { fill: #6A6A6A; }
 
-/* ── 10.14：必要的状态点缀（照 hpc-topology-node：状态色嵌在图元体内、只在出事时出现，平时全灰）──
+/* ── 10.14：必要的状态点缀（照 硬件图元库：状态色嵌在图元体内、只在出事时出现，平时全灰）──
    器件：NPU 状态条（die 窗口底下那一条）——显存 ≥ 红线（Critical）琥珀、OOM 告警红；其余仍是占用灰阶。
    交换机：首个端口点——EP 路由失衡超线时琥珀。
    链路：平时灰、选中白；选中卡承载告警流量的那几根（EP 失衡时它的出板 Clos）由白改琥珀。只做这三种，不加常亮的「正常」绿 */
